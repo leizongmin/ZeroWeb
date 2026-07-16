@@ -1756,6 +1756,15 @@ fn position_cells_vertical(
     // 是 vertical-rl 文本绘制偏离 box（R1050 vrl paint bug），须 vertical IFC paint 修（多 session）。
 }
 
+/// table-sizing 架构切片 R1570：max-width/max-height 不应压缩 table 的固有内容
+/// （行/列不因 max 而收缩——chromium 行为，css-tables §computing-the-table-height）。
+/// 显式 width/height 的 max 约束已在行分布（target_content_h / 列宽）中处理，
+/// 故此处仅影响「无显式尺寸、内容超过 max」的情况（如 min-max-size-table-content-box
+/// v4 max-height:50 + 75px div → 内容 77 不被压到 34）。env-gated 做 A/B，default-on。
+fn table_maxsize_no_shrink() -> bool {
+    !matches!(std::env::var("ZW_TABLE_MAXSIZE_NO_SHRINK").as_deref(), Ok("0"))
+}
+
 /// 应用 min-height/max-height/min-width/max-width 约束到 table 容器。
 ///
 /// 在 position_cells 之后调用，根据 CSS 尺寸约束调整表格的实际尺寸。
@@ -1837,6 +1846,7 @@ fn apply_table_size_constraints(
         }
         if let LengthValue::Px(v) = &style.max_width
             && *v != f64::INFINITY
+            && !table_maxsize_no_shrink()
         {
             let max_w = *v as f32;
             let max_content = if is_border_box {
@@ -1860,6 +1870,7 @@ fn apply_table_size_constraints(
         }
         if let LengthValue::Px(v) = &style.max_height
             && *v != f64::INFINITY
+            && !table_maxsize_no_shrink()
         {
             let max_content = (*v as f32 - padding_border_h).max(0.0);
             final_height = final_height.min(max_content);

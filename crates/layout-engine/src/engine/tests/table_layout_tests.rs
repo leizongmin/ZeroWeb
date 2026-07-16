@@ -358,3 +358,62 @@ fn test_float_with_zero_width_block_child_shrinks() {
         "width:auto float with 0-width block child should shrink (<<800), got {w} (old bug left it full-width)"
     );
 }
+
+/// R1570 table-sizing 切片：max-height / max-width 不应压缩 table 的固有内容
+/// （chromium 行为，css-tables §computing-the-table-height——行/列不因 max 而收缩）。
+/// min-max-size-table-content-box v4（max-height:50px + 75px div）期望 table 内容
+/// 高度保持 75（td 内容）而非被压到 max-height。显式 width/height 的 max 约束已在
+/// 行/列分布中处理，此处仅守「内容 > max 时不收缩」。
+#[test]
+fn test_table_maxsize_does_not_shrink_intrinsic_content() {
+    use zero_css_parser::values::LengthValue;
+    use zero_dom::{NodeId, NodeKind};
+    // table 内含 75px 高 div；max-height:50 不应把 table 高度压到 50。
+    let html = r#"<html><body style="margin:0">
+      <table id="t" style="border-spacing:0"><tr>
+        <td style="padding:0"><div style="width:75px;height:75px"></div></td>
+      </tr></table>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let mut styles = sys.compute_styles(&doc, &[]);
+    // 找到 table 元素 NodeId，注入 max-height:50（复现 min-max-size-table-content-box v4）
+    let mut table_id: Option<NodeId> = None;
+    let mut stack = vec![doc.root()];
+    while let Some(nid) = stack.pop() {
+        if let Some(n) = doc.get(nid) {
+            if let NodeKind::Element(e) = &n.kind {
+                if e.local_name().eq_ignore_ascii_case("table") && table_id.is_none() {
+                    table_id = Some(nid);
+                }
+            }
+            stack.extend(n.children.iter().copied());
+        }
+    }
+    let table_id = table_id.expect("table element found");
+    if let Some(s) = styles.get_mut(&table_id) {
+        s.max_height = LengthValue::Px(50.0);
+    }
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find_box(b: &LayoutBox, id: NodeId) -> Option<&LayoutBox> {
+        if b.node_id == Some(id) {
+            return Some(b);
+        }
+        for c in &b.children {
+            if let Some(found) = find_box(c, id) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    let table_box = find_box(&result.root, table_id).expect("table box found");
+    // div 内容 75px + td padding 0 = 行高 75；max-height:50 不应把 table 内容压到 50。
+    assert!(
+        table_box.height >= 75.0,
+        "table content (75px div) must not be shrunk by max-height:50, got {}",
+        table_box.height
+    );
+}
