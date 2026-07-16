@@ -615,6 +615,69 @@ impl InlineFormattingContext {
         }
     }
 
+    /// R1576 inline-box-model 递归开关：inline 元素含嵌套 inline-block 后代时递归收集。
+    /// default-on（`ZW_INLINE_BOX_RECURSE=0` 关闭）。
+    fn inline_box_model_recurse() -> bool {
+        !matches!(std::env::var("ZW_INLINE_BOX_RECURSE").as_deref(), Ok("0"))
+    }
+
+    /// R1576：检测 inline 元素是否含**嵌套 atomic inline 后代**（任意深度，限 inline 路径）。
+    /// atomic = inline-block/inline-flex/inline-grid/inline-table **或 `<img>`**（IFC 把 img 作
+    /// 原子行内级盒，local_name=="img" 分支）。仅沿 inline-level 后代下探（block-level 停止 =
+    /// R109 block-in-inline 另路径）。驱动 `collect_inline_items` 递归收集，修复
+    /// `<p><a><img></a></p>` / `<p><a><span class=inline-block></span></a></p>` 容器塌缩。
+    fn inline_elem_has_nested_inline_block(
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        inline_id: NodeId,
+    ) -> bool {
+        use zero_style_system::property::types::DisplayValue;
+        let is_atomic_inline = |d: &DisplayValue| {
+            matches!(
+                d,
+                DisplayValue::InlineBlock
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::InlineGrid
+                    | DisplayValue::InlineTable
+            )
+        };
+        let is_inline_level = |d: &DisplayValue| {
+            matches!(
+                d,
+                DisplayValue::Inline
+                    | DisplayValue::InlineBlock
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::InlineGrid
+                    | DisplayValue::InlineTable
+            )
+        };
+        // BFS 沿 inline-level 后代下探，找 atomic inline 盒（inline-block 或 img）。
+        let mut stack = doc.child_nodes(inline_id);
+        while let Some(cid) = stack.pop() {
+            let Some(node) = doc.get(cid) else {
+                continue;
+            };
+            let Some(elem_data) = (match &node.kind {
+                NodeKind::Element(e) => Some(e),
+                _ => None,
+            }) else {
+                continue;
+            };
+            let Some(s) = styles.get(&cid) else {
+                continue;
+            };
+            // img 是 atomic inline（IFC img 分支），无论 display（默认 inline）。
+            if elem_data.local_name() == "img" || is_atomic_inline(&s.display) {
+                return true;
+            }
+            if is_inline_level(&s.display) {
+                // 继续沿 inline 后代下探（block-level 后代停止 = R109 另路径）
+                stack.extend(doc.child_nodes(cid));
+            }
+        }
+        false
+    }
+
     /// 收集容器中所有行内级内容（文本节点 + inline 元素 + `<br>` 元素），
     /// 从 ComputedStyle 中读取 font-size 和 line-height。
     fn collect_inline_items(
@@ -943,6 +1006,20 @@ impl InlineFormattingContext {
                                 continue;
                             }
                             // 无有效尺寸的 img 降级为零宽度 TextRun
+                        }
+
+                        // R1576 inline-box-model：若 inline 元素含**嵌套 inline-block 后代**，
+                        // 递归收集（保留 atomic inline 盒参与行盒高度计算），否则保持扁平化文本
+                        //（向后兼容，纯文本 inline 行为不变）。修复 `<p><a><img class=inline-block></a></p>`
+                        // 的 `<p>` 塌缩 h=0（旧扁平化 `text_content` 漏嵌套 inline-block，IFC 产 0 item）。
+                        // env `ZW_INLINE_BOX_RECURSE=0` 关闭。仅当后代有 inline-block 才递归（最小行为变化）。
+                        if Self::inline_box_model_recurse()
+                            && !self.vertical
+                            && Self::inline_elem_has_nested_inline_block(doc, styles, child_id)
+                        {
+                            let nested = self.collect_inline_items(doc, child_id, styles);
+                            items.extend(nested);
+                            continue;
                         }
 
                         // 其他 inline 元素的文本内容也收集进来

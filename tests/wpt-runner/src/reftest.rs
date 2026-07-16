@@ -1282,9 +1282,9 @@ mod tests {
 
     #[test]
     fn test_collapsed_containers_detects_inline_wrapping_inline_block() {
-        // R1575：`<p><a><img class=inline-block h-24></a></p>` 的 `<p>` 须随 inline-block
-        // 子内容长高（~24px），不应塌缩为 0。这是 IFC 不递归 inline 元素收集嵌套
-        // inline-block 的真 bug（wintertc footer）。check 须检出（in-flow child）。
+        // R1576 inline-box-model：`<p><a><img class=inline-block h-24></a></p>` 的 `<p>` 须随
+        // inline-block 子内容长高（IFC 递归 inline 元素收集嵌套 atomic inline 盒），不应塌缩为 0。
+        // default-on（ZW_INLINE_BOX_RECURSE）修复后 check 须**不**检出 `<p>` 塌缩。
         let html = "<html><body style=\"margin:0\">\
             <p><a href=\"#\"><img style=\"display:inline-block;height:24px;width:24px\" src=\"x.png\"></a></p>\
             </body></html>";
@@ -1293,10 +1293,8 @@ mod tests {
         let labels = collect_dom_labels(html);
         let issues = check_collapsed_containers(&root, &labels);
         assert!(
-            issues
-                .iter()
-                .any(|s| s.contains("collapsed container") && s.contains("[p]")),
-            "collapsed <p> (inline > inline-block) must be flagged, got {issues:?}"
+            !issues.iter().any(|s| s.contains("[p]")),
+            "R1576: <p> wrapping inline>inline-block must grow (not collapse), still flagged: {issues:?}"
         );
     }
 

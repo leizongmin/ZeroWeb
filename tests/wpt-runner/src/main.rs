@@ -391,6 +391,10 @@ fn cmd_product_smoke(args: &[String]) {
         let mut issues: Vec<String> = Vec::new();
         if struct_check {
             issues.extend(reftest::check_sibling_overlaps(&root, &labels));
+            // R1576：check_collapsed_containers 暂不入 product-smoke gate——inline>inline-block
+            // 已修（R1576 递归），但 inline>inline-IMG（无显式尺寸，IFC measure 无法解析 SVG
+            // 固有尺寸）仍未修（wintertc footer `<p>` 仍塌缩），入 gate 会阻塞 wintertc。
+            // 诊断仍经 struct-sweep 报告。
         }
         // 元素计数断言（DC-13「四个 feature card」/「四个 nav button」等）。
         for (class, min) in &expect_classes {
