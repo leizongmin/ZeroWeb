@@ -39,6 +39,7 @@ pub mod table_types;
 pub mod table_visibility;
 pub mod tree;
 pub mod types;
+pub mod vertical_block_flow;
 
 pub use converter::*;
 pub use dirty::*;
