@@ -39,9 +39,9 @@
   （HarfBuzz/Skia coherence）+ Phase A line-box metric + ::first-letter，受 CI 计费 6-target 全失败 +
   policy 约束，agent 无法单方面推进。
 
-### 当前真实 lever（R1496 视角，按 yield × 可行性）
+### 当前真实 lever（R1560 更新视角，按 yield × 可行性）
 
-1. **font-wall C-dep 解锁（user-gated）** — 数百案（最大簇），等用户决策。**主指标唯一根本路径**。
+1. **font-wall = 光栅化方向已穷尽，剩 layout/metric coherence（Phase A）**。**R1560 决定性证伪**：real Skia（skia-safe 0.80，chromium 实际光栅器）over FreeType hinted 轮廓 = writing-modes net+1（噪声）/ welcome −0.09pp / **css-text net−24**（font-wall 文本簇真回归）。光栅化 coverage 算法 swap 非 font-wall unlock。**光栅化 C-dep 全角度穷尽**（metric DEAD R1090/R1095/R1160/R1206 / LoadFlag R1069 / gamma R1553 / tiny-skia R1555 / **real Skia R1560**）→ 永久移出 lever 清单。残余 font-wall real-yield 唯一路径 = **Phase A IFC 统一（layout/metric coherence，estimate-vs-fontdue，line-height/baseline）**，R125-R213 6 轮 deadlock 须 fresh architectural attempt。HarfBuzz shaping slice 理论低优先（rustybuzz 已用，shaping 差主影响字形选择非 coverage）。
 2. **multicol column-breaking R1035**（multicol nested-spanner wrapper 工作已 R1352-R1361 完成：
    R1359 FLIP 004a PASS、R1360 004b→1.51%；**R1535（2026-07-16）再推导末列 bg 闭式公式
    `last_h = capped_h − spans_total`（逐像素 PIL，替 capped_h − c），004b 1.51%→0.55% FLIP，
@@ -205,13 +205,13 @@ plateau = aggregate ~55% + 上述累计。
 
 ## 剩余 lever 清单（按 yield × 可行性排序）
 
-### L1. ★ C-dep 解锁：FreeType/Phase A 完整 font-stack（用户决策）— 最高杠杆
-- **blocker**: CI 计费 6-target 全 failure + policy（R1088）；本 agent 无法单方面启用。
-- **解锁**: font-wall residual（FreeType(ZW) vs FreeType+Skia(CHR) AA/subpixel）+ Phase A line-box
-  metric（leaf-measure 高度 0.4px 过冲，R1311e inline-fold blocker）+ ::first-letter（436 案 lever）。
-- **yield**: 数百案（最大簇）。welcome/morning.work 产品 smoke 亦受益。
-- **可行性**: 待用户决策；技术路径 R1068 FreeType 已 default-on，须扩到完整 font-stack + Phase A。
-- **行动**: ⚠️ 卡用户决策。agent 侧无可推进代码工作。
+### L1. ~~★ C-dep 解锁：FreeType/Phase A 完整 font-stack~~ — 光栅化 slice 已 R1560 证伪，剩 Phase A layout/metric
+- **R1560 决定性更新**：原「font-wall = FreeType(ZW) vs FreeType+Skia(CHR) AA/subpixel 差，须 Skia C-dep 对齐」**已被 real Skia S2 证伪**——skia-safe 0.80（chromium 实际光栅器）over FreeType 轮廓 = css-text **net−24**（真回归）/ writing-modes net+1 / welcome −0.09pp。**光栅化 coverage 算法非 font-wall unlock**，永久移出 lever。
+- **blocker（残余）**: font-wall 真根因 = **layout/metric coherence（Phase A IFC 统一 / estimate-vs-fontdue / line-height-baseline 定位）**，R125-R213 6 轮 deadlock，须 fresh architectural attempt，非 C-dep 可解。
+- **解锁**: Phase A line-box metric（leaf-measure 高度 0.4px 过冲，R1311e inline-fold blocker）+ ::first-letter（436 案 lever，亦 font-metric 依赖）。
+- **yield**: 数百案（最大簇，但路径从「光栅化 C-dep」改为「layout/metric 架构」）。
+- **可行性**: Phase A 多 session 架构（IFC 统一），非单 round；HarfBuzz shaping slice 低优先。
+- **行动**: 光栅化方向（Skia/FreeType/tiny-skia/gamma/LoadFlag/metric-swap）全角度穷尽，勿再试；转 Phase A IFC-result-reuse fresh attempt，或他 lever（multicol/content-list），或接受 plateau。
 
 ### L2. margin-collapse-clear §8.3.1 clearance-containment（6 案 17-35%，最高 diff in-scope 非 C-dep）
 - **blocker**: ZW 当前定位已乱（margin-collapse-clear-012 实测 #following-sibling@132.6 在

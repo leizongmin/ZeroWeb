@@ -1,7 +1,7 @@
 # RFC：Skia C-Dep — FreeType→Skia 字形光栅化对齐（font-wall 唯一真实 unlock）
 
-> **状态**：RFC 草案（待 feasibility spike 验证后实施）
-> **日期**：2026-07-16（R1554）
+> **状态**：⚠️ **S2 决定性证伪（R1560，2026-07-16）— RFC 作废**。S1 集成实现 + S2 A/B 实测：real skia-safe 0.80（chromium 实际光栅器）over FreeType hinted 轮廓 = writing-modes net+1（噪声）/ welcome −0.09pp / **css-text net−24（font-wall 文本簇真回归）**。光栅化 coverage 算法 swap **非** font-wall unlock；font-wall 残余在 layout/metric coherence（Phase A）。S1 代码已 revert（net-≤0 + OOM-prone + 重 C-dep）。**光栅化 C-dep（Skia/FreeType/fontdue）作 font-wall unlock 路径永久移出 lever 清单**。详见 master.md R1560。下方 §1-§8 设计保留作历史追溯，勿再据此实施。
+> **日期**：2026-07-16（R1554 提出 → R1560 S2 证伪作废）
 > **承接**：R1553 font-wall scoping（metric/LoadFlag/gamma 三小切片全排除）
 > **授权**：用户裁决包 #1（① 字体/C 依赖：许可证兼容 + feature-gate + A/B 验证；Skia 等大依赖须 **RFC + 小切片**）
 
