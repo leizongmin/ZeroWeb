@@ -133,6 +133,59 @@ fn test_abspos_vertical_rl_height_auto_shrink_to_fit() {
     );
 }
 
+/// 回归 R1548：vertical-rl 容器内 abspos span 的 paint_text 会重跑自身 IFC（paint Path B，
+/// 空 styles）。store_font_sizes_from_ifc 把 font metrics 存入容器 CB 而非 abspos 子盒，
+/// 致子盒 paint IFC 用默认 16px 渲染（"X" 渲成 16×16 而非 80×80）。fix_vertical_mode_abs_pos
+/// 须把 CB IFC 已测量的 fragment font metrics 按子盒直接文本节点存入子盒。
+///
+/// 复刻 abs-pos-non-replaced-vrl-002 结构。修复前 span.text_node_font_sizes 为空；
+/// 修复后应含其 "X" 文本节点 → 80px。
+#[test]
+fn test_r1548_abspos_vertical_stores_font_metrics_for_self_paint() {
+    let html = r#"<html style="writing-mode:vertical-rl"><body>
+      <div id="cb" style="background:red; direction:ltr; font:80px/1 monospace; height:320px; width:320px; position:relative">1 2 34<span id="s" style="position:absolute; top:auto; bottom:auto; height:auto; color:green">X</span></div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let s = find("s", &doc, &result.root).expect("span #s");
+    assert!(s.is_absolute, "span should be absolute");
+    // span 的直接文本节点 "X"
+    let text_nid = doc
+        .child_nodes(s.node_id.expect("span node_id"))
+        .into_iter()
+        .find(|c| {
+            doc.get(*c)
+                .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Text(_)))
+        })
+        .expect("span should have a text child");
+    // R1548：font metrics 应已存入子盒（供其 paint IFC 用，避免 16px 默认）。
+    let fs = s.text_node_font_sizes.get(&text_nid).copied().unwrap_or(0.0);
+    assert!(
+        (79.0..=81.0).contains(&fs),
+        "abspos span text_node_font_sizes should carry ~80px for its text node (got {fs}); \
+         without R1548 it is empty → paint IFC defaults to 16px"
+    );
+    let family_is_set = s.text_node_font_families.get(&text_nid).is_some_and(|f| !f.is_empty());
+    assert!(
+        s.text_node_is_ahem.get(&text_nid).copied().unwrap_or(false) || family_is_set,
+        "abspos span should carry font_family/is_ahem for its text node"
+    );
+}
+
 /// 回归：vertical-rl + direction:rtl 下 abspos 静态位置沿 inline 轴镜像（R334）。
 ///
 /// 复刻 abs-pos-non-replaced-vrl-002(ltr)/vrl-012(rtl) 结构。CSS §10.3.7 + writing-modes §7.1：

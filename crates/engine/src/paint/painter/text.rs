@@ -827,7 +827,25 @@ impl super::Painter {
             }
             // R109：匿名块片段跳过 painted_inline_nodes 去重——多个片段共享 inline 的
             // node_id，首个片段渲染后会标记该 id，须放行后续片段各自渲染其片段文本。
-            if box_node.fragment_node_ids.is_none() && self.painted_inline_nodes.contains(&node_id) {
+            // R1548：vertical abspos（全 inset auto）盒由 fix_vertical_mode_abs_pos 在
+            // postprocess 期精确定位（IFC 静态位置 + height shrink-to-fit），其文本须由
+            // 自身 paint_text 绘制。但其 containing-block 的 IFC 也会收集该文本片段（用于
+            // 静态位置计算）并以容器色（R335/R358，常 transparent）绘在静态流位置 + 标记
+            // node painted → 抑制 abspos 盒自身绘制 → 文本消失（R1547 root cause）。
+            // 仅对「vertical + 全 inset auto」的 abspos/fixed 盒放开去重（与
+            // fix_vertical_mode_abs_pos 的 x/y 修正条件一致）；非 auto inset 的 abspos 盒
+            // 定位未经 postprocess 修正，绘自身文本会落在错误位置，仍走去重（旧行为）。
+            let vert_abspos_self_paint = (box_node.is_absolute || box_node.is_fixed)
+                && matches!(
+                    style.writing_mode,
+                    zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
+                )
+                && matches!(style.top, LengthValue::Auto)
+                && matches!(style.bottom, LengthValue::Auto);
+            if box_node.fragment_node_ids.is_none()
+                && !vert_abspos_self_paint
+                && self.painted_inline_nodes.contains(&node_id)
+            {
                 return;
             }
 

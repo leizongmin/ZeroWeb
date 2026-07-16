@@ -469,6 +469,29 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
                 if cb_direction_rtl {
                     child.y = (container_width - child.y - child.height).max(0.0);
                 }
+
+                // R1548：abspos 子元素自身的 paint_text 会重跑 IFC（paint Path B，空 styles），
+                // 但 store_font_sizes_from_ifc 把 font metrics 存入了容器 CB 而非 abspos 子盒，
+                // 致子盒 paint IFC 用默认 16px 渲染（abs-pos-non-replaced-vrl-002 的 "X" 渲成
+                // 16×16 而非 80×80）。此处把 CB IFC 已正确测量的 fragment font metrics
+                //（font_size / line-height=height / is_ahem / letter_spacing）按子盒直接文本节点
+                // 重新键化存入子盒，供其 paint IFC 使用；font_family 取子盒自身 computed style。
+                // 仅在全 inset auto（盒位已被本函数修正）时存——非 auto inset 的 abspos 盒定位
+                // 未修正，其 paint_text 经 R1548 paint-gate 仍走去重，不消费这些 metrics。
+                for tn in doc.child_nodes(child_node_id) {
+                    if doc
+                        .get(tn)
+                        .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Text(_)))
+                    {
+                        child.text_node_font_sizes.insert(tn, fragment.font_size);
+                        child.text_node_line_heights.insert(tn, fragment.height);
+                        child.text_node_is_ahem.insert(tn, fragment.is_ahem);
+                        child.text_node_letter_spacing.insert(tn, fragment.letter_spacing);
+                        if let Some(cs) = styles.get(&child_node_id) {
+                            child.text_node_font_families.insert(tn, cs.font_family.clone());
+                        }
+                    }
+                }
             }
         }
     }
