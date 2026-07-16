@@ -1,0 +1,53 @@
+EMPIRICAL VERTICAL-MODE GROUND TRUTH (chromium 150 CDP vs ZeroWeb, 2026-07-16)
+==============================================================================
+结构（R1348-pattern）：受控变体 isolating vertical-mode 子行为，body margin:0，
+300×320 viewport。chromium oracle PNG（oracle/*.png）+ ZW render（oracle/*-zw.png，
+product-smoke --out）。PIL 测几何。
+
+变体：
+  V1-rl-inline : writing-mode:vertical-rl, height:240, 单行 5 个 distinct-color chars
+                 (A红 B绿 C蓝 D黄 E品红), font:40px/1 monospace, border 2px
+  V2-rl-block  : writing-mode:vertical-rl, 2 blocks (B1红 50×150, B2蓝 50×150)
+  V3-lr-block  : writing-mode:vertical-lr, 2 blocks (同 V2)
+
+━━━ V1 vertical-rl inline-flow（字符列推进）━━━
+char centers (x,y):
+  CHR: A=(19,11) B=(19,32) C=(19,51) D=(19,72) E=(19,92)  ← 单 x 列，y 递增（top→bottom）
+  ZW : A=(234,13) B=(234,33) C=(234,54) D=(234,77) E=(234,99) ← 单 x 列，y 递增（top→bottom）
+★ 结论：inline-flow（字符推进方向）ZW == CHR（均 top→bottom 垂直列）。
+  ★ 纠正 R1050「ZW 对 vertical 文本水平布局」——至少 V1 单行 case ZW inline-flow 已垂直。
+  ★ 残余 = 容器宽度/定位：CHR container w=44（1 line-height，左侧 x[0-43]）；
+    ZW container w=202（右侧 x[0-201]，过宽，未按 line-height shrink）。
+  ⇒ bug = vertical 容器 auto-width（ZW 拉到 ~200 而非 line-height），非 inline-flow。
+
+━━━ V2 vertical-rl block-flow（块方向，2 blocks）━━━
+block bboxes:
+  CHR: B1红 x[52-101]（右）y[2-151]   B2蓝 x[2-51]（左）y[2-151]
+       → blocks 水平排列，B1 右 B2 左 = right-to-left block-flow（vertical-rl 正确）
+  ZW : B1红 x[4-53]   y[4-153]        B2蓝 x[54-103] y[154-303]
+       → blocks 垂直堆叠（B1 上 B2 下）= top-to-bottom（horizontal-tb block-flow，错）
+★ 结论：ZW 对 vertical-rl 块用 horizontal-tb block-flow（垂直堆叠），应 right-to-left。
+
+━━━ V3 vertical-lr block-flow（块方向，2 blocks）━━━
+block bboxes:
+  CHR: B1红 x[2-51]（左）y[2-151]     B2蓝 x[52-101]（右）y[2-151]
+       → blocks 水平排列，B1 左 B2 右 = left-to-right block-flow（vertical-lr 正确）
+  ZW : B1红 x[4-53]   y[4-153]        B2蓝 x[54-103] y[154-303]
+       → 同 V2，垂直堆叠（不区分 rl/lr）
+★ 结论：ZW 不区分 vertical-rl / vertical-lr（均 vertical 堆叠），block-flow 方向未实现。
+
+━━━ ALGORITHM FINDINGS（R1541，2026-07-16）━━━
+1. inline-flow（字符推进）ZW 已垂直（V1），R1050「水平布局」判断至少对单行 case 过时。
+2. **block-flow 方向（R1043）= 未实现**：ZW 对 vertical-rl/lr 的 block-level 子用
+   horizontal-tb 堆叠，应分别 right-to-left / left-to-right 水平排列（V2/V3 铁证）。
+3. **vertical 容器 auto-width = 未按 line-height shrink**（V1：ZW 202 vs CHR 44）。
+4. => vertical-mode 正确实现须修 ① block-flow 方向（R1043，converter/layout 层）
+   + ② vertical 容器 auto-width（inline-size = line-height × line-count）。
+   inline-flow 已部分工作（V1），故 R1050「四层全须同修」判断可缩窄：block-flow +
+   container-width 两层是主缺口（inline-flow 已通），可能是 net-positive 单/双层修。
+   ★ 须 A/B 验证（writing-modes reftest-oracle 守 net≥0，R1047/R1052 net-negative 先例）。
+
+━━━ 工具链 ━━━
+chromium CDP（非 headless，WSL2 --no-sandbox --ozone-platform=x11，port 9227）+
+product-oracle-shot.mjs --root --html --out 抓 oracle + product-smoke --out 抓 ZW render。
+R1348 multicol harness 的 vertical 版本，reusable DC-1 工具扩展。
