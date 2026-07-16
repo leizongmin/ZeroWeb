@@ -917,6 +917,52 @@ pub fn check_sibling_overlaps(
     issues
 }
 
+/// DC-13 struct-check 扩展（R1575）：检测「塌缩容器」——有显著高度子内容但自身高度
+/// 近 0 的**真实元素**盒（非匿名）。这是 layout grow 失败的强信号（容器未随内容长高，
+/// R1492 谱系 / IFC 高度未回填等）。仅 flag 显著 case（子 > 20px 且父 < 2px）以降低
+/// 误报（合法 height:0 + 高子元素在产品 fixture 罕见）。
+pub fn check_collapsed_containers(
+    root: &zero_layout_engine::types::LayoutBox,
+    labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+) -> Vec<String> {
+    const MIN_CHILD_H: f32 = 20.0;
+    const MAX_PARENT_H: f32 = 2.0;
+    let mut issues = Vec::new();
+    fn walk(
+        b: &zero_layout_engine::types::LayoutBox,
+        labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+        issues: &mut Vec<String>,
+    ) {
+        // 仅真实元素盒（labels 含该 node_id；匿名盒 label_of 返回 "(anon)"）
+        let is_real = b.node_id.is_some_and(|id| labels.contains_key(&id));
+        if is_real && b.height < MAX_PARENT_H {
+            // 找最高**流内**子盒（排除 abspos/fixed——脱离流，父盒正确不随其长高；
+            // position-absolute-* 测试的父盒 h=0 是正确行为，非 bug）。
+            let max_child_h = b
+                .children
+                .iter()
+                .filter(|c| !c.is_absolute && !c.is_fixed)
+                .map(|c| c.height)
+                .fold(0.0f32, f32::max);
+            if max_child_h > MIN_CHILD_H {
+                let label = b
+                    .node_id
+                    .and_then(|id| labels.get(&id).cloned())
+                    .unwrap_or_else(|| "(anon)".to_string());
+                issues.push(format!(
+                    "collapsed container: [{label}] h={:.0} < in-flow child h={:.0} (parent failed to grow around content)",
+                    b.height, max_child_h
+                ));
+            }
+        }
+        for child in &b.children {
+            walk(child, labels, issues);
+        }
+    }
+    walk(root, labels, &mut issues);
+    issues
+}
+
 /// DC-13 line 322：统计布局树中带指定 class 的盒数（结构计数断言用）。
 ///
 /// `labels`（[`collect_dom_labels`] 产出）格式为 `tag.class1.class2`；本函数按 `.` 拆分后
@@ -1231,6 +1277,43 @@ mod tests {
         assert!(
             issues.is_empty(),
             "stacked block siblings must not flag overlap: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn test_collapsed_containers_detects_inline_wrapping_inline_block() {
+        // R1575：`<p><a><img class=inline-block h-24></a></p>` 的 `<p>` 须随 inline-block
+        // 子内容长高（~24px），不应塌缩为 0。这是 IFC 不递归 inline 元素收集嵌套
+        // inline-block 的真 bug（wintertc footer）。check 须检出（in-flow child）。
+        let html = "<html><body style=\"margin:0\">\
+            <p><a href=\"#\"><img style=\"display:inline-block;height:24px;width:24px\" src=\"x.png\"></a></p>\
+            </body></html>";
+        let config = ReftestConfig::default();
+        let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let labels = collect_dom_labels(html);
+        let issues = check_collapsed_containers(&root, &labels);
+        assert!(
+            issues
+                .iter()
+                .any(|s| s.contains("collapsed container") && s.contains("[p]")),
+            "collapsed <p> (inline > inline-block) must be flagged, got {issues:?}"
+        );
+    }
+
+    #[test]
+    fn test_collapsed_containers_ignores_abspos_child() {
+        // R1575：父盒 h=0 但子为 abspos（脱离流）是正确行为（position-absolute-* 测试），
+        // 不应 flag。仅 in-flow 高子内容触发。
+        let html = "<html><body style=\"margin:0;position:relative\">\
+            <div style=\"height:0\"><div style=\"position:absolute;width:100px;height:100px\"></div></div>\
+            </body></html>";
+        let config = ReftestConfig::default();
+        let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let labels = collect_dom_labels(html);
+        let issues = check_collapsed_containers(&root, &labels);
+        assert!(
+            issues.is_empty(),
+            "parent with only abspos child must not be flagged: {issues:?}"
         );
     }
 

@@ -1190,6 +1190,40 @@ fn cmd_struct_sweep(options: &CliOptions, filter: Option<&str>) {
     for (id, total, top) in flagged.iter().take(30) {
         eprintln!("  {:.0}px²  {}  | {}", total, id, top);
     }
+
+    // R1575：collapsed-container 诊断（非 gating）—— 真实元素盒有显著高度子内容但自身
+    // 高度近 0（layout grow 失败，如 inline>inline-block 的 `<p>` 塌缩）。独立于
+    // sibling-overlap 报告，定位 IFC/inline-box-model 类 layout gap。
+    let collapsed: Vec<(String, Vec<String>)> = filtered
+        .iter()
+        .filter_map(|case| {
+            let config = ReftestConfig {
+                viewport_width: options.viewport_width as u32,
+                viewport_height: options.viewport_height as u32,
+                ..Default::default()
+            };
+            let (_fb, root, rendered_html) = reftest::render_to_framebuffer_with_layout_with_base(
+                &case.test_html,
+                "",
+                &config,
+                case.base_dir.as_deref(),
+            );
+            let labels = reftest::collect_dom_labels(&rendered_html);
+            let issues = reftest::check_collapsed_containers(&root, &labels);
+            if issues.is_empty() {
+                None
+            } else {
+                Some((case.id.clone(), issues))
+            }
+        })
+        .collect();
+    eprintln!(
+        "\n  collapsed-container: {} cases with塌缩 containers (top 30 shown)",
+        collapsed.len()
+    );
+    for (id, issues) in collapsed.iter().take(30) {
+        eprintln!("  {}  | {}", id, issues.first().unwrap_or(&String::new()));
+    }
 }
 
 /// 格式化 reftest 报告（文本格式）。
