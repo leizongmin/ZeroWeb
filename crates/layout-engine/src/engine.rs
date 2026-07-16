@@ -510,6 +510,16 @@ impl LayoutEngine {
         // 仅根传视口高度作包含块；后代经 my_definite_content_height 链传播。
         clamp_percentage_max_height(&mut root_box, Some(self.viewport_height), styles);
 
+        // 12.7 后处理（R1544 Phase 2）：vertical-rl/lr 容器的 block-level in-flow 子用
+        // native block-flow 重定位（rl 右到左 / lr 左到右，同 y），并修正容器 block-size
+        //（物理 width = Σ 子宽）。**须在所有 HorizontalTb 语义的兄弟位移/高度调整之后**
+        //（shift_siblings_after_ifc_grow 会把 vertical 容器内并排子误当垂直堆叠兄弟下移，
+        // 实测 V2 把 B2 下移 150px）；本 pass 收尾重定位，确保子位置最终正确。
+        // 仅改物理 width（HorizontalTb 块父中不传播）+ 子位置，不动物理 height
+        //（避 R1542 高度传播 net-negative 墙）。env ZW_VERTICAL_BLOCK_FLOW=1 启用
+        //（default-off，A/B 实验期）。
+        crate::vertical_block_flow::apply_vertical_block_flow(&mut root_box, styles);
+
         // 诊断（不改变布局）：对 shrink-to-fit 候选容器（inline-flex/inline-grid/float:flex/
         // float:grid 的 width:auto，或任意 flex/grid 的 width:max-content/min-content）打印
         // 测得的固有宽度 vs 当前宽度，供 flex-grid 两趟布局（见 intrinsic_sizing / 设计草图）

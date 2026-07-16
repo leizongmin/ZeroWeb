@@ -1,5 +1,12 @@
 # Vertical native block-flow — rally-pattern 设计（R1544，2026-07-16）
 
+> **★ Phase 2 LANDED R1545（2026-07-16）**：postprocess 接线 default-on，
+> writing-modes reftest-oracle 全量 A/B **net +1**（91/784 vs 90/784）+ 14 大改善 / 0 大
+> 回归 + Σ −422pp；V2/V3 ground truth 像素级匹配 chromium。详见
+> [`evidence/r1545-vertical-block-flow-phase2-landed-2026-07-16.txt`](./evidence/r1545-vertical-block-flow-phase2-landed-2026-07-16.txt)。
+> 关键突破 = 仅改不传播维度（HorizontalTb 块父中物理 width）+ 不碰传播维度（物理 height），
+> 规避 R1542 sizing-entanglement 墙，纯 postprocess（无 two-pass）即 net-positive。
+>
 > 承接 R1541（vertical empirical ground truth）+ R1542（postprocess 路三证 net-negative）。
 > 本文档是 vertical-mode 最大未触 frontier 的 **native block-flow** 实现设计（rally-pattern，
 > 非 lei-spec-rfc——后者需用户确认与无人值守 rally 协议冲突，见 master.md R896）。
