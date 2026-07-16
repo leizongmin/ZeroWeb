@@ -140,8 +140,17 @@ pub(crate) fn resolve_no_wrap_for_ifc_measure(style: Option<&ComputedStyle>) -> 
 
 /// 将 IFC 片段结果存储到 LayoutBox.inline_layout，供 paint 系统复用。
 ///
-/// 避免在 paint 阶段重新运行 IFC（paint IFC 使用空 styles 导致字体度量不一致）。
-/// TODO: 当前被注释掉 — 基线计算修复后启用
+/// ⚠️ **死代码，保持不启用（R1526 调研定论）**：
+/// - 存储职责已由 `compute_final_inline_layouts`（本文件 line 521）inline 实现
+///   （line 933 `root.inline_layout = Some(lines)` + line 872 `store_font_sizes_from_ifc`），
+///   wiring 本函数要么 redundant（存储已发生），要么无对应调用场景。
+/// - broad-authoritative-storage 机制（paint 经 `use_stored` 复用 layout 行盒、不再重跑 IFC）
+///   经 R1487 env-gate A/B 决定性证伪（normal-flow NET -7 revert）：layout 行断用
+///   `estimate_char_width` 与 chromium 分歧**大于** paint Path B 的 fontdue 重跑，故强制
+///   paint 复用 layout 结果**更差**而非更好。narrow ascent/baseline override 变体亦
+///   net-negative（R1194 / R1206 NET -22 / R1208）。
+///
+/// 旧 TODO「基线计算修复后启用」hereby 作废——勿再以 wiring 本函数为 Phase A lever。
 #[allow(dead_code)]
 pub(crate) fn store_inline_layout_results(
     inline_ctx: &crate::inline::InlineFormattingContext,

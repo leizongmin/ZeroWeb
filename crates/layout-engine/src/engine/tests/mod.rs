@@ -95,8 +95,6 @@ mod r1389_clear_no_float_context_tests;
 #[cfg(test)]
 mod r1390_table_cell_bfc_float_tests;
 #[cfg(test)]
-mod r1518_table_among_floats_tests;
-#[cfg(test)]
 mod r1393_adjoining_float_clearance_tests;
 #[cfg(test)]
 mod r1398_abspos_cb_border_tests;
@@ -107,6 +105,8 @@ mod r1411_column_flex_aspect_main_tests;
 #[cfg(test)]
 mod r1412_align_content_flex_end_tests;
 mod r1423_multicol_balance_text_node_is_ahem_tests;
+#[cfg(test)]
+mod r1518_table_among_floats_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

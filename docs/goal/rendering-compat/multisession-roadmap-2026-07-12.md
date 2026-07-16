@@ -26,6 +26,15 @@
   **R1492 真 R109 bug 发现并修**（plain block + inline 元素子 → taffy 仅按 inline 子定块高 → compute_final
   长高后后续兄弟重叠）→ **R1495 post-process `shift_siblings_after_ifc_grow` LANDED**（default-on，
   oracle A/B 五目录 NET 0；`inside_multicol` 祖先 gate 排除 multicol 子树）。详见 master.md R1489-R1495。
+- **Phase-A-authoritative-storage 谱系 = 已关闭（R1526）**：`store_inline_layout_results`
+  （inline_finalization.rs:146，`#[allow(dead_code)]`）wiring 非 yield lever——(1) 函数已 dead，
+  存储职责被 `compute_final_inline_layouts`（line 521/933）inline 取代（R1379）；(2) broad
+  authoritative-storage 机制（paint 经 `use_stored` 复用 layout 行盒不重跑 IFC）经 R1487 env-gate
+  A/B 决定性证伪（normal-flow NET -7 revert）——layout 行断 `estimate_char_width` 与 chromium 分歧
+  **大于** paint Path B fontdue 重跑，强制 paint 用 layout 结果更差；(3) narrow ascent/baseline
+  override 变体 net-negative（R1194 / R1206 NET -22 / R1208）。R630/R632/R1280 yield 皆 mechanism A
+  narrow override/坐标修，非 mechanism B broad storage。**勿再以 wiring 本函数 / Phase-A-broad-storage
+  / ascent 单点 override 为 lever**。详见 master.md R1526。
 - **font-wall 主指标阻塞 = 仍 user-gated**（L1 C-dep）：R1068 FreeType 已 default-on，剩完整 font-stack
   （HarfBuzz/Skia coherence）+ Phase A line-box metric + ::first-letter，受 CI 计费 6-target 全失败 +
   policy 约束，agent 无法单方面推进。
