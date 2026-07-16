@@ -186,6 +186,62 @@ fn test_r1548_abspos_vertical_stores_font_metrics_for_self_paint() {
     );
 }
 
+/// 回归 R1550：vertical-rl 容器内 abspos span `top:1em`（top 非 auto，left/right auto）。
+/// writing-modes §7.1 + §10.3.7 轴交换：vertical 下 top/bottom = inline 轴（物理 y），
+/// left/right = block 轴（物理 x）。
+///   - inline 轴（y）：taffy 按 top:1em 正确解析（不覆盖）；
+///   - block 轴（x）：须取 IFC 静态位置（旧 gated 在 all_inset_auto 致 taffy 给 CB 左缘）；
+///   - inline-extent（height）：须 shrink-to-fit（旧致填满 CB 320）；
+///   - font metrics：须存（R1549 gate 据此放开自身绘制）。
+///
+/// 复刻 abs-pos-non-replaced-vrl-038 结构（top:1em = 80px at 80px font）。
+#[test]
+fn test_r1550_abspos_vertical_non_auto_top_block_axis_corrected() {
+    let html = r#"<html style="writing-mode:vertical-rl"><body>
+      <div id="cb" style="background:red; direction:ltr; font:80px/1 monospace; height:320px; width:320px; position:relative">1 2 34<span id="s" style="position:absolute; top:1em; bottom:auto; left:auto; right:auto; height:auto; color:green">X</span></div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let cb = find("cb", &doc, &result.root).expect("cb");
+    let s = find("s", &doc, &result.root).expect("span #s");
+    assert!(s.is_absolute, "span should be absolute");
+    // block 轴（x）：应取 IFC 静态位置（远离 CB 左缘），而非 taffy 的 CB-left。
+    let x_rel = s.x - cb.x;
+    assert!(
+        x_rel > 100.0,
+        "abspos span block-axis x should be the IFC static position (far from CB left edge), got x_rel={x_rel}"
+    );
+    // inline-extent（height）：应 shrink-to-fit 到内容（~80），而非填满 CB（320）。
+    assert!(
+        (79.0..=81.0).contains(&s.height),
+        "abspos span height should shrink-to-fit to ~80px (got {})",
+        s.height
+    );
+    // font metrics 应已存（R1549 gate 据此放开自身绘制）。
+    let has_metrics = doc
+        .child_nodes(s.node_id.expect("span node_id"))
+        .iter()
+        .any(|c| s.text_node_font_sizes.contains_key(c));
+    assert!(
+        has_metrics,
+        "abspos span should have font metrics stored for its text node (R1549 gate signal)"
+    );
+}
+
 /// 回归：vertical-rl + direction:rtl 下 abspos 静态位置沿 inline 轴镜像（R334）。
 ///
 /// 复刻 abs-pos-non-replaced-vrl-002(ltr)/vrl-012(rtl) 结构。CSS §10.3.7 + writing-modes §7.1：

@@ -422,7 +422,6 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
 
         // 查找匹配的 fragment（node_id 一致）
         if let Some(fragment) = fragments.iter().find(|f| f.node_id == child_node_id) {
-            // 仅在所有 inset 为 auto 时才修正静态位置
             let style = styles.get(&child_node_id);
             let all_inset_auto = style.is_some_and(|s| {
                 matches!(s.top, zero_css_parser::values::LengthValue::Auto)
@@ -441,28 +440,18 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
 
                 // CSS §10.3.7 + writing-modes §7.1：vertical-rl 下 abspos 的物理
                 // height（= inline 轴跨度）在 height:auto 时应 shrink-to-fit 到内容
-                // inline 跨度，而非填满 CB cross-axis。taffy 把 auto height 当
-                // cross-axis stretch（给 320=CB 高），fragment.width 是 IFC 计算的
-                // 内容 inline 跨度（垂直模式下 = 单行/字形的视觉竖向高度）。
-                // 仅当 style.height 为 auto 时收缩（尊重显式 height）。
+                // inline 跨度，而非填满 CB cross-axis。仅当 style.height 为 auto 时收缩。
                 let height_auto = style.is_some_and(|s| matches!(s.height, zero_css_parser::values::LengthValue::Auto));
                 if height_auto {
                     let content_h = fragment.width.max(fragment.font_size);
                     if (child.height - content_h).abs() > 0.01 && content_h > 0.0 {
                         child.height = content_h;
-                        // content_height 同步（无 border/padding 时 = height）
                         child.content_height = child.content_height.min(content_h).max(0.0);
                     }
                 }
 
                 // CSS §10.3.7 + writing-modes §7.1：direction:rtl 下 abspos 静态位置镜像。
-                // all-three-auto（top/bottom 即 left/right 均为 auto）时，ltr 把 inline-start
-                // 边（=top 角色）置静态位置、内容自 inline-start 向 end 排；rtl 把 inline-end
-                // 边（=bottom 角色）置静态位置、内容反向排。两者最终盒位沿 inline 轴镜像：
-                //   rtl_top = CB_inline_extent - ltr_top - height
-                // container_width 在垂直模式 = CB 视觉高度（inline 可用尺寸，见上方注释）。
-                // 旧实现在 rtl 下与 ltr 渲染完全相同（诊断实证），致 abs-pos-non-replaced-vrl
-                // 的 rtl 子集（012/122/130 ~5%）远高于 ltr（002 ~1.3%）。
+                // container_width 在垂直模式 = CB 视觉高度（inline 可用尺寸）。
                 let cb_direction_rtl = styles
                     .get(&container_node_id)
                     .is_some_and(|s| matches!(s.direction, zero_style_system::property::types::DirectionValue::Rtl));
@@ -470,28 +459,65 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
                     child.y = (container_width - child.y - child.height).max(0.0);
                 }
 
-                // R1548：abspos 子元素自身的 paint_text 会重跑 IFC（paint Path B，空 styles），
-                // 但 store_font_sizes_from_ifc 把 font metrics 存入了容器 CB 而非 abspos 子盒，
-                // 致子盒 paint IFC 用默认 16px 渲染（abs-pos-non-replaced-vrl-002 的 "X" 渲成
-                // 16×16 而非 80×80）。此处把 CB IFC 已正确测量的 fragment font metrics
-                //（font_size / line-height=height / is_ahem / letter_spacing）按子盒直接文本节点
-                // 重新键化存入子盒，供其 paint IFC 使用；font_family 取子盒自身 computed style。
-                // 仅在全 inset auto（盒位已被本函数修正）时存——非 auto inset 的 abspos 盒定位
-                // 未修正，其 paint_text 经 R1548 paint-gate 仍走去重，不消费这些 metrics。
-                for tn in doc.child_nodes(child_node_id) {
-                    if doc
-                        .get(tn)
-                        .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Text(_)))
-                    {
-                        child.text_node_font_sizes.insert(tn, fragment.font_size);
-                        child.text_node_line_heights.insert(tn, fragment.height);
-                        child.text_node_is_ahem.insert(tn, fragment.is_ahem);
-                        child.text_node_letter_spacing.insert(tn, fragment.letter_spacing);
-                        if let Some(cs) = styles.get(&child_node_id) {
-                            child.text_node_font_families.insert(tn, cs.font_family.clone());
+                // R1548：font metrics 存子盒（供其 paint IFC）。
+                store_abspos_child_font_metrics(child, doc, styles, child_node_id, fragment);
+            } else {
+                // R1550：非全 inset auto 但 left/right 均 auto（block 轴静态定位）的 abspos 子盒
+                // ——典型为 top 非 auto（如 vrl-038 top:1em）+ left/right auto。此类盒：
+                //   - inline 轴（物理 y）由 taffy 按 top/bottom 正确解析（top:1em → CB.y+1em），
+                //     **不覆盖**；
+                //   - block 轴（物理 x）须取 IFC 静态位置（旧 gated 在 all_inset_auto 内致 taffy
+                //     给 CB 左缘 8 而非静态 168）；
+                //   - inline-extent（物理 height）须 shrink-to-fit（旧致填满 CB 320 而非内容 80）；
+                //   - font metrics 须存（R1549 gate 据此放开自身绘制）。
+                // writing-modes §7.1 + §10.3.7 轴交换：vertical 下物理 left/right = block 轴。
+                let left_right_auto = style.is_some_and(|s| {
+                    matches!(s.left, zero_css_parser::values::LengthValue::Auto)
+                        && matches!(s.right, zero_css_parser::values::LengthValue::Auto)
+                });
+                if left_right_auto {
+                    let dx = (child.x - fragment.x).abs();
+                    if dx > 0.01 {
+                        child.x = fragment.x;
+                    }
+                    let height_auto =
+                        style.is_some_and(|s| matches!(s.height, zero_css_parser::values::LengthValue::Auto));
+                    if height_auto {
+                        let content_h = fragment.width.max(fragment.font_size);
+                        if (child.height - content_h).abs() > 0.01 && content_h > 0.0 {
+                            child.height = content_h;
+                            child.content_height = child.content_height.min(content_h).max(0.0);
                         }
                     }
+                    store_abspos_child_font_metrics(child, doc, styles, child_node_id, fragment);
                 }
+            }
+        }
+    }
+}
+
+/// R1548/R1550：把 CB IFC 已测量的 fragment font metrics（font_size / line-height=height /
+/// is_ahem / letter_spacing）按 abspos 子盒的直接文本节点重新键化存入子盒；font_family 取
+/// 子盒自身 computed style。供子盒 paint_text 重跑 IFC（Path B 空 styles）时使用，避免默认
+/// 16px 渲染。供 R1549 paint-gate（`!text_node_font_sizes.is_empty()`）放开自身绘制。
+fn store_abspos_child_font_metrics(
+    child: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    child_node_id: NodeId,
+    fragment: &crate::inline::TextFragment,
+) {
+    for tn in doc.child_nodes(child_node_id) {
+        if doc
+            .get(tn)
+            .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Text(_)))
+        {
+            child.text_node_font_sizes.insert(tn, fragment.font_size);
+            child.text_node_line_heights.insert(tn, fragment.height);
+            child.text_node_is_ahem.insert(tn, fragment.is_ahem);
+            child.text_node_letter_spacing.insert(tn, fragment.letter_spacing);
+            if let Some(cs) = styles.get(&child_node_id) {
+                child.text_node_font_families.insert(tn, cs.font_family.clone());
             }
         }
     }
