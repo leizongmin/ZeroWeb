@@ -950,6 +950,7 @@ pub(crate) fn measure_text_content(
     dom_id: NodeId,
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
 ) -> Size<f32> {
     // 检查是否为文本节点（匿名 flex/grid item）
     // 在 flex/grid 容器中，文本节点被包装为匿名 taffy 节点参与布局。
@@ -1099,7 +1100,8 @@ pub(crate) fn measure_text_content(
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
         .with_no_wrap(no_wrap)
-        .with_inline_block_sizes(ib_sizes);
+        .with_inline_block_sizes(ib_sizes)
+        .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
     inline_ctx.layout(doc, dom_id, styles);
 
     let measured_width = inline_ctx

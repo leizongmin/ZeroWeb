@@ -98,6 +98,17 @@ pub struct InlineFormattingContext {
     /// 当 CSS 属性 width/height 为 Auto 时，inline-block 的尺寸由其内容决定，
     /// IFC 无法自行测量，需要外部布局结果提供。
     pub inline_block_sizes: HashMap<NodeId, (f32, f32)>,
+    /// `<img>` 替换元素的解码固有尺寸（intrinsic w/h，px），按 img NodeId 索引。
+    ///
+    /// **R1578 inline>inline-IMG 固有尺寸打通**：`collect_inline_items` img 分支在
+    /// HTML attr / CSS computed / 百分比 / `inline_block_sizes` 全部无法给出两侧
+    /// 维度时，若 img 恰有一侧已知（显式 width 或 height），用本 map 的固有宽高比
+    /// 推导缺失侧（解「inline 元素包裹 auto-width img 致父容器塌缩 h=0」，如
+    /// wintertc footer `<p><a><img class="h-6 inline-block"></a></p>`）。
+    /// 默认空 map = 不推导（零回归）；由 measure path `measure_text_content` 经
+    /// `with_img_intrinsic_sizes` 注入（`img_intrinsic_sizes` 来自 engine 输入）。
+    /// env-gated `ZW_IFC_IMG_INTRINSIC=1` 开启（default-off，高风险 R1492/R1494 先例）。
+    pub img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
     /// 默认字体度量 — 当 styles HashMap 中找不到元素样式时使用。
     ///
     /// 这主要用于 paint 系统的 IFC，因为 paint 系统传入空的 styles HashMap。
@@ -231,6 +242,7 @@ impl InlineFormattingContext {
             vertical_rtl: false,
             block_extent: container_width,
             inline_block_sizes: HashMap::new(),
+            img_intrinsic_sizes: HashMap::new(),
             default_font_metrics: None,
             container_font_size: DEFAULT_FONT_SIZE,
             font_size_overrides: HashMap::new(),
@@ -289,6 +301,12 @@ impl InlineFormattingContext {
     /// 设置 inline-block 元素的预计算尺寸（来自 LayoutBox / taffy 布局结果）。
     pub fn with_inline_block_sizes(mut self, sizes: HashMap<NodeId, (f32, f32)>) -> Self {
         self.inline_block_sizes = sizes;
+        self
+    }
+
+    /// 设置 `<img>` 替换元素的解码固有尺寸（R1578，见 `img_intrinsic_sizes` 字段文档）。
+    pub fn with_img_intrinsic_sizes(mut self, sizes: HashMap<NodeId, (f32, f32)>) -> Self {
+        self.img_intrinsic_sizes = sizes;
         self
     }
 
@@ -619,6 +637,13 @@ impl InlineFormattingContext {
     /// default-on（`ZW_INLINE_BOX_RECURSE=0` 关闭）。
     fn inline_box_model_recurse() -> bool {
         !matches!(std::env::var("ZW_INLINE_BOX_RECURSE").as_deref(), Ok("0"))
+    }
+
+    /// R1578 img 固有宽高比推导开关：img 分支在恰一侧维度已知时按固有比推导缺失侧。
+    /// default-off（`ZW_IFC_IMG_INTRINSIC=1` 开启）——高风险（R1492/R1494 inline-ownership
+    /// reverted 先例），须全量 A/B 守 net≥0 后才翻 default-on。
+    fn ifc_img_intrinsic_enabled() -> bool {
+        matches!(std::env::var("ZW_IFC_IMG_INTRINSIC").as_deref(), Ok("1"))
     }
 
     /// R1576：检测 inline 元素是否含**嵌套 atomic inline 后代**（任意深度，限 inline 路径）。
@@ -984,6 +1009,28 @@ impl InlineFormattingContext {
                                     if h <= 0.0 {
                                         h = lh;
                                     }
+                                }
+                            }
+                            // R1578：以上回退全部无法给出两侧维度时，若 img 恰有一侧已知
+                            //（显式 width 或 height，如 `class="h-6"` = height:24px / width:auto），
+                            // 用解码固有宽高比推导缺失侧。解「inline 元素（`<a>`/`<span>`）包裹
+                            // auto-width img 致 IFC 不收集 → 父容器塌缩 h=0」（wintertc footer）。
+                            // env-gated `ZW_IFC_IMG_INTRINSIC=1`（default-off，高风险 R1492/R1494 先例）；
+                            // 排除 vertical（R109-blocked，沿用 R1576 gate）；两侧都未知不推导
+                            //（避免与 final path `apply_replaced_element_sizing` 的 default-object-size
+                            // 300×150 冲突）。eff_ratio 与 tree.rs:436 一致：CSS aspect-ratio 优先。
+                            if Self::ifc_img_intrinsic_enabled()
+                                && !self.vertical
+                                && (w > 0.0) != (h > 0.0)
+                                && let Some(&(iw, ih)) = self.img_intrinsic_sizes.get(&child_id)
+                                && iw > 0.0
+                                && ih > 0.0
+                            {
+                                let eff_ratio = styles.get(&child_id).and_then(|s| s.aspect_ratio).unwrap_or(iw / ih);
+                                if w > 0.0 && h <= 0.0 {
+                                    h = (w / eff_ratio).max(0.5);
+                                } else if h > 0.0 && w <= 0.0 {
+                                    w = (h * eff_ratio).max(0.5);
                                 }
                             }
                             if w > 0.0 && h > 0.0 {

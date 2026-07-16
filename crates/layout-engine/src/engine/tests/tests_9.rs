@@ -511,6 +511,7 @@ fn test_measure_text_content_no_text() {
             width: taffy::style::AvailableSpace::Definite(800.0),
             height: taffy::style::AvailableSpace::Definite(600.0),
         },
+        &HashMap::new(),
     );
     assert_eq!(size.width, 0.0, "无文本节点宽度应为 0");
     assert_eq!(size.height, 0.0, "无文本节点高度应为 0");
@@ -555,6 +556,7 @@ fn test_measure_text_content_min_content_is_widest_word() {
             width: taffy::style::AvailableSpace::MinContent,
             height: taffy::style::AvailableSpace::Definite(600.0),
         },
+        &HashMap::new(),
     );
     // MinContent ≈ 最宽词 "YYYY"(40px)，远小于整行 max-content(~70px)。
     assert!(
@@ -571,6 +573,7 @@ fn test_measure_text_content_min_content_is_widest_word() {
             width: taffy::style::AvailableSpace::MaxContent,
             height: taffy::style::AvailableSpace::Definite(600.0),
         },
+        &HashMap::new(),
     );
     // MaxContent ≈ 整行 "XX YYYY"(~70px)。
     assert!(
@@ -584,6 +587,72 @@ fn test_measure_text_content_min_content_is_widest_word() {
         min_size.width,
         max_size.width
     );
+}
+
+/// R1578：measure path 经 `img_intrinsic_sizes` 推导 auto-width img 的缺失维度，
+/// 解「inline 元素包裹 auto-width img 致父容器塌缩」（wintertc footer
+/// `<p><a><img class="h-6"></a></p>`）。load-bearing：env ON 时 `<a>` measured
+/// 高度 ≈ img height（img 经固有比推导 w 后参与行盒），env OFF 时塌缩（h_on > h_off）。
+#[test]
+fn test_r1578_measure_uses_img_intrinsic_for_auto_width_img() {
+    use zero_css_parser::values::LengthValue;
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let p = doc.create_element("p");
+    doc.append_child(body, p).unwrap();
+    let a = doc.create_element("a");
+    doc.append_child(p, a).unwrap();
+    let img = doc.create_element("img");
+    doc.append_child(a, img).unwrap();
+
+    // img CSS height=24、width=auto（auto-width img）；`<a>`/img 默认 display:Inline。
+    let mut img_style = ComputedStyle::default();
+    img_style.height = LengthValue::Px(24.0);
+    let mut styles = HashMap::new();
+    styles.insert(img, img_style);
+
+    // img 固有尺寸 75×32（matrix.svg BothAbs）→ 期望推导 w = 24 × 75/32 = 56.25。
+    let mut intrinsic: HashMap<zero_dom::NodeId, (f32, f32)> = HashMap::new();
+    intrinsic.insert(img, (75.0, 32.0));
+
+    let none_size = taffy::geometry::Size::<Option<f32>> {
+        width: None,
+        height: None,
+    };
+    let avail = taffy::geometry::Size {
+        width: taffy::style::AvailableSpace::MaxContent,
+        height: taffy::style::AvailableSpace::Definite(600.0),
+    };
+
+    // ON：img 分支用固有比推导 w=56.25 → 产 item → `<a>` measured h≈24
+    // SAFETY: 测试单线程内同步设置/读取；无其他测试并发读 ZW_IFC_IMG_INTRINSIC。
+    unsafe {
+        std::env::set_var("ZW_IFC_IMG_INTRINSIC", "1");
+    }
+    let h_on = measure_text_content(&doc, &styles, a, none_size, avail, &intrinsic).height;
+    // OFF：不推导 → img 不收集（w=0）→ `<a>` 塌缩
+    unsafe {
+        std::env::set_var("ZW_IFC_IMG_INTRINSIC", "0");
+    }
+    let h_off = measure_text_content(&doc, &styles, a, none_size, avail, &intrinsic).height;
+
+    assert!(
+        h_on > 20.0,
+        "R1578 ON: <a> measured height should be ~24 (img drives line box), got {h_on}"
+    );
+    assert!(
+        h_on > h_off + 4.0,
+        "R1578 load-bearing: ON ({h_on}) must exceed OFF ({h_off}) by >4px (else fix is no-op)"
+    );
+
+    // 清理 env，避免污染同进程后续测试
+    unsafe {
+        std::env::remove_var("ZW_IFC_IMG_INTRINSIC");
+    }
 }
 
 /// 测试 adjust_absolute_pct_to_viewport：无 positioned ancestor 的 absolute 元素，

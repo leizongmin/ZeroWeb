@@ -172,7 +172,14 @@ impl LayoutEngine {
                     Some(id) => *id,
                     None => return Size::ZERO,
                 };
-                measure_text_content(doc, styles, dom_id, known_dimensions, available_space)
+                measure_text_content(
+                    doc,
+                    styles,
+                    dom_id,
+                    known_dimensions,
+                    available_space,
+                    &intrinsic_for_r695,
+                )
             },
         );
 
@@ -229,7 +236,14 @@ impl LayoutEngine {
                         Some(id) => *id,
                         None => return Size::ZERO,
                     };
-                    measure_text_content(doc, styles, dom_id, known_dimensions, available_space)
+                    measure_text_content(
+                        doc,
+                        styles,
+                        dom_id,
+                        known_dimensions,
+                        available_space,
+                        &intrinsic_for_r695,
+                    )
                 },
             );
             root_box = Self::extract_layout(
@@ -613,7 +627,7 @@ impl LayoutEngine {
                     Some(id) => *id,
                     None => return Size::ZERO,
                 };
-                measure_text_content(doc, styles, dom_id, known_dimensions, available_space)
+                measure_text_content(doc, styles, dom_id, known_dimensions, available_space, &HashMap::new())
             },
         );
 
