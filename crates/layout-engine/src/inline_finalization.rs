@@ -532,6 +532,7 @@ pub(crate) fn compute_final_inline_layouts(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     ancestor_floats: &[crate::inline::FloatExclusion],
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
 ) {
     // R362：先收集本容器直接 float 子（既用于自身 IFC 排除，也向后代传播）。
     // 坐标系：c.y 是 float 子相对 root box 顶部的位置，与 IFC 行 y（0=root box 顶）一致。
@@ -576,7 +577,7 @@ pub(crate) fn compute_final_inline_layouts(
             .chain(ancestor_floats.iter().map(|f| transform(f, child)))
             .filter(|f| f.y + f.height > 0.0) // 裁掉完全在子节点上方的 float
             .collect();
-        compute_final_inline_layouts(child, doc, styles, &child_ancestor);
+        compute_final_inline_layouts(child, doc, styles, &child_ancestor, img_intrinsic_sizes);
     }
 
     // 仅处理有 node_id 且含有直接文本子节点的容器
@@ -850,7 +851,8 @@ pub(crate) fn compute_final_inline_layouts(
         .with_letter_spacing_overrides(parent_letter_spacing)
         .with_line_height_overrides(parent_line_heights)
         .with_inline_element_metrics(root.inline_element_metrics.clone())
-        .with_margin_overrides(root.inline_element_margins.clone());
+        .with_margin_overrides(root.inline_element_margins.clone())
+        .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
 
     if !exclusions.is_empty() {
         inline_ctx = inline_ctx.with_float_exclusions(exclusions);
@@ -1209,6 +1211,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
     box_node: &mut LayoutBox,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
 ) {
     // 收集此容器的 float 排除区域
     let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
@@ -1280,7 +1283,8 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .with_text_align(text_align)
                 .with_text_align_last(text_align_last)
                 .with_no_wrap(no_wrap)
-                .with_inline_block_sizes(ib_sizes);
+                .with_inline_block_sizes(ib_sizes)
+                .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
             inline_ctx.layout(doc, dom_id, styles);
 
             // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
@@ -1309,7 +1313,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
 
     // 递归处理子容器
     for child in &mut box_node.children {
-        remeasure_text_with_float_exclusions(child, doc, styles);
+        remeasure_text_with_float_exclusions(child, doc, styles, img_intrinsic_sizes);
     }
 }
 
@@ -1325,6 +1329,7 @@ pub(crate) fn remeasure_inline_only_containers(
     box_node: &mut LayoutBox,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
 ) {
     // flex/grid 容器不走 IFC 重算——它们的子元素是 flex/grid item，
     // 尺寸由 taffy 决定，不应被 IFC 片段覆盖。
@@ -1355,7 +1360,7 @@ pub(crate) fn remeasure_inline_only_containers(
         if !is_table_without_internals {
             // 仍然递归处理子容器
             for child in &mut box_node.children {
-                remeasure_inline_only_containers(child, doc, styles);
+                remeasure_inline_only_containers(child, doc, styles, img_intrinsic_sizes);
             }
             return;
         }
@@ -1424,7 +1429,8 @@ pub(crate) fn remeasure_inline_only_containers(
             .with_text_align(text_align)
             .with_text_align_last(text_align_last)
             .with_no_wrap(no_wrap)
-            .with_inline_block_sizes(ib_sizes);
+            .with_inline_block_sizes(ib_sizes)
+            .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
         inline_ctx.layout(doc, dom_id, styles);
 
         // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
@@ -1443,7 +1449,8 @@ pub(crate) fn remeasure_inline_only_containers(
                 .with_text_align(text_align)
                 .with_text_align_last(text_align_last)
                 .with_no_wrap(no_wrap)
-                .with_inline_block_sizes(ib_sizes_for_mc);
+                .with_inline_block_sizes(ib_sizes_for_mc)
+                .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
             col_ctx.layout(doc, dom_id, styles);
             let total = col_ctx.total_height();
             let n = col_ctx.lines.len();
@@ -1490,7 +1497,7 @@ pub(crate) fn remeasure_inline_only_containers(
     while idx < box_node.children.len() {
         let old_height = box_node.children[idx].height;
         let old_content_height = box_node.children[idx].content_height;
-        remeasure_inline_only_containers(&mut box_node.children[idx], doc, styles);
+        remeasure_inline_only_containers(&mut box_node.children[idx], doc, styles, img_intrinsic_sizes);
         let height_delta = box_node.children[idx].height - old_height;
         let content_height_delta = box_node.children[idx].content_height - old_content_height;
         let shrink_delta = height_delta.min(content_height_delta);

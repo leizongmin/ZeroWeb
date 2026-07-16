@@ -381,11 +381,11 @@ impl LayoutEngine {
         crate::r109::shrink_r109_anon_blocks(&mut root_box, doc, styles);
 
         // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
-        remeasure_text_with_float_exclusions(&mut root_box, doc, styles);
+        remeasure_text_with_float_exclusions(&mut root_box, doc, styles, &intrinsic_for_r695);
 
         // 6.5 后处理：为仅包含 inline 子元素的容器重新测量内容高度
         // 空 inline 元素的 line-height 贡献需要通过 IFC 正确计算
-        remeasure_inline_only_containers(&mut root_box, doc, styles);
+        remeasure_inline_only_containers(&mut root_box, doc, styles, &intrinsic_for_r695);
 
         // 7. 后处理：CSS margin 折叠 — taffy 0.7 已内置块级 margin 折叠（CollapsibleMarginSet）
         // 不需要额外后处理
@@ -486,7 +486,7 @@ impl LayoutEngine {
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
-        compute_final_inline_layouts(&mut root_box, doc, styles, &[]);
+        compute_final_inline_layouts(&mut root_box, doc, styles, &[], &intrinsic_for_r695);
 
         // 12.1 后处理（R109 §9.2.1.1 匿名块盒高度回填，env R109_BACKFILL 默认开）：
         // compute_final 存了 inline_layout 但不回填 box height；taffy 经 ctx_node（片段
