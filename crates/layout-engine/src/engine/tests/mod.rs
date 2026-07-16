@@ -95,6 +95,8 @@ mod r1389_clear_no_float_context_tests;
 #[cfg(test)]
 mod r1390_table_cell_bfc_float_tests;
 #[cfg(test)]
+mod r1518_table_among_floats_tests;
+#[cfg(test)]
 mod r1393_adjoining_float_clearance_tests;
 #[cfg(test)]
 mod r1398_abspos_cb_border_tests;

@@ -379,6 +379,13 @@ impl LayoutEngine {
         // 8. 后处理：对 display:table 容器执行 table grid 布局
         crate::table::adjust_table_layout(&mut root_box, doc, styles);
 
+        // 8.5 后处理（R1518d V2）：table-among-floats scoped iterative fix。
+        // step5 float 定位早于 step8 table layout，table shrink-to-fit 后不重跑 §9.5，
+        // 致窄 table 堆在 float 下方扩容器。本 pass scoped（仅 float+table 同容器）：
+        // A re-wrap 内层 float + B 重算 table 高 + C 手动 §9.5 push + D 重算容器高度。
+        // env ZW_TABLE_FLOAT_ITER_V2=0 关闭（default-on）；ZW_TABLE_FLOAT_DBG 诊断。
+        crate::table_float_fix::fix_table_among_floats(&mut root_box, doc, styles);
+
         // 9. 后处理：对 column-count/column-width 容器执行多列布局
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
 

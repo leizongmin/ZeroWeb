@@ -32,6 +32,7 @@ pub mod r109;
 pub mod table;
 pub mod table_borders;
 pub mod table_cell_content;
+pub mod table_float_fix;
 pub mod table_grid;
 pub mod table_shrink;
 pub mod table_types;

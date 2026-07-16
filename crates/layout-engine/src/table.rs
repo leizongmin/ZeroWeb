@@ -251,7 +251,11 @@ fn reflow_siblings_after_table_height_change(parent: &mut LayoutBox, table_idx: 
 /// 2. 构建 row × column 网格
 /// 3. 计算每列的宽度（auto table layout）
 /// 4. 定位每个 cell
-fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &HashMap<NodeId, ComputedStyle>) {
+pub(crate) fn layout_table(
+    table_box: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
     // 读取 border-spacing
     let (spacing_x, spacing_y) = table_box
         .node_id
