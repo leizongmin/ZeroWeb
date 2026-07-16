@@ -528,7 +528,18 @@ fn try_layout_nested_spanner(
         let n = info.count;
         let cw = info.column_width;
         let gap = info.gap;
-        let last_h = (capped_h - c).max(0.0);
+        // R1535：末列 bg height。col0 全高 = capped_h（painter 经 column clip 自然截到列内容
+        // 止点）；末列 col1 只在非末 region 有内容（末 region block 全进 col0，col1 空），故
+        // 末列 bg 止于末 span 之前 = capped_h − spans_total。PIL 实证：004a col1=250（=350−100）、
+        // 004b col1=200（=300−100），与 chromium oracle 逐像素一致（span1 绘于 bg 之上，故单
+        // 矩形覆盖 region1+span1+region2 与 oracle 的非连续 pink 等效）。替旧 capped_h−c（004b
+        // 误给 300 致末列 over-paint 50px = 1.51% 残余）。kill-switch ZW_R1535_LASTH_SPANS=0 回退。
+        let r1535 = std::env::var("ZW_R1535_LASTH_SPANS").as_deref() != Ok("0");
+        let last_h = if r1535 {
+            (capped_h - spans_total).max(0.0)
+        } else {
+            (capped_h - c).max(0.0)
+        };
         let mut regions = Vec::with_capacity(n);
         for i in 0..n {
             let offset = i as f32 * (cw + gap);
