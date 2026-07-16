@@ -43,13 +43,17 @@
 
 1. **font-wall C-dep 解锁（user-gated）** — 数百案（最大簇），等用户决策。**主指标唯一根本路径**。
 2. **multicol column-breaking R1035**（multicol nested-spanner wrapper 工作已 R1352-R1361 完成：
-   R1359 FLIP 004a PASS、R1360 004b→1.51%；R1350 dormant `multicol_balancing.rs` 功能已被 R1357-R1360
-   region_available 路径覆盖，无须再 wire）。**残余 multicol 前沿 = column-breaking**（004b 1.51% 残余 +
-   multicol-breaking-004/nobackground-004 ~9%）：overflow block 须跨列拆分（block2-col1=50 sequential
-   vs 100 balance），R1352-R1361 九轮深调后定性 deferred——属 R1035 multi-session 高风险（影响 all
-   multicol balance），须 RFC + 紧 gate + 全量 A/B。其余 multicol top fail = font-wall（column-rule
-   subpixel）/ @media print OOS / JS-dynamic / nested+margin 结构性 / form-control，均非 clean lever。
-   css-multicol 171/452 (37.8%)。
+   R1359 FLIP 004a PASS、R1360 004b→1.51%；**R1535（2026-07-16）再推导末列 bg 闭式公式
+   `last_h = capped_h − spans_total`（逐像素 PIL，替 capped_h − c），004b 1.51%→0.55% FLIP，
+   css-multicol NET +1 零回归**；R1350 dormant `multicol_balancing.rs` 功能已被 R1357-R1360
+   region_available 路径覆盖，无须再 wire）。**残余 multicol 前沿 = column-breaking**
+   （004b 已 PASS，残余=block 文本 font-wall；multicol-breaking-004/nobackground-004 ~9%）：
+   overflow block 须跨列拆分（block2-col1=50 sequential vs 100 balance），R1352-R1361 九轮深调
+   后定性 deferred——属 R1035 multi-session 高风险（影响 all multicol balance），须 RFC + 紧 gate +
+   全量 A/B。span-all-children-height 其他成员（002/005/007/008/009/012/013）各为不同结构
+   （auto-height / column-count:1 / border 碎片化），残余非 004b-class 闭式可解，均 multi-session。
+   其余 multicol top fail = font-wall（column-rule subpixel / multicol-basic Ahem 文本）/ @media print
+   OOS / JS-dynamic / nested+margin 结构性 / form-control，均非 clean lever。css-multicol 178/452 (39.4%)。
 3. **DC-11 host-layer** — overflow:scroll 真滚动容器（交互滚动，静态 clip 已工作）/ position:sticky 动态
    （静态已按 relative 渲染）/ scroll-snap。需 browser/display 验证环境，非纯 headless reftest 可验。
    注：css-overflow / position:sticky 在当前 oracle corpus 无独立 shot（0 case），无法 reftest A/B。
