@@ -137,19 +137,24 @@ fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, Comp
                 found = true;
                 break;
             }
-            // 放不下 → 推过最大右边缘（最宽）float 的 bottom
-            match frects
+            // 放不下 → 推到「同行」float 中最晚结束的 bottom（MAX-bottom，仅 top<=y 的 float）。
+            // R1612：匹配 float_positioning 的 line-advance——float 不 fit 当前行时整行下移到
+            // 当前行 max float bottom（非 strict-CSS 最早 beside-fit y）。R1611 root-cause：ref 用
+            // float_positioning（line-advance），block1 purple 在 blue(底20)+silver(底6) 同行
+            // → max-bottom 20，故 purple y=20（abs 28）非 silver 底 6。「同行」filter（top<=y）
+            // 排除 clear 致的后继行 float（如 float2 clear:left top=10 在 y=0 行不算）→ table
+            // 推到 float1 底后在 float2 行 beside-fit，匹配 float_positioning。
+            let max_bottom = frects
                 .iter()
-                .filter(|(_, ft, fb)| *ft < y + table_h && y < *fb)
-                .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+                .filter(|(_, ft, fb)| *ft <= y + 0.5 && *ft < y + table_h && y < *fb)
                 .map(|(_, _, fb)| *fb)
-            {
-                Some(nb) if nb > y => y = nb,
-                _ => {
-                    placed_x = 0.0;
-                    found = true;
-                    break;
-                }
+                .fold(0.0f32, |mx, fb| mx.max(fb));
+            if max_bottom > y {
+                y = max_bottom;
+            } else {
+                placed_x = 0.0;
+                found = true;
+                break;
             }
         }
         if found { Some((placed_x, y)) } else { None }
