@@ -77,6 +77,12 @@ if child block-level && !abspos && establishes_bfc(child) {
 ### Slice 4+：B（shrink-to-fit-retry）/ D（top-below）/ E（right-table）/ F（zero-height）
 - 各自独立 root-cause，按 R1608/R1613 方法论逐案 dump ref + 对齐。B 需 BFC shrink-to-fit-with-retry（扩展 table_float_fix V2 到 generic BFC），最大工程量。
 
+## 4a. R1618 实证 findings（Slice 1 + Slice 2 试 land，均 net 0 revert）
+
+- **Slice 1（右 float 对称下沉）单独 land**：floats 242→242、CSS2 5505→5505 **全量 net 0**。原因：当前 FAIL 簇的目标案（with-margin-008/009）是**嵌套 BFC**（BFC 在非 BFC margin-div 内），直接同胞路径根本不触达；无「直接同胞右 float definite-width BFC」FAIL case 命中。→ revert。
+- **Slice 2（嵌套 BFC 祖先 float 几何透传）单独 land**：CSS2 5505→5505 **net 0**。透传机制**证正确**（margin-div 经 `inherited_floats` 收到 wrapper 的 right float 几何，转 child 帧 `fx - child.x`；BFC 排斥段读到该 float），但**右 float 分支只 shrink 不 push-below**（Slice 1 revert）→ BFC 从 w=100 重叠 变 w=50 并排，**y 不变（仍 0）、wrapper 高度不变（仍 50）**→ diff 像素位置略移但未过阈 → net 0。→ revert。
+- **★ 关键阻塞（精确化）**：Slice 1+2 **必须同时 land**，且 Slice 1 的 `is_definite_width = child.width < container_width - 0.5` 启发式在**嵌套+margin 上下文失效**——with-margin-008 的 BFC width=100 **溢出**其窄父 margin-div（content_width=50，因 margin-right:50px），`100 < 49.5` = false → push-below 不触发。须把 `is_definite_width` 重定义为「BFC 有 declared（非 auto）宽度」而非「width < container_width」，push-below 触发改「BFC definite 宽 > float 旁可用宽」。
+
 ## 5. 验收标准
 
 - 每 slice：全量 A/B（`make reftest` 走 reftest-upstream CSS2 + reftest-oracle floats + product-smoke + make test）net≥0，目标 case flip，0 回归（尤其 margin-collapse-clear 簇、floats-clear 簇）。
@@ -88,9 +94,11 @@ if child block-level && !abspos && establishes_bfc(child) {
 - **margin-collapse**：BFC 下沉改变 y 后，后续同胞定位 + 容器高度 + clear 几何连锁。须守 `floats-clear` + `margin-collapse-*` 全量 A/B。
 - **全树重跑禁令**：R1518 全树 adjust_float_positions 净 -2；R1610 全局 BFC-avoid 回归。每 slice 限结构签名 gate，早返回无该结构的 case。
 - **taffy native float**：taffy 0.12 自带部分 float 定位，改动须与 taffy 已定位协调（R1369 注释 :909 提及「taffy 0.12 native float 可能已推 BFC 到 float 右」）。
+- **R1618 经验**：Slice 1/Slice 2 各自 net 0（目标案是嵌套=Slice 2 territory + 启发式需 Slice 1 配合）→ **必须合并提交 + 重设计 `is_definite_width` 启发式（declared-width 而非 < container_width）**，单独任一 slice 无 yield。
 
 ## 7. forward / 续跑入口
 
-- 本轮（R1617）：RFC landed + root-cause 实证；0 code land（探针已删）。
-- 下轮：执行 Slice 1（右 float 对称下沉），A/B 验证；若 flip 直接同胞右 float case 且 net≥0 则 land，否则缩小 gate。
-- Slice 2/3/4 按 ROI 序续跑，每轮记 master.md + evidence。
+- R1617：RFC landed + root-cause 实证；0 code land。
+- R1618：Slice 1 + Slice 2 各自试 land 均 net 0 revert；精确化阻塞 = 两 slice 必须合并 + 重设计 `is_definite_width`（declared-width 而非 < container_width）。
+- 下轮：**合并 land Slice 1+2 + 重设计启发式**——右 float 分支加对称 push-below（declared-width + `child.width > float 旁可用宽` + 无后续同胞 → `child.y = float_bottom`），同时 land Slice 2 透传使嵌套 BFC 收到祖先 float 几何。A/B 守 with-margin-008/009 flip + 全量 CSS2 net≥0 + margin-collapse 全量。若合并后仍 net 0（启发式仍不触达），转 Slice 3（百分比宽，flunts-wrap-bfc-005）或单案逐 root-cause。
+- Slice 3/4 按 ROI 序续跑，每轮记 master.md + evidence。
