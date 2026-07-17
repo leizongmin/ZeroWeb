@@ -2,7 +2,7 @@
 
 **版本**：v1.0
 **日期**：2026-07-17
-**状态**：草案（rally autonomous，跳过用户确认，首切片即下轮 CONTINUE）
+**状态**：已确认执行路线（2026-07-17 用户确认：短期按本 RFC 推进；首切片 R1609/FR-001 为 0-code root-cause 诊断）
 **起源**：R1607 发现 css/CSS2/floats+floats-clear 是唯一 REAL-BUG（非 font-wall）territory；R1608 诊断 floats-wrap-bfc-006 定位 bug 性质。
 
 ---
@@ -15,6 +15,7 @@
 - **核心约束**：① 每 slice 必须 scoped 到结构签名（R1518e V2 方法论），禁全树重跑（R1518 net-2 教训）；② 每 slice 全量 A/B（floats+floats-clear+margin-collapse+tables+css-position 全套），net<0 即 revert；③ root-cause-first，禁止症状修补。
 - **推荐方案**：按子类（BFC-wrap / margin-collapse+clear / zero-height-float / abspos+float）分轨，每轨先 root-cause 再 scoped slice。
 - **首个落地步骤**：floats-wrap-bfc-006 deep root-cause——LAYOUT_DUMP 追 nested table block 在 float staircase 旁的定位路径，定位「为何不 BFC-avoid / 为何 x≥158 而非 wrap」。
+- **当前裁决**：本线作为近期主线推进；font-stack rebuild 仅作为独立战略 RFC/one-pager 准备，不与本 RFC 混线实现；Taffy 本地 fork 清理不阻塞本线。
 
 ---
 
