@@ -107,6 +107,8 @@ mod r1412_align_content_flex_end_tests;
 mod r1423_multicol_balance_text_node_is_ahem_tests;
 #[cfg(test)]
 mod r1518_table_among_floats_tests;
+#[cfg(test)]
+mod r1616_definite_height_float_overflow_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

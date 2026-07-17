@@ -1302,8 +1302,20 @@ pub(crate) fn remeasure_text_with_float_exclusions(
 
             // 使用文本和 float 中较大的高度
             let content_height = text_height.max(float_bottom);
-            // 更新容器的内容高度：文本环绕 float 后可能需要更大的高度
-            if content_height > box_node.content_height {
+            // 更新容器的内容高度：文本环绕 float 后可能需要更大的高度。
+            // ★ R1616：仅 height:auto 容器才按 float/文本底扩展——definite height
+            //（如 height:100px）容器 float 应溢出而非撑高（CSS §10.5/§10.6：显式高度
+            // 不被 float 子覆盖）。floats-placement-006：container height:100 +
+            // float-left clear:both @y=100 被错误扩到 150（float_bottom=150）。
+            // env ZW_REMEASURE_FLOAT_DEFHEIGHT=0 关闭（kill-switch，default-on）：
+            // 关闭时退回旧行为（无视 is_auto_height，一律扩展）。
+            let fix_active = std::env::var("ZW_REMEASURE_FLOAT_DEFHEIGHT").as_deref() != Ok("0");
+            let is_auto_height = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.height, LengthValue::Auto));
+            let should_expand = if fix_active { is_auto_height } else { true };
+            if should_expand && content_height > box_node.content_height {
                 let diff = content_height - box_node.content_height;
                 box_node.content_height = content_height;
                 box_node.height += diff;
