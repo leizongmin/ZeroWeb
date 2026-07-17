@@ -73,6 +73,16 @@ ZW **误渲染 `<noframes>` 回退内容**（chromium 等 frame-capable UA 按 H
 帧支持时隐藏 noframes，语义完全平行）。fixture 38 diff **2.74%→1.34%**（13170→6426 px）。
 load-bearing 单测 `test_hidden_elements_default_to_none` 钉死 None-arm 含 noframes/noscript。
 
+### R1658 `<pre>`/`<xmp>`/`<listing>`/`<plaintext>` UA white-space:pre（spec correctness）
+
+R1656 forward finding：ZW `default_impl.rs` `white_space` 默认 `Normal` 全元素，故 `<pre>` 此前
+折叠空白/换行（真 bug——pre-family 应按 HTML 渲染规范 `white-space: pre` 保真）。**fix**：
+`ua_decl_inputs`（UA 默认样式机制，≡ h1-h6/p/hr）加 `pre|xmp|listing|plaintext` → `white-space:pre`。
+fixture 26-pre **1.06%→1.00%**、35-xmp **3.94%→3.85%**（bbox diff 8,54,335,121 证白空格保真生效）。
+**css-text 全 1644 oracle A/B net-0**（433/1644 = 26.3% ↔ 26.3%，零回归——test-guard --per-proc-mem 12
+绕过默认 6GB 跨用例累积上限）。load-bearing 单测 `pre_family_gets_white_space_pre_from_ua`。
+**monospace 字体未加**（font-wall 高方差，单独 A/B 切片）。
+
 ## oracle
 
 `oracle/*.png` — chrome-for-testing 127 截图（800×600）。重抓：
@@ -85,9 +95,9 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1657）
+## 当前基线（2026-07-18，R1658）
 
-- **37/39 struct-check PASS**（avg diff 2.79%，font-wall baseline），39 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
+- **37/39 struct-check PASS**（avg diff 2.78%，font-wall baseline），39 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
 - **17-center** R1651 修复（`<center>` UA display:block，HTML4 块级）。
 - **19-testpage-minimal** R1652 修 check 误报（check_text_concatenation 跳过 table-internal）。
 - **30-table-sections** R1653 修复 `<caption>` 定位（caption-side:top 须让 rows 下移 caption 高度，

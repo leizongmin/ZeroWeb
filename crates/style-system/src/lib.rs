@@ -457,6 +457,18 @@ impl StyleSystem {
                 "p" => {
                     ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
                 }
+                // pre/xmp/listing/plaintext：HTML 渲染规范 UA 样式表 white-space:pre（保留空白/换行）。
+                // R1658：ZW default_impl white_space 默认 Normal，故 <pre> 此前折叠空白/换行（真 bug）。
+                // 仅 white-space:pre（monospace 字体属 font-wall 高方差，单独 A/B 切片）。
+                "pre" | "xmp" | "listing" | "plaintext" => {
+                    ua_decl_inputs.push((
+                        "white-space".to_string(),
+                        "pre".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                }
                 // ul/ol 默认 padding-left 和 margin
                 "ul" | "ol" => {
                     ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
@@ -1399,6 +1411,28 @@ mod presentational_hint_tests {
         assert_eq!(h1.font_size, zero_css_parser::values::LengthValue::Px(32.0));
         assert_eq!(h2.font_size, zero_css_parser::values::LengthValue::Px(24.0));
         assert!(matches!(h1.font_weight, zero_css_parser::values::FontWeightValue::Bold));
+    }
+
+    /// `<pre>`/`<xmp>`/`<listing>`/`<plaintext>` 必须从 UA 样式表继承 `white-space: pre`
+    /// （HTML 渲染规范）。R1658：ZW default_impl white_space 默认 Normal，pre-family 此前折叠
+    /// 空白/换行（真 bug）；css-text 全 1644 oracle A/B net-0（零回归）+ legacy fixture 26/35
+    /// 小幅改善（whitespace 保真）。monospace 字体独立 A/B 切片（font-wall 高方差）。
+    #[test]
+    fn pre_family_gets_white_space_pre_from_ua() {
+        let doc = parse_html(
+            "<body><pre>p</pre><xmp>x</xmp><listing>l</listing><plaintext>t</plaintext></body>",
+        );
+        let mut system = StyleSystem::new();
+        let styles = system.compute_styles(&doc, &[]);
+        for tag in ["pre", "xmp", "listing", "plaintext"] {
+            let id = doc.get_elements_by_tag_name(tag)[0];
+            let style = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));
+            assert!(
+                matches!(style.white_space, WhiteSpaceValue::Pre),
+                "<{tag}> should inherit white-space:pre from UA stylesheet, got {:?}",
+                style.white_space
+            );
+        }
     }
 
     #[test]
