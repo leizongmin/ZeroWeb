@@ -20,11 +20,9 @@ use tungstenite::accept;
 
 use zero_browser_shell::BrowserShell;
 use zero_browser_shell::TabId;
-use zero_render_foundation::cpu::render_scene_to_framebuffer;
+use zero_render_foundation::cpu::render_full_scene;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
-use zero_render_foundation::gpu::renderer::GlyphDraw;
-use zero_render_foundation::primitive::FillPrimitive;
 use zero_webview::{WebView, WebViewConfig};
 
 // ── 协议消息类型 ──
@@ -661,35 +659,22 @@ impl HeadlessServer {
     fn cmd_capture_screenshot(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
         let result = session.webview.render();
 
-        // 从 RenderPrimitives 提取 fills 和 glyphs
-        let fills: Vec<FillPrimitive> = result.primitives.fills.clone();
-        let glyph_primitives = result.primitives.glyphs.clone();
-
-        let glyph_draws: Vec<GlyphDraw> = glyph_primitives
-            .iter()
-            .map(|g| GlyphDraw {
-                ch: char::from_u32(g.glyph_id).unwrap_or('?'),
-                x: g.x,
-                baseline_y: g.y,
-                font_size: g.font_size,
-                color: g.color,
-                font_id: g.font_id.0,
-                rotation: g.rotation,
-            })
-            .collect();
-
         let font_loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(1024);
-
-        let fb = render_scene_to_framebuffer(
+        // R1600：用 render_full_scene 渲染**全部 13 种图元**（旧 render_scene_to_framebuffer 仅
+        // 渲染 fills+glyphs，静默丢弃 gradients/shadows/images/strokes/paths/transforms/clips/
+        // filters/blend_modes 11 种）。headless 截图须反映真实 ZeroBrowser 渲染管线才能用于
+        // DC-13 line 315（welcome headless 截图 vs chromium oracle）等像素对比；image_cache
+        // 传入以渲染 `<img>` 子资源。
+        let fb = render_full_scene(
             self.viewport_width as u32,
             self.viewport_height as u32,
             1.0,
-            &fills,
-            &[],
+            &result.primitives,
             &font_loader,
             &mut glyph_cache,
-            &glyph_draws,
+            Some(session.webview.image_cache()),
+            &[],
             &[],
             &[],
             &[],
