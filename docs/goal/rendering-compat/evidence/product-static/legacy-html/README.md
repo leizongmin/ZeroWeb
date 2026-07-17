@@ -57,14 +57,15 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1651）
+## 当前基线（2026-07-18，R1652）
 
-- **18/20 struct-check PASS**，avg diff ~3.00%（font-wall baseline）。
+- **20/20 struct-check PASS**，avg diff ~3.00%（font-wall baseline）。
 - **17-center** 经 R1651 修复（`<center>` 加入 UA block 列表，HTML4 块级；先前 inline 致 4px 盒
   与块子元素 overlap）。
-- **19-testpage-minimal** struct FAIL（22.33%）：`<tr>` text-concatenation（table×R109 上下文，
-  待 dedicated 调查 — 疑 check 误报 on 合法 inline-heavy td 内容 或 真实 text_node map 存储泄漏）。
-  LAYOUT_DUMP 显表格结构正确（行/单元格几何对），残余 = font-wall + 该 text-concat 信号。
+- **19-testpage-minimal** struct 经 R1652 PASS（22.33% diff 为 font-wall，文本量大）：`<tr>`
+  text-concatenation 误报已修 —— `check_text_concatenation` 跳过 table-internal 容器
+  （tr/td/th/tbody/…，cell 合法拥有文本非串联；本检查针对 flex/grid R109 inline-ownership）。
+  LAYOUT_DUMP 显表格结构正确（行/单元格几何对）。
 
 ## 新增 fixture
 

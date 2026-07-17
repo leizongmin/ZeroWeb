@@ -1023,19 +1023,37 @@ pub fn check_text_concatenation(
             && let Some(bid) = b.node_id
             && !has_direct_text.contains(&bid)
         {
+            // R1652：跳过 table-internal 容器（tr/td/th/tbody/thead/tfoot/caption/col/colgroup）。
+            // 本检查针对 flex/grid/block 的 R109 inline-ownership 串联（sibling 文本错位拼到共享
+            // IFC）；table 单元格**合法**拥有自身文本（cell 内容由 td IFC 处理，tr 的
+            // text_node_line_heights 会含子 cell 文本属正常 table 布局，非串联 bug）。legacy-html
+            // fixture 19-testpage-minimal 的 `<tr>` 误报即此（LAYOUT_DUMP 表格几何正确）。
+            let is_table_internal = labels
+                .get(&bid)
+                .is_some_and(|label| {
+                    let tag = label.split('.').next().unwrap_or("");
+                    matches!(
+                        tag,
+                        "tr" | "td" | "th" | "tbody" | "thead" | "tfoot" | "caption"
+                            | "col" | "colgroup"
+                    )
+                });
             // 条件 2：容器自身 text_node 映射含 ≥1 个非空白文本节点（吸收的子元素文本）。
-            let absorbed: usize = b
-                .text_node_line_heights
-                .keys()
-                .filter(|id| non_ws_text_nodes.contains(id))
-                .count();
-            if absorbed >= 1 {
-                let label = labels.get(&bid).cloned().unwrap_or_else(|| "(unlabeled)".to_string());
-                issues.push(format!(
-                    "text concatenation: [{label}] ran an IFC absorbing {absorbed} non-whitespace \
-                     text node(s) from across {block_children} block children (sibling text merged \
-                     into shared IFC — R109 inline-ownership regression)",
-                ));
+            // table-internal 跳过（合法 table 文本归属，非串联）。
+            if !is_table_internal {
+                let absorbed: usize = b
+                    .text_node_line_heights
+                    .keys()
+                    .filter(|id| non_ws_text_nodes.contains(id))
+                    .count();
+                if absorbed >= 1 {
+                    let label = labels.get(&bid).cloned().unwrap_or_else(|| "(unlabeled)".to_string());
+                    issues.push(format!(
+                        "text concatenation: [{label}] ran an IFC absorbing {absorbed} non-whitespace \
+                         text node(s) from across {block_children} block children (sibling text merged \
+                         into shared IFC — R109 inline-ownership regression)",
+                    ));
+                }
             }
         }
         for child in &b.children {
@@ -1673,6 +1691,30 @@ mod tests {
                 .iter()
                 .any(|s| s.contains("text concatenation") && s.contains("[div.wrap]")),
             "container with legitimate direct text must not be flagged: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn test_text_concatenation_skips_table_internal() {
+        // R1652：table-internal 容器（tr/td/th/tbody/…）合法拥有自身/子 cell 文本（td IFC 处理
+        // cell 内容，tr 的 text_node_line_heights 含子 cell 文本属正常 table 布局）。本检查针对
+        // flex/grid/block 的 R109 inline-ownership 串联，table 不属此列 → 即使满足三条件也不应 flag。
+        // legacy-html fixture 19-testpage-minimal 的 `<tr>` 误报即此（LAYOUT_DUMP 表格几何正确）。
+        let html = "<html><body style=\"margin:0\">\
+            <table>\
+              <tr><td>cell A text</td><td>cell B text</td></tr>\
+            </table>\
+            </body></html>";
+        let config = ReftestConfig::default();
+        let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let labels = collect_dom_labels(html);
+        let (has_direct_text, non_ws_text_nodes) = collect_concat_dom_info(html);
+        let issues = check_text_concatenation(&root, &labels, &has_direct_text, &non_ws_text_nodes);
+        assert!(
+            !issues
+                .iter()
+                .any(|s| s.contains("text concatenation") && (s.contains("[tr]") || s.contains("[td]"))),
+            "table-internal containers must not be flagged (legitimate cell text ownership): {issues:?}"
         );
     }
 
