@@ -141,3 +141,77 @@ fn r1518_cleared_table_not_pushed_aside() {
         table_box.x, table_box.y
     );
 }
+
+/// R1609：per-y §9.5 BFC-avoid（floats-wrap-bfc-006 谱系）。table 太宽放不进 natural_y 处
+/// 最宽 float 右侧（fits=false）时，原 fits-only 逻辑不推 → table 卡顶部重叠 float。新 per-y
+/// 逻辑从 natural_y 起按 float bottom 递进，把 table 推到首个整高避开 float 的 y。
+///
+/// 结构：BFC 容器（overflow:hidden width:300）含 float1(200×10) + float2(50×10)（均 clear:left）
+/// 以及 table(width 150, td height 30)。table 150 放不进 float1(200) 右（剩 100）→ per-y 推过
+/// float1 bottom 到 y=10，放得进 float2(50) 右（剩 250）→ x≈50。
+/// load-bearing：关 fix（env=0）则 table 卡顶部 y≈0 重叠 float1，断言失败。
+#[test]
+fn r1609_wide_table_pushed_down_past_blocking_float() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let float1 = doc.create_element("div");
+    doc.append_child(container, float1).unwrap();
+    let float2 = doc.create_element("div");
+    doc.append_child(container, float2).unwrap();
+    let table = doc.create_element("div");
+    doc.append_child(container, table).unwrap();
+    let tr = doc.create_element("div");
+    doc.append_child(table, tr).unwrap();
+    let td = doc.create_element("div");
+    doc.append_child(tr, td).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut cont = ComputedStyle::default();
+    cont.display = DisplayValue::Block;
+    cont.overflow_x = OverflowValue::Hidden;
+    cont.overflow_y = OverflowValue::Hidden;
+    cont.width = LengthValue::Px(300.0);
+    styles.insert(container, cont);
+
+    let mk_float = |w: f64, h: f64| {
+        let mut s = ComputedStyle::default();
+        s.display = DisplayValue::Block;
+        s.float = FloatValue::Left;
+        s.clear = ClearValue::Left;
+        s.width = LengthValue::Px(w);
+        s.height = LengthValue::Px(h);
+        s
+    };
+    styles.insert(float1, mk_float(200.0, 10.0));
+    styles.insert(float2, mk_float(50.0, 10.0));
+
+    let mut t = ComputedStyle::default();
+    t.display = DisplayValue::Table;
+    styles.insert(table, t);
+    let mut tr_s = ComputedStyle::default();
+    tr_s.display = DisplayValue::TableRow;
+    styles.insert(tr, tr_s);
+    let mut td_s = ComputedStyle::default();
+    td_s.display = DisplayValue::TableCell;
+    td_s.width = LengthValue::Px(150.0);
+    td_s.height = LengthValue::Px(30.0);
+    styles.insert(td, td_s);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let table_box = find_child_by_node_id(&result.root, table).expect("table found");
+
+    // table(150) 放不进 float1(200) 右侧（剩 100 < 150）→ per-y 推到 float1 下方（y≥10），
+    // 放得进 float2(50) 右侧（剩 250）→ x≈50。
+    assert!(
+        table_box.y >= 8.0,
+        "wide table should be pushed DOWN past blocking float1 (y≈10), got y={}",
+        table_box.y
+    );
+    assert!(
+        (table_box.x - 50.0).abs() <= 8.0,
+        "table should sit beside float2 (x≈50), got x={}",
+        table_box.x
+    );
+}

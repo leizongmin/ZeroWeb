@@ -106,29 +106,73 @@ fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, Comp
             if overlap { f.x + f.width + f.margin_right } else { 0.0 }
         })
         .fold(0.0f32, |mx, v| mx.max(v));
-    let max_w = (content_width - avoidance_x).max(0.0);
-
-    // === C: 手动 §9.5 push（仅当 table 非 cleared、能放进 float 右侧空间、且确有 float 须避开）===
-    // §9.5 触发条件 = avoidance_x > table.x（左方有须避开的 float）。仅此时才把 table 推到
-    // float 右侧并重置 Y 到 natural_y（table 此前被 taffy 当全宽堆到 float 下方）。
-    // 无 float 须避开（avoidance_x==0，如 blocks-025 table 在正常流、float 不重叠）则不动 table。
-    let table = &mut root.children[tidx];
-    let fits = table_w <= max_w + 0.5;
-    let need_push = !is_cleared && fits && avoidance_x > table.x + 0.5;
+    // === C: §9.5 BFC float-avoidance（per-y；R1609 泛化原 fits-only push）===
+    // 原逻辑仅当 table 在 natural_y 能放进 float 右侧（fits）时推右；放不下（fits=false）时
+    // 不动 → table 卡顶部重叠 float（floats-wrap-bfc-006：230px table 放不进 142px 剩余空间）。
+    // 新逻辑：从 natural_y 起按 float bottom 递进，找首个 table 整高 [y,y+h] 不与任何 float
+    // 重叠的位置——放得下则 x=max_right、y；放不下则 y 推过当前最大右边缘（最宽）float 的
+    // bottom，逐 float 收敛。clear 的 table 由 clear 逻辑定位，不介入。
+    // 触发条件 = avoidance_x > 0.5（natural_y 处有重叠 float 须避开）；table 已在正确位置则
+    // diff 检查不移动（守 blocks-025 等 float 不重叠案）。
     let mut pushed = false;
-    if need_push {
-        let (old_x, old_y) = (table.x, table.y);
-        table.x = avoidance_x;
-        table.y = natural_y;
-        if table.width > max_w {
-            table.width = max_w;
+    let target: Option<(f32, f32)> = if !is_cleared && avoidance_x > 0.5 {
+        // floats → (right_margin_edge, top, bottom)
+        let frects: Vec<(f32, f32, f32)> = root
+            .children
+            .iter()
+            .filter(|c| is_float(c))
+            .map(|f| (f.x + f.width + f.margin_right, f.y, f.y + f.height))
+            .collect();
+        let mut y = natural_y;
+        let mut placed_x = 0.0;
+        let mut found = false;
+        for _ in 0..64 {
+            let max_right = frects
+                .iter()
+                .filter(|(_, ft, fb)| *ft < y + table_h && y < *fb)
+                .map(|(r, _, _)| *r)
+                .fold(0.0f32, |mx, r| mx.max(r));
+            if table_w <= (content_width - max_right).max(0.0) + 0.5 {
+                placed_x = max_right;
+                found = true;
+                break;
+            }
+            // 放不下 → 推过最大右边缘（最宽）float 的 bottom
+            match frects
+                .iter()
+                .filter(|(_, ft, fb)| *ft < y + table_h && y < *fb)
+                .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+                .map(|(_, _, fb)| *fb)
+            {
+                Some(nb) if nb > y => y = nb,
+                _ => {
+                    placed_x = 0.0;
+                    found = true;
+                    break;
+                }
+            }
         }
-        pushed = true;
-        if dbg {
-            eprintln!(
-                "ZW_TABLE_FLOAT_DBG C push table: ({},{}) -> ({},{}) w={} avoid={} naty={} maxw={}",
-                old_x, old_y, table.x, table.y, table.width, avoidance_x, natural_y, max_w
-            );
+        if found { Some((placed_x, y)) } else { None }
+    } else {
+        None
+    };
+    if let Some((nx, ny)) = target {
+        let table = &mut root.children[tidx];
+        if (nx - table.x).abs() > 0.5 || (ny - table.y).abs() > 0.5 {
+            let (old_x, old_y) = (table.x, table.y);
+            table.x = nx;
+            table.y = ny;
+            let mw = (content_width - nx).max(0.0);
+            if table.width > mw {
+                table.width = mw;
+            }
+            pushed = true;
+            if dbg {
+                eprintln!(
+                    "ZW_TABLE_FLOAT_DBG C bfc-avoid table: ({},{}) -> ({},{}) w={} naty={}",
+                    old_x, old_y, table.x, table.y, table.width, natural_y
+                );
+            }
         }
     }
 
