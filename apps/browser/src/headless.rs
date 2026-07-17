@@ -674,6 +674,7 @@ impl HeadlessServer {
                 font_size: g.font_size,
                 color: g.color,
                 font_id: g.font_id.0,
+                rotation: g.rotation,
             })
             .collect();
 

@@ -1546,6 +1546,7 @@ fn render_full_scene_overlay_covers_ui_glyphs() {
                 color: Color::BLACK,
                 font_id,
                 font_size: 12.0,
+                rotation: 0.0,
             });
         }
     }

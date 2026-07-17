@@ -98,6 +98,7 @@ pub fn append_webview_primitives(
                 glyph.font_id.0
             },
             font_size,
+            rotation: 0.0,
         });
     }
 

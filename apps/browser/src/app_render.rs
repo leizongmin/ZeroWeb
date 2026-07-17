@@ -872,6 +872,7 @@ impl BrowserApp {
                 color: self.chrome_palette.bookmarks_bar_icon,
                 font_id: crate::tab_favicon::FAVICON_FONT_ID,
                 font_size: icon_size,
+                rotation: 0.0,
             });
             let text_x = bx + layout::BOOKMARKS_BAR_ITEM_PAD_H * s + icon_size + layout::BOOKMARKS_BAR_ICON_GAP * s;
             let (text_top, _) = self.ui_text_centered_in_height(bar_h, font_size);
@@ -1816,6 +1817,7 @@ impl BrowserApp {
                 color,
                 font_id,
                 font_size,
+                rotation: 0.0,
             });
             x += self.font_loader.measure_advance(primary, ch, font_size);
         }

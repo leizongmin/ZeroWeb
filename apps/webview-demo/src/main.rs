@@ -340,6 +340,7 @@ impl DemoState {
                     color: text_color,
                     font_id: fid,
                     font_size,
+                    rotation: 0.0,
                 });
                 let key = zero_render_foundation::font::cache::GlyphKey::new(fid, ch as u32, font_size);
                 if let Ok(bitmap) = self

@@ -43,6 +43,10 @@ pub struct GlyphDraw {
     pub font_id: u32,
     /// 字体大小（像素）
     pub font_size: f32,
+    /// 字形旋转弧度（0.0 = 不旋转；FRAC_PI_2 = 顺时针 90°，用于 vertical-rl/lr Latin 文本）。
+    /// DC-9 GPU parity：CPU renderer `blit_glyph_bitmap` 已支持 is_rotated_90，GPU 此前缺（rotation
+    /// 字段不存在），致 GPU-mode vertical 文本不旋转。R1595 接入。
+    pub rotation: f32,
 }
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
@@ -517,7 +521,8 @@ impl GpuRenderer {
 
         // 2. Glyph 文本
         // 先收集所有 glyph 位图数据，避免同时借用 glyph_cache 和 self
-        let glyph_data: Vec<(char, f32, f32, Color, u32, f32, crate::font::GlyphBitmap)> = glyphs
+        type GlyphDataItem = (char, f32, f32, Color, u32, f32, crate::font::GlyphBitmap, f32);
+        let glyph_data: Vec<GlyphDataItem> = glyphs
             .iter()
             .filter_map(|gd| {
                 let physical_font_size = gd.font_size * scale;
@@ -534,12 +539,13 @@ impl GpuRenderer {
                     resolved_id,
                     physical_font_size,
                     cached.clone(),
+                    gd.rotation,
                 ))
             })
             .collect();
 
         // LAY-02: 预先收集 overlay glyph 位图数据（避免在重试循环内重复借用 glyph_cache）
-        let og_data: Vec<(char, f32, f32, Color, u32, f32, crate::font::GlyphBitmap)> = if !overlay_glyphs.is_empty() {
+        let og_data: Vec<GlyphDataItem> = if !overlay_glyphs.is_empty() {
             overlay_glyphs
                 .iter()
                 .filter_map(|gd| {
@@ -557,6 +563,7 @@ impl GpuRenderer {
                         resolved_id,
                         physical_font_size,
                         cached.clone(),
+                        gd.rotation,
                     ))
                 })
                 .collect()
@@ -572,7 +579,7 @@ impl GpuRenderer {
             vertices.truncate(fill_vertex_end);
 
             // 2. 主 glyph 文本
-            for (ch, x, baseline_y, color, font_id, font_size, bitmap) in &glyph_data {
+            for (ch, x, baseline_y, color, font_id, font_size, bitmap, rotation) in &glyph_data {
                 let atlas_key = GlyphAtlasKey::new(*font_id, *ch as u32, *font_size);
                 let placement = match self.upload_glyph_to_atlas(
                     atlas_key,
@@ -608,12 +615,24 @@ impl GpuRenderer {
                 let gh = placement.height as f32;
                 let (r, g, b) = color_to_f32(*color);
 
-                vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
-                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
-                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-                vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
-                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                // R1595 DC-9 GPU parity：90° CW 旋转（匹配 CPU cpu/mod.rs is_rotated_90）。
+                // 旋转后 quad 尺寸 gh×gw（swap），UV 角点重映射（orig TR→out TL 等），使 GPU-mode
+                // vertical-rl/lr Latin 文本字形旋转正确。
+                if (*rotation - std::f32::consts::FRAC_PI_2).abs() < 0.1 {
+                    vertices.extend_from_slice(&[gx, gy, u1, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gh, gy + gw, u0, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
+                } else {
+                    vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                }
             }
 
             // 3. Overlay fills（圆角遮罩、边框等，绘制在 glyphs 之上）
@@ -629,7 +648,7 @@ impl GpuRenderer {
             }
 
             // 4. Overlay glyphs（最顶层控制元素，如右键菜单的文字）
-            for (ch, x, baseline_y, color, font_id, font_size, bitmap) in &og_data {
+            for (ch, x, baseline_y, color, font_id, font_size, bitmap, rotation) in &og_data {
                 let atlas_key = GlyphAtlasKey::new(*font_id, *ch as u32, *font_size);
                 let placement = match self.upload_glyph_to_atlas(
                     atlas_key,
@@ -662,12 +681,22 @@ impl GpuRenderer {
                 let gw = placement.width as f32;
                 let gh = placement.height as f32;
                 let (r, g, b) = color_to_f32(*color);
-                vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
-                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
-                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-                vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
-                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                // R1595 DC-9 GPU parity：90° CW 旋转（同主 glyph 循环）。
+                if (*rotation - std::f32::consts::FRAC_PI_2).abs() < 0.1 {
+                    vertices.extend_from_slice(&[gx, gy, u1, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gh, gy + gw, u0, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
+                } else {
+                    vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                }
             }
 
             break 'retry_glyphs;
@@ -1340,12 +1369,22 @@ impl GpuRenderer {
             let (gx, gy) = (gx.round(), gy.round());
             let (gw, gh) = (placement.width as f32, placement.height as f32);
             let (r, g, b) = color_to_f32(gd.color);
-            vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
-            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
-            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-            vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
-            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+            // R1595 DC-9 GPU parity：90° CW 旋转（同主 glyph 循环）。
+            if (gd.rotation - std::f32::consts::FRAC_PI_2).abs() < 0.1 {
+                vertices.extend_from_slice(&[gx, gy, u1, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
+                vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
+                vertices.extend_from_slice(&[gx + gh, gy + gw, u0, v1, r, g, b]);
+                vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
+            } else {
+                vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
+                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+            }
         }
         vertices
     }

@@ -97,6 +97,81 @@ fn test_gpu_renderer_render_and_read_pixels() {
     assert_eq!(pixels[3], 255, "A channel should be 255");
 }
 
+/// R1595 DC-9 GPU parity：glyph `rotation = FRAC_PI_2`（90° CW）应把字形 bbox 的宽高互换——
+/// 证明 GPU renderer 应用字形旋转（此前 GlyphDraw 无 rotation 字段，GPU-mode vertical 文本不旋转）。
+/// 用 register_bitmap_glyph 注入可控 4w×8h 实心字形（FontLoader::new 空，须手动供字形）。
+#[serial]
+#[test]
+fn test_gpu_renderer_rotated_glyph_swaps_dimensions() {
+    use crate::font::GlyphBitmap;
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut font_loader = FontLoader::new();
+    // 4 宽 × 8 高实心字形（高>宽）； upright 渲染应高>宽，rotated 90°CW 应宽>高（swap）。
+    font_loader.register_bitmap_glyph(
+        0,
+        'I' as u32,
+        16.0,
+        GlyphBitmap {
+            data: vec![255; 4 * 8],
+            width: 4,
+            height: 8,
+            x_offset: 0,
+            y_offset: 0,
+            advance: 4.0,
+        },
+    );
+    let mut glyph_cache = GlyphCache::new(64);
+
+    let lit_bbox = |px: &[u8]| -> Option<(i32, i32)> {
+        let (mut minx, mut miny, mut maxx, mut maxy) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+        for y in 0..32 {
+            for x in 0..32 {
+                let r = px[(y * 32 + x) as usize * 4];
+                // 黑字 over 白底：glyph 区 RGB 暗（R < 200）。
+                if r < 200 {
+                    minx = minx.min(x);
+                    maxx = maxx.max(x);
+                    miny = miny.min(y);
+                    maxy = maxy.max(y);
+                }
+            }
+        }
+        if maxx < minx {
+            None
+        } else {
+            Some((maxx - minx + 1, maxy - miny + 1))
+        }
+    };
+
+    let upright = vec![GlyphDraw {
+        ch: 'I',
+        x: 8.0,
+        baseline_y: 24.0,
+        color: Color::BLACK,
+        font_id: 0,
+        font_size: 16.0,
+        rotation: 0.0,
+    }];
+    renderer.render_scene(&[], &font_loader, &mut glyph_cache, &upright, &[]);
+    let upright_px = renderer.read_pixels().expect("read_pixels");
+    let (uw, uh) = lit_bbox(&upright_px).expect("upright glyph should render dark pixels");
+    assert!(uh > uw, "upright 4×8 glyph should be tall: got {uw}w×{uh}h");
+
+    let rotated = vec![GlyphDraw {
+        ch: 'I',
+        x: 8.0,
+        baseline_y: 24.0,
+        color: Color::BLACK,
+        font_id: 0,
+        font_size: 16.0,
+        rotation: std::f32::consts::FRAC_PI_2,
+    }];
+    renderer.render_scene(&[], &font_loader, &mut glyph_cache, &rotated, &[]);
+    let rotated_px = renderer.read_pixels().expect("read_pixels");
+    let (rw, rh) = lit_bbox(&rotated_px).expect("rotated glyph should render dark pixels");
+    assert!(rw > rh, "rotated 90° glyph should be wide (swap): got {rw}w×{rh}h");
+}
+
 /// 测试渲染绿色填充并回读像素
 #[serial]
 #[test]
@@ -241,6 +316,7 @@ fn test_glyph_draw_fields() {
         color: Color::RED,
         font_id: 1,
         font_size: 16.0,
+        rotation: 0.0,
     };
     assert_eq!(gd.ch, 'A');
     assert_eq!(gd.x, 10.0);
@@ -295,6 +371,7 @@ fn test_glyph_draw_clone() {
         color: Color::GREEN,
         font_id: 3,
         font_size: 24.0,
+        rotation: 0.0,
     };
     let gd2 = gd.clone();
     assert_eq!(gd2.ch, 'Z');
@@ -459,6 +536,7 @@ fn test_glyph_at_image_edge() {
         color: Color::BLACK,
         font_id: 0,
         font_size: 8.0,
+        rotation: 0.0,
     }];
     renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs, &[]);
     let pixels = renderer.read_pixels().expect("read_pixels");
@@ -479,6 +557,7 @@ fn test_glyph_alpha_zero() {
         color: Color::rgba(255, 255, 255, 0),
         font_id: 0,
         font_size: 8.0,
+        rotation: 0.0,
     }];
     renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs, &[]);
     let pixels = renderer.read_pixels().expect("read_pixels");
@@ -618,6 +697,7 @@ fn test_multiple_glyphs_same_font_char() {
             color: Color::BLACK,
             font_id: 0,
             font_size: 16.0,
+            rotation: 0.0,
         },
         GlyphDraw {
             ch: 'A',
@@ -626,6 +706,7 @@ fn test_multiple_glyphs_same_font_char() {
             color: Color::BLACK,
             font_id: 0,
             font_size: 16.0,
+            rotation: 0.0,
         },
     ];
     renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs, &[]);
@@ -647,6 +728,7 @@ fn test_glyph_at_bottom_edge() {
         color: Color::BLACK,
         font_id: 0,
         font_size: 8.0,
+        rotation: 0.0,
     }];
     renderer.render_scene(&[], &font_loader, &mut glyph_cache, &glyphs, &[]);
     let pixels = renderer.read_pixels().expect("read_pixels");
