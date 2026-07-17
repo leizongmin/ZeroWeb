@@ -312,7 +312,7 @@
 
 ### DC-13: 产品静态页面视觉 smoke
 
-- [ ] `apps/browser/assets/welcome.html` 通过 ZeroBrowser 窗口/无头路径截图，并与 Chromium 在相同 viewport 下的参考截图对比
+- [x] ✅(R1600+R1601) `apps/browser/assets/welcome.html` 通过 ZeroBrowser 窗口/无头路径截图，并与 Chromium 在相同 viewport 下的参考截图对比 — R1600 修复 headless `captureScreenshot` 渲染全 13 图元（旧版仅 fills+glyphs 丢 11 种）；R1601 扩协议返回 base64 PNG 像素 + 新增 `browsingContext.loadHtml` 命令（绕过 fetch_url HTTP-only，加载自包含 fixture）+ `test_dc13_line315_welcome_headless_vs_chromium_oracle` 单测：welcome 经 headless loadHtml→captureScreenshot→base64 PNG 解码 vs `welcome-chromium.png` oracle（tracked），实测 diff 10.80%（< 25% 阈值，同字体墙 baseline ~17% 谱系，per-channel>8 严于 compare_pixels 故数值偏低）；验真实 ZeroBrowser headless 渲染管线（WebView + render_full_scene 全图元）端到端
 - [ ] `https://morning.work/page/2026-02/fedora-macbook-three-finger-drag.html` 录制为固定 HTML/CSS fixture，并通过 ZeroBrowser/WebView/Chromium 三方截图对比；fixture 必须包含原页面依赖的 `/article.css`、`/styles/github.css`、`/JetBrainsMono/JetBrainsMono.css` 或明确记录不可用资源
 - [ ] `https://wintertc.org/` 录制为固定 HTML/resource fixture，并通过 ZeroBrowser/WebView/Chromium 三方截图对比；fixture 必须包含内联 Twind CSS、`/static/logo.svg`、`/static/logos/*.svg`、`/static/logos/*.png` 等首页可见图片资源
 - [x] ✅(R658) **Legacy Static Web smoke（HTML 3.2/4 + CSS1/2）**：建立固定 fixture 集并纳入 product-smoke 路径，首批至少 20 页，覆盖无 CSS 老式文档、HTML presentational attributes、表格布局、图片与文本环绕、列表/链接/标题、`font` 标签、`hr`、基础 CSS1/2 外链样式。每页必须有 Chromium oracle 截图和 ZeroWeb CPU 输出截图，失败时持久化 diff 与资源清单

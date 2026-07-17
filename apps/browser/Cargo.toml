@@ -38,6 +38,7 @@ arboard = { workspace = true }
 resvg = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 png = "0.17"
+base64 = "0.22"
 url = { workspace = true }
 ico = "0.5.0"
 

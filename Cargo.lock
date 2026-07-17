@@ -5893,6 +5893,7 @@ name = "zero-browser"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "base64",
  "ico",
  "png 0.17.16",
  "reqwest",

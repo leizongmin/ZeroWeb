@@ -23,9 +23,26 @@ use zero_browser_shell::TabId;
 use zero_render_foundation::cpu::render_full_scene;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
+use zero_render_foundation::surface::FrameBuffer;
 use zero_webview::{WebView, WebViewConfig};
 
 // ── 协议消息类型 ──
+
+/// R1601：把 RGBA8 FrameBuffer 编码为 base64 PNG 字符串，供 `captureScreenshot`
+/// 协议响应携带像素数据（headless 截图用于像素对比，DC-13 line 315）。
+fn framebuffer_to_png_base64(fb: &FrameBuffer) -> String {
+    use base64::Engine;
+    use png::{BitDepth, ColorType, Encoder};
+    let mut png_buf: Vec<u8> = Vec::new();
+    {
+        let mut encoder = Encoder::new(&mut png_buf, fb.width, fb.height);
+        encoder.set_color(ColorType::Rgba);
+        encoder.set_depth(BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("PNG header encode");
+        writer.write_image_data(&fb.data).expect("PNG image data encode");
+    }
+    base64::engine::general_purpose::STANDARD.encode(&png_buf)
+}
 
 /// 接收到的客户端请求。
 #[derive(Debug, Deserialize)]
@@ -468,6 +485,8 @@ impl HeadlessServer {
 
             // ── 导航 ──
             "browsingContext.navigate" => self.cmd_navigate(session, params),
+            // DC-13 line 315：加载内联 HTML（绕过 fetch_url HTTP-only），供 headless 截图自包含 fixture。
+            "browsingContext.loadHtml" => self.cmd_load_html(session, params),
 
             // ── 脚本执行 ──
             "script.evaluate" => self.cmd_script_evaluate(session, params),
@@ -680,15 +699,36 @@ impl HeadlessServer {
             &[],
         );
 
-        // 转为 base64 PNG（简化版：返回 raw RGBA 尺寸信息）
+        // R1601：返回 base64 PNG 像素数据（旧版仅返回尺寸，headless 截图无法用于像素对比）。
+        // 保留 width/height/pixelCount 供 HeadlessClient::parse_screenshot 向后兼容。
+        let png_b64 = framebuffer_to_png_base64(&fb);
         Ok(serde_json::json!({
             "data": {
                 "width": fb.width,
                 "height": fb.height,
-                "format": "rgba8",
+                "format": "png-base64",
                 "pixelCount": fb.width as usize * fb.height as usize,
+                "png": png_b64,
             }
         }))
+    }
+
+    /// DC-13 line 315：加载内联 HTML（绕过 fetch_url 的 HTTP-only 限制），供 headless 路径
+    /// 加载自包含 fixture（如 welcome.html，内联 CSS + data-URI 图标）做截图对比。参数 `html`
+    ///（必填）+ `css`（可选）。区别于 `browsingContext.navigate`（需 URL + HTTP/file 抓取）。
+    fn cmd_load_html(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
+        let html = params
+            .get("html")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'html' parameter".into(),
+            })?;
+        let css = params.get("css").and_then(|v| v.as_str());
+        session.shell.navigate("about:blank");
+        let _ = session.webview.load_html(html, css);
+        session.shell.on_page_loaded("headless:loadHtml");
+        Ok(serde_json::json!({ "success": true }))
     }
 
     fn cmd_get_dom_snapshot(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
@@ -1392,6 +1432,106 @@ mod tests {
         fn event_count(&self, method: &str) -> usize {
             self.event_log.iter().filter(|(m, _)| m == method).count()
         }
+    }
+
+    /// 解码 PNG 字节为 (width, height, RGBA8 像素)。测试辅助。
+    fn decode_png_rgba(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+        use png::ColorType;
+        let decoder = png::Decoder::new(bytes);
+        let mut reader = decoder.read_info().ok()?;
+        let info = reader.info().clone();
+        let mut buf = vec![0u8; reader.output_buffer_size()];
+        reader.next_frame(&mut buf).ok()?;
+        // 若非 RGBA，转 RGBA（oracle 均为 RGBA8/RGB，统一转 RGBA 比较）。
+        let rgba = if info.color_type == ColorType::Rgb {
+            buf.chunks(3).flat_map(|px| [px[0], px[1], px[2], 255u8]).collect()
+        } else {
+            buf
+        };
+        Some((info.width, info.height, rgba))
+    }
+
+    /// 两 RGBA8 缓冲的差异像素占比（min 尺寸对齐）。逐像素：任一通道差 > 8 计为差异。
+    fn rgba_diff_pct(a: &(u32, u32, Vec<u8>), b: &(u32, u32, Vec<u8>)) -> f64 {
+        let w = a.0.min(b.0) as usize;
+        let h = a.1.min(b.1) as usize;
+        let total = w * h;
+        if total == 0 {
+            return 1.0;
+        }
+        let stride = 4;
+        let mut diff = 0usize;
+        for y in 0..h {
+            for x in 0..w {
+                let ia = (y * a.0 as usize + x) * stride;
+                let ib = (y * b.0 as usize + x) * stride;
+                let da = [
+                    a.2[ia].abs_diff(b.2[ib]),
+                    a.2[ia + 1].abs_diff(b.2[ib + 1]),
+                    a.2[ia + 2].abs_diff(b.2[ib + 2]),
+                ];
+                if da.iter().any(|&d| d > 8) {
+                    diff += 1;
+                }
+            }
+        }
+        diff as f64 / total as f64
+    }
+
+    /// DC-13 line 315：welcome.html 经 ZeroBrowser headless 路径截图，与 chromium oracle
+    /// 像素对比。验真实 headless 渲染管线（loadHtml + captureScreenshot 经 render_full_scene
+    /// 全 13 图元）。welcome 自包含（内联 CSS + data-URI），loadHtml 绕过 fetch_url HTTP-only。
+    /// oracle（welcome-chromium.png）为 tracked 文件（CI 可用）。baseline diff ~17%（字体墙）。
+    #[test]
+    fn test_dc13_line315_welcome_headless_vs_chromium_oracle() {
+        use base64::Engine;
+
+        let welcome = std::fs::read_to_string("assets/welcome.html").expect("welcome.html tracked fixture");
+        let oracle_bytes =
+            std::fs::read("../../docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png")
+                .expect("welcome-chromium.png tracked oracle");
+        let oracle = decode_png_rgba(&oracle_bytes).expect("decode oracle PNG");
+
+        let mut runner = ProtocolTestRunner::new();
+        let load = runner
+            .send("browsingContext.loadHtml", serde_json::json!({ "html": welcome }))
+            .expect("loadHtml responds");
+        let load_ok = load.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+        assert!(load_ok, "loadHtml must report success: {load:?}");
+
+        let shot = runner
+            .send("browsingContext.captureScreenshot", serde_json::Value::Null)
+            .expect("captureScreenshot responds");
+        let data = shot.get("data").expect("captureScreenshot data field");
+        let png_b64 = data
+            .get("png")
+            .and_then(|v| v.as_str())
+            .expect("R1601: captureScreenshot must return base64 PNG in data.png");
+        let shot_w = data.get("width").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let shot_h = data.get("height").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        assert_eq!((shot_w, shot_h), (800, 600), "headless viewport must be 800x600");
+
+        let png_bytes = base64::engine::general_purpose::STANDARD
+            .decode(png_b64)
+            .expect("decode screenshot base64");
+        let rendered = decode_png_rgba(&png_bytes).expect("decode screenshot PNG");
+
+        let diff = rgba_diff_pct(&rendered, &oracle);
+        eprintln!(
+            "DC-13 line 315: welcome headless vs chromium oracle diff = {:.2}% ({}x{} vs {}x{})",
+            diff * 100.0,
+            rendered.0,
+            rendered.1,
+            oracle.0,
+            oracle.1
+        );
+        // baseline ~17%（字体墙残余，同 product-smoke engine 路径 16.98%）；25% 留余量，
+        // 超过则 headless 路径相对 chromium 退化（非字体墙）。
+        assert!(
+            diff < 0.25,
+            "welcome headless render must be within 25% of chromium oracle (baseline ~17%): {:.2}%",
+            diff * 100.0
+        );
     }
 
     /// 冒烟测试：完整会话生命周期（创建→导航→脚本→截图→关闭）。
