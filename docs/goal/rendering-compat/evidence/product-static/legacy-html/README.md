@@ -58,6 +58,11 @@ make product-smoke-legacy
 | 32 | table align | `<table align=center/right>` |
 | 33 | css1 float | `float:left/right` + `clear` 基础 |
 | 34 | br + phrasing | `<br>` + b/i/u/strong/em/small/big/tt/sub/sup/code/samp/kbd/var |
+| 35 | xmp/listing/plaintext | HTML4 obsolete raw-text 块级元素（≡ `<pre>`，内容字面渲染）|
+| 36 | isindex | HTML3.2 obsolete `<isindex prompt>` |
+| 37 | form controls | input(text/password/checkbox/radio/submit/reset)/button/select/textarea/fieldset/legend/label |
+| 38 | noframes | `<noframes>` 帧不支持回退内容（display:none in frame-capable UAs）|
+| 39 | menu | `<menu><li>` 菜单列表（HTML UA 块级）|
 
 ## oracle
 
@@ -71,9 +76,9 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1654）
+## 当前基线（2026-07-18，R1656）
 
-- **33/34 struct-check PASS**（avg diff 2.78%，font-wall baseline），34 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
+- **37/39 struct-check PASS**（avg diff 2.82%，font-wall baseline），39 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
 - **17-center** R1651 修复（`<center>` UA display:block，HTML4 块级）。
 - **19-testpage-minimal** R1652 修 check 误报（check_text_concatenation 跳过 table-internal）。
 - **30-table-sections** R1653 修复 `<caption>` 定位（caption-side:top 须让 rows 下移 caption 高度，
@@ -88,6 +93,19 @@ done
   时漏涂（罕见：多数实际页多子 → body 正确长高 + bg 填满）。**修复高风险**：parent-height propagation
   经 R1047（sibling-push）/ R109 BACKFILL 多轮 net-negative（margin-collapse 交互），scoped fix 须
   守已工作的多子案 + 不破 margin-collapse，待 dedicated 多 session。trend-only smoke 不阻（exit 0）。
+- **35-xmp-listing-plaintext** R1656 修复（`<xmp>`/`<listing>`/`<plaintext>` UA display:block，
+  HTML 渲染规范 raw-text 块级元素 ≡ `<pre>` 谱系）：struct FAIL→PASS。修复前 ZW 把这三元素当 inline
+  （listing 盒仅 83px 宽）致与后续 block sibling overlap。**残余 3.94% diff** = font-wall + 一个独立
+  pre-existing gap（ZW 未对 `<pre>`/`<xmp>`/`<listing>`/`<plaintext>` 应用 `white-space:pre` + monospace
+  —— `default_impl.rs` white_space 默认 `Normal` 全元素，pre 本身亦然，fixture 26 pre 同谱系；
+  该 gap 属 font-wall/white-space 范畴，独立多 session，非本轮 scoped 修复）。
+- **37-form-controls** struct FAIL（7.03%，**已知 gap·baseline 验证面**）：`<input>` 渲染为 6px 高
+  inline-block（ZW 未建模表单控件固有尺寸——text/password 输入框默认尺寸、checkbox/radio 方框、
+  select/textarea 默认行列尺寸均未实现），致包裹 input 的 `<label>` 几何错位（label 误占 784px 全宽
+  且 y 间距 6px = input 高度而非 label 高度 → sibling overlap）+ p-concatenation 误报。R1655 已将
+  form 控件列为「预期高 diff 但验 baseline」领域，本 fixture 即 baseline 锚点。**修复** = 多 session
+  feature（为 input/select/textarea/button/fieldset 建模 UA 固有尺寸 + 默认渲染），非 scoped bug fix。
+  trend-only smoke 不阻（exit 0）。
 
 ## 新增 fixture
 

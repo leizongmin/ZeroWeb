@@ -51,8 +51,8 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
         // 块级元素（对齐 HTML Living Standard UA 样式表的 display:block 列表）
         "html" | "address" | "article" | "aside" | "blockquote" | "body" | "center" | "dd" | "details" | "div" | "dl" | "dt"
         | "fieldset" | "figcaption" | "figure" | "footer" | "form" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
-        | "header" | "hgroup" | "hr" | "legend" | "li" | "main" | "menu" | "nav" | "ol" | "p" | "pre" | "search"
-        | "section" | "summary" | "ul" => DisplayValue::Block,
+        | "header" | "hgroup" | "hr" | "legend" | "li" | "listing" | "main" | "menu" | "nav" | "ol" | "p" | "plaintext" | "pre" | "search"
+        | "section" | "summary" | "ul" | "xmp" => DisplayValue::Block,
 
         // 表格元素
         "table" => DisplayValue::Table,
@@ -1254,16 +1254,19 @@ mod ua_display_tests {
             "hgroup",
             "hr",
             "li",
+            "listing",
             "main",
             "menu",
             "nav",
             "ol",
             "p",
+            "plaintext",
             "pre",
             "search",
             "section",
             "summary",
             "ul",
+            "xmp",
         ] {
             assert_eq!(
                 ua_default_display(tag),
