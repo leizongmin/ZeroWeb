@@ -44,6 +44,16 @@ make product-smoke-legacy
 | 18 | nested table | 表套表 |
 | 19 | testpage-minimal | 综合：导航条 + 表格 + font/b/i/a/img + copyright（goal line 319 代表页）|
 | 20 | mixed-legacy | 综合布局：菜单 + 正文 + 嵌套表 + footer |
+| 21 | dl/dt/dd | 定义列表 |
+| 22 | ol attrs | `ol start type` + `li value type` |
+| 23 | rowspan/colspan | 表格合并单元格 |
+| 24 | img presentational | `<img border hspace vspace align>` |
+| 25 | table width/height | `<table width height>` + `<td width>` |
+| 26 | pre | `<pre>` 预格式化 |
+| 27 | address | `<address>` + `<br>` |
+| 28 | div align | `<div align>` |
+| 29 | inline style | CSS1 `style=` 基础 |
+| 30 | table sections | caption + colgroup + thead/tbody/tfoot |
 
 ## oracle
 
@@ -57,15 +67,17 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1652）
+## 当前基线（2026-07-18，R1653）
 
-- **20/20 struct-check PASS**，avg diff ~3.00%（font-wall baseline）。
-- **17-center** 经 R1651 修复（`<center>` 加入 UA block 列表，HTML4 块级；先前 inline 致 4px 盒
-  与块子元素 overlap）。
-- **19-testpage-minimal** struct 经 R1652 PASS（22.33% diff 为 font-wall，文本量大）：`<tr>`
-  text-concatenation 误报已修 —— `check_text_concatenation` 跳过 table-internal 容器
-  （tr/td/th/tbody/…，cell 合法拥有文本非串联；本检查针对 flex/grid R109 inline-ownership）。
-  LAYOUT_DUMP 显表格结构正确（行/单元格几何对）。
+- **29/30 struct-check PASS**（avg diff 2.79%，font-wall baseline），30 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
+- **17-center** R1651 修复（`<center>` UA display:block，HTML4 块级）。
+- **19-testpage-minimal** R1652 修 check 误报（check_text_concatenation 跳过 table-internal）。
+- **30-table-sections** R1653 修复 `<caption>` 定位（caption-side:top 须让 rows 下移 caption 高度，
+  否则 caption 与 thead overlap）：diff 12.95%→**4.45%**，struct FAIL→PASS。新增 `top_caption_extent`
+  helper（position_cells + update_row_group_positions 一致偏移）。
+- **27-address** struct FAIL（0.96%）：body/html h=0 未随单 block 子（address h=74）长高——root
+  html/body 高度传播在「单 block 子 + body margin」场景的 niche bug，**视觉无影响**（fixture 无 body
+  bg，address 内容正确渲染于 abs_y=8 h=74），待 dedicated 调查（html/body root sizing）。
 
 ## 新增 fixture
 

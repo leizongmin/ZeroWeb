@@ -950,3 +950,49 @@ fn test_r1131_grow_vrl_cell_block_extent() {
     );
     assert!(w > cb.width, "grown > original width");
 }
+
+#[test]
+fn test_top_caption_extent_sums_top_caption_heights() {
+    // R1653：top_caption_extent（caption-side:top 默认）= Σ caption 子盒高度；
+    // caption-side:bottom 排除（由 post-processing 移到表底）；非 caption 子盒不计。
+    use zero_style_system::property::CaptionSideValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("table");
+    let cap1_id = doc.create_element("caption");
+    let cap2_id = doc.create_element("caption");
+    let thead_id = doc.create_element("thead");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    styles.insert(table_id, ts);
+    let mut cap1 = ComputedStyle::default();
+    cap1.display = DisplayValue::TableCaption; // caption-side:top（默认）
+    styles.insert(cap1_id, cap1);
+    let mut cap2 = ComputedStyle::default();
+    cap2.display = DisplayValue::TableCaption;
+    cap2.caption_side = CaptionSideValue::Bottom; // 排除
+    styles.insert(cap2_id, cap2);
+    let mut th = ComputedStyle::default();
+    th.display = DisplayValue::TableHeaderGroup;
+    styles.insert(thead_id, th);
+
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![
+            LayoutBox { node_id: Some(cap1_id), height: 19.0, ..Default::default() },
+            LayoutBox { node_id: Some(cap2_id), height: 15.0, ..Default::default() },
+            LayoutBox { node_id: Some(thead_id), height: 33.0, ..Default::default() },
+        ],
+        ..Default::default()
+    };
+    // 仅 cap1（19）计入；cap2 bottom（15）排除；thead（33）非 caption 排除。
+    assert_eq!(
+        top_caption_extent(&table_box, &styles),
+        19.0,
+        "only top caption (cap1=19) counted; bottom caption + thead excluded"
+    );
+}

@@ -1009,6 +1009,30 @@ fn cell_float_aware_content_height(cell_box: &LayoutBox) -> f32 {
     in_flow_height.max(float_bottom)
 }
 
+/// R1653：caption-side:top（默认）的 caption 占据 table 顶部的总高度。
+///
+/// CSS tables §17.1.1：caption 在 table box 外的 top/bottom；top 时 table 内容（行组/行/单元格）
+/// 须在 caption 之下。旧实现 caption 与首行组同 y → overlap（legacy fixture 30-table-sections
+/// struct-check FAIL：caption & thead 11913px²）。caption-side:bottom 由调用方 post-processing
+/// 移到表底，此处只累计非-bottom caption 高度。供 [`position_cells`]（cell + 表高）与
+/// [`update_row_group_positions`]（行组盒 y）一致偏移共用。
+fn top_caption_extent(table_box: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    use zero_style_system::property::CaptionSideValue;
+    table_box
+        .children
+        .iter()
+        .filter(|c| {
+            c.node_id.is_some_and(|id| {
+                styles.get(&id).is_some_and(|s| {
+                    s.display == DisplayValue::TableCaption
+                        && !matches!(s.caption_side, CaptionSideValue::Bottom)
+                })
+            })
+        })
+        .map(|c| c.height)
+        .sum::<f32>()
+}
+
 /// 根据 grid 结构和列宽定位每个单元格。
 fn position_cells(
     table_box: &mut LayoutBox,
@@ -1123,6 +1147,8 @@ fn position_cells(
     };
 
     let mut row_y = perimeter_y;
+    // R1653：caption-side:top caption 占据顶部，rows/cell 须下移 caption 高度（见 top_caption_extent）。
+    row_y += top_caption_extent(table_box, styles);
     // 判断 table_box 本身是否为 display:table/inline-table（区分「直接 table-cell
     // 子元素的匿名行」与「孤立行组的匿名行」：前者 row_box=table_box 不应覆盖
     // table 几何，后者 row_box=table_box（行组）需要设置行组几何）。
@@ -1978,7 +2004,9 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
 
     // 预计算所有行的 y 位置和高度（不可变借用阶段）
     let mut row_positions: Vec<(f32, f32)> = Vec::with_capacity(grid.rows.len());
-    let mut row_y = perimeter_y;
+    // R1653：caption-side:top caption 占据顶部，行组盒 y 须与 position_cells 的 cell 一致下移
+    // caption 高度（否则行组盒与 cell 错位 + 与 caption overlap）。
+    let mut row_y = perimeter_y + top_caption_extent(table_box, styles);
     for (row_idx, row) in grid.rows.iter().enumerate() {
         // visibility:collapse 的行高度为 0（CSS Tables §4.1），与 position_cells 对齐。
         let row_collapsed = grid.collapsed_rows.get(row_idx).copied().unwrap_or(false);
