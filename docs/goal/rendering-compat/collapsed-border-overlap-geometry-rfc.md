@@ -1,6 +1,7 @@
 # RFC：collapsed-border 重叠几何修复（border-conflict / collapsing-border-model 簇）
 
-状态：Draft（R1627 诊断 + 设计；R1628 实现验证模型正确但 incomplete 回退）
+状态：⛔ ABANDONED（R1630 证 scope-gating 无法净正向 land；cluster 关闭，勿再以单/多会话重试）
+日期：2026-07-17（R1627）/ 2026-07-18（R1628-R1630）
 日期：2026-07-17（R1627）/ 2026-07-18（R1628 验证）
 承接：R1626（color override LANDED）forward —— collapsed-border 内部共享 border 双计 geometry 修复
 谱系：border-conflict-element-001a/b/c/d/e + collapsing-border-model-001/004/010a/b（CSS2/tables 簇）
@@ -62,6 +63,29 @@ R1629 实现 Slice A+B+C 全套（kill-switch `ZW_COLLAPSE_OVERLAP_GEOMETRY` def
 谓词能精确区分 flip 集 vs 回归集（如 row-group-order 虽 border 均匀但 row-group 排序受 row_y 重叠影响 →
 须排除多 row-group 表）。gate 加 collapse_overlap 之上，env-gated default-off，全量 A/B 守 net≥0。
 若找不到精确 scope 谓词 → 接受 overlap 为「simple 表 only」有限收益（3 flip）或 abandon 转 other lever。
+
+---
+
+## 0c. R1630 scope-gating 尝试 = ABANDONED（即使最保守 gate 仍 4 隐藏回归，cluster 关闭）
+
+R1630 实现 A+B+C + `table_is_overlap_safe` 4 条件 gate（① 表无 border ② 无 colspan/rowspan ③ cell
+四边 border 跨 cell 均匀 ④ 单一 row-group）+ per-cell `collapsed_overlap_full` flag（paint FULL）。
+A/B（gate ON，kill-switch `ZW_COLLAPSE_OVERLAP_GEOMETRY`）：
+
+- **001a/b/c 仍 FLIP**（0.00/0.00/0.12%）；**row-group-order gate 排除 → 恢复 baseline PASS**（0.65%）。
+- gate 排除 row-group-order/table-cell-width-0（表 border）/ table_grid_size_col_colspan（colspan/表 border）。
+- 但 **collapsed-border-paint-phase-002（单 cell 100px 异常 border）+ table_grid_size_col_colspan 未排除**（仍回归）。
+- **加紧 gate**（cell 0-content `children.is_empty()` + 0 padding = 「纯 border 网格」）后：CSS2 **仍 773**（baseline 772，**NET −1**），001a/b/c 仍 FLIP。即 **4 CSS2 PASS→FAIL 隐藏回归本身就是「纯 border 网格」表**——通过所有 gate 条件仍回归。
+- css-tables NET +1（1 flip），writing-modes 100% PASS（guard 守）。
+
+**★ 裁决：ABANDONED**。5 轮（R1626-R1630）证 overlap 模型对 001a/b/c（simple 均匀 0-content 表）PROVEN
+正确（EXACT ref 匹配），但**无结构 gate 能净正向隔离**——即使最保守 gate（纯 border 网格）仍留 4 CSS2
+隐藏 PASS→FAIL 回归（aggregate net 0：CSS2 −1 + css-tables +1）。4 隐藏回归与 flip 集结构同质（均 simple
+纯 border 网格），差异在更细微处（border 值/维度比/cell 显式 width 等）非结构可 gate。cluster 关闭，
+**勿再以单/多会话重试**（同 R1518/R1610/R1622 broad-table-regresses 谱系）。
+
+**保留 R1626 color override LANDED**（net-0 但 spec-correct + 3 单测，独立于 overlap）。tables 簇
+collapsed-border geometry 转 polish/edge（非 clean flip lever）。转 other lever（fresh corpus scan / float 簇残余）。
 
 ---
 
