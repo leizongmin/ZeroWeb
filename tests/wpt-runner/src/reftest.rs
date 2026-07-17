@@ -963,6 +963,144 @@ pub fn check_collapsed_containers(
     issues
 }
 
+/// DC-13 line 325「不同 sibling card/link/shortcut 的文本不串联」：检测容器把**块级子元素**
+/// 的文本错误地吸收进自身 IFC 的回归（R109 inline-ownership 失效谱系）。
+///
+/// 信号原理：`store_font_sizes_from_ifc`（layout 主路径多处调用）把每个 box 自身 IFC 处理过的
+/// 文本节点 ID 存入该 box 的 `text_node_font_sizes`/`text_node_line_heights` 映射。正常布局下，
+/// grid/flex/block 容器（如 welcome 的 `.cards`/`.shortcuts`/`.links`）的文本由各 block 子盒各自
+/// 的 IFC 渲染，**容器自身的 text_node 映射为空**。当 R109 inline-ownership 退化时，父容器经
+/// `text_content()` 收集整棵 inline 子树文本并跑一套 IFC，把多个 sibling block 子元素的文本拼到
+/// 同一 IFC——此时容器的 text_node 映射会含**子元素子树**的文本节点 ID（用户可见的「卡片/链接/
+/// 快捷键文本串联」退化）。
+///
+/// 判定规则（三条件全满足才 flag，降低误报）：
+/// 1. 容器有 ≥2 个**真实元素**（labels 含其 node_id）、in-flow、高度 ≥ `MIN_CHILD_H` 的子盒
+///    （= block-level sibling，排除 inline span / 匿名盒 / 单子容器）。
+/// 2. 容器自身 `text_node_line_heights` 含 ≥1 个**非空白**文本节点 ID（确有吸收的子元素文本，
+///    由 `non_ws_text_nodes` 过滤空白/换行节点）。
+/// 3. 容器的 DOM 元素**无直接文本子节点**（`!has_direct_text`）——有直接文本的容器（如
+///    `<div>intro<p>..</p></div>` 块中行 / 合法 block-in-inline）合法拥有自身 IFC，不 flag。
+///
+/// 与 [`check_sibling_overlaps`]（border-box 重叠）互补：后者抓几何重叠，本检查抓**文本归属**
+/// 串联（盒未必重叠，但文本被错位拼到容器自身 IFC）。`has_direct_text`/`non_ws_text_nodes`
+/// 由 [`collect_concat_dom_info`] 从 DOM 预构建。
+pub fn check_text_concatenation(
+    root: &zero_layout_engine::types::LayoutBox,
+    labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+    has_direct_text: &std::collections::HashSet<zero_dom::NodeId>,
+    non_ws_text_nodes: &std::collections::HashSet<zero_dom::NodeId>,
+) -> Vec<String> {
+    const MIN_BLOCK_CHILDREN: usize = 2;
+    const MIN_CHILD_H: f32 = 4.0;
+    let mut issues = Vec::new();
+    fn walk(
+        b: &zero_layout_engine::types::LayoutBox,
+        labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+        has_direct_text: &std::collections::HashSet<zero_dom::NodeId>,
+        non_ws_text_nodes: &std::collections::HashSet<zero_dom::NodeId>,
+        issues: &mut Vec<String>,
+    ) {
+        // 条件 1：≥2 个真实元素、in-flow、显著高度的 block-level 子盒。
+        let block_children = b
+            .children
+            .iter()
+            .filter(|c| {
+                !c.is_absolute
+                    && !c.is_fixed
+                    && c.height >= MIN_CHILD_H
+                    && c.node_id.is_some_and(|id| labels.contains_key(&id))
+            })
+            .count();
+        if block_children >= MIN_BLOCK_CHILDREN
+            && let Some(bid) = b.node_id
+            && !has_direct_text.contains(&bid)
+        {
+            // 条件 2：容器自身 text_node 映射含 ≥1 个非空白文本节点（吸收的子元素文本）。
+            let absorbed: usize = b
+                .text_node_line_heights
+                .keys()
+                .filter(|id| non_ws_text_nodes.contains(id))
+                .count();
+            if absorbed >= 1 {
+                let label = labels.get(&bid).cloned().unwrap_or_else(|| "(unlabeled)".to_string());
+                issues.push(format!(
+                    "text concatenation: [{label}] ran an IFC absorbing {absorbed} non-whitespace \
+                     text node(s) from across {block_children} block children (sibling text merged \
+                     into shared IFC — R109 inline-ownership regression)",
+                ));
+            }
+        }
+        for child in &b.children {
+            walk(child, labels, has_direct_text, non_ws_text_nodes, issues);
+        }
+    }
+    walk(root, labels, has_direct_text, non_ws_text_nodes, &mut issues);
+    issues
+}
+
+/// DC-13 [`check_text_concatenation`] 辅助：单次 DOM 遍历产出两个集合。
+///
+/// - `has_direct_text`：有非空白**直接**文本子节点的元素 NodeId（合法拥有自身 IFC 的容器，
+///   如 `<p>text</p>`、`<div>intro<div>b</div></div>` 外层 div），用于条件 3 排除。
+/// - `non_ws_text_nodes`：内容非空白的文本节点 NodeId，用于条件 2 过滤空白/换行节点
+///   （避免 HTML 源码缩进空白触发误报）。
+pub fn collect_concat_dom_info(
+    html: &str,
+) -> (
+    std::collections::HashSet<zero_dom::NodeId>,
+    std::collections::HashSet<zero_dom::NodeId>,
+) {
+    use std::collections::HashSet;
+    use zero_dom::{NodeKind, parse_html};
+    let doc = parse_html(html);
+    let mut has_direct_text: HashSet<zero_dom::NodeId> = HashSet::new();
+    let mut non_ws_text_nodes: HashSet<zero_dom::NodeId> = HashSet::new();
+    let mut queue = vec![doc.root()];
+    while let Some(id) = queue.pop() {
+        if let Some(node) = doc.get(id) {
+            match &node.kind {
+                NodeKind::Element(_) => {
+                    // 检查直接子节点中是否有非空白 Text。
+                    let mut child = doc.first_child(id);
+                    let mut has_text = false;
+                    while let Some(c) = child {
+                        if let Some(cnode) = doc.get(c)
+                            && let NodeKind::Text(t) = &cnode.kind
+                            && !t.content.trim().is_empty()
+                        {
+                            has_text = true;
+                        }
+                        queue.push(c);
+                        child = doc.next_sibling(c);
+                    }
+                    if has_text {
+                        has_direct_text.insert(id);
+                    }
+                }
+                NodeKind::Text(t) => {
+                    if !t.content.trim().is_empty() {
+                        non_ws_text_nodes.insert(id);
+                    }
+                    let mut child = doc.first_child(id);
+                    while let Some(c) = child {
+                        queue.push(c);
+                        child = doc.next_sibling(c);
+                    }
+                }
+                _ => {
+                    let mut child = doc.first_child(id);
+                    while let Some(c) = child {
+                        queue.push(c);
+                        child = doc.next_sibling(c);
+                    }
+                }
+            }
+        }
+    }
+    (has_direct_text, non_ws_text_nodes)
+}
+
 /// DC-13 line 322：统计布局树中带指定 class 的盒数（结构计数断言用）。
 ///
 /// `labels`（[`collect_dom_labels`] 产出）格式为 `tag.class1.class2`；本函数按 `.` 拆分后
@@ -1363,6 +1501,132 @@ mod tests {
             count_lines_for_class(&root, &labels, "tagline"),
             Some(2),
             "tagline (<br>) must be 2 lines"
+        );
+    }
+
+    #[test]
+    fn test_text_concatenation_passes_grid_container() {
+        // welcome 谱系：`.cards`（grid）含 2 个 `.card` block 子元素，各自持文本。正常布局下
+        // 容器自身 text_node 映射为空（文本由各 card 各自的 IFC 渲染）→ 不应 flag 串联。
+        let html = "<html><body style=\"margin:0\">\
+            <div class=\"cards\" style=\"display:grid;grid-template-columns:1fr 1fr\">\
+              <div class=\"card\">Card one text</div>\
+              <div class=\"card\">Card two text</div>\
+            </div>\
+            </body></html>";
+        let config = ReftestConfig::default();
+        let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let labels = collect_dom_labels(html);
+        let (has_direct_text, non_ws_text_nodes) = collect_concat_dom_info(html);
+        let issues = check_text_concatenation(&root, &labels, &has_direct_text, &non_ws_text_nodes);
+        assert!(
+            !issues
+                .iter()
+                .any(|s| s.contains("text concatenation") && s.contains("[div.cards]")),
+            "correct grid container must not be flagged for concatenation: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn test_text_concatenation_flags_absorbed_children() {
+        // 模拟 R109 inline-ownership 退化：把一个 card 子盒 text_node_line_heights 的条目注入
+        // `.cards` 容器自身映射（= 父容器 IFC 吸收了子元素文本）。容器无直接文本、有 ≥2 block 子、
+        // 自身 text_node 映射含非空白文本节点 → 必被 flag（sibling 文本串联）。
+        let html = "<html><body style=\"margin:0\">\
+            <div class=\"cards\" style=\"display:grid;grid-template-columns:1fr 1fr\">\
+              <div class=\"card\">Card one text</div>\
+              <div class=\"card\">Card two text</div>\
+            </div>\
+            </body></html>";
+        let config = ReftestConfig::default();
+        let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let labels = collect_dom_labels(html);
+        let (has_direct_text, non_ws_text_nodes) = collect_concat_dom_info(html);
+        // 基线：正常渲染不 flag。
+        assert!(
+            check_text_concatenation(&root, &labels, &has_direct_text, &non_ws_text_nodes)
+                .iter()
+                .all(|s| !(s.contains("text concatenation") && s.contains("[div.cards]"))),
+            "baseline must not flag the cards container"
+        );
+        // 递归找一个含**非空白**文本节点的 text_node_line_heights（card 子树内的真实文本），
+        // 注入 cards 容器模拟吸收。须过滤空白节点（store_font_sizes_from_ifc 也存空白片段，
+        // 空白节点不在 non_ws_text_nodes，注入它们不会触发检查——与检查的过滤一致）。
+        fn first_non_ws_text_entries(
+            b: &zero_layout_engine::types::LayoutBox,
+            non_ws: &std::collections::HashSet<zero_dom::NodeId>,
+        ) -> Option<Vec<(zero_dom::NodeId, f32)>> {
+            let matched: Vec<_> = b
+                .text_node_line_heights
+                .iter()
+                .filter(|(k, _)| non_ws.contains(k))
+                .map(|(k, v)| (*k, *v))
+                .collect();
+            if !matched.is_empty() {
+                return Some(matched);
+            }
+            b.children.iter().find_map(|c| first_non_ws_text_entries(c, non_ws))
+        }
+        let mut root2 = root.clone();
+        fn find_mut<'a>(
+            b: &'a mut zero_layout_engine::types::LayoutBox,
+            labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+            needle: &str,
+        ) -> Option<&'a mut zero_layout_engine::types::LayoutBox> {
+            if let Some(id) = b.node_id
+                && let Some(label) = labels.get(&id)
+                && label.split('.').any(|c| c == needle)
+            {
+                return Some(b);
+            }
+            for child in &mut b.children {
+                if let Some(found) = find_mut(child, labels, needle) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let entries = first_non_ws_text_entries(&root, &non_ws_text_nodes)
+            .expect("some box has non-whitespace text_node_line_heights entries");
+        let cards = find_mut(&mut root2, &labels, "cards").expect("cards container found");
+        for (id, h) in entries {
+            cards.text_node_line_heights.insert(id, h);
+        }
+        let issues = check_text_concatenation(&root2, &labels, &has_direct_text, &non_ws_text_nodes);
+        assert!(
+            issues
+                .iter()
+                .any(|s| s.contains("text concatenation") && s.contains("[div.cards]")),
+            "absorbed child text into cards container must be flagged: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn test_text_concatenation_ignores_container_with_direct_text() {
+        // 条件 3 排除：容器有直接文本子节点 + block 子元素（合法 block-in-inline / 自带文本）。
+        // 容器自身 IFC 含其直接文本是合法的，不应 flag。
+        let html = "<html><body style=\"margin:0\">\
+            <div class=\"wrap\">Intro direct text\
+              <div>block one</div>\
+              <div>block two</div>\
+            </div>\
+            </body></html>";
+        let config = ReftestConfig::default();
+        let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let labels = collect_dom_labels(html);
+        let (has_direct_text, non_ws_text_nodes) = collect_concat_dom_info(html);
+        assert!(
+            has_direct_text
+                .iter()
+                .any(|id| labels.get(id).is_some_and(|l| l.contains("wrap"))),
+            ".wrap has direct text and must be in has_direct_text set"
+        );
+        let issues = check_text_concatenation(&root, &labels, &has_direct_text, &non_ws_text_nodes);
+        assert!(
+            !issues
+                .iter()
+                .any(|s| s.contains("text concatenation") && s.contains("[div.wrap]")),
+            "container with legitimate direct text must not be flagged: {issues:?}"
         );
     }
 

@@ -395,6 +395,17 @@ fn cmd_product_smoke(args: &[String]) {
             // 递归）+ R1578（inline>inline-IMG 固有尺寸）修了 wintertc footer 塌缩后，产品 fixture
             // 不再含已知塌缩，可入 gate 守未来 collapse 回归（exit 3）。诊断仍经 struct-sweep。
             issues.extend(reftest::check_collapsed_containers(&root, &labels));
+            // DC-13 line 325「不同 sibling card/link/shortcut 的文本不串联」：检测容器把 block
+            // 子元素文本吸收进自身 IFC（R109 inline-ownership 退化）。信号 = 容器 text_node 映射
+            // 含子元素子树的非空白文本节点（store_font_sizes_from_ifc 主路径存储）。welcome/
+            // wintertc/morning 当前不触发（grid/flex 容器 text_node 映射为空）；守未来串联回归。
+            let (has_direct_text, non_ws_text_nodes) = reftest::collect_concat_dom_info(&layout_html);
+            issues.extend(reftest::check_text_concatenation(
+                &root,
+                &labels,
+                &has_direct_text,
+                &non_ws_text_nodes,
+            ));
         }
         // 元素计数断言（DC-13「四个 feature card」/「四个 nav button」等）。
         for (class, min) in &expect_classes {
