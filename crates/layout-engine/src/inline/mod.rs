@@ -355,6 +355,18 @@ impl InlineFormattingContext {
         }
     }
 
+    /// C3 advance（R223 font_id gap）：解析 ComputedStyle 的 font-family → font_id。
+    ///
+    /// TextRun 构造处调用以 populate `run.font_id`（当前恒 `None`，致 `advance_of`
+    /// 即使注入 `AdvanceSource` 也收到 `None` 回退 estimate）。**dormant**：IFC 的
+    /// `font_metric_provider` 默认 `None` → 返回 `None` = 现行为零回归；provider
+    /// 注入后（U1b-wiring 激活）经 `FontMetricProvider::font_id_of` 真实解析。
+    fn font_id_for_style(&self, style: Option<&zero_style_system::ComputedStyle>) -> Option<u32> {
+        let provider = self.font_metric_provider.as_ref()?;
+        let s = style?;
+        provider.font_id_of(&s.font_family)
+    }
+
     /// 测量整段文本的 advance 宽度（C3 advance plumbing，R2 dormant）。
     ///
     /// 注入源时逐字符经 `advance_of`（真实 hmtx）；否则直接委托 `estimate_string_width`
@@ -821,7 +833,7 @@ impl InlineFormattingContext {
                                 border_top: 0.0,
                                 border_bottom: 0.0,
                                 is_ahem_font,
-                                font_id: None,
+                                font_id: self.font_id_for_style(style),
                             }));
                         }
                     }
@@ -1144,7 +1156,7 @@ impl InlineFormattingContext {
                                 border_top,
                                 border_bottom,
                                 is_ahem_font,
-                                font_id: None,
+                                font_id: self.font_id_for_style(style),
                             }));
                         } else {
                             // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
@@ -1164,7 +1176,7 @@ impl InlineFormattingContext {
                                 border_top,
                                 border_bottom,
                                 is_ahem_font,
-                                font_id: None,
+                                font_id: self.font_id_for_style(style),
                             }));
                         }
                     }

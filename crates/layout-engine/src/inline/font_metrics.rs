@@ -58,6 +58,17 @@ pub trait FontMetricProvider {
     /// 返回 `None` 表示无匹配的已加载字体（或字体无度量），IFC 应回退到 `0.8` 启发式
     /// （零回归）。调用方不得假设一定有值。
     fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics>;
+
+    /// 解析 CSS `font-family` 列表到具体 font_id（C3 advance 解锁，R223 font_id gap）。
+    ///
+    /// IFC 在 `TextRun` 构造处经本方法 populate `run.font_id`（当前恒 `None`，致
+    /// `advance_of` 即使注入 `AdvanceSource` 也收到 `None` → 回退 estimate）。默认
+    /// `None`（保持现有行为 + 不破坏桩实现）；`FontLoader`-backed 实现覆写为真实
+    /// `build_font_resolver` 解析。**dormant**：生产 IFC 的 provider 默认 `None`，
+    /// 故 `font_id` 仍 `None` = 零回归；待 U1b-wiring provider 注入后自动 populate。
+    fn font_id_of(&self, _font_family: &[String]) -> Option<u32> {
+        None
+    }
 }
 
 /// 持有 `FontMetricProvider` 的 trait 对象句柄。
@@ -84,6 +95,11 @@ impl FontMetricProviderHandle {
     pub fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
         self.0.line_metrics(font_family, size)
     }
+
+    /// 经由内部 provider 解析 family → font_id（C3 advance，R223 gap）。
+    pub fn font_id_of(&self, font_family: &[String]) -> Option<u32> {
+        self.0.font_id_of(font_family)
+    }
 }
 
 /// `FontLoader`-backed 实现：解析 family → font_id → fontdue `line_metrics_full`。
@@ -108,6 +124,20 @@ impl FontMetricProvider for FontLoader {
             ascent,
             descent,
             line_gap,
+        })
+    }
+
+    /// C3 advance（R223 font_id gap）：解析 family → font_id，复用 `line_metrics` 的
+    /// 优先级 + 大小写不敏感匹配逻辑（build_font_resolver + 回退）。
+    fn font_id_of(&self, font_family: &[String]) -> Option<u32> {
+        let resolver = self.build_font_resolver();
+        font_family.iter().find_map(|fam| {
+            resolver.get(fam).copied().or_else(|| {
+                resolver
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(fam))
+                    .map(|(_, v)| *v)
+            })
         })
     }
 }
@@ -176,6 +206,28 @@ mod tests {
             return;
         };
         assert!(FontMetricProvider::line_metrics(&loader, &["DoesNotExist".to_string()], 16.0).is_none());
+    }
+
+    /// C3 advance（R223 font_id gap）：FontLoader 解析 family → font_id（Ahem = 已加载）。
+    /// 大小写不敏感（CSS font-family）。未加载 family 返回 None。
+    #[test]
+    fn font_loader_provider_font_id_of_resolves() {
+        let Some(loader) = ahem_loader() else {
+            eprintln!("skipping: Ahem.ttf failed to load");
+            return;
+        };
+        let id = <FontLoader as FontMetricProvider>::font_id_of(&loader, &["Ahem".to_string()])
+            .expect("Ahem must resolve to a font_id");
+        assert_eq!(id, 0u32, "first loaded font (Ahem) has id 0");
+        // 大小写不敏感。
+        assert!(<FontLoader as FontMetricProvider>::font_id_of(&loader, &["aHeM".to_string()]).is_some());
+        // 未加载 family → None。
+        assert!(<FontLoader as FontMetricProvider>::font_id_of(&loader, &["DoesNotExist".to_string()]).is_none());
+        // 多 family 列表：取首个已加载（Ahem 在第二位也解析）。
+        assert!(
+            <FontLoader as FontMetricProvider>::font_id_of(&loader, &["Missing".to_string(), "Ahem".to_string()])
+                .is_some()
+        );
     }
 
     /// 大小写不敏感匹配（CSS font-family 大小写不敏感；与 IFC `is_ahem` 检测一致）。
