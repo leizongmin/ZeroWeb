@@ -106,3 +106,22 @@ if child block-level && !abspos && establishes_bfc(child) {
 ## 8. R1620 后续（cell-content-height，非 BFC-relocate 但同簇连带）
 
 - floats-wrap-bfc-005 探针实证：BFC（R1369 推下）定位已对，**cell 高度未长** = `cell_float_aware_content_height`（R1390）`SUM(heights)` 在子元素重定位/margin 折叠时低估/高估。改 `MAX(c.y+c.height+mb)`（spec §17.5.3）LANDED：CSS2 NET +3（floats-wrap-bfc-007 + 2 margin-collapse bonus），0 回归。floats-wrap-bfc-005 本身 7.92→6.67%（TABLE 子案 table_float_fix 残缺未过阈）。
+
+## 9. R1621 floats-wrap-bfc-005 TABLE 子案 root-cause（defer，单 6.67% 案，intricate）
+
+- 探针 dump floats-wrap-bfc-005 TABLE 子案（左 + 右 float，inner table width:50%）：
+  inner table 已被正确推到 float 下方（y=20, w=150），**td(cell) h=40**（R1620/table_float_fix
+  step D 长到 40），但 **TableRow / TableRowGroup / 外层 Table 仍 h=20** → cell 溢出 row，
+  外层 table h=20 使 4 子案 table 堆叠重叠（y=0/20/40/60 应 0/40/80/120）= 残 6.67%。
+- **root-cause（ordering）**：外层 table 的 row 高度在 step8 `position_cells`（table.rs:1218
+  `row_box.height = row_height`，row_height 取 `cell_float_aware_content_height`）计算——此时
+  inner table 尚未被 step8.5 `table_float_fix` 推下（仍在 y=0），故 cell_float_aware=20 →
+  row=20。step8.5 推下 inner table 并（经 R1620）长 td 到 40，但**不回传 row/rowgroup/外层 table
+  高度**。
+- **fix 方向（defer，须 dedicated pass）**：step8.5 后加 growth-only pass——对每个 TableRow，
+  `row.height = max(row.height, max cell.height)`；delta 传播到 rowgroup → 外层 table 高度；
+  再 `reflow_siblings_after_table_height_change` 移后续 table。**风险**：broad table-height-chain
+  改动（R1518/R1610 教训：全树 table/float 改动易回归 margin-collapse / 其他 table 案）。
+  须 kill-switch + 全量 CSS2 A/B（尤其 css-tables + margin-collapse + floats-clear）net≥0。
+- **裁决**：单 6.67% 案不值得本轮冒险 broad pass（危及已得 +9）；defer 到 dedicated 轮次，
+  先写 scoped growth-only pass + 严 A/B。转更可解的单案或 floats-bfc-003。
