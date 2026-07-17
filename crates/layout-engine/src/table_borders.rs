@@ -192,13 +192,14 @@ pub(crate) fn resolve_collapsed_borders(
                     } else {
                         // Cell-vs-Cell 内部边：手动判断哪个 cell 的边框获胜
                         // resolve_border 在两边都是 Cell 时无法区分具体哪个 cell 赢
+                        // CSS 2.1 §17.6.2.1：同 style 同 width 平局时，最左/最上格胜出（用 >=）。
                         let prev_a_wins = {
                             let prio_a = border_style_priority(&prev_cb.bottom_s);
                             let prio_b = border_style_priority(&cb.top_s);
                             if prio_a != prio_b {
                                 prio_a > prio_b
                             } else {
-                                prev_cb.bottom_w.floor() > cb.top_w.floor()
+                                prev_cb.bottom_w.floor() >= cb.top_w.floor()
                             }
                         };
                         let (win_w, win_style) = if prev_a_wins {
@@ -206,14 +207,22 @@ pub(crate) fn resolve_collapsed_borders(
                         } else {
                             (cb.top_w, &cb.top_s)
                         };
+                        // 提前取两侧颜色：§17.6.2.1 平局异色时也须把胜出色 propagate 到败者侧
+                        //（旧触发条件只看宽/style 差，同宽同 style 异色平局不推 override → 共享边
+                        // 被相邻两格各画半宽异色，border-conflict-element-001a 谱系，R1626）。
+                        let prev_bottom_color =
+                            get_cell_border_color(table_box, grid, row_idx - 1, prev_cell_idx, 2, styles);
+                        let cur_top_color = get_cell_border_color(table_box, grid, row_idx, cell_idx, 0, styles);
+                        let colors_differ = matches!(
+                            (prev_bottom_color, cur_top_color),
+                            (Some(wc), Some(cc)) if wc != cc
+                        );
                         // 覆盖当前 cell 的顶边（side=0）
-                        let need_override_cur = (win_w - cb.top_w).abs() > 0.001 || win_style != &cb.top_s;
+                        let need_override_cur = (win_w - cb.top_w).abs() > 0.001
+                            || win_style != &cb.top_s
+                            || (prev_a_wins && colors_differ);
                         if need_override_cur {
-                            let win_color = if prev_a_wins {
-                                get_cell_border_color(table_box, grid, row_idx - 1, prev_cell_idx, 2, styles)
-                            } else {
-                                None
-                            };
+                            let win_color = if prev_a_wins { prev_bottom_color } else { None };
                             let style_ov = if win_style != &cb.top_s {
                                 Some(win_style.clone())
                             } else {
@@ -222,14 +231,11 @@ pub(crate) fn resolve_collapsed_borders(
                             overrides.push(((row_idx, cell_idx), 0, win_w, win_color, style_ov));
                         }
                         // 覆盖上一行 cell 的底边（side=2）—— CSS 2.1 §17.6.2.1 双侧同步
-                        let need_override_prev =
-                            (win_w - prev_cb.bottom_w).abs() > 0.001 || win_style != &prev_cb.bottom_s;
+                        let need_override_prev = (win_w - prev_cb.bottom_w).abs() > 0.001
+                            || win_style != &prev_cb.bottom_s
+                            || (!prev_a_wins && colors_differ);
                         if need_override_prev {
-                            let win_color = if !prev_a_wins {
-                                get_cell_border_color(table_box, grid, row_idx, cell_idx, 0, styles)
-                            } else {
-                                None
-                            };
+                            let win_color = if !prev_a_wins { cur_top_color } else { None };
                             let style_ov = if win_style != &prev_cb.bottom_s {
                                 Some(win_style.clone())
                             } else {
@@ -353,13 +359,14 @@ pub(crate) fn resolve_collapsed_borders(
                         overrides.push(((row_idx, left_cell_idx), 1, 0.0, None, None));
                     } else {
                         // Cell-vs-Cell 内部边：手动判断哪个 cell 的边框获胜
+                        // CSS 2.1 §17.6.2.1：同 style 同 width 平局时，最左/最上格胜出（用 >=）。
                         let left_a_wins = {
                             let prio_a = border_style_priority(&left_cb.right_s);
                             let prio_b = border_style_priority(&cb.left_s);
                             if prio_a != prio_b {
                                 prio_a > prio_b
                             } else {
-                                left_cb.right_w.floor() > cb.left_w.floor()
+                                left_cb.right_w.floor() >= cb.left_w.floor()
                             }
                         };
                         let (win_w, win_style) = if left_a_wins {
@@ -367,14 +374,20 @@ pub(crate) fn resolve_collapsed_borders(
                         } else {
                             (cb.left_w, &cb.left_s)
                         };
+                        // 提前取两侧颜色：平局异色时也须把胜出色 propagate 到败者侧（R1626）。
+                        let left_right_color =
+                            get_cell_border_color(table_box, grid, row_idx, left_cell_idx, 1, styles);
+                        let cur_left_color = get_cell_border_color(table_box, grid, row_idx, cell_idx, 3, styles);
+                        let colors_differ = matches!(
+                            (left_right_color, cur_left_color),
+                            (Some(wc), Some(cc)) if wc != cc
+                        );
                         // 覆盖当前 cell 的左边（side=3）
-                        let need_override_cur = (win_w - cb.left_w).abs() > 0.001 || win_style != &cb.left_s;
+                        let need_override_cur = (win_w - cb.left_w).abs() > 0.001
+                            || win_style != &cb.left_s
+                            || (left_a_wins && colors_differ);
                         if need_override_cur {
-                            let win_color = if left_a_wins {
-                                get_cell_border_color(table_box, grid, row_idx, left_cell_idx, 1, styles)
-                            } else {
-                                None
-                            };
+                            let win_color = if left_a_wins { left_right_color } else { None };
                             let style_ov = if win_style != &cb.left_s {
                                 Some(win_style.clone())
                             } else {
@@ -383,14 +396,11 @@ pub(crate) fn resolve_collapsed_borders(
                             overrides.push(((row_idx, cell_idx), 3, win_w, win_color, style_ov));
                         }
                         // 覆盖左侧 cell 的右边（side=1）—— CSS 2.1 §17.6.2.1 双侧同步
-                        let need_override_left =
-                            (win_w - left_cb.right_w).abs() > 0.001 || win_style != &left_cb.right_s;
+                        let need_override_left = (win_w - left_cb.right_w).abs() > 0.001
+                            || win_style != &left_cb.right_s
+                            || (!left_a_wins && colors_differ);
                         if need_override_left {
-                            let win_color = if !left_a_wins {
-                                get_cell_border_color(table_box, grid, row_idx, cell_idx, 3, styles)
-                            } else {
-                                None
-                            };
+                            let win_color = if !left_a_wins { cur_left_color } else { None };
                             let style_ov = if win_style != &left_cb.right_s {
                                 Some(win_style.clone())
                             } else {
