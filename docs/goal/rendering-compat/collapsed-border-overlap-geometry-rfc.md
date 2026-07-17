@@ -1,9 +1,41 @@
 # RFC：collapsed-border 重叠几何修复（border-conflict / collapsing-border-model 簇）
 
-状态：Draft（R1627 诊断 + 设计，0 code land）
-日期：2026-07-17
+状态：Draft（R1627 诊断 + 设计；R1628 实现验证模型正确但 incomplete 回退）
+日期：2026-07-17（R1627）/ 2026-07-18（R1628 验证）
 承接：R1626（color override LANDED）forward —— collapsed-border 内部共享 border 双计 geometry 修复
 谱系：border-conflict-element-001a/b/c/d/e + collapsing-border-model-001/004/010a/b（CSS2/tables 簇）
+
+---
+
+## 0. R1628 实现验证（模型 PROVEN 正确，incomplete 回退）
+
+R1628 按 §3 实现 Slice A（position_cells cell_x/row_y 重叠）+ Slice B（paint FULL border）
+behind kill-switch `ZW_COLLAPSE_OVERLAP_GEOMETRY`（default-off），**跳过 Slice C（表尺寸修正）**。
+单案 + 簇 A/B 实证：
+
+**★ 模型 PROVEN 正确**：
+- **001a 渲染 = EXACT ref 匹配**：100×100 实心绿方，green px=10100（ref 也是 10100），bbox x[8,107] y[50,150]
+  size 100×101（旧 160×161 绿网格+白格心）。逐行采样全 G（无白心）。
+- **001a/b/c FLIP**：3.65/2.12/2.10% → **0.00/0.00/0.12% PASS**（R1626 color fix 后残差，overlap 解剩余 geometry）。
+- **writing-modes border-conflict-element-vlr/vrl 100% PASS（12 案全过，guard 守住）**——vertical collapsed 不回归。
+
+**★ incomplete（须 Slice C）→ 回退**：
+- CSS2 self-source NET 0（772=772）：3 flip（001a/b/c）被 ~3 回归抵消。
+- css-tables NET 0（13=13）但 collapsed 簇变差：collapsed-border-paint-phase-002 **3.16→4.21%**、
+  table-cell-width-0 **7.53→8.30%**、row-group-order PASS→FAIL（1.29%）；box-shadow-001 偶然 flip（噪声）。
+- **根因 = 缺 Slice C**：position 重叠后 cell 跨度变小（100），但 `apply_table_size_constraints`
+  仍按 `intrinsic_width = Σ col_widths`（160）定 table 盒宽 → table 盒比 cell 跨度大 → bg/content 表
+  （collapsed-border-paint-phase / table-cell-width-0 / row-group-order）盒尺寸与 cell 摆放发散。
+  001a 无 table bg/border 故不受影响（恰好 flip），有 bg 的表回归。
+- **回退**：3 处代码（border.rs paint half + table.rs collapse_overlap flag + cell_x/row_y 重叠）
+  git checkout HEAD 还原；模型验证结论保留本节。下轮须补 Slice C 再 land。
+
+**Slice C 细化（R1628 实证后明确）**：`apply_table_size_constraints`（table.rs:1790 `total_col_width` /
+:1810 `intrinsic_width`）须扣内部共享 border 总和：collapse+overlap 时
+`intrinsic_width = Σ col_widths − Σ_internal_shared_h`，`intrinsic_height = total_row_height − Σ_internal_shared_v`。
+Σ_internal_shared_h = 各内部列边的解析 border（对 simple 表 = Σ_{非首列 cell} cell.border_left；
+colspan 须按列边计非 cell 计）。配套 position_cells 已实测（cell_x 推进扣 border_right / row_y 推进扣
+row_bottom_border）。Slice A+B+C 三者必须同 land（A+B 不带 C = 本轮 incomplete 回退证）。
 
 ---
 
