@@ -741,3 +741,49 @@ fn test_r362_float_intrusion_propagates_to_sibling_block_ifc() {
         line1_text
     );
 }
+
+/// DC-11 position:sticky 静态基线钉死：无滚动（scroll_offset=0）时 sticky 须与 relative
+/// 产生**相同**布局位置（converter `PositionValue::Sticky|Relative|Static => taffy Relative`，
+/// engine inset 解析对 sticky/relative 同路径）。sticky 的动态 clamp 行为需 host-layer scroll
+/// offset（DC-11 动态部分，display 环境，本测试覆盖不到）；本测试守静态基线，防未来动态实现
+/// 误改静态映射，并为动态实现提供回归对照（动态只应在 scroll_offset!=0 时偏离 relative）。
+#[test]
+fn test_sticky_static_case_equals_relative() {
+    fn pos_of_t(position: &str) -> (f32, f32, bool) {
+        let html = format!(
+            r#"<html><body style="margin:0">
+            <div style="height:40px"></div>
+            <div id="t" style="position:{position}; top:10px; width:50px; height:50px"></div>
+            </body></html>"#
+        );
+        let doc = zero_dom::parse_html(&html);
+        let mut ss = StyleSystem::new();
+        ss.set_viewport(800.0, 600.0);
+        let styles = ss.compute_styles(&doc, &[]);
+        let mut eng = LayoutEngine::new(800.0, 600.0);
+        let result = eng.compute(&doc, &styles);
+        let mut stack = vec![&result.root];
+        while let Some(n) = stack.pop() {
+            if let Some(nid) = n.node_id
+                && let Some(dn) = doc.get(nid)
+                && let zero_dom::NodeKind::Element(e) = &dn.kind
+                && e.get_attribute("id").as_deref() == Some("t")
+            {
+                return (n.x, n.y, n.is_sticky);
+            }
+            stack.extend(n.children.iter());
+        }
+        panic!("#t not found for position:{position}");
+    }
+    let (s_x, s_y, s_is_sticky) = pos_of_t("sticky");
+    let (r_x, r_y, _) = pos_of_t("relative");
+    // sticky 标志须正确（is_sticky=true 区分于 relative）。
+    assert!(s_is_sticky, "sticky #t must carry is_sticky=true");
+    // 静态位置须与 relative 字节一致（同一 taffy Relative 映射 + 同 inset 解析路径）。
+    assert_eq!(
+        (s_x, s_y),
+        (r_x, r_y),
+        "sticky static-case must equal relative position (same taffy Relative mapping); \
+         got sticky=({s_x},{s_y}) relative=({r_x},{r_y})"
+    );
+}
