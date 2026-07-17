@@ -1101,6 +1101,45 @@ pub fn collect_concat_dom_info(
     (has_direct_text, non_ws_text_nodes)
 }
 
+/// DC-13 line 327「参与方 Logo 网格中 SVG/PNG Logo 可见且不会退化为短横/alt glyph」：
+/// 检测**塌缩的替换元素**（`<img>`/logo）——`is_replaced` 盒 width<2 或 height<2，即固有尺寸
+/// 未解析/图片未参与布局致盒塌缩到近 0（R1578b inline>inline-IMG 固有尺寸谱系：img 塌缩→
+/// 容器塌缩→logo 不可见）。返回问题描述列表（空 = 通过）。
+///
+/// **opt-in 检查**：仅在 `--check-img-visibility` 启用时跑（非通用 struct-check）——因为部分
+/// fixture 含**故意缺失**的图片（如 morning 的 `images/cc_unavailable.png` 测 alt 回退），
+/// 通用 gate 会误报。仅对「所有图片都应可见」的 fixture（如 wintertc 14 个 logo 全有 asset）
+/// 启用。仅报告真实元素盒（labels 含 node_id，排除匿名盒）。
+pub fn check_replaced_collapse(
+    root: &zero_layout_engine::types::LayoutBox,
+    labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+) -> Vec<String> {
+    const MIN_REPLACED_PX: f32 = 2.0;
+    let mut issues = Vec::new();
+    fn walk(
+        b: &zero_layout_engine::types::LayoutBox,
+        labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+        issues: &mut Vec<String>,
+    ) {
+        if b.is_replaced
+            && let Some(id) = b.node_id
+            && let Some(label) = labels.get(&id)
+            && (b.width < MIN_REPLACED_PX || b.height < MIN_REPLACED_PX)
+        {
+            issues.push(format!(
+                "collapsed replaced element: [{label}] size={:.0}x{:.0} (img/logo failed to get \
+                 intrinsic size — R1578b spectrum; degrades to invisible/alt glyph)",
+                b.width, b.height
+            ));
+        }
+        for child in &b.children {
+            walk(child, labels, issues);
+        }
+    }
+    walk(root, labels, &mut issues);
+    issues
+}
+
 /// DC-13 line 322：统计布局树中带指定 class 的盒数（结构计数断言用）。
 ///
 /// `labels`（[`collect_dom_labels`] 产出）格式为 `tag.class1.class2`；本函数按 `.` 拆分后
@@ -1627,6 +1666,31 @@ mod tests {
                 .iter()
                 .any(|s| s.contains("text concatenation") && s.contains("[div.wrap]")),
             "container with legitimate direct text must not be flagged: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn test_replaced_collapse_flags_zero_size_img() {
+        // DC-13 line 327：塌缩的 img（width/height<2）须被检出（logo 不可见退化）。
+        // 用一个 0×0 的 <img>（无 src + 无尺寸属性 → 塌缩）+ 一个有尺寸的 img 对比。
+        let html = "<html><body style=\"margin:0\">\
+            <img class=\"collapsed\" style=\"width:0;height:0\" src=\"x.png\">\
+            <img class=\"visible\" style=\"width:40px;height:30px\" src=\"y.png\">\
+            </body></html>";
+        let config = ReftestConfig::default();
+        let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let labels = collect_dom_labels(html);
+        let issues = check_replaced_collapse(&root, &labels);
+        // 仅 .collapsed 被检出；.visible（40×30）不报。
+        assert!(
+            issues
+                .iter()
+                .any(|s| s.contains("[img.collapsed]") && s.contains("collapsed replaced")),
+            "zero-size img must be flagged: {issues:?}"
+        );
+        assert!(
+            !issues.iter().any(|s| s.contains("[img.visible]")),
+            "sized img must not be flagged: {issues:?}"
         );
     }
 

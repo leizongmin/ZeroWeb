@@ -206,6 +206,13 @@ fn cmd_product_smoke(args: &[String]) {
     // DC-13 line 323/324：行数断言（可重复）。「标题不拆行」/「tagline 保持 2 行」等；
     // 格式 `<class>:<line-count>`，经 content_height / line_height 估算（无度量则跳过）。
     let mut expect_lines: Vec<(String, usize)> = Vec::new();
+    // DC-13 line 327：行数下限断言（可重复）。「正文按宽度换行」= 行数 ≥ N（如 text-justify:2
+    // 证明段落换行而非压成一行）。格式 `<class>:<min-lines>`。
+    let mut expect_lines_min: Vec<(String, usize)> = Vec::new();
+    // DC-13 line 327「参与方 Logo 网格 SVG/PNG 可见不退化」：opt-in 替换元素（img/logo）塌缩
+    // 检查。仅对「所有图片都应可见」的 fixture 启用——morning 含故意缺失图（cc_unavailable），
+    // 通用 gate 会误报。
+    let mut check_img_visibility = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -282,6 +289,22 @@ fn cmd_product_smoke(args: &[String]) {
                     }
                 }
             }
+            "--expect-lines-min" => {
+                // --expect-lines-min <class>:<min-lines>（可重复），行数下限断言。
+                i += 1;
+                if i < args.len() {
+                    if let Some((class, n)) = args[i].rsplit_once(':')
+                        && let Ok(min) = n.parse::<usize>()
+                    {
+                        expect_lines_min.push((class.to_string(), min));
+                    } else {
+                        eprintln!("Warning: --expect-lines-min expects <class>:<count>, got {}", args[i]);
+                    }
+                }
+            }
+            "--check-img-visibility" => {
+                check_img_visibility = true;
+            }
             s if !s.starts_with('-') && html_path.is_none() => {
                 html_path = Some(s.to_string());
             }
@@ -317,7 +340,11 @@ fn cmd_product_smoke(args: &[String]) {
     );
     // DC-13 结构检查（--struct-check / --expect-class）需 layout 树，仅 engine-direct 路径暴露；
     // via_webview 路径无 layout 访问，结构检查静默跳过。
-    let need_layout = struct_check || !expect_classes.is_empty() || !expect_lines.is_empty();
+    let need_layout = struct_check
+        || !expect_classes.is_empty()
+        || !expect_lines.is_empty()
+        || !expect_lines_min.is_empty()
+        || check_img_visibility;
     // layout_html = render_html 实际解析的 HTML（经 script DOM 变更后的 mutated_html）。
     // 结构检查须用它建 labels（node_id 与 layout 树一致），否则真元素误标 "(anon)"。
     let (fb, layout_root, layout_html) = if via_webview {
@@ -407,6 +434,10 @@ fn cmd_product_smoke(args: &[String]) {
                 &non_ws_text_nodes,
             ));
         }
+        // DC-13 line 327 opt-in：img/logo 塌缩检查（仅对「所有图片都应可见」的 fixture）。
+        if check_img_visibility {
+            issues.extend(reftest::check_replaced_collapse(&root, &labels));
+        }
         // 元素计数断言（DC-13「四个 feature card」/「四个 nav button」等）。
         for (class, min) in &expect_classes {
             let count = reftest::count_boxes_by_class(&root, &labels, class);
@@ -422,8 +453,17 @@ fn cmd_product_smoke(args: &[String]) {
                 None => eprintln!("Warning: --expect-lines .{class}: no line metric (skip)"),
             }
         }
+        // 行数下限断言（DC-13「正文按宽度换行」= 行数 ≥ N）。
+        for (class, min) in &expect_lines_min {
+            match reftest::count_lines_for_class(&root, &labels, class) {
+                Some(got) if got >= *min => {}
+                Some(got) => issues.push(format!("class .{class}: {got} lines (expected >= {min})")),
+                None => eprintln!("Warning: --expect-lines-min .{class}: no line metric (skip)"),
+            }
+        }
         if issues.is_empty() {
             let overlap_note = if struct_check { " + sibling-overlap" } else { "" };
+            let img_note = if check_img_visibility { " + img-visible" } else { "" };
             let count_note = if expect_classes.is_empty() {
                 String::new()
             } else {
@@ -436,19 +476,22 @@ fn cmd_product_smoke(args: &[String]) {
                         .join(",")
                 )
             };
-            let lines_note = if expect_lines.is_empty() {
+            let lines_note = if expect_lines.is_empty() && expect_lines_min.is_empty() {
                 String::new()
             } else {
-                format!(
-                    " + lines[{}]",
-                    expect_lines
-                        .iter()
-                        .map(|(c, n)| format!(".{c}={n}"))
-                        .collect::<Vec<_>>()
-                        .join(",")
-                )
+                let exact = expect_lines
+                    .iter()
+                    .map(|(c, n)| format!(".{c}={n}"))
+                    .collect::<Vec<_>>();
+                let min = expect_lines_min
+                    .iter()
+                    .map(|(c, n)| format!(".{c}>={n}"))
+                    .collect::<Vec<_>>();
+                let mut all = exact;
+                all.extend(min);
+                format!(" + lines[{}]", all.join(","))
             };
-            println!("product-smoke struct-check: PASS (0 issues{overlap_note}{count_note}{lines_note})");
+            println!("product-smoke struct-check: PASS (0 issues{overlap_note}{img_note}{count_note}{lines_note})");
         } else {
             println!("product-smoke struct-check: FAIL ({} issue(s))", issues.len());
             for iss in &issues {
