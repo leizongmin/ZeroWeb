@@ -215,3 +215,66 @@ fn r1609_wide_table_pushed_down_past_blocking_float() {
         table_box.x
     );
 }
+
+/// R1613：auto-width BFC table 放进 float 右侧时填满可用 avoidance 宽度（非 shrink-to-fit
+/// 内容宽）。floats-wrap-bfc-002-left-table 谱系：ref 用显式 width:200 的 div 模拟，test 的
+/// auto table 须填 200（=container 300 − float 100）非内容宽。
+/// 结构：BFC 容器（overflow:hidden width:300）含 float(100×100) + table(无显式宽，td 内容 50
+/// 宽)。期望 table 在 float 右 x≈100、宽≈200（填满），非 50（shrink-to-fit）。
+#[test]
+fn r1613_beside_float_table_fills_available_width() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let float1 = doc.create_element("div");
+    doc.append_child(container, float1).unwrap();
+    let table = doc.create_element("div");
+    doc.append_child(container, table).unwrap();
+    let tr = doc.create_element("div");
+    doc.append_child(table, tr).unwrap();
+    let td = doc.create_element("div");
+    doc.append_child(tr, td).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut cont = ComputedStyle::default();
+    cont.display = DisplayValue::Block;
+    cont.overflow_x = OverflowValue::Hidden;
+    cont.overflow_y = OverflowValue::Hidden;
+    cont.width = LengthValue::Px(300.0);
+    styles.insert(container, cont);
+
+    let mut f = ComputedStyle::default();
+    f.display = DisplayValue::Block;
+    f.float = FloatValue::Left;
+    f.width = LengthValue::Px(100.0);
+    f.height = LengthValue::Px(100.0);
+    styles.insert(float1, f);
+
+    let mut t = ComputedStyle::default();
+    t.display = DisplayValue::Table;
+    styles.insert(table, t);
+    let mut tr_s = ComputedStyle::default();
+    tr_s.display = DisplayValue::TableRow;
+    styles.insert(tr, tr_s);
+    let mut td_s = ComputedStyle::default();
+    td_s.display = DisplayValue::TableCell;
+    td_s.width = LengthValue::Px(50.0); // 内容仅 50 宽（< 可用 200）
+    td_s.height = LengthValue::Px(100.0);
+    styles.insert(td, td_s);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let table_box = find_child_by_node_id(&result.root, table).expect("table found");
+
+    // table 放进 float(100) 右侧 → 填满可用宽 200（=300−100），非 shrink-to-fit 内容 50。
+    assert!(
+        (table_box.x - 100.0).abs() <= 8.0,
+        "table should sit beside float (x≈100), got x={}",
+        table_box.x
+    );
+    assert!(
+        table_box.width >= 190.0,
+        "beside-float auto table should FILL available width (~200, not shrink-to-fit 50), got {}",
+        table_box.width
+    );
+}

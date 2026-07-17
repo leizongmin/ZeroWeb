@@ -163,12 +163,25 @@ fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, Comp
     };
     if let Some((nx, ny)) = target {
         let table = &mut root.children[tidx];
-        if (nx - table.x).abs() > 0.5 || (ny - table.y).abs() > 0.5 {
+        let mw = (content_width - nx).max(0.0);
+        // beside float（nx>0）：auto-width BFC table 填可用 avoidance 宽度（非 shrink-to-fit 内容宽）
+        // ——floats-wrap-bfc-002-left-table auto table 应 200（=300-100）非 150，匹配 ref 显式 width:200。
+        // below floats（nx=0）：保持 shrink-to-fit，仅 clamp 不溢出。须在「位置变 OR 宽度变」时介入
+        //（即使位置已正确，beside 宽度仍须填，故 width_change 独立于 pos_change）。
+        let beside = nx > 0.5;
+        let pos_change = (nx - table.x).abs() > 0.5 || (ny - table.y).abs() > 0.5;
+        let width_change = if beside {
+            (table.width - mw).abs() > 0.5
+        } else {
+            table.width > mw + 0.5
+        };
+        if pos_change || width_change {
             let (old_x, old_y) = (table.x, table.y);
             table.x = nx;
             table.y = ny;
-            let mw = (content_width - nx).max(0.0);
-            if table.width > mw {
+            // beside float（nx>0）：auto-width BFC table 填可用宽（非 shrink-to-fit）。
+            // below floats（nx=0）：仅当溢出时 clamp。合并为 `beside || 溢出` → 设 mw。
+            if beside || table.width > mw {
                 table.width = mw;
             }
             pushed = true;
