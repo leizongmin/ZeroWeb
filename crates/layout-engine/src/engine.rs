@@ -197,6 +197,7 @@ impl LayoutEngine {
                     known_dimensions,
                     available_space,
                     &intrinsic_for_r695,
+                    self.font_metric_provider.as_ref(),
                 )
             },
         );
@@ -274,6 +275,7 @@ impl LayoutEngine {
                         known_dimensions,
                         available_space,
                         &intrinsic_for_r695,
+                        self.font_metric_provider.as_ref(),
                     )
                 },
             );
@@ -412,7 +414,13 @@ impl LayoutEngine {
         crate::r109::shrink_r109_anon_blocks(&mut root_box, doc, styles);
 
         // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
-        remeasure_text_with_float_exclusions(&mut root_box, doc, styles, &intrinsic_for_r695);
+        remeasure_text_with_float_exclusions(
+            &mut root_box,
+            doc,
+            styles,
+            &intrinsic_for_r695,
+            self.font_metric_provider.as_ref(),
+        );
 
         // 6.5 后处理：为仅包含 inline 子元素的容器重新测量内容高度
         // 空 inline 元素的 line-height 贡献需要通过 IFC 正确计算
@@ -666,7 +674,15 @@ impl LayoutEngine {
                     Some(id) => *id,
                     None => return Size::ZERO,
                 };
-                measure_text_content(doc, styles, dom_id, known_dimensions, available_space, &HashMap::new())
+                measure_text_content(
+                    doc,
+                    styles,
+                    dom_id,
+                    known_dimensions,
+                    available_space,
+                    &HashMap::new(),
+                    self.font_metric_provider.as_ref(),
+                )
             },
         );
 

@@ -971,6 +971,7 @@ pub(crate) fn measure_text_content(
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    font_metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
 ) -> Size<f32> {
     // 检查是否为文本节点（匿名 flex/grid item）
     // 在 flex/grid 容器中，文本节点被包装为匿名 taffy 节点参与布局。
@@ -983,7 +984,8 @@ pub(crate) fn measure_text_content(
         }
         // 获取父元素的 ComputedStyle 用于字体指标
         let parent_style = doc.parent_node(dom_id).and_then(|pid| styles.get(&pid));
-        let (font_size, line_height) = crate::inline::resolve_font_metrics(parent_style);
+        let (font_size, line_height) =
+            crate::inline::resolve_font_metrics_with_provider(parent_style, font_metric_provider);
         let is_ahem = parent_style
             .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
             .unwrap_or(false);
@@ -1122,6 +1124,9 @@ pub(crate) fn measure_text_content(
         .with_no_wrap(no_wrap)
         .with_inline_block_sizes(ib_sizes)
         .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
+    if let Some(provider) = font_metric_provider {
+        inline_ctx = inline_ctx.with_font_metric_provider(provider.0.clone());
+    }
     inline_ctx.layout(doc, dom_id, styles);
 
     let measured_width = inline_ctx
@@ -1167,6 +1172,9 @@ pub(crate) fn measure_text_content(
             });
             if text_only {
                 let mut col_ctx = InlineFormattingContext::new(cw).with_no_wrap(no_wrap);
+                if let Some(provider) = font_metric_provider {
+                    col_ctx = col_ctx.with_font_metric_provider(provider.0.clone());
+                }
                 col_ctx.layout(doc, dom_id, styles);
                 let cn = col_ctx.lines.len();
                 let ct = col_ctx.total_height();
@@ -1230,6 +1238,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    font_metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
 ) {
     // 收集此容器的 float 排除区域
     let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
@@ -1303,6 +1312,9 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .with_no_wrap(no_wrap)
                 .with_inline_block_sizes(ib_sizes)
                 .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
+            if let Some(provider) = font_metric_provider {
+                inline_ctx = inline_ctx.with_font_metric_provider(provider.0.clone());
+            }
             inline_ctx.layout(doc, dom_id, styles);
 
             // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
@@ -1343,7 +1355,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
 
     // 递归处理子容器
     for child in &mut box_node.children {
-        remeasure_text_with_float_exclusions(child, doc, styles, img_intrinsic_sizes);
+        remeasure_text_with_float_exclusions(child, doc, styles, img_intrinsic_sizes, font_metric_provider);
     }
 }
 

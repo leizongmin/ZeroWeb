@@ -512,6 +512,7 @@ fn test_measure_text_content_no_text() {
             height: taffy::style::AvailableSpace::Definite(600.0),
         },
         &HashMap::new(),
+        None,
     );
     assert_eq!(size.width, 0.0, "无文本节点宽度应为 0");
     assert_eq!(size.height, 0.0, "无文本节点高度应为 0");
@@ -557,6 +558,7 @@ fn test_measure_text_content_min_content_is_widest_word() {
             height: taffy::style::AvailableSpace::Definite(600.0),
         },
         &HashMap::new(),
+        None,
     );
     // MinContent ≈ 最宽词 "YYYY"(40px)，远小于整行 max-content(~70px)。
     assert!(
@@ -574,6 +576,7 @@ fn test_measure_text_content_min_content_is_widest_word() {
             height: taffy::style::AvailableSpace::Definite(600.0),
         },
         &HashMap::new(),
+        None,
     );
     // MaxContent ≈ 整行 "XX YYYY"(~70px)。
     assert!(
@@ -633,12 +636,12 @@ fn test_r1578_measure_uses_img_intrinsic_for_auto_width_img() {
     unsafe {
         std::env::set_var("ZW_IFC_IMG_INTRINSIC", "1");
     }
-    let h_on = measure_text_content(&doc, &styles, a, none_size, avail, &intrinsic).height;
+    let h_on = measure_text_content(&doc, &styles, a, none_size, avail, &intrinsic, None).height;
     // OFF：不推导 → img 不收集（w=0）→ `<a>` 塌缩
     unsafe {
         std::env::set_var("ZW_IFC_IMG_INTRINSIC", "0");
     }
-    let h_off = measure_text_content(&doc, &styles, a, none_size, avail, &intrinsic).height;
+    let h_off = measure_text_content(&doc, &styles, a, none_size, avail, &intrinsic, None).height;
 
     assert!(
         h_on > 20.0,
