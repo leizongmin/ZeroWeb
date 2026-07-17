@@ -125,3 +125,11 @@ if child block-level && !abspos && establishes_bfc(child) {
   须 kill-switch + 全量 CSS2 A/B（尤其 css-tables + margin-collapse + floats-clear）net≥0。
 - **裁决**：单 6.67% 案不值得本轮冒险 broad pass（危及已得 +9）；defer 到 dedicated 轮次，
   先写 scoped growth-only pass + 严 A/B。转更可解的单案或 floats-bfc-003。
+- **R1622 试 land growth-only pass = NET -6 revert**：实现 `grow_tables_for_cell_overflow`
+ （table.rs，bottom-up 对 row/rowgroup/table growth-only 取 max 子底边 + reflow_siblings，
+  kill-switch ZW_TABLE_HEIGHT_GROW）。A/B 全量 CSS2 **5510→5504 NET -6**：floats-wrap-bfc-005
+  改善 6.67→1.76（未 flip）但 **6+ 案回归**（growth-only 假设「cell 溢出 row 必长 row」错——
+  baseline 对齐 / 显式高 table / vertical-align 场景下 cell.y>0 使 max(c.y+c.height) 误长）。
+  revert。**结论**：floats-wrap-bfc-005 须**根本上不同**方案（非 broad growth-only）——
+  例如只在「cell 因 float 推下而溢出」的精确结构签名触发（gate on cell 内有被 float 推下的
+  BFC/table 子），而非对所有 row growth。defer 到更精确 gate 的专项轮次；当前转其他 target。
