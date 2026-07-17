@@ -39,6 +39,32 @@ row_bottom_border）。Slice A+B+C 三者必须同 land（A+B 不带 C = 本轮 
 
 ---
 
+## 0b. R1629 Slice C 实现验证（necessary-but-insufficient，仍 incomplete 回退）
+
+R1629 实现 Slice A+B+C 全套（kill-switch `ZW_COLLAPSE_OVERLAP_GEOMETRY` default-off），补 Slice C
+（apply_table_size_constraints 扣 `internal_shared_w/h`，full 非 halved）。单案 + 全量 A/B：
+
+- **001a 仍 EXACT ref 匹配**（100×101 实心绿，10100 px == ref，Slice C 不破坏 flip）。001a/b/c 仍 FLIP
+  （0.00/0.00/0.12%）；001d/e 改善（7.46/8.26 → 5.97/6.55，仍 FAIL）。writing-modes 守住（上轮证）。
+- **★ 但 CSS2 仍 NET 0（772=772）+ css-tables 簇回归未解**：Slice C **未修** R1628 的回归——
+  - collapsed-border-paint-phase-002 **3.16→4.21%**（更差，仍 FAIL）
+  - table-cell-width-0 **7.53→8.30%**（更差，仍 FAIL）
+  - **row-group-order PASS(0.65%)→FAIL(1.29%)**（真回归）
+  - table_grid_size_col_colspan 1.04→1.25%（更差，仍 FAIL）
+- **★ 结论：Slice C necessary-but-insufficient**。回归非「表盒尺寸」（Slice C 已修），是 **overlap 模型对
+  不规则表（width:0 cell / colspan / row-group 排序 / paint-phase）本身错位**：overlap 假设相邻 cell 共享
+  恰一个 border 宽且均匀，但 width:0/colspan/row-group 结构下 cell.border_right 推进与 chromium 不一致。
+  对 simple 均匀 0-content 表（001a/b/c）精确，对不规则表错位 → ~3 CSS2 + 多 css-tables PASS→FAIL 抵 flip。
+- **回退**（同 R1628，A+B+C 完整但仍 net 0 + 真 PASS→FAIL 回归，不 land）。
+
+**★ 下轮方向 = scope-gating**：overlap 仅对「安全」表触发——所有 cell border 均匀非零 + 无 colspan +
+（可能）无 row-group 重排，使 001a/b/c flip 保留、不规则表回归排除。须先 dump 各回归案结构确认 scope
+谓词能精确区分 flip 集 vs 回归集（如 row-group-order 虽 border 均匀但 row-group 排序受 row_y 重叠影响 →
+须排除多 row-group 表）。gate 加 collapse_overlap 之上，env-gated default-off，全量 A/B 守 net≥0。
+若找不到精确 scope 谓词 → 接受 overlap 为「simple 表 only」有限收益（3 flip）或 abandon 转 other lever。
+
+---
+
 ## 1. 背景
 
 R1624 定位 tables 簇 layout-tractable 子簇 = border-conflict + collapsing-border-model。
