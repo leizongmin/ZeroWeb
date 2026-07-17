@@ -54,6 +54,10 @@ make product-smoke-legacy
 | 28 | div align | `<div align>` |
 | 29 | inline style | CSS1 `style=` 基础 |
 | 30 | table sections | caption + colgroup + thead/tbody/tfoot |
+| 31 | nested list | ul/ol 嵌套三层 |
+| 32 | table align | `<table align=center/right>` |
+| 33 | css1 float | `float:left/right` + `clear` 基础 |
+| 34 | br + phrasing | `<br>` + b/i/u/strong/em/small/big/tt/sub/sup/code/samp/kbd/var |
 
 ## oracle
 
@@ -67,17 +71,23 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1653）
+## 当前基线（2026-07-18，R1654）
 
-- **29/30 struct-check PASS**（avg diff 2.79%，font-wall baseline），30 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
+- **33/34 struct-check PASS**（avg diff 2.78%，font-wall baseline），34 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
 - **17-center** R1651 修复（`<center>` UA display:block，HTML4 块级）。
 - **19-testpage-minimal** R1652 修 check 误报（check_text_concatenation 跳过 table-internal）。
 - **30-table-sections** R1653 修复 `<caption>` 定位（caption-side:top 须让 rows 下移 caption 高度，
   否则 caption 与 thead overlap）：diff 12.95%→**4.45%**，struct FAIL→PASS。新增 `top_caption_extent`
   helper（position_cells + update_row_group_positions 一致偏移）。
-- **27-address** struct FAIL（0.96%）：body/html h=0 未随单 block 子（address h=74）长高——root
-  html/body 高度传播在「单 block 子 + body margin」场景的 niche bug，**视觉无影响**（fixture 无 body
-  bg，address 内容正确渲染于 abs_y=8 h=74），待 dedicated 调查（html/body root sizing）。
+- **27-address** struct FAIL（0.96%）：body/html 高度传播 bug——**child-count 相关不一致**：
+  单 content-driven block 子 → body h=0（reproB/D 实证）；2 子 → body h=首子高仅（reproC）；
+  3+ 子 → body 正确长高（fixture 01 body h=154 + bgcolor 填满视口，pixel(400,550)=(255,255,238)
+  正确）。根因 = auto-height body 的 content-driven 子经 IFC 长 high 后，**父高度回填不一致**
+ （部分子的高增长未加回 body；显式 height 子不受影响——reproA `height:74px` body h=74 正确）。
+  **视觉影响 minimal**：内容经子盒正确渲染；body bg/border 仅在「单/双 content-driven 子 + body 有 bg」
+  时漏涂（罕见：多数实际页多子 → body 正确长高 + bg 填满）。**修复高风险**：parent-height propagation
+  经 R1047（sibling-push）/ R109 BACKFILL 多轮 net-negative（margin-collapse 交互），scoped fix 须
+  守已工作的多子案 + 不破 margin-collapse，待 dedicated 多 session。trend-only smoke 不阻（exit 0）。
 
 ## 新增 fixture
 
