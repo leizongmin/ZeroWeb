@@ -142,6 +142,39 @@ impl FontMetricProvider for FontLoader {
     }
 }
 
+/// HashMap-backed provider（U1b-wiring 激活 / per-font line-height A/B）。
+///
+/// 持有 app/runner 启动期从 `FontLoader::build_line_metric_map()` 构建的 per-family
+/// per-em 度量（拥有所有权，无生命周期/Rc-share 问题——runner 不能 Rc-share FontLoader
+/// 因 painter &mut 占用）。`line_metrics` 按 family 匹配 + 按 `size` 缩放 per-em 比率
+/// （fontdue 线性，等价 `FontLoader::line_metrics_full(id, size)`）；`font_id_of` 返回
+/// family→id（启用 C3 font_id population）。family 匹配：精确 + 大小写不敏感（同 FontLoader impl）。
+pub struct FontMetricMap(pub std::collections::HashMap<String, (u32, f32, f32, f32)>);
+
+impl FontMetricProvider for FontMetricMap {
+    fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
+        let &(_id, a, d, g) = font_family.iter().find_map(|fam| {
+            self.0
+                .get(fam)
+                .or_else(|| self.0.iter().find(|(k, _)| k.eq_ignore_ascii_case(fam)).map(|(_, v)| v))
+        })?;
+        Some(LineMetrics {
+            ascent: a * size,
+            descent: d * size,
+            line_gap: g * size,
+        })
+    }
+
+    fn font_id_of(&self, font_family: &[String]) -> Option<u32> {
+        font_family.iter().find_map(|fam| {
+            self.0
+                .get(fam)
+                .or_else(|| self.0.iter().find(|(k, _)| k.eq_ignore_ascii_case(fam)).map(|(_, v)| v))
+                .map(|(id, _, _, _)| *id)
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

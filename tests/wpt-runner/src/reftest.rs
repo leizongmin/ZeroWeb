@@ -494,6 +494,13 @@ pub fn render_to_framebuffer_with_layout_with_base(
     let font_resolver = font_loader.build_font_resolver();
     pipeline.set_font_resolver(font_resolver);
 
+    // U1b-wiring 激活 A/B（per-font line-height，env-gated）：注入 per-family 度量映射，
+    // 使 line-height:normal 走 per-family hhea（+ populate TextRun.font_id，C3 前置）。
+    // 默认关 = 常数度量 = 零回归。测 R1636 未隔离的 per-family hhea 对显式 family 信号。
+    if std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1") {
+        pipeline.set_font_metric_map(font_loader.build_line_metric_map());
+    }
+
     let result = pipeline.render_html(html, &combined_css);
 
     // DEBUG: dump layout box tree geometry (absolute y / margin-top / padding-top)

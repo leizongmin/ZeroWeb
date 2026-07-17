@@ -223,6 +223,19 @@ impl RenderPipeline {
         self.font_resolver = resolver;
     }
 
+    /// U1b-wiring 激活（per-font line-height）：注入 per-family 行度量映射。
+    ///
+    /// 调用方从 `FontLoader::build_line_metric_map()` 构建并传入（拥有所有权，避
+    /// FontLoader Rc-share 冲突）。包装为 `FontMetricMap` provider 注入 LayoutEngine，
+    /// 经 compute_final_inline_layouts + measure_text_content 双路径触达 IFC，使
+    /// line-height:normal 走 per-family hhea（+ populate TextRun.font_id，C3 前置）。
+    /// **dormant**：不调用 = provider None = 常数度量 = 零回归。
+    pub fn set_font_metric_map(&mut self, map: HashMap<String, (u32, f32, f32, f32)>) {
+        let provider: std::rc::Rc<dyn zero_layout_engine::FontMetricProvider> =
+            std::rc::Rc::new(zero_layout_engine::FontMetricMap(map));
+        self.layout_engine.set_font_metric_provider(provider);
+    }
+
     /// 设置用户颜色方案偏好。
     pub fn set_prefers_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
         self.style_system.set_prefers_color_scheme(scheme);
