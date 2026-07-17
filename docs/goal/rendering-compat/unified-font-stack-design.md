@@ -1,11 +1,13 @@
 # 设计：Unified Font Stack（fontdue+启发式 → chromium 对齐字体栈）
 
-**版本**：v0.1（rally 自主模式，scoping）
-**日期**：2026-07-08
+**版本**：v0.2（R1560/R1634 refresh）
+**日期**：2026-07-08（v0.1）/ 2026-07-18（v0.2 refresh）
 **作者**：AI Assistant（rendering-compat rally）
 **状态**：scoping 文档（bounded rally exhausted 后的唯一 forward path；multi-month 架构投资）
 **模式**：rally-pattern 设计文档（非 lei-spec-rfc skill —— 该 skill 需用户确认，与无人值守 rally 协议冲突；同 multicol Phase 2 spec 先例）
-**关联**：master.md R1174/R1175/R1180/R1181；[`research-chromium-lineheight-normal-formula-2026-07-08.md`](./research-chromium-lineheight-normal-formula-2026-07-08.md)；[`research-font-backend-freetype-metric-consolidation-2026-07-08.md`](./research-font-backend-freetype-metric-consolidation-2026-07-08.md)
+**关联**：master.md R1174/R1175/R1180/R1181/R1560/R1634；[`research-chromium-lineheight-normal-formula-2026-07-08.md`](./research-chromium-lineheight-normal-formula-2026-07-08.md)；[`research-font-backend-freetype-metric-consolidation-2026-07-08.md`](./research-font-backend-freetype-metric-consolidation-2026-07-08.md)；[`font-wall-cdep-scoping.md`](./font-wall-cdep-scoping.md)；[`skia-cdep-rfc.md`](./skia-cdep-rfc.md)
+
+> **📍 v0.2 refresh（2026-07-18，R1560+R1634）**：① **R1560 实测 chromium 实际光栅器 skia-safe 0.80 A/B = net-negative**（css-text oracle −24，font-wall 簇真回归）→ **font-wall 不在光栅化 coverage**（FreeType 已 default-on R1159 +232，光栅层已对齐 chromium 的 FreeType）**，真在 layout/metric coherence**（advance 启发式 0.6 vs 实际 + generic/explicit line-height 区分）——**强化 §1「光栅已对齐」结论，光栅 C-dep 路径（Skia/HarfBuzz）全角度穷尽 ruled out，勿再试**。② **R1634 增量 reftest lever 彻底穷尽**（R1626-R1634 九轮：tables-overlap abandoned / float 005 多层 entangled / fresh scan plateau / 唯一净 land = R1626 color override net-0 spec-correct）→ **font-stack rebuild 是 rendering-compat 唯一剩余 major-arch unlock**，当前 reftest ~57% = 2026-07-17 用户裁决接受的阶段性 plateau。③ **directive 状态**：2026-07-17「font-stack rebuild 先列 RFC 不直接开工」→ 本 scoping RFC 已就绪（§3 分阶段 + §5 首切片），**implementation 待用户解锁**（R1634 飞书告知请裁决：① 解锁首切片 OR ② accept plateau）。**孤立 slice 均 net-negative 证伪**（R225/R375 advance / R1185 1.150 / R1560 Skia），须 C2'(per-font generic-vs-explicit metric)+C3(advance) 协同才 yield → multi-week。
 
 ---
 
