@@ -82,6 +82,13 @@ pub struct LayoutEngine {
     pub viewport_height: f32,
     /// 缓存的 taffy 布局状态（可选，用于增量计算）。
     cached_state: Option<CachedLayoutState>,
+    /// U1b-wiring（unified font stack）：可选 per-font 行度量提供者。
+    ///
+    /// `None`（默认）= 生产未注入，IFC `font_metric_provider` 字段为 None，
+    /// `resolve_font_metrics_with_provider` 回退常数度量 = 零回归。`Some` 时经
+    /// `compute_final_inline_layouts` 注入到 stored IFC，使 line-height:normal 走
+    /// per-font 真实度量。详见 `docs/goal/rendering-compat/unified-font-stack-design.md`。
+    font_metric_provider: Option<crate::inline::FontMetricProviderHandle>,
 }
 
 impl LayoutEngine {
@@ -96,7 +103,18 @@ impl LayoutEngine {
             viewport_width,
             viewport_height,
             cached_state: None,
+            font_metric_provider: None,
         }
+    }
+
+    /// U1b-wiring（unified font stack）：注入 per-font 行度量提供者。
+    ///
+    /// 注入后 `compute_final_inline_layouts`（stored IFC 路径）把 provider 传给所构造的
+    /// IFC，使 line-height:normal 走 per-font 真实度量（`ascent − descent + line_gap`）。
+    /// **dormant 默认**：生产不调用本方法 → `None` → IFC 回退常数度量 = 零回归。
+    /// 须配合 measure 路径（`measure_text_content`）同源注入以保证双路径一致（切片 B）。
+    pub fn set_font_metric_provider(&mut self, provider: std::rc::Rc<dyn crate::inline::FontMetricProvider>) {
+        self.font_metric_provider = Some(crate::inline::FontMetricProviderHandle(provider));
     }
 
     /// 计算整个文档的布局（全量）。
@@ -499,7 +517,14 @@ impl LayoutEngine {
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
-        compute_final_inline_layouts(&mut root_box, doc, styles, &[], &intrinsic_for_r695);
+        compute_final_inline_layouts(
+            &mut root_box,
+            doc,
+            styles,
+            &[],
+            &intrinsic_for_r695,
+            self.font_metric_provider.as_ref(),
+        );
 
         // 12.1 后处理（R109 §9.2.1.1 匿名块盒高度回填，env R109_BACKFILL 默认开）：
         // compute_final 存了 inline_layout 但不回填 box height；taffy 经 ctx_node（片段

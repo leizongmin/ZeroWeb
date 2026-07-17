@@ -533,6 +533,7 @@ pub(crate) fn compute_final_inline_layouts(
     styles: &HashMap<NodeId, ComputedStyle>,
     ancestor_floats: &[crate::inline::FloatExclusion],
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    font_metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
 ) {
     // R362：先收集本容器直接 float 子（既用于自身 IFC 排除，也向后代传播）。
     // 坐标系：c.y 是 float 子相对 root box 顶部的位置，与 IFC 行 y（0=root box 顶）一致。
@@ -577,7 +578,14 @@ pub(crate) fn compute_final_inline_layouts(
             .chain(ancestor_floats.iter().map(|f| transform(f, child)))
             .filter(|f| f.y + f.height > 0.0) // 裁掉完全在子节点上方的 float
             .collect();
-        compute_final_inline_layouts(child, doc, styles, &child_ancestor, img_intrinsic_sizes);
+        compute_final_inline_layouts(
+            child,
+            doc,
+            styles,
+            &child_ancestor,
+            img_intrinsic_sizes,
+            font_metric_provider,
+        );
     }
 
     // 仅处理有 node_id 且含有直接文本子节点的容器
@@ -853,6 +861,16 @@ pub(crate) fn compute_final_inline_layouts(
         .with_inline_element_metrics(root.inline_element_metrics.clone())
         .with_margin_overrides(root.inline_element_margins.clone())
         .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
+
+    // U1b-wiring 切片 A（dormant）：注入 font-metric provider 使 line-height:normal 走
+    // per-font 真实度量（`resolve_font_metrics_with_provider` 消费者已在 inline/mod.rs
+    // :749/:1087 存在，读 IFC.font_metric_provider 字段）。默认 `None`（生产未注入）→
+    // 消费者回退常数 1.164/Ahem 1.0 = 逐字节等价旧路径（零回归）。`Some` 时经既有
+    // override-map 链路（frag.height → store_font_sizes → text_node_line_heights → paint）
+    // 触达 paint，绕 R890 空 styles 阻塞。Handle 内部 `Rc` clone 廉价共享。
+    if let Some(provider) = font_metric_provider {
+        inline_ctx = inline_ctx.with_font_metric_provider(provider.0.clone());
+    }
 
     if !exclusions.is_empty() {
         inline_ctx = inline_ctx.with_float_exclusions(exclusions);
