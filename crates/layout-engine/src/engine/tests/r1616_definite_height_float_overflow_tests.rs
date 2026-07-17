@@ -42,8 +42,8 @@ fn test_definite_height_container_not_expanded_by_cleared_float() {
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
-    let container = find_float_container(&result.root, 100.0)
-        .expect("should find .container (w=100 with float children)");
+    let container =
+        find_float_container(&result.root, 100.0).expect("should find .container (w=100 with float children)");
     assert!(
         (container.content_height - 100.0).abs() < 0.5,
         "definite-height container must stay 100 (float overflows), got content_height={}",
@@ -64,8 +64,8 @@ fn test_auto_height_bfc_container_still_expanded_by_float() {
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
-    let container = find_float_container(&result.root, 100.0)
-        .expect("should find BFC container (w=100 with float child)");
+    let container =
+        find_float_container(&result.root, 100.0).expect("should find BFC container (w=100 with float child)");
     assert!(
         (container.content_height - 100.0).abs() < 1.0,
         "auto-height BFC container should expand to contain float (≈100), got content_height={}",

@@ -1,8 +1,8 @@
 # RFC：BFC 元素旁 float 放不下须下沉（general BFC-relocate-below-float）
 
-**版本**：v1.0
+**版本**：v1.1
 **日期**：2026-07-17
-**状态**：root-cause 已确认（R1617 探针实证）；待执行 scoped slices
+**状态**：Slice 1+2 合并 LANDED（R1619，with-margin-008/009 flip，CSS2 NET +2 0 回归）；Slice 3/4 待续
 **起源**：R1616 forward「剩 close case floats-bfc-003 / with-margin-008/009」；R1617 探针确认 BFC 不下沉 = 真根因。
 
 ---
@@ -100,5 +100,5 @@ if child block-level && !abspos && establishes_bfc(child) {
 
 - R1617：RFC landed + root-cause 实证；0 code land。
 - R1618：Slice 1 + Slice 2 各自试 land 均 net 0 revert；精确化阻塞 = 两 slice 必须合并 + 重设计 `is_definite_width`（declared-width 而非 < container_width）。
-- 下轮：**合并 land Slice 1+2 + 重设计启发式**——右 float 分支加对称 push-below（declared-width + `child.width > float 旁可用宽` + 无后续同胞 → `child.y = float_bottom`），同时 land Slice 2 透传使嵌套 BFC 收到祖先 float 几何。A/B 守 with-margin-008/009 flip + 全量 CSS2 net≥0 + margin-collapse 全量。若合并后仍 net 0（启发式仍不触达），转 Slice 3（百分比宽，flunts-wrap-bfc-005）或单案逐 root-cause。
-- Slice 3/4 按 ROI 序续跑，每轮记 master.md + evidence。
+- **R1619（LANDED）**：合并 Slice 1+2 + 重设计。float_positioning.rs：`adjust_float_positions_with_context` 加 `inherited_floats: &[FloatGeom]`（透传祖先 float 几何到非 BFC 后代，转 child 帧），hoist `float_geometries`+`all_floats` 到函数作用域；BFC 排斥段**新增**独立 `inherited_floats` 下沉分支（不触 R1369 直接同胞路径）——`!child.declared_width_auto && child.width > float 旁可用宽 && !has_following_block_sibling` → `child.y = float_bottom`。kill-switch `ZW_NESTED_BFC_FLOAT_AVOID` default-on。A/B：with-margin-008/009 **0.00% FLIP**，CSS2 self-source 5505→**5507 NET +2 0 回归**（per-case 确认）；fmt/clippy(-D)/make test/product-smoke 全绿；+2 load-bearing 单测。容器高度增长由既有 containment 机制自动处理（无需新增 pass）。**float 簇累计 +8**（table_float_fix +3 / remeasure_text +3 / nested-BFC +2）。
+- 下轮：Slice 3（百分比宽 floats-wrap-bfc-005，7.92%）或单案逐 root-cause（floats-bfc-003 BFC shrink-retry / floats-wrap-top-below-bfc-* top-below）。每轮记 master.md + evidence。

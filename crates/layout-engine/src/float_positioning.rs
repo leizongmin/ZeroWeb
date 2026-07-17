@@ -25,8 +25,12 @@ use crate::types::LayoutBox;
 /// - 非 float、非 clear 元素的 Y 偏移扣除 float 元素占据的垂直空间
 pub(crate) fn adjust_float_positions(box_node: &mut LayoutBox) {
     let content_abs_y = box_node.y + box_node.content_y;
-    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0);
+    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0, &[]);
 }
+
+/// 浮动几何元组：(dir, x, y, width, height+margin_bottom, margin_right)。
+/// 坐标相对「持有该浮动的容器的 border-box 原点」。供 BFC 排斥 + 嵌套透传共用。
+type FloatGeom = (FloatValue, f32, f32, f32, f32, f32);
 
 /// 纯文本 float shrink-to-fit（CSS §10.3.5）预补 pass。
 ///
@@ -329,6 +333,11 @@ pub(crate) fn adjust_float_positions_with_context(
     box_content_abs_y: f32,
     inherited_left_bottom_abs: f32,
     inherited_right_bottom_abs: f32,
+    // R1618/R1619 Slice 2：祖先 BFC 上下文内的浮动几何（已转换到本容器 border-box 帧）。
+    // 非 BFC 子递归时透传，使嵌套 BFC（如 overflow:hidden 在 margin-div 内）能避开
+    // 祖先 float（CSS §9.5：BFC border-box 不重叠同 BFC 上下文内任意 float）。
+    // env ZW_NESTED_BFC_FLOAT_AVOID=0 关闭（kill-switch，default-on）。
+    inherited_floats: &[FloatGeom],
 ) {
     use zero_css_parser::values::ClearValue;
     use zero_css_parser::values::FloatValue;
@@ -649,6 +658,37 @@ pub(crate) fn adjust_float_positions_with_context(
     // 时须从 trailing 折叠链中扣除，避免 clearance-absorbed margin 双计。
     let mut clearance_consumed_mt = 0.0f32;
 
+    // 收集本容器自身的 float 子元素几何（border-box 帧），用于 BFC 排斥 + 嵌套透传。
+    // 注意：c.y 已含 margin_top（Phase 1 定位），故 float_h 只需 height + margin_bottom。
+    let float_geometries: Vec<FloatGeom> = box_node
+        .children
+        .iter()
+        .filter(|c| !matches!(c.float, FloatValue::None))
+        .map(|c| {
+            (
+                c.float.clone(),
+                c.x,
+                c.y,
+                c.width,
+                c.height + c.margin_bottom,
+                c.margin_right,
+            )
+        })
+        .collect();
+    // R1619 Slice 2：合并祖先 float（已在本容器 border-box 帧）与自身 float，供 BFC 排斥段
+    //（块内）与递归透传（块外）使用——使嵌套在非 BFC 后代内的 BFC 能避开祖先 float。
+    // env ZW_NESTED_BFC_FLOAT_AVOID=0 关闭（kill-switch，default-on）。
+    let nested_avoid_on = std::env::var("ZW_NESTED_BFC_FLOAT_AVOID").as_deref() != Ok("0");
+    let all_floats: Vec<FloatGeom> = if nested_avoid_on && !inherited_floats.is_empty() {
+        inherited_floats
+            .iter()
+            .chain(float_geometries.iter())
+            .cloned()
+            .collect()
+    } else {
+        float_geometries.clone()
+    };
+
     if has_active_float_context {
         let mut float_y_offset = 0.0f32;
         // 追踪正常流内容的位置，用于 clearance 假设位置计算
@@ -660,27 +700,8 @@ pub(crate) fn adjust_float_positions_with_context(
         let mut nested_left_bottom: f32 = 0.0;
         let mut nested_right_bottom: f32 = 0.0;
 
-        // 收集浮动元素的几何信息，用于 BFC 排斥计算
-        // 使用实际坐标（Phase 1 已完成定位），避免重复计算
-        // 收集浮动元素的几何信息，用于 BFC 排斥计算
-        // 使用实际坐标（Phase 1 已完成定位），避免重复计算
-        // 注意：c.y 已包含 margin_top（Phase 1 定位：line_y + margin_top），
-        // 因此 float_h 只需 height + margin_bottom，避免 margin_top 双重计数。
-        let float_geometries: Vec<(FloatValue, f32, f32, f32, f32, f32)> = box_node
-            .children
-            .iter()
-            .filter(|c| !matches!(c.float, FloatValue::None))
-            .map(|c| {
-                (
-                    c.float.clone(),
-                    c.x,                        // 边框盒左边（已含 margin_left 偏移）
-                    c.y,                        // 边框盒顶部（已含 margin_top 偏移）
-                    c.width,                    // 边框盒宽度（不含 margin）
-                    c.height + c.margin_bottom, // 从边框盒顶部到 margin-box 底部
-                    c.margin_right,             // 右 margin（用于 BFC 排斥计算）
-                )
-            })
-            .collect();
+        // float_geometries / all_floats 已在 if 块外（函数作用域）定义，使 BFC 排斥段
+        //（块内）与递归透传（块外）都能访问。
 
         // R1369：预计算每个子是否有「后续 in-flow block 同胞」（definite-width BFC 推到 float
         // 下方时，若有后续 block 同胞会留空隙/错位 → 仅无后续同胞时才安全推下）。
@@ -937,6 +958,43 @@ pub(crate) fn adjust_float_positions_with_context(
                         _ => {}
                     }
                 }
+
+                // R1619 Slice 2（嵌套 BFC 祖先 float 下沉）：直接同胞 float 由上方 float_geometries
+                // 循环（R1369 左 / 右 shrink）处理；此处处理**祖先 float**（经 inherited_floats 透传，
+                // 即嵌套在非 BFC 后代内的 BFC 看到的外层 float）。declared-width BFC（width 非 auto）
+                // 放不下 float 旁可用宽时，下沉到 float 底（CSS §9.5），而非被 shrink 到 0/负宽。
+                // 与 R1369 分离：R1369 用 `width < container_width` 代理，嵌套+margin 上下文下 BFC
+                // 溢出窄父失效（with-margin-008/009）；此处用 `!declared_width_auto` 精确判定。
+                // env ZW_NESTED_BFC_FLOAT_AVOID=0 关闭（kill-switch，default-on）。
+                if nested_avoid_on
+                    && !inherited_floats.is_empty()
+                    && !has_following_block_sibling[idx]
+                    && !child.declared_width_auto
+                {
+                    let ctop = child.y;
+                    let cbottom = child.y + child.height;
+                    for (fdir, fx, fy, fbw, fh, fmr) in inherited_floats.iter() {
+                        let fbottom = fy + fh;
+                        // 垂直重叠
+                        if !(ctop < fbottom && cbottom > *fy) {
+                            continue;
+                        }
+                        // float 旁可用宽（本容器 border-box 帧）
+                        let available = match fdir {
+                            FloatValue::Left => container_width - (fx + fbw + fmr),
+                            FloatValue::Right => fx - child.x,
+                            _ => continue,
+                        };
+                        if child.width > available + 0.5 {
+                            if fbottom > child.y {
+                                child.y = fbottom;
+                            }
+                            // 回正常流左对齐（float 在侧，BFC 下沉后不与 float 同行）。
+                            child.x = child.margin_left;
+                            break;
+                        }
+                    }
+                }
             }
 
             // R1392：nested-float clearance——非 BFC 子内的嵌套浮动须对后续 clear 兄弟可见
@@ -1157,13 +1215,27 @@ pub(crate) fn adjust_float_positions_with_context(
             .unwrap_or((inherited_left_bottom, inherited_right_bottom));
         let child_content_abs_y = box_content_abs_y + child.y + child.content_y;
         if crate::margin_collapse::establishes_bfc(child) {
-            adjust_float_positions_with_context(child, child_content_abs_y, 0.0, 0.0);
+            // BFC 子：独立浮动上下文，祖先 float 不透传。
+            adjust_float_positions_with_context(child, child_content_abs_y, 0.0, 0.0, &[]);
         } else {
+            // 非 BFC 子：其内 float 与外层同 BFC 上下文。R1619 Slice 2 透传 all_floats
+            //（祖先 + 自身）到子 border-box 帧（减 child.x/child.y），使嵌套 BFC 后代能避开外层 float。
+            let child_inherited: Vec<FloatGeom> = if nested_avoid_on && !all_floats.is_empty() {
+                // all_floats 借用 box_node.children；先取出 child 偏移再 map（避免与 child mut 借用冲突）。
+                let (cx, cy) = (child.x, child.y);
+                all_floats
+                    .iter()
+                    .map(|(d, fx, fy, w, h, mr)| (d.clone(), fx - cx, fy - cy, *w, *h, *mr))
+                    .collect()
+            } else {
+                Vec::new()
+            };
             adjust_float_positions_with_context(
                 child,
                 child_content_abs_y,
                 box_content_abs_y + left_ctx,
                 box_content_abs_y + right_ctx,
+                &child_inherited,
             );
         }
     }

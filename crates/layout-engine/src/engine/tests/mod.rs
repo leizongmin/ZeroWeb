@@ -109,6 +109,8 @@ mod r1423_multicol_balance_text_node_is_ahem_tests;
 mod r1518_table_among_floats_tests;
 #[cfg(test)]
 mod r1616_definite_height_float_overflow_tests;
+#[cfg(test)]
+mod r1619_nested_bfc_float_avoid_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
