@@ -49,7 +49,7 @@ use zero_dom::{Document, NodeId, NodeKind, QuirksMode};
 pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
     Some(match tag {
         // 块级元素（对齐 HTML Living Standard UA 样式表的 display:block 列表）
-        "html" | "address" | "article" | "aside" | "blockquote" | "body" | "dd" | "details" | "div" | "dl" | "dt"
+        "html" | "address" | "article" | "aside" | "blockquote" | "body" | "center" | "dd" | "details" | "div" | "dl" | "dt"
         | "fieldset" | "figcaption" | "figure" | "footer" | "form" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
         | "header" | "hgroup" | "hr" | "legend" | "li" | "main" | "menu" | "nav" | "ol" | "p" | "pre" | "search"
         | "section" | "summary" | "ul" => DisplayValue::Block,
@@ -1232,6 +1232,9 @@ mod ua_display_tests {
         for tag in [
             "address",
             "blockquote",
+            // R1651：<center> HTML4 块级（等价 <div align=center>）；先前缺 → inline 致 4px 盒
+            // 与块子元素 overlap（legacy-html fixture 17-center struct-check FAIL 抓到）。
+            "center",
             "dd",
             "div",
             "dl",
