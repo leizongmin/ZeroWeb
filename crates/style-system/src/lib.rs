@@ -70,9 +70,8 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
         | "textarea" => DisplayValue::InlineBlock,
 
         // display:none
-        "script" | "style" | "link" | "meta" | "head" | "title" | "base" | "noscript" | "template" | "dialog" => {
-            DisplayValue::None
-        }
+        "script" | "style" | "link" | "meta" | "head" | "title" | "base" | "noframes" | "noscript"
+        | "template" | "dialog" => { DisplayValue::None }
 
         // 内联元素 — 无需覆盖（CSS 初始值即为 inline）
         _ => return None,
@@ -1284,6 +1283,24 @@ mod ua_display_tests {
                 ua_default_display(tag),
                 None,
                 "<{tag}> should fall back to CSS initial inline (None), not block"
+            );
+        }
+    }
+
+    /// 隐藏元素（script/style/noframes/noscript 等）必须 display:none。
+    /// `<noframes>` 内容在 frame-capable UA（含 chromium oracle，所有现代浏览器）中按
+    /// HTML 渲染规范隐藏；`<noscript>` 在脚本启用时同理隐藏。R1657：legacy-html fixture
+    /// 38-noframes 实测 ZW 误渲染 noframes 回退文本（5 行）vs chromium 隐藏（2 段）。
+    #[test]
+    fn test_hidden_elements_default_to_none() {
+        for tag in [
+            "script", "style", "link", "meta", "head", "title", "base", "noframes", "noscript",
+            "template", "dialog",
+        ] {
+            assert_eq!(
+                ua_default_display(tag),
+                Some(DisplayValue::None),
+                "<{tag}> should default to display:none (hidden content) per HTML UA stylesheet"
             );
         }
     }

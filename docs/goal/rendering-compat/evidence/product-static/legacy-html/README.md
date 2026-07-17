@@ -64,6 +64,15 @@ make product-smoke-legacy
 | 38 | noframes | `<noframes>` 帧不支持回退内容（display:none in frame-capable UAs）|
 | 39 | menu | `<menu><li>` 菜单列表（HTML UA 块级）|
 
+### R1657 `<noframes>` display:none 修复
+
+fixture 38 struct PASS 但 diff 2.74% 异常（高于同类短文本 fixture）。**像素 y-band 实测定位**：
+ZW 渲染 5 行文本（2 段 + noframes 回退 3 行，y=19/54/73/92/125）vs chromium 仅 2 段（y=10/44）——
+ZW **误渲染 `<noframes>` 回退内容**（chromium 等 frame-capable UA 按 HTML 渲染规范隐藏）。
+**fix**：`ua_default_display` display:none arm 加 `noframes`（与 `noscript` 同列——脚本启用时隐藏 noscript、
+帧支持时隐藏 noframes，语义完全平行）。fixture 38 diff **2.74%→1.34%**（13170→6426 px）。
+load-bearing 单测 `test_hidden_elements_default_to_none` 钉死 None-arm 含 noframes/noscript。
+
 ## oracle
 
 `oracle/*.png` — chrome-for-testing 127 截图（800×600）。重抓：
@@ -76,9 +85,9 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1656）
+## 当前基线（2026-07-18，R1657）
 
-- **37/39 struct-check PASS**（avg diff 2.82%，font-wall baseline），39 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
+- **37/39 struct-check PASS**（avg diff 2.79%，font-wall baseline），39 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
 - **17-center** R1651 修复（`<center>` UA display:block，HTML4 块级）。
 - **19-testpage-minimal** R1652 修 check 误报（check_text_concatenation 跳过 table-internal）。
 - **30-table-sections** R1653 修复 `<caption>` 定位（caption-side:top 须让 rows 下移 caption 高度，
