@@ -990,12 +990,14 @@ fn compute_column_widths(
 /// 此处把 in-flow 子（sum，垂直堆叠）与浮动子（max 外底边，BFC 包含）分离，
 /// 取两者 max。返回该单元格「BFC 包含浮动后」的内容高度下限。
 fn cell_float_aware_content_height(cell_box: &LayoutBox) -> f32 {
+    // 内容高度 = in-flow 子元素 border-box 底边最大值（c.y 已含定位 + margin_top，
+    // adjust_float_positions 可能把 BFC/table 子推到 float 下方使 c.y>0，此时 sum(heights)
+    // 低估——须用 max(c.y + height + mb)）。c.y 相对 cell border-box。
     let in_flow_height: f32 = cell_box
         .children
         .iter()
         .filter(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
-        .map(|c| c.height + c.margin_top + c.margin_bottom)
-        .sum();
+        .fold(0.0f32, |max_y, c| max_y.max(c.y + c.height + c.margin_bottom));
     let float_bottom: f32 = cell_box
         .children
         .iter()

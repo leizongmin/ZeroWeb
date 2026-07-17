@@ -102,3 +102,7 @@ if child block-level && !abspos && establishes_bfc(child) {
 - R1618：Slice 1 + Slice 2 各自试 land 均 net 0 revert；精确化阻塞 = 两 slice 必须合并 + 重设计 `is_definite_width`（declared-width 而非 < container_width）。
 - **R1619（LANDED）**：合并 Slice 1+2 + 重设计。float_positioning.rs：`adjust_float_positions_with_context` 加 `inherited_floats: &[FloatGeom]`（透传祖先 float 几何到非 BFC 后代，转 child 帧），hoist `float_geometries`+`all_floats` 到函数作用域；BFC 排斥段**新增**独立 `inherited_floats` 下沉分支（不触 R1369 直接同胞路径）——`!child.declared_width_auto && child.width > float 旁可用宽 && !has_following_block_sibling` → `child.y = float_bottom`。kill-switch `ZW_NESTED_BFC_FLOAT_AVOID` default-on。A/B：with-margin-008/009 **0.00% FLIP**，CSS2 self-source 5505→**5507 NET +2 0 回归**（per-case 确认）；fmt/clippy(-D)/make test/product-smoke 全绿；+2 load-bearing 单测。容器高度增长由既有 containment 机制自动处理（无需新增 pass）。**float 簇累计 +8**（table_float_fix +3 / remeasure_text +3 / nested-BFC +2）。
 - 下轮：Slice 3（百分比宽 floats-wrap-bfc-005，7.92%）或单案逐 root-cause（floats-bfc-003 BFC shrink-retry / floats-wrap-top-below-bfc-* top-below）。每轮记 master.md + evidence。
+
+## 8. R1620 后续（cell-content-height，非 BFC-relocate 但同簇连带）
+
+- floats-wrap-bfc-005 探针实证：BFC（R1369 推下）定位已对，**cell 高度未长** = `cell_float_aware_content_height`（R1390）`SUM(heights)` 在子元素重定位/margin 折叠时低估/高估。改 `MAX(c.y+c.height+mb)`（spec §17.5.3）LANDED：CSS2 NET +3（floats-wrap-bfc-007 + 2 margin-collapse bonus），0 回归。floats-wrap-bfc-005 本身 7.92→6.67%（TABLE 子案 table_float_fix 残缺未过阈）。
