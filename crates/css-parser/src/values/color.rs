@@ -680,6 +680,45 @@ pub fn parse_text_decoration_thickness(value: &str) -> Option<TextDecorationThic
     }
 }
 
+/// 解析 CSS text-decoration-inset 值（CSS Text Decoration 4 §2.4）。R1607。
+///
+/// 语法：`<length>{1,2}`。1 个值 → start=end；2 个值 → (start, end)。
+/// 仅接受真 `<length>`（px/em/rem/ch/v*/%），拒绝 auto/min-content/max-content
+/// 等关键字（inset 无关键字值）。负值=向外延伸。
+pub fn parse_text_decoration_inset(value: &str) -> Option<TextDecorationInsetValue> {
+    // 仅认数值长度，过滤 auto/min-content/max-content 等关键字变体。
+    let parse_one = |s: &str| -> Option<LengthValue> {
+        match parse_length(s)? {
+            v @ (LengthValue::Px(_)
+            | LengthValue::Em(_)
+            | LengthValue::Rem(_)
+            | LengthValue::Ch(_)
+            | LengthValue::Percentage(_)
+            | LengthValue::Vh(_)
+            | LengthValue::Vw(_)
+            | LengthValue::Vmin(_)
+            | LengthValue::Vmax(_)) => Some(v),
+            // auto/min-content/max-content/calc/fit-content 等非纯长度 → 拒绝。
+            _ => None,
+        }
+    };
+    let parts: Vec<&str> = value.split_ascii_whitespace().collect();
+    match parts.len() {
+        1 => {
+            let v = parse_one(parts[0])?;
+            Some(TextDecorationInsetValue {
+                start: v.clone(),
+                end: v,
+            })
+        }
+        2 => Some(TextDecorationInsetValue {
+            start: parse_one(parts[0])?,
+            end: parse_one(parts[1])?,
+        }),
+        _ => None,
+    }
+}
+
 /// 解析 CSS text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
 /// `none` | [ [ filled | open ] || [ dot | circle | double-circle | triangle | sesame ] ] | <string>
 /// 关键字组合解析为对应标记字符（filled dot → '•' 等）；<string> 取首字符。

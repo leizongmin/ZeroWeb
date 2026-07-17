@@ -1323,6 +1323,8 @@ pub enum PropertyValue {
     TextDecorationStyle(TextDecorationStyleValue),
     /// text-decoration-thickness 值（CSS Text Decoration 4 §2.3）。R1402。
     TextDecorationThickness(TextDecorationThicknessValue),
+    /// text-decoration-inset 值（CSS Text Decoration 4 §2.4）。R1607。
+    TextDecorationInset(zero_css_parser::values::TextDecorationInsetValue),
     /// text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
     TextEmphasisStyle(TextEmphasisStyleValue),
     /// text-emphasis-position 值（§3.2）。

@@ -136,6 +136,9 @@ pub struct ComputedStyle {
     pub text_decoration_style: TextDecorationStyleValue,
     /// text-decoration-thickness 属性（CSS Text Decoration 4 §2.3，不继承）。R1402。
     pub text_decoration_thickness: TextDecorationThicknessValue,
+    /// text-decoration-inset 属性（CSS Text Decoration 4 §2.4，不继承）。R1607。
+    /// 装饰线 inline 轴内缩（负值=延伸）；em 在 paint 期按 font_size 解析。
+    pub text_decoration_inset: zero_css_parser::values::TextDecorationInsetValue,
     /// text-emphasis-style 属性（CSS Text Decoration 3 §3.1，继承）。
     pub text_emphasis_style: TextEmphasisStyleValue,
     /// text-emphasis-position 属性（§3.2，继承）。默认 OverRight。

@@ -469,6 +469,12 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "text-decoration-inset" => {
+            if let Some(v) = values::parse_text_decoration_inset(value) {
+                style.text_decoration_inset = v;
+                return true;
+            }
+        }
         "text-emphasis-style" => {
             if let Some(v) = values::parse_text_emphasis_style(value) {
                 style.text_emphasis_style = v;

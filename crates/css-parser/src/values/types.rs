@@ -366,6 +366,19 @@ pub enum TextDecorationThicknessValue {
     Length(f64),
 }
 
+/// CSS text-decoration-inset 值（CSS Text Decoration 4 §2.4）。R1607。
+///
+/// 装饰线在 inline 轴的内缩量：`start` 控制 inline-start 端，`end` 控制 inline-end 端。
+/// 负值表示向外延伸（延长装饰线）。em/rem 在 paint 期按元素 font_size 解析为 px
+/// （与 text-decoration-thickness 相反，inset 的 driver test 用 em，故不在解析期 resolve）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextDecorationInsetValue {
+    /// inline-start 端内缩（正值=向内缩进，负值=向外延伸）。
+    pub start: LengthValue,
+    /// inline-end 端内缩。
+    pub end: LengthValue,
+}
+
 /// CSS text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
 /// 解析后存为标记字符（如 filled dot → '•' U+2022），None = 无标记。
 #[derive(Debug, Clone, PartialEq, Eq)]

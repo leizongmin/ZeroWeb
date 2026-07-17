@@ -6,7 +6,7 @@
 //! 还包含 CSS 交互/提示属性指示器：cursor、image-rendering、isolation、
 //! will-change、pointer-events、user-select、overscroll-behavior、touch-action。
 
-use zero_css_parser::values::ColorValue;
+use zero_css_parser::values::{ColorValue, LengthValue};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -223,7 +223,24 @@ impl super::Painter {
             zero_style_system::TextDecorationThicknessValue::Auto => (font_size * 0.06).max(1.0),
         };
 
-        self.paint_decoration_line(base_x, y, total_width, line_width, color, &style.text_decoration_style);
+        // R1607：text-decoration-inset 在 inline 轴内缩/延伸装饰线两端。
+        // start 内缩 inline-start（正值=向内，负值=向外延伸），end 内缩 inline-end。
+        // em/rem 按 font_size 解析（driver test text-decoration-inset-005 用 em）。
+        let inset_to_px = |lv: &LengthValue| match lv {
+            LengthValue::Px(n) => *n as f32,
+            LengthValue::Em(n) => *n as f32 * font_size,
+            // ch/rem 等罕见单位未解析 → 视作 0（不影响默认渲染）
+            _ => 0.0,
+        };
+        let inset_start = inset_to_px(&style.text_decoration_inset.start);
+        let inset_end = inset_to_px(&style.text_decoration_inset.end);
+        let line_x = base_x + inset_start;
+        let line_w = total_width - inset_start - inset_end;
+        if line_w <= 0.0 {
+            return;
+        }
+
+        self.paint_decoration_line(line_x, y, line_w, line_width, color, &style.text_decoration_style);
     }
 
     /// 绘制文本装饰线的底层实现。

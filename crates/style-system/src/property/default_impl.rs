@@ -91,6 +91,10 @@ impl Default for ComputedStyle {
             text_decoration_color: ColorValue::CurrentColor,
             text_decoration_style: TextDecorationStyleValue::Solid,
             text_decoration_thickness: TextDecorationThicknessValue::Auto,
+            text_decoration_inset: zero_css_parser::values::TextDecorationInsetValue {
+                start: LengthValue::Px(0.0),
+                end: LengthValue::Px(0.0),
+            },
             text_emphasis_style: TextEmphasisStyleValue::None,
             text_emphasis_position: TextEmphasisPositionValue::OverRight,
             text_transform: TextTransformValue::None,

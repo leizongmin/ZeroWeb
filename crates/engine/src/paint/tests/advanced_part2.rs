@@ -741,6 +741,66 @@ fn test_paint_text_decoration_zero_negative_width() {
     assert!(painter.primitives().fills.is_empty(), "负宽度不应生成装饰填充");
 }
 
+/// 测试 text-decoration-inset 在 inline 轴内缩/延伸装饰线（R1607）。
+#[test]
+fn test_paint_text_decoration_inset_shifts_and_extends_line() {
+    let color = Color::rgb(0, 0, 0);
+    let font_size = 20.0;
+    let base_x = 100.0;
+    let total_width = 50.0;
+
+    // 基线：无 inset，solid underline 从 base_x 起、宽 total_width。
+    let mut painter = Painter::new();
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_style = TextDecorationStyleValue::Solid;
+    painter.paint_text_decoration_from_style(base_x, 16.0, font_size, total_width, color, &style);
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].rect.origin.x, base_x);
+    assert_eq!(fills[0].rect.size.width, total_width);
+
+    // inset = -0.25em（font_size=20 → -5px）：两端各延伸 5px。
+    let mut painter2 = Painter::new();
+    style.text_decoration_inset = zero_css_parser::values::TextDecorationInsetValue {
+        start: LengthValue::Em(-0.25),
+        end: LengthValue::Em(-0.25),
+    };
+    painter2.paint_text_decoration_from_style(base_x, 16.0, font_size, total_width, color, &style);
+    let fills2 = &painter2.primitives().fills;
+    assert_eq!(fills2.len(), 1);
+    assert_eq!(fills2[0].rect.origin.x, base_x - 5.0, "start inset -0.25em 应左移 5px");
+    assert_eq!(fills2[0].rect.size.width, total_width + 10.0, "两端各延伸 5px 共 +10");
+
+    // inset = 10px -10px：new_x = base_x + 10，width = total_width - 10 - (-10) = total_width（整体右移 10px）。
+    let mut painter3 = Painter::new();
+    style.text_decoration_inset = zero_css_parser::values::TextDecorationInsetValue {
+        start: LengthValue::Px(10.0),
+        end: LengthValue::Px(-10.0),
+    };
+    painter3.paint_text_decoration_from_style(base_x, 16.0, font_size, total_width, color, &style);
+    let fills3 = &painter3.primitives().fills;
+    assert_eq!(fills3.len(), 1);
+    assert_eq!(fills3[0].rect.origin.x, base_x + 10.0);
+    assert_eq!(fills3[0].rect.size.width, total_width);
+}
+
+/// inset 使装饰线宽度 ≤ 0 时不绘制（R1607）。
+#[test]
+fn test_paint_text_decoration_inset_zero_width_skipped() {
+    let mut painter = Painter::new();
+    let color = Color::rgb(0, 0, 0);
+    let mut style = zero_style_system::ComputedStyle::default();
+    style.text_decoration_line = TextDecorationLineValue::Underline;
+    // start=30, end=30, total_width=50 → line_w = 50-30-30 = -10 ≤ 0 → 跳过。
+    style.text_decoration_inset = zero_css_parser::values::TextDecorationInsetValue {
+        start: LengthValue::Px(30.0),
+        end: LengthValue::Px(30.0),
+    };
+    painter.paint_text_decoration_from_style(0.0, 16.0, 20.0, 50.0, color, &style);
+    assert!(painter.primitives().fills.is_empty(), "inset 致宽度≤0 不应绘制");
+}
+
 /// 测试 linear_direction_to_kind 对各种角度值生成正确的 Linear 坐标。
 #[test]
 fn test_linear_direction_to_kind_angle_values() {

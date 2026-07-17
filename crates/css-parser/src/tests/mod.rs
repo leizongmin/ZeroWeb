@@ -9,16 +9,16 @@ use crate::values::{
     BorderCollapseValue, CalcContext, CaptionSideValue, ClearValue, ColorValue, ColumnCountValue, ColumnWidthValue,
     ContainerTypeValue, CursorValue, FloatValue, GradientDirection, GradientValue, LengthValue, ListStylePositionValue,
     ListStyleTypeValue, ObjectFitValue, RadialShape, RadialSize, ResizeValue, ScrollSnapAlignValue, ScrollSnapAxis,
-    ScrollSnapStopValue, ScrollSnapTypeValue, TableLayoutValue, TextDecorationLineValue, TextOverflowValue,
-    TextTransformValue, TimeUnit, TransformFunction, TransformValue, WritingModeValue, eval_calc,
+    ScrollSnapStopValue, ScrollSnapTypeValue, TableLayoutValue, TextDecorationInsetValue, TextDecorationLineValue,
+    TextOverflowValue, TextTransformValue, TimeUnit, TransformFunction, TransformValue, WritingModeValue, eval_calc,
     eval_calc_with_context, parse_animation_direction, parse_animation_duration, parse_animation_fill_mode,
     parse_animation_iteration_count, parse_animation_name, parse_animation_play_state, parse_background_image,
     parse_border_collapse, parse_box_shadow, parse_calc, parse_caption_side, parse_clear, parse_color,
     parse_column_count, parse_column_width, parse_container_type, parse_cursor, parse_float, parse_gradient,
     parse_length, parse_length_shorthand, parse_list_style_position, parse_list_style_type, parse_object_fit,
     parse_opacity, parse_resize, parse_scroll_snap_align, parse_scroll_snap_stop, parse_scroll_snap_type,
-    parse_spacing, parse_table_layout, parse_text_decoration_line, parse_text_indent, parse_text_overflow,
-    parse_text_shadow, parse_text_transform, parse_transform, parse_var, parse_writing_mode,
+    parse_spacing, parse_table_layout, parse_text_decoration_inset, parse_text_decoration_line, parse_text_indent,
+    parse_text_overflow, parse_text_shadow, parse_text_transform, parse_transform, parse_var, parse_writing_mode,
 };
 
 /// Helper: 创建标签选择器。

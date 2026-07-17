@@ -1249,6 +1249,46 @@ fn test_apply_text_indent_percentage() {
     assert_eq!(style.text_indent, LengthValue::Percentage(10.0));
 }
 
+// ── text-decoration-inset（R1607，CSS Text Decoration 4 §2.4）────────────
+
+#[test]
+/// 默认 inset = 0/0（不改变装饰线）
+fn test_text_decoration_inset_default() {
+    let style = ComputedStyle::default();
+    assert_eq!(style.text_decoration_inset.start, LengthValue::Px(0.0));
+    assert_eq!(style.text_decoration_inset.end, LengthValue::Px(0.0));
+}
+
+#[test]
+/// apply 单值 px
+fn test_apply_text_decoration_inset_single() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "text-decoration-inset", "10px"));
+    assert_eq!(style.text_decoration_inset.start, LengthValue::Px(10.0));
+    assert_eq!(style.text_decoration_inset.end, LengthValue::Px(10.0));
+}
+
+#[test]
+/// apply 两值（start end），em 支持
+fn test_apply_text_decoration_inset_two_em() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "text-decoration-inset",
+        "0.25em -0.5em"
+    ));
+    assert_eq!(style.text_decoration_inset.start, LengthValue::Em(0.25));
+    assert_eq!(style.text_decoration_inset.end, LengthValue::Em(-0.5));
+}
+
+#[test]
+/// 非法值不 apply（返回 false，保持默认）
+fn test_apply_text_decoration_inset_invalid() {
+    let mut style = ComputedStyle::default();
+    assert!(!apply_property_value(&mut style, "text-decoration-inset", "auto"));
+    assert_eq!(style.text_decoration_inset.start, LengthValue::Px(0.0));
+}
+
 #[test]
 /// 测试 table-layout 默认值为 Auto
 fn test_table_layout_default() {

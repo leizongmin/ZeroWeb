@@ -1110,6 +1110,42 @@ fn test_parse_text_indent_invalid() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// text-decoration-inset 解析测试（R1607）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_text_decoration_inset_single_px() {
+    // 单值 → start=end（正值=向内缩进）
+    let v = parse_text_decoration_inset("10px").unwrap();
+    assert_eq!(v.start, LengthValue::Px(10.0));
+    assert_eq!(v.end, LengthValue::Px(10.0));
+}
+
+#[test]
+fn test_parse_text_decoration_inset_two_values() {
+    // 两值 → (start, end)；inset-001 用例 10px -10px
+    let v = parse_text_decoration_inset("10px -10px").unwrap();
+    assert_eq!(v.start, LengthValue::Px(10.0));
+    assert_eq!(v.end, LengthValue::Px(-10.0));
+}
+
+#[test]
+fn test_parse_text_decoration_inset_em() {
+    // em 支持（inset-005 用例 -0.25em，负值=向外延伸）
+    let v = parse_text_decoration_inset("-0.25em").unwrap();
+    assert_eq!(v.start, LengthValue::Em(-0.25));
+    assert_eq!(v.end, LengthValue::Em(-0.25));
+}
+
+#[test]
+fn test_parse_text_decoration_inset_invalid() {
+    // 关键字 / 三值 / 非长度 → None
+    assert_eq!(parse_text_decoration_inset("auto"), None);
+    assert_eq!(parse_text_decoration_inset("1px 2px 3px"), None);
+    assert_eq!(parse_text_decoration_inset("abc"), None);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // table-layout 解析测试
 // ═══════════════════════════════════════════════════════════════════════
 
