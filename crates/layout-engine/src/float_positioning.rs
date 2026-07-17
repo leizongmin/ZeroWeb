@@ -32,6 +32,14 @@ pub(crate) fn adjust_float_positions(box_node: &mut LayoutBox) {
 /// 坐标相对「持有该浮动的容器的 border-box 原点」。供 BFC 排斥 + 嵌套透传共用。
 type FloatGeom = (FloatValue, f32, f32, f32, f32, f32);
 
+/// R1623：BFC 被 float 排斥收缩 width 后，同步收缩 content_width（= width - frame）。
+/// 否则内层 adjust_float_positions 递归用旧（大）content_width 做 container_width，
+/// 致 BFC 内 float 不按收缩后宽换行/堆叠（floats-bfc-003 inner floats 溢出 BFC）。
+fn shrink_bfc_content_width(child: &mut LayoutBox) {
+    let frame = child.border_left + child.border_right + child.padding_left + child.padding_right;
+    child.content_width = (child.width - frame).max(0.0);
+}
+
 /// 纯文本 float shrink-to-fit（CSS §10.3.5）预补 pass。
 ///
 /// `adjust_float_positions` 的收缩分支仅处理含 block 级 / replaced 子元素的 float
@@ -947,6 +955,7 @@ pub(crate) fn adjust_float_positions_with_context(
                                 let max_width = container_width - child.x;
                                 if child.width > max_width {
                                     child.width = max_width.max(0.0);
+                                    shrink_bfc_content_width(child);
                                 }
                             }
                         }
@@ -954,6 +963,7 @@ pub(crate) fn adjust_float_positions_with_context(
                             // 右浮动：缩小 BFC 元素宽度以不重叠 float 的 margin-box
                             let new_width = float_x - child.x;
                             child.width = new_width.max(0.0);
+                            shrink_bfc_content_width(child);
                         }
                         _ => {}
                     }

@@ -113,6 +113,8 @@ mod r1616_definite_height_float_overflow_tests;
 mod r1619_nested_bfc_float_avoid_tests;
 #[cfg(test)]
 mod r1620_table_cell_float_aware_height_tests;
+#[cfg(test)]
+mod r1623_bfc_shrink_content_width_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
