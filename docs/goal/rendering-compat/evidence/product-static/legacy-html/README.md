@@ -63,6 +63,13 @@ make product-smoke-legacy
 | 37 | form controls | input(text/password/checkbox/radio/submit/reset)/button/select/textarea/fieldset/legend/label |
 | 38 | noframes | `<noframes>` 帧不支持回退内容（display:none in frame-capable UAs）|
 | 39 | menu | `<menu><li>` 菜单列表（HTML UA 块级）|
+| 40 | phrase elements | b/i/u/em/strong/code/big/small/tt/kbd/samp/var/sub/sup/q/cite/dfn/abbr/acronym（R1666）|
+| 41 | obsolete elements | `<dir>`/`<menu>`/`<marquee>` obsolete 块级/行内（R1666）|
+| 42 | special inline | `<marquee>`/`<noembed>`/`<nobr>`/`<wbr>`/`<bgsound>`（R1667）|
+| 43 | replaced elements | `<object>`/`<embed>`/`<applet>` + `<param>`（R1668）|
+| 44 | image map | `<map>`/`<area>` 客户端图像映射（R1669；area→display:none）|
+| 45 | progress / meter / keygen | 废弃/替换类表单控件（R1669；keygen 固有尺寸，progress/meter forward Bug C）|
+| 46 | frameset / frame | frameset 帧模式探测（R1669；frame→display:none，帧网格渲染 unsupported）|
 
 ### R1657 `<noframes>` display:none 修复
 
@@ -83,6 +90,39 @@ fixture 26-pre **1.06%→1.00%**、35-xmp **3.94%→3.85%**（bbox diff 8,54,335
 绕过默认 6GB 跨用例累积上限）。load-bearing 单测 `pre_family_gets_white_space_pre_from_ua`。
 **monospace 字体未加**（font-wall 高方差，单独 A/B 切片）。
 
+### R1669 image-map / form 控件 / frameset 探测（area+frame→display:none，keygen 固有尺寸）
+
+承接 R1668 forward「续 legacy fixture + LAYOUT_DUMP 复核 image map / form 控件 / frameset」。
+新增 3 fixture（44-image-map / 45-progress-meter-keygen / 46-frameset）+ chrome-127 oracle。**LAYOUT_DUMP
+深查（R1667 方法论——struct-check 只抓 overlap，display:none 类「不该出现的盒」须看 dump）抓到 3 类缺口**：
+
+1. **`<area>` 误渲染**（fixture 44）：image map 的 `<area>` 渲成 6×24.6 inline 盒 ×3（@x=8/12/16 横排），
+   致 `<map>` 容器报 collapsed container（h=0 < in-flow child h=25）。HTML 渲染规范 `area{display:none}`
+   （area 仅定义 img 上可点击区，不渲染盒）。**fix**：`ua_default_display` None-arm + `area`。
+2. **`<frame>` 误渲染**（fixture 46）：frameset 的 `<frame>` 渲成 6×24.6 盒 @**负 abs_y=-5.5**（frameset
+   盒几何坏）。`<frame>` 是 nested browsing context（非普通 CSS 盒）；ZW 未实现 frameset 帧模式网格
+   渲染。**fix**：None-arm + `frame`（避免断盒；frameset 帧网格本身是多 session 架构工作，forward）。
+3. **`<keygen>` 塌缩**（fixture 45）：废弃 void 表单控件无固有尺寸 → 渲成 6×24.6 sliver → 包裹 `<p>`
+   报 collapsed container h=0 < h=25 → struct FAIL。**fix**：InlineBlock UA list + `keygen` + `ua_decl_inputs`
+   注入 bg/border/padding + width:90px height:24px（menulist 近似，≡ R1659 `<input>` / R1396 form-control
+   谱系，最低优先级可被作者样式覆盖）。fixture 45 struct **FAIL→PASS**（keygen 现 96×30）。
+
+**documented Bug C forward（本轮不修，progress/meter）**：`<progress>`(61.6×18)/`<meter>`(22.4×18) 现
+按 fallback 文本宽渲染（应 inline-block 替换控件，chromium progress 10em×1em≈160×16 / meter 类似）。
+progress/meter **含 fallback 文本子节点**（"60% done"/"30%"），chromium 替换元素渲染时**隐藏 fallback**
+（仅不支持时显示）；ZW 若只加 InlineBlock+固有尺寸而不抑制 fallback，文本会溢出控件盒反而更差。
+故 progress/meter 须**三步同修**（display:inline-block + 固有尺寸 + fallback-content 抑制），≡ R1668
+object/embed/applet Bug B 谱系（替换元素 + fallback + sizing entanglement），多 session defer。
+（progress/meter 不触发 struct FAIL——有 fallback 文本故 p 有高度；本轮 fixture 45 struct PASS。）
+
+**A/B**：CSS2 oracle bit-identical **net-0**（6283 案，oracle-pass 4458/71.6% ↔ R1668 baseline 4458/71.6%
+零变化——area/frame/keygen 在 WPT reftest 极罕见，≡ R1659 input / R1666-R1668 谱系）。load-bearing
+单测 `test_hidden_elements_default_to_none` 钉死 None-arm 含 area/frame。
+
+**门禁**：fmt clean / clippy --workspace --all-targets -D warnings clean / make test 全 workspace 0 failed /
+product-smoke welcome struct PASS 字节一致（零回归——welcome 无 area/frame/keygen）/ legacy smoke
+46 fixture（44 struct PASS，2 known struct FAIL = 27-address + 37-form 不变；avg excl. 46-probe ≈2.99%）。
+
 ## oracle
 
 `oracle/*.png` — chrome-for-testing 127 截图（800×600）。重抓：
@@ -95,9 +135,19 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1668）
+## 当前基线（2026-07-18，R1669）
 
-- **41/43 struct-check PASS**（avg diff 2.93%，font-wall baseline），43 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
+- **44/46 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 2.99%，font-wall baseline），46 fixtures 覆盖
+  HTML 3.2/4 + CSS1/2。2 known struct FAIL = 27-address（body/html 高度传播，R1047/R109 高风险 defer）+
+  37-form-controls（R109 inline-`<label>` 含 inline-block `<input>` entanglement）。
+- **R1669 新增 3 fixture + 3 display 修复**（详见下 R1669 段）：`<area>`+`<frame>`→display:none +
+  `<keygen>`→inline-block UA + 固有尺寸（R1659 input 谱系）。
+- **46-frameset 是 probe**（非 font-wall）：diff ~100% 是 inherent——chrome 用默认 canvas bg `#DDDDDD` +
+  帧边框填满视口（帧 src 缺失仍渲染帧网格），ZW 未实现 frameset 帧模式网格渲染 → 空白 frameset。
+  该 diff 反映「frameset unsupported」架构缺口，**不计入 font-wall 趋势**（avg excl. probe 才是趋势口径）。
+  本轮 `<frame>`→display:none 修的是「frame 渲成 6×24.6 断盒 @负 y」真 bug（LAYOUT_DUMP 抓到）；
+  frameset 帧网格渲染本身是多 session 架构工作，forward。
+
 - **R1666 chrome-127 oracle 捕获可用**（系统 chromium 150 SIGTRAP，但 chrome-for-testing 127 经
   `PUPPETEER_EXECUTABLE_PATH` 正常——重抓 oracle 用 `PUPPETEER_EXECUTABLE_PATH=$HOME/.cache/zw-oracle-chrome/chrome-linux64/chrome`）。
 - **42-special-inline** R1667 新增 + 修 `<noembed>`+`<bgsound>` UA display:none（LAYOUT_DUMP 深查抓到：

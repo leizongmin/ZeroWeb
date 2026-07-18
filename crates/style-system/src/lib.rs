@@ -67,11 +67,14 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
 
         // 内联块级元素
         "img" | "video" | "audio" | "canvas" | "iframe" | "embed" | "object" | "input" | "button" | "select"
-        | "textarea" => DisplayValue::InlineBlock,
+        | "textarea" | "keygen" => DisplayValue::InlineBlock,
 
         // display:none
+        // R1669：+ `area`（image map 区域，HTML 渲染规范 area{display:none}——仅定义可点击区不渲染盒）
+        //   + `frame`（frameset 子元素，是 nested browsing context 非普通 CSS 盒；ZW 未实现 frameset
+        //   帧模式网格渲染，display:none 避免把 frame 渲成 6×24.6 断盒，见 legacy-html fixture 46）。
         "script" | "style" | "link" | "meta" | "head" | "title" | "base" | "basefont" | "bgsound" | "noframes"
-        | "noembed" | "param" | "noscript" | "template" | "dialog" => DisplayValue::None,
+        | "noembed" | "param" | "noscript" | "template" | "dialog" | "area" | "frame" => DisplayValue::None,
 
         // 内联元素 — 无需覆盖（CSS 初始值即为 inline）
         _ => return None,
@@ -593,6 +596,31 @@ impl StyleSystem {
                             }
                         }
                     }
+                }
+                // R1669：`<keygen>` deprecated void 表单控件（≡ R1659 `<input>` / R1396 form-control 谱系）。
+                // keygen 是 void inline-block（无子节点），无固有尺寸时 ZW 把 auto 宽当 6px sliver 致
+                // 包裹它的 `<p>` 塌缩（legacy-html fixture 45 struct FAIL: collapsed container h=0 < h=25）。
+                // Chromium 把 keygen 建模为 menulist 替换控件（已废弃，Chrome 57+/Firefox 69+ 移除）。
+                // 此处补 bg/border/padding（控件可见，与 input/select 同 R1396 外观）+ UA width/height
+                //（menulist 近似 90×24，最低优先级 specificity(0,0,0)，可被作者/内联样式覆盖）。
+                "keygen" => {
+                    ua_decl_inputs.push((
+                        "background-color".to_string(),
+                        "white".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push((
+                        "border".to_string(),
+                        "1px solid #767676".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push(("padding".to_string(), "2px".to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push(("width".to_string(), "90px".to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push(("height".to_string(), "24px".to_string(), false, (0, 0, 0), None));
                 }
                 _ => {}
             }
@@ -1359,6 +1387,10 @@ mod ua_display_tests {
         for tag in [
             "script", "style", "link", "meta", "head", "title", "base", "basefont", "bgsound", "noframes", "noembed",
             "param", "noscript", "template", "dialog",
+            // R1669：area（image map 区域，HTML 渲染规范 area{display:none}）+ frame（frameset 子，
+            // nested browsing context 非普通 CSS 盒）。legacy-html fixture 44/46 LAYOUT_DUMP 抓到
+            // 两者误渲染（area 6×24.6 盒、frame 6×24.6 断盒 @负 y）。
+            "area", "frame",
         ] {
             assert_eq!(
                 ua_default_display(tag),
