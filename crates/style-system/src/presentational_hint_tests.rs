@@ -236,21 +236,18 @@ fn caption_gets_text_align_center_from_ua() {
 /// list-style-type 继承、CSS initial=Disc，故 ul 隐式 Disc 正确；但 ol 旧也继承 Disc
 /// → 渲染圆点而非序号（BUG）。li 经继承得父 list-style-type（ul 下 li=Disc / ol 下 li=Decimal）。
 #[test]
-fn ul_ol_get_list_style_type_from_ua_and_inherit_to_li() {    use zero_css_parser::values::ListStyleTypeValue;
+fn ul_ol_get_list_style_type_from_ua_and_inherit_to_li() {
+    use zero_css_parser::values::ListStyleTypeValue;
     let doc = parse_html("<body><ul><li>u</li></ul><ol><li>o</li></ol></body>");
     let mut system = StyleSystem::new();
     let styles = system.compute_styles(&doc, &[]);
-    let ul = styles
-        .get(&doc.get_elements_by_tag_name("ul")[0])
-        .expect("ul styled");
+    let ul = styles.get(&doc.get_elements_by_tag_name("ul")[0]).expect("ul styled");
     assert!(
         matches!(ul.list_style_type, ListStyleTypeValue::Disc),
         "<ul> list-style-type should be Disc, got {:?}",
         ul.list_style_type
     );
-    let ol = styles
-        .get(&doc.get_elements_by_tag_name("ol")[0])
-        .expect("ol styled");
+    let ol = styles.get(&doc.get_elements_by_tag_name("ol")[0]).expect("ol styled");
     assert!(
         matches!(ol.list_style_type, ListStyleTypeValue::Decimal),
         "<ol> list-style-type should be Decimal (not inherited Disc), got {:?}",
