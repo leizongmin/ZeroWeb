@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en"><head><title>details / summary disclosure</title></head>
+<body bgcolor="#ffffff">
+<h3>Disclosure widgets</h3>
+<p>A closed details (no open attribute) — only the summary should show:</p>
+<details>
+  <summary>System requirements</summary>
+  <p>This hidden paragraph must NOT render while details is closed.</p>
+  <ul>
+    <li>Hidden list item one</li>
+    <li>Hidden list item two</li>
+  </ul>
+</details>
+<p>An open details (has open attribute) — summary and content both show:</p>
+<details open>
+  <summary>Release notes</summary>
+  <p>This visible paragraph SHOULD render because details is open.</p>
+</details>
+<p>Final paragraph — no overlap with the widgets above.</p>
+</body></html>

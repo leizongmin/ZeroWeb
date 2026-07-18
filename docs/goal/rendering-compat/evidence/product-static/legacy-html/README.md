@@ -72,6 +72,7 @@ make product-smoke-legacy
 | 46 | frameset / frame | frameset 帧模式探测（R1669；frame→display:none，帧网格渲染 unsupported）|
 | 47 | datalist / misc | datalist/source/track/optgroup/output/bdi/bdo（R1675；datalist+source+track→display:none）|
 | 48 | ruby / misc | ruby/rp/rt/picture/wbr/data（R1676；rp→display:none）|
+| 49 | details / summary | `<details>`/`<summary>` disclosure（R1684；闭合态 details 隐藏非 summary 内容）|
 
 ### R1657 `<noframes>` display:none 修复
 
@@ -219,11 +220,15 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1676）
+## 当前基线（2026-07-18，R1684）
 
-- **46/48 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.05%，font-wall baseline），48 fixtures 覆盖
+- **47/49 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.04%，font-wall baseline），49 fixtures 覆盖
   HTML 3.2/4 + CSS1/2。2 known struct FAIL = 27-address（body/html 高度传播，R1047/R109 高风险 defer）+
   37-form-controls（R109 inline-`<label>` 含 inline-block `<input>` entanglement）。
+- **R1684 `<details>` 闭合态隐藏非 summary 内容**（HTML 渲染规范 `details:not([open])>*:not(summary){display:none}`）：
+  ZW 无 UA CSS 父条件选择器，故 layout-tree 构建期（`build_subtree`）对闭合 details 过滤直接子仅留 summary。
+  fixture 49 实证闭合 details 仅 summary（h=18，p+ul 隐藏），开启 details 显示全部；diff 3.57% struct PASS
+  （残余 = summary ▶ 标记未绘 + font-wall，独立 forward）。
 - **R1671 progress/meter value 填充条绘制**（paint 半，≡ R1660 paint_input_value；sizing+paint 两轮收尾）：
   新增 `controls.rs::paint_progress_meter_value`，progress #0075FF / meter 三区域 green-yellow-red，chrome-127
   oracle 实测颜色精确匹配；track bg #d5d5d5→#efefef 校正。fixture 45 diff 5.05%→4.76%。

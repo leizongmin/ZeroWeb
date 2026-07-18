@@ -790,6 +790,28 @@ fn extract_attr_float(tag: &str, attr: &str) -> Option<f32> {
     value_str[..end].parse::<f32>().ok().filter(|&v| v > 0.0)
 }
 
+/// R1684：`<details>` 是否处于闭合态（无 `open` 属性）。
+///
+/// HTML 渲染规范：`<details>` 无 `open` boolean 属性时，仅 `<summary>` 子可见，其余子
+/// 按 UA `details:not([open]) > *:not(summary) { display: none }` 隐藏。ZW 无 UA CSS 父
+/// 条件选择器，故在 layout-tree 构建期用此谓词过滤直接子。
+fn is_closed_details(doc: &Document, id: NodeId) -> bool {
+    let Some(node) = doc.get(id) else {
+        return false;
+    };
+    if !matches!(&node.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("details")) {
+        return false;
+    }
+    // `open` 是 HTML boolean attribute（出现即开启，无论值）。缺失 = 闭合态。
+    doc.get_attribute(id, "open").is_none()
+}
+
+/// R1684：节点是否为 `<summary>` 元素（details 的 disclosure summary）。
+fn is_summary_element(doc: &Document, id: NodeId) -> bool {
+    doc.get(id)
+        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("summary")))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_subtree(
     ctx: &mut BuildContext,
@@ -980,6 +1002,18 @@ fn build_subtree(
         // 无 ShadowRoot，不在 shadow 树中 → 正常遍历 light DOM 子节点
         let node_data = doc.get(dom_id);
         let children_dom: Vec<NodeId> = node_data.map(|n| n.children.clone()).unwrap_or_default();
+        // R1684：`<details>` 无 `open` 属性（闭合态 disclosure）时，仅 `<summary>` 子渲染，
+        // 其余子隐藏（HTML 渲染规范 `details:not([open]) > *:not(summary) { display: none }`）。
+        // ZW 无 UA CSS 父条件选择器，故在 layout-tree 构建期按 details 状态过滤直接子。
+        // 仅保留 summary 元素子（闭合态非 summary 内容不建 layout box → 不渲染）。
+        let children_dom: Vec<NodeId> = if is_closed_details(doc, dom_id) {
+            children_dom
+                .into_iter()
+                .filter(|&c| is_summary_element(doc, c))
+                .collect()
+        } else {
+            children_dom
+        };
 
         // 检测是否为 flex/grid 容器 — 在这些容器中，文本节点成为匿名 flex/grid 项
         let is_flex_or_grid = matches!(

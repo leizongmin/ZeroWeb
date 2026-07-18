@@ -627,6 +627,67 @@ fn test_embed_object_applet_intrinsic_sizing_from_attributes() {
     }
 }
 
+/// R1684：`<details>` 无 `open` 属性（闭合态）时，仅 `<summary>` 子渲染，其余子按 UA
+/// `details:not([open]) > *:not(summary) { display: none }` 隐藏。ZW 无 UA CSS 父条件
+/// 选择器，故 layout-tree 构建期过滤。本测试钉死闭合态 details 隐藏非 summary 内容、
+/// 开启态 details 显示全部内容。
+#[test]
+fn test_closed_details_hides_non_summary_children() {
+    let (mut doc, body) = make_doc_with_body();
+
+    // 闭合 details（无 open）：summary + p
+    let closed = doc.create_element("details");
+    let closed_summary = doc.create_element("summary");
+    let closed_p = doc.create_element("p");
+    doc.append_child(closed, closed_summary).unwrap();
+    doc.append_child(closed, closed_p).unwrap();
+    doc.append_child(body, closed).unwrap();
+
+    // 开启 details（有 open）：summary + p
+    let open_details = doc.create_element("details");
+    {
+        let elem = doc.get_mut(open_details).unwrap();
+        if let zero_dom::NodeKind::Element(e) = &mut elem.kind {
+            e.set_attribute("open", "");
+        }
+    }
+    let open_summary = doc.create_element("summary");
+    let open_p = doc.create_element("p");
+    doc.append_child(open_details, open_summary).unwrap();
+    doc.append_child(open_details, open_p).unwrap();
+    doc.append_child(body, open_details).unwrap();
+
+    let mut styles = HashMap::new();
+    for &el in &[closed, closed_summary, closed_p, open_details, open_summary, open_p] {
+        let mut s = ComputedStyle::default();
+        s.display = DisplayValue::Block;
+        styles.insert(el, s);
+    }
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // 闭合 details：summary 有 box，p（隐藏内容）无 box（不在 layout 树）。
+    assert!(
+        find_child_by_node_id(&result.root, closed_summary).is_some(),
+        "closed <details> summary must render"
+    );
+    assert!(
+        find_child_by_node_id(&result.root, closed_p).is_none(),
+        "closed <details> non-summary content must be hidden (no layout box)"
+    );
+
+    // 开启 details：summary + p 都有 box。
+    assert!(
+        find_child_by_node_id(&result.root, open_summary).is_some(),
+        "open <details> summary must render"
+    );
+    assert!(
+        find_child_by_node_id(&result.root, open_p).is_some(),
+        "open <details> content must render"
+    );
+}
+
 /// R784：`<canvas>` 是替换元素，HTML width/height 属性给出固有尺寸，与 `<img>` 一致——
 /// CSS 单侧显式时另一侧按固有宽高比推导。旧实现 canvas 未被 apply_replaced_element_sizing
 /// 处理（仅 img）→ 当普通 block 拉伸填满父宽；且 HTML-attr 分支 auto 侧用 HTML 绝对值
