@@ -322,20 +322,35 @@ fn apply_replaced_element_sizing(
     // reftest，不处理。
     // 注：<svg> 替换元素 sizing（CSS §10.3.2 默认 300px）经实测对 driving reftest 0-effect
     // （inline-replaced-width 簇依赖 inline SVG 形状渲染，goal line 118 out of scope），暂不处理。
-    if tag != "img" && tag != "canvas" {
+    // R1683：+ <embed>/<object>/<applet>（同为替换元素，HTML width/height 属性定 viewport 固有
+    // 尺寸）。此前三者走早返回 → embed 渲成 784×0、object/applet 按 fallback 内容宽。仅当元素
+    // 显式带 width/height 属性时应用（无属性回落原行为，避免默认 300×150 改动 ripple）。
+    if tag != "img" && tag != "canvas" && tag != "embed" && tag != "object" && tag != "applet" {
         return;
     }
+    // R1683：embed/object/applet 仅消费 HTML width/height 属性（无 decoded intrinsic / SVG data URI
+    // 回退，那是 <img> 专属）。无属性时直接返回保持原行为。
+    let is_attr_only_replaced = tag == "embed" || tag == "object" || tag == "applet";
 
     // 读取 HTML width/height 属性
     let attr_w = elem.get_attribute("width").and_then(|v| v.parse::<f32>().ok());
     let attr_h = elem.get_attribute("height").and_then(|v| v.parse::<f32>().ok());
 
-    // 回退到 SVG data URI 内的固有尺寸
-    let (attr_w, attr_h) = match (attr_w, attr_h) {
-        (Some(w), Some(h)) => (Some(w), Some(h)),
-        _ => {
-            let (svg_w, svg_h) = extract_svg_data_uri_size(elem);
-            (attr_w.or(svg_w), attr_h.or(svg_h))
+    // R1683：embed/object/applet 仅消费 HTML width/height 属性（无 decoded intrinsic / SVG data
+    // URI，那是 <img> 专属）。无属性时直接返回保持原行为（避免默认 300×150 改动 ripple）。
+    // img/canvas 走 SVG data URI 回退填补缺失侧。
+    let (attr_w, attr_h) = if is_attr_only_replaced {
+        match (attr_w, attr_h) {
+            (Some(w), Some(h)) if w > 0.0 && h > 0.0 => (attr_w, attr_h),
+            _ => return,
+        }
+    } else {
+        match (attr_w, attr_h) {
+            (Some(w), Some(h)) => (Some(w), Some(h)),
+            _ => {
+                let (svg_w, svg_h) = extract_svg_data_uri_size(elem);
+                (attr_w.or(svg_w), attr_h.or(svg_h))
+            }
         }
     };
 

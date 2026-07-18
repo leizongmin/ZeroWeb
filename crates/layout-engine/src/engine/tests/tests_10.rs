@@ -587,6 +587,46 @@ fn test_img_intrinsic_sizing_with_attributes() {
     );
 }
 
+/// R1683：`<embed>`/`<object>`/`<applet>` 同为替换元素，HTML width/height 属性应给出固有
+/// 尺寸（viewport）。此前 `apply_replaced_element_sizing` 仅处理 img/canvas → embed 渲成
+/// 784×0、object/applet 按 fallback 内容宽（legacy-html fixture 43 抓到）。本测试钉死三标签
+/// 带 width/height 属性时用属性固有尺寸。
+#[test]
+fn test_embed_object_applet_intrinsic_sizing_from_attributes() {
+    for tag in ["embed", "object", "applet"] {
+        let (mut doc, body) = make_doc_with_body();
+        let el = doc.create_element(tag);
+        {
+            let elem = doc.get_mut(el).unwrap();
+            if let zero_dom::NodeKind::Element(e) = &mut elem.kind {
+                e.set_attribute("width", "120");
+                e.set_attribute("height", "60");
+            }
+        }
+        doc.append_child(body, el).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut el_style = ComputedStyle::default();
+        el_style.display = DisplayValue::InlineBlock;
+        styles.insert(el, el_style);
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let el_box = find_child_by_node_id(&result.root, el).expect("element found");
+        assert!(
+            (el_box.width - 120.0).abs() < 1.0,
+            "<{tag}> width should be ~120 (from HTML attribute), got {}",
+            el_box.width
+        );
+        assert!(
+            (el_box.height - 60.0).abs() < 1.0,
+            "<{tag}> height should be ~60 (from HTML attribute), got {}",
+            el_box.height
+        );
+    }
+}
+
 /// R784：`<canvas>` 是替换元素，HTML width/height 属性给出固有尺寸，与 `<img>` 一致——
 /// CSS 单侧显式时另一侧按固有宽高比推导。旧实现 canvas 未被 apply_replaced_element_sizing
 /// 处理（仅 img）→ 当普通 block 拉伸填满父宽；且 HTML-attr 分支 auto 侧用 HTML 绝对值
