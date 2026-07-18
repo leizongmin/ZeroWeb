@@ -171,6 +171,22 @@ impl super::Painter {
             });
             char_x += measure_char_for_paint(ch, font_size, false);
         }
+
+        // R1680：下拉箭头（小灰色向下三角），填补 R1679 select 固有宽预留的 chrome 空间。
+        // chromium 在 select 右侧绘向下箭头指示可展开；固定中性灰（非 style.color，≡ chromium
+        // 系统箭头色），垂直居中于内容盒。select 太窄（<16px）时跳过避免溢出。
+        let cw = box_node.content_width;
+        if cw >= 16.0 {
+            let ch = if box_node.content_height > 0.0 {
+                box_node.content_height
+            } else {
+                font_size
+            };
+            let cy = content_y + ch * 0.5;
+            let ax = content_x + cw - 10.0;
+            self.primitives
+                .add_path_fill(vec![ax - 4.0, cy - 3.0, ax + 4.0, cy - 3.0, ax, cy + 3.0], SELECT_ARROW);
+        }
     }
 }
 
@@ -224,6 +240,14 @@ const PROGRESS_VALUE: Color = Color {
     r: 0,
     g: 117,
     b: 255,
+    a: 255,
+};
+
+/// chromium `<select>` 下拉箭头色（中性灰，chrome-127 oracle 实测 (90,90,90) 近似）。
+const SELECT_ARROW: Color = Color {
+    r: 90,
+    g: 90,
+    b: 90,
     a: 255,
 };
 

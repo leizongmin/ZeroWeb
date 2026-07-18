@@ -675,11 +675,23 @@ fn paint_select_value_renders_selected_option_text() {
     let mut box_node = make_box(80.0, 22.0);
     box_node.node_id = Some(select);
     let before = painter.primitives.glyphs.len();
+    let fills_before = painter.primitives.path_fills.len();
     painter.paint_select_value(&box_node, 0.0, 0.0, &style, &doc);
     // "Volvo" → 5 glyphs（非 "Mercedes" 8）。
     assert_eq!(painter.primitives.glyphs.len(), before + 5);
     // 首字符 'V'。
     assert_eq!(painter.primitives.glyphs[before].glyph_id, 'V' as u32);
+    // R1680：下拉箭头（1 个 path_fill 三角），位于右侧 chrome 区。
+    assert_eq!(
+        painter.primitives.path_fills.len(),
+        fills_before + 1,
+        "select 应绘 1 个下拉箭头三角"
+    );
+    let arrow = &painter.primitives.path_fills[fills_before];
+    assert_eq!(arrow.vertices.len(), 6, "箭头 = 3 顶点（6 float）");
+    // 三角中心 x ≈ content_x + cw - 10 = 0 + 80 - 10 = 70。
+    let cx = (arrow.vertices[0] + arrow.vertices[2] + arrow.vertices[4]) / 3.0;
+    assert!((cx - 70.0).abs() < 1.5, "箭头中心 x ≈ 70（右侧 chrome），got {cx}");
 }
 
 #[test]
