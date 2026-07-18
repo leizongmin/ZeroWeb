@@ -603,6 +603,20 @@ impl StyleSystem {
                         None,
                     ));
                 }
+                // R1693：HTML 渲染规范 UA font-family:monospace（chromium UA
+                // `code,kbd,samp,tt { font-family: monospace }`）。ZW 解析 monospace →
+                // DejaVu Sans Mono（font/loader.rs:258）。pre 已 R1658 white-space:pre；
+                // pre 的 monospace 字体同此（pre-family monospace A/B 见 R1658 forward，本 slice
+                // 只 code/kbd/samp/tt，pre 另切片避 font-wall 耦合）。specificity 0,0,0 可被作者覆盖。
+                "code" | "kbd" | "samp" | "tt" => {
+                    ua_decl_inputs.push((
+                        "font-family".to_string(),
+                        "monospace".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                }
                 // mark：HTML 渲染规范 UA `mark { background-color: yellow; color: black }`
                 //（高亮文本）。ZW 默认无 → <mark> 渲成普通 inline（无高亮）。R1685：补 UA 默认值
                 //（≡ pre white-space / h1 bold 谱系，specificity 0,0,0 可被作者样式覆盖）。
@@ -1803,6 +1817,23 @@ mod presentational_hint_tests {
             matches!(sup.vertical_align, VerticalAlignValue::Super),
             "<sup> should be vertical-align:super"
         );
+    }
+
+    /// R1693：code/kbd/samp/tt → font-family:monospace（chromium UA）。
+    #[test]
+    fn code_family_gets_monospace_from_ua() {
+        let doc = parse_html("<body><code>c</code><kbd>k</kbd><samp>s</samp><tt>t</tt></body>");
+        let mut system = StyleSystem::new();
+        let styles = system.compute_styles(&doc, &[]);
+        for tag in ["code", "kbd", "samp", "tt"] {
+            let id = doc.get_elements_by_tag_name(tag)[0];
+            let s = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));
+            assert!(
+                s.font_family.iter().any(|f| f.eq_ignore_ascii_case("monospace")),
+                "<{tag}> font-family should contain monospace from UA, got {:?}",
+                s.font_family
+            );
+        }
     }
 
     #[test]
