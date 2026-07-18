@@ -71,6 +71,68 @@ fn tr_bgcolor_applies_to_cells_not_row() {
     );
 }
 
+/// R1715：`<td valign>` → vertical-align 表现提示（top/middle/bottom/baseline）。
+#[test]
+fn td_valign_attr_maps_to_vertical_align_hint() {
+    let doc = parse_html(
+        "<table><tr>\
+         <td valign=\"top\">a</td>\
+         <td valign=\"middle\">b</td>\
+         <td valign=\"bottom\">c</td>\
+         <td valign=\"baseline\">d</td>\
+         <td valign=\"center\">e</td>\
+         <td valign=\"texttop\">f</td>\
+         <td valign=\"bogus\">g</td>\
+         </tr></table>",
+    );
+    let tds = doc.get_elements_by_tag_name("td");
+    let expected = ["top", "middle", "bottom", "baseline", "middle", "text-top"];
+    for (i, want) in expected.iter().enumerate() {
+        let hints = collect_presentational_hints(&doc, tds[i]);
+        assert!(
+            hints.iter().any(|(p, v)| p == "vertical-align" && v == *want),
+            "td[{}] valign should map to vertical-align:{} , got {hints:?}",
+            i,
+            want
+        );
+    }
+    // 非法 valign 值不应产生 vertical-align 提示。
+    let bad = collect_presentational_hints(&doc, tds[6]);
+    assert!(
+        !bad.iter().any(|(p, _)| p == "vertical-align"),
+        "bogus valign should not emit vertical-align: {bad:?}"
+    );
+}
+
+/// R1715：`<tr valign>` 传播到无自身 valign 的单元格；td 自身 valign 优先。
+#[test]
+fn tr_valign_propagates_and_td_override() {
+    let doc = parse_html(
+        "<table><tr valign=\"bottom\">\
+         <td>inherited</td>\
+         <td valign=\"top\">override</td>\
+         </tr></table>",
+    );
+    let tr = doc.get_elements_by_tag_name("tr")[0];
+    // tr 自身不产生 vertical-align 提示（行级 valign 只向单元格传播）。
+    let tr_hints = collect_presentational_hints(&doc, tr);
+    assert!(
+        !tr_hints.iter().any(|(p, _)| p == "vertical-align"),
+        "tr should not get its own vertical-align: {tr_hints:?}"
+    );
+    let tds = doc.get_elements_by_tag_name("td");
+    let inh = collect_presentational_hints(&doc, tds[0]);
+    assert!(
+        inh.iter().any(|(p, v)| p == "vertical-align" && v == "bottom"),
+        "td should inherit tr valign=bottom: {inh:?}"
+    );
+    let ovr = collect_presentational_hints(&doc, tds[1]);
+    assert!(
+        ovr.iter().any(|(p, v)| p == "vertical-align" && v == "top"),
+        "td own valign should override tr: {ovr:?}"
+    );
+}
+
 #[test]
 fn bold_tag_gets_font_weight_from_ua() {
     let doc = parse_html("<p><b>bold</b></p>");

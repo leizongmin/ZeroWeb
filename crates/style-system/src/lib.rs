@@ -1075,6 +1075,12 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
                     hints.push(("text-align".to_string(), ta));
                 }
             }
+            // R1715：HTML4 `valign` 属性 → vertical-align（CSS2 App D）。td/th 自身
+            // valign 优先；否则继承父 `<tr valign>`（chromium 行级 valign 传播到单元格）。
+            let valign = elem_attr(elem, "valign").or_else(|| parent_tr_valign(doc, element));
+            if let Some(va) = valign.and_then(|v| html_valign_to_vertical_align(&v)) {
+                hints.push(("vertical-align".to_string(), va));
+            }
             for attr in ["width", "height"] {
                 if let Some(v) = elem_attr(elem, attr).and_then(|v| html_length_attr(&v)) {
                     hints.push((attr.to_string(), v));
@@ -1269,6 +1275,19 @@ fn parent_tr_bgcolor(doc: &Document, element: NodeId) -> Option<String> {
     elem_attr(tr, "bgcolor").map(|bg| normalize_html_color(&bg))
 }
 
+/// R1715：取父 `<tr valign>` 属性（行级 valign 传播到单元格，≡ parent_tr_bgcolor 模式）。
+fn parent_tr_valign(doc: &Document, element: NodeId) -> Option<String> {
+    let parent = doc.parent_node(element)?;
+    let n = doc.get(parent)?;
+    let NodeKind::Element(tr) = &n.kind else {
+        return None;
+    };
+    if !tr.local_name().eq_ignore_ascii_case("tr") {
+        return None;
+    }
+    elem_attr(tr, "valign")
+}
+
 fn ancestor_table(doc: &Document, mut node: NodeId) -> Option<NodeId> {
     loop {
         if let Some(n) = doc.get(node)
@@ -1295,6 +1314,24 @@ fn html_align_to_vertical_align(align: &str) -> Option<String> {
         "top" => Some("top".to_string()),
         "middle" | "center" => Some("middle".to_string()),
         "bottom" => Some("bottom".to_string()),
+        _ => None,
+    }
+}
+
+/// R1715：HTML4 `valign` 属性值 → CSS vertical-align（CSS2 App D 表现提示）。
+/// chromium UA `<td/th/tr valign>` 传播到单元格：top/middle/bottom/baseline +
+/// 同义词 center(=middle)/texttop(=text-top)/textbottom(=text-bottom)。
+/// 非法值返回 None（忽略，回落到 td/th 默认）。注意与 `html_align_to_vertical_align`
+/// 区别：后者映射 `<img align>`（align 取 top/middle/bottom 表垂直），本函数映射
+/// `valign` 专用属性（语义独立，多 baseline/text-top/text-bottom 值）。
+fn html_valign_to_vertical_align(valign: &str) -> Option<String> {
+    match valign.trim().to_ascii_lowercase().as_str() {
+        "top" => Some("top".to_string()),
+        "middle" | "center" => Some("middle".to_string()),
+        "bottom" => Some("bottom".to_string()),
+        "baseline" => Some("baseline".to_string()),
+        "texttop" => Some("text-top".to_string()),
+        "textbottom" => Some("text-bottom".to_string()),
         _ => None,
     }
 }
