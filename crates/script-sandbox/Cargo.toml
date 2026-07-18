@@ -10,11 +10,11 @@ thiserror = { workspace = true }
 
 [features]
 default = ["v8"]
-v8 = ["dep:rusty_v8"]
+v8 = ["dep:v8"]
 quickjs = ["dep:rquickjs"]
 
-[dependencies.rusty_v8]
-version = "0.32"
+[dependencies.v8]
+version = "150.2.0"
 default-features = false
 optional = true
 

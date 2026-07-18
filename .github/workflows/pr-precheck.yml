@@ -36,7 +36,7 @@ jobs:
       - name: Determine rusty_v8 version
         shell: bash
         run: |
-          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"rusty_v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
 
       - name: Cache cargo registry
         uses: actions/cache@v6

@@ -536,10 +536,8 @@ pub fn parse_background_image_layers(value: &str) -> Option<Vec<BackgroundImageV
     let layers = split_background_layers(value);
     let mut result = Vec::with_capacity(layers.len());
     for layer in &layers {
-        match parse_background_image(layer.trim()) {
-            Some(v) => result.push(v),
-            None => return None, // 任何一个图层解析失败则整体失败
-        }
+        let v = parse_background_image(layer.trim())?;
+        result.push(v);
     }
     if result.is_empty() { None } else { Some(result) }
 }

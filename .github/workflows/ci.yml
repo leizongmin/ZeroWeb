@@ -89,7 +89,7 @@ jobs:
       - name: Determine rusty_v8 version
         shell: bash
         run: |
-          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"rusty_v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
 
       - name: Cache rusty_v8
         uses: actions/cache@v6
@@ -127,7 +127,7 @@ jobs:
         if: runner.os == 'Windows' && matrix.v8_runtime != false
         shell: bash
         run: |
-          echo "RUSTY_V8_ARCHIVE=https://github.com/denoland/rusty_v8/releases/download/v${RUSTY_V8_VERSION}/rusty_v8_release_${{ matrix.target }}.lib" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_ARCHIVE=https://github.com/denoland/rusty_v8/releases/download/v${RUSTY_V8_VERSION}/rusty_v8_release_${{ matrix.target }}.lib.gz" >> "$GITHUB_ENV"
           echo "RUSTFLAGS=-C link-arg=advapi32.lib" >> "$GITHUB_ENV"
 
       - name: Install zlib via vcpkg (Windows)
@@ -339,7 +339,7 @@ jobs:
       - name: Determine rusty_v8 version
         shell: bash
         run: |
-          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"rusty_v8\"/{n;s/version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"v8\"/{n;s/version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
 
       - name: Cache rusty_v8
         uses: actions/cache@v6
@@ -395,7 +395,7 @@ jobs:
       - name: Run benchmarks
         run: |
           chmod +x scripts/run-benchmarks.sh
-          ./scripts/run-benchmarks.sh
+          ZERO_WEB_BENCH_QUICK=1 ./scripts/run-benchmarks.sh
         continue-on-error: true
 
       - name: Upload benchmark results

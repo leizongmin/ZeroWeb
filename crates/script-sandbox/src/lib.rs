@@ -4,7 +4,7 @@
 //!
 //! 提供JavaScript脚本执行沙箱，用于扩展脚本、用户脚本和自动化脚本。
 //! 通过feature gate选择后端引擎：
-//! - `v8`（默认推荐）— 使用rusty_v8绑定V8引擎
+//! - `v8`（默认推荐）— 使用 v8 crate 绑定 V8 引擎
 //! - `quickjs` — 使用rquickjs绑定QuickJS引擎
 
 #![warn(missing_docs)]

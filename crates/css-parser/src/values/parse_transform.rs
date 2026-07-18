@@ -375,11 +375,8 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
         let args_str = value[args_start..pos - 1].trim();
 
         // 解析函数
-        if let Some(func) = parse_transform_function(name, args_str) {
-            functions.push(func);
-        } else {
-            return None;
-        }
+        let func = parse_transform_function(name, args_str)?;
+        functions.push(func);
     }
 
     if functions.is_empty() {
@@ -506,11 +503,8 @@ fn parse_transform_args(args: &str) -> Option<Vec<f64>> {
             continue;
         }
         // 尝试解析为带单位的角度或长度
-        if let Some(val) = parse_css_number(part) {
-            result.push(val);
-        } else {
-            return None;
-        }
+        let val = parse_css_number(part)?;
+        result.push(val);
     }
     if result.is_empty() { None } else { Some(result) }
 }

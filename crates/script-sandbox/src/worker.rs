@@ -185,57 +185,59 @@ impl std::fmt::Debug for WorkerRuntime {
 /// 在 V8 scope 中执行脚本。
 macro_rules! v8_exec {
     ($scope:expr, $code:expr) => {{
-        let Some(v8_code) = rusty_v8::String::new($scope, $code) else {
+        let scope = &mut $scope;
+        let Some(v8_code) = v8::String::new(scope, $code) else {
             return;
         };
-        let Some(script) = rusty_v8::Script::compile($scope, v8_code, None) else {
+        let Some(script) = v8::Script::compile(scope, v8_code, None) else {
             return;
         };
-        let _ = script.run($scope);
+        let _ = script.run(scope);
     }};
 }
 
 /// 从 Worker 上下文中提取排队的消息并发送到主线程。
 macro_rules! v8_drain {
     ($scope:expr, $sender:expr) => {{
-        let Some(len_code) = rusty_v8::String::new($scope, "_workerMessageQueue.length") else {
+        let scope = &mut $scope;
+        let Some(len_code) = v8::String::new(scope, "_workerMessageQueue.length") else {
             return;
         };
-        let Some(len_script) = rusty_v8::Script::compile($scope, len_code, None) else {
+        let Some(len_script) = v8::Script::compile(scope, len_code, None) else {
             return;
         };
-        let Some(len_result) = len_script.run($scope) else {
+        let Some(len_result) = len_script.run(scope) else {
             return;
         };
-        let Some(len_str) = len_result.to_string($scope) else {
+        let Some(len_str) = len_result.to_string(scope) else {
             return;
         };
-        let len_s = len_str.to_rust_string_lossy($scope);
+        let len_s = len_str.to_rust_string_lossy(scope);
         let Ok(count) = len_s.parse::<usize>() else {
             return;
         };
         for i in 0..count {
             let get_code = format!("_workerMessageQueue[{i}]");
-            let Some(v8_code) = rusty_v8::String::new($scope, &get_code) else {
+            let Some(v8_code) = v8::String::new(scope, &get_code) else {
                 continue;
             };
-            let Some(script) = rusty_v8::Script::compile($scope, v8_code, None) else {
+            let Some(script) = v8::Script::compile(scope, v8_code, None) else {
                 continue;
             };
-            let Some(result) = script.run($scope) else {
+            let Some(result) = script.run(scope) else {
                 continue;
             };
-            let Some(str_val) = result.to_string($scope) else {
+            let Some(str_val) = result.to_string(scope) else {
                 continue;
             };
-            let msg = str_val.to_rust_string_lossy($scope);
+            let msg = str_val.to_rust_string_lossy(scope);
             let _ = $sender.send(WorkerEvent::Message(msg));
         }
-        let Some(clear_code) = rusty_v8::String::new($scope, "_workerMessageQueue = []") else {
+        let Some(clear_code) = v8::String::new(scope, "_workerMessageQueue = []") else {
             return;
         };
-        if let Some(clear_script) = rusty_v8::Script::compile($scope, clear_code, None) {
-            let _ = clear_script.run($scope);
+        if let Some(clear_script) = v8::Script::compile(scope, clear_code, None) {
+            let _ = clear_script.run(scope);
         }
     }};
 }
@@ -253,15 +255,15 @@ fn worker_thread_fn(
     crate::v8_runtime::V8Sandbox::new().ok();
 
     // 创建 Isolate + 持久化 Context
-    let mut create_params = rusty_v8::Isolate::create_params();
+    let mut create_params = v8::Isolate::create_params();
     if config.heap_limit > 0 {
         create_params = create_params.heap_limits(0, config.heap_limit);
     }
-    let mut isolate = rusty_v8::Isolate::new(create_params);
+    let mut isolate = v8::Isolate::new(create_params);
 
-    let scope = &mut rusty_v8::HandleScope::new(&mut isolate);
-    let context = rusty_v8::Context::new(scope);
-    let scope = &mut rusty_v8::ContextScope::new(scope, context);
+    v8::scope!(let scope, &mut isolate);
+    let context = v8::Context::new(scope, Default::default());
+    let mut scope = v8::ContextScope::new(scope, context);
 
     // 注入 Worker 全局环境
     let bootstrap = r#"

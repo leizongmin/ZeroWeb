@@ -144,7 +144,7 @@ pub fn computed_style_to_taffy(
             // 错误推开块子间距；split inline 的匿名块盒经 computed_style_to_taffy 继承同 bug）。
             // 水平 margin 保留（inline 水平 margin 有效，作用于 IFC 内 inline 片段）。
             let inline_vmargin_zero = matches!(style.display, DisplayValue::Inline);
-            let zero = taffy::style::LengthPercentageAuto::length(0.0);
+            let zero = taffy::style::LengthPercentageAuto::length(0.0_f32);
             taffy::geometry::Rect {
                 left: convert_length_to_lpa(&style.margin_left, is_float, vw, vh),
                 right: convert_length_to_lpa(&style.margin_right, is_float, vw, vh),
@@ -199,7 +199,7 @@ pub fn computed_style_to_taffy(
             // column-gap 长写属性优先；若未设置（0px），回退到 gap 简写
             width: {
                 let col = convert_length_to_lp(&style.column_gap, vw, vh);
-                if col == taffy::style::LengthPercentage::length(0.0) {
+                if col == taffy::style::LengthPercentage::length(0.0_f32) {
                     convert_length_to_lp(&style.gap, vw, vh)
                 } else {
                     col
@@ -208,7 +208,7 @@ pub fn computed_style_to_taffy(
             // row-gap 长写属性优先；若未设置（0px），回退到 gap 简写
             height: {
                 let row = convert_length_to_lp(&style.row_gap, vw, vh);
-                if row == taffy::style::LengthPercentage::length(0.0) {
+                if row == taffy::style::LengthPercentage::length(0.0_f32) {
                     convert_length_to_lp(&style.gap, vw, vh)
                 } else {
                     row
@@ -240,7 +240,7 @@ pub fn computed_style_to_taffy(
         flex_wrap: convert_flex_wrap(&style.flex_wrap),
         flex_basis: if collapsed {
             // visibility:collapse 的 flex item 主尺寸归零（strut）。
-            taffy::style::Dimension::length(0.0)
+            taffy::style::Dimension::length(0.0_f32)
         } else {
             convert_flex_basis(&style.flex_basis, vw, vh)
         },
@@ -438,7 +438,7 @@ fn convert_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taffy::
             if let Some(pct) = extract_calc_percentage(expr) {
                 taffy::style::Dimension::percent(pct as f32 / 100.0)
             } else {
-                length(0.0)
+                length(0.0_f32)
             }
         }
         // fit-content() 将内部值转换为 dimension
@@ -447,7 +447,7 @@ fn convert_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taffy::
         // 由 layout-engine 两趟固有宽度测量在可测时把容器宽度提升到 intrinsic。
         // 不能映射为 Auto——taffy 会把 width:auto 的块级容器拉伸到可用宽度（填充），
         // 违反 max-content/min-content 的 shrink-to-fit 语义（R181c 实测 net -5）。
-        LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
+        LengthValue::MinContent | LengthValue::MaxContent => length(0.0_f32),
         // viewport 单位已在上方 resolve_viewport_px 处理
         _ => taffy::style::Dimension::auto(),
     }
@@ -480,7 +480,7 @@ fn convert_max_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taf
             if let Some(pct) = extract_calc_percentage(expr) {
                 taffy::style::Dimension::percent(pct as f32 / 100.0)
             } else {
-                length(0.0)
+                length(0.0_f32)
             }
         }
         LengthValue::FitContent(inner) => convert_max_length_to_dimension(inner, vw, vh),
@@ -502,19 +502,19 @@ fn convert_length_to_lp(value: &LengthValue, vw: f32, vh: f32) -> taffy::style::
         LengthValue::Rem(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::LengthPercentage::percent((*v / 100.0) as f32),
-        LengthValue::Auto => length(0.0), // 不接受 auto 的属性，auto 视为 0
+        LengthValue::Auto => length(0.0_f32), // 不接受 auto 的属性，auto 视为 0
         // Calc 表达式：提取百分比部分（与 convert_length_to_dimension 一致），
         // 非百分比 calc 回退 0.0。此前 calc() 被静默丢弃为 0.0（padding/border/gap 失效）。
         LengthValue::Calc(expr) => {
             if let Some(pct) = extract_calc_percentage(expr) {
                 taffy::style::LengthPercentage::percent(pct as f32 / 100.0)
             } else {
-                length(0.0)
+                length(0.0_f32)
             }
         }
         LengthValue::FitContent(inner) => convert_length_to_lp(inner, vw, vh),
-        LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
-        _ => length(0.0),
+        LengthValue::MinContent | LengthValue::MaxContent => length(0.0_f32),
+        _ => length(0.0_f32),
     }
 }
 
@@ -539,7 +539,7 @@ fn convert_length_to_lpa(
         LengthValue::Percentage(v) => taffy::style::LengthPercentageAuto::percent((*v / 100.0) as f32),
         LengthValue::Auto => {
             if resolve_auto_as_zero {
-                length(0.0)
+                length(0.0_f32)
             } else {
                 taffy::style::LengthPercentageAuto::auto()
             }
@@ -551,12 +551,12 @@ fn convert_length_to_lpa(
             if let Some(pct) = extract_calc_percentage(expr) {
                 taffy::style::LengthPercentageAuto::percent(pct as f32 / 100.0)
             } else {
-                length(0.0)
+                length(0.0_f32)
             }
         }
         LengthValue::FitContent(inner) => convert_length_to_lpa(inner, resolve_auto_as_zero, vw, vh),
-        LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
-        _ => length(0.0),
+        LengthValue::MinContent | LengthValue::MaxContent => length(0.0_f32),
+        _ => length(0.0_f32),
     }
 }
 
@@ -1332,9 +1332,11 @@ fn extract_calc_percentage(expr: &zero_css_parser::values::CalcExpr) -> Option<f
 }
 
 #[cfg(test)]
+#[allow(float_literal_f32_fallback)]
 mod tests;
 
 #[cfg(test)]
+#[allow(float_literal_f32_fallback)]
 mod inline_tests {
     use super::*;
     use zero_css_parser::values::{
@@ -1422,7 +1424,7 @@ mod inline_tests {
         style.padding_bottom = LengthValue::Px(100.0);
         style.padding_left = LengthValue::Px(100.0);
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        let zero = taffy::style::LengthPercentage::length(0.0);
+        let zero = taffy::style::LengthPercentage::length(0.0_f32);
         assert_eq!(result.padding.top, zero);
         assert_eq!(result.padding.right, zero);
         assert_eq!(result.padding.bottom, zero);
@@ -1535,7 +1537,7 @@ mod inline_tests {
         style.flex_grow = 1.0;
         style.flex_shrink = 1.0;
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.flex_basis, taffy::style::Dimension::length(0.0));
+        assert_eq!(result.flex_basis, taffy::style::Dimension::length(0.0_f32));
         assert_eq!(result.flex_grow, 0.0);
         assert_eq!(result.flex_shrink, 0.0);
     }

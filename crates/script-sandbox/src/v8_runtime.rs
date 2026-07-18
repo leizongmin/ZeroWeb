@@ -1,6 +1,6 @@
 //! V8引擎运行时实现。
 //!
-//! 封装rusty_v8，提供安全的JavaScript脚本执行沙箱。
+//! 封装 v8 crate，提供安全的JavaScript脚本执行沙箱。
 
 use std::cell::RefCell;
 use std::sync::{Arc, Once};
@@ -39,20 +39,16 @@ macro_rules! v8_try_catch_message {
 /// `Send + Sync + 'static` 以便能跨 V8 调用边界存于线程局部注册表。
 pub type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>;
 
-// 宿主回调注册表（线程局部）。rusty_v8 0.32 的 FunctionTemplate 回调须为 `Copy`
+// 宿主回调注册表（线程局部）。FunctionTemplate 回调须为 `Copy`
 //（MapFnTo<FunctionCallback>），无法捕获 Arc 状态；故回调闭包存于此注册表，
 // FunctionTemplate 经 builder().data(idx) 携带索引，fn 回调按 idx 查表调用。
 thread_local! {
     static HOST_CALLBACKS: RefCell<Vec<HostCallback>> = RefCell::new(Vec::new());
 }
 
-/// rusty_v8 FunctionTemplate 回调：按 args.data() 的索引查 HOST_CALLBACKS 调用。
-fn host_callback_invoke(
-    scope: &mut rusty_v8::HandleScope,
-    args: rusty_v8::FunctionCallbackArguments,
-    mut rv: rusty_v8::ReturnValue,
-) {
-    let idx = args.data().and_then(|d| d.integer_value(scope)).unwrap_or(-1);
+/// V8 FunctionTemplate 回调：按 args.data() 的索引查 HOST_CALLBACKS 调用。
+fn host_callback_invoke(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments, mut rv: v8::ReturnValue) {
+    let idx = args.data().integer_value(scope).unwrap_or(-1);
     if idx < 0 {
         return;
     }
@@ -61,7 +57,7 @@ fn host_callback_invoke(
         .filter_map(|i| args.get(i).to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
         .collect();
     let result = HOST_CALLBACKS.with(|cbs| cbs.borrow().get(idx as usize).map(|cb| cb(&strs)).unwrap_or_default());
-    if let Some(s) = rusty_v8::String::new(scope, &result) {
+    if let Some(s) = v8::String::new(scope, &result) {
         rv.set(s.into());
     }
 }
@@ -69,17 +65,31 @@ fn host_callback_invoke(
 /// V8平台初始化守卫（全局只初始化一次）。
 static V8_INIT: Once = Once::new();
 
+struct IsolateEnterGuard {
+    isolate: *const v8::OwnedIsolate,
+}
+
+impl Drop for IsolateEnterGuard {
+    fn drop(&mut self) {
+        // SAFETY: The guard is created only after entering this isolate, and it
+        // is dropped before the owned isolate is disposed.
+        unsafe {
+            (*self.isolate).exit();
+        }
+    }
+}
+
 /// 确保V8平台已初始化。
 fn ensure_v8_initialized() {
     V8_INIT.call_once(|| {
-        let platform = rusty_v8::new_default_platform(0, false).make_shared();
+        let platform = v8::new_default_platform(0, false).make_shared();
         // SAFETY: V8平台初始化在进程生命周期内只调用一次，
         // 且在所有Isolate创建之前完成。
         #[allow(unused_unsafe)]
         unsafe {
-            rusty_v8::V8::initialize_platform(platform);
+            v8::V8::initialize_platform(platform);
         }
-        rusty_v8::V8::initialize();
+        v8::V8::initialize();
     });
 }
 
@@ -101,12 +111,12 @@ fn ensure_v8_initialized() {
 ///
 /// V8 Isolate不是线程安全的。每个线程应创建独立的沙箱实例。
 pub struct V8Sandbox {
+    /// 缓存的 V8 Context（当 persistent_context 启用时复用）。
+    cached_context: Option<v8::Global<v8::Context>>,
     /// V8 Isolate（拥有所有权）。
-    isolate: Option<rusty_v8::OwnedIsolate>,
+    isolate: Option<v8::OwnedIsolate>,
     /// 沙箱配置。
     config: SandboxConfig,
-    /// 缓存的 V8 Context（当 persistent_context 启用时复用）。
-    cached_context: Option<rusty_v8::Global<rusty_v8::Context>>,
     /// 宿主注入的回调名 + 线程局部注册表索引（register_callback 注册），execute 时挂到全局对象。
     callbacks: Vec<(String, usize)>,
 }
@@ -124,12 +134,12 @@ impl V8Sandbox {
     pub fn with_config(config: SandboxConfig) -> Result<Self, ScriptError> {
         ensure_v8_initialized();
 
-        let mut create_params = rusty_v8::Isolate::create_params();
+        let mut create_params = v8::Isolate::create_params();
         if config.heap_limit > 0 {
             create_params = create_params.heap_limits(0, config.heap_limit);
         }
 
-        let isolate = rusty_v8::Isolate::new(create_params);
+        let isolate = v8::Isolate::new(create_params);
 
         Ok(Self {
             isolate: Some(isolate),
@@ -182,6 +192,13 @@ impl V8Sandbox {
         let cached_ptr: *mut _ = &mut self.cached_context;
 
         let isolate = self.isolate.as_mut().ok_or(ScriptError::NotInitialized)?;
+        // SAFETY: OwnedIsolate instances are entered on creation. Re-entering
+        // around each execution makes multiple sandbox instances usable on the
+        // same thread while preserving V8's stack-like enter/exit discipline.
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
 
         let start = std::time::Instant::now();
 
@@ -203,35 +220,35 @@ impl V8Sandbox {
                 None
             };
 
-        let mut hs = rusty_v8::HandleScope::new(isolate);
+        v8::scope!(let hs, isolate);
         // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
         // HandleScope 的借用仅涉及 isolate，不会修改 cached_context。
-        let context = unsafe { resolve_context(persistent, cached_ptr, &mut hs) };
-        let mut ctx_scope = rusty_v8::ContextScope::new(&mut hs, context);
-        let try_catch = &mut rusty_v8::TryCatch::new(&mut ctx_scope);
+        let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
+        let mut ctx_scope = v8::ContextScope::new(hs, context);
+        v8::tc_scope!(let try_catch, &mut ctx_scope);
 
         // 把宿主回调（register_callback 注册）挂到全局对象。无注册时为 no-op（零回归）。
         if !self.callbacks.is_empty() {
             let global = context.global(try_catch);
             for (name, idx) in &self.callbacks {
-                let data = rusty_v8::Integer::new(try_catch, *idx as i32);
-                let tmpl = rusty_v8::FunctionTemplate::builder(host_callback_invoke)
+                let data = v8::Integer::new(try_catch, *idx as i32);
+                let tmpl = v8::FunctionTemplate::builder(host_callback_invoke)
                     .data(data.into())
                     .build(try_catch);
                 let Some(function) = tmpl.get_function(try_catch) else {
                     continue;
                 };
-                if let Some(key) = rusty_v8::String::new(try_catch, name) {
+                if let Some(key) = v8::String::new(try_catch, name) {
                     let _ = global.set(try_catch, key.into(), function.into());
                 }
             }
         }
 
         // 编译脚本
-        let code_str = rusty_v8::String::new(try_catch, code)
+        let code_str = v8::String::new(try_catch, code)
             .ok_or_else(|| ScriptError::InvalidInput("failed to create V8 string".into()))?;
 
-        let script = rusty_v8::Script::compile(try_catch, code_str, None);
+        let script = v8::Script::compile(try_catch, code_str, None);
         if try_catch.has_caught() || script.is_none() {
             let msg = v8_try_catch_message!(try_catch);
             return Err(ScriptError::CompileError(msg));
@@ -287,18 +304,23 @@ impl V8Sandbox {
         let cached_ptr: *mut _ = &mut self.cached_context;
 
         let isolate = self.isolate.as_mut().ok_or(ScriptError::NotInitialized)?;
+        // SAFETY: See execute().
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
 
         let start = std::time::Instant::now();
 
-        let mut hs = rusty_v8::HandleScope::new(isolate);
-        let context = unsafe { resolve_context(persistent, cached_ptr, &mut hs) };
-        let mut ctx_scope = rusty_v8::ContextScope::new(&mut hs, context);
-        let try_catch = &mut rusty_v8::TryCatch::new(&mut ctx_scope);
+        v8::scope!(let hs, isolate);
+        let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
+        let mut ctx_scope = v8::ContextScope::new(hs, context);
+        v8::tc_scope!(let try_catch, &mut ctx_scope);
 
-        let code_str = rusty_v8::String::new(try_catch, code)
+        let code_str = v8::String::new(try_catch, code)
             .ok_or_else(|| ScriptError::InvalidInput("failed to create V8 string".into()))?;
 
-        let script = rusty_v8::Script::compile(try_catch, code_str, None);
+        let script = v8::Script::compile(try_catch, code_str, None);
         if try_catch.has_caught() || script.is_none() {
             let msg = v8_try_catch_message!(try_catch);
             return Err(ScriptError::CompileError(msg));
@@ -341,22 +363,22 @@ impl V8Sandbox {
 /// `Option<Global<Context>>`。调用方需确保两个引用不冲突。
 unsafe fn resolve_context<'s>(
     persistent: bool,
-    cached_ptr: *mut Option<rusty_v8::Global<rusty_v8::Context>>,
-    scope: &mut rusty_v8::HandleScope<'s, ()>,
-) -> rusty_v8::Local<'s, rusty_v8::Context> {
+    cached_ptr: *mut Option<v8::Global<v8::Context>>,
+    scope: &mut v8::PinScope<'s, '_, ()>,
+) -> v8::Local<'s, v8::Context> {
     let cached = unsafe { &mut *cached_ptr };
     if !persistent {
-        return rusty_v8::Context::new(scope);
+        return v8::Context::new(scope, Default::default());
     }
 
     // 尝试复用缓存的 Context
     if let Some(ref cached_ctx) = *cached {
-        return rusty_v8::Local::new(scope, cached_ctx);
+        return v8::Local::new(scope, cached_ctx);
     }
 
     // 首次执行：创建并缓存 Context
-    let context = rusty_v8::Context::new(scope);
-    *cached = Some(rusty_v8::Global::new(scope, context));
+    let context = v8::Context::new(scope, Default::default());
+    *cached = Some(v8::Global::new(scope, context));
     context
 }
 
@@ -371,15 +393,18 @@ impl V8Sandbox {
     /// 获取V8引擎版本号。
     pub fn v8_version() -> &'static str {
         ensure_v8_initialized();
-        rusty_v8::V8::get_version()
+        v8::V8::get_version()
     }
 
     /// 将V8值转换为JSON字符串。
-    fn value_to_json_string(scope: &mut rusty_v8::HandleScope, value: rusty_v8::Local<rusty_v8::Value>) -> String {
+    fn value_to_json_string(
+        scope: &mut v8::PinnedRef<v8::TryCatch<v8::HandleScope>>,
+        value: v8::Local<v8::Value>,
+    ) -> String {
         let context = scope.get_current_context();
         let global = context.global(scope);
 
-        let json_key = rusty_v8::String::new(scope, "JSON").unwrap();
+        let json_key = v8::String::new(scope, "JSON").unwrap();
         let json_val = global.get(scope, json_key.into());
 
         let Some(json_val) = json_val else {
@@ -403,7 +428,7 @@ impl V8Sandbox {
                 .unwrap_or_default();
         };
 
-        let stringify_key = rusty_v8::String::new(scope, "stringify").unwrap();
+        let stringify_key = v8::String::new(scope, "stringify").unwrap();
         let stringify_val = json_obj.get(scope, stringify_key.into());
 
         let Some(stringify_val) = stringify_val else {
@@ -420,7 +445,7 @@ impl V8Sandbox {
                 .unwrap_or_default();
         }
 
-        let Ok(stringify_fn) = rusty_v8::Local::<rusty_v8::Function>::try_from(stringify_val) else {
+        let Ok(stringify_fn) = v8::Local::<v8::Function>::try_from(stringify_val) else {
             return value
                 .to_string(scope)
                 .map(|s| s.to_rust_string_lossy(scope))
@@ -439,6 +464,13 @@ impl V8Sandbox {
                     .map(|s| s.to_rust_string_lossy(scope))
                     .unwrap_or_default()
             })
+    }
+}
+
+impl Drop for V8Sandbox {
+    fn drop(&mut self) {
+        self.cached_context = None;
+        self.isolate = None;
     }
 }
 

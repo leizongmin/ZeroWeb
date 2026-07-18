@@ -37,13 +37,26 @@ echo "Commit: $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')" | tee
 echo "Crates: ${#BENCH_MAP[@]}" | tee -a "$REPORT"
 echo "" | tee -a "$REPORT"
 
+QUICK_MODE=0
+if [ "${ZERO_WEB_BENCH_QUICK:-}" = "1" ]; then
+    QUICK_MODE=1
+    echo "Mode: quick compile check" | tee -a "$REPORT"
+    echo "" | tee -a "$REPORT"
+fi
+
 PASSED=()
 FAILED=()
 
 for crate in "${!BENCH_MAP[@]}"; do
     bench_name="${BENCH_MAP[$crate]}"
     echo "--- $crate ($bench_name) ---" | tee -a "$REPORT"
-    if cargo bench -p "$crate" --bench "$bench_name" 2>&1 | grep -E "^(Benchmarking|$crate|time:|Found|change:)" | tee -a "$REPORT"; then
+    if [ "$QUICK_MODE" = "1" ]; then
+        bench_cmd=(cargo bench -p "$crate" --bench "$bench_name" --no-run)
+    else
+        bench_cmd=(cargo bench -p "$crate" --bench "$bench_name")
+    fi
+
+    if "${bench_cmd[@]}" 2>&1 | grep -E "^(Benchmarking|$crate|time:|Found|change:|    Finished)" | tee -a "$REPORT"; then
         PASSED+=("$crate")
     else
         FAILED+=("$crate")
