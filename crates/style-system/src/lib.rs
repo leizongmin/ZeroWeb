@@ -558,6 +558,31 @@ impl StyleSystem {
                 "i" | "em" => {
                     ua_decl_inputs.push(("font-style".to_string(), "italic".to_string(), false, (0, 0, 0), None));
                 }
+                // R1691：HTML 渲染规范 UA font-style:italic 短语元素（≡ i/em，chromium UA）。
+                // address（block+italic，block 已在 display 列表）+ cite/var/dfn（inline italic）。
+                "address" | "cite" | "var" | "dfn" => {
+                    ua_decl_inputs.push(("font-style".to_string(), "italic".to_string(), false, (0, 0, 0), None));
+                }
+                // R1691：HTML 渲染规范 UA text-decoration（chromium UA）。
+                // u → underline；s/del/strike → line-through（deprecated strike ≡ s）。
+                "u" => {
+                    ua_decl_inputs.push((
+                        "text-decoration".to_string(),
+                        "underline".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                }
+                "s" | "del" | "strike" => {
+                    ua_decl_inputs.push((
+                        "text-decoration".to_string(),
+                        "line-through".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                }
                 // mark：HTML 渲染规范 UA `mark { background-color: yellow; color: black }`
                 //（高亮文本）。ZW 默认无 → <mark> 渲成普通 inline（无高亮）。R1685：补 UA 默认值
                 //（≡ pre white-space / h1 bold 谱系，specificity 0,0,0 可被作者样式覆盖）。
@@ -1691,6 +1716,42 @@ mod presentational_hint_tests {
         check("figure", em, 40.0, em, 40.0);
         check("dl", em, 0.0, em, 0.0);
         check("dd", 0.0, 0.0, 0.0, 40.0);
+    }
+
+    /// R1691：短语元素 UA font-style/text-decoration 默认（≡ i/em，chromium UA）。
+    /// address/cite/var/dfn → italic；u → underline；s/del/strike → line-through。
+    #[test]
+    fn phrase_elements_get_ua_italic_and_decoration() {
+        use crate::property::types::TextDecorationLineValue;
+        use zero_css_parser::values::FontStyleValue;
+        let doc = parse_html(
+            "<body><address>a</address><cite>c</cite><var>v</var><dfn>d</dfn>\
+             <u>u</u><s>s</s><del>x</del><strike>k</strike></body>",
+        );
+        let mut system = StyleSystem::new();
+        let styles = system.compute_styles(&doc, &[]);
+        for tag in ["address", "cite", "var", "dfn"] {
+            let id = doc.get_elements_by_tag_name(tag)[0];
+            let s = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));
+            assert!(
+                matches!(s.font_style, FontStyleValue::Italic),
+                "<{tag}> should be italic from UA, got {:?}",
+                s.font_style
+            );
+        }
+        let u = styles.get(&doc.get_elements_by_tag_name("u")[0]).unwrap();
+        assert!(
+            matches!(u.text_decoration_line, TextDecorationLineValue::Underline),
+            "<u> should be underline from UA"
+        );
+        for tag in ["s", "del", "strike"] {
+            let id = doc.get_elements_by_tag_name(tag)[0];
+            let s = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));
+            assert!(
+                matches!(s.text_decoration_line, TextDecorationLineValue::LineThrough),
+                "<{tag}> should be line-through from UA"
+            );
+        }
     }
 
     #[test]
