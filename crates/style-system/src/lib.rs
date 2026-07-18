@@ -583,6 +583,26 @@ impl StyleSystem {
                         None,
                     ));
                 }
+                // R1692：HTML 渲染规范 UA font-size/vertical-align（chromium UA `smaller` ≈0.83em，
+                // ZW 无 smaller 关键字 → 用 0.83em 显式）。ZW vertical-align:sub/super 已支持
+                //（parse + layout 基线偏移 inline/mod.rs:2173）。specificity 0,0,0 可被作者覆盖。
+                "small" => {
+                    ua_decl_inputs.push(("font-size".to_string(), "0.83em".to_string(), false, (0, 0, 0), None));
+                }
+                "sub" => {
+                    ua_decl_inputs.push(("font-size".to_string(), "0.83em".to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push(("vertical-align".to_string(), "sub".to_string(), false, (0, 0, 0), None));
+                }
+                "sup" => {
+                    ua_decl_inputs.push(("font-size".to_string(), "0.83em".to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push((
+                        "vertical-align".to_string(),
+                        "super".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                }
                 // mark：HTML 渲染规范 UA `mark { background-color: yellow; color: black }`
                 //（高亮文本）。ZW 默认无 → <mark> 渲成普通 inline（无高亮）。R1685：补 UA 默认值
                 //（≡ pre white-space / h1 bold 谱系，specificity 0,0,0 可被作者样式覆盖）。
@@ -1752,6 +1772,37 @@ mod presentational_hint_tests {
                 "<{tag}> should be line-through from UA"
             );
         }
+    }
+
+    /// R1692：small/sub/sup UA font-size/vertical-align（chromium smaller≈0.83em）。
+    #[test]
+    fn small_sub_sup_get_ua_font_size_and_vertical_align() {
+        use crate::property::types::VerticalAlignValue;
+        use zero_css_parser::values::LengthValue;
+        let doc = parse_html("<body><small>s</small><sub>b</sub><sup>p</sup></body>");
+        let mut system = StyleSystem::new();
+        system.set_viewport(800.0, 600.0);
+        let styles = system.compute_styles(&doc, &[]);
+        // 0.83em × 默认 16px ≈ 13.28px。
+        for tag in ["small", "sub", "sup"] {
+            let id = doc.get_elements_by_tag_name(tag)[0];
+            let s = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));
+            assert!(
+                matches!(s.font_size, LengthValue::Px(v) if (v - 13.28).abs() < 1.0),
+                "<{tag}> font-size should be ~13.28 (0.83em×16), got {:?}",
+                s.font_size
+            );
+        }
+        let sub = styles.get(&doc.get_elements_by_tag_name("sub")[0]).unwrap();
+        assert!(
+            matches!(sub.vertical_align, VerticalAlignValue::Sub),
+            "<sub> should be vertical-align:sub"
+        );
+        let sup = styles.get(&doc.get_elements_by_tag_name("sup")[0]).unwrap();
+        assert!(
+            matches!(sup.vertical_align, VerticalAlignValue::Super),
+            "<sup> should be vertical-align:super"
+        );
     }
 
     #[test]
