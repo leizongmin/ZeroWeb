@@ -555,6 +555,12 @@ impl StyleSystem {
                     ua_decl_inputs.push(("font-weight".to_string(), "bold".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push(("text-align".to_string(), "center".to_string(), false, (0, 0, 0), None));
                 }
+                // R1698：HTML 渲染规范 UA `caption { text-align: center }`（chromium UA）。
+                // caption 默认水平居中（caption-side 上下定位由 R1653 top_caption_extent 独立处理）。
+                // ZW 此前无 → caption 文本左对齐，与 chromium 发散。specificity 0,0,0 可被作者覆盖。
+                "caption" => {
+                    ua_decl_inputs.push(("text-align".to_string(), "center".to_string(), false, (0, 0, 0), None));
+                }
                 "i" | "em" => {
                     ua_decl_inputs.push(("font-style".to_string(), "italic".to_string(), false, (0, 0, 0), None));
                 }

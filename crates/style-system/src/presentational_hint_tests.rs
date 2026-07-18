@@ -214,6 +214,24 @@ fn code_family_gets_monospace_from_ua() {
     }
 }
 
+/// R1698：caption → UA text-align:center（chromium UA `caption { text-align: center }`）。
+/// caption-side 上下定位由 layout 独立处理（R1653），此处只验默认水平居中。
+#[test]
+fn caption_gets_text_align_center_from_ua() {
+    use crate::property::types::TextAlignValue;
+    let doc = parse_html("<body><table><caption>t</caption><tr><td>x</td></tr></table></body>");
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[]);
+    let cap = styles
+        .get(&doc.get_elements_by_tag_name("caption")[0])
+        .expect("caption styled");
+    assert!(
+        matches!(cap.text_align, TextAlignValue::Center),
+        "<caption> should be text-align:center from UA, got {:?}",
+        cap.text_align
+    );
+}
+
 #[test]
 fn heading_gets_ua_font_size_and_weight() {
     let doc = parse_html("<body><h1>Title</h1><h2>Section</h2></body>");
