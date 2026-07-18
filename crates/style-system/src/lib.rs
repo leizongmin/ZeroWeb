@@ -70,8 +70,8 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
         | "textarea" => DisplayValue::InlineBlock,
 
         // display:none
-        "script" | "style" | "link" | "meta" | "head" | "title" | "base" | "noframes" | "noscript" | "template"
-        | "dialog" => DisplayValue::None,
+        "script" | "style" | "link" | "meta" | "head" | "title" | "base" | "bgsound" | "noframes" | "noembed"
+        | "noscript" | "template" | "dialog" => DisplayValue::None,
 
         // 内联元素 — 无需覆盖（CSS 初始值即为 inline）
         _ => return None,
@@ -1357,7 +1357,8 @@ mod ua_display_tests {
     #[test]
     fn test_hidden_elements_default_to_none() {
         for tag in [
-            "script", "style", "link", "meta", "head", "title", "base", "noframes", "noscript", "template", "dialog",
+            "script", "style", "link", "meta", "head", "title", "base", "bgsound", "noframes", "noembed", "noscript",
+            "template", "dialog",
         ] {
             assert_eq!(
                 ua_default_display(tag),

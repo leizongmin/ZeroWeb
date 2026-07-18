@@ -95,15 +95,14 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1666）
+## 当前基线（2026-07-18，R1667）
 
-- **39/41 struct-check PASS**（avg diff 2.83%，font-wall baseline），41 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
+- **40/42 struct-check PASS**（avg diff 2.87%，font-wall baseline），42 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
 - **R1666 chrome-127 oracle 捕获可用**（系统 chromium 150 SIGTRAP，但 chrome-for-testing 127 经
   `PUPPETEER_EXECUTABLE_PATH` 正常——重抓 oracle 用 `PUPPETEER_EXECUTABLE_PATH=$HOME/.cache/zw-oracle-chrome/chrome-linux64/chrome`）。
-- **40-phrase-elements** R1666 新增（b/i/u/em/strong/code/big/small/tt/kbd/samp/var/sub/sup/q/cite/dfn/abbr/acronym），
-  struct PASS（diff 5.63%，残余 = sub/sup vertical-align + code/tt monospace 字体墙）。
-- **41-obsolete-elements** R1666 新增 + 修 `<dir>` UA display:block（≡ ul 块级列表；smoke 抓到第五个真 legacy bug：
-  dir 误渲染 4×60 inline 盒 sibling-overlap → R1666 加 ua_default_display block 列表 → struct FAIL→PASS，diff 4.56%）。
+- **42-special-inline** R1667 新增 + 修 `<noembed>`+`<bgsound>` UA display:none（LAYOUT_DUMP 深查抓到：
+  noembed/bgsound 误渲染应 display:none——noembed ≡ noframes/noscript R1657 谱系，bgsound IE obsolete head/void 元素；
+  struct-check 未报因无 overlap，须 LAYOUT_DUMP 才暴露）。fixture 42 struct PASS（diff 4.47%）。
 - **37-form-controls** R1659 修复 `<input>` 固有尺寸（7.03%→4.25%）+ R1660 修复 `<input>` value 文本渲染
  （4.25%→4.33%，+0.08pp font-wall 噪声但语义正确——按钮/输入框标签与值现在可见 = 「核心语义可见」）。
   struct 仍 FAIL（残余 = R109 inline-`<label>` 含 inline-block `<input>` 被拆成 block 盒的已知 entanglement）。
