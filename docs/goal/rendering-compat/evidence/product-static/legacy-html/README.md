@@ -74,6 +74,7 @@ make product-smoke-legacy
 | 48 | ruby / misc | ruby/rp/rt/picture/wbr/data（R1676；rp→display:none）|
 | 49 | details / summary | `<details>`/`<summary>` disclosure（R1684；闭合态 details 隐藏非 summary 内容）|
 | 50 | mark / highlight | `<mark>` 高亮（R1685；UA 黄底黑字 `mark{background-color:#ffff00;color:black}`）|
+| 51 | blockquote / dl / figure | `<blockquote>`/`<dl>`/`<dd>`/`<figure>` UA margins（R1690；1em 40px / dd margin-left 40px）|
 
 ### R1657 `<noframes>` display:none 修复
 
@@ -221,11 +222,14 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1685）
+## 当前基线（2026-07-18，R1690）
 
-- **48/50 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.04%，font-wall baseline），50 fixtures 覆盖
+- **49/51 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.06%，font-wall baseline），51 fixtures 覆盖
   HTML 3.2/4 + CSS1/2。2 known struct FAIL = 27-address（body/html 高度传播，R1047/R109 高风险 defer）+
   37-form-controls（R109 inline-`<label>` 含 inline-block `<input>` entanglement）。
+- **R1690 块级元素 UA margins**（HTML 渲染规范 chromium UA）：`<blockquote>`/`<figure>` margin 1em 40px、
+  `<dl>` 1em 0、`<dd>` margin-left 40px。ZW 此前仅 display:block 无 margin → 内容无缩进。fixture 51
+  实证 blockquote x=48 w=704、dd x=48（40px 缩进）、dl/figure mt=16，匹配 chromium，diff 5.16% struct PASS。
 - **R1685 `<mark>` UA 黄底黑字**（HTML 渲染规范 `mark { background-color: yellow; color: black }`）：
   ZW 默认无 → `<mark>` 渲成普通 inline（无高亮）。补 `ua_decl_inputs` mark arm 注入 `background-color:#ffff00`
   + `color:black`（≡ pre white-space / b bold 谱系，specificity 0,0,0 可被作者样式覆盖）。fixture 50

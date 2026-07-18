@@ -524,6 +524,19 @@ impl StyleSystem {
                 "p" => {
                     ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
                 }
+                // R1690：HTML 渲染规范 UA 块级元素的默认 margin（chromium UA 样式表）。
+                // ZW 此前仅给 display:block 无 margin → blockquote/dd/figure 内容无缩进，
+                // 与 chromium 发散。blockquote/figure margin 1em 40px（上下 1em + 左右 40px），
+                // dl margin 1em 0，dd margin-left 40px（margin-inline-start，垂直 0）。
+                "blockquote" | "figure" => {
+                    ua_decl_inputs.push(("margin".to_string(), "1em 40px".to_string(), false, (0, 0, 0), None));
+                }
+                "dl" => {
+                    ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
+                }
+                "dd" => {
+                    ua_decl_inputs.push(("margin".to_string(), "0 0 0 40px".to_string(), false, (0, 0, 0), None));
+                }
                 // pre/xmp/listing/plaintext：HTML 渲染规范 UA 样式表 white-space:pre（保留空白/换行）。
                 // R1658：ZW default_impl white_space 默认 Normal，故 <pre> 此前折叠空白/换行（真 bug）。
                 // 仅 white-space:pre（monospace 字体属 font-wall 高方差，单独 A/B 切片）。
@@ -1637,6 +1650,47 @@ mod presentational_hint_tests {
             style.font_weight,
             zero_css_parser::values::FontWeightValue::Bold
         ));
+    }
+
+    /// R1690：块级元素的 UA 默认 margin（chromium UA 样式表）。ZW 此前无 → blockquote/dd/figure
+    /// 无缩进。钉死 blockquote/figure margin 1em 40px、dl 1em 0、dd margin-left 40px。
+    #[test]
+    fn blockquote_dd_figure_dl_get_ua_margins() {
+        use zero_css_parser::values::LengthValue;
+        let doc = parse_html("<body><blockquote>q</blockquote><dl><dt>t</dt><dd>d</dd></dl><figure>f</figure></body>");
+        let mut system = StyleSystem::new();
+        system.set_viewport(800.0, 600.0);
+        let styles = system.compute_styles(&doc, &[]);
+        let em = 16.0; // 默认 font-size 16px
+        let check = |tag: &str, mt: f64, mr: f64, mb: f64, ml: f64| {
+            let id = doc.get_elements_by_tag_name(tag)[0];
+            let s = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));
+            assert!(
+                matches!(s.margin_top, LengthValue::Px(v) if (v - mt).abs() < 0.5),
+                "<{tag}> margin-top should be {mt}, got {:?}",
+                s.margin_top
+            );
+            assert!(
+                matches!(s.margin_right, LengthValue::Px(v) if (v - mr).abs() < 0.5),
+                "<{tag}> margin-right should be {mr}, got {:?}",
+                s.margin_right
+            );
+            assert!(
+                matches!(s.margin_bottom, LengthValue::Px(v) if (v - mb).abs() < 0.5),
+                "<{tag}> margin-bottom should be {mb}, got {:?}",
+                s.margin_bottom
+            );
+            assert!(
+                matches!(s.margin_left, LengthValue::Px(v) if (v - ml).abs() < 0.5),
+                "<{tag}> margin-left should be {ml}, got {:?}",
+                s.margin_left
+            );
+        };
+        // 1em = 16px（默认 font-size）。
+        check("blockquote", em, 40.0, em, 40.0);
+        check("figure", em, 40.0, em, 40.0);
+        check("dl", em, 0.0, em, 0.0);
+        check("dd", 0.0, 0.0, 0.0, 40.0);
     }
 
     #[test]
