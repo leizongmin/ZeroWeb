@@ -95,9 +95,9 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1667）
+## 当前基线（2026-07-18，R1668）
 
-- **40/42 struct-check PASS**（avg diff 2.87%，font-wall baseline），42 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
+- **41/43 struct-check PASS**（avg diff 2.93%，font-wall baseline），43 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
 - **R1666 chrome-127 oracle 捕获可用**（系统 chromium 150 SIGTRAP，但 chrome-for-testing 127 经
   `PUPPETEER_EXECUTABLE_PATH` 正常——重抓 oracle 用 `PUPPETEER_EXECUTABLE_PATH=$HOME/.cache/zw-oracle-chrome/chrome-linux64/chrome`）。
 - **42-special-inline** R1667 新增 + 修 `<noembed>`+`<bgsound>` UA display:none（LAYOUT_DUMP 深查抓到：
