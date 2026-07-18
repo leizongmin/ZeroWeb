@@ -10,7 +10,7 @@ use zero_protocol::{
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::image_cache::decode_image_bytes;
+use zero_render_foundation::image_cache::{decode_data_uri, decode_image_bytes};
 use zero_render_foundation::primitive::{
     BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FilterKind, FilterPrimitive, GradientKind, GradientPrimitive,
     LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, RenderPrimitives, ShadowPrimitive, StrokePrimitive,
@@ -153,9 +153,6 @@ where
     let mut seen = std::collections::HashSet::new();
 
     for src in extract_img_srcs(html) {
-        if src.starts_with("data:") {
-            continue;
-        }
         let resolved = resolve_document_url(page_url, &src);
         let key = image_resource_key(&resolved, None);
         if !seen.insert(key) {
@@ -163,6 +160,12 @@ where
         }
         let data = if let Some(img) = cache.get(&ImageKey::new(key)) {
             img.clone()
+        } else if src.starts_with("data:") {
+            // R1705：data URI 自包含（无文件系统/网络），inline 解码（不经 fetch 回调）。
+            match decode_data_uri(&resolved) {
+                Ok(data) => data,
+                Err(_) => continue,
+            }
         } else if let Some(body) = fetch(&resolved) {
             match decode_image_bytes(&body) {
                 Ok(data) => data,

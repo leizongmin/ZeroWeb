@@ -15,7 +15,7 @@ use zero_engine::RenderPipeline;
 use zero_engine::paint::simple_hash;
 use zero_render_foundation::cpu::render_full_scene;
 use zero_render_foundation::font::cache::GlyphCache;
-use zero_render_foundation::image_cache::{decode_image_bytes, ImageCache, ImageData, ImageKey};
+use zero_render_foundation::image_cache::{decode_data_uri, ImageCache, ImageData, ImageKey};
 use zero_render_foundation::surface::FrameBuffer;
 
 use crate::manifest::FuzzyMeta;

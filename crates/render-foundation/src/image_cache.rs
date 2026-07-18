@@ -451,6 +451,51 @@ pub fn decode_image_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     }
 }
 
+/// R1705：解析 `data:` URI 并解码为 `ImageData`（renderer 多进程路径 + wpt-runner 共用）。
+///
+/// `data:[<mediatype>][;base64],<payload>` —— header 含 `base64` 则 base64 解码 payload，
+/// 否则按字节 percent-decode（%XX）。所得字节交 `decode_image_bytes` 按 magic 分派
+///（PNG/JPEG/SVG）。无逗号或解码失败返回 Err（调用方降级，不阻断页面）。
+pub fn decode_data_uri(src: &str) -> Result<ImageData, String> {
+    let Some(comma) = src.find(',') else {
+        return Err("data URI 缺逗号分隔符".to_string());
+    };
+    let header = &src[..comma];
+    let payload = &src[comma + 1..];
+    let bytes: Vec<u8> = if header.contains("base64") {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .map_err(|e| format!("data URI base64 解码失败: {e}"))?
+    } else {
+        percent_decode_bytes(payload)
+    };
+    decode_image_bytes(&bytes)
+}
+
+/// 字节级 percent-decode（%XX → byte）；非 % 字节原样保留（data URI 非 base64 payload）。
+fn percent_decode_bytes(input: &str) -> Vec<u8> {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let Ok(b) = u8::from_str_radix(
+                std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""),
+                16,
+            )
+        {
+            out.push(b);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
 /// 嗅探字节是否为 SVG（文本，跳过 UTF-8 BOM 与前导空白后以 `<svg` 或 `<?xml` 开头）。
 ///
 /// `<?xml` 声明不一定是 SVG，但在图片加载上下文中非 PNG/JPEG 的 XML 应尝试 SVG
@@ -779,6 +824,25 @@ mod decode_tests {
             result.unwrap_err().contains("unsupported"),
             "should report unsupported format"
         );
+    }
+
+    /// R1705：`decode_data_uri` base64 PNG → ImageData（renderer + wpt-runner 共用入口）。
+    #[test]
+    fn decode_data_uri_base64_png() {
+        use base64::Engine;
+        let png = red_2x2_png();
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+        let src = format!("data:image/png;base64,{b64}");
+        let img = decode_data_uri(&src).expect("base64 PNG data URI should decode");
+        assert_eq!(img.width, 2);
+        assert_eq!(img.height, 2);
+        assert_eq!(&img.pixels[..4], &[255, 0, 0, 255]); // 红
+    }
+
+    /// R1705：无逗号的非法 data URI → Err（调用方降级，不阻断）。
+    #[test]
+    fn decode_data_uri_missing_comma_is_err() {
+        assert!(decode_data_uri("data:image/png;base64").is_err());
     }
 
     /// 4×3 纯绿 SVG（含 `<?xml` 声明）栅格化往返：断言绿色主导 + alpha=255。

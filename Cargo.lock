@@ -6305,6 +6305,7 @@ dependencies = [
 name = "zero-render-foundation"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bytemuck",
  "criterion",
  "flate2",
