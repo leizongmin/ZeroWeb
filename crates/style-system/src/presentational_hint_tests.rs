@@ -125,15 +125,15 @@ fn blockquote_dd_figure_dl_get_ua_margins() {
     check("dd", 0.0, 0.0, 0.0, 40.0);
 }
 
-/// R1691：短语元素 UA font-style/text-decoration 默认（≡ i/em，chromium UA）。
-/// address/cite/var/dfn → italic；u → underline；s/del/strike → line-through。
+/// R1691/R1697：短语元素 UA font-style/text-decoration 默认（≡ i/em，chromium UA）。
+/// address/cite/var/dfn → italic；u|ins → underline；s/del/strike → line-through。
 #[test]
 fn phrase_elements_get_ua_italic_and_decoration() {
     use crate::property::types::TextDecorationLineValue;
     use zero_css_parser::values::FontStyleValue;
     let doc = parse_html(
         "<body><address>a</address><cite>c</cite><var>v</var><dfn>d</dfn>\
-             <u>u</u><s>s</s><del>x</del><strike>k</strike></body>",
+             <u>u</u><ins>i</ins><s>s</s><del>x</del><strike>k</strike></body>",
     );
     let mut system = StyleSystem::new();
     let styles = system.compute_styles(&doc, &[]);
@@ -146,11 +146,16 @@ fn phrase_elements_get_ua_italic_and_decoration() {
             s.font_style
         );
     }
-    let u = styles.get(&doc.get_elements_by_tag_name("u")[0]).unwrap();
-    assert!(
-        matches!(u.text_decoration_line, TextDecorationLineValue::Underline),
-        "<u> should be underline from UA"
-    );
+    // R1697：ins 与 u 同组 underline（chromium UA `u, ins { text-decoration: underline }`）。
+    for tag in ["u", "ins"] {
+        let id = doc.get_elements_by_tag_name(tag)[0];
+        let s = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));
+        assert!(
+            matches!(s.text_decoration_line, TextDecorationLineValue::Underline),
+            "<{tag}> should be underline from UA, got {:?}",
+            s.text_decoration_line
+        );
+    }
     for tag in ["s", "del", "strike"] {
         let id = doc.get_elements_by_tag_name(tag)[0];
         let s = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));

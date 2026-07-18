@@ -563,9 +563,10 @@ impl StyleSystem {
                 "address" | "cite" | "var" | "dfn" => {
                     ua_decl_inputs.push(("font-style".to_string(), "italic".to_string(), false, (0, 0, 0), None));
                 }
-                // R1691：HTML 渲染规范 UA text-decoration（chromium UA）。
-                // u → underline；s/del/strike → line-through（deprecated strike ≡ s）。
-                "u" => {
+                // R1691/R1697：HTML 渲染规范 UA text-decoration（chromium UA）。
+                // u|ins → underline；s/del/strike → line-through（deprecated strike ≡ s）。
+                // ins 是 del 的对称对（编辑标记：插入/删除），chromium UA 把 ins 与 u 同组 underline。
+                "u" | "ins" => {
                     ua_decl_inputs.push((
                         "text-decoration".to_string(),
                         "underline".to_string(),
