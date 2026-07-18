@@ -157,37 +157,55 @@ fn multicol_balance_target_height(num_lines: usize, col_count: usize, total_heig
     }
 }
 
-/// R1022：收集 `<ruby>` owner 的 `<rt>` 后代文本作 annotation。
+/// R1689：收集 `<ruby>` 的 per-segment annotation —— 按 DOM 序遍历 ruby 直接子，每个 `<rt>`
+/// 配对其**前**累积的 base 文本段，返回 `[(base_segment, annotation)]`。
 ///
-/// 返回非空白字符序列（rt 标记逐字符配对 rb 文本，paint 期上移到 rb 之上）。
-/// owner 非 ruby 元素或无 rt 文本时返回 None。
-fn ruby_annotation_chars(doc: &Document, owner_id: NodeId) -> Option<Vec<char>> {
+/// 匹配 CSS Ruby 语义：`<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>` → [("漢","かん"),("字","じ")]，
+/// 每个 annotation 居中于对应 base segment（非整 base 扁平化）。whole-word ruby
+/// `<ruby>漢字<rt>かんじ</rt></ruby>` → 单 segment [("漢字","かんじ")]。owner 非 ruby 或
+/// 无 rt 时返回 None（paint 走普通文本路径）。base/annotation 去空白字符。
+fn ruby_annotation_segments(doc: &Document, owner_id: NodeId) -> Option<Vec<(String, String)>> {
     let owner = doc.get(owner_id)?;
     if !matches!(&owner.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("ruby")) {
         return None;
     }
-    let mut text = String::new();
-    collect_ruby_rt_text(doc, owner_id, &mut text);
-    let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
-    if chars.is_empty() { None } else { Some(chars) }
-}
-
-/// 递归收集 `id` 子树内所有 `<rt>` 元素的文本。
-fn collect_ruby_rt_text(doc: &Document, id: NodeId, out: &mut String) {
-    for child_id in doc.child_nodes(id) {
-        if let Some(node) = doc.get(child_id)
-            && let NodeKind::Element(elem) = &node.kind
-        {
-            if elem.local_name().eq_ignore_ascii_case("rt") {
-                if let Some(t) = doc.text_content(child_id) {
-                    out.push_str(&t);
+    let mut segs: Vec<(String, String)> = Vec::new();
+    let mut base_buf = String::new();
+    for child_id in doc.child_nodes(owner_id) {
+        let Some(node) = doc.get(child_id) else {
+            continue;
+        };
+        match &node.kind {
+            NodeKind::Element(elem) => {
+                let name = elem.local_name();
+                if name.eq_ignore_ascii_case("rt") {
+                    // rt 配对其前累积的 base 段（CSS Ruby：rt 标注其前 base）。
+                    let annot: String = doc
+                        .text_content(child_id)
+                        .unwrap_or_default()
+                        .chars()
+                        .filter(|c| !c.is_whitespace())
+                        .collect();
+                    let base: String = std::mem::take(&mut base_buf)
+                        .chars()
+                        .filter(|c| !c.is_whitespace())
+                        .collect();
+                    segs.push((base, annot));
+                } else if name.eq_ignore_ascii_case("rp") || name.eq_ignore_ascii_case("rtc") {
+                    // rp 已 display:none（R1676）；rtc 多 annotation 超出 simple ruby scope，跳过。
+                } else {
+                    // 嵌套元素（含嵌套 ruby）的文本累积进当前 base 段。
+                    if let Some(t) = doc.text_content(child_id) {
+                        base_buf.push_str(&t);
+                    }
                 }
-            } else {
-                // 递归查找嵌套 ruby 中的 rt（如 ruby 嵌套）
-                collect_ruby_rt_text(doc, child_id, out);
             }
+            NodeKind::Text(t) => base_buf.push_str(&t.content),
+            _ => {}
         }
     }
+    // 尾部 base（无后续 rt）无 annotation，丢弃（chromium 亦不标注）。
+    if segs.is_empty() { None } else { Some(segs) }
 }
 
 impl super::Painter {
@@ -1408,8 +1426,9 @@ impl super::Painter {
                                         )
                                     })
                                     .unwrap_or(true);
-                                // R1022：ruby annotation —— owner 为 <ruby> 时，rt 后代文本逐字符上移。
-                                let ruby_marks: Option<Vec<char>> = ruby_annotation_chars(doc, owner_id);
+                                // R1689：ruby per-segment annotation —— owner 为 <ruby> 时，
+                                // 每个 rt 配对其前 base 段，annotation 居中于对应 base segment。
+                                let ruby_segs: Option<Vec<(String, String)>> = ruby_annotation_segments(doc, owner_id);
 
                                 let frag_base_x = content_x + fragment.x + col_x_offset + tx;
                                 // 行盒顶部 = (line.y - col_start_y)；基线偏移 v_offset
@@ -1498,33 +1517,43 @@ impl super::Painter {
                                         if ch == ' ' { w + word_spacing } else { w }
                                     })
                                     .sum();
-                                // R1688：ruby annotation —— segment-centered（替代 R1022 逐字符 pairing）。
-                                // chromium 把整个 rt 注音居中于整个 base segment 上方（非逐字配对）。
-                                // base fragment owner = ruby（collect_inline_items TextRun.node_id=child_id），
-                                // ruby_annotation_chars 收集 rt 后代文本。rt_fs=base×0.5，居中于 base 宽。
-                                if let Some(marks) = ruby_marks.as_ref()
-                                    && !marks.is_empty()
+                                // R1689：ruby per-segment annotation —— 每个 rt 居中于其前 base 段
+                                //（替代 R1688 整 base 扁平化居中，解 per-kanji Japanese ruby）。
+                                // seg_x_start 按各 base 段字符宽累积，annotation 居中于 [start, start+seg_w]。
+                                if let Some(segs) = ruby_segs.as_ref()
+                                    && !segs.is_empty()
                                 {
                                     let rt_fs = fragment.font_size * 0.5;
                                     let rt_y = frag_base_y - fragment.font_size;
-                                    let annot_w: f32 = marks
-                                        .iter()
-                                        .map(|&c| measure_char_for_paint(c, rt_fs, frag_is_ahem))
-                                        .sum();
-                                    let mut ax = frag_base_x + (text_width - annot_w) / 2.0;
-                                    for &rc in marks {
-                                        self.primitives.add_glyph(GlyphPrimitive {
-                                            x: ax,
-                                            y: rt_y,
-                                            font_size: rt_fs,
-                                            color: frag_color,
-                                            glyph_id: rc as u32,
-                                            font_id: default_font_id,
-                                            bitmap_width: None,
-                                            bitmap_height: None,
-                                            rotation,
-                                        });
-                                        ax += measure_char_for_paint(rc, rt_fs, frag_is_ahem);
+                                    let mut seg_x = frag_base_x;
+                                    for (base, annot) in segs {
+                                        let seg_w: f32 = base
+                                            .chars()
+                                            .map(|c| measure_char_for_paint(c, fragment.font_size, frag_is_ahem))
+                                            .sum::<f32>()
+                                            + letter_spacing * base.chars().count() as f32;
+                                        if !annot.is_empty() {
+                                            let annot_w: f32 = annot
+                                                .chars()
+                                                .map(|c| measure_char_for_paint(c, rt_fs, frag_is_ahem))
+                                                .sum();
+                                            let mut ax = seg_x + (seg_w - annot_w) / 2.0;
+                                            for rc in annot.chars() {
+                                                self.primitives.add_glyph(GlyphPrimitive {
+                                                    x: ax,
+                                                    y: rt_y,
+                                                    font_size: rt_fs,
+                                                    color: frag_color,
+                                                    glyph_id: rc as u32,
+                                                    font_id: default_font_id,
+                                                    bitmap_width: None,
+                                                    bitmap_height: None,
+                                                    rotation,
+                                                });
+                                                ax += measure_char_for_paint(rc, rt_fs, frag_is_ahem);
+                                            }
+                                        }
+                                        seg_x += seg_w;
                                     }
                                 }
                                 self.paint_text_decoration_from_style(
@@ -1622,8 +1651,8 @@ impl super::Painter {
                                     TextEmphasisPositionValue::OverRight | TextEmphasisPositionValue::OverLeft
                                 ))
                                 .unwrap_or(true);
-                            // R1022：ruby annotation —— owner 为 <ruby> 时，rt 后代文本逐字符上移。
-                            let ruby_marks: Option<Vec<char>> = ruby_annotation_chars(doc, owner_id);
+                            // R1689：ruby per-segment annotation（替代 R1022 逐字符 + R1688 整 base 居中）。
+                            let ruby_segs: Option<Vec<(String, String)>> = ruby_annotation_segments(doc, owner_id);
 
                             let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
                                 (content_x + $frag_x + tx, content_y + $frag_y + ty, true)
@@ -1650,32 +1679,43 @@ impl super::Painter {
                                     if ch == ' ' { w + word_spacing } else { w }
                                 })
                                 .sum();
-                            // R1688：ruby annotation —— segment-centered（替代 R1022 逐字符 pairing）。
-                            // chromium 整 rt 注音居中于整个 base segment 上方。水平书写模式 only。
+                            // R1689：ruby per-segment annotation —— 每个 rt 居中于其前 base 段
+                            //（替代 R1688 整 base 扁平化居中，解 per-kanji Japanese ruby）。水平 only。
                             if !char_advance_is_y
-                                && let Some(marks) = ruby_marks.as_ref()
-                                && !marks.is_empty()
+                                && let Some(segs) = ruby_segs.as_ref()
+                                && !segs.is_empty()
                             {
                                 let rt_fs = $frag_fs * 0.5;
                                 let rt_y = frag_base_y - $frag_fs;
-                                let annot_w: f32 = marks
-                                    .iter()
-                                    .map(|&c| measure_char_for_paint(c, rt_fs, $is_ahem))
-                                    .sum();
-                                let mut ax = frag_base_x + (text_width - annot_w) / 2.0;
-                                for &rc in marks {
-                                    self.primitives.add_glyph(GlyphPrimitive {
-                                        x: ax,
-                                        y: rt_y,
-                                        font_size: rt_fs,
-                                        color: frag_color,
-                                        glyph_id: rc as u32,
-                                        font_id: frag_font_id,
-                                        bitmap_width: None,
-                                        bitmap_height: None,
-                                        rotation,
-                                    });
-                                    ax += measure_char_for_paint(rc, rt_fs, $is_ahem);
+                                let mut seg_x = frag_base_x;
+                                for (base, annot) in segs {
+                                    let seg_w: f32 = base
+                                        .chars()
+                                        .map(|c| measure_char_for_paint(c, $frag_fs, $is_ahem))
+                                        .sum::<f32>()
+                                        + letter_spacing * base.chars().count() as f32;
+                                    if !annot.is_empty() {
+                                        let annot_w: f32 = annot
+                                            .chars()
+                                            .map(|c| measure_char_for_paint(c, rt_fs, $is_ahem))
+                                            .sum();
+                                        let mut ax = seg_x + (seg_w - annot_w) / 2.0;
+                                        for rc in annot.chars() {
+                                            self.primitives.add_glyph(GlyphPrimitive {
+                                                x: ax,
+                                                y: rt_y,
+                                                font_size: rt_fs,
+                                                color: frag_color,
+                                                glyph_id: rc as u32,
+                                                font_id: frag_font_id,
+                                                bitmap_width: None,
+                                                bitmap_height: None,
+                                                rotation,
+                                            });
+                                            ax += measure_char_for_paint(rc, rt_fs, $is_ahem);
+                                        }
+                                    }
+                                    seg_x += seg_w;
                                 }
                             }
 
@@ -2451,5 +2491,57 @@ mod r1424_tests {
             (multicol_balance_target_height(44, 0, 880.0) - 880.0).abs() < 0.01,
             "col_count=0 回退 total（防 panic）"
         );
+    }
+}
+
+#[cfg(test)]
+mod r1689_ruby_segment_tests {
+    use super::ruby_annotation_segments;
+
+    fn first_ruby_owner(html: &str) -> zero_dom::Document {
+        let doc = zero_dom::parse_html(html);
+        // 返回 doc（caller 用 get_elements_by_tag_name 取 ruby）；为简化直接重建。
+        doc
+    }
+
+    /// R1689：per-kanji ruby → 每个 rt 配对其前 base 段。
+    #[test]
+    fn per_kanji_ruby_segments_pair_rt_with_preceding_base() {
+        let doc = first_ruby_owner("<body><ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby></body>");
+        let ruby = doc.get_elements_by_tag_name("ruby")[0];
+        let segs = ruby_annotation_segments(&doc, ruby).expect("ruby has segments");
+        assert_eq!(segs.len(), 2, "per-kanji ruby → 2 segments");
+        assert_eq!(segs[0], ("漢".to_string(), "かん".to_string()));
+        assert_eq!(segs[1], ("字".to_string(), "じ".to_string()));
+    }
+
+    /// whole-word ruby → 单 segment，整 base 配整 annotation。
+    #[test]
+    fn whole_word_ruby_single_segment() {
+        let doc = first_ruby_owner("<body><ruby>漢字<rt>かんじ</rt></ruby></body>");
+        let ruby = doc.get_elements_by_tag_name("ruby")[0];
+        let segs = ruby_annotation_segments(&doc, ruby).expect("ruby has segment");
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0], ("漢字".to_string(), "かんじ".to_string()));
+    }
+
+    /// 非 ruby owner → None（paint 走普通文本路径）。
+    #[test]
+    fn non_ruby_owner_returns_none() {
+        let doc = first_ruby_owner("<body><p>text</p></body>");
+        let p = doc.get_elements_by_tag_name("p")[0];
+        assert!(ruby_annotation_segments(&doc, p).is_none());
+    }
+
+    /// rp（display:none）不参与分段（括号 fallback 不算 annotation）。
+    #[test]
+    fn rp_excluded_from_segments() {
+        let doc = first_ruby_owner("<body><ruby>漢<rt>kan</rt><rp>(</rp><rt>字</rt><rp>)</rp></ruby></body>");
+        let ruby = doc.get_elements_by_tag_name("ruby")[0];
+        let segs = ruby_annotation_segments(&doc, ruby).expect("segments");
+        // 两个 rt → 2 segments；rp 文本不计入。
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[0].1, "kan");
+        assert_eq!(segs[1].1, "字");
     }
 }
