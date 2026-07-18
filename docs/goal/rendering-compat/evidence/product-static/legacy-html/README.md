@@ -148,6 +148,33 @@ meter **22.4×18→82×18**（80+2 border），struct PASS。
 跨 select/object/embed/applet/progress/meter——ZW 当前无任何元素抑制子节点，select/option latent gap）；
 ③ object/embed/applet width/height attr sizing（R1668 Bug B，低 ROI）。
 
+### R1671 `<progress>`/`<meter>` value 填充条绘制（paint 半，≡ R1660 paint_input_value；sizing+paint 两轮收尾）
+
+承接 R1670 forward ①「value-bar/gauge 绘制（paint 半）」。**新增** [`controls.rs`](../../../../../crates/engine/src/paint/painter/controls.rs)
+（`text.rs` 已 2438 行超 2000 行限，独立成文件 per CLAUDE.md §5）含 `paint_progress_meter_value`。
+progress 按 value/max 比例绘填充条，meter 按 value/(max-min) 比例 + HTML §4.10.16 三区域算法（green/
+yellow/red）着色。**chrome-127 oracle 实测颜色**：progress value `#0075FF`（accent 蓝，(0,117,255)）+
+track `#EFEFEF`；meter green `(16,124,16)`（value=0.3 在 [low=0.2,high=0.8]，optimum=0.5 同段 → green）。
+R1670 track bg `#d5d5d5`→`#efefef`（chrome 实测校正）。
+
+**调用时序关键**：`paint_progress_meter_value` 须在 `paint_text` **之后**调用——bar 覆盖 fallback 文本
+（ZW 无 replaced 子节点抑制机制，fallback 仍 layout+paint；bar 后绘覆盖之，近似 chromium 不显示 fallback）。
+indeterminate progress（无 value 属性）不绘条。
+
+**diff 5.05%→4.76%（-0.29pp，paint 半把 R1670 +0.58pp 收回近半）**：ZW 现 #0075FF progress 填充条（60%=96px）+
+green meter 填充条（30%=24px）+ #efefef track，颜色精确匹配 chrome。残余 +0.29pp（vs R1669 baseline 4.47%）=
+track 边框/高度 UA-appearance 保真（ZW 162×18 含 border vs chrome 160×16 recessed track），精确 UA-appearance
+rendering 是 forward。
+
+**A/B**：CSS2 oracle bit-identical **net-0**（6283 案，oracle-pass 4458/71.6% ↔ R1668/R1669/R1670 baseline 零变化）。
+**门禁全绿**：fmt / clippy --workspace --all-targets -D warnings clean / make test 0 failed / product-smoke welcome
+struct PASS 字节一致 / legacy smoke 仅 45 变化（4.76%）。**sizing+paint 两轮收尾**（progress/meter 现完整渲染：
+track + value 条，≡ input R1659 sizing + R1660 value-paint 谱系）。
+
+**forward**：① **replaced 元素子节点抑制机制**（tree.rs 架构，跨 select/object/embed/applet/progress/meter——
+彻底隐藏 fallback 而非 bar 覆盖）；② track UA-appearance 精确保真（recessed 边框/高度）；③ object/embed/applet
+width/height attr sizing（R1668 Bug B）。
+
 ## oracle
 
 `oracle/*.png` — chrome-for-testing 127 截图（800×600）。重抓：
@@ -160,13 +187,16 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1670）
+## 当前基线（2026-07-18，R1671）
 
-- **44/46 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.01%，font-wall baseline），46 fixtures 覆盖
+- **44/46 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 2.99%，font-wall baseline），46 fixtures 覆盖
   HTML 3.2/4 + CSS1/2。2 known struct FAIL = 27-address（body/html 高度传播，R1047/R109 高风险 defer）+
   37-form-controls（R109 inline-`<label>` 含 inline-block `<input>` entanglement）。
-- **R1670 progress/meter sizing 半**（≡ R1659 input 谱系；value-bar paint + 子节点抑制 forward）：progress/meter
-  → InlineBlock UA + 固有尺寸（progress 160×16 / meter 80×16，chrome-127 oracle 实测）+ track 外观。
+- **R1671 progress/meter value 填充条绘制**（paint 半，≡ R1660 paint_input_value；sizing+paint 两轮收尾）：
+  新增 `controls.rs::paint_progress_meter_value`，progress #0075FF / meter 三区域 green-yellow-red，chrome-127
+  oracle 实测颜色精确匹配；track bg #d5d5d5→#efefef 校正。fixture 45 diff 5.05%→4.76%。
+- **R1670 progress/meter sizing 半**（≡ R1659 input 谱系）：progress/meter → InlineBlock UA + 固有尺寸
+  （progress 160×16 / meter 80×16，chrome-127 oracle 实测）+ track 外观。
 - **R1669 新增 3 fixture + 3 display 修复**（详见下 R1669 段）：`<area>`+`<frame>`→display:none +
   `<keygen>`→inline-block UA + 固有尺寸（R1659 input 谱系）。
 - **46-frameset 是 probe**（非 font-wall）：diff ~100% 是 inherent——chrome 用默认 canvas bg `#DDDDDD` +

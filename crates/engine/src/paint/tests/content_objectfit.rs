@@ -516,3 +516,135 @@ fn paint_input_value_non_input_element_skipped() {
     // 非 <input> 元素 → 不渲染。
     assert_eq!(painter.primitives.glyphs.len(), before);
 }
+
+// ── R1671：`<progress>`/`<meter>` value 填充条绘制（≡ R1660 paint_input_value 测试谱系）──
+
+/// 辅助：取首个 progress/meter 元素 NodeId。
+fn first_progress_meter(html: &str, tag: &str) -> (zero_dom::Document, zero_dom::NodeId) {
+    let doc = zero_dom::parse_html(html);
+    let id = doc.get_elements_by_tag_name(tag)[0];
+    (doc, id)
+}
+
+#[test]
+fn paint_progress_value_bar_proportion_and_color() {
+    // value=60 max=100 → 60% 填充条，#0075FF（chrome-127 oracle 实测）。
+    let (doc, prog) = first_progress_meter(r#"<body><progress value="60" max="100"></progress></body>"#, "progress");
+    let mut painter = Painter::new();
+    let style = ComputedStyle::default();
+    // track content-box 160×16（R1670 固有尺寸，border/padding=0 简化）。
+    let mut box_node = make_box(160.0, 16.0);
+    box_node.node_id = Some(prog);
+    let before = painter.primitives.fills.len();
+    painter.paint_progress_meter_value(&box_node, 0.0, 0.0, &style, &doc);
+    assert_eq!(
+        painter.primitives.fills.len(),
+        before + 1,
+        "progress 应生成 1 个 value 填充条"
+    );
+    let fill = &painter.primitives.fills[before];
+    // bar 宽 = 0.6 × 160 = 96px（≈ 容差 0.5px 取整）。
+    assert!(
+        (fill.rect.size.width - 96.0).abs() < 1.0,
+        "progress bar 宽应 ≈ 96px（60% of 160），实际 {}",
+        fill.rect.size.width
+    );
+    // 颜色 #0075FF = (0,117,255)。
+    assert_eq!((fill.color.r, fill.color.g, fill.color.b), (0, 117, 255));
+}
+
+#[test]
+fn paint_progress_indeterminate_no_value_no_bar() {
+    // 无 value 属性 = indeterminate progress → 不绘条（超出本 slice scope）。
+    let (doc, prog) = first_progress_meter("<body><progress max=\"100\"></progress></body>", "progress");
+    let mut painter = Painter::new();
+    let style = ComputedStyle::default();
+    let mut box_node = make_box(160.0, 16.0);
+    box_node.node_id = Some(prog);
+    let before = painter.primitives.fills.len();
+    painter.paint_progress_meter_value(&box_node, 0.0, 0.0, &style, &doc);
+    assert_eq!(
+        painter.primitives.fills.len(),
+        before,
+        "indeterminate progress 不应绘 value 条"
+    );
+}
+
+#[test]
+fn paint_meter_color_three_regions() {
+    let style = ComputedStyle::default();
+    // green：value 与 optimum 同在 mid 段（low≤v≤high，low≤opt≤high）。
+    let (doc_green, m_green) = first_progress_meter(
+        r#"<body><meter value="0.3" min="0" max="1" low="0.2" high="0.8" optimum="0.5"></meter></body>"#,
+        "meter",
+    );
+    let mut painter = Painter::new();
+    let mut b = make_box(80.0, 16.0);
+    b.node_id = Some(m_green);
+    let before = painter.primitives.fills.len();
+    painter.paint_progress_meter_value(&b, 0.0, 0.0, &style, &doc_green);
+    assert_eq!(painter.primitives.fills.len(), before + 1);
+    assert_eq!(
+        (
+            painter.primitives.fills[before].color.r,
+            painter.primitives.fills[before].color.g,
+            painter.primitives.fills[before].color.b
+        ),
+        (16, 124, 16),
+        "value 在 mid + optimum 在 mid → green (chrome-127 实测)"
+    );
+
+    // yellow：value 在 low 段（v<low），optimum 在 mid → 相邻段。
+    let (doc_yellow, m_yellow) = first_progress_meter(
+        r#"<body><meter value="0.1" min="0" max="1" low="0.2" high="0.8" optimum="0.5"></meter></body>"#,
+        "meter",
+    );
+    let mut painter = Painter::new();
+    let mut b = make_box(80.0, 16.0);
+    b.node_id = Some(m_yellow);
+    let before = painter.primitives.fills.len();
+    painter.paint_progress_meter_value(&b, 0.0, 0.0, &style, &doc_yellow);
+    assert_eq!(painter.primitives.fills.len(), before + 1);
+    let yc = &painter.primitives.fills[before].color;
+    assert!(
+        yc.g > 100 && yc.r > yc.g,
+        "value 在 low 段 + optimum 在 mid → yellow/amber（R>G>0，G 通道非零区别于 red），实际 {:?}",
+        yc
+    );
+
+    // red：value 在 high 段（v>high），optimum 在 low 段（opt<low）→ 相隔一段。
+    let (doc_red, m_red) = first_progress_meter(
+        r#"<body><meter value="0.9" min="0" max="1" low="0.2" high="0.8" optimum="0.1"></meter></body>"#,
+        "meter",
+    );
+    let mut painter = Painter::new();
+    let mut b = make_box(80.0, 16.0);
+    b.node_id = Some(m_red);
+    let before = painter.primitives.fills.len();
+    painter.paint_progress_meter_value(&b, 0.0, 0.0, &style, &doc_red);
+    assert_eq!(painter.primitives.fills.len(), before + 1);
+    let rc = &painter.primitives.fills[before].color;
+    assert!(
+        rc.r > 0 && rc.g == 0 && rc.b == 0,
+        "value 在 high 段 + optimum 在 low 段 → red（纯 R，G/B=0），实际 {:?}",
+        rc
+    );
+}
+
+#[test]
+fn paint_progress_meter_non_target_element_skipped() {
+    // 非 progress/meter 元素 → 不绘条。
+    let doc = zero_dom::parse_html("<body><div value=\"60\" max=\"100\">x</div></body>");
+    let div = doc.get_elements_by_tag_name("div")[0];
+    let mut painter = Painter::new();
+    let style = ComputedStyle::default();
+    let mut box_node = make_box(160.0, 16.0);
+    box_node.node_id = Some(div);
+    let before = painter.primitives.fills.len();
+    painter.paint_progress_meter_value(&box_node, 0.0, 0.0, &style, &doc);
+    assert_eq!(
+        painter.primitives.fills.len(),
+        before,
+        "非 progress/meter 元素不应绘 value 条"
+    );
+}

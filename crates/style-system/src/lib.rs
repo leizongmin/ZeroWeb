@@ -639,7 +639,7 @@ impl StyleSystem {
                 "progress" | "meter" => {
                     ua_decl_inputs.push((
                         "background-color".to_string(),
-                        "#d5d5d5".to_string(),
+                        "#efefef".to_string(),
                         false,
                         (0, 0, 0),
                         None,

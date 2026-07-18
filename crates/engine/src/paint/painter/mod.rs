@@ -4,6 +4,7 @@
 //! 边框、效果、文本等子模块通过 `impl Painter` 扩展。
 
 mod border;
+mod controls;
 mod effects;
 mod effects_indicators;
 mod text;
@@ -711,6 +712,14 @@ impl Painter {
 
                 // 5. 文本内容绘制（含 text-shadow，使用行内格式化上下文处理换行）
                 self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
+
+                // 5b3. <progress>/<meter> value 填充条绘制（R1671 paint 半，≡ R1660
+                // paint_input_value 的 form-control slice-2）。**须在 paint_text 之后**——bar
+                // 覆盖 fallback 文本（ZW 无 replaced 子节点抑制机制，select/option 同 latent gap；
+                // fallback 仍 layout+paint，bar 后绘覆盖之，近似 chromium 不显示 fallback）。
+                if let Some(doc) = doc {
+                    self.paint_progress_meter_value(box_node, abs_x, abs_y, style, doc);
+                }
             }
 
             hidden
