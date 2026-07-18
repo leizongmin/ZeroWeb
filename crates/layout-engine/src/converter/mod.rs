@@ -1332,11 +1332,11 @@ fn extract_calc_percentage(expr: &zero_css_parser::values::CalcExpr) -> Option<f
 }
 
 #[cfg(test)]
-#[allow(clippy::float_literal_f32_fallback)]
+#[allow(float_literal_f32_fallback)]
 mod tests;
 
 #[cfg(test)]
-#[allow(clippy::float_literal_f32_fallback)]
+#[allow(float_literal_f32_fallback)]
 mod inline_tests {
     use super::*;
     use zero_css_parser::values::{
