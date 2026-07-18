@@ -48,11 +48,11 @@ thread_local! {
 
 /// rusty_v8 FunctionTemplate 回调：按 args.data() 的索引查 HOST_CALLBACKS 调用。
 fn host_callback_invoke(
-    scope: &mut rusty_v8::HandleScope,
+    scope: &mut rusty_v8::PinScope,
     args: rusty_v8::FunctionCallbackArguments,
     mut rv: rusty_v8::ReturnValue,
 ) {
-    let idx = args.data().and_then(|d| d.integer_value(scope)).unwrap_or(-1);
+    let idx = args.data().integer_value(scope).unwrap_or(-1);
     if idx < 0 {
         return;
     }
@@ -68,6 +68,20 @@ fn host_callback_invoke(
 
 /// V8平台初始化守卫（全局只初始化一次）。
 static V8_INIT: Once = Once::new();
+
+struct IsolateEnterGuard {
+    isolate: *const rusty_v8::OwnedIsolate,
+}
+
+impl Drop for IsolateEnterGuard {
+    fn drop(&mut self) {
+        // SAFETY: The guard is created only after entering this isolate, and it
+        // is dropped before the owned isolate is disposed.
+        unsafe {
+            (*self.isolate).exit();
+        }
+    }
+}
 
 /// 确保V8平台已初始化。
 fn ensure_v8_initialized() {
@@ -101,12 +115,12 @@ fn ensure_v8_initialized() {
 ///
 /// V8 Isolate不是线程安全的。每个线程应创建独立的沙箱实例。
 pub struct V8Sandbox {
+    /// 缓存的 V8 Context（当 persistent_context 启用时复用）。
+    cached_context: Option<rusty_v8::Global<rusty_v8::Context>>,
     /// V8 Isolate（拥有所有权）。
     isolate: Option<rusty_v8::OwnedIsolate>,
     /// 沙箱配置。
     config: SandboxConfig,
-    /// 缓存的 V8 Context（当 persistent_context 启用时复用）。
-    cached_context: Option<rusty_v8::Global<rusty_v8::Context>>,
     /// 宿主注入的回调名 + 线程局部注册表索引（register_callback 注册），execute 时挂到全局对象。
     callbacks: Vec<(String, usize)>,
 }
@@ -182,6 +196,13 @@ impl V8Sandbox {
         let cached_ptr: *mut _ = &mut self.cached_context;
 
         let isolate = self.isolate.as_mut().ok_or(ScriptError::NotInitialized)?;
+        // SAFETY: OwnedIsolate instances are entered on creation. Re-entering
+        // around each execution makes multiple sandbox instances usable on the
+        // same thread while preserving V8's stack-like enter/exit discipline.
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
 
         let start = std::time::Instant::now();
 
@@ -203,12 +224,12 @@ impl V8Sandbox {
                 None
             };
 
-        let mut hs = rusty_v8::HandleScope::new(isolate);
+        rusty_v8::scope!(let hs, isolate);
         // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
         // HandleScope 的借用仅涉及 isolate，不会修改 cached_context。
-        let context = unsafe { resolve_context(persistent, cached_ptr, &mut hs) };
-        let mut ctx_scope = rusty_v8::ContextScope::new(&mut hs, context);
-        let try_catch = &mut rusty_v8::TryCatch::new(&mut ctx_scope);
+        let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
+        let mut ctx_scope = rusty_v8::ContextScope::new(hs, context);
+        rusty_v8::tc_scope!(let try_catch, &mut ctx_scope);
 
         // 把宿主回调（register_callback 注册）挂到全局对象。无注册时为 no-op（零回归）。
         if !self.callbacks.is_empty() {
@@ -287,13 +308,18 @@ impl V8Sandbox {
         let cached_ptr: *mut _ = &mut self.cached_context;
 
         let isolate = self.isolate.as_mut().ok_or(ScriptError::NotInitialized)?;
+        // SAFETY: See execute().
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
 
         let start = std::time::Instant::now();
 
-        let mut hs = rusty_v8::HandleScope::new(isolate);
-        let context = unsafe { resolve_context(persistent, cached_ptr, &mut hs) };
-        let mut ctx_scope = rusty_v8::ContextScope::new(&mut hs, context);
-        let try_catch = &mut rusty_v8::TryCatch::new(&mut ctx_scope);
+        rusty_v8::scope!(let hs, isolate);
+        let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
+        let mut ctx_scope = rusty_v8::ContextScope::new(hs, context);
+        rusty_v8::tc_scope!(let try_catch, &mut ctx_scope);
 
         let code_str = rusty_v8::String::new(try_catch, code)
             .ok_or_else(|| ScriptError::InvalidInput("failed to create V8 string".into()))?;
@@ -342,11 +368,11 @@ impl V8Sandbox {
 unsafe fn resolve_context<'s>(
     persistent: bool,
     cached_ptr: *mut Option<rusty_v8::Global<rusty_v8::Context>>,
-    scope: &mut rusty_v8::HandleScope<'s, ()>,
+    scope: &mut rusty_v8::PinScope<'s, '_, ()>,
 ) -> rusty_v8::Local<'s, rusty_v8::Context> {
     let cached = unsafe { &mut *cached_ptr };
     if !persistent {
-        return rusty_v8::Context::new(scope);
+        return rusty_v8::Context::new(scope, Default::default());
     }
 
     // 尝试复用缓存的 Context
@@ -355,7 +381,7 @@ unsafe fn resolve_context<'s>(
     }
 
     // 首次执行：创建并缓存 Context
-    let context = rusty_v8::Context::new(scope);
+    let context = rusty_v8::Context::new(scope, Default::default());
     *cached = Some(rusty_v8::Global::new(scope, context));
     context
 }
@@ -375,7 +401,10 @@ impl V8Sandbox {
     }
 
     /// 将V8值转换为JSON字符串。
-    fn value_to_json_string(scope: &mut rusty_v8::HandleScope, value: rusty_v8::Local<rusty_v8::Value>) -> String {
+    fn value_to_json_string(
+        scope: &mut rusty_v8::PinnedRef<rusty_v8::TryCatch<rusty_v8::HandleScope>>,
+        value: rusty_v8::Local<rusty_v8::Value>,
+    ) -> String {
         let context = scope.get_current_context();
         let global = context.global(scope);
 
@@ -439,6 +468,13 @@ impl V8Sandbox {
                     .map(|s| s.to_rust_string_lossy(scope))
                     .unwrap_or_default()
             })
+    }
+}
+
+impl Drop for V8Sandbox {
+    fn drop(&mut self) {
+        self.cached_context = None;
+        self.isolate = None;
     }
 }
 

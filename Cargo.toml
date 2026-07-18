@@ -87,7 +87,7 @@ html5ever = "0.29"
 taffy = "0.12"
 
 # JavaScript 引擎
-rusty_v8 = { version = "0.32", default-features = false }
+rusty_v8 = { package = "v8", version = "150.2.0", default-features = false }
 
 # WASM 运行时
 wasmtime = { version = "36", default-features = false }

@@ -73,7 +73,7 @@ function Get-RustyV8Version {
 
     $lines = Get-Content -LiteralPath $CargoLockPath
     for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -eq 'name = "rusty_v8"') {
+        if ($lines[$i] -eq 'name = "v8"') {
             if ($lines[$i + 1] -match '^version = "([^"]+)"$') {
                 return $Matches[1]
             }
@@ -81,7 +81,7 @@ function Get-RustyV8Version {
         }
     }
 
-    throw "Failed to determine rusty_v8 version from Cargo.lock"
+    throw "Failed to determine v8 version from Cargo.lock"
 }
 
 function Get-HostTargetTriple {
@@ -140,7 +140,7 @@ if ($targetTriple -notmatch 'windows') {
     Write-Error "download-rusty-v8.ps1 only supports Windows targets (host: $targetTriple)."
 }
 
-$archiveName = "rusty_v8_release_${targetTriple}.lib"
+$archiveName = "rusty_v8_release_${targetTriple}.lib.gz"
 
 $cacheRoot = if ($env:RUSTY_V8_CACHE_DIR) {
     $env:RUSTY_V8_CACHE_DIR

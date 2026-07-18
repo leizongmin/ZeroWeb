@@ -14,7 +14,8 @@ v8 = ["dep:rusty_v8"]
 quickjs = ["dep:rquickjs"]
 
 [dependencies.rusty_v8]
-version = "0.32"
+package = "v8"
+version = "150.2.0"
 default-features = false
 optional = true
 

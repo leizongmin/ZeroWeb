@@ -18,7 +18,8 @@ esac
 has_archive_header() {
   local path="$1"
   [[ -f "${path}" ]] || return 1
-  cmp -s <(head -c 8 "${path}") <(printf '!<arch>\n')
+  cmp -s <(head -c 8 "${path}") <(printf '!<arch>\n') ||
+    cmp -s <(head -c 2 "${path}") <(printf '\x1f\x8b')
 }
 
 cache_root="${RUSTY_V8_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8}"
@@ -28,10 +29,10 @@ if [[ "${local_archive}" != /* ]]; then
 fi
 
 version="$(
-  sed -n '/name = "rusty_v8"/{n;s/^version = "//;s/"$//;p;q;}' "${workspace_root}/Cargo.lock"
+  sed -n '/name = "v8"/{n;s/^version = "//;s/"$//;p;q;}' "${workspace_root}/Cargo.lock"
 )"
 if [[ -z "${version}" ]]; then
-  echo "Failed to determine rusty_v8 version from Cargo.lock" >&2
+  echo "Failed to determine v8 version from Cargo.lock" >&2
   exit 1
 fi
 
@@ -41,16 +42,17 @@ if [[ -z "${target_triple}" ]]; then
   exit 1
 fi
 
+profile="release"
+case "${V8_FORCE_DEBUG:-}" in
+  1|true|yes)
+    profile="debug"
+    ;;
+esac
+
 if [[ "${target_triple}" == *windows* ]]; then
-  archive_name="rusty_v8_release_${target_triple}.lib"
+  archive_name="rusty_v8_${profile}_${target_triple}.lib.gz"
 else
-  profile="release"
-  case "${V8_FORCE_DEBUG:-}" in
-    1|true|yes)
-      profile="debug"
-      ;;
-  esac
-  archive_name="librusty_v8_${profile}_${target_triple}.a"
+  archive_name="librusty_v8_${profile}_${target_triple}.a.gz"
 fi
 
 cache_archive="${cache_root}/v${version}/${archive_name}"
