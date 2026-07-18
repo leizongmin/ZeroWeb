@@ -93,6 +93,10 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
         "script" | "style" | "link" | "meta" | "head" | "title" | "base" | "basefont" | "bgsound" | "noframes"
         | "noembed" | "param" | "noscript" | "template" | "dialog" | "area" | "frame" | "datalist" | "source"
         | "track" | "rp" => DisplayValue::None,
+        // R1688（ruby Slice 1 探针）：rt/rtc → display:none（kill rt 垂直堆叠盒 + rt 文本出父 IFC）。
+        // ruby base 文本经 collect_text_excluding 收集进父 IFC（owner=ruby），R1022 overlay 据此绘
+        // segment annotation。env `ZW_RUBY_RT_NONE=0` 关闭（A/B 探针，default-on 试）。
+        "rt" | "rtc" if std::env::var("ZW_RUBY_RT_NONE").as_deref() != Ok("0") => DisplayValue::None,
 
         // 内联元素 — 无需覆盖（CSS 初始值即为 inline）
         _ => return None,

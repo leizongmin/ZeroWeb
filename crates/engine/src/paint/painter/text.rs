@@ -1424,7 +1424,7 @@ impl super::Painter {
                                 let mut char_pos = frag_base_x;
                                 let frag_is_ahem = fragment.is_ahem;
 
-                                for (char_idx, ch) in transformed.chars().enumerate() {
+                                for ch in transformed.chars() {
                                     let glyph_x = char_pos;
                                     let glyph_y = frag_base_y;
 
@@ -1486,27 +1486,8 @@ impl super::Painter {
                                         });
                                     }
 
-                                    // R1022：ruby annotation —— rt[char_idx] 上移到 rb 字符上方
-                                    // （类 text-emphasis over，mark 来自 rt 文本而非 style）。
-                                    if !ch.is_whitespace()
-                                        && let Some(rt_ch) = ruby_marks.as_ref().and_then(|v| v.get(char_idx).copied())
-                                    {
-                                        let rt_fs = fragment.font_size * 0.5;
-                                        let rt_advance = measure_char_for_paint(rt_ch, rt_fs, frag_is_ahem);
-                                        let rt_x = char_pos - advance / 2.0 - rt_advance / 2.0;
-                                        let rt_y = frag_base_y - fragment.font_size;
-                                        self.primitives.add_glyph(GlyphPrimitive {
-                                            x: rt_x,
-                                            y: rt_y,
-                                            font_size: rt_fs,
-                                            color: frag_color,
-                                            glyph_id: rt_ch as u32,
-                                            font_id: default_font_id,
-                                            bitmap_width: None,
-                                            bitmap_height: None,
-                                            rotation,
-                                        });
-                                    }
+                                    // R1022 per-char ruby annotation 已移至 text_width 后的
+                                    // segment-centered 块（R1688）—— 整 rt 注音居中于 base segment。
                                 }
 
                                 let text_width: f32 = transformed
@@ -1517,6 +1498,35 @@ impl super::Painter {
                                         if ch == ' ' { w + word_spacing } else { w }
                                     })
                                     .sum();
+                                // R1688：ruby annotation —— segment-centered（替代 R1022 逐字符 pairing）。
+                                // chromium 把整个 rt 注音居中于整个 base segment 上方（非逐字配对）。
+                                // base fragment owner = ruby（collect_inline_items TextRun.node_id=child_id），
+                                // ruby_annotation_chars 收集 rt 后代文本。rt_fs=base×0.5，居中于 base 宽。
+                                if let Some(marks) = ruby_marks.as_ref()
+                                    && !marks.is_empty()
+                                {
+                                    let rt_fs = fragment.font_size * 0.5;
+                                    let rt_y = frag_base_y - fragment.font_size;
+                                    let annot_w: f32 = marks
+                                        .iter()
+                                        .map(|&c| measure_char_for_paint(c, rt_fs, frag_is_ahem))
+                                        .sum();
+                                    let mut ax = frag_base_x + (text_width - annot_w) / 2.0;
+                                    for &rc in marks {
+                                        self.primitives.add_glyph(GlyphPrimitive {
+                                            x: ax,
+                                            y: rt_y,
+                                            font_size: rt_fs,
+                                            color: frag_color,
+                                            glyph_id: rc as u32,
+                                            font_id: default_font_id,
+                                            bitmap_width: None,
+                                            bitmap_height: None,
+                                            rotation,
+                                        });
+                                        ax += measure_char_for_paint(rc, rt_fs, frag_is_ahem);
+                                    }
+                                }
                                 self.paint_text_decoration_from_style(
                                     frag_base_x,
                                     frag_base_y,
@@ -1640,6 +1650,34 @@ impl super::Painter {
                                     if ch == ' ' { w + word_spacing } else { w }
                                 })
                                 .sum();
+                            // R1688：ruby annotation —— segment-centered（替代 R1022 逐字符 pairing）。
+                            // chromium 整 rt 注音居中于整个 base segment 上方。水平书写模式 only。
+                            if !char_advance_is_y
+                                && let Some(marks) = ruby_marks.as_ref()
+                                && !marks.is_empty()
+                            {
+                                let rt_fs = $frag_fs * 0.5;
+                                let rt_y = frag_base_y - $frag_fs;
+                                let annot_w: f32 = marks
+                                    .iter()
+                                    .map(|&c| measure_char_for_paint(c, rt_fs, $is_ahem))
+                                    .sum();
+                                let mut ax = frag_base_x + (text_width - annot_w) / 2.0;
+                                for &rc in marks {
+                                    self.primitives.add_glyph(GlyphPrimitive {
+                                        x: ax,
+                                        y: rt_y,
+                                        font_size: rt_fs,
+                                        color: frag_color,
+                                        glyph_id: rc as u32,
+                                        font_id: frag_font_id,
+                                        bitmap_width: None,
+                                        bitmap_height: None,
+                                        rotation,
+                                    });
+                                    ax += measure_char_for_paint(rc, rt_fs, $is_ahem);
+                                }
+                            }
 
                             // R639 Phase A slice：per-line-fragment inline background，仅对跨多行
                             // 的 inline 生效。关键修复（R638 锁定 blocker）：宏的 box_node 是 **IFC
@@ -1733,7 +1771,7 @@ impl super::Painter {
                                 }
                             }
 
-                            for (char_idx, ch) in transformed.chars().enumerate() {
+                            for ch in transformed.chars() {
                                 let (glyph_x, glyph_y) = if char_advance_is_y {
                                     (frag_base_x, char_pos)
                                 } else {
@@ -1809,29 +1847,8 @@ impl super::Painter {
                                     });
                                 }
 
-                                // R1022：ruby annotation —— rt[char_idx] 上移到 rb 字符上方
-                                // （类 text-emphasis over，mark 来自 rt 文本）。
-                                if !char_advance_is_y
-                                    && !ch.is_whitespace()
-                                    && let Some(rt_ch) =
-                                        ruby_marks.as_ref().and_then(|v| v.get(char_idx).copied())
-                                {
-                                    let rt_fs = $frag_fs * 0.5;
-                                    let rt_advance = measure_char_for_paint(rt_ch, rt_fs, $is_ahem);
-                                    let rt_x = char_pos - advance / 2.0 - rt_advance / 2.0;
-                                    let rt_y = frag_base_y - $frag_fs - rt_fs * 0.4;
-                                    self.primitives.add_glyph(GlyphPrimitive {
-                                        x: rt_x,
-                                        y: rt_y,
-                                        font_size: rt_fs,
-                                        color: frag_color,
-                                        glyph_id: rt_ch as u32,
-                                        font_id: frag_font_id,
-                                        bitmap_width: None,
-                                        bitmap_height: None,
-                                        rotation,
-                                    });
-                                }
+                                // R1022 per-char ruby annotation 已移至 text_width 后的
+                                // segment-centered 块（R1688）—— 整 rt 注音居中于 base segment。
                             }
 
                             self.paint_text_decoration_from_style(
