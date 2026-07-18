@@ -1028,16 +1028,13 @@ pub fn check_text_concatenation(
             // IFC）；table 单元格**合法**拥有自身文本（cell 内容由 td IFC 处理，tr 的
             // text_node_line_heights 会含子 cell 文本属正常 table 布局，非串联 bug）。legacy-html
             // fixture 19-testpage-minimal 的 `<tr>` 误报即此（LAYOUT_DUMP 表格几何正确）。
-            let is_table_internal = labels
-                .get(&bid)
-                .is_some_and(|label| {
-                    let tag = label.split('.').next().unwrap_or("");
-                    matches!(
-                        tag,
-                        "tr" | "td" | "th" | "tbody" | "thead" | "tfoot" | "caption"
-                            | "col" | "colgroup"
-                    )
-                });
+            let is_table_internal = labels.get(&bid).is_some_and(|label| {
+                let tag = label.split('.').next().unwrap_or("");
+                matches!(
+                    tag,
+                    "tr" | "td" | "th" | "tbody" | "thead" | "tfoot" | "caption" | "col" | "colgroup"
+                )
+            });
             // 条件 2：容器自身 text_node 映射含 ≥1 个非空白文本节点（吸收的子元素文本）。
             // table-internal 跳过（合法 table 文本归属，非串联）。
             if !is_table_internal {

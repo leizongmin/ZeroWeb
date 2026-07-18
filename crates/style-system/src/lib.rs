@@ -49,10 +49,10 @@ use zero_dom::{Document, NodeId, NodeKind, QuirksMode};
 pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
     Some(match tag {
         // 块级元素（对齐 HTML Living Standard UA 样式表的 display:block 列表）
-        "html" | "address" | "article" | "aside" | "blockquote" | "body" | "center" | "dd" | "details" | "div" | "dl" | "dt"
-        | "fieldset" | "figcaption" | "figure" | "footer" | "form" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
-        | "header" | "hgroup" | "hr" | "legend" | "li" | "listing" | "main" | "menu" | "nav" | "ol" | "p" | "plaintext" | "pre" | "search"
-        | "section" | "summary" | "ul" | "xmp" => DisplayValue::Block,
+        "html" | "address" | "article" | "aside" | "blockquote" | "body" | "center" | "dd" | "details" | "div"
+        | "dl" | "dt" | "fieldset" | "figcaption" | "figure" | "footer" | "form" | "h1" | "h2" | "h3" | "h4" | "h5"
+        | "h6" | "header" | "hgroup" | "hr" | "legend" | "li" | "listing" | "main" | "menu" | "nav" | "ol" | "p"
+        | "plaintext" | "pre" | "search" | "section" | "summary" | "ul" | "xmp" => DisplayValue::Block,
 
         // 表格元素
         "table" => DisplayValue::Table,
@@ -70,8 +70,8 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
         | "textarea" => DisplayValue::InlineBlock,
 
         // display:none
-        "script" | "style" | "link" | "meta" | "head" | "title" | "base" | "noframes" | "noscript"
-        | "template" | "dialog" => { DisplayValue::None }
+        "script" | "style" | "link" | "meta" | "head" | "title" | "base" | "noframes" | "noscript" | "template"
+        | "dialog" => DisplayValue::None,
 
         // 内联元素 — 无需覆盖（CSS 初始值即为 inline）
         _ => return None,
@@ -461,13 +461,7 @@ impl StyleSystem {
                 // R1658：ZW default_impl white_space 默认 Normal，故 <pre> 此前折叠空白/换行（真 bug）。
                 // 仅 white-space:pre（monospace 字体属 font-wall 高方差，单独 A/B 切片）。
                 "pre" | "xmp" | "listing" | "plaintext" => {
-                    ua_decl_inputs.push((
-                        "white-space".to_string(),
-                        "pre".to_string(),
-                        false,
-                        (0, 0, 0),
-                        None,
-                    ));
+                    ua_decl_inputs.push(("white-space".to_string(), "pre".to_string(), false, (0, 0, 0), None));
                 }
                 // ul/ol 默认 padding-left 和 margin
                 "ul" | "ol" => {
@@ -543,6 +537,62 @@ impl StyleSystem {
                         None,
                     ));
                     ua_decl_inputs.push(("padding".to_string(), "2px".to_string(), false, (0, 0, 0), None));
+
+                    // R1659：`<input>` 固有尺寸（form-control intrinsic sizing）。
+                    // `<input>` 是 void inline-block（无子节点），无固有尺寸时 ZW 把 auto 宽度当
+                    // 全容器宽（fixture 37 实测 784×6 = body 内容宽 × padding/border），致包裹它的
+                    // `<label>` 被迫换行 → 同父 label 盒大面积重叠（DC-13 struct FAIL）+ submit
+                    // input 与 `<button>` 重叠。Chromium 把表单控件建模为有固有尺寸的替换类元素
+                    //（text 默认 size=20 字符宽、checkbox/radio ~13px 方框、submit/reset 按 value
+                    // 文本宽）。此处按 HTML 渲染规范补 UA width/height（同 h1/p/hr/button UA 谱系，
+                    // 最低优先级 specificity(0,0,0)，可被作者/内联样式覆盖）。select/textarea 已按
+                    // 内容（option/文本子节点）正确测宽，不加 width 以免覆盖内容尺寸。
+                    if tag == "input" {
+                        let itype = doc.get_attribute(element, "type").unwrap_or_default().to_lowercase();
+                        // 字符宽度近似因子（默认字体平均字符宽，≈7px）。
+                        const CHAR_PX: f32 = 7.0;
+                        match itype.as_str() {
+                            // checkbox/radio：固定方框（Chromium ~13px）。
+                            "checkbox" | "radio" | "color" => {
+                                ua_decl_inputs.push(("width".to_string(), "13px".to_string(), false, (0, 0, 0), None));
+                                ua_decl_inputs.push(("height".to_string(), "13px".to_string(), false, (0, 0, 0), None));
+                            }
+                            // submit/reset/button/image：按 value 文本字符数估宽（value 即按钮标签）。
+                            // image 有 src 走替换元素路径，给个最小宽兜底。
+                            "submit" | "reset" | "button" | "image" => {
+                                let value = doc.get_attribute(element, "value").unwrap_or_default();
+                                let chars = value.chars().count().max(1) as f32;
+                                // +14 ≈ 按钮左右 padding/border chrome（1px 6px padding + 2px border）。
+                                let w = chars * CHAR_PX + 14.0;
+                                ua_decl_inputs.push((
+                                    "width".to_string(),
+                                    format!("{:.0}px", w),
+                                    false,
+                                    (0, 0, 0),
+                                    None,
+                                ));
+                            }
+                            // 文本类（默认无 type 当 text）：按 size 属性（默认 20 字符）估宽 + 行高。
+                            // height 给文本字段合理内容高（content-box，+padding/border 共 ~21px 总高）。
+                            _ => {
+                                let size = doc
+                                    .get_attribute(element, "size")
+                                    .and_then(|s| s.trim().parse::<f32>().ok())
+                                    .filter(|&n| n >= 1.0)
+                                    .unwrap_or(20.0);
+                                // +8 ≈ 输入框左右 padding/border chrome（2px padding + 1px border ×2）。
+                                let w = size * CHAR_PX + 8.0;
+                                ua_decl_inputs.push((
+                                    "width".to_string(),
+                                    format!("{:.0}px", w),
+                                    false,
+                                    (0, 0, 0),
+                                    None,
+                                ));
+                                ua_decl_inputs.push(("height".to_string(), "15px".to_string(), false, (0, 0, 0), None));
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -1306,8 +1356,7 @@ mod ua_display_tests {
     #[test]
     fn test_hidden_elements_default_to_none() {
         for tag in [
-            "script", "style", "link", "meta", "head", "title", "base", "noframes", "noscript",
-            "template", "dialog",
+            "script", "style", "link", "meta", "head", "title", "base", "noframes", "noscript", "template", "dialog",
         ] {
             assert_eq!(
                 ua_default_display(tag),
@@ -1419,9 +1468,7 @@ mod presentational_hint_tests {
     /// 小幅改善（whitespace 保真）。monospace 字体独立 A/B 切片（font-wall 高方差）。
     #[test]
     fn pre_family_gets_white_space_pre_from_ua() {
-        let doc = parse_html(
-            "<body><pre>p</pre><xmp>x</xmp><listing>l</listing><plaintext>t</plaintext></body>",
-        );
+        let doc = parse_html("<body><pre>p</pre><xmp>x</xmp><listing>l</listing><plaintext>t</plaintext></body>");
         let mut system = StyleSystem::new();
         let styles = system.compute_styles(&doc, &[]);
         for tag in ["pre", "xmp", "listing", "plaintext"] {
@@ -1431,6 +1478,89 @@ mod presentational_hint_tests {
                 matches!(style.white_space, WhiteSpaceValue::Pre),
                 "<{tag}> should inherit white-space:pre from UA stylesheet, got {:?}",
                 style.white_space
+            );
+        }
+    }
+
+    /// R1659：`<input>` 是 void inline-block（无子节点），缺固有尺寸时 ZW 把 auto 宽度当全容器宽
+    ///（fixture 37 实测 784×6）致 `<label>` 换行重叠。本测试钉死 UA 按类型注入的固有 width/height：
+    /// 文本类按 `size` 属性（默认 20）估宽 + 15px 内容高；checkbox/radio/color 固定 13px 方框；
+    /// submit/reset/button 按 `value` 字符数估宽。select/textarea 仍 width:auto（按内容测宽）。
+    #[test]
+    fn input_gets_intrinsic_sizing_from_ua_by_type() {
+        use zero_css_parser::values::LengthValue;
+        let doc = parse_html(
+            "<body>\
+             <input type=\"text\" value=\"Alice\">\
+             <input type=\"password\">\
+             <input size=\"10\">\
+             <input type=\"checkbox\">\
+             <input type=\"radio\">\
+             <input type=\"submit\" value=\"Send\">\
+             <input type=\"reset\" value=\"Clear\">\
+             <select><option>x</option></select>\
+             <textarea>t</textarea>\
+             </body>",
+        );
+        let mut system = StyleSystem::new();
+        let styles = system.compute_styles(&doc, &[]);
+        let inputs = doc.get_elements_by_tag_name("input");
+        // 文本类（type=text/password）：默认 size=20 → 20*7+8 = 148px，height 15px。
+        for &i in &inputs[0..2] {
+            let s = styles.get(&i).expect("text input styled");
+            assert!(
+                matches!(s.width, LengthValue::Px(w) if (140.0..=160.0).contains(&w)),
+                "text input default-size width ~148px, got {:?}",
+                s.width
+            );
+            assert!(
+                matches!(s.height, LengthValue::Px(15.0)),
+                "text input content height 15px, got {:?}",
+                s.height
+            );
+        }
+        // 显式 size=10（无 type → 文本类）→ 10*7+8 = 78px（窄于默认 20）。
+        let sized = styles.get(&inputs[2]).expect("size=10 input styled");
+        assert!(
+            matches!(sized.width, LengthValue::Px(w) if (74.0..=84.0).contains(&w)),
+            "size=10 input width ~78px, got {:?}",
+            sized.width
+        );
+        // checkbox / radio：固定 13px 方框。
+        for &i in &inputs[3..5] {
+            let s = styles.get(&i).expect("check input styled");
+            assert!(
+                matches!(s.width, LengthValue::Px(13.0)),
+                "checkbox/radio width 13px, got {:?}",
+                s.width
+            );
+            assert!(
+                matches!(s.height, LengthValue::Px(13.0)),
+                "checkbox/radio height 13px, got {:?}",
+                s.height
+            );
+        }
+        // submit value="Send"（4 字符）→ 4*7+14 = 42px；reset value="Clear"（5）→ 49px。
+        let submit = styles.get(&inputs[5]).expect("submit styled");
+        assert!(
+            matches!(submit.width, LengthValue::Px(w) if (38.0..=48.0).contains(&w)),
+            "submit value=Send width ~42px, got {:?}",
+            submit.width
+        );
+        let reset = styles.get(&inputs[6]).expect("reset styled");
+        assert!(
+            matches!(reset.width, LengthValue::Px(w) if (45.0..=55.0).contains(&w)),
+            "reset value=Clear width ~49px, got {:?}",
+            reset.width
+        );
+        // select / textarea：仍 width:auto（按内容测宽，UA 不注入固有 width）。
+        for tag in ["select", "textarea"] {
+            let id = doc.get_elements_by_tag_name(tag)[0];
+            let s = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));
+            assert!(
+                matches!(s.width, LengthValue::Auto),
+                "<{tag}> must stay width:auto (content-sized), got {:?}",
+                s.width
             );
         }
     }

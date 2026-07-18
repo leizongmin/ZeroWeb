@@ -95,9 +95,11 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1658）
+## 当前基线（2026-07-18，R1659）
 
-- **37/39 struct-check PASS**（avg diff 2.78%，font-wall baseline），39 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
+- **37/39 struct-check PASS**（avg diff 2.71%，font-wall baseline），39 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
+- **37-form-controls** R1659 修复 `<input>` 固有尺寸（见下条），diff **7.03%→4.25%**（struct 仍 FAIL，
+  残余 = R109 inline-`<label>` 含 inline-block `<input>` 被拆成 block 盒的已知 entanglement，非固有尺寸缺口）。
 - **17-center** R1651 修复（`<center>` UA display:block，HTML4 块级）。
 - **19-testpage-minimal** R1652 修 check 误报（check_text_concatenation 跳过 table-internal）。
 - **30-table-sections** R1653 修复 `<caption>` 定位（caption-side:top 须让 rows 下移 caption 高度，
@@ -118,13 +120,18 @@ done
   pre-existing gap（ZW 未对 `<pre>`/`<xmp>`/`<listing>`/`<plaintext>` 应用 `white-space:pre` + monospace
   —— `default_impl.rs` white_space 默认 `Normal` 全元素，pre 本身亦然，fixture 26 pre 同谱系；
   该 gap 属 font-wall/white-space 范畴，独立多 session，非本轮 scoped 修复）。
-- **37-form-controls** struct FAIL（7.03%，**已知 gap·baseline 验证面**）：`<input>` 渲染为 6px 高
-  inline-block（ZW 未建模表单控件固有尺寸——text/password 输入框默认尺寸、checkbox/radio 方框、
-  select/textarea 默认行列尺寸均未实现），致包裹 input 的 `<label>` 几何错位（label 误占 784px 全宽
-  且 y 间距 6px = input 高度而非 label 高度 → sibling overlap）+ p-concatenation 误报。R1655 已将
-  form 控件列为「预期高 diff 但验 baseline」领域，本 fixture 即 baseline 锚点。**修复** = 多 session
-  feature（为 input/select/textarea/button/fieldset 建模 UA 固有尺寸 + 默认渲染），非 scoped bug fix。
-  trend-only smoke 不阻（exit 0）。
+- **37-form-controls** struct FAIL（7.03%→**4.25%** 经 R1659；残余 struct FAIL = R109，见下）：
+  **R1659 已修** `<input>` 固有尺寸（void inline-block 无固有尺寸时 ZW 把 auto 宽当全容器宽 = 784×6）：
+  按 `type` 注入 UA width/height——文本类按 `size`（默认 20）估宽 ~148px + 15px 内容高；
+  checkbox/radio/color 固定 13px 方框；submit/reset/button 按 `value` 字符数估宽。select/textarea 已按
+  内容（option/文本子节点）正确测宽，不加 width。**A/B**（CSS2 6226/css-flexbox 497/css-grid 49 三 dir，
+  含全 corpus `<input>` 文件：CSS2 54 / grid 6 / flex 4）**bit-identical net-0**（UA lowest-priority，
+  WPT reftest 罕用 bare input）。
+  **残余 struct FAIL（5 issue，非固有尺寸缺口）= R109 entanglement**：inline `<label>` 含 inline-block
+  `<input>` 子被 ZW 拆成 block 盒 → 同父 label 垂直堆叠 overlap（3）+ `<p>` IFC 吸收 block 子文本
+  concatenation（2）。此为 inline-box-model Phase-A 已知硬 vein（R125/R198/R205 谱系 net-negative），
+  独立于 form-control 固有尺寸，需 IFC 统一解，非 scoped slice。submit/reset 的 `value` 文本未渲染为
+  可见标签亦属 slice-2（paint 侧）。trend-only smoke 不阻（exit 0）。
 
 ## 新增 fixture
 

@@ -1024,8 +1024,7 @@ fn top_caption_extent(table_box: &LayoutBox, styles: &HashMap<NodeId, ComputedSt
         .filter(|c| {
             c.node_id.is_some_and(|id| {
                 styles.get(&id).is_some_and(|s| {
-                    s.display == DisplayValue::TableCaption
-                        && !matches!(s.caption_side, CaptionSideValue::Bottom)
+                    s.display == DisplayValue::TableCaption && !matches!(s.caption_side, CaptionSideValue::Bottom)
                 })
             })
         })

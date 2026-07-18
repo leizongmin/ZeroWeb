@@ -983,9 +983,21 @@ fn test_top_caption_extent_sums_top_caption_heights() {
     let table_box = LayoutBox {
         node_id: Some(table_id),
         children: vec![
-            LayoutBox { node_id: Some(cap1_id), height: 19.0, ..Default::default() },
-            LayoutBox { node_id: Some(cap2_id), height: 15.0, ..Default::default() },
-            LayoutBox { node_id: Some(thead_id), height: 33.0, ..Default::default() },
+            LayoutBox {
+                node_id: Some(cap1_id),
+                height: 19.0,
+                ..Default::default()
+            },
+            LayoutBox {
+                node_id: Some(cap2_id),
+                height: 15.0,
+                ..Default::default()
+            },
+            LayoutBox {
+                node_id: Some(thead_id),
+                height: 33.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
