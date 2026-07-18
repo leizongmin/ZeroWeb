@@ -210,11 +210,10 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
     for url in &all_urls {
         let key = ImageKey::new(simple_hash(url));
 
-        // R1703：data URI 自包含（无需文件系统 base_dir）——须在 base_dir 早返回外处理，
-        // 否则 product-smoke / 无 base_dir 渲染（fixture 24 等）下 data URI 图永不解码。
-        // 优先处理 data:image/svg+xml（generate_svg_data_uri_image 提取首个 rect 纯色）。
+        // R1706：data:image/svg+xml → decode_data_uri 真 resvg 栅格化（支持任意 SVG：
+        // 渐变/路径/多形状，不再仅单色 rect 近似）。fixture 24 实测像素与旧纯色近似一致。
         if url.starts_with("data:image/svg+xml")
-            && let Some(data) = generate_svg_data_uri_image(url)
+            && let Ok(data) = decode_data_uri(url)
         {
             cache.insert_with_key(key, data);
             continue;
@@ -223,8 +222,7 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
         // 其他 data: URI（PNG/JPEG/GIF/base64 等）暂不支持（无 base_dir 亦无文件系统），跳过。
         if url.starts_with("data:") {
             // R1704/R1705：PNG/JPEG/GIF 等栅格 data URI（base64 或 url-encoded）→ decode_data_uri
-            // 真解码（render-foundation 共用，按 magic bytes 分派）。SVG 走上方纯色近似路径
-            //（fixture 均为单色，避改 R1703 行为）。
+            // 真解码（render-foundation 共用，按 magic bytes 分派）。
             if let Ok(data) = decode_data_uri(url) {
                 cache.insert_with_key(key, data);
             }
@@ -359,152 +357,6 @@ fn load_jpeg_file(path: &Path) -> Result<ImageData, String> {
 fn load_svg_file(path: &Path) -> Result<ImageData, String> {
     let data = std::fs::read(path).map_err(|e| format!("无法读取 SVG {}: {e}", path.display()))?;
     zero_render_foundation::image_cache::decode_svg_bytes(&data)
-}
-
-///
-/// 支持简单的单色矩形 SVG（如 `<svg><rect fill='green' width='200' height='100'/></svg>`）。
-/// 对于更复杂的 SVG，返回 None。
-fn generate_svg_data_uri_image(url: &str) -> Option<ImageData> {
-    let comma_pos = url.find(',')?;
-    let svg_content = &url[comma_pos + 1..];
-
-    // URL 解码
-    let decoded = percent_decode_svg(svg_content);
-
-    // 提取 SVG 尺寸
-    let svg_start = decoded.find("<svg")?;
-    let tag_end = decoded[svg_start..].find('>')?;
-    let svg_tag = &decoded[svg_start..svg_start + tag_end];
-    let svg_w = extract_svg_attr_float(svg_tag, "width")? as u32;
-    let svg_h = extract_svg_attr_float(svg_tag, "height")? as u32;
-
-    if svg_w == 0 || svg_h == 0 || svg_w > 4096 || svg_h > 4096 {
-        return None;
-    }
-
-    // 提取第一个 <rect> 的 fill 颜色
-    let rect_fill = extract_first_rect_fill(&decoded[svg_start + tag_end..])?;
-
-    // 生成纯色 ImageData
-    let [r, g, b, a] = rect_fill;
-    let buf_size = (svg_w as usize) * (svg_h as usize) * 4;
-    let mut buf = vec![0u8; buf_size];
-    for pixel in buf.chunks_exact_mut(4) {
-        pixel[0] = r;
-        pixel[1] = g;
-        pixel[2] = b;
-        pixel[3] = a;
-    }
-
-    ImageData::from_rgba(buf, svg_w, svg_h).ok()
-}
-
-/// 简易 percent-decode。
-fn percent_decode_svg(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut chars = input.chars();
-    while let Some(c) = chars.next() {
-        if c == '%' {
-            let hex: String = chars.by_ref().take(2).collect();
-            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                result.push(byte as char);
-            } else {
-                result.push('%');
-                result.push_str(&hex);
-            }
-        } else {
-            result.push(c);
-        }
-    }
-    result
-}
-
-/// 从 SVG 标签属性中提取浮点数值。
-fn extract_svg_attr_float(tag: &str, attr: &str) -> Option<f32> {
-    let prefix = format!("{}=", attr);
-    let pos = tag.find(&prefix)?;
-    let rest = &tag[pos + prefix.len()..];
-    let (quote, offset) = if rest.starts_with('"') {
-        ('"', 1)
-    } else if rest.starts_with('\'') {
-        ('\'', 1)
-    } else {
-        return None;
-    };
-    let value_str = &rest[offset..];
-    let end = value_str.find(quote)?;
-    value_str[..end].parse::<f32>().ok()
-}
-
-/// 从 SVG 内容中提取第一个 <rect> 的 fill 颜色。
-/// 支持命名颜色（如 "green", "red", "blue"）和十六进制颜色（如 "#00ff00"）。
-fn extract_first_rect_fill(svg_content: &str) -> Option<[u8; 4]> {
-    let rect_start = svg_content.find("<rect")?;
-    let rect_end = svg_content[rect_start..].find("/>")?;
-    let rect_tag = &svg_content[rect_start..rect_start + rect_end];
-
-    // 查找 fill 属性
-    let fill_prefix = "fill=";
-    let pos = rect_tag.find(fill_prefix)?;
-    let rest = &rect_tag[pos + fill_prefix.len()..];
-    let (quote, offset) = if rest.starts_with('"') {
-        ('"', 1)
-    } else if rest.starts_with('\'') {
-        ('\'', 1)
-    } else {
-        return None;
-    };
-    let value_str = &rest[offset..];
-    let end = value_str.find(quote)?;
-    let color_name = &value_str[..end];
-
-    parse_css_color(color_name)
-}
-
-/// 解析 CSS 颜色名称或十六进制颜色。
-fn parse_css_color(name: &str) -> Option<[u8; 4]> {
-    match name {
-        "green" => Some([0, 128, 0, 255]),
-        "red" => Some([255, 0, 0, 255]),
-        "blue" => Some([0, 0, 255, 255]),
-        "white" => Some([255, 255, 255, 255]),
-        "black" => Some([0, 0, 0, 255]),
-        "yellow" => Some([255, 255, 0, 255]),
-        "orange" => Some([255, 165, 0, 255]),
-        "purple" => Some([128, 0, 128, 255]),
-        "gray" | "grey" => Some([128, 128, 128, 255]),
-        "lime" => Some([0, 255, 0, 255]),
-        "navy" => Some([0, 0, 128, 255]),
-        "cyan" | "aqua" => Some([0, 255, 255, 255]),
-        "magenta" | "fuchsia" => Some([255, 0, 255, 255]),
-        "silver" => Some([192, 192, 192, 255]),
-        "maroon" => Some([128, 0, 0, 255]),
-        "olive" => Some([128, 128, 0, 255]),
-        "teal" => Some([0, 128, 128, 255]),
-        "transparent" => Some([0, 0, 0, 0]),
-        hex if hex.starts_with('#') => parse_hex_color(hex),
-        _ => None,
-    }
-}
-
-/// 解析 #RGB 或 #RRGGBB 十六进制颜色。
-fn parse_hex_color(hex: &str) -> Option<[u8; 4]> {
-    let hex = hex.trim_start_matches('#');
-    match hex.len() {
-        3 => {
-            let r = u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
-            let g = u8::from_str_radix(&hex[1..2].repeat(2), 16).ok()?;
-            let b = u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
-            Some([r, g, b, 255])
-        }
-        6 => {
-            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-            Some([r, g, b, 255])
-        }
-        _ => None,
-    }
 }
 
 /// 从 ImageCache 中提取所有图像的固有尺寸、ratio-only 与 no-ratio 信号。
