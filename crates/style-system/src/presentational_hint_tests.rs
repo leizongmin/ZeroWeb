@@ -236,8 +236,7 @@ fn caption_gets_text_align_center_from_ua() {
 /// list-style-type 继承、CSS initial=Disc，故 ul 隐式 Disc 正确；但 ol 旧也继承 Disc
 /// → 渲染圆点而非序号（BUG）。li 经继承得父 list-style-type（ul 下 li=Disc / ol 下 li=Decimal）。
 #[test]
-fn ul_ol_get_list_style_type_from_ua_and_inherit_to_li() {
-    use zero_css_parser::values::ListStyleTypeValue;
+fn ul_ol_get_list_style_type_from_ua_and_inherit_to_li() {    use zero_css_parser::values::ListStyleTypeValue;
     let doc = parse_html("<body><ul><li>u</li></ul><ol><li>o</li></ol></body>");
     let mut system = StyleSystem::new();
     let styles = system.compute_styles(&doc, &[]);
@@ -273,6 +272,48 @@ fn ul_ol_get_list_style_type_from_ua_and_inherit_to_li() {
         matches!(li_in_ol.list_style_type, ListStyleTypeValue::Decimal),
         "<li> in <ol> should inherit Decimal, got {:?}",
         li_in_ol.list_style_type
+    );
+}
+
+/// R1700：HTML4 `<ol/ul/li type>` 属性 → list-style-type（CSS2 App D 表现提示）。
+/// ol type: 1/a/A/i/I → decimal/lower-alpha/upper-alpha/lower-roman/upper-roman；
+/// ul type: disc/circle/square；li type 覆盖父 list-style-type。
+#[test]
+fn list_type_attr_maps_to_list_style_type_hint() {
+    use zero_css_parser::values::ListStyleTypeValue;
+    let doc = parse_html(
+        "<body>\
+<ol type=\"A\"><li>a</li></ol>\
+<ol type=\"i\"><li>r</li></ol>\
+<ul type=\"circle\"><li>c</li></ul>\
+<ol><li type=\"a\">alpha-li</li></ol>",
+    );
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[]);
+    let ol_a = styles.get(&doc.get_elements_by_tag_name("ol")[0]).unwrap();
+    assert!(
+        matches!(ol_a.list_style_type, ListStyleTypeValue::UpperAlpha),
+        "<ol type=A> → UpperAlpha, got {:?}",
+        ol_a.list_style_type
+    );
+    let ol_i = styles.get(&doc.get_elements_by_tag_name("ol")[1]).unwrap();
+    assert!(
+        matches!(ol_i.list_style_type, ListStyleTypeValue::LowerRoman),
+        "<ol type=i> → LowerRoman, got {:?}",
+        ol_i.list_style_type
+    );
+    let ul_c = styles.get(&doc.get_elements_by_tag_name("ul")[0]).unwrap();
+    assert!(
+        matches!(ul_c.list_style_type, ListStyleTypeValue::Circle),
+        "<ul type=circle> → Circle, got {:?}",
+        ul_c.list_style_type
+    );
+    // li type 覆盖父 ol（默认 decimal）：li[type=a] → LowerAlpha。
+    let li_alpha = styles.get(&doc.get_elements_by_tag_name("li")[3]).unwrap();
+    assert!(
+        matches!(li_alpha.list_style_type, ListStyleTypeValue::LowerAlpha),
+        "<li type=a> overrides parent → LowerAlpha, got {:?}",
+        li_alpha.list_style_type
     );
 }
 

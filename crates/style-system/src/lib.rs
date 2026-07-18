@@ -1122,6 +1122,14 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
                 }
             }
         }
+        // R1700：ol/ul/li 的 HTML4 `type` 属性 → list-style-type（CSS2 App D 表现提示）。
+        // ol type: 1/a/A/i/I；ul/li type: disc/circle/square（li 也可取 ol 的 1/a/A/i/I）。
+        // 仅 type 属性；start=/value= 计数器语义是独立切片（须 counter-reset 支持）。
+        "ol" | "ul" | "li" => {
+            if let Some(t) = elem_attr(elem, "type").and_then(|v| html_list_type_attr(&v)) {
+                hints.push(("list-style-type".to_string(), t.to_string()));
+            }
+        }
         _ => {
             if let Some(bg) = elem_attr(elem, "bgcolor") {
                 hints.push(("background-color".to_string(), normalize_html_color(&bg)));
@@ -1272,6 +1280,24 @@ fn html_align_to_vertical_align(align: &str) -> Option<String> {
         "top" => Some("top".to_string()),
         "middle" | "center" => Some("middle".to_string()),
         "bottom" => Some("bottom".to_string()),
+        _ => None,
+    }
+}
+
+/// R1700：HTML4 `<ol/ul/li type>` 属性值 → CSS list-style-type 关键字（CSS2 App D）。
+/// ol type: 1/a/A/i/I → decimal/lower-alpha/upper-alpha/lower-roman/upper-roman；
+/// ul/li type: disc/circle/square（li 也可取 ol 的序数类型）。非法值返回 None（忽略）。
+/// 注意：type 大小写敏感（`a` vs `A` 是不同 list-style-type），故不 to_lowercase。
+fn html_list_type_attr(attr: &str) -> Option<&'static str> {
+    match attr.trim() {
+        "1" => Some("decimal"),
+        "a" => Some("lower-alpha"),
+        "A" => Some("upper-alpha"),
+        "i" => Some("lower-roman"),
+        "I" => Some("upper-roman"),
+        "disc" => Some("disc"),
+        "circle" => Some("circle"),
+        "square" => Some("square"),
         _ => None,
     }
 }
