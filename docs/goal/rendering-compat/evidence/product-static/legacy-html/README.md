@@ -71,6 +71,7 @@ make product-smoke-legacy
 | 45 | progress / meter / keygen | 废弃/替换类表单控件（R1669；keygen 固有尺寸，progress/meter forward Bug C）|
 | 46 | frameset / frame | frameset 帧模式探测（R1669；frame→display:none，帧网格渲染 unsupported）|
 | 47 | datalist / misc | datalist/source/track/optgroup/output/bdi/bdo（R1675；datalist+source+track→display:none）|
+| 48 | ruby / misc | ruby/rp/rt/picture/wbr/data（R1676；rp→display:none）|
 
 ### R1657 `<noframes>` display:none 修复
 
@@ -134,6 +135,21 @@ struct **FAIL→PASS**。diff 6.93% 持平（source/track 透明无像素差；d
 font-wall + optgroup/output/bdi/bdo 文本）。★ **未修 optgroup**：fixture 47 standalone optgroup 仍渲染（w=17.6
 + options 堆叠），但 standalone optgroup 非标准（真实页 optgroup 总在 select 内）——select 内 optgroup/option
 渲染属 select widget 域（= R1670/R1671 forward 的 replaced 子节点抑制架构缺口，非 display:none）。
+
+### R1676 `<rp>` UA display:none（ruby 括号 fallback）·legacy fixture 48·ruby-layout + wbr-zero-width forward
+
+承接 R1675 forward ①「续 legacy/UA-display vein probe 剩余元素」。本轮加 [`48-ruby-and-misc.html`](./fixtures/48-ruby-and-misc.html)
+（ruby/rp/rt/picture/wbr/data）+ chrome-127 oracle。★ **pixel 采样抓 bug**：`<rp>`（ruby 括号 fallback "("/")"）
+当 inline 渲染（ZW ruby 盒内 rp 子盒 6.4×19 可见 "("），chromium ruby-capable UA `rp{display:none}` 隐藏
+（pixel：chrome rp 区是 ruby base/rt 文本非括号）。★ **fix**（[`lib.rs`](../../../../../crates/style-system/src/lib.rs)
+None-arm）：加 `rp` + 扩 `test_hidden_elements_default_to_none`。fixture 48 LAYOUT_DUMP 复核 rp 子盒消失，
+ruby 宽 55.2→42.4，diff 5.46%→5.45%（括号移除，正确方向；残余 = ruby-layout 差异，见下）。★ **documented
+forward（本轮不修，非 display:none scope）**：① **ruby-layout**——ZW 把 `<ruby>` 渲成 `<rt>` 垂直堆叠盒
+（rt 上下排），chromium 做 proper ruby（rt 小字浮 base 上方）；fixture 48 5.45% 主导 = ruby-layout，须 ruby
+display type + ruby box layout（多 session 架构）；② **`<wbr>` 零宽**——ZW 渲成 6×24.6 盒（应零宽 inline +
+line-break opportunity），须 IFC wbr 处理（非 display:none——wbr 是断行机会标记非隐藏元素）。picture/img/data
+确认正确（inline + 替换/文本）。★ **A/B**：CSS2 oracle bit-identical **net-0**（CSS2 无 ruby 测试——rp 在 WPT
+css-ruby 簇，非 css/CSS2 corpus）。load-bearing 单测钉死 None-arm 含 rp。
 
 **门禁**：fmt clean / clippy --workspace --all-targets -D warnings clean / make test 全 workspace 0 failed /
 product-smoke welcome struct PASS 字节一致（零回归——welcome 无 area/frame/keygen）/ legacy smoke
@@ -203,9 +219,9 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1675）
+## 当前基线（2026-07-18，R1676）
 
-- **45/47 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.04%，font-wall baseline），47 fixtures 覆盖
+- **46/48 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.05%，font-wall baseline），48 fixtures 覆盖
   HTML 3.2/4 + CSS1/2。2 known struct FAIL = 27-address（body/html 高度传播，R1047/R109 高风险 defer）+
   37-form-controls（R109 inline-`<label>` 含 inline-block `<input>` entanglement）。
 - **R1671 progress/meter value 填充条绘制**（paint 半，≡ R1660 paint_input_value；sizing+paint 两轮收尾）：
