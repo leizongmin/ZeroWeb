@@ -1158,4 +1158,3 @@ fn test_tokenizer_invalid_numbers() {
         assert!(!tokens.is_empty());
     }
 }
-

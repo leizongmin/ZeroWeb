@@ -466,9 +466,7 @@ mod tests {
         let mut cache = build_image_cache(&html, None);
         let src = extract_img_srcs(&html).into_iter().next().expect("img src extracted");
         let key = ImageKey::new(simple_hash(&src));
-        let img = cache
-            .get(&key)
-            .expect("base64 PNG data URI should decode (R1704)");
+        let img = cache.get(&key).expect("base64 PNG data URI should decode (R1704)");
         assert_eq!(img.width, 2);
         assert_eq!(img.height, 2);
         assert_eq!(&img.pixels[..4], &[255, 0, 0, 255]); // 红

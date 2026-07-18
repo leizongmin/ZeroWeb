@@ -853,4 +853,3 @@ fn test_parse_selector_is_where() {
         panic!("Expected Style rule for :where()");
     }
 }
-
