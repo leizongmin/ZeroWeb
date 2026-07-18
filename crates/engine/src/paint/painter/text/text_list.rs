@@ -268,26 +268,94 @@ impl super::super::Painter {
 
     /// 计算当前列表项在其兄弟中的 1-based 索引。
     fn compute_list_item_index(&self, doc: &Document, node_id: NodeId) -> usize {
-        let parent_id = match doc.parent_node(node_id) {
-            Some(id) => id,
-            None => return 1,
-        };
+        list_item_counter(doc, node_id) as usize
+    }
+}
 
-        let mut index = 0;
-        let mut found = false;
-        for child_id in doc.child_nodes(parent_id) {
-            if child_id == node_id {
-                found = true;
-                break;
-            }
-            if let Some(child) = doc.get(child_id)
-                && let NodeKind::Element(elem) = &child.kind
-                && elem.local_name() == "li"
-            {
-                index += 1;
-            }
+/// R1701：计算 `<li>` 的列表序号（counter），尊重 HTML4 `<ol start=N>` 起始值
+/// 与 `<li value=N>` 重置值（后续 li 从 value+1 继续）。无属性时等价 1-based 兄弟
+/// 位置（向后兼容）。fixture 22 `<ol start="3" type="A">` → C/D/J(`value=10`)/K。
+pub(super) fn list_item_counter(doc: &Document, node_id: NodeId) -> i64 {
+    let parent_id = match doc.parent_node(node_id) {
+        Some(id) => id,
+        None => return 1,
+    };
+    // <ol start=N>：默认 1；负数/非数字忽略（HTML4 start 须为整数）。
+    let start: i64 = doc
+        .get_attribute(parent_id, "start")
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or(1);
+    let mut counter = start;
+    let mut found = false;
+    for child_id in doc.child_nodes(parent_id) {
+        if child_id == node_id {
+            found = true;
+            break;
         }
+        if is_li(doc, child_id) {
+            // 该 li 兄弟消耗一个序号；若带 value=N，先把 counter 重置为 N。
+            if let Some(v) = doc
+                .get_attribute(child_id, "value")
+                .and_then(|s| s.trim().parse::<i64>().ok())
+            {
+                counter = v;
+            }
+            counter += 1;
+        }
+    }
+    if !found {
+        return 1;
+    }
+    // 目标 li 自身 value= 设其序号（其上方兄弟的循环已从 value+1 继续）。
+    if let Some(v) = doc
+        .get_attribute(node_id, "value")
+        .and_then(|s| s.trim().parse::<i64>().ok())
+    {
+        return v.max(1);
+    }
+    counter.max(1)
+}
 
-        if found { index + 1 } else { 1 }
+fn is_li(doc: &Document, id: NodeId) -> bool {
+    doc.get(id)
+        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name() == "li"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::list_item_counter;
+    use zero_dom::parse_html;
+
+    fn li(doc: &zero_dom::Document, n: usize) -> zero_dom::NodeId {
+        doc.get_elements_by_tag_name("li")[n]
+    }
+
+    /// R1701：ol start= 与 li value= 计数器语义（fixture 22 ol[start=3] type=A → C/D/J/K）。
+    #[test]
+    fn list_counter_respects_start_and_value_attrs() {
+        let doc = parse_html("<ol start=\"3\"><li>a</li><li>b</li><li value=\"10\">c</li><li>d</li></ol>");
+        assert_eq!(list_item_counter(&doc, li(&doc, 0)), 3); // C
+        assert_eq!(list_item_counter(&doc, li(&doc, 1)), 4); // D
+        assert_eq!(list_item_counter(&doc, li(&doc, 2)), 10); // J（value=10）
+        assert_eq!(list_item_counter(&doc, li(&doc, 3)), 11); // K（从 10+1 继续）
+    }
+
+    /// 无 start=/value= 时等价 1-based 兄弟位置（向后兼容，R1701 前行为）。
+    #[test]
+    fn list_counter_default_is_one_based_position() {
+        let doc = parse_html("<ol><li>a</li><li>b</li><li>c</li></ol>");
+        assert_eq!(list_item_counter(&doc, li(&doc, 0)), 1);
+        assert_eq!(list_item_counter(&doc, li(&doc, 1)), 2);
+        assert_eq!(list_item_counter(&doc, li(&doc, 2)), 3);
+    }
+
+    /// li value= 在中间重置后续计数（value=5 后续 6/7）。
+    #[test]
+    fn list_counter_value_attr_resets_running_counter() {
+        let doc = parse_html("<ol><li>a</li><li value=\"5\">b</li><li>c</li></ol>");
+        assert_eq!(list_item_counter(&doc, li(&doc, 0)), 1);
+        assert_eq!(list_item_counter(&doc, li(&doc, 1)), 5); // value=5
+        assert_eq!(list_item_counter(&doc, li(&doc, 2)), 6); // 从 5+1 继续
     }
 }
