@@ -75,6 +75,27 @@ fn test_pipeline_render_simple_html() {
     assert!(result.layout.viewport_width > 0.0);
 }
 
+/// R1682：`<wbr>` 零宽断行机会标记——无可见渲染。`<div>ab<wbr>cd</div>` 应与
+/// `<div>abcd</div>` 产出**相同** glyphs（"abcd"，wbr 不贡献 glyph 也不打断文本）。
+#[test]
+fn test_pipeline_wbr_renders_zero_width_no_glyph() {
+    let mut with_wbr = RenderPipeline::new(800.0, 600.0);
+    let r1 = with_wbr.render_html("<html><body><div>ab<wbr>cd</div></body></html>", "");
+    let mut without = RenderPipeline::new(800.0, 600.0);
+    let r2 = without.render_html("<html><body><div>abcd</div></body></html>", "");
+
+    // 两侧都应有 4 个 glyph（a/b/c/d），wbr 不增加 glyph。
+    assert_eq!(r1.primitives.glyphs.len(), r2.primitives.glyphs.len());
+    assert_eq!(r1.primitives.glyphs.len(), 4, "ab<wbr>cd → 4 glyphs (a/b/c/d)");
+    // glyph_id 序列应为 a/b/c/d（确认 wbr 未插入额外字符或打断）。
+    let ids: Vec<u32> = r1.primitives.glyphs.iter().map(|g| g.glyph_id).collect();
+    assert_eq!(
+        ids,
+        vec!['a' as u32, 'b' as u32, 'c' as u32, 'd' as u32],
+        "glyph 序列应为 a/b/c/d"
+    );
+}
+
 /// 测试带 CSS 的渲染。
 #[test]
 fn test_pipeline_render_with_css() {

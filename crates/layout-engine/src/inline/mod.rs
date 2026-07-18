@@ -844,6 +844,14 @@ impl InlineFormattingContext {
                             continue;
                         }
 
+                        // R1682：`<wbr>` 是零宽断行机会标记（HTML §12.3）——无可见渲染，仅提示
+                        // 换行。跳过不产生 InlineItem → 零宽不可见（修 R1676 latent gap：旧把它当
+                        // 普通 inline 元素收集 text_content 渲成可见盒）。断行机会语义（长词在 wbr
+                        // 处可断）是 line-breaker 增强，本 slice 只修零宽可见性。
+                        if elem_data.local_name() == "wbr" {
+                            continue;
+                        }
+
                         // CSS2 §9.4.3/§9.7：position:absolute/fixed 元素脱离常规流（含
                         // 行内流），不参与 IFC 行盒——由 abspos pass 独立定位/绘制。旧实现
                         // 把它们当 inline 盒收入 IFC，其全高撑大行盒 max_ascent，错位
