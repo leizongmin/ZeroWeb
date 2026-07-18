@@ -395,7 +395,7 @@ jobs:
       - name: Run benchmarks
         run: |
           chmod +x scripts/run-benchmarks.sh
-          ./scripts/run-benchmarks.sh
+          ZERO_WEB_BENCH_QUICK=1 ./scripts/run-benchmarks.sh
         continue-on-error: true
 
       - name: Upload benchmark results
