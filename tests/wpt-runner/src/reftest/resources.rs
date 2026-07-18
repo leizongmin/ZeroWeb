@@ -220,8 +220,15 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
             continue;
         }
 
-        // 其他 data: URI（PNG/JPEG/base64 等）暂不支持（无 base_dir 亦无文件系统），跳过。
+        // 其他 data: URI（PNG/JPEG/GIF/base64 等）暂不支持（无 base_dir 亦无文件系统），跳过。
         if url.starts_with("data:") {
+            // R1704：PNG/JPEG/GIF 等栅格 data URI（base64 或 url-encoded）→ decode_image_bytes
+            // 真解码（按 magic bytes 分派）。SVG 走上方纯色近似路径（fixture 均为单色）。
+            if let Some(bytes) = decode_data_uri_bytes(url)
+                && let Ok(data) = decode_image_bytes(&bytes)
+            {
+                cache.insert_with_key(key, data);
+            }
             continue;
         }
 
@@ -391,6 +398,44 @@ fn generate_svg_data_uri_image(url: &str) -> Option<ImageData> {
     }
 
     ImageData::from_rgba(buf, svg_w, svg_h).ok()
+}
+
+/// R1704：解析 `data:` URI 的 payload 字节（base64 或 url-encoded）。
+///
+/// `data:[<mediatype>][;base64],<payload>` —— header 含 `base64` 则 base64 解码 payload，
+/// 否则按字节 percent-decode（%XX）。返回原始字节供 `decode_image_bytes` 按 magic 分派。
+/// 仅处理栅格图（PNG/JPEG/GIF）；SVG 走 `generate_svg_data_uri_image` 纯色近似路径。
+fn decode_data_uri_bytes(url: &str) -> Option<Vec<u8>> {
+    let comma = url.find(',')?;
+    let header = &url[..comma];
+    let payload = &url[comma + 1..];
+    if header.contains("base64") {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .ok()
+    } else {
+        // 字节级 percent-decode（%XX → byte）；非 % 字节原样保留。
+        let bytes = payload.as_bytes();
+        let mut out = Vec::with_capacity(bytes.len());
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'%'
+                && i + 2 < bytes.len()
+                && let Ok(b) = u8::from_str_radix(
+                    std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""),
+                    16,
+                )
+            {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+            out.push(bytes[i]);
+            i += 1;
+        }
+        Some(out)
+    }
 }
 
 /// 简易 percent-decode。
@@ -584,5 +629,35 @@ mod tests {
         assert_eq!(img.height, 30);
         // 纯绿 #008000 = (0, 128, 0, 255)。
         assert_eq!(&img.pixels[..4], &[0, 128, 0, 255]);
+    }
+
+    /// R1704：`data:image/png;base64,...` 经 base64 解码 + decode_image_bytes 真解码。
+    /// 构造 2×2 红 PNG → base64 → data URI → build_image_cache 应得 2×2 红 ImageData。
+    #[test]
+    fn png_data_uri_base64_decodes() {
+        use base64::Engine;
+        // 构造 2×2 红色 PNG。
+        let mut png_buf = Vec::new();
+        {
+            use png::{BitDepth, ColorType, Encoder};
+            let mut enc = Encoder::new(&mut png_buf, 2, 2);
+            enc.set_color(ColorType::Rgba);
+            enc.set_depth(BitDepth::Eight);
+            let mut w = enc.write_header().expect("PNG header");
+            // 4 像素 × RGBA = 16 字节，全红（[255,0,0,255] × 4）。
+            let data: Vec<u8> = [255, 0, 0, 255].repeat(4);
+            w.write_image_data(&data).expect("PNG data");
+        }
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&png_buf);
+        let html = format!("<body><img src=\"data:image/png;base64,{b64}\"></body>");
+        let mut cache = build_image_cache(&html, None);
+        let src = extract_img_srcs(&html).into_iter().next().expect("img src extracted");
+        let key = ImageKey::new(simple_hash(&src));
+        let img = cache
+            .get(&key)
+            .expect("base64 PNG data URI should decode (R1704)");
+        assert_eq!(img.width, 2);
+        assert_eq!(img.height, 2);
+        assert_eq!(&img.pixels[..4], &[255, 0, 0, 255]); // 红
     }
 }

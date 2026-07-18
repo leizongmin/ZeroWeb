@@ -22,5 +22,6 @@ zero-script-sandbox = { workspace = true }
 zero-webview = { workspace = true }
 png = "0.17"
 rayon = "1"
+base64 = "0.22"
 
 [dev-dependencies]
