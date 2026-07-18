@@ -198,7 +198,8 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
             }
             result.classes.push(r[..end].to_string());
             rest = &r[end..];
-        } else if let Some(r) = rest.strip_prefix('[') {
+        } else {
+            let r = rest.strip_prefix('[')?;
             // 属性选择器
             let end_bracket = r.find(']')?;
             let attr_content = &r[..end_bracket];
@@ -222,9 +223,6 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
 
             result.attribute = Some(attr_sel);
             rest = &r[end_bracket + 1..];
-        } else {
-            // 无法识别的选择器部分
-            return None;
         }
     }
 
