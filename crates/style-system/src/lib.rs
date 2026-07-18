@@ -49,10 +49,10 @@ use zero_dom::{Document, NodeId, NodeKind, QuirksMode};
 pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
     Some(match tag {
         // 块级元素（对齐 HTML Living Standard UA 样式表的 display:block 列表）
-        "html" | "address" | "article" | "aside" | "blockquote" | "body" | "center" | "dd" | "details" | "div"
-        | "dl" | "dt" | "fieldset" | "figcaption" | "figure" | "footer" | "form" | "h1" | "h2" | "h3" | "h4" | "h5"
-        | "h6" | "header" | "hgroup" | "hr" | "legend" | "li" | "listing" | "main" | "menu" | "nav" | "ol" | "p"
-        | "plaintext" | "pre" | "search" | "section" | "summary" | "ul" | "xmp" => DisplayValue::Block,
+        "html" | "address" | "article" | "aside" | "blockquote" | "body" | "center" | "dd" | "details" | "dir"
+        | "div" | "dl" | "dt" | "fieldset" | "figcaption" | "figure" | "footer" | "form" | "h1" | "h2" | "h3"
+        | "h4" | "h5" | "h6" | "header" | "hgroup" | "hr" | "legend" | "li" | "listing" | "main" | "menu" | "nav"
+        | "ol" | "p" | "plaintext" | "pre" | "search" | "section" | "summary" | "ul" | "xmp" => DisplayValue::Block,
 
         // 表格元素
         "table" => DisplayValue::Table,
@@ -1297,6 +1297,7 @@ mod ua_display_tests {
             // 与块子元素 overlap（legacy-html fixture 17-center struct-check FAIL 抓到）。
             "center",
             "dd",
+            "dir",
             "div",
             "dl",
             "dt",
