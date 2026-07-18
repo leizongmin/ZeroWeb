@@ -201,10 +201,6 @@ pub(super) fn load_linked_stylesheets(html: &str, base_dir: Option<&Path>) -> St
 pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCache {
     let mut cache = ImageCache::new(256, 64 * 1024 * 1024);
 
-    let Some(base) = base_dir else {
-        return cache;
-    };
-
     // 收集所有需要加载的 URL
     let mut all_urls = extract_img_srcs(html);
     all_urls.extend(extract_css_urls(html));
@@ -214,7 +210,9 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
     for url in &all_urls {
         let key = ImageKey::new(simple_hash(url));
 
-        // 优先处理 data URI（SVG 等）
+        // R1703：data URI 自包含（无需文件系统 base_dir）——须在 base_dir 早返回外处理，
+        // 否则 product-smoke / 无 base_dir 渲染（fixture 24 等）下 data URI 图永不解码。
+        // 优先处理 data:image/svg+xml（generate_svg_data_uri_image 提取首个 rect 纯色）。
         if url.starts_with("data:image/svg+xml")
             && let Some(data) = generate_svg_data_uri_image(url)
         {
@@ -222,10 +220,15 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
             continue;
         }
 
-        // 跳过非文件 URL（如 data: URI 无法从文件系统加载）
+        // 其他 data: URI（PNG/JPEG/base64 等）暂不支持（无 base_dir 亦无文件系统），跳过。
         if url.starts_with("data:") {
             continue;
         }
+
+        // 文件 URL 需 base_dir；无 base_dir 跳过（data URI 已在上方处理完毕）。
+        let Some(base) = base_dir else {
+            continue;
+        };
 
         // 站点根相对 URL（如 "/static/x.svg"）应解析到 base_dir 下（fixture 的站点根），
         // 而非 `base.join(absolute)`（会替换 base → 文件系统根 → 加载失败）。
@@ -559,4 +562,27 @@ pub(super) fn extract_image_sizes(
     html: &str,
 ) -> std::collections::HashMap<u64, (f32, f32)> {
     extract_image_metrics(image_cache, html).0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R1703：`data:image/svg+xml` URI 须在无 base_dir 时也解码（自包含，无文件系统依赖）。
+    /// 此前 build_image_cache 在 base_dir=None 时早返回空 cache，致 product-smoke fixture 24
+    /// 的 data URI img 永不渲染（ZW 与 chromium 全图绿区 diff）。
+    #[test]
+    fn data_uri_svg_decodes_without_base_dir() {
+        let html = "<body><img src=\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30'><rect width='30' height='30' fill='%23008000'/></svg>\"></body>";
+        let mut cache = build_image_cache(html, None);
+        let src = extract_img_srcs(html).into_iter().next().expect("img src extracted");
+        let key = ImageKey::new(simple_hash(&src));
+        let img = cache
+            .get(&key)
+            .expect("data:image/svg+xml should decode without base_dir (R1703)");
+        assert_eq!(img.width, 30);
+        assert_eq!(img.height, 30);
+        // 纯绿 #008000 = (0, 128, 0, 255)。
+        assert_eq!(&img.pixels[..4], &[0, 128, 0, 255]);
+    }
 }
