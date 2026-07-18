@@ -960,10 +960,27 @@ pub(crate) fn adjust_float_positions_with_context(
                             }
                         }
                         FloatValue::Right if child.x + child.width > *float_x => {
-                            // 右浮动：缩小 BFC 元素宽度以不重叠 float 的 margin-box
-                            let new_width = float_x - child.x;
-                            child.width = new_width.max(0.0);
-                            shrink_bfc_content_width(child);
+                            // R1722：float:right definite-width BFC 放不下 float 左侧可用宽
+                            //（child.x + width > float_x）→ 推到 float 下方（mirror of R1369 左
+                            // float overflows 推下，CSS §9.5：BFC border-box 不重叠 float；definite
+                            // 宽度保持不 shrink）。仅 definite-width + 无后续 in-flow block 同胞时推下，
+                            // 否则保持 shrink-to-fit（原行为）。kill-switch ZW_BFC_RIGHT_PUSHBELOW=0。
+                            let is_definite_width = child.width < container_width - 0.5;
+                            if std::env::var("ZW_BFC_RIGHT_PUSHBELOW").as_deref() != Ok("0")
+                                && is_definite_width
+                                && !has_following_block_sibling[idx]
+                                && !child.is_layout_container
+                            {
+                                if float_bottom > child.y {
+                                    child.y = float_bottom;
+                                }
+                                child.x = child.margin_left;
+                            } else {
+                                // 右浮动：缩小 BFC 元素宽度以不重叠 float 的 margin-box
+                                let new_width = float_x - child.x;
+                                child.width = new_width.max(0.0);
+                                shrink_bfc_content_width(child);
+                            }
                         }
                         _ => {}
                     }
