@@ -2,7 +2,8 @@
 
 use super::*;
 // R964：count_col_elements 抽到 table_grid 模块。
-use crate::table_grid::count_col_elements;
+// R1718：collect_col_widths 同模块。
+use crate::table_grid::{collect_col_widths, count_col_elements};
 use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, VisibilityValue};
 use zero_dom::Document;
@@ -359,6 +360,58 @@ fn test_table_cell_text_valign_offset_for_text_only_cell() {
         "valign:top should not set valign_offset, got {}",
         table_box2.children[0].valign_offset
     );
+}
+
+/// R1718：`<colgroup><col width="40%"><col width="30%"><col width="30%">` → 列宽按 %
+/// 解析（available_width=300 → 120/90/90）。colgroup 含 col 子时按各 col 的 width 映射。
+/// col 无 box，须在 grid 直接读 DOM 属性（compute_column_widths 此前忽略 col width）。
+#[test]
+fn test_collect_col_widths_resolves_percent_and_px() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cg_id = doc.create_element("div");
+    let col0 = doc.create_element("div");
+    let col1 = doc.create_element("div"); // 无 width 属性 → None
+    let col2 = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+    let _ = doc.append_child(table_id, cg_id);
+    let _ = doc.append_child(cg_id, col0);
+    let _ = doc.append_child(cg_id, col1);
+    let _ = doc.append_child(cg_id, col2);
+    doc.set_attribute(col0, "width", "40%");
+    doc.set_attribute(col2, "width", "60"); // px（无 %）
+
+    let mut styles = HashMap::new();
+    let mk = |d: DisplayValue| {
+        let mut s = ComputedStyle::default();
+        s.display = d;
+        s
+    };
+    styles.insert(table_id, mk(DisplayValue::Table));
+    styles.insert(cg_id, mk(DisplayValue::TableColumnGroup));
+    styles.insert(col0, mk(DisplayValue::TableColumn));
+    styles.insert(col1, mk(DisplayValue::TableColumn));
+    styles.insert(col2, mk(DisplayValue::TableColumn));
+
+    let col = |nid| LayoutBox {
+        node_id: Some(nid),
+        ..Default::default()
+    };
+    let colgroup = LayoutBox {
+        node_id: Some(cg_id),
+        children: vec![col(col0), col(col1), col(col2)],
+        ..Default::default()
+    };
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![colgroup],
+        ..Default::default()
+    };
+
+    let widths = collect_col_widths(&table_box, 3, &styles, &doc, 300.0);
+    // 40% of 300 = 120，col1 无 width → None，"60" px = 60。
+    assert_eq!(widths, vec![Some(120.0), None, Some(60.0)]);
 }
 
 /// R769：table-cell 建立 BFC（CSS §9.4.1），其首子 margin-top 不应向上穿透单元格

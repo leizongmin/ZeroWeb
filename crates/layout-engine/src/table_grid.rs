@@ -515,3 +515,77 @@ pub(crate) fn detect_collapsed_columns(
     }
     collapsed
 }
+
+/// R1718：收集 `<col>`/`<colgroup>` 的 `width` 属性并映射到列索引（≡ detect_collapsed_columns
+/// 遍历模式）。返回每列的 col 指定宽度（px，% 已按 `available_width` 解析）；无 col width 的
+/// 列返回 None。col width 行为同显式 cell width（compute_column_widths 据此设列宽 floor +
+/// col_explicit，auto 扩展期冻结）。colgroup 含 col 子时按各 col 的 width；否则 colgroup 自身
+/// width 平铺到其 span 覆盖的列。
+pub(crate) fn collect_col_widths(
+    table_box: &LayoutBox,
+    col_count: usize,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+    available_width: f32,
+) -> Vec<Option<f32>> {
+    let mut col_widths = vec![None; col_count];
+    let mut col_cursor = 0usize;
+    let resolve = |w: &str| -> Option<f32> {
+        let w = w.trim();
+        if let Some(pct) = w.strip_suffix('%') {
+            let p = pct.trim().parse::<f32>().ok()?;
+            Some((p / 100.0 * available_width).max(0.0))
+        } else {
+            let n = w.strip_suffix("px").unwrap_or(w).trim();
+            n.parse::<f32>().ok().map(|v| v.max(0.0))
+        }
+    };
+    let apply = |col_widths: &mut Vec<Option<f32>>,
+                 nid: Option<NodeId>,
+                 span: usize,
+                 cursor: usize,
+                 resolve: &dyn Fn(&str) -> Option<f32>| {
+        if let Some(nid) = nid
+            && let Some(w) = doc.get_attribute(nid, "width")
+            && let Some(px) = resolve(&w)
+        {
+            for i in 0..span {
+                let idx = cursor + i;
+                if idx < col_count {
+                    col_widths[idx] = Some(px);
+                }
+            }
+        }
+    };
+    for child in &table_box.children {
+        let child_display = get_display(child, styles);
+        match child_display {
+            Some(DisplayValue::TableColumnGroup) => {
+                let has_col_children = child
+                    .children
+                    .iter()
+                    .any(|c| get_display(c, styles) == Some(DisplayValue::TableColumn));
+                if has_col_children {
+                    for col_child in &child.children {
+                        if get_display(col_child, styles) == Some(DisplayValue::TableColumn) {
+                            let col_span = get_span(col_child, doc);
+                            apply(&mut col_widths, col_child.node_id, col_span, col_cursor, &resolve);
+                            col_cursor += col_span;
+                        }
+                    }
+                    continue;
+                }
+                let rg_span = get_span(child, doc);
+                apply(&mut col_widths, child.node_id, rg_span, col_cursor, &resolve);
+                col_cursor += rg_span;
+            }
+            Some(DisplayValue::TableColumn) => {
+                let col_span = get_span(child, doc);
+                apply(&mut col_widths, child.node_id, col_span, col_cursor, &resolve);
+                col_cursor += col_span;
+            }
+            _ => {}
+        }
+    }
+    col_widths
+}

@@ -605,6 +605,20 @@ fn compute_column_widths(
     //（table-cell-width-0：width:0/2px/20px 列保持其宽，width:auto 的 .normal 列填满剩余）。
     let mut col_explicit = vec![false; col_count];
 
+    // R1718：`<col>`/`<colgroup>` width 属性 → 列宽 floor + col_explicit（≡ 显式 cell width
+    // 语义，CSS Tables §4：col width 行为同该列每格显式 width）。col 无 box，须在 grid 直接读
+    // DOM 属性（compute_column_widths 此前仅读 cell width，col width 被忽略）。auto 扩展期
+    // 这些列冻结（同 R364 cell-explicit），仅 auto 列吸收剩余空间。
+    for (i, w) in crate::table_grid::collect_col_widths(table_box, col_count, styles, doc, available_width)
+        .iter()
+        .enumerate()
+    {
+        if let Some(px) = w {
+            col_max_widths[i] = col_max_widths[i].max(*px);
+            col_explicit[i] = true;
+        }
+    }
+
     // 辅助闭包：计算单元格对其所在列的宽度贡献
     let cell_used_width = |cell_box: &LayoutBox| -> (f32, bool) {
         let cell_style_width = cell_box.node_id.and_then(|id| styles.get(&id)).map(|s| s.width.clone());
