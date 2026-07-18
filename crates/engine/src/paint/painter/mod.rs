@@ -699,6 +699,11 @@ impl Painter {
 
                     // 4b. <img> 元素绘制（含 object-fit）
                     self.paint_img_element(box_node, abs_x, abs_y, style, doc);
+
+                    // 4b2. <input> value 文本绘制（submit/reset/button 标签 + text/password
+                    // 预填值；R1660 form-control slice-2）。input 是 void 无文本子节点，value
+                    // 属性须显式 paint（R1659 已给正确几何宽）。
+                    self.paint_input_value(box_node, abs_x, abs_y, style, doc);
                 }
 
                 // 4c. CSS `content` 属性生成的文本（在普通文本之前）

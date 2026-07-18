@@ -95,11 +95,12 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1659）
+## 当前基线（2026-07-18，R1660）
 
 - **37/39 struct-check PASS**（avg diff 2.71%，font-wall baseline），39 fixtures 覆盖 HTML 3.2/4 + CSS1/2。
-- **37-form-controls** R1659 修复 `<input>` 固有尺寸（见下条），diff **7.03%→4.25%**（struct 仍 FAIL，
-  残余 = R109 inline-`<label>` 含 inline-block `<input>` 被拆成 block 盒的已知 entanglement，非固有尺寸缺口）。
+- **37-form-controls** R1659 修复 `<input>` 固有尺寸（7.03%→4.25%）+ R1660 修复 `<input>` value 文本渲染
+ （4.25%→4.33%，+0.08pp font-wall 噪声但语义正确——按钮/输入框标签与值现在可见 = 「核心语义可见」）。
+  struct 仍 FAIL（残余 = R109 inline-`<label>` 含 inline-block `<input>` 被拆成 block 盒的已知 entanglement）。
 - **17-center** R1651 修复（`<center>` UA display:block，HTML4 块级）。
 - **19-testpage-minimal** R1652 修 check 误报（check_text_concatenation 跳过 table-internal）。
 - **30-table-sections** R1653 修复 `<caption>` 定位（caption-side:top 须让 rows 下移 caption 高度，
@@ -127,11 +128,15 @@ done
   内容（option/文本子节点）正确测宽，不加 width。**A/B**（CSS2 6226/css-flexbox 497/css-grid 49 三 dir，
   含全 corpus `<input>` 文件：CSS2 54 / grid 6 / flex 4）**bit-identical net-0**（UA lowest-priority，
   WPT reftest 罕用 bare input）。
-  **残余 struct FAIL（5 issue，非固有尺寸缺口）= R109 entanglement**：inline `<label>` 含 inline-block
+  **R1660 已修** `<input>` value 文本渲染（paint 侧，form-control slice-2）：void `<input>` 无 DOM 文本子节点，
+  value 属性此前不渲染。R1660 按 `type` 绘 value——submit/reset/button value（默认 "Submit"/"Reset"）水平居中；
+  text 类 value 左对齐；password value 渲为 `•`；checkbox/radio/hidden/range 等不绘。**A/B** 三 dir
+  （CSS2/css-flexbox/css-grid）**bit-identical net-0**；fixture 37 diff 4.25%→4.33%（+0.08pp font-wall glyph
+  噪声，trend-only），但按钮/输入框标签与值现可见（「核心语义可见」验收口径优先于 font-wall pixel 噪声）。
+  **残余 struct FAIL（5 issue，非 form-control 缺口）= R109 entanglement**：inline `<label>` 含 inline-block
   `<input>` 子被 ZW 拆成 block 盒 → 同父 label 垂直堆叠 overlap（3）+ `<p>` IFC 吸收 block 子文本
   concatenation（2）。此为 inline-box-model Phase-A 已知硬 vein（R125/R198/R205 谱系 net-negative），
-  独立于 form-control 固有尺寸，需 IFC 统一解，非 scoped slice。submit/reset 的 `value` 文本未渲染为
-  可见标签亦属 slice-2（paint 侧）。trend-only smoke 不阻（exit 0）。
+  独立于 form-control 固有尺寸/value 渲染，需 IFC 统一解，非 scoped slice。trend-only smoke 不阻（exit 0）。
 
 ## 新增 fixture
 

@@ -682,6 +682,110 @@ impl super::Painter {
         }
     }
 
+    /// R1660：`<input>` 的 `value` 渲染为可见文本（form-control slice-2）。
+    ///
+    /// `<input>` 是 void 元素（无 DOM 文本子节点），其 `value` 属性的标签/预填内容此前
+    /// 不渲染——submit/reset 按钮无可见文字、text 输入框的预填值不可见。R1659 已按 value
+    /// 字符数 / `size` 属性给 input 正确几何宽；本方法在 paint 侧把 value 文本绘出，对齐
+    /// Chromium UA 语义：
+    /// - submit/reset/button：value（submit/reset 无 value 时默认 "Submit"/"Reset"）水平居中
+    ///   （按钮标签居中）
+    /// - text 类（text/search/email/url/tel/number + 默认无 type）：value 左对齐于内容盒
+    /// - password：每字符渲染为 `•`（密码遮罩语义）
+    /// - checkbox/radio/hidden/range/file/image/color/date 等：不渲染 value 文本
+    ///
+    /// 几何宽由 R1659 UA sizing 决定；此处只补 paint。值超 content 宽时自然溢出（与 chromium
+    /// overflow 一致，本 slice 不做 ellipsis）。
+    pub(crate) fn paint_input_value(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: &Document,
+    ) {
+        let node_id = match box_node.node_id {
+            Some(id) => id,
+            None => return,
+        };
+        let node = match doc.get(node_id) {
+            Some(n) => n,
+            None => return,
+        };
+        let elem = match &node.kind {
+            NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("input") => e,
+            _ => return,
+        };
+
+        let itype = elem.get_attribute("type").unwrap_or_default().to_ascii_lowercase();
+        // 决定渲染标签 + 是否水平居中。
+        let (label, center): (String, bool) = match itype.as_str() {
+            "submit" => (
+                elem.get_attribute("value").unwrap_or_else(|| "Submit".to_string()),
+                true,
+            ),
+            "reset" => (elem.get_attribute("value").unwrap_or_else(|| "Reset".to_string()), true),
+            "button" => (elem.get_attribute("value").unwrap_or_default(), true),
+            "password" => (
+                elem.get_attribute("value")
+                    .unwrap_or_default()
+                    .chars()
+                    .map(|_| '\u{2022}')
+                    .collect(),
+                false,
+            ),
+            // 文本类（默认无 type 当 text）。
+            "" | "text" | "search" | "email" | "url" | "tel" | "number" => {
+                (elem.get_attribute("value").unwrap_or_default(), false)
+            }
+            // checkbox/radio/hidden/range/file/image/color/date/... 不渲染 value 文本。
+            _ => return,
+        };
+        if label.is_empty() {
+            return;
+        }
+
+        let font_size: f32 = match style.font_size {
+            LengthValue::Px(s) => s as f32,
+            _ => return,
+        };
+        if font_size <= 0.0 {
+            return;
+        }
+
+        let color = super::super::color::color_value_to_render(&style.color);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
+
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+        let baseline_y = content_y + font_size;
+
+        // 居中按钮标签：先测总宽再定起始 x。
+        let total_w: f32 = label
+            .chars()
+            .map(|ch| measure_char_for_paint(ch, font_size, false))
+            .sum();
+        let mut char_x = if center {
+            content_x + (box_node.content_width - total_w).max(0.0) / 2.0
+        } else {
+            content_x
+        };
+        for ch in label.chars() {
+            self.primitives.add_glyph(GlyphPrimitive {
+                x: char_x,
+                y: baseline_y,
+                font_size,
+                color,
+                glyph_id: ch as u32,
+                font_id: default_font_id,
+                bitmap_width: None,
+                bitmap_height: None,
+                rotation: 0.0,
+            });
+            char_x += measure_char_for_paint(ch, font_size, false);
+        }
+    }
+
     /// 绘制 `<img>` 元素，根据 `object-fit` 属性决定图片如何适配容器。
     ///
     /// - `fill`：拉伸图片填满容器（默认）

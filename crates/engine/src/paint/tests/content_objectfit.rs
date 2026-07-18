@@ -408,3 +408,111 @@ fn test_paint_img_is_clipped_to_content_box() {
         "图片应裁剪到内容盒范围内"
     );
 }
+
+// ── R1660 <input> value 文本渲染（form-control slice-2）──────────────────
+
+/// 辅助：parse HTML 取首个 `<input>` 的 NodeId。
+fn first_input(html: &str) -> (zero_dom::Document, zero_dom::NodeId) {
+    let doc = zero_dom::parse_html(html);
+    let id = doc.get_elements_by_tag_name("input")[0];
+    (doc, id)
+}
+
+#[test]
+fn paint_input_value_submit_renders_value_label() {
+    let (doc, submit) = first_input(r#"<body><input type="submit" value="Send"></body>"#);
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+
+    let mut box_node = make_box(80.0, 22.0);
+    box_node.node_id = Some(submit);
+    let before = painter.primitives.glyphs.len();
+    painter.paint_input_value(&box_node, 0.0, 0.0, &style, &doc);
+    // value="Send" → 4 glyphs.
+    assert_eq!(painter.primitives.glyphs.len(), before + 4);
+}
+
+#[test]
+fn paint_input_value_default_submit_uses_submit_label() {
+    let (doc, submit) = first_input(r#"<body><input type="submit"></body>"#);
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+
+    let mut box_node = make_box(80.0, 22.0);
+    box_node.node_id = Some(submit);
+    let before = painter.primitives.glyphs.len();
+    painter.paint_input_value(&box_node, 0.0, 0.0, &style, &doc);
+    // 默认标签 "Submit" → 6 glyphs.
+    assert_eq!(painter.primitives.glyphs.len(), before + 6);
+}
+
+#[test]
+fn paint_input_value_password_renders_bullets() {
+    let (doc, pw) = first_input(r#"<body><input type="password" value="ab"></body>"#);
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+
+    let mut box_node = make_box(148.0, 21.0);
+    box_node.node_id = Some(pw);
+    let before = painter.primitives.glyphs.len();
+    painter.paint_input_value(&box_node, 0.0, 0.0, &style, &doc);
+    // value="ab" → 2 个 •（U+2022）遮罩字符。
+    assert_eq!(painter.primitives.glyphs.len(), before + 2);
+    assert_eq!(painter.primitives.glyphs[before].glyph_id, '\u{2022}' as u32);
+}
+
+#[test]
+fn paint_input_value_text_renders_value_and_skips_non_text_types() {
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+
+    // text value="Alice" → 5 glyphs（左对齐）。
+    let (doc_text, text_input) = first_input(r#"<body><input type="text" value="Alice"></body>"#);
+    let mut box_text = make_box(148.0, 21.0);
+    box_text.node_id = Some(text_input);
+    let before = painter.primitives.glyphs.len();
+    painter.paint_input_value(&box_text, 0.0, 0.0, &style, &doc_text);
+    assert_eq!(painter.primitives.glyphs.len(), before + 5);
+
+    // checkbox / radio / hidden / range → 不渲染 value 文本。
+    for html in [
+        r#"<body><input type="checkbox" value="x"></body>"#,
+        r#"<body><input type="radio" value="x"></body>"#,
+        r#"<body><input type="hidden" value="x"></body>"#,
+        r#"<body><input type="range" value="x"></body>"#,
+    ] {
+        let (doc, nid) = first_input(html);
+        let mut box_node = make_box(13.0, 13.0);
+        box_node.node_id = Some(nid);
+        let before = painter.primitives.glyphs.len();
+        painter.paint_input_value(&box_node, 0.0, 0.0, &style, &doc);
+        assert_eq!(
+            painter.primitives.glyphs.len(),
+            before,
+            "non-text input type should render no value glyphs: {html}"
+        );
+    }
+}
+
+#[test]
+fn paint_input_value_non_input_element_skipped() {
+    let doc = zero_dom::parse_html("<body><div type=\"submit\" value=\"Send\">x</div></body>");
+    let div = doc.get_elements_by_tag_name("div")[0];
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    let mut box_node = make_box(80.0, 22.0);
+    box_node.node_id = Some(div);
+    let before = painter.primitives.glyphs.len();
+    painter.paint_input_value(&box_node, 0.0, 0.0, &style, &doc);
+    // 非 <input> 元素 → 不渲染。
+    assert_eq!(painter.primitives.glyphs.len(), before);
+}
