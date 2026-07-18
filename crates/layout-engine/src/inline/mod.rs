@@ -1206,9 +1206,12 @@ impl InlineFormattingContext {
                         baseline_y - run.height - offset
                     }
                 };
-                // inline-block 的 margin_top 把盒内容下移（文本运行 margin_top=0，无影响）。
-                // 行盒高度已含 margin box（layout_inline 时 +margin_top+bottom），故偏移后盒仍在行盒内。
-                run.y += run.margin_top;
+                // R1720：inline-block 垂直 margin 不下移 border box（chromium 行为：margin 扩
+                // line-box 高度，border box 仍按 valign 定位）。旧 `run.y += run.margin_top`（R536）
+                // 把 border box 下移 margin_top，致 valign:middle + margin over-shift（R1719 vspace
+                // 根因）。A/B 实证该 shift **inert**：css-flexbox 309/497 + css-multicol 179/452
+                // with/without 全等（R536 的 +52 oracle 全来自 flex-basis em 修，非此 shift）。
+                // 文本运行 margin_top=0 无影响；行盒高度已含 margin box（break_lines.rs:430）。
             }
 
             // R822：line-box 高度 = strut ∪ valign 偏移 inline box（CSS §10.8.1）。text-top/bottom/

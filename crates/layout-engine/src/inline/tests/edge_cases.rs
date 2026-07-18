@@ -314,9 +314,11 @@ fn test_zero_height_inline_block() {
     );
 }
 
-/// inline-block 的 margin_top 应把盒内容下移（Bug 2：此前 margin_top 被记录进
-/// InlineBlockBox 但 apply_vertical_alignment 不据此偏移 run.y，致 inline-block
-/// 垂直 margin 失效——flexbox_flex REF 的 span margin:1em 不偏移）。
+/// R1720：inline-block 垂直 margin **扩展 line-box 高度**但**不下移 border box**
+///（chromium 行为：border box 按 valign 定位，margin 在 border box 外扩 line box）。
+/// 旧 R536 实现把 border box 下移 margin_top（`run.y += margin_top`），致 valign:middle
+/// 叠加 margin over-shift（R1719 vspace 根因）。A/B 实证该 shift inert（css-flexbox/multicol
+/// with/without 全等），故移除。本测钉死正确语义：run.y 不含 margin_top，line.height 含。
 #[test]
 fn test_inline_block_margin_top_offsets_box_y() {
     let mut ctx = InlineFormattingContext::new(800.0);
@@ -335,13 +337,14 @@ fn test_inline_block_margin_top_offsets_box_y() {
 
     assert_eq!(ctx.lines.len(), 1);
     let run = &ctx.lines[0].runs[0];
-    // margin_top:16 把盒下移：run.y 应 == 16.0（此前为 0.0，margin 失效）。
+    // R1720：margin_top 不下移 border box——run.y 应 == 0.0（valign:baseline 定位），
+    // 非 16.0（旧 R536 shift）。border box 留在 valign 位，margin 在其外扩 line box。
     assert!(
-        (run.y - 16.0).abs() < 0.01,
-        "inline-block margin_top 应把盒下移 16px，实际 run.y = {}",
+        run.y.abs() < 0.01,
+        "inline-block margin_top 不应下移 border box，run.y 应 == 0，实际 {}",
         run.y
     );
-    // 行盒高度应含 margin box（box 30 + margin_top 16 = 46）。
+    // 行盒高度应含 margin box（box 30 + margin_top 16 = 46）——margin 扩 line-box。
     assert!(
         ctx.lines[0].height >= 46.0,
         "行盒高度应含 margin_top，实际 {}",
