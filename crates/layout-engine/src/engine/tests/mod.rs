@@ -119,6 +119,8 @@ mod r1623_bfc_shrink_content_width_tests;
 mod r1626_border_conflict_tie_color_tests;
 #[cfg(test)]
 mod r1637_u1b_font_metric_provider_wiring_tests;
+#[cfg(test)]
+mod r1721_right_float_table_avoid_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

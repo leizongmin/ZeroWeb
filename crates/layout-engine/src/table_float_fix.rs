@@ -115,8 +115,38 @@ fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, Comp
     // 触发条件 = avoidance_x > 0.5（natural_y 处有重叠 float 须避开）；table 已在正确位置则
     // diff 检查不移动（守 blocks-025 等 float 不重叠案）。
     let mut pushed = false;
-    let target: Option<(f32, f32)> = if !is_cleared && avoidance_x > 0.5 {
-        // floats → (right_margin_edge, top, bottom)
+    // R1721：float:right avoidance —— table 避到 float 左侧（mirror of 既有 float:left 右避）。
+    // 既有 C 算法仅 float:left（table 放 float 右侧 content_width-max_right）；float:right 的
+    // right_edge≈content_width → 右侧无空间 → table 错误推 below（应 beside 左 x=0 w=float.left）。
+    // 仅纯右 float（natural_y 处有重叠右 float 且无重叠左 float）触发；混合 fall through 左 float 逻辑。
+    // kill-switch ZW_TABLE_FLOAT_RIGHT_AVOID=0 关闭（default-on）。
+    let right_float_left: Option<f32> = {
+        let mut rl: Option<f32> = None;
+        for f in &root.children {
+            if matches!(f.float, FloatValue::Right) && natural_y < f.y + f.height && natural_y + table_h > f.y {
+                rl = Some(rl.map_or(f.x, |m: f32| m.min(f.x)));
+            }
+        }
+        rl
+    };
+    let has_left_overlap = root
+        .children
+        .iter()
+        .any(|c| matches!(c.float, FloatValue::Left) && natural_y < c.y + c.height && natural_y + table_h > c.y);
+    // target = (nx, ny, fill_w)：fill_w = table 应填的 avoidance 宽度（beside 时填，below 时仅 clamp）
+    let right_target: Option<(f32, f32, f32)> = if std::env::var("ZW_TABLE_FLOAT_RIGHT_AVOID").as_deref() != Ok("0")
+        && !is_cleared
+        && !has_left_overlap
+    {
+        // 纯右 float：table beside 左侧 x=0 y=natural_y，填到右 float 左边。
+        right_float_left.map(|rl| (0.0, natural_y, rl))
+    } else {
+        None
+    };
+    let target: Option<(f32, f32, f32)> = if right_target.is_some() {
+        right_target
+    } else if !is_cleared && avoidance_x > 0.5 {
+        // 既有 float:left 算法（target (placed_x, y)），fill_w = content_width - placed_x。
         let frects: Vec<(f32, f32, f32)> = root
             .children
             .iter()
@@ -157,18 +187,24 @@ fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, Comp
                 break;
             }
         }
-        if found { Some((placed_x, y)) } else { None }
+        if found {
+            Some((placed_x, y, (content_width - placed_x).max(0.0)))
+        } else {
+            None
+        }
     } else {
         None
     };
-    if let Some((nx, ny)) = target {
+    if let Some((nx, ny, fill_w)) = target {
         let table = &mut root.children[tidx];
-        let mw = (content_width - nx).max(0.0);
-        // beside float（nx>0）：auto-width BFC table 填可用 avoidance 宽度（非 shrink-to-fit 内容宽）
-        // ——floats-wrap-bfc-002-left-table auto table 应 200（=300-100）非 150，匹配 ref 显式 width:200。
-        // below floats（nx=0）：保持 shrink-to-fit，仅 clamp 不溢出。须在「位置变 OR 宽度变」时介入
-        //（即使位置已正确，beside 宽度仍须填，故 width_change 独立于 pos_change）。
-        let beside = nx > 0.5;
+        let mw = fill_w;
+        // beside float：auto-width BFC table 填可用 avoidance 宽度（非 shrink-to-fit 内容宽）
+        // ——floats-wrap-bfc-002-left-table（float:left，nx>0，mw=content_width-nx）/ R1721 -right-table
+        //（float:right，nx=0，mw=right_float.left）auto table 应 200 非 150，匹配 ref 显式 width:200。
+        // below floats（nx=0 且 fill_w≈content_width）：保持 shrink-to-fit，仅 clamp 不溢出。须在
+        // 「位置变 OR 宽度变」时介入（即使位置已正确，beside 宽度仍须填，故 width_change 独立于 pos_change）。
+        // R1721：beside 判定加 `fill_w < content_width` 捕获 float:right（nx=0 但填部分宽）。
+        let beside = nx > 0.5 || fill_w < content_width - 0.5;
         let pos_change = (nx - table.x).abs() > 0.5 || (ny - table.y).abs() > 0.5;
         let width_change = if beside {
             (table.width - mw).abs() > 0.5
