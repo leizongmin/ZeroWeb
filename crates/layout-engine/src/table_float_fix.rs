@@ -134,15 +134,13 @@ fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, Comp
         .iter()
         .any(|c| matches!(c.float, FloatValue::Left) && natural_y < c.y + c.height && natural_y + table_h > c.y);
     // target = (nx, ny, fill_w)：fill_w = table 应填的 avoidance 宽度（beside 时填，below 时仅 clamp）
-    let right_target: Option<(f32, f32, f32)> = if std::env::var("ZW_TABLE_FLOAT_RIGHT_AVOID").as_deref() != Ok("0")
-        && !is_cleared
-        && !has_left_overlap
-    {
-        // 纯右 float：table beside 左侧 x=0 y=natural_y，填到右 float 左边。
-        right_float_left.map(|rl| (0.0, natural_y, rl))
-    } else {
-        None
-    };
+    let right_target: Option<(f32, f32, f32)> =
+        if std::env::var("ZW_TABLE_FLOAT_RIGHT_AVOID").as_deref() != Ok("0") && !is_cleared && !has_left_overlap {
+            // 纯右 float：table beside 左侧 x=0 y=natural_y，填到右 float 左边。
+            right_float_left.map(|rl| (0.0, natural_y, rl))
+        } else {
+            None
+        };
     let target: Option<(f32, f32, f32)> = if right_target.is_some() {
         right_target
     } else if !is_cleared && avoidance_x > 0.5 {
