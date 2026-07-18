@@ -543,10 +543,16 @@ impl StyleSystem {
                 "pre" | "xmp" | "listing" | "plaintext" => {
                     ua_decl_inputs.push(("white-space".to_string(), "pre".to_string(), false, (0, 0, 0), None));
                 }
-                // ul/ol 默认 padding-left 和 margin
+                // ul/ol 默认 padding-left、margin 和 list-style-type（HTML 渲染规范 UA 样式表）。
+                // R1699：list-style-type 继承、CSS initial=Disc，故 <ul> 隐式得 Disc（正确），
+                // 但 <ol> 也继承 Disc → 渲染 disc 圆点而非 decimal 数字（BUG：ol 显示圆点而非序号）。
+                // 显式标 ul=disc / ol=decimal 同时修正 ol 默认 + ul 嵌套在 ol 内不误继承 decimal
+                //（chromium UA `ul,menu,dir{list-style-type:disc}` / `ol{list-style-type:decimal}`）。
                 "ul" | "ol" => {
                     ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push(("padding-left".to_string(), "40px".to_string(), false, (0, 0, 0), None));
+                    let lst = if tag == "ul" { "disc" } else { "decimal" };
+                    ua_decl_inputs.push(("list-style-type".to_string(), lst.to_string(), false, (0, 0, 0), None));
                 }
                 "b" | "strong" => {
                     ua_decl_inputs.push(("font-weight".to_string(), "bold".to_string(), false, (0, 0, 0), None));
