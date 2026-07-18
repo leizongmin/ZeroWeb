@@ -1332,10 +1332,12 @@ fn extract_calc_percentage(expr: &zero_css_parser::values::CalcExpr) -> Option<f
 }
 
 #[cfg(test)]
+#[allow(unknown_lints)] // R1704: float_literal_f32_fallback 仅 rustc 1.96+ 存在；旧 toolchain 用 unknown_lints 抑制
 #[allow(float_literal_f32_fallback)]
 mod tests;
 
 #[cfg(test)]
+#[allow(unknown_lints)] // R1704: 同上
 #[allow(float_literal_f32_fallback)]
 mod inline_tests {
     use super::*;
