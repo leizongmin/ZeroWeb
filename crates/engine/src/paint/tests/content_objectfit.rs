@@ -648,3 +648,112 @@ fn paint_progress_meter_non_target_element_skipped() {
         "非 progress/meter 元素不应绘 value 条"
     );
 }
+
+// ── R1672：table bg 排除 caption 行（CSS 表模型 §17.1.1）──
+
+#[test]
+fn paint_background_table_excludes_top_caption_row() {
+    use std::collections::HashMap;
+    use zero_style_system::property::types::{CaptionSideValue, DisplayValue};
+    // caption 在 table box 外部，table bg 不应覆盖 caption 行。
+    let doc = zero_dom::parse_html("<table><caption>C</caption><tbody><tr><td>x</td></tr></tbody></table>");
+    let table_id = doc.get_elements_by_tag_name("table")[0];
+    let caption_id = doc.get_elements_by_tag_name("caption")[0];
+
+    let mut table_style = ComputedStyle::default();
+    table_style.display = DisplayValue::Table;
+    table_style.background_color = ColorValue::Rgba(128, 0, 128, 255);
+    let mut caption_style = ComputedStyle::default();
+    caption_style.display = DisplayValue::TableCaption;
+    caption_style.caption_side = CaptionSideValue::Top;
+    let mut styles = HashMap::new();
+    styles.insert(table_id, table_style.clone());
+    styles.insert(caption_id, caption_style);
+
+    // table box h=60（caption 30 + body 30），caption 子盒 h=30。
+    let mut caption_box = make_box(100.0, 30.0);
+    caption_box.node_id = Some(caption_id);
+    let mut table_box = make_box(100.0, 60.0);
+    table_box.node_id = Some(table_id);
+    table_box.children = vec![caption_box];
+
+    let mut painter = Painter::new();
+    let before = painter.primitives.fills.len();
+    painter.paint_background(&table_box, 0.0, 0.0, &table_style, &styles);
+    assert!(painter.primitives.fills.len() > before, "table bg 应生成 fill");
+    let bg = &painter.primitives.fills[before];
+    assert!(
+        bg.rect.origin.y >= 30.0,
+        "table bg 应排除 top caption 行（y >= 30），实际 y = {}",
+        bg.rect.origin.y
+    );
+    assert!(
+        (bg.rect.size.height - 30.0).abs() < 1.0,
+        "table bg 高应 = body 30（h − caption），实际 {}",
+        bg.rect.size.height
+    );
+}
+
+#[test]
+fn paint_background_table_excludes_bottom_caption_row() {
+    use std::collections::HashMap;
+    use zero_style_system::property::types::{CaptionSideValue, DisplayValue};
+    let doc = zero_dom::parse_html("<table><caption>C</caption><tbody><tr><td>x</td></tr></tbody></table>");
+    let table_id = doc.get_elements_by_tag_name("table")[0];
+    let caption_id = doc.get_elements_by_tag_name("caption")[0];
+
+    let mut table_style = ComputedStyle::default();
+    table_style.display = DisplayValue::Table;
+    table_style.background_color = ColorValue::Rgba(128, 0, 128, 255);
+    let mut caption_style = ComputedStyle::default();
+    caption_style.display = DisplayValue::TableCaption;
+    caption_style.caption_side = CaptionSideValue::Bottom;
+    let mut styles = HashMap::new();
+    styles.insert(table_id, table_style.clone());
+    styles.insert(caption_id, caption_style);
+
+    // table box h=60，caption 子盒 h=30（caption-side:bottom 在底部）。
+    let mut caption_box = make_box(100.0, 30.0);
+    caption_box.node_id = Some(caption_id);
+    let mut table_box = make_box(100.0, 60.0);
+    table_box.node_id = Some(table_id);
+    table_box.children = vec![caption_box];
+
+    let mut painter = Painter::new();
+    let before = painter.primitives.fills.len();
+    painter.paint_background(&table_box, 0.0, 0.0, &table_style, &styles);
+    let bg = &painter.primitives.fills[before];
+    // bg 顶部不变（y=0），但高度应排除底部 caption（h = 60 − 30 = 30）。
+    assert!(
+        bg.rect.origin.y < 1.0,
+        "caption-side:bottom 时 table bg 顶部不变（y≈0），实际 y = {}",
+        bg.rect.origin.y
+    );
+    assert!(
+        (bg.rect.size.height - 30.0).abs() < 1.0,
+        "table bg 高应排除 bottom caption（h = 30），实际 {}",
+        bg.rect.size.height
+    );
+}
+
+#[test]
+fn paint_background_table_without_caption_unaffected() {
+    use std::collections::HashMap;
+    use zero_style_system::property::types::DisplayValue;
+    // 无 caption 的 table：bg rect 不变（cap_top=cap_bottom=0）。
+    let mut table_style = ComputedStyle::default();
+    table_style.display = DisplayValue::Table;
+    table_style.background_color = ColorValue::Rgba(128, 0, 128, 255);
+    let table_box = make_box(100.0, 60.0);
+    let styles = HashMap::new();
+
+    let mut painter = Painter::new();
+    let before = painter.primitives.fills.len();
+    painter.paint_background(&table_box, 0.0, 0.0, &table_style, &styles);
+    let bg = &painter.primitives.fills[before];
+    assert!(
+        (bg.rect.origin.y - 0.0).abs() < 1.0 && (bg.rect.size.height - 60.0).abs() < 1.0,
+        "无 caption 的 table bg 应覆盖全盒（0,0,100,60），实际 {:?}",
+        bg.rect
+    );
+}

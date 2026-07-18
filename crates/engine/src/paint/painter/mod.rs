@@ -479,7 +479,7 @@ impl Painter {
                     && box_node.height > inline_fs_px * 1.5
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
                 if style.background_color != ColorValue::Transparent && !skip_inline_box_bg {
-                    self.paint_background(box_node, abs_x, abs_y, style);
+                    self.paint_background(box_node, abs_x, abs_y, style, styles);
                 }
                 self.paint_background_image(box_node, abs_x, abs_y, style);
                 // border-collapse: collapse 时，表格外边框由边缘单元格绘制，
@@ -649,7 +649,7 @@ impl Painter {
                     && box_node.height > inline_fs_px * 1.5
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
                 if style.background_color != ColorValue::Transparent && !skip_split_inline_deco && !skip_inline_box_bg {
-                    self.paint_background(box_node, abs_x, abs_y, style);
+                    self.paint_background(box_node, abs_x, abs_y, style, styles);
                 }
 
                 // 1b. 背景图片（行组/行仍可渲染背景图片）
@@ -1482,7 +1482,14 @@ impl Painter {
     /// 绘制背景（考虑 border-radius）。
     ///
     /// 当 border-radius 为零时退化为普通矩形填充。
-    fn paint_background(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+    pub(crate) fn paint_background(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) {
         // CSS §14.2：背景已传播到画布的元素（html/body）不在自身盒上绘制背景色——
         // 画布已以视口 (0,0) 为 origin 统一绘制其 color+image。若此处再绘 color，body（传播
         // 到画布时，html 透明）的 bg color 会覆盖画布 image（background-root-007：body red
@@ -1497,7 +1504,7 @@ impl Painter {
         let radii = super::helpers::BorderRadiusSpec::from_style(style);
 
         // 根据 background-clip 决定背景绘制区域
-        let (clip_x, clip_y, clip_w, clip_h) = match style.background_clip {
+        let (clip_x, mut clip_y, clip_w, mut clip_h) = match style.background_clip {
             BackgroundClipComputedValue::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
             BackgroundClipComputedValue::PaddingBox => (
                 abs_x + box_node.border_left,
@@ -1521,6 +1528,32 @@ impl Painter {
                 )
             }
         };
+
+        // R1672：CSS 表模型 §17.1.1 — caption 在 table box **外部**（独立盒附在 table 上下），
+        // table 背景只覆盖 table box（即 row group 网格），不覆盖 caption 行。ZW 此前把 table
+        // LayoutBox.height 当含 caption（layout 给 table h = caption + body），bg 涂满含 caption 行，
+        // 致窄 caption 右侧的 caption 行错显 table bg（应显祖先 bg）。诊断源 = floats-wrap-bfc-006
+        //（BFC float-avoid 正常——table 正确避 float 至 x=78；52% diff 主因 = 本 table-bg-over-caption
+        // 副作用 + 残余 caption 细节）。此处按 caption-side 排除 top/bottom caption 行的 bg rect。
+        if matches!(style.display, DisplayValue::Table | DisplayValue::InlineTable) {
+            use zero_style_system::property::CaptionSideValue;
+            let (mut cap_top, mut cap_bottom) = (0.0_f32, 0.0_f32);
+            for c in &box_node.children {
+                let Some(id) = c.node_id else { continue };
+                let Some(s) = styles.get(&id) else { continue };
+                if s.display == DisplayValue::TableCaption {
+                    if matches!(s.caption_side, CaptionSideValue::Bottom) {
+                        cap_bottom += c.height;
+                    } else {
+                        cap_top += c.height;
+                    }
+                }
+            }
+            if cap_top > 0.0 || cap_bottom > 0.0 {
+                clip_y += cap_top;
+                clip_h = (clip_h - cap_top - cap_bottom).max(0.0);
+            }
+        }
 
         // R1359：nested-spanner wrapper 按列区域涂 bg（排除列间隙 + 末列末段 section）。
         // PIL 实证（004a）：wrapper bg 整宽涂覆盖 16px gap（应露 article green）+ 末列 section c
