@@ -649,7 +649,113 @@ fn paint_progress_meter_non_target_element_skipped() {
     );
 }
 
-// ── R1672：table bg 排除 caption 行（CSS 表模型 §17.1.1）──
+// ── R1679：`<select>` selected option 标签绘制（≡ R1660 paint_input_value 测试谱系）──
+
+/// 辅助：取首个 select 元素 NodeId。
+fn first_select(html: &str) -> (zero_dom::Document, zero_dom::NodeId) {
+    let doc = zero_dom::parse_html(html);
+    let id = doc.get_elements_by_tag_name("select")[0];
+    (doc, id)
+}
+
+#[test]
+fn paint_select_value_renders_selected_option_text() {
+    // selected option = "Volvo"（带 selected 属性），应绘其 5 字符标签。
+    let (doc, select) = first_select(
+        "<body><select>\
+         <option value=\"v\" selected>Volvo</option>\
+         <option value=\"m\">Mercedes</option>\
+         </select></body>",
+    );
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+
+    let mut box_node = make_box(80.0, 22.0);
+    box_node.node_id = Some(select);
+    let before = painter.primitives.glyphs.len();
+    painter.paint_select_value(&box_node, 0.0, 0.0, &style, &doc);
+    // "Volvo" → 5 glyphs（非 "Mercedes" 8）。
+    assert_eq!(painter.primitives.glyphs.len(), before + 5);
+    // 首字符 'V'。
+    assert_eq!(painter.primitives.glyphs[before].glyph_id, 'V' as u32);
+}
+
+#[test]
+fn paint_select_value_defaults_to_first_option() {
+    // 无 selected 属性 → 默认选中首个 option "First"。
+    let (doc, select) = first_select("<body><select><option>First</option><option>Second</option></select></body>");
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+
+    let mut box_node = make_box(80.0, 22.0);
+    box_node.node_id = Some(select);
+    let before = painter.primitives.glyphs.len();
+    painter.paint_select_value(&box_node, 0.0, 0.0, &style, &doc);
+    // "First" → 5 glyphs（默认首项）。
+    assert_eq!(painter.primitives.glyphs.len(), before + 5);
+    assert_eq!(painter.primitives.glyphs[before].glyph_id, 'F' as u32);
+}
+
+#[test]
+fn paint_select_value_uses_option_label_attribute() {
+    // option label="AB" 优先于 text content "long ignored text"。
+    let (doc, select) = first_select("<body><select><option label=\"AB\">long ignored text</option></select></body>");
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+
+    let mut box_node = make_box(80.0, 22.0);
+    box_node.node_id = Some(select);
+    let before = painter.primitives.glyphs.len();
+    painter.paint_select_value(&box_node, 0.0, 0.0, &style, &doc);
+    // label "AB" → 2 glyphs（非 text content）。
+    assert_eq!(painter.primitives.glyphs.len(), before + 2);
+}
+
+#[test]
+fn paint_select_value_finds_selected_inside_optgroup() {
+    // selected option 嵌套在 optgroup 内 → 仍应选中。
+    let (doc, select) = first_select(
+        "<body><select>\
+         <optgroup label=\"G\"><option>A</option><option selected>B</option></optgroup>\
+         </select></body>",
+    );
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+
+    let mut box_node = make_box(80.0, 22.0);
+    box_node.node_id = Some(select);
+    let before = painter.primitives.glyphs.len();
+    painter.paint_select_value(&box_node, 0.0, 0.0, &style, &doc);
+    // "B" → 1 glyph（optgroup 内的 selected option）。
+    assert_eq!(painter.primitives.glyphs.len(), before + 1);
+    assert_eq!(painter.primitives.glyphs[before].glyph_id, 'B' as u32);
+}
+
+#[test]
+fn paint_select_value_non_select_element_skipped() {
+    let doc = zero_dom::parse_html("<body><div><option selected>x</option></div></body>");
+    let div = doc.get_elements_by_tag_name("div")[0];
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    let mut box_node = make_box(80.0, 22.0);
+    box_node.node_id = Some(div);
+    let before = painter.primitives.glyphs.len();
+    painter.paint_select_value(&box_node, 0.0, 0.0, &style, &doc);
+    assert_eq!(
+        painter.primitives.glyphs.len(),
+        before,
+        "非 select 元素不应绘 select value"
+    );
+}
 
 #[test]
 fn paint_background_table_excludes_top_caption_row() {

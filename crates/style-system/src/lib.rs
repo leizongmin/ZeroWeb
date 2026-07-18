@@ -47,6 +47,18 @@ use zero_dom::{Document, NodeId, NodeKind, QuirksMode};
 /// 根据 HTML 规范，不同元素有不同的默认 display 类型。
 /// 未列出的元素默认为 CSS 初始值 `inline`。
 pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
+    // R1679：option/optgroup 抑制（select 渲染切片，≡ R1675 datalist/source/track 谱系）。
+    // ZW 无 select popup shadow tree，option/optgroup 默认 inline 会把所有 option 文本串联显示
+    // 在 select 按钮内（chromium 只显示 selected option 标签，其余进 popup）。display:none 使
+    // option 不生成盒，并让 has_direct_paintable_text 对 select 返回 false（paint_text 跳过），
+    // 由 paint_select_value（controls.rs）绘 selected option 文本。select 失去内容测宽后由
+    // select 固有宽（见 collect UA 宽）兜底，避免 R1659 width 回归。
+    // kill-switch `ZW_SELECT_SUPPRESS_OPTIONS=0` 关闭（default-on）。
+    if std::env::var("ZW_SELECT_SUPPRESS_OPTIONS").as_deref() != Ok("0")
+        && (tag.eq_ignore_ascii_case("option") || tag.eq_ignore_ascii_case("optgroup"))
+    {
+        return Some(DisplayValue::None);
+    }
     Some(match tag {
         // 块级元素（对齐 HTML Living Standard UA 样式表的 display:block 列表）
         "html" | "address" | "article" | "aside" | "blockquote" | "body" | "center" | "dd" | "details" | "dir"
@@ -85,6 +97,48 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
         // 内联元素 — 无需覆盖（CSS 初始值即为 inline）
         _ => return None,
     })
+}
+
+/// R1679：返回 `<option>` 的标签文本（HTML §4.10.10）。
+///
+/// `label` 属性非空时优先（trim 后），否则回落到 option 的 text content。
+fn option_label(doc: &Document, id: NodeId) -> String {
+    if let Some(l) = doc.get_attribute(id, "label") {
+        let trimmed = l.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    doc.text_content(id).unwrap_or_default().trim().to_string()
+}
+
+/// R1679：计算 `<select>` 的固有宽度（px）= 最宽 option 标签宽 + 下拉 chrome。
+///
+/// 遍历 select 直接 option 子 + optgroup 内 option（HTML 允许两种嵌套）。字符宽近似
+/// `CHAR_PX`（≡ R1659 input sizing，默认字体平均字符宽）。chrome = 下拉箭头 + padding/border
+///（chromium ≈ 20px 箭头 + 4px ≈ 24px）。无 option 时回落 chrome 最小宽。
+fn select_intrinsic_width(doc: &Document, select: NodeId) -> f32 {
+    const CHAR_PX: f32 = 7.0;
+    const CHROME: f32 = 24.0;
+    let mut max_chars: usize = 0;
+    for child in doc.child_nodes(select) {
+        let Some(node) = doc.get(child) else { continue };
+        let NodeKind::Element(e) = &node.kind else { continue };
+        let name = e.local_name();
+        if name.eq_ignore_ascii_case("option") {
+            max_chars = max_chars.max(option_label(doc, child).chars().count());
+        } else if name.eq_ignore_ascii_case("optgroup") {
+            for gc in doc.child_nodes(child) {
+                if let Some(gn) = doc.get(gc)
+                    && let NodeKind::Element(ge) = &gn.kind
+                    && ge.local_name().eq_ignore_ascii_case("option")
+                {
+                    max_chars = max_chars.max(option_label(doc, gc).chars().count());
+                }
+            }
+        }
+    }
+    (max_chars as f32 * CHAR_PX + CHROME).max(CHROME)
 }
 
 /// 样式系统，负责为文档中的元素计算样式。
@@ -601,6 +655,14 @@ impl StyleSystem {
                                 ua_decl_inputs.push(("height".to_string(), "15px".to_string(), false, (0, 0, 0), None));
                             }
                         }
+                    } else if tag == "select" && std::env::var("ZW_SELECT_SUPPRESS_OPTIONS").as_deref() != Ok("0") {
+                        // R1679：select 固有宽 = 最宽 option 标签宽 + 下拉 chrome（form-control
+                        // intrinsic sizing，≡ R1659 input）。option/optgroup 经 ua_default_display
+                        // 抑制为 display:none 后，select 失去 inline 内容测宽（R1659 width 回归——
+                        // inline-block width:auto 会塌缩/拉满），此处补 UA width 兜底（最低优先级
+                        // specificity(0,0,0)，可被作者/内联样式覆盖）。
+                        let w = select_intrinsic_width(doc, element);
+                        ua_decl_inputs.push(("width".to_string(), format!("{w:.0}px"), false, (0, 0, 0), None));
                     }
                 }
                 // R1669：`<keygen>` deprecated void 表单控件（≡ R1659 `<input>` / R1396 form-control 谱系）。
@@ -1637,16 +1699,79 @@ mod presentational_hint_tests {
             "reset value=Clear width ~49px, got {:?}",
             reset.width
         );
-        // select / textarea：仍 width:auto（按内容测宽，UA 不注入固有 width）。
-        for tag in ["select", "textarea"] {
-            let id = doc.get_elements_by_tag_name(tag)[0];
-            let s = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));
-            assert!(
-                matches!(s.width, LengthValue::Auto),
-                "<{tag}> must stay width:auto (content-sized), got {:?}",
-                s.width
-            );
+        // textarea：仍 width:auto（UA 不注入固有 width）。select 自 R1679 起按最宽 option
+        // 标签注入固有 width（见 select_suppresses_options_and_gets_intrinsic_width）。
+        let textarea_id = doc.get_elements_by_tag_name("textarea")[0];
+        let ts = styles.get(&textarea_id).expect("textarea styled");
+        assert!(
+            matches!(ts.width, LengthValue::Auto),
+            "<textarea> must stay width:auto (content-sized), got {:?}",
+            ts.width
+        );
+    }
+
+    #[test]
+    fn select_suppresses_options_and_gets_intrinsic_width() {
+        // R1679：option/optgroup UA display:none（ZW_SELECT_SUPPRESS_OPTIONS default-on）+ select
+        // 固有宽 = 最宽 option 标签宽 + chrome。本测试跑在 default env（feature on）下。
+        use zero_css_parser::values::{DisplayValue, LengthValue};
+        assert_eq!(
+            ua_default_display("option"),
+            Some(DisplayValue::None),
+            "option suppressed to display:none (R1679)"
+        );
+        assert_eq!(
+            ua_default_display("optgroup"),
+            Some(DisplayValue::None),
+            "optgroup suppressed to display:none (R1679)"
+        );
+
+        // 两个 option：5 字符 "Volvo"（selected）+ 8 字符 "Mercedes"（最宽，决定宽）。
+        let doc = parse_html(
+            "<body>\
+             <select>\
+             <option value=\"v\" selected>Volvo</option>\
+             <option value=\"m\">Mercedes</option>\
+             </select>\
+             </body>",
+        );
+        let mut system = StyleSystem::new();
+        let styles = system.compute_styles(&doc, &[]);
+        let select = doc.get_elements_by_tag_name("select")[0];
+        let s = styles.get(&select).expect("select styled");
+        // 8 字符 × 7 + 24 chrome = 80px（允许 ±10 容差）。
+        assert!(
+            matches!(s.width, LengthValue::Px(w) if (70.0..=90.0).contains(&w)),
+            "select width = widest option (Mercedes 8ch) ×7 + chrome ≈80px, got {:?}",
+            s.width
+        );
+        // option 子应 display:none。
+        for opt in doc.get_elements_by_tag_name("option") {
+            let os = styles.get(&opt).expect("option styled");
+            assert_eq!(os.display, DisplayValue::None, "option {opt:?} display:none");
         }
+    }
+
+    #[test]
+    fn select_intrinsic_width_uses_label_attribute() {
+        // R1679：option `label` 属性优先于 text content，optgroup 内 option 也计入。
+        let doc = parse_html(
+            "<body>\
+             <select>\
+             <optgroup label=\"Swedish\">\
+             <option label=\"Volvo-car\">v</option>\
+             </optgroup>\
+             <option>Short</option>\
+             </select>\
+             </body>",
+        );
+        let select = doc.get_elements_by_tag_name("select")[0];
+        // 最宽标签 "Volvo-car"（9 字符）× 7 + 24 chrome = 87px。
+        let w = select_intrinsic_width(&doc, select);
+        assert!(
+            (77.0..=97.0).contains(&w),
+            "select intrinsic width uses widest option label (Volvo-car 9ch), got {w}"
+        );
     }
 
     #[test]

@@ -3,11 +3,15 @@
 //! 与 [`super::text::Painter::paint_input_value`]（R1660）/ `paint_img_element` 同属「元素特化
 //! paint」。独立成文件因 `text.rs` 已超 2000 行（CLAUDE.md §5 文件大小控制）。
 
-use zero_dom::{Document, NodeKind};
+use zero_css_parser::values::LengthValue;
+use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
+use zero_render_foundation::primitive::GlyphPrimitive;
 use zero_style_system::ComputedStyle;
+
+use crate::measure_char_for_paint;
 
 impl super::Painter {
     /// 绘制 `<progress>`/`<meter>` 的 value 填充条（R1671 paint 半，≡ R1660 `paint_input_value`）。
@@ -101,6 +105,118 @@ impl super::Painter {
         self.primitives
             .add_fill(Rect::new(content_x, content_y, bar_w, track_h), color);
     }
+
+    /// 绘制 `<select>` 的 selected option 标签文本（R1679，≡ R1660 `paint_input_value` 谱系）。
+    ///
+    /// ZW 无 select popup shadow tree，option/optgroup 经 UA `display:none` 抑制（R1679）不生成
+    /// 盒 → select 按钮内无文本（`has_direct_paintable_text` 对 select 返回 false，paint_text 跳过），
+    /// 须显式绘 selected option 标签。selected option = 首个带 `selected` 属性的 option（含
+    /// optgroup 内），否则 DOM 首个 option（HTML 默认选中首项）。标签 = option `label` 属性（非空）
+    /// 否则文本内容。左对齐于内容盒，baseline = content_y + font_size（≡ paint_input_value 几何）。
+    /// kill-switch `ZW_SELECT_SUPPRESS_OPTIONS=0` 关闭（与 option 抑制 + select 宽同 gate，default-on）。
+    pub(crate) fn paint_select_value(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: &Document,
+    ) {
+        if std::env::var("ZW_SELECT_SUPPRESS_OPTIONS").as_deref() == Ok("0") {
+            return;
+        }
+        let node_id = match box_node.node_id {
+            Some(id) => id,
+            None => return,
+        };
+        match doc.get(node_id) {
+            Some(n) => match &n.kind {
+                NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("select") => {}
+                _ => return,
+            },
+            None => return,
+        }
+
+        let label = match select_selected_option_label(doc, node_id) {
+            Some(l) if !l.is_empty() => l,
+            _ => return,
+        };
+
+        let font_size: f32 = match style.font_size {
+            LengthValue::Px(s) => s as f32,
+            _ => return,
+        };
+        if font_size <= 0.0 {
+            return;
+        }
+        let color = super::super::color::color_value_to_render(&style.color);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
+
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+        let baseline_y = content_y + font_size;
+
+        let mut char_x = content_x;
+        for ch in label.chars() {
+            self.primitives.add_glyph(GlyphPrimitive {
+                x: char_x,
+                y: baseline_y,
+                font_size,
+                color,
+                glyph_id: ch as u32,
+                font_id: default_font_id,
+                bitmap_width: None,
+                bitmap_height: None,
+                rotation: 0.0,
+            });
+            char_x += measure_char_for_paint(ch, font_size, false);
+        }
+    }
+}
+
+/// R1679：返回 `<select>` 的 selected option 标签文本。
+///
+/// 选中项 = 首个带 `selected` 属性的 option（含 optgroup 内，按 DOM 顺序）；无则首个 option
+///（HTML：select 单选默认选中首个 option）。标签 = option `label` 属性（非空）否则文本内容。
+fn select_selected_option_label(doc: &Document, select: NodeId) -> Option<String> {
+    let mut first: Option<String> = None;
+    for child in doc.child_nodes(select) {
+        let Some(node) = doc.get(child) else { continue };
+        let NodeKind::Element(e) = &node.kind else { continue };
+        let name = e.local_name();
+        if name.eq_ignore_ascii_case("option") {
+            let label = option_label_text(doc, child);
+            if doc.get_attribute(child, "selected").is_some() {
+                return Some(label);
+            }
+            first.get_or_insert(label);
+        } else if name.eq_ignore_ascii_case("optgroup") {
+            for gc in doc.child_nodes(child) {
+                let Some(gn) = doc.get(gc) else { continue };
+                let NodeKind::Element(ge) = &gn.kind else { continue };
+                if !ge.local_name().eq_ignore_ascii_case("option") {
+                    continue;
+                }
+                let label = option_label_text(doc, gc);
+                if doc.get_attribute(gc, "selected").is_some() {
+                    return Some(label);
+                }
+                first.get_or_insert(label);
+            }
+        }
+    }
+    first
+}
+
+/// R1679：返回 `<option>` 标签文本（`label` 属性非空优先，否则 text content）。
+fn option_label_text(doc: &Document, id: NodeId) -> String {
+    if let Some(l) = doc.get_attribute(id, "label") {
+        let trimmed = l.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    doc.text_content(id).unwrap_or_default().trim().to_string()
 }
 
 /// chromium 默认 progress value 填充色（accent 蓝，chrome-127 oracle 实测 (0,117,255)）。
