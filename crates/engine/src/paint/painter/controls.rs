@@ -188,6 +188,75 @@ impl super::Painter {
                 .add_path_fill(vec![ax - 4.0, cy - 3.0, ax + 4.0, cy - 3.0, ax, cy + 3.0], SELECT_ARROW);
         }
     }
+
+    /// 绘制 `<summary>` 的 disclosure 标记（R1686，≡ R1680 select 箭头 paint 谱系）。
+    ///
+    /// chromium 在 summary 文本前绘一个小三角指示 disclosure 状态：闭合态 ▶（右指）、
+    /// 开启态 ▼（下指）。标记用 currentColor（≡ chrome-127 oracle 实测黑字页 (0,0,0)），
+    /// 绘在 summary 的 UA `padding-left` 区（text 让位）。无 `padding-left`（作者覆盖为 0）时
+    /// 跳过避免压字。父非 `<details>` 或无 open 属性判定时按闭合态处理（≡ R1684 is_closed_details）。
+    pub(crate) fn paint_summary_marker(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: &Document,
+    ) {
+        let Some(node_id) = box_node.node_id else {
+            return;
+        };
+        let Some(node) = doc.get(node_id) else {
+            return;
+        };
+        if !matches!(&node.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("summary")) {
+            return;
+        }
+        let font_size: f32 = match style.font_size {
+            LengthValue::Px(s) => s as f32,
+            _ => 16.0,
+        };
+        if font_size <= 0.0 {
+            return;
+        }
+        // 父 <details> 的 open 态：open 属性存在 = 开启（▼），否则闭合（▶）。
+        let is_open =
+            doc.parent_node(node_id).and_then(|pid| doc.get(pid)).is_some_and(
+                |p| matches!(&p.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("details")),
+            ) && doc
+                .parent_node(node_id)
+                .is_some_and(|pid| doc.get_attribute(pid, "open").is_some());
+
+        // 标记绘在 padding-left 区（chromium 标记 ~0.4em 宽 + gap，text 让位 ≈1.2em）。
+        // padding_left 不足（作者覆盖为 0）时跳过避免压字。
+        let pad_l = box_node.padding_left;
+        if pad_l < 6.0 {
+            return;
+        }
+        let ms_w = font_size * 0.4;
+        let ms_h = font_size * 0.5;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+        // 标记垂直居中于首行 x-height（≈ content_y + font_size*0.45）。
+        let cy = content_y + font_size * 0.45;
+        // 标记贴 padding 区起点（chromium 标记在 content 起 x=8，text 让位到 x≈26）。
+        let mx = abs_x + box_node.border_left + 2.0;
+        let color = super::super::color::color_value_to_render(&style.color);
+        let verts = if is_open {
+            // ▼ 下指三角：上边两角 + 下尖。
+            vec![
+                mx,
+                cy - ms_h * 0.5,
+                mx + ms_w,
+                cy - ms_h * 0.5,
+                mx + ms_w * 0.5,
+                cy + ms_h * 0.5,
+            ]
+        } else {
+            // ▶ 右指三角：左边两角 + 右尖。
+            vec![mx, cy - ms_h * 0.5, mx, cy + ms_h * 0.5, mx + ms_w, cy]
+        };
+        self.primitives.add_path_fill(verts, color);
+    }
 }
 
 /// R1679：返回 `<select>` 的 selected option 标签文本。

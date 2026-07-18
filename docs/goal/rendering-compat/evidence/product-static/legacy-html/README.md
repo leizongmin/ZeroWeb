@@ -232,8 +232,10 @@ done
   实证 mark 黄底渲染（4522 纯黄像素），作者 inline style `#90ee90` 仍生效（UA overridable），diff 4.36% struct PASS。
 - **R1684 `<details>` 闭合态隐藏非 summary 内容**（HTML 渲染规范 `details:not([open])>*:not(summary){display:none}`）：
   ZW 无 UA CSS 父条件选择器，故 layout-tree 构建期（`build_subtree`）对闭合 details 过滤直接子仅留 summary。
-  fixture 49 实证闭合 details 仅 summary（h=18，p+ul 隐藏），开启 details 显示全部；diff 3.57% struct PASS
-  （残余 = summary ▶ 标记未绘 + font-wall，独立 forward）。
+  fixture 49 实证闭合 details 仅 summary（h=18，p+ul 隐藏），开启 details 显示全部；diff 3.57% struct PASS。
+- **R1686 `<summary>` disclosure 标记 ▶/▼**（完成 R1684 details 视觉 affordance）：UA `summary{padding-left:1.2em}`
+  给标记让位 + `paint_summary_marker`（currentColor 三角，闭合▶右指/开启▼下指，绘 padding 区起点）。fixture 49
+  closed ▶ + open ▼ 均渲染（chrome-127 oracle 实测黑字页标记 (0,0,0) currentColor），diff 3.57% 持平 struct PASS。
 - **R1671 progress/meter value 填充条绘制**（paint 半，≡ R1660 paint_input_value；sizing+paint 两轮收尾）：
   新增 `controls.rs::paint_progress_meter_value`，progress #0075FF / meter 三区域 green-yellow-red，chrome-127
   oracle 实测颜色精确匹配；track bg #d5d5d5→#efefef 校正。fixture 45 diff 5.05%→4.76%。

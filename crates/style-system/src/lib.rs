@@ -554,6 +554,12 @@ impl StyleSystem {
                     ));
                     ua_decl_inputs.push(("color".to_string(), "black".to_string(), false, (0, 0, 0), None));
                 }
+                // summary：为 disclosure 标记（▶/▼，R1686 paint_summary_marker）让出左侧空间。
+                // chromium 标记占首行行首 ~0.4em + gap，text 让位 ≈1.2em。padding-left 给标记绘区，
+                // 否则标记压字（无 padding 时 paint_summary_marker 跳过）。specificity 0,0,0 可被作者覆盖。
+                "summary" => {
+                    ua_decl_inputs.push(("padding-left".to_string(), "1.2em".to_string(), false, (0, 0, 0), None));
+                }
                 "a" => {
                     let link_color = html_body_link_color(doc).unwrap_or_else(|| "#0000ee".to_string());
                     ua_decl_inputs.push(("color".to_string(), link_color, false, (0, 0, 0), None));

@@ -695,6 +695,67 @@ fn paint_select_value_renders_selected_option_text() {
 }
 
 #[test]
+fn paint_summary_marker_renders_disclosure_triangle() {
+    // R1686：closed <details>（无 open）summary → ▶；open <details> summary → ▼。
+    let doc = zero_dom::parse_html(
+        "<body><details><summary>x</summary><p>hidden</p></details>\
+         <details open><summary>y</summary><p>shown</p></details></body>",
+    );
+    let summaries = doc.get_elements_by_tag_name("summary");
+    let details = doc.get_elements_by_tag_name("details");
+    let closed_sum = summaries[0];
+    let open_sum = summaries[1];
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+    let mut box_node = make_box(200.0, 20.0);
+    box_node.padding_left = 19.0; // UA 1.2em ≈ 19px（≥6 threshold）
+
+    // closed summary → 1 path_fill（▶ 右指）。
+    box_node.node_id = Some(closed_sum);
+    let before = painter.primitives.path_fills.len();
+    painter.paint_summary_marker(&box_node, 0.0, 0.0, &style, &doc);
+    assert_eq!(
+        painter.primitives.path_fills.len(),
+        before + 1,
+        "closed summary should render ▶ triangle"
+    );
+    assert_eq!(painter.primitives.path_fills[before].vertices.len(), 6);
+
+    // open summary → 1 path_fill（▼ 下指）。
+    box_node.node_id = Some(open_sum);
+    let before2 = painter.primitives.path_fills.len();
+    painter.paint_summary_marker(&box_node, 0.0, 0.0, &style, &doc);
+    assert_eq!(
+        painter.primitives.path_fills.len(),
+        before2 + 1,
+        "open summary should render ▼ triangle"
+    );
+
+    // 非 summary（details 本身）→ 无标记。
+    box_node.node_id = Some(details[0]);
+    let before3 = painter.primitives.path_fills.len();
+    painter.paint_summary_marker(&box_node, 0.0, 0.0, &style, &doc);
+    assert_eq!(
+        painter.primitives.path_fills.len(),
+        before3,
+        "non-summary element should not render disclosure marker"
+    );
+
+    // padding_left < 6（作者覆盖为 0）→ 跳过避免压字。
+    box_node.node_id = Some(closed_sum);
+    box_node.padding_left = 0.0;
+    let before4 = painter.primitives.path_fills.len();
+    painter.paint_summary_marker(&box_node, 0.0, 0.0, &style, &doc);
+    assert_eq!(
+        painter.primitives.path_fills.len(),
+        before4,
+        "summary with padding-left:0 should skip marker (no room)"
+    );
+}
+
+#[test]
 fn paint_select_value_defaults_to_first_option() {
     // 无 selected 属性 → 默认选中首个 option "First"。
     let (doc, select) = first_select("<body><select><option>First</option><option>Second</option></select></body>");

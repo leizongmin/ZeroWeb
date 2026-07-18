@@ -506,6 +506,8 @@ impl Painter {
             if !hidden {
                 if let Some(doc) = doc {
                     self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
+                    // R1686：<summary> disclosure 标记（▶/▼），≡ list marker 同位。
+                    self.paint_summary_marker(box_node, abs_x, abs_y, style, doc);
                 }
                 self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
             }
@@ -697,6 +699,9 @@ impl Painter {
                 // 4. 列表标记绘制（bullets/numbers，位于文本之前）
                 if let Some(doc) = doc {
                     self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
+
+                    // R1686：<summary> disclosure 标记（▶闭合/▼开启），≡ list marker 同位。
+                    self.paint_summary_marker(box_node, abs_x, abs_y, style, doc);
 
                     // 4b. <img> 元素绘制（含 object-fit）
                     self.paint_img_element(box_node, abs_x, abs_y, style, doc);
