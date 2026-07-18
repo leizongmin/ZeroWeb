@@ -197,6 +197,24 @@ fn small_sub_sup_get_ua_font_size_and_vertical_align() {
     );
 }
 
+/// R1714：`<big>` UA font-size:1.2em（chromium UA `larger` ≈1.2em，≡ small 0.83em 对称对）。
+#[test]
+fn big_gets_ua_font_size_larger() {
+    use zero_css_parser::values::LengthValue;
+    let doc = parse_html("<body><big>big</big></body>");
+    let mut system = StyleSystem::new();
+    system.set_viewport(800.0, 600.0);
+    let styles = system.compute_styles(&doc, &[]);
+    let id = doc.get_elements_by_tag_name("big")[0];
+    let s = styles.get(&id).expect("big styled");
+    // 1.2em × 默认 16px = 19.2px。
+    assert!(
+        matches!(s.font_size, LengthValue::Px(v) if (v - 19.2).abs() < 1.0),
+        "<big> font-size should be ~19.2 (1.2em×16), got {:?}",
+        s.font_size
+    );
+}
+
 /// R1693：code/kbd/samp/tt → font-family:monospace（chromium UA）。
 #[test]
 fn code_family_gets_monospace_from_ua() {

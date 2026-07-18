@@ -602,6 +602,13 @@ impl StyleSystem {
                 "small" => {
                     ua_decl_inputs.push(("font-size".to_string(), "0.83em".to_string(), false, (0, 0, 0), None));
                 }
+                // R1714：HTML 渲染规范 UA `big { font-size: larger }`（≡ small 的对称对，chromium UA
+                // `larger` ≈1.2em；ZW 无 larger 关键字 → 用 1.2em 显式，与 small 0.83em 对称）。
+                // `<big>` 已废弃（HTML5）但 legacy 页仍用；ZW 此前无 → 渲成普通 inline（无放大）。
+                // specificity 0,0,0 可被作者覆盖。corpus 0（WPT 罕用），legacy fixture 34 可见。
+                "big" => {
+                    ua_decl_inputs.push(("font-size".to_string(), "1.2em".to_string(), false, (0, 0, 0), None));
+                }
                 "sub" => {
                     ua_decl_inputs.push(("font-size".to_string(), "0.83em".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push(("vertical-align".to_string(), "sub".to_string(), false, (0, 0, 0), None));
