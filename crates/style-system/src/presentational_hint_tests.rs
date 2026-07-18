@@ -40,6 +40,48 @@ fn table_border_and_cell_padding_map_to_css() {
     );
 }
 
+/// R1716：`<table align>` 表现提示（HTML4 §11.2.4 / chromium UA）。
+/// center → margin-left/right:auto；left/right → float:left/right。
+#[test]
+fn table_align_attr_maps_to_margin_or_float() {
+    let doc = parse_html(
+        "<table align=\"center\"></table>\
+         <table align=\"left\"></table>\
+         <table align=\"right\"></table>\
+         <table align=\"bogus\"></table>",
+    );
+    let tables = doc.get_elements_by_tag_name("table");
+
+    let center = collect_presentational_hints(&doc, tables[0]);
+    assert!(
+        center.iter().any(|(p, v)| p == "margin-left" && v == "auto")
+            && center.iter().any(|(p, v)| p == "margin-right" && v == "auto"),
+        "align=center → margin auto: {center:?}"
+    );
+    assert!(
+        !center.iter().any(|(p, _)| p == "float"),
+        "align=center should not float: {center:?}"
+    );
+
+    let left = collect_presentational_hints(&doc, tables[1]);
+    assert!(
+        left.iter().any(|(p, v)| p == "float" && v == "left"),
+        "align=left → float:left: {left:?}"
+    );
+
+    let right = collect_presentational_hints(&doc, tables[2]);
+    assert!(
+        right.iter().any(|(p, v)| p == "float" && v == "right"),
+        "align=right → float:right: {right:?}"
+    );
+
+    let bad = collect_presentational_hints(&doc, tables[3]);
+    assert!(
+        !bad.iter().any(|(p, _)| p == "float") && !bad.iter().any(|(p, _)| p == "margin-left"),
+        "bogus align should emit no hint: {bad:?}"
+    );
+}
+
 #[test]
 fn anchor_ua_uses_body_link_color() {
     let doc = parse_html("<body LINK=\"#0000EE\"><a href=\"#\">x</a></body>");

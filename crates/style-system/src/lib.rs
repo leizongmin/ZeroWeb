@@ -1051,6 +1051,20 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
                     hints.push((attr.to_string(), v));
                 }
             }
+            // R1716：HTML4 §11.2.4 `<table align>` 表现提示（chromium UA）。
+            // center → margin-left/right:auto（display:table 块居中，非浮动）；
+            // left/right → float:left/right（HTML4 表格浮动，后续块内容环绕）。
+            if let Some(align) = elem_attr(elem, "align") {
+                match align.trim().to_ascii_lowercase().as_str() {
+                    "center" => {
+                        hints.push(("margin-left".to_string(), "auto".to_string()));
+                        hints.push(("margin-right".to_string(), "auto".to_string()));
+                    }
+                    "left" => hints.push(("float".to_string(), "left".to_string())),
+                    "right" => hints.push(("float".to_string(), "right".to_string())),
+                    _ => {}
+                }
+            }
         }
         "td" | "th" => {
             if let Some(bg) = parent_tr_bgcolor(doc, element) {
