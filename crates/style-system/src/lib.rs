@@ -663,6 +663,28 @@ impl StyleSystem {
                         // specificity(0,0,0)，可被作者/内联样式覆盖）。
                         let w = select_intrinsic_width(doc, element);
                         ua_decl_inputs.push(("width".to_string(), format!("{w:.0}px"), false, (0, 0, 0), None));
+                    } else if tag == "textarea" && std::env::var("ZW_TEXTAREA_INTRINSIC_SIZE").as_deref() != Ok("0") {
+                        // R1681：textarea 固有尺寸 = cols×char宽 + rows×行高（form-control intrinsic
+                        // sizing，≡ R1659 input / R1679 select 谱系）。textarea 现 width:auto 按 text
+                        // content 测宽（短内容塌缩/长内容拉满），chromium 按 cols（默认 20）/rows
+                        //（默认 2）属性定尺寸。最低优先级 specificity(0,0,0)，可被作者/内联样式覆盖。
+                        const CHAR_PX: f32 = 7.0; // ≡ R1659 input/select 平均字符宽
+                        const ROW_PX: f32 = 19.0; // ≈ 默认 16px font × 1.2 line-height（行高）
+                        const WIDTH_CHROME: f32 = 8.0; // ≡ R1659 input：左右 padding(4)+border(2)+边距
+                        let cols = doc
+                            .get_attribute(element, "cols")
+                            .and_then(|s| s.trim().parse::<f32>().ok())
+                            .filter(|&n| n >= 1.0)
+                            .unwrap_or(20.0);
+                        let rows = doc
+                            .get_attribute(element, "rows")
+                            .and_then(|s| s.trim().parse::<f32>().ok())
+                            .filter(|&n| n >= 1.0)
+                            .unwrap_or(2.0);
+                        let w = cols * CHAR_PX + WIDTH_CHROME;
+                        let h = rows * ROW_PX;
+                        ua_decl_inputs.push(("width".to_string(), format!("{w:.0}px"), false, (0, 0, 0), None));
+                        ua_decl_inputs.push(("height".to_string(), format!("{h:.0}px"), false, (0, 0, 0), None));
                     }
                 }
                 // R1669：`<keygen>` deprecated void 表单控件（≡ R1659 `<input>` / R1396 form-control 谱系）。
@@ -1699,14 +1721,41 @@ mod presentational_hint_tests {
             "reset value=Clear width ~49px, got {:?}",
             reset.width
         );
-        // textarea：仍 width:auto（UA 不注入固有 width）。select 自 R1679 起按最宽 option
-        // 标签注入固有 width（见 select_suppresses_options_and_gets_intrinsic_width）。
+        // textarea：自 R1681 起按 cols（默认 20）/rows（默认 2）注入 UA 固有尺寸。
+        // <textarea>t</textarea>（无 cols/rows）→ width=20×7+8≈148px / height=2×19≈38px。
         let textarea_id = doc.get_elements_by_tag_name("textarea")[0];
         let ts = styles.get(&textarea_id).expect("textarea styled");
         assert!(
-            matches!(ts.width, LengthValue::Auto),
-            "<textarea> must stay width:auto (content-sized), got {:?}",
+            matches!(ts.width, LengthValue::Px(w) if (140.0..=160.0).contains(&w)),
+            "textarea default cols=20 width ~148px, got {:?}",
             ts.width
+        );
+        assert!(
+            matches!(ts.height, LengthValue::Px(h) if (34.0..=42.0).contains(&h)),
+            "textarea default rows=2 height ~38px, got {:?}",
+            ts.height
+        );
+    }
+
+    #[test]
+    fn textarea_uses_cols_rows_intrinsic_size() {
+        // R1681：cols/rows 属性驱动 UA 固有尺寸（≡ R1659 input size 谱系）。
+        // cols=10 rows=4 → width=10×7+8≈78px / height=4×19≈76px。
+        use zero_css_parser::values::LengthValue;
+        let doc = parse_html("<body><textarea cols=\"10\" rows=\"4\">txt</textarea></body>");
+        let mut system = StyleSystem::new();
+        let styles = system.compute_styles(&doc, &[]);
+        let ta = doc.get_elements_by_tag_name("textarea")[0];
+        let s = styles.get(&ta).expect("textarea styled");
+        assert!(
+            matches!(s.width, LengthValue::Px(w) if (72.0..=84.0).contains(&w)),
+            "textarea cols=10 width ~78px, got {:?}",
+            s.width
+        );
+        assert!(
+            matches!(s.height, LengthValue::Px(h) if (70.0..=82.0).contains(&h)),
+            "textarea rows=4 height ~76px, got {:?}",
+            s.height
         );
     }
 
