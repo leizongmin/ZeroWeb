@@ -70,6 +70,7 @@ make product-smoke-legacy
 | 44 | image map | `<map>`/`<area>` 客户端图像映射（R1669；area→display:none）|
 | 45 | progress / meter / keygen | 废弃/替换类表单控件（R1669；keygen 固有尺寸，progress/meter forward Bug C）|
 | 46 | frameset / frame | frameset 帧模式探测（R1669；frame→display:none，帧网格渲染 unsupported）|
+| 47 | datalist / misc | datalist/source/track/optgroup/output/bdi/bdo（R1675；datalist+source+track→display:none）|
 
 ### R1657 `<noframes>` display:none 修复
 
@@ -118,6 +119,21 @@ object/embed/applet Bug B 谱系（替换元素 + fallback + sizing entanglement
 **A/B**：CSS2 oracle bit-identical **net-0**（6283 案，oracle-pass 4458/71.6% ↔ R1668 baseline 4458/71.6%
 零变化——area/frame/keygen 在 WPT reftest 极罕见，≡ R1659 input / R1666-R1668 谱系）。load-bearing
 单测 `test_hidden_elements_default_to_none` 钉死 None-arm 含 area/frame。
+
+### R1675 `<datalist>`/`<source>`/`<track>` UA display:none（LAYOUT_DUMP+pixel 抓到第十三个真 legacy bug）·legacy fixture 47
+
+承接 R1674 forward「pivot 回 legacy/UA-display vein」。本轮加 [`47-datalist-and-misc.html`](./fixtures/47-datalist-and-misc.html)
+（datalist/source/track/optgroup/output/bdi/bdo）+ chrome-127 oracle。★ **LAYOUT_DUMP + pixel 采样抓 bug**：
+① `<datalist>` 的 option 文本当 inline 渲染（pixel 采样 y=118 有暗像素 = option 文本 "apple/banana/cherry"
+可见），chromium `datalist{display:none}` 完全移除（pixel 白）；② `<source>`/`<track>` 渲成 6×24.6 断盒
+（media 子元素应无盒——source 提供 src / track 提供文本轨道），致 `<video>` collapsed-container h=0<25 +
+source/track sibling overlap → **fixture 47 struct FAIL**。★ **fix**（[`lib.rs`](../../../../../crates/style-system/src/lib.rs)
+None-arm）：加 `datalist`+`source`+`track` + 扩 `test_hidden_elements_default_to_none`（≡ R1667-R1669 noembed/
+bgsound/param/basefont/area/frame 谱系）。fixture 47 LAYOUT_DUMP 复核 datalist+options 与 source/track 全消失，
+struct **FAIL→PASS**。diff 6.93% 持平（source/track 透明无像素差；datalist 文本移除 ≈ 内容上移抵消；残余 =
+font-wall + optgroup/output/bdi/bdo 文本）。★ **未修 optgroup**：fixture 47 standalone optgroup 仍渲染（w=17.6
++ options 堆叠），但 standalone optgroup 非标准（真实页 optgroup 总在 select 内）——select 内 optgroup/option
+渲染属 select widget 域（= R1670/R1671 forward 的 replaced 子节点抑制架构缺口，非 display:none）。
 
 **门禁**：fmt clean / clippy --workspace --all-targets -D warnings clean / make test 全 workspace 0 failed /
 product-smoke welcome struct PASS 字节一致（零回归——welcome 无 area/frame/keygen）/ legacy smoke
@@ -187,9 +203,9 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1671）
+## 当前基线（2026-07-18，R1675）
 
-- **44/46 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 2.99%，font-wall baseline），46 fixtures 覆盖
+- **45/47 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.04%，font-wall baseline），47 fixtures 覆盖
   HTML 3.2/4 + CSS1/2。2 known struct FAIL = 27-address（body/html 高度传播，R1047/R109 高风险 defer）+
   37-form-controls（R109 inline-`<label>` 含 inline-block `<input>` entanglement）。
 - **R1671 progress/meter value 填充条绘制**（paint 半，≡ R1660 paint_input_value；sizing+paint 两轮收尾）：

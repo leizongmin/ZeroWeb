@@ -73,8 +73,12 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
         // R1669：+ `area`（image map 区域，HTML 渲染规范 area{display:none}——仅定义可点击区不渲染盒）
         //   + `frame`（frameset 子元素，是 nested browsing context 非普通 CSS 盒；ZW 未实现 frameset
         //   帧模式网格渲染，display:none 避免把 frame 渲成 6×24.6 断盒，见 legacy-html fixture 46）。
+        // R1675：+ `datalist`（自动补全建议容器，HTML 渲染规范 datalist{display:none}——其 option 仅作
+        //   input 建议不渲染；ZW 误把 option 文本当 inline 渲染）+ `source`/`track`（media 子元素，
+        //   分别提供 src / 文本轨道，自身无盒——ZW 误渲成 6×24.6 断盒致 video collapsed-container）。
         "script" | "style" | "link" | "meta" | "head" | "title" | "base" | "basefont" | "bgsound" | "noframes"
-        | "noembed" | "param" | "noscript" | "template" | "dialog" | "area" | "frame" => DisplayValue::None,
+        | "noembed" | "param" | "noscript" | "template" | "dialog" | "area" | "frame" | "datalist" | "source"
+        | "track" => DisplayValue::None,
 
         // 内联元素 — 无需覆盖（CSS 初始值即为 inline）
         _ => return None,
@@ -1428,6 +1432,10 @@ mod ua_display_tests {
             // nested browsing context 非普通 CSS 盒）。legacy-html fixture 44/46 LAYOUT_DUMP 抓到
             // 两者误渲染（area 6×24.6 盒、frame 6×24.6 断盒 @负 y）。
             "area", "frame",
+            // R1675：datalist（自动补全建议容器）+ source/track（media 子元素，无盒）。legacy-html
+            // fixture 47 LAYOUT_DUMP + pixel 采样抓到误渲染（datalist option 文本当 inline 渲染；
+            // source/track 渲成 6×24.6 断盒致 video collapsed-container + sibling overlap）。
+            "datalist", "source", "track",
         ] {
             assert_eq!(
                 ua_default_display(tag),
