@@ -87,6 +87,7 @@ mod tests_12;
 mod tests_2;
 mod tests_3;
 mod tests_4;
+mod tests_5;
 mod tests_9;
 mod tokenizer_coverage;
 mod tokenizer_coverage2;
