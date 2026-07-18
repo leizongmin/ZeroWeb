@@ -67,7 +67,7 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
 
         // 内联块级元素
         "img" | "video" | "audio" | "canvas" | "iframe" | "embed" | "object" | "input" | "button" | "select"
-        | "textarea" | "keygen" => DisplayValue::InlineBlock,
+        | "textarea" | "keygen" | "progress" | "meter" => DisplayValue::InlineBlock,
 
         // display:none
         // R1669：+ `area`（image map 区域，HTML 渲染规范 area{display:none}——仅定义可点击区不渲染盒）
@@ -621,6 +621,43 @@ impl StyleSystem {
                     ua_decl_inputs.push(("padding".to_string(), "2px".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push(("width".to_string(), "90px".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push(("height".to_string(), "24px".to_string(), false, (0, 0, 0), None));
+                }
+                // R1670：`<progress>`/`<meter>` inline-block 替换控件固有尺寸（sizing 半，≡ R1659 input
+                // 谱系；value-bar/gauge 绘制 = paint 半，forward）。progress/meter 是 replaced inline-block，
+                // 无固有尺寸时 ZW 按默认 inline 渲成 fallback 文本宽的薄盒（fixture 45：progress 61.6×18 /
+                // meter 22.4×18，应 chromium progress 10em×1em=160×16 / meter 5em=80×16，chrome-127 oracle
+                // 实测 progress x[8,167]=160 value-fill 60%=96px；meter x[8,87]=80 value-fill 30%=24px）。
+                // 此处补 track 外观（border + 灰 bg，近似 chromium track）+ UA width/height（最低优先级
+                // specificity(0,0,0)，可被作者样式覆盖）。
+                //
+                // ★ fallback-content forward（本轮不修，架构缺口）：chromium 把 progress/meter 当 replaced
+                // 元素，**渲染时不显示 fallback 子节点**（"60% done" 等仅在不支持时显示）。ZW 无「replaced
+                // 元素抑制子节点 layout」机制——`<select>` 的 `<option>` 同样当 inline 文本渲染（latent gap，
+                // 非 progress/meter 独有）；`is_replaced` 仅影响 sizing 不抑制子节点。真修须 tree.rs 加
+                // replaced-element 子节点抑制（跨 select/object/embed/applet/progress/meter），多 session。
+                // 故本轮 fallback 文本仍会渲染在 track 盒内（与 select 现状一致，非新引入 bug 类）。
+                "progress" | "meter" => {
+                    ua_decl_inputs.push((
+                        "background-color".to_string(),
+                        "#d5d5d5".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push((
+                        "border".to_string(),
+                        "1px solid #767676".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    let (w, h) = if tag == "progress" {
+                        ("160px", "16px")
+                    } else {
+                        ("80px", "16px")
+                    };
+                    ua_decl_inputs.push(("width".to_string(), w.to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push(("height".to_string(), h.to_string(), false, (0, 0, 0), None));
                 }
                 _ => {}
             }

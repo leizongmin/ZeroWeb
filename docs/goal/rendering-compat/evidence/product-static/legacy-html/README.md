@@ -123,6 +123,31 @@ object/embed/applet Bug B 谱系（替换元素 + fallback + sizing entanglement
 product-smoke welcome struct PASS 字节一致（零回归——welcome 无 area/frame/keygen）/ legacy smoke
 46 fixture（44 struct PASS，2 known struct FAIL = 27-address + 37-form 不变；avg excl. 46-probe ≈2.99%）。
 
+### R1670 `<progress>`/`<meter>` inline-block 固有尺寸（sizing 半，≡ R1659 input 谱系）
+
+承接 R1669 forward ①「progress/meter 三步同修」。**研究（select/option 机制）关键发现**：ZW **无「replaced
+元素抑制子节点 layout」机制**——`is_replaced`（engine.rs:1327）仅含 img/video/iframe/embed/object/svg/canvas
+且只影响 sizing，不抑制子节点；`<select>` 的 `<option>` 同样当 inline 文本渲染（**latent gap，非 progress/meter
+独有**）。故 progress/meter 的「fallback-content 抑制」须 tree.rs 加跨元素子节点抑制机制（影响 select/
+object/embed/applet/progress/meter），多 session 架构工作，**本轮 defer**。
+
+**本轮落地 sizing 半**（≡ R1659 input sizing → R1660 input value-paint 的两轮拆分之前半）：
+`<progress>`/`<meter>` → InlineBlock UA list + `ua_decl_inputs` 注入 track 外观（border 1px + bg #d5d5d5 灰
+track 近似）+ UA 固有尺寸。**chrome-127 oracle 实测**：progress x[8,167]=160px（value-fill 60%=96px ✓）、
+meter x[8,87]=80px（value-fill 30%=24px ✓）→ progress **160×16**（chromium 10em×1em）、meter **80×16**
+（5em），最低优先级 specificity(0,0,0) 可被作者样式覆盖。fixture 45 progress **61.6×18→162×18**（160+2 border）、
+meter **22.4×18→82×18**（80+2 border），struct PASS。
+
+**diff 4.47%→5.05%（+0.58pp，trend-only）**：ZW 现 track 盒 + fallback 文本（"60% done"）vs chromium track +
+绿色 value bar。+0.58pp = fallback 文本 + 缺 value-bar 绘制（≡ R1660 input +0.08pp font-wall 噪声判例——
+「核心语义可见」验收口径优先于 font-wall pixel 噪声：progress/meter 现**正确固有尺寸的可见 track 控件**，
+非薄 sliver）。残余 diff 待 **paint 半**（R1671，≡ R1660）：paint_progress/meter_value 绘 value bar/gauge
+（model `paint_input_value`）。
+
+**forward（架构）**：① value-bar/gauge 绘制（paint 半，R1671）；② **replaced 元素子节点抑制机制**（tree.rs，
+跨 select/object/embed/applet/progress/meter——ZW 当前无任何元素抑制子节点，select/option latent gap）；
+③ object/embed/applet width/height attr sizing（R1668 Bug B，低 ROI）。
+
 ## oracle
 
 `oracle/*.png` — chrome-for-testing 127 截图（800×600）。重抓：
@@ -135,11 +160,13 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1669）
+## 当前基线（2026-07-18，R1670）
 
-- **44/46 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 2.99%，font-wall baseline），46 fixtures 覆盖
+- **44/46 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.01%，font-wall baseline），46 fixtures 覆盖
   HTML 3.2/4 + CSS1/2。2 known struct FAIL = 27-address（body/html 高度传播，R1047/R109 高风险 defer）+
   37-form-controls（R109 inline-`<label>` 含 inline-block `<input>` entanglement）。
+- **R1670 progress/meter sizing 半**（≡ R1659 input 谱系；value-bar paint + 子节点抑制 forward）：progress/meter
+  → InlineBlock UA + 固有尺寸（progress 160×16 / meter 80×16，chrome-127 oracle 实测）+ track 外观。
 - **R1669 新增 3 fixture + 3 display 修复**（详见下 R1669 段）：`<area>`+`<frame>`→display:none +
   `<keygen>`→inline-block UA + 固有尺寸（R1659 input 谱系）。
 - **46-frameset 是 probe**（非 font-wall）：diff ~100% 是 inherent——chrome 用默认 canvas bg `#DDDDDD` +
