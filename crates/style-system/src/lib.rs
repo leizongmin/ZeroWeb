@@ -541,6 +541,19 @@ impl StyleSystem {
                 "i" | "em" => {
                     ua_decl_inputs.push(("font-style".to_string(), "italic".to_string(), false, (0, 0, 0), None));
                 }
+                // mark：HTML 渲染规范 UA `mark { background-color: yellow; color: black }`
+                //（高亮文本）。ZW 默认无 → <mark> 渲成普通 inline（无高亮）。R1685：补 UA 默认值
+                //（≡ pre white-space / h1 bold 谱系，specificity 0,0,0 可被作者样式覆盖）。
+                "mark" => {
+                    ua_decl_inputs.push((
+                        "background-color".to_string(),
+                        "#ffff00".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push(("color".to_string(), "black".to_string(), false, (0, 0, 0), None));
+                }
                 "a" => {
                     let link_color = html_body_link_color(doc).unwrap_or_else(|| "#0000ee".to_string());
                     ua_decl_inputs.push(("color".to_string(), link_color, false, (0, 0, 0), None));
@@ -1648,6 +1661,28 @@ mod presentational_hint_tests {
                 style.white_space
             );
         }
+    }
+
+    /// R1685：`<mark>` 高亮文本，HTML 渲染规范 UA `mark { background-color: yellow; color: black }`。
+    /// ZW 默认无 → <mark> 渲成普通 inline（无高亮）。本测试钉死 UA 注入的黄底黑字。
+    #[test]
+    fn mark_gets_yellow_bg_black_color_from_ua() {
+        use zero_css_parser::values::ColorValue;
+        let doc = parse_html("<body><mark>hi</mark></body>");
+        let mut system = StyleSystem::new();
+        let styles = system.compute_styles(&doc, &[]);
+        let id = doc.get_elements_by_tag_name("mark")[0];
+        let style = styles.get(&id).expect("mark styled");
+        assert!(
+            matches!(style.background_color, ColorValue::Rgba(255, 255, 0, 255)),
+            "<mark> should get background-color:#ffff00 from UA, got {:?}",
+            style.background_color
+        );
+        assert!(
+            matches!(style.color, ColorValue::Rgba(0, 0, 0, 255)),
+            "<mark> should get color:black from UA, got {:?}",
+            style.color
+        );
     }
 
     /// R1659：`<input>` 是 void inline-block（无子节点），缺固有尺寸时 ZW 把 auto 宽度当全容器宽

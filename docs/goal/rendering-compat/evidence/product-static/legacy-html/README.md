@@ -73,6 +73,7 @@ make product-smoke-legacy
 | 47 | datalist / misc | datalist/source/track/optgroup/output/bdi/bdo（R1675；datalist+source+track→display:none）|
 | 48 | ruby / misc | ruby/rp/rt/picture/wbr/data（R1676；rp→display:none）|
 | 49 | details / summary | `<details>`/`<summary>` disclosure（R1684；闭合态 details 隐藏非 summary 内容）|
+| 50 | mark / highlight | `<mark>` 高亮（R1685；UA 黄底黑字 `mark{background-color:#ffff00;color:black}`）|
 
 ### R1657 `<noframes>` display:none 修复
 
@@ -220,11 +221,15 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1684）
+## 当前基线（2026-07-18，R1685）
 
-- **47/49 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.04%，font-wall baseline），49 fixtures 覆盖
+- **48/50 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.04%，font-wall baseline），50 fixtures 覆盖
   HTML 3.2/4 + CSS1/2。2 known struct FAIL = 27-address（body/html 高度传播，R1047/R109 高风险 defer）+
   37-form-controls（R109 inline-`<label>` 含 inline-block `<input>` entanglement）。
+- **R1685 `<mark>` UA 黄底黑字**（HTML 渲染规范 `mark { background-color: yellow; color: black }`）：
+  ZW 默认无 → `<mark>` 渲成普通 inline（无高亮）。补 `ua_decl_inputs` mark arm 注入 `background-color:#ffff00`
+  + `color:black`（≡ pre white-space / b bold 谱系，specificity 0,0,0 可被作者样式覆盖）。fixture 50
+  实证 mark 黄底渲染（4522 纯黄像素），作者 inline style `#90ee90` 仍生效（UA overridable），diff 4.36% struct PASS。
 - **R1684 `<details>` 闭合态隐藏非 summary 内容**（HTML 渲染规范 `details:not([open])>*:not(summary){display:none}`）：
   ZW 无 UA CSS 父条件选择器，故 layout-tree 构建期（`build_subtree`）对闭合 details 过滤直接子仅留 summary。
   fixture 49 实证闭合 details 仅 summary（h=18，p+ul 隐藏），开启 details 显示全部；diff 3.57% struct PASS
