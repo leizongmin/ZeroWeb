@@ -314,6 +314,37 @@ fn list_type_attr_maps_to_list_style_type_hint() {
     );
 }
 
+/// R1710：HTML4 `<img border=N>` → border:Npx solid（CSS2 App D §13.7.3）。
+/// 隔离实测 border 单独 net 改善（fixture 24 0.79%→0.71%）；hspace/vspace defer。
+#[test]
+fn img_border_attr_maps_to_border_hint() {
+    use zero_css_parser::values::LengthValue;
+    let doc = parse_html("<body><img src=\"x\" border=\"3\"></body>");
+    let body_img = doc.get_elements_by_tag_name("img")[0];
+    let hints = collect_presentational_hints(&doc, body_img);
+    assert!(
+        hints.iter().any(|(p, v)| p == "border" && v == "3px solid"),
+        "<img border=3> → border:3px solid, got hints: {hints:?}"
+    );
+    // border="0" 不加边框（HTML4 border=0 显式抑制，img 默认无边框故 no-op）。
+    let doc0 = parse_html("<body><img src=\"x\" border=\"0\"></body>");
+    let img0 = doc0.get_elements_by_tag_name("img")[0];
+    let hints0 = collect_presentational_hints(&doc0, img0);
+    assert!(
+        !hints0.iter().any(|(p, _)| p == "border"),
+        "<img border=0> should not add border hint, got: {hints0:?}"
+    );
+    // computed: border=3 → border-top-width 3px solid。
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[]);
+    let img = styles.get(&body_img).expect("img styled");
+    assert!(
+        matches!(img.border_top_width, LengthValue::Px(v) if (v - 3.0).abs() < 0.01),
+        "border=3 → border-top-width 3px, got {:?}",
+        img.border_top_width
+    );
+}
+
 #[test]
 fn heading_gets_ua_font_size_and_weight() {
     let doc = parse_html("<body><h1>Title</h1><h2>Section</h2></body>");

@@ -1016,6 +1016,14 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
                     hints.push(("vertical-align".to_string(), va));
                 }
             }
+            // R1710：HTML4 §13.7.3 `<img border=N>` → border:Npx solid（currentColor；
+            // <a> 内经继承自动取链接色）。隔离实测 border 单独 net −381px（fixture 24
+            // 0.79%→0.71%，border ring 匹配 chromium）；hspace/vspace 因 font-wall 文本宽
+            // + inline 垂直 margin 发散（+168/+541px），defer。
+            let bw = table_border_width_attr(elem);
+            if bw > 0 {
+                hints.push(("border".to_string(), format!("{bw}px solid")));
+            }
         }
         "table" => {
             if let Some(bg) = elem_attr(elem, "bgcolor") {
