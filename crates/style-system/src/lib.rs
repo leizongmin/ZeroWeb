@@ -1288,7 +1288,7 @@ fn gather_custom_properties(
         max_iter -= 1;
         changed = false;
         let snapshot = props.clone();
-        for (_key, value) in props.iter_mut() {
+        for value in props.values_mut() {
             let resolved = computed::resolve_var(value, &snapshot);
             if resolved != *value {
                 *value = resolved;
