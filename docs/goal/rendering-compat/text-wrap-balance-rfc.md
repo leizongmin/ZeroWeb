@@ -9,6 +9,12 @@
 
 `text-wrap` 属性**已解析已存储**（`TextWrapComputedValue::{Wrap,Nowrap,Balance,Pretty}`，[`apply_advanced.rs:955`](../../crates/style-system/src/property/apply_advanced.rs) + ComputedStyle.text_wrap），但**布局侧完全未消费**——`grep text_wrap crates/layout-engine` 仅命中 multicol balancing（无关）。故 `text-wrap:balance` 当前等同 `wrap`（普通贪婪换行），balance 测案 oracle FAIL。
 
+## ⚠️ R1664 阻塞发现：balance 全 corpus 被 ch 单位近似阻塞（实现已 revert）
+
+R1664 按 RFC 实施 Slice A 后 A/B 实测**零翻转**（27 案 5/27 持平）。根因：**全 27 balance 测案均用 `ch` 宽**（35ch/50ch/8.5ch/20ch/60ch），而 ZW `ch` 解析 = `font_size × 0.5`（[`computed.rs:46`](../../crates/style-system/src/computed.rs)，R1338 裁决的 0.5em 近似——真实 ch='0' advance 须 font-stack C-dep；Ahem/monospace 真 ch=1.0em）。balance-003 `35ch`@15pxAhem 实测 263px（应 525px）→ 容器半宽 → N=3（应 N=2）→ balance 在错误尺度算。**balance 实现已 revert**（零 corpus 价值 + 罕用特性 + 文件体积），本 RFC 保留作 ch 修复后的重实施设计。
+
+**前置条件**：先做 **font-aware ch**（computed.rs:46：Ahem/monospace→1.0em，proportional→0.5em；R1338 仅评估过全局 1.0em 净 −7，font-aware 变体未试），解锁 balance + 大量 `width:Nch` Ahem 测案后，再按本 RFC 实施 balance。
+
 ## 算法（balance-003 实证验证，确定性匹配 chromium）
 
 balance 的语义：在保持**与普通换行相同行数 N** 的前提下，找**最小换行宽 W**，使各行长度尽量均等。
