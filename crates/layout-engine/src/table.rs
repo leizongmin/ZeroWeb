@@ -1385,6 +1385,35 @@ fn position_cells(
                         }
                     }
                 }
+
+                // R1717：text-only cell valign — 单元格直接文本经 IFC 在 paint 期渲染（非 child
+                // box），上面的 child-box 位移对空 children 无效。据单元格预-extra 高度（post-extra
+                // height 减去本行 row_extra = natural 文本块高度）算 dy 写入 valign_offset，paint_text
+                // 据此偏移文本起点。仅对 middle/bottom/text-bottom 非 top 单元格；block-child cell 无
+                // 直接文本（paint_text 早退）故 valign_offset 不被读，与上面 child-box 位移互补不冲突。
+                // kill-switch ZW_TABLE_CELL_VALIGN_IFC=0 关闭（default-on）。
+                if std::env::var("ZW_TABLE_CELL_VALIGN_IFC").as_deref() != Ok("0")
+                    && cell_box.children.is_empty()
+                    && matches!(
+                        cell_style.vertical_align,
+                        zero_css_parser::values::VerticalAlignValue::Middle
+                            | zero_css_parser::values::VerticalAlignValue::Bottom
+                            | zero_css_parser::values::VerticalAlignValue::TextBottom
+                    )
+                {
+                    let extra = row_extras.get(row_idx).copied().unwrap_or(0.0);
+                    let natural_h = (cell_box.height - extra).max(0.0);
+                    let bp =
+                        cell_box.border_top + cell_box.border_bottom + cell_box.padding_top + cell_box.padding_bottom;
+                    let text_content_h = (natural_h - bp).max(0.0);
+                    let avail = (cell_box.content_height - text_content_h).max(0.0);
+                    cell_box.valign_offset = match cell_style.vertical_align {
+                        zero_css_parser::values::VerticalAlignValue::Middle => avail / 2.0,
+                        zero_css_parser::values::VerticalAlignValue::Bottom
+                        | zero_css_parser::values::VerticalAlignValue::TextBottom => avail,
+                        _ => 0.0,
+                    };
+                }
             }
 
             // 折叠列的单元格不推进 cell_x（宽度为 0，也不加 spacing）

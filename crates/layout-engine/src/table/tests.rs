@@ -288,6 +288,79 @@ fn test_table_cell_valign_bottom_stays_in_content_box() {
     );
 }
 
+/// R1717：text-only table-cell（无 child box，文本经 IFC 在 paint 期渲染）的 vertical-align
+/// 内容偏移写入 `cell.valign_offset`，供 paint_text 偏移文本起点。
+///
+/// 单元格预-extra 高度（text 块高度）= post-extra height − row_extra。本测试构造 cell
+/// 初始 height=18（模拟文本块高度）+ table height=120 → row_extra≈102，valign:middle
+/// → valign_offset ≈ (content_h − 18)/2。valign:top 不触发（gate 排除）。
+#[test]
+fn test_table_cell_text_valign_offset_for_text_only_cell() {
+    use zero_css_parser::values::{LengthValue, VerticalAlignValue};
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    ts.height = LengthValue::Px(120.0);
+    styles.insert(table_id, ts);
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    cs.vertical_align = VerticalAlignValue::Middle;
+    styles.insert(cell_id, cs);
+
+    // text-only cell：无 children（文本经 IFC paint 期渲染），初始 height=18 = 文本块高度
+    //（content_row_heights 据此算 row_extra；position_cells 随后把 height 撑到 row_height）。
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        height: 18.0,
+        ..Default::default()
+    };
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 200.0,
+        children: vec![cell_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    position_cells(&mut table_box, &grid, &[200.0], 0.0, 0.0, &styles);
+
+    let cell = &table_box.children[0];
+    // valign:middle → 文本居中，offset ≈ (content_height − text_h)/2 = (120−18)/2 = 51
+    assert!(
+        cell.valign_offset > 40.0 && cell.valign_offset < 60.0,
+        "valign:middle text-only cell valign_offset should be ~51 (centered), got {}",
+        cell.valign_offset
+    );
+
+    // valign:top → gate 排除，valign_offset 应保持 0（top 不位移文本）
+    styles.get_mut(&cell_id).unwrap().vertical_align = VerticalAlignValue::Top;
+    let cell_box2 = LayoutBox {
+        node_id: Some(cell_id),
+        height: 18.0,
+        ..Default::default()
+    };
+    let mut table_box2 = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 200.0,
+        children: vec![cell_box2],
+        ..Default::default()
+    };
+    let grid2 = build_grid(&table_box2, &doc, &styles);
+    position_cells(&mut table_box2, &grid2, &[200.0], 0.0, 0.0, &styles);
+    assert!(
+        table_box2.children[0].valign_offset == 0.0,
+        "valign:top should not set valign_offset, got {}",
+        table_box2.children[0].valign_offset
+    );
+}
+
 /// R769：table-cell 建立 BFC（CSS §9.4.1），其首子 margin-top 不应向上穿透单元格
 /// 而丢失——BFC 的 margin 不与子元素折叠（§8.3.1）。但 taffy 把单元格按普通 Block
 /// 布局，把首子 margin-top 折叠上提到 `cell.margin_top`；自定义表格布局忽略单元格

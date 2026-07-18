@@ -1609,6 +1609,7 @@ impl LayoutEngine {
             r109_first_fragment,
             r109_last_fragment,
             table_col_backgrounds: Vec::new(),
+            valign_offset: 0.0,
         }
     }
 }

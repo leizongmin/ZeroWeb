@@ -386,7 +386,9 @@ impl super::Painter {
         let shadow_color = color_value_to_render(&text_shadow.color);
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
-        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+        // R1717：+ valign_offset — 表格单元格文本的 vertical-align 内容偏移（仅 table-cell，
+        // table.rs position_cells 设置；其他盒默认 0.0，零影响）。
+        let content_y = abs_y + box_node.border_top + box_node.padding_top + box_node.valign_offset;
 
         let (tx, ty) = super::super::helpers::apply_transform_offset(style, abs_x, abs_y);
 

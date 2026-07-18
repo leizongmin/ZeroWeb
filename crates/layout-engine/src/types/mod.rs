@@ -334,6 +334,15 @@ pub struct LayoutBox {
     /// col 在后（colgroup 背景在下层）。由 `collect_table_col_backgrounds` 在
     /// position_cells 后填充（彼时 col_widths + col→column 映射已知）。
     pub table_col_backgrounds: Vec<(NodeId, f32, f32)>,
+    /// R1717：表格单元格文本的 vertical-align 内容偏移（px，正=向下）。
+    ///
+    /// CSS 2.1 表格单元格的 `vertical-align` 控制单元格**内容**在单元格内的垂直对齐
+    ///（top/middle/bottom），与 IFC 内 inline 盒的 vertical-align（baseline 对齐）是不同
+    /// 语义。ZW 单元格文本经 IFC 在 paint 期渲染（非 child box），故 table.rs 的 child-box
+    /// 位移对 text-only cell 无效；改由 table.rs `position_cells` 据单元格预-extra 文本高度
+    /// 算出 dy 写入此字段，paint_text 据此偏移文本起点。仅 middle/bottom 非 0；top/baseline=0。
+    /// kill-switch `ZW_TABLE_CELL_VALIGN_IFC=0` 关闭（default-on）。
+    pub valign_offset: f32,
 }
 
 impl LayoutBox {
@@ -440,6 +449,7 @@ impl Default for LayoutBox {
             r109_first_fragment: false,
             r109_last_fragment: false,
             table_col_backgrounds: Vec::new(),
+            valign_offset: 0.0,
         }
     }
 }
