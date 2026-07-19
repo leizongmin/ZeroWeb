@@ -60,11 +60,40 @@ pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox) {
             }
             let ctop = child.y;
             let cbottom = child.y + child.height;
-            for (fd, fx, fy, fw, fh, fmr) in &floats {
-                let fbottom = *fy + *fh;
-                if !(ctop < fbottom && cbottom > *fy) {
-                    continue;
+            // 收集与本 inline-block 垂直重叠的 float。
+            let overlapping: Vec<&(FloatValue, f32, f32, f32, f32, f32)> = floats
+                .iter()
+                .filter(|(_, _, fy, _, fh, _)| {
+                    let fbottom = *fy + *fh;
+                    ctop < fbottom && cbottom > *fy
+                })
+                .collect();
+            if overlapping.len() >= 2 {
+                // R1733 续：多-float 协调（mirror R1730）——逐 float 独立 shift/shrink 会 over-shrink
+                //（floats-wrap-top-below-inline-002r：left+right float 致 inline-block 被错缩到右侧）。
+                // 计算可行 x 区间 [x_lo, x_hi]（左 float 推 x_lo 右移、右 float 推 x_hi 左移），
+                // 可行则置 x_lo；不可行（float 占满致旁无空）则**保持原位**（勿错位，如 002r-inline
+                // 原 x=[11,210] 匹配 chromium，per-float 错移到 [311,410]）。
+                let mut x_lo = 0.0_f32;
+                let mut x_hi = (container_w - child.width).max(0.0);
+                for (fd, fx, _fy, fw, _fh, fmr) in &overlapping {
+                    match fd {
+                        FloatValue::Left => x_lo = x_lo.max(*fx + *fw + *fmr),
+                        FloatValue::Right => x_hi = x_hi.min(*fx - child.width),
+                        _ => {}
+                    }
                 }
+                if x_lo <= x_hi + 0.5 {
+                    child.x = x_lo;
+                    let max_w = (container_w - child.x).max(0.0);
+                    if child.width > max_w {
+                        child.width = max_w;
+                    }
+                }
+                // 不可行 → 不动（避免错位）
+            } else if overlapping.len() == 1 {
+                // 单 float：per-float（左推右、右收缩宽）。
+                let (fd, fx, _fy, fw, _fh, fmr) = overlapping[0];
                 match fd {
                     FloatValue::Left => {
                         let avoidance_x = *fx + *fw + *fmr;
