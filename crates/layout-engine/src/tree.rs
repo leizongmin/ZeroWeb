@@ -955,10 +955,7 @@ fn build_subtree(
     //
     // 注意：此轴交换仅影响布局盒的几何位置。文本字符的垂直排列（逐字竖排）
     // 和字符旋转由 paint 层的 GlyphPrimitive.rotation 字段控制。
-    let is_vertical = matches!(
-        parent_writing_mode,
-        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
-    );
+    let is_vertical = parent_writing_mode.is_vertical_block_flow();
     if is_vertical {
         crate::converter::apply_vertical_writing_mode(&mut taffy_style);
     }

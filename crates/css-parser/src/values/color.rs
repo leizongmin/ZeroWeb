@@ -636,6 +636,12 @@ pub fn parse_writing_mode(value: &str) -> Option<WritingModeValue> {
         "horizontal-tb" => Some(WritingModeValue::HorizontalTb),
         "vertical-rl" => Some(WritingModeValue::VerticalRl),
         "vertical-lr" => Some(WritingModeValue::VerticalLr),
+        // R1785：sideways-rl/lr 的 block-flow 方向等价 vertical-rl/lr（仅 glyph rotation 不同），
+        // 在 parse 时规范化为对应 vertical 值——使 sideways 走已验证的 vertical 块流路径
+        //（解 block-flow-direction-slr/srl 86% diff）。字形旋转（line-box-direction）是
+        // paint-side 独立关注，未实现，留 future。
+        "sideways-rl" => Some(WritingModeValue::VerticalRl),
+        "sideways-lr" => Some(WritingModeValue::VerticalLr),
         _ => None,
     }
 }

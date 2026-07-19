@@ -22,11 +22,21 @@ fn test_parse_writing_mode_vertical_lr() {
     assert_eq!(parse_writing_mode("vertical-lr"), Some(WritingModeValue::VerticalLr));
 }
 
+/// R1785：sideways-rl/lr 在 parse 时规范化为 vertical-rl/lr（block-flow 方向等价）。
+#[test]
+fn test_parse_writing_mode_sideways_normalizes_to_vertical() {
+    assert_eq!(parse_writing_mode("sideways-rl"), Some(WritingModeValue::VerticalRl));
+    assert_eq!(parse_writing_mode("sideways-lr"), Some(WritingModeValue::VerticalLr));
+    // 大小写不敏感（color.rs / parse_basic.rs 路径 to_ascii_lowercase）。
+    assert_eq!(parse_writing_mode("Sideways-RL"), Some(WritingModeValue::VerticalRl));
+}
+
 #[test]
 fn test_parse_writing_mode_invalid() {
     assert_eq!(parse_writing_mode("invalid"), None);
     assert_eq!(parse_writing_mode(""), None);
-    assert_eq!(parse_writing_mode("sideways-rl"), None);
+    // 裸 "sideways"（无 -rl/-lr 后缀）非标准值 → None。
+    assert_eq!(parse_writing_mode("sideways"), None);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

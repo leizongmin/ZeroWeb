@@ -317,6 +317,9 @@ pub fn parse_writing_mode(value: &str) -> Option<WritingModeValue> {
         "horizontal-tb" => Some(WritingModeValue::HorizontalTb),
         "vertical-rl" => Some(WritingModeValue::VerticalRl),
         "vertical-lr" => Some(WritingModeValue::VerticalLr),
+        // R1785：sideways-rl/lr 规范化为 vertical-rl/lr（block-flow 等价，见 color.rs 注释）。
+        "sideways-rl" => Some(WritingModeValue::VerticalRl),
+        "sideways-lr" => Some(WritingModeValue::VerticalLr),
         _ => None,
     }
 }

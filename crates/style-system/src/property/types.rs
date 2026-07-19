@@ -300,10 +300,24 @@ pub enum LineBreakValue {
 pub enum WritingModeValue {
     /// horizontal-tb。
     HorizontalTb,
-    /// vertical-rl。
+    /// vertical-rl（R1785：`sideways-rl` 在 parse 时规范化为此值——block-flow 方向等价，
+    /// 仅 glyph rotation 不同；paint-side 字形旋转独立关注，未实现）。
     VerticalRl,
-    /// vertical-lr。
+    /// vertical-lr（R1785：`sideways-lr` 在 parse 时规范化为此值，同上）。
     VerticalLr,
+}
+
+impl WritingModeValue {
+    /// 是否为垂直块流（vertical-rl/lr）。R1785：sideways-* 在 parse 时已规范化为 vertical，
+    /// 故此处无需单独区分。
+    pub fn is_vertical_block_flow(&self) -> bool {
+        matches!(self, WritingModeValue::VerticalRl | WritingModeValue::VerticalLr)
+    }
+
+    /// 块流是否右到左（vertical-rl）。
+    pub fn is_block_flow_rl(&self) -> bool {
+        matches!(self, WritingModeValue::VerticalRl)
+    }
 }
 
 /// CSS table-layout 值。

@@ -73,6 +73,7 @@ pub fn compute_vertical_block_flow(
     match writing_mode {
         WritingModeValue::VerticalRl => {
             // DOM 序从右到左：child[i].x = content_width − Σ_{0..=i} width − i×gap。
+            //（R1785：sideways-rl 在 parse 时规范化为 VerticalRl，故同此分支。）
             let mut cum = 0.0_f32;
             for (i, (w, _)) in children_outer_sizes.iter().enumerate() {
                 cum += w;
@@ -266,10 +267,7 @@ pub fn vertical_block_child_indices(
     styles: &HashMap<NodeId, ComputedStyle>,
     parent_wm: &WritingModeValue,
 ) -> Option<Vec<usize>> {
-    let is_vertical = matches!(
-        b.writing_mode,
-        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
-    );
+    let is_vertical = b.writing_mode.is_vertical_block_flow();
     if !is_vertical || !matches!(parent_wm, WritingModeValue::HorizontalTb) {
         return None;
     }

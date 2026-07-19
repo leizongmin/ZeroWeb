@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use zero_css_parser::values::DisplayValue;
 use zero_dom::NodeId;
-use zero_style_system::{ComputedStyle, WritingModeValue};
+use zero_style_system::ComputedStyle;
 
 use crate::table_types::*;
 use crate::types::LayoutBox;
@@ -30,7 +30,7 @@ pub(super) fn position_cells_vertical(
     // 故 vertical 路径对 rowspan cell 按单行 x 宽处理（与 horizontal 同局限），
     // 不再回退——转置结构正确（行沿 x、cell 沿 y）比 horizontal fallback（87% 发散）
     // 显著更接近 chromium。
-    let is_rl = matches!(table_box.writing_mode, WritingModeValue::VerticalRl);
+    let is_rl = table_box.writing_mode.is_block_flow_rl();
 
     // 转置 spacing：vertical 下 spacing_x（inline 轴）→ y 方向（cell 间），
     // spacing_y（block 轴）→ x 方向（行间）。周界 spacing 同步轴换。

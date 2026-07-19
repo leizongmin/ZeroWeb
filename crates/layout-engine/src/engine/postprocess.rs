@@ -14,7 +14,7 @@ use zero_css_parser::values::{
 
 use zero_dom::{Document, NodeId};
 
-use zero_style_system::{ComputedStyle, WhiteSpaceValue, WritingModeValue};
+use zero_style_system::{ComputedStyle, WhiteSpaceValue};
 
 use crate::types::{LayoutBox, OverflowClip};
 
@@ -259,11 +259,8 @@ pub(super) fn adjust_inline_block_positions(
         .collect();
     // 运行 InlineFormattingContext 获取行内布局坐标
     let container_width = root.content_width;
-    let is_vertical = matches!(
-        root.writing_mode,
-        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
-    );
-    let is_vertical_rtl = matches!(root.writing_mode, WritingModeValue::VerticalRl);
+    let is_vertical = root.writing_mode.is_vertical_block_flow();
+    let is_vertical_rtl = root.writing_mode.is_block_flow_rl();
     let container_text_align = resolve_text_align(styles.get(&container_node_id));
     // white-space: nowrap/pre 禁止换行——inline-block 超出容器宽度时应溢出而非换行。
     // 此前未把容器的 white_space 传给 IFC（no_wrap 恒 false），致 nowrap 容器内的
@@ -364,10 +361,7 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
     }
 
     // 仅处理垂直书写模式的容器
-    if !matches!(
-        root.writing_mode,
-        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
-    ) {
+    if !root.writing_mode.is_vertical_block_flow() {
         return;
     }
 
@@ -393,7 +387,7 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
 
     // 运行 IFC（垂直模式）获取所有片段坐标
     let is_vertical = true;
-    let is_vertical_rtl = matches!(root.writing_mode, WritingModeValue::VerticalRl);
+    let is_vertical_rtl = root.writing_mode.is_block_flow_rl();
     // 轴交换后：content_width = 视觉高度（行内方向），content_height = 视觉宽度（块方向）
     // IFC 的"行宽"是行内方向的可用尺寸 = 视觉高度 = content_width
     let container_width = root.content_width;
