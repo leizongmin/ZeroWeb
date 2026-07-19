@@ -1,0 +1,127 @@
+R1735 — border-width-applies-to-008 专项根因定位 + naive-fix 证伪（R109 inline-element-wrapping 架构阻塞）
+日期：2026-07-19
+承接：R1734 forward ①（border-width-008 专项 instrument → scoped fix）
+本轮净 code：0（实验 revert 干净，纯诊断 + 证伪）
+
+================================================================================
+1. 测试与基线
+================================================================================
+
+测试：css/CSS2/borders/border-width-applies-to-008.xht（oracle diff 15.36%）
+结构：
+  <body>
+    <p>Test passes...</p>          <!-- block；style: p{margin-bottom:135px} -->
+    <div>&nbsp;</div>              <!-- display:inline; border-width:90px; font:90px/1 Ahem -->
+
+断言：inline 元素的 border-width 应生效——一个 270×270 的大方块（90px 黑边 × 4），
+中心 90×90 白色（Ahem &nbsp; = 空白字形）。
+ref：block <div> border:90px solid; height:90px; margin-top:45px; width:90px（同 270×270 视觉）。
+
+================================================================================
+2. ZW 渲染几何（LAYOUT_DUMP + REFTEST_DEBUG 实测）
+================================================================================
+
+ZW LayoutBox 树：
+  html     abs_y=0    h=376
+  body     abs_y=16   h=352  (mt=16)
+    p      abs_y=16   h=37   (mt=16, margin-bottom:135)
+    div    abs_y=188  h=270  (mt=0, x=8, w=270)   ← inline 元素，但 LayoutBox 直挂 body
+
+ZW primitives（4 fills = 4 段 border 条，几何正确但整体下移）：
+  fill[0] (8,   188, 270, 90)  TOP    边条  y=[188,278]
+  fill[1] (188, 278,  90, 90)  RIGHT  边条  x=[188,278] y=[278,368]
+  fill[2] (8,   368, 270, 90)  BOTTOM 边条  y=[368,458]
+  fill[3] (8,   278,  90, 90)  LEFT   边条  x=[8,98]   y=[278,368]
+  → border-box = x[8,278] y[188,458]，中心白方 x[98,188] y[278,368]
+
+chromium oracle：border-box y=[96,366]（同 270 高）。
+
+差：ZW top=188 vs chromium top=96 → ZW 整体低 92px ≈ border-top-width(90px)。
+border 条形状本身正确（270×270，90px 条），纯 Y 定位差。
+
+================================================================================
+3. 根因（block vs inline box 模型）
+================================================================================
+
+ZW 把 display:inline 的 <div> 当作 **block-flow box** 渲染（border-box 落在流位）：
+  - div 作为 body 的直挂 taffy 子节点（block flow item）
+  - border-box top = p_bottom(53) + p_margin_bottom(135) = 188（流位）
+  - 内容区 = 188 + border_top(90) = 278（glyph 在 [278,368]）
+  - border-box = [188, 458]
+
+chromium（正确 inline 模型）：
+  - div 参与 IFC line box（line-height 90px），line box 在流位 [188,278]
+  - border-top **向上溢出** line box 90px → border-box top = 188 − 90 = 98（≈ oracle 96）
+  - border-bottom 向下溢出 → border-box = [98, 368]
+  - glyph（line 内容）在 [188,278]
+
+→ 差 90px = border-top-width。inline border 应溢出 line box，ZW 无 line box（block 模型）故 border 落流位。
+
+================================================================================
+4. 为何不触发匿名块 wrapping（R109 §9.2.1.1）
+================================================================================
+
+R109 wrapping 已 default-on（tree.rs:94 r109_wired()），但 `block_container_has_mixed_content`
+（inline_block_split.rs:77）**仅把 text 节点算作 inline 内容**：
+  - body 子 = [p(block), div(inline)] → has_block=true, has_text=false（div 是 Element 非 Text）
+  - line 122-123 注释明示：「inline-level elements already have their own taffy nodes;
+    only text nodes need anonymous block wrapping」
+  - → mixed=false → 不拆分 → div 直挂 taffy 节点按 block-flow 渲染
+
+即 R109 当前只 wrap **text 节点**，不 wrap **inline 元素**子节点。inline 元素直作 block-flow。
+
+================================================================================
+5. Naive fix 证伪（env ZW_R109_INLINE_WRAP=1 实验）
+================================================================================
+
+假设：把 inline 元素子也算 inline 内容 → 触发匿名块拆分 → div 进 IFC → border 溢出。
+实施：block_container_has_mixed_content 加 env-gated 分支（inline 元素 → has_text=true）。
+结果（LAYOUT_DUMP）：
+  body
+    p      abs_y=16  h=37
+    body   abs_y=188 h=110 w=16      ← 匿名块！但 w=16（错），h=110
+  diff = 15.32%（vs baseline 15.36%，marginal，未 flip）
+
+证伪根因：匿名块的 `ctx_node` 取片段首个 **Text** 节点（tree.rs:1131），
+但 div 片段无直挂 Text（div 的 &nbsp; 是 div 的子，非 body 的子）→ fallback 到 dom_id(body)
+→ 匿名块用 **body 的** measure context（w=16 错误）→ div 的 border/sizing 全丢。
+且 IFC paint 的 border 溢出路径（text.rs:1207-1282）gate `owner_h > 1.5·fs`（仅多行），
+单行 inline 不触达。
+
+→ 仅放宽 gate 不足；machinery 为 text-node 片段设计，element 片段需更深改造。
+代码已 revert（git diff 净 0）。
+
+================================================================================
+6. 真修复 = 多部件 R109 inline-element-wrapping（多 session 架构）
+================================================================================
+
+须同改 4 处（任一缺失即不工作）：
+  (a) gate：block_container_has_mixed_content 把 inline 元素子算 inline 内容（本轮 naive 部分）。
+  (b) anonymous block ctx_node：tree.rs:1128-1132 对 element-only 片段取 **该 inline 元素**
+      作 measure context（非 fallback 到 container），并继承该 inline 元素的盒模型
+      （border/padding/background）—— 现仅 inline-split-parent 分支（is_inline_r109）继承，
+      is_block_mixed 分支用 plain Block 不继承。
+  (c) IFC border 溢出 paint：text.rs:1207 gate `owner_h > 1.5·fs` 须放宽到单行
+      （或为 inline 元素 border 另开 paint 路径），同时避 R638 双计。
+  (d) inline 元素自身子节点（&nbsp; text）的 IFC 收集与 fragment owner 归属。
+
+风险：涉 inline 渲染核心（R109 + IFC paint），影响所有 inline border / welcome 等真页。
+reward：border-width-008（1 案）+ 可能少数 inline-applies-to 同谱案，reftest yield 低。
+对照：R109 历史多次 attempt net-negative/multi-session（plateau 文档反复定性 high-risk defer）。
+
+================================================================================
+7. 裁决
+================================================================================
+
+border-width-008 = R109 inline-element-wrapping 架构阻塞，**非单 session clean lever**。
+naive gate relaxation 证伪（anonymous block ctx_node fallback + IFC paint 单行 gate 两层缺口）。
+本轮 0 code land（实验 revert 干净），产出 = 精确根因 + naive-fix 证伪 + 4-部件修复计划
+（防后续 session 重复 naive 尝试）。
+
+forward（next）：
+  (1) 若推进 R109 inline-element-wrapping：按 4-部件计划用 lei-spec-rfc 起设计，
+      slice 1 = (a)+(b) 让匿名块用 inline 元素 ctx/盒模型（env-gated + 全量 A/B 守 net≥0），
+      slice 2 = (c) 单行 IFC border 溢出 paint（避 R638），slice 3 = (d) 子节点归属。
+      高风险低 reftest yield，须 dedicated 多 session。
+  (2) 或接受 border-width-008 为 R109-blocked plateau 案（同 font-wall/vertical 谱系），
+      转 safe latent-gap fix（R1666-R1683 谱系）或 font-wall C-dep（user-gated）。
