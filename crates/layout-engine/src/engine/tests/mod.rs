@@ -127,6 +127,8 @@ mod r1722_right_bfc_pushbelow_tests;
 mod r1723_table_beside_float_defwidth_tests;
 #[cfg(test)]
 mod r1728_left_fit_pushbelow_tests;
+#[cfg(test)]
+mod r1730_multifloat_coord_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

@@ -919,91 +919,180 @@ pub(crate) fn adjust_float_positions_with_context(
                 let child_top = child.y;
                 let child_bottom = child.y + child.height;
 
-                for (float_dir, float_x, float_y, float_border_w, float_h, float_margin_r) in &float_geometries {
-                    let float_top = *float_y;
-                    let float_bottom = *float_y + *float_h;
-
-                    // 检查垂直重叠
-                    if !(child_top < float_bottom && child_bottom > float_top) {
-                        continue;
-                    }
-                    match float_dir {
-                        FloatValue::Left => {
-                            // 左浮动：将 BFC 元素推到浮动元素的 margin-box 右侧
-                            // float_x 是边框盒左边，加上边框宽度和右 margin
-                            let avoidance_x = float_x + float_border_w + float_margin_r;
-                            // R1369：definite-width BFC（width 未填满容器）若 overflow 容器
-                            //（child.x + width > container_width），应推到 float 下方（CSS §9.5：
-                            // BFC border-box 不重叠 float；definite 宽度保持不 shrink）。
-                            // **关键**：taffy 0.12 native float 可能已把 BFC 推到 float 右
-                            //（child.x == avoidance_x），故本检查须在 `avoidance_x > child.x`
-                            // 之外做（否则 taffy 已推时整块 skip）。auto-width BFC（填满容器）
-                            // 仍走 shrink-to-fit（else 分支）。仅无后续 in-flow block 同胞时推下。
-                            let overflows = child.x + child.width > container_width + 0.5;
-                            let is_definite_width = child.width < container_width - 0.5;
-                            // R1728：补充「放不下 float 旁」判定。原 R1369 gate 仅查「溢出容器」，
-                            // 漏「float 占满宽致其右可用宽 < BFC 声明宽」——此时 BFC 同样无法旁置，
-                            // 须推到 float 下方（CSS §9.5：BFC border-box 不重叠 float；definite
-                            // 宽度不 shrink）。floats-wrap-top-below-bfc-002r span2：float:left 300
-                            // 宽，span2（overflow:hidden）声明宽 200 放不下其右 [300,400]=100 → 应
-                            // pushdown 到 float 下方（原行为是 squeeze 到 x=300/w=100，错）。
-                            // **关键**：仅对「声明宽（非 auto）」BFC 触发——auto 宽 BFC（如
-                            // floats-bfc-003 的 #bfc、new-fc-beside-float）须 shrink-to-fit 旁置
-                            //（spec：BFC 占 float 旁可用宽），用 declared_width_auto 区分（width
-                            // 已 shrink 的 auto BFC 其 child.width < container_width 但非「definite」）。
-                            // kill-switch ZW_BFC_LEFT_FIT_PUSHBELOW=0 回退纯溢出 gate。
-                            let avail_beside = (container_width - avoidance_x).max(0.0);
-                            let fits_beside = child.width <= avail_beside + 0.5;
-                            let left_fit_pushbelow = std::env::var("ZW_BFC_LEFT_FIT_PUSHBELOW").as_deref() != Ok("0");
-                            let must_pushdown = overflows
-                                || (left_fit_pushbelow
-                                    && is_definite_width
-                                    && !child.declared_width_auto
-                                    && !fits_beside);
-                            if is_definite_width && !has_following_block_sibling[idx] && must_pushdown {
-                                if float_bottom > child.y {
-                                    child.y = float_bottom;
+                // R1730 Slice 5（RFC §10.2）：多-float BFC 协调。当 BFC 子同时垂直重叠 ≥2 个
+                // 同容器 float 时，per-float 循环（R1369/R1722/R1728）独立逐 float pushdown/squeeze
+                // 会 over-push（floats-wrap-top-below-bfc-003l span2 被推到 float R 底 164 而非
+                // float L 底 89）。协调：收集所有垂直重叠 float，按候选 y（自然 y ∪ 各重叠 float
+                // bottom，升序）找首个使 BFC 不重叠任何 float 的 y（该 y 处所有现役 float 联合约束
+                // 出可行 x 区间 [x_lo, x_hi]，BFC 宽能放下即可行），取 x_lo（尊 BFC 既有 margin_left
+                // 左对齐）；找不到可行 y 则下到最晚 float bottom。margin-left:auto 的右对齐特化须
+                // margin_auto 字段（LayoutBox 暂无），001r 此版落 x=margin_left（与现状一致非回归）。
+                // kill-switch ZW_BFC_MULTIFLOAT_COORD=0（default-on）。scope gate：≥2 垂直重叠 float
+                // + 无后续 in-flow block 同胞——单 float 走既有 per-float 循环，零回归基线。
+                let coord_on = std::env::var("ZW_BFC_MULTIFLOAT_COORD").as_deref() != Ok("0");
+                let mut coord_handled = false;
+                if coord_on
+                    && !has_following_block_sibling[idx]
+                    && !child.declared_width_auto
+                    && !child.is_layout_container
+                {
+                    let overlapping: Vec<&FloatGeom> = float_geometries
+                        .iter()
+                        .filter(|g| {
+                            let (_, _, fy, _, fh, _) = g;
+                            let fbottom = *fy + *fh;
+                            child_top < fbottom && child_bottom > *fy
+                        })
+                        .collect();
+                    if overlapping.len() >= 2 {
+                        let w = child.width;
+                        let h = child.height;
+                        // 候选 y：自然 y + 各重叠 float bottom（> 自然 y），升序去重。
+                        let mut y_candidates: Vec<f32> = vec![child.y];
+                        for g in &overlapping {
+                            let (_, _, fy, _, fh, _) = g;
+                            let fb = *fy + *fh;
+                            if fb > child.y + 0.5 {
+                                y_candidates.push(fb);
+                            }
+                        }
+                        y_candidates.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        y_candidates.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+                        let mut placed: Option<(f32, f32)> = None;
+                        for &cand_y in &y_candidates {
+                            // 该 y 处可行 x 区间：左 float 推 x_lo 右移，右 float 推 x_hi 左移。
+                            let mut x_lo = child.margin_left;
+                            let mut x_hi = (container_width - w).max(child.margin_left);
+                            for g in &overlapping {
+                                let (fd, fx, fy, fwidth, fh, fmargin_r) = g;
+                                let fbottom = *fy + *fh;
+                                if !(cand_y < fbottom && cand_y + h > *fy) {
+                                    continue;
                                 }
-                                // 回正常流位置（taffy float push 前）：block border-box 左 =
-                                // 父 content-box 左 + margin_left（child.x 相对父 content-box）。
-                                child.x = child.margin_left;
-                            } else if avoidance_x > child.x {
-                                // taffy 未推 → ZW 推到 float 右 + shrink-to-fit（原行为）
-                                child.x = avoidance_x;
-                                // 缩小宽度以不超出容器
-                                let max_width = container_width - child.x;
-                                if child.width > max_width {
-                                    child.width = max_width.max(0.0);
+                                match fd {
+                                    FloatValue::Left => {
+                                        // BFC 须在 float margin-box 右侧：x >= fx + width + margin_r。
+                                        x_lo = x_lo.max(fx + fwidth + fmargin_r);
+                                    }
+                                    FloatValue::Right => {
+                                        // BFC 须在 float 左侧：x + w <= fx（float 左 margin 未存，用 border-box 左）。
+                                        x_hi = x_hi.min(fx - w);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            if x_lo <= x_hi + 0.5 {
+                                placed = Some((x_lo, cand_y));
+                                break;
+                            }
+                        }
+                        if let Some((px, py)) = placed {
+                            child.x = px;
+                            child.y = py;
+                        } else {
+                            // 无可行 y（BFC 宽放不下任何候选处）→ 下到最晚重叠 float bottom。
+                            let max_bottom = overlapping
+                                .iter()
+                                .map(|g| {
+                                    let (_, _, fy, _, fh, _) = g;
+                                    *fy + *fh
+                                })
+                                .fold(child.y, f32::max);
+                            child.y = max_bottom;
+                            child.x = child.margin_left;
+                        }
+                        coord_handled = true;
+                    }
+                }
+
+                if !coord_handled {
+                    for (float_dir, float_x, float_y, float_border_w, float_h, float_margin_r) in &float_geometries {
+                        let float_top = *float_y;
+                        let float_bottom = *float_y + *float_h;
+
+                        // 检查垂直重叠
+                        if !(child_top < float_bottom && child_bottom > float_top) {
+                            continue;
+                        }
+                        match float_dir {
+                            FloatValue::Left => {
+                                // 左浮动：将 BFC 元素推到浮动元素的 margin-box 右侧
+                                // float_x 是边框盒左边，加上边框宽度和右 margin
+                                let avoidance_x = float_x + float_border_w + float_margin_r;
+                                // R1369：definite-width BFC（width 未填满容器）若 overflow 容器
+                                //（child.x + width > container_width），应推到 float 下方（CSS §9.5：
+                                // BFC border-box 不重叠 float；definite 宽度保持不 shrink）。
+                                // **关键**：taffy 0.12 native float 可能已把 BFC 推到 float 右
+                                //（child.x == avoidance_x），故本检查须在 `avoidance_x > child.x`
+                                // 之外做（否则 taffy 已推时整块 skip）。auto-width BFC（填满容器）
+                                // 仍走 shrink-to-fit（else 分支）。仅无后续 in-flow block 同胞时推下。
+                                let overflows = child.x + child.width > container_width + 0.5;
+                                let is_definite_width = child.width < container_width - 0.5;
+                                // R1728：补充「放不下 float 旁」判定。原 R1369 gate 仅查「溢出容器」，
+                                // 漏「float 占满宽致其右可用宽 < BFC 声明宽」——此时 BFC 同样无法旁置，
+                                // 须推到 float 下方（CSS §9.5：BFC border-box 不重叠 float；definite
+                                // 宽度不 shrink）。floats-wrap-top-below-bfc-002r span2：float:left 300
+                                // 宽，span2（overflow:hidden）声明宽 200 放不下其右 [300,400]=100 → 应
+                                // pushdown 到 float 下方（原行为是 squeeze 到 x=300/w=100，错）。
+                                // **关键**：仅对「声明宽（非 auto）」BFC 触发——auto 宽 BFC（如
+                                // floats-bfc-003 的 #bfc、new-fc-beside-float）须 shrink-to-fit 旁置
+                                //（spec：BFC 占 float 旁可用宽），用 declared_width_auto 区分（width
+                                // 已 shrink 的 auto BFC 其 child.width < container_width 但非「definite」）。
+                                // kill-switch ZW_BFC_LEFT_FIT_PUSHBELOW=0 回退纯溢出 gate。
+                                let avail_beside = (container_width - avoidance_x).max(0.0);
+                                let fits_beside = child.width <= avail_beside + 0.5;
+                                let left_fit_pushbelow =
+                                    std::env::var("ZW_BFC_LEFT_FIT_PUSHBELOW").as_deref() != Ok("0");
+                                let must_pushdown = overflows
+                                    || (left_fit_pushbelow
+                                        && is_definite_width
+                                        && !child.declared_width_auto
+                                        && !fits_beside);
+                                if is_definite_width && !has_following_block_sibling[idx] && must_pushdown {
+                                    if float_bottom > child.y {
+                                        child.y = float_bottom;
+                                    }
+                                    // 回正常流位置（taffy float push 前）：block border-box 左 =
+                                    // 父 content-box 左 + margin_left（child.x 相对父 content-box）。
+                                    child.x = child.margin_left;
+                                } else if avoidance_x > child.x {
+                                    // taffy 未推 → ZW 推到 float 右 + shrink-to-fit（原行为）
+                                    child.x = avoidance_x;
+                                    // 缩小宽度以不超出容器
+                                    let max_width = container_width - child.x;
+                                    if child.width > max_width {
+                                        child.width = max_width.max(0.0);
+                                        shrink_bfc_content_width(child);
+                                    }
+                                }
+                            }
+                            FloatValue::Right if child.x + child.width > *float_x => {
+                                // R1722：float:right definite-width BFC 放不下 float 左侧可用宽
+                                //（child.x + width > float_x）→ 推到 float 下方（mirror of R1369 左
+                                // float overflows 推下，CSS §9.5：BFC border-box 不重叠 float；definite
+                                // 宽度保持不 shrink）。仅 definite-width + 无后续 in-flow block 同胞时推下，
+                                // 否则保持 shrink-to-fit（原行为）。kill-switch ZW_BFC_RIGHT_PUSHBELOW=0。
+                                let is_definite_width = child.width < container_width - 0.5;
+                                if std::env::var("ZW_BFC_RIGHT_PUSHBELOW").as_deref() != Ok("0")
+                                    && is_definite_width
+                                    && !has_following_block_sibling[idx]
+                                    && !child.is_layout_container
+                                {
+                                    if float_bottom > child.y {
+                                        child.y = float_bottom;
+                                    }
+                                    child.x = child.margin_left;
+                                } else {
+                                    // 右浮动：缩小 BFC 元素宽度以不重叠 float 的 margin-box
+                                    let new_width = float_x - child.x;
+                                    child.width = new_width.max(0.0);
                                     shrink_bfc_content_width(child);
                                 }
                             }
+                            _ => {}
                         }
-                        FloatValue::Right if child.x + child.width > *float_x => {
-                            // R1722：float:right definite-width BFC 放不下 float 左侧可用宽
-                            //（child.x + width > float_x）→ 推到 float 下方（mirror of R1369 左
-                            // float overflows 推下，CSS §9.5：BFC border-box 不重叠 float；definite
-                            // 宽度保持不 shrink）。仅 definite-width + 无后续 in-flow block 同胞时推下，
-                            // 否则保持 shrink-to-fit（原行为）。kill-switch ZW_BFC_RIGHT_PUSHBELOW=0。
-                            let is_definite_width = child.width < container_width - 0.5;
-                            if std::env::var("ZW_BFC_RIGHT_PUSHBELOW").as_deref() != Ok("0")
-                                && is_definite_width
-                                && !has_following_block_sibling[idx]
-                                && !child.is_layout_container
-                            {
-                                if float_bottom > child.y {
-                                    child.y = float_bottom;
-                                }
-                                child.x = child.margin_left;
-                            } else {
-                                // 右浮动：缩小 BFC 元素宽度以不重叠 float 的 margin-box
-                                let new_width = float_x - child.x;
-                                child.width = new_width.max(0.0);
-                                shrink_bfc_content_width(child);
-                            }
-                        }
-                        _ => {}
                     }
-                }
+                } // end if !coord_handled（R1730 Slice 5：coord_handled 时跳过 per-float 循环）
 
                 // R1619 Slice 2（嵌套 BFC 祖先 float 下沉）：直接同胞 float 由上方 float_geometries
                 // 循环（R1369 左 / 右 shrink）处理；此处处理**祖先 float**（经 inherited_floats 透传，
