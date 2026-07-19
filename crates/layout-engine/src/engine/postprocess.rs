@@ -967,11 +967,20 @@ pub(super) fn shift_siblings_after_ifc_grow(
     }
     // R1743：父高度回填（margin-collapse-safe）。max_in_flow_bottom 是 in-flow 子盒 border-box
     // 最大底边 = CSS §10.6.3 auto-height 块的内容高（margin 折叠在 border-box 外，不影响此值）。
-    // 仅增大守卫（不收缩）；负 margin 守卫避合法负 margin 重叠误扩。max_bottom ≥ 旧 content +
-    // cumulative_shift（末子 y=原+shift，height≥taffy 值），故覆盖旧 cumulative_shift 增长。
-    // gate=Block/Flow/FlowRoot/ListItem（shift_active），排除 flex/grid/table/multicol（welcome
-    // +12.57pp 回归源 = R1163 broad gate 触及非 Block 容器；本 gate 仅 Block 谱系）。
-    if parent_backfill_active && !has_negative_margin && max_in_flow_bottom > box_node.content_height + 0.5 {
+    // 仅增大守卫（不收缩）。max_bottom ≥ 旧 content + cumulative_shift（末子 y=原+shift，
+    // height≥taffy 值），故覆盖旧 cumulative_shift 增长。gate=Block/Flow/FlowRoot/ListItem
+    //（shift_active），排除 flex/grid/table/multicol（welcome +12.57pp 回归源 = R1163 broad gate
+    // 触及非 Block 容器；本 gate 仅 Block 谱系）。
+    //
+    // R1746 负 margin 逃生（refine）：负 margin 子时 R1743 原 guard 全跳过父 → 单子负 margin +
+    // br 长高致父 h=0（div/p h=0，p 内 5 行 br 正确）。但负 margin-bottom 折叠到父**外**（不影
+    // 响父内容高），故 max_bottom 仍正确。仅当父 content_height ≈ 0（< 1.0，明显 taffy 误测非
+    // 合法 margin-collapse——含高 block 子的父不可能合法 h=0）时放行负 margin 父长高。R1163 负
+    // margin 回归案（block-in-inline-negative-margin-*，content_height > 0）仍被 guard 挡住。
+    if parent_backfill_active
+        && max_in_flow_bottom > box_node.content_height + 0.5
+        && (!has_negative_margin || box_node.content_height < 1.0)
+    {
         let delta = max_in_flow_bottom - box_node.content_height;
         box_node.content_height = max_in_flow_bottom;
         box_node.height += delta;

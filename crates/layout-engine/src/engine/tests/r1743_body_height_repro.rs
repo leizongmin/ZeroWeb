@@ -135,3 +135,42 @@ fn r1745_flex_grid_parent_propagates_child_height() {
         );
     }
 }
+
+/// R1746 负 margin 单子 + br 长高 → 父高度回填（refine R1743 negative-margin guard）。
+/// 旧 R1743 guard 见负 margin 子即全跳过父 → 单子负 margin + br 长高致父 h=0。
+/// refine：负 margin 父仅当 content_height ≈ 0（明显 taffy 误测）时放行长高。
+#[test]
+fn r1746_negative_margin_single_child_br_grows_parent() {
+    for css in ["margin-bottom:-10px", "margin-top:-10px"] {
+        let html = format!(r#"<html><body><div><p style="{css}">a<br>b<br>c<br>d<br>e</p></div></body></html>"#);
+        let (doc, root, _) = compute(&html);
+        let (_, div) = find_tag(&doc, &root, "div").expect("div");
+        let (_, p) = find_tag(&doc, &root, "p").expect("p");
+        assert!(
+            div.height >= p.height - 1.0,
+            "[{css}] div h={:.1} 应 ≈ p h={:.1}（负 margin 折叠到父外，不影响父内容高）",
+            div.height,
+            p.height
+        );
+        assert!(div.height > 40.0, "[{css}] div h={:.1} 应 > 40", div.height);
+    }
+}
+
+/// R1746 守卫：负 margin 父 content_height > 0 时不应被误扩（避 R1163 回归）。
+/// 一个已有合理高度的负 margin 父不应被 max-bottom 重算（防 margin-collapse 误扩）。
+#[test]
+fn r1746_negative_margin_nonzero_parent_not_overgrown() {
+    // body 有自身 margin（content_height > 0 after taffy），含负 margin 子；
+    // R1743 refine 仅 content_height<1.0 放行，故 body 已有高度时不触发 max-bottom 重算。
+    // 这里用显式 height 的父确保 content_height 非 0，验证不被误扩。
+    let html = r#"<html><body><div style="height:50px;overflow:hidden"><p style="margin-top:-200px">tall<br>content<br>that<br>overflows<br>upward<br>a<br>b<br>c<br>d<br>e</p></div></body></html>"#;
+    let (doc, root, _) = compute(html);
+    let (_, div) = find_tag(&doc, &root, "div").expect("div");
+    // 显式 height:50px 的父不应被 max-bottom 拉到子全高（负 mt -200 拉子向上溢出父顶）
+    // declared_height_auto=false → parent_backfill_active=false → 不触发；h 应保持 ~50。
+    assert!(
+        div.height < 80.0,
+        "显式 height 父 h={:.1} 不应被负 mt 子拉到全高（应保持 ~50）",
+        div.height
+    );
+}
