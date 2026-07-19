@@ -5,7 +5,8 @@
 //!（clear 特判）→ 子定位 y=flow_bottom+mt；R1743 父高回填 fold `max(child.y+child.height)`
 //! 含该空子底（y+0）→ 父高被误扩（016：sibling h:100 + empty clear mt:100 → 父 200 露红，
 //! 应 100）。修复 = R1743 fold（postprocess.rs `shift_siblings_after_ifc_grow`）排除
-//! `is_empty_block` 子（env `ZW_CLEARANCE_NO_FLOAT_CONTAINMENT=1`，default-off）。
+//! `is_empty_block` 子。**default-on**（broad-corpus A/B：977 案 0 回归 + 3 案改善），
+//! kill-switch env `ZW_CLEARANCE_NO_FLOAT_CONTAINMENT=0`。
 //!
 //! 镜像 WPT margin-collapse-clear-016：`#parent-block`(mb:0) 含 `#sibling`(h:100) +
 //! `#element-without-clearance`(clear:both mt:100 空)。parent content_height 应 ≈ 100（仅
@@ -46,14 +47,10 @@ fn find_by_id<'a>(doc: &'a Document, b: &'a LayoutBox, id: &str) -> Option<&'a L
 }
 
 /// 016 结构：parent-block(mb:0) + sibling(h:100) + empty clear:both(mt:100)。
-/// 开启 `ZW_CLEARANCE_NO_FLOAT_CONTAINMENT` 后 parent content_height 应 ≈ 100（仅 sibling），
-/// 不含 collapsed-through mt:100（旧 bug 父 200 露红）。
+/// default-on：parent content_height 应 ≈ 100（仅 sibling），不含 collapsed-through mt:100
+///（旧 bug 父 200 露红）。kill-switch `ZW_CLEARANCE_NO_FLOAT_CONTAINMENT=0` 关闭。
 #[test]
 fn r1771_clear_empty_no_clearance_containment() {
-    // 测试与并行用例共享进程 env；本 gate 仅排除 is_empty_block 子，对无 trailing 空块容器
-    // 字节等价（零影响），故临时 set_var 安全。
-    // Safety：单测环境，无其他线程并发读该 env（test单线程跑此 module 的串行子集）。
-    unsafe { std::env::set_var("ZW_CLEARANCE_NO_FLOAT_CONTAINMENT", "1") };
     let html = r#"<html><body>
       <div id="parent-block" style="background-color:red;margin-bottom:0">
         <div id="sibling" style="background-color:green;height:100px"></div>
@@ -80,8 +77,6 @@ fn r1771_clear_empty_no_clearance_containment() {
 /// 镜像 R1771 修复对普通空块的同等处理（is_empty_block 不分 clear/非 clear）。
 #[test]
 fn r1771_empty_block_no_clear_also_excluded() {
-    // Safety：同上，单测环境无并发线程读该 env。
-    unsafe { std::env::set_var("ZW_CLEARANCE_NO_FLOAT_CONTAINMENT", "1") };
     let html = r#"<html><body>
       <div id="parent" style="background-color:red">
         <div id="sibling" style="background-color:green;height:100px"></div>

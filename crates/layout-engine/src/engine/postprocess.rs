@@ -960,9 +960,12 @@ pub(super) fn shift_siblings_after_ifc_grow(
         // `clear:both` 空块不 collapse-through 其 mt（clear 特判）→ 子定位 y=flow_bottom+mt，
         // 旧 fold 含其底（y+0）误扩父高（016：element y=200 → 父 200 露红，应 100）。with-clearance
         // 空块（clearance 破坏 collapse-through，建立流位置）由 R1317 containment（adjust_float_
-        // positions had_empty_clearance 路径）单独定父高，不依赖本 fold。env
-        // `ZW_CLEARANCE_NO_FLOAT_CONTAINMENT=1` 开启（default-off）。
-        let r1771_exclude_empty = std::env::var("ZW_CLEARANCE_NO_FLOAT_CONTAINMENT").as_deref() == Ok("1")
+        // positions had_empty_clearance 路径）单独定父高，不依赖本 fold。
+        // default-on（broad-corpus A/B 验证：margin-collapse-clear 016 17.19→0.86 FLIP +
+        // negative-clearance-after-adjoining-float 7.92→4.79 + margin-collapse-through-percentage-
+        // padding 4.69→2.61，floats-clear 214 + normal-flow 750 共 977 案 0 回归 + welcome 字节
+        // 一致 + 1220 单测）。env `ZW_CLEARANCE_NO_FLOAT_CONTAINMENT=0` 关闭（kill-switch）。
+        let r1771_exclude_empty = std::env::var("ZW_CLEARANCE_NO_FLOAT_CONTAINMENT").as_deref() != Ok("0")
             && crate::margin_collapse::is_empty_block(child);
         if parent_backfill_active && child.is_block_level && !r1771_exclude_empty {
             if child.margin_top < 0.0 || child.margin_bottom < 0.0 {
