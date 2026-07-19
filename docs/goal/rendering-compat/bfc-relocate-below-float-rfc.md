@@ -1,9 +1,9 @@
 # RFC：BFC 元素旁 float 放不下须下沉（general BFC-relocate-below-float）
 
-**版本**：v1.2
+**版本**：v1.3
 **日期**：2026-07-19
-**状态**：Slice 1+2 合并 LANDED（R1619，with-margin-008/009 flip，CSS2 NET +2 0 回归）；Slice 3 精神落地于 R1728（002r，左 float fits_beside gate，§10.1）；Slice 4-D top-below 子簇 002r ✅ / 001r+003l defer 为 Slice 5 多-float 协调（§10.2）；Slice 3 百分比宽 / 4-B/4-E/4-F 待续
-**起源**：R1616 forward「剩 close case floats-bfc-003 / with-margin-008/009」；R1617 探针确认 BFC 不下沉 = 真根因。R1725–R1729 续 floats-wrap-top-below-bfc 子簇（§10）。
+**状态**：Slice 1+2 合并 LANDED（R1619，with-margin-008/009 flip，CSS2 NET +2 0 回归）；Slice 3 精神落地于 R1728（002r，左 float fits_beside gate，§10.1）；Slice 5 多-float 协调 LANDED（R1730，003l/003r TEST-side spec-correct，§10.2）；top-below 子簇 6/5 案 TEST-correct（仅 001r margin-auto 待 margin_auto 字段）；Slice 3 百分比宽 / 4-B/4-E/4-F 待续
+**起源**：R1616 forward「剩 close case floats-bfc-003 / with-margin-008/009」；R1617 探针确认 BFC 不下沉 = 真根因。R1725–R1730 续 floats-wrap-top-below-bfc 子簇（§10）。
 
 ---
 
@@ -159,7 +159,13 @@ REF 渲染错），r 变体=TEST-side（ZW TEST 偏离 chromium）**。推翻「
 - **R1727 三假设全证伪**：float_geometries 含两 float ✓ / establishes_bfc(span) ✓ / 非分支覆盖——
   是 gate 条件本身漏判。
 
-### 10.2 001r / 003l = 多-float BFC 协调（Slice 5 提案，per-float 循环无法解，defer）
+### 10.2 001r / 003l = 多-float BFC 协调（Slice 5 ✅ LANDED R1730；003l/003r 解，001r margin-auto 残留）
+
+**R1730 LANDED（commit de72a653f）**：协调路径落地，003l 2.68%→0.66% / 003r 1.51%→0.66%（TEST-side
+spec-correct）。A/B floats+floats-clear net 0（首版缺 `!declared_width_auto`/`!is_layout_container`
+gate 致 floats-bfc-003/floats-wrap-bfc-004/zero-width-floats-positioning 3 案回归，加双 gate 后 net 0）。
+**001r 残留**：margin-left:auto 右对齐特化须 LayoutBox 加 `margin_left_auto` 字段（当前无），此版落
+x=margin_left 与现状一致（非回归）。forward = margin_auto plumbing + 协调路径加 x_hi 右对齐特化。
 
 两案**同根因**：BFC 同时垂直重叠 ≥2 float，per-float 循环独立处理致 over-pushdown。
 
