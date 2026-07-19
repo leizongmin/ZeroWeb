@@ -32,6 +32,16 @@ pub(crate) const DEFAULT_FONT_SIZE: f32 = 16.0;
 /// 并非纯自源中性——test/ref 文本结构不同时换行点敏感度不同，单独扰动 estimate 会破
 /// 同源对齐。真实修复须完整接入 FontLoader（R223 plumbing R2-R5，layout+paint+intrinsic
 /// 三处同源替换 + font_id 解析），而非单点改 estimate_char_width。证据见 master.md R224。
+///
+/// ⚠️ R1769 advance 杠杆最终关闭（refute R1768「REOPENED」）：per-char NotoSansCJK advance
+/// 表（chromium fc-match sans-serif 实测）注入 estimate 后 welcome diff **16.84%→23.44%
+/// (+6.6pp)** —— **显著恶化**。根因 = ZW paint 路径用 **DejaVu Sans**（`find_system_font`
+/// → `DejaVuSans.ttf`）非 NotoSansCJK，故 estimate 切 NotoSansCJK 反在 ZW 内部制造
+/// layout↔paint 字体源分裂（estimate NotoSansCJK 宽 vs paint DejaVu 宽），换行点两边都不
+/// 对齐。R1768 drastic 0.55→0.90「advance 影响 diff」仅证 advance 影响幅度（平凡真），非证
+/// 「匹配 chromium 有益」。**advance 任何单字体 per-char 表注入 estimate 都受 layout/paint/
+/// chromium 三方字体源分裂所阻**，须 font-stack rebuild 统一三方字体源才能 yield。
+/// 见 master.md R1769。
 pub fn estimate_char_width(c: char, font_size: f32, is_ahem: bool) -> f32 {
     // R1449：零宽格式字符宽度恒为 0（与字体无关，CSS 语义覆盖字体 advance）。
     // ZWNJ U+200C / ZWJ U+200D / WJ U+2060 / ZWNBSP U+FEFF 均零宽（joiner 类，shaping/
