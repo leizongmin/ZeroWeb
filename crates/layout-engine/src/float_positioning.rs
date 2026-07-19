@@ -961,7 +961,10 @@ pub(crate) fn adjust_float_positions_with_context(
                         let mut placed: Option<(f32, f32)> = None;
                         for &cand_y in &y_candidates {
                             // 该 y 处可行 x 区间：左 float 推 x_lo 右移，右 float 推 x_hi 左移。
-                            let mut x_lo = child.margin_left;
+                            // margin-left:auto 时 margin_left 是 taffy 已解析的 auto 值（大），
+                            // 作左界会误判不可行——auto margin 的 BFC 可放 [0, x_hi] 任意处（右对齐 x_hi），
+                            // 故 auto 时 x_lo 从 0 起；非 auto 时尊固定 margin_left。
+                            let mut x_lo = if child.margin_left_auto { 0.0 } else { child.margin_left };
                             let mut x_hi = (container_width - w).max(child.margin_left);
                             for g in &overlapping {
                                 let (fd, fx, fy, fwidth, fh, fmargin_r) = g;
@@ -982,7 +985,10 @@ pub(crate) fn adjust_float_positions_with_context(
                                 }
                             }
                             if x_lo <= x_hi + 0.5 {
-                                placed = Some((x_lo, cand_y));
+                                // margin-left:auto → 右对齐到最左 obstructing float 左缘（x_hi）；
+                                // 否则左对齐 x_lo（floats-wrap-top-below-bfc-001r span2 margin-auto）。
+                                let chosen_x = if child.margin_left_auto { x_hi } else { x_lo };
+                                placed = Some((chosen_x, cand_y));
                                 break;
                             }
                         }

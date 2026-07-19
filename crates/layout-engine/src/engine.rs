@@ -1485,6 +1485,13 @@ impl LayoutEngine {
         // R1277 ④：记录 height:auto 供 float 后处理收缩守卫（显式高度容器不被收缩）。
         let declared_height_auto =
             computed.is_some_and(|c| matches!(c.height, zero_css_parser::values::LengthValue::Auto));
+        // R1730 Slice 5 续：记录 margin-left/right:auto（仅水平书写模式）供多-float BFC 协调
+        // 「margin-auto 右对齐到最左 obstructing float 左缘」特化（floats-wrap-top-below-bfc-001r）。
+        // 垂直书写模式下物理 left/right 对应逻辑 top/bottom，协调路径水平 only，故 vertical 默认 false。
+        let margin_left_auto = matches!(parent_writing_mode, WritingModeValue::HorizontalTb)
+            && computed.is_some_and(|c| matches!(c.margin_left, zero_css_parser::values::LengthValue::Auto));
+        let margin_right_auto = matches!(parent_writing_mode, WritingModeValue::HorizontalTb)
+            && computed.is_some_and(|c| matches!(c.margin_right, zero_css_parser::values::LengthValue::Auto));
 
         // 计算内容区域
         let content_x = border_left + padding_left;
@@ -1561,6 +1568,8 @@ impl LayoutEngine {
             declared_margin_bottom,
             declared_width_auto,
             declared_height_auto,
+            margin_left_auto,
+            margin_right_auto,
             children: children_boxes,
             is_absolute,
             is_replaced,

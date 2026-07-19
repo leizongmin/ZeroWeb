@@ -95,6 +95,14 @@ pub struct LayoutBox {
     /// 上提后 content_bottom 降到 100 而被错误塌缩到 100（R1273 实证）。此标记让
     /// 收缩守卫跳过 definite-height 容器。
     pub declared_height_auto: bool,
+    /// `margin-left:auto` 标记（R1730 Slice 5，仅水平书写模式）。
+    ///
+    /// 多-float BFC 协调路径用此判「margin-auto 右对齐」——margin-left:auto 的 BFC 旁 float 时
+    /// 应右对齐到最左 obstructing float 左缘（取可行 x 区间右端 x_hi），而非默认左对齐 x_lo
+    ///（floats-wrap-top-below-bfc-001r span2）。垂直书写模式下物理 left 对应逻辑 top，默认 false。
+    pub margin_left_auto: bool,
+    /// `margin-right:auto` 标记（R1730 Slice 5，仅水平书写模式，对称 margin_left_auto）。
+    pub margin_right_auto: bool,
     /// 子布局盒。
     pub children: Vec<LayoutBox>,
     /// 是否为绝对定位。
@@ -401,6 +409,8 @@ impl Default for LayoutBox {
             declared_margin_bottom: 0.0,
             declared_width_auto: false,
             declared_height_auto: false,
+            margin_left_auto: false,
+            margin_right_auto: false,
             children: Vec::new(),
             is_absolute: false,
             is_replaced: false,

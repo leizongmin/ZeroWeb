@@ -74,3 +74,75 @@ fn r1730_multifloat_coord_span2_below_first_float_beside_second() {
         span2_box.y
     );
 }
+
+/// R1730 续（margin_auto plumbing）：2× float:right clear:right（叠右侧）+ BFC span
+/// `margin-left:auto` w=200。span2 应右对齐到最晚 float（div2）左缘旁（x≈111），与 span1
+/// 相邻（y≈64），非推到两 float 下。load-bearing：无 margin_left_auto 字段则 span2 的 x_lo
+/// 起始 = 解析后大 margin_left → 误判 y=64 不可行 → over-push 到 float 底。
+#[test]
+fn r1730_margin_auto_bfc_right_aligns_to_leftmost_obstructing_float() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let div1 = doc.create_element("div");
+    doc.append_child(container, div1).unwrap();
+    let div2 = doc.create_element("div");
+    doc.append_child(container, div2).unwrap();
+    let span1 = doc.create_element("span");
+    doc.append_child(container, span1).unwrap();
+    let span2 = doc.create_element("span");
+    doc.append_child(container, span2).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut cont = ComputedStyle::default();
+    cont.display = DisplayValue::Block;
+    cont.width = LengthValue::Px(400.0);
+    styles.insert(container, cont);
+
+    // 2× float:right clear:right（叠右侧）：div1 50×75 @ right，div2 100×75 clear:right 下沉。
+    let mut d1 = ComputedStyle::default();
+    d1.display = DisplayValue::Block;
+    d1.float = FloatValue::Right;
+    d1.clear = zero_css_parser::values::ClearValue::Right;
+    d1.width = LengthValue::Px(50.0);
+    d1.height = LengthValue::Px(75.0);
+    styles.insert(div1, d1);
+    let mut d2 = ComputedStyle::default();
+    d2.display = DisplayValue::Block;
+    d2.float = FloatValue::Right;
+    d2.clear = zero_css_parser::values::ClearValue::Right;
+    d2.width = LengthValue::Px(100.0);
+    d2.height = LengthValue::Px(75.0);
+    styles.insert(div2, d2);
+
+    // 两 BFC span（block overflow:hidden）w=200 h=50，margin-left:auto（右对齐）。
+    let mk_span = || {
+        let mut s = ComputedStyle::default();
+        s.display = DisplayValue::Block;
+        s.overflow_x = OverflowValue::Hidden;
+        s.overflow_y = OverflowValue::Hidden;
+        s.width = LengthValue::Px(200.0);
+        s.height = LengthValue::Px(50.0);
+        s.margin_left = LengthValue::Auto;
+        s
+    };
+    styles.insert(span1, mk_span());
+    styles.insert(span2, mk_span());
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let span2_box = find_child_by_node_id(&result.root, span2).expect("span2 found");
+    // span2 应右对齐到 div2 左缘旁（x≈111，右缘≈311=div2 左），y 与 span1 相邻（≈64），
+    // 非 over-push 到两 float 下（y≈150）。
+    assert!(
+        span2_box.y < 120.0,
+        "margin-auto BFC span2 应与 span1 相邻（y≈64）右对齐到 div2 左缘，非推到 float 下（y≈150），实际 y={}",
+        span2_box.y
+    );
+    assert!(
+        span2_box.x > 80.0,
+        "span2 应右对齐到 div2 左缘旁（x≈111），实际 x={}",
+        span2_box.x
+    );
+}
