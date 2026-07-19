@@ -6,7 +6,8 @@ use std::rc::Rc;
 
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, PipelineTimings, PrefersColorSchemeValue, RenderPipeline, RenderResult,
-    extract_img_srcs, extract_stylesheet_hrefs, image_resource_key, resolve_document_url,
+    extract_css_image_urls, extract_html_style_text, extract_img_srcs, extract_stylesheet_hrefs, image_resource_key,
+    resolve_document_url,
 };
 use zero_net::{CacheLookup, HttpCache, HttpClient, NetError, is_file_url};
 use zero_render_foundation::image_cache::{ImageCache, ImageKey, decode_image_bytes};
@@ -249,7 +250,13 @@ impl WebView {
     fn prepare_page_subresources(&mut self, html: &str, page_url: &str) -> String {
         self.pipeline.set_document_url(Some(page_url));
         let external_css = self.resolve_external_css(html, page_url);
-        let (image_sizes, image_ratios, image_no_ratio) = self.fetch_image_subresources(html, page_url);
+        // R1794：外链 CSS + inline `<style>` 块中的 `url()` 图片引用一并抓取。
+        let mut combined_css = external_css.clone();
+        combined_css.push('\n');
+        combined_css.push_str(&extract_html_style_text(html));
+        let css_image_urls = extract_css_image_urls(&combined_css);
+        let (image_sizes, image_ratios, image_no_ratio) =
+            self.fetch_image_subresources(html, page_url, &css_image_urls);
         self.cached_image_sizes = image_sizes.clone();
         self.cached_image_ratios = image_ratios.clone();
         self.cached_image_no_ratio = image_no_ratio.clone();
@@ -293,7 +300,13 @@ impl WebView {
     pub fn reload_html_after_script(&mut self, html: &str) -> WebViewRenderResult {
         self.cached_html = html.to_string();
         if let Some(page_url) = self.current_url.clone() {
-            let (image_sizes, image_ratios, image_no_ratio) = self.fetch_image_subresources(html, &page_url);
+            // R1794：脚本改 DOM 后刷新图片子资源，CSS url() 引用随 cached_css + inline <style> 一起重抓。
+            let mut combined_css = self.cached_css.clone();
+            combined_css.push('\n');
+            combined_css.push_str(&extract_html_style_text(html));
+            let css_image_urls = extract_css_image_urls(&combined_css);
+            let (image_sizes, image_ratios, image_no_ratio) =
+                self.fetch_image_subresources(html, &page_url, &css_image_urls);
             self.cached_image_sizes = image_sizes.clone();
             self.cached_image_ratios = image_ratios.clone();
             self.cached_image_no_ratio = image_no_ratio.clone();
@@ -372,27 +385,35 @@ impl WebView {
         &mut self,
         html: &str,
         base_url: &str,
+        css_image_urls: &[String],
     ) -> (
         HashMap<u64, (f32, f32)>,
         HashMap<u64, f32>,
         HashMap<u64, (Option<f32>, Option<f32>)>,
     ) {
+        // R1794：合并 `<img src>` 与 CSS `url()` 图片引用（background-image /
+        // list-style-image / border-image-source）。两类共用同一条 fetch+decode+key 路径：
+        // 按绝对 URL 解析后 `image_resource_key` 入 image_sizes/ratios/no_ratio/cache，
+        // painter 改后亦按 `image_resource_key(url, document_url)` 查找，端到端一致。
         let srcs = extract_img_srcs(html);
+        let mut all_urls: Vec<&String> = srcs.iter().chain(css_image_urls.iter()).collect();
+        all_urls.sort();
+        all_urls.dedup();
         let mut image_sizes = HashMap::new();
         let mut image_ratios = HashMap::new();
         let mut image_no_ratio = HashMap::new();
-        if srcs.is_empty() {
+        if all_urls.is_empty() {
             return (image_sizes, image_ratios, image_no_ratio);
         }
         let base = url::Url::parse(base_url).ok();
-        for src in &srcs {
+        for src in &all_urls {
             // data: URI 暂不支持解码（后续可扩展）。
             if src.starts_with("data:") {
                 continue;
             }
             let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
                 Some(u) => u.to_string(),
-                None => src.clone(),
+                None => src.to_string(),
             };
             let bytes = match self.http_client.get(&abs) {
                 Ok(resp) => resp.body,
@@ -404,7 +425,7 @@ impl WebView {
             let img = match decode_image_bytes(&bytes) {
                 Ok(img) => img,
                 Err(e) => {
-                    tracing::warn!("image {abs} decode failed (PNG/JPEG): {e}");
+                    tracing::warn!("image {abs} decode failed (PNG/JPEG/WebP): {e}");
                     continue;
                 }
             };

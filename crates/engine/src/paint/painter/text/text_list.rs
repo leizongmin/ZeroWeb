@@ -15,7 +15,7 @@ use zero_style_system::ComputedStyle;
 
 use crate::measure_char_for_paint;
 use crate::paint::color::color_value_to_render;
-use crate::paint::helpers::simple_hash;
+use crate::paint::helpers::image_resource_key;
 
 /// 将正整数转为大写罗马数字（lowercase 由调用方 `to_lowercase()`）。
 fn to_roman(mut num: usize) -> String {
@@ -107,7 +107,7 @@ impl super::super::Painter {
                 let marker_y = abs_y + box_node.border_top + box_node.padding_top;
                 self.primitives.add_image(ImagePrimitive {
                     rect: Rect::new(marker_x, marker_y, img_size, img_size),
-                    image_key: ImageKey::new(simple_hash(url)),
+                    image_key: ImageKey::new(image_resource_key(url, self.document_url.as_deref())),
                     clip: None,
                 });
                 return;

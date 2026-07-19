@@ -333,6 +333,37 @@ fn test_paint_background_image_url_hash_consistency() {
     assert_eq!(key1, key2, "相同 URL 应产生相同的 ImageKey");
 }
 
+/// R1794：background-image 相对 url() + document_url → ImageKey 必须等于
+/// `image_resource_key(url, document_url)`（与 webview 抓取路径 `image_resource_key(&abs, None)`
+/// 一致，使 painter 查找与 image_cache 像素存储对齐）。改前 painter 用 `simple_hash(url)`
+/// 哈希原始相对字符串，永不命中抓取 key。
+#[test]
+fn test_paint_background_image_url_resolves_against_document_url() {
+    use crate::paint::helpers::image_resource_key;
+    use zero_render_foundation::image_cache::ImageKey;
+
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = vec![BackgroundImageComputedValue::Url("bg.png".to_string())];
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.set_document_url(Some("https://example.com/page"));
+    painter.paint(&layout, &styles, None);
+
+    let expected = image_resource_key("bg.png", Some("https://example.com/page"));
+    assert_eq!(
+        painter.primitives().images[0].image_key,
+        ImageKey::new(expected),
+        "相对 url() 应按 document_url 解析为绝对后哈希，与抓取 key 一致"
+    );
+}
+
 // ── 新增测试：text-shadow 渲染 ──────────────────────────────
 
 /// 测试 text-shadow 生成阴影 glyph。

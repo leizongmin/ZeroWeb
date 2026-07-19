@@ -947,6 +947,65 @@ pub fn extract_font_face_urls(css: &str) -> Vec<String> {
     urls
 }
 
+/// R1794：从 CSS 文本提取所有**图片类** `url(...)` 引用。
+///
+/// 与 `extract_font_face_urls` 互补：本函数扫描**全部** `url(...)`，但**排除**
+/// `@font-face` 块内的 url（字体由 `extract_font_face_urls` 单独处理，避免重复抓取）
+/// 与 `data:` URI（调用方识别，此处亦过滤以保持集合干净）。结果去重并保留首次出现顺序。
+///
+/// 覆盖 `background-image` / `list-style-image` / `border-image-source` 等所有
+/// CSS 图片引用——它们都经 `decode_image_bytes` 解码后入 `image_cache`，painter
+/// 按 `image_resource_key(url, document_url)` 查找像素。
+pub fn extract_css_image_urls(css: &str) -> Vec<String> {
+    // 先定位所有 @font-face 块的 [start, end) 区间，扫描时跳过。
+    let lower = css.to_ascii_lowercase();
+    let mut font_blocks: Vec<(usize, usize)> = Vec::new();
+    let mut search_from = 0;
+    while let Some(ff) = lower[search_from..].find("@font-face") {
+        let start = search_from + ff;
+        let end = lower[start..].find('}').map(|i| start + i + 1).unwrap_or(css.len());
+        font_blocks.push((start, end));
+        search_from = end;
+    }
+    let in_font_block = |pos: usize| font_blocks.iter().any(|(s, e)| *s <= pos && pos < *e);
+
+    let mut urls: Vec<String> = Vec::new();
+    let mut search_from = 0;
+    while let Some(ui) = lower[search_from..].find("url(") {
+        let lparen = search_from + ui;
+        let rest_start = lparen + 4;
+        let rest = &css[rest_start..];
+        let end = rest.find(')').unwrap_or(rest.len());
+        let raw = rest[..end].trim().trim_matches('"').trim_matches('\'');
+        // 排除 data: URI、空串、以及位于 @font-face 块内的 url。
+        if !raw.is_empty()
+            && !raw.starts_with("data:")
+            && !in_font_block(lparen)
+            && !urls.iter().any(|u: &String| u == raw)
+        {
+            urls.push(raw.to_string());
+        }
+        search_from = rest_start + end + 1;
+    }
+    urls
+}
+
+/// R1794：提取 HTML 中所有 `<style>` 块的文本内容并拼接。
+///
+/// 供 `extract_css_image_urls` 扫描 inline CSS 中的图片 `url()` 引用。
+/// 与 `extract_img_srcs` 同模式：复用 `zero_dom` 解析（DOM 精确，比正则稳健）。
+pub fn extract_html_style_text(html: &str) -> String {
+    let doc = zero_dom::parse_html(html);
+    let mut out = String::new();
+    for style_id in doc.get_elements_by_tag_name("style") {
+        if let Some(text) = doc.text_content(style_id) {
+            out.push_str(&text);
+            out.push('\n');
+        }
+    }
+    out
+}
+
 /// 去除 XHTML CDATA 包装（`<![CDATA[...]]>`）。
 ///
 /// html5ever 仅支持 HTML 模式解析，会将 `<style>` 中的 CDATA 标记
@@ -1193,5 +1252,64 @@ mod pseudo_tests {
             }
             other => panic!("应为 Inline，得到 {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod css_image_url_tests {
+    use super::*;
+
+    #[test]
+    fn extract_css_image_urls_collects_background_and_list() {
+        let css = r#"
+            .hero { background-image: url("/img/bg.png"); }
+            ul { list-style-image: url('bullet.png'); }
+        "#;
+        let urls = extract_css_image_urls(css);
+        assert_eq!(urls, vec!["/img/bg.png", "bullet.png"]);
+    }
+
+    #[test]
+    fn extract_css_image_urls_skips_font_face_and_data() {
+        let css = r#"
+            @font-face { font-family: x; src: url(font.woff2) format('woff2'); }
+            .a { background-image: url(real.png); }
+            .b { background-image: url(data:image/png;base64,iVBOR=); }
+        "#;
+        let urls = extract_css_image_urls(css);
+        // 字体 url 与 data: URI 均排除，仅保留 real.png。
+        assert_eq!(urls, vec!["real.png"]);
+    }
+
+    #[test]
+    fn extract_css_image_urls_dedupes() {
+        let css = "a{background-image:url(a.png)}b{background-image:url(a.png)}";
+        let urls = extract_css_image_urls(css);
+        assert_eq!(urls, vec!["a.png"]);
+    }
+
+    #[test]
+    fn extract_css_image_urls_empty_when_no_url() {
+        assert!(extract_css_image_urls(".a { color: red }").is_empty());
+        assert!(extract_css_image_urls("").is_empty());
+    }
+
+    #[test]
+    fn extract_html_style_text_collects_inline_blocks() {
+        let html = r#"<html><head>
+            <style>.a { background-image: url(a.png) }</style>
+            </head><body>
+            <style>.b { background-image: url(b.png) }</style>
+            <p>not css</p>
+            </body></html>"#;
+        let text = extract_html_style_text(html);
+        assert!(text.contains("a.png"), "应含首个 style 块: {text}");
+        assert!(text.contains("b.png"), "应含第二个 style 块: {text}");
+    }
+
+    #[test]
+    fn extract_html_style_text_empty_when_no_style() {
+        let html = "<html><body><p>no styles</p></body></html>";
+        assert!(extract_html_style_text(html).is_empty());
     }
 }

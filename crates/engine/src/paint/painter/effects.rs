@@ -23,7 +23,7 @@ use zero_style_system::{
 };
 
 use super::super::color::color_value_to_render;
-use super::super::helpers::{PrimitiveCounts, gradient_to_primitive, simple_hash};
+use super::super::helpers::{PrimitiveCounts, gradient_to_primitive, image_resource_key};
 use super::effects_indicators::clip_tile_to_origin;
 
 impl super::Painter {
@@ -118,7 +118,7 @@ impl super::Painter {
         // background-size: auto 时使用图像的原始像素尺寸，而非容器尺寸。
         let default_intrinsic = (origin_w, origin_h);
         let first_url_hash = style.background_image.iter().find_map(|layer| match layer {
-            BackgroundImageComputedValue::Url(url) => Some(simple_hash(url)),
+            BackgroundImageComputedValue::Url(url) => Some(image_resource_key(url, self.document_url.as_deref())),
             _ => None,
         });
         let (img_w, img_h) = first_url_hash
@@ -140,7 +140,7 @@ impl super::Painter {
             match layer {
                 BackgroundImageComputedValue::None => {}
                 BackgroundImageComputedValue::Url(url) => {
-                    let key = simple_hash(url);
+                    let key = image_resource_key(url, self.document_url.as_deref());
                     let repeat = &style.background_repeat;
 
                     let (repeat_x, repeat_y, tile_w, tile_h) = resolve_repeat_params(

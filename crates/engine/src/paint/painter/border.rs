@@ -14,7 +14,7 @@ use zero_style_system::{
 };
 
 use super::super::color::color_value_to_render;
-use super::super::helpers::{length_to_f32, simple_hash};
+use super::super::helpers::{image_resource_key, length_to_f32};
 
 /// 边框边缘规格 — 描述一条边框的几何位置和方向。
 pub(super) struct BorderEdgeSpec {
@@ -179,7 +179,7 @@ impl super::Painter {
 
         let w = box_node.width;
         let h = box_node.height;
-        let key = simple_hash(&url);
+        let key = image_resource_key(&url, self.document_url.as_deref());
 
         // 辅助：创建 ImagePrimitive（每次创建新的 ImageKey，因为 ImageKey 不是 Copy）
         let make_img = |rect: Rect| ImagePrimitive {
