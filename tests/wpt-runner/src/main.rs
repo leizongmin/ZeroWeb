@@ -13,6 +13,7 @@ mod reftest;
 mod reftest_data;
 mod report;
 mod runner;
+mod runner_text_metrics;
 mod wpt_file_loader;
 
 use rayon::prelude::*;
@@ -81,6 +82,12 @@ enum OutputFormat {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+
+    // R1765：注册 fontdue 真实 advance 测量回调（镜像 browser app.rs:204）。
+    // 此前 runner 未注册 → paint 回退 estimate_char_width（0.55×fs）→ reftest/product-smoke
+    // 测量用 estimate paint（'m'=0.584×fs）vs chromium 0.797×fs，font-wall 部分是测量 artifact。
+    // 注册后经 with_measure_ctx（reftest.rs render 包裹）注入 fontdue measure_advance。
+    zero_engine::set_char_measure_fn(runner_text_metrics::measure_char);
 
     if args.len() < 2 {
         print_usage();

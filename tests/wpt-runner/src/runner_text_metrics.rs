@@ -1,0 +1,42 @@
+//! Runner paint 阶段真实字体 metrics 桥接（镜像 `apps/browser/src/text_metrics.rs`）。
+//!
+//! **R1765 发现**：wpt-runner 此前**未注册** `set_char_measure_fn`，导致 reftest /
+//! product-smoke 的 paint 路径回退到 `estimate_char_width`（0.55×fs 启发式）而非
+//! fontdue 真实 advance。实测探针：ZW 渲染 'm' = 0.584×fs（≈estimate）vs chromium
+//! 0.797×fs vs fontdue Liberation 0.833×fs → 「font-wall」部分是**测量 artifact**
+//! （runner 用 estimate paint，browser 用 fontdue）。本模块把 browser 的
+//! `with_measure_ctx` 模式复刻到 runner，使测量与真实 browser 一致。
+use std::cell::Cell;
+
+use zero_engine::layout_estimate_char_width;
+use zero_render_foundation::font::loader::FontLoader;
+
+thread_local! {
+    static MEASURE_CTX: Cell<Option<(*const FontLoader, u32)>> = const { Cell::new(None) };
+}
+
+/// 全局 paint 测量回调（注册到 `zero-engine`）。读 thread-local `MEASURE_CTX`，
+/// 有则用 `FontLoader::measure_advance`（真实 fontdue advance），无则回退 estimate。
+pub fn measure_char(ch: char, font_size: f32, is_ahem: bool) -> f32 {
+    if is_ahem {
+        return font_size;
+    }
+    MEASURE_CTX.with(|cell| {
+        if let Some((loader, font_id)) = cell.get() {
+            // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效（runner 单线程渲染）。
+            unsafe { (*loader).measure_advance(font_id, ch, font_size) }
+        } else {
+            layout_estimate_char_width(ch, font_size, false)
+        }
+    })
+}
+
+/// 在闭包执行期间启用真实字体测量（镜像 browser `with_measure_ctx`）。
+pub fn with_measure_ctx<R>(font_loader: &FontLoader, font_id: u32, f: impl FnOnce() -> R) -> R {
+    MEASURE_CTX.with(|cell| {
+        cell.set(Some((font_loader as *const FontLoader, font_id)));
+        let result = f();
+        cell.set(None);
+        result
+    })
+}

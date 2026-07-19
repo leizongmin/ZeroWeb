@@ -19,6 +19,7 @@ use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decod
 use zero_render_foundation::surface::FrameBuffer;
 
 use crate::manifest::FuzzyMeta;
+use crate::runner_text_metrics;
 
 mod reftest_compare;
 mod reftest_fonts;
@@ -504,7 +505,8 @@ pub fn render_to_framebuffer_with_layout_with_base(
         pipeline.set_font_metric_map(font_loader.build_line_metric_map());
     }
 
-    let result = pipeline.render_html(html, &combined_css);
+    let result =
+        runner_text_metrics::with_measure_ctx(&font_loader, 0u32, || pipeline.render_html(html, &combined_css));
 
     // DEBUG: dump layout box tree geometry (absolute y / margin-top / padding-top)
     // 用途：诊断产品 smoke 垂直偏移（如 welcome 36px 顶部偏移）。
