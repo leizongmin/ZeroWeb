@@ -28,6 +28,70 @@ pub(crate) fn adjust_float_positions(box_node: &mut LayoutBox) {
     adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0, &[]);
 }
 
+/// R1733：inline-block（atomic inline-level BFC，`is_flow_root && !is_block_level`）float 排斥
+/// **终末 pass**——在 compute() 所有重定位 pass 之后运行，确保 x-fix 不被后续 pass 重置
+///（R1732 实证：在 adjust_float_positions 内做 x-fix 被 inline-level `y -= float_y_offset`
+/// 降级 + 后续 pass 重置 → 不存活）。近似 IFC line-box shortening：inline-block 与同容器 float
+/// 垂直重叠时 shift x 到 float 旁（左 float 推右、右 float 收缩宽），使 border-box 不重叠 float。
+///
+/// floats-wrap-top-below-bfc l 变体 REF（inline-block 旁 float 应 x=161 非 x=11）。
+/// 非 R109 匿名块重写（RFC Slice 1+2 高风险）的低风险终末近似——终末跑使坐标已最终
+///（y 已匹配 chromium），仅 x 需修正且不被覆盖。kill-switch `ZW_BFC_INLINEBLOCK_AVOID=0`。
+pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox) {
+    use zero_css_parser::values::FloatValue;
+    // 收集本容器直接 float 子几何（与子同坐标系）。
+    let floats: Vec<(FloatValue, f32, f32, f32, f32, f32)> = box_node
+        .children
+        .iter()
+        .filter(|c| !matches!(c.float, FloatValue::None))
+        .map(|c| (c.float.clone(), c.x, c.y, c.width, c.height, c.margin_right))
+        .collect();
+    if !floats.is_empty() {
+        let container_w = box_node.content_width;
+        for child in &mut box_node.children {
+            // 仅 atomic inline-level BFC（inline-block；flow_root 含 FlowRoot 但后者 block-level）。
+            if !(child.is_flow_root
+                && !child.is_block_level
+                && matches!(child.float, FloatValue::None)
+                && !child.is_absolute
+                && !child.is_fixed)
+            {
+                continue;
+            }
+            let ctop = child.y;
+            let cbottom = child.y + child.height;
+            for (fd, fx, fy, fw, fh, fmr) in &floats {
+                let fbottom = *fy + *fh;
+                if !(ctop < fbottom && cbottom > *fy) {
+                    continue;
+                }
+                match fd {
+                    FloatValue::Left => {
+                        let avoidance_x = *fx + *fw + *fmr;
+                        if avoidance_x > child.x {
+                            child.x = avoidance_x;
+                            let max_w = (container_w - child.x).max(0.0);
+                            if child.width > max_w {
+                                child.width = max_w;
+                            }
+                        }
+                    }
+                    FloatValue::Right if *fx < child.x + child.width => {
+                        let new_w = (*fx - child.x).max(0.0);
+                        if child.width > new_w {
+                            child.width = new_w;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    for child in &mut box_node.children {
+        apply_inline_block_float_avoidance(child);
+    }
+}
+
 /// 浮动几何元组：(dir, x, y, width, height+margin_bottom, margin_right)。
 /// 坐标相对「持有该浮动的容器的 border-box 原点」。供 BFC 排斥 + 嵌套透传共用。
 type FloatGeom = (FloatValue, f32, f32, f32, f32, f32);

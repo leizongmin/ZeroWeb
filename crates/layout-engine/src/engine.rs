@@ -594,6 +594,12 @@ impl LayoutEngine {
             crate::inline_block_split::debug_dump_inline_block_splits(&root_box, doc, styles);
         }
 
+        // R1733：终末 inline-block float 排斥（在所有重定位 pass 之后，避免被重置；R1732 教训）。
+        // kill-switch ZW_BFC_INLINEBLOCK_AVOID=0。默认 on。
+        if std::env::var("ZW_BFC_INLINEBLOCK_AVOID").as_deref() != Ok("0") {
+            crate::float_positioning::apply_inline_block_float_avoidance(&mut root_box);
+        }
+
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
             taffy: taffy_tree,

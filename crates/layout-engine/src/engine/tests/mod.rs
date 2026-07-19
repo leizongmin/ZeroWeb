@@ -129,6 +129,8 @@ mod r1723_table_beside_float_defwidth_tests;
 mod r1728_left_fit_pushbelow_tests;
 #[cfg(test)]
 mod r1730_multifloat_coord_tests;
+#[cfg(test)]
+mod r1733_inline_block_float_avoid_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
