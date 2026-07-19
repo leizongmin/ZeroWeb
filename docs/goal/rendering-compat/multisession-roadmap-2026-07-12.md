@@ -214,6 +214,9 @@ plateau = aggregate ~55% + 上述累计。
 - **行动**: 光栅化方向（Skia/FreeType/tiny-skia/gamma/LoadFlag/metric-swap）全角度穷尽，勿再试；转 Phase A IFC-result-reuse fresh attempt，或他 lever（multicol/content-list），或接受 plateau。
 
 ### L2. margin-collapse-clear §8.3.1 clearance-containment（6 案 17-35%，最高 diff in-scope 非 C-dep）
+
+> **⚠ R1770 STALE 复测（2026-07-20）**：本节「6 案 17-35%」基于 pre-R1393 快照。R1393 adjoining-float clearance LANDED（2026-07-16，adjoining-float-before-clearance 9.98→0.63）已解 012/013/014 主几何——fresh reftest-oracle 实测现仅 **016=17.19%** 残余 high-diff，012/013/014=0.56-0.60%（font-wall `<p>` floor，R1155 勿挖），余 <1.2%。**L2 现仅 1 案真 lever（016）**，yield 估计须下调；016 根因 = `float_positioning.rs:1329` containment gate 漏 no-float clear-only 容器（无 float → containment SKIP → taffy 把 collapsed-through mt 当 content）。详见 master.md R1770。
+
 - **blocker**: ZW 当前定位已乱（margin-collapse-clear-012 实测 #following-sibling@132.6 在
   #clear-left@152.6 之前 = clearance 未推后续兄弟）+ §8.3.1 containment math intricate（012 的
   (140−40) cleared-top-consumed 规则，R1314 deep-research）。taffy 0.7 不建模 collapse-through。
