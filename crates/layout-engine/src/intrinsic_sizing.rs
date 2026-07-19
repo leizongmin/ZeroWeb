@@ -299,18 +299,44 @@ pub(crate) fn block_max_content_width(
 /// 用元素 font 度量逐字符累加宽度（复用 IFC 的 `estimate_char_width`：Ahem 等宽=font_size，
 /// 其它字体按字符近似宽）。仅 max-content（假设不换行）；min-content（最宽词）独立子问题。
 pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
-    let text = doc.text_content(node_id).unwrap_or_default();
-    let collapsed = crate::inline::collapse_whitespace(&text);
-    if collapsed.is_empty() {
-        return 0.0;
-    }
     let style = styles.get(&node_id);
     let (font_size, _line_height) = crate::inline::resolve_font_metrics(style);
     let is_ahem = style.is_some_and(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")));
-    collapsed
-        .chars()
-        .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
-        .sum()
+    // R1747：`<br>` 是强制换行（CSS css-sizing-3：forced break 产生独立 line，max-content
+    // 取最宽 line 而非全文本累加）。旧实现用 `doc.text_content`（递归扁平化，br 折成空）把
+    // "short<br>much longer line<br>mid" 测成单行 201.6px（应 max-line 131.2px），致 inline-block
+    // / float / leaf block shrink-to-fit 过宽。改为递归遍历 DOM 子树，按 `<br>` 切段，取最宽段。
+    let mut segments: Vec<f32> = vec![0.0];
+    text_max_width_walk(node_id, doc, font_size, is_ahem, &mut segments);
+    segments.into_iter().fold(0.0f32, f32::max)
+}
+
+/// R1747：递归遍历 `node_id` 子树，把文本节点字符宽累入当前段，遇 `<br>` 元素开新段，
+/// 遇其他元素递归（其文本并入当前段，嵌套 `<br>` 同样切段）。`segments` 每项 = 一段宽。
+fn text_max_width_walk(node_id: NodeId, doc: &Document, font_size: f32, is_ahem: bool, segments: &mut Vec<f32>) {
+    for child in doc.child_nodes(node_id) {
+        let Some(node) = doc.get(child) else { continue };
+        match &node.kind {
+            zero_dom::NodeKind::Text(t) => {
+                let collapsed = crate::inline::collapse_whitespace(&t.content);
+                if collapsed.is_empty() {
+                    continue;
+                }
+                let w: f32 = collapsed
+                    .chars()
+                    .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
+                    .sum();
+                *segments.last_mut().expect("segments 非空") += w;
+            }
+            zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") => {
+                segments.push(0.0);
+            }
+            zero_dom::NodeKind::Element(_) => {
+                text_max_width_walk(child, doc, font_size, is_ahem, segments);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// R109 §9.2.1.1：测量 split inline 的一个匿名块片段的 inline 内容 max-content 宽度。

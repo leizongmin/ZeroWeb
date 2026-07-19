@@ -174,3 +174,58 @@ fn r1746_negative_margin_nonzero_parent_not_overgrown() {
         div.height
     );
 }
+
+/// R1747：inline-block br-split shrink-to-fit 宽 = 最宽行宽（非全文本累加）。
+/// 旧 `text_content_max_width` 用 `doc.text_content`（扁平化 br）把多行测成单行
+///（"short<br>much longer line<br>mid" → 201.6px 累加，应 max-line 131.2px）。
+/// CSS css-sizing-3：forced break（br）产生独立 line，max-content 取最宽 line。
+#[test]
+fn r1747_inline_block_br_shrink_to_widest_line() {
+    let longest = r#"<html><body><span style="display:inline-block">much longer line</span></body></html>"#;
+    let br_split =
+        r#"<html><body><span style="display:inline-block">short<br>much longer line<br>mid</span></body></html>"#;
+    let (doc_l, root_l, _) = compute(longest);
+    let (doc_b, root_b, _) = compute(br_split);
+    let w_longest = find_tag(&doc_l, &root_l, "span").expect("span").1.width;
+    let w_br = find_tag(&doc_b, &root_b, "span").expect("span").1.width;
+    let delta = (w_br - w_longest).abs();
+    assert!(
+        delta < 3.0,
+        "br-split shrink-to-fit width ({:.1}) 应 ≈ 最宽行宽 ({:.1})，差 {:.1}px（旧：201.6 累加全文本 bug）",
+        w_br,
+        w_longest,
+        delta
+    );
+}
+
+/// R1747：float br-split shrink-to-fit 宽 = 最宽行宽（< 200，旧 bug 会 > 200）。
+#[test]
+fn r1747_float_br_shrink_to_widest_line() {
+    let html = r#"<html><body><div style="float:left">short<br>much longer line here<br>mid</div></body></html>"#;
+    let (doc, root, _) = compute(html);
+    let div = find_tag(&doc, &root, "div").expect("div").1;
+    assert!(
+        div.width < 200.0,
+        "float br-split shrink-to-fit width {:.1} 应 < 200（最宽行宽，非全文本累加）",
+        div.width
+    );
+    assert!(
+        div.width > 100.0,
+        "float br-split shrink-to-fit width {:.1} 应 > 100（最宽行 'much longer line here' 真实宽）",
+        div.width
+    );
+}
+
+/// R1747 守卫：无 br 的纯文本 max-content 不变（单段 = 全文本累加，行为同旧）。
+#[test]
+fn r1747_no_br_unchanged() {
+    let html =
+        r#"<html><body><span style="display:inline-block">a single long line of text content</span></body></html>"#;
+    let (doc, root, _) = compute(html);
+    let span = find_tag(&doc, &root, "span").expect("span").1;
+    assert!(
+        span.width > 200.0 && span.width < 320.0,
+        "无 br 单行 span 宽 {:.1} 应 ≈ 270（行为不变）",
+        span.width
+    );
+}
