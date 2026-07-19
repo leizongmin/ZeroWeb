@@ -12,6 +12,7 @@ swash = { workspace = true }
 rustybuzz = { workspace = true }
 png = "0.17"
 jpeg-decoder = "0.3"
+image-webp = "0.2"
 flate2 = "1"
 base64 = "0.22"
 resvg = { workspace = true }

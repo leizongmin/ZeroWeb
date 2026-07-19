@@ -339,9 +339,10 @@ impl Default for ImageCache {
 //
 // 供 URL 导航路径（webview fetch_url）抓取 `<img src>` 子资源后解码为 ImageData。
 // render-foundation 拥有 ImageData 结构，故解码逻辑置此，供 webview / reftest 等复用。
-// 支持格式：PNG（最常见）/ JPEG（goal doc DC-13「PNG/JPEG 基础解码」）/ SVG 栅格化
+// 支持格式：PNG（最常见）/ JPEG（goal doc DC-13「PNG/JPEG 基础解码」）/ WebP
+// （R1793「PNG/JPEG/WebP 基础解码」，image-webp 纯 Rust）/ SVG 栅格化
 // （resvg + tiny-skia，goal doc DC-13「SVG 栅格化」）。`decode_image_bytes` 按
-// 魔数字节（PNG/JPEG）或文本内容嗅探（SVG）分发格式。
+// 魔数字节（PNG/JPEG/WebP）或文本内容嗅探（SVG）分发格式。
 
 /// 将 PNG 字节流解码为 RGBA `ImageData`。
 ///
@@ -380,6 +381,38 @@ pub fn decode_jpeg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     let width = info.width as u32;
     let height = info.height as u32;
     let rgba = convert_jpeg_pixels_to_rgba(&pixels, info.pixel_format);
+    ImageData::from_rgba(rgba, width, height)
+}
+
+/// 解码 WebP 字节为 `ImageData`（RGBA）。
+///
+/// goal doc Support Envelope「图片子资源 / ImageCache」要求 PNG/JPEG/WebP 基础解码
+///（rendering-compat.md line 76）。使用 `image-webp`（纯 Rust，MIT/Apache-2.0）；
+/// 该 crate 已作为 `image` 的传递依赖存在于 Cargo.lock（0.2.4），此处提升为直接依赖。
+/// `read_image` 在 `has_alpha` 时输出 RGBA，否则输出 RGB（补 alpha=255），统一转 RGBA。
+pub fn decode_webp_bytes(bytes: &[u8]) -> Result<ImageData, String> {
+    use std::io::Cursor;
+    let mut decoder = image_webp::WebPDecoder::new(Cursor::new(bytes)).map_err(|e| format!("WebP 解码失败: {e}"))?;
+    let (width, height) = decoder.dimensions();
+    let has_alpha = decoder.has_alpha();
+    let buf_size = decoder
+        .output_buffer_size()
+        .ok_or_else(|| "WebP 无输出缓冲区大小（可能为动画，暂不支持）".to_string())?;
+    let mut raw = vec![0u8; buf_size];
+    decoder
+        .read_image(&mut raw)
+        .map_err(|e| format!("WebP 读取失败: {e}"))?;
+    let rgba = if has_alpha {
+        // 已是 RGBA，直接使用。
+        raw
+    } else {
+        // RGB → RGBA（补 alpha=255）。
+        let mut out = Vec::with_capacity(raw.len() / 3 * 4);
+        for px in raw.chunks_exact(3) {
+            out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+        }
+        out
+    };
     ImageData::from_rgba(rgba, width, height)
 }
 
@@ -441,21 +474,29 @@ pub fn decode_image_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         decode_png_bytes(bytes)
     } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
         decode_jpeg_bytes(bytes)
+    } else if is_webp_magic(bytes) {
+        decode_webp_bytes(bytes)
     } else if looks_like_svg(bytes) {
         decode_svg_bytes(bytes)
     } else {
         Err(format!(
-            "unsupported image format (magic bytes: {:?}); only PNG/JPEG/SVG supported",
+            "unsupported image format (magic bytes: {:?}); only PNG/JPEG/WebP/SVG supported",
             bytes.get(..4).unwrap_or(&[])
         ))
     }
+}
+
+/// WebP magic：`RIFF` (offset 0..4) + 文件大小 4 字节 + `WEBP` (offset 8..12)。
+/// 见 https://developers.google.com/speed/webp/docs/riff_container。
+fn is_webp_magic(bytes: &[u8]) -> bool {
+    bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP"
 }
 
 /// R1705：解析 `data:` URI 并解码为 `ImageData`（renderer 多进程路径 + wpt-runner 共用）。
 ///
 /// `data:[<mediatype>][;base64],<payload>` —— header 含 `base64` 则 base64 解码 payload，
 /// 否则按字节 percent-decode（%XX）。所得字节交 `decode_image_bytes` 按 magic 分派
-///（PNG/JPEG/SVG）。无逗号或解码失败返回 Err（调用方降级，不阻断页面）。
+///（PNG/JPEG/WebP/SVG）。无逗号或解码失败返回 Err（调用方降级，不阻断页面）。
 pub fn decode_data_uri(src: &str) -> Result<ImageData, String> {
     let Some(comma) = src.find(',') else {
         return Err("data URI 缺逗号分隔符".to_string());
@@ -794,7 +835,36 @@ mod decode_tests {
         assert!(result.is_err());
     }
 
-    /// 分发器：按魔数字节/内容正确路由 PNG / JPEG / SVG / 未知格式。
+    /// R1793：解码真实 4×3 纯绿 WebP fixture（lossless，RGB → 补 alpha=255）。
+    #[test]
+    fn decode_webp_bytes_green_4x3() {
+        let bytes = include_bytes!("testdata/green_4x3.webp");
+        let img = decode_webp_bytes(bytes).expect("WebP decode should succeed");
+        assert_eq!(img.width, 4);
+        assert_eq!(img.height, 3);
+        // 纯绿，补 alpha=255
+        assert_eq!(&img.pixels[..4], &[0, 255, 0, 255]);
+    }
+
+    /// R1793：WebP 魔数（RIFF....WEBP）+ 无效正文 → 库解码失败。
+    #[test]
+    fn decode_webp_bytes_invalid_returns_err() {
+        // RIFF + WEBP 魔数但无有效 VP8/VP8L chunk
+        let bad = b"RIFF\x00\x00\x00\x00WEBPrest is garbage";
+        let result = decode_webp_bytes(bad);
+        assert!(result.is_err());
+    }
+
+    /// R1793：`is_webp_magic` 边界（≥12 字节、RIFF+WEBP 双魔数）。
+    #[test]
+    fn is_webp_magic_detects_riff_webp() {
+        assert!(is_webp_magic(b"RIFF\x00\x00\x00\x00WEBPVP8 "));
+        assert!(!is_webp_magic(b"RIFF\x00\x00\x00\x00")); // < 12 字节，无 WEBP
+        assert!(!is_webp_magic(b"RIFF\x00\x00\x00\x00WAVI")); // RIFF 但非 WEBP
+        assert!(!is_webp_magic(b"\x89PNG\r\n\x1a\n")); // PNG 不匹配
+    }
+
+    /// 分发器：按魔数字节/内容正确路由 PNG / JPEG / WebP / SVG / 未知格式。
     #[test]
     fn decode_image_bytes_dispatches_by_magic() {
         // PNG → 成功
@@ -806,6 +876,12 @@ mod decode_tests {
         let jpeg = include_bytes!("testdata/green_4x3.jpg");
         let img = decode_image_bytes(jpeg).expect("JPEG should dispatch and decode");
         assert_eq!(img.width, 4);
+
+        // WebP → 成功（RIFF....WEBP 魔数路由）
+        let webp = include_bytes!("testdata/green_4x3.webp");
+        let img = decode_image_bytes(webp).expect("WebP should dispatch and decode");
+        assert_eq!(img.width, 4);
+        assert_eq!(img.height, 3);
 
         // SVG → 成功（文本内容嗅探路由）
         let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"3\">\

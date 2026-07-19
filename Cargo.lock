@@ -6312,6 +6312,7 @@ dependencies = [
  "fontdue",
  "freetype-rs",
  "hashbrown 0.17.1",
+ "image-webp",
  "jpeg-decoder",
  "parking_lot",
  "png 0.17.16",
