@@ -955,7 +955,16 @@ pub(super) fn shift_siblings_after_ifc_grow(
         // 已终态）。仅 block-level 子（CSS §10.6.3 auto-height 块的内容高由 block-level in-flow
         // 子 border-box 底决定）；inline 子的几何非权威（行盒由 IFC/remeasure 直设容器高，
         // 含 inline img 底边会误扩 inline-only 容器——test_inline_only_container_shrink_* 回归）。
-        if parent_backfill_active && child.is_block_level {
+        // R1771 §8.3.1（margin-collapse-clear-016）：排除空块（collapse-through）——空块 h=0 无
+        // border/padding/content，其 margin collapse-through 到父底（不建立 content 高）。taffy 对
+        // `clear:both` 空块不 collapse-through 其 mt（clear 特判）→ 子定位 y=flow_bottom+mt，
+        // 旧 fold 含其底（y+0）误扩父高（016：element y=200 → 父 200 露红，应 100）。with-clearance
+        // 空块（clearance 破坏 collapse-through，建立流位置）由 R1317 containment（adjust_float_
+        // positions had_empty_clearance 路径）单独定父高，不依赖本 fold。env
+        // `ZW_CLEARANCE_NO_FLOAT_CONTAINMENT=1` 开启（default-off）。
+        let r1771_exclude_empty = std::env::var("ZW_CLEARANCE_NO_FLOAT_CONTAINMENT").as_deref() == Ok("1")
+            && crate::margin_collapse::is_empty_block(child);
+        if parent_backfill_active && child.is_block_level && !r1771_exclude_empty {
             if child.margin_top < 0.0 || child.margin_bottom < 0.0 {
                 has_negative_margin = true;
             }
