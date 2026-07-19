@@ -1,9 +1,9 @@
 # RFC：BFC 元素旁 float 放不下须下沉（general BFC-relocate-below-float）
 
-**版本**：v1.1
-**日期**：2026-07-17
-**状态**：Slice 1+2 合并 LANDED（R1619，with-margin-008/009 flip，CSS2 NET +2 0 回归）；Slice 3/4 待续
-**起源**：R1616 forward「剩 close case floats-bfc-003 / with-margin-008/009」；R1617 探针确认 BFC 不下沉 = 真根因。
+**版本**：v1.2
+**日期**：2026-07-19
+**状态**：Slice 1+2 合并 LANDED（R1619，with-margin-008/009 flip，CSS2 NET +2 0 回归）；Slice 3 精神落地于 R1728（002r，左 float fits_beside gate，§10.1）；Slice 4-D top-below 子簇 002r ✅ / 001r+003l defer 为 Slice 5 多-float 协调（§10.2）；Slice 3 百分比宽 / 4-B/4-E/4-F 待续
+**起源**：R1616 forward「剩 close case floats-bfc-003 / with-margin-008/009」；R1617 探针确认 BFC 不下沉 = 真根因。R1725–R1729 续 floats-wrap-top-below-bfc 子簇（§10）。
 
 ---
 
@@ -133,3 +133,68 @@ if child block-level && !abspos && establishes_bfc(child) {
   revert。**结论**：floats-wrap-bfc-005 须**根本上不同**方案（非 broad growth-only）——
   例如只在「cell 因 float 推下而溢出」的精确结构签名触发（gate on cell 内有被 float 推下的
   BFC/table 子），而非对所有 row growth。defer 到更精确 gate 的专项轮次；当前转其他 target。
+
+## 10. R1728/R1729 floats-wrap-top-below-bfc 子簇 resolution（Slice 4-D 落地 + 多-float 协调 Slice 5 提案）
+
+**版本**：v1.1 续（2026-07-19）。承接 Slice 4+ 的 D（top-below）。R1725 解除 dump 工具坑
+（REFTEST_DUMP 实为可靠，R1724「UB」误诊推翻）后，对全 6 变体（001l/r、002l/r、003l/r）
+逐案 ZW-TEST vs chromium-oracle 像素 diff 分侧（R1726 triage）：**l 变体=REF-side（ZW TEST 对、
+REF 渲染错），r 变体=TEST-side（ZW TEST 偏离 chromium）**。推翻「全簇=单一 BFC avoidance bug」
+框定——实为两条独立线。
+
+### 10.1 002r ✅ LANDED（R1728，commit f2a85f487）= Slice 3「放不下 float 旁可用宽」精神落地
+
+- **结构**：body 400 + `float:right 150×75` + `float:left 300×75`（450>400 不并行，left float 下沉
+  到 right float 底）+ 2× BFC span（block overflow:hidden，**声明宽 200**）。
+- **根因（R1727 instrument ZW_R1727_PROBE 实证）**：span2 进 BFC-avoid 时在自然位 x=0 y=50 w=200，
+  float:left 300 宽（右可用仅 [300,400]=100）。R1369 gate `overflows = child.x+child.width > container_width`
+  = `200 > 400` = **false** → pushdown 不 fire，落 squeeze 分支缩到 w=100 留 beside。
+- **fix**：R1369 左 float 分支 `must_pushdown = overflows || (left_fit_pushbelow && is_definite_width
+  && !declared_width_auto && !fits_beside)`，`fits_beside = child.width <= container_width - avoidance_x`。
+  = **Slice 3「> available_width_beside_float」判定的左 float 落地**，加 `!declared_width_auto` gate
+  排除 auto 宽 BFC（floats-bfc-003 / new-fc-beside-float 回归源）。
+- **验证**：002r ZW-TEST vs chromium **4.00%→1.00%**；A/B floats+floats-clear **net 0**（0 回归 0 新
+  self-source pass——002r self-source 仍 fail 因 REF 侧 IFC 独立 bug，见 10.3）；welcome product-smoke
+  16.98% PASS；2 load-bearing 单测；kill-switch `ZW_BFC_LEFT_FIT_PUSHBELOW`。
+- **R1727 三假设全证伪**：float_geometries 含两 float ✓ / establishes_bfc(span) ✓ / 非分支覆盖——
+  是 gate 条件本身漏判。
+
+### 10.2 001r / 003l = 多-float BFC 协调（Slice 5 提案，per-float 循环无法解，defer）
+
+两案**同根因**：BFC 同时垂直重叠 ≥2 float，per-float 循环独立处理致 over-pushdown。
+
+| case | 配置 | chromium span2 | ZW span2 | 缺口 |
+|---|---|---|---|---|
+| 001r | 2× `float:right clear:right`（50+100 宽，叠右侧）+ BFC span `margin-left:auto` w=200 | 与 span1 相邻成 1 blob x=[111,360] y=[11,110]；span2 **右对齐到 div2 左缘** x=[111,311] y=[60,110] | span2 推到两 float 下 y=[164,214]，x=[161,361]（右缘=div1 左缘，未重右对齐到 div2） | R1722 右 pushdown **逐 float 重复 fire**；且正确行为=「margin-left:auto BFC 右对齐到最左 obstructing float 左缘保持宽」，当前代码只有 pushdown/shrink 两分支无此第三行为 |
+| 003l | `float:left 250` + `float:right 250`（500>400 不并行）+ BFC span w=100 | span2 **下到 float L 底 y=[89,139] 且 旁 float R** x=[11,110] | span2 推到 float R 下 y=[164,214] x=[11,110] | span2 应「下到 float L 底 + 旁 float R」（y=89, x<161），per-float 循环无「跨 float 协调找同时不重叠位」能力 |
+
+**Slice 5 算法草案（multi-float BFC coordination）**：BFC-avoid 段对每个 BFC 子收集**所有**垂直重叠
+float（不再逐 float 独立 fire），然后：
+1. 计算候选 y 序列 = {child 自然 y} ∪ {每个重叠 float 的 bottom}（升序）；
+2. 对每个候选 y（从低到高），检查 BFC 在该 y 是否与任一 float 重叠；若 BFC 声明宽 > 该 y 处旁置可用宽
+   （考虑该 y 处所有现役 float 的联合占用）→ 排除该候选；
+3. 取**首个可行候选 y**（最低可行）。若 none → 下到最晚 float bottom。
+- **margin-left:auto 特化（001r）**：可行候选处，BFC 右对齐到该 y 处最左 obstructing float 左缘
+  （`child.x = min_obstructing_float_x - child.width`），保持声明宽。
+- **scope gate**：仅当 BFC 垂直重叠 ≥2 float 时走协调路径（单 float 走既有 R1369/R1722/R1728 分支，
+  零回归）。
+- **风险**：高——重写 BFC-avoid 核心，须守 R1369/R1619/R1722/R1723/R1728 全部既有行为；margin-collapse
+  + clear + container-height 连锁。须 kill-switch `ZW_BFC_MULTIFLOAT_COORD` default-OFF 渐进 A/B。
+- **验收**：001r/003l ZW-TEST vs chromium → <1.5%（border 噪声）；A/B floats+floats-clear+margin-collapse+
+  css-position net≥0；product-smoke；load-bearing 单测覆盖「≥2 float 协调」+「margin-auto 右对齐到 float」。
+
+### 10.3 l 变体（001l/002l/003r）= REF 侧 IFC inline-block+float 行盒缩短（R109/Phase-A，独立线）
+
+ZW 渲染 TEST 页**正确**（匹配 chromium oracle，~1% border 噪声）。self-source fail 真因 = ZW 渲染
+REF 页错：REF 用 `display:inline-block; vertical-align:top` span 旁 float，chromium 把 span1 放 float
+右侧（行盒被 float 缩短），ZW 放 float 下方/原位（IFC 行盒未对 float 缩短）。= **IFC inline-level
+行盒被相邻 float 缩短缺失 = R109/Phase-A 谱系**。**更高 yield**：l 簇 REF 修好后 001l/002l/003l/003r
+self-source 均可 flip（多案）。独立于本 RFC 的 BFC-relocate（属 IFC，另案 RFC / Phase-A 设计）。
+
+### 10.4 forward（续跑入口）
+
+- **Slice 5（多-float 协调）实现轮**：按 10.2 算法草案 + kill-switch default-OFF 渐进 A/B；目标 001r/003l
+  TEST-side 对齐 chromium。
+- **l 簇 IFC 行盒缩短**：R109/Phase-A 子症状，独立多会话线（修后多案 self-source flip）。
+- **bfc-006 / with-margin-001a**：JS-entangled（onload=go），须 harness JS 执行后再 dump。
+
