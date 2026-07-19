@@ -903,6 +903,15 @@ pub(super) fn shift_siblings_after_ifc_grow(
     let mut prev_plain = false;
     let mut prev_margin_bottom: f32 = 0.0;
     let auto_parent_height = box_node.declared_height_auto;
+    // R1743：父容器高度回填信号。taffy 对含 `<br>`/多行 inline 内容的块子通过 ctx_node 测高
+    // 欠计（br-split 子 taffy 测 ~0），remeasure_inline_only_containers 之后子盒 height 已正确，
+    // 但父盒（body/html/任意 Block）仍持 taffy 旧值 → 父 h=0 或仅计首子（R1654 fixture 27 谱系）。
+    // 跟踪 in-flow 子盒最大底边 + 是否含负 margin（负 margin 合法重叠不应扩父，同 overlap 守卫）。
+    // 末子无后续兄弟触发不了 cumulative_shift，故须单独 max-bottom 信号。
+    let parent_backfill_active =
+        shift_active && auto_parent_height && std::env::var("ZW_IFC_PARENT_HEIGHT_BACKFILL").as_deref() != Ok("0");
+    let mut max_in_flow_bottom: f32 = 0.0;
+    let mut has_negative_margin = false;
     for child in &mut box_node.children {
         // 排除 OOF（abspos/fixed）+ float + relative/sticky（flow 位特殊，偏移保留，
         // 不应被 R1492 长高 shift 移动——test_relative_position_preserves_flow_space）。
@@ -942,8 +951,31 @@ pub(super) fn shift_siblings_after_ifc_grow(
             prev_plain = is_plain_real_block(child);
             prev_margin_bottom = child.margin_bottom;
         }
+        // R1743：累计最大 in-flow **block-level** 子盒底边 + 负 margin 检测（递归后子 height
+        // 已终态）。仅 block-level 子（CSS §10.6.3 auto-height 块的内容高由 block-level in-flow
+        // 子 border-box 底决定）；inline 子的几何非权威（行盒由 IFC/remeasure 直设容器高，
+        // 含 inline img 底边会误扩 inline-only 容器——test_inline_only_container_shrink_* 回归）。
+        if parent_backfill_active && child.is_block_level {
+            if child.margin_top < 0.0 || child.margin_bottom < 0.0 {
+                has_negative_margin = true;
+            }
+            let bottom = child.y + child.height;
+            if bottom > max_in_flow_bottom {
+                max_in_flow_bottom = bottom;
+            }
+        }
     }
-    if cumulative_shift > 0.0 && auto_parent_height {
+    // R1743：父高度回填（margin-collapse-safe）。max_in_flow_bottom 是 in-flow 子盒 border-box
+    // 最大底边 = CSS §10.6.3 auto-height 块的内容高（margin 折叠在 border-box 外，不影响此值）。
+    // 仅增大守卫（不收缩）；负 margin 守卫避合法负 margin 重叠误扩。max_bottom ≥ 旧 content +
+    // cumulative_shift（末子 y=原+shift，height≥taffy 值），故覆盖旧 cumulative_shift 增长。
+    // gate=Block/Flow/FlowRoot/ListItem（shift_active），排除 flex/grid/table/multicol（welcome
+    // +12.57pp 回归源 = R1163 broad gate 触及非 Block 容器；本 gate 仅 Block 谱系）。
+    if parent_backfill_active && !has_negative_margin && max_in_flow_bottom > box_node.content_height + 0.5 {
+        let delta = max_in_flow_bottom - box_node.content_height;
+        box_node.content_height = max_in_flow_bottom;
+        box_node.height += delta;
+    } else if cumulative_shift > 0.0 && auto_parent_height {
         box_node.content_height += cumulative_shift;
         box_node.height += cumulative_shift;
     }

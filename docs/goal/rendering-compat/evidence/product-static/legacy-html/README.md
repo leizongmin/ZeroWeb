@@ -266,15 +266,16 @@ done
 - **30-table-sections** R1653 修复 `<caption>` 定位（caption-side:top 须让 rows 下移 caption 高度，
   否则 caption 与 thead overlap）：diff 12.95%→**4.45%**，struct FAIL→PASS。新增 `top_caption_extent`
   helper（position_cells + update_row_group_positions 一致偏移）。
-- **27-address** struct FAIL（0.96%）：body/html 高度传播 bug——**child-count 相关不一致**：
-  单 content-driven block 子 → body h=0（reproB/D 实证）；2 子 → body h=首子高仅（reproC）；
-  3+ 子 → body 正确长高（fixture 01 body h=154 + bgcolor 填满视口，pixel(400,550)=(255,255,238)
-  正确）。根因 = auto-height body 的 content-driven 子经 IFC 长 high 后，**父高度回填不一致**
- （部分子的高增长未加回 body；显式 height 子不受影响——reproA `height:74px` body h=74 正确）。
-  **视觉影响 minimal**：内容经子盒正确渲染；body bg/border 仅在「单/双 content-driven 子 + body 有 bg」
-  时漏涂（罕见：多数实际页多子 → body 正确长高 + bg 填满）。**修复高风险**：parent-height propagation
-  经 R1047（sibling-push）/ R109 BACKFILL 多轮 net-negative（margin-collapse 交互），scoped fix 须
-  守已工作的多子案 + 不破 margin-collapse，待 dedicated 多 session。trend-only smoke 不阻（exit 0）。
+- **27-address** R1743 修复（body/html height propagation，struct FAIL→PASS，diff 0.96% 持平）：
+  旧 bug = body/html 高度**child-count 相关不一致**——单 content-driven block 子 → body h=0；
+  2 子 → body h=首子高仅；3+ 子 → body 正确长高。根因 = taffy 经 ctx_node 测 br-split/多行 inline
+  内容的块子时欠计，remeasure_inline_only_containers 后子盒 height 已正确但**父盒仍持 taffy 旧值**
+ （backfill ② gate 太窄不覆盖 plain-block 子；shift_siblings 仅按 cumulative_shift 长父，末子/独子
+  无 overlap 触发不了父增长）。**R1743 fix** = shift_siblings_after_ifc_grow 末尾加 max-bottom 回填：
+  Block-only 父 + 仅 block-level 子 + 负 margin 守卫 + 仅增大（margin-collapse-safe 三守卫，避 R1163
+  broad gate welcome +12.57pp 回归）；kill-switch `ZW_IFC_PARENT_HEIGHT_BACKFILL=0`。fixture 27
+  struct **FAIL→PASS**（diff 0.96% 持平——body 无 bg 故像素不变，修的是 body/html 逻辑高度）。
+  CSS2 oracle A/B +7 net 0 回归，welcome 16.98→16.84%。详见 master.md R1743。
 - **35-xmp-listing-plaintext** R1656 修复（`<xmp>`/`<listing>`/`<plaintext>` UA display:block，
   HTML 渲染规范 raw-text 块级元素 ≡ `<pre>` 谱系）：struct FAIL→PASS。修复前 ZW 把这三元素当 inline
   （listing 盒仅 83px 宽）致与后续 block sibling overlap。**残余 3.94% diff** = font-wall + 一个独立

@@ -131,6 +131,8 @@ mod r1728_left_fit_pushbelow_tests;
 mod r1730_multifloat_coord_tests;
 #[cfg(test)]
 mod r1733_inline_block_float_avoid_tests;
+#[cfg(test)]
+mod r1743_body_height_repro;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
