@@ -6,7 +6,8 @@ use std::sync::mpsc::Receiver;
 use zero_engine::image_resource_key;
 use zero_engine::preload::{ResourceHintType, ResourceType, scan_html_resource_hints};
 use zero_engine::{
-    BudgetAdvance, BudgetedRenderSession, extract_font_face_urls, extract_img_resources, extract_stylesheet_hrefs,
+    BudgetAdvance, BudgetedRenderSession, extract_css_image_urls, extract_font_face_urls, extract_html_style_text,
+    extract_img_resources, extract_stylesheet_hrefs,
 };
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
 use zero_render_foundation::image_cache::{ImageKey, decode_image_bytes};
@@ -399,6 +400,30 @@ impl AsyncPageLoad {
             self.img_pending
                 .push((abs.clone(), key, host.fetch_bytes_meta(&abs, ResourceFetchMeta::IMAGE)));
         }
+        // R1795：CSS `url()` 图片引用（background-image / list-style-image /
+        // border-image-source）一并异步抓取——与 sync 路径（webview.rs fetch_image_subresources）
+        // 对齐。合并 self.css（外链 CSS）+ inline `<style>` 文本，extract_css_image_urls 已排除
+        // @font-face 与 data:。CSS url 非 lazy，直接入 img_pending；fetch+decode+key 复用
+        // poll_images 现有路径（painter 查找经 R1794 Part A 已按 image_resource_key 对齐）。
+        let mut combined_css = self.css.clone();
+        combined_css.push('\n');
+        combined_css.push_str(&extract_html_style_text(html));
+        for src in extract_css_image_urls(&combined_css) {
+            if src.starts_with("data:") {
+                continue;
+            }
+            let abs = match base.as_ref().and_then(|b| b.join(&src).ok()) {
+                Some(u) => u.to_string(),
+                None => src,
+            };
+            // <img src> 与 CSS url() 可能指向同一资源：去重，避免重复抓取。
+            if self.img_pending.iter().any(|(a, _, _)| *a == abs) || self.lazy_urls.contains(&abs) {
+                continue;
+            }
+            let key = image_resource_key(&abs, None);
+            self.img_pending
+                .push((abs.clone(), key, host.fetch_bytes_meta(&abs, ResourceFetchMeta::IMAGE)));
+        }
         if self.img_pending.is_empty() && self.lazy_urls.is_empty() {
             self.stage = PageLoadStage::Complete;
         } else if !self.img_pending.is_empty() {
@@ -653,6 +678,26 @@ mod tests {
         assert_eq!(host.calls.len(), 2);
         assert!(host.calls.iter().any(|u| u.ends_with("i1.png")));
         assert!(host.calls.iter().any(|u| u.ends_with("i2.png")));
+    }
+
+    /// R1795：CSS `url()` 图片引用（background-image）在 async 路径亦被抓取。
+    /// inline `<style>` 块内的相对 url 按 base 解析为绝对后请求。
+    #[test]
+    fn begin_image_fetch_includes_css_url_references() {
+        let html = r#"<html><head>
+            <style>.hero { background-image: url("bg.png"); }</style>
+            </head><body>
+            <img src="photo.png">
+            </body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new();
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        // <img> photo.png + CSS url() bg.png 各 1 次字节请求。
+        assert!(host.calls.iter().any(|u| u.ends_with("photo.png")), "img src fetched");
+        assert!(host.calls.iter().any(|u| u.ends_with("bg.png")), "CSS url() fetched");
     }
 
     #[test]
