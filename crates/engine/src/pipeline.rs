@@ -990,16 +990,25 @@ pub fn extract_css_image_urls(css: &str) -> Vec<String> {
     urls
 }
 
-/// R1794：提取 HTML 中所有 `<style>` 块的文本内容并拼接。
+/// R1794：提取 HTML 中所有文档级 CSS 文本并拼接——`<style>` 块 + 元素 inline `style=` 属性。
 ///
-/// 供 `extract_css_image_urls` 扫描 inline CSS 中的图片 `url()` 引用。
-/// 与 `extract_img_srcs` 同模式：复用 `zero_dom` 解析（DOM 精确，比正则稳健）。
+/// 供 `extract_css_image_urls` 扫描图片 `url()` 引用（R1796 起覆盖 inline
+/// `style="background-image: url(...)"` 等属性内引用）。与 `extract_img_srcs` 同模式：
+/// 复用 `zero_dom` 解析（DOM 精确，比正则稳健）。
 pub fn extract_html_style_text(html: &str) -> String {
     let doc = zero_dom::parse_html(html);
     let mut out = String::new();
     for style_id in doc.get_elements_by_tag_name("style") {
         if let Some(text) = doc.text_content(style_id) {
             out.push_str(&text);
+            out.push('\n');
+        }
+    }
+    // R1796：inline `style=` 属性值（如 `style="background-image: url(x)"`）亦是 CSS 文本，
+    // 收集后交 extract_css_image_urls 扫描。通配 `"*"` 匹配所有元素。
+    for elem_id in doc.get_elements_by_tag_name_ns(None, "*") {
+        if let Some(style_attr) = doc.get_attribute(elem_id, "style") {
+            out.push_str(&style_attr);
             out.push('\n');
         }
     }
@@ -1307,9 +1316,31 @@ mod css_image_url_tests {
         assert!(text.contains("b.png"), "应含第二个 style 块: {text}");
     }
 
+    /// R1796：inline `style=` 属性内的 CSS（含 `url()`）亦被收集。
+    #[test]
+    fn extract_html_style_text_collects_inline_style_attrs() {
+        let html = r#"<html><body>
+            <div style="background-image: url('hero.png')"></div>
+            <span style="color: red">no image</span>
+            </body></html>"#;
+        let text = extract_html_style_text(html);
+        assert!(text.contains("hero.png"), "应含 inline style= 属性内 url(): {text}");
+    }
+
     #[test]
     fn extract_html_style_text_empty_when_no_style() {
         let html = "<html><body><p>no styles</p></body></html>";
         assert!(extract_html_style_text(html).is_empty());
+    }
+
+    /// R1796：端到端——inline `style=` 中的 `url()` 经 extract_css_image_urls 提取。
+    #[test]
+    fn extract_css_image_urls_from_inline_style_attr() {
+        let html = r#"<html><body>
+            <div style="background-image: url(bg.png)"></div>
+            </body></html>"#;
+        let css = extract_html_style_text(html);
+        let urls = extract_css_image_urls(&css);
+        assert_eq!(urls, vec!["bg.png"]);
     }
 }
