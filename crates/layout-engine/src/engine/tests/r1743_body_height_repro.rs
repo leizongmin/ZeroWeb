@@ -229,3 +229,47 @@ fn r1747_no_br_unchanged() {
         span.width
     );
 }
+
+/// 找首个满足谓词的 LayoutBox（深度优先）。
+fn find_first_box<'a>(b: &'a LayoutBox, pred: &dyn Fn(&LayoutBox) -> bool) -> Option<&'a LayoutBox> {
+    if pred(b) {
+        return Some(b);
+    }
+    for c in &b.children {
+        if let Some(f) = find_first_box(c, pred) {
+            return Some(f);
+        }
+    }
+    None
+}
+
+/// R1748：R109 split inline 片段内含 `<br>` → 片段 shrink-to-fit 应取最宽行宽（非全文本累加）。
+///
+/// 对照：split inline 片段 `short<br>much longer line<br>mid` 的收缩宽应 ≈ 仅含
+/// `much longer line` 的片段宽（最宽行），而非三段文本累加（旧 bug 过宽）。
+#[test]
+fn r1748_r109_split_br_fragment_widest_line() {
+    // split inline：span 含 br 内容 + block 子 div（触发 R109 拆分）。首片段 = br 内容。
+    let br_split = r#"<html><body><span style="display:inline;background:yellow">short<br>much longer line<br>mid<div>block</div></span></body></html>"#;
+    // 对照：首片段仅含最宽行「much longer line」（无 br）。
+    let widest_only = r#"<html><body><span style="display:inline;background:yellow">much longer line<div>block</div></span></body></html>"#;
+    let (_doc_b, root_b, _) = compute(br_split);
+    let (_doc_w, root_w, _) = compute(widest_only);
+    // 首个匿名块片段盒 = 带 fragment_node_ids 的 LayoutBox。
+    let frag_b = find_first_box(&root_b, &|b| b.fragment_node_ids.is_some()).expect("br-split 片段盒");
+    let frag_w = find_first_box(&root_w, &|b| b.fragment_node_ids.is_some()).expect("widest-only 片段盒");
+    let delta = (frag_b.width - frag_w.width).abs();
+    assert!(
+        delta < 3.0,
+        "br-split 片段宽 ({:.1}) 应 ≈ 最宽行片段宽 ({:.1})（差 {:.1}；旧 bug 全文本累加会显著过宽）",
+        frag_b.width,
+        frag_w.width,
+        delta
+    );
+    // sanity：片段宽应明显小于「三段文本累加」的近似（short+much longer line+mid ≫ 最宽行）。
+    assert!(
+        frag_b.width < 200.0,
+        "br-split 片段宽 {:.1} 应 < 200（最宽行宽，非全文本累加）",
+        frag_b.width
+    );
+}

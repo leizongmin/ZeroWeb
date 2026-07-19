@@ -311,31 +311,32 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
     segments.into_iter().fold(0.0f32, f32::max)
 }
 
-/// R1747：递归遍历 `node_id` 子树，把文本节点字符宽累入当前段，遇 `<br>` 元素开新段，
-/// 遇其他元素递归（其文本并入当前段，嵌套 `<br>` 同样切段）。`segments` 每项 = 一段宽。
+/// R1747：测量 `node_id` 自身（文本节点直接量；元素递归子树），把文本字符宽累入当前段，
+/// 遇 `<br>` 元素开新段（嵌套 br 同样切段）。`segments` 每项 = 一段宽。
+/// R1748：改为处理 node 自身（text/br/element 三态），使 fragment_node_ids（可能是文本
+/// 节点）亦可用此函数。
 fn text_max_width_walk(node_id: NodeId, doc: &Document, font_size: f32, is_ahem: bool, segments: &mut Vec<f32>) {
-    for child in doc.child_nodes(node_id) {
-        let Some(node) = doc.get(child) else { continue };
-        match &node.kind {
-            zero_dom::NodeKind::Text(t) => {
-                let collapsed = crate::inline::collapse_whitespace(&t.content);
-                if collapsed.is_empty() {
-                    continue;
-                }
+    let Some(node) = doc.get(node_id) else { return };
+    match &node.kind {
+        zero_dom::NodeKind::Text(t) => {
+            let collapsed = crate::inline::collapse_whitespace(&t.content);
+            if !collapsed.is_empty() {
                 let w: f32 = collapsed
                     .chars()
                     .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
                     .sum();
                 *segments.last_mut().expect("segments 非空") += w;
             }
-            zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") => {
-                segments.push(0.0);
-            }
-            zero_dom::NodeKind::Element(_) => {
+        }
+        zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") => {
+            segments.push(0.0);
+        }
+        zero_dom::NodeKind::Element(_) => {
+            for child in doc.child_nodes(node_id) {
                 text_max_width_walk(child, doc, font_size, is_ahem, segments);
             }
-            _ => {}
         }
+        _ => {}
     }
 }
 
@@ -345,6 +346,9 @@ fn text_max_width_walk(node_id: NodeId, doc: &Document, font_size: f32, is_ahem:
 /// 假设不换行），字体度量取自 split inline 自身（片段继承其 font-family/size）。
 /// 用于匿名块收缩到文本宽，使 inline 的 border/background 落在文本宽而非全宽
 /// （inline-box-001 等 §9.2.1.1 用例）。返回 0 = 不可测（无文本）。
+///
+/// R1748：br-aware（同 R1747 text_content_max_width）——片段内含 `<br>` 时按最宽行而非
+/// 全文本累加（forced break 产生独立 line）。无 br 片段行为不变（单段 = 累加）。
 pub(crate) fn fragment_inline_max_width(
     inline_style: &ComputedStyle,
     fragment_node_ids: &[NodeId],
@@ -352,16 +356,13 @@ pub(crate) fn fragment_inline_max_width(
 ) -> f32 {
     let (font_size, _line_height) = crate::inline::resolve_font_metrics(Some(inline_style));
     let is_ahem = inline_style.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"));
-    let mut total = 0.0f32;
+    // R1748：br-aware —— fragment_node_ids 共享一组 segments（同片段 inline 级内容按序累入
+    // 当前段，遇 br 切段），取最宽段。无 br 时单段 = 全文本累加（行为同旧 total）。
+    let mut segments: Vec<f32> = vec![0.0];
     for nid in fragment_node_ids {
-        let text = doc.text_content(*nid).unwrap_or_default();
-        let collapsed = crate::inline::collapse_whitespace(&text);
-        total += collapsed
-            .chars()
-            .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
-            .sum::<f32>();
+        text_max_width_walk(*nid, doc, font_size, is_ahem, &mut segments);
     }
-    total
+    segments.into_iter().fold(0.0f32, f32::max)
 }
 
 /// 计算 flex item 的主轴 base size（CSS Flexbox §9.2 flex base size）。
