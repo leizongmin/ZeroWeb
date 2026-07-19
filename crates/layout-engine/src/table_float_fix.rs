@@ -24,7 +24,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue};
+use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue};
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
 
@@ -38,7 +38,18 @@ pub(crate) fn fix_table_among_floats(root: &mut LayoutBox, doc: &Document, style
     if std::env::var("ZW_TABLE_FLOAT_ITER_V2").as_deref() == Ok("0") {
         return;
     }
-    fix_inner(root, doc, styles);
+    let mut grown_cell_ids: Vec<NodeId> = Vec::new();
+    fix_inner(root, doc, styles, &mut grown_cell_ids);
+    // R1723 eval：D 步扩高的 td（cell）需把增量传到外层 table 行高，否则下推的 table 溢出
+    // 被后续块覆盖（floats-wrap-bfc-005）。曾尝试 height-only reflow（reflow_tables_with_grown_cells），
+    // 但 bfc-004 是「假通过」案——test table 与 ref purple 经 R1612 line-advance 都落在 y=20，
+    // 但 ref 容器 height:20（definite，不增长）vs test 外层 table auto-height；reflow 让 test
+    // 外层 table 长高 → 与 ref 不再匹配 → bfc-004 0.42%→8.31% 回归（bfc-005 0.09% flip，net 0）。
+    // bfc-005（ref height:40，须长高）与 bfc-004（ref height:20，不须长高）对外层 table 高度
+    // 需求相反，R1612 line-advance 又把两者 table 都放到 y=20 → reflow 无法区分 → 暂搁置，
+    // 待 R1612 line-advance 改 min-bottom 步进（须重核 floats-placement 簇）或外层 table 高度
+    // 传播与 line-advance 解耦后再做。grown_cell_ids 收集保留供未来 reflow 复用。
+    let _ = grown_cell_ids;
 }
 
 fn is_table_box(b: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
@@ -61,10 +72,15 @@ fn is_in_flow(b: &LayoutBox) -> bool {
     !is_float(b) && !b.is_absolute && !b.is_fixed
 }
 
-fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
+fn fix_inner(
+    root: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    grown_cell_ids: &mut Vec<NodeId>,
+) {
     // post-order：先修子容器（嵌套结构）
     for child in &mut root.children {
-        fix_inner(child, doc, styles);
+        fix_inner(child, doc, styles, grown_cell_ids);
     }
     // 仅「同时含 float 子 + table 子」的容器介入（scoping 关键）
     let has_float = root.children.iter().any(is_float);
@@ -86,6 +102,22 @@ fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, Comp
     // 先用不可变读取计算 natural_y / avoidance_x / is_cleared（避免与下方可变借用冲突）
     let table_h = root.children[tidx].height;
     let table_w = root.children[tidx].width;
+    // R1723：definite-width table 的「声明宽」（Px 或 Percentage 解析到容器 content_width）。
+    // step5 `adjust_float_positions` 会把旁 float 的 BFC table **shrink** 到可用宽（如 150→100），
+    // 故此处读到的是 shrink 后宽。但 CSS §9.5：definite-width table 应保持声明宽，放不下 float 旁
+    // 可用空间时**推到 float 下方**（非 shrink beside）。floats-wrap-bfc-005 子案 1/2：
+    // `<table width="50%">`（=150）旁 200px float（300 容器，可用 100）→ 应推下保宽 150，旧实测
+    // shrink 到 100 beside。用 effective_w（声明宽 if definite，否则当前 table_w）做 fit 决策，
+    // below 时恢复声明宽。
+    let declared_w: Option<f32> = root.children[tidx]
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .and_then(|s| match &s.width {
+            LengthValue::Px(v) => Some(*v as f32),
+            LengthValue::Percentage(p) => Some((*p as f32 / 100.0) * content_width),
+            _ => None,
+        });
+    let effective_w = declared_w.unwrap_or(table_w);
     // clear != None 的 table 应由 clear 逻辑定位（推到 float 下方），不做 §9.5 推开
     //（clear-applies-to-013：display:table + clear:both 应清到 float 下，非推到 float 右）。
     let is_cleared = !matches!(root.children[tidx].clear, ClearValue::None);
@@ -137,7 +169,16 @@ fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, Comp
     let right_target: Option<(f32, f32, f32)> =
         if std::env::var("ZW_TABLE_FLOAT_RIGHT_AVOID").as_deref() != Ok("0") && !is_cleared && !has_left_overlap {
             // 纯右 float：table beside 左侧 x=0 y=natural_y，填到右 float 左边。
-            right_float_left.map(|rl| (0.0, natural_y, rl))
+            // R1723：仅当 table 放得进左可用宽（right_float_left）时 beside；definite-width table
+            // 声明宽 > 可用宽（floats-wrap-bfc-005 子案 2：150 > 100）→ 不 beside，fall through 到
+            // 下方 left-float 算法推下（mirror 子案 1）。
+            right_float_left.and_then(|rl| {
+                if effective_w <= rl + 0.5 {
+                    Some((0.0, natural_y, rl))
+                } else {
+                    None
+                }
+            })
         } else {
             None
         };
@@ -160,7 +201,7 @@ fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, Comp
                 .filter(|(_, ft, fb)| *ft < y + table_h && y < *fb)
                 .map(|(r, _, _)| *r)
                 .fold(0.0f32, |mx, r| mx.max(r));
-            if table_w <= (content_width - max_right).max(0.0) + 0.5 {
+            if effective_w <= (content_width - max_right).max(0.0) + 0.5 {
                 placed_x = max_right;
                 found = true;
                 break;
@@ -213,6 +254,14 @@ fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, Comp
             let (old_x, old_y) = (table.x, table.y);
             table.x = nx;
             table.y = ny;
+            // R1723：definite-width table 推到 float 下方时，恢复声明宽（step5 shrink 到可用宽，
+            // below 应保声明宽，floats-wrap-bfc-005 子案 1/2：150 非 shrink 100）。先恢复再 clamp，
+            // 防 declared>container 时溢出（width:120% 等 edge case）。
+            if !beside {
+                if let Some(dw) = declared_w {
+                    table.width = dw;
+                }
+            }
             // beside float（nx>0）：auto-width BFC table 填可用宽（非 shrink-to-fit）。
             // below floats（nx=0）：仅当溢出时 clamp。合并为 `beside || 溢出` → 设 mw。
             if beside || table.width > mw {
@@ -256,6 +305,11 @@ fn fix_inner(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, Comp
             }
             root.content_height = new_content_h;
             root.height = new_content_h + pb;
+            // R1723：记录被 D 步扩高的容器 node_id（常为 td/cell），供后续
+            // reflow_tables_with_grown_cells 重算其外层 table 行高。
+            if let Some(id) = root.node_id {
+                grown_cell_ids.push(id);
+            }
         }
     }
 }
