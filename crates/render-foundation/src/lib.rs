@@ -6,7 +6,7 @@
 //! - 场景/Primitive/Backend 分层架构
 //! - GPU 渲染器（wgpu）— glyph atlas、WGSL 着色器、统一渲染管线
 //! - CPU 软件渲染器后备
-//! - 字体渲染栈（fontdue + swash）
+//! - 字体渲染栈（fontdue + FreeType，`freetype-raster` feature 默认开启，非 Ahem 路径优先 FreeType 光栅化）
 //! - 图片对象缓存与 GC
 //! - 脏区域追踪与增量渲染
 
