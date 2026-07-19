@@ -208,7 +208,7 @@ plateau = aggregate ~55% + 上述累计。
 ### L1. ~~★ C-dep 解锁：FreeType/Phase A 完整 font-stack~~ — 光栅化 slice 已 R1560 证伪，剩 Phase A layout/metric
 - **R1560 决定性更新**：原「font-wall = FreeType(ZW) vs FreeType+Skia(CHR) AA/subpixel 差，须 Skia C-dep 对齐」**已被 real Skia S2 证伪**——skia-safe 0.80（chromium 实际光栅器）over FreeType 轮廓 = css-text **net−24**（真回归）/ writing-modes net+1 / welcome −0.09pp。**光栅化 coverage 算法非 font-wall unlock**，永久移出 lever。
 - **blocker（残余）**: font-wall 真根因 = **layout/metric coherence（Phase A IFC 统一 / estimate-vs-fontdue / line-height-baseline 定位）**，R125-R213 6 轮 deadlock，须 fresh architectural attempt，非 C-dep 可解。
-- **解锁**: Phase A line-box metric（leaf-measure 高度 0.4px 过冲，R1311e inline-fold blocker）+ ::first-letter（436 案 lever，亦 font-metric 依赖）。
+- **解锁**: Phase A line-box metric（~~leaf-measure 高度 0.4px 过冲，R1311e inline-fold blocker~~ → **R1779 REFUTED**：empirical probe 证当前 leaf-measure 对非-Ahem 16px 返 18.624 = chromium 真值，零过冲；ZW_LEAF_MEASURE_FIX no-op；general inline-fold 独立 net-negative 双证 R1311c/R1492-R1494）+ ::first-letter（436 案 lever，亦 font-metric 依赖）。
 - **yield**: 数百案（最大簇，但路径从「光栅化 C-dep」改为「layout/metric 架构」）。
 - **可行性**: Phase A 多 session 架构（IFC 统一），非单 round；HarfBuzz shaping slice 低优先。
 - **行动**: 光栅化方向（Skia/FreeType/tiny-skia/gamma/LoadFlag/metric-swap）全角度穷尽，勿再试；转 Phase A IFC-result-reuse fresh attempt，或他 lever（multicol/content-list），或接受 plateau。
@@ -278,5 +278,5 @@ R1311b tail 证），续 render+PIL 偶有 +1-2，但期望低。
 
 - **布局路径变更一律 chromium per-case oracle A/B**（ORACLE_DUMP_ALL），self-source / oracle pass-count
   阈值敏感可误导（linebox self-source +5 实 chromium -6；borderline 0.99→1.01 伪回归）。
-- **leaf-measure 路径**有 Phase A 0.4px 高度过冲，经全区域错位放大成大 diff（inline-fold blocker）。
+- **leaf-measure 路径**~~有 Phase A 0.4px 高度过冲，经全区域错位放大成大 diff（inline-fold blocker）~~ → **R1779 REFUTED**：empirical probe 证当前 leaf-measure 对非-Ahem 16px 返 18.624 = 16×1.164 = chromium 真值，零过冲；该 blocker 已不存在，general inline-fold 仍独立 net-negative（R1311c/R1492-R1494 双证）。
 - **postprocess margin 调整 net-negative**（R1047），margin 类改须 layout-time/converter 层。

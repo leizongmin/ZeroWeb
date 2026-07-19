@@ -540,7 +540,7 @@ fn test_measure_text_content_min_content_is_widest_word() {
 
     let mut style = ComputedStyle::default();
     style.font_family = vec!["Ahem".to_string()];
-    style.font_size = LengthValue::Px(10.0);
+    style.font_size = LengthValue::Px(10.0_f64);
     let mut styles = HashMap::new();
     styles.insert(div, style);
 
@@ -656,6 +656,107 @@ fn test_r1578_measure_uses_img_intrinsic_for_auto_width_img() {
     unsafe {
         std::env::remove_var("ZW_IFC_IMG_INTRINSIC");
     }
+}
+
+/// R1311e REFUTED 回归守卫：非-Ahem `line-height:normal` 单行文本块 IFC leaf-measure
+/// 必须返回 `font_size × NORMAL_LINE_HEIGHT_RATIO(1.164)`（= chromium 真值），无 +0.4px 过冲。
+///
+/// R1311e（2026-07-12）曾记录 inline-fold ON 时 instruction `<p>` leaf-measure 返 19.0
+/// （vs container 18.6），归因为「Phase A leaf-measure 0.4px 高度过冲」并据此关闭 inline-fold。
+/// R1779 经验复测（measure_text_content 直接调用）：当前 leaf-measure 对非-Ahem 16px 文本
+/// 返回 **18.624 = 16×1.164 = chromium 真值**，全 font-size 线性 ratio=1.164，**无过冲**。
+/// R1311e 19.0 为 stale（此后 line-height ratio 已固化为 DejaVu hhea 1.164）。本测试锁定该
+/// 事实，防未来 ratio 改动重新引入过冲被误判为 leaf-measure blocker。
+#[test]
+fn test_leaf_measure_nonahem_lineheight_no_overshoot() {
+    let none_size = taffy::geometry::Size::<Option<f32>> {
+        width: None,
+        height: None,
+    };
+    let avail = taffy::geometry::Size {
+        width: taffy::style::AvailableSpace::Definite(800.0),
+        height: taffy::style::AvailableSpace::Definite(600.0),
+    };
+    // 非注释 instruction `<p>`（text + inline <strong>）leaf-measure：必须 = 16×1.164 = 18.624。
+    let (doc, styles, p, _strong) = build_instruction_p(16.0);
+    let h = measure_text_content(&doc, &styles, p, none_size, avail, &HashMap::new(), None).height;
+    assert!(
+        (h - 18.624).abs() < 0.001,
+        "非-Ahem 16px leaf-measure 应为 18.624(=16×1.164, chromium 真值)，实际 {h}；若 >18.9 说明重新引入 R1311e 过冲"
+    );
+    // 纯文本块扫描：ratio 必须恒为 1.164（线性，无 fs 相关过冲）。
+    for fs in [10.0_f32, 12.0, 14.0, 16.0, 20.0, 24.0, 32.0] {
+        let (d, s, n) = build_nonahem_text_block("Test passes", fs);
+        let m = measure_text_content(&d, &s, n, none_size, avail, &HashMap::new(), None).height;
+        let expected = fs * 1.164;
+        assert!(
+            (m - expected).abs() < 0.001,
+            "fs={fs}: leaf-measure {m} 应 = {expected}(×1.164)，ratio={:.5}",
+            m / fs
+        );
+    }
+}
+
+fn build_nonahem_text_block(
+    text: &str,
+    fs: f32,
+) -> (Document, HashMap<zero_dom::NodeId, ComputedStyle>, zero_dom::NodeId) {
+    use zero_css_parser::values::LengthValue;
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+    let text = doc.create_text_node(text);
+    doc.append_child(div, text).unwrap();
+
+    let mut style = ComputedStyle::default();
+    style.font_family = vec!["DejaVu Sans".to_string()];
+    style.font_size = LengthValue::Px(fs as f64);
+    let mut styles = HashMap::new();
+    styles.insert(div, style);
+    (doc, styles, div)
+}
+
+fn build_instruction_p(
+    fs: f32,
+) -> (
+    Document,
+    HashMap<zero_dom::NodeId, ComputedStyle>,
+    zero_dom::NodeId,
+    zero_dom::NodeId,
+) {
+    use zero_css_parser::values::LengthValue;
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let p = doc.create_element("p");
+    doc.append_child(body, p).unwrap();
+    let t1 = doc.create_text_node("Test passes if there are 2 identical filled green rectangles and ");
+    doc.append_child(p, t1).unwrap();
+    let strong = doc.create_element("strong");
+    doc.append_child(p, strong).unwrap();
+    let t2 = doc.create_text_node("no red");
+    doc.append_child(strong, t2).unwrap();
+    let t3 = doc.create_text_node(".");
+    doc.append_child(p, t3).unwrap();
+
+    let mut p_style = ComputedStyle::default();
+    p_style.font_family = vec!["DejaVu Sans".to_string()];
+    p_style.font_size = LengthValue::Px(fs as f64);
+    let mut strong_style = ComputedStyle::default();
+    strong_style.font_family = vec!["DejaVu Sans".to_string()];
+    strong_style.font_size = LengthValue::Px(fs as f64);
+    let mut styles = HashMap::new();
+    styles.insert(p, p_style);
+    styles.insert(strong, strong_style);
+    (doc, styles, p, strong)
 }
 
 /// 测试 adjust_absolute_pct_to_viewport：无 positioned ancestor 的 absolute 元素，
