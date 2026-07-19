@@ -1,9 +1,33 @@
 # RFC：匿名 table-cell 盒生成（CSS2 §17.2.1）
 
-状态：📋 DRAFT（待实现；R1752 已 characterization 钉死当前 bug，yield ~9 案确认）
-日期：2026-07-19（R1752 根因确认 / R1753 本 RFC）
+状态：⬇ DOWNGRADED（R1754 de-risk 证 display-normalization 不足 + net-negative；真挑战 = table 跨行 margin-collapse/row-height-distribution，非 cell generation；降级为 documented edge case，不建议 dedicated 推进）
+日期：2026-07-19（R1752 根因确认 / R1753 本 RFC / R1754 de-risk 负结果）
 承接：R1752（characterize anon-table-cell-margin-collapsing bug）forward ①
 谱系：css-tables/anonymous-table-cell-margin-collapsing + CSS2/tables/table-anonymous-objects-197..204（9 案）
+
+---
+
+## 0. R1754 de-risk 负结果（display-normalization 不足 + net-negative）
+
+R1754 实验简化版 Slice A：style-system compute_style 把 table-row/row-group 的 block-level
+非 table-internal 子 display 归一化为 TableCell（kill-switch `ZW_ANON_TABLE_CELL`，不生成
+独立包装盒）。结果：
+
+- **归一化生效**（dump 实证 div 现 `disp=TableCell`），但 **css-tables 目标案 table 仍 h=150**（未修）。
+- **CSS2 oracle 4464/6219 vs baseline 4465/6219 = NET −1**（1 回归）。
+- **revert**（实验代码还原，working tree clean）。
+
+**真挑战（精化认知）**：css-tables 案 table h=150（应 100）根因**不是** cell 缺失（build_row 已
+把 div 作 cell，归一化让它成真 TableCell），是 **table 跨行 margin-collapse + definite-height
+row-height-distribution**——`height:100px`（minimum）下 row1 h=100 + row2 h=50 = 150 应被分布到
+100（margins 跨行折叠 + 行高重分配），ZW 行高纯内容驱动不分布。此为 **table-level margin-
+collapse/distribution**，属 R1630（broad-table 5 轮 abandon）+ R1047（margin-collapse postprocess
+net-negative）谱系**深水区**，非本 RFC 的 cell generation 范围。
+
+**裁决**：~9 yield 涉及深水区，ROI 不足 → 降级为 documented edge case，**不建议 dedicated 推进**。
+下方 Slice A/B/C 设计保留作历史参考，但真入口须先解 table 跨行 margin-collapse/distribution
+（独立更深 RFC，非 cell generation）。
+
 
 ---
 
