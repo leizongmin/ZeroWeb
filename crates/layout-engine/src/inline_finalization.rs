@@ -997,10 +997,25 @@ pub(crate) fn measure_text_content(
                 _ => 0.0,
             })
             .unwrap_or(0.0);
-        let measured_width: f32 = text
-            .chars()
-            .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem) + letter_spacing)
-            .sum();
+        // R1750：respect available_space MinContent —— bare-text 匿名 flex/grid item 的
+        // min-width:auto（CSS Flexbox §4.5）须取 min-content（最宽不可拆词）非 max-content
+        //（全文本累加）。旧实现恒返全文本宽 → taffy 把 min-size:auto 算成 max-content → flex
+        // item 无法收缩到最宽词以下（flex-minimum-width-flex-items 谱系 + grid item min-size）。
+        // MaxContent/Definite 行为不变（单行全文本累加）。
+        let measured_width: f32 = if matches!(available_space.width, AvailableSpace::MinContent) {
+            text.split(char::is_whitespace)
+                .filter(|word| !word.is_empty())
+                .map(|word| {
+                    word.chars()
+                        .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem) + letter_spacing)
+                        .sum::<f32>()
+                })
+                .fold(0.0f32, f32::max)
+        } else {
+            text.chars()
+                .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem) + letter_spacing)
+                .sum()
+        };
 
         return Size {
             width: known_dimensions.width.unwrap_or(measured_width),

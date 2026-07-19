@@ -465,6 +465,75 @@ fn test_flex_transferred_min_size_column_intrinsic_smaller_than_transferred() {
     );
 }
 
+/// R1750：bare-text 匿名 flex item 的 min-width:auto 应 = min-content（最宽词），
+/// 非 max-content（全文本）。`measure_text_content` 文本节点分支（inline_finalization.rs）
+/// 旧实现恒返 measured_width（max-content），忽略 available_space MinContent → taffy 把
+/// min-size:auto 算成 max-content → flex item 无法收缩到最宽词以下（flex-minimum-width-
+/// flex-items 谱系）。R1750 fix：MinContent 时按空白分词取最宽词宽。
+///
+/// 场景：flex 容器 width:10px + Ahem 50px，匿名文本 item "IT E"：
+/// 正确 min-content = 最宽词 "IT" = 2 字 × 50 = 100px；
+/// 旧 bug max-content = "IT E" 全文本（含空格）= 200px。
+/// 容器仅 10px → item 被 min-width:auto floor。正确 ≈100，旧 bug = 200。
+#[test]
+fn test_r1750_anonymous_text_flex_item_min_content() {
+    let html = r#"<html><body style="margin:0"><div style="display:flex;width:10px;font:50px/1 Ahem">IT E</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // 找匿名文本 flex item。
+    let mut anon: Option<&LayoutBox> = None;
+    let mut stack = vec![&result.root];
+    while let Some(b) = stack.pop() {
+        if b.is_anonymous_text_item {
+            anon = Some(b);
+            break;
+        }
+        stack.extend(b.children.iter());
+    }
+    let item = anon.expect("anonymous text flex item");
+    // 最宽词 "IT" = 2 × 50 = 100px（min-content）。旧 bug 返 200（max-content 全文本）。
+    assert!(
+        (item.width - 100.0).abs() < 3.0,
+        "R1750: bare-text flex item min-width:auto 应 = min-content 最宽词 ~100px（'IT'），\
+         旧 bug = max-content 200px（'IT E' 全文本）；实际 {:.1}",
+        item.width
+    );
+}
+
+/// R1750 守卫：单行无空格文本 min-content == max-content（无换行机会），
+/// fix 不应改变此类 case（split 仍得唯一词 = 全文本宽）。
+#[test]
+fn test_r1750_single_word_min_content_equals_max() {
+    let html = r#"<html><body style="margin:0"><div style="display:flex;width:10px;font:50px/1 Ahem">XXXX</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let mut anon: Option<&LayoutBox> = None;
+    let mut stack = vec![&result.root];
+    while let Some(b) = stack.pop() {
+        if b.is_anonymous_text_item {
+            anon = Some(b);
+            break;
+        }
+        stack.extend(b.children.iter());
+    }
+    let item = anon.expect("anonymous text flex item");
+    // 单词 "XXXX" 无换行机会：min-content = max-content = 4 × 50 = 200。
+    assert!(
+        (item.width - 200.0).abs() < 3.0,
+        "R1750 guard: 单词文本 min-content 应 == max-content ~200px（无换行机会），实际 {:.1}",
+        item.width
+    );
+}
+
 /// 在 LayoutResult 树中按 node_id 查找盒的 (width, height)。
 fn find_box(root: &LayoutBox, node_id: zero_dom::NodeId) -> Option<(f32, f32)> {
     let mut stack = vec![root];
