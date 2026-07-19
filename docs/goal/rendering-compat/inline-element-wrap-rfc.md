@@ -112,11 +112,19 @@ diff = 15.32%（vs baseline 15.36%，marginal，未 flip）
 
 **改动**：
 - (a) [`inline_block_split.rs block_container_has_mixed_content`](../../crates/layout-engine/src/inline_block_split.rs)：加 env `ZW_R109_INLINE_WRAP` 分支，inline 元素子（in-flow，非 out-of-flow）算 inline 内容（`has_text = true`）。
-- (b) [`tree.rs:1128-1161`](../../crates/layout-engine/src/tree.rs) Inline 片段处理：对 **element-only 片段**（无 Text 直挂子），`ctx_node` 取片段内的 inline **元素** 节点（非 fallback 到 container）；匿名块 taffy style 用 `computed_style_to_taffy(inline_element_style, ...)` 继承该 inline 元素的盒模型（border/padding/background）—— 现仅 `is_inline_r109`（inline-split-parent）分支继承（:1148），`is_block_mixed` 分支用 plain Block（:1136）须扩。
+- (b) [`tree.rs:1128-1132`](../../crates/layout-engine/src/tree.rs) Inline 片段处理：对 **element-only 片段**（无 Text 直挂子），`ctx_node` 取片段内的 inline **元素** 节点（非 fallback 到 container）。
+
+**★ R1737 实测（Slice 1a+1b 已实施 + revert，0 net code）**：A/B border-width-008 diff 15.36→15.32 未 flip，LAYOUT_DUMP 示匿名块 **malformed（w=16 h=110，应 ~270）**。根因 = `measure_text_content`（[inline_finalization.rs:967](../../crates/layout-engine/src/inline_finalization.rs)）对 inline **Element** ctx_node 跑 IFC 测量时**只测文本宽，不计 inline 元素 border/padding**（ZW IFC border 仅在 paint 期 text.rs:1207 bleed 加，measure 期不计）→ 匿名块尺寸错误。即 Slice 1a+1b **不足**，须 Slice 1c：IFC 测量须含 inline-box border/padding（横向 border+padding 计入 line-box 宽）。
 
 **门禁**：env `ZW_R109_INLINE_WRAP=1` default-off；A/B borders + visuren + CSS2 + welcome product-smoke net≥0。
-**预期**：div 进 IFC，匿名块用 div 盒模型（border 90px），w/h 正确。但单行 border 溢出 paint 仍不触达 → border-width-008 **此切片后仍不 flip**（需 Slice 2），但匿名块几何正确（w=270 非 16）= enabling infra。
-**风险**：[block + inline 元素] 容器全量变化（broad）；inline 元素盒模型继承可能 double-count（容器盒 + 匿名块各绘 border/bg）→ 须 gate 容器盒绘制跳过被包裹 inline 子（或在 extract_layout 标记）。
+**预期**：Slice 1a+1b+1c 后 div 进 IFC，匿名块 w=270（90 border + 90 text + 90 border）。border 溢出 paint（text.rs:1207）对 div 已 fire（owner_h=270 > 1.5·fs，**Slice 2 gate 放宽可能不需要**——待 1c 后验证 owner_h 归属）。border-width-008 此切片后可能 flip。
+**风险**：[block + inline 元素] 容器全量变化（broad）；Slice 1c 改 IFC 测量核心（measure 期加 inline-box border），影响所有 inline 元素 intrinsic sizing，高风险。
+
+### Slice 1c（R1737 新增）：IFC 测量含 inline-box border/padding
+
+**改动**：`measure_text_content`（或其调用的 IFC 测量）对 inline 元素 ctx_node，测量结果须加该元素的横向 `border-left + border-right + padding-left + padding-right`（inline 方向 box 扩展），纵向加 `border-top + border-bottom`（如 owner_h 用于 gate）。即 IFC 须把 inline 元素当 inline-box 测（content + padding + border），非纯 text。
+**门禁**：随 Slice 1 同 env + 全量 A/B；重点核查 inline 元素 intrinsic sizing（inline-block shrink、flex/grid item inline 子）零回归。
+**风险**：IFC 测量核心改动，broad。
 
 ### Slice 2：单行 IFC inline border 溢出 paint
 
