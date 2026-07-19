@@ -133,6 +133,7 @@ mod r1730_multifloat_coord_tests;
 mod r1733_inline_block_float_avoid_tests;
 #[cfg(test)]
 mod r1743_body_height_repro;
+mod r1752_anon_table_margin_diag;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
