@@ -941,7 +941,26 @@ pub(crate) fn adjust_float_positions_with_context(
                             // 仍走 shrink-to-fit（else 分支）。仅无后续 in-flow block 同胞时推下。
                             let overflows = child.x + child.width > container_width + 0.5;
                             let is_definite_width = child.width < container_width - 0.5;
-                            if overflows && is_definite_width && !has_following_block_sibling[idx] {
+                            // R1728：补充「放不下 float 旁」判定。原 R1369 gate 仅查「溢出容器」，
+                            // 漏「float 占满宽致其右可用宽 < BFC 声明宽」——此时 BFC 同样无法旁置，
+                            // 须推到 float 下方（CSS §9.5：BFC border-box 不重叠 float；definite
+                            // 宽度不 shrink）。floats-wrap-top-below-bfc-002r span2：float:left 300
+                            // 宽，span2（overflow:hidden）声明宽 200 放不下其右 [300,400]=100 → 应
+                            // pushdown 到 float 下方（原行为是 squeeze 到 x=300/w=100，错）。
+                            // **关键**：仅对「声明宽（非 auto）」BFC 触发——auto 宽 BFC（如
+                            // floats-bfc-003 的 #bfc、new-fc-beside-float）须 shrink-to-fit 旁置
+                            //（spec：BFC 占 float 旁可用宽），用 declared_width_auto 区分（width
+                            // 已 shrink 的 auto BFC 其 child.width < container_width 但非「definite」）。
+                            // kill-switch ZW_BFC_LEFT_FIT_PUSHBELOW=0 回退纯溢出 gate。
+                            let avail_beside = (container_width - avoidance_x).max(0.0);
+                            let fits_beside = child.width <= avail_beside + 0.5;
+                            let left_fit_pushbelow = std::env::var("ZW_BFC_LEFT_FIT_PUSHBELOW").as_deref() != Ok("0");
+                            let must_pushdown = overflows
+                                || (left_fit_pushbelow
+                                    && is_definite_width
+                                    && !child.declared_width_auto
+                                    && !fits_beside);
+                            if is_definite_width && !has_following_block_sibling[idx] && must_pushdown {
                                 if float_bottom > child.y {
                                     child.y = float_bottom;
                                 }
