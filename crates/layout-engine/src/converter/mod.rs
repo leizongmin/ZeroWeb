@@ -238,8 +238,16 @@ pub fn computed_style_to_taffy(
         },
         flex_direction: convert_flex_direction(&style.flex_direction),
         flex_wrap: convert_flex_wrap(&style.flex_wrap),
-        flex_basis: if collapsed {
-            // visibility:collapse 的 flex item 主尺寸归零（strut）。
+        flex_basis: if collapsed
+            && (std::env::var("ZW_VC_NONFLEX_STRUT").as_deref() == Ok("0") || (style.flex_grow as f32) > 0.0)
+        {
+            // visibility:collapse flex item 主尺寸归零（§10.1 strut）：
+            // - **flexible** collapsed（flex-grow>0）→ 0（flexbox-collapsed-item-horiz-001 Row4）
+            // - ③ OFF（ZW_VC_NONFLEX_STRUT=0）→ 所有 collapsed → 0（旧行为）
+            // **非-flexible** collapsed（flex-grow==0，③ ON）保留原 flex-basis 作 strut
+            // 保宽——CSS Flexbox §10.1「item continues to participate in intrinsic
+            // main-size as if visible」，chromium oracle Row1 非-flexible collapsed 贡献
+            // 原 base（20px）非 0。旧代码对所有 collapsed 归零致 Row1 container 2px（应 22）。
             taffy::style::Dimension::length(0.0_f32)
         } else {
             convert_flex_basis(&style.flex_basis, vw, vh)
