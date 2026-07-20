@@ -73,6 +73,22 @@ pub fn adjust_multicol_layout(root: &mut LayoutBox, styles: &HashMap<NodeId, Com
 
 /// 计算列高限制（用于 column breaking 判断）。
 ///
+/// R1820：forced-break overflow column + auto-height recompute kill-switch（LANDED default-on）。
+///
+/// 承接 R1817/R1818（code-trace 诊断未经验证属假阳性，A/B 零效果已 revert）。R1820 经
+/// REFTEST_DEBUG 实证确证真根因：multicol-fill-auto-005 ZW 输出容器高 160px（= 自然高度和），
+/// chromium 100px（forced breaks > column-count 时创建溢出列，容器高 = max 列高）。两层：
+/// (1) 主路径 `let _ = position_multicol_children`（multicol.rs:797）丢弃 region_height →
+/// 容器高永不按列分配结果重算；(2) 末列 forced break 不创建溢出列（`current_col+1<col_count`
+/// 守卫）。本开关同时启用两层；全 multicol corpus A/B net +1 零 pass 回归后 LANDED default-on。
+/// `ZW_MULTICOL_FORCED_OVERFLOW=0` 可紧急关闭。
+fn forced_overflow_enabled() -> bool {
+    // R1820 LANDED default-on（全 multicol corpus A/B net +1 零 pass 回归；
+    // multicol-fill-auto-005 1.87%→0.62% flip，multicol-nested-027 0.62→0.87 仍 pass）。
+    // ZW_MULTICOL_FORCED_OVERFLOW=0 可紧急关闭。
+    std::env::var("ZW_MULTICOL_FORCED_OVERFLOW").as_deref() != Ok("0")
+}
+
 /// 当 `column-fill: auto` 且容器有明确高度时，每列的最大高度等于容器内容高度。
 /// 当 `column-fill: balance`（默认）时，列高无限制（均衡分配）。
 fn column_height_limit(container: &LayoutBox, info: &ColumnInfo) -> f32 {
@@ -782,7 +798,27 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
     };
 
     // 定位子元素（y_base=0：单区域，整个 multicol 内容在一行列内）
-    let _ = position_multicol_children(container, &assignments, info, 0.0, 0.0);
+    let region_height = position_multicol_children(container, &assignments, info, 0.0, 0.0);
+    // R1820：auto-height column-fill:auto 容器高度重算。主路径此前丢弃 region_height（let _），
+    // 容器高保持 taffy 预算的自然高度和，对 forced-break / 跨列分配给出错误（过高）容器高
+    //（multicol-fill-auto-005：160px 自然和 vs chromium 100px max 列高）。仅当
+    // column-fill:auto + 容器 auto-height（非 explicit）+ 列分配结果比自然和短时收紧容器高
+    //（只缩不胀），限 blast radius（balance / explicit-height 路径不变）。随 R1820 kill-switch default-on。
+    if forced_overflow_enabled()
+        && info.sequential_fill
+        && region_height > 0.0
+        && region_height < container.content_height
+    {
+        let container_explicit = container
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(is_explicit_height);
+        if !container_explicit {
+            let delta = container.content_height - region_height;
+            container.content_height = region_height;
+            container.height -= delta;
+        }
+    }
 }
 
 /// column-span:all spanner 布局（R1028）。
@@ -1067,12 +1103,22 @@ fn assign_children_to_columns_with_breaking(
     let mut columns: Vec<Vec<ColumnFragment>> = vec![Vec::new(); col_count];
     let mut current_col = 0usize;
     let mut current_col_height = 0.0f32;
+    // R1820：forced break 命中末列时创建溢出列（chromium parity，env-gated default-off）。
+    let forced_overflow = forced_overflow_enabled();
 
     for (i, &(child_idx, child_height)) in children.iter().enumerate() {
         // break-before:column：当前列已有内容时强制推进到下一列（R903 消费死值 break_before）。
-        if forced_breaks.get(i).copied().unwrap_or(false) && current_col_height > 0.0 && current_col + 1 < col_count {
-            current_col += 1;
-            current_col_height = 0.0;
+        if forced_breaks.get(i).copied().unwrap_or(false) && current_col_height > 0.0 {
+            if current_col + 1 < col_count {
+                current_col += 1;
+                current_col_height = 0.0;
+            } else if forced_overflow {
+                // R1820：末列 forced break → 创建溢出列（chromium 对「forced breaks 多于
+                // column-count」创建额外 column box 于 inline 方向溢出，非堆末列）。
+                columns.push(Vec::new());
+                current_col = columns.len() - 1;
+                current_col_height = 0.0;
+            }
         }
         let available = max_col_height - current_col_height;
 
