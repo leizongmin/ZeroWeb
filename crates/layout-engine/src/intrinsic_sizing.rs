@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{BoxSizingValue, DisplayValue, FlexDirectionValue, LengthValue};
+use zero_css_parser::values::{BoxSizingValue, DisplayValue, FlexDirectionValue, LengthValue, VisibilityValue};
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue};
@@ -379,6 +379,21 @@ fn flex_item_base_size(
     container_cross: Option<f32>,
 ) -> f32 {
     let style = box_node.node_id.and_then(|id| styles.get(&id));
+    // R1840：mirror converter §10.1 visibility:collapse 逻辑（converter/mod.rs:241，R1834）。
+    // flexible collapsed item（flex-grow>0，或 ③ kill-switch ZW_VC_NONFLEX_STRUT=0）→ flex_basis=0，
+    // 主尺寸贡献仅 frame（border+padding），与 converter 设 taffy flex_basis=0 一致。
+    // 非-flexible collapsed（③ ON，flex-grow==0）保留原 base 作 strut，走下方原逻辑。
+    // 修 flexbox-collapsed-item-horiz-001 Row4：旧 intrinsic 对 collapsed flexible item 读
+    // width:20px 返 20，与 converter flex_basis=0 不一致 → 容器 intrinsic=42（应 22）→
+    // float shrink-to-fit（b.width > intrinsic）不触发 → flexible item grow 到 40（应 20）。
+    if let Some(s) = style {
+        let collapsed = matches!(s.visibility, VisibilityValue::Collapse);
+        let nonflex_strut_off = std::env::var("ZW_VC_NONFLEX_STRUT").as_deref() == Ok("0");
+        if collapsed && (nonflex_strut_off || (s.flex_grow as f32) > 0.0) {
+            let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+            return frame;
+        }
+    }
     // 1. flex-basis 显式长度优先
     if let Some(s) = style
         && let FlexBasisValue::Length(len) = &s.flex_basis
