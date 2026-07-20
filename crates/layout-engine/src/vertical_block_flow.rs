@@ -290,7 +290,18 @@ pub fn vertical_block_child_indices(
         )
     });
     if container_is_table {
-        return None;
+        // R1844：vertical-RL/sideways-RL table-cell BFC 允许 native RL block flow
+        //（block-flow-direction-vrl-017 / -srl-057 等 RL table-cell 需 RL 子排列；旧 blanket
+        // 排除致其子保 LR）。vertical-LR table-cell 仍排除（gate #3 measured vlr-018/020
+        // +5.83pp 回归——table step-8 与本 pass 在 LR 方向冲突）。RL-only 窄放宽：避开 LR 回归。
+        // A/B（writing-modes）：vrl-017/srl-057 各 −7.48pp，vlr-018/020 不变，0 回归。
+        let is_vrl_table_cell = b.writing_mode == WritingModeValue::VerticalRl
+            && b.node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
+        if !is_vrl_table_cell {
+            return None;
+        }
     }
     let block_indices: Vec<usize> = b
         .children
