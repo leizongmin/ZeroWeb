@@ -613,10 +613,15 @@ pub(crate) fn grid_intrinsic_width(
     // 跨行换列导致过计。fit-content(L)/固定长度 track 的 L 钳制未建模（item 的
     // min-content 地板通常已 >= L，故不缩窄；残余边界由 reftest 验证）。
     let multi_column = is_column_flow || style.and_then(count_explicit_grid_columns).is_some_and(|n| n >= count);
-    let inner = if multi_column {
-        sum + gap * (count - 1) as f32
-    } else {
-        max_w
+    // R1842：显式 definite-length grid-template-columns（如 `60px`、`100px 200px`）定义
+    // 固定 track，grid 的 max-content 宽度 = definite track 之和（CSS Grid §11.2：item
+    // 溢出不撑大 definite track）。仅当全部显式 track 为 definite Px 且 item 数 <= track
+    // 数时启用，其余回落 item-content 测量。修 inline-grid + 空子 + `grid-template-columns:60px`
+    // 旧路径返 item-content(0)+frame=6px（应 60px+frame）。A/B 守 net≥0。
+    let inner = match style.and_then(sum_definite_grid_columns) {
+        Some((def_sum, def_n)) if def_n >= count => def_sum + gap * (def_n - 1) as f32,
+        _ if multi_column => sum + gap * (count - 1) as f32,
+        _ => max_w,
     };
     Some(inner + frame)
 }
@@ -654,6 +659,64 @@ fn count_explicit_grid_columns(s: &ComputedStyle) -> Option<usize> {
         count += 1;
     }
     (count > 0).then_some(count)
+}
+
+/// 解析显式 `grid-template-columns` 中**全部 definite-length** track 的宽度之和。
+///
+/// 仅当所有显式 track 均为 definite Px 长度（如 `60px`、`100px 200px`）时返回
+/// `Some((sum, count))`；遇到 `fr`/`auto`/`min-content`/`max-content`/`minmax()`/
+/// `repeat()`/`fit-content()` 等非 definite track 返回 `None`（调用方回落到 item
+/// content 测量）。line-names `[a]` 跳过。括号感知分词避免 `minmax(a, b)` 内空格误切。
+/// 用于 [`grid_intrinsic_width`] 的 definite-track fast path（R1842）。
+fn sum_definite_grid_columns(s: &ComputedStyle) -> Option<(f32, usize)> {
+    let cols = s.grid_template_columns.as_deref()?.trim();
+    if cols.is_empty() || cols.eq_ignore_ascii_case("none") {
+        return None;
+    }
+    let mut tokens: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut depth = 0i32;
+    for ch in cols.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                cur.push(ch);
+            }
+            ')' => {
+                depth -= 1;
+                cur.push(ch);
+            }
+            c if c.is_whitespace() && depth == 0 => {
+                if !cur.is_empty() {
+                    tokens.push(std::mem::take(&mut cur));
+                }
+            }
+            c => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        tokens.push(cur);
+    }
+    let mut sum = 0.0f32;
+    let mut n = 0usize;
+    for t in &tokens {
+        if t.starts_with('[') {
+            continue; // line-names
+        }
+        let val = t
+            .strip_suffix("px")
+            .map(str::trim)
+            .filter(|x| !x.is_empty())
+            .and_then(|x| x.parse::<f32>().ok());
+        match val {
+            Some(v) if v >= 0.0 => {
+                sum += v;
+                n += 1;
+            }
+            _ => return None, // 非 definite track（fr/auto/minmax/repeat/fit-content）→ 整体回落
+        }
+    }
+    (n > 0).then_some((sum, n))
 }
 
 /// 判断一个盒是否是 flex/grid 行容器（display:flex/inline-flex/grid/inline-grid）。

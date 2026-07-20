@@ -338,6 +338,21 @@ pub(crate) fn shrink_inline_blocks_to_content(
                     box_node.content_width = content_max_w;
                 }
             }
+            // R1842 grow：inline-grid + width:auto 须确保容器宽 >= grid intrinsic（含 definite
+            // track 之和）。taffy 对空/小内容 inline-grid 给 content=0（仅 frame），上方 shrink
+            // 只缩不扩，致容器欠扩（grid-container-baseline-synthesized：grid-template-columns:60px
+            // + 空子 → 容器 w=6 应 66）。仅 InlineGrid + 当前 border-box < intrinsic 时 grow（窄条件，
+            // 不影响 inline-flex/inline-block 或已正确尺寸的 inline-grid）。A/B 守 net≥0。
+            if box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.display, DisplayValue::InlineGrid))
+                && let Some(intrinsic_bb) = crate::intrinsic_sizing::grid_intrinsic_width(box_node, doc, styles)
+                && intrinsic_bb > box_node.content_width + frame + 0.5
+            {
+                box_node.content_width = (intrinsic_bb - frame).max(0.0);
+                box_node.width = intrinsic_bb;
+            }
         }
     }
 
