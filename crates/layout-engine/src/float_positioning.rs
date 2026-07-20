@@ -567,6 +567,38 @@ pub(crate) fn adjust_float_positions_with_context(
             }
             // 处理非 float 元素的 clear 属性（延迟到第二阶段）
             if matches!(child.float, FloatValue::None) {
+                // R1833：X-staircase fix。非-float clear 元素（如 clear:both 空 div）原被
+                // 此处 continue 跳过，Phase 1 float X 定位用的 left/right_used_width 永不
+                // reset → 后续行 float 继承累积宽度 = X-staircase（flexbox-collapsed-item-
+                // horiz-001 fill x=13/25/57/89/121/153/205 阶梯，-001 cluster 谱系，R1823
+                // 锁定）。fix：clear 元素须 reset left/right_used_width（Y clearance 仍延迟
+                // Phase 2，line 569 注释原意保留）。kill-switch `ZW_FLOAT_XSTAIRCASE_FIX=0`。
+                if std::env::var("ZW_FLOAT_XSTAIRCASE_FIX").as_deref() != Ok("0") {
+                    match child.clear {
+                        ClearValue::Left if left_float_bottom > line_y => {
+                            line_y = left_float_bottom;
+                            left_used_width = 0.0;
+                            right_used_width = 0.0;
+                            line_max_height = 0.0;
+                        }
+                        ClearValue::Right if right_float_bottom > line_y => {
+                            line_y = right_float_bottom;
+                            left_used_width = 0.0;
+                            right_used_width = 0.0;
+                            line_max_height = 0.0;
+                        }
+                        ClearValue::Both => {
+                            let clear_y = left_float_bottom.max(right_float_bottom);
+                            if clear_y > line_y {
+                                line_y = clear_y;
+                                left_used_width = 0.0;
+                                right_used_width = 0.0;
+                                line_max_height = 0.0;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 continue;
             }
         }
@@ -831,13 +863,22 @@ pub(crate) fn adjust_float_positions_with_context(
                 // 注意：flow_bottom 是 content-relative，child.y 是 border-relative
                 let child_content_y = child.y - content_y_offset;
                 if child_content_y < flow_bottom {
-                    let shift = flow_bottom - child_content_y;
                     child.y = content_y_offset + flow_bottom;
-                    // 仅更新此 float 所在侧的 float_bottom 追踪
-                    match child.float {
-                        FloatValue::Left => active_left_float_bottom += shift,
-                        FloatValue::Right => active_right_float_bottom += shift,
-                        _ => {}
+                    // R1832：修复 float/clear Y-staircase。旧代码在此 `active_*_float_bottom
+                    // += shift`，但 active_*_float_bottom 追踪「前序 float 底边」非本 float
+                    // 原始位置——把 shift（本 float 被下推量）加到前序底边 = 双重计数：
+                    // side-by-side 同行 float 共享 flow_bottom，第二个 float 的 shift 把
+                    // active_L 再抬一个行高（probe 实测指数增长 52→99→146→287→428→851），
+                    // clear:both 后 flow_bottom 跳到膨胀 active_L = Y-staircase。本 float
+                    // 真实底边已由下方 `.max(child_bottom)` 正确更新。kill-switch
+                    // `ZW_FLOAT_YSTAIRCASE_FIX=0` 恢复旧行为。
+                    if std::env::var("ZW_FLOAT_YSTAIRCASE_FIX").as_deref() == Ok("0") {
+                        let shift = flow_bottom - child_content_y;
+                        match child.float {
+                            FloatValue::Left => active_left_float_bottom += shift,
+                            FloatValue::Right => active_right_float_bottom += shift,
+                            _ => {}
+                        }
                     }
                 }
 
