@@ -1,0 +1,45 @@
+R1877 — CSS2/lists 首探 = 92.9% near-complete·list-style-position 簇 = list-spacing/margin-collapse entanglement + font-wall·disc marker square-vs-circle minor·0 net code
+日期: 2026-07-23
+
+═══════════════════════════════════════════════
+lists 首探（156 案 baseline 145/156 = 92.9% pass，11 mismatch）
+═══════════════════════════════════════════════
+承接 R1876 forward（续探 CSS2 余未探 sub-dir）。lists = §12 list-style/markers。
+仅 11 mismatch，top 簇 = list-style-position：
+
+  list-style-position-018/023/024（10.47/13.82/13.86%）= list-style-position:outside/inside
+    + text-align / 嵌套 ol。像素 diff 诊断（018）：
+    - `<p>` font-wall（h=37, 90 glyphs）+ li nbsp 行。
+    - **垂直间距差异**：LAYOUT_DUMP 实测 ZW 三个 ul 的 li 背景条 y=69/87.6/106.2
+      （间距 18.6 = li 行高，ul margin-top:16 被 margin-collapse 吞），chromium 条 y 位
+      置不同 → 整条 bar 区域 diff（~50k px ≈ 3 条 bar 面积）。
+    - disc marker：ZW 绘 6.4×6.4 方块（fill rect），chromium 圆形（subtle，非主导 diff）。
+    - li principal box x=48 正确（ul padding-left:40 + body margin:8 ✓），marker x=32
+      独立在 margin（结构正确，非 box-model 错位；早期「li bg 覆盖 marker」误读）。
+    根因 = list vertical spacing（ul 间 margin-collapse + li line-height）+ font-wall，
+    非 clean 单点 lever。
+  list-style-position-applies-to-008/009/010/016/017（3.26-3.62%）= applies-to 簇 +
+    font-wall；list-style-020/021（2.23/0.85%）；list-style-image-004/007（1.07/1.00%）；
+  counter-increment-053（0.81%）；list-item-dynamic-color（0.85%）= JS dynamic。
+
+⇒ lists = 92.9% near-complete plateau。残余 = list-spacing/margin-collapse entanglement
+（多 ul 间 margin 折叠 + li line-height）+ font-wall + disc marker 形状（minor）。
+
+═══════════════════════════════════════════════
+裁决 + forward
+═══════════════════════════════════════════════
+本轮 0 net code landed。CSS2 已探子目录累计（7 个）：abspos(R1874 +2 LANDED) / floats
+(R1873 plateau) / box-display(R1872 R109) / visudet(R1875 plateau,SVG reverted) /
+visufx(R1876 94% near-complete) / lists(R1877 92.9% near-complete)。模式：多数子目录
+near-complete plateau（font-wall + 子域 entanglement），仅 abspos(R1874) yield clean lever。
+
+forward（next）：
+  ① **R1874 fixed-auto-inset yield 量化**（CSS2/positioning/css-multicol，临时 toggle gate
+    A/B，gate 零回归保证安全）——最 honest 增量 R1874 LANDED headline，可能 +N。
+  ② 续探 CSS2 余未探 sub-dir（visuren §9 / borders §8 / selectors / generated-content /
+    pagination / linebox / normal-flow）——yield 已低（7 子目录仅 abspos 出 lever）。
+  ③ list vertical spacing（ul margin-collapse + li line-height）= lists 簇阻塞，若投入
+    须 dedicated margin-collapse 排查（多 ul 间）。
+  ④ disc marker square→circle = minor clean fix（paint_list_marker），yield 低（font-wall
+    主导），可选低优先。
+  ⑤ headline font-wall 用户 A/B/C 不变。
