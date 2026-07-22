@@ -1,0 +1,59 @@
+R1881 — block-in-inline table 根因精确追踪 = 匿名 inline 文本 stretch·合成裁决：多 deferred interaction edge 同根 inline-stretch/Phase-A（user-gated）·0 net code
+日期: 2026-07-23
+
+═══════════════════════════════════════════════
+1. block-in-inline table 根因精确追踪（refine R1880）
+═══════════════════════════════════════════════
+R1880 实证：compute_cell_intrinsic_width 加 is_r109_split gate 后落到 box_content_max_width(td)
+仍返回 fill-width（td1 283→289）。本轮精确追踪机制：
+
+box_content_max_width（intrinsic_sizing.rs:32）递归路径：
+  box_content_max_width(td) → td 子=span.inline（is_r109_split, display:Inline,
+    fragment_node_ids=None → is_split_wrapper=true）→ line 114 else 分支递归
+  box_content_max_width(span.inline) → 子 = [Line1 anon, span.block(Line2), Line3 anon]
+    span.block（display:block, w=283 fill）→ line 114 else 递归
+    box_content_max_width(span.block) → 子 = 匿名 inline 文本盒 "Line 2"
+      ★ 匿名 inline 文本盒：**无 node_id / 无 style 条目**（匿名）→ R1479 content-测量
+      gate（line 96-110，需 node_id + display:Inline style）**不命中** → 落 line 112
+      `inline_sum += outer_w` = 匿名盒 stretched width（283，taffy inline→Block fill）
+      → box_content_max_width(span.block) = 283（非内容 "Line 2" ≈47）
+
+★ **根因 = 匿名 inline 文本盒 stretch**（ZW 把 inline→taffy::Block，致 inline 子含匿名
+文本盒拉伸到容器宽；R1479 修了有 node_id 的 display:Inline 子，但匿名文本盒漏网）。
+= inline-stretch / Phase-A 已知多 session 缺口（converter inline→taffy::Block）。
+
+═══════════════════════════════════════════════
+2. ★ 合成裁决：多 deferred interaction edge 同根 inline-stretch/Phase-A
+═══════════════════════════════════════════════
+经 R1875-R1881 追踪，多个 deferred/entangled 边缘 case **同根** inline-stretch/Phase-A
+（即 ZW 把 inline-level 盒映射为 taffy::Block 致拉伸/度量失真）：
+  - block-in-inline table 过宽分配（R1878/R1880/R1881）= 匿名 inline 文本盒 stretch
+    → box_content_max_width 返回 fill-width。
+  - inline-border box 几何（R1879 border-width-applies-to）= inline 元素 border-box 相对
+    line-box 几何失真（inline→Block 拉伸）。
+  - visibility:visible 覆盖（R1876）= inline span 文本归父 block IFC（inline-box 所有权）。
+  - list vertical spacing（R1877）= 部分亦 inline/margin 交互。
+  - SVG replaced-sizing inline wrapping（R1875 REVERTED）= inline-replaced 变化尺寸 wrapping。
+  - welcome/morning font-wall（headline）= Phase-A 行盒度量（同根 inline-level 度量）。
+
+⇒ 这些**非各自独立 bug**，是 inline-stretch/Phase-A 单一根因的多个 facet。**勿再逐个攻击**
+（各 scoped slice 均 net-0 或 net-negative，R1875/R1880 已证）；将**一并 unlock** 当
+inline-stretch/Phase-A 被修（= font-stack rebuild / Phase-A IFC metric coherence 统一，
+user-gated ruling #2）。
+
+═══════════════════════════════════════════════
+3. 裁决 + forward
+═══════════════════════════════════════════════
+本轮 0 net code（read-only 精确追踪 + 合成）。autonomous clean-lever 空间经 R1872-R1881
+十轮 **comprehensive + definitively 穷尽 + 根因合成**：所有 deferred edge 同根 inline-stretch/
+Phase-A（user-gated），唯一近期 LANDED = R1874 position:fixed 全-auto-inset +7（独立于
+inline-stretch，abspos 定位路径）。
+
+forward（next）：
+  ① 唯一 headline unlock = **inline-stretch/Phase-A（= font-stack rebuild / Phase-A IFC
+    metric coherence，user-gated ruling #2）**——一并解锁 block-in-inline table / inline-border
+    IFC / visibility:visible / list spacing / font-wall（≥95%）多 facet。已飞书 surfacing。
+  ② autonomous 非 inline-stretch 路径的 clean lever 已穷尽（R1872-R1881 十轮证）。
+  ③ R1874 谱（abspos 定位，独立 inline-stretch）是唯一近期可 clean-land 的方向——可继续
+    在 abspos/positioning dir 找类似独立 lever（但 R1874 后该方向亦近穷尽）。
+  ④ 维持 plateau（周期 scoped oracle 回归巡检）；DC-11/12 interactive 须 browser-display 环境。
