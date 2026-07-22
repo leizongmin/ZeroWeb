@@ -1,0 +1,89 @@
+R1875 — CSS2/visudet 首探 + SVG replaced-sizing 集群 fix 实验净负 REVERTED
+日期: 2026-07-23
+范围: read-only characterization + 1 实验 revert（0 net code landed）
+
+═══════════════════════════════════════════════
+1. visudet 首探（38 案 baseline 18/38 = 47.4%）
+═══════════════════════════════════════════════
+承接 R1874 forward（CSS2 余未探 sub-dir 继续 R1820 empirical hunt）。visudet = §10
+width/height 计算（纯 geometry 候选）。逐案 empirical 探测：
+
+  replaced-elements-* 簇（7 案 5.56-9.31%）= SVG replaced sizing（§10.3.2/§10.6.6）。
+    用 7 个精心设计的 SVG（height-25-width-50 双绝对 / height-25-ratio-2 单维+viewBox /
+    width-50-ratio-2 / height-25-no-ratio / width-50-no-ratio / ratio-2 仅 viewBox / no-ratio）
+    × CSS 变体（all-auto / height-20 / max-height-20 / min-height-20/40 / min-width-40/80 /
+    max-width-40 / width-40）。
+  content-height-001..004（2.32-4.64%）= inline-level box 内容区高度不依赖 line-height
+    （font em-box 度量）= font-wall/Phase-A。
+  line-height-205/206（3.06/1.60%）= line-height font-wall。
+  height-computed-001 / height-percentage-004（2.61/1.62%）= 边缘。
+
+═══════════════════════════════════════════════
+2. replaced-elements 簇根因定位（empirical LAYOUT_DUMP）
+═══════════════════════════════════════════════
+ZW baseline 对 all-auto 7 个 img 的 used size：
+  image[0] height-25-width-50（BothAbs）= 50×25 ✓
+  image[1] height-25-ratio-2（h=25+viewBox ratio2）= 300×150 ✗（应 50×25）
+  image[2] width-50-ratio-2 = 300×150 ✗（应 50×25）
+  image[3] height-25-no-ratio（h=25 无 viewBox）= 300×150 ✗（应 300×25）
+  image[4] width-50-no-ratio = 300×150 ✗（应 50×150）
+  image[5] ratio-2（仅 viewBox）= 300×150（ref 200×100 模糊 should 案）
+  image[6] no-ratio = 300×150 ✓
+
+根因：R1469 裁决「INLINE `<img>` 非 BothAbs SVG → default object size 300×150，不应用
+viewBox 比」。该裁决基于 2026-07-15 chromium 实测（height-25-ratio-2.svg 配 width:40 →
+40×150 非 40×20），但 net pass-count=0（从未被 flip 验证）。visudet height-20 ref 实证
+**推翻** R1469：height-25-ratio-2.svg 配 CSS height:20 → 40×20（width=20×ratio2=40），
+即 chromium 对 inline 【确实】应用 viewBox/intrinsic 比。
+
+两处代码 bug（image_cache.rs::decode_svg_bytes）：
+  A. ComputedIntrinsic(cw,ch) 丢弃 (cw,ch)，仅设 intrinsic_ratio=cw/ch（→ 进 image_ratios，
+     inline 走 default object size）。
+  B. NoRatio{width,height} 丢弃解析出的 abs 维，设 no_ratio=(None,None)。
+
+═══════════════════════════════════════════════
+3. fix 实验 + A/B = 净负 REVERTED
+═══════════════════════════════════════════════
+fix（image_cache.rs + async_load.rs）：
+  - ComputedIntrinsic → 设 computed_intrinsic=Some((cw,ch))（走 image_sizes，inline 用计算
+    尺寸 + aspect_ratio 由 w/h 推导；flex transferred-size 亦由此 path 驱动）。
+  - NoRatio → 设 no_ratio=Some((width,height))（携带 abs 维）。
+  - async_load.rs:475 用 computed_intrinsic() fallback（与 webview.rs sync 路径一致）。
+
+fix 后 LAYOUT_DUMP 实证 5 个可修 SVG 尺寸全正确（image[1-4] = 50×25/50×25/300×25/50×150
+匹配 ref）。但 all-auto oracle diff **5.56% → 34.32% 严重回归**！min-* 变体亦恶化
+（min-width-80 35.87% / min-height-40 35.73% / min-height-20/min-width-40/all-auto 34.32%）。
+height-20/max-height-20 仅微改（9.31→9.27）。visudet 总 pass-rate **不变（18/38）= net-0
+带大回归**。
+
+像素 diff 诊断：fix 后 image 尺寸正确但**流动/换行与 chromium 完全不同**——diff 区 ZW 主导
+色 = background(56753px) + aqua(no-ratio 45300) + gray(ratio-2 45000)，chromium = silver(45004)
++ fuchsia(45000) + blue(45000)。即 img 在 200px 宽 div 内的 inline 换行/累积垂直位置发散。
+（image[3] 300×25、image[4] 50×150 等变化尺寸触发 ZW inline-replaced wrapping ≠ chromium。）
+
+★ 根因更深：**inline-replaced wrapping/line-breaking with varying sizes**（R109/Phase-A
+inline-formatting territory），非 SVG sizing 单点。R1469 的 inline-300×150（net-0）**巧合地**
+把所有 img 设成同尺寸简化换行，掩盖了此 wrapping bug；逆转它（引入尺寸变化）即暴露。
+fix 本身 per-image spec-correct，但 ZW inline 布局无法像 chromium 那样放置变化尺寸的 img。
+
+═══════════════════════════════════════════════
+4. 裁决 + forward
+═══════════════════════════════════════════════
+REVERTED（git checkout 两文件，all-auto 回 5.56% baseline，working tree clean）。per R1849
+（net-0 带回归 → revert）。
+
+★ 重要 negative（防再试）：SVG replaced-sizing fix（ComputedIntrinsic/NoRatio → 正确尺寸）
+**被 inline-replaced wrapping bug 阻塞**——unlock 须先修 inline-replaced 在变化尺寸下的
+line-breaking/wrapping（R109/Phase-A 多 session 架构 deadlock 史）。勿再以「SVG sizing」
+为 visudet replaced-elements 簇 lever 单独尝试；R1469 inline-300×150 虽 net-0 但**不可逆**
+（逆转暴露 wrapping bug）。RatioOnly inline（ratio-2.svg 200×100）是模糊 should 案，低价值。
+
+visudet 整体 = plateau（replaced-elements=inline-wrapping entangled / content-height/line-height
+=font-wall）。本轮 0 net code landed（R1874 +2 是本轮之前的 LANDED）。
+
+forward（next）：
+  ① 续探 CSS2 余未探 sub-dir（visuren §9 / visufx overflow-clip / borders / lists / selectors）
+    ——R1874 证未探角度仍可有 lever（如 R1874 abspos fixed-static）。
+  ② inline-replaced wrapping（R109/Phase-A）是 visudet replaced-elements + 多 dir 的共同
+    阻塞，须 dedicated multi-session spec-rfc（deadlock 史）。
+  ③ headline font-wall 用户 A/B/C 不变。
