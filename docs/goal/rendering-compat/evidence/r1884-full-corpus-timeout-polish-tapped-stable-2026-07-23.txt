@@ -1,0 +1,50 @@
+R1884 — full-corpus reftest-oracle health check【超时 infeasible】+ clean-polish 收尾 + LANDED 稳定确认·0 net code
+日期: 2026-07-23
+
+═══════════════════════════════════════════════
+1. full-corpus reftest-oracle 超时（operational finding）
+═══════════════════════════════════════════════
+尝试周期性全量 oracle 回归巡检（R1013 方法论，LANDED R1874/R1882/R1883 后）。`make reftest-oracle`
+（全量 ~10k 案）经 test-guard 包裹在 **1800s（30min）超时被杀**（exit 124），日志 365 行（多 JS
+warning）无 summary——全量跑不完。run-rules 禁裸跑 cargo（OOM 防护），故 full-corpus health check
+**infeasible under test-guard 1800s**。
+
+★ **裁决**：health check 须 **per-dir scoped**（已做：fixed-heavy dir A/B + product-smoke），
+非 full-corpus。勿再尝试 `make reftest-oracle` 无 DIR（必超时）。若需全量统计须分 dir 批跑汇总。
+
+═══════════════════════════════════════════════
+2. clean-independence-polish 收尾确认
+═══════════════════════════════════════════════
+marker polish：disc（R1882 +1）/ circle（R1883 net-0 correctness）/ square（已正确）——全收尾。
+本轮确认：
+  - **border-style（dashed/dotted）**：CSS2/borders 13 案 oracle-pass **100%**（top worst 全 0.50%
+    font-wall near-pass）。dashed/dotted 图元渲染正确，非 lever。
+  - **hr 元素**：UA border-style:inset + border-width:1px（lib.rs:676），DC-13 legacy「结构不崩」
+    已 handled；无 dedicated reftest 覆盖（8 CSS2 文件仅 incidental 用 hr）→ 非 reftest lever。
+⇒ clean-polish（paint-only 非 inline-stretch）方向 **largely tapped**：markers done / border-style
+100% / hr handled。残余（outline 等）预计同 net-0 cosmetic。
+
+═══════════════════════════════════════════════
+3. LANDED 稳定确认（scoped A/B + product-smoke）
+═══════════════════════════════════════════════
+近期 LANDED 全部 scoped 确认零回归：
+  - R1874 fixed-auto-inset +7：fixed-heavy dir 全 A/B（css-position/CSS2-abspos/positioning/box-display/
+    visufx/multicol），零回归。
+  - R1882 disc circle +1：CSS2/lists A/B 零回归。
+  - R1883 circle true-circle net-0：CSS2/lists A/B 零回归。
+  - product-smoke welcome 16.84%==baseline 全 fixture struct PASS（R1874/R1882/R1883 三轮均验）。
+无 latent regression 迹象。
+
+═══════════════════════════════════════════════
+4. 裁决 + forward
+═══════════════════════════════════════════════
+本轮 0 net code landed（health check 超时 + polish 收尾确认）。autonomous clean-lever +
+clean-polish 经 R1872-R1884 十三轮 **comprehensively tapped**。唯 R1874（+7）+ R1882（+1）有
+reftest yield；R1883 net-0 correctness。残余全 user-gated（inline-stretch/Phase-A，R1881 合成）。
+
+forward（next）：
+  ① 唯一 headline unlock = **inline-stretch/Phase-A（font-stack rebuild，user-gated ruling #2）**
+    ——一并解 font-wall + block-in-inline table + inline-border + visibility + list-spacing（R1881）。
+  ② autonomous 续低频 per-dir scoped oracle 回归巡检（非 full-corpus，必超时）。
+  ③ DC-11/12 interactive（sticky/scroll/scroll-snap）须 browser-display 验证环境。
+  ④ 若 user 授权 font-stack rebuild：起 lei-spec-rfc 拆可回退切片（高风险多 session）。
