@@ -1,0 +1,123 @@
+R1874 — position:fixed 全 inset auto 静态位置修复 LANDED (default-on)
+日期: 2026-07-23
+范围: crates/layout-engine (types/mod.rs + engine.rs + engine/abspos.rs + engine/tests/tests_8.rs)
+
+═══════════════════════════════════════════════
+1. 触发：CSS2/abspos 首探（R1873 forward「CSS2/abspos/borders 低频 hunt」）
+═══════════════════════════════════════════════
+承接 R1873 forward（CSS2/abspos + CSS2/borders 未探测子目录 opportunistic empirical
+hunt，R1820 教训：plateau「穷尽」结论仅对已 empirical 验证角度成立）。本轮首探
+css/CSS2/abspos（27 案，baseline 21/27 = 77.8%）。逐案 empirical 探测（REFTEST_DEBUG +
+LAYOUT_DUMP + ZW-vs-chromium 像素 diff）：
+
+  7.50%  remove-block-between-inline-and-abspos.html  = JS dynamic（<script> removeMe
+         display:none）→ JS-blocked，skip
+  2.50%  abspos-containing-block-initial-007.xht       = oracle-capture 伪影（diff 全在
+         y=585-599 视口底 15px 全宽，ZW (255,255,255) vs CHR (252,252,252)，3-unit 近白
+         偏差；测试内容在 y=100-220，底缘空画布）→ 非 ZW bug，skip
+  2.45%  static-inside-inline-002.html                 = R109（§9.2.1.1 inline 含 static/
+         abspos）→ Phase-A deadlock 史，skip
+  2.26%  between-float-and-text.html                   = abspos 假想静态位置 + float 交互
+         （red 条 y=200-250 暴露：green abspos y=30.6 未覆盖 red float y=50.6 margin-top:20）
+         + `<p>` font-wall → entangled，skip
+  1.61%  static-fixed-inside-abspos.html               = ★ REAL BUG（本轮 LANDED，见下）
+  1.19%  static-inside-inline-block.html               = R109（static-in-inline-block）
+  0.62%  带（6 案）                                     = `<p>` 描述文本 font-wall（R1155 near-pass）
+
+⇒ CSS2/abspos 唯一 clean lever = static-fixed-inside-abspos 的 fixed-全-inset-auto 静态位置 bug。
+
+═══════════════════════════════════════════════
+2. 根因（empirical LAYOUT_DUMP 实测，非 code-trace）
+═══════════════════════════════════════════════
+测试 css/CSS2/abspos/static-fixed-inside-abspos.html：
+  <div style="display:absolute; w:100 h:100 bg:green">       <!-- display:absolute 无效→block，ZW 正确忽略 -->
+    <div style="position:absolute; w:50 h:50 ml:50 mt:50 bg:red">   <!-- middle，abspos，CB=ICB 静态 -->
+      <div style="position:fixed; w:50 h:50 bg:green">              <!-- inner，fixed，无 inset -->
+
+期望（chromium）：inner fixed 无 inset → §10.3.7/§10.6.4 位置 = 静态位置（若 position:static
+的位置）= middle 内容原点 (58,100.6)，green 覆盖 red → 「filled green square, no red」。
+
+ZW baseline（fix 前）LAYOUT_DUMP：
+  inner fixed:  abs_y=-0.4, x=0   → 视口原点 (0,0)
+  fill: green@(0,-0.4) + red@(58,100.6) + green@(8,50.6 外层)
+  ⇒ green 在 (0,0) 既未覆盖 red（red y=100-150 暴露），又覆盖了顶部 `<p>` 文本 x=0-50。
+
+根因：engine/abspos.rs::adjust_fixed_to_viewport（R324）对所有 is_fixed 一律
+`box.x -= parent_offset_x; box.y -= parent_offset_y`（扣除累积祖先偏移使其视口相对）。
+该修正的假设（R324 注释）= 「taffy 把 fixed 当 absolute，box.x/y = 相对 positioned 祖先的
+left/top inset；视口相对 = 同 inset 值相对视口 → 扣除祖先偏移」。
+
+此假设仅对【有 inset】的 fixed 成立（如 `position:fixed; top:0; left:0`）。对【四 inset 全
+auto】的 fixed，taffy 已将其置于【静态位置】（视口正确坐标），扣除祖先偏移反将其错误地移到
+视口原点 (0,0)。CSS §10.3.7（width）/§10.6.4（height）：全 inset auto 时 left/top 取静态位置值，
+元素停留在静态位置（CB=视口只影响百分比/inset 解析，不影响静态位置本身）。
+
+═══════════════════════════════════════════════
+3. fix（layout-engine，default-on，无 kill-switch 需要——严格 gate）
+═══════════════════════════════════════════════
+- types/mod.rs：LayoutBox 新增 `pub fixed_insets_all_auto: bool`（default false，init 在
+  Default impl line 417 区，复用 declared_width_auto 谱系模式）。
+- engine.rs（conversion，computed 在手）：is_fixed 时计算
+  `fixed_insets_all_auto = is_fixed && top/right/bottom/left 全 LengthValue::Auto`，写入 box。
+- engine/abspos.rs::adjust_fixed_to_viewport：扣除条件由 `if box_node.is_fixed` 收紧为
+  `if box_node.is_fixed && !box_node.fixed_insets_all_auto`。全 auto inset fixed 跳过扣除，
+  x/y 保持 taffy 算出的静态坐标（视口正确）。offset 向子元素传播逻辑不变（仅 fixed 后代消费，
+  本案无嵌套 fixed）。
+
+★ 严格 gate（零回归保证）：仅【fixed 且四 inset 全 auto】的元素行为变化（不再移到 (0,0)）。
+  - 有 inset 的 fixed（R324 全部用例）：代码路径完全不变 → 零回归。
+  - 非 fixed 元素：不受影响。
+  之前 all-auto-inset fixed 都在 (0,0)（几乎必然错误 → 要么 fail 要么 near-pass），修复只能
+  改善或中性，不会把一个正确 case 改错。
+
+═══════════════════════════════════════════════
+4. A/B（chromium Oracle，scoped）
+═══════════════════════════════════════════════
+fix 后 LAYOUT_DUMP（static-fixed-inside-abspos）：
+  inner fixed:  abs_y=100.6, x=58   → 与 middle/red 完全重合
+  fill: green@(58,100.6) 覆盖 red@(58,100.6) ✓ + 外层 green@(8,50.6)
+  ⇒ green 覆盖 red，匹配 chromium；green 不再覆盖 `<p>` 文本。
+
+per-case：
+  static-fixed-inside-abspos: 1.61%(mismatch) → 0.62%(near-pass<1%) FLIP（diff 7668→2946 px，
+    残余 0.62% = `<p>` 描述文本 font-wall）
+
+scoped dir A/B（z_vs_chr<1% oracle-pass）：
+  css/CSS2/abspos:   21/27 (77.8%) → 22/27 (81.5%)  net +1（static-fixed FLIP）
+                     top-15 worst 字节同 baseline 除 static-fixed；abspos-containing-block-
+                     initial-007(2.50% oracle 伪影)/between-float-and-text(2.26% entangled) 不变
+  css/css-position:  60/97 (61.9%, R1868 baseline) → 61/97 (62.9%)  net +1（另一 fixed-全-auto
+                     inset case FLIP，零回归——R324 fixed-WITH-inset 用例字节不变）
+
+⇒ net +2 零回归（两个有 baseline 的 dir）。
+
+═══════════════════════════════════════════════
+5. 门禁
+═══════════════════════════════════════════════
+- cargo fmt --all --check：clean
+- cargo clippy --workspace --all-targets -- -D warnings：clean
+- cargo test -p zero-layout-engine：1223 passed 0 failed（含 R324 adjust_fixed_to_viewport 全部
+  tests_8.rs 用例 + 新增 test_adjust_fixed_to_viewport_all_auto_insets_keeps_static_position）
+- make test（workspace）：全绿 0 failed
+- make product-smoke：welcome @800 diff 16.84%(80808/480000) == R1862/R1870 baseline 零回归；
+  @375/@320 + morning-work @320 struct-check 全 PASS
+- 新增单测 test_adjust_fixed_to_viewport_all_auto_insets_keeps_static_position：断言全-auto-inset
+  fixed x/y 保持静态值（不被扣除）
+
+═══════════════════════════════════════════════
+6. 裁决 + forward
+═══════════════════════════════════════════════
+★ R1820 教训再次验证：plateau「穷尽」结论被推翻——CSS2/abspos 首探即找到 clean lever
+（fixed-全-inset-auto 静态位置）。R1873 宣「floats 子目录 plateau」对 floats 成立，但未探测的
+CSS2/abspos 仍有 lever。empirical LAYOUT_DUMP + ZW-vs-chromium 像素 diff 是定位真 bug 的决定性
+工具（code-trace 会把 oracle-capture 伪影 / font-wall / entangled 误判为 bug）。
+
+forward（next）：
+  ① CSS2/abspos/borders 仍未探（borders 5 案，极小）；CSS2 其余未 per-case 探子目录
+     （visufx 6 fixed / visuren 5 / generated-content / linebox / lists / selectors / pagination
+     / normal-flow / visudet）可继续 R1820-style empirical hunt，yield 极低但 R1874 证非零。
+  ② position:fixed 全-inset-auto 修复在其他 fixed-heavy dir（CSS2/positioning 24 / css-multicol 12
+     / CSS2/visufx 6 / CSS2/box-display 6）的额外 flip 未测（无 baseline）—— opportunistic 下轮可
+     stash A/B 量化总 yield（gate 零回归保证，安全）。
+  ③ headline font-wall 用户 A/B/C 不变（唯一 ≥95% unlock）。
+  ④ 结构深层 lever（R109 block-in-inline / flex-base-size / nested-multicol）仍 deadlock 史。

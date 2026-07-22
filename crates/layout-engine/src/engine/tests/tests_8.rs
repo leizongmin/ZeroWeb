@@ -126,6 +126,48 @@ fn test_adjust_fixed_to_viewport_nested() {
     );
 }
 
+/// 测试 adjust_fixed_to_viewport：四 inset 全 auto 的 fixed 保持在静态位置，不被移到视口原点。
+///
+/// R1874：`position:fixed` 全 inset auto 时位置 = 静态位置（§10.3.7/§10.6.4）。旧实现对
+/// 所有 fixed 一律扣除祖先偏移，把无 inset 的 fixed 错误地移到视口原点 (0,0)。修复后
+/// `fixed_insets_all_auto` 标记的 fixed 跳过扣除，x/y 保持 taffy 算出的静态坐标。
+/// （对应 WPT CSS2/abspos/static-fixed-inside-abspos：fixed 应覆盖父 abspos 块而非移到原点。）
+#[test]
+fn test_adjust_fixed_to_viewport_all_auto_insets_keeps_static_position() {
+    let fixed_child = LayoutBox {
+        x: 10.0,
+        y: 20.0,
+        width: 100.0,
+        height: 50.0,
+        is_fixed: true,
+        fixed_insets_all_auto: true,
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        x: 50.0,
+        y: 60.0,
+        width: 800.0,
+        height: 600.0,
+        children: vec![fixed_child],
+        ..Default::default()
+    };
+
+    adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
+
+    // 全 auto inset：不扣除祖先偏移，x/y 保持静态值 10.0 / 20.0（painter 累积得绝对坐标）。
+    let child = &root.children[0];
+    assert!(
+        (child.x - 10.0).abs() < 0.001,
+        "全 auto inset fixed x 应保持 10.0（静态位置），实际 {}",
+        child.x
+    );
+    assert!(
+        (child.y - 20.0).abs() < 0.001,
+        "全 auto inset fixed y 应保持 20.0（静态位置），实际 {}",
+        child.y
+    );
+}
+
 /// 测试 adjust_fixed_to_viewport：根节点为 fixed 时加上初始偏移。
 #[test]
 fn test_adjust_fixed_to_viewport_at_root() {

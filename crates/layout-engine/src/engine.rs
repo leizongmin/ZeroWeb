@@ -1327,6 +1327,16 @@ impl LayoutEngine {
 
         let is_absolute = computed.is_some_and(|s| matches!(s.position, PositionValue::Absolute));
         let is_fixed = computed.is_some_and(|s| matches!(s.position, PositionValue::Fixed));
+        // fixed 且四 inset 全 auto：位置应为静态位置（§10.3.7/§10.6.4），adjust_fixed_to_viewport
+        // 据此跳过「扣除祖先偏移」（该扣除仅对有 inset 的 fixed 正确）。
+        let fixed_insets_all_auto = is_fixed
+            && computed.is_some_and(|s| {
+                use zero_css_parser::values::types::LengthValue;
+                matches!(s.top, LengthValue::Auto)
+                    && matches!(s.right, LengthValue::Auto)
+                    && matches!(s.bottom, LengthValue::Auto)
+                    && matches!(s.left, LengthValue::Auto)
+            });
         // 替换元素（有固有尺寸）：img/video/iframe/embed/object/svg/canvas。
         // CSS §10.3.8/§10.6.6 对其 auto 尺寸按固有尺寸解析，不走 §10.3.18/§10.6.4
         // 全-inset stretch。标记供 abspos stretch 后处理跳过（避免覆写固有尺寸）。
@@ -1580,6 +1590,7 @@ impl LayoutEngine {
             is_absolute,
             is_replaced,
             is_fixed,
+            fixed_insets_all_auto,
             is_sticky,
             float,
             clear,

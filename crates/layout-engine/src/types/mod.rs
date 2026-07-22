@@ -115,6 +115,14 @@ pub struct LayoutBox {
     pub is_replaced: bool,
     /// 是否为 fixed 定位（需宿主层处理）。
     pub is_fixed: bool,
+    /// `position: fixed` 且四个 inset（top/right/bottom/left）全为 auto。
+    ///
+    /// CSS §10.3.7/§10.6.4：fixed 全 inset auto 时位置 = 静态位置（若 position:static
+    /// 的位置），非视口原点。taffy 把 fixed 当 absolute（CB=最近 positioned 祖先），
+    /// `adjust_fixed_to_viewport` 扣除祖先偏移使其视口相对——该修正仅对「有 inset」的
+    /// fixed 正确；全 auto inset 的 fixed 静态位置已是正确视口坐标，扣除会错误地移到 (0,0)
+    ///（如 CSS2/abspos/static-fixed-inside-abspos：fixed 应覆盖父 abspos 红块而非移到原点）。
+    pub fixed_insets_all_auto: bool,
     /// 是否为 sticky 定位（需宿主层在滚动时动态调整偏移）。
     pub is_sticky: bool,
     /// Float 方向（None 表示非浮动元素）。
@@ -415,6 +423,7 @@ impl Default for LayoutBox {
             is_absolute: false,
             is_replaced: false,
             is_fixed: false,
+            fixed_insets_all_auto: false,
             is_sticky: false,
             float: FloatValue::None,
             clear: ClearValue::None,
