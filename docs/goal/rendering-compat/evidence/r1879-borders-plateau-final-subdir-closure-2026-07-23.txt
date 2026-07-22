@@ -1,0 +1,51 @@
+R1879 — CSS2/borders 首探 = 81.2% plateau·applies-to=inline-border IFC entanglement·conflict=R1630·shorthand WORKS（diff=positional/font-wall）·CSS2 subdir 探测 comprehensive 收官·0 net code
+日期: 2026-07-23
+
+═══════════════════════════════════════════════
+borders 首探（506 案 baseline 411/506 = 81.2% pass，95 mismatch）
+═══════════════════════════════════════════════
+承接 R1878 forward。borders = §8 border 渲染。最后一个大未探 CSS2 sub-dir。
+
+★ **border-width-applies-to-008（15.37%）= inline-border IFC entanglement**：
+  `div{border-width:90px;border-style:solid;display:inline;font:90px/1 Ahem}`。
+  ZW **正确绘 4 边框**（fill top/right/bottom/left 各 90px，270×270 square）——border
+  应用 inline 工作非缺。但 div border-box y 位置/几何与 chromium 不同（ZW square y=19-457
+  vs CHR y=22-366，差 ~91px）= inline 元素 border-box 几何（top/bottom border 如何相对
+  line-box 扩展）= IFC/inline-box border 渲染 nuance（Phase-A territory），非 clean lever。
+
+★ **border-width-shorthand-003（8.50%）= shorthand 解析【正确】，diff=positional/font-wall**：
+  `border-width:3px 10px 30px`（3-value）→ ZW 实测 top=3/right=10/bottom=30/left=10 全对。
+  diff 集中 `<p>` font-wall（y=0-60）+ bottom-border 区（y=150-210 ~29k px，div 垂直位置
+  因 p/margin 处理与 chromium 异）。shorthand 解析【非缺口】。
+
+★ border-conflict-style-107（11.22%）= collapsed border conflict（R1630 ABANDONED 谱）。
+  border-width-010/013、border-color-012、border-bottom-width-applies-to-001..004（3.16% 簇）
+  = 同 inline-border IFC + positional + font-wall 谱。
+
+⇒ borders = 81.2% plateau（applies-to=inline-border IFC / conflict=R1630 / shorthand 正确 /
+  余 positional+font-wall）。
+
+═══════════════════════════════════════════════
+裁决 + forward（CSS2 subdir 探测 comprehensive 收官）
+═══════════════════════════════════════════════
+本轮 0 net code landed。CSS2 已探子目录累计（8 个，comprehensive）：
+  abspos(R1874 +7 LANDED) ✓唯一 yield / floats(R1873 plateau) / box-display(R1872 R109) /
+  visudet(R1875 plateau,SVG reverted) / visufx(R1876 94%) / lists(R1877 92.9%) /
+  borders(R1879 81.2% plateau) / + R109(R1878 split works, interaction edges)。
+模式确认：除 abspos(R1874 +7) 外，**全 CSS2 子目录 + R109 = plateau 或 entangled**。
+
+★ autonomous clean-lever 空间经 R1872-R1879（八轮 subdir + R109 + 全 major dir R1853-R1872）
+**definitively comprehensive 穷尽**。残余可 hunt（yield 极低/entangled）：
+  - CSS2 余小未探 sub-dir（visuren/selectors/generated-content/pagination/linebox/normal-flow）。
+  - 具体已识别 interaction edge（各须 dedicated scoped slice + 全量 A/B，非单一 fix）：
+    ① block-in-inline-001/002 table intrinsic-width 过宽分配（~2 案，table auto-layout）。
+    ② inline-border box 几何（border-width-applies-to 簇，IFC/Phase-A）。
+    ③ visibility:visible 覆盖（R1876 DEFER，paint_text per-run 过滤）。
+    ④ list vertical spacing（R1877，ul margin-collapse + li line-height）。
+
+forward（next）：
+  ① 唯一 headline unlock = **font-wall 用户 A/B/C**（≥95% plateau，已飞书 surfacing）。
+  ② autonomous 无更多 clean lever（八轮证）；维持 plateau（周期 scoped oracle 回归巡检）。
+  ③ 若攻 structural：选一具体 interaction edge 起 dedicated multi-session spec-rfc
+    （block-in-inline table intrinsic-width 最 concrete ~2 案，或 inline-border IFC）。
+  ④ DC-11/12 interactive（sticky/scroll/scroll-snap）须 browser-display 验证环境。
