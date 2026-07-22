@@ -1046,6 +1046,42 @@ fn test_overflow_wrap_normal_no_break() {
     );
 }
 
+// ── R1855：break-word 内容高度测量 ──
+
+/// 递归查找是否存在「窄盒 + 多行高度」的盒子（break-word 长词断成多行的 `<p>`）。
+fn has_narrow_multiline_box(b: &LayoutBox) -> bool {
+    // width ≤ 100（窄 `<p>`，区别于全宽 body/html）；height ≥ 60（≥3 行 @20px，区别于 1 行溢出）。
+    (b.width <= 100.0 && b.height >= 60.0) || b.children.iter().any(has_narrow_multiline_box)
+}
+
+/// R1855：overflow-wrap:break-word 容器的内容高度测量须 char-break。
+///
+/// 窄容器（60px）中的长不可断词（20 字 × 20px = 400px）+ break-word 应断成 ≥4 行，
+/// 故 `<p>` box 高度须为多行（≥60px）。`measure_text_content` 此前未传 break_word，
+/// taffy 测成 1 行 → box 过矮 → 与 paint/stored IFC（char-break 多行）不一致 →
+/// 兄弟错位（word-wrap-002/overflow-wrap-002 等回归）。
+#[test]
+fn r1855_break_word_measures_multiline_height() {
+    use crate::pipeline::RenderPipeline;
+    let html = "<html><body><p>AAAAAAAAAAAAAAAAAAAA</p></body></html>";
+
+    // break-word：长词应 char-break 成多行 → 存在窄多行盒。
+    let mut p = RenderPipeline::new(120.0, 400.0);
+    let r = p.render_html(html, "p { overflow-wrap: break-word; font-size: 20px; width: 60px; }");
+    assert!(
+        has_narrow_multiline_box(&r.layout.root),
+        "break-word <p> 应测成多行（窄盒 height>=60），实际未找到——测量期未 char-break"
+    );
+
+    // 对照：overflow-wrap:normal（无 break-word）长词溢出 1 行 → 不应有窄多行盒。
+    let mut p2 = RenderPipeline::new(120.0, 400.0);
+    let r2 = p2.render_html(html, "p { overflow-wrap: normal; font-size: 20px; width: 60px; }");
+    assert!(
+        !has_narrow_multiline_box(&r2.layout.root),
+        "normal（无 break-word）<p> 应 1 行溢出，不应有窄多行盒"
+    );
+}
+
 // ── writing-mode 渲染测试 ──
 
 /// 测试 writing-mode: horizontal-tb（默认）字形不旋转。

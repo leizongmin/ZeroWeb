@@ -1132,11 +1132,24 @@ pub(crate) fn measure_text_content(
         .collect();
     // R645：white-space 影响 taffy 测量的内容高度——pre/nowrap 容器不应在测量时换行
     //（否则 box content_height 偏大，暴露于 SEA 词典分词文字 per-char fallback breaking）。
-    let no_wrap = resolve_no_wrap_for_ifc_measure(styles.get(&dom_id));
+    // R1855：overflow-wrap:break-word/anywhere 须在测量期也 char-break——否则 break-word 容器被
+    // 测成 1 行（box 高度偏小），与 paint/stored IFC（char-break 多行）不一致，致 #ref 该断词
+    // 多行却只占 1 行高度（word-wrap-002/overflow-wrap-002 等）。no_wrap=true 时 char-break 已被
+    // break_lines.rs 的 `!self.no_wrap` gate 关闭，故此处 break_word 仅对非 nowrap 容器生效（spec 正确）。
+    let measure_style = styles.get(&dom_id);
+    let no_wrap = resolve_no_wrap_for_ifc_measure(measure_style);
+    let break_word = measure_style.is_some_and(|s| {
+        use zero_style_system::property::types::OverflowWrapValue;
+        matches!(
+            s.overflow_wrap,
+            OverflowWrapValue::BreakWord | OverflowWrapValue::Anywhere
+        )
+    });
     let mut inline_ctx = InlineFormattingContext::new(width)
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
         .with_no_wrap(no_wrap)
+        .with_break_word(break_word)
         .with_inline_block_sizes(ib_sizes)
         .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
     if let Some(provider) = font_metric_provider {
