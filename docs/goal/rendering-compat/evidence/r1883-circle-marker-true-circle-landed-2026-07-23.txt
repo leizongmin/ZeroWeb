@@ -1,0 +1,45 @@
+R1883 — list-style-type:circle 空心圆 marker 修复 LANDED default-on·net-0 reftest（circle marker 罕见 + font-wall 主导）但 correctness/product-visible（2:1 椭圆→真圆）·paint-only 零回归
+日期: 2026-07-23
+范围: crates/engine (paint/painter/text/text_list.rs + paint/tests/visual.rs)
+
+═══════════════════════════════════════════════
+1. 触发（R1882 同向 clean-independence-polish 续）
+═══════════════════════════════════════════════
+R1882 disc 方→圆（+1）证 paint-only correctness polish 可独立 land。续修 circle marker。
+旧实现（text_list.rs Circle 分支）用 add_stroke（x1→x2 长度=marker_size，width=marker_size，
+cap=Round）= round-cap 水平线 = 2:1 胶囊（bounding 2*marker_size × marker_size，椭圆），非空心圆。
+
+═══════════════════════════════════════════════
+2. fix（paint，default-on）
+═══════════════════════════════════════════════
+Circle 分支：add_stroke(胶囊) → add_path_stroke（24 点圆周多边形，closed=true，line_width=
+marker_size*0.2 max 1.0）。圆心 (actual_marker_x+marker_size/2, marker_y+font_size*0.3)，
+radius=marker_size/2。移除未用 import StrokePrimitive/LineCap。新增单测
+test_list_style_circle_renders_true_circle（断言 path_strokes 非空 + 48 f32 顶点=24 点圆）。
+
+═══════════════════════════════════════════════
+3. A/B + 门禁
+═══════════════════════════════════════════════
+★ A/B css/CSS2/lists 156 案：oracle-pass 146(93.6%)==R1882 baseline **net-0**（circle marker
+罕见 + 用 circle 的 case 被 font-wall/list-spacing 主导，marker shape 非翻转 tipping point）；
+top-15 worst 字节同 baseline（零回归）。
+★ 门禁：fmt clean / clippy --workspace -D warnings clean / make test 全绿（含新单测
+test_list_style_circle_renders_true_circle）/product-smoke welcome 16.84%==baseline struct PASS 全 fixture。
+
+═══════════════════════════════════════════════
+4. 裁决（net-0 但 land 的理由）+ forward
+═══════════════════════════════════════════════
+★ **land 理由**（区别 R1849 net-0-revert）：circle marker 旧 2:1 椭圆是**product-visible
+明显错误渲染**（任何 `<ul style="list-style-type:circle">` 显示椭圆非圆 outline）；fix 是
+chromium-alignment（goal 本质）+ paint-only 零回归；net-0 是 corpus 性质（circle 罕见 +
+font-wall 主导那些 case），非 fix 正确性问题。R1849 针对 speculative/purposeless net-0；
+此 fix 有明确 correctness purpose（同 R1882 disc 谱，disc 恰 +1，circle +0，皆 correctness）。
+若严格守 R1849 可 revert，但 product-visible correctness 价值 > 24 点 polygon 代码成本。
+
+forward（next）：
+  ① 同向 clean-independence-polish（paint-only 非 inline-stretch）续 hunt：square marker
+    已正确（add_fill Rect=方块 ✓）；其他 paint-only correctness（hr 渲染 / border-style
+    dashed/dotted 图元 / outline）。
+  ② circle marker 真正 yield 须待 circle-marker case 近 pass（font-wall unlock）。
+  ③ 大 lever 仍 inline-stretch/Phase-A user-gated（R1881 合成）。
+  ④ R1874 谱（abspos 定位独立 inline-stretch）续找独立 lever。

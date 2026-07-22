@@ -1691,9 +1691,46 @@ fn test_list_style_disc_renders_circle() {
         size
     );
     assert!(
-        prims.fills.iter().all(|f| (f.rect.size.width - f.rect.size.height).abs() > 0.5
-            || f.rect.size.width < 2.0),
+        prims
+            .fills
+            .iter()
+            .all(|f| (f.rect.size.width - f.rect.size.height).abs() > 0.5 || f.rect.size.width < 2.0),
         "disc marker 不应残留方块 fill（与圆 marker 同尺寸的 fill 应消失）"
+    );
+}
+
+/// R1883：list-style-type:circle 生成空心圆 outline（PathStroke 多边形），非 2:1 胶囊。
+///
+/// CSS §12.5 / chromium：circle 为空心圆。旧实现用 add_stroke（length=width + Round cap）
+/// 实为 2:1 胶囊（椭圆）。修复后用 add_path_stroke 多边形（24 点圆周）描真圆。
+#[test]
+fn test_list_style_circle_renders_true_circle() {
+    let mut doc = zero_dom::Document::new();
+    let ul = doc.create_element("ul");
+    let li = doc.create_element("li");
+    let _ = doc.append_child(ul, li);
+
+    let layout = make_box(Some(li), 0.0, 0.0, 200.0, 30.0);
+
+    let mut style = ComputedStyle::default();
+    style.list_style_type = zero_css_parser::values::ListStyleTypeValue::Circle;
+    let mut styles = HashMap::new();
+    styles.insert(li, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let prims = painter.primitives();
+    // circle 应产出 path_stroke（多边形真圆），非 stroke（线段胶囊）。
+    assert!(
+        !prims.path_strokes.is_empty(),
+        "list-style-type:circle 应生成 path_stroke（多边形真圆 outline），实际 path_strokes 为空"
+    );
+    // 24 点圆周 = 48 个 f32 顶点。
+    assert_eq!(
+        prims.path_strokes[0].vertices.len(),
+        48,
+        "circle marker 应为 24 点圆周多边形（48 f32），实际 {}",
+        prims.path_strokes[0].vertices.len()
     );
 }
 

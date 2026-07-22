@@ -10,9 +10,7 @@ use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
-use zero_render_foundation::primitive::{
-    GlyphPrimitive, ImagePrimitive, LineCap, RoundedRectPrimitive, StrokePrimitive,
-};
+use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, RoundedRectPrimitive};
 use zero_style_system::ComputedStyle;
 
 use crate::measure_char_for_paint;
@@ -156,16 +154,21 @@ impl super::super::Painter {
                 ));
             }
             ListStyleTypeValue::Circle => {
-                self.primitives.add_stroke(StrokePrimitive {
-                    x1: actual_marker_x,
-                    y1: marker_y + font_size * 0.3 - marker_size / 2.0 + marker_size / 2.0,
-                    x2: actual_marker_x + marker_size,
-                    y2: marker_y + font_size * 0.3 - marker_size / 2.0 + marker_size / 2.0,
-                    width: marker_size,
-                    color,
-                    style: zero_render_foundation::primitive::LineStyle::Solid,
-                    cap: LineCap::Round,
-                });
+                // R1883：circle 是空心圆 outline（CSS §12.5 / chromium），非水平线胶囊。
+                // 旧 add_stroke（length=width=marker_size + Round cap）实为 2:1 胶囊（椭圆），
+                // 非圆。改用 PathStroke 多边形（24 点圆周）描真圆，line_width 细（~0.2em）。
+                let cx = actual_marker_x + marker_size / 2.0;
+                let cy = marker_y + font_size * 0.3;
+                let radius = marker_size / 2.0;
+                let line_w = (marker_size * 0.2).max(1.0);
+                let steps = 24;
+                let mut verts: Vec<f32> = Vec::with_capacity(steps * 2);
+                for i in 0..steps {
+                    let theta = (i as f32) * (2.0 * std::f32::consts::PI / steps as f32);
+                    verts.push(cx + radius * theta.cos());
+                    verts.push(cy + radius * theta.sin());
+                }
+                self.primitives.add_path_stroke(verts, color, line_w, true);
             }
             ListStyleTypeValue::Square => {
                 self.primitives.add_fill(
