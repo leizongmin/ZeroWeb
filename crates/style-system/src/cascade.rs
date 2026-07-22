@@ -216,6 +216,21 @@ fn is_invalid_enum_value(property: &str, value: &str) -> bool {
     }
 }
 
+/// 将遗留属性名别名规范化为标准名。
+///
+/// CSS 规范中部分属性有遗留别名，指向同一属性（同一 computed 字段、同一级联槽位）。
+/// 必须在级联分组前规范化，否则别名名与标准名会成为**两个不同的级联键**——
+/// 别名声明的值会被后续「该属性未出现在级联表」的继承逻辑用父值/初始值覆盖。
+///
+/// 当前映射（CSS Text 3 §5.3）：
+/// - `word-wrap` → `overflow-wrap`（遗留别名，二者完全等价）
+fn canonical_property_name(property: &str) -> &str {
+    match property {
+        "word-wrap" => "overflow-wrap",
+        _ => property,
+    }
+}
+
 /// 级联算法。
 ///
 /// 接收一组级联声明，按属性名分组后，为每个属性选择优先级最高的声明。
@@ -224,10 +239,11 @@ fn is_invalid_enum_value(property: &str, value: &str) -> bool {
 ///
 /// 返回一个 HashMap，键为属性名，值为胜出的声明值。
 pub fn cascade(declarations: Vec<CascadedDeclaration>) -> HashMap<String, String> {
-    // 按属性名分组
+    // 按属性名分组（遗留别名先规范化为标准名——见 canonical_property_name）
     let mut by_property: HashMap<String, Vec<CascadedDeclaration>> = HashMap::new();
     for decl in declarations {
-        by_property.entry(decl.property.clone()).or_default().push(decl);
+        let canonical = canonical_property_name(&decl.property).to_string();
+        by_property.entry(canonical).or_default().push(decl);
     }
 
     let mut result = HashMap::new();
@@ -285,6 +301,52 @@ mod tests {
         assert!(author > user);
         assert!(user > ua);
         assert!(author > ua);
+    }
+
+    #[test]
+    fn test_canonical_property_name_word_wrap_alias() {
+        // CSS Text 3 §5.3：word-wrap 是 overflow-wrap 的遗留别名，须规范化为同一属性。
+        assert_eq!(canonical_property_name("word-wrap"), "overflow-wrap");
+        // 非别名属性原样返回。
+        assert_eq!(canonical_property_name("overflow-wrap"), "overflow-wrap");
+        assert_eq!(canonical_property_name("color"), "color");
+        assert_eq!(canonical_property_name("font-size"), "font-size");
+    }
+
+    #[test]
+    fn test_cascade_normalizes_word_wrap_to_overflow_wrap() {
+        // word-wrap 声明经 cascade() 后须以标准名 overflow-wrap 出现在结果中，
+        // 而非作为独立键 word-wrap（否则会被继承逻辑当「未声明」用父值覆盖——见 canonical_property_name 注释）。
+        let decls = vec![CascadedDeclaration {
+            property: "word-wrap".to_string(),
+            value: "break-word".to_string(),
+            order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+        }];
+        let result = cascade(decls);
+        // 标准名存在，别名名不存在。
+        assert_eq!(result.get("overflow-wrap"), Some(&"break-word".to_string()));
+        assert!(!result.contains_key("word-wrap"));
+    }
+
+    #[test]
+    fn test_cascade_word_wrap_and_overflow_wrap_share_slot() {
+        // word-wrap 与 overflow-wrap 是同一属性：同优先级下后声明者胜，而非两个独立键各取其值。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "overflow-wrap".to_string(),
+                value: "normal".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "word-wrap".to_string(),
+                value: "break-word".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls);
+        // 同一槽位：后声明的 word-wrap:break-word 胜出。
+        assert_eq!(result.get("overflow-wrap"), Some(&"break-word".to_string()));
+        assert!(!result.contains_key("word-wrap"));
     }
 
     #[test]
