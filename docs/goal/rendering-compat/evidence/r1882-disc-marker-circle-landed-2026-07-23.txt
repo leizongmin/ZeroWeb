@@ -1,0 +1,45 @@
+R1882 — list-style-type:disc 实心圆 marker 修复 LANDED default-on·css/CSS2/lists 145→146 net +1 零回归·product-visible（bullet 圆非方）
+日期: 2026-07-23
+范围: crates/engine (paint/painter/text/text_list.rs + paint/tests/visual.rs)
+
+═══════════════════════════════════════════════
+1. 触发（autonomous 大 lever 全 user-gated 后的 clean correctness polish）
+═══════════════════════════════════════════════
+R1881 合成：所有大 lever 同根 inline-stretch/Phase-A（user-gated）。本轮转 clean、safe、
+product-visible 的 correctness 修复。R1877 lists 探测时注意到 disc marker 绘 6.4×6.4 方块
+（add_fill Rect）vs chromium 实心圆——CSS §12.5 / chromium 的 list-style-type:disc 是实心圆。
+
+═══════════════════════════════════════════════
+2. fix（paint，default-on）
+═══════════════════════════════════════════════
+text_list.rs::paint_list_marker 的 Disc 分支：`add_fill(Rect)`（方块）→
+`add_rounded_rect(RoundedRectPrimitive::uniform(rect, color, marker_size/2))`（radius=size/2
+= 正方形四角全圆 → 实心圆）。marker_size = font_size*0.4 不变（chromium ~0.4em 对齐）。
+import 加 RoundedRectPrimitive。
+
+═══════════════════════════════════════════════
+3. A/B + 门禁
+═══════════════════════════════════════════════
+★ A/B css/CSS2/lists 156 案：oracle-pass 145(92.9%)→**146(93.6%) net +1**，mismatch 11→10，
+top-15 worst 字节同 baseline（list-style-position 簇=list-spacing entanglement 不变，零回归）。
+disc→circle 仅 IMPROVE（chromium 用圆，ZW 方→圆只能更近），不会 regress passing case。
+★ 门禁：fmt clean / clippy --workspace -D warnings clean / make test 全绿（含新单测
+test_list_style_disc_renders_circle 断言 disc 产 rounded_rect radius=size/2 非方块 fill）/
+product-smoke welcome 16.84%(80808/480000)==baseline 零回归 + struct PASS（@800/@375/@320 +
+morning-work 全 PASS）。
+
+═══════════════════════════════════════════════
+4. 裁决 + forward
+═══════════════════════════════════════════════
++1 reftest（小但 clean）+ product-visible correctness（bullet 圆非方，chromium 对齐）。
+零回归。disc marker shape 修复不依赖 inline-stretch/Phase-A（纯 paint 图元选择），独立可 land。
+本轮 0 dependency on user-gated unlock。
+
+forward（next）：
+  ① 大 lever（block-in-inline table / inline-border / visibility / list-spacing / font-wall）
+    仍同根 inline-stretch/Phase-A（user-gated ruling #2），R1881 合成。
+  ② 类似 clean independence polish（非 inline-stretch 路径）可续 hunt——如 list-style-type:
+    circle 当前用 add_stroke hack（水平线+Round cap=胶囊非真圆 outline），可改 PathFill/Stoke
+    真圆（低优先 cosmetic）；或其他 paint-only correctness。
+  ③ R1874 谱（abspos 定位独立 inline-stretch）续找独立 lever（近穷尽）。
+  ④ headline unlock = inline-stretch/Phase-A（user-gated，已飞书 surfacing）。

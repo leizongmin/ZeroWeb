@@ -1655,6 +1655,48 @@ fn test_list_style_image_none() {
     );
 }
 
+/// R1882：list-style-type:disc 生成实心圆 marker（圆角矩形 radius=size/2），非方块。
+///
+/// CSS §12.5 / chromium：disc 为实心圆。旧实现用 add_fill(Rect) 绘方块。修复后用
+/// RoundedRectPrimitive（radius = marker_size/2 = 正方形四角全圆 → 圆）近似实心圆。
+#[test]
+fn test_list_style_disc_renders_circle() {
+    let mut doc = zero_dom::Document::new();
+    let ul = doc.create_element("ul");
+    let li = doc.create_element("li");
+    let _ = doc.append_child(ul, li);
+
+    let layout = make_box(Some(li), 0.0, 0.0, 200.0, 30.0);
+
+    let mut style = ComputedStyle::default();
+    style.list_style_type = zero_css_parser::values::ListStyleTypeValue::Disc;
+    let mut styles = HashMap::new();
+    styles.insert(li, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let prims = painter.primitives();
+    // disc 应产出 rounded_rect（实心圆），非 fill（方块）。
+    assert!(
+        !prims.rounded_rects.is_empty(),
+        "list-style-type:disc 应生成 rounded_rect（实心圆 marker），实际 rounded_rects 为空"
+    );
+    let r = &prims.rounded_rects[0];
+    // 圆 = 正方形四角 radius = size/2。
+    let size = r.rect.size.width;
+    assert!(
+        (r.top_left_radius - size / 2.0).abs() < 0.01,
+        "disc marker 应四角 radius=size/2（实心圆），实际 top_left_radius={} size={}",
+        r.top_left_radius,
+        size
+    );
+    assert!(
+        prims.fills.iter().all(|f| (f.rect.size.width - f.rect.size.height).abs() > 0.5
+            || f.rect.size.width < 2.0),
+        "disc marker 不应残留方块 fill（与圆 marker 同尺寸的 fill 应消失）"
+    );
+}
+
 /// 测试 empty-cells:hide 跳过空单元格的背景绘制。
 #[test]
 fn test_empty_cells_hide() {

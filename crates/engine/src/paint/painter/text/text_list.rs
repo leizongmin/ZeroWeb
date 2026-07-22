@@ -10,7 +10,9 @@ use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
-use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, LineCap, StrokePrimitive};
+use zero_render_foundation::primitive::{
+    GlyphPrimitive, ImagePrimitive, LineCap, RoundedRectPrimitive, StrokePrimitive,
+};
 use zero_style_system::ComputedStyle;
 
 use crate::measure_char_for_paint;
@@ -140,7 +142,9 @@ impl super::super::Painter {
 
         match style.list_style_type {
             ListStyleTypeValue::Disc => {
-                self.primitives.add_fill(
+                // R1882：disc 是实心圆（CSS §12.5 / chromium），非方块。用圆角矩形
+                //（radius = marker_size/2 = 正方形四角全圆 → 圆）近似实心圆 marker。
+                self.primitives.add_rounded_rect(RoundedRectPrimitive::uniform(
                     Rect::new(
                         actual_marker_x,
                         marker_y + font_size * 0.3 - marker_size / 2.0,
@@ -148,7 +152,8 @@ impl super::super::Painter {
                         marker_size,
                     ),
                     color,
-                );
+                    marker_size / 2.0,
+                ));
             }
             ListStyleTypeValue::Circle => {
                 self.primitives.add_stroke(StrokePrimitive {
