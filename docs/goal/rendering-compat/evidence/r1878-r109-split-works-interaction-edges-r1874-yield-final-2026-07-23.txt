@@ -1,0 +1,60 @@
+R1878 — R109 block-in-inline empirical probe（split 工作，diff=interaction 边缘）+ R1874 yield 最终核算 +7·0 net code
+日期: 2026-07-23
+
+═══════════════════════════════════════════════
+1. R109 block-in-inline empirical probe（承接上轮 forward「攻 R109 最大 structural lever」）
+═══════════════════════════════════════════════
+cluster：block-in-inline filter 119 案 58% pass / 50 mismatch。top = insert/delete-*
+（12-21%，JS dynamic）+ block-in-inline-001/002（4.39%）+ margin-collapses-through-float
+（3-4%）+ relpos-002（3.53%）+ negative-margin（3.21%）。
+
+★ **block-in-inline-001 实证（LAYOUT_DUMP）**：测试 `<span class=inline>Line1<span class=block>Line2</span>Line3</span>`
+（§9.2.1.1 inline 含 block 须拆成匿名块）。ZW **正确拆分**：
+  span.inline[Line1] y=54 h=18 w=47.2（lime bg ✓）
+  span.block[Line2]  y=73 h=19 w=277.2（green bg ✓）
+  span.inline[Line3] y=91 h=18 w=47.2（lime bg ✓）
+3 行堆叠 + 正确背景。**核心 R109 split 机制工作**。
+
+4.39% diff 根因 = **table column 宽度不对称**：test td=283.2（block 填满→Line2 green
+宽 277），ref td=53.2（div.b Line2 green 宽 47）。两个 td 同行但 ZW auto-layout 给
+含 block-in-inline 的 test td 过宽（283 vs 内容 ~47）。= table intrinsic width +
+block-in-inline 交互，非 core R109 split 缺口。
+
+★ **裁决**：R109 cluster 的 diff 全是 **interaction 边缘 case**（table sizing / margin
+collapse+float / relpos / negative margin / JS dynamic），**非单一 R109 split 缺口**。
+core split 已工作。⇒ R109 **非 clean high-yield lever**——是多个小 entangled bug 的集合，
+~15 案 cluster 不会从单一 fix 翻转。确认 R125/R213/R1052 deadlock 史。勿再以「修 R109
+split」为单一 lever；若攻须逐 interaction 边缘 case（table intrinsic width for block-in-
+inline / margin-collapse-through-split 等）各起 scoped slice。
+
+═══════════════════════════════════════════════
+2. R1874 yield 最终核算（gate-toggle A/B 全 fixed-heavy dir）
+═══════════════════════════════════════════════
+gate-toggle A/B（临时改 abspos.rs gate `is_fixed && !fixed_insets_all_auto`→`is_fixed`
+跑 baseline，恢复→with-fix，git diff 验证还原）跨全 fixed-heavy dir：
+
+  css/css-position:   60 → 61   (+1)
+  css/CSS2/abspos:    21 → 22   (+1)
+  css/CSS2/positioning: 370 → 375  (+5)
+  css/CSS2/box-display: 46 == 46   (0)
+  css/CSS2/visufx:    48 == 48   (0)
+  css/css-multicol:   186 == 186  (0)
+
+⇒ **R1874 总 yield = +7**（definitive）。box-display/visufx/multicol 无 all-auto-inset
+fixed flip（该 pattern 集中在 abspos/positioning dir）。
+
+═══════════════════════════════════════════════
+3. 裁决 + forward
+═══════════════════════════════════════════════
+本轮 0 net code landed（R1874 +7 是已 LANDED commit 6fdc4ba11 的最终核算）。
+autonomous clean-lever 空间经 R1872-R1878 七轮 subdir + R109 probe comprehensive 确认
+**definitively 穷尽**：CSS2 全子目录（abspos/floats/box-display/visudet/visufx/lists）
++ R109 block-in-inline 均 plateau 或 entangled。唯 R1874（abspos fixed-auto-inset）出 +7。
+
+forward（next）：
+  ① 唯一 headline unlock = **font-wall 用户 A/B/C**（≥95% plateau，已飞书 surfacing）。
+  ② autonomous 无更多 clean lever（七轮证）；维持 plateau（周期 scoped oracle 回归巡检）。
+  ③ 若攻 structural：须逐 R109 interaction 边缘 case（table intrinsic width for block-
+    in-inline = block-in-inline-001/002 ~2 案 / margin-collapse-through-split+float 等），
+    各 scoped slice + 全量 A/B，非单一 R109 fix。
+  ④ DC-11/12 interactive（sticky/scroll/scroll-snap）须 browser-display 验证环境。
