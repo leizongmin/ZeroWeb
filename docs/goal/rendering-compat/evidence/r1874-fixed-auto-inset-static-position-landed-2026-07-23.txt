@@ -88,8 +88,12 @@ scoped dir A/B（z_vs_chr<1% oracle-pass）：
                      initial-007(2.50% oracle 伪影)/between-float-and-text(2.26% entangled) 不变
   css/css-position:  60/97 (61.9%, R1868 baseline) → 61/97 (62.9%)  net +1（另一 fixed-全-auto
                      inset case FLIP，零回归——R324 fixed-WITH-inset 用例字节不变）
+  css/CSS2/positioning: 370/520 (71.2%) → 375/520 (72.1%)  net +5（R1877 gate-toggle
+                     A/B 实测：临时改 abspos.rs gate `is_fixed && !fixed_insets_all_auto`→
+                     `is_fixed` 跑 baseline 370，恢复 gate→375；git diff 验证还原）
+  css/css-multicol:    186 (==186，少 fixed 用例，R1874 不影响)
 
-⇒ net +2 零回归（两个有 baseline 的 dir）。
+⇒ **总 yield +7** 零回归（css-position +1 / CSS2/abspos +1 / CSS2/positioning +5）。
 
 ═══════════════════════════════════════════════
 5. 门禁
