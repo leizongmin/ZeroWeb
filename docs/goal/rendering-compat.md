@@ -93,7 +93,7 @@
 | 图片渲染 | 背景图片（`background-image`）、`<img>` 元素、`list-style-image` 的图片解码和渲染 | ✅ **已实现（M7）**：CPU `render_image`（cpu/mod.rs）+ GPU `draw_image_pass`（纹理采样） |
 | 线段/路径渲染 | `StrokePrimitive`（线段）、`PathFillPrimitive`（路径填充）、`PathStrokePrimitive`（路径描边）的渲染 | ✅ **已实现（M7）**：render_stroke/render_path_fill/render_path_stroke（cpu/stroke.rs）；原「渲染器未实现」已过时 |
 | 变换渲染 | CSS 2D transform（translate、rotate、scale、skew、matrix）的正确应用 | `TransformPrimitive` ✅ 已实现（M7，CPU+GPU，见 DC-8/9）；原「渲染器未实现」描述已过时；3D transform 降级为 2D |
-| 裁剪渲染 | `overflow: hidden/clip` 的矩形裁剪，`border-radius` 的圆角裁剪 | `ClipPrimitive` ✅ 已实现（M7，CPU+GPU，见 DC-8/9）；原「渲染器未实现」描述已过时；当前裁剪仅在浏览器层做像素级处理，不在渲染器层 |
+| 裁剪渲染 | `overflow: hidden/clip` 的矩形裁剪，`border-radius` 的圆角裁剪 | `ClipPrimitive` ✅ 已实现（M7，CPU+GPU，见 DC-8/9）；原「渲染器未实现」描述已过时；**R1861 实测：overflow:hidden/scroll/auto 裁剪已在 paint 路径工作**（painter needs_clip 生成 clip primitive，200×200 内容裁剪到 100×100 容器实测通过）；原「仅在浏览器层做像素级处理，不在渲染器层」描述已过时（浏览器层像素裁剪为补充 viewport/chrome，非主要 overflow 裁剪） |
 | 滤镜渲染 | CSS filter（blur、brightness、contrast、grayscale、hue-rotate、invert、opacity、saturate、sepia、drop-shadow） | `FilterPrimitive` ✅ 已实现（M7，CPU+GPU，见 DC-8/9）；原「渲染器未实现」描述已过时 |
 | 混合模式渲染 | `mix-blend-mode` 的 16 种混合模式（normal、multiply、screen、overlay、darken、lighten 等） | `BlendModePrimitive` ✅ 已实现（M7，CPU+GPU，见 DC-8/9）；原「渲染器未实现」描述已过时 |
 | Margin 折叠 | 相邻块级元素 margin-top/margin-bottom 的正确折叠算法 | ✅ **已实现（R323 实测）**：taffy 0.7 `CollapsibleMarginSet` 内置块级 margin 折叠；R323 探针实测 6 case 全过（相邻兄弟 max 折叠 / 父子折叠 / border 阻断 / 负 margin 30+(-10)=20 / 祖父嵌套 max(40,0,35)=40 / BFC `overflow:hidden` 子不折叠），margin reftest 5/5 全绿（`block-in-inline-...-margin-collapse` 0.00%） |
