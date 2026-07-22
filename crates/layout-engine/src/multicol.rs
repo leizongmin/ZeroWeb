@@ -623,6 +623,121 @@ fn has_abspos_descendant(box_node: &LayoutBox) -> bool {
     false
 }
 
+/// R1869 Slice 1（RFC `multicol-block-fragmentation-rfc-2026-07-23.md`）：multicol 单子块
+/// 「透明展开」分片。
+///
+/// 当 multicol 唯一 in-flow 子是块（wrapper，无 border/padding、非 spanner、非 monolithic、
+/// 非 nested multicol）且其直接子含 forced column break 时，把 wrapper 的直接子当 multicol
+/// fragmentable units 跨列分配（复用 [`assign_children_to_columns_with_breaking`]，forced
+/// breaks 驱动每子入新列），定位到列 x，并把 wrapper 宽设为 multicol 内容宽、高设为 max
+/// 列内容高——使 wrapper 背景填满各列（chromium fragmented-bg 近似；multicol-fill-auto-004
+/// green div bg 填满 100×100）。env `ZW_MULTICOL_BLOCKFRAG=0` 关闭（kill-switch，default-on）。
+/// gate 严格：仅单 in-flow 块子（无 box）+ 直接子 forced break，不触现有 direct-children 路径。
+fn try_layout_single_child_block_frag(
+    container: &mut LayoutBox,
+    info: &ColumnInfo,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> bool {
+    if std::env::var("ZW_MULTICOL_BLOCKFRAG").as_deref() == Ok("0") {
+        return false;
+    }
+    // 1. 找唯一 in-flow 子（wrapper）
+    let wrapper_idx = {
+        let mut idx: Option<usize> = None;
+        for (i, c) in container.children.iter().enumerate() {
+            if c.is_absolute || c.is_fixed {
+                continue;
+            }
+            if idx.is_some() {
+                return false; // 多于一个 in-flow 子 → 非本 gate
+            }
+            idx = Some(i);
+        }
+        match idx {
+            Some(i) => i,
+            None => return false,
+        }
+    };
+    // 2. gate + 收集 wrapper 直接子（immutable 借用，块内结束供后续 mutable）
+    let (child_info, forced_breaks, forced_breaks_after) = {
+        let wrapper = &container.children[wrapper_idx];
+        let Some(wid) = wrapper.node_id else {
+            return false;
+        };
+        let Some(ws) = styles.get(&wid) else {
+            return false;
+        };
+        if !wrapper.is_block_level
+            || matches!(ws.column_span, ColumnSpanComputedValue::All)
+            || wrapper.overflow_x != OverflowClip::Visible
+            || wrapper.overflow_y != OverflowClip::Visible
+            || matches!(ws.column_count, ColumnCountComputedValue::Number(_))
+            || matches!(ws.column_width, ColumnWidthComputedValue::Length(_))
+            // wrapper 须无自身 box（Slice 1 简化：border/padding 与列坐标系互斥）
+            || wrapper.border_top + wrapper.border_bottom + wrapper.padding_top + wrapper.padding_bottom
+                > 0.5
+        {
+            return false;
+        }
+        let mut child_info: Vec<(usize, f32)> = Vec::new();
+        let mut forced_breaks: Vec<bool> = Vec::new();
+        let mut forced_breaks_after: Vec<bool> = Vec::new();
+        let mut has_forced = false;
+        for (i, c) in wrapper.children.iter().enumerate() {
+            if c.is_absolute || c.is_fixed {
+                continue;
+            }
+            child_info.push((i, c.height + c.margin_top + c.margin_bottom));
+            let st = c.node_id.and_then(|id| styles.get(&id));
+            let fb = st.is_some_and(|s| matches!(s.break_before, BreakValue::Column | BreakValue::Page));
+            let fa = st.is_some_and(|s| matches!(s.break_after, BreakValue::Column | BreakValue::Page));
+            if fb || fa {
+                has_forced = true;
+            }
+            forced_breaks.push(fb);
+            forced_breaks_after.push(fa);
+        }
+        if !has_forced || child_info.is_empty() {
+            return false;
+        }
+        (child_info, forced_breaks, forced_breaks_after)
+    };
+    // 3. 分配：max_col_height 用大 sentinel 使子总适应当前列，由 forced breaks 驱动换列。
+    let assignments = assign_children_to_columns_with_breaking(
+        &child_info,
+        info.count,
+        100_000.0,
+        &forced_breaks,
+        &forced_breaks_after,
+    );
+    // 4. 定位 wrapper 子到列 x + 设 wrapper 宽/高（bg 填满）。
+    let wrapper = &mut container.children[wrapper_idx];
+    let col_stride = info.column_width + info.gap;
+    let mut max_col_h = 0.0f32;
+    for (col_idx, col_frags) in assignments.iter().enumerate() {
+        let col_x = col_idx as f32 * col_stride;
+        let mut y = 0.0f32;
+        for frag in col_frags {
+            let child = &mut wrapper.children[frag.child_idx];
+            child.x = col_x + child.margin_left;
+            child.y = y + child.margin_top - frag.fragment_y_offset;
+            if child.width > info.column_width {
+                child.width = info.column_width;
+            }
+            y += frag.visual_height;
+        }
+        max_col_h = max_col_h.max(y);
+    }
+    // wrapper 宽 = multicol 内容宽（子列 x 偏移有效）；高 = max 列内容高（bg 填各列）。
+    wrapper.width = info.column_width * info.count as f32 + info.gap * (info.count - 1) as f32;
+    wrapper.content_width = wrapper.width;
+    if max_col_h > 0.0 {
+        wrapper.height = max_col_h;
+        wrapper.content_height = max_col_h;
+    }
+    true
+}
+
 /// 对单个 multicol 容器执行布局。
 ///
 /// 算法：
@@ -661,6 +776,12 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
 
     // R1341：嵌套 spanner wrapper-fragmentation（synthetic-container 首版）。命中则跳过常规路径。
     if try_layout_nested_spanner(container, info, styles) {
+        return;
+    }
+
+    // R1869 Slice 1（RFC multicol-block-fragmentation）：单子块 + 后代 forced break 透明展开。
+    // env ZW_MULTICOL_BLOCKFRAG=0 关闭（kill-switch，default-on）。命中则跳过常规 direct-children 路径。
+    if try_layout_single_child_block_frag(container, info, styles) {
         return;
     }
 
