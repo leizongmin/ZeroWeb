@@ -122,6 +122,45 @@ pub(super) fn multicol_balance_target_height(num_lines: usize, col_count: usize,
     }
 }
 
+/// R1862：判定 inline-content multicol 的哪些列实际有内容。
+///
+/// `store_inline_multicol_columns`（inline_finalization.rs）把每行 fragment.x 加上
+/// `col_idx×(col_w+gap)` 列偏移后存入 `inline_layout`，故某列是否有内容 = 是否存在
+/// fragment.x 落在该列范围 `[col_idx×stride, col_idx×stride+col_w]`（stride = col_w+gap）。
+///
+/// 供 `paint_column_rules` 实现 CSS Multicol §5.2「列分隔线仅在相邻两列都有内容时绘制」：
+/// `column-fill:auto` 容器内容只填满部分列时（如 columnfill-auto-max-height-001 内容仅
+/// 在 col1），空列侧的 rule 不应绘制（旧实现因无 block 子而跳过检查 → 误画 red rule）。
+pub(super) fn inline_multicol_used_columns(
+    inline_layout: &[zero_layout_engine::types::InlineLayoutLine],
+    col_w: f32,
+    gap: f32,
+    count: usize,
+) -> Vec<bool> {
+    let stride = col_w + gap;
+    let mut used = vec![false; count];
+    if stride <= 0.0 || col_w <= 0.0 || count == 0 {
+        return used;
+    }
+    for line in inline_layout {
+        for frag in &line.fragments {
+            let col_idx = (frag.x / stride).floor();
+            if col_idx < 0.0 {
+                continue;
+            }
+            let col_idx = col_idx as usize;
+            if col_idx >= count {
+                continue;
+            }
+            let start = col_idx as f32 * stride;
+            if frag.x >= start - 0.5 && frag.x < start + col_w + 0.5 {
+                used[col_idx] = true;
+            }
+        }
+    }
+    used
+}
+
 impl super::super::Painter {
     /// 绘制多列布局的 column-rule（列之间的分隔线）。
     pub(crate) fn paint_column_rules(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
@@ -222,20 +261,35 @@ impl super::super::Painter {
 
         for i in 1..actual_count {
             // CSS Multi-column §5.2：列分隔线仅在两列都有内容时绘制。
-            // 如果容器有子元素，检查第 i 列和第 i+1 列是否有内容；
-            // 如果容器没有子元素（单元测试场景），默认绘制所有分隔线。
-            if !box_node.children.is_empty() {
-                let col_left_start = (i - 1) as f32 * (col_w + gap);
-                let has_left_content = box_node.children.iter().any(|c| {
-                    !c.is_absolute && !c.is_fixed && c.x >= col_left_start - 0.5 && c.x < col_left_start + col_w + 0.5
-                });
-                let col_right_start = i as f32 * (col_w + gap);
-                let has_right_content = box_node.children.iter().any(|c| {
-                    !c.is_absolute && !c.is_fixed && c.x >= col_right_start - 0.5 && c.x < col_right_start + col_w + 0.5
-                });
-                if !has_left_content || !has_right_content {
-                    continue; // 跳过空列的分隔线
-                }
+            // 检查第 i-1 列（left）和第 i 列（right）是否有内容：
+            // - block 子：按子元素 x（position_multicol_children 已设为列内坐标）判定列归属；
+            // - inline 内容（column-fill:auto + 纯文本，无 block 子）：按 store_inline_multicol_columns
+            //   存的 inline_layout fragment.x 判定（每个 fragment.x 已加 col_idx×(col_w+gap) 列偏移）。
+            //   修 columnfill-auto-max-height-001：内容仅填满 col1 时不应在 col1/col2 间隙画 rule。
+            // - 无子元素信息（单元测试场景）：默认绘制。
+            let col_left_start = (i - 1) as f32 * (col_w + gap);
+            let col_right_start = i as f32 * (col_w + gap);
+            let in_col = |x: f32, start: f32| x >= start - 0.5 && x < start + col_w + 0.5;
+            let (has_left_content, has_right_content) = if !box_node.children.is_empty() {
+                let l = box_node
+                    .children
+                    .iter()
+                    .any(|c| !c.is_absolute && !c.is_fixed && in_col(c.x, col_left_start));
+                let r = box_node
+                    .children
+                    .iter()
+                    .any(|c| !c.is_absolute && !c.is_fixed && in_col(c.x, col_right_start));
+                (l, r)
+            } else if let Some(inline_layout) = &box_node.inline_layout {
+                let used = inline_multicol_used_columns(inline_layout, col_w, gap, actual_count as usize);
+                let l = used.get((i - 1) as usize).copied().unwrap_or(false);
+                let r = used.get(i as usize).copied().unwrap_or(false);
+                (l, r)
+            } else {
+                (true, true)
+            };
+            if !has_left_content || !has_right_content {
+                continue; // 跳过空列的分隔线
             }
 
             let rule_x = content_x + i as f32 * col_w + (i as f32 - 0.5) * gap - rule_w / 2.0;
@@ -289,7 +343,8 @@ impl super::super::Painter {
 
 #[cfg(test)]
 mod r1424_tests {
-    use super::multicol_balance_target_height;
+    use super::{inline_multicol_used_columns, multicol_balance_target_height};
+    use zero_layout_engine::types::{InlineLayoutFragment, InlineLayoutLine};
 
     /// R1424：ceil(行数/列数) × 平均行高 → front-loaded 分布（匹配 chromium）。
     /// 驱动案 multicol-columns-001（44 行/6 列，Ahem 20px/行，total 880）：旧 total/col_count
@@ -333,6 +388,75 @@ mod r1424_tests {
         assert!(
             (multicol_balance_target_height(44, 0, 880.0) - 880.0).abs() < 0.01,
             "col_count=0 回退 total（防 panic）"
+        );
+    }
+
+    /// 构造一个仅含给定列偏移处文本片段的 inline_layout（模拟 store_inline_multicol_columns
+    /// 的存储：fragment.x = in-column x + col_idx×stride）。
+    fn layout_with_fragments(col_w: f32, gap: f32, col_indices: &[usize]) -> Vec<InlineLayoutLine> {
+        let stride = col_w + gap;
+        col_indices
+            .iter()
+            .map(|&c| InlineLayoutLine {
+                y: 0.0,
+                height: 25.0,
+                baseline_y: 20.0,
+                ascent: 20.0,
+                descent: 5.0,
+                fragments: vec![InlineLayoutFragment {
+                    x: c as f32 * stride, // 列起始处（in-column x=0）
+                    y: 0.0,
+                    width: col_w,
+                    height: 25.0,
+                    font_size: 25.0,
+                    is_ahem: true,
+                    is_ahem_font: true,
+                    text: "Abcd".into(),
+                    node_id: None,
+                    baseline_y: 20.0,
+                }],
+            })
+            .collect()
+    }
+
+    /// R1862：columnfill-auto-max-height-001 —— 内容仅填满 col1（declared col_count=2），
+    /// col2 为空。used = [true, false]，故 col1/col2 间隙不应画 rule。
+    #[test]
+    fn r1862_inline_used_columns_single_column_filled() {
+        // col_w=100, gap=100（4em@25px），declared count=2，4 行全在 col1。
+        let layout = layout_with_fragments(100.0, 100.0, &[0, 0, 0, 0]);
+        let used = inline_multicol_used_columns(&layout, 100.0, 100.0, 2);
+        assert_eq!(used, vec![true, false], "仅 col1 有内容，col2 应为空");
+    }
+
+    /// R1862：内容跨所有声明列 → 全部 true（rule 正常绘制，零回归基线）。
+    #[test]
+    fn r1862_inline_used_columns_all_columns_filled() {
+        let layout = layout_with_fragments(100.0, 100.0, &[0, 1]);
+        let used = inline_multicol_used_columns(&layout, 100.0, 100.0, 2);
+        assert_eq!(used, vec![true, true], "两列均有内容");
+    }
+
+    /// R1862：空 inline_layout → 全 false（无任何 rule）。
+    #[test]
+    fn r1862_inline_used_columns_empty_layout() {
+        let used = inline_multicol_used_columns(&[], 100.0, 10.0, 3);
+        assert_eq!(used, vec![false, false, false], "空 layout 无列有内容");
+    }
+
+    /// R1862：退化几何（col_w=0 / stride=0）不 panic，返回全 false。
+    #[test]
+    fn r1862_inline_used_columns_degenerate_geometry() {
+        let layout = layout_with_fragments(100.0, 10.0, &[0]);
+        assert_eq!(
+            inline_multicol_used_columns(&layout, 0.0, 10.0, 2),
+            vec![false, false],
+            "col_w=0 不 panic"
+        );
+        assert_eq!(
+            inline_multicol_used_columns(&layout, 0.0, 0.0, 2),
+            vec![false, false],
+            "stride=0 不 panic"
         );
     }
 }
