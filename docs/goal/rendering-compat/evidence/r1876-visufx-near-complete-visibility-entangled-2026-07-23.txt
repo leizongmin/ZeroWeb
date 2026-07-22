@@ -1,0 +1,47 @@
+R1876 — CSS2/visufx 首探 = 94% near-complete·visibility-005=visibility:visible 覆盖 bug（IFC 文本归属 entangled，DEFER）·0 net code
+日期: 2026-07-23
+
+═══════════════════════════════════════════════
+visufx 首探（51 案 baseline 48/51 = 94.1% pass，仅 3 mismatch）
+═══════════════════════════════════════════════
+承接 R1875 forward（续探 CSS2 余未探 sub-dir）。visufx = §11 visual effects
+（overflow/clip/visibility/z-index）。R1861 已实证 overflow:hidden/scroll/auto CLIP
+在 paint 路径工作。残余 3 mismatch：
+
+  visibility-005.xht（2.63%）= ★ REAL visibility:visible 覆盖 bug（DEFER）
+    测试：`div{visibility:hidden}` 内 `span#testpassed{visibility:visible;color:green;
+    font:100px/1 Ahem}`。CSS §11.2：visibility:visible 后代应覆盖祖先 visibility:hidden。
+    像素 diff：span 区 ZW=(255,255,255) white 10936px vs CHR=(0,128,0) green 9744px
+    → ZW 未绘 green span。
+    根因：span 是 inline，其文本归入 div 的 IFC。paint（mod.rs:506）`if !hidden {
+    paint_text }`——div hidden 时整体跳过 paint_text → span 的 visible 文本（在 div
+    IFC 内）从未被评估。children 递归（mod.rs:533）虽进入 span box，但 inline span
+    的文本由父 block IFC 拥有（text.rs painted_inline_nodes / has_direct_paintable_text
+    去重逻辑），span 自身 paint_text 不产出其文本。
+    fix 须改 paint_text 热路径做 per-text-run owning-element visibility 过滤（hidden
+    block 仍跑 paint_text 但仅绘 visible 后代 run）= IFC 文本归属（R109 territory），
+    moderate complexity + 回归风险，yield ~1 narrow case → DEFER。
+
+  overflow-applies-to-001.xht（1.54%）= overflow 应用 display 类型（inline 非替换不应用）
+    + text-align/line-height font-wall，narrow feature。
+  overflow-propagation-001a/b/c（1.11%/0.67%/0.67%）= body/html overflow → viewport
+    传播（UA §10/§11），narrow feature + `<p>` font-wall。
+
+clip-001..019（0.54-0.65%）= deprecated `clip:` rect() 属性 near-pass（sub-pixel/font-wall）。
+
+⇒ visufx = 94% near-complete plateau。visibility-005 = real bug 但 IFC entangled DEFER。
+
+═══════════════════════════════════════════════
+裁决 + forward
+═══════════════════════════════════════════════
+本轮 0 net code landed（R1874 +2 是前 session LANDED）。CSS2 已探子目录累计：
+abspos(R1874 +2 LANDED) / floats(R1873 plateau) / box-display(R1872 R109) / visudet
+(R1875 plateau, SVG sizing reverted) / visufx(R1876 94% near-complete)。
+
+forward（next）：
+  ① visibility:visible 覆盖（visibility-005）= legitimate deferred bug，若投入须改
+    paint_text per-run visibility 过滤（IFC 文本归属，R109 territory，~1 case yield）。
+  ② 续探 CSS2 余未探 sub-dir（visuren §9 / borders §8 / lists §12 / selectors /
+    generated-content）——R1874 证未探角度仍可有 clean lever。
+  ③ R1874 fixed-auto-inset fix 在 CSS2/positioning/css-multicol 额外 flip 未测（stash A/B）。
+  ④ headline font-wall 用户 A/B/C 不变。
