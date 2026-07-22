@@ -1,0 +1,56 @@
+R1880 — block-in-inline-001 table intrinsic-width fix 实验【失败 REVERTED】（box_content_max_width 对 block-in-inline 亦返回 fill-width）·0 net code
+日期: 2026-07-23
+
+═══════════════════════════════════════════════
+1. 触发（承接 R1878/R1879 forward「block-in-inline table intrinsic-width 最 concrete structural」）
+═══════════════════════════════════════════════
+block-in-inline-001：test td=283.2（block 填满→Line2 green 宽 277）vs ref td=53.2（Line2
+green 宽 47）——ZW table auto-layout 给含 block-in-inline 的 td 过宽分配（4.39% diff）。
+R1878 定位根因：compute_cell_intrinsic_width（table_types.rs:304）用 child.width（laid-out
+fill-width）作内容宽度——span.inline 拆分父盒（is_r109_split）width=283（填满 td）< cell*0.95
+→ 被当「真内容宽」用 → td=283 循环过宽。
+
+═══════════════════════════════════════════════
+2. fix 实验 + A/B = 失败 REVERTED
+═══════════════════════════════════════════════
+fix（table_types.rs:304 加 `&& !child.is_r109_split` gate）：跳过 R109 拆分 inline 父盒
+的 fill-width，期望落到下方 box_content_max_width（递归片段测内容 max-content ~47）。
+
+A/B 实测（LAYOUT_DUMP）：**td1 不缩反增** 283.2→289.2（table 336.4→342.4）。gate 跳过
+span.inline 后落到 box_content_max_width(cell)，但该函数对 block-in-inline 内容**亦返回
+fill-width**（span.block width=283 填满，非内容 max-content ~47）→ td 更宽。
+
+★ **根因更深**：block-in-inline 的 span.block（display:block）填满容器，**intrinsic 测量
+本身**（box_content_max_width）对其返回 fill-width 而非内容 max-content（"Line 2" ≈ 47px）。
+非 table_types 单点 gate 可修——须修 intrinsic_sizing 对 block-in-line 子的 max-content
+计算（block 的 intrinsic = 内容 max-content，非 fill），= R109 + intrinsic-sizing 交叉
+entanglement。
+
+REVERTED（git checkout table_types.rs，td1 回 283.2 baseline，working tree clean）。
+
+═══════════════════════════════════════════════
+3. 裁决 + forward
+═══════════════════════════════════════════════
+★ 重要 negative（防再试）：block-in-inline table 过宽分配 **非 compute_cell_intrinsic_width
+单点 gate 可修**——intrinsic 测量（box_content_max_width）对 block-in-line 子返回 fill-width。
+unlock 须修 intrinsic_sizing.rs 对「block 容器内 block-in-line 子」的 max-content（block
+intrinsic = 内容 max-content 非 fill），= R109 + intrinsic-sizing 交叉，dedicated multi-session。
+
+本轮 0 net code landed（实验 revert）。autonomous clean-lever 空间经 R1872-R1880 **九轮
+ subdir + R109 + block-in-inline table 实验 comprehensive + definitively 穷尽**——所有具体
+identified opportunity 均已 attempt/closed：
+  R1874 abspos fixed-auto-inset LANDED +7（唯一 yield）
+  R1875 visudet SVG sizing REVERTED（inline-wrapping）
+  R1876 visufx visibility DEFER（IFC text-ownership）
+  R1877 lists plateau（list-spacing）
+  R1878 R109 split works（interaction edges）
+  R1879 borders plateau（inline-border IFC + R1630）
+  R1880 block-in-inline table REVERTED（intrinsic-measurement fill-width）
+
+forward（next）：
+  ① 唯一 headline unlock = **font-wall 用户 A/B/C**（≥95% plateau，已飞书 surfacing）。
+  ② autonomous clean lever definitively 穷尽（九轮证）；维持 plateau（周期 scoped oracle
+    回归巡检）。
+  ③ 若攻 structural 须 dedicated multi-session spec-rfc 攻 intrinsic-measurement for
+    block-in-line（解锁 block-in-inline table + 多 dir block-in-line sizing），高风险。
+  ④ DC-11/12 interactive（sticky/scroll/scroll-snap）须 browser-display 验证环境。
