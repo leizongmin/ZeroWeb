@@ -46,7 +46,10 @@ pub fn resolve_length(
         LengthValue::Ch(v) => {
             // 近似：1ch ≈ 0.5em（真实 1ch = '0' 字形 advance，须 font-stack C-dep；
             // Ahem/monospace 真 ch=1.0em，0.5em 对 Ahem 偏小致 pre-wrap-align 等容器宽度偏窄，
-            // 但全局改 1.0em 净 −7 非-Ahem ch 案，故保留 0.5em 默认——见 R1338 evidence）
+            // 但全局改 1.0em 净 −7 非-Ahem ch 案（R1338），font-aware（Ahem→1.0/余→0.5）亦
+            // css-text −16 已 revert——ch 与文本度量经 font-wall 耦合，单改 ch 致容器宽变但文本
+            // 度量仍错 → 包裹更发散。R1853 white-space 实测 ch=1.0em 21.3%→19.7%（−6）三证收敛。
+            // ch-0.5em 对 corpus 是 settled-correct，勿再以 ch 为 lever。
             v * font_size * 0.5
         }
         // 百分比值不在此处解析，由布局引擎根据容器尺寸处理
