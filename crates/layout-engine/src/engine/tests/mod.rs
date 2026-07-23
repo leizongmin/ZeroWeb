@@ -140,6 +140,7 @@ mod r1771_clear_empty_containment_tests;
 mod r1781_semi_replaced_stretch_probe;
 #[cfg(test)]
 mod r1782_table_cell_overflow_probe;
+mod r1964_vertical_float_inf_diag;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
