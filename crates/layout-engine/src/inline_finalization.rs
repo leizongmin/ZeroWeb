@@ -726,12 +726,18 @@ pub(crate) fn compute_final_inline_layouts(
         style.overflow_wrap,
         OverflowWrapValue::BreakWord | OverflowWrapValue::Anywhere
     );
-    let (no_wrap, preserve_whitespace) = match &style.white_space {
-        WhiteSpaceValue::Pre => (true, true),
-        WhiteSpaceValue::PreWrap => (false, true),
-        WhiteSpaceValue::PreLine => (false, false),
-        WhiteSpaceValue::Nowrap => (true, false),
-        _ => (false, false),
+    let (no_wrap, preserve_whitespace, break_at_newline) = match &style.white_space {
+        WhiteSpaceValue::Pre => (true, true, false),
+        WhiteSpaceValue::PreWrap => (false, true, false),
+        // pre-line：空白序列折叠（preserve_whitespace=false）但 `\n` 强制断行
+        //（break_at_newline=true，CSS Text 3 §4.2）。kill-switch ZW_PRELINE_NEWLINE_BREAK=0 恢复旧行为。
+        WhiteSpaceValue::PreLine => (
+            false,
+            false,
+            std::env::var("ZW_PRELINE_NEWLINE_BREAK").as_deref() != Ok("0"),
+        ),
+        WhiteSpaceValue::Nowrap => (true, false, false),
+        _ => (false, false, false),
     };
     let break_word = break_word
         || !no_wrap
@@ -835,6 +841,7 @@ pub(crate) fn compute_final_inline_layouts(
         .with_break_word(break_word)
         .with_no_wrap(no_wrap)
         .with_preserve_whitespace(preserve_whitespace)
+        .with_break_at_newline(break_at_newline)
         .with_word_break(word_break_mode)
         .with_text_autospace(style.text_autospace)
         .with_text_indent(text_indent_px)

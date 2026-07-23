@@ -481,6 +481,54 @@ fn test_split_into_words_whitespace_only() {
     assert!(words.is_empty(), "仅空白字符不应产生单词");
 }
 
+/// R1927：white-space: pre-line（break_at_newline）应在换行符 `\n` 处强制断行
+///（CSS Text 3 §4.2），同时折叠空白序列（区别于 pre-wrap 保留空白）。
+/// split_into_words 对 break_at_newline 按 `\n` 切段，段间插入空串强制断行标记
+///（break_items_into_lines 消费空串为强制断行，gate 已扩到 break_at_newline）。
+/// normal 模式 `\n` 被折叠为普通词界（无断行标记）。
+#[test]
+fn test_preline_break_at_newline_markers() {
+    // pre-line：单个 `\n` 产生 1 个空串强制断行标记。
+    let ctx_preline = InlineFormattingContext::new(800.0).with_break_at_newline(true);
+    let words = ctx_preline.split_into_words("a\nb", false);
+    assert_eq!(
+        words.iter().filter(|w| w.is_empty()).count(),
+        1,
+        "pre-line 单个 \\n 应产生 1 个断行标记，got {:?}",
+        words
+    );
+    assert_eq!(
+        words.iter().filter(|w| !w.is_empty()).count(),
+        2,
+        "pre-line a\\nb 应有 2 个非空词，got {:?}",
+        words
+    );
+
+    // pre-line：多个 `\n` 各产生断行标记。
+    let words_multi = ctx_preline.split_into_words("a\nb\nc", false);
+    assert_eq!(
+        words_multi.iter().filter(|w| w.is_empty()).count(),
+        2,
+        "pre-line 两个 \\n 应产生 2 个断行标记，got {:?}",
+        words_multi
+    );
+
+    // normal（break_at_newline=false）：`\n` 折叠为词界，无断行标记。
+    let ctx_normal = InlineFormattingContext::new(800.0);
+    let words_normal = ctx_normal.split_into_words("a\nb", false);
+    assert!(
+        !words_normal.iter().any(|w| w.is_empty()),
+        "normal 模式 \\n 不应产生断行标记，got {:?}",
+        words_normal
+    );
+    assert_eq!(
+        words_normal.iter().filter(|w| !w.is_empty()).count(),
+        2,
+        "normal a\\nb 应折叠为 2 个词，got {:?}",
+        words_normal
+    );
+}
+
 // ── overflow-wrap: break-word 测试 ──
 
 /// break_word=false 时，超长单词不应在字符边界断行。

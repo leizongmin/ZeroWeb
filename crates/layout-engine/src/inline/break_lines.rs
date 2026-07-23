@@ -162,11 +162,12 @@ impl InlineFormattingContext {
                         } else {
                             content_word
                         };
-                        // CSS Text §3.1：pre/pre-wrap 模式下，换行符 `\n` 是强制断行机会。
-                        // split_into_words（preserve_whitespace 模式）为每个 `\n` 推入空字符串
-                        // 作为强制换行标记——此处消费它：把当前行推入结果并开始新行（同 <br>）。
+                        // CSS Text §3.1：pre/pre-wrap/pre-line 模式下，换行符 `\n` 是强制断行机会。
+                        // split_into_words（preserve_whitespace 或 break_at_newline 模式）为每个 `\n`
+                        // 推入空字符串作为强制换行标记——此处消费它：把当前行推入结果并开始新行（同 <br>）。
                         // 旧实现在此只对空词 continue，静默丢弃标记 → 多行 <pre> 塌缩为一行。
-                        if self.preserve_whitespace && content_word.is_empty() {
+                        // pre-line（break_at_newline）：空白序列折叠但 `\n` 仍强制断行（CSS Text 3 §4.2）。
+                        if (self.preserve_whitespace || self.break_at_newline) && content_word.is_empty() {
                             last_was_collapsible_ws = false;
                             let est_height = if current_line.height > 0.0 {
                                 current_line.height

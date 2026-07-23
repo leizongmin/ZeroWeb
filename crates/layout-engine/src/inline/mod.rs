@@ -61,6 +61,10 @@ pub struct InlineFormattingContext {
     pub no_wrap: bool,
     /// 是否保留空白字符序列（white-space: pre / pre-wrap 时为 true）。
     pub preserve_whitespace: bool,
+    /// 是否在换行符 `\n` 处强制断行（white-space: pre-line：折叠空白序列但保留换行符为
+    /// 强制断行点，CSS Text 3 §4.2）。介于 normal（折叠含 `\n`）与 pre-wrap（保留全部空白）
+    /// 之间：空白序列仍折叠为单空格，但 `\n` 触发强制断行。
+    pub break_at_newline: bool,
     /// CSS word-break 行为。
     pub word_break: WordBreakMode,
     /// CSS text-autospace 行为（CSS Text 4 §8，表意文字与字母/数字间 0.125em 间距）。
@@ -232,6 +236,7 @@ impl InlineFormattingContext {
             break_word: false,
             no_wrap: false,
             preserve_whitespace: false,
+            break_at_newline: false,
             word_break: WordBreakMode::default(),
             text_autospace: TextAutospaceValue::NoAutospace,
             text_indent: 0.0,
@@ -501,6 +506,12 @@ impl InlineFormattingContext {
     /// 设置是否保留空白字符（white-space: pre / pre-wrap）。
     pub fn with_preserve_whitespace(mut self, preserve: bool) -> Self {
         self.preserve_whitespace = preserve;
+        self
+    }
+
+    /// 设置是否在换行符 `\n` 处强制断行（white-space: pre-line）。
+    pub fn with_break_at_newline(mut self, break_at_newline: bool) -> Self {
+        self.break_at_newline = break_at_newline;
         self
     }
 
@@ -1356,69 +1367,98 @@ impl InlineFormattingContext {
                 result.push(format!("{text} "));
             }
             result
-        } else {
-            // 标准 normal 模式：按可折叠白空格分割（R1085：is_collapsible_ws 排除 U+00A0 nbsp，
-            // 保 non-breaking；split_whitespace 含 nbsp 致 nbsp-only 元素 0 行盒）。
-            // R1214：is_ahem（cjk_contiguous）时 CJK per-char 连续无词间空格——Ahem 精确
-            // 1em == chromium Ahem 1em，修 text-autospace ideograph-numeric/alpha-001 2em 发散
-            // （旧 post-loop 给同一 step-1 词内 CJK per-char 也加 1em 词间距 → 2em）。非-Ahem 保留
-            // 旧词间空格：estimate 1em ≠ chromium real font，CJK reflow 发散（welcome +7.39pp
-            // 回归），须 advance-wall 解后才可对非-Ahem 启用连续。A/B 实测 +2 strict（11→13
-            // oracle-pass / 4→6 strict，零 PASS→FAIL）。
-            let cjk_contiguous = is_ahem;
+        } else if self.break_at_newline {
+            // pre-line 模式（CSS Text 3 §4.2）：空白序列折叠为单空格（同 normal），但换行符
+            // `\n` 触发强制断行（同 pre-wrap 的强制断行语义）。按 `\n` 切段，每段走 normal
+            // 折叠分割（collapse_split_words），段间插入空串强制断行标记——break_items_into_lines
+            // 消费空串为强制断行（gate 已扩到 break_at_newline，见 break_lines.rs）。
+            // 旧实现 PreLine 派生 preserve_whitespace=false → 走 normal 分支 text.split(is_collapsible_ws)
+            // 把 `\n` 当普通词界折叠，丢断行 identity（content-white-space-001 簇）。
             let mut result = Vec::new();
-            let words: Vec<&str> = text.split(is_collapsible_ws).filter(|s| !s.is_empty()).collect();
-            for (word_idx, word) in words.iter().enumerate() {
-                let is_last_step1 = word_idx + 1 == words.len();
-                // 检查单词中是否包含 CJK / R645 SEA 词典分词文字
-                let has_cjk = word.chars().any(is_per_char_break_script);
-                if has_cjk && self.word_break != WordBreakMode::KeepAll {
-                    // 将单词拆分为：连续非 CJK + 单个 CJK/SEA 交替
-                    let mut current_latin = String::new();
-                    for ch in word.chars() {
-                        if is_per_char_break_script(ch) {
-                            // 先推入累积的拉丁字符（cjk_contiguous 时不加尾部空格——连续）
-                            if !current_latin.is_empty() {
-                                if cjk_contiguous {
-                                    result.push(current_latin.clone());
-                                } else {
-                                    result.push(format!("{current_latin} "));
-                                }
-                                current_latin.clear();
-                            }
-                            // CJK / R645 SEA 字符单独作为"单词"（不带尾部空格，不需要词间距）
-                            result.push(ch.to_string());
-                        } else {
-                            current_latin.push(ch);
-                        }
-                    }
-                    if !current_latin.is_empty() {
-                        result.push(current_latin);
-                    }
-                } else {
-                    result.push(word.to_string());
+            for (i, segment) in text.split('\n').enumerate() {
+                if i > 0 {
+                    // 段间强制断行标记（空串，语义同 preserve_whitespace 分支）
+                    result.push(String::new());
                 }
-                // cjk_contiguous：仅 step-1 词之间（原文本真实空格处）加尾部空格作 word-spacing
-                if cjk_contiguous && !is_last_step1 {
-                    let needs_space = result.last().is_some_and(|last| !last.ends_with(' '));
-                    if needs_space {
-                        if let Some(last) = result.last_mut() {
-                            last.push(' ');
-                        }
-                    }
+                if segment.is_empty() {
+                    continue;
                 }
+                result.extend(self.collapse_split_words(segment, is_ahem));
             }
-            // 非-cjk_contiguous：保留旧 post-loop（给所有非末尾 result 词加尾部空格）
-            if !cjk_contiguous {
-                let len = result.len();
-                for (i, item) in result.iter_mut().enumerate() {
-                    if i < len - 1 && !item.ends_with(' ') {
-                        item.push(' ');
-                    }
-                }
+            if result.is_empty() {
+                result.push(format!("{text} "));
             }
             result
+        } else {
+            self.collapse_split_words(text, is_ahem)
         }
+    }
+
+    /// normal 模式折叠分割：按可折叠白空格分割 + CJK per-char 断词。
+    ///
+    /// split_into_words 的 normal 分支与 pre-line 分支（每个 `\n` 段）共用此逻辑。
+    fn collapse_split_words(&self, text: &str, is_ahem: bool) -> Vec<String> {
+        // 标准 normal 模式：按可折叠白空格分割（R1085：is_collapsible_ws 排除 U+00A0 nbsp，
+        // 保 non-breaking；split_whitespace 含 nbsp 致 nbsp-only 元素 0 行盒）。
+        // R1214：is_ahem（cjk_contiguous）时 CJK per-char 连续无词间空格——Ahem 精确
+        // 1em == chromium Ahem 1em，修 text-autospace ideograph-numeric/alpha-001 2em 发散
+        // （旧 post-loop 给同一 step-1 词内 CJK per-char 也加 1em 词间距 → 2em）。非-Ahem 保留
+        // 旧词间空格：estimate 1em ≠ chromium real font，CJK reflow 发散（welcome +7.39pp
+        // 回归），须 advance-wall 解后才可对非-Ahem 启用连续。A/B 实测 +2 strict（11→13
+        // oracle-pass / 4→6 strict，零 PASS→FAIL）。
+        let cjk_contiguous = is_ahem;
+        let mut result = Vec::new();
+        let words: Vec<&str> = text.split(is_collapsible_ws).filter(|s| !s.is_empty()).collect();
+        for (word_idx, word) in words.iter().enumerate() {
+            let is_last_step1 = word_idx + 1 == words.len();
+            // 检查单词中是否包含 CJK / R645 SEA 词典分词文字
+            let has_cjk = word.chars().any(is_per_char_break_script);
+            if has_cjk && self.word_break != WordBreakMode::KeepAll {
+                // 将单词拆分为：连续非 CJK + 单个 CJK/SEA 交替
+                let mut current_latin = String::new();
+                for ch in word.chars() {
+                    if is_per_char_break_script(ch) {
+                        // 先推入累积的拉丁字符（cjk_contiguous 时不加尾部空格——连续）
+                        if !current_latin.is_empty() {
+                            if cjk_contiguous {
+                                result.push(current_latin.clone());
+                            } else {
+                                result.push(format!("{current_latin} "));
+                            }
+                            current_latin.clear();
+                        }
+                        // CJK / R645 SEA 字符单独作为"单词"（不带尾部空格，不需要词间距）
+                        result.push(ch.to_string());
+                    } else {
+                        current_latin.push(ch);
+                    }
+                }
+                if !current_latin.is_empty() {
+                    result.push(current_latin);
+                }
+            } else {
+                result.push(word.to_string());
+            }
+            // cjk_contiguous：仅 step-1 词之间（原文本真实空格处）加尾部空格作 word-spacing
+            if cjk_contiguous && !is_last_step1 {
+                let needs_space = result.last().is_some_and(|last| !last.ends_with(' '));
+                if needs_space {
+                    if let Some(last) = result.last_mut() {
+                        last.push(' ');
+                    }
+                }
+            }
+        }
+        // 非-cjk_contiguous：保留旧 post-loop（给所有非末尾 result 词加尾部空格）
+        if !cjk_contiguous {
+            let len = result.len();
+            for (i, item) in result.iter_mut().enumerate() {
+                if i < len - 1 && !item.ends_with(' ') {
+                    item.push(' ');
+                }
+            }
+        }
+        result
     }
 
     /// 获取所有行盒的总高度。

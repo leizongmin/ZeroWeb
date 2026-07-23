@@ -494,13 +494,19 @@ impl super::Painter {
             );
 
             // 根据 white-space 属性设置换行和空白保留行为
-            let (mut no_wrap, preserve_whitespace) = match style.white_space {
-                WhiteSpaceValue::Normal => (false, false),
-                WhiteSpaceValue::Nowrap => (true, false),
-                WhiteSpaceValue::Pre => (true, true),
-                WhiteSpaceValue::PreWrap => (false, true),
-                WhiteSpaceValue::PreLine => (false, false),
-                WhiteSpaceValue::BreakSpaces => (false, true),
+            let (mut no_wrap, preserve_whitespace, break_at_newline) = match style.white_space {
+                WhiteSpaceValue::Normal => (false, false, false),
+                WhiteSpaceValue::Nowrap => (true, false, false),
+                WhiteSpaceValue::Pre => (true, true, false),
+                WhiteSpaceValue::PreWrap => (false, true, false),
+                // pre-line：空白序列折叠但 `\n` 强制断行（CSS Text 3 §4.2）。
+                // kill-switch ZW_PRELINE_NEWLINE_BREAK=0 恢复旧行为（与 inline_finalization 对称）。
+                WhiteSpaceValue::PreLine => (
+                    false,
+                    false,
+                    std::env::var("ZW_PRELINE_NEWLINE_BREAK").as_deref() != Ok("0"),
+                ),
+                WhiteSpaceValue::BreakSpaces => (false, true, false),
             };
 
             // CSS text-wrap: nowrap 覆盖换行行为
@@ -742,6 +748,7 @@ impl super::Painter {
                     .with_break_word(break_word)
                     .with_no_wrap(no_wrap)
                     .with_preserve_whitespace(preserve_whitespace)
+                    .with_break_at_newline(break_at_newline)
                     .with_word_break(word_break_mode)
                     .with_text_autospace(style.text_autospace)
                     .with_text_indent(text_indent_px)
