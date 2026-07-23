@@ -581,6 +581,74 @@ fn stroke_dotted_line_has_dots() {
     assert!(has_black, "dotted line should have dots");
 }
 
+/// R1909 回归测试：退化（非有限坐标 / 零宽度）的点线/虚线不得使渲染卡死。
+///
+/// 根因：`render_dotted_line` 的 `while d <= total_len`（d += dot_spacing）在
+/// total_len=inf（vertical-mode border 生成 y2=inf）或 dot_spacing=0（width=0）时
+/// 永不终止，曾致 text-underline-position-001a 渲染 >75s hang。本测试断言这些退化
+/// 输入被防御性跳过、快速返回（不 hang、不 panic）。
+#[test]
+fn stroke_degenerate_dotted_does_not_hang() {
+    let mut primitives = RenderPrimitives::new();
+    // (28.5,124)-(28.5,inf)：复刻 R1909 实测到的 vertical-mode inf 端点点线。
+    primitives.strokes.push(StrokePrimitive {
+        x1: 28.5,
+        y1: 124.0,
+        x2: 28.5,
+        y2: f32::INFINITY,
+        width: 1.0,
+        color: Color::BLACK,
+        style: LineStyle::Dotted,
+        cap: LineCap::Butt,
+    });
+    // width=0 的点线：dot_spacing=0，旧实现 while 死循环。
+    primitives.strokes.push(StrokePrimitive {
+        x1: 0.0,
+        y1: 10.0,
+        x2: 50.0,
+        y2: 10.0,
+        width: 0.0,
+        color: Color::BLACK,
+        style: LineStyle::Dotted,
+        cap: LineCap::Butt,
+    });
+    // inf 端点虚线（render_dashed_line 路径亦须经 render_stroke 守卫）。
+    primitives.strokes.push(StrokePrimitive {
+        x1: 0.0,
+        y1: f32::NEG_INFINITY,
+        x2: 50.0,
+        y2: 10.0,
+        width: 1.0,
+        color: Color::BLACK,
+        style: LineStyle::Dashed,
+        cap: LineCap::Butt,
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    // 若回归，本调用将 hang（test-guard/CI 超时杀进程）；预期立即返回。
+    let fb = render_full_scene(
+        50,
+        20,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    // 退化线段被跳过 → 帧应保持背景白色，无黑像素泄漏。
+    for y in 0..20 {
+        for x in 0..50 {
+            let p = fb.get_pixel(x, y);
+            assert_eq!(p, [255, 255, 255, 255], "degenerate stroke must not paint at ({x},{y})");
+        }
+    }
+}
+
 #[test]
 fn path_fill_triangle() {
     let mut primitives = RenderPrimitives::new();

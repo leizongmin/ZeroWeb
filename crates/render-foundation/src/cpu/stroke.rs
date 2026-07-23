@@ -12,6 +12,14 @@ pub fn render_stroke(fb: &mut FrameBuffer, stroke: &StrokePrimitive, scale: f32)
     let y2 = stroke.y2 * scale;
     let half_w = stroke.width * scale * 0.5;
 
+    // R1909：防御非有限坐标（如 vertical-mode border 生成的 y2=inf）。
+    // 非有限端点会使包围盒 clamp 异常，且 render_dotted_line 的 `while d <= total_len`
+    //（total_len=inf）永不终止 → 渲染卡死（text-underline-position-001a >75s hang 根因）。
+    // 跳过退化线段（源头几何 inf 是独立的 painter/vertical 度量 bug，此处仅防卡死）。
+    if !x1.is_finite() || !y1.is_finite() || !x2.is_finite() || !y2.is_finite() {
+        return;
+    }
+
     // 计算包围盒
     let min_x = x1.min(x2) - half_w - 1.0;
     let min_y = y1.min(y2) - half_w - 1.0;
@@ -259,6 +267,13 @@ fn render_dotted_line(
 ) {
     let total_len = ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)).sqrt();
     let dot_radius = half_w;
+
+    // R1909：dot_spacing 非正或非有限（width=0 退化时 = 0）会使 d 永不增长 → while 死循环。
+    // 端点有限性已由 render_stroke 入口守卫保证，故 total_len 此处恒有限，无需再 cap
+    //（cap 到 bbox 对角线会漏绘「起点在 fb 外」的点线可见段，引入回归）。
+    if !dot_spacing.is_finite() || dot_spacing <= 0.0 {
+        return;
+    }
 
     // 沿线段方向逐点放置圆点
     let mut d = 0.0;
