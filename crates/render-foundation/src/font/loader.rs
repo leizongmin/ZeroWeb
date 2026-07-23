@@ -679,6 +679,47 @@ mod tests {
         assert!((bm.advance - 20.0).abs() < 2.0, "Ahem advance ≈ 20, got {}", bm.advance);
     }
 
+    /// R1950 诊断：grid-fitted slot advance（当前 ZW，glyph.advance().x/64）vs
+    /// linearHoriAdvance（chromium/Skia 用于 text layout，unhinted scaled）。
+    /// 验假设：linearHoriAdvance ≈ chromium 0.797×fs，slot advance（hinted）≈0.833×fs。
+    /// 跳过若系统无 LiberationSerif。
+    #[test]
+    #[cfg(feature = "freetype-raster")]
+    fn diag_linear_vs_gridfitted_advance() {
+        let path = "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf";
+        let data = match std::fs::read(path) {
+            Ok(d) => d,
+            Err(_) => {
+                eprintln!("diag: LiberationSerif not found at {path}, skip");
+                return;
+            }
+        };
+        let lib = freetype::Library::init().expect("FT init");
+        let face = lib.new_memory_face2(data, 0).expect("FT face");
+        let size = 16.0_f64;
+        face.set_char_size((size * 64.0) as isize, (size * 64.0) as isize, 0, 0)
+            .expect("FT set_char_size");
+        eprintln!("diag: char gridfitted(×fs) linear(×fs)  [chromium m≈0.797×fs]");
+        for ch in ['m', 'i', 'W', 'n', 'o', 'a', 'l'] {
+            let idx = match face.get_char_index(ch as usize) {
+                Some(i) => i,
+                None => continue,
+            };
+            face.load_glyph(idx, freetype::face::LoadFlag::DEFAULT)
+                .expect("FT load_glyph");
+            let slot = face.glyph();
+            let gridfitted = slot.advance().x as f64 / 64.0;
+            let linear = slot.linear_hori_advance() as f64 / 65536.0;
+            eprintln!(
+                "diag:  {ch:?}  {gf:.4} ({gfr:.4}×fs)   {lin:.4} ({linr:.4}×fs)",
+                gf = gridfitted,
+                gfr = gridfitted / size,
+                lin = linear,
+                linr = linear / size,
+            );
+        }
+    }
+
     /// 加载系统字体数据（如果可用）
     fn load_system_font_data() -> Option<Vec<u8>> {
         let path = find_system_font()?;
