@@ -1,6 +1,15 @@
 # RFC: per-element white-space in IFC（Phase-A 结构切片）
 
-**状态**：Ready for slice-by-slice 实现（ruling #4 预授权：Phase-A 深水区允许 dedicated 多会话推进）
+**状态**：⚠ **可行性下调（R1902 实测）**——minimal preserve-only slice 完整实现 + A/B 证 target
+cluster **NET-NEGATIVE**（含 uniform-pre 案 white-space-pre-001/002 +3.6/+4.7pp）→ REVERTED。
+R1901「orthogonal to storage / Ahem 可独立 yield」估计过乐观：实测连 uniform-pre 都恶化，
+示 per-element-ws 触达 cross-element break coherence 深层（非单 preserve 字段可解），须完整
+break_at_newline + pre-line split_collapsible + cross-element 断行边界 line-breaker 重构 +
+dual-path override-map 同步 + 测量路径同步 = **high-risk multi-session IFC 重构（R125/R213/R1052
+deadlock 谱系）**。从「pre-authorized 可推进」下调为「high-risk，须先解 cross-element break
+coherence + dual-path」。详见 [`evidence/r1902-per-element-ws-slice-impl-ab-netnegative-reverted-2026-07-23.txt`](./evidence/r1902-per-element-ws-slice-impl-ab-netnegative-reverted-2026-07-23.txt)。
+
+**原状态**：Ready for slice-by-slice 实现（ruling #4 预授权：Phase-A 深水区允许 dedicated 多会话推进）
 **日期**：2026-07-23（R1901）
 **前置裁决**：master.md 顶部裁决包 ruling #4（Phase-A 多会话预授权）+ ruling #2（font-stack rebuild RFC-only，本 RFC **不**触及 font-stack）
 **相关**：[`evidence/r1899-preline-nl-fix-impl-unreachable-per-element-ws-2026-07-23.txt`](./evidence/r1899-preline-nl-fix-impl-unreachable-per-element-ws-2026-07-23.txt) / [`evidence/r1900-cs2-text-plateau-phaseA-ws-coherence-2026-07-23.txt](./evidence/r1900-cs2-text-plateau-phaseA-ws-coherence-2026-07-23.txt) / [`multicol-layoutside-IFC-implementation-handoff.md`](./multicol-layoutside-IFC-implementation-handoff.md) line 20
