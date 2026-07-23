@@ -41,9 +41,25 @@ impl super::Painter {
         let w = box_node.width;
         let h = box_node.height;
 
-        // border-collapse:collapse 时，内边框（右和下）厚度减半，避免与邻居重叠
+        // border-collapse:collapse 时，内共享边（有邻居）厚度减半，两邻居各画一半合成
+        // 居中的完整边框（CSS 2.1 §17.6.2）；外边缘（表格周边，无邻居共享）须绘制
+        // 完整厚度。`collapsed_border_outer_edge` 由 resolve_collapsed_borders 阶段 4 标记。
+        // kill-switch `ZW_COLLAPSE_OUTER_FULL=0` 关闭（default-on，恢复旧行为：全部减半）。
         let collapse = matches!(style.border_collapse, BorderCollapseValue::Collapse);
-        let half = |v: f32| if collapse { v / 2.0 } else { v };
+        let outer_full = collapse && std::env::var("ZW_COLLAPSE_OUTER_FULL").as_deref() != Ok("0");
+        let outer = &box_node.collapsed_border_outer_edge;
+        // 每条边的有效厚度：collapse 时外边缘=full，内共享边=half；非 collapse=原值。
+        let eff = |side: usize, v: f32| -> f32 {
+            if collapse {
+                if outer_full && outer[side] { v } else { v / 2.0 }
+            } else {
+                v
+            }
+        };
+        let top_t = eff(0, box_node.border_top);
+        let right_t = eff(1, box_node.border_right);
+        let bottom_t = eff(2, box_node.border_bottom);
+        let left_t = eff(3, box_node.border_left);
 
         // border-collapse 颜色覆盖：当表格边框胜出时使用表格的颜色
         let top_color = collapsed_border_color(&box_node.collapsed_border_color_overrides[0], &style.border_top_color);
@@ -86,7 +102,7 @@ impl super::Painter {
                     y1: abs_y,
                     x2: abs_x + w,
                     y2: abs_y,
-                    thickness: half(box_node.border_top),
+                    thickness: top_t,
                     is_horizontal: true,
                     extend_left: false,
                 },
@@ -103,10 +119,10 @@ impl super::Painter {
             self.paint_border_edge(
                 &BorderEdgeSpec {
                     x1: abs_x + w,
-                    y1: abs_y + half(box_node.border_top),
+                    y1: abs_y + top_t,
                     x2: abs_x + w,
-                    y2: abs_y + h - half(box_node.border_bottom),
-                    thickness: half(box_node.border_right),
+                    y2: abs_y + h - bottom_t,
+                    thickness: right_t,
                     is_horizontal: false,
                     extend_left: true,
                 },
@@ -123,10 +139,10 @@ impl super::Painter {
             self.paint_border_edge(
                 &BorderEdgeSpec {
                     x1: abs_x,
-                    y1: abs_y + h - half(box_node.border_bottom),
+                    y1: abs_y + h - bottom_t,
                     x2: abs_x + w,
-                    y2: abs_y + h - half(box_node.border_bottom),
-                    thickness: half(box_node.border_bottom),
+                    y2: abs_y + h - bottom_t,
+                    thickness: bottom_t,
                     is_horizontal: true,
                     extend_left: false,
                 },
@@ -143,10 +159,10 @@ impl super::Painter {
             self.paint_border_edge(
                 &BorderEdgeSpec {
                     x1: abs_x,
-                    y1: abs_y + half(box_node.border_top),
+                    y1: abs_y + top_t,
                     x2: abs_x,
-                    y2: abs_y + h - half(box_node.border_bottom),
-                    thickness: half(box_node.border_left),
+                    y2: abs_y + h - bottom_t,
+                    thickness: left_t,
                     is_horizontal: false,
                     extend_left: false,
                 },
