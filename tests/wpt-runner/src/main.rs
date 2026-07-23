@@ -1021,6 +1021,7 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     // 用于三态分类（真通过 < strict / 近似通过 strict..loose / 不一致 >= loose）。
     // oracle_near_solid = DC-14 非平凡性检查（oracle 帧退化/纯色 → 假绿可疑，排除出 credible pass）。
     let results: Vec<(String, bool, Option<f64>, f64, bool)> = parallel_map(&filtered, jobs, |case| {
+        let _timer = CaseTimer::new(&case.id);
         log_mem_if_enabled(&case.id);
         let safe_id = case.id.replace(['/', '\\', '.'], "_");
         let oracle_path = oracle_dir.join(format!("{safe_id}.png"));
@@ -1447,6 +1448,34 @@ fn log_mem_if_enabled(label: &str) {
         }
     }
     eprintln!("[mem] {label} | VmRSS={rss} | VmHWM={hwm}");
+}
+
+/// 诊断（env `REFTEST_TIME_LOG=1` 启用）：RAII 守卫，per-case closure 退出时
+/// （任意 return 路径）打印该 case 耗时，用于定位 CPU-straggler 慢案。零开销：
+/// env 关时仅一次 `var` 读 + 一次 `Instant::now`。
+struct CaseTimer {
+    id: String,
+    start: std::time::Instant,
+    enabled: bool,
+}
+
+impl CaseTimer {
+    fn new(id: &str) -> Self {
+        let enabled = std::env::var("REFTEST_TIME_LOG").ok().as_deref() == Some("1");
+        Self {
+            id: id.to_string(),
+            start: std::time::Instant::now(),
+            enabled,
+        }
+    }
+}
+
+impl Drop for CaseTimer {
+    fn drop(&mut self) {
+        if self.enabled {
+            eprintln!("[time] {} | {:.3}s", self.id, self.start.elapsed().as_secs_f64());
+        }
+    }
 }
 
 fn parallel_map<T, R, F>(items: &[T], jobs: usize, f: F) -> Vec<R>
