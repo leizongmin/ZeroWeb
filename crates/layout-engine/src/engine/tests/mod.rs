@@ -147,6 +147,8 @@ mod r1982_anon_block_pct_height_probe;
 mod r1982_overflow_scroll_container_diag;
 #[allow(dead_code)]
 mod r1982c_mixed_children_dump;
+#[allow(dead_code)]
+mod r1984_neg_margin_width_probe;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
