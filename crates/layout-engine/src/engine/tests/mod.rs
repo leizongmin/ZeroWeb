@@ -142,6 +142,7 @@ mod r1781_semi_replaced_stretch_probe;
 mod r1782_table_cell_overflow_probe;
 mod r1964_vertical_float_inf_diag;
 mod r1976_vertical_ahem_p_extent_diag;
+mod r1982_overflow_scroll_container_diag;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
