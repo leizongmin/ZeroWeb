@@ -10,7 +10,7 @@ use zero_engine::{
     extract_img_resources, extract_stylesheet_hrefs,
 };
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
-use zero_render_foundation::image_cache::{ImageKey, decode_image_bytes};
+use zero_render_foundation::image_cache::{ImageKey, decode_data_uri, decode_image_bytes};
 
 use crate::net_pool::{fetch_bytes_async_meta, fetch_text_async_meta};
 use crate::webview::WebView;
@@ -386,6 +386,12 @@ impl AsyncPageLoad {
         let base = url::Url::parse(&self.url).ok();
         for img in imgs {
             if img.src.starts_with("data:") {
+                // R1987：data: URI（PNG/JPEG/WebP/SVG）无 HTTP fetch，直接解码并入缓存
+                // （in-scope img 子资源，goal line 118；与 sync 路径 fetch_image_subresources 对齐）。
+                if let Ok(data) = decode_data_uri(&img.src) {
+                    let key = image_resource_key(&img.src, None);
+                    webview.image_cache().insert_with_key(ImageKey::new(key), data);
+                }
                 continue;
             }
             let abs = match base.as_ref().and_then(|b| b.join(&img.src).ok()) {
@@ -410,6 +416,11 @@ impl AsyncPageLoad {
         combined_css.push_str(&extract_html_style_text(html));
         for src in extract_css_image_urls(&combined_css) {
             if src.starts_with("data:") {
+                // R1987：CSS url(data:) 同 <img src=data:>，直接解码入缓存（无 fetch）。
+                if let Ok(data) = decode_data_uri(&src) {
+                    let key = image_resource_key(&src, None);
+                    webview.image_cache().insert_with_key(ImageKey::new(key), data);
+                }
                 continue;
             }
             let abs = match base.as_ref().and_then(|b| b.join(&src).ok()) {

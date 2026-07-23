@@ -390,6 +390,44 @@ fn test_webview_load_html_with_only_whitespace() {
     assert!(render_result.timings.total_ms >= 0.0, "空白 HTML 上重新渲染不应 panic");
 }
 
+/// R1987：`<img src="data:...">` 经 `reload_html_after_script` → `fetch_image_subresources`
+///（sync 路径，current_url 设置时触发）解码 + 缓存，不再跳过 data: URI（in-scope img 子资源，
+/// goal line 118 SVG-as-img）。fetch_image_subresources 由 fetch_url / reload_html_after_script 调用
+///（load_html 本身不抓子资源），故用 load_url 设 current_url 后 reload_html_after_script 触发。
+#[test]
+fn test_load_html_decodes_data_uri_image() {
+    let svg = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><rect width='16' height='16' fill='%23880088'/></svg>";
+    let html = format!(
+        "<html><body><img src=\"{}\" width=\"16\" height=\"16\"></body></html>",
+        svg
+    );
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_url("https://example.com/");
+    let _ = wv.reload_html_after_script(&html);
+    assert!(
+        !wv.image_cache_ref().is_empty(),
+        "data: URI SVG image should be decoded + cached (R1987), not skipped"
+    );
+}
+
+/// R1987：base64 PNG data: URI 同理解码 + 缓存。
+#[test]
+fn test_load_html_decodes_data_uri_base64_png() {
+    // 2×2 red PNG（base64，ZW png crate 可解）。
+    let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4GBgYGJAQoAHxcCAk+Uzr4AAAAASUVORK5CYII=";
+    let html = format!(
+        "<html><body><img src=\"{}\" width=\"2\" height=\"2\"></body></html>",
+        png
+    );
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_url("https://example.com/");
+    let _ = wv.reload_html_after_script(&html);
+    assert!(
+        !wv.image_cache_ref().is_empty(),
+        "base64 PNG data: URI should be decoded + cached (R1987)"
+    );
+}
+
 /// 验证在未先调用 load_url 的情况下直接调用 fail_load 不会 panic。
 ///
 /// 边界场景：current_url 为 None 时调用 fail_load，

@@ -10,7 +10,7 @@ use zero_engine::{
     resolve_document_url,
 };
 use zero_net::{CacheLookup, HttpCache, HttpClient, NetError, is_file_url};
-use zero_render_foundation::image_cache::{ImageCache, ImageKey, decode_image_bytes};
+use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri, decode_image_bytes};
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
 use zero_security::{ResourceCheckResult, SecurityContext};
@@ -407,29 +407,38 @@ impl WebView {
         }
         let base = url::Url::parse(base_url).ok();
         for src in &all_urls {
-            // data: URI 暂不支持解码（后续可扩展）。
-            if src.starts_with("data:") {
-                continue;
-            }
-            let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
-                Some(u) => u.to_string(),
-                None => src.to_string(),
-            };
-            let bytes = match self.http_client.get(&abs) {
-                Ok(resp) => resp.body,
-                Err(e) => {
-                    tracing::warn!("image {abs} fetch failed: {e}");
-                    continue;
+            // R1987：data: URI（PNG/JPEG/WebP/SVG，base64 或 url-encoded）→ decode_data_uri 直接
+            // 解码（in-scope img 子资源，goal line 118 SVG-as-img；render-foundation 共用按 magic
+            // 分派）。data: 非相对，key = image_resource_key(src)（与 painter 查找一致：data: 经
+            // is_non_relative_href 原样保留）。失败仅 warn 不阻断（与 HTTP fetch 失败同，宽松降级）。
+            let (img, key_hash): (ImageData, u64) = if src.starts_with("data:") {
+                match decode_data_uri(src) {
+                    Ok(d) => (d, image_resource_key(src, None)),
+                    Err(e) => {
+                        tracing::warn!("data: URI image decode failed: {e}");
+                        continue;
+                    }
+                }
+            } else {
+                let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
+                    Some(u) => u.to_string(),
+                    None => src.to_string(),
+                };
+                let bytes = match self.http_client.get(&abs) {
+                    Ok(resp) => resp.body,
+                    Err(e) => {
+                        tracing::warn!("image {abs} fetch failed: {e}");
+                        continue;
+                    }
+                };
+                match decode_image_bytes(&bytes) {
+                    Ok(img) => (img, image_resource_key(&abs, None)),
+                    Err(e) => {
+                        tracing::warn!("image {abs} decode failed (PNG/JPEG/WebP): {e}");
+                        continue;
+                    }
                 }
             };
-            let img = match decode_image_bytes(&bytes) {
-                Ok(img) => img,
-                Err(e) => {
-                    tracing::warn!("image {abs} decode failed (PNG/JPEG/WebP): {e}");
-                    continue;
-                }
-            };
-            let key_hash = image_resource_key(&abs, None);
             let key = ImageKey::new(key_hash);
             // R717：ratio-only SVG（%-dim / viewBox-only）无确定固有尺寸，仅有 viewBox 比——
             // 进 image_ratios，**不**进 image_sizes（任何确定 size 都会被 taffy 当作固有高度，
