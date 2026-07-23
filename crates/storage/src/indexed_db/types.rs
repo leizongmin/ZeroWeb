@@ -170,7 +170,14 @@ impl std::hash::Hash for IdbKey {
         // Discriminant first, then variant data
         std::mem::discriminant(self).hash(state);
         match self {
-            IdbKey::Number(n) => n.to_bits().hash(state),
+            // 规范化 -0.0 → +0.0：f64 的 == 认为 -0.0 == +0.0（派生 PartialEq 视为相等），
+            // Hash/Eq 契约要求 a==b ⇒ hash(a)==hash(b)。旧实现用 n.to_bits() 区分两者违反契约，
+            // 致 HashSet 在 SipHash RandomState 偶然同桶 + Eq 相等时去重（flaky len=1 vs len=2）。
+            // 归一化后与 Eq 一致，且符合 JS Set/Map「-0 与 +0 为同一键」语义。
+            IdbKey::Number(n) => {
+                let normalized = if *n == 0.0 { 0.0_f64 } else { *n };
+                normalized.to_bits().hash(state);
+            }
             IdbKey::String(s) => s.hash(state),
             IdbKey::Binary(b) => b.hash(state),
             IdbKey::Array(a) => a.hash(state),

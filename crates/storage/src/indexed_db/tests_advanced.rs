@@ -259,9 +259,10 @@ fn test_idb_key_infinity_ordering() {
 
 /// 测试 -0.0 与 +0.0 键的比较行为。
 ///
-/// 按 IEEE 754，-0.0 == +0.0。IdbKey 使用 PartialEq 派生，
-/// 但 Hash 基于 to_bits()（不同），所以它们在 HashMap/HashSet 中
-/// 是不同的键，但 Ord 比较返回 Equal。
+/// 按 IEEE 754，-0.0 == +0.0。IdbKey 派生 PartialEq（f64 ==）故两者相等；
+/// Hash 已归一化 -0.0 → +0.0（与 Eq 契约一致：a==b ⇒ hash(a)==hash(b)，
+/// 且符合 JS Set/Map「-0 与 +0 为同一键」语义），故 HashSet 中为同一键。
+/// Ord 比较返回 Equal。
 #[test]
 fn test_idb_key_zero_ordering() {
     let pos_zero = IdbKey::Number(0.0);
@@ -275,14 +276,15 @@ fn test_idb_key_zero_ordering() {
     // Ord 排序：应为 Equal（因为底层 f64 的 partial_cmp 返回 Equal）
     assert_eq!(pos_zero.cmp(&neg_zero), Ordering::Equal);
 
-    // Hash 行为：to_bits() 不同（+0=0, -0=0x8000000000000000），
-    // 所以它们在 HashSet 中被视为不同元素
+    // Hash 行为：Hash 已归一化 -0.0 → +0.0（to_bits 相同），
+    // 与 PartialEq 一致（a==b ⇒ hash(a)==hash(b)），故 HashSet 视为同一键。
     use std::collections::HashSet;
     let mut set = HashSet::new();
     set.insert(pos_zero.clone());
     set.insert(neg_zero.clone());
-    // 当前实现：discriminant 相同 + to_bits 不同 → 两个都插入
-    assert_eq!(set.len(), 2, "-0.0 and +0.0 should hash differently (to_bits mismatch)");
+    // 归一化后两者 hash 相同 + Eq 相等 → 第二次插入去重，set.len() == 1（确定，非 flaky）。
+    // 旧实现 to_bits 不同致与 Eq 契约冲突，len() 随 SipHash RandomState 同桶与否而变（flaky）。
+    assert_eq!(set.len(), 1, "-0.0 and +0.0 应为同一键（Hash 归一化 + PartialEq 相等）");
 
     // 在 Vec 排序中，-0.0 和 +0.0 位置不确定（因为 Equal），
     // 但排序后它们应该相邻
