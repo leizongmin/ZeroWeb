@@ -448,6 +448,84 @@ fn test_media_query_skips_when_condition_fails() {
 }
 
 #[test]
+fn test_media_print_not_applied_in_screen_mode() {
+    // R1981：默认渲染媒体 = Screen，`@media print` 规则不应生效（CSS §7）。
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0); // 默认 Screen（不调 set_media_type）。
+
+    // @media print { div { color: red; } }
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::At(zero_css_parser::ast::AtRule {
+            name: "media".to_string(),
+            prelude: "print".to_string(),
+            body: zero_css_parser::ast::AtRuleBody::Block(vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "red".to_string(),
+                    important: false,
+                }],
+            })]),
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    // Screen 模式下 @media print 不应用，color 保持默认黑色。
+    assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
+}
+
+#[test]
+fn test_media_print_applied_in_print_mode() {
+    // R1981：set_media_type(Print) 后，`@media print` 规则生效，`@media screen` 规则失效。
+    let (doc, _html, _body, div, p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    sys.set_media_type(zero_css_parser::media_query::MediaType::Print);
+
+    // @media print { div { color: red; } }  —— Print 模式应生效
+    // @media screen { p { color: blue; } }  —— Print 模式应失效（screen != print）
+    let stylesheets = vec![Stylesheet {
+        rules: vec![
+            Rule::At(zero_css_parser::ast::AtRule {
+                name: "media".to_string(),
+                prelude: "print".to_string(),
+                body: zero_css_parser::ast::AtRuleBody::Block(vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("div")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "red".to_string(),
+                        important: false,
+                    }],
+                })]),
+            }),
+            Rule::At(zero_css_parser::ast::AtRule {
+                name: "media".to_string(),
+                prelude: "screen".to_string(),
+                body: zero_css_parser::ast::AtRuleBody::Block(vec![Rule::Style(StyleRule {
+                    selectors: vec![make_tag_selector("p")],
+                    declarations: vec![Declaration {
+                        property: "color".to_string(),
+                        value: "blue".to_string(),
+                        important: false,
+                    }],
+                })]),
+            }),
+        ],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    let p_style = styles.get(&p).expect("p should have style");
+    // @media print 生效：div color = red。
+    assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
+    // @media screen 失效：p 未被设为 blue。p 是 div 的子元素，color 继承自 div 的 red
+    // （若 @media screen 生效，p 应为 blue；此处为 red 证明 screen 规则未应用）。
+    assert_eq!(p_style.color, ColorValue::Rgba(255, 0, 0, 255));
+}
+
+#[test]
 fn test_media_query_with_regular_rules() {
     let (doc, _html, _body, div, _p) = make_test_dom();
     let mut sys = StyleSystem::new();

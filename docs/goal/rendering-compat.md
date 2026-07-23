@@ -308,7 +308,7 @@
 - [x] ✅ **backdrop-filter** — 元素背后内容的滤镜效果 — painter/effects.rs 实现；**R894 实测验证**（gradient 背景 + overlay backdrop-filter:blur(15px)，with-vs-without 渲染 diff = 15314 px 恰落在 overlay 盒 y[0,80] 带、带外 0 px，证 blur 效果正确限定在元素盒内）
 - [x] ✅ **CSS mask** — 基础遮罩效果（渐变蒙版裁剪 + alpha 衰减）— painter/effects.rs 实现（M9）
 - [ ] **scroll-snap** — 滚动吸附行为（需宿主层滚动输入路由）
-- [ ] **打印媒体查询** — `@media print` 基础支持（可选，降低优先级）
+- [~] **打印媒体查询** — `@media print` 基础支持（可选，降低优先级）— ✅ **R1981 cascade 支持落地**（部分）：`StyleSystem` 加 `media_type` 字段（default Screen）+ `set_media_type()` API + 接入 `MediaContext`（lib.rs:355）；@media print/screen/all 级联过滤现在按渲染媒体类型正确生效（单测验证：Screen 模式 @media print 不应用 / Print 模式 @media print 生效 + @media screen 失效）。default Screen = 零生产行为变更。⏳ 待接线生产入口（pipeline→webview→IPC→browser，镜像 prefers_color_scheme 全栈）使 print 预览可达；reftest runner `--media=print` flag 量真实 WPT yield。
 
 ### DC-13: 产品静态页面视觉 smoke
 

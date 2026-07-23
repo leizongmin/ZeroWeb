@@ -39,7 +39,7 @@ pub use shorthand::*;
 
 use std::collections::HashMap;
 use zero_css_parser::Stylesheet;
-use zero_css_parser::media_query::PrefersColorSchemeValue;
+use zero_css_parser::media_query::{MediaType, PrefersColorSchemeValue};
 use zero_dom::{Document, NodeId, NodeKind, QuirksMode};
 
 /// 返回 HTML 元素的 UA 默认 display 值。
@@ -157,6 +157,9 @@ pub struct StyleSystem {
     viewport_height: Option<f64>,
     /// 用户颜色方案偏好（对应 `prefers-color-scheme` 媒体查询）。
     prefers_color_scheme: PrefersColorSchemeValue,
+    /// 渲染媒体类型（对应 `@media screen/print/all`）。默认 Screen；
+    /// 设为 Print 时 `@media print` 规则生效、`@media screen` 规则失效（CSS §7）。
+    media_type: MediaType,
 }
 
 impl StyleSystem {
@@ -167,6 +170,7 @@ impl StyleSystem {
             viewport_width: None,
             viewport_height: None,
             prefers_color_scheme: PrefersColorSchemeValue::Light,
+            media_type: MediaType::Screen,
         }
     }
 
@@ -179,6 +183,11 @@ impl StyleSystem {
     /// 设置用户颜色方案偏好。
     pub fn set_prefers_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
         self.prefers_color_scheme = scheme;
+    }
+
+    /// 设置渲染媒体类型（`MediaType::Print` 用于 `@media print` 渲染，如打印预览）。
+    pub fn set_media_type(&mut self, media_type: MediaType) {
+        self.media_type = media_type;
     }
 
     /// 为整个文档计算样式。
@@ -354,6 +363,7 @@ impl StyleSystem {
             (Some(w), Some(h)) => {
                 let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
                 ctx.prefers_color_scheme = self.prefers_color_scheme;
+                ctx.media_type = self.media_type;
                 Some(ctx)
             }
             _ => None,
