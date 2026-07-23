@@ -379,6 +379,62 @@ fn apply_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, paren
     }
 }
 
+/// R1972 vertical child inline-fill（experimental，gate `ZW_VERTICAL_CHILD_FILL` default-off）。
+///
+/// **与 R1965/R1968/R1970（改 *容器* height）的根本区别**：本 pass 改 *子* 的物理 height
+///（= inline-size），不改容器几何。容器 height（definite inline-size，如 height:8em=180）
+/// 与 width（block-size=Σ 子宽，apply_vertical_block_flow 设）都不变 → **horizontal 父兄弟
+/// 定位不受影响**（容器 outer size 不变）。子 height 改在 vertical 子树内部，contained。
+///
+/// **修的 bug（R1971 定位）**：vertical 容器（horizontal 父）未 axis-swap 但子 swap →
+/// 容器 definite inline-size（物理 height）在错误 taffy 轴 → 子物理 height=inf。本 pass 把
+/// inf 子的 height 设为容器 content_height（子填满 inline 轴，CSS block 子语义）。
+///
+/// **gate**：vertical 容器（复用 vertical_block_child_indices）+ 容器 height **definite**
+///（非 Auto，content_height 是正确 fill 值）+ content_height finite + 子 height inf。
+/// 仅 inf 子（不覆盖 finite definite 子）。
+pub fn apply_vertical_child_inline_fill(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    if std::env::var("ZW_VERTICAL_CHILD_FILL").as_deref() != Ok("1") {
+        return;
+    }
+    apply_child_fill_inner(root, styles, &WritingModeValue::HorizontalTb);
+}
+
+fn apply_child_fill_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, parent_wm: &WritingModeValue) {
+    // 自底向上：先递归子。
+    let own_wm = b.writing_mode.clone();
+    for child in &mut b.children {
+        apply_child_fill_inner(child, styles, &own_wm);
+    }
+    // 复用 vertical_block_child_indices gate（vertical 容器 + horizontal 父 + ≥2 block 子 + ...）。
+    let Some(block_indices) = vertical_block_child_indices(b, styles, parent_wm) else {
+        return;
+    };
+    // 容器 inline-size 须 definite（height 非 Auto）——否则 content_height 非正确 fill 值。
+    let container_height_definite = b
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| !matches!(s.height, LengthValue::Auto));
+    if !container_height_definite {
+        return;
+    }
+    let inline_size = b.content_height;
+    if !inline_size.is_finite() || inline_size <= 0.0 {
+        return;
+    }
+    for &i in &block_indices {
+        let child = &mut b.children[i];
+        // 仅修 inf 子（clear bug）；finite 子（definite 或已正确）不动。
+        if child.height.is_infinite() {
+            let margins = child.margin_top + child.margin_bottom;
+            let box_h = (inline_size - margins).max(0.0);
+            child.height = box_h;
+            let frame_h = child.border_top + child.border_bottom + child.padding_top + child.padding_bottom;
+            child.content_height = (box_h - frame_h).max(0.0);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

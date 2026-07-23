@@ -581,6 +581,13 @@ impl LayoutEngine {
         // env ZW_VERTICAL_BLOCK_FLOW default-on（`=0` kill-switch）。
         crate::vertical_block_flow::apply_vertical_block_flow(&mut root_box, styles);
 
+        // 12.8 R1972 vertical child inline-fill（experimental，env ZW_VERTICAL_CHILD_FILL=1 开启，
+        // default-off）：vertical 容器（definite inline-size）的 inf 子物理 height→填满容器
+        // inline-size。区别 R1965/R1968/R1970（改容器 height 耦合 horizontal 父兄弟）：本 pass
+        // 改子 height（contained 在 vertical 子树，容器 outer size 不变）。须在 apply_vertical
+        // _block_flow（设容器 width + 子位置）之后。
+        crate::vertical_block_flow::apply_vertical_child_inline_fill(&mut root_box, styles);
+
         // 诊断（不改变布局）：对 shrink-to-fit 候选容器（inline-flex/inline-grid/float:flex/
         // float:grid 的 width:auto，或任意 flex/grid 的 width:max-content/min-content）打印
         // 测得的固有宽度 vs 当前宽度，供 flex-grid 两趟布局（见 intrinsic_sizing / 设计草图）
