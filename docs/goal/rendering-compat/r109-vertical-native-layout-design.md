@@ -1,11 +1,16 @@
 # 设计：R109 Vertical-Native Layout（axis-swap emulation → native vertical subtree layout）
 
-**版本**：v0.1.1（session 1 架构草案 + Slice 1 empirical refutation）
-**日期**：2026-07-24（R1966 起草 / R1968 Slice 1 A/B refutation）
+**版本**：v0.1.2（session 2：timing-impasse 架构发现 + pre-taffy injection 新方向）
+**日期**：2026-07-24（R1966 起草 / R1968 Slice 1 A/B refutation / R1969 timing-impasse + pre-taffy injection）
 **作者**：AI Assistant（rendering-compat rally）
 **状态**：scoping / 架构设计草案（pre-authorized ruling #4 multi-session track，session 1 = 本架构设计；implementation 待后续 session 按切片推进）
 **模式**：rally-pattern 设计文档（非 lei-spec-rfc skill —— 该 skill 需用户确认，与无人值守 rally 协议冲突；同 `unified-font-stack-design.md` / `column-aware-IFC-spec.md` 先例）
-**关联**：master.md R1043/R1050/R1052/R1099/R1541/R1544/R1545/R1895/R1910/R1963/R1964/R1965/R1966；[`evidence/r1963-...`](./evidence/r1963-taffy-zero-vertical-awareness-zw-axis-swap-emulation-r109-reopened-2026-07-24.txt)；[`evidence/r1966-...`](./evidence/r1966-vertical-float-inf-4path-no-zw-lever-2026-07-24.txt)；`vertical_block_flow.rs`；`crates/taffy-local/`
+**关联**：master.md R1043/R1050/R1052/R1099/R1541/R1544/R1545/R1895/R1910/R1963/R1964/R1965/R1966/R1968；[`evidence/r1963-...`](./evidence/r1963-taffy-zero-vertical-awareness-zw-axis-swap-emulation-r109-reopened-2026-07-24.txt)；[`evidence/r1966-...`](./evidence/r1966-vertical-float-inf-4path-no-zw-lever-2026-07-24.txt)；`vertical_block_flow.rs`；`crates/taffy-local/`
+
+> **📍 v0.1.2 addendum（R1969，2026-07-24）·timing-impasse 架构发现：vertical container 正确 height 须在「taffy 对 horizontal 父兄弟定位之前」已知·三 timing 全分析·pre-taffy injection 是未试新方向**：承接 R1968（Slice 1 postprocess height-only net -1，第 7 证）。本轮 code-archaeology `shift_siblings_after_ifc_grow`（postprocess.rs:802-940）揭示 R109 vertical 的**真架构死结**非「7 证 couple-regress」现象层，而在 **timing**：vertical container 的正确 height（物理 height = inline-size = max 子高）须在 **taffy 对 horizontal 父的后续 in-flow 兄弟定位之前**已知，否则兄弟用错误（Σ）height 定位 → 不一致。三 timing 分析：① **post-taffy postprocess 写（R1968）**= 太晚：兄弟已被 taffy 用旧 Σ-height 定位；改 height 后产生 **gap（shrink，Σ→max 多子常缩）**，而 `shift_siblings_after_ifc_grow` 检测（line 932-940 `child.y < prev_bottom - 0.5`）**仅修 overlap（grow）不修 gap（shrink）**——因 gap-closing 歧义（bug vs 合法 margin/spacing），shift 基础设施设计上只安全处理 overlap → R1968 net -1 的根因。② **post-taffy mark_dirty 重跑（R1965 height-set）**= 重跑 cascade couples（vlr-008 float +12.86pp）。③ **PRE-taffy definite-size injection（未试）**= **最干净**：在 taffy 单趟布局**之前**把 vertical container 的正确 height 作为 definite size 注入 → taffy 一次定位兄弟正确，无 postprocess gap、无 mark_dirty 重跑 cascade。R1965 是 post-taffy mark_dirty（须第一趟 taffy 测），本方向是 **pre-taffy 从 styles 直接测**（无第一趟 taffy）——**genuinely 新、未试**。★ **可行性**：对 **definite-size 子的 pure-block vertical 容器**（子 width/height 从 styles 已知），可在 converter/build_subtree（taffy 树构建前）算 height=max 子高 + frame，注入为 definite taffy size → 单趟 taffy 正确。**局限**：auto-size 子（文本内容）须 IFC 预测（container_width 循环依赖，TBD2 territory），故首切片 scope = **definite-children 子集**。★ **axis-swap 交互 TBD**：注入的物理 height 经 `apply_vertical_writing_mode` axis-swap 变 taffy width，须确认 swap 后 taffy 用对维度（须 converter 层 probe）。★ **forward（next session，concrete code slice）**：实现 pre-taffy vertical-height injection（converter 或 build_subtree 前 pass），gate `ZW_VERTICAL_PRE_INJECT` default-off，scope pure-block vertical 容器 + definite-size 子，A/B css-writing-modes 784 案守 net≥0。若 yield = R109 vertical 首净 win（多轮来首次）；若 couple-regress = 第 8 证 + 关闭 pre-taffy 角度（definitive）。区别 R1965（post-taffy mark_dirty）/ R1968（postprocess）：本切片在 **converter 层、taffy 之前**。
+
+---
+
 
 > **📍 定位（R1966 session 1）**：R109 vertical（css-writing-modes 652/784 mismatch）经 R1963 重开→R1964 定位（float block 子 `<p>` height=inf）→R1965 height-set A/B couple-regress（5 证）→R1966 4-path 核查（无 incremental ZW-side lever，6 证）**conclusively 确认**：inf 是 vertical-IFC measurement 结构性表现，**incremental axis-swap patch 全 couple-regress**（block-height/float-height/container_width/line-height/emphasis + height-set + output-clamp + backfill + storage-gate 六角度）。唯一 forward = **vertical-native layout**（弃 axis-swap emulation，对 vertical 子树自建 layout）。本文档是 session 1 架构设计，供后续 session 按切片实施。**非 rally 单 session 可完成**（multi-week+），但架构设计本身是 durable forward（解阻塞未来 session，明确拦截点 / mixed-WM / native measurement / 切片顺序）。
 
@@ -208,4 +213,5 @@ vertical 子树可含 orthogonal 流（vertical 容器内 horizontal 子，或�
 |------|------|----------|
 | v0.1 | 2026-07-24（R1966） | session 1 架构草案：现状/耦合证据、目标状态、三方案对比（选方案 B post-taffy native re-layout）、5 切片、6 TBD、验证策略。implementation 待后续 session。 |
 | v0.1.1 | 2026-07-24（R1968） | Slice 1 empirical A/B（height-only postprocess）= net -1 oracle-pass + 新 top-fail → refutes「postprocess-write 避 couple-regress」假设（第 7 证）。Slice 1 收窄为须捆绑 companion sibling-shift。代码 revert（不留二次证伪 dormant 死代码，R1636 先例）。 |
+| v0.1.2 | 2026-07-24（R1969） | timing-impasse 架构发现：vertical container 正确 height 须在 taffy 对 horizontal 父兄弟定位之前已知。三 timing 全分析（postprocess=太晚 gap 歧义 / mark_dirty 重跑=cascade couples / **pre-taffy injection=未试新方向，最干净**）。下轮 concrete code slice = pre-taffy vertical-height injection（converter 层，scope pure-block + definite-size 子）。 |
 
