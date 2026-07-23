@@ -149,6 +149,8 @@ mod r1982_overflow_scroll_container_diag;
 mod r1982c_mixed_children_dump;
 #[allow(dead_code)]
 mod r1984_neg_margin_width_probe;
+#[allow(dead_code)]
+mod r1986_inline_svg_width_probe;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
