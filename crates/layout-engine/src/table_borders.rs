@@ -320,6 +320,39 @@ pub(crate) fn resolve_collapsed_borders(
                 }
             }
 
+            // CSS 2.1 §17.6.2.1：行边框参与顶边冲突解决（镜像下方 BOTTOM 的 ROW 处理，
+            // 补 TOP 对称缺口——原仅 BOTTOM 读 row border-bottom，TOP 漏 row border-top）。
+            // 单元格顶边所在起始行（row_idx）的 border-top 与单元格 border-top 冲突解决。
+            if row_idx < row_count
+                && let Some(row_at_top) = grid.rows.get(row_idx)
+            {
+                let row_box_ref = get_row_box(table_box, row_at_top);
+                if let Some(rb) = row_box_ref
+                    && let Some(rs) = rb.node_id.and_then(|id| styles.get(&id))
+                {
+                    let row_bt = length_to_px(&rs.border_top_width);
+                    if row_bt > 0.0 && !matches!(rs.border_top_style, BorderStyleValue::None | BorderStyleValue::Hidden)
+                    {
+                        // 行边框与单元格顶边冲突解决
+                        let winner = resolve_border(
+                            (cb.top_w, &cb.top_s, BorderSource::Cell),
+                            (row_bt, &rs.border_top_style, BorderSource::Row),
+                        );
+                        if winner == BorderSource::Row {
+                            // 行边框获胜：使用行的颜色和宽度
+                            let row_color = color_value_to_u32(&rs.border_top_color);
+                            overrides.push((
+                                (row_idx, cell_idx),
+                                0,
+                                row_bt,
+                                Some(row_color),
+                                Some(rs.border_top_style.clone()),
+                            ));
+                        }
+                    }
+                }
+            }
+
             // ── Left edge ──
             if is_first_col {
                 // 外边缘：table vs rowgroup vs cell 多来源解析
