@@ -431,6 +431,12 @@ fn apply_child_fill_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedSt
             child.height = box_h;
             let frame_h = child.border_top + child.border_bottom + child.padding_top + child.padding_bottom;
             child.content_height = (box_h - frame_h).max(0.0);
+            // R1978 rendering-layer fix：同步 inline_layout_width = 新 content_height，使 paint
+            // width_matches（paint/text.rs:605 inline_layout_width vs ifc_width=content_height）
+            // 保持 Path A（stored glyphs），避 R1972 回归（改 height 致 inline_layout_width stale
+            // → width_matches 失败 → Path B 重跑 IFC → glyph 发散）。R1976 证 stored glyphs 正确
+            //（extent 不依赖 container_width）。
+            child.inline_layout_width = child.content_height;
         }
     }
 }
