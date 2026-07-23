@@ -1,13 +1,18 @@
 # 设计：R109 Vertical-Native Layout（axis-swap emulation → native vertical subtree layout）
 
-**版本**：v0.1（session 1 架构草案）
-**日期**：2026-07-24（R1966）
+**版本**：v0.1.1（session 1 架构草案 + Slice 1 empirical refutation）
+**日期**：2026-07-24（R1966 起草 / R1968 Slice 1 A/B refutation）
 **作者**：AI Assistant（rendering-compat rally）
 **状态**：scoping / 架构设计草案（pre-authorized ruling #4 multi-session track，session 1 = 本架构设计；implementation 待后续 session 按切片推进）
 **模式**：rally-pattern 设计文档（非 lei-spec-rfc skill —— 该 skill 需用户确认，与无人值守 rally 协议冲突；同 `unified-font-stack-design.md` / `column-aware-IFC-spec.md` 先例）
 **关联**：master.md R1043/R1050/R1052/R1099/R1541/R1544/R1545/R1895/R1910/R1963/R1964/R1965/R1966；[`evidence/r1963-...`](./evidence/r1963-taffy-zero-vertical-awareness-zw-axis-swap-emulation-r109-reopened-2026-07-24.txt)；[`evidence/r1966-...`](./evidence/r1966-vertical-float-inf-4path-no-zw-lever-2026-07-24.txt)；`vertical_block_flow.rs`；`crates/taffy-local/`
 
 > **📍 定位（R1966 session 1）**：R109 vertical（css-writing-modes 652/784 mismatch）经 R1963 重开→R1964 定位（float block 子 `<p>` height=inf）→R1965 height-set A/B couple-regress（5 证）→R1966 4-path 核查（无 incremental ZW-side lever，6 证）**conclusively 确认**：inf 是 vertical-IFC measurement 结构性表现，**incremental axis-swap patch 全 couple-regress**（block-height/float-height/container_width/line-height/emphasis + height-set + output-clamp + backfill + storage-gate 六角度）。唯一 forward = **vertical-native layout**（弃 axis-swap emulation，对 vertical 子树自建 layout）。本文档是 session 1 架构设计，供后续 session 按切片实施。**非 rally 单 session 可完成**（multi-week+），但架构设计本身是 durable forward（解阻塞未来 session，明确拦截点 / mixed-WM / native measurement / 切片顺序）。
+
+> **📍 v0.1.1 addendum（R1968，2026-07-24）·Slice 1 empirical A/B REFUTES「postprocess-write 避 couple-regress」假设·第 7 证·设计收窄**：本设计 v0.1 §3/§4 推测方案 B 的 Slice 1（postprocess 写 height 不回喂 taffy）可能避开 R1965 的 taffy-feedback couple-regress。**R1968 实证证伪**：实现 Slice 1（`apply_inner` 加 content_height postprocess 写 LayoutBox，gate `ZW_VERTICAL_NATIVE_HEIGHT` default-off）+ A/B css-writing-modes 784 案 = **net -1 oracle-pass**（baseline 130/16.6% → treatment 129/16.5%；strict 68→66 / near 62→63 / mismatch 654→655），且 **引入新 top-fail**（block-flow-direction-srl-045 41.35% / vrl-005 41.35% / srl-051+vrl-011 33.42%，baseline 未在 worst-15）。★ **结论**：couple-regress **不来自 taffy cascade**（postprocess 无 mark_dirty），而来自 **height 值变化本身**——vertical 容器 height 改后，horizontal 父的兄弟定位（taffy layout 期用旧 Σ-height 算）与之不一致（TBD1 预测成立）。即「不回喂 taffy」**不足以**避 couple-regress，须 **full-native 子树 layout**（positions + sizes + 兄弟重定位 同步算）。★ **设计收窄**：Slice 1「height-only postprocess」**不可单切片落地**（net-negative），须与 **companion sibling-shift**（shift_siblings_after_ifc_grow 模式 R1492，scoped 到 vertical 容器在 horizontal 父中的兄弟）**捆绑**，或直接走 full-native（一次算完 positions+sizes 不依赖 taffy layout 期定位）。代码已 revert（违 R1636「不留二次证伪 dormant 死代码」），dormant gate 不保留。★ **第 7 证**：R1043/R1050/R1052/R1054（axis-swap 单层）+ R1965（taffy-feedback height-set）+ R1968（postprocess height-only）= incremental vertical patch 全 couple-regress，**含 postprocess 路径**（非仅 taffy-feedback）。强化本设计核心论点：vertical-native 须 **整体**（非切片蹭）。
+
+---
+
 
 ---
 
@@ -124,13 +129,13 @@ vertical 子树可含 orthogonal 流（vertical 容器内 horizontal 子，或�
 
 > **原则**：每片独立 env gate default-off；A/B css-writing-modes 784 案 + 全量 reftest-oracle 守 net≥0 + 零大回归；characterization test（R1964）作 success signal；test-guard 包裹防 hang。失败即关，dormant 保留。
 
-### Slice 1（session 2）：vertical 容器 content_height 解析（pure-block）
+### Slice 1（session 2）：vertical 容器 content_height 解析（pure-block）— ⚠ R1968 height-only 实证 net-negative，须捆绑 sibling-shift
 
 - **范围**：vertical 容器（≥2 block in-flow 子，非 float/abspos/table/flex/grid/multicol）的 **content_height**（物理 block-size 方向，= max child outer height）解析。当前 `apply_vertical_block_flow` 只设 width（Σ 子宽），height 留 taffy（vertical-stack Σ 子高，错）。
 - **改动**：`vertical_block_flow.rs::apply_inner` 增 `content_height = max(child.height + margin_tb)` + frame → 写 `box.height / content_height`。区别 R1965 height-set（layout-time sizing 回喂 taffy，couple-regress）：本片是 **postprocess 写 LayoutBox，不回喂 taffy** → 无 loop。
 - **gate**：`ZW_VERTICAL_NATIVE_HEIGHT` default-off。
-- **A/B**：css-writing-modes near-pass/mismatch + R1964 characterization test。
-- **风险**：vertical 容器 height 改变可能影响 horizontal 父中后续兄弟定位（vertical 容器在 horizontal 父中是块子，其 height 影响 vertical-stack）→ 须 shift_siblings_after_ifc_grow 模式补偿（R1492）。A/B 守。
+- **⚠ R1968 A/B 实证（height-only）= net -1 oracle-pass**（130→129；strict 68→66 / near 62→63 / mismatch 654→655）+ 引入新 top-fail（srl-045/vrl-005 41.35%）。**height-only postprocess couple-regress**（非 taffy cascade，是 height 值变化致 horizontal 父兄弟定位不一致，TBD1 成立）。**结论**：Slice 1 **不可 height-only 单切片**，须 **捆绑 companion sibling-shift**（shift_siblings_after_ifc_grow 模式 R1492，scoped 到 vertical 容器在 horizontal 父中的兄弟）或走 full-native。代码已 revert，dormant gate 不保留。
+- **修订 A/B**（session 2 须重做）：height postprocess + companion sibling-shift **捆绑** A/B，gate 仍 default-off，守 net≥0。
 
 ### Slice 2（session 3）：vertical 块 IFC extent（auto block-size + 文本）
 
@@ -202,4 +207,5 @@ vertical 子树可含 orthogonal 流（vertical 容器内 horizontal 子，或�
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
 | v0.1 | 2026-07-24（R1966） | session 1 架构草案：现状/耦合证据、目标状态、三方案对比（选方案 B post-taffy native re-layout）、5 切片、6 TBD、验证策略。implementation 待后续 session。 |
+| v0.1.1 | 2026-07-24（R1968） | Slice 1 empirical A/B（height-only postprocess）= net -1 oracle-pass + 新 top-fail → refutes「postprocess-write 避 couple-regress」假设（第 7 证）。Slice 1 收窄为须捆绑 companion sibling-shift。代码 revert（不留二次证伪 dormant 死代码，R1636 先例）。 |
 
