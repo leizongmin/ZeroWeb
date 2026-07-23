@@ -1021,6 +1021,7 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     // 用于三态分类（真通过 < strict / 近似通过 strict..loose / 不一致 >= loose）。
     // oracle_near_solid = DC-14 非平凡性检查（oracle 帧退化/纯色 → 假绿可疑，排除出 credible pass）。
     let results: Vec<(String, bool, Option<f64>, f64, bool)> = parallel_map(&filtered, jobs, |case| {
+        log_mem_if_enabled(&case.id);
         let safe_id = case.id.replace(['/', '\\', '.'], "_");
         let oracle_path = oracle_dir.join(format!("{safe_id}.png"));
         let strict_thresh_pct = case.category.strict_max_diff_ratio() * 100.0;
@@ -1425,6 +1426,27 @@ fn run_wpt_cases(tests: &[runner::TestCase], ctx: &TestContext, jobs: usize) -> 
     parallel_map(tests, jobs, |case| {
         runner::run_single_with_expectations(case, ctx, &expectations)
     })
+}
+
+/// 诊断（env `REFTEST_MEM_LOG=1` 启用）：打印当前进程 VmRSS / VmHWM，用于定位
+/// 跨 reftest 用例的内存累积（区分真 leak vs glibc allocator RSS retention）。
+/// 零开销：env 关时仅一次 `var` 读 + 即时返回。仅 Linux（读 /proc/self/status）。
+fn log_mem_if_enabled(label: &str) {
+    if std::env::var("REFTEST_MEM_LOG").ok().as_deref() != Some("1") {
+        return;
+    }
+    let mut rss = String::from('?');
+    let mut hwm = String::from('?');
+    if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+        for line in status.lines() {
+            if let Some(rest) = line.strip_prefix("VmRSS:") {
+                rss = rest.trim().to_string();
+            } else if let Some(rest) = line.strip_prefix("VmHWM:") {
+                hwm = rest.trim().to_string();
+            }
+        }
+    }
+    eprintln!("[mem] {label} | VmRSS={rss} | VmHWM={hwm}");
 }
 
 fn parallel_map<T, R, F>(items: &[T], jobs: usize, f: F) -> Vec<R>
