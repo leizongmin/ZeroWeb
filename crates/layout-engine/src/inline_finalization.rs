@@ -138,6 +138,29 @@ pub(crate) fn resolve_no_wrap_for_ifc_measure(style: Option<&ComputedStyle>) -> 
     )
 }
 
+/// R1935：measure 期是否保留空白序列（pre/pre-wrap）。镜像 `resolve_no_wrap_for_ifc_measure`。
+///
+/// R645 仅传 no_wrap 不传 preserve（letter-spacing-201 pre-wrap 多空格回归），但 binary-search
+///（R1935）实证 `<pre>` 容器（white-space-pre-001）因 measure 不传 preserve 被测成 1 行
+///（content \n 被折叠，应 5 行）→ box 高度错。本函数让 measure 期也保留 pre/pre-wrap 空白，
+/// 修 `<pre>`/pre-wrap 容器测量行数。kill-switch `ZW_MEASURE_PRESERVE=0` 关闭（恢复 R645 行为）。
+pub(crate) fn resolve_preserve_for_ifc_measure(style: Option<&ComputedStyle>) -> bool {
+    use zero_style_system::property::types::WhiteSpaceValue;
+    matches!(
+        style.map(|s| &s.white_space).unwrap_or(&WhiteSpaceValue::Normal),
+        WhiteSpaceValue::Pre | WhiteSpaceValue::PreWrap
+    )
+}
+
+/// R1935：measure 期是否在 `\n` 处强制断行（pre-line，与 layout 派生一致）。
+pub(crate) fn resolve_break_at_newline_for_ifc_measure(style: Option<&ComputedStyle>) -> bool {
+    use zero_style_system::property::types::WhiteSpaceValue;
+    matches!(
+        style.map(|s| &s.white_space).unwrap_or(&WhiteSpaceValue::Normal),
+        WhiteSpaceValue::PreLine
+    )
+}
+
 /// 将 IFC 片段结果存储到 LayoutBox.inline_layout，供 paint 系统复用。
 ///
 /// ⚠️ **死代码，保持不启用（R1526 调研定论）**：
@@ -1145,6 +1168,10 @@ pub(crate) fn measure_text_content(
     // break_lines.rs 的 `!self.no_wrap` gate 关闭，故此处 break_word 仅对非 nowrap 容器生效（spec 正确）。
     let measure_style = styles.get(&dom_id);
     let no_wrap = resolve_no_wrap_for_ifc_measure(measure_style);
+    // R1935：measure 期也传 preserve/break_at_newline（pre/pre-wrap/pre-line 容器），kill-switch 可关。
+    let measure_preserve_on = std::env::var("ZW_MEASURE_PRESERVE").as_deref() != Ok("0");
+    let preserve = measure_preserve_on && resolve_preserve_for_ifc_measure(measure_style);
+    let break_at_newline = measure_preserve_on && resolve_break_at_newline_for_ifc_measure(measure_style);
     let break_word = measure_style.is_some_and(|s| {
         use zero_style_system::property::types::OverflowWrapValue;
         matches!(
@@ -1156,6 +1183,8 @@ pub(crate) fn measure_text_content(
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
         .with_no_wrap(no_wrap)
+        .with_preserve_whitespace(preserve)
+        .with_break_at_newline(break_at_newline)
         .with_break_word(break_word)
         .with_inline_block_sizes(ib_sizes)
         .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
@@ -1206,7 +1235,10 @@ pub(crate) fn measure_text_content(
                 true
             });
             if text_only {
-                let mut col_ctx = InlineFormattingContext::new(cw).with_no_wrap(no_wrap);
+                let mut col_ctx = InlineFormattingContext::new(cw)
+                    .with_no_wrap(no_wrap)
+                    .with_preserve_whitespace(preserve)
+                    .with_break_at_newline(break_at_newline);
                 if let Some(provider) = font_metric_provider {
                     col_ctx = col_ctx.with_font_metric_provider(provider.0.clone());
                 }
