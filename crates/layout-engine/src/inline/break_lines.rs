@@ -16,6 +16,32 @@ impl InlineFormattingContext {
     pub fn break_items_into_lines(&mut self, items: Vec<InlineItem>) {
         self.lines.clear();
 
+        // 诊断（R2027）：`ZW_DEBUG_IFC=1` 时对含 inline-block item 的容器 dump 条目构成 +
+        // 各 inline-block 的 (w, h, baseline) + 最终行盒高度。Phase A IFC 调试用（line-box
+        // 高度贡献 / inline-block 度量是否 stale）。零默认开销（env 未设即跳过）。
+        let debug_ifc = std::env::var("ZW_DEBUG_IFC").is_ok();
+        if debug_ifc {
+            let n_text = items.iter().filter(|i| matches!(i, InlineItem::Text(_))).count();
+            let n_ib = items
+                .iter()
+                .filter(|i| matches!(i, InlineItem::InlineBlock(_)))
+                .count();
+            let n_br = items.iter().filter(|i| matches!(i, InlineItem::Br)).count();
+            if n_ib > 0 {
+                let ib_dims: Vec<(f32, f32, f32)> = items
+                    .iter()
+                    .filter_map(|i| match i {
+                        InlineItem::InlineBlock(b) => Some((b.width, b.height, b.baseline)),
+                        _ => None,
+                    })
+                    .collect();
+                eprintln!(
+                    "[ZW_DEBUG_IFC] items: text={n_text} inline_block={n_ib} br={n_br} container_w={:.1} ib_dims(w,h,baseline)={ib_dims:?}",
+                    self.container_width
+                );
+            }
+        }
+
         if self.vertical {
             self.break_items_into_columns(items);
             return;
@@ -497,6 +523,13 @@ impl InlineFormattingContext {
         for line in &mut self.lines {
             line.y = y;
             y += line.height;
+        }
+
+        // 诊断（R2027）：dump 最终行盒高度（与上方条目构成对应）。
+        if debug_ifc && !self.lines.is_empty() {
+            let total: f32 = self.lines.iter().map(|l| l.height).sum();
+            let heights: Vec<f32> = self.lines.iter().map(|l| l.height).collect();
+            eprintln!("[ZW_DEBUG_IFC] lines={} total_h={:.1} heights={:?}", self.lines.len(), total, heights);
         }
 
         // 应用文本对齐

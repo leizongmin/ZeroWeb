@@ -4,7 +4,24 @@
 **性质**：Phase A 最高杠杆轨的可执行首切片机制方案（改动区域 + 验证 + 风险，**非代码实施**）。pre-authorized ruling #4。
 **关联**：[blockers-resolution-plan-2026-07-25.md](blockers-resolution-plan-2026-07-25.md) §2、[phase-a-IFC-unification-design.md](phase-a-IFC-unification-design.md) v1.4、[inline-box-model-unification-design.md](inline-box-model-unification-design.md)（R1576 谱系）
 
-> ## ⚠️ v0.2 修正（2026-07-25 R2026 empirical recheck）—— 本切片原机制对 37-form-controls **INERT，不可直接实施**
+> ## ⚠️ v0.3 修正（2026-07-25 R2027 ZW_DEBUG_IFC deep trace）—— 精确根因链
+>
+> R2026（v0.2）判 R1576「inert」。R2027 加 `ZW_DEBUG_IFC` 诊断（break_lines.rs dump 条目构成 + ib 度量 + 行盒高度）**纠正并细化**该结论：
+>
+> 1. **R1576 实际生效**：`<p>` IFC 收到 `items: text=5 inline_block=2`——R1576 递归**确实**把 input 作 `InlineBlock` item 喂进 `<p>` IFC（非 inert）。
+> 2. **但 input 度量 stale**：IFC 时 `ib_dims=[(148, 15.0, 15.0)×2]`——input 高度 **15.0**（来自 `inline_block_sizes` 预烘焙初测），而最终布局树 input h=**21.0**。`break_lines.rs:431 current_line.height.max(box_height+margins)` = max(18.6, 15.0) = **18.6 未抬升**（15.0 < 文本行高 18.6）。即便度量正确（21），行盒也只到 21。
+> 3. **label 双重表示**（核心）：label 同时是 ① taffy Block 子（converter `display:inline→taffy::Block`，被 taffy **垂直堆叠**）② IFC 条目（R1576 递归）。IFC line-box 仅决定 `<p>` **文本内容高**（18.6），**不**决定 label box 位置——label 由 taffy 堆叠（label1 y=43、label2 y=64，advance=21=input 高，<label 高 33.6）→ overlap。
+> 4. **label 自身 IFC 也错**：label IFC（w=154）产 2 行 `[18.6, 15.0]`——"Name:" 文本与 input **分两行**（label shrink-wrap 到 input 宽 148，text+input 放不下一行）。正确应 label 宽 = text + input 同行。
+>
+> **精确根因链**（非单点，故 narrow slice 不可行）：`convert_display inline→taffy::Block` → label 双重表示 → taffy 堆叠（非 inline 流）+ label shrink-wrap 错 + ib 度量 stale。**真解 = inline-box-model coherence**（inline 元素参与父 IFC 流而非 taffy 块，统一度量源）= **full Phase A unification**。
+>
+> **印证 R1985 v1.4 ruling**（三证）：line-box metric / inline-block identity / inline-box-model 任一单点 lever 均 net-neg 或 inert。37-form-controls struct FAIL = sibling-overlap（本链）+ text-concatenation（R109 inline-ownership，本切片不覆盖）两路。
+>
+> **诊断方法**（可复用，2026-07-25 落地）：`ZW_DEBUG_IFC=1`（break_lines.rs dump IFC 条目/度量/行盒）+ `LAYOUT_DUMP=1`（product-smoke 逐盒 dump）+ `ZW_INLINE_BOX_RECURSE=0` A/B。
+>
+> ---
+
+> ## ⚠️ v0.2 修正（2026-07-25 R2026 empirical recheck）—— R1576 toggle 零效果（R2027 部分纠正：R1576 生效但度量 stale + label 双重表示）—— 本切片原机制对 37-form-controls **INERT，不可直接实施**
 >
 > 原方案（下方正文）假定 `<label>Name: <input></label>` 的 `<input>` 经 R1576（`ZW_INLINE_BOX_RECURSE`）递归收集后，作为 IFC `InlineItem::InlineBlock` 进入 `break_items_into_lines`，故 `break_lines.rs:431` + `mod.rs:1125-1192` 是改点。**该假定经实证推翻**：
 >
