@@ -473,7 +473,7 @@ fn collect_table_col_backgrounds(
         let rg_has_bg = child
             .node_id
             .and_then(|id| styles.get(&id))
-            .is_some_and(|s| !matches!(s.background_color, ColorValue::Transparent));
+            .is_some_and(|s| !matches!(s.background_color, ColorValue::Transparent) || !s.background_image.is_empty());
         if !rg_collapsed && rg_has_bg {
             if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
                 if let Some(nid) = child.node_id {
@@ -525,10 +525,9 @@ fn collect_table_col_backgrounds(
                             let col_collapsed = col_child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
                                 matches!(s.visibility, zero_css_parser::values::VisibilityValue::Collapse)
                             });
-                            let col_has_bg = col_child
-                                .node_id
-                                .and_then(|id| styles.get(&id))
-                                .is_some_and(|s| !matches!(s.background_color, ColorValue::Transparent));
+                            let col_has_bg = col_child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                                !matches!(s.background_color, ColorValue::Transparent) || !s.background_image.is_empty()
+                            });
                             if !col_collapsed && col_has_bg {
                                 if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
                                     if let Some(nid) = col_child.node_id {
@@ -551,10 +550,9 @@ fn collect_table_col_backgrounds(
                     .node_id
                     .and_then(|id| styles.get(&id))
                     .is_some_and(|s| matches!(s.visibility, zero_css_parser::values::VisibilityValue::Collapse));
-                let col_has_bg = child
-                    .node_id
-                    .and_then(|id| styles.get(&id))
-                    .is_some_and(|s| !matches!(s.background_color, ColorValue::Transparent));
+                let col_has_bg = child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                    !matches!(s.background_color, ColorValue::Transparent) || !s.background_image.is_empty()
+                });
                 if !col_collapsed && col_has_bg {
                     if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
                         if let Some(nid) = child.node_id {

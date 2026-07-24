@@ -1457,7 +1457,7 @@ impl Painter {
     /// `<col>`/`<colgroup>` 不生成常规流盒，其 `background-color` 须按列跨满表格
     /// content 高度绘制，位于单元格背景之下。几何 `(node_id, x_offset, width)` 相对
     /// 表格 content box（由 layout 层 `collect_table_col_backgrounds` 写入）。
-    /// 仅绘制 background-color（col 上 background-image 极罕见，暂不支持）。
+    /// 绘制 background-color + background-image（R2046：col 经列 rect 平铺 image）。
     fn paint_table_col_backgrounds(
         &mut self,
         box_node: &LayoutBox,
@@ -1476,16 +1476,28 @@ impl Painter {
         }
         for (node_id, x_off, w) in &box_node.table_col_backgrounds {
             let Some(style) = styles.get(node_id) else { continue };
-            if matches!(style.background_color, ColorValue::Transparent) {
-                continue;
-            }
             if *w <= 0.0 {
                 continue;
             }
-            self.primitives.add_fill(
-                Rect::new(content_x + *x_off, content_y, *w, h),
-                color_value_to_render(&style.background_color),
-            );
+            let rect_x = content_x + *x_off;
+            // bg-color（§17.5.1 col 层；透明跳过）。
+            if !matches!(style.background_color, ColorValue::Transparent) {
+                self.primitives.add_fill(
+                    Rect::new(rect_x, content_y, *w, h),
+                    color_value_to_render(&style.background_color),
+                );
+            }
+            // R2046：col/colgroup background-image（§17.5.1 col 层；col 无 box，经列 rect 平铺）。
+            // attachment:fixed 须 viewport-anchored（col rect 锚定 = scroll 语义会错位）→ 跳过
+            // （col fixed-image 极罕见；跳过回到无 col-image 行为，零回归）。
+            if !style.background_image.is_empty()
+                && !matches!(
+                    style.background_attachment,
+                    zero_style_system::BackgroundAttachmentComputedValue::Fixed
+                )
+            {
+                self.paint_bg_image_in_origin(rect_x, content_y, *w, h, style, 0.0, 0.0);
+            }
         }
     }
 
