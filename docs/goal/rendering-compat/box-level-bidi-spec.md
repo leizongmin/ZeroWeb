@@ -1,7 +1,7 @@
 # Spec / RFC：Box-level Bidi（IFC 全行 bidi 重排序）
 
-**日期**：2026-07-24（R2021，承接 R2020 text-level bidi correctness fix + box-level bidi 识别）
-**状态**：scoping / RFC v0.1（**未进入实施**——substantial IFC 重构，须确认范围 + 第一切片 A/B 后再推进；非 font-stack 依赖，可作 font-stack-parallel 非-font 推进面）
+**日期**：2026-07-24（R2021，承接 R2020 text-level bidi correctness fix + box-level bidi 识别）；**R2023 更新**：BL2 Option A 经实证确认 dead-end（见 §8）
+**状态**：scoping / RFC v0.1（**未进入实施**——substantial IFC 重构，须确认范围 + 第一切片 A/B 后再推进；非 font-stack 依赖，可作 font-stack-parallel 非-font 推进面）。**R2023 更新**：BL2 Option A 已实证为 dead-end（bidi-007a framebuffer 字节一致 off/on + bidi-text dir 零 flip），code 已 revert——**真路径 = BL3 Option B item-level**（见 §4.2/§8）。
 **前置**：R2020 text-level bidi correctness（`bidi_reorder` per-run，控制码 + paragraph level 修），`css/CSS2/bidi-text` 31/105 (30%)。本文档定义 box-level bidi（全行/跨 run bidi）范围与设计。
 
 > **范围诚实（EV）**：bidi-text 105 案，box-level bidi 潜在 +40-74 案（30%→~60-100%，含 display:table/inline-block bidi 隔离语义则更高），= headline +0.4-0.7%。**非 font-stack-gated**（bidi 是文本/盒序，非字形渲染）——独立非-font lever。reftest EV 中等（小 dir），但价值 = bidi dir 真解锁 + DC/Writing-Modes 合规 + RTL 产品页正确性。
@@ -136,8 +136,8 @@ R2020 纠 master.md「bidi shaping/font-stack-gated」误判：`bidi_reorder`（
 
 ## 8. 何时止步（kill conditions）
 
-- BL2（Option A 全行文本 bidi）若 bidi-007 A/B 0 改善或回归 → Option A 不足，跳 BL3（item-level）。
-- BL3（item-level）若触 line-break 耦合 net-neg（vertical-mode deadlock 类）且独立 post-process 不可行 → **box-level bidi 止于 BL2**，bidi dir 跨 run 用例标 structural（同 R109 entanglement），per-run text-level（R2020）为 bidi 最终形态。
+- **BL2（Option A 全行文本 bidi）= R2023 实证 DEAD-END（已满足本 kill condition）**：A/B bidi-007a ZW framebuffer **字节一致** off/on（`ZW_DUMP_FB_TAG` PNG cmp IDENTICAL，6 位精确 z_vs_chr 11.507917% 两路径一致），bidi-text dir oracle-pass 31/105 两路径逐案相同（零 flip）。painter 收到重排后 fragment 文本（run2 "h\u{202d}g\u{202c}f"→"fgh"）但像素不变——根因 = bidi-007 失败是**结构性/box-level**（图分：字符垂直堆叠、inline-box 定位错乱），text-level 重排触不到。map-back 本身正确（单测验 cross-run 控制码重排）。**code 已 revert**（0-yield 实验非永久 feature）。→ **跳 BL3 Option B item-level**。
+- BL3（item-level）若触 line-break 耦合 net-neg（vertical-mode deadlock 类）且独立 post-process 不可行 → **box-level bidi 止于 BL3 评估**，bidi dir 跨 run 用例标 structural（同 R109 entanglement），per-run text-level（R2020）为 bidi 最终形态。
 - 任意切片 net<0 → revert + 评估。
 
 ---
