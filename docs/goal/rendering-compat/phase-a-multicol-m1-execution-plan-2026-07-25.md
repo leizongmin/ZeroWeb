@@ -25,14 +25,18 @@ Phase A 硬阻塞 = **墙 ② multicol + 换行精度**（[`phase-a-IFC-unificat
 
 ## 1. 现状代码定位
 
+**★ 关键发现（R2039 调查，2026-07-25）：M1 的「auto + inline-only + 定高」子集已被 R900 实现**——非从零开始。
+
 | 位置 | 当前行为 | M1 目标 |
 |------|----------|---------|
-| `crates/engine/src/paint/painter/text.rs:609` | `use_stored = multicol_info.is_none() && inline_layout.is_some() && width_matches`——multicol **永远** Path B | multicol 也走 stored（消费 inline_layout） |
-| `painter/text.rs:668+`（Path B `inline_ctx` 构建） | 用 override-maps（`text_node_font_sizes`）重跑 IFC，再按列分配 | multicol 改读 stored fragments 做列分配（不重跑 IFC） |
-| `engine.rs` Gate 1/2（compute_final） | multicol 内层容器是否存 inline_layout？**须实证**（incr0 探针） | incr1：确保 multicol 内层容器存 inline_layout |
-| `painter/text.rs` 文件体积 | **1876 行**（近 2000 上限） | incr2 新增逻辑若超 2000 须先拆分（按 stored-vs-rerun / multicol 列分配拆子模块） |
+| `crates/layout-engine/src/inline_finalization.rs:234` `store_inline_multicol_columns` | **R900 已实现**：column-fill:**auto** + inline-only（无 block 子）+ 定高（height/max-height Px）+ 列数≥2 的 multicol 容器，列分布后存 `inline_layout`（line.y=y_in_column，fragment.x += col_idx×(col_w+gap)）；paint `use_stored` 消费。R905 max-height budget、R1429 overflow 列、R1423 填 text_node_is_ahem 度量（供 balance 重跑路径）。**+1 oracle 零回归**。 | ✅ 已 LANDED（auto+inline-only+定高 子集） |
+| 同上，**balance 模式**分支（`!info.sequential_fill`，line 281 `return false`） | R902/R1422 实证 balance 存列分布 **net-negative** → balance 仅填度量不存分布，paint 用 multicol_info 重跑 | ❓ M1 剩余：balance 存分布（须克服 R902/R1422 net-negative，难） |
+| 同上，**block-children** 分支（`has_block_child`，line 264 `return false`） | block 子走 `multicol.rs assign_children` 路径，不经本函数 | ❓ M1 剩余：block-children multicol 存分布（新机制） |
+| 同上，**不定高 auto**（`available_height<=0`，line 294） | 回退不存 | ❓ M1 剩余：不定高 auto（须先解 height，单独 lever） |
+| `painter/text.rs:609` `use_stored = multicol_info.is_none() && ...` | multicol 走 Path B；但 R900 stored 的容器 `inline_layout.is_some()` 且... 实际 use_stored 仍 `multicol_info.is_none()` → **须核验 paint 是否真消费 R900 stored**（R900 注释称「无 paint 改动」命中即按列渲染，须实证 use_stored 真路径） | 核验 + 必要时打通 paint 消费 |
+| `painter/text.rs` 文件体积 | **1876 行**（近 2000 上限） | incr2 新增逻辑若超 2000 须先拆分 |
 
-**⚠ 文件体积前置约束**：`painter/text.rs` 1876 行，M1 新增「stored 列分配」逻辑（估 +80~150 行）会超 2000。**incr0 前置 = 拆分 painter/text.rs**（run-rules 单文件 ≤2000），把 multicol 列分配 / Path B override-maps 抽到子模块，再开始 M1。
+**M1 实际剩余 = broaden R900 至 balance / block-children / 不定高 auto**——auto+inline-only+定高 已完成。balance 经 R902/R1422 已证 net-negative（勿盲目重试）。故 M1 剩余比基线 M1 更难（easy case done，remaining 皆曾 net-negative 或需新机制）。
 
 ---
 
@@ -45,22 +49,31 @@ Phase A 硬阻塞 = **墙 ② multicol + 换行精度**（[`phase-a-IFC-unificat
 
 ---
 
-## 3. 切片化增量（每片须过 FR-M1-3 三态门禁，净负即回退）
+## 3. 切片化增量（R2039 调查后重排；每片须过 FR-M1-3 三态门禁，净负即回退）
 
-### incr1：multicol 内层容器存 inline_layout（compute_final 侧）
-- 实证当前 multicol 内层是否存（`ZW_DEBUG_IFC` 探针 + LAYOUT_DUMP）；若不存，扩 Gate 让其存。
-- **注意**：paint 暂不消费 → 此片单独是「dead data」（违背 code-guidelines「不推测开发」）。故 **incr1 须与 incr2 合并提交**（存 + 消费同片），避免中间态存而不用。incr1 的价值是定位 Gate 改点 + 实证 multicol 内层当前存储状态。
-- **验证**：与 incr2 合并后统一 A/B。
+**前提**：incr1（store）+ incr2（paint 消费）的「auto + inline-only + 定高」子集已被 R900 LANDED。下述增量针对 R900 **未覆盖**的子集。
 
-### incr2：multicol 内层存 inline_layout + paint multicol 消费 stored 做列分配（M1 核心，与 incr1 合并）
-- `painter/text.rs:609` 改 `use_stored` 含 multicol；compute_final 侧确保 multicol 内层容器存 inline_layout（incr1 的 Gate 改点）；paint multicol 路径列分配改读 stored fragments（按 column width 切片，不重跑 IFC）。
-- **文件体积**：若本片新增逻辑使 `painter/text.rs` 超 2000 行，**先拆分**（把 multicol 列分配抽到 `painter/text_multicol.rs`），再实施——拆分本身零行为变更，单独 commit + 零回归验证。
-- **风险**：列分配算法须与 IFC 重跑产出的列几何一致（balance / fill / column-gap / column-rule）。这是 M1 主要复杂度。
-- **验证**：`css-multicol` scoped reftest A/B；multicol-fill-auto-001 须仍 PASS（守 R327 墙——M1 只动 multicol，REF-side float 不受影响，理论不撞墙，须实证）。
+### incr-A：核验 R900 paint 消费真路径（read-only，首步）
+- R900 注释称「无 paint 改动」命中即 use_stored 按列渲染，但 `painter/text.rs:609` 的 `use_stored = multicol_info.is_none() && ...` 似与「multicol 命中 stored」矛盾。须 LAYOUT_DUMP + 像素实证 R900 stored 的 multicol 容器 paint 是否真走 stored 路径（或另有 multicol-stored 分支）。
+- **验证**：read-only 调查，记录到 master.md（无 code 变更，无回归风险）。确立「paint 消费 multicol stored」的真实代码路径，为后续 broaden 增量铺路。
 
-### incr3：default-on + 全量验证
-- 移除 env gate；跑全量 `make reftest` + `make product-smoke` + `make product-smoke-legacy`。
-- **验证**：全量 net ≥ 0；welcome < 20%；legacy struct-check 无新 FAIL（37-form-controls 仍 Phase A 阻塞，不计）。
+### incr-B：broaden R900 至 block-children multicol（M1 真增量）
+- 现 `has_block_child → return false`（line 264）。block-children multicol 走 `multicol.rs assign_children`（块级分片），不经 `store_inline_multicol_columns`。
+- 增量：让 block-children multicol 也存列分布 inline_layout（block 子跨列分片后，各列内 inline 内容存布局）。
+- **风险**：block-children 跨列分片 = multicol fragmentation（R109/blockfrag 谱系，R1870 Slice1 已部分）。与 inline-only 不同机制，可能需新分片接口。
+- **验证**：scoped css-multicol A/B（block-children 子集）；multicol-fill-auto-001 等仍 PASS。
+
+### incr-C：broaden R900 至不定高 auto（须先解 height）
+- 现 `available_height<=0 → return false`。不定高 multicol 无列高预算 → 无法顺序填列。
+- 增量：不定高时先算 content_height（全宽 IFC 高度）作 budget，再分布。
+- **风险**：与 R905 max-height budget 交互；不定高 auto 行为 spec 复杂。
+
+### ❌ balance 模式（勿盲目重试）
+- R902/R1422 已证 balance 存列分布 **net-negative**。除非发现新机制克服其回归，勿重试。balance 仍走 paint multicol_info 重跑（用 R1423 填的正确度量）。
+
+### incr-D：default-on + 全量验证（broaden 增量 A/B/C 任一 LANDED 后）
+- 跑全量 `make reftest` + `make product-smoke` + `make product-smoke-legacy`。
+- **验证**：全量 net ≥ 0；welcome < 20%；legacy struct-check 无新 FAIL。
 
 ---
 
@@ -80,6 +93,8 @@ Phase A 硬阻塞 = **墙 ② multicol + 换行精度**（[`phase-a-IFC-unificat
 3. 几何 baseline_y（frag.y+height）作 render y——R306 证伪。
 4. line-box metric / inline-block identity / per-font metric 单点 lever——R1985/R1206 ruled out。
 5. 37-form-controls 的 break_lines.rs:431 改点——R2026/R2027 dead-code-path。
+6. **balance 模式 multicol 存列分布**——R902/R1422 net-negative（除非发现新机制）。
+7. **R900 的 auto+inline-only+定高 子集**——已 LANDED，勿重复实现。
 
 ---
 
@@ -94,4 +109,4 @@ Phase A 硬阻塞 = **墙 ② multicol + 换行精度**（[`phase-a-IFC-unificat
 
 ## 7. 下一步（next session）
 
-**从 incr1+incr2 合并切片开始**：先用 `ZW_DEBUG_IFC` + LAYOUT_DUMP 实证 multicol 内层容器当前的 inline_layout 存储状态（incr1 探针），再设计与 IFC 重跑几何一致的 stored-fragments 列分配算法（incr2）。若 `painter/text.rs` 因新增超 2000 行，先做零行为变更的拆分（抽 multicol 列分配到子模块）。每片严格过 FR-M1-3 三态门禁。
+**从 incr-A 开始**（read-only 核验）：LAYOUT_DUMP + 像素实证 R900 stored 的 multicol 容器 paint 是否真走 stored 路径（确立「paint 消费 multicol stored」的真实代码路径，因 `painter/text.rs:609` 的 `multicol_info.is_none()` 与 R900「命中即按列渲染」注释似矛盾）。incr-A 确立路径后，incr-B（broaden 至 block-children）是 M1 真增量。balance（incr-C 同列的 ❌ 项）勿盲目重试（R902/R1422 net-negative）。
