@@ -53,9 +53,12 @@ Phase A 硬阻塞 = **墙 ② multicol + 换行精度**（[`phase-a-IFC-unificat
 
 **前提**：incr1（store）+ incr2（paint 消费）的「auto + inline-only + 定高」子集已被 R900 LANDED。下述增量针对 R900 **未覆盖**的子集。
 
-### incr-A：核验 R900 paint 消费真路径（read-only，首步）
-- R900 注释称「无 paint 改动」命中即 use_stored 按列渲染，但 `painter/text.rs:609` 的 `use_stored = multicol_info.is_none() && ...` 似与「multicol 命中 stored」矛盾。须 LAYOUT_DUMP + 像素实证 R900 stored 的 multicol 容器 paint 是否真走 stored 路径（或另有 multicol-stored 分支）。
-- **验证**：read-only 调查，记录到 master.md（无 code 变更，无回归风险）。确立「paint 消费 multicol stored」的真实代码路径，为后续 broaden 增量铺路。
+### incr-A：核验 R900 paint 消费真路径（read-only，首步）✅ R2041 已解决（favorable）
+- **无矛盾**：`multicol_info`（`painter/text.rs:481`）仅在 `!has_in_flow_children && is_balance_mode && height_auto` 时 Some。`is_balance_mode = column_fill != Auto`（line 476）、`height_auto = height == Auto`（line 480）。R900 case = column-fill:**auto** + **定高** → `is_balance_mode=false` 且 `height_auto=false` → `multicol_info=None` → `use_stored = multicol_info.is_none() && inline_layout.is_some() && width_matches` = **true**（R900 stored）→ **R900 stored 经正常 stored 路径（line 626-668）消费**。`multicol_info.is_none()` gate 正确，非矛盾。
+- **M1 当前状态图**（R2041 确立）：
+  - balance + auto-height + 无 block 子：`multicol_info=Some` → Path B 重跑（用 R1423 填度量）。❌ 勿重试存分布（R902/R1422）。
+  - auto + 定高（R900）：`multicol_info=None` + stored → use_stored=true → ✅ stored 消费。
+  - block-children：`has_in_flow_children=true` → `multicol_info=None`，但 `store_inline_multicol_columns` `has_block_child→false` 不存 → `inline_layout=None` → use_stored=false → Path B 重跑。← **incr-B 目标**
 
 ### incr-B：broaden R900 至 block-children multicol（M1 真增量）
 - 现 `has_block_child → return false`（line 264）。block-children multicol 走 `multicol.rs assign_children`（块级分片），不经 `store_inline_multicol_columns`。
