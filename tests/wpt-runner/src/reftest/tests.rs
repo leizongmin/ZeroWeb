@@ -248,6 +248,70 @@ fn r2005_print_tall_framebuffer_env_grows_height() {
     assert!(fb_on.height > fb_off.height, "tall framebuffer 须高于 viewport");
 }
 
+/// R2014 综合集成验证：Print 模式下 @page `{ size: A4; margin: 2cm }` 同时驱动
+/// ① 根布局宽 = 页内容宽（R2013 layout-width-for-print：A4 宽 793.7 − 2×2cm(75.59) ≈ 642.5，
+///    **非** viewport 800），② 自定义页高驱动分页（R2010 size + R1999/R2000 pagination）。
+/// 端到端经全管线（parse → cascade → @page 解析 → layout → paginate），验 R2010/R2011/R2013
+/// 三切片在真实 @page 文档上**协同**生效（单元测试各切片独立，未验协同）。
+/// 镜像 R2000 e2e 方法论（端到端可发单元测试漏的集成 bug，如 R2000 匿名包装盒）。
+fn r2014_max_box_width(b: &zero_layout_engine::types::LayoutBox) -> f32 {
+    let mut max_w = b.width.max(b.content_width);
+    for child in &b.children {
+        max_w = max_w.max(r2014_max_box_width(child));
+    }
+    max_w
+}
+
+#[test]
+fn r2014_print_page_size_margin_width_integration_end_to_end() {
+    // @page A4 + 2cm margin：页内容宽 = 793.7 − 151.18 ≈ 642.5。body margin:0 消默认 8px。
+    // 三 div：red（页 0）+ green（page-break-before→页 1）+ blue（页 1）。width:100% 撑满页内容宽。
+    let html = concat!(
+        "<html><head><style>",
+        "@page { size: A4; margin: 2cm; }",
+        "body { margin: 0; }",
+        "div { width: 100%; }",
+        "</style></head><body>",
+        "<div style=\"height:100px;background:red\"></div>",
+        "<div style=\"height:100px;background:green;page-break-before:always\"></div>",
+        "<div style=\"height:100px;background:blue\"></div>",
+        "</body></html>"
+    );
+    let print_cfg = ReftestConfig {
+        media_type: zero_css_parser::media_query::MediaType::Print,
+        ..Default::default()
+    };
+    let screen_cfg = ReftestConfig::default();
+
+    unsafe {
+        std::env::remove_var("ZW_PRINT_PAGINATE");
+    }
+    let (_fb_p, root_p, _) = render_to_framebuffer_with_layout_with_base(html, "", &print_cfg, None);
+    let (_fb_s, root_s, _) = render_to_framebuffer_with_layout_with_base(html, "", &screen_cfg, None);
+
+    let max_w_print = r2014_max_box_width(&root_p);
+    let max_w_screen = r2014_max_box_width(&root_s);
+    let a4_content_w = 210.0 / 25.4 * 96.0 - 2.0 * (2.0 * 96.0 / 2.54);
+
+    // R2013：Print 模式根布局宽 = 页内容宽（≈642.5），非 viewport 800。
+    assert!(
+        (max_w_print - a4_content_w).abs() < 8.0,
+        "Print max box width 须 = A4 内容宽 {a4_content_w:.1}（R2013 layout-width-for-print），got {max_w_print:.1}"
+    );
+    // Screen 模式：根布局宽仍 = viewport（800），证 R2013 仅 Print 触发（Screen 零回归）。
+    assert!(
+        max_w_screen > a4_content_w + 50.0,
+        "Screen max box width 须 = viewport 800（不受 @page 影响），got {max_w_screen:.1}"
+    );
+
+    // R2010 + R1999/R2000：自定义 A4 页高 + 分页 → green 推到页 1（extent > 1 页）。
+    let extent_print = r2000_max_abs_bottom(&root_p, 0.0);
+    assert!(
+        extent_print > 1000.0,
+        "Print extent 须跨页（green 推到 A4 页 1 边界 1122.5），got {extent_print:.1}"
+    );
+}
+
 #[test]
 fn test_struct_check_detects_sibling_overlap() {
     // 两个**普通块流**兄弟盒经负 margin 重叠（第二个 margin-top:-50px 拉 50px，100×50=5000px²
