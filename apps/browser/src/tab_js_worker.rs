@@ -293,9 +293,10 @@ fn js_worker_main(
 }
 
 /// P1b S3 incr-a：注册 `__zw_fetch(id, url)` 回调。JS `fetch(url)` 经 shim 生成 ID +
-/// 存 pending Promise 后调本回调。回调同步抓取（读 fetch_handler cell）→
-/// `resolver.resolve(id, body)` 排队 ResolveAsyncCallback（worker 下一命令处理，
-/// FIFO 保序，测试确定性）。handler 未注入时 resolve 错误（fetch not ready）。
+/// 存 pending Promise 后调本回调。**非阻塞**（incr-d）：回调克隆 handler Option +
+/// resolver 后**立即返回**，子线程抓取（`h(url)` / `fetch_text_async.recv`）+ 异步
+/// `resolver.resolve`——JS worker 不在 fetch 期间冻结。handler 未注入时子线程 resolve
+/// 错误标记。代价：resolve 时机非确定（异步），fetch 测试改 polling（见 wait_for_global）。
 fn register_fetch_callback(
     sandbox: &mut dyn zero_script_sandbox::Sandbox,
     fetch_handler: &Arc<std::sync::Mutex<Option<FetchHandler>>>,
@@ -307,27 +308,29 @@ fn register_fetch_callback(
         Box::new(move |args: &[String]| -> String {
             let id = args.first().cloned().unwrap_or_default();
             let url = args.get(1).cloned().unwrap_or_default();
-            let result = match handler_cell.lock() {
-                Ok(cell) => match cell.as_ref() {
+            // 非阻塞：锁内仅克隆 handler Option（FetchHandler=Arc，廉价），立即释放锁；
+            // 抓取在子线程进行，不阻塞 JS worker。
+            let handler_opt: Option<FetchHandler> = handler_cell.lock().ok().and_then(|c| c.as_ref().cloned());
+            let resolver_clone = resolver.clone();
+            std::thread::spawn(move || {
+                let result = match handler_opt {
                     Some(h) => h(&url).unwrap_or_else(|e| format!("__zw_fetch_error:{e}")),
                     None => "__zw_fetch_error:no-handler".to_string(),
-                },
-                Err(_) => "__zw_fetch_error:lock".to_string(),
-            };
-            // 排队 ResolveAsyncCallback（worker 下一轮处理 → resolve Promise + drain .then）。
-            resolver.resolve(&id, &result);
+                };
+                // 排队 ResolveAsyncCallback（worker 处理 → resolve Promise + drain .then）。
+                resolver_clone.resolve(&id, &result);
+            });
             String::new()
         }),
     );
 }
 
-/// P1b S3 incr-b：生产 fetch handler——经 `zero_webview::fetch_text_async`（net pool
-/// 自动 OnceLock 初始化）发起 HTTP GET，**同步阻塞 recv** 等 response body。
+/// P1b S3 incr-b/d：生产 fetch handler——经 `zero_webview::fetch_text_async`（net pool
+/// 自动 OnceLock 初始化）发起 HTTP GET，`recv()` 等 response body。
 ///
-/// ⚠️ **阻塞 JS worker**：handler 在 `__zw_fetch` 回调内同步执行，`recv()` 期间 JS worker
-/// 线程阻塞（无法处理其他命令）。本地/快响应可接受；慢网络冻结 JS = 已知限制，
-/// 非阻塞化（thread spawn + 异步 resolve）= 后续增量。response 仍为 body 字符串
-/// （Response 对象 spec-compliance = 后续增量）。
+/// incr-d 起 `register_fetch_callback` 在**子线程**调本 handler（`recv()` 阻塞子线程，
+/// 非 JS worker），故 JS worker 不在 fetch 期间冻结。response 仍为 body 字符串（Response
+/// 对象 spec-compliance 由 shim `_makeResponse` 在 JS 侧包装，incr-c）。
 pub fn default_fetch_handler() -> FetchHandler {
     Arc::new(|url: &str| {
         fetch_text_async(url)
@@ -455,6 +458,25 @@ mod tests {
     use super::*;
     use zero_browser_shell::TabId;
 
+    /// P1b S3 incr-d：非阻塞 fetch 的 resolve 时机异步——轮询 `globalThis.{key}` 直到
+    /// 非 undefined（或超时返当前值）。子线程抓取（synthetic ~ms / 本地 server ~ms）→
+    /// generous 超时下可靠（非 flaky）。
+    fn wait_for_global(worker: &TabJsWorkerHandle, key: &str, timeout_ms: u64) -> String {
+        let start = std::time::Instant::now();
+        let probe = format!("String(globalThis.{key})");
+        loop {
+            if let Ok(v) = worker.execute_script_direct(&probe) {
+                if v != "undefined" {
+                    return v;
+                }
+            }
+            if start.elapsed().as_millis() >= timeout_ms as u128 {
+                return worker.execute_script_direct(&probe).unwrap_or_default();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     #[test]
     fn tab_js_worker_async_resolver_delivers_cross_command() {
         // P1b S1 incr3：跨命令 marshal 验证。JS 建 pending Promise → 主线程经
@@ -527,9 +549,9 @@ mod tests {
 
     #[test]
     fn tab_js_worker_fetch_resolves_via_handler() {
-        // P1b S3 incr-a/c：fetch 经 __zw_fetch 回调 + handler 抓取 + resolver.resolve
-        // 端到端。合成 handler（无网络）返 body:<url>。incr-c 起 fetch resolve Response
-        // 对象——用 r.text() 取 body。FIFO 确定性（无 polling）。
+        // P1b S3 incr-a/c/d：fetch 经 __zw_fetch 回调 + handler 抓取 + resolver.resolve
+        // 端到端。合成 handler（无网络）返 body:<url>。incr-c 起 resolve Response 对象（r.text()
+        // 取 body）；incr-d 起非阻塞（子线程抓取 → 异步 resolve → 测试 polling）。
         let mut worker = TabJsWorkerHandle::spawn(TabId(4));
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         worker.set_fetch_handler(Arc::new(|url: &str| Ok(format!("body:{url}"))));
@@ -539,7 +561,7 @@ mod tests {
                  .then(function(t){ globalThis.__result = t; });",
             )
             .unwrap();
-        let r = worker.execute_script_direct("globalThis.__result").unwrap();
+        let r = wait_for_global(&worker, "__result", 1000);
         assert_eq!(r, "body:/hello");
         worker.shutdown();
     }
@@ -553,7 +575,7 @@ mod tests {
         worker
             .execute_script_direct("fetch('/x').then(function(r){ globalThis.__result = r.ok ? 'OK' : 'ERR'; });")
             .unwrap();
-        let r = worker.execute_script_direct("globalThis.__result").unwrap();
+        let r = wait_for_global(&worker, "__result", 1000);
         assert_eq!(r, "ERR");
         worker.shutdown();
     }
@@ -573,17 +595,18 @@ mod tests {
                  }).then(function(o){ globalThis.__result = o.key + '/' + o.n; });",
             )
             .unwrap();
-        let shape = worker.execute_script_direct("globalThis.__shape").unwrap();
+        let shape = wait_for_global(&worker, "__shape", 1000);
         assert_eq!(shape, "true:200");
-        let r = worker.execute_script_direct("globalThis.__result").unwrap();
+        let r = wait_for_global(&worker, "__result", 1000);
         assert_eq!(r, "value/42");
         worker.shutdown();
     }
 
     #[test]
     fn tab_js_worker_default_fetch_handler_real_http() {
-        // P1b S3 incr-b：生产 default_fetch_handler 经 net pool 真实 HTTP GET。
-        // 本地 HTTP server（127.0.0.1）服务固定 body——不依赖外部网络。
+        // P1b S3 incr-b/d：生产 default_fetch_handler 经 net pool 真实 HTTP GET。
+        // 本地 HTTP server（127.0.0.1）服务固定 body——不依赖外部网络。incr-d 非阻塞：
+        // 子线程 recv（不冻结 JS worker），测试 polling（3s 超时，本地 fetch ~ms）。
         use std::io::{Read, Write};
         use std::net::TcpListener;
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind local server");
@@ -605,7 +628,6 @@ mod tests {
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         worker.set_fetch_handler(default_fetch_handler());
         let url = format!("http://127.0.0.1:{port}/data");
-        // handler 同步 recv 阻塞 JS worker 直至本地 fetch 完成（~ms 级），FIFO 确定性。
         worker
             .execute_script_direct(&format!(
                 "fetch({:?}).then(function(r){{ return r.text(); }})
@@ -613,7 +635,7 @@ mod tests {
                 url
             ))
             .unwrap();
-        let r = worker.execute_script_direct("globalThis.__result").unwrap();
+        let r = wait_for_global(&worker, "__result", 3000);
         assert_eq!(r, "hello-from-server");
         worker.shutdown();
         let _ = server.join();
