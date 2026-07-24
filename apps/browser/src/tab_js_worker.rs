@@ -42,7 +42,33 @@ enum JsWorkerCommand {
         html: String,
         url: String,
     },
+    /// P1b S1 incr3：跨线程异步回调 resolve（marshal channel）。任意线程经
+    /// [`TabJsWorkerHandle::async_resolver`] 投递 (id, result)，JS worker 收到后调
+    /// `sandbox.resolve_async_callback`（执行 shim 的 `__zwResolveCallback` resolve Promise）。
+    /// 复用现有 cmd mpsc（FIFO 保序），无需独立 channel / select。
+    ResolveAsyncCallback {
+        id: String,
+        result: String,
+    },
     Shutdown,
+}
+
+/// 异步回调 resolver（P1b S1 incr3）——克隆供跨线程异步完成方（fetch host / 定时器）
+/// 持有，把 `(id, result)` 投递回 JS worker 线程 resolve 对应 Promise。
+#[derive(Clone)]
+pub struct AsyncResolver {
+    cmd_tx: Sender<JsWorkerCommand>,
+}
+
+impl AsyncResolver {
+    /// 投递一次异步 resolve（fire-and-forget）。JS worker 收到后执行
+    /// `__zwResolveCallback(id, result)` resolve pending Promise。
+    pub fn resolve(&self, id: &str, result: &str) {
+        let _ = self.cmd_tx.send(JsWorkerCommand::ResolveAsyncCallback {
+            id: id.to_string(),
+            result: result.to_string(),
+        });
+    }
 }
 
 /// 专用 JS worker 句柄（每 Tab 一个）。
@@ -140,6 +166,15 @@ impl TabJsWorkerHandle {
         Arc::clone(&self.mutations)
     }
 
+    /// 返回异步回调 resolver（P1b S1 incr3）。克隆供跨线程异步完成方（fetch host /
+    /// 定时器）持有，`resolver.resolve(id, result)` 经 cmd channel marshal 回 JS worker
+    /// 线程，由 worker 调 `sandbox.resolve_async_callback` resolve 对应 Promise。
+    pub fn async_resolver(&self) -> AsyncResolver {
+        AsyncResolver {
+            cmd_tx: self.cmd_tx.clone(),
+        }
+    }
+
     /// 关闭 JS 线程。
     pub fn shutdown(&mut self) {
         let _ = self.cmd_tx.send(JsWorkerCommand::Shutdown);
@@ -205,6 +240,11 @@ fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::M
                 if let Ok(mut u) = page_url.lock() {
                     *u = url;
                 }
+            }
+            JsWorkerCommand::ResolveAsyncCallback { id, result } => {
+                // P1b S1 incr3：跨线程 marshal 到此——在 JS worker 线程调
+                // resolve_async_callback（执行 shim 的 __zwResolveCallback resolve Promise）。
+                sandbox.resolve_async_callback(&id, &result);
             }
             JsWorkerCommand::Shutdown => break,
         }
@@ -321,5 +361,49 @@ impl zero_page_runtime::JsExecutor for TabJsWorkerHandle {
     }
     fn mutations(&self) -> std::sync::Arc<std::sync::Mutex<Vec<zero_engine::DomMutation>>> {
         self.mutations()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_browser_shell::TabId;
+
+    #[test]
+    fn tab_js_worker_async_resolver_delivers_cross_command() {
+        // P1b S1 incr3：跨命令 marshal 验证。JS 建 pending Promise → 主线程经
+        // async_resolver().resolve() 投递 ResolveAsyncCallback → worker FIFO 后于该命令的
+        // 下一条 Execute 读到已 resolve 的 __result（证跨线程/跨命令 resolve 通路工作）。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(1));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        // 建 pending Promise on id "r1"，then 写全局 __result。
+        let init = worker.execute_script_direct(
+            "new Promise(function(resolve){ globalThis.__zw_pending['r1'] = resolve; })
+                 .then(function(v){ globalThis.__result = v; });",
+        );
+        assert!(init.is_ok(), "init script should succeed: {:?}", init.err());
+        // resolve 前：__result 未设（Promise pending）。
+        let before = worker.execute_script_direct("typeof globalThis.__result").unwrap();
+        assert_eq!(before, "undefined");
+        // 经 async_resolver 投递 resolve（cmd channel → worker → sandbox.resolve_async_callback）。
+        let resolver = worker.async_resolver();
+        resolver.resolve("r1", "delivered!");
+        // FIFO：resolve 命令先于下一条 Execute 入队 → worker 先 resolve 后读。
+        let after = worker.execute_script_direct("globalThis.__result").unwrap();
+        assert_eq!(after, "delivered!");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_async_resolver_safe_for_unknown_id() {
+        // 未知 id（无 pending resolver）经 shim 防御分支静默 no-op，不报错/不崩溃。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(2));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        let resolver = worker.async_resolver();
+        resolver.resolve("nonexistent-id", "v");
+        // worker 仍正常服务。
+        let r = worker.execute_script_direct("1 + 2").unwrap();
+        assert_eq!(r, "3");
+        worker.shutdown();
     }
 }
