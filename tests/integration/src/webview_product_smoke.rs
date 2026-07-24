@@ -480,6 +480,32 @@ fn webview_skips_debug_indicators_by_default() {
 
 // ── Phase 4: WASM 执行验证 ──
 
+/// R1997：inline `page-break-before:always`（**合法** CSS2）经 inline style 正确 populate
+/// ComputedStyle（触发 paint_break_indicator）——证实 inline 解析路径工作正常。
+///
+/// **纠正 R1996「inline break-before 解析 gap」笔记**：R1996 的首测用 `break-before:always`
+/// 是**非法 CSS**（CSS3 `break-before` 不接受 `always`，仅接受 auto|avoid|page|column|...；
+/// `always` 是 CSS2 `page-break-before` 的值）→ parse_break_before 正确拒绝 → 指示器不触发
+/// （正确行为，非 gap）。R1996 style-block 次测通过是因含 `direction:rtl`（触 direction 指示器），
+/// 非因 break-before。本测试用合法 `page-break-before:always` 证实 inline 应用路径正常。
+#[test]
+fn inline_page_break_before_applied_via_style_attr() {
+    let html =
+        r#"<html><body><div style="page-break-before:always;background:#f00">hello world content</div></body></html>"#;
+    let r_default = create_webview().load_html(html, None);
+    let mut wv = create_webview();
+    wv.set_skip_indicators(false);
+    let r_indicators = wv.load_html(html, None);
+    // 背景 red（1 fill）+ page-break-before 指示器（2 fills，skip=false 时）→ 3 > 1。
+    // default（skip=true）仅背景（1 fill）。差值证 inline page-break-before 被正确应用。
+    assert!(
+        r_indicators.primitives.fills.len() > r_default.primitives.fills.len(),
+        "inline page-break-before:always should add indicator fills on top of bg: {} vs {}",
+        r_indicators.primitives.fills.len(),
+        r_default.primitives.fills.len()
+    );
+}
+
 /// execute_wasm 基础调用（空 WASM 模块不崩溃）
 #[test]
 fn test_smoke_wasm_execution() {
