@@ -28,6 +28,21 @@
     _rafBudget = 64;
   };
 
+  // P1b S1（方案 A）异步回调 resolve 通道（JS 侧契约）：
+  // Rust 异步完成（fetch / timer 等后续切片接通）后经
+  // `V8Sandbox::resolve_async_callback(id, result)` 执行 `__zwResolveCallback(id, result)`，
+  // 从 pending 表取出 resolver 触发 Promise resolve。execute 末尾的 microtask
+  // checkpoint 随即 drain `.then` 回调。pending 表 idempotent 初始化——跨脚本执行
+  // 存活（resolve 可晚于注册），且 shim 重注入时不覆盖既有 pending 项。
+  globalThis.__zw_pending = globalThis.__zw_pending || {};
+  globalThis.__zwResolveCallback = function(id, result) {
+    var r = globalThis.__zw_pending[id];
+    if (typeof r === 'function') {
+      delete globalThis.__zw_pending[id];
+      r(result);
+    }
+  };
+
   globalThis.setTimeout = function(fn, _delay) {
     if (typeof fn === 'function') _defer(fn);
     return _timerId++;

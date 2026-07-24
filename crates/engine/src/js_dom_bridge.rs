@@ -1055,6 +1055,36 @@ mod tests {
     }
 
     #[test]
+    fn test_shim_async_resolve_callback_e2e() {
+        // P1b S1（方案 A）端到端：注入**生产** DOM shim（含 __zwResolveCallback + pending 表），
+        // 验证 V8Sandbox::resolve_async_callback 经 shim 的 JS 契约真实 resolve Promise。
+        // 宿主回调同步返「回调 ID」，JS 建 pending Promise；Rust resolve 触发 .then。
+        use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+        // 注入生产 shim（tab_js_worker.rs / js_worker.rs 同款）。
+        sandbox.execute(generate_js_dom_shim()).unwrap();
+        sandbox.register_callback("__zw_start_async", Box::new(|args| format!("aid:{}", args[0])));
+        sandbox
+            .execute(
+                "var id = __zw_start_async('99');
+                 new Promise(function(resolve){ globalThis.__zw_pending[id] = resolve; })
+                     .then(function(v){ globalThis.__result = v; });",
+            )
+            .unwrap();
+        // resolve 前：Promise pending。
+        let before = sandbox.execute("typeof globalThis.__result").unwrap();
+        assert_eq!(before.value, "undefined");
+        // Rust 异步完成 → resolve（shim 的 __zwResolveCallback 触发 + microtask drain）。
+        sandbox.resolve_async_callback("aid:99", "resolved!");
+        let after = sandbox.execute("globalThis.__result").unwrap();
+        assert_eq!(after.value, "resolved!");
+    }
+
+    #[test]
     fn test_shim_includes_runtime_stubs() {
         let shim = generate_js_dom_shim();
         assert!(shim.contains("globalThis.setTimeout"));
@@ -1063,6 +1093,9 @@ mod tests {
         assert!(shim.contains("__zw_get_page_url"));
         assert!(shim.contains("globalThis.screen"));
         assert!(shim.contains("parentNode"));
+        // P1b S1（方案 A）异步回调 resolve 通道 JS 侧契约。
+        assert!(shim.contains("globalThis.__zwResolveCallback"));
+        assert!(shim.contains("globalThis.__zw_pending"));
     }
 
     #[test]
