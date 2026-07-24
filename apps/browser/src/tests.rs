@@ -1693,6 +1693,47 @@ fn transform_webview_primitives_culls_primitives_outside_viewport() {
     assert_eq!(out.fills.len(), 1, "only the in-viewport fill should survive");
 }
 
+/// DC-13 line 328：ZeroBrowser 不得对 WebView glyph 做改变布局语义的整行重排。
+///
+/// `transform_webview_primitives` 须按输入顺序逐个映射 glyph（仅 scale+offset + 裁剪），
+/// 不得按 Y / 字体 / 纹理图集排序或批处理重排——否则会破坏跨行布局语义（如把不同 baseline
+/// 的 glyph 合并到一行）。本测试构造**会被 sort-by-Y / font-batch 优化重排**的 glyph 序列
+///（混合行 + 混合字体），断言输出严格保序，守此不变量防未来优化回归。
+#[test]
+fn transform_webview_primitives_preserves_glyph_order() {
+    use app::transform_webview_primitives;
+    use zero_render_foundation::color::Color;
+    use zero_render_foundation::primitive::{FontId, GlyphPrimitive, RenderPrimitives};
+
+    let mut p = RenderPrimitives::new();
+    // 输入顺序 = 布局文档顺序：A(行1 y=10, font0) → B(行1 y=10, font1) → C(行2 y=30, font0)
+    // → D(行1 y=10, font0)。sort-by-Y-then-font 会把 D 移到 C 前；font-batch 会按 font 分组
+    //（[A,C,D]+[B]）。两者都破坏跨行布局语义。
+    let seq = [('A', 10.0, 0u32), ('B', 10.0, 1), ('C', 30.0, 0), ('D', 10.0, 0)];
+    for (ch, y, fid) in seq {
+        p.add_glyph(GlyphPrimitive {
+            x: 5.0,
+            y,
+            font_size: 16.0,
+            color: Color::rgb(0, 0, 0),
+            glyph_id: ch as u32,
+            font_id: FontId(fid),
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+        });
+    }
+    // 不裁剪（None）→ 全保留 → 顺序可直接比对。
+    let out = transform_webview_primitives(&p, 0.0, 0.0, 1.0, None);
+    assert_eq!(out.glyphs.len(), 4, "无裁剪须全保留");
+    let out_ids: Vec<u32> = out.glyphs.iter().map(|g| g.glyph_id).collect();
+    assert_eq!(
+        out_ids,
+        vec!['A' as u32, 'B' as u32, 'C' as u32, 'D' as u32],
+        "glyph 须严格保输入顺序（不得按 Y/字体排序或批处理重排，DC-13 line 328）"
+    );
+}
+
 /// Esc 在加载中应停止加载（无其他 Escape 上下文时）。
 #[test]
 fn escape_stops_loading_when_active_tab_loading() {
