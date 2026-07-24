@@ -1,5 +1,10 @@
 (function() {
   var _listenerStore = {};
+  // P1b S2 incr3：元素 proxy 缓存——同一 (sel, handle) 复用同一 Proxy 实例，使
+  // `querySelector('#t') === querySelector('#t')` 为真（node === identity，v8::External
+  // 精修目标，但纯 JS Proxy 缓存即可达成，无需 rusty_v8 对象绑定）。proxy 无状态（仅委托
+  // host 回调），缓存安全；key 复用 `_elKey`（@handle / sel），与 _listenerStore 同生命周期。
+  var _proxyCache = {};
 
   // ── 浏览器运行时桩（定时器、navigator、location 等）──
   var _timerId = 1;
@@ -575,7 +580,8 @@
 
   function _makeProxy(sel, handle) {
     var key = _elKey(sel, handle);
-    return new Proxy({}, {
+    if (_proxyCache[key]) return _proxyCache[key];
+    var proxy = new Proxy({}, {
       get: function(_t, prop) {
         if (prop === '__zwHandle') return handle;
         if (prop === '__zwSelector') return sel;
@@ -786,6 +792,7 @@
       },
       set: function(_t, prop, value) {
         var p = String(prop);
+        var moAttr = null;
         if (p === 'textContent' || p === 'innerHTML') {
           if (p === 'innerHTML') {
             if (handle) __zw_set_inner_html_handle(handle, String(value));
@@ -795,19 +802,26 @@
           } else {
             __zw_set_text(sel, String(value));
           }
+          // textContent/innerHTML = characterData 类，incr 仅支持 attributes + childList，不 notify。
         } else if (p === 'className') {
           if (handle) __zw_set_attr_handle(handle, 'class', String(value));
           else __zw_set_attr(sel, 'class', String(value));
+          moAttr = 'class';
         } else if (p === 'id') {
           if (handle) __zw_set_attr_handle(handle, 'id', String(value));
           else __zw_set_attr(sel, 'id', String(value));
+          moAttr = 'id';
         } else {
           if (handle) __zw_set_attr_handle(handle, p, String(value));
           else __zw_set_attr(sel, p, String(value));
+          moAttr = p;
         }
+        if (moAttr) _mo_notify(sel, handle, { type: 'attributes', attributeName: moAttr });
         return true;
       }
     });
+    _proxyCache[key] = proxy;
+    return proxy;
   }
 
   function _wrapSelector(sel) {

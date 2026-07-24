@@ -773,4 +773,53 @@ mod tests {
         assert_eq!(r, "childList:1");
         worker.shutdown();
     }
+
+    #[test]
+    fn tab_js_worker_element_identity_stable_proxy() {
+        // P1b S2 incr3：=== node identity——Proxy 缓存使 querySelector 同元素返同一对象；
+        // createElement 每次返新节点（不同 handle → 不同 proxy）。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(16));
+        worker.set_dom_snapshot("<html><body><div id='t'></div></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var a = document.querySelector('#t');
+                 var b = document.querySelector('#t');
+                 globalThis.__same = (a === b);
+                 var c1 = document.createElement('div');
+                 var c2 = document.createElement('div');
+                 globalThis.__diff = (c1 !== c2);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__same)").unwrap(),
+            "true"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__diff)").unwrap(),
+            "true"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_mutation_observer_property_set() {
+        // P1b S2 incr3：property set 路径（el.className='x'，set trap）也触发 MutationObserver
+        // attributes 记录（incr1/2 仅 hook setAttribute；incr3 补 set trap）。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(17));
+        worker.set_dom_snapshot("<html><body><div id='t'></div></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;
+                 var obs = new MutationObserver(function(records){
+                   globalThis.__seen = records[0].type + ':' + records[0].attributeName;
+                 });
+                 var el = document.querySelector('#t');
+                 obs.observe(el, { attributes: true });
+                 el.className = 'active';",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "attributes:class");
+        worker.shutdown();
+    }
 }

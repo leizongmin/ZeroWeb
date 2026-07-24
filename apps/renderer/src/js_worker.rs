@@ -726,4 +726,51 @@ mod tests {
         assert_eq!(r, "childList:1");
         worker.shutdown();
     }
+
+    #[test]
+    fn renderer_js_worker_element_identity_stable_proxy() {
+        // P1b S2 incr3（镜像 browser）：=== node identity——Proxy 缓存。
+        let mut worker = RendererJsWorker::spawn(16);
+        worker.set_dom_snapshot("<html><body><div id='t'></div></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var a = document.querySelector('#t');
+                 var b = document.querySelector('#t');
+                 globalThis.__same = (a === b);
+                 var c1 = document.createElement('div');
+                 var c2 = document.createElement('div');
+                 globalThis.__diff = (c1 !== c2);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__same)").unwrap(),
+            "true"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__diff)").unwrap(),
+            "true"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_mutation_observer_property_set() {
+        // P1b S2 incr3（镜像 browser）：property set（el.className='x'）触发 attributes 记录。
+        let mut worker = RendererJsWorker::spawn(17);
+        worker.set_dom_snapshot("<html><body><div id='t'></div></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;
+                 var obs = new MutationObserver(function(records){
+                   globalThis.__seen = records[0].type + ':' + records[0].attributeName;
+                 });
+                 var el = document.querySelector('#t');
+                 obs.observe(el, { attributes: true });
+                 el.className = 'active';",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "attributes:class");
+        worker.shutdown();
+    }
 }
