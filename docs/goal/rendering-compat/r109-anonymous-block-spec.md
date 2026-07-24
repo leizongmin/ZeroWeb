@@ -1,9 +1,11 @@
 # Spec：R109 §9.2.1.1 匿名块盒生成 + 高度回填 + bg/border 协调
 
-**版本**：v1.0
+**版本**：v1.0（**SUPERSEDED — 见顶部裁决**）
 **日期**：2026-07-02
 **作者**：AI Assistant（rally R937）
-**状态**：草稿（rally 自主模式，无交互确认；假设显式标注）
+**状态**：⚠️ **SUPERSEDED（R2007，2026-07-24）—— 勿按本 spec 实施**。R937 起草时 box-display 高 diff 簇（insert-/delete- 16-42%）被假定为静态 R109 paint 问题；R1162 re-scope + R1878 empirical probe + **R2007 box-display oracle 复核**确证：该簇**全部是 JS-driven 动态测试**（`class=reftest-wait` + `appendChild` script），须 **JS-DOM-bridge**（reftest harness 执行页面 JS 到终态）才能 flip，**非 R109 匿名块 paint/height 修复**（paint 修复对 JS-driven case 零 yield）。静态 block-in-inline 簇（block-in-inline-001/002/003）在 0.00-0.28% = font-wall near-pass（R1155）。故本 spec 的 FR-001 高度回填 / FR-002 bg / FR-003 border **对当前 box-display 失败簇零 EV**（目标全 JS-driven 或 font-wall）。R1878 亦证 R109 core split（block-in-inline-001 正确拆 3 行）已工作，残余 = entangled edge cases（table/float/relpos/JS dynamic）。**R109 作为 rendering-compat clean lever definitive 关闭**；box-display 高 diff 簇的真 unlock = JS-DOM-bridge（大型 borderline-scope 工作流，Mission 定 JS/DOM API compat 属父目标 zero-web.md，非本 goal）。本 spec 保留作历史追溯，**勿据其 Batch 1（height backfill）开工**。
+
+> 本 spec 把 R764 读码分析 + R929–R936 五轮调查（font-metric 三角度证伪 + 像素 forensics + R109 toggle A/B）收敛为可实施的多会话计划。证据链见 `master.md` R764/R929–R936。
 
 > 本 spec 把 R764 读码分析 + R929–R936 五轮调查（font-metric 三角度证伪 + 像素 forensics + R109 toggle A/B）收敛为可实施的多会话计划。证据链见 `master.md` R764/R929–R936。
 
