@@ -190,6 +190,11 @@ impl StyleSystem {
         self.media_type = media_type;
     }
 
+    /// 读取渲染媒体类型（R1999：供 layout 层判断是否触发 Print 分页 post-process）。
+    pub fn media_type(&self) -> MediaType {
+        self.media_type
+    }
+
     /// 为整个文档计算样式。
     ///
     /// 遍历文档中的所有元素节点，为每个元素计算完整的计算样式。

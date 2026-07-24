@@ -80,6 +80,11 @@ pub struct LayoutEngine {
     pub viewport_width: f32,
     /// 视口高度。
     pub viewport_height: f32,
+    /// 渲染媒体类型（R1999：`Print` 时触发分页 post-process；default `Screen` = 零行为变更）。
+    /// 镜像 `viewport_width/height` 接线模式：`RenderPipeline::set_media_type` 同设
+    /// style_system + layout_engine，使 layout 层可判 Print 模式（cascade 已用 style_system
+    /// 的 media_type，layout 此前无 media 感知——R1998 确认的缺口）。
+    media_type: zero_css_parser::MediaType,
     /// 缓存的 taffy 布局状态（可选，用于增量计算）。
     cached_state: Option<CachedLayoutState>,
     /// U1b-wiring（unified font stack）：可选 per-font 行度量提供者。
@@ -102,9 +107,16 @@ impl LayoutEngine {
         Self {
             viewport_width,
             viewport_height,
+            media_type: zero_css_parser::MediaType::Screen,
             cached_state: None,
             font_metric_provider: None,
         }
+    }
+
+    /// 设置渲染媒体类型（R1999：`Print` 触发分页 post-process；镜像 `set_viewport`）。
+    /// 由 `RenderPipeline::set_media_type` 调用（同设 style_system + layout_engine）。
+    pub fn set_media_type(&mut self, media_type: zero_css_parser::MediaType) {
+        self.media_type = media_type;
     }
 
     /// U1b-wiring（unified font stack）：注入 per-font 行度量提供者。
@@ -607,6 +619,20 @@ impl LayoutEngine {
             crate::float_positioning::apply_inline_block_float_avoidance(&mut root_box);
         }
 
+        // R1999 Phase P1a：Print 媒体分页（独立 post-process，在所有重定位之后）。
+        // gate = media_type==Print + env ZW_PRINT_PAGINATE=1（首切片 default-off）。
+        // Screen 路径（默认）双重 gate 跳过 → LayoutResult 逐字段不变（零回归）。
+        // 详见 docs/goal/rendering-compat/print-layout-phase-p1-spec.md。
+        if matches!(self.media_type, zero_css_parser::MediaType::Print)
+            && crate::print_pagination::print_paginate_enabled()
+        {
+            crate::print_pagination::paginate_for_print(
+                &mut root_box,
+                crate::print_pagination::PRINT_PAGE_HEIGHT_A4,
+                styles,
+            );
+        }
+
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
             taffy: taffy_tree,
@@ -715,6 +741,17 @@ impl LayoutEngine {
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
         sort_children_by_css_order(&mut root_box, styles);
         // taffy 已在 layout.location 中包含 position:relative 的 inset 偏移，无需额外后处理
+
+        // R1999 Phase P1a：Print 媒体分页（与全量路径同 gate）。
+        if matches!(self.media_type, zero_css_parser::MediaType::Print)
+            && crate::print_pagination::print_paginate_enabled()
+        {
+            crate::print_pagination::paginate_for_print(
+                &mut root_box,
+                crate::print_pagination::PRINT_PAGE_HEIGHT_A4,
+                styles,
+            );
+        }
 
         let layout_ms = use_start.elapsed().as_secs_f64() * 1000.0;
 

@@ -248,6 +248,9 @@ impl RenderPipeline {
     /// 量真实 WPT yield（R1991）。镜像 `set_prefers_color_scheme` 的全栈接线入口。
     pub fn set_media_type(&mut self, media_type: zero_css_parser::media_query::MediaType) {
         self.style_system.set_media_type(media_type);
+        // R1999：同步传到 layout_engine，使 layout 层可判 Print 模式触发分页 post-process
+        //（cascade 已用 style_system.media_type；layout 此前无 media 感知——R1998 缺口）。
+        self.layout_engine.set_media_type(media_type);
     }
 
     /// 更新视口尺寸（保留 DOM 缓存，后续需 `repaint_cached_viewport` 重布局）。
