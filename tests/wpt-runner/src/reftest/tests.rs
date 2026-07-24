@@ -312,6 +312,40 @@ fn r2014_print_page_size_margin_width_integration_end_to_end() {
     );
 }
 
+/// R2022：vertical-rl 文本朝向实证（R1820 复核 R1050/R1052「4-layer deadlock」）。
+///
+/// 渲染 `writing-mode:vertical-rl` 的 "WWW"，layout-tree dump 实测：vertical-rl div
+/// `writing_mode=VerticalRl` 已设但 **w=0**（inline-size 塌缩）——证 R1050「container_width=0」
+/// deadlock **仍存在**（vertical 文本的纵向 extent 未作 inline-size 测量）。R1820 recheck
+/// **确认** deadlock（非推翻）。vertical-mode 非可独立窄切片解锁。
+#[test]
+fn r2022_vertical_rl_container_width_zero_deadlock_confirmed() {
+    let html = "<html><body style=\"margin:0\">\
+        <div style=\"writing-mode:vertical-rl;font-size:40px;letter-spacing:0\">WWW</div>\
+        </body></html>";
+    let cfg = ReftestConfig::default();
+    let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &cfg, None);
+    // 找到 vertical-rl div（wm=VerticalRl）—— 证 writing-mode 已解析应用。
+    fn find_vertical(b: &zero_layout_engine::types::LayoutBox) -> Option<&zero_layout_engine::types::LayoutBox> {
+        if matches!(b.writing_mode, zero_style_system::WritingModeValue::VerticalRl) {
+            return Some(b);
+        }
+        for c in &b.children {
+            if let Some(v) = find_vertical(c) {
+                return Some(v);
+            }
+        }
+        None
+    }
+    let vdiv = find_vertical(&root).expect("vertical-rl div 存在");
+    // R1050 container_width=0 deadlock 实测：vertical-rl div w=0（inline-size 塌缩）。
+    assert!(
+        vdiv.width < 1.0,
+        "vertical-rl div inline-size 塌缩 (R1050 container_width=0 deadlock 实测确认)，got w={}",
+        vdiv.width
+    );
+}
+
 #[test]
 fn test_struct_check_detects_sibling_overlap() {
     // 两个**普通块流**兄弟盒经负 margin 重叠（第二个 margin-top:-50px 拉 50px，100×50=5000px²
