@@ -619,8 +619,8 @@ impl LayoutEngine {
             crate::float_positioning::apply_inline_block_float_avoidance(&mut root_box);
         }
 
-        // R1999 Phase P1a：Print 媒体分页（独立 post-process，在所有重定位之后）。
-        // gate = media_type==Print + env ZW_PRINT_PAGINATE=1（首切片 default-off）。
+        // R1999/R2000 Phase P1a：Print 媒体分页（独立 post-process，在所有重定位之后）。
+        // gate = media_type==Print + env ZW_PRINT_PAGINATE（default-on；=0 紧急关闭）。
         // Screen 路径（默认）双重 gate 跳过 → LayoutResult 逐字段不变（零回归）。
         // 详见 docs/goal/rendering-compat/print-layout-phase-p1-spec.md。
         if matches!(self.media_type, zero_css_parser::MediaType::Print)

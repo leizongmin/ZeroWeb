@@ -161,6 +161,55 @@ fn test_media_type_print_applies_print_rules() {
     );
 }
 
+/// 递归算 LayoutBox 树的最大 abs bottom（镜像 pipeline.rs `layout_extent_y`）。
+/// 供 R2000 端到端分页测试量 layout extent。
+fn r2000_max_abs_bottom(b: &zero_layout_engine::types::LayoutBox, parent_offset_y: f32) -> f32 {
+    let abs_top = parent_offset_y + b.y;
+    let mut max_y = abs_top + b.height;
+    for child in &b.children {
+        max_y = max_y.max(r2000_max_abs_bottom(child, abs_top));
+    }
+    max_y
+}
+
+/// R2000：Print 分页端到端验证（经完整 parse→cascade→layout→paginate 管线，真实 HTML）。
+///
+/// Print 模式 + `page-break-before:always` → 分页 post-process（R2000 default-on）
+/// 把第二个 div（green）推到 A4 页边界（≈1122.5）→ layout extent 从 ~150 增到 ~1172。
+/// 对比 pagination-off（env `ZW_PRINT_PAGINATE=0`）→ extent 显著增大（>900px）证全管线分页生效。
+/// 注：framebuffer 按 viewport_height 创建（高内容裁剪），故量 **layout root extent** 非 fb.height。
+#[test]
+fn r2000_print_pagination_end_to_end_layout_extent_grows() {
+    let html = concat!(
+        "<html><body style=\"margin:0\">",
+        "<div style=\"width:100px;height:100px;background:red\"></div>",
+        "<div style=\"width:100px;height:50px;background:green;page-break-before:always\"></div>",
+        "</body></html>"
+    );
+    let print_cfg = ReftestConfig {
+        media_type: zero_css_parser::media_query::MediaType::Print,
+        ..Default::default()
+    };
+    // 分页关（kill-switch）。
+    unsafe {
+        std::env::set_var("ZW_PRINT_PAGINATE", "0");
+    }
+    let (_fb_off, root_off, _) = render_to_framebuffer_with_layout_with_base(html, "", &print_cfg, None);
+    let extent_off = r2000_max_abs_bottom(&root_off, 0.0);
+
+    // 分页开（default-on：移除 env 即启用）。
+    unsafe {
+        std::env::remove_var("ZW_PRINT_PAGINATE");
+    }
+    let (_fb_on, root_on, _) = render_to_framebuffer_with_layout_with_base(html, "", &print_cfg, None);
+    let extent_on = r2000_max_abs_bottom(&root_on, 0.0);
+
+    assert!(
+        extent_on > extent_off + 900.0,
+        "分页须使 layout extent 显著增大（B 推到 A4 页边界 1122.5）: off={extent_off} on={extent_on}"
+    );
+}
+
 #[test]
 fn test_struct_check_detects_sibling_overlap() {
     // 两个**普通块流**兄弟盒经负 margin 重叠（第二个 margin-top:-50px 拉 50px，100×50=5000px²

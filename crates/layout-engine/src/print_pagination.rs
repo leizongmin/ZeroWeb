@@ -15,12 +15,15 @@
 //!
 //! 详见 `docs/goal/rendering-compat/print-layout-phase-p1-spec.md`。
 //!
-//! # 范围（P1a-M1）
+//! # 范围（P1a-M2）
 //!
-//! - ✅ FR-001 gate（调用方 engine.rs 判 media_type==Print + env `ZW_PRINT_PAGINATE=1`）
-//! - ✅ FR-002 `page-break-before: always` / `break-before: page` 强制换页（own style）
+//! - ✅ FR-001 gate（调用方 engine.rs 判 media_type==Print + env `ZW_PRINT_PAGINATE` default-on）
+//! - ✅ FR-002 `page-break-before: always` / `break-before: page` 强制换页
+//! - ✅ FR-003 `page-break-after: always` / `break-after: page`（下一兄弟换页）
+//! - ✅ FR-004 自然页填充（子越页边界且整页装得下→推下页顶；oversized 留原位 deferred）
+//! - ✅ FR-006 嵌套 break 子树提升（后代 break-before→整单元换页，P1a 近似）
 //! - ✅ FR-005 默认页尺寸常量（A4 @96dpi）
-//! - ⏳ FR-003 `page-break-after` / FR-004 自然页填充 / FR-006 嵌套提升 = P1a-M2
+//! - ⏳ oversized 单元真分片（fragment_y_offset 拆多页）/ P2 嵌套精确断 / P3 inside:avoid / P4 @page / P5 输出模型
 //!
 //! # 输出模型
 //!
@@ -39,10 +42,11 @@ use crate::types::LayoutBox;
 /// A4 页高 @96dpi（297mm = 11.6929in × 96 ≈ 1122.5px）。P4 `@page { size }` 解析前的默认。
 pub const PRINT_PAGE_HEIGHT_A4: f32 = 1122.5;
 
-/// env kill-switch（首切片 default-off）：`ZW_PRINT_PAGINATE=1` 启用 Print 分页。
-/// gate 由 engine.rs 组合 `media_type == Print && print_paginate_enabled()`。
+/// env kill-switch（R2000 default-on）：Print 分页默认启用；`ZW_PRINT_PAGINATE=0` 紧急关闭。
+/// gate 由 engine.rs 组合 `media_type == Print && print_paginate_enabled()`（Screen 永不触发）。
+/// default-on 依据：11 单元测试 + 端到端真实 HTML 管线测试（R2000）证分页正确 + Screen 零影响。
 pub fn print_paginate_enabled() -> bool {
-    std::env::var("ZW_PRINT_PAGINATE").as_deref() == Ok("1")
+    std::env::var("ZW_PRINT_PAGINATE").as_deref() != Ok("0")
 }
 
 /// 对 `root` 执行 Print 分页 post-process。
@@ -68,21 +72,22 @@ pub fn paginate_for_print(root: &mut LayoutBox, page_height: f32, styles: &HashM
 
 /// 下降路径 + 块流根内容原点 abs y。
 ///
-/// 启发式：从 root 沿「唯一 in-flow block 子」下降，直到遇到含 **多个** in-flow block 子的
-/// 容器（= 内容层，通常 body）。probe 构造 root=body（多子）时立即返回 root。生产 root=html
-/// 时下降 html→body。TBD-1（body 缺失/结构异常）回退：0 in-flow 子时返回当前节点（无分页）。
+/// 启发式：从 root 沿「唯一 **node_id-bearing** in-flow 子」下降（跳过匿名包装盒 node_id=None），
+/// 直到遇到含 **多个** node_id-bearing in-flow 子的容器（= 内容层，通常 body）。
+/// probe 构造 root=body（多子）时立即返回 root。生产 layout root 常为 `[anon, html/body]`
+///（anon 无 node_id）→ 过滤 anon 后下降到真实内容层。0 真实子时返回当前节点（无分页）。
 fn find_flow_container_path(root: &LayoutBox) -> Option<(Vec<usize>, f32)> {
     let mut path: Vec<usize> = Vec::new();
     // root 内容原点 abs y：root 无父，parent_content_abs = 0。
     let mut content_abs = content_origin_abs(root, 0.0);
     let mut cur = root;
     loop {
-        let in_flow = in_flow_block_indices(cur);
-        if in_flow.len() > 1 {
+        let real = real_in_flow_child_indices(cur);
+        if real.len() > 1 {
             // cur = 块流根；其内容原点 = content_abs。
             return Some((path, content_abs));
         }
-        match in_flow.into_iter().next() {
+        match real.into_iter().next() {
             Some(i) => {
                 let child = &cur.children[i];
                 content_abs = content_origin_abs(child, content_abs);
@@ -90,7 +95,7 @@ fn find_flow_container_path(root: &LayoutBox) -> Option<(Vec<usize>, f32)> {
                 cur = child;
             }
             None => {
-                // 0 in-flow 子：当前节点作块流根（无子可分页，no-op）。
+                // 0 真实子：当前节点作块流根（无子可分页，no-op）。
                 return Some((path, content_abs));
             }
         }
@@ -106,17 +111,28 @@ fn content_origin_abs(node: &LayoutBox, parent_content_abs: f32) -> f32 {
     border_box_top + node.border_top + node.padding_top
 }
 
-/// 直接 in-flow block 子的索引（排除 abspos/fixed）。
-fn in_flow_block_indices(node: &LayoutBox) -> Vec<usize> {
+/// 直接 in-flow 且 **有 node_id**（非匿名包装盒）的子索引——用于下降决策。
+///
+/// layout root 常含匿名包装盒（node_id=None，h=0），若计入会让启发式停在 root 而非下降到
+/// 真实内容层（body）。仅数 node_id-bearing 子确保下降穿过匿名包装层。
+fn real_in_flow_child_indices(node: &LayoutBox) -> Vec<usize> {
     node.children
         .iter()
         .enumerate()
-        .filter(|(_, c)| !c.is_absolute && !c.is_fixed)
+        .filter(|(_, c)| !c.is_absolute && !c.is_fixed && c.node_id.is_some())
         .map(|(i, _)| i)
         .collect()
 }
 
-/// 对块流根的直接 in-flow block 子施加分页 gap。
+/// 对块流根的直接 in-flow block 子施加分页 gap（P1a-M2：forced before/after + 自然填充）。
+///
+/// 三类换页触发（皆仅在「当前页已有前导内容」即子非页顶时生效，避免首页被推空）：
+/// - **FR-002 forced before**：子自身或后代声明 `break-before:page` / `page-break-before:always`
+///   （FR-006 后代 break 经子树扫描**提升**到整单元）→ 推到下一页边界。
+/// - **FR-003 break-after**：上一兄弟声明 `break-after:page` / `page-break-after:always`
+///   → 当前子推到下一页边界（`pending_break_after` 标志传递）。
+/// - **FR-004 自然填充**：子放不下当前页剩余空间且**整页装得下**（outer_h ≤ page_height）
+///   → 推到下一页顶。**oversized**（outer_h > page_height）M2 不分片，留原位（overflow），deferred。
 fn paginate_flow_children(
     flow: &mut LayoutBox,
     flow_content_abs: f32,
@@ -124,44 +140,105 @@ fn paginate_flow_children(
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
     let mut gap = 0.0f32;
+    let mut pending_break_after = false;
     for child in flow.children.iter_mut() {
         if child.is_absolute || child.is_fixed {
             continue;
         }
-        if has_forced_break_before(child, styles) {
-            // 子当前 abs border-box 顶（含已累积 gap）。
-            let cur_abs = flow_content_abs + child.y + gap + child.margin_top;
-            // 仅当当前页已有前导内容时才强制换页（镜像 multicol `current_col_height > 0`
-            // 守卫）：子已在页顶（cur_abs % page_height ≈ 0）时不换页，避免首页被推空。
-            let within_page = (cur_abs % page_height).abs();
-            if within_page > 0.5 {
-                let target = next_page_boundary(cur_abs, page_height);
-                let extra = target - cur_abs;
+        // 子当前 abs border-box 顶（含已累积 gap）。
+        let top_abs = flow_content_abs + child.y + gap + child.margin_top;
+        let outer_h = child.height + child.margin_top + child.margin_bottom;
+        // 镜像 multicol `current_col_height > 0` 守卫：子在页顶（top_abs % page_height ≈ 0）不换页。
+        let at_page_top = (top_abs % page_height).abs() < 0.5;
+
+        let forced = has_forced_break_before(child, styles) || pending_break_after;
+        if forced {
+            if !at_page_top {
+                let target = next_page_boundary(top_abs, page_height);
+                let extra = target - top_abs;
                 if extra > 0.0 {
                     gap += extra;
                 }
             }
+        } else if !at_page_top && outer_h <= page_height + 0.5 {
+            // FR-004 自然填充：整页装得下但放不下当前页剩余空间 → 推到当前页底（= 下一页顶）。
+            let bottom_abs = top_abs + child.height + child.margin_bottom;
+            let page_bottom = page_bottom_for(top_abs, page_height);
+            if bottom_abs > page_bottom + 0.5 {
+                gap += page_bottom - top_abs;
+            }
         }
         // 累积 gap 下移此子（相对块流根内容区；后代因相对此子而自动跟随）。
         child.y += gap;
+        // FR-003：记录此子 break-after 供下一兄弟换页。
+        pending_break_after = has_forced_break_after(child, styles);
     }
 }
 
-/// 元素自身声明 forced break-before（CSS2 `page-break-before: always|left|right` 或
-/// CSS3 `break-before: page`）。M1 仅查自身样式（FR-006 子树提升 = M2）。
+/// 元素声明 forced break-before（FR-006：自身 **或** 后代子树，后代 break 提升到整单元）。
 fn has_forced_break_before(child: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
-    child.node_id.is_some_and(|id| {
-        styles.get(&id).is_some_and(|s| {
-            matches!(s.break_before, BreakValue::Page)
+    if let Some(id) = child.node_id {
+        if let Some(s) = styles.get(&id) {
+            if matches!(s.break_before, BreakValue::Page)
                 || matches!(
                     s.page_break_before,
+                    PageBreakValue::Always | PageBreakValue::Left | PageBreakValue::Right
+                )
+            {
+                return true;
+            }
+        }
+    }
+    // FR-006 子树提升：任一后代声明 forced break-before → 整单元换页（P1a 近似，P2 才精确断）。
+    subtree_has_forced_break_before(child, styles)
+}
+
+/// 元素自身声明 forced break-after（CSS2 `page-break-after: always|left|right` 或
+/// CSS3 `break-after: page`）。break-after 不做子树提升（after 是元素之后的断，后代无关）。
+fn has_forced_break_after(child: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    child.node_id.is_some_and(|id| {
+        styles.get(&id).is_some_and(|s| {
+            matches!(s.break_after, BreakValue::Page)
+                || matches!(
+                    s.page_break_after,
                     PageBreakValue::Always | PageBreakValue::Left | PageBreakValue::Right
                 )
         })
     })
 }
 
-/// >= cur_abs 的最小页边界（k * page_height）。
+/// 子树（不含 node 自身）是否含 forced break-before（FR-006 提升）。
+fn subtree_has_forced_break_before(node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    for c in &node.children {
+        if c.is_absolute || c.is_fixed {
+            continue;
+        }
+        if let Some(id) = c.node_id {
+            if let Some(s) = styles.get(&id) {
+                if matches!(s.break_before, BreakValue::Page)
+                    || matches!(
+                        s.page_break_before,
+                        PageBreakValue::Always | PageBreakValue::Left | PageBreakValue::Right
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        if subtree_has_forced_break_before(c, styles) {
+            return true;
+        }
+    }
+    false
+}
+
+/// 包含 `top_abs` 的页的底部边界（= 下一页顶）。`top_abs` 在页顶时返该页底（非自身）。
+fn page_bottom_for(top_abs: f32, page_height: f32) -> f32 {
+    let page_idx = (top_abs / page_height).floor();
+    (page_idx + 1.0) * page_height
+}
+
+/// >= cur_abs 的最小页边界（k * page_height）。用于 forced 推页（mid-page 时与 page_bottom_for 同）。
 fn next_page_boundary(cur_abs: f32, page_height: f32) -> f32 {
     (cur_abs / page_height).ceil() * page_height
 }
@@ -270,11 +347,11 @@ mod tests {
 
     #[test]
     fn r1999_print_paginate_killswitch_disables_pass() {
-        // NFR-002：env ZW_PRINT_PAGINATE != "1" 时 print_paginate_enabled() 返 false（default-off）。
+        // NFR-002：R2000 default-on——未设/="0" 时 print_paginate_enabled() 返 true；="0" 关闭。
         // Rust 2024：set_var/remove_var 为 unsafe（进程全局可变）。
         unsafe {
             std::env::remove_var("ZW_PRINT_PAGINATE");
-            assert!(!print_paginate_enabled(), "未设 env 时须 default-off");
+            assert!(print_paginate_enabled(), "未设 env 时须 default-on");
             std::env::set_var("ZW_PRINT_PAGINATE", "0");
             assert!(!print_paginate_enabled(), "=0 时须关闭");
             std::env::set_var("ZW_PRINT_PAGINATE", "1");
@@ -335,5 +412,224 @@ mod tests {
         assert_eq!(d.y, 10.0, "后代 D 相对 B 的 y 不变（=10）");
         // D 的 abs 顶 = B 内容原点 + D.y = H + 10。
         assert!((b.y + d.y - (h + 10.0)).abs() < 0.01, "D abs 顶随 B 整体下移到 H+10");
+    }
+
+    /// 构造一个声明 forced break-after 的 ComputedStyle（CSS2 page-break-after:always）。
+    fn style_with_break_after() -> ComputedStyle {
+        let mut s = ComputedStyle::default();
+        s.page_break_after = PageBreakValue::Always;
+        s
+    }
+
+    #[test]
+    fn r2000_print_paginate_break_after_pushes_next_sibling() {
+        // FR-003：A(page-break-after:always) 之后强制换页 → 下一兄弟 B 起于新页顶 (y=H)。
+        let mut doc = Document::new();
+        let id_a = doc.create_element("div");
+        let id_b = doc.create_element("div");
+        let id_root = doc.create_element("div");
+        let mut styles = HashMap::new();
+        styles.insert(id_a, style_with_break_after());
+        let a = LayoutBox {
+            node_id: Some(id_a),
+            y: 0.0,
+            height: 100.0,
+            ..Default::default()
+        };
+        let b = LayoutBox {
+            node_id: Some(id_b),
+            y: 100.0,
+            height: 50.0,
+            ..Default::default()
+        };
+        let mut root = LayoutBox {
+            node_id: Some(id_root),
+            y: 0.0,
+            children: vec![a, b],
+            ..Default::default()
+        };
+        let h = 1000.0;
+        paginate_for_print(&mut root, h, &styles);
+        assert_eq!(root.children[0].y, 0.0, "A 留在第1页原位");
+        assert_eq!(root.children[1].y, h, "B 因 A 的 break-after 被推到 H");
+    }
+
+    #[test]
+    fn r2000_print_paginate_natural_fill_overflows_to_next_page() {
+        // FR-004：无 forced break，但 B 放不下当前页剩余空间 → 自然推到下一页顶。
+        // A h=950（占第1页 0..950），B h=100 起于 y=950 → 底 1050 越页边界 1000 → 推到 1000。
+        let mut doc = Document::new();
+        let id_a = doc.create_element("div");
+        let id_b = doc.create_element("div");
+        let id_root = doc.create_element("div");
+        let styles = HashMap::new();
+        let a = LayoutBox {
+            node_id: Some(id_a),
+            y: 0.0,
+            height: 950.0,
+            ..Default::default()
+        };
+        let b = LayoutBox {
+            node_id: Some(id_b),
+            y: 950.0,
+            height: 100.0,
+            ..Default::default()
+        };
+        let mut root = LayoutBox {
+            node_id: Some(id_root),
+            y: 0.0,
+            children: vec![a, b],
+            ..Default::default()
+        };
+        let h = 1000.0;
+        paginate_for_print(&mut root, h, &styles);
+        assert_eq!(root.children[0].y, 0.0, "A 留第1页");
+        assert_eq!(root.children[1].y, h, "B 自然填充推到下一页顶 H（原 950 + gap 50）");
+    }
+
+    #[test]
+    fn r2000_print_paginate_nested_break_promoted_to_top_unit() {
+        // FR-006：section 自身无 break，但其后代 h1 声明 break-before:page →
+        // 整个 section 单元被提升换页（推到下一页顶）。P1a 近似（P2 才精确断在 h1）。
+        let mut doc = Document::new();
+        let id_a = doc.create_element("div");
+        let id_section = doc.create_element("section");
+        let id_h1 = doc.create_element("h1");
+        let id_c = doc.create_element("div");
+        let id_root = doc.create_element("div");
+        let mut styles = HashMap::new();
+        // h1 后代声明 break-before:page（CSS3）。
+        let mut h1_style = ComputedStyle::default();
+        h1_style.break_before = BreakValue::Page;
+        styles.insert(id_h1, h1_style);
+        let h1 = LayoutBox {
+            node_id: Some(id_h1),
+            y: 0.0,
+            height: 20.0,
+            ..Default::default()
+        };
+        let section = LayoutBox {
+            node_id: Some(id_section),
+            y: 100.0,
+            height: 50.0,
+            children: vec![h1],
+            ..Default::default()
+        };
+        let a = LayoutBox {
+            node_id: Some(id_a),
+            y: 0.0,
+            height: 100.0,
+            ..Default::default()
+        };
+        let c = LayoutBox {
+            node_id: Some(id_c),
+            y: 200.0,
+            height: 30.0,
+            ..Default::default()
+        };
+        let mut root = LayoutBox {
+            node_id: Some(id_root),
+            y: 0.0,
+            children: vec![a, section, c],
+            ..Default::default()
+        };
+        let h = 1000.0;
+        paginate_for_print(&mut root, h, &styles);
+        assert_eq!(root.children[0].y, 0.0, "A 留第1页");
+        assert_eq!(root.children[1].y, h, "section 因后代 h1 break 提升到 H");
+        assert_eq!(
+            root.children[2].y,
+            h + 100.0,
+            "C 跟随 section（原 200 + gap 900 = H+100）"
+        );
+    }
+
+    #[test]
+    fn r2000_print_paginate_oversized_left_in_place() {
+        // FR-004 oversized（outer_h > page_height）：M2 不分片，留原位（overflow），deferred。
+        // B h=100（页顶），A h=1500（> page_h=1000）起于 y=100 → 不自然填充（整页装不下）→ 留原位。
+        let mut doc = Document::new();
+        let id_b = doc.create_element("div");
+        let id_a = doc.create_element("div");
+        let id_root = doc.create_element("div");
+        let styles = HashMap::new();
+        let b = LayoutBox {
+            node_id: Some(id_b),
+            y: 0.0,
+            height: 100.0,
+            ..Default::default()
+        };
+        let a = LayoutBox {
+            node_id: Some(id_a),
+            y: 100.0,
+            height: 1500.0,
+            ..Default::default()
+        };
+        let mut root = LayoutBox {
+            node_id: Some(id_root),
+            y: 0.0,
+            children: vec![b, a],
+            ..Default::default()
+        };
+        let h = 1000.0;
+        paginate_for_print(&mut root, h, &styles);
+        assert_eq!(root.children[0].y, 0.0, "B 留页顶");
+        assert_eq!(root.children[1].y, 100.0, "oversized A 留原位（未分片，deferred）");
+    }
+
+    #[test]
+    fn r2000_print_paginate_descends_html_to_body() {
+        // 真实文档形（root=html[margin_top=8] → body → [A, B*, C]）：验证 find_flow_container
+        // 下降启发式落地到 body（html 单子→下降，body 多子→停）+ content_origin_abs 累积
+        // html margin（8）使 B 的 abs 顶精确落页边界 1000（若 origin 算错会落 992）。
+        let mut doc = Document::new();
+        let id_html = doc.create_element("html");
+        let id_body = doc.create_element("body");
+        let id_a = doc.create_element("div");
+        let id_b = doc.create_element("div");
+        let id_c = doc.create_element("div");
+        let mut styles = HashMap::new();
+        styles.insert(id_b, style_with_break_before(BreakValue::Auto, PageBreakValue::Always));
+        let a = LayoutBox {
+            node_id: Some(id_a),
+            y: 0.0,
+            height: 100.0,
+            ..Default::default()
+        };
+        let b = LayoutBox {
+            node_id: Some(id_b),
+            y: 100.0,
+            height: 50.0,
+            ..Default::default()
+        };
+        let c = LayoutBox {
+            node_id: Some(id_c),
+            y: 150.0,
+            height: 30.0,
+            ..Default::default()
+        };
+        let body = LayoutBox {
+            node_id: Some(id_body),
+            y: 0.0,
+            children: vec![a, b, c],
+            ..Default::default()
+        };
+        // html margin_top=8 模拟 UA 默认 margin；html 单 in-flow 子 body。
+        let mut html = LayoutBox {
+            node_id: Some(id_html),
+            y: 0.0,
+            margin_top: 8.0,
+            children: vec![body],
+            ..Default::default()
+        };
+        let h = 1000.0;
+        paginate_for_print(&mut html, h, &styles);
+        let body = &html.children[0];
+        let a = &body.children[0];
+        let b = &body.children[1];
+        assert_eq!(a.y, 0.0, "A 留原位");
+        // B 的 abs 顶须 == 页边界 1000（content_origin 累积 html margin=8 正确）。
+        // abs = body_content_abs(8) + B.y + 0 = 8 + B.y == 1000 → B.y == 992。
+        assert_eq!(8.0 + b.y, h, "B abs 顶须精确落页边界 H=1000（验证 html margin 累积）");
     }
 }
