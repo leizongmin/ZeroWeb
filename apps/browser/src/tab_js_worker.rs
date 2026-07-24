@@ -12,6 +12,7 @@ use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
     extract_module_import_specifiers,
 };
+use zero_webview::fetch_text_async;
 
 /// 页面 `<script>` 执行超时（毫秒）— 短于事件派发，避免死循环拖死 tab worker。
 pub const PAGE_SCRIPT_TIMEOUT_MS: u64 = 2_500;
@@ -320,6 +321,22 @@ fn register_fetch_callback(
     );
 }
 
+/// P1b S3 incr-b：生产 fetch handler——经 `zero_webview::fetch_text_async`（net pool
+/// 自动 OnceLock 初始化）发起 HTTP GET，**同步阻塞 recv** 等 response body。
+///
+/// ⚠️ **阻塞 JS worker**：handler 在 `__zw_fetch` 回调内同步执行，`recv()` 期间 JS worker
+/// 线程阻塞（无法处理其他命令）。本地/快响应可接受；慢网络冻结 JS = 已知限制，
+/// 非阻塞化（thread spawn + 异步 resolve）= 后续增量。response 仍为 body 字符串
+/// （Response 对象 spec-compliance = 后续增量）。
+pub fn default_fetch_handler() -> FetchHandler {
+    Arc::new(|url: &str| {
+        fetch_text_async(url)
+            .recv()
+            .map_err(|e| format!("fetch recv: {e}"))
+            .and_then(|r| r)
+    })
+}
+
 fn execute_module_in_sandbox(
     sandbox: &mut dyn zero_script_sandbox::Sandbox,
     source: &str,
@@ -537,5 +554,43 @@ mod tests {
         let r = worker.execute_script_direct("globalThis.__result").unwrap();
         assert!(r.starts_with("__zw_fetch_error"), "got: {r}");
         worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_default_fetch_handler_real_http() {
+        // P1b S3 incr-b：生产 default_fetch_handler 经 net pool 真实 HTTP GET。
+        // 本地 HTTP server（127.0.0.1）服务固定 body——不依赖外部网络。
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind local server");
+        let port = listener.local_addr().expect("local addr").port();
+        let server = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf); // 丢弃请求行
+                let body = "hello-from-server";
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+        let mut worker = TabJsWorkerHandle::spawn(TabId(6));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker.set_fetch_handler(default_fetch_handler());
+        let url = format!("http://127.0.0.1:{port}/data");
+        // handler 同步 recv 阻塞 JS worker 直至本地 fetch 完成（~ms 级），FIFO 确定性。
+        worker
+            .execute_script_direct(&format!(
+                "fetch({:?}).then(function(v){{ globalThis.__result = v; }});",
+                url
+            ))
+            .unwrap();
+        let r = worker.execute_script_direct("globalThis.__result").unwrap();
+        assert_eq!(r, "hello-from-server");
+        worker.shutdown();
+        let _ = server.join();
     }
 }

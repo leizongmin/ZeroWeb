@@ -135,6 +135,10 @@ fn tab_worker_main(
         #[cfg(not(test))]
         {
             let js_worker = TabJsWorkerHandle::spawn(tab_id);
+            // P1b S3 incr-b：注入生产 fetch handler（经 net pool 真实 HTTP GET）。
+            // js_worker 早于 WebView 创建，但 fetch_text_async 自带 net pool（OnceLock），
+            // 无需 WebView 句柄，故可在 spawn 后立即注入。
+            js_worker.set_fetch_handler(crate::tab_js_worker::default_fetch_handler());
             Some(js_worker)
         }
         #[cfg(test)]
