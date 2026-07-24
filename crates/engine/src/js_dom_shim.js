@@ -43,25 +43,36 @@
     }
   };
 
-  // P1b S3 incr-a：`fetch(url)` 经 `__zw_fetch(id, url)` 回调异步抓取 + Promise。
-  // JS 生成唯一 ID + 存 pending resolver，调 `__zw_fetch`；Rust handler 抓取后
-  // `__zwResolveCallback(id, body)` resolve Promise（**body 字符串**，非标准 Response
-  // 对象——spec-compliance Response/text()/json() 在 incr-b/c）。
-  // `__zw_fetch` 未注册（engine/renderer/reftest 路径无 browser 的 fetch handler）时
-  // resolve 空（stub，避免悬挂），保持零回归。
+  // P1b S3 incr-c：fetch 返回 Response 对象（spec-compliance：ok/status/text()/json()）。
+  // body 经 `__zw_fetch` 抓取；`__zwResolveCallback` 触发 pending resolver，包装为 Response。
+  // body 以 `__zw_fetch_error` 开头 → ok:false（错误标记约定，见 register_fetch_callback）。
+  function _makeResponse(body) {
+    var ok = typeof body === 'string' && body.indexOf('__zw_fetch_error') !== 0;
+    return {
+      ok: ok,
+      status: ok ? 200 : 0,
+      statusText: ok ? 'OK' : 'Error',
+      text: function() { return Promise.resolve(ok ? body : ''); },
+      json: function() { return Promise.resolve(JSON.parse(ok ? body : 'null')); }
+    };
+  }
+
+  // P1b S3 incr-a：`fetch(url)` 经 `__zw_fetch(id, url)` 回调异步抓取 + Promise（incr-c
+  // 起 resolve Response 对象）。`__zw_fetch` 未注册（engine/renderer/reftest 路径无
+  // browser fetch handler）时 resolve ok:false Response（stub，避免悬挂，零回归）。
   if (!globalThis.fetch) {
     globalThis.fetch = function(url) {
       if (typeof __zw_fetch !== 'function') {
-        return Promise.resolve('');
+        return Promise.resolve(_makeResponse('__zw_fetch_error:no-handler'));
       }
       return new Promise(function(resolve) {
         globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
         var id = '__zwfid:' + globalThis.__zw_fetch_counter;
-        globalThis.__zw_pending[id] = resolve;
+        globalThis.__zw_pending[id] = function(body) { resolve(_makeResponse(body)); };
         try {
           __zw_fetch(id, url);
         } catch (_e) {
-          resolve('');
+          resolve(_makeResponse('__zw_fetch_error:throw'));
         }
       });
     };

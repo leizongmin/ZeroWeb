@@ -527,15 +527,17 @@ mod tests {
 
     #[test]
     fn tab_js_worker_fetch_resolves_via_handler() {
-        // P1b S3 incr-a：fetch 经 __zw_fetch 回调 + handler 抓取 + resolver.resolve
-        // 端到端。合成 handler（无网络）返 body:<url>。FIFO 确定性（无 polling）：
-        // Execute(fetch.then) → 回调同步抓 + 排队 ResolveAsyncCallback → worker 下轮
-        // resolve Promise + .then → 下一条 Execute 读 __result。
+        // P1b S3 incr-a/c：fetch 经 __zw_fetch 回调 + handler 抓取 + resolver.resolve
+        // 端到端。合成 handler（无网络）返 body:<url>。incr-c 起 fetch resolve Response
+        // 对象——用 r.text() 取 body。FIFO 确定性（无 polling）。
         let mut worker = TabJsWorkerHandle::spawn(TabId(4));
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         worker.set_fetch_handler(Arc::new(|url: &str| Ok(format!("body:{url}"))));
         worker
-            .execute_script_direct("fetch('/hello').then(function(v){ globalThis.__result = v; });")
+            .execute_script_direct(
+                "fetch('/hello').then(function(r){ return r.text(); })
+                 .then(function(t){ globalThis.__result = t; });",
+            )
             .unwrap();
         let r = worker.execute_script_direct("globalThis.__result").unwrap();
         assert_eq!(r, "body:/hello");
@@ -544,15 +546,37 @@ mod tests {
 
     #[test]
     fn tab_js_worker_fetch_without_handler_resolves_error() {
-        // 未注入 handler 时 __zw_fetch resolve 错误标记（不悬挂 Promise）。
+        // 未注入 handler 时 __zw_fetch resolve 错误标记 → Response.ok=false（不悬挂）。
         let mut worker = TabJsWorkerHandle::spawn(TabId(5));
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         // 不调 set_fetch_handler。
         worker
-            .execute_script_direct("fetch('/x').then(function(v){ globalThis.__result = v; });")
+            .execute_script_direct("fetch('/x').then(function(r){ globalThis.__result = r.ok ? 'OK' : 'ERR'; });")
             .unwrap();
         let r = worker.execute_script_direct("globalThis.__result").unwrap();
-        assert!(r.starts_with("__zw_fetch_error"), "got: {r}");
+        assert_eq!(r, "ERR");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_fetch_response_object_shape_and_json() {
+        // P1b S3 incr-c：Response 对象 spec-compliance（ok/status/text()/json()）。
+        // 合成 handler 返 JSON body → r.ok/status 正确，r.json() 解析出对象。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(7));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker.set_fetch_handler(Arc::new(|_url: &str| Ok("{\"key\":\"value\",\"n\":42}".to_string())));
+        worker
+            .execute_script_direct(
+                "fetch('/j').then(function(r){
+                   globalThis.__shape = r.ok + ':' + r.status;
+                   return r.json();
+                 }).then(function(o){ globalThis.__result = o.key + '/' + o.n; });",
+            )
+            .unwrap();
+        let shape = worker.execute_script_direct("globalThis.__shape").unwrap();
+        assert_eq!(shape, "true:200");
+        let r = worker.execute_script_direct("globalThis.__result").unwrap();
+        assert_eq!(r, "value/42");
         worker.shutdown();
     }
 
@@ -584,7 +608,8 @@ mod tests {
         // handler 同步 recv 阻塞 JS worker 直至本地 fetch 完成（~ms 级），FIFO 确定性。
         worker
             .execute_script_direct(&format!(
-                "fetch({:?}).then(function(v){{ globalThis.__result = v; }});",
+                "fetch({:?}).then(function(r){{ return r.text(); }})
+                 .then(function(t){{ globalThis.__result = t; }});",
                 url
             ))
             .unwrap();
