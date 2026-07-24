@@ -210,6 +210,44 @@ fn r2000_print_pagination_end_to_end_layout_extent_grows() {
     );
 }
 
+/// R2005 P5 bounded：`ZW_PRINT_TALL_FB=1` + Print 模式 → framebuffer 高度按 page-aligned
+/// doc extent（tall），让分页可视化（默认 viewport 600 会裁掉 >600 的分页内容）。
+/// default-off（env 未设）→ framebuffer 高度 = viewport（零影响现有 print 测试）。
+#[test]
+fn r2005_print_tall_framebuffer_env_grows_height() {
+    let html = concat!(
+        "<html><body style=\"margin:0\">",
+        "<div style=\"width:100px;height:100px;background:red\"></div>",
+        "<div style=\"width:100px;height:50px;background:green;page-break-before:always\"></div>",
+        "</body></html>"
+    );
+    let print_cfg = ReftestConfig {
+        media_type: zero_css_parser::media_query::MediaType::Print,
+        ..Default::default()
+    };
+    // default-off：framebuffer 高度 = viewport（600）。
+    unsafe {
+        std::env::remove_var("ZW_PRINT_TALL_FB");
+    }
+    let (fb_off, _root, _) = render_to_framebuffer_with_layout_with_base(html, "", &print_cfg, None);
+    assert_eq!(fb_off.height, 600, "default-off 须用 viewport 高度");
+
+    // env=1：framebuffer 高度 = page-aligned extent（B 推到 1122.5 → 2 页 → ceil×1122.5≈2245）。
+    unsafe {
+        std::env::set_var("ZW_PRINT_TALL_FB", "1");
+    }
+    let (fb_on, _root_on, _) = render_to_framebuffer_with_layout_with_base(html, "", &print_cfg, None);
+    unsafe {
+        std::env::remove_var("ZW_PRINT_TALL_FB");
+    }
+    assert!(
+        fb_on.height > 1100,
+        "ZW_PRINT_TALL_FB=1 须按 page-aligned extent 渲染 tall framebuffer，got height={}",
+        fb_on.height
+    );
+    assert!(fb_on.height > fb_off.height, "tall framebuffer 须高于 viewport");
+}
+
 #[test]
 fn test_struct_check_detects_sibling_overlap() {
     // 两个**普通块流**兄弟盒经负 margin 重叠（第二个 margin-top:-50px 拉 50px，100×50=5000px²

@@ -466,6 +466,16 @@ pub fn render_to_framebuffer_with_base(
     render_to_framebuffer_with_layout_with_base(html, css, config, base_dir).0
 }
 
+/// 递归算 LayoutBox 树的最大 abs bottom（镜像 pipeline.rs `layout_extent_y`）。
+/// 供 R2005 Print tall-framebuffer（`ZW_PRINT_TALL_FB`）算 page-aligned 渲染高度。
+fn layout_extent_max_y(b: &zero_layout_engine::types::LayoutBox, offset_y: f32) -> f32 {
+    let mut max_y = offset_y + b.y + b.height;
+    for child in &b.children {
+        max_y = max_y.max(layout_extent_max_y(child, offset_y + b.y));
+    }
+    max_y
+}
+
 /// 同 [`render_to_framebuffer_with_base`]，但额外返回布局树根（DC-13 结构检查用）。
 ///
 /// `RenderResult.layout.root` 在 `render_full_scene`（仅借 `result.primitives`）后移出，
@@ -553,10 +563,24 @@ pub fn render_to_framebuffer_with_layout_with_base(
 
     let mut glyph_cache = GlyphCache::new(1024);
 
+    // R2005 P5 bounded：Print 模式 + env `ZW_PRINT_TALL_FB=1` 时按 page-aligned doc extent
+    // 渲染 tall framebuffer（非 viewport 600），让分页可视化 + 产 evidence PNG（验证 R1999-R2001
+    // 分页的渲染像素，此前仅 e2e layout-extent 程序验证）。default-off → 现有 print 测试
+    //（如 test_media_type_print_applies_print_rules）用 viewport 高度，零影响。
+    let fb_height = if matches!(config.media_type, zero_css_parser::media_query::MediaType::Print)
+        && std::env::var("ZW_PRINT_TALL_FB").as_deref() == Ok("1")
+    {
+        let extent = layout_extent_max_y(&result.layout.root, 0.0);
+        let page_h = zero_layout_engine::print_pagination::PRINT_PAGE_HEIGHT_A4;
+        (((extent / page_h).ceil() * page_h).max(config.viewport_height as f32)) as u32
+    } else {
+        config.viewport_height
+    };
+
     // 使用已构建的图像缓存（包含固有尺寸信息）
     let fb = render_full_scene(
         config.viewport_width,
-        config.viewport_height,
+        fb_height,
         config.scale_factor,
         &result.primitives,
         &font_loader,
