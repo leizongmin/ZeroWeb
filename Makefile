@@ -68,6 +68,13 @@ test: target/test-guard
 reftest: fetch-wpt-data target/test-guard
 	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest
 
+# 上游 WPT reftest（wpt-data/，self-source 同源 ref）。test-guard 包裹（OOM 防护）。
+# 用法: make reftest-upstream                     全量上游（慢）
+#       make reftest-upstream FILTER=css-tables   单目录/子串过滤（case.id.contains）
+#       make reftest-upstream FILTER=css/CSS2/backgrounds
+reftest-upstream: fetch-wpt-data target/test-guard
+	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest-upstream $(FILTER)
+
 # DC-14 独立 Oracle：渲染上游 WPT test 页 vs chromium oracle-shots，报告真一致率
 # （chromium-Oracle pass-rate，替代 self-ref 的 ~46.5% 假通过）。oracle-shots 由
 # capture-oracle-per-dir.mjs 本地抓取（gitignored，可再生）。非硬 fail 门禁（报告性）。
