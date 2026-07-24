@@ -24,6 +24,7 @@ function parseArgs() {
     viewport: '800x600',
     filter: null,
     output: null,
+    media: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -40,6 +41,9 @@ function parseArgs() {
       case '--output':
         opts.output = resolve(args[++i]);
         break;
+      case '--media':
+        opts.media = args[++i];
+        break;
       case '--help':
         console.log(`Usage: node capture-chromium-screenshots.mjs [options]
 Options:
@@ -47,6 +51,7 @@ Options:
   --viewport <WxH>     Viewport size (default: 800x600)
   --filter <prefix>    Only process tests matching path prefix
   --output <path>      Output directory for screenshots (default: <data-dir>/screenshots)
+  --media <type>       Emulated media type: screen|print (default: screen; for @media print oracle capture)
   --help               Show this help`);
         process.exit(0);
     }
@@ -125,6 +130,10 @@ async function main() {
 
   const page = await browser.newPage();
   await page.setViewport({ width: opts.width, height: opts.height });
+  // R1991：模拟媒体类型（screen|print）以抓 @media print oracle shot（与 ZW --media 对齐）。
+  if (opts.media) {
+    await page.emulateMediaType(opts.media);
+  }
 
   // 查找所有 HTML 文件
   let htmlFiles = await findHtmlFiles(opts.dataDir);
