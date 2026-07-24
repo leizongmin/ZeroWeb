@@ -496,6 +496,10 @@ impl BrowserApp {
                 "r" | "R" => {
                     self.refresh_page();
                 }
+                "p" | "P" => {
+                    // Ctrl+P：切换打印预览（@media print 重渲染；DC-12 / R1993）。
+                    self.toggle_print_preview();
+                }
                 "f" | "F" => {
                     // Ctrl+F：切换查找栏。已打开则关闭，未打开则打开（空查询激活）。
                     if self.shell.find_state().is_active() {

@@ -822,6 +822,12 @@ impl BrowserApp {
         self.color_scheme
     }
 
+    /// 测试用：当前渲染媒体类型（DC-12 @media print；R1993）。
+    #[cfg(test)]
+    pub fn media_type_for_test(&self) -> zero_engine::MediaType {
+        self.tabs.media_type()
+    }
+
     /// 测试用：窗口是否处于全屏。
     #[cfg(test)]
     pub fn window_is_fullscreen_for_test(&self) -> bool {
@@ -1483,6 +1489,18 @@ impl BrowserApp {
         };
 
         self.start_tab_load(tab_id, url);
+    }
+
+    /// 切换打印预览（Ctrl+P）：Screen ↔ Print，重渲染使 `@media print` 规则即时生效/失效
+    ///（DC-12 打印预览；R1993）。minimal preview——显示打印媒体样式（@page/page-break
+    /// 真 print-layout 分页为后续 feature）。
+    pub fn toggle_print_preview(&mut self) {
+        let next = match self.tabs.media_type() {
+            zero_engine::MediaType::Print => zero_engine::MediaType::Screen,
+            _ => zero_engine::MediaType::Print,
+        };
+        self.tabs.set_media_type(next);
+        self.needs_redraw = true;
     }
 
     /// 停止当前页加载（Esc / loading 时点击刷新按钮）。

@@ -33,6 +33,8 @@ pub enum TabWorkerCommand {
     Resize { width: u32, height: u32 },
     /// 更新颜色方案。
     SetColorScheme(PrefersColorSchemeValue),
+    /// 更新渲染媒体类型（DC-12 @media print 打印预览；R1993）。
+    SetMediaType(zero_engine::MediaType),
     /// 异步向页面元素派发 DOM 事件（click / keydown 等）。
     ///
     /// 结果通过 `TabWorkerMessage::DispatchResult` 异步回送，避免 UI 主线程阻塞等待。
@@ -187,6 +189,17 @@ fn tab_worker_main(
                 }
                 TabWorkerCommand::SetColorScheme(scheme) => {
                     wv.set_prefers_color_scheme(scheme);
+                    if wv.last_render().is_some() {
+                        with_measure(&font_loader, font_id, || {
+                            if wv.render_incremental().is_none() {
+                                wv.render();
+                            }
+                        });
+                        push_snapshot(&wv, &msg_tx);
+                    }
+                }
+                TabWorkerCommand::SetMediaType(media_type) => {
+                    wv.set_media_type(media_type);
                     if wv.last_render().is_some() {
                         with_measure(&font_loader, font_id, || {
                             if wv.render_incremental().is_none() {

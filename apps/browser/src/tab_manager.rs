@@ -3,7 +3,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use zero_browser_shell::TabId;
-use zero_engine::{DomEventDetail, PrefersColorSchemeValue, selector_from_element_hit};
+use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit};
 use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
@@ -37,6 +37,8 @@ pub struct TabManager {
     process_backend: Option<ProcessTabBackend>,
     viewport: (u32, u32),
     color_scheme: PrefersColorSchemeValue,
+    /// 当前渲染媒体类型（DC-12 @media print；transient 打印预览，非新 Tab 默认）。
+    media_type: MediaType,
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
     poll_tick: u64,
@@ -65,6 +67,7 @@ impl TabManager {
             },
             viewport,
             color_scheme,
+            media_type: MediaType::Screen,
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
             poll_tick: 0,
@@ -135,6 +138,29 @@ impl TabManager {
         if let Some(ref mut backend) = self.process_backend {
             backend.set_color_scheme(scheme);
         }
+    }
+
+    /// 更新渲染媒体类型并通知所有 Tab（DC-12 @media print 打印预览；R1993）。
+    ///
+    /// 镜像 `set_color_scheme`：dedup + 持久化 + 广播 in-process workers + 多进程 backend。
+    /// 语义为**transient 打印预览**（非新 Tab 默认：新 Tab 仍 Screen；打印预览是当前
+    /// 已打开 Tab 的即时视图切换）。
+    pub fn set_media_type(&mut self, media_type: MediaType) {
+        if self.media_type == media_type {
+            return;
+        }
+        self.media_type = media_type;
+        for worker in self.workers.values() {
+            worker.send(TabWorkerCommand::SetMediaType(media_type));
+        }
+        if let Some(ref mut backend) = self.process_backend {
+            backend.set_media_type(media_type);
+        }
+    }
+
+    /// 当前渲染媒体类型（供 UI toggle 判方向；R1993）。
+    pub fn media_type(&self) -> MediaType {
+        self.media_type
     }
 
     /// 确保 Tab 存在 worker / 进程。

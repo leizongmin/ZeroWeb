@@ -26,13 +26,13 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use std::io;
-use zero_engine::{DomEventDetail, PrefersColorSchemeValue, selector_from_element_hit, set_char_measure_fn};
+use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit, set_char_measure_fn};
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
     DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, HitTestElementResultParams,
-    HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMessage, IpcMessageKind, KeyboardEventParams,
-    LoadHtmlParams, MouseEventParams, NavigateParams, ScrollEventParams, SetColorSchemeParams, SetViewportParams,
-    StorageOpParams,
+    HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind,
+    KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams, ScrollEventParams, SetColorSchemeParams,
+    SetMediaTypeParams, SetViewportParams, StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{ProcessRole, is_disconnected_channel_message};
@@ -616,6 +616,13 @@ impl RendererRuntime {
         self.try_republish_cached()
     }
 
+    fn handle_set_media_type(&mut self, params: SetMediaTypeParams) -> Result<(), String> {
+        if let Some(wv) = self.webview.as_mut() {
+            wv.set_media_type(ipc_media_to_engine(params.media_type));
+        }
+        self.try_republish_cached()
+    }
+
     fn reload_history_entry(&mut self, index: usize) -> Result<(), String> {
         let url = self
             .history_url(index)
@@ -775,6 +782,7 @@ impl RendererRuntime {
             IpcMessageKind::LoadHtml(params) => self.handle_load_html(params),
             IpcMessageKind::SetViewport(params) => self.handle_set_viewport(params),
             IpcMessageKind::SetColorScheme(params) => self.handle_set_color_scheme(params),
+            IpcMessageKind::SetMediaType(params) => self.handle_set_media_type(params),
             IpcMessageKind::GoBack => self.handle_go_back(),
             IpcMessageKind::GoForward => self.handle_go_forward(),
             IpcMessageKind::StopLoading => {
@@ -1006,6 +1014,14 @@ fn ipc_scheme_to_engine(scheme: IpcColorScheme) -> PrefersColorSchemeValue {
     match scheme {
         IpcColorScheme::Light => PrefersColorSchemeValue::Light,
         IpcColorScheme::Dark => PrefersColorSchemeValue::Dark,
+    }
+}
+
+/// IPC 媒体类型 → engine MediaType（DC-12 @media print；R1993）。
+fn ipc_media_to_engine(media: IpcMediaType) -> MediaType {
+    match media {
+        IpcMediaType::Screen => MediaType::Screen,
+        IpcMediaType::Print => MediaType::Print,
     }
 }
 

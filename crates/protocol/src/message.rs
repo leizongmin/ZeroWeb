@@ -31,6 +31,8 @@ pub enum IpcMessageKind {
     SetViewport(SetViewportParams),
     /// 更新颜色方案（浏览器→渲染）。
     SetColorScheme(SetColorSchemeParams),
+    /// 更新渲染媒体类型（浏览器→渲染，DC-12 @media print；R1993）。
+    SetMediaType(SetMediaTypeParams),
 
     // ── 页面事件（渲染→浏览器）──
     /// 页面标题变更。
@@ -143,6 +145,22 @@ pub enum IpcColorScheme {
 pub struct SetColorSchemeParams {
     /// 用户偏好颜色方案。
     pub scheme: IpcColorScheme,
+}
+
+/// IPC 媒体类型（对应 `@media print/screen`；R1993）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum IpcMediaType {
+    /// screen。
+    Screen,
+    /// print。
+    Print,
+}
+
+/// 媒体类型更新参数（浏览器→渲染，DC-12 @media print）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SetMediaTypeParams {
+    /// 渲染媒体类型。
+    pub media_type: IpcMediaType,
 }
 
 /// 网络请求参数。

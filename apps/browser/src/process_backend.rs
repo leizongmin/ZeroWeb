@@ -11,8 +11,8 @@ use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
-    DispatchDomEventParams, FetchParams, IpcColorScheme, IpcMessage, IpcMessageKind, LoadHtmlParams,
-    SetColorSchemeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
+    DispatchDomEventParams, FetchParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, LoadHtmlParams,
+    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
@@ -424,6 +424,22 @@ impl ProcessTabBackend {
             self.send_to_renderer(
                 tab_id,
                 IpcMessageKind::SetColorScheme(SetColorSchemeParams { scheme: ipc_scheme }),
+            );
+        }
+    }
+
+    /// 广播渲染媒体类型到所有 live 渲染进程（DC-12 @media print；R1993）。
+    pub fn set_media_type(&mut self, media_type: zero_engine::MediaType) {
+        let ipc_media = match media_type {
+            zero_engine::MediaType::Screen => IpcMediaType::Screen,
+            zero_engine::MediaType::Print => IpcMediaType::Print,
+            _ => IpcMediaType::Screen, // All/其他按 Screen 回退（打印预览仅 Screen/Print）
+        };
+        let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
+        for tab_id in tabs {
+            self.send_to_renderer(
+                tab_id,
+                IpcMessageKind::SetMediaType(SetMediaTypeParams { media_type: ipc_media }),
             );
         }
     }

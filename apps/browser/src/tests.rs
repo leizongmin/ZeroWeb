@@ -577,6 +577,20 @@ fn theme_button_cycles_preference() {
     assert_eq!(app.color_scheme_for_test(), zero_engine::PrefersColorSchemeValue::Dark);
 }
 
+/// R1993：`toggle_print_preview`（Ctrl+P）翻转渲染媒体类型 Screen ↔ Print（DC-12）。
+///
+/// 验证 App 层 toggle 逻辑 + TabManager 持久化：默认 Screen → Print → Screen 往返。
+/// （webview 层 set_media_type 触达级联由 R1992 integration smoke 覆盖。）
+#[test]
+fn toggle_print_preview_flips_media_type() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    assert_eq!(app.media_type_for_test(), zero_engine::MediaType::Screen);
+    app.toggle_print_preview();
+    assert_eq!(app.media_type_for_test(), zero_engine::MediaType::Print);
+    app.toggle_print_preview();
+    assert_eq!(app.media_type_for_test(), zero_engine::MediaType::Screen);
+}
+
 /// 点击地址栏右侧三点按钮应打开浏览器菜单。
 #[test]
 fn browser_menu_button_opens_context_menu() {
