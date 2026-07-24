@@ -1201,6 +1201,8 @@ pub enum ContentComputedValue {
         /// 可选的列表样式类型。
         style: Option<String>,
     },
+    /// `url(...)` 图片引用（generated content image，R1988）。
+    Url(String),
 }
 
 /// CSS grid line 值（用于 grid-column-start/end、grid-row-start/end）。

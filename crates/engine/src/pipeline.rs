@@ -689,6 +689,9 @@ pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<
     // 先收集待注入项，避免在遍历 styles 时变更它。
     // (parent, is_before, text, pseudo_style)
     let mut pending: Vec<(NodeId, bool, String, ComputedStyle)> = Vec::new();
+    // R1988：content:url() 图片 content（parent, is_before, url, pseudo_style）——注入 `<img>`
+    // 元素，图片已由 extract_css_image_urls 抓取+缓存，build_layout_tree 按替换元素处理。
+    let mut pending_img: Vec<(NodeId, bool, String, ComputedStyle)> = Vec::new();
     for (&nid, st) in styles.iter() {
         // 解析伪元素 content 的文本：String 直接用；attr(name) 读宿主元素（nid）的
         // 属性值（CSS generated content 的 attr() 函数，如 `content: attr(bgcolor)`
@@ -703,15 +706,26 @@ pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<
                 _ => None,
             }
         };
-        if let Some(b) = st.before_pseudo.as_ref()
-            && let Some(t) = resolve_text(&b.content)
-        {
-            pending.push((nid, true, t, (**b).clone()));
+        // R1988：content:url() → 图片 url。
+        let resolve_url = |content: &ContentComputedValue| -> Option<String> {
+            match content {
+                ContentComputedValue::Url(u) => Some(u.clone()),
+                _ => None,
+            }
+        };
+        if let Some(b) = st.before_pseudo.as_ref() {
+            if let Some(t) = resolve_text(&b.content) {
+                pending.push((nid, true, t, (**b).clone()));
+            } else if let Some(u) = resolve_url(&b.content) {
+                pending_img.push((nid, true, u, (**b).clone()));
+            }
         }
-        if let Some(a) = st.after_pseudo.as_ref()
-            && let Some(t) = resolve_text(&a.content)
-        {
-            pending.push((nid, false, t, (**a).clone()));
+        if let Some(a) = st.after_pseudo.as_ref() {
+            if let Some(t) = resolve_text(&a.content) {
+                pending.push((nid, false, t, (**a).clone()));
+            } else if let Some(u) = resolve_url(&a.content) {
+                pending_img.push((nid, false, u, (**a).clone()));
+            }
         }
     }
 
@@ -750,6 +764,29 @@ pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<
         if !inserted {
             // 插入失败（如 parent 不存在）则回滚 styles 条目，避免悬空引用。
             styles.remove(&new_id);
+        }
+    }
+
+    // R1988：content:url() → 注入 `<img src=url>` 元素。图片已由 extract_css_image_urls
+    //（property-agnostic 扫所有 url()）在 fetch_image_subresources 抓取+解码+缓存（image_sizes
+    // 含其固有尺寸，image_cache 含像素）。build_layout_tree 把 `<img>` 当替换元素按 image_sizes
+    // 定尺寸，painter 渲染缓存图。伪元素 content:url()（如 `::before { content: url(icon.png) }`）
+    // 渲染为 inline 替换图片。
+    for (parent, is_before, url, mut pseudo_style) in pending_img {
+        pseudo_style.content = ContentComputedValue::Normal;
+        let img_id = doc.create_element("img");
+        doc.set_attribute(img_id, "src", &url);
+        styles.insert(img_id, pseudo_style);
+        let inserted = if is_before {
+            match doc.get(parent).and_then(|n| n.children.first().copied()) {
+                Some(fc) => doc.insert_before(parent, img_id, fc).is_ok(),
+                None => doc.append_child(parent, img_id).is_ok(),
+            }
+        } else {
+            doc.append_child(parent, img_id).is_ok()
+        };
+        if !inserted {
+            styles.remove(&img_id);
         }
     }
 }
@@ -1143,6 +1180,39 @@ mod pseudo_tests {
             doc.get(second.unwrap()).map(|n| &n.kind),
             Some(zero_dom::NodeKind::Text(_))
         ));
+    }
+
+    /// R1988：::before `content: url(icon.png)` → 注入 `<img src="icon.png">` 元素
+    ///（非文本节点）。图片已由 extract_css_image_urls 抓取+缓存（fetch_image_subresources），
+    /// build_layout_tree 按替换元素处理，painter 渲染缓存图。
+    #[test]
+    fn inject_before_pseudo_url_as_img_element() {
+        let html = r#"<html><body><div>X</div></body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+        let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        div_style.before_pseudo = Some(Box::new(ComputedStyle {
+            content: ContentComputedValue::Url("icon.png".to_string()),
+            ..ComputedStyle::default()
+        }));
+        styles.insert(div, div_style);
+
+        inject_pseudo_text_nodes(&mut doc, &mut styles);
+
+        let first_child = doc
+            .get(div)
+            .and_then(|n| n.children.first().copied())
+            .expect("有子节点");
+        match &doc.get(first_child).unwrap().kind {
+            zero_dom::NodeKind::Element(e) => {
+                assert_eq!(e.local_name(), "img", "应为 img 元素");
+                assert_eq!(e.get_attribute("src").as_deref(), Some("icon.png"));
+            }
+            other => panic!("首个子节点应为 img 元素，实际 {other:?}"),
+        }
+        let inj_style = styles.get(&first_child).expect("注入节点有样式");
+        assert!(matches!(inj_style.content, ContentComputedValue::Normal));
     }
 
     /// R1307：需要独立盒的伪元素（position != static / float / display != inline）且

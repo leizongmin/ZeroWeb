@@ -672,6 +672,27 @@ fn test_content_single_quotes() {
     assert!(c.is_some());
 }
 
+/// R1988：`content: url(...)` 解析为 `ContentValue::Url`（generated content image）。
+#[test]
+fn test_content_url() {
+    use crate::values::ContentValue;
+    assert_eq!(
+        parse_content("url(icon.png)"),
+        Some(ContentValue::Url("icon.png".to_string()))
+    );
+    // 引号包裹的 url。
+    assert_eq!(
+        parse_content("url('bullet.svg')"),
+        Some(ContentValue::Url("bullet.svg".to_string()))
+    );
+    assert_eq!(
+        parse_content(r#"url("x/y.gif")"#),
+        Some(ContentValue::Url("x/y.gif".to_string()))
+    );
+    // 空 url() → None。
+    assert!(parse_content("url()").is_none());
+}
+
 #[test]
 fn test_content_invalid() {
     assert!(parse_content("something-else").is_none());

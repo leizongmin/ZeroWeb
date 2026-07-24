@@ -117,6 +117,9 @@ impl super::Painter {
     pub(crate) fn paint_content(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let text = match &style.content {
             ContentComputedValue::Normal | ContentComputedValue::None | ContentComputedValue::Attr(_) => return,
+            // R1988：content:url() 由 inject_pseudo_text_nodes 注入 `<img>` 元素渲染，paint_content
+            //（文本路径）不处理图片，直接返回。
+            ContentComputedValue::Url(_) => return,
             ContentComputedValue::String(s) => s.clone(),
             ContentComputedValue::Counter {
                 name,

@@ -372,11 +372,15 @@ pub enum ContentValue {
         /// 可选的列表样式类型。
         style: Option<String>,
     },
+    /// `url(...)` 图片引用（generated content image，如 `content: url(icon.png)`）。
+    /// R1988：伪元素 content:url() 渲染为替换图片。
+    Url(String),
 }
 
 /// 解析 CSS content 属性值。
 ///
-/// 支持格式：`normal`、`none`、字符串、`attr(name)`、`counter(name)` 或 `counter(name, style)`。
+/// 支持格式：`normal`、`none`、字符串、`attr(name)`、`counter(name)` 或 `counter(name, style)`、
+/// `url(...)`（R1988 generated content image，伪元素 content:url() 渲染为替换图片）。
 pub fn parse_content(input: &str) -> Option<ContentValue> {
     let input = input.trim();
     if input.eq_ignore_ascii_case("normal") {
@@ -414,6 +418,18 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
             None
         };
         return Some(ContentValue::Counter { name, style });
+    }
+    // url(...) — generated content image（R1988）。支持引号包裹的 url："url('x.png')" / 'url("x.png")'。
+    if input.starts_with("url(") && input.ends_with(')') {
+        let inner = input[4..input.len() - 1].trim();
+        if inner.is_empty() {
+            return None;
+        }
+        let url = inner.trim_matches('"').trim_matches('\'').trim();
+        if url.is_empty() {
+            return None;
+        }
+        return Some(ContentValue::Url(url.to_string()));
     }
     None
 }
