@@ -463,7 +463,24 @@ fn collect_table_col_backgrounds(
         if child_display != Some(DisplayValue::TableColumnGroup) {
             continue;
         }
-        let rg_span = get_span(child, doc);
+        // R2047：colgroup 的有效 span——含内部 col 时按内部 col span 之和（每个内部 col 占一列），
+        // 否则按 colgroup 自身 span 属性。bg entry 与 col_cursor 推进须用同一 span，否则
+        // bg 覆盖列数 ≠ 实际占位列数（background-repeat-applies-to-005：colgroup 2 内部 col
+        // 但 get_span=1 → bg 仅覆盖 col0，col1 漏白）。
+        let has_inner_cols = child
+            .children
+            .iter()
+            .any(|c| get_display(c, styles) == Some(DisplayValue::TableColumn));
+        let rg_span = if has_inner_cols {
+            child
+                .children
+                .iter()
+                .filter(|c| get_display(c, styles) == Some(DisplayValue::TableColumn))
+                .map(|c| get_span(c, doc))
+                .sum::<usize>()
+        } else {
+            get_span(child, doc)
+        };
         let col_start = col_cursor.min(col_count);
         let col_end = (col_cursor + rg_span).min(col_count);
         let rg_collapsed = child
@@ -481,20 +498,8 @@ fn collect_table_col_backgrounds(
                 }
             }
         }
-        // col_cursor 推进：colgroup 内含 col 时按内部 col 推进，否则按 rg_span
-        let has_inner_cols = child
-            .children
-            .iter()
-            .any(|c| get_display(c, styles) == Some(DisplayValue::TableColumn));
-        if has_inner_cols {
-            for col_child in &child.children {
-                if get_display(col_child, styles) == Some(DisplayValue::TableColumn) {
-                    col_cursor += get_span(col_child, doc);
-                }
-            }
-        } else {
-            col_cursor += rg_span;
-        }
+        // col_cursor 推进——与 bg entry 同 span（R2047 统一）。
+        col_cursor += rg_span;
     }
 
     // Pass 2：col（上层后入）—— 顶层 col + colgroup 内部 col
