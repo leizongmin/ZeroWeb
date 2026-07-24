@@ -730,4 +730,47 @@ mod tests {
         );
         worker.shutdown();
     }
+
+    #[test]
+    fn tab_js_worker_mutation_observer_existing_dom_attributes() {
+        // P1b S2 incr2：观测现有 DOM——querySelector 返 selector-based proxy（handle=null），
+        // observe 用 selector 身份注册；setAttribute 经 sel 匹配派发。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(14));
+        worker.set_dom_snapshot("<html><body><div id='t'></div></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;
+                 var obs = new MutationObserver(function(records){
+                   globalThis.__seen = records[0].type + ':' + records[0].attributeName;
+                 });
+                 var el = document.querySelector('#t');
+                 obs.observe(el, { attributes: true });
+                 el.setAttribute('data-x', '1');",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "attributes:data-x");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_mutation_observer_existing_dom_childlist() {
+        // P1b S2 incr2：观测现有 DOM childList——appendChild 到既有容器。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(15));
+        worker.set_dom_snapshot("<html><body><ul id='list'></ul></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;
+                 var obs = new MutationObserver(function(records){
+                   globalThis.__seen = records[0].type + ':' + records[0].addedNodes.length;
+                 });
+                 var list = document.querySelector('#list');
+                 obs.observe(list, { childList: true });
+                 list.appendChild(document.createElement('li'));",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "childList:1");
+        worker.shutdown();
+    }
 }

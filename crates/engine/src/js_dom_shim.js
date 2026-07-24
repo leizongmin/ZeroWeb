@@ -128,29 +128,39 @@
     delete globalThis.__zw_pending[_timerIdKey(handle)];
   };
 
-  // ── P1b S2 incr1：MutationObserver（handle-based，JS 侧拦截 + microtask 派发）──
-  // 节点身份复用既有 `__zwHandle`（NodeRegistry）——v8::External 真 object identity（===）
-  // 非功能必需（RFC「须 v8::External」纠正：handle 已足够）。`observe(target, options)` 注册
-  // handle→options；`_makeProxy` 的 setAttribute/appendChild/etc. 调 `_mo_notify` 排队记录；
-  // `_defer`（microtask）派发回调（spec §4 microtask 语义）。incr1 限制：仅观测 JS 驱动的
-  // mutation（host 侧 `__zw_dispatch_event` 等不触发）；支持 attributes + childList。
+  // ── P1b S2 incr1/incr2：MutationObserver（JS 侧拦截 + microtask 派发）──
+  // 节点身份用「复合 key」：handle-based（JS 创建子树，`createElement` 返 `"__n{n}"`）+
+  // selector-based（现有 DOM，`querySelector` 返 `_makeProxy(sel, null)`）。`_mo_id(handle, sel)`
+  // 优先 handle，否则 sel——v8::External 真 object identity（===）非功能必需（RFC 纠正）。
+  // `observe(target, options)` 注册 id→options；`_makeProxy` 的 setAttribute/appendChild/etc.
+  // 调 `_mo_notify(sel, handle, record)` 排队；`_defer`（microtask）派发回调（spec §4 语义）。
+  // incr1 = handle（JS 子树）；incr2 = +selector（现有 DOM）。支持 attributes + childList。
+  // 限制：仅观测 JS 驱动的 mutation（host 侧 `__zw_dispatch_event` 等不触发）。
   globalThis.__zw_mo_observers = globalThis.__zw_mo_observers || [];
   var _moFlushScheduled = false;
 
-  // 把一条 mutation 记录投递给所有观测 `handle` 且 options 匹配的 observer。
+  // 元素身份 key——handle 优先（JS 创建节点），否则 selector（现有 DOM）。
+  function _mo_id(handle, sel) {
+    if (handle != null) return 'h:' + handle;
+    if (sel) return 's:' + sel;
+    return null;
+  }
+
+  // 把一条 mutation 记录投递给所有观测该 id 且 options 匹配的 observer。
   // 每个 observer 拿独立 record 副本（target 指向各自 observe() 时的 proxy）。
-  function _mo_notify(handle, baseRecord) {
-    if (handle == null) return;
+  function _mo_notify(sel, handle, baseRecord) {
+    var id = _mo_id(handle, sel);
+    if (id == null) return;
     var observers = globalThis.__zw_mo_observers;
     for (var i = 0; i < observers.length; i++) {
       var obs = observers[i];
-      var opts = obs._targets[handle];
+      var opts = obs._targets[id];
       if (!opts) continue;
       if (baseRecord.type === 'attributes' && !opts.attributes) continue;
       if (baseRecord.type === 'childList' && !opts.childList) continue;
       var rec = {};
       for (var k in baseRecord) rec[k] = baseRecord[k];
-      rec.target = obs._targetProxies[handle];
+      rec.target = obs._targetProxies[id];
       obs._records.push(rec);
       _mo_scheduleFlush();
     }
@@ -174,17 +184,17 @@
 
   globalThis.MutationObserver = function(callback) {
     this._callback = callback;
-    this._targets = {};       // handle -> options
-    this._targetProxies = {}; // handle -> observe() 时传入的 proxy（record.target 用）
+    this._targets = {};       // id (h:handle / s:sel) -> options
+    this._targetProxies = {}; // id -> observe() 时传入的 proxy（record.target 用）
     this._records = [];
     globalThis.__zw_mo_observers.push(this);
   };
   globalThis.MutationObserver.prototype.observe = function(target, options) {
-    if (!target || target.__zwHandle == null) return;
-    var h = target.__zwHandle;
-    var opts = options || {};
-    this._targets[h] = opts;
-    this._targetProxies[h] = target;
+    if (!target) return;
+    var id = _mo_id(target.__zwHandle, target.__zwSelector);
+    if (id == null) return;
+    this._targets[id] = options || {};
+    this._targetProxies[id] = target;
   };
   globalThis.MutationObserver.prototype.disconnect = function() {
     this._targets = {};
@@ -574,7 +584,7 @@
             set: function(_s, p, v) {
               if (handle) __zw_set_style_handle(handle, String(p), String(v));
               else __zw_set_style(sel, String(p), String(v));
-              _mo_notify(handle, { type: 'attributes', attributeName: 'style' });
+              _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
               return true;
             },
             get: function(_s, p) {
@@ -629,14 +639,14 @@
           return function(name, value) {
             if (handle) __zw_set_attr_handle(handle, name, String(value));
             else __zw_set_attr(sel, name, String(value));
-            _mo_notify(handle, { type: 'attributes', attributeName: String(name) });
+            _mo_notify(sel, handle, { type: 'attributes', attributeName: String(name) });
           };
         }
         if (prop === 'removeAttribute') {
           return function(name) {
             if (handle) __zw_set_attr_handle(handle, name, '');
             else __zw_set_attr(sel, name, '');
-            _mo_notify(handle, { type: 'attributes', attributeName: String(name) });
+            _mo_notify(sel, handle, { type: 'attributes', attributeName: String(name) });
           };
         }
         if (prop === 'addEventListener') {
@@ -680,7 +690,7 @@
             if (child && child.__zwHandle) {
               if (handle) __zw_append_child_handle(handle, child.__zwHandle);
               else __zw_append_child(sel, child.__zwHandle);
-              _mo_notify(handle, { type: 'childList', addedNodes: [child], removedNodes: [] });
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [child], removedNodes: [] });
             }
             return child;
           };
@@ -689,7 +699,7 @@
           return function(child) {
             if (child && child.__zwHandle) {
               __zw_remove_handle(child.__zwHandle);
-              _mo_notify(handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
             }
             return child;
           };
@@ -706,7 +716,7 @@
                 else __zw_insert_before(sel, newNode.__zwHandle, refNode.__zwSelector);
               }
               // refNode 为 create 句柄（无 selector）时不支持（罕见）。
-              _mo_notify(handle, { type: 'childList', addedNodes: [newNode], removedNodes: [] });
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [] });
             }
             return newNode;
           };
@@ -739,7 +749,7 @@
               }
             }
             if (added.length > 0) {
-              _mo_notify(handle, { type: 'childList', addedNodes: added, removedNodes: [] });
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: added, removedNodes: [] });
             }
             return undefined;
           };
