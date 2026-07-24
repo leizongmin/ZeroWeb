@@ -7,7 +7,7 @@
 **目标案**：`multicol-breaking-001/002/003/004/005/006` + `multicol-breaking-nobackground-{000..005}`（13 案，oracle 3.16-9.58%，css-multicol 唯一剩余 reftest-validatable lever）
 **关联**：
 - [`multicol-fragmentation-design.md`](./multicol-fragmentation-design.md) §R201（三 blocker A/B/C，2026-06-17 dump 实测）
-- [`multicol-phase2-column-fragmentation-context.md`](./multicol-phase2-column-fragmentation-context.md)（Phase 1/2a 已 DONE：inline-only + single-level block breaking）
+- [`multicol-phase2-column-fragmentation-context.md`](./archive/multicol-phase2-column-fragmentation-context.md)（Phase 1/2a 已 DONE：inline-only + single-level block breaking，已归档）
 - master.md R1351（painter-core 实验 net -1 REVERTED）、R1352-R1361（九轮深调）
 
 ---

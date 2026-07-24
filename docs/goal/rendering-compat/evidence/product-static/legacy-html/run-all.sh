@@ -60,6 +60,9 @@ for f in "$FIXTURE_DIR"/*.html; do
     struct="PASS"
   else
     struct="FAIL"; struct_fail=$((struct_fail+1))
+    # struct FAIL 时打印 issue 详情（sibling overlap / collapsed / text concatenation），
+    # 作为「待查清单」诊断入口——否则 summary 只见 FAIL 不见根因。
+    echo "$out" | grep -E "^[[:space:]]*-[[:space:]]+(sibling overlap|collapsed|text concatenation|text-concat)" | sed 's/^/      /'
   fi
   printf "  %-34s diff=%6s%%  struct=%s\n" "$name" "$pct" "$struct"
   results+=("$pct  $name  $struct")

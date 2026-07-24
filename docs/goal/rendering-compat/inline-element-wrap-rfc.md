@@ -174,6 +174,6 @@ Slice 1-3 全 flip 且全量 A/B net≥0 后：移除 env gate（default-on）+ 
 ## 6. 与既有文档/记忆的关系
 
 - R1735 evidence：[`evidence/r1735-border-width-008-inline-element-r109-blocked-2026-07-19.txt`](./evidence/r1735-border-width-008-inline-element-r109-blocked-2026-07-19.txt)（实证根因 + naive-fix 证伪）。
-- R109 §9.2.1.1 既有实现：[`r109-anonymous-block-spec.md`](./r109-anonymous-block-spec.md)（text-node 包裹设计）；本 RFC 扩到 element 包裹。
+- R109 §9.2.1.1 既有实现：[`r109-anonymous-block-spec.md`](./archive/r109-anonymous-block-spec.md)（text-node 包裹设计，已归档）；本 RFC 扩到 element 包裹。
 - R109 FR-002（容器 bg 涂满匿名块盒）：已由 [`backfill_r109_anon_block_heights`](../../crates/layout-engine/src/postprocess.rs) 解决（R1596）；本 RFC 是 FR-003（inline 元素 border）+ 匿名块包裹扩展。
 - font-wall：[[r1088-first-letter-phasea-universal-gate]] / [[r1560-skia-raster-fontwall-ruled-out]]（headline 主阻塞，C-dep user-gated，与本 RFC 独立）。

@@ -5,7 +5,7 @@
 **承接**：R1043（vertical-rl block-flow 方向，postprocess mirror ruled out）→ R1050（vertical inline 布局根因初定位）→ R1051（本 handoff v1.0）→ R1052（**纠正诊断 + 耦合裁决**）
 **关联**：
 - [`phase-a-IFC-unification-design.md`](./phase-a-IFC-unification-design.md)（IFC 统一，vertical 是其子问题）
-- [`r109-anonymous-block-spec.md`](./r109-anonymous-block-spec.md)（R109 anonymous block，不同子问题）
+- [`r109-anonymous-block-spec.md`](./archive/r109-anonymous-block-spec.md)（R109 anonymous block，不同子问题，已归档）
 - [`evidence/r1052-vertical-ifc-container-width-zero-2026-07-05.txt`](./evidence/r1052-vertical-ifc-container-width-zero-2026-07-05.txt)（R1052 实证 + 探针代码）
 - master.md R1043 / R1050 / R1051 / R1052
 

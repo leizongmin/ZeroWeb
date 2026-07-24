@@ -222,11 +222,18 @@ for f in fixtures/*.html; do
 done
 ```
 
-## 当前基线（2026-07-18，R1690）
+## 当前基线（2026-07-25 校准）
 
-- **49/51 struct-check PASS**（avg diff excl. 46-frameset probe ≈ 3.06%，font-wall baseline），51 fixtures 覆盖
-  HTML 3.2/4 + CSS1/2。2 known struct FAIL = 27-address（body/html 高度传播，R1047/R109 高风险 defer）+
-  37-form-controls（R109 inline-`<label>` 含 inline-block `<input>` entanglement）。
+- **50/51 struct-check PASS**（avg diff ≈ 5.09% incl. 46-frameset probe；excl. probe ≈ 3.06%，font-wall baseline），
+  51 fixtures 覆盖 HTML 3.2/4 + CSS1/2。**唯一 known struct FAIL = 37-form-controls**。
+- **27-address R1743 已修**（body/html 高度 backfill，struct FAIL→PASS，diff 0.96% 持平）——基线从 R1690 的
+  49/51 提升到 50/51。
+- **37-form-controls struct FAIL（5 issue）= Phase A 阻塞，非 form-control 缺口**：3 sibling overlap
+  （inline-block `<input>` 未撑高父 `<p>` line-box，≡ linebox-metric RFC A2 / va-117a 同机制）+ 2 text
+  concatenation（R109 inline-ownership）。form-control 固有尺寸/value 渲染已由 R1659/R1660 落地（diff 7.03%→
+  4.33%）。phase-a-IFC-unification-design v1.4 addendum（R1985，2026-07-24）明确裁决：「勿再以这类 line-box
+  metric / inline-block identity 为独立 lever 狩猎——fix 须随 Phase A 整体 unification，非单会话切片」。
+  trend-only smoke 不阻（exit 0）；Phase A 解锁后 37 号应自动 struct PASS（作 success signal）。
 - **R1690 块级元素 UA margins**（HTML 渲染规范 chromium UA）：`<blockquote>`/`<figure>` margin 1em 40px、
   `<dl>` 1em 0、`<dd>` margin-left 40px。ZW 此前仅 display:block 无 margin → 内容无缩进。fixture 51
   实证 blockquote x=48 w=704、dd x=48（40px 缩进）、dl/figure mt=16，匹配 chromium，diff 5.16% struct PASS。

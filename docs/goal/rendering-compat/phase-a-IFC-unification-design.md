@@ -1,8 +1,8 @@
 # Phase A — IFC 三路径统一设计（Spec + RFC）
 
-**版本**：v1.2
-**日期**：2026-06-19（R306 Phase 0 探针实证后）
-**状态**：草稿（read-only 调研产出，未落地代码）
+**版本**：v1.2（+ v1.3/v1.4 addendum 见文末）
+**日期**：2026-06-19 起；最近 addendum 2026-07-24（R1985）
+**状态**：**设计中，整体未实施**。Phase 1/2 部分 LANDED（R207 PHASEA_STORE_EXT + R355 多行放宽 + R817 linebox Phase 2 +45 case）；**Phase 3（line-box metric unification）未解** = reftest 大盘 57% / 37-form-controls label overlap / vertical-mode 的共同结构性阻塞。v1.4 addendum（R1985）裁决：「勿再以 line-box metric / inline-block identity 为独立 lever 狩猎——fix 须随 Phase A 整体 unification」。pre-authorized ruling #4（多 session）。
 **关联**：`docs/goal/rendering-compat/master.md` R125 / R198 / R205 / R207 / R208 / R209 / R213 / **R306**；DC-13 产品 smoke 文本保真；DC-14 真实一致率
 
 > **⚠️ v1.2 重大修订（R306 Phase 0 探针）**：原 §0/§6.1/§7.1 推荐的「baseline-resolved 单一权威行盒（baseline_y = 几何基线 frag.y+height）」方案经 env-gated A/B 实证**证伪**——font-051 用 `v_offset=frag.height` 渲染 **16.67% FAIL**，默认 `v_offset=is_ahem?0:font_size` **0.00% PASS**（详见 §6.3B）。geometric baseline ≠ fontdue render baseline。原 Phase 1（加 baseline_y=几何基线）作废；Phase 1 重定向为 **Gate 2 放宽（offset 校准不动）**。offset 语义非 Phase A 阻塞点；真硬阻塞 = 墙② multicol + 换行精度。下文 §0/§6.1/§7.1 的「baseline_y」措辞应据此修订理解。
