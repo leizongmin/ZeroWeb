@@ -951,7 +951,10 @@ impl<'a> Parser<'a> {
             if matches!(self.peek(), Token::Semicolon) {
                 self.advance();
             }
-            return Some(PageRule { size: None });
+            return Some(PageRule {
+                size: None,
+                margin: None,
+            });
         }
         self.advance(); // {
 
@@ -965,16 +968,20 @@ impl<'a> Parser<'a> {
         // 提取首个有效 `size` 描述符（CSS 规范：后声明优先，但 @page size 单一语义，
         // 取首个有效即可）。
         let mut size: Option<(f32, f32)> = None;
+        let mut margin: Option<(f32, f32, f32, f32)> = None;
         for decl in &declarations {
-            if decl.property.eq_ignore_ascii_case("size") {
+            if decl.property.eq_ignore_ascii_case("size") && size.is_none() {
                 if let Some(resolved) = resolve_page_size_px(&decl.value) {
                     size = Some(resolved);
-                    break;
+                }
+            } else if decl.property.eq_ignore_ascii_case("margin") && margin.is_none() {
+                if let Some(resolved) = resolve_page_margin_px(&decl.value) {
+                    margin = Some(resolved);
                 }
             }
         }
 
-        Some(PageRule { size })
+        Some(PageRule { size, margin })
     }
 
     /// 消耗 @keyframes 规则。
@@ -1559,6 +1566,27 @@ pub fn resolve_page_size_px(size: &str) -> Option<(f32, f32)> {
                 _ => None,
             }
         }
+        _ => None,
+    }
+}
+
+/// 解析 @page `margin` 描述符为像素 `(top, right, bottom, left)`。
+///
+/// 同 CSS `margin` 1-4 值简写：1 值四边同；2 值 `(top bottom, right left)`；
+/// 3 值 `(top, right left, bottom)`；4 值 `(top, right, bottom, left)`。仅绝对长度
+/// （px/in/cm/mm/pt/pc），相对单位 / 未知 / 空串 → `None`。
+pub fn resolve_page_margin_px(margin: &str) -> Option<(f32, f32, f32, f32)> {
+    use crate::values::{LengthValue, parse_length};
+    let to_px = |s: &str| match parse_length(s) {
+        Some(LengthValue::Px(p)) => Some(p as f32),
+        _ => None,
+    };
+    let parts: Vec<&str> = margin.split_whitespace().collect();
+    match parts.as_slice() {
+        [a] => to_px(a).map(|v| (v, v, v, v)),
+        [a, b] => Some((to_px(a)?, to_px(b)?, to_px(a)?, to_px(b)?)),
+        [a, b, c] => Some((to_px(a)?, to_px(b)?, to_px(c)?, to_px(b)?)),
+        [a, b, c, d] => Some((to_px(a)?, to_px(b)?, to_px(c)?, to_px(d)?)),
         _ => None,
     }
 }

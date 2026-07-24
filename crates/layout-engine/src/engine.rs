@@ -90,6 +90,12 @@ pub struct LayoutEngine {
     /// 仅 `media_type==Print` 时 `paginate_for_print` 消费；Screen 路径零影响。
     /// R2010：P4 @page `size` 描述符支持——页尺寸不再硬编码 A4。
     print_page_height: f32,
+    /// Print 分页页内容盒垂直边距（px）。R2011 P4-followup：由 `@page { margin }` 解析注入
+    /// （`set_print_page_margins`），驱动分页内容区（页内容顶 = margin_top + k×page_height，
+    /// 内容区高 = page_height − margin_top − margin_bottom）。default 0 = 旧行为。水平边距
+    /// 待 layout-width-for-print 切片（当前仅垂直边距影响断页几何）。
+    print_margin_top: f32,
+    print_margin_bottom: f32,
     /// 缓存的 taffy 布局状态（可选，用于增量计算）。
     cached_state: Option<CachedLayoutState>,
     /// U1b-wiring（unified font stack）：可选 per-font 行度量提供者。
@@ -114,6 +120,8 @@ impl LayoutEngine {
             viewport_height,
             media_type: zero_css_parser::MediaType::Screen,
             print_page_height: crate::print_pagination::PRINT_PAGE_HEIGHT_A4,
+            print_margin_top: 0.0,
+            print_margin_bottom: 0.0,
             cached_state: None,
             font_metric_provider: None,
         }
@@ -130,6 +138,17 @@ impl LayoutEngine {
     pub fn set_print_page_height(&mut self, page_height: f32) {
         if page_height > 0.0 {
             self.print_page_height = page_height;
+        }
+    }
+
+    /// 设置 Print 分页页内容盒垂直边距（R2011 P4-followup：由 `@page { margin }` 解析注入）。
+    /// 由 `RenderPipeline` 在收集样式表后调用（与页高同源）。负值忽略保默认 0。
+    pub fn set_print_page_margins(&mut self, margin_top: f32, margin_bottom: f32) {
+        if margin_top >= 0.0 {
+            self.print_margin_top = margin_top;
+        }
+        if margin_bottom >= 0.0 {
+            self.print_margin_bottom = margin_bottom;
         }
     }
 
@@ -642,7 +661,13 @@ impl LayoutEngine {
         if matches!(self.media_type, zero_css_parser::MediaType::Print)
             && crate::print_pagination::print_paginate_enabled()
         {
-            crate::print_pagination::paginate_for_print(&mut root_box, self.print_page_height, styles);
+            crate::print_pagination::paginate_for_print(
+                &mut root_box,
+                self.print_page_height,
+                self.print_margin_top,
+                self.print_margin_bottom,
+                styles,
+            );
         }
 
         // 缓存 taffy 状态用于后续增量计算
@@ -758,7 +783,13 @@ impl LayoutEngine {
         if matches!(self.media_type, zero_css_parser::MediaType::Print)
             && crate::print_pagination::print_paginate_enabled()
         {
-            crate::print_pagination::paginate_for_print(&mut root_box, self.print_page_height, styles);
+            crate::print_pagination::paginate_for_print(
+                &mut root_box,
+                self.print_page_height,
+                self.print_margin_top,
+                self.print_margin_bottom,
+                styles,
+            );
         }
 
         let layout_ms = use_start.elapsed().as_secs_f64() * 1000.0;

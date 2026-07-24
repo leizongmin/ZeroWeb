@@ -519,3 +519,46 @@ fn test_resolve_page_size_px_lengths_and_invalid() {
     assert!(resolve_page_size_px("50%").is_none());
     assert!(resolve_page_size_px("").is_none());
 }
+
+// ── R2011 @page margin 描述符 ───────────────────────────────────────────
+
+#[test]
+fn test_page_margin_and_size_both_parsed() {
+    let css = "@page { size: letter; margin: 2cm; }";
+    let ws = Parser::parse_stylesheet(css);
+    match &ws.rules[0] {
+        Rule::Page(p) => {
+            let (w, _h) = p.size.expect("size parsed");
+            assert!((w - 816.0).abs() < 0.1, "letter width");
+            let (mt, _r, mb, _l) = p.margin.expect("margin parsed");
+            let two_cm = 2.0 * 96.0 / 2.54;
+            assert!((mt - two_cm).abs() < 0.1, "margin-top 2cm");
+            assert!((mb - two_cm).abs() < 0.1, "margin-bottom 2cm");
+        }
+        other => panic!("expected Rule::Page, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_resolve_page_margin_px_shorthand() {
+    use crate::parser::resolve_page_margin_px;
+    // 1 值：四边同
+    let (t, r, b, l) = resolve_page_margin_px("10px").unwrap();
+    assert_eq!((t as i32, r as i32, b as i32, l as i32), (10, 10, 10, 10));
+    // 2 值：(top bottom, right left)
+    let (t, r, b, l) = resolve_page_margin_px("10px 20px").unwrap();
+    assert_eq!((t as i32, r as i32, b as i32, l as i32), (10, 20, 10, 20));
+    // 3 值：(top, right left, bottom)
+    let (t, r, b, l) = resolve_page_margin_px("1px 2px 3px").unwrap();
+    assert_eq!((t as i32, r as i32, b as i32, l as i32), (1, 2, 3, 2));
+    // 4 值
+    let (t, r, b, l) = resolve_page_margin_px("1px 2px 3px 4px").unwrap();
+    assert_eq!((t as i32, r as i32, b as i32, l as i32), (1, 2, 3, 4));
+    // 单位换算（cm → px）
+    let (t, _r, _b, _l) = resolve_page_margin_px("1in").unwrap();
+    assert!((t - 96.0).abs() < 0.01, "1in = 96px, got {t}");
+    // 无效 / 相对单位 / 空 → None
+    assert!(resolve_page_margin_px("bogus").is_none());
+    assert!(resolve_page_margin_px("50%").is_none());
+    assert!(resolve_page_margin_px("").is_none());
+}

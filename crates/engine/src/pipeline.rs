@@ -295,9 +295,11 @@ impl RenderPipeline {
 
         // 2. 解析 CSS → Stylesheets
         let stylesheets = collect_stylesheets(&doc, css);
-        // R2010 P4：从 `@page { size }` 解析 Print 页高注入 layout_engine（Screen 零影响）。
+        // R2010/R2011：从 `@page { size; margin }` 解析 Print 页几何注入 layout_engine（Screen 零影响）。
+        let (print_page_h, print_margin_top, print_margin_bottom) = extract_print_page_geometry(&stylesheets);
+        self.layout_engine.set_print_page_height(print_page_h);
         self.layout_engine
-            .set_print_page_height(extract_print_page_height(&stylesheets));
+            .set_print_page_margins(print_margin_top, print_margin_bottom);
 
         // 3. 注册 @keyframes 到动画时钟
         self.animation_clock.register_from_stylesheets(&stylesheets);
@@ -433,9 +435,11 @@ impl RenderPipeline {
 
         // 2. 解析 CSS → Stylesheets（外部 CSS + HTML 内 `<style>`）
         let stylesheets = collect_stylesheets(&doc, css);
-        // R2010 P4：从 `@page { size }` 解析 Print 页高注入 layout_engine（分页 + 页边界分隔线共用）。
-        let print_page_h = extract_print_page_height(&stylesheets);
+        // R2010/R2011：从 `@page { size; margin }` 解析 Print 页几何注入 layout_engine（分页 + 页边界分隔线共用）。
+        let (print_page_h, print_margin_top, print_margin_bottom) = extract_print_page_geometry(&stylesheets);
         self.layout_engine.set_print_page_height(print_page_h);
+        self.layout_engine
+            .set_print_page_margins(print_margin_top, print_margin_bottom);
 
         // 3. 计算样式
         let style_start = Instant::now();
@@ -869,23 +873,36 @@ pub(crate) fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> 
 }
 
 /// 从样式表中提取 Print 分页页高（R2010 P4：`@page { size }` 解析）。
+/// 从样式表中提取 Print 分页页几何（R2010 P4 `@page { size }` + R2011 `@page { margin }`）。
 ///
-/// 扫描首个有效 `@page` 的 `size` 描述符，返回其 height（px）；无 `@page` 或 `size`
-/// 无效时回退默认 A4 高（`PRINT_PAGE_HEIGHT_A4`）。仅 `media_type==Print` 时
+/// 返回 `(page_height, margin_top, margin_bottom)`：扫描首个有效 `@page` 的 `size`/`margin`
+/// 描述符；无 `@page` 或描述符无效时回退默认（A4 高 + 0 边距）。仅 `media_type==Print` 时
 /// `paginate_for_print` / `inject_print_page_dividers` 消费；Screen 不调用。
-pub(crate) fn extract_print_page_height(stylesheets: &[Stylesheet]) -> f32 {
+pub(crate) fn extract_print_page_geometry(stylesheets: &[Stylesheet]) -> (f32, f32, f32) {
     use zero_css_parser::ast::Rule;
+    let mut height = zero_layout_engine::print_pagination::PRINT_PAGE_HEIGHT_A4;
+    let mut margin_top = 0.0;
+    let mut margin_bottom = 0.0;
     for ss in stylesheets {
         for rule in &ss.rules {
-            if let Rule::Page(page) = rule
-                && let Some((_w, h)) = page.size
-                && h > 0.0
-            {
-                return h;
+            if let Rule::Page(page) = rule {
+                if let Some((_w, h)) = page.size
+                    && h > 0.0
+                {
+                    height = h;
+                }
+                if let Some((mt, _r, mb, _l)) = page.margin {
+                    if mt >= 0.0 {
+                        margin_top = mt;
+                    }
+                    if mb >= 0.0 {
+                        margin_bottom = mb;
+                    }
+                }
             }
         }
     }
-    zero_layout_engine::print_pagination::PRINT_PAGE_HEIGHT_A4
+    (height, margin_top, margin_bottom)
 }
 
 /// 提取 HTML 中所有 `<link rel="stylesheet" href="...">` 的 href 原始值。
@@ -1564,12 +1581,12 @@ mod print_page_size_tests {
     use super::*;
     use zero_css_parser::Parser;
 
-    /// R2010 P4：`@page { size }` 解析后的页高经 `extract_print_page_height` 提取，
+    /// R2010 P4：`@page { size }` 解析后的页高经 `extract_print_page_geometry` 提取，
     /// 覆盖默认 A4。letter (11in) = 1056px。
     #[test]
     fn r2010_extract_print_page_height_letter_overrides_a4_default() {
         let ws = vec![Parser::parse_stylesheet("@page { size: letter; }")];
-        let h = extract_print_page_height(&ws);
+        let (h, _mt, _mb) = extract_print_page_geometry(&ws);
         assert!((h - 1056.0).abs() < 0.1, "letter height 1056, got {h}");
     }
 
@@ -1577,11 +1594,39 @@ mod print_page_size_tests {
     #[test]
     fn r2010_extract_print_page_height_defaults_to_a4() {
         let ws = vec![Parser::parse_stylesheet("@page { margin: 2cm; } div { color: red; }")];
-        let h = extract_print_page_height(&ws);
+        let (h, _mt, _mb) = extract_print_page_geometry(&ws);
         assert!((h - 1122.5).abs() < 0.1, "no size → A4 default 1122.5, got {h}");
         let empty: Vec<zero_css_parser::Stylesheet> = vec![];
-        let h0 = extract_print_page_height(&empty);
+        let (h0, _, _) = extract_print_page_geometry(&empty);
         assert!((h0 - 1122.5).abs() < 0.1, "empty → A4 default, got {h0}");
+    }
+
+    /// R2011：`@page { margin }` 解析为垂直边距注入分页内容区（top/bottom）。1 值简写 = 四边同。
+    #[test]
+    fn r2011_extract_print_page_margin_vertical() {
+        let ws = vec![Parser::parse_stylesheet("@page { size: A4; margin: 2cm; }")];
+        let (h, mt, mb) = extract_print_page_geometry(&ws);
+        assert!((h - 1122.5).abs() < 1.0, "A4 height");
+        let two_cm = 2.0 * 96.0 / 2.54;
+        assert!((mt - two_cm).abs() < 0.1, "margin-top 2cm, got {mt}");
+        assert!((mb - two_cm).abs() < 0.1, "margin-bottom 2cm, got {mb}");
+    }
+
+    /// R2011：2 值 margin 简写 `(top bottom, right left)` → top/bottom = 第 1 值。
+    #[test]
+    fn r2011_extract_print_page_margin_two_value() {
+        let ws = vec![Parser::parse_stylesheet("@page { margin: 100px 50px; }")];
+        let (_h, mt, mb) = extract_print_page_geometry(&ws);
+        assert!((mt - 100.0).abs() < 0.1, "margin-top = 100px (1st value), got {mt}");
+        assert!((mb - 100.0).abs() < 0.1, "margin-bottom = 100px (1st value), got {mb}");
+    }
+
+    /// R2011：无 margin → 边距默认 0（旧行为，零行为变更）。
+    #[test]
+    fn r2011_extract_print_page_margin_defaults_zero() {
+        let ws = vec![Parser::parse_stylesheet("@page { size: A4; }")];
+        let (_h, mt, mb) = extract_print_page_geometry(&ws);
+        assert_eq!((mt, mb), (0.0, 0.0), "no margin → (0, 0)");
     }
 
     /// R2010 P4：inject_print_page_dividers 接受自定义页高——letter=1056，extent=2500

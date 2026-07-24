@@ -88,12 +88,16 @@ pub struct FontFaceRule {
 /// CSS @page 规则（Paged Media）。
 ///
 /// 格式：`@page { size: A4; margin: 2cm; }`（prelude 可为命名页 `:first` 等，当前忽略）。
-/// 当前仅解析 `size` 描述符并解析为像素 `(width, height)`；`margin` / 命名页 / 页边距盒
-/// 为后续切片。`size` 用于 Print 媒体分页的页尺寸（覆盖默认 A4）。
+/// 解析 `size` 描述符为像素 `(width, height)` 与 `margin` 描述符为 `(top, right, bottom, left)`
+/// 像素（1-4 值简写，同 CSS margin）；命名页 / 页边距盒为后续切片。`size`/`margin` 用于
+/// Print 媒体分页的页几何（覆盖默认 A4 + 0 边距）。
 #[derive(Debug, Clone)]
 pub struct PageRule {
     /// 解析后的页尺寸（px），`None` = `size` 缺失或无效（调用方回退默认 A4）。
     pub size: Option<(f32, f32)>,
+    /// 解析后的页边距 `(top, right, bottom, left)` px，`None` = `margin` 缺失或无效（回退 0）。
+    /// R2011 P4-followup：垂直边距驱动分页内容区（水平边距待 layout-width-for-print 切片）。
+    pub margin: Option<(f32, f32, f32, f32)>,
 }
 
 /// @keyframes 规则。

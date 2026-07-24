@@ -22,8 +22,8 @@
 //! - ✅ FR-003 `page-break-after: always` / `break-after: page`（下一兄弟换页）
 //! - ✅ FR-004 自然页填充（子越页边界且整页装得下→推下页顶；oversized 留原位 deferred）
 //! - ✅ FR-006 嵌套 break 子树提升（后代 break-before→整单元换页，P1a 近似）
-//! - ✅ FR-005 页尺寸（default A4 @96dpi；R2010 P4：`@page { size }` 解析后由 `set_print_page_height` 注入覆盖）
-//! - ⏳ oversized 单元真分片（fragment_y_offset 拆多页）/ P2 嵌套精确断 / P3 inside:avoid / @page `margin` / P5 输出模型
+//! - ✅ FR-005 页尺寸 + 垂直页边距（default A4 + 0 边距；R2010 P4 `@page { size }` + R2011 `@page { margin }` 解析后由 pipeline 注入覆盖；margin_top/bottom 驱动分页内容区）
+//! - ⏳ oversized 单元真分片（fragment_y_offset 拆多页）/ P2 嵌套精确断 / P3 inside:avoid / @page 水平 margin（须 layout-width-for-print）/ P5 输出模型
 //!
 //! # 输出模型
 //!
@@ -54,10 +54,23 @@ pub fn print_paginate_enabled() -> bool {
 /// 下降到块流根（body 近似：含多个 in-flow block 子的容器），对其直接 in-flow block 子
 /// 按 `page_height` 分页：forced break-before 的子被推到下一页边界，后续兄弟累加 gap 跟随。
 /// Screen 路径不调用本函数（engine.rs gate）。
-pub fn paginate_for_print(root: &mut LayoutBox, page_height: f32, styles: &HashMap<NodeId, ComputedStyle>) {
+pub fn paginate_for_print(
+    root: &mut LayoutBox,
+    page_height: f32,
+    margin_top: f32,
+    margin_bottom: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
     if page_height <= 0.0 {
         return;
     }
+    // R2011：退化为 0 边距若垂直边距吃掉绝大部分页高（usable ≤ 1px）——避免负可用高死循环。
+    let usable = page_height - margin_top - margin_bottom;
+    let (margin_top, margin_bottom) = if usable < 1.0 {
+        (0.0, 0.0)
+    } else {
+        (margin_top.max(0.0), margin_bottom.max(0.0))
+    };
     // Pass 1（不可变）：下降到块流根 + 累积其内容原点 abs y。
     let (path, flow_content_abs) = match find_flow_container_path(root) {
         Some(v) => v,
@@ -67,7 +80,7 @@ pub fn paginate_for_print(root: &mut LayoutBox, page_height: f32, styles: &HashM
     let flow = path
         .iter()
         .fold(root as &mut LayoutBox, |node, &i| &mut node.children[i]);
-    paginate_flow_children(flow, flow_content_abs, page_height, styles);
+    paginate_flow_children(flow, flow_content_abs, page_height, margin_top, margin_bottom, styles);
 }
 
 /// 下降路径 + 块流根内容原点 abs y。
@@ -137,9 +150,14 @@ fn paginate_flow_children(
     flow: &mut LayoutBox,
     flow_content_abs: f32,
     page_height: f32,
+    margin_top: f32,
+    margin_bottom: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
-    let mut gap = 0.0f32;
+    // R2011：初始 gap 把页 0 内容对齐到 `margin_top`（页内容盒顶）。若块流根已超过 margin_top
+    //（flow_content_abs > margin_top，罕见）则不前推。后续页的内容顶 = k×page_height + margin_top
+    // 由下方 forced/FR-004 推页时 +margin_top 保证。
+    let mut gap = (margin_top - flow_content_abs).max(0.0);
     let mut pending_break_after = false;
     for child in flow.children.iter_mut() {
         if child.is_absolute || child.is_fixed {
@@ -148,24 +166,26 @@ fn paginate_flow_children(
         // 子当前 abs border-box 顶（含已累积 gap）。
         let top_abs = flow_content_abs + child.y + gap + child.margin_top;
         let outer_h = child.height + child.margin_top + child.margin_bottom;
-        // 镜像 multicol `current_col_height > 0` 守卫：子在页顶（top_abs % page_height ≈ 0）不换页。
-        let at_page_top = (top_abs % page_height).abs() < 0.5;
+        // 镜像 multicol `current_col_height > 0` 守卫：子在页内容顶（(top_abs - margin_top) % page_height ≈ 0）不换页。
+        let at_page_top = ((top_abs - margin_top).max(0.0) % page_height).abs() < 0.5;
 
         let forced = has_forced_break_before(child, styles) || pending_break_after;
         if forced {
             if !at_page_top {
-                let target = next_page_boundary(top_abs, page_height);
+                // 推到下一页内容顶 = 下一物理页边界 + margin_top。
+                let target = next_page_boundary(top_abs, page_height) + margin_top;
                 let extra = target - top_abs;
                 if extra > 0.0 {
                     gap += extra;
                 }
             }
         } else if !at_page_top && outer_h <= page_height + 0.5 {
-            // FR-004 自然填充：整页装得下但放不下当前页剩余空间 → 推到当前页底（= 下一页顶）。
+            // FR-004 自然填充：整页装得下但放不下当前页内容区剩余空间 → 推到下一页内容顶。
             let bottom_abs = top_abs + child.height + child.margin_bottom;
-            let page_bottom = page_bottom_for(top_abs, page_height);
-            if bottom_abs > page_bottom + 0.5 {
-                gap += page_bottom - top_abs;
+            let phys_bottom = page_bottom_for(top_abs, page_height);
+            let content_bottom = phys_bottom - margin_bottom;
+            if bottom_abs > content_bottom + 0.5 {
+                gap += phys_bottom + margin_top - top_abs;
             }
         }
         // 累积 gap 下移此子（相对块流根内容区；后代因相对此子而自动跟随）。
@@ -305,7 +325,7 @@ mod tests {
             style_with_break_before(BreakValue::Auto, PageBreakValue::Always),
         );
         let h = 1000.0;
-        paginate_for_print(&mut root, h, &styles);
+        paginate_for_print(&mut root, h, 0.0, 0.0, &styles);
         let a = &root.children[0];
         let b = &root.children[1];
         let c = &root.children[2];
@@ -326,7 +346,7 @@ mod tests {
             style_with_break_before(BreakValue::Page, PageBreakValue::Auto),
         );
         let h = 1000.0;
-        paginate_for_print(&mut root, h, &styles);
+        paginate_for_print(&mut root, h, 0.0, 0.0, &styles);
         assert_eq!(root.children[1].y, h, "break-before:page 应等价推到 H");
     }
 
@@ -339,7 +359,7 @@ mod tests {
             style_with_break_before(BreakValue::Auto, PageBreakValue::Auto),
         );
         let h = 1000.0;
-        paginate_for_print(&mut root, h, &styles);
+        paginate_for_print(&mut root, h, 0.0, 0.0, &styles);
         assert_eq!(root.children[0].y, 0.0);
         assert_eq!(root.children[1].y, 100.0);
         assert_eq!(root.children[2].y, 150.0);
@@ -405,7 +425,7 @@ mod tests {
         };
         let mut root = root;
         let h = 1000.0;
-        paginate_for_print(&mut root, h, &styles);
+        paginate_for_print(&mut root, h, 0.0, 0.0, &styles);
         let b = &root.children[1];
         let d = &b.children[0];
         assert_eq!(b.y, h, "B 推到 H");
@@ -449,7 +469,7 @@ mod tests {
             ..Default::default()
         };
         let h = 1000.0;
-        paginate_for_print(&mut root, h, &styles);
+        paginate_for_print(&mut root, h, 0.0, 0.0, &styles);
         assert_eq!(root.children[0].y, 0.0, "A 留在第1页原位");
         assert_eq!(root.children[1].y, h, "B 因 A 的 break-after 被推到 H");
     }
@@ -482,7 +502,7 @@ mod tests {
             ..Default::default()
         };
         let h = 1000.0;
-        paginate_for_print(&mut root, h, &styles);
+        paginate_for_print(&mut root, h, 0.0, 0.0, &styles);
         assert_eq!(root.children[0].y, 0.0, "A 留第1页");
         assert_eq!(root.children[1].y, h, "B 自然填充推到下一页顶 H（原 950 + gap 50）");
     }
@@ -534,7 +554,7 @@ mod tests {
             ..Default::default()
         };
         let h = 1000.0;
-        paginate_for_print(&mut root, h, &styles);
+        paginate_for_print(&mut root, h, 0.0, 0.0, &styles);
         assert_eq!(root.children[0].y, 0.0, "A 留第1页");
         assert_eq!(root.children[1].y, h, "section 因后代 h1 break 提升到 H");
         assert_eq!(
@@ -572,7 +592,7 @@ mod tests {
             ..Default::default()
         };
         let h = 1000.0;
-        paginate_for_print(&mut root, h, &styles);
+        paginate_for_print(&mut root, h, 0.0, 0.0, &styles);
         assert_eq!(root.children[0].y, 0.0, "B 留页顶");
         assert_eq!(root.children[1].y, 100.0, "oversized A 留原位（未分片，deferred）");
     }
@@ -623,7 +643,7 @@ mod tests {
             ..Default::default()
         };
         let h = 1000.0;
-        paginate_for_print(&mut html, h, &styles);
+        paginate_for_print(&mut html, h, 0.0, 0.0, &styles);
         let body = &html.children[0];
         let a = &body.children[0];
         let b = &body.children[1];
@@ -631,5 +651,105 @@ mod tests {
         // B 的 abs 顶须 == 页边界 1000（content_origin 累积 html margin=8 正确）。
         // abs = body_content_abs(8) + B.y + 0 = 8 + B.y == 1000 → B.y == 992。
         assert_eq!(8.0 + b.y, h, "B abs 顶须精确落页边界 H=1000（验证 html margin 累积）");
+    }
+
+    /// R2011：`margin_top` 把页 0 内容从 y=0 下移到 margin_top（页内容盒顶）。
+    /// flow 容器须 ≥2 node_id 子才被 find_flow_container 识别（单子会下降到叶）。
+    #[test]
+    fn r2011_print_paginate_margin_top_offsets_page_zero_content() {
+        let mut doc = Document::new();
+        let id_a = doc.create_element("div");
+        let id_b = doc.create_element("div");
+        let id_root = doc.create_element("div");
+        let styles = HashMap::new();
+        let a = LayoutBox {
+            node_id: Some(id_a),
+            y: 0.0,
+            height: 50.0,
+            ..Default::default()
+        };
+        let b = LayoutBox {
+            node_id: Some(id_b),
+            y: 50.0,
+            height: 50.0,
+            ..Default::default()
+        };
+        let mut root = LayoutBox {
+            node_id: Some(id_root),
+            y: 0.0,
+            children: vec![a, b],
+            ..Default::default()
+        };
+        // page_h=1000, margin_top=100 → 页 0 内容起于 y=100；A、B 均下移 100。
+        paginate_for_print(&mut root, 1000.0, 100.0, 0.0, &styles);
+        assert_eq!(root.children[0].y, 100.0, "A 下移到 margin_top=100");
+        assert_eq!(root.children[1].y, 150.0, "B 同步下移 100（50+100）");
+    }
+
+    /// R2011：内容超出页内容区（[margin_top, page_h - margin_bottom]）→ 推到下一页内容顶
+    /// （phys_boundary + margin_top），非物理页边界本身。B 不在页顶（A 占位）触发 FR-004。
+    #[test]
+    fn r2011_print_paginate_margin_overflow_lands_at_next_page_content_top() {
+        let mut doc = Document::new();
+        let id_a = doc.create_element("div");
+        let id_b = doc.create_element("div");
+        let id_root = doc.create_element("div");
+        let styles = HashMap::new();
+        // page_h=1000, margin_top=100, margin_bottom=100 → 内容区 [100, 900]（usable 800）。
+        // A(h=50) 在页顶；B(y=50, h=760) abs 顶=150，底=910 > 内容底 900 → 推到下一页内容顶 1100。
+        let a = LayoutBox {
+            node_id: Some(id_a),
+            y: 0.0,
+            height: 50.0,
+            ..Default::default()
+        };
+        let b = LayoutBox {
+            node_id: Some(id_b),
+            y: 50.0,
+            height: 760.0,
+            ..Default::default()
+        };
+        let mut root = LayoutBox {
+            node_id: Some(id_root),
+            y: 0.0,
+            children: vec![a, b],
+            ..Default::default()
+        };
+        paginate_for_print(&mut root, 1000.0, 100.0, 100.0, &styles);
+        assert_eq!(
+            root.children[1].y, 1100.0,
+            "B 底 910 > 内容底 900 → 推到下一页内容顶 = page_h + margin_top = 1100"
+        );
+    }
+
+    /// R2011：margin 0（默认）= 旧行为零回归——内容留原位，按物理页边界。
+    #[test]
+    fn r2011_print_paginate_zero_margin_matches_legacy_behavior() {
+        let mut doc = Document::new();
+        let id_a = doc.create_element("div");
+        let id_b = doc.create_element("div");
+        let id_root = doc.create_element("div");
+        let styles = HashMap::new();
+        let a = LayoutBox {
+            node_id: Some(id_a),
+            y: 0.0,
+            height: 50.0,
+            ..Default::default()
+        };
+        let b = LayoutBox {
+            node_id: Some(id_b),
+            y: 50.0,
+            height: 50.0,
+            ..Default::default()
+        };
+        let mut root = LayoutBox {
+            node_id: Some(id_root),
+            y: 0.0,
+            children: vec![a, b],
+            ..Default::default()
+        };
+        paginate_for_print(&mut root, 1000.0, 0.0, 0.0, &styles);
+        assert_eq!(root.children[0].y, 0.0, "margin=0 → A 留 y=0（旧行为）");
+        assert_eq!(root.children[1].y, 50.0, "margin=0 → B 留 y=50（旧行为）");
     }
 }
