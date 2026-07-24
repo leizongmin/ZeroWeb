@@ -174,7 +174,65 @@ impl BrowserApp {
         // 18. 缩放百分比浮层（右下角，缩放后 3 秒内显示）
         self.render_zoom_indicator(&mut overlay_fills, &mut overlay_glyphs, width, height, s);
 
+        // 19. 打印预览徽标（右下角，@media print 激活期间持久显示；Ctrl+P 切换。R1994）
+        self.render_print_preview_indicator(&mut overlay_fills, &mut overlay_glyphs, width, height, s);
+
         (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects)
+    }
+
+    /// 渲染打印预览徽标（DC-12 @media print；R1994）。
+    ///
+    /// `Ctrl+P` 切换打印预览（`toggle_print_preview`）后，`media_type == Print` 期间在页面
+    /// 右下角持久显示「Print Preview — Ctrl+P to exit」徽标，给用户明确反馈当前为打印
+    /// 媒体渲染（@media print 样式生效）。镜像 `render_zoom_indicator` 的右下角圆角浮层，
+    /// 但**无 3 秒自动隐藏**（持久态，随 toggle 消失）。
+    fn render_print_preview_indicator(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        _width: u32,
+        height: u32,
+        s: f32,
+    ) {
+        if self.font_id.is_none() {
+            return;
+        }
+        // 仅打印媒体类型激活时显示（Screen = 默认，不显示）。
+        if self.tabs.media_type() != zero_engine::MediaType::Print {
+            return;
+        }
+        let label = "Print Preview — Ctrl+P to exit";
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let label_w = self.measure_ui_text_width(label, font_size);
+        let pad_h = 12.0 * s;
+        let pad_v = 8.0 * s;
+        let box_w = label_w + pad_h * 2.0;
+        let box_h = font_size + pad_v * 2.0;
+        let margin = 16.0 * s;
+        // 左下角（避开右下角缩放浮层 + 滚动条）。
+        let box_x = margin;
+        let box_y = height as f32 - box_h - margin;
+        let radius = 8.0 * s;
+        let border = s.max(1.0);
+
+        push_rounded_rect_fill(fills, box_x, box_y, box_w, box_h, radius, self.chrome_palette.find_bar_border);
+        push_rounded_rect_fill(
+            fills,
+            box_x + border,
+            box_y + border,
+            box_w - 2.0 * border,
+            box_h - 2.0 * border,
+            radius - border,
+            self.chrome_palette.find_bar_bg,
+        );
+        self.draw_ui_text(
+            label,
+            box_x + pad_h,
+            box_y + pad_v,
+            font_size,
+            self.chrome_palette.find_bar_text,
+            glyphs,
+        );
     }
 
     /// 渲染缩放百分比浮层。zoom 操作后 3 秒内显示在页面右下角。
