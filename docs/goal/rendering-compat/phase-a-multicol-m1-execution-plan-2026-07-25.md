@@ -60,11 +60,11 @@ Phase A 硬阻塞 = **墙 ② multicol + 换行精度**（[`phase-a-IFC-unificat
   - auto + 定高（R900）：`multicol_info=None` + stored → use_stored=true → ✅ stored 消费。
   - block-children：`has_in_flow_children=true` → `multicol_info=None`，但 `store_inline_multicol_columns` `has_block_child→false` 不存 → `inline_layout=None` → use_stored=false → Path B 重跑。← **incr-B 目标**
 
-### incr-B：broaden R900 至 block-children multicol（M1 真增量）
-- 现 `has_block_child → return false`（line 264）。block-children multicol 走 `multicol.rs assign_children`（块级分片），不经 `store_inline_multicol_columns`。
-- 增量：让 block-children multicol 也存列分布 inline_layout（block 子跨列分片后，各列内 inline 内容存布局）。
-- **风险**：block-children 跨列分片 = multicol fragmentation（R109/blockfrag 谱系，R1870 Slice1 已部分）。与 inline-only 不同机制，可能需新分片接口。
-- **验证**：scoped css-multicol A/B（block-children 子集）；multicol-fill-auto-001 等仍 PASS。
+### incr-B：broaden R900 至 block-children multicol（M1 真增量）⚠ R2042 评估 = 结构性难
+- 现 `has_block_child → return false`（line 264）。block-children multicol 走 `multicol.rs assign_children_to_columns_{balanced,with_breaking,multirow,sequential}`（`multicol.rs` 1961 行）。
+- **R2042 关键评估**：block-children multicol 产出的是**逐列 block 放置**（哪个 block 进哪列），与 `store_inline_multicol_columns` 存的 `inline_layout`（Vec<InlineLayoutLine> 行盒）是**不同数据结构**。故 incr-B **非 R900 的简单 broaden**——须新存储「逐列 block 放置」+ paint 消费，属 **block fragmentation（R109/blockfrag 谱系，R1870 Slice1 仅部分解）**。
+- **裁决**：incr-B 是独立的 block-fragmentation 多 session 架构工作，非 M1（multicol-Path-A）的单点 broaden。勿以「broaden R900」框架单 session 重试。
+- **验证**：若启动，须先走 lei-spec-rfc 设计 block-children 逐列放置存储（与 R1870 Slice1 协调）。
 
 ### incr-C：broaden R900 至不定高 auto（须先解 height）
 - 现 `available_height<=0 → return false`。不定高 multicol 无列高预算 → 无法顺序填列。
@@ -112,4 +112,17 @@ Phase A 硬阻塞 = **墙 ② multicol + 换行精度**（[`phase-a-IFC-unificat
 
 ## 7. 下一步（next session）
 
-**从 incr-A 开始**（read-only 核验）：LAYOUT_DUMP + 像素实证 R900 stored 的 multicol 容器 paint 是否真走 stored 路径（确立「paint 消费 multicol stored」的真实代码路径，因 `painter/text.rs:609` 的 `multicol_info.is_none()` 与 R900「命中即按列渲染」注释似矛盾）。incr-A 确立路径后，incr-B（broaden 至 block-children）是 M1 真增量。balance（incr-C 同列的 ❌ 项）勿盲目重试（R902/R1422 net-negative）。
+**M1 tractable 领域已近穷尽**（R2042 评估）：R900（auto+inline-only+定高）已 LANDED；balance（R902/R1422 net-negative）；incr-B（block-children）结构性难（R109/blockfrag，非 R900 broaden）；incr-C（不定高 auto）spec 上 auto+height:auto 退化似 balance（moot，待实证）。故 M1 单点可推进空间小。
+
+**Phase A 真剩余**（M1 之外）：① Gate 2 放宽（让更多非-multicol 容器进 stored）仍被 R327 墙阻塞（REF-side float 切 Path A）——但 R900 已让 auto+定高 multicol 一致走 Path A，**部分缓解** test/ref 分歧（须重评 R327 在 R900 后是否仍硬阻塞）；② 墙 ③ Path A 多行非-Ahem 垂直定位（v_offset 语义）。建议下 session **重评 R327 墙在 R900-后是否仍成立**（R327 是 R900 前 verdict），若缓解则 Gate 2 放宽 + 墙③ 成 Phase A 真前线。
+
+## 8. M1 viable-limit 评估（R2042）
+
+M1（multicol Path A）tractable 子集经 R900 + 本计划四轮调查（R2039-R2042）**近穷尽**：
+- ✅ auto + inline-only + 定高（R900 LANDED，+1 oracle）。
+- ❌ balance（R902/R1422 net-negative，勿重试）。
+- ⚠ incr-B block-children（结构性难 = R109/blockfrag，非 M1 单点）。
+- ❓ incr-C 不定高 auto（spec moot，待实证）。
+- ✅ incr-A（paint 消费路径，R2041 确认）。
+
+**结论**：M1 作为「消灭 Path B 的多列墙 ②」的 tractable 部分基本完成（R900）。墙 ② 的残余（block-children）实为 block-fragmentation 独立轨。Phase A 前线应转向 Gate 2 放宽（重评 R327 post-R900）+ 墙 ③。
