@@ -168,7 +168,9 @@ fn test_fixed_is_viewport_relative_inside_offset_positioned_ancestor() {
 /// 第二趟把 img 恢复到固有尺寸、child 恢复到内容高度。
 #[test]
 fn test_r695_percent_height_indefinite_cb_computes_to_auto() {
-    let html = r#"<html><body style="margin:0">
+    // R2016：显式 <!DOCTYPE html> = standards mode（R695 compute-to-auto 是 standards 行为）。
+    // 无 doctype 会进 quirks mode，百分比高度按 viewport 解析（R2016 quirks fix），不再 compute-to-auto。
+    let html = r#"<!DOCTYPE html><html><body style="margin:0">
         <div id="grandparent" style="height:0px">
           <div id="parent">
             <div id="child" style="height:100%">

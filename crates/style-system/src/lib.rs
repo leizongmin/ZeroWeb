@@ -1467,20 +1467,12 @@ fn apply_quirks_mode_adjustments(
 ) {
     use zero_css_parser::values::{DisplayValue, LengthValue};
 
-    // 1. 百分比高度 quirks：
-    // 在 quirks mode 中，如果父元素（block-level container）的高度不是明确指定的，
-    // 则 block-level 子元素的 height: <percentage> 计算为 auto。
-    //
-    // 判断条件：父元素存在且父元素的 height 是 auto（而非明确指定值）
-    if let Some(parent) = parent_style {
-        let parent_height_is_auto = matches!(&parent.height, LengthValue::Auto);
-        if parent_height_is_auto {
-            // 如果当前元素 height 是百分比值，则回退为 auto
-            if let LengthValue::Percentage(_) = &style.height {
-                style.height = LengthValue::Auto;
-            }
-        }
-    }
+    // 1. （已移除，R2016）原「百分比高度 quirks」规则**反向**：它在 quirks mode 把
+    //    height:<percentage>（auto 父）compute-to-auto，但那是 **standards** 行为（CSS §10.5），
+    //    layout 的 `apply_indefinite_percent_height_to_auto` 已为 standards 实现。quirks mode 的
+    //    正确行为是百分比按 ICB（viewport）解析（「百分比高度生效」legacy 行为），由 layout 的
+    //    quirks 分支（R2016）处理。故本 style-system 规则删除——保留百分比，交 layout 按模式裁决。
+    let _ = parent_style; // 保留签名稳定（其他 quirks 规则未来可能用 parent_style）。
 
     // 2. 表格高度 quirks：
     // 在 quirks mode 下，<table> 元素的 height 被视为 min-height（CSS 2.1 §17.5.2）。
@@ -1509,6 +1501,9 @@ mod quirks_tests {
     /// 测试 quirks mode 下百分比高度回退为 auto
     ///
     /// 当父元素 height 为 auto 时，子元素的 height: <percentage> 应回退为 auto。
+    /// R2016：quirks mode 下百分比高度**保留**（不再 compute-to-auto）——layout 的
+    /// `apply_indefinite_percent_height_to_auto` quirks 分支按 ICB（viewport）解析。
+    /// （原规则反向：把 standards 的 compute-to-auto 误安到 quirks gate 上，已移除。）
     #[test]
     fn test_quirks_mode_percentage_height_fallback() {
         let mut child_style = ComputedStyle::default();
@@ -1521,8 +1516,8 @@ mod quirks_tests {
 
         assert_eq!(
             child_style.height,
-            LengthValue::Auto,
-            "Quirks mode should convert percentage height to auto when parent height is auto"
+            LengthValue::Percentage(50.0),
+            "Quirks mode must KEEP percentage height (resolved against viewport in layout), not convert to auto"
         );
     }
 

@@ -321,6 +321,7 @@ impl LayoutEngine {
             styles,
             &intrinsic_for_r695,
             self.viewport_height,
+            matches!(doc.quirks_mode(), zero_dom::QuirksMode::Quirks),
         );
         let changed_pct_padding =
             Self::resolve_percentage_padding(&mut taffy_tree, &root_box, &dom_to_taffy, styles, self.viewport_width);
@@ -1223,13 +1224,17 @@ impl LayoutEngine {
         styles: &HashMap<NodeId, ComputedStyle>,
         img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
         viewport_height: f32,
+        quirks_mode: bool,
     ) -> bool {
         use zero_css_parser::values::{BoxSizingValue, DisplayValue, LengthValue, PositionValue};
 
+        #[allow(clippy::too_many_arguments)]
         fn walk(
             b: &LayoutBox,
             cb_definite: Option<f32>,
             parent_is_flex_grid: bool,
+            quirks_mode: bool,
+            viewport_height: f32,
             taffy_tree: &mut TaffyTree<NodeId>,
             dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
             styles: &HashMap<NodeId, ComputedStyle>,
@@ -1256,33 +1261,56 @@ impl LayoutEngine {
                                 my_definite = Some(*p as f32 / 100.0 * cbh);
                             }
                             None => {
-                                // 不明确 CB → compute-to-auto：改写 taffy height 为 Auto。
-                                if let Some(id) = b.node_id
-                                    && let Some(&tid) = dom_to_taffy.get(&id)
-                                    && let Ok(mut st) = taffy_tree.style(tid).cloned()
-                                {
-                                    st.size.height = taffy::style::Dimension::auto();
-                                    // 替换元素补设固有绝对尺寸：taffy 需要绝对值才能
-                                    // 在两侧 auto 时定尺寸（aspect_ratio 只够推导比例）。
-                                    if b.is_replaced
-                                        && let Some(&(iw, ih)) = img_intrinsic_sizes.get(&id)
+                                if quirks_mode && !b.is_replaced {
+                                    // R2016 quirks mode（CSS quirks §percentage-height）：不明确 CB
+                                    //（auto 父）的百分比 height 按 ICB（viewport）高解析——legacy
+                                    // 「百分比高度生效」行为（chromium quirks 实测）。非替换块专用
+                                    //（替换元素保留固有尺寸回退）。box-sizing 折算内容高供子链解析。
+                                    let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                                    let resolved = (*p as f32 / 100.0 * viewport_height).max(0.0);
+                                    if let Some(id) = b.node_id
+                                        && let Some(&tid) = dom_to_taffy.get(&id)
+                                        && let Ok(mut st) = taffy_tree.style(tid).cloned()
                                     {
-                                        let iw = iw.max(1.0);
-                                        let ih = ih.max(1.0);
-                                        if matches!(s.width, LengthValue::Auto) {
-                                            st.size.width = taffy::style::Dimension::length(iw);
-                                        }
-                                        st.size.height = taffy::style::Dimension::length(ih);
-                                        if st.aspect_ratio.is_none() {
-                                            st.aspect_ratio = Some(iw / ih);
-                                        }
+                                        st.size.height = taffy::style::Dimension::length(resolved);
+                                        let _ = taffy_tree.set_style(tid, st);
+                                        let _ = taffy_tree.mark_dirty(tid);
+                                        changed = true;
                                     }
-                                    let _ = taffy_tree.set_style(tid, st);
-                                    let _ = taffy_tree.mark_dirty(tid);
-                                    changed = true;
+                                    my_definite = Some(if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
+                                        (resolved - pb).max(0.0)
+                                    } else {
+                                        resolved
+                                    });
+                                } else {
+                                    // standards 或替换元素：compute-to-auto：改写 taffy height 为 Auto。
+                                    if let Some(id) = b.node_id
+                                        && let Some(&tid) = dom_to_taffy.get(&id)
+                                        && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                                    {
+                                        st.size.height = taffy::style::Dimension::auto();
+                                        // 替换元素补设固有绝对尺寸：taffy 需要绝对值才能
+                                        // 在两侧 auto 时定尺寸（aspect_ratio 只够推导比例）。
+                                        if b.is_replaced
+                                            && let Some(&(iw, ih)) = img_intrinsic_sizes.get(&id)
+                                        {
+                                            let iw = iw.max(1.0);
+                                            let ih = ih.max(1.0);
+                                            if matches!(s.width, LengthValue::Auto) {
+                                                st.size.width = taffy::style::Dimension::length(iw);
+                                            }
+                                            st.size.height = taffy::style::Dimension::length(ih);
+                                            if st.aspect_ratio.is_none() {
+                                                st.aspect_ratio = Some(iw / ih);
+                                            }
+                                        }
+                                        let _ = taffy_tree.set_style(tid, st);
+                                        let _ = taffy_tree.mark_dirty(tid);
+                                        changed = true;
+                                    }
+                                    // 现为 auto（内容决定）→ 子元素 CB 不明确。
+                                    my_definite = None;
                                 }
-                                // 现为 auto（内容决定）→ 子元素 CB 不明确。
-                                my_definite = None;
                             }
                         },
                         LengthValue::Px(v) => {
@@ -1315,6 +1343,8 @@ impl LayoutEngine {
                     child,
                     my_definite,
                     child_parent_flex_grid,
+                    quirks_mode,
+                    viewport_height,
                     taffy_tree,
                     dom_to_taffy,
                     styles,
@@ -1328,6 +1358,8 @@ impl LayoutEngine {
             root,
             Some(viewport_height),
             false,
+            quirks_mode,
+            viewport_height,
             taffy_tree,
             dom_to_taffy,
             styles,

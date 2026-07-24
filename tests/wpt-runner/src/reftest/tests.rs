@@ -614,6 +614,38 @@ fn test_replaced_collapse_flags_zero_size_img() {
 }
 
 #[test]
+fn r2016_quirks_mode_percent_height_resolves_against_viewport() {
+    let count_red = |fb: &zero_render_foundation::surface::FrameBuffer| -> usize {
+        let mut n = 0usize;
+        for px in fb.data.chunks_exact(4) {
+            if px[0] > 240 && px[1] < 15 && px[2] < 15 {
+                n += 1;
+            }
+        }
+        n
+    };
+    let cfg = ReftestConfig::default(); // 800×600
+    // 无 doctype → html5ever Quirks；<!DOCTYPE html> → NoQuirks。div height:50% of auto body。
+    let quirks = "<html><body style=\"margin:0\"><div style=\"height:50%;background:red\"></div></body></html>";
+    let standards =
+        "<!DOCTYPE html><html><body style=\"margin:0\"><div style=\"height:50%;background:red\"></div></body></html>";
+    let (fb_q, _, _) = render_to_framebuffer_with_layout_with_base(quirks, "", &cfg, None);
+    let (fb_s, _, _) = render_to_framebuffer_with_layout_with_base(standards, "", &cfg, None);
+    let red_q = count_red(&fb_q);
+    let red_s = count_red(&fb_s);
+    // quirks：height:50% 按 ICB（viewport 600）解析 → 300px 高 × 800 宽 ≈ 240000 red。
+    assert!(
+        red_q > 200_000,
+        "quirks mode height:50% 须按 viewport 解析（≈240000 red），got {red_q}"
+    );
+    // standards：height:50% of auto body = indefinite → 空 div auto/0 高 ≈ 0 red。
+    assert!(
+        red_s < 5_000,
+        "standards mode height:50% of auto parent 须 indefinite（≈0 red），got {red_s}"
+    );
+}
+
+#[test]
 fn test_reftest_config_default() {
     let config = ReftestConfig::default();
     assert_eq!(config.viewport_width, 800);
