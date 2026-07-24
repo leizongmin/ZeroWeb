@@ -619,4 +619,69 @@ mod tests {
         assert_eq!(n2, n1, "clearInterval should stop the interval (n stayed {n1})");
         worker.shutdown();
     }
+
+    #[test]
+    fn renderer_js_worker_mutation_observer_childlist() {
+        // P1b S2 incr1（镜像 browser）：MutationObserver handle-based，JS 创建子树。
+        let mut worker = RendererJsWorker::spawn(11);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;
+                 var obs = new MutationObserver(function(records){
+                   globalThis.__seen = records[0].type + ':' + records[0].addedNodes.length;
+                 });
+                 var root = document.createElement('div');
+                 obs.observe(root, { childList: true });
+                 root.appendChild(document.createElement('span'));",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "childList:1");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_mutation_observer_attributes() {
+        // P1b S2 incr1（镜像 browser）：attributes 观测。
+        let mut worker = RendererJsWorker::spawn(12);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;
+                 var obs = new MutationObserver(function(records){
+                   globalThis.__seen = records[0].type + ':' + records[0].attributeName;
+                 });
+                 var el = document.createElement('div');
+                 obs.observe(el, { attributes: true });
+                 el.setAttribute('data-x', '1');",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "attributes:data-x");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_mutation_observer_disconnect() {
+        // P1b S2 incr1（镜像 browser）：disconnect 后不再派发。
+        let mut worker = RendererJsWorker::spawn(13);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;
+                 var obs = new MutationObserver(function(records){ globalThis.__seen = 'fired'; });
+                 var el = document.createElement('div');
+                 obs.observe(el, { attributes: true });
+                 obs.disconnect();
+                 el.setAttribute('data-x', '1');",
+            )
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "null"
+        );
+        worker.shutdown();
+    }
 }

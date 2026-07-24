@@ -128,6 +128,74 @@
     delete globalThis.__zw_pending[_timerIdKey(handle)];
   };
 
+  // ── P1b S2 incr1：MutationObserver（handle-based，JS 侧拦截 + microtask 派发）──
+  // 节点身份复用既有 `__zwHandle`（NodeRegistry）——v8::External 真 object identity（===）
+  // 非功能必需（RFC「须 v8::External」纠正：handle 已足够）。`observe(target, options)` 注册
+  // handle→options；`_makeProxy` 的 setAttribute/appendChild/etc. 调 `_mo_notify` 排队记录；
+  // `_defer`（microtask）派发回调（spec §4 microtask 语义）。incr1 限制：仅观测 JS 驱动的
+  // mutation（host 侧 `__zw_dispatch_event` 等不触发）；支持 attributes + childList。
+  globalThis.__zw_mo_observers = globalThis.__zw_mo_observers || [];
+  var _moFlushScheduled = false;
+
+  // 把一条 mutation 记录投递给所有观测 `handle` 且 options 匹配的 observer。
+  // 每个 observer 拿独立 record 副本（target 指向各自 observe() 时的 proxy）。
+  function _mo_notify(handle, baseRecord) {
+    if (handle == null) return;
+    var observers = globalThis.__zw_mo_observers;
+    for (var i = 0; i < observers.length; i++) {
+      var obs = observers[i];
+      var opts = obs._targets[handle];
+      if (!opts) continue;
+      if (baseRecord.type === 'attributes' && !opts.attributes) continue;
+      if (baseRecord.type === 'childList' && !opts.childList) continue;
+      var rec = {};
+      for (var k in baseRecord) rec[k] = baseRecord[k];
+      rec.target = obs._targetProxies[handle];
+      obs._records.push(rec);
+      _mo_scheduleFlush();
+    }
+  }
+  function _mo_scheduleFlush() {
+    if (_moFlushScheduled) return;
+    _moFlushScheduled = true;
+    _defer(function() {
+      _moFlushScheduled = false;
+      var observers = globalThis.__zw_mo_observers;
+      for (var i = 0; i < observers.length; i++) {
+        var obs = observers[i];
+        if (obs._records.length > 0) {
+          var records = obs._records;
+          obs._records = [];
+          try { obs._callback(records, obs); } catch (_e) {}
+        }
+      }
+    });
+  }
+
+  globalThis.MutationObserver = function(callback) {
+    this._callback = callback;
+    this._targets = {};       // handle -> options
+    this._targetProxies = {}; // handle -> observe() 时传入的 proxy（record.target 用）
+    this._records = [];
+    globalThis.__zw_mo_observers.push(this);
+  };
+  globalThis.MutationObserver.prototype.observe = function(target, options) {
+    if (!target || target.__zwHandle == null) return;
+    var h = target.__zwHandle;
+    var opts = options || {};
+    this._targets[h] = opts;
+    this._targetProxies[h] = target;
+  };
+  globalThis.MutationObserver.prototype.disconnect = function() {
+    this._targets = {};
+    this._targetProxies = {};
+  };
+  globalThis.MutationObserver.prototype.takeRecords = function() {
+    var r = this._records;
+    this._records = [];
+    return r;
+  };
+
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
   // 同步立即执行回调即可让 setup mutation 被记录并应用到二次渲染（镜像 setTimeout 的 microtask 语义，
@@ -506,6 +574,7 @@
             set: function(_s, p, v) {
               if (handle) __zw_set_style_handle(handle, String(p), String(v));
               else __zw_set_style(sel, String(p), String(v));
+              _mo_notify(handle, { type: 'attributes', attributeName: 'style' });
               return true;
             },
             get: function(_s, p) {
@@ -560,12 +629,14 @@
           return function(name, value) {
             if (handle) __zw_set_attr_handle(handle, name, String(value));
             else __zw_set_attr(sel, name, String(value));
+            _mo_notify(handle, { type: 'attributes', attributeName: String(name) });
           };
         }
         if (prop === 'removeAttribute') {
           return function(name) {
             if (handle) __zw_set_attr_handle(handle, name, '');
             else __zw_set_attr(sel, name, '');
+            _mo_notify(handle, { type: 'attributes', attributeName: String(name) });
           };
         }
         if (prop === 'addEventListener') {
@@ -609,6 +680,7 @@
             if (child && child.__zwHandle) {
               if (handle) __zw_append_child_handle(handle, child.__zwHandle);
               else __zw_append_child(sel, child.__zwHandle);
+              _mo_notify(handle, { type: 'childList', addedNodes: [child], removedNodes: [] });
             }
             return child;
           };
@@ -617,6 +689,7 @@
           return function(child) {
             if (child && child.__zwHandle) {
               __zw_remove_handle(child.__zwHandle);
+              _mo_notify(handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
             }
             return child;
           };
@@ -633,6 +706,7 @@
                 else __zw_insert_before(sel, newNode.__zwHandle, refNode.__zwSelector);
               }
               // refNode 为 create 句柄（无 selector）时不支持（罕见）。
+              _mo_notify(handle, { type: 'childList', addedNodes: [newNode], removedNodes: [] });
             }
             return newNode;
           };
@@ -648,18 +722,24 @@
         // createTextNode 回调，无需新增 Rust 端 callback。
         if (prop === 'append') {
           return function() {
+            var added = [];
             for (var i = 0; i < arguments.length; i++) {
               var item = arguments[i];
               if (item == null) continue;
               if (typeof item === 'object' && item.__zwHandle) {
                 if (handle) __zw_append_child_handle(handle, item.__zwHandle);
                 else __zw_append_child(sel, item.__zwHandle);
+                added.push(item);
               } else {
                 var txt = String(item);
                 var tn = __zw_create_text(txt);
                 if (handle) __zw_append_child_handle(handle, tn);
                 else __zw_append_child(sel, tn);
+                added.push({ __zwHandle: tn, __zwSelector: '' });
               }
+            }
+            if (added.length > 0) {
+              _mo_notify(handle, { type: 'childList', addedNodes: added, removedNodes: [] });
             }
             return undefined;
           };

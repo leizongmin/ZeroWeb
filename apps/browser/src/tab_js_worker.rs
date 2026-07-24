@@ -663,4 +663,71 @@ mod tests {
         assert_eq!(n2, n1, "clearInterval should stop the interval (n stayed {n1})");
         worker.shutdown();
     }
+
+    #[test]
+    fn tab_js_worker_mutation_observer_childlist() {
+        // P1b S2 incr1：MutationObserver（handle-based，JS 创建子树）。observe(createElement'd
+        // root, {childList:true}) → appendChild → microtask 派发回调（records[0].type=childList）。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(11));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;
+                 var obs = new MutationObserver(function(records){
+                   globalThis.__seen = records[0].type + ':' + records[0].addedNodes.length;
+                 });
+                 var root = document.createElement('div');
+                 obs.observe(root, { childList: true });
+                 root.appendChild(document.createElement('span'));",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "childList:1");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_mutation_observer_attributes() {
+        // P1b S2 incr1：attributes 观测——setAttribute → records[0].attributeName。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(12));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;
+                 var obs = new MutationObserver(function(records){
+                   globalThis.__seen = records[0].type + ':' + records[0].attributeName;
+                 });
+                 var el = document.createElement('div');
+                 obs.observe(el, { attributes: true });
+                 el.setAttribute('data-x', '1');",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "attributes:data-x");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_mutation_observer_disconnect() {
+        // P1b S2 incr1：disconnect 后不再派发——回调永不触发。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(13));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;
+                 var obs = new MutationObserver(function(records){ globalThis.__seen = 'fired'; });
+                 var el = document.createElement('div');
+                 obs.observe(el, { attributes: true });
+                 obs.disconnect();
+                 el.setAttribute('data-x', '1');",
+            )
+            .unwrap();
+        // 等过任何 microtask flush 窗口。
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "null"
+        );
+        worker.shutdown();
+    }
 }
