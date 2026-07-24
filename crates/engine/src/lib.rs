@@ -27,9 +27,11 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod animation;
+pub mod async_resolver;
 pub mod composite;
 pub mod dirty;
 pub mod dom_bridge;
+pub mod fetch_bridge;
 pub mod hit_test;
 pub mod js_dom_bridge;
 pub mod paint;
@@ -40,9 +42,11 @@ pub mod text_metrics;
 pub mod transition;
 
 pub use animation::*;
+pub use async_resolver::*;
 pub use composite::*;
 pub use dirty::*;
 pub use dom_bridge::*;
+pub use fetch_bridge::*;
 pub use hit_test::*;
 pub use js_dom_bridge::*;
 pub use paint::*;

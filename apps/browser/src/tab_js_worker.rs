@@ -7,7 +7,9 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use zero_browser_shell::TabId;
-use zero_engine::{DomMutation, generate_js_dom_shim, register_dom_callbacks};
+use zero_engine::{
+    AsyncResolver, DomMutation, FetchBridge, FetchHandler, generate_js_dom_shim, register_dom_callbacks,
+};
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
     extract_module_import_specifiers,
@@ -26,10 +28,6 @@ fn channel_timeout_for(exec_timeout_ms: u64) -> Duration {
 type ScriptFn = Arc<dyn Fn(&str, u64) -> Result<String, String> + Send + Sync>;
 type ModuleFn = Arc<dyn Fn(&str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
 type ExecutorFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
-/// P1b S3：JS `fetch(url)` 的抓取函数类型（同步返 response body 文本或 error）。
-/// tab_worker 在 WebView 初始化后注入（chicken-and-egg：js_worker 早于 WebView）；
-/// 测试用合成实现（无网络）。生产异步化（非阻塞 fetch_host Receiver）= incr-b。
-type FetchHandler = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 
 enum JsWorkerCommand {
     Execute {
@@ -62,28 +60,6 @@ enum JsWorkerCommand {
         handler: FetchHandler,
     },
     Shutdown,
-}
-
-/// 异步回调 resolver（P1b S1 incr3 / S3 prep）——克隆供跨线程异步完成方（fetch host /
-/// 定时器）持有，把 `(id, result)` 投递回 JS worker 线程 resolve 对应 Promise。
-///
-/// 内部 `Arc<Mutex<Sender>>`：`mpsc::Sender` 是 `Send` 但**非 `Sync`**，无法直接被
-/// `register_callback` 要求的 `Send + Sync` 闭包捕获（S3 `__zw_fetch` 等回调所需）。
-/// `Mutex` 赋予 `Sync`，`Arc` 赋予多异步完成方共享克隆。故 `AsyncResolver: Send + Sync + Clone`。
-#[derive(Clone)]
-pub struct AsyncResolver {
-    cmd_tx: Arc<std::sync::Mutex<Sender<JsWorkerCommand>>>,
-}
-
-impl AsyncResolver {
-    /// 投递一次异步 resolve（fire-and-forget）。JS worker 收到后执行
-    /// `__zwResolveCallback(id, result)` resolve pending Promise。
-    pub fn resolve(&self, id: &str, result: &str) {
-        let _ = self.cmd_tx.lock().unwrap().send(JsWorkerCommand::ResolveAsyncCallback {
-            id: id.to_string(),
-            result: result.to_string(),
-        });
-    }
 }
 
 /// 专用 JS worker 句柄（每 Tab 一个）。
@@ -186,9 +162,13 @@ impl TabJsWorkerHandle {
     /// 定时器）持有，`resolver.resolve(id, result)` 经 cmd channel marshal 回 JS worker
     /// 线程，由 worker 调 `sandbox.resolve_async_callback` resolve 对应 Promise。
     pub fn async_resolver(&self) -> AsyncResolver {
-        AsyncResolver {
-            cmd_tx: Arc::new(std::sync::Mutex::new(self.cmd_tx.clone())),
-        }
+        let tx = Arc::new(std::sync::Mutex::new(self.cmd_tx.clone()));
+        AsyncResolver::new(move |id, result| {
+            let _ = tx.lock().unwrap().send(JsWorkerCommand::ResolveAsyncCallback {
+                id: id.to_string(),
+                result: result.to_string(),
+            });
+        })
     }
 
     /// P1b S3 incr-a：注入 fetch handler（解 chicken-and-egg——tab_worker 在 WebView
@@ -233,14 +213,20 @@ fn js_worker_main(
     let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url);
     register_module_compile_callback(&mut *sandbox);
-    // P1b S3 incr-a：fetch handler cell（chicken-and-egg——tab_worker 经 SetFetchHandler
-    // 命令在 WebView 初始化后注入；未注入时 __zw_fetch resolve 错误 Promise）。
-    let fetch_handler: Arc<std::sync::Mutex<Option<FetchHandler>>> = Arc::new(std::sync::Mutex::new(None));
-    // AsyncResolver 供 __zw_fetch 回调 resolve Promise（复用 S1 通路）。
-    let resolver = AsyncResolver {
-        cmd_tx: Arc::new(std::sync::Mutex::new(cmd_tx)),
-    };
-    register_fetch_callback(&mut *sandbox, &fetch_handler, resolver);
+    // P1b S1/S3：AsyncResolver（跨线程 resolve Promise）+ FetchBridge（__zw_fetch 注册 +
+    // handler cell）。fetch_bridge 经 SetFetchHandler 命令在 WebView 初始化后注入生产 handler
+    // （chicken-and-egg——js_worker spawn 早于 WebView）；未注入时 __zw_fetch resolve 错误 Promise。
+    let resolver = AsyncResolver::new({
+        let tx = Arc::new(std::sync::Mutex::new(cmd_tx));
+        move |id, result| {
+            let _ = tx.lock().unwrap().send(JsWorkerCommand::ResolveAsyncCallback {
+                id: id.to_string(),
+                result: result.to_string(),
+            });
+        }
+    });
+    let fetch_bridge = FetchBridge::new(resolver);
+    fetch_bridge.register(&mut *sandbox);
     let shim = generate_js_dom_shim();
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
@@ -283,46 +269,11 @@ fn js_worker_main(
             }
             JsWorkerCommand::SetFetchHandler { handler } => {
                 // P1b S3 incr-a：注入 fetch handler（tab_worker 在 WebView 初始化后发送）。
-                if let Ok(mut cell) = fetch_handler.lock() {
-                    *cell = Some(handler);
-                }
+                fetch_bridge.set_handler(handler);
             }
             JsWorkerCommand::Shutdown => break,
         }
     }
-}
-
-/// P1b S3 incr-a：注册 `__zw_fetch(id, url)` 回调。JS `fetch(url)` 经 shim 生成 ID +
-/// 存 pending Promise 后调本回调。**非阻塞**（incr-d）：回调克隆 handler Option +
-/// resolver 后**立即返回**，子线程抓取（`h(url)` / `fetch_text_async.recv`）+ 异步
-/// `resolver.resolve`——JS worker 不在 fetch 期间冻结。handler 未注入时子线程 resolve
-/// 错误标记。代价：resolve 时机非确定（异步），fetch 测试改 polling（见 wait_for_global）。
-fn register_fetch_callback(
-    sandbox: &mut dyn zero_script_sandbox::Sandbox,
-    fetch_handler: &Arc<std::sync::Mutex<Option<FetchHandler>>>,
-    resolver: AsyncResolver,
-) {
-    let handler_cell = Arc::clone(fetch_handler);
-    sandbox.register_callback(
-        "__zw_fetch",
-        Box::new(move |args: &[String]| -> String {
-            let id = args.first().cloned().unwrap_or_default();
-            let url = args.get(1).cloned().unwrap_or_default();
-            // 非阻塞：锁内仅克隆 handler Option（FetchHandler=Arc，廉价），立即释放锁；
-            // 抓取在子线程进行，不阻塞 JS worker。
-            let handler_opt: Option<FetchHandler> = handler_cell.lock().ok().and_then(|c| c.as_ref().cloned());
-            let resolver_clone = resolver.clone();
-            std::thread::spawn(move || {
-                let result = match handler_opt {
-                    Some(h) => h(&url).unwrap_or_else(|e| format!("__zw_fetch_error:{e}")),
-                    None => "__zw_fetch_error:no-handler".to_string(),
-                };
-                // 排队 ResolveAsyncCallback（worker 处理 → resolve Promise + drain .then）。
-                resolver_clone.resolve(&id, &result);
-            });
-            String::new()
-        }),
-    );
 }
 
 /// P1b S3 incr-b/d：生产 fetch handler——经 `zero_webview::fetch_text_async`（net pool

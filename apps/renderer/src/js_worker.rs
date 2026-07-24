@@ -6,11 +6,14 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use zero_engine::{DomMutation, generate_js_dom_shim, register_dom_callbacks};
+use zero_engine::{
+    AsyncResolver, DomMutation, FetchBridge, FetchHandler, generate_js_dom_shim, register_dom_callbacks,
+};
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
     extract_module_import_specifiers,
 };
+use zero_webview::fetch_text_async;
 
 const TAB_JS_EXEC_TIMEOUT_MS: u64 = 15_000;
 const TAB_JS_CHANNEL_TIMEOUT: Duration = Duration::from_millis(TAB_JS_EXEC_TIMEOUT_MS + 5_000);
@@ -33,6 +36,17 @@ enum JsWorkerCommand {
         html: String,
         url: String,
     },
+    /// P1b S1：跨线程异步回调 resolve（marshal channel）。任意线程经
+    /// [`RendererJsWorker::async_resolver`] 投递 (id, result)，JS worker 收到后调
+    /// `sandbox.resolve_async_callback`（执行 shim 的 `__zwResolveCallback` resolve Promise）。
+    ResolveAsyncCallback {
+        id: String,
+        result: String,
+    },
+    /// P1b S3：注入 fetch handler（renderer 在 WebView 初始化后发送；测试用合成 handler）。
+    SetFetchHandler {
+        handler: FetchHandler,
+    },
     Shutdown,
 }
 
@@ -52,12 +66,13 @@ impl RendererJsWorker {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
+        let cmd_for_worker = cmd_tx.clone();
         let mutations_for_worker = Arc::clone(&mutations);
 
         let join = thread::Builder::new()
             .name(format!("renderer-js-{}", renderer_id))
-            .spawn(move || js_worker_main(cmd_rx, mutations_for_worker))
-            .expect("spawn tab js worker");
+            .spawn(move || js_worker_main(cmd_rx, cmd_for_worker, mutations_for_worker))
+            .expect("spawn renderer js worker");
 
         let executor: ScriptFn = Arc::new(move |script: &str| {
             let (reply_tx, reply_rx) = mpsc::channel();
@@ -125,6 +140,26 @@ impl RendererJsWorker {
         Arc::clone(&self.mutations)
     }
 
+    /// 返回异步回调 resolver（P1b S1）。克隆供跨线程异步完成方（fetch host / 定时器）持有，
+    /// `resolver.resolve(id, result)` 经 cmd channel marshal 回 JS worker 线程，由 worker 调
+    /// `sandbox.resolve_async_callback` resolve 对应 Promise。
+    #[allow(dead_code)] // 未来 setTimeout / MutationObserver 跨线程完成方消费（S5/S2）。
+    pub fn async_resolver(&self) -> AsyncResolver {
+        let tx = Arc::new(std::sync::Mutex::new(self.cmd_tx.clone()));
+        AsyncResolver::new(move |id, result| {
+            let _ = tx.lock().unwrap().send(JsWorkerCommand::ResolveAsyncCallback {
+                id: id.to_string(),
+                result: result.to_string(),
+            });
+        })
+    }
+
+    /// P1b S3：注入 fetch handler（renderer 在 WebView 初始化后调用；测试用合成实现）。
+    /// `__zw_fetch` 回调读此 handler 抓取后 resolve Promise。
+    pub fn set_fetch_handler(&self, handler: FetchHandler) {
+        let _ = self.cmd_tx.send(JsWorkerCommand::SetFetchHandler { handler });
+    }
+
     /// 关闭 JS 线程。
     pub fn shutdown(&mut self) {
         let _ = self.cmd_tx.send(JsWorkerCommand::Shutdown);
@@ -140,7 +175,11 @@ impl Drop for RendererJsWorker {
     }
 }
 
-fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>) {
+fn js_worker_main(
+    cmd_rx: Receiver<JsWorkerCommand>,
+    cmd_tx: Sender<JsWorkerCommand>,
+    mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
+) {
     let js_config = SandboxConfig {
         persistent_context: true,
         timeout_ms: TAB_JS_EXEC_TIMEOUT_MS,
@@ -156,6 +195,20 @@ fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::M
     let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url);
     register_module_compile_callback(&mut *sandbox);
+    // P1b S1/S3：AsyncResolver（跨线程 resolve Promise）+ FetchBridge（__zw_fetch 注册 +
+    // handler cell）。fetch_bridge 经 SetFetchHandler 命令在 WebView 初始化后注入生产 handler
+    // （chicken-and-egg——js_worker spawn 早于 WebView）；未注入时 __zw_fetch resolve 错误 Promise。
+    let resolver = AsyncResolver::new({
+        let tx = Arc::new(std::sync::Mutex::new(cmd_tx));
+        move |id, result| {
+            let _ = tx.lock().unwrap().send(JsWorkerCommand::ResolveAsyncCallback {
+                id: id.to_string(),
+                result: result.to_string(),
+            });
+        }
+    });
+    let fetch_bridge = FetchBridge::new(resolver);
+    fetch_bridge.register(&mut *sandbox);
     let shim = generate_js_dom_shim();
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
@@ -185,9 +238,34 @@ fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::M
                     *u = url;
                 }
             }
+            JsWorkerCommand::ResolveAsyncCallback { id, result } => {
+                // P1b S1：跨线程 marshal 到此——在 JS worker 线程调 resolve_async_callback
+                // （执行 shim 的 __zwResolveCallback resolve Promise）。
+                sandbox.resolve_async_callback(&id, &result);
+            }
+            JsWorkerCommand::SetFetchHandler { handler } => {
+                // P1b S3：注入 fetch handler（renderer 在 WebView 初始化后发送）。
+                fetch_bridge.set_handler(handler);
+            }
             JsWorkerCommand::Shutdown => break,
         }
     }
+}
+
+/// P1b S3：生产 fetch handler——经 `zero_webview::fetch_text_async`（net pool 自动 OnceLock
+/// 初始化）发起 HTTP GET，`recv()` 等 response body。renderer 进程直接联网（与 browser
+/// `tab_js_worker::default_fetch_handler` 同实现；net pool 共享）。
+///
+/// `FetchBridge::register` 在**子线程**调本 handler（`recv()` 阻塞子线程，非 JS worker），
+/// 故 JS worker 不在 fetch 期间冻结。response 为 body 字符串（Response 对象 spec-compliance
+/// 由 shim `_makeResponse` 在 JS 侧包装）。
+pub fn default_fetch_handler() -> FetchHandler {
+    Arc::new(|url: &str| {
+        fetch_text_async(url)
+            .recv()
+            .map_err(|e| format!("fetch recv: {e}"))
+            .and_then(|r| r)
+    })
 }
 
 fn execute_module_in_sandbox(
@@ -301,5 +379,178 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
     }
     fn mutations(&self) -> Arc<std::sync::Mutex<Vec<zero_engine::DomMutation>>> {
         self.mutations()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// P1b S3 incr-d（镜像 browser tab_js_worker）：非阻塞 fetch 的 resolve 时机异步——
+    /// 轮询 `globalThis.{key}` 直到非 undefined（或超时返当前值）。子线程抓取 → generous
+    /// 超时下可靠（非 flaky）。
+    fn wait_for_global(worker: &RendererJsWorker, key: &str, timeout_ms: u64) -> String {
+        let start = std::time::Instant::now();
+        let probe = format!("String(globalThis.{key})");
+        loop {
+            if let Ok(v) = worker.execute_script_direct(&probe)
+                && v != "undefined"
+            {
+                return v;
+            }
+            if start.elapsed().as_millis() >= timeout_ms as u128 {
+                return worker.execute_script_direct(&probe).unwrap_or_default();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn renderer_js_worker_async_resolver_delivers_cross_command() {
+        // P1b S1（镜像 browser）：跨命令 marshal 验证。JS 建 pending Promise → 主线程经
+        // async_resolver().resolve() 投递 ResolveAsyncCallback → worker FIFO 后于该命令的
+        // 下一条 Execute 读到已 resolve 的 __result。
+        let mut worker = RendererJsWorker::spawn(1);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        let init = worker.execute_script_direct(
+            "new Promise(function(resolve){ globalThis.__zw_pending['r1'] = resolve; })
+                 .then(function(v){ globalThis.__result = v; });",
+        );
+        assert!(init.is_ok(), "init script should succeed: {:?}", init.err());
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.__result").unwrap(),
+            "undefined"
+        );
+        let resolver = worker.async_resolver();
+        resolver.resolve("r1", "delivered!");
+        // FIFO：resolve 命令先于下一条 Execute 入队 → worker 先 resolve 后读。
+        assert_eq!(
+            worker.execute_script_direct("globalThis.__result").unwrap(),
+            "delivered!"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_async_resolver_safe_for_unknown_id() {
+        // 未知 id（无 pending resolver）经 shim 防御分支静默 no-op，不报错/不崩溃。
+        let mut worker = RendererJsWorker::spawn(2);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker.async_resolver().resolve("nonexistent-id", "v");
+        assert_eq!(worker.execute_script_direct("1 + 2").unwrap(), "3");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_async_resolver_usable_from_other_thread() {
+        // AsyncResolver: Send（可 move 到子线程）+ Arc<Mutex> clone 跨线程工作
+        // （仿真实 fetch host / 定时器跨线程完成）。
+        let mut worker = RendererJsWorker::spawn(3);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "new Promise(function(r){ globalThis.__zw_pending['t1'] = r; })
+                 .then(function(v){ globalThis.__result = v; });",
+            )
+            .unwrap();
+        let resolver = worker.async_resolver();
+        let handle = std::thread::spawn(move || {
+            resolver.resolve("t1", "from-thread!");
+        });
+        handle.join().unwrap();
+        assert_eq!(
+            worker.execute_script_direct("globalThis.__result").unwrap(),
+            "from-thread!"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_fetch_resolves_via_handler() {
+        // P1b S3（镜像 browser）：fetch 经 __zw_fetch 回调 + handler 抓取 + resolver.resolve
+        // 端到端。合成 handler 返 body:<url>；resolve Response 对象（r.text() 取 body）。
+        let mut worker = RendererJsWorker::spawn(4);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker.set_fetch_handler(Arc::new(|url: &str| Ok(format!("body:{url}"))));
+        worker
+            .execute_script_direct(
+                "fetch('/hello').then(function(r){ return r.text(); })
+                 .then(function(t){ globalThis.__result = t; });",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__result", 1000);
+        assert_eq!(r, "body:/hello");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_fetch_without_handler_resolves_error() {
+        // 未注入 handler 时 __zw_fetch resolve 错误标记 → Response.ok=false（不悬挂）。
+        let mut worker = RendererJsWorker::spawn(5);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct("fetch('/x').then(function(r){ globalThis.__result = r.ok ? 'OK' : 'ERR'; });")
+            .unwrap();
+        let r = wait_for_global(&worker, "__result", 1000);
+        assert_eq!(r, "ERR");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_fetch_response_object_shape_and_json() {
+        // P1b S3 incr-c（镜像 browser）：Response 对象 spec-compliance（ok/status/text()/json()）。
+        let mut worker = RendererJsWorker::spawn(7);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker.set_fetch_handler(Arc::new(|_url: &str| Ok("{\"key\":\"value\",\"n\":42}".to_string())));
+        worker
+            .execute_script_direct(
+                "fetch('/j').then(function(r){
+                   globalThis.__shape = r.ok + ':' + r.status;
+                   return r.json();
+                 }).then(function(o){ globalThis.__result = o.key + '/' + o.n; });",
+            )
+            .unwrap();
+        assert_eq!(wait_for_global(&worker, "__shape", 1000), "true:200");
+        assert_eq!(wait_for_global(&worker, "__result", 1000), "value/42");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_default_fetch_handler_real_http() {
+        // P1b S3（镜像 browser）：生产 default_fetch_handler 经 net pool 真实 HTTP GET。
+        // 本地 HTTP server（127.0.0.1）服务固定 body——不依赖外部网络。非阻塞：子线程 recv
+        // （不冻结 JS worker），测试 polling（3s 超时，本地 fetch ~ms）。
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind local server");
+        let port = listener.local_addr().expect("local addr").port();
+        let server = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf); // 丢弃请求行
+                let body = "hello-from-renderer";
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+        let mut worker = RendererJsWorker::spawn(6);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker.set_fetch_handler(default_fetch_handler());
+        let url = format!("http://127.0.0.1:{port}/data");
+        worker
+            .execute_script_direct(&format!(
+                "fetch({:?}).then(function(r){{ return r.text(); }})
+                 .then(function(t){{ globalThis.__result = t; }});",
+                url
+            ))
+            .unwrap();
+        let r = wait_for_global(&worker, "__result", 3000);
+        assert_eq!(r, "hello-from-renderer");
+        worker.shutdown();
+        let _ = server.join();
     }
 }

@@ -29,5 +29,18 @@ serde_json = { workspace = true }
 
 [features]
 default = ["v8"]
-v8 = ["zero-script-sandbox/v8"]
-quickjs = ["zero-script-sandbox/quickjs"]
+# 镜像 browser 的 feature 传播——下游 v8-gated 代码（webview.rs sandbox 创建、
+# engine/page-runtime v8 路径）须随本 bin 的 v8/quickjs 一并开启，否则 `cargo build
+# -p zero-renderer` 独立构建时 zero-webview 既无 v8 又无 quickjs → sandbox 未定义。
+v8 = [
+    "zero-engine/v8",
+    "zero-webview/v8",
+    "zero-script-sandbox/v8",
+    "zero-page-runtime/v8",
+]
+quickjs = [
+    "zero-engine/quickjs",
+    "zero-webview/quickjs",
+    "zero-script-sandbox/quickjs",
+    "zero-page-runtime/quickjs",
+]
