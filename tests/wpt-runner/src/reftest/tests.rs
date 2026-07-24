@@ -172,6 +172,16 @@ fn r2000_max_abs_bottom(b: &zero_layout_engine::types::LayoutBox, parent_offset_
     max_y
 }
 
+/// R2000/R2005/R2014 Print 测试共享互斥锁。
+///
+/// 这些测试通过 `std::env::set_var` 操作进程全局的 Print kill-switch
+/// （`ZW_PRINT_PAGINATE` / `ZW_PRINT_TALL_FB`）。cargo 默认多线程跑测试时，
+/// 同进程各线程共享环境变量 → 并发 set/remove 互相覆盖，致 r2000 实测
+/// `extent_off == extent_on`（kill-switch 失效，分页未关）假失败。串行化这组
+/// 测试消除 env 竞态（其余测试仍并发）。单线程 `--test-threads=1` 复现零失败
+/// 印证本根因。根治需把 kill-switch 从 env 改为 `RenderConfig` 字段（多会话）。
+static PRINT_ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// R2000：Print 分页端到端验证（经完整 parse→cascade→layout→paginate 管线，真实 HTML）。
 ///
 /// Print 模式 + `page-break-before:always` → 分页 post-process（R2000 default-on）
@@ -180,6 +190,7 @@ fn r2000_max_abs_bottom(b: &zero_layout_engine::types::LayoutBox, parent_offset_
 /// 注：framebuffer 按 viewport_height 创建（高内容裁剪），故量 **layout root extent** 非 fb.height。
 #[test]
 fn r2000_print_pagination_end_to_end_layout_extent_grows() {
+    let _env_guard = PRINT_ENV_MUTEX.lock().unwrap();
     let html = concat!(
         "<html><body style=\"margin:0\">",
         "<div style=\"width:100px;height:100px;background:red\"></div>",
@@ -215,6 +226,7 @@ fn r2000_print_pagination_end_to_end_layout_extent_grows() {
 /// default-off（env 未设）→ framebuffer 高度 = viewport（零影响现有 print 测试）。
 #[test]
 fn r2005_print_tall_framebuffer_env_grows_height() {
+    let _env_guard = PRINT_ENV_MUTEX.lock().unwrap();
     let html = concat!(
         "<html><body style=\"margin:0\">",
         "<div style=\"width:100px;height:100px;background:red\"></div>",
@@ -264,6 +276,7 @@ fn r2014_max_box_width(b: &zero_layout_engine::types::LayoutBox) -> f32 {
 
 #[test]
 fn r2014_print_page_size_margin_width_integration_end_to_end() {
+    let _env_guard = PRINT_ENV_MUTEX.lock().unwrap();
     // @page A4 + 2cm margin：页内容宽 = 793.7 − 151.18 ≈ 642.5。body margin:0 消默认 8px。
     // 三 div：red（页 0）+ green（page-break-before→页 1）+ blue（页 1）。width:100% 撑满页内容宽。
     let html = concat!(

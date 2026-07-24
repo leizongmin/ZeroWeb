@@ -825,7 +825,7 @@ pub fn collect_dom_labels(html: &str) -> std::collections::HashMap<zero_dom::Nod
     id_label
 }
 
-fn dump_layout_tree(root: &zero_layout_engine::types::LayoutBox, html: &str) {
+pub fn dump_layout_tree(root: &zero_layout_engine::types::LayoutBox, html: &str) {
     use std::collections::HashMap;
     use zero_dom::NodeId;
     let id_label = collect_dom_labels(html);

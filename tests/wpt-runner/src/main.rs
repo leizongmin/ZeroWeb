@@ -437,6 +437,9 @@ fn cmd_product_smoke(args: &[String]) {
     // 像素 diff 量化整体差距，本检查定位结构性退化（兄弟盒重叠 / 卡片按钮塌缩 = 用户可见
     // 排版 breakage，即使像素差小）。退出码 3（区别于像素 diff 门禁的 2 与参数错误的 1）。
     if let Some(root) = layout_root {
+        if std::env::var("LAYOUT_DUMP").is_ok() {
+            reftest::dump_layout_tree(&root, &layout_html);
+        }
         let labels = reftest::collect_dom_labels(&layout_html);
         let mut issues: Vec<String> = Vec::new();
         if struct_check {

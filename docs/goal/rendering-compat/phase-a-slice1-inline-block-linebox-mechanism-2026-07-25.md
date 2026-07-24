@@ -4,7 +4,22 @@
 **性质**：Phase A 最高杠杆轨的可执行首切片机制方案（改动区域 + 验证 + 风险，**非代码实施**）。pre-authorized ruling #4。
 **关联**：[blockers-resolution-plan-2026-07-25.md](blockers-resolution-plan-2026-07-25.md) §2、[phase-a-IFC-unification-design.md](phase-a-IFC-unification-design.md) v1.4、[inline-box-model-unification-design.md](inline-box-model-unification-design.md)（R1576 谱系）
 
+> ## ⚠️ v0.2 修正（2026-07-25 R2026 empirical recheck）—— 本切片原机制对 37-form-controls **INERT，不可直接实施**
+>
+> 原方案（下方正文）假定 `<label>Name: <input></label>` 的 `<input>` 经 R1576（`ZW_INLINE_BOX_RECURSE`）递归收集后，作为 IFC `InlineItem::InlineBlock` 进入 `break_items_into_lines`，故 `break_lines.rs:431` + `mod.rs:1125-1192` 是改点。**该假定经实证推翻**：
+>
+> 1. **R1576 toggle = 零效果**：`ZW_INLINE_BOX_RECURSE=0` 跑 37-form-controls 产**字节级相同**布局树（label/input/p 全同坐标）。即 `<input>` **没有**作为 IFC `InlineBlock` item 进入 `<p>` 的 IFC。
+> 2. **真路径**：`convert_display`（`converter/mod.rs:345-350`）把 `display:inline` **映射为 `taffy::style::Display::Block`**。故 `<label>`（inline）成为 `<p>` 的 **taffy block 子**，与 `<input>`（inline-block→taffy Block）一起进 taffy 布局；IFC 只吸收被扁平化的 label 文本（`collect_items.rs:382` `text_content`）。
+> 3. **后果**：两个 `<label>` 被当作 taffy block **垂直堆叠**（均在 x=8，w=154），而非 IFC 内 inline 并排；`<p>` 高度（18.6）来自 IFC line-box（label 文本 line-height），看不到 label 的 taffy 测高（33.6，含 input 21）；label overflow → sibling overlap。
+> 4. **结论**：原方案改点（`break_lines.rs:431` InlineBlock arm / `mod.rs` apply_vertical_alignment）**对 37-form-controls 是 dead code path**——改它零效果。真改点须在 **converter inline→taffy-Block 映射** 或 **IFC↔taffy 行盒高度 coherence**，即 full Phase A unification。
+> 5. **印证 R1985 v1.4 ruling**：「勿再以 line-box metric / inline-block identity 为独立 lever，fix 须随 Phase A 整体 unification」——**实证确认**。37-form-controls 不是可独立 ship 的 narrow slice；struct FAIL 含 sibling-overlap（Phase A 行盒）+ text-concatenation（R109 inline-ownership）两路，后者本切片明确不覆盖。
+>
+> **诊断方法**（可复用）：`cmd_product_smoke` 加 `LAYOUT_DUMP` env hook（2026-07-25 落地）→ `make product-smoke-legacy` 单 fixture 逐盒 dump abs_y/h/w，配合 `ZW_INLINE_BOX_RECURSE=0` A/B 判 IFC vs taffy 路径。
+>
+> 正文（v0.1 原方案）保留作历史；**实施须以本修正为准**，否则在 dead code path 上浪费。
+
 ---
+
 
 ## 目标
 
