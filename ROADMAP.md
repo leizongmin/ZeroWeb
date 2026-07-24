@@ -18,15 +18,10 @@
 
 ## 当前重点
 
-现在最值得继续往前推的几件事：
-
-- 当前优先完成 `rendering-compat` / render-compact 验收，把静态 CSS-heavy 页面渲染拉到可验证的 Chromium 参考水平；通过率以 Chromium Oracle 像素对比（`make reftest-oracle`）为诚实度量，同源自渲染 reftest 仅作自一致性参考
-- 外部样式表加载、图片子资源与 `ImageCache`、SVG 作为图片资源的栅格化、产品静态页截图门禁（`make product-smoke` / `make product-smoke-legacy`）均已落地；FreeType 字体光栅化（`freetype-raster` 默认开启）落地后 broad 一致率（chr<1%）稳定在约 57%、strict 像素级仍处低位 plateau；残余缺口集中在 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export 等结构性方向，经多角度实证真根因是 layout 与 paint 两端 IFC 度量不一致（Phase-A spread），而非字体光栅化单点
-- taffy 已从 vendored 0.7.7 升级到 0.12.1（本地 `crates/taffy-local` 仅保留 `cached_baselines()` 等访问器补丁；设计记录见 `docs/goal/rendering-compat/taffy-migration-design.md`）；可单点修复的 sizing 缺口已基本收敛、broad 处 plateau；font-stack 重建已三子杠杆（line-height / advance / raster）证伪、即使授权也不 yield，真正的 unlock 是 Phase A IFC 布局-绘制 metric coherence 统一（须 fresh architectural attempt）
-- 用真实静态页面暴露缺口：`apps/browser/assets/welcome.html`、`morning.work` 文章页、`wintertc.org` 首页
-- HTML 3.2/4 + CSS1/2 常见静态文档（presentational hints、UA 默认样式、基础表格 / 列表 / 链接颜色）作为高优先级推进面，配套 `legacy-html` 产品 smoke fixture 集与 `make product-smoke-legacy` 回归门禁已落地；近期持续补齐 legacy HTML 元素 UA 默认样式与表单控件固有尺寸（ruby、`<details>`/`<summary>`、`<select>`/`<input>`/`<textarea>`、短语与排版元素等）；不替代 WPT / DC-14 长期目标
-- `browser-shell` 已有基础骨架，后续重点是把产品层和 WebView/渲染管线的真实验收打通
-- render-compact 验收通过后，再逐步推进完整 JS/DOM API、图形 API、SVG 文档、动画逐帧、真实网站交互兼容性和平台字体差异
+- 推进 `rendering-compat` / render-compact 验收：以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量，broad 一致率约 57%、strict 处低位 plateau。残余缺口集中在 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性方向，根因是 layout↔paint IFC 度量不一致（Phase-A spread）。详见 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md)
+- 补齐 legacy HTML 元素 UA 默认样式与表单控件（`<select>`/`<input>`/`<textarea>` 等），通过 `make product-smoke-legacy` 回归门禁验收
+- 打通 `browser-shell` 产品层与 WebView/渲染管线的真实验收
+- render-compact 验收后，逐步推进完整 JS/DOM API、图形 API、SVG 文档、动画和真实网站交互兼容性
 
 ## 路线图
 
@@ -43,7 +38,7 @@
 | M9 | Canvas 与存储 | `✅ 已完成` | Canvas 2D、localStorage、sessionStorage、IndexedDB、Cache API、Service Worker registry 基础已在仓库中 |
 | M10 | WebView API 与自动化基础 | `✅ 已完成` | 已有可嵌入 API、导航加载、测试和 headless/自动化相关基础，但还会继续演进 |
 | M11 | 浏览器产品层 | `🚧 进行中` | `browser-shell`、标签页、地址栏、历史、书签、下载、设置等基础逐步落地；真实窗口/GPU/display 产品验收仍需补齐 |
-| M12 | Render compatibility / render-compact | `🚧 进行中` | 当前主线；以 WPT/CSSWG reftest 对齐 Chromium，并以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源 reftest 存在假通过）；harness 会执行测试页 setup 脚本后再截图；外部 CSS、图片资源、SVG 栅格化、产品静态页与 `legacy-html` 门禁均已落地。broad 一致率（chr<1%）约 57%、strict 像素级处低位 plateau；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export 等结构性问题，经多角度实证真根因是 layout 与 paint 两端 IFC 度量不一致（Phase-A spread），真正的 unlock 是 Phase A IFC metric coherence 统一（taffy 已升级到 0.12.1） |
+| M12 | Render compatibility / render-compact | `🚧 进行中` | 当前主线；WPT/CSSWG reftest 对齐 Chromium Oracle（`make reftest-oracle`），broad 一致率约 57%、strict 处低位 plateau。残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread） |
 | M13 | 完整 JS/DOM API 兼容性 | `⏳ 计划中` | render-compact 验收后推进；目标是从基础 DOM bridge 扩展到更完整的 Web API、事件循环、DOM/CSSOM 操作和真实页面脚本行为 |
 | M14 | Canvas / WebGL / WebGPU | `⏳ 计划中` | Canvas 2D 继续补全后，逐步进入 Khronos WebGL CTS 和 GPUWeb WebGPU CTS；不作为 render-compact 的阻塞项 |
 | M15 | SVG 文档与内联 SVG DOM 渲染 | `⏳ 计划中` | render-compact 只要求 SVG 作为图片资源栅格化；完整 SVG 文档、内联 SVG DOM、样式和交互放到后续阶段 |
@@ -76,16 +71,12 @@
 
 ## 接下来大概率会先做什么
 
-如果按当前仓库状态往下走，顺序大致会是：
+1. 完成 render-compact 验收：WPT/CSSWG reftest、产品静态页、真实文章页与 Chromium Oracle 稳定对比，Phase A IFC metric coherence 统一解除当前 layout↔paint 结构性瓶颈。
+2. 搭出 `browser-shell` 最小可用产品形态。
+3. render-compact 验收后，把 Test262、WPT testharness、WebDriver wdspec、WebGL CTS、WebGPU CTS 等行业测试按阶段接入。
+4. 逐步推进完整 JS/DOM API、图形 API、SVG 文档、CSS 动画和真实网站交互兼容性。
 
-1. 完成 render-compact 验收：WPT/CSSWG reftest、静态产品页、真实静态文章页、图片密集首页都要能和 Chromium 做稳定截图对比。
-2. 收敛 ZeroBrowser glyph 后处理与 layout/paint/glyph 度量一致性（外部 stylesheet、图片子资源/`ImageCache`、SVG 作为图片资源的栅格化均已贯通；`freetype-raster` 默认开启后 broad 一致率（chr<1%）稳定在约 57% plateau，残余 strict 像素级差异经多角度实证真根因是 layout↔paint 两端 IFC 度量不一致（Phase-A spread），font-stack 重建已证伪、下一收敛动作是 Phase A IFC metric coherence 统一，而非资源加载）。
-3. 统一 inline formatting、layout IFC 和 paint IFC 的权威结果，解决文本串联、重叠、标题误拆行和正文压缩。
-4. 搭出 `browser-shell` 最小可用骨架，让浏览器产品层真正出现。
-5. render-compact 验收后，把 Test262、WPT testharness、WebDriver wdspec、WebGL CTS、WebGPU CTS、WebAssembly spec tests 等行业测试按阶段接入。
-6. 再逐步推进完整 JS/DOM API、Canvas/WebGL/WebGPU、SVG 文档、CSS 动画逐帧和真实网站完整交互行为。
-
-这不是死板顺序。实际推进时，底层能力和产品层会交替往前推。
+底层能力和产品层会交替推进，非死板顺序。
 
 ## 暂不放在当前优先级里的方向
 

@@ -43,7 +43,7 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 | `ZeroWebView` | 已有稳定嵌入 API、可运行 demo，以及跨 crate 和产品层 smoke 测试；Service Worker、WASM 桥接与 `SecurityContext` 安全检查等页面级能力已接入其中 |
 | 浏览器应用 | `zero-browser`、`browser-shell` 和 `zero-renderer` 已打通桌面入口、多进程链路、headless 调试与跨平台打包（Linux / macOS / Windows）+ CI 发布工作流；整体仍处于实验阶段 |
 | 页面 JavaScript | `script-sandbox` 已提供 V8/QuickJS feature gate（含 V8 持久化 Context 复用）、Web Worker、ES Modules，以及 WebAssembly JS API 到 `wasm-sandbox` 的自动桥接；完整 Web API 和站点兼容性仍在推进 |
-| 渲染兼容性（当前主线） | 以 WPT/CSSWG reftest 对齐 Chromium 为验收标准，Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源自渲染 reftest 仅作自一致性参考，存在假通过）。reftest harness 会先执行测试页 setup 脚本（DOM 变更、`requestAnimationFrame` / `takeScreenshot` / `getBoundingClientRect` 等）再做像素对比；CSS 全面渲染集成（100+ 属性）、FreeType 字体光栅化（默认开启）、产品静态页与 `legacy-html` 结构性 smoke 门禁（`make product-smoke` / `make product-smoke-legacy`）均已落地。broad 一致率（chr<1%）稳定在约 57%、strict 像素级仍处低位 plateau；残余缺口集中在 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export 等结构性方向，经多角度实证真根因是 layout 与 paint 两端 IFC 度量不一致（Phase-A spread），而非字体光栅化单点——font-stack 重建已三子杠杆（line-height / advance / raster）证伪、即使授权也不 yield，真正的 unlock 是 Phase A IFC metric coherence 统一。详见 [路线图](ROADMAP.md) 与 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md) |
+| 渲染兼容性（当前主线） | 以 WPT/CSSWG reftest 对齐 Chromium 为验收标准，Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源 reftest 存在假通过，仅作自一致性参考）。broad 一致率（chr<1%）约 57%、strict 像素级处低位 plateau；残余缺口集中在 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性方向，根因是 layout↔paint IFC 度量不一致（Phase-A spread）。详见 [路线图](ROADMAP.md) 与 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md) |
 | 安全与可访问性 | CSP 完整实现、HSTS 预加载、混合内容阻止 / 升级、权限模型与站点隔离已落地并统一接入 `SecurityContext`；可访问性基础（`FocusManager` Tab 导航 + ARIA）已起步 |
 | 项目定位 | 适合学习、研究、工程探索，不适合直接当成生产浏览器 |
 
@@ -105,7 +105,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 在 Linux 和 macOS 上，构建前需先下载 `rusty_v8` 预构建产物：`make setup-rusty-v8`（缓存到 `${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8`）。推荐用 `make build` 或 `make browser`，会自动执行该步骤。Windows 需在本地环境里设置 `RUSTY_V8_ARCHIVE` 为 release `.lib` 的 URL。
 
-`freetype-raster` feature（R1159 起为 default-on）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，提升与 Chromium 的字体度量一致性；全 corpus oracle 实测 +232 零回归（R1094 A/B），落地后 broad 一致率（chr<1%）从 ~36% 提升到当前约 57% 的 plateau。默认构建经 `freetype-rs/bundled` 从 C 源码编译 FreeType2，无须系统 FreeType。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`（下游 crate 同理加 `--no-default-features`）。
+`freetype-raster` feature（默认开启）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，提升与 Chromium 的字体度量一致性（+232 零回归），broad 一致率从 ~36% 提升到当前约 57%。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`。
 
 ### 3. 运行本地入口
 

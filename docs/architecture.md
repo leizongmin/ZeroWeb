@@ -98,7 +98,7 @@
 
 - **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、wasm-sandbox、script-sandbox、page-runtime、webview 都有可运行代码和对应测试。
 - **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）已打通，但产品形态、稳定性和真实站点兼容性仍在推进。
-- **当前主线**: 渲染兼容性（WPT / CSSWG reftest 对齐 Chromium）持续修复 CSS2 / Flexbox / Grid / Multicol / Writing Modes 等缺口；以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量，broad 一致率（chr<1%）约 57%、strict 像素级处低位 plateau；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export 等结构性问题，经多角度实证真根因是 layout 与 paint 两端 IFC 度量不一致（Phase-A spread），真正的 unlock 是 Phase A IFC metric coherence 统一（须 fresh architectural attempt）；完整 Web API 与真实网站交互兼容性是后续阶段。
+- **当前主线**: 渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle），broad 一致率约 57%、strict 处低位 plateau。残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread）。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
 
 所以今天的 ZeroWeb 是一个内核已成形、产品层在打磨的浏览器工作区，但还不是一个做完的浏览器产品。
 
