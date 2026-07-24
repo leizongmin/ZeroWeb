@@ -51,6 +51,8 @@ pub use pipeline_budget::{BudgetAdvance, BudgetStep, BudgetedRenderSession};
 pub use preload::*;
 pub use text_metrics::{layout_estimate_char_width, measure_char_for_paint, set_char_measure_fn};
 pub use transition::*;
+/// 渲染媒体类型（DC-12 @media print/screen；R1992 webview 生产接线）。
+pub use zero_css_parser::media_query::MediaType;
 pub use zero_css_parser::media_query::PrefersColorSchemeValue;
 
 #[cfg(test)]

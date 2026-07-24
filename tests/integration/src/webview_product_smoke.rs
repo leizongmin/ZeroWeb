@@ -420,6 +420,34 @@ fn test_smoke_prefers_color_scheme() {
     assert!(result.timings.total_ms >= 0.0);
 }
 
+// ── Phase 4: @media print 媒体类型验证（R1992 webview 生产接线）──
+
+/// `WebView::set_media_type(Print)` 不 panic 且经 pipeline 触达级联（DC-12）。
+///
+/// 镜像 `test_smoke_prefers_color_scheme`：设置 Print 媒体类型后加载含 `@media print`
+/// 规则的页面，验证 webview 层接线（字段持久化 + pipeline.set_media_type + 各 render
+/// 入口重放）端到端不崩溃。
+#[test]
+fn test_smoke_media_type_print() {
+    let mut wv = create_webview();
+
+    // 切打印媒体类型（默认 Screen；Print 使 @media print 规则生效）。
+    wv.set_media_type(zero_css_parser::media_query::MediaType::Print);
+
+    let html = r#"<html><head><style>
+        @media screen { body { background: #00f; } }
+        @media print  { body { background: #f00; } }
+    </style></head><body><p>Print media test</p></body></html>"#;
+
+    let result = wv.load_html(html, None);
+    assert!(result.timings.total_ms >= 0.0);
+
+    // 切回 Screen 不 panic（验证字段可重复设置 + 默认值往返）。
+    wv.set_media_type(zero_css_parser::media_query::MediaType::Screen);
+    let result2 = wv.load_html(html, None);
+    assert!(result2.timings.total_ms >= 0.0);
+}
+
 // ── Phase 4: WASM 执行验证 ──
 
 /// execute_wasm 基础调用（空 WASM 模块不崩溃）

@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use zero_engine::{
-    BudgetAdvance, BudgetedRenderSession, PipelineTimings, PrefersColorSchemeValue, RenderPipeline, RenderResult,
-    extract_css_image_urls, extract_html_style_text, extract_img_srcs, extract_stylesheet_hrefs, image_resource_key,
-    resolve_document_url,
+    BudgetAdvance, BudgetedRenderSession, MediaType, PipelineTimings, PrefersColorSchemeValue, RenderPipeline,
+    RenderResult, extract_css_image_urls, extract_html_style_text, extract_img_srcs, extract_stylesheet_hrefs,
+    image_resource_key, resolve_document_url,
 };
 use zero_net::{CacheLookup, HttpCache, HttpClient, NetError, is_file_url};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri, decode_image_bytes};
@@ -152,6 +152,8 @@ pub struct WebView {
     font_resolver: std::collections::HashMap<String, u32>,
     /// 用户颜色方案偏好。
     prefers_color_scheme: PrefersColorSchemeValue,
+    /// 渲染媒体类型（DC-12 @media print/screen；R1992）。默认 `Screen` = 零行为变更。
+    media_type: MediaType,
     /// 安全上下文（HSTS + 混合内容 + CSP）。
     security_context: SecurityContext,
 }
@@ -205,6 +207,7 @@ impl WebView {
             cached_image_no_ratio: HashMap::new(),
             font_resolver: HashMap::new(),
             prefers_color_scheme: PrefersColorSchemeValue::Light,
+            media_type: MediaType::Screen,
             security_context: SecurityContext::new(),
         }
     }
@@ -287,6 +290,7 @@ impl WebView {
         self.cached_css = css_str.to_string();
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
+        self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(html, css_str);
         let render_result = WebViewRenderResult {
             primitives: result.primitives,
@@ -316,6 +320,7 @@ impl WebView {
         }
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
+        self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(html, &self.cached_css);
         let render_result = WebViewRenderResult {
             primitives: result.primitives,
@@ -700,6 +705,7 @@ impl WebView {
     pub fn render(&mut self) -> WebViewRenderResult {
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
+        self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(&self.cached_html, &self.cached_css);
         let render_result = WebViewRenderResult {
             primitives: result.primitives,
@@ -716,6 +722,7 @@ impl WebView {
         }
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
+        self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.repaint_cached_viewport(&self.cached_css)?;
         let render_result = WebViewRenderResult {
             primitives: result.primitives,
@@ -747,6 +754,7 @@ impl WebView {
     pub fn advance_budget_session(&mut self, session: &mut BudgetedRenderSession, budget_ms: f64) -> BudgetAdvance {
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
+        self.pipeline.set_media_type(self.media_type);
         self.pipeline.advance_budgeted_render(session, budget_ms)
     }
 
@@ -848,6 +856,7 @@ impl WebView {
         self.config.height = height;
         self.pipeline = RenderPipeline::new(width as f32, height as f32);
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
+        self.pipeline.set_media_type(self.media_type);
         self.pipeline.set_document_url(doc_url.as_deref());
         if !image_sizes.is_empty() {
             self.pipeline.set_image_sizes(image_sizes);
@@ -871,6 +880,16 @@ impl WebView {
     pub fn set_prefers_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
         self.prefers_color_scheme = scheme;
         self.pipeline.set_prefers_color_scheme(scheme);
+    }
+
+    /// 设置渲染媒体类型（DC-12 @media print/screen 级联；R1992 生产接线）。
+    ///
+    /// `Print` 使 `@media print` 规则在级联中生效——供浏览器打印预览 / 外部嵌入者
+    /// 切换媒体类型。默认 `Screen` = 零行为变更。镜像 `set_prefers_color_scheme`：
+    /// 持久化字段 + 即时下推 pipeline，后续 render 入口重放（见各 render 方法）。
+    pub fn set_media_type(&mut self, media_type: MediaType) {
+        self.media_type = media_type;
+        self.pipeline.set_media_type(media_type);
     }
 
     /// 命中测试链接，坐标为 WebView 视口内的 CSS 逻辑像素。
