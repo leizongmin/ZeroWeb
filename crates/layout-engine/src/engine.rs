@@ -622,6 +622,8 @@ impl LayoutEngine {
         // R1999/R2000 Phase P1a：Print 媒体分页（独立 post-process，在所有重定位之后）。
         // gate = media_type==Print + env ZW_PRINT_PAGINATE（default-on；=0 紧急关闭）。
         // Screen 路径（默认）双重 gate 跳过 → LayoutResult 逐字段不变（零回归）。
+        // R2001 P1.5：页边界分隔线由 render 路径（pipeline）从 layout extent 重算绘制，
+        // 无需 LayoutResult 字段（避测试构造点 churn）。
         // 详见 docs/goal/rendering-compat/print-layout-phase-p1-spec.md。
         if matches!(self.media_type, zero_css_parser::MediaType::Print)
             && crate::print_pagination::print_paginate_enabled()
@@ -742,7 +744,7 @@ impl LayoutEngine {
         sort_children_by_css_order(&mut root_box, styles);
         // taffy 已在 layout.location 中包含 position:relative 的 inset 偏移，无需额外后处理
 
-        // R1999 Phase P1a：Print 媒体分页（与全量路径同 gate）。
+        // R1999/R2000 Phase P1a：Print 媒体分页（与全量路径同 gate）。
         if matches!(self.media_type, zero_css_parser::MediaType::Print)
             && crate::print_pagination::print_paginate_enabled()
         {

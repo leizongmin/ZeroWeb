@@ -8,6 +8,7 @@ use zero_css_parser::Stylesheet;
 use zero_css_parser::media_query::PrefersColorSchemeValue;
 use zero_dom::{Document, NodeId};
 use zero_layout_engine::{LayoutEngine, LayoutResult};
+use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{RenderPrimitives, RenderStats};
 use zero_style_system::ComputedStyle;
@@ -466,7 +467,14 @@ impl RenderPipeline {
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
         let (primitives, stats) = primitives.cull_invisible(viewport);
         // 对填充图元进行批处理优化
-        let primitives = primitives.batch_fills();
+        let mut primitives = primitives.batch_fills();
+        // R2001 P1.5：Print 分页页边界分隔线（render-path 从 layout extent 重算）。
+        inject_print_page_dividers(
+            &mut primitives,
+            self.style_system.media_type(),
+            self.viewport_width,
+            &layout_result.root,
+        );
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
@@ -674,6 +682,36 @@ fn layout_extent_y(b: &zero_layout_engine::LayoutBox, offset_y: f32) -> f32 {
         max_y = max_y.max(layout_extent_y(child, offset_y + b.y));
     }
     max_y
+}
+
+/// R2001 P1.5：Print 分页页边界分隔线——在每页边界（k × page_height）处绘制浅灰细线，
+/// 使 Ctrl+P 打印预览的分页可视化（满页内容相邻处无 gap，分隔线标记边界）。
+///
+/// 仅 `media_type==Print` + 分页启用时绘制；Screen 零影响。页边界从 layout extent 重算
+/// （`ceil(extent/page_height)`，与 `paginate_for_print` 的 push 目标 k×page_height 一致），
+/// 避免 LayoutResult 新字段（types/tests 多处构造点 churn）。
+fn inject_print_page_dividers(
+    primitives: &mut RenderPrimitives,
+    media_type: zero_css_parser::media_query::MediaType,
+    viewport_w: f32,
+    layout_root: &zero_layout_engine::LayoutBox,
+) {
+    use zero_layout_engine::print_pagination;
+    if !matches!(media_type, zero_css_parser::media_query::MediaType::Print)
+        || !print_pagination::print_paginate_enabled()
+    {
+        return;
+    }
+    let page_h = print_pagination::PRINT_PAGE_HEIGHT_A4;
+    let extent = layout_extent_y(layout_root, 0.0);
+    let page_count = (extent / page_h).ceil() as usize;
+    if page_count < 2 {
+        return; // 单页：无内部页边界。
+    }
+    let color = Color::rgb(170, 170, 170);
+    for k in 1..page_count {
+        primitives.add_fill(Rect::new(0.0, k as f32 * page_h, viewport_w, 2.0), color);
+    }
 }
 
 /// 绘制阶段剔除矩形：宽度仍限视口，高度扩展到完整文档，避免浏览器滚动时丢失页内图元。
@@ -1424,5 +1462,70 @@ mod css_image_url_tests {
         let css = extract_html_style_text(html);
         let urls = extract_css_image_urls(&css);
         assert_eq!(urls, vec!["bg.png"]);
+    }
+}
+
+#[cfg(test)]
+mod print_page_divider_tests {
+    use super::*;
+    use zero_css_parser::media_query::MediaType;
+    use zero_layout_engine::LayoutBox;
+
+    /// 构造 layout 根，高度 = `height`（其余 default）。
+    fn root_with_height(height: f32) -> LayoutBox {
+        LayoutBox {
+            height,
+            ..Default::default()
+        }
+    }
+
+    /// R2001 P1.5：Print 模式 + 分页启用 → extent 跨多页时每页边界加 1 条分隔线 fill。
+    /// extent=2500px，A4 页高 1122.5 → ceil(2500/1122.5)=3 页 → 边界 1122.5 + 2245.0 = 2 条。
+    #[test]
+    fn r2001_inject_print_page_dividers_one_line_per_boundary() {
+        let mut primitives = RenderPrimitives::new();
+        let root = root_with_height(2500.0);
+        // Print + 分页启用（env default-on；显式设 1 避并行噪声）。
+        unsafe {
+            std::env::set_var("ZW_PRINT_PAGINATE", "1");
+        }
+        inject_print_page_dividers(&mut primitives, MediaType::Print, 800.0, &root);
+        unsafe {
+            std::env::remove_var("ZW_PRINT_PAGINATE");
+        }
+        assert_eq!(primitives.fills.len(), 2, "3 页 → 2 条内部页边界分隔线");
+        // 第 1 条分隔线 y ≈ A4 页高 1122.5，full-width 800，厚 2。
+        let first = &primitives.fills[0];
+        assert!(
+            (first.rect.origin.y - 1122.5).abs() < 0.1,
+            "首条 y≈1122.5, got {}",
+            first.rect.origin.y
+        );
+        assert!((first.rect.size.width - 800.0).abs() < 0.1, "full-width 800");
+        assert!((first.rect.size.height - 2.0).abs() < 0.1, "厚度 2px");
+    }
+
+    /// R2001 P1.5：Screen 模式 → 零分隔线（零回归核心不变量）。
+    #[test]
+    fn r2001_inject_print_page_dividers_screen_zero_dividers() {
+        let mut primitives = RenderPrimitives::new();
+        let root = root_with_height(2500.0);
+        inject_print_page_dividers(&mut primitives, MediaType::Screen, 800.0, &root);
+        assert_eq!(primitives.fills.len(), 0, "Screen 模式不得加分隔线");
+    }
+
+    /// R2001 P1.5：单页（extent ≤ 页高）→ 无内部页边界 → 零分隔线。
+    #[test]
+    fn r2001_inject_print_page_dividers_single_page_none() {
+        let mut primitives = RenderPrimitives::new();
+        let root = root_with_height(800.0); // < 1122.5 → 单页
+        unsafe {
+            std::env::set_var("ZW_PRINT_PAGINATE", "1");
+        }
+        inject_print_page_dividers(&mut primitives, MediaType::Print, 800.0, &root);
+        unsafe {
+            std::env::remove_var("ZW_PRINT_PAGINATE");
+        }
+        assert_eq!(primitives.fills.len(), 0, "单页无内部页边界");
     }
 }
