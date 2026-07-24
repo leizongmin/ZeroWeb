@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use zero_browser_shell::TabId;
 use zero_engine::{
-    AsyncResolver, DomMutation, FetchBridge, FetchHandler, generate_js_dom_shim, register_dom_callbacks,
+    AsyncResolver, DomMutation, FetchBridge, FetchHandler, TimerBridge, generate_js_dom_shim, register_dom_callbacks,
 };
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
@@ -225,8 +225,12 @@ fn js_worker_main(
             });
         }
     });
-    let fetch_bridge = FetchBridge::new(resolver);
+    let fetch_bridge = FetchBridge::new(resolver.clone());
     fetch_bridge.register(&mut *sandbox);
+    // P1b S5：TimerBridge 注 __zw_setTimeout——shim setTimeout/setInterval 真实延迟
+    // （子线程 sleep + resolver.resolve → __zwResolveCallback 调用 JS 回调）。
+    let timer_bridge = TimerBridge::new(resolver);
+    timer_bridge.register(&mut *sandbox);
     let shim = generate_js_dom_shim();
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
@@ -590,5 +594,73 @@ mod tests {
         assert_eq!(r, "hello-from-server");
         worker.shutdown();
         let _ = server.join();
+    }
+
+    #[test]
+    fn tab_js_worker_settimeout_fires_after_real_delay() {
+        // P1b S5：setTimeout 真实延迟。host 注册 __zw_setTimeout → 子线程 sleep(delay) 后
+        // resolve → __zwResolveCallback 调用回调。注册前（delay 未到）未触发；之后触发。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(8));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct("setTimeout(function(){ globalThis.__fired = 'yes'; }, 50);")
+            .unwrap();
+        // delay（50ms）未到：回调尚未触发（host 子线程 sleep 中）。
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.__fired").unwrap(),
+            "undefined"
+        );
+        let r = wait_for_global(&worker, "__fired", 1000);
+        assert_eq!(r, "yes");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_cleartimeout_cancels_callback() {
+        // P1b S5：clearTimeout 删 pending 项 → 即便 host 子线程后到 resolve，
+        // __zwResolveCallback 见无 pending 即 no-op，回调永不触发。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(9));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var h = setTimeout(function(){ globalThis.__fired = 'yes'; }, 30);
+                 clearTimeout(h);",
+            )
+            .unwrap();
+        // 等待远超 30ms（clearTimeout 应已阻止触发）。
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.__fired").unwrap(),
+            "undefined"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_setinterval_repeats_then_clear() {
+        // P1b S5：setInterval 回调内 re-arm（再次 __zw_setTimeout）实现重复触发；
+        // clearInterval 删 pending 断开 re-arm 链。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(10));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__n = 0;
+                 globalThis.__iv = setInterval(function(){ globalThis.__n++; }, 20);",
+            )
+            .unwrap();
+        // 等 ~120ms（interval 20ms → 至少触发数次）。
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        let n1 = wait_for_global(&worker, "__n", 500).parse::<u32>().unwrap_or(0);
+        assert!(n1 >= 2, "setInterval should repeat at least twice, got {n1}");
+        worker.execute_script_direct("clearInterval(globalThis.__iv);").unwrap();
+        // clearInterval 后再等，计数应不再增长。
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        let n2 = worker
+            .execute_script_direct("String(globalThis.__n)")
+            .unwrap()
+            .parse::<u32>()
+            .unwrap_or(n1);
+        assert_eq!(n2, n1, "clearInterval should stop the interval (n stayed {n1})");
+        worker.shutdown();
     }
 }

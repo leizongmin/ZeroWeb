@@ -7,7 +7,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use zero_engine::{
-    AsyncResolver, DomMutation, FetchBridge, FetchHandler, generate_js_dom_shim, register_dom_callbacks,
+    AsyncResolver, DomMutation, FetchBridge, FetchHandler, TimerBridge, generate_js_dom_shim, register_dom_callbacks,
 };
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
@@ -207,8 +207,12 @@ fn js_worker_main(
             });
         }
     });
-    let fetch_bridge = FetchBridge::new(resolver);
+    let fetch_bridge = FetchBridge::new(resolver.clone());
     fetch_bridge.register(&mut *sandbox);
+    // P1b S5：TimerBridge 注 __zw_setTimeout——shim setTimeout/setInterval 真实延迟
+    // （子线程 sleep + resolver.resolve → __zwResolveCallback 调用 JS 回调）。
+    let timer_bridge = TimerBridge::new(resolver);
+    timer_bridge.register(&mut *sandbox);
     let shim = generate_js_dom_shim();
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
@@ -552,5 +556,67 @@ mod tests {
         assert_eq!(r, "hello-from-renderer");
         worker.shutdown();
         let _ = server.join();
+    }
+
+    #[test]
+    fn renderer_js_worker_settimeout_fires_after_real_delay() {
+        // P1b S5（镜像 browser）：setTimeout 真实延迟。host __zw_setTimeout → 子线程 sleep
+        // 后 resolve → __zwResolveCallback 调用回调。
+        let mut worker = RendererJsWorker::spawn(8);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct("setTimeout(function(){ globalThis.__fired = 'yes'; }, 50);")
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.__fired").unwrap(),
+            "undefined"
+        );
+        let r = wait_for_global(&worker, "__fired", 1000);
+        assert_eq!(r, "yes");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_cleartimeout_cancels_callback() {
+        // P1b S5（镜像 browser）：clearTimeout 删 pending → 回调永不触发。
+        let mut worker = RendererJsWorker::spawn(9);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var h = setTimeout(function(){ globalThis.__fired = 'yes'; }, 30);
+                 clearTimeout(h);",
+            )
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.__fired").unwrap(),
+            "undefined"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_setinterval_repeats_then_clear() {
+        // P1b S5（镜像 browser）：setInterval re-arm 重复触发；clearInterval 断链。
+        let mut worker = RendererJsWorker::spawn(10);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__n = 0;
+                 globalThis.__iv = setInterval(function(){ globalThis.__n++; }, 20);",
+            )
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        let n1 = wait_for_global(&worker, "__n", 500).parse::<u32>().unwrap_or(0);
+        assert!(n1 >= 2, "setInterval should repeat at least twice, got {n1}");
+        worker.execute_script_direct("clearInterval(globalThis.__iv);").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        let n2 = worker
+            .execute_script_direct("String(globalThis.__n)")
+            .unwrap()
+            .parse::<u32>()
+            .unwrap_or(n1);
+        assert_eq!(n2, n1, "clearInterval should stop the interval (n stayed {n1})");
+        worker.shutdown();
     }
 }

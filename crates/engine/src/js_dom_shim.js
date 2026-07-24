@@ -78,16 +78,55 @@
     };
   }
 
-  globalThis.setTimeout = function(fn, _delay) {
-    if (typeof fn === 'function') _defer(fn);
-    return _timerId++;
+  // P1b S5：setTimeout/setInterval 真实延迟。host（browser/renderer js_worker）注册
+  // `__zw_setTimeout(id, delayMs)` 时，回调存 `__zw_pending[id]` + 调本回调；host 子线程
+  // sleep 后 resolve → `__zwResolveCallback` 取出调用回调。未注册（engine/reftest/polyfill
+  // 等无 host 路径）时 fallback `_defer`（microtask 同步触发）——保持旧行为，零回归。
+  function _timerIdKey(handle) { return '__zwtid:' + handle; }
+  globalThis.setTimeout = function(fn, delay) {
+    var handle = _timerId++;
+    if (typeof fn !== 'function') return handle;
+    var id = _timerIdKey(handle);
+    globalThis.__zw_pending[id] = function() { try { fn(); } catch (_e) {} };
+    if (typeof __zw_setTimeout === 'function') {
+      try { __zw_setTimeout(id, delay | 0); return handle; }
+      catch (_e) { delete globalThis.__zw_pending[id]; }
+    }
+    // fallback：无 host → microtask 同步触发（旧行为）。
+    delete globalThis.__zw_pending[id];
+    _defer(fn);
+    return handle;
   };
-  globalThis.setInterval = function(fn, _delay) {
-    if (typeof fn === 'function') _defer(fn);
-    return _timerId++;
+  globalThis.setInterval = function(fn, delay) {
+    var handle = _timerId++;
+    if (typeof fn !== 'function') return handle;
+    var id = _timerIdKey(handle);
+    var ms = delay | 0;
+    if (typeof __zw_setTimeout === 'function') {
+      // host 路径：回调内 re-arm 实现重复触发（host 仅实现单次定时器）。
+      var arm = function() {
+        globalThis.__zw_pending[id] = function() {
+          try { fn(); } catch (_e) {}
+          arm();
+        };
+        try { __zw_setTimeout(id, ms); }
+        catch (_e) { delete globalThis.__zw_pending[id]; }
+      };
+      arm();
+    } else {
+      // fallback（无 host）：保持旧行为——单次 _defer 触发（非重复）。
+      _defer(fn);
+    }
+    return handle;
   };
-  globalThis.clearTimeout = function(_id) {};
-  globalThis.clearInterval = function(_id) {};
+  // clearTimeout/clearInterval：删 pending 项——即便 host 子线程后到 resolve，
+  // `__zwResolveCallback` 见无 pending 即 no-op（setInterval 的 re-arm 链亦在此断开）。
+  globalThis.clearTimeout = function(handle) {
+    delete globalThis.__zw_pending[_timerIdKey(handle)];
+  };
+  globalThis.clearInterval = function(handle) {
+    delete globalThis.__zw_pending[_timerIdKey(handle)];
+  };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
