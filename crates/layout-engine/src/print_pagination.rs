@@ -22,8 +22,8 @@
 //! - ✅ FR-003 `page-break-after: always` / `break-after: page`（下一兄弟换页）
 //! - ✅ FR-004 自然页填充（子越页边界且整页装得下→推下页顶；oversized 留原位 deferred）
 //! - ✅ FR-006 嵌套 break 子树提升（后代 break-before→整单元换页，P1a 近似）
-//! - ✅ FR-005 默认页尺寸常量（A4 @96dpi）
-//! - ⏳ oversized 单元真分片（fragment_y_offset 拆多页）/ P2 嵌套精确断 / P3 inside:avoid / P4 @page / P5 输出模型
+//! - ✅ FR-005 页尺寸（default A4 @96dpi；R2010 P4：`@page { size }` 解析后由 `set_print_page_height` 注入覆盖）
+//! - ⏳ oversized 单元真分片（fragment_y_offset 拆多页）/ P2 嵌套精确断 / P3 inside:avoid / @page `margin` / P5 输出模型
 //!
 //! # 输出模型
 //!

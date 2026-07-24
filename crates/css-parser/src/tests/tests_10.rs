@@ -419,3 +419,103 @@ fn test_font_face_missing_family_or_src_dropped() {
     let ws = Parser::parse_stylesheet(css);
     assert_eq!(ws.rules.len(), 0, "font-face without src is dropped");
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// parser.rs — @page 规则解析（R2010 P4：CSS Paged Media `size` 描述符）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_page_size_letter_resolved() {
+    let css = "@page { size: letter; }";
+    let ws = Parser::parse_stylesheet(css);
+    assert_eq!(ws.rules.len(), 1, "should parse one @page rule");
+    match &ws.rules[0] {
+        Rule::Page(p) => {
+            let (w, h) = p.size.expect("letter size resolved");
+            assert!((w - 816.0).abs() < 0.1, "letter width 8.5in=816px, got {w}");
+            assert!((h - 1056.0).abs() < 0.1, "letter height 11in=1056px, got {h}");
+        }
+        other => panic!("expected Rule::Page, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_page_size_a4_landscape_swapped() {
+    let css = "@page { size: A4 landscape; }";
+    let ws = Parser::parse_stylesheet(css);
+    match &ws.rules[0] {
+        Rule::Page(p) => {
+            let (w, h) = p.size.expect("a4 landscape resolved");
+            // A4 portrait ≈ (793.7, 1122.5)；landscape 交换 → 宽 > 高
+            assert!(w > h, "landscape: width {w} should exceed height {h}");
+            assert!((h - 793.7).abs() < 1.0, "landscape height = portrait width, got {h}");
+        }
+        other => panic!("expected Rule::Page, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_page_size_explicit_lengths() {
+    let css = "@page { size: 200mm 300mm; }";
+    let ws = Parser::parse_stylesheet(css);
+    match &ws.rules[0] {
+        Rule::Page(p) => {
+            let (w, h) = p.size.expect("explicit lengths resolved");
+            assert!((w - 200.0 * 96.0 / 25.4).abs() < 0.1, "width 200mm, got {w}");
+            assert!((h - 300.0 * 96.0 / 25.4).abs() < 0.1, "height 300mm, got {h}");
+        }
+        other => panic!("expected Rule::Page, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_page_size_auto_or_missing_is_none() {
+    // `size: auto` 与无 size 描述符 → size=None（调用方回退默认 A4）
+    for css in ["@page { size: auto; }", "@page { margin: 2cm; }"] {
+        let ws = Parser::parse_stylesheet(css);
+        match &ws.rules[0] {
+            Rule::Page(p) => assert!(p.size.is_none(), "auto/missing size → None for {css:?}"),
+            other => panic!("expected Rule::Page, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn test_page_rule_among_other_rules() {
+    // @page 与样式规则共存——确认 dispatch 不吞相邻规则
+    let css = "@page { size: legal; } div { color: red; }";
+    let ws = Parser::parse_stylesheet(css);
+    assert_eq!(ws.rules.len(), 2, "page + style rule both parsed");
+    assert!(matches!(ws.rules[0], Rule::Page(_)));
+    assert!(matches!(ws.rules[1], Rule::Style(_)));
+}
+
+#[test]
+fn test_resolve_page_size_px_keywords_and_orient() {
+    use crate::parser::resolve_page_size_px;
+    // 命名关键字
+    let (aw, ah) = resolve_page_size_px("A4").unwrap();
+    assert!((ah - 1122.5).abs() < 1.0, "A4 height ≈1122.5, got {ah}");
+    assert!(aw < ah, "A4 portrait w<h");
+    // portrait / landscape 单独 = A4 朝向
+    let (lw, lh) = resolve_page_size_px("landscape").unwrap();
+    assert!(lw > lh, "landscape w>h");
+    // legal
+    let (_lw, lh2) = resolve_page_size_px("legal").unwrap();
+    assert!((lh2 - 1344.0).abs() < 0.1, "legal height 14in=1344, got {lh2}");
+}
+
+#[test]
+fn test_resolve_page_size_px_lengths_and_invalid() {
+    use crate::parser::resolve_page_size_px;
+    // 单长度 → 正方
+    let (w, h) = resolve_page_size_px("10cm").unwrap();
+    assert!((w - h).abs() < 0.01 && (w - 10.0 * 96.0 / 2.54).abs() < 0.01);
+    // 双长度
+    let (w, h) = resolve_page_size_px("100px 200px").unwrap();
+    assert_eq!((w as i32, h as i32), (100, 200));
+    // 无效 / 相对单位 → None
+    assert!(resolve_page_size_px("bogus").is_none());
+    assert!(resolve_page_size_px("50%").is_none());
+    assert!(resolve_page_size_px("").is_none());
+}

@@ -295,6 +295,9 @@ impl RenderPipeline {
 
         // 2. 解析 CSS → Stylesheets
         let stylesheets = collect_stylesheets(&doc, css);
+        // R2010 P4：从 `@page { size }` 解析 Print 页高注入 layout_engine（Screen 零影响）。
+        self.layout_engine
+            .set_print_page_height(extract_print_page_height(&stylesheets));
 
         // 3. 注册 @keyframes 到动画时钟
         self.animation_clock.register_from_stylesheets(&stylesheets);
@@ -430,6 +433,9 @@ impl RenderPipeline {
 
         // 2. 解析 CSS → Stylesheets（外部 CSS + HTML 内 `<style>`）
         let stylesheets = collect_stylesheets(&doc, css);
+        // R2010 P4：从 `@page { size }` 解析 Print 页高注入 layout_engine（分页 + 页边界分隔线共用）。
+        let print_page_h = extract_print_page_height(&stylesheets);
+        self.layout_engine.set_print_page_height(print_page_h);
 
         // 3. 计算样式
         let style_start = Instant::now();
@@ -474,6 +480,7 @@ impl RenderPipeline {
             self.style_system.media_type(),
             self.viewport_width,
             &layout_result.root,
+            print_page_h,
         );
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
@@ -695,6 +702,7 @@ fn inject_print_page_dividers(
     media_type: zero_css_parser::media_query::MediaType,
     viewport_w: f32,
     layout_root: &zero_layout_engine::LayoutBox,
+    page_h: f32,
 ) {
     use zero_layout_engine::print_pagination;
     if !matches!(media_type, zero_css_parser::media_query::MediaType::Print)
@@ -702,7 +710,8 @@ fn inject_print_page_dividers(
     {
         return;
     }
-    let page_h = print_pagination::PRINT_PAGE_HEIGHT_A4;
+    // R2010 P4：页高由 `@page { size }` 解析传入（default A4，与 paginate_for_print 同源）。
+    let page_h = page_h.max(1.0);
     let extent = layout_extent_y(layout_root, 0.0);
     let page_count = (extent / page_h).ceil() as usize;
     if page_count < 2 {
@@ -857,6 +866,26 @@ pub(crate) fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> 
         }
     }
     stylesheets
+}
+
+/// 从样式表中提取 Print 分页页高（R2010 P4：`@page { size }` 解析）。
+///
+/// 扫描首个有效 `@page` 的 `size` 描述符，返回其 height（px）；无 `@page` 或 `size`
+/// 无效时回退默认 A4 高（`PRINT_PAGE_HEIGHT_A4`）。仅 `media_type==Print` 时
+/// `paginate_for_print` / `inject_print_page_dividers` 消费；Screen 不调用。
+pub(crate) fn extract_print_page_height(stylesheets: &[Stylesheet]) -> f32 {
+    use zero_css_parser::ast::Rule;
+    for ss in stylesheets {
+        for rule in &ss.rules {
+            if let Rule::Page(page) = rule
+                && let Some((_w, h)) = page.size
+                && h > 0.0
+            {
+                return h;
+            }
+        }
+    }
+    zero_layout_engine::print_pagination::PRINT_PAGE_HEIGHT_A4
 }
 
 /// 提取 HTML 中所有 `<link rel="stylesheet" href="...">` 的 href 原始值。
@@ -1489,7 +1518,7 @@ mod print_page_divider_tests {
         unsafe {
             std::env::set_var("ZW_PRINT_PAGINATE", "1");
         }
-        inject_print_page_dividers(&mut primitives, MediaType::Print, 800.0, &root);
+        inject_print_page_dividers(&mut primitives, MediaType::Print, 800.0, &root, 1122.5);
         unsafe {
             std::env::remove_var("ZW_PRINT_PAGINATE");
         }
@@ -1510,7 +1539,7 @@ mod print_page_divider_tests {
     fn r2001_inject_print_page_dividers_screen_zero_dividers() {
         let mut primitives = RenderPrimitives::new();
         let root = root_with_height(2500.0);
-        inject_print_page_dividers(&mut primitives, MediaType::Screen, 800.0, &root);
+        inject_print_page_dividers(&mut primitives, MediaType::Screen, 800.0, &root, 1122.5);
         assert_eq!(primitives.fills.len(), 0, "Screen 模式不得加分隔线");
     }
 
@@ -1522,10 +1551,68 @@ mod print_page_divider_tests {
         unsafe {
             std::env::set_var("ZW_PRINT_PAGINATE", "1");
         }
-        inject_print_page_dividers(&mut primitives, MediaType::Print, 800.0, &root);
+        inject_print_page_dividers(&mut primitives, MediaType::Print, 800.0, &root, 1122.5);
         unsafe {
             std::env::remove_var("ZW_PRINT_PAGINATE");
         }
         assert_eq!(primitives.fills.len(), 0, "单页无内部页边界");
+    }
+}
+
+#[cfg(test)]
+mod print_page_size_tests {
+    use super::*;
+    use zero_css_parser::Parser;
+
+    /// R2010 P4：`@page { size }` 解析后的页高经 `extract_print_page_height` 提取，
+    /// 覆盖默认 A4。letter (11in) = 1056px。
+    #[test]
+    fn r2010_extract_print_page_height_letter_overrides_a4_default() {
+        let ws = vec![Parser::parse_stylesheet("@page { size: letter; }")];
+        let h = extract_print_page_height(&ws);
+        assert!((h - 1056.0).abs() < 0.1, "letter height 1056, got {h}");
+    }
+
+    /// 无 @page 或 size 无效 → 回退默认 A4 高（PRINT_PAGE_HEIGHT_A4 = 1122.5）。
+    #[test]
+    fn r2010_extract_print_page_height_defaults_to_a4() {
+        let ws = vec![Parser::parse_stylesheet("@page { margin: 2cm; } div { color: red; }")];
+        let h = extract_print_page_height(&ws);
+        assert!((h - 1122.5).abs() < 0.1, "no size → A4 default 1122.5, got {h}");
+        let empty: Vec<zero_css_parser::Stylesheet> = vec![];
+        let h0 = extract_print_page_height(&empty);
+        assert!((h0 - 1122.5).abs() < 0.1, "empty → A4 default, got {h0}");
+    }
+
+    /// R2010 P4：inject_print_page_dividers 接受自定义页高——letter=1056，extent=2500
+    /// → ceil(2500/1056)=3 页 → 边界 1056 + 2112 = 2 条（非 A4 的 1122.5 + 2245）。
+    #[test]
+    fn r2010_dividers_use_custom_page_height() {
+        use zero_css_parser::media_query::MediaType;
+        use zero_layout_engine::LayoutBox;
+        let mut primitives = RenderPrimitives::new();
+        let root = LayoutBox {
+            height: 2500.0,
+            ..Default::default()
+        };
+        unsafe {
+            std::env::set_var("ZW_PRINT_PAGINATE", "1");
+        }
+        inject_print_page_dividers(&mut primitives, MediaType::Print, 800.0, &root, 1056.0);
+        unsafe {
+            std::env::remove_var("ZW_PRINT_PAGINATE");
+        }
+        let ys: Vec<f32> = primitives.fills.iter().map(|f| f.rect.origin.y).collect();
+        assert_eq!(primitives.fills.len(), 2, "letter: 3 pages → 2 dividers");
+        assert!(
+            (ys[0] - 1056.0).abs() < 0.1,
+            "first boundary at letter height 1056, got {}",
+            ys[0]
+        );
+        assert!(
+            (ys[1] - 2112.0).abs() < 0.1,
+            "second boundary at 2×1056=2112, got {}",
+            ys[1]
+        );
     }
 }

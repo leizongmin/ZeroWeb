@@ -100,6 +100,10 @@ impl<'a> Parser<'a> {
                 if name.eq_ignore_ascii_case("font-face") {
                     return self.consume_font_face_rule().map(Rule::FontFace);
                 }
+                // 对 @page 使用专用解析器（body 是声明块：size/margin 描述符）
+                if name.eq_ignore_ascii_case("page") {
+                    return self.consume_page_rule().map(Rule::Page);
+                }
                 Some(Rule::At(self.consume_at_rule(name)))
             }
             _ => {
@@ -930,6 +934,49 @@ impl<'a> Parser<'a> {
         Some(FontFaceRule { family, sources })
     }
 
+    /// 消耗 @page 规则（CSS Paged Media）。
+    ///
+    /// 格式：`@page { size: A4; margin: 2cm; }`（prelude 可为命名页 `:first` / `name`，
+    /// 当前忽略——仅消费 body 声明块提取 `size` 描述符）。
+    /// body 是声明块（同 @font-face），用 `consume_declaration_block` 解析，
+    /// 提取 `size` 描述符并经 `resolve_page_size_px` 解析为像素 `(width, height)`。
+    fn consume_page_rule(&mut self) -> Option<PageRule> {
+        self.skip_whitespace();
+        // 跳过 prelude（命名页 / `:first` 等）直到 `{` / `;` / EOF。
+        while !matches!(self.peek(), Token::LBrace | Token::Semicolon | Token::Eof) {
+            self.advance();
+        }
+        if !matches!(self.peek(), Token::LBrace) {
+            // 非 `{`（如 `@page :first;` 语句形式）：吞 `;`，无 body → 无 size。
+            if matches!(self.peek(), Token::Semicolon) {
+                self.advance();
+            }
+            return Some(PageRule { size: None });
+        }
+        self.advance(); // {
+
+        let declarations = self.consume_declaration_block();
+
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+
+        // 提取首个有效 `size` 描述符（CSS 规范：后声明优先，但 @page size 单一语义，
+        // 取首个有效即可）。
+        let mut size: Option<(f32, f32)> = None;
+        for decl in &declarations {
+            if decl.property.eq_ignore_ascii_case("size") {
+                if let Some(resolved) = resolve_page_size_px(&decl.value) {
+                    size = Some(resolved);
+                    break;
+                }
+            }
+        }
+
+        Some(PageRule { size })
+    }
+
     /// 消耗 @keyframes 规则。
     ///
     /// 格式：`@keyframes name { from { ... } 50% { ... } to { ... } }`
@@ -1451,4 +1498,67 @@ fn extract_urls_from_src(src: &str) -> Vec<String> {
         }
     }
     urls
+}
+
+/// 解析 @page `size` 描述符为像素 `(width, height)`（@96dpi）。
+///
+/// 支持：
+/// - 命名尺寸：`a3` / `a4` / `a5` / `b5` / `letter` / `legal` / `ledger`（portrait 朝向）
+/// - 朝向修饰：`<name> portrait` / `<name> landscape`（或单独 `portrait` / `landscape`，默认 A4）
+/// - 显式长度：`<length>`（正方页）或 `<length> <length>`（宽 高）
+///
+/// 其他值（`auto` / 未知关键字 / 相对单位）→ `None`（调用方回退默认 A4）。
+pub fn resolve_page_size_px(size: &str) -> Option<(f32, f32)> {
+    use crate::values::{LengthValue, parse_length};
+
+    /// @96dpi 命名页尺寸 `(width, height)`，portrait 朝向（w ≤ h）。
+    fn named(name: &str) -> Option<(f32, f32)> {
+        const PX_PER_MM: f32 = 96.0 / 25.4;
+        const PX_PER_IN: f32 = 96.0;
+        match name {
+            "a5" => Some((148.0 * PX_PER_MM, 210.0 * PX_PER_MM)),
+            "a4" => Some((210.0 * PX_PER_MM, 297.0 * PX_PER_MM)),
+            "a3" => Some((297.0 * PX_PER_MM, 420.0 * PX_PER_MM)),
+            "b5" => Some((176.0 * PX_PER_MM, 250.0 * PX_PER_MM)),
+            "letter" => Some((8.5 * PX_PER_IN, 11.0 * PX_PER_IN)),
+            "legal" => Some((8.5 * PX_PER_IN, 14.0 * PX_PER_IN)),
+            "ledger" => Some((11.0 * PX_PER_IN, 17.0 * PX_PER_IN)),
+            _ => None,
+        }
+    }
+
+    let lower = size.trim().to_ascii_lowercase();
+    let parts: Vec<&str> = lower.split_whitespace().collect();
+    match parts.as_slice() {
+        [one] => {
+            if let Some(b) = named(one) {
+                return Some(b);
+            }
+            if *one == "portrait" {
+                return named("a4");
+            }
+            if *one == "landscape" {
+                return named("a4").map(|(w, h)| (h, w));
+            }
+            // 单长度 → 正方页
+            match parse_length(one) {
+                Some(LengthValue::Px(p)) => Some((p as f32, p as f32)),
+                _ => None,
+            }
+        }
+        [a, b] => {
+            let base = named(a).or_else(|| named(b));
+            let orient_is_landscape = *a == "landscape" || *b == "landscape";
+            if let Some((w, h)) = base {
+                // named 返回 portrait（w ≤ h）；landscape 交换两轴。
+                return Some(if orient_is_landscape { (h, w) } else { (w, h) });
+            }
+            // `<length> <length>`（宽 高）
+            match (parse_length(a), parse_length(b)) {
+                (Some(LengthValue::Px(w)), Some(LengthValue::Px(h))) => Some((w as f32, h as f32)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }

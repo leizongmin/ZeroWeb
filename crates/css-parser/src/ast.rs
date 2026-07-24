@@ -28,6 +28,8 @@ pub enum Rule {
     Container(ContainerRule),
     /// @font-face 规则。
     FontFace(FontFaceRule),
+    /// @page 规则（CSS Paged Media）。
+    Page(PageRule),
 }
 
 /// CSS @import 规则。
@@ -81,6 +83,17 @@ pub struct FontFaceRule {
     pub family: String,
     /// `src` 描述符中解析出的 URL 列表（按出现顺序，已去 url() 包裹与引号）。
     pub sources: Vec<String>,
+}
+
+/// CSS @page 规则（Paged Media）。
+///
+/// 格式：`@page { size: A4; margin: 2cm; }`（prelude 可为命名页 `:first` 等，当前忽略）。
+/// 当前仅解析 `size` 描述符并解析为像素 `(width, height)`；`margin` / 命名页 / 页边距盒
+/// 为后续切片。`size` 用于 Print 媒体分页的页尺寸（覆盖默认 A4）。
+#[derive(Debug, Clone)]
+pub struct PageRule {
+    /// 解析后的页尺寸（px），`None` = `size` 缺失或无效（调用方回退默认 A4）。
+    pub size: Option<(f32, f32)>,
 }
 
 /// @keyframes 规则。

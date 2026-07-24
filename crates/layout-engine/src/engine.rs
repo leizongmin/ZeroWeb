@@ -85,6 +85,11 @@ pub struct LayoutEngine {
     /// style_system + layout_engine，使 layout 层可判 Print 模式（cascade 已用 style_system
     /// 的 media_type，layout 此前无 media 感知——R1998 确认的缺口）。
     media_type: zero_css_parser::MediaType,
+    /// Print 分页页高（px）。由 `RenderPipeline` 从 `@page { size }` 解析后注入
+    /// （`set_print_page_height`），default = A4 高（`PRINT_PAGE_HEIGHT_A4`）。
+    /// 仅 `media_type==Print` 时 `paginate_for_print` 消费；Screen 路径零影响。
+    /// R2010：P4 @page `size` 描述符支持——页尺寸不再硬编码 A4。
+    print_page_height: f32,
     /// 缓存的 taffy 布局状态（可选，用于增量计算）。
     cached_state: Option<CachedLayoutState>,
     /// U1b-wiring（unified font stack）：可选 per-font 行度量提供者。
@@ -108,6 +113,7 @@ impl LayoutEngine {
             viewport_width,
             viewport_height,
             media_type: zero_css_parser::MediaType::Screen,
+            print_page_height: crate::print_pagination::PRINT_PAGE_HEIGHT_A4,
             cached_state: None,
             font_metric_provider: None,
         }
@@ -117,6 +123,14 @@ impl LayoutEngine {
     /// 由 `RenderPipeline::set_media_type` 调用（同设 style_system + layout_engine）。
     pub fn set_media_type(&mut self, media_type: zero_css_parser::MediaType) {
         self.media_type = media_type;
+    }
+
+    /// 设置 Print 分页页高（R2010 P4：由 `@page { size }` 解析注入；≤0 忽略保默认）。
+    /// 由 `RenderPipeline` 在收集样式表后调用（页尺寸为文档级，随文档 CSS 变化）。
+    pub fn set_print_page_height(&mut self, page_height: f32) {
+        if page_height > 0.0 {
+            self.print_page_height = page_height;
+        }
     }
 
     /// U1b-wiring（unified font stack）：注入 per-font 行度量提供者。
@@ -628,11 +642,7 @@ impl LayoutEngine {
         if matches!(self.media_type, zero_css_parser::MediaType::Print)
             && crate::print_pagination::print_paginate_enabled()
         {
-            crate::print_pagination::paginate_for_print(
-                &mut root_box,
-                crate::print_pagination::PRINT_PAGE_HEIGHT_A4,
-                styles,
-            );
+            crate::print_pagination::paginate_for_print(&mut root_box, self.print_page_height, styles);
         }
 
         // 缓存 taffy 状态用于后续增量计算
@@ -748,11 +758,7 @@ impl LayoutEngine {
         if matches!(self.media_type, zero_css_parser::MediaType::Print)
             && crate::print_pagination::print_paginate_enabled()
         {
-            crate::print_pagination::paginate_for_print(
-                &mut root_box,
-                crate::print_pagination::PRINT_PAGE_HEIGHT_A4,
-                styles,
-            );
+            crate::print_pagination::paginate_for_print(&mut root_box, self.print_page_height, styles);
         }
 
         let layout_ms = use_start.elapsed().as_secs_f64() * 1000.0;

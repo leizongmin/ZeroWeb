@@ -1210,6 +1210,10 @@ fn collect_from_rules(
                 // @font-face 规则不参与样式匹配（自定义字体加载由 reftest/webview
                 // 调用方在渲染前从 CSS 提取并注入 FontLoader），跳过。
             }
+            zero_css_parser::ast::Rule::Page(_) => {
+                // @page 规则不参与元素级样式匹配（页尺寸为文档级，由 render pipeline
+                // 从 CSS 提取并注入 print 分页），跳过。
+            }
         }
     }
 }
