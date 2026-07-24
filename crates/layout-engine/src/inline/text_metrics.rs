@@ -449,8 +449,11 @@ pub(crate) fn bidi_reorder(text: &str) -> String {
         return text.to_string();
     }
 
-    // 检查是否包含 RTL 字符
-    let has_rtl = text.chars().any(|ch| {
+    // 检查是否需要 BiDi 处理：含 RTL 脚本字符 **或** bidi 控制码（R2019）。
+    // 原 `has_rtl` 仅查 RTL 脚本（Hebrew/Arabic），漏 bidi 控制码（U+202A-202E LRE/RLE/PDF/LRO/RLO
+    // + U+2066-2069 LRI/RLI/FSI/PDI）——含控制码的纯 Latin 文本（如 bidi-008a `a[U+202E]l[U+202D]...`）
+    // 误判无需重排序 → 早返原序 → 视觉顺序错（RLO 未生效）。
+    let needs_bidi = text.chars().any(|ch| {
         let cp = ch as u32;
         // Hebrew: 0x0590–0x05FF, Arabic: 0x0600–0x06FF, Syriac: 0x0700–0x074F
         // Arabic Extended: 0x08A0–0x08FF, Arabic Presentation Forms: 0xFB50–0xFDFF, 0xFE70–0xFEFF
@@ -460,27 +463,48 @@ pub(crate) fn bidi_reorder(text: &str) -> String {
             || (0x08A0..=0x08FF).contains(&cp)
             || (0xFB50..=0xFDFF).contains(&cp)
             || (0xFE70..=0xFEFF).contains(&cp)
+            // bidi 控制码（UAX #9 §2-3）：embedding/override + isolate
+            || (0x202A..=0x202E).contains(&cp)
+            || (0x2066..=0x2069).contains(&cp)
     });
 
-    if !has_rtl {
+    if !needs_bidi {
         return text.to_string();
     }
 
-    // 运行 BiDi 算法
+    // 运行 BiDi 算法（unicode_bidi 按段落算正确 paragraph level + 字符级 level + 控制码语义）
     let bidi_info = BidiInfo::new(text, None);
-    if bidi_info.levels.is_empty() {
+    // 用实际段落信息（含正确 paragraph embedding level，由首强字符定）——R2019 修：
+    // 原硬编码 `Level::ltr()` 对 RTL-首段（首强字符为 RTL）致基向错。
+    let Some(para) = bidi_info.paragraphs.first() else {
         return text.to_string();
-    }
-
-    // 查找段落信息
-    let para = unicode_bidi::ParagraphInfo {
-        range: 0..text.len(),
-        level: unicode_bidi::Level::ltr(),
     };
 
-    // 对整个文本段落进行重排序
-    let reordered = bidi_info.reorder_line(&para, 0..text.len());
+    // 对整个段落进行重排序（单段文本：para.range = 全文）
+    let reordered = bidi_info.reorder_line(para, para.range.clone());
     reordered.into_owned()
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use super::bidi_reorder;
+
+    /// R2019：纯 ASCII（无 RTL 脚本字符、无 bidi 控制码）须原样返回（早返 fast-path）。
+    #[test]
+    fn r2019_bidi_reorder_pure_ascii_unchanged() {
+        assert_eq!(bidi_reorder("hello world"), "hello world");
+        assert_eq!(bidi_reorder(""), "");
+    }
+
+    /// R2019：bidi 控制码（U+202E RLO）须触发重排序（修：原 `has_rtl` 漏控制码致早返原序）。
+    /// logical `ab[RLO]cde` → RLO 反转后续 → 视觉序中 c/d/e 倒序（edc）。
+    #[test]
+    fn r2019_bidi_reorder_handles_rlo_control_code() {
+        let out = bidi_reorder("ab\u{202E}cde");
+        // RLO 生效 → cde 视觉倒序（e 在 d 前，d 在 c 前）。
+        let (pc, pd, pe) = (out.find('c').unwrap(), out.find('d').unwrap(), out.find('e').unwrap());
+        assert!(pe < pd, "RLO must reverse cde (e before d): got {out:?}");
+        assert!(pd < pc, "RLO must reverse cde (d before c): got {out:?}");
+    }
+}
