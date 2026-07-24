@@ -101,6 +101,17 @@ pub trait Sandbox {
     /// 须在 `execute` 之前调用。回调参数为 JS 参数的字符串数组，返回字符串。
     #[allow(clippy::type_complexity)]
     fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>);
+    /// P1b S1 异步回调 resolve（方案 A，RFC `p1b-rfc-2026-07-25.md` v0.3）：Rust 异步
+    /// 完成后调此方法，在沙箱中执行 JS 全局 `__zwResolveCallback(id, result)`，由 JS
+    /// 侧 pending 表 resolve 对应 Promise。`id`/`result` 按 JS 字符串字面量安全转义防注入。
+    ///
+    /// **前置**：JS 侧须先注入 `__zwResolveCallback` + pending 表（dom_bridge 负责）；
+    /// 未注入时 V8 实现防御性 no-op。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（RFC v0.3 V8-first——异步/对象绑定仅 V8 可行，
+    /// QuickJS 保持同步）。后续切片接通 `tab_js_worker` marshal channel 后，跨线程异步
+    /// 完成（net fetch / setTimeout）经 marshal 回 JS worker 线程再调本方法。
+    fn resolve_async_callback(&mut self, _id: &str, _result: &str) {}
     /// 设置脚本执行超时（毫秒），0 表示无超时。
     fn set_timeout_ms(&mut self, timeout_ms: u64);
     /// 重置上下文（清空 JS 状态）。

@@ -62,6 +62,28 @@ fn host_callback_invoke(scope: &mut v8::PinScope, args: v8::FunctionCallbackArgu
     }
 }
 
+/// 将 Rust 字符串转为 JS 字符串字面量（含两端双引号），转义特殊字符防注入。
+/// 供 [`V8Sandbox::resolve_async_callback`] 把 `id`/`result` 安全嵌入执行脚本。
+fn js_string_literal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' | '\\' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// V8平台初始化守卫（全局只初始化一次）。
 static V8_INIT: Once = Once::new();
 
@@ -164,6 +186,21 @@ impl V8Sandbox {
             idx
         });
         self.callbacks.push((name.to_string(), idx));
+    }
+
+    /// P1b S1 异步回调 resolve（方案 A）。Rust 异步完成后调此方法：执行 JS 全局
+    /// `__zwResolveCallback(id, result)`，由 JS 侧 pending 表 resolve 对应 Promise。
+    /// `execute` 末尾的 `perform_microtask_checkpoint` 会 drain 随后触发的 `.then`
+    /// 微任务，故返回时 Promise 已 resolve。
+    ///
+    /// **防御**：JS 侧未注入 `__zwResolveCallback`（dom_bridge 未接通）时，外层
+    /// `if(globalThis.__zwResolveCallback)` 守卫令本次 execute 的脚本结果为
+    /// `undefined`，不报错（零回归）。`id`/`result` 经 [`js_string_literal`] 转义防注入。
+    pub fn resolve_async_callback(&mut self, id: &str, result: &str) {
+        let id_lit = js_string_literal(id);
+        let result_lit = js_string_literal(result);
+        let js = format!("if(globalThis.__zwResolveCallback){{__zwResolveCallback({id_lit},{result_lit});}}");
+        let _ = self.execute(&js);
     }
 
     /// 设置脚本执行超时（毫秒）；0 表示无超时。
@@ -484,6 +521,9 @@ impl crate::Sandbox for V8Sandbox {
     fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
         V8Sandbox::register_callback(self, name, callback)
     }
+    fn resolve_async_callback(&mut self, id: &str, result: &str) {
+        V8Sandbox::resolve_async_callback(self, id, result);
+    }
     fn set_timeout_ms(&mut self, timeout_ms: u64) {
         V8Sandbox::set_timeout_ms(self, timeout_ms)
     }
@@ -614,6 +654,96 @@ mod tests {
         // 第二次 execute 复用缓存 Context，回调仍可用。
         let r2 = sandbox.execute("__zw_greet('again')").unwrap();
         assert_eq!(r2.value, "hi again");
+    }
+
+    // ── P1b S1 异步回调 resolve（方案 A）──
+
+    #[test]
+    fn test_resolve_async_callback_resolves_pending_promise() {
+        // 方案 A 端到端：宿主回调同步返「回调 ID」，JS 端建 pending Promise；
+        // Rust 异步完成后 resolve_async_callback 触发 __zwResolveCallback resolve。
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+        // JS 侧 __zwResolveCallback + pending 表（生产由 dom_bridge 注入）。
+        sandbox
+            .execute(
+                "globalThis.__zw_pending = {};
+                 globalThis.__zwResolveCallback = function(id, result) {
+                     var r = globalThis.__zw_pending[id];
+                     if (r) { r(result); delete globalThis.__zw_pending[id]; }
+                 };",
+            )
+            .unwrap();
+        // 宿主回调返回调 ID（同步，方案 A）。
+        sandbox.register_callback("__zw_start", Box::new(|args| format!("id:{}", args[0])));
+        // JS：调宿主回调拿 ID，建 Promise 存 pending[id]，then 写全局 __result。
+        sandbox
+            .execute(
+                "var id = __zw_start('7');
+                 new Promise(function(resolve){ globalThis.__zw_pending[id] = resolve; })
+                     .then(function(v){ globalThis.__result = v; });",
+            )
+            .unwrap();
+        // resolve 前：Promise pending，__result 未设。
+        let before = sandbox.execute("typeof globalThis.__result").unwrap();
+        assert_eq!(before.value, "undefined");
+        // Rust 异步完成 → resolve（execute 内 perform_microtask_checkpoint drain then）。
+        sandbox.resolve_async_callback("id:7", "done-value");
+        // resolve 后：__result 已被 .then 写入。
+        let after = sandbox.execute("globalThis.__result").unwrap();
+        assert_eq!(after.value, "done-value");
+    }
+
+    #[test]
+    fn test_resolve_async_callback_safe_when_resolver_not_injected() {
+        // 防御：JS 侧未注入 __zwResolveCallback（dom_bridge 未接通）时不报错（零回归）。
+        let mut sandbox = V8Sandbox::new().unwrap();
+        // 不注入 __zwResolveCallback，直接调 resolve_async_callback。
+        sandbox.resolve_async_callback("id:x", "v");
+        // 沙箱仍可用。
+        let r = sandbox.execute("1 + 1").unwrap();
+        assert_eq!(r.value, "2");
+    }
+
+    #[test]
+    fn test_resolve_async_callback_escapes_injection() {
+        // id/result 含双引号/反斜杠/代码片段时，js_string_literal 须转义，不得逃逸为 JS 代码。
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+        sandbox
+            .execute(
+                "globalThis.__zw_pending = {};
+                 globalThis.__zw_evil_called = false;
+                 globalThis.__zwResolveCallback = function(id, result) {
+                     globalThis.__zw_received = result;
+                 };",
+            )
+            .unwrap();
+        // 恶意 payload：试图闭合字符串注入 evil()。js_string_literal 须使其被当作纯字符串。
+        sandbox.resolve_async_callback("a\", globalThis.__zw_evil_called = true, \"b", "x\"); evil");
+        // evil 未执行（evil_called 仍 false），payload 作为字符串原样送达。
+        let evil = sandbox.execute("globalThis.__zw_evil_called").unwrap();
+        assert_eq!(evil.value, "false");
+        let received = sandbox.execute("globalThis.__zw_received").unwrap();
+        assert_eq!(received.value, "x\"); evil");
+    }
+
+    #[test]
+    fn test_js_string_literal_escapes_special_chars() {
+        // 直接单测转义器：常见注入向量与控制字符。
+        assert_eq!(js_string_literal("plain"), "\"plain\"");
+        assert_eq!(js_string_literal("a\"b"), "\"a\\\"b\"");
+        assert_eq!(js_string_literal("a\\b"), "\"a\\\\b\"");
+        assert_eq!(js_string_literal("a\nb"), "\"a\\nb\"");
+        assert_eq!(js_string_literal("a\tb"), "\"a\\tb\"");
+        // 控制字符（U+0001）转 。
+        assert_eq!(js_string_literal("a\u{0001}b"), "\"a\\u0001b\"");
     }
 
     #[test]
