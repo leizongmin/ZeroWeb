@@ -3,7 +3,8 @@
 > **🎯 当前状态速览（2026-07-25）**
 >
 > - **Reftest broad 一致率 ~57%**（plateau；2026-07-17 用户裁决接受）。自主 clean-lever 空间经 R1872–R1878 七轮 subdir 扫描 + R109 probe **definitive 穷尽**——唯 R1874 出 +7，残余全 font-wall / interaction-entangled / structural-deadlock。
-> - **唯一 headline unlock = Phase A IFC 三路径统一**（line-box metric coherence；pre-authorized ruling #4，多 session，未实施）。阻塞 reftest 大盘 / 37-form-controls overlap / vertical-mode。详见 [`blockers-resolution-plan-2026-07-25.md`](./blockers-resolution-plan-2026-07-25.md)。
+> - **唯一 headline unlock = Phase A IFC 三路径统一**（line-box metric coherence；pre-authorized ruling #4，多 session，未实施）。阻塞 reftest 大盘 / 37-form-controls overlap / vertical-mode。详见 [`blockers-resolution-plan-2026-07-25.md`](./blockers-resolution-plan-2026-07-25.md)；**首切片机制（可执行）** = [`phase-a-slice1-inline-block-linebox-mechanism-2026-07-25.md`](./phase-a-slice1-inline-block-linebox-mechanism-2026-07-25.md)（inline-block line-box 贡献，解 37-form-controls overlap）。
+> - **P1b（JS Bridge 原生化）**：解锁交互式网站（fetch/MutationObserver/事件循环）。独立 RFC [`p1b-rfc-2026-07-25.md`](./p1b-rfc-2026-07-25.md)（v0.3 选型就绪，待授权实施）。
 > - **font-wall** = Phase A layout-metric coherence spread（非 raster、非 advance 单点，R1764–R1769 三部曲收敛）。font-stack rebuild = user-gated ruling #2（M18 暂不优先，plateau-accepted）。
 > - **legacy smoke 50/51 struct PASS**（唯一 FAIL = 37-form-controls = Phase A 阻塞，非回归）。
 > - 浓缩结论见下方「## 综合裁决」「## 当前状态概览」；用户裁决见 📌 裁决包；四大阻塞解决方案见 [`blockers-resolution-plan-2026-07-25.md`](./blockers-resolution-plan-2026-07-25.md)。

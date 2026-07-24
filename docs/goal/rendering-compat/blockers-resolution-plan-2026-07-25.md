@@ -3,6 +3,7 @@
 **日期**：2026-07-25
 **性质**：方案层（根因 / 解锁路径 / 切片 / 依赖 / 推荐），非代码实施。供架构方向决策。
 **关联**：[phase-a-IFC-unification-design.md](phase-a-IFC-unification-design.md)、[unified-font-stack-design.md](unified-font-stack-design.md)、[linebox-metric-unification-rfc.md](linebox-metric-unification-rfc.md)、[js-dom-bridge-design.md](js-dom-bridge-design.md)、[master.md](master.md)
+**可执行首切片（实施入口）**：Phase A → [phase-a-slice1-inline-block-linebox-mechanism-2026-07-25.md](phase-a-slice1-inline-block-linebox-mechanism-2026-07-25.md)；P1b → [p1b-rfc-2026-07-25.md](p1b-rfc-2026-07-25.md)（v0.3 选型）+ [p1b-slice1](p1b-slice1-event-loop-microtask-mechanism-2026-07-25.md)（已撤销 microtask，保留历史）
 
 ---
 

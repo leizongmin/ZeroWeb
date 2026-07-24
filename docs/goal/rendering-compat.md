@@ -9,6 +9,8 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **🔗 当前阻塞 + 可执行方案（2026-07-25）**：reftest ~57% plateau（自主 clean-lever 穷尽）。四大阻塞（Phase A / font-stack / P1b / P3）方案见 [`rendering-compat/blockers-resolution-plan-2026-07-25.md`](rendering-compat/blockers-resolution-plan-2026-07-25.md)。**实施入口**：Phase A 首切片（pre-authorized）= [`rendering-compat/phase-a-slice1-inline-block-linebox-mechanism-2026-07-25.md`](rendering-compat/phase-a-slice1-inline-block-linebox-mechanism-2026-07-25.md)；P1b 独立 RFC = [`rendering-compat/p1b-rfc-2026-07-25.md`](rendering-compat/p1b-rfc-2026-07-25.md)。运行时控制面板 = [`rendering-compat/master.md`](rendering-compat/master.md)。
+
 ---
 
 ## Mission
