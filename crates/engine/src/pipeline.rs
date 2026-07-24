@@ -717,15 +717,17 @@ fn inject_print_page_dividers(
         return;
     }
     // R2010 P4：页高由 `@page { size }` 解析传入（default A4，与 paginate_for_print 同源）。
-    let page_h = page_h.max(1.0);
+    // R2018 P5a：页边界经 `compute_print_page_sequence` 算（与 paginate/divider 单一真相）。
+    // 分隔线用物理页边界（physical_top），边距传 0（分隔线标记物理页 break，与 margin 无关）。
     let extent = layout_extent_y(layout_root, 0.0);
-    let page_count = (extent / page_h).ceil() as usize;
-    if page_count < 2 {
+    let pages = print_pagination::compute_print_page_sequence(extent, page_h, 0.0, 0.0);
+    if pages.len() < 2 {
         return; // 单页：无内部页边界。
     }
     let color = Color::rgb(170, 170, 170);
-    for k in 1..page_count {
-        primitives.add_fill(Rect::new(0.0, k as f32 * page_h, viewport_w, 2.0), color);
+    // 页 1..N-1 的物理顶 = 页间分隔线位置（页 0 顶 = 文档顶，不画）。
+    for page in pages.iter().skip(1) {
+        primitives.add_fill(Rect::new(0.0, page.physical_top, viewport_w, 2.0), color);
     }
 }
 

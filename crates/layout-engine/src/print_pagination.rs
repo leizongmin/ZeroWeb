@@ -56,6 +56,66 @@ pub fn print_content_width(page_width: f32, margin_left: f32, margin_right: f32)
     if usable < 1.0 { page_width.max(0.0) } else { usable }
 }
 
+/// 一页的几何信息（R2014 Phase P5a page-sequence 元数据）。
+///
+/// `physical_top/bottom` = 物理页框边界（k×page_height … (k+1)×page_height）；
+/// `content_top/bottom` = 页内容盒边界（physical ± 垂直 margin），即该页内容可占据的 abs y 区间。
+/// 物理边界供页边界分隔线（`inject_print_page_dividers`）+ 未来 P5b per-page clip；
+/// 内容盒边界供 P5b 内容裁剪 + 未来 fragmentation。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PrintPage {
+    /// 页索引（0-based）。
+    pub index: usize,
+    /// 物理页框顶 abs y（= index × page_height）。
+    pub physical_top: f32,
+    /// 物理页框底 abs y（= (index + 1) × page_height）。
+    pub physical_bottom: f32,
+    /// 页内容盒顶 abs y（= physical_top + margin_top）。
+    pub content_top: f32,
+    /// 页内容盒底 abs y（= physical_bottom − margin_bottom）。
+    pub content_bottom: f32,
+}
+
+/// 计算打印页序列（R2014 Phase P5a FR-P5-001）。
+///
+/// 从文档布局 `layout_extent`（abs y 跨度）+ 页尺寸 + 垂直边距算页序列：
+/// `page_count = ceil(extent / page_height)`，每页含物理边界 + 内容盒边界。
+/// 与 `inject_print_page_dividers`（分隔线）/ `paginate_for_print`（分页）同源页边界——
+/// 单一真相，避免三处页边界计算发散。退化守卫镜像 `paginate_for_print`：
+/// 垂直边距吃光页高（usable ≤ 1px）→ 边距归零。
+///
+/// 返回至少 1 页（空文档 extent=0 → 1 页）。
+pub fn compute_print_page_sequence(
+    layout_extent: f32,
+    page_height: f32,
+    margin_top: f32,
+    margin_bottom: f32,
+) -> Vec<PrintPage> {
+    let page_height = page_height.max(1.0);
+    // 退化守卫：边距吃光页高 → 边距归零（镜像 paginate_for_print usable 守卫）。
+    let usable = page_height - margin_top - margin_bottom;
+    let (mt, mb) = if usable < 1.0 {
+        (0.0, 0.0)
+    } else {
+        (margin_top.max(0.0), margin_bottom.max(0.0))
+    };
+    let extent = layout_extent.max(0.0);
+    let page_count = (extent / page_height).ceil() as usize;
+    (0..page_count.max(1))
+        .map(|k| {
+            let physical_top = k as f32 * page_height;
+            let physical_bottom = (k as f32 + 1.0) * page_height;
+            PrintPage {
+                index: k,
+                physical_top,
+                physical_bottom,
+                content_top: physical_top + mt,
+                content_bottom: physical_bottom - mb,
+            }
+        })
+        .collect()
+}
+
 /// env kill-switch（R2000 default-on）：Print 分页默认启用；`ZW_PRINT_PAGINATE=0` 紧急关闭。
 /// gate 由 engine.rs 组合 `media_type == Print && print_paginate_enabled()`（Screen 永不触发）。
 /// default-on 依据：11 单元测试 + 端到端真实 HTML 管线测试（R2000）证分页正确 + Screen 零影响。
@@ -796,5 +856,59 @@ mod tests {
         // 边界：usable 恰 = 1 不触发回退（>1 才正常减）。
         let wb = print_content_width(101.0, 50.0, 50.0);
         assert!((wb - 1.0).abs() < 0.01, "usable=1 boundary → 1.0, got {wb}");
+    }
+
+    /// R2018 P5a：页序列按 ceil(extent/page_h) 计页数 + 物理边界 = k×page_h。
+    #[test]
+    fn r2018_page_sequence_extent_to_page_count() {
+        // extent 2500 / page_h 1122.5 → ceil = 3 页。
+        let pages = compute_print_page_sequence(2500.0, 1122.5, 0.0, 0.0);
+        assert_eq!(pages.len(), 3, "extent 2500 / 1122.5 → 3 pages");
+        assert_eq!(pages[0].index, 0);
+        assert!((pages[0].physical_top - 0.0).abs() < 0.1);
+        assert!((pages[1].physical_top - 1122.5).abs() < 0.1, "page 1 physical_top");
+        assert!((pages[2].physical_top - 2245.0).abs() < 0.1, "page 2 physical_top");
+        // 无边距时 content == physical。
+        assert_eq!(pages[1].content_top, pages[1].physical_top);
+        assert_eq!(pages[1].content_bottom, pages[1].physical_bottom);
+    }
+
+    /// R2018 P5a：垂直边距驱动内容盒边界（content_top = physical_top + mt，content_bottom = physical_bottom − mb）。
+    #[test]
+    fn r2018_page_sequence_content_box_uses_margins() {
+        // page_h 1000, mt 100, mb 80 → 内容盒高 820，content_top = k×1000 + 100。
+        let pages = compute_print_page_sequence(2500.0, 1000.0, 100.0, 80.0);
+        assert_eq!(pages.len(), 3);
+        assert!(
+            (pages[1].content_top - 1100.0).abs() < 0.1,
+            "page 1 content_top = 1000+100"
+        );
+        assert!(
+            (pages[1].content_bottom - 1920.0).abs() < 0.1,
+            "page 1 content_bottom = 2000-80"
+        );
+        // 物理边界不受 margin 影响。
+        assert!((pages[1].physical_top - 1000.0).abs() < 0.1);
+        assert!((pages[1].physical_bottom - 2000.0).abs() < 0.1);
+    }
+
+    /// R2018 P5a：退化守卫——垂直边距吃光页高（usable ≤ 1）→ 边距归零（content == physical）。
+    #[test]
+    fn r2018_page_sequence_degenerate_margins_zeroed() {
+        // page_h 100, mt 60, mb 60 → usable = -20 < 1 → 边距归零。
+        let pages = compute_print_page_sequence(250.0, 100.0, 60.0, 60.0);
+        assert_eq!(
+            pages[1].content_top, pages[1].physical_top,
+            "degenerate → margins zeroed"
+        );
+        assert_eq!(pages[1].content_bottom, pages[1].physical_bottom);
+    }
+
+    /// R2018 P5a：空文档（extent ≤ 0）至少 1 页。
+    #[test]
+    fn r2018_page_sequence_empty_doc_one_page() {
+        let pages = compute_print_page_sequence(0.0, 1122.5, 0.0, 0.0);
+        assert_eq!(pages.len(), 1, "empty doc → 1 page");
+        assert_eq!(pages[0].index, 0);
     }
 }
