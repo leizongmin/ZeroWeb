@@ -241,6 +241,15 @@ impl RenderPipeline {
         self.style_system.set_prefers_color_scheme(scheme);
     }
 
+    /// 设置渲染媒体类型（`@media print/screen/all` 级联过滤据此生效，DC-12）。
+    ///
+    /// 默认 `Screen`（`StyleSystem` 初始值）= 零行为变更。`Print` 使 `@media print`
+    /// 规则在级联中生效、`@media screen` 失效——用于打印预览与 reftest `--media=print`
+    /// 量真实 WPT yield（R1991）。镜像 `set_prefers_color_scheme` 的全栈接线入口。
+    pub fn set_media_type(&mut self, media_type: zero_css_parser::media_query::MediaType) {
+        self.style_system.set_media_type(media_type);
+    }
+
     /// 更新视口尺寸（保留 DOM 缓存，后续需 `repaint_cached_viewport` 重布局）。
     pub fn set_viewport(&mut self, width: f32, height: f32) {
         if (self.viewport_width - width).abs() < f32::EPSILON && (self.viewport_height - height).abs() < f32::EPSILON {

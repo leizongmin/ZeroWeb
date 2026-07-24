@@ -161,6 +161,8 @@ pub struct ReftestConfig {
     /// mismatch 模式的最小差异率阈值（默认 0.005 = 0.5%）。
     /// 差异率超过此值才认为是不匹配通过。
     pub min_mismatch_ratio: f64,
+    /// 渲染媒体类型（DC-12 @media print/screen 级联过滤；R1991）。默认 `Screen` = 零行为变更。
+    pub media_type: zero_css_parser::media_query::MediaType,
 }
 
 impl Default for ReftestConfig {
@@ -174,6 +176,7 @@ impl Default for ReftestConfig {
             category: ReftestCategory::Unknown,
             fuzzy_override: None,
             min_mismatch_ratio: 0.005,
+            media_type: zero_css_parser::media_query::MediaType::Screen,
         }
     }
 }
@@ -485,6 +488,9 @@ pub fn render_to_framebuffer_with_layout_with_base(
 
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
     pipeline.set_skip_indicators(true);
+    // R1991：@media print/screen 级联按渲染媒体类型过滤（DC-12）。默认 Screen = 零变更；
+    // `--media print` 经 config.media_type 传入使 @media print 生效（量真实 WPT yield）。
+    pipeline.set_media_type(config.media_type);
     pipeline.set_image_sizes(image_sizes);
     pipeline.set_image_ratios(image_ratios);
     pipeline.set_image_no_ratio(image_no_ratio);

@@ -46,6 +46,7 @@ Options:
   --width <px>      Viewport width (default: 800)
   --height <px>     Viewport height (default: 600)
   --jobs <n>        Number of parallel test jobs (default: CPU count - 1, GPU 1)
+  --media <type>    Rendering media type: print|screen (default: screen; applies @media print/screen cascade)
   --category <cat>  Reftest category filter (layout|text|all)
   --output <path>   Reftest report output path
 ";
@@ -68,6 +69,8 @@ struct CliOptions {
     jobs: Option<usize>,
     /// 上游 WPT 数据目录。
     wpt_data: Option<String>,
+    /// 渲染媒体类型（DC-12 @media print/screen；R1991）。默认 `Screen`。
+    media_type: zero_css_parser::media_query::MediaType,
 }
 
 /// 输出格式。
@@ -111,6 +114,7 @@ fn main() {
         use_gpu: false,
         jobs: None,
         wpt_data: None,
+        media_type: zero_css_parser::media_query::MediaType::Screen,
     };
 
     // 解析选项参数
@@ -155,6 +159,18 @@ fn main() {
                 i += 1;
                 if i < args.len() {
                     options.wpt_data = Some(args[i].clone());
+                }
+            }
+            // R1991：渲染媒体类型（DC-12 @media print/screen 级联过滤）。
+            // `--media print` 量 @media print 真实 WPT yield；默认 screen = 零变更。
+            "--media" => {
+                i += 1;
+                if i < args.len() {
+                    match args[i].to_ascii_lowercase().as_str() {
+                        "print" => options.media_type = zero_css_parser::media_query::MediaType::Print,
+                        "screen" => options.media_type = zero_css_parser::media_query::MediaType::Screen,
+                        other => eprintln!("Unknown --media value '{other}' (expected print|screen), ignoring"),
+                    }
                 }
             }
             _ => {
@@ -690,6 +706,7 @@ fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
         let mut config = configs[*idx].clone();
         config.viewport_width = options.viewport_width as u32;
         config.viewport_height = options.viewport_height as u32;
+        config.media_type = options.media_type;
 
         if options.use_gpu {
             run_reftest_gpu(case, &config)
@@ -869,7 +886,8 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
 
     let results: Vec<ReftestResult> = parallel_map(&filtered, jobs, |case| {
         let reftest_case = case.to_reftest_case();
-        let config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
+        let mut config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
+        config.media_type = options.media_type;
         let base_dir = case.base_dir.as_deref();
 
         if options.use_gpu {
@@ -1032,6 +1050,7 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         let config = ReftestConfig {
             viewport_width: options.viewport_width as u32,
             viewport_height: options.viewport_height as u32,
+            media_type: options.media_type,
             ..Default::default()
         };
         let test_fb = render_to_framebuffer_with_base(&case.test_html, "", &config, case.base_dir.as_deref());

@@ -126,6 +126,41 @@ fn test_reftest_mismatch_mode() {
     );
 }
 
+/// R1991：`--media print` 端到端接线验证（DC-12 @media print 级联）。
+///
+/// 同一页面声明 `@media screen { body: blue } @media print { body: red }`：
+/// `ReftestConfig.media_type = Screen` 渲染蓝底，`Print` 渲染红底。两 framebuffer
+/// 应显著不同 → 证明 config.media_type 经 `pipeline.set_media_type` →
+/// `StyleSystem.set_media_type` 触达级联过滤（@media print/screen 规则按渲染媒体类型生效）。
+#[test]
+fn test_media_type_print_applies_print_rules() {
+    let html = concat!(
+        "<html><head><style>",
+        "@media screen { body { background-color: blue; } }",
+        "@media print  { body { background-color: red;  } }",
+        "</style></head>",
+        "<body style=\"margin:0\"><div style=\"width:100%;height:100%;\"></div></body></html>"
+    );
+    let screen_cfg = ReftestConfig {
+        media_type: zero_css_parser::media_query::MediaType::Screen,
+        ..Default::default()
+    };
+    let print_cfg = ReftestConfig {
+        media_type: zero_css_parser::media_query::MediaType::Print,
+        ..Default::default()
+    };
+
+    let screen_fb = render_to_framebuffer_with_base(html, "", &screen_cfg, None);
+    let print_fb = render_to_framebuffer_with_base(html, "", &print_cfg, None);
+
+    // Screen(蓝) vs Print(红) 整页背景不同 → diff_pixel_count 应远大于 0。
+    let (diff_pixels, _) = compare_pixels(&screen_fb, &print_fb, 5);
+    assert!(
+        diff_pixels > 100,
+        "Screen vs Print render must differ (media_type wiring broken): diff_pixels={diff_pixels}"
+    );
+}
+
 #[test]
 fn test_struct_check_detects_sibling_overlap() {
     // 两个**普通块流**兄弟盒经负 margin 重叠（第二个 margin-top:-50px 拉 50px，100×50=5000px²
