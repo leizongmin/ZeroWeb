@@ -161,7 +161,13 @@ pub struct WebView {
 impl WebView {
     /// 创建新的 WebView。
     pub fn new(config: WebViewConfig) -> Self {
-        let pipeline = RenderPipeline::new(config.width as f32, config.height as f32);
+        let mut pipeline = RenderPipeline::new(config.width as f32, config.height as f32);
+        // R1996：调试属性指示器（border-collapse/border-spacing/break/overflow-wrap 等，
+        // 绘制于元素边角的彩色标记）默认**跳过**——WebView 是生产嵌入 API，不应默认显示
+        // 调试标记（与 reftest/product-smoke 的 skip_indicators=true 一致；旧默认 false 致
+        // zero-browser 产品页含 table/direction 等属性的元素显示调试标记）。需要指示器的
+        // 嵌入者（dev 工具）可调 `set_skip_indicators(false)` 重新开启。
+        pipeline.set_skip_indicators(true);
         let http_client = HttpClient::new();
         let external_script = config.external_script.clone();
         let js_sandbox = if external_script.is_some() {
@@ -890,6 +896,14 @@ impl WebView {
     pub fn set_media_type(&mut self, media_type: MediaType) {
         self.media_type = media_type;
         self.pipeline.set_media_type(media_type);
+    }
+
+    /// 设置是否跳过调试属性指示器（R1996）。
+    ///
+    /// 默认 `true`（跳过，生产嵌入干净渲染）。dev 工具需要可视化 CSS 属性指示器
+    ///（border-collapse/break/overflow-wrap 等元素边角标记）时可传 `false` 重新开启。
+    pub fn set_skip_indicators(&mut self, skip: bool) {
+        self.pipeline.set_skip_indicators(skip);
     }
 
     /// 命中测试链接，坐标为 WebView 视口内的 CSS 逻辑像素。

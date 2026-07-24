@@ -448,6 +448,36 @@ fn test_smoke_media_type_print() {
     assert!(result2.timings.total_ms >= 0.0);
 }
 
+// ── Phase 4: 调试指示器默认跳过验证（R1996）──
+
+/// WebView 默认跳过调试属性指示器（生产嵌入干净渲染；R1996）。
+///
+/// `break-before: always` 触发 `paint_break_indicator`（元素顶部红色双横线 = 2 个 fill）。
+/// 默认（skip=true）不绘制；`set_skip_indicators(false)` 后绘制 → 后者 fills 更多，证明：
+/// ① 默认干净（无调试标记）；② 指示器机制工作（skip=false 时存在）；③ 旧默认 skip=false
+/// 会在产品页含此类属性的元素上显示调试标记（R1996 修复）。
+#[test]
+fn webview_skips_debug_indicators_by_default() {
+    // 经 <style> 块 + class 选择器施加（比 inline 更可靠触发指示器），含两个指示器触发属性：
+    // break-before:always（paint_break_indicator 顶部红双横线）+ direction:rtl（paint_direction_indicator）。
+    let html = concat!(
+        "<html><head><style>",
+        ".b { break-before: always; direction: rtl; }",
+        "</style></head><body><div class=\"b\">hello indicator</div></body></html>"
+    );
+    let r_default = create_webview().load_html(html, None);
+    let mut wv_indicators = create_webview();
+    wv_indicators.set_skip_indicators(false);
+    let r_indicators = wv_indicators.load_html(html, None);
+    assert!(
+        r_indicators.primitives.fills.len() > r_default.primitives.fills.len(),
+        "skip=false should render more fills (debug indicators) than default skip=true; \
+         got indicators={} vs default={}",
+        r_indicators.primitives.fills.len(),
+        r_default.primitives.fills.len()
+    );
+}
+
 // ── Phase 4: WASM 执行验证 ──
 
 /// execute_wasm 基础调用（空 WASM 模块不崩溃）
