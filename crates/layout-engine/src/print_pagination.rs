@@ -23,7 +23,8 @@
 //! - ✅ FR-004 自然页填充（子越页边界且整页装得下→推下页顶；oversized 留原位 deferred）
 //! - ✅ FR-006 嵌套 break 子树提升（后代 break-before→整单元换页，P1a 近似）
 //! - ✅ FR-005 页尺寸 + 垂直页边距（default A4 + 0 边距；R2010 P4 `@page { size }` + R2011 `@page { margin }` 解析后由 pipeline 注入覆盖；margin_top/bottom 驱动分页内容区）
-//! - ⏳ oversized 单元真分片（fragment_y_offset 拆多页）/ P2 嵌套精确断 / P3 inside:avoid / @page 水平 margin（须 layout-width-for-print）/ P5 输出模型
+//! - ✅ R2013 layout-width-for-print（Print 模式根布局 containing block 宽 = 页内容盒宽 `print_content_width`；@page size 宽度 + 水平 margin 完整生效；default A4 宽）
+//! - ⏳ oversized 单元真分片（fragment_y_offset 拆多页）/ P2 嵌套精确断 / P3 inside:avoid / P5 输出模型
 //!
 //! # 输出模型
 //!
@@ -41,6 +42,19 @@ use crate::types::LayoutBox;
 
 /// A4 页高 @96dpi（297mm = 11.6929in × 96 ≈ 1122.5px）。P4 `@page { size }` 解析前的默认。
 pub const PRINT_PAGE_HEIGHT_A4: f32 = 1122.5;
+
+/// A4 页宽 @96dpi（210mm = 8.2677in × 96 ≈ 793.7px）。R2013 layout-width-for-print：
+/// Print 模式根布局宽默认 = A4 内容宽（与页高默认 A4 一致），`@page { size }` 解析后由 pipeline 注入覆盖。
+pub const PRINT_PAGE_WIDTH_A4: f32 = 210.0 / 25.4 * 96.0;
+
+/// Print 页内容盒宽（px）= 页宽 − 水平边距。R2013：Print 模式根布局 containing block 宽。
+///
+/// 退化守卫：若水平边距吃掉绝大部分页宽（usable ≤ 1px），回退页宽本身（边距归零），
+/// 避免负可用宽致布局塌缩（镜像 `paginate_for_print` 的垂直 usable 守卫）。
+pub fn print_content_width(page_width: f32, margin_left: f32, margin_right: f32) -> f32 {
+    let usable = page_width - margin_left - margin_right;
+    if usable < 1.0 { page_width.max(0.0) } else { usable }
+}
 
 /// env kill-switch（R2000 default-on）：Print 分页默认启用；`ZW_PRINT_PAGINATE=0` 紧急关闭。
 /// gate 由 engine.rs 组合 `media_type == Print && print_paginate_enabled()`（Screen 永不触发）。
@@ -751,5 +765,36 @@ mod tests {
         paginate_for_print(&mut root, 1000.0, 0.0, 0.0, &styles);
         assert_eq!(root.children[0].y, 0.0, "margin=0 → A 留 y=0（旧行为）");
         assert_eq!(root.children[1].y, 50.0, "margin=0 → B 留 y=50（旧行为）");
+    }
+
+    /// R2013：`PRINT_PAGE_WIDTH_A4` = 210mm @96dpi ≈ 793.7px（与 `PRINT_PAGE_HEIGHT_A4` 同源）。
+    #[test]
+    fn r2013_print_page_width_a4_is_210mm_at_96dpi() {
+        let expected = 210.0 / 25.4 * 96.0;
+        assert!(
+            (PRINT_PAGE_WIDTH_A4 - expected).abs() < 0.01,
+            "A4 width {expected}, got {PRINT_PAGE_WIDTH_A4}"
+        );
+    }
+
+    /// R2013：`print_content_width` = 页宽 − 水平边距。正常区间。
+    #[test]
+    fn r2013_print_content_width_subtracts_horizontal_margins() {
+        // A4 (793.7) − 1in(96) left − 1in(96) right = 601.7
+        let w = print_content_width(PRINT_PAGE_WIDTH_A4, 96.0, 96.0);
+        let expected = PRINT_PAGE_WIDTH_A4 - 192.0;
+        assert!((w - expected).abs() < 0.01, "content width {expected}, got {w}");
+    }
+
+    /// R2013：退化守卫——水平边距吃掉绝大部分页宽（usable ≤ 1px）→ 回退页宽本身（边距归零），
+    /// 避免负可用宽致布局塌缩（镜像垂直 usable 守卫）。
+    #[test]
+    fn r2013_print_content_width_degenerate_falls_back_to_page_width() {
+        // 页宽 100，左右边距各 60 → usable = -20 < 1 → 回退页宽 100。
+        let w = print_content_width(100.0, 60.0, 60.0);
+        assert!((w - 100.0).abs() < 0.01, "degenerate → page width 100, got {w}");
+        // 边界：usable 恰 = 1 不触发回退（>1 才正常减）。
+        let wb = print_content_width(101.0, 50.0, 50.0);
+        assert!((wb - 1.0).abs() < 0.01, "usable=1 boundary → 1.0, got {wb}");
     }
 }

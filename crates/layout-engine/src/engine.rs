@@ -90,12 +90,21 @@ pub struct LayoutEngine {
     /// 仅 `media_type==Print` 时 `paginate_for_print` 消费；Screen 路径零影响。
     /// R2010：P4 @page `size` 描述符支持——页尺寸不再硬编码 A4。
     print_page_height: f32,
+    /// Print 页宽（px）。R2013 layout-width-for-print：由 `@page { size }` 解析注入
+    /// （`set_print_page_width`），default = A4 宽（`PRINT_PAGE_WIDTH_A4`）。Print 模式根布局
+    /// containing block 宽 = `print_content_width(page_width, margin_left, margin_right)`，
+    /// 使 @page size 宽度 + 水平 margin 完整生效。Screen 路径零影响（`effective_root_layout_width` 返 viewport_width）。
+    print_page_width: f32,
     /// Print 分页页内容盒垂直边距（px）。R2011 P4-followup：由 `@page { margin }` 解析注入
     /// （`set_print_page_margins`），驱动分页内容区（页内容顶 = margin_top + k×page_height，
-    /// 内容区高 = page_height − margin_top − margin_bottom）。default 0 = 旧行为。水平边距
-    /// 待 layout-width-for-print 切片（当前仅垂直边距影响断页几何）。
+    /// 内容区高 = page_height − margin_top − margin_bottom）。default 0 = 旧行为。
     print_margin_top: f32,
     print_margin_bottom: f32,
+    /// Print 页内容盒水平边距（px）。R2013 layout-width-for-print：由 `@page { margin }` 解析注入
+    /// （`set_print_horizontal_margins`），与 `print_page_width` 共同决定根布局 containing block 宽。
+    /// default 0 = 旧行为（页内容宽 = 页宽）。
+    print_margin_left: f32,
+    print_margin_right: f32,
     /// 缓存的 taffy 布局状态（可选，用于增量计算）。
     cached_state: Option<CachedLayoutState>,
     /// U1b-wiring（unified font stack）：可选 per-font 行度量提供者。
@@ -120,8 +129,11 @@ impl LayoutEngine {
             viewport_height,
             media_type: zero_css_parser::MediaType::Screen,
             print_page_height: crate::print_pagination::PRINT_PAGE_HEIGHT_A4,
+            print_page_width: crate::print_pagination::PRINT_PAGE_WIDTH_A4,
             print_margin_top: 0.0,
             print_margin_bottom: 0.0,
+            print_margin_left: 0.0,
+            print_margin_right: 0.0,
             cached_state: None,
             font_metric_provider: None,
         }
@@ -149,6 +161,43 @@ impl LayoutEngine {
         }
         if margin_bottom >= 0.0 {
             self.print_margin_bottom = margin_bottom;
+        }
+    }
+
+    /// 设置 Print 页宽（R2013 layout-width-for-print：由 `@page { size }` 解析注入）。≤0 忽略保默认 A4。
+    /// 由 `RenderPipeline` 在收集样式表后调用（与页高同源）。
+    pub fn set_print_page_width(&mut self, page_width: f32) {
+        if page_width > 0.0 {
+            self.print_page_width = page_width;
+        }
+    }
+
+    /// 设置 Print 页内容盒水平边距（R2013 layout-width-for-print：由 `@page { margin }` 解析注入）。
+    /// 负值忽略保默认 0。由 `RenderPipeline` 在收集样式表后调用（与垂直边距同源）。
+    pub fn set_print_horizontal_margins(&mut self, margin_left: f32, margin_right: f32) {
+        if margin_left >= 0.0 {
+            self.print_margin_left = margin_left;
+        }
+        if margin_right >= 0.0 {
+            self.print_margin_right = margin_right;
+        }
+    }
+
+    /// 根布局 containing block 宽（R2013 layout-width-for-print）。
+    ///
+    /// - `Screen` 模式：`viewport_width`（旧行为，零变更）。
+    /// - `Print` 模式：`print_content_width(page_width, margin_left, margin_right)` = 页内容盒宽
+    ///   （default A4 宽 − 水平 margin）。使 Print 文档按页宽而非视口宽 reflow——
+    ///   @page `size` 宽度 + 水平 `margin` 完整生效。退化守卫见 [`crate::print_pagination::print_content_width`]。
+    pub fn effective_root_layout_width(&self) -> f32 {
+        if matches!(self.media_type, zero_css_parser::MediaType::Print) {
+            crate::print_pagination::print_content_width(
+                self.print_page_width,
+                self.print_margin_left,
+                self.print_margin_right,
+            )
+        } else {
+            self.viewport_width
         }
     }
 
@@ -224,7 +273,7 @@ impl LayoutEngine {
 
         // 2. 计算布局
         let available_space = taffy::geometry::Size {
-            width: AvailableSpace::Definite(self.viewport_width),
+            width: AvailableSpace::Definite(self.effective_root_layout_width()),
             height: AvailableSpace::Definite(self.viewport_height),
         };
         let _ = taffy_tree.compute_layout_with_measure(
@@ -302,7 +351,7 @@ impl LayoutEngine {
         if changed_r695 || changed_pct_padding || changed_ratio_img || changed_intrinsic || changed_vertical {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
             let available_space = taffy::geometry::Size {
-                width: AvailableSpace::Definite(self.viewport_width),
+                width: AvailableSpace::Definite(self.effective_root_layout_width()),
                 height: AvailableSpace::Definite(self.viewport_height),
             };
             let _ = taffy_tree.compute_layout_with_measure(
@@ -725,6 +774,8 @@ impl LayoutEngine {
             );
         }
 
+        // R2013：先取根布局宽（借用 &self），再可变借用 cached_state（避免借用冲突）。
+        let root_layout_width = self.effective_root_layout_width();
         let cached = self.cached_state.as_mut().expect("cached_state checked above");
 
         // 标记脏节点的 taffy 节点为脏
@@ -739,7 +790,7 @@ impl LayoutEngine {
 
         // 重新计算布局（taffy 只重算脏节点）
         let available_space = taffy::geometry::Size {
-            width: AvailableSpace::Definite(self.viewport_width),
+            width: AvailableSpace::Definite(root_layout_width),
             height: AvailableSpace::Definite(self.viewport_height),
         };
         let _ = cached.taffy.compute_layout_with_measure(

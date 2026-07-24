@@ -295,11 +295,12 @@ impl RenderPipeline {
 
         // 2. 解析 CSS → Stylesheets
         let stylesheets = collect_stylesheets(&doc, css);
-        // R2010/R2011：从 `@page { size; margin }` 解析 Print 页几何注入 layout_engine（Screen 零影响）。
-        let (print_page_h, print_margin_top, print_margin_bottom) = extract_print_page_geometry(&stylesheets);
-        self.layout_engine.set_print_page_height(print_page_h);
-        self.layout_engine
-            .set_print_page_margins(print_margin_top, print_margin_bottom);
+        // R2010/R2011/R2013：从 `@page { size; margin }` 解析 Print 页几何注入 layout_engine（Screen 零影响）。
+        let (page_w, page_h, m_top, m_right, m_bottom, m_left) = extract_print_page_geometry(&stylesheets);
+        self.layout_engine.set_print_page_height(page_h);
+        self.layout_engine.set_print_page_width(page_w);
+        self.layout_engine.set_print_page_margins(m_top, m_bottom);
+        self.layout_engine.set_print_horizontal_margins(m_left, m_right);
 
         // 3. 注册 @keyframes 到动画时钟
         self.animation_clock.register_from_stylesheets(&stylesheets);
@@ -435,11 +436,12 @@ impl RenderPipeline {
 
         // 2. 解析 CSS → Stylesheets（外部 CSS + HTML 内 `<style>`）
         let stylesheets = collect_stylesheets(&doc, css);
-        // R2010/R2011：从 `@page { size; margin }` 解析 Print 页几何注入 layout_engine（分页 + 页边界分隔线共用）。
-        let (print_page_h, print_margin_top, print_margin_bottom) = extract_print_page_geometry(&stylesheets);
-        self.layout_engine.set_print_page_height(print_page_h);
-        self.layout_engine
-            .set_print_page_margins(print_margin_top, print_margin_bottom);
+        // R2010/R2011/R2013：从 `@page { size; margin }` 解析 Print 页几何注入 layout_engine（分页 + 页边界分隔线共用）。
+        let (page_w, page_h, m_top, m_right, m_bottom, m_left) = extract_print_page_geometry(&stylesheets);
+        self.layout_engine.set_print_page_height(page_h);
+        self.layout_engine.set_print_page_width(page_w);
+        self.layout_engine.set_print_page_margins(m_top, m_bottom);
+        self.layout_engine.set_print_horizontal_margins(m_left, m_right);
 
         // 3. 计算样式
         let style_start = Instant::now();
@@ -484,7 +486,7 @@ impl RenderPipeline {
             self.style_system.media_type(),
             self.viewport_width,
             &layout_result.root,
-            print_page_h,
+            page_h,
         );
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
@@ -878,31 +880,43 @@ pub(crate) fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> 
 /// 返回 `(page_height, margin_top, margin_bottom)`：扫描首个有效 `@page` 的 `size`/`margin`
 /// 描述符；无 `@page` 或描述符无效时回退默认（A4 高 + 0 边距）。仅 `media_type==Print` 时
 /// `paginate_for_print` / `inject_print_page_dividers` 消费；Screen 不调用。
-pub(crate) fn extract_print_page_geometry(stylesheets: &[Stylesheet]) -> (f32, f32, f32) {
+pub(crate) fn extract_print_page_geometry(stylesheets: &[Stylesheet]) -> (f32, f32, f32, f32, f32, f32) {
     use zero_css_parser::ast::Rule;
+    let mut width = zero_layout_engine::print_pagination::PRINT_PAGE_WIDTH_A4;
     let mut height = zero_layout_engine::print_pagination::PRINT_PAGE_HEIGHT_A4;
     let mut margin_top = 0.0;
+    let mut margin_right = 0.0;
     let mut margin_bottom = 0.0;
+    let mut margin_left = 0.0;
     for ss in stylesheets {
         for rule in &ss.rules {
             if let Rule::Page(page) = rule {
-                if let Some((_w, h)) = page.size
-                    && h > 0.0
-                {
-                    height = h;
+                if let Some((w, h)) = page.size {
+                    if w > 0.0 {
+                        width = w;
+                    }
+                    if h > 0.0 {
+                        height = h;
+                    }
                 }
-                if let Some((mt, _r, mb, _l)) = page.margin {
+                if let Some((mt, mr, mb, ml)) = page.margin {
                     if mt >= 0.0 {
                         margin_top = mt;
                     }
+                    if mr >= 0.0 {
+                        margin_right = mr;
+                    }
                     if mb >= 0.0 {
                         margin_bottom = mb;
+                    }
+                    if ml >= 0.0 {
+                        margin_left = ml;
                     }
                 }
             }
         }
     }
-    (height, margin_top, margin_bottom)
+    (width, height, margin_top, margin_right, margin_bottom, margin_left)
 }
 
 /// 提取 HTML 中所有 `<link rel="stylesheet" href="...">` 的 href 原始值。
@@ -1586,7 +1600,7 @@ mod print_page_size_tests {
     #[test]
     fn r2010_extract_print_page_height_letter_overrides_a4_default() {
         let ws = vec![Parser::parse_stylesheet("@page { size: letter; }")];
-        let (h, _mt, _mb) = extract_print_page_geometry(&ws);
+        let (_w, h, _mt, _mr, _mb, _ml) = extract_print_page_geometry(&ws);
         assert!((h - 1056.0).abs() < 0.1, "letter height 1056, got {h}");
     }
 
@@ -1594,10 +1608,10 @@ mod print_page_size_tests {
     #[test]
     fn r2010_extract_print_page_height_defaults_to_a4() {
         let ws = vec![Parser::parse_stylesheet("@page { margin: 2cm; } div { color: red; }")];
-        let (h, _mt, _mb) = extract_print_page_geometry(&ws);
+        let (_w, h, _mt, _mr, _mb, _ml) = extract_print_page_geometry(&ws);
         assert!((h - 1122.5).abs() < 0.1, "no size → A4 default 1122.5, got {h}");
         let empty: Vec<zero_css_parser::Stylesheet> = vec![];
-        let (h0, _, _) = extract_print_page_geometry(&empty);
+        let (_w0, h0, _, _, _, _) = extract_print_page_geometry(&empty);
         assert!((h0 - 1122.5).abs() < 0.1, "empty → A4 default, got {h0}");
     }
 
@@ -1605,7 +1619,7 @@ mod print_page_size_tests {
     #[test]
     fn r2011_extract_print_page_margin_vertical() {
         let ws = vec![Parser::parse_stylesheet("@page { size: A4; margin: 2cm; }")];
-        let (h, mt, mb) = extract_print_page_geometry(&ws);
+        let (_w, h, mt, _mr, mb, _ml) = extract_print_page_geometry(&ws);
         assert!((h - 1122.5).abs() < 1.0, "A4 height");
         let two_cm = 2.0 * 96.0 / 2.54;
         assert!((mt - two_cm).abs() < 0.1, "margin-top 2cm, got {mt}");
@@ -1616,7 +1630,7 @@ mod print_page_size_tests {
     #[test]
     fn r2011_extract_print_page_margin_two_value() {
         let ws = vec![Parser::parse_stylesheet("@page { margin: 100px 50px; }")];
-        let (_h, mt, mb) = extract_print_page_geometry(&ws);
+        let (_w, _h, mt, _mr, mb, _ml) = extract_print_page_geometry(&ws);
         assert!((mt - 100.0).abs() < 0.1, "margin-top = 100px (1st value), got {mt}");
         assert!((mb - 100.0).abs() < 0.1, "margin-bottom = 100px (1st value), got {mb}");
     }
@@ -1625,8 +1639,49 @@ mod print_page_size_tests {
     #[test]
     fn r2011_extract_print_page_margin_defaults_zero() {
         let ws = vec![Parser::parse_stylesheet("@page { size: A4; }")];
-        let (_h, mt, mb) = extract_print_page_geometry(&ws);
+        let (_w, _h, mt, _mr, mb, _ml) = extract_print_page_geometry(&ws);
         assert_eq!((mt, mb), (0.0, 0.0), "no margin → (0, 0)");
+    }
+
+    /// R2013 layout-width-for-print：`@page { size }` 解析页宽注入。A4 默认宽 ≈793.7；
+    /// `size: letter` 宽 = 8.5in × 96 = 816px。
+    #[test]
+    fn r2013_extract_print_page_width_letter() {
+        let ws = vec![Parser::parse_stylesheet("@page { size: letter; }")];
+        let (w, _h, _mt, _mr, _mb, _ml) = extract_print_page_geometry(&ws);
+        assert!((w - 816.0).abs() < 0.1, "letter width 816, got {w}");
+    }
+
+    /// R2013：无 size → 页宽回退默认 A4（≈793.7）。A4 = 210mm @96dpi。
+    #[test]
+    fn r2013_extract_print_page_width_defaults_to_a4() {
+        let a4_w = 210.0 / 25.4 * 96.0;
+        let ws = vec![Parser::parse_stylesheet("@page { margin: 1in; }")];
+        let (w, _h, _mt, _mr, _mb, _ml) = extract_print_page_geometry(&ws);
+        assert!((w - a4_w).abs() < 0.1, "no size → A4 default width {a4_w}, got {w}");
+    }
+
+    /// R2013：`@page { margin }` 水平边距（left/right）解析注入。3 值简写 = top, right/left, bottom。
+    #[test]
+    fn r2013_extract_print_page_margin_horizontal() {
+        let ws = vec![Parser::parse_stylesheet("@page { size: A4; margin: 1in 2in 3in; }")];
+        let (_w, _h, mt, mr, mb, ml) = extract_print_page_geometry(&ws);
+        let inch = 96.0;
+        assert!((mt - 1.0 * inch).abs() < 0.1, "margin-top 1in");
+        assert!((mr - 2.0 * inch).abs() < 0.1, "margin-right 2in, got {mr}");
+        assert!((mb - 3.0 * inch).abs() < 0.1, "margin-bottom 3in");
+        assert!(
+            (ml - 2.0 * inch).abs() < 0.1,
+            "margin-left 2in (3-value = r/l), got {ml}"
+        );
+    }
+
+    /// R2013：4 值 margin 简写 `(top right bottom left)` → 完整四边。
+    #[test]
+    fn r2013_extract_print_page_margin_four_value() {
+        let ws = vec![Parser::parse_stylesheet("@page { margin: 10px 20px 30px 40px; }")];
+        let (_w, _h, mt, mr, mb, ml) = extract_print_page_geometry(&ws);
+        assert_eq!((mt, mr, mb, ml), (10.0, 20.0, 30.0, 40.0), "4-value margin TRBL");
     }
 
     /// R2010 P4：inject_print_page_dividers 接受自定义页高——letter=1056，extent=2500
