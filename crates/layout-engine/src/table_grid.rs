@@ -545,15 +545,27 @@ pub(crate) fn collect_col_widths(
                  span: usize,
                  cursor: usize,
                  resolve: &dyn Fn(&str) -> Option<f32>| {
-        if let Some(nid) = nid
-            && let Some(w) = doc.get_attribute(nid, "width")
-            && let Some(px) = resolve(&w)
-        {
-            for i in 0..span {
-                let idx = cursor + i;
-                if idx < col_count {
-                    col_widths[idx] = Some(px);
-                }
+        let Some(nid) = nid else {
+            return;
+        };
+        // R2045：HTML width 属性优先（<col width="100">/"50%"），否则读 CSS width 属性
+        // （ComputedStyle 已解析为 Px/%）。此前仅读 HTML attr → CSS-width col（如
+        // `#test{display:table-column;width:1in}`）被当 auto 列，错误吸收剩余宽（175px 而非 96）。
+        let px = doc.get_attribute(nid, "width").and_then(|w| resolve(&w)).or_else(|| {
+            use zero_css_parser::values::LengthValue;
+            styles.get(&nid).and_then(|s| match &s.width {
+                LengthValue::Px(v) => Some(*v as f32),
+                LengthValue::Percentage(p) => Some((*p as f32 / 100.0 * available_width).max(0.0)),
+                _ => None,
+            })
+        });
+        let Some(px) = px else {
+            return;
+        };
+        for i in 0..span {
+            let idx = cursor + i;
+            if idx < col_count {
+                col_widths[idx] = Some(px);
             }
         }
     };
