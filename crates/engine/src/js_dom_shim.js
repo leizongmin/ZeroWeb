@@ -43,6 +43,30 @@
     }
   };
 
+  // P1b S3 incr-a：`fetch(url)` 经 `__zw_fetch(id, url)` 回调异步抓取 + Promise。
+  // JS 生成唯一 ID + 存 pending resolver，调 `__zw_fetch`；Rust handler 抓取后
+  // `__zwResolveCallback(id, body)` resolve Promise（**body 字符串**，非标准 Response
+  // 对象——spec-compliance Response/text()/json() 在 incr-b/c）。
+  // `__zw_fetch` 未注册（engine/renderer/reftest 路径无 browser 的 fetch handler）时
+  // resolve 空（stub，避免悬挂），保持零回归。
+  if (!globalThis.fetch) {
+    globalThis.fetch = function(url) {
+      if (typeof __zw_fetch !== 'function') {
+        return Promise.resolve('');
+      }
+      return new Promise(function(resolve) {
+        globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
+        var id = '__zwfid:' + globalThis.__zw_fetch_counter;
+        globalThis.__zw_pending[id] = resolve;
+        try {
+          __zw_fetch(id, url);
+        } catch (_e) {
+          resolve('');
+        }
+      });
+    };
+  }
+
   globalThis.setTimeout = function(fn, _delay) {
     if (typeof fn === 'function') _defer(fn);
     return _timerId++;
