@@ -645,6 +645,37 @@ fn r2016_quirks_mode_percent_height_resolves_against_viewport() {
     );
 }
 
+/// R2016 hardening：quirks 百分比高度**链式**正确——内层 height:50% 应解析 against 外层
+///（已 definite 的 300px）→ 150px，**非** against viewport（否则 300px）。
+/// 外 div height:50%（→300）红底 + 内 div height:50%（→150）蓝底。蓝面积 ≈ 800×150=120000
+///（若误对 viewport 解析则 800×300=240000）。
+#[test]
+fn r2016_quirks_percent_height_chains_against_resolved_parent() {
+    let count_blue = |fb: &zero_render_foundation::surface::FrameBuffer| -> usize {
+        let mut n = 0usize;
+        for px in fb.data.chunks_exact(4) {
+            // blue 像素：B 高，R/G 低。
+            if px[0] < 15 && px[1] < 15 && px[2] > 240 {
+                n += 1;
+            }
+        }
+        n
+    };
+    let cfg = ReftestConfig::default(); // 800×600
+    let quirks = "<html><body style=\"margin:0\">\
+        <div style=\"height:50%;background:red\">\
+            <div style=\"height:50%;background:blue\"></div>\
+        </div></body></html>";
+    let (fb, _, _) = render_to_framebuffer_with_layout_with_base(quirks, "", &cfg, None);
+    let blue = count_blue(&fb);
+    // 内 div = 50% of 外 div(300) = 150px → 蓝面积 ≈ 800×150 = 120000（非 viewport 的 240000）。
+    assert!(
+        (blue as f32 - 120_000.0).abs() < 20_000.0,
+        "quirks 内层 height:50% 须解析 against 外层(300px)→150px（蓝≈120000），\
+         非 viewport（蓝≈240000）；got blue={blue}"
+    );
+}
+
 #[test]
 fn test_reftest_config_default() {
     let config = ReftestConfig::default();
