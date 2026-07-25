@@ -268,6 +268,18 @@ fn test_parse_z_index_variants() {
     assert_eq!(parse_z_index("abc"), None);
 }
 
+/// R2070：z-index 极端值（超出 i32 范围）clamp 到 i32::MIN/MAX，保排序正确。
+/// WPT z-index-001 (-2147483649 = INT32_MIN-1) / z-index-012 (2147483648 = INT32_MAX+1)。
+fn test_parse_z_index_extreme_values_clamp() {
+    assert_eq!(parse_z_index("-2147483649"), Some(ZIndexValue::Integer(i32::MIN)));
+    assert_eq!(parse_z_index("2147483648"), Some(ZIndexValue::Integer(i32::MAX)));
+    // i32 边界值仍精确（不 clamp）。
+    assert_eq!(parse_z_index("-2147483648"), Some(ZIndexValue::Integer(i32::MIN)));
+    assert_eq!(parse_z_index("2147483647"), Some(ZIndexValue::Integer(i32::MAX)));
+    // clamp 后保排序：-2147483649 → i32::MIN 仍 < -100。
+    assert!(matches!(parse_z_index("-2147483649"), Some(ZIndexValue::Integer(v)) if v < -100));
+}
+
 #[test]
 /// apply_property_value 对无效 display 值返回 false
 fn test_apply_property_invalid_display() {

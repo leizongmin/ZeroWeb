@@ -358,8 +358,13 @@ pub fn parse_z_index(value: &str) -> Option<ZIndexValue> {
     if value.eq_ignore_ascii_case("auto") {
         return Some(ZIndexValue::Auto);
     }
-    let int: i32 = value.parse().ok()?;
-    Some(ZIndexValue::Integer(int))
+    // R2070：z-index 整数解析为 i64 后 clamp 到 i32 范围。CSS §9.9.1 z-index 是 <integer>，
+    // WPT（z-index-001/012）用 INT32_MIN-1 (-2147483649) / INT32_MAX+1 (2147483648) 验证
+    // 极端值处理。旧 `i32::parse` 超范围失败返 None → 声明被丢弃 → 元素回退 auto(0) 致
+    // 错序（red 盖 green，应反之）。clamp 到 i32::MIN/MAX 保排序正确（极端值仍是最负/最正）。
+    let int: i64 = value.parse().ok()?;
+    let clamped = int.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+    Some(ZIndexValue::Integer(clamped))
 }
 
 /// 解析 CSS cursor 值。
