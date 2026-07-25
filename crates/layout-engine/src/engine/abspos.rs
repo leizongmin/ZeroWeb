@@ -617,7 +617,10 @@ fn recenter_abspos_vcenter_inner(
         if (child.is_absolute || child.is_fixed)
             && let Some(s) = child.node_id.and_then(|id| styles.get(&id))
         {
-            let both_v_inset = matches!(s.top, LengthValue::Px(_)) && matches!(s.bottom, LengthValue::Px(_));
+            // R2085：inset 接受 Px 或 Percentage（Percentage 相对 effective_cb_height 解析，
+            // 见下方；与 Px 等价参与 §10.6.4 方程）。
+            let both_v_inset = matches!(s.top, LengthValue::Px(_) | LengthValue::Percentage(_))
+                && matches!(s.bottom, LengthValue::Px(_) | LengthValue::Percentage(_));
             let mt_auto = matches!(s.margin_top, LengthValue::Auto);
             let mb_auto = matches!(s.margin_bottom, LengthValue::Auto);
             // R2068：仅处理「两侧 margin 均 auto」的垂直居中（taffy 不解此场景，absolute-tables-016
@@ -636,20 +639,30 @@ fn recenter_abspos_vcenter_inner(
             // adjust_fixed_to_viewport 假设）。taffy 对 fixed both-auto 给不一致结果（probe 实证
             // abs_y=0 + mt=100 未居中），故本 pass 接管。effective_cb_height：fixed→viewport，
             // absolute→inherited cb_height（positioned 祖先 padding-box 或 root ICB）。
+            // R2085：扩到 Percentage inset——CSS2.1 §10.6.4 百分比 top/bottom 相对 CB height 解析后
+            // 与 Px 等价参与方程（absolute-non-replaced-height-013：top/bottom:50%+height:100+
+            // margin:auto in 100px CB）。旧 both_v_inset 仅 Px 漏 Percentage → 013 recenter no-op。
             if both_v_inset && mt_auto && mb_auto {
                 let effective_cb_height = if child.is_fixed { viewport_height } else { cb_height };
                 let top_px = match &s.top {
                     LengthValue::Px(v) => *v as f32,
+                    LengthValue::Percentage(p) => *p as f32 / 100.0 * effective_cb_height,
                     _ => 0.0,
                 };
                 let bottom_px = match &s.bottom {
                     LengthValue::Px(v) => *v as f32,
+                    LengthValue::Percentage(p) => *p as f32 / 100.0 * effective_cb_height,
                     _ => 0.0,
                 };
                 // §10.6.4：leftover = CB_height − top − bottom − element border-box height
                 //（child.height 是 border-box，已含 border/padding，对 box-sizing 均正确）。
-                // 两侧 margin 均 auto → 各取 leftover/2。
-                let leftover = (effective_cb_height - top_px - bottom_px - child.height).max(0.0);
+                // 两侧 margin 均 auto → 各取 leftover/2。R2085：leftover **不钳零**——CSS2.1
+                // §10.6.4 "solve the equation under the constraint that the two margins get equal
+                // values" 不限符号；over-constrained（显式 height > CB−insets）时 margin 取负值仍
+                // 居中。旧 `.max(0.0)` 把负 leftover 钳零致元素贴 top（013：leftover=−100 钳零→
+                // y=50 留上半红；应 mt=mb=−50→y=0 填满 CB）。height:auto stretch/cap 场景 leftover
+                // 恒 ≥0，去钳零对其无影响（max-height-002/003/007/009/011 簇零回归）。
+                let leftover = effective_cb_height - top_px - bottom_px - child.height;
                 let half = leftover / 2.0;
                 child.margin_top = half;
                 child.margin_bottom = half;
@@ -875,5 +888,105 @@ mod r2062_tests {
         );
         assert_eq!(img.margin_top, 250.0);
         assert_eq!(img.margin_bottom, 250.0);
+    }
+
+    /// R2085：Percentage top/bottom inset 被接受并参与居中（相对 effective_cb_height 解析）。
+    /// absolute-non-replaced-height-013 谱系：top/bottom:25% + height:50 + margin:auto in CB 200
+    /// → top=bottom=50, leftover=200-50-50-50=50, half=25, y=75。旧实现 both_v_inset 仅 Px → no-op。
+    #[test]
+    fn r2085_abspos_percentage_inset_centers() {
+        let mut doc = zero_dom::Document::new();
+        let root = doc.root();
+        let parent = doc.create_element("div");
+        let img = doc.create_element("img");
+        let _ = doc.append_child(root, parent);
+        let _ = doc.append_child(parent, img);
+        let mut styles = HashMap::new();
+        let mut sp = ComputedStyle::default();
+        sp.position = zero_style_system::property::types::PositionValue::Relative;
+        styles.insert(parent, sp);
+        let mut si = ComputedStyle::default();
+        si.top = LengthValue::Percentage(25.0);
+        si.bottom = LengthValue::Percentage(25.0);
+        si.height = LengthValue::Px(50.0);
+        si.margin_top = LengthValue::Auto;
+        si.margin_bottom = LengthValue::Auto;
+        si.position = zero_style_system::property::types::PositionValue::Absolute;
+        styles.insert(img, si);
+        let img_box = LayoutBox {
+            node_id: Some(img),
+            is_absolute: true,
+            width: 100.0,
+            height: 50.0,
+            ..Default::default()
+        };
+        let mut parent_box = LayoutBox {
+            node_id: Some(parent),
+            is_relative: true,
+            height: 200.0,
+            children: vec![img_box],
+            ..Default::default()
+        };
+        // cb_height=200：top=bottom=50（25% of 200），leftover=200-50-50-50=50，half=25，y=75。
+        recenter_abspos_margin_auto_vertically(&mut parent_box, 200.0, 600.0, &styles);
+        let img = &parent_box.children[0];
+        assert_eq!(
+            img.y, 75.0,
+            "percentage inset 25% of 200 = 50; centers at top(50)+half(25)=75"
+        );
+        assert_eq!(img.margin_top, 25.0);
+        assert_eq!(img.margin_bottom, 25.0);
+    }
+
+    /// R2085：over-constrained（显式 height > CB−insets）both-auto 居中——CSS2.1 §10.6.4
+    /// "solve with equal margins" 不钳零；leftover 为负时 margin 取负值仍居中。
+    /// absolute-non-replaced-height-013 精确复现：CB 100, top/bottom:50%→50/50, height:100
+    /// → leftover=100-50-50-100=−100, half=−50, y=0（填满 CB 顶部）。
+    #[test]
+    fn r2085_abspos_over_constrained_centers_with_negative_margins() {
+        let mut doc = zero_dom::Document::new();
+        let root = doc.root();
+        let parent = doc.create_element("div");
+        let div = doc.create_element("div");
+        let _ = doc.append_child(root, parent);
+        let _ = doc.append_child(parent, div);
+        let mut styles = HashMap::new();
+        let mut sp = ComputedStyle::default();
+        sp.position = zero_style_system::property::types::PositionValue::Relative;
+        styles.insert(parent, sp);
+        let mut si = ComputedStyle::default();
+        si.top = LengthValue::Percentage(50.0);
+        si.bottom = LengthValue::Percentage(50.0);
+        si.height = LengthValue::Px(100.0);
+        si.margin_top = LengthValue::Auto;
+        si.margin_bottom = LengthValue::Auto;
+        si.position = zero_style_system::property::types::PositionValue::Absolute;
+        styles.insert(div, si);
+        let div_box = LayoutBox {
+            node_id: Some(div),
+            is_absolute: true,
+            width: 100.0,
+            height: 100.0,
+            ..Default::default()
+        };
+        let mut parent_box = LayoutBox {
+            node_id: Some(parent),
+            is_relative: true,
+            height: 100.0,
+            children: vec![div_box],
+            ..Default::default()
+        };
+        // cb_height=100：top=bottom=50（50%），height=100，leftover=100-50-50-100=−100，
+        // half=−50，y=50+(−50)=0（green 填满 100×100 red CB 顶部，no red 可见）。旧 .max(0.0)
+        // 钳零 → half=0 → y=50（仅覆盖下半，上半红可见 → 013 FAIL）。
+        recenter_abspos_margin_auto_vertically(&mut parent_box, 100.0, 600.0, &styles);
+        let child = &parent_box.children[0];
+        assert_eq!(
+            child.y, 0.0,
+            "over-constrained both-auto centers via negative margins: y=0"
+        );
+        assert_eq!(child.margin_top, -50.0);
+        assert_eq!(child.margin_bottom, -50.0);
+        assert_eq!(child.height, 100.0, "height unchanged");
     }
 }
