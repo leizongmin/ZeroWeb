@@ -625,7 +625,7 @@ impl LayoutEngine {
         } else {
             self.viewport_height
         };
-        recenter_abspos_margin_auto_vertically(&mut root_box, initial_cb_height, styles);
+        recenter_abspos_margin_auto_vertically(&mut root_box, initial_cb_height, self.viewport_height, styles);
 
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
