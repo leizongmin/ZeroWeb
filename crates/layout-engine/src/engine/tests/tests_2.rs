@@ -1620,6 +1620,71 @@ fn test_aspect_ratio_16_9() {
     );
 }
 
+/// R2086 回归守卫：auto-width（block-fill）+ aspect-ratio 推导 height（无子场景）。
+/// 200px 父 + 子 block div（width:auto 块填充→200）+ aspect-ratio:4 → height=50。
+/// 实证 taffy 对 auto-width childless 元素**正确**应用 aspect-ratio（block 与 flex 均 ✓）。
+/// 注：有子（尤其 height:% 子）时 aspect-ratio 被覆盖——见 master.md R2086（entangled lever）。
+#[test]
+fn r2086_block_auto_width_aspect_ratio_childless() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let child = doc.create_element("div");
+    doc.append_child(container, child).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut container_style = ComputedStyle::default();
+    container_style.display = DisplayValue::Block;
+    container_style.width = LengthValue::Px(200.0);
+    styles.insert(container, container_style);
+
+    let mut child_style = ComputedStyle::default();
+    child_style.display = DisplayValue::Block;
+    child_style.aspect_ratio = Some(4.0);
+    styles.insert(child, child_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let child_box = &result.root.children[0].children[0];
+    assert!(
+        (child_box.height - 50.0).abs() < 1.0,
+        "childless block auto-width + aspect-ratio:4 → height=50，实际 {}",
+        child_box.height
+    );
+}
+
+/// R2086 回归守卫：flex 容器 auto-width + aspect-ratio（childless，cross-size-002 .outer 单体）。
+#[test]
+fn r2086_flex_auto_width_aspect_ratio_childless() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let outer = doc.create_element("div");
+    doc.append_child(container, outer).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut container_style = ComputedStyle::default();
+    container_style.display = DisplayValue::Block;
+    container_style.width = LengthValue::Px(200.0);
+    styles.insert(container, container_style);
+
+    let mut outer_style = ComputedStyle::default();
+    outer_style.display = DisplayValue::Flex;
+    outer_style.aspect_ratio = Some(4.0);
+    styles.insert(outer, outer_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let outer_box = &result.root.children[0].children[0];
+    assert!(
+        (outer_box.height - 50.0).abs() < 1.0,
+        "childless flex auto-width + aspect-ratio:4 → height=50，实际 {}",
+        outer_box.height
+    );
+}
+
 // ── box-sizing: border-box 布局测试 ──
 
 /// 测试 box-sizing: border-box 时，width 包含 padding 和 border。
