@@ -115,14 +115,17 @@ pub struct LayoutBox {
     pub is_replaced: bool,
     /// 是否为 fixed 定位（需宿主层处理）。
     pub is_fixed: bool,
-    /// `position: fixed` 且四个 inset（top/right/bottom/left）全为 auto。
+    /// `position: fixed` 且**水平**两 inset（left/right）全为 auto。
     ///
-    /// CSS §10.3.7/§10.6.4：fixed 全 inset auto 时位置 = 静态位置（若 position:static
-    /// 的位置），非视口原点。taffy 把 fixed 当 absolute（CB=最近 positioned 祖先），
-    /// `adjust_fixed_to_viewport` 扣除祖先偏移使其视口相对——该修正仅对「有 inset」的
-    /// fixed 正确；全 auto inset 的 fixed 静态位置已是正确视口坐标，扣除会错误地移到 (0,0)
-    ///（如 CSS2/abspos/static-fixed-inside-abspos：fixed 应覆盖父 abspos 红块而非移到原点）。
-    pub fixed_insets_all_auto: bool,
+    /// R2084：dim-aware 拆分（旧单一 `fixed_insets_all_auto` = x&&y 过粗，致 partial-auto
+    /// fixed 的 auto 维被误扣偏移）。CSS §10.3.7/§10.6.4：fixed 某维 inset 全 auto 时，该维
+    /// 位置 = 静态位置（非视口原点）。taffy 把 fixed 当 absolute（CB=最近 positioned 祖先），
+    /// `adjust_fixed_to_viewport` 扣祖先偏移使其视口相对——仅对「该维有 explicit inset」正确；
+    /// 该维全 auto 的 fixed 静态位置已是正确视口坐标，扣除会误移到 0（R1874 all-auto 已修，
+    /// R2084 扩到 per-dim：partial-auto 如 top:auto+left:10px 的 top 维不再误扣）。
+    pub fixed_x_insets_all_auto: bool,
+    /// `position: fixed` 且**垂直**两 inset（top/bottom）全 auto。见 [`fixed_x_insets_all_auto`]。
+    pub fixed_y_insets_all_auto: bool,
     /// 是否为 sticky 定位（需宿主层在滚动时动态调整偏移）。
     pub is_sticky: bool,
     /// Float 方向（None 表示非浮动元素）。
@@ -423,7 +426,8 @@ impl Default for LayoutBox {
             is_absolute: false,
             is_replaced: false,
             is_fixed: false,
-            fixed_insets_all_auto: false,
+            fixed_x_insets_all_auto: false,
+            fixed_y_insets_all_auto: false,
             is_sticky: false,
             float: FloatValue::None,
             clear: ClearValue::None,

@@ -1503,15 +1503,19 @@ impl LayoutEngine {
 
         let is_absolute = computed.is_some_and(|s| matches!(s.position, PositionValue::Absolute));
         let is_fixed = computed.is_some_and(|s| matches!(s.position, PositionValue::Fixed));
-        // fixed 且四 inset 全 auto：位置应为静态位置（§10.3.7/§10.6.4），adjust_fixed_to_viewport
-        // 据此跳过「扣除祖先偏移」（该扣除仅对有 inset 的 fixed 正确）。
-        let fixed_insets_all_auto = is_fixed
+        // R2084 dim-aware：fixed 某 inset 维（x=left/right, y=top/bottom）全 auto 时，该维
+        // 位置 = 静态位置（§10.3.7/§10.6.4），adjust_fixed_to_viewport 据此跳过该维「扣除祖先
+        // 偏移」（扣除仅对该维有 explicit inset 正确）。旧单一 fixed_insets_all_auto（全 4 auto）
+        // 过粗——partial-auto（一维全 auto + 另维 explicit）的 auto 维被误扣致静态位置零化。
+        let fixed_x_insets_all_auto = is_fixed
             && computed.is_some_and(|s| {
                 use zero_css_parser::values::types::LengthValue;
-                matches!(s.top, LengthValue::Auto)
-                    && matches!(s.right, LengthValue::Auto)
-                    && matches!(s.bottom, LengthValue::Auto)
-                    && matches!(s.left, LengthValue::Auto)
+                matches!(s.left, LengthValue::Auto) && matches!(s.right, LengthValue::Auto)
+            });
+        let fixed_y_insets_all_auto = is_fixed
+            && computed.is_some_and(|s| {
+                use zero_css_parser::values::types::LengthValue;
+                matches!(s.top, LengthValue::Auto) && matches!(s.bottom, LengthValue::Auto)
             });
         // 替换元素（有固有尺寸）：img/video/iframe/embed/object/svg/canvas。
         // CSS §10.3.8/§10.6.6 对其 auto 尺寸按固有尺寸解析，不走 §10.3.18/§10.6.4
@@ -1766,7 +1770,8 @@ impl LayoutEngine {
             is_absolute,
             is_replaced,
             is_fixed,
-            fixed_insets_all_auto,
+            fixed_x_insets_all_auto,
+            fixed_y_insets_all_auto,
             is_sticky,
             float,
             clear,

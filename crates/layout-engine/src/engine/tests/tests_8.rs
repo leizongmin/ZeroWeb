@@ -130,7 +130,7 @@ fn test_adjust_fixed_to_viewport_nested() {
 ///
 /// R1874：`position:fixed` 全 inset auto 时位置 = 静态位置（§10.3.7/§10.6.4）。旧实现对
 /// 所有 fixed 一律扣除祖先偏移，把无 inset 的 fixed 错误地移到视口原点 (0,0)。修复后
-/// `fixed_insets_all_auto` 标记的 fixed 跳过扣除，x/y 保持 taffy 算出的静态坐标。
+/// `fixed_{x,y}_insets_all_auto` 标记的 fixed 跳过该维扣除，x/y 保持 taffy 算出的静态坐标。
 /// （对应 WPT CSS2/abspos/static-fixed-inside-abspos：fixed 应覆盖父 abspos 块而非移到原点。）
 #[test]
 fn test_adjust_fixed_to_viewport_all_auto_insets_keeps_static_position() {
@@ -140,7 +140,8 @@ fn test_adjust_fixed_to_viewport_all_auto_insets_keeps_static_position() {
         width: 100.0,
         height: 50.0,
         is_fixed: true,
-        fixed_insets_all_auto: true,
+        fixed_x_insets_all_auto: true,
+        fixed_y_insets_all_auto: true,
         ..Default::default()
     };
     let mut root = LayoutBox {
@@ -164,6 +165,48 @@ fn test_adjust_fixed_to_viewport_all_auto_insets_keeps_static_position() {
     assert!(
         (child.y - 20.0).abs() < 0.001,
         "全 auto inset fixed y 应保持 20.0（静态位置），实际 {}",
+        child.y
+    );
+}
+
+/// R2084：partial-auto fixed——一维 explicit inset + 另维全 auto。dim-aware 后仅扣
+/// explicit 维偏移，auto 维保持静态位置（旧单一 fixed_insets_all_auto 过粗，两维都扣，
+/// auto 维被误零化）。场景：fixed top:auto/bottom:auto（y 全 auto）+ left 显式（x 非 auto），
+/// parent_offset_x=30/parent_offset_y=40。x 维扣（视口相对），y 维不扣（保静态 y=20）。
+#[test]
+fn test_adjust_fixed_to_viewport_partial_auto_keeps_auto_dim_static() {
+    let fixed_child = LayoutBox {
+        x: 10.0, // taffy 相对父 content origin 的 left（explicit）
+        y: 20.0, // taffy 相对父 content origin 的静态 top（top/bottom auto）
+        width: 100.0,
+        height: 50.0,
+        is_fixed: true,
+        fixed_x_insets_all_auto: false, // left explicit → x 维扣
+        fixed_y_insets_all_auto: true,  // top/bottom auto → y 维不扣
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+        children: vec![fixed_child],
+        ..Default::default()
+    };
+
+    adjust_fixed_to_viewport(&mut root, 30.0, 40.0);
+
+    let child = &root.children[0];
+    // x 维（explicit left）：扣 parent_offset_x → 10 − 30 = −20（painter 累积父 30 得视口 10）。
+    assert!(
+        (child.x - (-20.0)).abs() < 0.001,
+        "partial-auto fixed x（explicit left）应扣偏移 → -20，实际 {}",
+        child.x
+    );
+    // y 维（top/bottom auto）：不扣，保持静态 y=20（painter 累积父 40 得视口 60 = 静态位置）。
+    assert!(
+        (child.y - 20.0).abs() < 0.001,
+        "partial-auto fixed y（auto）应保持静态 20，实际 {}",
         child.y
     );
 }

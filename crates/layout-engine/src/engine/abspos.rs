@@ -48,7 +48,7 @@ fn resolve_abspos_pct(
 /// 此函数在布局完成后遍历布局树，将 fixed 元素的坐标加上祖先累积偏移，
 /// 使其变为相对于视口的绝对坐标。
 pub(super) fn adjust_fixed_to_viewport(box_node: &mut LayoutBox, parent_offset_x: f32, parent_offset_y: f32) {
-    if box_node.is_fixed && !box_node.fixed_insets_all_auto {
+    if box_node.is_fixed {
         // R324：fixed 元素须视口相对。taffy 0.7 把 fixed 当 absolute 处理（containing
         // block = 最近 positioned 祖先），故 box.x/y 编码的是相对该祖先的 left/top。
         // 视口相对 = 同一 left/top 数值但相对视口 → 需从累积祖先偏移中【扣除】
@@ -56,8 +56,16 @@ pub(super) fn adjust_fixed_to_viewport(box_node: &mut LayoutBox, parent_offset_x
         // positioned 祖先的 fixed 会 over-correct，如 fixed-inside-relative-ancestor）。
         // R1874：四 inset 全 auto 的 fixed，位置应为静态位置（§10.3.7/§10.6.4），
         // taffy 已置其于静态坐标（视口正确），扣除祖先偏移反将其误移到 (0,0)，故跳过。
-        box_node.x -= parent_offset_x;
-        box_node.y -= parent_offset_y;
+        // R2084 dim-aware：per-dim 判定（旧单一 fixed_insets_all_auto 过粗）。仅当该维有
+        // explicit inset（即 !fixed_{x,y}_insets_all_auto）才扣该维偏移；该维全 auto 的
+        // fixed 静态位置已是视口正确，扣除会误零化（partial-auto 如 top:auto+left:10px：
+        // x 维 left explicit→扣 x✓，y 维 top/bottom 全 auto→不扣 y✓，保静态 y）。
+        if !box_node.fixed_x_insets_all_auto {
+            box_node.x -= parent_offset_x;
+        }
+        if !box_node.fixed_y_insets_all_auto {
+            box_node.y -= parent_offset_y;
+        }
     }
 
     let offset_x = if box_node.is_fixed {
