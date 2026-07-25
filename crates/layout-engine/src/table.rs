@@ -1260,9 +1260,19 @@ fn position_cells(
         // 仍需设置行组几何。
         let is_direct_cell_row = row.is_anonymous && row.row_group_index.is_none() && table_is_display_table;
         if !is_direct_cell_row {
-            row_box.x = row_rel_dx;
+            // R2050：行背景应覆盖 cell grid（单元格 + 列间 border-spacing），不含左右
+            // 周界 border-spacing（§17.5.2.1 separated 模型：周界 spacing 在 table content
+            // 边缘与首/末单元格之间，属 table 而非 row）。旧行盒宽 = table_content_width
+            //（含 2×perimeter_x）致行背景两侧各多覆盖一段周界 spacing（table-backgrounds-
+            // bs-row-001：aqua 行 bg [28,334] w=307 vs ref [30,332] w=303）。
+            // 行组内的行：行组已偏移 perimeter_x（update_row_group_positions），行相对
+            // 行组 x 不再叠加（否则双重计数）。直接 table 子行（无行组）：相对 table
+            // content 偏移 perimeter_x。collapse 模式 perimeter_x=0，无变化。
+            let in_row_group = row.row_group_index.is_some();
+            let row_x_offset = if in_row_group { 0.0 } else { perimeter_x };
+            row_box.x = row_rel_dx + row_x_offset;
             row_box.y = local_y + row_rel_dy;
-            row_box.width = table_content_width;
+            row_box.width = table_content_width - 2.0 * perimeter_x;
             row_box.height = row_height;
         }
 
@@ -1672,7 +1682,7 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
     }
 
     // 读取 border-spacing
-    let (_, spacing_y) = table_box
+    let (spacing_x, spacing_y) = table_box
         .node_id
         .and_then(|id| styles.get(&id))
         .map(get_border_spacing)
@@ -1684,6 +1694,8 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
         .and_then(|id| styles.get(&id))
         .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate));
     let perimeter_y = if separated { spacing_y } else { 0.0 };
+    // R2050：水平周界 spacing（行组背景覆盖 cell grid，不含左右周界，与行盒一致）。
+    let perimeter_x = if separated { spacing_x } else { 0.0 };
 
     // 预计算所有行的 y 位置和高度（不可变借用阶段）
     let mut row_positions: Vec<(f32, f32)> = Vec::with_capacity(grid.rows.len());
@@ -1752,7 +1764,13 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
             rel_dy = resolve_length_inset(row_group, styles, false);
         }
 
-        updates.push((*rg_idx, rel_dx, first_row_y + rel_dy, table_box.content_width, total_h));
+        updates.push((
+            *rg_idx,
+            rel_dx + perimeter_x,
+            first_row_y + rel_dy,
+            table_box.content_width - 2.0 * perimeter_x,
+            total_h,
+        ));
     }
 
     // 应用更新（可变借用阶段）

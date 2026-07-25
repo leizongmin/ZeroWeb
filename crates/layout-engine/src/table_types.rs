@@ -317,7 +317,12 @@ pub(crate) fn compute_cell_intrinsic_width(
     let direct_text_w = cell_direct_text_width(cell_box, styles, doc);
 
     if has_explicit_child && content_width > 0.0 {
-        return content_width.max(direct_text_w) + padding;
+        // R2050：返回 cell 的 border-box 宽度（content + padding + border），与下方
+        // box_content_max_width 路径（line 143 返回 inner + padding + border）语义一致。
+        // 旧实现漏掉 border，致含显式宽子元素（如 `<td><div style="width:50px">`）的
+        // cell 列宽 = content+padding（55）而非 border-box（59），separated 表整体偏窄、
+        // 行背景右侧短缺（table-backgrounds-bs-row-001：aqua 行 bg 宽 287 vs ref 303）。
+        return content_width.max(direct_text_w) + padding + cell_box.border_left + cell_box.border_right;
     }
 
     // 当 cell_box.width 接近 0 时，taffy 将所有子元素也约束为 0，

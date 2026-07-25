@@ -1010,6 +1010,59 @@ fn test_r702_cell_intrinsic_uses_max_content_not_whitespace_charcount() {
     );
 }
 
+/// R2050：`compute_cell_intrinsic_width` 对含显式宽子元素（如 `<td><div style="width:50px">`）
+/// 的 cell，应返回 **border-box** 宽度（content + padding + border），与 `box_content_max_width`
+/// 文本路径（intrinsic_sizing.rs:143 返回 inner + padding + border）语义一致。修复前漏掉
+/// border，致该类 cell 列宽 = content+padding（55）而非 border-box（59），separated 表整体
+/// 偏窄、行背景右侧短缺（table-backgrounds-bs-row-001：aqua 行 bg 287 vs ref 303）。
+#[test]
+fn test_r2050_cell_intrinsic_explicit_child_includes_border() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let cell_id = doc.create_element("td");
+    let inner_id = doc.create_element("div");
+    let _ = doc.append_child(root, cell_id);
+    let _ = doc.append_child(cell_id, inner_id);
+
+    let mut styles = HashMap::new();
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    styles.insert(cell_id, cs);
+    let mut inner_style = ComputedStyle::default();
+    inner_style.display = DisplayValue::Block;
+    inner_style.width = LengthValue::Px(50.0); // 显式宽子元素
+    styles.insert(inner_id, inner_style);
+
+    // cell: content 50（来自 inner.width）+ padding (3+2)=5 + border (3+1)=4 = border-box 59。
+    let inner_box = LayoutBox {
+        node_id: Some(inner_id),
+        width: 50.0,
+        content_width: 50.0,
+        ..Default::default()
+    };
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        width: 50.0,
+        content_width: 50.0,
+        padding_left: 3.0,
+        padding_right: 2.0,
+        border_left: 3.0,
+        border_right: 1.0,
+        children: vec![inner_box],
+        ..Default::default()
+    };
+
+    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc);
+    // 修复前 = 50 + 5(padding) = 55（漏 border）；修复后 = 50 + 5 + 4 = 59（border-box）。
+    assert_eq!(
+        intrinsic, 59.0,
+        "含显式宽子元素的 cell intrinsic 应为 border-box（content+padding+border=59），got {}",
+        intrinsic
+    );
+}
+
 /// R1131 slice 3：grow_vrl_cell_block_extent 单测。
 /// 验证 None scale / rowspan gate / Some scale + text → N×fs 增长 三条路径。
 #[test]
