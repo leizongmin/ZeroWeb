@@ -122,6 +122,10 @@ fn adjust_table_layout_inner(
                 let old_height = root.children[idx].height;
                 layout_table(&mut root.children[idx], doc, styles);
                 reflow_siblings_after_table_height_change(root, idx, old_height);
+                // R2061：abspos table 内容高确定后按 §10.3.7 重算垂直 auto-margin 居中
+                //（old_height = taffy stretch 高 = CB 可用）。在调用方调用覆盖 build_grid
+                // 空表早返路径与正常路径；非 abspos table 经 recenter 内部 gate no-op。
+                recenter_abspos_table_vertically(&mut root.children[idx], old_height, styles);
                 for child in &mut root.children[idx].children {
                     adjust_table_layout_inner(child, doc, styles, true);
                 }
@@ -233,6 +237,15 @@ fn merge_orphan_table_run(
 /// 收缩 table 后需把后续普通流兄弟上移（与 inline_finalization 的 shrink 重排同谱系）。
 fn reflow_siblings_after_table_height_change(parent: &mut LayoutBox, table_idx: usize, old_table_height: f32) {
     if !matches!(parent.writing_mode, WritingModeValue::HorizontalTb) {
+        return;
+    }
+    // R2061：abspos/fixed table 完全脱离正常流（CSS §9.8），其高度变化既不位移后续
+    // in-flow 兄弟，也不改父容器高度。center-007：`<div position:relative height:200px>`
+    // 的唯一正常流外子是 abspos table（top:0 bottom:0 margin:auto），taffy 先把它按
+    // abspos stretch 拉到 CB 高度，layout_table 再收到 table 内容高（100），旧实现把
+    // delta（100−200=−100）加到父高度 → 父 200→100 塌缩 → abspos CB 跟着塌缩 →
+    // margin:auto 垂直居中失效（表格贴顶）。abspos/fixed table 须早返，不触父/兄弟。
+    if parent.children[table_idx].is_absolute || parent.children[table_idx].is_fixed {
         return;
     }
     let height_delta = parent.children[table_idx].height - old_table_height;
@@ -1475,6 +1488,65 @@ fn position_cells(
             child.y = row_y;
         }
     }
+}
+
+/// R2061：abspos table 经 [`layout_table`] 收到内容高后，按 CSS §10.3.7 重算垂直
+/// auto-margin 居中。在 [`adjust_table_layout_inner`] 中于 `layout_table` 之后调用，
+/// `entry_height` = table 进入 layout_table 前的高度（= taffy §10.5.7 stretch 高 =
+/// CB 可用高 = CB_content − top − bottom；auto margin 在 stretch 期视作 0）。
+///
+/// 仅当满足居中条件（否则 no-op）：
+/// - `is_absolute`（CB = 最近 positioned 祖先；fixed 走独立 viewport 路径不在此处理）
+/// - `top` 与 `bottom` 均为 Px（双向 inset 明确才会触发 stretch + 居中方程）
+/// - `height: Auto`（明确高度时 taffy 已正确居中，无须补；auto 才被 stretch）
+/// - `margin-top` 或 `margin-bottom` 至少一个 Auto（否则无 auto-margin 可分配 leftover）
+///
+/// `leftover = entry_height − table_box.height`（≥0）按 §10.3.7 分配：
+/// - mt、mb 均 auto：各取 leftover/2，table 下移 leftover/2
+/// - 仅 mt auto：mt = leftover，table 下移 leftover
+/// - 仅 mb auto：mb = leftover，table 留在顶（不下移）
+///
+/// table.y 下移量 = margin_top（坐标系无关——entry y 已是 top inset 位置，仅加 margin）。
+/// 在调用方（非 layout_table 内部）调用，覆盖 build_grid 空表的早返路径与正常路径。
+/// env `ZW_ABSPOS_TABLE_VCENTER=0` 关闭（kill-switch，default-on）。
+fn recenter_abspos_table_vertically(
+    table_box: &mut LayoutBox,
+    entry_height: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    use zero_css_parser::values::LengthValue;
+    if std::env::var("ZW_ABSPOS_TABLE_VCENTER").as_deref() == Ok("0") {
+        return;
+    }
+    if !table_box.is_absolute {
+        return;
+    }
+    let s = match table_box.node_id.and_then(|id| styles.get(&id)) {
+        Some(s) => s,
+        None => return,
+    };
+    let both_v_inset = matches!(s.top, LengthValue::Px(_)) && matches!(s.bottom, LengthValue::Px(_));
+    let height_auto = matches!(s.height, LengthValue::Auto);
+    let mt_auto = matches!(s.margin_top, LengthValue::Auto);
+    let mb_auto = matches!(s.margin_bottom, LengthValue::Auto);
+    if !(both_v_inset && height_auto && (mt_auto || mb_auto)) {
+        return;
+    }
+    let leftover = (entry_height - table_box.height).max(0.0);
+    let shift = if mt_auto && mb_auto {
+        let half = leftover / 2.0;
+        table_box.margin_top = half;
+        table_box.margin_bottom = half;
+        half
+    } else if mt_auto {
+        table_box.margin_top = leftover;
+        leftover
+    } else {
+        // 仅 mb_auto：mb 吸收 leftover，table 留顶不下移。
+        table_box.margin_bottom = leftover;
+        0.0
+    };
+    table_box.y += shift;
 }
 
 /// table-sizing 架构切片 R1570：max-width/max-height 不应压缩 table 的固有内容

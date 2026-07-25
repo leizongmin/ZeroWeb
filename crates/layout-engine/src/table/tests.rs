@@ -1187,3 +1187,110 @@ fn test_top_caption_extent_sums_top_caption_heights() {
         "only top caption (cap1=19) counted; bottom caption + thead excluded"
     );
 }
+
+/// R2061：abspos table（top+bottom + height:auto + margin:auto）经 layout_table
+/// 收到内容高后，应按 §10.3.7 用 auto-margin 垂直居中。taffy 先把 abspos table
+/// stretch 到 CB 高度（entry_height），layout_table 收到内容高，recenter 据 leftover
+/// 分配 auto margin 并下移 table。回归 position-absolute-center-007。
+#[test]
+fn test_r2061_abspos_table_vertical_centering_auto_margins() {
+    use zero_css_parser::values::LengthValue;
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Table;
+    s.top = LengthValue::Px(0.0);
+    s.bottom = LengthValue::Px(0.0);
+    s.height = LengthValue::Auto;
+    s.margin_top = LengthValue::Auto;
+    s.margin_bottom = LengthValue::Auto;
+    styles.insert(table_id, s);
+
+    // table 内容高 100（layout_table 后），entry_height=200（taffy stretch = CB 可用）。
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        is_absolute: true,
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+        ..Default::default()
+    };
+
+    recenter_abspos_table_vertically(&mut table_box, 200.0, &styles);
+
+    // leftover = 200 − 100 = 100；mt=mb 均 auto → 各 50；table 下移 50。
+    assert_eq!(table_box.y, 50.0, "table should shift down by leftover/2 = 50");
+    assert_eq!(table_box.margin_top, 50.0, "auto margin-top = leftover/2");
+    assert_eq!(table_box.margin_bottom, 50.0, "auto margin-bottom = leftover/2");
+    assert_eq!(table_box.height, 100.0, "table content height unchanged by recenter");
+}
+
+/// R2061：abspos table 是非流内子元素，其高度变化**不应**塌缩父容器高度或位移兄弟。
+/// 回归 position-absolute-center-007：父 height:200px 的唯一正常流外子是 abspos table，
+/// 旧 reflow 把 table 收缩的 delta 加到父高度致父 200→100 塌缩。
+#[test]
+fn test_r2061_reflow_skips_abspos_table_parent_height() {
+    // 父容器高度 200，唯一子是 abspos table（高度从 taffy stretch 200 收到内容 100）。
+    let abspos_table = LayoutBox {
+        is_absolute: true,
+        height: 100.0,
+        ..Default::default()
+    };
+    let mut parent = LayoutBox {
+        height: 200.0,
+        content_height: 200.0,
+        writing_mode: WritingModeValue::HorizontalTb,
+        children: vec![abspos_table],
+        ..Default::default()
+    };
+    let old_table_height = 200.0_f32;
+    reflow_siblings_after_table_height_change(&mut parent, 0, old_table_height);
+
+    // abspos table 不在流内：父高度不被 table 收缩 delta（200→100）影响，保持 200。
+    assert_eq!(
+        parent.height, 200.0,
+        "abspos table height change must not shrink parent (out-of-flow)"
+    );
+    assert_eq!(
+        parent.content_height, 200.0,
+        "abspos table height change must not shrink parent content_height"
+    );
+}
+
+/// R2061：recenter 仅在 abspos + top/bottom Px + height Auto + auto margin 时触发；
+/// 非 abspos table（in-flow）即使高度变化也不被 recenter 触碰（早返 no-op）。
+#[test]
+fn test_r2061_recenter_noop_for_inflow_table() {
+    use zero_css_parser::values::LengthValue;
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Table;
+    s.top = LengthValue::Px(0.0);
+    s.bottom = LengthValue::Px(0.0);
+    s.height = LengthValue::Auto;
+    s.margin_top = LengthValue::Auto;
+    s.margin_bottom = LengthValue::Auto;
+    styles.insert(table_id, s);
+
+    // 非 abspos（is_absolute=false）：recenter 应 no-op。
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        is_absolute: false,
+        y: 0.0,
+        height: 100.0,
+        ..Default::default()
+    };
+    recenter_abspos_table_vertically(&mut table_box, 200.0, &styles);
+    assert_eq!(table_box.y, 0.0, "in-flow table must not be recentered");
+    assert_eq!(table_box.margin_top, 0.0, "in-flow table margin untouched");
+}
