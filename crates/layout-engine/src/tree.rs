@@ -511,15 +511,23 @@ fn apply_replaced_element_sizing(
                     }
                     // both-auto flex：不设确定 size，仅 aspect_ratio（transferred-size 由 taffy 推）。
                 } else {
-                    // INLINE（非 flex）：chromium default object size，**不**应用 viewBox 比。
-                    // 显式 CSS 侧由 converter 处理，auto 侧用 default（宽 300 / 高 150）。
-                    if width_auto {
-                        taffy_style.size.width = taffy::style::Dimension::length(300.0);
+                    // INLINE（非 flex）：R2054 实测 chromium visudet width-40 ref——img6
+                    //（RatioOnly ratio=2）配 width:40 → 40×20 = width/ratio，**应用 viewBox 比**
+                    //（纠正 decode_svg_bytes / 旧注释「INLINE 不应用比」误判，该误判仅对
+                    // ComputedIntrinsic 显式宽度成立但被 R2054 Fix B 推翻）。设 aspect_ratio 让
+                    // taffy 从显式侧推 auto 侧；auto+auto 用 default object size 300×150（ratio=2
+                    // 时自洽，其他 ratio 仍 300×150——auto+auto ratio-only 的 chromium 精确 size
+                    // 如 container-width×ratio 属 §10.3.2 "should" 未定义，此处保守 default）。
+                    if computed.aspect_ratio.is_none() && (width_auto || height_auto) {
+                        taffy_style.aspect_ratio = Some(ratio);
                     }
-                    if height_auto {
+                    if width_auto && height_auto {
+                        // auto+auto: default object size（aspect_ratio 维持比）。
+                        taffy_style.size.width = taffy::style::Dimension::length(300.0);
                         taffy_style.size.height = taffy::style::Dimension::length(150.0);
                     }
-                    // 不设 aspect_ratio（chromium inline 不应用 viewBox 比）。
+                    // 显式 width + auto height / 显式 height + auto width：不设 auto 侧 default，
+                    // taffy 按 aspect_ratio 从显式侧推导（与 image_sizes BothAbs 路径一致）。
                 }
             }
         }

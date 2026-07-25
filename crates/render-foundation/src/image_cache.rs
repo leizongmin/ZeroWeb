@@ -589,12 +589,20 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         // viewBox 比（无 abs 维 / 单 abs 维）：保留 ratio 供 flex transferred-size；inline 由
         // 布局层 default object size 处理（不应用此 ratio）。
         SvgIntrinsicKind::RatioOnly(ratio) => data.intrinsic_ratio = Some(ratio),
-        SvgIntrinsicKind::ComputedIntrinsic(cw, ch) if ch > 0.0 => {
-            data.intrinsic_ratio = Some(cw / ch);
+        // R2054：一维 abs + 另一维缺失 + viewBox 比 → **计算的真实固有尺寸**（abs × ratio）
+        // 走 computed_intrinsic（→ image_sizes），使 INLINE auto+auto 用该固有尺寸（chromium
+        // visudet replaced-elements-all-auto：height-25-ratio-2 → 50×25，非 300×150）。
+        // 旧实现设 intrinsic_ratio 致 layout ratio-only 分支 INLINE 走 default 300×150（错）。
+        // flex transferred-size 仍经 image_sizes 的 aspect_ratio 推导（tree.rs:439-441）。
+        SvgIntrinsicKind::ComputedIntrinsic(cw, ch) if ch > 0.0 && cw > 0.0 => {
+            data.computed_intrinsic = Some((cw, ch));
         }
         // 无 viewBox 比：default object size，无 ratio。
         SvgIntrinsicKind::ComputedIntrinsic(_, _) => {}
-        SvgIntrinsicKind::NoRatio { .. } => data.no_ratio = Some((None, None)),
+        // R2054：NoRatio 保留真实 abs 固有维（仅 abs 属性存在的维，缺失维 None）——旧实现
+        // 丢弃为 (None,None) 致 height-25-no-ratio / width-50-no-ratio 失去固有维走全 default。
+        // 布局 no_ratio 分支（tree.rs:413）用 w_opt/h_opt + unwrap_or(300/150) 正确分派。
+        SvgIntrinsicKind::NoRatio { width, height } => data.no_ratio = Some((width, height)),
     }
     Ok(data)
 }
@@ -1055,15 +1063,32 @@ mod decode_tests {
         assert_eq!(img.no_ratio_intrinsic(), None);
     }
 
-    /// 端到端：width-only no-ratio SVG 经 decode 后归入 no_ratio(None,None)（chromium 忽略
-    /// 单 abs 维，按 default object size sizing）。
+    /// R2054：width-only no-ratio SVG 经 decode 后 no_ratio **保留真实 abs 固有维**
+    ///（Some(50), None）——旧实现丢弃为 (None,None) 致 visudet width-50-no-ratio.svg
+    /// 失去固有宽走全 default（应 50×150）。布局 no_ratio 分支用 w_opt/h_opt + unwrap_or
+    /// 正确分派（显式 width 时 width=50，auto height 时 default 150）。
     #[test]
     fn decode_svg_width_only_no_ratio_sets_field() {
         let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" preserveAspectRatio=\"none\">\
                    <rect fill=\"orange\" width=\"100%\" height=\"100%\"/></svg>";
         let img = decode_svg_bytes(svg).expect("SVG rasterize should succeed");
         assert_eq!(img.intrinsic_ratio(), None);
-        assert_eq!(img.no_ratio_intrinsic(), Some((None, None)));
+        assert_eq!(img.no_ratio_intrinsic(), Some((Some(50.0), None)));
+    }
+
+    /// R2054：height abs + viewBox ComputedIntrinsic SVG 经 decode → **computed_intrinsic**
+    ///（→ image_sizes），使 INLINE auto+auto 用 (50,25)（chromium visudet all-auto：
+    /// height-25-ratio-2 → 50×25）。旧实现设 intrinsic_ratio 致 layout ratio-only 分支
+    /// INLINE 走 default 300×150（错）。computed_intrinsic 不再设 intrinsic_ratio（flex
+    /// transferred-size 经 image_sizes aspect_ratio 推导）。
+    #[test]
+    fn decode_svg_height_abs_viewbox_sets_computed_intrinsic() {
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1000 500\" height=\"25\" preserveAspectRatio=\"none\">\
+                   <rect fill=\"fuchsia\" width=\"1000\" height=\"500\"/></svg>";
+        let img = decode_svg_bytes(svg).expect("SVG rasterize should succeed");
+        assert_eq!(img.computed_intrinsic(), Some((50.0, 25.0)));
+        assert_eq!(img.intrinsic_ratio(), None);
+        assert_eq!(img.no_ratio_intrinsic(), None);
     }
 
     /// 端到端：双绝对 SVG（width+height 均 abs）经 decode 后**不**进 no_ratio（走 image_sizes
