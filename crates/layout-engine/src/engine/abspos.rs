@@ -606,15 +606,18 @@ fn recenter_abspos_vcenter_inner(box_node: &mut LayoutBox, cb_height: f32, style
             let both_v_inset = matches!(s.top, LengthValue::Px(_)) && matches!(s.bottom, LengthValue::Px(_));
             let mt_auto = matches!(s.margin_top, LengthValue::Auto);
             let mb_auto = matches!(s.margin_bottom, LengthValue::Auto);
-            // 仅 definite height——height:auto 的 stretch 场景由 taffy / R2061 table recenter 处理。
-            let height_definite = !matches!(s.height, LengthValue::Auto);
             // R2068：仅处理「两侧 margin 均 auto」的垂直居中（taffy 不解此场景，absolute-tables-016
             // 等 driving test 依赖）。单边 auto（mt_auto xor mb_auto）的 §10.6.4 margin 分配
             // **taffy 已正确求解**——禁用本 pass（ZW_ABSPOS_VCENTER=0）实证 max-height-004 单边
             // auto 0.06% PASS；启用则双重应用（taffy 已下移 + 本 pass 再叠加 leftover）致元素
             // 贴底（absolute-non-replaced-max-height-002/003/004/007/009/011 簇）。故单边 auto
             // 交回 taffy，本 pass 仅 both-auto。
-            if both_v_inset && mt_auto && mb_auto && height_definite {
+            // R2072：放开 height_definite gate——height:auto + top+bottom Px + both-auto 也处理。
+            // SET（top_px+half）对两种 height:auto 子场景都对：① 无 max-height stretch 填满 CB
+            //（child.height=CB-top-bottom，leftover=0，half=0，SET=top_px no-op，元素已填满 ✓）；
+            // ② max-height cap（child.height=capped<stretch，leftover>0，SET 下移居中 ✓）。解
+            // max-height-002/007/009/011 簇（height:auto+cap+both-auto，旧 gate 跳过）。
+            if both_v_inset && mt_auto && mb_auto {
                 let top_px = match &s.top {
                     LengthValue::Px(v) => *v as f32,
                     _ => 0.0,
@@ -744,13 +747,19 @@ mod r2062_tests {
         assert_eq!(img.margin_bottom, 0.0);
     }
 
-    /// R2062：height:auto（definite gate 不满足）→ 不触动（由 R2061 table recenter / taffy 处理）。
+    /// R2072：height:auto 现也处理（放开 height_definite gate）。synthetic config
+    ///（top=0, bottom=0, height=100, cb=200）→ leftover=200-0-0-100=100, half=50,
+    /// SET child.y = top_px(0) + half(50) = 50。真实 stretch 场景 taffy 会让 child.height
+    /// = CB-top-bottom（填满）→ leftover=0 → SET=top_px no-op（无中心化需要）。
     #[test]
-    fn r2062_abspos_height_auto_not_touched() {
+    fn r2072_abspos_height_auto_now_processed() {
         let (mut parent, styles) = make_parent_with_abspos_img(LengthValue::Auto, LengthValue::Auto, LengthValue::Auto);
         recenter_abspos_margin_auto_vertically(&mut parent, 200.0, &styles);
         let img = &parent.children[0];
-        assert_eq!(img.y, 0.0, "height:auto abspos not centered by this pass");
+        // top=0, bottom=0, child.height=100, cb=200 → leftover=100, half=50, SET y=0+50=50.
+        assert_eq!(img.y, 50.0, "height:auto both-auto now centered via SET (R2072)");
+        assert_eq!(img.margin_top, 50.0);
+        assert_eq!(img.margin_bottom, 50.0);
     }
 
     /// R2062：递归——positioned 祖先的 padding-box（border-box − border）成为后代 CB。
