@@ -1638,6 +1638,56 @@ fn test_table_percentage_height_resolves_as_minimum() {
     );
 }
 
+/// R2057：abspos + max-height:max-content/fit-content 关键字 cap。
+///
+/// convert_max_length_to_dimension 把这些关键字转 taffy auto（无 max 约束），taffy 0.12
+/// max_size 不支持 content keyword → abspos top+bottom 拉伸到 CB 高度，max-height 不 cap。
+/// clamp_percentage_max_height 的 R2057 分支在 taffy 后用 content_height（max child bottom）
+/// cap。构造 abspos(height=200 拉伸, max-height:max-content) > child(height=100)，验证 cap 到 100。
+#[test]
+fn test_abspos_max_height_keyword_caps_stretched_height() {
+    let (mut doc, _body) = make_doc_with_body();
+    let abs = doc.create_element("div");
+    let child = doc.create_element("div");
+
+    let mut styles = HashMap::new();
+    let mut a_s = ComputedStyle::default();
+    a_s.display = DisplayValue::Block;
+    a_s.position = PositionValue::Absolute;
+    a_s.max_height = LengthValue::MaxContent;
+    styles.insert(abs, a_s);
+
+    // child height=100（definite content）；abspos 拉伸到 200（top+bottom stretch）
+    let child_box = LayoutBox {
+        node_id: Some(child),
+        y: 0.0,
+        height: 100.0,
+        content_height: 100.0,
+        ..Default::default()
+    };
+    let mut abs_box = LayoutBox {
+        node_id: Some(abs),
+        is_absolute: true,
+        height: 200.0,
+        content_height: 200.0,
+        ..Default::default()
+    };
+    abs_box.children.push(child_box);
+
+    super::super::clamp_percentage_max_height(&mut abs_box, None, &styles);
+
+    assert!(
+        abs_box.height <= 101.0,
+        "abspos max-height:max-content 应 cap 拉伸高度到 content(100)，got {}",
+        abs_box.height
+    );
+    assert!(
+        abs_box.content_height <= 101.0,
+        "abspos content_height 应同步 cap，got {}",
+        abs_box.content_height
+    );
+}
+
 /// 测试 table column 的 visibility:collapse。
 ///
 /// 对应 visibility-collapse-colspan-003：中间列被 `visibility:collapse` 折叠，

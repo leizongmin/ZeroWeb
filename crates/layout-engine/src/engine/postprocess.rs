@@ -1431,12 +1431,45 @@ pub(super) fn clamp_percentage_max_height(
     use zero_css_parser::values::{BoxSizingValue, LengthValue};
 
     // absolute 元素的包含块语义不同（由 positioned ancestor / 视口决定），
-    // 不在此处处理，避免与 adjust_absolute_pct_to_viewport 重叠。
+    // 不在此处处理百分比 max-height（避免与 adjust_absolute_pct_to_viewport 重叠）。
     let style = if box_node.is_absolute {
         None
     } else {
         box_node.node_id.and_then(|id| styles.get(&id))
     };
+
+    // R2057：abspos + max-height:fit-content/max-content 关键字 cap。
+    // convert_max_length_to_dimension 把这些关键字转 taffy auto（无 max 约束），
+    // 且 taffy 0.12 max_size 仅 LengthPercentageAuto（不支持 content keyword）→
+    // abspos top+bottom + max-height:fit-content/max-content 无 cap 拉伸到 CB 高度
+    //（position-absolute-fit-content：ZW 231px 应 131px）。本 pass 在 taffy 后跑
+    //（children LayoutBox.height 已定），content_height = max child bottom 相对
+    // content origin，把拉伸的 box height cap 到 content 高度。仅对 definite-content
+    // abspos 有效（auto-content 子填满拉伸父 → content_h = stretched → no-op，安全）。
+    if box_node.is_absolute
+        && let Some(id) = box_node.node_id
+        && let Some(s) = styles.get(&id)
+    {
+        let is_content_keyword = matches!(
+            &s.max_height,
+            LengthValue::FitContent(_) | LengthValue::MaxContent | LengthValue::MinContent
+        );
+        if is_content_keyword {
+            let content_top = box_node.padding_top + box_node.border_top;
+            let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+            // content_height = max child bottom 相对 content origin（子 y 相对 padding/border box）
+            let content_h = box_node
+                .children
+                .iter()
+                .map(|c| (c.y + c.height - content_top).max(0.0))
+                .fold(0.0_f32, f32::max);
+            let cap_box = content_h + pb;
+            if box_node.height > cap_box && cap_box > 0.0 {
+                box_node.height = cap_box;
+                box_node.content_height = content_h;
+            }
+        }
+    }
 
     // 1) 收紧：百分比 max-height 相对包含块内容高度解析
     if let (Some(style), Some(cb_h)) = (style.as_ref(), cb_content_height)
