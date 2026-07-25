@@ -184,6 +184,7 @@ const ENUM_KEYWORD_PROPS: &[&str] = &[
     "box-sizing",
     "flex-direction",
     "flex-wrap",
+    "column-count",
 ];
 
 /// 判定一条声明是否为「有限关键字值属性的非法值」（级联时应按未声明处理）。
@@ -195,8 +196,8 @@ const ENUM_KEYWORD_PROPS: &[&str] = &[
 /// 级联结果→初值/继承，与旧行为一致。
 fn is_invalid_enum_value(property: &str, value: &str) -> bool {
     use zero_css_parser::values::{
-        parse_box_sizing, parse_clear, parse_display, parse_flex_direction, parse_flex_wrap, parse_float,
-        parse_overflow, parse_position, parse_visibility,
+        parse_box_sizing, parse_clear, parse_column_count, parse_display, parse_flex_direction, parse_flex_wrap,
+        parse_float, parse_overflow, parse_position, parse_visibility,
     };
     if !ENUM_KEYWORD_PROPS.contains(&property) {
         return false;
@@ -212,6 +213,11 @@ fn is_invalid_enum_value(property: &str, value: &str) -> bool {
         "box-sizing" => parse_box_sizing(v).is_none(),
         "flex-direction" => parse_flex_direction(v).is_none(),
         "flex-wrap" => parse_flex_wrap(v).is_none(),
+        // R2066：column-count 须为 auto 或正整数（CSS Multicol §3）。
+        // 非法值（-1 / 2.1 等）须在级联时按未声明处理——否则后到的非法声明因 order 更高
+        // 胜出，apply 阶段 parse_column_count 返 None 不赋值，column_count 回退初值 Auto，
+        // 覆盖前到的合法值（multicol-count-negative/non-integer：column-count:4 后跟 -1/2.1）。
+        "column-count" => parse_column_count(v).is_none(),
         _ => false,
     }
 }
@@ -948,6 +954,63 @@ mod tests {
         }];
         let result = cascade(decls);
         assert_eq!(result.get("color"), Some(&"red".to_string()));
+    }
+
+    #[test]
+    /// R2066：column-count 非法值（负数 / 非整数）须在级联时按未声明处理——
+    /// 后到的非法声明不得胜出覆盖前到的合法值（CSS Multicol §3 + CSS error-handling）。
+    fn test_cascade_column_count_invalid_filtered() {
+        // column-count: 4; column-count: -1;  → 4 胜出（-1 非法被过滤）
+        let decls = vec![
+            CascadedDeclaration {
+                property: "column-count".to_string(),
+                value: "4".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "column-count".to_string(),
+                value: "-1".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls);
+        assert_eq!(
+            result.get("column-count"),
+            Some(&"4".to_string()),
+            "非法 column-count:-1 应被过滤，保留合法 column-count:4"
+        );
+
+        // column-count: 4; column-count: 2.1;  → 4 胜出（2.1 非整数非法）
+        let decls = vec![
+            CascadedDeclaration {
+                property: "column-count".to_string(),
+                value: "4".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "column-count".to_string(),
+                value: "2.1".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls);
+        assert_eq!(
+            result.get("column-count"),
+            Some(&"4".to_string()),
+            "非整数 column-count:2.1 应被过滤，保留合法 column-count:4"
+        );
+
+        // 全非法 → 属性不进级联结果（回退初值）
+        let decls = vec![CascadedDeclaration {
+            property: "column-count".to_string(),
+            value: "-5".to_string(),
+            order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+        }];
+        let result = cascade(decls);
+        assert!(
+            !result.contains_key("column-count"),
+            "全非法 column-count 应不进级联结果（回退初值 Auto）"
+        );
     }
 
     #[test]
