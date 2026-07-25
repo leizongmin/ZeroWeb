@@ -617,6 +617,16 @@ impl LayoutEngine {
         // R1411：column-flex 非 stretch 替换 item main（height）修正（绕过 taffy，LayoutBox 层）。
         fix_column_flex_nonstretch_replaced_main(&mut root_box, styles, &intrinsic_for_r695);
 
+        // 11.9 R2062：abspos 垂直 margin:auto 居中（§10.6.4）。taffy 不对 positioned-ancestor-CB
+        // 的 definite-height abspos（top+bottom Px + margin:auto）做垂直居中。初始 CB：
+        // root positioned → root padding-box；否则 ICB（viewport）。kill-switch ZW_ABSPOS_VCENTER=0。
+        let initial_cb_height = if root_is_positioned {
+            (root_box.height - root_box.border_top - root_box.border_bottom).max(0.0)
+        } else {
+            self.viewport_height
+        };
+        recenter_abspos_margin_auto_vertically(&mut root_box, initial_cb_height, styles);
+
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。

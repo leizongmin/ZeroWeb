@@ -490,6 +490,13 @@ fn apply_replaced_element_sizing(
             {
                 let width_auto = matches!(computed.width, LengthValue::Auto);
                 let height_auto = matches!(computed.height, LengthValue::Auto);
+                // R2062：replaced 元素的 max-content/min-content 关键字（CSS §10.6.2/§10.3.2
+                // 固有尺寸）。converter 把 MinContent|MaxContent→length(0)，但 ratio-only SVG
+                //（仅有 viewBox 比，无确定固有维）+ 另一侧 definite 时，content-keyword 侧应按
+                // 固有比从 definite 侧推导（chromium position-absolute-replaced-no-intrinsic-size：
+                // img width:100 + height:max-content + viewBox 1:1 → 100×100，非 100×0）。
+                let width_content_kw = matches!(computed.width, LengthValue::MaxContent | LengthValue::MinContent);
+                let height_content_kw = matches!(computed.height, LengthValue::MaxContent | LengthValue::MinContent);
                 if is_flex_row_item || is_flex_col_item {
                     // FLEX：保留 ratio 供 transferred-size（aspect-ratio-intrinsic-007：flex column
                     // → 784×392，cross stretch + main=width/ratio）。★ 不设确定 size——definite size
@@ -537,6 +544,16 @@ fn apply_replaced_element_sizing(
                         let w = container_w.unwrap_or(300.0);
                         taffy_style.size.width = taffy::style::Dimension::length(w);
                         taffy_style.size.height = taffy::style::Dimension::length((w / ratio).max(0.5));
+                    } else if height_content_kw && let LengthValue::Px(cw) = &computed.width {
+                        // R2062：height:max-content/min-content + 定宽 + 比 → height = width/ratio
+                        //（converter 把 max-content→length(0)，此处显式覆写定高，使 abspos
+                        // margin:auto 居中等下游用 definite 高度）。对称分支见下。
+                        let r = computed.aspect_ratio.unwrap_or(ratio);
+                        taffy_style.size.height = taffy::style::Dimension::length(((*cw as f32) / r).max(0.5));
+                    } else if width_content_kw && let LengthValue::Px(ch) = &computed.height {
+                        // R2062 对称：width:max-content/min-content + 定高 + 比 → width = height*ratio
+                        let r = computed.aspect_ratio.unwrap_or(ratio);
+                        taffy_style.size.width = taffy::style::Dimension::length(((*ch as f32) * r).max(0.5));
                     }
                     // 显式 width + auto height / 显式 height + auto width：不设 auto 侧 default，
                     // taffy 按 aspect_ratio 从显式侧推导（与 image_sizes BothAbs 路径一致）。
