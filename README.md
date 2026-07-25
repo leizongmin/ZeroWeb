@@ -47,20 +47,7 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 | 安全与可访问性 | CSP 完整实现、HSTS 预加载、混合内容阻止 / 升级、权限模型与站点隔离已落地并统一接入 `SecurityContext`；可访问性基础（`FocusManager` Tab 导航 + ARIA）已起步 |
 | 项目定位 | 适合学习、研究、工程探索，不适合直接当成生产浏览器 |
 
-现在已经有一批能跑起来的模块：
-
-- 核心引擎：`dom`、`css-parser`、`style-system`、`layout-engine`、`engine`、`canvas`
-- 基础设施：`render-foundation`、`host-runtime`、`net`、`security`、`storage`、`protocol`
-- 运行时与隔离：`script-sandbox`、`wasm-sandbox`、`page-runtime`
-- 对外与产品层：`webview`、`browser-shell`
-- 应用与测试：`apps/browser`、`apps/renderer`、`apps/webview-demo`、`tests/integration`、`tests/wpt-runner`
-
-还没做完的地方也很明确：
-
-- `browser-shell` 还没有进入完整产品形态
-- 页面级 JavaScript 和 Web API 兼容性仍在持续补齐
-- 浏览器产品层、无头调试和多进程链路还需要更多稳定性验证
-- 真实站点兼容性和 WPT 覆盖率还需要大幅推进
+各模块现状见上方表格，未完成的工作见 [路线图](ROADMAP.md)。
 
 ## 快速开始
 
@@ -105,7 +92,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 在 Linux 和 macOS 上，构建前需先下载 `rusty_v8` 预构建产物：`make setup-rusty-v8`（缓存到 `${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8`）。推荐用 `make build` 或 `make browser`，会自动执行该步骤。Windows 需在本地环境里设置 `RUSTY_V8_ARCHIVE` 为 release `.lib` 的 URL。
 
-`freetype-raster` feature（默认开启）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，提升与 Chromium 的字体度量一致性（+232 零回归），broad 一致率从 ~36% 提升到当前约 57%。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`。
+`freetype-raster` feature（默认开启）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，是 broad 一致率提升到 ~57% 的关键。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`。
 
 ### 3. 运行本地入口
 

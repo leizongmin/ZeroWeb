@@ -18,10 +18,9 @@
 
 ## 当前重点
 
-- 推进 `rendering-compat` / render-compact 验收：以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量，broad 一致率约 57%、strict 处低位 plateau。残余缺口集中在 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性方向，根因是 layout↔paint IFC 度量不一致（Phase-A spread）。详见 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md)
-- 补齐 legacy HTML 元素 UA 默认样式与表单控件（`<select>`/`<input>`/`<textarea>` 等），通过 `make product-smoke-legacy` 回归门禁验收
-- 打通 `browser-shell` 产品层与 WebView/渲染管线的真实验收
-- render-compact 验收后，逐步推进完整 JS/DOM API、图形 API、SVG 文档、动画和真实网站交互兼容性
+- **Render compact**: WPT/CSSWG reftest 对齐 Chromium Oracle（`make reftest-oracle`），broad 一致率 chr&lt;1% 约 57%、strict 处低位 plateau。残余缺口在 vertical writing modes、multicol 碎片化、R109 inline-as-block 等 layout↔paint IFC 度量不一致（Phase-A spread）。详见 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md)
+- **Legacy HTML 与表单**: 补齐 `<select>`/`<input>`/`<textarea>` 等 UA 默认样式与表单控件，通过 `make product-smoke-legacy` 门禁验收
+- **Browser shell 产品化**: 打通 `browser-shell` 与 WebView/渲染管线的真实验收
 
 ## 路线图
 
@@ -38,7 +37,7 @@
 | M9 | Canvas 与存储 | `✅ 已完成` | Canvas 2D、localStorage、sessionStorage、IndexedDB、Cache API、Service Worker registry 基础已在仓库中 |
 | M10 | WebView API 与自动化基础 | `✅ 已完成` | 已有可嵌入 API、导航加载、测试和 headless/自动化相关基础，但还会继续演进 |
 | M11 | 浏览器产品层 | `🚧 进行中` | `browser-shell`、标签页、地址栏、历史、书签、下载、设置等基础逐步落地；真实窗口/GPU/display 产品验收仍需补齐 |
-| M12 | Render compatibility / render-compact | `🚧 进行中` | 当前主线；WPT/CSSWG reftest 对齐 Chromium Oracle（`make reftest-oracle`），broad 一致率约 57%、strict 处低位 plateau。残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread） |
+| M12 | Render compatibility / render-compact | `🚧 进行中` | 当前主线；WPT/CSSWG reftest 对齐 Chromium Oracle，详见「当前重点」 |
 | M13 | 完整 JS/DOM API 兼容性 | `⏳ 计划中` | render-compact 验收后推进；目标是从基础 DOM bridge 扩展到更完整的 Web API、事件循环、DOM/CSSOM 操作和真实页面脚本行为 |
 | M14 | Canvas / WebGL / WebGPU | `⏳ 计划中` | Canvas 2D 继续补全后，逐步进入 Khronos WebGL CTS 和 GPUWeb WebGPU CTS；不作为 render-compact 的阻塞项 |
 | M15 | SVG 文档与内联 SVG DOM 渲染 | `⏳ 计划中` | render-compact 只要求 SVG 作为图片资源栅格化；完整 SVG 文档、内联 SVG DOM、样式和交互放到后续阶段 |
@@ -69,14 +68,14 @@
 
 不会把 Acid2、Acid3 这类历史测试作为主要路线图目标。它们可以作为趣味性 smoke，但不能替代 WPT、Test262、CTS 和真实网站验收。
 
-## 接下来大概率会先做什么
+## 随后计划
 
-1. 完成 render-compact 验收：WPT/CSSWG reftest、产品静态页、真实文章页与 Chromium Oracle 稳定对比，Phase A IFC metric coherence 统一解除当前 layout↔paint 结构性瓶颈。
-2. 搭出 `browser-shell` 最小可用产品形态。
-3. render-compact 验收后，把 Test262、WPT testharness、WebDriver wdspec、WebGL CTS、WebGPU CTS 等行业测试按阶段接入。
-4. 逐步推进完整 JS/DOM API、图形 API、SVG 文档、CSS 动画和真实网站交互兼容性。
+1. 完成 **render-compact** 验收，解除 Phase-A IFC metric coherence 结构性瓶颈
+2. **browser-shell** 最小可用产品形态
+3. 逐步接入 Test262、WPT testharness、WebDriver wdspec、WebGL/WebGPU CTS 等行业测试
+4. 逐步推进完整 JS/DOM API、图形 API、SVG 文档、CSS 动画和真实网站交互兼容性
 
-底层能力和产品层会交替推进，非死板顺序。
+底层能力和产品层会交替推进。
 
 ## 暂不放在当前优先级里的方向
 

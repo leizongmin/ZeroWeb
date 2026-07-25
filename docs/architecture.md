@@ -104,14 +104,12 @@
 
 ## 写代码时最该记住的约束
 
-做设计和实现时，这几条比「多写点代码」更重要：
+编码准则详见 [CLAUDE.md](../CLAUDE.md)。架构层面的关键约束：
 
-- **许可证约束**: 核心路径优先选择 MIT、Apache-2.0、BSD 等宽松许可证依赖
-- **最小修改原则**: 避免无关重构和推测性抽象
-- **公共 API 文档**: 对外 API 必须有文档注释
-- **日志与可观测性**: 正式日志使用 `tracing`
-- **验证优先**: 行为变化需要测试，性能敏感路径需要基准或说明
-- **测试入口**: 跑测试和 reftest 用 `make test` / `make reftest`（经 `scripts/test-guard.rs` 包裹），不要裸跑 `cargo test`，避免内存型 bug 触发系统 OOM；涉及渲染 / 布局变更时额外跑 `make product-smoke`，渲染兼容性的诚实通过率用 `make reftest-oracle`（Chromium Oracle 像素对比）度量
+- **许可证边界**: 核心路径优先 MIT、Apache-2.0、BSD 等宽松许可证依赖
+- **架构边界**: `webview` 是稳定嵌入边界；`engine` 负责管线串联（不混入渲染图元）；`render-foundation` 负责 GPU/CPU 图元输出（不混入布局/样式逻辑）；`protocol` + `apps/renderer` 定义多进程契约
+- **测试入口**: 使用 `make test` / `make reftest`（经 `scripts/test-guard.rs` OOM 包裹），不要裸跑 `cargo test`；渲染变更额外跑 `make product-smoke` / `make product-smoke-legacy`
+- **诚实度量**: 渲染兼容性以 `make reftest-oracle`（Chromium Oracle 像素对比）为诚实通过率，同源 reftest 存在假通过仅作自一致性参考
 
 ## 建议的阅读顺序
 
