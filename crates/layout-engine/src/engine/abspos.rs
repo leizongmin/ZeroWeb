@@ -626,11 +626,18 @@ fn recenter_abspos_vcenter_inner(box_node: &mut LayoutBox, cb_height: f32, style
                 // §10.6.4：leftover = CB_height − top − bottom − element border-box height
                 //（child.height 是 border-box，已含 border/padding，对 box-sizing 均正确）。
                 // 两侧 margin 均 auto → 各取 leftover/2。
+                // §10.6.4：leftover = CB_height − top − bottom − element border-box height
+                //（child.height 是 border-box，已含 border/padding，对 box-sizing 均正确）。
+                // 两侧 margin 均 auto → 各取 leftover/2。
                 let leftover = (cb_height - top_px - bottom_px - child.height).max(0.0);
                 let half = leftover / 2.0;
                 child.margin_top = half;
                 child.margin_bottom = half;
-                child.y += half;
+                // R2069：SET（非 +=）目标居中位 child.y = top_px + half。旧 `+= half` 假设 taffy
+                // 把元素放在静态位（child.y = top_px），仅对 taffy 不居中的场景（height keyword
+                // stretch / table）正确；对 height:Px regular div，taffy 已居中（child.y = top_px
+                // + half），+= half 双重应用致贴底（max-height-003）。SET 对两种 taffy 起点都对。
+                child.y = top_px + half;
             }
         }
         // 递归：若 child 自身 positioned，其后代 CB = child padding-box height（§10.1）。
