@@ -522,9 +522,21 @@ fn apply_replaced_element_sizing(
                         taffy_style.aspect_ratio = Some(ratio);
                     }
                     if width_auto && height_auto {
-                        // auto+auto: default object size（aspect_ratio 维持比）。
-                        taffy_style.size.width = taffy::style::Dimension::length(300.0);
-                        taffy_style.size.height = taffy::style::Dimension::length(150.0);
+                        // R2054 C2：ratio-only auto+auto——chromium visudet all-auto 实测 img6
+                        //（ratio-2.svg 无 w/h）在 div width:200 内渲染 200×100 = **父 Px 宽 ×
+                        // ratio**（§10.3.2 "should" undefined 的 chromium 非标准行为；default object
+                        // size 300×150 会溢出父盒，chromium 收束到父宽）。仅父有 Px 宽时用之
+                        //（限 blast radius——auto 父或无父回落 default 300，避免普遍撑满父宽）。
+                        let container_w =
+                            doc.parent_node(dom_id)
+                                .and_then(|p| styles.get(&p))
+                                .and_then(|s| match &s.width {
+                                    zero_css_parser::values::LengthValue::Px(w) => Some(*w as f32),
+                                    _ => None,
+                                });
+                        let w = container_w.unwrap_or(300.0);
+                        taffy_style.size.width = taffy::style::Dimension::length(w);
+                        taffy_style.size.height = taffy::style::Dimension::length((w / ratio).max(0.5));
                     }
                     // 显式 width + auto height / 显式 height + auto width：不设 auto 侧 default，
                     // taffy 按 aspect_ratio 从显式侧推导（与 image_sizes BothAbs 路径一致）。
