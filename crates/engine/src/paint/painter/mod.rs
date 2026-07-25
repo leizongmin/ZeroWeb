@@ -355,7 +355,19 @@ impl Painter {
                 // （CSS §14.2.3：根背景传播到画布时图像定位相对根元素盒，含根 margin 偏移）。
                 // R1428：anchor = 根元素（html）盒位置 layout.x/y，使背景图随根 margin 偏移定位
                 // （修 background-root-002：html margin:1in 时绿条应 y=96 非 y=0）。
-                self.paint_bg_image_in_origin(0.0, 0.0, self.viewport_w, self.viewport_h, ps, layout.x, layout.y);
+                self.paint_bg_image_in_origin(
+                    0.0,
+                    0.0,
+                    self.viewport_w,
+                    self.viewport_h,
+                    0.0,
+                    0.0,
+                    self.viewport_w,
+                    self.viewport_h,
+                    ps,
+                    layout.x,
+                    layout.y,
+                );
             }
         }
         // R639：预扫描布局树填充 NodeId→height 索引，供 render_fragment 宏查 owner inline
@@ -481,7 +493,12 @@ impl Painter {
                 if style.background_color != ColorValue::Transparent && !skip_inline_box_bg {
                     self.paint_background(box_node, abs_x, abs_y, style, styles);
                 }
-                self.paint_background_image(box_node, abs_x, abs_y, style);
+                // R2063：attachment:fixed → 视口锚定平铺、裁剪到元素盒；否则元素盒锚定。
+                if matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed) {
+                    self.paint_background_image_fixed(box_node, abs_x, abs_y, style);
+                } else {
+                    self.paint_background_image(box_node, abs_x, abs_y, style);
+                }
                 // border-collapse: collapse 时，表格外边框由边缘单元格绘制，
                 // 表格元素本身不绘制边框（避免与单元格边框重叠）
                 let is_collapsed_table = matches!(style.display, DisplayValue::Table | DisplayValue::InlineTable)
@@ -656,7 +673,12 @@ impl Painter {
 
                 // 1b. 背景图片（行组/行仍可渲染背景图片）
                 if !skip_split_inline_deco {
-                    self.paint_background_image(box_node, abs_x, abs_y, style);
+                    // R2063：attachment:fixed → 视口锚定平铺、裁剪到元素盒；否则元素盒锚定。
+                    if matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed) {
+                        self.paint_background_image_fixed(box_node, abs_x, abs_y, style);
+                    } else {
+                        self.paint_background_image(box_node, abs_x, abs_y, style);
+                    }
                 }
 
                 // 2. 边框填充（zero_box_model 已归零，但保留防护检查）
@@ -1496,7 +1518,7 @@ impl Painter {
                     zero_style_system::BackgroundAttachmentComputedValue::Fixed
                 )
             {
-                self.paint_bg_image_in_origin(rect_x, content_y, *w, h, style, 0.0, 0.0);
+                self.paint_bg_image_in_origin(rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0);
             }
         }
     }

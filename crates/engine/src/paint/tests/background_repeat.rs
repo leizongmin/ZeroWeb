@@ -426,7 +426,7 @@ fn r1428_canvas_bg_image_anchor_shifts_gradient_position() {
 
     // anchor=(50,50)（canvas 根盒偏移）：positioned = origin(0) + offset(0,bg-pos 默认) + anchor(50) = 50。
     let mut p1 = Painter::new();
-    p1.paint_bg_image_in_origin(0.0, 0.0, 100.0, 100.0, &mk_style(), 50.0, 50.0);
+    p1.paint_bg_image_in_origin(0.0, 0.0, 100.0, 100.0, 0.0, 0.0, 100.0, 100.0, &mk_style(), 50.0, 50.0);
     let g1 = &p1.primitives().gradients;
     assert!(g1.len() >= 1, "R1428: anchor 测试应生成 gradient primitive");
     assert!(
@@ -438,7 +438,7 @@ fn r1428_canvas_bg_image_anchor_shifts_gradient_position() {
 
     // anchor=(0,0)（正常元素）：positioned = 0。
     let mut p0 = Painter::new();
-    p0.paint_bg_image_in_origin(0.0, 0.0, 100.0, 100.0, &mk_style(), 0.0, 0.0);
+    p0.paint_bg_image_in_origin(0.0, 0.0, 100.0, 100.0, 0.0, 0.0, 100.0, 100.0, &mk_style(), 0.0, 0.0);
     let g0 = &p0.primitives().gradients;
     assert!(g0.len() >= 1);
     assert!(
@@ -446,5 +446,64 @@ fn r1428_canvas_bg_image_anchor_shifts_gradient_position() {
         "R1428: anchor=(0,0) gradient 应在 (0,0)，got ({}, {})",
         g0[0].rect.left(),
         g0[0].rect.top()
+    );
+}
+
+/// R2063：background-attachment:fixed 的 positioning area = 视口（初始包含块），
+/// 非 background-origin 盒。即 fixed 背景「锚定视口、裁剪到元素」。
+///
+/// 驱动 background-attachment-applies-to-*（10 案）：img fixed + repeat-x，元素仅显示
+/// 与视口锚定 tile 重叠的条带。修复前 fixed 当 scroll（锚定元素盒）→ 整块图像。
+/// 本测试用 gradient（其 primitive 直接取 positioned_x/y）验证 fixed 时 positioned 锚定视口。
+/// 直接调 paint_bg_image_in_origin（pub(crate)）传 fixed-bg 参数（origin=视口、clip=元素盒）。
+#[test]
+fn r2063_bg_attachment_fixed_positions_against_viewport() {
+    use zero_css_parser::values::{GradientColorStop, GradientDirection, GradientValue, LinearGradient};
+
+    let mk_style = || {
+        let mut style = ComputedStyle::default();
+        style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+            LinearGradient {
+                direction: GradientDirection::Angle(90.0),
+                stops: vec![
+                    GradientColorStop {
+                        color: ColorValue::Rgba(255, 0, 0, 255),
+                        position: Some(LengthValue::Px(0.0)),
+                    },
+                    GradientColorStop {
+                        color: ColorValue::Rgba(0, 0, 255, 255),
+                        position: Some(LengthValue::Px(100.0)),
+                    },
+                ],
+                repeating: false,
+            },
+        ))];
+        style.color = ColorValue::CurrentColor;
+        style
+    };
+
+    // R2063 fixed：positioning area（origin）= 视口 (0,0,800,600)，painting area（clip）= 元素盒 (72,72,96,192)。
+    let mut painter = Painter::new();
+    painter.paint_bg_image_in_origin(0.0, 0.0, 800.0, 600.0, 72.0, 72.0, 96.0, 192.0, &mk_style(), 0.0, 0.0);
+    let g = &painter.primitives().gradients;
+    assert!(g.len() >= 1, "R2063: fixed bg 应生成 gradient primitive");
+    // fixed：positioning area = 视口 → positioned 锚定 (0,0)，非元素盒 (72,72)。
+    assert!(
+        (g[0].rect.left() - 0.0).abs() < 0.5 && (g[0].rect.top() - 0.0).abs() < 0.5,
+        "R2063: fixed bg gradient 应锚定视口 (0,0)，got ({}, {})",
+        g[0].rect.left(),
+        g[0].rect.top()
+    );
+
+    // 对照 scroll：origin ≡ clip = 元素盒 (72,72,96,192) → positioned 锚定 (72,72)。
+    let mut painter2 = Painter::new();
+    painter2.paint_bg_image_in_origin(72.0, 72.0, 96.0, 192.0, 72.0, 72.0, 96.0, 192.0, &mk_style(), 0.0, 0.0);
+    let g2 = &painter2.primitives().gradients;
+    assert!(g2.len() >= 1);
+    assert!(
+        (g2[0].rect.left() - 72.0).abs() < 0.5 && (g2[0].rect.top() - 72.0).abs() < 0.5,
+        "scroll bg gradient 应锚定元素盒 (72,72)，got ({}, {})",
+        g2[0].rect.left(),
+        g2[0].rect.top()
     );
 }

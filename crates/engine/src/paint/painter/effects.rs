@@ -90,19 +90,92 @@ impl super::Painter {
             ),
         };
 
-        self.paint_bg_image_in_origin(origin_x, origin_y, origin_w, origin_h, style, 0.0, 0.0);
+        self.paint_bg_image_in_origin(
+            origin_x, origin_y, origin_w, origin_h, origin_x, origin_y, origin_w, origin_h, style, 0.0, 0.0,
+        );
     }
 
-    /// 在指定 origin 矩形内绘制 background-image（含多图层逆序、size/position/repeat 解析、
-    /// 平铺裁剪）。元素背景由 `paint_background_image` 计算 origin（按 background-origin）
-    /// 后调用本函数；画布背景传播（CSS §14.2：body/html 背景传播到画布）直接以视口
-    /// (0,0,vw,vh) 为 origin 调用本函数，使背景图像平铺整个画布。
+    /// R2063：background-attachment: fixed 的 bg-image 绘制入口。
+    ///
+    /// CSS §14.1：attachment:fixed 时 positioning area = 初始包含块（视口），painting area
+    /// 仍为元素 background-origin 盒。即在元素盒上「开窗」显示锚定视口的平铺图像。driving
+    /// test：background-attachment-applies-to-*（10 案，img attachment:fixed + repeat-x，元素
+    /// 仅显示与视口锚定 tile 重叠的条带）。旧实现把 fixed 当 scroll（锚定元素盒）→ 整块图像
+    /// 而非视口条带。kill-switch `ZW_BG_ATTACHMENT_FIXED=0`。
+    pub(super) fn paint_background_image_fixed(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        if std::env::var("ZW_BG_ATTACHMENT_FIXED").as_deref() == Ok("0") {
+            // 回退：fixed 当 scroll（旧行为）——origin=clip=元素盒。
+            self.paint_background_image(box_node, abs_x, abs_y, style);
+            return;
+        }
+        if style.background_image.is_empty() {
+            return;
+        }
+        if box_node
+            .node_id
+            .is_some_and(|id| self.canvas_propagated_node == Some(id))
+        {
+            return;
+        }
+        // painting area（clip）= 元素 background-origin 盒（与 paint_background_image 同源）。
+        let (clip_x, clip_y, clip_w, clip_h) = match style.background_origin {
+            BackgroundOriginComputedValue::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
+            BackgroundOriginComputedValue::PaddingBox => (
+                abs_x + box_node.border_left,
+                abs_y + box_node.border_top,
+                box_node.width - box_node.border_left - box_node.border_right,
+                box_node.height - box_node.border_top - box_node.border_bottom,
+            ),
+            BackgroundOriginComputedValue::ContentBox => (
+                abs_x + box_node.border_left + box_node.padding_left,
+                abs_y + box_node.border_top + box_node.padding_top,
+                box_node.content_width,
+                box_node.content_height,
+            ),
+        };
+        // positioning area（origin）= 视口（初始包含块）。
+        self.paint_bg_image_in_origin(
+            0.0,
+            0.0,
+            self.viewport_w,
+            self.viewport_h,
+            clip_x,
+            clip_y,
+            clip_w,
+            clip_h,
+            style,
+            0.0,
+            0.0,
+        );
+    }
+
+    /// 在指定矩形内绘制 background-image（含多图层逆序、size/position/repeat 解析、
+    /// 平铺裁剪）。
+    ///
+    /// **positioning area**（`origin_*`）= background-size / background-position 的解析基准
+    ///（CSS §14.1：attachment:fixed 时 = 初始包含块即视口，否则 = background-origin 盒）。
+    /// **painting area**（`clip_*`）= 平铺范围与 tile 裁剪区域（元素的 background-origin 盒；
+    /// 画布传播时 = 视口）。正常元素 `origin` ≡ `clip`；attachment:fixed 时 `origin`=视口、
+    /// `clip`=元素盒，二者分离才能正确呈现「图像锚定视口、裁剪到元素」语义（R2063）。
+    ///
+    /// 元素背景由 `paint_background_image` 计算 origin/clip 后调用本函数；画布背景传播
+    ///（CSS §14.2）直接以视口 (0,0,vw,vh) 同时作 origin+clip 调用本函数。
     pub(crate) fn paint_bg_image_in_origin(
         &mut self,
         origin_x: f32,
         origin_y: f32,
         origin_w: f32,
         origin_h: f32,
+        clip_x: f32,
+        clip_y: f32,
+        clip_w: f32,
+        clip_h: f32,
         style: &ComputedStyle,
         anchor_x: f32,
         anchor_y: f32,
@@ -125,6 +198,7 @@ impl super::Painter {
             .and_then(|h| self.get_image_size(h))
             .unwrap_or(default_intrinsic);
 
+        // size/position 相对 positioning area（origin）解析（fixed 时 origin=视口）。
         let (sized_w, sized_h) = resolve_background_size(&style.background_size, origin_w, origin_h, img_w, img_h);
         let (offset_x, offset_y) =
             resolve_background_position(&style.background_position, origin_w, origin_h, sized_w, sized_h);
@@ -132,6 +206,7 @@ impl super::Painter {
         // positioned = 定位区域 origin + bg-position offset + anchor 偏移。
         // R1428：anchor 用于 canvas 传播（CSS §14.2.3 根背景传播到画布时，positioning area =
         // 根元素盒含 margin 偏移，painting area = 画布）；正常元素 anchor=0（positioned=origin+offset）。
+        // R2063：attachment:fixed 时 origin=视口(0,0) → positioned=视口锚定（图像不随元素滚动）。
         let positioned_x = origin_x + offset_x + anchor_x;
         let positioned_y = origin_y + offset_y + anchor_y;
 
@@ -143,12 +218,14 @@ impl super::Painter {
                     let key = image_resource_key(url, self.document_url.as_deref());
                     let repeat = &style.background_repeat;
 
+                    // 平铺范围相对 painting area（clip）计算——生成足够覆盖元素盒的 tile，
+                    // 网格对齐到 positioned（fixed 时为视口锚定）。
                     let (repeat_x, repeat_y, tile_w, tile_h) = resolve_repeat_params(
                         repeat,
-                        origin_x,
-                        origin_y,
-                        origin_w,
-                        origin_h,
+                        clip_x,
+                        clip_y,
+                        clip_w,
+                        clip_h,
                         positioned_x,
                         positioned_y,
                         sized_w,
@@ -159,8 +236,7 @@ impl super::Painter {
                     while y < repeat_y.1 {
                         let mut x = repeat_x.0;
                         while x < repeat_x.1 {
-                            let clipped =
-                                clip_tile_to_origin(x, y, tile_w, tile_h, origin_x, origin_y, origin_w, origin_h);
+                            let clipped = clip_tile_to_origin(x, y, tile_w, tile_h, clip_x, clip_y, clip_w, clip_h);
                             if let Some((cx, cy, cw, ch)) = clipped {
                                 self.primitives.add_image(ImagePrimitive {
                                     rect: Rect::new(cx, cy, cw, ch),
