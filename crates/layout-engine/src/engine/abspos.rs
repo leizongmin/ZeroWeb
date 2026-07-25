@@ -608,7 +608,13 @@ fn recenter_abspos_vcenter_inner(box_node: &mut LayoutBox, cb_height: f32, style
             let mb_auto = matches!(s.margin_bottom, LengthValue::Auto);
             // 仅 definite height——height:auto 的 stretch 场景由 taffy / R2061 table recenter 处理。
             let height_definite = !matches!(s.height, LengthValue::Auto);
-            if both_v_inset && (mt_auto || mb_auto) && height_definite {
+            // R2068：仅处理「两侧 margin 均 auto」的垂直居中（taffy 不解此场景，absolute-tables-016
+            // 等 driving test 依赖）。单边 auto（mt_auto xor mb_auto）的 §10.6.4 margin 分配
+            // **taffy 已正确求解**——禁用本 pass（ZW_ABSPOS_VCENTER=0）实证 max-height-004 单边
+            // auto 0.06% PASS；启用则双重应用（taffy 已下移 + 本 pass 再叠加 leftover）致元素
+            // 贴底（absolute-non-replaced-max-height-002/003/004/007/009/011 簇）。故单边 auto
+            // 交回 taffy，本 pass 仅 both-auto。
+            if both_v_inset && mt_auto && mb_auto && height_definite {
                 let top_px = match &s.top {
                     LengthValue::Px(v) => *v as f32,
                     _ => 0.0,
@@ -619,21 +625,12 @@ fn recenter_abspos_vcenter_inner(box_node: &mut LayoutBox, cb_height: f32, style
                 };
                 // §10.6.4：leftover = CB_height − top − bottom − element border-box height
                 //（child.height 是 border-box，已含 border/padding，对 box-sizing 均正确）。
+                // 两侧 margin 均 auto → 各取 leftover/2。
                 let leftover = (cb_height - top_px - bottom_px - child.height).max(0.0);
-                let shift = if mt_auto && mb_auto {
-                    let half = leftover / 2.0;
-                    child.margin_top = half;
-                    child.margin_bottom = half;
-                    half
-                } else if mt_auto {
-                    child.margin_top = leftover;
-                    leftover
-                } else {
-                    // 仅 mb_auto：mb 吸收 leftover，元素留顶不下移。
-                    child.margin_bottom = leftover;
-                    0.0
-                };
-                child.y += shift;
+                let half = leftover / 2.0;
+                child.margin_top = half;
+                child.margin_bottom = half;
+                child.y += half;
             }
         }
         // 递归：若 child 自身 positioned，其后代 CB = child padding-box height（§10.1）。
@@ -708,28 +705,36 @@ mod r2062_tests {
         assert_eq!(img.height, 100.0, "img height unchanged");
     }
 
-    /// R2062：仅 margin-top auto → mt 吸收 leftover，元素下移 leftover。
+    /// R2068：仅 margin-top auto（mb 非 auto）→ 本 pass **不再处理**（交回 taffy）。
+    /// taffy 已正确解 §10.6.4 单边 auto margin 分配；旧实现双重应用致 max-height-004 簇
+    /// 贴底（ZW_ABSPOS_VCENTER=0 实证 taffy 单独 0.06% PASS）。守 recenter 对单边 auto no-op。
     #[test]
-    fn r2062_abspos_definite_height_top_auto_margin_absorbs() {
+    fn r2068_abspos_single_auto_margin_left_to_taffy_top() {
         let (mut parent, styles) =
             make_parent_with_abspos_img(LengthValue::Auto, LengthValue::Px(0.0), LengthValue::Px(100.0));
         recenter_abspos_margin_auto_vertically(&mut parent, 200.0, &styles);
         let img = &parent.children[0];
-        assert_eq!(img.y, 100.0, "img shifts down by full leftover = 100");
-        assert_eq!(img.margin_top, 100.0);
+        assert_eq!(
+            img.y, 0.0,
+            "single-auto (mt auto, mb=0) is left to taffy — recenter no-op"
+        );
+        assert_eq!(img.margin_top, 0.0);
         assert_eq!(img.margin_bottom, 0.0);
     }
 
-    /// R2062：仅 margin-bottom auto → mb 吸收 leftover，元素留顶不下移。
+    /// R2068：仅 margin-bottom auto → 同上，recenter no-op（交回 taffy）。
     #[test]
-    fn r2062_abspos_definite_height_bottom_auto_margin_no_shift() {
+    fn r2068_abspos_single_auto_margin_left_to_taffy_bottom() {
         let (mut parent, styles) =
             make_parent_with_abspos_img(LengthValue::Px(0.0), LengthValue::Auto, LengthValue::Px(100.0));
         recenter_abspos_margin_auto_vertically(&mut parent, 200.0, &styles);
         let img = &parent.children[0];
-        assert_eq!(img.y, 0.0, "img stays at top when only margin-bottom is auto");
+        assert_eq!(
+            img.y, 0.0,
+            "single-auto (mt=0, mb auto) is left to taffy — recenter no-op"
+        );
         assert_eq!(img.margin_top, 0.0);
-        assert_eq!(img.margin_bottom, 100.0);
+        assert_eq!(img.margin_bottom, 0.0);
     }
 
     /// R2062：height:auto（definite gate 不满足）→ 不触动（由 R2061 table recenter / taffy 处理）。
