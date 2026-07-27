@@ -671,9 +671,8 @@ fn test_consume_string_unterminated() {
 fn test_consume_string_escaped_quotes() {
     let tokenizer = crate::Tokenizer::new(r#""escaped \" quotes""#);
     let tokens: Vec<_> = tokenizer.collect_tokens();
-    // The tokenizer is not handling escaped quotes correctly
-    // The quote is missing from the output
-    assert!(matches!(tokens[0], Token::String(ref s) if s == r#"escaped  quotes"#));
+    // 转义引号保留为字面引号字符："escaped \" quotes" → `escaped " quotes`
+    assert!(matches!(tokens[0], Token::String(ref s) if s == r#"escaped " quotes"#));
 }
 
 #[test]

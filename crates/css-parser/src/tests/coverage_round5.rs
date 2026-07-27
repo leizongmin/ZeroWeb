@@ -364,14 +364,10 @@ fn test_tokenizer_unicode_escape_too_large() {
 
 #[test]
 fn test_tokenizer_string_with_escape() {
-    // consume_string_content already consumed \, then consume_escape
-    // also consumes one more char (expects \ but it's gone), so the hex parsing
-    // starts one char later. Actual result is "a" + replacement char from partial parse.
+    // 字符串内十六进制转义：\41b = U+041B（Cyrillic Л），故 "a\41b" → "aЛ"
     let tokens: Vec<_> = Tokenizer::new("\"a\\41b\"").collect_tokens();
     assert_eq!(tokens.len(), 1);
-    // The escape behavior: consume_string_content consumes \, then consume_escape
-    // consumes '4' (thinking it consumed \), then reads hex '1b' = 0x1B (ESC)
-    assert_eq!(tokens[0], Token::String("a\u{1b}".to_string()));
+    assert_eq!(tokens[0], Token::String("a\u{41b}".to_string()));
 }
 
 // ═══════════════════════════════════════════════════════════════════════

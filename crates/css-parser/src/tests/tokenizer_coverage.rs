@@ -184,8 +184,14 @@ fn test_string_escaped_backslash_eof() {
 
 #[test]
 fn test_string_with_escaped_quote() {
+    // 转义引号必须保留为字面引号字符（历史 double-consume bug 曾误得 "hello"）
     let toks = tokens(r#""he\"llo""#);
-    assert!(matches!(&toks[0], Token::String(s) if s.contains("llo")));
+    assert!(matches!(&toks[0], Token::String(s) if s == "he\"llo"));
+    // 双引号串中转义双引号 + 单引号串中转义单引号（escapes-001）
+    let toks2 = tokens(r#""\"" "#);
+    assert!(matches!(&toks2[0], Token::String(s) if s == "\""));
+    let toks3 = tokens(r#"'\''"#);
+    assert!(matches!(&toks3[0], Token::String(s) if s == "'"));
 }
 
 #[test]

@@ -520,23 +520,30 @@ impl Tokenizer {
                     return s;
                 }
                 Some('\\') => {
-                    self.consume();
-                    match self.peek() {
+                    // 注意：consume_escape 自身会消耗反斜杠（约定「已确认以 \ 开头」），
+                    // 故此处不再提前消耗反斜杠，否则会重复消耗一个真实字符
+                    // （历史 bug：`"\""` 把转义引号与闭合引号一并吞掉）。
+                    match self.peek_at(1) {
+                        // \<换行> = 行连接，跳过反斜杠与换行（含 CRLF）
                         Some('\n') => {
                             self.consume();
-                            // 续行，跳过
+                            self.consume();
                         }
                         Some('\r') => {
                             self.consume();
+                            self.consume();
                             self.consume_if('\n');
                         }
-                        Some(_c) => {
+                        // \<EOF> = 字面反斜杠（CSS2 §4.2：非合法转义时保留反斜杠）
+                        None => {
+                            self.consume();
+                            s.push('\\');
+                        }
+                        // 合法转义（十六进制 / 转义引号与普通字符）交给 consume_escape
+                        Some(_) => {
                             if let Some(escaped) = self.consume_escape() {
                                 s.push(escaped);
                             }
-                        }
-                        None => {
-                            s.push('\\');
                         }
                     }
                 }
