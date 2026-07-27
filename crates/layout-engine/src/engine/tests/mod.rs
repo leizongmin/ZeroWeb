@@ -152,6 +152,7 @@ mod r1984_neg_margin_width_probe;
 #[allow(dead_code)]
 mod r1986_inline_svg_width_probe;
 mod r2013_print_layout_width_tests;
+mod r2091_grid_replaced_pct_indefinite_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

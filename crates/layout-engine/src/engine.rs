@@ -7,7 +7,7 @@
 //! - **全量计算** (`compute`): 每次从 DOM 重新构建 taffy 树并完整计算。
 //! - **增量计算** (`compute_incremental`): 复用缓存的 taffy 树，仅重算脏节点。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use taffy::prelude::*;
 
@@ -255,7 +255,7 @@ impl LayoutEngine {
     ) -> LayoutResult {
         // R695 复用副本：build_layout_tree_with_r109 按值取走 img_intrinsic_sizes，
         // 此处保留一份供 apply_indefinite_percent_height_to_auto 为替换元素补设固有尺寸。
-        let intrinsic_for_r695 = img_intrinsic_sizes.clone();
+        let mut intrinsic_for_r695 = img_intrinsic_sizes.clone();
         // 1. 构建 taffy 树（含 R109 接线产物，仅 R109_WIRE=1 时非空）
         let (mut taffy_tree, root_id, taffy_to_dom, r109) = build_layout_tree_with_r109(
             doc,
@@ -314,6 +314,23 @@ impl LayoutEngine {
         // 3.2 R695（CSS §10.5）：百分比 height 在不明确包含块上 compute-to-auto。
         //     taffy 0.7 对此回退到 CB 宽度解析（非规范）。此 pass 改写 taffy style，
         //     与 3.1 共用一次重算（两者都 set_style + mark_dirty）。
+        // R2091：补充 canvas/embed/object/applet 的 HTML width/height 属性固有尺寸到
+        // intrinsic_for_r695。caller 的 img_intrinsic_sizes 只含 decoded img（canvas 等无解码
+        // 像素），而 R2016 else 分支依赖该 map 为替换元素补设 intrinsic（解 grid/flex item
+        // 中 replaced + Percentage height + indefinite CB 的 double-resolve）。本步在 tree
+        // build 之后注入，tree.rs 不受影响（canvas-with-attrs 在 tree.rs:358 attr-match 分支
+        // 早返，不达 line 428 img_intrinsic_sizes 查询）。
+        //
+        // gathered_html_attr_ids：收集这些「HTML-attr-only intrinsic」节点的 id，供 R2016
+        // gate 精确锁定（仅 canvas/embed/object/applet，排除 img——img 有 decoded intrinsic，
+        // 其 definite-track grid 百分比案 grid-in-table-cell-with-img 须保持 taffy 原生解析，
+        // 误纳会回归）。
+        let gathered_html_attr: HashMap<zero_dom::NodeId, (f32, f32)> =
+            Self::gather_replaced_html_attr_intrinsic(doc, &root_box);
+        let gathered_html_attr_ids: HashSet<zero_dom::NodeId> = gathered_html_attr.keys().copied().collect();
+        for (nid, size) in gathered_html_attr {
+            intrinsic_for_r695.entry(nid).or_insert(size);
+        }
         let changed_r695 = Self::apply_indefinite_percent_height_to_auto(
             &mut taffy_tree,
             &root_box,
@@ -322,6 +339,7 @@ impl LayoutEngine {
             &intrinsic_for_r695,
             self.viewport_height,
             matches!(doc.quirks_mode(), zero_dom::QuirksMode::Quirks),
+            &gathered_html_attr_ids,
         );
         let changed_pct_padding =
             Self::resolve_percentage_padding(&mut taffy_tree, &root_box, &dom_to_taffy, styles, self.viewport_width);
@@ -1227,6 +1245,7 @@ impl LayoutEngine {
     /// 范围限定：跳过 abspos（由 `adjust_absolute_pct_to_viewport` 处理）；跳过
     /// flex/grid item（其 %height 有独立 stretch 语义，taffy-gated，见 R691）。常见
     /// `html,body{height:100%}` 不受影响——根 CB 为视口（明确），整条链明确。
+    #[allow(clippy::too_many_arguments)]
     fn apply_indefinite_percent_height_to_auto(
         taffy_tree: &mut TaffyTree<NodeId>,
         root: &LayoutBox,
@@ -1235,6 +1254,7 @@ impl LayoutEngine {
         img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
         viewport_height: f32,
         quirks_mode: bool,
+        html_attr_intrinsic_ids: &HashSet<NodeId>,
     ) -> bool {
         use zero_css_parser::values::{BoxSizingValue, DisplayValue, LengthValue, PositionValue};
 
@@ -1249,6 +1269,7 @@ impl LayoutEngine {
             dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
             styles: &HashMap<NodeId, ComputedStyle>,
             img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+            html_attr_intrinsic_ids: &HashSet<NodeId>,
         ) -> bool {
             // 垂直书写模式块轴为 X，高度语义不同——保守跳过整棵子树。
             if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
@@ -1263,7 +1284,21 @@ impl LayoutEngine {
 
             if let Some(s) = style {
                 let is_abs = matches!(s.position, PositionValue::Absolute | PositionValue::Fixed);
-                if !is_abs && !parent_is_flex_grid {
+                // R2091：grid/flex item 中 **HTML-attr-only intrinsic 替换元素**（canvas/embed/
+                // object/applet，即 `gather_replaced_html_attr_intrinsic` 收集的；排除 img——img
+                // 有 decoded intrinsic，其 definite-track grid 百分比案须保持 taffy 原生解析）
+                // + Percentage height + indefinite CB → taffy 在 indefinite 容器中 double-resolve
+                //（容器从祖父辈尺寸、item 再按 aspect_ratio 重解，致 `<canvas width=10 height=10
+                // style="height:200%">` 作 grid item 时 h=400 vs intrinsic 10）。本 gate 把此类
+                // item 交本 pass 处理（走下方 else 分支 → auto+intrinsic）。definite CB（容器定高）
+                // 不入此 gate → 百分比正常解析。kill-switch `ZW_GRID_REPLACED_PCT_INDEFINITE=0`。
+                let is_html_attr_intrinsic_replaced = b.node_id.is_some_and(|id| html_attr_intrinsic_ids.contains(&id));
+                let grid_replaced_pct_indefinite = parent_is_flex_grid
+                    && is_html_attr_intrinsic_replaced
+                    && cb_definite.is_none()
+                    && matches!(s.height, LengthValue::Percentage(_))
+                    && std::env::var("ZW_GRID_REPLACED_PCT_INDEFINITE").as_deref() != Ok("0");
+                if !is_abs && (!parent_is_flex_grid || grid_replaced_pct_indefinite) {
                     match &s.height {
                         LengthValue::Percentage(p) => match cb_definite {
                             Some(cbh) => {
@@ -1359,6 +1394,7 @@ impl LayoutEngine {
                     dom_to_taffy,
                     styles,
                     img_intrinsic_sizes,
+                    html_attr_intrinsic_ids,
                 );
             }
             changed
@@ -1374,7 +1410,46 @@ impl LayoutEngine {
             dom_to_taffy,
             styles,
             img_intrinsic_sizes,
+            html_attr_intrinsic_ids,
         )
+    }
+
+    /// R2091：从 DOM 收集 `canvas`/`embed`/`object`/`applet` 的 HTML `width`/`height` 属性
+    /// 固有尺寸，注入 `intrinsic_for_r695` 供 R2016 else 分支为这些替换元素补设 intrinsic。
+    ///
+    /// caller 传入的 `img_intrinsic_sizes` 只含 decoded `<img>` 像素尺寸；canvas 等替换元素
+    /// 无解码像素，其固有尺寸来自 HTML 属性（在 `tree.rs::apply_replaced_element_sizing` 消费
+    /// 但不回填该 map）。R2016 的 else 分支（替换元素 + Percentage height + indefinite CB）
+    /// 读 `img_intrinsic_sizes` 取不到 canvas → 高度置 auto → taffy 在 grid/flex 中按
+    /// justify-self:stretch + aspect_ratio 重解致尺寸错误（grid-item-percentage-quirk-001）。
+    /// 本函数补齐该缺口。`<img>` 不在此收集（caller 已填 decoded 尺寸；HTML-attr-only img 由
+    /// tree.rs SVG data URI 回退处理，且其在 img_intrinsic_sizes 缺失时 R2016 行为不变）。
+    fn gather_replaced_html_attr_intrinsic(
+        doc: &zero_dom::Document,
+        root: &LayoutBox,
+    ) -> HashMap<zero_dom::NodeId, (f32, f32)> {
+        use zero_dom::NodeKind;
+        let mut map = HashMap::new();
+        let mut stack: Vec<&LayoutBox> = vec![root];
+        while let Some(b) = stack.pop() {
+            if b.is_replaced
+                && let Some(nid) = b.node_id
+                && let Some(node) = doc.get(nid)
+                && let NodeKind::Element(elem) = &node.kind
+                && matches!(elem.local_name(), "canvas" | "embed" | "object" | "applet")
+            {
+                let attr_w = elem.get_attribute("width").and_then(|v| v.parse::<f32>().ok());
+                let attr_h = elem.get_attribute("height").and_then(|v| v.parse::<f32>().ok());
+                if let (Some(w), Some(h)) = (attr_w, attr_h)
+                    && w > 0.0
+                    && h > 0.0
+                {
+                    map.insert(nid, (w.max(1.0), h.max(1.0)));
+                }
+            }
+            stack.extend(&b.children);
+        }
+        map
     }
 
     /// CSS §8.3/§8.4：百分比 padding 相对**包含块的内容宽度**解析（与元素自身宽度无关）。
