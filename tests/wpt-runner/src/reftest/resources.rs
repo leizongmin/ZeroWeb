@@ -9,6 +9,7 @@
 //! `pub use` 再导出，供 `main.rs` 使用）。集群内部自洽（不调用 reftest 其它函数）。
 
 use super::*;
+use percent_encoding::percent_decode;
 
 /// 从 HTML 中提取所有 `<img src="...">` 的 URL。
 fn extract_img_srcs(html: &str) -> Vec<String> {
@@ -284,7 +285,14 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
         // 站点根相对 URL（如 "/static/x.svg"）应解析到 base_dir 下（fixture 的站点根），
         // 而非 `base.join(absolute)`（会替换 base → 文件系统根 → 加载失败）。
         // WPT reftest 多用相对路径（无前导 /），trim 不影响；绝对路径此前全失败，此处修复。
-        let path = base.join(url.trim_start_matches('/'));
+        //
+        // 浏览器按 URL 语义解析路径（production 走 `url::Url::to_file_path` 会 percent-decode）。
+        // harness 此前用 `Path::join` 不解码，致 `support/%27green%20block.png` 找不到
+        // 实际文件 `support/'green block.png`（WPT uri-004）。此处仅对文件系统查找解码；
+        // ImageKey 仍用原始 url（上面 `simple_hash(url)`），与 painter 端 `image_resource_key`
+        // 对齐（painter 拿到的也是 CSS 原始 url() 值）。
+        let decoded = percent_decode(url.as_bytes()).decode_utf8_lossy();
+        let path = base.join(decoded.trim_start_matches('/'));
 
         // 尝试加载 PNG 文件，失败再尝试 JPEG（真实页面 logo/照片多为 JPEG），再尝试 SVG
         if let Ok(data) = load_png_file(&path) {
@@ -517,5 +525,43 @@ mod tests {
         assert_eq!(img.width, 2);
         assert_eq!(img.height, 2);
         assert_eq!(&img.pixels[..4], &[255, 0, 0, 255]); // 红
+    }
+
+    /// R2120：`url()` 路径含 percent-encoding 时，浏览器按 URL 语义解码后查找文件
+    ///（production 走 `url::Url::to_file_path`）。harness 此前用 `Path::join` 不解码，
+    /// 致 `support/%27green%20block.png` 找不到 `support/'green block.png`（WPT uri-004）。
+    /// 此测试构造一个文件名需解码的 PNG（含空格），用 `%20` 引用，验证解码后能加载。
+    #[test]
+    fn percent_encoded_url_path_decodes_to_file() {
+        use std::fs;
+        // 临时目录（固定子名，避免依赖 tempfile crate）。
+        let dir = std::env::temp_dir().join("zw_reftest_pct_decode_test");
+        fs::create_dir_all(&dir).expect("create temp dir");
+        // 写一个文件名含空格的 1×1 绿 PNG：`green block.png`。
+        let png_path = dir.join("green block.png");
+        let mut buf = Vec::new();
+        {
+            use png::{BitDepth, ColorType, Encoder};
+            let mut enc = Encoder::new(&mut buf, 1, 1);
+            enc.set_color(ColorType::Rgba);
+            enc.set_depth(BitDepth::Eight);
+            let mut w = enc.write_header().expect("PNG header");
+            w.write_image_data(&[0, 128, 0, 255]).expect("PNG data");
+        }
+        fs::write(&png_path, &buf).expect("write png");
+        // 用 %20 引用空格 → 须经 percent-decode 才能命中 `green block.png`。
+        let html = "<style>p{background:url(green%20block.png)}</style>";
+        let mut cache = build_image_cache(html, Some(&dir));
+        let url = extract_css_urls(html).into_iter().next().expect("css url extracted");
+        // ImageKey 仍用原始（编码）url，与 painter 端对齐。
+        assert!(url.contains("%20"), "url should be raw/encoded: {url}");
+        let key = ImageKey::new(simple_hash(&url));
+        let img = cache
+            .get(&key)
+            .expect("percent-encoded url should decode to file (R2120)");
+        assert_eq!(img.width, 1);
+        assert_eq!(&img.pixels[..4], &[0, 128, 0, 255]); // 绿
+        // 清理。
+        let _ = fs::remove_dir_all(&dir);
     }
 }
