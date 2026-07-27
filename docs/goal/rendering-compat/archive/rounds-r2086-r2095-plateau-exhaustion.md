@@ -113,6 +113,7 @@ test required」**REVERT**（spec-correct 但零 reftest footprint，defer 到�
 | legacy/UA 产品表面 | R2077/R2094 | 二次确认 plateau |
 | dormant-infra R1958 pattern | R2095 | false positive（Phase A 谱系） |
 | CSS contain:layout/size BFC dormancy | R2096 | zero footprint（spec-correct REVERT） |
+| CSS var() resolution | R2097 | tiny footprint（6 案）+ ZW 已支持（resolve_var_in_cascaded） |
 
 ## 已 ruled out（勿以单 session 重试，详见 master.md「已 ruled out」节）
 
