@@ -184,12 +184,21 @@ pub(super) fn load_linked_stylesheets(html: &str, base_dir: Option<&Path>) -> St
             base.join(&href)
         };
 
+        // CSS MIME 类型检查：只有 text/css 才应作为样式表应用（CSS2 §6.2 / conformance——
+        // text/plain 等非 CSS MIME 须忽略，HTML `type` 属性已被现代浏览器废弃，以服务端
+        // Content-Type 为准）。file:// 下 Content-Type 来自 `.headers` sidecar，无 sidecar
+        // 时按扩展名猜测（.css → text/css）。WPT content-type-000（sidecar text/plain）/
+        // content-type-001（.txt 扩展名）。
+        let content_type = read_headers_sidecar_content_type(&path);
+        if !is_css_stylesheet(&path, content_type.as_deref()) {
+            continue;
+        }
+
         // CSS Syntax §6.2 charset determination：读字节 + `.headers` sidecar 的 Content-Type
         // charset，按 BOM/@charset/Content-Type 优先级解码（旧 `read_to_string` 强制 UTF-8
         // 致 ISO-8859-1/UTF-16BE 等 CSS 非 ASCII 字节损坏，WPT at-charset-071~077 /
         // character-encoding-031~037,041 选择器失配）。
         if let Ok(bytes) = std::fs::read(&path) {
-            let content_type = read_headers_sidecar_content_type(&path);
             let css = zero_net::charset::decode_css_bytes(&bytes, content_type.as_deref());
             if !merged.is_empty() {
                 merged.push('\n');
@@ -198,6 +207,20 @@ pub(super) fn load_linked_stylesheets(html: &str, base_dir: Option<&Path>) -> St
         }
     }
     merged
+}
+
+/// 判断路径指向的外链样式表是否为 CSS MIME（CSS2 conformance：非 text/css 须忽略）。
+///
+/// 有 `.headers` sidecar Content-Type 时以 sidecar MIME 为准（WPT content-type-000：
+/// plaintext.css 经 sidecar 强制 text/plain）；无 sidecar 时按扩展名猜（`.css` → CSS，
+/// 其余如 `.txt` 非 CSS — WPT content-type-001）。
+fn is_css_stylesheet(path: &Path, sidecar_content_type: Option<&str>) -> bool {
+    if let Some(ct) = sidecar_content_type {
+        let mime = ct.split(';').next().unwrap_or("").trim();
+        return mime.eq_ignore_ascii_case("text/css");
+    }
+    // 无 sidecar：按扩展名。`.css` 视为 CSS，其余（含 `.txt`）非 CSS。
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("css"))
 }
 
 /// 读取 `<path>.headers` sidecar 的 `Content-Type` 值（WPT 约定，file:// 下替代 HTTP header）。
