@@ -1294,9 +1294,11 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    /// 检查值是否为有效的 column-count 值（整数或 auto）
+    /// 检查值是否为有效的 column-count 值（正整数或 auto）。
+    /// CSS Multicol §3.2：column-count 须为正整数；0 非法（zero-column-width-layout：
+    /// `columns: 0` 的 0 不可归 column-count，须归 column-width）。
     fn is_valid_column_count(s: &str) -> bool {
-        s == "auto" || s.parse::<u32>().is_ok()
+        s == "auto" || s.parse::<u32>().is_ok_and(|n| n >= 1)
     }
 
     /// 检查值是否为有效的 column-width 值（长度或 auto）
@@ -1307,8 +1309,10 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
     let parts: Vec<&str> = value.split_whitespace().collect();
     match parts.len() {
         1 => {
-            // 单值：判断是整数（column-count）还是长度（column-width）
-            if parts[0].parse::<u32>().is_ok() || parts[0] == "auto" {
+            // 单值：判断是正整数（column-count）还是长度（column-width）。
+            // 0 非正整数 → 归 column-width（CSS Multicol §3.2：column-count 须 ≥1）。
+            let is_positive_int = parts[0].parse::<u32>().is_ok_and(|n| n >= 1);
+            if is_positive_int || parts[0] == "auto" {
                 vec![mk("column-count", parts[0]), mk("column-width", "auto")]
             } else if is_valid_column_width(parts[0]) {
                 vec![mk("column-count", "auto"), mk("column-width", parts[0])]
@@ -1319,12 +1323,12 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
         }
         2 => {
             // 双值：CSS Multicol §3.4 `columns: <column-width> || <column-count>`，顺序无关。
-            // 消歧规则：整数 → column-count；长度 → column-width；auto 填余下槽位。
+            // 消歧规则：正整数 → column-count；长度 → column-width；auto 填余下槽位。
             // R1425 修复：旧逻辑 `parts[0]=="auto"` 把 auto 当 count 指示，致 `auto 6` 误解析为
             // column-count:auto + column-width:6（应 column-count:6 + column-width:auto），使
             // `columns: auto N` 案（如 multicol-columns-007）列数变 auto → 退回 column-width 驱动。
-            let p0_int = parts[0].parse::<u32>().is_ok();
-            let p1_int = parts[1].parse::<u32>().is_ok();
+            let p0_int = parts[0].parse::<u32>().is_ok_and(|n| n >= 1);
+            let p1_int = parts[1].parse::<u32>().is_ok_and(|n| n >= 1);
             let (count_val, width_val) = if p0_int {
                 (parts[0], parts[1])
             } else if p1_int {

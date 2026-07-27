@@ -170,6 +170,24 @@ fn test_apply_columns_invalid() {
 }
 
 #[test]
+fn test_apply_columns_zero_is_width_not_count() {
+    // CSS Multicol §3.2：column-count 须为正整数；0 非法。
+    // 故 `columns: 0` 的单值 0 须归 column-width（zero-column-width-layout 第二 div），
+    // 不可归 column-count（旧逻辑 `parse::<u32>().is_ok()` 误把 0 当 count）。
+    use crate::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue, LengthValue};
+    let (ok, s) = apply("columns", "0");
+    assert!(ok);
+    assert!(
+        matches!(s.column_count, ColumnCountComputedValue::Auto),
+        "columns:0 must NOT set column-count (0 is not a positive integer)"
+    );
+    assert!(
+        matches!(s.column_width, ColumnWidthComputedValue::Length(LengthValue::Px(0.0))),
+        "columns:0 must set column-width to 0px"
+    );
+}
+
+#[test]
 fn test_apply_column_count_individual() {
     let (ok, _) = apply("column-count", "4");
     assert!(ok);
