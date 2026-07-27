@@ -1,0 +1,77 @@
+R2133 (2026-07-28) — escaped url() tokenizer 提取（uri-015 PASS，+1 syntax）
+==================================================================================================================
+
+背景
+----
+R2132 清 escapes 子目录后，syntax 残余 8 fail 中 uri-015（`background: red U\r\4c ("...")`，
+assert「url() notation is case-insensitive and can be escaped」）看似 escapes 谱系续作。
+probe 发现 uri-015 的 CSS 解析**完全正确**：tokenizer 产 `Url("support/swatch-green.png")`
+（consume_ident_like line 688 eq_ignore_ascii_case("url") + R2132 `\` 路由解码 `U\r\4c`→"UrL"），
+consume_declaration 重建值 `red url(support/swatch-green.png)`，expand_background 正确切出
+background-image = `url(support/swatch-green.png)`。**解析全对，失败在下游**。
+
+driving test
+------------
+uri-015：`background: red U\r\4c ("support/swatch-green.png")` —— `U\r\4c` = 转义 `URL`，
+应识别为 url() → 抓 swatch-green.png → 绿底覆盖红。ref = ref-green-background（纯绿 + 白字）。
+REFTEST_BBOX 实测 diff 在 `<p>` 行带 y=[16,34] max-channel=255 → 图片未渲染，bg 滞红。
+
+根因（image 预抓 raw `find("url(")` 漏转义函数名）
+-------------------------------------------------
+painter 经 tokenizer 识别 url()（含转义），但 image 预抓（生产 extract_css_image_urls
+pipeline.rs:1108 + harness extract_css_urls resources.rs:108）用 **raw `lower.find("url(")`**
+扫描——`U\r\4c (` 经 lower 成 `u\r\4c (`，**不含字面 `url(` 子串**（反斜杠断开）→ 漏抽 →
+image_cache 不预载 → painter 查无 → 背景滞红。
+
+★ **escaped-url-001 为何 PASS**：6 div 共享同一图 `support/1x1-green.png`，div0 用纯
+`url(...)` 被 raw 扫描命中预抓 → div2-5（`U\Rl(` 等转义形式）painter 查同一 key 命中缓存。
+uri-015 **仅用转义形式**（无纯 `url()` 兜底）→ 永不预抓 → fail。证根因 = 预抓漏转义。
+
+★ **真生产 bug（非仅 harness）**：生产 extract_css_image_urls 亦 raw 扫描 → 真实网站用转义
+url() 引用背景图时 ZW 同样不抓取（DC-14 anti-false-pass：须修生产路径，否则 reftest PASS
+而生产 FAIL = 假通过）。
+
+fix（tokenizer 提取，生产 + harness 两路径）
+-------------------------------------------
+两处 `find("url(")` raw 循环改为经 `Tokenizer` 收 `Token::Url(s)`：
+- 函数名 `url` 大小写不敏感 + 转义（`URL(` / `U\r\4c (`）经 tokenizer eq_ignore_ascii_case
+  + consume_escape 统一识别（CSS Syntax §5）。
+- 内容转义经 tokenizer **解码**（`support/\'green\ block.png` → `support/'green block.png`），
+  与 painter image key 对齐（painter 用解码 url 作 key，harness get_support_image_color 亦
+  按 `simple_hash(url_string)` 查 known 支持图 → 解码串对齐）。
+- 生产 extract_css_image_urls：@font-face 块内 url 是字体引用，按 token 上下文跳过
+  （AtKeyword("font-face") 后 LBrace 起、匹配 RBrace 止，brace_depth 跟踪）。
+- harness extract_css_urls：对 HTML 整体 tokenize（非 CSS 区域偶现 `url(` 至多多抓一张不
+  参与渲染的图，harmless，与原 raw 扫描同 scope）；保留 data:/http 排除。
+
+A/B（make reftest-upstream）
+---------------------------
+- uri-015：**3.09% → 0.00% PASS**（flip）
+- escaped-url-001：**仍 0.00% PASS**（无回归，转义形式 + 共享图双路径均工作）
+- syntax 总：8 fail → **7 fail**（-1，仅 uri-015；残余 7 全 error-recovery：at-rule-013 /
+  core-syntax-001/006 / matching-brackets-001/003 / uri-013/017）
+- **backgrounds 零回归**（最重 url() 图目录）：stash R2133 跑 baseline = **333 pass / 20 fail**；
+  with R2133 = **333 pass / 20 fail**（逐名一致）——证 tokenizer 提取是 raw 扫描的超集
+  （plain url 两路径产同 Url token；仅转义形式新增）。
+
+门禁
+----
+fmt / clippy(-D warnings on zero-engine + zero-wpt-runner) 全绿。
+make test 全绿。
+product-smoke：exit 0（welcome 16.84%=baseline 全 struct-check PASS）——生产 image-fetch
+路径改动经产品 fixture 验证零回归。
+生产 extract_css_image_urls 单测 6/6 PASS（5 既有 plain-url 案不变 + 1 新增转义函数名案
+`extract_css_image_urls_handles_escaped_function_name`：`U\r\4c (` / `URL(` / 内容转义 三形式）。
+
+R2133 总结
+---------
+uri-015 非 syntax 解析问题（解析全对），是 image 预抓 raw 扫描漏转义函数名的**生产 bug**。
+经 tokenizer 提取（生产 + harness 两路径）修复——与 painter 同源识别 url()。+1 syntax，
+零回归（backgrounds 最重 url() 目录逐名一致）。rally 累计 driving-test yield = **+50**
+（R2132 +49 → R2133 +1）。syntax 子目录 R2114 baseline 38 fail → 现 7 fail（-31）。
+
+forward
+-------
+syntax 残余 7 fail 全 error-recovery（复合：malformed at-rule / 未闭合 string-bracket /
+nested block recovery 多机制），clean single-point vein 真 comprehensive 穷尽。须完整 CSS
+Syntax error-recovery machinery（结构性多 session）。或转其他子系统 fresh lever。

@@ -1106,35 +1106,43 @@ pub fn extract_font_face_urls(css: &str) -> Vec<String> {
 /// CSS 图片引用——它们都经 `decode_image_bytes` 解码后入 `image_cache`，painter
 /// 按 `image_resource_key(url, document_url)` 查找像素。
 pub fn extract_css_image_urls(css: &str) -> Vec<String> {
-    // 先定位所有 @font-face 块的 [start, end) 区间，扫描时跳过。
-    let lower = css.to_ascii_lowercase();
-    let mut font_blocks: Vec<(usize, usize)> = Vec::new();
-    let mut search_from = 0;
-    while let Some(ff) = lower[search_from..].find("@font-face") {
-        let start = search_from + ff;
-        let end = lower[start..].find('}').map(|i| start + i + 1).unwrap_or(css.len());
-        font_blocks.push((start, end));
-        search_from = end;
-    }
-    let in_font_block = |pos: usize| font_blocks.iter().any(|(s, e)| *s <= pos && pos < *e);
-
+    // 经 tokenizer 识别 url()（CSS Syntax §5）：函数名 `url` 大小写不敏感且可含转义
+    //（如 `URL(`、`U\r\4c (`——tokenizer eq_ignore_ascii_case + consume_escape 解码），
+    // 内容亦可含转义（`support/\'green\ block.png`）。Url token 内容**已解码**，与
+    // painter 一致（painter 经 tokenizer 解码 url 作 image key）。原 raw `find("url(")`
+    // 漏转义函数名（driving：uri-015 `U\r\4c ("...")` 不抓 → painter image_cache miss
+    // → 背景滞红；escaped-url-001 仅因 6 div 共享一图、div0 纯 `url()` 预抓而幸免）。
+    // @font-face 块内 url 是字体引用（由字体路径抓取），按 token 上下文跳过。
+    use zero_css_parser::tokenizer::{Token, Tokenizer};
     let mut urls: Vec<String> = Vec::new();
-    let mut search_from = 0;
-    while let Some(ui) = lower[search_from..].find("url(") {
-        let lparen = search_from + ui;
-        let rest_start = lparen + 4;
-        let rest = &css[rest_start..];
-        let end = rest.find(')').unwrap_or(rest.len());
-        let raw = rest[..end].trim().trim_matches('"').trim_matches('\'');
-        // 排除 data: URI、空串、以及位于 @font-face 块内的 url。
-        if !raw.is_empty()
-            && !raw.starts_with("data:")
-            && !in_font_block(lparen)
-            && !urls.iter().any(|u: &String| u == raw)
-        {
-            urls.push(raw.to_string());
+    let mut brace_depth: i32 = 0;
+    let mut font_face_depth: i32 = 0; // >0 表示当前在 @font-face 块内（记录其 brace 层）
+    let mut pending_at: Option<String> = None;
+    for spanned in Tokenizer::new(css) {
+        match spanned.token {
+            Token::AtKeyword(name) => pending_at = Some(name),
+            Token::LBrace => {
+                brace_depth += 1;
+                if let Some(name) = pending_at.take()
+                    && name.eq_ignore_ascii_case("font-face")
+                {
+                    font_face_depth = brace_depth;
+                }
+            }
+            Token::RBrace => {
+                brace_depth = (brace_depth - 1).max(0);
+                if brace_depth < font_face_depth {
+                    font_face_depth = 0;
+                }
+            }
+            Token::Url(u) if font_face_depth == 0 => {
+                let raw = u.trim();
+                if !raw.is_empty() && !raw.starts_with("data:") && !urls.iter().any(|x: &String| x == raw) {
+                    urls.push(raw.to_string());
+                }
+            }
+            _ => {}
         }
-        search_from = rest_start + end + 1;
     }
     urls
 }
@@ -1483,6 +1491,29 @@ mod css_image_url_tests {
     fn extract_css_image_urls_empty_when_no_url() {
         assert!(extract_css_image_urls(".a { color: red }").is_empty());
         assert!(extract_css_image_urls("").is_empty());
+    }
+
+    /// R2133：转义函数名 `url()`（`U\r\4c (`）与大小写变体经 tokenizer 识别——原 raw
+    /// `find("url(")` 漏此形式。driving：uri-015 `background: red U\r\4c ("...")`。
+    /// 内容转义（`support/\'green\ block.png`）经 tokenizer 解码，与 painter key 对齐。
+    #[test]
+    fn extract_css_image_urls_handles_escaped_function_name() {
+        let css = r#"
+            .a { background: red U\r\4c ("support/swatch-green.png"); }
+            .b { background: URL(img.png); }
+            .c { background: url(support/\'green\ block.png); }
+        "#;
+        let urls = extract_css_image_urls(css);
+        assert!(
+            urls.iter().any(|u| u == "support/swatch-green.png"),
+            "escaped function name U\\r\\4c ( should be detected: {urls:?}"
+        );
+        assert!(urls.iter().any(|u| u == "img.png"), "URL( case: {urls:?}");
+        // 内容转义经解码 → "support/'green block.png"（与 painter 一致）。
+        assert!(
+            urls.iter().any(|u| u == "support/'green block.png"),
+            "escaped content decoded: {urls:?}"
+        );
     }
 
     #[test]

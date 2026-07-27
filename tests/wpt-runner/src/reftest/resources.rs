@@ -106,36 +106,25 @@ fn get_support_image_color(key: &ImageKey) -> Option<[u8; 4]> {
     None
 }
 fn extract_css_urls(html: &str) -> Vec<String> {
+    // 经 tokenizer 识别 CSS `url()`（CSS Syntax §5）：函数名大小写不敏感且可含转义
+    //（`URL(`、`U\r\4c (`），内容亦可含转义（`support/\'green\ block.png`）。Url token
+    // 内容**已解码**（consume_escape），与 painter image key 对齐。原 raw `find("url(")`
+    // 漏转义函数名（driving：uri-015 `U\r\4c ("...")` 不预抓 → painter image_cache miss
+    // → 背景滞红；escaped-url-001 仅因 6 div 共享一图、div0 纯 `url()` 预抓而幸免）。
+    // 对 HTML 整体 tokenize：非 CSS 区域偶现的 `url(`（如脚本文本）至多多抓一张不参与
+    // 渲染的图（harmless），与原 raw 扫描同 scope。
+    use zero_css_parser::{Token, Tokenizer};
     let mut urls = Vec::new();
-    let mut pos = 0;
-    // CSS `url()` 函数名大小写不敏感（tokenizer eq_ignore_ascii_case("url")，CSS Syntax
-    // §5）。原始扫描须同样大小写不敏感，否则 `UrL(...)`（case-sensitive-001）漏抽 →
-    // harness 不加载该图 → painter 经 tokenizer 识别但 image_cache 查无。用 lower 镜像
-    // 仅用于定位 `url(`，url 内容仍取 html 原文（ASCII 小写不改变字节位置/长度）。
-    let lower = html.to_ascii_lowercase();
-    while let Some(idx) = lower[pos..].find("url(") {
-        let url_start = pos + idx + 4;
-        // 跳过空白和引号
-        let rest = &html[url_start..];
-        let trimmed = rest
-            .trim_start_matches(' ')
-            .trim_start_matches('\'')
-            .trim_start_matches('"');
-        let offset = rest.len() - trimmed.len();
-        let actual_start = url_start + offset;
-
-        if let Some(end_idx) = html[actual_start..].find(')') {
-            let raw = html[actual_start..actual_start + end_idx].trim();
-            let url = raw.trim_matches('\'').trim_matches('"').trim();
-            if !url.is_empty() && !url.starts_with("data:") && !url.starts_with("http") {
-                // CSS url() 值经 tokenizer 解码转义（consume_escape）；painter 用解码后 url
-                // 作 image key。harness 原始扫描须同样解码（uri-005 `support/\'green\
-                // block.png` → `support/'green block.png`），使 key 与 painter 对齐。
-                urls.push(zero_css_parser::Tokenizer::css_unescape(url));
+    for spanned in Tokenizer::new(html) {
+        if let Token::Url(u) = spanned.token {
+            let raw = u.trim();
+            if !raw.is_empty()
+                && !raw.starts_with("data:")
+                && !raw.starts_with("http")
+                && !urls.iter().any(|x: &String| x == raw)
+            {
+                urls.push(raw.to_string());
             }
-            pos = actual_start + end_idx + 1;
-        } else {
-            break;
         }
     }
     urls
