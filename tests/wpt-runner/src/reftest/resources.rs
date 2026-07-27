@@ -108,7 +108,12 @@ fn get_support_image_color(key: &ImageKey) -> Option<[u8; 4]> {
 fn extract_css_urls(html: &str) -> Vec<String> {
     let mut urls = Vec::new();
     let mut pos = 0;
-    while let Some(idx) = html[pos..].find("url(") {
+    // CSS `url()` 函数名大小写不敏感（tokenizer eq_ignore_ascii_case("url")，CSS Syntax
+    // §5）。原始扫描须同样大小写不敏感，否则 `UrL(...)`（case-sensitive-001）漏抽 →
+    // harness 不加载该图 → painter 经 tokenizer 识别但 image_cache 查无。用 lower 镜像
+    // 仅用于定位 `url(`，url 内容仍取 html 原文（ASCII 小写不改变字节位置/长度）。
+    let lower = html.to_ascii_lowercase();
+    while let Some(idx) = lower[pos..].find("url(") {
         let url_start = pos + idx + 4;
         // 跳过空白和引号
         let rest = &html[url_start..];
@@ -577,5 +582,25 @@ mod tests {
         let html = r#"<style>p{background:url(a\'b\ c.png)}</style>"#;
         let urls = extract_css_urls(html);
         assert_eq!(urls, vec!["a'b c.png".to_string()]);
+    }
+
+    /// R2125：`url()` 函数名大小写不敏感（tokenizer eq_ignore_ascii_case("url")）。
+    /// harness 原始扫描须同样大小写不敏感，否则 `UrL(...)`（case-sensitive-001）漏抽。
+    #[test]
+    fn extract_css_urls_case_insensitive_function_name() {
+        let html = r#"<style>p{background:UrL(support/swatch-green.png)}</style>"#;
+        let urls = extract_css_urls(html);
+        assert_eq!(urls, vec!["support/swatch-green.png".to_string()]);
+        // 多种大小写 + 与小写并存
+        let html2 = r#"<style>
+          p { background: URL(a.png); }
+          p { background: url(b.png); }
+          p { background: uRl(c.png); }
+        </style>"#;
+        let urls2 = extract_css_urls(html2);
+        assert_eq!(
+            urls2,
+            vec!["a.png".to_string(), "b.png".to_string(), "c.png".to_string()]
+        );
     }
 }
