@@ -6272,6 +6272,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "dirs",
+ "encoding_rs",
  "hyper",
  "reqwest",
  "serde",
@@ -6452,6 +6453,7 @@ dependencies = [
  "zero-dom",
  "zero-engine",
  "zero-layout-engine",
+ "zero-net",
  "zero-render-foundation",
  "zero-script-sandbox",
  "zero-style-system",

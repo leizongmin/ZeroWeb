@@ -8,6 +8,7 @@
 
 pub mod cache_key;
 pub mod cache_policy;
+pub mod charset;
 pub mod client;
 pub mod connect;
 pub mod cookie;

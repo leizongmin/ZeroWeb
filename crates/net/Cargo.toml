@@ -9,6 +9,7 @@ license.workspace = true
 hyper = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "gzip", "brotli", "deflate"] }
 url = { workspace = true }
+encoding_rs = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }

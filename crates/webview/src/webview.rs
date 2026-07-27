@@ -369,13 +369,16 @@ impl WebView {
                 None => href.clone(),
             };
             match self.http_client.get(&abs) {
-                Ok(resp) => match resp.text() {
-                    Ok(css) => {
-                        combined.push_str(&css);
-                        combined.push('\n');
-                    }
-                    Err(e) => tracing::warn!("external stylesheet {abs} decode failed: {e}"),
-                },
+                Ok(resp) => {
+                    // CSS Syntax §6.2 charset determination：按 BOM / @charset / Content-Type
+                    // charset 优先级解码（file:// 下 Content-Type charset 来自 `.headers`
+                    // sidecar，file_url.rs 已注入）。旧 `resp.text()` 强制 UTF-8 致
+                    // ISO-8859-1/UTF-16BE 等编码的 CSS 非 ASCII 字节变 U+FFFD，选择器失配
+                    // （WPT at-charset-071~077 / character-encoding-031~037,041）。
+                    let css = zero_net::charset::decode_css_bytes(&resp.body, resp.content_type());
+                    combined.push_str(&css);
+                    combined.push('\n');
+                }
                 Err(e) => tracing::warn!("external stylesheet {abs} fetch failed: {e}"),
             }
         }

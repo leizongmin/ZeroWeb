@@ -44,18 +44,56 @@ fn guess_content_type(path: &Path) -> &'static str {
 }
 
 /// 读取 `file:` URL 指向的本地文件，返回类似 HTTP 200 的响应。
+///
+/// WPT 约定：资源旁可有一个 `<file>.headers` sidecar 文件（如 `foo.css.headers`），
+/// 内含 HTTP header 行（如 `Content-Type: text/css; charset=iso-8859-1`）。file:// 无真实
+/// HTTP 层，须读 sidecar 把 header（尤其 charset）注入响应，供 CSS Syntax §6.2 charset
+/// determination 使用（WPT character-encoding-031~037,041 经此设 charset）。
 pub fn read_file_url(url: &str) -> Result<HttpResponse, NetError> {
     let path = file_url_to_path(url)?;
     let body =
         std::fs::read(&path).map_err(|e| NetError::Network(format!("failed to read {}: {e}", path.display())))?;
-    let content_type = guess_content_type(&path);
+
+    // 读 `<file>.headers` sidecar（若存在），提取 header 行。
+    let mut headers = read_headers_sidecar(&path);
+    let has_content_type = headers
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("content-type"));
+    if !has_content_type {
+        // sidecar 未指定 Content-Type → 按扩展名猜测补上。
+        headers.push(("Content-Type".to_string(), guess_content_type(&path).to_string()));
+    }
+
     Ok(HttpResponse {
         status_code: 200,
-        headers: vec![("Content-Type".to_string(), content_type.to_string())],
+        headers,
         body,
         url: url.to_string(),
         redirect_count: 0,
     })
+}
+
+/// 读取 `<path>.headers` sidecar 文件，解析 `Name: Value` 行为 header 列表。
+///
+/// 文件不存在则返回空 vec。格式遵循 WPT 约定（每行一个 header，`:` 分隔名值）。
+fn read_headers_sidecar(path: &Path) -> Vec<(String, String)> {
+    // 拼接 `<path>.headers`：直接在路径字符串后加 ".headers"，避免 with_extension 对
+    // 无扩展名 / 多扩展名路径的边界行为。
+    let sidecar = PathBuf::from(format!("{}.headers", path.display()));
+    let Ok(content) = std::fs::read_to_string(&sidecar) else {
+        return Vec::new();
+    };
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            let (name, value) = line.split_once(':')?;
+            Some((name.trim().to_string(), value.trim().to_string()))
+        })
+        .collect()
 }
 
 #[cfg(test)]

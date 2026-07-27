@@ -184,7 +184,13 @@ pub(super) fn load_linked_stylesheets(html: &str, base_dir: Option<&Path>) -> St
             base.join(&href)
         };
 
-        if let Ok(css) = std::fs::read_to_string(&path) {
+        // CSS Syntax §6.2 charset determination：读字节 + `.headers` sidecar 的 Content-Type
+        // charset，按 BOM/@charset/Content-Type 优先级解码（旧 `read_to_string` 强制 UTF-8
+        // 致 ISO-8859-1/UTF-16BE 等 CSS 非 ASCII 字节损坏，WPT at-charset-071~077 /
+        // character-encoding-031~037,041 选择器失配）。
+        if let Ok(bytes) = std::fs::read(&path) {
+            let content_type = read_headers_sidecar_content_type(&path);
+            let css = zero_net::charset::decode_css_bytes(&bytes, content_type.as_deref());
             if !merged.is_empty() {
                 merged.push('\n');
             }
@@ -192,6 +198,24 @@ pub(super) fn load_linked_stylesheets(html: &str, base_dir: Option<&Path>) -> St
         }
     }
     merged
+}
+
+/// 读取 `<path>.headers` sidecar 的 `Content-Type` 值（WPT 约定，file:// 下替代 HTTP header）。
+///
+/// 文件不存在或无 Content-Type 行则返回 `None`。用于 CSS charset determination
+/// （`character-encoding-*` 经 sidecar 设 `charset=iso-8859-x/koi8-r/utf-16be`）。
+fn read_headers_sidecar_content_type(path: &Path) -> Option<String> {
+    let sidecar = std::path::PathBuf::from(format!("{}.headers", path.display()));
+    let content = std::fs::read_to_string(&sidecar).ok()?;
+    content.lines().find_map(|line| {
+        let line = line.trim();
+        let (name, value) = line.split_once(':')?;
+        if name.trim().eq_ignore_ascii_case("content-type") {
+            Some(value.trim().to_string())
+        } else {
+            None
+        }
+    })
 }
 
 /// 从基础目录加载图片文件并解码为 RGBA 数据，放入 ImageCache。

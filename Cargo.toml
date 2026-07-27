@@ -79,6 +79,8 @@ arboard = "3"
 # 网络
 hyper = "1"
 reqwest = "0.12"
+# 字符编码（CSS Syntax §6.2 charset determination：@charset / BOM / Content-Type）
+encoding_rs = "0.8"
 
 # HTML 解析
 html5ever = "0.29"
