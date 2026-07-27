@@ -224,10 +224,43 @@ fn test_url_with_paren_error() {
 }
 
 #[test]
-fn test_url_backslash_error() {
+fn test_url_backslash_escape() {
+    // CSS Syntax L3：无引号 url 允许转义（driving：uri-005）。
+    // `url(test\png)` → `\p` 经 consume_escape → 'p' → "testpng"。
     let toks = tokens("url(test\\png)");
-    // 反斜杠在无引号 URL 中是非法的
+    assert!(matches!(&toks[0], Token::Url(s) if s == "testpng"));
+    // uri-005：`url(support/\'green\ block.png)` → `support/'green block.png`。
+    let toks2 = tokens(r"url(support/\'green\ block.png)");
+    assert!(
+        matches!(&toks2[0], Token::Url(s) if s == "support/'green block.png"),
+        "uri-005: expected decoded url, got {:?}",
+        toks2.first()
+    );
+}
+
+#[test]
+fn test_url_paren_still_error() {
+    // 嵌套 `(` 在无引号 url 中仍非法（仅 `\` 改为转义，`(` 仍 Error）。
+    let toks = tokens("url(test(png)");
     assert!(toks.len() >= 1);
+}
+
+#[test]
+fn test_css_unescape_parity_with_tokenizer() {
+    // css_unescape 须与 tokenizer consume_escape 一致（harness 用它对齐 painter key）。
+    use crate::tokenizer::Tokenizer;
+    // 普通字符转义
+    assert_eq!(
+        Tokenizer::css_unescape(r"support/\'green\ block.png"),
+        "support/'green block.png"
+    );
+    // 十六进制转义（含 6 位上限与可选尾空白）
+    assert_eq!(Tokenizer::css_unescape(r"a\41b"), "a\u{41b}");
+    assert_eq!(Tokenizer::css_unescape(r"\41 b"), "\u{41}b");
+    // 无转义：原样
+    assert_eq!(Tokenizer::css_unescape("plain/path.png"), "plain/path.png");
+    // 行连接：\<LF> 丢弃
+    assert_eq!(Tokenizer::css_unescape("a\\\nb"), "ab");
 }
 
 #[test]

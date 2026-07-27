@@ -123,7 +123,10 @@ fn extract_css_urls(html: &str) -> Vec<String> {
             let raw = html[actual_start..actual_start + end_idx].trim();
             let url = raw.trim_matches('\'').trim_matches('"').trim();
             if !url.is_empty() && !url.starts_with("data:") && !url.starts_with("http") {
-                urls.push(url.to_string());
+                // CSS url() 值经 tokenizer 解码转义（consume_escape）；painter 用解码后 url
+                // 作 image key。harness 原始扫描须同样解码（uri-005 `support/\'green\
+                // block.png` → `support/'green block.png`），使 key 与 painter 对齐。
+                urls.push(zero_css_parser::Tokenizer::css_unescape(url));
             }
             pos = actual_start + end_idx + 1;
         } else {
@@ -563,5 +566,16 @@ mod tests {
         assert_eq!(&img.pixels[..4], &[0, 128, 0, 255]); // 绿
         // 清理。
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// R2124：CSS url() 值内的 backslash 转义须经 tokenizer 解码（consume_escape）。
+    /// harness 原始扫描 extract_css_urls 须用 css_unescape 解码，使 url key 与 painter
+    ///（经 tokenizer 解码）对齐（driving：uri-005 `support/\'green\ block.png`）。
+    #[test]
+    fn extract_css_urls_decodes_backslash_escapes() {
+        // `url(a\'b\ c.png)` → 解码 → `a'b c.png`
+        let html = r#"<style>p{background:url(a\'b\ c.png)}</style>"#;
+        let urls = extract_css_urls(html);
+        assert_eq!(urls, vec!["a'b c.png".to_string()]);
     }
 }

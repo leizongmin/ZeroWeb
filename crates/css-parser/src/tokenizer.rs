@@ -446,6 +446,59 @@ impl Tokenizer {
         }
     }
 
+    /// 对字符串做 CSS 转义解码（镜像 [`Tokenizer::consume_escape`] 的算法）。
+    ///
+    /// 用于在不经完整 tokenization 的场景（如 reftest harness 原始扫描 `url()` 内容）
+    /// 下，得到与 tokenizer 一致的解码结果——使 harness 的 url key 与 painter（经
+    /// tokenizer 解码）对齐（driving：uri-005 `support/\'green\ block.png` →
+    /// `support/'green block.png`）。算法稳定（CSS Syntax §4.3.7），并有 parity 测试
+    /// 守此函数与 consume_escape 一致。
+    pub fn css_unescape(input: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+        let mut chars = input.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c != '\\' {
+                out.push(c);
+                continue;
+            }
+            // 反斜杠：镜像 consume_escape
+            match chars.peek().copied() {
+                Some(h) if Self::is_hex_digit(h) => {
+                    let mut hex = String::new();
+                    while hex.len() < 6 {
+                        if let Some(hc) = chars.peek().copied()
+                            && Self::is_hex_digit(hc)
+                        {
+                            hex.push(chars.next().unwrap());
+                        } else {
+                            break;
+                        }
+                    }
+                    // 消耗可选的单个空白
+                    if matches!(chars.peek().copied(), Some(w) if Self::is_whitespace(w)) {
+                        chars.next();
+                    }
+                    let codepoint = u32::from_str_radix(&hex, 16).unwrap_or(0);
+                    if codepoint == 0 || codepoint > 0x10FFFF || (0xD800..=0xDFFF).contains(&codepoint) {
+                        out.push('\u{FFFD}');
+                    } else {
+                        out.push(char::from_u32(codepoint).unwrap_or('\u{FFFD}'));
+                    }
+                }
+                Some('\n') | Some('\r') | Some('\x0C') => {
+                    // 换行不能转义：丢弃反斜杠与换行（行连接语义）
+                    chars.next();
+                }
+                Some(other) => {
+                    out.push(other);
+                    chars.next();
+                }
+                None => out.push('\u{FFFD}'),
+            }
+        }
+        out
+    }
+
     /// 消耗数字。
     fn consume_number(&mut self) -> f64 {
         let mut num_str = String::new();
@@ -598,9 +651,18 @@ impl Tokenizer {
                     }
                     return Token::Url(url);
                 }
-                Some('(') | Some('\\') => {
-                    // 非法字符在无引号 URL 中
+                Some('(') => {
+                    // 嵌套括号在无引号 URL 中非法
                     return Token::Error("Invalid character in URL".to_string());
+                }
+                Some('\\') => {
+                    // CSS Syntax L3：无引号 url 允许转义（driving：uri-005
+                    // `url(support/\'green\ block.png)` → `support/'green block.png`）。
+                    // consume_escape 解码转义字符（含十六进制）；\<换行> 在 url 中非法 → 错误终止。
+                    match self.consume_escape() {
+                        Some(escaped) => url.push(escaped),
+                        None => return Token::Error("Invalid escape in URL".to_string()),
+                    }
                 }
                 Some(c) => {
                     self.consume();

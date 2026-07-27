@@ -412,11 +412,11 @@ fn test_tokenizer_url_invalid_paren() {
 }
 
 #[test]
-fn test_tokenizer_url_invalid_backslash() {
-    // URL 中包含 `\` → Error
+fn test_tokenizer_url_backslash_escape() {
+    // CSS Syntax L3：无引号 url 允许转义（R2124，driving：uri-005）。
+    // `url(test\.png)` → `\.` → '.' → "test.png"（旧实现误判为 Error）。
     let tokens: Vec<_> = Tokenizer::new("url(test\\.png)").collect_tokens();
-    assert!(tokens.len() >= 1);
-    assert!(matches!(&tokens[0], Token::Error(_)));
+    assert!(matches!(&tokens[0], Token::Url(s) if s == "test.png"));
 }
 
 #[test]
