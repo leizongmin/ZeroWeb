@@ -154,6 +154,7 @@ mod r1986_inline_svg_width_probe;
 mod r2013_print_layout_width_tests;
 mod r2091_grid_replaced_pct_indefinite_tests;
 mod r2101_quirks_pct_height_table_cell_tests;
+mod r2108_table_internal_margin_suppressed_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

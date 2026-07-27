@@ -55,6 +55,17 @@ pub fn computed_style_to_taffy(
             | DisplayValue::TableRow
     );
 
+    // CSS §8.4 margin：「margin applies to: all elements except elements with table display
+    // types other than table-caption, table and inline-table」——即 margin 不应用于 table-cell /
+    // table-column / table-column-group（以及 is_table_internal 的行组/行）。cell 的 **padding**
+    // 仍应用（§17.5），故此 set 独立于 padding suppression（padding 字段仍用 is_table_internal，
+    // 不含 TableCell）。driving test：margin-applies-to-005/006/007（margin:50px 应被忽略）。
+    let is_margin_suppressed = is_table_internal
+        || matches!(
+            style.display,
+            DisplayValue::TableCell | DisplayValue::TableColumn | DisplayValue::TableColumnGroup
+        );
+
     // CSS 2.1 §17.6.2（collapsing border model）：border-collapse:collapse 时 table 元素的
     // padding 不应用（「In this model, the [table's] padding is not applied」）。ZW 此前对
     // display:table 的 padding 照常解析，致 collapsing-border-model-011/013 渲染 300×300
@@ -134,7 +145,7 @@ pub fn computed_style_to_taffy(
             height: convert_max_length_to_dimension(&style.max_height, vw, vh),
         },
         aspect_ratio: style.aspect_ratio,
-        margin: if is_table_internal {
+        margin: if is_margin_suppressed {
             taffy::geometry::Rect::zero()
         } else {
             // R1058 CSS §8.3：非替换 inline 元素（display:inline）的垂直 margin 无效果
