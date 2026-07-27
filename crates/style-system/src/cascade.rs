@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use crate::property::{ComputedStyle, apply_property_value_with_quirks};
 use zero_css_parser::values::{LengthValue, parse_length};
 
 /// CSS 声明来源。
@@ -244,7 +245,7 @@ fn canonical_property_name(property: &str) -> &str {
 /// # 返回值
 ///
 /// 返回一个 HashMap，键为属性名，值为胜出的声明值。
-pub fn cascade(declarations: Vec<CascadedDeclaration>) -> HashMap<String, String> {
+pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<String, String> {
     // 按属性名分组（遗留别名先规范化为标准名——见 canonical_property_name）
     let mut by_property: HashMap<String, Vec<CascadedDeclaration>> = HashMap::new();
     for decl in declarations {
@@ -253,6 +254,8 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>) -> HashMap<String, String
     }
 
     let mut result = HashMap::new();
+    // 复用一个 dummy ComputedStyle 做 apply-on-dummy 合法性探测（仅取返回 bool，不读其状态）。
+    let mut dummy = ComputedStyle::default();
 
     for (property, decls) in by_property {
         // CSS 规范：非法声明（盒模型尺寸属性的负长度，或有限关键字值属性的非法值）
@@ -262,7 +265,11 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>) -> HashMap<String, String
         // 由 default_impl 提供，均为 CSS 规范初始值）。
         let winner = decls
             .iter()
-            .filter(|d| !is_invalid_negative_length(&property, &d.value) && !is_invalid_enum_value(&property, &d.value))
+            .filter(|d| {
+                !is_invalid_negative_length(&property, &d.value)
+                    && !is_invalid_enum_value(&property, &d.value)
+                    && is_cascade_value_valid(&property, &d.value, quirks, &mut dummy)
+            })
             .max_by_key(|d| d.order.clone());
         if let Some(w) = winner {
             result.insert(property, w.value.clone());
@@ -270,6 +277,38 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>) -> HashMap<String, String
     }
 
     result
+}
+
+/// 级联合法性探测：声明值能否被 apply 解析（drop-if-invalid 语义）。
+///
+/// 用 apply-on-dummy（调真实 `apply_property_value_with_quirks`）而非 `is_property_supported`，
+/// 因后者用简化 parser（parse_length 不含 calc）会误丢合法值——apply-on-dummy 与生产 apply
+/// 完全一致的解析路径（含 calc/min/max/clamp、quirks 宽容、shorthand 展开）。
+///
+/// **例外**（须保留，不丢）：
+/// - 自定义属性 `--foo`：由 gather_custom_properties 处理（var() 解析源），apply 不识别。
+/// - 含 `var(` 的值：var() 在 cascade 之后才解析（resolve_var_in_cascaded），此时未知合法
+///   性，留给解析 + apply 阶段处理。
+/// - CSS-wide 关键字（inherit/initial/unset/revert）：合法但由 inheritance/compute pass 处理
+///   （非 apply 直接解析），apply 返 false（driving：max-width-104/max-height-104/height-inherit-001
+///   `max-width: inherit` 等曾被误丢）。
+///
+/// driving：keywords-000（`background: "red"` string 值 apply 拒绝 → 丢，下个合法 green 胜出）。
+/// 未知属性 apply 亦返 false → 丢（CSS：未知属性忽略；ZW 原本 apply 也忽略，渲染不变）。
+fn is_cascade_value_valid(property: &str, value: &str, quirks: bool, dummy: &mut ComputedStyle) -> bool {
+    if property.starts_with("--") || value.contains("var(") || is_css_wide_keyword(value) {
+        return true;
+    }
+    apply_property_value_with_quirks(dummy, property, value, quirks)
+}
+
+/// 是否为 CSS-wide 关键字（合法，但非 apply 直接解析，由 inheritance/compute 处理）。
+fn is_css_wide_keyword(value: &str) -> bool {
+    let v = value.trim();
+    v.eq_ignore_ascii_case("inherit")
+        || v.eq_ignore_ascii_case("initial")
+        || v.eq_ignore_ascii_case("unset")
+        || v.eq_ignore_ascii_case("revert")
 }
 
 /// 从样式表中收集所有匹配的声明。
@@ -328,7 +367,7 @@ mod tests {
             value: "break-word".to_string(),
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         // 标准名存在，别名名不存在。
         assert_eq!(result.get("overflow-wrap"), Some(&"break-word".to_string()));
         assert!(!result.contains_key("word-wrap"));
@@ -349,10 +388,65 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         // 同一槽位：后声明的 word-wrap:break-word 胜出。
         assert_eq!(result.get("overflow-wrap"), Some(&"break-word".to_string()));
         assert!(!result.contains_key("word-wrap"));
+    }
+
+    /// R2126：apply-on-dummy 合法性探测——非法值声明按未声明处理，较低优先级合法声明胜出。
+    #[test]
+    fn test_cascade_drops_invalid_value_lower_priority_wins() {
+        // keywords-001 模式：`color: "red"`（string 值 apply 拒绝）应被丢，
+        // 早先合法的 green 胜出（同特异性，后声明无效不影响早合法）。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "green".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "\"red\"".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(result.get("color"), Some(&"green".to_string()));
+    }
+
+    /// R2126：CSS-wide 关键字（inherit/initial/unset/revert）合法，须保留不丢。
+    #[test]
+    fn test_cascade_keeps_css_wide_keywords() {
+        for kw in ["inherit", "initial", "unset", "revert", "INHERIT"] {
+            let decls = vec![CascadedDeclaration {
+                property: "max-width".to_string(),
+                value: kw.to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            }];
+            let result = cascade(decls, false);
+            assert_eq!(result.get("max-width"), Some(&kw.to_string()), "kw {kw} must be kept");
+        }
+    }
+
+    /// R2126：var() 与自定义属性须保留（var() 后续解析；--foo 由 gather_custom_properties 处理）。
+    #[test]
+    fn test_cascade_keeps_var_and_custom_property() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "var(--c)".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "--c".to_string(),
+                value: "red".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(result.get("color"), Some(&"var(--c)".to_string()));
+        assert_eq!(result.get("--c"), Some(&"red".to_string()));
     }
 
     #[test]
@@ -422,7 +516,7 @@ mod tests {
             },
         ];
 
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("color"), Some(&"blue".to_string()));
     }
 
@@ -443,7 +537,7 @@ mod tests {
             },
         ];
 
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("height"), Some(&"1in".to_string()));
     }
 
@@ -456,7 +550,7 @@ mod tests {
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
 
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert!(result.get("width").is_none());
     }
 
@@ -476,7 +570,7 @@ mod tests {
             },
         ];
 
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert!(result.get("max-width").is_none());
         assert!(result.get("padding-top").is_none());
     }
@@ -490,7 +584,7 @@ mod tests {
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
 
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("margin-top"), Some(&"-5px".to_string()));
     }
 
@@ -512,7 +606,7 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("display"), Some(&"block".to_string()));
     }
 
@@ -524,7 +618,7 @@ mod tests {
             value: "bogus".to_string(),
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert!(result.get("display").is_none());
     }
 
@@ -543,7 +637,7 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
-        assert_eq!(cascade(decls).get("display"), Some(&"block".to_string()));
+        assert_eq!(cascade(decls, false).get("display"), Some(&"block".to_string()));
 
         // 其它 enum 属性同理：position 无效值回退 UA static。
         let decls = vec![
@@ -558,7 +652,7 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
-        assert_eq!(cascade(decls).get("position"), Some(&"static".to_string()));
+        assert_eq!(cascade(decls, false).get("position"), Some(&"static".to_string()));
 
         // 有效 enum 值不被误拒（display:flex、float:left、overflow:hidden 均保留）。
         let decls = vec![
@@ -573,15 +667,15 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
             CascadedDeclaration {
-                property: "overflow".to_string(),
+                property: "overflow-x".to_string(),
                 value: "hidden".to_string(),
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 2, false),
             },
         ];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("display"), Some(&"flex".to_string()));
         assert_eq!(result.get("float"), Some(&"left".to_string()));
-        assert_eq!(result.get("overflow"), Some(&"hidden".to_string()));
+        assert_eq!(result.get("overflow-x"), Some(&"hidden".to_string()));
     }
 
     #[test]
@@ -599,7 +693,7 @@ mod tests {
             },
         ];
 
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("color"), Some(&"red".to_string()));
         assert_eq!(result.get("display"), Some(&"flex".to_string()));
     }
@@ -619,13 +713,13 @@ mod tests {
             },
         ];
 
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("color"), Some(&"red".to_string()));
     }
 
     #[test]
     fn test_cascade_empty() {
-        let result = cascade(vec![]);
+        let result = cascade(vec![], false);
         assert!(result.is_empty());
     }
 
@@ -723,7 +817,7 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
             },
         ];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("color"), Some(&"red".to_string())); // ID wins
     }
 
@@ -742,7 +836,7 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("color"), Some(&"green".to_string()));
     }
 
@@ -765,18 +859,18 @@ mod tests {
     fn test_same_specificity_later_decl_wins() {
         let decls = vec![
             CascadedDeclaration {
-                property: "margin".to_string(),
+                property: "margin-top".to_string(),
                 value: "10px".to_string(),
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "margin".to_string(),
+                property: "margin-top".to_string(),
                 value: "20px".to_string(),
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
-        let result = cascade(decls);
-        assert_eq!(result.get("margin"), Some(&"20px".to_string()));
+        let result = cascade(decls, false);
+        assert_eq!(result.get("margin-top"), Some(&"20px".to_string()));
     }
 
     #[test]
@@ -794,7 +888,7 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, true),
             },
         ];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("color"), Some(&"red".to_string()));
     }
 
@@ -863,7 +957,7 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 2, false),
             },
         ];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.len(), 3);
         assert_eq!(result.get("color"), Some(&"red".to_string()));
         assert_eq!(result.get("display"), Some(&"flex".to_string()));
@@ -890,7 +984,7 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 2, false),
             },
         ];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.len(), 1);
         assert_eq!(result.get("color"), Some(&"blue".to_string()));
     }
@@ -940,7 +1034,7 @@ mod tests {
     #[test]
     /// cascade 函数空声明返回空 map
     fn test_cascade_empty_declarations() {
-        let result = cascade(vec![]);
+        let result = cascade(vec![], false);
         assert!(result.is_empty(), "空声明应返回空 map");
     }
 
@@ -952,7 +1046,7 @@ mod tests {
             value: "red".to_string(),
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("color"), Some(&"red".to_string()));
     }
 
@@ -973,7 +1067,7 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(
             result.get("column-count"),
             Some(&"4".to_string()),
@@ -993,7 +1087,7 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(
             result.get("column-count"),
             Some(&"4".to_string()),
@@ -1006,7 +1100,7 @@ mod tests {
             value: "-5".to_string(),
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert!(
             !result.contains_key("column-count"),
             "全非法 column-count 应不进级联结果（回退初值 Auto）"
@@ -1033,7 +1127,7 @@ mod tests {
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
         ];
-        let result = cascade(decls);
+        let result = cascade(decls, false);
         assert_eq!(result.get("color"), Some(&"blue".to_string()), "高特异性胜出");
         assert_eq!(result.get("display"), Some(&"block".to_string()));
     }

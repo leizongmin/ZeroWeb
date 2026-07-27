@@ -85,7 +85,7 @@ fn bench_cascade(c: &mut Criterion) {
                 .collect();
 
             b.iter(|| {
-                let result = cascade::cascade(black_box(decls.clone()));
+                let result = cascade::cascade(black_box(decls.clone()), false);
                 black_box(&result);
             });
         });

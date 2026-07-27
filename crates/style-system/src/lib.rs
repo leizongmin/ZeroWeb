@@ -912,8 +912,9 @@ impl StyleSystem {
             });
         }
 
-        // 3. 运行级联算法
-        let cascaded = cascade::cascade(declarations);
+        // 3. 运行级联算法（apply-on-dummy 合法性探测：非法值声明按未声明处理，
+        //    较低优先级合法声明可胜出；driving：keywords-000 `background:"red"`）
+        let cascaded = cascade::cascade(declarations, quirks_mode == QuirksMode::Quirks);
 
         // 4. 收集自定义属性（继承父元素 + 当前元素自身声明覆盖）
         // CSS 自定义属性是继承属性：`:root { --x }` 定义的变量需对后代可见。
