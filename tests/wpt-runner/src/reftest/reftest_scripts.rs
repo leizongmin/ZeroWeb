@@ -87,6 +87,9 @@ pub(super) fn apply_scripted_dom_mutations(html: &str, base_dir: Option<&Path>) 
     );
 
     let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if std::env::var("REFTEST_DEBUG").is_ok() {
+        eprintln!("  [reftest JS] recorded {} mutation(s): {:?}", recorded.len(), recorded);
+    }
     if recorded.is_empty() {
         return html.to_string();
     }
