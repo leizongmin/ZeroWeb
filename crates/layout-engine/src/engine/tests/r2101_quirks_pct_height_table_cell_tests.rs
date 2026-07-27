@@ -80,3 +80,23 @@ fn r2101_quirks_pct_height_outside_table_cell_still_resolves_to_viewport() {
         "quirks-mode height:50% outside table-cell must still resolve against viewport (~300), not auto; got h={h}"
     );
 }
+
+/// R2107：quirks mode 百分比高度解析针对「最近 definite-height 祖先」（穿透 auto 祖先），
+/// 非恒 ICB/viewport。driving case：`float-percentage-resolution-quirks-mode.html`（9.35%→0%）。
+/// 外 definite(200px) > 中 auto > 内 height:50%：应解析对 200px = 100px，非 viewport 300px。
+#[test]
+fn r2107_quirks_pct_height_resolves_against_nearest_definite_ancestor() {
+    // 无 DOCTYPE → quirks mode；外格 height:200px（definite），中格 auto，内格 height:50%。
+    let html = r#"<div style="height:200px;">
+  <div>
+    <div style="height:50%; background:red;"></div>
+  </div>
+</div>"#;
+    let (doc, root) = layout(html);
+    let h = deepest_div_height(&doc, &root).expect("target div not found");
+    // R2107：50% × 200（最近 definite 祖先）= 100px。修复前（恒 viewport）：50% × 600 = 300px。
+    assert!(
+        (h - 100.0).abs() < 60.0,
+        "quirks-mode height:50% must resolve against nearest definite ancestor (200px → ~100), not viewport (300); got h={h}"
+    );
+}

@@ -1267,6 +1267,11 @@ impl LayoutEngine {
             // CSS Quirks §percentage-height：百分比高度 quirk（不明确 CB 按 ICB 解析）**不适用**
             // 于 table-cell 的后代——后代 height:% 须 compute-to-auto（standards 行为）。
             inside_table_cell: bool,
+            // R2107：最近 definite-height 祖先的内容高度（穿透 auto-height 祖先，
+            // 不像 cb_definite 在 auto 上 reset）。CSS Quirks §percentage-height：百分比高度
+            // 解析应针对「first ancestor with a defined height」非恒 ICB——有 definite 祖先时
+            // 解析对其高度，否则回退 ICB。None 仅理论（root 起手 Some(viewport)）。
+            quirks_nearest_definite: Option<f32>,
             quirks_mode: bool,
             viewport_height: f32,
             taffy_tree: &mut TaffyTree<NodeId>,
@@ -1312,11 +1317,15 @@ impl LayoutEngine {
                             None => {
                                 if quirks_mode && !b.is_replaced && !inside_table_cell {
                                     // R2016 quirks mode（CSS quirks §percentage-height）：不明确 CB
-                                    //（auto 父）的百分比 height 按 ICB（viewport）高解析——legacy
-                                    // 「百分比高度生效」行为（chromium quirks 实测）。非替换块专用
-                                    //（替换元素保留固有尺寸回退）。box-sizing 折算内容高供子链解析。
+                                    //（auto 父）的百分比 height 解析——legacy「百分比高度生效」行为。
+                                    // R2107：解析针对**最近 definite-height 祖先**（穿透 auto 祖先），
+                                    // 而非恒 ICB（chromium quirks：float-percentage-resolution-quirks-mode
+                                    // 实测解析对 first ancestor with defined height）。无 definite 祖先时
+                                    // 回退 ICB（viewport_height）。非替换块专用（替换元素保留固有尺寸回退）。
+                                    // box-sizing 折算内容高供子链解析。
                                     let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
-                                    let resolved = (*p as f32 / 100.0 * viewport_height).max(0.0);
+                                    let base = quirks_nearest_definite.unwrap_or(viewport_height);
+                                    let resolved = (*p as f32 / 100.0 * base).max(0.0);
                                     if let Some(id) = b.node_id
                                         && let Some(&tid) = dom_to_taffy.get(&id)
                                         && let Ok(mut st) = taffy_tree.style(tid).cloned()
@@ -1392,12 +1401,17 @@ impl LayoutEngine {
             let self_is_table_cell = style.is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
             let child_inside_table_cell = inside_table_cell || self_is_table_cell;
 
+            // R2107：子代的「最近 definite 祖先」——本盒 definite 时更新为本盒内容高，
+            // 否则透传继承（auto 盒不阻断）。供 quirks 百分比高度按 first definite ancestor 解析。
+            let child_quirks_nearest = my_definite.or(quirks_nearest_definite);
+
             for child in &b.children {
                 changed |= walk(
                     child,
                     my_definite,
                     child_parent_flex_grid,
                     child_inside_table_cell,
+                    child_quirks_nearest,
                     quirks_mode,
                     viewport_height,
                     taffy_tree,
@@ -1415,6 +1429,7 @@ impl LayoutEngine {
             Some(viewport_height),
             false,
             false,
+            Some(viewport_height),
             quirks_mode,
             viewport_height,
             taffy_tree,
