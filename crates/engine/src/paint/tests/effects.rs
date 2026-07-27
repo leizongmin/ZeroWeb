@@ -238,6 +238,40 @@ fn test_outline_zero_width_no_fill() {
     );
 }
 
+/// R2121：outline 不应用于 table-column / table-column-group（CSS2 §17.4 此二者不生成盒）。
+/// driving cluster：outline-applies-to-005/006（4 outline 属性 × 2 display = 8 案）。
+/// 非 0 宽 outline 在这两种 display 下应完全不绘制（同 R2108 margin 抑制谱系）。
+#[test]
+fn test_outline_suppressed_for_table_column_types() {
+    use zero_style_system::property::types::DisplayValue;
+
+    for display in [DisplayValue::TableColumn, DisplayValue::TableColumnGroup] {
+        let display_dbg = format!("{display:?}");
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.display = display;
+        // 非 0 宽、Solid、红 —— 正常 display 会绘制 4 条 fill。
+        style.outline_width = LengthValue::Px(10.0);
+        style.outline_style = OutlineStyleValue::Solid;
+        style.outline_color = ColorValue::Rgba(255, 0, 0, 255);
+        style.color = ColorValue::CurrentColor;
+        styles.insert(elem, style);
+
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        assert!(
+            painter.primitives().is_empty(),
+            "outline must not apply to {display_dbg} (CSS2 §17.4 no box); got {} primitives",
+            painter.primitives().len()
+        );
+    }
+}
+
 /// 测试 paint_text with non-Px font size (Em) — early return, no glyph。
 #[test]
 fn test_paint_text_em_font_size_no_glyph() {

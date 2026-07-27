@@ -589,6 +589,20 @@ impl super::Painter {
     /// outline 绘制为 4 条边框段，根据 outline-style 生成不同图元类型。
     pub(super) fn paint_outline(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         use zero_style_system::OutlineStyleValue;
+        use zero_style_system::property::types::DisplayValue;
+
+        // CSS2 §17.4：table-column / table-column-group 不生成盒（仅参与列宽计算），
+        // 故 outline 不应用——同 R2108「margin 不应用 table-column/cell/column-group」
+        // 谱系（display-type exclusion）。driving cluster：outline-applies-to-005/006，
+        // 4 个 outline 属性（outline/width/color/style）× 2 display = 8 案全应无红边。
+        // 其它 table 类型（row-group/header-group/footer-group/row/cell）生成盒，outline
+        // 仍应用（outline-applies-to-001~004 PASS）。
+        if matches!(
+            style.display,
+            DisplayValue::TableColumn | DisplayValue::TableColumnGroup
+        ) {
+            return;
+        }
 
         let outline_width = length_to_f32(&style.outline_width);
 
