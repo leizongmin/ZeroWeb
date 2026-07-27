@@ -1263,6 +1263,10 @@ impl LayoutEngine {
             b: &LayoutBox,
             cb_definite: Option<f32>,
             parent_is_flex_grid: bool,
+            // R2101：当前 box 是否处于 table-cell 子树内（含自身为 table-cell）。
+            // CSS Quirks §percentage-height：百分比高度 quirk（不明确 CB 按 ICB 解析）**不适用**
+            // 于 table-cell 的后代——后代 height:% 须 compute-to-auto（standards 行为）。
+            inside_table_cell: bool,
             quirks_mode: bool,
             viewport_height: f32,
             taffy_tree: &mut TaffyTree<NodeId>,
@@ -1306,7 +1310,7 @@ impl LayoutEngine {
                                 my_definite = Some(*p as f32 / 100.0 * cbh);
                             }
                             None => {
-                                if quirks_mode && !b.is_replaced {
+                                if quirks_mode && !b.is_replaced && !inside_table_cell {
                                     // R2016 quirks mode（CSS quirks §percentage-height）：不明确 CB
                                     //（auto 父）的百分比 height 按 ICB（viewport）高解析——legacy
                                     // 「百分比高度生效」行为（chromium quirks 实测）。非替换块专用
@@ -1383,11 +1387,17 @@ impl LayoutEngine {
                 )
             });
 
+            // R2101：当前 box 若为 table-cell，则其子树标记为「table-cell 内」，
+            // 阻断后代 height:% 的 quirks ICB 解析。
+            let self_is_table_cell = style.is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
+            let child_inside_table_cell = inside_table_cell || self_is_table_cell;
+
             for child in &b.children {
                 changed |= walk(
                     child,
                     my_definite,
                     child_parent_flex_grid,
+                    child_inside_table_cell,
                     quirks_mode,
                     viewport_height,
                     taffy_tree,
@@ -1403,6 +1413,7 @@ impl LayoutEngine {
         walk(
             root,
             Some(viewport_height),
+            false,
             false,
             quirks_mode,
             viewport_height,
