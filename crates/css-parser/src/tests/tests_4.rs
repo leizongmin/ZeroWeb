@@ -452,6 +452,44 @@ fn test_parse_stylesheet_custom_property() {
 }
 
 #[test]
+/// CSS 属性名 ASCII 大小写不敏感（CSS Syntax §5「All CSS keywords are
+/// case-insensitive」）：`bACkGRounD` 须归一化为小写 `background`，否则下游
+/// apply.rs 按小写名 dispatch 会丢声明（WPT case-sensitive-000）。
+/// 自定义属性（`--*`）大小写敏感（CSS Variables §2），须保留原值。
+fn test_parse_property_name_case_insensitive() {
+    let css = "p { bACkGRounD: gREen; --MyVar: red; }";
+    let stylesheet = crate::Parser::parse_stylesheet(css);
+    let style = stylesheet
+        .rules
+        .iter()
+        .find_map(|r| if let Rule::Style(s) = r { Some(s) } else { None })
+        .expect("应有 style 规则");
+    assert_eq!(style.declarations.len(), 2);
+    // 标准属性名归一化为小写
+    assert_eq!(
+        style.declarations[0].property, "background",
+        "bACkGRounD 应归一化为 background（CSS §5 大小写不敏感）"
+    );
+    // 自定义属性保留原大小写
+    assert_eq!(
+        style.declarations[1].property, "--MyVar",
+        "自定义属性 --MyVar 大小写敏感须保留原值（CSS Variables §2）"
+    );
+}
+
+#[test]
+/// CSS 伪类 / 伪元素名 ASCII 大小写不敏感（CSS Syntax §5）：`:FiRSt-cHIlD` 与
+/// `::FiRst-LiNe` 须归一化为小写，否则下游 matcher 按小写名匹配会失配
+/// （WPT case-sensitive-003）。
+fn test_parse_pseudo_name_case_insensitive() {
+    let css = "p:FiRSt-cHIlD { color: green; } span::FiRst-LiNe { color: red; }";
+    let stylesheet = crate::Parser::parse_stylesheet(css);
+    // 不 panic + 解析出 2 条规则即可（伪名归一化在 selector 解析内部，归一化后 matcher
+    // 能匹配；此处主要守 parse 不因大小写丢规则）。
+    assert_eq!(stylesheet.rules.len(), 2, "两条规则都应被解析（伪名大小写不敏感）");
+}
+
+#[test]
 /// 测试解析 @import 带 media query。
 fn test_parse_stylesheet_import_with_media() {
     let css = r#"@import url("dark.css") screen and (prefers-color-scheme: dark);"#;

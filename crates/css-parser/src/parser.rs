@@ -307,12 +307,18 @@ impl<'a> Parser<'a> {
                         // 伪元素（::before, ::after）
                         self.advance();
                         if let Token::Ident(name) = self.peek().clone() {
+                            // CSS 伪元素名 ASCII 大小写不敏感（CSS Syntax §5），归一化为小写
+                            // 供下游 matcher 按小写名匹配（WPT case-sensitive-003 `::FiRst-LiNe`）。
+                            let name = name.to_ascii_lowercase();
                             subclass_selectors
                                 .push(SubclassSelector::PseudoElement(PseudoElementSelector::Standard(name)));
                             self.advance();
                         }
                     } else if let Token::Ident(name) = self.peek().clone() {
-                        // 简单伪类或函数伪类（Ident + LParen 形式）
+                        // 简单伪类或函数伪类（Ident + LParen 形式）。伪类名 ASCII 大小写不敏感
+                        // （CSS Syntax §5），归一化为小写——既为下方 `match name.as_str()` 分发，
+                        // 也为 PseudoClassSelector::Simple 存储供 matcher 匹配（WPT case-sensitive-003）。
+                        let name = name.to_ascii_lowercase();
                         self.advance();
                         if matches!(self.peek(), Token::LParen) {
                             self.advance(); // (
@@ -345,7 +351,9 @@ impl<'a> Parser<'a> {
                             }
                         }
                     } else if let Token::Function(name) = self.peek().clone() {
-                        // 函数伪类（Function token 形式，tokenizer 直接产生 Function）
+                        // 函数伪类（Function token 形式，tokenizer 直接产生 Function）。
+                        // 函数名 ASCII 大小写不敏感（CSS Syntax §5），归一化为小写（同上）。
+                        let name = name.to_ascii_lowercase();
                         self.advance(); // 消耗 Function token（已包含 '('）
                         let pseudo = match name.as_str() {
                             "not" => self.parse_pseudo_class_function_list("not"),
@@ -753,7 +761,20 @@ impl<'a> Parser<'a> {
     /// 消耗单个声明。
     fn consume_declaration(&mut self) -> Option<Declaration> {
         let property = match self.peek().clone() {
-            Token::Ident(name) => name,
+            // CSS 属性名 ASCII 大小写不敏感（CSS Syntax §5「All CSS keywords are
+            // case-insensitive」，规范形式为小写），下游 apply.rs / shorthand 按小写名
+            // dispatch，故此处归一化为小写，否则 `bACkGRounD` 不匹配 `"background"` 致
+            // 声明被丢弃（WPT case-sensitive-000/001）。
+            // 但 CSS 自定义属性（`--foo`）大小写敏感（CSS Variables §2），须保留原值——
+            // tokenizer 把 `--foo` 整体消费为单个 Ident（'-' 是 ident-start 字符），故
+            // starts_with("--") 可区分。
+            Token::Ident(name) => {
+                if name.starts_with("--") {
+                    name
+                } else {
+                    name.to_ascii_lowercase()
+                }
+            }
             _ => return None,
         };
         self.advance();
