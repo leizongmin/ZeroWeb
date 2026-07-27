@@ -9,7 +9,10 @@ use super::*;
 /// 支持命名颜色、十六进制颜色（#RGB、#RRGGBB、#RGBA、#RRGGBBAA）、
 /// `rgb()`/`rgba()`、`hsl()`/`hsla()` 和 `hwb()` 函数。
 pub fn parse_color(value: &str) -> Option<ColorValue> {
-    let value = value.trim();
+    // 不在此 trim：声明值经 consume_declaration deferred-whitespace 已无首尾空白 token，
+    // 此处 trim 会误剥**转义产生的**空白（如 `red\9` → `red\t`，应 ≠ 关键字 `red` 判无效，
+    // apply 拒绝→cascade R2126 丢弃）。调用方传入均为已 trim 值；quirks 入口自行 trim。
+    // driving：escapes-014/015/016。
 
     // 特殊关键字
     if value.eq_ignore_ascii_case("transparent") {

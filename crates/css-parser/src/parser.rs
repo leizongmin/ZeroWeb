@@ -798,6 +798,22 @@ impl<'a> Parser<'a> {
         // `;` 和 `}` 都属于该 `(` 块，从而吞掉后续规则直到匹配的 `)`。
         let mut group_depth: i32 = 0;
 
+        // 延迟空白：仅当后续有非空白 token 时才写入空格（首尾空白 token 不入值）。
+        // 这样无需末尾 trim，**保留**值内由转义产生的空白（如 `red\9` → `red\t`，
+        // `red\t` ≠ 关键字 `red`，apply 拒绝→cascade R2126 丢弃，下个合法声明胜出）。
+        // 原 `value_parts.trim()` 会把转义产生的空白一并剥掉（driving：escapes-014/015/016）。
+        let mut pending_ws = false;
+        macro_rules! flush_ws {
+            () => {
+                if pending_ws {
+                    if !value_parts.is_empty() {
+                        value_parts.push(' ');
+                    }
+                    pending_ws = false;
+                }
+            };
+        }
+
         loop {
             match self.peek() {
                 Token::Semicolon | Token::RBrace if group_depth == 0 => break,
@@ -808,18 +824,20 @@ impl<'a> Parser<'a> {
                 // Function token = `ident(`，隐含一个未闭合的 `(`，需要匹配的 `)`。
                 Token::Function(_) | Token::LParen | Token::LBracket => {
                     group_depth += 1;
+                    flush_ws!();
                     let display = format!("{}", self.peek());
                     value_parts.push_str(&display);
                     self.advance();
                 }
                 Token::RParen | Token::RBracket => {
                     group_depth = (group_depth - 1).max(0);
+                    flush_ws!();
                     let display = format!("{}", self.peek());
                     value_parts.push_str(&display);
                     self.advance();
                 }
                 Token::Whitespace => {
-                    value_parts.push(' ');
+                    pending_ws = true;
                     self.advance();
                 }
                 Token::Delim('!') if group_depth == 0 => {
@@ -832,9 +850,11 @@ impl<'a> Parser<'a> {
                         self.advance();
                         break;
                     }
+                    flush_ws!();
                     value_parts.push('!');
                 }
                 _ => {
+                    flush_ws!();
                     let display = format!("{}", self.peek());
                     value_parts.push_str(&display);
                     self.advance();
@@ -842,7 +862,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let value = value_parts.trim().to_string();
+        let value = value_parts;
 
         Some(Declaration {
             property,

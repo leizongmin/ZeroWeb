@@ -46,7 +46,11 @@ pub fn apply_property_value_with_quirks(
     value: &str,
     quirks_mode: bool,
 ) -> bool {
-    let value = value.trim();
+    // 不在此 trim：声明值经 consume_declaration deferred-whitespace 已无首尾空白 token
+    // （inline style 经 parse_inline_style 自行 trim，presentational hints 产 clean 值，
+    // cascade apply-on-dummy 传 cascaded 值）。此处 trim 会误剥**转义产生的**空白
+    //（如 `red\9` → `red\t`），与 parse_color 不再 trim 配合使非法颜色被正确拒绝。
+    // driving：escapes-014/015/016（apply 拒绝→cascade R2126 丢弃→下个合法声明胜出）。
     let parse_color_fn = if quirks_mode {
         values::parse_color_quirks
     } else {

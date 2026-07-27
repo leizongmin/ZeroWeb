@@ -615,6 +615,24 @@ fn test_declaration_exclamation_not_important() {
     }
 }
 
+#[test]
+/// R2127：deferred-whitespace 保留值内转义产生的空白（不 trim 掉），使非法值被
+/// apply 拒绝→cascade 丢弃。driving：escapes-014/015/016（`red\9`→`red\t`）。
+fn test_declaration_value_preserves_escaped_whitespace() {
+    // `color: red\9` → 值应为 `red\t`（tab 保留），非 `red`（被 trim 剥掉会误判合法）。
+    let css = "p { color: red\\9; }";
+    let ss = Parser::parse_stylesheet(css);
+    if let Rule::Style(style) = &ss.rules[0] {
+        assert_eq!(style.declarations[0].value, "red\t");
+    }
+    // 对照：普通值无转义，首尾空白 token 不入值（deferred-ws）。
+    let css2 = "p { color:   red   ; }";
+    let ss2 = Parser::parse_stylesheet(css2);
+    if let Rule::Style(style) = &ss2.rules[0] {
+        assert_eq!(style.declarations[0].value, "red");
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // 15. 前导组合器（如 :has(> .child)）
 // ═══════════════════════════════════════════════════════════════════════
