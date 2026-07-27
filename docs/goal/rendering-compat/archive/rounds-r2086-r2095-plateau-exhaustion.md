@@ -86,6 +86,21 @@ ascent）+ Phase A font-metric 谱系（八证 net-negative）。R1958 pattern �
 本轮同时做 master.md 瘦身（line 5 = 8034 chars → 结构化结论 + 本 archive 指针）。
 详见 [`evidence/r2095-dormant-infra-hunt-false-positive-2026-07-27.txt`](../evidence/r2095-dormant-infra-hunt-false-positive-2026-07-27.txt)。
 
+
+### R2096（2026-07-27）CSS contain:layout/size BFC dormancy negative（zero footprint）
+CSS `contain`（35 案 corpus，23 multicol）：ZW parse + store ContainComputedValue，paint
+消费 contain:paint 做 clip（mod.rs:153）+ debug indicator；**layout 不消费 contain**
+（establishes_bfc / is_flow_root 无 contain 检查）。`contain:layout/paint/strict/content`
+per CSS Contain §3 应建立 BFC（等价 flow-root，隔离 margin 折叠 + 含浮动）。实施 minimal
+wire（LayoutBox 加 establishes_containment_bfc flag + engine build 期从 contain:layout/
+paint/strict/content/Custom(layout|paint) 设 + establishes_bfc 检查），oracle A/B：css-
+multicol 190/452=42.0% **baseline==fix**，css-position 66/97=68.0% **baseline==fix**
+（两最大 contain 目录零 yield 零回归，无 observable geometry 变化）。★ 与 R2091 不同：
+R2091 修了真 geometry（canvas 400→10），本 wire **零 geometry 变化**（contain-BFC 在
+corpus 无 driving test——contain 案用 size containment / abspos-CB / paint-clip 等其他
+facet，非 BFC）。按 code-guidelines「不为不可能发生的场景编写错误处理」+ 方法论「driving
+test required」**REVERT**（spec-correct 但零 reftest footprint，defer 到有 driving test）。
+
 ## 调查覆盖矩阵（全 exhausted）
 
 | 角度 | 轮次 | 结论 |
@@ -97,6 +112,7 @@ ascent）+ Phase A font-metric 谱系（八证 net-negative）。R1958 pattern �
 | content-visibility feature | R2094 | +2 max ROI 不足 |
 | legacy/UA 产品表面 | R2077/R2094 | 二次确认 plateau |
 | dormant-infra R1958 pattern | R2095 | false positive（Phase A 谱系） |
+| CSS contain:layout/size BFC dormancy | R2096 | zero footprint（spec-correct REVERT） |
 
 ## 已 ruled out（勿以单 session 重试，详见 master.md「已 ruled out」节）
 
