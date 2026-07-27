@@ -35,6 +35,17 @@ pub fn expand_shorthands(declarations: &[MatchingDecl]) -> Vec<MatchingDecl> {
 fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
+    // 简写值首尾空白守卫：consume_declaration 的 deferred-ws（R2127）已保证声明值
+    // 无首尾空白 **token**，故值字符串首尾若出现空白，必来自转义序列（如
+    // `background:\0020red` → 单个 ident `" red"`）。简写展开用 split_whitespace
+    // 重新切分值串，会把这种转义空白当分隔符剥掉（`" red"`→`"red"`），误把非法
+    // 颜色当合法应用。此处直接丢弃整个简写声明（与 chromium 一致：含转义首尾空白
+    // 的简写值视为非法）。长属性（color 等）不经此路径，由 apply/parse_color 不 trim
+    // 自行拒绝（R2127）。driving：escapes-014/015/016（与 R2132 tokenizer `\` 路由联合）。
+    if value.starts_with(char::is_whitespace) || value.ends_with(char::is_whitespace) {
+        return vec![];
+    }
+
     match property {
         // ── 4 边简写 ──
         "margin" => {

@@ -1,0 +1,96 @@
+R2132 (2026-07-28) — `\` 主循环路由 + 简写首尾空白守卫（escapes-002 PASS，+1 syntax）
+==================================================================================================================
+
+背景
+----
+R2127 land escapes-014/015/016 后，escapes 仅余 escapes-002（syntax 10 fail 之一）。
+R2131 定位 escapes-002 根因 = tokenizer `is_ident_start` 不含 `\`，前导 `\` 落 Error：
+选择器 `p.class#id \{ background: red; \}` 中 `\{` 被拆成 Error(`\`)+LBrace(`{`)，
+LBrace 误开声明块 → `background:red` 错误应用 → 测试 fail（应绿染红）。
+R2131 试「主循环加 `\`=>consume_ident_like」：escapes-002 PASS **但** escapes-014 回归
+（`\0020red`→`Ident(" red")` 经 shorthand expand_background 剥成 `red` 应用）→ net-zero revert。
+R2131 结论：须 `\` routing + shorthand-trim 联合（broad 多点，须 spec-rfc 级 A/B）。
+
+R2132 关键发现（纠正 R2131「shorthand-trim」诊断）
+--------------------------------------------------
+R2131 认为第 4 个 trim 点在 shorthand expansion（~10 处 value.trim()）。R2132 实读
+expand_background 发现：**真正的剥离来自 `split_whitespace()`**（mod.rs:1506），不止
+top-level `value.trim()`。即使去掉 top-level trim，`" red".split_whitespace()` 仍产
+`["red"]` → bg_color="red" → 应用。根因是简写展开在**值串**上重切分，丢失 token 边界
+（转义产生的空白与分隔空白无法区分）。
+
+driving tests
+-------------
+- escapes-002：`p\.class#id` / `p.class\#id`（选择器转义 `.`/`#`）/ `background\: red`
+  （属性名转义 `:`）/ `background: red\;`（值转义 `;`）/ `p.class#id \{ ... \}`
+  （选择器转义 `{`/`}`）。全部「转义使分隔符变字面字符 → 规则失效/不匹配 → 不染红」。
+- escapes-014/015/016（R2127 baseline PASS，须不回归）：`background:\0020red` /
+  `color: red\9` / `color: \9red` 等——转义产生空白使值 ≠ 关键字 → 声明无效应丢。
+
+fix（2 点联合）
+---------------------------------------
+1. **tokenizer 主循环 `\` 路由**（tokenizer.rs:966）：加 `'\\' =>` arm。`\` 后跟合法转义
+   （hex 数字或任意非换行字符，含 EOF）→ `consume_ident_like`（`\` 是 ident 的一部分，
+   CSS Syntax §4.3）；仅 `\`+换行（LF/CR/FF）= 非法转义 → `Delim('\\')`。
+   → `\{` 产 `Ident("{")`（非 LBrace，不误开块）；`\. ` 产含 `.` 的 ident。
+2. **expand_one 简写首尾空白守卫**（shorthand/mod.rs:38）：值字符串首尾若含空白，**直接
+   丢弃整个简写声明**。consume_declaration deferred-ws（R2127）已保证声明值无首尾空白
+   **token**，故值串首尾的空白**只能来自转义**（如 `\0020red`→`" red"`）。简写展开用
+   split_whitespace 重切分会把转义空白当分隔符剥掉（`" red"`→`"red"` 误应用），故守卫
+   在切分前丢弃（与 chromium 一致：含转义首尾空白的简写值非法）。长属性（color 等）不经
+   简写，由 apply/parse_color 不 trim（R2127）自行拒绝。
+   ★ 单一 chokepoint（expand_one 顶部），非 ~10 处分散 trim 去除——更简单且覆盖全简写。
+
+A/B（make reftest-upstream FILTER=escapes）
+-------------------------------------------
+- escapes-002：**3.09% → 0.00% PASS**（flip）
+- escapes-014/015/016：**仍全 0.00% PASS**（守卫保转义空白→非法→丢→不染红）
+- escapes：1 fail → **0 fail**（全清）+ matching-brackets-002 bonus（0.00% PASS，该测 assert
+  「correctly handling escapes」，`\` 路由顺带修）
+
+全 CSS2 corpus 零回归（DC-14 严格）
+-----------------------------------
+`\` 路由是全局 tokenizer 变更（影响所有 token-start `\`），须全量验证。
+A/B（make reftest-upstream FILTER=css/CSS2，6283 case）：
+- baseline（stash tokenizer `\` arm，仅保留守卫）：**681 fail / 5602 pass（89.2%）**
+- with R2132（`\` 路由 + 守卫）：**679 fail / 5604 pass（89.2%）**
+- **net -2 fail（escapes-002 + matching-brackets-002），零回归**（6283 case 逐名稳）
+- per-dir 核查：syntax 10→8 fail（-2，两改善）/ selectors 12=12（同集，±0）
+- blast-radius 分析：非 syntax/selectors 的 `\` 多在 string 内（generated-content
+  `content:"\2022"` / font-family）——`\` 路由 arm 仅在 token-start 触发，string 内 `\`
+  由 consume_string 处理，不受影响。残余 longhand parse.rs 仍有 trim，但无测试在非 color
+  longhand 值首用 `\`-escape-ws（escapes 测仅覆盖 color/background，已处理）。
+
+门禁
+----
+fmt / clippy(-D warnings on zero-css-parser + zero-style-system) 全绿。
+make test 全绿（0 failed）。
+新单测：
+- `test_tokenizer_backslash_routes_to_ident_like`（`\{`→Ident("{")、`\.`→Ident(".")、
+  `\`+换行→Delim('\\')）
+- `test_shorthand_boundary_whitespace_drops_declaration`（" red"/"red "→丢弃；
+  对照 "red"→正常展开 8 子属性、"10px 20px"→内部空白正常切分）
+- 更新 3 处旧测试（assert 旧 Error 行为→新 ident 行为）：
+  test_tokenizer_ident_with_escape_start / test_consume_escape_invalid /
+  test_consume_ident_start_with_digit_escape / test_consume_whitespace_various
+
+R2132 总结
+---------
+R2131「escapes-002 须 `\` routing + shorthand-trim 联合 spec-rfc」经 R2132 两点联合 land：
+tokenizer `\` 路由（修选择器/属性名/值内 `\` 转义）+ expand_one 首尾空白守卫（堵简写
+split_whitespace 剥转义空白）。关键纠正：R2131 诊断「shorthand ~10 处 trim」不完整，
+真正剥离来自 split_whitespace；故用单一 expand_one 守卫（非分散去 trim）更简洁且全覆盖。
+escapes 子目录全清（17/17 PASS）。syntax 子目录 R2114 baseline 38 fail → 现 8 fail（-30）。
+
+rally 累计 driving-test yield = **+49 oracle PASS**（R2127 +47 → R2132 +2 [escapes-002
++ matching-brackets-002]）。注：R2132 两案经 self-source reftest 验证（0.00%）；matching-
+brackets-002 为 `\` 路由 bonus（非原 driving test）。
+
+forward
+-------
+syntax 残余 8 fail 全归类 error-recovery（复合：嵌套 + malformed + 未闭合 string/bracket
+多机制），clean single-point vein 真 comprehensive 穷尽。须完整 CSS Syntax error-recovery
+machinery（结构性多 session）：
+1. at-rule-013 / core-syntax-001/006 / matching-brackets-001/003 / uri-013/015/017。
+2. 或转其他子系统 fresh lever（reftest clean single-point 全维度已 R2099-R2129 扫尽，
+   残余全 structural/font-wall/user-gated）。

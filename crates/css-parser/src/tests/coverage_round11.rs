@@ -270,6 +270,35 @@ fn test_tokenizer_escape_newline_returns_error() {
 }
 
 #[test]
+/// R2132：主循环 `\` 路由——合法转义起始的 `\` 应走 ident-like 路径，而非落 Error。
+/// driving：escapes-002 选择器 `p\.class#id`、`p.class#id \{ ... \}`。
+fn test_tokenizer_backslash_routes_to_ident_like() {
+    // `\{` → 转义花括号，是 ident 的一部分（`{`），**不**应产生 LBrace 误开声明块。
+    let tokens = tokenize("\\{");
+    assert!(
+        matches!(&tokens[0], Token::Ident(s) if s == "{"),
+        "expected Ident(\"{{\"), got {:?}",
+        tokens[0]
+    );
+
+    // `\.` → 转义点，ident 含 `.`（`p\.class` 中 `.` 不再当 class 组合器）。
+    let tokens = tokenize("\\.");
+    assert!(
+        matches!(&tokens[0], Token::Ident(s) if s == "."),
+        "expected Ident(\".\"), got {:?}",
+        tokens[0]
+    );
+
+    // `\`+换行 = 非法转义 → `\` 作 Delim（CSS Syntax §4.3.4），换行单独成空白。
+    let tokens = tokenize("\\\n");
+    assert!(
+        matches!(&tokens[0], Token::Delim(c) if *c == '\\'),
+        "expected Delim('\\\\'), got {:?}",
+        tokens[0]
+    );
+}
+
+#[test]
 fn test_tokenizer_escape_at_eof() {
     // \ 后直接 EOF（line 421）
     let tokens = tokenize("\\");

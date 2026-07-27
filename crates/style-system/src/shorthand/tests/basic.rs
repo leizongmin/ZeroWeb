@@ -539,3 +539,30 @@ fn test_text_emphasis_shorthand_string() {
     assert_eq!(result[0].0, "text-emphasis-style");
     assert_eq!(result[0].1, "\"*\"");
 }
+
+#[test]
+/// R2132：简写值首尾空白守卫——值字符串首尾的空白只能来自转义（consume_declaration
+/// deferred-ws 已保证无首尾空白 token），应丢弃整个简写声明（与 chromium 一致：
+/// 含转义首尾空白的简写值非法）。driving：escapes-014 `background:\0020red` → `" red"`。
+/// 对照：普通值无首尾空白（deferred-ws）不受影响。
+fn test_shorthand_boundary_whitespace_drops_declaration() {
+    // 转义产生的首部空白（`\0020red` → " red"）→ 丢弃，不剥成 "red" 误应用。
+    let result = expand_one("background", " red", false, (0, 0, 1));
+    assert!(result.is_empty(), "leading escape-ws should drop shorthand");
+
+    // 转义产生的尾部空白（`red\0020` → "red "）→ 丢弃。
+    let result = expand_one("background", "red ", false, (0, 0, 1));
+    assert!(result.is_empty(), "trailing escape-ws should drop shorthand");
+
+    // 对照：普通简写值无首尾空白 → 正常展开。
+    let result = expand_one("background", "red", false, (0, 0, 1));
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[0].0, "background-color");
+    assert_eq!(result[0].1, "red");
+
+    // 对照：内部空白（多 token）正常切分，不受守卫影响。
+    let result = expand_one("margin", "10px 20px", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "10px");
+    assert_eq!(result[1].1, "20px");
+}

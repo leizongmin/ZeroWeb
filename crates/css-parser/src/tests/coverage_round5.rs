@@ -457,10 +457,12 @@ fn test_tokenizer_slash_not_comment() {
 
 #[test]
 fn test_tokenizer_ident_with_escape_start() {
-    // `\` 不是 is_ident_start → 进入 unknown character 分支 → Error
+    // R2132：`\` 合法转义起始 → 主循环路由到 ident-like（CSS Syntax §4.3）。
+    // `\41BC` = `\41`(=41='A'，1-6 hex 截到非 hex 'B'... 实际 41BC 全 hex) 解码为 ident，
+    // 不再落 Error。driving：escapes-002。
     let tokens: Vec<_> = Tokenizer::new("\\41BC").collect_tokens();
     assert!(tokens.len() >= 1);
-    assert!(matches!(&tokens[0], Token::Error(_)));
+    assert!(matches!(&tokens[0], Token::Ident(_)));
 }
 
 #[test]

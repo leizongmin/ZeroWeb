@@ -627,10 +627,11 @@ fn test_consume_escape_with_newline() {
 #[test]
 /// 测试 consume_escape - 无效的转义序列
 fn test_consume_escape_invalid() {
+    // R2132：`\` 起始走 ident-like 路径。`\000000` = 6 hex 全 0 → codepoint 0 →
+    // REPLACEMENT CHAR（consume_escape §4.3.7），产 Ident("\u{FFFD}")，不再落 Error。
     let tokenizer = crate::Tokenizer::new("\\000000");
     let tokens: Vec<_> = tokenizer.collect_tokens();
-    // The tokenizer produces an error for invalid escape sequences
-    assert!(matches!(tokens[0], Token::Error(_)));
+    assert!(matches!(tokens[0], Token::Ident(_)));
 }
 
 #[test]
@@ -714,14 +715,13 @@ fn test_consume_ident_like_function_vs_ident() {
 #[test]
 /// 测试 consume_ident - 以数字开头的标识符（通过转义）
 fn test_consume_ident_start_with_digit_escape() {
-    let tokenizer = crate::Tokenizer::new(r#"\\31 ident"#);
+    // R2132：`\` 起始路由到 ident-like。`\31 ident` = `\31`(=0x31='1'，消耗一个空白终止)
+    // + `ident` → ident "1ident"（通过转义以数字开头）。driving：escapes-002 谱系。
+    // 注：raw 字符串单反斜杠（`r#"\31 ident"#`），非 `\\`（两个反斜杠）。
+    let tokenizer = crate::Tokenizer::new(r#"\31 ident"#);
     let tokens: Vec<_> = tokenizer.collect_tokens();
-    // The tokenizer doesn't handle this escape sequence correctly
-    // It produces errors instead of the escaped character
-    assert_eq!(tokens.len(), 5);
-    assert!(matches!(tokens[0], Token::Error(_)));
-    assert!(matches!(tokens[1], Token::Error(_)));
-    assert!(matches!(tokens[2], Token::Number(31.0)));
+    assert_eq!(tokens.len(), 1);
+    assert!(matches!(tokens[0], Token::Ident(ref s) if s == "1ident"));
 }
 
 #[test]
@@ -755,13 +755,14 @@ fn test_consume_number_and_suffix_dimension() {
 #[test]
 /// 测试 consume_whitespace - 各种空白字符
 fn test_consume_whitespace_various() {
+    // R2132：raw 串 ` \t\n\r\f `（`\t`/`\n`/`\r`/`\f` 为字面 反斜杠+字母）。
+    // `\` 起始路由 ident-like：`\t`(='t')、`\n`(='n')、`\r`(='r')、`\f`(hex 0x0f=换页，
+    // 消耗尾随空格作终止) → 合并成 ident "tnr\u{f}"，不再产生 spurious Error。
     let tokenizer = crate::Tokenizer::new(r" \t\n\r\f ");
     let tokens: Vec<_> = tokenizer.collect_tokens();
-    // The tokenizer treats \f as an escape sequence, not as a literal \ and f
-    assert_eq!(tokens.len(), 3);
+    assert_eq!(tokens.len(), 2);
     assert!(matches!(tokens[0], Token::Whitespace));
-    assert!(matches!(tokens[1], Token::Error(_)));
-    assert!(matches!(tokens[2], Token::Ident(ref s) if s == "tnr\u{f}"));
+    assert!(matches!(tokens[1], Token::Ident(ref s) if s == "tnr\u{f}"));
 }
 
 #[test]

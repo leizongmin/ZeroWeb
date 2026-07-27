@@ -964,6 +964,24 @@ impl Iterator for Tokenizer {
                 Token::Delim('=')
             }
 
+            // 反斜杠转义起始：CSS Syntax §4.3 规定 `\` 后跟合法转义（hex 数字或
+            // 任意非换行字符，含 EOF）时，`\` 是 ident 的一部分，应走 ident-like 路径
+            //（driving：escapes-002 选择器 `p\.class#id`、`p.class#id \{ ... \}` ——
+            // 旧实现 `\` 落 Error，`\{` 被拆成 Error+LBrace 误开声明块，致 `background:red`
+            // 错误应用）。仅 `\`+换行为非法转义 → `\` 作 Delim。
+            '\\' => {
+                let valid_escape = match self.peek_at(1) {
+                    Some('\n') | Some('\r') | Some('\x0C') => false,
+                    _ => true, // 含 EOF：consume_escape 返回 REPLACEMENT CHAR
+                };
+                if valid_escape {
+                    self.consume_ident_like()
+                } else {
+                    self.consume();
+                    Token::Delim('\\')
+                }
+            }
+
             // 标识符
             _ if Self::is_ident_start(c) => self.consume_ident_like(),
 
