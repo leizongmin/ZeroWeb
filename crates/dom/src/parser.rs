@@ -61,6 +61,7 @@ impl DomBuilder {
         let mut nodes = slotmap::SlotMap::with_key();
         let root = nodes.insert(NodeData::new(NodeKind::Document(DocumentData {
             quirks_mode: QuirksMode::NoQuirks,
+            content_is_xml: false,
         })));
 
         Self {
@@ -132,6 +133,9 @@ impl DomBuilder {
         }
 
         doc.set_quirks_mode(inner.quirks_mode);
+        // 检测 XHTML 文档（DOCTYPE public_id 含 "XHTML"），置位 content_is_xml 供
+        // style-system matcher 按大小写敏感语义处理属性值选择器（CSS Selectors §6.3）。
+        doc.detect_and_set_content_is_xml();
         doc
     }
 }

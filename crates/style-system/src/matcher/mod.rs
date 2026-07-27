@@ -187,11 +187,27 @@ fn matches_attribute(doc: &Document, element: NodeId, attr: &AttributeSelector) 
         None => return false,
     };
 
-    // CSS 属性值选择器在 HTML 中对 ASCII 大小写不敏感（CSS-Selectors §6.3：HTML 文档属性
-    // 值匹配 ASCII case-insensitive；`[attr="val" i]` 显式标记仅对 Level 4 语法生效，但
-    // HTML 默认即不敏感）。WPT attribute-value-selector-007 assert：`[lang="es"]` 应匹配
-    // `lang="ES"`。对全匹配器统一 to_ascii_lowercase 后比较（XML 文档应大小写敏感，但 ZW
-    // reftest corpus 全 HTML；若未来接 XML 须按文档类型分发）。
+    // CSS Selectors §6.3「case-sensitivity depends on the document language」：
+    // - HTML 文档：属性名与属性值匹配 ASCII 大小写不敏感（WPT attribute-value-selector-007
+    //   assert `[lang="es"]` 应匹配 `lang="ES"`）。
+    // - XML/XHTML 文档：大小写敏感（WPT attribute-value-selector-008/009 assert `[title="es"]`
+    //   不应匹配 `title="ES"`；meta `nonHTML` flag）。
+    // ZW 用 html5ever 统一按 HTML 解析，但 parser 检测 DOCTYPE public_id 含 "XHTML" 时置位
+    // `content_is_xml`，此处据此分发大小写语义。
+    if doc.content_is_xml() {
+        // XML/XHTML：大小写敏感，按原值比较
+        return match &attr.matcher {
+            AttributeMatcher::Exists => true,
+            AttributeMatcher::Exact(v) => value == v.as_str(),
+            AttributeMatcher::Includes(v) => value.split_whitespace().any(|part| part == v.as_str()),
+            AttributeMatcher::DashMatch(v) => value == v.as_str() || value.starts_with(&format!("{v}-")),
+            AttributeMatcher::Prefix(v) => value.starts_with(v.as_str()),
+            AttributeMatcher::Suffix(v) => value.ends_with(v.as_str()),
+            AttributeMatcher::Substring(v) => value.contains(v.as_str()),
+        };
+    }
+
+    // HTML：属性值匹配 ASCII 大小写不敏感（to_ascii_lowercase 后比较）。
     let value_lower = value.to_ascii_lowercase();
     match &attr.matcher {
         AttributeMatcher::Exists => true,

@@ -236,6 +236,100 @@ fn test_matches_attribute_selector() {
     assert!(matches_selector(&doc, div, &sel_exact));
 }
 
+/// 辅助：构造 `[name=matcher]` 单一属性选择器。
+fn attr_selector(name: &str, matcher: AttributeMatcher) -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
+                        name: name.to_string(),
+                        matcher,
+                    })],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+/// CSS Selectors §6.3：属性值选择器大小写敏感性由文档语言决定。
+/// HTML 不敏感（`[title="es"]` 匹配 `title="ES"`），XML/XHTML 敏感（不匹配）。
+/// 验证 WPT attribute-value-selector-007（HTML 不敏感）与 008/009（XHTML 敏感）语义。
+#[test]
+fn test_matches_attribute_case_sensitivity_html_vs_xml() {
+    let (mut doc, _html, _body, div, _p) = make_test_dom();
+    doc.set_attribute(div, "title", "ES");
+
+    // HTML 模式（content_is_xml = false，默认）：大小写不敏感
+    assert!(!doc.content_is_xml(), "默认 doc 应为 HTML 模式");
+    assert!(
+        matches_selector(
+            &doc,
+            div,
+            &attr_selector("title", AttributeMatcher::Exact("es".to_string()))
+        ),
+        "HTML 模式：[title=\"es\"] 应匹配 title=\"ES\"（大小写不敏感）"
+    );
+    assert!(
+        matches_selector(
+            &doc,
+            div,
+            &attr_selector("title", AttributeMatcher::Exact("ES".to_string()))
+        ),
+        "HTML 模式：[title=\"ES\"] 应匹配 title=\"ES\""
+    );
+
+    // XML/XHTML 模式（content_is_xml = true）：大小写敏感
+    doc.set_content_is_xml(true);
+    assert!(doc.content_is_xml(), "置位后应为 XML 模式");
+    assert!(
+        !matches_selector(
+            &doc,
+            div,
+            &attr_selector("title", AttributeMatcher::Exact("es".to_string()))
+        ),
+        "XML 模式：[title=\"es\"] 不应匹配 title=\"ES\"（大小写敏感，WPT 008/009）"
+    );
+    assert!(
+        matches_selector(
+            &doc,
+            div,
+            &attr_selector("title", AttributeMatcher::Exact("ES".to_string()))
+        ),
+        "XML 模式：[title=\"ES\"] 应匹配 title=\"ES\""
+    );
+}
+
+/// DashMatch (`|=`) 在 XML 模式下也应大小写敏感（WPT attribute-value-selector-009）。
+#[test]
+fn test_matches_attribute_dashmatch_case_sensitivity_xml() {
+    let (mut doc, _html, _body, div, _p) = make_test_dom();
+    doc.set_attribute(div, "title", "ES");
+
+    // HTML 模式：[title|="es"] 匹配 "ES"（大小写不敏感，"ES" 整体匹配）
+    assert!(
+        matches_selector(
+            &doc,
+            div,
+            &attr_selector("title", AttributeMatcher::DashMatch("es".to_string()))
+        ),
+        "HTML 模式：[title|=\"es\"] 应匹配 title=\"ES\""
+    );
+
+    // XML 模式：[title|="es"] 不匹配 "ES"（大小写敏感）
+    doc.set_content_is_xml(true);
+    assert!(
+        !matches_selector(
+            &doc,
+            div,
+            &attr_selector("title", AttributeMatcher::DashMatch("es".to_string()))
+        ),
+        "XML 模式：[title|=\"es\"] 不应匹配 title=\"ES\"（大小写敏感，WPT 009）"
+    );
+}
+
 #[test]
 fn test_matches_pseudo_first_child() {
     let (doc, _html, _body, div, _p) = make_test_dom();

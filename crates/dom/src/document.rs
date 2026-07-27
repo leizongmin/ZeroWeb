@@ -77,6 +77,7 @@ impl Document {
         let mut nodes = SlotMap::with_key();
         let root = nodes.insert(NodeData::new(NodeKind::Document(DocumentData {
             quirks_mode: QuirksMode::NoQuirks,
+            content_is_xml: false,
         })));
 
         Self {
@@ -1152,6 +1153,48 @@ impl Document {
         if let Some(NodeKind::Document(data)) = self.nodes.get_mut(self.root).map(|n| &mut n.kind) {
             data.quirks_mode = mode;
         }
+    }
+
+    // ── content is XML / XHTML ──────────────────────────────────
+
+    /// 文档内容是否按 XML/XHTML 语义处理（影响选择器大小写敏感性等）。
+    ///
+    /// ZW 用 html5ever 统一按 HTML 解析，但对 WPT `.xht`/`.xhtml` 文档须按 XML 语义
+    /// 处理选择器大小写（CSS Selectors §6.3：HTML 不敏感、XML 敏感）。
+    pub fn content_is_xml(&self) -> bool {
+        match &self.nodes.get(self.root).map(|n| &n.kind) {
+            Some(NodeKind::Document(data)) => data.content_is_xml,
+            _ => false,
+        }
+    }
+
+    /// 设置文档的 XML/XHTML 内容语义标志。
+    pub fn set_content_is_xml(&mut self, is_xml: bool) {
+        if let Some(NodeKind::Document(data)) = self.nodes.get_mut(self.root).map(|n| &mut n.kind) {
+            data.content_is_xml = is_xml;
+        }
+    }
+
+    /// 检测文档是否为 XHTML 并设置 `content_is_xml` 标志。
+    ///
+    /// 判据：根的子节点中存在 `DocumentType`，且其 `public_id` 含 "XHTML"（大小写不敏感，
+    /// 匹配 `-//W3C//DTD XHTML 1.0//EN` 等所有 XHTML DOCTYPE）。这是 WPT `.xht`/`.xhtml`
+    /// 文件的标准标记（10618/10633 含此信号）。
+    ///
+    /// 在 `DomBuilder::into_document` 收尾处调用；对纯 HTML 文档（无 DOCTYPE 或 HTML5 DOCTYPE）
+    /// 保持 `false`，行为不变。
+    pub fn detect_and_set_content_is_xml(&mut self) {
+        let is_xml = self
+            .child_nodes(self.root)
+            .iter()
+            .any(|child| match self.get(*child).map(|n| &n.kind) {
+                Some(NodeKind::DocumentType(dt)) => dt
+                    .public_id
+                    .as_deref()
+                    .is_some_and(|pid| pid.to_ascii_lowercase().contains("xhtml")),
+                _ => false,
+            });
+        self.set_content_is_xml(is_xml);
     }
 
     // ── MutationObserver ────────────────────────────────────────

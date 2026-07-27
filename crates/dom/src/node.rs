@@ -58,6 +58,13 @@ pub enum NodeKind {
 pub struct DocumentData {
     /// 文档的 quirks mode。
     pub quirks_mode: QuirksMode,
+    /// 文档内容是否为 XML/XHTML 语义（影响选择器大小写敏感性等）。
+    ///
+    /// ZW 用 html5ever 统一按 HTML 解析，但 WPT corpus 含大量 `.xht`/`.xhtml` 文件：
+    /// 这些文档在 chromium 中按 XML 解析，属性值选择器**大小写敏感**（CSS Selectors §6.3
+    /// 「case-sensitivity depends on the document language」；HTML 大小写不敏感、XML 敏感）。
+    /// 此标志由 parser 检测 DOCTYPE public_id 含 "XHTML" 时置位，供 style-system matcher 分支。
+    pub content_is_xml: bool,
 }
 
 // ── ElementData ─────────────────────────────────────────────────────

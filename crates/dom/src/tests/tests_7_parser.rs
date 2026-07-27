@@ -560,6 +560,31 @@ fn test_parse_doctype_variants() {
     assert!(doc3.node_count() > 3, "系统标识符 DOCTYPE 应该创建多个节点");
 }
 
+/// 测试 XHTML 文档检测：DOCTYPE public_id 含 "XHTML" 时 content_is_xml 置位
+/// （CSS Selectors §6.3：XML/XHTML 属性值选择器大小写敏感，HTML 不敏感）。
+#[test]
+fn test_parse_xhtml_content_is_xml_detection() {
+    // XHTML 1.0 Transitional DOCTYPE → 检测为 XML
+    let xhtml10 = parse_html(
+        "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http://www.w3.org/1999/xhtml\"><body>Test</body></html>",
+    );
+    assert!(xhtml10.content_is_xml(), "XHTML 1.0 DOCTYPE 应检测为 XML 内容");
+
+    // XHTML 1.1 DOCTYPE（WPT .xht 文件常用）→ 检测为 XML
+    let xhtml11 = parse_html(
+        "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\" \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\"><html xmlns=\"http://www.w3.org/1999/xhtml\"><body>Test</body></html>",
+    );
+    assert!(xhtml11.content_is_xml(), "XHTML 1.1 DOCTYPE 应检测为 XML 内容");
+
+    // HTML5 DOCTYPE → 不检测为 XML（属性值大小写不敏感）
+    let html5 = parse_html("<!DOCTYPE html><html><body>Test</body></html>");
+    assert!(!html5.content_is_xml(), "HTML5 DOCTYPE 不应检测为 XML 内容");
+
+    // 无 DOCTYPE → 不检测为 XML
+    let no_doctype = parse_html("<html><body>Test</body></html>");
+    assert!(!no_doctype.content_is_xml(), "无 DOCTYPE 不应检测为 XML 内容");
+}
+
 /// 测试自闭合 void 元素
 #[test]
 fn test_parse_void_elements_comprehensive() {
