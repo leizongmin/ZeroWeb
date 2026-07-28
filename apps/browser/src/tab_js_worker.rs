@@ -648,9 +648,19 @@ mod tests {
                  globalThis.__iv = setInterval(function(){ globalThis.__n++; }, 20);",
             )
             .unwrap();
-        // 等 ~120ms（interval 20ms → 至少触发数次）。
-        std::thread::sleep(std::time::Duration::from_millis(120));
-        let n1 = wait_for_global(&worker, "__n", 500).parse::<u32>().unwrap_or(0);
+        // 轮询等待 setInterval 至少触发 2 次（R2149：原固定 sleep 120ms 在 `make test` 全
+        // workspace 并行负载下偶发 worker 线程饿死 → n1<2 false-fail；改条件式轮询
+        // robust-to-starvation，1000ms 充分覆盖调度延迟，只要 interval 能 fire 即必达 ≥2）。
+        let mut n1: u32 = 0;
+        let poll_start = std::time::Instant::now();
+        while n1 < 2 && poll_start.elapsed().as_millis() < 1000 {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            n1 = worker
+                .execute_script_direct("String(globalThis.__n)")
+                .unwrap()
+                .parse::<u32>()
+                .unwrap_or(0);
+        }
         assert!(n1 >= 2, "setInterval should repeat at least twice, got {n1}");
         worker.execute_script_direct("clearInterval(globalThis.__iv);").unwrap();
         // clearInterval 后再等，计数应不再增长。
