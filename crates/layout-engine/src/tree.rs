@@ -1365,19 +1365,22 @@ fn build_subtree(
                 } else {
                     // 仅处理元素子节点（原有行为）
                     //
-                    // R2160 Phase A slice 2 probe（env `ZW_PHASEA_MULTI_INLINE`，**default-on**；`=0` kill）：
-                    // 多 inline Element 子 block 容器中，**childless plain inline**（display:inline
-                    // + 无 Element 子 + 非 ooflow + 子树无 ooflow 后代）的 taffy 节点跳过——让其
+                    // R2160 Phase A slice 2 probe（env `ZW_PHASEA_MULTI_INLINE=1`，**default-off**；`=0`
+                    // 同样关）：多 inline Element 子 block 容器中，**childless plain inline**（display:
+                    // inline + 无 Element 子 + 非 ooflow + 子树无 ooflow 后代）的 taffy 节点跳过——让其
                     // 文本流入父 IFC（消除 a/i/b 块级栈列）。orphan 信号（inline_heights 无条目 =
                     // owner_h=0）驱动 painter R639 part2 对 orphan 触发 per-fragment bg/border 绘制
                     //（part1+part2 经 orphan 信号耦合，单行非 orphan 不触发=无双绘，避 R1492）。
                     // gate 仅容器有 ≥2 个合格 inline Element 子时生效（精确触发 multi-inline 栈列
                     // bug；单 inline 子仍走 LayoutBox=R1492-safe，缩 blast radius）。限 horizontal-tb。
-                    // ★ R2161 gate-tighten（br/wbr tag 排除 + multicol-context 守卫 + text-wrap balance
-                    //   守卫）使 self-source 由 net −20 拉回 net +2（css-text count-0）；R2162 翻
-                    //   default-on（产品 legacy 增益：19-testpage −5.16pp / 20-mixed-legacy −1.64pp），
-                    //   welcome +0.19pp 残余为多 inline 重排的固有 font-wall 代价（struct PASS）。
-                    let phasea_multi_inline_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() != Ok("0")
+                    // ★ R2161 gate-tighten（br/wbr tag 排除 + multicol-context + text-wrap balance 守卫）
+                    //   使 self-source 由 net −20 拉回 net +2。**R2163 REVERT default-on → default-off**：
+                    //   orphan 致 inline 丢 LayoutBox → collect_hit_test_nodes（hit_test.rs 遍历
+                    //   LayoutBox 树）漏收 orphan `<a>` → 链接点击/导航 hit-test 失效（真功能回归）+
+                    //   morning-work struct-check item-tag:0（badge 仍绘但无 LayoutBox）。须 slice 3
+                    //   IFC fragment→LayoutBox 回填（补 orphan LayoutBox，保 hit-test/struct）后方可
+                    //   default-on。probe + 3 guard 保留 dormant。
+                    let phasea_multi_inline_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() == Ok("1")
                         && matches!(own_writing_mode, WritingModeValue::HorizontalTb)
                         && !container_in_multicol_context(doc, styles, dom_id)
                         && !container_has_balancing_text_wrap(styles, dom_id);

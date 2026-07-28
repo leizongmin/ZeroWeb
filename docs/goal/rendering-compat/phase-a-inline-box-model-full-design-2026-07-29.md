@@ -138,6 +138,15 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > - **翻 default-on**：`== Ok("1")` → `!= Ok("0")`（tree.rs gate + painter text.rs phasea_orphan_fire 两处）。依据：redirect item-2 产品/legacy 优先（无「零回归」qualifier）+ self-source net +2 + welcome +0.19pp documented-accept（固有 font-wall 代价，消除即失 legacy 增益，同机制；struct PASS + <20%）+ kill-switch 可回退 + 上 session「两残余归零/documented-accept」条件满足。
 > - **全门禁 default path（probe on）全 PASS**：make test EXIT=0（★首次默认路径 probe 验证，零 unit test 破坏）/ fmt CLEAN / clippy --workspace CLEAN / product-smoke welcome 17.03% struct PASS / legacy 19-testpage 17.23%（−5.16pp）+ 20-mixed-legacy 11.49%（−1.64pp）struct PASS / chromium-oracle CSS2/borders 415/506=82% 零漂移（R1492 安全）。
 > - **LANDED**：Phase A slice 2 多 inline block 容器块级栈列修复 default-on。消除 a/i/b/font 多 inline 在 p/div/td 的块级栈列（19-testpage Product A 行 h=55→~20）。kill-switch `ZW_PHASEA_MULTI_INLINE=0`。
+>
+> **⚠️ R2163（2026-07-29）REVERT default-on → default-off（orphan-LayoutBox hit-test 回归）**。
+> R2162 仅验 welcome+legacy+borders 即翻 default-on，**漏验 morning-work/wintertc**。R2163 尽职调查发现：
+> - morning-work struct-check `item-tag:0`（期望 3）：probe orphan childless inline span 致无 LayoutBox（badge 仍绘但 struct-check 按 LayoutBox 树计数=漏）。
+> - **`collect_hit_test_nodes`（hit_test.rs:192）遍历 LayoutBox 树收集 `<a>` 链接——orphan inline 无 LayoutBox → orphan `<a>` 链接点击/导航 hit-test 失效（真功能回归）**。设计本节 risk 块曾标「hit-test（`<a href>` 点击区）须 gate 排除」但实现未排除 `<a>`。
+>
+> 裁决：两 gate `!= Ok("0")` → `== Ok("1")` 回 default-off。probe + 3 guard 保留 dormant（self-source net +2 不变）。**slice 2 default-on 须先做 slice 3 = IFC fragment→LayoutBox 回填**（orphan inline 按 fragment 几何补 LayoutBox，保 hit-test/struct）——现**有 driving test**（morning-work struct + `<a>` hit-test），修正早先「slice 3 无 driving test」结论。
+>
+> ★ 教训：default-on 前必须跑全 DC-13 fixture（welcome+legacy51+morning+wintertc+narrow）+ 验 hit-test 语义，不能只 welcome+legacy。开放问题 3「inline `<a>` hit-test 在丢 LayoutBox 后是否仍工作」= R2163 实测**不工作**。
 
 ### Slice 3+ — 后续（本设计列出，不展开）
 - inline-wrapping-inline（`<span><span>text</span></span>` 嵌套纯 inline）。
