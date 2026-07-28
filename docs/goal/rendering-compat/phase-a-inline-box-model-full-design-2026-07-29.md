@@ -231,6 +231,23 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > 防御回退在此不可达）等价。实证：welcome 16.84% 字节不变 + make test 12686/0 + product-smoke 全 struct
 > PASS。**Path A/B `.with_*` 链分歧进度 = 4 处中 2 解**：text-align✅(R2187) / text-indent✅(R2188) /
 > tab_size⏳(R2183 非 lever) / container_width-gate⏳(R1043 vertical entangled)。剩 2 处 blocked/risky。
+>
+> **★ R2189（2026-07-29）override-map 共享 helper 提取 LANDED net-zero + white-space/break 第 5 分歧
+> 发现（Path A < Path B 完整性）**。第三处 safe DRY：Path A 4 map + Path B 3 map（font_sizes/
+> letter_spacing/line_heights，Path A 另含 is_ahem）的「文本节点→父元素重键 + 过滤内联元素片段防
+> last-write-wins 非确定性」逻辑字节同源，提取为共享 generic helper `build_text_parent_override_map<T:
+> Copy>`（pub）。Path B is_ahem（multicol else 分支）+ text_transforms（None 过滤）留内联。net −34 行。
+> 实证 net-zero：welcome 16.84% 字节不变 + make test 12686/0 + product-smoke 全 struct PASS。
+>
+> **★ 第 5 分歧（white-space/break 派生）= Path A 系统性残缺，非 safe DRY**：探 break_word/no_wrap/
+> preserve/break_at_newline/word_break_mode 派生发现 Path B 比 Path A 多 ① 显式 BreakSpaces preserve
+>（Path A 落 `_=>` no-preserve，spec-wrong）② text-wrap override（`resolve_text_wrap`）③ line-clamp
+>（`resolve_line_clamp`→max_lines）。即 stored IFC（Path A，pure-Ahem 容器）white-space/text-wrap/
+> line-clamp 处理残缺。统一 = Path A 行为变更（须 driving test + A/B；R2186 已归 white-space 子目录 fail
+> 为 plateau，无 driving PASS），故仅 catalog。**Path A/B 完整分歧图（5 处）**：text-align✅ / text-indent✅ /
+> override-maps✅(R2189) / tab_size⏳ / container_width-gate⏳ / white-space·break⏳(Path A 残缺)。**3 safe
+> DRY 已尽**（text-align/text-indent/override-maps），剩 3 均行为变更 blocked。IFC helper 完整提取须先
+> 逐个裁决剩 3 行为分歧（tab_size 公式 / container_width-gate / white-space·break 补全），非机械。
 
 ---
 

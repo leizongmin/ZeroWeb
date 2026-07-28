@@ -11,7 +11,8 @@ use crate::measure_char_for_paint;
 use zero_css_parser::values::{ColorValue, FloatValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::inline_finalization::{
-    resolve_text_align, resolve_text_align_last, resolve_text_indent, subtree_has_text_decoration,
+    build_text_parent_override_map, resolve_text_align, resolve_text_align_last, resolve_text_indent,
+    subtree_has_text_decoration,
 };
 use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, WordBreakMode};
 use zero_render_foundation::geometry::Rect;
@@ -648,16 +649,8 @@ impl super::Painter {
                 // 结果随 HashMap 迭代顺序（每进程随机）变化 → 渲染非确定性（flaky reftest）。
                 // 过滤为纯文本节点后，同一父元素的文本节点继承一致的字号/行高，结果确定。
                 let is_text = |tn: zero_dom::NodeId| matches!(doc.get(tn).map(|n| &n.kind), Some(NodeKind::Text(_)));
-                let parent_font_sizes: HashMap<zero_dom::NodeId, f32> = box_node
-                    .text_node_font_sizes
-                    .iter()
-                    .filter_map(|(&tn, &fs)| {
-                        if !is_text(tn) {
-                            return None;
-                        }
-                        doc.parent_node(tn).map(|pid| (pid, fs))
-                    })
-                    .collect();
+                let parent_font_sizes: HashMap<zero_dom::NodeId, f32> =
+                    build_text_parent_override_map(doc, &box_node.text_node_font_sizes);
 
                 let parent_is_ahem: HashMap<zero_dom::NodeId, bool> = box_node
                     .text_node_is_ahem
@@ -676,27 +669,11 @@ impl super::Painter {
                     })
                     .collect();
 
-                let parent_letter_spacing: HashMap<zero_dom::NodeId, f32> = box_node
-                    .text_node_letter_spacing
-                    .iter()
-                    .filter_map(|(&tn, &ls)| {
-                        if !is_text(tn) {
-                            return None;
-                        }
-                        doc.parent_node(tn).map(|pid| (pid, ls))
-                    })
-                    .collect();
+                let parent_letter_spacing: HashMap<zero_dom::NodeId, f32> =
+                    build_text_parent_override_map(doc, &box_node.text_node_letter_spacing);
 
-                let parent_line_heights: HashMap<zero_dom::NodeId, f32> = box_node
-                    .text_node_line_heights
-                    .iter()
-                    .filter_map(|(&tn, &lh)| {
-                        if !is_text(tn) {
-                            return None;
-                        }
-                        doc.parent_node(tn).map(|pid| (pid, lh))
-                    })
-                    .collect();
+                let parent_line_heights: HashMap<zero_dom::NodeId, f32> =
+                    build_text_parent_override_map(doc, &box_node.text_node_line_heights);
 
                 // R1012：text-transform 覆盖（re-key 文本节点 → 父元素），让 paint Path B
                 // 空 styles IFC 也能在 collect_inline_items 期应用 transform，使行断用

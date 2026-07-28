@@ -118,6 +118,29 @@ pub fn resolve_text_align_last(style: Option<&ComputedStyle>) -> Option<TextAlig
     }
 }
 
+/// 构建「文本节点 → 父元素」override map（IFC Path A/B 共享，R2189）。
+///
+/// 把 `LayoutBox.text_node_*` HashMap（键 = 文本节点 NodeId）重映射为「父元素 NodeId → 值」，
+/// 仅保留文本节点片段——`text_node_*` 混入了内联元素片段（如 `<img>`，font_size=0、height=96），
+/// 它们与文本片段共享同一父元素，直接 collect 时 last-write-wins，结果随 HashMap 迭代顺序
+///（每进程随机）变化 → 渲染非确定性；过滤为纯文本节点后结果确定。
+///
+/// Path A（`compute_final_inline_layouts` stored IFC）与 Path B（paint 重跑 IFC）此逻辑字节一致，
+/// 提取为共享 helper 消除 7 处重复（同 R2187/R2188 text-align / text-indent DRY 谱系）。
+/// 注：Path B 的 `is_ahem`（multicol flatten 元素自键 else 分支）与 `text_transforms`（None 过滤）
+/// 逻辑不同，未走此 helper，仍各自内联。
+pub fn build_text_parent_override_map<T: Copy>(doc: &Document, source: &HashMap<NodeId, T>) -> HashMap<NodeId, T> {
+    source
+        .iter()
+        .filter_map(|(&tn, &v)| {
+            if !matches!(doc.get(tn).map(|n| &n.kind), Some(NodeKind::Text(_))) {
+                return None;
+            }
+            doc.parent_node(tn).map(|pid| (pid, v))
+        })
+        .collect()
+}
+
 /// R645：从 ComputedStyle 读取 white-space，返回 IFC 测量所需的 `no_wrap`。
 ///
 /// `measure_text_content` / `remeasure_*` 测量函数此前构造 IFC 时未传 white-space（no_wrap 恒
@@ -802,54 +825,14 @@ pub(crate) fn compute_final_inline_layouts(
     );
     let is_vertical_rtl = matches!(root.writing_mode, zero_style_system::WritingModeValue::VerticalRl);
 
-    // 构造与 paint-IFC 相同的 override maps。
-    // 仅纳入文本节点片段：text_node_* 混入了内联元素片段（如 <img>，font_size=0、height=96），
-    // 它们与文本片段共享同一父元素；直接 collect 时 last-write-wins，结果随 HashMap 迭代
-    // 顺序（每进程随机）变化 → 渲染非确定性。过滤为纯文本节点后结果确定。
-    let is_text = |tn: NodeId| matches!(doc.get(tn).map(|n| &n.kind), Some(NodeKind::Text(_)));
-    let parent_font_sizes: HashMap<NodeId, f32> = root
-        .text_node_font_sizes
-        .iter()
-        .filter_map(|(&text_node_id, &fs)| {
-            if !is_text(text_node_id) {
-                return None;
-            }
-            doc.parent_node(text_node_id).map(|pid| (pid, fs))
-        })
-        .collect();
-
-    let parent_is_ahem: HashMap<NodeId, bool> = root
-        .text_node_is_ahem
-        .iter()
-        .filter_map(|(&text_node_id, &is_ahem)| {
-            if !is_text(text_node_id) {
-                return None;
-            }
-            doc.parent_node(text_node_id).map(|pid| (pid, is_ahem))
-        })
-        .collect();
-
-    let parent_letter_spacing: HashMap<NodeId, f32> = root
-        .text_node_letter_spacing
-        .iter()
-        .filter_map(|(&text_node_id, &ls)| {
-            if !is_text(text_node_id) {
-                return None;
-            }
-            doc.parent_node(text_node_id).map(|pid| (pid, ls))
-        })
-        .collect();
-
-    let parent_line_heights: HashMap<NodeId, f32> = root
-        .text_node_line_heights
-        .iter()
-        .filter_map(|(&text_node_id, &lh)| {
-            if !is_text(text_node_id) {
-                return None;
-            }
-            doc.parent_node(text_node_id).map(|pid| (pid, lh))
-        })
-        .collect();
+    // 构造 override maps（文本节点 → 父元素重键，过滤混入的内联元素片段防 last-write-wins
+    // 非确定性）。R2189：此 4 map 与 paint Path B 三 map 逻辑字节一致，走共享 helper
+    // build_text_parent_override_map（详见该 fn 文档）。
+    let parent_font_sizes: HashMap<NodeId, f32> = build_text_parent_override_map(doc, &root.text_node_font_sizes);
+    let parent_is_ahem: HashMap<NodeId, bool> = build_text_parent_override_map(doc, &root.text_node_is_ahem);
+    let parent_letter_spacing: HashMap<NodeId, f32> =
+        build_text_parent_override_map(doc, &root.text_node_letter_spacing);
+    let parent_line_heights: HashMap<NodeId, f32> = build_text_parent_override_map(doc, &root.text_node_line_heights);
 
     // 收集浮动排除区域 = 本容器直接 float 子 + 祖先传播下来的 float（均已在 root box 坐标系）
     let exclusions: Vec<crate::inline::FloatExclusion> = own_floats
