@@ -96,13 +96,23 @@ fn r109_wired() -> bool {
 }
 
 /// R2160 Phase A slice 2：判定某子节点是否为「childless plain inline」——display:inline +
-/// 非 ooflow（abspos/fixed）+ 无 Element 子（仅文本后代）+ 子树无 ooflow 后代。此类 inline
-/// 在多 inline block 容器中可跳过 taffy 节点（orphan → painter R639 part2 per-fragment 绘
-/// bg/border），消除 a/i/b 块级栈列。子树无 ooflow 守卫 ≡ R2156（保 abspos CB）。
+/// 非 ooflow（abspos/fixed）+ 非 line-break 元素（br/wbr）+ 无 Element 子（仅文本后代）+
+/// 子树无 ooflow 后代。此类 inline 在多 inline block 容器中可跳过 taffy 节点
+///（orphan → painter R639 part2 per-fragment 绘 bg/border），消除 a/i/b 块级栈列。
+/// 子树无 ooflow 守卫 ≡ R2156（保 abspos CB）。
 fn phasea_multi_inline_eligible(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, child_id: NodeId) -> bool {
     let Some(node) = doc.get(child_id) else {
         return false;
     };
+    let is_line_break_el = matches!(
+        &node.kind,
+        NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") || e.local_name().eq_ignore_ascii_case("wbr")
+    );
+    if is_line_break_el {
+        // br/wbr 是换行/换行机会元素，须保留 taffy 节点维持 line-break 语义（跳过会丢强制换行，
+        // 致 line-break-*/white-space 簇回归——R2161 gate-tighten 实测定位）。
+        return false;
+    }
     if !matches!(&node.kind, NodeKind::Element(_)) {
         return false;
     }
@@ -126,6 +136,29 @@ fn phasea_multi_inline_eligible(doc: &Document, styles: &HashMap<NodeId, Compute
     }
     // 子树无 ooflow 后代守卫（childless 已无 Element 子，理论上无后代可 ooflow；保留以防边界）。
     !crate::inline::InlineFormattingContext::inline_subtree_has_ooflow_descendant(doc, styles, child_id)
+}
+
+/// R2161 Phase A slice 2 gate-tighten：判定容器 `dom_id` 是否处于 multicol 列流上下文
+///（自身或任一祖先是 multicol 容器，即 column-count / column-width 非 Auto）。multicol 列流
+/// 依赖 taffy 对 inline 内容的精确测量以决定列宽 / 列高 / 断列；multi-inline skip-taffy probe
+/// 改变该测量会破坏列几何（multicol-width-large / multicol-gap-large / multicol-clip 簇：R2161
+/// 实测 css-multicol −5 全为真几何 damage，0.00%→1.7-2.4%，非阈值噪声）。故容器在 multicol 上下文
+/// 时抑制 probe。含 `dom_id` 自身：multicol-width-large-* 的 multicol 容器直接含 ≥2 inline 子，
+/// probe 即在该容器触发（须查自身，非仅祖先）。
+fn container_in_multicol_context(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, dom_id: NodeId) -> bool {
+    use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue};
+    let mut cur = Some(dom_id);
+    while let Some(id) = cur {
+        if let Some(s) = styles.get(&id) {
+            if !matches!(s.column_count, ColumnCountComputedValue::Auto)
+                || !matches!(s.column_width, ColumnWidthComputedValue::Auto)
+            {
+                return true;
+            }
+        }
+        cur = doc.parent_node(id);
+    }
+    false
 }
 
 /// R109 §9.2.1.1 生产端接线产物（仅 env `R109_WIRE=1` 时非空）。
@@ -1327,7 +1360,8 @@ fn build_subtree(
                     // bug；单 inline 子仍走 LayoutBox=R1492-safe，缩 blast radius）。限 horizontal-tb。
                     // ★ probe 目的=验证 R639-extend+skip-taffy 修 multi-inline 栈列；net 负即回退。
                     let phasea_multi_inline_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() == Ok("1")
-                        && matches!(own_writing_mode, WritingModeValue::HorizontalTb);
+                        && matches!(own_writing_mode, WritingModeValue::HorizontalTb)
+                        && !container_in_multicol_context(doc, styles, dom_id);
                     let eligible_inline_count = if phasea_multi_inline_on {
                         children_dom
                             .iter()
