@@ -86,8 +86,23 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 - **driving test**：6 个 `r2156_*` 单测 + 37-form-controls 产品 smoke。
 - **状态**：landed `f322d2e46`，pending 用户 keep/revert 裁决（redirect 对齐）。
 
-### Slice 2 — 多 inline Element 子 block 容器（本设计主目标，**未实施**）
-- **gate（精确化建议）**：block 容器（p/div/td/blockquote/li 等，**非** flex/grid/flex-item/inline-block/float 容器）+ 有 ≥2 个 inline-level Element 子 + 全部子为 inline-level（text + inline/inline-block/inline-table 元素，无 block-level 子=非 R109 mixed）+ 无 ooflow 后代 + horizontal-tb → 为这些 inline Element 子**不建独立块级 taffy 节点**，容器整体走 leaf/IFC 单次排版（同 R2156 模式但放宽到多 plain inline）。
+### Slice 2 — 多 inline Element 子 block 容器（**R2158 修正：leaf-path 路径 R1492-REFUTED，须改为 IFC→LayoutBox 定位**）
+
+> **⚠️ R2158（2026-07-29）关键修正**：本节原设计「leaf-path（容器整体走 leaf，inline 子不建 taffy 节点）」= **R1492 已 REFUTED 的路径**。R1492（`ZW_PLAIN_INLINE_LEAF=1`）实测 borders oracle 411→401（**-10**），根因 = plain inline 元素（带 bg/border）须保留独立 LayoutBox，回流父 IFC 会丢 LayoutBox → bg/border 丢绘（tree.rs:1266-1270 注释 + R1480 evidence §2「元素仍 block 堆叠（仅 width 维度，完整 inline-box 模型属 R109 多 session）」）。R2156 slice 1 仅因 label 通常无 bg/border 而 orphan 良性——**不可外推到一般 plain inline**。
+>
+> **R2156 borders 安全已实测复核**（R2158）：`reftest-oracle CSS2/borders` gate ON=OFF=415（82.0%），R2156 在 borders dir 零漂移（inline-wrapper-with-bg-border-wrapping-atomic 模式在 borders corpus 罕见/缺失）。R2156 自身安全，但本节 slice 2 的 leaf-path 路径对一般多 inline（含 a/i/b 带 border）**必触发 R1492 -10 机制**。
+>
+> **修正后的正确路径 = 深层 Phase A：IFC→LayoutBox 定位**（R1492 建议的「保 inline 子为独立 box，修正容器高 + 移后续兄弟」）。即：inline 元素**保留**独立 LayoutBox（bg/border/hit-test 不破，R1492-safe），但其**位置由父 IFC 行盒决定**（非 taffy 块级栈列）。难点 = IFC 当前把 inline 元素作 text run 扁平收集（无 per-element 定位框），须扩 IFC 输出 per-inline-element 行内位置 + post-process 回填 LayoutBox。属多 session 深度架构，**非单切片**。
+
+- ~~**gate（原 leaf-path，R1492-REFUTED）**~~：block 容器 + ≥2 inline Element 子 → leaf/IFC。**勿实施**（R1492 -10）。
+- **gate（修正后，深层 Phase A，多 session）**：保留 inline Element 子的 taffy 节点（LayoutBox 不丢），新增 post-process 从父 IFC 行盒回填各 inline Element LayoutBox 的 (x,y,w,h) + 容器高度修正为真实行高（非块级栈列高）。须先扩 IFC 输出 per-inline-element 行内位置（当前无）。
+- **kill-switch**：`ZW_PHASEA_IFC_LAYOUTBOX_BACKFILL`（probe 期 default-off）。
+- **driving test**：`<p>A<a>x</a><i>y</i><b>z</b>.</p>` 断言 a/i/b LayoutBox 同行（y 一致，x 递增），bg/border 仍绘（R1492 守），容器高≈单行非 3 行。
+- **三态 A/B**：self-source 全目录零 delta + **chromium-oracle CSS2/borders 零漂移（R1492 守，关键）** + 19-testpage diff 22%↓ + welcome 字节一致 + make test green。
+- **前置工作**：扩 `InlineFormattingContext` 输出 per-inline-element 行内位置（fragment → element NodeId 映射）。此为深层 Phase A 的 enabling infra，独立可 land（dormant，零行为变更），后续再接 post-process 回填。
+- **回退**：net 负 → `ZW_PHASEA_IFC_LAYOUTBOX_BACKFILL=0`。
+
+
 - **kill-switch**：`ZW_PHASEA_MULTI_INLINE`（probe 期 default-off，A/B net≥0 后 default-on）。
 - **driving test（须先建）**：
   - 单测：`<p>A <a>x</a> <i>y</i> <b>z</b>.</p>` 断言 a/i/b 同一行（baseline_y 一致），非块级栈列。
@@ -108,14 +123,20 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 
 ---
 
-## 4. 实施顺序与验证矩阵
+## 4. 实施顺序与验证矩阵（R2158 修正后）
+
+> 原矩阵 S2-probe-a/b 基于 leaf-path，R1492-REFUTED（见 §3 slice 2 修正块）。新矩阵基于 IFC→LayoutBox 回填路径。
 
 | 阶段 | 动作 | 验证 | 回退条件 |
 |------|------|------|----------|
-| S2-probe-a | slice 2 gate 实现，default-off；probe `<p>A<a>x</a><i>y</i><b>z</b></p>` 确认 a/i/b 同行 | layout dump a/i/b 同 baseline_y | probe 失败→重设计 gate |
-| S2-probe-b | probe plain inline bg/border 是否经 IFC fragment 绘（`<a style="background:yellow">x</a>` 多个） | 渲染断言 bg 可见 | 不可绘→slice 2 须先做 step-2 LayoutBox 回填 |
-| S2-A/B | 翻 default-on，全量三态 A/B | self-source 零 delta + oracle 零漂移 + 19-testpage diff↓ + welcome 字节一致 + make test green | 任一 net 负→回 default-off |
+| S2-infra | 扩 `InlineFormattingContext` 输出 per-inline-element 行内位置（fragment→element NodeId 映射），dormant（零行为变更），default-off gate | make test green + self-source 零 delta + 单测断言映射正确 | 编译/测试不过→修 |
+| S2-backfill-probe | post-process 从父 IFC 行盒回填 inline Element LayoutBox (x,y,w,h) + 容器高修正，default-off；probe `<p>A<a>x</a><i>y</i><b>z</b>.</p>` | layout dump a/i/b 同行（y 一致 x 递增）+ **bg/border 仍绘**（R1492 守）+ 容器高≈单行 | bg/border 丢→回填未保 LayoutBox，重设计 |
+| S2-A/B | 翻 default-on，全量三态 A/B | self-source 零 delta + **chromium-oracle CSS2/borders 零漂移（R1492 守）** + 19-testpage diff 22%↓ + welcome 字节一致 + make test green | 任一 net 负→回 default-off |
 | S2-land | 提交 + 推送 | pre-commit-guard + fmt/clippy/test | — |
+
+**R2156 borders 安全复核（R2158，已完成）**：`reftest-oracle CSS2/borders` gate ON=OFF=415（82.0%）零漂移，R2156 slice 1 在 borders dir 安全（无须硬化）。
+
+
 
 ---
 
