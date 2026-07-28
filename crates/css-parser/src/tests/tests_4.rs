@@ -1388,8 +1388,15 @@ fn test_parse_length_various_units() {
 fn test_parse_multiple_consecutive_errors() {
     let css = "!!! $$$ @@@ .valid { color: red; }";
     let stylesheet = crate::Parser::parse_stylesheet(css);
-    // 至少 .valid 规则应该被解析
-    assert!(!stylesheet.rules.is_empty());
+    // CSS Syntax L3：`!!! $$$ @@@ .valid` 是一条 qualified rule 的 prelude（到 `{`），
+    // 整体作为非法选择器丢弃（旧实现逐 token 宽松 advance 让 `.valid {...}` 泄漏成规则，
+    // 非 spec 行为）。R2140 skip_malformed_qualified_rule 把整条畸形 prelude + 块一并丢弃。
+    // 不应 panic；spec-correct：0 规则。
+    assert!(
+        stylesheet.rules.is_empty(),
+        "malformed prelude `!!! $$$ @@@ .valid` should drop the whole qualified rule, got {} rules",
+        stylesheet.rules.len()
+    );
 }
 
 #[test]

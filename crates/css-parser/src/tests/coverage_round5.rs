@@ -574,16 +574,14 @@ fn test_parse_keyframes_string_name() {
 fn test_parse_keyframes_no_name() {
     let css = "@keyframes { from { opacity: 0; } }";
     let stylesheet = Parser::parse_stylesheet(css);
-    // consume_keyframes_rule 返回 None（名称不是 Ident/String）
-    // 外层 advance 跳过 LBrace，然后 "from { opacity: 0; }" 被解析为 StyleRule
-    assert!(!stylesheet.rules.is_empty());
-    // "from" 被解析为标签选择器
-    match &stylesheet.rules[0] {
-        Rule::Style(sr) => {
-            assert_eq!(sr.declarations.len(), 1);
-        }
-        _ => panic!("Expected Style rule (from as tag selector)"),
-    }
+    // @keyframes 缺名 → 畸形 at-rule，整条（含 {...} 块）丢弃。R2140 at-rule fallback：
+    // consume_keyframes_rule 返回 None 时消耗残余，body 不再泄漏成 StyleRule
+    //（旧实现「外层 advance 跳过 LBrace，from {...} 泄漏成 StyleRule」是 leak，非 spec 行为）。
+    assert!(
+        stylesheet.rules.is_empty(),
+        "malformed @keyframes (no name) should be dropped entirely, got {} rules",
+        stylesheet.rules.len()
+    );
 }
 
 #[test]

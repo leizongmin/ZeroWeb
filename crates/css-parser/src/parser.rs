@@ -37,9 +37,13 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            // 记录 consume_rule 前位置：若其返回 None 且未通过错误恢复前进，则强制
+            // advance 一个保证进度；若已前进（如畸形规则恢复消耗了整段），不重复 advance
+            // 以免跳过下一条合法规则的首 token（driving: matching-brackets-003）。
+            let pos_before_rule = parser.pos();
             if let Some(rule) = parser.consume_rule() {
                 rules.push(rule);
-            } else {
+            } else if parser.pos() == pos_before_rule {
                 parser.advance();
             }
         }
@@ -64,6 +68,11 @@ impl<'a> Parser<'a> {
         matches!(self.peek(), Token::Eof)
     }
 
+    /// 当前位置（供调用方判断 `consume_rule` 等是否已通过错误恢复前进）。
+    fn pos(&self) -> usize {
+        self.pos
+    }
+
     /// 跳过空白。
     fn skip_whitespace(&mut self) {
         while matches!(self.peek(), Token::Whitespace | Token::Comment(_)) {
@@ -75,43 +84,61 @@ impl<'a> Parser<'a> {
     fn consume_rule(&mut self) -> Option<Rule> {
         match self.peek().clone() {
             Token::AtKeyword(name) => {
-                self.advance();
-                // 对 @keyframes 使用专用解析器
-                if name.eq_ignore_ascii_case("keyframes") {
-                    return self.consume_keyframes_rule().map(Rule::Keyframes);
+                self.advance(); // @
+                // 专用 at-rule 解析器。注意：这些解析器在条件/名解析失败时可能**中途**
+                // 返回 None（未消费 body），故不能 early-return——须在 None 时消耗 at-rule
+                // 残余（prelude + `{...}` 块），否则 body 会泄漏成顶层规则（CSS Syntax L3
+                // consume_an_at_rule：at-rule 须消费全部 extent）。driving: matching-brackets-003
+                // 前置 + @keyframes-no-name/missing-lbrace 不泄漏。
+                let rule_opt = if name.eq_ignore_ascii_case("keyframes") {
+                    self.consume_keyframes_rule().map(Rule::Keyframes)
+                } else if name.eq_ignore_ascii_case("layer") {
+                    self.consume_layer_rule().map(Rule::Layer)
+                } else if name.eq_ignore_ascii_case("import") {
+                    self.consume_import_rule().map(Rule::Import)
+                } else if name.eq_ignore_ascii_case("supports") {
+                    self.consume_supports_rule().map(Rule::Supports)
+                } else if name.eq_ignore_ascii_case("container") {
+                    self.consume_container_rule().map(Rule::Container)
+                } else if name.eq_ignore_ascii_case("font-face") {
+                    self.consume_font_face_rule().map(Rule::FontFace)
+                } else if name.eq_ignore_ascii_case("page") {
+                    self.consume_page_rule().map(Rule::Page)
+                } else {
+                    // 通用 at-rule：consume_at_rule 内部循环到 `;`/`{block}`，总消费全部 extent，
+                    // 不触发 fallback。
+                    return Some(Rule::At(self.consume_at_rule(name)));
+                };
+                match rule_opt {
+                    Some(r) => Some(r),
+                    None => {
+                        // 专用 at-rule 中途失败 → 消耗残余到 `;`/`{...}` 块/EOF，避免 body 泄漏。
+                        self.skip_malformed_qualified_rule();
+                        None
+                    }
                 }
-                // 对 @layer 使用专用解析器
-                if name.eq_ignore_ascii_case("layer") {
-                    return self.consume_layer_rule().map(Rule::Layer);
-                }
-                // 对 @import 使用专用解析器
-                if name.eq_ignore_ascii_case("import") {
-                    return self.consume_import_rule().map(Rule::Import);
-                }
-                // 对 @supports 使用专用解析器
-                if name.eq_ignore_ascii_case("supports") {
-                    return self.consume_supports_rule().map(Rule::Supports);
-                }
-                // 对 @container 使用专用解析器
-                if name.eq_ignore_ascii_case("container") {
-                    return self.consume_container_rule().map(Rule::Container);
-                }
-                // 对 @font-face 使用专用解析器（body 是声明块，非嵌套规则）
-                if name.eq_ignore_ascii_case("font-face") {
-                    return self.consume_font_face_rule().map(Rule::FontFace);
-                }
-                // 对 @page 使用专用解析器（body 是声明块：size/margin 描述符）
-                if name.eq_ignore_ascii_case("page") {
-                    return self.consume_page_rule().map(Rule::Page);
-                }
-                Some(Rule::At(self.consume_at_rule(name)))
             }
             _ => {
                 // 尝试解析样式规则：选择器 + { 声明块 }
-                let selectors = self.consume_selector_list()?;
+                // consume_selector_list 可能因「合法前缀 + 非法 token」（如 `p (`——`p`
+                // 合法但 `(` 非法）返回 None；须做畸形 qualified rule 恢复而非 `?` 短路
+                //（driving: matching-brackets-003）。
+                let selectors = match self.consume_selector_list() {
+                    Some(s) => s,
+                    None => {
+                        self.skip_malformed_qualified_rule();
+                        return None;
+                    }
+                };
                 self.skip_whitespace();
 
                 if !matches!(self.peek(), Token::LBrace) {
+                    // 畸形 qualified rule：选择器后非 `{`（如 `p ( { ... } ... )`，
+                    // driving: matching-brackets-003）。按 CSS 2.1 §4.2 / CSS Syntax L3
+                    // consume_a_qualified_rule 恢复——消耗 prelude 残余（`()`/`[]` 块整块
+                    // 跳过，块内 `{` 不提前终止）到非嵌套 `{`（消耗其 `{...}` 块）或 `;`/EOF，
+                    // 整条畸形规则丢弃。parse_stylesheet 据此不重复 advance。
+                    self.skip_malformed_qualified_rule();
                     return None;
                 }
                 self.advance(); // {
@@ -753,6 +780,64 @@ impl<'a> Parser<'a> {
                 Token::RParen | Token::RBracket | Token::RBrace => {
                     depth = (depth - 1).max(0);
                     self.advance();
+                }
+                _ => self.advance(),
+            }
+        }
+    }
+
+    /// 消耗一个平衡块：当前 token 须是开块符（`{` / `(` / `[`），消耗到匹配闭块符，
+    /// 期间所有开块符 `+1`、闭块符 `-1`（统一计数，足以跳过畸形区域；token 级别字符串/
+    /// 转义已由 tokenizer 处理）。depth 回到 0 即返回。
+    fn skip_simple_block(&mut self) {
+        let mut depth: i32 = 0;
+        loop {
+            match self.peek() {
+                Token::Eof => return,
+                Token::LBrace | Token::LParen | Token::LBracket => {
+                    depth += 1;
+                    self.advance();
+                }
+                Token::RBrace | Token::RParen | Token::RBracket => {
+                    depth -= 1;
+                    self.advance();
+                    if depth <= 0 {
+                        return;
+                    }
+                }
+                _ => self.advance(),
+            }
+        }
+    }
+
+    /// 畸形 qualified rule 错误恢复（CSS 2.1 §4.2「Malformed statements」/ CSS Syntax L3
+    /// consume_a_qualified_rule）：消耗 prelude 残余直到非嵌套的 `{`（消耗其 `{...}` 块）
+    /// 或 `;`/EOF。prelude 内的 `()`/`[]` 块**整块跳过**（块内 `{`/`}` 不提前终止）。
+    ///
+    /// driving: matching-brackets-003 `p ( { border...; } p { background...; } ) p { color:red }`
+    ///——`p (` 选择器后非 `{`，`(...)` 块内含 `{...}`/`p {...}`，须把整个 `(...)` 作 prelude
+    /// 一部分整块消耗，再到真 `{`（规则 3 的块），整条作为一条畸形 qualified rule 丢弃
+    ///（prelude `p(...)p` 非法），故规则 3 不应用，`<p>` 保持规则 1 的 green。
+    fn skip_malformed_qualified_rule(&mut self) {
+        loop {
+            match self.peek() {
+                Token::Eof => return,
+                Token::Semicolon => {
+                    self.advance();
+                    return;
+                }
+                Token::LBrace => {
+                    // 顶层 `{` = 规则块开始，消耗整个 {...} 块，结束恢复
+                    self.skip_simple_block();
+                    return;
+                }
+                Token::LParen | Token::LBracket => {
+                    // prelude 内的 ()/[] 块：整块消耗（内部 { } 受保护）
+                    self.skip_simple_block();
+                }
+                Token::RBrace => {
+                    // 顶层多余 `}`：不消耗，返回让 parse_stylesheet 在下一轮识别
+                    return;
                 }
                 _ => self.advance(),
             }
@@ -1456,6 +1541,15 @@ impl<'a> Parser<'a> {
                 Token::LParen => {
                     depth += 1;
                     text.push('(');
+                    self.advance();
+                }
+                // Function token（如 `size(`）已隐含一个 `(`——其匹配 `)` 须纳入深度计数，
+                // 否则 `(size(min-width: 400px))` 的内层 `)`（size 闭合）会把 depth 提前归零，
+                // 仅收集到 `size(min-width: 400px`（无闭合），致 parse_container_condition 失败
+                //（driving: test_container_with_size_function `(size(...))` 形式）。
+                Token::Function(_) => {
+                    depth += 1;
+                    text.push_str(&format!("{}", self.peek()));
                     self.advance();
                 }
                 Token::RParen => {

@@ -219,11 +219,16 @@ fn test_keyframes_string_name() {
 
 #[test]
 fn test_keyframes_no_name() {
-    // @keyframes 后没有名称 → 无法识别，走其他路径
+    // @keyframes 后没有名称 → 畸形 at-rule，整条（含 {...} 块）应被丢弃（CSS Syntax L3
+    // consume_an_at_rule：at-rule 须消费全部 extent，body 不泄漏成顶层规则）。R2140 at-rule
+    // fallback 使 consume_keyframes_rule 返回 None 时消耗残余 → 0 规则。
     let css = "@keyframes { from { opacity: 0; } to { opacity: 1; } }";
     let sheet = Parser::parse_stylesheet(css);
-    // 不应 panic，具体规则数量取决于解析器处理
-    assert!(!sheet.rules.is_empty());
+    // 不应 panic；spec-correct：畸形 @keyframes 整条丢弃
+    assert!(
+        sheet.rules.is_empty(),
+        "malformed @keyframes (no name) should be dropped entirely"
+    );
 }
 
 #[test]
