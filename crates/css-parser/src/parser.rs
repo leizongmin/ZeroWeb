@@ -1010,11 +1010,16 @@ impl<'a> Parser<'a> {
     fn consume_at_rule(&mut self, name: String) -> AtRule {
         self.skip_whitespace();
 
-        // 收集前导部分
+        // 收集前导部分。跟踪 `()`/`[]`（含 Function token 隐含的 `(`）嵌套：depth>0 时
+        // 块内的 `;`/`{`/`}` 不作终止符（CSS Syntax L3 consume_a_qualified_rule / consume_an_at_rule
+        // 「observing nesting」）。`}` 在 depth==0 时是外层块结束，不消耗（让调用方识别）——
+        // 旧实现把 `}` 收进 prelude 会吞掉外层块的闭合，driving: matching-brackets-001
+        // `@foo ] } ) ...`（@media 内畸形 @foo，`}` 应闭 @media 而非进 @foo prelude）。
         let mut prelude = String::new();
+        let mut group_depth: i32 = 0;
         loop {
             match self.peek() {
-                Token::Semicolon => {
+                Token::Semicolon if group_depth == 0 => {
                     self.advance();
                     return AtRule {
                         name,
@@ -1022,7 +1027,7 @@ impl<'a> Parser<'a> {
                         body: AtRuleBody::Statement,
                     };
                 }
-                Token::LBrace => {
+                Token::LBrace if group_depth == 0 => {
                     self.advance();
                     let mut rules = Vec::new();
                     loop {
@@ -1045,12 +1050,31 @@ impl<'a> Parser<'a> {
                         body: AtRuleBody::Block(rules),
                     };
                 }
+                Token::RBrace if group_depth == 0 => {
+                    // 外层块结束：不消耗 `}`，返回（让外层 consume_declaration_block / @media
+                    // body 循环识别）。prelude 为已收集部分（可能为畸形 at-rule 语句）。
+                    return AtRule {
+                        name,
+                        prelude: prelude.trim().to_string(),
+                        body: AtRuleBody::Statement,
+                    };
+                }
                 Token::Eof => {
                     return AtRule {
                         name,
                         prelude: prelude.trim().to_string(),
                         body: AtRuleBody::Statement,
                     };
+                }
+                Token::Function(_) | Token::LParen | Token::LBracket => {
+                    group_depth += 1;
+                    prelude.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+                Token::RParen | Token::RBracket => {
+                    group_depth = (group_depth - 1).max(0);
+                    prelude.push_str(&format!("{}", self.peek()));
+                    self.advance();
                 }
                 Token::Whitespace => {
                     prelude.push(' ');
