@@ -248,6 +248,15 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > override-maps✅(R2189) / tab_size⏳ / container_width-gate⏳ / white-space·break⏳(Path A 残缺)。**3 safe
 > DRY 已尽**（text-align/text-indent/override-maps），剩 3 均行为变更 blocked。IFC helper 完整提取须先
 > 逐个裁决剩 3 行为分歧（tab_size 公式 / container_width-gate / white-space·break 补全），非机械。
+>
+> **★ R2190（2026-07-29）第 5 分歧 white-space·break = empirical −8 回归非 lever，已 revert**。对 Path A
+> BreakSpaces preserve 做 decisive reftest-oracle A/B（white-space 子目录）：加 `BreakSpaces=>(false,true,false)`
+>（preserve，对齐 Path B）后 **84/395 → 76/395 = −8** → net-negative revert；revert 复跑 = 84 复现 baseline。
+> 根因 = stored-IFC（Path A pure-Ahem）preserve=true 后远离 chromium（ZW break-spaces preserve+wrap 本身不完美，
+> preserve 反不如 no-preserve「less wrong」近 chromium）。**第 5 分歧 empirical 闭合 = 非 lever**（R2186 一致）。
+> **IFC Path A/B 自主方向定论 exhausted**：3 safe DRY land（R2187/2188/2189）+ 3 行为分歧 confirmed non-lever/blocked
+>（tab_size R2183 / container_width-gate R1043 / white-space·break R2190 −8）+ 残 word_break_mode trivial。显著
+> 进展 await user 授权 slice-3 深构造或新 vein。
 
 ---
 
