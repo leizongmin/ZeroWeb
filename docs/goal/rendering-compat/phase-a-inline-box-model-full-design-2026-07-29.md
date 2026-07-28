@@ -154,6 +154,43 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 - vertical writing-mode（R109-blocked，暂排除）。
 - IFC fragment → LayoutBox 回填（R2155 step-2，补全 hit-test/事件路径，根治 orphan-LayoutBox 隐患）。
 
+> **★ Slice 3「orphan LayoutBox 回填」refined 设计（R2164/R2165 实证，design-first，多 session）**
+>
+> **驱动测试**：morning-work struct `item-tag:3`（probe on + 回填后 PASS）+ `<a>` hit-test（orphan 链接经回填后 click 命中）。
+>
+> **R2164 障碍（已证）**：「读 layout 期 `LayoutBox.inline_layout` fragment」**数据源不普遍**。R1526 定论
+> broad-authoritative-storage 经 R1487 A/B 证伪（normal-flow NET −7：layout 行断 estimate_char_width
+> 与 chromium 分歧 > paint Path B fontdue 重跑）→ `inline_layout` 仅部分容器存储。R2164 backfill 对
+> 有 inline_layout 的容器（css-text，为其它 probe orphan 合成 = 非 no-op css-text −1）有效，对
+> morning-work（无 inline_layout）失效。
+>
+> **R2165 未解 open question（implementation 期首查）**：morning-work `#remaining-time` 容器既有 inline
+> element 子（orphan span）**又有**直接文本子（"全文约..."），`has_inline_content`(line 1277) 返回 true，
+> 但 R2164_DEBUG 显示该容器**无 inline_layout 存储** → compute_final 处理 gate 与 has_inline_content
+> 不一致，或 compute_final 早返 / 存后清。须插桩 compute_final 确认 `#remaining-time` 是否被处理。
+>
+> **refined 三候选**（须 design-first A/B 选定）：
+> 1. **broaden compute_final 存储**：让 compute_final 对 orphan-容器（probe 记录）存 inline_layout
+>    （paint 仍走 Path B 不读它，故无 R1526 paint 回归）→ R2164 backfill 读它即可。前提：解 R2165 open
+>    question（compute_final 为何不存 orphan-容器）。
+> 2. **专用 IFC pass（backfill 内）**：对 orphan-容器按需构造 IFC 取几何。但 IFC 构造 ~15 参（text_align
+>    / break_word / no_wrap / preserve / word_break / text_autospace / text_indent / tab_size / vertical
+>    / font_size+is_ahem+letter_spacing+line_height overrides / inline_element_metrics / margin_overrides
+>    / img_intrinsic_sizes）+ float/ancestor 上下文（compute_final line 861）——重建成本高 + 须与 paint
+>    Path B 几何一致（否则 hit-test bbox 错位）。★关键：layout 期 IFC 几何对 hit-test bbox **充分**
+>    （R1526 paint 分歧只影响绘制，不挡 hit-test 近似）。
+> 3. **paint-time 几何存储**：paint Path B 跑完 IFC 后写 orphan 几何到 side-table，hit-test post-paint
+>    读。改 hit-test 时序（layout 期 → post-paint）。
+>
+> **推荐**：候选 1（最低增量——复用 compute_final + R2164 backfill，仅解 R2165 open question + 对 orphan-
+> 容器强制存储）。kill-switch `ZW_PHASEA_LAYOUTBOX_BACKFILL`；A/B：morning-work struct item-tag:3 + 全
+> DC-13 fixture（welcome+legacy51+morning+wintertc+narrow）+ `<a>` hit-test 单测 + self-source 零 delta。
+> 净负回退。验证后与 slice 2 一同翻 default-on。
+>
+> **暂停裁决（R2165）**：slice 3 = 深 architectural（IFC 存储/gate/双路径一致性），多 session。R2164 一次
+> negative（read-inline_layout 障碍）+ R2165 深化（IFC ~15 参 + open question）。按 redirect「停止条件」
+> 暂停 slice 3 实现 grinding，转 plateau-guard；implementation 待下 session 解 R2165 open question 后启动。
+
 ---
 
 ## 4. 实施顺序与验证矩阵（R2158 修正后）
