@@ -66,7 +66,7 @@ pub(crate) fn resolve_text_indent(text_indent: &LengthValue, font_size: &LengthV
 /// `start`/`end` 是**方向感知**值（CSS Text 3 §6.1）：`start` = inline-start 边
 /// （LTR→left, RTL→right），`end` 反之。旧实现无条件 start→left/end→right，
 /// 致 `direction:rtl` + `text-align:start` 错误左对齐（应右对齐）。
-pub(crate) fn resolve_text_align(style: Option<&ComputedStyle>) -> TextAlign {
+pub fn resolve_text_align(style: Option<&ComputedStyle>) -> TextAlign {
     use zero_style_system::property::{DirectionValue, TextAlignValue};
     let s = match style {
         Some(s) => s,
@@ -102,7 +102,7 @@ pub(crate) fn resolve_text_align(style: Option<&ComputedStyle>) -> TextAlign {
 /// `text_align_last`，致**存储路径**（pure-Ahem 容器，如 justifyall 簇）末行 text-align-last
 /// 不应用——末行恒按 text-align 默认处理。paint 非存储路径已传（text.rs:949），此处补齐使
 /// layout/paint 双路径一致。
-pub(crate) fn resolve_text_align_last(style: Option<&ComputedStyle>) -> Option<TextAlign> {
+pub fn resolve_text_align_last(style: Option<&ComputedStyle>) -> Option<TextAlign> {
     use zero_style_system::property::{DirectionValue, TextAlignLastValue};
     let s = style?;
     let is_rtl = matches!(s.direction, DirectionValue::Rtl);

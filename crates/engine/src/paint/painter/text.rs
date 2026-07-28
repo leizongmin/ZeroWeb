@@ -10,15 +10,16 @@ use std::collections::HashMap;
 use crate::measure_char_for_paint;
 use zero_css_parser::values::{ColorValue, FloatValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
-use zero_layout_engine::inline_finalization::subtree_has_text_decoration;
-use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode};
+use zero_layout_engine::inline_finalization::{
+    resolve_text_align, resolve_text_align_last, subtree_has_text_decoration,
+};
+use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, WordBreakMode};
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive};
 use zero_style_system::{
-    ComputedStyle, ContentComputedValue, DirectionValue, ObjectFitComputedValue, TabSizeValue, TextAlignLastValue,
-    TextAlignValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue, TextTransformValue,
-    WhiteSpaceValue,
+    ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TabSizeValue, TextEmphasisPositionValue,
+    TextEmphasisStyleValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -534,41 +535,12 @@ impl super::Painter {
                 word_break_mode
             };
 
-            // 将 CSS text-align 映射到布局引擎的 TextAlign。
-            // `start`/`end` 方向感知（CSS Text 3 §6.1）：start = LTR→left / RTL→right，end 反之。
-            let is_rtl = matches!(style.direction, DirectionValue::Rtl);
-            let text_align = match style.text_align {
-                TextAlignValue::Left => TextAlign::Left,
-                TextAlignValue::Right => TextAlign::Right,
-                TextAlignValue::Center => TextAlign::Center,
-                TextAlignValue::Justify => TextAlign::Justify,
-                TextAlignValue::Start => {
-                    if is_rtl {
-                        TextAlign::Right
-                    } else {
-                        TextAlign::Left
-                    }
-                }
-                TextAlignValue::End => {
-                    if is_rtl {
-                        TextAlign::Left
-                    } else {
-                        TextAlign::Right
-                    }
-                }
-            };
-
-            // 将 CSS text-align-last 映射到布局引擎（Auto = 跟随 text-align）。
-            // start/end 同样方向感知。
-            let text_align_last = match &style.text_align_last {
-                TextAlignLastValue::Auto => None,
-                TextAlignLastValue::Left => Some(TextAlign::Left),
-                TextAlignLastValue::Right => Some(TextAlign::Right),
-                TextAlignLastValue::Center => Some(TextAlign::Center),
-                TextAlignLastValue::Justify => Some(TextAlign::Justify),
-                TextAlignLastValue::Start => Some(if is_rtl { TextAlign::Right } else { TextAlign::Left }),
-                TextAlignLastValue::End => Some(if is_rtl { TextAlign::Left } else { TextAlign::Right }),
-            };
+            // R958 双路径同源：text-align / text-align-last 经 layout 路径的共享 resolver
+            //（inline_finalization::resolve_text_align[_last]）解析，消除 paint Path B 此前内联的
+            // 重复 match（与 layout Path A 两份独立拷贝，曾潜伏 IFC Path A/B 分歧风险）。start/end
+            // 方向感知（CSS Text 3 §6.1/§6.2）、Auto = 跟随 text-align，均由 resolver 统一实现。
+            let text_align = resolve_text_align(Some(style));
+            let text_align_last = resolve_text_align_last(Some(style));
 
             // text-indent 首行缩进（px）：Px/Em（×font_size）/Percentage（×container_width，CSS §10.3.1）。
             // 与 layout 路径（inline_finalization::resolve_text_indent）保持一致（IFC 双路径同源）。

@@ -199,6 +199,29 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > 按 redirect「停止条件」**slice 3 实现 STOP**，转 plateau-guard；slice 3 需先做 IFC 构造 refactor
 >（提 helper）再 implementation，是独立多 session 工程。slice 2 legacy 增益（modest positional 改善）
 > ROI 不足以 grind——保持 dormant opt-in（ZW_PHASEA_MULTI_INLINE=1）。
+>
+> **★ R2187（2026-07-29）IFC 构造 helper 提取前置 = 非机械（3 真 Path A/B 分歧），其中 1 已解**。
+> 承接 R2166「提 helper」前置，实证读两处 IFC 构造点（Path A `inline_finalization.rs:861`
+> compute_final / Path B `text.rs:748` paint 重跑）比对 `.with_*` 链：**共享 ~17 项但有 3 处真分歧**
+>（非拷贝粘贴误差，是 output-affecting 行为差异），故「机械提取一个 helper」**不安全**——提取须先
+> 逐个 A/B 裁决分歧（每个 = 行为决策）：
+> 1. **text-align / text-align-last**：Path A 调 `resolve_text_align[_last]` 共享 resolver，Path B 内联同
+>    逻辑两份独立拷贝。**R2187 已解**：提升两 resolver 为 `pub`，Path B 改调 resolver（消除 ~32 行重复
+>    match + 消除分歧潜伏风险）。**net-zero 实证**（构造同逻辑 + welcome 16.84% 字节不变 + make test
+>    EXIT=0 + product-smoke 全 struct PASS + fmt/clippy clean）。LANDED（本提交）。这是 slice 3 前置的
+>    首个安全切片。
+> 2. **tab_size_px 公式**：Path A = `Number(n) => n*8.0`（硬编码 8）；Path B = `Number(n) => n*font_size*0.25`。
+>    font_size=16 时 8n vs 4n 不一致（stored 容器走 A，非 stored 走 B → 同页 tab 渲染依赖存储路径不同）。
+>    R2183 已查 tab_size 非 clean lever（无 driving-test PASS 可 flip，case 多 16px/JS-blocked）；统一须
+>    A/B 裁决正确公式（规范 = n × U+0020 advance，两者皆近似）+ 验 css-text 零回归。
+> 3. **container_width 的 vertical_decoration_gate**：Path A 有 `vertical_decoration_free` gate（子树有
+>    text-decoration/emphasis 时保持 content_width 回避装饰坐标耦合），Path B 无此 gate。统一须 A/B
+>    裁决 gate 是否补到 Path B（vertical-mode R1043 entangled，须 WM A/B）。
+>
+> **结论（R2187）**：IFC 构造 helper 提取 = 分歧 1 已解（text-align LANDED net-zero）+ 分歧 2/3 待裁决
+>（tab_size / container_width-gate，各需 A/B，非机械）。提取 helper 本身非「单 session 机械活」——R2166
+> 「独立多 session 工程」precise 化为「先逐个裁决 N 个 Path A/B 分歧」。slice 3 实施（orphan LayoutBox
+> 回填）仍须等 helper 提取完成（分歧 2/3 裁决后）。本轮 LANDED 分歧 1 = slice 3 前置首个安全切片，无回归。
 
 ---
 
