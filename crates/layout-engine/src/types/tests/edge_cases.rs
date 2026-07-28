@@ -439,6 +439,7 @@ fn test_layout_result_large_viewport() {
         },
         viewport_width: 7680.0,
         viewport_height: 4320.0,
+        paint_skip_node_ids: Default::default(),
     };
     assert!((result.viewport_width - 7680.0).abs() < 0.001);
     assert!((result.viewport_height - 4320.0).abs() < 0.001);

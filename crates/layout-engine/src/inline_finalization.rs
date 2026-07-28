@@ -602,6 +602,7 @@ pub(crate) fn compute_final_inline_layouts(
     styles: &HashMap<NodeId, ComputedStyle>,
     ancestor_floats: &[crate::inline::FloatExclusion],
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    paint_skip: &mut std::collections::HashSet<NodeId>,
     font_metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
 ) {
     // R362：先收集本容器直接 float 子（既用于自身 IFC 排除，也向后代传播）。
@@ -653,6 +654,7 @@ pub(crate) fn compute_final_inline_layouts(
             styles,
             &child_ancestor,
             img_intrinsic_sizes,
+            paint_skip,
             font_metric_provider,
         );
     }
@@ -919,6 +921,10 @@ pub(crate) fn compute_final_inline_layouts(
     // line_height 不影响行断（mod.rs 注释），但 font_size override 命中会影响 paint IFC
     // char-width 行断——R627 曾 net -15（pre-wrap），R630 后重试（with_line_y 可能吸收）。
     store_font_sizes_from_ifc(&inline_ctx, root, doc, styles);
+    // R2197 Phase A slice 3：orphan inline 元素 LayoutBox 回填（gated default-off）。
+    // 见 backfill_phasea_orphan_boxes 文档。须在 store-gate return 之前跑（对所有文本容器，
+    // 非 stored-path 独占）——IFC 已在 line 916 跑完，inline_ctx.lines 普遍可用。
+    backfill_phasea_orphan_boxes(root, doc, styles, node_id, &inline_ctx, paint_skip);
     let is_pure_ahem = style.font_family.len() == 1 && style.font_family[0].eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);
     // R1280：含 float 子的容器（[inline 内容 + float] 模式，如 floats-006 的 div1）须存 IFC，
@@ -981,6 +987,117 @@ pub(crate) fn compute_final_inline_layouts(
     if !lines.is_empty() {
         root.inline_layout = Some(lines);
         root.inline_layout_width = container_width;
+    }
+}
+
+/// R2197 Phase A slice 3：为 `ZW_PHASEA_MULTI_INLINE` gate 跳过 taffy 节点的 orphan inline
+/// 子（childless `<a>`/`<span>`/`<i>`/`<b>` 等）回填 LayoutBox，并登记到 `paint_skip` 集。
+///
+/// **背景**：tree.rs `build_subtree` 对 multi-inline block 容器的 eligible childless inline
+/// 子跳过 taffy 节点（`multi_inline_block_skip`），消除块级栈列（slice 2 修复 19-testpage 等）。
+/// 但跳过后这些元素**无 LayoutBox** → `collect_hit_test_nodes` / struct-check（遍历 LayoutBox
+/// 树）漏见 orphan `<a>` / `<span>` → 链接 hit-test 失效 + struct 计数错（R2163 回归根因）。
+///
+/// **本函数**：复用 `compute_final` 已跑的 IFC（`inline_ctx.lines`，line 916）行盒片段几何，
+/// 为每个 orphan 元素取其文本后代片段的 bbox 并集，建 LayoutBox 加入 `root.children`，使
+/// hit-test / struct-check 经 LayoutBox 树遍历自然见之（修复 R2163）。paint 期其文本/背景已
+/// 由父 IFC 片段绘制（R639 part2），故须 `paint_skip` 登记 → Painter 递归跳过，避免双绘。
+///
+/// **几何精度**：layout 期 IFC 几何对 hit-test bbox **近似充分**（R2165 实证：paint Path B
+/// 分歧只影响绘制，不挡 hit-test 近似）。坐标系与 float 子 `c.y` 同帧（注释 line 608：c.y 与
+/// IFC 行 y 均相对 root box 顶部一致），故 `line.y + frag.y` 直接作 LayoutBox.y。
+///
+/// **gate**：与 tree.rs `multi_inline_block_skip` 完全同条件复算（env + HorizontalTb +
+/// 非 multicol 上下文 + 非 balancing text-wrap + ≥2 eligible 子），保证只对真实 orphan
+/// 容器回填。default-off（`ZW_PHASEA_MULTI_INLINE=1` 才生效）→ 默认路径零行为变更。
+fn backfill_phasea_orphan_boxes(
+    root: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    container_id: NodeId,
+    inline_ctx: &crate::inline::InlineFormattingContext,
+    paint_skip: &mut std::collections::HashSet<NodeId>,
+) {
+    // 与 tree.rs `phasea_multi_inline_on` 同条件复算（保证只对真实触发 multi_inline_block_skip
+    // 的容器回填，避免对未跳过 taffy 的容器误加孤儿盒）。
+    let gate_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() == Ok("1")
+        && matches!(root.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
+        && !crate::tree::container_in_multicol_context(doc, styles, container_id)
+        && !crate::tree::container_has_balancing_text_wrap(styles, container_id);
+    if !gate_on {
+        return;
+    }
+    // orphan 候选 = 容器的 eligible childless inline 子（与 tree.rs skip 集合一致）。
+    let orphan_ids: Vec<NodeId> = doc
+        .child_nodes(container_id)
+        .into_iter()
+        .filter(|&c| crate::tree::phasea_multi_inline_eligible(doc, styles, c))
+        .collect();
+    // 容器须 ≥2 eligible 子才触发 multi_inline_block_skip（tree.rs:1415）；否则无 orphan。
+    if orphan_ids.len() < 2 {
+        return;
+    }
+    // R2197 atomicity 镜像 tree.rs：若容器含非 eligible 的 inline Element 子（如含嵌套元素
+    // 子节点的 inline），tree.rs 整容器不 orphan（eligible 子仍保留 taffy LayoutBox）。此处须
+    // 同判——否则会对未 orphan 的 eligible 子重复加 LayoutBox（与 taffy 盒重复）。
+    let has_non_eligible_inline = doc.child_nodes(container_id).into_iter().any(|c| {
+        let Some(node) = doc.get(c) else {
+            return false;
+        };
+        let elem = match &node.kind {
+            NodeKind::Element(e) => e,
+            _ => return false,
+        };
+        if elem.local_name().eq_ignore_ascii_case("br") || elem.local_name().eq_ignore_ascii_case("wbr") {
+            return false;
+        }
+        styles.get(&c).is_some_and(|s| {
+            matches!(s.display, zero_css_parser::values::DisplayValue::Inline)
+                && !crate::tree::phasea_multi_inline_eligible(doc, styles, c)
+        })
+    });
+    if has_non_eligible_inline {
+        return;
+    }
+    for orphan_id in orphan_ids {
+        // collect_inline_items 把 childless inline 元素的扁平文本 (`doc.text_content`) 收为
+        // TextRun 时，node_id 记为**该元素自身**（collect_items.rs:439 `node_id: child_id`），
+        // 非 DOM 文本子节点 id。故按 orphan 元素 id 直接匹配其片段。
+        // 扫描 IFC 行盒片段，取 node_id == orphan_id 的片段 bbox 并集（跨行换行时多片段）。
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        let mut found = false;
+        for line in &inline_ctx.lines {
+            for frag in &line.runs {
+                if frag.node_id == orphan_id {
+                    found = true;
+                    let fx = frag.x;
+                    let fy = line.y + frag.y;
+                    min_x = min_x.min(fx);
+                    min_y = min_y.min(fy);
+                    max_x = max_x.max(fx + frag.width);
+                    max_y = max_y.max(fy + frag.height);
+                }
+            }
+        }
+        if !found {
+            // 无文本片段（空 orphan，如 `<span></span>`）：无几何可回填，跳过（struct 计数
+            // 对空元素本就无意义；morning-work item-tag 均有文本）。
+            continue;
+        }
+        root.children.push(LayoutBox {
+            node_id: Some(orphan_id),
+            x: min_x,
+            y: min_y,
+            width: (max_x - min_x).max(0.0),
+            height: (max_y - min_y).max(0.0),
+            // orphan 经 paint_skip 跳过绘制，其余字段（border/margin/children 等）默认即可——
+            // paint 不读，hit-test/struct-check 只需 node_id + 几何。
+            ..Default::default()
+        });
+        paint_skip.insert(orphan_id);
     }
 }
 

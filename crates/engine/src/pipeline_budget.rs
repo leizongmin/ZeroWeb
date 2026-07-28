@@ -147,6 +147,7 @@ impl RenderPipeline {
                     painter.set_document_url(self.document_url.as_deref());
                     painter.viewport_w = self.viewport_width;
                     painter.viewport_h = self.viewport_height;
+                    painter.paint_skip_nodes = layout.paint_skip_node_ids.clone();
                     painter.paint(&layout.root, &session.styles, Some(doc));
                     let primitives = painter.into_primitives();
                     let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout.root);
@@ -164,11 +165,13 @@ impl RenderPipeline {
                         root: layout.root.clone(),
                         viewport_width: layout.viewport_width,
                         viewport_height: layout.viewport_height,
+                        paint_skip_node_ids: layout.paint_skip_node_ids.clone(),
                     };
                     self.cached_layout = Some(LayoutResult {
                         root: layout.root.clone(),
                         viewport_width: layout.viewport_width,
                         viewport_height: layout.viewport_height,
+                        paint_skip_node_ids: layout.paint_skip_node_ids.clone(),
                     });
 
                     session.result = Some(RenderResult {
@@ -222,6 +225,7 @@ impl RenderPipeline {
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
+        painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         painter.paint_in_rect(&layout_result.root, &styles, &visible_rect, Some(&doc));
         let primitives = painter.into_primitives();
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
@@ -232,6 +236,7 @@ impl RenderPipeline {
             root: layout_result.root.clone(),
             viewport_width: layout_result.viewport_width,
             viewport_height: layout_result.viewport_height,
+            paint_skip_node_ids: layout_result.paint_skip_node_ids.clone(),
         };
         self.cached_layout = Some(layout_result);
 

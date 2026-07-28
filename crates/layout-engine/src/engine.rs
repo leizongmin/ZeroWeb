@@ -659,12 +659,14 @@ impl LayoutEngine {
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
+        let mut paint_skip_set: HashSet<NodeId> = HashSet::new();
         compute_final_inline_layouts(
             &mut root_box,
             doc,
             styles,
             &[],
             &intrinsic_for_r695,
+            &mut paint_skip_set,
             self.font_metric_provider.as_ref(),
         );
 
@@ -772,6 +774,7 @@ impl LayoutEngine {
             root: root_box,
             viewport_width: self.viewport_width,
             viewport_height: self.viewport_height,
+            paint_skip_node_ids: paint_skip_set,
         }
     }
 
@@ -889,6 +892,8 @@ impl LayoutEngine {
             root: root_box,
             viewport_width: self.viewport_width,
             viewport_height: self.viewport_height,
+            // 增量路径不重跑 compute_final（无 Phase A orphan 回填），paint_skip 恒空。
+            paint_skip_node_ids: HashSet::new(),
         };
 
         (

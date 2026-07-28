@@ -358,6 +358,7 @@ impl RenderPipeline {
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
+        painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
@@ -373,6 +374,7 @@ impl RenderPipeline {
             root: layout_result.root.clone(),
             viewport_width: layout_result.viewport_width,
             viewport_height: layout_result.viewport_height,
+            paint_skip_node_ids: layout_result.paint_skip_node_ids.clone(),
         };
         self.cached_layout = Some(layout_result);
 
@@ -473,6 +475,7 @@ impl RenderPipeline {
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
+        painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         // 视口剔除 — 移除视口外的图元（高度取文档布局范围，供浏览器滚动消费）
@@ -499,6 +502,7 @@ impl RenderPipeline {
             root: layout_result.root.clone(),
             viewport_width: layout_result.viewport_width,
             viewport_height: layout_result.viewport_height,
+            paint_skip_node_ids: layout_result.paint_skip_node_ids.clone(),
         };
         self.cached_layout = Some(layout_result);
 
@@ -545,6 +549,7 @@ impl RenderPipeline {
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
+        painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         painter.paint(&layout_result.root, &styles, Some(doc));
         let primitives = painter.into_primitives();
 
@@ -552,6 +557,7 @@ impl RenderPipeline {
             root: layout_result.root.clone(),
             viewport_width: layout_result.viewport_width,
             viewport_height: layout_result.viewport_height,
+            paint_skip_node_ids: layout_result.paint_skip_node_ids.clone(),
         };
         self.cached_layout = Some(layout_result);
 
@@ -621,6 +627,7 @@ impl RenderPipeline {
             root: layout_result.root.clone(),
             viewport_width: layout_result.viewport_width,
             viewport_height: layout_result.viewport_height,
+            paint_skip_node_ids: layout_result.paint_skip_node_ids.clone(),
         });
 
         // 仅绘制脏区域内的节点
@@ -631,6 +638,7 @@ impl RenderPipeline {
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
+        painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         painter.paint_in_rect(&layout_result.root, &styles, &dirty_rect, Some(doc));
         Some(painter.into_primitives())
     }
@@ -647,6 +655,7 @@ impl RenderPipeline {
             root: layout_ref.root.clone(),
             viewport_width: layout_ref.viewport_width,
             viewport_height: layout_ref.viewport_height,
+            paint_skip_node_ids: layout_ref.paint_skip_node_ids.clone(),
         };
         Some(RenderResult {
             primitives,

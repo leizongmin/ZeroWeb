@@ -35,6 +35,13 @@ pub struct Painter {
     pub(crate) primitives: RenderPrimitives,
     /// 已由父级行内格式化上下文绘制过文本的节点。
     pub(crate) painted_inline_nodes: HashSet<NodeId>,
+    /// R2197 Phase A slice 3：paint 期须跳过递归绘制的 orphan inline 元素 NodeId 集合。
+    ///
+    /// 这些元素经 `ZW_PHASEA_MULTI_INLINE` gate 跳过 taffy 节点，layout 期已回填 LayoutBox
+    ///（加入树，供 hit-test / struct-check 见之），但其文本/背景由父 IFC 片段绘制（R639 part2），
+    /// 故 paint 递归遍历到其 LayoutBox 时须跳过，避免双绘。来自 `LayoutResult::paint_skip_node_ids`。
+    /// 默认空集（gate default-off）→ paint 递归行为不变。
+    pub paint_skip_nodes: HashSet<NodeId>,
     /// CSS 计数器状态（计数器名 → 当前值）。
     pub(crate) counters: HashMap<String, i32>,
     /// 是否跳过属性指示器（用于 reftest 精确对比）。
@@ -235,6 +242,7 @@ impl Painter {
         Self {
             primitives: RenderPrimitives::new(),
             painted_inline_nodes: HashSet::new(),
+            paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),
             skip_indicators: false,
             image_sizes: HashMap::new(),
@@ -413,6 +421,10 @@ impl Painter {
         dirty_rect: &Rect,
         doc: Option<&Document>,
     ) {
+        // R2197 Phase A slice 3：orphan inline LayoutBox 跳过（同 paint_node，见其文档）。
+        if box_node.node_id.is_some_and(|id| self.paint_skip_nodes.contains(&id)) {
+            return;
+        }
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
 
@@ -583,6 +595,13 @@ impl Painter {
         doc: Option<&Document>,
         is_root_scope: bool,
     ) {
+        // R2197 Phase A slice 3：orphan inline LayoutBox（paint_skip_nodes）跳过递归绘制。
+        // 其文本/背景已由父 IFC 片段绘制（R639 part2），此处跳过避免双绘 + 避免 approximate
+        // 几何盒被当独立盒误绘。default 空集 → 不触发，零行为变更。
+        if box_node.node_id.is_some_and(|id| self.paint_skip_nodes.contains(&id)) {
+            return;
+        }
+
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
 

@@ -43,6 +43,7 @@ fn test_layout_result_zero_viewport() {
         },
         viewport_width: 0.0,
         viewport_height: 0.0,
+        paint_skip_node_ids: Default::default(),
     };
     assert!((result.viewport_width - 0.0).abs() < 0.001);
     assert!((result.viewport_height - 0.0).abs() < 0.001);
@@ -589,6 +590,7 @@ fn test_layout_result_viewport_edge() {
         },
         viewport_width: 375.0,
         viewport_height: 667.0,
+        paint_skip_node_ids: Default::default(),
     };
     assert!((result.viewport_width - 375.0).abs() < 0.001);
     assert!((result.viewport_height - 667.0).abs() < 0.001);

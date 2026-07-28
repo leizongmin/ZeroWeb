@@ -268,6 +268,7 @@ fn test_layout_result_viewport() {
         root: make_box_at(0.0, 0.0, 1024.0, 768.0),
         viewport_width: 1024.0,
         viewport_height: 768.0,
+        paint_skip_node_ids: Default::default(),
     };
     assert_eq!(result.viewport_width, 1024.0);
     assert_eq!(result.viewport_height, 768.0);
@@ -282,6 +283,7 @@ fn test_layout_result_with_children() {
         root,
         viewport_width: 800.0,
         viewport_height: 600.0,
+        paint_skip_node_ids: Default::default(),
     };
     assert_eq!(result.root.children.len(), 2);
     assert_eq!(result.root.children[0].height, 50.0);
@@ -428,6 +430,7 @@ fn test_layout_result_snapshot_basic() {
         },
         viewport_width: 800.0,
         viewport_height: 600.0,
+        paint_skip_node_ids: Default::default(),
     };
     let snap = result.snapshot();
     assert!(
@@ -479,6 +482,7 @@ fn test_layout_result_snapshot_with_box_model() {
         },
         viewport_width: 800.0,
         viewport_height: 600.0,
+        paint_skip_node_ids: Default::default(),
     };
     let snap = result.snapshot();
     assert!(snap.contains("border="), "should show border");
@@ -557,6 +561,7 @@ fn test_layout_result_snapshot_flags() {
         },
         viewport_width: 800.0,
         viewport_height: 600.0,
+        paint_skip_node_ids: Default::default(),
     };
     let snap = result.snapshot();
     assert!(snap.contains("abs"), "should show absolute flag");

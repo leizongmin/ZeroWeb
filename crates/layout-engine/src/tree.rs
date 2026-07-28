@@ -100,7 +100,11 @@ fn r109_wired() -> bool {
 /// 子树无 ooflow 后代。此类 inline 在多 inline block 容器中可跳过 taffy 节点
 ///（orphan → painter R639 part2 per-fragment 绘 bg/border），消除 a/i/b 块级栈列。
 /// 子树无 ooflow 守卫 ≡ R2156（保 abspos CB）。
-fn phasea_multi_inline_eligible(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, child_id: NodeId) -> bool {
+pub(crate) fn phasea_multi_inline_eligible(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    child_id: NodeId,
+) -> bool {
     let Some(node) = doc.get(child_id) else {
         return false;
     };
@@ -145,7 +149,11 @@ fn phasea_multi_inline_eligible(doc: &Document, styles: &HashMap<NodeId, Compute
 /// 实测 css-multicol −5 全为真几何 damage，0.00%→1.7-2.4%，非阈值噪声）。故容器在 multicol 上下文
 /// 时抑制 probe。含 `dom_id` 自身：multicol-width-large-* 的 multicol 容器直接含 ≥2 inline 子，
 /// probe 即在该容器触发（须查自身，非仅祖先）。
-fn container_in_multicol_context(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, dom_id: NodeId) -> bool {
+pub(crate) fn container_in_multicol_context(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    dom_id: NodeId,
+) -> bool {
     use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue};
     let mut cur = Some(dom_id);
     while let Some(id) = cur {
@@ -168,7 +176,7 @@ fn container_in_multicol_context(doc: &Document, styles: &HashMap<NodeId, Comput
 /// ref（text-wrap-balance-003：OFF 4.97% 已是 ZW 不 balance 的输出，probe 推过 5% 阈值→5.39%
 /// = 阈值噪声但严格违「零 delta」）。legacy 页（HTML 3.2/4）不用 CSS Text 4 text-wrap，故此 guard
 /// 不影响 19-testpage / 20-mixed-legacy 产品增益。
-fn container_has_balancing_text_wrap(styles: &HashMap<NodeId, ComputedStyle>, dom_id: NodeId) -> bool {
+pub(crate) fn container_has_balancing_text_wrap(styles: &HashMap<NodeId, ComputedStyle>, dom_id: NodeId) -> bool {
     use zero_style_system::property::types::TextWrapComputedValue;
     matches!(
         styles.get(&dom_id).map(|s| &s.text_wrap),
@@ -1412,7 +1420,31 @@ fn build_subtree(
                     } else {
                         0
                     };
-                    let multi_inline_block_skip = phasea_multi_inline_on && eligible_inline_count >= 2;
+                    // R2197 atomicity：若容器含**非 eligible 的 inline Element 子**（如含嵌套元素
+                    // 子节点的 inline，典型 syntax-highlight `<span class=hljs-function><span
+                    // class=hljs-title>…</span></span>`），部分 orphan（仅 eligible 子跳 taffy）
+                    // 会扭曲剩余 taffy inline 的几何——移除 eligible 兄弟后，非 eligible inline 被
+                    // taffy 当唯一 inline 子撑到全宽（morning-work 代码块 hljs-function 620×42 实测），
+                    // 致 sibling-overlap 假阳性。要求 inline 子**全部** eligible 或 br/wbr（零宽换行
+                    // 元素混排安全），否则整容器不 orphan（all-or-nothing 保几何一致）。
+                    let has_non_eligible_inline = phasea_multi_inline_on
+                        && children_dom.iter().any(|&c| {
+                            let Some(node) = doc.get(c) else {
+                                return false;
+                            };
+                            let NodeKind::Element(e) = &node.kind else {
+                                return false;
+                            };
+                            if e.local_name().eq_ignore_ascii_case("br") || e.local_name().eq_ignore_ascii_case("wbr") {
+                                return false;
+                            }
+                            styles.get(&c).is_some_and(|s| {
+                                matches!(s.display, DisplayValue::Inline)
+                                    && !phasea_multi_inline_eligible(doc, styles, c)
+                            })
+                        });
+                    let multi_inline_block_skip =
+                        phasea_multi_inline_on && eligible_inline_count >= 2 && !has_non_eligible_inline;
                     let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
                     for &child_dom in &children_dom {
                         let child_data = doc.get(child_dom);

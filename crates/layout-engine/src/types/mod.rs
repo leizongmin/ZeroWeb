@@ -3,7 +3,7 @@
 //! 定义 [`LayoutBox`] 和 [`LayoutResult`] 作为布局引擎的输出格式，
 //! 描述元素在页面上的几何位置和大小。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 pub use zero_css_parser::values::ClearValue;
 use zero_css_parser::values::FloatValue;
 use zero_dom::NodeId;
@@ -537,6 +537,15 @@ pub struct LayoutResult {
     pub viewport_width: f32,
     /// 视口高度。
     pub viewport_height: f32,
+    /// Phase A slice 3（R2197）：paint 期须跳过的 orphan inline 元素 NodeId 集合。
+    ///
+    /// 这些元素经 `ZW_PHASEA_MULTI_INLINE` gate 跳过 taffy 节点（orphan，无原生
+    /// LayoutBox），但 `compute_final` 已按父 IFC 行盒片段几何回填了 LayoutBox（加入
+    /// 树），使 hit-test / struct-check（遍历 LayoutBox 树）能见到它们（修复 R2163
+    /// 链接 hit-test 失效 + struct 计数）。paint 期它们的文本/背景已由父 IFC 片段
+    /// 绘制（R639 part2），故须跳过 orphan LayoutBox 自身的递归绘制，避免双绘。
+    /// 默认空集（gate default-off）→ 零行为变更。
+    pub paint_skip_node_ids: HashSet<NodeId>,
 }
 
 impl LayoutResult {

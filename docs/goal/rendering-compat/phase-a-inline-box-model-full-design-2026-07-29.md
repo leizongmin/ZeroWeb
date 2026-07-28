@@ -263,6 +263,33 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > import。net-zero：welcome 16.84% 字节不变 + make test 12686/0 + product-smoke 全 struct PASS。**IFC Path A/B
 > safe DRY 4/4 收官**（text-align R2187 / text-indent R2188 / override-maps R2189 / word_break_mode R2191）。
 > 自主代码级工作全面穷尽；剩 3 行为分歧 confirmed blocked/non-lever。
+>
+> **★ R2197（2026-07-29）✅ slice 3 external-set 实施 LANDED（dormant default-off）= orphan LayoutBox 回填
+> + paint_skip，4 轮失败后首次跑通**。承接 R2196 external-set 方案（LayoutBox 401-literal churn ruled out），
+> 本轮 focused 实施：LayoutResult 加 `paint_skip_node_ids: HashSet<NodeId>`（23 literal，10× 少于 401）+
+> compute_final 加 `&mut HashSet` accumulator + 新 `backfill_phasea_orphan_boxes`（gate 同条件复算 → orphan_ids
+> ≥2 + all-or-nothing → 扫 inline_ctx.lines 片段 `frag.node_id == orphan_id` bbox 并集 → 建 orphan LayoutBox
+> 加入 root.children + paint_skip 登记）+ Painter `paint_skip_nodes` 字段 + paint_node/_in_rect 顶部 early-return。
+>
+> **★ 三处 de-risking 发现（绕 R2164-R2166 三 wall）**：① **R2164/R2178「IFC 几何仅 paint 期」被推翻**——
+> `compute_final` line 916 `inline_ctx.layout()` 对**所有**文本容器跑 IFC（仅 store 受 Ahem/float gate），
+> 故 `inline_ctx.lines` 普遍可用，backfill 在 store-gate return 前跑，几何源普遍（无须重跑 IFC，规避 R2165
+> 候选2 ~15 参重建成本）。② **fragment node_id = 元素自身 id**（collect_items.rs:439 `node_id: child_id`），
+> 非文本子节点 id → backfill 按 orphan_id 直接匹配（首版按文本 id 匹配致「NO fragments」item-tag:0）。③
+> **R2197 atomicity gate**（新发现 + fix）：部分 orphan（仅 eligible 子跳 taffy，非 eligible inline-with-children
+> 保留 taffy）扭曲剩余 taffy inline 几何（morning 代码块 hljs-function 被撑到 620×42 → sibling-overlap 假阳性）；
+> fix = tree.rs gate + backfill 镜像加「inline 子须**全部** eligible 或 br/wbr，否则整容器不 orphan」。
+>
+> **A/B**：make test OFF **12686/0**；product-smoke 桌面**全 PASS**（welcome 17.03% / wintertc / **morning item-tag:3
+> PASS 修 R2163 主回归**）；product-smoke-legacy 51/51 struct PASS + 19-testpage 22.39→**17.23%（−5.16pp）** +
+> 20-mixed 13.13→**11.49%（−1.64pp）**（slice-2 增益全保留）；self-source reftest 686 smoke ON=OFF 526/47/0
+> （paint-skip 工作，slice-3 reftest-neutral）。**残余 1**：窄屏 morning 1 multi-line-`<a>` struct 假阳性
+>（CC 许可链接跨行 union box 与 sibling 重叠；one-rect-per-multiline 局限；视觉正确 paint-skip）。
+>
+> **裁决**：gate **default-off dormant opt-in**（`ZW_PHASEA_MULTI_INLINE=1`）。slice-3 机制跑通 + 修 R2163 主回归
+> + 保 slice-2 增益，但窄屏 multi-line-`<a>` struct 假阳性阻 default-on（须 struct-check 接 paint_skip 感知 或
+> multi-rect 表示，future）。**4 轮 slice-3 attempt 后首次跑通**，离 default-on 仅差窄屏 struct 假阳性。详见
+> [`evidence/r2197-slice3-external-set-landed-2026-07-29.txt`](./evidence/r2197-slice3-external-set-landed-2026-07-29.txt)。
 
 ---
 
