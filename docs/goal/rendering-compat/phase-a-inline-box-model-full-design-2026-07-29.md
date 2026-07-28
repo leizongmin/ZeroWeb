@@ -93,27 +93,25 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > **R2156 borders 安全已实测复核**（R2158）：`reftest-oracle CSS2/borders` gate ON=OFF=415（82.0%），R2156 在 borders dir 零漂移（inline-wrapper-with-bg-border-wrapping-atomic 模式在 borders corpus 罕见/缺失）。R2156 自身安全，但本节 slice 2 的 leaf-path 路径对一般多 inline（含 a/i/b 带 border）**必触发 R1492 -10 机制**。
 >
 > **修正后的正确路径 = 深层 Phase A：IFC→LayoutBox 定位**（R1492 建议的「保 inline 子为独立 box，修正容器高 + 移后续兄弟」）。即：inline 元素**保留**独立 LayoutBox（bg/border/hit-test 不破，R1492-safe），但其**位置由父 IFC 行盒决定**（非 taffy 块级栈列）。难点 = IFC 当前把 inline 元素作 text run 扁平收集（无 per-element 定位框），须扩 IFC 输出 per-inline-element 行内位置 + post-process 回填 LayoutBox。属多 session 深度架构，**非单切片**。
+>
+> **★ R2159（2026-07-29）更可处理路径发现：R639-extend + skip-taffy**（优于上方 IFC→LayoutBox backfill）。读 painter text.rs:1202-1290 发现 **R639 Phase A slice 已实现 per-fragment inline bg/border 绘制**（add_fill bg + per-fragment border-top/bottom），但 **gate `owner_h > frag_fs*1.5` 仅多行生效**（单行 inline 排除，依赖 LayoutBox 绘 bg/border = R1492 机制所在）。故深层 Phase A 可重构为：
+> - **part 1（skip-taffy）**：tree.rs 对 inline Element 子不建块级 taffy 节点（同 R2156 模式），消除块级栈列。
+> - **part 2（R639-extend）**：painter text.rs 放宽 R639 gate 到单行（`owner_h > 0` 而非 `> 1.5·fs`），让 per-fragment bg/border 覆盖单行 inline（补 part 1 丢的 LayoutBox bg/border）。
+> - **耦合**：part 1 单独 = R1492-refuted（单行 bg/border 丢）；part 2 单独 = 双绘（LayoutBox + fragment 都绘）；**须同 gate 同开**。part 2 复用已有 R639 infra（仅放宽 gate）= 比 IFC→LayoutBox backfill（须新 element-boundary tracking）**更可处理**。
+> - **关键风险点（R2159 已实证 CONFIRMED）**：R639 用 `self.inline_heights.get(&owner_id)`（pre-scan inline 元素高）判多行。**`inline_heights` 由 `collect_box_heights`（painter/mod.rs:383）遍历 LayoutBox 树填充**——skip-taffy 后 inline 元素丢 LayoutBox → 无 `inline_heights` 条目（owner_h=0）→ R639 gate 即便放宽到 `>0` 也不触。故 R639-extend 路径**须加 part 3：迁移 `inline_heights` 数据源**（从 LayoutBox 树改为 DOM/IFC 衍生，让 orphan inline 仍有高）。
+> - **part 3（inline_heights 数据源迁移）**：`collect_box_heights` 改为从 IFC 行盒结果计算每个 inline 元素高（其跨行片段的 y 范围），或保留 LayoutBox 源 + 补 IFC 源双轨。这是 R639-extend 路径的额外成本，使其接近 IFC→LayoutBox backfill 的复杂度。
+> - **结论（R2159）**：两条路径（R639-extend + part3 / IFC→LayoutBox backfill）均须 substantial 新 infra，**深层 Phase A 确属多 session**。19-testpage 22% + 20-mixed-legacy 13% 的 multi-inline fix 阻塞于此。
+> - **20-mixed-legacy 13% diff = 同 Phase A**（R2159 确认）：内容列 `<p>...<b><i><font>...</p>` 多 inline 块级栈列→内容过高→table row 过高→左 menu td bgcolor=#eeeeee 延伸至 y=396（chromium 行早结束，下方白）。与 19-testpage 同根（multi-inline block-stacking）。
 
 - ~~**gate（原 leaf-path，R1492-REFUTED）**~~：block 容器 + ≥2 inline Element 子 → leaf/IFC。**勿实施**（R1492 -10）。
-- **gate（修正后，深层 Phase A，多 session）**：保留 inline Element 子的 taffy 节点（LayoutBox 不丢），新增 post-process 从父 IFC 行盒回填各 inline Element LayoutBox 的 (x,y,w,h) + 容器高度修正为真实行高（非块级栈列高）。须先扩 IFC 输出 per-inline-element 行内位置（当前无）。
-- **kill-switch**：`ZW_PHASEA_IFC_LAYOUTBOX_BACKFILL`（probe 期 default-off）。
-- **driving test**：`<p>A<a>x</a><i>y</i><b>z</b>.</p>` 断言 a/i/b LayoutBox 同行（y 一致，x 递增），bg/border 仍绘（R1492 守），容器高≈单行非 3 行。
-- **三态 A/B**：self-source 全目录零 delta + **chromium-oracle CSS2/borders 零漂移（R1492 守，关键）** + 19-testpage diff 22%↓ + welcome 字节一致 + make test green。
-- **前置工作**：扩 `InlineFormattingContext` 输出 per-inline-element 行内位置（fragment → element NodeId 映射）。此为深层 Phase A 的 enabling infra，独立可 land（dormant，零行为变更），后续再接 post-process 回填。
-- **回退**：net 负 → `ZW_PHASEA_IFC_LAYOUTBOX_BACKFILL=0`。
-
-
-- **kill-switch**：`ZW_PHASEA_MULTI_INLINE`（probe 期 default-off，A/B net≥0 后 default-on）。
-- **driving test（须先建）**：
-  - 单测：`<p>A <a>x</a> <i>y</i> <b>z</b>.</p>` 断言 a/i/b 同一行（baseline_y 一致），非块级栈列。
-  - struct-check：扩展 `check_text_concatenation` / 新增 `check_inline_element_block_stacking`，守 19-testpage-minimal Product A 行 h≈单行非 3 行。
-  - 产品 smoke：19-testpage-minimal oracle diff 22.39% → 目标 < 12%（行高修正后），struct PASS。
-- **三态 A/B**：self-source 全目录（重点 CSS2/css-text/css-tables/normal-flow）零 delta + chromium-oracle（CSS2/css-tables）零漂移 + welcome/morning 字节一致或改善 + legacy struct 0→0（不退）+ make test green。
-- **风险**：blast-radius 大（所有多 inline block 容器）。须增量验证：
-  1. inline 元素有 bg/border/padding（如 `<a style="background:...">`）→ 丢 LayoutBox 则 bg/border 丢绘。R2156 实测「painter 经 IFC fragment 渲染 atomic inline 含 bg/border」成立，但 **plain inline（a/i/b）的 bg/border 是否经 IFC fragment 绘**须 probe 确认（slice 2 前置实验）。
-  2. inline 元素是 hit-test / 事件目标（如 `<a href>`）→ 丢 LayoutBox 可致点击区域失真。须 product-smoke `--check-img-visibility` / 手测验证。
-  3. inline 元素含 background-img / 形成 stacking context（position/opacity/transform）→ 须排除（gate 加 stacking-context 守卫）。
-- **回退**：net 负 → `ZW_PHASEA_MULTI_INLINE=0`，记 evidence，slice 2 拆更小子切片。
+- **gate（R2159 精化，R639-extend + skip-taffy，优先路径）**：part 1（tree.rs skip inline Element 子 taffy 节点）+ part 2（painter R639 gate 放宽到单行），同 `ZW_PHASEA_MULTI_INLINE` gate，default-off。前置 probe = 确认 inline_heights 在 orphan inline 下数据源。
+- **gate（备选，IFC→LayoutBox backfill，更深）**：保留 inline Element LayoutBox + post-process 从父 IFC 行盒回填位置。仅当 R639-extend 路径 probe 不可行（inline_heights 数据源不可迁移）时采用。
+- **kill-switch**：`ZW_PHASEA_MULTI_INLINE`（probe 期 default-off）。
+- **driving test**：`<p>A<a>x</a><i>y</i><b>z</b>.</p>` 断言 a/i/b 同行（y 一致 x 递增）+ `<p>A<a style="background:yellow">x</a> text.</p>` bg 可见（R1492 守）+ 容器高≈单行非 3 行。
+- **三态 A/B**：self-source 全目录零 delta + **chromium-oracle CSS2/borders 零漂移（R1492 守，关键）** + 19-testpage diff 22%↓ + 20-mixed-legacy diff 13%↓ + welcome 字节一致 + make test green。
+- **前置 probe（S2-probe-0）**：确认 `inline_heights` 数据源（DOM vs LayoutBox 树），判断 R639-extend 路径对 orphan inline 可行性。
+- **回退**：net 负 → `ZW_PHASEA_MULTI_INLINE=0`。
+- **风险（R2159 精化后）**：blast-radius 大（所有多 inline block 容器）。R639-extend + skip-taffy 耦合须同 gate 同开（part1 单独 R1492-refuted，part2 单独双绘）。hit-test（`<a href>` 点击区）+ stacking-context inline（position/opacity/transform）须 gate 排除。
 
 ### Slice 3+ — 后续（本设计列出，不展开）
 - inline-wrapping-inline（`<span><span>text</span></span>` 嵌套纯 inline）。
