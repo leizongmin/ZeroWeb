@@ -731,6 +731,34 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// 消耗畸形声明：读到 `;` / `}` / EOF，期间尊重 `()` / `[]` / `{}` 嵌套块
+    ///（嵌套块内的 `;` / `}` 不作终止符）。CSS 2.1 §4.2「Malformed declarations」错误恢复。
+    ///
+    /// 调用方（`consume_declaration_block`）保证进入时当前 token **非** `;` / `}` / EOF
+    ///（均已在上游分别处理），故首 token 必被本函数消耗，保证解析进度、避免死循环。
+    /// 典型场景（driving: core-syntax-001）：`test { :nested; color: yellow; } : junk;`
+    ///——`test` 后非 `:` 而是 `{`，整个 `{...}` 块 + trailing `: junk` 须作为一条畸形声明
+    /// 整体跳过（块内 `;`/`}` 受嵌套保护不提前终止），否则块内 `color/background` 会泄漏
+    /// 进外层规则、且外层块会在嵌套 `}` 处提前关闭。
+    fn skip_malformed_declaration(&mut self) {
+        let mut depth: i32 = 0;
+        loop {
+            match self.peek() {
+                Token::Eof => return,
+                Token::Semicolon | Token::RBrace if depth == 0 => return,
+                Token::LParen | Token::LBracket | Token::LBrace => {
+                    depth += 1;
+                    self.advance();
+                }
+                Token::RParen | Token::RBracket | Token::RBrace => {
+                    depth = (depth - 1).max(0);
+                    self.advance();
+                }
+                _ => self.advance(),
+            }
+        }
+    }
+
     /// 消耗声明块。
     fn consume_declaration_block(&mut self) -> Vec<Declaration> {
         let mut declarations = Vec::new();
@@ -742,6 +770,13 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            // 空声明 / 多余分号：直接跳过（避免传入 consume_declaration 返回 None 后
+            // skip_malformed_declaration 在 `;` 处零进度导致死循环）。
+            if matches!(self.peek(), Token::Semicolon) {
+                self.advance();
+                continue;
+            }
+
             if let Some(decl) = self.consume_declaration() {
                 declarations.push(decl);
                 // consume_declaration 消耗到分号或 RBrace 前停止
@@ -750,8 +785,10 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
             } else {
-                // 无法识别的 token，跳过它以避免无限循环
-                self.advance();
+                // 畸形声明错误恢复（CSS 2.1 §4.2）：当前 token 非 `;`/`}`/EOF，读到下一条
+                // 声明边界，尊重嵌套块。旧实现仅 `advance()` 一个 token，会把 `{...}` 嵌套块
+                // 内容泄漏进外层规则 + 提前关闭外层块（driving: core-syntax-001）。
+                self.skip_malformed_declaration();
             }
         }
 
