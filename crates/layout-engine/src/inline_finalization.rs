@@ -1009,7 +1009,7 @@ pub(crate) fn compute_final_inline_layouts(
 ///
 /// **gate**：与 tree.rs `multi_inline_block_skip` 完全同条件复算（env + HorizontalTb +
 /// 非 multicol 上下文 + 非 balancing text-wrap + ≥2 eligible 子），保证只对真实 orphan
-/// 容器回填。default-off（`ZW_PHASEA_MULTI_INLINE=1` 才生效）→ 默认路径零行为变更。
+/// 容器回填。default-on（R2198；`ZW_PHASEA_MULTI_INLINE=0` kill-switch 回退）。
 fn backfill_phasea_orphan_boxes(
     root: &mut LayoutBox,
     doc: &Document,
@@ -1020,7 +1020,7 @@ fn backfill_phasea_orphan_boxes(
 ) {
     // 与 tree.rs `phasea_multi_inline_on` 同条件复算（保证只对真实触发 multi_inline_block_skip
     // 的容器回填，避免对未跳过 taffy 的容器误加孤儿盒）。
-    let gate_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() == Ok("1")
+    let gate_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() != Ok("0")
         && matches!(root.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
         && !crate::tree::container_in_multicol_context(doc, styles, container_id)
         && !crate::tree::container_has_balancing_text_wrap(styles, container_id);

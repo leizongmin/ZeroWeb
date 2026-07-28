@@ -371,7 +371,7 @@ fn test_struct_check_detects_sibling_overlap() {
     let config = ReftestConfig::default();
     let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
     let labels = collect_dom_labels(html);
-    let issues = check_sibling_overlaps(&root, &labels);
+    let issues = check_sibling_overlaps(&root, &labels, &Default::default());
     assert!(
         !issues.is_empty(),
         "overlapping normal-block siblings must be flagged, got {issues:?}"
@@ -392,7 +392,7 @@ fn test_struct_check_passes_stacked_blocks() {
     let config = ReftestConfig::default();
     let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
     let labels = collect_dom_labels(html);
-    let issues = check_sibling_overlaps(&root, &labels);
+    let issues = check_sibling_overlaps(&root, &labels, &Default::default());
     assert!(
         issues.is_empty(),
         "stacked block siblings must not flag overlap: {issues:?}"

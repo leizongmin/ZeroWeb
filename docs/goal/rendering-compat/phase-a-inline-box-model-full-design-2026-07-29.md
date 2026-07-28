@@ -290,6 +290,25 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > + 保 slice-2 增益，但窄屏 multi-line-`<a>` struct 假阳性阻 default-on（须 struct-check 接 paint_skip 感知 或
 > multi-rect 表示，future）。**4 轮 slice-3 attempt 后首次跑通**，离 default-on 仅差窄屏 struct 假阳性。详见
 > [`evidence/r2197-slice3-external-set-landed-2026-07-29.txt`](./evidence/r2197-slice3-external-set-landed-2026-07-29.txt)。
+>
+> **★ R2198（2026-07-29）✅ slice 2+3 翻 default-on LANDED 🎉 — struct-check paint_skip-aware 解窄屏残余，
+> slice 2 多 inline block-stacking fix 进入默认渲染路径**。承接 R2197 残余（窄屏 multi-line `<a>` struct 假阳性）：
+> - **struct-check paint_skip-aware**：`check_sibling_overlaps` 加 `paint_skip: &HashSet<NodeId>`，跳过 paint_skip
+>   orphan box 对的 overlap 判定——orphan 是 hit-test proxy（paint-skip，非视觉盒），其几何为父 IFC 片段并集
+>   （multi-line 元素并集盒与同行 sibling 边界重叠不代表视觉重叠），排除是 **principled**（非掩盖真重叠）。
+>   `count_boxes_by_class` 仍计 orphan box（item-tag:3 须见之）。
+> - **paint_skip 通路**：`render_to_framebuffer_with_layout_with_base` 重构 private `render_with_layout_inner`
+>   （4-tuple）+ 两个 pub wrapper（3-tuple 旧 25 调用方零 churn + 4-tuple 新）；main.rs product-smoke + struct-sweep
+>   用 4-tuple 取 paint_skip 传 check_sibling_overlaps。
+> - **翻 default-on**：3 处 gate `== Ok("1")` → `!= Ok("0")`（tree.rs:1411 + inline_finalization backfill + painter
+>   text.rs phasea_orphan_fire）。kill-switch `ZW_PHASEA_MULTI_INLINE=0` 紧急回退。
+>
+> **默认路径全门禁绿**：make test **12686/0**；product-smoke 全 8 fixture PASS（含**窄屏 375+320** = R2197 残余已解）；
+> legacy 51/51 struct PASS + 19-testpage −5.16pp + 20-mixed −1.64pp；reftest 686 neutral。
+>
+> **里程碑**：Phase A slice 2（R2160-R2162）+ slice 3（R2197）+ struct-check paint_skip-aware（R2198）**全部 default-on**。
+> 5 轮 slice-2/3 工作（R2160-R2162/R2163 revert/R2164-R2166/R2196/R2197/R2198）收官：多 inline block 容器不再 a/i/b
+> 块级堆叠 + orphan 链接 hit-test/struct 正常 + 窄屏 multi-line 不假报。`ZW_PHASEA_MULTI_INLINE=0` 整体回退。
 
 ---
 

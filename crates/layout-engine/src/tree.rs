@@ -1393,8 +1393,8 @@ fn build_subtree(
                 } else {
                     // 仅处理元素子节点（原有行为）
                     //
-                    // R2160 Phase A slice 2 probe（env `ZW_PHASEA_MULTI_INLINE=1`，**default-off**；`=0`
-                    // 同样关）：多 inline Element 子 block 容器中，**childless plain inline**（display:
+                    // R2160 Phase A slice 2（env `ZW_PHASEA_MULTI_INLINE`，**R2198 default-on**；`=0`
+                    // kill-switch）：多 inline Element 子 block 容器中，**childless plain inline**（display:
                     // inline + 无 Element 子 + 非 ooflow + 子树无 ooflow 后代）的 taffy 节点跳过——让其
                     // 文本流入父 IFC（消除 a/i/b 块级栈列）。orphan 信号（inline_heights 无条目 =
                     // owner_h=0）驱动 painter R639 part2 对 orphan 触发 per-fragment bg/border 绘制
@@ -1402,13 +1402,11 @@ fn build_subtree(
                     // gate 仅容器有 ≥2 个合格 inline Element 子时生效（精确触发 multi-inline 栈列
                     // bug；单 inline 子仍走 LayoutBox=R1492-safe，缩 blast radius）。限 horizontal-tb。
                     // ★ R2161 gate-tighten（br/wbr tag 排除 + multicol-context + text-wrap balance 守卫）
-                    //   使 self-source 由 net −20 拉回 net +2。**R2163 REVERT default-on → default-off**：
-                    //   orphan 致 inline 丢 LayoutBox → collect_hit_test_nodes（hit_test.rs 遍历
-                    //   LayoutBox 树）漏收 orphan `<a>` → 链接点击/导航 hit-test 失效（真功能回归）+
-                    //   morning-work struct-check item-tag:0（badge 仍绘但无 LayoutBox）。须 slice 3
-                    //   IFC fragment→LayoutBox 回填（补 orphan LayoutBox，保 hit-test/struct）后方可
-                    //   default-on。probe + 3 guard 保留 dormant。
-                    let phasea_multi_inline_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() == Ok("1")
+                    //   使 self-source 由 net −20 拉回 net +2。**R2163 曾 REVERT default-on → default-off**
+                    //   （orphan 丢 LayoutBox 破 hit-test + struct item-tag:0）；**R2197 slice 3 external-set**
+                    //   （orphan LayoutBox 回填 + paint_skip）修 hit-test/struct，**R2198 struct-check
+                    //   paint_skip-aware**（修窄屏 multi-line `<a>` 假阳性）后 default-on 复开。
+                    let phasea_multi_inline_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() != Ok("0")
                         && matches!(own_writing_mode, WritingModeValue::HorizontalTb)
                         && !container_in_multicol_context(doc, styles, dom_id)
                         && !container_has_balancing_text_wrap(styles, dom_id);

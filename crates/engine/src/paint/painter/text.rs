@@ -1143,13 +1143,14 @@ impl super::Painter {
                             //（inline 自身 box 上）分歧致 bg 消失。两处现均用 inline 自身 height → 一致。
                             // frag_base_x 已含 text-indent（IFC 首行 current_x=text_indent），首行从缩进后起。
                             let owner_h = self.inline_heights.get(&owner_id).copied().unwrap_or(0.0);
-                            // R2160 Phase A slice 2 part2：env `ZW_PHASEA_MULTI_INLINE=1`（**default-off**，
-                            // R2163 REVERT 自 default-on：orphan 丢 LayoutBox 致 hit_test.rs 漏收 `<a>`）
+                            // R2160 Phase A slice 2 part2：env `ZW_PHASEA_MULTI_INLINE`（**R2198 default-on**；
+                            // `=0` kill-switch。R2163 曾 REVERT default-on：orphan 丢 LayoutBox 致 hit_test.rs
+                            // 漏收 `<a>`；R2197 slice 3 回填 + R2198 struct-check paint_skip-aware 后复开）
                             // 时，R639 per-fragment bg/border 也对 **orphan inline**（owner_h==0.0，即
                             // part1 skip-taffy 致 inline_heights 无条目）触发——补 part1 丢的 LayoutBox
                             // bg/border 绘制（解 R1492）。单行非 orphan（owner_h∈(0,1.5·fs]）不触发=
                             // 无双绘。orphan 信号（owner_h==0）天然耦合 part1。
-                            let phasea_orphan_fire = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() == Ok("1")
+                            let phasea_orphan_fire = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() != Ok("0")
                                 && owner_h == 0.0;
                             if !is_vertical
                                 && !box_node.is_absolute

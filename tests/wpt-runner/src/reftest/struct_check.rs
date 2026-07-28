@@ -14,6 +14,7 @@
 pub fn check_sibling_overlaps(
     root: &zero_layout_engine::types::LayoutBox,
     labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+    paint_skip: &std::collections::HashSet<zero_dom::NodeId>,
 ) -> Vec<String> {
     // 忽略 < 100px² 的微小叠（负 margin、亚像素边界、匿名盒 layout artifact）；仅报显著
     // 结构重叠。50→100：morning 残余 50px² 匿名盒重叠为亚像素噪声（~7×7px），真重叠
@@ -33,6 +34,7 @@ pub fn check_sibling_overlaps(
         off_x: f32,
         off_y: f32,
         labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+        paint_skip: &std::collections::HashSet<zero_dom::NodeId>,
         issues: &mut Vec<String>,
     ) {
         let abs_x = off_x + b.x;
@@ -64,6 +66,15 @@ pub fn check_sibling_overlaps(
                 {
                     continue;
                 }
+                // R2198：跳过 paint_skip orphan box 对——orphan 是 hit-test proxy（paint-skip，
+                // 非视觉盒），其几何为父 IFC 片段并集（multi-line inline 元素并集盒会与同行
+                // sibling 边界重叠，如 morning 窄屏 CC 许可 `<a>` 跨行），不代表视觉重叠。
+                // orphan 文本/背景已由父 IFC 片段绘制（R639 part2）。任一为 paint_skip 即跳过。
+                if ci.node_id.is_some_and(|id| paint_skip.contains(&id))
+                    || cj.node_id.is_some_and(|id| paint_skip.contains(&id))
+                {
+                    continue;
+                }
                 let (ov, ov_h) = rect_overlap_area(
                     (child_off_x + ci.x, child_off_y + ci.y, ci.width, ci.height),
                     (child_off_x + cj.x, child_off_y + cj.y, cj.width, cj.height),
@@ -90,10 +101,10 @@ pub fn check_sibling_overlaps(
             }
         }
         for child in &b.children {
-            walk(child, child_off_x, child_off_y, labels, issues);
+            walk(child, child_off_x, child_off_y, labels, paint_skip, issues);
         }
     }
-    walk(root, 0.0, 0.0, labels, &mut issues);
+    walk(root, 0.0, 0.0, labels, paint_skip, &mut issues);
     issues
 }
 

@@ -40,7 +40,7 @@ pub struct Painter {
     /// 这些元素经 `ZW_PHASEA_MULTI_INLINE` gate 跳过 taffy 节点，layout 期已回填 LayoutBox
     ///（加入树，供 hit-test / struct-check 见之），但其文本/背景由父 IFC 片段绘制（R639 part2），
     /// 故 paint 递归遍历到其 LayoutBox 时须跳过，避免双绘。来自 `LayoutResult::paint_skip_node_ids`。
-    /// 默认空集（gate default-off）→ paint 递归行为不变。
+    /// 默认空集（无 multi-inline block 容器的页面）。
     pub paint_skip_nodes: HashSet<NodeId>,
     /// CSS 计数器状态（计数器名 → 当前值）。
     pub(crate) counters: HashMap<String, i32>,

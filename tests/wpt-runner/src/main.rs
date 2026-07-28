@@ -370,20 +370,26 @@ fn cmd_product_smoke(args: &[String]) {
         || check_img_visibility;
     // layout_html = render_html 实际解析的 HTML（经 script DOM 变更后的 mutated_html）。
     // 结构检查须用它建 labels（node_id 与 layout 树一致），否则真元素误标 "(anon)"。
-    let (fb, layout_root, layout_html) = if via_webview {
+    // R2198：paint_skip = orphan inline 元素集（R2197 Phase A slice 3），供 struct-check
+    // `check_sibling_overlaps` 排除 orphan 假阳性（orphan 是 hit-test proxy，paint-skip）。
+    // via_webview / 无 layout 路径无 paint_skip（空集）。
+    let (fb, layout_root, layout_html, paint_skip) = if via_webview {
         (
             reftest::render_via_webview_to_framebuffer_with_base(&html, "", &config, base),
             None,
             html.clone(),
+            std::collections::HashSet::new(),
         )
     } else if need_layout {
-        let (fb, root, rendered_html) = reftest::render_to_framebuffer_with_layout_with_base(&html, "", &config, base);
-        (fb, Some(root), rendered_html)
+        let (fb, root, ps, rendered_html) =
+            reftest::render_to_framebuffer_with_layout_and_paint_skip_with_base(&html, "", &config, base);
+        (fb, Some(root), rendered_html, ps)
     } else {
         (
             reftest::render_to_framebuffer_with_base(&html, "", &config, base),
             None,
             html.clone(),
+            std::collections::HashSet::new(),
         )
     };
 
@@ -443,7 +449,7 @@ fn cmd_product_smoke(args: &[String]) {
         let labels = reftest::collect_dom_labels(&layout_html);
         let mut issues: Vec<String> = Vec::new();
         if struct_check {
-            issues.extend(reftest::check_sibling_overlaps(&root, &labels));
+            issues.extend(reftest::check_sibling_overlaps(&root, &labels, &paint_skip));
             // R1579：check_collapsed_containers 入 product-smoke gate。R1576（inline>inline-block
             // 递归）+ R1578（inline>inline-IMG 固有尺寸）修了 wintertc footer 塌缩后，产品 fixture
             // 不再含已知塌缩，可入 gate 守未来 collapse 回归（exit 3）。诊断仍经 struct-sweep。
@@ -1234,14 +1240,15 @@ fn cmd_struct_sweep(options: &CliOptions, filter: Option<&str>) {
             viewport_height: options.viewport_height as u32,
             ..Default::default()
         };
-        let (_fb, root, rendered_html) = reftest::render_to_framebuffer_with_layout_with_base(
-            &case.test_html,
-            "",
-            &config,
-            case.base_dir.as_deref(),
-        );
+        let (_fb, root, paint_skip, rendered_html) =
+            reftest::render_to_framebuffer_with_layout_and_paint_skip_with_base(
+                &case.test_html,
+                "",
+                &config,
+                case.base_dir.as_deref(),
+            );
         let labels = reftest::collect_dom_labels(&rendered_html);
-        let issues = reftest::check_sibling_overlaps(&root, &labels);
+        let issues = reftest::check_sibling_overlaps(&root, &labels, &paint_skip);
         if issues.is_empty() {
             (case.id.clone(), 0.0, String::new())
         } else {

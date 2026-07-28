@@ -38,6 +38,18 @@
 >
 > **裁决**：gate **保持 default-off（dormant opt-in `ZW_PHASEA_MULTI_INLINE=1`）**。slice-3 机制跑通 + 修 R2163 主回归（hit-test/struct）+ 保 slice-2 产品增益，但窄屏 1 处 multi-line-`<a>` struct 假阳性阻 default-on（须 struct-check 接 paint_skip 感知 或 multi-rect 表示，future）。4 轮 slice-3 attempt（R2164/R2165/R2166/R2196）后**首次跑通**，离 default-on 仅差窄屏 struct 假阳性。详见 [`evidence/r2197-slice3-external-set-landed-2026-07-29.txt`](./evidence/r2197-slice3-external-set-landed-2026-07-29.txt) + 设计 §3 slice 3 R2197 块。
 
+> **📍 R2198（2026-07-29）✅ Phase A slice 2+3 翻 default-on LANDED 🎉 — struct-check paint_skip-aware 解窄屏残余，slice 2 多 inline block-stacking fix 进入默认渲染路径**。承接 R2197（slice 3 dormant，残余窄屏 multi-line `<a>` struct 假阳性阻 default-on），本轮解残余 + 翻 default-on：
+>
+> - **struct-check paint_skip-aware**：`check_sibling_overlaps`（struct_check.rs）加 `paint_skip: &HashSet<NodeId>` 参数，跳过 paint_skip orphan box 对的 overlap 判定（orphan 是 hit-test proxy，paint-skip = 非视觉盒；其几何为父 IFC 片段并集，multi-line 元素并集盒与同行 sibling 边界重叠不代表视觉重叠 → 排除是 principled，非掩盖）。`count_boxes_by_class` 仍计 orphan box（item-tag:3 须见之）。
+> - **paint_skip 通路**：`render_to_framebuffer_with_layout_with_base` 重构为 private `render_with_layout_inner`（4-tuple fb+root+paint_skip+html）+ 两个 pub wrapper（3-tuple 旧 25 调用方零 churn + 4-tuple `render_to_framebuffer_with_layout_and_paint_skip_with_base` 新）。main.rs product-smoke + struct-sweep 用 4-tuple 取 paint_skip 传 check_sibling_overlaps。
+> - **翻 default-on**：3 处 gate `== Ok("1")` → `!= Ok("0")`（tree.rs:1411 multi_inline 主 gate + inline_finalization.rs backfill gate + painter text.rs phasea_orphan_fire R639 part2 gate）。kill-switch `ZW_PHASEA_MULTI_INLINE=0` 紧急回退。
+>
+> **默认路径（DEFAULT，无 env）全门禁绿**：make test **12686/0**（默认路径 slice-2+3 首次激活，零单测破坏）；**product-smoke 全 8 fixture PASS**（welcome 17.03% / wintertc / morning item-tag:3 / **窄屏 375+320 全 PASS** = R2197 残余假阳性已解）；**product-smoke-legacy 51/51 struct PASS** + 19-testpage 22.39→**17.23%（−5.16pp）** + 20-mixed 13.13→**11.49%（−1.64pp）**；self-source reftest 686 smoke neutral（526/47/0）。fmt/clippy workspace clean。
+>
+> **里程碑**：Phase A slice 2（多 inline Element 子 block 容器块级栈列修复，R2160-R2162）+ slice 3（orphan LayoutBox 回填 + paint_skip，R2197）+ struct-check paint_skip-aware（R2198）**全部 default-on**。5 轮 slice-2/3 工作（R2160-R2162/R2163 revert/R2164-R2166/R2196/R2197/R2198）收官：`<p>A<a>x</a><i>y</i><b>z</b>.</p>` 类多 inline 容器不再 a/i/b 块级堆叠（19-testpage Product A 行 h=55→~20），orphan 链接 hit-test/struct 正常，窄屏 multi-line 不假报。`ZW_PHASEA_MULTI_INLINE=0` 可整体回退。详见设计 §3 slice 2/3 R2198 块。
+
+> **📍 最新进展（R2163，2026-07-29）— Phase A slice 2 REVERT default-on → default-off（hit-test 回归）⚠️**
+
 > **📍 最新进展（R2163，2026-07-29）— Phase A slice 2 REVERT default-on → default-off（hit-test 回归）⚠️**
 >
 > - **R2162 翻 default-on 被 R2163 撤回**。R2162 仅验 welcome+legacy+borders 即翻 default-on，**漏验 morning-work/wintertc 产品 fixture**。R2163 尽职调查发现 **2 处 orphan-LayoutBox 回归**：①morning-work struct-check `item-tag:0`（期望 3）——probe orphan childless inline span 致无 LayoutBox（badge 仍绘但 struct-check 按 LayoutBox 计数）；②**`collect_hit_test_nodes`（hit_test.rs:192 遍历 LayoutBox 树）漏收 orphan inline → orphan `<a>` 链接点击/导航 hit-test 失效（真功能回归）**。设计 §3 slice 2 risk 块曾标「hit-test 须 gate 排除」但 R2160/R2162 实现未排除 `<a>`。probe off 后 morning-work struct PASS（item-tag:3）复现。

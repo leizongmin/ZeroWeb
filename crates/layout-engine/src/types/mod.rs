@@ -544,7 +544,7 @@ pub struct LayoutResult {
     /// 树），使 hit-test / struct-check（遍历 LayoutBox 树）能见到它们（修复 R2163
     /// 链接 hit-test 失效 + struct 计数）。paint 期它们的文本/背景已由父 IFC 片段
     /// 绘制（R639 part2），故须跳过 orphan LayoutBox 自身的递归绘制，避免双绘。
-    /// 默认空集（gate default-off）→ 零行为变更。
+    /// 默认空集（无 multi-inline block 容器的页面）。
     pub paint_skip_node_ids: HashSet<NodeId>,
 }
 
