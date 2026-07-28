@@ -367,7 +367,18 @@ impl LayoutEngine {
             &dom_to_taffy,
             styles,
         );
-        if changed_r695 || changed_pct_padding || changed_ratio_img || changed_intrinsic || changed_vertical {
+        // R2171：flex/grid 容器自身 cross 从 aspect-ratio + Auto-main 推导（taffy 0.12.1 gap，
+        // cross 塌缩到 0 案）。driving flex-aspect-ratio-cross-size-002。kill-switch
+        // ZW_AR_CONTAINER_CROSS（default-on）。
+        let changed_ar_container =
+            Self::apply_aspect_ratio_container_cross_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles);
+        if changed_r695
+            || changed_pct_padding
+            || changed_ratio_img
+            || changed_intrinsic
+            || changed_vertical
+            || changed_ar_container
+        {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
             let available_space = taffy::geometry::Size {
                 width: AvailableSpace::Definite(self.effective_root_layout_width()),
@@ -1228,6 +1239,92 @@ impl LayoutEngine {
             changed
         }
         walk(root, None, taffy_tree, dom_to_taffy, styles)
+    }
+
+    /// R2171：flex/grid **容器**自身 cross 尺寸从 aspect-ratio + Auto-main 推导（taffy 0.12.1 gap）。
+    /// 驱动 flex-aspect-ratio-cross-size-002：outer{display:flex; aspect-ratio:4}（width:auto→200，
+    /// height:auto）taffy 给 height=0，应 width/ratio=200/4=50。实测 taffy 仅在 main **显式** Px 时
+    /// 应用 ar（-001 .flex width:400px → h=200）；main 为 Auto（解析到 definite）时不事后应用 ar
+    /// → 容器 cross 塌缩到 0（standards + quirks 同）。chromium 两案都应用 ar（h=50）。
+    ///
+    /// 本 pass 在第一趟后运行：对 flex/grid 容器（非替换）+ ar + main/cross 均 CSS-Auto +
+    /// **cross 当前为 0**（taffy 失败模式）+ main 已解析 definite（>0）→ 推导 cross 并 set taffy
+    /// size + mark_dirty，由调用方重跑 taffy。`cross==0` 守卫把作用域精确锁在 taffy 失败案——
+    /// taffy 已给非零 cross（内容/main-explicit 等正确案）不受影响。仅水平书写模式；row/column
+    /// 对称。kill-switch `ZW_AR_CONTAINER_CROSS=0`（default-on）。
+    fn apply_aspect_ratio_container_cross_size(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) -> bool {
+        use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue};
+        if std::env::var("ZW_AR_CONTAINER_CROSS").as_deref() == Ok("0") {
+            return false;
+        }
+        if !matches!(root.writing_mode, WritingModeValue::HorizontalTb) {
+            return false;
+        }
+
+        fn walk(
+            b: &LayoutBox,
+            taffy_tree: &mut TaffyTree<NodeId>,
+            dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+            styles: &HashMap<NodeId, ComputedStyle>,
+        ) -> bool {
+            if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                return false;
+            }
+            let mut changed = false;
+            let Some(style) = b.node_id.and_then(|id| styles.get(&id)) else {
+                for c in &b.children {
+                    changed |= walk(c, taffy_tree, dom_to_taffy, styles);
+                }
+                return changed;
+            };
+            let is_flex_grid = matches!(
+                style.display,
+                DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+            );
+            // 仅 ar + main/cross 均 Auto 的容器（taffy 失败案）；非替换（替换走固有尺寸路径）。
+            if is_flex_grid
+                && !b.is_replaced
+                && let Some(ratio) = style.aspect_ratio.filter(|&r| r > 0.0)
+                && matches!(style.width, LengthValue::Auto)
+                && matches!(style.height, LengthValue::Auto)
+                && let Some(id) = b.node_id
+                && let Some(&tid) = dom_to_taffy.get(&id)
+                && let Ok(mut st) = taffy_tree.style(tid).cloned()
+            {
+                let is_column = matches!(
+                    style.flex_direction,
+                    FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+                );
+                // row: main=width(definite), cross=height(collapsed)→ height=width/ratio。
+                // column: main=height(definite), cross=width(collapsed)→ width=height×ratio。
+                let (main, cross) = if is_column {
+                    (b.height, b.width)
+                } else {
+                    (b.width, b.height)
+                };
+                if main > 0.5 && cross < 0.5 {
+                    let derived_cross = if is_column { main * ratio } else { main / ratio };
+                    if is_column {
+                        st.size.width = taffy::style::Dimension::length(derived_cross.max(0.5));
+                    } else {
+                        st.size.height = taffy::style::Dimension::length(derived_cross.max(0.5));
+                    }
+                    let _ = taffy_tree.set_style(tid, st);
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                }
+            }
+            for c in &b.children {
+                changed |= walk(c, taffy_tree, dom_to_taffy, styles);
+            }
+            changed
+        }
+        walk(root, taffy_tree, dom_to_taffy, styles)
     }
 
     /// R695（CSS §10.5）：百分比 `height` 仅当包含块高度**明确指定**时才解析，
