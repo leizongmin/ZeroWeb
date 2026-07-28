@@ -756,8 +756,11 @@ fn test_non_media_at_rule_unconditional_recurse() {
     }];
 
     let decls = collect_matching_declarations(&doc, el, &stylesheets);
-    // 非 @media 的 AtRule 无条件递归
-    assert_eq!(decls.len(), 1);
+    // 非 @media 的通用 AtRule（未知 at-rule）body 不得作为样式应用（CSS：未知 at-rule
+    // 整体忽略）。R2142 修正：旧实现无条件递归→body 内规则泄漏应用；现 body 不参与 cascade。
+    // 注：真实 @font-face 经解析为 Rule::FontFace 专属变体，不进此通用 Rule::At 分支；
+    // 此处构造通用 Rule::At(name="font-face") 模拟未知 at-rule 带 body 的场景。
+    assert_eq!(decls.len(), 0, "unknown/non-media generic at-rule body must not apply");
 }
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -1153,18 +1153,12 @@ fn collect_from_rules(
                         }
                         // 没有 media_ctx 时，@media 规则不应用（安全默认值）
                     } else {
-                        // 非 @media 的 AtRule（如 @supports）无条件递归，保持当前层
-                        collect_from_rules(
-                            doc,
-                            element,
-                            inner_rules,
-                            results,
-                            media_ctx,
-                            container_ctx,
-                            current_layer,
-                            layer_counter,
-                            pseudo,
-                        );
+                        // 非 @media 的通用 AtRule（@charset/@foo/@unknown 等）：未知 at-rule
+                        // 的 body **不得**作为样式应用（CSS：未知 at-rule 整体忽略，body 不
+                        // 参与 cascade）。@supports/@container/@layer 等已知条件 at-rule 各有
+                        // 专属 Rule 变体与处理分支（见下方 match），不进此通用 At 分支。
+                        // 旧实现对未知 at-rule body 无条件递归→body 内规则泄漏应用
+                        //（driving: at-rule-013 `@foo { #block { background: red; } }`）。
                     }
                 }
             }

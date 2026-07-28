@@ -1381,20 +1381,29 @@ impl<'a> Parser<'a> {
 
         self.skip_whitespace();
 
-        // 可选的媒体查询部分：收集直到分号
+        // 可选的媒体查询部分：收集直到分号。跟踪 `()`/`[]`/`{}`/Function 嵌套——
+        // depth>0 时块内的 `;`/`,` 不作分隔/终止符（CSS Syntax「observing nesting」）；
+        // `}` 在 depth==0 时是外层块（@media）结束，不消耗（让外层识别）——否则 `}` 被收进
+        // media query 会吞掉外层闭合 + trailing 规则泄漏（driving: at-rule-013 #eob-complex
+        // `@import "..." [; #eob-complex { background: red; } ] ...`）。
         let mut media_queries = Vec::new();
         let mut current_query = String::new();
+        let mut group_depth: i32 = 0;
 
         loop {
             match self.peek() {
-                Token::Semicolon => {
+                Token::Semicolon if group_depth == 0 => {
                     self.advance();
+                    break;
+                }
+                Token::RBrace if group_depth == 0 => {
+                    // 外层块结束（@media 闭合）：不消耗 `}`，结束 @import（无 `;`）
                     break;
                 }
                 Token::Eof => {
                     break;
                 }
-                Token::Comma => {
+                Token::Comma if group_depth == 0 => {
                     // 逗号分隔多个媒体查询
                     let trimmed = current_query.trim().to_string();
                     if !trimmed.is_empty() {
@@ -1403,6 +1412,16 @@ impl<'a> Parser<'a> {
                     current_query.clear();
                     self.advance();
                     self.skip_whitespace();
+                }
+                Token::Function(_) | Token::LParen | Token::LBracket | Token::LBrace => {
+                    group_depth += 1;
+                    current_query.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+                Token::RParen | Token::RBracket | Token::RBrace => {
+                    group_depth = (group_depth - 1).max(0);
+                    current_query.push_str(&format!("{}", self.peek()));
+                    self.advance();
                 }
                 Token::Whitespace => {
                     if !current_query.is_empty() && !current_query.ends_with(' ') {
