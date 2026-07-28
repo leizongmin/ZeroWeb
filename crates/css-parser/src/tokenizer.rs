@@ -664,6 +664,19 @@ impl Tokenizer {
                         None => return Token::Error("Invalid escape in URL".to_string()),
                     }
                 }
+                Some('"') | Some('\'') => {
+                    // CSS Syntax §5.4.7 consume_a_url：无引号 url 中遇 `"`/`'` 是 parse error，
+                    // 须**消耗一个字符串**（consume a string）并把其值并入 url。字符串未终止时在
+                    // 行尾结束（consume_string_content 见换行即返）——故 `url(foo"bar) }` 的
+                    // `"bar) }` 整段被字符串吞掉（含 `}`/`)`），#foo 的 `{` 因此得不到匹配 `}`，
+                    // 后续 `#three { background-color: red }` 被收入 #foo 未闭合块（driving:
+                    // uri-013 #three）。旧实现把 `"` 当普通字符并入 url → url 视为合法 →
+                    // `#three { background-color: red }` 成独立规则应用致红。
+                    let quote = self.peek().unwrap();
+                    self.consume(); // 消耗起始引号
+                    let s = self.consume_string_content(quote);
+                    url.push_str(&s);
+                }
                 Some(c) => {
                     self.consume();
                     url.push(c);
