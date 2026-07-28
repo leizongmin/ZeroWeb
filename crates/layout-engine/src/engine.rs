@@ -1267,6 +1267,12 @@ impl LayoutEngine {
             // CSS Quirks §percentage-height：百分比高度 quirk（不明确 CB 按 ICB 解析）**不适用**
             // 于 table-cell 的后代——后代 height:% 须 compute-to-auto（standards 行为）。
             inside_table_cell: bool,
+            // R2170：当前 box 是否处于 flex/grid 容器子树内（含自身为 flex/grid 容器）。
+            // 驱动 flex-aspect-ratio-cross-size-002（quirks 模式无 DOCTYPE）：嵌套 flex 容器内
+            // 后代 `height:100%` 不应按 ICB quirks 解析（否则以视口高度 inflate 容器）——flex/grid
+            // 容器高度由 flex/grid 算法决定，非 quirks-definite。与 R2101 table-cell 同型 gate。
+            // chromium quirks 实测：flex 子树内百分比高度 compute-to-auto（不 inflate）。
+            inside_flex_grid: bool,
             // R2107：最近 definite-height 祖先的内容高度（穿透 auto-height 祖先，
             // 不像 cb_definite 在 auto 上 reset）。CSS Quirks §percentage-height：百分比高度
             // 解析应针对「first ancestor with a defined height」非恒 ICB——有 definite 祖先时
@@ -1286,6 +1292,14 @@ impl LayoutEngine {
             }
             let mut changed = false;
             let style = b.node_id.and_then(|id| styles.get(&id));
+
+            // R2170：自身是否为 flex/grid 容器（供 gate + 子代 inside_flex_grid 传播）。
+            let self_is_flex_grid = style.is_some_and(|s| {
+                matches!(
+                    s.display,
+                    DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+                )
+            });
 
             // 本元素提供给子元素的「明确内容高度」（None = 不明确）。
             // 默认沿用父级传入的明确性（无样式节点如匿名盒透传）。
@@ -1315,7 +1329,13 @@ impl LayoutEngine {
                                 my_definite = Some(*p as f32 / 100.0 * cbh);
                             }
                             None => {
-                                if quirks_mode && !b.is_replaced && !inside_table_cell {
+                                // R2170 kill-switch：ZW_QUIRKS_PCT_FLEX_GATE=0 禁用 flex/grid gate
+                                //（回退旧行为——flex 子树内仍按 ICB quirks 解析，驱动测试将 fail）。
+                                // R2170：flex/grid 子树内禁用 ICB quirks（kill-switch
+                                // ZW_QUIRKS_PCT_FLEX_GATE=0 回退旧行为）。
+                                let quirk_blocked_by_flex_grid =
+                                    inside_flex_grid && std::env::var("ZW_QUIRKS_PCT_FLEX_GATE").as_deref() != Ok("0");
+                                if quirks_mode && !b.is_replaced && !inside_table_cell && !quirk_blocked_by_flex_grid {
                                     // R2016 quirks mode（CSS quirks §percentage-height）：不明确 CB
                                     //（auto 父）的百分比 height 解析——legacy「百分比高度生效」行为。
                                     // R2107：解析针对**最近 definite-height 祖先**（穿透 auto 祖先），
@@ -1389,17 +1409,16 @@ impl LayoutEngine {
             }
 
             // 子元素是否为 flex/grid item（其 %height 走独立语义，本 pass 跳过）。
-            let child_parent_flex_grid = style.is_some_and(|s| {
-                matches!(
-                    s.display,
-                    DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
-                )
-            });
+            // R2170：复用 self_is_flex_grid（本盒为 flex/grid → 子代为 flex/grid item）。
+            let child_parent_flex_grid = self_is_flex_grid;
 
             // R2101：当前 box 若为 table-cell，则其子树标记为「table-cell 内」，
             // 阻断后代 height:% 的 quirks ICB 解析。
             let self_is_table_cell = style.is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
             let child_inside_table_cell = inside_table_cell || self_is_table_cell;
+
+            // R2170：子代「是否在 flex/grid 子树内」= 本盒在 flex/grid 子树内 OR 本盒自身为 flex/grid。
+            let child_inside_flex_grid = inside_flex_grid || self_is_flex_grid;
 
             // R2107：子代的「最近 definite 祖先」——本盒 definite 时更新为本盒内容高，
             // 否则透传继承（auto 盒不阻断）。供 quirks 百分比高度按 first definite ancestor 解析。
@@ -1411,6 +1430,7 @@ impl LayoutEngine {
                     my_definite,
                     child_parent_flex_grid,
                     child_inside_table_cell,
+                    child_inside_flex_grid,
                     child_quirks_nearest,
                     quirks_mode,
                     viewport_height,
@@ -1427,6 +1447,7 @@ impl LayoutEngine {
         walk(
             root,
             Some(viewport_height),
+            false,
             false,
             false,
             Some(viewport_height),
