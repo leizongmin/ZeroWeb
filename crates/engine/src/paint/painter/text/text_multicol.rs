@@ -34,6 +34,9 @@ pub(super) fn compute_multicol_info_for_paint(
     font_size_px: f32,
 ) -> Option<MulticolInfo> {
     let gap: f32 = match &style.column_gap {
+        // R2192：column-gap:normal（Auto sentinel）→ 1em（CSS Multicol §4.1 default），对齐 layout
+        //（multicol.rs:161 R1040）。旧 `_ => 0.0` 致 paint 重算列几何 gap=0 与 layout 的 1em 分歧。
+        LengthValue::Auto => font_size_px,
         LengthValue::Px(g) => *g as f32,
         LengthValue::Em(e) => *e as f32 * font_size_px,
         LengthValue::Rem(r) => *r as f32 * 16.0_f32, // rem 基于 root font-size
