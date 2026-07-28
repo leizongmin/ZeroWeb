@@ -106,28 +106,24 @@ fn get_support_image_color(key: &ImageKey) -> Option<[u8; 4]> {
     None
 }
 fn extract_css_urls(html: &str) -> Vec<String> {
-    // 经 tokenizer 识别 CSS `url()`（CSS Syntax §5）：函数名大小写不敏感且可含转义
-    //（`URL(`、`U\r\4c (`），内容亦可含转义（`support/\'green\ block.png`）。Url token
-    // 内容**已解码**（consume_escape），与 painter image key 对齐。原 raw `find("url(")`
-    // 漏转义函数名（driving：uri-015 `U\r\4c ("...")` 不预抓 → painter image_cache miss
-    // → 背景滞红；escaped-url-001 仅因 6 div 共享一图、div0 纯 `url()` 预抓而幸免）。
-    // 对 HTML 整体 tokenize：非 CSS 区域偶现的 `url(`（如脚本文本）至多多抓一张不参与
-    // 渲染的图（harmless），与原 raw 扫描同 scope。
-    use zero_css_parser::{Token, Tokenizer};
-    let mut urls = Vec::new();
-    for spanned in Tokenizer::new(html) {
-        if let Token::Url(u) = spanned.token {
-            let raw = u.trim();
-            if !raw.is_empty()
-                && !raw.starts_with("data:")
-                && !raw.starts_with("http")
-                && !urls.iter().any(|x: &String| x == raw)
-            {
-                urls.push(raw.to_string());
-            }
-        }
-    }
-    urls
+    // 与生产同源：先经 DOM 抽 `<style>` 块 + inline `style=` 文本（生产
+    // [`zero_engine::extract_html_style_text`]，与 painter/collect_stylesheets 一致），
+    // 再用生产 [`zero_engine::extract_css_image_urls`]（tokenizer 识别 url()：函数名大小写
+    // 不敏感且可含转义 `URL(` / `U\r\4c (`，内容转义已解码 consume_escape，跳过 @font-face
+    // 与 data:，与 painter image key 对齐）。
+    //
+    // 原「对 HTML 整体 tokenize」会在未终止 url() 字符串处吞掉 `</style>` 及后续 HTML：
+    // driving uri-017 `background: url("support/swatch-green.png</style>` 经 HTML 整体
+    // tokenize 时，未终止字符串吸收 `</style>` → 抽成 `support/swatch-green.png</style>`
+    //（key 9447…）→ 与 painter（HTML 解析剥离 `</style>` 后得 `support/swatch-green.png`，
+    // key 16204…）不一致 → image_cache miss → 背景图不渲染（DC-14 假通过风险）。改为按
+    // `<style>` 块独立抽文本后，每个块末 EOF 自动闭合未终止 url，与 painter 同语义。
+    // 副作用：不再多抓非 CSS 区域（脚本文本等）偶现的 `url(`——那些本就不参与渲染。
+    let css = zero_engine::extract_html_style_text(html);
+    zero_engine::extract_css_image_urls(&css)
+        .into_iter()
+        .filter(|u| !u.starts_with("http"))
+        .collect()
 }
 
 pub(super) fn extract_stylesheet_hrefs(html: &str) -> Vec<String> {
@@ -590,6 +586,38 @@ mod tests {
         assert_eq!(
             urls2,
             vec!["a.png".to_string(), "b.png".to_string(), "c.png".to_string()]
+        );
+    }
+
+    /// R2134：未终止 url() 字符串在 `</style>` 处不得吸收 `</style>` 及后续 HTML。
+    /// driving uri-017：`background: url("support/swatch-green.png</style>` 经「HTML 整体
+    /// tokenize」会抽成 `support/swatch-green.png</style>`（key 与 painter 不一致 → cache
+    /// miss）。改为按 `<style>` 块抽文本后，块末 EOF 自动闭合未终止 url，得干净 url。
+    #[test]
+    fn extract_css_urls_unterminated_at_style_close() {
+        // 未终止带引号 url（块末 EOF 闭合）
+        let html = r#"<style>.one { background: url("support/swatch-green.png</style>"#;
+        let urls = extract_css_urls(html);
+        assert_eq!(urls, vec!["support/swatch-green.png".to_string()]);
+
+        // 未终止无引号 url（块末 EOF 闭合），含 </style> 不被吞
+        let html2 = r#"<style>.two { background: url(support/swatch-green.png</style>"#;
+        let urls2 = extract_css_urls(html2);
+        assert_eq!(urls2, vec!["support/swatch-green.png".to_string()]);
+
+        // 两块各自独立：第二块的 url 不被第一块未终止字符串吞掉
+        let html3 = concat!(
+            r#"<style>.one { background: url("support/swatch-green.png</style>"#,
+            "\n",
+            r#"<style>.two { background: url(support/swatch-red.png) }</style>"#,
+        );
+        let urls3 = extract_css_urls(html3);
+        assert_eq!(
+            urls3,
+            vec![
+                "support/swatch-green.png".to_string(),
+                "support/swatch-red.png".to_string(),
+            ]
         );
     }
 }
