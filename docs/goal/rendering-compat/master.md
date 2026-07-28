@@ -17,7 +17,7 @@
 > - **welcome +0.19pp 残余 = documented-accept**：probe 在 welcome 多 inline 容器（22 span/4 a）触发，welcome 多 inline 本身未坏（OFF 16.84% font-wall），probe 微改测量 = 固有代价（消除即失 legacy 增益，同机制）；struct PASS + 17.03% < 20% gate = 可接受。
 > - **翻 default-on 依据**：redirect item-2（产品/legacy smoke 可见稳定性修复，无「零回归」qualifier）+ self-source net +2 强安全信号 + kill-switch 可回退 + 上 session「两残余归零/documented-accept 后翻」条件满足（css-text 归零 + welcome documented-accept）。
 > - **全门禁（default path = probe on）**：make test EXIT=0 全绿（★首次 probe 默认路径验证，零 unit test 破坏）/ cargo fmt CLEAN / cargo clippy --workspace --all-targets -D warnings CLEAN / product-smoke welcome 17.03% struct PASS / product-smoke-legacy 19/20 struct PASS / borders oracle 415/506 零漂移。
-> - **forward**：监控 welcome +0.19pp（font-stack/行盒度量工作后复测）；Phase A slice 3+（inline-wrapping-inline 嵌套 / inline 带 bg/border 保留 LayoutBox / vertical R109-blocked / IFC fragment→LayoutBox 回填根治 orphan-LayoutBox hit-test）；37-form-controls 随 slice 2 default-on 进一步受益。★ R2161 教训：特殊 inline（br/wbr/img）须按 tag 排除 eligibility。
+> - **forward**：监控 welcome +0.19pp（font-stack/行盒度量工作后复测）；Phase A slice 3+（inline-wrapping-inline 嵌套 / inline 带 bg/border 保留 LayoutBox / vertical R109-blocked / IFC fragment→LayoutBox 回填根治 orphan-LayoutBox hit-test）。**★ R2163 slice 3 driving-test 调查 = legacy 表面 negative**：19/20 fixture 用**兄弟** childless inline（slice 2 已覆盖），无嵌套 inline → slice 3（nested inline）在当前可见 corpus 无 driving test，按 redirect「禁止推测性开发」**deferred**（待 reftest 失败案或含嵌套 inline 的产品页涌现）。**R2163 post-default-on 验证**：legacy 51/51 struct PASS（含 37-form-controls 3.85% PASS，Phase A slice 1+2 已修——run-rules「唯一 known struct FAIL=37」陈述 stale）。★ R2161 教训：特殊 inline（br/wbr/img）须按 tag 排除 eligibility。
 
 > **🎯 当前状态速览（2026-07-25）**
 >
