@@ -463,6 +463,18 @@ fn apply_replaced_element_sizing(
         (Some(w), None) if w > 0.0 => {
             // 仅有 width：设置宽度，高度由 aspect_ratio 推导
             if computed.aspect_ratio.is_none() {
+                // R2172：SVG data URI unitless width attr（`extract_svg_data_uri_size` 解析
+                // '200' 命中此分支，区别于 '50px' 解析失败落 img_intrinsic_sizes 分支）须补设
+                // aspect_ratio（从 decoded intrinsic 比），否则替换元素 cross 维 = 0（img-row-010
+                // 200×0；img-row-011 等）。仅 CSS aspect-ratio 未设 + 至少一侧 auto + decoded
+                // intrinsic 可用时。kill-switch ZW_SVG_ATTR_AR=0。
+                if (matches!(computed.width, LengthValue::Auto) || matches!(computed.height, LengthValue::Auto))
+                    && std::env::var("ZW_SVG_ATTR_AR").as_deref() != Ok("0")
+                    && let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id)
+                    && ih > 0.0
+                {
+                    taffy_style.aspect_ratio = Some(iw / ih);
+                }
                 // 无 aspect_ratio 也无 height，使用固定宽度
                 if matches!(computed.width, LengthValue::Auto) {
                     taffy_style.size.width = taffy::style::Dimension::length(w.max(1.0));
@@ -474,6 +486,14 @@ fn apply_replaced_element_sizing(
         (None, Some(h)) if h > 0.0 => {
             // 仅有 height：设置高度，宽度由 aspect_ratio 推导
             if computed.aspect_ratio.is_none() {
+                // R2172：对称——SVG unitless height attr 须补设 aspect_ratio（见上分支注释）。
+                if (matches!(computed.width, LengthValue::Auto) || matches!(computed.height, LengthValue::Auto))
+                    && std::env::var("ZW_SVG_ATTR_AR").as_deref() != Ok("0")
+                    && let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id)
+                    && ih > 0.0
+                {
+                    taffy_style.aspect_ratio = Some(iw / ih);
+                }
                 if matches!(computed.height, LengthValue::Auto) {
                     taffy_style.size.height = taffy::style::Dimension::length(h.max(1.0));
                 }
