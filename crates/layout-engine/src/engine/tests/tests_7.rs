@@ -222,6 +222,12 @@ fn test_inline_block_line_wrapping() {
 
     let mut styles = HashMap::new();
     let mut container_s = ComputedStyle::default();
+    // 显式 Block：ComputedStyle::default().display == Inline（R1058），须显式设 Block 才符合
+    // 「inline-block 行内换行容器」的测试意图（div 默认 block）。否则 R2156 inline-box-model
+    // coherence 会把该 inline 容器的 taffy 节点跳过（其 inline-block 子改由父 IFC 排版），
+    // ib1/ib2/ib3 不再作为 container 的 LayoutBox 直接子——与本测试 find_child_by_node_id 的
+    // 断言前提（container 为块级容器、inline-block 子为其 LayoutBox 子）不符。
+    container_s.display = DisplayValue::Block;
     container_s.width = LengthValue::Px(150.0);
     styles.insert(container, container_s);
 

@@ -670,12 +670,46 @@ impl InlineFormattingContext {
         !matches!(std::env::var("ZW_IFC_IMG_INTRINSIC").as_deref(), Ok("0"))
     }
 
+    /// R2156 Phase A：检测 inline 元素的**整个子树**是否含 out-of-flow 后代
+    /// （position:absolute/fixed）。tree.rs 的 `ZW_INLINE_BOX_MODEL_COHERENCE` 切片在跳过 inline
+    /// 的 taffy 节点前调此函数——若子树含 ooflow 后代，必须保留 taffy 子树，否则 ooflow 后代
+    /// 失去 containing block（nested-inline-abspos-child 簇：`<span>...<span class=parent>
+    /// <div class=inline-content>` 中 inline-content 同时是 inline-block + absolute，跳过外层
+    /// `<span>` 会把整棵子树丢出 taffy 树 → abspos 丢 CB）。与 R1492 同源约束。
+    pub(crate) fn inline_subtree_has_ooflow_descendant(
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        inline_id: NodeId,
+    ) -> bool {
+        let mut stack = doc.child_nodes(inline_id);
+        while let Some(cid) = stack.pop() {
+            let Some(node) = doc.get(cid) else {
+                continue;
+            };
+            if let NodeKind::Element(_) = &node.kind
+                && let Some(s) = styles.get(&cid)
+                && matches!(
+                    s.position,
+                    zero_style_system::property::types::PositionValue::Absolute
+                        | zero_style_system::property::types::PositionValue::Fixed
+                )
+            {
+                return true;
+            }
+            // 继续下探全部后代（不限 inline-level——abspos 可嵌在 block-in-inline 子树里）。
+            stack.extend(doc.child_nodes(cid));
+        }
+        false
+    }
+
     /// R1576：检测 inline 元素是否含**嵌套 atomic inline 后代**（任意深度，限 inline 路径）。
     /// atomic = inline-block/inline-flex/inline-grid/inline-table **或 `<img>`**（IFC 把 img 作
     /// 原子行内级盒，local_name=="img" 分支）。仅沿 inline-level 后代下探（block-level 停止 =
     /// R109 block-in-inline 另路径）。驱动 `collect_inline_items` 递归收集，修复
     /// `<p><a><img></a></p>` / `<p><a><span class=inline-block></span></a></p>` 容器塌缩。
-    fn inline_elem_has_nested_inline_block(
+    //
+    // R2156 Phase A：暴露为 pub(crate) 供 tree.rs 子循环复用同一判定（避免逻辑漂移）。
+    pub(crate) fn inline_elem_has_nested_inline_block(
         doc: &Document,
         styles: &HashMap<NodeId, ComputedStyle>,
         inline_id: NodeId,

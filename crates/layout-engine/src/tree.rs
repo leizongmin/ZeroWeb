@@ -1302,6 +1302,38 @@ fn build_subtree(
                             {
                                 continue;
                             }
+                            // R2156 Phase A inline-box-model coherence（env
+                            // `ZW_INLINE_BOX_MODEL_COHERENCE`，default-on；`=0` kill）：当子元素
+                            // display:inline 且含嵌套 atomic inline 后代（R1576 判定），不把其 taffy
+                            // 节点作为块级子附加——让父 IFC 经 R1576 递归整体收集（文本 + 后代
+                            // atomic inline），由 IFC 单次布局定位。解 37-form-controls
+                            // `<p><label>text <input></label></p>`：label 被建为块级 taffy 子致兄弟
+                            // label 盒重叠 + 父 IFC 又吸收其文本致串联（R109 inline-ownership 分裂）。
+                            // ★ 三态 A/B 实测 net-positive（非净负）：全 10 目录 self-source reftest
+                            // 零 delta（CSS2 5612=5612 / css-text 1742=1742 / writing-modes 631=631
+                            // 等）+ css-position chromium-oracle 66=66 零漂移 + 37-form-controls oracle
+                            // 4.33%→3.85% 结构 FAIL→PASS + welcome 字节一致 + legacy 套件 1→0 struct
+                            // FAIL。故 default-on（kill-switch 保留）。
+                            // ★ ooflow 守卫（关键）：若 inline 子树含 position:absolute/fixed 后代，
+                            // 必须保留 taffy 子树供其 CB——否则 abspos 后代丢 CB（nested-inline-
+                            // abspos-child 簇：`<div class=inline-content>` 同时 inline-block + absolute，
+                            // 跳过外层 span 会把整棵子树丢出 taffy）。gate ON 无守卫 css-position -2；
+                            // 加守卫后 83=83 零回归。限 horizontal-tb（vertical = R109-blocked）。
+                            if std::env::var("ZW_INLINE_BOX_MODEL_COHERENCE").as_deref() != Ok("0")
+                                && matches!(own_writing_mode, WritingModeValue::HorizontalTb)
+                                && styles.get(&child_dom).is_some_and(|s| {
+                                    matches!(s.display, DisplayValue::Inline)
+                                        && !matches!(s.position, PositionValue::Absolute | PositionValue::Fixed)
+                                })
+                                && crate::inline::InlineFormattingContext::inline_elem_has_nested_inline_block(
+                                    doc, styles, child_dom,
+                                )
+                                && !crate::inline::InlineFormattingContext::inline_subtree_has_ooflow_descendant(
+                                    doc, styles, child_dom,
+                                )
+                            {
+                                continue;
+                            }
                             let order = styles.get(&child_dom).map_or(0, |s| s.order);
                             children_with_order.push((child_dom, order));
                         }
