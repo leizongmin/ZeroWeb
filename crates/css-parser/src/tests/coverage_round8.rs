@@ -615,6 +615,53 @@ fn test_declaration_with_important() {
     assert!(style.declarations[0].important);
 }
 
+/// R2134：`!important` 必须紧跟 `;` / `}` / EOF 才有效。trailing token（如
+/// `background: red ! important fail`）使整个声明非法——`!important` 回填进值，
+/// 值整体无效 → cascade 丢弃（driving: core-syntax-006，chromium 一致）。
+/// 旧实现直接 break 把 `red !important` 当有效声明、trailing `fail` 成独立坏声明。
+#[test]
+fn test_declaration_important_with_trailing_token_is_invalid() {
+    // `! important fail` → 重要标志不得置位
+    let css = "div { background: red ! important fail; }";
+    let sheet = Parser::parse_stylesheet(css);
+    let Rule::Style(style) = &sheet.rules[0] else {
+        panic!("expected style")
+    };
+    assert_eq!(style.declarations.len(), 1);
+    assert!(
+        !style.declarations[0].important,
+        "trailing token after !important must invalidate the priority flag"
+    );
+    // 值应含 `!important`（回填），使下游 cascade apply-on-dummy 判定非法并丢弃
+    assert!(
+        style.declarations[0].value.contains("important"),
+        "value should absorb the invalid !important: {}",
+        style.declarations[0].value
+    );
+
+    // 对照：合法 `!important`（紧跟 `;`）仍置位
+    let css_ok = "div { color: green ! important; }";
+    let sheet_ok = Parser::parse_stylesheet(css_ok);
+    let Rule::Style(style_ok) = &sheet_ok.rules[0] else {
+        panic!("expected style")
+    };
+    assert!(
+        style_ok.declarations[0].important,
+        "valid !important (followed by ;) must set the flag"
+    );
+
+    // 对照：合法 `!IMPORTANT`（大小写不敏感 + 紧跟 `}`）
+    let css_ci = "div { color: green !IMPORTANT }";
+    let sheet_ci = Parser::parse_stylesheet(css_ci);
+    let Rule::Style(style_ci) = &sheet_ci.rules[0] else {
+        panic!("expected style")
+    };
+    assert!(
+        style_ci.declarations[0].important,
+        "!IMPORTANT (case-insensitive, followed by }}) must set the flag"
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // 选择器列表 — 多选择器
 // ═══════════════════════════════════════════════════════════════════════

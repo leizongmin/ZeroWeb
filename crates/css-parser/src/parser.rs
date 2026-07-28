@@ -844,14 +844,27 @@ impl<'a> Parser<'a> {
                     self.advance();
                     self.skip_whitespace();
                     if let Token::Ident(s) = self.peek().clone()
-                        && s == "important"
+                        && s.eq_ignore_ascii_case("important")
                     {
-                        important = true;
-                        self.advance();
-                        break;
+                        self.advance(); // 消耗 "important"
+                        // CSS Syntax：`!important` 必须紧跟 `;` / `}` / EOF 才有效。若其后
+                        // 还有非空白 token（如 `background: red !important fail`），整个声明
+                        // 非法（driving: core-syntax-006 `background: red ! important fail`）。
+                        // 旧实现此处直接 break，把 `red !important` 当有效声明，trailing `fail`
+                        // 成独立坏声明——应改为把 `!important` 回填进值，使值整体无效→cascade
+                        // 丢弃（与 chromium 一致：trailing token 后 !important 不生效）。
+                        self.skip_whitespace();
+                        if matches!(self.peek(), Token::Semicolon | Token::RBrace | Token::Eof) {
+                            important = true;
+                            break;
+                        }
+                        // 有 trailing token → !important 无效，回填值使声明整体非法
+                        flush_ws!();
+                        value_parts.push_str("!important");
+                    } else {
+                        flush_ws!();
+                        value_parts.push('!');
                     }
-                    flush_ws!();
-                    value_parts.push('!');
                 }
                 _ => {
                     flush_ws!();
