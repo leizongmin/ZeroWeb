@@ -48,7 +48,7 @@ pub fn subtree_has_text_decoration(doc: &Document, styles: &HashMap<NodeId, Comp
 /// 支持 Px / Em（× font_size）/ Percentage（× container_width）。其他单位回退 0。
 /// font_size 由 ComputedStyle.font_size（通常已 compute 到 Px）解析；Em 嵌套以父 font-size 为准。
 /// 与 paint 路径（`painter/text.rs`）的 text_indent 解析保持一致（IFC 双路径同源）。
-pub(crate) fn resolve_text_indent(text_indent: &LengthValue, font_size: &LengthValue, container_width: f32) -> f32 {
+pub fn resolve_text_indent(text_indent: &LengthValue, font_size: &LengthValue, container_width: f32) -> f32 {
     let font_size_px = match font_size {
         LengthValue::Px(v) => *v as f32,
         _ => 16.0, // computed font_size 应为 Px；防御性回退

@@ -222,6 +222,15 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 >（tab_size / container_width-gate，各需 A/B，非机械）。提取 helper 本身非「单 session 机械活」——R2166
 > 「独立多 session 工程」precise 化为「先逐个裁决 N 个 Path A/B 分歧」。slice 3 实施（orphan LayoutBox
 > 回填）仍须等 helper 提取完成（分歧 2/3 裁决后）。本轮 LANDED 分歧 1 = slice 3 前置首个安全切片，无回归。
+>
+> **★ R2188（2026-07-29）分歧 4 = text-indent，同型 LANDED net-zero**。R2187 catalog 的 3 处分歧之外，
+> `.with_*` 链还有第 4 处同类重复：**text-indent** Path A 调 `resolve_text_indent` resolver，Path B 内联同
+> 公式（Px/Em×fs/Percentage×cw）两份独立拷贝（旧注释自称「双路径同源」= aspirational 非强制）。提升
+> `resolve_text_indent` `pub(crate)`→`pub`，Path B 改调 resolver。net-zero 构造证明：Path B 的 `font_size`
+>（text.rs:361）已保证 `style.font_size` Px（非 Px 早 return）→ 与 resolver 内 `font_size_px`（同源 + 16.0
+> 防御回退在此不可达）等价。实证：welcome 16.84% 字节不变 + make test 12686/0 + product-smoke 全 struct
+> PASS。**Path A/B `.with_*` 链分歧进度 = 4 处中 2 解**：text-align✅(R2187) / text-indent✅(R2188) /
+> tab_size⏳(R2183 非 lever) / container_width-gate⏳(R1043 vertical entangled)。剩 2 处 blocked/risky。
 
 ---
 

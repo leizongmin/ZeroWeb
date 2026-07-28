@@ -11,7 +11,7 @@ use crate::measure_char_for_paint;
 use zero_css_parser::values::{ColorValue, FloatValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::inline_finalization::{
-    resolve_text_align, resolve_text_align_last, subtree_has_text_decoration,
+    resolve_text_align, resolve_text_align_last, resolve_text_indent, subtree_has_text_decoration,
 };
 use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, WordBreakMode};
 use zero_render_foundation::geometry::Rect;
@@ -542,14 +542,12 @@ impl super::Painter {
             let text_align = resolve_text_align(Some(style));
             let text_align_last = resolve_text_align_last(Some(style));
 
-            // text-indent 首行缩进（px）：Px/Em（×font_size）/Percentage（×container_width，CSS §10.3.1）。
-            // 与 layout 路径（inline_finalization::resolve_text_indent）保持一致（IFC 双路径同源）。
-            let text_indent_px: f32 = match style.text_indent {
-                LengthValue::Px(v) => v as f32,
-                LengthValue::Em(v) => v as f32 * font_size,
-                LengthValue::Percentage(v) => v as f32 / 100.0 * container_width,
-                _ => 0.0,
-            };
+            // R958 双路径同源：text-indent 经 layout 路径的共享 resolver（resolve_text_indent）解析，
+            // 消除 paint Path B 此前内联的重复 match（与 layout Path A 两份独立拷贝，曾潜伏 IFC Path A/B
+            // 分歧风险）。Px / Em（×font_size）/ Percentage（×container_width），CSS §10.3.1。Path B 的
+            // font_size 已在 line 361 保证为 style.font_size 的 Px（非 Px 早 return），故与 resolver 内部
+            // font_size_px（同取 style.font_size Px，16.0 防御回退在此不可达）等价。
+            let text_indent_px = resolve_text_indent(&style.text_indent, &style.font_size, container_width);
 
             // CSS tab-size — 制表符展开宽度
             // Number(n) 表示 n 个空格宽度，Length 表示具体像素值
