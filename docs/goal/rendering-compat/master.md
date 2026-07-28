@@ -48,6 +48,8 @@
 >
 > **里程碑**：Phase A slice 2（多 inline Element 子 block 容器块级栈列修复，R2160-R2162）+ slice 3（orphan LayoutBox 回填 + paint_skip，R2197）+ struct-check paint_skip-aware（R2198）**全部 default-on**。5 轮 slice-2/3 工作（R2160-R2162/R2163 revert/R2164-R2166/R2196/R2197/R2198）收官：`<p>A<a>x</a><i>y</i><b>z</b>.</p>` 类多 inline 容器不再 a/i/b 块级堆叠（19-testpage Product A 行 h=55→~20），orphan 链接 hit-test/struct 正常，窄屏 multi-line 不假报。`ZW_PHASEA_MULTI_INLINE=0` 可整体回退。详见设计 §3 slice 2/3 R2198 块。
 
+> **📍 R2199（2026-07-29）✅ default-on plateau-guard 全量 chromium-Oracle 复核 = net-POSITIVE（+66），slice 2+3 default-on 经全语料验证无回归**。R2198 default-on 后跑全量 `make reftest-oracle`（10397 cases）做 DC-7 持久化证据 + 漂移检查。**聚合（DC-14 三态）**：oracle-pass（z_vs_chr<1%）**5969（58.8%）** vs R2185 baseline 5903（58.2%）= **+66 案 / +0.6pp**；credible 5848（57.6%）vs 57.0% = +0.6pp；strict 真通过 414（4.1%）= 持平；不一致 **4177** vs 4243 = **−66**（mismatch 减少）。**default-on 经全语料验证 net-positive 无回归**——slice-2 block-stacking fix 使多 inline block 容器 WPT 案更接近 chromium（a/i/b 不再块级堆叠），oracle 一致率上升。top high-diff 案全为 pre-existing（box-display insert-inline-in-blocks = JS DOM-mutation known-blocked / fonts/generated-content font-wall），无新回归。结论：Phase A slice 2+3 default-on **收官验证通过**（product-smoke + legacy + make test + 全量 oracle 四重绿）。
+
 > **📍 最新进展（R2163，2026-07-29）— Phase A slice 2 REVERT default-on → default-off（hit-test 回归）⚠️**
 
 > **📍 最新进展（R2163，2026-07-29）— Phase A slice 2 REVERT default-on → default-off（hit-test 回归）⚠️**
