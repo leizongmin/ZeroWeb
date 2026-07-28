@@ -77,9 +77,11 @@ fn test_parser_uncovered_cases() {
     // assert_eq!(stylesheet.rules.len(), 1);
 
     // Line 426: _ => PseudoClassSelector::Simple(name.to_string())
+    // R2144：`:nth-child-anb` 是未知伪类（非标准），按 CSS Selectors L3 invalidates 选择器
+    // → 整条规则丢弃（rules.len()==0）。旧实现把它当 Simple 伪类存（rules.len()==1，leak）。
     let css = ":nth-child-anb { color: red; }";
     let stylesheet = Parser::parse_stylesheet(css);
-    assert_eq!(stylesheet.rules.len(), 1);
+    assert_eq!(stylesheet.rules.len(), 0);
 
     // Lines 453-456: nth expression parsing for odd/even
     let css = ":nth-child(odd) { color: red; }";

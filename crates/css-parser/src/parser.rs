@@ -169,8 +169,12 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            if let Some(sel) = self.consume_selector() {
-                selectors.push(sel);
+            // CSS Selectors L3：选择器列表中任一非法选择器（如未知伪类）invalidates 整个列表
+            // → 整条规则丢弃（driving: selectors-parsing-001 `p:invalidPseudoClass, p.test1`）。
+            // 旧实现跳过 None 选择器继续，导致同组其他合法选择器（如 p.test1）泄漏应用。
+            match self.consume_selector() {
+                Some(sel) => selectors.push(sel),
+                None => return None,
             }
 
             self.skip_whitespace();
@@ -286,6 +290,119 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// 已知**简单**伪类名（非函数形式）。CSS Selectors L4 + 常见浏览器伪类。
+    /// vendor 前缀（`-` 开头，如 `-webkit-`/`-moz-`）视为已知（容忍）。
+    /// 未知伪类使选择器非法（CSS Selectors L3 §13：未知伪类 invalidates 选择器 → 整个选择器
+    /// 列表非法 → 规则丢弃）。driving: selectors-parsing-001 `p:invalidPseudoClass, p.test1 {...}`
+    /// —— `:invalidPseudoClass` 未知故整条规则（含 `p.test1`）应丢弃，`p.test1` 不应用。
+    fn is_known_simple_pseudo_class(name: &str) -> bool {
+        if name.starts_with('-') {
+            return true; // vendor 前缀容忍
+        }
+        matches!(
+            name,
+            "link"
+                | "visited"
+                | "hover"
+                | "active"
+                | "focus"
+                | "focus-visible"
+                | "focus-within"
+                | "any-link"
+                | "local-link"
+                | "target"
+                | "target-within"
+                | "scope"
+                | "root"
+                | "empty"
+                | "blank"
+                | "first-child"
+                | "last-child"
+                | "only-child"
+                | "first-of-type"
+                | "last-of-type"
+                | "only-of-type"
+                | "enabled"
+                | "disabled"
+                | "checked"
+                | "indeterminate"
+                | "default"
+                | "required"
+                | "optional"
+                | "valid"
+                | "invalid"
+                | "in-range"
+                | "out-of-range"
+                | "placeholder-shown"
+                | "read-only"
+                | "read-write"
+                | "user-invalid"
+                | "defined"
+                | "host"
+                | "fullscreen"
+                | "modal"
+                | "picture-in-picture"
+                | "playing"
+                | "paused"
+                | "muted"
+                | "seeking"
+                | "buffering"
+                | "stalled"
+                | "volume-locked"
+                | "autoplay"
+                | "locked"
+                | "current"
+                | "past"
+                | "future"
+                | "spatial-navigation"
+                | "inert"
+                | "has-slotted"
+                | "open"
+                | "closed"
+                | "top-layer"
+        )
+    }
+
+    /// 已知函数伪类名（`name(...)` 形式，未被上方 match 显式分发处理的）。
+    fn is_known_function_pseudo_class(name: &str) -> bool {
+        if name.starts_with('-') {
+            return true;
+        }
+        matches!(
+            name,
+            "dir" | "matches" | "any" | "host-context" | "nth-col" | "nth-last-col"
+        )
+    }
+
+    /// 已知伪元素名。vendor 前缀 + `view-transition-*` 视为已知。
+    fn is_known_pseudo_element(name: &str) -> bool {
+        if name.starts_with('-') || name.starts_with("view-transition-") {
+            return true;
+        }
+        matches!(
+            name,
+            "first-line"
+                | "first-letter"
+                | "before"
+                | "after"
+                | "selection"
+                | "placeholder"
+                | "backdrop"
+                | "marker"
+                | "cue"
+                | "grammar-error"
+                | "spelling-error"
+                | "file-selector-button"
+                | "details-content"
+                | "search-text"
+                | "target-text"
+                | "view-transition"
+                | "highlight"
+                | "shadow-tree"
+                | "content"
+        )
+    }
+
     /// 消耗复合选择器。
     fn consume_compound_selector(&mut self) -> Option<CompoundSelector> {
         let mut type_selector = None;
@@ -337,6 +454,10 @@ impl<'a> Parser<'a> {
                             // CSS 伪元素名 ASCII 大小写不敏感（CSS Syntax §5），归一化为小写
                             // 供下游 matcher 按小写名匹配（WPT case-sensitive-003 `::FiRst-LiNe`）。
                             let name = name.to_ascii_lowercase();
+                            // 未知伪元素使选择器非法（CSS Selectors L3），返回 None
+                            if !Self::is_known_pseudo_element(&name) {
+                                return None;
+                            }
                             subclass_selectors
                                 .push(SubclassSelector::PseudoElement(PseudoElementSelector::Standard(name)));
                             self.advance();
@@ -360,7 +481,13 @@ impl<'a> Parser<'a> {
                                 "nth-of-type" => self.parse_nth_pattern("nth-of-type"),
                                 "nth-last-of-type" => self.parse_nth_last_of_type_pattern(),
                                 "lang" => self.parse_lang(),
-                                _ => PseudoClassSelector::Simple(name),
+                                _ => {
+                                    // 未知函数伪类（如 `:foo(...)`）使选择器非法
+                                    if !Self::is_known_function_pseudo_class(&name) {
+                                        return None;
+                                    }
+                                    PseudoClassSelector::Simple(name)
+                                }
                             };
                             subclass_selectors.push(SubclassSelector::PseudoClass(pseudo));
                         } else {
@@ -372,6 +499,10 @@ impl<'a> Parser<'a> {
                                         .push(SubclassSelector::PseudoElement(PseudoElementSelector::Standard(name)));
                                 }
                                 _ => {
+                                    // 未知简单伪类（如 `:invalidPseudoClass`）使选择器非法
+                                    if !Self::is_known_simple_pseudo_class(&name) {
+                                        return None;
+                                    }
                                     subclass_selectors
                                         .push(SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name)));
                                 }
@@ -392,7 +523,13 @@ impl<'a> Parser<'a> {
                             "nth-of-type" => self.parse_nth_pattern("nth-of-type"),
                             "nth-last-of-type" => self.parse_nth_last_of_type_pattern(),
                             "lang" => self.parse_lang(),
-                            _ => PseudoClassSelector::Simple(name),
+                            _ => {
+                                // 未知函数伪类（Function token 形式）使选择器非法
+                                if !Self::is_known_function_pseudo_class(&name) {
+                                    return None;
+                                }
+                                PseudoClassSelector::Simple(name)
+                            }
                         };
                         subclass_selectors.push(SubclassSelector::PseudoClass(pseudo));
                     }
