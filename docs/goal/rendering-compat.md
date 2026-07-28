@@ -10,6 +10,8 @@
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
 > **🔗 当前阻塞 + 可执行方案（2026-07-25）**：reftest ~57% plateau（自主 clean-lever 穷尽）。四大阻塞（Phase A / font-stack / P1b / P3）方案见 [`rendering-compat/blockers-resolution-plan-2026-07-25.md`](rendering-compat/blockers-resolution-plan-2026-07-25.md)。**实施入口**：Phase A 首切片（pre-authorized）= [`rendering-compat/phase-a-slice1-inline-block-linebox-mechanism-2026-07-25.md`](rendering-compat/phase-a-slice1-inline-block-linebox-mechanism-2026-07-25.md)；P1b 独立 RFC = [`rendering-compat/p1b-rfc-2026-07-25.md`](rendering-compat/p1b-rfc-2026-07-25.md)。运行时控制面板 = [`rendering-compat/master.md`](rendering-compat/master.md)。
+>
+> **🧭 方向裁决（2026-07-28）**：当前执行策略改为“转投高收益项目 + plateau-guard”。后续 agent 不应再把 WPT 95% 当作短期冲刺目标，也不应在已反复证伪的单点切片上循环。允许继续推进的工作仅限：（1）有明确 driving test、低风险、A/B 零回归的 CSS2/parser/selector clean lever；（2）产品/legacy smoke 的可见稳定性修复；（3）为 Phase A 完整 inline-box-model / IFC coherence 输出可回退实施设计。暂跳过：旧 Phase A 首切片、R109 单点、37-form-controls 单点、font-stack rebuild/M18、P1b JS Bridge 深改、P3 真窗口/GPU 验收、inline SVG/SVG intrinsic sizing、sticky/scroll-snap/动态滚动。旧 2026-07-25 blocker 文档保留作历史依据，不再作为默认开工入口；最新执行方向以 `rendering-compat/master.md` 顶部裁决包为准。
 
 ---
 
@@ -898,6 +900,17 @@ evidence/
 ---
 
 ## Execution Protocol
+
+### 高收益执行模式（2026-07-28 裁决）
+
+当前目标进入 **plateau-guard + 高收益推进** 模式：
+
+1. **守住已获得收益**：每轮先确认 `make test`、产品 smoke、legacy smoke 没有新回归；reftest 作为回归守卫和机会性扫描，不再作为短期 95% 冲刺。
+2. **只接 low-risk clean lever**：只有同时满足“明确 driving test、根因清楚、改动面小、A/B 无新失败、产品 smoke 无结构回归”的修复才继续落地。
+3. **及时跳过死胡同**：同一方向连续 2-3 轮 empirical 扫描 negative、或需要高风险架构重写但没有新设计时，立即记录结论并转向，不继续消耗会话。
+4. **Phase A 只做设计后实施**：完整 inline-box-model / IFC coherence 是潜在高收益架构方向，但必须先写可回退实施设计，包含 kill-switch、结构签名 gate、三态 A/B 门禁和净负回退策略；禁止直接按旧 `phase-a-slice1` 开工。
+5. **明确暂跳过项**：font-stack rebuild/M18、P1b JS Bridge 深改、P3 真窗口/GPU、R109 单点、37-form-controls 单点、inline SVG/SVG intrinsic sizing、sticky/scroll-snap/动态滚动不作为当前 rendering-compat 主线。
+6. **文档优先级**：入口文档定义长期目标；当前执行方向以 `docs/goal/rendering-compat/master.md` 顶部“当前裁决”块为准；archive/evidence 只作历史证据，不覆盖最新裁决。
 
 ### 自主执行原则
 
