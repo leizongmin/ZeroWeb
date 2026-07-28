@@ -257,6 +257,12 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > **IFC Path A/B 自主方向定论 exhausted**：3 safe DRY land（R2187/2188/2189）+ 3 行为分歧 confirmed non-lever/blocked
 >（tab_size R2183 / container_width-gate R1043 / white-space·break R2190 −8）+ 残 word_break_mode trivial。显著
 > 进展 await user 授权 slice-3 深构造或新 vein。
+>
+> **R2191（2026-07-29）word_break_mode 第 4 safe DRY LANDED net-zero = IFC Path A/B safe DRY 全部穷尽（4/4）**。
+> 提取 `resolve_word_break_mode` 共享 resolver（word-break + line-break:anywhere，Path A/B 字节同源）+ 清理 4 处
+> import。net-zero：welcome 16.84% 字节不变 + make test 12686/0 + product-smoke 全 struct PASS。**IFC Path A/B
+> safe DRY 4/4 收官**（text-align R2187 / text-indent R2188 / override-maps R2189 / word_break_mode R2191）。
+> 自主代码级工作全面穷尽；剩 3 行为分歧 confirmed blocked/non-lever。
 
 ---
 

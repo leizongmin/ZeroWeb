@@ -10,7 +10,7 @@ use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, VerticalAli
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
-use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign};
+use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, WordBreakMode};
 use crate::types::LayoutBox;
 use zero_style_system::WritingModeValue;
 
@@ -115,6 +115,29 @@ pub fn resolve_text_align_last(style: Option<&ComputedStyle>) -> Option<TextAlig
         // start/end 方向感知，与 resolve_text_align 一致（CSS Text 3 §6.2）。
         TextAlignLastValue::Start => Some(if is_rtl { TextAlign::Right } else { TextAlign::Left }),
         TextAlignLastValue::End => Some(if is_rtl { TextAlign::Left } else { TextAlign::Right }),
+    }
+}
+
+/// 从 ComputedStyle 读取 word-break + line-break 并转换为 IFC 的 `WordBreakMode`。
+///
+/// `word-break: break-all/keep-all` 直接映射；`line-break: anywhere` 覆盖为 BreakAll 近似
+///（CSS Text 3 §5.3：anywhere 在每个排版字符处创建换行机会，覆盖禁则；ZW 复用 BreakAll 逐字符
+/// 断行近似，对 width:1ch/窄容器产出与 anywhere 一致逐字换行）。strict/loose/normal/auto 涉及
+/// CJK 标点禁则，当前不实现（按 normal 默认行为）。
+///
+/// Path A（`compute_final_inline_layouts`）与 Path B（paint）此逻辑字节一致，提取为共享 resolver
+/// 消除两份内联重复 match（R2191，同 R2187/R2188 DRY 谱系）。
+pub fn resolve_word_break_mode(style: &ComputedStyle) -> WordBreakMode {
+    use zero_style_system::property::types::{LineBreakValue, WordBreakValue};
+    let mode = match &style.word_break {
+        WordBreakValue::BreakAll => WordBreakMode::BreakAll,
+        WordBreakValue::KeepAll => WordBreakMode::KeepAll,
+        _ => WordBreakMode::Normal,
+    };
+    if matches!(style.line_break, LineBreakValue::Anywhere) {
+        WordBreakMode::BreakAll
+    } else {
+        mode
     }
 }
 
@@ -741,11 +764,10 @@ pub(crate) fn compute_final_inline_layouts(
 
     // 创建 IFC 并使用与 paint_text 相同的 CSS 属性配置
     use crate::inline::InlineFormattingContext;
-    use crate::inline::WordBreakMode;
     use crate::types::InlineLayoutFragment;
     use crate::types::InlineLayoutLine;
     use zero_css_parser::values::LengthValue;
-    use zero_style_system::property::types::{OverflowWrapValue, WhiteSpaceValue, WordBreakValue};
+    use zero_style_system::property::types::{OverflowWrapValue, WhiteSpaceValue};
 
     // R1099 Slice α-1（vertical-mode IFC 四层协调）：container_width WM-aware。
     // vertical-rl/lr 下 IFC 的 `max_depth = self.container_width`（break_items_into_columns）
@@ -791,24 +813,9 @@ pub(crate) fn compute_final_inline_layouts(
                 style.overflow_wrap,
                 OverflowWrapValue::BreakWord | OverflowWrapValue::Anywhere
             );
-    let word_break_mode = match &style.word_break {
-        WordBreakValue::BreakAll => WordBreakMode::BreakAll,
-        WordBreakValue::KeepAll => WordBreakMode::KeepAll,
-        _ => WordBreakMode::Normal,
-    };
-    // CSS Text 3 §5.3：line-break: anywhere 在每个排版字符处创建换行机会（覆盖
-    // GL/JW/ZJW 禁则）。ZW 复用 BreakAll（任意字符可断）作为近似——break-all 在
-    // overflow 时逐字符断行，对 width:1ch/窄容器场景产出与 anywhere 一致的逐字换行
-    // （line-break-anywhere 簇驱动）。strict/loose/normal/auto 涉及 CJK 标点禁则，
-    // 当前不实现（按 normal 默认行为）。
-    let word_break_mode = if matches!(
-        style.line_break,
-        zero_style_system::property::types::LineBreakValue::Anywhere
-    ) {
-        WordBreakMode::BreakAll
-    } else {
-        word_break_mode
-    };
+    // R2191：word-break + line-break:anywhere 经共享 resolver 解析（与 paint Path B 同源，
+    // 消除两份内联重复 match）。详见 inline_finalization::resolve_word_break_mode。
+    let word_break_mode = resolve_word_break_mode(style);
     // 复用 resolve_text_align：start/end 方向感知（RTL→反向），避免此处独立 match 与
     // resolve_text_align / paint 路径三处分叉（R958 统一）。
     let text_align = resolve_text_align(Some(style));

@@ -12,9 +12,9 @@ use zero_css_parser::values::{ColorValue, FloatValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::inline_finalization::{
     build_text_parent_override_map, resolve_text_align, resolve_text_align_last, resolve_text_indent,
-    subtree_has_text_decoration,
+    resolve_word_break_mode, subtree_has_text_decoration,
 };
-use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, WordBreakMode};
+use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox};
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive};
@@ -522,19 +522,8 @@ impl super::Painter {
             // CSS line-clamp: 限制最大行数
             let max_lines = super::Painter::resolve_line_clamp(style);
 
-            // 将 CSS word-break 映射到布局引擎的 WordBreakMode
-            let word_break_mode = match style.word_break {
-                zero_style_system::WordBreakValue::BreakAll => WordBreakMode::BreakAll,
-                zero_style_system::WordBreakValue::KeepAll => WordBreakMode::KeepAll,
-                _ => WordBreakMode::Normal,
-            };
-            // CSS Text 3 §5.3：line-break: anywhere → BreakAll（与 inline_finalization 一致，
-            // layout/paint 双路径同步，避免 R1004/R989 类发散）。
-            let word_break_mode = if matches!(style.line_break, zero_style_system::LineBreakValue::Anywhere) {
-                WordBreakMode::BreakAll
-            } else {
-                word_break_mode
-            };
+            // R2191：word-break + line-break:anywhere 经共享 resolver（与 layout Path A 同源）。
+            let word_break_mode = resolve_word_break_mode(style);
 
             // R958 双路径同源：text-align / text-align-last 经 layout 路径的共享 resolver
             //（inline_finalization::resolve_text_align[_last]）解析，消除 paint Path B 此前内联的
