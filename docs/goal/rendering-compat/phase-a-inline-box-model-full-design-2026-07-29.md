@@ -113,6 +113,15 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 - **回退**：net 负 → `ZW_PHASEA_MULTI_INLINE=0`。
 - **风险（R2159 精化后）**：blast-radius 大（所有多 inline block 容器）。R639-extend + skip-taffy 耦合须同 gate 同开（part1 单独 R1492-refuted，part2 单独双绘）。hit-test（`<a href>` 点击区）+ stacking-context inline（position/opacity/transform）须 gate 排除。
 
+> **★ R2160（2026-07-29）probe 实测：机制成立但 self-source net −20 → 保持 default-off，未 land**。
+> 完整 A/B 见 [`evidence/r2160-phase-a-slice2-multi-inline-probe-netneg-2026-07-29.txt`](./evidence/r2160-phase-a-slice2-multi-inline-probe-netneg-2026-07-29.txt)。
+>
+> - **part3 被 orphan 信号耦合避开（创新）**：part1 skip taffy → inline 无 LayoutBox → `inline_heights` 无条目 → `owner_h==0.0`；part2 把 R639 gate 放宽为 `(owner_h > fs*1.5 || phasea_orphan_fire)`，`phasea_orphan_fire = (gate_on && owner_h==0.0)`。**owner_h==0.0 既是 orphan 信号又是 part2 触发条件**，part1+part2 天然耦合（orphan 只走 fragment、非 orphan 单行只走 LayoutBox=无双绘），**无需 R2159 担心的 part3（inline_heights 数据源迁移）**。
+> - **产品面 net POSITIVE**：19-testpage 22.39→17.23%（−5.16pp）/ 20-mixed-legacy 13.13→11.49%（−1.64pp）/ legacy 51 fixture sum 259.36→252.33%（−7.03pp aggregate）/ struct_FAIL 0→0（零结构性退化）/ chromium-oracle CSS2/borders OFF=ON=415/506（零漂移，**R1492 -10 未触发**，orphan-fire 精确耦合证实安全）。welcome 16.84→17.03%（+0.19pp，含多 inline 产品页 gate 触发致微移，非崩溃）。
+> - **self-source reftest net NEGATIVE −20（违硬门「零 delta」）**：css-text 1742→1727（**−15**）+ css-multicol 264→256（**−8**）；css-position +1 / css-flexbox +1 / css-fonts +1；text-decor/tables/grid/writing-modes/normal-flow/box-display/generated-content 全 0。**css-text −15 明细**：PASS→FAIL 19 案（**line-break-{loose,normal,strict}-{011,014,016a,016b,017a,018} 占 18 = CJK 换行断点偏移** + text-wrap-balance-003），FAIL→PASS 4 案（letter-spacing-200/text-transform-fullwidth-009/eol-spaces-bidi-002/white-space-intrinsic-size-014）。CJK line-break 簇系统退步 = **真布局 damage 非 font-wall 噪声**（预存 FAIL 如 letter-spacing-201/203/204/206 仅 diff% 微摆未翻，噪声与真翻可分）。
+> - **裁决**：机制（orphan-coupling）empirically 成立 + 产品面 positive，但 self-source −20 违设计门 → **保持 default-off（= 回退态），不翻 default-on**。probe 代码保留（codebase dormant ZW_ 先例）作 gate-tightening 迭代基础。make test EXIT=0 全绿（default-off 故 default 路径零影响）。
+> - **forward（gate-tightening，下一 session）**：blast radius 集中 CJK line-break（−18 主因）+ multicol（−8）。候选：(a) `phasea_multi_inline_eligible` 加「祖先无 multicol」守卫（最低成本，预测恢复 multicol −8）→ A/B；(b) 排除 CJK 文本容器（预测恢复 line-break −18，可能牺牲部分产品增益）；(c) 仅对 inline 子无 text-styling（letter-spacing/word-break/line-break/text-autospace）触发（须查 computed style，较重）。先 (a) 孤立 A/B，css-text 仍 −15 再 (b)/(c)。**重启 slice 2 须先 (a)/(b)/(c) 把 self-source 拉回零 delta**，产品收益才能经 default-on 实现。
+
 ### Slice 3+ — 后续（本设计列出，不展开）
 - inline-wrapping-inline（`<span><span>text</span></span>` 嵌套纯 inline）。
 - inline 元素带 bg/border 须保留 LayoutBox 的场景（若 slice 2 probe 暴露）。

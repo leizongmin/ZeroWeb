@@ -95,6 +95,39 @@ fn r109_wired() -> bool {
     std::env::var("R109_WIRE").ok().as_deref() != Some("0")
 }
 
+/// R2160 Phase A slice 2：判定某子节点是否为「childless plain inline」——display:inline +
+/// 非 ooflow（abspos/fixed）+ 无 Element 子（仅文本后代）+ 子树无 ooflow 后代。此类 inline
+/// 在多 inline block 容器中可跳过 taffy 节点（orphan → painter R639 part2 per-fragment 绘
+/// bg/border），消除 a/i/b 块级栈列。子树无 ooflow 守卫 ≡ R2156（保 abspos CB）。
+fn phasea_multi_inline_eligible(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, child_id: NodeId) -> bool {
+    let Some(node) = doc.get(child_id) else {
+        return false;
+    };
+    if !matches!(&node.kind, NodeKind::Element(_)) {
+        return false;
+    }
+    let Some(s) = styles.get(&child_id) else {
+        return false;
+    };
+    if !matches!(s.display, DisplayValue::Inline) {
+        return false;
+    }
+    if matches!(s.position, PositionValue::Absolute | PositionValue::Fixed) {
+        return false;
+    }
+    // childless：无 Element 子（仅文本后代）。含 Element 子的 inline（如 <a><img></a>）由
+    // R2156（嵌套 atomic）或须保留 taffy（嵌套 block/abspos）处理，不入此路径。
+    let has_elem_child = doc
+        .child_nodes(child_id)
+        .iter()
+        .any(|&gc| doc.get(gc).is_some_and(|gn| matches!(&gn.kind, NodeKind::Element(_))));
+    if has_elem_child {
+        return false;
+    }
+    // 子树无 ooflow 后代守卫（childless 已无 Element 子，理论上无后代可 ooflow；保留以防边界）。
+    !crate::inline::InlineFormattingContext::inline_subtree_has_ooflow_descendant(doc, styles, child_id)
+}
+
 /// R109 §9.2.1.1 生产端接线产物（仅 env `R109_WIRE=1` 时非空）。
 ///
 /// - `fragment_registry`：匿名块片段 taffy 节点 → 该片段包含的 DOM 子节点，
@@ -1283,6 +1316,27 @@ fn build_subtree(
                     // inline Element 须无 Element 子（abspos-in-inline 簇的 span 内 abspos 须保留 CB）。
                 } else {
                     // 仅处理元素子节点（原有行为）
+                    //
+                    // R2160 Phase A slice 2 probe（env `ZW_PHASEA_MULTI_INLINE=1`，default-off）：
+                    // 多 inline Element 子 block 容器中，**childless plain inline**（display:inline
+                    // + 无 Element 子 + 非 ooflow + 子树无 ooflow 后代）的 taffy 节点跳过——让其
+                    // 文本流入父 IFC（消除 a/i/b 块级栈列）。orphan 信号（inline_heights 无条目 =
+                    // owner_h=0）驱动 painter R639 part2 对 orphan 触发 per-fragment bg/border 绘制
+                    //（part1+part2 经 orphan 信号耦合，单行非 orphan 不触发=无双绘，避 R1492）。
+                    // gate 仅容器有 ≥2 个合格 inline Element 子时生效（精确触发 multi-inline 栈列
+                    // bug；单 inline 子仍走 LayoutBox=R1492-safe，缩 blast radius）。限 horizontal-tb。
+                    // ★ probe 目的=验证 R639-extend+skip-taffy 修 multi-inline 栈列；net 负即回退。
+                    let phasea_multi_inline_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() == Ok("1")
+                        && matches!(own_writing_mode, WritingModeValue::HorizontalTb);
+                    let eligible_inline_count = if phasea_multi_inline_on {
+                        children_dom
+                            .iter()
+                            .filter(|&&c| phasea_multi_inline_eligible(doc, styles, c))
+                            .count()
+                    } else {
+                        0
+                    };
+                    let multi_inline_block_skip = phasea_multi_inline_on && eligible_inline_count >= 2;
                     let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
                     for &child_dom in &children_dom {
                         let child_data = doc.get(child_dom);
@@ -1332,6 +1386,11 @@ fn build_subtree(
                                     doc, styles, child_dom,
                                 )
                             {
+                                continue;
+                            }
+                            // R2160 part1：multi-inline block 容器中 childless plain inline 跳过
+                            // taffy 节点（orphan → owner_h=0 → painter R639 part2 per-fragment 绘 bg/border）。
+                            if multi_inline_block_skip && phasea_multi_inline_eligible(doc, styles, child_dom) {
                                 continue;
                             }
                             let order = styles.get(&child_dom).map_or(0, |s| s.order);

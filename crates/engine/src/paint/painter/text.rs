@@ -1207,10 +1207,17 @@ impl super::Painter {
                             //（inline 自身 box 上）分歧致 bg 消失。两处现均用 inline 自身 height → 一致。
                             // frag_base_x 已含 text-indent（IFC 首行 current_x=text_indent），首行从缩进后起。
                             let owner_h = self.inline_heights.get(&owner_id).copied().unwrap_or(0.0);
+                            // R2160 Phase A slice 2 part2：env `ZW_PHASEA_MULTI_INLINE=1` 时，R639
+                            // per-fragment bg/border 也对 **orphan inline**（owner_h==0.0，即 part1
+                            // skip-taffy 致 inline_heights 无条目）触发——补 part1 丢的 LayoutBox
+                            // bg/border 绘制（解 R1492）。单行非 orphan（owner_h∈(0,1.5·fs]）不触发=
+                            // 无双绘。orphan 信号（owner_h==0）天然耦合 part1。
+                            let phasea_orphan_fire = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() == Ok("1")
+                                && owner_h == 0.0;
                             if !is_vertical
                                 && !box_node.is_absolute
                                 && !box_node.is_fixed
-                                && owner_h > $frag_fs * 1.5
+                                && (owner_h > $frag_fs * 1.5 || phasea_orphan_fire)
                                 && let Some(owner_style) = styles.and_then(|s| s.get(&owner_id))
                                 && matches!(owner_style.display, zero_css_parser::values::DisplayValue::Inline)
                             {
