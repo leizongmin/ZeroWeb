@@ -180,16 +180,25 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 >    img_intrinsic_sizes）+ float/ancestor 上下文（compute_final line 861）——重建成本高 + 须与 paint Path B
 >    几何一致（否则 hit-test bbox 错位）。★关键：layout 期 IFC 几何对 hit-test bbox **充分**（R1526 paint
 >    分歧只影响绘制，不挡 hit-test 近似）。
-> 3. **paint-time 几何存储**：paint Path B 跑完 IFC 后写 orphan 几何到 side-table，hit-test post-paint 读。
->    改 hit-test 时序（layout 期 → post-paint）。
+> 3. **paint-time 几何存储**（⚠️ R2166 timing 障碍）：paint Path B 跑完 IFC 后写 orphan 几何到 side-table，
+>    hit-test 读。**但 hit-test 是 layout 期**（`hit_test::hit_test_link(doc, &layout.root, x, y)` +
+>    `HitTestCache::from_document(doc, &layout.root)` 用 LayoutBox 树，layout 期建）→ paint 期 side-table
+>    对 layout 期 hit-test 不可用（时序倒置）。须改 hit-test 时序到 post-paint（架构改）或 paint→layout
+>    反写（chicken-and-egg）。**非干净路径**。
 >
-> **推荐（R2165 修正）**：候选 2 或 3（候选 1 降级）。kill-switch `ZW_PHASEA_LAYOUTBOX_BACKFILL`；A/B：
-> morning-work struct item-tag:3 + 全 DC-13 fixture（welcome+legacy51+morning+wintertc+narrow）+ `<a>`
-> hit-test 单测 + self-source 零 delta。净负回退。验证后与 slice 2 一同翻 default-on。
+> **R2166 三候选障碍汇总**：候选 1（R1526 broad-storage 风险）/ 候选 2（~15 参 IFC 重建 + 须与 Path B
+> 一致）/ 候选 3（hit-test layout 期 timing 倒置）——**三候选均非低增量**，slice 3 = 深 architectural。
 >
-> **暂停裁决（R2165）**：slice 3 = 深 architectural（IFC 存储/gate/双路径一致性），多 session。R2164 一次
-> negative（read-inline_layout 障碍）+ R2165 深化（IFC ~15 参 + open question）。按 redirect「停止条件」
-> 暂停 slice 3 实现 grinding，转 plateau-guard；implementation 待下 session 解 R2165 open question 后启动。
+> **推荐（R2165/R2166 修正）**：候选 2 仍是最自洽（layout 期闭环、几何对 hit-test 充分），但须 design-first
+> 拆 IFC 构造为可复用 helper（提 ~15 参为 struct）+ A/B 守与 paint Path B 几何一致。kill-switch
+> `ZW_PHASEA_LAYOUTBOX_BACKFILL`；A/B：morning-work struct item-tag:3 + 全 DC-13 fixture + `<a>` hit-test
+> 单测 + self-source 零 delta。净负回退。验证后与 slice 2 一同翻 default-on。
+>
+> **暂停裁决（R2166）**：slice 3 = 深 architectural（IFC 存储/gate/双路径一致性/timing），多 session。
+> R2164 + R2165 + R2166 三轮 negative/障碍（read-inline_layout / 全树零 stored / hit-test timing）。
+> 按 redirect「停止条件」**slice 3 实现 STOP**，转 plateau-guard；slice 3 需先做 IFC 构造 refactor
+>（提 helper）再 implementation，是独立多 session 工程。slice 2 legacy 增益（modest positional 改善）
+> ROI 不足以 grind——保持 dormant opt-in（ZW_PHASEA_MULTI_INLINE=1）。
 
 ---
 
