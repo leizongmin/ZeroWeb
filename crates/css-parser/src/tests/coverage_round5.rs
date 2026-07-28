@@ -759,17 +759,24 @@ fn test_parse_container_named() {
 fn test_parse_container_inline_size() {
     let css = "@container inline-size(min-width: 400px) { div { width: 100%; } }";
     let stylesheet = Parser::parse_stylesheet(css);
-    // "inline-size" 被解析为容器名称（Ident 后跟 (LParen），
-    // 然后 (min-width: 400px) 被解析为条件
-    // 这与 CSS 规范略有不同，但是当前实现的行为
-    if !stylesheet.rules.is_empty() {
-        match &stylesheet.rules[0] {
-            Rule::Container(cont) => {
-                // "inline-size" 被视为容器名称
-                assert!(cont.name.is_some());
-            }
-            _ => {} // 可能解析为其他类型
+    // inline-size() 是容器尺寸函数条件（CSS Contain 3），**非容器名**——name 为 None，
+    // condition 为 InlineSize。R2139 修正：原实现把 `inline-size` 误当容器名（与规范
+    // 略有不同），现 tokenizer 产 `Function("inline-size")`，consume_container_rule 正确
+    // 识别为尺寸函数条件。
+    assert_eq!(stylesheet.rules.len(), 1, "should parse one container rule");
+    match &stylesheet.rules[0] {
+        Rule::Container(cont) => {
+            assert!(
+                cont.name.is_none(),
+                "inline-size() is a condition function, not a container name"
+            );
+            assert!(
+                matches!(cont.condition, ContainerCondition::InlineSize(_)),
+                "condition should be InlineSize: {:?}",
+                cont.condition
+            );
         }
+        other => panic!("expected Container rule, got {other:?}"),
     }
 }
 

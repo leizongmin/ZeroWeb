@@ -1396,39 +1396,24 @@ impl<'a> Parser<'a> {
 
         self.skip_whitespace();
 
-        // 收集条件文本（括号内容）
+        // 收集条件文本。两种形式：
+        //   (1) `(...)` 普通条件；
+        //   (2) `size(...)` / `inline-size(...)` 尺寸函数条件（CSS Contain 3）——tokenizer
+        //       把 `size(` 产成 `Function("size")`（ident 紧跟 `(`），Function token 已含 `(`，
+        //       须单独处理，否则 `size` 被跳过、条件丢失 `size(` 包装致 parse_container_condition
+        //       解析为裸 width 条件（driving: `@container size(width > 300px)`）。
         let condition = if matches!(self.peek(), Token::LParen) {
             self.advance(); // (
-            let mut cond_text = String::new();
-            let mut depth = 1;
-            loop {
-                match self.peek() {
-                    Token::LParen => {
-                        depth += 1;
-                        cond_text.push('(');
-                        self.advance();
-                    }
-                    Token::RParen => {
-                        depth -= 1;
-                        if depth == 0 {
-                            self.advance(); // )
-                            break;
-                        }
-                        cond_text.push(')');
-                        self.advance();
-                    }
-                    Token::Whitespace => {
-                        cond_text.push(' ');
-                        self.advance();
-                    }
-                    Token::Eof => return None,
-                    _ => {
-                        cond_text.push_str(&format!("{}", self.peek()));
-                        self.advance();
-                    }
-                }
-            }
+            let cond_text = self.collect_paren_content()?;
             parse_container_condition(cond_text.trim())?
+        } else if let Token::Function(func) = self.peek().clone() {
+            if !func.eq_ignore_ascii_case("size") && !func.eq_ignore_ascii_case("inline-size") {
+                return None;
+            }
+            let func = func.to_ascii_lowercase();
+            self.advance(); // Function token（已含 `(`）
+            let inner = self.collect_paren_content()?;
+            parse_container_condition(&format!("{func}({inner})"))?
         } else {
             return None;
         };
@@ -1459,6 +1444,41 @@ impl<'a> Parser<'a> {
         }
 
         Some(ContainerRule { name, condition, rules })
+    }
+
+    /// 收集已消耗 `(` 后的括号内容文本，直到匹配 `)`（嵌套 `()` 保留）。
+    /// 供 `consume_container_rule` 条件收集复用。EOF（未闭合）返回 None。
+    fn collect_paren_content(&mut self) -> Option<String> {
+        let mut text = String::new();
+        let mut depth = 1;
+        loop {
+            match self.peek() {
+                Token::LParen => {
+                    depth += 1;
+                    text.push('(');
+                    self.advance();
+                }
+                Token::RParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        self.advance(); // )
+                        break;
+                    }
+                    text.push(')');
+                    self.advance();
+                }
+                Token::Whitespace => {
+                    text.push(' ');
+                    self.advance();
+                }
+                Token::Eof => return None,
+                _ => {
+                    text.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+            }
+        }
+        Some(text)
     }
 }
 
