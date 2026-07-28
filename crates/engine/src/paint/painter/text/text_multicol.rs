@@ -24,88 +24,19 @@ pub(super) struct MulticolInfo {
     pub(super) gap: f32,
 }
 
-/// 从 ComputedStyle 计算多列参数。
+/// 从 ComputedStyle 计算多列参数（paint 侧）。
 ///
 /// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
-/// `font_size_px` 用于将 em/rem 单位的 gap 和 column-width 转换为像素。
-pub(super) fn compute_multicol_info_for_paint(
-    style: &ComputedStyle,
-    container_width: f32,
-    font_size_px: f32,
-) -> Option<MulticolInfo> {
-    let gap: f32 = match &style.column_gap {
-        // R2192：column-gap:normal（Auto sentinel）→ 1em（CSS Multicol §4.1 default），对齐 layout
-        //（multicol.rs:161 R1040）。旧 `_ => 0.0` 致 paint 重算列几何 gap=0 与 layout 的 1em 分歧。
-        LengthValue::Auto => font_size_px,
-        LengthValue::Px(g) => *g as f32,
-        LengthValue::Em(e) => *e as f32 * font_size_px,
-        LengthValue::Rem(r) => *r as f32 * 16.0_f32, // rem 基于 root font-size
-        LengthValue::Percentage(_) => 0.0,           // 百分比 gap 需要容器宽度上下文，暂不支持
-        _ => 0.0,
-    };
-
-    let col_count_from_count = match &style.column_count {
-        ColumnCountComputedValue::Auto => None,
-        ColumnCountComputedValue::Number(n) => Some(*n as usize),
-    };
-
-    let col_width_hint = match &style.column_width {
-        ColumnWidthComputedValue::Auto => None,
-        ColumnWidthComputedValue::Length(l) => match l {
-            LengthValue::Px(v) => Some(*v as f32),
-            LengthValue::Em(e) => Some(*e as f32 * font_size_px),
-            LengthValue::Rem(r) => Some(*r as f32 * 16.0_f32),
-            _ => None,
-        },
-    };
-
-    match (col_count_from_count, col_width_hint) {
-        (None, None) => None,
-        (Some(n), None) => {
-            if n == 0 {
-                return None;
-            }
-            let col_width = if container_width > 0.0 {
-                (container_width - (n - 1) as f32 * gap) / n as f32
-            } else {
-                0.0
-            };
-            Some(MulticolInfo {
-                col_count: n,
-                col_width: col_width.max(0.0),
-                gap,
-            })
-        }
-        (None, Some(min_w)) => {
-            if container_width <= 0.0 || min_w <= 0.0 {
-                return None;
-            }
-            let count = ((container_width + gap) / (min_w + gap)).floor() as usize;
-            let count = count.max(1);
-            let col_width = (container_width - (count - 1) as f32 * gap) / count as f32;
-            Some(MulticolInfo {
-                col_count: count,
-                col_width: col_width.max(0.0),
-                gap,
-            })
-        }
-        (Some(_n), Some(min_w)) => {
-            // 两者都有值：使用 CSS §3.4 伪算法
-            // 取 min(count_from_count, count_from_width)
-            let count_from_width = if container_width > 0.0 && min_w > 0.0 {
-                ((container_width + gap) / (min_w + gap)).floor() as usize
-            } else {
-                return None;
-            };
-            let count = (_n).min(count_from_width).max(1);
-            let col_width = (container_width - (count - 1) as f32 * gap) / count as f32;
-            Some(MulticolInfo {
-                col_count: count,
-                col_width: col_width.max(0.0),
-                gap,
-            })
-        }
-    }
+/// R2193：经 layout 共享 `compute_column_info`（multicol.rs）解析列几何，消除 paint 此前内联
+/// 重复 + 4 处分歧（gap 默认值 / col_width Percentage / min_width.max(1) / count≤1 guard）。
+/// `compute_column_info` 内部从 `style.font_size` 推 font_size_px（与旧 paint 形参同源），故移除
+/// `font_size_px` 形参。
+pub(super) fn compute_multicol_info_for_paint(style: &ComputedStyle, container_width: f32) -> Option<MulticolInfo> {
+    zero_layout_engine::multicol::compute_column_info(style, container_width).map(|ci| MulticolInfo {
+        col_count: ci.count,
+        col_width: ci.column_width,
+        gap: ci.gap,
+    })
 }
 
 /// R1424：multicol balance 列高 target_h（ceil(行数/列数) × 平均行高）。

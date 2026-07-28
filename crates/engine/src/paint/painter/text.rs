@@ -481,7 +481,7 @@ impl super::Painter {
             // 当前简单均衡分配会回归这类用例，回退到单块渲染。
             let height_auto = matches!(style.height, LengthValue::Auto);
             let multicol_info = if !has_in_flow_children && is_balance_mode && height_auto {
-                compute_multicol_info_for_paint(style, container_width, font_size)
+                compute_multicol_info_for_paint(style, container_width)
             } else {
                 None
             };

@@ -100,7 +100,7 @@ fn column_height_limit(container: &LayoutBox, info: &ColumnInfo) -> f32 {
 }
 
 /// 多列布局计算信息。
-pub(crate) struct ColumnInfo {
+pub struct ColumnInfo {
     /// 列数。
     pub count: usize,
     /// 单列宽度。
@@ -149,7 +149,7 @@ pub(crate) fn balance_column_geometry(style: &ComputedStyle, container_width: f3
 /// 从 ComputedStyle 计算多列参数。
 ///
 /// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
-pub(crate) fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<ColumnInfo> {
+pub fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<ColumnInfo> {
     // em 单位按 element font-size 解析（R904：column-width/column-gap apply 不解析 em）。
     let font_size_px = match &style.font_size {
         LengthValue::Px(v) => *v as f32,
