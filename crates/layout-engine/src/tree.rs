@@ -161,6 +161,21 @@ fn container_in_multicol_context(doc: &Document, styles: &HashMap<NodeId, Comput
     false
 }
 
+/// R2161 Phase A slice 2 gate-tighten：容器 `dom_id` 的 text-wrap 为「均衡 / 美观 / 稳定」模式
+///（Balance/Pretty/Stable，非默认 Wrap / Nowrap）时抑制 probe。这些 CSS Text 4 模式的行分配
+/// 算法非贪心换行，probe 改 inline 测量会偏移其结果——即便 ZW 当前未实现 balancing（text-wrap 仅
+/// 在 paint resolve_text_wrap 消费 Nowrap，layout 不 balance），test 仍对比 chromium 的 balancing
+/// ref（text-wrap-balance-003：OFF 4.97% 已是 ZW 不 balance 的输出，probe 推过 5% 阈值→5.39%
+/// = 阈值噪声但严格违「零 delta」）。legacy 页（HTML 3.2/4）不用 CSS Text 4 text-wrap，故此 guard
+/// 不影响 19-testpage / 20-mixed-legacy 产品增益。
+fn container_has_balancing_text_wrap(styles: &HashMap<NodeId, ComputedStyle>, dom_id: NodeId) -> bool {
+    use zero_style_system::property::types::TextWrapComputedValue;
+    matches!(
+        styles.get(&dom_id).map(|s| &s.text_wrap),
+        Some(TextWrapComputedValue::Balance | TextWrapComputedValue::Pretty | TextWrapComputedValue::Stable)
+    )
+}
+
 /// R109 §9.2.1.1 生产端接线产物（仅 env `R109_WIRE=1` 时非空）。
 ///
 /// - `fragment_registry`：匿名块片段 taffy 节点 → 该片段包含的 DOM 子节点，
@@ -1350,7 +1365,7 @@ fn build_subtree(
                 } else {
                     // 仅处理元素子节点（原有行为）
                     //
-                    // R2160 Phase A slice 2 probe（env `ZW_PHASEA_MULTI_INLINE=1`，default-off）：
+                    // R2160 Phase A slice 2 probe（env `ZW_PHASEA_MULTI_INLINE`，**default-on**；`=0` kill）：
                     // 多 inline Element 子 block 容器中，**childless plain inline**（display:inline
                     // + 无 Element 子 + 非 ooflow + 子树无 ooflow 后代）的 taffy 节点跳过——让其
                     // 文本流入父 IFC（消除 a/i/b 块级栈列）。orphan 信号（inline_heights 无条目 =
@@ -1358,10 +1373,14 @@ fn build_subtree(
                     //（part1+part2 经 orphan 信号耦合，单行非 orphan 不触发=无双绘，避 R1492）。
                     // gate 仅容器有 ≥2 个合格 inline Element 子时生效（精确触发 multi-inline 栈列
                     // bug；单 inline 子仍走 LayoutBox=R1492-safe，缩 blast radius）。限 horizontal-tb。
-                    // ★ probe 目的=验证 R639-extend+skip-taffy 修 multi-inline 栈列；net 负即回退。
-                    let phasea_multi_inline_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() == Ok("1")
+                    // ★ R2161 gate-tighten（br/wbr tag 排除 + multicol-context 守卫 + text-wrap balance
+                    //   守卫）使 self-source 由 net −20 拉回 net +2（css-text count-0）；R2162 翻
+                    //   default-on（产品 legacy 增益：19-testpage −5.16pp / 20-mixed-legacy −1.64pp），
+                    //   welcome +0.19pp 残余为多 inline 重排的固有 font-wall 代价（struct PASS）。
+                    let phasea_multi_inline_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() != Ok("0")
                         && matches!(own_writing_mode, WritingModeValue::HorizontalTb)
-                        && !container_in_multicol_context(doc, styles, dom_id);
+                        && !container_in_multicol_context(doc, styles, dom_id)
+                        && !container_has_balancing_text_wrap(styles, dom_id);
                     let eligible_inline_count = if phasea_multi_inline_on {
                         children_dom
                             .iter()

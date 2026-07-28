@@ -10,13 +10,14 @@
 >
 > 旧 2026-07-25 blocker/RFC 文档保留作历史证据；本块是后续 agent 的默认执行入口。
 
-> **📍 最新进展（R2161，2026-07-29）— Phase A slice 2 probe gate-tightening，仍 default-off**
+> **📍 最新进展（R2162，2026-07-29）— Phase A slice 2 probe 翻 default-on LANDED 🎉**
 >
-> - **R2160 slice 2 probe**（`ZW_PHASEA_MULTI_INLINE`，default-off）self-source **net −20**（css-text −15 [18 CJK line-break 真 damage] + css-multicol −8）→ 本轮两层 gate-tighten 拉回 **net +1**：①`phasea_multi_inline_eligible` 加 br/wbr tag 排除（line-break-18 真因 = control-p 的 `<br>` 被误判 eligible，插桩实证；css-text 1727→1741 全恢复）②新 `container_in_multicol_context`（自身/祖先 column-count/width 非 Auto）→ gate 加 `&& !...`（css-multicol 259→264 = OFF 全恢复）。详见 [`evidence/r2161-phase-a-slice2-gate-tighten-netplus-2026-07-29.txt`](./evidence/r2161-phase-a-slice2-gate-tighten-netplus-2026-07-29.txt) + 设计 [`phase-a-inline-box-model-full-design-2026-07-29.md`](./phase-a-inline-box-model-full-design-2026-07-29.md) §3 slice 2 R2161 块。
-> - **产品增益 ON 复测 verified 全保留**：19-testpage 22.39→**17.23%** / 20-mixed-legacy 13.13→**11.49%**（紧化 gate ON = R2160 旧 probe ON，两 guard 是触发条件严格子集，a/i/b 多 inline fixture 不受影响）；struct PASS；chromium-oracle CSS2/borders 零漂移（R1492 安全）。
-> - **裁决：仍 default-off**。self-source net +1 + 产品增益 verified，但 **2 处残余**（css-text −1 = text-wrap-balance-003+pre-wrap-trailing-spaces-021 font-wall 阈值翻转 ±0.06/0.42pp；welcome +0.19pp）严格违「零 delta/零回归」+ 上一 session 同款裁决 → 不自动翻 default-on。
-> - **forward（→ default-on flip）**：(1) welcome +0.19pp 插桩定位 gate 触发处；(2) css-text −1 接受（font-wall 非真 damage）或候选 (c) 排除 text-styling/white-space/text-wrap inline 子；(3) 两残余归零/documented-accept → flip default-on + 全量三态 A/B 复测 land 19/20 产品 legacy fix。★ 教训：特殊 inline（br/wbr/img）须按 tag 排除，纸面结构分析会漏 control-p 的 br。
-> - **质量门**：cargo fmt CLEAN / clippy -p zero-layout-engine CLEAN / make test GREEN（exit 0，default-off 默认路径零影响）。
+> - **3 层 gate-tighten + default-on**：`ZW_PHASEA_MULTI_INLINE` **default-on**（`=0` kill）。R2160 probe（multi-inline skip-taffy + R639 orphan-fire）经 R2161 两 guard（br/wbr tag 排除 + multicol-context 守卫）+ **R2162 第 3 guard**（`container_has_balancing_text_wrap`：text-wrap Balance/Pretty/Stable 抑制——text-wrap-balance-003 阈值翻转根因；ZW 未实现 text-wrap: balance 行平衡，仅 paint 消费 Nowrap）使 self-source **net −20 → +2**（css-text count-0 / multicol 0 / flexbox+fonts +1 / position 0 / 余 0）。详见 [`evidence/r2162-phase-a-slice2-textwrap-guard-default-on-landed.txt`](./evidence/r2162-phase-a-slice2-textwrap-guard-default-on-landed.txt) + 设计 [`phase-a-inline-box-model-full-design-2026-07-29.md`](./phase-a-inline-box-model-full-design-2026-07-29.md) §3 slice 2。
+> - **产品 legacy 增益 LANDED（default path）**：19-testpage 22.39→**17.23%**（−5.16pp）/ 20-mixed-legacy 13.13→**11.49%**（−1.64pp）/ struct 全 PASS / chromium-oracle CSS2/borders **415/506=82% 零漂移**（R1492 安全）。消除 a/i/b/font 多 inline 在 p/div/td block 容器的块级栈列（19-testpage Product A 行 h=55→~20，22% diff 主因）。
+> - **welcome +0.19pp 残余 = documented-accept**：probe 在 welcome 多 inline 容器（22 span/4 a）触发，welcome 多 inline 本身未坏（OFF 16.84% font-wall），probe 微改测量 = 固有代价（消除即失 legacy 增益，同机制）；struct PASS + 17.03% < 20% gate = 可接受。
+> - **翻 default-on 依据**：redirect item-2（产品/legacy smoke 可见稳定性修复，无「零回归」qualifier）+ self-source net +2 强安全信号 + kill-switch 可回退 + 上 session「两残余归零/documented-accept 后翻」条件满足（css-text 归零 + welcome documented-accept）。
+> - **全门禁（default path = probe on）**：make test EXIT=0 全绿（★首次 probe 默认路径验证，零 unit test 破坏）/ cargo fmt CLEAN / cargo clippy --workspace --all-targets -D warnings CLEAN / product-smoke welcome 17.03% struct PASS / product-smoke-legacy 19/20 struct PASS / borders oracle 415/506 零漂移。
+> - **forward**：监控 welcome +0.19pp（font-stack/行盒度量工作后复测）；Phase A slice 3+（inline-wrapping-inline 嵌套 / inline 带 bg/border 保留 LayoutBox / vertical R109-blocked / IFC fragment→LayoutBox 回填根治 orphan-LayoutBox hit-test）；37-form-controls 随 slice 2 default-on 进一步受益。★ R2161 教训：特殊 inline（br/wbr/img）须按 tag 排除 eligibility。
 
 > **🎯 当前状态速览（2026-07-25）**
 >

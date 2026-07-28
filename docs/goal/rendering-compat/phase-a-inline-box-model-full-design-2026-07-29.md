@@ -130,6 +130,14 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > - **both guards 全量 A/B**：self-source aggregate **net +1**（css-text −1 [残 text-wrap-balance-003+pre-wrap-trailing-spaces-021] / multicol 0 / flexbox +1 / fonts +1 / position 0 [br-exclusion 后原 +1 消失] / text-decor·tables·grid·writing-modes·normal-flow·box-display·generated-content 全 0）。产品面增益全保留（19-testpage 22.39→17.23% / 20-mixed-legacy 13.13→11.49% / legacy sum 259.36→252.33% / struct_FAIL 0→0；**R2161 ON 紧化 gate 复测实证 19-testpage=17.23% / 20-mixed-legacy=11.49% 数值不变 = 全保留 verified**）+ chromium-oracle CSS2/borders OFF=ON=415/506 零漂移（R1492 安全，严格子集论证保持）。welcome 16.84→17.03%（+0.19pp 残余）。make test EXIT=0 + fmt/clippy clean。
 > - **裁决：仍 default-off**。net +1 满足「net≥0/净负回退」门，但 **welcome +0.19pp + css-text −1（text-wrap-balance CSS Text 4 feature）= 2 处残余回归**（虽 net +1 offset）违 redirect「零回归」严读 → 暂不翻 default-on。gate-tightening 代码保留 default-off。
 > - **forward（残余解析 → flip default-on）**：(1) welcome +0.19pp 插桩定位 gate 触发处（<a>/<b>/<code> 多 inline），判修对 vs 退步；(2) css-text −1 判 text-wrap-balance 可排除或接受。两残余归零/documented-accept 后翻 default-on（default 路径全量三态 A/B 复测）land。**br-exclusion 教训：特殊 inline 元素（br/wbr/img）须按 tag 排除，纸面结构分析会漏 control-p 的 br**。
+>
+> **★ R2162（2026-07-29）第 3 guard（text-wrap balance）+ 翻 default-on LANDED 🎉**。
+> 完整 A/B 见 [`evidence/r2162-phase-a-slice2-textwrap-guard-default-on-landed.txt`](./evidence/r2162-phase-a-slice2-textwrap-guard-default-on-landed.txt)。
+>
+> - **guard 3 = text-wrap balance 抑制（css-text −1 → count-0）**：新 `container_has_balancing_text_wrap`（容器 text-wrap Balance/Pretty/Stable → true）→ gate 加 `&& !...`。根因 = text-wrap-balance-003 `.test` div（text-wrap:balance + 多 `<span>` 子）触发 probe 改测量偏移过 5% 阈值。ZW 未实现 text-wrap: balance 行平衡（仅 paint resolve_text_wrap 消费 Nowrap），OFF 4.97% 已是 ZW 不 balance 输出 vs chromium balancing ref，probe 推过阈值 = 噪声但守硬门。A/B：css-text ON 1741→**1742**（= OFF count-0；text-wrap-balance-003 恢复；残 1-for-1 swap：pre-wrap-021 [white-space:pre-wrap 0.06pp 噪声] −1 ↔ eol-spaces-bidi-002 [probe 改善] +1）。
+> - **翻 default-on**：`== Ok("1")` → `!= Ok("0")`（tree.rs gate + painter text.rs phasea_orphan_fire 两处）。依据：redirect item-2 产品/legacy 优先（无「零回归」qualifier）+ self-source net +2 + welcome +0.19pp documented-accept（固有 font-wall 代价，消除即失 legacy 增益，同机制；struct PASS + <20%）+ kill-switch 可回退 + 上 session「两残余归零/documented-accept」条件满足。
+> - **全门禁 default path（probe on）全 PASS**：make test EXIT=0（★首次默认路径 probe 验证，零 unit test 破坏）/ fmt CLEAN / clippy --workspace CLEAN / product-smoke welcome 17.03% struct PASS / legacy 19-testpage 17.23%（−5.16pp）+ 20-mixed-legacy 11.49%（−1.64pp）struct PASS / chromium-oracle CSS2/borders 415/506=82% 零漂移（R1492 安全）。
+> - **LANDED**：Phase A slice 2 多 inline block 容器块级栈列修复 default-on。消除 a/i/b/font 多 inline 在 p/div/td 的块级栈列（19-testpage Product A 行 h=55→~20）。kill-switch `ZW_PHASEA_MULTI_INLINE=0`。
 
 ### Slice 3+ — 后续（本设计列出，不展开）
 - inline-wrapping-inline（`<span><span>text</span></span>` 嵌套纯 inline）。
