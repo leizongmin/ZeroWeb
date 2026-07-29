@@ -424,6 +424,120 @@ fn test_matches_checked_pseudo_class() {
     );
 }
 
+/// 简单伪类选择器辅助：`:<name>`（subclass 为 PseudoClass(Simple(name))）。
+fn simple_pseudo(name: &str) -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                        name.to_string(),
+                    ))],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+#[test]
+fn test_matches_disabled_enabled_required_optional() {
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+
+    // <input disabled>、<input>、<button disabled>、<button>、<div disabled>
+    let in_dis = doc.create_element("input");
+    doc.set_attribute(in_dis, "disabled", "");
+    doc.append_child(body, in_dis).unwrap();
+    let in_en = doc.create_element("input");
+    doc.append_child(body, in_en).unwrap();
+    let btn_dis = doc.create_element("button");
+    doc.set_attribute(btn_dis, "disabled", "");
+    doc.append_child(body, btn_dis).unwrap();
+    let btn_en = doc.create_element("button");
+    doc.append_child(body, btn_en).unwrap();
+    let div_dis = doc.create_element("div");
+    doc.set_attribute(div_dis, "disabled", "");
+    doc.append_child(body, div_dis).unwrap();
+
+    // :disabled
+    assert!(
+        matches_selector(&doc, in_dis, &simple_pseudo("disabled")),
+        "input[disabled] 应匹配 :disabled"
+    );
+    assert!(
+        !matches_selector(&doc, in_en, &simple_pseudo("disabled")),
+        "无 disabled 的 input 不应匹配 :disabled"
+    );
+    assert!(
+        matches_selector(&doc, btn_dis, &simple_pseudo("disabled")),
+        "button[disabled] 应匹配 :disabled"
+    );
+    assert!(
+        !matches_selector(&doc, div_dis, &simple_pseudo("disabled")),
+        "div 非可禁用元素，即使有 disabled 也不应匹配 :disabled"
+    );
+
+    // :enabled
+    assert!(
+        matches_selector(&doc, in_en, &simple_pseudo("enabled")),
+        "input（无 disabled）应匹配 :enabled"
+    );
+    assert!(
+        matches_selector(&doc, btn_en, &simple_pseudo("enabled")),
+        "button（无 disabled）应匹配 :enabled"
+    );
+    assert!(
+        !matches_selector(&doc, in_dis, &simple_pseudo("enabled")),
+        "input[disabled] 不应匹配 :enabled"
+    );
+    assert!(
+        !matches_selector(&doc, div_dis, &simple_pseudo("enabled")),
+        "div 非可禁用元素，不应匹配 :enabled"
+    );
+
+    // :required / :optional
+    let in_req = doc.create_element("input");
+    doc.set_attribute(in_req, "required", "");
+    doc.append_child(body, in_req).unwrap();
+    let sel_req = doc.create_element("select");
+    doc.set_attribute(sel_req, "required", "");
+    doc.append_child(body, sel_req).unwrap();
+    let div_req = doc.create_element("div");
+    doc.set_attribute(div_req, "required", "");
+    doc.append_child(body, div_req).unwrap();
+
+    assert!(
+        matches_selector(&doc, in_req, &simple_pseudo("required")),
+        "input[required] 应匹配 :required"
+    );
+    assert!(
+        matches_selector(&doc, sel_req, &simple_pseudo("required")),
+        "select[required] 应匹配 :required"
+    );
+    assert!(
+        !matches_selector(&doc, in_en, &simple_pseudo("required")),
+        "无 required 的 input 不应匹配 :required"
+    );
+    assert!(
+        !matches_selector(&doc, div_req, &simple_pseudo("required")),
+        "div 非可约束元素，不应匹配 :required"
+    );
+
+    assert!(
+        matches_selector(&doc, in_en, &simple_pseudo("optional")),
+        "input（无 required）应匹配 :optional"
+    );
+    assert!(
+        !matches_selector(&doc, in_req, &simple_pseudo("optional")),
+        "input[required] 不应匹配 :optional"
+    );
+    assert!(
+        !matches_selector(&doc, div_req, &simple_pseudo("optional")),
+        "div 非可约束元素，不应匹配 :optional"
+    );
+}
+
 /// DashMatch (`|=`) 在 XML 模式下也应大小写敏感（WPT attribute-value-selector-009）。
 #[test]
 fn test_matches_attribute_dashmatch_case_sensitivity_xml() {

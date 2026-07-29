@@ -264,6 +264,10 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             "only-of-type" => is_first_of_type(doc, element) && is_last_of_type(doc, element),
             // 表单状态伪类：静态 HTML 下 checkedness/selectedness = 布尔属性存在性（无 JS 交互）
             "checked" => is_checked(doc, element),
+            "disabled" => is_disabled(doc, element),
+            "enabled" => is_enabled(doc, element),
+            "required" => is_required(doc, element),
+            "optional" => is_optional(doc, element),
             _ => false, // 不支持的伪类
         },
         PseudoClassSelector::Not(selectors) => {
@@ -448,6 +452,56 @@ fn is_checked(doc: &Document, element: NodeId) -> bool {
         "option" => doc.get_attribute(element, "selected").is_some(),
         _ => false,
     }
+}
+
+/// 可禁用元素（HTML spec `:disabled`/`:enabled` 适用集）。
+fn is_disableable_tag(tag: &str) -> bool {
+    matches!(
+        tag,
+        "input" | "button" | "select" | "textarea" | "optgroup" | "option" | "fieldset"
+    )
+}
+
+/// `:disabled` 匹配：可禁用元素且带 `disabled` 属性。
+/// 注：`<fieldset disabled>` 向后代表单控件的禁用传播未实现（静态罕见场景，后续按需补）。
+fn is_disabled(doc: &Document, element: NodeId) -> bool {
+    let tag = match element_tag_name(doc, element) {
+        Some(t) => t,
+        None => return false,
+    };
+    is_disableable_tag(&tag) && doc.get_attribute(element, "disabled").is_some()
+}
+
+/// `:enabled` 匹配：可禁用元素且无 `disabled` 属性（`:disabled` 在可禁用元素上的补集）。
+fn is_enabled(doc: &Document, element: NodeId) -> bool {
+    let tag = match element_tag_name(doc, element) {
+        Some(t) => t,
+        None => return false,
+    };
+    is_disableable_tag(&tag) && doc.get_attribute(element, "disabled").is_none()
+}
+
+/// 可设 `required` 的元素（HTML spec `:required`/`:optional` 仅限可约束表单控件）。
+fn is_requireable_tag(tag: &str) -> bool {
+    matches!(tag, "input" | "select" | "textarea")
+}
+
+/// `:required` 匹配：可约束元素带 `required` 属性。
+fn is_required(doc: &Document, element: NodeId) -> bool {
+    let tag = match element_tag_name(doc, element) {
+        Some(t) => t,
+        None => return false,
+    };
+    is_requireable_tag(&tag) && doc.get_attribute(element, "required").is_some()
+}
+
+/// `:optional` 匹配：可约束元素无 `required` 属性（`:required` 在可约束元素上的补集）。
+fn is_optional(doc: &Document, element: NodeId) -> bool {
+    let tag = match element_tag_name(doc, element) {
+        Some(t) => t,
+        None => return false,
+    };
+    is_requireable_tag(&tag) && doc.get_attribute(element, "required").is_none()
 }
 
 /// 检查元素是否是同类型中的第一个。
