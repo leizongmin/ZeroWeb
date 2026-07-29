@@ -10,6 +10,8 @@
 >
 > 旧 2026-07-28 高收益转向块保留作历史依据；本块覆盖它，是后续 agent 的默认执行入口。
 
+> **📍 R2201（2026-07-29）fresh-session plateau-guard = make test 12686/0 绿，R2198 default-on 代码跨全新构建无漂移，暂停态基线稳定**。新 session 承接，按顶部暂停裁决允许的「低频 plateau-guard」跑 `make test`（test-guard 包裹，排除 zero-render-foundation GPU crate）作漂移守护 + DC-7 持久化证据。**结果：12686 passed / 0 failed / 74 ignored，EXIT=0**（HEAD `f07ffcce` = R2198 default-on 代码；自 R2198[commit 2a290494]后仅 5 个 docs 提交，无 `.rs`/`.toml` 变更；全新依赖 + 工作区构建后重跑，与 R2200 基线 12686/0 字节级一致 = 零环境/工具链漂移）。**结论**：暂停裁决下基线经独立 fresh build 复核稳定，Phase A slice 2+3 default-on 未腐化；自主可推进面仍 comprehensively exhausted（reftest 9 重 + IFC Path A/B 4/4 safe DRY + multicol/float 双路径 vein + R2200 legacy outlier font-wall）。下一步不变 = 待用户点名授权结构性方向（font-stack C-dep / Phase A IFC 单一权威深实现[设计 `phase-a-inline-box-model-full-design-2026-07-29.md` 已就绪] / vertical-mode native R1043 / taffy replaced-element border-box sizing R2174）后转主动推进；期间仅低频 plateau-guard。本轮无代码变更，不重复跑昂贵的全量 oracle（R2199 今天刚跑过同代码）。
+
 > **🧭 当前裁决（2026-07-28，高收益转向）**
 >
 > - **执行模式**：从“持续冲 WPT 95%”切换为 **plateau-guard + 高收益项目**。reftest broad plateau 已接受为阶段性事实；后续只做低风险、可证实、A/B 零回归的 clean lever，或产品/legacy smoke 的可见稳定性修复。
