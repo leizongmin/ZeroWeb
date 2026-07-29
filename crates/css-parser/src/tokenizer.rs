@@ -181,6 +181,13 @@ pub struct Tokenizer {
 impl Tokenizer {
     /// 创建新的 tokenizer。
     pub fn new(input: &str) -> Self {
+        // CSS Syntax §3.3 输入预处理：若输入以 U+FEFF (BOM) 开头，须忽略（consume 掉）。
+        // external CSS 经 `net::charset::decode_with` 已剥 UTF-8/UTF-16 BOM，但 inline
+        // `<style>` 文本（html5ever 不剥离文档中段的 FEFF）与直接 `parse_stylesheet`/
+        // `load_html` 调用仍可能带首 BOM；不去则 FEFF（`!is_ascii()`）被 `is_ident_start`
+        // 当成标识符首字符，污染紧跟其后的首个选择器（driving: bom-at-stylesheet-start）。
+        // 仅剥首个；中段 BOM 作 ZERO WIDTH NO-BREAK SPACE 是合法 ident 字符，保留。
+        let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
         Self {
             chars: input.chars().collect(),
             pos: 0,
