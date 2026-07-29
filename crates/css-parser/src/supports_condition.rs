@@ -31,6 +31,12 @@ fn parse_or_expression(input: &str) -> Option<SupportsCondition> {
     if has_and && has_or {
         return None;
     }
+    // CSS Conditional §7：`not` 是条件前导形式（`not <in-parens>`），不可与顶层 and/or
+    // 共现——`not X and/or Y` / `X and/or not Y` 非法（and/or 操作数须为 in-parens）。
+    // driving: WPT css-supports-019/029/030。
+    if top_level_not(input) && (has_and || has_or) {
+        return None;
+    }
 
     let parts = split_top_level(input, " or ");
     if parts.len() > 1 {
@@ -80,6 +86,63 @@ fn top_level_ops(input: &str) -> (bool, bool) {
     (has_and, has_or)
 }
 
+/// 检测字符串**顶层**（括号外）是否含 `not` 关键字（词边界：前为串首/空格，后为空格）。
+fn top_level_not(input: &str) -> bool {
+    let lower = input.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut depth = 0i32;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'(' => {
+                depth += 1;
+                i += 1;
+            }
+            b')' => {
+                depth = depth.saturating_sub(1);
+                i += 1;
+            }
+            _ => {
+                if depth == 0 {
+                    let prev_boundary = i == 0 || bytes[i - 1] == b' ';
+                    if prev_boundary && lower[i..].starts_with("not") {
+                        let after = i + 3;
+                        if after == bytes.len() || bytes[after] == b' ' {
+                            return true;
+                        }
+                    }
+                }
+                i += 1;
+            }
+        }
+    }
+    false
+}
+
+/// 若 `input` 恰为**单个匹配括号对**包裹（首个 `(` 的匹配 `)` 在末尾），返回其内部；
+/// 否则 None。用于 `parse_primary` 递归剥层（`((X))` → `X`）。
+fn strip_one_paren_pair(input: &str) -> Option<&str> {
+    let input = input.trim();
+    if !input.starts_with('(') {
+        return None;
+    }
+    let bytes = input.as_bytes();
+    let mut depth = 0i32;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return if i == bytes.len() - 1 { Some(&input[1..i]) } else { None };
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// 解析 and 表达式。
 fn parse_and_expression(input: &str) -> Option<SupportsCondition> {
     let parts = split_top_level(input, " and ");
@@ -111,6 +174,10 @@ fn parse_not_expression(input: &str) -> Option<SupportsCondition> {
 }
 
 /// 解析基本条件（括号表达式或 selector()）。
+///
+/// `<supports-feature>` = `( <declaration> )` —— 属性值测试**必须在括号内**；
+/// 裸 `property: value`（无括号）非法 → None（driving: WPT css-supports-002
+/// `@supports color: green` 须不应用）。
 fn parse_primary(input: &str) -> Option<SupportsCondition> {
     let input = input.trim();
 
@@ -121,24 +188,24 @@ fn parse_primary(input: &str) -> Option<SupportsCondition> {
         return Some(SupportsCondition::Selector(inner.trim().to_string()));
     }
 
-    // 括号表达式
-    if input.starts_with('(') && input.ends_with(')') {
-        let inner = &input[1..input.len() - 1];
+    // 括号包裹：单个匹配括号对
+    if let Some(inner) = strip_one_paren_pair(input) {
         let inner = inner.trim();
-
-        // 检查内部是否包含嵌套的 and/or/not
-        if contains_top_level_keyword(inner) {
+        // 内含 and/or/not 或自身仍为括号组（嵌套 `((X))`）→ 递归为条件（复用校验逻辑）
+        let (has_and, has_or) = top_level_ops(inner);
+        if has_and || has_or || top_level_not(inner) || strip_one_paren_pair(inner).is_some() {
             return parse_or_expression(inner);
         }
-
-        // 属性值测试：(property: value)
+        // 底层 feature：property: value
         if let Some(colon_pos) = inner.find(':') {
             let property = inner[..colon_pos].trim().to_string();
             let value = inner[colon_pos + 1..].trim().to_string();
             return Some(SupportsCondition::Property(property, value));
         }
+        return None;
     }
 
+    // 裸形式（无括号）→ feature 须在括号内，非法
     None
 }
 
@@ -167,28 +234,6 @@ fn split_top_level<'a>(input: &'a str, keyword: &str) -> Vec<&'a str> {
     }
     parts.push(&input[start..]);
     parts
-}
-
-/// 检查字符串是否在顶层包含 and/or/not 关键字。
-fn contains_top_level_keyword(input: &str) -> bool {
-    let lower = input.to_ascii_lowercase();
-    let mut depth = 0i32;
-    for b in lower.as_bytes() {
-        if *b == b'(' {
-            depth += 1;
-        } else if *b == b')' {
-            depth = depth.saturating_sub(1);
-        } else if depth == 0 {
-            if lower.contains(" and ") || lower.contains(" or ") {
-                return true;
-            }
-            if lower.starts_with("not ") {
-                return true;
-            }
-            return false;
-        }
-    }
-    false
 }
 
 #[cfg(test)]
@@ -282,5 +327,62 @@ mod tests {
         // 注意：上一行的 `(A) and (B) or (C)` 是非法（顶层混用）；这里改用合法形式
         let cond = parse_supports_condition("((color: red) and (color: blue)) or (color: green)");
         assert!(cond.is_some(), "括号包裹的 and 链与 or 混用合法");
+    }
+
+    #[test]
+    fn test_parse_not_mixed_with_and_or_invalid() {
+        // CSS Conditional §7：`not` 是条件**前导**形式（`not <in-parens>`），不可与顶层
+        // and/or 共现——`not X and/or Y` 非法（and/or 操作数须为 in-parens，非 `not X`）。
+        // driving: WPT css-supports-019/029/030。
+        assert_eq!(
+            parse_supports_condition("not (color: rainbow) and not (color: iridescent)"),
+            None
+        );
+        assert_eq!(parse_supports_condition("not (color: rainbow) or (color: green)"), None);
+        assert_eq!(
+            parse_supports_condition("(color: green) and not (color: rainbow)"),
+            None
+        );
+        // 括号包裹的 `not X or Y` 内层非法 → 外层整体非法（030）。
+        assert_eq!(
+            parse_supports_condition("(not (color: rainbow) or (color: green))"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_parse_not_alone_valid() {
+        // 回归：`not (X)` 单独合法。
+        assert!(parse_supports_condition("not (color: green)").is_some());
+    }
+
+    #[test]
+    fn test_parse_bare_property_invalid() {
+        // feature 须在括号内：裸 `property: value`（无括号）非法 → None。
+        // driving: WPT css-supports-002 `@supports color: green`。
+        assert_eq!(parse_supports_condition("color: green"), None);
+    }
+
+    #[test]
+    fn test_parse_double_not_invalid() {
+        // `not` 取单个 in-parens；`not not (X)` 中外层 not 的操作数 `not (X)` 非 in-parens
+        // → 非法 → None。driving: WPT css-supports-017。
+        assert_eq!(parse_supports_condition("not not (color: green)"), None);
+    }
+
+    #[test]
+    fn test_parse_nested_extra_parens_valid() {
+        // 任意子表达式可被额外一层括号包裹：`((X))` 合法（CSS Conditional §7），
+        // 且应解析为正确的 Property（不应把 "(" 并入属性名）。
+        // driving: WPT css-supports-003。
+        let cond = parse_supports_condition("((color: green))");
+        match cond {
+            Some(SupportsCondition::Property(p, v)) => {
+                assert_eq!(p, "color", "属性名不应含括号");
+                assert_eq!(v, "green");
+            }
+            other => panic!("`((color: green))` 应解析为 Property(color, green)，实际: {:?}", other),
+        }
+        assert!(parse_supports_condition("(((display: grid)))").is_some());
     }
 }
