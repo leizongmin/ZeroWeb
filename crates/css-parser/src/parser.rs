@@ -552,25 +552,32 @@ impl<'a> Parser<'a> {
     /// 解析函数伪类选择器列表（:not()、:is()、:where()）。
     ///
     /// 调用前已消耗 `(`。
-    fn parse_pseudo_class_function_list(&mut self, _name: &str) -> PseudoClassSelector {
-        let selectors = self.consume_selector_list_for_function();
+    fn parse_pseudo_class_function_list(&mut self, name: &str) -> PseudoClassSelector {
+        // Selectors L4：:is()/:where()/:has() 取 forgiving selector list（无效选择器跳过而非吞整列表）；
+        // :not() 与 nth `of S` 取普通列表（无效即停）。
+        let forgiving = matches!(name, "is" | "where" | "has");
+        let selectors = self.consume_selector_list_for_function(forgiving);
 
         // 消耗右括号
         if matches!(self.peek(), Token::RParen) {
             self.advance();
         }
 
-        match _name {
+        match name {
             "not" => PseudoClassSelector::Not(selectors),
             "is" => PseudoClassSelector::Is(selectors),
             "where" => PseudoClassSelector::Where(selectors),
             "has" => PseudoClassSelector::Has(selectors),
-            _ => PseudoClassSelector::Simple(_name.to_string()),
+            _ => PseudoClassSelector::Simple(name.to_string()),
         }
     }
 
     /// 为函数伪类内部消耗选择器列表。
-    fn consume_selector_list_for_function(&mut self) -> Vec<Selector> {
+    ///
+    /// `forgiving=true`（:is/:where/:has）时，遇无效选择器跳过其残余到下一个逗号或 `)`，
+    /// 继续解析后续选择器（spec 的 forgiving selector list）；`false`（:not、nth `of S`）时，
+    /// 遇无效即停（普通选择器列表）。
+    fn consume_selector_list_for_function(&mut self, forgiving: bool) -> Vec<Selector> {
         let mut selectors = Vec::new();
 
         loop {
@@ -580,14 +587,23 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            if let Some(sel) = self.consume_selector() {
-                selectors.push(sel);
-            } else {
-                break;
+            match self.consume_selector() {
+                Some(sel) => selectors.push(sel),
+                None => {
+                    if !forgiving {
+                        break;
+                    }
+                    // forgiving：跳过无效选择器残余到逗号或 `)`（不消耗目标 token）
+                    self.skip_to_comma_or_rparen();
+                    // 若停在 `)`/EOF（无后续逗号），结束
+                    if !matches!(self.peek(), Token::Comma) {
+                        break;
+                    }
+                }
             }
 
+            // 成功选择器后，或 forgiving 恢复停在逗号后：消耗逗号继续
             self.skip_whitespace();
-
             if matches!(self.peek(), Token::Comma) {
                 self.advance();
                 continue;
@@ -597,6 +613,13 @@ impl<'a> Parser<'a> {
         }
 
         selectors
+    }
+
+    /// 跳过 token 直到遇到 `,`、`)` 或 EOF（不消耗目标 token）。用于 forgiving 选择器列表恢复。
+    fn skip_to_comma_or_rparen(&mut self) {
+        while !matches!(self.peek(), Token::Comma | Token::RParen | Token::Eof) {
+            self.advance();
+        }
     }
 
     /// 解析 nth 函数模式（:nth-child、:nth-last-child、:nth-of-type）。
@@ -647,7 +670,7 @@ impl<'a> Parser<'a> {
                 // `of` 关键字（仅在已收集到 an+b 表达式时识别，避免吞掉非法裸 `of`）
                 Token::Ident(s) if !expr.trim().is_empty() && s.eq_ignore_ascii_case("of") => {
                     self.advance(); // 消耗 of
-                    of_selectors = self.consume_selector_list_for_function();
+                    of_selectors = self.consume_selector_list_for_function(false);
                     break;
                 }
                 Token::Whitespace => {

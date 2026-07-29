@@ -80,6 +80,7 @@ mod coverage_round7;
 mod coverage_round8;
 mod coverage_round9;
 mod dir_pseudo;
+mod forgiving_selector_list;
 mod nth_of_selector;
 mod null_handling;
 mod parser_coverage;
