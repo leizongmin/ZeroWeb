@@ -270,6 +270,7 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             "optional" => is_optional(doc, element),
             "read-only" => is_read_only(doc, element),
             "read-write" => is_read_write(doc, element),
+            "placeholder-shown" => is_placeholder_shown(doc, element),
             _ => false, // 不支持的伪类
         },
         PseudoClassSelector::Not(selectors) => {
@@ -553,6 +554,37 @@ fn is_read_write(doc: &Document, element: NodeId) -> bool {
 /// `:read-only` 匹配：非 `:read-write`（所有不可编辑元素，含 `<p>`/`<div>` 等非表单元素）。
 fn is_read_only(doc: &Document, element: NodeId) -> bool {
     !is_read_write(doc, element)
+}
+
+/// 元素直接子文本节点是否有非空（非纯空白）内容。
+fn element_has_text_content(doc: &Document, element: NodeId) -> bool {
+    for &child in &doc.child_nodes(element) {
+        if let Some(node) = doc.get(child)
+            && let NodeKind::Text(data) = &node.kind
+            && !data.content.trim().is_empty()
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// `:placeholder-shown` 匹配（CSS UI）：input/textarea 正在显示 placeholder。
+/// = 有 `placeholder` 属性 且 当前无值：`<input>` 的 `value` 属性为空/缺省；
+/// `<textarea>` 的文本内容为空/纯空白。
+fn is_placeholder_shown(doc: &Document, element: NodeId) -> bool {
+    let tag = match element_tag_name(doc, element) {
+        Some(t) => t,
+        None => return false,
+    };
+    if doc.get_attribute(element, "placeholder").is_none() {
+        return false;
+    }
+    match tag.as_str() {
+        "input" => doc.get_attribute(element, "value").is_none_or(|v| v.is_empty()),
+        "textarea" => !element_has_text_content(doc, element),
+        _ => false,
+    }
 }
 
 /// 检查元素是否是同类型中的第一个。

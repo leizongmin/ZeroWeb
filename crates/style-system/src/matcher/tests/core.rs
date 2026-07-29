@@ -632,6 +632,80 @@ fn test_matches_read_only_read_write() {
     );
 }
 
+#[test]
+fn test_matches_placeholder_shown() {
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+
+    // <input placeholder="x">（无 value）→ 显示 placeholder
+    let in_ph = doc.create_element("input");
+    doc.set_attribute(in_ph, "placeholder", "name");
+    doc.append_child(body, in_ph).unwrap();
+
+    // <input placeholder="x" value="">（空 value）→ 仍显示 placeholder
+    let in_empty = doc.create_element("input");
+    doc.set_attribute(in_empty, "placeholder", "name");
+    doc.set_attribute(in_empty, "value", "");
+    doc.append_child(body, in_empty).unwrap();
+
+    // <input placeholder="x" value="hi">（有值）→ 不显示
+    let in_val = doc.create_element("input");
+    doc.set_attribute(in_val, "placeholder", "name");
+    doc.set_attribute(in_val, "value", "hi");
+    doc.append_child(body, in_val).unwrap();
+
+    // <input value="hi">（无 placeholder）→ 不匹配
+    let in_no_ph = doc.create_element("input");
+    doc.set_attribute(in_no_ph, "value", "hi");
+    doc.append_child(body, in_no_ph).unwrap();
+
+    // <textarea placeholder="x"></textarea>（空内容）→ 显示
+    let ta_empty = doc.create_element("textarea");
+    doc.set_attribute(ta_empty, "placeholder", "name");
+    doc.append_child(body, ta_empty).unwrap();
+
+    // <textarea placeholder="x">text</textarea>（有内容）→ 不显示
+    let ta_val = doc.create_element("textarea");
+    doc.set_attribute(ta_val, "placeholder", "name");
+    let text = doc.create_text_node("text");
+    doc.append_child(ta_val, text).unwrap();
+    doc.append_child(body, ta_val).unwrap();
+
+    // <p placeholder="x">（非 input/textarea）→ 不匹配
+    let p_ph = doc.create_element("p");
+    doc.set_attribute(p_ph, "placeholder", "x");
+    doc.append_child(body, p_ph).unwrap();
+
+    let sel = simple_pseudo("placeholder-shown");
+    assert!(
+        matches_selector(&doc, in_ph, &sel),
+        "input[placeholder] 无 value 应匹配 :placeholder-shown"
+    );
+    assert!(
+        matches_selector(&doc, in_empty, &sel),
+        "input[placeholder][value=\"\"] 应匹配 :placeholder-shown"
+    );
+    assert!(
+        !matches_selector(&doc, in_val, &sel),
+        "input[placeholder][value=\"hi\"] 不应匹配 :placeholder-shown"
+    );
+    assert!(
+        !matches_selector(&doc, in_no_ph, &sel),
+        "无 placeholder 的 input 不应匹配 :placeholder-shown"
+    );
+    assert!(
+        matches_selector(&doc, ta_empty, &sel),
+        "textarea[placeholder] 空内容应匹配 :placeholder-shown"
+    );
+    assert!(
+        !matches_selector(&doc, ta_val, &sel),
+        "textarea[placeholder] 有内容不应匹配 :placeholder-shown"
+    );
+    assert!(
+        !matches_selector(&doc, p_ph, &sel),
+        "p 非输入元素，不应匹配 :placeholder-shown"
+    );
+}
+
 /// DashMatch (`|=`) 在 XML 模式下也应大小写敏感（WPT attribute-value-selector-009）。
 #[test]
 fn test_matches_attribute_dashmatch_case_sensitivity_xml() {
