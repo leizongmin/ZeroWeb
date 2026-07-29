@@ -168,6 +168,9 @@ impl RendererRuntime {
             ..Default::default()
         });
         webview.set_font_resolver(font_resolver);
+        // R2202 U1b-wiring 生产接通：注入 per-family 行度量（env-gated ZW_PERFONT_LINEHEIGHT=1，
+        // 默认 dormant 零回归；激活后 line-height:normal 走真实 ascent−descent+line_gap）。
+        webview.set_font_metric_map(font_loader.build_line_metric_map());
         Self {
             outbound,
             inbound_rx,

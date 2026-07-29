@@ -172,10 +172,8 @@ impl<'a> Parser<'a> {
             // CSS Selectors L3：选择器列表中任一非法选择器（如未知伪类）invalidates 整个列表
             // → 整条规则丢弃（driving: selectors-parsing-001 `p:invalidPseudoClass, p.test1`）。
             // 旧实现跳过 None 选择器继续，导致同组其他合法选择器（如 p.test1）泄漏应用。
-            match self.consume_selector() {
-                Some(sel) => selectors.push(sel),
-                None => return None,
-            }
+            let sel = self.consume_selector()?;
+            selectors.push(sel);
 
             self.skip_whitespace();
 
