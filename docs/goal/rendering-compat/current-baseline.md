@@ -19,7 +19,7 @@
 | Paint 系统 | ✅ 13 种图元 | 填充、圆角矩形、路径、线段、渐变、阴影、图片、文字、滤镜、混合模式、变换、裁剪 |
 | CPU 软件渲染 | ✅ **已实现（M7）** | fills/rounded/glyphs + gradient/shadow/image/stroke/path_fill/path_stroke/filter/blend（cpu/ 下各模块，附单测） |
 | GPU 渲染 | ✅ **已实现（M7）** | wgpu+WGSL `draw_*_pass` + `collect_*_vertices` + mesh 管线（rounded/gradient/image/shadow/stroke/path/filter），非 CPU passthrough，附 `test_gpu_full_scene_*` |
-| 浏览器图元消费 | ✅ **已实现（M7）** | `append_webview_primitives()`（app_render.rs:1512）遍历全 13 字段无丢弃 |
+| 浏览器图元消费 | ✅ **已实现（M7）** | `append_webview_primitives()`（`app_render_primitives.rs:17`，字段迭代 ~31-487）遍历全 13 字段无丢弃 |
 | Margin 折叠 | ✅ 已实现（taffy 0.7 CollapsibleMarginSet；R323 实测 6 探针 case + 5 reftest 全过） | 块级元素间距与主流浏览器一致 |
 | BFC（margin 隔离部分） | ✅ 已实现（overflow:hidden/flex/grid 等 BFC 的子元素 margin 不与父折叠；R323 实测） | margin 折叠隔离正确；浮动包含（float containment）部分未单独验证 |
 | 滚动容器 | ⚠️ 简化处理 | 无真正滚动容器，浏览器层手动偏移 |
@@ -29,7 +29,7 @@
 | 缺口 | 影响范围 | 严重性 | 当前状态 |
 |------|----------|--------|----------|
 | **渲染器图元覆盖** | **所有视觉输出** | ✅ **已实现（M7）** | CPU（cpu/gradient.rs+shadow.rs+image+stroke.rs+effects.rs filter/blend）+ GPU（gpu/renderer/mod.rs draw_gradient/image/rounded_rect_pass + collect_shadow/stroke/path_fill/path_stroke/color_filter/blur_filter + mesh）均已实现全 13 种图元，附单测（test_gpu_full_scene_gradient/shadow/stroke 等）。**注**：granular DC-8/9 各项的 framebuffer 像素断言 rigor 仍待逐项复核。原「CPU 仅 3 种 / GPU 仅 2 种 / 全部无法渲染」描述已过时（pre-M7） |
-| **浏览器图元消费** | **所有视觉输出** | ✅ **已实现（M7）** | `append_webview_primitives()`（app_render.rs:1512）遍历 `RenderPrimitives` 全 13 字段（line 1526-1840）无静默丢弃。原「仅 fills+glyphs，11 种丢弃」描述已过时（pre-M7） |
+| **浏览器图元消费** | **所有视觉输出** | ✅ **已实现（M7）** | `append_webview_primitives()`（`app_render_primitives.rs:17`）遍历 `RenderPrimitives` 全 13 字段（迭代 ~31-487：fills/glyphs/shadows/rounded_rects/gradients/images/strokes/path_fills/path_strokes/clips/transforms/filters/blend_modes）无静默丢弃。原「仅 fills+glyphs，11 种丢弃」描述已过时（pre-M7） |
 | **Inline formatting 所有权分裂** | **静态页面基础排版** | **P1-严重** | inline/inline-block 在 taffy 中映射为 block，同时 IFC 又通过 `text_content()` 收集 inline 子树文本；父容器和子 inline 盒可能重复或错位绘制文本。`welcome.html` 中 `ZeroBrowser`、card/link/shortcut 文本串联是该类缺口的产品可见症状 |
 | **Layout/Paint IFC 双路径** | **文本布局与 glyph 输出一致性** | **P1-严重** | layout 阶段和 paint 阶段不是同一份 IFC 结果；paint 二次运行 IFC 时 style map、float exclusion、container width 可能不同，导致 box 背景位置与 glyph 位置不一致 |
 | ~~**外部样式表加载缺失**~~ | **真实静态网页 CSS** | ✅ **已贯通（R213）** | ✅ **已修复**：fetch_url 三条成功路径（SW 拦截 line 396 / HTTP 缓存命中 421 / 正常 fetch 448）现均 `load_html(&html, Some(&external_css))`（非 None）；prepare_page_subresources → resolve_external_css（webview.rs:256）经 extract_stylesheet_hrefs 提取 `<link rel="stylesheet">` + base URL 解析 + 逐个 HTTP 抓取 + 合并注入级联，抓取/解码失败记 `tracing::warn!`（274-276）不阻断（宽松降级）；R213 测试 test_fetch_url_loads_external_stylesheet + ..._missing_does_not_break 覆盖。~~原（已过时）~~： `WebView::fetch_url()` 三条成功路径都会调用 `load_html(&html, None)`；`RenderPipeline::collect_stylesheets()` 只收调用方传入 CSS 和文档内 `<style>`，不抓取 `<link rel="stylesheet">`。morning.work 文章页依赖外链 CSS，当前会静默退化为仅内联样式 |
