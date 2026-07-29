@@ -706,6 +706,171 @@ fn test_matches_placeholder_shown() {
     );
 }
 
+#[test]
+fn test_matches_default_pseudo_class() {
+    // :default = option[selected] + 默认选中的 checkbox/radio（checked 内容属性）
+    //          + 表单内树序首个 submit 按钮（button[type=submit|缺省]、input[type=submit|image]）。
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+
+    // 表单 1：两个 submit，树序首个 input[type=submit] 匹配，第二个 button 不匹配。
+    let form1 = doc.create_element("form");
+    doc.append_child(body, form1).unwrap();
+    let sub1 = doc.create_element("input");
+    doc.set_attribute(sub1, "type", "submit");
+    doc.append_child(form1, sub1).unwrap();
+    let sub2 = doc.create_element("button");
+    doc.set_attribute(sub2, "type", "submit");
+    doc.append_child(form1, sub2).unwrap();
+
+    // 表单 2：reset 非 submit 候选不匹配；无 type 的 button（默认 submit）为首个 → 匹配。
+    let form2 = doc.create_element("form");
+    doc.append_child(body, form2).unwrap();
+    let reset_btn = doc.create_element("button");
+    doc.set_attribute(reset_btn, "type", "reset");
+    doc.append_child(form2, reset_btn).unwrap();
+    let btn_default = doc.create_element("button");
+    doc.append_child(form2, btn_default).unwrap();
+
+    // option[selected] → :default；无 selected → 不匹配。
+    let opt_sel = doc.create_element("option");
+    doc.set_attribute(opt_sel, "selected", "");
+    doc.append_child(body, opt_sel).unwrap();
+    let opt_plain = doc.create_element("option");
+    doc.append_child(body, opt_plain).unwrap();
+
+    // 默认选中的 checkbox/radio（checked 内容属性）→ :default。
+    let cb = doc.create_element("input");
+    doc.set_attribute(cb, "type", "checkbox");
+    doc.set_attribute(cb, "checked", "");
+    doc.append_child(body, cb).unwrap();
+    let rd = doc.create_element("input");
+    doc.set_attribute(rd, "type", "radio");
+    doc.set_attribute(rd, "checked", "");
+    doc.append_child(body, rd).unwrap();
+
+    // 无 form 宿主的 submit：非任何 form 的默认按钮 → 不匹配。
+    let img = doc.create_element("input");
+    doc.set_attribute(img, "type", "image");
+    doc.append_child(body, img).unwrap();
+    // 非 submit 的 input：text 不匹配。
+    let txt = doc.create_element("input");
+    doc.set_attribute(txt, "type", "text");
+    doc.append_child(body, txt).unwrap();
+
+    let sel = simple_pseudo("default");
+    assert!(
+        matches_selector(&doc, sub1, &sel),
+        "form 内树序首个 submit 应匹配 :default"
+    );
+    assert!(
+        !matches_selector(&doc, sub2, &sel),
+        "form 内非首个 submit 不应匹配 :default"
+    );
+    assert!(
+        matches_selector(&doc, btn_default, &sel),
+        "无 type 的 button（默认 submit）作为首个应匹配 :default"
+    );
+    assert!(
+        !matches_selector(&doc, reset_btn, &sel),
+        "button[type=reset] 非 submit 候选，不应匹配 :default"
+    );
+    assert!(
+        matches_selector(&doc, opt_sel, &sel),
+        "option[selected] 应匹配 :default"
+    );
+    assert!(
+        !matches_selector(&doc, opt_plain, &sel),
+        "无 selected 的 option 不应匹配 :default"
+    );
+    assert!(
+        matches_selector(&doc, cb, &sel),
+        "input[type=checkbox][checked] 默认选中应匹配 :default"
+    );
+    assert!(
+        matches_selector(&doc, rd, &sel),
+        "input[type=radio][checked] 默认选中应匹配 :default"
+    );
+    assert!(
+        !matches_selector(&doc, img, &sel),
+        "无 form 宿主的 submit 不应匹配 :default"
+    );
+    assert!(
+        !matches_selector(&doc, txt, &sel),
+        "input[type=text] 非 submit/checkbox/radio，不应匹配 :default"
+    );
+}
+
+#[test]
+fn test_matches_indeterminate_pseudo_class() {
+    // :indeterminate = <progress> 无 value 属性 + radio 组（同 name + 同 form 宿主）无任何 checked。
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+
+    // <progress> 无 value → indeterminate；有 value → 非 indeterminate。
+    let prog_ind = doc.create_element("progress");
+    doc.append_child(body, prog_ind).unwrap();
+    let prog_det = doc.create_element("progress");
+    doc.set_attribute(prog_det, "value", "50");
+    doc.append_child(body, prog_det).unwrap();
+
+    // radio 组 g（同 form + 同 name）无 checked → 全部 indeterminate。
+    let form = doc.create_element("form");
+    doc.append_child(body, form).unwrap();
+    let r1 = doc.create_element("input");
+    doc.set_attribute(r1, "type", "radio");
+    doc.set_attribute(r1, "name", "g");
+    doc.append_child(form, r1).unwrap();
+    let r2 = doc.create_element("input");
+    doc.set_attribute(r2, "type", "radio");
+    doc.set_attribute(r2, "name", "g");
+    doc.append_child(form, r2).unwrap();
+
+    // radio 组 h 有 checked 成员 → 组内均非 indeterminate。
+    let r3 = doc.create_element("input");
+    doc.set_attribute(r3, "type", "radio");
+    doc.set_attribute(r3, "name", "h");
+    doc.set_attribute(r3, "checked", "");
+    doc.append_child(form, r3).unwrap();
+    let r4 = doc.create_element("input");
+    doc.set_attribute(r4, "type", "radio");
+    doc.set_attribute(r4, "name", "h");
+    doc.append_child(form, r4).unwrap();
+
+    // checkbox 不匹配（indeterminate 为动态 IDL 状态，静态不可知）。
+    let cb = doc.create_element("input");
+    doc.set_attribute(cb, "type", "checkbox");
+    doc.append_child(body, cb).unwrap();
+
+    let sel = simple_pseudo("indeterminate");
+    assert!(
+        matches_selector(&doc, prog_ind, &sel),
+        "无 value 的 progress 应匹配 :indeterminate"
+    );
+    assert!(
+        !matches_selector(&doc, prog_det, &sel),
+        "有 value 的 progress 不应匹配 :indeterminate"
+    );
+    assert!(
+        matches_selector(&doc, r1, &sel),
+        "radio 组（name=g）无 checked，成员应匹配 :indeterminate"
+    );
+    assert!(
+        matches_selector(&doc, r2, &sel),
+        "radio 组（name=g）无 checked，成员应匹配 :indeterminate"
+    );
+    assert!(
+        !matches_selector(&doc, r3, &sel),
+        "radio 组（name=h）有 checked，checked 成员不应匹配 :indeterminate"
+    );
+    assert!(
+        !matches_selector(&doc, r4, &sel),
+        "radio 组（name=h）有 checked，未选成员也不应匹配 :indeterminate"
+    );
+    assert!(
+        !matches_selector(&doc, cb, &sel),
+        "checkbox 静态下不匹配 :indeterminate"
+    );
+}
+
 /// DashMatch (`|=`) 在 XML 模式下也应大小写敏感（WPT attribute-value-selector-009）。
 #[test]
 fn test_matches_attribute_dashmatch_case_sensitivity_xml() {
