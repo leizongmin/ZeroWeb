@@ -823,6 +823,23 @@ impl Iterator for Tokenizer {
                 Token::Comma
             }
 
+            // CDO（`<!--`，CSS Syntax §4.1.1）：stylesheet 顶层应忽略——legacy HTML 注释
+            // 包裹 `<style>` 块的常见模式。复用 Comment ignorable 通道（同 CDC），顶层被
+            // `skip_whitespace` 跳过，不触发 selector 解析 + `skip_malformed_qualified_rule`
+            // 吞掉后续真实规则（driving: cdo-cdc-stylesheet-wrap）。
+            '<' => {
+                if self.peek_at(1) == Some('!') && self.peek_at(2) == Some('-') && self.peek_at(3) == Some('-') {
+                    self.consume(); // <
+                    self.consume(); // !
+                    self.consume(); // -
+                    self.consume(); // -
+                    Token::Comment("<!--".to_string())
+                } else {
+                    self.consume();
+                    Token::Delim('<')
+                }
+            }
+
             // @ 关键字
             '@' => {
                 self.consume();
@@ -860,6 +877,21 @@ impl Iterator for Tokenizer {
 
             // + 或 - 后面跟数字
             '+' | '-' => {
+                // CDC（`-->`，CSS Syntax §4.1.1）：stylesheet 顶层应忽略——legacy HTML 注释
+                // 包裹 `<style>` 块的常见模式（`<style><!-- ... --></style>`）。复用 Comment
+                // ignorable 通道（parser `skip_whitespace` 已跳过 Comment），与 chromium 顶层
+                // 忽略一致。须在数字/ident 判定前识别，否则 `-->` 经 `--` ident 路径被拆散，
+                // 顶层残 token 触发 `skip_malformed_qualified_rule` 吞掉后续真实规则
+                //（driving: cdo-cdc-stylesheet-wrap）。
+                if c == '-' && self.peek_at(1) == Some('-') && self.peek_at(2) == Some('>') {
+                    self.consume(); // -
+                    self.consume(); // -
+                    self.consume(); // >
+                    return Some(Spanned {
+                        token: Token::Comment("-->".to_string()),
+                        offset: start_offset,
+                    });
+                }
                 let sign = self.consume().unwrap();
                 // 检查是否为数字
                 let mut is_number = false;

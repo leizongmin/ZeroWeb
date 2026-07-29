@@ -35,7 +35,7 @@
 
 **关键约束**：所有验证必须基于从上游 WPT 仓库（`https://github.com/web-platform-tests/wpt`）导入的**真实 reftest**，不允许使用手写 inline reftest 替代或充数。通过率统计的分母是上游 WPT 目录中**所有**属于范围内、不在 skip list 中的 reftest case，不允许人为缩小导入范围。
 
-**⚠️ 优化目标 = chromium Oracle 一致率，非同源通过率（DC-14，2026-06-16 实测确立）**：reftest runner 当前用 ZeroWeb 自渲染 ref 作参考（`reftest.rs:230-232`），同源通过率含 **46.5% 假通过**（全量实测，见 `evidence/cross-validate-full-2026-06-16.txt`）——真实「与 chromium 一致」通过仅 ~37%。**同源通过率（当前 436/489）不再作为优化目标或达标依据**；优化目标改为「chromium Oracle 一致率」，修复优先取 `evidence/analyze-pollution-2026-06-16.txt` 的 18 个真 bug 候选，每项修复用 `scripts/cross-validate.py` 验证（而非仅看同源通过）。**★ R669 起 chromium Oracle 已集成为一等 harness 指标**：`make reftest-oracle [DIR=...]` 直接报 per-dir chromium-Oracle 真一致率 + top 发散修复候选（DC-14 独立 Oracle 项 ✅，见下），取代 post-hoc cross-validate.py 作主测量路径。
+**⚠️ 优化目标 = chromium Oracle 一致率，非同源通过率（DC-14，2026-06-16 实测确立）**：reftest runner 当前用 ZeroWeb 自渲染 ref 作参考（`reftest.rs:278-283` `run_reftest_with_base` 把 test 与 ref 都经同一 `RenderPipeline` 渲染），同源通过率含 **46.5% 假通过**（全量实测，见 `evidence/cross-validate-full-2026-06-16.txt`）——真实「与 chromium 一致」通过仅 ~37%。**同源通过率（当前 436/489）不再作为优化目标或达标依据**；优化目标改为「chromium Oracle 一致率」，修复优先取 `evidence/analyze-pollution-2026-06-16.txt` 的 18 个真 bug 候选，每项修复用 `scripts/cross-validate.py` 验证（而非仅看同源通过）。**★ R669 起 chromium Oracle 已集成为一等 harness 指标**：`make reftest-oracle [DIR=...]` 直接报 per-dir chromium-Oracle 真一致率 + top 发散修复候选（DC-14 独立 Oracle 项 ✅，见下），取代 post-hoc cross-validate.py 作主测量路径。
 
 覆盖范围：
 

@@ -14,6 +14,8 @@
 > **📍 R2202（2026-07-29）用户推翻暂停裁决 + 3 方向查证 = 文档滞后是根因；定位真未完成 plumbing = 生产未接通 `set_font_metric_map`**。承接用户「永远不要停止，待决策记账、继续推进」，已翻转顶部裁决（⏸️→▶）+ rendering-compat.md 状态/裁决/待决策清单。查 3 候选方向（避免盲推）：① R2197 残余 → 已被 R2198 修 + default-on；② tab_size → R2183 实证 non-lever；③ font-metrics/line-height（R632）→ **代码已大量实施**（R885 `FontMetricProvider` trait + U1b-wiring `set_font_metric_map` + `resolve_normal_line_height` 走真实 ascent−descent+line_gap），**根因 = 文档/注释滞后于代码**（loader.rs:429 / text_metrics.rs:344 仍称 dormant，实际 runner 已接通）。**真未完成项定论**：`set_font_metric_map` 唯一调用方 = `tests/wpt-runner/src/reftest.rs:557`，**生产 webview RenderPipeline 从未调用**（webview.rs:879/885 仅 `set_font_resolver`）→ 生产 line-height:normal 走常数 1.164（DejaVu 真值=1.164 故 welcome 零差；CJK NotoSansCJK 真值≠1.164 = morning 中文 R632 残余 lever）。
 >
 > **📍 R2203（2026-07-29）R2202「下一切片」状态核对 = ✅ 已在同一提交落地（dormant），本块订正滞后文本 + 连带纠偏 active doc 的 3 处 stale 函数引用**。承接用户「文档 vs 代码不一致的纠偏 = 高价值轻量活」，逐文件核对 R2202「下一切片：webview 生产路径补 `set_font_metric_map`」实际状态：commit `37c8e353`（即承载 R2202 文本的同一提交）**已落地 dormant 生产接通**——① `apps/renderer/src/main.rs:173` 启动期调 `webview.set_font_metric_map(font_loader.build_line_metric_map())`；② `crates/webview/src/webview.rs:901-906` `set_font_metric_map()` 镜像 `set_font_resolver`（存储 + env-gated 下推 pipeline）；③ `webview.rs:884-886` layout 更新时重推。kill-switch = env `ZW_PERFONT_LINEHEIGHT=1`，默认关 = dormant = 与接通前逐字节等价（零回归）。**故 R2202 原文「下一切片：补 set_font_metric_map」为 stale**——wiring 已 DONE，**唯一剩余 = 激活**（翻 env gate / default-on + product-smoke A/B 量化 CJK 收益），属深结构边界，**记待决策清单等用户授权，不自主开工**（顶部裁决一致）。**连带 active doc stale 纠偏（零源码行为变更）**：current-baseline.md:22/:32 + dc-progress.md:115 三处称 `append_webview_primitives()` 在 `app_render.rs:1512`（字段 `1526-1840`），实证函数已于更早提交抽取到 `apps/browser/src/app_render_primitives.rs:17`（字段迭代 `~31-487`，`app_render.rs:1512` 现为无关 UI 搜索提示代码）→ 已订正。archive 内同名引用按 append-only 规则不动。**待决策新增（沿用 R2202）**：是否授权系统性「文档 vs 代码实际状态」核对（文档滞后正导致反复盲推空转；本轮仅修已实证 3+1 处，未做全量扫描）。
+>
+> **📍 R2204（2026-07-29）✅ 新代码 clean lever LANDED — CDO `<!--` / CDC `-->` token 化 + stylesheet 顶层忽略（CSS Syntax §4.1.1）+ 连带 active doc 行号纠偏**。承接 R2203「轻量修复候选」verify-then-fix 入口，做**代码级**（非 wpt-data 依赖）fresh probe，发现并修复一个 CSS Syntax 合规缺口：**bug** = legacy `<style><!-- ... --></style>` 包裹（HTML 3.2/4 静态页常见，DC-13 Tier 1）会**丢掉全部内部规则**——tokenizer 不识别 CDO/CDC，`<!--` 落 `Error('<')`，顶层 `consume_rule` 当选择器解析失败后 `skip_malformed_qualified_rule` 一路消耗到 `{...}` 块（`skip_simple_block`），**吞掉紧跟其后的真实规则**。**fix**（tokenizer.rs）：`<!--`→`Token::Comment`、`-->`→`Token::Comment`，复用既有 `skip_whitespace` 跳过 Comment 的 ignorable 通道 → 顶层 `parse_stylesheet` 每轮 `skip_whitespace` 自动跳过；`<` 非紧跟 `!--` 时退回 `Delim('<')`。**6 个 driving 单测**（tests/cdo_cdc.rs：单/多规则包裹、仅 CDO 无 CDC、裸 CDC、真实 style 块、`<`-非-CDO 回退）全绿。**门禁**：scoped css-parser 2589/0；**全量 `make test` 12692/0/74**（vs R2201 12686 = +6 新测试，零回归，零 panic/OOM）；`cargo clippy --workspace --all-targets -D warnings` 干净；`cargo fmt --all --check` 干净。**意义**：这是 R2183-R2190「九重穷尽」**之后**首个新代码 lever——证「exhausted」结论局限于 **reftest-visible**（需 wpt-data/oracle 验证）lever；**unit-test 驱动的 CSS Syntax 合规缺口**经定向代码阅读仍可发现，验证用户「永不停止」+ 定向 code-reading fresh probe（非仅 wpt-data reftest probe）的价值。**连带 active doc 行号纠偏**（本轮同一批 verify-then-fix）：rendering-compat.md:38 自渲染 ref `reftest.rs:230-232`→`:278-283`（`run_reftest_with_base`）；current-baseline.md 外链 CSS/图片子资源 stale 行号（`:256`/`:265`/`396/421/448`/`370/395/423`）→ 当前（`prepare_page_subresources` :263 / `resolve_external_css` :363 / `fetch_image_subresources` :402 / `fetch_url` :515）。**下一轮可接续**：继续 CSS Syntax §4/§5 合规缺口定向 code-reading probe（如 `<`/`>` 在 media-query 比较运算符、CDC 在非顶层上下文的 parse-error 行为），或跑 scoped reftest（css-text-decor/css-fonts 近 95% dir）量本 lever 实际 WPT footprint。
 
 > **📍 R2201（2026-07-29）fresh-session plateau-guard = make test 12686/0 绿，R2198 default-on 代码跨全新构建无漂移，暂停态基线稳定**。新 session 承接，按顶部暂停裁决允许的「低频 plateau-guard」跑 `make test`（test-guard 包裹，排除 zero-render-foundation GPU crate）作漂移守护 + DC-7 持久化证据。**结果：12686 passed / 0 failed / 74 ignored，EXIT=0**（HEAD `f07ffcce` = R2198 default-on 代码；自 R2198[commit 2a290494]后仅 5 个 docs 提交，无 `.rs`/`.toml` 变更；全新依赖 + 工作区构建后重跑，与 R2200 基线 12686/0 字节级一致 = 零环境/工具链漂移）。**结论**：暂停裁决下基线经独立 fresh build 复核稳定，Phase A slice 2+3 default-on 未腐化；自主可推进面仍 comprehensively exhausted（reftest 9 重 + IFC Path A/B 4/4 safe DRY + multicol/float 双路径 vein + R2200 legacy outlier font-wall）。下一步不变 = 待用户点名授权结构性方向（font-stack C-dep / Phase A IFC 单一权威深实现[设计 `phase-a-inline-box-model-full-design-2026-07-29.md` 已就绪] / vertical-mode native R1043 / taffy replaced-element border-box sizing R2174）后转主动推进；期间仅低频 plateau-guard。本轮无代码变更，不重复跑昂贵的全量 oracle（R2199 今天刚跑过同代码）。
 
@@ -39,7 +41,7 @@
 
 ## 通过率快照
 
-- **make test**：12686 passed / 0 failed / 74 ignored
+- **make test**：12692 passed / 0 failed / 74 ignored（R2204 +6 = CDO/CDC 新单测，零回归）
 - **reftest oracle**：58.8% oracle-pass（5969/10397，+0.6pp vs R2185 baseline），57.6% credible
 - **product-smoke**：welcome 16.84% / wintertc / morning item-tag:3 全 PASS
 - **product-smoke-legacy**：51/51 struct PASS，19-testpage 17.23%（−5.16pp），20-mixed 11.49%（−1.64pp）
@@ -74,12 +76,15 @@
 
 ### 轻量修复候选
 
-**当前活跃轻量主线 = 文档 vs 代码不一致纠偏**（R2202 根因：文档滞后致反复盲推空转；用户授权「文档 vs 代码不一致的纠偏 = 高价值轻量活」）。CSS2/parser/selector 代码 clean lever 九重穷尽（R2183-R2190 + R2184 skip-list 审计 + R2181-R2183 tab-size 全 exhausted；R2203 fresh probe 再确认 rendering path 零 TODO/FIXME）。
+**当前活跃轻量主线 = 文档 vs 代码不一致纠偏 + CSS Syntax 合规缺口定向 code-reading probe**（R2202 根因：文档滞后致反复盲推空转；用户授权「文档 vs 代码不一致的纠偏 = 高价值轻量活」）。
 
-下一轮可接续的具体入口（逐条 verify-then-fix，**不**做 pending 的全量系统性审计，只修已实证项）：
-- rendering-compat.md:38 称 reftest runner 用「自渲染 ref（`reftest.rs:230-232`）」——实证 reftest.rs:226-236 为 `fuzzy_override` 逻辑，自渲染 ref 调用点已漂移，需核对真实行号订正。
-- current-baseline.md 的外部样式表/图片子资源行（`webview.rs:256/:265`）——实证 `prepare_page_subresources` 在 :263、`resolve_external_css` 在 :363、`fetch_image_subresources` 在 :402，行号漂移需订正。
-- 每修一批跑零代码变更校验（仅文档则跳过昂贵 make test；若连带 `.rs` 注释订正则跑 `cargo build` 确认不破编译），net≥0 land。
+★ **R2204 重要订正**：「CSS2/parser/selector clean lever 九重穷尽」结论**局限于 reftest-visible lever**（需 wpt-data/oracle 验证者）；**unit-test 驱动的 CSS Syntax 合规缺口**经定向代码阅读仍可发现——R2204 即证：CDO/CDC token 化缺口被「rendering path 零 TODO/FIXME」式扫描漏掉，但经读 tokenizer 主 dispatch + `skip_whitespace`/`skip_malformed_qualified_rule` 行为即定位修复。故后续 agent 不应把「reftest 九重穷尽」当成「所有 CSS lever 穷尽」。
+
+下一轮可接续的具体入口（逐条 verify-then-fix，**不**做 pending 的全量系统性审计，只修已实证项；优先 unit-test 驱动，不强依赖 wpt-data）：
+- CSS Syntax §4/§5 其他合规缺口定向 probe：media-query 比较运算符 `<`/`>`/`<=`/`>=`（MQ Level 4）token 化与 parse；CDO/CDC 在**非顶层**上下文（qualified rule prelude / declaration value）应 parse-error 而非一律忽略——核实现状是否需收紧。
+- 量本 R2204 lever 的实际 WPT footprint：scoped `make reftest-upstream FILTER=css-syntax`（需 wpt-data，网络 fetch；不强求）看 css-syntax dir 是否有 `<!--` 相关 case 翻绿。
+- 文档 vs 代码行号漂移续修（沿用 R2203/R2204 verify-then-fix 模式）。
+- 每修一个：仅文档→跳过昂贵 make test；连带 `.rs`→跑 scoped test-guard + 必要时全量 `make test`，net≥0 land。
 
 期间不要借机跳入深结构（见「深结构性方向」与「待用户决策清单」）。
 
