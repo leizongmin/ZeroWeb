@@ -50,6 +50,8 @@
 > **📍 R2222（2026-07-30）css/selectors corpus 永久化 LANDED — zeroweb-wpt-data v1.2 + Makefile WPT_DATA_REF v1.1→v1.2**。承接 R2221「corpus 永久化 follow-up」。R2221 本地扩 css/selectors 发现 specificity 真 bug，但本地副本 wpt-data gitignored（re-fetch 即丢）。本轮永久化：① push `leizongmin/zeroweb-wpt-data` 加 `css/selectors`（996 文件，333 reftest，含 support/xml）→ tag **v1.2**（SSH push 验证）；② ZeroWeb Makefile `WPT_DATA_REF v1.1→v1.2`；③ 验证 `git clone --depth=1 --branch v1.2`（HTTPS，同 Makefile 路径）含 css/selectors 333 reftest。**意义**：R2221 corpus-expansion 突破现可复现（fresh `make fetch-wpt-data` 拉取 v1.2 自带 css/selectors）；后续 selector L4 lever（:dir/:nth-child of S/forgiving list/any-link 等）可对真实 WPT reftest 量化（旧 v1.1 corpus 无 css/selectors，选择器 lever 0 footprint）——**推翻 R2218-R2220 的「clean-lever 穷尽」结论**（该结论局限于旧 corpus）。**影响**：reftest 分母 +333 selector 案（css/selectors self-source 83.0%，R2221 specificity fix 后）；oracle 路径暂无 selector oracle-shots（reftest-oracle DIR=css/selectors 需后补 chromium 抓图），self-source reftest-upstream 路径可用。goal 执行模式「扩展导入范围」按既定推进。
 > **📍 R2201（2026-07-29）fresh-session plateau-guard = make test 12686/0 绿，R2198 default-on 代码跨全新构建无漂移，暂停态基线稳定**。新 session 承接，按顶部暂停裁决允许的「低频 plateau-guard」跑 `make test`（test-guard 包裹，排除 zero-render-foundation GPU crate）作漂移守护 + DC-7 持久化证据。**结果：12686 passed / 0 failed / 74 ignored，EXIT=0**（HEAD `f07ffcce` = R2198 default-on 代码；自 R2198[commit 2a290494]后仅 5 个 docs 提交，无 `.rs`/`.toml` 变更；全新依赖 + 工作区构建后重跑，与 R2200 基线 12686/0 字节级一致 = 零环境/工具链漂移）。**结论**：暂停裁决下基线经独立 fresh build 复核稳定，Phase A slice 2+3 default-on 未腐化；自主可推进面仍 comprehensively exhausted（reftest 9 重 + IFC Path A/B 4/4 safe DRY + multicol/float 双路径 vein + R2200 legacy outlier font-wall）。下一步不变 = 待用户点名授权结构性方向（font-stack C-dep / Phase A IFC 单一权威深实现[设计 `phase-a-inline-box-model-full-design-2026-07-29.md` 已就绪] / vertical-mode native R1043 / taffy replaced-element border-box sizing R2174）后转主动推进；期间仅低频 plateau-guard。本轮无代码变更，不重复跑昂贵的全量 oracle（R2199 今天刚跑过同代码）。
 
+> **📍 R2223（2026-07-30）✅ `:nth-child` 非法 An+B 严格校验 LANDED（token-based 重写）+ namespace 前缀 lever 经实证 net-0 回退（负结果归档）**。承接 R2222「续查 css/selectors 残余离散 fail」。先对 38 个 css/selectors fail 全聚类：17 focus-within（JS `element.focus()` host 层 / P1b blocked）、6 invalidation + remove-hovered + popover + lang-shadow + dir-auto-change（JS 动态 host 层）、2 selection-image（`::selection`+JS getSelection 深）、2 first-line-bidi（`::first-line`+BiDi 深 IFC）、2 dir-style（`:dir` matcher 经核验正确 → 残余是 RTL 文本渲染 font-wall/BiDi 非匹配 bug）、4 featureless（shadow/`:host` 深）、1 nth-child-of-universal（`*|*`）、1 nth-of-invalid。**namespace 前缀 lever（net-0，已回退）**：实现 `*|*`/`|x` 前缀解析 + 连带修 tokenizer 裸 `|`→`Delim('|')`（原 `Ident("|")` 非 spec），**实证 css/selectors 净 0**——`nth-child-of-universal` 翻绿（+1）但 `is-default-ns-001` 回归（−1，`*|*:is(div)` 因 ZW 无 `@namespace` 默认命名空间传播，规则原被整体丢弃而「意外通过」，现 `*|*` 正确解析后 `:is(div)` 错配 HTML div → 红）；正确解法需 `@namespace` 默认传播深特性，**整体回退到 baseline，负结果归档**（省后续 agent 重探）。**nth-of-invalid lever LANDED**：bug = 非法 `:nth-child(...)` 参数（`1 n` 空格分隔、`n-1of` 非法 n-ident、`n + of` 非法 B、`even of`/`of ""` of 后空列表、`n of div` of-type 不支持 of）被旧**宽松文本收集**（`parse_nth_expression_str` 用 `unwrap_or(0)`）纳为匹配 NthPattern → 规则保留并匹配 → WPT nth-of-invalid 应全绿却现 red。**fix**：重写为 **token-based 严格 An+B 校验**（`consume_an_plus_b`/`consume_nth_b`/`finish_an_plus_b` + `parse_n_ident`/`parse_dim_unit`/`is_nth_sign` helpers），None 上抛 → 规则丢弃；处理 tokenizer 怪癖——`2n-1` 粘成 `Dimension(2,"n-1")`（`-` 是 name-char）、孤立 `-` 作 `Ident("-")`（非 `Delim`，与 `+` 不对称）、`2n - 2` 空格减号 = Ident("-")。of-type 系出现 `of` → 非法；`of` 后空选择器列表 → 非法。**6 driving 单测**（`nth_invalid.rs`：24 非法形式全丢 + even-of-even 合法保留 + of-type 拒 of + of 空列表 + 合法形式回归含粘合/空格减号）。**门禁**：scoped css-parser 2625/0、style-system 2003/0；连带订正 2 个旧断言（coverage_round6 `2 n + 1` 现正确判非法、coverage_round9 `abc` 现正确丢弃——两测试原编码 lenient bug）；clippy + fmt 干净。**WPT 量证**：css/selectors **83.0→83.5%**（nth-of-invalid fail→pass，nth-last-child-of-nesting 经修 `Ident("-")` 处理后仍 0.00% pass，零回归）；**css-flexbox 339/497=68.2% 与 R2219 baseline 完全一致 = 全语料零回归**（nth-child 跨 crate 改动的 blast-radius 确认）。**意义**：第 15 个 clean lever；token-based An+B 严格化是真实世界 robustness（typo'd `:nth-child` 不再误配）+ spec 合规；再次证「扩 corpus 后定向 code-reading」出真 lever（nth-of-invalid 是 css/selectors corpus 内、R2221 specificity 之外的第二个真 bug）。**下一轮可接续**：css/selectors clean lever 至此穷尽（残余全 JS/shadow/rendering 深）；续扩 corpus 到其他 dir（css/css-variables、css/cssom、css/css-pseudo、css/geometry）找新离散 lever，或为 css/selectors 补 chromium oracle-shots 启用 reftest-oracle 真一致率；TDD red→green + 全量门禁 net≥0 land。
+
 
 ## 最近轮次摘要
 
@@ -72,7 +74,7 @@
 
 ## 通过率快照
 
-- **make test**：12733 passed / 0 failed / 74 ignored（R2221 +2 = `:nth-child(of S)` specificity 新单测，零回归）
+- **make test**：12739 passed / 0 failed / 74 ignored（R2223 +6 = `:nth-child` token-based An+B 校验单测 nth_invalid.rs，零回归）
 - **reftest oracle**：58.8% oracle-pass（5969/10397，+0.6pp vs R2185 baseline），57.6% credible
 - **product-smoke**：welcome 16.84% / wintertc / morning item-tag:3 全 PASS
 - **product-smoke-legacy**：51/51 struct PASS，19-testpage 17.23%（−5.16pp），20-mixed 11.49%（−1.64pp）
@@ -142,6 +144,7 @@
 ### reftest 通过率（最新）
 
 - **self-source 全量目录**（R2219 scoped 复测，wpt-data v1.1）：css-grid 37/49=75.5% + css-position 83/97=85.6% + css-tables 103/115=89.6% + css-flexbox 339/497=68.2% + css-multicol 264/452=58.4% + css-text-decor 245/250=98.0% + css-fonts 281/287=97.9%。**7 目录聚合 self-source 1352/1747=77.4%**（旧快照 56.5% 严重 stale——position/tables/multicol/grid 自那以后大幅改善；flexbox 68.2% 低于旧 74.2% 但 R2213-R2217 selector 改动经核验非因——flexbox fail 全 flex 布局/font-wall 深结构，无失败案用所改选择器）
+- **css/selectors self-source 187/224=83.5%**（wpt-data v1.2，R2221 specificity + R2223 nth-of-invalid 后；R2221 实测 186/224=83.0%，本轮 nth-of-invalid fail→pass +1，零回归——css-flexbox 68.2% 跨 crate 复核无回归）
 - **7 目录全量 chromium-Oracle 真一致 47.5%**（post-font-wall 全幅，旧 stale 36.4%）：grid 20/49=40.8% / position 57/97=58.8% / tables 74/115=64.3% / flexbox 298/497=60.0% / text-decor 118/242=48.8% / fonts 100/282=35.5% / multicol 157/452=34.7%（最低，chr<1%，聚合 **824/1734=47.5%**）
 - **self-source strict**：295/490 (60.2%) @ 锁定 0.1%/0.5%（DC-14 真通过口径，pre-grid-expand）
 - **chromium-Oracle 广义一致**：200/475 (42.1%) @ chr<1%（R391 锁定诚实基线）；严格 self-pass&chr<1% **177/475 (37.3%)**；污染 46.5%
@@ -155,7 +158,7 @@
 
 ### 测试覆盖率
 
-- **cargo test**：12700+ 测试全部通过（`make test`：12731 passed / 0 failed / 74 ignored，截至 R2217）
+- **cargo test**：12700+ 测试全部通过（`make test`：12739 passed / 0 failed / 74 ignored，截至 R2223）
 - **cargo clippy**：`cargo clippy --workspace --all-targets -D warnings` 通过
 - **#[ignore] 测试**：74 个 ignored（real_website_compat.rs 等因本地网络不稳定的用例，不计入通过率）
 

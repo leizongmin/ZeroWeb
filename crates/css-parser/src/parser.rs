@@ -474,10 +474,10 @@ impl<'a> Parser<'a> {
                                 "is" => self.parse_pseudo_class_function_list("is"),
                                 "where" => self.parse_pseudo_class_function_list("where"),
                                 "has" => self.parse_pseudo_class_function_list("has"),
-                                "nth-child" => self.parse_nth_pattern("nth-child"),
-                                "nth-last-child" => self.parse_nth_pattern("nth-last-child"),
-                                "nth-of-type" => self.parse_nth_pattern("nth-of-type"),
-                                "nth-last-of-type" => self.parse_nth_last_of_type_pattern(),
+                                "nth-child" => self.parse_nth_pattern("nth-child")?,
+                                "nth-last-child" => self.parse_nth_pattern("nth-last-child")?,
+                                "nth-of-type" => self.parse_nth_pattern("nth-of-type")?,
+                                "nth-last-of-type" => self.parse_nth_last_of_type_pattern()?,
                                 "lang" => self.parse_lang(),
                                 "dir" => self.parse_dir(),
                                 _ => {
@@ -517,10 +517,10 @@ impl<'a> Parser<'a> {
                             "is" => self.parse_pseudo_class_function_list("is"),
                             "where" => self.parse_pseudo_class_function_list("where"),
                             "has" => self.parse_pseudo_class_function_list("has"),
-                            "nth-child" => self.parse_nth_pattern("nth-child"),
-                            "nth-last-child" => self.parse_nth_pattern("nth-last-child"),
-                            "nth-of-type" => self.parse_nth_pattern("nth-of-type"),
-                            "nth-last-of-type" => self.parse_nth_last_of_type_pattern(),
+                            "nth-child" => self.parse_nth_pattern("nth-child")?,
+                            "nth-last-child" => self.parse_nth_pattern("nth-last-child")?,
+                            "nth-of-type" => self.parse_nth_pattern("nth-of-type")?,
+                            "nth-last-of-type" => self.parse_nth_last_of_type_pattern()?,
                             "lang" => self.parse_lang(),
                             "dir" => self.parse_dir(),
                             _ => {
@@ -625,151 +625,218 @@ impl<'a> Parser<'a> {
     /// 解析 nth 函数模式（:nth-child、:nth-last-child、:nth-of-type）。
     ///
     /// 调用前已消耗 `(`。`:nth-child`/`:nth-last-child` 支持 Selectors L4 的 `of S`
-    /// 选择器参数（仅在匹配 S 的兄弟中计数）；`:nth-of-type` 不支持 `of S`。
-    fn parse_nth_pattern(&mut self, name: &str) -> PseudoClassSelector {
-        let (pattern, of_selectors) = match name {
-            "nth-child" | "nth-last-child" => self.parse_nth_with_optional_of(),
-            _ => (self.parse_nth_expression(), Vec::new()),
+    /// 选择器参数；`:nth-of-type`/`:nth-last-of-type` 不支持 `of S`（出现 `of` → 非法）。
+    /// 非法 An+B 或 `of` 后空选择器列表 → 返回 None（选择器非法 → 整条规则丢弃）。
+    fn parse_nth_pattern(&mut self, name: &str) -> Option<PseudoClassSelector> {
+        match name {
+            "nth-child" | "nth-last-child" => {
+                let (pattern, of_selectors) = self.parse_nth_with_optional_of()?;
+                Some(if of_selectors.is_empty() {
+                    if name == "nth-child" {
+                        PseudoClassSelector::NthChild(pattern)
+                    } else {
+                        PseudoClassSelector::NthLastChild(pattern)
+                    }
+                } else if name == "nth-child" {
+                    PseudoClassSelector::NthChildOf(pattern, of_selectors)
+                } else {
+                    PseudoClassSelector::NthLastChildOf(pattern, of_selectors)
+                })
+            }
+            _ => Some(PseudoClassSelector::NthOfType(self.parse_nth_expression()?)),
+        }
+    }
+
+    /// 解析 nth 表达式，并可选地解析 L4 `of S` 选择器列表（消耗到 `)`）。
+    ///
+    /// An+B 用 [`consume_an_plus_b`] 严格校验；`of` 后选择器列表为空 → None（非法）。
+    fn parse_nth_with_optional_of(&mut self) -> Option<(NthPattern, Vec<Selector>)> {
+        let pattern = self.consume_an_plus_b()?;
+
+        // 检测可选 `of S`（consume_an_plus_b 已停在 `)`/`of`/EOF，可能停在 of 前的空白上）
+        let saved = self.pos;
+        self.skip_whitespace();
+        let of_selectors = if matches!(self.peek(), Token::Ident(s) if s.eq_ignore_ascii_case("of")) {
+            self.advance(); // 消耗 of
+            let sels = self.consume_selector_list_for_function(false);
+            if sels.is_empty() {
+                return None;
+            }
+            sels
+        } else {
+            self.pos = saved; // 回退空白
+            Vec::new()
         };
 
         // 消耗右括号
         if matches!(self.peek(), Token::RParen) {
             self.advance();
         }
-
-        match name {
-            "nth-child" => {
-                if of_selectors.is_empty() {
-                    PseudoClassSelector::NthChild(pattern)
-                } else {
-                    PseudoClassSelector::NthChildOf(pattern, of_selectors)
-                }
-            }
-            "nth-last-child" => {
-                if of_selectors.is_empty() {
-                    PseudoClassSelector::NthLastChild(pattern)
-                } else {
-                    PseudoClassSelector::NthLastChildOf(pattern, of_selectors)
-                }
-            }
-            "nth-of-type" => PseudoClassSelector::NthOfType(pattern),
-            _ => PseudoClassSelector::Simple(name.to_string()),
-        }
+        Some((pattern, of_selectors))
     }
 
-    /// 解析 nth 表达式，并可选地解析 L4 `of S` 选择器列表。
-    /// 第一阶段收集 `an+b` 文本直到 `)` 或 `of` 关键字；遇 `of` 则解析其后选择器列表。
-    fn parse_nth_with_optional_of(&mut self) -> (NthPattern, Vec<Selector>) {
+    /// 解析 nth-last-of-type 函数模式（消耗到 `)`）。
+    fn parse_nth_last_of_type_pattern(&mut self) -> Option<PseudoClassSelector> {
+        Some(PseudoClassSelector::NthLastOfType(self.parse_nth_expression()?))
+    }
+
+    /// 解析 nth 表达式（:nth-of-type / :nth-last-of-type 路径）。
+    /// of-type 系不支持 `of S`：An+B 后出现 `of` → None（非法）。
+    fn parse_nth_expression(&mut self) -> Option<NthPattern> {
+        let pattern = self.consume_an_plus_b()?;
+        let saved = self.pos;
         self.skip_whitespace();
-        let mut expr = String::new();
-        let mut of_selectors: Vec<Selector> = Vec::new();
-
-        loop {
-            match self.peek().clone() {
-                Token::RParen | Token::Eof => break,
-                // `of` 关键字（仅在已收集到 an+b 表达式时识别，避免吞掉非法裸 `of`）
-                Token::Ident(s) if !expr.trim().is_empty() && s.eq_ignore_ascii_case("of") => {
-                    self.advance(); // 消耗 of
-                    of_selectors = self.consume_selector_list_for_function(false);
-                    break;
-                }
-                Token::Whitespace => {
-                    if !expr.is_empty() && !expr.ends_with(' ') {
-                        expr.push(' ');
-                    }
-                    self.advance();
-                }
-                other => {
-                    expr.push_str(&format!("{other}"));
-                    self.advance();
-                }
-            }
+        if matches!(self.peek(), Token::Ident(s) if s.eq_ignore_ascii_case("of")) {
+            return None; // of-type 不支持 of
         }
-
-        let pattern = Self::nth_pattern_from_text(expr.trim());
-        (pattern, of_selectors)
-    }
-
-    /// 解析 nth-last-of-type 函数模式。
-    ///
-    /// 调用前已消耗 `(`。
-    fn parse_nth_last_of_type_pattern(&mut self) -> PseudoClassSelector {
-        let pattern = self.parse_nth_expression();
-
-        // 消耗右括号
+        self.pos = saved;
         if matches!(self.peek(), Token::RParen) {
             self.advance();
         }
-
-        PseudoClassSelector::NthLastOfType(pattern)
+        Some(pattern)
     }
 
-    /// 解析 nth 表达式（如 `2n+1`、`odd`、`even`、`3`）。
-    fn parse_nth_expression(&mut self) -> NthPattern {
+    /// 从 token 流解析 An+B（CSS Values §7.1.1）。
+    ///
+    /// 消耗 An+B token 与其后空白，停在 `)` / `of` 关键字 / EOF（of 不消耗，且回退其前空白
+    /// 以便上层 of 检测统一）。非法形式（如 `1 n`、`even .x`、`of`、`n-1of`、`+`、空）→ None。
+    fn consume_an_plus_b(&mut self) -> Option<NthPattern> {
         self.skip_whitespace();
-
-        // 收集 nth 表达式的文本
-        let mut expr = String::new();
-        while !matches!(self.peek(), Token::RParen | Token::Eof) {
-            match self.peek() {
-                Token::Whitespace => {
-                    if !expr.is_empty() && !expr.ends_with(' ') {
-                        expr.push(' ');
-                    }
+        // (a, 粘合在 token 内的 B)。粘合形式见 parse_n_ident / parse_dim_unit（tokenizer 把
+        // `n-1` 粘进 ident/dimension 单位，因 `-` 是 name-char）。
+        let (a, glued_b) = match self.peek().clone() {
+            Token::Ident(s) => {
+                let l = s.to_ascii_lowercase();
+                if l == "odd" {
                     self.advance();
+                    return self.finish_an_plus_b(2, 1);
                 }
-                _ => {
-                    expr.push_str(&format!("{}", self.peek()));
+                if l == "even" {
                     self.advance();
+                    return self.finish_an_plus_b(2, 0);
+                }
+                let (a, b) = Self::parse_n_ident(&l)?;
+                self.advance();
+                (a, b)
+            }
+            Token::Dimension(v, ref unit) => {
+                let (a, b) = Self::parse_dim_unit(v, unit)?;
+                self.advance();
+                (a, b)
+            }
+            Token::Delim('+') => {
+                // `+n` / `+n-1` 形式（`+` 后跟 ident n...；`+2n` 会被 tokenizer 合成 Dimension，不落此）
+                self.advance();
+                self.skip_whitespace();
+                match self.peek().clone() {
+                    Token::Ident(s) => {
+                        let (a, b) = Self::parse_n_ident(&s.to_ascii_lowercase())?;
+                        self.advance();
+                        (a, b)
+                    }
+                    _ => return None,
                 }
             }
-        }
+            Token::Number(v) => {
+                // 纯整数 B（无 n）。`An` 形式由 tokenizer 合成 Dimension，不会落此。
+                self.advance();
+                return self.finish_an_plus_b(0, v as i32);
+            }
+            _ => return None,
+        };
 
-        let expr = expr.trim();
-
-        // 解析特殊关键字 / an+b 模式
-        Self::nth_pattern_from_text(expr)
-    }
-
-    /// 从已收集的 nth 表达式文本解析为 NthPattern（odd/even/an+b/纯整数）。
-    fn nth_pattern_from_text(expr: &str) -> NthPattern {
-        match expr {
-            "odd" => NthPattern { a: 2, b: 1 },
-            "even" => NthPattern { a: 2, b: 0 },
-            _ => Self::parse_nth_expression_str(expr),
+        // n-form：粘合 B 已在 token 内 → 直接收尾；否则消耗可选的独立 B token
+        match glued_b {
+            Some(b) => self.finish_an_plus_b(a, b),
+            None => self.consume_nth_b(a),
         }
     }
 
-    /// 从字符串解析 nth 表达式。
-    fn parse_nth_expression_str(expr: &str) -> NthPattern {
-        let expr = expr.replace(' ', "");
-        let expr_lower = expr.to_lowercase();
-
-        // 尝试匹配 an+b 或 an-b 模式
-        if let Some(n_pos) = expr_lower.find('n') {
-            let a_part = &expr_lower[..n_pos];
-            let b_part = &expr_lower[n_pos + 1..];
-
-            let a: i32 = if a_part.is_empty() || a_part == "+" {
-                1
-            } else if a_part == "-" {
-                -1
-            } else {
-                a_part.parse().unwrap_or(0)
-            };
-
-            let b: i32 = if b_part.is_empty() {
-                0
-            } else {
-                b_part.parse().unwrap_or(0)
-            };
-
-            return NthPattern { a, b };
+    /// 解析 n-form ident（无数值系数）：`n` / `-n` / `+n` / `n-1` / `-n-1` / `n+2`...
+    /// 返回 (a, Option<b>)。b 仅当 tokenizer 把 `-<int>`/`+<int>` 粘进 ident 时存在。
+    /// 输入须为小写。非法（如 `n-1of`、`even`、`of`）→ None。
+    fn parse_n_ident(s: &str) -> Option<(i32, Option<i32>)> {
+        let (sign, rest) = if let Some(r) = s.strip_prefix('+') {
+            (1, r)
+        } else if let Some(r) = s.strip_prefix('-') {
+            (-1, r)
+        } else {
+            (1, s)
+        };
+        let rest = rest.strip_prefix('n')?;
+        if rest.is_empty() {
+            return Some((sign, None));
         }
+        // 剩余须为 signed-integer（如 "-1"、"+3"），否则非法（如 "-1of"）
+        let b: i32 = rest.parse().ok()?;
+        Some((sign, Some(b)))
+    }
 
-        // 纯数字
-        let b: i32 = expr_lower.parse().unwrap_or(0);
-        NthPattern { a: 0, b }
+    /// 解析 n-dimension 的单位：value 是系数 a，unit 是 `n` 或 `n<signed-int>`
+    ///（tokenizer 把 `2n-1` 粘成 Dimension(2,"n-1")）。返回 (a, Option<b>)。非法 → None。
+    fn parse_dim_unit(value: f64, unit: &str) -> Option<(i32, Option<i32>)> {
+        let l = unit.to_ascii_lowercase();
+        if l == "n" {
+            return Some((value as i32, None));
+        }
+        let rest = l.strip_prefix('n')?;
+        let b: i32 = rest.parse().ok()?;
+        Some((value as i32, Some(b)))
+    }
+
+    /// An+B 的 B 部分（n-form 之后）。消耗可选 `<signed-integer>` 或 `['+'|'-'] <signless-integer>`。
+    fn consume_nth_b(&mut self, a: i32) -> Option<NthPattern> {
+        let saved = self.pos;
+        self.skip_whitespace();
+        match self.peek().clone() {
+            Token::RParen | Token::Eof => Some(NthPattern { a, b: 0 }),
+            Token::Ident(s) if s.eq_ignore_ascii_case("of") => {
+                self.pos = saved; // 回退空白，让上层 of 检测定位
+                Some(NthPattern { a, b: 0 })
+            }
+            Token::Number(v) => {
+                let b = v as i32;
+                self.advance();
+                self.finish_an_plus_b(a, b)
+            }
+            Token::Delim('+') | Token::Delim('-') | Token::Ident(_) if Self::is_nth_sign(self.peek()) => {
+                // `['+'|'-'] <signless-integer>`：`+` 为 Delim，孤立 `-` 为 Ident
+                //（tokenizer 把不跟数字/标识符的 `-` 作 Ident("-")）。
+                let neg =
+                    matches!(self.peek(), Token::Delim('-')) || matches!(self.peek(), Token::Ident(s) if s == "-");
+                self.advance();
+                self.skip_whitespace();
+                match self.peek() {
+                    Token::Number(v) => {
+                        let b = if neg { -(*v as i32) } else { *v as i32 };
+                        self.advance();
+                        self.finish_an_plus_b(a, b)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None, // 残余非法 token（如 `2n.x` 的 `.`、`n + of` 的 `of`）
+        }
+    }
+
+    /// An+B 中的 `+`/`-` 符号判定：Delim('+')/Delim('-') 或孤立 Ident("+")/Ident("-")。
+    fn is_nth_sign(tok: &Token) -> bool {
+        matches!(tok, Token::Delim('+') | Token::Delim('-')) || matches!(tok, Token::Ident(s) if s == "+" || s == "-")
+    }
+
+    /// An+B 结束校验：An+B 完成后须紧跟 `)` / `of` / EOF（空白可 intervening）。
+    /// 成功时若停在 `of`，回退其前空白以便上层 of 检测统一；停在 `)`/EOF 则保持。
+    fn finish_an_plus_b(&mut self, a: i32, b: i32) -> Option<NthPattern> {
+        let saved = self.pos;
+        self.skip_whitespace();
+        match self.peek() {
+            Token::RParen | Token::Eof => Some(NthPattern { a, b }),
+            Token::Ident(s) if s.eq_ignore_ascii_case("of") => {
+                self.pos = saved; // 回退空白
+                Some(NthPattern { a, b })
+            }
+            _ => None, // 残余非法 token（如 `even .x` 的 `.`、`1 n` 的 `n`、`2px)` 的 px 已在 Dimension 排除）
+        }
     }
 
     /// 解析 :lang() 函数。

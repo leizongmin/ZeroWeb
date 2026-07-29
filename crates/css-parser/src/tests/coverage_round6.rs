@@ -147,13 +147,14 @@ fn test_function_token_unknown_nth_like() {
 
 #[test]
 fn test_nth_expression_whitespace_handling() {
-    // nth 表达式中间有空格 — "2 n + 1"
+    // 系数与 `n` 之间有空格（"2 n + 1"）→ 不是单一 `<n-dimension>`（`2n`），An+B 非法 →
+    // 规则被丢弃（与浏览器一致；旧宽松实现误纳为 a=2,b=1）。
     let css = "li:nth-child( 2 n + 1 ) { color: blue; }";
     let sheet = Parser::parse_stylesheet(css);
-    assert_eq!(sheet.rules.len(), 1);
-    if let Rule::Style(ref style) = sheet.rules[0] {
-        assert_eq!(style.selectors.len(), 1);
-    }
+    assert_eq!(sheet.rules.len(), 0, "`2 n + 1`（系数与 n 间有空格）应使规则被丢弃");
+    // 对照：无空格的 `2n + 1` 合法，规则保留。
+    let ok = Parser::parse_stylesheet("li:nth-child(2n + 1) { color: blue; }");
+    assert_eq!(ok.rules.len(), 1);
 }
 
 #[test]

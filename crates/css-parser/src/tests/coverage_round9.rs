@@ -138,10 +138,11 @@ fn test_nth_child_plain_number() {
 
 #[test]
 fn test_nth_child_invalid_expr() {
-    // 非法 nth 表达式 → a=0, b=0
+    // 非法 nth 表达式（`abc` 非合法 An+B）→ 选择器非法 → 整条规则被丢弃（与浏览器一致；
+    // 旧宽松实现误纳为 a=0,b=0 并保留规则）。
     let css = "li:nth-child(abc) { color: pink; }";
     let sheet = Parser::parse_stylesheet(css);
-    assert_eq!(sheet.rules.len(), 1);
+    assert_eq!(sheet.rules.len(), 0, "`abc` 非合法 An+B，应使规则被丢弃");
 }
 
 #[test]
