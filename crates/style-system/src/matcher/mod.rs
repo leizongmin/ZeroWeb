@@ -187,6 +187,28 @@ fn matches_attribute(doc: &Document, element: NodeId, attr: &AttributeSelector) 
         None => return false,
     };
 
+    // Selectors Level 4 `[attr=val i]`：显式 ASCII 大小写不敏感，覆盖文档语言默认（无论
+    // HTML/XML 一律不敏感）。`s` 修饰符当前 parser 未单独标记（见 css-parser ast.rs 注释），
+    // 故此处仅处理 `i`；缺省与 `s` 走下方文档语言默认分支（行为不变）。
+    if attr.case_insensitive {
+        let value_lower = value.to_ascii_lowercase();
+        return match &attr.matcher {
+            AttributeMatcher::Exists => true,
+            AttributeMatcher::Exact(v) => value_lower == v.to_ascii_lowercase(),
+            AttributeMatcher::Includes(v) => {
+                let vl = v.to_ascii_lowercase();
+                value.split_whitespace().any(|part| part.to_ascii_lowercase() == vl)
+            }
+            AttributeMatcher::DashMatch(v) => {
+                let vl = v.to_ascii_lowercase();
+                value_lower == vl || value_lower.starts_with(&format!("{vl}-"))
+            }
+            AttributeMatcher::Prefix(v) => value_lower.starts_with(&v.to_ascii_lowercase()),
+            AttributeMatcher::Suffix(v) => value_lower.ends_with(&v.to_ascii_lowercase()),
+            AttributeMatcher::Substring(v) => value_lower.contains(&v.to_ascii_lowercase()),
+        };
+    }
+
     // CSS Selectors §6.3「case-sensitivity depends on the document language」：
     // - HTML 文档：属性名与属性值匹配 ASCII 大小写不敏感（WPT attribute-value-selector-007
     //   assert `[lang="es"]` 应匹配 `lang="ES"`）。

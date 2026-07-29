@@ -519,6 +519,7 @@ fn test_attribute_includes_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "class".to_string(),
                         matcher: AttributeMatcher::Includes("bar".to_string()),
+                        case_insensitive: false,
                     })],
                 },
                 None,

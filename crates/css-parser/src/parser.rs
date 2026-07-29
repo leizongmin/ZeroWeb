@@ -753,6 +753,7 @@ impl<'a> Parser<'a> {
                 return Some(AttributeSelector {
                     name,
                     matcher: AttributeMatcher::Exists,
+                    case_insensitive: false,
                 });
             }
             Token::Delim('=') => {
@@ -760,10 +761,6 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.skip_whitespace();
                 let val = self.consume_attribute_value();
-                self.skip_whitespace();
-                if matches!(self.peek(), Token::RBracket) {
-                    self.advance();
-                }
                 AttributeMatcher::Exact(val)
             }
             Token::IncludeMatch => {
@@ -771,10 +768,6 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.skip_whitespace();
                 let val = self.consume_attribute_value();
-                self.skip_whitespace();
-                if matches!(self.peek(), Token::RBracket) {
-                    self.advance();
-                }
                 AttributeMatcher::Includes(val)
             }
             Token::DashMatch => {
@@ -782,10 +775,6 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.skip_whitespace();
                 let val = self.consume_attribute_value();
-                self.skip_whitespace();
-                if matches!(self.peek(), Token::RBracket) {
-                    self.advance();
-                }
                 AttributeMatcher::DashMatch(val)
             }
             Token::PrefixMatch => {
@@ -793,10 +782,6 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.skip_whitespace();
                 let val = self.consume_attribute_value();
-                self.skip_whitespace();
-                if matches!(self.peek(), Token::RBracket) {
-                    self.advance();
-                }
                 AttributeMatcher::Prefix(val)
             }
             Token::SuffixMatch => {
@@ -804,10 +789,6 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.skip_whitespace();
                 let val = self.consume_attribute_value();
-                self.skip_whitespace();
-                if matches!(self.peek(), Token::RBracket) {
-                    self.advance();
-                }
                 AttributeMatcher::Suffix(val)
             }
             Token::SubstringMatch => {
@@ -815,10 +796,6 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.skip_whitespace();
                 let val = self.consume_attribute_value();
-                self.skip_whitespace();
-                if matches!(self.peek(), Token::RBracket) {
-                    self.advance();
-                }
                 AttributeMatcher::Substring(val)
             }
             _ => {
@@ -827,11 +804,39 @@ impl<'a> Parser<'a> {
                 return Some(AttributeSelector {
                     name,
                     matcher: AttributeMatcher::Exists,
+                    case_insensitive: false,
                 });
             }
         };
 
-        Some(AttributeSelector { name, matcher })
+        // Selectors Level 4：取值后可选空白 + `i`/`s` 大小写修饰符 + 可选空白再 `]`。
+        // 修复前各 matcher arm 自行「紧跟 ] 才消耗 ]」，遇 `i`/`s` 时 ] 不消耗 → 残余
+        // `i` `]` 破坏选择器解析、整条规则被丢（driving: attribute_case_flag）。现统一在
+        // 取值后消耗修饰符与 ]。`i` → case_insensitive=true，`s`/缺省 → false。
+        self.skip_whitespace();
+        let case_insensitive = self.consume_attr_case_flag();
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBracket) {
+            self.advance();
+        }
+        Some(AttributeSelector {
+            name,
+            matcher,
+            case_insensitive,
+        })
+    }
+
+    /// Selectors Level 4：消耗属性选择器值后可选的大小写修饰符（`i`/`s`）。
+    /// 返回 true 表示 `i`（大小写不敏感）；`s` 或无修饰符返回 false（消耗 `s` 但语义见 matcher）。
+    fn consume_attr_case_flag(&mut self) -> bool {
+        if let Token::Ident(s) = self.peek().clone()
+            && (s == "i" || s == "I" || s == "s" || s == "S")
+        {
+            self.advance();
+            s == "i" || s == "I"
+        } else {
+            false
+        }
     }
 
     /// 消耗属性选择器的值。

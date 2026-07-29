@@ -210,6 +210,7 @@ fn test_matches_attribute_selector() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "id".to_string(),
                         matcher: AttributeMatcher::Exists,
+                        case_insensitive: false,
                     })],
                 },
                 None,
@@ -227,6 +228,7 @@ fn test_matches_attribute_selector() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "id".to_string(),
                         matcher: AttributeMatcher::Exact("main".to_string()),
+                        case_insensitive: false,
                     })],
                 },
                 None,
@@ -246,6 +248,7 @@ fn attr_selector(name: &str, matcher: AttributeMatcher) -> Selector {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: name.to_string(),
                         matcher,
+                        case_insensitive: false,
                     })],
                 },
                 None,
@@ -299,6 +302,64 @@ fn test_matches_attribute_case_sensitivity_html_vs_xml() {
             &attr_selector("title", AttributeMatcher::Exact("ES".to_string()))
         ),
         "XML 模式：[title=\"ES\"] 应匹配 title=\"ES\""
+    );
+}
+
+/// Selectors Level 4 `[attr=val i]`：`i` 修饰符强制 ASCII 大小写不敏感，覆盖文档语言默认。
+/// 在 XML 模式（默认大小写敏感）下，`i` 应让 `[title="es"]` 匹配 `title="ES"`。
+fn attr_selector_ci(name: &str, matcher: AttributeMatcher) -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
+                        name: name.to_string(),
+                        matcher,
+                        case_insensitive: true,
+                    })],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+#[test]
+fn test_matches_attribute_case_insensitive_flag_i() {
+    let (mut doc, _html, _body, div, _p) = make_test_dom();
+    doc.set_attribute(div, "title", "ES");
+    doc.set_content_is_xml(true);
+
+    // XML 模式基线：无修饰符大小写敏感，[title="es"] 不匹配 title="ES"。
+    assert!(
+        !matches_selector(
+            &doc,
+            div,
+            &attr_selector("title", AttributeMatcher::Exact("es".to_string()))
+        ),
+        "XML 基线：无修饰符 [title=\"es\"] 不应匹配 title=\"ES\""
+    );
+
+    // `i` 修饰符：强制大小写不敏感，覆盖 XML 默认 → 应匹配。
+    assert!(
+        matches_selector(
+            &doc,
+            div,
+            &attr_selector_ci("title", AttributeMatcher::Exact("es".to_string()))
+        ),
+        "Selectors L4：[title=\"es\" i] 应强制大小写不敏感、匹配 title=\"ES\""
+    );
+
+    // `i` 对 Includes/Substring 等其他 matcher 同样生效。
+    doc.set_attribute(div, "class", "Btn Active");
+    assert!(
+        matches_selector(
+            &doc,
+            div,
+            &attr_selector_ci("class", AttributeMatcher::Includes("active".to_string()))
+        ),
+        "[class~=\"active\" i] 应匹配 class=\"Btn Active\""
     );
 }
 

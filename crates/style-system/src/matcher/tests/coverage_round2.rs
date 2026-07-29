@@ -531,6 +531,7 @@ fn test_attribute_selector_missing_attr() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "data-missing".to_string(),
                         matcher: AttributeMatcher::Exists,
+                        case_insensitive: false,
                     })],
                 },
                 None,

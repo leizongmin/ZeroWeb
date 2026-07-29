@@ -410,6 +410,7 @@ fn test_attribute_exists_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "id".to_string(),
                         matcher: AttributeMatcher::Exists,
+                        case_insensitive: false,
                     })],
                 },
                 None,
@@ -430,6 +431,7 @@ fn test_attribute_exact_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "id".to_string(),
                         matcher: AttributeMatcher::Exact("main".to_string()),
+                        case_insensitive: false,
                     })],
                 },
                 None,
@@ -451,6 +453,7 @@ fn test_attribute_includes_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "class".to_string(),
                         matcher: AttributeMatcher::Includes("text".to_string()),
+                        case_insensitive: false,
                     })],
                 },
                 None,

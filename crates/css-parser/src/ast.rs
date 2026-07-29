@@ -222,6 +222,10 @@ pub struct AttributeSelector {
     pub name: String,
     /// 匹配操作。
     pub matcher: AttributeMatcher,
+    /// Selectors Level 4 大小写修饰符：`[attr=val i]` → true（强制 ASCII 大小写不敏感）；
+    /// `s` 或缺省 → false。**注**：`s` 当前仅被 parser 消耗以保留规则（不再吞规则），
+    /// 其「强制大小写敏感」语义尚未在 matcher 强制（仍走文档语言默认）——`s` 罕见，后续按需补。
+    pub case_insensitive: bool,
 }
 
 /// 属性匹配操作。

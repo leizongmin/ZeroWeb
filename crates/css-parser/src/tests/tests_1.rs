@@ -232,6 +232,7 @@ fn test_specificity_attribute() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "type".to_string(),
                         matcher: AttributeMatcher::Exact("text".to_string()),
+                        case_insensitive: false,
                     })],
                 },
                 None,
@@ -671,6 +672,7 @@ fn test_parse_attribute_exists() {
             SubclassSelector::Attribute(AttributeSelector {
                 name,
                 matcher: AttributeMatcher::Exists,
+                ..
             }) if name == "type"
         )));
     } else {
@@ -690,6 +692,7 @@ fn test_parse_attribute_exact() {
             SubclassSelector::Attribute(AttributeSelector {
                 name,
                 matcher: AttributeMatcher::Exact(val),
+                ..
             }) if name == "type" && val == "text"
         )));
     } else {
@@ -709,6 +712,7 @@ fn test_parse_attribute_includes() {
             SubclassSelector::Attribute(AttributeSelector {
                 name,
                 matcher: AttributeMatcher::Includes(val),
+                ..
             }) if name == "class" && val == "active"
         )));
     } else {
@@ -1680,6 +1684,7 @@ fn test_parse_attribute_prefix() {
             SubclassSelector::Attribute(AttributeSelector {
                 name,
                 matcher: AttributeMatcher::Prefix(val),
+                ..
             }) if name == "href" && val == "https"
         )));
     } else {
@@ -1699,6 +1704,7 @@ fn test_parse_attribute_suffix() {
             SubclassSelector::Attribute(AttributeSelector {
                 name,
                 matcher: AttributeMatcher::Suffix(val),
+                ..
             }) if name == "href" && val == ".pdf"
         )));
     } else {
@@ -1718,6 +1724,7 @@ fn test_parse_attribute_substring() {
             SubclassSelector::Attribute(AttributeSelector {
                 name,
                 matcher: AttributeMatcher::Substring(val),
+                ..
             }) if name == "title" && val == "hello"
         )));
     } else {
@@ -1737,6 +1744,7 @@ fn test_parse_attribute_dash() {
             SubclassSelector::Attribute(AttributeSelector {
                 name,
                 matcher: AttributeMatcher::DashMatch(val),
+                ..
             }) if name == "lang" && val == "en"
         )));
     } else {
