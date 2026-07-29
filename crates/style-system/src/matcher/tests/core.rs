@@ -871,6 +871,91 @@ fn test_matches_indeterminate_pseudo_class() {
     );
 }
 
+/// `:dir(<dir>)` 选择器辅助：subclass 为 PseudoClass(Dir(dir))。
+fn dir_selector(dir: &str) -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Dir(dir.to_string()))],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+#[test]
+fn test_matches_dir_pseudo_class() {
+    // :dir(ltr|rtl) 按元素方向性匹配：显式 dir、祖先继承、缺省默认 LTR、dir=auto 按内容。
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+
+    // 显式 dir="rtl" / dir="ltr"。
+    let rtl_el = doc.create_element("div");
+    doc.set_attribute(rtl_el, "dir", "rtl");
+    doc.append_child(body, rtl_el).unwrap();
+    let ltr_el = doc.create_element("div");
+    doc.set_attribute(ltr_el, "dir", "ltr");
+    doc.append_child(body, ltr_el).unwrap();
+
+    // 继承：section[dir=rtl] 内的 p。
+    let sec = doc.create_element("section");
+    doc.set_attribute(sec, "dir", "rtl");
+    doc.append_child(body, sec).unwrap();
+    let p_in_rtl = doc.create_element("p");
+    doc.append_child(sec, p_in_rtl).unwrap();
+
+    // 无 dir（默认 LTR）。
+    let no_dir = doc.create_element("span");
+    doc.append_child(body, no_dir).unwrap();
+
+    // dir="auto" + 阿拉伯文 → RTL。
+    let auto_rtl = doc.create_element("div");
+    doc.set_attribute(auto_rtl, "dir", "auto");
+    let ar_text = doc.create_text_node("مرحبا");
+    doc.append_child(auto_rtl, ar_text).unwrap();
+    doc.append_child(body, auto_rtl).unwrap();
+
+    // dir="auto" + 拉丁文 → LTR。
+    let auto_ltr = doc.create_element("div");
+    doc.set_attribute(auto_ltr, "dir", "auto");
+    let en_text = doc.create_text_node("Hello");
+    doc.append_child(auto_ltr, en_text).unwrap();
+    doc.append_child(body, auto_ltr).unwrap();
+
+    let sel_ltr = dir_selector("ltr");
+    let sel_rtl = dir_selector("rtl");
+    assert!(matches_selector(&doc, rtl_el, &sel_rtl), "dir=rtl 应匹配 :dir(rtl)");
+    assert!(!matches_selector(&doc, rtl_el, &sel_ltr), "dir=rtl 不应匹配 :dir(ltr)");
+    assert!(matches_selector(&doc, ltr_el, &sel_ltr), "dir=ltr 应匹配 :dir(ltr)");
+    assert!(!matches_selector(&doc, ltr_el, &sel_rtl), "dir=ltr 不应匹配 :dir(rtl)");
+    assert!(
+        matches_selector(&doc, p_in_rtl, &sel_rtl),
+        "继承 section[dir=rtl] 的 p 应匹配 :dir(rtl)"
+    );
+    assert!(
+        !matches_selector(&doc, p_in_rtl, &sel_ltr),
+        "继承 RTL 的 p 不应匹配 :dir(ltr)"
+    );
+    assert!(
+        matches_selector(&doc, no_dir, &sel_ltr),
+        "无 dir 默认 LTR 应匹配 :dir(ltr)"
+    );
+    assert!(
+        !matches_selector(&doc, no_dir, &sel_rtl),
+        "无 dir 默认 LTR 不应匹配 :dir(rtl)"
+    );
+    assert!(
+        matches_selector(&doc, auto_rtl, &sel_rtl),
+        "dir=auto + 阿拉伯文应匹配 :dir(rtl)"
+    );
+    assert!(
+        matches_selector(&doc, auto_ltr, &sel_ltr),
+        "dir=auto + 拉丁文应匹配 :dir(ltr)"
+    );
+}
+
 /// DashMatch (`|=`) 在 XML 模式下也应大小写敏感（WPT attribute-value-selector-009）。
 #[test]
 fn test_matches_attribute_dashmatch_case_sensitivity_xml() {

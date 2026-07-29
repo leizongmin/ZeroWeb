@@ -297,6 +297,7 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
         PseudoClassSelector::NthOfType(pattern) => matches_nth_of_type(doc, element, pattern),
         PseudoClassSelector::NthLastOfType(pattern) => matches_nth_last_of_type(doc, element, pattern),
         PseudoClassSelector::Lang(range) => matches_lang(doc, element, range),
+        PseudoClassSelector::Dir(dir) => matches_dir(doc, element, dir),
     }
 }
 
@@ -320,6 +321,101 @@ fn matches_lang(doc: &Document, element: NodeId, range: &str) -> bool {
         node = doc.parent_node(n);
     }
     false
+}
+
+/// `:dir(ltr|rtl)` 匹配（CSS Selectors L4 §14）：元素方向性与参数一致。
+/// 方向性 = 最近 `dir` 属性解析（ltr/rtl/auto），沿祖先继承，终极默认 LTR（HTML §3.2.6）。
+fn matches_dir(doc: &Document, element: NodeId, dir: &str) -> bool {
+    let is_rtl = element_is_rtl(doc, element);
+    match dir {
+        "rtl" => is_rtl,
+        "ltr" => !is_rtl,
+        // 未知方向值（含空）不匹配任何元素
+        _ => false,
+    }
+}
+
+/// 元素是否为 RTL 方向。沿祖先找首个有效的 `dir` 属性：
+/// `rtl`→true、`ltr`→false、`auto`→按子树文本首个强方向字符、无效值→继续向上；缺省→false（LTR）。
+fn element_is_rtl(doc: &Document, element: NodeId) -> bool {
+    let mut node = Some(element);
+    while let Some(n) = node {
+        if let Some(val) = doc.get_attribute(n, "dir") {
+            match val.to_ascii_lowercase().as_str() {
+                "rtl" => return true,
+                "ltr" => return false,
+                "auto" => return auto_is_rtl(doc, n),
+                _ => {} // 无效值，继续向上查找
+            }
+        }
+        node = doc.parent_node(n);
+    }
+    false
+}
+
+/// `dir="auto"` 方向性：子树文本（前序）首个强方向字符——RTL 脚本（希伯来/阿拉伯等）→ RTL，
+/// LTR 脚本（拉丁/希腊/西里尔字母）→ LTR；无强字符 → LTR（默认）。
+/// 注：简化实现，未跳过带自身 `dir` 的后代隔离节点（静态罕见边角）。
+fn auto_is_rtl(doc: &Document, root: NodeId) -> bool {
+    let mut found_rtl = false;
+    auto_first_strong(doc, root, &mut found_rtl);
+    found_rtl
+}
+
+/// 前序遍历子树，定位首个强方向字符；命中即设 `found_rtl` 并提前返回。
+fn auto_first_strong(doc: &Document, node_id: NodeId, found_rtl: &mut bool) {
+    if *found_rtl {
+        return;
+    }
+    let Some(node) = doc.get(node_id) else {
+        return;
+    };
+    match &node.kind {
+        NodeKind::Text(data) => {
+            for ch in data.content.chars() {
+                if is_strong_rtl(ch) {
+                    *found_rtl = true;
+                    return;
+                }
+                if is_strong_ltr(ch) {
+                    return; // LTR 强字符定方向
+                }
+            }
+        }
+        NodeKind::Element(_) => {
+            for &child in &doc.child_nodes(node_id) {
+                auto_first_strong(doc, child, found_rtl);
+                if *found_rtl {
+                    return;
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// 强 RTL 字符：希伯来/阿拉伯/叙利亚/塔安那/恩科等 RTL 脚本区（含 presentation forms）。
+fn is_strong_rtl(c: char) -> bool {
+    matches!(c as u32,
+        0x0590..=0x05FF   // Hebrew
+        | 0x0600..=0x06FF // Arabic
+        | 0x0700..=0x074F // Syriac
+        | 0x0780..=0x07BF // Thaana
+        | 0x07C0..=0x07FF // NKo
+        | 0x0800..=0x083F // Samaritan
+        | 0x0840..=0x085F // Mandaic
+        | 0xFB1D..=0xFB4F // Hebrew presentation forms
+        | 0xFB50..=0xFDFF // Arabic presentation forms-A
+        | 0xFE70..=0xFEFF // Arabic presentation forms-B
+    )
+}
+
+/// 强 LTR 字符：拉丁/希腊/西里尔字母（CJK 等中性字符不算强 LTR，继续扫描）。
+fn is_strong_ltr(c: char) -> bool {
+    let u = c as u32;
+    (0x0041..=0x024F).contains(&u) // Latin + Latin Extended
+        || (0x0370..=0x03FF).contains(&u) // Greek
+        || (0x0400..=0x04FF).contains(&u) // Cyrillic
 }
 
 /// 检查元素是否为第一个子元素。

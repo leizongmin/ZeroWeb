@@ -479,6 +479,7 @@ impl<'a> Parser<'a> {
                                 "nth-of-type" => self.parse_nth_pattern("nth-of-type"),
                                 "nth-last-of-type" => self.parse_nth_last_of_type_pattern(),
                                 "lang" => self.parse_lang(),
+                                "dir" => self.parse_dir(),
                                 _ => {
                                     // 未知函数伪类（如 `:foo(...)`）使选择器非法
                                     if !Self::is_known_function_pseudo_class(&name) {
@@ -521,6 +522,7 @@ impl<'a> Parser<'a> {
                             "nth-of-type" => self.parse_nth_pattern("nth-of-type"),
                             "nth-last-of-type" => self.parse_nth_last_of_type_pattern(),
                             "lang" => self.parse_lang(),
+                            "dir" => self.parse_dir(),
                             _ => {
                                 // 未知函数伪类（Function token 形式）使选择器非法
                                 if !Self::is_known_function_pseudo_class(&name) {
@@ -722,6 +724,29 @@ impl<'a> Parser<'a> {
         }
 
         PseudoClassSelector::Lang(lang)
+    }
+
+    /// 解析 `:dir(ltr|rtl)` 参数。调用前已消耗 `(`，本方法消耗参数标识与 `)`。
+    /// 参数归一化为小写（HTML `dir` 属性值 ASCII 大小写不敏感）。
+    fn parse_dir(&mut self) -> PseudoClassSelector {
+        self.skip_whitespace();
+
+        let dir = match self.peek().clone() {
+            Token::Ident(s) => {
+                self.advance();
+                s.to_ascii_lowercase()
+            }
+            _ => String::new(),
+        };
+
+        self.skip_whitespace();
+
+        // 消耗右括号
+        if matches!(self.peek(), Token::RParen) {
+            self.advance();
+        }
+
+        PseudoClassSelector::Dir(dir)
     }
 
     /// 消耗属性选择器。

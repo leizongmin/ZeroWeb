@@ -79,6 +79,7 @@ mod coverage_round6;
 mod coverage_round7;
 mod coverage_round8;
 mod coverage_round9;
+mod dir_pseudo;
 mod null_handling;
 mod parser_coverage;
 mod parser_coverage_extra;

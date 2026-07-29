@@ -270,6 +270,8 @@ pub enum PseudoClassSelector {
     NthLastOfType(NthPattern),
     /// `:lang()` 选择器。
     Lang(String),
+    /// `:dir()` 选择器（参数为 `ltr`/`rtl`，归一化为小写）。
+    Dir(String),
 }
 
 /// nth 函数的模式（如 `2n+1`、`odd`、`even`、`3`）。
