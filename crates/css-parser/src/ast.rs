@@ -264,6 +264,10 @@ pub enum PseudoClassSelector {
     NthChild(NthPattern),
     /// `:nth-last-child()` 选择器。
     NthLastChild(NthPattern),
+    /// `:nth-child(an+b of S)` 选择器（Selectors L4，`of` 选择器列表过滤计数的兄弟）。
+    NthChildOf(NthPattern, Vec<Selector>),
+    /// `:nth-last-child(an+b of S)` 选择器（Selectors L4）。
+    NthLastChildOf(NthPattern, Vec<Selector>),
     /// `:nth-of-type()` 选择器。
     NthOfType(NthPattern),
     /// `:nth-last-of-type()` 选择器。

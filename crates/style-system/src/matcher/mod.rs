@@ -294,6 +294,8 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
         }
         PseudoClassSelector::NthChild(pattern) => matches_nth_child(doc, element, pattern),
         PseudoClassSelector::NthLastChild(pattern) => matches_nth_last_child(doc, element, pattern),
+        PseudoClassSelector::NthChildOf(pattern, of) => matches_nth_child_of(doc, element, pattern, of),
+        PseudoClassSelector::NthLastChildOf(pattern, of) => matches_nth_last_child_of(doc, element, pattern, of),
         PseudoClassSelector::NthOfType(pattern) => matches_nth_of_type(doc, element, pattern),
         PseudoClassSelector::NthLastOfType(pattern) => matches_nth_last_of_type(doc, element, pattern),
         PseudoClassSelector::Lang(range) => matches_lang(doc, element, range),
@@ -519,6 +521,66 @@ fn matches_nth_last_child(doc: &Document, element: NodeId, pattern: &zero_css_pa
 
     // 从末尾计数（1-indexed）
     for (i, &child) in element_children.iter().rev().enumerate() {
+        if child == element {
+            return matches_nth_pattern((i + 1) as i32, pattern);
+        }
+    }
+    false
+}
+
+/// 元素是否匹配 `of S` 选择器列表中的任一选择器。
+fn matches_any_selector(doc: &Document, element: NodeId, selectors: &[Selector]) -> bool {
+    selectors.iter().any(|s| matches_selector(doc, element, s))
+}
+
+/// `:nth-child(an+b of S)`（Selectors L4）：元素须匹配 S，且在父元素子代中**仅计匹配 S
+/// 的元素**的位置满足 an+b。
+fn matches_nth_child_of(
+    doc: &Document,
+    element: NodeId,
+    pattern: &zero_css_parser::ast::NthPattern,
+    of_selectors: &[Selector],
+) -> bool {
+    if !matches_any_selector(doc, element, of_selectors) {
+        return false;
+    }
+    let parent = match doc.parent_node(element) {
+        Some(p) => p,
+        None => return false,
+    };
+    let mut index = 0;
+    for &child in &doc.child_nodes(parent) {
+        if is_element(doc, child) && matches_any_selector(doc, child, of_selectors) {
+            index += 1;
+            if child == element {
+                return matches_nth_pattern(index, pattern);
+            }
+        }
+    }
+    false
+}
+
+/// `:nth-last-child(an+b of S)`（Selectors L4）：从末尾仅计匹配 S 的兄弟。
+fn matches_nth_last_child_of(
+    doc: &Document,
+    element: NodeId,
+    pattern: &zero_css_parser::ast::NthPattern,
+    of_selectors: &[Selector],
+) -> bool {
+    if !matches_any_selector(doc, element, of_selectors) {
+        return false;
+    }
+    let parent = match doc.parent_node(element) {
+        Some(p) => p,
+        None => return false,
+    };
+    let matching: Vec<NodeId> = doc
+        .child_nodes(parent)
+        .iter()
+        .copied()
+        .filter(|&c| is_element(doc, c) && matches_any_selector(doc, c, of_selectors))
+        .collect();
+    for (i, &child) in matching.iter().rev().enumerate() {
         if child == element {
             return matches_nth_pattern((i + 1) as i32, pattern);
         }

@@ -601,9 +601,13 @@ impl<'a> Parser<'a> {
 
     /// 解析 nth 函数模式（:nth-child、:nth-last-child、:nth-of-type）。
     ///
-    /// 调用前已消耗 `(`。
+    /// 调用前已消耗 `(`。`:nth-child`/`:nth-last-child` 支持 Selectors L4 的 `of S`
+    /// 选择器参数（仅在匹配 S 的兄弟中计数）；`:nth-of-type` 不支持 `of S`。
     fn parse_nth_pattern(&mut self, name: &str) -> PseudoClassSelector {
-        let pattern = self.parse_nth_expression();
+        let (pattern, of_selectors) = match name {
+            "nth-child" | "nth-last-child" => self.parse_nth_with_optional_of(),
+            _ => (self.parse_nth_expression(), Vec::new()),
+        };
 
         // 消耗右括号
         if matches!(self.peek(), Token::RParen) {
@@ -611,11 +615,56 @@ impl<'a> Parser<'a> {
         }
 
         match name {
-            "nth-child" => PseudoClassSelector::NthChild(pattern),
-            "nth-last-child" => PseudoClassSelector::NthLastChild(pattern),
+            "nth-child" => {
+                if of_selectors.is_empty() {
+                    PseudoClassSelector::NthChild(pattern)
+                } else {
+                    PseudoClassSelector::NthChildOf(pattern, of_selectors)
+                }
+            }
+            "nth-last-child" => {
+                if of_selectors.is_empty() {
+                    PseudoClassSelector::NthLastChild(pattern)
+                } else {
+                    PseudoClassSelector::NthLastChildOf(pattern, of_selectors)
+                }
+            }
             "nth-of-type" => PseudoClassSelector::NthOfType(pattern),
             _ => PseudoClassSelector::Simple(name.to_string()),
         }
+    }
+
+    /// 解析 nth 表达式，并可选地解析 L4 `of S` 选择器列表。
+    /// 第一阶段收集 `an+b` 文本直到 `)` 或 `of` 关键字；遇 `of` 则解析其后选择器列表。
+    fn parse_nth_with_optional_of(&mut self) -> (NthPattern, Vec<Selector>) {
+        self.skip_whitespace();
+        let mut expr = String::new();
+        let mut of_selectors: Vec<Selector> = Vec::new();
+
+        loop {
+            match self.peek().clone() {
+                Token::RParen | Token::Eof => break,
+                // `of` 关键字（仅在已收集到 an+b 表达式时识别，避免吞掉非法裸 `of`）
+                Token::Ident(s) if !expr.trim().is_empty() && s.eq_ignore_ascii_case("of") => {
+                    self.advance(); // 消耗 of
+                    of_selectors = self.consume_selector_list_for_function();
+                    break;
+                }
+                Token::Whitespace => {
+                    if !expr.is_empty() && !expr.ends_with(' ') {
+                        expr.push(' ');
+                    }
+                    self.advance();
+                }
+                other => {
+                    expr.push_str(&format!("{other}"));
+                    self.advance();
+                }
+            }
+        }
+
+        let pattern = Self::nth_pattern_from_text(expr.trim());
+        (pattern, of_selectors)
     }
 
     /// 解析 nth-last-of-type 函数模式。
@@ -655,15 +704,17 @@ impl<'a> Parser<'a> {
 
         let expr = expr.trim();
 
-        // 解析特殊关键字
-        match expr {
-            "odd" => return NthPattern { a: 2, b: 1 },
-            "even" => return NthPattern { a: 2, b: 0 },
-            _ => {}
-        }
+        // 解析特殊关键字 / an+b 模式
+        Self::nth_pattern_from_text(expr)
+    }
 
-        // 解析 an+b 模式
-        Self::parse_nth_expression_str(expr)
+    /// 从已收集的 nth 表达式文本解析为 NthPattern（odd/even/an+b/纯整数）。
+    fn nth_pattern_from_text(expr: &str) -> NthPattern {
+        match expr {
+            "odd" => NthPattern { a: 2, b: 1 },
+            "even" => NthPattern { a: 2, b: 0 },
+            _ => Self::parse_nth_expression_str(expr),
+        }
     }
 
     /// 从字符串解析 nth 表达式。

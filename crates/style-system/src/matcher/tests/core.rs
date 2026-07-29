@@ -1,8 +1,8 @@
 // Test file split from matcher.rs — core selector matching tests
 use super::super::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, PseudoClassSelector, Selector,
-    SubclassSelector, TypeSelector,
+    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, NthPattern,
+    PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
 };
 use zero_dom::Document;
 
@@ -953,6 +953,86 @@ fn test_matches_dir_pseudo_class() {
     assert!(
         matches_selector(&doc, auto_ltr, &sel_ltr),
         "dir=auto + 拉丁文应匹配 :dir(ltr)"
+    );
+}
+
+/// `:nth-child(an+b of S)` 选择器辅助。
+fn nth_child_of_selector(a: i32, b: i32, of: Vec<Selector>, last: bool) -> Selector {
+    let pseudo = if last {
+        PseudoClassSelector::NthLastChildOf(NthPattern { a, b }, of)
+    } else {
+        PseudoClassSelector::NthChildOf(NthPattern { a, b }, of)
+    };
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(pseudo)],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+#[test]
+fn test_matches_nth_child_of_selector() {
+    // :nth-child(an+b of S) 仅在匹配 S 的兄弟中计数。
+    // 父代子序：div.a, p, div.a, span —— div 兄弟位置 1/2。
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+
+    let parent = doc.create_element("div");
+    doc.append_child(body, parent).unwrap();
+    let div1 = doc.create_element("div");
+    doc.set_attribute(div1, "class", "a");
+    doc.append_child(parent, div1).unwrap();
+    let mid_p = doc.create_element("p");
+    doc.append_child(parent, mid_p).unwrap();
+    let div2 = doc.create_element("div");
+    doc.set_attribute(div2, "class", "a");
+    doc.append_child(parent, div2).unwrap();
+    let span = doc.create_element("span");
+    doc.append_child(parent, span).unwrap();
+
+    let of_div = vec![make_tag_selector("div")];
+    let first_of_div = nth_child_of_selector(0, 1, of_div.clone(), false);
+    let second_of_div = nth_child_of_selector(0, 2, of_div.clone(), false);
+    let last_of_div = nth_child_of_selector(0, 1, of_div.clone(), true);
+    let second_last_of_div = nth_child_of_selector(0, 2, of_div.clone(), true);
+    let even_of_div = nth_child_of_selector(2, 0, of_div.clone(), false);
+
+    assert!(
+        matches_selector(&doc, div1, &first_of_div),
+        "div1 是首个 div 兄弟，应匹配 :nth-child(1 of div)"
+    );
+    assert!(
+        !matches_selector(&doc, div2, &first_of_div),
+        "div2 非首个 div 兄弟，不应匹配 :nth-child(1 of div)"
+    );
+    assert!(
+        matches_selector(&doc, div2, &second_of_div),
+        "div2 是第 2 个 div 兄弟，应匹配 :nth-child(2 of div)"
+    );
+    assert!(
+        !matches_selector(&doc, mid_p, &first_of_div),
+        "p 不匹配 of 选择器(div)，不应匹配"
+    );
+    assert!(
+        matches_selector(&doc, div2, &last_of_div),
+        "div2 是最后一个 div，应匹配 :nth-last-child(1 of div)"
+    );
+    assert!(
+        matches_selector(&doc, div1, &second_last_of_div),
+        "div1 是倒数第 2 个 div，应匹配 :nth-last-child(2 of div)"
+    );
+    assert!(
+        matches_selector(&doc, div2, &even_of_div),
+        "div2 在 div 兄弟中位置 2，应匹配 :nth-child(2n of div)"
+    );
+    assert!(
+        !matches_selector(&doc, div1, &even_of_div),
+        "div1 在 div 兄弟中位置 1，不应匹配 :nth-child(2n of div)"
     );
 }
 
