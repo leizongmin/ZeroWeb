@@ -37,18 +37,24 @@ pub fn specificity(selector: &Selector) -> (u32, u32, u32) {
                         PseudoClassSelector::Is(sels)
                         | PseudoClassSelector::Not(sels)
                         | PseudoClassSelector::Has(sels) => {
-                            // :is() 和 :not() 取参数列表中最大的 specificity
-                            let max_spec = sels
-                                .iter()
-                                .map(specificity)
-                                .max_by(|(a1, b1, c1), (a2, b2, c2)| a1.cmp(a2).then(b1.cmp(b2)).then(c1.cmp(c2)))
-                                .unwrap_or((0, 0, 0));
+                            // :is()/:not()/:has() 取参数列表中最大的 specificity
+                            let max_spec = max_specificity(sels);
                             a += max_spec.0;
                             b += max_spec.1;
                             c += max_spec.2;
                         }
                         PseudoClassSelector::Where(_) => {
                             // :where() specificity 为 0，不增加
+                        }
+                        // :nth-child(an+b of S) / :nth-last-child(an+b of S)（Selectors L4 §16）：
+                        // specificity = 伪类基 (0,1,0) + of 列表最大 specificity
+                        //（如 `:nth-child(even of .foo,#bar,target)` = (1,1,0) = (0,1,0)+(1,0,0)）。
+                        PseudoClassSelector::NthChildOf(_, sels) | PseudoClassSelector::NthLastChildOf(_, sels) => {
+                            b += 1;
+                            let max_spec = max_specificity(sels);
+                            a += max_spec.0;
+                            b += max_spec.1;
+                            c += max_spec.2;
                         }
                         _ => b += 1,
                     }
@@ -59,6 +65,14 @@ pub fn specificity(selector: &Selector) -> (u32, u32, u32) {
     }
 
     (a, b, c)
+}
+
+/// 选择器列表的最大 specificity（用于 :is()/:not()/:has() 与 :nth-child(an+b of S)）。
+fn max_specificity(sels: &[Selector]) -> (u32, u32, u32) {
+    sels.iter()
+        .map(specificity)
+        .max_by(|(a1, b1, c1), (a2, b2, c2)| a1.cmp(a2).then(b1.cmp(b2)).then(c1.cmp(c2)))
+        .unwrap_or((0, 0, 0))
 }
 
 #[cfg(test)]
@@ -177,5 +191,51 @@ mod tests {
             },
         };
         assert_eq!(specificity(&sel), (0, 0, 0));
+    }
+
+    #[test]
+    fn test_specificity_nth_child_of_selector_list() {
+        // :nth-child(even of .foo, #bar, target) = (1,1,0) = 伪类基 (0,1,0) + max(S)
+        // 其中 max(S) = max((0,1,0), (1,0,0), (0,0,1)) = (1,0,0)。Selectors L4 §16。
+        let of_list = vec![
+            make_class_selector("foo"),
+            make_id_selector("bar"),
+            make_tag_selector("target"),
+        ];
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: None,
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::NthChildOf(
+                            NthPattern { a: 2, b: 0 },
+                            of_list,
+                        ))],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert_eq!(specificity(&sel), (1, 1, 0));
+    }
+
+    #[test]
+    fn test_specificity_nth_child_of_no_list() {
+        // of 列表为空（不应发生，parser 总带 of 列表）→ 仅伪类基 (0,1,0)。
+        let sel = Selector {
+            complex: ComplexSelector {
+                parts: vec![(
+                    CompoundSelector {
+                        type_selector: None,
+                        subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::NthChildOf(
+                            NthPattern { a: 2, b: 0 },
+                            vec![],
+                        ))],
+                    },
+                    None,
+                )],
+            },
+        };
+        assert_eq!(specificity(&sel), (0, 1, 0));
     }
 }
