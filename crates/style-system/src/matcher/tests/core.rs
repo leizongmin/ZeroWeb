@@ -363,6 +363,67 @@ fn test_matches_attribute_case_insensitive_flag_i() {
     );
 }
 
+/// `:checked` 选择器辅助：subclass 为 PseudoClass(Simple("checked"))。
+fn checked_selector() -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                        "checked".to_string(),
+                    ))],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+#[test]
+fn test_matches_checked_pseudo_class() {
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+
+    // <input type="checkbox" checked> → :checked
+    let cb_on = doc.create_element("input");
+    doc.set_attribute(cb_on, "type", "checkbox");
+    doc.set_attribute(cb_on, "checked", "");
+    doc.append_child(body, cb_on).unwrap();
+
+    // <input type="checkbox">（无 checked）→ 不匹配
+    let cb_off = doc.create_element("input");
+    doc.set_attribute(cb_off, "type", "checkbox");
+    doc.append_child(body, cb_off).unwrap();
+
+    // <input type="text" checked> → 不匹配（text 输入非 :checked）
+    let text_on = doc.create_element("input");
+    doc.set_attribute(text_on, "type", "text");
+    doc.set_attribute(text_on, "checked", "");
+    doc.append_child(body, text_on).unwrap();
+
+    // <option selected> → :checked
+    let opt = doc.create_element("option");
+    doc.set_attribute(opt, "selected", "");
+    doc.append_child(body, opt).unwrap();
+
+    assert!(
+        matches_selector(&doc, cb_on, &checked_selector()),
+        "input[type=checkbox][checked] 应匹配 :checked"
+    );
+    assert!(
+        !matches_selector(&doc, cb_off, &checked_selector()),
+        "无 checked 属性的 checkbox 不应匹配 :checked"
+    );
+    assert!(
+        !matches_selector(&doc, text_on, &checked_selector()),
+        "input[type=text] 即使有 checked 也不应匹配 :checked"
+    );
+    assert!(
+        matches_selector(&doc, opt, &checked_selector()),
+        "option[selected] 应匹配 :checked"
+    );
+}
+
 /// DashMatch (`|=`) 在 XML 模式下也应大小写敏感（WPT attribute-value-selector-009）。
 #[test]
 fn test_matches_attribute_dashmatch_case_sensitivity_xml() {

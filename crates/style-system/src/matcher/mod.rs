@@ -262,6 +262,8 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             "first-of-type" => is_first_of_type(doc, element),
             "last-of-type" => is_last_of_type(doc, element),
             "only-of-type" => is_first_of_type(doc, element) && is_last_of_type(doc, element),
+            // 表单状态伪类：静态 HTML 下 checkedness/selectedness = 布尔属性存在性（无 JS 交互）
+            "checked" => is_checked(doc, element),
             _ => false, // 不支持的伪类
         },
         PseudoClassSelector::Not(selectors) => {
@@ -424,6 +426,27 @@ fn element_tag_name(doc: &Document, element: NodeId) -> Option<String> {
     match &node.kind {
         zero_dom::NodeKind::Element(e) => Some(e.local_name().to_ascii_lowercase()),
         _ => None,
+    }
+}
+
+/// `:checked` 匹配（HTML §4.15）：静态 HTML 下 checkedness/selectedness 由布尔属性决定。
+/// 匹配 `<input type="checkbox"|"radio" checked>`（默认 type=text 不匹配）与
+/// `<option selected>`；其他元素不匹配。
+fn is_checked(doc: &Document, element: NodeId) -> bool {
+    let tag = match element_tag_name(doc, element) {
+        Some(t) => t,
+        None => return false,
+    };
+    match tag.as_str() {
+        "input" => {
+            let ty = doc
+                .get_attribute(element, "type")
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            (ty == "checkbox" || ty == "radio") && doc.get_attribute(element, "checked").is_some()
+        }
+        "option" => doc.get_attribute(element, "selected").is_some(),
+        _ => false,
     }
 }
 
