@@ -1036,6 +1036,54 @@ fn test_matches_nth_child_of_selector() {
     );
 }
 
+#[test]
+fn test_matches_any_link_and_link_pseudo_class() {
+    // :any-link / :link 匹配 a/area/link 带 href；静态下 :link 等价 :any-link。
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+
+    let a_href = doc.create_element("a");
+    doc.set_attribute(a_href, "href", "/x");
+    doc.append_child(body, a_href).unwrap();
+    let a_nohref = doc.create_element("a");
+    doc.append_child(body, a_nohref).unwrap();
+    let area = doc.create_element("area");
+    doc.set_attribute(area, "href", "/y");
+    doc.append_child(body, area).unwrap();
+    let link = doc.create_element("link");
+    doc.set_attribute(link, "href", "/z");
+    doc.append_child(body, link).unwrap();
+    let para = doc.create_element("p");
+    doc.append_child(body, para).unwrap();
+
+    let any_link = simple_pseudo("any-link");
+    let link_sel = simple_pseudo("link");
+    assert!(matches_selector(&doc, a_href, &any_link), "a[href] 应匹配 :any-link");
+    assert!(
+        matches_selector(&doc, a_href, &link_sel),
+        "a[href] 应匹配 :link（静态等价 :any-link）"
+    );
+    assert!(
+        !matches_selector(&doc, a_nohref, &any_link),
+        "无 href 的 a 不应匹配 :any-link"
+    );
+    assert!(matches_selector(&doc, area, &any_link), "area[href] 应匹配 :any-link");
+    assert!(matches_selector(&doc, link, &any_link), "link[href] 应匹配 :any-link");
+    assert!(
+        !matches_selector(&doc, para, &any_link),
+        "p 非链接元素，不应匹配 :any-link"
+    );
+}
+
+#[test]
+fn test_matches_scope_pseudo_class() {
+    // :scope 在文档样式表中等价 :root（匹配文档根元素 html）。
+    let (doc, html, _body, div, p) = make_test_dom();
+    let sel = simple_pseudo("scope");
+    assert!(matches_selector(&doc, html, &sel), ":scope 应匹配文档根元素 html");
+    assert!(!matches_selector(&doc, div, &sel), "div 非文档根，不应匹配 :scope");
+    assert!(!matches_selector(&doc, p, &sel), "p 非文档根，不应匹配 :scope");
+}
+
 /// DashMatch (`|=`) 在 XML 模式下也应大小写敏感（WPT attribute-value-selector-009）。
 #[test]
 fn test_matches_attribute_dashmatch_case_sensitivity_xml() {

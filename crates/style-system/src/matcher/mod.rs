@@ -274,6 +274,12 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             // :default / :indeterminate：HTML 静态语义（无 JS 交互状态）
             "default" => is_default(doc, element),
             "indeterminate" => is_indeterminate(doc, element),
+            // :any-link / :link：超链接（a/area/link 带 href）。
+            // :link 静态下等价 :any-link（全当未访问，隐私安全）；:visited 永不匹配（走 _ => false）。
+            "any-link" => is_any_link(doc, element),
+            "link" => is_any_link(doc, element),
+            // :scope：文档样式表中等价 :root（匹配文档根元素）。
+            "scope" => is_root_element(doc, element),
             _ => false, // 不支持的伪类
         },
         PseudoClassSelector::Not(selectors) => {
@@ -882,6 +888,18 @@ fn is_indeterminate(doc: &Document, element: NodeId) -> bool {
         }
         _ => false,
     }
+}
+
+/// `:any-link` / `:link` 匹配（CSS Selectors L4 §18）：超链接元素——`<a>`/`<area>`/`<link>`
+/// 带 `href` 属性。`:link` 静态下等价（全当未访问，隐私安全）。
+fn is_any_link(doc: &Document, element: NodeId) -> bool {
+    let Some(tag) = element_tag_name(doc, element) else {
+        return false;
+    };
+    if !matches!(tag.as_str(), "a" | "area" | "link") {
+        return false;
+    }
+    doc.get_attribute(element, "href").is_some()
 }
 
 /// 检查元素是否是同类型中的第一个。
