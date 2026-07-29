@@ -74,7 +74,14 @@
 
 ### 轻量修复候选
 
-当前无新候选（clean lever 九重穷尽 R2183-R2190 + R2184 skip-list 审计 + R2181-R2182 + R2183 tab-size 全 exhausted）。期间可做文档纠偏 + plateau-guard，不要借机跳入深结构。
+**当前活跃轻量主线 = 文档 vs 代码不一致纠偏**（R2202 根因：文档滞后致反复盲推空转；用户授权「文档 vs 代码不一致的纠偏 = 高价值轻量活」）。CSS2/parser/selector 代码 clean lever 九重穷尽（R2183-R2190 + R2184 skip-list 审计 + R2181-R2183 tab-size 全 exhausted；R2203 fresh probe 再确认 rendering path 零 TODO/FIXME）。
+
+下一轮可接续的具体入口（逐条 verify-then-fix，**不**做 pending 的全量系统性审计，只修已实证项）：
+- rendering-compat.md:38 称 reftest runner 用「自渲染 ref（`reftest.rs:230-232`）」——实证 reftest.rs:226-236 为 `fuzzy_override` 逻辑，自渲染 ref 调用点已漂移，需核对真实行号订正。
+- current-baseline.md 的外部样式表/图片子资源行（`webview.rs:256/:265`）——实证 `prepare_page_subresources` 在 :263、`resolve_external_css` 在 :363、`fetch_image_subresources` 在 :402，行号漂移需订正。
+- 每修一批跑零代码变更校验（仅文档则跳过昂贵 make test；若连带 `.rs` 注释订正则跑 `cargo build` 确认不破编译），net≥0 land。
+
+期间不要借机跳入深结构（见「深结构性方向」与「待用户决策清单」）。
 
 ### 深结构性方向（等用户授权）
 
