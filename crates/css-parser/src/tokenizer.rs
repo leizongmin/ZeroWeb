@@ -188,11 +188,22 @@ impl Tokenizer {
         // 当成标识符首字符，污染紧跟其后的首个选择器（driving: bom-at-stylesheet-start）。
         // 仅剥首个；中段 BOM 作 ZERO WIDTH NO-BREAK SPACE 是合法 ident 字符，保留。
         let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
-        Self {
-            chars: input.chars().collect(),
-            pos: 0,
-            source: input.to_string(),
+        if !input.contains('\0') {
+            // 常见路径：无 NULL，保持原有零额外开销（仅 BOM 剥离判断）。
+            return Self {
+                chars: input.chars().collect(),
+                pos: 0,
+                source: input.to_string(),
+            };
         }
+        // CSS Syntax §3.3 输入预处理：所有 U+0000 (NULL) 须替换为 U+FFFD REPLACEMENT
+        // CHARACTER。修复前原始 NULL 落默认 `_ => Token::Error` 分支，顶层 Error 触发
+        // `skip_malformed_qualified_rule` 吞掉相邻规则（与 pre-R2204 CDO bug 同源）；FFFD
+        // 是合法 ident 字符，并入相邻标识符（与 chromium 一致）。转义 NULL（`\0`）已在
+        // consume_escape 处理，此处覆盖原始 NULL。仅当含 NULL 时走此归一化分支。
+        let chars: Vec<char> = input.chars().map(|c| if c == '\0' { '\u{FFFD}' } else { c }).collect();
+        let source: String = chars.iter().collect();
+        Self { chars, pos: 0, source }
     }
 
     /// 获取当前位置。
