@@ -2,8 +2,8 @@
 
 **版本**: v1.0
 **日期**: 2026-06-06
-**状态**: Active
-**执行模式**: 长期无人值守持续执行（rally run）
+**状态**: Paused / Maintenance（2026-07-29 用户裁决）
+**执行模式**: 暂停自主推进；仅低频 plateau-guard，默认转其他 goal
 **父目标**: `docs/goal/zero-web.md`（ZeroWeb 总体目标）
 
 > **说明**
@@ -12,6 +12,8 @@
 > **🔗 当前阻塞 + 可执行方案（2026-07-25）**：reftest ~57% plateau（自主 clean-lever 穷尽）。四大阻塞（Phase A / font-stack / P1b / P3）方案见 [`rendering-compat/blockers-resolution-plan-2026-07-25.md`](rendering-compat/blockers-resolution-plan-2026-07-25.md)。**实施入口**：Phase A 首切片（pre-authorized）= [`rendering-compat/phase-a-slice1-inline-block-linebox-mechanism-2026-07-25.md`](rendering-compat/phase-a-slice1-inline-block-linebox-mechanism-2026-07-25.md)；P1b 独立 RFC = [`rendering-compat/p1b-rfc-2026-07-25.md`](rendering-compat/p1b-rfc-2026-07-25.md)。运行时控制面板 = [`rendering-compat/master.md`](rendering-compat/master.md)。
 >
 > **🧭 方向裁决（2026-07-28）**：当前执行策略改为“转投高收益项目 + plateau-guard”。后续 agent 不应再把 WPT 95% 当作短期冲刺目标，也不应在已反复证伪的单点切片上循环。允许继续推进的工作仅限：（1）有明确 driving test、低风险、A/B 零回归的 CSS2/parser/selector clean lever；（2）产品/legacy smoke 的可见稳定性修复；（3）为 Phase A 完整 inline-box-model / IFC coherence 输出可回退实施设计。暂跳过：旧 Phase A 首切片、R109 单点、37-form-controls 单点、font-stack rebuild/M18、P1b JS Bridge 深改、P3 真窗口/GPU 验收、inline SVG/SVG intrinsic sizing、sticky/scroll-snap/动态滚动。旧 2026-07-25 blocker 文档保留作历史依据，不再作为默认开工入口；最新执行方向以 `rendering-compat/master.md` 顶部裁决包为准。
+>
+> **⏸️ 暂停裁决（2026-07-29）**：R2198/R2199/R2200 后确认 rendering-compat 自主推进能力已 comprehensively exhausted：Phase A slice 2+3 default-on 已交付并经 `make test`、product smoke、legacy smoke、全量 chromium Oracle 四重验证（+66 oracle，约 57%→58.8%）；redirect「立即可做」三类（CSS2 clean lever、产品稳定性、Phase A 设计/切片）均已完成或穷尽；后续不再继续 rally 式自主探索，避免陷入死胡同。默认动作改为转其他 goal。仅允许低频 plateau-guard（确认既有收益无漂移、补记 evidence、处理明确回归）。任何结构性方向（font-stack rebuild、vertical-mode 四层协调、taffy replaced/border-box 深改、R109/anonymous block-in-inline、P1b 深改等）必须由用户点名授权后才能开工。
 
 ---
 

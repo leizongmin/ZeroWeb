@@ -1,5 +1,15 @@
 # 渲染兼容性目标 — 运行时控制面板
 
+> **⏸️ 当前裁决（2026-07-29，暂停自主推进 / 转其他 goal）**
+>
+> - **结论**：rendering-compat 自主推进能力已 comprehensively exhausted。R2198 已交付 Phase A slice 2+3 default-on；R2199 全量 chromium Oracle 复核为 net-positive（+66，约 57%→58.8%）且四重绿；R2200 确认 legacy 残余 outlier 属 font-wall/metric coherence，非离散 bug。
+> - **redirect 三类“立即可做”已收口**：CSS2/parser/selector clean lever 已经 9 重 survey 实证穷尽；产品/legacy smoke 已稳定且仅剩已知结构性/字体墙残余；Phase A 设计与可落地 slice 2+3 已完成，继续深入变成结构性多会话重构。
+> - **默认动作**：停止 rally 式自主探索，避免重复扫描和反复试错。后续 agent 若接到 rendering-compat 上下文，默认应转其他 goal，或只做低频 plateau-guard（验证 `make test`、product smoke、legacy smoke、oracle 指标没有漂移）。
+> - **禁止默认开工**：font-stack rebuild（R2025 勿推 / user-blocked）、vertical-mode 四层协调（R1043 谱系，停止条件已触发）、taffy replaced/border-box 深改（R2174，深 multi-session）、R109/anonymous block-in-inline、P1b JS Bridge 深改、SVG intrinsic sizing、sticky/scroll 动态行为等均保持 blocked/deferred。
+> - **解锁条件**：只有用户明确点名授权某个结构性方向，或明确扩展 redirect 允许类别，才可重新开工；否则不要把“fresh probe”“机会性扫描”“补一个小 slice”当作继续推进理由。
+>
+> 旧 2026-07-28 高收益转向块保留作历史依据；本块覆盖它，是后续 agent 的默认执行入口。
+
 > **🧭 当前裁决（2026-07-28，高收益转向）**
 >
 > - **执行模式**：从“持续冲 WPT 95%”切换为 **plateau-guard + 高收益项目**。reftest broad plateau 已接受为阶段性事实；后续只做低风险、可证实、A/B 零回归的 clean lever，或产品/legacy smoke 的可见稳定性修复。
