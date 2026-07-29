@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{CalcExpr, LengthValue, parse_var};
+use zero_css_parser::values::{CalcExpr, LengthValue};
 
 use crate::property::ComputedStyle;
 use crate::property::types::{ColumnRuleWidthComputedValue, FlexBasisValue, LineHeightValue};
@@ -74,47 +74,82 @@ pub fn resolve_length(
     }
 }
 
-/// 解析 var() 引用并解析自定义属性。
+/// 解析 var() 引用并**完全**（含 var() 链，传递）解析自定义属性。
 ///
-/// 如果值包含 var()，从 custom_properties 中查找并替换。
-/// 支持嵌套的 var() 调用和回退值。
+/// 支持：嵌套 var()、回退值、自定义属性链（`--a: var(--b); --b: green` → green）。
+/// **环检测**：var() 引用形成环（直接或间接自引用）→ 返回原值（该 var() 在下游无法
+/// 解析为合法值 → 属性按 invalid-at-computed-value-time 处理 → 继承/初始值），解析有界
+///（无指数膨胀）。driving: WPT variable-declaration-48/49（var() 环致 6GB OOM）。
 pub fn resolve_var(value: &str, custom_properties: &HashMap<String, String>) -> String {
-    // 检查整个值是否就是一个 var() 调用
-    if let Some(var_ref) = parse_var(value) {
-        if let Some(resolved) = custom_properties.get(&var_ref.name) {
-            return resolved.clone();
-        }
-        if let Some(fallback) = &var_ref.fallback {
-            return resolve_var(fallback, custom_properties);
-        }
-        // 无法解析，返回原值
-        return value.to_string();
+    let mut visiting = Vec::new();
+    resolve_var_recursive(value, custom_properties, &mut visiting).unwrap_or_else(|| value.to_string())
+}
+
+/// 递归解析 var()。返回 None 表示该值 invalid at computed-value-time
+///（环引用、或无回退的未定义引用）—— 上层 [`resolve_var`] 据此回退到原值。
+fn resolve_var_recursive(
+    value: &str,
+    custom_properties: &HashMap<String, String>,
+    visiting: &mut Vec<String>,
+) -> Option<String> {
+    if !value.contains("var(") {
+        return Some(value.to_string());
     }
+    substitute_embedded_var(value, custom_properties, visiting)
+}
 
-    // 处理值中嵌入的 var() 调用
-    let mut result = value.to_string();
-    let mut max_iterations = 10; // 防止无限递归
-
-    while max_iterations > 0 {
-        max_iterations -= 1;
-
-        // 查找 var( 的位置
-        let Some(start) = result.find("var(") else {
-            break;
-        };
-
-        // 找到匹配的右括号
-        let Some(end) = find_matching_paren(&result, start + 4) else {
-            break;
-        };
-
-        let inner = &result[start + 4..end];
-        let replacement = resolve_var_inner(inner, custom_properties);
-
-        result = format!("{}{}{}", &result[..start], replacement, &result[end + 1..]);
+/// 解析单个 `var(--name, fallback)` 引用。
+///
+/// - `name` 在解析栈上（环）→ 用回退（解析之），无回退 → None（invalid）。
+/// - `name` 已定义 → 递归完全解析其值（name 入栈做环检测）；其值 invalid → 本引用 invalid。
+/// - `name` 未定义 → 用回退，无回退 → None。
+fn resolve_var_reference(
+    name: &str,
+    fallback: Option<&str>,
+    custom_properties: &HashMap<String, String>,
+    visiting: &mut Vec<String>,
+) -> Option<String> {
+    if visiting.iter().any(|n| n == name) {
+        return fallback.and_then(|f| resolve_var_recursive(f, custom_properties, visiting));
     }
+    if let Some(raw) = custom_properties.get(name) {
+        visiting.push(name.to_string());
+        let resolved = resolve_var_recursive(raw, custom_properties, visiting);
+        visiting.pop();
+        return resolved;
+    }
+    fallback.and_then(|f| resolve_var_recursive(f, custom_properties, visiting))
+}
 
-    result
+/// 替换值中嵌入的所有 var() 调用。任一 var() invalid → 整值 invalid（None）。
+fn substitute_embedded_var(
+    value: &str,
+    custom_properties: &HashMap<String, String>,
+    visiting: &mut Vec<String>,
+) -> Option<String> {
+    let mut result = String::new();
+    let mut idx = 0;
+    while let Some(rel) = value[idx..].find("var(") {
+        let start = idx + rel;
+        result.push_str(&value[idx..start]);
+        let inner_start = start + 4;
+        let end = find_matching_paren(value, inner_start)?;
+        let inner = &value[inner_start..end];
+        let (name, fallback) = split_var_name_fallback(inner);
+        let replacement = resolve_var_reference(name, fallback, custom_properties, visiting)?;
+        result.push_str(&replacement);
+        idx = end + 1;
+    }
+    result.push_str(&value[idx..]);
+    Some(result)
+}
+
+/// 将 var() 内部内容拆为 `(name, Option<fallback>)`（按顶层逗号）。
+fn split_var_name_fallback(inner: &str) -> (&str, Option<&str>) {
+    match find_top_level_comma(inner) {
+        Some(pos) => (inner[..pos].trim(), Some(inner[pos + 1..].trim())),
+        None => (inner.trim(), None),
+    }
 }
 
 /// 在字符串中查找匹配的右括号。
@@ -131,29 +166,6 @@ fn find_matching_paren(s: &str, start: usize) -> Option<usize> {
         i += 1;
     }
     if depth == 0 { Some(i - 1) } else { None }
-}
-
-/// 解析 var() 内部内容。
-fn resolve_var_inner(inner: &str, custom_properties: &HashMap<String, String>) -> String {
-    // 查找顶层逗号（可能有嵌套 var()）
-    let comma_pos = find_top_level_comma(inner);
-    if let Some(pos) = comma_pos {
-        let name = inner[..pos].trim();
-        let fallback = inner[pos + 1..].trim();
-        if let Some(resolved) = custom_properties.get(name) {
-            return resolved.clone();
-        }
-        return resolve_var(fallback, custom_properties);
-    }
-
-    // 没有回退值
-    let name = inner.trim();
-    if let Some(resolved) = custom_properties.get(name) {
-        return resolved.clone();
-    }
-
-    // 无法解析
-    String::new()
 }
 
 /// 查找字符串中顶层的逗号（不在括号内的）。
@@ -575,12 +587,41 @@ mod tests {
 
     #[test]
     fn test_resolve_var_chained() {
+        // var() 链应**完全**（传递）解析，而非只展开一层。
         let mut custom = HashMap::new();
         custom.insert("--a".to_string(), "var(--b)".to_string());
         custom.insert("--b".to_string(), "resolved".to_string());
 
         let result = resolve_var("var(--a)", &custom);
-        assert_eq!(result, "var(--b)"); // 只展开一层
+        assert_eq!(result, "resolved");
+    }
+
+    #[test]
+    fn test_resolve_var_cycle_returns_original() {
+        // var() 环（间接自引用）→ invalid at computed-value-time → 返回原值（含 var()，
+        // 下游按非法处理 → 继承/初始）。解析必须**有界**（旧实现指数膨胀致 OOM，
+        // driving: WPT variable-declaration-48/49）。
+        let mut custom = HashMap::new();
+        custom.insert("--a".to_string(), "red var(--b)".to_string());
+        custom.insert("--b".to_string(), "var(--c)".to_string());
+        custom.insert("--c".to_string(), "var(--d)".to_string());
+        custom.insert("--d".to_string(), "var(--e)".to_string());
+        custom.insert("--e".to_string(), "var(--a)".to_string());
+        custom.insert("--f".to_string(), "var(--e)".to_string());
+
+        let result = resolve_var("var(--f)", &custom);
+        // 环 → 返回原值（不应膨胀、不应挂起）
+        assert_eq!(result, "var(--f)");
+        assert!(result.len() < 100, "环引用解析结果不应膨胀: len={}", result.len());
+    }
+
+    #[test]
+    fn test_resolve_var_self_cycle_returns_original() {
+        // 直接自引用 `--a: var(--a)` → 环 → 原值。
+        let mut custom = HashMap::new();
+        custom.insert("--a".to_string(), "var(--a)".to_string());
+        let result = resolve_var("var(--a)", &custom);
+        assert_eq!(result, "var(--a)");
     }
 
     // ── Percentage 和 Auto 测试 ──

@@ -1423,10 +1423,13 @@ fn parse_inline_style(style_attr: &str) -> Vec<(String, String, bool)> {
     declarations
 }
 
-/// 从级联值中收集自定义属性，并解析自定义属性值中的 var() 引用。
+/// 从级联值中收集自定义属性（继承父元素 + 当前元素自身声明覆盖）。
 ///
-/// 自定义属性是继承属性：先继承父元素（`inherited`）的自定义属性，再用当前元素
-/// 自身级联声明覆盖（自身优先），最后迭代解析值中的 var() 引用（可引用继承来的属性）。
+/// 自定义属性是继承属性：先继承父元素（`inherited`），再用当前元素自身级联声明覆盖
+///（自身优先）。值中的 var() 引用**不在收集期预解析**——[`computed::resolve_var`] 在
+/// 使用点（常规属性解析时）做完全传递解析 + 环检测，使用元素自身的 custom_properties
+/// 上下文（更正确：子元素可覆盖被引用的变量）。旧实现的收集期迭代预解析在 var() 环引用
+/// 下指数膨胀 → 6GB OOM（driving: WPT variable-declaration-48/49），已移除。
 fn gather_custom_properties(
     cascaded: &HashMap<String, String>,
     inherited: &HashMap<String, String>,
@@ -1435,23 +1438,6 @@ fn gather_custom_properties(
     for (k, v) in cascaded.iter().filter(|(k, _)| k.starts_with("--")) {
         props.insert(k.clone(), v.clone());
     }
-
-    // 迭代解析自定义属性值中的 var() 引用
-    let mut changed = true;
-    let mut max_iter = 10;
-    while changed && max_iter > 0 {
-        max_iter -= 1;
-        changed = false;
-        let snapshot = props.clone();
-        for value in props.values_mut() {
-            let resolved = computed::resolve_var(value, &snapshot);
-            if resolved != *value {
-                *value = resolved;
-                changed = true;
-            }
-        }
-    }
-
     props
 }
 
