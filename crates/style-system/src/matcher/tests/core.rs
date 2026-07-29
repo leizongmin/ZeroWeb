@@ -538,6 +538,100 @@ fn test_matches_disabled_enabled_required_optional() {
     );
 }
 
+#[test]
+fn test_matches_read_only_read_write() {
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+
+    // <input>（默认 text，可编辑）→ :read-write；非 :read-only
+    let in_text = doc.create_element("input");
+    doc.append_child(body, in_text).unwrap();
+
+    // <input type="password">（可编辑）→ :read-write
+    let in_pw = doc.create_element("input");
+    doc.set_attribute(in_pw, "type", "password");
+    doc.append_child(body, in_pw).unwrap();
+
+    // <input readonly> → :read-only
+    let in_ro = doc.create_element("input");
+    doc.set_attribute(in_ro, "readonly", "");
+    doc.append_child(body, in_ro).unwrap();
+
+    // <input disabled> → :read-only（不可编辑）
+    let in_dis = doc.create_element("input");
+    doc.set_attribute(in_dis, "disabled", "");
+    doc.append_child(body, in_dis).unwrap();
+
+    // <input type="checkbox">（非文本可编辑类型）→ :read-only
+    let in_cb = doc.create_element("input");
+    doc.set_attribute(in_cb, "type", "checkbox");
+    doc.append_child(body, in_cb).unwrap();
+
+    // <textarea>（可编辑）→ :read-write
+    let ta = doc.create_element("textarea");
+    doc.append_child(body, ta).unwrap();
+
+    // <textarea readonly> → :read-only
+    let ta_ro = doc.create_element("textarea");
+    doc.set_attribute(ta_ro, "readonly", "");
+    doc.append_child(body, ta_ro).unwrap();
+
+    // <p>（非表单控件，默认不可编辑）→ :read-only
+    let p = doc.create_element("p");
+    doc.append_child(body, p).unwrap();
+
+    // :read-write
+    assert!(
+        matches_selector(&doc, in_text, &simple_pseudo("read-write")),
+        "input（默认 text 可编辑）应匹配 :read-write"
+    );
+    assert!(
+        matches_selector(&doc, in_pw, &simple_pseudo("read-write")),
+        "input[type=password] 应匹配 :read-write"
+    );
+    assert!(
+        matches_selector(&doc, ta, &simple_pseudo("read-write")),
+        "textarea 应匹配 :read-write"
+    );
+    assert!(
+        !matches_selector(&doc, in_ro, &simple_pseudo("read-write")),
+        "input[readonly] 不应匹配 :read-write"
+    );
+    assert!(
+        !matches_selector(&doc, in_dis, &simple_pseudo("read-write")),
+        "input[disabled] 不应匹配 :read-write"
+    );
+    assert!(
+        !matches_selector(&doc, in_cb, &simple_pseudo("read-write")),
+        "input[type=checkbox] 非可编辑类型，不应匹配 :read-write"
+    );
+    assert!(
+        !matches_selector(&doc, p, &simple_pseudo("read-write")),
+        "p 非表单控件，不应匹配 :read-write"
+    );
+
+    // :read-only（:read-write 的补集）
+    assert!(
+        matches_selector(&doc, p, &simple_pseudo("read-only")),
+        "p 应匹配 :read-only"
+    );
+    assert!(
+        matches_selector(&doc, in_ro, &simple_pseudo("read-only")),
+        "input[readonly] 应匹配 :read-only"
+    );
+    assert!(
+        matches_selector(&doc, in_cb, &simple_pseudo("read-only")),
+        "input[type=checkbox] 应匹配 :read-only"
+    );
+    assert!(
+        !matches_selector(&doc, in_text, &simple_pseudo("read-only")),
+        "可编辑 input 不应匹配 :read-only"
+    );
+    assert!(
+        !matches_selector(&doc, ta, &simple_pseudo("read-only")),
+        "可编辑 textarea 不应匹配 :read-only"
+    );
+}
+
 /// DashMatch (`|=`) 在 XML 模式下也应大小写敏感（WPT attribute-value-selector-009）。
 #[test]
 fn test_matches_attribute_dashmatch_case_sensitivity_xml() {

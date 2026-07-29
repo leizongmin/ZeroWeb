@@ -268,6 +268,8 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             "enabled" => is_enabled(doc, element),
             "required" => is_required(doc, element),
             "optional" => is_optional(doc, element),
+            "read-only" => is_read_only(doc, element),
+            "read-write" => is_read_write(doc, element),
             _ => false, // 不支持的伪类
         },
         PseudoClassSelector::Not(selectors) => {
@@ -502,6 +504,55 @@ fn is_optional(doc: &Document, element: NodeId) -> bool {
         None => return false,
     };
     is_requireable_tag(&tag) && doc.get_attribute(element, "required").is_none()
+}
+
+/// 文本可编辑的 input type（HTML spec「mutable」文本输入集；button/checkbox/radio/file/
+/// hidden/range/color/image/submit/reset 等非文本可编辑，不在列）。
+fn is_text_editable_input_type(ty: &str) -> bool {
+    matches!(
+        ty,
+        "" | "text"
+            | "search"
+            | "url"
+            | "tel"
+            | "email"
+            | "password"
+            | "date"
+            | "month"
+            | "week"
+            | "time"
+            | "datetime-local"
+            | "number"
+    )
+}
+
+/// `:read-write` 匹配（CSS Basic UI）：可编辑表单文本控件——
+/// `<input>`（文本可编辑 type）或 `<textarea>`，无 `readonly`/`disabled`。
+/// 注：`contenteditable` 元素未实现（需 host 层动态状态）。
+fn is_read_write(doc: &Document, element: NodeId) -> bool {
+    let tag = match element_tag_name(doc, element) {
+        Some(t) => t,
+        None => return false,
+    };
+    if doc.get_attribute(element, "readonly").is_some() || doc.get_attribute(element, "disabled").is_some() {
+        return false;
+    }
+    match tag.as_str() {
+        "textarea" => true,
+        "input" => {
+            let ty = doc
+                .get_attribute(element, "type")
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            is_text_editable_input_type(&ty)
+        }
+        _ => false,
+    }
+}
+
+/// `:read-only` 匹配：非 `:read-write`（所有不可编辑元素，含 `<p>`/`<div>` 等非表单元素）。
+fn is_read_only(doc: &Document, element: NodeId) -> bool {
+    !is_read_write(doc, element)
 }
 
 /// 检查元素是否是同类型中的第一个。
