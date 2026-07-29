@@ -23,6 +23,15 @@ pub fn parse_supports_condition(input: &str) -> Option<SupportsCondition> {
 
 /// 解析 or 表达式（最低优先级）。
 fn parse_or_expression(input: &str) -> Option<SupportsCondition> {
+    // CSS Conditional §7：同一括号层内 `and` 与 `or` 不可混用——条件须为
+    // `in-parens (and in-parens)*` 或 `in-parens (or in-parens)*`。混用 → 非法 → None
+    //（整条 @supports 块不应用）。本函数在每个层级（含 parse_primary 对括号内的递归调用）
+    // 入口校验，故嵌套混用亦被拒。driving: WPT css-supports-013 `(A) and (B) or (C)`。
+    let (has_and, has_or) = top_level_ops(input);
+    if has_and && has_or {
+        return None;
+    }
+
     let parts = split_top_level(input, " or ");
     if parts.len() > 1 {
         let conditions: Vec<SupportsCondition> = parts
@@ -38,6 +47,37 @@ fn parse_or_expression(input: &str) -> Option<SupportsCondition> {
         return Some(SupportsCondition::Or(conditions));
     }
     parse_and_expression(input)
+}
+
+/// 检测字符串**顶层**（括号外）是否含 ` and ` / ` or ` 运算符。
+fn top_level_ops(input: &str) -> (bool, bool) {
+    let lower = input.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut depth = 0i32;
+    let mut has_and = false;
+    let mut has_or = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'(' => depth += 1,
+            b')' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => {
+                if i + 5 <= bytes.len() && &lower[i..i + 5] == " and " {
+                    has_and = true;
+                    i += 5;
+                    continue;
+                }
+                if i + 4 <= bytes.len() && &lower[i..i + 4] == " or " {
+                    has_or = true;
+                    i += 4;
+                    continue;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    (has_and, has_or)
 }
 
 /// 解析 and 表达式。
@@ -209,5 +249,38 @@ mod tests {
     #[test]
     fn test_parse_empty() {
         assert_eq!(parse_supports_condition(""), None);
+    }
+
+    #[test]
+    fn test_parse_mixed_and_or_invalid() {
+        // CSS Conditional §7：顶层 and/or 不可混用（须全 and 或全 or，否则非法 → None，
+        // 整条 @supports 块不应用）。driving: WPT css-supports-013
+        // `(A) and (B) or (C)`。
+        assert_eq!(
+            parse_supports_condition("(color: green) and (color: green) or (color: green)"),
+            None
+        );
+        assert_eq!(
+            parse_supports_condition("(color: green) or (color: green) and (color: green)"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_parse_nested_mixed_in_parens_invalid() {
+        // 括号内顶层 and/or 混用同样非法（递归层级独立校验）。
+        assert_eq!(
+            parse_supports_condition("((color: green) and (color: green) or (color: green))"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_parse_parenthesized_mix_is_valid() {
+        // `(A and B) or C` 合法：顶层仅 or；and 在括号内（非顶层）。
+        let cond = parse_supports_condition("(color: red) and (color: blue) or (color: green)");
+        // 注意：上一行的 `(A) and (B) or (C)` 是非法（顶层混用）；这里改用合法形式
+        let cond = parse_supports_condition("((color: red) and (color: blue)) or (color: green)");
+        assert!(cond.is_some(), "括号包裹的 and 链与 or 混用合法");
     }
 }
