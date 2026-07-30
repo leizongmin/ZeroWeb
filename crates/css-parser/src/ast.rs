@@ -320,6 +320,9 @@ pub enum SupportsCondition {
     Or(Vec<SupportsCondition>),
     /// 逻辑非：`not <cond>`。
     Not(Box<SupportsCondition>),
+    /// 通用括号：`( <any-value> )` 非合法 condition/feature 时为 general-enclosed，
+    /// 恒求值为 false（CSS Conditional §7）。如 `(@page)`、`()`。
+    GeneralEnclosed(String),
 }
 
 // ── @container ──────────────────────────────────────────────────────

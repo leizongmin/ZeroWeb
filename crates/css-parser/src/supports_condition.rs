@@ -202,7 +202,9 @@ fn parse_primary(input: &str) -> Option<SupportsCondition> {
             let value = inner[colon_pos + 1..].trim().to_string();
             return Some(SupportsCondition::Property(property, value));
         }
-        return None;
+        // 非合法 condition/feature 的括号内容 → general-enclosed（恒求值 false）。
+        // driving: WPT css-supports-032/033/034/040 `(@page)` / `()`。
+        return Some(SupportsCondition::GeneralEnclosed(inner.to_string()));
     }
 
     // 裸形式（无括号）→ feature 须在括号内，非法
@@ -368,6 +370,36 @@ mod tests {
         // `not` 取单个 in-parens；`not not (X)` 中外层 not 的操作数 `not (X)` 非 in-parens
         // → 非法 → None。driving: WPT css-supports-017。
         assert_eq!(parse_supports_condition("not not (color: green)"), None);
+    }
+
+    #[test]
+    fn test_parse_general_enclosed_is_false_not_inverts() {
+        // CSS Conditional §7：`(<any-value>)` 非合法 condition/feature 时为 general-enclosed，
+        // 恒求值为 false；故 `not (@page)` / `not ()` 求值为 true（块应用）。
+        // driving: WPT css-supports-032/033/034/040。parse 须返回 Some（非 None）。
+        assert!(
+            parse_supports_condition("(@page)").is_some(),
+            "`(@page)` 应解析为 general-enclosed"
+        );
+        assert!(
+            parse_supports_condition("()").is_some(),
+            "`()` 应解析为 general-enclosed"
+        );
+        assert!(
+            parse_supports_condition("not (@page)").is_some(),
+            "`not (@page)` 应解析（求值 true）"
+        );
+        assert!(
+            parse_supports_condition("not ()").is_some(),
+            "`not ()` 应解析（求值 true）"
+        );
+    }
+
+    #[test]
+    fn test_parse_general_enclosed_regression_property_still_works() {
+        // 回归：合法 feature 仍解析为 Property，不误判为 general-enclosed。
+        let cond = parse_supports_condition("(color: green)");
+        assert!(matches!(cond, Some(SupportsCondition::Property(_, _))));
     }
 
     #[test]

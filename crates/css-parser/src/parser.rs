@@ -1756,11 +1756,26 @@ impl<'a> Parser<'a> {
     fn consume_supports_rule(&mut self) -> Option<SupportsRule> {
         self.skip_whitespace();
 
-        // 收集 prelude 文本（直到 {）
+        // 收集 prelude 文本（直到**括号外**的 `{`）。条件内可能含嵌套 `(`/`[`/`{` 或函数
+        // `selector(...)`/`func(...)`（Function token 自带开括号），故须按括号深度区分条件
+        // 内容与规则体起始。开括号类（LParen / Function / LBracket / 嵌套 LBrace）+1，
+        // 闭括号类（RParen / RBracket / RBrace）-1，顶层 LBrace（depth==0）= 规则体起始。
+        // driving: WPT css-supports-033/034 `not ({ ... })`；selector() regression。
         let mut prelude = String::new();
+        let mut depth = 0i32;
         loop {
             match self.peek() {
-                Token::LBrace => break,
+                Token::LBrace if depth == 0 => break,
+                Token::LParen | Token::Function(_) | Token::LBracket | Token::LBrace => {
+                    depth += 1;
+                    prelude.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+                Token::RParen | Token::RBracket | Token::RBrace => {
+                    depth = depth.saturating_sub(1);
+                    prelude.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
                 Token::Eof => return None,
                 Token::Whitespace => {
                     prelude.push(' ');

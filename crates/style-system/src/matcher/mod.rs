@@ -1321,6 +1321,8 @@ fn evaluate_supports_condition(condition: &zero_css_parser::ast::SupportsConditi
         SupportsCondition::And(conditions) => conditions.iter().all(evaluate_supports_condition),
         SupportsCondition::Or(conditions) => conditions.iter().any(evaluate_supports_condition),
         SupportsCondition::Not(inner) => !evaluate_supports_condition(inner),
+        // general-enclosed（`(@page)` / `()` 等）恒求值为 false（CSS Conditional §7）。
+        SupportsCondition::GeneralEnclosed(_) => false,
     }
 }
 
@@ -1368,6 +1370,18 @@ fn is_valid_selector_parse(input: &str, selectors: &[zero_css_parser::ast::Selec
     true
 }
 
+/// 剥离值末尾的 `!important` / `! important`（CSS 语法 §8.2，`!` 与 `important` 间允许空白）。
+/// 用于 @supports 声明支持性求值（`!important` 不影响是否支持）。
+fn strip_important(value: &str) -> &str {
+    let lower = value.to_ascii_lowercase();
+    if let Some(bang) = lower.rfind('!') {
+        if lower[bang + 1..].trim_start() == "important" {
+            return value[..bang].trim_end();
+        }
+    }
+    value
+}
+
 /// 检查 CSS 属性值对是否受支持。
 ///
 /// 已知属性且值能被解析即为"支持"。
@@ -1375,7 +1389,9 @@ fn is_property_supported(property: &str, value: &str) -> bool {
     use zero_css_parser::values::*;
 
     let lower = property.to_ascii_lowercase();
-    let trimmed = value.trim();
+    // @supports 声明可带 `!important`（CSS Conditional §7），求值支持性时忽略之。
+    // driving: WPT css-supports-004 `(color: green !important)`。
+    let trimmed = strip_important(value).trim();
 
     match lower.as_str() {
         // 布尔特性：有值即为支持
