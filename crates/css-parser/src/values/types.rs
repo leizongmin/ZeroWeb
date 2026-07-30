@@ -94,17 +94,19 @@ pub struct ColorMixComponent {
 /// RCS（CSS Color 5 相对色）非 identity 规范：`<func>(from <origin> <ch1> <ch2> <ch3> [/ <alpha>])`。
 ///
 /// currentColor origin 保留未解析（paint 时按元素色解析，支持 inherit 透传）。rgb/rgba/hsl/hsla +
-/// lab/lch/oklab/oklch 输出空间。driving: css-color relative-currentcolor-rgb-02 / hsl-02。
+/// lab/lch/oklab/oklch/color() 输出空间。driving: css-color relative-currentcolor-rgb-02 / hsl-02。
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelativeColorSpec {
     /// 输出函数（决定通道语义与单位）。
     pub func: RelativeColorFunc,
     /// origin 颜色（可为 currentColor，运行时解析）。
     pub origin: ColorValue,
-    /// 3 个输出通道（rgb: r/g/b；hsl: h/s/l；lab/oklab: l/a/b；lch/oklch: l/c/h）。
+    /// 3 个输出通道（rgb: r/g/b；hsl: h/s/l；lab/oklab: l/a/b；lch/oklch: l/c/h；color: r/g/b 或 x/y/z）。
     pub channels: [RcsChannel; 3],
     /// alpha（省略 = 用 origin alpha）。
     pub alpha: RcsAlpha,
+    /// color() 的预定义色彩空间名（仅 func==Color 时 Some，如 "display-p3"/"xyz-d50"）；其余函数 None。
+    pub space: Option<String>,
 }
 
 /// RCS 输出函数。
@@ -122,6 +124,8 @@ pub enum RelativeColorFunc {
     Oklab,
     /// oklch() —— L∈[0,1]，C（常见 0-0.4），h 为度。
     Oklch,
+    /// color() —— 预定义色彩空间（space 字段），通道为 0-1（rect 空间 r/g/b；xyz 空间 x/y/z）。
+    Color,
 }
 
 /// RCS 单个输出通道。

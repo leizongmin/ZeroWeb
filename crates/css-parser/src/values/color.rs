@@ -649,7 +649,7 @@ const XYZ_D65_TO_D50: [f64; 9] = [
 ];
 
 /// 把预定义颜色空间 3 分量转换为 sRGB u8。返回 None 表示不支持的空间（rec2020/prophoto/未知）。
-fn convert_predefined_to_srgb(space: &str, c0: f64, c1: f64, c2: f64) -> Option<(u8, u8, u8)> {
+pub fn convert_predefined_to_srgb(space: &str, c0: f64, c1: f64, c2: f64) -> Option<(u8, u8, u8)> {
     let (lr, lg, lb) = match space {
         "srgb" => {
             // 已是 sRGB gamma 分量（0-1），直接转 u8。
@@ -741,6 +741,113 @@ fn prophoto_decode(c: f64) -> f64 {
     } else {
         safe_powf(c, 1.8)
     }
+}
+
+/// 3×3 矩阵求逆（行列式 + 伴随矩阵法）。用于 color() RCS 的 sRGB→native 反向转换——
+/// 数值化从正向矩阵推导，避免手算逆矩阵的精度/转写错误（driving: color() RCS 非 identity）。
+fn mat3_inverse(m: [f64; 9]) -> [f64; 9] {
+    let det =
+        m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6]);
+    if det.abs() < 1e-15 {
+        return [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]; // 退化 → 单位阵（保守）
+    }
+    let inv_det = 1.0 / det;
+    [
+        (m[4] * m[8] - m[5] * m[7]) * inv_det,
+        (m[2] * m[7] - m[1] * m[8]) * inv_det,
+        (m[1] * m[5] - m[2] * m[4]) * inv_det,
+        (m[5] * m[6] - m[3] * m[8]) * inv_det,
+        (m[0] * m[8] - m[2] * m[6]) * inv_det,
+        (m[2] * m[3] - m[0] * m[5]) * inv_det,
+        (m[3] * m[7] - m[4] * m[6]) * inv_det,
+        (m[1] * m[6] - m[0] * m[7]) * inv_det,
+        (m[0] * m[4] - m[1] * m[3]) * inv_det,
+    ]
+}
+
+/// a98-rgb 传递函数逆（线性光 → 分量）：正向 gamma 563/256，逆 = 256/563。
+fn a98_encode(c: f64) -> f64 {
+    safe_powf(c, 256.0 / 563.0)
+}
+
+/// BT.2020 传递函数逆（线性光 → 分量）；rec2020_decode 的分段逆。
+fn rec2020_encode(lin: f64) -> f64 {
+    const ALPHA: f64 = 1.09929682680944;
+    const BETA: f64 = 0.018053968510807;
+    if lin < BETA {
+        lin * 4.5
+    } else {
+        ALPHA * safe_powf(lin, 0.45) - ALPHA + 1.0
+    }
+}
+
+/// prophoto-rgb 传递函数逆（线性光 → 分量）；prophoto_decode 的分段逆。
+/// toe 段边界：c=0.03125 → lin=0.03125/16=0.001953125。
+fn prophoto_encode(lin: f64) -> f64 {
+    if lin < 0.001953125 {
+        lin * 16.0
+    } else {
+        safe_powf(lin, 1.0 / 1.8)
+    }
+}
+
+/// sRGB u8 → 预定义色彩空间分量（color() RCS origin 解析）：返回 (c0,c1,c2)。
+/// rect 空间返回 gamma/编码信号分量（0-1），xyz 空间返回 XYZ 分量。None = 未知空间。
+/// 与 [`convert_predefined_to_srgb`] 互为逆运算（数值上经 `mat3_inverse` 从正向矩阵推导）。
+pub fn srgb_u8_to_predefined(space: &str, r: u8, g: u8, b: u8) -> Option<(f64, f64, f64)> {
+    let lr = srgb_decode(r as f64 / 255.0);
+    let lg = srgb_decode(g as f64 / 255.0);
+    let lb = srgb_decode(b as f64 / 255.0);
+    let comps = match space {
+        "srgb" => (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0),
+        "srgb-linear" => (lr, lg, lb),
+        "display-p3" => {
+            let (x, y, z) = mat3_mul(SRGB_TO_XYZ, lr, lg, lb);
+            let (c0, c1, c2) = mat3_mul(mat3_inverse(P3_TO_XYZ), x, y, z);
+            (srgb_encode(c0), srgb_encode(c1), srgb_encode(c2))
+        }
+        "display-p3-linear" => {
+            let (x, y, z) = mat3_mul(SRGB_TO_XYZ, lr, lg, lb);
+            mat3_mul(mat3_inverse(P3_TO_XYZ), x, y, z)
+        }
+        "a98-rgb" => {
+            let (x, y, z) = mat3_mul(SRGB_TO_XYZ, lr, lg, lb);
+            let (c0, c1, c2) = mat3_mul(mat3_inverse(A98_TO_XYZ), x, y, z);
+            (a98_encode(c0), a98_encode(c1), a98_encode(c2))
+        }
+        "a98-rgb-linear" => {
+            let (x, y, z) = mat3_mul(SRGB_TO_XYZ, lr, lg, lb);
+            mat3_mul(mat3_inverse(A98_TO_XYZ), x, y, z)
+        }
+        "rec2020" => {
+            let (x, y, z) = mat3_mul(SRGB_TO_XYZ, lr, lg, lb);
+            let (c0, c1, c2) = mat3_mul(mat3_inverse(REC2020_TO_XYZ), x, y, z);
+            (rec2020_encode(c0), rec2020_encode(c1), rec2020_encode(c2))
+        }
+        "rec2020-linear" => {
+            let (x, y, z) = mat3_mul(SRGB_TO_XYZ, lr, lg, lb);
+            mat3_mul(mat3_inverse(REC2020_TO_XYZ), x, y, z)
+        }
+        "prophoto-rgb" => {
+            // prophoto 矩阵定义于 XYZ-D50：线性 sRGB → XYZ-D65 → XYZ-D50 → prophoto 线性 → encode。
+            let (x, y, z) = mat3_mul(SRGB_TO_XYZ, lr, lg, lb);
+            let (x, y, z) = mat3_mul(XYZ_D65_TO_D50, x, y, z);
+            let (c0, c1, c2) = mat3_mul(mat3_inverse(PROPHOTO_TO_XYZ), x, y, z);
+            (prophoto_encode(c0), prophoto_encode(c1), prophoto_encode(c2))
+        }
+        "prophoto-rgb-linear" => {
+            let (x, y, z) = mat3_mul(SRGB_TO_XYZ, lr, lg, lb);
+            let (x, y, z) = mat3_mul(XYZ_D65_TO_D50, x, y, z);
+            mat3_mul(mat3_inverse(PROPHOTO_TO_XYZ), x, y, z)
+        }
+        "xyz" | "xyz-d65" => mat3_mul(SRGB_TO_XYZ, lr, lg, lb),
+        "xyz-d50" => {
+            let (x, y, z) = mat3_mul(SRGB_TO_XYZ, lr, lg, lb);
+            mat3_mul(XYZ_D65_TO_D50, x, y, z)
+        }
+        _ => return None,
+    };
+    Some(comps)
 }
 
 /// 解析 hsl() / hsla() 函数。
@@ -1047,7 +1154,8 @@ fn parse_relative_color(value: &str) -> Option<ColorValue> {
         "lch" => RelativeColorFunc::Lch,
         "oklab" => RelativeColorFunc::Oklab,
         "oklch" => RelativeColorFunc::Oklch,
-        _ => return None, // color() 非 identity defer（per-space 通道计算，独立 slice）
+        "color" => RelativeColorFunc::Color,
+        _ => return None,
     };
     let inner = strip_css_comments(value.get(open + 1..close)?)
         .trim()
@@ -1064,10 +1172,20 @@ fn parse_relative_color(value: &str) -> Option<ColorValue> {
             None => (channels_str, RcsAlpha::Origin),
         }
     };
-    let comps: Vec<&str> = if main.contains(',') {
+    // color() 的 main 形如 `<space> <ch1> <ch2> <ch3>`：首 token 为色彩空间名，其余为 3 通道。
+    let mut comps: Vec<&str> = if main.contains(',') {
         main.split(',').map(str::trim).filter(|s| !s.is_empty()).collect()
     } else {
         main.split_whitespace().collect()
+    };
+    let space = if func == RelativeColorFunc::Color {
+        // 首个 token 为色彩空间名（display-p3 / srgb / xyz-d50 …）。
+        if comps.is_empty() {
+            return None;
+        }
+        Some(comps.remove(0).to_string())
+    } else {
+        None
     };
     if comps.len() != 3 {
         return None;
@@ -1082,6 +1200,7 @@ fn parse_relative_color(value: &str) -> Option<ColorValue> {
         origin,
         channels,
         alpha,
+        space,
     })))
 }
 
@@ -1094,7 +1213,7 @@ fn parse_rcs_channel(s: &str, func: RelativeColorFunc, idx: usize) -> Option<Rcs
         return Some(RcsChannel::None);
     }
     // 关键字引用：记录所引用的 origin 通道序。
-    // rgb r/g/b=0/1/2；hsl h/s/l；lab/oklab l/a/b；lch/oklch l/c/h。
+    // rgb r/g/b=0/1/2；hsl h/s/l；lab/oklab l/a/b；lch/oklch l/c/h；color r/g/b 或 x/y/z（均 0/1/2）。
     let kw_ref = match (func, s.to_ascii_lowercase().as_str()) {
         (RelativeColorFunc::Rgb, "r") => Some(0u8),
         (RelativeColorFunc::Rgb, "g") => Some(1),
@@ -1114,6 +1233,9 @@ fn parse_rcs_channel(s: &str, func: RelativeColorFunc, idx: usize) -> Option<Rcs
         (RelativeColorFunc::Oklch, "l") => Some(0),
         (RelativeColorFunc::Oklch, "c") => Some(1),
         (RelativeColorFunc::Oklch, "h") => Some(2),
+        (RelativeColorFunc::Color, "r" | "x") => Some(0),
+        (RelativeColorFunc::Color, "g" | "y") => Some(1),
+        (RelativeColorFunc::Color, "b" | "z") => Some(2),
         _ => None,
     };
     if let Some(i) = kw_ref {
@@ -1130,8 +1252,21 @@ fn parse_rcs_channel(s: &str, func: RelativeColorFunc, idx: usize) -> Option<Rcs
         RelativeColorFunc::Lab | RelativeColorFunc::Lch | RelativeColorFunc::Oklab | RelativeColorFunc::Oklch => {
             parse_rcs_number_wide(s, func, idx)?
         }
+        // color() 通道为 0-1（`%` → p/100，裸数字 → 0-1，可越界/负）。
+        RelativeColorFunc::Color => parse_rcs_color_component(s)?,
     };
     Some(RcsChannel::Num(v))
+}
+
+/// 解析 color() RCS 通道数字字面量：`p%` → p/100，裸数字 → 0-1 浮点（可负/越界，回转时钳）。
+fn parse_rcs_color_component(s: &str) -> Option<f64> {
+    let s = s.trim();
+    if let Some(pct) = s.strip_suffix('%') {
+        let p: f64 = pct.trim().parse().ok()?;
+        Some(p / 100.0)
+    } else {
+        s.parse().ok()
+    }
 }
 
 /// 解析 rgb 通道数字字面量：`p%` → p/100*255，裸数字 → 0-255（不钳制，paint 时钳）。

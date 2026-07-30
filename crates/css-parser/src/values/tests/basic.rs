@@ -1503,8 +1503,15 @@ fn test_parse_relative_color_non_identity() {
         }
         other => panic!("hsl 覆盖应为 RelativeColor，实际: {:?}", other),
     }
-    // color() 非 identity 仍 defer → None（per-space 通道计算，独立 slice）。
-    assert!(super::super::parse_color("color(from currentColor srgb 0.1 0.2 0.3)").is_none());
+    // color() 非 identity 现解析为 RelativeColor（R2277；space + r/g/b 通道；identity 仍短路为 origin）。
+    let c = super::super::parse_color("color(from currentColor srgb 0.1 0.2 0.3)").unwrap();
+    match c {
+        ColorValue::RelativeColor(spec) => {
+            assert_eq!(spec.func, RelativeColorFunc::Color);
+            assert_eq!(spec.space.as_deref(), Some("srgb"));
+        }
+        other => panic!("color() 非 identity 应为 RelativeColor，实际: {:?}", other),
+    }
     // 非 from 形式不受影响（常规 rgb）。
     assert!(matches!(
         super::super::parse_color("rgb(1 2 3)"),
@@ -1571,6 +1578,60 @@ fn test_parse_relative_color_wide_gamut() {
     ));
     // 通道数 ≠ 3 → None。
     assert!(super::super::parse_color("lab(from red 50 a)").is_none());
+}
+
+#[test]
+/// R2277：color() RCS 非 identity 解析——色彩空间名 + r/g/b|x/y/z 通道引用 + 0-1 数字/% 覆盖。
+fn test_parse_relative_color_color_function() {
+    use crate::values::{ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc};
+    // color(from red display-p3 0.5 g b) —— space=display-p3，r=0.5 覆盖，g/b 引用 origin。
+    let c = super::super::parse_color("color(from red display-p3 0.5 g b)").unwrap();
+    match c {
+        ColorValue::RelativeColor(spec) => {
+            assert_eq!(spec.func, RelativeColorFunc::Color);
+            assert_eq!(spec.space.as_deref(), Some("display-p3"));
+            assert!(
+                matches!(spec.channels[0], RcsChannel::Num(v) if (v - 0.5).abs() < 1e-9),
+                "r → Num(0.5)"
+            );
+            assert!(matches!(spec.channels[1], RcsChannel::Ref(1)), "g → Ref(1)");
+            assert!(matches!(spec.channels[2], RcsChannel::Ref(2)), "b → Ref(2)");
+            assert_eq!(spec.alpha, RcsAlpha::Origin);
+        }
+        other => panic!("color() RCS 应为 RelativeColor，实际: {:?}", other),
+    }
+    // xyz 关键字（非 identity）：color(from blue xyz-d50 x y 0.3) —— x/y 引用，z=0.3 覆盖。
+    let c = super::super::parse_color("color(from blue xyz-d50 x y 0.3)").unwrap();
+    match c {
+        ColorValue::RelativeColor(spec) => {
+            assert_eq!(spec.space.as_deref(), Some("xyz-d50"));
+            assert!(matches!(spec.channels[0], RcsChannel::Ref(0)), "x → Ref(0)");
+            assert!(matches!(spec.channels[1], RcsChannel::Ref(1)), "y → Ref(1)");
+            assert!(
+                matches!(spec.channels[2], RcsChannel::Num(v) if (v - 0.3).abs() < 1e-9),
+                "z → Num(0.3)"
+            );
+        }
+        other => panic!("xyz color() RCS 应为 RelativeColor，实际: {:?}", other),
+    }
+    // 百分比：50% of 1 = 0.5。
+    let c = super::super::parse_color("color(from red srgb 50% g b)").unwrap();
+    match c {
+        ColorValue::RelativeColor(spec) => {
+            assert!(
+                matches!(spec.channels[0], RcsChannel::Num(v) if (v - 0.5).abs() < 1e-9),
+                "50% → Num(0.5)"
+            );
+        }
+        other => panic!("百分比 color() RCS 应为 RelativeColor，实际: {:?}", other),
+    }
+    // identity（channels 恰为 r g b）仍短路为 origin，不产生 RelativeColor。
+    assert!(matches!(
+        super::super::parse_color("color(from red srgb r g b)"),
+        Some(ColorValue::Rgba(255, 0, 0, 255))
+    ));
+    // 通道数 ≠ 3 → None。
+    assert!(super::super::parse_color("color(from red display-p3 0.5 g)").is_none());
 }
 
 #[test]

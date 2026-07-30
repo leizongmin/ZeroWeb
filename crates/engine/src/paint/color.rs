@@ -1,9 +1,9 @@
 //! 颜色转换工具 — CSS ColorValue 到渲染层 Color 的转换。
 
 use zero_css_parser::values::{
-    ColorMixSpace, ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec, lab_to_srgb_u8,
-    lch_to_srgb_u8, oklab_to_srgb_u8, oklch_to_srgb_u8, srgb_u8_to_lab, srgb_u8_to_lch, srgb_u8_to_oklab,
-    srgb_u8_to_oklch,
+    ColorMixSpace, ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec, convert_predefined_to_srgb,
+    lab_to_srgb_u8, lch_to_srgb_u8, oklab_to_srgb_u8, oklch_to_srgb_u8, srgb_u8_to_lab, srgb_u8_to_lch,
+    srgb_u8_to_oklab, srgb_u8_to_oklch, srgb_u8_to_predefined,
 };
 use zero_render_foundation::color::Color;
 
@@ -189,6 +189,18 @@ fn resolve_relative_color(spec: &RelativeColorSpec, origin: Color) -> Color {
             let c = rcs_pick(&spec.channels, srgb_u8_to_oklch(origin.r, origin.g, origin.b));
             let (r, g, b) = oklch_to_srgb_u8(c.0, c.1, c.2);
             Color::rgba(r, g, b, resolve_rcs_alpha(spec.alpha, origin.a))
+        }
+        // color(from <origin> <space> <channels>)：origin sRGB → 预定义空间分量 → 通道覆盖 → 回 sRGB。
+        RelativeColorFunc::Color => {
+            let space = spec.space.as_deref().unwrap_or("srgb");
+            match srgb_u8_to_predefined(space, origin.r, origin.g, origin.b) {
+                Some(comps) => {
+                    let c = rcs_pick(&spec.channels, comps);
+                    let (r, g, b) = convert_predefined_to_srgb(space, c.0, c.1, c.2).unwrap_or((0, 0, 0));
+                    Color::rgba(r, g, b, resolve_rcs_alpha(spec.alpha, origin.a))
+                }
+                None => Color::rgba(0, 0, 0, resolve_rcs_alpha(spec.alpha, origin.a)),
+            }
         }
     }
 }
@@ -562,6 +574,7 @@ fn test_resolve_relative_color() {
         origin: ColorValue::CurrentColor,
         channels: [RcsChannel::Ref(1), RcsChannel::Ref(0), RcsChannel::Ref(2)],
         alpha: RcsAlpha::Origin,
+        space: None,
     }));
     let elem = ColorValue::Rgba(128, 0, 0, 255); // #800000
     let r = resolve_color_current(&rgb_swap, &elem);
@@ -574,6 +587,7 @@ fn test_resolve_relative_color() {
         origin: ColorValue::CurrentColor,
         channels: [RcsChannel::Num(120.0), RcsChannel::Ref(1), RcsChannel::Ref(2)],
         alpha: RcsAlpha::Origin,
+        space: None,
     }));
     let r = resolve_color_current(&hsl_override, &elem);
     assert_eq!((r.r, r.g, r.b), (0, 128, 0), "hsl(from #800000 120 s l) = green");
@@ -596,6 +610,7 @@ fn test_resolve_relative_color_wide_gamut() {
             origin,
             channels,
             alpha,
+            space: None,
         }))
     };
     let white = ColorValue::Rgba(255, 255, 255, 255);
@@ -650,6 +665,87 @@ fn test_resolve_relative_color_wide_gamut() {
     let r = resolve_color_current(&lab_alpha, &white);
     assert_eq!(r.a, 128, "alpha 0.5 → 128");
     assert_eq!((r.r, r.g, r.b), (255, 255, 255), "全 Ref → origin white 往返");
+}
+
+#[test]
+/// R2277：color() RCS 非 identity resolve——origin sRGB → 预定义空间 → 通道覆盖 → 回 sRGB。
+/// 关键验证：全 Ref（保留 origin 各通道）应在所有空间往返 ≈ origin（±3/通道）—— 这是 0 reftest
+/// footprint 下的正确性 backstop（inverse 经 mat3_inverse 数值推导，encode/decode 互逆，仅 u8 量化损失）。
+fn test_resolve_relative_color_color_function() {
+    use zero_css_parser::values::{RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec};
+    let mk = |space: &str, channels: [RcsChannel; 3], origin: ColorValue| {
+        ColorValue::RelativeColor(Box::new(RelativeColorSpec {
+            func: RelativeColorFunc::Color,
+            origin,
+            channels,
+            alpha: RcsAlpha::Origin,
+            space: Some(space.to_string()),
+        }))
+    };
+    let all_ref = [RcsChannel::Ref(0), RcsChannel::Ref(1), RcsChannel::Ref(2)];
+
+    // 全 Ref 往返：多个 in-gamut 色 × 多个空间（覆盖 trivial / mat3_inverse×4 / XYZ 路径）。
+    let spaces = [
+        "srgb",
+        "srgb-linear",
+        "display-p3",
+        "display-p3-linear",
+        "a98-rgb",
+        "a98-rgb-linear",
+        "rec2020",
+        "rec2020-linear",
+        "prophoto-rgb",
+        "prophoto-rgb-linear",
+        "xyz",
+        "xyz-d50",
+        "xyz-d65",
+    ];
+    let colors = [(255u8, 0, 0), (0, 128, 0), (0, 0, 255), (128, 128, 128), (200, 100, 50)];
+    for &(r0, g0, b0) in &colors {
+        let ov = ColorValue::Rgba(r0, g0, b0, 255);
+        for &space in &spaces {
+            let r = resolve_color_current(&mk(space, all_ref, ov.clone()), &ov);
+            assert!(
+                (r.r as i32 - r0 as i32).abs() <= 3
+                    && (r.g as i32 - g0 as i32).abs() <= 3
+                    && (r.b as i32 - b0 as i32).abs() <= 3,
+                "color(from {:?} {} r g b) 往返应≈origin {:?}，实际 {:?}",
+                space,
+                space,
+                (r0, g0, b0),
+                (r.r, r.g, r.b)
+            );
+        }
+    }
+
+    // 通道覆盖：color(from red srgb 0.5 g b) → r=0.5*255≈128, g/b 保留 origin red 的 0 → rgb(128,0,0)。
+    let red = ColorValue::Rgba(255, 0, 0, 255);
+    let r = resolve_color_current(
+        &mk(
+            "srgb",
+            [RcsChannel::Num(0.5), RcsChannel::Ref(1), RcsChannel::Ref(2)],
+            red.clone(),
+        ),
+        &red,
+    );
+    assert!(
+        (r.r as i32 - 128).abs() <= 2 && r.g <= 2 && r.b <= 2,
+        "color(from red srgb 0.5 g b) ≈ rgb(128,0,0)，实际 {:?}",
+        (r.r, r.g, r.b)
+    );
+
+    // alpha 覆盖：color(from red srgb r g b / 0.5) → red alpha 128。
+    let r = resolve_color_current(
+        &ColorValue::RelativeColor(Box::new(RelativeColorSpec {
+            func: RelativeColorFunc::Color,
+            origin: red.clone(),
+            channels: all_ref,
+            alpha: RcsAlpha::Num(0.5),
+            space: Some("srgb".to_string()),
+        })),
+        &red,
+    );
+    assert_eq!(r.a, 128, "alpha 0.5 → 128");
 }
 
 #[test]
