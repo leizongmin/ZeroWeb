@@ -1453,14 +1453,52 @@ fn test_parse_relative_color_identity() {
             "identity {identity:?} 应解析为 CurrentColor"
         );
     }
-    // 非 identity（channel 覆盖/swap）→ None（defer）
-    assert!(super::super::parse_color("rgb(from currentColor g r b)").is_none());
-    assert!(super::super::parse_color("hsl(from currentColor 120 s l)").is_none());
+    // 非 identity（channel 覆盖/swap）现由 parse_relative_color 处理（R2271，见
+    // test_parse_relative_color_non_identity）；不再返回 None。
     // 非 currentColor origin + identity → origin 颜色（currentColor 经 parse_color）
     // 常规 rgb（无 from）不受影响
     assert!(matches!(
         super::super::parse_color("rgb(0, 128, 0)"),
         Some(ColorValue::Rgba(0, 128, 0, 255))
+    ));
+}
+
+#[test]
+/// R2271：RCS 非 identity（channel 置换/覆盖）解析为 ColorValue::RelativeColor（保留 currentColor
+/// origin 未解析，paint 时按元素色解析）。driving: relative-currentcolor-rgb-02（g r b 置换）/ hsl-02（120 s l）。
+fn test_parse_relative_color_non_identity() {
+    use crate::values::{ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc};
+    // rgb 置换：`rgb(from currentColor g r b)` —— 首通道引用 origin green(=1)，次引用 red(=0)。
+    let c = super::super::parse_color("rgb(from currentColor g r b)").unwrap();
+    match c {
+        ColorValue::RelativeColor(spec) => {
+            assert_eq!(spec.func, RelativeColorFunc::Rgb);
+            assert!(matches!(spec.origin, ColorValue::CurrentColor));
+            assert!(matches!(spec.channels[0], RcsChannel::Ref(1)), "g → Ref(1)");
+            assert!(matches!(spec.channels[1], RcsChannel::Ref(0)), "r → Ref(0)");
+            assert!(matches!(spec.channels[2], RcsChannel::Ref(2)), "b → Ref(2)");
+            assert_eq!(spec.alpha, RcsAlpha::Origin);
+        }
+        other => panic!("rgb 置换应为 RelativeColor，实际: {:?}", other),
+    }
+    // hsl 覆盖：`hsl(from currentColor 120 s l)` —— h=字面量 120，s/l 引用 origin。
+    let c = super::super::parse_color("hsl(from currentColor 120 s l)").unwrap();
+    match c {
+        ColorValue::RelativeColor(spec) => {
+            assert_eq!(spec.func, RelativeColorFunc::Hsl);
+            assert!(matches!(spec.origin, ColorValue::CurrentColor));
+            assert!(matches!(spec.channels[0], RcsChannel::Num(120.0)), "h → Num(120)");
+            assert!(matches!(spec.channels[1], RcsChannel::Ref(1)), "s → Ref(1)");
+            assert!(matches!(spec.channels[2], RcsChannel::Ref(2)), "l → Ref(2)");
+        }
+        other => panic!("hsl 覆盖应为 RelativeColor，实际: {:?}", other),
+    }
+    // 非 rgb/hsl 函数（lab/lch/oklab/oklch/color()）非 identity 仍 defer → None。
+    assert!(super::super::parse_color("lab(from currentColor l a b / 0.5)").is_none());
+    // 非 from 形式不受影响（常规 rgb）。
+    assert!(matches!(
+        super::super::parse_color("rgb(1 2 3)"),
+        Some(ColorValue::Rgba(1, 2, 3, 255))
     ));
 }
 

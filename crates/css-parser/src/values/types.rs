@@ -55,6 +55,11 @@ pub enum ColorValue {
     /// 支持 inherit 透传：`background-color: inherit` 把 Mix 原样传给子元素，currentColor
     /// 在子元素按其自身 color 重解析）。仅 `in srgb` 色彩空间（gamma-encoded 线性插值）。
     Mix(Box<ColorMixSpec>),
+    /// CSS Color 5 相对色（RCS）非 identity —— **未解析**（currentColor origin 在 paint 时
+    /// 按元素色解析，支持 inherit 透传，同 Mix）。仅 rgb/rgba/hsl/hsla 输出空间 + 通道为关键字
+    /// 引用或数字字面量（无 calc）。identity（channels 恰为自然关键字）在 parse 阶段已短路为 origin。
+    /// driving: css-color relative-currentcolor-rgb-02（g r b swap）/ hsl-02（120 s l 覆盖）。
+    RelativeColor(Box<RelativeColorSpec>),
 }
 
 /// `color-mix()` 规范（CSS Color 5）。
@@ -73,6 +78,54 @@ pub struct ColorMixComponent {
     pub color: ColorValue,
     /// 百分比 [0, 100]，None 表示省略（按 spec 默认：双省略=50/50，单省略=100-另一）。
     pub percentage: Option<f64>,
+}
+
+/// RCS（CSS Color 5 相对色）非 identity 规范：`<func>(from <origin> <ch1> <ch2> <ch3> [/ <alpha>])`。
+///
+/// currentColor origin 保留未解析（paint 时按元素色解析，支持 inherit 透传）。仅 rgb/rgba/hsl/hsla
+/// 输出空间。driving: css-color relative-currentcolor-rgb-02 / hsl-02。
+#[derive(Debug, Clone, PartialEq)]
+pub struct RelativeColorSpec {
+    /// 输出函数（决定通道语义与单位）。
+    pub func: RelativeColorFunc,
+    /// origin 颜色（可为 currentColor，运行时解析）。
+    pub origin: ColorValue,
+    /// 3 个输出通道（rgb: r/g/b；hsl: h/s/l）。
+    pub channels: [RcsChannel; 3],
+    /// alpha（省略 = 用 origin alpha）。
+    pub alpha: RcsAlpha,
+}
+
+/// RCS 输出函数。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelativeColorFunc {
+    /// rgb()/rgba() —— 通道为 0-255。
+    Rgb,
+    /// hsl()/hsla() —— h 为度 [0,360)，s/l 为 [0,100]。
+    Hsl,
+}
+
+/// RCS 单个输出通道。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RcsChannel {
+    /// 引用 origin 的某通道（按函数通道序：rgb 0=r/1=g/2=b；hsl 0=h/1=s/2=l）。
+    /// 支持置换（如 `rgb(from X g r b)` 的首通道引用 origin green=index 1）。
+    Ref(u8),
+    /// 数字字面量覆盖（rgb: 0-255；hsl h: 度；s/l: 0-100）。
+    Num(f64),
+    /// `none`（缺失分量 → 0）。
+    None,
+}
+
+/// RCS alpha 分量。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RcsAlpha {
+    /// 用 origin alpha（省略时的默认；currentColor origin → 元素色 alpha）。
+    Origin,
+    /// 数字字面量（0-1 或 0-100%，paint 时归一到 0-255）。
+    Num(f64),
+    /// `none` → alpha 0。
+    None,
 }
 
 /// CSS display 值。

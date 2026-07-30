@@ -1,6 +1,6 @@
 //! 颜色转换工具 — CSS ColorValue 到渲染层 Color 的转换。
 
-use zero_css_parser::values::ColorValue;
+use zero_css_parser::values::{ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec};
 use zero_render_foundation::color::Color;
 
 /// 将 ComputedStyle 的 ColorValue 转换为 render-foundation 的 Color。
@@ -32,6 +32,13 @@ pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> 
             let c1 = resolve_color_current(&spec.c1.color, element_color);
             let c2 = resolve_color_current(&spec.c2.color, element_color);
             mix_srgb(c1, spec.c1.percentage, c2, spec.c2.percentage)
+        }
+        // RCS 非 identity：先按元素色解析 origin（currentColor → 元素色），再按函数通道语义计算。
+        // 支持 inherit 透传（background-color: inherit 透传 RelativeColor，currentColor 在子元素
+        // 按其自身 color 重解析）。driving: relative-currentcolor-rgb-02 / hsl-02。
+        ColorValue::RelativeColor(spec) => {
+            let origin = resolve_color_current(&spec.origin, element_color);
+            resolve_relative_color(spec, origin)
         }
         ColorValue::Rgba(r, g, b, a) => Color::rgba(*r, *g, *b, *a),
         ColorValue::Transparent => Color::rgba(0, 0, 0, 0),
@@ -76,6 +83,85 @@ fn mix_srgb(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
         to_u8(pb),
         (final_a * 255.0).round().clamp(0.0, 255.0) as u8,
     )
+}
+
+/// 解析 RCS（CSS Color 5 相对色）非 identity：origin 已解析为 sRGB Color，按函数通道语义计算输出。
+///
+/// - rgb：origin 通道 r/g/b（0-255）按 channels 引用或字面量重组（支持置换），结果 rgb。
+/// - hsl：origin 经 rgba_to_hsl 转 HSL（h 度、s/l 0-100），按 channels 覆盖，再 hsla_to_rgba 回 sRGB。
+///
+/// alpha：省略/Origin → origin alpha；Num(0-1) → 归一 0-255；None → 0。
+fn resolve_relative_color(spec: &RelativeColorSpec, origin: Color) -> Color {
+    match spec.func {
+        RelativeColorFunc::Rgb => {
+            let chans = [origin.r as f64, origin.g as f64, origin.b as f64];
+            let pick = |i: usize| match spec.channels[i] {
+                RcsChannel::Ref(r) => chans[r as usize],
+                RcsChannel::Num(v) => v,
+                RcsChannel::None => 0.0,
+            };
+            Color::rgba(
+                pick(0).round().clamp(0.0, 255.0) as u8,
+                pick(1).round().clamp(0.0, 255.0) as u8,
+                pick(2).round().clamp(0.0, 255.0) as u8,
+                resolve_rcs_alpha(spec.alpha, origin.a),
+            )
+        }
+        RelativeColorFunc::Hsl => {
+            let (h0, s0, l0) = rgba_to_hsl(origin.r, origin.g, origin.b);
+            let h = match spec.channels[0] {
+                RcsChannel::Ref(_) => h0,
+                RcsChannel::Num(v) => v,
+                RcsChannel::None => 0.0,
+            };
+            let s = match spec.channels[1] {
+                RcsChannel::Ref(_) => s0,
+                RcsChannel::Num(v) => v,
+                RcsChannel::None => 0.0,
+            };
+            let l = match spec.channels[2] {
+                RcsChannel::Ref(_) => l0,
+                RcsChannel::Num(v) => v,
+                RcsChannel::None => 0.0,
+            };
+            let mut c = hsla_to_rgba(h, s, l, 1.0);
+            c.a = resolve_rcs_alpha(spec.alpha, origin.a);
+            c
+        }
+    }
+}
+
+/// 归一 RCS alpha 到 0-255 u8：Origin → origin alpha；Num(0-1) → ×255 钳制；None → 0。
+fn resolve_rcs_alpha(alpha: RcsAlpha, origin_alpha: u8) -> u8 {
+    match alpha {
+        RcsAlpha::Origin => origin_alpha,
+        RcsAlpha::Num(v) => (v * 255.0).round().clamp(0.0, 255.0) as u8,
+        RcsAlpha::None => 0,
+    }
+}
+
+/// sRGB (0-255) → HSL：h ∈ [0,360)，s/l ∈ [0,100]。灰色（r=g=b）→ h=0/s=0。
+fn rgba_to_hsl(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let r = r as f64 / 255.0;
+    let g = g as f64 / 255.0;
+    let b = b as f64 / 255.0;
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+    let d = max - min;
+    if d == 0.0 {
+        return (0.0, 0.0, l * 100.0);
+    }
+    let s = d / (1.0 - (2.0 * l - 1.0).abs());
+    let h = if max == r {
+        ((g - b) / d).rem_euclid(6.0)
+    } else if max == g {
+        (b - r) / d + 2.0
+    } else {
+        (r - g) / d + 4.0
+    };
+    let h = h * 60.0;
+    (h, s * 100.0, l * 100.0)
 }
 
 /// 将 HSL(Hue, Saturation, Lightness, Alpha) 转换为 RGBA。
@@ -386,4 +472,53 @@ fn test_resolve_color_mix() {
     }));
     let r = resolve_color_current(&mix_rg, &ColorValue::CurrentColor);
     assert_eq!((r.r, r.g, r.b), (128, 64, 0), "mix(red 50%, green 50%) = rgb(128,64,0)");
+}
+
+#[test]
+/// R2271：RCS 非 identity 解析——currentColor origin 按元素色解析后做通道置换/覆盖。
+/// driving: css-color relative-currentcolor-rgb-02（g r b 置换）/ hsl-02（120 s l 覆盖）。
+/// 两 driving 案共同点：origin = 元素 color = #800000 (128,0,0)，结果均为 green。
+fn test_resolve_relative_color() {
+    use zero_css_parser::values::{RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec};
+    // rgb 置换：`rgb(from currentColor g r b)`，origin=#800000 → (g=0, r=128, b=0) = green。
+    let rgb_swap = ColorValue::RelativeColor(Box::new(RelativeColorSpec {
+        func: RelativeColorFunc::Rgb,
+        origin: ColorValue::CurrentColor,
+        channels: [RcsChannel::Ref(1), RcsChannel::Ref(0), RcsChannel::Ref(2)],
+        alpha: RcsAlpha::Origin,
+    }));
+    let elem = ColorValue::Rgba(128, 0, 0, 255); // #800000
+    let r = resolve_color_current(&rgb_swap, &elem);
+    assert_eq!((r.r, r.g, r.b), (0, 128, 0), "rgb(from #800000 g r b) = green");
+    assert_eq!(r.a, 255, "alpha 省略 → origin alpha");
+
+    // hsl 覆盖：`hsl(from currentColor 120 s l)`，origin=#800000 → HSL(0,100,25)，覆盖 h=120 → green。
+    let hsl_override = ColorValue::RelativeColor(Box::new(RelativeColorSpec {
+        func: RelativeColorFunc::Hsl,
+        origin: ColorValue::CurrentColor,
+        channels: [RcsChannel::Num(120.0), RcsChannel::Ref(1), RcsChannel::Ref(2)],
+        alpha: RcsAlpha::Origin,
+    }));
+    let r = resolve_color_current(&hsl_override, &elem);
+    assert_eq!((r.r, r.g, r.b), (0, 128, 0), "hsl(from #800000 120 s l) = green");
+
+    // inherit 透传：同一 RelativeColor 对不同元素 color 重解析（rgb 置换 origin=#0000FF → (b? no: g=0,r=0,b=255)）
+    // `rgb(from #0000ff g r b)`：g=0,r=0,b=255 → (0,0,255) 蓝（b 引用未变，r/g 互换仍 0）
+    let blue_elem = ColorValue::Rgba(0, 0, 255, 255);
+    let r = resolve_color_current(&rgb_swap, &blue_elem);
+    assert_eq!((r.r, r.g, r.b), (0, 0, 255), "rgb(from #0000ff g r b) = blue");
+}
+
+#[test]
+/// R2271：rgba_to_hsl 往返——sRGB → HSL → sRGB 经 hsla_to_rgba 应回到原色（灰色与饱和色）。
+fn test_rgba_to_hsl_roundtrip() {
+    // #800000 = (128,0,0) → HSL(0,100,~25)（红，色相 0、饱和 100）
+    let (h, s, l) = rgba_to_hsl(128, 0, 0);
+    assert!((h - 0.0).abs() < 0.5, "h≈0 (red), got {h}");
+    assert!((s - 100.0).abs() < 0.5, "s≈100, got {s}");
+    assert!((l - 25.0).abs() < 0.5, "l≈25, got {l}");
+    // 灰色 (128,128,128) → h=0/s=0
+    let (h, s, _l) = rgba_to_hsl(128, 128, 128);
+    assert_eq!(h, 0.0);
+    assert_eq!(s, 0.0);
 }

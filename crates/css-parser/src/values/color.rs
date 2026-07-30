@@ -31,6 +31,12 @@ pub fn parse_color(value: &str) -> Option<ColorValue> {
         if let Some(c) = try_parse_relative_identity(value) {
             return Some(c);
         }
+        // 非 identity RCS（channel 覆盖/置换）：仅 rgb/rgba/hsl/hsla + 关键字引用/数字字面量。
+        // currentColor origin 保留未解析（paint 时按元素色解析，支持 inherit 透传，同 Mix）。
+        // driving: css-color relative-currentcolor-rgb-02（g r b 置换）/ hsl-02（120 s l 覆盖）。
+        if let Some(c) = parse_relative_color(value) {
+            return Some(c);
+        }
     }
 
     // 十六进制颜色
@@ -908,6 +914,124 @@ fn natural_channel_keywords<'a>(func: &str, channels: &'a str) -> Option<Vec<&'a
     let mut expected: Vec<&str> = tokens[..offset].to_vec(); // 空间名（如有）
     expected.extend(kw.iter().copied());
     Some(expected)
+}
+
+/// 解析非 identity RCS（CSS Color 5 相对色）：`<func>(from <origin> <ch1> <ch2> <ch3> [/ <alpha>])`。
+///
+/// 仅 rgb/rgba/hsl/hsla 输出空间。origin 经 `split_origin_channels` 拆出后递归 `parse_color`（保留
+/// currentColor 未解析）。通道为关键字引用（r/g/b、h/s/l，记录引用的 origin 通道序以支持置换）或
+/// 数字字面量（rgb: 0-255；hsl h: 度；s/l: 0-100，`%` 去除）。alpha 省略 = origin alpha。
+/// 非法（非 rgb/hsl 函数、通道数≠3、未知通道 token、非 `from` 形式）→ None。
+fn parse_relative_color(value: &str) -> Option<ColorValue> {
+    let open = value.find('(')?;
+    let close = value.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let func_name = value[..open].trim().to_ascii_lowercase();
+    let func = match func_name.as_str() {
+        "rgb" | "rgba" => RelativeColorFunc::Rgb,
+        "hsl" | "hsla" => RelativeColorFunc::Hsl,
+        _ => return None, // lab/lch/oklab/oklch/color() 非 identity defer
+    };
+    let inner = strip_css_comments(value.get(open + 1..close)?)
+        .trim()
+        .to_ascii_lowercase();
+    let rest = inner.strip_prefix("from ")?.trim();
+    let (origin_str, channels_str) = split_origin_channels(rest)?;
+    let origin = parse_color(origin_str)?;
+    // alpha：仅无逗号时认斜杠 alpha（与 parse_hsl_function 一致）。
+    let (main, alpha) = if main_uses_comma_syntax(channels_str) {
+        (channels_str, RcsAlpha::Origin)
+    } else {
+        match channels_str.split_once('/') {
+            Some((m, a)) => (m.trim(), parse_rcs_alpha(a.trim())),
+            None => (channels_str, RcsAlpha::Origin),
+        }
+    };
+    let comps: Vec<&str> = if main.contains(',') {
+        main.split(',').map(str::trim).filter(|s| !s.is_empty()).collect()
+    } else {
+        main.split_whitespace().collect()
+    };
+    if comps.len() != 3 {
+        return None;
+    }
+    let channels = [
+        parse_rcs_channel(comps[0], func, 0)?,
+        parse_rcs_channel(comps[1], func, 1)?,
+        parse_rcs_channel(comps[2], func, 2)?,
+    ];
+    Some(ColorValue::RelativeColor(Box::new(RelativeColorSpec {
+        func,
+        origin,
+        channels,
+        alpha,
+    })))
+}
+
+/// 解析 RCS 单个通道：关键字引用（r/g/b、h/s/l，记录 origin 通道序）/ 数字字面量 / `none`。
+/// `idx` 为输出位置：rgb 任意位为 0-255；hsl 首位（idx=0）为色相（度，可带角度单位），s/l 为 0-100。
+fn parse_rcs_channel(s: &str, func: RelativeColorFunc, idx: usize) -> Option<RcsChannel> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("none") {
+        return Some(RcsChannel::None);
+    }
+    // 关键字引用：记录所引用的 origin 通道序（rgb r=0/g=1/b=2；hsl h=0/s=1/l=2），支持置换。
+    let kw_ref = match (func, s) {
+        (RelativeColorFunc::Rgb, "r") => Some(0u8),
+        (RelativeColorFunc::Rgb, "g") => Some(1),
+        (RelativeColorFunc::Rgb, "b") => Some(2),
+        (RelativeColorFunc::Hsl, "h") => Some(0),
+        (RelativeColorFunc::Hsl, "s") => Some(1),
+        (RelativeColorFunc::Hsl, "l") => Some(2),
+        _ => None,
+    };
+    if let Some(i) = kw_ref {
+        return Some(RcsChannel::Ref(i));
+    }
+    let v = match func {
+        // hsl 首通道 = 色相（数字或角度单位 → 度）。
+        RelativeColorFunc::Hsl if idx == 0 => parse_hue_angle(s)?,
+        RelativeColorFunc::Rgb => parse_rcs_number_255(s)?,
+        RelativeColorFunc::Hsl => parse_rcs_number_100(s)?,
+    };
+    Some(RcsChannel::Num(v))
+}
+
+/// 解析 rgb 通道数字字面量：`p%` → p/100*255，裸数字 → 0-255（不钳制，paint 时钳）。
+fn parse_rcs_number_255(s: &str) -> Option<f64> {
+    if let Some(pct) = s.strip_suffix('%') {
+        let p: f64 = pct.trim().parse().ok()?;
+        Some(p / 100.0 * 255.0)
+    } else {
+        Some(s.parse().ok()?)
+    }
+}
+
+/// 解析 hsl s/l 数字字面量：`p%` 或裸数字 → 0-100。
+fn parse_rcs_number_100(s: &str) -> Option<f64> {
+    if let Some(pct) = s.strip_suffix('%') {
+        Some(pct.trim().parse().ok()?)
+    } else {
+        Some(s.parse().ok()?)
+    }
+}
+
+/// 解析 RCS alpha：`none` → None，`p%` → p/100，裸数字 → 0-1（不钳制）。
+fn parse_rcs_alpha(s: &str) -> RcsAlpha {
+    if s.eq_ignore_ascii_case("none") {
+        return RcsAlpha::None;
+    }
+    if let Some(pct) = s.strip_suffix('%') {
+        if let Ok(p) = pct.trim().parse::<f64>() {
+            return RcsAlpha::Num(p / 100.0);
+        }
+    }
+    if let Ok(v) = s.parse::<f64>() {
+        return RcsAlpha::Num(v);
+    }
+    RcsAlpha::Origin // 无法解析时退回 origin alpha（保守不破坏规则）
 }
 
 /// 解析色相角度（CSS Color 4）：数字 + 可选角度单位（`deg`/`grad`/`rad`/`turn`），
