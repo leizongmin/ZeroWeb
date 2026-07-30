@@ -186,7 +186,15 @@ impl MediaContext {
 pub fn parse_media_query(input: &str) -> Option<Vec<MediaQuery>> {
     let input = input.trim();
     if input.is_empty() {
-        return None;
+        // CSS Media Queries §3：媒体查询列表省略时隐含 `all`（`@media { ... }` ≡
+        // `@media all { ... }`，匹配一切）。返回无类型限制 + 无条件的查询（evaluate = true）。
+        // 旧实现返回 None 导致 `@media{...}`（prelude 为空，含 `@media` 后无空格的
+        // whitespace-optional 形式）规则不应用。driving: WPT at-media-whitespace-optional-001。
+        return Some(vec![MediaQuery {
+            media_type: None,
+            negated: false,
+            conditions: Vec::new(),
+        }]);
     }
 
     // 按逗号分割为多个查询
@@ -736,7 +744,16 @@ mod tests {
 
     #[test]
     fn test_parse_empty() {
-        assert!(parse_media_query("").is_none());
+        // CSS Media Queries §3：空媒体查询列表 ≡ `all`（匹配一切），非 None。
+        // driving: WPT at-media-whitespace-optional-001 `@media{...}`。
+        let queries = parse_media_query("").expect("空媒体查询应解析为隐含 all");
+        let q = &queries[0];
+        assert!(q.media_type.is_none(), "media_type 不限制 ≡ all");
+        assert!(q.conditions.is_empty());
+        assert!(!q.negated);
+        // 评估：无类型限制 + 无条件 → 匹配（screen ctx 下也为 true）
+        let ctx = MediaContext::with_type(800.0, 600.0, MediaType::Screen);
+        assert!(evaluate_media_query(q, &ctx), "空查询应匹配（≡ all）");
     }
 
     #[test]
