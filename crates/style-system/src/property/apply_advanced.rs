@@ -863,6 +863,52 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // ── contain-intrinsic-size（CSS Sizing 4：size-containment 元素的尺寸覆盖）──
+        // 仅对 contain:size / content-visibility:hidden 元素生效（converter 取代 size containment 的 0）。
+        "contain-intrinsic-size" => {
+            let v = value.trim();
+            if v.eq_ignore_ascii_case("none") {
+                style.contain_intrinsic_width = None;
+                style.contain_intrinsic_height = None;
+                return true;
+            }
+            // 收集长度 token，忽略 `auto` 关键字（静态无 remembered size，auto 按显式长度处理）。
+            let lens: Vec<LengthValue> = v
+                .split_whitespace()
+                .filter_map(|t| {
+                    if t.eq_ignore_ascii_case("auto") {
+                        None
+                    } else {
+                        values::parse_length(t)
+                    }
+                })
+                .collect();
+            match lens.len() {
+                1 => {
+                    style.contain_intrinsic_width = Some(lens[0].clone());
+                    style.contain_intrinsic_height = Some(lens[0].clone());
+                    return true;
+                }
+                2 => {
+                    style.contain_intrinsic_width = Some(lens[0].clone());
+                    style.contain_intrinsic_height = Some(lens[1].clone());
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        "contain-intrinsic-width" => {
+            if let Some(l) = values::parse_length(value.trim()) {
+                style.contain_intrinsic_width = Some(l);
+                return true;
+            }
+        }
+        "contain-intrinsic-height" => {
+            if let Some(l) = values::parse_length(value.trim()) {
+                style.contain_intrinsic_height = Some(l);
+                return true;
+            }
+        }
         // ── UI Appearance 属性 ──
         "appearance" => {
             if let Some(v) = values::parse_appearance(value) {

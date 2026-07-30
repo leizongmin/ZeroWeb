@@ -1607,6 +1607,8 @@ pub enum PropertyValue {
     EmptyCells(EmptyCellsComputedValue),
     /// border-spacing 值。
     BorderSpacing(BorderSpacingComputedValue),
+    /// contain-intrinsic-size 值（width, height 分量；None = 不覆盖）。CSS Sizing 4。
+    ContainIntrinsicSize(Option<LengthValue>, Option<LengthValue>),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────

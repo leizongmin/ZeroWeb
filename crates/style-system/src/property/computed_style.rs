@@ -391,6 +391,11 @@ pub struct ComputedStyle {
     // ── Contain ──
     /// contain 属性。
     pub contain: ContainComputedValue,
+    /// contain-intrinsic-size 宽度分量（CSS Sizing 4）。仅对 size-containment 元素生效
+    ///（contain:size / content-visibility:hidden）。None = 不覆盖（取 size containment 的 0）。
+    pub contain_intrinsic_width: Option<LengthValue>,
+    /// contain-intrinsic-size 高度分量。语义同 contain_intrinsic_width。
+    pub contain_intrinsic_height: Option<LengthValue>,
 
     // ── Interaction / Performance Hint ──
     /// overscroll-behavior-x 属性。

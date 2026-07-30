@@ -1196,6 +1196,12 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.contain = default_style.contain;
             true
         }
+        "contain-intrinsic-size" | "contain-intrinsic-width" | "contain-intrinsic-height" => {
+            // 重置两个分量到默认（None）；任一 longhand 重置都恢复该维为 None。
+            style.contain_intrinsic_width = default_style.contain_intrinsic_width;
+            style.contain_intrinsic_height = default_style.contain_intrinsic_height;
+            true
+        }
         // UI Appearance
         "appearance" => {
             style.appearance = default_style.appearance;

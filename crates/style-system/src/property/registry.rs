@@ -245,6 +245,9 @@ impl PropertyRegistry {
 
             // Contain
             "contain" => Some(Contain(ContainComputedValue::None)),
+            "contain-intrinsic-size" | "contain-intrinsic-width" | "contain-intrinsic-height" => {
+                Some(ContainIntrinsicSize(None, None))
+            }
 
             // UI Appearance
             "appearance" => Some(Appearance(AppearanceComputedValue::Auto)),
@@ -552,6 +555,9 @@ impl PropertyRegistry {
             "filter",
             "column-rule-color",
             "contain",
+            "contain-intrinsic-size",
+            "contain-intrinsic-width",
+            "contain-intrinsic-height",
             "appearance",
             "accent-color",
             "caret-color",

@@ -122,13 +122,20 @@ pub fn computed_style_to_taffy(
         },
         size: if style.contain.has_size() {
             // R2239：contain:size — auto 尺寸解析为 0（content 不贡献 size），显式尺寸保留。
+            // R2256：contain-intrinsic-size 覆盖 auto 维的 0（CSS Sizing 4）——size containment
+            // 元素的 auto 尺寸取 contain-intrinsic-size（若有），否则 0。driving: css-sizing
+            // contain-intrinsic-size-001..（contain:size + contain-intrinsic-size: 111px 222px → 111×222）。
+            let cis_dim = |cis: &Option<LengthValue>| match cis {
+                Some(l) => convert_length_to_dimension(l, vw, vh),
+                None => taffy::style::Dimension::length(0.0),
+            };
             taffy::geometry::Size {
                 width: match &style.width {
-                    LengthValue::Auto => taffy::style::Dimension::length(0.0),
+                    LengthValue::Auto => cis_dim(&style.contain_intrinsic_width),
                     _ => convert_length_to_dimension(&style.width, vw, vh),
                 },
                 height: match &style.height {
-                    LengthValue::Auto => taffy::style::Dimension::length(0.0),
+                    LengthValue::Auto => cis_dim(&style.contain_intrinsic_height),
                     _ => convert_length_to_dimension(&style.height, vw, vh),
                 },
             }

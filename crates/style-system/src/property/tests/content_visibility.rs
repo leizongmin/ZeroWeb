@@ -66,3 +66,35 @@ fn test_content_visibility_hidden_effective_display_gate() {
         "auto 静态等价 visible，不跳过"
     );
 }
+
+#[test]
+/// R2256 contain-intrinsic-size 解析（CSS Sizing 4）。
+fn test_contain_intrinsic_size_parse() {
+    use zero_css_parser::values::LengthValue;
+    let mut style = ComputedStyle::default();
+    assert!(style.contain_intrinsic_width.is_none() && style.contain_intrinsic_height.is_none());
+
+    // 1 length → 双维
+    assert!(apply_property_value(&mut style, "contain-intrinsic-size", "100px"));
+    assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(100.0)));
+    assert_eq!(style.contain_intrinsic_height, Some(LengthValue::Px(100.0)));
+
+    // 2 lengths → width height
+    assert!(apply_property_value(
+        &mut style,
+        "contain-intrinsic-size",
+        "111px 222px"
+    ));
+    assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(111.0)));
+    assert_eq!(style.contain_intrinsic_height, Some(LengthValue::Px(222.0)));
+
+    // none → 清空
+    assert!(apply_property_value(&mut style, "contain-intrinsic-size", "none"));
+    assert!(style.contain_intrinsic_width.is_none() && style.contain_intrinsic_height.is_none());
+
+    // longhands
+    assert!(apply_property_value(&mut style, "contain-intrinsic-width", "50px"));
+    assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(50.0)));
+    assert!(apply_property_value(&mut style, "contain-intrinsic-height", "75px"));
+    assert_eq!(style.contain_intrinsic_height, Some(LengthValue::Px(75.0)));
+}
