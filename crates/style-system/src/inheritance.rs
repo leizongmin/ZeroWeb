@@ -37,6 +37,21 @@ pub fn compute_inherited_style_with_quirks(
 ) -> ComputedStyle {
     let mut style = ComputedStyle::default();
 
+    // 预解析 color-scheme：它影响本元素 light-dark() 颜色解析，须在颜色属性应用前确定
+    //（CSS 规定 color-scheme 先于其他属性计算）。复用 keyword 解析保证 inherit/initial 等正确。
+    // 主循环仍会按既有路径处理 color-scheme（idempotent）；未显式声明则继承父元素。
+    if let Some(cs) = cascaded.get("color-scheme") {
+        style.color_scheme_dark = match resolve_keyword(cs, "color-scheme", parent_style) {
+            KeywordResolution::Concrete(v) => crate::property::apply::parse_color_scheme_dark(&v),
+            KeywordResolution::Inherit | KeywordResolution::Unset | KeywordResolution::Revert => {
+                parent_style.map(|p| p.color_scheme_dark).unwrap_or(false)
+            }
+            KeywordResolution::Initial | KeywordResolution::RevertLayer => false,
+        };
+    } else if let Some(parent) = parent_style {
+        style.color_scheme_dark = parent.color_scheme_dark;
+    }
+
     // 先处理所有级联属性
     for (property, value) in cascaded {
         let resolved = resolve_keyword(value, property, parent_style);

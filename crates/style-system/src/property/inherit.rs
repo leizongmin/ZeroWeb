@@ -11,6 +11,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.color = parent.color.clone();
             true
         }
+        "color-scheme" => {
+            child.color_scheme_dark = parent.color_scheme_dark;
+            true
+        }
         "font-family" => {
             child.font_family = parent.font_family.clone();
             true
@@ -1141,6 +1145,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "direction" => {
             style.direction = default_style.direction;
+            true
+        }
+        "color-scheme" => {
+            style.color_scheme_dark = default_style.color_scheme_dark;
             true
         }
         "unicode-bidi" => {

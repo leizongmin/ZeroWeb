@@ -4,11 +4,21 @@ use super::*;
 
 // ── 解析函数 ────────────────────────────────────────────────────────
 
-/// 解析 CSS 颜色值。
+/// 解析 CSS 颜色值（按 light color-scheme 解析 `light-dark()`）。
+///
+/// 等价 [`parse_color_with_scheme`](parse_color_with_scheme)`(value, false)`。
+/// 保留无 scheme 参数入口供所有不关心 color-scheme 的调用方使用（零回归）。
+pub fn parse_color(value: &str) -> Option<ColorValue> {
+    parse_color_with_scheme(value, false)
+}
+
+/// 解析 CSS 颜色值，`dark` 控制元素 used color-scheme 是否为暗。
 ///
 /// 支持命名颜色、十六进制颜色（#RGB、#RRGGBB、#RGBA、#RRGGBBAA）、
-/// `rgb()`/`rgba()`、`hsl()`/`hsla()` 和 `hwb()` 函数。
-pub fn parse_color(value: &str) -> Option<ColorValue> {
+/// `rgb()`/`rgba()`、`hsl()`/`hsla()` 和 `hwb()` 函数。`dark` 仅影响 `light-dark(L, D)`：
+/// `dark=true`（元素 `color-scheme: dark`）取第二个（dark）参数，否则取第一个（light）参数。
+/// dark 向所选参数递归传播（`light-dark(light-dark(a,b), c)` 等嵌套）。
+pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
     // 不在此 trim：声明值经 consume_declaration deferred-whitespace 已无首尾空白 token，
     // 此处 trim 会误剥**转义产生的**空白（如 `red\9` → `red\t`，应 ≠ 关键字 `red` 判无效，
     // apply 拒绝→cascade R2126 丢弃）。调用方传入均为已 trim 值；quirks 入口自行 trim。
@@ -80,17 +90,27 @@ pub fn parse_color(value: &str) -> Option<ColorValue> {
     }
 
     // light-dark() 函数（CSS Color Adjust §color-scheme-effect）：light-dark(<light>, <dark>)
-    // 按元素的 color-scheme 取值。ZW 默认 color-scheme = light（normal→light），故取第一个
-    //（light）参数。driving: css-color light-dark-inheritance / light-dark-currentcolor。
+    // 按元素 used color-scheme 取值：dark（color-scheme: dark）取第二个（dark）参数，否则取
+    // 第一个（light）参数。dark 向所选参数递归传播。driving: css-color light-dark-inheritance /
+    // light-dark-currentcolor + css-variables registered-property-light-dark。
     if value.starts_with("light-dark(") {
         let start = value.find('(')?;
         let end = value.rfind(')')?;
         let inner = strip_css_comments(value.get(start + 1..end)?);
-        let light = first_top_level_comma_arg(&inner);
-        if light.is_empty() {
+        let chosen = match top_level_byte_index(&inner, b',') {
+            // 两个参数：按 scheme 选 light/dark。
+            Some(comma_pos) => {
+                let light = inner[..comma_pos].trim();
+                let dark_arg = inner[comma_pos + 1..].trim();
+                if dark { dark_arg } else { light }
+            }
+            // 仅一个参数（非标准，宽容取之）。
+            None => inner.trim(),
+        };
+        if chosen.is_empty() {
             return None;
         }
-        return parse_color(light);
+        return parse_color_with_scheme(chosen, dark);
     }
 
     // color-mix() 函数（CSS Color 5）：color-mix(in <space>, <c1> [<p1>], <c2> [<p2>])。
@@ -922,21 +942,6 @@ fn strip_css_comments(s: &str) -> String {
     }
     out.push_str(rest);
     out
-}
-
-/// 取首个**顶层**（括号深度 0）逗号前的参数，trim 返回。无顶层逗号则返回整体 trim。
-/// 用于 light-dark() 等多参数颜色函数取首个参数（参数内可能含嵌套逗号，如 color-mix()）。
-fn first_top_level_comma_arg(s: &str) -> &str {
-    let mut depth = 0i32;
-    for (i, ch) in s.char_indices() {
-        match ch {
-            '(' => depth += 1,
-            ')' => depth -= 1,
-            ',' if depth == 0 => return s[..i].trim(),
-            _ => {}
-        }
-    }
-    s.trim()
 }
 
 /// 返回**顶层**（括号深度 0）首个目标字符的字节位置，无则 None。
@@ -2284,6 +2289,30 @@ mod tests {
         assert_eq!(
             parse_color("light-dark(currentColor, red)"),
             parse_color("currentColor")
+        );
+    }
+
+    #[test]
+    fn test_light_dark_resolves_to_dark_when_dark_scheme() {
+        // dark color-scheme（color-scheme: dark）→ 取第二个（dark）参数。
+        // driving: css-variables registered-property-light-dark。
+        assert_eq!(
+            parse_color_with_scheme("light-dark(red, green)", true),
+            parse_color("green")
+        );
+        assert_eq!(
+            parse_color_with_scheme("light-dark(red, #008000)", true),
+            parse_color("#008000")
+        );
+        // light scheme（默认）仍取首个参数（parse_color = parse_color_with_scheme(_, false)）。
+        assert_eq!(
+            parse_color_with_scheme("light-dark(red, green)", false),
+            parse_color("red")
+        );
+        // dark 向所选参数递归传播：light-dark(light-dark(a, b), c) 在 dark 下取 c。
+        assert_eq!(
+            parse_color_with_scheme("light-dark(red, light-dark(red, blue))", true),
+            parse_color("blue")
         );
     }
 

@@ -55,6 +55,8 @@ impl PropertyRegistry {
             // 颜色和背景
             "color" => Some(Color(ColorValue::Rgba(0, 0, 0, 255))),
             "background-color" => Some(Color(ColorValue::Transparent)),
+            // color-scheme 初始 = normal → light（dark=false）。CSS Color Adjust。
+            "color-scheme" => Some(ColorScheme(false)),
             "opacity" => Some(Number(1.0)),
             "visibility" => Some(Visibility(VisibilityValue::Visible)),
             "content-visibility" => Some(ContentVisibility(ContentVisibilityValue::Visible)),
@@ -369,6 +371,7 @@ impl PropertyRegistry {
                 | "empty-cells"
                 | "border-spacing"
                 | "writing-mode"
+                | "color-scheme"
         )
     }
 
@@ -415,6 +418,7 @@ impl PropertyRegistry {
             "border-bottom-left-radius",
             "color",
             "background-color",
+            "color-scheme",
             "opacity",
             "visibility",
             "content-visibility",

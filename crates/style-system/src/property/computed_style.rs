@@ -104,6 +104,9 @@ pub struct ComputedStyle {
     pub color: ColorValue,
     /// background-color 属性。
     pub background_color: ColorValue,
+    /// color-scheme 属性的暗 scheme 标志（`color-scheme: dark` → true）。
+    /// 影响 `light-dark(L, D)` 解析：dark 取第二参。继承属性。
+    pub color_scheme_dark: bool,
     /// opacity 属性。
     pub opacity: f64,
     /// visibility 属性。

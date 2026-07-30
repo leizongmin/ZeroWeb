@@ -88,3 +88,84 @@ fn test_property_unregistered_var_unchanged() {
         "未注册未定义 var 应保持默认行为"
     );
 }
+
+// ── light-dark() + color-scheme（CSS Color Adjust）──────────────────────
+// 验证 light-dark(L, D) 按元素 used color-scheme 取参。driving: css-variables
+// registered-property-light-dark（@property 注册 + color-scheme: dark + var() 组合）。
+
+/// 解析 CSS 跑 compute_styles，返回 div 的计算 background-color。
+fn div_background_color(css: &str) -> ColorValue {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let stylesheets = vec![CssParser::parse_stylesheet(css)];
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    styles.get(&div).expect("div 应有计算样式").background_color.clone()
+}
+
+#[test]
+/// `color-scheme: dark` + `light-dark(red, green)` → 取 dark 参数 green。
+fn test_light_dark_dark_scheme_picks_dark_arg() {
+    let css = "div { color-scheme: dark; background-color: light-dark(red, green); }";
+    assert_eq!(
+        div_background_color(css),
+        GREEN,
+        "color-scheme:dark 时 light-dark 应取第二参 green"
+    );
+}
+
+#[test]
+/// `color-scheme: light`（默认）+ `light-dark(red, green)` → 取 light 参数 red。
+fn test_light_dark_light_scheme_picks_light_arg() {
+    let css = "div { color-scheme: light; background-color: light-dark(red, green); }";
+    assert_eq!(
+        div_background_color(css),
+        RED,
+        "color-scheme:light 时 light-dark 应取首参 red"
+    );
+}
+
+#[test]
+/// 无 color-scheme 声明 → 默认 light → 取首参。
+fn test_light_dark_default_scheme_is_light() {
+    let css = "div { background-color: light-dark(red, green); }";
+    assert_eq!(div_background_color(css), RED, "无 color-scheme 默认 light");
+}
+
+#[test]
+/// driving reftest 镜像：@property 注册 + color-scheme:dark + var() 组合。
+/// `@property --test-color { initial-value: red } .square { color-scheme: dark;
+/// --test-color: light-dark(red, green); background-color: var(--test-color); }` → green。
+fn test_registered_property_light_dark_reftest_mirror() {
+    let css = r#"
+        @property --test-color {
+          syntax: "<color>";
+          inherits: true;
+          initial-value: red;
+        }
+        div { color-scheme: dark; --test-color: light-dark(red, green); background-color: var(--test-color); }
+    "#;
+    assert_eq!(
+        div_background_color(css),
+        GREEN,
+        "color-scheme:dark + 注册属性 var(light-dark(red,green)) 应解析为 green"
+    );
+}
+
+#[test]
+/// color-scheme 继承：父 div 设 color-scheme:dark，子 p 的 light-dark() 应取 dark 参数。
+fn test_color_scheme_inherited_to_child_light_dark() {
+    let (doc, _html, _body, div, p) = make_test_dom();
+    let css = r#"
+        div { color-scheme: dark; }
+        p { background-color: light-dark(red, green); }
+    "#;
+    let stylesheets = vec![CssParser::parse_stylesheet(css)];
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let p_bg = styles.get(&p).expect("p 应有计算样式").background_color.clone();
+    assert_eq!(
+        p_bg, GREEN,
+        "color-scheme:dark 应继承到 p，其 light-dark 取 dark 参数 green"
+    );
+    let _ = div;
+}

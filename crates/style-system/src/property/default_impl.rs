@@ -73,6 +73,7 @@ impl Default for ComputedStyle {
             // 颜色和背景
             color: initial_color.clone(),
             background_color: transparent,
+            color_scheme_dark: false,
             opacity: 1.0,
             visibility: VisibilityValue::Visible,
             content_visibility: ContentVisibilityValue::Visible,

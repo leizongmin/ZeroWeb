@@ -51,10 +51,18 @@ pub fn apply_property_value_with_quirks(
     // cascade apply-on-dummy 传 cascaded 值）。此处 trim 会误剥**转义产生的**空白
     //（如 `red\9` → `red\t`），与 parse_color 不再 trim 配合使非法颜色被正确拒绝。
     // driving：escapes-014/015/016（apply 拒绝→cascade R2126 丢弃→下个合法声明胜出）。
-    let parse_color_fn = if quirks_mode {
-        values::parse_color_quirks
-    } else {
-        values::parse_color
+    // 颜色解析：light-dark(L, D) 按本元素 used color-scheme（style.color_scheme_dark）取参。
+    // color_scheme_dark 由 compute_inherited_style_with_quirks 预解析先行设置（CSS 规定
+    // color-scheme 先于其他属性计算），故此处读取已反映显式声明/继承的暗 scheme。
+    // quirks 路径忽略 dark（quirks+light-dark 极罕见，保持 parse_color_quirks 原行为）。
+    let dark = style.color_scheme_dark;
+    let quirks = quirks_mode;
+    let parse_color_fn = |value: &str| -> Option<zero_css_parser::values::ColorValue> {
+        if quirks {
+            values::parse_color_quirks(value)
+        } else {
+            values::parse_color_with_scheme(value, dark)
+        }
     };
 
     // 长度解析函数：quirks mode 将裸数字视为 px
@@ -377,6 +385,12 @@ pub fn apply_property_value_with_quirks(
                 style.background_color = v;
                 return true;
             }
+        }
+        "color-scheme" => {
+            // color-scheme 影响本元素 light-dark() 解析，须在颜色属性应用前确定
+            //（compute_inherited_style_with_quirks 的预解析已先行设置；此处对显式声明同步）。
+            style.color_scheme_dark = parse_color_scheme_dark(value);
+            return true;
         }
         "opacity" => {
             if let Some(v) = values::parse_opacity(value) {
@@ -856,4 +870,17 @@ pub fn apply_property_value_with_quirks(
         }
     }
     false
+}
+
+/// 解析 `color-scheme` 描述符为「是否暗 scheme」标志。
+///
+/// CSS Color Adjust：`color-scheme` 取首个支持的 scheme（顺序优先）。ZW 支持 light/dark，
+/// 故取首个非 `only` 关键字：`dark` → true（含 `dark`、`only dark`、`dark light`），
+/// `light`/`normal`/其他/缺省 → false。driving: css-variables registered-property-light-dark。
+pub(crate) fn parse_color_scheme_dark(value: &str) -> bool {
+    value
+        .split_whitespace()
+        .find(|t| !t.eq_ignore_ascii_case("only"))
+        .map(|t| t.eq_ignore_ascii_case("dark"))
+        .unwrap_or(false)
 }

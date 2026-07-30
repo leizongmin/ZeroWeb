@@ -1609,6 +1609,8 @@ pub enum PropertyValue {
     BorderSpacing(BorderSpacingComputedValue),
     /// contain-intrinsic-size 值（width, height 分量；None = 不覆盖）。CSS Sizing 4。
     ContainIntrinsicSize(Option<LengthValue>, Option<LengthValue>),
+    /// color-scheme 值（true = dark scheme）。CSS Color Adjust。
+    ColorScheme(bool),
 }
 
 // ── 3D Transform 相关枚举 ──────────────────────────────────────────────
