@@ -589,6 +589,23 @@ pub enum CalcExpr {
         /// 最大值。
         max: Box<CalcExpr>,
     },
+    /// CSS Values L4 单参数数学函数：abs/sign/sqrt/exp/log（driving: R2279 CSS Values L4 数学函数）。
+    UnaryOp(UnaryMathOp, Box<CalcExpr>),
+}
+
+/// CSS Values L4 单参数数学函数运算符（number → number）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum UnaryMathOp {
+    /// abs(x) —— 绝对值。
+    Abs,
+    /// sign(x) —— 符号（-1/0/1）。
+    Sign,
+    /// sqrt(x) —— 平方根。
+    Sqrt,
+    /// exp(x) —— 自然指数 eˣ。
+    Exp,
+    /// log(x) —— 自然对数 ln(x)。
+    Log,
 }
 
 /// CSS calc() 运算符。
@@ -865,6 +882,9 @@ impl<'a> CalcParser<'a> {
                 val: Box::new(val),
                 max: Box::new(max),
             }
+        } else if let Some(u) = self.try_parse_unary_math() {
+            // CSS Values L4 单参数数学函数 abs/sign/sqrt/exp/log。
+            u
         } else if self.try_consume("(") {
             // 括号表达式
             let inner = self.parse_expr()?;
@@ -883,6 +903,35 @@ impl<'a> CalcParser<'a> {
         }
 
         Some(expr)
+    }
+
+    /// 尝试解析 CSS Values L4 单参数数学函数 abs/sign/sqrt/exp/log。
+    /// 命中则消费前缀 + 解析内层 expr + 消费 `)`，返回 UnaryOp；否则不消费、返回 None。
+    fn try_parse_unary_math(&mut self) -> Option<CalcExpr> {
+        if self.depth >= MAX_CALC_DEPTH {
+            return None;
+        }
+        let op = if self.try_consume("abs(") {
+            UnaryMathOp::Abs
+        } else if self.try_consume("sign(") {
+            UnaryMathOp::Sign
+        } else if self.try_consume("sqrt(") {
+            UnaryMathOp::Sqrt
+        } else if self.try_consume("exp(") {
+            UnaryMathOp::Exp
+        } else if self.try_consume("log(") {
+            UnaryMathOp::Log
+        } else {
+            return None; // 未命中：try_consume 仅在匹配时消费，此处无消费
+        };
+        self.depth += 1;
+        let inner = self.parse_expr()?;
+        self.skip_whitespace();
+        if !self.try_consume(")") {
+            return None;
+        }
+        self.depth -= 1;
+        Some(CalcExpr::UnaryOp(op, Box::new(inner)))
     }
 
     /// 解析逗号分隔的表达式列表（用于 min/max 函数）。
@@ -924,6 +973,15 @@ impl<'a> CalcParser<'a> {
         // 尝试解析为纯数字
         if let Ok(num) = token.parse::<f64>() {
             return Some(CalcExpr::Number(num));
+        }
+
+        // CSS Values L4 常量：pi/e/infinity/NaN（大小写不敏感）。
+        match token.to_ascii_lowercase().as_str() {
+            "pi" => return Some(CalcExpr::Number(std::f64::consts::PI)),
+            "e" => return Some(CalcExpr::Number(std::f64::consts::E)),
+            "infinity" => return Some(CalcExpr::Number(f64::INFINITY)),
+            "nan" => return Some(CalcExpr::Number(f64::NAN)),
+            _ => {}
         }
 
         // 尝试解析为长度值
@@ -1136,6 +1194,36 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
             let val_v = eval_calc_with_context(val, ctx)?;
             let max_v = eval_calc_with_context(max, ctx)?;
             Some(val_v.clamp(min_v, max_v))
+        }
+        // CSS Values L4 单参数数学函数（number → number）。sqrt(负)/log(≤0) → None（IACVT 无效）。
+        CalcExpr::UnaryOp(op, inner) => {
+            let v = eval_calc_with_context(inner, ctx)?;
+            match op {
+                UnaryMathOp::Abs => Some(v.abs()),
+                // CSS Values L4 sign：>0→1、<0 或 -0→-1、+0→0（f64::signum(0.0)=1.0 不符 spec）。
+                UnaryMathOp::Sign => Some(if v > 0.0 {
+                    1.0
+                } else if v.is_sign_negative() {
+                    -1.0
+                } else {
+                    0.0
+                }),
+                UnaryMathOp::Sqrt => {
+                    if v >= 0.0 {
+                        Some(v.sqrt())
+                    } else {
+                        None
+                    }
+                }
+                UnaryMathOp::Exp => Some(v.exp()),
+                UnaryMathOp::Log => {
+                    if v > 0.0 {
+                        Some(v.ln())
+                    } else {
+                        None
+                    }
+                }
+            }
         }
     }
 }

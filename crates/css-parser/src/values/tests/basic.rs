@@ -178,6 +178,53 @@ fn test_eval_calc_percentage_without_parent() {
     assert_eq!(eval_calc(&expr, None), None);
 }
 
+#[test]
+/// R2279：CSS Values L4 单参数数学函数 abs/sign/sqrt/exp/log + 常量 pi/e/infinity/NaN 求值。
+fn test_eval_calc_unary_math() {
+    let eval = |s: &str| eval_calc(&parse_math_function(s).unwrap(), None);
+    assert_eq!(eval("calc(abs(-5))"), Some(5.0));
+    assert_eq!(eval("calc(abs(5))"), Some(5.0));
+    assert_eq!(eval("calc(sign(-5))"), Some(-1.0));
+    assert_eq!(eval("calc(sign(0))"), Some(0.0));
+    assert_eq!(eval("calc(sign(42))"), Some(1.0));
+    assert_eq!(eval("calc(sqrt(16))"), Some(4.0));
+    assert_eq!(eval("calc(exp(0))"), Some(1.0));
+    assert!((eval("calc(log(e))").unwrap() - 1.0).abs() < 1e-9, "log(e) = 1");
+    // 常量（parse_atom 阶段归一为 Number）
+    assert!((eval("calc(pi)").unwrap() - std::f64::consts::PI).abs() < 1e-9, "pi");
+    assert!((eval("calc(e)").unwrap() - std::f64::consts::E).abs() < 1e-9, "e");
+    assert_eq!(eval("calc(infinity)"), Some(f64::INFINITY));
+    assert!(eval("calc(nan)").unwrap().is_nan(), "NaN");
+    // 嵌套 + 组合
+    assert_eq!(eval("calc(sqrt(9) + 1)"), Some(4.0));
+    assert_eq!(eval("calc(abs(3 - 10))"), Some(7.0));
+    // 无效：sqrt(负)/log(≤0) → None（CSS IACVT 无效，不产生 NaN 渲染值）
+    assert_eq!(eval("calc(sqrt(-4))"), None, "sqrt(负) → None");
+    assert_eq!(eval("calc(log(0))"), None, "log(0) → None");
+}
+
+#[test]
+/// R2279：CSS Values L4 数学函数 AST 结构 + 未知函数 defer。
+fn test_parse_calc_unary_math() {
+    use crate::values::{CalcExpr, UnaryMathOp};
+    assert!(matches!(
+        parse_math_function("calc(sqrt(16))").unwrap(),
+        CalcExpr::UnaryOp(UnaryMathOp::Sqrt, _)
+    ));
+    assert!(matches!(
+        parse_math_function("calc(abs(-5))").unwrap(),
+        CalcExpr::UnaryOp(UnaryMathOp::Abs, _)
+    ));
+    // 常量归一为 Number
+    assert!(matches!(
+        parse_math_function("calc(pi)").unwrap(),
+        CalcExpr::Number(n) if (n - std::f64::consts::PI).abs() < 1e-9
+    ));
+    // 未实现的函数（trig/round/mod 等）→ calc 解析失败 None（留待后续 slice）。
+    assert!(parse_math_function("calc(sin(0))").is_none());
+    assert!(parse_math_function("calc(round(1.5, 1))").is_none());
+}
+
 // ── parse_calc 嵌套与优先级 ──
 
 #[test]

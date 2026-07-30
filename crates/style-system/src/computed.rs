@@ -418,6 +418,7 @@ fn calc_contains_percentage(expr: &CalcExpr) -> bool {
         CalcExpr::Clamp { min, val, max } => {
             calc_contains_percentage(min) || calc_contains_percentage(val) || calc_contains_percentage(max)
         }
+        CalcExpr::UnaryOp(_, inner) => calc_contains_percentage(inner),
     }
 }
 
