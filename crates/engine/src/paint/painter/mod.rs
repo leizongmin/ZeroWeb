@@ -26,7 +26,7 @@ use zero_style_system::{
     UserSelectValue, WillChangeValue,
 };
 
-use super::color::color_value_to_render;
+use super::color::resolve_color_current;
 use super::helpers::{PrimitiveCounts, apply_opacity_to_new_primitives, circle_to_polygon, ellipse_to_polygon};
 
 /// 绘制命令生成器 — 将布局盒树转换为渲染图元。
@@ -368,7 +368,7 @@ impl Painter {
                 if ps.background_color != ColorValue::Transparent {
                     self.primitives.add_fill(
                         Rect::new(0.0, 0.0, self.viewport_w, self.viewport_h),
-                        color_value_to_render(&ps.background_color),
+                        resolve_color_current(&ps.background_color, &ps.color),
                     );
                 }
                 // 画布背景图像：painting area = 画布 (0,0,vw,vh)；positioning area = 根元素盒
@@ -1550,7 +1550,7 @@ impl Painter {
             if !matches!(style.background_color, ColorValue::Transparent) {
                 self.primitives.add_fill(
                     Rect::new(rect_x, content_y, *w, h),
-                    color_value_to_render(&style.background_color),
+                    resolve_color_current(&style.background_color, &style.color),
                 );
             }
             // R2046：col/colgroup background-image（§17.5.1 col 层；col 无 box，经列 rect 平铺）。
@@ -1650,7 +1650,7 @@ impl Painter {
         // gate 无 border，圆角罕见）。wrapper 经 no_box gate 无 border/padding，region offset 直接从
         // abs_x（box origin = content origin）起。
         if box_node.is_nested_spanner_wrapper && !box_node.nested_spanner_col_bg.is_empty() && radii.is_zero() {
-            let bg = color_value_to_render(&style.background_color);
+            let bg = resolve_color_current(&style.background_color, &style.color);
             for &(offset, rw, rh) in &box_node.nested_spanner_col_bg {
                 self.primitives.add_fill(Rect::new(abs_x + offset, abs_y, rw, rh), bg);
             }
@@ -1661,14 +1661,14 @@ impl Painter {
             // 无圆角：简单矩形填充
             self.primitives.add_fill(
                 Rect::new(clip_x, clip_y, clip_w, clip_h),
-                color_value_to_render(&style.background_color),
+                resolve_color_current(&style.background_color, &style.color),
             );
         } else {
             // 圆角矩形：通过 add_rounded_rect 记录 DrawOp（draw_order 是默认渲染路径，
             // 直接 push 到 rounded_rects 会绕过 DrawOp 记录导致圆角背景被丢弃）。
             self.primitives.add_rounded_rect(RoundedRectPrimitive {
                 rect: Rect::new(clip_x, clip_y, clip_w, clip_h),
-                color: color_value_to_render(&style.background_color),
+                color: resolve_color_current(&style.background_color, &style.color),
                 top_left_radius: radii.top_left,
                 top_right_radius: radii.top_right,
                 bottom_right_radius: radii.bottom_right,

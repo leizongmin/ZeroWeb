@@ -18,6 +18,22 @@ pub fn color_value_to_render(color: &ColorValue) -> Color {
     }
 }
 
+/// 解析颜色到渲染 Color，**currentColor 替换为元素自身计算 `color`**（CSS Color §resolving）。
+///
+/// 与 `color_value_to_render` 的区别：后者无元素上下文把 currentColor 回落黑色；本函数
+/// 用于 background-color 等须正确解析 currentColor 的场景（driving: css-color currentcolor-001..
+/// `background-color: currentColor` 应取元素 `color`，非黑色）。若元素 color 本身未解析仍为
+/// CurrentColor（`color: currentColor` 罕见，须 cascade 解析继承色），回落黑色（旧行为）。
+pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> Color {
+    match color {
+        ColorValue::CurrentColor => match element_color {
+            ColorValue::CurrentColor => Color::rgba(0, 0, 0, 255),
+            other => color_value_to_render(other),
+        },
+        other => color_value_to_render(other),
+    }
+}
+
 /// 将 HSL(Hue, Saturation, Lightness, Alpha) 转换为 RGBA。
 ///
 /// - `h` 色相角度 [0, 360)
@@ -124,6 +140,30 @@ mod tests {
         assert_eq!(c.g, 0);
         assert_eq!(c.b, 0);
         assert_eq!(c.a, 255);
+    }
+
+    #[test]
+    /// R2259：resolve_color_current 把 currentColor 解析为元素自身 color（非黑色）。
+    /// driving: css-color currentcolor-001..（`background-color: currentColor` → 元素 color）。
+    fn test_resolve_color_current() {
+        let green = ColorValue::Named("green".to_string());
+        let red = ColorValue::Named("red".to_string());
+        // currentColor → 元素 color（green）
+        assert_eq!(
+            resolve_color_current(&ColorValue::CurrentColor, &green),
+            color_value_to_render(&green)
+        );
+        assert_eq!(
+            resolve_color_current(&ColorValue::CurrentColor, &red),
+            color_value_to_render(&red)
+        );
+        // 非 currentColor 透传（不受 element_color 影响）
+        assert_eq!(resolve_color_current(&red, &green), color_value_to_render(&red));
+        // 元素 color 本身未解析仍为 currentColor（color:currentColor 罕见）→ 回落黑
+        assert_eq!(
+            resolve_color_current(&ColorValue::CurrentColor, &ColorValue::CurrentColor),
+            Color::rgba(0, 0, 0, 255)
+        );
     }
 
     #[test]

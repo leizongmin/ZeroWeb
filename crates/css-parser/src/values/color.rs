@@ -47,6 +47,20 @@ pub fn parse_color(value: &str) -> Option<ColorValue> {
         return parse_color_function(value);
     }
 
+    // light-dark() 函数（CSS Color Adjust §color-scheme-effect）：light-dark(<light>, <dark>)
+    // 按元素的 color-scheme 取值。ZW 默认 color-scheme = light（normal→light），故取第一个
+    //（light）参数。driving: css-color light-dark-inheritance / light-dark-currentcolor。
+    if value.starts_with("light-dark(") {
+        let start = value.find('(')?;
+        let end = value.rfind(')')?;
+        let inner = strip_css_comments(value.get(start + 1..end)?);
+        let light = first_top_level_comma_arg(&inner);
+        if light.is_empty() {
+            return None;
+        }
+        return parse_color(light);
+    }
+
     // 命名颜色
     parse_named_color(value)
 }
@@ -473,6 +487,21 @@ fn strip_css_comments(s: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// 取首个**顶层**（括号深度 0）逗号前的参数，trim 返回。无顶层逗号则返回整体 trim。
+/// 用于 light-dark() 等多参数颜色函数取首个参数（参数内可能含嵌套逗号，如 color-mix()）。
+fn first_top_level_comma_arg(s: &str) -> &str {
+    let mut depth = 0i32;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => return s[..i].trim(),
+            _ => {}
+        }
+    }
+    s.trim()
 }
 
 /// 解析色相角度（CSS Color 4）：数字 + 可选角度单位（`deg`/`grad`/`rad`/`turn`），
@@ -1409,6 +1438,30 @@ mod tests {
         assert_eq!(
             parse_color("color(prophoto-rgb 0 0 0)"),
             Some(ColorValue::Rgba(0, 0, 0, 255))
+        );
+    }
+
+    // ── light-dark()（CSS Color Adjust，R2259）───────────────────────────
+
+    #[test]
+    fn test_light_dark_resolves_to_light() {
+        // 默认 color-scheme = light → 取首个（light）参数。driving: light-dark-inheritance。
+        assert_eq!(parse_color("light-dark(green, red)"), parse_color("green"));
+        assert_eq!(parse_color("light-dark(#008000, red)"), parse_color("#008000"));
+        // 嵌套 color() / hsl 作 light 参数
+        assert_eq!(
+            parse_color("light-dark(rgb(0,128,0), white)"),
+            parse_color("rgb(0,128,0)")
+        );
+        // 参数内含逗号（color-mix）——顶层逗号切分，首个参数完整取出
+        assert_eq!(
+            parse_color("light-dark(color(srgb 0 0.5 0), red)"),
+            parse_color("color(srgb 0 0.5 0)")
+        );
+        // currentColor 作 light 参数（透传，paint 时解析）
+        assert_eq!(
+            parse_color("light-dark(currentColor, red)"),
+            parse_color("currentColor")
         );
     }
 
