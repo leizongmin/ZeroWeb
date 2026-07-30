@@ -42,6 +42,11 @@ pub fn parse_color(value: &str) -> Option<ColorValue> {
         return parse_hwb_function(value);
     }
 
+    // color() 函数（CSS Color 4 预定义颜色空间：srgb/srgb-linear/display-p3/a98-rgb/xyz…）
+    if value.starts_with("color(") {
+        return parse_color_function(value);
+    }
+
     // 命名颜色
     parse_named_color(value)
 }
@@ -214,6 +219,185 @@ fn parse_alpha_component(s: &str) -> Option<u8> {
     } else {
         let v: f64 = s.parse().ok()?;
         Some((v * 255.0).round().clamp(0.0, 255.0) as u8)
+    }
+}
+
+/// 解析 CSS Color 4 `color()` 函数（预定义颜色空间）。
+///
+/// `color(<space> c1 c2 c3 [ / <alpha>])`，space ∈ srgb / srgb-linear / display-p3 /
+/// a98-rgb / rec2020 / prophoto-rgb / xyz / xyz-d50 / xyz-d65（CSS Color 4 全部预定义空间）。
+/// 分量 0-1（可越界/负）；`none` → 0。wide-gamut 经传递函数 + XYZ-D65 矩阵转换到 sRGB 渲染。
+/// driving: css-color a98rgb-001..004 / xyz-* / display-p3-* / rec2020-* / prophoto-* / background-color-color-*。
+fn parse_color_function(value: &str) -> Option<ColorValue> {
+    let start = value.find('(')?;
+    let end = value.rfind(')')?;
+    let inner_str = strip_css_comments(value.get(start + 1..end)?);
+    let inner = inner_str.trim();
+
+    let (main, slash_alpha) = if let Some((m, a)) = inner.split_once('/') {
+        (m.trim(), Some(a.trim()))
+    } else {
+        (inner, None)
+    };
+
+    let mut parts = main.split_whitespace();
+    let space = parts.next()?.to_ascii_lowercase();
+    let comps: Vec<&str> = parts.collect();
+    if comps.len() != 3 {
+        return None;
+    }
+    let c0 = parse_color_number(comps[0])?;
+    let c1 = parse_color_number(comps[1])?;
+    let c2 = parse_color_number(comps[2])?;
+    let a = if let Some(ap) = slash_alpha {
+        parse_alpha_value(ap)?
+    } else {
+        1.0
+    };
+
+    let (r, g, b) = convert_predefined_to_srgb(&space, c0, c1, c2)?;
+    Some(ColorValue::Rgba(r, g, b, (a * 255.0).round().clamp(0.0, 255.0) as u8))
+}
+
+/// 解析 color() 分量数字（0-1 浮点，可负/越界）；`none` → 0。
+fn parse_color_number(s: &str) -> Option<f64> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("none") {
+        return Some(0.0);
+    }
+    s.parse().ok()
+}
+
+/// sRGB 传递函数：分量 → 线性光（CSS Color 4，与 display-p3 共用）。
+fn srgb_decode(c: f64) -> f64 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// sRGB 传递函数：线性光 → 分量（编码 gamma）。
+fn srgb_encode(c: f64) -> f64 {
+    if c <= 0.0031308 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+/// 线性 RGB 分量 → sRGB u8（编码 gamma + 钳制 + 四舍五入）。
+fn linear_srgb_to_u8(c: f64) -> u8 {
+    (srgb_encode(c) * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+/// 3×3 矩阵（行优先 [9]）乘列向量。
+fn mat3_mul(m: [f64; 9], x: f64, y: f64, z: f64) -> (f64, f64, f64) {
+    (
+        m[0] * x + m[1] * y + m[2] * z,
+        m[3] * x + m[4] * y + m[5] * z,
+        m[6] * x + m[7] * y + m[8] * z,
+    )
+}
+
+// display-p3（线性）→ XYZ-D65（CSS Color 4）
+const P3_TO_XYZ: [f64; 9] = [
+    0.4865709, 0.2656677, 0.1982173, 0.2289746, 0.6917385, 0.0792869, 0.0, 0.0451134, 1.0439444,
+];
+// a98-rgb（线性）→ XYZ-D65（CSS Color 4）
+const A98_TO_XYZ: [f64; 9] = [
+    0.5766690, 0.1855582, 0.1882286, 0.2973448, 0.6273624, 0.0752914, 0.0270313, 0.0706892, 0.9913375,
+];
+// rec2020（线性）→ XYZ-D65（CSS Color 4）
+const REC2020_TO_XYZ: [f64; 9] = [
+    0.6369580, 0.1446169, 0.1688809, 0.2627002, 0.6779981, 0.0593017, 0.0, 0.0280727, 1.0609851,
+];
+// prophoto-rgb（线性）→ XYZ-D50（CSS Color 4）
+const PROPHOTO_TO_XYZ: [f64; 9] = [
+    0.7977666, 0.1351813, 0.0313477, 0.2880747, 0.7118762, 0.0000853, 0.0, 0.0, 0.8251044,
+];
+// XYZ-D65 → 线性 sRGB（CSS Color 4）
+const XYZ_TO_SRGB: [f64; 9] = [
+    3.2409699, -1.5373832, -0.4986108, -0.9692436, 1.8759675, 0.0415551, 0.0556300, -0.2039770, 1.0569715,
+];
+// XYZ-D50 → XYZ-D65（Bradford 色度适应）
+const XYZ_D50_TO_D65: [f64; 9] = [
+    0.9555766, -0.0230393, 0.0631636, -0.0282895, 1.0099416, 0.0210077, 0.0122982, -0.0204830, 1.3299098,
+];
+
+/// 把预定义颜色空间 3 分量转换为 sRGB u8。返回 None 表示不支持的空间（rec2020/prophoto/未知）。
+fn convert_predefined_to_srgb(space: &str, c0: f64, c1: f64, c2: f64) -> Option<(u8, u8, u8)> {
+    let (lr, lg, lb) = match space {
+        "srgb" => {
+            // 已是 sRGB gamma 分量（0-1），直接转 u8。
+            return Some((
+                (c0 * 255.0).round().clamp(0.0, 255.0) as u8,
+                (c1 * 255.0).round().clamp(0.0, 255.0) as u8,
+                (c2 * 255.0).round().clamp(0.0, 255.0) as u8,
+            ));
+        }
+        "srgb-linear" => (c0, c1, c2), // 已是线性 sRGB
+        "display-p3" => {
+            let (x, y, z) = mat3_mul(P3_TO_XYZ, srgb_decode(c0), srgb_decode(c1), srgb_decode(c2));
+            mat3_mul(XYZ_TO_SRGB, x, y, z)
+        }
+        "a98-rgb" => {
+            let g = 563.0 / 256.0; // a98 gamma ≈ 2.1992
+            let (x, y, z) = mat3_mul(A98_TO_XYZ, safe_powf(c0, g), safe_powf(c1, g), safe_powf(c2, g));
+            mat3_mul(XYZ_TO_SRGB, x, y, z)
+        }
+        "rec2020" => {
+            let (x, y, z) = mat3_mul(
+                REC2020_TO_XYZ,
+                rec2020_decode(c0),
+                rec2020_decode(c1),
+                rec2020_decode(c2),
+            );
+            mat3_mul(XYZ_TO_SRGB, x, y, z)
+        }
+        "prophoto-rgb" => {
+            // prophoto 矩阵到 XYZ-D50，须 Bradford 适应到 D65。
+            let (x, y, z) = mat3_mul(
+                PROPHOTO_TO_XYZ,
+                prophoto_decode(c0),
+                prophoto_decode(c1),
+                prophoto_decode(c2),
+            );
+            let (x, y, z) = mat3_mul(XYZ_D50_TO_D65, x, y, z);
+            mat3_mul(XYZ_TO_SRGB, x, y, z)
+        }
+        "xyz" | "xyz-d65" => mat3_mul(XYZ_TO_SRGB, c0, c1, c2),
+        "xyz-d50" => {
+            let (x, y, z) = mat3_mul(XYZ_D50_TO_D65, c0, c1, c2);
+            mat3_mul(XYZ_TO_SRGB, x, y, z)
+        }
+        _ => return None,
+    };
+    Some((linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb)))
+}
+
+/// 安全幂运算：负分量（越界/色域外）钳到 0（powf 对负数返回 NaN）。
+fn safe_powf(c: f64, g: f64) -> f64 {
+    c.max(0.0).powf(g)
+}
+
+/// BT.2020 传递函数（分量 → 线性光）。α/β 为 BT.2020 常数。
+fn rec2020_decode(c: f64) -> f64 {
+    const ALPHA: f64 = 1.09929682680944;
+    const BETA: f64 = 0.018053968510807;
+    if c < BETA * 4.5 {
+        c / 4.5
+    } else {
+        safe_powf((c + ALPHA - 1.0) / ALPHA, 1.0 / 0.45)
+    }
+}
+
+/// prophoto-rgb 传递函数（分量 → 线性光，gamma 1.8 + 线性 toe）。
+fn prophoto_decode(c: f64) -> f64 {
+    if c < 0.03125 {
+        (c / 16.0).max(0.0)
+    } else {
+        safe_powf(c, 1.8)
     }
 }
 
@@ -1180,6 +1364,52 @@ mod tests {
         // 现代色大小写不敏感
         assert_eq!(parse_color("canvas"), parse_color("Canvas"));
         assert_eq!(parse_color("graytext"), parse_color("GrayText"));
+    }
+
+    // ── CSS Color 4 color() 预定义颜色空间（R2255）──────────────────────
+
+    #[test]
+    fn test_color_function_srgb() {
+        // srgb 空间 = 普通 sRGB 分量（0-1）
+        assert_eq!(parse_color("color(srgb 0 0 0)"), Some(ColorValue::Rgba(0, 0, 0, 255)));
+        assert_eq!(
+            parse_color("color(srgb 1 1 1)"),
+            Some(ColorValue::Rgba(255, 255, 255, 255))
+        );
+        assert_eq!(
+            parse_color("color(srgb 0 0.5 0)"),
+            Some(ColorValue::Rgba(0, 128, 0, 255))
+        );
+        // slash alpha
+        assert_eq!(
+            parse_color("color(srgb 1 0 0 / 0.5)"),
+            Some(ColorValue::Rgba(255, 0, 0, 128))
+        );
+    }
+
+    #[test]
+    fn test_color_function_wide_gamut_round_trip() {
+        // a98rgb-001 driving：sRGB green #008000 转 a98-rgb 坐标，转回应得 green。
+        let c = parse_color("color(a98-rgb 0.281363 0.498012 0.116746)").unwrap();
+        assert_eq!(c, ColorValue::Rgba(0, 128, 0, 255));
+        // display-p3 red (1,0,0) → sRGB red（钳制后 ≈ 255,0,0）
+        let c = parse_color("color(display-p3 1 0 0)").unwrap();
+        assert_eq!(c, ColorValue::Rgba(255, 0, 0, 255));
+    }
+
+    #[test]
+    fn test_color_function_unsupported_space() {
+        // 未知空间 → None（color 声明被拒绝，cascade 丢弃）。rec2020/prophoto 已支持。
+        assert_eq!(parse_color("color(unknown-space 0 0 0)"), None);
+        // rec2020/prophoto-rgb 黑色 round-trip → sRGB 黑
+        assert_eq!(
+            parse_color("color(rec2020 0 0 0)"),
+            Some(ColorValue::Rgba(0, 0, 0, 255))
+        );
+        assert_eq!(
+            parse_color("color(prophoto-rgb 0 0 0)"),
+            Some(ColorValue::Rgba(0, 0, 0, 255))
+        );
     }
 
     // ── hwb_to_rgba ─────────────────────────────────────────────────────
