@@ -419,6 +419,7 @@ fn calc_contains_percentage(expr: &CalcExpr) -> bool {
             calc_contains_percentage(min) || calc_contains_percentage(val) || calc_contains_percentage(max)
         }
         CalcExpr::UnaryOp(_, inner) => calc_contains_percentage(inner),
+        CalcExpr::BinaryMathOp(_, a, b) => calc_contains_percentage(a) || calc_contains_percentage(b),
     }
 }
 

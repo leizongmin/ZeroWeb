@@ -591,6 +591,8 @@ pub enum CalcExpr {
     },
     /// CSS Values L4 单参数数学函数：abs/sign/sqrt/exp/log（driving: R2279 CSS Values L4 数学函数）。
     UnaryOp(UnaryMathOp, Box<CalcExpr>),
+    /// CSS Values L4 双参数数学函数：pow/hypot/round/mod/rem（driving: R2280 CSS Values L4 数学函数）。
+    BinaryMathOp(BinaryMathOp, Box<CalcExpr>, Box<CalcExpr>),
 }
 
 /// CSS Values L4 单参数数学函数运算符（number → number）。
@@ -606,6 +608,21 @@ pub enum UnaryMathOp {
     Exp,
     /// log(x) —— 自然对数 ln(x)。
     Log,
+}
+
+/// CSS Values L4 双参数数学函数运算符（number, number → number）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BinaryMathOp {
+    /// pow(a, b) —— 幂 a^b。
+    Pow,
+    /// hypot(a, b) —— √(a²+b²)。
+    Hypot,
+    /// round(a, b) —— a 四舍五入到 b 的最近整数倍（nearest 策略，半值远离零）。
+    Round,
+    /// mod(a, b) —— 取模（结果符号同 b，floor 除法）。
+    Mod,
+    /// rem(a, b) —— 余数（结果符号同 a，trunc 除法）。
+    Rem,
 }
 
 /// CSS calc() 运算符。
@@ -882,6 +899,9 @@ impl<'a> CalcParser<'a> {
                 val: Box::new(val),
                 max: Box::new(max),
             }
+        } else if let Some(b) = self.try_parse_binary_math() {
+            // CSS Values L4 双参数数学函数 pow/hypot/round/mod/rem。
+            b
         } else if let Some(u) = self.try_parse_unary_math() {
             // CSS Values L4 单参数数学函数 abs/sign/sqrt/exp/log。
             u
@@ -932,6 +952,44 @@ impl<'a> CalcParser<'a> {
         }
         self.depth -= 1;
         Some(CalcExpr::UnaryOp(op, Box::new(inner)))
+    }
+
+    /// 尝试解析 CSS Values L4 双参数数学函数 pow/hypot/round/mod/rem。
+    /// 命中则消费前缀 + 解析 2 个逗号分隔参数 + 消费 `)`；否则不消费、返回 None。
+    /// round 的 rounding-strategy 关键字形式（round(nearest, A, B)）defer —— 仅支持 round(A, B)。
+    fn try_parse_binary_math(&mut self) -> Option<CalcExpr> {
+        if self.depth >= MAX_CALC_DEPTH {
+            return None;
+        }
+        let op = if self.try_consume("pow(") {
+            BinaryMathOp::Pow
+        } else if self.try_consume("hypot(") {
+            BinaryMathOp::Hypot
+        } else if self.try_consume("round(") {
+            BinaryMathOp::Round
+        } else if self.try_consume("mod(") {
+            BinaryMathOp::Mod
+        } else if self.try_consume("rem(") {
+            BinaryMathOp::Rem
+        } else {
+            return None;
+        };
+        self.depth += 1;
+        let args = self.parse_comma_list()?;
+        if args.len() != 2 {
+            return None;
+        }
+        self.skip_whitespace();
+        if !self.try_consume(")") {
+            return None;
+        }
+        self.depth -= 1;
+        let mut iter = args.into_iter();
+        Some(CalcExpr::BinaryMathOp(
+            op,
+            Box::new(iter.next()?),
+            Box::new(iter.next()?),
+        ))
     }
 
     /// 解析逗号分隔的表达式列表（用于 min/max 函数）。
@@ -1221,6 +1279,36 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                         Some(v.ln())
                     } else {
                         None
+                    }
+                }
+            }
+        }
+        // CSS Values L4 双参数数学函数（number, number → number）。
+        CalcExpr::BinaryMathOp(op, a, b) => {
+            let av = eval_calc_with_context(a, ctx)?;
+            let bv = eval_calc_with_context(b, ctx)?;
+            match op {
+                BinaryMathOp::Pow => {
+                    let r = av.powf(bv);
+                    if r.is_nan() { None } else { Some(r) }
+                }
+                BinaryMathOp::Hypot => Some(av.hypot(bv)),
+                // round(x, 0) = x；否则 (x/y).round()*y（nearest，半值远离零）。
+                BinaryMathOp::Round => Some(if bv == 0.0 { av } else { (av / bv).round() * bv }),
+                // mod(x, 0) 无效 → None；否则 x - y*floor(x/y)（符号同 y）。
+                BinaryMathOp::Mod => {
+                    if bv == 0.0 {
+                        None
+                    } else {
+                        Some(av - bv * (av / bv).floor())
+                    }
+                }
+                // rem(x, 0) 无效 → None；否则 x % y（符号同 x）。
+                BinaryMathOp::Rem => {
+                    if bv == 0.0 {
+                        None
+                    } else {
+                        Some(av % bv)
                     }
                 }
             }

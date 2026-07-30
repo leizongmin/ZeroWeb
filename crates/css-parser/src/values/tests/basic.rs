@@ -220,9 +220,55 @@ fn test_parse_calc_unary_math() {
         parse_math_function("calc(pi)").unwrap(),
         CalcExpr::Number(n) if (n - std::f64::consts::PI).abs() < 1e-9
     ));
-    // 未实现的函数（trig/round/mod 等）→ calc 解析失败 None（留待后续 slice）。
+    // 未实现的函数（trig 等）→ calc 解析失败 None（留待后续 slice）。
     assert!(parse_math_function("calc(sin(0))").is_none());
-    assert!(parse_math_function("calc(round(1.5, 1))").is_none());
+    assert!(parse_math_function("calc(atan2(1, 1))").is_none());
+}
+
+#[test]
+/// R2280：CSS Values L4 双参数数学函数 pow/hypot/round/mod/rem 求值。
+fn test_eval_calc_binary_math() {
+    let eval = |s: &str| eval_calc(&parse_math_function(s).unwrap(), None);
+    assert_eq!(eval("calc(pow(2, 3))"), Some(8.0));
+    assert_eq!(eval("calc(pow(2, -1))"), Some(0.5));
+    assert_eq!(eval("calc(hypot(3, 4))"), Some(5.0));
+    // round：nearest 策略，半值远离零。
+    assert_eq!(eval("calc(round(1.5, 1))"), Some(2.0));
+    assert_eq!(eval("calc(round(2.5, 1))"), Some(3.0), "2.5 半值远离零 → 3");
+    assert_eq!(eval("calc(round(7, 5))"), Some(5.0), "7 → 最近 5 的倍数");
+    assert_eq!(eval("calc(round(8, 5))"), Some(10.0), "8 → 最近 10 的倍数");
+    assert_eq!(eval("calc(round(1.4, 0))"), Some(1.4), "round(x, 0) = x");
+    // mod：floor 除法，结果符号同 b。
+    assert_eq!(eval("calc(mod(-1, 3))"), Some(2.0), "mod(-1,3)=2（符号同 3）");
+    assert_eq!(eval("calc(mod(4, 3))"), Some(1.0));
+    assert_eq!(eval("calc(mod(1, -3))"), Some(-2.0), "mod(1,-3)=-2（符号同 -3）");
+    // rem：trunc 除法，结果符号同 a。
+    assert_eq!(eval("calc(rem(-1, 3))"), Some(-1.0), "rem(-1,3)=-1（符号同 -1）");
+    assert_eq!(eval("calc(rem(4, 3))"), Some(1.0));
+    assert_eq!(eval("calc(rem(1, -3))"), Some(1.0), "rem(1,-3)=1（符号同 1）");
+    // 无效：pow 产生 NaN（负底非整指数）→ None；mod/rem 除零 → None。
+    assert_eq!(eval("calc(pow(-2, 0.5))"), None, "pow(-2,0.5)=NaN → None");
+    assert_eq!(eval("calc(mod(1, 0))"), None, "mod(x,0) → None");
+    assert_eq!(eval("calc(rem(1, 0))"), None, "rem(x,0) → None");
+    // 嵌套：pow(round(2.4,1)=2, 3) = 8。
+    assert_eq!(eval("calc(pow(round(2.4, 1), 3))"), Some(8.0));
+}
+
+#[test]
+/// R2280：CSS Values L4 双参数数学函数 AST 结构 + 参数数校验。
+fn test_parse_calc_binary_math() {
+    use crate::values::{BinaryMathOp, CalcExpr};
+    assert!(matches!(
+        parse_math_function("calc(pow(2, 3))").unwrap(),
+        CalcExpr::BinaryMathOp(BinaryMathOp::Pow, _, _)
+    ));
+    assert!(matches!(
+        parse_math_function("calc(mod(4, 3))").unwrap(),
+        CalcExpr::BinaryMathOp(BinaryMathOp::Mod, _, _)
+    ));
+    // 参数数 ≠ 2 → None。
+    assert!(parse_math_function("calc(pow(2))").is_none());
+    assert!(parse_math_function("calc(hypot(1, 2, 3))").is_none());
 }
 
 // ── parse_calc 嵌套与优先级 ──
