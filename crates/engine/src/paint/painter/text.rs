@@ -747,6 +747,12 @@ impl super::Painter {
             let needs_ellipsis = matches!(style.text_overflow, TextOverflowValue::Ellipsis)
                 && !matches!(style.overflow_x, zero_css_parser::values::OverflowValue::Visible);
 
+            // R2237：ellipsis '.' 测宽须用容器字体判定 is_ahem（Ahem 字体 '.' = 1em 方块，
+            // 非真实点宽）。旧 measure_char_for_paint('.', fs, false) 硬编码 false → Ahem 容器
+            // ellipsis 宽度过小 → 定位错（text-overflow-ellipsis-001）。driving: 同 container_is_ahem
+            // 模式（text.rs:853）。
+            let container_is_ahem = style.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"));
+
             if has_content {
                 let glyphs_before_fragments = self.primitives.glyphs.len();
 
@@ -1423,7 +1429,7 @@ impl super::Painter {
                     }
 
                     if has_overflow {
-                        let ellipsis_char_width = measure_char_for_paint('.', font_size, false);
+                        let ellipsis_char_width = measure_char_for_paint('.', font_size, container_is_ahem);
                         let total_ellipsis_width = ellipsis_char_width * 3.0 + letter_spacing * 2.0;
                         let ellipsis_end_x = content_right;
                         let ellipsis_start_x = ellipsis_end_x - total_ellipsis_width;
@@ -1502,7 +1508,7 @@ impl super::Painter {
                             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                             .unwrap_or(content_x + tx);
 
-                        let ellipsis_width = measure_char_for_paint('.', font_size, false);
+                        let ellipsis_width = measure_char_for_paint('.', font_size, container_is_ahem);
                         let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
                         for i in 0..3 {
                             self.primitives.add_glyph(GlyphPrimitive {

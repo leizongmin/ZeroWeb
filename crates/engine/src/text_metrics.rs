@@ -30,3 +30,29 @@ pub fn measure_char_for_paint(ch: char, font_size: f32, is_ahem: bool) -> f32 {
 pub fn layout_estimate_char_width(ch: char, font_size: f32, is_ahem: bool) -> f32 {
     estimate_char_width(ch, font_size, is_ahem)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R2237：Ahem 字体的字符宽度 = font_size（1em 完美方块），非真实点宽。
+    /// ellipsis 测宽须传 is_ahem=true（Ahem 容器），否则 '.' 宽度过小致 ellipsis 定位错。
+    /// driving: WPT css-overflow text-overflow-ellipsis-001（font:100px/1 Ahem）。
+    #[test]
+    fn test_measure_char_ahem_returns_font_size() {
+        // Ahem: 任意字符（含 '.'）= font_size（1em 方块）。
+        assert_eq!(measure_char_for_paint('.', 100.0, true), 100.0);
+        assert_eq!(measure_char_for_paint('p', 100.0, true), 100.0);
+        assert_eq!(measure_char_for_paint('.', 16.0, true), 16.0);
+    }
+
+    /// 非 Ahem：'.' 远窄于 font_size（真实点宽，非 1em 方块）。
+    #[test]
+    fn test_measure_char_non_ahem_dot_is_narrow() {
+        let dot_width = measure_char_for_paint('.', 100.0, false);
+        assert!(
+            dot_width < 100.0,
+            "非 Ahem '.' 须窄于 1em（font_size），实际 {dot_width}"
+        );
+    }
+}
