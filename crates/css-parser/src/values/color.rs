@@ -1303,6 +1303,7 @@ fn parse_named_color(value: &str) -> Option<ColorValue> {
         "plum" => rgba(221, 160, 221),
         "powderblue" => rgba(176, 224, 230),
         // R-T
+        "rebeccapurple" => rgba(102, 51, 153), // CSS Color 4 新增命名颜色。driving: named-001。
         "rosybrown" => rgba(188, 143, 143),
         "royalblue" => rgba(65, 105, 225),
         "saddlebrown" => rgba(139, 69, 19),

@@ -1532,6 +1532,21 @@ fn test_parse_lab_lch_oklab_oklch() {
 }
 
 #[test]
+/// R2272：rebeccapurple（CSS Color 4 新增命名颜色）解析。driving: css-color named-001。
+fn test_parse_rebeccapurple() {
+    use crate::values::ColorValue;
+    assert!(matches!(
+        super::super::parse_color("rebeccapurple"),
+        Some(ColorValue::Rgba(102, 51, 153, 255))
+    ));
+    // 大小写不敏感
+    assert!(matches!(
+        super::super::parse_color("RebeccaPurple"),
+        Some(ColorValue::Rgba(102, 51, 153, 255))
+    ));
+}
+
+#[test]
 /// R2270：CSS Color 4 线性光变体（display-p3-linear 等）——跳过 gamma decode。
 fn test_parse_linear_color_spaces() {
     use crate::values::ColorValue;
