@@ -146,6 +146,24 @@ fn child_content_origin(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> (f32, f
     (cx, cy)
 }
 
+/// CSS Containment §4：paint containment 是否对该元素触发 paint 层裁剪。
+///
+/// 须同时满足：(a) 启用 paint containment（`has_paint()`：Paint/Strict/Content/Custom 含
+/// FLAG_PAINT）；(b) containment 对该 display 生效——排除 display:inline 非原子 /
+/// contents / none（这些不生成可 contain 的容器盒，containment 无效，driving: WPT
+/// paint-012：`contain:paint` 在 `<span>` 上不裁剪、不建 fixed containing block）。
+///
+/// **修复**：旧 `compute_needs_clip` 匹配 `ContainComputedValue::Custom(_)` 过宽——任何
+/// Custom 值（如 `contain: size` / `contain: layout style`，**不含 paint**）都被裁剪。
+/// 改用 `has_paint()` 精确判定 + 与 R2240 `is_flow_root` gate 同族的 inline 排除。
+fn paint_containment_clips(contain: ContainComputedValue, display: DisplayValue) -> bool {
+    contain.has_paint()
+        && !matches!(
+            display,
+            DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
+        )
+}
+
 /// 判断节点是否需要对子内容裁剪（overflow 或 contain:paint/strict/content 触发）。
 ///
 /// 从 paint_node 抽出，供 collect_positioned_auto_descendants 镜像 defer_abspos 条件，
@@ -156,13 +174,7 @@ fn compute_needs_clip(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedSty
     {
         box_node.overflow_x != OverflowClip::Visible
             || box_node.overflow_y != OverflowClip::Visible
-            || matches!(
-                style.contain,
-                ContainComputedValue::Paint
-                    | ContainComputedValue::Strict
-                    | ContainComputedValue::Content
-                    | ContainComputedValue::Custom(_)
-            )
+            || paint_containment_clips(style.contain.clone(), style.display.clone())
     } else {
         box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible
     }
@@ -1674,5 +1686,88 @@ impl Painter {
 impl Default for Painter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_css_parser::values::DisplayValue;
+    use zero_style_system::ContainComputedValue;
+
+    /// R2241：paint containment 裁剪判定——has_paint()（Paint/Strict/Content/Custom 含
+    /// FLAG_PAINT）且 display 生成容器盒（非 inline 非-原子 / contents / none）。
+    /// driving: WPT css-contain contain-paint-*（裁剪）+ paint-012（inline 不裁剪）。
+    #[test]
+    fn test_paint_containment_clips_paint_values() {
+        // 含 paint 的值，块级元素 → 裁剪。
+        assert!(
+            paint_containment_clips(ContainComputedValue::Paint, DisplayValue::Block),
+            "contain:paint 块须裁剪"
+        );
+        assert!(
+            paint_containment_clips(ContainComputedValue::Strict, DisplayValue::Block),
+            "contain:strict（含 paint）块须裁剪"
+        );
+        assert!(
+            paint_containment_clips(ContainComputedValue::Content, DisplayValue::Block),
+            "contain:content（含 paint）块须裁剪"
+        );
+        assert!(
+            paint_containment_clips(
+                ContainComputedValue::Custom(ContainComputedValue::FLAG_PAINT | ContainComputedValue::FLAG_LAYOUT),
+                DisplayValue::Block
+            ),
+            "contain:layout paint（Custom 含 PAINT）块须裁剪"
+        );
+    }
+
+    /// R2241：**不含 paint** 的 contain 值（含 Custom）不裁剪——修复旧 `Custom(_)` 过宽 bug。
+    #[test]
+    fn test_paint_containment_clips_non_paint_values_do_not_clip() {
+        for (contain, label) in [
+            (ContainComputedValue::None, "none"),
+            (ContainComputedValue::Size, "size"),
+            (ContainComputedValue::Layout, "layout"),
+            (ContainComputedValue::Style, "style"),
+            // 旧实现匹配 Custom(_) 会错误裁剪这两类——现须不裁剪（不含 paint）。
+            (
+                ContainComputedValue::Custom(ContainComputedValue::FLAG_SIZE),
+                "size(Custom)",
+            ),
+            (
+                ContainComputedValue::Custom(ContainComputedValue::FLAG_LAYOUT | ContainComputedValue::FLAG_STYLE),
+                "layout style(Custom)",
+            ),
+        ] {
+            assert!(
+                !paint_containment_clips(contain, DisplayValue::Block),
+                "contain:{label} 不含 paint，不应裁剪"
+            );
+        }
+    }
+
+    /// R2241：containment 对非原子 inline / contents / none 不生效（不裁剪）——
+    /// driving: paint-012（contain:paint 在 `<span>` 上不裁剪/不建 fixed CB）。
+    #[test]
+    fn test_paint_containment_clips_excludes_non_container_display() {
+        let paint = ContainComputedValue::Paint;
+        assert!(
+            !paint_containment_clips(paint.clone(), DisplayValue::Inline),
+            "contain:paint 在 display:inline（非原子）上不裁剪"
+        );
+        assert!(
+            !paint_containment_clips(paint.clone(), DisplayValue::Contents),
+            "contain:paint 在 display:contents 上不裁剪"
+        );
+        assert!(
+            !paint_containment_clips(paint, DisplayValue::None),
+            "contain:paint 在 display:none 上不裁剪"
+        );
+        // inline-block（原子行内盒，生成容器盒）仍裁剪。
+        assert!(
+            paint_containment_clips(ContainComputedValue::Paint, DisplayValue::InlineBlock),
+            "contain:paint 在 inline-block（原子行内）上仍裁剪"
+        );
     }
 }
