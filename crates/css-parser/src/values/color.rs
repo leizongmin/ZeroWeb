@@ -583,6 +583,24 @@ fn parse_named_color(value: &str) -> Option<ColorValue> {
         "wheat" => rgba(245, 222, 179),
         "whitesmoke" => rgba(245, 245, 245),
         "yellowgreen" => rgba(154, 205, 50),
+        // ── CSS 系统颜色（CSS Color 4 §system-colors + §deprecated-system-colors）──
+        // 现代系统颜色取 light color-scheme 合理默认值。deprecated-sameas 测试为**相对**
+        // 匹配（test 的 deprecated 色 == ref 的现代色），故具体值非关键，仅需每个现代色
+        // 自洽。`@supports (color: X)` 经 is_property_supported→parse_color 自动求值。
+        // driving: css-color deprecated-sameas-001..023（deprecated 系统色 ≡ 其现代等价）。
+        "canvas" => rgba(255, 255, 255),
+        "canvastext" => rgba(0, 0, 0),
+        "buttonface" => rgba(240, 240, 240),
+        "buttonborder" => rgba(128, 128, 128),
+        "graytext" | "greytext" => rgba(128, 128, 128),
+        // deprecated 系统颜色 → 现代等价（CSS Color 4 §deprecated-system-colors 映射表）
+        "activeborder" | "inactiveborder" | "threeddarkshadow" | "threedhighlight" | "threedlightshadow"
+        | "threedshadow" | "windowframe" => rgba(128, 128, 128), /* → ButtonBorder */
+        "activecaption" | "appworkspace" | "background" | "inactivecaption" | "infobackground" | "menu"
+        | "scrollbar" | "window" => rgba(255, 255, 255), /* → Canvas */
+        "buttonhighlight" | "buttonshadow" | "threedface" => rgba(240, 240, 240), /* → ButtonFace */
+        "captiontext" | "infotext" | "menutext" | "windowtext" => rgba(0, 0, 0),  /* → CanvasText */
+        "inactivecaptiontext" => rgba(128, 128, 128),                             /* → GrayText */
         // transparent 和 currentColor 由 parse_color_value 直接处理
         "transparent" => Some(ColorValue::Transparent),
         "currentcolor" => Some(ColorValue::CurrentColor),
@@ -1136,6 +1154,32 @@ mod tests {
         // 遗留逗号语法不回归
         assert_eq!(parse_color("rgb(0, 128, 0)"), Some(ColorValue::Rgba(0, 128, 0, 255)));
         assert_eq!(parse_color("rgba(0, 0, 0, 0.5)"), Some(ColorValue::Rgba(0, 0, 0, 128)));
+    }
+
+    // ── CSS 系统颜色（R2254：deprecated ≡ 现代等价）─────────────────────
+
+    #[test]
+    fn test_deprecated_system_colors_equal_modern() {
+        // deprecated-sameas 测试为相对匹配：deprecated 色须 == 其现代等价。
+        let modern = |name: &str| parse_color(name);
+        // ActiveBorder == ButtonBorder
+        assert_eq!(parse_color("ActiveBorder"), modern("ButtonBorder"));
+        assert_eq!(parse_color("ThreeDShadow"), modern("ButtonBorder"));
+        assert_eq!(parse_color("WindowFrame"), modern("ButtonBorder"));
+        // CaptionText == CanvasText
+        assert_eq!(parse_color("CaptionText"), modern("CanvasText"));
+        assert_eq!(parse_color("WindowText"), modern("CanvasText"));
+        // Window == Canvas
+        assert_eq!(parse_color("Window"), modern("Canvas"));
+        assert_eq!(parse_color("Scrollbar"), modern("Canvas"));
+        // ButtonHighlight == ButtonFace
+        assert_eq!(parse_color("ButtonHighlight"), modern("ButtonFace"));
+        assert_eq!(parse_color("ThreeDFace"), modern("ButtonFace"));
+        // InactiveCaptionText == GrayText
+        assert_eq!(parse_color("InactiveCaptionText"), modern("GrayText"));
+        // 现代色大小写不敏感
+        assert_eq!(parse_color("canvas"), parse_color("Canvas"));
+        assert_eq!(parse_color("graytext"), parse_color("GrayText"));
     }
 
     // ── hwb_to_rgba ─────────────────────────────────────────────────────
