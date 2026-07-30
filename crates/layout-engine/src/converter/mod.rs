@@ -121,16 +121,29 @@ pub fn computed_style_to_taffy(
             }
         },
         size: if style.contain.has_size() {
-            // R2239：contain:size — auto 尺寸解析为 0（content 不贡献 size），显式尺寸保留。
-            // R2256：contain-intrinsic-size 覆盖 auto 维的 0（CSS Sizing 4）——size containment
-            // 元素的 auto 尺寸取 contain-intrinsic-size（若有），否则 0。driving: css-sizing
-            // contain-intrinsic-size-001..（contain:size + contain-intrinsic-size: 111px 222px → 111×222）。
+            // R2239：contain:size — content-based auto 尺寸解析为 0（content 不贡献 size），显式尺寸保留。
+            // R2256：contain-intrinsic-size 覆盖 content-based auto 维的 0（CSS Sizing 4）。
+            // R2257：block-level auto-width 维持 fill-CB（stretch-fit）——size containment 只折叠
+            // content-based 尺寸，block 的 auto-width = fill CB（非 content-based），contain:size 不改之
+            //（contain-size-block-001「block 应如无内容 sized，但宽度仍 fill CB」+ contain-intrinsic-size
+            // block 案 CIS-height 应用、CIS-width 不覆盖 block fill-CB 宽）。非 block-level（inline-block/
+            // replaced/table 等收缩适配）auto-width 仍取 CIS 或 0。
             let cis_dim = |cis: &Option<LengthValue>| match cis {
                 Some(l) => convert_length_to_dimension(l, vw, vh),
                 None => taffy::style::Dimension::length(0.0),
             };
+            let block_fills_width = matches!(
+                style.display,
+                DisplayValue::Block
+                    | DisplayValue::Flow
+                    | DisplayValue::FlowRoot
+                    | DisplayValue::ListItem
+                    | DisplayValue::Flex
+                    | DisplayValue::Grid
+            );
             taffy::geometry::Size {
                 width: match &style.width {
+                    LengthValue::Auto if block_fills_width => taffy::style::Dimension::auto(),
                     LengthValue::Auto => cis_dim(&style.contain_intrinsic_width),
                     _ => convert_length_to_dimension(&style.width, vw, vh),
                 },
