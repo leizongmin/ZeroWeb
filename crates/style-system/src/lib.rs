@@ -103,6 +103,57 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
     })
 }
 
+/// R2246：HTML rendering §quotes（`<q>` 元素自动引号）— 英语默认引号对。
+///
+/// chromium/HTML 规范对未声明 `quotes` 的 `<q>`：depth 0 用双弯引号 “ ”（U+201C/U+201D），
+/// depth 1+ 用单弯引号 ‘ ’（U+2018/U+2019）。非英语 locale 的 per-lang 默认表未实现
+///（WPT css-content 多为英语，此默认覆盖主流案）。
+fn q_default_quote_pair(depth: usize) -> (String, String) {
+    if depth == 0 {
+        ("\u{201C}".to_string(), "\u{201D}".to_string())
+    } else {
+        ("\u{2018}".to_string(), "\u{2019}".to_string())
+    }
+}
+
+/// R2246：解析 `<q>` 元素在给定 `depth` 的开/闭引号字符串。
+///
+/// `depth` = 该 `<q>` 的 `<q>` 祖先数（CSS `open-quote` 深度；`<q>`-only 嵌套 ≡ 祖先数）。
+/// `quotes` 属性优先：`Pairs` 取 `pairs[min(depth, len-1)]`（空 Pairs 回落默认）；
+/// `Auto`/无声明 → [`q_default_quote_pair`]；`None` → 无引号（返回 `None`，`<q>` 不注入）。
+/// driving: WPT css-content quotes-*（`<q>` 自动引号）。
+pub fn resolve_q_quotes(quotes: &QuotesComputedValue, depth: usize) -> Option<(String, String)> {
+    match quotes {
+        QuotesComputedValue::None => None,
+        QuotesComputedValue::Auto => Some(q_default_quote_pair(depth)),
+        QuotesComputedValue::Pairs(pairs) => {
+            if pairs.is_empty() {
+                Some(q_default_quote_pair(depth))
+            } else {
+                let idx = depth.min(pairs.len() - 1);
+                Some((pairs[idx].0.clone(), pairs[idx].1.clone()))
+            }
+        }
+    }
+}
+
+/// R2246：统计节点的 `<q>` 祖先数（沿 DOM parent 链向上，含嵌套）。
+///
+/// 用于 `<q>` 自动引号的 depth（CSS open-quote 深度 = 当前打开的 `<q>` 祖先数）。
+fn count_q_ancestors(doc: &Document, mut node: NodeId) -> usize {
+    let mut count = 0usize;
+    while let Some(parent) = doc.parent_node(node) {
+        if let Some(pn) = doc.get(parent)
+            && let NodeKind::Element(e) = &pn.kind
+            && e.local_name().eq_ignore_ascii_case("q")
+        {
+            count += 1;
+        }
+        node = parent;
+    }
+    count
+}
+
 /// R1679：返回 `<option>` 的标签文本（HTML §4.10.10）。
 ///
 /// `label` 属性非空时优先（trim 后），否则回落到 option 的 text content。
@@ -276,17 +327,41 @@ impl StyleSystem {
                 Some("after"),
             );
             self.custom_properties = saved_custom;
+            // R2246：HTML rendering §quotes — `<q>` 自动引号。depth = `<q>` 祖先数（CSS
+            // open-quote 深度）；解析引号对（`quotes` 属性优先，Auto/无声明→英语默认，None→无）。
+            // 仅在**无显式 ::before/::after content**（content:Normal）时注入开/闭引号，经既有
+            // before_pseudo/after_pseudo + pipeline 文本节点注入渲染。driving: WPT css-content quotes-*。
+            let is_q = matches!(&node_data.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("q"));
+            let q_quotes = if is_q {
+                resolve_q_quotes(&computed.quotes, count_q_ancestors(doc, node))
+            } else {
+                None
+            };
             if matches!(
                 before.content,
                 property::types::ContentComputedValue::String(_) | property::types::ContentComputedValue::Attr(_)
             ) {
                 computed.before_pseudo = Some(Box::new(before));
+            } else if is_q
+                && matches!(before.content, property::types::ContentComputedValue::Normal)
+                && let Some((open, _)) = &q_quotes
+            {
+                let mut b = before.clone();
+                b.content = property::types::ContentComputedValue::String(open.clone());
+                computed.before_pseudo = Some(Box::new(b));
             }
             if matches!(
                 after.content,
                 property::types::ContentComputedValue::String(_) | property::types::ContentComputedValue::Attr(_)
             ) {
                 computed.after_pseudo = Some(Box::new(after));
+            } else if is_q
+                && matches!(after.content, property::types::ContentComputedValue::Normal)
+                && let Some((_, close)) = &q_quotes
+            {
+                let mut a = after.clone();
+                a.content = property::types::ContentComputedValue::String(close.clone());
+                computed.after_pseudo = Some(Box::new(a));
             }
             styles.insert(node, computed);
         }
@@ -1737,3 +1812,131 @@ mod presentational_hint_tests;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod q_quotes_tests {
+    use super::*;
+
+    /// R2246：resolve_q_quotes 引号对解析——None 无引号；Auto 英语默认（depth 0 “ ”，
+    /// depth 1+ ‘ ’）；Pairs 取对应 depth（clamp 到末对）。
+    #[test]
+    fn test_resolve_q_quotes() {
+        use property::types::QuotesComputedValue;
+        // None → 无引号。
+        assert!(resolve_q_quotes(&QuotesComputedValue::None, 0).is_none(), "None 无引号");
+        // Auto depth 0 → “ ”，depth 1 → ‘ ’。
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, 0).unwrap();
+        assert_eq!(o, "\u{201C}", "Auto depth 0 开引号 “");
+        assert_eq!(c, "\u{201D}", "Auto depth 0 闭引号 ”");
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, 1).unwrap();
+        assert_eq!(o, "\u{2018}", "Auto depth 1 开引号 ‘");
+        assert_eq!(c, "\u{2019}", "Auto depth 1 闭引号 ’");
+        // Pairs → 取对应 depth，clamp 到末对。
+        let pairs = QuotesComputedValue::Pairs(vec![
+            ("«".to_string(), "»".to_string()),
+            ("‹".to_string(), "›".to_string()),
+        ]);
+        let (o, c) = resolve_q_quotes(&pairs, 0).unwrap();
+        assert_eq!((o.as_str(), c.as_str()), ("«", "»"), "Pairs depth 0");
+        let (o, c) = resolve_q_quotes(&pairs, 1).unwrap();
+        assert_eq!((o.as_str(), c.as_str()), ("‹", "›"), "Pairs depth 1");
+        // depth 超过 Pairs 长度 → clamp 到末对。
+        let (o, c) = resolve_q_quotes(&pairs, 5).unwrap();
+        assert_eq!((o.as_str(), c.as_str()), ("‹", "›"), "Pairs depth 5 clamp");
+        // 空 Pairs → 回落英语默认。
+        let (o, _) = resolve_q_quotes(&QuotesComputedValue::Pairs(vec![]), 0).unwrap();
+        assert_eq!(o, "\u{201C}", "空 Pairs 回落默认 depth 0");
+    }
+
+    /// 辅助：在 doc 中按标签名查找首个元素 NodeId。
+    fn find_first_tag(doc: &Document, root: NodeId, tag: &str) -> Option<NodeId> {
+        if let Some(n) = doc.get(root)
+            && let NodeKind::Element(e) = &n.kind
+            && e.local_name().eq_ignore_ascii_case(tag)
+        {
+            return Some(root);
+        }
+        for child in doc.child_nodes(root) {
+            if let Some(found) = find_first_tag(doc, child, tag) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// R2246：`<q>text</q>` 经 compute_styles 注入 before_pseudo=“ / after_pseudo=”
+    ///（英语默认，经既有 before_pseudo + pipeline 文本节点渲染）。
+    #[test]
+    fn test_q_element_auto_quotes_default() {
+        let doc = zero_dom::parse_html("<html><body><q>hello</q></body></html>");
+        let body = doc.root();
+        let q = find_first_tag(&doc, body, "q").expect("应找到 <q>");
+        let mut sys = StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &[]);
+        let q_style = styles.get(&q).expect("<q> 应有计算样式");
+        let before = q_style.before_pseudo.as_ref().expect("<q> 应注入 before_pseudo");
+        assert!(
+            matches!(&before.content, property::types::ContentComputedValue::String(s) if s == "\u{201C}"),
+            "<q> before_pseudo content 须为 “，got {:?}",
+            before.content
+        );
+        let after = q_style.after_pseudo.as_ref().expect("<q> 应注入 after_pseudo");
+        assert!(
+            matches!(&after.content, property::types::ContentComputedValue::String(s) if s == "\u{201D}"),
+            "<q> after_pseudo content 须为 ”，got {:?}",
+            after.content
+        );
+    }
+
+    /// R2246：`quotes` 属性覆盖默认对（作者声明 `quotes: « »`）。
+    #[test]
+    fn test_q_element_quotes_property_override() {
+        let doc =
+            zero_dom::parse_html("<html><head><style>q{quotes:\"«\" \"»\"}</style></head><body><q>x</q></body></html>");
+        let body = doc.root();
+        let q = find_first_tag(&doc, body, "q").expect("应找到 <q>");
+        // 解析样式表
+        let css = "q{quotes:\"«\" \"»\"}";
+        let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+        let q_style = styles.get(&q).expect("<q> 应有计算样式");
+        let before = q_style.before_pseudo.as_ref().expect("<q> 应注入 before_pseudo");
+        assert!(
+            matches!(&before.content, property::types::ContentComputedValue::String(s) if s == "«"),
+            "quotes:« » 覆盖 → before 须为 «，got {:?}",
+            before.content
+        );
+    }
+
+    /// R2246：嵌套 `<q><q>` — 内层 depth=1 用单引号对（英语默认 depth 1 = ‘ ’）。
+    #[test]
+    fn test_q_element_nested_depth() {
+        let doc = zero_dom::parse_html("<html><body><q>outer <q>inner</q></q></body></html>");
+        let body = doc.root();
+        // 找到内层 <q>（DFS 最后一个 q = inner）。
+        fn find_last_tag(doc: &Document, root: NodeId, tag: &str, found: &mut Option<NodeId>) {
+            if let Some(n) = doc.get(root)
+                && let NodeKind::Element(e) = &n.kind
+                && e.local_name().eq_ignore_ascii_case(tag)
+            {
+                *found = Some(root);
+            }
+            for child in doc.child_nodes(root) {
+                find_last_tag(doc, child, tag, found);
+            }
+        }
+        let mut inner = None;
+        find_last_tag(&doc, body, "q", &mut inner);
+        let inner = inner.expect("应找到内层 <q>");
+        let mut sys = StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &[]);
+        let q_style = styles.get(&inner).expect("内层 <q> 应有计算样式");
+        let before = q_style.before_pseudo.as_ref().expect("内层 <q> 应注入 before_pseudo");
+        assert!(
+            matches!(&before.content, property::types::ContentComputedValue::String(s) if s == "\u{2018}"),
+            "内层 <q> depth=1 → before 须为 ‘，got {:?}",
+            before.content
+        );
+    }
+}
