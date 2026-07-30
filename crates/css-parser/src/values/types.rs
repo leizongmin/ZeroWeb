@@ -833,9 +833,10 @@ impl<'a> CalcParser<'a> {
 
         // 处理负号前缀
         let neg = if self.peek_rest().starts_with('-') {
-            // 判断是否为负号（而非减号）：后面紧跟数字或 calc(
+            // 判断是否为负号（而非减号）：后面紧跟数字、小数点或标识符首字符
+            // （支持 -5、-.5、-infinity/-pi/-e/-nan 常量、-calc(...) 等；二元减号由 parse_expr 处理）。
             let after = self.peek_rest()[1..].trim_start();
-            if after.starts_with(|c: char| c.is_ascii_digit() || c == '.') || after.starts_with("calc(") {
+            if after.starts_with(|c: char| c.is_ascii_digit() || c == '.' || c.is_ascii_alphabetic()) {
                 self.pos += 1;
                 true
             } else {

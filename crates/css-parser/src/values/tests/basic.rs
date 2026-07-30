@@ -194,6 +194,7 @@ fn test_eval_calc_unary_math() {
     assert!((eval("calc(pi)").unwrap() - std::f64::consts::PI).abs() < 1e-9, "pi");
     assert!((eval("calc(e)").unwrap() - std::f64::consts::E).abs() < 1e-9, "e");
     assert_eq!(eval("calc(infinity)"), Some(f64::INFINITY));
+    assert_eq!(eval("calc(-infinity)"), Some(f64::NEG_INFINITY), "-infinity");
     assert!(eval("calc(nan)").unwrap().is_nan(), "NaN");
     // 嵌套 + 组合
     assert_eq!(eval("calc(sqrt(9) + 1)"), Some(4.0));
