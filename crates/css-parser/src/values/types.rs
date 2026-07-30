@@ -608,6 +608,18 @@ pub enum UnaryMathOp {
     Exp,
     /// log(x) —— 自然对数 ln(x)。
     Log,
+    /// sin(x) —— 正弦（x 为弧度 number 或 <angle>，由 parse_angle_to_radians 归一）。
+    Sin,
+    /// cos(x) —— 余弦。
+    Cos,
+    /// tan(x) —— 正切。
+    Tan,
+    /// asin(x) —— 反正弦（[-1,1] → 弧度 [-π/2,π/2]；|x|>1 无效）。
+    Asin,
+    /// acos(x) —— 反余弦（[-1,1] → 弧度 [0,π]；|x|>1 无效）。
+    Acos,
+    /// atan(x) —— 反正切（任意 → 弧度 (-π/2,π/2)）。
+    Atan,
 }
 
 /// CSS Values L4 双参数数学函数运算符（number, number → number）。
@@ -623,6 +635,8 @@ pub enum BinaryMathOp {
     Mod,
     /// rem(a, b) —— 余数（结果符号同 a，trunc 除法）。
     Rem,
+    /// atan2(y, x) —— 二参数反正切（弧度 (-π,π]）。
+    Atan2,
 }
 
 /// CSS calc() 运算符。
@@ -925,7 +939,7 @@ impl<'a> CalcParser<'a> {
         Some(expr)
     }
 
-    /// 尝试解析 CSS Values L4 单参数数学函数 abs/sign/sqrt/exp/log。
+    /// 尝试解析 CSS Values L4 单参数数学函数 abs/sign/sqrt/exp/log + trig sin/cos/tan/asin/acos/atan。
     /// 命中则消费前缀 + 解析内层 expr + 消费 `)`，返回 UnaryOp；否则不消费、返回 None。
     fn try_parse_unary_math(&mut self) -> Option<CalcExpr> {
         if self.depth >= MAX_CALC_DEPTH {
@@ -941,6 +955,18 @@ impl<'a> CalcParser<'a> {
             UnaryMathOp::Exp
         } else if self.try_consume("log(") {
             UnaryMathOp::Log
+        } else if self.try_consume("sin(") {
+            UnaryMathOp::Sin
+        } else if self.try_consume("cos(") {
+            UnaryMathOp::Cos
+        } else if self.try_consume("tan(") {
+            UnaryMathOp::Tan
+        } else if self.try_consume("asin(") {
+            UnaryMathOp::Asin
+        } else if self.try_consume("acos(") {
+            UnaryMathOp::Acos
+        } else if self.try_consume("atan(") {
+            UnaryMathOp::Atan
         } else {
             return None; // 未命中：try_consume 仅在匹配时消费，此处无消费
         };
@@ -954,7 +980,7 @@ impl<'a> CalcParser<'a> {
         Some(CalcExpr::UnaryOp(op, Box::new(inner)))
     }
 
-    /// 尝试解析 CSS Values L4 双参数数学函数 pow/hypot/round/mod/rem。
+    /// 尝试解析 CSS Values L4 双参数数学函数 pow/hypot/round/mod/rem/atan2。
     /// 命中则消费前缀 + 解析 2 个逗号分隔参数 + 消费 `)`；否则不消费、返回 None。
     /// round 的 rounding-strategy 关键字形式（round(nearest, A, B)）defer —— 仅支持 round(A, B)。
     fn try_parse_binary_math(&mut self) -> Option<CalcExpr> {
@@ -971,6 +997,8 @@ impl<'a> CalcParser<'a> {
             BinaryMathOp::Mod
         } else if self.try_consume("rem(") {
             BinaryMathOp::Rem
+        } else if self.try_consume("atan2(") {
+            BinaryMathOp::Atan2
         } else {
             return None;
         };
@@ -1040,6 +1068,11 @@ impl<'a> CalcParser<'a> {
             "infinity" => return Some(CalcExpr::Number(f64::INFINITY)),
             "nan" => return Some(CalcExpr::Number(f64::NAN)),
             _ => {}
+        }
+
+        // CSS Values L4 <angle> 单位（deg/grad/turn/rad）→ 弧度 Number（供 trig 函数参数）。
+        if let Some(rad) = parse_angle_to_radians(token) {
+            return Some(CalcExpr::Number(rad));
         }
 
         // 尝试解析为长度值
@@ -1281,6 +1314,20 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                         None
                     }
                 }
+                // trig：sin/cos/tan 输入弧度（parse_angle_to_radians 已把 <angle> 归一）。
+                UnaryMathOp::Sin => Some(v.sin()),
+                UnaryMathOp::Cos => Some(v.cos()),
+                UnaryMathOp::Tan => Some(v.tan()),
+                // 反三角：asin/acos 对 |v|>1 产生 NaN → None（CSS 无效）；atan 恒有效。
+                UnaryMathOp::Asin => {
+                    let r = v.asin();
+                    if r.is_nan() { None } else { Some(r) }
+                }
+                UnaryMathOp::Acos => {
+                    let r = v.acos();
+                    if r.is_nan() { None } else { Some(r) }
+                }
+                UnaryMathOp::Atan => Some(v.atan()),
             }
         }
         // CSS Values L4 双参数数学函数（number, number → number）。
@@ -1311,6 +1358,8 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
                         Some(av % bv)
                     }
                 }
+                // atan2(y, x) —— 二参数反正切（弧度 (-π,π]），恒有效。
+                BinaryMathOp::Atan2 => Some(av.atan2(bv)),
             }
         }
     }
@@ -1342,6 +1391,24 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         // min-content/max-content 需要内容信息才能计算，此处返回 None
         LengthValue::MinContent | LengthValue::MaxContent => None,
     }
+}
+
+/// 解析 CSS `<angle>` 为弧度数值（CSS Values L4，供 calc trig 函数参数）。
+///
+/// 支持单位：`deg`（°×π/180）、`grad`（×π/200）、`turn`（×2π）、`rad`（×1）。
+/// 裸数字非 angle（返回 None）；大小写不敏感。driving: CSS Values L4 sin/cos/tan(<angle>)。
+pub fn parse_angle_to_radians(token: &str) -> Option<f64> {
+    let lower = token.to_ascii_lowercase();
+    let (num_str, factor) = [
+        ("deg", std::f64::consts::PI / 180.0),
+        ("grad", std::f64::consts::PI / 200.0),
+        ("turn", 2.0 * std::f64::consts::PI),
+        ("rad", 1.0),
+    ]
+    .into_iter()
+    .find_map(|(suffix, f)| lower.strip_suffix(suffix).map(|n| (n, f)))?;
+    let v: f64 = num_str.trim().parse().ok()?;
+    Some(v * factor)
 }
 
 /// 解析 CSS 长度值。

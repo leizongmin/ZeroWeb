@@ -220,9 +220,8 @@ fn test_parse_calc_unary_math() {
         parse_math_function("calc(pi)").unwrap(),
         CalcExpr::Number(n) if (n - std::f64::consts::PI).abs() < 1e-9
     ));
-    // 未实现的函数（trig 等）→ calc 解析失败 None（留待后续 slice）。
-    assert!(parse_math_function("calc(sin(0))").is_none());
-    assert!(parse_math_function("calc(atan2(1, 1))").is_none());
+    // 未知函数 → calc 解析失败 None。
+    assert!(parse_math_function("calc(unknownmath(0))").is_none());
 }
 
 #[test]
@@ -269,6 +268,46 @@ fn test_parse_calc_binary_math() {
     // 参数数 ≠ 2 → None。
     assert!(parse_math_function("calc(pow(2))").is_none());
     assert!(parse_math_function("calc(hypot(1, 2, 3))").is_none());
+}
+
+#[test]
+/// R2281：CSS Values L4 三角函数 sin/cos/tan/asin/acos/atan/atan2 + <angle> 单位解析。
+fn test_eval_calc_trig() {
+    let eval = |s: &str| eval_calc(&parse_math_function(s).unwrap(), None);
+    let approx = |a: Option<f64>, b: f64, tol: f64| (a.unwrap() - b).abs() < tol;
+    // 裸数字 = 弧度。
+    assert!(approx(eval("calc(sin(0))"), 0.0, 1e-9));
+    assert!(approx(eval("calc(sin(1.5707963267948966))"), 1.0, 1e-9), "sin(π/2)=1");
+    assert!(approx(eval("calc(cos(0))"), 1.0, 1e-9));
+    assert!(approx(eval("calc(tan(0.7853981633974483))"), 1.0, 1e-9), "tan(π/4)=1");
+    // <angle> 单位 → 弧度（parse_angle_to_radians）。
+    assert!(approx(eval("calc(sin(90deg))"), 1.0, 1e-9), "sin(90°)=1");
+    assert!(approx(eval("calc(cos(180deg))"), -1.0, 1e-9), "cos(180°)=-1");
+    assert!(approx(eval("calc(sin(0.5turn))"), 0.0, 1e-9), "sin(π)=0");
+    assert!(approx(eval("calc(sin(100grad))"), 1.0, 1e-9), "sin(100grad)=sin(π/2)=1");
+    assert!(
+        approx(eval("calc(sin(1.5707963267948966rad))"), 1.0, 1e-9),
+        "sin(π/2 rad)=1"
+    );
+    // 反三角（返回弧度）。
+    assert!(
+        approx(eval("calc(asin(1))"), std::f64::consts::PI / 2.0, 1e-9),
+        "asin(1)=π/2"
+    );
+    assert!(approx(eval("calc(acos(1))"), 0.0, 1e-9), "acos(1)=0");
+    assert!(
+        approx(eval("calc(atan(1))"), std::f64::consts::PI / 4.0, 1e-9),
+        "atan(1)=π/4"
+    );
+    assert!(
+        approx(eval("calc(atan2(1, 1))"), std::f64::consts::PI / 4.0, 1e-9),
+        "atan2(1,1)=π/4"
+    );
+    // 无效：asin/acos 对 |v|>1 产生 NaN → None。
+    assert_eq!(eval("calc(asin(2))"), None, "asin(2) → None");
+    assert_eq!(eval("calc(acos(-2))"), None, "acos(-2) → None");
+    // pi 常量 + trig 组合：sin(pi / 2) = 1。
+    assert!(approx(eval("calc(sin(pi / 2))"), 1.0, 1e-9), "sin(pi/2)=1");
 }
 
 // ── parse_calc 嵌套与优先级 ──
