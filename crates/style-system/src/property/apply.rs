@@ -31,7 +31,7 @@ pub(crate) fn parse_length_or_math_quirks(value: &str) -> Option<LengthValue> {
 ///
 /// 返回 true 表示成功设置。
 pub fn apply_property_value(style: &mut ComputedStyle, property: &str, value: &str) -> bool {
-    apply_property_value_with_quirks(style, property, value, false)
+    apply_property_value_with_quirks(style, property, value, false, false)
 }
 
 /// 将属性字符串值设置到 ComputedStyle 的对应字段。
@@ -45,6 +45,7 @@ pub fn apply_property_value_with_quirks(
     property: &str,
     value: &str,
     quirks_mode: bool,
+    prefers_dark: bool,
 ) -> bool {
     // 不在此 trim：声明值经 consume_declaration deferred-whitespace 已无首尾空白 token
     // （inline style 经 parse_inline_style 自行 trim，presentational hints 产 clean 值，
@@ -389,7 +390,8 @@ pub fn apply_property_value_with_quirks(
         "color-scheme" => {
             // color-scheme 影响本元素 light-dark() 解析，须在颜色属性应用前确定
             //（compute_inherited_style_with_quirks 的预解析已先行设置；此处对显式声明同步）。
-            style.color_scheme_dark = parse_color_scheme_dark(value);
+            // used-scheme 与 prefers-color-scheme 合成（见 parse_color_scheme_dark）。
+            style.color_scheme_dark = parse_color_scheme_dark(value, prefers_dark);
             return true;
         }
         "opacity" => {
@@ -872,15 +874,32 @@ pub fn apply_property_value_with_quirks(
     false
 }
 
-/// 解析 `color-scheme` 描述符为「是否暗 scheme」标志。
+/// 解析 `color-scheme` 描述符为「是否暗 used-scheme」标志（CSS Color Adjust L1 §2.3）。
 ///
-/// CSS Color Adjust：`color-scheme` 取首个支持的 scheme（顺序优先）。ZW 支持 light/dark，
-/// 故取首个非 `only` 关键字：`dark` → true（含 `dark`、`only dark`、`dark light`），
-/// `light`/`normal`/其他/缺省 → false。driving: css-variables registered-property-light-dark。
-pub(crate) fn parse_color_scheme_dark(value: &str) -> bool {
-    value
-        .split_whitespace()
-        .find(|t| !t.eq_ignore_ascii_case("only"))
-        .map(|t| t.eq_ignore_ascii_case("dark"))
-        .unwrap_or(false)
+/// used color-scheme 由属性声明的 scheme 列表与用户偏好（`prefers-color-scheme`）合成：
+/// - 列表含 `dark` 与 `light`（如 `light dark`、`dark light`、`only light dark`）→ 由
+///   `prefers_dark` 决定（两种 scheme 均可用，用户偏好取胜）；
+/// - 列表仅含 `dark`（含 `only dark`、`dark only`）→ dark；
+/// - 列表仅含 `light`（含 `only light`）→ light；
+/// - 列表不含 light/dark（`normal` / 缺省 / 仅 custom-ident）→ 保守取 light（ZW 默认，
+///   不让未显式 opt-in 的页面在暗 OS 上整体翻转）。
+///
+/// `prefers_dark` 来自 `prefers-color-scheme` 媒体查询（自渲染 reftest 恒为 light=false，
+/// 故合成对 reftest 字节级等价、零回归；仅真实浏览器暗 OS / 单测 prefers=true 时激活）。
+/// driving: css-variables registered-property-light-dark + 全局暗模式 theming。
+pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
+    let mut has_light = false;
+    let mut has_dark = false;
+    for tok in value.split_whitespace() {
+        if tok.eq_ignore_ascii_case("light") {
+            has_light = true;
+        } else if tok.eq_ignore_ascii_case("dark") {
+            has_dark = true;
+        }
+    }
+    match (has_light, has_dark) {
+        (true, true) => prefers_dark, // 两种均可用 → 用户偏好决定
+        (false, true) => true,        // 仅 dark
+        _ => false,                   // 仅 light / normal / 缺省 → light（保守默认）
+    }
 }

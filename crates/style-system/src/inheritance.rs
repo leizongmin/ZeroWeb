@@ -26,14 +26,18 @@ pub fn compute_inherited_style(
     parent_style: Option<&ComputedStyle>,
     cascaded: &HashMap<String, String>,
 ) -> ComputedStyle {
-    compute_inherited_style_with_quirks(parent_style, cascaded, QuirksMode::NoQuirks)
+    compute_inherited_style_with_quirks(parent_style, cascaded, QuirksMode::NoQuirks, false)
 }
 
 /// 为元素计算继承样式（支持 quirks mode）。
+///
+/// `prefers_dark` 为用户颜色偏好（`prefers-color-scheme` 媒体查询 = dark），
+/// 参与 `color-scheme` 属性的 used-scheme 合成（见 `parse_color_scheme_dark`）。
 pub fn compute_inherited_style_with_quirks(
     parent_style: Option<&ComputedStyle>,
     cascaded: &HashMap<String, String>,
     quirks_mode: QuirksMode,
+    prefers_dark: bool,
 ) -> ComputedStyle {
     let mut style = ComputedStyle::default();
 
@@ -42,7 +46,7 @@ pub fn compute_inherited_style_with_quirks(
     // 主循环仍会按既有路径处理 color-scheme（idempotent）；未显式声明则继承父元素。
     if let Some(cs) = cascaded.get("color-scheme") {
         style.color_scheme_dark = match resolve_keyword(cs, "color-scheme", parent_style) {
-            KeywordResolution::Concrete(v) => crate::property::apply::parse_color_scheme_dark(&v),
+            KeywordResolution::Concrete(v) => crate::property::apply::parse_color_scheme_dark(&v, prefers_dark),
             KeywordResolution::Inherit | KeywordResolution::Unset | KeywordResolution::Revert => {
                 parent_style.map(|p| p.color_scheme_dark).unwrap_or(false)
             }
@@ -106,7 +110,13 @@ pub fn compute_inherited_style_with_quirks(
                 }
             }
             KeywordResolution::Concrete(v) => {
-                apply_property_value_with_quirks(&mut style, property, &v, quirks_mode == QuirksMode::Quirks);
+                apply_property_value_with_quirks(
+                    &mut style,
+                    property,
+                    &v,
+                    quirks_mode == QuirksMode::Quirks,
+                    prefers_dark,
+                );
             }
         }
     }

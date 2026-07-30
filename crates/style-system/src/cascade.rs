@@ -299,7 +299,8 @@ fn is_cascade_value_valid(property: &str, value: &str, quirks: bool, dummy: &mut
     if property.starts_with("--") || value.contains("var(") || is_css_wide_keyword(value) {
         return true;
     }
-    apply_property_value_with_quirks(dummy, property, value, quirks)
+    // 有效性检查（apply-on-dummy）：color-scheme 合法性不依赖 prefers，传 light=false。
+    apply_property_value_with_quirks(dummy, property, value, quirks, false)
 }
 
 /// 是否为 CSS-wide 关键字（合法，但非 apply 直接解析，由 inheritance/compute 处理）。

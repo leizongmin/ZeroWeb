@@ -4,6 +4,7 @@ mod advanced;
 mod apply_coverage;
 mod apply_coverage_extra;
 mod basic;
+mod color_scheme_synthesis;
 mod coverage_round3;
 mod edge;
 mod helpers;
