@@ -1463,3 +1463,32 @@ fn test_parse_relative_color_identity() {
         Some(ColorValue::Rgba(0, 128, 0, 255))
     ));
 }
+
+#[test]
+/// R2269：lab()/lch()/oklab()/oklch() → sRGB（green #008000 各空间值经 WPT 注释验证）。
+fn test_parse_lab_lch_oklab_oklch() {
+    use crate::values::ColorValue;
+    // green = (0,128,0)。WPT 注释提供各空间转换值。
+    let g = |c: &str| super::super::parse_color(c);
+    assert!(matches!(
+        g("lab(46.2775% -47.5621 48.5837)"),
+        Some(ColorValue::Rgba(0, 128, 0, 255))
+    ));
+    assert!(matches!(
+        g("lch(46.2775% 67.9892 134.3912)"),
+        Some(ColorValue::Rgba(0, 128, 0, 255))
+    ));
+    assert!(matches!(
+        g("oklab(51.975% -0.1403 0.10768)"),
+        Some(ColorValue::Rgba(0, 128, 0, 255))
+    ));
+    assert!(matches!(
+        g("oklch(51.975% 0.17686 142.495)"),
+        Some(ColorValue::Rgba(0, 128, 0, 255))
+    ));
+    // L>100/L>1 钳制：lab(150 150 20) == lab(100 150 20)（driving: lab-l-over-100-*）。
+    assert_eq!(g("lab(150 150 20)"), g("lab(100 150 20)"), "L>100 应钳制到 100");
+    assert_eq!(g("oklch(150% 0.17686 142.495)"), g("oklch(100% 0.17686 142.495)"));
+    // 非 3 分量 → None
+    assert!(g("lab(50% 40)").is_none());
+}

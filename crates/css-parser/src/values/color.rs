@@ -58,6 +58,21 @@ pub fn parse_color(value: &str) -> Option<ColorValue> {
         return parse_color_function(value);
     }
 
+    // lab() / lch() / oklab() / oklch()（CSS Color 4 CIE Lab / OKLab 色彩空间）。driving:
+    // css-color lab-*/lch-*/oklab-*/oklch-*（~54 案；R2255 XYZ↔sRGB 基础设施复用）。
+    if value.starts_with("lab(") {
+        return parse_lab(value);
+    }
+    if value.starts_with("lch(") {
+        return parse_lch(value);
+    }
+    if value.starts_with("oklab(") {
+        return parse_oklab(value);
+    }
+    if value.starts_with("oklch(") {
+        return parse_oklch(value);
+    }
+
     // light-dark() 函数（CSS Color Adjust §color-scheme-effect）：light-dark(<light>, <dark>)
     // 按元素的 color-scheme 取值。ZW 默认 color-scheme = light（normal→light），故取第一个
     //（light）参数。driving: css-color light-dark-inheritance / light-dark-currentcolor。
@@ -289,6 +304,173 @@ fn parse_color_function(value: &str) -> Option<ColorValue> {
 
     let (r, g, b) = convert_predefined_to_srgb(&space, c0, c1, c2)?;
     Some(ColorValue::Rgba(r, g, b, (a * 255.0).round().clamp(0.0, 255.0) as u8))
+}
+
+/// 提取 `<func>(...)` 内层（首个 `(` 到末个 `)`，去注释）。
+fn inner_of_parens(value: &str) -> Option<String> {
+    let start = value.find('(')?;
+    let end = value.rfind(')')?;
+    if end <= start {
+        return None;
+    }
+    Some(strip_css_comments(value.get(start + 1..end)?).trim().to_string())
+}
+
+/// 拆分颜色分量（main + 可选 `/ alpha`），空白与逗号均作分隔（兼容 legacy 逗号语法）。
+/// 返回（main 分量 token 列表, 可选 alpha [0,1]）。
+fn split_color_components(inner: &str) -> Option<(Vec<&str>, Option<f64>)> {
+    let (main, slash_alpha) = if let Some((m, a)) = inner.split_once('/') {
+        (m.trim(), Some(a.trim()))
+    } else {
+        (inner.trim(), None)
+    };
+    let comps: Vec<&str> = main
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let alpha = match slash_alpha {
+        Some(ap) => Some(parse_alpha_value(ap)?),
+        None => Some(1.0),
+    };
+    Some((comps, alpha))
+}
+
+/// 解析带可选百分比的分量：`<number>` 或 `<number>%`（按 `percent_scale` 缩放）；`none`→0。
+fn parse_scaled_component(s: &str, percent_scale: f64) -> Option<f64> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("none") {
+        return Some(0.0);
+    }
+    if let Some(num_str) = s.strip_suffix('%') {
+        return num_str.parse::<f64>().ok().map(|v| v * percent_scale / 100.0);
+    }
+    s.parse::<f64>().ok()
+}
+
+/// alpha f64 → u8。
+fn alpha_to_u8(a: Option<f64>) -> u8 {
+    ((a.unwrap_or(1.0)) * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+/// CIE Lab → 线性 sRGB（CSS Color 4 §10.3：Lab → XYZ-D50 → XYZ-D65 → 线性 sRGB）。
+/// L∈[0,100]，a/b 为 a*/b*（无固定范围，常见 ±125）。
+fn lab_to_linear_srgb(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
+    // f⁻¹（CSS Color 4：t > 6/29 → t³，否则 (116t−16)·27/24389）
+    let t0 = 6.0 / 29.0;
+    let f_inv = |t: f64| {
+        if t > t0 {
+            t * t * t
+        } else {
+            (116.0 * t - 16.0) * 27.0 / 24389.0
+        }
+    };
+    let fy = (l + 16.0) / 116.0;
+    let fx = fy + a / 500.0;
+    let fz = fy - b / 200.0;
+    // XYZ-D50（D50 白点 Xn=0.96422, Yn=1.0, Zn=0.82521）
+    let x = f_inv(fx) * 0.96422;
+    let y = f_inv(fy) * 1.0;
+    let z = f_inv(fz) * 0.82521;
+    // XYZ-D50 → XYZ-D65（Bradford）→ 线性 sRGB
+    let (x, y, z) = mat3_mul(XYZ_D50_TO_D65, x, y, z);
+    mat3_mul(XYZ_TO_SRGB, x, y, z)
+}
+
+/// OKLab → 线性 sRGB（CSS Color 4 §10.4，直接线性 LMS 矩阵）。
+fn oklab_to_linear_srgb(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
+    let l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+    let m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+    let s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+    let l = l_ * l_ * l_;
+    let m = m_ * m_ * m_;
+    let s = s_ * s_ * s_;
+    (
+        4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+        -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+        -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+    )
+}
+
+/// `lab(L a b [/ alpha])`：L∈[0,100]（% of 100），a/b（% of 125 或数字）。
+fn parse_lab(value: &str) -> Option<ColorValue> {
+    let inner = inner_of_parens(value)?;
+    let (comps, alpha) = split_color_components(&inner)?;
+    if comps.len() < 3 {
+        return None;
+    }
+    let l = parse_scaled_component(comps[0], 100.0)?.clamp(0.0, 100.0);
+    let a = parse_scaled_component(comps[1], 125.0)?;
+    let b = parse_scaled_component(comps[2], 125.0)?;
+    let (lr, lg, lb) = lab_to_linear_srgb(l, a, b);
+    Some(ColorValue::Rgba(
+        linear_srgb_to_u8(lr),
+        linear_srgb_to_u8(lg),
+        linear_srgb_to_u8(lb),
+        alpha_to_u8(alpha),
+    ))
+}
+
+/// `lch(L C h [/ alpha])`：L∈[0,100]（% of 100），C（% of 150 或数字），h 为角度。
+fn parse_lch(value: &str) -> Option<ColorValue> {
+    let inner = inner_of_parens(value)?;
+    let (comps, alpha) = split_color_components(&inner)?;
+    if comps.len() < 3 {
+        return None;
+    }
+    let l = parse_scaled_component(comps[0], 100.0)?.clamp(0.0, 100.0);
+    let c = parse_scaled_component(comps[1], 150.0)?;
+    let h_deg = parse_hue_angle(comps[2])?;
+    let h_rad = h_deg * std::f64::consts::PI / 180.0;
+    let a = c * h_rad.cos();
+    let b = c * h_rad.sin();
+    let (lr, lg, lb) = lab_to_linear_srgb(l, a, b);
+    Some(ColorValue::Rgba(
+        linear_srgb_to_u8(lr),
+        linear_srgb_to_u8(lg),
+        linear_srgb_to_u8(lb),
+        alpha_to_u8(alpha),
+    ))
+}
+
+/// `oklab(L a b [/ alpha])`：L∈[0,1]（% of 1），a/b（% of 0.4 或数字）。
+fn parse_oklab(value: &str) -> Option<ColorValue> {
+    let inner = inner_of_parens(value)?;
+    let (comps, alpha) = split_color_components(&inner)?;
+    if comps.len() < 3 {
+        return None;
+    }
+    let l = parse_scaled_component(comps[0], 1.0)?.clamp(0.0, 1.0);
+    let a = parse_scaled_component(comps[1], 0.4)?;
+    let b = parse_scaled_component(comps[2], 0.4)?;
+    let (lr, lg, lb) = oklab_to_linear_srgb(l, a, b);
+    Some(ColorValue::Rgba(
+        linear_srgb_to_u8(lr),
+        linear_srgb_to_u8(lg),
+        linear_srgb_to_u8(lb),
+        alpha_to_u8(alpha),
+    ))
+}
+
+/// `oklch(L C h [/ alpha])`：L∈[0,1]（% of 1），C（% of 0.4 或数字），h 为角度。
+fn parse_oklch(value: &str) -> Option<ColorValue> {
+    let inner = inner_of_parens(value)?;
+    let (comps, alpha) = split_color_components(&inner)?;
+    if comps.len() < 3 {
+        return None;
+    }
+    let l = parse_scaled_component(comps[0], 1.0)?.clamp(0.0, 1.0);
+    let c = parse_scaled_component(comps[1], 0.4)?;
+    let h_deg = parse_hue_angle(comps[2])?;
+    let h_rad = h_deg * std::f64::consts::PI / 180.0;
+    let a = c * h_rad.cos();
+    let b = c * h_rad.sin();
+    let (lr, lg, lb) = oklab_to_linear_srgb(l, a, b);
+    Some(ColorValue::Rgba(
+        linear_srgb_to_u8(lr),
+        linear_srgb_to_u8(lg),
+        linear_srgb_to_u8(lb),
+        alpha_to_u8(alpha),
+    ))
 }
 
 /// 解析 color() 分量数字（0-1 浮点，可负/越界）；`none` → 0。
