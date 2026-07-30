@@ -30,6 +30,8 @@ pub enum Rule {
     FontFace(FontFaceRule),
     /// @page 规则（CSS Paged Media）。
     Page(PageRule),
+    /// @property 规则（CSS Properties and Values API）。
+    Property(PropertyRule),
 }
 
 /// CSS @import 规则。
@@ -98,6 +100,27 @@ pub struct PageRule {
     /// 解析后的页边距 `(top, right, bottom, left)` px，`None` = `margin` 缺失或无效（回退 0）。
     /// R2011 P4-followup：垂直边距驱动分页内容区（水平边距待 layout-width-for-print 切片）。
     pub margin: Option<(f32, f32, f32, f32)>,
+}
+
+/// CSS `@property` 规则（CSS Properties and Values API Level 1）。
+///
+/// 格式：`@property --foo { syntax: "<color>"; inherits: false; initial-value: #c0ffee; }`
+/// 注册自定义属性 `--foo`，给定语法、是否继承、初始值。注册后，未显式声明的 `var(--foo)`
+/// 解析为 `initial-value`（而非 invalid）；`inherits` 控制该值是否像普通自定义属性一样继承。
+///
+/// 当前仅消费描述符的原始值（`syntax` 不做值校验/类型强制——按 CSS 规范 `syntax` 为 `*`
+/// 时 `initial-value` 可缺省，其余情形须有初值；此处宽容存储，由 style-system 在
+/// `var()` 解析时用作兜底默认值）。
+#[derive(Debug, Clone)]
+pub struct PropertyRule {
+    /// 自定义属性名（含 `--` 前缀，如 `--foo`）。
+    pub name: String,
+    /// `syntax` 描述符原始值（如 `<color>`、`<length>`、`*`）。
+    pub syntax: String,
+    /// `inherits` 描述符（`true`/`false`）。
+    pub inherits: bool,
+    /// `initial-value` 描述符原始值；`None` = 缺省（仅 `syntax: "*"` 时合法）。
+    pub initial_value: Option<String>,
 }
 
 /// @keyframes 规则。

@@ -202,6 +202,10 @@ fn select_intrinsic_width(doc: &Document, select: NodeId) -> f32 {
 pub struct StyleSystem {
     /// 自定义属性存储（--variable）。
     custom_properties: HashMap<String, String>,
+    /// `@property` 注册的自定义属性（名称 → 注册信息）。由 `compute_styles` 预扫描
+    /// 样式表填充，在 `gather_custom_properties` 中为未显式声明的注册属性提供
+    /// `initial-value` 兜底默认值（并按 `inherits` 控制继承）。
+    registered_properties: HashMap<String, RegisteredProperty>,
     /// 视口宽度（px），用于 vh/vw 计算。
     viewport_width: Option<f64>,
     /// 视口高度（px），用于 vh/vw 计算。
@@ -218,6 +222,7 @@ impl StyleSystem {
     pub fn new() -> Self {
         Self {
             custom_properties: HashMap::new(),
+            registered_properties: HashMap::new(),
             viewport_width: None,
             viewport_height: None,
             prefers_color_scheme: PrefersColorSchemeValue::Light,
@@ -260,6 +265,11 @@ impl StyleSystem {
     /// 返回一个 HashMap，键为元素 NodeId，值为对应的 ComputedStyle。
     pub fn compute_styles(&mut self, doc: &Document, stylesheets: &[Stylesheet]) -> HashMap<NodeId, ComputedStyle> {
         let mut styles = HashMap::new();
+
+        // 预扫描所有样式表的 `@property` 规则，注册自定义属性（syntax/inherits/initial-value）。
+        // 注册信息在 `gather_custom_properties` 中为未显式声明的注册属性提供 initial-value
+        // 兜底默认值（CSS Properties and Values API）。
+        self.registered_properties = collect_registered_properties(stylesheets);
 
         // 读取文档 quirks mode
         let quirks_mode = doc.quirks_mode();
@@ -993,7 +1003,7 @@ impl StyleSystem {
 
         // 4. 收集自定义属性（继承父元素 + 当前元素自身声明覆盖）
         // CSS 自定义属性是继承属性：`:root { --x }` 定义的变量需对后代可见。
-        self.custom_properties = gather_custom_properties(&cascaded, parent_custom);
+        self.custom_properties = gather_custom_properties(&cascaded, parent_custom, &self.registered_properties);
 
         // 4.5. 在级联值中解析 var() 引用
         let resolved_cascaded = resolve_var_in_cascaded(&cascaded, &self.custom_properties);
@@ -1508,12 +1518,64 @@ fn parse_inline_style(style_attr: &str) -> Vec<(String, String, bool)> {
 fn gather_custom_properties(
     cascaded: &HashMap<String, String>,
     inherited: &HashMap<String, String>,
+    registered: &HashMap<String, RegisteredProperty>,
 ) -> HashMap<String, String> {
-    let mut props: HashMap<String, String> = inherited.clone();
+    let mut props: HashMap<String, String> = HashMap::new();
+    // 1. 继承父元素的自定义属性。`inherits: false` 的注册属性不继承——在子元素重置为
+    //    初值（由步骤 3 兜底），符合 CSS Properties and Values API 语义。
+    for (k, v) in inherited {
+        if let Some(reg) = registered.get(k)
+            && !reg.inherits
+        {
+            continue;
+        }
+        props.insert(k.clone(), v.clone());
+    }
+    // 2. 当前元素自身的级联声明覆盖（自身优先）。
     for (k, v) in cascaded.iter().filter(|(k, _)| k.starts_with("--")) {
         props.insert(k.clone(), v.clone());
     }
+    // 3. 注册属性的 initial-value 作为兜底默认（未显式声明/继承时）。这使得
+    //    `@property --x { initial-value: green; }` 后，未声明 `--x` 处的 `var(--x)`
+    //    解析为 green（而非 invalid at computed-value-time）。
+    for (name, reg) in registered {
+        if let Some(iv) = &reg.initial_value {
+            props.entry(name.clone()).or_insert_with(|| iv.clone());
+        }
+    }
     props
+}
+
+/// `@property` 注册的自定义属性信息（仅消费 var() 解析所需的最小语义）。
+#[derive(Debug, Clone)]
+struct RegisteredProperty {
+    /// 是否继承。`true` 时像普通自定义属性一样继承；`false` 时每个元素从初值起算。
+    inherits: bool,
+    /// `initial-value` 描述符原始值；`None` = 缺省（仅 `syntax: "*"` 时合法，此时无兜底）。
+    initial_value: Option<String>,
+}
+
+/// 扫描样式表中的 `@property` 规则，构建「自定义属性名 → 注册信息」映射。
+///
+/// 后注册的同名属性覆盖先注册者（CSS Properties and Values API：后者胜出）。仅顶层
+/// `@property` 规则有效（不递归进入 @media 等条件块——@property 是全局注册，无作用域）。
+fn collect_registered_properties(stylesheets: &[Stylesheet]) -> HashMap<String, RegisteredProperty> {
+    use zero_css_parser::ast::Rule;
+    let mut map: HashMap<String, RegisteredProperty> = HashMap::new();
+    for ss in stylesheets {
+        for rule in &ss.rules {
+            if let Rule::Property(pr) = rule {
+                map.insert(
+                    pr.name.clone(),
+                    RegisteredProperty {
+                        inherits: pr.inherits,
+                        initial_value: pr.initial_value.clone(),
+                    },
+                );
+            }
+        }
+    }
+    map
 }
 
 /// 应用 quirks mode 样式调整。

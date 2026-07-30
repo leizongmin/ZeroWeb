@@ -14,5 +14,6 @@ mod matcher_coverage3;
 mod matcher_coverage4;
 mod matcher_coverage5;
 mod matcher_extra;
+mod registered_property;
 mod shorthand_coverage;
 mod style_system_coverage;

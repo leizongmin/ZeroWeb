@@ -1743,6 +1743,11 @@ fn collect_from_rules(
                 // @page 规则不参与元素级样式匹配（页尺寸为文档级，由 render pipeline
                 // 从 CSS 提取并注入 print 分页），跳过。
             }
+            zero_css_parser::ast::Rule::Property(_) => {
+                // @property 规则不参与元素级选择器匹配（注册的自定义属性初值由
+                // `compute_styles` 预扫描注入 `registered_properties`，在 var() 解析时
+                // 作兜底默认值），跳过。
+            }
         }
     }
 }

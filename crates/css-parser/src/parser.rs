@@ -359,6 +359,8 @@ impl<'a> Parser<'a> {
                     self.consume_font_face_rule().map(Rule::FontFace)
                 } else if name.eq_ignore_ascii_case("page") {
                     self.consume_page_rule().map(Rule::Page)
+                } else if name.eq_ignore_ascii_case("property") {
+                    self.consume_property_rule().map(Rule::Property)
                 } else {
                     // 通用 at-rule：consume_at_rule 内部循环到 `;`/`{block}`，总消费全部 extent，
                     // 不触发 fallback。
@@ -2089,6 +2091,61 @@ impl<'a> Parser<'a> {
         }
 
         Some(PageRule { size, margin })
+    }
+
+    /// 消耗 `@property` 规则（CSS Properties and Values API Level 1）。
+    ///
+    /// 格式：`@property --foo { syntax: "<color>"; inherits: false; initial-value: #c0ffee; }`
+    /// prelude 必须是自定义属性名（以 `--` 起始的标识符）；body 是描述符声明块
+    /// （`syntax` / `inherits` / `initial-value`），用 `consume_declaration_block` 解析。
+    /// 名称非法（非 `--` 起始）或块缺失 → 返回 None（上层做畸形恢复，消费残余 extent）。
+    fn consume_property_rule(&mut self) -> Option<PropertyRule> {
+        self.skip_whitespace();
+        // prelude：自定义属性名（`--foo` 整体为单个 Ident token）。
+        let name = match self.peek().clone() {
+            Token::Ident(s) if s.starts_with("--") => {
+                self.advance();
+                s
+            }
+            _ => return None,
+        };
+
+        self.skip_whitespace();
+        if !matches!(self.peek(), Token::LBrace) {
+            // 非 `{`（如 `@property --foo;` 语句形式）：返回 None，上层消费残余。
+            return None;
+        }
+        self.advance(); // {
+
+        let declarations = self.consume_declaration_block();
+
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+
+        let mut syntax = String::new();
+        let mut inherits = false;
+        let mut inherits_seen = false;
+        let mut initial_value: Option<String> = None;
+        for decl in &declarations {
+            if decl.property.eq_ignore_ascii_case("syntax") && syntax.is_empty() {
+                syntax = decl.value.trim().to_string();
+            } else if decl.property.eq_ignore_ascii_case("inherits") && !inherits_seen {
+                // 取首个 inherits 描述符（@property 单一语义）。
+                inherits_seen = true;
+                inherits = decl.value.trim().eq_ignore_ascii_case("true");
+            } else if decl.property.eq_ignore_ascii_case("initial-value") && initial_value.is_none() {
+                initial_value = Some(decl.value.trim().to_string());
+            }
+        }
+
+        Some(PropertyRule {
+            name,
+            syntax,
+            inherits,
+            initial_value,
+        })
     }
 
     /// 消耗 @keyframes 规则。
