@@ -1035,8 +1035,10 @@ impl<'a> Parser<'a> {
                                 "lang" => self.parse_lang(),
                                 "dir" => self.parse_dir(),
                                 _ => {
-                                    // 未知函数伪类（如 `:foo(...)`）使选择器非法
+                                    // 未知函数伪类（如 `:foo(...)`）使选择器非法：整块消耗参数
+                                    //（含 Function token 的 `(`）后再判非法，避免参数碎片化泄漏。
                                     if !Self::is_known_function_pseudo_class(&name) {
+                                        self.consume_balanced_function_args();
                                         return None;
                                     }
                                     PseudoClassSelector::Simple(name)
@@ -1078,8 +1080,10 @@ impl<'a> Parser<'a> {
                             "lang" => self.parse_lang(),
                             "dir" => self.parse_dir(),
                             _ => {
-                                // 未知函数伪类（Function token 形式）使选择器非法
+                                // 未知函数伪类（Function token 形式）使选择器非法：整块消耗参数
+                                //（Function token 的 `(` 已含）后再判非法，避免参数碎片化泄漏。
                                 if !Self::is_known_function_pseudo_class(&name) {
+                                    self.consume_balanced_function_args();
                                     return None;
                                 }
                                 PseudoClassSelector::Simple(name)
@@ -1157,14 +1161,29 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            let arg_start = self.pos;
             match self.consume_selector(false) {
                 Some(sel) => selectors.push(sel),
                 None => {
                     if !forgiving {
                         break;
                     }
-                    // forgiving：跳过无效选择器残余到逗号或 `)`（不消耗目标 token）
+                    // forgiving：跳过无效选择器残余到逗号或 `)`（不消耗目标 token）。
+                    // CSS Nesting：若被跳过的参数含 `&`（如 `:is(.a, !&)`、`:is(.a, :unknown(&))`），
+                    // 注入一个 bare-`&` 标记选择器——使外层嵌套按**显式嵌套**去糖（& 替换父级），
+                    // 而非隐式后代前缀。这样 `:is(.a, !&)` → `:is(.a, <父级>)` 直接匹配 .a，
+                    // 而非 `<父级> :is(.a)`（父级不存在则永不匹配）。driving: nest-containing-forgiving。
+                    // 扫描从 arg_start（consume_selector 之前）到 skip 后——覆盖 consume_compound
+                    // 已整块消耗的未知函数参数内的 `&`（如 `:unknown(div,&)`）。
                     self.skip_to_comma_or_rparen();
+                    let scan_end = self.pos;
+                    let had_amp = self
+                        .tokens
+                        .get(arg_start..scan_end)
+                        .is_some_and(|toks| toks.iter().any(|t| matches!(t, Token::Delim('&'))));
+                    if had_amp {
+                        selectors.push(amp_selector());
+                    }
                     // 若停在 `)`/EOF（无后续逗号），结束
                     if !matches!(self.peek(), Token::Comma) {
                         break;
@@ -1189,6 +1208,28 @@ impl<'a> Parser<'a> {
     fn skip_to_comma_or_rparen(&mut self) {
         while !matches!(self.peek(), Token::Comma | Token::RParen | Token::Eof) {
             self.advance();
+        }
+    }
+
+    /// 消耗「`(` 已消费」（含 Function token 的 `name(`）的函数参数到匹配的 `)`。
+    /// 用于未知函数伪类失败时**整块**跳过参数——避免参数内的逗号/`&` 碎片化（旧实现 `return None`
+    /// 后由 `skip_to_comma_or_rparen` 接手，遇参数内首个 `,`/`)` 即停，泄漏 `:is(.a, :unknown(b,c))`
+    /// 的内层 `c` 为 :is 成员；且无法扫描到 `:unknown(div,&)` 内的 `&`）。driving: nest-containing-forgiving。
+    fn consume_balanced_function_args(&mut self) {
+        let mut depth: i32 = 1; // `(` 已消费
+        while depth > 0 {
+            match self.peek() {
+                Token::Eof => return,
+                Token::LParen | Token::LBracket | Token::Function(_) => {
+                    depth += 1;
+                    self.advance();
+                }
+                Token::RParen | Token::RBracket => {
+                    depth -= 1;
+                    self.advance();
+                }
+                _ => self.advance(),
+            }
         }
     }
 

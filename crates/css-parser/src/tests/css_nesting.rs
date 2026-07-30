@@ -345,3 +345,26 @@ fn test_nesting_layer_reparent() {
         .collect();
     assert_eq!(first_rule_with_prop(&body, "color"), Some(".a"));
 }
+
+#[test]
+/// forgiving-skip 含 `&` 的参数保留 &（显式嵌套）：`:is(.a, !&)` 在 `.parent` 内应编译为
+/// `:is(.a, .parent)`（直接匹配 .a），而非 `.parent :is(.a)`（隐式后代，parent 不存在则永不匹配）。
+/// driving: nest-containing-forgiving（`:is(.test-N, !&)` / `:is(.test-N, :unknown(div,&))`）。
+fn test_nesting_forgiving_skip_preserves_amp() {
+    // `!&`：invalid 选择器含 &，forgiving-skip 后注入 & 标记 → 显式嵌套 → 直接匹配 .a。
+    let rules = style_rules(".parent { :is(.a, !&) { color: green; } }");
+    // 应有 :is(.a, .parent) 规则（显式，无 .parent 前缀）。
+    assert!(
+        rules.iter().any(|(s, _)| s.contains(":is(.a, .parent)")),
+        "!& 应注入 & 保显式嵌套，实际: {:?}",
+        rules
+    );
+
+    // `:unknown(div,&)`：未知函数参数内 &，整块消耗后扫描到 & → 注入 & 标记。
+    let rules = style_rules(".parent { :is(.b, :unknown(div,&)) { color: green; } }");
+    assert!(
+        rules.iter().any(|(s, _)| s.contains(":is(.b, .parent)")),
+        ":unknown(div,&) 应注入 &，实际: {:?}",
+        rules
+    );
+}
