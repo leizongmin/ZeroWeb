@@ -555,9 +555,19 @@ fn convert_predefined_to_srgb(space: &str, c0: f64, c1: f64, c2: f64) -> Option<
             let (x, y, z) = mat3_mul(P3_TO_XYZ, srgb_decode(c0), srgb_decode(c1), srgb_decode(c2));
             mat3_mul(XYZ_TO_SRGB, x, y, z)
         }
+        // CSS Color 4 线性光变体（分量已是线性，跳过 gamma 传递函数 decode）。
+        // driving: css-color display-p3-linear-*（spec #valdef-color-display-p3-linear）。
+        "display-p3-linear" => {
+            let (x, y, z) = mat3_mul(P3_TO_XYZ, c0, c1, c2);
+            mat3_mul(XYZ_TO_SRGB, x, y, z)
+        }
         "a98-rgb" => {
             let g = 563.0 / 256.0; // a98 gamma ≈ 2.1992
             let (x, y, z) = mat3_mul(A98_TO_XYZ, safe_powf(c0, g), safe_powf(c1, g), safe_powf(c2, g));
+            mat3_mul(XYZ_TO_SRGB, x, y, z)
+        }
+        "a98-rgb-linear" => {
+            let (x, y, z) = mat3_mul(A98_TO_XYZ, c0, c1, c2);
             mat3_mul(XYZ_TO_SRGB, x, y, z)
         }
         "rec2020" => {
@@ -569,6 +579,10 @@ fn convert_predefined_to_srgb(space: &str, c0: f64, c1: f64, c2: f64) -> Option<
             );
             mat3_mul(XYZ_TO_SRGB, x, y, z)
         }
+        "rec2020-linear" => {
+            let (x, y, z) = mat3_mul(REC2020_TO_XYZ, c0, c1, c2);
+            mat3_mul(XYZ_TO_SRGB, x, y, z)
+        }
         "prophoto-rgb" => {
             // prophoto 矩阵到 XYZ-D50，须 Bradford 适应到 D65。
             let (x, y, z) = mat3_mul(
@@ -577,6 +591,11 @@ fn convert_predefined_to_srgb(space: &str, c0: f64, c1: f64, c2: f64) -> Option<
                 prophoto_decode(c1),
                 prophoto_decode(c2),
             );
+            let (x, y, z) = mat3_mul(XYZ_D50_TO_D65, x, y, z);
+            mat3_mul(XYZ_TO_SRGB, x, y, z)
+        }
+        "prophoto-rgb-linear" => {
+            let (x, y, z) = mat3_mul(PROPHOTO_TO_XYZ, c0, c1, c2);
             let (x, y, z) = mat3_mul(XYZ_D50_TO_D65, x, y, z);
             mat3_mul(XYZ_TO_SRGB, x, y, z)
         }

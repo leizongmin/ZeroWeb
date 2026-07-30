@@ -1492,3 +1492,16 @@ fn test_parse_lab_lch_oklab_oklch() {
     // 非 3 分量 → None
     assert!(g("lab(50% 40)").is_none());
 }
+
+#[test]
+/// R2270：CSS Color 4 线性光变体（display-p3-linear 等）——跳过 gamma decode。
+fn test_parse_linear_color_spaces() {
+    use crate::values::ColorValue;
+    // display-p3-linear green（WPT 线性 display-p3 值）→ (0,128,0)
+    assert!(matches!(
+        super::super::parse_color("color(display-p3-linear 0.0383 0.2087 0.0156)"),
+        Some(ColorValue::Rgba(0, 128, 0, 255))
+    ));
+    // 常规 display-p3（gamma）仍工作（green 在 display-p3 略不同，但 a98-rgb green 已 R2255 验证）
+    assert!(super::super::parse_color("color(display-p3 0 0.5 0)").is_some());
+}
