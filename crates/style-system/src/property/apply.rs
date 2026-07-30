@@ -390,6 +390,12 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "content-visibility" => {
+            if let Some(v) = values::parse_content_visibility(value) {
+                style.content_visibility = v;
+                return true;
+            }
+        }
         "font-family" => {
             style.font_family = parse_font_family(value);
             return true;

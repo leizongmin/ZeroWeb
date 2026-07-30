@@ -108,6 +108,8 @@ pub struct ComputedStyle {
     pub opacity: f64,
     /// visibility 属性。
     pub visibility: VisibilityValue,
+    /// content-visibility 属性（CSS Containment 2）。非继承。
+    pub content_visibility: ContentVisibilityValue,
 
     // ── 字体 ──
     /// font-family 属性。
@@ -502,4 +504,26 @@ pub struct ComputedStyle {
     pub before_pseudo: Option<Box<ComputedStyle>>,
     /// `::after` 伪元素的计算样式（语义同 `before_pseudo`，合成在元素内容后）。
     pub after_pseudo: Option<Box<ComputedStyle>>,
+}
+
+impl ComputedStyle {
+    /// R2251：`content-visibility: hidden` 是否产生「跳过内容」视觉效果（CSS Containment 2）。
+    ///
+    /// `content-visibility: hidden` 通过隐式 `contain: size layout paint` 起效，而 size
+    /// containment **不适用于**无主盒（`display: none` / `display: contents`）与非替换 inline
+    /// 盒（"non-atomic inline"）。在这些情况下 `content-visibility: hidden` 无视觉效果——
+    /// 内容正常渲染。WPT 量证：`content-visibility-on-display-contents`（display:contents +
+    /// CV:hidden → 绿块可见）、`content-visibility-on-ruby`（`<ruby>` inline + CV:hidden →
+    /// base/annotation 可见）、`content-visibility-073`（meta assert「no effect on non-atomic
+    /// inlines」）。ZW 无 ruby display（`<ruby>` 作 inline 处理），内部 table 盒边角未在语料
+    /// 触发，此处不排除。
+    ///
+    /// **kill-switch 由调用方检查**（env `ZW_CONTENT_VISIBILITY`，default-on）。
+    pub fn content_visibility_hidden_effective(&self) -> bool {
+        matches!(self.content_visibility, ContentVisibilityValue::Hidden)
+            && !matches!(
+                self.display,
+                DisplayValue::None | DisplayValue::Contents | DisplayValue::Inline
+            )
+    }
 }

@@ -75,6 +75,7 @@ impl Default for ComputedStyle {
             background_color: transparent,
             opacity: 1.0,
             visibility: VisibilityValue::Visible,
+            content_visibility: ContentVisibilityValue::Visible,
 
             // 字体
             font_family: vec![],

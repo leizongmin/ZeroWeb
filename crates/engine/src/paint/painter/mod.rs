@@ -484,6 +484,10 @@ impl Painter {
             && let Some(style) = styles.get(&node_id)
         {
             let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
+            // R2251 content-visibility:hidden → 直属文本跳过绘制（元素自身盒装饰仍绘）。
+            // kill-switch `ZW_CONTENT_VISIBILITY`，default-on。
+            let content_hidden = std::env::var("ZW_CONTENT_VISIBILITY").as_deref() != Ok("0")
+                && style.content_visibility_hidden_effective();
 
             let skip_empty_cell = matches!(style.empty_cells, zero_style_system::EmptyCellsComputedValue::Hide)
                 && box_node.children.is_empty()
@@ -550,7 +554,9 @@ impl Painter {
                     // R1686：<summary> disclosure 标记（▶/▼），≡ list marker 同位。
                     self.paint_summary_marker(box_node, abs_x, abs_y, style, doc);
                 }
-                self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
+                if !content_hidden {
+                    self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
+                }
             }
 
             hidden
@@ -651,6 +657,10 @@ impl Painter {
             && let Some(style) = styles.get(&node_id)
         {
             let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
+            // R2251 content-visibility:hidden → 直属文本跳过绘制（元素自身盒装饰仍绘）。
+            // kill-switch `ZW_CONTENT_VISIBILITY`，default-on。
+            let content_hidden = std::env::var("ZW_CONTENT_VISIBILITY").as_deref() != Ok("0")
+                && style.content_visibility_hidden_effective();
 
             // empty-cells:hide — 空表格单元格不绘制背景和边框
             let skip_empty_cell = matches!(style.empty_cells, zero_style_system::EmptyCellsComputedValue::Hide)
@@ -774,7 +784,10 @@ impl Painter {
                 self.paint_content(box_node, abs_x, abs_y, style);
 
                 // 5. 文本内容绘制（含 text-shadow，使用行内格式化上下文处理换行）
-                self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
+                // R2251 content-visibility:hidden → 直属文本跳过（元素盒装饰仍绘）。
+                if !content_hidden {
+                    self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
+                }
 
                 // 5b3. <progress>/<meter> value 填充条绘制（R1671 paint 半，≡ R1660
                 // paint_input_value 的 form-control slice-2）。**须在 paint_text 之后**——bar

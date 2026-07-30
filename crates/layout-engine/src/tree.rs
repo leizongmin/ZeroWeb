@@ -1170,7 +1170,19 @@ fn build_subtree(
     // shadow 树中的 <slot> 元素替换为已分配的 light DOM 节点（或回退内容）。
     let mut child_taffy_ids: Vec<taffy::NodeId> = Vec::new();
 
-    if let Some(shadow_id) = doc.shadow_root(dom_id) {
+    // R2251 content-visibility:hidden（CSS Containment Module Level 2；kill-switch
+    // `ZW_CONTENT_VISIBILITY`，default-on；`=0` 关闭回旧「不解析」等价行为）。
+    // 元素自身盒（背景/边框）仍经 paint_node 绘制，但其整个子树被跳过：不收集任何
+    // taffy 子节点 → 子元素无 layout box（不绘制）、亦不贡献尺寸（→ size containment：
+    // auto 尺寸取 padding/border，content=0）。元素直属文本的尺寸抑制与绘制跳过分别在
+    // measure_text_content（inline_finalization.rs）与 painter paint_text 门控处理。
+    // driving: css/css-contain/content-visibility/content-visibility-001/003/005.. 等。
+    let content_visibility_hidden =
+        std::env::var("ZW_CONTENT_VISIBILITY").as_deref() != Ok("0") && computed.content_visibility_hidden_effective();
+
+    if content_visibility_hidden {
+        // 跳过子树收集：child_taffy_ids 保持空 → 元素作 leaf 创建（见下方 new_leaf_with_context）。
+    } else if let Some(shadow_id) = doc.shadow_root(dom_id) {
         // 有 ShadowRoot → 遍历 shadow 树，slot 解析在任意深度生效
         collect_shadow_children(
             ctx,

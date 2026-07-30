@@ -281,6 +281,24 @@ pub enum VisibilityValue {
     Collapse,
 }
 
+/// CSS content-visibility 值（CSS Containment Module Level 2）。
+///
+/// - `Visible`（初始值）：元素正常渲染，不影响内容。
+/// - `Hidden`：元素自身盒（背景/边框）仍绘制，但其整个子树（子元素 + 直属文本）
+///   被跳过——不参与绘制，且不贡献元素尺寸（等价 `contain: size layout paint` +
+///   内容跳过）。静态渲染等价于「内容不渲染」。
+/// - `Auto`：动态跳过（需 IntersectionObserver 类视口观测）。静态全在屏内容
+///   等价 `Visible`，故此处按 `Visible` 处理（无观测基础设施时 spec 允许退化为不跳过）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentVisibilityValue {
+    /// visible。
+    Visible,
+    /// hidden。
+    Hidden,
+    /// auto（静态等价 visible）。
+    Auto,
+}
+
 /// CSS word-break 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum WordBreakValue {

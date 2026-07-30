@@ -646,6 +646,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.visibility = default_style.visibility;
             true
         }
+        "content-visibility" => {
+            style.content_visibility = default_style.content_visibility;
+            true
+        }
         // 字体
         "font-family" => {
             style.font_family = default_style.font_family;

@@ -5,10 +5,10 @@
 
 pub use zero_css_parser::values::{
     self, AlignmentValue, BoxSizingValue, ClipPathRadius, ColorValue, ColumnCountValue, ColumnWidthValue, ContainValue,
-    ContainerTypeValue, ContentValue, CounterActionValue, DisplayValue, FilterValue, FlexDirectionValue, FlexWrapValue,
-    FontStyleValue, FontWeightValue, LengthValue, ObjectFitValue, OverflowValue, PolygonFillRule, PositionValue,
-    QuotesValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue,
-    TextEmphasisPositionValue, TextEmphasisStyleValue, VerticalAlignValue, VisibilityValue,
+    ContainerTypeValue, ContentValue, ContentVisibilityValue, CounterActionValue, DisplayValue, FilterValue,
+    FlexDirectionValue, FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue, ObjectFitValue, OverflowValue,
+    PolygonFillRule, PositionValue, QuotesValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue,
+    ScrollSnapTypeValue, TextEmphasisPositionValue, TextEmphasisStyleValue, VerticalAlignValue, VisibilityValue,
 };
 
 /// CSS border-style 值。
@@ -1375,6 +1375,8 @@ pub enum PropertyValue {
     BoxSizing(BoxSizingValue),
     /// visibility 值。
     Visibility(VisibilityValue),
+    /// content-visibility 值。
+    ContentVisibility(ContentVisibilityValue),
     /// font-weight 值。
     FontWeight(FontWeightValue),
     /// font-style 值。

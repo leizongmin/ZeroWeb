@@ -57,6 +57,7 @@ impl PropertyRegistry {
             "background-color" => Some(Color(ColorValue::Transparent)),
             "opacity" => Some(Number(1.0)),
             "visibility" => Some(Visibility(VisibilityValue::Visible)),
+            "content-visibility" => Some(ContentVisibility(ContentVisibilityValue::Visible)),
 
             // 字体
             "font-family" => Some(StringList(vec![])),
@@ -413,6 +414,7 @@ impl PropertyRegistry {
             "background-color",
             "opacity",
             "visibility",
+            "content-visibility",
             "font-family",
             "font-size",
             "font-weight",

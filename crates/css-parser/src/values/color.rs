@@ -610,6 +610,18 @@ pub fn parse_visibility(value: &str) -> Option<VisibilityValue> {
     }
 }
 
+/// 解析 CSS content-visibility 属性值（CSS Containment Module Level 2）。
+///
+/// 大小写不敏感（与 `parse_visibility` 同色，实际匹配走 `to_ascii_lowercase`）。
+pub fn parse_content_visibility(value: &str) -> Option<ContentVisibilityValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "visible" => Some(ContentVisibilityValue::Visible),
+        "hidden" => Some(ContentVisibilityValue::Hidden),
+        "auto" => Some(ContentVisibilityValue::Auto),
+        _ => None,
+    }
+}
+
 /// 解析 CSS word-break 属性值。
 pub fn parse_word_break(value: &str) -> Option<WordBreakValue> {
     match value.trim().to_ascii_lowercase().as_str() {

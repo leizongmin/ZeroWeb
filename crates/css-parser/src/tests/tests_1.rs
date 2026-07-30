@@ -1427,6 +1427,24 @@ fn test_parse_visibility_all() {
 }
 
 #[test]
+/// 测试 content-visibility 解析（CSS Containment 2）：visible/hidden/auto + 大小写不敏感 + 非法值 None。
+/// R2251 driving：content-visibility:hidden 实现。
+fn test_parse_content_visibility_all() {
+    assert_eq!(
+        parse_content_visibility("visible"),
+        Some(ContentVisibilityValue::Visible)
+    );
+    assert_eq!(parse_content_visibility("hidden"), Some(ContentVisibilityValue::Hidden));
+    assert_eq!(parse_content_visibility("auto"), Some(ContentVisibilityValue::Auto));
+    // 大小写不敏感（to_ascii_lowercase）
+    assert_eq!(parse_content_visibility("HIDDEN"), Some(ContentVisibilityValue::Hidden));
+    assert_eq!(parse_content_visibility("  Auto  "), Some(ContentVisibilityValue::Auto));
+    // 非法值
+    assert_eq!(parse_content_visibility("inherit"), None);
+    assert_eq!(parse_content_visibility(""), None);
+}
+
+#[test]
 /// 测试所有 FontWeightValue 变体（100-900、bold、normal、bolder、lighter）
 fn test_parse_font_weight_all() {
     assert_eq!(parse_font_weight("100"), Some(FontWeightValue::Absolute(100)));

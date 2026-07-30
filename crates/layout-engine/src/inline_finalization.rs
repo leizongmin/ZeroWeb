@@ -1110,6 +1110,18 @@ pub(crate) fn measure_text_content(
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     font_metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
 ) -> Size<f32> {
+    // R2251 content-visibility:hidden → size containment：元素内容（直属文本）不贡献
+    // 尺寸，测量返回 0。（子元素已在 build_subtree 跳过，不入 taffy 树，故不经此回调。）
+    // 文本节点（匿名 flex/grid item）的 dom_id 在 styles 中无条目 → 不受影响。
+    // kill-switch `ZW_CONTENT_VISIBILITY`，default-on。
+    if std::env::var("ZW_CONTENT_VISIBILITY").as_deref() != Ok("0")
+        && styles
+            .get(&dom_id)
+            .is_some_and(|s| s.content_visibility_hidden_effective())
+    {
+        return Size::ZERO;
+    }
+
     // 检查是否为文本节点（匿名 flex/grid item）
     // 在 flex/grid 容器中，文本节点被包装为匿名 taffy 节点参与布局。
     if let Some(node) = doc.get(dom_id)
