@@ -37,7 +37,16 @@ impl super::Painter {
         }
 
         let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
-        let color = color_value_to_render(&shadow.color);
+        // box-shadow 颜色：`currentColor` 使用元素自身计算 `color`（CSS-Color §resolving）。
+        // color_value_to_render 无元素上下文会把 CurrentColor 回落为黑色，致 `color:transparent`
+        // 时阴影错误地实心可见。driving: WPT box-shadow-currentcolor（与 text-decoration /
+        // border 同族 currentColor 解析）。style.color 自身若仍为 CurrentColor（未解析继承），
+        // color_value_to_render 回落黑色 = 既有行为，零回归。
+        let color = if matches!(shadow.color, ColorValue::CurrentColor) {
+            color_value_to_render(&style.color)
+        } else {
+            color_value_to_render(&shadow.color)
+        };
 
         self.primitives.add_shadow(ShadowPrimitive {
             rect,

@@ -152,6 +152,60 @@ fn test_paint_combined_box_shadow_background_border_text_shadow() {
     assert_eq!(prims.glyphs.len(), 2, "应生成 2 个 glyph（text-shadow + 主文本）");
 }
 
+/// box-shadow 颜色为 `currentColor` 时须解析为元素自身 `color`，而非回落黑色。
+/// driving: WPT box-shadow-currentcolor（`color:transparent` 时 box-shadow 应透明，
+/// 旧实现 color_value_to_render 无元素上下文 → 黑色 alpha=255 实心阴影）。
+#[test]
+fn test_paint_box_shadow_currentcolor_resolves_to_element_color() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.color = ColorValue::Transparent; // 元素 color = 透明
+    style.font_size = LengthValue::Px(16.0);
+    style.box_shadow = BoxShadowComputedValue {
+        offset_x: 10.0,
+        offset_y: 5.0,
+        blur_radius: 5.0,
+        spread_radius: 0.0,
+        color: ColorValue::CurrentColor, // currentColor → 须解析为元素 color(transparent)
+        inset: false,
+    };
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    assert_eq!(prims.shadows.len(), 1, "应生成 1 个 box-shadow");
+    // shadow 颜色须为 transparent（alpha=0），非黑色回落（alpha=255）。
+    assert_eq!(
+        prims.shadows[0].color.a, 0,
+        "box-shadow currentColor 应解析为元素 color(transparent, alpha=0)，非黑色回落"
+    );
+
+    // 对照：显式 limegreen 元素 color + currentColor box-shadow → 阴影应为 limegreen。
+    let mut styles2 = HashMap::new();
+    let mut style2 = ComputedStyle::default();
+    style2.color = ColorValue::Rgba(50, 205, 50, 255); // limegreen（具体值，避免 named 表耦合）
+    style2.font_size = LengthValue::Px(16.0);
+    style2.box_shadow = BoxShadowComputedValue {
+        offset_x: 10.0,
+        offset_y: 5.0,
+        blur_radius: 5.0,
+        spread_radius: 0.0,
+        color: ColorValue::CurrentColor,
+        inset: false,
+    };
+    styles2.insert(elem, style2);
+    let mut painter2 = Painter::new();
+    painter2.paint(&layout, &styles2, None);
+    let c = painter2.primitives().shadows[0].color;
+    assert_eq!((c.r, c.g, c.b), (50, 205, 50), "currentColor 应解析为元素 color");
+}
+
 /// 测试 visibility:hidden 时 box-shadow 和 background-image 不绘制。
 #[test]
 fn test_paint_visibility_hidden_no_shadow_no_image() {
