@@ -245,3 +245,103 @@ fn test_nesting_deep() {
 
 // kill-switch（ZW_CSS_NESTING=0）的零回归回退由 reftest A/B（默认 vs =0）验证，
 // 不在此加单测——`cargo test` 多线程并行下设全局 env 会与其他嵌套用例竞态致 flaky。
+
+// ── 嵌套 @规则重父化（R2262）──────────────────────────────────────────────
+// `.a { @media/q { <body> } }` → body 相对 .a 重父化后包裹回 @规则。
+
+/// 从样式表提取所有 @media（Rule::At name=media）块体内的样式规则 `(选择器, 属性集)`。
+fn media_body_style_rules(css: &str) -> Vec<(String, Vec<String>)> {
+    let ss = Parser::parse_stylesheet(css);
+    let mut out = Vec::new();
+    for r in &ss.rules {
+        if let Rule::At(at) = r
+            && at.name.eq_ignore_ascii_case("media")
+            && let crate::ast::AtRuleBody::Block(inner) = &at.body
+        {
+            for ir in inner {
+                if let Rule::Style(sr) = ir {
+                    out.push((
+                        selectors_to_string(&sr.selectors),
+                        sr.declarations.iter().map(|d| d.property.clone()).collect(),
+                    ));
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+/// 嵌套 @media 含显式 `& {...}` 规则：body 相对父级重父化。
+fn test_nesting_media_explicit_amp() {
+    let rules = media_body_style_rules(".a { @media (min-width: 10px) { & { color: green; } } }");
+    assert_eq!(first_rule_with_prop(&rules, "color"), Some(".a"));
+}
+
+#[test]
+/// 嵌套 @media 含裸声明（隐式 `& { ... }`）：声明归属父级。
+fn test_nesting_media_bare_declaration() {
+    let rules = media_body_style_rules(".a { @media (min-width: 10px) { color: green; } }");
+    assert_eq!(first_rule_with_prop(&rules, "color"), Some(".a"));
+}
+
+#[test]
+/// 嵌套 @media body 内含嵌套规则：相对父级去糖（`.a .b`）。
+fn test_nesting_media_nested_rule() {
+    let rules = media_body_style_rules(".a { @media (min-width: 10px) { .b { color: green; } } }");
+    assert_eq!(first_rule_with_prop(&rules, "color"), Some(".a .b"));
+}
+
+#[test]
+/// 嵌套 @supports：条件保留，body 相对父级重父化（包裹回 Rule::Supports）。
+fn test_nesting_supports_reparent() {
+    let ss = Parser::parse_stylesheet(".a { @supports (display: grid) { & { color: green; } } }");
+    // 顶层规则应为 Rule::Supports，其 body 含 `.a { color:green }`。
+    let supports = ss
+        .rules
+        .iter()
+        .find_map(|r| if let Rule::Supports(s) = r { Some(s) } else { None })
+        .expect("应有 @supports 规则");
+    let body: Vec<(String, Vec<String>)> = supports
+        .rules
+        .iter()
+        .filter_map(|r| {
+            if let Rule::Style(sr) = r {
+                Some((
+                    selectors_to_string(&sr.selectors),
+                    sr.declarations.iter().map(|d| d.property.clone()).collect(),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(first_rule_with_prop(&body, "color"), Some(".a"));
+}
+
+#[test]
+/// 嵌套 @layer：层名保留，body 相对父级重父化（包裹回 Rule::Layer）。
+fn test_nesting_layer_reparent() {
+    let ss = Parser::parse_stylesheet(".a { @layer base { & { color: green; } } }");
+    let layer = ss
+        .rules
+        .iter()
+        .find_map(|r| if let Rule::Layer(l) = r { Some(l) } else { None })
+        .expect("应有 @layer 规则");
+    assert_eq!(layer.name, "base");
+    let body: Vec<(String, Vec<String>)> = layer
+        .rules
+        .iter()
+        .filter_map(|r| {
+            if let Rule::Style(sr) = r {
+                Some((
+                    selectors_to_string(&sr.selectors),
+                    sr.declarations.iter().map(|d| d.property.clone()).collect(),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(first_rule_with_prop(&body, "color"), Some(".a"));
+}

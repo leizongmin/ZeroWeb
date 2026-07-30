@@ -23,6 +23,48 @@ struct ParsedStyleRule {
     selectors: Vec<Selector>,
     declarations: Vec<Declaration>,
     nested: Vec<ParsedStyleRule>,
+    /// 嵌套 @规则（@media/@supports/@layer 等）：body 以 token 形式保留，编译时相对
+    /// 父级重父化（合成 `&` 规则包裹 body 后编译）。
+    nested_at: Vec<ParsedAtRule>,
+}
+
+/// 未编译的嵌套 @规则（CSS 嵌套中间结构）。
+///
+/// body 以原始 token 序列保留——编译时用 `consume_style_block_with_nesting` 在子 Parser
+/// 上重解析为 `(decls, nested)`，合成 `ParsedStyleRule{ selectors:[&], decls, nested }` 相对
+/// 父级编译（body 内裸声明 → 隐式 `& { ... }` → 父级；body 内嵌套规则 → 相对父级），
+/// 再包裹回对应 @规则变体。
+enum ParsedAtRule {
+    /// @media / 通用块 @规则（@container 等下游非 media 的通用 AtRule 被忽略 = 无回归）。
+    GenericBlock {
+        name: String,
+        prelude: String,
+        body: Vec<Token>,
+    },
+    /// @supports：已解析条件 + body tokens。
+    Supports {
+        condition: SupportsCondition,
+        body: Vec<Token>,
+    },
+    /// @layer：层名（可为空=匿名层）+ body tokens。
+    Layer { name: String, body: Vec<Token> },
+    /// 语句式 @规则（无块，如嵌套 @import）：原样输出。
+    Statement { name: String, prelude: String },
+}
+
+/// 构造表示 `&`（嵌套选择器）的单化合物选择器，用于嵌套 @规则 body 的合成包裹。
+fn amp_selector() -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Nesting],
+                },
+                None,
+            )],
+        },
+    }
 }
 
 /// 构造表示 `:scope` 的选择器（顶层 `&` 的去糖目标；文档样式表中 `:scope` ≡ `:root`）。
@@ -351,7 +393,7 @@ impl<'a> Parser<'a> {
             return None;
         }
         self.advance(); // {
-        let (declarations, nested) = self.consume_style_block_with_nesting();
+        let (declarations, nested, nested_at) = self.consume_style_block_with_nesting();
         self.skip_whitespace();
         if matches!(self.peek(), Token::RBrace) {
             self.advance();
@@ -360,6 +402,7 @@ impl<'a> Parser<'a> {
             selectors,
             declarations,
             nested,
+            nested_at,
         })
     }
 
@@ -388,12 +431,10 @@ impl<'a> Parser<'a> {
     ///（声明值不会含顶层 `{`，故此判据可靠）。`(`/`[`/Function 计入嵌套深度——值内的
     /// `(...)`/`[...]` 块（如 `calc()`、属性值）中的 token 不误判。
     fn peek_starts_nested_rule(&self) -> bool {
-        // 嵌套 @规则（`.a { @media print { ... } }`）v1 不支持——其块体需相对父级重父化
-        //（`.a { @media print { & {...} } }` → `@media print { .a {...} }`），复杂度高，
-        // R2260 defer。返回 false 使其落入声明分支被 `skip_malformed_declaration` 丢弃
-        //（等价 R2260 前行为，零回归）。
+        // 嵌套 @规则（`.a { @media print { ... } }`）由 `consume_nested_at_rule` 解析，
+        // 编译时 body 相对父级重父化（`.a { @media { & {...} } }` → `@media { .a {...} }`）。
         if matches!(self.peek(), Token::AtKeyword(_)) {
-            return false;
+            return true;
         }
         let mut depth: i32 = 0;
         let mut i = self.pos;
@@ -413,16 +454,16 @@ impl<'a> Parser<'a> {
 
     /// 消耗样式声明块（支持 CSS 嵌套）。
     ///
-    /// 返回 `(直接声明, 嵌套样式规则树)`。kill-switch 关闭时退化为纯声明（等价
+    /// 返回 `(直接声明, 嵌套样式规则树, 嵌套 @规则)`。kill-switch 关闭时退化为纯声明（等价
     /// `consume_declaration_block`，嵌套规则丢弃），保证零回归回退。不消耗闭合 `}`
-    ///（由 `parse_style_rule_structure` 消耗）。嵌套 @规则（`@media` 等）v1 不解析
-    ///（`peek_starts_nested_rule` 对 AtKeyword 返回 false → 落声明分支丢弃）。
-    fn consume_style_block_with_nesting(&mut self) -> (Vec<Declaration>, Vec<ParsedStyleRule>) {
+    ///（由 `parse_style_rule_structure` 消耗）。
+    fn consume_style_block_with_nesting(&mut self) -> (Vec<Declaration>, Vec<ParsedStyleRule>, Vec<ParsedAtRule>) {
         if !Self::nesting_enabled() {
-            return (self.consume_declaration_block(), vec![]);
+            return (self.consume_declaration_block(), vec![], vec![]);
         }
         let mut declarations = Vec::new();
         let mut nested: Vec<ParsedStyleRule> = Vec::new();
+        let mut nested_at: Vec<ParsedAtRule> = Vec::new();
 
         loop {
             self.skip_whitespace();
@@ -431,6 +472,20 @@ impl<'a> Parser<'a> {
             }
             if matches!(self.peek(), Token::Semicolon) {
                 self.advance();
+                continue;
+            }
+
+            if matches!(self.peek(), Token::AtKeyword(_)) {
+                // 嵌套 @规则：consume_nested_at_rule 消费全部 extent（prelude + `{...}`）。
+                let pos_before = self.pos();
+                match self.consume_nested_at_rule() {
+                    Some(at) => nested_at.push(at),
+                    None => {
+                        if self.pos() == pos_before {
+                            self.skip_malformed_qualified_rule();
+                        }
+                    }
+                }
                 continue;
             }
 
@@ -458,7 +513,91 @@ impl<'a> Parser<'a> {
             }
         }
 
-        (declarations, nested)
+        (declarations, nested, nested_at)
+    }
+
+    /// 消耗嵌套 @规则（CSS 嵌套）：`@name prelude { body }` 或 `@name prelude;`。
+    ///
+    /// 全消费其 extent：prelude 跟踪 `()`/`[]`/Function 嵌套（块内 `;`/`}` 不终止），块体
+    /// 以原始 token 序列保留（`{` 与匹配 `}` 之间的 token，不含两端括号）。条件式 @规则
+    ///（@supports）解析条件就地存储；@media/@layer/通用按名 + prelude 字符串 + body 存储。
+    fn consume_nested_at_rule(&mut self) -> Option<ParsedAtRule> {
+        let name = match self.peek().clone() {
+            Token::AtKeyword(n) => {
+                self.advance();
+                n
+            }
+            _ => return None,
+        };
+
+        let mut prelude = String::new();
+        let mut group_depth: i32 = 0;
+        loop {
+            match self.peek() {
+                Token::Eof => return None,
+                Token::Semicolon | Token::RBrace if group_depth == 0 => {
+                    if matches!(self.peek(), Token::Semicolon) {
+                        self.advance();
+                    }
+                    return Some(ParsedAtRule::Statement {
+                        name,
+                        prelude: prelude.trim().to_string(),
+                    });
+                }
+                Token::LBrace if group_depth == 0 => {
+                    self.advance(); // {
+                    let body_start = self.pos;
+                    self.skip_simple_block(); // 消耗到匹配 `}`（含）
+                    // body = `{` 之后到 `}` 之前（不含两端）
+                    let body_end = self.pos.saturating_sub(1);
+                    let body: Vec<Token> = if body_start <= body_end {
+                        self.tokens[body_start..body_end].to_vec()
+                    } else {
+                        vec![]
+                    };
+                    return Some(Self::build_parsed_at_rule(&name, prelude.trim(), body));
+                }
+                Token::Function(_) | Token::LParen | Token::LBracket => {
+                    group_depth += 1;
+                    prelude.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+                Token::RParen | Token::RBracket => {
+                    group_depth = (group_depth - 1).max(0);
+                    prelude.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+                Token::Whitespace => {
+                    prelude.push(' ');
+                    self.advance();
+                }
+                _ => {
+                    prelude.push_str(&format!("{}", self.peek()));
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    /// 按名称把 (name, prelude, body tokens) 装配为对应 `ParsedAtRule` 变体。
+    fn build_parsed_at_rule(name: &str, prelude: &str, body: Vec<Token>) -> ParsedAtRule {
+        if name.eq_ignore_ascii_case("supports") {
+            if let Some(cond) = crate::supports_condition::parse_supports_condition(prelude) {
+                return ParsedAtRule::Supports { condition: cond, body };
+            }
+        } else if name.eq_ignore_ascii_case("layer") {
+            return ParsedAtRule::Layer {
+                name: prelude.to_string(),
+                body,
+            };
+        }
+        // @media（下游评估 media query）/ @container / 通用 / @supports 条件解析失败 →
+        // GenericBlock（下游仅处理 name=media，其余被忽略 = 无回归）。
+        ParsedAtRule::GenericBlock {
+            name: name.to_ascii_lowercase(),
+            prelude: prelude.to_string(),
+            body,
+        }
     }
 
     /// 自顶向下编译 `ParsedStyleRule` 树为扁平 `Vec<Rule>`，线程父级选择器。
@@ -484,7 +623,62 @@ impl<'a> Parser<'a> {
             }
             out.extend(Self::compile_parsed_style_rule(child, Some(&own)));
         }
+        for at in rule.nested_at {
+            // 嵌套 @规则 body 相对父级 own 重父化：body 在子 Parser 上重解析为声明+嵌套树，
+            // 合成 `&` 规则包裹后相对 own 编译（裸声明 → 隐式 & → own；嵌套规则 → 相对 own），
+            // 再包裹回对应 @规则变体。
+            if let Some(r) = Self::compile_nested_at_rule(at, Some(&own)) {
+                out.push(r);
+            }
+        }
         out
+    }
+
+    /// 编译嵌套 @规则：body tokens 重解析 + 合成 `&` 包裹 + 相对父级编译 + 包裹回 @变体。
+    fn compile_nested_at_rule(at: ParsedAtRule, parent: Option<&[Selector]>) -> Option<Rule> {
+        match at {
+            ParsedAtRule::Statement { name, prelude } => Some(Rule::At(AtRule {
+                name,
+                prelude,
+                body: AtRuleBody::Statement,
+            })),
+            ParsedAtRule::GenericBlock { name, prelude, body } => {
+                let rules = Self::compile_at_body(body, parent);
+                Some(Rule::At(AtRule {
+                    name,
+                    prelude,
+                    body: AtRuleBody::Block(rules),
+                }))
+            }
+            ParsedAtRule::Supports { condition, body } => {
+                let rules = Self::compile_at_body(body, parent);
+                Some(Rule::Supports(SupportsRule { condition, rules }))
+            }
+            ParsedAtRule::Layer { name, body } => {
+                let rules = Self::compile_at_body(body, parent);
+                Some(Rule::Layer(LayerRule { name, rules }))
+            }
+        }
+    }
+
+    /// 在子 Parser 上重解析 @规则 body tokens 为声明+嵌套树，合成 `&` 规则相对 `parent`
+    /// 编译，返回扁平 body 规则列表。body 内裸声明经合成 `&` → `parent`（隐式 `& { ... }`），
+    /// body 内嵌套规则相对 `parent` 去糖——与父样式规则 body 语义一致。
+    fn compile_at_body(body_tokens: Vec<Token>, parent: Option<&[Selector]>) -> Vec<Rule> {
+        if body_tokens.is_empty() {
+            return vec![];
+        }
+        let mut toks = body_tokens;
+        toks.push(Token::Eof);
+        let mut sub = Parser::new(&mut toks);
+        let (declarations, nested, nested_at) = sub.consume_style_block_with_nesting();
+        let synth = ParsedStyleRule {
+            selectors: vec![amp_selector()],
+            declarations,
+            nested,
+            nested_at,
+        };
+        Self::compile_parsed_style_rule(synth, parent)
     }
 
     /// 消耗选择器列表。
