@@ -1,6 +1,9 @@
 //! 颜色转换工具 — CSS ColorValue 到渲染层 Color 的转换。
 
-use zero_css_parser::values::{ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec};
+use zero_css_parser::values::{
+    ColorMixSpace, ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec, lch_to_srgb_u8,
+    srgb_u8_to_lch,
+};
 use zero_render_foundation::color::Color;
 
 /// 将 ComputedStyle 的 ColorValue 转换为 render-foundation 的 Color。
@@ -31,7 +34,10 @@ pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> 
         ColorValue::Mix(spec) => {
             let c1 = resolve_color_current(&spec.c1.color, element_color);
             let c2 = resolve_color_current(&spec.c2.color, element_color);
-            mix_srgb(c1, spec.c1.percentage, c2, spec.c2.percentage)
+            match spec.space {
+                ColorMixSpace::Srgb => mix_srgb(c1, spec.c1.percentage, c2, spec.c2.percentage),
+                ColorMixSpace::Lch => mix_lch(c1, spec.c1.percentage, c2, spec.c2.percentage),
+            }
         }
         // RCS 非 identity：先按元素色解析 origin（currentColor → 元素色），再按函数通道语义计算。
         // 支持 inherit 透传（background-color: inherit 透传 RelativeColor，currentColor 在子元素
@@ -83,6 +89,40 @@ fn mix_srgb(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
         to_u8(pb),
         (final_a * 255.0).round().clamp(0.0, 255.0) as u8,
     )
+}
+
+/// `color-mix(in lch, c1 [p1], c2 [p2])` 的 LCH 极坐标插值（CSS Color 5）。
+///
+/// 两色转 CIE LCH-D50，L/C 线性插值、h 色相**短弧**插值，再回转 sRGB。百分比归一化同 srgb；
+/// alpha 独立线性插值（polar 空间不对色度通道做 premultiply；不透明色与 srgb 插值一致）。
+/// driving: css-color color-mix-percents-01/02（purple/plum 50-50 → rgb(175,92,174)）。
+fn mix_lch(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
+    let (p1, p2) = match (p1, p2) {
+        (Some(a), Some(b)) => (a, b),
+        (Some(a), None) => (a, 100.0 - a),
+        (None, Some(b)) => (100.0 - b, b),
+        (None, None) => (50.0, 50.0),
+    };
+    let sum = p1 + p2;
+    if sum <= 0.0 {
+        return Color::rgba(0, 0, 0, 0);
+    }
+    let alpha_mult = (sum / 100.0).min(1.0);
+    let w2 = p2 / sum; // w1 = 1 - w2
+    let (l1, ch1, h1) = srgb_u8_to_lch(c1.r, c1.g, c1.b);
+    let (l2, ch2, h2) = srgb_u8_to_lch(c2.r, c2.g, c2.b);
+    let l = l1 + (l2 - l1) * w2;
+    let c = ch1 + (ch2 - ch1) * w2;
+    // 色相短弧：取 |Δh| ≤ 180 的方向插值。
+    let dh = ((h2 - h1 + 540.0) % 360.0) - 180.0;
+    let h = (h1 + dh * w2 + 360.0) % 360.0;
+    let (r, g, b) = lch_to_srgb_u8(l, c, h);
+    // alpha 独立线性插值（premultiplied 权重同 srgb；不透明时 alpha_mult=1）。
+    let a1 = c1.a as f64 / 255.0;
+    let a2 = c2.a as f64 / 255.0;
+    let pa = a1 * (1.0 - w2) + a2 * w2;
+    let final_a = (pa * alpha_mult).clamp(0.0, 1.0);
+    Color::rgba(r, g, b, (final_a * 255.0).round().clamp(0.0, 255.0) as u8)
 }
 
 /// 解析 RCS（CSS Color 5 相对色）非 identity：origin 已解析为 sRGB Color，按函数通道语义计算输出。
@@ -439,7 +479,7 @@ mod tests {
 #[test]
 /// R2267：resolve_color_current 对 color-mix Mix 的解析（currentColor 按元素色 + sRGB 插值）。
 fn test_resolve_color_mix() {
-    use zero_css_parser::values::{ColorMixComponent, ColorMixSpec};
+    use zero_css_parser::values::{ColorMixComponent, ColorMixSpace, ColorMixSpec};
     // mix(green 50%, green) = green（001 场景：currentColor 在子元素按 green 解析）
     let both_green = ColorValue::Mix(Box::new(ColorMixSpec {
         c1: ColorMixComponent {
@@ -450,6 +490,7 @@ fn test_resolve_color_mix() {
             color: ColorValue::CurrentColor,
             percentage: None,
         },
+        space: ColorMixSpace::Srgb,
     }));
     let green_elem = ColorValue::Rgba(0, 128, 0, 255);
     let r = resolve_color_current(&both_green, &green_elem);
@@ -469,6 +510,7 @@ fn test_resolve_color_mix() {
             color: ColorValue::Rgba(0, 128, 0, 255),
             percentage: Some(50.0),
         },
+        space: ColorMixSpace::Srgb,
     }));
     let r = resolve_color_current(&mix_rg, &ColorValue::CurrentColor);
     assert_eq!((r.r, r.g, r.b), (128, 64, 0), "mix(red 50%, green 50%) = rgb(128,64,0)");
@@ -521,4 +563,37 @@ fn test_rgba_to_hsl_roundtrip() {
     let (h, s, _l) = rgba_to_hsl(128, 128, 128);
     assert_eq!(h, 0.0);
     assert_eq!(s, 0.0);
+}
+
+#[test]
+/// R2273：color-mix(in lch) 极坐标插值——purple/plum 50-50 应接近 WPT ref rgb(175,92,174)
+///（color-mix-percents-01 ref = rgb(68.4898% 36.015% 68.3102%)）。driving: color-mix-percents-01/02。
+fn test_mix_lch_purple_plum() {
+    let purple = Color::rgb(128, 0, 128);
+    let plum = Color::rgb(221, 160, 221);
+    // 50%/50%（双省略也归一为 50/50）
+    let r = mix_lch(purple, Some(50.0), plum, Some(50.0));
+    // WPT ref：≈ (175, 92, 174)。矩阵精度容差 ±4/通道。
+    assert!(
+        (r.r as i32 - 175).abs() <= 4 && (r.g as i32 - 92).abs() <= 4 && (r.b as i32 - 174).abs() <= 4,
+        "mix(in lch, purple, plum) 应≈rgb(175,92,174)，实际 ({},{},{})",
+        r.r,
+        r.g,
+        r.b
+    );
+    // 百分比省略归一化（purple, plum → 50/50）应等价
+    let r2 = mix_lch(purple, None, plum, None);
+    assert_eq!((r2.r, r2.g, r2.b), (r.r, r.g, r.b), "省略百分比应等价 50/50");
+    assert_eq!(r.a, 255, "两端不透明 → alpha 255");
+    // 色相短弧：red↔yellow（0°↔60°）应走短弧 30°→橙色，非长弧走 210°
+    let red = Color::rgb(255, 0, 0);
+    let yellow = Color::rgb(255, 255, 0);
+    let ry = mix_lch(red, Some(50.0), yellow, Some(50.0));
+    assert!(
+        (ry.r as i32 - 255).abs() <= 5 && ry.g > 80,
+        "red↔yellow 短弧→橙色，实际 ({},{},{})",
+        ry.r,
+        ry.g,
+        ry.b
+    );
 }

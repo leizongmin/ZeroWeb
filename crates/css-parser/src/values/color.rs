@@ -382,6 +382,45 @@ fn lab_to_linear_srgb(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
     mat3_mul(XYZ_TO_SRGB, x, y, z)
 }
 
+/// sRGB u8 → CIE LCH-D50（CSS Color 4）：L∈[0,100]、C、h∈[0,360)。供 color-mix(in lch) 插值。
+pub fn srgb_u8_to_lch(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    // sRGB gamma → 线性 sRGB → XYZ-D65 → XYZ-D50（Bradford）→ Lab → LCH
+    let lr = srgb_decode(r as f64 / 255.0);
+    let lg = srgb_decode(g as f64 / 255.0);
+    let lb = srgb_decode(b as f64 / 255.0);
+    let (x, y, z) = mat3_mul(SRGB_TO_XYZ, lr, lg, lb);
+    let (x, y, z) = mat3_mul(XYZ_D65_TO_D50, x, y, z);
+    lab_from_xyz_d50(x, y, z)
+}
+
+/// XYZ-D50 → LCH（CSS Color 4；f 正函数）。
+fn lab_from_xyz_d50(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
+    // D50 参考白点
+    let (xn, yn, zn) = (0.96422, 1.0, 0.82521);
+    let eps = 216.0 / 24389.0; // (6/29)³
+    let kappa = 24389.0 / 27.0; // (29/3)³
+    let f = |t: f64| if t > eps { t.cbrt() } else { (kappa * t + 16.0) / 116.0 };
+    let fx = f(x / xn);
+    let fy = f(y / yn);
+    let fz = f(z / zn);
+    let l = 116.0 * fy - 16.0;
+    let a = 500.0 * (fx - fy);
+    let b = 200.0 * (fy - fz);
+    let c = (a * a + b * b).sqrt();
+    let mut h = b.atan2(a).to_degrees();
+    if h < 0.0 {
+        h += 360.0;
+    }
+    (l, c, h)
+}
+
+/// CIE LCH-D50 → sRGB u8（CSS Color 4；越界色逐通道钳制）。供 color-mix(in lch) 插值回转。
+pub fn lch_to_srgb_u8(l: f64, c: f64, h: f64) -> (u8, u8, u8) {
+    let h_rad = h.to_radians();
+    let (lr, lg, lb) = lab_to_linear_srgb(l, c * h_rad.cos(), c * h_rad.sin());
+    (linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb))
+}
+
 /// OKLab → 线性 sRGB（CSS Color 4 §10.4，直接线性 LMS 矩阵）。
 fn oklab_to_linear_srgb(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
     let l_ = l + 0.3963377774 * a + 0.2158037573 * b;
@@ -543,6 +582,14 @@ const XYZ_TO_SRGB: [f64; 9] = [
 // XYZ-D50 → XYZ-D65（Bradford 色度适应）
 const XYZ_D50_TO_D65: [f64; 9] = [
     0.9555766, -0.0230393, 0.0631636, -0.0282895, 1.0099416, 0.0210077, 0.0122982, -0.0204830, 1.3299098,
+];
+// 线性 sRGB → XYZ-D65（CSS Color 4，XYZ_TO_SRGB 的逆）。driving: srgb_u8_to_lch（color-mix lch 插值）。
+const SRGB_TO_XYZ: [f64; 9] = [
+    0.4123908, 0.3575843, 0.1804808, 0.2126390, 0.7151687, 0.0721923, 0.0193308, 0.1191948, 0.9505322,
+];
+// XYZ-D65 → XYZ-D50（Bradford 适应逆，CSS Color 4）。
+const XYZ_D65_TO_D50: [f64; 9] = [
+    1.0478112, 0.0228866, -0.0501270, 0.0295424, 0.9904844, -0.0170491, -0.0092345, 0.0150436, 0.7521316,
 ];
 
 /// 把预定义颜色空间 3 分量转换为 sRGB u8。返回 None 表示不支持的空间（rec2020/prophoto/未知）。
@@ -755,15 +802,23 @@ fn parse_color_mix(value: &str) -> Option<ColorValue> {
     // 首个顶层逗号分隔色彩空间与第一分量
     let first_comma = top_level_byte_index(&inner, b',')?;
     let space = inner[..first_comma].trim();
-    if !space.eq_ignore_ascii_case("in srgb") {
-        return None; // 其他色彩空间（srgb-linear/lch/oklch/…）defer
-    }
+    let mix_space = if space.eq_ignore_ascii_case("in srgb") {
+        ColorMixSpace::Srgb
+    } else if space.eq_ignore_ascii_case("in lch") {
+        ColorMixSpace::Lch
+    } else {
+        return None; // 其他色彩空间（srgb-linear/oklch/oklab/…）defer
+    };
     let rest = inner[first_comma + 1..].trim();
     // 顶层逗号分隔两分量
     let second_comma = top_level_byte_index(rest, b',')?;
     let c1 = parse_color_mix_component(rest[..second_comma].trim())?;
     let c2 = parse_color_mix_component(rest[second_comma + 1..].trim())?;
-    Some(ColorValue::Mix(Box::new(ColorMixSpec { c1, c2 })))
+    Some(ColorValue::Mix(Box::new(ColorMixSpec {
+        c1,
+        c2,
+        space: mix_space,
+    })))
 }
 
 /// 解析 color-mix 单分量：`<color>` 或 `<color> <百分比>`（CSS Color 4 空白语法）。

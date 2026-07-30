@@ -1410,7 +1410,7 @@ fn test_parse_length_quirks_invalid_still_none() {
 #[test]
 /// R2267：color-mix(in srgb, ...) 解析为 ColorValue::Mix（保留 currentColor 未解析）。
 fn test_parse_color_mix_srgb() {
-    use crate::values::ColorValue;
+    use crate::values::{ColorMixSpace, ColorValue};
     // 双省略百分比 → 各 None（解析层不归一化，paint 时按 spec 默认 50/50）
     let c = super::super::parse_color("color-mix(in srgb, currentColor 50%, green)").unwrap();
     match c {
@@ -1420,11 +1420,21 @@ fn test_parse_color_mix_srgb() {
             // green 在 parse_color 阶段已解析为 Rgba(0,128,0)
             assert!(matches!(spec.c2.color, ColorValue::Rgba(0, 128, 0, 255)));
             assert_eq!(spec.c2.percentage, None); // 第二分量省略 → None（100-50 在 paint 算）
+            assert_eq!(spec.space, ColorMixSpace::Srgb);
         }
         other => panic!("应为 Mix，实际: {:?}", other),
     }
-    // 非 srgb 色彩空间 → None（defer）
-    assert!(super::super::parse_color("color-mix(in lch, red, blue)").is_none());
+    // R2273：in lch 解析为 Mix(space=Lch)。
+    let lch = super::super::parse_color("color-mix(in lch, purple, plum)").unwrap();
+    match lch {
+        ColorValue::Mix(spec) => {
+            assert_eq!(spec.space, ColorMixSpace::Lch);
+            assert!(matches!(spec.c1.color, ColorValue::Rgba(128, 0, 128, 255))); // purple
+        }
+        other => panic!("in lch 应为 Mix，实际: {:?}", other),
+    }
+    // 其他色彩空间（srgb-linear/oklch/…）→ None（defer）
+    assert!(super::super::parse_color("color-mix(in oklch, red, blue)").is_none());
 }
 
 #[test]

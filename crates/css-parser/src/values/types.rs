@@ -69,6 +69,17 @@ pub struct ColorMixSpec {
     pub c1: ColorMixComponent,
     /// 第二个颜色分量。
     pub c2: ColorMixComponent,
+    /// 插值色彩空间（sRGB gamma-encoded 线性 / LCH 极坐标 + 色相短弧）。
+    pub space: ColorMixSpace,
+}
+
+/// `color-mix()` 插值色彩空间。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorMixSpace {
+    /// `in srgb` —— gamma-encoded sRGB 线性插值（premultiplied alpha）。
+    Srgb,
+    /// `in lch` —— CIE LCH 极坐标插值（L/C 线性、h 色相短弧）。driving: color-mix-percents-01/02。
+    Lch,
 }
 
 /// `color-mix()` 的单个分量（颜色 + 可选百分比）。
