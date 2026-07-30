@@ -181,3 +181,42 @@ fn r2156_gate_decision_blocks_when_ooflow_present() {
         "含 abspos 后代时守卫须阻止 gate 跳过（保 CB）"
     );
 }
+
+/// R2236：`<span><img class="block">`（block-in-inline）—— span（inline）含 `display:block` 的 img。
+/// `inline_elem_has_nested_inline_block(span)` 须返回 **false**：block-level img 非 atomic inline
+/// 后代（由 R109 split 处理）。旧实现无视 display 把任意 img 判为 atomic inline → collect_inline_items
+/// 无限递归（栈溢出 DoS）。driving: WPT css-overflow/line-clamp/line-clamp-033。
+#[test]
+fn r2236_block_img_in_inline_is_not_atomic_inline_descendant() {
+    let doc = parse_html("<p><span><img class=\"block\"></span></p>");
+    let p = first_body_element(&doc);
+    let span = doc.first_child(p).unwrap();
+    let img = first_element_child(&doc, span).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(span, style(DisplayValue::Inline, PositionValue::Static));
+    styles.insert(img, style(DisplayValue::Block, PositionValue::Static));
+
+    assert!(
+        !InlineFormattingContext::inline_elem_has_nested_inline_block(&doc, &styles, span),
+        "display:block 的 img 非 atomic inline 后代（block-in-inline 不应触发 IFC 递归）"
+    );
+}
+
+/// R2236 回归：默认 inline 的 img（`<span><img>`）仍判为 atomic inline 后代（R1576 行为不变）。
+#[test]
+fn r2236_inline_img_in_inline_still_atomic() {
+    let doc = parse_html("<p><span><img></span></p>");
+    let p = first_body_element(&doc);
+    let span = doc.first_child(p).unwrap();
+    let img = first_element_child(&doc, span).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(span, style(DisplayValue::Inline, PositionValue::Static));
+    styles.insert(img, style(DisplayValue::Inline, PositionValue::Static));
+
+    assert!(
+        InlineFormattingContext::inline_elem_has_nested_inline_block(&doc, &styles, span),
+        "默认 inline 的 img 仍是 atomic inline 后代（R1576 行为保留）"
+    );
+}

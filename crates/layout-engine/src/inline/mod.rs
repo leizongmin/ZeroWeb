@@ -749,8 +749,13 @@ impl InlineFormattingContext {
             let Some(s) = styles.get(&cid) else {
                 continue;
             };
-            // img 是 atomic inline（IFC img 分支），无论 display（默认 inline）。
-            if elem_data.local_name() == "img" || is_atomic_inline(&s.display) {
+            // img 是 atomic inline（IFC img 分支）**仅当 display 为 inline-level**（默认 inline）。
+            // R2236：旧实现 `local_name()=="img"` 无视 display，把 `display:block` 的 img（如
+            // `<span><img class="block">` block-in-inline）误判为原子行内后代 → 触发
+            // collect_inline_items 无限递归（栈溢出 DoS）。block-level img 由 R109 split 处理，
+            // 非 IFC 原子行内。driving: WPT css-overflow/line-clamp/line-clamp-033。
+            let img_inline_atomic = elem_data.local_name() == "img" && is_inline_level(&s.display);
+            if img_inline_atomic || is_atomic_inline(&s.display) {
                 return true;
             }
             if is_inline_level(&s.display) {
