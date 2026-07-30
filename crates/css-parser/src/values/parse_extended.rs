@@ -126,6 +126,75 @@ pub fn parse_resize(value: &str) -> Option<ResizeValue> {
     }
 }
 
+/// CSS margin-trim 值（css-box-4 §margin-trim）。
+///
+/// 表示为四向边 flag（block-start / block-end / inline-start / inline-end），统一
+/// 支持单值（`block` / `inline` / `both` / `block-start` / `block-end` /
+/// `inline-start` / `inline-end`）与空格分隔组合（如 `block-start inline-start`）。
+/// `<inset()>` 形式未实现。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MarginTrimValue {
+    /// 裁剪块首边距（首子 margin-block-start）。
+    pub block_start: bool,
+    /// 裁剪块末边距（末子 margin-block-end）。
+    pub block_end: bool,
+    /// 裁剪行内首边距（首子 margin-inline-start）。
+    pub inline_start: bool,
+    /// 裁剪行内末边距（末子 margin-inline-end）。
+    pub inline_end: bool,
+}
+
+impl MarginTrimValue {
+    /// 全 false（`none`，默认）。
+    pub const NONE: Self = Self {
+        block_start: false,
+        block_end: false,
+        inline_start: false,
+        inline_end: false,
+    };
+}
+
+/// 解析 CSS margin-trim 属性值（css-box-4）。
+///
+/// 支持：`none`、`block`、`inline`、`both`、`block-start`、`block-end`、
+/// `inline-start`、`inline-end`，以及空格分隔的组合（如 `block-start inline-start`）。
+/// `none` 仅单独合法（与其他 token 混用 → 非法）；未识别 token → None（整条声明非法）。
+pub fn parse_margin_trim(value: &str) -> Option<MarginTrimValue> {
+    let tokens: Vec<&str> = value.split_ascii_whitespace().collect();
+    if tokens.is_empty() {
+        return None;
+    }
+    if tokens.len() == 1 && tokens[0].eq_ignore_ascii_case("none") {
+        return Some(MarginTrimValue::NONE);
+    }
+    let mut v = MarginTrimValue::NONE;
+    for tok in tokens {
+        match tok.to_ascii_lowercase().as_str() {
+            "block" => {
+                v.block_start = true;
+                v.block_end = true;
+            }
+            "inline" => {
+                v.inline_start = true;
+                v.inline_end = true;
+            }
+            "both" => {
+                v.block_start = true;
+                v.block_end = true;
+                v.inline_start = true;
+                v.inline_end = true;
+            }
+            "block-start" => v.block_start = true,
+            "block-end" => v.block_end = true,
+            "inline-start" => v.inline_start = true,
+            "inline-end" => v.inline_end = true,
+            // none 与其他 token 混用 / 未识别 token → 非法。
+            _ => return None,
+        }
+    }
+    Some(v)
+}
+
 // ── CSS Interaction / Performance Hint 值类型 ──────────────────────────
 
 /// CSS overscroll-behavior 值。

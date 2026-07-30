@@ -165,6 +165,8 @@ pub struct ComputedStyle {
     pub text_indent: LengthValue,
     /// resize 属性。
     pub resize: ResizeValue,
+    /// margin-trim 属性（css-box-4 §margin-trim）。
+    pub margin_trim: MarginTrimValue,
 
     // ── 表格 ──
     /// table-layout 属性。

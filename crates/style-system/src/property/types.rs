@@ -364,6 +364,29 @@ pub enum ResizeValue {
     Inline,
 }
 
+/// CSS margin-trim 值（css-box-4 §margin-trim，四向 flag；镜像 css-parser 的定义）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MarginTrimValue {
+    /// 裁剪块首边距（首子 margin-block-start）。
+    pub block_start: bool,
+    /// 裁剪块末边距（末子 margin-block-end）。
+    pub block_end: bool,
+    /// 裁剪行内首边距。
+    pub inline_start: bool,
+    /// 裁剪行内末边距。
+    pub inline_end: bool,
+}
+
+impl MarginTrimValue {
+    /// 全 false（`none`，默认）。
+    pub const NONE: Self = Self {
+        block_start: false,
+        block_end: false,
+        inline_start: false,
+        inline_end: false,
+    };
+}
+
 /// CSS page-break 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum PageBreakValue {

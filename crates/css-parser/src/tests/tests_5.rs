@@ -394,6 +394,100 @@ fn test_parse_resize_invalid() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// margin-trim 解析测试（css-box-4 §margin-trim）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_margin_trim_none() {
+    assert_eq!(parse_margin_trim("none"), Some(MarginTrimValue::NONE));
+    // NONE 即全 false。
+    let n = parse_margin_trim("none").unwrap();
+    assert!(!n.block_start && !n.block_end && !n.inline_start && !n.inline_end);
+}
+
+#[test]
+fn test_parse_margin_trim_axis_keywords() {
+    // block = block-start + block-end
+    let b = parse_margin_trim("block").unwrap();
+    assert!(b.block_start && b.block_end && !b.inline_start && !b.inline_end);
+    // inline = inline-start + inline-end
+    let i = parse_margin_trim("inline").unwrap();
+    assert!(!i.block_start && !i.block_end && i.inline_start && i.inline_end);
+    // both = all four
+    let both = parse_margin_trim("both").unwrap();
+    assert!(both.block_start && both.block_end && both.inline_start && both.inline_end);
+}
+
+#[test]
+fn test_parse_margin_trim_side_keywords() {
+    assert_eq!(
+        parse_margin_trim("block-start"),
+        Some(MarginTrimValue {
+            block_start: true,
+            block_end: false,
+            inline_start: false,
+            inline_end: false
+        })
+    );
+    assert_eq!(
+        parse_margin_trim("block-end"),
+        Some(MarginTrimValue {
+            block_start: false,
+            block_end: true,
+            inline_start: false,
+            inline_end: false
+        })
+    );
+    assert_eq!(
+        parse_margin_trim("inline-start"),
+        Some(MarginTrimValue {
+            block_start: false,
+            block_end: false,
+            inline_start: true,
+            inline_end: false
+        })
+    );
+    assert_eq!(
+        parse_margin_trim("inline-end"),
+        Some(MarginTrimValue {
+            block_start: false,
+            block_end: false,
+            inline_start: false,
+            inline_end: true
+        })
+    );
+}
+
+#[test]
+fn test_parse_margin_trim_combinations() {
+    // 空格分隔组合（css-box-4）：block-start inline-start
+    let combo = parse_margin_trim("block-start inline-start").unwrap();
+    assert!(combo.block_start && combo.inline_start);
+    assert!(!combo.block_end && !combo.inline_end);
+    // 全四边组合 ≡ both
+    let all = parse_margin_trim("block-start block-end inline-start inline-end").unwrap();
+    assert!(all.block_start && all.block_end && all.inline_start && all.inline_end);
+}
+
+#[test]
+fn test_parse_margin_trim_case_insensitive_and_whitespace() {
+    // 大小写不敏感 + 多空白归一。
+    let v = parse_margin_trim("  Block-Start  Inline-End ").unwrap();
+    assert!(v.block_start && v.inline_end);
+    assert!(!v.block_end && !v.inline_start);
+}
+
+#[test]
+fn test_parse_margin_trim_invalid() {
+    assert_eq!(parse_margin_trim(""), None);
+    assert_eq!(parse_margin_trim("auto"), None);
+    assert_eq!(parse_margin_trim("block-foo"), None);
+    // none 与其他 token 混用 → 非法（none 须单独）。
+    assert_eq!(parse_margin_trim("none block"), None);
+    assert_eq!(parse_margin_trim("block none"), None);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // 29. 未覆盖的边界条件测试 — word-break / contain / grid-area / length-shorthand / length-vw
 // ═══════════════════════════════════════════════════════════════════════
 

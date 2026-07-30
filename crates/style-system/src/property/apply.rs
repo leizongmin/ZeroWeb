@@ -585,6 +585,17 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "margin-trim" => {
+            if let Some(v) = values::parse_margin_trim(value) {
+                style.margin_trim = MarginTrimValue {
+                    block_start: v.block_start,
+                    block_end: v.block_end,
+                    inline_start: v.inline_start,
+                    inline_end: v.inline_end,
+                };
+                return true;
+            }
+        }
         "text-overflow" => {
             if let Some(v) = parse_text_overflow(value) {
                 style.text_overflow = v;

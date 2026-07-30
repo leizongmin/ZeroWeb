@@ -958,6 +958,21 @@ fn is_summary_element(doc: &Document, id: NodeId) -> bool {
         .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("summary")))
 }
 
+/// margin-trim 首末子判定：元素是否为参与块格式化上下文的 in-flow block-level 子。
+/// 排除 display:none、inline/contents 级（垂直 margin 不参与块轴）、abspos/fixed（脱流）。
+/// display 谓词与 R1285 `br_is_inline_only` 的 block-level 判定一致。
+fn is_block_level_in_flow(display: &DisplayValue, position: &PositionValue) -> bool {
+    matches!(
+        display,
+        DisplayValue::Block
+            | DisplayValue::FlowRoot
+            | DisplayValue::ListItem
+            | DisplayValue::Flex
+            | DisplayValue::Grid
+            | DisplayValue::Table
+    ) && !matches!(position, PositionValue::Absolute | PositionValue::Fixed)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_subtree(
     ctx: &mut BuildContext,
@@ -993,6 +1008,47 @@ fn build_subtree(
 
     // 转换为 taffy 样式（传入父级区域映射）
     let mut taffy_style = computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
+
+    // margin-trim（css-box-4 §margin-trim）：父块容器声明 margin-trim 的 block / block-start /
+    // block-end 时，归零首子 block-start（margin-top）与/或末子 block-end（margin-bottom）。
+    // 在 taffy 布局前修改 taffy_style.margin，使整个流正确重算（trim 到 0 即移除参与折叠的
+    // margin，对 collapsing / non-collapsing 案均正确）。bounded scope：仅水平书写模式
+    // （horizontal-tb）；inline 轴 trim 对块级子无效（block-container-inline-001 实证：`margin-trim:
+    // inline` 不裁剪块级子的 inline 边距）；flex/grid/multicol 容器有独立语义（defer）；自折叠 /
+    // 嵌套深案（block-container-block-*-self-collapsing-*）defer。kill-switch `ZW_MARGIN_TRIM=0`
+    // （default-on）。driving: css/css-box/margin-trim/block-container-block-001 等。
+    if std::env::var("ZW_MARGIN_TRIM").as_deref() != Ok("0")
+        && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
+        && let Some(parent_id) = doc.parent_node(dom_id)
+        && let Some(ps) = styles.get(&parent_id)
+        && matches!(
+            ps.display,
+            DisplayValue::Block | DisplayValue::FlowRoot | DisplayValue::ListItem
+        )
+        && (ps.margin_trim.block_start || ps.margin_trim.block_end)
+        && is_block_level_in_flow(&computed.display, &computed.position)
+    {
+        // 父容器 in-flow block-level 子（按文档序），用于定位当前子是否为首/末子。
+        let in_flow_block: Vec<NodeId> = doc
+            .child_nodes(parent_id)
+            .iter()
+            .copied()
+            .filter(|&s| {
+                styles
+                    .get(&s)
+                    .is_some_and(|st| is_block_level_in_flow(&st.display, &st.position))
+            })
+            .collect();
+        if let Some(idx) = in_flow_block.iter().position(|&s| s == dom_id) {
+            let zero = taffy::style::LengthPercentageAuto::length(0.0_f32);
+            if idx == 0 && ps.margin_trim.block_start {
+                taffy_style.margin.top = zero;
+            }
+            if idx + 1 == in_flow_block.len() && ps.margin_trim.block_end {
+                taffy_style.margin.bottom = zero;
+            }
+        }
+    }
 
     // R1284：`<br>` 经 convert_display 映射为 taffy Block leaf（无内容 → height 0）。
     // 当 br 处于 block 兄弟之间（如 `<div/><br><div/>`），它作为 direct block 子渲染

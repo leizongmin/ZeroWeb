@@ -108,6 +108,7 @@ impl Default for ComputedStyle {
             line_break: LineBreakValue::Auto,
             text_indent: LengthValue::Px(0.0),
             resize: ResizeValue::None,
+            margin_trim: MarginTrimValue::NONE,
 
             // 表格
             table_layout: TableLayoutValue::Auto,
