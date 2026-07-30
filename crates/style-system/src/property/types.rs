@@ -524,6 +524,30 @@ impl ContainComputedValue {
             _ => false,
         }
     }
+
+    /// 是否启用 layout containment（`Layout` / `Strict` / `Content` / `Custom` 含 FLAG_LAYOUT）。
+    /// CSS Containment §3：layout containment 使元素建立独立格式化上下文（BFC）——隔离浮动
+    ///（祖先 float 不侵入、内部 float 不溢出）+ 阻止与后代的 margin 折叠，并成为 abspos 后代
+    /// 的包含块。`strict`=layout+style+paint、`content`=layout+style+paint+size 均含 layout。
+    pub fn has_layout(&self) -> bool {
+        match self {
+            ContainComputedValue::Layout | ContainComputedValue::Strict | ContainComputedValue::Content => true,
+            ContainComputedValue::Custom(flags) => (flags & Self::FLAG_LAYOUT) != 0,
+            _ => false,
+        }
+    }
+
+    /// 是否启用 paint containment（`Paint` / `Strict` / `Content` / `Custom` 含 FLAG_PAINT）。
+    /// CSS Containment §4：paint containment 同样建立独立格式化上下文（BFC，与 layout containment
+    /// 同族的 BFC 效果），并额外裁剪后代到元素的 paint box。本判定仅覆盖 BFC 部分（layout/paint
+    /// 共享）；paint 裁剪是独立的 paint 层关注点。`strict`/`content` 均含 paint。
+    pub fn has_paint(&self) -> bool {
+        match self {
+            ContainComputedValue::Paint | ContainComputedValue::Strict | ContainComputedValue::Content => true,
+            ContainComputedValue::Custom(flags) => (flags & Self::FLAG_PAINT) != 0,
+            _ => false,
+        }
+    }
 }
 
 /// CSS appearance 属性值。
@@ -1790,6 +1814,66 @@ mod tests {
         assert!(
             !ContainComputedValue::Custom(ContainComputedValue::FLAG_LAYOUT).has_size(),
             "Custom(LAYOUT) 不含 size"
+        );
+    }
+
+    /// R2240：contain:layout 标志判定——Layout/Strict/Content/Custom(FLAG_LAYOUT) 含 layout
+    /// containment；None/Size/Style/Paint 不含。Strict=layout+style+paint、Content 含 layout。
+    /// driving: WPT css-contain contain-layout-formatting-context-*（float/margin BFC 隔离）。
+    #[test]
+    fn test_contain_has_layout() {
+        assert!(ContainComputedValue::Layout.has_layout(), "Layout 须含 layout");
+        assert!(
+            ContainComputedValue::Strict.has_layout(),
+            "Strict 须含 layout（layout+style+paint）"
+        );
+        assert!(ContainComputedValue::Content.has_layout(), "Content 须含 layout");
+        assert!(
+            ContainComputedValue::Custom(ContainComputedValue::FLAG_LAYOUT).has_layout(),
+            "Custom(FLAG_LAYOUT) 须含 layout"
+        );
+        assert!(
+            ContainComputedValue::Custom(ContainComputedValue::FLAG_LAYOUT | ContainComputedValue::FLAG_PAINT)
+                .has_layout(),
+            "Custom(LAYOUT|PAINT) 须含 layout"
+        );
+        assert!(!ContainComputedValue::None.has_layout(), "None 不含 layout");
+        assert!(!ContainComputedValue::Size.has_layout(), "Size 不含 layout");
+        assert!(!ContainComputedValue::Style.has_layout(), "Style 不含 layout");
+        assert!(!ContainComputedValue::Paint.has_layout(), "Paint 不含 layout");
+        assert!(
+            !ContainComputedValue::Custom(ContainComputedValue::FLAG_PAINT).has_layout(),
+            "Custom(FLAG_PAINT) 不含 layout"
+        );
+    }
+
+    /// R2240：contain:paint 标志判定——Paint/Strict/Content/Custom(FLAG_PAINT) 含 paint
+    /// containment；None/Size/Style/Layout 不含。Strict/Content 均含 paint。
+    /// driving: WPT css-contain contain-paint-formatting-context-*（BFC 隔离部分）。
+    #[test]
+    fn test_contain_has_paint() {
+        assert!(ContainComputedValue::Paint.has_paint(), "Paint 须含 paint");
+        assert!(
+            ContainComputedValue::Strict.has_paint(),
+            "Strict 须含 paint（layout+style+paint）"
+        );
+        assert!(ContainComputedValue::Content.has_paint(), "Content 须含 paint");
+        assert!(
+            ContainComputedValue::Custom(ContainComputedValue::FLAG_PAINT).has_paint(),
+            "Custom(FLAG_PAINT) 须含 paint"
+        );
+        assert!(
+            ContainComputedValue::Custom(ContainComputedValue::FLAG_LAYOUT | ContainComputedValue::FLAG_PAINT)
+                .has_paint(),
+            "Custom(LAYOUT|PAINT) 须含 paint"
+        );
+        assert!(!ContainComputedValue::None.has_paint(), "None 不含 paint");
+        assert!(!ContainComputedValue::Size.has_paint(), "Size 不含 paint");
+        assert!(!ContainComputedValue::Style.has_paint(), "Style 不含 paint");
+        assert!(!ContainComputedValue::Layout.has_paint(), "Layout 不含 paint");
+        assert!(
+            !ContainComputedValue::Custom(ContainComputedValue::FLAG_LAYOUT).has_paint(),
+            "Custom(FLAG_LAYOUT) 不含 paint"
         );
     }
 }

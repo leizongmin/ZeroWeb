@@ -373,3 +373,93 @@ fn test_shrink_vertical_block_no_op_for_horizontal() {
 
     assert_eq!(root.children[0].width, 784.0, "水平块不应被 shrink 影响");
 }
+
+// ── R2240 contain:layout / contain:paint → BFC（独立格式化上下文）──────────────
+
+/// 辅助：对给定 HTML 跑完整布局，返回指定标签首个 LayoutBox 的引用。
+fn contain_bfc_box(html: &str, tag: &str) -> LayoutBox {
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let found = find_box_by_tag(&result.root, &doc, tag).expect("应找到目标元素");
+    // 克隆出来脱离 result 生命周期，便于断言。
+    LayoutBox {
+        is_flow_root: found.is_flow_root,
+        is_block_level: found.is_block_level,
+        ..LayoutBox::default()
+    }
+}
+
+/// R2240：CSS Containment §3 — `contain: layout` 建立独立格式化上下文（BFC），
+/// 隔离浮动 + 阻止与后代的 margin 折叠。driving: WPT css-contain
+/// contain-layout-formatting-context-float-001 / -margin-001。
+#[test]
+fn test_contain_layout_establishes_bfc() {
+    use crate::margin_collapse::establishes_bfc;
+    let bx = contain_bfc_box(
+        r#"<html><body><div style="contain:layout">a</div></body></html>"#,
+        "div",
+    );
+    assert!(bx.is_flow_root, "contain:layout 的块须标记 is_flow_root");
+    assert!(establishes_bfc(&bx), "contain:layout 的块须建立 BFC");
+}
+
+/// R2240：CSS Containment §4 — `contain: paint` 同样建立独立格式化上下文（BFC）。
+/// driving: WPT css-contain contain-paint-formatting-context-float-001 / -margin-001。
+#[test]
+fn test_contain_paint_establishes_bfc() {
+    use crate::margin_collapse::establishes_bfc;
+    let bx = contain_bfc_box(r#"<html><body><div style="contain:paint">a</div></body></html>"#, "div");
+    assert!(bx.is_flow_root, "contain:paint 的块须标记 is_flow_root");
+    assert!(establishes_bfc(&bx), "contain:paint 的块须建立 BFC");
+}
+
+/// R2240：`contain: strict` / `contain: content` 含 layout+paint，亦须建立 BFC。
+#[test]
+fn test_contain_strict_content_establish_bfc() {
+    use crate::margin_collapse::establishes_bfc;
+    for (decl, label) in [("contain:strict", "strict"), ("contain:content", "content")] {
+        let html = format!(r#"<html><body><div style="{decl}">a</div></body></html>"#);
+        let bx = contain_bfc_box(&html, "div");
+        assert!(bx.is_flow_root, "contain:{label} 的块须标记 is_flow_root");
+        assert!(establishes_bfc(&bx), "contain:{label} 的块须建立 BFC");
+    }
+}
+
+/// R2240：`contain: style` / `contain: size` 不含 layout/paint，**不**建立 BFC
+///（size 仅独立化尺寸，style 仅隔离计数器/引号）。同时验证普通块无 contain 不建立 BFC。
+/// 这是回归护栏：contain→BFC 仅限 layout/paint，不误伤其他 contain 值。
+#[test]
+fn test_contain_style_size_no_bfc() {
+    use crate::margin_collapse::establishes_bfc;
+    for (decl, label) in [("contain:style", "style"), ("contain:size", "size")] {
+        let html = format!(r#"<html><body><div style="{decl}">a</div></body></html>"#);
+        let bx = contain_bfc_box(&html, "div");
+        assert!(!bx.is_flow_root, "contain:{label} 不应标记 is_flow_root");
+        assert!(!establishes_bfc(&bx), "contain:{label} 不应建立 BFC");
+    }
+    // 普通块（无 contain）不建立 BFC。
+    let bx = contain_bfc_box(r#"<html><body><div>a</div></body></html>"#, "div");
+    assert!(!bx.is_flow_root, "无 contain 的普通块不应标记 is_flow_root");
+    assert!(!establishes_bfc(&bx), "无 contain 的普通块不应建立 BFC");
+}
+
+/// R2240：`contain: layout` 不对 `display: inline`（非原子行内）元素建立 BFC——
+/// 防止 apply_inline_block_float_avoidance（float_positioning.rs，按
+/// `is_flow_root && !is_block_level` 识别 inline-block）把 inline+contain 误判为 inline-block。
+#[test]
+fn test_contain_layout_inline_not_bfc() {
+    use crate::margin_collapse::establishes_bfc;
+    let bx = contain_bfc_box(
+        r#"<html><body><span style="contain:layout">a</span></body></html>"#,
+        "span",
+    );
+    assert!(
+        !bx.is_flow_root || bx.is_block_level,
+        "display:inline + contain:layout 不应成为非块级 is_flow_root（避免被当作 inline-block）"
+    );
+    let _ = establishes_bfc(&bx); // 仅作可调用性占位；判定以 is_flow_root + is_block_level 为准。
+}

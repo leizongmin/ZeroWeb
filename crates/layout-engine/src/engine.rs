@@ -1831,9 +1831,21 @@ impl LayoutEngine {
         // 取代（chromium/IE 现行行为 = 裁剪）。此处 table cell 与非 cell 用同一 overflow 映射。
         let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
         let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
-        // CSS 2.1 §9.4.1: display:flow-root 和 display:inline-block 都建立 BFC
-        let is_flow_root =
-            computed.is_some_and(|s| matches!(s.display, DisplayValue::FlowRoot | DisplayValue::InlineBlock));
+        // CSS 2.1 §9.4.1: display:flow-root 和 display:inline-block 都建立 BFC。
+        // CSS Containment §3/§4：contain:layout / contain:paint 也建立独立格式化上下文
+        //（BFC）——隔离浮动（祖先 float 不侵入、内部 float 不溢出）+ 阻止与后代的 margin 折叠。
+        // 仅对生成块容器盒的元素生效（排除 inline 非-原子 / contents / none）：避免 display:inline
+        // + contain 元素被 apply_inline_block_float_avoidance（float_positioning.rs，按
+        // `is_flow_root && !is_block_level` 识别 inline-block）误判为 inline-block 走 float 排斥。
+        // driving: WPT css-contain contain-layout/paint-formatting-context-float/margin-*。
+        let is_flow_root = computed.is_some_and(|s| {
+            matches!(s.display, DisplayValue::FlowRoot | DisplayValue::InlineBlock)
+                || ((s.contain.has_layout() || s.contain.has_paint())
+                    && !matches!(
+                        s.display,
+                        DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
+                    ))
+        });
         let is_multicol = computed.is_some_and(|s| {
             use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue};
             !matches!(s.column_count, ColumnCountComputedValue::Auto)
