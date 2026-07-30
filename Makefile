@@ -6,7 +6,7 @@ setup-rusty-v8:
 # WPT reftest 数据（上游 web-platform-tests/wpt 子集，~19952 文件，独立 repo）。
 # reftest / reftest-oracle 会自动前置触发；目录已存在则跳过，刷新需先 rm -rf。
 WPT_DATA_REPO ?= https://github.com/leizongmin/zeroweb-wpt-data.git
-WPT_DATA_REF  ?= v1.7
+WPT_DATA_REF  ?= v1.8
 WPT_DATA_DIR  ?= tests/wpt-runner/wpt-data
 fetch-wpt-data:
 	@if [ -d "$(WPT_DATA_DIR)" ] && [ -n "$$(ls -A $(WPT_DATA_DIR) 2>/dev/null)" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi
