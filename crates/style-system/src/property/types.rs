@@ -511,6 +511,19 @@ impl ContainComputedValue {
     pub const FLAG_STYLE: u8 = 0x04;
     /// paint 标志位。
     pub const FLAG_PAINT: u8 = 0x08;
+
+    /// 是否启用 size containment（`Size` / `Content` / `Custom` 含 FLAG_SIZE）。
+    /// `contain: size` 使元素尺寸独立于内容——auto 尺寸解析为 0（content 不贡献 size，
+    /// 仍 render/overflow）。`strict` = layout+style+paint（**不含** size）；`content` 含 size。
+    /// driving: WPT css-contain contain-size-*（如 contain-size-027：inline-block contain:size
+    /// 无显式尺寸 → border-box = padding-box，content 0）。
+    pub fn has_size(&self) -> bool {
+        match self {
+            ContainComputedValue::Size | ContainComputedValue::Content => true,
+            ContainComputedValue::Custom(flags) => (flags & Self::FLAG_SIZE) != 0,
+            _ => false,
+        }
+    }
 }
 
 /// CSS appearance 属性值。
@@ -1746,3 +1759,37 @@ pub struct BorderSpacingComputedValue {
 
 // ComputedStyle 结构体已拆分到 computed_style.rs
 pub use super::computed_style::ComputedStyle;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R2239：contain:size 标志判定——Size/Content/Custom(FLAG_SIZE) 含 size containment；
+    /// Strict（layout+style+paint，**不含** size）/Layout/Style/Paint/None 不含。
+    /// driving: WPT css-contain contain-size-*。
+    #[test]
+    fn test_contain_has_size() {
+        assert!(ContainComputedValue::Size.has_size(), "Size 须含 size");
+        assert!(ContainComputedValue::Content.has_size(), "Content 须含 size");
+        assert!(
+            ContainComputedValue::Custom(ContainComputedValue::FLAG_SIZE).has_size(),
+            "Custom(FLAG_SIZE) 须含 size"
+        );
+        assert!(
+            ContainComputedValue::Custom(ContainComputedValue::FLAG_SIZE | ContainComputedValue::FLAG_LAYOUT)
+                .has_size(),
+            "Custom(SIZE|LAYOUT) 须含 size"
+        );
+        assert!(!ContainComputedValue::None.has_size(), "None 不含 size");
+        assert!(
+            !ContainComputedValue::Strict.has_size(),
+            "Strict 不含 size（仅 layout+style+paint）"
+        );
+        assert!(!ContainComputedValue::Layout.has_size(), "Layout 不含 size");
+        assert!(!ContainComputedValue::Paint.has_size(), "Paint 不含 size");
+        assert!(
+            !ContainComputedValue::Custom(ContainComputedValue::FLAG_LAYOUT).has_size(),
+            "Custom(LAYOUT) 不含 size"
+        );
+    }
+}
