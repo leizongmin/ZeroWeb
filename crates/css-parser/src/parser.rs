@@ -1766,6 +1766,11 @@ impl<'a> Parser<'a> {
         loop {
             match self.peek() {
                 Token::LBrace if depth == 0 => break,
+                // `@supports` 是块 at-rule（须有 `{...}`）。prelude 收集期间遇顶层 `;`
+                //（depth==0，无块）= 畸形语句 → 返回 None（不消耗 `;`），由 consume_rule
+                // 的 skip_malformed_qualified_rule 消耗 `;` 后继续下一条规则。否则 prelude
+                // 会越过 `;` 吞掉紧跟其后的合法规则。driving: WPT at-supports-024 `@supports;`。
+                Token::Semicolon if depth == 0 => return None,
                 Token::LParen | Token::Function(_) | Token::LBracket | Token::LBrace => {
                     depth += 1;
                     prelude.push_str(&format!("{}", self.peek()));

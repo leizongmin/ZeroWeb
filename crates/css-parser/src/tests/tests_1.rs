@@ -1892,6 +1892,31 @@ fn test_parse_at_supports_multiple_rules() {
 }
 
 #[test]
+/// 测试畸形 `@supports;`（无条件/无块）须正确恢复，不吞掉紧跟其后的合法 @supports 规则。
+/// driving: WPT at-supports-024 `@supports;` 后随 `@supports (margin:0){...}`。
+fn test_parse_at_supports_malformed_semicolon_recovers() {
+    let css = "div { background-color: red; } @supports; @supports (margin: 0) { div { background-color: green; } }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    // 应至少有 1 个 div 样式规则 + 1 个合法 @supports（margin:0）规则；
+    // 畸形 @supports; 不应吞掉随后的合法 @supports。
+    let supports_count = stylesheet
+        .rules
+        .iter()
+        .filter(|r| matches!(r, Rule::Supports(_)))
+        .count();
+    assert!(
+        supports_count >= 1,
+        "合法 @supports (margin:0) 规则应存活，实际规则数={}，supports={}",
+        stylesheet.rules.len(),
+        supports_count
+    );
+    // 合法 @supports 须含 margin:0 条件（非空 rules）
+    if let Some(Rule::Supports(s)) = stylesheet.rules.iter().find(|r| matches!(r, Rule::Supports(_))) {
+        assert!(!s.rules.is_empty(), "@supports (margin:0) 块内规则不应为空");
+    }
+}
+
+#[test]
 /// 测试 @supports 带 selector() 函数
 fn test_parse_at_supports_selector() {
     let css = "@supports selector(.a > .b) { .container { color: red; } }";
