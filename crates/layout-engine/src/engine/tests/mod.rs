@@ -158,6 +158,7 @@ mod r2108_table_internal_margin_suppressed_tests;
 mod r2170_quirks_pct_height_flex_grid_tests;
 mod r2171_ar_container_cross_size_tests;
 mod r2173_svg_attr_aspect_ratio_tests;
+mod r2234_logical_float_clear_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

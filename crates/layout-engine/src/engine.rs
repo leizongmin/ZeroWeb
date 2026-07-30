@@ -12,10 +12,58 @@ use std::collections::{HashMap, HashSet};
 use taffy::prelude::*;
 
 use zero_css_parser::values::{ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, PositionValue};
+// ComputedStyle.direction 是 style-system 自有的 DirectionValue（与 css-parser 的不同枚举）。
+use zero_style_system::DirectionValue;
 
 use zero_dom::{Document, NodeId, NodeKind};
 
 use zero_style_system::{ComputedStyle, ZIndexValue};
+
+/// 将逻辑 `float` 值（`inline-start`/`inline-end`）按方向解析为物理 `left`/`right`
+/// （CSS Logical §float-clear）。物理值（Left/Right/None）原样返回。
+///
+/// `is_rtl` 取自元素 `direction`（继承自 containing block）。driving: WPT css-logical
+/// logical-values-float-clear-1/3。
+fn resolve_float_physical(float: &FloatValue, is_rtl: bool) -> FloatValue {
+    match float {
+        FloatValue::InlineStart => {
+            if is_rtl {
+                FloatValue::Right
+            } else {
+                FloatValue::Left
+            }
+        }
+        FloatValue::InlineEnd => {
+            if is_rtl {
+                FloatValue::Left
+            } else {
+                FloatValue::Right
+            }
+        }
+        other => other.clone(),
+    }
+}
+
+/// 将逻辑 `clear` 值（`inline-start`/`inline-end`）按方向解析为物理 `left`/`right`。
+fn resolve_clear_physical(clear: &ClearValue, is_rtl: bool) -> ClearValue {
+    match clear {
+        ClearValue::InlineStart => {
+            if is_rtl {
+                ClearValue::Right
+            } else {
+                ClearValue::Left
+            }
+        }
+        ClearValue::InlineEnd => {
+            if is_rtl {
+                ClearValue::Left
+            } else {
+                ClearValue::Right
+            }
+        }
+        other => other.clone(),
+    }
+}
 
 use crate::dirty::LayoutDirtyTracker;
 
@@ -1754,7 +1802,13 @@ impl LayoutEngine {
             })
         });
         let is_sticky = computed.is_some_and(|s| matches!(s.position, PositionValue::Sticky));
-        let float = computed.map_or(FloatValue::None, |s| s.float.clone());
+        let float = computed.map_or(FloatValue::None, |s| {
+            // CSS Logical §float-clear：`inline-start`/`inline-end` 按元素 direction（继承自
+            // containing block）解析为物理 left/right（LTR: start=left,end=right；RTL 反之）。
+            // float_positioning 仅识别 Left/Right，未解析的 InlineStart/InlineEnd 会被当 None
+            // 忽略。driving: WPT css-logical logical-values-float-clear-*。
+            resolve_float_physical(&s.float, matches!(s.direction, DirectionValue::Rtl))
+        });
         let clear = computed.map_or(ClearValue::None, |s| {
             if matches!(
                 s.display,
@@ -1768,7 +1822,7 @@ impl LayoutEngine {
             ) {
                 ClearValue::None
             } else {
-                s.clear.clone()
+                resolve_clear_physical(&s.clear, matches!(s.direction, DirectionValue::Rtl))
             }
         });
         // 现代 CSS Overflow 行为（Mozilla bug 1880550 / csswg-drafts）：table cell 的
