@@ -131,27 +131,68 @@ fn hex_char_to_byte(c1: char, c2: char) -> u8 {
 }
 
 /// 解析 rgb() / rgba() 函数。
+///
+/// 支持两种语法（CSS Color 4）：
+/// - 遗留逗号：`rgb(R, G, B)` / `rgba(R, G, B, A)`。
+/// - 现代空白：`rgb(R G B)` / `rgb(R G B / A)`（分量以空白分隔，alpha 以斜杠分隔）。
+///
+/// 分量为 0-255 或 0%-100%；alpha 为 0-1 或百分比；`none` → 0。分量间允许 `/* 注释 */`。
+/// driving: css-color rgb-001..006 / background-color-rgb-001..002。
 fn parse_rgb_function(value: &str) -> Option<ColorValue> {
-    // 提取括号内的内容
     let start = value.find('(')?;
     let end = value.rfind(')')?;
-    let inner = value.get(start + 1..end)?.trim();
+    let inner_str = strip_css_comments(value.get(start + 1..end)?);
+    let inner = inner_str.trim();
 
-    let parts: Vec<&str> = inner.split(',').collect();
-    if parts.len() < 3 {
+    // 现代斜杠 alpha（仅无逗号时）；遗留逗号 alpha 在第 4 分量。
+    let (main, slash_alpha) = if inner.contains(',') {
+        (inner, None)
+    } else {
+        match inner.split_once('/') {
+            Some((m, a)) => (m.trim(), Some(a.trim())),
+            None => (inner, None),
+        }
+    };
+
+    let comps: Vec<&str> = if main.contains(',') {
+        main.split(',').map(str::trim).filter(|s| !s.is_empty()).collect()
+    } else {
+        main.split_whitespace().collect()
+    };
+    if !(3..=4).contains(&comps.len()) {
         return None;
     }
 
-    let r = parse_color_component(parts[0].trim())?;
-    let g = parse_color_component(parts[1].trim())?;
-    let b = parse_color_component(parts[2].trim())?;
-    let a = if parts.len() > 3 {
-        parse_alpha_component(parts[3].trim())?
+    let r = parse_rgb_component(comps[0])?;
+    let g = parse_rgb_component(comps[1])?;
+    let b = parse_rgb_component(comps[2])?;
+    let a = if let Some(ap) = slash_alpha {
+        parse_rgb_alpha(ap)?
+    } else if comps.len() == 4 {
+        parse_rgb_alpha(comps[3])?
     } else {
         255u8
     };
 
     Some(ColorValue::Rgba(r, g, b, a))
+}
+
+/// rgb 分量（0-255 或 0%-100%）；CSS Color 4 `none` → 0。
+fn parse_rgb_component(s: &str) -> Option<u8> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("none") {
+        return Some(0);
+    }
+    parse_color_component(s)
+}
+
+/// rgb alpha（0-1 或 0%-100%）；`none` → 0。
+fn parse_rgb_alpha(s: &str) -> Option<u8> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("none") {
+        return Some(0);
+    }
+    parse_alpha_component(s)
 }
 
 /// 解析颜色分量（0-255 或 0%-100%）。
@@ -177,26 +218,124 @@ fn parse_alpha_component(s: &str) -> Option<u8> {
 }
 
 /// 解析 hsl() / hsla() 函数。
+///
+/// 支持两种语法（CSS Color 4）：
+/// - 遗留逗号：`hsl(H, S, L)` / `hsla(H, S, L, A)`。
+/// - 现代空白：`hsl(H S L)` / `hsl(H S L / A)`（分量以空白分隔，alpha 以斜杠分隔）。
+///
+/// 色相 H 为角度（数字 + 可选 `deg`/`grad`/`rad`/`turn` 单位）；S/L 为百分比；alpha 为 0-1 或百分比。
+/// CSS Color 4 `none` 关键字 → 该分量取 0。分量间允许 `/* 注释 */`。负值/越界 H 留待
+/// `hsla_to_rgba` 渲染时归一化（R2253）。driving: css-color hsl-001..008 / hsla-001..008 /
+/// background-color-hsl-001..003 / t424 / t425。
 fn parse_hsl_function(value: &str) -> Option<ColorValue> {
     let start = value.find('(')?;
     let end = value.rfind(')')?;
-    let inner = value.get(start + 1..end)?.trim();
+    let inner_str = strip_css_comments(value.get(start + 1..end)?);
+    let inner = inner_str.trim();
 
-    let parts: Vec<&str> = inner.split(',').collect();
-    if parts.len() < 3 {
+    // 斜杠分隔的现代 alpha（hsl(H S L / A)）；遗留逗号语法的 alpha 在分量列表第 4 位。
+    // CSS Color 4 禁止逗号与斜杠 alpha 混用：仅当无逗号时才认斜杠。
+    let (main, slash_alpha) = if main_uses_comma_syntax(inner) {
+        (inner, None)
+    } else {
+        match inner.split_once('/') {
+            Some((m, a)) => (m.trim(), Some(a.trim())),
+            None => (inner, None),
+        }
+    };
+
+    // 分量分隔：逗号（遗留）或空白（Color 4）。
+    let comps: Vec<&str> = if main.contains(',') {
+        main.split(',').map(str::trim).filter(|s| !s.is_empty()).collect()
+    } else {
+        main.split_whitespace().collect()
+    };
+    if !(3..=4).contains(&comps.len()) {
         return None;
     }
 
-    let h: f64 = parts[0].trim().trim_end_matches("deg").parse().ok()?;
-    let s: f64 = parts[1].trim().trim_end_matches('%').parse().ok()?;
-    let l: f64 = parts[2].trim().trim_end_matches('%').parse().ok()?;
-    let a = if parts.len() > 3 {
-        parts[3].trim().parse().ok()?
+    let h = parse_hue_angle(comps[0])?;
+    let s = parse_percent_component(comps[1])?;
+    let l = parse_percent_component(comps[2])?;
+    let a = if let Some(ap) = slash_alpha {
+        parse_alpha_value(ap)?
+    } else if comps.len() == 4 {
+        parse_alpha_value(comps[3])?
     } else {
         1.0
     };
 
     Some(ColorValue::Hsla(h, s, l, a))
+}
+
+/// 判定 hsl/hwb 内部是否使用遗留逗号语法（含逗号即按逗号语义；逗号语法禁斜杠 alpha）。
+fn main_uses_comma_syntax(inner: &str) -> bool {
+    inner.contains(',')
+}
+
+/// 移除 CSS 注释 `/* ... */`（CSS Color 4 允许颜色分量间穿插注释，如
+/// `hsl(120/* c */75%/* c */50%)`）。注释是**词法分隔符**，故以空格替换（而非删除），
+/// 避免把 `120/* c */75%` 拼成 `12075%`。未闭合的 `/*` 丢弃其后剩余内容。
+fn strip_css_comments(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(start) = rest.find("/*") {
+        out.push_str(&rest[..start]);
+        out.push(' ');
+        rest = match rest[start..].find("*/") {
+            Some(end_rel) => &rest[start + end_rel + 2..],
+            None => "",
+        };
+    }
+    out.push_str(rest);
+    out
+}
+
+/// 解析色相角度（CSS Color 4）：数字 + 可选角度单位（`deg`/`grad`/`rad`/`turn`），
+/// 归一化为度。`none` → 0。单位大小写不敏感。
+fn parse_hue_angle(s: &str) -> Option<f64> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("none") {
+        return Some(0.0);
+    }
+    let lower = s.to_ascii_lowercase();
+    let (num_str, scale) = if let Some(n) = lower.strip_suffix("deg") {
+        (n, 1.0)
+    } else if let Some(n) = lower.strip_suffix("grad") {
+        (n, 360.0 / 400.0)
+    } else if let Some(n) = lower.strip_suffix("turn") {
+        (n, 360.0)
+    } else if let Some(n) = lower.strip_suffix("rad") {
+        (n, 180.0 / std::f64::consts::PI)
+    } else {
+        (lower.as_str(), 1.0) // 裸数字 = deg
+    };
+    let v: f64 = num_str.trim().parse().ok()?;
+    Some(v * scale)
+}
+
+/// 解析百分比分量（S/L）：去掉 `%` 返回数值（0-100+）。`none` → 0。
+fn parse_percent_component(s: &str) -> Option<f64> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("none") {
+        return Some(0.0);
+    }
+    s.trim_end_matches('%').parse().ok()
+}
+
+/// 解析 alpha 分量（0-1 或 0%-100%），钳制到 [0,1]。`none` → 0。
+fn parse_alpha_value(s: &str) -> Option<f64> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("none") {
+        return Some(0.0);
+    }
+    if let Some(pct) = s.strip_suffix('%') {
+        let v: f64 = pct.parse().ok()?;
+        Some((v / 100.0).clamp(0.0, 1.0))
+    } else {
+        let v: f64 = s.parse().ok()?;
+        Some(v.clamp(0.0, 1.0))
+    }
 }
 
 /// 将 HWB 颜色转换为 RGBA。
@@ -221,7 +360,9 @@ pub fn hwb_to_rgba(h: f64, w: f64, b: f64, a: f64) -> (u8, u8, u8, u8) {
     // 先将 HWB 转为 HSL 再转为 RGB
     // HWB → RGB 标准算法：
     // 先算出没有白度/黑度影响的纯色 RGB，再与白/黑混合
-    let h_norm = (h % 360.0) / 60.0;
+    // R2253：色相为角度，归一化到 [0,360)（负值/越界值取模，Rust `%` 取余保留符号故须 `+360` 再 `%`）。
+    let h_mod = ((h % 360.0) + 360.0) % 360.0;
+    let h_norm = h_mod / 60.0;
     let sector = h_norm.floor() as i32;
     let f = h_norm - sector as f64;
 
@@ -894,6 +1035,108 @@ pub fn parse_font_style(value: &str) -> Option<FontStyleValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── parse_hsl_function 现代/遗留语法（R2253，CSS Color 4）─────────────
+
+    #[test]
+    fn test_hsl_modern_whitespace_no_alpha() {
+        // hsl(120 100% 25%) — 现代空白语法，无 alpha（hsl-001 driving）
+        assert_eq!(
+            parse_color("hsl(120 100% 25%)"),
+            Some(ColorValue::Hsla(120.0, 100.0, 25.0, 1.0))
+        );
+    }
+
+    #[test]
+    fn test_hsl_modern_slash_alpha() {
+        // hsl(120deg 100% 25% / 1) 与 / 0.5
+        assert_eq!(
+            parse_color("hsl(120deg 100% 25% / 1)"),
+            Some(ColorValue::Hsla(120.0, 100.0, 25.0, 1.0))
+        );
+        assert_eq!(
+            parse_color("hsl(120 100% 25% / 0.5)"),
+            Some(ColorValue::Hsla(120.0, 100.0, 25.0, 0.5))
+        );
+        // alpha 百分比
+        assert_eq!(
+            parse_color("hsla(120 75% 50% / 60%)"),
+            Some(ColorValue::Hsla(120.0, 75.0, 50.0, 0.6))
+        );
+        assert_eq!(
+            parse_color("hsla(120.0 75% 50% / 1.0)"),
+            Some(ColorValue::Hsla(120.0, 75.0, 50.0, 1.0))
+        );
+    }
+
+    #[test]
+    fn test_hsl_legacy_comma_percent_alpha() {
+        // 遗留逗号 + 百分比 alpha：旧实现 "20%".parse::<f64>() 失败致丢色（background-color-hsl-001 #p1）
+        assert_eq!(
+            parse_color("hsla(120.0, 75%, 50%, 20%)"),
+            Some(ColorValue::Hsla(120.0, 75.0, 50.0, 0.2))
+        );
+        assert_eq!(
+            parse_color("hsla(120, 75%, 50%, 0.4)"),
+            Some(ColorValue::Hsla(120.0, 75.0, 50.0, 0.4))
+        );
+    }
+
+    #[test]
+    fn test_hsl_comments_between_components() {
+        // CSS Color 4 允许分量间 /* 注释 */（background-color-hsl-001 #p5 driving）
+        assert_eq!(
+            parse_color("hsla(120/* c */75%/* c */50%/1.0)"),
+            Some(ColorValue::Hsla(120.0, 75.0, 50.0, 1.0))
+        );
+    }
+
+    #[test]
+    fn test_hsl_angle_units_and_none() {
+        // 角度单位：turn/grad/rad 归一化为度；none → 0
+        assert_eq!(
+            parse_color("hsl(0.5turn 100% 50%)"),
+            Some(ColorValue::Hsla(180.0, 100.0, 50.0, 1.0))
+        );
+        assert_eq!(
+            parse_color("hsl(none 100% 50%)"),
+            Some(ColorValue::Hsla(0.0, 100.0, 50.0, 1.0))
+        );
+        assert_eq!(
+            parse_color("hsl(120 100% none)"),
+            Some(ColorValue::Hsla(120.0, 100.0, 0.0, 1.0))
+        );
+    }
+
+    #[test]
+    fn test_hsl_negative_hue_stored_raw() {
+        // 负值 H 原样存储，归一化在 hsla_to_rgba 渲染时（R2253 hue-angle 修复）
+        assert_eq!(
+            parse_color("hsl(-300 100% 50%)"),
+            Some(ColorValue::Hsla(-300.0, 100.0, 50.0, 1.0))
+        );
+    }
+
+    // ── parse_rgb_function 现代/遗留语法（R2253，CSS Color 4）─────────────
+
+    #[test]
+    fn test_rgb_modern_whitespace_and_slash() {
+        // 现代空白语法（rgb-001 driving）+ 斜杠 alpha + none
+        assert_eq!(parse_color("rgb(0% 50% 0%)"), Some(ColorValue::Rgba(0, 128, 0, 255)));
+        assert_eq!(parse_color("rgb(0 0 0 / 0.5)"), Some(ColorValue::Rgba(0, 0, 0, 128)));
+        assert_eq!(parse_color("rgb(0 0 0 / 50%)"), Some(ColorValue::Rgba(0, 0, 0, 128)));
+        assert_eq!(
+            parse_color("rgb(none 255 none)"),
+            Some(ColorValue::Rgba(0, 255, 0, 255))
+        );
+    }
+
+    #[test]
+    fn test_rgb_legacy_comma_regression() {
+        // 遗留逗号语法不回归
+        assert_eq!(parse_color("rgb(0, 128, 0)"), Some(ColorValue::Rgba(0, 128, 0, 255)));
+        assert_eq!(parse_color("rgba(0, 0, 0, 0.5)"), Some(ColorValue::Rgba(0, 0, 0, 128)));
+    }
 
     // ── hwb_to_rgba ─────────────────────────────────────────────────────
 

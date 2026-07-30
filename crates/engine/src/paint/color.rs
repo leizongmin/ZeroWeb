@@ -25,6 +25,11 @@ pub fn color_value_to_render(color: &ColorValue) -> Color {
 /// - `l` 亮度 [0, 100]
 /// - `a` 不透明度 [0, 1]
 pub fn hsla_to_rgba(h: f64, s: f64, l: f64, a: f64) -> Color {
+    // R2253：HSL 色相当作**角度**（CSS Color §6.1），归一化到 [0,360)。负值与 >360 值取模。
+    // Rust `%` 是取余（对负被除数保留符号），故 `-300 % 360 = -300` → 错误扇区；
+    // `((h % 360) + 360) % 360` 把 -300→60、-360→0、450→90。driving: css-color
+    // t424-hsl-h-rotating-b / t425-hsla-h-rotating-b（H 值「even when outside [0,360)」）。
+    let h = ((h % 360.0) + 360.0) % 360.0;
     let s = s / 100.0;
     let l = l / 100.0;
 
@@ -119,6 +124,31 @@ mod tests {
         assert_eq!(c.g, 0);
         assert_eq!(c.b, 0);
         assert_eq!(c.a, 255);
+    }
+
+    #[test]
+    /// R2253：HSL 色相为角度（mod 360），负值/越界值须归一化。driving: css-color
+    /// t424-hsl-h-rotating-b / t425-hsla-h-rotating-b（H 值「even when outside [0,360)」）。
+    fn test_hsla_hue_angle_normalization() {
+        // 基准色（归一化后应等于这些）
+        let red = hsla_to_rgba(0.0, 100.0, 50.0, 1.0); // hsl(0)=红
+        let yellow = hsla_to_rgba(60.0, 100.0, 50.0, 1.0); // hsl(60)=黄
+        let green = hsla_to_rgba(120.0, 100.0, 50.0, 1.0); // hsl(120)=绿
+        let cyan = hsla_to_rgba(180.0, 100.0, 50.0, 1.0); // hsl(180)=青
+
+        // 负值：-360≡0、-300≡60、-240≡120、-180≡180
+        assert_eq!(hsla_to_rgba(-360.0, 100.0, 50.0, 1.0), red, "hsl(-360)≡hsl(0)");
+        assert_eq!(hsla_to_rgba(-300.0, 100.0, 50.0, 1.0), yellow, "hsl(-300)≡hsl(60)");
+        assert_eq!(hsla_to_rgba(-240.0, 100.0, 50.0, 1.0), green, "hsl(-240)≡hsl(120)");
+        assert_eq!(hsla_to_rgba(-180.0, 100.0, 50.0, 1.0), cyan, "hsl(-180)≡hsl(180)");
+
+        // 越界正值：360≡0、420≡60、480≡120
+        assert_eq!(hsla_to_rgba(360.0, 100.0, 50.0, 1.0), red, "hsl(360)≡hsl(0)");
+        assert_eq!(hsla_to_rgba(420.0, 100.0, 50.0, 1.0), yellow, "hsl(420)≡hsl(60)");
+        assert_eq!(hsla_to_rgba(480.0, 100.0, 50.0, 1.0), green, "hsl(480)≡hsl(120)");
+
+        // 大幅越界：720≡0
+        assert_eq!(hsla_to_rgba(720.0, 100.0, 50.0, 1.0), red, "hsl(720)≡hsl(0)");
     }
 
     #[test]
