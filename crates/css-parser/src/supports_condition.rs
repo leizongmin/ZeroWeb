@@ -196,6 +196,12 @@ fn parse_primary(input: &str) -> Option<SupportsCondition> {
         if has_and || has_or || top_level_not(inner) || strip_one_paren_pair(inner).is_some() {
             return parse_or_expression(inner);
         }
+        // 括号包裹的 selector() 特性（如 `(selector(&))`、`@supports (selector(> .a))`）
+        // → 递归 parse_primary 解析为 Selector，而非落 general-enclosed。
+        // driving: supports-rule（`selector(&)` 须为 true；`@supports(...)` 总以括号包条件）。
+        if inner.to_ascii_lowercase().starts_with("selector(") {
+            return parse_primary(inner);
+        }
         // 底层 feature：property: value
         if let Some(colon_pos) = inner.find(':') {
             let property = inner[..colon_pos].trim().to_string();
@@ -255,6 +261,29 @@ mod tests {
     fn test_parse_selector_condition() {
         let cond = parse_supports_condition("selector(.a > .b)").unwrap();
         assert_eq!(cond, SupportsCondition::Selector(".a > .b".to_string()));
+    }
+
+    #[test]
+    fn test_parse_paren_wrapped_selector_condition() {
+        // `@supports(...)` 总以括号包裹条件，故 `(selector(&))` 须递归解析为 Selector，
+        // 而非落 general-enclosed（恒 false）。driving: supports-rule。
+        assert_eq!(
+            parse_supports_condition("(selector(&))").unwrap(),
+            SupportsCondition::Selector("&".to_string())
+        );
+        assert_eq!(
+            parse_supports_condition("(selector(> .test-1))").unwrap(),
+            SupportsCondition::Selector("> .test-1".to_string())
+        );
+        // 回归：property 仍走 Property 分支，非 selector 的括号内容仍 general-enclosed。
+        assert!(matches!(
+            parse_supports_condition("(color: green)").unwrap(),
+            SupportsCondition::Property(_, _)
+        ));
+        assert!(matches!(
+            parse_supports_condition("(@page)").unwrap(),
+            SupportsCondition::GeneralEnclosed(_)
+        ));
     }
 
     #[test]
