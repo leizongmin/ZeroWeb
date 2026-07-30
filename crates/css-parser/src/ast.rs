@@ -213,6 +213,14 @@ pub enum SubclassSelector {
     PseudoClass(PseudoClassSelector),
     /// 伪元素选择器。
     PseudoElement(PseudoElementSelector),
+    /// CSS 嵌套选择器 `&`（CSS Nesting Module Level 1）。
+    ///
+    /// 作为子类选择器标记存放（而非 `TypeSelector` 变体），因为 `&` 可与类型选择器
+    /// 共存于同一复合选择器（如 `div&`、`&.cls`），而 `type_selector` 是单值 `Option`。
+    /// `&` 仅出现在**未编译**的嵌套选择器中；解析阶段会被 compile 算法替换为父级
+    /// 选择器化合物（见 `parser::compile_style_rule`），编译后的规则不含 `Nesting`。
+    /// specificity 贡献 0（与父级合并后特异性自然正确），matcher 兜底按「匹配任意」处理。
+    Nesting,
 }
 
 /// 属性选择器。

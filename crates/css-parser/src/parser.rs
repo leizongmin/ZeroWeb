@@ -15,6 +15,200 @@ pub struct Parser<'a> {
     pos: usize,
 }
 
+/// 未编译的样式规则（CSS 嵌套中间结构）。
+///
+/// 解析阶段保留嵌套子规则为树形（父级选择器此时未知），由
+/// `Parser::compile_parsed_style_rule` 自顶向下线程父级后展平为扁平 `Vec<Rule>`。
+struct ParsedStyleRule {
+    selectors: Vec<Selector>,
+    declarations: Vec<Declaration>,
+    nested: Vec<ParsedStyleRule>,
+}
+
+/// 构造表示 `:scope` 的选择器（顶层 `&` 的去糖目标；文档样式表中 `:scope` ≡ `:root`）。
+fn scope_selector() -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Simple(
+                        "scope".to_string(),
+                    ))],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+/// 复杂选择器是否含 `&`（化合物级 `SubclassSelector::Nesting`，或 :is/:not/:where/:has
+/// 参数内嵌套）。
+fn complex_contains_amp(complex: &ComplexSelector) -> bool {
+    for (compound, _) in &complex.parts {
+        if compound
+            .subclass_selectors
+            .iter()
+            .any(|s| matches!(s, SubclassSelector::Nesting))
+        {
+            return true;
+        }
+        for sub in &compound.subclass_selectors {
+            if let SubclassSelector::PseudoClass(pc) = sub {
+                let list: Option<&Vec<Selector>> = match pc {
+                    PseudoClassSelector::Is(l)
+                    | PseudoClassSelector::Not(l)
+                    | PseudoClassSelector::Where(l)
+                    | PseudoClassSelector::Has(l) => Some(l),
+                    _ => None,
+                };
+                if let Some(list) = list {
+                    if list.iter().any(|s| complex_contains_amp(&s.complex)) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// 选择器列表中是否存在「`&` 出现在 `:has()` 参数内」——unsupported 相对选择器 + `&`
+/// 嵌套（如 `:has(> &)`），其去糖需专门处理相对选择器隐式主题，v1 跳过（零回归）。
+fn selectors_have_amp_inside_has(selectors: &[Selector]) -> bool {
+    selectors.iter().any(|s| complex_has_amp_inside_has(&s.complex))
+}
+
+/// 递归检测复杂选择器内 `:has()` 参数是否含 `&`。
+fn complex_has_amp_inside_has(complex: &ComplexSelector) -> bool {
+    for (compound, _) in &complex.parts {
+        for sub in &compound.subclass_selectors {
+            if let SubclassSelector::PseudoClass(PseudoClassSelector::Has(list)) = sub {
+                if list.iter().any(|s| complex_contains_amp(&s.complex)) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// 将选择器列表相对父级列表去糖（CSS 嵌套 compile 算法）。
+///
+/// - 含 `&`：顶层（parent=None）替换为 `:scope`；嵌套替换为各父级化合物（交叉积）。
+/// - 不含 `&` 且 parent=Some：隐式嵌套——`父级 后代 本选择器`（交叉积）。
+/// - 不含 `&` 且 parent=None：顶层独立，原样返回。
+fn desugar_selectors(selectors: &[Selector], parent: Option<&[Selector]>) -> Vec<Selector> {
+    let mut out = Vec::new();
+    for sel in selectors {
+        let has_amp = complex_contains_amp(&sel.complex);
+        if has_amp {
+            let parents: Vec<Selector> = match parent {
+                Some(p) => p.to_vec(),
+                None => vec![scope_selector()],
+            };
+            for p in &parents {
+                if let Some(d) = substitute_amp(&sel.complex, &p.complex) {
+                    out.push(Selector { complex: d });
+                }
+            }
+        } else if let Some(parents) = parent {
+            for p in parents {
+                out.push(prepend_descendant(&p.complex, &sel.complex));
+            }
+        } else {
+            out.push(sel.clone());
+        }
+    }
+    out
+}
+
+/// 隐式嵌套：`parent 后代 nested`。父级末化合物的组合器改为 Descendant（链接嵌套首化合物）。
+fn prepend_descendant(parent: &ComplexSelector, nested: &ComplexSelector) -> Selector {
+    let mut parts = parent.parts.clone();
+    if let Some(last) = parts.last_mut() {
+        last.1 = Some(Combinator::Descendant);
+    } else {
+        return Selector {
+            complex: nested.clone(),
+        };
+    }
+    parts.extend(nested.parts.iter().cloned());
+    Selector {
+        complex: ComplexSelector { parts },
+    }
+}
+
+/// 把 `nested` 中每个 `&`（Nesting 化合物）替换为 `parent` 的化合物链，并递归处理
+/// :is/:not/:where/:has 参数内的 `&`。组合器簿记：
+/// - 父级内部组合器保留；
+/// - `&` 化合物的**尾随**组合器转移到父级末化合物；
+/// - `&` 化合物的**前导**组合器（在前一嵌套化合物上）自然指向父级首化合物，无需改。
+fn substitute_amp(nested: &ComplexSelector, parent: &ComplexSelector) -> Option<ComplexSelector> {
+    let mut new_parts: Vec<(CompoundSelector, Option<Combinator>)> = Vec::new();
+    let last_parent_idx = parent.parts.len().saturating_sub(1);
+    for (compound, comb) in &nested.parts {
+        let has_nesting = compound
+            .subclass_selectors
+            .iter()
+            .any(|s| matches!(s, SubclassSelector::Nesting));
+        if has_nesting {
+            for (pi, (p_compound, p_comb)) in parent.parts.iter().enumerate() {
+                let merged = if pi == last_parent_idx {
+                    merge_compound(p_compound, compound)
+                } else {
+                    p_compound.clone()
+                };
+                let use_comb = if pi == last_parent_idx { *comb } else { *p_comb };
+                new_parts.push((merged, use_comb));
+            }
+        } else {
+            // 无化合物级 `&`：但仍可能在 :is/:not/:where/:has 内 → 递归替换为 parent。
+            let mut new_compound = compound.clone();
+            for sub in &mut new_compound.subclass_selectors {
+                if let SubclassSelector::PseudoClass(pc) = sub {
+                    let list: Option<&mut Vec<Selector>> = match pc {
+                        PseudoClassSelector::Is(l)
+                        | PseudoClassSelector::Not(l)
+                        | PseudoClassSelector::Where(l)
+                        | PseudoClassSelector::Has(l) => Some(l),
+                        _ => None,
+                    };
+                    if let Some(list) = list {
+                        let mut new_list = Vec::new();
+                        for inner in list.iter() {
+                            if let Some(d) = substitute_amp(&inner.complex, parent) {
+                                new_list.push(Selector { complex: d });
+                            }
+                        }
+                        *list = new_list;
+                    }
+                }
+            }
+            new_parts.push((new_compound, *comb));
+        }
+    }
+    Some(ComplexSelector { parts: new_parts })
+}
+
+/// 合并父级末化合物与嵌套化合物的非 `&` 部分（用于 `&.cls` / `div&` / `&:is()`）。
+///
+/// 类型选择器优先取嵌套（`div&` 的 div），嵌套无则取父级；子类 = 父级子类 + 嵌套非-Nesting
+/// 子类。两类型相异（如 `span&` 父级 `div`）的矛盾情形取嵌套类型（近似，罕见边角 defer）。
+fn merge_compound(parent: &CompoundSelector, nested: &CompoundSelector) -> CompoundSelector {
+    let type_selector = nested.type_selector.clone().or_else(|| parent.type_selector.clone());
+    let mut subclass = parent.subclass_selectors.clone();
+    for s in &nested.subclass_selectors {
+        if !matches!(s, SubclassSelector::Nesting) {
+            subclass.push(s.clone());
+        }
+    }
+    CompoundSelector {
+        type_selector,
+        subclass_selectors: subclass,
+    }
+}
+
 impl<'a> Parser<'a> {
     /// 创建新的解析器。
     pub fn new(tokens: &'a mut Vec<Token>) -> Self {
@@ -37,15 +231,15 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            // 记录 consume_rule 前位置：若其返回 None 且未通过错误恢复前进，则强制
+            // 记录 consume_one_rule 前位置：若其返回空且未通过错误恢复前进，则强制
             // advance 一个保证进度；若已前进（如畸形规则恢复消耗了整段），不重复 advance
             // 以免跳过下一条合法规则的首 token（driving: matching-brackets-003）。
             let pos_before_rule = parser.pos();
-            if let Some(rule) = parser.consume_rule() {
-                rules.push(rule);
-            } else if parser.pos() == pos_before_rule {
+            let produced = parser.consume_one_rule(None);
+            if produced.is_empty() && parser.pos() == pos_before_rule {
                 parser.advance();
             }
+            rules.extend(produced);
         }
 
         Stylesheet { rules }
@@ -68,7 +262,7 @@ impl<'a> Parser<'a> {
         matches!(self.peek(), Token::Eof)
     }
 
-    /// 当前位置（供调用方判断 `consume_rule` 等是否已通过错误恢复前进）。
+    /// 当前位置（供调用方判断 `consume_one_rule` 等是否已通过错误恢复前进）。
     fn pos(&self) -> usize {
         self.pos
     }
@@ -80,8 +274,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// 消耗一个规则。
-    fn consume_rule(&mut self) -> Option<Rule> {
+    /// 消耗一个规则，返回**编译并展平后**的规则列表（CSS 嵌套展开为多条顶层等价规则）。
+    ///
+    /// `parent = None` 用于顶层 / @规则块体内（规则独立，无嵌套父级；但选择器中的 `&`
+    /// 仍按 `:scope` 去糖）。`parent = Some(...)` 用于嵌套样式规则的声明块内（隐式/显式
+    /// 嵌套相对父级去糖）。当前嵌套样式规则的解析由 `consume_style_block_with_nesting`
+    /// 构造 `ParsedStyleRule` 树后统一编译，本函数的样式分支仅处理 parent=None 的入口。
+    fn consume_one_rule(&mut self, parent: Option<&[Selector]>) -> Vec<Rule> {
         match self.peek().clone() {
             Token::AtKeyword(name) => {
                 self.advance(); // @
@@ -107,59 +306,194 @@ impl<'a> Parser<'a> {
                 } else {
                     // 通用 at-rule：consume_at_rule 内部循环到 `;`/`{block}`，总消费全部 extent，
                     // 不触发 fallback。
-                    return Some(Rule::At(self.consume_at_rule(name)));
+                    return vec![Rule::At(self.consume_at_rule(name))];
                 };
                 match rule_opt {
-                    Some(r) => Some(r),
+                    Some(r) => vec![r],
                     None => {
                         // 专用 at-rule 中途失败 → 消耗残余到 `;`/`{...}` 块/EOF，避免 body 泄漏。
                         self.skip_malformed_qualified_rule();
-                        None
+                        vec![]
                     }
                 }
             }
             _ => {
-                // 尝试解析样式规则：选择器 + { 声明块 }
-                // consume_selector_list 可能因「合法前缀 + 非法 token」（如 `p (`——`p`
-                // 合法但 `(` 非法）返回 None；须做畸形 qualified rule 恢复而非 `?` 短路
-                //（driving: matching-brackets-003）。
-                let selectors = match self.consume_selector_list() {
-                    Some(s) => s,
+                // 样式规则：选择器 + { 声明块（可能含嵌套）}。parse_style_rule_structure
+                // 解析选择器与块结构；选择器非法或块缺失时返回 None，由调用方做畸形恢复。
+                match self.parse_style_rule_structure(parent.is_some()) {
+                    Some(parsed) => Self::compile_parsed_style_rule(parsed, parent),
                     None => {
                         self.skip_malformed_qualified_rule();
-                        return None;
+                        vec![]
                     }
-                };
-                self.skip_whitespace();
-
-                if !matches!(self.peek(), Token::LBrace) {
-                    // 畸形 qualified rule：选择器后非 `{`（如 `p ( { ... } ... )`，
-                    // driving: matching-brackets-003）。按 CSS 2.1 §4.2 / CSS Syntax L3
-                    // consume_a_qualified_rule 恢复——消耗 prelude 残余（`()`/`[]` 块整块
-                    // 跳过，块内 `{` 不提前终止）到非嵌套 `{`（消耗其 `{...}` 块）或 `;`/EOF，
-                    // 整条畸形规则丢弃。parse_stylesheet 据此不重复 advance。
-                    self.skip_malformed_qualified_rule();
-                    return None;
                 }
-                self.advance(); // {
-
-                let declarations = self.consume_declaration_block();
-
-                self.skip_whitespace();
-                if matches!(self.peek(), Token::RBrace) {
-                    self.advance();
-                }
-
-                Some(Rule::Style(StyleRule {
-                    selectors,
-                    declarations,
-                }))
             }
         }
     }
 
+    /// CSS 嵌套 kill-switch（default-on）。`ZW_CSS_NESTING=0` 关闭 → 样式声明块不检测
+    /// 嵌套规则（落 skip_malformed_declaration 丢弃，等价 R2260 前行为），保证零回归回退。
+    fn nesting_enabled() -> bool {
+        std::env::var("ZW_CSS_NESTING").as_deref() != Ok("0")
+    }
+
+    /// 解析样式规则结构：选择器列表 + `{` + 声明块（支持嵌套）+ `}`。
+    ///
+    /// `nesting=true` 时选择器按嵌套上下文解析（前导组合器注入 `&`）。返回未编译的
+    /// `ParsedStyleRule` 树（嵌套子规则保留为树形），由 `compile_parsed_style_rule`
+    /// 自顶向下线程父级选择器后展平。选择器非法或块缺失时返回 None（不消耗 `{`）。
+    fn parse_style_rule_structure(&mut self, nesting: bool) -> Option<ParsedStyleRule> {
+        let selectors = self.consume_selector_list(nesting)?;
+        self.skip_whitespace();
+        if !matches!(self.peek(), Token::LBrace) {
+            // 畸形 qualified rule：选择器后非 `{`（driving: matching-brackets-003）。
+            // 由调用方做 skip_malformed_qualified_rule 恢复。
+            return None;
+        }
+        self.advance(); // {
+        let (declarations, nested) = self.consume_style_block_with_nesting();
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+        Some(ParsedStyleRule {
+            selectors,
+            declarations,
+            nested,
+        })
+    }
+
+    /// 消耗规则列表直到 `}` / EOF（不消耗 `}`），用于 @media/@layer/@supports/@container
+    /// 块体。内部用 `consume_one_rule(None)` 逐条解析并展平，含进度保证（避免死循环）。
+    fn consume_rules_until_rbrace(&mut self) -> Vec<Rule> {
+        let mut rules = Vec::new();
+        loop {
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::RBrace | Token::Eof) {
+                break;
+            }
+            let pos_before = self.pos();
+            let produced = self.consume_one_rule(None);
+            if produced.is_empty() && self.pos() == pos_before {
+                self.advance(); // 进度保证（畸形规则未前进时）
+            }
+            rules.extend(produced);
+        }
+        rules
+    }
+
+    /// 向前扫描（不消耗）判断当前位置是否起始一条嵌套规则（而非声明）。
+    ///
+    /// 判据：当前为 `@keyword`（嵌套 @规则），或在顶层 `}` / `;` / EOF 之前出现顶层 `{`
+    ///（声明值不会含顶层 `{`，故此判据可靠）。`(`/`[`/Function 计入嵌套深度——值内的
+    /// `(...)`/`[...]` 块（如 `calc()`、属性值）中的 token 不误判。
+    fn peek_starts_nested_rule(&self) -> bool {
+        // 嵌套 @规则（`.a { @media print { ... } }`）v1 不支持——其块体需相对父级重父化
+        //（`.a { @media print { & {...} } }` → `@media print { .a {...} }`），复杂度高，
+        // R2260 defer。返回 false 使其落入声明分支被 `skip_malformed_declaration` 丢弃
+        //（等价 R2260 前行为，零回归）。
+        if matches!(self.peek(), Token::AtKeyword(_)) {
+            return false;
+        }
+        let mut depth: i32 = 0;
+        let mut i = self.pos;
+        while let Some(tok) = self.tokens.get(i) {
+            match tok {
+                Token::Eof => return false,
+                Token::Semicolon | Token::RBrace if depth == 0 => return false,
+                Token::LBrace if depth == 0 => return true,
+                Token::LParen | Token::LBracket | Token::Function(_) => depth += 1,
+                Token::RParen | Token::RBracket => depth = (depth - 1).max(0),
+                _ => {}
+            }
+            i += 1;
+        }
+        false
+    }
+
+    /// 消耗样式声明块（支持 CSS 嵌套）。
+    ///
+    /// 返回 `(直接声明, 嵌套样式规则树)`。kill-switch 关闭时退化为纯声明（等价
+    /// `consume_declaration_block`，嵌套规则丢弃），保证零回归回退。不消耗闭合 `}`
+    ///（由 `parse_style_rule_structure` 消耗）。嵌套 @规则（`@media` 等）v1 不解析
+    ///（`peek_starts_nested_rule` 对 AtKeyword 返回 false → 落声明分支丢弃）。
+    fn consume_style_block_with_nesting(&mut self) -> (Vec<Declaration>, Vec<ParsedStyleRule>) {
+        if !Self::nesting_enabled() {
+            return (self.consume_declaration_block(), vec![]);
+        }
+        let mut declarations = Vec::new();
+        let mut nested: Vec<ParsedStyleRule> = Vec::new();
+
+        loop {
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::RBrace | Token::Eof) {
+                break;
+            }
+            if matches!(self.peek(), Token::Semicolon) {
+                self.advance();
+                continue;
+            }
+
+            if self.peek_starts_nested_rule() {
+                let pos_before = self.pos();
+                match self.parse_style_rule_structure(true) {
+                    Some(r) => nested.push(r),
+                    None => {
+                        // 选择器非法：畸形 qualified rule 恢复（消耗到 `;`/`{...}`/`}`）。
+                        if self.pos() == pos_before {
+                            self.skip_malformed_qualified_rule();
+                        }
+                    }
+                }
+                continue;
+            }
+
+            if let Some(decl) = self.consume_declaration() {
+                declarations.push(decl);
+                if matches!(self.peek(), Token::Semicolon) {
+                    self.advance();
+                }
+            } else {
+                self.skip_malformed_declaration();
+            }
+        }
+
+        (declarations, nested)
+    }
+
+    /// 自顶向下编译 `ParsedStyleRule` 树为扁平 `Vec<Rule>`，线程父级选择器。
+    ///
+    /// - 自身选择器经 `desugar_selectors` 相对 `parent` 去糖（顶层无 `&` → 原样；
+    ///   顶层含 `&` → `:scope`；嵌套含 `&` → 替换父级；嵌套无 `&` → 隐式后代前缀）。
+    /// - 去糖后的自身选择器成为子规则的父级（递归）。
+    /// - **unsupported 守卫**：`&` 出现在 `:has()` 参数内（相对选择器 + `&`，如 `:has(> &)`）
+    ///   的嵌套规则被跳过——该组合的相对选择器去糖需专门处理（R2260 defer），跳过 = 丢弃 =
+    ///   R2260 前行为，零回归。
+    fn compile_parsed_style_rule(rule: ParsedStyleRule, parent: Option<&[Selector]>) -> Vec<Rule> {
+        let own = desugar_selectors(&rule.selectors, parent);
+        let mut out = Vec::new();
+        if !own.is_empty() {
+            out.push(Rule::Style(StyleRule {
+                selectors: own.clone(),
+                declarations: rule.declarations,
+            }));
+        }
+        for child in rule.nested {
+            if selectors_have_amp_inside_has(&child.selectors) {
+                continue; // unsupported 相对选择器 + & 嵌套：跳过（零回归）
+            }
+            out.extend(Self::compile_parsed_style_rule(child, Some(&own)));
+        }
+        out
+    }
+
     /// 消耗选择器列表。
-    fn consume_selector_list(&mut self) -> Option<Vec<Selector>> {
+    ///
+    /// `nesting=true` 时（CSS 嵌套上下文：规则位于父样式规则的声明块内），前导组合器
+    /// （`> .c` / `+ .c` / `~ .c`）注入嵌套选择器 `&` 作为隐式主题（→ `& > .c`），
+    /// 而非通用选择器 `*`。`&` 本身始终由 `consume_compound_selector` 解析为
+    /// `SubclassSelector::Nesting`（与 nesting 标志无关）。
+    fn consume_selector_list(&mut self, nesting: bool) -> Option<Vec<Selector>> {
         let mut selectors = Vec::new();
 
         loop {
@@ -172,7 +506,7 @@ impl<'a> Parser<'a> {
             // CSS Selectors L3：选择器列表中任一非法选择器（如未知伪类）invalidates 整个列表
             // → 整条规则丢弃（driving: selectors-parsing-001 `p:invalidPseudoClass, p.test1`）。
             // 旧实现跳过 None 选择器继续，导致同组其他合法选择器（如 p.test1）泄漏应用。
-            let sel = self.consume_selector()?;
+            let sel = self.consume_selector(nesting)?;
             selectors.push(sel);
 
             self.skip_whitespace();
@@ -189,7 +523,10 @@ impl<'a> Parser<'a> {
     }
 
     /// 消耗单个复杂选择器。
-    fn consume_selector(&mut self) -> Option<Selector> {
+    ///
+    /// `nesting=true` 时前导组合器注入 `&`（嵌套选择器）而非 `*`（通用选择器）——
+    /// 见 `consume_selector_list` 文档。
+    fn consume_selector(&mut self, nesting: bool) -> Option<Selector> {
         let mut parts = Vec::new();
 
         loop {
@@ -200,7 +537,8 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            // 处理前导组合器（如 :has(> .child)），隐式添加通用选择器
+            // 处理前导组合器（如 :has(> .child) / 嵌套 `> .c`），隐式添加主题化合物：
+            // 嵌套上下文 → `&`（SubclassSelector::Nesting），否则 → `*`（Universal）。
             let leading_combinator = match self.peek() {
                 Token::Delim('>') => {
                     self.advance();
@@ -221,10 +559,18 @@ impl<'a> Parser<'a> {
             };
 
             if leading_combinator.is_some() {
-                // 隐式主题（:has() 元素自身）作为通用选择器
-                let implicit = CompoundSelector {
-                    type_selector: Some(TypeSelector::Universal),
-                    subclass_selectors: vec![],
+                // 隐式主题：嵌套上下文用 `&`（SubclassSelector::Nesting），否则通用选择器 `*`。
+                // `&` 经 compile 算法替换为父级化合物；`:has(> .c)` 等函数参数仍用 `*`。
+                let implicit = if nesting {
+                    CompoundSelector {
+                        type_selector: None,
+                        subclass_selectors: vec![SubclassSelector::Nesting],
+                    }
+                } else {
+                    CompoundSelector {
+                        type_selector: Some(TypeSelector::Universal),
+                        subclass_selectors: vec![],
+                    }
                 };
                 parts.push((implicit, leading_combinator));
                 continue;
@@ -534,6 +880,13 @@ impl<'a> Parser<'a> {
                         subclass_selectors.push(SubclassSelector::PseudoClass(pseudo));
                     }
                 }
+                // CSS 嵌套选择器 `&`（可出现在复合选择器任意位置：`&`、`&.cls`、`div&`、`&:is()`）。
+                // 解析为 SubclassSelector::Nesting 标记，由 compile 算法（compile_style_rule）
+                // 替换为父级化合物；非嵌套上下文（顶层）的 `&` 由 desugar 解析为 `:scope`。
+                Token::Delim('&') => {
+                    subclass_selectors.push(SubclassSelector::Nesting);
+                    self.advance();
+                }
                 _ => break,
             }
         }
@@ -587,7 +940,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            match self.consume_selector() {
+            match self.consume_selector(false) {
                 Some(sel) => selectors.push(sel),
                 None => {
                     if !forgiving {
@@ -1335,20 +1688,10 @@ impl<'a> Parser<'a> {
                 }
                 Token::LBrace if group_depth == 0 => {
                     self.advance();
-                    let mut rules = Vec::new();
-                    loop {
-                        self.skip_whitespace();
-                        if matches!(self.peek(), Token::RBrace | Token::Eof) {
-                            if matches!(self.peek(), Token::RBrace) {
-                                self.advance();
-                            }
-                            break;
-                        }
-                        if let Some(rule) = self.consume_rule() {
-                            rules.push(rule);
-                        } else {
-                            self.advance();
-                        }
+                    let rules = self.consume_rules_until_rbrace();
+                    self.skip_whitespace();
+                    if matches!(self.peek(), Token::RBrace) {
+                        self.advance();
                     }
                     return AtRule {
                         name,
@@ -1641,20 +1984,10 @@ impl<'a> Parser<'a> {
                 self.advance();
 
                 // 解析层内规则列表
-                let mut rules = Vec::new();
-                loop {
-                    self.skip_whitespace();
-                    if matches!(self.peek(), Token::RBrace | Token::Eof) {
-                        if matches!(self.peek(), Token::RBrace) {
-                            self.advance();
-                        }
-                        break;
-                    }
-                    if let Some(rule) = self.consume_rule() {
-                        rules.push(rule);
-                    } else {
-                        self.advance();
-                    }
+                let rules = self.consume_rules_until_rbrace();
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::RBrace) {
+                    self.advance();
                 }
 
                 Some(LayerRule { name, rules })
@@ -1804,20 +2137,10 @@ impl<'a> Parser<'a> {
         self.advance();
 
         // 解析规则列表
-        let mut rules = Vec::new();
-        loop {
-            self.skip_whitespace();
-            if matches!(self.peek(), Token::RBrace | Token::Eof) {
-                if matches!(self.peek(), Token::RBrace) {
-                    self.advance();
-                }
-                break;
-            }
-            if let Some(rule) = self.consume_rule() {
-                rules.push(rule);
-            } else {
-                self.advance();
-            }
+        let rules = self.consume_rules_until_rbrace();
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
         }
 
         Some(SupportsRule { condition, rules })
@@ -1881,20 +2204,10 @@ impl<'a> Parser<'a> {
         self.advance();
 
         // 解析规则列表
-        let mut rules = Vec::new();
-        loop {
-            self.skip_whitespace();
-            if matches!(self.peek(), Token::RBrace | Token::Eof) {
-                if matches!(self.peek(), Token::RBrace) {
-                    self.advance();
-                }
-                break;
-            }
-            if let Some(rule) = self.consume_rule() {
-                rules.push(rule);
-            } else {
-                self.advance();
-            }
+        let rules = self.consume_rules_until_rbrace();
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
         }
 
         Some(ContainerRule { name, condition, rules })

@@ -80,6 +80,7 @@ mod coverage_round6;
 mod coverage_round7;
 mod coverage_round8;
 mod coverage_round9;
+mod css_nesting;
 mod dir_pseudo;
 mod forgiving_selector_list;
 mod nth_invalid;

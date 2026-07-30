@@ -124,21 +124,36 @@ fn test_import_with_media() {
 
 #[test]
 /// 测试声明块中遇到无法识别的 token
+///
+/// 注：CSS 嵌套启用后，声明块内的 `@unknown;` 按嵌套 @规则解析（spec 对齐），
+/// 会作为独立规则输出，故规则总数 > 1；核心意图——后续声明 `color: red` 仍正确归属 `div`——
+/// 不受影响。
 fn test_declaration_block_unknown_token() {
     let css = "div { @unknown; color: red; }";
     let ss = Parser::parse_stylesheet(css);
-    assert_eq!(ss.rules.len(), 1);
-    if let Rule::Style(sr) = &ss.rules[0] {
-        assert!(sr.declarations.len() >= 1);
-    }
+    let div = ss
+        .rules
+        .iter()
+        .find_map(|r| if let Rule::Style(sr) = r { Some(sr) } else { None });
+    let div = div.expect("应存在 div 样式规则");
+    assert!(div.declarations.iter().any(|d| d.property == "color"));
 }
 
 #[test]
-/// 测试声明块中只有无法识别的 token
+/// 测试声明块中只有无法识别的 token（不 panic 即可）
 fn test_declaration_block_only_unknown_tokens() {
     let css = "div { @unknown; @other; }";
     let ss = Parser::parse_stylesheet(css);
-    assert_eq!(ss.rules.len(), 1);
+    // CSS 嵌套：@unknown/@other 作嵌套 @规则解析；div 样式规则仍存在（声明可能为空）。
+    assert!(
+        ss.rules
+            .iter()
+            .any(|r| matches!(r, Rule::Style(sr) if sr.selectors.iter().any(|s| s
+            .complex
+            .parts
+            .iter()
+            .any(|(c, _)| matches!(c.type_selector, Some(TypeSelector::Tag(ref t)) if t == "div")))))
+    );
 }
 
 // ── 7. @supports 的错误路径 ─────────────────────────────────────────────

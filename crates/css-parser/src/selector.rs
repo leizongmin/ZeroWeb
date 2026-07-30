@@ -32,6 +32,9 @@ pub fn specificity(selector: &Selector) -> (u32, u32, u32) {
                 SubclassSelector::Id(_) => a += 1,
                 SubclassSelector::Class(_) => b += 1,
                 SubclassSelector::Attribute(_) => b += 1,
+                // `&` 嵌套选择器：编译后已替换为父级化合物（特异性自然正确）；
+                // 未编译残余（不应出现）贡献 0。
+                SubclassSelector::Nesting => {}
                 SubclassSelector::PseudoClass(pc) => {
                     match pc {
                         PseudoClassSelector::Is(sels)

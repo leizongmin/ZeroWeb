@@ -1027,6 +1027,13 @@ impl Iterator for Tokenizer {
                 Token::Delim('=')
             }
 
+            // & 嵌套选择器（CSS Nesting Module Level 1；CSS Syntax §4 为 U+0026 的 Delim token）。
+            // 旧实现对 `&` 落 unknown-char `Token::Error`，使 `&` 不可用（嵌套未支持时无害）。
+            '&' => {
+                self.consume();
+                Token::Delim('&')
+            }
+
             // 反斜杠转义起始：CSS Syntax §4.3 规定 `\` 后跟合法转义（hex 数字或
             // 任意非换行字符，含 EOF）时，`\` 是 ident 的一部分，应走 ident-like 路径
             //（driving：escapes-002 选择器 `p\.class#id`、`p.class#id \{ ... \}` ——

@@ -154,6 +154,9 @@ fn matches_subclass(doc: &Document, element: NodeId, sub: &SubclassSelector) -> 
         SubclassSelector::Id(id) => matches_id(doc, element, id),
         SubclassSelector::Class(cls) => matches_class(doc, element, cls),
         SubclassSelector::Attribute(attr) => matches_attribute(doc, element, attr),
+        // `&` 嵌套选择器：编译后已被替换为父级化合物，正常路径不应到达此处。
+        // 兜底返回 true（匹配任意）——仅未编译残余会命中，不影响正确编译的规则。
+        SubclassSelector::Nesting => true,
         SubclassSelector::PseudoClass(pc) => matches_pseudo_class(doc, element, pc),
         SubclassSelector::PseudoElement(_) => {
             // 伪元素不匹配 DOM 元素
