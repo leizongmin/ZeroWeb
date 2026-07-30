@@ -1426,3 +1426,40 @@ fn test_parse_color_mix_srgb() {
     // 非 srgb 色彩空间 → None（defer）
     assert!(super::super::parse_color("color-mix(in lch, red, blue)").is_none());
 }
+
+#[test]
+/// R2268：RCS 相对色 identity 快捷——`<func>(from currentColor <自然关键字>)` → CurrentColor。
+/// driving: css-color relative-currentcolor-*（14 identity 案）。
+fn test_parse_relative_color_identity() {
+    use crate::values::ColorValue;
+    // identity：channels = 函数自然关键字 → origin（currentColor）
+    for identity in [
+        "rgb(from currentColor r g b)",
+        "hsl(from currentColor h s l)",
+        "hwb(from currentColor h w b)",
+        "lab(from currentColor l a b)",
+        "lch(from currentColor l c h)",
+        "oklab(from currentColor l a b)",
+        "oklch(from currentColor l c h)",
+        "color(from currentColor a98-rgb r g b)",
+        "color(from currentColor display-p3 r g b)",
+        "color(from currentColor prophoto-rgb r g b)",
+        "color(from currentColor rec2020 r g b)",
+        "color(from currentColor xyz-d50 x y z)",
+        "color(from currentColor xyz-d65 x y z)",
+    ] {
+        assert!(
+            matches!(super::super::parse_color(identity), Some(ColorValue::CurrentColor)),
+            "identity {identity:?} 应解析为 CurrentColor"
+        );
+    }
+    // 非 identity（channel 覆盖/swap）→ None（defer）
+    assert!(super::super::parse_color("rgb(from currentColor g r b)").is_none());
+    assert!(super::super::parse_color("hsl(from currentColor 120 s l)").is_none());
+    // 非 currentColor origin + identity → origin 颜色（currentColor 经 parse_color）
+    // 常规 rgb（无 from）不受影响
+    assert!(matches!(
+        super::super::parse_color("rgb(0, 128, 0)"),
+        Some(ColorValue::Rgba(0, 128, 0, 255))
+    ));
+}

@@ -22,6 +22,17 @@ pub fn parse_color(value: &str) -> Option<ColorValue> {
         return Some(ColorValue::CurrentColor);
     }
 
+    // RCS 相对色语法（CSS Color 5）：<func>(from <origin> <channels>)。
+    // **identity 快捷**：当 channels 恰为该函数的自然关键字（rgb→r g b、hsl→h s l、…）时，
+    // 结果 = origin（origin↔输出色彩空间往返保色）。currentColor origin → CurrentColor
+    //（paint 时按元素色解析，支持 inherit 透传）。driving: css-color relative-currentcolor-*
+    //（14/16 案为 identity；hsl-02 h 覆盖 / rgb-02 swap 非 identity，defer）。
+    if value.to_ascii_lowercase().contains("from ") {
+        if let Some(c) = try_parse_relative_identity(value) {
+            return Some(c);
+        }
+    }
+
     // 十六进制颜色
     if value.starts_with('#') {
         return parse_hex_color(value);
@@ -589,6 +600,113 @@ fn trailing_percentage_pos(s: &str) -> Option<usize> {
     } else {
         None
     }
+}
+
+/// RCS（CSS Color 5 相对色）identity 快捷：`<func>(from <origin> <channels>)`，当 channels
+/// 恰为该函数自然关键字时返回 origin（currentColor origin → CurrentColor，paint 时解析）。
+/// 非 identity（channel 覆盖/swap/calc）或非 `from` 形式 → None（落回常规解析或丢弃）。
+fn try_parse_relative_identity(value: &str) -> Option<ColorValue> {
+    let open = value.find('(')?;
+    let close = value.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let func = value[..open].trim().to_ascii_lowercase();
+    let inner = strip_css_comments(value.get(open + 1..close)?).trim().to_string();
+    let lower_inner = inner.to_ascii_lowercase();
+    let rest = lower_inner.strip_prefix("from ")?.trim();
+    // 拆分 origin（首个颜色 token）与剩余 channels（含 color() 的空间名）。
+    let (origin_str, channels_str) = split_origin_channels(rest)?;
+    // color() 的 channels 含色彩空间名前缀；按空间决定自然关键字。
+    let natural = natural_channel_keywords(&func, channels_str)?;
+    let chans: Vec<&str> = channels_str.split_whitespace().collect();
+    if chans != natural {
+        return None; // 非 identity（覆盖/swap/calc）
+    }
+    // identity：origin 经 origin↔输出空间往返保色 → 结果 = origin（按原样解析，保留 currentColor）
+    parse_color(origin_str)
+}
+
+/// 拆分 RCS rest（`<origin> <channels...>`）为 (origin 原始串, channels 串)。
+/// origin 取首个顶层颜色 token：currentColor / 命名 / hex 为单 token；函数 `foo(...)` 取平衡括号。
+fn split_origin_channels(rest: &str) -> Option<(&str, &str)> {
+    let bytes = rest.as_bytes();
+    let mut depth = 0i32;
+    let mut i = 0;
+    // 跳过 origin：单 token 或平衡 foo(...)
+    if i < bytes.len() && bytes[i] == b'(' {
+        // 不太可能以 ( 开头
+    }
+    // 扫到首个顶层空白（单 token origin）或匹配 foo(...) 的 )
+    let start = i;
+    if bytes.get(i).is_some_and(|b| b.is_ascii_alphabetic()) {
+        // 扫 ident；若紧跟 ( 则是函数，取平衡
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_') {
+            i += 1;
+        }
+        if bytes.get(i).is_some_and(|b| *b == b'(') {
+            // 函数 origin：取平衡 (...)（含内部嵌套）
+            depth = 1;
+            i += 1;
+            while i < bytes.len() && depth > 0 {
+                match bytes[i] {
+                    b'(' | b'[' => depth += 1,
+                    b')' | b']' => depth -= 1,
+                    _ => {}
+                }
+                i += 1;
+            }
+        }
+    } else {
+        // hex（#...）或其他：取到首个顶层空白
+        while i < bytes.len() && !(depth == 0 && (bytes[i] == b' ' || bytes[i] == b'\t')) {
+            i += 1;
+        }
+    }
+    if i >= bytes.len() {
+        return None; // 仅有 origin 无 channels
+    }
+    let origin = rest.get(start..i)?.trim();
+    let channels = rest.get(i..)?.trim();
+    Some((origin, channels))
+}
+
+/// 返回该函数的「自然关键字」（小写），channels 与之完全相等即为 identity。
+/// color() 的 channels 形如 `<space> r g b`——空间决定关键字（rect 空间→r g b，xyz→x y z）。
+/// 返回的 Vec 包含 color() 空间名（如有）+ 关键字，供与 channels split 后逐 token 比较。
+fn natural_channel_keywords<'a>(func: &str, channels: &'a str) -> Option<Vec<&'a str>> {
+    let tokens: Vec<&str> = channels.split_whitespace().collect();
+    let (kw, offset) = if func == "color" {
+        // 首个 token = 色彩空间名
+        let space = tokens.first()?.to_ascii_lowercase();
+        let kw = if matches!(
+            space.as_str(),
+            "srgb" | "srgb-linear" | "a98-rgb" | "display-p3" | "prophoto-rgb" | "rec2020"
+        ) {
+            ["r", "g", "b"]
+        } else if matches!(space.as_str(), "xyz" | "xyz-d50" | "xyz-d65") {
+            ["x", "y", "z"]
+        } else {
+            return None; // 未知空间
+        };
+        (kw, 1) // 跳过空间名 token
+    } else {
+        let kw = match func {
+            "rgb" | "rgba" => ["r", "g", "b"],
+            "hsl" | "hsla" => ["h", "s", "l"],
+            "hwb" => ["h", "w", "b"],
+            "lab" => ["l", "a", "b"],
+            "lch" => ["l", "c", "h"],
+            "oklab" => ["l", "a", "b"],
+            "oklch" => ["l", "c", "h"],
+            _ => return None,
+        };
+        (kw, 0)
+    };
+    // 构造期望 token 序列（color 含空间名 + 关键字）
+    let mut expected: Vec<&str> = tokens[..offset].to_vec(); // 空间名（如有）
+    expected.extend(kw.iter().copied());
+    Some(expected)
 }
 
 /// 解析色相角度（CSS Color 4）：数字 + 可选角度单位（`deg`/`grad`/`rad`/`turn`），
