@@ -1,8 +1,9 @@
 //! 颜色转换工具 — CSS ColorValue 到渲染层 Color 的转换。
 
 use zero_css_parser::values::{
-    ColorMixSpace, ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec, lch_to_srgb_u8,
-    srgb_u8_to_lch,
+    ColorMixSpace, ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec, lab_to_srgb_u8,
+    lch_to_srgb_u8, oklab_to_srgb_u8, oklch_to_srgb_u8, srgb_u8_to_lab, srgb_u8_to_lch, srgb_u8_to_oklab,
+    srgb_u8_to_oklch,
 };
 use zero_render_foundation::color::Color;
 
@@ -168,7 +169,40 @@ fn resolve_relative_color(spec: &RelativeColorSpec, origin: Color) -> Color {
             c.a = resolve_rcs_alpha(spec.alpha, origin.a);
             c
         }
+        // wide-gamut（lab/lch/oklab/oklch）：origin sRGB → 目标空间分量 → 通道覆盖 → 回 sRGB。
+        RelativeColorFunc::Lab => {
+            let c = rcs_pick(&spec.channels, srgb_u8_to_lab(origin.r, origin.g, origin.b));
+            let (r, g, b) = lab_to_srgb_u8(c.0, c.1, c.2);
+            Color::rgba(r, g, b, resolve_rcs_alpha(spec.alpha, origin.a))
+        }
+        RelativeColorFunc::Lch => {
+            let c = rcs_pick(&spec.channels, srgb_u8_to_lch(origin.r, origin.g, origin.b));
+            let (r, g, b) = lch_to_srgb_u8(c.0, c.1, c.2);
+            Color::rgba(r, g, b, resolve_rcs_alpha(spec.alpha, origin.a))
+        }
+        RelativeColorFunc::Oklab => {
+            let c = rcs_pick(&spec.channels, srgb_u8_to_oklab(origin.r, origin.g, origin.b));
+            let (r, g, b) = oklab_to_srgb_u8(c.0, c.1, c.2);
+            Color::rgba(r, g, b, resolve_rcs_alpha(spec.alpha, origin.a))
+        }
+        RelativeColorFunc::Oklch => {
+            let c = rcs_pick(&spec.channels, srgb_u8_to_oklch(origin.r, origin.g, origin.b));
+            let (r, g, b) = oklch_to_srgb_u8(c.0, c.1, c.2);
+            Color::rgba(r, g, b, resolve_rcs_alpha(spec.alpha, origin.a))
+        }
     }
+}
+
+/// 按 RCS channels 从 origin 目标空间分量 (c0,c1,c2) 选取输出分量：
+/// Ref → origin 对应通道（支持置换）、Num → 字面量覆盖、None → 0。
+fn rcs_pick(channels: &[RcsChannel; 3], comps: (f64, f64, f64)) -> (f64, f64, f64) {
+    let arr = [comps.0, comps.1, comps.2];
+    let pick = |i: usize| match channels[i] {
+        RcsChannel::Ref(r) => arr[r as usize],
+        RcsChannel::Num(v) => v,
+        RcsChannel::None => 0.0,
+    };
+    (pick(0), pick(1), pick(2))
 }
 
 /// 归一 RCS alpha 到 0-255 u8：Origin → origin alpha；Num(0-1) → ×255 钳制；None → 0。
@@ -549,6 +583,73 @@ fn test_resolve_relative_color() {
     let blue_elem = ColorValue::Rgba(0, 0, 255, 255);
     let r = resolve_color_current(&rgb_swap, &blue_elem);
     assert_eq!((r.r, r.g, r.b), (0, 0, 255), "rgb(from #0000ff g r b) = blue");
+}
+
+#[test]
+/// R2274：wide-gamut RCS resolve——lab/lch/oklab/oklch origin→目标空间→通道覆盖→回 sRGB。
+/// 验证 sRGB↔各空间转换精度（全 Ref 往返≈origin）+ 数字覆盖语义（L/hue 覆盖）+ alpha 覆盖。
+fn test_resolve_relative_color_wide_gamut() {
+    use zero_css_parser::values::{RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec};
+    let mk = |func: RelativeColorFunc, channels: [RcsChannel; 3], alpha: RcsAlpha, origin: ColorValue| {
+        ColorValue::RelativeColor(Box::new(RelativeColorSpec {
+            func,
+            origin,
+            channels,
+            alpha,
+        }))
+    };
+    let white = ColorValue::Rgba(255, 255, 255, 255);
+
+    // lab 覆盖 L=50 on white（a=b=0）→ 中灰 rgb(119,119,119)。
+    let lab_gray = mk(
+        RelativeColorFunc::Lab,
+        [RcsChannel::Num(50.0), RcsChannel::Ref(1), RcsChannel::Ref(2)],
+        RcsAlpha::Origin,
+        white.clone(),
+    );
+    let r = resolve_color_current(&lab_gray, &white);
+    assert_eq!(r.r, r.g, "lab(50 0 0) 应为灰（r==g）");
+    assert_eq!(r.g, r.b, "lab(50 0 0) 应为灰（g==b）");
+    assert!(r.r > 110 && r.r < 130, "lab(50 0 0) ≈ rgb(119,119,119)，实际 {}", r.r);
+
+    // oklab 全 Ref 往返 red：应回到 red（±2/通道，验证 sRGB↔OKLab 转换精度）。
+    let oklab_rt = mk(
+        RelativeColorFunc::Oklab,
+        [RcsChannel::Ref(0), RcsChannel::Ref(1), RcsChannel::Ref(2)],
+        RcsAlpha::Origin,
+        ColorValue::Rgba(255, 0, 0, 255),
+    );
+    let r = resolve_color_current(&oklab_rt, &ColorValue::Rgba(255, 0, 0, 255));
+    assert!(
+        (r.r as i32 - 255).abs() <= 2 && r.g <= 2 && r.b <= 2,
+        "oklab 往返 red 应≈red，实际 {:?}",
+        (r.r, r.g, r.b)
+    );
+
+    // oklch 色相覆盖（red h≈29°，覆盖为 180° → 互补青绿，r 跌、g 涨）。
+    let oklch_hue = mk(
+        RelativeColorFunc::Oklch,
+        [RcsChannel::Ref(0), RcsChannel::Ref(1), RcsChannel::Num(180.0)],
+        RcsAlpha::Origin,
+        ColorValue::Rgba(255, 0, 0, 255),
+    );
+    let r = resolve_color_current(&oklch_hue, &ColorValue::Rgba(255, 0, 0, 255));
+    assert!(
+        r.r < 100 && r.g > 100,
+        "oklch(red l c 180) hue 翻转→青绿，实际 {:?}",
+        (r.r, r.g, r.b)
+    );
+
+    // alpha 覆盖：lab(from white l a b / 0.5) → white alpha 0.5。
+    let lab_alpha = mk(
+        RelativeColorFunc::Lab,
+        [RcsChannel::Ref(0), RcsChannel::Ref(1), RcsChannel::Ref(2)],
+        RcsAlpha::Num(0.5),
+        white.clone(),
+    );
+    let r = resolve_color_current(&lab_alpha, &white);
+    assert_eq!(r.a, 128, "alpha 0.5 → 128");
+    assert_eq!((r.r, r.g, r.b), (255, 255, 255), "全 Ref → origin white 往返");
 }
 
 #[test]

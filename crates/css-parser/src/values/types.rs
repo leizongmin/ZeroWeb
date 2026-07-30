@@ -56,9 +56,9 @@ pub enum ColorValue {
     /// 在子元素按其自身 color 重解析）。仅 `in srgb` 色彩空间（gamma-encoded 线性插值）。
     Mix(Box<ColorMixSpec>),
     /// CSS Color 5 相对色（RCS）非 identity —— **未解析**（currentColor origin 在 paint 时
-    /// 按元素色解析，支持 inherit 透传，同 Mix）。仅 rgb/rgba/hsl/hsla 输出空间 + 通道为关键字
-    /// 引用或数字字面量（无 calc）。identity（channels 恰为自然关键字）在 parse 阶段已短路为 origin。
-    /// driving: css-color relative-currentcolor-rgb-02（g r b swap）/ hsl-02（120 s l 覆盖）。
+    /// 按元素色解析，支持 inherit 透传，同 Mix）。rgb/rgba/hsl/hsla 与 lab/lch/oklab/oklch 输出空间，
+    /// 通道为关键字引用或数字字面量（无 calc）。identity（channels 恰为自然关键字）在 parse 阶段
+    /// 已短路为 origin。driving: css-color relative-currentcolor-rgb-02（g r b swap）/ hsl-02（120 s l 覆盖）。
     RelativeColor(Box<RelativeColorSpec>),
 }
 
@@ -93,15 +93,15 @@ pub struct ColorMixComponent {
 
 /// RCS（CSS Color 5 相对色）非 identity 规范：`<func>(from <origin> <ch1> <ch2> <ch3> [/ <alpha>])`。
 ///
-/// currentColor origin 保留未解析（paint 时按元素色解析，支持 inherit 透传）。仅 rgb/rgba/hsl/hsla
-/// 输出空间。driving: css-color relative-currentcolor-rgb-02 / hsl-02。
+/// currentColor origin 保留未解析（paint 时按元素色解析，支持 inherit 透传）。rgb/rgba/hsl/hsla +
+/// lab/lch/oklab/oklch 输出空间。driving: css-color relative-currentcolor-rgb-02 / hsl-02。
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelativeColorSpec {
     /// 输出函数（决定通道语义与单位）。
     pub func: RelativeColorFunc,
     /// origin 颜色（可为 currentColor，运行时解析）。
     pub origin: ColorValue,
-    /// 3 个输出通道（rgb: r/g/b；hsl: h/s/l）。
+    /// 3 个输出通道（rgb: r/g/b；hsl: h/s/l；lab/oklab: l/a/b；lch/oklch: l/c/h）。
     pub channels: [RcsChannel; 3],
     /// alpha（省略 = 用 origin alpha）。
     pub alpha: RcsAlpha,
@@ -114,6 +114,14 @@ pub enum RelativeColorFunc {
     Rgb,
     /// hsl()/hsla() —— h 为度 [0,360)，s/l 为 [0,100]。
     Hsl,
+    /// lab() —— L∈[0,100]，a/b 为 a*/b*（常见 ±125）。
+    Lab,
+    /// lch() —— L∈[0,100]，C（常见 0-150），h 为度。
+    Lch,
+    /// oklab() —— L∈[0,1]，a/b（常见 ±0.4）。
+    Oklab,
+    /// oklch() —— L∈[0,1]，C（常见 0-0.4），h 为度。
+    Oklch,
 }
 
 /// RCS 单个输出通道。

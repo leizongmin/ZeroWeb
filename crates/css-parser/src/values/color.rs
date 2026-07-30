@@ -382,19 +382,36 @@ fn lab_to_linear_srgb(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
     mat3_mul(XYZ_TO_SRGB, x, y, z)
 }
 
-/// sRGB u8 → CIE LCH-D50（CSS Color 4）：L∈[0,100]、C、h∈[0,360)。供 color-mix(in lch) 插值。
-pub fn srgb_u8_to_lch(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
-    // sRGB gamma → 线性 sRGB → XYZ-D65 → XYZ-D50（Bradford）→ Lab → LCH
+/// sRGB u8 → CIE Lab-D50（CSS Color 4）：L∈[0,100]、a/b。供 RCS lab()/lch() origin 解析 + color-mix。
+pub fn srgb_u8_to_lab(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    // sRGB gamma → 线性 sRGB → XYZ-D65 → XYZ-D50（Bradford）→ Lab
     let lr = srgb_decode(r as f64 / 255.0);
     let lg = srgb_decode(g as f64 / 255.0);
     let lb = srgb_decode(b as f64 / 255.0);
     let (x, y, z) = mat3_mul(SRGB_TO_XYZ, lr, lg, lb);
     let (x, y, z) = mat3_mul(XYZ_D65_TO_D50, x, y, z);
-    lab_from_xyz_d50(x, y, z)
+    lab_components_from_xyz_d50(x, y, z)
 }
 
-/// XYZ-D50 → LCH（CSS Color 4；f 正函数）。
-fn lab_from_xyz_d50(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
+/// sRGB u8 → CIE LCH-D50（CSS Color 4）：L∈[0,100]、C、h∈[0,360)。供 color-mix(in lch) 插值。
+pub fn srgb_u8_to_lch(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let (l, a, b) = srgb_u8_to_lab(r, g, b);
+    let c = (a * a + b * b).sqrt();
+    let mut h = b.atan2(a).to_degrees();
+    if h < 0.0 {
+        h += 360.0;
+    }
+    (l, c, h)
+}
+
+/// CIE Lab-D50 → sRGB u8（CSS Color 4；越界色逐通道钳制）。供 RCS lab() 输出回转。
+pub fn lab_to_srgb_u8(l: f64, a: f64, b: f64) -> (u8, u8, u8) {
+    let (lr, lg, lb) = lab_to_linear_srgb(l, a, b);
+    (linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb))
+}
+
+/// XYZ-D50 → Lab（L, a, b）（CSS Color 4；f 正函数）。
+fn lab_components_from_xyz_d50(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
     // D50 参考白点
     let (xn, yn, zn) = (0.96422, 1.0, 0.82521);
     let eps = 216.0 / 24389.0; // (6/29)³
@@ -406,12 +423,7 @@ fn lab_from_xyz_d50(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
     let l = 116.0 * fy - 16.0;
     let a = 500.0 * (fx - fy);
     let b = 200.0 * (fy - fz);
-    let c = (a * a + b * b).sqrt();
-    let mut h = b.atan2(a).to_degrees();
-    if h < 0.0 {
-        h += 360.0;
-    }
-    (l, c, h)
+    (l, a, b)
 }
 
 /// CIE LCH-D50 → sRGB u8（CSS Color 4；越界色逐通道钳制）。供 color-mix(in lch) 插值回转。
@@ -434,6 +446,50 @@ fn oklab_to_linear_srgb(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
         -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
         -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
     )
+}
+
+/// 线性 sRGB → OKLab（CSS Color 4 §10.4 逆变换：线性 sRGB → LMS → 立方根 → OKLab）。
+/// 立方根保留负号（f64::cbrt），支持越界线性光。
+fn linear_srgb_to_oklab(lr: f64, lg: f64, lb: f64) -> (f64, f64, f64) {
+    let l_ = (0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb).cbrt();
+    let m_ = (0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb).cbrt();
+    let s_ = (0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb).cbrt();
+    (
+        0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+        1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+        0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_,
+    )
+}
+
+/// sRGB u8 → OKLab（CSS Color 4）：L∈[0,1]、a/b。供 RCS oklab()/oklch() origin 解析。
+pub fn srgb_u8_to_oklab(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let lr = srgb_decode(r as f64 / 255.0);
+    let lg = srgb_decode(g as f64 / 255.0);
+    let lb = srgb_decode(b as f64 / 255.0);
+    linear_srgb_to_oklab(lr, lg, lb)
+}
+
+/// OKLab → sRGB u8（CSS Color 4；越界色逐通道钳制）。供 RCS oklab() 输出回转。
+pub fn oklab_to_srgb_u8(l: f64, a: f64, b: f64) -> (u8, u8, u8) {
+    let (lr, lg, lb) = oklab_to_linear_srgb(l, a, b);
+    (linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb))
+}
+
+/// sRGB u8 → OKLCH（CSS Color 4）：L∈[0,1]、C、h∈[0,360)。供 RCS oklch() origin 解析。
+pub fn srgb_u8_to_oklch(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let (l, a, b) = srgb_u8_to_oklab(r, g, b);
+    let c = (a * a + b * b).sqrt();
+    let mut h = b.atan2(a).to_degrees();
+    if h < 0.0 {
+        h += 360.0;
+    }
+    (l, c, h)
+}
+
+/// OKLCH → sRGB u8（CSS Color 4；L, C, h° → a=C·cos h, b=C·sin h → oklab 回转）。
+pub fn oklch_to_srgb_u8(l: f64, c: f64, h: f64) -> (u8, u8, u8) {
+    let h_rad = h.to_radians();
+    oklab_to_srgb_u8(l, c * h_rad.cos(), c * h_rad.sin())
 }
 
 /// `lab(L a b [/ alpha])`：L∈[0,100]（% of 100），a/b（% of 125 或数字）。
@@ -987,7 +1043,11 @@ fn parse_relative_color(value: &str) -> Option<ColorValue> {
     let func = match func_name.as_str() {
         "rgb" | "rgba" => RelativeColorFunc::Rgb,
         "hsl" | "hsla" => RelativeColorFunc::Hsl,
-        _ => return None, // lab/lch/oklab/oklch/color() 非 identity defer
+        "lab" => RelativeColorFunc::Lab,
+        "lch" => RelativeColorFunc::Lch,
+        "oklab" => RelativeColorFunc::Oklab,
+        "oklch" => RelativeColorFunc::Oklch,
+        _ => return None, // color() 非 identity defer（per-space 通道计算，独立 slice）
     };
     let inner = strip_css_comments(value.get(open + 1..close)?)
         .trim()
@@ -1025,31 +1085,51 @@ fn parse_relative_color(value: &str) -> Option<ColorValue> {
     })))
 }
 
-/// 解析 RCS 单个通道：关键字引用（r/g/b、h/s/l，记录 origin 通道序）/ 数字字面量 / `none`。
-/// `idx` 为输出位置：rgb 任意位为 0-255；hsl 首位（idx=0）为色相（度，可带角度单位），s/l 为 0-100。
+/// 解析 RCS 单个通道：关键字引用（记录 origin 通道序，支持置换）/ 数字字面量 / `none`。
+/// `idx` 为输出位置：rgb 任意位 0-255；hsl h/lch h/oklch h（idx 0 或 2）为色相（度，可带角度单位）；
+/// wide-gamut（lab/lch/oklab/oklch）非 hue 通道按 spec 百分比基准缩放（见 parse_rcs_number_wide）。
 fn parse_rcs_channel(s: &str, func: RelativeColorFunc, idx: usize) -> Option<RcsChannel> {
     let s = s.trim();
     if s.eq_ignore_ascii_case("none") {
         return Some(RcsChannel::None);
     }
-    // 关键字引用：记录所引用的 origin 通道序（rgb r=0/g=1/b=2；hsl h=0/s=1/l=2），支持置换。
-    let kw_ref = match (func, s) {
+    // 关键字引用：记录所引用的 origin 通道序。
+    // rgb r/g/b=0/1/2；hsl h/s/l；lab/oklab l/a/b；lch/oklch l/c/h。
+    let kw_ref = match (func, s.to_ascii_lowercase().as_str()) {
         (RelativeColorFunc::Rgb, "r") => Some(0u8),
         (RelativeColorFunc::Rgb, "g") => Some(1),
         (RelativeColorFunc::Rgb, "b") => Some(2),
         (RelativeColorFunc::Hsl, "h") => Some(0),
         (RelativeColorFunc::Hsl, "s") => Some(1),
         (RelativeColorFunc::Hsl, "l") => Some(2),
+        (RelativeColorFunc::Lab, "l") => Some(0),
+        (RelativeColorFunc::Lab, "a") => Some(1),
+        (RelativeColorFunc::Lab, "b") => Some(2),
+        (RelativeColorFunc::Lch, "l") => Some(0),
+        (RelativeColorFunc::Lch, "c") => Some(1),
+        (RelativeColorFunc::Lch, "h") => Some(2),
+        (RelativeColorFunc::Oklab, "l") => Some(0),
+        (RelativeColorFunc::Oklab, "a") => Some(1),
+        (RelativeColorFunc::Oklab, "b") => Some(2),
+        (RelativeColorFunc::Oklch, "l") => Some(0),
+        (RelativeColorFunc::Oklch, "c") => Some(1),
+        (RelativeColorFunc::Oklch, "h") => Some(2),
         _ => None,
     };
     if let Some(i) = kw_ref {
         return Some(RcsChannel::Ref(i));
     }
     let v = match func {
+        RelativeColorFunc::Rgb => parse_rcs_number_255(s)?,
         // hsl 首通道 = 色相（数字或角度单位 → 度）。
         RelativeColorFunc::Hsl if idx == 0 => parse_hue_angle(s)?,
-        RelativeColorFunc::Rgb => parse_rcs_number_255(s)?,
         RelativeColorFunc::Hsl => parse_rcs_number_100(s)?,
+        // lch/oklch 第三通道（idx=2）= 色相。
+        RelativeColorFunc::Lch | RelativeColorFunc::Oklch if idx == 2 => parse_hue_angle(s)?,
+        // lab/lch/oklab/oklch 非 hue 通道。
+        RelativeColorFunc::Lab | RelativeColorFunc::Lch | RelativeColorFunc::Oklab | RelativeColorFunc::Oklch => {
+            parse_rcs_number_wide(s, func, idx)?
+        }
     };
     Some(RcsChannel::Num(v))
 }
@@ -1071,6 +1151,27 @@ fn parse_rcs_number_100(s: &str) -> Option<f64> {
     } else {
         Some(s.parse().ok()?)
     }
+}
+
+/// 解析 wide-gamut RCS 通道数字字面量（lab/lch/oklab/oklch 非 hue 通道）。
+/// `%` 按该通道 spec 百分比基准缩放；裸数字 = 通道自然单位值（不缩放、不钳制，paint 时回转钳）。
+fn parse_rcs_number_wide(s: &str, func: RelativeColorFunc, idx: usize) -> Option<f64> {
+    let s = s.trim();
+    if let Some(pct) = s.strip_suffix('%') {
+        let p: f64 = pct.trim().parse().ok()?;
+        // 百分比基准：lab/lch L=100；lab a/b=125；lch C=150；oklab/oklch L=1；oklab a/b=0.4；oklch C=0.4。
+        let basis = match (func, idx) {
+            (RelativeColorFunc::Lab | RelativeColorFunc::Lch, 0) => 100.0,
+            (RelativeColorFunc::Lab, _) => 125.0,
+            (RelativeColorFunc::Lch, _) => 150.0,
+            (RelativeColorFunc::Oklab | RelativeColorFunc::Oklch, 0) => 1.0,
+            (RelativeColorFunc::Oklab, _) => 0.4,
+            (RelativeColorFunc::Oklch, _) => 0.4,
+            _ => return None,
+        };
+        return Some(p / 100.0 * basis);
+    }
+    s.parse().ok()
 }
 
 /// 解析 RCS alpha：`none` → None，`p%` → p/100，裸数字 → 0-1（不钳制）。

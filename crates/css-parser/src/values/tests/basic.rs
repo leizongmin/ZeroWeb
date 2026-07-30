@@ -1503,13 +1503,74 @@ fn test_parse_relative_color_non_identity() {
         }
         other => panic!("hsl 覆盖应为 RelativeColor，实际: {:?}", other),
     }
-    // 非 rgb/hsl 函数（lab/lch/oklab/oklch/color()）非 identity 仍 defer → None。
-    assert!(super::super::parse_color("lab(from currentColor l a b / 0.5)").is_none());
+    // color() 非 identity 仍 defer → None（per-space 通道计算，独立 slice）。
+    assert!(super::super::parse_color("color(from currentColor srgb 0.1 0.2 0.3)").is_none());
     // 非 from 形式不受影响（常规 rgb）。
     assert!(matches!(
         super::super::parse_color("rgb(1 2 3)"),
         Some(ColorValue::Rgba(1, 2, 3, 255))
     ));
+}
+
+#[test]
+/// R2274：wide-gamut RCS（lab/lch/oklab/oklch）非 identity 解析——通道关键字引用 + 数字覆盖。
+/// driving: lab/lch/oklab/oklch 通道置换/覆盖（identity 仍在 parse 阶段短路为 origin，见 test_parse_relative_color_identity）。
+fn test_parse_relative_color_wide_gamut() {
+    use crate::values::{ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc};
+    // lab 覆盖：`lab(from red 50 a b)` —— L=字面量 50，a/b 引用 origin。
+    let c = super::super::parse_color("lab(from red 50 a b)").unwrap();
+    match c {
+        ColorValue::RelativeColor(spec) => {
+            assert_eq!(spec.func, RelativeColorFunc::Lab);
+            assert!(matches!(spec.channels[0], RcsChannel::Num(50.0)), "L → Num(50)");
+            assert!(matches!(spec.channels[1], RcsChannel::Ref(1)), "a → Ref(1)");
+            assert!(matches!(spec.channels[2], RcsChannel::Ref(2)), "b → Ref(2)");
+            assert_eq!(spec.alpha, RcsAlpha::Origin);
+        }
+        other => panic!("lab 覆盖应为 RelativeColor，实际: {:?}", other),
+    }
+    // lab L 百分比：`lab(from red 50% a b)` —— 50% of 100 = 50。
+    let c = super::super::parse_color("lab(from red 50% a b)").unwrap();
+    match c {
+        ColorValue::RelativeColor(spec) => {
+            assert_eq!(spec.func, RelativeColorFunc::Lab);
+            assert!(
+                matches!(spec.channels[0], RcsChannel::Num(v) if (v - 50.0).abs() < 1e-9),
+                "50% → Num(50)"
+            );
+        }
+        other => panic!("lab %% 应为 RelativeColor，实际: {:?}", other),
+    }
+    // lch 色相覆盖：`lch(from blue l c 240)` —— l/c 引用 origin，h=字面量 240。
+    let c = super::super::parse_color("lch(from blue l c 240)").unwrap();
+    match c {
+        ColorValue::RelativeColor(spec) => {
+            assert_eq!(spec.func, RelativeColorFunc::Lch);
+            assert!(matches!(spec.channels[0], RcsChannel::Ref(0)), "l → Ref(0)");
+            assert!(matches!(spec.channels[1], RcsChannel::Ref(1)), "c → Ref(1)");
+            assert!(matches!(spec.channels[2], RcsChannel::Num(240.0)), "h → Num(240)");
+        }
+        other => panic!("lch 色相覆盖应为 RelativeColor，实际: {:?}", other),
+    }
+    // oklch 色相覆盖（角度单位）：`oklch(from green l c 0.5turn)` → h=180。
+    let c = super::super::parse_color("oklch(from green l c 0.5turn)").unwrap();
+    match c {
+        ColorValue::RelativeColor(spec) => {
+            assert_eq!(spec.func, RelativeColorFunc::Oklch);
+            assert!(
+                matches!(spec.channels[2], RcsChannel::Num(v) if (v - 180.0).abs() < 1e-9),
+                "0.5turn → Num(180)"
+            );
+        }
+        other => panic!("oklch 色相覆盖应为 RelativeColor，实际: {:?}", other),
+    }
+    // identity（channels 恰为自然关键字）仍短路为 origin，不产生 RelativeColor。
+    assert!(matches!(
+        super::super::parse_color("oklch(from red l c h)"),
+        Some(ColorValue::Rgba(255, 0, 0, 255))
+    ));
+    // 通道数 ≠ 3 → None。
+    assert!(super::super::parse_color("lab(from red 50 a)").is_none());
 }
 
 #[test]
