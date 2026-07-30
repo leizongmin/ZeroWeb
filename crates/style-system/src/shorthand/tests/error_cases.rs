@@ -534,6 +534,31 @@ fn test_font_unusual_order() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// @supports font 简写求值（driving: WPT css-supports-024）
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+/// @supports 求值 font 简写：合法值（含 font-size + font-family）应判为 supported。
+fn test_font_shorthand_supported_valid() {
+    // driving: WPT css-supports-024 `(font: 16px serif)` 须判为 supported（块应用 → green）。
+    assert!(font_shorthand_supported("16px serif"), "font: 16px serif 应 supported");
+    assert!(font_shorthand_supported("italic bold 14px/1.5 Arial, sans-serif"));
+    assert!(font_shorthand_supported("caption"), "系统字体关键字应 supported");
+}
+
+#[test]
+/// @supports 求值 font 简写：非法值（缺 font-size / 负 line-height）应判为 unsupported。
+fn test_font_shorthand_supported_invalid() {
+    assert!(!font_shorthand_supported("bold"), "缺 font-size 应 unsupported");
+    assert!(!font_shorthand_supported("italic"), "缺 font-size 应 unsupported");
+    assert!(!font_shorthand_supported("Arial"), "仅 family 缺 size 应 unsupported");
+    assert!(
+        !font_shorthand_supported("16px/-2em serif"),
+        "负 line-height 应 unsupported"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // border-image 复杂情况测试
 // ═══════════════════════════════════════════════════════════════════
 

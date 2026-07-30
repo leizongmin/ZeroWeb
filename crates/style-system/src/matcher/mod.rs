@@ -1462,6 +1462,9 @@ fn is_property_supported(property: &str, value: &str) -> bool {
             v == "auto" || v == "normal" || v == "none"
         }
         "font-variant-numeric" | "font-feature-settings" | "font-variation-settings" => true,
+        // font 简写：复用 expand_font 严格校验（须含 font-size + font-family 或系统字体关键字）。
+        // driving: WPT css-supports-024 `(font: 16px serif)`。
+        "font" => crate::shorthand::font_shorthand_supported(trimmed),
         // 未知属性：默认不支持（安全保守策略）
         _ => false,
     }

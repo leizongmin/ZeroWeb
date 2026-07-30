@@ -1630,6 +1630,13 @@ fn classify_bg_token_owned(
     *bg_color = token.to_string();
 }
 
+/// @supports 求值用：`font` 简写值是否合法可解析（CSS Conditional §7：声明 supported
+/// 的充要条件是 UA 能解析该值）。复用 `expand_font` 的严格校验（无 font-size 或负
+/// line-height 等非法值 → 空 Vec = 不支持）。driving: WPT css-supports-024 `(font: 16px serif)`。
+pub(crate) fn font_shorthand_supported(value: &str) -> bool {
+    !expand_font(value, false, (0, 0, 0)).is_empty()
+}
+
 /// 展开 font 简写。
 ///
 /// 简化实现：`font: [style] [weight] <size>[/<line-height>] <family>`
