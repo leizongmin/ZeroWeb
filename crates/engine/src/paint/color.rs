@@ -7,15 +7,9 @@ use zero_render_foundation::color::Color;
 ///
 /// 注意：`ColorValue::CurrentColor` 在此无元素上下文，回落为黑色。需要正确解析
 /// currentColor 的调用点（如边框绘制）须在传入前先把 currentColor 替换为元素
-/// 自身计算 `color`（CSS-Color §resolving）。
+/// 自身计算 `color`（CSS-Color §resolving）。等价于 `resolve_color_current(color, &CurrentColor)`。
 pub fn color_value_to_render(color: &ColorValue) -> Color {
-    match color {
-        ColorValue::Rgba(r, g, b, a) => Color::rgba(*r, *g, *b, *a),
-        ColorValue::Transparent => Color::rgba(0, 0, 0, 0),
-        ColorValue::Named(name) => named_color_to_render(name),
-        ColorValue::CurrentColor => Color::rgba(0, 0, 0, 255),
-        ColorValue::Hsla(h, s, l, a) => hsla_to_rgba(*h, *s, *l, *a),
-    }
+    resolve_color_current(color, &ColorValue::CurrentColor)
 }
 
 /// 解析颜色到渲染 Color，**currentColor 替换为元素自身计算 `color`**（CSS Color §resolving）。
@@ -24,14 +18,64 @@ pub fn color_value_to_render(color: &ColorValue) -> Color {
 /// 用于 background-color 等须正确解析 currentColor 的场景（driving: css-color currentcolor-001..
 /// `background-color: currentColor` 应取元素 `color`，非黑色）。若元素 color 本身未解析仍为
 /// CurrentColor（`color: currentColor` 罕见，须 cascade 解析继承色），回落黑色（旧行为）。
+///
+/// `ColorValue::Mix`（color-mix）的两分量 currentColor 也按 `element_color` 递归解析后插值，
+/// 故 `background-color: inherit` 透传的 Mix 在子元素按其自身 color 重解析 currentColor
+///（driving: color-mix-currentcolor-001）。
 pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> Color {
     match color {
         ColorValue::CurrentColor => match element_color {
             ColorValue::CurrentColor => Color::rgba(0, 0, 0, 255),
             other => color_value_to_render(other),
         },
-        other => color_value_to_render(other),
+        ColorValue::Mix(spec) => {
+            let c1 = resolve_color_current(&spec.c1.color, element_color);
+            let c2 = resolve_color_current(&spec.c2.color, element_color);
+            mix_srgb(c1, spec.c1.percentage, c2, spec.c2.percentage)
+        }
+        ColorValue::Rgba(r, g, b, a) => Color::rgba(*r, *g, *b, *a),
+        ColorValue::Transparent => Color::rgba(0, 0, 0, 0),
+        ColorValue::Named(name) => named_color_to_render(name),
+        ColorValue::Hsla(h, s, l, a) => hsla_to_rgba(*h, *s, *l, *a),
     }
+}
+
+/// `color-mix(in srgb, c1 [p1], c2 [p2])` 的 sRGB 插值（CSS Color 5 §12.2）。
+///
+/// sRGB 色彩空间 gamma-encoded 线性插值（premultiplied alpha）。百分比默认：双省略=50/50，
+/// 单省略=100-另一；和≠100 时按比例归一化到 100%，sum<100 则 alpha ×= sum/100。
+fn mix_srgb(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
+    let (p1, p2) = match (p1, p2) {
+        (Some(a), Some(b)) => (a, b),
+        (Some(a), None) => (a, 100.0 - a),
+        (None, Some(b)) => (100.0 - b, b),
+        (None, None) => (50.0, 50.0),
+    };
+    let sum = p1 + p2;
+    if sum <= 0.0 {
+        return Color::rgba(0, 0, 0, 0); // 两端 0% → 全透明
+    }
+    let alpha_mult = (sum / 100.0).min(1.0);
+    let w1 = p1 / sum;
+    let w2 = p2 / sum;
+    // premultiplied alpha 插值（CSS Color §12.2）
+    let a1 = c1.a as f64 / 255.0;
+    let a2 = c2.a as f64 / 255.0;
+    let pr = c1.r as f64 * a1 * w1 + c2.r as f64 * a2 * w2;
+    let pg = c1.g as f64 * a1 * w1 + c2.g as f64 * a2 * w2;
+    let pb = c1.b as f64 * a1 * w1 + c2.b as f64 * a2 * w2;
+    let pa = a1 * w1 + a2 * w2;
+    let final_a = (pa * alpha_mult).clamp(0.0, 1.0);
+    if final_a <= 0.0 {
+        return Color::rgba(0, 0, 0, 0);
+    }
+    let to_u8 = |v: f64| (v / pa).round().clamp(0.0, 255.0) as u8; // un-premultiply
+    Color::rgba(
+        to_u8(pr),
+        to_u8(pg),
+        to_u8(pb),
+        (final_a * 255.0).round().clamp(0.0, 255.0) as u8,
+    )
 }
 
 /// 将 HSL(Hue, Saturation, Lightness, Alpha) 转换为 RGBA。
@@ -304,4 +348,42 @@ mod tests {
         assert_eq!(c.g, 165);
         assert_eq!(c.b, 0);
     }
+}
+
+#[test]
+/// R2267：resolve_color_current 对 color-mix Mix 的解析（currentColor 按元素色 + sRGB 插值）。
+fn test_resolve_color_mix() {
+    use zero_css_parser::values::{ColorMixComponent, ColorMixSpec};
+    // mix(green 50%, green) = green（001 场景：currentColor 在子元素按 green 解析）
+    let both_green = ColorValue::Mix(Box::new(ColorMixSpec {
+        c1: ColorMixComponent {
+            color: ColorValue::Rgba(0, 128, 0, 255),
+            percentage: Some(50.0),
+        },
+        c2: ColorMixComponent {
+            color: ColorValue::CurrentColor,
+            percentage: None,
+        },
+    }));
+    let green_elem = ColorValue::Rgba(0, 128, 0, 255);
+    let r = resolve_color_current(&both_green, &green_elem);
+    assert_eq!(
+        (r.r, r.g, r.b),
+        (0, 128, 0),
+        "mix(green, currentColor=green) 应为 green"
+    );
+
+    // mix(red 50%, green) = rgb(128, 64, 0)
+    let mix_rg = ColorValue::Mix(Box::new(ColorMixSpec {
+        c1: ColorMixComponent {
+            color: ColorValue::Rgba(255, 0, 0, 255),
+            percentage: Some(50.0),
+        },
+        c2: ColorMixComponent {
+            color: ColorValue::Rgba(0, 128, 0, 255),
+            percentage: Some(50.0),
+        },
+    }));
+    let r = resolve_color_current(&mix_rg, &ColorValue::CurrentColor);
+    assert_eq!((r.r, r.g, r.b), (128, 64, 0), "mix(red 50%, green 50%) = rgb(128,64,0)");
 }

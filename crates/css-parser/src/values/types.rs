@@ -51,6 +51,28 @@ pub enum ColorValue {
     Transparent,
     /// currentColor。
     CurrentColor,
+    /// CSS Color 5 `color-mix()` —— **未解析**（currentColor 在 paint 时按元素色解析，
+    /// 支持 inherit 透传：`background-color: inherit` 把 Mix 原样传给子元素，currentColor
+    /// 在子元素按其自身 color 重解析）。仅 `in srgb` 色彩空间（gamma-encoded 线性插值）。
+    Mix(Box<ColorMixSpec>),
+}
+
+/// `color-mix()` 规范（CSS Color 5）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorMixSpec {
+    /// 第一个颜色分量。
+    pub c1: ColorMixComponent,
+    /// 第二个颜色分量。
+    pub c2: ColorMixComponent,
+}
+
+/// `color-mix()` 的单个分量（颜色 + 可选百分比）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorMixComponent {
+    /// 颜色（可为 currentColor 等，运行时解析）。
+    pub color: ColorValue,
+    /// 百分比 [0, 100]，None 表示省略（按 spec 默认：双省略=50/50，单省略=100-另一）。
+    pub percentage: Option<f64>,
 }
 
 /// CSS display 值。

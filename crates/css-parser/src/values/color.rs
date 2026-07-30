@@ -61,6 +61,13 @@ pub fn parse_color(value: &str) -> Option<ColorValue> {
         return parse_color(light);
     }
 
+    // color-mix() 函数（CSS Color 5）：color-mix(in <space>, <c1> [<p1>], <c2> [<p2>])。
+    // 仅 `in srgb` 支持（其他色彩空间 defer）。存为未解析 ColorValue::Mix——currentColor 在
+    // paint 时按元素色解析，支持 inherit 透传。driving: css-color color-mix-currentcolor-001。
+    if value.len() >= 10 && value[..10].eq_ignore_ascii_case("color-mix(") {
+        return parse_color_mix(value);
+    }
+
     // 命名颜色
     parse_named_color(value)
 }
@@ -502,6 +509,86 @@ fn first_top_level_comma_arg(s: &str) -> &str {
         }
     }
     s.trim()
+}
+
+/// 返回**顶层**（括号深度 0）首个目标字符的字节位置，无则 None。
+fn top_level_byte_index(s: &str, target: u8) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut depth = 0i32;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => depth = (depth - 1).max(0),
+            _ if depth == 0 && b == target => return Some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// 解析 `color-mix(in <space>, <c1> [<p1>], <c2> [<p2>])`（CSS Color 5）。
+///
+/// 仅 `in srgb` 支持；分量 `<color> [<百分比>]`，百分比省略按 spec 默认（双省略=50/50）。
+/// currentColor 保留未解析（paint 时按元素色解析）。driving: color-mix-currentcolor-001。
+fn parse_color_mix(value: &str) -> Option<ColorValue> {
+    let start = value.find('(')?;
+    let end = value.rfind(')')?;
+    let inner = strip_css_comments(value.get(start + 1..end)?);
+    // 首个顶层逗号分隔色彩空间与第一分量
+    let first_comma = top_level_byte_index(&inner, b',')?;
+    let space = inner[..first_comma].trim();
+    if !space.eq_ignore_ascii_case("in srgb") {
+        return None; // 其他色彩空间（srgb-linear/lch/oklch/…）defer
+    }
+    let rest = inner[first_comma + 1..].trim();
+    // 顶层逗号分隔两分量
+    let second_comma = top_level_byte_index(rest, b',')?;
+    let c1 = parse_color_mix_component(rest[..second_comma].trim())?;
+    let c2 = parse_color_mix_component(rest[second_comma + 1..].trim())?;
+    Some(ColorValue::Mix(Box::new(ColorMixSpec { c1, c2 })))
+}
+
+/// 解析 color-mix 单分量：`<color>` 或 `<color> <百分比>`（CSS Color 4 空白语法）。
+fn parse_color_mix_component(s: &str) -> Option<ColorMixComponent> {
+    let s = s.trim();
+    // 末尾百分比：最后一个**顶层**空白之后是 `<num>%`。
+    if let Some(ws) = trailing_percentage_pos(s) {
+        let color_str = s[..ws].trim();
+        let pct_str = s[ws..].trim();
+        let pct = pct_str.trim_end_matches('%').parse::<f64>().ok()?;
+        let color = parse_color(color_str)?;
+        return Some(ColorMixComponent {
+            color,
+            percentage: Some(pct),
+        });
+    }
+    let color = parse_color(s)?;
+    Some(ColorMixComponent {
+        color,
+        percentage: None,
+    })
+}
+
+/// 返回末尾百分比在 `s` 中的起始字节位置（最后一个顶层空白处），无则 None。
+fn trailing_percentage_pos(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut depth = 0i32;
+    let mut last_ws = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => depth = (depth - 1).max(0),
+            b' ' | b'\t' if depth == 0 => last_ws = Some(i),
+            _ => {}
+        }
+    }
+    let ws = last_ws?;
+    let after = s[ws..].trim();
+    if after.ends_with('%') && after[..after.len() - 1].parse::<f64>().is_ok() {
+        Some(ws)
+    } else {
+        None
+    }
 }
 
 /// 解析色相角度（CSS Color 4）：数字 + 可选角度单位（`deg`/`grad`/`rad`/`turn`），
