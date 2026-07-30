@@ -88,3 +88,27 @@ fn test_not_non_forgiving_invalidates_selector() {
     let sheet = Parser::parse_stylesheet(css);
     assert_eq!(sheet.rules.len(), 0, ":not 含无效选择器应使规则被丢弃");
 }
+
+#[test]
+fn test_pseudo_element_in_is_invalidates() {
+    // CSS Selectors L4：:is/:where/:not/:has 参数不得含伪元素——含则整函数（连同所在
+    // 选择器）非法（contextually invalid，非 forgiving-skip）。driving: contextually-invalid-selectors-002。
+    // `:is(*, ::before)` 应使整个 :is() 失效 → 规则不匹配、零特异性 → 规则被丢弃。
+    let css = ":is(*, ::before) * { color: red; }";
+    let sheet = Parser::parse_stylesheet(css);
+    assert_eq!(sheet.rules.len(), 0, ":is(*, ::before) 含伪元素应使规则被丢弃");
+
+    // :where / :not / :has 同理。
+    assert_eq!(
+        Parser::parse_stylesheet(":where(::before) { color: red; }").rules.len(),
+        0
+    );
+    assert_eq!(
+        Parser::parse_stylesheet(":not(::before) { color: red; }").rules.len(),
+        0
+    );
+
+    // 回归：无伪元素的 :is() 行为不变（规则保留）。
+    let sheet = Parser::parse_stylesheet(":is(*, .a) { color: red; }");
+    assert_eq!(sheet.rules.len(), 1, ":is(*, .a) 无伪元素应保留");
+}

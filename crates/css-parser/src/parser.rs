@@ -121,6 +121,20 @@ fn selectors_have_amp_inside_has(selectors: &[Selector]) -> bool {
     selectors.iter().any(|s| complex_has_amp_inside_has(&s.complex))
 }
 
+/// 选择器列表中是否含伪元素（`::before` 等）——用于 :is/:where/:not/:has 参数校验。
+/// CSS Selectors L4：这些 functional pseudo-class 参数不得含伪元素，含则整函数
+///（连同所在选择器）非法（contextually invalid，非 forgiving-skip）。
+/// driving: contextually-invalid-selectors-002 `:is(*, ::before)`。
+fn selectors_contain_pseudo_element(selectors: &[Selector]) -> bool {
+    selectors.iter().any(|s| {
+        s.complex.parts.iter().any(|(c, _)| {
+            c.subclass_selectors
+                .iter()
+                .any(|sub| matches!(sub, SubclassSelector::PseudoElement(_)))
+        })
+    })
+}
+
 /// 递归检测复杂选择器内 `:has()` 参数是否含 `&`。
 fn complex_has_amp_inside_has(complex: &ComplexSelector) -> bool {
     for (compound, _) in &complex.parts {
@@ -1010,10 +1024,10 @@ impl<'a> Parser<'a> {
                             self.advance(); // (
                             // 解析函数伪类参数
                             let pseudo = match name.as_str() {
-                                "not" => self.parse_pseudo_class_function_list("not"),
-                                "is" => self.parse_pseudo_class_function_list("is"),
-                                "where" => self.parse_pseudo_class_function_list("where"),
-                                "has" => self.parse_pseudo_class_function_list("has"),
+                                "not" => self.parse_pseudo_class_function_list("not")?,
+                                "is" => self.parse_pseudo_class_function_list("is")?,
+                                "where" => self.parse_pseudo_class_function_list("where")?,
+                                "has" => self.parse_pseudo_class_function_list("has")?,
                                 "nth-child" => self.parse_nth_pattern("nth-child")?,
                                 "nth-last-child" => self.parse_nth_pattern("nth-last-child")?,
                                 "nth-of-type" => self.parse_nth_pattern("nth-of-type")?,
@@ -1053,10 +1067,10 @@ impl<'a> Parser<'a> {
                         let name = name.to_ascii_lowercase();
                         self.advance(); // 消耗 Function token（已包含 '('）
                         let pseudo = match name.as_str() {
-                            "not" => self.parse_pseudo_class_function_list("not"),
-                            "is" => self.parse_pseudo_class_function_list("is"),
-                            "where" => self.parse_pseudo_class_function_list("where"),
-                            "has" => self.parse_pseudo_class_function_list("has"),
+                            "not" => self.parse_pseudo_class_function_list("not")?,
+                            "is" => self.parse_pseudo_class_function_list("is")?,
+                            "where" => self.parse_pseudo_class_function_list("where")?,
+                            "has" => self.parse_pseudo_class_function_list("has")?,
                             "nth-child" => self.parse_nth_pattern("nth-child")?,
                             "nth-last-child" => self.parse_nth_pattern("nth-last-child")?,
                             "nth-of-type" => self.parse_nth_pattern("nth-of-type")?,
@@ -1099,7 +1113,7 @@ impl<'a> Parser<'a> {
     /// 解析函数伪类选择器列表（:not()、:is()、:where()）。
     ///
     /// 调用前已消耗 `(`。
-    fn parse_pseudo_class_function_list(&mut self, name: &str) -> PseudoClassSelector {
+    fn parse_pseudo_class_function_list(&mut self, name: &str) -> Option<PseudoClassSelector> {
         // Selectors L4：:is()/:where()/:has() 取 forgiving selector list（无效选择器跳过而非吞整列表）；
         // :not() 与 nth `of S` 取普通列表（无效即停）。
         let forgiving = matches!(name, "is" | "where" | "has");
@@ -1110,13 +1124,22 @@ impl<'a> Parser<'a> {
             self.advance();
         }
 
-        match name {
+        // CSS Selectors L4：:is/:where/:not/:has 参数不得含伪元素——含则整函数（连同所在
+        // 选择器）非法。伪元素在这些 functional pseudo-class 中是 contextually invalid，使整个
+        // 函数失效（非 forgiving-skip——forgiving 仅跳过未知/非法选择器，伪元素是更强的约束）。
+        // driving: contextually-invalid-selectors-002 `:is(*, ::before)`（应不匹配、零特异性）。
+        if selectors_contain_pseudo_element(&selectors) {
+            return None;
+        }
+
+        let pseudo = match name {
             "not" => PseudoClassSelector::Not(selectors),
             "is" => PseudoClassSelector::Is(selectors),
             "where" => PseudoClassSelector::Where(selectors),
             "has" => PseudoClassSelector::Has(selectors),
             _ => PseudoClassSelector::Simple(name.to_string()),
-        }
+        };
+        Some(pseudo)
     }
 
     /// 为函数伪类内部消耗选择器列表。
