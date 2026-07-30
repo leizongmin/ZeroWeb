@@ -68,12 +68,14 @@ fn top_level_ops(input: &str) -> (bool, bool) {
             b'(' => depth += 1,
             b')' => depth = depth.saturating_sub(1),
             _ if depth == 0 => {
-                if i + 5 <= bytes.len() && &lower[i..i + 5] == " and " {
+                // 字节比较（ASCII 关键字）：多字节 UTF-8 字节均 > 0x7F，不会与 ASCII 关键字误匹配，
+                // 且避开 `lower[i..i+n]` 的 char-boundary 切片 panic（driving: css-variables reftest U+FFFD）。
+                if i + 5 <= bytes.len() && &bytes[i..i + 5] == b" and " {
                     has_and = true;
                     i += 5;
                     continue;
                 }
-                if i + 4 <= bytes.len() && &lower[i..i + 4] == " or " {
+                if i + 4 <= bytes.len() && &bytes[i..i + 4] == b" or " {
                     has_or = true;
                     i += 4;
                     continue;
@@ -105,7 +107,8 @@ fn top_level_not(input: &str) -> bool {
             _ => {
                 if depth == 0 {
                     let prev_boundary = i == 0 || bytes[i - 1] == b' ';
-                    if prev_boundary && lower[i..].starts_with("not") {
+                    // 字节比较（ASCII "not"）：避开 `lower[i..]` 的 char-boundary 切片 panic。
+                    if prev_boundary && bytes[i..].starts_with(b"not") {
                         let after = i + 3;
                         if after == bytes.len() || bytes[after] == b' ' {
                             return true;
@@ -232,7 +235,7 @@ fn split_top_level<'a>(input: &'a str, keyword: &str) -> Vec<&'a str> {
             depth += 1;
         } else if bytes[i] == b')' {
             depth = depth.saturating_sub(1);
-        } else if depth == 0 && i + keyword_len <= bytes.len() && &lower[i..i + keyword_len] == keyword {
+        } else if depth == 0 && i + keyword_len <= bytes.len() && &bytes[i..i + keyword_len] == keyword.as_bytes() {
             parts.push(&input[start..i]);
             start = i + keyword_len;
             i += keyword_len;
@@ -261,6 +264,24 @@ mod tests {
     fn test_parse_selector_condition() {
         let cond = parse_supports_condition("selector(.a > .b)").unwrap();
         assert_eq!(cond, SupportsCondition::Selector(".a > .b".to_string()));
+    }
+
+    #[test]
+    /// R2283：多字节 UTF-8（如非 UTF-8 流解码的 U+FFFD，或 CJK）在 @supports 条件中不应触发
+    /// char-boundary 切片 panic。修复前 `lower[i..i+n]` 在 U+FFFD（bytes 2..5）中间切片会 panic
+    /// （driving: css-variables reftest 的 CSS2 i18n 非 UTF-8 流 → make reftest-upstream exit 101）。
+    fn test_supports_multibyte_no_panic() {
+        // U+FFFD（3 字节 EF BF BD）紧贴关键字位置：i=0 时旧代码 `lower[0..5]` 命中 byte 4（在 FFFD 内）panic。
+        let s = "ab\u{FFFD} and (x) or y";
+        let _ = top_level_ops(s); // 修复前在此 panic
+        let _ = top_level_not(s);
+        let _ = split_top_level(s, "and");
+        let _ = parse_supports_condition(s);
+        // CJK（3 字节）同理；确认 and 仍被正确检出（跳过多字节字符）。
+        let cjk = "(display: 中) and (grid: 1)";
+        assert_eq!(top_level_ops(cjk), (true, false), "CJK 后仍检出 and");
+        let parts = split_top_level(cjk, "and");
+        assert_eq!(parts.len(), 2, "按 and 分割得 2 段");
     }
 
     #[test]
