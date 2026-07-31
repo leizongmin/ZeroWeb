@@ -182,62 +182,115 @@ fn lerp(a: f64, b: f64, t: f64) -> f64 {
 
 /// 在指定色彩空间内对两个色标颜色做分段插值，返回插值后的 sRGB 颜色。
 ///
-/// `t` 为本段内的局部进度 [0,1]。alpha 始终在 sRGB 域线性插值（与既有行为一致；
-/// 多数 fixture 为不透明色，premultiply 无差异）。
+/// `t` 为本段内的局部进度 [0,1]。**CSS Color 4 §12.3 premultiplied alpha**：颜色分量在
+/// 插值空间内先乘以源 alpha（premultiply），插值后再除以结果 alpha（un-premultiply）。
+/// 不透明色（alpha=255）premultiply = identity → 与既有行为字节级一致（零回归）；半透明色
+/// 才发散（spec-correct）。alpha 始终独立线性插值。极坐标空间（LCH/OKLCH）的色相不参与
+/// premultiply（角度无量纲）。
 pub fn interp_pair(c0: Color, c1: Color, t: f64, space: GradientColorSpace, hue: HueMethod) -> Color {
-    let a = lerp(c0.a as f64, c1.a as f64, t).round().clamp(0.0, 255.0) as u8;
-    let (r, g, b) = match space {
-        // sRGB（gamma 编码）：保留既有逐通道 lerp，保证 `in srgb` 字节级一致（零回归）。
-        GradientColorSpace::Srgb => {
-            let f = |a: u8, b: u8| (a as f64 + (b as f64 - a as f64) * t).round().clamp(0.0, 255.0) as u8;
-            (f(c0.r, c1.r), f(c0.g, c1.g), f(c0.b, c1.b))
+    let a0 = c0.a as f64 / 255.0;
+    let a1 = c1.a as f64 / 255.0;
+    let a_f = lerp(a0, a1, t); // 结果 alpha（0..1）
+    let a_u8 = (a_f * 255.0).round().clamp(0.0, 255.0) as u8;
+    // un-premultiply 分量到 u8（输入 v 为 0..255 尺度；结果 alpha 为 0 时颜色无意义 → 0）。
+    let unmulp = |v: f64| -> u8 {
+        if a_f > 1e-10 {
+            (v / a_f).round().clamp(0.0, 255.0) as u8
+        } else {
+            0
         }
-        // 线性 sRGB：decode → lerp → encode
-        GradientColorSpace::SrgbLinear => {
-            let (lr0, lg0, lb0) = (
-                srgb_decode(c0.r as f64 / 255.0),
-                srgb_decode(c0.g as f64 / 255.0),
-                srgb_decode(c0.b as f64 / 255.0),
-            );
-            let (lr1, lg1, lb1) = (
-                srgb_decode(c1.r as f64 / 255.0),
-                srgb_decode(c1.g as f64 / 255.0),
-                srgb_decode(c1.b as f64 / 255.0),
-            );
+    };
+    let (r, g, b) = match space {
+        // sRGB（gamma 编码）：premultiply channel×alpha（0..255 尺度）→ lerp → un-premultiply。
+        // 不透明（alpha=1）：×1/÷1 精确 → 与既有逐通道 lerp 字节级一致（零回归）。
+        GradientColorSpace::Srgb => {
+            let (r0, g0, b0) = (c0.r as f64 * a0, c0.g as f64 * a0, c0.b as f64 * a0);
+            let (r1, g1, b1) = (c1.r as f64 * a1, c1.g as f64 * a1, c1.b as f64 * a1);
             (
-                linear_srgb_to_u8(lerp(lr0, lr1, t)),
-                linear_srgb_to_u8(lerp(lg0, lg1, t)),
-                linear_srgb_to_u8(lerp(lb0, lb1, t)),
+                unmulp(lerp(r0, r1, t)),
+                unmulp(lerp(g0, g1, t)),
+                unmulp(lerp(b0, b1, t)),
             )
         }
-        // Lab：L/a/b 线性 lerp
+        // 线性 sRGB：decode → premultiply ×alpha → lerp → un-premultiply → encode
+        GradientColorSpace::SrgbLinear => {
+            let decode_premul = |c: &Color, a: f64| {
+                (
+                    srgb_decode(c.r as f64 / 255.0) * a,
+                    srgb_decode(c.g as f64 / 255.0) * a,
+                    srgb_decode(c.b as f64 / 255.0) * a,
+                )
+            };
+            let (lr0, lg0, lb0) = decode_premul(&c0, a0);
+            let (lr1, lg1, lb1) = decode_premul(&c1, a1);
+            (
+                unmulp_lin(lerp(lr0, lr1, t), a_f),
+                unmulp_lin(lerp(lg0, lg1, t), a_f),
+                unmulp_lin(lerp(lb0, lb1, t), a_f),
+            )
+        }
+        // Lab：L/a/b premultiply ×alpha → lerp → un-premultiply
         GradientColorSpace::Lab => {
-            let (l0, a0, b0) = srgb_u8_to_lab(c0.r, c0.g, c0.b);
-            let (l1, a1, b1) = srgb_u8_to_lab(c1.r, c1.g, c1.b);
-            lab_to_srgb_u8(lerp(l0, l1, t), lerp(a0, a1, t), lerp(b0, b1, t))
+            let (l0, la0, b0) = srgb_u8_to_lab(c0.r, c0.g, c0.b);
+            let (l1, la1, b1) = srgb_u8_to_lab(c1.r, c1.g, c1.b);
+            let (l, la, b) = unmulp3(
+                lerp(l0 * a0, l1 * a1, t),
+                lerp(la0 * a0, la1 * a1, t),
+                lerp(b0 * a0, b1 * a1, t),
+                a_f,
+            );
+            lab_to_srgb_u8(l, la, b)
         }
-        // OKLab：L/a/b 线性 lerp
+        // OKLab：L/a/b premultiply ×alpha → lerp → un-premultiply
         GradientColorSpace::Oklab => {
-            let (l0, a0, b0) = srgb_u8_to_oklab(c0.r, c0.g, c0.b);
-            let (l1, a1, b1) = srgb_u8_to_oklab(c1.r, c1.g, c1.b);
-            oklab_to_srgb_u8(lerp(l0, l1, t), lerp(a0, a1, t), lerp(b0, b1, t))
+            let (l0, la0, b0) = srgb_u8_to_oklab(c0.r, c0.g, c0.b);
+            let (l1, la1, b1) = srgb_u8_to_oklab(c1.r, c1.g, c1.b);
+            let (l, la, b) = unmulp3(
+                lerp(l0 * a0, l1 * a1, t),
+                lerp(la0 * a0, la1 * a1, t),
+                lerp(b0 * a0, b1 * a1, t),
+                a_f,
+            );
+            oklab_to_srgb_u8(l, la, b)
         }
-        // LCH：L/C lerp，h 按 hue method
+        // LCH：L/C premultiply ×alpha（hue 不 premultiply，按 hue method 插值）→ un-premultiply
         GradientColorSpace::Lch => {
             let (l0, c0c, h0) = to_lch(c0);
             let (l1, c1c, h1) = to_lch(c1);
             let h = interp_hue(h0, h1, t, hue);
-            lch_to_srgb_u8_via_lab(lerp(l0, l1, t), lerp(c0c, c1c, t), h)
+            let (l, c) = unmulp2(lerp(l0 * a0, l1 * a1, t), lerp(c0c * a0, c1c * a1, t), a_f);
+            lch_to_srgb_u8_via_lab(l, c, h)
         }
-        // OKLCH：L/C lerp，h 按 hue method
+        // OKLCH：L/C premultiply ×alpha → un-premultiply
         GradientColorSpace::Oklch => {
             let (l0, c0c, h0) = to_oklch(c0);
             let (l1, c1c, h1) = to_oklch(c1);
             let h = interp_hue(h0, h1, t, hue);
-            oklch_to_srgb_u8_via_oklab(lerp(l0, l1, t), lerp(c0c, c1c, t), h)
+            let (l, c) = unmulp2(lerp(l0 * a0, l1 * a1, t), lerp(c0c * a0, c1c * a1, t), a_f);
+            oklch_to_srgb_u8_via_oklab(l, c, h)
         }
     };
-    Color::rgba(r, g, b, a)
+    Color::rgba(r, g, b, a_u8)
+}
+
+/// 线性光分量 un-premultiply → sRGB u8（encode gamma + 钳制）。
+fn unmulp_lin(v: f64, a_f: f64) -> u8 {
+    let lin = if a_f > 1e-10 { v / a_f } else { 0.0 };
+    linear_srgb_to_u8(lin)
+}
+
+/// 3 个插值空间分量 un-premultiply（结果 alpha 为 0 → 全 0）。
+fn unmulp3(x: f64, y: f64, z: f64, a_f: f64) -> (f64, f64, f64) {
+    if a_f > 1e-10 {
+        (x / a_f, y / a_f, z / a_f)
+    } else {
+        (0.0, 0.0, 0.0)
+    }
+}
+
+/// 2 个分量（L/C）un-premultiply。
+fn unmulp2(x: f64, y: f64, a_f: f64) -> (f64, f64) {
+    if a_f > 1e-10 { (x / a_f, y / a_f) } else { (0.0, 0.0) }
 }
 
 fn to_lch(c: Color) -> (f64, f64, f64) {
@@ -293,6 +346,45 @@ mod tests {
             oklab_mid,
             srgb_mid
         );
+    }
+
+    /// CSS Color 4 §12.3 premultiplied alpha：半透明色插值应 premultiply。
+    /// rgba(255,0,0,128) [red 50%] ↔ rgba(0,0,255,255) [opaque blue] @ t=0.5：
+    /// 非 premultiply 会给 rgb(128,0,128)；premultiply 给 rgb(85,0,170)（不透明端主导）。
+    #[test]
+    fn test_premultiplied_alpha_semi_transparent() {
+        let red_half = Color::rgba(255, 0, 0, 128);
+        let blue = Color::rgba(0, 0, 255, 255);
+        let mid = interp_pair(red_half, blue, 0.5, GradientColorSpace::Srgb, HueMethod::Shorter);
+        // 结果 alpha = lerp(128/255, 1.0, 0.5) ≈ 0.751 → 191
+        assert!(
+            (mid.a as i16 - 191).abs() <= 1,
+            "result alpha should be ~191, got {}",
+            mid.a
+        );
+        // premultiply：r 由不透明端少贡献（≈85），b 由不透明端主导（≈170）。
+        // 关键：与「非 premultiply 的 rgb(128,0,128)」明显不同——b 应远大于 r。
+        assert!(
+            mid.b > mid.r + 60,
+            "premultiplied: blue should dominate red (b={}, r={})",
+            mid.b,
+            mid.r
+        );
+        assert!(
+            approx(mid.r, 85) && approx(mid.b, 170),
+            "mid ≈ rgb(85,0,170), got {:?}",
+            mid
+        );
+    }
+
+    /// premultiply 对不透明色 = identity（零回归守护）：opaque srgb 中点不变。
+    #[test]
+    fn test_premultiplied_identity_for_opaque() {
+        let red = Color::rgba(255, 0, 0, 255);
+        let blue = Color::rgba(0, 0, 255, 255);
+        let mid = interp_pair(red, blue, 0.5, GradientColorSpace::Srgb, HueMethod::Shorter);
+        // 不透明：与既有逐通道 lerp 一致 = rgb(128,0,128) alpha 255
+        assert_eq!(mid, Color::rgba(128, 0, 128, 255));
     }
 
     /// srgb-linear 中点：red↔lime，线性光中点比 gamma 编码中点亮。
