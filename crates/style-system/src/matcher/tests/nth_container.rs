@@ -252,6 +252,8 @@ fn test_not_empty_with_text() {
 
 #[test]
 fn test_empty_with_whitespace() {
+    // CSS Selectors §:empty：纯空白文本使元素**非空**（WPT selectors-empty-001.xml test6
+    // `<test6> </test6>` 在 :not(:empty) 块；与 Chromium 一致）。修复前 ZW 错把纯空白当 empty。
     let mut doc = Document::new();
     let root = doc.root();
     let div = doc.create_element("div");
@@ -260,7 +262,56 @@ fn test_empty_with_whitespace() {
     doc.append_child(div, ws).unwrap();
 
     let sel = pseudo_sel(PseudoClassSelector::Simple("empty".to_string()));
-    assert!(matches_selector(&doc, div, &sel), "whitespace-only should be :empty");
+    assert!(
+        !matches_selector(&doc, div, &sel),
+        "whitespace-only text should NOT be :empty"
+    );
+}
+
+#[test]
+fn test_empty_comment_or_pi_only() {
+    // 仅注释或处理指令 → :empty（不计入；WPT selectors-empty-001 test3/test4）。
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let div_comment = doc.create_element("div");
+    doc.append_child(root, div_comment).unwrap();
+    let cmt = doc.create_comment("x");
+    doc.append_child(div_comment, cmt).unwrap();
+
+    let div_empty_text = doc.create_element("div");
+    doc.append_child(root, div_empty_text).unwrap();
+    let empty_tn = doc.create_text_node("");
+    doc.append_child(div_empty_text, empty_tn).unwrap();
+
+    let sel = pseudo_sel(PseudoClassSelector::Simple("empty".to_string()));
+    assert!(
+        matches_selector(&doc, div_comment, &sel),
+        "comment-only should be :empty"
+    );
+    assert!(
+        matches_selector(&doc, div_empty_text, &sel),
+        "empty-string text node should be :empty"
+    );
+}
+
+#[test]
+fn test_not_empty_whitespace_plus_comment() {
+    // 空白 + 注释 → 非空（有非空文本；WPT selectors-empty-001 test7/test9/test10）。
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    doc.append_child(root, div).unwrap();
+    let cmt = doc.create_comment("c");
+    doc.append_child(div, cmt).unwrap();
+    let ws = doc.create_text_node(" ");
+    doc.append_child(div, ws).unwrap();
+
+    let sel = pseudo_sel(PseudoClassSelector::Simple("empty".to_string()));
+    assert!(
+        !matches_selector(&doc, div, &sel),
+        "whitespace + comment should NOT be :empty"
+    );
 }
 
 #[test]

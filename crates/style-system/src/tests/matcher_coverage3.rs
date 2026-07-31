@@ -99,9 +99,9 @@ fn test_empty_element_with_whitespace_text() {
     let text = doc.create_text_node("   ");
     doc.append_child(root, div).unwrap();
     doc.append_child(div, text).unwrap();
-    // 空白文本节点 trim 后为空 → 算 empty
+    // 任何非空文本（含纯空白）都使元素非空（CSS Selectors §:empty，与 Chromium 一致）
     let sel = make_pseudo_selector(PseudoClassSelector::Simple("empty".to_string()));
-    assert!(matches_selector(&doc, div, &sel));
+    assert!(!matches_selector(&doc, div, &sel));
 }
 
 // ═══════════════════════════════════════════════════════════════════════

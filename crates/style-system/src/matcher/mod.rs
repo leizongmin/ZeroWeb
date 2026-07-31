@@ -514,14 +514,14 @@ fn is_empty_element(doc: &Document, element: NodeId) -> bool {
     if children.is_empty() {
         return true;
     }
-    // 检查是否只有空文本节点
+    // CSS Selectors §:empty：元素无「有内容的子节点」即为空。注释、处理指令、属性、空字符串
+    // 文本节点不计入；但**任何非空文本（含纯空白）**都使元素非空（WPT selectors-empty-001.xml
+    // line 40 `<test6> </test6>` 在 :not(:empty) 块 → 纯空白文本使元素非空，与 Chromium 一致）。
     for &child in &children {
         if let Some(node) = doc.get(child) {
             match &node.kind {
                 NodeKind::Element(_) => return false,
-                NodeKind::Text(data) if !data.content.trim().is_empty() => {
-                    return false;
-                }
+                NodeKind::Text(data) if !data.content.is_empty() => return false,
                 _ => {}
             }
         }

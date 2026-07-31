@@ -793,7 +793,8 @@ fn test_nth_of_type_no_siblings_of_type() {
 
 // ── is_empty_element 边界条件 ──
 
-/// 测试 is_empty_element 只有空白文本节点
+/// 测试 is_empty_element 只有空白文本节点 → 非 empty（CSS Selectors §:empty：任何非空文本
+/// 含纯空白都使元素非空，与 Chromium / WPT selectors-empty-001 一致）。
 #[test]
 fn test_empty_element_with_whitespace() {
     let mut doc = Document::new();
@@ -819,7 +820,7 @@ fn test_empty_element_with_whitespace() {
             )],
         },
     };
-    assert!(matches_selector(&doc, parent, &sel));
+    assert!(!matches_selector(&doc, parent, &sel));
 }
 
 /// 测试 is_empty_element 有元素子节点但不匹配
