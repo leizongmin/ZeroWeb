@@ -1020,7 +1020,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
-        "line-clamp" => {
+        "line-clamp" | "-webkit-line-clamp" => {
             if let Some(v) = values::parse_line_clamp(value) {
                 style.line_clamp = match v {
                     zero_css_parser::values::LineClampValue::None => LineClampComputedValue::None,

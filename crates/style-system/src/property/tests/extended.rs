@@ -1354,6 +1354,18 @@ fn test_apply_property_line_clamp_count() {
     assert_eq!(style.line_clamp, LineClampComputedValue::Count(3));
 }
 
+/// R2296：`-webkit-line-clamp`（web-compat 遗留语法，多数页面/测试用此）应别名到 `line-clamp`。
+#[test]
+fn test_apply_property_webkit_line_clamp_alias() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "-webkit-line-clamp", "2"));
+    assert_eq!(style.line_clamp, LineClampComputedValue::Count(2));
+    // none 也应工作。
+    let mut style2 = ComputedStyle::default();
+    assert!(apply_property_value(&mut style2, "-webkit-line-clamp", "none"));
+    assert_eq!(style2.line_clamp, LineClampComputedValue::None);
+}
+
 #[test]
 fn test_apply_property_line_clamp_count_one() {
     let mut style = ComputedStyle::default();
