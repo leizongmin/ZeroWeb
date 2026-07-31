@@ -425,15 +425,15 @@ pub fn srgb_u8_to_lch(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
 }
 
 /// CIE Lab-D50 → sRGB u8（CSS Color 4；越界色逐通道钳制）。供 RCS lab() 输出回转。
+/// L 边界（L≤0→黑、L≥100→白）：L=0/100 平面退化为黑/白单点，任意 chroma 解析为黑/白
+///（driving: lch-009/010）。近边界（0<L<100）逐通道钳制（byte-identical 于 R2323）。
 pub fn lab_to_srgb_u8(l: f64, a: f64, b: f64) -> (u8, u8, u8) {
-    // CSS Color 4 gamut 映射 L 边界：L≥100（D50 白点，任意 chroma gamut-map 到白）；
-    // L≤0 → 黑。此前逐通道钳制致 lab(100,大C) 非纯白。driving: css-color lch-009/010。
-    // in-gamut（0<L<100）不受影响，byte-identical。
-    if l >= 100.0 {
-        return (255, 255, 255);
-    }
+    let l = l.clamp(0.0, 100.0);
     if l <= 0.0 {
         return (0, 0, 0);
+    }
+    if l >= 100.0 {
+        return (255, 255, 255);
     }
     let (lr, lg, lb) = lab_to_linear_srgb(l, a, b);
     (linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb))
@@ -456,14 +456,14 @@ fn lab_components_from_xyz_d50(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
 }
 
 /// CIE LCH-D50 → sRGB u8（CSS Color 4；越界色逐通道钳制）。供 color-mix(in lch) 插值回转。
+/// driving: css-color lch-009（lch(100% 110 60)→白）/ lch-010（lch(0% 110 60)→黑）。
 pub fn lch_to_srgb_u8(l: f64, c: f64, h: f64) -> (u8, u8, u8) {
-    // CSS Color 4 gamut 映射 L 边界（同 lab_to_srgb_u8）：L≥100→白、L≤0→黑。
-    // driving: css-color lch-009（lch(100% 110 60)→白）/ lch-010（lch(0% 110 60)→黑）。
-    if l >= 100.0 {
-        return (255, 255, 255);
-    }
+    let l = l.clamp(0.0, 100.0);
     if l <= 0.0 {
         return (0, 0, 0);
+    }
+    if l >= 100.0 {
+        return (255, 255, 255);
     }
     let h_rad = h.to_radians();
     let (lr, lg, lb) = lab_to_linear_srgb(l, c * h_rad.cos(), c * h_rad.sin());
@@ -507,15 +507,18 @@ pub fn srgb_u8_to_oklab(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
 }
 
 /// OKLab → sRGB u8（CSS Color 4；越界色逐通道钳制）。供 RCS oklab() 输出回转。
+/// oklch_to_srgb_u8 委托本函数，故 OKLCH 亦覆盖。
+/// L 边界用 1e-4 容差（≈0.01%，视觉上即黑/白）：L 极接近 0/1 时与 L=0/1 渲染一致——
+/// L=0/1 平面经 gamut 映射恒收敛到黑/白，故 oklab(0.0001% …)（L=1e-6）须与 oklab(0 …)
+/// 同为黑（driving: oklab/oklch-l-almost-0/1）；其余逐通道钳制，byte-identical 于 R2323。
 pub fn oklab_to_srgb_u8(l: f64, a: f64, b: f64) -> (u8, u8, u8) {
-    // CSS Color 4 gamut 映射 L 边界：OKLab L∈[0,1]，L≥1.0→白、L≤0→黑。
-    // driving: css-color oklch-009（oklch(100% 110 60)→白）/ oklch-010（oklch(0% 1.1 60)→黑）。
-    // oklch_to_srgb_u8 委托本函数，故 OKLCH 亦覆盖。
-    if l >= 1.0 {
-        return (255, 255, 255);
-    }
-    if l <= 0.0 {
+    const L_EPS: f64 = 1e-4;
+    let l = l.clamp(0.0, 1.0);
+    if l <= L_EPS {
         return (0, 0, 0);
+    }
+    if l >= 1.0 - L_EPS {
+        return (255, 255, 255);
     }
     let (lr, lg, lb) = oklab_to_linear_srgb(l, a, b);
     (linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb))
@@ -2267,6 +2270,82 @@ mod tests {
         );
         // display-p3 percent 也接受（解析成功）
         assert!(parse_color("color(display-p3 0% 100% 0%)").is_some());
+    }
+
+    // ── R2325：OKLab/OKLCH L 边界容差（CSS Color 4）─────────────────────
+    // R2323 的 L 边界用精确 0/1 阈值：oklab(0 …)→黑 但 oklab(0.0001% …)（L=1e-6）走逐通道钳制
+    // →(4,7,0)，二者不一致 → oklab-l-almost-0/1 fail。fix：OKLab/OKLCH 边界改用 1e-4 容差，
+    // L 极接近 0/1（含 0.0001%）即与 L=0/1 同为黑/白（L=0/1 平面经 gamut 映射恒收敛到黑/白点）；
+    // 其余逐通道钳制 byte-identical 于 R2323。lab/lch 仍精确 0/100（lch-009/010 不变）。
+
+    #[test]
+    fn test_r2325_oklab_l_almost_boundary_consistent() {
+        // driving: css-color oklab-l-almost-0/1。L 极接近 0/1 须与 L 恰为 0/1 渲染一致。
+        // R2323 精确阈值致 oklab(0 ...)→黑 但 oklab(0.0001% ...)→(4,7,0) 不一致。
+        assert_eq!(
+            oklab_to_srgb_u8(0.0, 0.15, 0.15),
+            oklab_to_srgb_u8(0.000001, 0.15, 0.15),
+            "oklab L=0 and L≈0 must match (almost-0)"
+        );
+        assert_eq!(
+            oklab_to_srgb_u8(1.0, 0.15, 0.15),
+            oklab_to_srgb_u8(0.999999, 0.15, 0.15),
+            "oklab L=1 and L≈1 must match (almost-1)"
+        );
+        // OKLCH 同族（委托 oklab_to_srgb_u8）
+        assert_eq!(
+            oklch_to_srgb_u8(0.0, 0.2121, 45.0),
+            oklch_to_srgb_u8(0.000001, 0.2121, 45.0),
+            "oklch L=0 and L≈0 must match"
+        );
+        assert_eq!(
+            oklch_to_srgb_u8(1.0, 0.2121, 45.0),
+            oklch_to_srgb_u8(0.999999, 0.2121, 45.0),
+            "oklch L=1 and L≈1 must match"
+        );
+        // 边界外（恰超容差）仍走逐通道钳制，不被强制——容差边界清晰
+        assert_ne!(
+            oklab_to_srgb_u8(0.0, 0.15, 0.15),
+            oklab_to_srgb_u8(0.001, 0.15, 0.15),
+            "L=0.001 (above L_EPS) is not forced to black"
+        );
+    }
+
+    #[test]
+    fn test_r2325_l_boundary_forces_white_black() {
+        // driving: css-color lch-009/010、oklch-009/010。L 边界（含 OKLab 容差带）任意 chroma → 黑/白。
+        // 回归守护 R2323 已修的 lch/oklch-009/010。
+        assert_eq!(
+            lch_to_srgb_u8(100.0, 110.0, 60.0),
+            (255, 255, 255),
+            "lch L=100 大C -> white"
+        );
+        assert_eq!(lch_to_srgb_u8(0.0, 110.0, 60.0), (0, 0, 0), "lch L=0 大C -> black");
+        assert_eq!(lab_to_srgb_u8(100.0, 55.0, 95.3), (255, 255, 255));
+        assert_eq!(lab_to_srgb_u8(0.0, 55.0, 95.3), (0, 0, 0));
+        assert_eq!(oklch_to_srgb_u8(1.0, 0.11, 60.0), (255, 255, 255));
+        assert_eq!(oklch_to_srgb_u8(0.0, 1.1, 60.0), (0, 0, 0));
+        // 超 100 / 负 L 钳制后同上
+        assert_eq!(lab_to_srgb_u8(120.0, 40.0, 40.0), (255, 255, 255));
+        assert_eq!(lch_to_srgb_u8(-5.0, 30.0, 30.0), (0, 0, 0));
+    }
+
+    #[test]
+    fn test_r2325_in_gamut_byte_identical_saturated_stable() {
+        // in-gamut mid-L 灰不变（byte-identical 守护，未触边界）
+        let lab_mid = lab_to_srgb_u8(50.0, 0.0, 0.0);
+        assert!(lab_mid.0 > 50 && lab_mid.0 < 250, "lab mid-L mid-gray, got {lab_mid:?}");
+        let ok_mid = oklab_to_srgb_u8(0.5, 0.0, 0.0);
+        assert!(ok_mid.0 > 50 && ok_mid.0 < 250, "oklab mid-L mid-gray, got {ok_mid:?}");
+        // L=0/1 中等 chroma 经边界容差强制为黑/白（与 L=0/1 一致）
+        assert_eq!(oklab_to_srgb_u8(0.0, 0.2, 0.3), (0, 0, 0));
+        assert_eq!(oklab_to_srgb_u8(1.0, 0.2, 0.3), (255, 255, 255));
+        // 高饱和 in-gamut 色（如纯红 oklab）应稳定渲染为红，非黑/白
+        let red = oklab_to_srgb_u8(0.6279, 0.22486, 0.12585); // ≈ sRGB 红
+        assert!(
+            red.0 > 200 && red.1 < 60 && red.2 < 60,
+            "oklab red renders red, got {red:?}"
+        );
     }
 
     // ── CSS 系统颜色（R2254：deprecated ≡ 现代等价）─────────────────────
