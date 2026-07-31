@@ -17,7 +17,7 @@ use zero_style_system::DirectionValue;
 
 use zero_dom::{Document, NodeId, NodeKind};
 
-use zero_style_system::{ComputedStyle, IsolationValue, ZIndexValue};
+use zero_style_system::{ClipPathComputedValue, ComputedStyle, IsolationValue, MixBlendModeComputedValue, ZIndexValue};
 
 /// 将逻辑 `float` 值（`inline-start`/`inline-end`）按方向解析为物理 `left`/`right`
 /// （CSS Logical §float-clear）。物理值（Left/Right/None）原样返回。
@@ -1736,13 +1736,24 @@ impl LayoutEngine {
 
     /// CSS 堆叠上下文（stacking context）触发器（CSS 2.1 §9.9 + CSS3）：
     /// (1) positioned 元素 + 显式整数 z-index；(2) opacity < 1（CSS3，R505 scope）；
-    /// (3) `isolation: isolate`（CSS Compositing §3，R2302 补——隔离后代与祖先背景的混合）。
-    /// 抽出为独立纯函数便于单测（creates_stacking_context 在 extract_layout 内联组装，
-    /// 其余触发器如 transform/filter/will-change 等由 paint 层按需处理）。
+    /// (3) `isolation: isolate`（CSS Compositing §3，R2302 补——隔离后代与祖先背景的混合）；
+    /// (4) R2309 补：非 none 的 `filter`/`backdrop-filter`/`clip-path`/`will-change`、
+    ///     非 normal 的 `mix-blend-mode`、含 paint/layout 的 `contain`（CSS Filter Effects /
+    ///     CSS Masking / CSS Will Change / CSS Compositing §3.5 / CSS Containment §4）——
+    ///     这些属性值都会建立 SC，使后代与祖先背景隔离（paint 层已消费此标记做 paint-order/scope）。
+    /// `transform`（非 none 亦建 SC）暂未纳入——产品 fixture 有 transform 用例，需独立 A/B 切片验证。
+    /// 抽出为独立纯函数便于单测（creates_stacking_context 在 extract_layout 内联组装）。
     pub(crate) fn style_creates_stacking_context(is_positioned: bool, s: &ComputedStyle) -> bool {
         (is_positioned && matches!(s.z_index, ZIndexValue::Integer(_)))
             || s.opacity < 1.0
             || matches!(s.isolation, IsolationValue::Isolate)
+            || !s.will_change.is_empty()
+            || !s.filter.is_empty()
+            || !s.backdrop_filter.is_empty()
+            || !matches!(s.mix_blend_mode, MixBlendModeComputedValue::Normal)
+            || !matches!(s.clip_path, ClipPathComputedValue::None)
+            || s.contain.has_paint()
+            || s.contain.has_layout()
     }
 
     /// 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，
