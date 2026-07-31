@@ -460,12 +460,12 @@ fn test_paint_text_shadow_basic() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_shadow = TextShadowComputedValue {
+    style.text_shadow = vec![TextShadowComputedValue {
         offset_x: 2.0,
         offset_y: 2.0,
         blur_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 128),
-    };
+    }];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -503,12 +503,12 @@ fn test_paint_text_shadow_zero_skip() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_shadow = TextShadowComputedValue {
+    style.text_shadow = vec![TextShadowComputedValue {
         offset_x: 0.0,
         offset_y: 0.0,
         blur_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 128),
-    };
+    }];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -533,12 +533,12 @@ fn test_paint_text_shadow_offset_y_only() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_shadow = TextShadowComputedValue {
+    style.text_shadow = vec![TextShadowComputedValue {
         offset_x: 0.0,
         offset_y: 3.0,
         blur_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 128),
-    };
+    }];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -565,12 +565,12 @@ fn test_paint_text_shadow_color() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_shadow = TextShadowComputedValue {
+    style.text_shadow = vec![TextShadowComputedValue {
         offset_x: 2.0,
         offset_y: 2.0,
         blur_radius: 0.0,
         color: ColorValue::Rgba(255, 0, 0, 255),
-    };
+    }];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -591,12 +591,12 @@ fn test_paint_text_shadow_with_transform() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_shadow = TextShadowComputedValue {
+    style.text_shadow = vec![TextShadowComputedValue {
         offset_x: 2.0,
         offset_y: 2.0,
         blur_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 128),
-    };
+    }];
     style.transform = TransformValue::List(vec![TransformFunction::Translate(10.0, 20.0)]);
     styles.insert(elem, style);
 
@@ -624,6 +624,88 @@ fn test_paint_text_shadow_with_transform() {
         shadow_glyph.y,
         main_glyph.y + 2.0,
         "阴影 glyph y 应包含 translate + shadow offset"
+    );
+}
+
+/// R2305：多 text-shadow 列表每个字符生成多组阴影 glyph（CSS Text Decoration §3）。
+#[test]
+fn test_paint_text_shadow_multiple_list() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+    style.text_shadow = vec![
+        TextShadowComputedValue {
+            offset_x: 2.0,
+            offset_y: 2.0,
+            blur_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+        },
+        TextShadowComputedValue {
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 0.0,
+            color: ColorValue::Rgba(255, 0, 0, 128),
+        },
+    ];
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // 2 个阴影 glyph + 1 个主 glyph = 3
+    assert_eq!(prims.glyphs.len(), 3, "应生成 3 个 glyph（2 阴影 + 1 主）");
+    // 按列表顺序绘制：首个阴影先入列
+    assert_eq!(prims.glyphs[0].color, Color::rgba(0, 0, 0, 128), "首个阴影 glyph 颜色");
+    assert_eq!(
+        prims.glyphs[1].color,
+        Color::rgba(255, 0, 0, 128),
+        "第二个阴影 glyph 颜色"
+    );
+}
+
+/// R2305：text-shadow 列表中含全零项时，该零项被跳过（不生成阴影 glyph）。
+#[test]
+fn test_paint_text_shadow_list_skips_zero_entry() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+    style.text_shadow = vec![
+        TextShadowComputedValue {
+            // 全零：应被跳过
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+        },
+        TextShadowComputedValue {
+            offset_x: 0.0,
+            offset_y: 3.0,
+            blur_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+        },
+    ];
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // 全零阴影项被跳过，仅 1 个阴影 glyph + 1 个主 glyph = 2
+    assert_eq!(
+        prims.glyphs.len(),
+        2,
+        "全零阴影项被跳过，应生成 2 个 glyph（1 阴影 + 1 主）"
     );
 }
 

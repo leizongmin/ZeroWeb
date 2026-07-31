@@ -1293,22 +1293,25 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "text-shadow" => {
-            if let Some(v) = zero_css_parser::values::parse_text_shadow(value) {
-                style.text_shadow = TextShadowComputedValue {
-                    offset_x: match v.offset_x {
-                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                        _ => 0.0,
-                    },
-                    offset_y: match v.offset_y {
-                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                        _ => 0.0,
-                    },
-                    blur_radius: match v.blur_radius {
-                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                        _ => 0.0,
-                    },
-                    color: v.color,
-                };
+            if let Some(list) = zero_css_parser::values::parse_text_shadow_list(value) {
+                style.text_shadow = list
+                    .into_iter()
+                    .map(|v| TextShadowComputedValue {
+                        offset_x: match v.offset_x {
+                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                            _ => 0.0,
+                        },
+                        offset_y: match v.offset_y {
+                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                            _ => 0.0,
+                        },
+                        blur_radius: match v.blur_radius {
+                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                            _ => 0.0,
+                        },
+                        color: v.color,
+                    })
+                    .collect();
                 return true;
             }
         }

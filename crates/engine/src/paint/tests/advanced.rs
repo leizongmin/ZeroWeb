@@ -132,12 +132,12 @@ fn test_paint_combined_box_shadow_background_border_text_shadow() {
     style.border_left_style = BorderStyleValue::Solid;
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_shadow = TextShadowComputedValue {
+    style.text_shadow = vec![TextShadowComputedValue {
         offset_x: 1.0,
         offset_y: 1.0,
         blur_radius: 0.0,
         color: ColorValue::Rgba(128, 128, 128, 128),
-    };
+    }];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();

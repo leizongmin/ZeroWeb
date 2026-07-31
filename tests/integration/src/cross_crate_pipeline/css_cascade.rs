@@ -520,17 +520,17 @@ fn test_text_shadow_pipeline_integration() {
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
     assert!(
-        (div_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+        (div_style.text_shadow[0].offset_x - 2.0).abs() < 0.01,
         "text-shadow offset_x 应为 2.0，实际为 {}",
-        div_style.text_shadow.offset_x
+        div_style.text_shadow[0].offset_x
     );
     assert!(
-        (div_style.text_shadow.offset_y - 3.0).abs() < 0.01,
+        (div_style.text_shadow[0].offset_y - 3.0).abs() < 0.01,
         "text-shadow offset_y 应为 3.0，实际为 {}",
-        div_style.text_shadow.offset_y
+        div_style.text_shadow[0].offset_y
     );
     assert_eq!(
-        div_style.text_shadow.color,
+        div_style.text_shadow[0].color,
         zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255),
         "text-shadow color 应为红色 (255, 0, 0, 255)"
     );
@@ -655,24 +655,24 @@ fn test_text_shadow_inheritance_integration() {
     // 验证父元素的 text-shadow
     let parent_style = styles.get(&parent).expect("parent 应有计算样式");
     assert!(
-        (parent_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+        (parent_style.text_shadow[0].offset_x - 2.0).abs() < 0.01,
         "parent text-shadow offset_x 应为 2.0"
     );
 
     // 验证子元素继承了 text-shadow
     let child_style = styles.get(&child).expect("child 应有计算样式");
     assert!(
-        (child_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+        (child_style.text_shadow[0].offset_x - 2.0).abs() < 0.01,
         "child 应继承 parent 的 text-shadow offset_x=2.0，实际为 {}",
-        child_style.text_shadow.offset_x
+        child_style.text_shadow[0].offset_x
     );
     assert!(
-        (child_style.text_shadow.offset_y - 3.0).abs() < 0.01,
+        (child_style.text_shadow[0].offset_y - 3.0).abs() < 0.01,
         "child 应继承 parent 的 text-shadow offset_y=3.0，实际为 {}",
-        child_style.text_shadow.offset_y
+        child_style.text_shadow[0].offset_y
     );
     assert_eq!(
-        child_style.text_shadow.color,
+        child_style.text_shadow[0].color,
         zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255),
         "child 应继承 parent 的 text-shadow color 为红色"
     );
@@ -811,16 +811,16 @@ fn test_text_shadow_inheritance_pipeline() {
     // 验证父元素的 text-shadow
     let parent_style = styles.get(&parent).expect("parent 应有计算样式");
     assert!(
-        (parent_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+        (parent_style.text_shadow[0].offset_x - 2.0).abs() < 0.01,
         "parent text-shadow offset_x 应为 2.0"
     );
 
     // 验证子元素继承了 text-shadow
     let child_style = styles.get(&child).expect("child 应有计算样式");
     assert!(
-        (child_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+        (child_style.text_shadow[0].offset_x - 2.0).abs() < 0.01,
         "child 应继承 parent 的 text-shadow offset_x=2.0，实际为 {}",
-        child_style.text_shadow.offset_x
+        child_style.text_shadow[0].offset_x
     );
 }
 

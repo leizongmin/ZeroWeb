@@ -331,12 +331,7 @@ impl Default for ComputedStyle {
                 left: BorderImageOutsetComputedComponent::Number(0.0),
             },
 
-            text_shadow: TextShadowComputedValue {
-                offset_x: 0.0,
-                offset_y: 0.0,
-                blur_radius: 0.0,
-                color: zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255),
-            },
+            text_shadow: Vec::new(),
             box_shadow: Vec::new(),
             clip_path: ClipPathComputedValue::None,
             clip: ClipRectComputedValue::Auto,

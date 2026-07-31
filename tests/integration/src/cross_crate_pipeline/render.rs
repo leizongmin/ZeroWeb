@@ -593,17 +593,17 @@ fn test_text_decoration_with_text_shadow_pipeline() {
 
     // 验证 text-shadow 的 offset_x 和 offset_y
     assert!(
-        (div_style.text_shadow.offset_x - 2.0).abs() < 0.01,
+        (div_style.text_shadow[0].offset_x - 2.0).abs() < 0.01,
         "text-shadow offset_x 应为 2.0，实际为 {}",
-        div_style.text_shadow.offset_x
+        div_style.text_shadow[0].offset_x
     );
     assert!(
-        (div_style.text_shadow.offset_y - 2.0).abs() < 0.01,
+        (div_style.text_shadow[0].offset_y - 2.0).abs() < 0.01,
         "text-shadow offset_y 应为 2.0，实际为 {}",
-        div_style.text_shadow.offset_y
+        div_style.text_shadow[0].offset_y
     );
     assert_eq!(
-        div_style.text_shadow.color,
+        div_style.text_shadow[0].color,
         zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255),
         "text-shadow color 应为红色"
     );

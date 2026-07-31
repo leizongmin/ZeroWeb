@@ -12,7 +12,7 @@
 
 use crate::values::{
     parse_animation_duration, parse_box_shadow, parse_box_shadow_list, parse_gradient, parse_grid_area,
-    parse_text_shadow, parse_timing_function, parse_transform,
+    parse_text_shadow, parse_text_shadow_list, parse_timing_function, parse_transform,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -534,6 +534,47 @@ fn test_text_shadow_none() {
 #[test]
 fn test_text_shadow_too_few_values() {
     assert!(parse_text_shadow("2px").is_none());
+}
+
+// ── R2305：parse_text_shadow_list — 多阴影列表（CSS Text Decoration §3：none | <shadow>#）──
+
+#[test]
+fn test_text_shadow_list_none_is_empty() {
+    let list = parse_text_shadow_list("none").expect("none → Some(空 Vec)");
+    assert!(list.is_empty(), "none 应解析为空阴影列表");
+}
+
+#[test]
+fn test_text_shadow_list_single() {
+    let list = parse_text_shadow_list("2px 2px 4px red").expect("单阴影 → Some");
+    assert_eq!(list.len(), 1);
+}
+
+#[test]
+fn test_text_shadow_list_multiple_comma() {
+    // 顶层逗号分割：3 个独立阴影
+    let list = parse_text_shadow_list("1px 1px red, 2px 2px green, 3px 3px blue").expect("多阴影 → Some");
+    assert_eq!(list.len(), 3, "应拆为 3 个阴影");
+}
+
+#[test]
+fn test_text_shadow_list_rgb_internal_commas_preserved() {
+    // paren-aware：rgba()/rgb() 的内部逗号不应拆分 → 仍是 2 个阴影
+    let list = parse_text_shadow_list("1px 1px rgb(0, 0, 0), 2px 2px rgba(255, 0, 0, 0.5)").expect("含函数逗号 → Some");
+    assert_eq!(list.len(), 2, "rgb()/rgba() 内部逗号必须保持一体，应为 2 个阴影");
+}
+
+#[test]
+fn test_text_shadow_list_any_invalid_is_none() {
+    // 任意单个阴影解析失败 → 整列表 None
+    assert!(parse_text_shadow_list("1px 1px red, bogus, 2px 2px blue").is_none());
+}
+
+#[test]
+fn test_text_shadow_list_empty_is_none() {
+    // 空字符串 / 纯空白 → None
+    assert!(parse_text_shadow_list("").is_none());
+    assert!(parse_text_shadow_list("   ").is_none());
 }
 
 // ═══════════════════════════════════════════════════════════════════════

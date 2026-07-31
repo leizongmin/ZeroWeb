@@ -1386,6 +1386,25 @@ pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
     })
 }
 
+/// 解析 text-shadow 多阴影列表（CSS Text Decoration §3：`none | <shadow>#`）。
+/// `none` → 空 Vec；否则顶层逗号分割（paren-aware，`rgb()`/`rgba()` 内部逗号保持一体）
+/// 后逐个 parse_text_shadow，任一失败 → None。语义镜像 parse_box_shadow_list。
+pub fn parse_text_shadow_list(value: &str) -> Option<Vec<TextShadowValue>> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(Vec::new());
+    }
+    let parts = split_top_level_commas(v);
+    if parts.is_empty() {
+        return None;
+    }
+    let mut shadows = Vec::with_capacity(parts.len());
+    for p in &parts {
+        shadows.push(parse_text_shadow(p)?);
+    }
+    Some(shadows)
+}
+
 /// CSS box-shadow 单个阴影。
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoxShadowValue {

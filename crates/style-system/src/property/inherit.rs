@@ -1303,7 +1303,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         "text-shadow" => {
-            style.text_shadow = default_style.text_shadow;
+            style.text_shadow = default_style.text_shadow.clone();
             true
         }
         "box-shadow" => {

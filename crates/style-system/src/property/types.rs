@@ -1586,8 +1586,8 @@ pub enum PropertyValue {
     BorderImageRepeat(BorderImageRepeatComputedValue),
     /// border-image-outset 值。
     BorderImageOutset(BorderImageOutsetComputedValue),
-    /// text-shadow 值。
-    TextShadow(TextShadowComputedValue),
+    /// text-shadow 值（多阴影列表）。
+    TextShadow(Vec<TextShadowComputedValue>),
     /// box-shadow 值。
     BoxShadow(Vec<BoxShadowComputedValue>),
     /// clip-path 值。

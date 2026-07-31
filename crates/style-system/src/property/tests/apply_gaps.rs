@@ -160,15 +160,14 @@ fn test_column_count_number() {
 fn test_text_shadow_single() {
     let style = apply_and_get("text-shadow", "1px 2px 3px black");
     // 验证 text-shadow 已被应用（非零偏移）
-    assert!(style.text_shadow.offset_x != 0.0 || style.text_shadow.offset_y != 0.0);
+    assert!(style.text_shadow[0].offset_x != 0.0 || style.text_shadow[0].offset_y != 0.0);
 }
 
 #[test]
 fn test_text_shadow_none() {
     let style = apply_and_get("text-shadow", "none");
-    // none 应该保持默认值
-    assert_eq!(style.text_shadow.offset_x, 0.0);
-    assert_eq!(style.text_shadow.offset_y, 0.0);
+    // none → 空阴影列表
+    assert!(style.text_shadow.is_empty(), "none → 空阴影列表");
 }
 
 #[test]

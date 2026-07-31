@@ -15,6 +15,7 @@ use zero_layout_engine::inline_finalization::{
     resolve_word_break_mode, subtree_has_text_decoration,
 };
 use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox};
+use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive};
@@ -384,12 +385,15 @@ impl super::Painter {
             _ => 0.0,
         };
 
-        let text_shadow = &style.text_shadow;
-        let has_text_shadow =
-            text_shadow.offset_x != 0.0 || text_shadow.offset_y != 0.0 || text_shadow.blur_radius != 0.0;
-        let shadow_ox = text_shadow.offset_x;
-        let shadow_oy = text_shadow.offset_y;
-        let shadow_color = color_value_to_render(&text_shadow.color);
+        // R2305：text-shadow 多阴影列表（CSS Text Decoration §3：`none | <shadow>#`）。
+        // 预解析非零阴影（offset/blur 全零 = 不可见，跳过；与既有 has_text_shadow 语义一致），
+        // 颜色预解析避免逐 glyph 重复 color_value_to_render。空 Vec = none。
+        let active_text_shadows: Vec<(f32, f32, Color)> = style
+            .text_shadow
+            .iter()
+            .filter(|ts| !(ts.offset_x == 0.0 && ts.offset_y == 0.0 && ts.blur_radius == 0.0))
+            .map(|ts| (ts.offset_x, ts.offset_y, color_value_to_render(&ts.color)))
+            .collect();
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         // R1717：+ valign_offset — 表格单元格文本的 vertical-align 内容偏移（仅 table-cell，
@@ -870,7 +874,7 @@ impl super::Painter {
                                     let glyph_x = char_pos;
                                     let glyph_y = frag_base_y;
 
-                                    if has_text_shadow {
+                                    for &(shadow_ox, shadow_oy, shadow_color) in &active_text_shadows {
                                         self.primitives.add_glyph(GlyphPrimitive {
                                             x: glyph_x + shadow_ox,
                                             y: glyph_y + shadow_oy,
@@ -1250,7 +1254,7 @@ impl super::Painter {
                                     (char_pos, frag_base_y)
                                 };
 
-                                if has_text_shadow {
+                                for &(shadow_ox, shadow_oy, shadow_color) in &active_text_shadows {
                                     self.primitives.add_glyph(GlyphPrimitive {
                                         x: glyph_x + shadow_ox,
                                         y: glyph_y + shadow_oy,
@@ -1535,7 +1539,7 @@ impl super::Painter {
         let glyph_x = content_x + tx;
         let glyph_y = content_y + ty;
 
-        if has_text_shadow {
+        for &(shadow_ox, shadow_oy, shadow_color) in &active_text_shadows {
             self.primitives.add_glyph(GlyphPrimitive {
                 x: glyph_x + shadow_ox,
                 y: glyph_y + font_size + shadow_oy,

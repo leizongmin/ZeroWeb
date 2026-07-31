@@ -500,8 +500,8 @@ pub struct ComputedStyle {
     pub border_image_repeat: BorderImageRepeatComputedValue,
     /// border-image-outset 属性。
     pub border_image_outset: BorderImageOutsetComputedValue,
-    /// text-shadow 属性。
-    pub text_shadow: TextShadowComputedValue,
+    /// text-shadow 属性（CSS Text Decoration §3：`none | <shadow>#`，多阴影列表；空 Vec = none）。
+    pub text_shadow: Vec<TextShadowComputedValue>,
     /// box-shadow 属性（CSS Backgrounds §7.2：<shadow>#，多阴影列表；空 Vec = none）。
     pub box_shadow: Vec<BoxShadowComputedValue>,
     /// clip-path 属性。

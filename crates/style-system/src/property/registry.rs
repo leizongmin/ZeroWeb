@@ -305,12 +305,7 @@ impl PropertyRegistry {
                 bottom: BorderImageOutsetComputedComponent::Number(0.0),
                 left: BorderImageOutsetComputedComponent::Number(0.0),
             })),
-            "text-shadow" => Some(TextShadow(TextShadowComputedValue {
-                offset_x: 0.0,
-                offset_y: 0.0,
-                blur_radius: 0.0,
-                color: zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255),
-            })),
+            "text-shadow" => Some(TextShadow(Vec::new())),
             "box-shadow" => Some(BoxShadow(Vec::new())),
 
             // Clip Path
