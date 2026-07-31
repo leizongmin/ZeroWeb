@@ -581,9 +581,53 @@ impl BorderRadiusSpec {
         }
     }
 
+    /// 从 ComputedStyle 提取圆角半径，按 border-box 尺寸解析百分比与含百分比 calc。
+    ///
+    /// `box_w`/`box_h` 为元素 border-box 尺寸（layout 后已知）。CSS Backgrounds §5.1：
+    /// border-radius 百分比相对于 border-box 对应轴。百分比与含百分比的
+    /// calc()/min()/max()/clamp() 在 computed 阶段无法解析（需容器尺寸），此处按
+    /// border-box 解析。不含百分比的长度（含 calc）已在 computed 阶段解析为 Px，
+    /// 经此路径原值返回（byte-identical 于 [`Self::from_style`]）。
+    ///
+    /// driving：R2314 border-radius 百分比（`border-radius: 50%` 圆形）与含百分比 calc。
+    pub fn from_style_with_box(style: &ComputedStyle, box_w: f32, box_h: f32) -> Self {
+        let max_r = (box_w.min(box_h) / 2.0).max(0.0);
+        Self {
+            top_left: resolve_radius_length(&style.border_top_left_radius, box_w, max_r),
+            top_right: resolve_radius_length(&style.border_top_right_radius, box_w, max_r),
+            bottom_right: resolve_radius_length(&style.border_bottom_right_radius, box_w, max_r),
+            bottom_left: resolve_radius_length(&style.border_bottom_left_radius, box_w, max_r),
+        }
+    }
+
     /// 所有圆角都为零。
     pub fn is_zero(&self) -> bool {
         self.top_left == 0.0 && self.top_right == 0.0 && self.bottom_right == 0.0 && self.bottom_left == 0.0
+    }
+}
+
+/// 解析 border-radius 单角长度值为像素半径。
+///
+/// - `Px`：已解析的绝对值（em/rem/vw 与不含百分比的 calc 已在 computed 阶段解析为 Px），
+///   原值返回（不钳制，保持既有 px 行为 byte-identical）。
+/// - `Percentage`：CSS Backgrounds §5.1，相对于 border-box 宽度（水平半径语义）。
+/// - `Calc`：含百分比的 calc/min/max/clamp（无百分比的已在 computed 解析为 Px），
+///   以 `box_w` 为百分比基准（parent_length）求值；不可解（如需 font 上下文）→ 回退 0.0。
+///
+/// 百分比与 calc 结果钳制到 `max_r`（= min(box_w, box_h) / 2）：CSS 规定单角半径不超过
+/// 边长一半，避免圆角超出边框盒致视觉溢出。Px 值不钳制（既有行为不变）。
+fn resolve_radius_length(v: &LengthValue, box_w: f32, max_r: f32) -> f32 {
+    match v {
+        LengthValue::Px(p) => *p as f32,
+        LengthValue::Percentage(pct) => {
+            let r = (pct / 100.0) * box_w as f64;
+            r.min(max_r as f64) as f32
+        }
+        LengthValue::Calc(expr) => eval_calc(expr, Some(box_w as f64))
+            .map(|r| r.min(max_r as f64) as f32)
+            .unwrap_or(0.0),
+        // computed 阶段未解析的其余变体（理论不达；安全回退到 Px-only 语义）
+        _ => length_to_f32(v),
     }
 }
 
@@ -1359,6 +1403,98 @@ mod tests {
             bottom_left: 0.0,
         };
         assert!(!spec.is_zero());
+    }
+
+    // ── R2314: border-radius 百分比 / 含百分比 calc 解析 ──────────────────
+
+    /// 辅助：从字符串构造含百分比 calc 的 LengthValue。
+    fn calc_radius(s: &str) -> LengthValue {
+        LengthValue::Calc(Box::new(
+            zero_css_parser::values::parse_math_function(s).expect("calc must parse"),
+        ))
+    }
+
+    #[test]
+    fn test_r2314_border_radius_px_byte_identical() {
+        // px 值经 from_style_with_box 与 from_style 完全一致（不钳制）
+        let mut style = ComputedStyle::default();
+        style.border_top_left_radius = LengthValue::Px(10.0);
+        style.border_top_right_radius = LengthValue::Px(20.0);
+        style.border_bottom_right_radius = LengthValue::Px(30.0);
+        style.border_bottom_left_radius = LengthValue::Px(40.0);
+        let with_box = BorderRadiusSpec::from_style_with_box(&style, 100.0, 100.0);
+        let plain = BorderRadiusSpec::from_style(&style);
+        assert_eq!(with_box.top_left, plain.top_left);
+        assert_eq!(with_box.top_right, plain.top_right);
+        assert_eq!(with_box.bottom_right, plain.bottom_right);
+        assert_eq!(with_box.bottom_left, plain.bottom_left);
+        assert_eq!(with_box.top_left, 10.0);
+    }
+
+    #[test]
+    fn test_r2314_border_radius_percentage_circle() {
+        // border-radius: 50% on 100×100 → 50（正圆）。此前 length_to_f32 丢弃为 0（方形）。
+        let mut style = ComputedStyle::default();
+        style.border_top_left_radius = LengthValue::Percentage(50.0);
+        let spec = BorderRadiusSpec::from_style_with_box(&style, 100.0, 100.0);
+        assert_eq!(spec.top_left, 50.0);
+    }
+
+    #[test]
+    fn test_r2314_border_radius_percentage_clamped() {
+        // 50% on 200×100 → 0.5×200=100，钳制到 min(200,100)/2=50（CSS 单角半径不超边长一半）
+        let mut style = ComputedStyle::default();
+        style.border_top_left_radius = LengthValue::Percentage(50.0);
+        let spec = BorderRadiusSpec::from_style_with_box(&style, 200.0, 100.0);
+        assert_eq!(spec.top_left, 50.0);
+    }
+
+    #[test]
+    fn test_r2314_border_radius_percentage_small() {
+        // 10% on 100×100 → 10（未触钳制）
+        let mut style = ComputedStyle::default();
+        style.border_top_left_radius = LengthValue::Percentage(10.0);
+        let spec = BorderRadiusSpec::from_style_with_box(&style, 100.0, 100.0);
+        assert_eq!(spec.top_left, 10.0);
+    }
+
+    #[test]
+    fn test_r2314_border_radius_calc_with_percentage() {
+        // calc(50% - 5px) on 100×100 → 50 - 5 = 45
+        let mut style = ComputedStyle::default();
+        style.border_top_left_radius = calc_radius("calc(50% - 5px)");
+        let spec = BorderRadiusSpec::from_style_with_box(&style, 100.0, 100.0);
+        assert!((spec.top_left - 45.0).abs() < 0.01, "got {}", spec.top_left);
+    }
+
+    #[test]
+    fn test_r2314_border_radius_min_max_clamp_with_percentage() {
+        // 用 200×200（max_r=100）避免 CSS 单角半径钳制（≤边长一半）干扰 min/max/clamp 数学验证
+        // min(80%, 60px) on 200×200 → min(160, 60) = 60
+        let mut style = ComputedStyle::default();
+        style.border_top_left_radius = calc_radius("min(80%, 60px)");
+        let spec = BorderRadiusSpec::from_style_with_box(&style, 200.0, 200.0);
+        assert!((spec.top_left - 60.0).abs() < 0.01, "got {}", spec.top_left);
+
+        // max(10%, 30px) on 200×200 → max(20, 30) = 30
+        let mut style2 = ComputedStyle::default();
+        style2.border_top_right_radius = calc_radius("max(10%, 30px)");
+        let spec2 = BorderRadiusSpec::from_style_with_box(&style2, 200.0, 200.0);
+        assert!((spec2.top_right - 30.0).abs() < 0.01, "got {}", spec2.top_right);
+
+        // clamp(20%, 90%, 70px) on 200×200 → clamp(40, 180, 70) = 70
+        let mut style3 = ComputedStyle::default();
+        style3.border_bottom_right_radius = calc_radius("clamp(20%, 90%, 70px)");
+        let spec3 = BorderRadiusSpec::from_style_with_box(&style3, 200.0, 200.0);
+        assert!((spec3.bottom_right - 70.0).abs() < 0.01, "got {}", spec3.bottom_right);
+    }
+
+    #[test]
+    fn test_r2314_border_radius_default_zero() {
+        // 无圆角 → 0
+        let style = ComputedStyle::default();
+        let spec = BorderRadiusSpec::from_style_with_box(&style, 100.0, 100.0);
+        assert!(spec.is_zero());
     }
 
     // ── length_to_f32 ───────────────────────────────────────────────────

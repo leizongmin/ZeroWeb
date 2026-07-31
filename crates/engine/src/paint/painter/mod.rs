@@ -1589,7 +1589,9 @@ impl Painter {
         {
             return;
         }
-        let radii = super::helpers::BorderRadiusSpec::from_style(style);
+        // border-radius 百分比/含百分比 calc 需 border-box 尺寸解析（R2314）；
+        // box_node.width/height 即 border-box 尺寸。
+        let radii = super::helpers::BorderRadiusSpec::from_style_with_box(style, box_node.width, box_node.height);
 
         // 根据 background-clip 决定背景绘制区域
         let (clip_x, mut clip_y, clip_w, mut clip_h) = match style.background_clip {
