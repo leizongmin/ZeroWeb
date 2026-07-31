@@ -694,8 +694,9 @@ fn find_top_level_comma(s: &str) -> Option<usize> {
 pub fn parse_var(value: &str) -> Option<VarReference> {
     let value = value.trim();
 
-    // 检查是否以 var( 开头
-    if !value.starts_with("var(") || !value.ends_with(')') {
+    // CSS Values §4：函数名大小写不敏感（VAR ≡ Var ≡ var）。自定义属性名（--x）大小写敏感，
+    // 故仅前缀大小写不敏感检查，内容（变量名/回退）按原样提取。
+    if !(value.len() >= 4 && value[..4].eq_ignore_ascii_case("var(")) || !value.ends_with(')') {
         return None;
     }
 

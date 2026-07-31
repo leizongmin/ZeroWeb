@@ -105,6 +105,12 @@ fn test_parse_var_edge_cases() {
     assert_eq!(parse_var(""), None);
     // 缺少右括号应返回 None
     assert_eq!(parse_var("var(--color"), None);
+    // CSS Values §4：函数名大小写不敏感（VAR/Var ≡ var）；自定义属性名大小写敏感（保持原样）。
+    let result = parse_var("VAR(--color, red)").unwrap();
+    assert_eq!(result.name, "--color");
+    assert_eq!(result.fallback, Some("red".to_string()));
+    let result = parse_var("Var(--MIXED-Case)").unwrap();
+    assert_eq!(result.name, "--MIXED-Case");
 }
 
 // ── break-inside 测试 ──
