@@ -1739,9 +1739,9 @@ impl LayoutEngine {
     /// (3) `isolation: isolate`（CSS Compositing §3，R2302 补——隔离后代与祖先背景的混合）；
     /// (4) R2309 补：非 none 的 `filter`/`backdrop-filter`/`clip-path`/`will-change`、
     ///     非 normal 的 `mix-blend-mode`、含 paint/layout 的 `contain`（CSS Filter Effects /
-    ///     CSS Masking / CSS Will Change / CSS Compositing §3.5 / CSS Containment §4）——
-    ///     这些属性值都会建立 SC，使后代与祖先背景隔离（paint 层已消费此标记做 paint-order/scope）。
-    /// `transform`（非 none 亦建 SC）暂未纳入——产品 fixture 有 transform 用例，需独立 A/B 切片验证。
+    ///     CSS Masking / CSS Will Change / CSS Compositing §3.5 / CSS Containment §4）；
+    /// (5) R2310 补：非 none 的 `transform`（CSS Transforms §6）——这些属性值都会建立 SC，
+    ///     使后代与祖先背景隔离（paint 层已消费此标记做 paint-order/scope）。
     /// 抽出为独立纯函数便于单测（creates_stacking_context 在 extract_layout 内联组装）。
     pub(crate) fn style_creates_stacking_context(is_positioned: bool, s: &ComputedStyle) -> bool {
         (is_positioned && matches!(s.z_index, ZIndexValue::Integer(_)))
@@ -1754,6 +1754,7 @@ impl LayoutEngine {
             || !matches!(s.clip_path, ClipPathComputedValue::None)
             || s.contain.has_paint()
             || s.contain.has_layout()
+            || !matches!(s.transform, zero_css_parser::values::TransformValue::None)
     }
 
     /// 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，

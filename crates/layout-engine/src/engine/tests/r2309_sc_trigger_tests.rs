@@ -4,7 +4,8 @@
 //! CSS Filter Effects / CSS Backdrop Filter / CSS Masking / CSS Will Change / CSS Compositing §3.5 /
 //! CSS Containment §4 规定：非 none 的 `filter`/`backdrop-filter`/`clip-path`、非 auto 的
 //! `will-change`、非 normal 的 `mix-blend-mode`、含 paint/layout 的 `contain` 亦建立堆叠上下文，
-//! 使后代与祖先背景隔离。R2309 补这些触发器（`transform` 因产品 fixture 有用例，待独立 A/B 切片）。
+//! 使后代与祖先背景隔离。R2309 补这些触发器；R2310 补 `transform`（CSS Transforms §6，经验证
+//! 产品 fixture 仅 :hover 用 transform，静态零 footprint）。
 //!
 //! 关键：`filter`/`backdrop-filter`/`will-change` 经解析层 `none`/`auto` → 空 Vec（R2306/R2308），
 //! 故 SC 判定用 `!is_empty()` 等价于 spec 的「值非 none」。
@@ -73,6 +74,14 @@ fn test_r2309_property_triggers_create_stacking_context() {
     // contain: content（含 paint+layout）→ SC
     let mut s = ComputedStyle::default();
     s.contain = ContainComputedValue::Content;
+    assert!(LayoutEngine::style_creates_stacking_context(false, &s));
+
+    // R2310：transform（非 none）→ SC（CSS Transforms §6）
+    let mut s = ComputedStyle::default();
+    s.transform =
+        zero_css_parser::values::TransformValue::List(vec![zero_css_parser::values::TransformFunction::Scale(
+            1.5, None,
+        )]);
     assert!(LayoutEngine::style_creates_stacking_context(false, &s));
 }
 
