@@ -4,8 +4,8 @@ use zero_engine::{
     HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, PipelineTimings, node_id_from_u64,
 };
 use zero_protocol::{
-    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGradientKind, IpcHitTestCache, IpcHitTestLayoutNode,
-    IpcLineCap, IpcLineStyle, IpcRect, PaintSnapshotParams,
+    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGradientColorSpace, IpcGradientInterpolation, IpcGradientKind,
+    IpcHitTestCache, IpcHitTestLayoutNode, IpcHueMethod, IpcLineCap, IpcLineStyle, IpcRect, PaintSnapshotParams,
 };
 // 仅测试用（构造 PaintSnapshotParams 断言）。
 #[cfg(test)]
@@ -15,9 +15,9 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::{ImageData, ImageKey};
 use zero_render_foundation::primitive::{
     BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FillPrimitive, FilterKind, FilterPrimitive, FontId,
-    GlyphPrimitive, GradientKind, GradientPrimitive, GradientStop, ImagePrimitive, LineCap, LineStyle,
-    PathFillPrimitive, PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive,
-    TransformPrimitive,
+    GlyphPrimitive, GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive, GradientStop,
+    HueMethod, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, RenderPrimitives,
+    RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
 use zero_webview::WebViewRenderResult;
 
@@ -47,6 +47,24 @@ fn ipc_gradient_kind_to_kind(k: IpcGradientKind) -> GradientKind {
         },
         IpcGradientKind::Conic { cx, cy, start_angle } => GradientKind::Conic { cx, cy, start_angle },
     }
+}
+
+fn ipc_interpolation_to_interpolation(i: IpcGradientInterpolation) -> GradientInterpolation {
+    let space = match i.space {
+        IpcGradientColorSpace::Srgb => GradientColorSpace::Srgb,
+        IpcGradientColorSpace::SrgbLinear => GradientColorSpace::SrgbLinear,
+        IpcGradientColorSpace::Lab => GradientColorSpace::Lab,
+        IpcGradientColorSpace::Oklab => GradientColorSpace::Oklab,
+        IpcGradientColorSpace::Lch => GradientColorSpace::Lch,
+        IpcGradientColorSpace::Oklch => GradientColorSpace::Oklch,
+    };
+    let hue = match i.hue {
+        IpcHueMethod::Shorter => HueMethod::Shorter,
+        IpcHueMethod::Longer => HueMethod::Longer,
+        IpcHueMethod::Increasing => HueMethod::Increasing,
+        IpcHueMethod::Decreasing => HueMethod::Decreasing,
+    };
+    GradientInterpolation { space, hue }
 }
 
 fn ipc_line_cap(c: IpcLineCap) -> LineCap {
@@ -157,6 +175,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
                 })
                 .collect(),
             repeating: g.repeating,
+            interpolation: ipc_interpolation_to_interpolation(g.interpolation),
         });
     }
     for shadow in params.shadows {

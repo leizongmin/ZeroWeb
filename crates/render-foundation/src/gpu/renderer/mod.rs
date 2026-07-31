@@ -1017,7 +1017,7 @@ impl GpuRenderer {
     ) -> Vec<(wgpu::BindGroup, Vec<f32>)> {
         let mut resources = Vec::new();
         for grad in gradients {
-            let tex_data = gradient_stops_to_texture(&grad.stops);
+            let tex_data = gradient_stops_to_texture(&grad.stops, grad.interpolation);
             let grad_texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("Gradient Texture"),
                 size: wgpu::Extent3d {
@@ -1927,7 +1927,10 @@ fn create_atlas_resources(
 }
 
 /// 将渐变色标转换为 256×1 RGBA 纹理数据
-fn gradient_stops_to_texture(stops: &[crate::primitive::GradientStop]) -> Vec<u8> {
+fn gradient_stops_to_texture(
+    stops: &[crate::primitive::GradientStop],
+    interpolation: crate::primitive::GradientInterpolation,
+) -> Vec<u8> {
     let mut tex = vec![0u8; 256 * 4];
     if stops.is_empty() {
         return tex;
@@ -1949,13 +1952,12 @@ fn gradient_stops_to_texture(stops: &[crate::primitive::GradientStop]) -> Vec<u8
                         0.0
                     };
                     let local_t = local_t.clamp(0.0, 1.0);
-                    let s0 = stops[j].color;
-                    let s1 = stops[j + 1].color;
-                    c = Color::rgba(
-                        (s0.r as f32 + (s1.r as f32 - s0.r as f32) * local_t) as u8,
-                        (s0.g as f32 + (s1.g as f32 - s0.g as f32) * local_t) as u8,
-                        (s0.b as f32 + (s1.b as f32 - s0.b as f32) * local_t) as u8,
-                        (s0.a as f32 + (s1.a as f32 - s0.a as f32) * local_t) as u8,
+                    c = crate::color_space::interp_pair(
+                        stops[j].color,
+                        stops[j + 1].color,
+                        local_t as f64,
+                        interpolation.space,
+                        interpolation.hue,
                     );
                     break;
                 }

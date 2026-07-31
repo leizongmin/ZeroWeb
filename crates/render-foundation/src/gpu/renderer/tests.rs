@@ -815,6 +815,7 @@ fn test_gpu_full_scene_gradient() {
     let mut renderer = GpuRenderer::new_headless(64, 16).expect("headless renderer");
     let mut primitives = RenderPrimitives::default();
     primitives.gradients.push(crate::primitive::GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 64.0, 16.0),
         kind: crate::primitive::GradientKind::Linear {
             x0: 0.0,

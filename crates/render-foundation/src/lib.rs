@@ -19,6 +19,7 @@
 #![allow(clippy::needless_range_loop)]
 
 pub mod color;
+pub mod color_space;
 pub mod config;
 pub mod cpu;
 pub mod font;

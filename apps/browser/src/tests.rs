@@ -1499,6 +1499,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
         bottom_left_radius: 4.0,
     });
     p.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 10.0, 10.0),
         kind: GradientKind::Linear {
             x0: 1.0,
@@ -1510,6 +1511,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
         repeating: false,
     });
     p.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 10.0, 10.0),
         kind: GradientKind::Radial {
             cx: 1.0,
@@ -1521,6 +1523,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
         repeating: false,
     });
     p.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 10.0, 10.0),
         kind: GradientKind::Conic {
             cx: 1.0,
@@ -1653,6 +1656,7 @@ fn transform_webview_primitives_culls_primitives_outside_viewport() {
         2.0,
     ));
     p.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(1000.0, 1000.0, 10.0, 10.0),
         kind: GradientKind::Linear {
             x0: 1000.0,

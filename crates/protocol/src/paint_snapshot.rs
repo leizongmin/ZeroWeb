@@ -153,6 +153,51 @@ pub struct IpcGradient {
     pub stops: Vec<IpcGradientStop>,
     /// 是否 repeating。
     pub repeating: bool,
+    /// 颜色插值配置（CSS Color 4 `in <colorspace>`，R2289）。serde default 保旧消息兼容。
+    #[serde(default)]
+    pub interpolation: IpcGradientInterpolation,
+}
+
+/// IPC 渐变颜色插值色彩空间（镜像 render-foundation GradientColorSpace）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum IpcGradientColorSpace {
+    /// gamma 编码 sRGB。
+    #[default]
+    Srgb,
+    /// 线性光 sRGB。
+    SrgbLinear,
+    /// CIE Lab。
+    Lab,
+    /// OKLab。
+    Oklab,
+    /// CIE LCH（极坐标）。
+    Lch,
+    /// OKLCH（极坐标）。
+    Oklch,
+}
+
+/// IPC 极坐标色相插值法（镜像 render-foundation HueMethod）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum IpcHueMethod {
+    /// 短弧（默认）。
+    #[default]
+    Shorter,
+    /// 长弧。
+    Longer,
+    /// 恒增。
+    Increasing,
+    /// 恒减。
+    Decreasing,
+}
+
+/// IPC 渐变颜色插值配置。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct IpcGradientInterpolation {
+    /// 插值色彩空间。
+    pub space: IpcGradientColorSpace,
+    /// 色相插值法（仅极坐标空间有意义）。
+    #[serde(default)]
+    pub hue: IpcHueMethod,
 }
 
 /// IPC 线段端点样式。

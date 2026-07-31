@@ -1200,6 +1200,7 @@ mod tests {
     #[test]
     fn test_mask_alpha_empty_stops() {
         let gradient = GradientPrimitive {
+            interpolation: Default::default(),
             kind: GradientKind::Linear {
                 x0: 0.0,
                 y0: 0.0,
@@ -1217,6 +1218,7 @@ mod tests {
     #[test]
     fn test_mask_alpha_fully_opaque() {
         let gradient = GradientPrimitive {
+            interpolation: Default::default(),
             kind: GradientKind::Linear {
                 x0: 0.0,
                 y0: 0.0,
@@ -1243,6 +1245,7 @@ mod tests {
     #[test]
     fn test_mask_alpha_half_transparent() {
         let gradient = GradientPrimitive {
+            interpolation: Default::default(),
             kind: GradientKind::Linear {
                 x0: 0.0,
                 y0: 0.0,

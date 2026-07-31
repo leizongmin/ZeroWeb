@@ -164,6 +164,51 @@ pub enum GradientKind {
     },
 }
 
+/// CSS Color 4 渐变颜色插值色彩空间（`gradient in <colorspace>`）。
+///
+/// driving: R2289 gradient colorspace render-math。Srgb 为默认，保留既有 gamma 编码
+/// 逐通道插值（零回归）。wide-gamut（display-p3/xyz/rec2020/...）无色彩管理管线，
+/// 由 parser 端归一为 Srgb 优雅回退。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GradientColorSpace {
+    /// gamma 编码 sRGB（CSS 默认 `in srgb`）。
+    #[default]
+    Srgb,
+    /// 线性光 sRGB（`in srgb-linear`）。
+    SrgbLinear,
+    /// CIE Lab（`in lab`）。
+    Lab,
+    /// OKLab（`in oklab`）。
+    Oklab,
+    /// CIE LCH（`in lch`，极坐标，需色相插值法）。
+    Lch,
+    /// OKLCH（`in oklch`，极坐标，需色相插值法）。
+    Oklch,
+}
+
+/// 极坐标色彩空间（LCH/OKLCH）的色相插值法（CSS Color 4 §13.5）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HueMethod {
+    /// `shorter hue`（默认，短弧）。
+    #[default]
+    Shorter,
+    /// `longer hue`（长弧）。
+    Longer,
+    /// `increasing hue`（恒增）。
+    Increasing,
+    /// `decreasing hue`（恒减）。
+    Decreasing,
+}
+
+/// CSS Color 4 渐变颜色插值配置：色彩空间 + （极坐标时）色相插值法。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GradientInterpolation {
+    /// 插值色彩空间。
+    pub space: GradientColorSpace,
+    /// 色相插值法（仅 Lch/Oklch 有意义；其余忽略）。
+    pub hue: HueMethod,
+}
+
 /// 渐变图元
 #[derive(Debug, Clone)]
 pub struct GradientPrimitive {
@@ -175,6 +220,8 @@ pub struct GradientPrimitive {
     pub stops: Vec<GradientStop>,
     /// 是否为重复渐变（repeating-*-gradient）
     pub repeating: bool,
+    /// 颜色插值配置（CSS Color 4 `in <colorspace>`）。默认 Srgb = 既有行为。
+    pub interpolation: GradientInterpolation,
 }
 
 /// 阴影图元

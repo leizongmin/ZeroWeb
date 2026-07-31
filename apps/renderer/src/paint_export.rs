@@ -4,17 +4,17 @@ use zero_engine::{HitTestCache, HitTestLayoutSnapshot, node_id_to_u64};
 use zero_engine::{extract_img_srcs, image_resource_key, resolve_document_url};
 use zero_protocol::{
     IpcBlendMode, IpcBlendModePrimitive, IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcFilter, IpcFilterKind, IpcGlyph,
-    IpcGradient, IpcGradientKind, IpcGradientStop, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcImage,
-    IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow,
-    IpcStroke, IpcTransform, PaintSnapshotParams,
+    IpcGradient, IpcGradientColorSpace, IpcGradientInterpolation, IpcGradientKind, IpcGradientStop, IpcHitTestCache,
+    IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcHueMethod, IpcImage, IpcImagePayload, IpcLineCap, IpcLineStyle,
+    IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, IpcTransform, PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::{decode_data_uri, decode_image_bytes};
 use zero_render_foundation::primitive::{
-    BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FilterKind, FilterPrimitive, GradientKind, GradientPrimitive,
-    LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, RenderPrimitives, ShadowPrimitive, StrokePrimitive,
-    TransformPrimitive,
+    BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FilterKind, FilterPrimitive, GradientColorSpace,
+    GradientKind, GradientPrimitive, HueMethod, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
+    RenderPrimitives, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
 
 fn rect_to_ipc(r: &Rect) -> IpcRect {
@@ -234,6 +234,22 @@ pub fn paint_snapshot_from_primitives(
                     })
                     .collect(),
                 repeating: g.repeating,
+                interpolation: IpcGradientInterpolation {
+                    space: match g.interpolation.space {
+                        GradientColorSpace::Srgb => IpcGradientColorSpace::Srgb,
+                        GradientColorSpace::SrgbLinear => IpcGradientColorSpace::SrgbLinear,
+                        GradientColorSpace::Lab => IpcGradientColorSpace::Lab,
+                        GradientColorSpace::Oklab => IpcGradientColorSpace::Oklab,
+                        GradientColorSpace::Lch => IpcGradientColorSpace::Lch,
+                        GradientColorSpace::Oklch => IpcGradientColorSpace::Oklch,
+                    },
+                    hue: match g.interpolation.hue {
+                        HueMethod::Shorter => IpcHueMethod::Shorter,
+                        HueMethod::Longer => IpcHueMethod::Longer,
+                        HueMethod::Increasing => IpcHueMethod::Increasing,
+                        HueMethod::Decreasing => IpcHueMethod::Decreasing,
+                    },
+                },
             })
             .collect(),
         shadows: primitives

@@ -36,7 +36,7 @@ pub fn render_gradient(fb: &mut FrameBuffer, gradient: &GradientPrimitive, scale
                 // 归一化到 [0, 1] 供色标采样
                 t /= period;
             }
-            let color = sample_gradient_color(t, &gradient.stops);
+            let color = sample_gradient_color(t, &gradient.stops, gradient.interpolation);
             let [r, g, b, _] = blend_with_fb(fb, x, y, color);
             fb.set_pixel(x, y, [r, g, b, 255]);
         }
@@ -106,7 +106,11 @@ fn compute_gradient_t(fx: f32, fy: f32, gradient: &GradientPrimitive, scale: f32
 }
 
 /// 根据位置参数 t 采样渐变颜色。
-fn sample_gradient_color(t: f32, stops: &[GradientStop]) -> Color {
+fn sample_gradient_color(
+    t: f32,
+    stops: &[GradientStop],
+    interpolation: crate::primitive::GradientInterpolation,
+) -> Color {
     if stops.is_empty() {
         return Color::TRANSPARENT;
     }
@@ -133,21 +137,17 @@ fn sample_gradient_color(t: f32, stops: &[GradientStop]) -> Color {
             }
             let local_t = (t - s0.offset) / range;
 
-            return Color::rgba(
-                lerp_u8(s0.color.r, s1.color.r, local_t),
-                lerp_u8(s0.color.g, s1.color.g, local_t),
-                lerp_u8(s0.color.b, s1.color.b, local_t),
-                lerp_u8(s0.color.a, s1.color.a, local_t),
+            return crate::color_space::interp_pair(
+                s0.color,
+                s1.color,
+                local_t as f64,
+                interpolation.space,
+                interpolation.hue,
             );
         }
     }
 
     stops[stops.len() - 1].color
-}
-
-/// 线性插值两个 u8 值。
-fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
-    (a as f32 + (b as f32 - a as f32) * t).round() as u8
 }
 
 /// 将渐变颜色与帧缓冲像素混合。

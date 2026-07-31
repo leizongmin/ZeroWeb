@@ -302,6 +302,7 @@ fn test_background_repeat_gradient_unchanged() {
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
         LinearGradient {
+            interpolation: Default::default(),
             direction: GradientDirection::Angle(90.0),
             stops: vec![
                 GradientColorStop {
@@ -406,6 +407,7 @@ fn r1428_canvas_bg_image_anchor_shifts_gradient_position() {
         let mut style = ComputedStyle::default();
         style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
             LinearGradient {
+                interpolation: Default::default(),
                 direction: GradientDirection::Angle(90.0),
                 stops: vec![
                     GradientColorStop {
@@ -464,6 +466,7 @@ fn r2063_bg_attachment_fixed_positions_against_viewport() {
         let mut style = ComputedStyle::default();
         style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
             LinearGradient {
+                interpolation: Default::default(),
                 direction: GradientDirection::Angle(90.0),
                 stops: vec![
                     GradientColorStop {

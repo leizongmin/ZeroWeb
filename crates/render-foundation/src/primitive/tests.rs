@@ -143,6 +143,7 @@ fn test_clip_primitive() {
 fn test_gradient_primitive() {
     let mut p = RenderPrimitives::new();
     p.add_gradient(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 100.0, 100.0),
         kind: GradientKind::Linear {
             x0: 0.0,
@@ -385,6 +386,7 @@ fn test_bounding_box_with_images() {
 fn test_bounding_box_with_gradient() {
     let mut p = RenderPrimitives::new();
     p.add_gradient(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 200.0, 100.0),
         kind: GradientKind::Linear {
             x0: 0.0,
@@ -495,6 +497,7 @@ fn test_len_all_primitive_types() {
         cap: LineCap::Butt,
     });
     p.add_gradient(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 10.0, 10.0),
         kind: GradientKind::Linear {
             x0: 0.0,
@@ -802,6 +805,7 @@ fn test_edge_shadow_zero_size_rect() {
 fn test_gradient_primitive_linear_in_primitives() {
     let mut p = RenderPrimitives::new();
     p.add_gradient(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 100.0, 100.0),
         kind: GradientKind::Linear {
             x0: 0.0,
@@ -829,6 +833,7 @@ fn test_gradient_primitive_linear_in_primitives() {
 fn test_gradient_primitive_radial_in_primitives() {
     let mut p = RenderPrimitives::new();
     p.add_gradient(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 100.0, 100.0),
         kind: GradientKind::Radial {
             cx: 50.0,
@@ -870,6 +875,7 @@ fn test_gradient_primitive_radial_in_primitives() {
 fn test_gradient_bounding_box() {
     let mut p = RenderPrimitives::new();
     p.add_gradient(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(10.0, 20.0, 100.0, 80.0),
         kind: GradientKind::Linear {
             x0: 10.0,
@@ -901,6 +907,7 @@ fn test_gradient_bounding_box() {
 fn test_multiple_gradients_bounding_box() {
     let mut p = RenderPrimitives::new();
     p.add_gradient(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(10.0, 20.0, 100.0, 80.0),
         kind: GradientKind::Linear {
             x0: 10.0,
@@ -912,6 +919,7 @@ fn test_multiple_gradients_bounding_box() {
         repeating: false,
     });
     p.add_gradient(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(200.0, 150.0, 50.0, 50.0),
         kind: GradientKind::Radial {
             cx: 225.0,
@@ -934,6 +942,7 @@ fn test_multiple_gradients_bounding_box() {
 fn test_gradient_stops_order() {
     let mut p = RenderPrimitives::new();
     p.add_gradient(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 100.0, 100.0),
         kind: GradientKind::Linear {
             x0: 0.0,

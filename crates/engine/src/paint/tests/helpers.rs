@@ -505,6 +505,7 @@ fn test_linear_direction_to_kind_angle() {
 fn test_gradient_to_primitive_linear() {
     let rect = Rect::new(0.0, 0.0, 100.0, 50.0);
     let gradient = GradientValue::Linear(LinearGradient {
+        interpolation: Default::default(),
         direction: GradientDirection::ToBottom,
         stops: vec![
             GradientColorStop {
@@ -533,6 +534,7 @@ fn test_gradient_to_primitive_linear() {
 fn test_gradient_to_primitive_radial() {
     let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
     let gradient = GradientValue::Radial(RadialGradient {
+        interpolation: Default::default(),
         shape: RadialShape::Circle,
         size: RadialSize::FarthestCorner,
         position_x: LengthValue::Percentage(50.0), // Center of 200x200 rect
@@ -574,6 +576,7 @@ fn test_gradient_to_primitive_radial() {
 fn test_gradient_to_primitive_conic() {
     let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
     let gradient = GradientValue::Conic(ConicGradient {
+        interpolation: Default::default(),
         from_angle: 0.0,
         position_x: LengthValue::Percentage(50.0),
         position_y: LengthValue::Percentage(50.0),
@@ -792,6 +795,7 @@ fn test_extreme_values() {
 fn test_gradient_to_primitive_radial_closest_side() {
     let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
     let gradient = GradientValue::Radial(RadialGradient {
+        interpolation: Default::default(),
         shape: RadialShape::Circle,
         size: RadialSize::ClosestSide,
         position_x: LengthValue::Px(100.0),
@@ -817,6 +821,7 @@ fn test_gradient_to_primitive_radial_closest_side() {
 fn test_gradient_to_primitive_radial_farthest_side() {
     let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
     let gradient = GradientValue::Radial(RadialGradient {
+        interpolation: Default::default(),
         shape: RadialShape::Circle,
         size: RadialSize::FarthestSide,
         position_x: LengthValue::Px(100.0),
@@ -842,6 +847,7 @@ fn test_gradient_to_primitive_radial_farthest_side() {
 fn test_gradient_to_primitive_radial_closest_corner() {
     let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
     let gradient = GradientValue::Radial(RadialGradient {
+        interpolation: Default::default(),
         shape: RadialShape::Circle,
         size: RadialSize::ClosestCorner,
         position_x: LengthValue::Px(100.0),
@@ -867,6 +873,7 @@ fn test_gradient_to_primitive_radial_closest_corner() {
 fn test_gradient_to_primitive_radial_length_size() {
     let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
     let gradient = GradientValue::Radial(RadialGradient {
+        interpolation: Default::default(),
         shape: RadialShape::Circle,
         size: RadialSize::Length(LengthValue::Px(50.0)),
         position_x: LengthValue::Px(100.0),
@@ -1127,6 +1134,7 @@ fn test_border_radius_spec_debug_clone() {
 fn test_gradient_to_primitive_radial_non_px_position() {
     let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
     let gradient = GradientValue::Radial(RadialGradient {
+        interpolation: Default::default(),
         shape: RadialShape::Circle,
         size: RadialSize::FarthestCorner,
         position_x: LengthValue::Percentage(50.0), // length_to_f32 → 0.0
@@ -1180,6 +1188,7 @@ fn test_clip_glyphs_empty() {
 fn test_gradient_to_primitive_linear_repeating() {
     let rect = Rect::new(0.0, 0.0, 100.0, 50.0);
     let gradient = GradientValue::Linear(LinearGradient {
+        interpolation: Default::default(),
         direction: GradientDirection::ToRight,
         stops: vec![
             GradientColorStop {

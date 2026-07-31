@@ -1269,6 +1269,94 @@ fn test_gradient_in_colorspace_conic_leading() {
     }
 }
 
+// ── CSS Color 4 `in <colorspace> [<hue-method>]` 解析为 interpolation 字段（R2289）─────
+// driving: css-images oklab/lch/oklch/srgb-linear gradient render-math。
+
+#[test]
+fn test_gradient_interpolation_space_parsed() {
+    // 各色彩空间被正确解析到 interpolation.space。
+    let cases = [
+        ("linear-gradient(in oklab, red, blue)", ColorInterpolationSpace::Oklab),
+        ("linear-gradient(in srgb, red, blue)", ColorInterpolationSpace::Srgb),
+        (
+            "linear-gradient(in srgb-linear, red, blue)",
+            ColorInterpolationSpace::SrgbLinear,
+        ),
+        ("linear-gradient(in lab, red, blue)", ColorInterpolationSpace::Lab),
+        ("linear-gradient(in lch, red, blue)", ColorInterpolationSpace::Lch),
+        ("linear-gradient(in oklch, red, blue)", ColorInterpolationSpace::Oklch),
+    ];
+    for (css, expected) in cases {
+        let g = parse_gradient(css).expect("不应丢弃");
+        match g {
+            GradientValue::Linear(lg) => assert_eq!(lg.interpolation.space, expected, "space mismatch for {css}"),
+            other => panic!("Expected Linear for {css}, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn test_gradient_interpolation_default_srgb_when_no_hint() {
+    // 无 `in <colorspace>` 提示 → 默认 Srgb（既有行为，零回归）。
+    let g = parse_gradient("linear-gradient(to right, red, blue)").expect("不应丢弃");
+    match g {
+        GradientValue::Linear(lg) => assert_eq!(lg.interpolation.space, ColorInterpolationSpace::Srgb),
+        other => panic!("Expected Linear, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_gradient_interpolation_hue_method_parsed() {
+    // 极坐标空间 + hue 插值法被正确解析。
+    let cases = [
+        ("linear-gradient(in lch, red, blue)", ColorHueMethod::Shorter),
+        ("linear-gradient(in lch longer hue, red, blue)", ColorHueMethod::Longer),
+        (
+            "linear-gradient(in lch increasing hue, red, blue)",
+            ColorHueMethod::Increasing,
+        ),
+        (
+            "linear-gradient(in lch decreasing hue, red, blue)",
+            ColorHueMethod::Decreasing,
+        ),
+        (
+            "linear-gradient(in oklch shorter hue, red, blue)",
+            ColorHueMethod::Shorter,
+        ),
+        (
+            "linear-gradient(45deg in oklch longer hue, red, blue)",
+            ColorHueMethod::Longer,
+        ),
+    ];
+    for (css, expected) in cases {
+        let g = parse_gradient(css).expect("不应丢弃");
+        match g {
+            GradientValue::Linear(lg) => assert_eq!(lg.interpolation.hue, expected, "hue method mismatch for {css}"),
+            other => panic!("Expected Linear for {css}, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn test_gradient_interpolation_wide_gamut_fallback_srgb() {
+    // wide-gamut / xyz：无色彩管理 → 优雅回退 Srgb（不丢弃，保持 R2288 行为）。
+    for css in [
+        "linear-gradient(in display-p3, red, blue)",
+        "linear-gradient(in xyz, red, blue)",
+        "linear-gradient(in rec2020, red, blue)",
+    ] {
+        let g = parse_gradient(css).expect("不应丢弃");
+        match g {
+            GradientValue::Linear(lg) => assert_eq!(
+                lg.interpolation.space,
+                ColorInterpolationSpace::Srgb,
+                "wide-gamut should fall back to Srgb for {css}"
+            ),
+            other => panic!("Expected Linear for {css}, got {other:?}"),
+        }
+    }
+}
+
 #[test]
 /// 回归守护：无 `in` 提示的 gradient 行为字节不变（方向/shape/stops 不受影响）。
 fn test_gradient_without_in_hint_unchanged() {

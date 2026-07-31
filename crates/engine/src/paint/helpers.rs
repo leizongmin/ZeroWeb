@@ -1,11 +1,13 @@
 //! 辅助工具 — 变换偏移、裁剪、opacity 应用、渐变转换等。
 
 use zero_css_parser::values::{
-    GradientColorStop, GradientDirection, GradientValue, LengthValue, RadialSize, TransformFunction, TransformValue,
+    ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, GradientColorStop, GradientDirection, GradientValue,
+    LengthValue, RadialSize, TransformFunction, TransformValue,
 };
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{
-    GradientKind, GradientPrimitive, GradientStop, RenderPrimitives, TransformPrimitive,
+    GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive, GradientStop, HueMethod,
+    RenderPrimitives, TransformPrimitive,
 };
 use zero_style_system::{ComputedStyle, TextTransformValue};
 
@@ -651,6 +653,7 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
             let kind = linear_direction_to_kind(&lg.direction, rect);
             let stops = convert_color_stops(&lg.stops);
             Some(GradientPrimitive {
+                interpolation: map_interpolation(lg.interpolation),
                 rect: *rect,
                 kind,
                 stops,
@@ -687,6 +690,7 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
             };
             let stops = convert_color_stops(&rg.stops);
             Some(GradientPrimitive {
+                interpolation: map_interpolation(rg.interpolation),
                 rect: *rect,
                 kind: GradientKind::Radial {
                     cx,
@@ -704,6 +708,7 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
             let start_angle = cg.from_angle.to_radians() as f32;
             let stops = convert_color_stops(&cg.stops);
             Some(GradientPrimitive {
+                interpolation: map_interpolation(cg.interpolation),
                 rect: *rect,
                 kind: GradientKind::Conic { cx, cy, start_angle },
                 stops,
@@ -711,6 +716,26 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
             })
         }
     }
+}
+
+/// 将 css-parser `ColorInterpolation` 映射为 render-foundation `GradientInterpolation`
+/// （CSS Color 4 `gradient in <colorspace>`，R2289）。
+fn map_interpolation(i: ColorInterpolation) -> GradientInterpolation {
+    let space = match i.space {
+        ColorInterpolationSpace::Srgb => GradientColorSpace::Srgb,
+        ColorInterpolationSpace::SrgbLinear => GradientColorSpace::SrgbLinear,
+        ColorInterpolationSpace::Lab => GradientColorSpace::Lab,
+        ColorInterpolationSpace::Oklab => GradientColorSpace::Oklab,
+        ColorInterpolationSpace::Lch => GradientColorSpace::Lch,
+        ColorInterpolationSpace::Oklch => GradientColorSpace::Oklch,
+    };
+    let hue = match i.hue {
+        ColorHueMethod::Shorter => HueMethod::Shorter,
+        ColorHueMethod::Longer => HueMethod::Longer,
+        ColorHueMethod::Increasing => HueMethod::Increasing,
+        ColorHueMethod::Decreasing => HueMethod::Decreasing,
+    };
+    GradientInterpolation { space, hue }
 }
 
 /// 将线性渐变方向转换为 GradientKind::Linear。
@@ -1351,6 +1376,7 @@ mod tests {
     #[test]
     fn test_linear_gradient_to_primitive() {
         let grad = GradientValue::Linear(LinearGradient {
+            interpolation: Default::default(),
             direction: GradientDirection::ToBottom,
             stops: vec![GradientColorStop {
                 color: ColorValue::Rgba(255, 0, 0, 255),
@@ -1368,6 +1394,7 @@ mod tests {
     #[test]
     fn test_radial_gradient_to_primitive() {
         let grad = GradientValue::Radial(RadialGradient {
+            interpolation: Default::default(),
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -1392,6 +1419,7 @@ mod tests {
     #[test]
     fn test_conic_gradient_to_primitive() {
         let grad = GradientValue::Conic(ConicGradient {
+            interpolation: Default::default(),
             repeating: false,
             from_angle: 90.0,
             position_x: LengthValue::Percentage(50.0),
@@ -1424,6 +1452,7 @@ mod tests {
     #[test]
     fn test_radial_closest_side() {
         let grad = GradientValue::Radial(RadialGradient {
+            interpolation: Default::default(),
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -1452,6 +1481,7 @@ mod tests {
     #[test]
     fn test_radial_farthest_side() {
         let grad = GradientValue::Radial(RadialGradient {
+            interpolation: Default::default(),
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),
@@ -1474,6 +1504,7 @@ mod tests {
     #[test]
     fn test_radial_length_size() {
         let grad = GradientValue::Radial(RadialGradient {
+            interpolation: Default::default(),
             shape: RadialShape::Ellipse,
             position_x: LengthValue::Percentage(50.0),
             position_y: LengthValue::Percentage(50.0),

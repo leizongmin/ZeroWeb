@@ -131,6 +131,7 @@ fn render_image_releases_cache_reference_after_draw() {
 fn gradient_linear_red_to_blue() {
     let mut primitives = RenderPrimitives::new();
     primitives.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 100.0, 10.0),
         kind: GradientKind::Linear {
             x0: 0.0,
@@ -239,6 +240,7 @@ fn rounded_rect_renders_via_draw_order() {
 fn gradient_radial_center_to_edge() {
     let mut primitives = RenderPrimitives::new();
     primitives.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 20.0, 20.0),
         kind: GradientKind::Radial {
             cx: 10.0,
@@ -289,6 +291,7 @@ fn gradient_radial_center_to_edge() {
 fn gradient_linear_repeating() {
     let mut primitives = RenderPrimitives::new();
     primitives.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 100.0, 10.0),
         kind: GradientKind::Linear {
             x0: 0.0,
@@ -355,6 +358,7 @@ fn gradient_linear_repeating() {
 fn gradient_radial_repeating() {
     let mut primitives = RenderPrimitives::new();
     primitives.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(0.0, 0.0, 40.0, 40.0),
         kind: GradientKind::Radial {
             cx: 20.0,
@@ -1059,6 +1063,7 @@ fn full_scene_renders_multiple_primitives() {
 
     // 渐变
     primitives.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
         rect: Rect::new(10.0, 10.0, 90.0, 30.0),
         kind: GradientKind::Linear {
             x0: 10.0,

@@ -570,6 +570,51 @@ pub struct GradientColorStop {
     pub position: Option<LengthValue>,
 }
 
+/// CSS Color 4 渐变颜色插值色彩空间（`gradient in <colorspace>`，R2289）。
+///
+/// 与 `render-foundation::primitive::GradientColorSpace` 一一对应；engine 负责映射。
+/// wide-gamut（display-p3/xyz/rec2020/...）与未知空间在解析期归一为 Srgb（无色彩管理管线，
+/// 优雅回退）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ColorInterpolationSpace {
+    /// gamma 编码 sRGB（默认）。
+    #[default]
+    Srgb,
+    /// 线性光 sRGB。
+    SrgbLinear,
+    /// CIE Lab。
+    Lab,
+    /// OKLab。
+    Oklab,
+    /// CIE LCH（极坐标）。
+    Lch,
+    /// OKLCH（极坐标）。
+    Oklch,
+}
+
+/// 极坐标色彩空间（LCH/OKLCH）的色相插值法（CSS Color 4 §13.5）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ColorHueMethod {
+    /// `shorter hue`（默认，短弧）。
+    #[default]
+    Shorter,
+    /// `longer hue`。
+    Longer,
+    /// `increasing hue`。
+    Increasing,
+    /// `decreasing hue`。
+    Decreasing,
+}
+
+/// CSS Color 4 渐变颜色插值配置：色彩空间 + （极坐标时）色相插值法。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ColorInterpolation {
+    /// 插值色彩空间。
+    pub space: ColorInterpolationSpace,
+    /// 色相插值法（仅 Lch/Oklch 有意义）。
+    pub hue: ColorHueMethod,
+}
+
 /// CSS linear-gradient() 值。
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinearGradient {
@@ -579,6 +624,8 @@ pub struct LinearGradient {
     pub stops: Vec<GradientColorStop>,
     /// 是否为 repeating-linear-gradient。
     pub repeating: bool,
+    /// 颜色插值配置（CSS Color 4 `in <colorspace>`）。默认 Srgb = 既有行为。
+    pub interpolation: ColorInterpolation,
 }
 
 /// CSS radial-gradient 形状。
@@ -620,6 +667,8 @@ pub struct RadialGradient {
     pub stops: Vec<GradientColorStop>,
     /// 是否为 repeating-radial-gradient。
     pub repeating: bool,
+    /// 颜色插值配置（CSS Color 4 `in <colorspace>`）。
+    pub interpolation: ColorInterpolation,
 }
 
 /// CSS conic-gradient() 值。
@@ -635,6 +684,8 @@ pub struct ConicGradient {
     pub stops: Vec<GradientColorStop>,
     /// 是否为 repeating-conic-gradient。
     pub repeating: bool,
+    /// 颜色插值配置（CSS Color 4 `in <colorspace>`）。
+    pub interpolation: ColorInterpolation,
 }
 
 /// CSS 渐变值（所有渐变类型的统一表示）。
@@ -682,29 +733,33 @@ fn split_function_call(value: &str) -> Option<(String, &str)> {
     Some((name.to_string(), inner))
 }
 
-/// 从渐变首参中剥离 CSS Color 4 `in <colorspace>` 颜色插值提示。
+/// 从渐变首参中剥离并解析 CSS Color 4 `in <colorspace> [<hue-method>]` 颜色插值提示。
 ///
-/// 返回 `(剩余方向/形状部分, 是否存在插值提示)`：
-/// - `"in oklab"` / `"in srgb-linear"` → `(None, true)`（无方向，整参为提示）
-/// - `"to right in srgb"` → `(Some("to right"), true)`
-/// - `"circle at center in oklch longer hue"` → `(Some("circle at center"), true)`
-/// - 无提示 → `(Some(orig), false)`
+/// 返回 `(剩余方向/形状部分, 解析得到的插值配置)`：
+/// - `"in oklab"` → `(None, Some(oklab))`
+/// - `"to right in srgb"` → `(Some("to right"), Some(srgb))`
+/// - `"circle at center in oklch longer hue"` → `(Some("circle at center"), Some(oklch, longer))`
+/// - `"in display-p3"` → `(None, Some(srgb))`（wide-gamut 无色彩管理，优雅回退 srgb）
+/// - 无 `in` 提示 → `(Some(orig), None)`
 ///
-/// 当前仅剥离以保证 gradient 不被丢弃并按既有 sRGB 渲染；颜色空间感知插值（oklab/oklch
-/// 等的 mid-tone 数学）defer 至后续 render-math 切片。driving: css-images oklab-gradient /
-/// srgb-gradient / srgb-linear-gradient（此前 `in <colorspace>` 致整 gradient 丢弃）。
-fn strip_interpolation_hint(arg: &str) -> (Option<&str>, bool) {
+/// `Some(ColorInterpolation)` = 检测到 `in` 提示并解析（未知空间/hue 归一为 Srgb/Shorter
+/// 优雅回退，保留 R2288 不丢弃 gradient 的行为）。driving: css-images oklab/lch/oklch/
+/// srgb-linear gradient（R2289 render-math）。
+fn strip_interpolation_hint(arg: &str) -> (Option<&str>, Option<ColorInterpolation>) {
     let arg = arg.trim();
     let bytes = arg.as_bytes();
-    // 前缀 "in "（大小写不敏感）
+
+    // 前缀 "in "（大小写不敏感）：整参为提示，无方向部分。
     if bytes.len() >= 3
         && (bytes[0] == b'i' || bytes[0] == b'I')
         && (bytes[1] == b'n' || bytes[1] == b'N')
         && bytes[2] == b' '
     {
-        return (None, true);
+        let interp = parse_color_interpolation(arg[3..].trim());
+        return (None, interp);
     }
-    // 子串 " in "（大小写不敏感；空格为 ASCII 单字节，切片边界安全）
+
+    // 子串 " in "（大小写不敏感；空格 ASCII 单字节，切片边界安全）。
     let mut i = 0;
     while i + 4 <= bytes.len() {
         if bytes[i] == b' '
@@ -712,11 +767,60 @@ fn strip_interpolation_hint(arg: &str) -> (Option<&str>, bool) {
             && (bytes[i + 2] == b'n' || bytes[i + 2] == b'N')
             && bytes[i + 3] == b' '
         {
-            return (Some(arg[..i].trim()), true);
+            let dir = arg[..i].trim();
+            let interp = parse_color_interpolation(arg[i + 4..].trim());
+            return (if dir.is_empty() { None } else { Some(dir) }, interp);
         }
         i += 1;
     }
-    (Some(arg), false)
+
+    (Some(arg), None)
+}
+
+/// 解析 CSS Color 4 `<color-interpolation-method>` = `<colorspace> [<hue-method>]?`。
+///
+/// 已知色彩空间：srgb / srgb-linear / lab / oklab / lch / oklch。极坐标空间（lch/oklch）
+/// 可选 hue 插值法（shorter/longer/increasing/decreasing hue）。wide-gamut（display-p3/
+/// a98-rgb/rec2020/prophoto-rgb/xyz[-d50/-d65]）与未知空间 → Srgb 优雅回退（无色彩管理）。
+fn parse_color_interpolation(s: &str) -> Option<ColorInterpolation> {
+    let lower = s.to_ascii_lowercase();
+    let parts: Vec<&str> = lower.split_whitespace().collect();
+    let first = *parts.first()?;
+    let space = match first {
+        "srgb" => ColorInterpolationSpace::Srgb,
+        "srgb-linear" => ColorInterpolationSpace::SrgbLinear,
+        "lab" => ColorInterpolationSpace::Lab,
+        "oklab" => ColorInterpolationSpace::Oklab,
+        "lch" => ColorInterpolationSpace::Lch,
+        "oklch" => ColorInterpolationSpace::Oklch,
+        // wide-gamut / xyz：无色彩管理管线，优雅回退 srgb（gamma 插值）。
+        "display-p3" | "a98-rgb" | "rec2020" | "prophoto-rgb" | "xyz" | "xyz-d50" | "xyz-d65" => {
+            ColorInterpolationSpace::Srgb
+        }
+        // 未知空间：按 `in` 提示存在但无法识别处理 → Srgb 回退（不丢弃 gradient）。
+        _ => ColorInterpolationSpace::Srgb,
+    };
+    let mut hue = ColorHueMethod::default();
+    if matches!(space, ColorInterpolationSpace::Lch | ColorInterpolationSpace::Oklch) {
+        // 寻找 `<method> hue` 两词序列。
+        let mut it = parts.iter().skip(1);
+        while let Some(w) = it.next() {
+            let method = match *w {
+                "shorter" => Some(ColorHueMethod::Shorter),
+                "longer" => Some(ColorHueMethod::Longer),
+                "increasing" => Some(ColorHueMethod::Increasing),
+                "decreasing" => Some(ColorHueMethod::Decreasing),
+                _ => None,
+            };
+            if let Some(m) = method
+                && matches!(it.next(), Some(next) if *next == "hue")
+            {
+                hue = m;
+                break;
+            }
+        }
+    }
+    Some(ColorInterpolation { space, hue })
 }
 
 /// 解析 linear-gradient 内部参数。
@@ -728,12 +832,14 @@ fn parse_linear_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
 
     let mut direction = GradientDirection::ToBottom;
     let mut stop_start = 0;
+    let mut interpolation = ColorInterpolation::default();
 
     // 检查第一个参数是否为方向（可能附带 `in <colorspace>` 插值提示）
     let first = args[0].trim();
-    let (dir_part, had_hint) = strip_interpolation_hint(first);
-    if had_hint {
+    let (dir_part, interp) = strip_interpolation_hint(first);
+    if let Some(i) = interp {
         // 首参含 `in <colorspace>`：剥离后解析方向（无方向则用默认）
+        interpolation = i;
         if let Some(dp) = dir_part
             && let Some(dir) = parse_linear_direction(dp)
         {
@@ -754,6 +860,7 @@ fn parse_linear_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
         direction,
         stops,
         repeating,
+        interpolation,
     }))
 }
 
@@ -790,10 +897,11 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
     let mut pos_x = LengthValue::Percentage(50.0);
     let mut pos_y = LengthValue::Percentage(50.0);
     let mut stop_start = 0;
+    let mut interpolation = ColorInterpolation::default();
 
     // 第一个参数可能包含 shape/size/position（可能附带 `in <colorspace>` 插值提示）
     let first = args[0].trim();
-    let (shape_part, had_hint) = strip_interpolation_hint(first);
+    let (shape_part, interp) = strip_interpolation_hint(first);
     let shape_src = shape_part.unwrap_or("");
     let shape_lower = shape_src.to_ascii_lowercase();
 
@@ -811,9 +919,13 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
             pos_x = px;
             pos_y = py;
         }
+        if let Some(i) = interp {
+            interpolation = i;
+        }
         stop_start = 1;
-    } else if had_hint {
+    } else if let Some(i) = interp {
         // 首参仅为 `in <colorspace>` 提示（无 shape），跳过用默认 shape
+        interpolation = i;
         stop_start = 1;
     }
 
@@ -829,6 +941,7 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
         position_y: pos_y,
         stops,
         repeating,
+        interpolation,
     }))
 }
 
@@ -924,9 +1037,10 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
     let mut pos_x = LengthValue::Percentage(50.0);
     let mut pos_y = LengthValue::Percentage(50.0);
     let mut stop_start = 0;
+    let mut interpolation = ColorInterpolation::default();
 
     let first = args[0].trim();
-    let (config_part, had_hint) = strip_interpolation_hint(first);
+    let (config_part, interp) = strip_interpolation_hint(first);
     let config_src = config_part.unwrap_or("");
     let config_lower = config_src.to_ascii_lowercase();
 
@@ -938,9 +1052,13 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
             pos_x = px;
             pos_y = py;
         }
+        if let Some(i) = interp {
+            interpolation = i;
+        }
         stop_start = 1;
-    } else if had_hint {
+    } else if let Some(i) = interp {
         // 首参仅为 `in <colorspace>` 提示（无 from/at），跳过用默认配置
+        interpolation = i;
         stop_start = 1;
     }
 
@@ -955,6 +1073,7 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
         position_y: pos_y,
         stops,
         repeating,
+        interpolation,
     }))
 }
 
