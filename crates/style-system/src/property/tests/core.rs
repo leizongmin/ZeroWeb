@@ -1279,6 +1279,16 @@ fn test_apply_outline_offset() {
     assert_eq!(style.outline_offset, LengthValue::Px(-2.0));
 
     assert!(!apply_property_value(&mut style, "outline-offset", "invalid"));
+
+    // CSS-UI-4 §4.4: `outline-offset: inset` 关键字 ≡ 负 outline-width 的偏移
+    // （outline 绘制在 border-box 内侧）。driving: outline-offset-inset-001/003/004。
+    assert!(!style.outline_offset_inset, "inset flag defaults to false");
+    assert!(apply_property_value(&mut style, "outline-offset", "inset"));
+    assert!(style.outline_offset_inset, "inset keyword sets the flag");
+    // 重新赋一个长度应清除 inset 标记（长度与 inset 互斥）
+    assert!(apply_property_value(&mut style, "outline-offset", "5px"));
+    assert!(!style.outline_offset_inset, "length clears the inset flag");
+    assert_eq!(style.outline_offset, LengthValue::Px(5.0));
 }
 
 #[test]

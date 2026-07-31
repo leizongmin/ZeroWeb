@@ -610,7 +610,14 @@ impl super::Painter {
             return;
         }
 
-        let offset = length_to_f32(&style.outline_offset);
+        let offset = if style.outline_offset_inset {
+            // CSS-UI-4 §4.4: `outline-offset: inset` ≡ 负 outline-width 偏移，
+            // 使 outline 绘制在 border-box 内侧（total_offset = outline_width + (-outline_width) = 0，
+            // 既有外扩矩形几何退化为贴 border-box 边内侧绘制）。driving: outline-offset-inset-001/003/004。
+            -outline_width
+        } else {
+            length_to_f32(&style.outline_offset)
+        };
 
         let w = box_node.width;
         let h = box_node.height;

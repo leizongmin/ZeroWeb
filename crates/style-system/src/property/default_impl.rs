@@ -69,6 +69,7 @@ impl Default for ComputedStyle {
             outline_style: OutlineStyleValue::None,
             outline_color: initial_color.clone(),
             outline_offset: LengthValue::Px(0.0),
+            outline_offset_inset: false,
 
             // 颜色和背景
             color: initial_color.clone(),

@@ -399,6 +399,7 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "outline-offset" => {
             child.outline_offset = parent.outline_offset.clone();
+            child.outline_offset_inset = parent.outline_offset_inset;
             true
         }
         // columns
@@ -631,6 +632,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "outline-offset" => {
             style.outline_offset = default_style.outline_offset;
+            style.outline_offset_inset = default_style.outline_offset_inset;
             true
         }
         // 颜色和背景

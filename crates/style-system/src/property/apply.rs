@@ -370,8 +370,16 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "outline-offset" => {
+            // CSS-UI-4 §4.4: `inset` 关键字——outline 绘制在 border-box 内侧
+            // （≡ 负 outline-width 偏移）。长度与 inset 互斥，赋长度时清标记。
+            let trimmed = value.trim();
+            if trimmed.eq_ignore_ascii_case("inset") {
+                style.outline_offset_inset = true;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 style.outline_offset = v;
+                style.outline_offset_inset = false;
                 return true;
             }
         }

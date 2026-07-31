@@ -98,6 +98,9 @@ pub struct ComputedStyle {
     pub outline_color: ColorValue,
     /// outline-offset 属性。
     pub outline_offset: LengthValue,
+    /// outline-offset: inset（CSS-UI-4 §4.4）关键字标记——为真时 outline 绘制在
+    /// border-box 内侧，等价于负 outline-width 的偏移（painter 计算 offset=-outline_width）。
+    pub outline_offset_inset: bool,
 
     // ── 颜色和背景 ──
     /// color 属性（前景色）。
