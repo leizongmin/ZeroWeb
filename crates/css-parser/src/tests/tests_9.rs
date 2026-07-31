@@ -465,8 +465,21 @@ fn test_filter_blur() {
 
 #[test]
 fn test_filter_blur_no_unit() {
+    // CSS Filter Effects：blur() 取 `<length>?`，无单位非零值无效（与 Chromium 一致）。
+    // 修复前 ZW 宽容地把 `blur(3)` 当 3px（偏离 spec）。
     let f = parse_filter("blur(3)");
-    assert!(f.is_some());
+    assert!(f.is_none(), "blur(3) 无单位非零应无效");
+}
+
+#[test]
+fn test_filter_blur_empty_arg_and_bare_zero() {
+    use crate::values::FilterValue;
+    // blur() 空参 = blur(0)（CSS Filter Effects：`<length>?` 缺省 0）。修复前 ZW 返回 None。
+    assert!(matches!(parse_filter("blur()"), Some(FilterValue::Blur(0.0))));
+    // 裸 0 是合法 `<length>`（CSS Values unitless-zero）。
+    assert!(matches!(parse_filter("blur(0)"), Some(FilterValue::Blur(0.0))));
+    // 0px 同。
+    assert!(matches!(parse_filter("blur(0px)"), Some(FilterValue::Blur(0.0))));
 }
 
 #[test]

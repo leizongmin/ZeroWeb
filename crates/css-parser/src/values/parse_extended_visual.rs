@@ -177,11 +177,17 @@ pub fn parse_filter_list(value: &str) -> Option<Vec<FilterValue>> {
 }
 fn parse_filter_length_px(s: &str) -> Option<f32> {
     let s = s.trim();
-    if s.ends_with("px") {
-        s.trim_end_matches("px").trim().parse::<f32>().ok()
-    } else {
-        // 无单位值在 blur 中无效，但尝试解析为纯数值
-        s.parse::<f32>().ok()
+    // CSS Filter Effects：`blur() = blur( <length>? )`——参数可选，缺省 = 0。
+    if s.is_empty() {
+        return Some(0.0);
+    }
+    if let Some(num_str) = s.strip_suffix("px") {
+        return num_str.trim().parse::<f32>().ok();
+    }
+    // CSS Values §5.4：裸 0 是合法 `<length>`（unitless-zero）；其他无单位值对 `<length>` 无效。
+    match s.parse::<f32>() {
+        Ok(0.0) => Some(0.0),
+        _ => None,
     }
 }
 
