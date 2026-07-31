@@ -1558,6 +1558,42 @@ fn test_column_rules_solid() {
     );
 }
 
+/// 测试 column-rule-width 关键字与 border-width 同值（CSS Multi-column：thin=1/medium=3/
+/// thick=5px）。修复前 ZW 用 Medium=2/Thick=3 偏离 border-width 与 Chromium。solid rule 是
+/// width=rule_w 的 fill 图元，故直接断言 fill 宽度。
+#[test]
+fn test_column_rule_width_keywords_match_border_width() {
+    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+
+    let assert_rule_width = |kw: ColumnRuleWidthComputedValue, expected: f32| {
+        let mut doc = zero_dom::Document::new();
+        let nid = doc.create_element("div");
+        let layout = make_box(Some(nid), 0.0, 0.0, 600.0, 200.0);
+
+        let mut style = ComputedStyle::default();
+        style.column_count = ColumnCountComputedValue::Number(2);
+        style.column_gap = LengthValue::Px(20.0);
+        style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
+        style.column_rule_width = kw;
+        style.column_rule_color = ColorValue::Rgba(128, 128, 128, 255);
+        let mut styles = HashMap::new();
+        styles.insert(nid, style);
+        let mut painter = Painter::new();
+        painter.paint(&layout, &styles, None);
+
+        let has_rule = painter
+            .primitives()
+            .fills
+            .iter()
+            .any(|f| f.color.a > 0 && (f.rect.size.width - expected).abs() < 0.1 && f.rect.size.height > 100.0);
+        assert!(has_rule, "column-rule solid 应产出一个宽度≈{expected}px 的 fill 图元");
+    };
+
+    assert_rule_width(ColumnRuleWidthComputedValue::Thin, 1.0);
+    assert_rule_width(ColumnRuleWidthComputedValue::Medium, 3.0);
+    assert_rule_width(ColumnRuleWidthComputedValue::Thick, 5.0);
+}
+
 /// 测试 column-rule-style: none 不绘制分隔线。
 #[test]
 fn test_column_rules_none() {

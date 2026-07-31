@@ -143,10 +143,12 @@ impl super::super::Painter {
             _ => 0.0,
         };
 
+        // column-rule-width 关键字与 border-width 同值（CSS Multi-column：thin=1/medium=3/thick=5px，
+        // 与 parse_basic.rs border-width 关键字 + Chromium 一致）。修复前 Medium=2/Thick=3 偏离。
         let rule_w: f32 = match &style.column_rule_width {
-            ColumnRuleWidthComputedValue::Medium => 2.0,
+            ColumnRuleWidthComputedValue::Medium => 3.0,
             ColumnRuleWidthComputedValue::Thin => 1.0,
-            ColumnRuleWidthComputedValue::Thick => 3.0,
+            ColumnRuleWidthComputedValue::Thick => 5.0,
             ColumnRuleWidthComputedValue::Length(LengthValue::Px(w)) => *w as f32,
             _ => 1.0,
         };
