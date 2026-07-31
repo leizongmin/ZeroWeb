@@ -760,6 +760,9 @@ pub enum BackgroundPositionComputedValue {
     Length(f32),
     /// 百分比值（如 50%）。
     Percent(f32),
+    /// calc()/min()/max()/clamp() 数学函数（延迟到 paint 期解析，% 相对 (container-image)）。
+    /// R2313。
+    Calc(zero_css_parser::values::CalcExpr),
     /// 两个值组合（水平 垂直）。
     TwoValue(
         Box<BackgroundPositionComputedValue>,

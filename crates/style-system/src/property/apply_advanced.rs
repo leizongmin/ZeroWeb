@@ -40,6 +40,7 @@ fn position_value_to_computed(
         Bp::Bottom => BackgroundPositionComputedValue::Bottom,
         Bp::Length(lv) => BackgroundPositionComputedValue::Length(resolve_bg_pos_length(lv, style)),
         Bp::Percent(pct) => BackgroundPositionComputedValue::Percent(pct),
+        Bp::Calc(expr) => BackgroundPositionComputedValue::Calc(expr),
         Bp::TwoValue(h, v) => {
             let hc = position_value_to_computed(*h, style)?;
             let vc = position_value_to_computed(*v, style)?;

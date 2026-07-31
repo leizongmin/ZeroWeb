@@ -670,6 +670,10 @@ pub enum BackgroundPositionValue {
     Length(LengthValue),
     /// 百分比值（如 50%）。
     Percent(f32),
+    /// calc()/min()/max()/clamp() 数学函数（CSS Values 4）。延迟到 paint 期解析——
+    /// % 相对 (container-image)（与 Percent 同语义），由 eval_calc(parent_length=
+    /// container-image) 求值。R2313：driving background-position-calc-minmax-001。
+    Calc(crate::values::CalcExpr),
     /// 两个值组合（水平 垂直）。
     TwoValue(Box<BackgroundPositionValue>, Box<BackgroundPositionValue>),
 }
@@ -681,11 +685,12 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
     let value = value.trim();
     let lower = value.to_ascii_lowercase();
 
-    // 先检查是否为两个值组合
-    let parts: Vec<&str> = lower.split_whitespace().collect();
+    // 先检查是否为两个值组合（R2313：split_top_level_whitespace paren-aware，
+    // 使 calc/min/max 含空白参数的函数保持一体，如 `min(0%, 100%) max(0%, 100%)`）。
+    let parts = split_top_level_whitespace(&lower);
     if parts.len() == 2 {
-        let first = parse_position_component(parts[0])?;
-        let second = parse_position_component(parts[1])?;
+        let first = parse_position_component(&parts[0])?;
+        let second = parse_position_component(&parts[1])?;
         // CSS background-position 两值语法（CSS Backgrounds §3.6）：关键字顺序无关——
         // 水平专属（left/right）→ x，垂直专属（top/bottom）→ y，center 兼容两轴。
         // 故须交换当：第一值是垂直专属（top/bottom），或第二值是水平专属（left/right）。
@@ -709,6 +714,12 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
         "top" => return Some(BackgroundPositionValue::Top),
         "bottom" => return Some(BackgroundPositionValue::Bottom),
         _ => {}
+    }
+
+    // R2313：calc()/min()/max()/clamp() 单值数学函数 → Calc（延迟到 paint 期按
+    // (container-image) 解析 %）。整条是一个数学函数（2 值情形由上方 2-value 分支处理）。
+    if ["calc(", "min(", "max(", "clamp("].iter().any(|p| lower.starts_with(p)) {
+        return crate::values::parse_math_function(&lower).map(BackgroundPositionValue::Calc);
     }
 
     // 单个百分比
@@ -754,6 +765,11 @@ fn parse_position_component(s: &str) -> Option<BackgroundPositionValue> {
         "top" => Some(BackgroundPositionValue::Top),
         "bottom" => Some(BackgroundPositionValue::Bottom),
         _ => {
+            // R2313：calc/min/max/clamp 单分量数学函数 → Calc。
+            let t = s.trim();
+            if ["calc(", "min(", "max(", "clamp("].iter().any(|p| t.starts_with(p)) {
+                return crate::values::parse_math_function(t).map(BackgroundPositionValue::Calc);
+            }
             if s.ends_with('%') {
                 let pct: f32 = s.trim_end_matches('%').parse().ok()?;
                 Some(BackgroundPositionValue::Percent(pct))

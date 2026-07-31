@@ -1061,6 +1061,12 @@ fn resolve_position_component(pos: &BackgroundPositionComputedValue, container_s
         }
         BackgroundPositionComputedValue::Length(px) => *px,
         BackgroundPositionComputedValue::Percent(pct) => (container_size - image_size) * pct / 100.0,
+        BackgroundPositionComputedValue::Calc(expr) => {
+            // R2313：calc/min/max/clamp，% 相对 (container-image)（与 Percent 同语义，
+            // eval_calc 的 parent_length 即 % 基准）。px/% 求值；em/vw 等需 font/viewport
+            // 上下文（此处无）→ None → 回退 0.0（paint 期无 style 上下文，边界限制）。
+            zero_css_parser::values::eval_calc(expr, Some((container_size - image_size) as f64)).unwrap_or(0.0) as f32
+        }
         BackgroundPositionComputedValue::TwoValue(_, _) => 0.0,
     }
 }

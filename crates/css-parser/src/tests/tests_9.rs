@@ -1313,3 +1313,50 @@ fn test_background_position_list_multi_layer() {
     // 空输入 → None
     assert_eq!(parse_background_position_list(""), None);
 }
+
+/// R2313：background-position 的 calc()/min()/max()/clamp() 数学函数解析。
+#[test]
+fn test_background_position_calc_math_functions() {
+    use crate::values::{BackgroundPositionValue, parse_background_position};
+    // 单值 calc/min/max/clamp → Calc
+    assert!(matches!(
+        parse_background_position("calc(50%)"),
+        Some(BackgroundPositionValue::Calc(_))
+    ));
+    assert!(matches!(
+        parse_background_position("min(0%, 100%)"),
+        Some(BackgroundPositionValue::Calc(_))
+    ));
+    assert!(matches!(
+        parse_background_position("max(0%, 100%)"),
+        Some(BackgroundPositionValue::Calc(_))
+    ));
+    assert!(matches!(
+        parse_background_position("clamp(0%, 50%, 100%)"),
+        Some(BackgroundPositionValue::Calc(_))
+    ));
+    // 两值 min/max（paren-aware 拆分，内部空格保持一体）→ TwoValue(Calc, Calc)
+    let two = parse_background_position("min(0%, 100%) max(0%, 100%)").expect("两值 min/max");
+    match two {
+        BackgroundPositionValue::TwoValue(h, v) => {
+            assert!(matches!(*h, BackgroundPositionValue::Calc(_)), "水平分量应为 Calc");
+            assert!(matches!(*v, BackgroundPositionValue::Calc(_)), "垂直分量应为 Calc");
+        }
+        other => panic!("两值 min/max 应为 TwoValue(Calc, Calc)，got {other:?}"),
+    }
+    // 单值回归（非 calc 不受影响）
+    assert!(matches!(
+        parse_background_position("center"),
+        Some(BackgroundPositionValue::Center)
+    ));
+    assert!(matches!(
+        parse_background_position("50%"),
+        Some(BackgroundPositionValue::Percent(50.0))
+    ));
+    assert!(matches!(
+        parse_background_position("left top"),
+        Some(BackgroundPositionValue::TwoValue(_, _))
+    ));
+    // 非法 calc → None
+    assert!(parse_background_position("calc()").is_none());
+}

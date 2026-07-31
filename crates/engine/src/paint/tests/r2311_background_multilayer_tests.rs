@@ -86,6 +86,35 @@ fn test_r2311_multilayer_position_per_layer() {
     );
 }
 
+/// R2313：background-position: calc()/min()/max() 单层 paint 求值（% 相对 container-image）。
+#[test]
+fn test_r2313_bg_position_calc_resolves() {
+    let expr = zero_css_parser::values::parse_math_function("calc(50%)").expect("calc(50%) 解析");
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 100.0, 100.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = vec![BackgroundImageComputedValue::Url("a.png".to_string())];
+    style.background_size = vec![BackgroundSizeComputedValue::Length(20.0)];
+    style.background_position = vec![BackgroundPositionComputedValue::Calc(expr)];
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let xs: Vec<f32> = painter.primitives().images.iter().map(|p| p.rect.origin.x).collect();
+    // calc(50%) → (container-image)*0.5 = (100-20)*0.5 = 40
+    assert_eq!(xs.len(), 1);
+    assert!(
+        (xs[0] - 40.0).abs() < 0.5,
+        "calc(50%) 应定位在 x≈40（(container-image)*0.5），got {xs:?}"
+    );
+}
+
 /// 两层图像 + 单值 position（cyclic mod 1）→ 两层均取 [0]，定位相同（byte-identical 回归守）。
 #[test]
 fn test_r2311_multilayer_single_position_byte_identical() {
