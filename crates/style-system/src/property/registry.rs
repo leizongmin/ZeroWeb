@@ -52,7 +52,8 @@ impl PropertyRegistry {
             "outline-width" => Some(Length(LengthValue::Px(3.0))),
             "outline-offset" => Some(Length(LengthValue::Px(0.0))),
             "outline-style" => Some(OutlineStyle(OutlineStyleValue::None)),
-            "outline-color" => Some(Color(ColorValue::Rgba(0, 0, 0, 255))),
+            // outline-color 初始 = currentColor（invert 无浏览器支持回落 currentColor，CSSWG #9199）。
+            "outline-color" => Some(Color(ColorValue::CurrentColor)),
 
             // 颜色和背景
             "color" => Some(Color(ColorValue::Rgba(0, 0, 0, 255))),

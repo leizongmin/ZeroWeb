@@ -70,7 +70,10 @@ impl Default for ComputedStyle {
             // 故默认元素无可见 outline。
             outline_width: LengthValue::Px(3.0),
             outline_style: OutlineStyleValue::None,
-            outline_color: initial_color.clone(),
+            // outline-color 初始 = currentColor（CSS UI：invert 无浏览器支持，回落 currentColor；
+            // CSSWG #9199 正式化为 currentColor，与 Chromium 一致）。paint 经 resolve_color_current
+            // 解析为元素自身 color；默认元素 color=black → currentColor 仍黑，零默认渲染变化。
+            outline_color: ColorValue::CurrentColor,
             outline_offset: LengthValue::Px(0.0),
             outline_offset_inset: false,
 

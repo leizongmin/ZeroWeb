@@ -946,6 +946,36 @@ fn test_painter_outline() {
     assert_eq!(top.color, Color::rgb(255, 0, 0));
 }
 
+/// CSS UI：outline-color 初始 = currentColor（invert 无浏览器支持回落 currentColor，CSSWG #9199）。
+/// color:red + outline-style:solid（不设 outline-color）→ outline 应为红色（currentColor 解析为元素 color）。
+#[test]
+fn test_painter_outline_color_currentcolor_resolves_to_element_color() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 10.0, 20.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.color = ColorValue::Rgba(255, 0, 0, 255); // red
+    style.outline_width = zero_css_parser::values::LengthValue::Px(3.0);
+    style.outline_style = OutlineStyleValue::Solid;
+    // outline_color 留默认 currentColor（不显式设）
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // outline 4 个 fill 应为红色（currentColor 解析为元素 color=red）。
+    // 修复前：初始黑 + paint 无元素色上下文 → 黑色 outline，本断言 red。
+    assert_eq!(painter.primitives().fills.len(), 4);
+    let top = &painter.primitives().fills[0];
+    assert_eq!(
+        top.color,
+        Color::rgb(255, 0, 0),
+        "outline currentColor 应解析为元素 color=red，非黑"
+    );
+}
+
 /// 测试 outline-style: none 不绘制。
 #[test]
 fn test_painter_outline_style_none() {

@@ -13,7 +13,7 @@ use zero_style_system::{
     BorderCollapseValue, BorderImageRepeatComputedMode, BorderImageSourceComputedValue, BorderStyleValue, ComputedStyle,
 };
 
-use super::super::color::color_value_to_render;
+use super::super::color::{color_value_to_render, resolve_color_current};
 use super::super::helpers::{image_resource_key, length_to_f32};
 
 /// 边框边缘规格 — 描述一条边框的几何位置和方向。
@@ -622,7 +622,9 @@ impl super::Painter {
         let w = box_node.width;
         let h = box_node.height;
         let total_offset = outline_width + offset;
-        let color = color_value_to_render(&style.outline_color);
+        // outline-color 初始 = currentColor（CSS UI：invert 无浏览器支持回落 currentColor），
+        // 须按元素自身 color 解析（color_value_to_render 无元素色上下文会回落黑色）。
+        let color = resolve_color_current(&style.outline_color, &style.color);
 
         // 计算外侧矩形坐标
         let ox = abs_x - total_offset;

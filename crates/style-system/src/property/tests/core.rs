@@ -1220,7 +1220,8 @@ fn test_computed_style_default_outline() {
     // outline-width 初始 = medium(3px)（CSS UI，与 border-width 同）；outline-style:none 抑制绘制。
     assert_eq!(style.outline_width, LengthValue::Px(3.0));
     assert_eq!(style.outline_style, OutlineStyleValue::None);
-    assert_eq!(style.outline_color, ColorValue::Rgba(0, 0, 0, 255));
+    // outline-color 初始 = currentColor（invert 无浏览器支持回落 currentColor，CSSWG #9199）。
+    assert_eq!(style.outline_color, ColorValue::CurrentColor);
     assert_eq!(style.outline_offset, LengthValue::Px(0.0));
 }
 
