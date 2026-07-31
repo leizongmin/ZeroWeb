@@ -26,15 +26,27 @@ pub fn render_gradient(fb: &mut FrameBuffer, gradient: &GradientPrimitive, scale
 
             let mut t = compute_gradient_t(fx, fy, gradient, scale);
             if gradient.repeating {
-                // 重复渐变：将 t 映射到 [0, 1) 区间循环
-                // 使用最后一个色标的 offset 作为重复周期
-                let period = gradient.stops.last().map(|s| s.offset).unwrap_or(1.0).max(0.001);
-                t %= period;
-                if t < 0.0 {
-                    t += period;
+                // 重复渐变：色标区间 [first, last] 为一个周期，t 折叠回该区间循环。
+                // period = last - first（非 last 本身——否则 first≠0 时周期错）。
+                // 折叠后直接用原 offset 采样（不再 / period：旧代码 t/=period 后用 [0,1) 采
+                // [0,period] offset，致 t≥period 的像素被 sample_gradient_color 钳到最后色标，
+                // repeating-linear(red 0,blue 25%) 等子域重复渲染为大片末色，比例错误）。
+                // driving: css-images repeating-conic-gradient（black 0 25%, white 25% 50%）。
+                let first = gradient.stops.first().map(|s| s.offset).unwrap_or(0.0);
+                let last = gradient.stops.last().map(|s| s.offset).unwrap_or(1.0);
+                let period = last - first;
+                if period > 1e-6 {
+                    let mut local = (t - first) % period;
+                    if local < 0.0 {
+                        local += period;
+                    }
+                    t = first + local;
+                } else {
+                    t = first;
                 }
-                // 归一化到 [0, 1] 供色标采样
-                t /= period;
+            } else {
+                // 非重复：钳到 [0,1]（原 compute_gradient_t 的 clamp 语义，byte-identical）
+                t = t.clamp(0.0, 1.0);
             }
             let color = sample_gradient_color(t, &gradient.stops, gradient.interpolation);
             let [r, g, b, _] = blend_with_fb(fb, x, y, color);
@@ -60,9 +72,9 @@ fn compute_gradient_t(fx: f32, fy: f32, gradient: &GradientPrimitive, scale: f32
                 return 0.0;
             }
 
-            // 投影到渐变线上的参数 t
-            let t = ((fx - sx0) * dx + (fy - sy0) * dy) / len_sq;
-            t.clamp(0.0, 1.0)
+            // 投影到渐变线上的参数 t（不钳——重复渐变需 t 超出 [0,1] 以折叠回周期；
+            // 非重复的钳制在 render_gradient 调用方做，保持 byte-identical）
+            ((fx - sx0) * dx + (fy - sy0) * dy) / len_sq
         }
         GradientKind::Radial {
             cx,
@@ -83,7 +95,8 @@ fn compute_gradient_t(fx: f32, fy: f32, gradient: &GradientPrimitive, scale: f32
             if range.abs() < 1e-10 {
                 if dist <= sor { 1.0 } else { 0.0 }
             } else {
-                ((dist - sir) / range).clamp(0.0, 1.0)
+                // 不钳——重复径向需 t>1（outer 之外）以折叠回周期（非重复钳制在调用方）
+                (dist - sir) / range
             }
         }
         GradientKind::Conic { cx, cy, start_angle } => {

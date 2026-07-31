@@ -416,6 +416,87 @@ fn gradient_radial_repeating() {
     );
 }
 
+/// R2316：子域重复线性渐变 — repeating-linear-gradient(red 0, blue 50%) 色标区间 [0,0.5] 为一周期，
+/// 在全宽渐变线上应重复 2 次。旧代码 `t/=period` 后用 [0,1) 采 [0,0.5] offset，致 t≥0.5 像素
+/// 被钳到 blue（末色标）—— t=0.25 本应是 50% 紫，旧代码给纯蓝。
+#[test]
+fn gradient_linear_repeating_subrange_stops() {
+    let mut primitives = RenderPrimitives::new();
+    primitives.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
+        rect: Rect::new(0.0, 0.0, 100.0, 10.0),
+        kind: GradientKind::Linear {
+            // 渐变线 = 全宽 100px；色标 [0,0.5] → 一周期 50px，跨 100px 重复 2 次
+            x0: 0.0,
+            y0: 0.0,
+            x1: 100.0,
+            y1: 0.0,
+        },
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: Color::RED,
+            },
+            GradientStop {
+                offset: 0.5,
+                color: Color::BLUE,
+            },
+        ],
+        repeating: true,
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        100,
+        10,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    // x=12 → t≈0.12 → 折叠到第一周期 [0,0.5] 的 0.12 → local_t=0.24 → 24% blue（偏红紫）
+    // 旧 buggy：t/=0.5 → 0.24 采 [0,0.5] → local_t=0.48；x=25 更极端：旧代码 t=0.25→0.5→采到末色标=纯蓝
+    let p_quarter = fb.get_pixel(25, 5); // t≈0.25 → 第一周期 50% → 紫（R≈B）
+    assert!(
+        p_quarter[0] > 80 && p_quarter[2] > 80,
+        "first-period midpoint (t=0.25) should be purple ~50% red/blue, got {:?}",
+        p_quarter
+    );
+
+    // x=75 → t≈0.75 → 折叠到第二周期 [0.5,1.0] 的 0.25 → 同样 50% 紫（重复正确）
+    let p_second = fb.get_pixel(75, 5);
+    assert!(
+        p_second[0] > 80 && p_second[2] > 80,
+        "second-period midpoint (t=0.75) should be purple (repetition), got {:?}",
+        p_second
+    );
+
+    // 重复性：两周期同相位应近等色（t=0.25 与 t=0.75 都折叠到 0.25）
+    let dr = (p_quarter[0] as i32 - p_second[0] as i32).abs();
+    let db = (p_quarter[2] as i32 - p_second[2] as i32).abs();
+    assert!(
+        dr < 20 && db < 20,
+        "same phase across periods should match: quarter={:?} second={:?}",
+        p_quarter,
+        p_second
+    );
+
+    // x=5 → t≈0.05 → 折叠 0.05 → local_t=0.1 → 10% blue（明显偏红，R 远大于 B）
+    let p_early = fb.get_pixel(5, 5);
+    assert!(
+        p_early[0] > p_early[2] + 40,
+        "early in period (t=0.05) should be red-dominant, got {:?}",
+        p_early
+    );
+}
+
 #[test]
 fn shadow_renders_blur_around_rect() {
     let mut primitives = RenderPrimitives::new();
