@@ -174,15 +174,15 @@ fn test_text_shadow_none() {
 #[test]
 fn test_box_shadow_single() {
     let style = apply_and_get("box-shadow", "2px 3px 4px rgba(0,0,0,0.5)");
-    // 验证 box-shadow 已被应用
-    assert!(style.box_shadow.offset_x != 0.0 || style.box_shadow.offset_y != 0.0);
+    // 验证 box-shadow 已被应用（单阴影 = 长度 1 列表）
+    assert_eq!(style.box_shadow.len(), 1);
+    assert!(style.box_shadow[0].offset_x != 0.0 || style.box_shadow[0].offset_y != 0.0);
 }
 
 #[test]
 fn test_box_shadow_none() {
     let style = apply_and_get("box-shadow", "none");
-    assert_eq!(style.box_shadow.offset_x, 0.0);
-    assert_eq!(style.box_shadow.offset_y, 0.0);
+    assert!(style.box_shadow.is_empty(), "none → 空阴影列表");
 }
 
 // ── Border spacing (lines 1956-1960) ──

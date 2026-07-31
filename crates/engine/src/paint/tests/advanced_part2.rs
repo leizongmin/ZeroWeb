@@ -235,14 +235,14 @@ fn test_paint_opacity_shadow_and_fill() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 4.0,
         offset_y: 4.0,
         blur_radius: 8.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 255),
         inset: false,
-    };
+    }];
     style.opacity = 0.5;
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
@@ -356,14 +356,14 @@ fn test_paint_multiple_box_shadows() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(255, 255, 255, 255);
     // 单个 box-shadow 测试（多 box-shadow 由 box_shadow 字段结构决定）
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 5.0,
         offset_y: 5.0,
         blur_radius: 10.0,
         spread_radius: 2.0,
         color: ColorValue::Rgba(0, 0, 0, 128),
         inset: false,
-    };
+    }];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -860,14 +860,14 @@ fn test_paint_box_shadow_negative_offsets() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: -5.0,
         offset_y: -3.0,
         blur_radius: 10.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 128),
         inset: false,
-    };
+    }];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 

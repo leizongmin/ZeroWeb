@@ -502,8 +502,8 @@ pub struct ComputedStyle {
     pub border_image_outset: BorderImageOutsetComputedValue,
     /// text-shadow 属性。
     pub text_shadow: TextShadowComputedValue,
-    /// box-shadow 属性。
-    pub box_shadow: BoxShadowComputedValue,
+    /// box-shadow 属性（CSS Backgrounds §7.2：<shadow>#，多阴影列表；空 Vec = none）。
+    pub box_shadow: Vec<BoxShadowComputedValue>,
     /// clip-path 属性。
     pub clip_path: ClipPathComputedValue,
     /// clip 属性（已弃用的 CSS2 裁剪属性，仅对绝对定位元素生效）。

@@ -1589,7 +1589,7 @@ pub enum PropertyValue {
     /// text-shadow 值。
     TextShadow(TextShadowComputedValue),
     /// box-shadow 值。
-    BoxShadow(BoxShadowComputedValue),
+    BoxShadow(Vec<BoxShadowComputedValue>),
     /// clip-path 值。
     ClipPath(ClipPathComputedValue),
     /// clip 属性值（已弃用的 CSS2 裁剪属性）。

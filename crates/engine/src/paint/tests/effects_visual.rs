@@ -24,14 +24,14 @@ fn test_paint_box_shadow_basic() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 4.0,
         offset_y: 4.0,
         blur_radius: 8.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 128),
         inset: false,
-    };
+    }];
     // 设置 color 为 CurrentColor 以避免生成 glyph
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
@@ -58,14 +58,14 @@ fn test_paint_box_shadow_zero_values_skip() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 0.0,
         offset_y: 0.0,
         blur_radius: 0.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 255),
         inset: false,
-    };
+    }];
     // 设置 color 为 CurrentColor 以避免生成 glyph
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
@@ -88,14 +88,14 @@ fn test_paint_box_shadow_offset_only() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 5.0,
         offset_y: 3.0,
         blur_radius: 0.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 255),
         inset: false,
-    };
+    }];
     // 设置 color 为 CurrentColor 以避免生成 glyph
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
@@ -119,14 +119,14 @@ fn test_paint_box_shadow_blur_only() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 0.0,
         offset_y: 0.0,
         blur_radius: 10.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 255),
         inset: false,
-    };
+    }];
     // 设置 color 为 CurrentColor 以避免生成 glyph
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
@@ -150,14 +150,14 @@ fn test_paint_box_shadow_spread_only() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 0.0,
         offset_y: 0.0,
         blur_radius: 0.0,
         spread_radius: 5.0,
         color: ColorValue::Rgba(0, 0, 0, 255),
         inset: false,
-    };
+    }];
     // 设置 color 为 CurrentColor 以避免生成 glyph
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
@@ -181,14 +181,14 @@ fn test_paint_box_shadow_color() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 4.0,
         offset_y: 4.0,
         blur_radius: 0.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(255, 0, 0, 255),
         inset: false,
-    };
+    }];
     // 设置 color 为 CurrentColor 以避免生成 glyph
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
@@ -210,14 +210,14 @@ fn test_paint_box_shadow_with_background() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 4.0,
         offset_y: 4.0,
         blur_radius: 8.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 128),
         inset: false,
-    };
+    }];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -226,6 +226,89 @@ fn test_paint_box_shadow_with_background() {
     let prims = painter.primitives();
     assert_eq!(prims.fills.len(), 1, "应生成 1 个背景填充");
     assert_eq!(prims.shadows.len(), 1, "应生成 1 个阴影图元");
+}
+
+/// R2304：多 box-shadow 列表按声明顺序生成多个 ShadowPrimitive（CSS Backgrounds §7.2）。
+#[test]
+fn test_paint_box_shadow_multiple_list() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.box_shadow = vec![
+        BoxShadowComputedValue {
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 8.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 128),
+            inset: false,
+        },
+        BoxShadowComputedValue {
+            offset_x: 2.0,
+            offset_y: 2.0,
+            blur_radius: 0.0,
+            spread_radius: 1.0,
+            color: ColorValue::Rgba(255, 0, 0, 255),
+            inset: false,
+        },
+    ];
+    // 设置 color 为 CurrentColor 以避免生成 glyph
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    assert_eq!(prims.shadows.len(), 2, "应生成 2 个阴影图元（多阴影）");
+    // 按列表顺序绘制：首个阴影先入列
+    assert_eq!(prims.shadows[0].offset_x, 4.0);
+    assert_eq!(prims.shadows[1].offset_x, 2.0);
+}
+
+/// R2304：box-shadow 列表中含全零项时，该零项被跳过、其余正常生成。
+#[test]
+fn test_paint_box_shadow_list_skips_zero_entry() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.box_shadow = vec![
+        BoxShadowComputedValue {
+            // 全零：应被跳过
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 255),
+            inset: false,
+        },
+        BoxShadowComputedValue {
+            offset_x: 5.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+            color: ColorValue::Rgba(0, 0, 0, 255),
+            inset: false,
+        },
+    ];
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert_eq!(
+        painter.primitives().shadows.len(),
+        1,
+        "全零阴影项被跳过，仅生成 1 个图元"
+    );
+    assert_eq!(painter.primitives().shadows[0].offset_x, 5.0);
 }
 
 // ── 新增测试：background-image 渲染 ──────────────────────────

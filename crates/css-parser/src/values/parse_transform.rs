@@ -1492,3 +1492,54 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
         inset,
     })
 }
+
+/// 按顶层逗号分割（paren-aware：使 `rgb(0, 0, 0)` / `hsl(...)` 等含逗号函数保持一体）。
+/// 用于 box-shadow / text-shadow 多值列表拆分。空白修剪；空段丢弃。
+fn split_top_level_commas(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut current = String::new();
+    for ch in s.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ',' if depth == 0 => {
+                let t = current.trim().to_string();
+                if !t.is_empty() {
+                    parts.push(t);
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    let t = current.trim().to_string();
+    if !t.is_empty() {
+        parts.push(t);
+    }
+    parts
+}
+
+/// 解析 box-shadow 多阴影列表（CSS Backgrounds §7.2：<shadow>#）。
+/// `none` → 空 Vec；否则顶层逗号分割后逐个 parse_box_shadow（任一失败 → None）。
+pub fn parse_box_shadow_list(value: &str) -> Option<Vec<BoxShadowValue>> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(Vec::new());
+    }
+    let parts = split_top_level_commas(v);
+    if parts.is_empty() {
+        return None;
+    }
+    let mut shadows = Vec::with_capacity(parts.len());
+    for p in &parts {
+        shadows.push(parse_box_shadow(p)?);
+    }
+    Some(shadows)
+}

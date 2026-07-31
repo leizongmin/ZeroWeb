@@ -649,15 +649,16 @@ fn test_opacity_shadow_gradient_combined_pipeline() {
     );
 
     // 验证 box-shadow
+    let s = &div_style.box_shadow[0];
     assert!(
-        (div_style.box_shadow.offset_x - 5.0).abs() < 0.01,
+        (s.offset_x - 5.0).abs() < 0.01,
         "box-shadow offset_x 应为 5.0，实际为 {}",
-        div_style.box_shadow.offset_x
+        s.offset_x
     );
     assert!(
-        (div_style.box_shadow.offset_y - 5.0).abs() < 0.01,
+        (s.offset_y - 5.0).abs() < 0.01,
         "box-shadow offset_y 应为 5.0，实际为 {}",
-        div_style.box_shadow.offset_y
+        s.offset_y
     );
 
     // 验证 background-image 为渐变

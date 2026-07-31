@@ -562,20 +562,21 @@ fn test_box_shadow_pipeline_integration() {
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
+    let s = &div_style.box_shadow[0];
     assert!(
-        (div_style.box_shadow.offset_x - 5.0).abs() < 0.01,
+        (s.offset_x - 5.0).abs() < 0.01,
         "box-shadow offset_x 应为 5.0，实际为 {}",
-        div_style.box_shadow.offset_x
+        s.offset_x
     );
     assert!(
-        (div_style.box_shadow.offset_y - 10.0).abs() < 0.01,
+        (s.offset_y - 10.0).abs() < 0.01,
         "box-shadow offset_y 应为 10.0，实际为 {}",
-        div_style.box_shadow.offset_y
+        s.offset_y
     );
     assert!(
-        (div_style.box_shadow.blur_radius - 20.0).abs() < 0.01,
+        (s.blur_radius - 20.0).abs() < 0.01,
         "box-shadow blur_radius 应为 20.0，实际为 {}",
-        div_style.box_shadow.blur_radius
+        s.blur_radius
     );
 }
 
@@ -605,16 +606,17 @@ fn test_box_shadow_inset_pipeline_integration() {
     let styles = sys.compute_styles(&doc, &[stylesheet]);
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
-    assert!(div_style.box_shadow.inset, "box-shadow inset 应为 true");
+    let s = &div_style.box_shadow[0];
+    assert!(s.inset, "box-shadow inset 应为 true");
     assert!(
-        (div_style.box_shadow.offset_x - 3.0).abs() < 0.01,
+        (s.offset_x - 3.0).abs() < 0.01,
         "box-shadow offset_x 应为 3.0，实际为 {}",
-        div_style.box_shadow.offset_x
+        s.offset_x
     );
     assert!(
-        (div_style.box_shadow.offset_y - 4.0).abs() < 0.01,
+        (s.offset_y - 4.0).abs() < 0.01,
         "box-shadow offset_y 应为 4.0，实际为 {}",
-        div_style.box_shadow.offset_y
+        s.offset_y
     );
 }
 
@@ -856,16 +858,15 @@ fn test_box_shadow_not_inherited_pipeline() {
     // 验证父元素的 box-shadow
     let parent_style = styles.get(&parent).expect("parent 应有计算样式");
     assert!(
-        (parent_style.box_shadow.offset_x - 5.0).abs() < 0.01,
+        (parent_style.box_shadow[0].offset_x - 5.0).abs() < 0.01,
         "parent box-shadow offset_x 应为 5.0"
     );
 
-    // 验证子元素不继承 box-shadow，应为默认值 offset_x=0.0
+    // 验证子元素不继承 box-shadow，box-shadow 列表应为空
     let child_style = styles.get(&child).expect("child 应有计算样式");
     assert!(
-        (child_style.box_shadow.offset_x - 0.0).abs() < 0.01,
-        "child 不应继承 parent 的 box-shadow，offset_x 应为 0.0，实际为 {}",
-        child_style.box_shadow.offset_x
+        child_style.box_shadow.is_empty(),
+        "child 不应继承 parent 的 box-shadow，box-shadow 列表应为空"
     );
 }
 

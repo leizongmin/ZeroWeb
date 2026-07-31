@@ -311,14 +311,7 @@ impl PropertyRegistry {
                 blur_radius: 0.0,
                 color: zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255),
             })),
-            "box-shadow" => Some(BoxShadow(BoxShadowComputedValue {
-                offset_x: 0.0,
-                offset_y: 0.0,
-                blur_radius: 0.0,
-                spread_radius: 0.0,
-                color: zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255),
-                inset: false,
-            })),
+            "box-shadow" => Some(BoxShadow(Vec::new())),
 
             // Clip Path
             "clip-path" => Some(ClipPath(ClipPathComputedValue::None)),

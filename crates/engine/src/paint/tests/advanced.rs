@@ -114,14 +114,14 @@ fn test_paint_combined_box_shadow_background_border_text_shadow() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 4.0,
         offset_y: 4.0,
         blur_radius: 8.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 128),
         inset: false,
-    };
+    }];
     style.border_top_color = ColorValue::Rgba(0, 0, 0, 255);
     style.border_right_color = ColorValue::Rgba(0, 0, 0, 255);
     style.border_bottom_color = ColorValue::Rgba(0, 0, 0, 255);
@@ -165,14 +165,14 @@ fn test_paint_box_shadow_currentcolor_resolves_to_element_color() {
     let mut style = ComputedStyle::default();
     style.color = ColorValue::Transparent; // 元素 color = 透明
     style.font_size = LengthValue::Px(16.0);
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 10.0,
         offset_y: 5.0,
         blur_radius: 5.0,
         spread_radius: 0.0,
         color: ColorValue::CurrentColor, // currentColor → 须解析为元素 color(transparent)
         inset: false,
-    };
+    }];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -191,14 +191,14 @@ fn test_paint_box_shadow_currentcolor_resolves_to_element_color() {
     let mut style2 = ComputedStyle::default();
     style2.color = ColorValue::Rgba(50, 205, 50, 255); // limegreen（具体值，避免 named 表耦合）
     style2.font_size = LengthValue::Px(16.0);
-    style2.box_shadow = BoxShadowComputedValue {
+    style2.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 10.0,
         offset_y: 5.0,
         blur_radius: 5.0,
         spread_radius: 0.0,
         color: ColorValue::CurrentColor,
         inset: false,
-    };
+    }];
     styles2.insert(elem, style2);
     let mut painter2 = Painter::new();
     painter2.paint(&layout, &styles2, None);
@@ -217,14 +217,14 @@ fn test_paint_visibility_hidden_no_shadow_no_image() {
     let mut style = ComputedStyle::default();
     style.visibility = VisibilityValue::Hidden;
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 4.0,
         offset_y: 4.0,
         blur_radius: 8.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 128),
         inset: false,
-    };
+    }];
     style.background_image = vec![BackgroundImageComputedValue::Url("test.png".to_string())];
     styles.insert(elem, style);
 
@@ -246,14 +246,14 @@ fn test_paint_in_rect_with_box_shadow() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 4.0,
         offset_y: 4.0,
         blur_radius: 8.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 128),
         inset: false,
-    };
+    }];
     // 设置 color 为 CurrentColor 以避免生成 glyph
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
@@ -988,14 +988,14 @@ fn test_paint_opacity_affects_shadow() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.box_shadow = BoxShadowComputedValue {
+    style.box_shadow = vec![BoxShadowComputedValue {
         offset_x: 4.0,
         offset_y: 4.0,
         blur_radius: 8.0,
         spread_radius: 0.0,
         color: ColorValue::Rgba(0, 0, 0, 255),
         inset: false,
-    };
+    }];
     style.opacity = 0.5;
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);

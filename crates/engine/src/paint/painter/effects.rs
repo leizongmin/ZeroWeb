@@ -29,33 +29,39 @@ use super::effects_indicators::clip_tile_to_origin;
 impl super::Painter {
     /// 绘制 box-shadow（盒阴影效果）。
     pub(super) fn paint_box_shadow(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
-        let shadow = &style.box_shadow;
+        // CSS Backgrounds §7.2：多阴影按列表顺序绘制（先列先绘=底层）。空 Vec = none。
+        // R2304：从单阴影改多阴影迭代。inset 仍未在 ShadowPrimitive 表达（paint 忽略，
+        // 与既有行为一致；inset 渲染是独立更深 lever）。
+        for shadow in &style.box_shadow {
+            if shadow.offset_x == 0.0
+                && shadow.offset_y == 0.0
+                && shadow.blur_radius == 0.0
+                && shadow.spread_radius == 0.0
+            {
+                continue;
+            }
 
-        if shadow.offset_x == 0.0 && shadow.offset_y == 0.0 && shadow.blur_radius == 0.0 && shadow.spread_radius == 0.0
-        {
-            return;
+            let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+            // box-shadow 颜色：`currentColor` 使用元素自身计算 `color`（CSS-Color §resolving）。
+            // color_value_to_render 无元素上下文会把 CurrentColor 回落为黑色，致 `color:transparent`
+            // 时阴影错误地实心可见。driving: WPT box-shadow-currentcolor（与 text-decoration /
+            // border 同族 currentColor 解析）。style.color 自身若仍为 CurrentColor（未解析继承），
+            // color_value_to_render 回落黑色 = 既有行为，零回归。
+            let color = if matches!(shadow.color, ColorValue::CurrentColor) {
+                color_value_to_render(&style.color)
+            } else {
+                color_value_to_render(&shadow.color)
+            };
+
+            self.primitives.add_shadow(ShadowPrimitive {
+                rect,
+                color,
+                offset_x: shadow.offset_x,
+                offset_y: shadow.offset_y,
+                blur_radius: shadow.blur_radius,
+                spread_radius: shadow.spread_radius,
+            });
         }
-
-        let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
-        // box-shadow 颜色：`currentColor` 使用元素自身计算 `color`（CSS-Color §resolving）。
-        // color_value_to_render 无元素上下文会把 CurrentColor 回落为黑色，致 `color:transparent`
-        // 时阴影错误地实心可见。driving: WPT box-shadow-currentcolor（与 text-decoration /
-        // border 同族 currentColor 解析）。style.color 自身若仍为 CurrentColor（未解析继承），
-        // color_value_to_render 回落黑色 = 既有行为，零回归。
-        let color = if matches!(shadow.color, ColorValue::CurrentColor) {
-            color_value_to_render(&style.color)
-        } else {
-            color_value_to_render(&shadow.color)
-        };
-
-        self.primitives.add_shadow(ShadowPrimitive {
-            rect,
-            color,
-            offset_x: shadow.offset_x,
-            offset_y: shadow.offset_y,
-            blur_radius: shadow.blur_radius,
-            spread_radius: shadow.spread_radius,
-        });
     }
 
     /// 绘制背景图片 / 渐变（支持多图层）。

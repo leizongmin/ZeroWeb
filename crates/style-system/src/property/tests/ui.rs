@@ -552,7 +552,7 @@ fn test_text_shadow_apply_initial() {
 fn test_apply_box_shadow_none() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "box-shadow", "none"));
-    assert_eq!(style.box_shadow.offset_x, 0.0);
+    assert!(style.box_shadow.is_empty(), "none → 空阴影列表");
 }
 
 #[test]
@@ -563,29 +563,52 @@ fn test_apply_box_shadow_values() {
         "box-shadow",
         "10px 20px 30px 5px blue"
     ));
-    assert_eq!(style.box_shadow.offset_x, 10.0);
-    assert_eq!(style.box_shadow.offset_y, 20.0);
-    assert_eq!(style.box_shadow.blur_radius, 30.0);
-    assert_eq!(style.box_shadow.spread_radius, 5.0);
-    assert_eq!(
-        style.box_shadow.color,
-        zero_css_parser::values::ColorValue::Rgba(0, 0, 255, 255)
-    );
-    assert!(!style.box_shadow.inset);
+    let s = &style.box_shadow[0];
+    assert_eq!(s.offset_x, 10.0);
+    assert_eq!(s.offset_y, 20.0);
+    assert_eq!(s.blur_radius, 30.0);
+    assert_eq!(s.spread_radius, 5.0);
+    assert_eq!(s.color, zero_css_parser::values::ColorValue::Rgba(0, 0, 255, 255));
+    assert!(!s.inset);
 }
 
 #[test]
 fn test_apply_box_shadow_inset() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "box-shadow", "inset 5px 10px"));
-    assert!(style.box_shadow.inset);
-    assert_eq!(style.box_shadow.offset_x, 5.0);
-    assert_eq!(style.box_shadow.offset_y, 10.0);
+    let s = &style.box_shadow[0];
+    assert!(s.inset);
+    assert_eq!(s.offset_x, 5.0);
+    assert_eq!(s.offset_y, 10.0);
 }
 
 #[test]
 fn test_box_shadow_not_inherited() {
     assert!(!PropertyRegistry::is_inherited("box-shadow"));
+}
+
+/// R2304：多 box-shadow 列表（CSS Backgrounds §7.2：<shadow>#）应用到 ComputedStyle。
+#[test]
+fn test_apply_box_shadow_multiple_list() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "box-shadow",
+        "1px 2px red, inset 3px 4px blue"
+    ));
+    assert_eq!(style.box_shadow.len(), 2, "应解析为 2 个阴影");
+
+    let first = &style.box_shadow[0];
+    assert_eq!(first.offset_x, 1.0);
+    assert_eq!(first.offset_y, 2.0);
+    assert!(!first.inset);
+    assert_eq!(first.color, zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255));
+
+    let second = &style.box_shadow[1];
+    assert_eq!(second.offset_x, 3.0);
+    assert_eq!(second.offset_y, 4.0);
+    assert!(second.inset, "第二个应为 inset");
+    assert_eq!(second.color, zero_css_parser::values::ColorValue::Rgba(0, 0, 255, 255));
 }
 
 #[test]
@@ -602,9 +625,16 @@ fn test_box_shadow_initial_value() {
 #[test]
 fn test_box_shadow_apply_initial() {
     let mut style = ComputedStyle::default();
-    style.box_shadow.offset_x = 99.0;
+    style.box_shadow = vec![BoxShadowComputedValue {
+        offset_x: 99.0,
+        offset_y: 0.0,
+        blur_radius: 0.0,
+        spread_radius: 0.0,
+        color: zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255),
+        inset: false,
+    }];
     assert!(apply_initial_value(&mut style, "box-shadow"));
-    assert_eq!(style.box_shadow.offset_x, 0.0);
+    assert!(style.box_shadow.is_empty(), "initial → 空阴影列表");
 }
 
 #[test]
@@ -657,15 +687,13 @@ fn test_box_shadow_inset_vs_normal_applied_correctly() {
         "box-shadow",
         "4px 8px 6px 2px green"
     ));
-    assert!(!normal_style.box_shadow.inset, "普通 box-shadow 的 inset 应为 false");
-    assert_eq!(normal_style.box_shadow.offset_x, 4.0);
-    assert_eq!(normal_style.box_shadow.offset_y, 8.0);
-    assert_eq!(normal_style.box_shadow.blur_radius, 6.0);
-    assert_eq!(normal_style.box_shadow.spread_radius, 2.0);
-    assert_eq!(
-        normal_style.box_shadow.color,
-        zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255)
-    );
+    let n = &normal_style.box_shadow[0];
+    assert!(!n.inset, "普通 box-shadow 的 inset 应为 false");
+    assert_eq!(n.offset_x, 4.0);
+    assert_eq!(n.offset_y, 8.0);
+    assert_eq!(n.blur_radius, 6.0);
+    assert_eq!(n.spread_radius, 2.0);
+    assert_eq!(n.color, zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255));
 
     // inset box-shadow
     let mut inset_style = ComputedStyle::default();
@@ -674,15 +702,13 @@ fn test_box_shadow_inset_vs_normal_applied_correctly() {
         "box-shadow",
         "inset 4px 8px 6px 2px green"
     ));
-    assert!(inset_style.box_shadow.inset, "inset box-shadow 的 inset 应为 true");
-    assert_eq!(inset_style.box_shadow.offset_x, 4.0);
-    assert_eq!(inset_style.box_shadow.offset_y, 8.0);
-    assert_eq!(inset_style.box_shadow.blur_radius, 6.0);
-    assert_eq!(inset_style.box_shadow.spread_radius, 2.0);
-    assert_eq!(
-        inset_style.box_shadow.color,
-        zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255)
-    );
+    let i = &inset_style.box_shadow[0];
+    assert!(i.inset, "inset box-shadow 的 inset 应为 true");
+    assert_eq!(i.offset_x, 4.0);
+    assert_eq!(i.offset_y, 8.0);
+    assert_eq!(i.blur_radius, 6.0);
+    assert_eq!(i.spread_radius, 2.0);
+    assert_eq!(i.color, zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255));
 }
 
 // ── 边界测试：outline 简写属性通过 expand_shorthands 展开 ──
@@ -758,7 +784,7 @@ fn test_border_image_slice_with_fill_keyword() {
 // ── 边界测试：text_shadow 和 box_shadow 计算样式的默认值（无阴影） ──
 
 /// 验证 ComputedStyle 默认构造时，text_shadow 和 box_shadow 均表示"无阴影"状态：
-/// 所有偏移/半径为 0，颜色为不透明黑色（但 inset 为 false 表示无实际阴影效果）。
+/// text-shadow 全偏移/半径为 0；box-shadow 为空阴影列表（R2304：none = 空 Vec）。
 #[test]
 fn test_computed_style_default_no_shadow() {
     let style = ComputedStyle::default();
@@ -768,12 +794,8 @@ fn test_computed_style_default_no_shadow() {
     assert_eq!(style.text_shadow.offset_y, 0.0);
     assert_eq!(style.text_shadow.blur_radius, 0.0);
 
-    // box-shadow 默认值：全部为零，无实际阴影
-    assert_eq!(style.box_shadow.offset_x, 0.0);
-    assert_eq!(style.box_shadow.offset_y, 0.0);
-    assert_eq!(style.box_shadow.blur_radius, 0.0);
-    assert_eq!(style.box_shadow.spread_radius, 0.0);
-    assert!(!style.box_shadow.inset, "默认 box-shadow 的 inset 应为 false");
+    // box-shadow 默认值：空阴影列表 = 无阴影
+    assert!(style.box_shadow.is_empty(), "默认 box-shadow 应为空列表");
 }
 
 // ── list-style-image ──
@@ -1313,19 +1335,11 @@ fn test_counter_set_initial_value() {
 
 // ── 边界测试：box-shadow / text-shadow / background-image ──
 
-/// 测试 box-shadow 计算值默认值（所有参数为零、无内阴影）。
+/// 测试 box-shadow 计算值默认值（空阴影列表 = 无阴影）。
 #[test]
 fn test_edge_box_shadow_default_all_zero() {
     let style = ComputedStyle::default();
-    assert_eq!(style.box_shadow.offset_x, 0.0);
-    assert_eq!(style.box_shadow.offset_y, 0.0);
-    assert_eq!(style.box_shadow.blur_radius, 0.0);
-    assert_eq!(style.box_shadow.spread_radius, 0.0);
-    assert!(!style.box_shadow.inset);
-    assert_eq!(
-        style.box_shadow.color,
-        zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255)
-    );
+    assert!(style.box_shadow.is_empty(), "默认 box-shadow 应为空列表");
 }
 
 /// 测试 box-shadow 解析 "4px 4px 8px 0px rgba(0,0,0,0.5)"。
@@ -1337,16 +1351,14 @@ fn test_edge_box_shadow_rgba_parse() {
         "box-shadow",
         "4px 4px 8px 0px rgba(0,0,0,0.5)"
     ));
-    assert_eq!(style.box_shadow.offset_x, 4.0);
-    assert_eq!(style.box_shadow.offset_y, 4.0);
-    assert_eq!(style.box_shadow.blur_radius, 8.0);
-    assert_eq!(style.box_shadow.spread_radius, 0.0);
+    let s = &style.box_shadow[0];
+    assert_eq!(s.offset_x, 4.0);
+    assert_eq!(s.offset_y, 4.0);
+    assert_eq!(s.blur_radius, 8.0);
+    assert_eq!(s.spread_radius, 0.0);
     // rgba(0,0,0,0.5) -> alpha=128 (0.5*255 rounded)
-    assert_eq!(
-        style.box_shadow.color,
-        zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 128)
-    );
-    assert!(!style.box_shadow.inset);
+    assert_eq!(s.color, zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 128));
+    assert!(!s.inset);
 }
 
 /// 测试 text-shadow 计算值默认值。
@@ -1403,15 +1415,13 @@ fn test_edge_box_shadow_negative_values() {
         "box-shadow",
         "-3px -5px -2px -1px red"
     ));
-    assert_eq!(style.box_shadow.offset_x, -3.0);
-    assert_eq!(style.box_shadow.offset_y, -5.0);
-    assert_eq!(style.box_shadow.blur_radius, -2.0);
-    assert_eq!(style.box_shadow.spread_radius, -1.0);
-    assert_eq!(
-        style.box_shadow.color,
-        zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255)
-    );
-    assert!(!style.box_shadow.inset);
+    let s = &style.box_shadow[0];
+    assert_eq!(s.offset_x, -3.0);
+    assert_eq!(s.offset_y, -5.0);
+    assert_eq!(s.blur_radius, -2.0);
+    assert_eq!(s.spread_radius, -1.0);
+    assert_eq!(s.color, zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255));
+    assert!(!s.inset);
 }
 
 /// 测试 text-shadow 继承到子元素。

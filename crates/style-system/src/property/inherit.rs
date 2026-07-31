@@ -1307,7 +1307,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         "box-shadow" => {
-            style.box_shadow = default_style.box_shadow;
+            style.box_shadow = default_style.box_shadow.clone();
             true
         }
         "clip-path" => {

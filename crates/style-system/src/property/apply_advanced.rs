@@ -1312,28 +1312,32 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // box-shadow（CSS Backgrounds §7.2：<shadow>#，多阴影列表，R2304）。
         "box-shadow" => {
-            if let Some(v) = zero_css_parser::values::parse_box_shadow(value) {
-                style.box_shadow = BoxShadowComputedValue {
-                    offset_x: match v.offset_x {
-                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                        _ => 0.0,
-                    },
-                    offset_y: match v.offset_y {
-                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                        _ => 0.0,
-                    },
-                    blur_radius: match v.blur_radius {
-                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                        _ => 0.0,
-                    },
-                    spread_radius: match v.spread_radius {
-                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                        _ => 0.0,
-                    },
-                    color: v.color,
-                    inset: v.inset,
-                };
+            if let Some(list) = zero_css_parser::values::parse_box_shadow_list(value) {
+                style.box_shadow = list
+                    .into_iter()
+                    .map(|v| BoxShadowComputedValue {
+                        offset_x: match v.offset_x {
+                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                            _ => 0.0,
+                        },
+                        offset_y: match v.offset_y {
+                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                            _ => 0.0,
+                        },
+                        blur_radius: match v.blur_radius {
+                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                            _ => 0.0,
+                        },
+                        spread_radius: match v.spread_radius {
+                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
+                            _ => 0.0,
+                        },
+                        color: v.color,
+                        inset: v.inset,
+                    })
+                    .collect();
                 return true;
             }
         }
