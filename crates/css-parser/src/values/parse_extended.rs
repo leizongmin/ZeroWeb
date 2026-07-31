@@ -505,8 +505,8 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
         }
         return Some(ContentValue::String(input[1..input.len() - 1].to_string()));
     }
-    // attr(name)
-    if input.starts_with("attr(") && input.ends_with(')') {
+    // attr(name) — CSS Values §4：函数名大小写不敏感（ATTR ≡ attr）；属性名内容保持原样。
+    if (input.len() >= 5 && input[..5].eq_ignore_ascii_case("attr(")) && input.ends_with(')') {
         let inner = input[5..input.len() - 1].trim();
         if inner.is_empty() {
             return None;
@@ -514,7 +514,8 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
         return Some(ContentValue::Attr(inner.to_string()));
     }
     // counter(name) 或 counter(name, style)
-    if input.starts_with("counter(") && input.ends_with(')') {
+    // counter(name[, style]) — CSS Values §4：函数名大小写不敏感（COUNTER ≡ counter）；计数器名/样式保持原样。
+    if (input.len() >= 8 && input[..8].eq_ignore_ascii_case("counter(")) && input.ends_with(')') {
         let inner = input[8..input.len() - 1].trim();
         if inner.is_empty() {
             return None;

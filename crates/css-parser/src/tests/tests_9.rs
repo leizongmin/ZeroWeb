@@ -759,6 +759,18 @@ fn test_content_url() {
         parse_content(r#"Url("x/y.gif")"#),
         Some(ContentValue::Url("x/y.gif".to_string()))
     );
+    // CSS Values §4：attr()/counter() 函数名大小写不敏感；属性名/计数器名保持原样。
+    assert_eq!(
+        parse_content("ATTR(data-x)"),
+        Some(ContentValue::Attr("data-x".to_string()))
+    );
+    assert_eq!(
+        parse_content("Counter(section, upper-roman)"),
+        Some(ContentValue::Counter {
+            name: "section".to_string(),
+            style: Some("upper-roman".to_string())
+        })
+    );
 }
 
 #[test]
