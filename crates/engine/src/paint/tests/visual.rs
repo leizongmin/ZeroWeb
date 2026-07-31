@@ -1709,6 +1709,48 @@ fn test_column_rule_em_gap_matches_layout_3cols() {
     );
 }
 
+/// CSS Multi-column：column-count:auto 时 column-width 须按 em/% 解析推列数（与 layout 一致）。
+/// column-width:10em(font16→160) + 默认 gap(16) + content_w=600 → count=3，col_w≈189.33，
+/// rule@i=1 x≈195.83、@i=2 x≈401.17。修复前 paint 只认 Px column-width → em 触发 `_=>return`
+/// 不画任何 rule（red）。
+#[test]
+fn test_column_rule_em_column_width_draws_rules() {
+    use zero_style_system::{
+        ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
+    };
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 600.0, 200.0);
+
+    let mut style = ComputedStyle::default();
+    style.column_count = ColumnCountComputedValue::Auto;
+    style.column_width = ColumnWidthComputedValue::Length(LengthValue::Em(10.0)); // 10em → 160px
+    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
+    style.column_rule_width = ColumnRuleWidthComputedValue::Medium; // 3px
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // count = floor((600+16)/(160+16)) = 3，col_w=(600-32)/3≈189.333，rule_w=3。
+    // rule@i=1 x ≈ 195.833，rule@i=2 x ≈ 401.167。
+    // 修复前 em column-width → `_=>return` 不画 rule（0 fill）→ 两 x 无 fill（red）。
+    let has_rule_at = |expected_x: f32| {
+        painter.primitives().fills.iter().any(|f| {
+            f.color.a > 0 && (f.rect.origin.x - expected_x).abs() < 0.5 && (f.rect.size.width - 3.0).abs() < 0.1
+        })
+    };
+    assert!(
+        has_rule_at(195.833),
+        "column-width:10em → 3 列 rule@i=1 应在 x≈195.83（修复前 em 不画 rule）"
+    );
+    assert!(
+        has_rule_at(401.167),
+        "column-width:10em → 3 列 rule@i=2 应在 x≈401.17（修复前 em 不画 rule）"
+    );
+}
+
 /// 测试 column-rule-style: none 不绘制分隔线。
 #[test]
 fn test_column_rules_none() {

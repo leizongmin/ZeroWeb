@@ -95,12 +95,24 @@ pub(super) fn inline_multicol_used_columns(
     used
 }
 
-/// 解析 column-gap 为 px，与 layout（`multicol.rs:161-165` + `length_to_px`）保持一致：
+/// 解析通用 LengthValue 为 px，与 layout（`multicol.rs:122-137` length_to_px）一致，限于
+/// 现实单位：Px/em/%/rem（em × font-size、% × 容器宽、rem × 16）。Vw/Vh/Ch 等占位单位保持 0
+///（layout 用常数 8.0/6.0，复制意义低）。供 column-gap / column-width paint 解析共用。
+fn resolve_length_px(l: &LengthValue, content_width: f32, font_size_px: f32) -> f32 {
+    match l {
+        LengthValue::Px(v) => *v as f32,
+        LengthValue::Em(v) => *v as f32 * font_size_px,
+        LengthValue::Percentage(p) => *p as f32 / 100.0 * content_width,
+        LengthValue::Rem(v) => *v as f32 * 16.0,
+        _ => 0.0,
+    }
+}
+
+/// 解析 column-gap 为 px，与 layout（`multicol.rs:161-165`）保持一致：
 /// CSS Multi-column §4.1：column-gap 初始 = normal，对 multicol = 1em（default_impl 用
-/// `LengthValue::Auto` 作 normal sentinel，gap 不接受 auto 故无冲突）。显式 Px/em/% 同 layout
-/// 解析（em × font-size，% × 容器宽）。修复前 paint 把 Auto/em/% 当 0 → 与 layout 不一致 →
-/// 多列的 column-rule X 坐标与 col_w 偏离实际列位置（3+ 列可见）。Rem/Vw/Vh/Ch 等罕见
-/// column-gap 单位暂不解析（layout 用占位常数，复制意义低），保持 0。
+/// `LengthValue::Auto` 作 normal sentinel，gap 不接受 auto 故无冲突）。显式长度（Px/em/%/rem）
+/// 经 `resolve_length_px` 解析。修复前 paint 把 Auto/em/% 当 0 → 与 layout 不一致 → 多列的
+/// column-rule X 坐标偏离实际列位置（3+ 列可见）。
 fn column_gap_px(style: &ComputedStyle, content_width: f32) -> f32 {
     let font_size_px = match style.font_size {
         LengthValue::Px(s) => s as f32,
@@ -109,10 +121,7 @@ fn column_gap_px(style: &ComputedStyle, content_width: f32) -> f32 {
     match style.column_gap {
         // CSS Multicol §4.1：normal（Auto sentinel）→ 1em。
         LengthValue::Auto => font_size_px,
-        LengthValue::Px(g) => g as f32,
-        LengthValue::Em(v) => v as f32 * font_size_px,
-        LengthValue::Percentage(p) => p as f32 / 100.0 * content_width,
-        _ => 0.0,
+        _ => resolve_length_px(&style.column_gap, content_width, font_size_px),
     }
 }
 
@@ -123,15 +132,26 @@ impl super::super::Painter {
         let count = match &style.column_count {
             ColumnCountComputedValue::Auto => match &style.column_width {
                 ColumnWidthComputedValue::Auto => return,
-                ColumnWidthComputedValue::Length(LengthValue::Px(w)) => {
+                ColumnWidthComputedValue::Length(w) => {
                     let content_w = box_node.content_width;
-                    if content_w <= 0.0 || *w <= 0.0 {
+                    if content_w <= 0.0 {
                         return;
                     }
+                    let font_size_px = match style.font_size {
+                        LengthValue::Px(s) => s as f32,
+                        _ => 16.0,
+                    };
+                    // 与 layout（multicol.rs compute_column_info）一致：解析 column-width
+                    //（em/%/rem 经 resolve_length_px），负值非法 → 无多列，0 < w < 1 clamp ≥1px
+                    //（CSS Multicol §3.1，zero-column-width-layout）。
+                    let w = resolve_length_px(w, content_w, font_size_px);
+                    if w < 0.0 {
+                        return;
+                    }
+                    let w = w.max(1.0);
                     let gap: f32 = column_gap_px(style, content_w);
-                    ((content_w + gap) / (*w as f32 + gap)).max(1.0).floor() as u32
+                    ((content_w + gap) / (w + gap)).max(1.0).floor() as u32
                 }
-                _ => return,
             },
             ColumnCountComputedValue::Number(n) => *n,
         };
