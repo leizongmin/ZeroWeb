@@ -17,7 +17,7 @@ use zero_style_system::DirectionValue;
 
 use zero_dom::{Document, NodeId, NodeKind};
 
-use zero_style_system::{ComputedStyle, ZIndexValue};
+use zero_style_system::{ComputedStyle, IsolationValue, ZIndexValue};
 
 /// 将逻辑 `float` 值（`inline-start`/`inline-end`）按方向解析为物理 `left`/`right`
 /// （CSS Logical §float-clear）。物理值（Left/Right/None）原样返回。
@@ -1734,6 +1734,17 @@ impl LayoutEngine {
         walk(root, viewport_width, taffy_tree, dom_to_taffy, styles)
     }
 
+    /// CSS 堆叠上下文（stacking context）触发器（CSS 2.1 §9.9 + CSS3）：
+    /// (1) positioned 元素 + 显式整数 z-index；(2) opacity < 1（CSS3，R505 scope）；
+    /// (3) `isolation: isolate`（CSS Compositing §3，R2302 补——隔离后代与祖先背景的混合）。
+    /// 抽出为独立纯函数便于单测（creates_stacking_context 在 extract_layout 内联组装，
+    /// 其余触发器如 transform/filter/will-change 等由 paint 层按需处理）。
+    pub(crate) fn style_creates_stacking_context(is_positioned: bool, s: &ComputedStyle) -> bool {
+        (is_positioned && matches!(s.z_index, ZIndexValue::Integer(_)))
+            || s.opacity < 1.0
+            || matches!(s.isolation, IsolationValue::Isolate)
+    }
+
     /// 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，
     /// 需要在提取时交换回来以获得正确的视觉坐标。
     fn extract_layout(
@@ -1893,9 +1904,10 @@ impl LayoutEngine {
         //     非 scope，其 positioned 后代被上提到祖先的图元范围之外，paint_node 末尾
         //     对 [counts_before, now] 应用的 opacity（painter/mod.rs）会漏掉它们——
         //     opacity:0 不隐藏内容的回归（R505）。故 opacity<1 元素必须为 scope。
-        let creates_stacking_context = (is_positioned
-            && computed.is_some_and(|s| matches!(s.z_index, ZIndexValue::Integer(_))))
-            || computed.is_some_and(|s| s.opacity < 1.0);
+        // (3) isolation: isolate（CSS Compositing §3）：显式建立堆叠上下文，隔离后代
+        //     与祖先背景的混合（mix-blend-mode 不应穿透到 isolate 元素之外）。R2302 补——
+        //     旧 impl 仅 parse/store isolation 字段不触发 SC（spec 缺口，类 contain R2299）。
+        let creates_stacking_context = computed.is_some_and(|s| Self::style_creates_stacking_context(is_positioned, s));
 
         // 从 taffy 提取原始值
         let mut x = layout.location.x;

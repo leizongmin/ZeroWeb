@@ -160,6 +160,7 @@ mod r2171_ar_container_cross_size_tests;
 mod r2173_svg_attr_aspect_ratio_tests;
 mod r2234_logical_float_clear_tests;
 mod r2248_margin_trim_tests;
+mod r2302_isolation_stacking_context_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
