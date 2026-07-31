@@ -1299,6 +1299,8 @@ fn test_background_origin_content_box() {
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
     style.background_origin = BackgroundOriginComputedValue::ContentBox;
+    // R2312：no-repeat 隔离 origin 定位断言（repeat 现平铺 painting area=clip box，tile 数会变）。
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
@@ -1306,6 +1308,33 @@ fn test_background_origin_content_box() {
 
     let img = &painter.primitives().images;
     assert_eq!(img.len(), 1);
+    assert_eq!(img[0].rect.origin.x, 15.0);
+    assert_eq!(img[0].rect.origin.y, 15.0);
+    assert_eq!(img[0].rect.size.width, 180.0);
+    assert_eq!(img[0].rect.size.height, 80.0);
+}
+
+/// R2312：background-clip 应用于背景图像（painting area = background-clip box，非 origin box）。
+/// 旧 impl 误把 origin box 当 clip；本测试守 `background-clip: content-box` 把图像裁到 content-box。
+#[test]
+fn test_r2312_background_clip_applied_to_image() {
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    // border 10 + padding 5 → content-box at (15,15) 180x80；padding-box (10,10) 190x90。
+    let layout = make_box_with_padding(Some(nid), 0.0, 0.0, 200.0, 100.0, 10.0, 10.0, 5.0, 5.0, 180.0, 80.0);
+
+    let mut style = ComputedStyle::default();
+    style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
+    style.background_clip = BackgroundClipComputedValue::ContentBox; // origin 仍默认 padding-box
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let img = &painter.primitives().images;
+    assert_eq!(img.len(), 1);
+    // 图像从 padding-box origin (10,10) 起绘（Auto size=190×90），被裁到 content-box (15,15) 180×80。
     assert_eq!(img[0].rect.origin.x, 15.0);
     assert_eq!(img[0].rect.origin.y, 15.0);
     assert_eq!(img[0].rect.size.width, 180.0);

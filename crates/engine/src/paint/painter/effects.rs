@@ -15,11 +15,12 @@ use zero_render_foundation::primitive::{
     StrokePrimitive,
 };
 use zero_style_system::{
-    AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundImageComputedValue,
-    BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
-    BackgroundSizeComputedValue, CaretColorComputedValue, ComputedStyle, FilterComputedValue, HyphensComputedValue,
-    LineClampComputedValue, MixBlendModeComputedValue, QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue,
-    ScrollbarWidthComputedValue, TextDecorationLineValue, TextDecorationStyleValue, TextWrapComputedValue,
+    AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
+    BackgroundImageComputedValue, BackgroundOriginComputedValue, BackgroundPositionComputedValue,
+    BackgroundRepeatComputedValue, BackgroundSizeComputedValue, CaretColorComputedValue, ComputedStyle,
+    FilterComputedValue, HyphensComputedValue, LineClampComputedValue, MixBlendModeComputedValue, QuotesComputedValue,
+    ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, TextDecorationLineValue,
+    TextDecorationStyleValue, TextWrapComputedValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -88,7 +89,7 @@ impl super::Painter {
             return;
         }
 
-        // 计算 background-origin 定位区域
+        // 计算 background-origin 定位区域（positioning area）
         let (origin_x, origin_y, origin_w, origin_h) = match style.background_origin {
             BackgroundOriginComputedValue::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
             BackgroundOriginComputedValue::PaddingBox => (
@@ -105,8 +106,28 @@ impl super::Painter {
             ),
         };
 
+        // R2312：painting area（clip）= background-clip box（CSS Backgrounds §3.7）。
+        // 旧 impl 误把 origin box 当 clip，致 background-position 负偏移露出 border/padding 区时
+        // 被错误裁掉（origin-content-box_with_position 等），且 background-clip≠origin 时图像
+        // 裁剪/平铺区域错误。text 变体按既有简化当 content-box（无 glyph-mask 能力）。
+        let (clip_x, clip_y, clip_w, clip_h) = match style.background_clip {
+            BackgroundClipComputedValue::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
+            BackgroundClipComputedValue::PaddingBox => (
+                abs_x + box_node.border_left,
+                abs_y + box_node.border_top,
+                box_node.width - box_node.border_left - box_node.border_right,
+                box_node.height - box_node.border_top - box_node.border_bottom,
+            ),
+            BackgroundClipComputedValue::ContentBox | BackgroundClipComputedValue::Text => (
+                abs_x + box_node.border_left + box_node.padding_left,
+                abs_y + box_node.border_top + box_node.padding_top,
+                box_node.content_width,
+                box_node.content_height,
+            ),
+        };
+
         self.paint_bg_image_in_origin(
-            origin_x, origin_y, origin_w, origin_h, origin_x, origin_y, origin_w, origin_h, style, 0.0, 0.0,
+            origin_x, origin_y, origin_w, origin_h, clip_x, clip_y, clip_w, clip_h, style, 0.0, 0.0,
         );
     }
 
@@ -239,10 +260,13 @@ impl super::Painter {
                 BackgroundImageComputedValue::Url(url) => {
                     let key = image_resource_key(url, self.document_url.as_deref());
 
-                    // 平铺范围相对 painting area（clip）计算——生成足够覆盖元素盒的 tile，
-                    // 网格对齐到 positioned（fixed 时为视口锚定）。
+                    // R2312：repeat 平铺 painting area（clip）/ space·round 适配 positioning area（origin）。
                     let (repeat_x, repeat_y, tile_w, tile_h) = resolve_repeat_params(
                         repeat,
+                        origin_x,
+                        origin_y,
+                        origin_w,
+                        origin_h,
                         clip_x,
                         clip_y,
                         clip_w,
@@ -1080,6 +1104,10 @@ fn resolve_repeat_params(
     origin_y: f32,
     origin_w: f32,
     origin_h: f32,
+    clip_x: f32,
+    clip_y: f32,
+    clip_w: f32,
+    clip_h: f32,
     positioned_x: f32,
     positioned_y: f32,
     sized_w: f32,
@@ -1094,11 +1122,13 @@ fn resolve_repeat_params(
         );
     }
 
+    // R2312：repeat/repeat-x/repeat-y 按 CSS §3.4 平铺覆盖 painting area（clip box）；
+    // space/round 按 positioning area（origin box）适配（见下方 space/round 分支用 origin_*）。
     let x_range = |do_repeat: bool| {
         if do_repeat {
-            // 从 origin 左边界开始，确保覆盖整个区域
-            let start = origin_x - ((origin_x - positioned_x) % sized_w).abs();
-            (start, origin_x + origin_w)
+            // 从 clip 左边界开始，确保覆盖整个 painting area
+            let start = clip_x - ((clip_x - positioned_x) % sized_w).abs();
+            (start, clip_x + clip_w)
         } else {
             (positioned_x, positioned_x + sized_w)
         }
@@ -1106,8 +1136,8 @@ fn resolve_repeat_params(
 
     let y_range = |do_repeat: bool| {
         if do_repeat {
-            let start = origin_y - ((origin_y - positioned_y) % sized_h).abs();
-            (start, origin_y + origin_h)
+            let start = clip_y - ((clip_y - positioned_y) % sized_h).abs();
+            (start, clip_y + clip_h)
         } else {
             (positioned_y, positioned_y + sized_h)
         }
