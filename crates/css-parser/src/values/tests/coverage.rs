@@ -81,6 +81,53 @@ fn test_transform_translate3d() {
     assert!(result.is_some());
 }
 
+// R2294：translate(%) 不再丢弃整 transform，解析为 *Mixed 变体（per-arg 百分比标记）。
+#[test]
+fn test_transform_translate_percent_not_dropped() {
+    use crate::values::{TransformFunction, TransformValue};
+    // 修复前：parse_css_number("50%") → None → 整 transform 丢弃。
+    let list = match parse_transform("translateX(50%)").unwrap() {
+        TransformValue::List(f) => f,
+        _ => panic!("expected list"),
+    };
+    assert!(matches!(list[0], TransformFunction::TranslateXMixed(50.0, true)));
+
+    let list = match parse_transform("translate(-50%, -50%)").unwrap() {
+        TransformValue::List(f) => f,
+        _ => panic!("expected list"),
+    };
+    assert!(matches!(
+        list[0],
+        TransformFunction::TranslateMixed(-50.0, true, -50.0, true)
+    ));
+
+    // 混合 px + %。
+    let list = match parse_transform("translate(50%, 10px)").unwrap() {
+        TransformValue::List(f) => f,
+        _ => panic!("expected list"),
+    };
+    assert!(matches!(
+        list[0],
+        TransformFunction::TranslateMixed(50.0, true, 10.0, false)
+    ));
+}
+
+#[test]
+fn test_transform_translate_px_still_uses_translate() {
+    // 回归守护：纯 px 仍走既有 Translate 变体（零回归）。
+    use crate::values::{TransformFunction, TransformValue};
+    let list = match parse_transform("translate(10px, 20px)").unwrap() {
+        TransformValue::List(f) => f,
+        _ => panic!("expected list"),
+    };
+    assert!(matches!(list[0], TransformFunction::Translate(10.0, 20.0)));
+    let list = match parse_transform("translateY(30px)").unwrap() {
+        TransformValue::List(f) => f,
+        _ => panic!("expected list"),
+    };
+    assert!(matches!(list[0], TransformFunction::TranslateY(30.0)));
+}
+
 #[test]
 fn test_transform_scale3d() {
     let result = parse_transform("scale3d(1.5, 2.0, 1.0)");

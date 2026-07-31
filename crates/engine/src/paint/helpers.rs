@@ -97,6 +97,27 @@ pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<Tr
     for func in funcs {
         let (fa, fb, fc, fd, ftx, fty) = match func {
             TransformFunction::Translate(dx, dy) => (1.0, 0.0, 0.0, 1.0, *dx as f32, *dy as f32),
+            // R2294：translate(%) 相对元素 border-box（rect.size）求值。has_non_translate 把
+            // Mixed 变体当非-translate → 走本 matrix 路径（rect 可用），绕过无 rect 的 offset 路径。
+            TransformFunction::TranslateMixed(tx, txp, ty, typ) => {
+                let fx = if *txp {
+                    rect.size.width * (*tx as f32) / 100.0
+                } else {
+                    *tx as f32
+                };
+                let fy = if *typ {
+                    rect.size.height * (*ty as f32) / 100.0
+                } else {
+                    *ty as f32
+                };
+                (1.0, 0.0, 0.0, 1.0, fx, fy)
+            }
+            TransformFunction::TranslateXMixed(tx, _) => {
+                (1.0, 0.0, 0.0, 1.0, rect.size.width * (*tx as f32) / 100.0, 0.0)
+            }
+            TransformFunction::TranslateYMixed(ty, _) => {
+                (1.0, 0.0, 0.0, 1.0, 0.0, rect.size.height * (*ty as f32) / 100.0)
+            }
             TransformFunction::TranslateX(dx) => (1.0, 0.0, 0.0, 1.0, *dx as f32, 0.0),
             TransformFunction::TranslateY(dy) => (1.0, 0.0, 0.0, 1.0, 0.0, *dy as f32),
             TransformFunction::Rotate(deg) => {

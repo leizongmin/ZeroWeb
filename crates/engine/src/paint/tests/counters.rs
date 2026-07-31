@@ -264,3 +264,41 @@ fn test_transform_matrix_skew() {
     assert!((tp.c - 1.0).abs() < 0.01, "c should be tan(45°)=1, got {}", tp.c);
     assert!((tp.d - 1.0).abs() < 0.01);
 }
+
+/// R2294：translate(%) 相对元素 border-box 求值（centering pattern translate(-50%,-50%)）。
+#[test]
+fn test_transform_matrix_translate_percent() {
+    let mut style = ComputedStyle::default();
+    style.transform = TransformValue::List(vec![TransformFunction::TranslateMixed(-50.0, true, -50.0, true)]);
+    style.transform_origin_x = LengthValue::Px(0.0);
+    style.transform_origin_y = LengthValue::Px(0.0);
+    // 100×100 box：-50% 应解析为 -50px（width/height 的 50%）。
+    let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+    let tp = compute_transform_matrix(&style, &rect).expect("percent translate should yield a transform");
+    assert!((tp.a - 1.0).abs() < 0.01);
+    assert!((tp.d - 1.0).abs() < 0.01);
+    assert!(
+        (tp.tx + 50.0).abs() < 0.01,
+        "tx should be -50 (50% of 100), got {}",
+        tp.tx
+    );
+    assert!(
+        (tp.ty + 50.0).abs() < 0.01,
+        "ty should be -50 (50% of 100), got {}",
+        tp.ty
+    );
+
+    // 非 1:1 box：tx 按 width、ty 按 height 独立解析。
+    let rect2 = Rect::new(0.0, 0.0, 200.0, 50.0);
+    let tp2 = compute_transform_matrix(&style, &rect2).expect("should generate transform");
+    assert!(
+        (tp2.tx + 100.0).abs() < 0.01,
+        "tx should be -100 (50% of 200), got {}",
+        tp2.tx
+    );
+    assert!(
+        (tp2.ty + 25.0).abs() < 0.01,
+        "ty should be -25 (50% of 50), got {}",
+        tp2.ty
+    );
+}

@@ -290,6 +290,14 @@ pub enum TransformValue {
 pub enum TransformFunction {
     /// translate(tx, ty)。
     Translate(f64, f64),
+    /// translate(tx, ty) 至少一个分量为百分比（CSS Transforms L1：`%` 相对元素 border-box）。
+    /// `(tx, tx_is_pct, ty, ty_is_pct)`。仅当任一分量为 `%` 时使用（纯 px 仍走 [`Translate`](TransformFunction::Translate)，
+    /// 零回归）。R2294：修复 `translate(50%)` 旧解析 `%` 失败→整 transform 丢弃。
+    TranslateMixed(f64, bool, f64, bool),
+    /// translateX(tx) tx 为百分比。
+    TranslateXMixed(f64, bool),
+    /// translateY(ty) ty 为百分比。
+    TranslateYMixed(f64, bool),
     /// translateX(tx)。
     TranslateX(f64),
     /// translateY(ty)。
@@ -390,20 +398,36 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
 fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction> {
     match name {
         "translate" => {
-            let vals = parse_transform_args(args)?;
-            let tx = vals.first().copied()?;
-            let ty = vals.get(1).copied().unwrap_or(0.0);
-            Some(TransformFunction::Translate(tx, ty))
+            let parts = split_transform_value_args(args)?;
+            let (tx, txp) = parse_len_or_pct(parts.first()?)?;
+            let (ty, typ) = match parts.get(1) {
+                Some(p) => parse_len_or_pct(p)?,
+                None => (0.0, false),
+            };
+            // 任一分量为 % → Mixed 变体（paint 期对 border-box 求值）；纯 px 走既有 Translate（零回归）。
+            Some(if txp || typ {
+                TransformFunction::TranslateMixed(tx, txp, ty, typ)
+            } else {
+                TransformFunction::Translate(tx, ty)
+            })
         }
         "translateX" => {
-            let vals = parse_transform_args(args)?;
-            let tx = vals.first().copied()?;
-            Some(TransformFunction::TranslateX(tx))
+            let parts = split_transform_value_args(args)?;
+            let (tx, txp) = parse_len_or_pct(parts.first()?)?;
+            Some(if txp {
+                TransformFunction::TranslateXMixed(tx, true)
+            } else {
+                TransformFunction::TranslateX(tx)
+            })
         }
         "translateY" => {
-            let vals = parse_transform_args(args)?;
-            let ty = vals.first().copied()?;
-            Some(TransformFunction::TranslateY(ty))
+            let parts = split_transform_value_args(args)?;
+            let (ty, typ) = parse_len_or_pct(parts.first()?)?;
+            Some(if typ {
+                TransformFunction::TranslateYMixed(ty, true)
+            } else {
+                TransformFunction::TranslateY(ty)
+            })
         }
         "rotate" => {
             let angle = parse_angle(args)?;
@@ -507,6 +531,27 @@ fn parse_transform_args(args: &str) -> Option<Vec<f64>> {
         result.push(val);
     }
     if result.is_empty() { None } else { Some(result) }
+}
+
+/// 按逗号/空白拆分 translate 参数为原始 token（保留 `%` 后缀供 [`parse_len_or_pct`] 判定）。
+fn split_transform_value_args(args: &str) -> Option<Vec<&str>> {
+    let parts: Vec<&str> = args
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if parts.is_empty() { None } else { Some(parts) }
+}
+
+/// 解析 translate 分量：返回 `(数值, 是否百分比)`。`%` 保留原数（paint 期对 border-box 求值），
+/// 其余（px/em/rem/裸数）走 [`parse_css_number`]。driving: R2294 transform `translate(%)`。
+fn parse_len_or_pct(s: &str) -> Option<(f64, bool)> {
+    let s = s.trim();
+    if let Some(num) = s.strip_suffix('%') {
+        Some((num.trim().parse::<f64>().ok()?, true))
+    } else {
+        Some((parse_css_number(s)?, false))
+    }
 }
 
 /// 解析 CSS 数值（可能带 px/deg/rad/turn 等单位）。
