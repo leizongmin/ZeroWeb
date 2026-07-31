@@ -1125,16 +1125,20 @@ pub fn parse_calc(value: &str) -> Option<CalcExpr> {
 /// 根据前缀自动识别并解析对应的数学函数。
 /// 返回统一的 [`CalcExpr`] 表达式树。
 pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
-    let value = value.trim();
+    // CSS Values §4：函数名大小写不敏感（CALC ≡ calc、MIN ≡ min、MAX ≡ max、CLAMP ≡ clamp）。
+    // 归一化小写后分发；内容（数字 + 长度）亦大小写不敏感（R2346），故整体小写委托安全。
+    // 修复前 starts_with 仅认小写 → 大写/混合大小写函数名落 None（部分调用方先 lowercase
+    // 掩盖、部分直传 raw 暴露，如 parse_transform.rs / parse_extended_visual.rs 不一致）。
+    let value = value.trim().to_ascii_lowercase();
 
     if value.starts_with("calc(") && value.ends_with(')') {
-        parse_calc(value)
+        parse_calc(&value)
     } else if value.starts_with("min(") && value.ends_with(')') {
-        parse_min(value)
+        parse_min(&value)
     } else if value.starts_with("max(") && value.ends_with(')') {
-        parse_max(value)
+        parse_max(&value)
     } else if value.starts_with("clamp(") && value.ends_with(')') {
-        parse_clamp(value)
+        parse_clamp(&value)
     } else {
         None
     }

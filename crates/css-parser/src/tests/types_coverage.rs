@@ -193,21 +193,21 @@ fn test_parse_calc_invalid_inputs() {
 #[test]
 /// 测试 parse_math_function 各种格式
 fn test_parse_math_function_variants() {
-    // calc 函数
+    // calc 函数（CSS Values §4：函数名大小写不敏感）
     assert!(crate::values::parse_math_function("calc(100px)").is_some());
-    assert!(crate::values::parse_math_function("CALC(100px)").is_none()); // case-sensitive
+    assert!(crate::values::parse_math_function("CALC(100px)").is_some());
 
     // min 函数
     assert!(crate::values::parse_math_function("min(100px, 200px)").is_some());
-    assert!(crate::values::parse_math_function("MIN(100px, 200px)").is_none()); // case-sensitive
+    assert!(crate::values::parse_math_function("MIN(100px, 200px)").is_some());
 
     // max 函数
     assert!(crate::values::parse_math_function("max(100px, 200px)").is_some());
-    assert!(crate::values::parse_math_function("MAX(100px, 200px)").is_none()); // case-sensitive
+    assert!(crate::values::parse_math_function("MAX(100px, 200px)").is_some());
 
     // clamp 函数
     assert!(crate::values::parse_math_function("clamp(100px, 150px, 200px)").is_some());
-    assert!(crate::values::parse_math_function("CLAMP(100px, 150px, 200px)").is_none()); // case-sensitive
+    assert!(crate::values::parse_math_function("CLAMP(100px, 150px, 200px)").is_some());
 
     // 无效的数学函数
     assert!(crate::values::parse_math_function("invalid(100px)").is_none());
