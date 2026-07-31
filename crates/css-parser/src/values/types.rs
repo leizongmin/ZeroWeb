@@ -1475,7 +1475,11 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
 
     let num: f64 = num_str.parse().ok()?;
 
-    match unit {
+    // CSS Values §4：长度单位大小写不敏感（1PX ≡ 1px、1Q ≡ 1q、12.5EX ≡ 12.5ex）。
+    // 归一化为小写后匹配（修复前仅认小写 + "Q" 大写 → 常规 `1q` 等失败）。
+    let unit = unit.to_ascii_lowercase();
+
+    match unit.as_str() {
         "px" => Some(LengthValue::Px(num)),
         "em" => Some(LengthValue::Em(num)),
         // CSS ex 单位 = 字体 x-height。ZeroWeb 未接入字体度量管线，按 Ahem（WPT 测试字体）
@@ -1495,7 +1499,7 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "pc" => Some(LengthValue::Px(num * 96.0 / 6.0)),
         "cm" => Some(LengthValue::Px(num * 96.0 / 2.54)),
         "mm" => Some(LengthValue::Px(num * 96.0 / 25.4)),
-        "Q" => Some(LengthValue::Px(num * 96.0 / 101.6)), // 1Q = 1/4mm
+        "q" => Some(LengthValue::Px(num * 96.0 / 101.6)), // 1q = 1/4mm（大小写不敏感）
         // Per CSS spec, a bare zero without units is a valid length (0px).
         "" if num == 0.0 => Some(LengthValue::Px(0.0)),
         _ => None,

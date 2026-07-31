@@ -110,10 +110,22 @@ fn test_parse_length_case_sensitive_units() {
         Some(LengthValue::Percentage(90.0))
     ));
 
-    // 大写单位应该失败
-    assert!(crate::values::parse_length("10PX").is_none());
-    assert!(crate::values::parse_length("20EM").is_none());
-    assert!(crate::values::parse_length("30REM").is_none());
+    // CSS Values §4：单位大小写不敏感（1PX ≡ 1px、1Q ≡ 1q、12.5EX ≡ 12.5ex）。
+    assert!(matches!(
+        crate::values::parse_length("10PX"),
+        Some(LengthValue::Px(10.0))
+    ));
+    assert!(matches!(
+        crate::values::parse_length("20EM"),
+        Some(LengthValue::Em(20.0))
+    ));
+    assert!(matches!(
+        crate::values::parse_length("30REM"),
+        Some(LengthValue::Rem(30.0))
+    ));
+    // 常规小写 q（CSS Values §length，1q = 1/4mm）须解析；大小写不敏感。
+    assert!(matches!(crate::values::parse_length("1q"), Some(LengthValue::Px(_))));
+    assert!(matches!(crate::values::parse_length("1Q"), Some(LengthValue::Px(_))));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
