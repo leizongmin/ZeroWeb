@@ -426,6 +426,15 @@ pub fn srgb_u8_to_lch(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
 
 /// CIE Lab-D50 → sRGB u8（CSS Color 4；越界色逐通道钳制）。供 RCS lab() 输出回转。
 pub fn lab_to_srgb_u8(l: f64, a: f64, b: f64) -> (u8, u8, u8) {
+    // CSS Color 4 gamut 映射 L 边界：L≥100（D50 白点，任意 chroma gamut-map 到白）；
+    // L≤0 → 黑。此前逐通道钳制致 lab(100,大C) 非纯白。driving: css-color lch-009/010。
+    // in-gamut（0<L<100）不受影响，byte-identical。
+    if l >= 100.0 {
+        return (255, 255, 255);
+    }
+    if l <= 0.0 {
+        return (0, 0, 0);
+    }
     let (lr, lg, lb) = lab_to_linear_srgb(l, a, b);
     (linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb))
 }
@@ -448,6 +457,14 @@ fn lab_components_from_xyz_d50(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
 
 /// CIE LCH-D50 → sRGB u8（CSS Color 4；越界色逐通道钳制）。供 color-mix(in lch) 插值回转。
 pub fn lch_to_srgb_u8(l: f64, c: f64, h: f64) -> (u8, u8, u8) {
+    // CSS Color 4 gamut 映射 L 边界（同 lab_to_srgb_u8）：L≥100→白、L≤0→黑。
+    // driving: css-color lch-009（lch(100% 110 60)→白）/ lch-010（lch(0% 110 60)→黑）。
+    if l >= 100.0 {
+        return (255, 255, 255);
+    }
+    if l <= 0.0 {
+        return (0, 0, 0);
+    }
     let h_rad = h.to_radians();
     let (lr, lg, lb) = lab_to_linear_srgb(l, c * h_rad.cos(), c * h_rad.sin());
     (linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb))
@@ -491,6 +508,15 @@ pub fn srgb_u8_to_oklab(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
 
 /// OKLab → sRGB u8（CSS Color 4；越界色逐通道钳制）。供 RCS oklab() 输出回转。
 pub fn oklab_to_srgb_u8(l: f64, a: f64, b: f64) -> (u8, u8, u8) {
+    // CSS Color 4 gamut 映射 L 边界：OKLab L∈[0,1]，L≥1.0→白、L≤0→黑。
+    // driving: css-color oklch-009（oklch(100% 110 60)→白）/ oklch-010（oklch(0% 1.1 60)→黑）。
+    // oklch_to_srgb_u8 委托本函数，故 OKLCH 亦覆盖。
+    if l >= 1.0 {
+        return (255, 255, 255);
+    }
+    if l <= 0.0 {
+        return (0, 0, 0);
+    }
     let (lr, lg, lb) = oklab_to_linear_srgb(l, a, b);
     (linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb))
 }
@@ -522,13 +548,8 @@ fn parse_lab(value: &str) -> Option<ColorValue> {
     let l = parse_scaled_component(comps[0], 100.0)?.clamp(0.0, 100.0);
     let a = parse_scaled_component(comps[1], 125.0)?;
     let b = parse_scaled_component(comps[2], 125.0)?;
-    let (lr, lg, lb) = lab_to_linear_srgb(l, a, b);
-    Some(ColorValue::Rgba(
-        linear_srgb_to_u8(lr),
-        linear_srgb_to_u8(lg),
-        linear_srgb_to_u8(lb),
-        alpha_to_u8(alpha),
-    ))
+    let (r, g, b) = lab_to_srgb_u8(l, a, b);
+    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)))
 }
 
 /// `lch(L C h [/ alpha])`：L∈[0,100]（% of 100），C（% of 150 或数字），h 为角度。
@@ -541,16 +562,8 @@ fn parse_lch(value: &str) -> Option<ColorValue> {
     let l = parse_scaled_component(comps[0], 100.0)?.clamp(0.0, 100.0);
     let c = parse_scaled_component(comps[1], 150.0)?;
     let h_deg = parse_hue_angle(comps[2])?;
-    let h_rad = h_deg * std::f64::consts::PI / 180.0;
-    let a = c * h_rad.cos();
-    let b = c * h_rad.sin();
-    let (lr, lg, lb) = lab_to_linear_srgb(l, a, b);
-    Some(ColorValue::Rgba(
-        linear_srgb_to_u8(lr),
-        linear_srgb_to_u8(lg),
-        linear_srgb_to_u8(lb),
-        alpha_to_u8(alpha),
-    ))
+    let (r, g, b) = lch_to_srgb_u8(l, c, h_deg);
+    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)))
 }
 
 /// `oklab(L a b [/ alpha])`：L∈[0,1]（% of 1），a/b（% of 0.4 或数字）。
@@ -563,13 +576,8 @@ fn parse_oklab(value: &str) -> Option<ColorValue> {
     let l = parse_scaled_component(comps[0], 1.0)?.clamp(0.0, 1.0);
     let a = parse_scaled_component(comps[1], 0.4)?;
     let b = parse_scaled_component(comps[2], 0.4)?;
-    let (lr, lg, lb) = oklab_to_linear_srgb(l, a, b);
-    Some(ColorValue::Rgba(
-        linear_srgb_to_u8(lr),
-        linear_srgb_to_u8(lg),
-        linear_srgb_to_u8(lb),
-        alpha_to_u8(alpha),
-    ))
+    let (r, g, b) = oklab_to_srgb_u8(l, a, b);
+    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)))
 }
 
 /// `oklch(L C h [/ alpha])`：L∈[0,1]（% of 1），C（% of 0.4 或数字），h 为角度。
@@ -582,16 +590,8 @@ fn parse_oklch(value: &str) -> Option<ColorValue> {
     let l = parse_scaled_component(comps[0], 1.0)?.clamp(0.0, 1.0);
     let c = parse_scaled_component(comps[1], 0.4)?;
     let h_deg = parse_hue_angle(comps[2])?;
-    let h_rad = h_deg * std::f64::consts::PI / 180.0;
-    let a = c * h_rad.cos();
-    let b = c * h_rad.sin();
-    let (lr, lg, lb) = oklab_to_linear_srgb(l, a, b);
-    Some(ColorValue::Rgba(
-        linear_srgb_to_u8(lr),
-        linear_srgb_to_u8(lg),
-        linear_srgb_to_u8(lb),
-        alpha_to_u8(alpha),
-    ))
+    let (r, g, b) = oklch_to_srgb_u8(l, c, h_deg);
+    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)))
 }
 
 /// 解析 color() 分量数字（0-1 浮点，可负/越界）；`none` → 0。
@@ -2194,6 +2194,47 @@ mod tests {
         // 遗留逗号语法不回归
         assert_eq!(parse_color("rgb(0, 128, 0)"), Some(ColorValue::Rgba(0, 128, 0, 255)));
         assert_eq!(parse_color("rgba(0, 0, 0, 0.5)"), Some(ColorValue::Rgba(0, 0, 0, 128)));
+    }
+
+    // ── R2323：Lab/LCH/OKLab/OKLCH L 边界 gamut 映射（CSS Color 4）─────────
+
+    #[test]
+    fn test_r2323_lab_lch_l_boundary_white_black() {
+        // CSS Color 4：L≥100（Lab/LCH 0-100 尺度）→ 白点（任意 chroma gamut-map 到白）；
+        // L≤0 → 黑。driving: css-color lch-009（lch(100% 110 60)→白）/ lch-010（lch(0% 110 60)→黑）。
+        // 此前逐通道钳制致 lch(100,110,60) 非纯白。
+        assert_eq!(lab_to_srgb_u8(100.0, 55.0, 95.3), (255, 255, 255), "lab L=100 -> white");
+        assert_eq!(lab_to_srgb_u8(0.0, 55.0, 95.3), (0, 0, 0), "lab L=0 -> black");
+        assert_eq!(
+            lch_to_srgb_u8(100.0, 110.0, 60.0),
+            (255, 255, 255),
+            "lch L=100 -> white"
+        );
+        assert_eq!(lch_to_srgb_u8(0.0, 110.0, 60.0), (0, 0, 0), "lch L=0 -> black");
+        // 超 100（越界亮）也→白；负 L→黑
+        assert_eq!(lab_to_srgb_u8(120.0, 40.0, 40.0), (255, 255, 255));
+        assert_eq!(lch_to_srgb_u8(-5.0, 30.0, 30.0), (0, 0, 0));
+        // 回归：in-gamput mid-L 不变（byte-identical）
+        let mid = lab_to_srgb_u8(50.0, 0.0, 0.0);
+        assert_eq!(mid, lab_to_srgb_u8(50.0, 0.0, 0.0));
+        // mid-L lab(50,0,0) 应是中灰，非纯白/纯黑
+        assert!(mid.0 > 50 && mid.0 < 250, "mid-L should be mid-gray, got {mid:?}");
+    }
+
+    #[test]
+    fn test_r2323_oklab_oklch_l_boundary_white_black() {
+        // OKLab/OKLCH L∈[0,1]：L≥1.0 → 白，L≤0 → 黑。
+        // driving: css-color oklch-009（oklch(100% 110 60)→白）/ oklch-010（oklch(0% 1.1 60)→黑）。
+        assert_eq!(oklab_to_srgb_u8(1.0, 0.2, 0.3), (255, 255, 255), "oklab L=1 -> white");
+        assert_eq!(oklab_to_srgb_u8(0.0, 0.2, 0.3), (0, 0, 0), "oklab L=0 -> black");
+        assert_eq!(oklch_to_srgb_u8(1.0, 0.11, 60.0), (255, 255, 255), "oklch L=1 -> white");
+        assert_eq!(oklch_to_srgb_u8(0.0, 1.1, 60.0), (0, 0, 0), "oklch L=0 -> black");
+        // 超 1.0 / 负
+        assert_eq!(oklab_to_srgb_u8(1.5, 0.1, 0.1), (255, 255, 255));
+        assert_eq!(oklch_to_srgb_u8(-0.2, 0.5, 30.0), (0, 0, 0));
+        // 回归：in-gamut mid-L byte-identical
+        let mid = oklab_to_srgb_u8(0.5, 0.0, 0.0);
+        assert!(mid.0 > 50 && mid.0 < 250, "oklab mid-L should be mid-gray, got {mid:?}");
     }
 
     // ── CSS 系统颜色（R2254：deprecated ≡ 现代等价）─────────────────────
