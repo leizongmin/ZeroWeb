@@ -95,19 +95,23 @@ pub(super) fn inline_multicol_used_columns(
     used
 }
 
-/// 解析 column-gap 为 px，与 layout（`multicol.rs:161-165`）保持一致：
+/// 解析 column-gap 为 px，与 layout（`multicol.rs:161-165` + `length_to_px`）保持一致：
 /// CSS Multi-column §4.1：column-gap 初始 = normal，对 multicol = 1em（default_impl 用
-/// `LengthValue::Auto` 作 normal sentinel，gap 不接受 auto 故无冲突）。显式 Px 尊重原值。
-/// 修复前 paint 把 Auto 当 0 → 与 layout 的 1em 不一致 → 默认 gap 多列的 column-rule X 坐标
-/// 与 col_w 偏离实际列位置（3+ 列可见）。em/% 等非 Px 长度当前简化为 0（残余，layout 走
-/// length_to_px；显式 em/% column-gap 较 default 罕见）。
-fn column_gap_px(style: &ComputedStyle) -> f32 {
+/// `LengthValue::Auto` 作 normal sentinel，gap 不接受 auto 故无冲突）。显式 Px/em/% 同 layout
+/// 解析（em × font-size，% × 容器宽）。修复前 paint 把 Auto/em/% 当 0 → 与 layout 不一致 →
+/// 多列的 column-rule X 坐标与 col_w 偏离实际列位置（3+ 列可见）。Rem/Vw/Vh/Ch 等罕见
+/// column-gap 单位暂不解析（layout 用占位常数，复制意义低），保持 0。
+fn column_gap_px(style: &ComputedStyle, content_width: f32) -> f32 {
+    let font_size_px = match style.font_size {
+        LengthValue::Px(s) => s as f32,
+        _ => 16.0,
+    };
     match style.column_gap {
-        LengthValue::Auto => match style.font_size {
-            LengthValue::Px(s) => s as f32,
-            _ => 16.0,
-        },
+        // CSS Multicol §4.1：normal（Auto sentinel）→ 1em。
+        LengthValue::Auto => font_size_px,
         LengthValue::Px(g) => g as f32,
+        LengthValue::Em(v) => v as f32 * font_size_px,
+        LengthValue::Percentage(p) => p as f32 / 100.0 * content_width,
         _ => 0.0,
     }
 }
@@ -124,7 +128,7 @@ impl super::super::Painter {
                     if content_w <= 0.0 || *w <= 0.0 {
                         return;
                     }
-                    let gap: f32 = column_gap_px(style);
+                    let gap: f32 = column_gap_px(style, content_w);
                     ((content_w + gap) / (*w as f32 + gap)).max(1.0).floor() as u32
                 }
                 _ => return,
@@ -152,7 +156,7 @@ impl super::super::Painter {
             return;
         }
 
-        let gap: f32 = column_gap_px(style);
+        let gap: f32 = column_gap_px(style, content_w);
 
         // column-rule-width 关键字与 border-width 同值（CSS Multi-column：thin=1/medium=3/thick=5px，
         // 与 parse_basic.rs border-width 关键字 + Chromium 一致）。修复前 Medium=2/Thick=3 偏离。

@@ -1669,6 +1669,46 @@ fn test_column_rule_default_gap_matches_layout_3cols() {
     );
 }
 
+/// CSS Multi-column：column-gap: 2em 须按 font-size 解析（与 layout 一致），否则 em/%
+/// column-gap 的 rule X 偏离列位置。3 列 content_w=600 + gap=2em(font16→32) + Medium(3px)：
+/// col_w=(600-64)/3≈178.67，rule@i=1 x≈193.17、@i=2 x≈403.83（修复前 em→0 → 198.5/398.5）。
+#[test]
+fn test_column_rule_em_gap_matches_layout_3cols() {
+    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 600.0, 200.0);
+
+    let mut style = ComputedStyle::default();
+    style.column_count = ColumnCountComputedValue::Number(3);
+    style.column_gap = LengthValue::Em(2.0); // 2em → 32px（font-size 16）
+    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
+    style.column_rule_width = ColumnRuleWidthComputedValue::Medium; // 3px
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // gap=32：col_w=(600-64)/3≈178.667，rule_w=3。
+    // rule@i=1 x = 0 + 1*178.667 + 0.5*32 - 1.5 ≈ 193.167
+    // rule@i=2 x = 0 + 2*178.667 + 1.5*32 - 1.5 ≈ 403.833
+    // 修复前（em→gap=0）：col_w=200，rule@198.5/398.5 → 这两个 x 无 fill（red）。
+    let has_rule_at = |expected_x: f32| {
+        painter.primitives().fills.iter().any(|f| {
+            f.color.a > 0 && (f.rect.origin.x - expected_x).abs() < 0.5 && (f.rect.size.width - 3.0).abs() < 0.1
+        })
+    };
+    assert!(
+        has_rule_at(193.167),
+        "column-gap:2em 3 列 rule@i=1 应在 x≈193.17（修复前 em→0 → 198.5）"
+    );
+    assert!(
+        has_rule_at(403.833),
+        "column-gap:2em 3 列 rule@i=2 应在 x≈403.83（修复前 em→0 → 398.5）"
+    );
+}
+
 /// 测试 column-rule-style: none 不绘制分隔线。
 #[test]
 fn test_column_rules_none() {
