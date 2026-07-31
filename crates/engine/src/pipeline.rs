@@ -870,6 +870,26 @@ pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<
 /// 收集样式表：外部 CSS 字符串 + 文档内 `<style>` 元素文本。
 pub(crate) fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> {
     let mut stylesheets = Vec::new();
+    // HTML presentational hint（HTML §4.2.5）：首个（树序）`<meta name="color-scheme"
+    // content="...">` 等价于在根元素声明 color-scheme。注入为最低优先级 stylesheet
+    //（vector 首位），author CSS（`css` 参数 + `<style>`）可覆盖。content 原样作
+    // color-scheme 值（"dark"/"light dark" 等，由 R2285/R2286 属性解析 + used-scheme 合成消费）。
+    for meta_id in doc.get_elements_by_tag_name("meta") {
+        let is_color_scheme = doc
+            .get_attribute(meta_id, "name")
+            .is_some_and(|n| n.eq_ignore_ascii_case("color-scheme"));
+        if !is_color_scheme {
+            continue;
+        }
+        if let Some(content) = doc.get_attribute(meta_id, "content") {
+            let content = content.trim();
+            if !content.is_empty() {
+                let synthetic = format!("html {{ color-scheme: {content}; }}");
+                stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&synthetic));
+            }
+        }
+        break; // 仅首个树序 `<meta name="color-scheme">` 生效（HTML spec）
+    }
     if !css.is_empty() {
         stylesheets.push(zero_css_parser::Parser::parse_stylesheet(css));
     }
@@ -1756,5 +1776,107 @@ mod print_page_size_tests {
             "second boundary at 2×1056=2112, got {}",
             ys[1]
         );
+    }
+}
+
+/// 提取首个样式规则的指定属性声明值（用于断言 collect_stylesheets 注入的合成规则）。
+#[cfg(test)]
+fn first_style_decl_value(rules: &[zero_css_parser::ast::Rule], property: &str) -> Option<String> {
+    use zero_css_parser::ast::Rule;
+    for rule in rules {
+        if let Rule::Style(sr) = rule {
+            for decl in &sr.declarations {
+                if decl.property == property {
+                    return Some(decl.value.clone());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// `<meta name="color-scheme">` HTML presentational hint 注入测试。
+/// driving：真实世界暗模式 opt-in 最常见写法（`<meta name="color-scheme" content="dark">`），
+/// 等价 `html { color-scheme: dark }`。
+#[cfg(test)]
+mod meta_color_scheme_hint_tests {
+    use super::*;
+
+    /// `<meta name="color-scheme" content="dark">` → 注入合成 `html { color-scheme: dark }`
+    /// 规则（首位，最低优先级）。
+    #[test]
+    fn meta_color_scheme_dark_injects_root_rule() {
+        let html = r#"<html><head><meta name="color-scheme" content="dark"></head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let sheets = collect_stylesheets(&doc, "");
+        assert_eq!(sheets.len(), 1, "应注入 1 个合成 stylesheet");
+        assert_eq!(
+            first_style_decl_value(&sheets[0].rules, "color-scheme").as_deref(),
+            Some("dark"),
+            "合成规则应含 color-scheme: dark"
+        );
+    }
+
+    /// 多值 content（`light dark`）原样传递，由 used-scheme 合成消费。
+    #[test]
+    fn meta_color_scheme_multi_value_passed_through() {
+        let html = r#"<html><head><meta name="color-scheme" content="light dark"></head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let sheets = collect_stylesheets(&doc, "");
+        assert_eq!(
+            first_style_decl_value(&sheets[0].rules, "color-scheme").as_deref(),
+            Some("light dark"),
+            "多值 content 应原样作 color-scheme 值"
+        );
+    }
+
+    /// 仅首个（树序）`<meta name="color-scheme">` 生效（HTML spec）。
+    #[test]
+    fn meta_color_scheme_only_first_in_tree_order_wins() {
+        let html = r#"<html><head>
+            <meta name="color-scheme" content="dark">
+            <meta name="color-scheme" content="light">
+        </head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let sheets = collect_stylesheets(&doc, "");
+        assert_eq!(
+            first_style_decl_value(&sheets[0].rules, "color-scheme").as_deref(),
+            Some("dark"),
+            "首个树序 meta（dark）应胜出"
+        );
+    }
+
+    /// 合成规则注入为最低优先级（vector 首位），author `<style>` 在其后 → 可覆盖。
+    #[test]
+    fn meta_color_scheme_lowest_precedence_before_author_style() {
+        let html = r#"<html><head><meta name="color-scheme" content="dark"></head>
+            <body><style>html { color-scheme: light; }</style></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let sheets = collect_stylesheets(&doc, "");
+        assert!(sheets.len() >= 2, "meta 合成 + author style 至少 2 个");
+        // 首位 = meta 合成（dark）；author style 在后（更高优先级，cascade 覆盖）
+        assert_eq!(
+            first_style_decl_value(&sheets[0].rules, "color-scheme").as_deref(),
+            Some("dark"),
+            "meta 合成应为首位（最低优先级）"
+        );
+    }
+
+    /// 无关 meta（如 viewport）不应注入 color-scheme。
+    #[test]
+    fn unrelated_meta_does_not_inject_color_scheme() {
+        let html = r#"<html><head><meta name="viewport" content="width=device-width"></head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let sheets = collect_stylesheets(&doc, "");
+        assert!(sheets.is_empty(), "viewport meta 不应注入任何 stylesheet");
+    }
+
+    /// 空 content 不注入。
+    #[test]
+    fn meta_color_scheme_empty_content_not_injected() {
+        let html = r#"<html><head><meta name="color-scheme" content=""></head><body></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let sheets = collect_stylesheets(&doc, "");
+        assert!(sheets.is_empty(), "空 content 不应注入");
     }
 }
