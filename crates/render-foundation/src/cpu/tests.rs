@@ -497,6 +497,74 @@ fn gradient_linear_repeating_subrange_stops() {
     );
 }
 
+/// R2317：conic-gradient 角度约定。CSS 规定 0deg = 正上方（12 点钟）、顺时针。
+/// 旧 ZW `atan2(dy, dx)` = 正右（3 点钟）、逆时针——中心正上方像素落在 t=0.75 而非 t=0。
+/// 修正后正上方像素应在 t=0（起始色 red），正下方 t=0.5（50% 紫）。
+#[test]
+fn conic_gradient_angle_convention_top_clockwise() {
+    let mut primitives = RenderPrimitives::new();
+    primitives.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
+        rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+        kind: GradientKind::Conic {
+            cx: 50.0,
+            cy: 50.0,
+            start_angle: 0.0,
+        },
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: Color::RED,
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Color::BLUE,
+            },
+        ],
+        repeating: false,
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        100,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    // 正上方像素（dx=0, dy<0）：CSS t=0 → red。旧 buggy（atan2(dy,dx)）→ t=0.75 → 偏蓝
+    let top = fb.get_pixel(50, 5);
+    assert!(
+        top[0] > 200 && top[2] < 80,
+        "top pixel (12 o'clock) should be RED (CSS conic 0deg=start), got {:?}",
+        top
+    );
+
+    // 正右方像素（dx>0, dy=0）：CSS t=0.25 → 25% blue（偏红）
+    let right = fb.get_pixel(95, 50);
+    assert!(
+        right[0] > right[2],
+        "right pixel (3 o'clock) should be red-dominant (t=0.25), got {:?}",
+        right
+    );
+
+    // 正下方像素（dx=0, dy>0）：CSS t=0.5 → 50% 紫
+    let bottom = fb.get_pixel(50, 95);
+    assert!(
+        bottom[0] > 80 && bottom[2] > 80,
+        "bottom pixel (6 o'clock) should be purple (t=0.5), got {:?}",
+        bottom
+    );
+}
+
 #[test]
 fn shadow_renders_blur_around_rect() {
     let mut primitives = RenderPrimitives::new();

@@ -106,7 +106,11 @@ fn compute_gradient_t(fx: f32, fy: f32, gradient: &GradientPrimitive, scale: f32
             let dx = fx - scx;
             let dy = fy - scy;
 
-            let angle = dy.atan2(dx);
+            // CSS conic-gradient 角度约定（CSS Images 4 §4.3.4）：0deg = 正上方（12 点钟）、
+            // 顺时针递增。屏幕坐标 y 向下，故 CSS 角度 θ 满足 dx=sinθ、dy=-cosθ，
+            // 即 θ = atan2(dx, -dy)。旧 `atan2(dy, dx)` = 正右（3 点钟）逆时针，差 90°+反向。
+            // driving: css-images conic-gradient-angle/center（8.33%）、repeating-conic-gradient。
+            let angle = dx.atan2(-dy);
             let mut t = (angle - start_angle) / (2.0 * std::f32::consts::PI);
             // 归一化到 [0, 1]
             t %= 1.0;
