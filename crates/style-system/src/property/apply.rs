@@ -147,6 +147,40 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        // CSS Logical Properties §7：min/max 逻辑尺寸——水平模式等价 min/max-width/height
+        //（垂直模式轴交换由 converter 的 swap_writing_mode_axes 负责，同 inline-size/block-size）。
+        "min-inline-size" => {
+            if let Some(v) = parse_length_fn(value) {
+                style.min_width = v;
+                return true;
+            }
+        }
+        "min-block-size" => {
+            if let Some(v) = parse_length_fn(value) {
+                style.min_height = v;
+                return true;
+            }
+        }
+        "max-inline-size" => {
+            if value == "none" {
+                style.max_width = LengthValue::Px(f64::INFINITY);
+                return true;
+            }
+            if let Some(v) = parse_length_fn(value) {
+                style.max_width = v;
+                return true;
+            }
+        }
+        "max-block-size" => {
+            if value == "none" {
+                style.max_height = LengthValue::Px(f64::INFINITY);
+                return true;
+            }
+            if let Some(v) = parse_length_fn(value) {
+                style.max_height = v;
+                return true;
+            }
+        }
         "min-width" => {
             if let Some(v) = parse_length_fn(value) {
                 style.min_width = v;

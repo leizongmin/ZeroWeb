@@ -80,6 +80,25 @@ fn test_apply_inline_block_size_logical() {
     let (ok, s) = apply("block-size", "2em");
     assert!(ok);
     assert!(matches!(s.height, zero_css_parser::values::LengthValue::Em(2.0)));
+
+    // min/max 逻辑尺寸（CSS Logical Properties §7）：水平模式下等价于 min/max-width/height
+    //（垂直模式轴交换同 inline-size/block-size，由 converter 负责）。R2301 补齐逻辑尺寸族——
+    // 旧 impl 仅 inline-size/block-size，缺 min/max 逻辑变体（不一致缺口）。
+    let (ok, s) = apply("min-inline-size", "10px");
+    assert!(ok);
+    assert!(matches!(s.min_width, zero_css_parser::values::LengthValue::Px(10.0)));
+    let (ok, s) = apply("min-block-size", "20px");
+    assert!(ok);
+    assert!(matches!(s.min_height, zero_css_parser::values::LengthValue::Px(20.0)));
+    let (ok, s) = apply("max-inline-size", "300px");
+    assert!(ok);
+    assert!(matches!(s.max_width, zero_css_parser::values::LengthValue::Px(300.0)));
+    let (ok, s) = apply("max-block-size", "none");
+    assert!(ok);
+    assert!(matches!(
+        s.max_height,
+        zero_css_parser::values::LengthValue::Px(f64::INFINITY)
+    ));
 }
 
 #[test]
