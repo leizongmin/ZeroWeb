@@ -1594,6 +1594,40 @@ fn test_column_rule_width_keywords_match_border_width() {
     assert_rule_width(ColumnRuleWidthComputedValue::Thick, 5.0);
 }
 
+/// CSS Multi-column §4.3：column-rule-color 初始 = currentColor，paint 须解析为元素自身 color。
+/// 元素 color:red + column-rule solid（无显式 column-rule-color）→ 分隔线应为红色（非黑）。
+#[test]
+fn test_column_rule_color_currentcolor_resolves_to_element_color() {
+    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 600.0, 200.0);
+
+    let mut style = ComputedStyle::default();
+    style.color = ColorValue::Rgba(255, 0, 0, 255); // red
+    style.column_count = ColumnCountComputedValue::Number(2);
+    style.column_gap = LengthValue::Px(20.0);
+    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
+    style.column_rule_width = ColumnRuleWidthComputedValue::Medium;
+    // column_rule_color 留默认 currentColor（不显式设）
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // 分隔线 fill 应为红色（currentColor 解析为元素 color=red）。修复前初始=黑 + paint 无元素
+    // 色上下文 → 黑色 fill，本断言 red；修复后初始=currentColor + resolve_color_current → 红。
+    let has_red_rule =
+        painter.primitives().fills.iter().any(|f| {
+            f.color.a > 0 && f.color.r == 255 && f.color.g == 0 && f.color.b == 0 && f.rect.size.height > 100.0
+        });
+    assert!(
+        has_red_rule,
+        "column-rule solid + color:red 应产出红色（currentColor）fill 图元，非黑色"
+    );
+}
+
 /// 测试 column-rule-style: none 不绘制分隔线。
 #[test]
 fn test_column_rules_none() {

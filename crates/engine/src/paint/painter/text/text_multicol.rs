@@ -12,7 +12,7 @@ use zero_style_system::{
     ComputedStyle,
 };
 
-use crate::paint::color::color_value_to_render;
+use crate::paint::color::resolve_color_current;
 
 /// 多列布局的列信息（用于 inline 内容的列分布）。
 pub(super) struct MulticolInfo {
@@ -153,7 +153,9 @@ impl super::super::Painter {
             _ => 1.0,
         };
 
-        let rule_color = color_value_to_render(&style.column_rule_color);
+        // CSS Multi-column §4.3：column-rule-color 初始 = currentColor，须按元素自身 color 解析
+        //（color_value_to_render 无元素上下文会把 currentColor 回落黑色）。与 background-color 同模式。
+        let rule_color = resolve_color_current(&style.column_rule_color, &style.color);
         let col_w = (content_w - (count as f32 - 1.0) * gap) / count as f32;
         if col_w <= 0.0 {
             return;

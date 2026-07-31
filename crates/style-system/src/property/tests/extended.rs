@@ -731,10 +731,10 @@ fn test_contain_initial_value() {
 }
 
 #[test]
-/// column-rule-color 默认值为黑色
+/// CSS Multi-column §4.3：column-rule-color 初始值 = currentColor（与 border-color 同）。
 fn test_column_rule_color_default() {
     let style = ComputedStyle::default();
-    assert_eq!(style.column_rule_color, ColorValue::Rgba(0, 0, 0, 255));
+    assert_eq!(style.column_rule_color, ColorValue::CurrentColor);
 }
 
 #[test]
@@ -777,7 +777,8 @@ fn test_column_rule_color_initial_value() {
     let mut style = ComputedStyle::default();
     style.column_rule_color = ColorValue::Rgba(255, 0, 0, 255);
     assert!(apply_initial_value(&mut style, "column-rule-color"));
-    assert_eq!(style.column_rule_color, ColorValue::Rgba(0, 0, 0, 255));
+    // CSS Multi-column §4.3：初始 = currentColor（与 border-color 同）。
+    assert_eq!(style.column_rule_color, ColorValue::CurrentColor);
 }
 
 // ── appearance 属性测试 ──

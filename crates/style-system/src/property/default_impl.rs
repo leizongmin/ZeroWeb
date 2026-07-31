@@ -244,7 +244,9 @@ impl Default for ComputedStyle {
             // Column Rule
             column_rule_width: ColumnRuleWidthComputedValue::Medium,
             column_rule_style: ColumnRuleStyleComputedValue::None,
-            column_rule_color: ColorValue::Rgba(0, 0, 0, 255), // currentColor 解析后默认黑色
+            // CSS Multi-column §4.3：column-rule-color 初始值 = currentColor（与 border-color 同）。
+            // paint 层（text_multicol）经 resolve_color_current(color, &style.color) 解析为元素自身 color。
+            column_rule_color: ColorValue::CurrentColor,
 
             // Contain
             contain: ContainComputedValue::None,

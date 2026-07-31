@@ -246,8 +246,8 @@ impl PropertyRegistry {
             "object-position" => Some(ObjectPosition(BackgroundPositionComputedValue::Center)),
             "filter" => Some(Filter(Vec::new())),
 
-            // Column Rule Color
-            "column-rule-color" => Some(ColumnRuleColor(ColorValue::Rgba(0, 0, 0, 255))),
+            // Column Rule Color — CSS Multi-column §4.3：初始 = currentColor（与 border-color 同）。
+            "column-rule-color" => Some(ColumnRuleColor(ColorValue::CurrentColor)),
 
             // Contain
             "contain" => Some(Contain(ContainComputedValue::None)),
