@@ -1196,53 +1196,82 @@ fn parse_color_stops(args: &[&str]) -> Option<Vec<GradientColorStop>> {
         if arg.is_empty() {
             continue;
         }
-        stops.push(parse_color_stop(arg)?);
+        stops.extend(parse_color_stop(arg)?);
     }
     Some(stops)
 }
 
 /// 解析单个色标（如 `red`、`red 50%`、`#00ff00 10px`、`red calc(1px / 0)`）。
-fn parse_color_stop(s: &str) -> Option<GradientColorStop> {
+///
+/// 返回 1 个或 2 个色标：CSS Images 4 双位置（`red 0% 50%`）展开为两个同色色标
+/// `red@0%` + `red@50%`（硬过渡）。多于 2 个位置非法 → None。
+fn parse_color_stop(s: &str) -> Option<Vec<GradientColorStop>> {
     let s = s.trim();
 
-    // 尝试 "color position" 格式：在括号深度 0 处切分（位置可为含空格的 calc/min/max/clamp）。
+    // "color [position] [position]"：在括号深度 0 处切分 color 与位置部分
+    //（位置可含空格如 `calc(1px / 0)`，故 split_color_stop_position 已 paren-aware）。
     if let Some((color_str, pos_str)) = split_color_stop_position(s)
         && let Some(color) = parse_color(color_str)
-        && let Some(position) = parse_stop_position(pos_str)
     {
-        return Some(GradientColorStop {
-            color,
-            position: Some(position),
-        });
+        // 位置部分按顶层空白拆分为 1 或 2 个位置 token（双位置 `0% 50%`；calc 内空格保持一体）。
+        let pos_tokens = super::parse_extended_visual::split_top_level_whitespace(pos_str);
+        match pos_tokens.len() {
+            1 => {
+                let position = parse_stop_position(&pos_tokens[0])?;
+                return Some(vec![GradientColorStop {
+                    color,
+                    position: Some(position),
+                }]);
+            }
+            2 => {
+                // CSS Images 4 双位置：同色两色标
+                let p1 = parse_stop_position(&pos_tokens[0])?;
+                let p2 = parse_stop_position(&pos_tokens[1])?;
+                return Some(vec![
+                    GradientColorStop {
+                        color: color.clone(),
+                        position: Some(p1),
+                    },
+                    GradientColorStop {
+                        color,
+                        position: Some(p2),
+                    },
+                ]);
+            }
+            // 0 个位置 token（pos_str 仅空白，不应发生，split_color_stop_position 已守）或 >2（非法）
+            _ => return None,
+        }
     }
 
     // 仅颜色
     let color = parse_color(s)?;
-    Some(GradientColorStop { color, position: None })
+    Some(vec![GradientColorStop { color, position: None }])
 }
 
-/// 在括号深度 0 处切分 `<color> <position>`，返回 `(color, position)`。
+/// 在括号深度 0 处切分 `<color> <position-part>`，返回 `(color, position-part)`。
 ///
-/// 位置部分可能含空格（`calc(1px / 0)`）或颜色部分可能含空格（`rgb(0 0 0)`），
-/// 故不可用 `rfind(' ')`（会切到 calc 内部空格）。driving: css-images gradient-infinity。
+/// 切**首个**顶层空格：颜色部分是首个 token（可能含空格如 `rgb(0 0 0)`，
+/// 其空格在 depth 1），位置部分为其后全部（单位置 `50%`、含空格的 `calc(1px / 0)`、
+/// 或双位置 `0% 50%`，CSS Images 4）。切首个而非末个空格是双位置的前提
+///（末个空格会把 `red 0% 50%` 切成 `("red 0%", "50%")` 致颜色解析失败）。
 fn split_color_stop_position(s: &str) -> Option<(&str, &str)> {
     let mut depth = 0i32;
-    let mut split_at = None;
     for (i, c) in s.char_indices() {
         match c {
             '(' => depth += 1,
             ')' => depth -= 1,
-            ' ' if depth == 0 => split_at = Some(i),
+            ' ' if depth == 0 => {
+                let color = s[..i].trim();
+                let pos = s[i..].trim();
+                if color.is_empty() || pos.is_empty() {
+                    return None;
+                }
+                return Some((color, pos));
+            }
             _ => {}
         }
     }
-    let i = split_at?;
-    let color = s[..i].trim();
-    let pos = s[i..].trim();
-    if color.is_empty() || pos.is_empty() {
-        return None;
-    }
-    Some((color, pos))
+    None
 }
 
 /// 解析渐变色标位置：长度或 calc/min/max/clamp 数学函数（→ `LengthValue::Calc` 延迟求值）。

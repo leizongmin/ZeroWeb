@@ -124,8 +124,9 @@ pub fn parse_filter(value: &str) -> Option<FilterValue> {
 }
 
 /// 按顶层空白分割（paren-aware：使 `drop-shadow(2px 4px red)` 等含空白参数的
-/// 函数保持一体）。用于 filter 多函数列表（`<filter-function>+`，空格分隔）拆分。
-fn split_top_level_whitespace(s: &str) -> Vec<String> {
+/// 函数保持一体）。用于 filter 多函数列表（`<filter-function>+`，空格分隔）拆分，
+/// 及渐变双位置色标（`red 0% 50%` / `red calc(10% + 5px) 80%`）的位置 token 拆分。
+pub(crate) fn split_top_level_whitespace(s: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut depth = 0i32;
     let mut current = String::new();

@@ -192,6 +192,60 @@ fn test_linear_gradient_color_stop_position() {
     assert!(parse_gradient("linear-gradient(red 0%, green 50%, blue 100%)").is_some());
 }
 
+#[test]
+fn test_r2315_gradient_double_position_color_stop() {
+    // CSS Images 4 双位置色标 `red 0% 50%` ≡ 两个同色色标 red@0% + red@50%（硬过渡）。
+    // 此前 split_color_stop_position 在首个空格切分 → 位置部分 "0% 50%" 解析失败 → 整条渐变 None。
+    let g = parse_gradient("linear-gradient(red 0% 50%, blue 100%)").expect("double-position color stop must parse");
+    let stops = match g {
+        GradientValue::Linear(lg) => lg.stops,
+        _ => panic!("expected linear gradient"),
+    };
+    assert_eq!(stops.len(), 3, "red 0% 50% → 2 stops + blue 100% → 3 total");
+    // red@0%, red@50%, blue@100%
+    let assert_pct = |stop: &crate::values::GradientColorStop, expect: f64| match &stop.position {
+        Some(LengthValue::Percentage(p)) => assert!(((*p) - expect).abs() < 0.01, "got {p} expect {expect}"),
+        other => panic!("expected Percentage({expect}), got {other:?}"),
+    };
+    assert_pct(&stops[0], 0.0);
+    assert_pct(&stops[1], 50.0);
+    assert_pct(&stops[2], 100.0);
+    // 前两色标同色（red，双位置展开为两个同色色标）
+    assert_eq!(stops[0].color, stops[1].color);
+}
+
+#[test]
+fn test_r2315_gradient_double_position_length_and_calc() {
+    // 双位置也支持长度与 calc() 位置（depth-aware 切分，calc 内空格不破坏）
+    let g = parse_gradient("linear-gradient(red 10px 20px, blue)").expect("must parse");
+    let stops = match g {
+        GradientValue::Linear(lg) => lg.stops,
+        _ => panic!("expected linear gradient"),
+    };
+    assert_eq!(stops.len(), 3, "red 10px 20px → 2 stops + blue → 3");
+    assert!(matches!(stops[0].position, Some(LengthValue::Px(10.0))));
+    assert!(matches!(stops[1].position, Some(LengthValue::Px(20.0))));
+
+    // calc() 双位置（calc 内含空格，须 depth-aware）
+    let g2 = parse_gradient("linear-gradient(red calc(10% + 5px) 80%, blue)").expect("must parse");
+    let stops2 = match g2 {
+        GradientValue::Linear(lg) => lg.stops,
+        _ => panic!("expected linear gradient"),
+    };
+    assert_eq!(stops2.len(), 3, "red calc(..) 80% → 2 stops + blue → 3");
+    assert!(matches!(stops2[0].position, Some(LengthValue::Calc(_))));
+    assert!(matches!(stops2[1].position, Some(LengthValue::Percentage(80.0))));
+}
+
+#[test]
+fn test_r2315_gradient_single_position_byte_identical() {
+    // 单位置/无位置回归 byte-identical（仍是合法解析）
+    assert!(parse_gradient("linear-gradient(red 50%, blue 100%)").is_some());
+    assert!(parse_gradient("linear-gradient(red, blue)").is_some());
+    // 非法（三个位置）仍拒绝
+    assert!(parse_gradient("linear-gradient(red 0% 50% 100%, blue)").is_none());
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // parse_transform.rs — text/box shadow 更多边界
 // ═══════════════════════════════════════════════════════════════════════
