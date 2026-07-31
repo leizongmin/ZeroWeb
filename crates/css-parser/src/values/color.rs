@@ -600,6 +600,11 @@ fn parse_color_number(s: &str) -> Option<f64> {
     if s.eq_ignore_ascii_case("none") {
         return Some(0.0);
     }
+    // CSS Color 4：color() 预定义空间分量可为 <number>（0-1）或 <percentage>（0-100% → 0-1）。
+    // driving: css-color predefined-002（color(srgb 0% 60% 0%) ≡ #009900）。
+    if let Some(pct) = s.strip_suffix('%') {
+        return pct.trim().parse::<f64>().ok().map(|v| v / 100.0);
+    }
     s.parse().ok()
 }
 
@@ -2235,6 +2240,33 @@ mod tests {
         // 回归：in-gamut mid-L byte-identical
         let mid = oklab_to_srgb_u8(0.5, 0.0, 0.0);
         assert!(mid.0 > 50 && mid.0 < 250, "oklab mid-L should be mid-gray, got {mid:?}");
+    }
+
+    // ── R2324：color() 预定义空间百分比分量（CSS Color 4）─────────────────
+
+    #[test]
+    fn test_r2324_color_function_percent_components() {
+        // CSS Color 4：color() 分量可为 <number>（0-1）或 <percentage>（0-100% → 0-1）。
+        // driving: css-color predefined-002（color(srgb 0% 60% 0%) ≡ #009900）。
+        // 此前 parse_color_number 仅 number → color(srgb 0% ...) None。
+        assert_eq!(
+            parse_color("color(srgb 0% 60% 0%)"),
+            parse_color("#009900"),
+            "color(srgb 0% 60% 0%) must equal #009900"
+        );
+        // percent ≡ number（0-1）
+        assert_eq!(
+            parse_color("color(srgb 100% 100% 100%)"),
+            parse_color("color(srgb 1 1 1)")
+        );
+        assert_eq!(parse_color("color(srgb 0% 0% 0%)"), parse_color("color(srgb 0 0 0)"));
+        // 回归：number 语法 byte-identical
+        assert_eq!(
+            parse_color("color(srgb 0 0.6 0)"),
+            Some(ColorValue::Rgba(0, 153, 0, 255))
+        );
+        // display-p3 percent 也接受（解析成功）
+        assert!(parse_color("color(display-p3 0% 100% 0%)").is_some());
     }
 
     // ── CSS 系统颜色（R2254：deprecated ≡ 现代等价）─────────────────────
