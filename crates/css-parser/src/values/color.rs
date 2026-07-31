@@ -54,46 +54,52 @@ pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
         return parse_hex_color(value);
     }
 
+    // CSS Values §4：颜色函数名大小写不敏感（RGB ≡ rgb、HSL ≡ hsl、Lab ≡ lab …）。函数式颜色
+    // 走 lower 路径（dispatch + 子解析器委托均用 lower，子解析器内 case-sensitive starts_with 在
+    // lower 输入下匹配）；命名色 / 十六进制 / 转义（red\9 等 escapes-014/015/016）仍用原 value
+    //（lowercase 会破转义）。函数参数（数字 + 大小写不敏感关键字/单位/色彩空间名）经 lower 安全。
+    let lower = value.to_ascii_lowercase();
+
     // rgb() / rgba() 函数
-    if value.starts_with("rgb(") || value.starts_with("rgba(") {
-        return parse_rgb_function(value);
+    if lower.starts_with("rgb(") || lower.starts_with("rgba(") {
+        return parse_rgb_function(&lower);
     }
 
     // hsl() / hsla() 函数
-    if value.starts_with("hsl(") || value.starts_with("hsla(") {
-        return parse_hsl_function(value);
+    if lower.starts_with("hsl(") || lower.starts_with("hsla(") {
+        return parse_hsl_function(&lower);
     }
 
     // hwb() 函数
-    if value.starts_with("hwb(") {
-        return parse_hwb_function(value);
+    if lower.starts_with("hwb(") {
+        return parse_hwb_function(&lower);
     }
 
     // color() 函数（CSS Color 4 预定义颜色空间：srgb/srgb-linear/display-p3/a98-rgb/xyz…）
-    if value.starts_with("color(") {
-        return parse_color_function(value);
+    if lower.starts_with("color(") {
+        return parse_color_function(&lower);
     }
 
     // lab() / lch() / oklab() / oklch()（CSS Color 4 CIE Lab / OKLab 色彩空间）。driving:
     // css-color lab-*/lch-*/oklab-*/oklch-*（~54 案；R2255 XYZ↔sRGB 基础设施复用）。
-    if value.starts_with("lab(") {
-        return parse_lab(value);
+    if lower.starts_with("lab(") {
+        return parse_lab(&lower);
     }
-    if value.starts_with("lch(") {
-        return parse_lch(value);
+    if lower.starts_with("lch(") {
+        return parse_lch(&lower);
     }
-    if value.starts_with("oklab(") {
-        return parse_oklab(value);
+    if lower.starts_with("oklab(") {
+        return parse_oklab(&lower);
     }
-    if value.starts_with("oklch(") {
-        return parse_oklch(value);
+    if lower.starts_with("oklch(") {
+        return parse_oklch(&lower);
     }
 
     // light-dark() 函数（CSS Color Adjust §color-scheme-effect）：light-dark(<light>, <dark>)
     // 按元素 used color-scheme 取值：dark（color-scheme: dark）取第二个（dark）参数，否则取
     // 第一个（light）参数。dark 向所选参数递归传播。driving: css-color light-dark-inheritance /
     // light-dark-currentcolor + css-variables registered-property-light-dark。
-    if value.starts_with("light-dark(") {
+    if lower.starts_with("light-dark(") {
         let start = value.find('(')?;
         let end = value.rfind(')')?;
         let inner = strip_css_comments(value.get(start + 1..end)?);

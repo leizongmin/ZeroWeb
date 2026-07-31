@@ -58,6 +58,33 @@ fn test_color_rgb_basic() {
 }
 
 #[test]
+/// CSS Values §4：颜色函数名大小写不敏感（RGB/RGBA/HSL/HWB/LAB/OKLAB ≡ 小写形式）。
+fn test_color_function_names_case_insensitive() {
+    // 已知解析结果的函数用显式期望值。
+    assert_eq!(
+        parse_color("RGB(255, 128, 0)"),
+        Some(ColorValue::Rgba(255, 128, 0, 255))
+    );
+    assert_eq!(
+        parse_color("RGBA(255, 128, 0, 0.5)"),
+        Some(ColorValue::Rgba(255, 128, 0, 128))
+    );
+    // 其余用「大写 ≡ 小写」断言（同时守护小写基线非 None）。
+    let (hsl_lo, hsl_up) = (parse_color("hsl(120, 100%, 50%)"), parse_color("HSL(120, 100%, 50%)"));
+    assert!(hsl_lo.is_some());
+    assert_eq!(hsl_up, hsl_lo);
+    let (hwb_lo, hwb_up) = (parse_color("hwb(120 30% 20%)"), parse_color("HWB(120 30% 20%)"));
+    assert!(hwb_lo.is_some());
+    assert_eq!(hwb_up, hwb_lo);
+    let (lab_lo, lab_up) = (parse_color("lab(50% 40 30)"), parse_color("LAB(50% 40 30)"));
+    assert!(lab_lo.is_some());
+    assert_eq!(lab_up, lab_lo);
+    let (oklab_lo, oklab_up) = (parse_color("oklab(0.5 0.1 0.1)"), parse_color("OKLAB(0.5 0.1 0.1)"));
+    assert!(oklab_lo.is_some());
+    assert_eq!(oklab_up, oklab_lo);
+}
+
+#[test]
 fn test_color_rgba_with_alpha() {
     assert_eq!(
         parse_color("rgba(255, 128, 0, 0.5)"),
