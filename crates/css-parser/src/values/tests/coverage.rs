@@ -248,6 +248,46 @@ fn test_linear_gradient_no_direction() {
     assert!(result.is_some());
 }
 
+// R2292：calc() 色标位置（css-images gradient-infinity）。
+// calc(1px / 0) 含内部空格——旧 rfind(' ') 切到 calc 内部空格 → 色标解析失败 →
+// 整 gradient 被丢弃。修复：按括号深度切分 color/position + 接受 calc 为位置。
+#[test]
+fn test_linear_gradient_calc_stop_position_not_dropped() {
+    // 修复前：calc(1px / 0) 内部空格使 rfind 误切 → gradient 被丢 → None。
+    let result = parse_gradient("linear-gradient(to right, lime 100px, red calc(1px / 0))");
+    assert!(result.is_some(), "calc() position must not drop the whole gradient");
+    assert!(
+        parse_gradient("linear-gradient(to right, lime 100px, red calc(Infinity * 1px))").is_some(),
+        "calc(Infinity * 1px) position must not drop the gradient"
+    );
+}
+
+#[test]
+fn test_linear_gradient_calc_stop_position_is_calc() {
+    use crate::values::{GradientValue, LengthValue};
+    let lg = match parse_gradient("linear-gradient(to right, lime 100px, red calc(1px / 0))").unwrap() {
+        GradientValue::Linear(lg) => lg,
+        _ => panic!("expected linear gradient"),
+    };
+    assert_eq!(lg.stops.len(), 2);
+    // red 色标位置应解析为 LengthValue::Calc（延迟求值）。
+    assert!(
+        matches!(lg.stops[1].position, Some(LengthValue::Calc(_))),
+        "red stop position should be LengthValue::Calc"
+    );
+    // lime 色标位置保持普通 Px。
+    assert!(matches!(lg.stops[0].position, Some(LengthValue::Px(100.0))));
+}
+
+#[test]
+fn test_linear_gradient_rgb_color_with_position_regression() {
+    // 回归守护：颜色含内部空格 rgb(0 0 0) 后随位置，深度切分仍正确（不误切颜色内空格）。
+    let result = parse_gradient("linear-gradient(to right, rgb(0 0 0) 50%, white)");
+    assert!(result.is_some());
+    let result = parse_gradient("linear-gradient(to right, rgb(0, 0, 0) 50%, white)");
+    assert!(result.is_some());
+}
+
 #[test]
 fn test_linear_gradient_empty() {
     assert!(parse_gradient("linear-gradient()").is_none());

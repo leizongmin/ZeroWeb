@@ -1153,30 +1153,62 @@ fn parse_color_stops(args: &[&str]) -> Option<Vec<GradientColorStop>> {
     Some(stops)
 }
 
-/// 解析单个色标（如 `red`、`red 50%`、`#00ff00 10px`）。
+/// 解析单个色标（如 `red`、`red 50%`、`#00ff00 10px`、`red calc(1px / 0)`）。
 fn parse_color_stop(s: &str) -> Option<GradientColorStop> {
     let s = s.trim();
 
-    // 尝试 "color position" 格式
-    // 从右往左找位置部分
-    let last_space = s.rfind(' ');
-    if let Some(space_pos) = last_space {
-        let color_str = &s[..space_pos];
-        let pos_str = &s[space_pos + 1..];
-
-        if let Some(color) = parse_color(color_str)
-            && let Some(position) = parse_length(pos_str)
-        {
-            return Some(GradientColorStop {
-                color,
-                position: Some(position),
-            });
-        }
+    // 尝试 "color position" 格式：在括号深度 0 处切分（位置可为含空格的 calc/min/max/clamp）。
+    if let Some((color_str, pos_str)) = split_color_stop_position(s)
+        && let Some(color) = parse_color(color_str)
+        && let Some(position) = parse_stop_position(pos_str)
+    {
+        return Some(GradientColorStop {
+            color,
+            position: Some(position),
+        });
     }
 
     // 仅颜色
     let color = parse_color(s)?;
     Some(GradientColorStop { color, position: None })
+}
+
+/// 在括号深度 0 处切分 `<color> <position>`，返回 `(color, position)`。
+///
+/// 位置部分可能含空格（`calc(1px / 0)`）或颜色部分可能含空格（`rgb(0 0 0)`），
+/// 故不可用 `rfind(' ')`（会切到 calc 内部空格）。driving: css-images gradient-infinity。
+fn split_color_stop_position(s: &str) -> Option<(&str, &str)> {
+    let mut depth = 0i32;
+    let mut split_at = None;
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ' ' if depth == 0 => split_at = Some(i),
+            _ => {}
+        }
+    }
+    let i = split_at?;
+    let color = s[..i].trim();
+    let pos = s[i..].trim();
+    if color.is_empty() || pos.is_empty() {
+        return None;
+    }
+    Some((color, pos))
+}
+
+/// 解析渐变色标位置：长度或 calc/min/max/clamp 数学函数（→ `LengthValue::Calc` 延迟求值）。
+/// driving: css-images gradient-infinity（`calc(1px / 0)` / `calc(Infinity * 1px)` 色标位置）。
+fn parse_stop_position(s: &str) -> Option<LengthValue> {
+    if let Some(lv) = parse_length(s) {
+        return Some(lv);
+    }
+    let t = s.trim();
+    let is_math = ["calc(", "min(", "max(", "clamp("].iter().any(|p| t.starts_with(p));
+    if is_math {
+        return parse_math_function(t).map(|e| LengthValue::Calc(Box::new(e)));
+    }
+    None
 }
 
 /// 解析 CSS grid-area 简写属性值。

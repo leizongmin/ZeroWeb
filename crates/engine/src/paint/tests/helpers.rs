@@ -388,6 +388,49 @@ fn test_convert_color_stops_with_px_position() {
 }
 
 #[test]
+fn test_convert_color_stops_calc_position() {
+    // R2292：calc() 色标位置求值（css-images gradient-infinity）。
+    use zero_css_parser::values::{CalcExpr, CalcOp};
+    let stops = vec![
+        GradientColorStop {
+            color: zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255),
+            position: Some(LengthValue::Px(100.0)),
+        },
+        // calc(10px + 5px) → 15px。
+        GradientColorStop {
+            color: zero_css_parser::values::ColorValue::Rgba(0, 0, 255, 255),
+            position: Some(LengthValue::Calc(Box::new(CalcExpr::BinaryOp(
+                Box::new(CalcExpr::Length(LengthValue::Px(10.0))),
+                CalcOp::Add,
+                Box::new(CalcExpr::Length(LengthValue::Px(5.0))),
+            )))),
+        },
+    ];
+    let converted = convert_color_stops(&stops);
+    assert_eq!(converted[0].offset, 100.0);
+    assert_eq!(converted[1].offset, 15.0, "calc(10px + 5px) should evaluate to 15.0");
+}
+
+#[test]
+fn test_convert_color_stops_calc_infinity_position() {
+    // R2292：calc(Infinity * 1px) → +infinity（gradient-infinity 色标）。
+    use zero_css_parser::values::{CalcExpr, CalcOp};
+    let stops = vec![GradientColorStop {
+        color: zero_css_parser::values::ColorValue::Rgba(0, 0, 255, 255),
+        position: Some(LengthValue::Calc(Box::new(CalcExpr::BinaryOp(
+            Box::new(CalcExpr::Number(f64::INFINITY)),
+            CalcOp::Multiply,
+            Box::new(CalcExpr::Length(LengthValue::Px(1.0))),
+        )))),
+    }];
+    let converted = convert_color_stops(&stops);
+    assert!(
+        converted[0].offset.is_infinite() && converted[0].offset > 0.0,
+        "calc(Infinity*1px) → +inf"
+    );
+}
+
+#[test]
 fn test_convert_color_stops_mixed_positions() {
     let stops = vec![
         GradientColorStop {

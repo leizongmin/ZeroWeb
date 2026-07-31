@@ -2,7 +2,7 @@
 
 use zero_css_parser::values::{
     ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, GradientColorStop, GradientDirection, GradientValue,
-    LengthValue, RadialSize, TransformFunction, TransformValue,
+    LengthValue, RadialSize, TransformFunction, TransformValue, eval_calc,
 };
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{
@@ -822,6 +822,9 @@ pub fn convert_color_stops(stops: &[GradientColorStop]) -> Vec<GradientStop> {
                 .map(|lv| match lv {
                     LengthValue::Percentage(p) => *p as f32 / 100.0,
                     LengthValue::Px(px) => *px as f32,
+                    // calc/min/max/clamp 求值为 px（无 parent_length：百分比不可解→None→回退 0.0）。
+                    // driving: css-images gradient-infinity（calc(1px/0) / calc(Infinity*1px)）。
+                    LengthValue::Calc(expr) => eval_calc(expr, None).unwrap_or(0.0) as f32,
                     _ => 0.0,
                 })
                 .unwrap_or(if n <= 1 { 0.0 } else { i as f32 / (n - 1) as f32 });
