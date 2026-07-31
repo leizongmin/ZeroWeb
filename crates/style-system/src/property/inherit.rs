@@ -1188,6 +1188,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.object_fit = default_style.object_fit;
             true
         }
+        "object-position" => {
+            style.object_position = default_style.object_position.clone();
+            true
+        }
         "filter" => {
             style.filter = default_style.filter;
             true

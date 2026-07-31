@@ -727,6 +727,65 @@ fn test_apply_object_fit_variants() {
     }
 }
 
+// === object-position（CSS Images §3，R2303）===
+
+#[test]
+fn test_apply_object_position() {
+    use crate::property::types::BackgroundPositionComputedValue as Bp;
+    use zero_css_parser::values::LengthValue;
+
+    // 默认 = Center（50% 50%）
+    let s = ComputedStyle::default();
+    assert!(
+        matches!(s.object_position, Bp::Center),
+        "default object-position = Center"
+    );
+
+    // 单关键字
+    let (_, s) = apply("object-position", "top");
+    assert!(matches!(s.object_position, Bp::Top));
+    let (_, s) = apply("object-position", "left");
+    assert!(matches!(s.object_position, Bp::Left));
+
+    // 百分比（单值 → x，y 默认 center）
+    let (ok, s) = apply("object-position", "25%");
+    assert!(ok);
+    assert!(matches!(s.object_position, Bp::Percent(25.0)));
+
+    // 两值（关键字顺序无关：top left / left top）
+    let (ok, s) = apply("object-position", "top left");
+    assert!(ok);
+    assert!(matches!(s.object_position, Bp::TwoValue(_, _)));
+
+    // 两值百分比（CSS Images 默认 50% 50% 的反面：0% 100% = 左下）
+    let (ok, s) = apply("object-position", "0% 100%");
+    assert!(ok);
+    match s.object_position {
+        Bp::TwoValue(x, y) => {
+            assert!(matches!(*x, Bp::Percent(0.0)), "x = 0%");
+            assert!(matches!(*y, Bp::Percent(100.0)), "y = 100%");
+        }
+        other => panic!("expected TwoValue, got {:?}", other),
+    }
+
+    // 长度
+    let (ok, s) = apply("object-position", "10px 20px");
+    assert!(ok);
+    match s.object_position {
+        Bp::TwoValue(x, y) => {
+            assert!(matches!(*x, Bp::Length(10.0)), "x = 10px");
+            assert!(matches!(*y, Bp::Length(20.0)), "y = 20px");
+        }
+        other => panic!("expected TwoValue, got {:?}", other),
+    }
+
+    // 非法值不应用
+    let (ok, _) = apply("object-position", "bogus");
+    assert!(!ok);
+    // LengthValue import 用于抑制未用警告（百分比/关键字路径已覆盖）
+    let _ = LengthValue::Px(0.0);
+}
+
 // === filter 函数变体 ===
 
 #[test]

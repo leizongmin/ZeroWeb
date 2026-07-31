@@ -240,6 +240,8 @@ impl PropertyRegistry {
 
             // Object Fit / Filter
             "object-fit" => Some(ObjectFit(ObjectFitComputedValue::Fill)),
+            // object-position 默认 50% 50%（Center），CSS Images §3。
+            "object-position" => Some(BackgroundPosition(BackgroundPositionComputedValue::Center)),
             "filter" => Some(Filter(FilterComputedValue::None)),
 
             // Column Rule Color
@@ -556,6 +558,7 @@ impl PropertyRegistry {
             "column-fill",
             "column-span",
             "object-fit",
+            "object-position",
             "filter",
             "column-rule-color",
             "contain",

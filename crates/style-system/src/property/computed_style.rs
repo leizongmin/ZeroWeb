@@ -446,6 +446,8 @@ pub struct ComputedStyle {
     // ── Object Fit / Filter ──
     /// object-fit 属性。
     pub object_fit: ObjectFitComputedValue,
+    /// object-position 属性（CSS Images §3）：替换元素内容在盒内的对齐位置（默认 Center=50% 50%）。
+    pub object_position: BackgroundPositionComputedValue,
     /// filter 属性。
     pub filter: FilterComputedValue,
     /// backdrop-filter 属性（对元素背后内容应用滤镜）。

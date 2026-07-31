@@ -1038,7 +1038,7 @@ fn resolve_position_component(pos: &BackgroundPositionComputedValue, container_s
 ///
 /// CSS 规范：单关键字时，horizontal keyword（left/right）应用于 x 轴，y 默认 center；
 /// vertical keyword（top/bottom）应用于 y 轴，x 默认 center。
-fn resolve_background_position(
+pub(super) fn resolve_background_position(
     pos: &BackgroundPositionComputedValue,
     container_w: f32,
     container_h: f32,

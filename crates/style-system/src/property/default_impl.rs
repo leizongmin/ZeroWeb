@@ -274,6 +274,7 @@ impl Default for ComputedStyle {
 
             // Object Fit / Filter
             object_fit: ObjectFitComputedValue::Fill,
+            object_position: BackgroundPositionComputedValue::Center,
             filter: FilterComputedValue::None,
             backdrop_filter: FilterComputedValue::None,
 

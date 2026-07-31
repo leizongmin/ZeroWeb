@@ -24,6 +24,30 @@ fn resolve_bg_pos_length(lv: zero_css_parser::values::LengthValue, style: &Compu
     crate::computed::resolve_length(&lv, fs, None, None) as f32
 }
 
+/// 将解析后的 `<position>` 值（`background-position` / `object-position` 共用同一语法）
+/// 转换为计算值。嵌套 `TwoValue`（非法）返回 `None`（调用方据此丢弃声明）。
+/// R2303 抽出：供 object-position 复用，避免 40 行转换逻辑重复。
+fn position_value_to_computed(
+    v: zero_css_parser::values::BackgroundPositionValue,
+    style: &ComputedStyle,
+) -> Option<BackgroundPositionComputedValue> {
+    use zero_css_parser::values::BackgroundPositionValue as Bp;
+    Some(match v {
+        Bp::Center => BackgroundPositionComputedValue::Center,
+        Bp::Left => BackgroundPositionComputedValue::Left,
+        Bp::Right => BackgroundPositionComputedValue::Right,
+        Bp::Top => BackgroundPositionComputedValue::Top,
+        Bp::Bottom => BackgroundPositionComputedValue::Bottom,
+        Bp::Length(lv) => BackgroundPositionComputedValue::Length(resolve_bg_pos_length(lv, style)),
+        Bp::Percent(pct) => BackgroundPositionComputedValue::Percent(pct),
+        Bp::TwoValue(h, v) => {
+            let hc = position_value_to_computed(*h, style)?;
+            let vc = position_value_to_computed(*v, style)?;
+            BackgroundPositionComputedValue::TwoValue(Box::new(hc), Box::new(vc))
+        }
+    })
+}
+
 pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, value: &str) -> bool {
     let value = value.trim();
     match property {
@@ -1075,71 +1099,21 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         "background-position" => {
             if let Some(v) = values::parse_background_position(value) {
-                style.background_position = match v {
-                    zero_css_parser::values::BackgroundPositionValue::Center => BackgroundPositionComputedValue::Center,
-                    zero_css_parser::values::BackgroundPositionValue::Left => BackgroundPositionComputedValue::Left,
-                    zero_css_parser::values::BackgroundPositionValue::Right => BackgroundPositionComputedValue::Right,
-                    zero_css_parser::values::BackgroundPositionValue::Top => BackgroundPositionComputedValue::Top,
-                    zero_css_parser::values::BackgroundPositionValue::Bottom => BackgroundPositionComputedValue::Bottom,
-                    zero_css_parser::values::BackgroundPositionValue::Length(lv) => {
-                        BackgroundPositionComputedValue::Length(resolve_bg_pos_length(lv, style))
-                    }
-                    zero_css_parser::values::BackgroundPositionValue::Percent(pct) => {
-                        BackgroundPositionComputedValue::Percent(pct)
-                    }
-                    zero_css_parser::values::BackgroundPositionValue::TwoValue(h, v) => {
-                        let hc = match *h {
-                            zero_css_parser::values::BackgroundPositionValue::Center => {
-                                BackgroundPositionComputedValue::Center
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Left => {
-                                BackgroundPositionComputedValue::Left
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Right => {
-                                BackgroundPositionComputedValue::Right
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Top => {
-                                BackgroundPositionComputedValue::Top
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Bottom => {
-                                BackgroundPositionComputedValue::Bottom
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Length(lv) => {
-                                BackgroundPositionComputedValue::Length(resolve_bg_pos_length(lv, style))
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Percent(pct) => {
-                                BackgroundPositionComputedValue::Percent(pct)
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::TwoValue(_, _) => return false,
-                        };
-                        let vc = match *v {
-                            zero_css_parser::values::BackgroundPositionValue::Center => {
-                                BackgroundPositionComputedValue::Center
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Left => {
-                                BackgroundPositionComputedValue::Left
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Right => {
-                                BackgroundPositionComputedValue::Right
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Top => {
-                                BackgroundPositionComputedValue::Top
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Bottom => {
-                                BackgroundPositionComputedValue::Bottom
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Length(lv) => {
-                                BackgroundPositionComputedValue::Length(resolve_bg_pos_length(lv, style))
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::Percent(pct) => {
-                                BackgroundPositionComputedValue::Percent(pct)
-                            }
-                            zero_css_parser::values::BackgroundPositionValue::TwoValue(_, _) => return false,
-                        };
-                        BackgroundPositionComputedValue::TwoValue(Box::new(hc), Box::new(vc))
-                    }
-                };
-                return true;
+                if let Some(c) = position_value_to_computed(v, style) {
+                    style.background_position = c;
+                    return true;
+                }
+            }
+        }
+        // object-position（CSS Images §3）：替换元素内容在其盒内的对齐位置，语法同
+        // background-position（<position>）。默认 50% 50%（Center）。R2303 补——旧 impl
+        // 完全缺该属性，object-fit 的 compute_object_fit_rect 恒居中。
+        "object-position" => {
+            if let Some(v) = values::parse_background_position(value) {
+                if let Some(c) = position_value_to_computed(v, style) {
+                    style.object_position = c;
+                    return true;
+                }
             }
         }
         "background-repeat" => {

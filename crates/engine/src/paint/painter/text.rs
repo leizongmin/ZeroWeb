@@ -19,8 +19,8 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive};
 use zero_style_system::{
-    ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TabSizeValue, TextEmphasisPositionValue,
-    TextEmphasisStyleValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
+    BackgroundPositionComputedValue, ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TabSizeValue,
+    TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -334,6 +334,7 @@ impl super::Painter {
 
         let (img_x, img_y, img_w, img_h) = compute_object_fit_rect(
             &style.object_fit,
+            &style.object_position,
             container_w,
             container_h,
             intrinsic_w,
@@ -1732,9 +1733,11 @@ fn get_img_intrinsic_size(
     (w.max(1.0), h.max(1.0))
 }
 
-/// 根据 `object-fit` 计算图片在容器内的绘制矩形。
+/// 根据 `object-fit` + `object-position` 计算图片在容器内的绘制矩形。
+/// `position` 默认 Center（50% 50%）→ 退化为既有居中行为（零回归）。
 pub(super) fn compute_object_fit_rect(
     fit: &ObjectFitComputedValue,
+    position: &BackgroundPositionComputedValue,
     container_w: f32,
     container_h: f32,
     intrinsic_w: f32,
@@ -1744,50 +1747,57 @@ pub(super) fn compute_object_fit_rect(
 ) -> (f32, f32, f32, f32) {
     match fit {
         ObjectFitComputedValue::Fill => {
-            // 拉伸填满容器
+            // 拉伸填满容器（position 不适用）
             (content_x, content_y, container_w, container_h)
         }
         ObjectFitComputedValue::Contain => {
-            // 等比缩放，完整显示
+            // 等比缩放，完整显示，按 object-position 定位
             let scale = (container_w / intrinsic_w).min(container_h / intrinsic_h);
             let w = intrinsic_w * scale;
             let h = intrinsic_h * scale;
-            let x = content_x + (container_w - w) / 2.0;
-            let y = content_y + (container_h - h) / 2.0;
-            (x, y, w, h)
+            let (px, py) = super::effects::resolve_background_position(position, container_w, container_h, w, h);
+            (content_x + px, content_y + py, w, h)
         }
         ObjectFitComputedValue::Cover => {
-            // 等比缩放，完全覆盖
+            // 等比缩放，完全覆盖，按 object-position 定位
             let scale = (container_w / intrinsic_w).max(container_h / intrinsic_h);
             let w = intrinsic_w * scale;
             let h = intrinsic_h * scale;
-            let x = content_x + (container_w - w) / 2.0;
-            let y = content_y + (container_h - h) / 2.0;
-            (x, y, w, h)
+            let (px, py) = super::effects::resolve_background_position(position, container_w, container_h, w, h);
+            (content_x + px, content_y + py, w, h)
         }
         ObjectFitComputedValue::None => {
-            // 原始尺寸，居中
-            let x = content_x + (container_w - intrinsic_w) / 2.0;
-            let y = content_y + (container_h - intrinsic_h) / 2.0;
-            (x, y, intrinsic_w, intrinsic_h)
+            // 原始尺寸，按 object-position 定位
+            let (px, py) = super::effects::resolve_background_position(
+                position,
+                container_w,
+                container_h,
+                intrinsic_w,
+                intrinsic_h,
+            );
+            (content_x + px, content_y + py, intrinsic_w, intrinsic_h)
         }
         ObjectFitComputedValue::ScaleDown => {
-            // 取 none 和 contain 中较小的结果
+            // 取 none 和 contain 中较小的结果，按 object-position 定位
             let none_w = intrinsic_w;
             let contain_scale = (container_w / intrinsic_w).min(container_h / intrinsic_h);
             let contain_w = intrinsic_w * contain_scale;
             if none_w <= contain_w {
-                // none 更小，使用原始尺寸居中
-                let x = content_x + (container_w - intrinsic_w) / 2.0;
-                let y = content_y + (container_h - intrinsic_h) / 2.0;
-                (x, y, intrinsic_w, intrinsic_h)
+                // none 更小，使用原始尺寸
+                let (px, py) = super::effects::resolve_background_position(
+                    position,
+                    container_w,
+                    container_h,
+                    intrinsic_w,
+                    intrinsic_h,
+                );
+                (content_x + px, content_y + py, intrinsic_w, intrinsic_h)
             } else {
                 // contain 更小
                 let w = contain_w;
                 let h = intrinsic_h * contain_scale;
-                let x = content_x + (container_w - w) / 2.0;
-                let y = content_y + (container_h - h) / 2.0;
-                (x, y, w, h)
+                let (px, py) = super::effects::resolve_background_position(position, container_w, container_h, w, h);
+                (content_x + px, content_y + py, w, h)
             }
         }
     }
@@ -1820,6 +1830,60 @@ mod r841_tests {
         assert!(!ahem_uses_embox_position(80.0, 40.0), "lh:2 不应启用");
         // lh:0.5（<fs）也不启用
         assert!(!ahem_uses_embox_position(10.0, 20.0), "lh:0.5 不应启用");
+    }
+}
+
+/// R2303：object-position 在 compute_object_fit_rect 中的定位（CSS Images §3）。
+#[cfg(test)]
+mod r2303_object_position_tests {
+    use super::compute_object_fit_rect;
+    use zero_style_system::property::types::{BackgroundPositionComputedValue as Bp, ObjectFitComputedValue};
+
+    fn cover() -> ObjectFitComputedValue {
+        ObjectFitComputedValue::Cover
+    }
+
+    #[test]
+    fn center_is_byte_identical_to_old_centering() {
+        // 100×50 intrinsic, 80×80 container, Cover → scale=1.6 → img 160×80.
+        // Center: x = (80-160)/2 = -40, y = (80-80)/2 = 0。
+        let (x, y, w, h) = compute_object_fit_rect(&cover(), &Bp::Center, 80.0, 80.0, 100.0, 50.0, 0.0, 0.0);
+        assert_eq!((x.round(), y.round(), w.round(), h.round()), (-40.0, 0.0, 160.0, 80.0));
+    }
+
+    #[test]
+    fn top_left_pins_image_to_origin() {
+        // object-position: 0% 0%（左上角）→ offset (0, 0)，非居中。
+        let pos = Bp::TwoValue(Box::new(Bp::Percent(0.0)), Box::new(Bp::Percent(0.0)));
+        let (x, y, w, h) = compute_object_fit_rect(&cover(), &pos, 80.0, 80.0, 100.0, 50.0, 0.0, 0.0);
+        assert_eq!((x, y), (0.0, 0.0), "top-left → 0,0 (was -40,0 when centered)");
+        assert_eq!((w.round(), h.round()), (160.0, 80.0));
+    }
+
+    #[test]
+    fn bottom_right_pins_to_far_edge() {
+        // object-position: 100% 100%（右下角）→ offset = container - img。
+        let pos = Bp::TwoValue(Box::new(Bp::Percent(100.0)), Box::new(Bp::Percent(100.0)));
+        let (x, y, _, _) = compute_object_fit_rect(&cover(), &pos, 80.0, 80.0, 100.0, 50.0, 0.0, 0.0);
+        // x = 80-160 = -80；y = 80-80 = 0
+        assert_eq!((x, y), (-80.0, 0.0));
+    }
+
+    #[test]
+    fn fill_ignores_position() {
+        // Fill 拉伸填满，position 不影响。
+        let pos = Bp::TwoValue(Box::new(Bp::Percent(0.0)), Box::new(Bp::Percent(0.0)));
+        let (x, y, w, h) =
+            compute_object_fit_rect(&ObjectFitComputedValue::Fill, &pos, 80.0, 60.0, 100.0, 50.0, 5.0, 7.0);
+        assert_eq!((x, y, w, h), (5.0, 7.0, 80.0, 60.0));
+    }
+
+    #[test]
+    fn length_offset_applied() {
+        // object-position: 10px 20px → 固定偏移。
+        let pos = Bp::TwoValue(Box::new(Bp::Length(10.0)), Box::new(Bp::Length(20.0)));
+        let (x, y, _, _) = compute_object_fit_rect(&cover(), &pos, 80.0, 80.0, 100.0, 50.0, 0.0, 0.0);
+        assert_eq!((x, y), (10.0, 20.0));
     }
 }
 
