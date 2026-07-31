@@ -592,13 +592,16 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "will-change" => {
-            if let Some(v) = values::parse_will_change(value) {
-                style.will_change = match v {
-                    zero_css_parser::values::WillChangeValue::Auto => WillChangeValue::Auto,
-                    zero_css_parser::values::WillChangeValue::ScrollPosition => WillChangeValue::ScrollPosition,
-                    zero_css_parser::values::WillChangeValue::Contents => WillChangeValue::Contents,
-                    zero_css_parser::values::WillChangeValue::Custom(s) => WillChangeValue::Custom(s),
-                };
+            if let Some(list) = values::parse_will_change_list(value) {
+                style.will_change = list
+                    .into_iter()
+                    .map(|v| match v {
+                        zero_css_parser::values::WillChangeValue::Auto => WillChangeValue::Auto,
+                        zero_css_parser::values::WillChangeValue::ScrollPosition => WillChangeValue::ScrollPosition,
+                        zero_css_parser::values::WillChangeValue::Contents => WillChangeValue::Contents,
+                        zero_css_parser::values::WillChangeValue::Custom(s) => WillChangeValue::Custom(s),
+                    })
+                    .collect();
                 return true;
             }
         }

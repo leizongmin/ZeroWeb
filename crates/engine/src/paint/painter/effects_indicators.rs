@@ -9,7 +9,7 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{LineCap, LineStyle, StrokePrimitive};
 use zero_style_system::{
     ClipPathComputedValue, ComputedStyle, ImageRenderingValue, IsolationValue, OverscrollBehaviorValue,
-    PointerEventsValue, TouchActionValue, UserSelectValue, WillChangeValue,
+    PointerEventsValue, TouchActionValue, UserSelectValue,
 };
 
 use super::super::helpers::length_to_f32;
@@ -128,7 +128,7 @@ impl super::Painter {
         abs_y: f32,
         style: &ComputedStyle,
     ) {
-        if matches!(style.will_change, WillChangeValue::Auto) {
+        if style.will_change.is_empty() {
             return;
         }
 

@@ -1512,8 +1512,8 @@ pub enum PropertyValue {
     TouchAction(TouchActionValue),
     /// user-select 值。
     UserSelect(UserSelectValue),
-    /// will-change 值。
-    WillChange(WillChangeValue),
+    /// will-change 值（多 ident 列表）。
+    WillChange(Vec<WillChangeValue>),
     /// pointer-events 值。
     PointerEvents(PointerEventsValue),
     /// overflow-wrap 值。

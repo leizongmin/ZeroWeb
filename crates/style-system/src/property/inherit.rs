@@ -1142,7 +1142,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         "will-change" => {
-            style.will_change = default_style.will_change;
+            style.will_change = default_style.will_change.clone();
             true
         }
         "direction" => {

@@ -253,7 +253,7 @@ impl Default for ComputedStyle {
             overscroll_behavior_y: OverscrollBehaviorValue::Auto,
             touch_action: TouchActionValue::Auto,
             user_select: UserSelectValue::Auto,
-            will_change: WillChangeValue::Auto,
+            will_change: Vec::new(),
             pointer_events: PointerEventsValue::Auto,
 
             // Text (新属性)

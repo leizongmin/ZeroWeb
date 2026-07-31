@@ -198,15 +198,39 @@ fn test_user_select_apply() {
 }
 
 #[test]
-/// will-change apply
+/// will-change apply（R2308：`auto | scroll-position | contents | <custom-ident>+`，空格或逗号分隔多 ident）
 fn test_will_change_apply() {
     let mut style = ComputedStyle::default();
+    // auto = 空 Vec（默认值）
     assert!(apply_property_value(&mut style, "will-change", "auto"));
-    assert_eq!(style.will_change, WillChangeValue::Auto);
+    assert_eq!(style.will_change, Vec::<WillChangeValue>::new());
+    // 单 ident
     assert!(apply_property_value(&mut style, "will-change", "scroll-position"));
-    assert_eq!(style.will_change, WillChangeValue::ScrollPosition);
+    assert_eq!(style.will_change, vec![WillChangeValue::ScrollPosition]);
     assert!(apply_property_value(&mut style, "will-change", "transform"));
-    assert_eq!(style.will_change, WillChangeValue::Custom("transform".to_string()));
+    assert_eq!(
+        style.will_change,
+        vec![WillChangeValue::Custom("transform".to_string())]
+    );
+    // R2308：多 ident 空格分隔（CSS Will Change 规范 `<custom-ident>+`）
+    assert!(apply_property_value(&mut style, "will-change", "transform opacity"));
+    assert_eq!(
+        style.will_change,
+        vec![
+            WillChangeValue::Custom("transform".to_string()),
+            WillChangeValue::Custom("opacity".to_string()),
+        ]
+    );
+    // R2308：多 ident 逗号分隔（容忍 `will-change: transform, opacity` 写法）
+    assert!(apply_property_value(
+        &mut style,
+        "will-change",
+        "scroll-position, contents"
+    ));
+    assert_eq!(
+        style.will_change,
+        vec![WillChangeValue::ScrollPosition, WillChangeValue::Contents]
+    );
 }
 
 #[test]

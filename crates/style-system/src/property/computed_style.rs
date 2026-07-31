@@ -413,7 +413,7 @@ pub struct ComputedStyle {
     /// user-select 属性。
     pub user_select: UserSelectValue,
     /// will-change 属性。
-    pub will_change: WillChangeValue,
+    pub will_change: Vec<WillChangeValue>,
     /// pointer-events 属性。
     pub pointer_events: PointerEventsValue,
 

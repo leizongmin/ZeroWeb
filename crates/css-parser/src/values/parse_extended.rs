@@ -311,6 +311,46 @@ pub fn parse_will_change(value: &str) -> Option<WillChangeValue> {
     }
 }
 
+/// 解析单个 will-change 标识符（非 auto/scroll-position/contents 的 custom-ident）。
+fn parse_will_change_ident(token: &str) -> Option<WillChangeValue> {
+    let t = token.trim().to_ascii_lowercase();
+    match t.as_str() {
+        "scroll-position" => Some(WillChangeValue::ScrollPosition),
+        "contents" => Some(WillChangeValue::Contents),
+        "" | "auto" => None, // auto 仅作为整体值合法，不能混入 ident 列表
+        _ => {
+            if t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                Some(WillChangeValue::Custom(t))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// 解析 will-change 多 ident 列表（CSS Will Change：`auto | scroll-position | contents | <custom-ident>+`）。
+/// `auto` → 空 Vec（默认值）；否则按空白分割（spec 为 `<custom-ident>+` 空格分隔，亦容忍逗号）
+/// 逐个解析 ident，任一失败 → None。空 Vec = auto。
+pub fn parse_will_change_list(value: &str) -> Option<Vec<WillChangeValue>> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("auto") {
+        return Some(Vec::new());
+    }
+    // 按空白和逗号分割（容忍 `will-change: transform, opacity` 的逗号写法）。
+    let tokens: Vec<&str> = v
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .filter(|s| !s.is_empty())
+        .collect();
+    if tokens.is_empty() {
+        return None;
+    }
+    let mut list = Vec::with_capacity(tokens.len());
+    for t in &tokens {
+        list.push(parse_will_change_ident(t)?);
+    }
+    Some(list)
+}
+
 /// CSS pointer-events 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum PointerEventsValue {

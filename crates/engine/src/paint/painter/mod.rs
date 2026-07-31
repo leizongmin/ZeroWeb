@@ -23,7 +23,7 @@ use zero_style_system::{
     BorderCollapseValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle, ContainComputedValue,
     HyphensComputedValue, ImageRenderingValue, IsolationValue, MixBlendModeComputedValue, OverscrollBehaviorValue,
     PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, TouchActionValue,
-    UserSelectValue, WillChangeValue,
+    UserSelectValue,
 };
 
 use super::color::resolve_color_current;
@@ -1279,10 +1279,10 @@ impl Painter {
                 self.paint_isolation_indicator(box_node, abs_x, abs_y, style);
             }
 
-            // CSS will-change — 性能提示指示器
+            // CSS will-change — 性能提示指示器（R2308：多 ident 列表，空 Vec = auto）
             if let Some(node_id) = box_node.node_id
                 && let Some(style) = styles.get(&node_id)
-                && !matches!(style.will_change, WillChangeValue::Auto)
+                && !style.will_change.is_empty()
             {
                 self.paint_will_change_indicator(box_node, abs_x, abs_y, style);
             }

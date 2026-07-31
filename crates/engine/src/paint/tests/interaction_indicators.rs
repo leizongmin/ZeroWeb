@@ -349,7 +349,7 @@ fn test_will_change_scroll_position_generates_indicator() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.will_change = WillChangeValue::ScrollPosition;
+    style.will_change = vec![WillChangeValue::ScrollPosition];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -372,7 +372,7 @@ fn test_will_change_custom_property_generates_indicator() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.will_change = WillChangeValue::Custom("transform".to_string());
+    style.will_change = vec![WillChangeValue::Custom("transform".to_string())];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -384,6 +384,32 @@ fn test_will_change_custom_property_generates_indicator() {
         .iter()
         .any(|f| f.color.r == 255 && f.color.g == 200 && f.color.b == 0 && f.color.a == 200);
     assert!(has_triangle, "will-change: transform 应生成黄色三角形指示器");
+}
+
+/// R2308：多 ident will-change（`will-change: transform opacity`）也应生成指示器。
+#[test]
+fn test_will_change_multiple_idents_generates_indicator() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.will_change = vec![
+        WillChangeValue::Custom("transform".to_string()),
+        WillChangeValue::Custom("opacity".to_string()),
+    ];
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    let has_triangle = prims
+        .fills
+        .iter()
+        .any(|f| f.color.r == 255 && f.color.g == 200 && f.color.b == 0 && f.color.a == 200);
+    assert!(has_triangle, "多 ident will-change 应生成黄色三角形指示器");
 }
 
 // === pointer-events 指示器测试 ===
@@ -644,7 +670,7 @@ fn test_multiple_indicators_together() {
     let mut style = ComputedStyle::default();
     style.cursor = CursorValue::Pointer;
     style.isolation = IsolationValue::Isolate;
-    style.will_change = WillChangeValue::Contents;
+    style.will_change = vec![WillChangeValue::Contents];
     style.pointer_events = PointerEventsValue::None;
     style.user_select = UserSelectValue::None;
     styles.insert(elem, style);

@@ -218,7 +218,7 @@ impl PropertyRegistry {
             }
             "touch-action" => Some(TouchAction(TouchActionValue::Auto)),
             "user-select" => Some(UserSelect(UserSelectValue::Auto)),
-            "will-change" => Some(WillChange(WillChangeValue::Auto)),
+            "will-change" => Some(WillChange(Vec::new())),
             "pointer-events" => Some(PointerEvents(PointerEventsValue::Auto)),
 
             // Text (新属性)
