@@ -2,8 +2,8 @@
 use super::super::*;
 use super::core::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, PseudoClassSelector, Selector,
-    SubclassSelector, TypeSelector,
+    AttrCaseModifier, AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector,
+    PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
 };
 use zero_dom::Document;
 
@@ -519,7 +519,7 @@ fn test_attribute_includes_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "class".to_string(),
                         matcher: AttributeMatcher::Includes("bar".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,

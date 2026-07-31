@@ -7,8 +7,8 @@
 type MatchingDecl = (String, String, bool, (u32, u32, u32), Option<usize>);
 
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, PseudoClassSelector, Selector, SubclassSelector,
-    TypeSelector,
+    AttrCaseModifier, AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, PseudoClassSelector, Selector,
+    SubclassSelector, TypeSelector,
 };
 use zero_dom::{Document, NodeId, NodeKind};
 
@@ -190,26 +190,33 @@ fn matches_attribute(doc: &Document, element: NodeId, attr: &AttributeSelector) 
         None => return false,
     };
 
-    // Selectors Level 4 `[attr=val i]`：显式 ASCII 大小写不敏感，覆盖文档语言默认（无论
-    // HTML/XML 一律不敏感）。`s` 修饰符当前 parser 未单独标记（见 css-parser ast.rs 注释），
-    // 故此处仅处理 `i`；缺省与 `s` 走下方文档语言默认分支（行为不变）。
-    if attr.case_insensitive {
-        let value_lower = value.to_ascii_lowercase();
-        return match &attr.matcher {
-            AttributeMatcher::Exists => true,
-            AttributeMatcher::Exact(v) => value_lower == v.to_ascii_lowercase(),
-            AttributeMatcher::Includes(v) => {
-                let vl = v.to_ascii_lowercase();
-                value.split_whitespace().any(|part| part.to_ascii_lowercase() == vl)
-            }
-            AttributeMatcher::DashMatch(v) => {
-                let vl = v.to_ascii_lowercase();
-                value_lower == vl || value_lower.starts_with(&format!("{vl}-"))
-            }
-            AttributeMatcher::Prefix(v) => value_lower.starts_with(&v.to_ascii_lowercase()),
-            AttributeMatcher::Suffix(v) => value_lower.ends_with(&v.to_ascii_lowercase()),
-            AttributeMatcher::Substring(v) => value_lower.contains(&v.to_ascii_lowercase()),
-        };
+    // CSS Selectors Level 4 §6.3：大小写修饰符三态。
+    //   `i` → 强制 ASCII 大小写不敏感（覆盖文档语言默认，无论 HTML/XML）。
+    //   `s` → 强制大小写敏感（覆盖文档语言默认）。
+    //   缺省 → 按文档语言默认（HTML 不敏感、XML/XHTML 敏感）。
+    match attr.case {
+        AttrCaseModifier::Insensitive => {
+            let value_lower = value.to_ascii_lowercase();
+            return match &attr.matcher {
+                AttributeMatcher::Exists => true,
+                AttributeMatcher::Exact(v) => value_lower == v.to_ascii_lowercase(),
+                AttributeMatcher::Includes(v) => {
+                    let vl = v.to_ascii_lowercase();
+                    value.split_whitespace().any(|part| part.to_ascii_lowercase() == vl)
+                }
+                AttributeMatcher::DashMatch(v) => {
+                    let vl = v.to_ascii_lowercase();
+                    value_lower == vl || value_lower.starts_with(&format!("{vl}-"))
+                }
+                AttributeMatcher::Prefix(v) => value_lower.starts_with(&v.to_ascii_lowercase()),
+                AttributeMatcher::Suffix(v) => value_lower.ends_with(&v.to_ascii_lowercase()),
+                AttributeMatcher::Substring(v) => value_lower.contains(&v.to_ascii_lowercase()),
+            };
+        }
+        AttrCaseModifier::Sensitive => {
+            return match_attr_value_exact(&attr.matcher, &value);
+        }
+        AttrCaseModifier::Default => {}
     }
 
     // CSS Selectors §6.3「case-sensitivity depends on the document language」：
@@ -220,16 +227,7 @@ fn matches_attribute(doc: &Document, element: NodeId, attr: &AttributeSelector) 
     // ZW 用 html5ever 统一按 HTML 解析，但 parser 检测 DOCTYPE public_id 含 "XHTML" 时置位
     // `content_is_xml`，此处据此分发大小写语义。
     if doc.content_is_xml() {
-        // XML/XHTML：大小写敏感，按原值比较
-        return match &attr.matcher {
-            AttributeMatcher::Exists => true,
-            AttributeMatcher::Exact(v) => value == v.as_str(),
-            AttributeMatcher::Includes(v) => value.split_whitespace().any(|part| part == v.as_str()),
-            AttributeMatcher::DashMatch(v) => value == v.as_str() || value.starts_with(&format!("{v}-")),
-            AttributeMatcher::Prefix(v) => value.starts_with(v.as_str()),
-            AttributeMatcher::Suffix(v) => value.ends_with(v.as_str()),
-            AttributeMatcher::Substring(v) => value.contains(v.as_str()),
-        };
+        return match_attr_value_exact(&attr.matcher, &value);
     }
 
     // HTML：属性值匹配 ASCII 大小写不敏感（to_ascii_lowercase 后比较）。
@@ -248,6 +246,19 @@ fn matches_attribute(doc: &Document, element: NodeId, attr: &AttributeSelector) 
         AttributeMatcher::Prefix(v) => value_lower.starts_with(&v.to_ascii_lowercase()),
         AttributeMatcher::Suffix(v) => value_lower.ends_with(&v.to_ascii_lowercase()),
         AttributeMatcher::Substring(v) => value_lower.contains(&v.to_ascii_lowercase()),
+    }
+}
+
+/// 大小写敏感地比较属性值（用于 XML/XHTML 默认 + `s` 修饰符强制敏感）。
+fn match_attr_value_exact(matcher: &AttributeMatcher, value: &str) -> bool {
+    match matcher {
+        AttributeMatcher::Exists => true,
+        AttributeMatcher::Exact(v) => value == v.as_str(),
+        AttributeMatcher::Includes(v) => value.split_whitespace().any(|part| part == v.as_str()),
+        AttributeMatcher::DashMatch(v) => value == v.as_str() || value.starts_with(&format!("{v}-")),
+        AttributeMatcher::Prefix(v) => value.starts_with(v.as_str()),
+        AttributeMatcher::Suffix(v) => value.ends_with(v.as_str()),
+        AttributeMatcher::Substring(v) => value.contains(v.as_str()),
     }
 }
 

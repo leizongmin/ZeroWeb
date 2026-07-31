@@ -36,6 +36,11 @@ fn test_attr_case_insensitive_flag_does_not_drop_rule() {
         AttributeMatcher::Exact(v) => assert_eq!(v, "text"),
         other => panic!("应为 Exact 匹配，实际: {:?}", other),
     }
+    assert_eq!(
+        attr.case,
+        AttrCaseModifier::Insensitive,
+        "`i` 修饰符应解析为 Insensitive"
+    );
 }
 
 #[test]
@@ -43,10 +48,38 @@ fn test_attr_case_sensitive_flag_s() {
     let css = r#"[lang|="en" s] { color: red; }"#;
     let sheet = Parser::parse_stylesheet(css);
     assert_eq!(sheet.rules.len(), 1, "[attr|=val s] 不应使规则被丢弃");
-    assert!(matches!(
-        first_attr(&sheet.rules[0]).map(|a| &a.matcher),
-        Some(AttributeMatcher::DashMatch(_))
-    ));
+    let attr = first_attr(&sheet.rules[0]).expect("应有属性选择器");
+    assert!(matches!(&attr.matcher, AttributeMatcher::DashMatch(_)));
+    assert_eq!(
+        attr.case,
+        AttrCaseModifier::Sensitive,
+        "`s` 修饰符应解析为 Sensitive（强制大小写敏感）"
+    );
+}
+
+#[test]
+fn test_attr_case_modifier_variants() {
+    // 缺省修饰符 → Default
+    let sheet = Parser::parse_stylesheet(r#"[a="x"] {}"#);
+    assert_eq!(first_attr(&sheet.rules[0]).unwrap().case, AttrCaseModifier::Default);
+    // `i`/`I` → Insensitive
+    for css in [r#"[a="x" i] {}"#, r#"[a="x" I] {}"#] {
+        let sheet = Parser::parse_stylesheet(css);
+        assert_eq!(
+            first_attr(&sheet.rules[0]).unwrap().case,
+            AttrCaseModifier::Insensitive,
+            "{css} 应为 Insensitive"
+        );
+    }
+    // `s`/`S` → Sensitive
+    for css in [r#"[a="x" s] {}"#, r#"[a="x" S] {}"#] {
+        let sheet = Parser::parse_stylesheet(css);
+        assert_eq!(
+            first_attr(&sheet.rules[0]).unwrap().case,
+            AttrCaseModifier::Sensitive,
+            "{css} 应为 Sensitive"
+        );
+    }
 }
 
 #[test]

@@ -1,9 +1,9 @@
 // 覆盖率提升测试 — matcher/mod.rs 中未覆盖的分支
 use super::super::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, ContainerCondition,
-    ContainerRule, ContainerSizeCondition, NthPattern, PseudoClassSelector, PseudoElementSelector, Selector,
-    SubclassSelector, SupportsCondition, TypeSelector,
+    AttrCaseModifier, AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector,
+    ContainerCondition, ContainerRule, ContainerSizeCondition, NthPattern, PseudoClassSelector, PseudoElementSelector,
+    Selector, SubclassSelector, SupportsCondition, TypeSelector,
 };
 use zero_css_parser::media_query::{
     MediaContext, MediaType, PointerValue, PrefersColorSchemeValue, ReducedMotionValue,
@@ -730,7 +730,7 @@ fn test_attribute_dash_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "lang".to_string(),
                         matcher: AttributeMatcher::DashMatch("en".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -759,7 +759,7 @@ fn test_attribute_exact_match_case_insensitive_html() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "lang".to_string(),
                         matcher,
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -796,7 +796,7 @@ fn test_attribute_prefix_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "data-x".to_string(),
                         matcher: AttributeMatcher::Prefix("hello".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -820,7 +820,7 @@ fn test_attribute_suffix_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "href".to_string(),
                         matcher: AttributeMatcher::Suffix(".html".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -844,7 +844,7 @@ fn test_attribute_substring_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "title".to_string(),
                         matcher: AttributeMatcher::Substring("lo wo".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,

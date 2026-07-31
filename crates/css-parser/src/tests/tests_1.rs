@@ -232,7 +232,7 @@ fn test_specificity_attribute() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "type".to_string(),
                         matcher: AttributeMatcher::Exact("text".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,

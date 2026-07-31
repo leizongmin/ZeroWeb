@@ -1,7 +1,7 @@
 // Test file split from matcher.rs — core selector matching tests
 use super::super::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, NthPattern,
+    AttrCaseModifier, AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, NthPattern,
     PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
 };
 use zero_dom::Document;
@@ -210,7 +210,7 @@ fn test_matches_attribute_selector() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "id".to_string(),
                         matcher: AttributeMatcher::Exists,
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -228,7 +228,7 @@ fn test_matches_attribute_selector() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "id".to_string(),
                         matcher: AttributeMatcher::Exact("main".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -248,7 +248,7 @@ fn attr_selector(name: &str, matcher: AttributeMatcher) -> Selector {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: name.to_string(),
                         matcher,
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -316,7 +316,7 @@ fn attr_selector_ci(name: &str, matcher: AttributeMatcher) -> Selector {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: name.to_string(),
                         matcher,
-                        case_insensitive: true,
+                        case: AttrCaseModifier::Insensitive,
                     })],
                 },
                 None,
@@ -360,6 +360,82 @@ fn test_matches_attribute_case_insensitive_flag_i() {
             &attr_selector_ci("class", AttributeMatcher::Includes("active".to_string()))
         ),
         "[class~=\"active\" i] 应匹配 class=\"Btn Active\""
+    );
+}
+
+/// Selectors Level 4 `[attr=val s]`：`s` 修饰符强制大小写敏感，覆盖文档语言默认。
+/// 在 HTML 模式（默认大小写不敏感）下，`s` 应让 `[title="es"]` 不匹配 `title="ES"`。
+fn attr_selector_cs(name: &str, matcher: AttributeMatcher) -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
+                        name: name.to_string(),
+                        matcher,
+                        case: AttrCaseModifier::Sensitive,
+                    })],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+#[test]
+fn test_matches_attribute_case_sensitive_flag_s() {
+    let (mut doc, _html, _body, div, _p) = make_test_dom();
+    doc.set_attribute(div, "title", "ES");
+    // HTML 模式（content_is_xml = false，默认大小写不敏感）。
+    assert!(!doc.content_is_xml(), "默认 doc 应为 HTML 模式");
+
+    // HTML 基线：无修饰符大小写不敏感，[title="es"] 匹配 title="ES"。
+    assert!(
+        matches_selector(
+            &doc,
+            div,
+            &attr_selector("title", AttributeMatcher::Exact("es".to_string()))
+        ),
+        "HTML 基线：无修饰符 [title=\"es\"] 应匹配 title=\"ES\"（大小写不敏感）"
+    );
+
+    // `s` 修饰符：强制大小写敏感，覆盖 HTML 默认 → 不匹配。
+    assert!(
+        !matches_selector(
+            &doc,
+            div,
+            &attr_selector_cs("title", AttributeMatcher::Exact("es".to_string()))
+        ),
+        "Selectors L4：[title=\"es\" s] 应强制大小写敏感、不匹配 title=\"ES\""
+    );
+    // 大小写一致时仍匹配。
+    assert!(
+        matches_selector(
+            &doc,
+            div,
+            &attr_selector_cs("title", AttributeMatcher::Exact("ES".to_string()))
+        ),
+        "[title=\"ES\" s] 应匹配 title=\"ES\""
+    );
+
+    // `s` 对 Includes/DashMatch 等 matcher 同样强制敏感。
+    doc.set_attribute(div, "class", "Btn Active");
+    assert!(
+        !matches_selector(
+            &doc,
+            div,
+            &attr_selector_cs("class", AttributeMatcher::Includes("active".to_string()))
+        ),
+        "[class~=\"active\" s] 不应匹配 class=\"Btn Active\""
+    );
+    assert!(
+        matches_selector(
+            &doc,
+            div,
+            &attr_selector_cs("class", AttributeMatcher::Includes("Active".to_string()))
+        ),
+        "[class~=\"Active\" s] 应匹配 class=\"Btn Active\""
     );
 }
 

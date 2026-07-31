@@ -1,8 +1,8 @@
 // Matcher module - uncovered paths test
 use super::super::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, ContainerRule,
-    ContainerSizeCondition, NthPattern, PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
+    AttrCaseModifier, AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector,
+    ContainerRule, ContainerSizeCondition, NthPattern, PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
 };
 use zero_css_parser::media_query::{
     MediaContext, MediaType, PointerValue, PrefersColorSchemeValue, ReducedMotionValue,
@@ -95,7 +95,7 @@ fn test_multiple_subclass_selectors() {
                         SubclassSelector::Attribute(AttributeSelector {
                             name: "data-x".to_string(),
                             matcher: AttributeMatcher::Exact("y".to_string()),
-                            case_insensitive: false,
+                            case: AttrCaseModifier::Default,
                         }),
                     ],
                 },
@@ -293,7 +293,7 @@ fn test_attribute_includes() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "class".to_string(),
                         matcher: AttributeMatcher::Includes("bar".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -320,7 +320,7 @@ fn test_attribute_includes_no_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "class".to_string(),
                         matcher: AttributeMatcher::Includes("bar".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -970,7 +970,7 @@ fn test_attribute_dash_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "lang".to_string(),
                         matcher: AttributeMatcher::DashMatch("en".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -997,7 +997,7 @@ fn test_attribute_prefix() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "data-test".to_string(),
                         matcher: AttributeMatcher::Prefix("value".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -1024,7 +1024,7 @@ fn test_attribute_suffix() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "href".to_string(),
                         matcher: AttributeMatcher::Suffix(".html".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -1051,7 +1051,7 @@ fn test_attribute_substring() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "class".to_string(),
                         matcher: AttributeMatcher::Substring("high".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,

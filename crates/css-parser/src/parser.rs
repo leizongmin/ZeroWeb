@@ -1532,7 +1532,7 @@ impl<'a> Parser<'a> {
                 return Some(AttributeSelector {
                     name,
                     matcher: AttributeMatcher::Exists,
-                    case_insensitive: false,
+                    case: AttrCaseModifier::Default,
                 });
             }
             Token::Delim('=') => {
@@ -1583,7 +1583,7 @@ impl<'a> Parser<'a> {
                 return Some(AttributeSelector {
                     name,
                     matcher: AttributeMatcher::Exists,
-                    case_insensitive: false,
+                    case: AttrCaseModifier::Default,
                 });
             }
         };
@@ -1591,30 +1591,30 @@ impl<'a> Parser<'a> {
         // Selectors Level 4：取值后可选空白 + `i`/`s` 大小写修饰符 + 可选空白再 `]`。
         // 修复前各 matcher arm 自行「紧跟 ] 才消耗 ]」，遇 `i`/`s` 时 ] 不消耗 → 残余
         // `i` `]` 破坏选择器解析、整条规则被丢（driving: attribute_case_flag）。现统一在
-        // 取值后消耗修饰符与 ]。`i` → case_insensitive=true，`s`/缺省 → false。
+        // 取值后消耗修饰符与 ]。`i` → Insensitive、`s` → Sensitive、缺省 → Default。
         self.skip_whitespace();
-        let case_insensitive = self.consume_attr_case_flag();
+        let case = self.consume_attr_case_flag();
         self.skip_whitespace();
         if matches!(self.peek(), Token::RBracket) {
             self.advance();
         }
-        Some(AttributeSelector {
-            name,
-            matcher,
-            case_insensitive,
-        })
+        Some(AttributeSelector { name, matcher, case })
     }
 
     /// Selectors Level 4：消耗属性选择器值后可选的大小写修饰符（`i`/`s`）。
-    /// 返回 true 表示 `i`（大小写不敏感）；`s` 或无修饰符返回 false（消耗 `s` 但语义见 matcher）。
-    fn consume_attr_case_flag(&mut self) -> bool {
+    /// `i`/`I` → [`AttrCaseModifier::Insensitive`]，`s`/`S` → [`AttrCaseModifier::Sensitive`]，
+    /// 无修饰符 → [`AttrCaseModifier::Default`]。
+    fn consume_attr_case_flag(&mut self) -> AttrCaseModifier {
         if let Token::Ident(s) = self.peek().clone()
             && (s == "i" || s == "I" || s == "s" || s == "S")
         {
             self.advance();
-            s == "i" || s == "I"
+            match s.as_str() {
+                "i" | "I" => AttrCaseModifier::Insensitive,
+                _ => AttrCaseModifier::Sensitive,
+            }
         } else {
-            false
+            AttrCaseModifier::Default
         }
     }
 

@@ -2,8 +2,8 @@
 use super::super::*;
 use super::core::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, PseudoClassSelector, Selector,
-    SubclassSelector, TypeSelector,
+    AttrCaseModifier, AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector,
+    PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
 };
 use zero_dom::{Document, NodeId};
 
@@ -211,7 +211,7 @@ fn test_attribute_dash_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "lang".to_string(),
                         matcher: AttributeMatcher::DashMatch("en".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -241,7 +241,7 @@ fn test_attribute_prefix_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "data-type".to_string(),
                         matcher: AttributeMatcher::Prefix("button".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -271,7 +271,7 @@ fn test_attribute_suffix_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "href".to_string(),
                         matcher: AttributeMatcher::Suffix("/page".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -301,7 +301,7 @@ fn test_attribute_substring_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "href".to_string(),
                         matcher: AttributeMatcher::Substring("example".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,

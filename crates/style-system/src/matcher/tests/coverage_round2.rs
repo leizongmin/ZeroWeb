@@ -2,8 +2,8 @@
 
 use super::super::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector, ContainerCondition,
-    ContainerRule, ContainerSizeCondition, Declaration, LayerRule, NthPattern, PseudoClassSelector,
+    AttrCaseModifier, AttributeMatcher, AttributeSelector, Combinator, ComplexSelector, CompoundSelector,
+    ContainerCondition, ContainerRule, ContainerSizeCondition, Declaration, LayerRule, NthPattern, PseudoClassSelector,
     PseudoElementSelector, Rule, Selector, StyleRule, SubclassSelector, TypeSelector,
 };
 use zero_css_parser::media_query::{
@@ -531,7 +531,7 @@ fn test_attribute_selector_missing_attr() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "data-missing".to_string(),
                         matcher: AttributeMatcher::Exists,
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,

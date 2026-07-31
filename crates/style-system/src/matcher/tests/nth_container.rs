@@ -1,8 +1,8 @@
 // Matcher nth/has/container/supports 扩展测试
 use super::super::*;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, ComplexSelector, CompoundSelector, NthPattern, PseudoClassSelector, Selector,
-    SubclassSelector, TypeSelector,
+    AttrCaseModifier, AttributeMatcher, AttributeSelector, ComplexSelector, CompoundSelector, NthPattern,
+    PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
 };
 use zero_dom::Document;
 
@@ -349,7 +349,7 @@ fn test_attribute_exact_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "type".to_string(),
                         matcher: AttributeMatcher::Exact("text".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -375,7 +375,7 @@ fn test_attribute_exists() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "data-test".to_string(),
                         matcher: AttributeMatcher::Exists,
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -401,7 +401,7 @@ fn test_attribute_no_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "id".to_string(),
                         matcher: AttributeMatcher::Exists,
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,

@@ -8,8 +8,8 @@ use super::super::*;
 use super::helpers::*;
 use crate::matcher::matches_selector;
 use zero_css_parser::ast::{
-    AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, NthPattern, PseudoClassSelector, Selector,
-    SubclassSelector, TypeSelector,
+    AttrCaseModifier, AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, NthPattern,
+    PseudoClassSelector, Selector, SubclassSelector, TypeSelector,
 };
 
 /// Helper: 创建带伪类的选择器。
@@ -410,7 +410,7 @@ fn test_attribute_exists_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "id".to_string(),
                         matcher: AttributeMatcher::Exists,
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -431,7 +431,7 @@ fn test_attribute_exact_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "id".to_string(),
                         matcher: AttributeMatcher::Exact("main".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
@@ -453,7 +453,7 @@ fn test_attribute_includes_match() {
                     subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
                         name: "class".to_string(),
                         matcher: AttributeMatcher::Includes("text".to_string()),
-                        case_insensitive: false,
+                        case: AttrCaseModifier::Default,
                     })],
                 },
                 None,
