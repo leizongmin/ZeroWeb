@@ -840,6 +840,40 @@ pub fn parse_background_size(value: &str) -> Option<BackgroundSizeValue> {
     }
 }
 
+/// 解析 background-position 多层列表（CSS Backgrounds §3.6 `<position>#`，顶层逗号分隔）。
+///
+/// 单层内可含空格（如 `center top` = 单个 2 值 position），逗号才是图层分隔符。
+/// R2311：单层 byte-identical（1 项 Vec）；多层改变存储。任一层失败 → None；空输入 → None。
+/// position/size/repeat 值均不含括号，故顶层逗号分割用简单 `split(',')`（无需 paren-aware）。
+pub fn parse_background_position_list(value: &str) -> Option<Vec<BackgroundPositionValue>> {
+    let mut list = Vec::new();
+    for part in value.split(',') {
+        list.push(parse_background_position(part)?);
+    }
+    (!list.is_empty()).then_some(list)
+}
+
+/// 解析 background-repeat 多层列表（CSS Backgrounds §3.4 `<repeat-style>#`，顶层逗号分隔）。
+/// 单层 byte-identical；多层改变存储。任一层失败 → None；空输入 → None。
+pub fn parse_background_repeat_list(value: &str) -> Option<Vec<BackgroundRepeatValue>> {
+    let mut list = Vec::new();
+    for part in value.split(',') {
+        list.push(parse_background_repeat(part)?);
+    }
+    (!list.is_empty()).then_some(list)
+}
+
+/// 解析 background-size 多层列表（CSS Backgrounds §3.5 `<bg-size>#`，顶层逗号分隔）。
+/// 单层内可含空格（如 `50% auto` = 单个 2 值 size）。单层 byte-identical；多层改变存储。
+/// 任一层失败 → None；空输入 → None。
+pub fn parse_background_size_list(value: &str) -> Option<Vec<BackgroundSizeValue>> {
+    let mut list = Vec::new();
+    for part in value.split(',') {
+        list.push(parse_background_size(part)?);
+    }
+    (!list.is_empty()).then_some(list)
+}
+
 /// CSS background-attachment 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackgroundAttachmentValue {

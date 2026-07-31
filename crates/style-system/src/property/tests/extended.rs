@@ -1488,14 +1488,14 @@ fn test_background_image_initial_value() {
 fn test_apply_property_background_position_center() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-position", "center"));
-    assert_eq!(style.background_position, BackgroundPositionComputedValue::Center);
+    assert_eq!(style.background_position, vec![BackgroundPositionComputedValue::Center]);
 }
 
 #[test]
 fn test_apply_property_background_position_left() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-position", "left"));
-    assert_eq!(style.background_position, BackgroundPositionComputedValue::Left);
+    assert_eq!(style.background_position, vec![BackgroundPositionComputedValue::Left]);
 }
 
 #[test]
@@ -1504,7 +1504,7 @@ fn test_apply_property_background_position_percent() {
     assert!(apply_property_value(&mut style, "background-position", "50%"));
     assert_eq!(
         style.background_position,
-        BackgroundPositionComputedValue::Percent(50.0)
+        vec![BackgroundPositionComputedValue::Percent(50.0)]
     );
 }
 
@@ -1512,7 +1512,10 @@ fn test_apply_property_background_position_percent() {
 fn test_apply_property_background_position_length() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-position", "10px"));
-    assert_eq!(style.background_position, BackgroundPositionComputedValue::Length(10.0));
+    assert_eq!(
+        style.background_position,
+        vec![BackgroundPositionComputedValue::Length(10.0)]
+    );
 }
 
 /// R1417：em/rem 单位 background-position 此前被 parser 拒绝（仅匹配 LengthValue::Px），
@@ -1521,11 +1524,17 @@ fn test_apply_property_background_position_length() {
 fn test_apply_property_background_position_em_resolves_to_px() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-position", "2em"));
-    assert_eq!(style.background_position, BackgroundPositionComputedValue::Length(32.0));
+    assert_eq!(
+        style.background_position,
+        vec![BackgroundPositionComputedValue::Length(32.0)]
+    );
     // -0em（负零 em，驱动案 background-position-076）应解析为 0px。
     let mut style2 = ComputedStyle::default();
     assert!(apply_property_value(&mut style2, "background-position", "-0em"));
-    assert_eq!(style2.background_position, BackgroundPositionComputedValue::Length(0.0));
+    assert_eq!(
+        style2.background_position,
+        vec![BackgroundPositionComputedValue::Length(0.0)]
+    );
 }
 
 /// R1417：默认 background-position 应为 0% 0%（top-left，CSS initial），非单值（旧实现
@@ -1533,12 +1542,12 @@ fn test_apply_property_background_position_em_resolves_to_px() {
 #[test]
 fn test_apply_property_background_position_default_is_zero_zero() {
     let style = ComputedStyle::default();
-    match style.background_position {
-        BackgroundPositionComputedValue::TwoValue(ref h, ref v) => {
+    match &style.background_position[0] {
+        BackgroundPositionComputedValue::TwoValue(h, v) => {
             assert_eq!(**h, BackgroundPositionComputedValue::Percent(0.0));
             assert_eq!(**v, BackgroundPositionComputedValue::Percent(0.0));
         }
-        ref other => panic!("default background-position 应为 TwoValue(0%,0%), got {other:?}"),
+        other => panic!("default background-position 应为 TwoValue(0%,0%), got {other:?}"),
     }
 }
 
@@ -1546,12 +1555,12 @@ fn test_apply_property_background_position_default_is_zero_zero() {
 fn test_apply_property_background_position_two_values() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-position", "left top"));
-    match style.background_position {
-        BackgroundPositionComputedValue::TwoValue(ref h, ref v) => {
+    match &style.background_position[0] {
+        BackgroundPositionComputedValue::TwoValue(h, v) => {
             assert_eq!(**h, BackgroundPositionComputedValue::Left);
             assert_eq!(**v, BackgroundPositionComputedValue::Top);
         }
-        ref other => panic!("Expected TwoValue, got {:?}", other),
+        other => panic!("Expected TwoValue, got {:?}", other),
     }
 }
 
@@ -1576,15 +1585,15 @@ fn test_background_position_in_known_properties() {
 fn test_background_position_initial_value() {
     assert!(PropertyRegistry::initial_value("background-position").is_some());
     let mut style = ComputedStyle::default();
-    style.background_position = BackgroundPositionComputedValue::Center;
+    style.background_position = vec![BackgroundPositionComputedValue::Center];
     assert!(apply_initial_value(&mut style, "background-position"));
     // R1417：CSS initial = 0% 0%（top-left，双值），非单值 Percent(0.0)。
     assert_eq!(
         style.background_position,
-        BackgroundPositionComputedValue::TwoValue(
+        vec![BackgroundPositionComputedValue::TwoValue(
             Box::new(BackgroundPositionComputedValue::Percent(0.0)),
             Box::new(BackgroundPositionComputedValue::Percent(0.0)),
-        )
+        )]
     );
 }
 
@@ -1594,42 +1603,42 @@ fn test_background_position_initial_value() {
 fn test_apply_property_background_repeat_repeat() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-repeat", "repeat"));
-    assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::Repeat);
+    assert_eq!(style.background_repeat, vec![BackgroundRepeatComputedValue::Repeat]);
 }
 
 #[test]
 fn test_apply_property_background_repeat_no_repeat() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-repeat", "no-repeat"));
-    assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::NoRepeat);
+    assert_eq!(style.background_repeat, vec![BackgroundRepeatComputedValue::NoRepeat]);
 }
 
 #[test]
 fn test_apply_property_background_repeat_repeat_x() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-repeat", "repeat-x"));
-    assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::RepeatX);
+    assert_eq!(style.background_repeat, vec![BackgroundRepeatComputedValue::RepeatX]);
 }
 
 #[test]
 fn test_apply_property_background_repeat_repeat_y() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-repeat", "repeat-y"));
-    assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::RepeatY);
+    assert_eq!(style.background_repeat, vec![BackgroundRepeatComputedValue::RepeatY]);
 }
 
 #[test]
 fn test_apply_property_background_repeat_space() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-repeat", "space"));
-    assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::Space);
+    assert_eq!(style.background_repeat, vec![BackgroundRepeatComputedValue::Space]);
 }
 
 #[test]
 fn test_apply_property_background_repeat_round() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-repeat", "round"));
-    assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::Round);
+    assert_eq!(style.background_repeat, vec![BackgroundRepeatComputedValue::Round]);
 }
 
 #[test]
@@ -1653,9 +1662,9 @@ fn test_background_repeat_in_known_properties() {
 fn test_background_repeat_initial_value() {
     assert!(PropertyRegistry::initial_value("background-repeat").is_some());
     let mut style = ComputedStyle::default();
-    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
     assert!(apply_initial_value(&mut style, "background-repeat"));
-    assert_eq!(style.background_repeat, BackgroundRepeatComputedValue::Repeat);
+    assert_eq!(style.background_repeat, vec![BackgroundRepeatComputedValue::Repeat]);
 }
 
 // ── background-size 属性测试 ──
@@ -1664,19 +1673,60 @@ fn test_background_repeat_initial_value() {
 fn test_apply_property_background_size_auto() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-size", "auto"));
-    assert_eq!(style.background_size, BackgroundSizeComputedValue::Auto);
+    assert_eq!(style.background_size, vec![BackgroundSizeComputedValue::Auto]);
 }
 
 #[test]
 fn test_apply_property_background_size_cover() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-size", "cover"));
-    assert_eq!(style.background_size, BackgroundSizeComputedValue::Cover);
+    assert_eq!(style.background_size, vec![BackgroundSizeComputedValue::Cover]);
 }
 
 #[test]
 fn test_apply_property_background_size_contain() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-size", "contain"));
-    assert_eq!(style.background_size, BackgroundSizeComputedValue::Contain);
+    assert_eq!(style.background_size, vec![BackgroundSizeComputedValue::Contain]);
+}
+
+// R2311：background 多层 longhand apply（`<position>#` / `<repeat-style>#` / `<bg-size>#`）
+
+/// R2311：多层 background-position/repeat/size 正确展开为 Vec；单层 byte-identical。
+#[test]
+fn test_apply_property_background_multi_layer_longhands() {
+    let mut style = ComputedStyle::default();
+    // background-position 多层
+    assert!(apply_property_value(
+        &mut style,
+        "background-position",
+        "center, left top"
+    ));
+    assert_eq!(style.background_position.len(), 2);
+    // background-repeat 多层
+    assert!(apply_property_value(
+        &mut style,
+        "background-repeat",
+        "repeat, no-repeat, space"
+    ));
+    assert_eq!(
+        style.background_repeat,
+        vec![
+            BackgroundRepeatComputedValue::Repeat,
+            BackgroundRepeatComputedValue::NoRepeat,
+            BackgroundRepeatComputedValue::Space,
+        ]
+    );
+    // background-size 多层
+    assert!(apply_property_value(&mut style, "background-size", "cover, 50%"));
+    assert_eq!(
+        style.background_size,
+        vec![
+            BackgroundSizeComputedValue::Cover,
+            BackgroundSizeComputedValue::Percent(50.0)
+        ]
+    );
+    // 任一层失败 → 整条不应用（保持上一次的值）
+    assert!(!apply_property_value(&mut style, "background-repeat", "repeat, bogus"));
+    assert_eq!(style.background_repeat.len(), 3); // 未被覆盖
 }

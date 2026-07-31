@@ -1107,9 +1107,22 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "background-position" => {
-            if let Some(v) = values::parse_background_position(value) {
-                if let Some(c) = position_value_to_computed(v, style) {
-                    style.background_position = c;
+            // R2311：多层 `<position>#`（逗号分隔），逐层经 position_value_to_computed（writing-mode
+            // aware），任一层失败则整条不应用。单层 byte-identical（1 项 Vec）。
+            if let Some(list) = values::parse_background_position_list(value) {
+                let mut computed = Vec::with_capacity(list.len());
+                let mut ok = true;
+                for v in list {
+                    match position_value_to_computed(v, style) {
+                        Some(c) => computed.push(c),
+                        None => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if ok {
+                    style.background_position = computed;
                     return true;
                 }
             }
@@ -1126,27 +1139,45 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "background-repeat" => {
-            if let Some(v) = values::parse_background_repeat(value) {
-                style.background_repeat = match v {
-                    zero_css_parser::values::BackgroundRepeatValue::Repeat => BackgroundRepeatComputedValue::Repeat,
-                    zero_css_parser::values::BackgroundRepeatValue::RepeatX => BackgroundRepeatComputedValue::RepeatX,
-                    zero_css_parser::values::BackgroundRepeatValue::RepeatY => BackgroundRepeatComputedValue::RepeatY,
-                    zero_css_parser::values::BackgroundRepeatValue::NoRepeat => BackgroundRepeatComputedValue::NoRepeat,
-                    zero_css_parser::values::BackgroundRepeatValue::Space => BackgroundRepeatComputedValue::Space,
-                    zero_css_parser::values::BackgroundRepeatValue::Round => BackgroundRepeatComputedValue::Round,
-                };
+            // R2311：多层 `<repeat-style>#`，逐层映射，任一层失败则整条不应用。
+            if let Some(list) = values::parse_background_repeat_list(value) {
+                style.background_repeat = list
+                    .into_iter()
+                    .map(|v| match v {
+                        zero_css_parser::values::BackgroundRepeatValue::Repeat => BackgroundRepeatComputedValue::Repeat,
+                        zero_css_parser::values::BackgroundRepeatValue::RepeatX => {
+                            BackgroundRepeatComputedValue::RepeatX
+                        }
+                        zero_css_parser::values::BackgroundRepeatValue::RepeatY => {
+                            BackgroundRepeatComputedValue::RepeatY
+                        }
+                        zero_css_parser::values::BackgroundRepeatValue::NoRepeat => {
+                            BackgroundRepeatComputedValue::NoRepeat
+                        }
+                        zero_css_parser::values::BackgroundRepeatValue::Space => BackgroundRepeatComputedValue::Space,
+                        zero_css_parser::values::BackgroundRepeatValue::Round => BackgroundRepeatComputedValue::Round,
+                    })
+                    .collect();
                 return true;
             }
         }
         "background-size" => {
-            if let Some(v) = values::parse_background_size(value) {
-                style.background_size = match v {
-                    zero_css_parser::values::BackgroundSizeValue::Auto => BackgroundSizeComputedValue::Auto,
-                    zero_css_parser::values::BackgroundSizeValue::Cover => BackgroundSizeComputedValue::Cover,
-                    zero_css_parser::values::BackgroundSizeValue::Contain => BackgroundSizeComputedValue::Contain,
-                    zero_css_parser::values::BackgroundSizeValue::Length(n) => BackgroundSizeComputedValue::Length(n),
-                    zero_css_parser::values::BackgroundSizeValue::Percent(n) => BackgroundSizeComputedValue::Percent(n),
-                };
+            // R2311：多层 `<bg-size>#`，逐层映射，任一层失败则整条不应用。
+            if let Some(list) = values::parse_background_size_list(value) {
+                style.background_size = list
+                    .into_iter()
+                    .map(|v| match v {
+                        zero_css_parser::values::BackgroundSizeValue::Auto => BackgroundSizeComputedValue::Auto,
+                        zero_css_parser::values::BackgroundSizeValue::Cover => BackgroundSizeComputedValue::Cover,
+                        zero_css_parser::values::BackgroundSizeValue::Contain => BackgroundSizeComputedValue::Contain,
+                        zero_css_parser::values::BackgroundSizeValue::Length(n) => {
+                            BackgroundSizeComputedValue::Length(n)
+                        }
+                        zero_css_parser::values::BackgroundSizeValue::Percent(n) => {
+                            BackgroundSizeComputedValue::Percent(n)
+                        }
+                    })
+                    .collect();
                 return true;
             }
         }

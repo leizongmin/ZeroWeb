@@ -5,14 +5,14 @@ use super::super::*;
 fn test_apply_property_background_size_length() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-size", "100px"));
-    assert_eq!(style.background_size, BackgroundSizeComputedValue::Length(100.0));
+    assert_eq!(style.background_size, vec![BackgroundSizeComputedValue::Length(100.0)]);
 }
 
 #[test]
 fn test_apply_property_background_size_percent() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-size", "50%"));
-    assert_eq!(style.background_size, BackgroundSizeComputedValue::Percent(50.0));
+    assert_eq!(style.background_size, vec![BackgroundSizeComputedValue::Percent(50.0)]);
 }
 
 #[test]
@@ -36,9 +36,9 @@ fn test_background_size_in_known_properties() {
 fn test_background_size_initial_value() {
     assert!(PropertyRegistry::initial_value("background-size").is_some());
     let mut style = ComputedStyle::default();
-    style.background_size = BackgroundSizeComputedValue::Cover;
+    style.background_size = vec![BackgroundSizeComputedValue::Cover];
     assert!(apply_initial_value(&mut style, "background-size"));
-    assert_eq!(style.background_size, BackgroundSizeComputedValue::Auto);
+    assert_eq!(style.background_size, vec![BackgroundSizeComputedValue::Auto]);
 }
 
 // ── background-attachment 属性测试 ──

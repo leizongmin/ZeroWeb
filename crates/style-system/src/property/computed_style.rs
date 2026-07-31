@@ -479,11 +479,11 @@ pub struct ComputedStyle {
     /// background-image 属性（支持多图层，CSS 规范渲染顺序为逆序）。
     pub background_image: Vec<BackgroundImageComputedValue>,
     /// background-position 属性。
-    pub background_position: BackgroundPositionComputedValue,
+    pub background_position: Vec<BackgroundPositionComputedValue>,
     /// background-repeat 属性。
-    pub background_repeat: BackgroundRepeatComputedValue,
+    pub background_repeat: Vec<BackgroundRepeatComputedValue>,
     /// background-size 属性。
-    pub background_size: BackgroundSizeComputedValue,
+    pub background_size: Vec<BackgroundSizeComputedValue>,
     /// background-attachment 属性。
     pub background_attachment: BackgroundAttachmentComputedValue,
     /// background-clip 属性。

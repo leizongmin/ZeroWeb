@@ -3,13 +3,14 @@
 use crate::values::hwb_to_rgba;
 use crate::values::{
     ColorValue, LengthValue, QuotesValue, parse_appearance, parse_background_attachment, parse_background_clip,
-    parse_background_origin, parse_background_repeat, parse_background_size, parse_border_collapse,
-    parse_border_image_outset, parse_border_image_repeat, parse_border_image_slice, parse_border_image_source,
-    parse_border_image_width, parse_box_shadow, parse_caret_color, parse_color, parse_column_count, parse_column_width,
-    parse_contain, parse_content, parse_counter_list, parse_filter, parse_filter_list, parse_gradient, parse_grid_area,
-    parse_hyphens, parse_line_clamp, parse_list_style_image, parse_mix_blend_mode, parse_object_fit, parse_quotes,
-    parse_scrollbar_gutter, parse_scrollbar_width, parse_table_layout, parse_text_overflow, parse_text_shadow,
-    parse_text_wrap, parse_will_change,
+    parse_background_origin, parse_background_repeat, parse_background_repeat_list, parse_background_size,
+    parse_background_size_list, parse_border_collapse, parse_border_image_outset, parse_border_image_repeat,
+    parse_border_image_slice, parse_border_image_source, parse_border_image_width, parse_box_shadow, parse_caret_color,
+    parse_color, parse_column_count, parse_column_width, parse_contain, parse_content, parse_counter_list,
+    parse_filter, parse_filter_list, parse_gradient, parse_grid_area, parse_hyphens, parse_line_clamp,
+    parse_list_style_image, parse_mix_blend_mode, parse_object_fit, parse_quotes, parse_scrollbar_gutter,
+    parse_scrollbar_width, parse_table_layout, parse_text_overflow, parse_text_shadow, parse_text_wrap,
+    parse_will_change,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1228,4 +1229,87 @@ fn test_border_collapse_values() {
     use crate::values::BorderCollapseValue;
     assert_eq!(parse_border_collapse("separate"), Some(BorderCollapseValue::Separate));
     assert_eq!(parse_border_collapse("collapse"), Some(BorderCollapseValue::Collapse));
+}
+
+// R2311：background 多层 longhand list 解析（`<position>#` / `<repeat-style>#` / `<bg-size>#`）
+
+#[test]
+fn test_background_repeat_list_multi_layer() {
+    use crate::values::BackgroundRepeatValue;
+    // 单层 byte-identical（1 项 Vec）
+    assert_eq!(
+        parse_background_repeat_list("repeat"),
+        Some(vec![BackgroundRepeatValue::Repeat])
+    );
+    assert_eq!(
+        parse_background_repeat_list("no-repeat"),
+        Some(vec![BackgroundRepeatValue::NoRepeat])
+    );
+    // 多层逗号分隔
+    assert_eq!(
+        parse_background_repeat_list("repeat, no-repeat"),
+        Some(vec![BackgroundRepeatValue::Repeat, BackgroundRepeatValue::NoRepeat])
+    );
+    assert_eq!(
+        parse_background_repeat_list("repeat-x, space, round"),
+        Some(vec![
+            BackgroundRepeatValue::RepeatX,
+            BackgroundRepeatValue::Space,
+            BackgroundRepeatValue::Round
+        ])
+    );
+    // 任一层失败 → None
+    assert_eq!(parse_background_repeat_list("repeat, bogus"), None);
+    // 空输入 → None
+    assert_eq!(parse_background_repeat_list(""), None);
+}
+
+#[test]
+fn test_background_size_list_multi_layer() {
+    use crate::values::BackgroundSizeValue;
+    // 单层
+    assert_eq!(
+        parse_background_size_list("cover"),
+        Some(vec![BackgroundSizeValue::Cover])
+    );
+    assert_eq!(
+        parse_background_size_list("auto"),
+        Some(vec![BackgroundSizeValue::Auto])
+    );
+    assert_eq!(
+        parse_background_size_list("50%"),
+        Some(vec![BackgroundSizeValue::Percent(50.0)])
+    );
+    // 多层逗号分隔
+    assert_eq!(
+        parse_background_size_list("cover, 100px, contain"),
+        Some(vec![
+            BackgroundSizeValue::Cover,
+            BackgroundSizeValue::Length(100.0),
+            BackgroundSizeValue::Contain
+        ])
+    );
+    // 任一层失败 → None
+    assert_eq!(parse_background_size_list("cover, bogus"), None);
+    assert_eq!(parse_background_size_list(""), None);
+}
+
+#[test]
+fn test_background_position_list_multi_layer() {
+    use crate::values::parse_background_position_list;
+    // 单层 → 1 项 Vec
+    assert_eq!(parse_background_position_list("center").map(|v| v.len()), Some(1));
+    // 多层逗号分隔；单层内 "left top"（空格）保持一体非两层
+    assert_eq!(
+        parse_background_position_list("center, left top").map(|v| v.len()),
+        Some(2)
+    );
+    assert_eq!(
+        parse_background_position_list("top, center, bottom").map(|v| v.len()),
+        Some(3)
+    );
+    // 任一层失败 → None
+    assert_eq!(parse_background_position_list("center, bogus"), None);
+    // 空输入 → None
+    assert_eq!(parse_background_position_list(""), None);
 }

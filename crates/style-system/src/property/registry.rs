@@ -241,7 +241,7 @@ impl PropertyRegistry {
             // Object Fit / Filter
             "object-fit" => Some(ObjectFit(ObjectFitComputedValue::Fill)),
             // object-position 默认 50% 50%（Center），CSS Images §3。
-            "object-position" => Some(BackgroundPosition(BackgroundPositionComputedValue::Center)),
+            "object-position" => Some(ObjectPosition(BackgroundPositionComputedValue::Center)),
             "filter" => Some(Filter(Vec::new())),
 
             // Column Rule Color
@@ -270,12 +270,12 @@ impl PropertyRegistry {
 
             // Background Image / Position / Repeat / Size / Attachment / Clip / Origin
             "background-image" => Some(BackgroundImage(BackgroundImageComputedValue::None)),
-            "background-position" => Some(BackgroundPosition(BackgroundPositionComputedValue::TwoValue(
+            "background-position" => Some(BackgroundPosition(vec![BackgroundPositionComputedValue::TwoValue(
                 Box::new(BackgroundPositionComputedValue::Percent(0.0)),
                 Box::new(BackgroundPositionComputedValue::Percent(0.0)),
-            ))),
-            "background-repeat" => Some(BackgroundRepeat(BackgroundRepeatComputedValue::Repeat)),
-            "background-size" => Some(BackgroundSize(BackgroundSizeComputedValue::Auto)),
+            )])),
+            "background-repeat" => Some(BackgroundRepeat(vec![BackgroundRepeatComputedValue::Repeat])),
+            "background-size" => Some(BackgroundSize(vec![BackgroundSizeComputedValue::Auto])),
             "background-attachment" => Some(BackgroundAttachment(BackgroundAttachmentComputedValue::Scroll)),
             "background-clip" => Some(BackgroundClip(BackgroundClipComputedValue::BorderBox)),
             "background-origin" => Some(BackgroundOrigin(BackgroundOriginComputedValue::PaddingBox)),

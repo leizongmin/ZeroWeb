@@ -63,7 +63,7 @@ fn test_background_repeat_default() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Url("tile.png".to_string())];
-    style.background_size = BackgroundSizeComputedValue::Length(50.0);
+    style.background_size = vec![BackgroundSizeComputedValue::Length(50.0)];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -90,8 +90,8 @@ fn test_background_repeat_x() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Url("tile.png".to_string())];
-    style.background_size = BackgroundSizeComputedValue::Length(30.0);
-    style.background_repeat = BackgroundRepeatComputedValue::RepeatX;
+    style.background_size = vec![BackgroundSizeComputedValue::Length(30.0)];
+    style.background_repeat = vec![BackgroundRepeatComputedValue::RepeatX];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -128,8 +128,8 @@ fn test_background_repeat_y() {
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Url("tile.png".to_string())];
     // 使用百分比尺寸确保正方形 tile
-    style.background_size = BackgroundSizeComputedValue::Percent(30.0);
-    style.background_repeat = BackgroundRepeatComputedValue::RepeatY;
+    style.background_size = vec![BackgroundSizeComputedValue::Percent(30.0)];
+    style.background_repeat = vec![BackgroundRepeatComputedValue::RepeatY];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -164,8 +164,8 @@ fn test_background_no_repeat() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Url("tile.png".to_string())];
-    style.background_size = BackgroundSizeComputedValue::Length(30.0);
-    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
+    style.background_size = vec![BackgroundSizeComputedValue::Length(30.0)];
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -186,7 +186,7 @@ fn test_background_no_repeat_auto_size() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Url("bg.png".to_string())];
-    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -209,8 +209,8 @@ fn test_background_repeat_round() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Url("tile.png".to_string())];
-    style.background_size = BackgroundSizeComputedValue::Length(30.0);
-    style.background_repeat = BackgroundRepeatComputedValue::Round;
+    style.background_size = vec![BackgroundSizeComputedValue::Length(30.0)];
+    style.background_repeat = vec![BackgroundRepeatComputedValue::Round];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -247,8 +247,8 @@ fn test_background_repeat_space() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Url("tile.png".to_string())];
-    style.background_size = BackgroundSizeComputedValue::Length(30.0);
-    style.background_repeat = BackgroundRepeatComputedValue::Space;
+    style.background_size = vec![BackgroundSizeComputedValue::Length(30.0)];
+    style.background_repeat = vec![BackgroundRepeatComputedValue::Space];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -274,7 +274,7 @@ fn test_background_repeat_many_tiles() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Url("tiny.png".to_string())];
-    style.background_size = BackgroundSizeComputedValue::Length(10.0);
+    style.background_size = vec![BackgroundSizeComputedValue::Length(10.0)];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -317,7 +317,7 @@ fn test_background_repeat_gradient_unchanged() {
             repeating: false,
         },
     ))];
-    style.background_repeat = BackgroundRepeatComputedValue::Repeat;
+    style.background_repeat = vec![BackgroundRepeatComputedValue::Repeat];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 
@@ -340,7 +340,7 @@ fn test_background_repeat_clips_to_origin() {
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Url("tile.png".to_string())];
-    style.background_size = BackgroundSizeComputedValue::Length(30.0);
+    style.background_size = vec![BackgroundSizeComputedValue::Length(30.0)];
     style.color = ColorValue::CurrentColor;
     styles.insert(elem, style);
 

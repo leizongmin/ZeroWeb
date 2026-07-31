@@ -295,12 +295,12 @@ impl Default for ComputedStyle {
 
             // Background Image / Position / Repeat / Size / Attachment / Clip / Origin
             background_image: vec![],
-            background_position: BackgroundPositionComputedValue::TwoValue(
+            background_position: vec![BackgroundPositionComputedValue::TwoValue(
                 Box::new(BackgroundPositionComputedValue::Percent(0.0)),
                 Box::new(BackgroundPositionComputedValue::Percent(0.0)),
-            ),
-            background_repeat: BackgroundRepeatComputedValue::Repeat,
-            background_size: BackgroundSizeComputedValue::Auto,
+            )],
+            background_repeat: vec![BackgroundRepeatComputedValue::Repeat],
+            background_size: vec![BackgroundSizeComputedValue::Auto],
             background_attachment: BackgroundAttachmentComputedValue::Scroll,
             background_clip: BackgroundClipComputedValue::BorderBox,
             background_origin: BackgroundOriginComputedValue::PaddingBox,

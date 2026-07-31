@@ -1068,7 +1068,7 @@ fn test_background_position_center() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
-    style.background_position = BackgroundPositionComputedValue::Center;
+    style.background_position = vec![BackgroundPositionComputedValue::Center];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     painter.paint(&layout, &styles, None);
@@ -1088,10 +1088,10 @@ fn test_background_position_right_bottom() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
-    style.background_position = BackgroundPositionComputedValue::TwoValue(
+    style.background_position = vec![BackgroundPositionComputedValue::TwoValue(
         Box::new(BackgroundPositionComputedValue::Right),
         Box::new(BackgroundPositionComputedValue::Bottom),
-    );
+    )];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     painter.paint(&layout, &styles, None);
@@ -1109,11 +1109,11 @@ fn test_background_position_length() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
-    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
-    style.background_position = BackgroundPositionComputedValue::TwoValue(
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
+    style.background_position = vec![BackgroundPositionComputedValue::TwoValue(
         Box::new(BackgroundPositionComputedValue::Length(20.0)),
         Box::new(BackgroundPositionComputedValue::Length(10.0)),
-    );
+    )];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     painter.paint(&layout, &styles, None);
@@ -1131,9 +1131,9 @@ fn test_background_position_percent() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
-    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
-    style.background_size = BackgroundSizeComputedValue::Length(50.0);
-    style.background_position = BackgroundPositionComputedValue::Percent(50.0);
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
+    style.background_size = vec![BackgroundSizeComputedValue::Length(50.0)];
+    style.background_position = vec![BackgroundPositionComputedValue::Percent(50.0)];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     painter.paint(&layout, &styles, None);
@@ -1152,7 +1152,7 @@ fn test_background_size_cover() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
-    style.background_size = BackgroundSizeComputedValue::Cover;
+    style.background_size = vec![BackgroundSizeComputedValue::Cover];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     painter.paint(&layout, &styles, None);
@@ -1170,7 +1170,7 @@ fn test_background_size_contain() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
-    style.background_size = BackgroundSizeComputedValue::Contain;
+    style.background_size = vec![BackgroundSizeComputedValue::Contain];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     painter.paint(&layout, &styles, None);
@@ -1190,8 +1190,8 @@ fn test_background_size_length() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
-    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
-    style.background_size = BackgroundSizeComputedValue::Length(100.0);
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
+    style.background_size = vec![BackgroundSizeComputedValue::Length(100.0)];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
@@ -1213,8 +1213,8 @@ fn test_background_size_percent() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
-    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
-    style.background_size = BackgroundSizeComputedValue::Percent(50.0);
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
+    style.background_size = vec![BackgroundSizeComputedValue::Percent(50.0)];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
@@ -1319,12 +1319,12 @@ fn test_background_position_right_bottom_with_small_size() {
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(200, 200, 200, 255);
     style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
-    style.background_repeat = BackgroundRepeatComputedValue::NoRepeat;
-    style.background_size = BackgroundSizeComputedValue::Length(50.0);
-    style.background_position = BackgroundPositionComputedValue::TwoValue(
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
+    style.background_size = vec![BackgroundSizeComputedValue::Length(50.0)];
+    style.background_position = vec![BackgroundPositionComputedValue::TwoValue(
         Box::new(BackgroundPositionComputedValue::Right),
         Box::new(BackgroundPositionComputedValue::Bottom),
-    );
+    )];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     painter.paint(&layout, &styles, None);
@@ -1361,11 +1361,11 @@ fn test_gradient_with_position_and_size() {
             repeating: false,
         },
     ))];
-    style.background_size = BackgroundSizeComputedValue::Percent(50.0);
-    style.background_position = BackgroundPositionComputedValue::TwoValue(
+    style.background_size = vec![BackgroundSizeComputedValue::Percent(50.0)];
+    style.background_position = vec![BackgroundPositionComputedValue::TwoValue(
         Box::new(BackgroundPositionComputedValue::Left),
         Box::new(BackgroundPositionComputedValue::Top),
-    );
+    )];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     painter.paint(&layout, &styles, None);

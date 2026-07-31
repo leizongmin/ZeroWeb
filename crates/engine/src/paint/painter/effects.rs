@@ -213,25 +213,31 @@ impl super::Painter {
             .and_then(|h| self.get_image_size(h))
             .unwrap_or(default_intrinsic);
 
-        // size/position 相对 positioning area（origin）解析（fixed 时 origin=视口）。
-        let (sized_w, sized_h) = resolve_background_size(&style.background_size, origin_w, origin_h, img_w, img_h);
-        let (offset_x, offset_y) =
-            resolve_background_position(&style.background_position, origin_w, origin_h, sized_w, sized_h);
+        // CSS 规范：多图层逆序渲染（最后一层在最底，第一层在最上）。
+        // R2311：background-position/size/repeat 均为多层 `<...>#`，按图层 cyclic 取值
+        //（`longhands[layer_idx % longhands.len()]`）。单值 longhand（len=1）→ 所有层取 [0]
+        // = 旧「单值应用到所有层」行为，**byte-identical 零回归**；仅多层 longhand 改变输出。
+        // enumerate().rev()：tuple 的 index 即原始图层下标（rev 仅反序，index 仍随元素）。
+        for (layer_idx, layer) in style.background_image.iter().enumerate().rev() {
+            let size = &style.background_size[layer_idx % style.background_size.len()];
+            let position = &style.background_position[layer_idx % style.background_position.len()];
+            let repeat = &style.background_repeat[layer_idx % style.background_repeat.len()];
 
-        // positioned = 定位区域 origin + bg-position offset + anchor 偏移。
-        // R1428：anchor 用于 canvas 传播（CSS §14.2.3 根背景传播到画布时，positioning area =
-        // 根元素盒含 margin 偏移，painting area = 画布）；正常元素 anchor=0（positioned=origin+offset）。
-        // R2063：attachment:fixed 时 origin=视口(0,0) → positioned=视口锚定（图像不随元素滚动）。
-        let positioned_x = origin_x + offset_x + anchor_x;
-        let positioned_y = origin_y + offset_y + anchor_y;
+            // size/position 相对 positioning area（origin）解析（fixed 时 origin=视口）。
+            let (sized_w, sized_h) = resolve_background_size(size, origin_w, origin_h, img_w, img_h);
+            let (offset_x, offset_y) = resolve_background_position(position, origin_w, origin_h, sized_w, sized_h);
 
-        // CSS 规范：多图层逆序渲染（最后一层在最底，第一层在最上）
-        for layer in style.background_image.iter().rev() {
+            // positioned = 定位区域 origin + bg-position offset + anchor 偏移。
+            // R1428：anchor 用于 canvas 传播（CSS §14.2.3 根背景传播到画布时，positioning area =
+            // 根元素盒含 margin 偏移，painting area = 画布）；正常元素 anchor=0（positioned=origin+offset）。
+            // R2063：attachment:fixed 时 origin=视口(0,0) → positioned=视口锚定（图像不随元素滚动）。
+            let positioned_x = origin_x + offset_x + anchor_x;
+            let positioned_y = origin_y + offset_y + anchor_y;
+
             match layer {
                 BackgroundImageComputedValue::None => {}
                 BackgroundImageComputedValue::Url(url) => {
                     let key = image_resource_key(url, self.document_url.as_deref());
-                    let repeat = &style.background_repeat;
 
                     // 平铺范围相对 painting area（clip）计算——生成足够覆盖元素盒的 tile，
                     // 网格对齐到 positioned（fixed 时为视口锚定）。

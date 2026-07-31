@@ -1259,15 +1259,15 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         "background-position" => {
-            style.background_position = default_style.background_position;
+            style.background_position = default_style.background_position.clone();
             true
         }
         "background-repeat" => {
-            style.background_repeat = default_style.background_repeat;
+            style.background_repeat = default_style.background_repeat.clone();
             true
         }
         "background-size" => {
-            style.background_size = default_style.background_size;
+            style.background_size = default_style.background_size.clone();
             true
         }
         "background-attachment" => {

@@ -140,7 +140,7 @@ fn test_background_repeat_pipeline_integration() {
     let div_style = styles.get(&div).expect("div 应有计算样式");
     assert_eq!(
         div_style.background_repeat,
-        zero_style_system::property::BackgroundRepeatComputedValue::NoRepeat,
+        vec![zero_style_system::property::BackgroundRepeatComputedValue::NoRepeat],
         "div 的 background-repeat 应为 NoRepeat"
     );
 }
@@ -173,7 +173,7 @@ fn test_background_size_pipeline_integration() {
     let div_style = styles.get(&div).expect("div 应有计算样式");
     assert_eq!(
         div_style.background_size,
-        zero_style_system::property::BackgroundSizeComputedValue::Cover,
+        vec![zero_style_system::property::BackgroundSizeComputedValue::Cover],
         "div 的 background-size 应为 Cover"
     );
 }

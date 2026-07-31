@@ -1564,12 +1564,14 @@ pub enum PropertyValue {
     LineClamp(LineClampComputedValue),
     /// background-image 值。
     BackgroundImage(BackgroundImageComputedValue),
-    /// background-position 值。
-    BackgroundPosition(BackgroundPositionComputedValue),
+    /// background-position 值（多层 `<position>#`）。
+    BackgroundPosition(Vec<BackgroundPositionComputedValue>),
+    /// object-position 值（单个 `<position>`，非多层——R2311 从 BackgroundPosition 分离）。
+    ObjectPosition(BackgroundPositionComputedValue),
     /// background-repeat 值。
-    BackgroundRepeat(BackgroundRepeatComputedValue),
+    BackgroundRepeat(Vec<BackgroundRepeatComputedValue>),
     /// background-size 值。
-    BackgroundSize(BackgroundSizeComputedValue),
+    BackgroundSize(Vec<BackgroundSizeComputedValue>),
     /// background-attachment 值。
     BackgroundAttachment(BackgroundAttachmentComputedValue),
     /// background-clip 值。
