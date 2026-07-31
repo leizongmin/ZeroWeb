@@ -361,7 +361,8 @@ pub fn parse_font_weight(value: &str) -> Option<FontWeightValue> {
 
 /// 解析 CSS font-style 属性值。
 pub fn parse_font_style(value: &str) -> Option<FontStyleValue> {
-    let value = value.trim();
+    // CSS 关键字大小写不敏感（NORMAL/Italic/OBLIQUE ≡ normal/italic/oblique）。归一化小写后匹配。
+    let value = value.trim().to_ascii_lowercase();
     if value == "normal" {
         Some(FontStyleValue::Normal)
     } else if value == "italic" {

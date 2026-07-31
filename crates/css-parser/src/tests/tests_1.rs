@@ -1477,6 +1477,14 @@ fn test_parse_font_style_all() {
         Some(FontStyleValue::Oblique(Some(15.0)))
     );
     assert_eq!(parse_font_style("unknown"), None);
+    // CSS 关键字大小写不敏感（CSS Values §4）：NORMAL/Italic/OBLIQUE ≡ 小写形式。
+    assert_eq!(parse_font_style("NORMAL"), Some(FontStyleValue::Normal));
+    assert_eq!(parse_font_style("Italic"), Some(FontStyleValue::Italic));
+    assert_eq!(parse_font_style("OBLIQUE"), Some(FontStyleValue::Oblique(None)));
+    assert_eq!(
+        parse_font_style("Oblique(15DEG)"),
+        Some(FontStyleValue::Oblique(Some(15.0)))
+    );
 }
 
 #[test]
