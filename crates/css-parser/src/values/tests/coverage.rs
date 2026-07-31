@@ -128,6 +128,28 @@ fn test_transform_translate_px_still_uses_translate() {
     assert!(matches!(list[0], TransformFunction::TranslateY(30.0)));
 }
 
+// R2295：CSS transform 函数名大小写不敏感（CSS Syntax §3.1）。
+#[test]
+fn test_transform_function_name_case_insensitive() {
+    use crate::values::{TransformFunction, TransformValue};
+    // 全大写、混合大小写、全小写均应解析。
+    assert!(parse_transform("TRANSLATEX(10px)").is_some());
+    assert!(parse_transform("Translate(10px, 20px)").is_some());
+    let list = match parse_transform("matrix(1,0,0,1,5,5)").unwrap() {
+        TransformValue::List(f) => f,
+        _ => panic!("expected list"),
+    };
+    assert!(matches!(
+        list[0],
+        TransformFunction::Matrix(1.0, 0.0, 0.0, 1.0, 5.0, 5.0)
+    ));
+    let list = match parse_transform("SCALE(2.0, 3.0)").unwrap() {
+        TransformValue::List(f) => f,
+        _ => panic!("expected list"),
+    };
+    assert!(matches!(list[0], TransformFunction::Scale(2.0, Some(3.0))));
+}
+
 #[test]
 fn test_transform_scale3d() {
     let result = parse_transform("scale3d(1.5, 2.0, 1.0)");

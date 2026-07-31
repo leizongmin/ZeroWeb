@@ -396,7 +396,10 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
 
 /// 解析单个变换函数。
 fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction> {
-    match name {
+    // CSS 关键字大小写不敏感（CSS Syntax §3.1）：`translatex`/`Translate`/`MATRIX` 等同 canonical-case。
+    // R2295：修复 parse_transform 不 lowercase name → 非 canonical-case 函数名被丢（WPT transform 测试常用小写）。
+    let name = name.to_ascii_lowercase();
+    match name.as_str() {
         "translate" => {
             let parts = split_transform_value_args(args)?;
             let (tx, txp) = parse_len_or_pct(parts.first()?)?;
@@ -411,7 +414,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
                 TransformFunction::Translate(tx, ty)
             })
         }
-        "translateX" => {
+        "translatex" => {
             let parts = split_transform_value_args(args)?;
             let (tx, txp) = parse_len_or_pct(parts.first()?)?;
             Some(if txp {
@@ -420,7 +423,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
                 TransformFunction::TranslateX(tx)
             })
         }
-        "translateY" => {
+        "translatey" => {
             let parts = split_transform_value_args(args)?;
             let (ty, typ) = parse_len_or_pct(parts.first()?)?;
             Some(if typ {
@@ -439,12 +442,12 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             let sy = vals.get(1).copied();
             Some(TransformFunction::Scale(sx, sy))
         }
-        "scaleX" => {
+        "scalex" => {
             let vals = parse_transform_args(args)?;
             let sx = vals.first().copied()?;
             Some(TransformFunction::ScaleX(sx))
         }
-        "scaleY" => {
+        "scaley" => {
             let vals = parse_transform_args(args)?;
             let sy = vals.first().copied()?;
             Some(TransformFunction::ScaleY(sy))
@@ -455,15 +458,15 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             let ay = vals.get(1).copied();
             Some(TransformFunction::Skew(ax, ay))
         }
-        "rotateX" => {
+        "rotatex" => {
             let angle = parse_angle(args)?;
             Some(TransformFunction::RotateX(angle))
         }
-        "rotateY" => {
+        "rotatey" => {
             let angle = parse_angle(args)?;
             Some(TransformFunction::RotateY(angle))
         }
-        "rotateZ" => {
+        "rotatez" => {
             let angle = parse_angle(args)?;
             Some(TransformFunction::RotateZ(angle))
         }
