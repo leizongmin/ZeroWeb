@@ -1683,7 +1683,7 @@ fn test_parse_lang() {
         assert!(compound.subclass_selectors.iter().any(|s| matches!(
             s,
             SubclassSelector::PseudoClass(PseudoClassSelector::Lang(lang))
-                if lang == "en"
+                if lang == &vec!["en".to_string()]
         )));
     } else {
         panic!("Expected Style rule");

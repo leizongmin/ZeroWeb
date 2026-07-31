@@ -66,7 +66,7 @@ fn pseudo_class_to_string(pc: &PseudoClassSelector) -> String {
         | PseudoClassSelector::NthLastChildOf(_, _)
         | PseudoClassSelector::NthOfType(_)
         | PseudoClassSelector::NthLastOfType(_) => "nth".to_string(),
-        PseudoClassSelector::Lang(l) => format!("lang({l})"),
+        PseudoClassSelector::Lang(l) => format!("lang({})", l.join(",")),
         PseudoClassSelector::Dir(d) => format!("dir({d})"),
     }
 }

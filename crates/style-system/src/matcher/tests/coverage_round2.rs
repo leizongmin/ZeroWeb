@@ -357,9 +357,9 @@ fn test_lang_no_lang_attribute_does_not_match() {
             parts: vec![(
                 CompoundSelector {
                     type_selector: Some(TypeSelector::Tag("div".to_string())),
-                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Lang(
+                    subclass_selectors: vec![SubclassSelector::PseudoClass(PseudoClassSelector::Lang(vec![
                         "en".to_string(),
-                    ))],
+                    ]))],
                 },
                 None,
             )],

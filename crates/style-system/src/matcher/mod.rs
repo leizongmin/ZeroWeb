@@ -323,13 +323,14 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
     }
 }
 
-/// `:lang(<range>)` 匹配（CSS 2.1 §5.11.4）。
+/// `:lang(<ranges>)` 匹配（CSS Selectors Level 4 §14）。
 ///
-/// 元素语言 = 自身或最近祖先的 `xml:lang`/`lang` 属性（向上查找首个）。匹配当且仅当
-/// 元素语言 == range，或以 `range-` 开头（连字符前缀边界），**大小写不敏感**。
-/// 例：`:lang(es)` 匹配 `lang="es"`/`"es-MX"`/`"ES"`，不匹配 `"MX-es"`/`"en"`。
-fn matches_lang(doc: &Document, element: NodeId, range: &str) -> bool {
-    let range_lower = range.to_ascii_lowercase();
+/// 元素语言 = 自身或最近祖先的 `xml:lang`/`lang` 属性（向上查找首个）。元素语言匹配
+/// **任一**语言范围即命中（逗号列表 OR）。范围大小写不敏感；`*` 为 BCP 47 通配符：
+/// 裸 `*` 匹配任意非空语言；`*-CA` 子标签通配（位置匹配，`*` 匹配单个子标签）。
+/// 例：`:lang(es)` 匹配 `es`/`es-MX`/`ES`；`:lang(en, fr)` 匹配 `en` 或 `fr`；
+/// `:lang(*-CA)` 匹配 `en-CA`/`fr-CA`，不匹配 `en`。
+fn matches_lang(doc: &Document, element: NodeId, ranges: &[String]) -> bool {
     let mut node = Some(element);
     while let Some(n) = node {
         // xml:lang 优先于 lang（XML 规范），HTML 仅 lang。
@@ -337,12 +338,33 @@ fn matches_lang(doc: &Document, element: NodeId, range: &str) -> bool {
             .get_attribute(n, "xml:lang")
             .or_else(|| doc.get_attribute(n, "lang"))
         {
-            let lang_lower = lang.to_ascii_lowercase();
-            return lang_lower == range_lower || lang_lower.starts_with(&format!("{range_lower}-"));
+            if lang.is_empty() {
+                return false;
+            }
+            return ranges.iter().any(|r| lang_range_matches(r, &lang));
         }
         node = doc.parent_node(n);
     }
     false
+}
+
+/// BCP 47 语言范围匹配（大小写不敏感）。
+///
+/// 裸 `*` 匹配任意语言。否则按子标签（`-` 分隔）位置匹配：范围的每个子标签须与语言对应
+/// 子标签相等，`*` 匹配任意单个子标签；范围子标签数 ≤ 语言子标签数（前缀语义，故
+/// `:lang(en)` 匹配 `en-US`，而 `:lang(en-US)` 不匹配 `en`）。
+fn lang_range_matches(range: &str, lang: &str) -> bool {
+    let range = range.to_ascii_lowercase();
+    let lang = lang.to_ascii_lowercase();
+    if range == "*" {
+        return !lang.is_empty();
+    }
+    let r_tags: Vec<&str> = range.split('-').collect();
+    let l_tags: Vec<&str> = lang.split('-').collect();
+    if r_tags.len() > l_tags.len() {
+        return false;
+    }
+    r_tags.iter().enumerate().all(|(i, r)| *r == "*" || *r == l_tags[i])
 }
 
 /// `:dir(ltr|rtl)` 匹配（CSS Selectors L4 §14）：元素方向性与参数一致。

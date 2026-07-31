@@ -53,7 +53,7 @@ fn test_lang_no_lang_attr_no_match() {
                 CompoundSelector {
                     type_selector: Some(TypeSelector::Tag("div".to_string())),
                     subclass_selectors: vec![SubclassSelector::PseudoClass(
-                        zero_css_parser::ast::PseudoClassSelector::Lang("en".to_string()),
+                        zero_css_parser::ast::PseudoClassSelector::Lang(vec!["en".to_string()]),
                     )],
                 },
                 None,

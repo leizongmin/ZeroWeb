@@ -1452,32 +1452,58 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// 解析 :lang() 函数。
+    /// 解析 `:lang()` 函数（CSS Selectors L4 §14）。
     ///
-    /// 调用前已消耗 `(`。
+    /// 调用前已消耗 `(`。取逗号分隔的语言范围列表，每项为 ident、string 或 BCP 47 通配
+    /// （`*`、`*-CA`），以 `)` 结束。修复前仅读单项后只在紧跟 `)` 时消耗它，`:lang(en, fr)`
+    /// 的 `,` 致 `)` 未消耗 → 残余 token 吞规则（R2204/R2208 同族 bug）。
     fn parse_lang(&mut self) -> PseudoClassSelector {
-        self.skip_whitespace();
-
-        let lang = match self.peek().clone() {
-            Token::Ident(s) => {
-                self.advance();
-                s
+        let mut ranges = Vec::new();
+        loop {
+            self.skip_whitespace();
+            let range = self.parse_lang_range();
+            if !range.is_empty() {
+                ranges.push(range);
             }
-            Token::String(s) => {
-                self.advance();
-                s
+            self.skip_whitespace();
+            match self.peek() {
+                Token::Comma => {
+                    self.advance();
+                    continue;
+                }
+                Token::RParen => {
+                    self.advance();
+                    break;
+                }
+                _ => break,
             }
-            _ => String::new(),
-        };
-
-        self.skip_whitespace();
-
-        // 消耗右括号
-        if matches!(self.peek(), Token::RParen) {
-            self.advance();
         }
+        PseudoClassSelector::Lang(ranges)
+    }
 
-        PseudoClassSelector::Lang(lang)
+    /// 读取单个 `:lang()` 语言范围（直到 `,` 或 `)`）。范围为 BCP 47 子标签序列（`-` 分隔），
+    /// 子标签可为 `*`（通配）或 ident 字符；quoted string 取整体。`*-CA` 经 tokenizer 为
+    /// `Delim('*')` + `Ident("-CA")`，逐 token 累加得 `"*-CA"`。
+    fn parse_lang_range(&mut self) -> String {
+        let mut s = String::new();
+        loop {
+            match self.peek().clone() {
+                Token::String(t) => {
+                    self.advance();
+                    return t;
+                }
+                Token::Delim(c) if c == '*' || c == '-' => {
+                    self.advance();
+                    s.push(c);
+                }
+                Token::Ident(t) => {
+                    self.advance();
+                    s.push_str(&t);
+                }
+                _ => break,
+            }
+        }
+        s
     }
 
     /// 解析 `:dir(ltr|rtl)` 参数。调用前已消耗 `(`，本方法消耗参数标识与 `)`。

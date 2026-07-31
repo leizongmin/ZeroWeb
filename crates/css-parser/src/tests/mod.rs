@@ -84,6 +84,7 @@ mod coverage_round9;
 mod css_nesting;
 mod dir_pseudo;
 mod forgiving_selector_list;
+mod lang_list;
 mod nth_invalid;
 mod nth_of_selector;
 mod null_handling;

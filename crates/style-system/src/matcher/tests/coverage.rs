@@ -249,31 +249,31 @@ fn test_lang_matches_basic_inherit_boundary_caseinsensitive() {
     let sibling = doc.create_element("p");
     let _ = doc.append_child(parent, sibling);
 
-    let sel_en = make_pseudo_selector(PseudoClassSelector::Lang("en".to_string()));
+    let sel_en = make_pseudo_selector(PseudoClassSelector::Lang(vec!["en".to_string()]));
     // child 继承 parent 的 en-US → :lang(en) 匹配（连字符前缀边界）。
     assert!(
         matches_selector(&doc, child, &sel_en),
         ":lang(en) should match inherited lang=en-US"
     );
     // 大小写不敏感：:lang(EN) 也匹配。
-    let sel_en_upper = make_pseudo_selector(PseudoClassSelector::Lang("EN".to_string()));
+    let sel_en_upper = make_pseudo_selector(PseudoClassSelector::Lang(vec!["EN".to_string()]));
     assert!(
         matches_selector(&doc, child, &sel_en_upper),
         ":lang(EN) case-insensitive match"
     );
     // 精确匹配另一 range：:lang(en-US) 匹配。
-    let sel_en_us = make_pseudo_selector(PseudoClassSelector::Lang("en-US".to_string()));
+    let sel_en_us = make_pseudo_selector(PseudoClassSelector::Lang(vec!["en-US".to_string()]));
     assert!(matches_selector(&doc, child, &sel_en_us), ":lang(en-US) exact match");
 
     // 不应匹配：:lang(fr) 与 en-US 无关。
-    let sel_fr = make_pseudo_selector(PseudoClassSelector::Lang("fr".to_string()));
+    let sel_fr = make_pseudo_selector(PseudoClassSelector::Lang(vec!["fr".to_string()]));
     assert!(
         !matches_selector(&doc, child, &sel_fr),
         ":lang(fr) should not match en-US"
     );
 
     // 连字符边界：:lang(eng) 不匹配 en-US（必须 "eng-" 前缀，"en-US" 不以 "eng-" 开头）。
-    let sel_eng = make_pseudo_selector(PseudoClassSelector::Lang("eng".to_string()));
+    let sel_eng = make_pseudo_selector(PseudoClassSelector::Lang(vec!["eng".to_string()]));
     assert!(
         !matches_selector(&doc, child, &sel_eng),
         ":lang(eng) must not match en-US (hyphen boundary)"
@@ -286,6 +286,82 @@ fn test_lang_matches_basic_inherit_boundary_caseinsensitive() {
         !matches_selector(&doc, orphan, &sel_en),
         ":lang(en) should not match element with no lang ancestor"
     );
+}
+
+// ── :lang() 逗号列表 + BCP 47 通配符（CSS Selectors L4 §14）──
+
+#[test]
+fn test_lang_comma_list_and_wildcards() {
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let parent = doc.create_element("div");
+    let _ = doc.append_child(root, parent);
+
+    // 逗号列表：:lang(en, fr) 匹配 en 或 fr。
+    doc.set_attribute(parent, "lang", "fr");
+    assert!(
+        matches_selector(
+            &doc,
+            parent,
+            &make_pseudo_selector(PseudoClassSelector::Lang(vec!["en".to_string(), "fr".to_string()]))
+        ),
+        ":lang(en, fr) 应匹配 lang=fr"
+    );
+    // 列表中无一命中时不匹配。
+    doc.set_attribute(parent, "lang", "de");
+    assert!(
+        !matches_selector(
+            &doc,
+            parent,
+            &make_pseudo_selector(PseudoClassSelector::Lang(vec!["en".to_string(), "fr".to_string()]))
+        ),
+        ":lang(en, fr) 不应匹配 lang=de"
+    );
+
+    // 裸通配符 *：匹配任意非空语言。
+    doc.set_attribute(parent, "lang", "zh-Hans");
+    assert!(
+        matches_selector(
+            &doc,
+            parent,
+            &make_pseudo_selector(PseudoClassSelector::Lang(vec!["*".to_string()]))
+        ),
+        ":lang(*) 应匹配任意非空语言"
+    );
+    // * 不匹配无 lang 的元素。
+    let nolang = doc.create_element("span");
+    let _ = doc.append_child(parent, nolang);
+    // nolang 继承 parent 的 zh-Hans → 仍匹配 *；用独立 orphan 验证无 lang。
+    let orphan = doc.create_element("p");
+    let _ = doc.append_child(root, orphan);
+    assert!(
+        !matches_selector(
+            &doc,
+            orphan,
+            &make_pseudo_selector(PseudoClassSelector::Lang(vec!["*".to_string()]))
+        ),
+        ":lang(*) 不应匹配无 lang 祖先的元素"
+    );
+
+    // 子标签通配 *-CA：匹配 en-CA / fr-ca，不匹配 en / en-US。
+    let mut verify = |lang: &str, expect: bool, msg: &str| {
+        let el = doc.create_element("b");
+        doc.set_attribute(el, "lang", lang);
+        let _ = doc.append_child(root, el);
+        assert_eq!(
+            matches_selector(
+                &doc,
+                el,
+                &make_pseudo_selector(PseudoClassSelector::Lang(vec!["*-CA".to_string()]))
+            ),
+            expect,
+            "{msg} (lang={lang})"
+        );
+    };
+    verify("en-CA", true, ":lang(*-CA) 应匹配 en-CA");
+    verify("fr-ca", true, ":lang(*-CA) 应匹配 fr-ca（大小写不敏感）");
+    verify("en", false, ":lang(*-CA) 不应匹配 en（无第二子标签）");
+    verify("en-US", false, ":lang(*-CA) 不应匹配 en-US");
 }
 
 // ── :has() 内部 NextSibling/SubsequentSibling 组合器 ──

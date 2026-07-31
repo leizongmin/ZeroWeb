@@ -313,8 +313,8 @@ pub enum PseudoClassSelector {
     NthOfType(NthPattern),
     /// `:nth-last-of-type()` 选择器。
     NthLastOfType(NthPattern),
-    /// `:lang()` 选择器。
-    Lang(String),
+    /// `:lang()` 选择器（CSS Selectors L4 §14：逗号分隔语言范围列表，支持 BCP 47 通配符 `*`）。
+    Lang(Vec<String>),
     /// `:dir()` 选择器（参数为 `ltr`/`rtl`，归一化为小写）。
     Dir(String),
 }
