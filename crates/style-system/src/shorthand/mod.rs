@@ -819,12 +819,45 @@ fn expand_transition(value: &str, important: bool, specificity: (u32, u32, u32))
         ];
     }
 
-    // 解析空格分隔的标记，但保留括号内的内容
-    let tokens = split_outside_parens(value);
-    let mut property = "all";
-    let mut duration = "0s";
-    let mut timing = "ease";
-    let mut delay = "0s";
+    // R2307：CSS Transitions — `transition: <single-transition>#`（逗号分隔多过渡）。
+    // 顶层逗号分割（paren-aware：cubic-bezier(...)/steps(...) 内部逗号保持一体），
+    // 每条单独解析，各 longhand 跨条目用 ", " 连接（longhand apply 已按逗号 split 成 Vec）。
+    let mut entries = split_top_level_commas(value);
+    if entries.is_empty() {
+        entries.push(String::new());
+    }
+    let mut properties = Vec::with_capacity(entries.len());
+    let mut durations = Vec::with_capacity(entries.len());
+    let mut timings = Vec::with_capacity(entries.len());
+    let mut delays = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        let (p, d, ti, de) = parse_single_transition(entry);
+        properties.push(p);
+        durations.push(d);
+        timings.push(ti);
+        delays.push(de);
+    }
+
+    let properties_str = properties.join(", ");
+    let durations_str = durations.join(", ");
+    let timings_str = timings.join(", ");
+    let delays_str = delays.join(", ");
+    vec![
+        mk("transition-property", &properties_str),
+        mk("transition-duration", &durations_str),
+        mk("transition-timing-function", &timings_str),
+        mk("transition-delay", &delays_str),
+    ]
+}
+
+/// 解析单个 transition 条目（不含顶层逗号）→ (property, duration, timing, delay)。
+/// 空白条目返回默认值（all / 0s / ease / 0s）。
+fn parse_single_transition(entry: &str) -> (String, String, String, String) {
+    let tokens = split_outside_parens(entry);
+    let mut property = "all".to_string();
+    let mut duration = "0s".to_string();
+    let mut timing = "ease".to_string();
+    let mut delay = "0s".to_string();
     let mut found_duration = false;
 
     for token in &tokens {
@@ -835,24 +868,50 @@ fn expand_transition(value: &str, important: bool, specificity: (u32, u32, u32))
         // 判断是否为时间值（duration/delay）
         if is_time_value(t) {
             if !found_duration {
-                duration = t;
+                duration = t.to_string();
                 found_duration = true;
             } else {
-                delay = t;
+                delay = t.to_string();
             }
         } else if is_timing_function_keyword(t) || t.starts_with("cubic-bezier(") || t.starts_with("steps(") {
-            timing = t;
+            timing = t.to_string();
         } else {
-            property = t;
+            property = t.to_string();
         }
     }
+    (property, duration, timing, delay)
+}
 
-    vec![
-        mk("transition-property", property),
-        mk("transition-duration", duration),
-        mk("transition-timing-function", timing),
-        mk("transition-delay", delay),
-    ]
+/// 顶层逗号分割（paren-aware：括号内逗号不分割，保留 cubic-bezier()/steps() 一体）。
+fn split_top_level_commas(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut current = String::new();
+    for ch in s.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ',' if depth == 0 => {
+                let t = current.trim().to_string();
+                if !t.is_empty() {
+                    parts.push(t);
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    let t = current.trim().to_string();
+    if !t.is_empty() {
+        parts.push(t);
+    }
+    parts
 }
 
 /// 检查字符串是否为 CSS 时间值。
@@ -928,15 +987,56 @@ fn expand_animation(value: &str, important: bool, specificity: (u32, u32, u32)) 
         ];
     }
 
-    let tokens = split_outside_parens(value);
-    let mut name = "none";
-    let mut duration = "0s";
-    let mut timing = "ease";
-    let mut delay = "0s";
-    let mut iteration_count = "1";
-    let mut direction = "normal";
-    let mut fill_mode = "none";
-    let mut play_state = "running";
+    // R2307：CSS Animations — `animation: <single-animation>#`（逗号分隔多动画）。
+    // 顶层逗号分割（paren-aware），每条单独解析，各 longhand 跨条目用 ", " 连接。
+    let mut entries = split_top_level_commas(value);
+    if entries.is_empty() {
+        entries.push(String::new());
+    }
+    let mut names = Vec::with_capacity(entries.len());
+    let mut durations = Vec::with_capacity(entries.len());
+    let mut timings = Vec::with_capacity(entries.len());
+    let mut delays = Vec::with_capacity(entries.len());
+    let mut iteration_counts = Vec::with_capacity(entries.len());
+    let mut directions = Vec::with_capacity(entries.len());
+    let mut fill_modes = Vec::with_capacity(entries.len());
+    let mut play_states = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        let (n, d, ti, de, ic, di, fm, ps) = parse_single_animation(entry);
+        names.push(n);
+        durations.push(d);
+        timings.push(ti);
+        delays.push(de);
+        iteration_counts.push(ic);
+        directions.push(di);
+        fill_modes.push(fm);
+        play_states.push(ps);
+    }
+
+    vec![
+        mk("animation-name", &names.join(", ")),
+        mk("animation-duration", &durations.join(", ")),
+        mk("animation-timing-function", &timings.join(", ")),
+        mk("animation-delay", &delays.join(", ")),
+        mk("animation-iteration-count", &iteration_counts.join(", ")),
+        mk("animation-direction", &directions.join(", ")),
+        mk("animation-fill-mode", &fill_modes.join(", ")),
+        mk("animation-play-state", &play_states.join(", ")),
+    ]
+}
+
+/// 解析单个 animation 条目（不含顶层逗号）→ 8 个 longhand 值。
+/// 空白条目返回默认值。
+fn parse_single_animation(entry: &str) -> (String, String, String, String, String, String, String, String) {
+    let tokens = split_outside_parens(entry);
+    let mut name = "none".to_string();
+    let mut duration = "0s".to_string();
+    let mut timing = "ease".to_string();
+    let mut delay = "0s".to_string();
+    let mut iteration_count = "1".to_string();
+    let mut direction = "normal".to_string();
+    let mut fill_mode = "none".to_string();
+    let mut play_state = "running".to_string();
     let mut found_time_count = 0u32;
 
     for token in &tokens {
@@ -949,39 +1049,38 @@ fn expand_animation(value: &str, important: bool, specificity: (u32, u32, u32)) 
         if is_time_value(t) {
             found_time_count += 1;
             if found_time_count == 1 {
-                duration = t;
+                duration = t.to_string();
             } else if found_time_count == 2 {
-                delay = t;
+                delay = t.to_string();
             }
         } else if is_timing_function_keyword(t) || t.starts_with("cubic-bezier(") || t.starts_with("steps(") {
-            timing = t;
+            timing = t.to_string();
         } else if t == "infinite" {
-            iteration_count = "infinite";
+            iteration_count = "infinite".to_string();
         } else if is_animation_direction(t) {
-            direction = t;
+            direction = t.to_string();
         } else if is_animation_fill_mode(t) {
-            fill_mode = t;
+            fill_mode = t.to_string();
         } else if is_animation_play_state(t) {
-            play_state = t;
+            play_state = t.to_string();
         } else if t.parse::<f64>().is_ok() {
             // 纯数字 → iteration-count
-            iteration_count = t;
+            iteration_count = t.to_string();
         } else {
             // 其他 → animation-name
-            name = t;
+            name = t.to_string();
         }
     }
-
-    vec![
-        mk("animation-name", name),
-        mk("animation-duration", duration),
-        mk("animation-timing-function", timing),
-        mk("animation-delay", delay),
-        mk("animation-iteration-count", iteration_count),
-        mk("animation-direction", direction),
-        mk("animation-fill-mode", fill_mode),
-        mk("animation-play-state", play_state),
-    ]
+    (
+        name,
+        duration,
+        timing,
+        delay,
+        iteration_count,
+        direction,
+        fill_mode,
+        play_state,
+    )
 }
 
 /// 检查字符串是否为 animation-direction 关键字。

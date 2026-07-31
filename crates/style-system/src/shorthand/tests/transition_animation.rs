@@ -56,6 +56,52 @@ fn test_transition_shorthand_duration_only() {
     assert_eq!(result[1].1, "0.5s");
 }
 
+// ── R2307：多 transition 列表（CSS Transitions：<single-transition>#）──
+
+#[test]
+fn test_transition_shorthand_multiple_comma() {
+    // 两条 transition：逗号分割，各 longhand 跨条目用 ", " 连接
+    let result = expand_one(
+        "transition",
+        "width 0.3s ease 0s, height 0.5s linear 0.1s",
+        false,
+        (0, 0, 1),
+    );
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].0, "transition-property");
+    assert_eq!(result[0].1, "width, height");
+    assert_eq!(result[1].1, "0.3s, 0.5s");
+    assert_eq!(result[2].1, "ease, linear");
+    assert_eq!(result[3].1, "0s, 0.1s");
+}
+
+#[test]
+fn test_transition_shorthand_multiple_with_cubic_bezier() {
+    // paren-aware：cubic-bezier 内部逗号不分割，仍是 2 条 transition
+    let result = expand_one(
+        "transition",
+        "transform 0.5s cubic-bezier(0.25, 0.1, 0.25, 1.0), opacity 0.2s",
+        false,
+        (0, 0, 1),
+    );
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "transform, opacity");
+    assert_eq!(result[1].1, "0.5s, 0.2s");
+    assert_eq!(
+        result[2].1, "cubic-bezier(0.25, 0.1, 0.25, 1.0), ease",
+        "cubic-bezier 内部逗号必须保持一体"
+    );
+}
+
+#[test]
+fn test_transition_shorthand_single_is_unchanged() {
+    // 回归守护：单条 transition 输出不应含逗号（byte-identical 旧行为）
+    let result = expand_one("transition", "opacity 0.3s", false, (0, 0, 1));
+    assert_eq!(result[0].1, "opacity");
+    assert_eq!(result[1].1, "0.3s");
+    assert!(!result[0].1.contains(','));
+}
+
 // ── 逻辑属性简写测试 ──
 
 #[test]
@@ -180,4 +226,41 @@ fn test_animation_shorthand_paused() {
     assert_eq!(result.len(), 8);
     assert_eq!(result[0].1, "spin");
     assert_eq!(result[7].1, "paused");
+}
+
+// ── R2307：多 animation 列表（CSS Animations：<single-animation>#）──
+
+#[test]
+fn test_animation_shorthand_multiple_comma() {
+    // 两条 animation：逗号分割，各 longhand 跨条目用 ", " 连接
+    let result = expand_one("animation", "spin 2s linear infinite, fade 1s ease 2", false, (0, 0, 1));
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[0].0, "animation-name");
+    assert_eq!(result[0].1, "spin, fade");
+    assert_eq!(result[1].1, "2s, 1s");
+    assert_eq!(result[2].1, "linear, ease");
+    assert_eq!(result[4].1, "infinite, 2");
+}
+
+#[test]
+fn test_animation_shorthand_multiple_with_steps() {
+    // paren-aware：steps() 内部逗号不分割，仍是 2 条 animation
+    let result = expand_one(
+        "animation",
+        "bounce 0.5s steps(4, end) infinite, spin 2s",
+        false,
+        (0, 0, 1),
+    );
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[0].1, "bounce, spin");
+    assert_eq!(result[2].1, "steps(4, end), ease", "steps() 内部逗号必须保持一体");
+}
+
+#[test]
+fn test_animation_shorthand_single_is_unchanged() {
+    // 回归守护：单条 animation 输出不应含逗号（byte-identical 旧行为）
+    let result = expand_one("animation", "fadeIn 0.5s", false, (0, 0, 1));
+    assert_eq!(result[0].1, "fadeIn");
+    assert_eq!(result[1].1, "0.5s");
+    assert!(!result[0].1.contains(','));
 }
