@@ -682,6 +682,43 @@ fn split_function_call(value: &str) -> Option<(String, &str)> {
     Some((name.to_string(), inner))
 }
 
+/// 从渐变首参中剥离 CSS Color 4 `in <colorspace>` 颜色插值提示。
+///
+/// 返回 `(剩余方向/形状部分, 是否存在插值提示)`：
+/// - `"in oklab"` / `"in srgb-linear"` → `(None, true)`（无方向，整参为提示）
+/// - `"to right in srgb"` → `(Some("to right"), true)`
+/// - `"circle at center in oklch longer hue"` → `(Some("circle at center"), true)`
+/// - 无提示 → `(Some(orig), false)`
+///
+/// 当前仅剥离以保证 gradient 不被丢弃并按既有 sRGB 渲染；颜色空间感知插值（oklab/oklch
+/// 等的 mid-tone 数学）defer 至后续 render-math 切片。driving: css-images oklab-gradient /
+/// srgb-gradient / srgb-linear-gradient（此前 `in <colorspace>` 致整 gradient 丢弃）。
+fn strip_interpolation_hint(arg: &str) -> (Option<&str>, bool) {
+    let arg = arg.trim();
+    let bytes = arg.as_bytes();
+    // 前缀 "in "（大小写不敏感）
+    if bytes.len() >= 3
+        && (bytes[0] == b'i' || bytes[0] == b'I')
+        && (bytes[1] == b'n' || bytes[1] == b'N')
+        && bytes[2] == b' '
+    {
+        return (None, true);
+    }
+    // 子串 " in "（大小写不敏感；空格为 ASCII 单字节，切片边界安全）
+    let mut i = 0;
+    while i + 4 <= bytes.len() {
+        if bytes[i] == b' '
+            && (bytes[i + 1] == b'i' || bytes[i + 1] == b'I')
+            && (bytes[i + 2] == b'n' || bytes[i + 2] == b'N')
+            && bytes[i + 3] == b' '
+        {
+            return (Some(arg[..i].trim()), true);
+        }
+        i += 1;
+    }
+    (Some(arg), false)
+}
+
 /// 解析 linear-gradient 内部参数。
 fn parse_linear_gradient_inner(inner: &str, repeating: bool) -> Option<GradientValue> {
     let args = split_gradient_args(inner)?;
@@ -692,9 +729,18 @@ fn parse_linear_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
     let mut direction = GradientDirection::ToBottom;
     let mut stop_start = 0;
 
-    // 检查第一个参数是否为方向
+    // 检查第一个参数是否为方向（可能附带 `in <colorspace>` 插值提示）
     let first = args[0].trim();
-    if let Some(dir) = parse_linear_direction(first) {
+    let (dir_part, had_hint) = strip_interpolation_hint(first);
+    if had_hint {
+        // 首参含 `in <colorspace>`：剥离后解析方向（无方向则用默认）
+        if let Some(dp) = dir_part
+            && let Some(dir) = parse_linear_direction(dp)
+        {
+            direction = dir;
+        }
+        stop_start = 1;
+    } else if let Some(dir) = parse_linear_direction(first) {
         direction = dir;
         stop_start = 1;
     }
@@ -745,23 +791,29 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
     let mut pos_y = LengthValue::Percentage(50.0);
     let mut stop_start = 0;
 
-    // 第一个参数可能包含 shape/size/position
+    // 第一个参数可能包含 shape/size/position（可能附带 `in <colorspace>` 插值提示）
     let first = args[0].trim();
-    let first_lower = first.to_ascii_lowercase();
+    let (shape_part, had_hint) = strip_interpolation_hint(first);
+    let shape_src = shape_part.unwrap_or("");
+    let shape_lower = shape_src.to_ascii_lowercase();
 
-    if first_lower.starts_with("circle")
-        || first_lower.starts_with("ellipse")
-        || first_lower.starts_with("closest")
-        || first_lower.starts_with("farthest")
-        || first_lower.contains(" at ")
+    if !shape_src.is_empty()
+        && (shape_lower.starts_with("circle")
+            || shape_lower.starts_with("ellipse")
+            || shape_lower.starts_with("closest")
+            || shape_lower.starts_with("farthest")
+            || shape_lower.contains(" at "))
     {
         // 解析 shape + size + at position
-        if let Some((s, sz, px, py)) = parse_radial_shape_and_position(first) {
+        if let Some((s, sz, px, py)) = parse_radial_shape_and_position(shape_src) {
             shape = s;
             size = sz;
             pos_x = px;
             pos_y = py;
         }
+        stop_start = 1;
+    } else if had_hint {
+        // 首参仅为 `in <colorspace>` 提示（无 shape），跳过用默认 shape
         stop_start = 1;
     }
 
@@ -874,14 +926,21 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
     let mut stop_start = 0;
 
     let first = args[0].trim();
-    let first_lower = first.to_ascii_lowercase();
+    let (config_part, had_hint) = strip_interpolation_hint(first);
+    let config_src = config_part.unwrap_or("");
+    let config_lower = config_src.to_ascii_lowercase();
 
-    if first_lower.starts_with("from ") || first_lower.starts_with("at ") || first_lower.contains(" at ") {
-        if let Some((angle, px, py)) = parse_conic_config(first) {
+    if !config_src.is_empty()
+        && (config_lower.starts_with("from ") || config_lower.starts_with("at ") || config_lower.contains(" at "))
+    {
+        if let Some((angle, px, py)) = parse_conic_config(config_src) {
             from_angle = angle;
             pos_x = px;
             pos_y = py;
         }
+        stop_start = 1;
+    } else if had_hint {
+        // 首参仅为 `in <colorspace>` 提示（无 from/at），跳过用默认配置
         stop_start = 1;
     }
 

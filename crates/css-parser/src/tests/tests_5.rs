@@ -1193,6 +1193,105 @@ fn test_parse_background_image_invalid_gradient() {
     assert_eq!(parse_background_image("gradient(red, blue)"), None);
 }
 
+// ── CSS Color 4 `in <colorspace>` 渐变插值提示剥离（R2288）──────────────
+// driving: css-images oklab-gradient / srgb-gradient / srgb-linear-gradient
+//（此前 `in <colorspace>` 致整 gradient 丢弃；本轮剥离以 un-drop）。
+
+#[test]
+fn test_gradient_in_colorspace_leading_linear_not_dropped() {
+    // `linear-gradient(in oklab, red, blue)` 此前被整体丢弃
+    let g = parse_gradient("linear-gradient(in oklab, red, blue)").expect("不应丢弃");
+    match g {
+        GradientValue::Linear(lg) => {
+            assert_eq!(lg.direction, GradientDirection::ToBottom, "无方向→默认 ToBottom");
+            assert_eq!(lg.stops.len(), 2);
+        }
+        other => panic!("Expected Linear, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_gradient_in_colorspace_after_direction_linear() {
+    // `to right in srgb` → 方向 ToRight + 剥离提示
+    let g = parse_gradient("linear-gradient(to right in srgb, red, green)").expect("不应丢弃");
+    match g {
+        GradientValue::Linear(lg) => {
+            assert_eq!(lg.direction, GradientDirection::ToRight);
+            assert_eq!(lg.stops.len(), 2);
+        }
+        other => panic!("Expected Linear, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_gradient_in_colorspace_after_angle_direction() {
+    // `45deg in oklch longer hue` → 方向 Angle(45) + 剥离含 hue method 的提示
+    let g = parse_gradient("linear-gradient(45deg in oklch longer hue, red, green)").expect("不应丢弃");
+    match g {
+        GradientValue::Linear(lg) => {
+            assert!(matches!(lg.direction, GradientDirection::Angle(a) if (a - 45.0).abs() < 0.1));
+            assert_eq!(lg.stops.len(), 2);
+        }
+        other => panic!("Expected Linear, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_gradient_in_colorspace_radial_leading() {
+    let g = parse_gradient("radial-gradient(in oklab, red, blue)").expect("不应丢弃");
+    match g {
+        GradientValue::Radial(rg) => {
+            assert_eq!(rg.shape, RadialShape::Ellipse, "无 shape→默认 Ellipse");
+            assert_eq!(rg.stops.len(), 2);
+        }
+        other => panic!("Expected Radial, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_gradient_in_colorspace_radial_with_shape() {
+    let g = parse_gradient("radial-gradient(circle at center in oklab, red, blue)").expect("不应丢弃");
+    match g {
+        GradientValue::Radial(rg) => {
+            assert_eq!(rg.shape, RadialShape::Circle);
+            assert_eq!(rg.stops.len(), 2);
+        }
+        other => panic!("Expected Radial, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_gradient_in_colorspace_conic_leading() {
+    let g = parse_gradient("conic-gradient(in oklab, red, blue)").expect("不应丢弃");
+    match g {
+        GradientValue::Conic(cg) => assert_eq!(cg.stops.len(), 2),
+        other => panic!("Expected Conic, got {other:?}"),
+    }
+}
+
+#[test]
+/// 回归守护：无 `in` 提示的 gradient 行为字节不变（方向/shape/stops 不受影响）。
+fn test_gradient_without_in_hint_unchanged() {
+    let g1 = parse_gradient("linear-gradient(red, blue)").expect("baseline linear");
+    match g1 {
+        GradientValue::Linear(lg) => {
+            assert_eq!(lg.direction, GradientDirection::ToBottom);
+            assert_eq!(lg.stops.len(), 2);
+        }
+        other => panic!("Expected Linear, got {other:?}"),
+    }
+    let g2 = parse_gradient("linear-gradient(to right, red, green)").expect("baseline dir linear");
+    match g2 {
+        GradientValue::Linear(lg) => assert_eq!(lg.direction, GradientDirection::ToRight),
+        other => panic!("Expected Linear, got {other:?}"),
+    }
+    let g3 = parse_gradient("radial-gradient(circle, red, blue)").expect("baseline radial");
+    match g3 {
+        GradientValue::Radial(rg) => assert_eq!(rg.shape, RadialShape::Circle),
+        other => panic!("Expected Radial, got {other:?}"),
+    }
+}
+
 #[test]
 /// 测试 parse_background_image 空渐变参数返回 None。
 fn test_parse_background_image_empty_gradient() {
