@@ -1193,11 +1193,11 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         "filter" => {
-            style.filter = default_style.filter;
+            style.filter = default_style.filter.clone();
             true
         }
         "backdrop-filter" => {
-            style.backdrop_filter = default_style.backdrop_filter;
+            style.backdrop_filter = default_style.backdrop_filter.clone();
             true
         }
         // Column Rule Color

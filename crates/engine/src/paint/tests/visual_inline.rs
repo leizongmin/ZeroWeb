@@ -929,6 +929,25 @@ fn test_filter_drop_shadow() {
     assert!(filters[0].filters.iter().any(|f| matches!(f, FilterKind::DropShadow(x, y, blur, _) if (*x - 2.0).abs() < 0.1 && (*y - 3.0).abs() < 0.1 && (*blur - 4.0).abs() < 0.1)));
 }
 
+/// R2306：filter 多函数列表按声明顺序生成 FilterPrimitive.filters（CSS Filter Effects：<filter-function>+）。
+#[test]
+fn test_filter_multiple_functions_emit_all() {
+    use crate::pipeline::RenderPipeline;
+    use zero_render_foundation::primitive::FilterKind;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(
+        "<html><body><div>Test</div></body></html>",
+        "div { color: black; font-size: 16px; filter: blur(5px) brightness(1.5) sepia(0.5); }",
+    );
+    let filters = &result.primitives.filters;
+    assert_eq!(filters.len(), 1, "应生成 1 个 FilterPrimitive（同元素多函数合并）");
+    // 3 个函数按声明顺序全部 emit
+    assert_eq!(filters[0].filters.len(), 3, "应 emit 3 个 filter 函数");
+    assert!(matches!(filters[0].filters[0], FilterKind::Blur(v) if (v - 5.0).abs() < 0.01));
+    assert!(matches!(filters[0].filters[1], FilterKind::Brightness(v) if (v - 1.5).abs() < 0.01));
+    assert!(matches!(filters[0].filters[2], FilterKind::Sepia(v) if (v - 0.5).abs() < 0.01));
+}
+
 // ── CSS text-indent 渲染测试 ──
 
 #[test]

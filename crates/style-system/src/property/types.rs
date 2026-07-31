@@ -1538,8 +1538,8 @@ pub enum PropertyValue {
     ColumnSpan(ColumnSpanComputedValue),
     /// object-fit 值。
     ObjectFit(ObjectFitComputedValue),
-    /// filter 值。
-    Filter(FilterComputedValue),
+    /// filter 值（多函数列表）。
+    Filter(Vec<FilterComputedValue>),
     /// contain 值。
     Contain(ContainComputedValue),
     /// column-rule-color 值。

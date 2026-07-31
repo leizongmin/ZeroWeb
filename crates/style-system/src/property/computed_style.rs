@@ -448,10 +448,10 @@ pub struct ComputedStyle {
     pub object_fit: ObjectFitComputedValue,
     /// object-position 属性（CSS Images §3）：替换元素内容在盒内的对齐位置（默认 Center=50% 50%）。
     pub object_position: BackgroundPositionComputedValue,
-    /// filter 属性。
-    pub filter: FilterComputedValue,
-    /// backdrop-filter 属性（对元素背后内容应用滤镜）。
-    pub backdrop_filter: FilterComputedValue,
+    /// filter 属性（CSS Filter Effects：`none | <filter-function>+`，多函数列表；空 Vec = none）。
+    pub filter: Vec<FilterComputedValue>,
+    /// backdrop-filter 属性（对元素背后内容应用滤镜；多函数列表；空 Vec = none）。
+    pub backdrop_filter: Vec<FilterComputedValue>,
 
     // ── UI Appearance ──
     /// appearance 属性。

@@ -242,7 +242,7 @@ impl PropertyRegistry {
             "object-fit" => Some(ObjectFit(ObjectFitComputedValue::Fill)),
             // object-position 默认 50% 50%（Center），CSS Images §3。
             "object-position" => Some(BackgroundPosition(BackgroundPositionComputedValue::Center)),
-            "filter" => Some(Filter(FilterComputedValue::None)),
+            "filter" => Some(Filter(Vec::new())),
 
             // Column Rule Color
             "column-rule-color" => Some(ColumnRuleColor(ColorValue::Rgba(0, 0, 0, 255))),

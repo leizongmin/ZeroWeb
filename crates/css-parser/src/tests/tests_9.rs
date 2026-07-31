@@ -6,8 +6,8 @@ use crate::values::{
     parse_background_origin, parse_background_repeat, parse_background_size, parse_border_collapse,
     parse_border_image_outset, parse_border_image_repeat, parse_border_image_slice, parse_border_image_source,
     parse_border_image_width, parse_box_shadow, parse_caret_color, parse_color, parse_column_count, parse_column_width,
-    parse_contain, parse_content, parse_counter_list, parse_filter, parse_gradient, parse_grid_area, parse_hyphens,
-    parse_line_clamp, parse_list_style_image, parse_mix_blend_mode, parse_object_fit, parse_quotes,
+    parse_contain, parse_content, parse_counter_list, parse_filter, parse_filter_list, parse_gradient, parse_grid_area,
+    parse_hyphens, parse_line_clamp, parse_list_style_image, parse_mix_blend_mode, parse_object_fit, parse_quotes,
     parse_scrollbar_gutter, parse_scrollbar_width, parse_table_layout, parse_text_overflow, parse_text_shadow,
     parse_text_wrap, parse_will_change,
 };
@@ -565,6 +565,51 @@ fn test_filter_invalid_name() {
 #[test]
 fn test_filter_no_paren() {
     assert!(parse_filter("blur").is_none());
+}
+
+// ── R2306：parse_filter_list — 多函数列表（CSS Filter Effects：none | <filter-function>+）──
+
+#[test]
+fn test_filter_list_none_is_empty() {
+    let list = parse_filter_list("none").expect("none → Some(空 Vec)");
+    assert!(list.is_empty(), "none 应解析为空 filter 列表");
+}
+
+#[test]
+fn test_filter_list_single() {
+    let list = parse_filter_list("blur(5px)").expect("单函数 → Some");
+    assert_eq!(list.len(), 1);
+}
+
+#[test]
+fn test_filter_list_multiple_space() {
+    // 顶层空格分割：3 个独立 filter 函数（CSS filter 用空格分隔，非逗号）
+    let list = parse_filter_list("blur(5px) brightness(1.5) sepia(0.5)").expect("多函数 → Some");
+    assert_eq!(list.len(), 3, "应拆为 3 个 filter 函数");
+}
+
+#[test]
+fn test_filter_list_drop_shadow_internal_spaces_preserved() {
+    // paren-aware：drop-shadow 的参数内空格不应拆分 → 仍是 2 个函数
+    let list = parse_filter_list("drop-shadow(2 4 red) blur(3px)").expect("含空格参数 → Some");
+    assert_eq!(
+        list.len(),
+        2,
+        "drop-shadow(2 4 red) 内部空格必须保持一体，应为 2 个函数"
+    );
+}
+
+#[test]
+fn test_filter_list_any_invalid_is_none() {
+    // 任意单个函数解析失败 → 整列表 None
+    assert!(parse_filter_list("blur(5px) bogus brightness(1.5)").is_none());
+}
+
+#[test]
+fn test_filter_list_empty_is_none() {
+    // 空字符串 / 纯空白 → None
+    assert!(parse_filter_list("").is_none());
+    assert!(parse_filter_list("   ").is_none());
 }
 
 // ═══════════════════════════════════════════════════════════════════════

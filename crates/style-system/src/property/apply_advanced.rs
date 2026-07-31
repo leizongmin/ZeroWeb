@@ -829,38 +829,44 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         // ── Filter 属性 ──
         "filter" => {
-            if let Some(v) = values::parse_filter(value) {
-                style.filter = match v {
-                    FilterValue::None => FilterComputedValue::None,
-                    FilterValue::Blur(n) => FilterComputedValue::Blur(n),
-                    FilterValue::Brightness(n) => FilterComputedValue::Brightness(n),
-                    FilterValue::Contrast(n) => FilterComputedValue::Contrast(n),
-                    FilterValue::Grayscale(n) => FilterComputedValue::Grayscale(n),
-                    FilterValue::HueRotate(n) => FilterComputedValue::HueRotate(n),
-                    FilterValue::Invert(n) => FilterComputedValue::Invert(n),
-                    FilterValue::Opacity(n) => FilterComputedValue::Opacity(n),
-                    FilterValue::Saturate(n) => FilterComputedValue::Saturate(n),
-                    FilterValue::Sepia(n) => FilterComputedValue::Sepia(n),
-                    FilterValue::DropShadow(x, y, b, c) => FilterComputedValue::DropShadow(x, y, b, c),
-                };
+            if let Some(list) = values::parse_filter_list(value) {
+                style.filter = list
+                    .into_iter()
+                    .map(|v| match v {
+                        FilterValue::None => FilterComputedValue::None,
+                        FilterValue::Blur(n) => FilterComputedValue::Blur(n),
+                        FilterValue::Brightness(n) => FilterComputedValue::Brightness(n),
+                        FilterValue::Contrast(n) => FilterComputedValue::Contrast(n),
+                        FilterValue::Grayscale(n) => FilterComputedValue::Grayscale(n),
+                        FilterValue::HueRotate(n) => FilterComputedValue::HueRotate(n),
+                        FilterValue::Invert(n) => FilterComputedValue::Invert(n),
+                        FilterValue::Opacity(n) => FilterComputedValue::Opacity(n),
+                        FilterValue::Saturate(n) => FilterComputedValue::Saturate(n),
+                        FilterValue::Sepia(n) => FilterComputedValue::Sepia(n),
+                        FilterValue::DropShadow(x, y, b, c) => FilterComputedValue::DropShadow(x, y, b, c),
+                    })
+                    .collect();
                 return true;
             }
         }
         "backdrop-filter" => {
-            if let Some(v) = values::parse_filter(value) {
-                style.backdrop_filter = match v {
-                    FilterValue::None => FilterComputedValue::None,
-                    FilterValue::Blur(n) => FilterComputedValue::Blur(n),
-                    FilterValue::Brightness(n) => FilterComputedValue::Brightness(n),
-                    FilterValue::Contrast(n) => FilterComputedValue::Contrast(n),
-                    FilterValue::Grayscale(n) => FilterComputedValue::Grayscale(n),
-                    FilterValue::HueRotate(n) => FilterComputedValue::HueRotate(n),
-                    FilterValue::Invert(n) => FilterComputedValue::Invert(n),
-                    FilterValue::Opacity(n) => FilterComputedValue::Opacity(n),
-                    FilterValue::Saturate(n) => FilterComputedValue::Saturate(n),
-                    FilterValue::Sepia(n) => FilterComputedValue::Sepia(n),
-                    FilterValue::DropShadow(x, y, b, c) => FilterComputedValue::DropShadow(x, y, b, c),
-                };
+            if let Some(list) = values::parse_filter_list(value) {
+                style.backdrop_filter = list
+                    .into_iter()
+                    .map(|v| match v {
+                        FilterValue::None => FilterComputedValue::None,
+                        FilterValue::Blur(n) => FilterComputedValue::Blur(n),
+                        FilterValue::Brightness(n) => FilterComputedValue::Brightness(n),
+                        FilterValue::Contrast(n) => FilterComputedValue::Contrast(n),
+                        FilterValue::Grayscale(n) => FilterComputedValue::Grayscale(n),
+                        FilterValue::HueRotate(n) => FilterComputedValue::HueRotate(n),
+                        FilterValue::Invert(n) => FilterComputedValue::Invert(n),
+                        FilterValue::Opacity(n) => FilterComputedValue::Opacity(n),
+                        FilterValue::Saturate(n) => FilterComputedValue::Saturate(n),
+                        FilterValue::Sepia(n) => FilterComputedValue::Sepia(n),
+                        FilterValue::DropShadow(x, y, b, c) => FilterComputedValue::DropShadow(x, y, b, c),
+                    })
+                    .collect();
                 return true;
             }
         }

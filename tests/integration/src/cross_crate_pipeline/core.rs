@@ -1059,9 +1059,9 @@ fn test_filter_pipeline_integration() {
 
     let div_style = styles.get(&div).expect("div 应有计算样式");
     assert_eq!(
-        div_style.filter,
-        zero_style_system::property::FilterComputedValue::Blur(5.0),
-        "div 的 filter 应为 Blur(5.0)"
+        &div_style.filter[..],
+        &[zero_style_system::property::FilterComputedValue::Blur(5.0)],
+        "div 的 filter 应为 [Blur(5.0)]"
     );
 }
 

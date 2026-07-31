@@ -401,11 +401,9 @@ impl super::Painter {
 
     /// 应用 CSS filter。
     pub(super) fn apply_filter(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
-        let filters = match &style.filter {
-            FilterComputedValue::None => return,
-            f => vec![filter_computed_to_kind(f)],
-        };
-
+        // R2306：filter 多函数列表（CSS Filter Effects：<filter-function>+）。空 Vec = none。
+        // render 侧 FilterPrimitive.filters: Vec<FilterKind> 已支持多函数顺序应用。
+        let filters: Vec<_> = style.filter.iter().map(filter_computed_to_kind).collect();
         if filters.is_empty() {
             return;
         }
@@ -424,11 +422,8 @@ impl super::Painter {
         abs_y: f32,
         style: &ComputedStyle,
     ) {
-        let filters = match &style.backdrop_filter {
-            FilterComputedValue::None => return,
-            f => vec![filter_computed_to_kind(f)],
-        };
-
+        // R2306：backdrop-filter 多函数列表（同 filter）。空 Vec = none。
+        let filters: Vec<_> = style.backdrop_filter.iter().map(filter_computed_to_kind).collect();
         if filters.is_empty() {
             return;
         }

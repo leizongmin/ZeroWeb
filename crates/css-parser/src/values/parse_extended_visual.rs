@@ -123,7 +123,57 @@ pub fn parse_filter(value: &str) -> Option<FilterValue> {
     }
 }
 
-/// 解析 filter 函数中的长度值（返回 px 数值）。
+/// 按顶层空白分割（paren-aware：使 `drop-shadow(2px 4px red)` 等含空白参数的
+/// 函数保持一体）。用于 filter 多函数列表（`<filter-function>+`，空格分隔）拆分。
+fn split_top_level_whitespace(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut current = String::new();
+    for ch in s.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' => {
+                depth -= 1;
+                current.push(ch);
+            }
+            c if c.is_whitespace() && depth == 0 => {
+                let t = current.trim().to_string();
+                if !t.is_empty() {
+                    parts.push(t);
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    let t = current.trim().to_string();
+    if !t.is_empty() {
+        parts.push(t);
+    }
+    parts
+}
+
+/// 解析 filter 多函数列表（CSS Filter Effects：`none | <filter-function>+`）。
+/// `none` → 空 Vec；否则 paren-aware 顶层空白分割后逐个 parse_filter（任一失败 → None）。
+/// 多函数按声明顺序返回；render 侧 `FilterPrimitive.filters: Vec<FilterKind>` 已支持顺序应用。
+pub fn parse_filter_list(value: &str) -> Option<Vec<FilterValue>> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(Vec::new());
+    }
+    let parts = split_top_level_whitespace(v);
+    if parts.is_empty() {
+        return None;
+    }
+    let mut filters = Vec::with_capacity(parts.len());
+    for p in &parts {
+        filters.push(parse_filter(p)?);
+    }
+    Some(filters)
+}
 fn parse_filter_length_px(s: &str) -> Option<f32> {
     let s = s.trim();
     if s.ends_with("px") {
