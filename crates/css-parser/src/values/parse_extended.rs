@@ -587,9 +587,9 @@ fn parse_quoted_string_chars(chars: &mut std::iter::Peekable<std::str::Chars>) -
 pub enum ContainValue {
     /// none（默认值）。
     None,
-    /// strict — 等价于 layout style paint。
+    /// strict — 等价于 size layout paint style（CSS Containment §2）。
     Strict,
-    /// content — 等价于 layout style paint size。
+    /// content — 等价于 layout paint style（不含 size）。
     Content,
     /// size。
     Size,
@@ -619,8 +619,8 @@ impl ContainValue {
 ///
 /// 支持格式：
 /// - `"none"` — 无包含。
-/// - `"strict"` — 等价于 `layout style paint`。
-/// - `"content"` — 等价于 `layout style paint size`。
+/// - `"strict"` — 等价于 `size layout paint style`。
+/// - `"content"` — 等价于 `layout paint style`（不含 size）。
 /// - 单个关键字：`"size"`、`"layout"`、`"style"`、`"paint"`。
 /// - 多个空格分隔的关键字：`"layout style paint"`。
 pub fn parse_contain(value: &str) -> Option<ContainValue> {

@@ -508,9 +508,9 @@ pub enum ColumnRuleStyleComputedValue {
 pub enum ContainComputedValue {
     /// none（默认值）。
     None,
-    /// strict — 等价于 layout + style + paint。
+    /// strict — 等价于 size + layout + paint + style（CSS Containment §2）。
     Strict,
-    /// content — 等价于 layout + style + paint + size。
+    /// content — 等价于 layout + paint + style（不含 size）。
     Content,
     /// size。
     Size,
@@ -535,14 +535,14 @@ impl ContainComputedValue {
     /// paint 标志位。
     pub const FLAG_PAINT: u8 = 0x08;
 
-    /// 是否启用 size containment（`Size` / `Content` / `Custom` 含 FLAG_SIZE）。
+    /// 是否启用 size containment（`Size` / `Strict` / `Custom` 含 FLAG_SIZE）。
     /// `contain: size` 使元素尺寸独立于内容——auto 尺寸解析为 0（content 不贡献 size，
-    /// 仍 render/overflow）。`strict` = layout+style+paint（**不含** size）；`content` 含 size。
-    /// driving: WPT css-contain contain-size-*（如 contain-size-027：inline-block contain:size
-    /// 无显式尺寸 → border-box = padding-box，content 0）。
+    /// 仍 render/overflow）。CSS Containment §2：`strict` = size+layout+paint+style（**含** size）；
+    /// `content` = layout+paint+style（**不含** size）。R2299 纠正历史倒置（旧 impl 误把 strict/content
+    /// 对 size 的归属弄反）。driving: WPT css-contain contain-size-* / contain-strict-* / contain-content-*。
     pub fn has_size(&self) -> bool {
         match self {
-            ContainComputedValue::Size | ContainComputedValue::Content => true,
+            ContainComputedValue::Size | ContainComputedValue::Strict => true,
             ContainComputedValue::Custom(flags) => (flags & Self::FLAG_SIZE) != 0,
             _ => false,
         }
@@ -551,7 +551,7 @@ impl ContainComputedValue {
     /// 是否启用 layout containment（`Layout` / `Strict` / `Content` / `Custom` 含 FLAG_LAYOUT）。
     /// CSS Containment §3：layout containment 使元素建立独立格式化上下文（BFC）——隔离浮动
     ///（祖先 float 不侵入、内部 float 不溢出）+ 阻止与后代的 margin 折叠，并成为 abspos 后代
-    /// 的包含块。`strict`=layout+style+paint、`content`=layout+style+paint+size 均含 layout。
+    /// 的包含块。`strict`=size+layout+paint+style、`content`=layout+paint+style 均含 layout。
     pub fn has_layout(&self) -> bool {
         match self {
             ContainComputedValue::Layout | ContainComputedValue::Strict | ContainComputedValue::Content => true,
@@ -563,7 +563,8 @@ impl ContainComputedValue {
     /// 是否启用 paint containment（`Paint` / `Strict` / `Content` / `Custom` 含 FLAG_PAINT）。
     /// CSS Containment §4：paint containment 同样建立独立格式化上下文（BFC，与 layout containment
     /// 同族的 BFC 效果），并额外裁剪后代到元素的 paint box。本判定仅覆盖 BFC 部分（layout/paint
-    /// 共享）；paint 裁剪是独立的 paint 层关注点。`strict`/`content` 均含 paint。
+    /// 共享）；paint 裁剪是独立的 paint 层关注点。`strict`=size+layout+paint+style、
+    /// `content`=layout+paint+style 均含 paint。
     pub fn has_paint(&self) -> bool {
         match self {
             ContainComputedValue::Paint | ContainComputedValue::Strict | ContainComputedValue::Content => true,
@@ -1817,13 +1818,17 @@ pub use super::computed_style::ComputedStyle;
 mod tests {
     use super::*;
 
-    /// R2239：contain:size 标志判定——Size/Content/Custom(FLAG_SIZE) 含 size containment；
-    /// Strict（layout+style+paint，**不含** size）/Layout/Style/Paint/None 不含。
-    /// driving: WPT css-contain contain-size-*。
+    /// R2239/R2299：contain:size 标志判定——Size/Strict/Custom(FLAG_SIZE) 含 size containment；
+    /// Content（layout+paint+style，**不含** size）/Layout/Style/Paint/None 不含。
+    /// CSS Containment §2：strict=size+layout+paint+style（含 size），content=layout+paint+style（不含）。
+    /// driving: WPT css-contain contain-size-* / contain-strict-* / contain-content-*。
     #[test]
     fn test_contain_has_size() {
         assert!(ContainComputedValue::Size.has_size(), "Size 须含 size");
-        assert!(ContainComputedValue::Content.has_size(), "Content 须含 size");
+        assert!(
+            ContainComputedValue::Strict.has_size(),
+            "Strict 须含 size（size+layout+paint+style）"
+        );
         assert!(
             ContainComputedValue::Custom(ContainComputedValue::FLAG_SIZE).has_size(),
             "Custom(FLAG_SIZE) 须含 size"
@@ -1835,8 +1840,8 @@ mod tests {
         );
         assert!(!ContainComputedValue::None.has_size(), "None 不含 size");
         assert!(
-            !ContainComputedValue::Strict.has_size(),
-            "Strict 不含 size（仅 layout+style+paint）"
+            !ContainComputedValue::Content.has_size(),
+            "Content 不含 size（仅 layout+paint+style）"
         );
         assert!(!ContainComputedValue::Layout.has_size(), "Layout 不含 size");
         assert!(!ContainComputedValue::Paint.has_size(), "Paint 不含 size");
