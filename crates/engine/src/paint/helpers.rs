@@ -1367,6 +1367,52 @@ mod tests {
         );
     }
 
+    // ── R2327：text-transform full-width / full-size-kana（CSS Text 3 §3.1）──
+
+    #[test]
+    fn test_r2327_text_transform_full_width() {
+        // CSS Text 3 §3.1：ASCII 可打印 U+0021–U+007E → 全角 U+FF01–U+FF5E（+0xFEE0）；
+        // 空格（U+0020）与非 ASCII 不变。driving: css-text text-transform-fullwidth-001/009。
+        assert_eq!(
+            apply_text_transform("Hello!", &TextTransformValue::FullWidth),
+            "\u{FF28}\u{FF45}\u{FF4C}\u{FF4C}\u{FF4F}\u{FF01}", // Ｈｅｌｌｏ！
+            "ASCII letters + punct -> fullwidth"
+        );
+        // 数字与符号（空格不转换）
+        assert_eq!(
+            apply_text_transform("A1 #", &TextTransformValue::FullWidth),
+            "\u{FF21}\u{FF11} \u{FF03}", // Ａ１ ＃（空格保留，# → U+FF03）
+            "digits/symbols -> fullwidth, space preserved"
+        );
+        // 空格（U+0020）保留不转换，两侧字母转全角
+        let r = apply_text_transform("A B", &TextTransformValue::FullWidth);
+        assert_eq!(
+            r, "\u{FF21} \u{FF22}",
+            "space U+0020 preserved (ASCII), letters fullwidth'd"
+        );
+        // 非 ASCII（中文）不变
+        assert_eq!(apply_text_transform("中文", &TextTransformValue::FullWidth), "中文");
+    }
+
+    #[test]
+    fn test_r2327_text_transform_full_size_kana() {
+        // CSS Text 3 §3.1：小書き仮名 → 普通仮名。driving: css-text text-transform-full-size-kana-005。
+        assert_eq!(
+            apply_text_transform("ぁぃぅぇぉっゃゅょゎ", &TextTransformValue::FullSizeKana),
+            "あいうえおつやゆよわ",
+            "hiragana small -> regular"
+        );
+        assert_eq!(
+            apply_text_transform("ァィゥェォッャュョォ", &TextTransformValue::FullSizeKana),
+            "アイウエオツヤユヨオ",
+            "katakana small -> regular (ォ->オ)"
+        );
+        // ヵ ヶ → カ ケ
+        assert_eq!(apply_text_transform("ヶ", &TextTransformValue::FullSizeKana), "ケ");
+        // 普通仮名不变
+        assert_eq!(apply_text_transform("あい", &TextTransformValue::FullSizeKana), "あい");
+    }
+
     // ── BorderRadiusSpec ────────────────────────────────────────────────
 
     #[test]

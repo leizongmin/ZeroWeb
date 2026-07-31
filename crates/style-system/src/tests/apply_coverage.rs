@@ -295,6 +295,28 @@ fn test_apply_text_properties() {
 }
 
 #[test]
+fn test_apply_text_transform_full_width_and_kana() {
+    use crate::property::types::TextTransformValue;
+    // R2327：text-transform full-width / full-size-kana 须解析并写入 ComputedStyle。
+    let (ok, s) = apply("text-transform", "full-width");
+    assert!(ok, "full-width parses");
+    assert!(
+        matches!(s.text_transform, TextTransformValue::FullWidth),
+        "stored as FullWidth"
+    );
+    let (ok, s) = apply("text-transform", "full-size-kana");
+    assert!(ok, "full-size-kana parses");
+    assert!(
+        matches!(s.text_transform, TextTransformValue::FullSizeKana),
+        "stored as FullSizeKana"
+    );
+    // 回归：既有值仍工作
+    let (ok, s) = apply("text-transform", "uppercase");
+    assert!(ok);
+    assert!(matches!(s.text_transform, TextTransformValue::Uppercase));
+}
+
+#[test]
 fn test_apply_text_align_last() {
     let (ok, _) = apply("text-align-last", "justify");
     assert!(ok);

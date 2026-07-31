@@ -242,6 +242,8 @@ pub fn parse_text_transform(value: &str) -> Option<TextTransformValue> {
         "uppercase" => Some(TextTransformValue::Uppercase),
         "lowercase" => Some(TextTransformValue::Lowercase),
         "capitalize" => Some(TextTransformValue::Capitalize),
+        "full-width" => Some(TextTransformValue::FullWidth),
+        "full-size-kana" => Some(TextTransformValue::FullSizeKana),
         _ => None,
     }
 }

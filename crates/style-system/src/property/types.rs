@@ -166,6 +166,10 @@ pub enum TextTransformValue {
     Lowercase,
     /// capitalize。
     Capitalize,
+    /// full-width（CSS Text 3 §3.1：ASCII 可打印字符 U+0021–U+007E → 全角 U+FF01–U+FF5E）。
+    FullWidth,
+    /// full-size-kana（CSS Text 3 §3.1：小書き仮名 → 普通仮名）。
+    FullSizeKana,
 }
 
 impl TextTransformValue {
@@ -198,6 +202,57 @@ impl TextTransformValue {
                     prev_is_boundary = !ch.is_alphanumeric();
                 }
                 result
+            }
+            // CSS Text 3 §3.1：full-width 把 ASCII 可打印字符（U+0021–U+007E）映射到
+            // 全角形式（U+FF01–U+FF5E，偏移 +0xFEE0）；空格（U+0020）与非 ASCII 不变。
+            // driving: WPT css-text text-transform-fullwidth-001/009。
+            TextTransformValue::FullWidth => text
+                .chars()
+                .map(|c| {
+                    let u = c as u32;
+                    if (0x21..=0x7E).contains(&u) {
+                        char::from_u32(u + 0xFEE0).unwrap_or(c)
+                    } else {
+                        c
+                    }
+                })
+                .collect(),
+            // CSS Text 3 §3.1：full-size-kana 把小書き仮名（清音/濁音/半濁音/拗音の小書き）
+            // 映射到普通仮名（ Hiragana + Katakana 小書き → 同音の普通形）。driving: WPT
+            // css-text text-transform-full-size-kana-005。
+            TextTransformValue::FullSizeKana => {
+                text.chars()
+                    .map(|c| {
+                        let m = match c {
+                            // Hiragana 小書き → 普通
+                            '\u{3041}' => Some('\u{3042}'), // ぁ→あ
+                            '\u{3043}' => Some('\u{3044}'), // ぃ→い
+                            '\u{3045}' => Some('\u{3046}'), // ぅ→う
+                            '\u{3047}' => Some('\u{3048}'), // ぇ→え
+                            '\u{3049}' => Some('\u{304A}'), // ぉ→お
+                            '\u{3063}' => Some('\u{3064}'), // っ→つ
+                            '\u{3083}' => Some('\u{3084}'), // ゃ→や
+                            '\u{3085}' => Some('\u{3086}'), // ゅ→ゆ
+                            '\u{3087}' => Some('\u{3088}'), // ょ→よ
+                            '\u{308E}' => Some('\u{308F}'), // ゎ→わ
+                            // Katakana 小書き → 普通
+                            '\u{30A1}' => Some('\u{30A2}'), // ァ→ア
+                            '\u{30A3}' => Some('\u{30A4}'), // ィ→イ
+                            '\u{30A5}' => Some('\u{30A6}'), // ゥ→ウ
+                            '\u{30A7}' => Some('\u{30A8}'), // ェ→エ
+                            '\u{30A9}' => Some('\u{30AA}'), // ォ→オ
+                            '\u{30C3}' => Some('\u{30C4}'), // ッ→ツ
+                            '\u{30E3}' => Some('\u{30E4}'), // ャ→ヤ
+                            '\u{30E5}' => Some('\u{30E6}'), // ュ→ユ
+                            '\u{30E7}' => Some('\u{30E8}'), // ョ→ヨ
+                            '\u{30EE}' => Some('\u{30EF}'), // ヮ→ワ
+                            '\u{30F5}' => Some('\u{30AB}'), // ヵ→カ
+                            '\u{30F6}' => Some('\u{30B1}'), // ヶ→ケ
+                            _ => None,
+                        };
+                        m.unwrap_or(c)
+                    })
+                    .collect()
             }
         }
     }
