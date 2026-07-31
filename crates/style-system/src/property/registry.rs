@@ -47,8 +47,10 @@ impl PropertyRegistry {
             | "border-bottom-right-radius"
             | "border-bottom-left-radius" => Some(Length(LengthValue::Px(0.0))),
 
-            // Outline
-            "outline-width" | "outline-offset" => Some(Length(LengthValue::Px(0.0))),
+            // Outline — outline-width 初始 = medium(3px)（CSS UI，与 border-width 同）；
+            // outline-offset 初始 = 0。outline-style 初始 none 抑制绘制。
+            "outline-width" => Some(Length(LengthValue::Px(3.0))),
+            "outline-offset" => Some(Length(LengthValue::Px(0.0))),
             "outline-style" => Some(OutlineStyle(OutlineStyleValue::None)),
             "outline-color" => Some(Color(ColorValue::Rgba(0, 0, 0, 255))),
 

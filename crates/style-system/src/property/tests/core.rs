@@ -1217,7 +1217,8 @@ fn test_grid_auto_known_properties() {
 #[test]
 fn test_computed_style_default_outline() {
     let style = ComputedStyle::default();
-    assert_eq!(style.outline_width, LengthValue::Px(0.0));
+    // outline-width 初始 = medium(3px)（CSS UI，与 border-width 同）；outline-style:none 抑制绘制。
+    assert_eq!(style.outline_width, LengthValue::Px(3.0));
     assert_eq!(style.outline_style, OutlineStyleValue::None);
     assert_eq!(style.outline_color, ColorValue::Rgba(0, 0, 0, 255));
     assert_eq!(style.outline_offset, LengthValue::Px(0.0));

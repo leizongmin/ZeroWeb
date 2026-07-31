@@ -513,6 +513,19 @@ mod tests {
     }
 
     #[test]
+    fn test_outline_width_initial_is_medium_3px() {
+        // CSS UI §outline-width 初始值 = medium(3px)，与 border-width 初始 medium=3px 一致。
+        // outline-style 初始 none 抑制绘制，故默认元素无可见 outline，但计算值须为 3px。
+        // 修复前 ZW 初始 = 0px（偏离 spec + 与 border-width 不一致）。
+        let default = ComputedStyle::default();
+        assert_eq!(
+            default.outline_width,
+            LengthValue::Px(3.0),
+            "outline-width 初始应为 medium=3px"
+        );
+    }
+
+    #[test]
     fn test_resolve_var_simple() {
         let mut custom = HashMap::new();
         custom.insert("--main-color".to_string(), "red".to_string());

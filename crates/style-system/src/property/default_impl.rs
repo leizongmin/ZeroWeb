@@ -64,8 +64,11 @@ impl Default for ComputedStyle {
             border_bottom_right_radius: LengthValue::Px(0.0),
             border_bottom_left_radius: LengthValue::Px(0.0),
 
-            // Outline
-            outline_width: LengthValue::Px(0.0),
+            // Outline — outline-width 初始值 = medium（CSS UI §outline-width），ZeroWeb 取 3px
+            //（与 border-width 初始 medium=3px 一致）。默认无 outline：outline-style 初始 = none，
+            // painter 在 style=none 时不绘制 outline（test_paint_outline_style_none_no_fill），
+            // 故默认元素无可见 outline。
+            outline_width: LengthValue::Px(3.0),
             outline_style: OutlineStyleValue::None,
             outline_color: initial_color.clone(),
             outline_offset: LengthValue::Px(0.0),
