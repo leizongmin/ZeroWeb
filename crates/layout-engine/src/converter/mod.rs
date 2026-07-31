@@ -239,7 +239,15 @@ pub fn computed_style_to_taffy(
                 if matches!(s, BorderStyleValue::None | BorderStyleValue::Hidden) {
                     convert_length_to_lp(&LengthValue::Px(0.0), vw, vh)
                 } else {
-                    convert_length_to_lp(w, vw, vh)
+                    // CSS Backgrounds §3：非零 border-width 至少 1 设备像素——亚像素值
+                    //（0 < v < 1）向上取整到 1px，否则光栅化不可见。driving: css-backgrounds
+                    // border-width-small-values-001（`border: 0.1px solid` mismatch：不可见→应可见）。
+                    // em/rem/vh/vw 与不含% calc 已在 computed 期解析为 Px，故此处仅 Px 亚像素需归一。
+                    let w_norm = match w {
+                        LengthValue::Px(v) if *v > 0.0 && *v < 1.0 => LengthValue::Px(1.0),
+                        _ => w.clone(),
+                    };
+                    convert_length_to_lp(&w_norm, vw, vh)
                 }
             };
             taffy::geometry::Rect {

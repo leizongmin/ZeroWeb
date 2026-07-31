@@ -157,6 +157,69 @@ fn test_convert_margin_padding_border() {
     assert_eq!(taffy_style.border.top, taffy::style::LengthPercentage::length(1.0));
 }
 
+/// R2319：CSS Backgrounds §3——非零 border-width 至少 1 设备像素（亚像素 0<v<1 → 1px 可见）。
+/// `border: 0.1px solid` 此前转 0.1px 光栅化不可见；现归一到 1px。
+#[test]
+fn test_r2319_border_width_subpixel_minimum_1px() {
+    let mut style = ComputedStyle::default();
+    style.display = DisplayValue::Block;
+    // 亚像素（0.1/0.5/0.9）→ 1px
+    style.border_top_width = LengthValue::Px(0.1);
+    style.border_right_width = LengthValue::Px(0.5);
+    style.border_bottom_width = LengthValue::Px(0.9);
+    style.border_left_width = LengthValue::Px(0.0);
+    style.border_top_style = zero_style_system::BorderStyleValue::Solid;
+    style.border_right_style = zero_style_system::BorderStyleValue::Solid;
+    style.border_bottom_style = zero_style_system::BorderStyleValue::Solid;
+    style.border_left_style = zero_style_system::BorderStyleValue::Solid;
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(
+        taffy_style.border.top,
+        taffy::style::LengthPercentage::length(1.0),
+        "0.1px -> 1px"
+    );
+    assert_eq!(
+        taffy_style.border.right,
+        taffy::style::LengthPercentage::length(1.0),
+        "0.5px -> 1px"
+    );
+    assert_eq!(
+        taffy_style.border.bottom,
+        taffy::style::LengthPercentage::length(1.0),
+        "0.9px -> 1px"
+    );
+    // 0px 保持 0（不强制为 1）
+    assert_eq!(
+        taffy_style.border.left,
+        taffy::style::LengthPercentage::length(0.0),
+        "0px stays 0"
+    );
+
+    // 回归：≥1px 整数边框不变
+    let mut s2 = ComputedStyle::default();
+    s2.display = DisplayValue::Block;
+    s2.border_top_width = LengthValue::Px(2.0);
+    s2.border_top_style = zero_style_system::BorderStyleValue::Solid;
+    let t2 = computed_style_to_taffy(&s2, None, 800.0, 600.0);
+    assert_eq!(
+        t2.border.top,
+        taffy::style::LengthPercentage::length(2.0),
+        "2px unchanged"
+    );
+
+    // 回归：border-style:none 时 width=0（亚像素也不强制）
+    let mut s3 = ComputedStyle::default();
+    s3.display = DisplayValue::Block;
+    s3.border_top_width = LengthValue::Px(0.5);
+    s3.border_top_style = zero_style_system::BorderStyleValue::None;
+    let t3 = computed_style_to_taffy(&s3, None, 800.0, 600.0);
+    assert_eq!(
+        t3.border.top,
+        taffy::style::LengthPercentage::length(0.0),
+        "none style -> 0"
+    );
+}
+
 /// 测试 flex 相关属性转换。
 #[test]
 fn test_convert_flex_properties() {
