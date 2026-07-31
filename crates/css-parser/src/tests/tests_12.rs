@@ -193,6 +193,51 @@ fn test_linear_gradient_color_stop_position() {
 }
 
 #[test]
+fn test_r2318_conic_angle_stop_position() {
+    // CSS Images 4 §4.3.3：conic 色标位置可为 <angle>（deg/grad/rad/turn），% 相对 360deg。
+    // 此前 parse_stop_position 仅长度/%/calc → `green 0% 180deg` 整条 conic None。
+    // 180deg → 50%（半圈），360deg → 100%（满圈）。
+    let g = parse_gradient("conic-gradient(green 0% 180deg, blue 180deg)").expect("conic angle stop must parse");
+    let stops = match g {
+        GradientValue::Conic(cg) => cg.stops,
+        _ => panic!("expected conic gradient"),
+    };
+    // green 0% 180deg → green@0% + green@50%；blue 180deg → blue@50%
+    assert_eq!(stops.len(), 3);
+    let assert_pct = |stop: &crate::values::GradientColorStop, expect: f64| match &stop.position {
+        Some(LengthValue::Percentage(p)) => assert!(((*p) - expect).abs() < 0.01, "got {p} expect {expect}"),
+        other => panic!("expected Percentage({expect}), got {other:?}"),
+    };
+    assert_pct(&stops[0], 0.0);
+    assert_pct(&stops[1], 50.0);
+    assert_pct(&stops[2], 50.0);
+
+    // 单角度位置 + 满圈
+    let g2 = parse_gradient("conic-gradient(lime 360deg, blue)").expect("must parse");
+    let s2 = match g2 {
+        GradientValue::Conic(cg) => cg.stops,
+        _ => panic!("expected conic"),
+    };
+    assert_eq!(s2.len(), 2);
+    assert_pct(&s2[0], 100.0);
+
+    // grad/rad/turn 也接受（400grad=360deg→100%, 1turn→100%, πrad=180deg→50%）
+    assert!(parse_gradient("conic-gradient(red 400grad, blue)").is_some());
+    assert!(parse_gradient("conic-gradient(red 1turn, blue)").is_some());
+    assert!(parse_gradient("conic-gradient(red 3.14159rad, blue)").is_some());
+
+    // 关键回归：linear/radial 仍**拒绝**角度位置（仅长度/%）—— is_conic=false
+    assert!(
+        parse_gradient("linear-gradient(red 180deg, blue)").is_none(),
+        "linear must reject angle position"
+    );
+    assert!(
+        parse_gradient("radial-gradient(red 90deg, blue)").is_none(),
+        "radial must reject angle position"
+    );
+}
+
+#[test]
 fn test_r2315_gradient_double_position_color_stop() {
     // CSS Images 4 双位置色标 `red 0% 50%` ≡ 两个同色色标 red@0% + red@50%（硬过渡）。
     // 此前 split_color_stop_position 在首个空格切分 → 位置部分 "0% 50%" 解析失败 → 整条渐变 None。

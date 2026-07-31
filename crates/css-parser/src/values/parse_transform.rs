@@ -899,7 +899,7 @@ fn parse_linear_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
         stop_start = 1;
     }
 
-    let stops = parse_color_stops(&args[stop_start..])?;
+    let stops = parse_color_stops(&args[stop_start..], false)?;
     if stops.is_empty() {
         return None;
     }
@@ -977,7 +977,7 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
         stop_start = 1;
     }
 
-    let stops = parse_color_stops(&args[stop_start..])?;
+    let stops = parse_color_stops(&args[stop_start..], false)?;
     if stops.is_empty() {
         return None;
     }
@@ -1110,7 +1110,7 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
         stop_start = 1;
     }
 
-    let stops = parse_color_stops(&args[stop_start..])?;
+    let stops = parse_color_stops(&args[stop_start..], true)?;
     if stops.is_empty() {
         return None;
     }
@@ -1189,14 +1189,14 @@ fn split_gradient_args(inner: &str) -> Option<Vec<&str>> {
 }
 
 /// 解析色标列表。
-fn parse_color_stops(args: &[&str]) -> Option<Vec<GradientColorStop>> {
+fn parse_color_stops(args: &[&str], is_conic: bool) -> Option<Vec<GradientColorStop>> {
     let mut stops = Vec::new();
     for arg in args {
         let arg = arg.trim();
         if arg.is_empty() {
             continue;
         }
-        stops.extend(parse_color_stop(arg)?);
+        stops.extend(parse_color_stop(arg, is_conic)?);
     }
     Some(stops)
 }
@@ -1205,7 +1205,12 @@ fn parse_color_stops(args: &[&str]) -> Option<Vec<GradientColorStop>> {
 ///
 /// 返回 1 个或 2 个色标：CSS Images 4 双位置（`red 0% 50%`）展开为两个同色色标
 /// `red@0%` + `red@50%`（硬过渡）。多于 2 个位置非法 → None。
-fn parse_color_stop(s: &str) -> Option<Vec<GradientColorStop>> {
+///
+/// `is_conic` 为真时（conic-gradient），色标位置额外接受 `<angle>`（deg/grad/rad/turn）：
+/// CSS Images 4 §4.3.3 规定 conic 色标位置为 `<angle-percentage>`，% 相对 360deg。
+/// 角度归一为 Percentage(rad/2π×100)（180deg→50%、360deg→100%），与 conic 渲染的 t∈[0,1) 一致。
+/// driving: R2318 css-images multiple-position-color-stop-conic（green 0% 180deg）。
+fn parse_color_stop(s: &str, is_conic: bool) -> Option<Vec<GradientColorStop>> {
     let s = s.trim();
 
     // "color [position] [position]"：在括号深度 0 处切分 color 与位置部分
@@ -1217,7 +1222,7 @@ fn parse_color_stop(s: &str) -> Option<Vec<GradientColorStop>> {
         let pos_tokens = super::parse_extended_visual::split_top_level_whitespace(pos_str);
         match pos_tokens.len() {
             1 => {
-                let position = parse_stop_position(&pos_tokens[0])?;
+                let position = parse_stop_position_maybe_angle(&pos_tokens[0], is_conic)?;
                 return Some(vec![GradientColorStop {
                     color,
                     position: Some(position),
@@ -1225,8 +1230,8 @@ fn parse_color_stop(s: &str) -> Option<Vec<GradientColorStop>> {
             }
             2 => {
                 // CSS Images 4 双位置：同色两色标
-                let p1 = parse_stop_position(&pos_tokens[0])?;
-                let p2 = parse_stop_position(&pos_tokens[1])?;
+                let p1 = parse_stop_position_maybe_angle(&pos_tokens[0], is_conic)?;
+                let p2 = parse_stop_position_maybe_angle(&pos_tokens[1], is_conic)?;
                 return Some(vec![
                     GradientColorStop {
                         color: color.clone(),
@@ -1246,6 +1251,20 @@ fn parse_color_stop(s: &str) -> Option<Vec<GradientColorStop>> {
     // 仅颜色
     let color = parse_color(s)?;
     Some(vec![GradientColorStop { color, position: None }])
+}
+
+/// 解析色标位置：先试长度/%/calc（[`parse_stop_position`]）；conic 额外接受裸 `<angle>`。
+fn parse_stop_position_maybe_angle(s: &str, is_conic: bool) -> Option<LengthValue> {
+    if let Some(lv) = parse_stop_position(s) {
+        return Some(lv);
+    }
+    if is_conic {
+        if let Some(rad) = parse_angle_to_radians(s.trim()) {
+            let pct = rad / (2.0 * std::f64::consts::PI) * 100.0;
+            return Some(LengthValue::Percentage(pct));
+        }
+    }
+    None
 }
 
 /// 在括号深度 0 处切分 `<color> <position-part>`，返回 `(color, position-part)`。
