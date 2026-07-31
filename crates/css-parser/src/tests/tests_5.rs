@@ -1086,10 +1086,13 @@ fn test_edge_parse_background_image_quoted_url() {
 }
 
 #[test]
-/// 测试 parse_background_image 大小写 URL。
+/// 测试 parse_background_image 大小写 URL（CSS Values §4 函数名大小写不敏感）。
 fn test_edge_parse_background_image_case_insensitive() {
-    // "URL(...)" is not recognized — starts_with("url(") is case-sensitive
-    assert_eq!(parse_background_image("URL(image.png)"), None);
+    // CSS Values §4：URL(...) ≡ url(...)，函数名大小写不敏感；URL 内容（路径）保持原样。
+    assert_eq!(
+        parse_background_image("URL(image.png)"),
+        Some(BackgroundImageValue::Url("image.png".to_string()))
+    );
     // "url(...)" is the valid form
     let result = parse_background_image("url(image.png)");
     assert_eq!(result, Some(BackgroundImageValue::Url("image.png".to_string())));

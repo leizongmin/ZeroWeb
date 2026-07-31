@@ -529,7 +529,7 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
         return Some(ContentValue::Counter { name, style });
     }
     // url(...) — generated content image（R1988）。支持引号包裹的 url："url('x.png')" / 'url("x.png")'。
-    if input.starts_with("url(") && input.ends_with(')') {
+    if (input.len() >= 4 && input[..4].eq_ignore_ascii_case("url(")) && input.ends_with(')') {
         let inner = input[4..input.len() - 1].trim();
         if inner.is_empty() {
             return None;

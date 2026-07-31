@@ -21,7 +21,7 @@ pub fn parse_border_image_source(value: &str) -> Option<BorderImageSourceValue> 
     if value.eq_ignore_ascii_case("none") {
         return Some(BorderImageSourceValue::None);
     }
-    if value.starts_with("url(") && value.ends_with(')') {
+    if (value.len() >= 4 && value[..4].eq_ignore_ascii_case("url(")) && value.ends_with(')') {
         let inner = value.get(4..value.len() - 1)?;
         let url = inner.trim();
         let url = if (url.starts_with('"') && url.ends_with('"')) || (url.starts_with('\'') && url.ends_with('\'')) {
@@ -351,7 +351,7 @@ pub fn parse_list_style_image(value: &str) -> Option<ListStyleImageValue> {
     if value.eq_ignore_ascii_case("none") {
         return Some(ListStyleImageValue::None);
     }
-    if value.starts_with("url(") && value.ends_with(')') {
+    if (value.len() >= 4 && value[..4].eq_ignore_ascii_case("url(")) && value.ends_with(')') {
         let inner = value.get(4..value.len() - 1)?;
         let url = inner.trim();
         let url = if (url.starts_with('"') && url.ends_with('"')) || (url.starts_with('\'') && url.ends_with('\'')) {

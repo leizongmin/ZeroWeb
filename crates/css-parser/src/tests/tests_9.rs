@@ -750,6 +750,15 @@ fn test_content_url() {
     );
     // 空 url() → None。
     assert!(parse_content("url()").is_none());
+    // CSS Values §4：函数名大小写不敏感（URL/Url ≡ url）；URL 内容（路径）大小写敏感，保持原样。
+    assert_eq!(
+        parse_content("URL('bullet.svg')"),
+        Some(ContentValue::Url("bullet.svg".to_string()))
+    );
+    assert_eq!(
+        parse_content(r#"Url("x/y.gif")"#),
+        Some(ContentValue::Url("x/y.gif".to_string()))
+    );
 }
 
 #[test]

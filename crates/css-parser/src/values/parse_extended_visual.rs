@@ -549,7 +549,7 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
     }
 
     // 解析 url(...) 函数
-    if value.starts_with("url(") && value.ends_with(')') {
+    if (value.len() >= 4 && value[..4].eq_ignore_ascii_case("url(")) && value.ends_with(')') {
         let inner = value.get(4..value.len() - 1)?;
         let url = inner.trim();
         // 去除可选的引号
