@@ -130,7 +130,45 @@ pub fn compute_inherited_style_with_quirks(
         }
     }
 
+    // CSS Text 3 §6.1：`match-parent` 在 compute 阶段按父元素定型——继承父元素 text-align，
+    // 但父值为 start/end 时按**父 direction** 解析为 left/right（区别于普通 inherit：inherit
+    // 保留 start/end 由子元素自身 direction 在 layout 解析）。根元素无父 → initial (start)。
+    // 此处 parent 的 text-align 已是其 computed 值（不会再是 MatchParent）。
+    if style.text_align == crate::property::TextAlignValue::MatchParent {
+        style.text_align = match parent_style {
+            Some(parent) => resolve_match_parent(&parent.text_align, &parent.direction),
+            None => crate::property::TextAlignValue::Start,
+        };
+    }
+
     style
+}
+
+/// 把 `match-parent` 解析为具体 text-align 值：继承 origin，但 start/end 按父 direction
+/// 解析（CSS Text 3 §6.1）。origin 须为父元素 computed text-align（非 MatchParent）。
+fn resolve_match_parent(
+    origin: &crate::property::TextAlignValue,
+    direction: &crate::property::DirectionValue,
+) -> crate::property::TextAlignValue {
+    use crate::property::{DirectionValue, TextAlignValue};
+    let is_rtl = matches!(direction, DirectionValue::Rtl);
+    match origin {
+        TextAlignValue::Start => {
+            if is_rtl {
+                TextAlignValue::Right
+            } else {
+                TextAlignValue::Left
+            }
+        }
+        TextAlignValue::End => {
+            if is_rtl {
+                TextAlignValue::Left
+            } else {
+                TextAlignValue::Right
+            }
+        }
+        other => other.clone(),
+    }
 }
 
 /// CSS 全局关键字解析结果。
@@ -496,6 +534,66 @@ mod tests {
         let cascaded = HashMap::new();
         let style = compute_inherited_style(Some(&parent), &cascaded);
         assert_eq!(style.text_align, crate::property::TextAlignValue::Center);
+    }
+
+    #[test]
+    /// text-align: match-parent — 继承父值，但 start/end 按父 direction 解析（CSS Text 3 §6.1）
+    fn test_text_align_match_parent() {
+        use crate::property::{DirectionValue, TextAlignValue};
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("text-align".to_string(), "match-parent".to_string());
+
+        // 父 LTR + start → match-parent 解析为 Left
+        let mut parent_ltr = ComputedStyle::default();
+        parent_ltr.text_align = TextAlignValue::Start;
+        parent_ltr.direction = DirectionValue::Ltr;
+        let style = compute_inherited_style(Some(&parent_ltr), &cascaded);
+        assert_eq!(
+            style.text_align,
+            TextAlignValue::Left,
+            "match-parent: parent LTR start → Left"
+        );
+
+        // 父 RTL + start → Right
+        let mut parent_rtl = ComputedStyle::default();
+        parent_rtl.text_align = TextAlignValue::Start;
+        parent_rtl.direction = DirectionValue::Rtl;
+        let style = compute_inherited_style(Some(&parent_rtl), &cascaded);
+        assert_eq!(
+            style.text_align,
+            TextAlignValue::Right,
+            "match-parent: parent RTL start → Right"
+        );
+
+        // 父 RTL + end → Left
+        let mut parent_end = ComputedStyle::default();
+        parent_end.text_align = TextAlignValue::End;
+        parent_end.direction = DirectionValue::Rtl;
+        let style = compute_inherited_style(Some(&parent_end), &cascaded);
+        assert_eq!(
+            style.text_align,
+            TextAlignValue::Left,
+            "match-parent: parent RTL end → Left"
+        );
+
+        // 父值非 start/end（Center）→ 直接继承 Center
+        let mut parent_center = ComputedStyle::default();
+        parent_center.text_align = TextAlignValue::Center;
+        let style = compute_inherited_style(Some(&parent_center), &cascaded);
+        assert_eq!(
+            style.text_align,
+            TextAlignValue::Center,
+            "match-parent: parent center inherited as-is"
+        );
+
+        // 根元素（无父）match-parent → initial (start)
+        let style = compute_inherited_style(None, &cascaded);
+        assert_eq!(
+            style.text_align,
+            TextAlignValue::Start,
+            "match-parent root → initial start"
+        );
     }
 
     #[test]

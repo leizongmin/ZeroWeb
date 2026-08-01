@@ -92,6 +92,15 @@ pub fn resolve_text_align(style: Option<&ComputedStyle>) -> TextAlign {
                 TextAlign::Right
             }
         }
+        // match-parent 正常在 compute 阶段已解析为具体值；若意外到达 layout（如绕过
+        // compute 的直构 style），按 Start 语义（is_rtl ? Right : Left）兜底。
+        TextAlignValue::MatchParent => {
+            if is_rtl {
+                TextAlign::Right
+            } else {
+                TextAlign::Left
+            }
+        }
     }
 }
 

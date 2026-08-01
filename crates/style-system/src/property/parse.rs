@@ -210,6 +210,7 @@ pub fn parse_text_align(value: &str) -> Option<TextAlignValue> {
         "justify" => Some(TextAlignValue::Justify),
         "start" => Some(TextAlignValue::Start),
         "end" => Some(TextAlignValue::End),
+        "match-parent" => Some(TextAlignValue::MatchParent),
         _ => None,
     }
 }

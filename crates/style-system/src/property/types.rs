@@ -103,6 +103,13 @@ pub enum TextAlignValue {
     Start,
     /// end。
     End,
+    /// match-parent（CSS Text 3 §6.1）。
+    ///
+    /// 行为同 inherit，但若继承到的值为 start/end，按**父元素 direction** 解析为 left/right
+    /// （而非继承 start/end 由子元素自身 direction 在 layout 解析）。在 compute 阶段
+    /// （`compute_inherited_style_with_quirks`）提前定型为具体 Left/Right/Center/Justify，
+    /// 故正常路径 layout 阶段不会见到 MatchParent。
+    MatchParent,
 }
 
 /// CSS text-decoration 值。
