@@ -143,8 +143,8 @@ fn oklab_to_srgb_u8(l: f64, a: f64, b: f64) -> (u8, u8, u8) {
 // ── 色相插值（CSS Color 4 §13.5）──────────────────────────────────────
 
 /// 计算两色相 h0→h1 在指定 hue method 下的插值色相（h0 + t·delta）。
-/// h0/h1 单位为度 [0,360)。
-fn interp_hue(h0: f64, h1: f64, t: f64, method: HueMethod) -> f64 {
+/// h0/h1 单位为度 [0,360)。pub 供 engine color-mix 复用（R2381）。
+pub fn interp_hue(h0: f64, h1: f64, t: f64, method: HueMethod) -> f64 {
     // delta 归一到所需弧段
     let delta = match method {
         HueMethod::Shorter => {

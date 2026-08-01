@@ -1,12 +1,14 @@
 //! 颜色转换工具 — CSS ColorValue 到渲染层 Color 的转换。
 
 use zero_css_parser::values::{
-    ColorMixSpace, ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec, convert_predefined_to_srgb,
-    lab_to_srgb_u8, lch_to_srgb_u8, oklab_to_srgb_u8, oklch_to_srgb_u8, srgb_linear_to_srgb_u8, srgb_u8_to_lab,
-    srgb_u8_to_lch, srgb_u8_to_oklab, srgb_u8_to_oklch, srgb_u8_to_predefined, srgb_u8_to_srgb_linear, srgb_u8_to_xyz,
-    xyz_to_srgb_u8,
+    ColorHueMethod, ColorMixSpace, ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec,
+    convert_predefined_to_srgb, lab_to_srgb_u8, lch_to_srgb_u8, oklab_to_srgb_u8, oklch_to_srgb_u8,
+    srgb_linear_to_srgb_u8, srgb_u8_to_lab, srgb_u8_to_lch, srgb_u8_to_oklab, srgb_u8_to_oklch, srgb_u8_to_predefined,
+    srgb_u8_to_srgb_linear, srgb_u8_to_xyz, xyz_to_srgb_u8,
 };
 use zero_render_foundation::color::Color;
+use zero_render_foundation::color_space::interp_hue;
+use zero_render_foundation::primitive::HueMethod;
 
 /// 将 ComputedStyle 的 ColorValue 转换为 render-foundation 的 Color。
 ///
@@ -46,7 +48,7 @@ pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> 
                     srgb_u8_to_srgb_linear,
                     srgb_linear_to_srgb_u8,
                 ),
-                ColorMixSpace::Lch => mix_lch(c1, spec.c1.percentage, c2, spec.c2.percentage),
+                ColorMixSpace::Lch => mix_lch(c1, spec.c1.percentage, c2, spec.c2.percentage, spec.hue),
                 ColorMixSpace::Lab => mix_cartesian(
                     c1,
                     spec.c1.percentage,
@@ -63,7 +65,7 @@ pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> 
                     srgb_u8_to_oklab,
                     oklab_to_srgb_u8,
                 ),
-                ColorMixSpace::OkLch => mix_oklch(c1, spec.c1.percentage, c2, spec.c2.percentage),
+                ColorMixSpace::OkLch => mix_oklch(c1, spec.c1.percentage, c2, spec.c2.percentage, spec.hue),
                 ColorMixSpace::Xyz => mix_cartesian(
                     c1,
                     spec.c1.percentage,
@@ -126,12 +128,11 @@ fn mix_srgb(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
     )
 }
 
-/// `color-mix(in lch, c1 [p1], c2 [p2])` 的 LCH 极坐标插值（CSS Color 5）。
+/// `color-mix(in lch [<method> hue], c1 [p1], c2 [p2])` 的 LCH 极坐标插值（CSS Color 4）。
 ///
-/// 两色转 CIE LCH-D50，L/C 线性插值、h 色相**短弧**插值，再回转 sRGB。百分比归一化同 srgb；
-/// alpha 独立线性插值（polar 空间不对色度通道做 premultiply；不透明色与 srgb 插值一致）。
-/// driving: css-color color-mix-percents-01/02（purple/plum 50-50 → rgb(175,92,174)）。
-fn mix_lch(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
+/// 两色转 CIE LCH-D50，L/C 线性插值、h 色相按 method 插值（默认短弧），再回转 sRGB。
+/// 百分比归一化同 srgb；alpha 独立线性插值。driving: css-color color-mix-percents-01/02。
+fn mix_lch(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>, hue: ColorHueMethod) -> Color {
     let (p1, p2) = match (p1, p2) {
         (Some(a), Some(b)) => (a, b),
         (Some(a), None) => (a, 100.0 - a),
@@ -148,9 +149,8 @@ fn mix_lch(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
     let (l2, ch2, h2) = srgb_u8_to_lch(c2.r, c2.g, c2.b);
     let l = l1 + (l2 - l1) * w2;
     let c = ch1 + (ch2 - ch1) * w2;
-    // 色相短弧：取 |Δh| ≤ 180 的方向插值。
-    let dh = ((h2 - h1 + 540.0) % 360.0) - 180.0;
-    let h = (h1 + dh * w2 + 360.0) % 360.0;
+    // 色相按 method 插值（复用 gradient 的 interp_hue，R2381）。
+    let h = interp_hue(h1, h2, w2, map_hue_method(hue));
     let (r, g, b) = lch_to_srgb_u8(l, c, h);
     // alpha 独立线性插值（premultiplied 权重同 srgb；不透明时 alpha_mult=1）。
     let a1 = c1.a as f64 / 255.0;
@@ -198,10 +198,10 @@ fn mix_cartesian(
     Color::rgba(r, g, b, (final_a * 255.0).round().clamp(0.0, 255.0) as u8)
 }
 
-/// `color-mix(in oklch, c1 [p1], c2 [p2])` 的 OKLCH 极坐标插值（R2376，CSS Color 4 §12）。
+/// `color-mix(in oklch [<method> hue], c1 [p1], c2 [p2])` 的 OKLCH 极坐标插值（CSS Color 4 §12）。
 ///
-/// 与 `mix_lch` 同构（L/C 线性、h 色相短弧），仅换用 OKLab 系转换。
-fn mix_oklch(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
+/// 与 `mix_lch` 同构（L/C 线性、h 色相按 method 插值），仅换用 OKLab 系转换。
+fn mix_oklch(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>, hue: ColorHueMethod) -> Color {
     let (p1, p2) = match (p1, p2) {
         (Some(a), Some(b)) => (a, b),
         (Some(a), None) => (a, 100.0 - a),
@@ -218,15 +218,25 @@ fn mix_oklch(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
     let (l2, ch2, h2) = srgb_u8_to_oklch(c2.r, c2.g, c2.b);
     let l = l1 + (l2 - l1) * w2;
     let c = ch1 + (ch2 - ch1) * w2;
-    // 色相短弧：取 |Δh| ≤ 180 的方向插值。
-    let dh = ((h2 - h1 + 540.0) % 360.0) - 180.0;
-    let h = (h1 + dh * w2 + 360.0) % 360.0;
+    // 色相按 method 插值（复用 gradient 的 interp_hue，R2381）。
+    let h = interp_hue(h1, h2, w2, map_hue_method(hue));
     let (r, g, b) = oklch_to_srgb_u8(l, c, h);
     let a1 = c1.a as f64 / 255.0;
     let a2 = c2.a as f64 / 255.0;
     let pa = a1 * (1.0 - w2) + a2 * w2;
     let final_a = (pa * alpha_mult).clamp(0.0, 1.0);
     Color::rgba(r, g, b, (final_a * 255.0).round().clamp(0.0, 255.0) as u8)
+}
+
+/// CSS parser `ColorHueMethod` → render-foundation `HueMethod`（color-mix 复用 gradient 的
+/// `interp_hue` 数学）。与 helpers.rs gradient 映射一致。R2381。
+fn map_hue_method(h: ColorHueMethod) -> HueMethod {
+    match h {
+        ColorHueMethod::Shorter => HueMethod::Shorter,
+        ColorHueMethod::Longer => HueMethod::Longer,
+        ColorHueMethod::Increasing => HueMethod::Increasing,
+        ColorHueMethod::Decreasing => HueMethod::Decreasing,
+    }
 }
 
 /// 解析 RCS（CSS Color 5 相对色）非 identity：origin 已解析为 sRGB Color，按函数通道语义计算输出。
@@ -628,7 +638,7 @@ mod tests {
 #[test]
 /// R2267：resolve_color_current 对 color-mix Mix 的解析（currentColor 按元素色 + sRGB 插值）。
 fn test_resolve_color_mix() {
-    use zero_css_parser::values::{ColorMixComponent, ColorMixSpace, ColorMixSpec};
+    use zero_css_parser::values::{ColorHueMethod, ColorMixComponent, ColorMixSpace, ColorMixSpec};
     // mix(green 50%, green) = green（001 场景：currentColor 在子元素按 green 解析）
     let both_green = ColorValue::Mix(Box::new(ColorMixSpec {
         c1: ColorMixComponent {
@@ -640,6 +650,7 @@ fn test_resolve_color_mix() {
             percentage: None,
         },
         space: ColorMixSpace::Srgb,
+        hue: ColorHueMethod::Shorter,
     }));
     let green_elem = ColorValue::Rgba(0, 128, 0, 255);
     let r = resolve_color_current(&both_green, &green_elem);
@@ -660,6 +671,7 @@ fn test_resolve_color_mix() {
             percentage: Some(50.0),
         },
         space: ColorMixSpace::Srgb,
+        hue: ColorHueMethod::Shorter,
     }));
     let r = resolve_color_current(&mix_rg, &ColorValue::CurrentColor);
     assert_eq!((r.r, r.g, r.b), (128, 64, 0), "mix(red 50%, green 50%) = rgb(128,64,0)");
@@ -670,7 +682,7 @@ fn test_resolve_color_mix() {
 /// parse 返回 None → 颜色回退；现 resolve_color_current 产出真实插值色（介于两端、非回退黑、
 /// 同色=identity）。
 fn test_resolve_color_mix_lab_oklab_oklch() {
-    use zero_css_parser::values::{ColorMixComponent, ColorMixSpace, ColorMixSpec};
+    use zero_css_parser::values::{ColorHueMethod, ColorMixComponent, ColorMixSpace, ColorMixSpec};
     let black_elem = ColorValue::Rgba(0, 0, 0, 255);
     // red 50% ↔ blue 50% → 介于两端、非黑、非红、非蓝
     let mk = |space| {
@@ -684,6 +696,7 @@ fn test_resolve_color_mix_lab_oklab_oklch() {
                 percentage: Some(50.0),
             },
             space,
+            hue: ColorHueMethod::Shorter,
         }))
     };
     for space in [
@@ -710,6 +723,7 @@ fn test_resolve_color_mix_lab_oklab_oklch() {
                 percentage: Some(50.0),
             },
             space,
+            hue: ColorHueMethod::Shorter,
         }))
     };
     for space in [
@@ -928,10 +942,11 @@ fn test_rgba_to_hsl_roundtrip() {
 /// R2273：color-mix(in lch) 极坐标插值——purple/plum 50-50 应接近 WPT ref rgb(175,92,174)
 ///（color-mix-percents-01 ref = rgb(68.4898% 36.015% 68.3102%)）。driving: color-mix-percents-01/02。
 fn test_mix_lch_purple_plum() {
+    use zero_css_parser::values::ColorHueMethod;
     let purple = Color::rgb(128, 0, 128);
     let plum = Color::rgb(221, 160, 221);
     // 50%/50%（双省略也归一为 50/50）
-    let r = mix_lch(purple, Some(50.0), plum, Some(50.0));
+    let r = mix_lch(purple, Some(50.0), plum, Some(50.0), ColorHueMethod::Shorter);
     // WPT ref：≈ (175, 92, 174)。矩阵精度容差 ±4/通道。
     assert!(
         (r.r as i32 - 175).abs() <= 4 && (r.g as i32 - 92).abs() <= 4 && (r.b as i32 - 174).abs() <= 4,
@@ -941,18 +956,41 @@ fn test_mix_lch_purple_plum() {
         r.b
     );
     // 百分比省略归一化（purple, plum → 50/50）应等价
-    let r2 = mix_lch(purple, None, plum, None);
+    let r2 = mix_lch(purple, None, plum, None, ColorHueMethod::Shorter);
     assert_eq!((r2.r, r2.g, r2.b), (r.r, r.g, r.b), "省略百分比应等价 50/50");
     assert_eq!(r.a, 255, "两端不透明 → alpha 255");
     // 色相短弧：red↔yellow（0°↔60°）应走短弧 30°→橙色，非长弧走 210°
     let red = Color::rgb(255, 0, 0);
     let yellow = Color::rgb(255, 255, 0);
-    let ry = mix_lch(red, Some(50.0), yellow, Some(50.0));
+    let ry = mix_lch(red, Some(50.0), yellow, Some(50.0), ColorHueMethod::Shorter);
     assert!(
         (ry.r as i32 - 255).abs() <= 5 && ry.g > 80,
         "red↔yellow 短弧→橙色，实际 ({},{},{})",
         ry.r,
         ry.g,
         ry.b
+    );
+}
+
+#[test]
+/// R2381：color-mix hue method（CSS Color 4 §12.3）—— longer hue 应与 shorter hue 产生不同
+/// 中点色（red↔lime 短弧经黄、长弧经洋红/蓝）。验证 mix_lch 接受 hue 参数且 longer≠shorter。
+fn test_mix_lch_hue_method_longer_vs_shorter() {
+    use zero_css_parser::values::ColorHueMethod;
+    let red = Color::rgb(255, 0, 0);
+    let lime = Color::rgb(0, 255, 0);
+    let shorter = mix_lch(red, Some(50.0), lime, Some(50.0), ColorHueMethod::Shorter);
+    let longer = mix_lch(red, Some(50.0), lime, Some(50.0), ColorHueMethod::Longer);
+    // 短弧 red↔lime 中点偏黄/橙（r、g 都高）；长弧绕远路经洋红/蓝（b 明显高于短弧）。
+    assert_ne!(
+        (shorter.r, shorter.g, shorter.b),
+        (longer.r, longer.g, longer.b),
+        "longer hue 应与 shorter 产生不同中点色"
+    );
+    assert!(
+        longer.b > shorter.b + 20,
+        "长弧中点应更蓝（绕洋红/蓝），shorter={:?} longer={:?}",
+        shorter,
+        longer
     );
 }

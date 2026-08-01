@@ -1003,10 +1003,12 @@ fn top_level_byte_index(s: &str, target: u8) -> Option<usize> {
     None
 }
 
-/// 解析 `color-mix(in <space>, <c1> [<p1>], <c2> [<p2>])`（CSS Color 5）。
+/// 解析 `color-mix(in <space> [<method> hue], <c1> [<p1>], <c2> [<p2>])`（CSS Color 4）。
 ///
-/// 仅 `in srgb` 支持；分量 `<color> [<百分比>]`，百分比省略按 spec 默认（双省略=50/50）。
-/// currentColor 保留未解析（paint 时按元素色解析）。driving: color-mix-currentcolor-001。
+/// 支持 srgb/srgb-linear/lab/lch/oklab/oklch/xyz 空间；极坐标空间（lch/oklch）额外接受
+/// 色相插值法（shorter/longer/increasing/decreasing hue，默认 shorter）。分量 `<color> [<百分比>]`，
+/// 百分比省略按 spec 默认（双省略=50/50）。currentColor 保留未解析（paint 时按元素色解析）。
+/// driving: color-mix-currentcolor-001。
 fn parse_color_mix(value: &str) -> Option<ColorValue> {
     let start = value.find('(')?;
     let end = value.rfind(')')?;
@@ -1014,23 +1016,7 @@ fn parse_color_mix(value: &str) -> Option<ColorValue> {
     // 首个顶层逗号分隔色彩空间与第一分量
     let first_comma = top_level_byte_index(&inner, b',')?;
     let space = inner[..first_comma].trim();
-    let mix_space = if space.eq_ignore_ascii_case("in srgb") {
-        ColorMixSpace::Srgb
-    } else if space.eq_ignore_ascii_case("in srgb-linear") {
-        ColorMixSpace::SrgbLinear
-    } else if space.eq_ignore_ascii_case("in lch") {
-        ColorMixSpace::Lch
-    } else if space.eq_ignore_ascii_case("in lab") {
-        ColorMixSpace::Lab
-    } else if space.eq_ignore_ascii_case("in oklab") {
-        ColorMixSpace::OkLab
-    } else if space.eq_ignore_ascii_case("in oklch") {
-        ColorMixSpace::OkLch
-    } else if space.eq_ignore_ascii_case("in xyz") || space.eq_ignore_ascii_case("in xyz-d65") {
-        ColorMixSpace::Xyz
-    } else {
-        return None; // 其他色彩空间（xyz-d50/display-p3/…）defer
-    };
+    let (mix_space, hue) = parse_color_mix_space(space)?;
     let rest = inner[first_comma + 1..].trim();
     // 顶层逗号分隔两分量
     let second_comma = top_level_byte_index(rest, b',')?;
@@ -1040,7 +1026,54 @@ fn parse_color_mix(value: &str) -> Option<ColorValue> {
         c1,
         c2,
         space: mix_space,
+        hue,
     })))
+}
+
+/// 解析 `color-mix` 的色彩空间段 `in <space> [ <method> hue ]`（CSS Color 4 §12）。
+///
+/// 返回 `(ColorMixSpace, ColorHueMethod)`。hue 插值法仅对极坐标空间（lch/oklch）有意义，
+/// 其他空间忽略（默认 Shorter）。镜像 gradient 的 `parse_color_interpolation` 逻辑。
+/// R2381。
+fn parse_color_mix_space(s: &str) -> Option<(ColorMixSpace, crate::values::parse_transform::ColorHueMethod)> {
+    use crate::values::parse_transform::ColorHueMethod;
+    let lower = s.to_ascii_lowercase();
+    let tokens: Vec<&str> = lower.split_whitespace().collect();
+    // tokens[0] 须为 "in"
+    if tokens.first().copied() != Some("in") {
+        return None;
+    }
+    let mix_space = match tokens.get(1).copied() {
+        Some("srgb") => ColorMixSpace::Srgb,
+        Some("srgb-linear") => ColorMixSpace::SrgbLinear,
+        Some("lab") => ColorMixSpace::Lab,
+        Some("lch") => ColorMixSpace::Lch,
+        Some("oklab") => ColorMixSpace::OkLab,
+        Some("oklch") => ColorMixSpace::OkLch,
+        Some("xyz") | Some("xyz-d65") => ColorMixSpace::Xyz,
+        _ => return None, // 其他色彩空间（xyz-d50/display-p3/…）defer
+    };
+    // 可选 hue 插值法（仅 lch/oklch）
+    let mut hue = ColorHueMethod::default();
+    if matches!(mix_space, ColorMixSpace::Lch | ColorMixSpace::OkLch) {
+        let mut it = tokens.iter().skip(2);
+        while let Some(w) = it.next() {
+            let method = match *w {
+                "shorter" => Some(ColorHueMethod::Shorter),
+                "longer" => Some(ColorHueMethod::Longer),
+                "increasing" => Some(ColorHueMethod::Increasing),
+                "decreasing" => Some(ColorHueMethod::Decreasing),
+                _ => None,
+            };
+            if let Some(m) = method
+                && matches!(it.next(), Some(next) if *next == "hue")
+            {
+                hue = m;
+                break;
+            }
+        }
+    }
+    Some((mix_space, hue))
 }
 
 /// 解析 color-mix 单分量：`<color>` 或 `<color> <百分比>`（CSS Color 4 空白语法）。

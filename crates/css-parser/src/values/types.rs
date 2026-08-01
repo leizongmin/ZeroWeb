@@ -62,7 +62,7 @@ pub enum ColorValue {
     RelativeColor(Box<RelativeColorSpec>),
 }
 
-/// `color-mix()` 规范（CSS Color 5）。
+/// `color-mix()` 规范（CSS Color 4）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColorMixSpec {
     /// 第一个颜色分量。
@@ -71,6 +71,8 @@ pub struct ColorMixSpec {
     pub c2: ColorMixComponent,
     /// 插值色彩空间（sRGB gamma-encoded 线性 / LCH 极坐标 + 色相短弧）。
     pub space: ColorMixSpace,
+    /// 极坐标空间（LCH/OKLCH）的色相插值法（CSS Color 4 §12.3），默认 Shorter。R2381。
+    pub hue: crate::values::parse_transform::ColorHueMethod,
 }
 
 /// `color-mix()` 插值色彩空间。

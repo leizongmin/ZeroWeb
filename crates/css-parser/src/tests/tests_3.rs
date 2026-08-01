@@ -450,6 +450,42 @@ fn test_parse_color_mix_lab_oklab_oklch_spaces() {
 }
 
 #[test]
+/// R2381：CSS Color 4 §12.3 color-mix 色相插值法（`in <polar-space> <method> hue`）。
+/// 修复前 `color-mix(in oklch longer hue, …)` 的 space 段 "in oklch longer hue" 不匹配任何
+/// eq_ignore_ascii_case → None → 整条被丢。现解析 hue method（仅 lch/oklch 极坐标空间）。
+fn test_parse_color_mix_hue_method() {
+    use crate::values::{ColorHueMethod, ColorMixSpace};
+    for (input, expect_hue) in [
+        ("color-mix(in oklch longer hue, red, blue)", ColorHueMethod::Longer),
+        ("color-mix(in lch shorter hue, red, blue)", ColorHueMethod::Shorter),
+        (
+            "color-mix(in oklch increasing hue, red, blue)",
+            ColorHueMethod::Increasing,
+        ),
+        (
+            "color-mix(in lch decreasing hue, red, blue)",
+            ColorHueMethod::Decreasing,
+        ),
+        // 大小写不敏感
+        ("color-mix(in oklch LONGER HUE, red, blue)", ColorHueMethod::Longer),
+    ] {
+        match parse_color(input) {
+            Some(ColorValue::Mix(spec)) => {
+                assert_eq!(spec.hue, expect_hue, "{input}");
+            }
+            _ => panic!("{input} 应解析为 Mix"),
+        }
+    }
+    // 无 hue method → 默认 Shorter（不回归）
+    let spec_default = match parse_color("color-mix(in oklch, red, blue)") {
+        Some(ColorValue::Mix(s)) => s,
+        _ => panic!("in oklch 应解析为 Mix"),
+    };
+    assert_eq!(spec_default.hue, ColorHueMethod::Shorter);
+    assert_eq!(spec_default.space, ColorMixSpace::OkLch);
+}
+
+#[test]
 /// 测试 hwb() 带透明度：hwb(120 30% 20% / 0.5) — 验证 RGBA 分量合理
 fn test_parse_color_hwb_with_alpha() {
     let result = parse_color("hwb(120 30% 20% / 0.5)");
