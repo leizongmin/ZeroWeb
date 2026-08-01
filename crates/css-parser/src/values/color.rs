@@ -120,7 +120,7 @@ pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
     }
 
     // color-mix() 函数（CSS Color 4）：color-mix(in <space>, <c1> [<p1>], <c2> [<p2>])。
-    // 支持 srgb/lab/lch/oklab/oklch（其他色彩空间 srgb-linear/xyz defer）。存为未解析
+    // 支持 srgb/srgb-linear/lab/lch/oklab/oklch（其他色彩空间 xyz defer）。存为未解析
     // ColorValue::Mix——currentColor 在 paint 时按元素色解析，支持 inherit 透传。
     // driving: css-color color-mix-currentcolor-001。
     if value.len() >= 10 && value[..10].eq_ignore_ascii_case("color-mix(") {
@@ -641,6 +641,20 @@ fn linear_srgb_to_u8(c: f64) -> u8 {
     (srgb_encode(c) * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
+/// sRGB u8 → 线性光 sRGB 三通道（0..1），供 `color-mix(in srgb-linear)` 笛卡尔插值。R2377。
+pub fn srgb_u8_to_srgb_linear(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    (
+        srgb_decode(r as f64 / 255.0),
+        srgb_decode(g as f64 / 255.0),
+        srgb_decode(b as f64 / 255.0),
+    )
+}
+
+/// 线性光 sRGB 三通道（0..1）→ sRGB u8，供 `color-mix(in srgb-linear)` 回转。R2377。
+pub fn srgb_linear_to_srgb_u8(lr: f64, lg: f64, lb: f64) -> (u8, u8, u8) {
+    (linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb))
+}
+
 /// 3×3 矩阵（行优先 [9]）乘列向量。
 fn mat3_mul(m: [f64; 9], x: f64, y: f64, z: f64) -> (f64, f64, f64) {
     (
@@ -987,6 +1001,8 @@ fn parse_color_mix(value: &str) -> Option<ColorValue> {
     let space = inner[..first_comma].trim();
     let mix_space = if space.eq_ignore_ascii_case("in srgb") {
         ColorMixSpace::Srgb
+    } else if space.eq_ignore_ascii_case("in srgb-linear") {
+        ColorMixSpace::SrgbLinear
     } else if space.eq_ignore_ascii_case("in lch") {
         ColorMixSpace::Lch
     } else if space.eq_ignore_ascii_case("in lab") {

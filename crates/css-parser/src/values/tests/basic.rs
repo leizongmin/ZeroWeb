@@ -1572,8 +1572,14 @@ fn test_parse_color_mix_srgb() {
         ColorValue::Mix(spec) => assert_eq!(spec.space, ColorMixSpace::OkLch),
         other => panic!("in oklch 应为 Mix，实际: {:?}", other),
     }
-    // 仍未支持的空间（srgb-linear/xyz）→ None（defer）
-    assert!(super::super::parse_color("color-mix(in srgb-linear, red, blue)").is_none());
+    // R2377：in srgb-linear 现解析为 Mix(space=SrgbLinear)（此前 defer→None）。
+    let lin = super::super::parse_color("color-mix(in srgb-linear, red, blue)").unwrap();
+    match lin {
+        ColorValue::Mix(spec) => assert_eq!(spec.space, ColorMixSpace::SrgbLinear),
+        other => panic!("in srgb-linear 应为 Mix，实际: {:?}", other),
+    }
+    // 仍未支持的空间（xyz）→ None（defer）
+    assert!(super::super::parse_color("color-mix(in xyz, red, blue)").is_none());
 }
 
 #[test]

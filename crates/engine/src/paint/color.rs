@@ -2,8 +2,8 @@
 
 use zero_css_parser::values::{
     ColorMixSpace, ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec, convert_predefined_to_srgb,
-    lab_to_srgb_u8, lch_to_srgb_u8, oklab_to_srgb_u8, oklch_to_srgb_u8, srgb_u8_to_lab, srgb_u8_to_lch,
-    srgb_u8_to_oklab, srgb_u8_to_oklch, srgb_u8_to_predefined,
+    lab_to_srgb_u8, lch_to_srgb_u8, oklab_to_srgb_u8, oklch_to_srgb_u8, srgb_linear_to_srgb_u8, srgb_u8_to_lab,
+    srgb_u8_to_lch, srgb_u8_to_oklab, srgb_u8_to_oklch, srgb_u8_to_predefined, srgb_u8_to_srgb_linear,
 };
 use zero_render_foundation::color::Color;
 
@@ -37,6 +37,14 @@ pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> 
             let c2 = resolve_color_current(&spec.c2.color, element_color);
             match spec.space {
                 ColorMixSpace::Srgb => mix_srgb(c1, spec.c1.percentage, c2, spec.c2.percentage),
+                ColorMixSpace::SrgbLinear => mix_cartesian(
+                    c1,
+                    spec.c1.percentage,
+                    c2,
+                    spec.c2.percentage,
+                    srgb_u8_to_srgb_linear,
+                    srgb_linear_to_srgb_u8,
+                ),
                 ColorMixSpace::Lch => mix_lch(c1, spec.c1.percentage, c2, spec.c2.percentage),
                 ColorMixSpace::Lab => mix_cartesian(
                     c1,
@@ -649,8 +657,9 @@ fn test_resolve_color_mix() {
 }
 
 #[test]
-/// R2376：color-mix lab/oklab/oklch 空间解析（engine 侧）。此前这三空间 parse 返回 None
-/// → 颜色回退；现 resolve_color_current 产出真实插值色（介于两端、非回退黑、同色=identity）。
+/// R2376/R2377：color-mix srgb-linear/lab/oklab/oklch 空间解析（engine 侧）。此前这些空间
+/// parse 返回 None → 颜色回退；现 resolve_color_current 产出真实插值色（介于两端、非回退黑、
+/// 同色=identity）。
 fn test_resolve_color_mix_lab_oklab_oklch() {
     use zero_css_parser::values::{ColorMixComponent, ColorMixSpace, ColorMixSpec};
     let black_elem = ColorValue::Rgba(0, 0, 0, 255);
@@ -668,13 +677,18 @@ fn test_resolve_color_mix_lab_oklab_oklch() {
             space,
         }))
     };
-    for space in [ColorMixSpace::Lab, ColorMixSpace::OkLab, ColorMixSpace::OkLch] {
+    for space in [
+        ColorMixSpace::SrgbLinear,
+        ColorMixSpace::Lab,
+        ColorMixSpace::OkLab,
+        ColorMixSpace::OkLch,
+    ] {
         let r = resolve_color_current(&mk(space), &black_elem);
         assert_ne!((r.r, r.g, r.b), (0, 0, 0), "{space:?} 应解析非黑（非回退）");
         assert_ne!((r.r, r.g, r.b), (255, 0, 0), "{space:?} 不应恒等于 red");
         assert_ne!((r.r, r.g, r.b), (0, 0, 255), "{space:?} 不应恒等于 blue");
     }
-    // 同色 mix = 该色（identity，三空间均成立）
+    // 同色 mix = 该色（identity，四空间均成立）
     let mk_same = |space| {
         ColorValue::Mix(Box::new(ColorMixSpec {
             c1: ColorMixComponent {
@@ -688,7 +702,12 @@ fn test_resolve_color_mix_lab_oklab_oklch() {
             space,
         }))
     };
-    for space in [ColorMixSpace::Lab, ColorMixSpace::OkLab, ColorMixSpace::OkLch] {
+    for space in [
+        ColorMixSpace::SrgbLinear,
+        ColorMixSpace::Lab,
+        ColorMixSpace::OkLab,
+        ColorMixSpace::OkLch,
+    ] {
         let r = resolve_color_current(&mk_same(space), &black_elem);
         assert_eq!((r.r, r.g, r.b), (0, 128, 0), "{space:?} 同色 mix 应回该色");
     }

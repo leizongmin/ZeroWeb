@@ -414,15 +414,17 @@ fn test_parse_color_modern_system_colors() {
 }
 
 #[test]
-/// R2376：color-mix 的 lab/oklab/oklch 插值色彩空间解析（CSS Color 4 §12）。
-/// 修复前仅 `in srgb`/`in lch` 支持，`in lab`/`in oklab`/`in oklch` 返回 None
-/// → 整条 color-mix 被丢（颜色回退）。现解析为 `ColorValue::Mix` 带正确 ColorMixSpace。
+/// R2376/R2377：color-mix 的 srgb-linear/lab/oklab/oklch 插值色彩空间解析（CSS Color 4 §12）。
+/// R2376 前仅 `in srgb`/`in lch` 支持，`in lab`/`in oklab`/`in oklch` 返回 None；R2377 补
+/// `in srgb-linear`。任一缺失 → 整条 color-mix 被丢（颜色回退）。现解析为 `ColorValue::Mix`
+/// 带正确 ColorMixSpace。
 fn test_parse_color_mix_lab_oklab_oklch_spaces() {
     use crate::values::ColorMixSpace;
     for (input, expect) in [
         ("color-mix(in lab, red, blue)", ColorMixSpace::Lab),
         ("color-mix(in oklab, red, blue)", ColorMixSpace::OkLab),
         ("color-mix(in oklch, red, blue)", ColorMixSpace::OkLch),
+        ("color-mix(in srgb-linear, red, blue)", ColorMixSpace::SrgbLinear),
     ] {
         match parse_color(input) {
             Some(ColorValue::Mix(spec)) => assert_eq!(spec.space, expect, "{input}"),

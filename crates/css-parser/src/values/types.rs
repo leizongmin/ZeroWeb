@@ -78,6 +78,8 @@ pub struct ColorMixSpec {
 pub enum ColorMixSpace {
     /// `in srgb` —— gamma-encoded sRGB 线性插值（premultiplied alpha）。
     Srgb,
+    /// `in srgb-linear` —— 线性光 sRGB 笛卡尔插值（L/a/b→R/G/B 三通道独立线性）。R2377。
+    SrgbLinear,
     /// `in lch` —— CIE LCH 极坐标插值（L/C 线性、h 色相短弧）。driving: color-mix-percents-01/02。
     Lch,
     /// `in lab` —— CIE Lab 笛卡尔插值（L/a/b 三通道独立线性）。R2376。
