@@ -71,6 +71,7 @@ pub(super) fn class_sel(cls: &str) -> Selector {
 mod attribute_case_flag;
 mod bom_handling;
 mod cdo_cdc;
+mod counter_style_at_rule;
 mod coverage_round10;
 mod coverage_round11;
 mod coverage_round12;

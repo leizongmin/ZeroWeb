@@ -78,6 +78,9 @@ pub struct Painter {
     pub(crate) inline_heights: HashMap<NodeId, f32>,
     /// 当前文档 URL（解析相对 `<img src>`）。
     pub(crate) document_url: Option<String>,
+    /// `@counter-style` 自定义计数器样式注册表（name → 定义）。driving: R2392。
+    /// 由管线从 stylesheets 收集（镜像 @keyframes 注册）；空 = 无自定义样式（builtin 行为不变）。
+    pub(crate) counter_styles: HashMap<String, zero_css_parser::ast::CounterStyleRule>,
 }
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
@@ -264,12 +267,18 @@ impl Painter {
             canvas_propagated_node: None,
             inline_heights: HashMap::new(),
             document_url: None,
+            counter_styles: HashMap::new(),
         }
     }
 
     /// 设置当前文档 URL。
     pub fn set_document_url(&mut self, url: Option<&str>) {
         self.document_url = url.map(str::to_string);
+    }
+
+    /// R2392：从 stylesheets 收集 `@counter-style` 定义注册到 painter。
+    pub fn register_counter_styles(&mut self, stylesheets: &[zero_css_parser::Stylesheet]) {
+        self.counter_styles = text::text_list::build_counter_style_registry(stylesheets);
     }
 
     /// 设置 CSS font-family 查找表。

@@ -361,6 +361,8 @@ impl<'a> Parser<'a> {
                     self.consume_page_rule().map(Rule::Page)
                 } else if name.eq_ignore_ascii_case("property") {
                     self.consume_property_rule().map(Rule::Property)
+                } else if name.eq_ignore_ascii_case("counter-style") {
+                    self.consume_counter_style_rule().map(Rule::CounterStyle)
                 } else {
                     // 通用 at-rule：consume_at_rule 内部循环到 `;`/`{block}`，总消费全部 extent，
                     // 不触发 fallback。
@@ -2174,6 +2176,78 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// 消耗 `@counter-style` 规则（CSS Counter Styles 3 §3）。driving: R2392。
+    ///
+    /// 格式：`@counter-style <name> { system: cyclic; symbols: "a" "b"; suffix: ") "; }`
+    /// prelude = 计数器名（单个 Ident）；body = 描述符声明块。解析 `system`/`symbols`/
+    /// `prefix`/`suffix`/`fallback` 为类型化字段。无名 / 无 `{` → None（上层畸形恢复）。
+    /// 非法 system/symbols 不足 → None（at-rule 无效，整体丢弃）。
+    fn consume_counter_style_rule(&mut self) -> Option<CounterStyleRule> {
+        self.skip_whitespace();
+        // prelude：计数器名（单个 Ident，CSS Counter Styles 3 §3.1：`<custom-ident>`）。
+        let name = match self.peek().clone() {
+            Token::Ident(s) => {
+                self.advance();
+                s
+            }
+            _ => return None,
+        };
+
+        self.skip_whitespace();
+        if !matches!(self.peek(), Token::LBrace) {
+            // 非 `{`（语句形式）：返回 None，上层消费残余。
+            return None;
+        }
+        self.advance(); // {
+
+        let declarations = self.consume_declaration_block();
+
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+
+        // 收集描述符（后声明覆盖前者——CSS @rule 描述符语义）。
+        let mut system: Option<String> = None;
+        let mut symbols_raw: Option<String> = None;
+        let mut prefix: Option<String> = None;
+        let mut suffix: Option<String> = None;
+        let mut fallback: Option<String> = None;
+        for decl in &declarations {
+            match decl.property.to_ascii_lowercase().as_str() {
+                "system" if system.is_none() => system = Some(decl.value.trim().to_string()),
+                "symbols" if symbols_raw.is_none() => symbols_raw = Some(decl.value.trim().to_string()),
+                "prefix" if prefix.is_none() => prefix = Some(strip_css_quotes(decl.value.trim())),
+                "suffix" if suffix.is_none() => suffix = Some(strip_css_quotes(decl.value.trim())),
+                "fallback" if fallback.is_none() => fallback = Some(decl.value.trim().to_string()),
+                _ => {}
+            }
+        }
+
+        // 解析 system（缺省 symbolic；CSS Counter Styles 3 §3.1.4）。
+        let system = parse_counter_system(system.as_deref())?;
+        // 解析 symbols（逐个去引号/按空白切分）。
+        let symbols: Vec<String> = symbols_raw.as_deref().map(split_counter_symbols).unwrap_or_default();
+
+        // 合法性（CSS §3.1.4）：cyclic/fixed 须 ≥1 symbol；symbolic/alphabetic/numeric 须 ≥1
+        // （alphabetic 表示大数须 ≥2 但 ≥1 不致非法）；additive 须有 additive-symbols（slice 1
+        // 不支持 → 视为 symbols 不足，整体 defer 丢弃，走 fallback）。
+        let needs_symbols = !matches!(system, CounterSystem::Extends(_));
+        if needs_symbols && symbols.is_empty() {
+            return None;
+        }
+
+        Some(CounterStyleRule {
+            name,
+            system,
+            symbols,
+            prefix: prefix.unwrap_or_default(),
+            // suffix 缺省 = ". "（period + space）；显式描述符（含空串）已覆盖。
+            suffix: suffix.unwrap_or_else(|| ". ".to_string()),
+            fallback: fallback.unwrap_or_else(|| "decimal".to_string()),
+        })
+    }
+
     /// 消耗 @keyframes 规则。
     ///
     /// 格式：`@keyframes name { from { ... } 50% { ... } to { ... } }`
@@ -2705,6 +2779,44 @@ fn strip_css_quotes(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// 解析 `@counter-style` 的 `system` 描述符为类型化算法（CSS Counter Styles 3 §3.1.4）。
+/// driving: R2392。`None` = 非法 system（at-rule 无效）。
+fn parse_counter_system(value: Option<&str>) -> Option<CounterSystem> {
+    let v = value.unwrap_or("symbolic").trim(); // 缺省 symbolic
+    let lower = v.to_ascii_lowercase();
+    let mut parts = lower.split_whitespace();
+    let head = parts.next()?;
+    let system = match head {
+        "cyclic" => CounterSystem::Cyclic,
+        "fixed" => {
+            // `fixed <integer>?`：首符号值（缺省 1）。
+            let first = parts.next().and_then(|s| s.parse::<i32>().ok());
+            CounterSystem::Fixed(first)
+        }
+        "symbolic" => CounterSystem::Symbolic,
+        "alphabetic" => CounterSystem::Alphabetic,
+        "numeric" => CounterSystem::Numeric,
+        "additive" => CounterSystem::Additive,
+        "extends" => {
+            // `extends <counter-style-name>`：继承名（原始大小写，取未 lower 的下一段）。
+            let ext = v.split_whitespace().nth(1)?.to_string();
+            if ext.is_empty() {
+                return None;
+            }
+            CounterSystem::Extends(ext)
+        }
+        _ => return None,
+    };
+    Some(system)
+}
+
+/// 切分 `@counter-style` 的 `symbols` 描述符值为独立符号列表（CSS Counter Styles 3 §3.1.5）。
+/// 符号可为带引号串（`"a"` / `'◆'`）或裸标识/字形（`◆`），按空白分隔；逐个去引号。
+/// driving: R2392。
+fn split_counter_symbols(value: &str) -> Vec<String> {
+    value.split_whitespace().map(strip_css_quotes).collect()
 }
 
 /// 从 `src` 描述符值中提取所有 `url(...)` 内的 URL（按出现顺序，去引号）。

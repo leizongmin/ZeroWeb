@@ -33,7 +33,7 @@ use super::super::helpers::apply_text_transform;
 // text_multicol = multicol 列参数 + balance + column-rule 绘制；
 // text_ruby = ruby per-segment annotation；
 // text_list = 列表标记渲染（paint_list_marker）+ 计数器格式化（Roman/Latin）。
-mod text_list;
+pub(crate) mod text_list;
 mod text_multicol;
 mod text_ruby;
 

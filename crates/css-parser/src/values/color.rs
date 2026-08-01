@@ -1840,8 +1840,45 @@ pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
         "lower-alpha" | "lower-latin" => Some(ListStyleTypeValue::LowerAlpha),
         "upper-alpha" | "upper-latin" => Some(ListStyleTypeValue::UpperAlpha),
         "none" => Some(ListStyleTypeValue::None),
-        _ => None,
+        _ => {
+            // R2392：非 builtin 的 `<custom-ident>` 视为自定义计数器样式名（@counter-style）。
+            // 渲染时查 CounterStyleRegistry，未命中走 fallback（默认 decimal）。
+            // CSS-wide 关键字（inherit/initial/unset/revert/revert-layer）不应到此（cascade
+            // 已解析），但防御性排除；非法 token（数字起始/空）→ None（声明丢弃）。
+            // kill-switch `ZW_COUNTER_STYLE=0`（default-on）：关闭则不识别自定义名 → None
+            // → 声明丢弃 → 回退 builtin decimal（旧行为，零回归）。
+            if std::env::var("ZW_COUNTER_STYLE").as_deref() == Ok("0") {
+                return None;
+            }
+            let name = value.trim();
+            if is_custom_counter_name(name) {
+                Some(ListStyleTypeValue::Custom(name.to_string()))
+            } else {
+                None
+            }
+        }
     }
+}
+
+/// 判定字符串是否为合法的自定义计数器样式名（CSS `<custom-ident>`，CSS Counter Styles 3）。
+/// driving: R2392。允许字母/连字符起始 + 字母数字连字符；排除 CSS-wide 关键字与 `none`。
+fn is_custom_counter_name(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    // 排除 CSS-wide 关键字（防御；正常经 cascade 已不至此）。
+    if matches!(
+        s.to_ascii_lowercase().as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer" | "none" | "default"
+    ) {
+        return false;
+    }
+    // 首字符须为字母或连字符（CSS ident-start）；余下为 ident 字符。
+    let first = s.chars().next().unwrap();
+    if !(first.is_ascii_alphabetic() || first == '-' || first == '_') {
+        return false;
+    }
+    s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// 解析 CSS list-style-position 属性值。

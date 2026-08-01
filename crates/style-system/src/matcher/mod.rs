@@ -1781,6 +1781,10 @@ fn collect_from_rules(
                 // `compute_styles` 预扫描注入 `registered_properties`，在 var() 解析时
                 // 作兜底默认值），跳过。
             }
+            zero_css_parser::ast::Rule::CounterStyle(_) => {
+                // @counter-style 规则不参与元素级选择器匹配（计数系统由 list-style
+                // 消费层从 CSS 提取并注入），跳过。
+            }
         }
     }
 }

@@ -130,16 +130,31 @@ fn test_parse_list_style_type() {
         Some(ListStyleTypeValue::UpperAlpha)
     );
     assert_eq!(parse_list_style_type("none"), Some(ListStyleTypeValue::None));
-    // 当前不支持的关键字应返回 None
-    assert_eq!(parse_list_style_type("lower-greek"), None);
-    assert_eq!(parse_list_style_type("armenian"), None);
-    assert_eq!(parse_list_style_type("georgian"), None);
+    // R2392：未实现的预定义 / 自定义计数器名（合法 `<custom-ident>`）→ Custom(name)，
+    // 渲染时查 CounterStyleRegistry，未命中走 decimal fallback（CSS Counter Styles 3）。
+    assert_eq!(
+        parse_list_style_type("lower-greek"),
+        Some(ListStyleTypeValue::Custom("lower-greek".to_string()))
+    );
+    assert_eq!(
+        parse_list_style_type("armenian"),
+        Some(ListStyleTypeValue::Custom("armenian".to_string()))
+    );
+    assert_eq!(
+        parse_list_style_type("georgian"),
+        Some(ListStyleTypeValue::Custom("georgian".to_string()))
+    );
     // 大小写不敏感
     assert_eq!(parse_list_style_type("DISC"), Some(ListStyleTypeValue::Disc));
     assert_eq!(parse_list_style_type("  Circle  "), Some(ListStyleTypeValue::Circle));
-    // 无效输入
-    assert_eq!(parse_list_style_type("invalid"), None);
+    // 合法 custom-ident 名（即使无 @counter-style 定义）→ Custom（render 走 fallback）。
+    assert_eq!(
+        parse_list_style_type("invalid"),
+        Some(ListStyleTypeValue::Custom("invalid".to_string()))
+    );
+    // 空 / 非法 token（数字起始）→ None（声明丢弃）。
     assert_eq!(parse_list_style_type(""), None);
+    assert_eq!(parse_list_style_type("123bad"), None);
 }
 
 #[test]

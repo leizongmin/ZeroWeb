@@ -32,6 +32,8 @@ pub enum Rule {
     Page(PageRule),
     /// @property 规则（CSS Properties and Values API）。
     Property(PropertyRule),
+    /// @counter-style 规则（CSS Counter Styles 3 §3）。driving: R2392。
+    CounterStyle(CounterStyleRule),
 }
 
 /// CSS @import 规则。
@@ -121,6 +123,48 @@ pub struct PropertyRule {
     pub inherits: bool,
     /// `initial-value` 描述符原始值；`None` = 缺省（仅 `syntax: "*"` 时合法）。
     pub initial_value: Option<String>,
+}
+
+/// `@counter-style` 计数系统算法（CSS Counter Styles 3 §3.1.4）。
+/// driving: R2392（slice 1 实现 cyclic/fixed/symbolic/alphabetic/numeric）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CounterSystem {
+    /// `cyclic`：循环遍历 symbols（i-1 % len）。
+    Cyclic,
+    /// `fixed [N]`：固定序列，N 为首符号值（默认 1）；超出范围走 fallback。
+    Fixed(Option<i32>),
+    /// `symbolic`：重复 symbol（i 个 × 对应 symbol）。
+    Symbolic,
+    /// `alphabetic`：位置制（无零位），如 a-z/aa-zz。
+    Alphabetic,
+    /// `numeric`：位置制（含零位），如 0-9/00-99。
+    Numeric,
+    /// `additive`：加法表（Roman 式）；slice 1 仅 parse 保留，应用 defer。
+    Additive,
+    /// `extends <name>`：继承内置/已定义样式；slice 1 仅 parse 保留，应用 defer。
+    Extends(String),
+}
+
+/// @counter-style 规则（CSS Counter Styles 3 §3）。
+///
+/// 格式：`@counter-style <name> { system: cyclic; symbols: "a" "b"; suffix: ") "; }`
+/// 解析 `system`/`symbols`/`prefix`/`suffix`/`fallback` 描述符为类型化字段；
+/// `additive-symbols`/`range`/`negative`/`pad`/`speak-as` 描述符 slice 1 忽略（应用 defer）。
+/// 非法规则（无名 / 无 system / symbols 不足）返回 None 由上层丢弃。
+#[derive(Debug, Clone)]
+pub struct CounterStyleRule {
+    /// 计数器样式名（`list-style-type` 引用键）。
+    pub name: String,
+    /// `system` 描述符（缺省 `symbolic`）。
+    pub system: CounterSystem,
+    /// `symbols` 描述符（已逐个去引号/空白切分）。
+    pub symbols: Vec<String>,
+    /// `prefix` 描述符（缺省 `""`）。
+    pub prefix: String,
+    /// `suffix` 描述符（缺省 `". "`，period + space；`""` 显式置空）。
+    pub suffix: String,
+    /// `fallback` 描述符（缺省 `"decimal"`）。
+    pub fallback: String,
 }
 
 /// @keyframes 规则。

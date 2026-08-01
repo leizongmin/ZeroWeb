@@ -309,6 +309,10 @@ pub enum ListStyleTypeValue {
     UpperAlpha,
     /// none。
     None,
+    /// 自定义计数器样式名（`@counter-style` 定义；CSS Counter Styles 3）。driving: R2392。
+    /// 非 builtin 的 `<custom-ident>` → Custom(name)；渲染时查 CounterStyleRegistry，
+    /// 未命中走 fallback（默认 decimal）。
+    Custom(String),
 }
 
 /// CSS list-style-position 值。

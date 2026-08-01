@@ -629,7 +629,11 @@ fn test_parse_list_style_type_values() {
         Some(ListStyleTypeValue::UpperAlpha)
     );
     assert_eq!(parse_list_style_type("none"), Some(ListStyleTypeValue::None));
-    assert_eq!(parse_list_style_type("invalid"), None);
+    // R2392：合法 custom-ident 名 → Custom（render 走 decimal fallback）。
+    assert_eq!(
+        parse_list_style_type("invalid"),
+        Some(ListStyleTypeValue::Custom("invalid".to_string()))
+    );
 }
 
 #[test]

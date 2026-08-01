@@ -356,6 +356,7 @@ impl RenderPipeline {
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
+        painter.register_counter_styles(&stylesheets);
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
@@ -473,6 +474,7 @@ impl RenderPipeline {
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
+        painter.register_counter_styles(&stylesheets);
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();

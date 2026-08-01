@@ -21,7 +21,15 @@ fn test_apply_property_list_style_type() {
     assert!(apply_property_value(&mut style, "list-style-type", "none"));
     assert_eq!(style.list_style_type, zero_css_parser::values::ListStyleTypeValue::None);
 
-    assert!(!apply_property_value(&mut style, "list-style-type", "invalid"));
+    // R2392：合法 custom-ident 名（如未定义的 `invalid` 或预定义 `lower-greek`）→ Custom(name)，
+    // apply 接受（render 走 decimal fallback）。仅非法 token（数字起始/空）才拒绝。
+    assert!(apply_property_value(&mut style, "list-style-type", "invalid"));
+    assert_eq!(
+        style.list_style_type,
+        zero_css_parser::values::ListStyleTypeValue::Custom("invalid".to_string())
+    );
+    assert!(!apply_property_value(&mut style, "list-style-type", "123bad"));
+    assert!(!apply_property_value(&mut style, "list-style-type", ""));
 }
 
 #[test]
