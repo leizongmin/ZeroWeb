@@ -1323,6 +1323,9 @@ fn test_parse_outline_style() {
     assert_eq!(parse_outline_style("ridge"), Some(OutlineStyleValue::Ridge));
     assert_eq!(parse_outline_style("inset"), Some(OutlineStyleValue::Inset));
     assert_eq!(parse_outline_style("outset"), Some(OutlineStyleValue::Outset));
+    // R2379：CSS UI 4 outline-style:auto（UA-defined，ZW 按 solid 渲染）。修复前 None → 声明被丢。
+    assert_eq!(parse_outline_style("auto"), Some(OutlineStyleValue::Auto));
+    assert_eq!(parse_outline_style("AUTO"), Some(OutlineStyleValue::Auto)); // 大小写不敏感
     assert_eq!(parse_outline_style("invalid"), None);
 }
 

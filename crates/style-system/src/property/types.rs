@@ -58,6 +58,8 @@ pub enum OutlineStyleValue {
     Inset,
     /// outset。
     Outset,
+    /// auto（CSS UI 4）—— UA-defined 描边样式，ZW 按 solid 渲染（典型焦点环）。R2379。
+    Auto,
 }
 
 /// CSS line-height 值。

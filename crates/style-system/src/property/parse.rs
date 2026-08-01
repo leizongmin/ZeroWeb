@@ -32,6 +32,8 @@ pub fn parse_outline_style(value: &str) -> Option<OutlineStyleValue> {
         "ridge" => Some(OutlineStyleValue::Ridge),
         "inset" => Some(OutlineStyleValue::Inset),
         "outset" => Some(OutlineStyleValue::Outset),
+        // R2379：CSS UI 4 auto（UA-defined，按 solid 渲染）。修复前 None → 焦点环声明被丢。
+        "auto" => Some(OutlineStyleValue::Auto),
         _ => None,
     }
 }

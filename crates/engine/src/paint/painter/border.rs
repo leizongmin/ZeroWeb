@@ -634,7 +634,8 @@ impl super::Painter {
 
         match style.outline_style {
             OutlineStyleValue::None => {}
-            OutlineStyleValue::Solid => {
+            // R2379：CSS UI 4 auto 为 UA-defined 描边，ZW 按 solid 渲染（典型焦点环）。
+            OutlineStyleValue::Solid | OutlineStyleValue::Auto => {
                 // 实线：4 个填充矩形
                 self.primitives.add_fill(Rect::new(ox, oy, ow, outline_width), color);
                 self.primitives
