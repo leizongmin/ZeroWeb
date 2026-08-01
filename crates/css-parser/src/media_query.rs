@@ -7,7 +7,7 @@
 //! - `width`, `min-width`, `max-width`
 //! - `height`, `min-height`, `max-height`
 //! - `orientation` (portrait/landscape)
-//! - Level 4 范围语法：`width > 600px`、`width >= 600px`、`width < 1000px`、`width <= 1000px`
+//! - Level 4 范围语法：`width > 600px`、`width >= 600px`、`width < 1000px`、`width <= 1000px`、`width = 800px`（`=` ≡ `:`）
 //! - Level 4 组合范围：`600px <= width <= 1000px`
 //! - 布尔特性：`hover`、`color`
 //! - 媒体类型：`screen`, `print`, `all`
@@ -514,9 +514,12 @@ fn parse_colon_syntax(s: &str, colon_pos: usize) -> Option<MediaCondition> {
     }
 }
 
-/// 检查字符串是否包含范围运算符（`<`, `<=`, `>`, `>=`）。
+/// 检查字符串是否包含范围运算符（`<`, `<=`, `>`, `>=`, `=`）。
+///
+/// 含 `=`（CSS MQ L4 §7.1 `<mf-comparison>` 包含 `=` 精确相等）——
+/// `(width = 800px)` 须路由到范围语法分支而非布尔特性分支。
 fn contains_range_op(s: &str) -> bool {
-    s.as_bytes().iter().any(|&b| b == b'<' || b == b'>')
+    s.as_bytes().iter().any(|&b| b == b'<' || b == b'>' || b == b'=')
 }
 
 /// 解析 Level 4 范围语法，返回条件向量。
@@ -595,6 +598,10 @@ fn parse_op(s: &str) -> Option<(MediaFeatureOp, &str)> {
         Some((MediaFeatureOp::GreaterThan, rest.trim_start()))
     } else if let Some(rest) = s.strip_prefix('<') {
         Some((MediaFeatureOp::LessThan, rest.trim_start()))
+    } else if let Some(rest) = s.strip_prefix('=') {
+        // CSS MQ L4 §7.1 `<mf-comparison>` 包含 `=`：`(width = 800px)` ≡ `(width: 800px)`。
+        // Exact 同冒号形式生成的 op，evaluate 路径已存在。
+        Some((MediaFeatureOp::Exact, rest.trim_start()))
     } else {
         None
     }
@@ -638,8 +645,10 @@ fn parse_simple_range(s: &str) -> Option<MediaCondition> {
 }
 
 /// 找到字符串中第一个范围运算符的位置。
+///
+/// `<`/`>` 优先于 `=` 命中（`width >= 600px` 命中 `>` 而非 `=`，确保 `parse_op` 见到完整 `>=`）。
 fn find_range_op_pos(s: &str) -> Option<usize> {
-    s.as_bytes().iter().position(|&b| b == b'<' || b == b'>')
+    s.as_bytes().iter().position(|&b| b == b'<' || b == b'>' || b == b'=')
 }
 
 /// 从 CSS 值字符串解析像素数值。
@@ -771,6 +780,24 @@ mod tests {
     fn test_parse_just_parentheses() {
         let q = first_query("(width: 800px)");
         assert_eq!(q.conditions[0], MediaCondition::Width(MediaFeatureOp::Exact, 800.0));
+    }
+
+    #[test]
+    fn test_media_l4_equality_operator() {
+        // (width = 800px) — CSS MQ L4 §7.1 <mf-comparison> `=`，≡ (width: 800px)
+        let q = first_query("(width = 800px)");
+        assert_eq!(q.conditions.len(), 1);
+        assert_eq!(q.conditions[0], MediaCondition::Width(MediaFeatureOp::Exact, 800.0));
+
+        // 评估：800 通过（精确相等），799/801 不通过
+        let ctx_pass = MediaContext::new(800.0, 600.0);
+        let ctx_fail = MediaContext::new(799.0, 600.0);
+        assert!(evaluate_media_query(&q, &ctx_pass));
+        assert!(!evaluate_media_query(&q, &ctx_fail));
+
+        // height 同理
+        let qh = first_query("(height = 600px)");
+        assert_eq!(qh.conditions[0], MediaCondition::Height(MediaFeatureOp::Exact, 600.0));
     }
 
     // ── Level 4 范围语法测试 ──

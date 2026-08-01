@@ -40,6 +40,8 @@ fn test_contains_range_op() {
     assert!(contains_range_op("width >= 600px"));
     assert!(contains_range_op("width < 1000px"));
     assert!(contains_range_op("width <= 1000px"));
+    // CSS MQ L4 `=` 精确相等也算范围运算符（路由到范围语法分支）
+    assert!(contains_range_op("width = 800px"));
     assert!(!contains_range_op("width: 600px"));
     assert!(!contains_range_op("orientation: portrait"));
 }
@@ -101,7 +103,8 @@ fn test_parse_op() {
     assert_eq!(parse_op("<="), Some((MediaFeatureOp::LessEqual, "")));
     assert_eq!(parse_op(">"), Some((MediaFeatureOp::GreaterThan, "")));
     assert_eq!(parse_op("<"), Some((MediaFeatureOp::LessThan, "")));
-    assert_eq!(parse_op("="), None);
+    // CSS MQ L4 §7.1：`=` 精确相等（≡ 冒号形式 Exact）
+    assert_eq!(parse_op("="), Some((MediaFeatureOp::Exact, "")));
     assert_eq!(parse_op("invalid"), None);
 }
 
@@ -143,6 +146,8 @@ fn test_find_range_op_pos() {
     assert_eq!(find_range_op_pos("width >= 600px"), Some(6));
     assert_eq!(find_range_op_pos("width < 1000px"), Some(6));
     assert_eq!(find_range_op_pos("width <= 1000px"), Some(6));
+    // `=` 命中位置；`>=`/`<=` 中 `<`/`>` 优先命中（见下方断言）
+    assert_eq!(find_range_op_pos("width = 800px"), Some(6));
     assert_eq!(find_range_op_pos("width: 600px"), None);
 }
 
