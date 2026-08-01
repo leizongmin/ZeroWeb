@@ -1,8 +1,8 @@
 //! 辅助工具 — 变换偏移、裁剪、opacity 应用、渐变转换等。
 
 use zero_css_parser::values::{
-    ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, GradientColorStop, GradientDirection, GradientValue,
-    LengthValue, RadialSize, TransformFunction, TransformValue, eval_calc,
+    ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue, GradientColorStop, GradientDirection,
+    GradientValue, LengthValue, RadialSize, TransformFunction, TransformValue, eval_calc,
 };
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{
@@ -11,7 +11,7 @@ use zero_render_foundation::primitive::{
 };
 use zero_style_system::{ComputedStyle, TextTransformValue};
 
-use super::color::color_value_to_render;
+use super::color::resolve_color_current;
 
 /// 从 ComputedStyle 的 transform 计算偏移量。
 ///
@@ -730,13 +730,17 @@ pub fn image_resource_key(src: &str, document_url: Option<&str>) -> u64 {
 ///
 /// 目前支持 linear-gradient 和 radial-gradient。
 /// conic-gradient 暂不渲染（返回 None）。
-pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<GradientPrimitive> {
+pub fn gradient_to_primitive(
+    gradient: &GradientValue,
+    rect: &Rect,
+    element_color: &ColorValue,
+) -> Option<GradientPrimitive> {
     let w = rect.size.width;
     let h = rect.size.height;
     match gradient {
         GradientValue::Linear(lg) => {
             let kind = linear_direction_to_kind(&lg.direction, rect);
-            let stops = convert_color_stops(&lg.stops);
+            let stops = convert_color_stops(&lg.stops, element_color);
             Some(GradientPrimitive {
                 interpolation: map_interpolation(lg.interpolation),
                 rect: *rect,
@@ -773,7 +777,7 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
                 }
                 RadialSize::Length(lv) => length_to_f32(lv),
             };
-            let stops = convert_color_stops(&rg.stops);
+            let stops = convert_color_stops(&rg.stops, element_color);
             Some(GradientPrimitive {
                 interpolation: map_interpolation(rg.interpolation),
                 rect: *rect,
@@ -791,7 +795,7 @@ pub fn gradient_to_primitive(gradient: &GradientValue, rect: &Rect) -> Option<Gr
             let cx = rect.left() + resolve_position(&cg.position_x, w);
             let cy = rect.top() + resolve_position(&cg.position_y, h);
             let start_angle = cg.from_angle.to_radians() as f32;
-            let stops = convert_color_stops(&cg.stops);
+            let stops = convert_color_stops(&cg.stops, element_color);
             Some(GradientPrimitive {
                 interpolation: map_interpolation(cg.interpolation),
                 rect: *rect,
@@ -895,7 +899,7 @@ pub fn linear_direction_to_kind(dir: &GradientDirection, rect: &Rect) -> Gradien
 }
 
 /// 将 CSS 渐变色标转换为渲染层 GradientStop。
-pub fn convert_color_stops(stops: &[GradientColorStop]) -> Vec<GradientStop> {
+pub fn convert_color_stops(stops: &[GradientColorStop], element_color: &ColorValue) -> Vec<GradientStop> {
     let n = stops.len();
     stops
         .iter()
@@ -915,7 +919,9 @@ pub fn convert_color_stops(stops: &[GradientColorStop]) -> Vec<GradientStop> {
                 .unwrap_or(if n <= 1 { 0.0 } else { i as f32 / (n - 1) as f32 });
             GradientStop {
                 offset,
-                color: color_value_to_render(&s.color),
+                // R2370：currentColor 按**使用该渐变的元素**自身 color 解析（CSS Color §resolving）。
+                // 旧 color_value_to_render 无元素上下文 → currentColor 回落黑色。driving: color-stop-currentcolor。
+                color: resolve_color_current(&s.color, element_color),
             }
         })
         .collect()
@@ -1611,10 +1617,35 @@ mod tests {
             repeating: false,
         });
         let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
-        let prim = gradient_to_primitive(&grad, &rect).expect("linear gradient should convert");
+        let prim = gradient_to_primitive(&grad, &rect, &ColorValue::Rgba(0, 0, 0, 255))
+            .expect("linear gradient should convert");
         assert_eq!(prim.rect, rect);
         assert!(matches!(prim.kind, GradientKind::Linear { .. }));
         assert_eq!(prim.stops.len(), 1);
+    }
+
+    /// R2370：gradient color-stop 的 currentColor 解析为**使用该渐变的元素**自身 color。
+    /// 旧 convert_color_stops 用 color_value_to_render 无元素上下文 → currentColor 回落黑色。
+    /// driving: css-images color-stop-currentcolor。
+    #[test]
+    fn test_gradient_to_primitive_currentcolor_resolves_to_element_color() {
+        let grad = GradientValue::Linear(LinearGradient {
+            interpolation: Default::default(),
+            direction: GradientDirection::ToBottom,
+            stops: vec![GradientColorStop {
+                color: ColorValue::CurrentColor,
+                position: None,
+            }],
+            repeating: false,
+        });
+        let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
+        let element_color = ColorValue::Rgba(255, 0, 0, 255); // red
+        let prim = gradient_to_primitive(&grad, &rect, &element_color).expect("gradient should convert");
+        assert_eq!(
+            prim.stops[0].color,
+            zero_render_foundation::color::Color::rgb(255, 0, 0),
+            "gradient currentcolor stop 应解析为元素 color（red），非黑色"
+        );
     }
 
     #[test]
@@ -1638,7 +1669,8 @@ mod tests {
             ],
         });
         let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
-        let prim = gradient_to_primitive(&grad, &rect).expect("radial gradient should convert");
+        let prim = gradient_to_primitive(&grad, &rect, &ColorValue::Rgba(0, 0, 0, 255))
+            .expect("radial gradient should convert");
         assert!(matches!(prim.kind, GradientKind::Radial { .. }));
     }
 
@@ -1662,7 +1694,8 @@ mod tests {
             ],
         });
         let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
-        let prim = gradient_to_primitive(&grad, &rect).expect("conic gradient should convert");
+        let prim = gradient_to_primitive(&grad, &rect, &ColorValue::Rgba(0, 0, 0, 255))
+            .expect("conic gradient should convert");
         assert!(matches!(prim.kind, GradientKind::Conic { .. }));
         assert_eq!(prim.stops.len(), 2);
         if let GradientKind::Conic {
@@ -1690,7 +1723,7 @@ mod tests {
             }],
         });
         let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
-        let prim = gradient_to_primitive(&grad, &rect).unwrap();
+        let prim = gradient_to_primitive(&grad, &rect, &ColorValue::Rgba(0, 0, 0, 255)).unwrap();
         if let GradientKind::Radial {
             cx, cy, outer_radius, ..
         } = prim.kind
@@ -1719,7 +1752,7 @@ mod tests {
             }],
         });
         let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
-        let prim = gradient_to_primitive(&grad, &rect).unwrap();
+        let prim = gradient_to_primitive(&grad, &rect, &ColorValue::Rgba(0, 0, 0, 255)).unwrap();
         if let GradientKind::Radial { outer_radius, .. } = prim.kind {
             assert!((outer_radius - 100.0).abs() < 0.1);
         } else {
@@ -1742,7 +1775,7 @@ mod tests {
             }],
         });
         let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
-        let prim = gradient_to_primitive(&grad, &rect).unwrap();
+        let prim = gradient_to_primitive(&grad, &rect, &ColorValue::Rgba(0, 0, 0, 255)).unwrap();
         if let GradientKind::Radial { outer_radius, .. } = prim.kind {
             assert!((outer_radius - 75.0).abs() < 0.1);
         } else {
@@ -1827,7 +1860,7 @@ mod tests {
                 position: Some(LengthValue::Percentage(100.0)),
             },
         ];
-        let result = convert_color_stops(&stops);
+        let result = convert_color_stops(&stops, &ColorValue::Rgba(0, 0, 0, 255));
         assert_eq!(result.len(), 2);
         assert!((result[0].offset - 0.0).abs() < 0.01);
         assert!((result[1].offset - 1.0).abs() < 0.01);
@@ -1849,7 +1882,7 @@ mod tests {
                 position: None,
             },
         ];
-        let result = convert_color_stops(&stops);
+        let result = convert_color_stops(&stops, &ColorValue::Rgba(0, 0, 0, 255));
         assert!((result[0].offset - 0.0).abs() < 0.01);
         assert!((result[1].offset - 0.5).abs() < 0.01);
         assert!((result[2].offset - 1.0).abs() < 0.01);
@@ -1861,7 +1894,7 @@ mod tests {
             color: ColorValue::Rgba(128, 128, 128, 255),
             position: None,
         }];
-        let result = convert_color_stops(&stops);
+        let result = convert_color_stops(&stops, &ColorValue::Rgba(0, 0, 0, 255));
         assert_eq!(result.len(), 1);
         assert!((result[0].offset - 0.0).abs() < 0.01);
     }

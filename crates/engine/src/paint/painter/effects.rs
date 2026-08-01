@@ -296,7 +296,7 @@ impl super::Painter {
                 }
                 BackgroundImageComputedValue::Gradient(gradient) => {
                     let rect = Rect::new(positioned_x, positioned_y, sized_w, sized_h);
-                    if let Some(prim) = gradient_to_primitive(gradient, &rect) {
+                    if let Some(prim) = gradient_to_primitive(gradient, &rect, &style.color) {
                         self.primitives.add_gradient(prim);
                     }
                 }
@@ -965,7 +965,9 @@ impl super::Painter {
         for layer in &style.mask_image {
             match layer {
                 BackgroundImageComputedValue::Gradient(gradient) => {
-                    if let Some(gradient_prim) = super::super::helpers::gradient_to_primitive(gradient, &mask_rect) {
+                    if let Some(gradient_prim) =
+                        super::super::helpers::gradient_to_primitive(gradient, &mask_rect, &style.color)
+                    {
                         // 渐变蒙版：将元素裁剪到渐变边界矩形
                         super::super::helpers::clip_all_primitives_to_rect(
                             &mut self.primitives,

@@ -12,6 +12,7 @@ use super::super::helpers::{
     clip_all_primitives_to_rect, clip_fills, clip_glyphs, convert_color_stops, gradient_to_primitive, length_to_f32,
     linear_direction_to_kind, simple_hash,
 };
+use zero_css_parser::values::ColorValue;
 
 /// 测试 apply_transform_offset 的各种 transform 情况
 #[test]
@@ -342,7 +343,7 @@ fn test_convert_color_stops_no_position() {
             position: None,
         },
     ];
-    let converted = convert_color_stops(&stops);
+    let converted = convert_color_stops(&stops, &ColorValue::Rgba(0, 0, 0, 255));
 
     assert_eq!(converted.len(), 2);
     assert_eq!(converted[0].offset, 0.0);
@@ -363,7 +364,7 @@ fn test_convert_color_stops_with_percentage_position() {
             position: Some(LengthValue::Percentage(75.0)),
         },
     ];
-    let converted = convert_color_stops(&stops);
+    let converted = convert_color_stops(&stops, &ColorValue::Rgba(0, 0, 0, 255));
 
     assert_eq!(converted[0].offset, 0.25);
     assert_eq!(converted[1].offset, 0.75);
@@ -381,7 +382,7 @@ fn test_convert_color_stops_with_px_position() {
             position: Some(LengthValue::Px(75.0)),
         },
     ];
-    let converted = convert_color_stops(&stops);
+    let converted = convert_color_stops(&stops, &ColorValue::Rgba(0, 0, 0, 255));
 
     assert_eq!(converted[0].offset, 25.0);
     assert_eq!(converted[1].offset, 75.0);
@@ -406,7 +407,7 @@ fn test_convert_color_stops_calc_position() {
             )))),
         },
     ];
-    let converted = convert_color_stops(&stops);
+    let converted = convert_color_stops(&stops, &ColorValue::Rgba(0, 0, 0, 255));
     assert_eq!(converted[0].offset, 100.0);
     assert_eq!(converted[1].offset, 15.0, "calc(10px + 5px) should evaluate to 15.0");
 }
@@ -423,7 +424,7 @@ fn test_convert_color_stops_calc_infinity_position() {
             Box::new(CalcExpr::Length(LengthValue::Px(1.0))),
         )))),
     }];
-    let converted = convert_color_stops(&stops);
+    let converted = convert_color_stops(&stops, &ColorValue::Rgba(0, 0, 0, 255));
     assert!(
         converted[0].offset.is_infinite() && converted[0].offset > 0.0,
         "calc(Infinity*1px) → +inf"
@@ -446,7 +447,7 @@ fn test_convert_color_stops_mixed_positions() {
             position: Some(LengthValue::Px(100.0)),
         },
     ];
-    let converted = convert_color_stops(&stops);
+    let converted = convert_color_stops(&stops, &ColorValue::Rgba(0, 0, 0, 255));
 
     assert_eq!(converted.len(), 3);
     assert_eq!(converted[0].offset, 0.5);
@@ -462,7 +463,7 @@ fn test_convert_color_stops_single_stop() {
         color: zero_css_parser::values::ColorValue::Rgba(128, 128, 128, 255),
         position: None,
     }];
-    let converted = convert_color_stops(&stops);
+    let converted = convert_color_stops(&stops, &ColorValue::Rgba(0, 0, 0, 255));
 
     assert_eq!(converted.len(), 1);
     assert_eq!(converted[0].offset, 0.0);
@@ -563,7 +564,7 @@ fn test_gradient_to_primitive_linear() {
         repeating: false,
     });
 
-    let result = gradient_to_primitive(&gradient, &rect);
+    let result = gradient_to_primitive(&gradient, &rect, &ColorValue::Rgba(0, 0, 0, 255));
     assert!(result.is_some());
     let prim = result.unwrap();
     assert!(matches!(
@@ -595,7 +596,7 @@ fn test_gradient_to_primitive_radial() {
         repeating: false,
     });
 
-    let result = gradient_to_primitive(&gradient, &rect);
+    let result = gradient_to_primitive(&gradient, &rect, &ColorValue::Rgba(0, 0, 0, 255));
     assert!(result.is_some());
     let prim = result.unwrap();
     if let zero_render_foundation::primitive::GradientKind::Radial {
@@ -636,7 +637,7 @@ fn test_gradient_to_primitive_conic() {
         repeating: false,
     });
 
-    let result = gradient_to_primitive(&gradient, &rect);
+    let result = gradient_to_primitive(&gradient, &rect, &ColorValue::Rgba(0, 0, 0, 255));
     assert!(result.is_some(), "conic-gradient 应返回 Some");
     let prim = result.unwrap();
     assert!(matches!(
@@ -855,7 +856,7 @@ fn test_gradient_to_primitive_radial_closest_side() {
         ],
         repeating: false,
     });
-    let result = gradient_to_primitive(&gradient, &rect);
+    let result = gradient_to_primitive(&gradient, &rect, &ColorValue::Rgba(0, 0, 0, 255));
     assert!(result.is_some());
 }
 
@@ -881,7 +882,7 @@ fn test_gradient_to_primitive_radial_farthest_side() {
         ],
         repeating: false,
     });
-    let result = gradient_to_primitive(&gradient, &rect);
+    let result = gradient_to_primitive(&gradient, &rect, &ColorValue::Rgba(0, 0, 0, 255));
     assert!(result.is_some());
 }
 
@@ -907,7 +908,7 @@ fn test_gradient_to_primitive_radial_closest_corner() {
         ],
         repeating: false,
     });
-    let result = gradient_to_primitive(&gradient, &rect);
+    let result = gradient_to_primitive(&gradient, &rect, &ColorValue::Rgba(0, 0, 0, 255));
     assert!(result.is_some());
 }
 
@@ -933,7 +934,7 @@ fn test_gradient_to_primitive_radial_length_size() {
         ],
         repeating: false,
     });
-    let result = gradient_to_primitive(&gradient, &rect);
+    let result = gradient_to_primitive(&gradient, &rect, &ColorValue::Rgba(0, 0, 0, 255));
     assert!(result.is_some());
     let prim = result.unwrap();
     if let zero_render_foundation::primitive::GradientKind::Radial { outer_radius, .. } = prim.kind {
@@ -1152,7 +1153,7 @@ fn test_convert_color_stops_em_position() {
         color: zero_css_parser::values::ColorValue::Rgba(128, 128, 128, 255),
         position: Some(LengthValue::Em(2.0)), // 不支持，应返回 0.0
     }];
-    let converted = convert_color_stops(&stops);
+    let converted = convert_color_stops(&stops, &ColorValue::Rgba(0, 0, 0, 255));
     assert_eq!(converted[0].offset, 0.0);
 }
 
@@ -1188,7 +1189,7 @@ fn test_gradient_to_primitive_radial_non_px_position() {
         }],
         repeating: false,
     });
-    let result = gradient_to_primitive(&gradient, &rect);
+    let result = gradient_to_primitive(&gradient, &rect, &ColorValue::Rgba(0, 0, 0, 255));
     assert!(result.is_some());
 }
 
@@ -1245,7 +1246,7 @@ fn test_gradient_to_primitive_linear_repeating() {
         ],
         repeating: true, // repeating 标志
     });
-    let result = gradient_to_primitive(&gradient, &rect);
+    let result = gradient_to_primitive(&gradient, &rect, &ColorValue::Rgba(0, 0, 0, 255));
     assert!(result.is_some());
     let prim = result.unwrap();
     assert!(prim.repeating, "repeating flag should be true");

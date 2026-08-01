@@ -844,7 +844,7 @@ fn test_gradient_to_primitive_single_color_stop() {
         repeating: false,
     });
 
-    let result = gradient_to_primitive(&gradient, &rect);
+    let result = gradient_to_primitive(&gradient, &rect, &ColorValue::Rgba(0, 0, 0, 255));
     assert!(result.is_some(), "单色标渐变应返回 Some");
     let prim = result.unwrap();
     assert_eq!(prim.stops.len(), 1);
