@@ -3,6 +3,7 @@
 //! 定义 CSS 属性值的类型化表示，以及解析函数。
 
 pub mod color;
+pub mod color_math;
 pub mod parse_extended;
 pub mod parse_extended_border;
 pub mod parse_extended_visual;
@@ -13,6 +14,7 @@ pub mod types;
 
 // Re-export all public items.
 pub use color::*;
+pub use color_math::*;
 pub use parse_extended::*;
 pub use parse_extended_border::*;
 pub use parse_extended_visual::*;
