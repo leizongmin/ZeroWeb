@@ -349,6 +349,9 @@ pub enum FlexWrapValue {
 pub enum AlignmentValue {
     /// auto（align-self 初始值，继承容器 align-items）。
     Auto,
+    /// normal（CSS Box Align 3：justify-content/align-items/align-self 初始值；
+    /// converter 中 align-items/self→stretch、justify-content→flex-start）。R2383。
+    Normal,
     /// flex-start。
     FlexStart,
     /// flex-end。

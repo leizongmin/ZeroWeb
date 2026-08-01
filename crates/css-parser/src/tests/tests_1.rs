@@ -1406,6 +1406,9 @@ fn test_parse_alignment_all() {
     assert_eq!(parse_alignment("start"), Some(AlignmentValue::Start));
     assert_eq!(parse_alignment("end"), Some(AlignmentValue::End));
     assert_eq!(parse_alignment("baseline"), Some(AlignmentValue::Baseline));
+    // R2383：CSS Box Align 3 normal（justify-content/align-items/align-self 初始值，Chrome 支持）。
+    // 修复前 None → 声明被丢（显式 normal 不能覆盖先前值）。
+    assert_eq!(parse_alignment("normal"), Some(AlignmentValue::Normal));
     assert_eq!(parse_alignment("unknown"), None);
 }
 

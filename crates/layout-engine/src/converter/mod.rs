@@ -668,6 +668,8 @@ fn convert_flex_basis(value: &FlexBasisValue, vw: f32, vh: f32) -> taffy::style:
 fn convert_alignment_to_align_items(value: &AlignmentValue) -> Option<taffy::style::AlignItems> {
     match value {
         AlignmentValue::Auto => None, // align-items 不使用 auto
+        // R2383：normal 行为等同 stretch（CSS Box Align 3，in-flow 默认）。
+        AlignmentValue::Normal => Some(taffy::style::AlignItems::STRETCH),
         AlignmentValue::FlexStart => Some(taffy::style::AlignItems::FLEX_START),
         AlignmentValue::FlexEnd => Some(taffy::style::AlignItems::FLEX_END),
         AlignmentValue::Center => Some(taffy::style::AlignItems::CENTER),
@@ -685,6 +687,8 @@ fn convert_alignment_to_align_self(value: &AlignmentValue) -> Option<taffy::styl
     // AlignSelf 是 AlignItems 的 type alias
     match value {
         AlignmentValue::Auto => None, // 继承容器 align-items
+        // R2383：normal 行为等同 stretch（in-flow；abspos 应为 start，ZW 未区分）。
+        AlignmentValue::Normal => Some(taffy::style::AlignSelf::STRETCH),
         AlignmentValue::FlexStart => Some(taffy::style::AlignSelf::FLEX_START),
         AlignmentValue::FlexEnd => Some(taffy::style::AlignSelf::FLEX_END),
         AlignmentValue::Center => Some(taffy::style::AlignSelf::CENTER),
@@ -700,6 +704,8 @@ fn convert_alignment_to_align_self(value: &AlignmentValue) -> Option<taffy::styl
 fn convert_alignment_to_justify_content(value: &AlignmentValue) -> Option<taffy::style::JustifyContent> {
     match value {
         AlignmentValue::Auto => None, // auto 不适用于 justify-content
+        // R2383：normal 行为等同 flex-start（justify-content 默认 pack-start）。
+        AlignmentValue::Normal => Some(taffy::style::JustifyContent::FLEX_START),
         AlignmentValue::FlexStart => Some(taffy::style::JustifyContent::FLEX_START),
         AlignmentValue::FlexEnd => Some(taffy::style::JustifyContent::FLEX_END),
         AlignmentValue::Center => Some(taffy::style::JustifyContent::CENTER),

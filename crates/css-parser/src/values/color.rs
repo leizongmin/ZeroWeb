@@ -1874,9 +1874,12 @@ pub fn parse_flex_wrap(value: &str) -> Option<FlexWrapValue> {
     }
 }
 
-/// 解析 CSS justify-content / align-items 属性值。
+/// 解析 CSS justify-content / align-items / align-self 属性值。
 pub fn parse_alignment(value: &str) -> Option<AlignmentValue> {
     match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(AlignmentValue::Auto),
+        // R2383：CSS Box Align 3 normal（justify-content/align-items/align-self 初始值）。
+        "normal" => Some(AlignmentValue::Normal),
         "flex-start" => Some(AlignmentValue::FlexStart),
         "flex-end" => Some(AlignmentValue::FlexEnd),
         "center" => Some(AlignmentValue::Center),
