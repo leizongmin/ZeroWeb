@@ -340,17 +340,19 @@
 
 ### 轻量修复候选
 
-**当前活跃轻量主线 = CSS 合规缺口定向 code-reading probe（多 vein 并行）**。R2373-R2380 连续 8 lever **彻底推翻 R2372「双路径穷尽」结论**，跨两大 vein：(1) color-mix 标准空间补全 milestone（R2376-R2378，6/6 CSS Color 4 §12 空间）；(2) **CSS 属性 value-级 parse-gap 新 vein**（R2379 outline-style:auto + R2380 aspect-ratio auto<ratio，经 Explore 短阵广扫 15 属性定位）。
+**当前活跃轻量主线 = CSS 合规缺口定向 code-reading probe（多 vein 并行）**。R2373-R2383 连续 11 lever **彻底推翻 R2372「双路径穷尽」结论**，跨多 vein：(1) color-mix 标准空间补全+feature 收官（R2376-R2378 空间 + R2381 hue method）；(2) **CSS 属性 value-级 parse-gap vein**（R2379 outline-style:auto、R2380 aspect-ratio、R2382 justify-items/self left/right、R2383 alignment normal）；(3) CSS Color 系统色/单位/gradient-hint（R2373-R2375）。
 
-★ **R2204 洞见 + R2373-R2380 八连实证**：「CSS2/parser/selector clean lever 九重穷尽」「自主清洁 lever 双路径穷尽」结论**均局限于 reftest-visible + 已扫维度**；**unit-test 驱动的 CSS 合规缺口**经定向代码阅读持续可发现。**故后续 agent 不应信「exhausted」结论停手**。**两类高产出模式**：① 转换/常量「已存在仅缺接线」（R2376-R2378 color-mix 空间）；② Explore 短阵广扫属性表定位 value-级缺失关键字（R2379-R2380）。
+★ **R2204 洞见 + R2373-R2383 十一连实证**：「exhausted」结论**局限于 reftest-visible + 已扫维度**；unit-test 驱动的 CSS 合规缺口经定向代码阅读持续可发现。**两类高产出模式**：① 转换/常量「已存在仅缺接线」（color-mix 空间）；② Explore 短阵广扫属性表定位 value-级缺失关键字。
+
+**★ CSS 属性 value-级 gap vein 经多轮探针（~50 属性：Tables/Text/UI/Overflow/Grid/Flex/Multicol/Backgrounds 全扫）已 Chrome-aligned 穷尽**——勿再盲扫；caption-side 等 Chrome 不支持者补反 diverge；subgrid/宽色域需 layout/gamut（defer）。**下一 lever 须 pivot 到其他 vein**。
 
 下一轮可接续的具体入口（逐条 verify-then-fix，TDD red→green，优先 unit-test 驱动不强依赖 wpt-data；每修一个跑 scoped test + clippy + fmt + 全量 `make test`，net≥0 land）：
-- **★ CSS 属性 value-级 gap vein 已 Chrome-aligned 穷尽**（多轮 Explore 探针 ~30 属性，详见 R2381 量证附注）——勿再在此 vein 盲扫；caption-side 等 Chrome 不支持者补反 diverge。
-- **fresh 子域定向 code-reading**（未深扫的 vein）：CSS Grid/Flex/Multicol **value-级**缺口（grid-template-* / flex-* / columns 缺失关键字值，先 Explore 定位 + 核消费侧 Chrome 支持）；CSS Counter（`counter()`/`counters()` / `@counter-style`，后者 R2233 待授权）；CSS `env()`（safe-area-inset 等）；CSS custom property `var()` 边角。
-- **color-mix 宽色域空间**（display-p3/a98-rgb/prophoto-rgb）：需 gamut 映射，深，defer（color-mix feature 已收官 + 量证正确）。
+- **reftest-driven vein（pivot 首选）**：scoped `make reftest-upstream FILTER=<dir>` 量未深扫 dir（css-box / css-values / css-backgrounds 边角）找离散 fail → 追踪到 parse/render bug（R2369/R2370 模式；R2372 称 exhausted 但 R2369+ 仍出 lever）。
+- **CSS Counter / 生成内容**：`counter()`/`counters()` 解析+渲染配套、`@counter-style`（R2233 待授权）；`<q>` quotes（R2233 待授权）。
+- **CSS `env()` 解析**（safe-area-inset + fallback，desktop→0 但 `env(x,fallback)` 现被丢）。
+- **孤儿/死代码清理（R2383 发现）**：`parse_basic.rs` 整文件未被 `mod` 声明（非 build），是 color.rs/parse_layout.rs 重导出版本的死副本且有 auto 不一致——建议核后清理（doc/cleanup，须确认无任何 mod 声明再删）。
 - **CSS Values 4 单位表续**：`lh`/`rlh`（弱）/`cap`/`ic`（需字体度量 deferred）/`dppx`/`dpi`/`dpcm`。
 - **CSS Syntax §4/§5 其他合规缺口**：MQ L4 比较运算符 token 化；CDO/CDC 非顶层上下文。
-- **scoped reftest 量证续**（R2381 已量 color-mix）：其他 dir（css-backgrounds/css-values）量 R2373-R2380 footprint；或 oracle 模式（需 chromium，慢）。
 - **文档 vs 代码行号漂移续修**（R2203 verify-then-fix 模式）。
 - 每修一个：仅文档→跳过昂贵 make test；连带 `.rs`→跑 scoped test-guard + 必要时全量 `make test`，net≥0 land。
 
