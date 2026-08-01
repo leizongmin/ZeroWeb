@@ -330,14 +330,16 @@
 
 ### 轻量修复候选
 
-**当前活跃轻量主线 = 文档 vs 代码不一致纠偏 + CSS Syntax 合规缺口定向 code-reading probe**（R2202 根因：文档滞后致反复盲推空转；用户授权「文档 vs 代码不一致的纠偏 = 高价值轻量活」）。
+**当前活跃轻量主线 = CSS Color / Values / Images 合规缺口定向 code-reading probe**（R2373-R2375 连续三轮证：对照各 spec § 清单逐一定向核 parser/命名表/单位表，持续发现 parser-compliance 缺口）。
 
-★ **R2204 重要订正**：「CSS2/parser/selector clean lever 九重穷尽」结论**局限于 reftest-visible lever**（需 wpt-data/oracle 验证者）；**unit-test 驱动的 CSS Syntax 合规缺口**经定向代码阅读仍可发现——R2204 即证：CDO/CDC token 化缺口被「rendering path 零 TODO/FIXME」式扫描漏掉，但经读 tokenizer 主 dispatch + `skip_whitespace`/`skip_malformed_qualified_rule` 行为即定位修复。故后续 agent 不应把「reftest 九重穷尽」当成「所有 CSS lever 穷尽」。
+★ **R2204 洞见 + R2373-R2375 连续实证**：「CSS2/parser/selector clean lever 九重穷尽」「自主清洁 lever 双路径穷尽」结论**均局限于 reftest-visible + 已扫维度**；**unit-test 驱动的 CSS 合规缺口**经定向代码阅读持续可发现。本 session 连续 land 3 lever（R2373 vi/vb 单位 / R2374 gradient hint / R2375 系统色），逐一**推翻 R2372 exhausted 结论**：① R2359 sv*/lv*/dv* sweep 漏同族 i/b 变体；② `parse_color_stops` 的 `?` 失败传播致裸 hint 丢整渐变（R2204 CDO/CDC 同族 parse-drop）；③ 14 个 CSS Color 4 §12 现代色缺失。**故后续 agent 不应信「exhausted」结论停手**——定向对照 spec 清单逐表/逐函数核 parser，仍有 lever。
 
-下一轮可接续的具体入口（逐条 verify-then-fix，**不**做 pending 的全量系统性审计，只修已实证项；优先 unit-test 驱动，不强依赖 wpt-data）：
-- CSS Syntax §4/§5 其他合规缺口定向 probe：media-query 比较运算符 `<`/`>`/`<=`/`>=`（MQ Level 4）token 化与 parse；CDO/CDC 在**非顶层**上下文（qualified rule prelude / declaration value）应 parse-error 而非一律忽略——核实现状是否需收紧。
-- 量本 R2204 lever 的实际 WPT footprint：scoped `make reftest-upstream FILTER=css-syntax`（需 wpt-data，网络 fetch；不强求）看 css-syntax dir 是否有 `<!--` 相关 case 翻绿。
-- 文档 vs 代码行号漂移续修（沿用 R2203/R2204 verify-then-fix 模式）。
+下一轮可接续的具体入口（逐条 verify-then-fix，TDD red→green，优先 unit-test 驱动不强依赖 wpt-data；每修一个跑 scoped test + clippy + fmt + 全量 `make test`，net≥0 land）：
+- **CSS Values 4 单位表续**：`parse_length` 单位 match 对照 CSS Values 4 §unit 清单——`lh`/`rlh`（line-height，可用 normal 常数近似，同 ex→0.8em 模式，但 lh 随作者 line-height 变更误导，弱候选）/ `cap`/`ic`/`ric`/`rcap`（需字体度量，deferred）/ `dppx`/`dpi`/`dpcm`（resolution，niche）。
+- **color-mix 色彩空间补全**（color.rs `parse_color_mix` 现 srgb+lch 两空间）：补 `srgb-linear`（已知线性变换，最易）/`oklab`/`oklch`/`xyz`（需 OKLab 矩阵 / xyz 变换数学，moderate；注意 GRADIENT interpolation 已支持全 6 空间=可参照）。
+- **CSS Syntax §4/§5 其他合规缺口**：media-query 比较运算符 `<`/`>`/`<=`/`>=`（MQ L4）token 化；CDO/CDC 在非顶层上下文应 parse-error 而非忽略——核实现状。
+- **量本 session lever 的 WPT footprint**（R2207 模式）：scoped `make reftest-oracle DIR=css/css-images` 看 R2374 hint 是否有 case 翻绿（需 wpt-data，网络 fetch；不强求）。
+- **文档 vs 代码行号漂移续修**（R2203 verify-then-fix 模式）。
 - 每修一个：仅文档→跳过昂贵 make test；连带 `.rs`→跑 scoped test-guard + 必要时全量 `make test`，net≥0 land。
 
 期间不要借机跳入深结构（见「深结构性方向」与「待用户决策清单」）。
