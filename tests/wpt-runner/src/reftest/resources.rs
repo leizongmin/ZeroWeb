@@ -203,6 +203,292 @@ pub(super) fn load_linked_stylesheets(html: &str, base_dir: Option<&Path>) -> St
     merged
 }
 
+/// R2426：递归展开 CSS 文本中的 `@import` 语句（harness sync 路径补全）。
+///
+/// **背景**：`load_linked_stylesheets` 只解析 `<link>`，完全不解析 `<style>`/passed CSS 内的
+/// `@import`——生产 async 路径 R2411 已递归抓 @import，但 harness sync 路径（collect_stylesheets
+/// 不抓 @import）丢失，致 WPT `@import` reftest（如 css-cascade/import-conditional-001/002，
+/// 19 个 @import 案）的导入 CSS 不应用。本函数文本扫描 CSS，对每个 @import：
+/// - 求值 media（CSS Cascade 3 §conditional-import；复用 parse_media_query + evaluate_media_query），
+///   空 media = all = 总应用；不匹配则**删除**该 @import。
+/// - 匹配且为本地 URL（非 data:/http(s):）则读 base_dir 下文件，递归展开其 @import，用文件内容
+///   **替换**该 @import 语句。
+///
+/// **文本扫描**（state machine 跳 string/comment 避误匹配）——css-parser Rule::Import 无 byte span、
+/// 无 CSS serializer，故不复用 parser 做替换。nested @import 相对 URL 相对**导入文件父目录**解析
+/// （递归传 path.parent()）。`chain` = 当前递归祖先链（insert 后 remove），防环 A→B→A，但允许
+/// 兄弟 @import 各自导入同文件。读失败/解析失败保守保留原语句。
+pub(super) fn expand_at_imports(
+    css: &str,
+    base_dir: &Path,
+    media_ctx: &zero_css_parser::media_query::MediaContext,
+    chain: &mut std::collections::HashSet<std::path::PathBuf>,
+) -> String {
+    let bytes = css.as_bytes();
+    let n = bytes.len();
+    let mut out = String::with_capacity(css.len());
+    let mut i = 0;
+    while i < n {
+        let c = bytes[i];
+        // 跳过 string literal（原样输出，不在串内匹配 @import）
+        if c == b'"' || c == b'\'' {
+            let quote = c;
+            out.push(c as char);
+            i += 1;
+            while i < n {
+                let cc = bytes[i];
+                out.push(cc as char);
+                i += 1;
+                if cc == quote {
+                    break;
+                }
+            }
+            continue;
+        }
+        // 跳过 block comment（原样输出）
+        if c == b'/' && i + 1 < n && bytes[i + 1] == b'*' {
+            out.push_str("/*");
+            i += 2;
+            while i + 1 < n {
+                if bytes[i] == b'*' && bytes[i + 1] == b'/' {
+                    out.push_str("*/");
+                    i += 2;
+                    break;
+                }
+                out.push(bytes[i] as char);
+                i += 1;
+            }
+            continue;
+        }
+        // 检测 @import（大小写不敏感；前置须非 ident 边界，后置须非 ident-char）
+        if c == b'@' && is_ident_boundary_before(bytes, i) {
+            let rest = &css[i..];
+            let lower_rest = rest.to_ascii_lowercase();
+            if lower_rest.starts_with("@import") && (rest.len() == 7 || !is_ident_char(rest.as_bytes()[7])) {
+                // 找语句末尾 ';'（跨 string 防 ';' 在串内）
+                let mut j = i + 7;
+                while j < n && bytes[j] != b';' {
+                    if bytes[j] == b'"' || bytes[j] == b'\'' {
+                        let q = bytes[j];
+                        j += 1;
+                        while j < n && bytes[j] != q {
+                            j += 1;
+                        }
+                    }
+                    j += 1;
+                }
+                if j >= n {
+                    // 无 ';' → 畸形，原样输出剩余
+                    out.push_str(&css[i..]);
+                    break;
+                }
+                let body = &css[i + 7..j]; // @import 之后、; 之前
+                i = j + 1;
+                match parse_import_stmt_body(body) {
+                    Some((url, supports, media)) => {
+                        let is_local =
+                            !url.starts_with("data:") && !url.starts_with("http://") && !url.starts_with("https://");
+                        let media_ok = media.is_empty() || media_matches_any(&media, media_ctx);
+                        if is_local && media_ok {
+                            let path = base_dir.join(&url);
+                            if !chain.contains(&path) {
+                                chain.insert(path.clone());
+                                if let Ok(imported_bytes) = std::fs::read(&path) {
+                                    let imported = zero_net::charset::decode_css_bytes(&imported_bytes, None);
+                                    let nested_base = path.parent().unwrap_or(base_dir);
+                                    let expanded = expand_at_imports(&imported, nested_base, media_ctx, chain);
+                                    chain.remove(&path);
+                                    // supports() 条件：把展开后的导入 CSS 包进 `@supports (<cond>) { ... }`，
+                                    // 委托 matcher 求值（CSS Cascade 5 @import 条件导入语义）。
+                                    // 统一包一层括号让 bare 声明 `display:block` 也合法（@supports 要求括号包裹）。
+                                    match supports {
+                                        Some(cond) => {
+                                            out.push_str("\n@supports (");
+                                            out.push_str(cond.trim());
+                                            out.push_str(") {\n");
+                                            out.push_str(&expanded);
+                                            out.push_str("\n}\n");
+                                        }
+                                        None => out.push_str(&expanded),
+                                    }
+                                    continue;
+                                }
+                                chain.remove(&path);
+                            }
+                        }
+                        // media 不匹配 / data:http: / 环 / 读失败 → 删除该 @import（不输出）；
+                        // supports 不成立的 @import 仍输出 @supports 包裹（matcher 会跳过），与 chromium
+                        // cascade-origin 行为一致。
+                        continue;
+                    }
+                    None => {
+                        // 解析失败 → 原样保留（保守，不破坏 CSS）
+                        out.push_str("@import");
+                        out.push_str(body);
+                        out.push(';');
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(c as char);
+        i += 1;
+    }
+    out
+}
+
+/// 解析 `@import` body（@import 之后、`;` 之前的内容）为 `(url, supports, media_query_list)`。
+///
+/// 形式：`"url" [supports(<cond>)]? <media-query-list>?` / `url(url) ...` / `url ...`（bare）。
+/// - `supports(<cond>)` 子句（CSS Cascade 5）：可选，提取括号内**条件文本**（`<cond>`）；
+///   内部递归展开为 `@supports (<cond>) { ... }` 由 matcher 求值（故 `<cond>` 允许裸声明
+///   `display:block`，与 @import supports() 语义一致——@supports 本身要求裸声明须括号包裹，
+///   本函数输出时统一包一层括号 `(<cond>)`，bare/nested/selector()/not 均合法）。
+/// - `<media-query-list>`：可选，顶层逗号分割（逗号 = OR）；仅当无 supports 子句时与 media 共存，
+///   有 supports 时 media 在其后（whitespace 分隔）。
+///
+/// 返回 (url, supports 条件文本 or None, media queries)；均缺省时 supports=None / media=空 Vec。
+fn parse_import_stmt_body(body: &str) -> Option<(String, Option<String>, Vec<String>)> {
+    let body = body.trim();
+    if body.is_empty() {
+        return None;
+    }
+    let bytes = body.as_bytes();
+    let (url, rest) = if bytes[0] == b'"' || bytes[0] == b'\'' {
+        let q = bytes[0] as char;
+        let end = body[1..].find(q)? + 1;
+        (body[1..end].to_string(), &body[end + 1..])
+    } else if body.to_ascii_lowercase().starts_with("url(") {
+        let after = &body[4..];
+        let close = after.find(')')?;
+        let inner = after[..close].trim();
+        let url = inner.trim_matches('"').trim_matches('\'').to_string();
+        (url, &after[close + 1..])
+    } else {
+        let end = body.find(|c: char| c.is_whitespace()).unwrap_or(body.len());
+        (body[..end].to_string(), &body[end..])
+    };
+    let trimmed = rest.trim_start();
+    // 提取可选的 `supports(<cond>)` 子句（CSS Cascade 5 @import 条件）。
+    let (supports, media_rest) = match strip_supports_clause(trimmed) {
+        Some((cond, after)) => (Some(cond), after),
+        None => (None, trimmed),
+    };
+    let media: Vec<String> = media_rest
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    Some((url, supports, media))
+}
+
+/// 从 `supports(<cond>) ...` 文本中提取 `<cond>` 与子句之后的剩余（含 media 列表）。
+///
+/// 仅当文本以 `supports` + 非标识边界 + `(` 开头时匹配（避 `supportsxyz` 误匹配）。用平衡
+/// 括号扫描定位 `supports(` 的匹配闭括号（处理嵌套括号 / selector() 内逗号 / 字符串字面量）。
+/// 返回 (条件内部文本, supports 子句之后的剩余)；不匹配返回 None。
+fn strip_supports_clause(input: &str) -> Option<(String, &str)> {
+    let lower = input.to_ascii_lowercase();
+    let after_kw = lower.strip_prefix("supports")?;
+    // supports 后须紧跟 `(`（允许空白），否则非 supports() 子句。
+    let paren_off = after_kw.find('(')?;
+    let ws = &after_kw[..paren_off];
+    if !ws.trim().is_empty() {
+        return None;
+    }
+    let bytes = input.as_bytes();
+    // supports 后第一个 `(` 的字节偏移。
+    let open_abs = "supports".len() + paren_off;
+    let mut depth = 1i32;
+    let mut j = open_abs + 1;
+    while j < bytes.len() && depth > 0 {
+        let c = bytes[j];
+        if c == b'"' || c == b'\'' {
+            // 跳过字符串字面量（条件内罕见，保守处理）
+            let q = c;
+            j += 1;
+            while j < bytes.len() && bytes[j] != q {
+                j += 1;
+            }
+        } else if c == b'(' {
+            depth += 1;
+        } else if c == b')' {
+            depth -= 1;
+            if depth == 0 {
+                let cond = &input[open_abs + 1..j];
+                return Some((cond.trim().to_string(), &input[j + 1..]));
+            }
+        }
+        j += 1;
+    }
+    None
+}
+
+/// media query 列表求值：任一 query 匹配即 true（CSS 逗号 = OR）。复用 css-parser 的
+/// parse_media_query + evaluate_media_query（与 @media 级联过滤同源）。
+fn media_matches_any(queries: &[String], ctx: &zero_css_parser::media_query::MediaContext) -> bool {
+    use zero_css_parser::media_query::{evaluate_media_query, parse_media_query};
+    queries.iter().any(|q| {
+        parse_media_query(q)
+            .map(|qs| qs.iter().any(|mq| evaluate_media_query(mq, ctx)))
+            .unwrap_or(false)
+    })
+}
+
+fn is_ident_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'-' || b == b'_'
+}
+
+fn is_ident_boundary_before(bytes: &[u8], i: usize) -> bool {
+    if i == 0 {
+        return true;
+    }
+    !is_ident_char(bytes[i - 1])
+}
+
+/// R2426：在 HTML 每个 `<style>` 块内展开 @import（替换 style 内容），供 harness 对
+/// inline `<style>` 的 @import 解析（与 expand_at_imports 同逻辑，作用域 HTML style 块）。
+/// 找 `<style ...>` open tag（含属性）→ content → `</style>`，对 content 调 expand_at_imports。
+pub(super) fn expand_style_imports(
+    html: &str,
+    base_dir: &Path,
+    media_ctx: &zero_css_parser::media_query::MediaContext,
+) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut pos = 0;
+    while let Some(rel) = html[pos..].find("<style") {
+        let abs_open = pos + rel;
+        // open tag 后须紧跟 '>' 或 whitespace（避 `<stylexxx` 误匹配）
+        let after_tag_name = &html[abs_open + 6..];
+        let next_non_ws = after_tag_name.trim_start();
+        let ws_len = after_tag_name.len() - next_non_ws.len();
+        if !next_non_ws.is_empty() && next_non_ws.as_bytes()[0] != b'>' && !(next_non_ws.starts_with('/')) {
+            // 非合法 <style> tag（如 <stylexyz），原样跳过该匹配
+            out.push_str(&html[pos..abs_open + 6]);
+            pos = abs_open + 6;
+            continue;
+        }
+        let _ = ws_len; // 属性解析由 find('>') 统一处理
+        let Some(rel_gt) = html[abs_open..].find('>') else {
+            break;
+        };
+        let content_start = abs_open + rel_gt + 1;
+        let Some(rel_close) = html[content_start..].find("</style>") else {
+            out.push_str(&html[pos..]);
+            break;
+        };
+        let content_end = content_start + rel_close;
+        let style_content = &html[content_start..content_end];
+        out.push_str(&html[pos..content_start]);
+        let mut chain = std::collections::HashSet::new();
+        out.push_str(&expand_at_imports(style_content, base_dir, media_ctx, &mut chain));
+        out.push_str("</style>");
+        pos = content_end + "</style>".len();
+    }
+    out.push_str(&html[pos..]);
+    out
+}
+
 /// 判断路径指向的外链样式表是否为 CSS MIME（CSS2 conformance：非 text/css 须忽略）。
 ///
 /// 有 `.headers` sidecar Content-Type 时以 sidecar MIME 为准（WPT content-type-000：
@@ -619,5 +905,183 @@ mod tests {
                 "support/swatch-red.png".to_string(),
             ]
         );
+    }
+
+    /// R2426：`@import` body 解析 —— 引号 URL + media 列表（逗号分割）。
+    #[test]
+    fn parse_import_body_quoted_url_with_media() {
+        let (url, supports, media) = parse_import_stmt_body(r#" "x.css" (min-width:1px), nonsense"#).unwrap();
+        assert_eq!(url, "x.css");
+        assert!(supports.is_none());
+        assert_eq!(media, vec!["(min-width:1px)".to_string(), "nonsense".to_string()]);
+    }
+
+    /// R2426：`url()` 函数形式 + 单 media query。
+    #[test]
+    fn parse_import_body_url_function() {
+        let (url, supports, media) = parse_import_stmt_body(" url(y.css) screen").unwrap();
+        assert_eq!(url, "y.css");
+        assert!(supports.is_none());
+        assert_eq!(media, vec!["screen".to_string()]);
+    }
+
+    /// R2426：无 media（空 media = all = 总应用）。
+    #[test]
+    fn parse_import_body_no_media() {
+        let (url, supports, media) = parse_import_stmt_body(r#""z.css""#).unwrap();
+        assert_eq!(url, "z.css");
+        assert!(supports.is_none());
+        assert!(media.is_empty());
+    }
+
+    /// R2426：`supports()` 子句（bare 声明形式，import-conditional-002 用法）。
+    #[test]
+    fn parse_import_body_supports_bare_declaration() {
+        let (url, supports, media) = parse_import_stmt_body(r#""green.css" supports(display: block)"#).unwrap();
+        assert_eq!(url, "green.css");
+        assert_eq!(supports.as_deref(), Some("display: block"));
+        assert!(media.is_empty(), "supports 后无 media → 空: {media:?}");
+    }
+
+    /// R2426：`supports()` + media 共存（supports 在前、media 在后）。
+    #[test]
+    fn parse_import_body_supports_then_media() {
+        let (url, supports, media) =
+            parse_import_stmt_body(r#""x.css" supports(display:flex) screen and (min-width:1px)"#).unwrap();
+        assert_eq!(url, "x.css");
+        assert_eq!(supports.as_deref(), Some("display:flex"));
+        // 注意：supports 子句内的 media split——supports 后的 media 列表按逗号分割。
+        assert_eq!(media, vec!["screen and (min-width:1px)".to_string()]);
+    }
+
+    /// R2426：`supports(selector(:is(a, b)))` 含逗号——平衡括号扫描不误截。
+    #[test]
+    fn parse_import_body_supports_with_inner_comma() {
+        let body = r#""x.css" supports(selector(:is(a, b))) (min-width:1px)"#;
+        let (url, supports, media) = parse_import_stmt_body(body).unwrap();
+        assert_eq!(url, "x.css");
+        assert_eq!(supports.as_deref(), Some("selector(:is(a, b))"));
+        assert_eq!(media, vec!["(min-width:1px)".to_string()]);
+    }
+
+    /// R2426：media 匹配 → @import 被文件内容替换；不匹配 → @import 删除。
+    #[test]
+    fn expand_at_imports_media_match_inlines_nomatch_drops() {
+        let dir = std::env::temp_dir().join(format!("zw_reftest_import_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("green.css"), ".test { background: green }").unwrap();
+        std::fs::write(dir.join("red.css"), ".test { background: red }").unwrap();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        // green @import media 匹配（800px ∈ [1,40000in]）→ 内联；red @import media 不匹配（max-width:1px）→ 删除。
+        let css = concat!(
+            r#"@import "green.css" (min-width:1px) and (max-width:40000in), nonsense;"#,
+            "\n",
+            r#"@import "red.css" (max-width:1px), nonsense;"#,
+            "\n",
+            "div { background: red }",
+        );
+        let mut chain = std::collections::HashSet::new();
+        let out = expand_at_imports(css, &dir, &ctx, &mut chain);
+        assert!(
+            out.contains(".test { background: green }"),
+            "匹配 @import 应被内容替换: {out}"
+        );
+        assert!(
+            !out.contains(".test { background: red }"),
+            "不匹配 @import 应删除（不含 red.css 内容）: {out}"
+        );
+        assert!(!out.contains("@import"), "无残留 @import 语句: {out}");
+        assert!(
+            out.contains("div { background: red }"),
+            "非 @import 规则原样保留: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// R2426：无 media → 总应用（内联）；递归展开嵌套 @import。
+    #[test]
+    fn expand_at_imports_recursion_and_cycle() {
+        let dir = std::env::temp_dir().join(format!("zw_reftest_import_rec_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // a.css 导入 b.css；b.css 导入 c.css + a.css（环 a→b→a）。
+        std::fs::write(dir.join("a.css"), "@import \"b.css\";\n.a { color: red }").unwrap();
+        std::fs::write(
+            dir.join("b.css"),
+            "@import \"c.css\";\n@import \"a.css\";\n.b { color: green }",
+        )
+        .unwrap();
+        std::fs::write(dir.join("c.css"), ".c { color: blue }").unwrap();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        let mut chain = std::collections::HashSet::new();
+        let out = expand_at_imports("@import \"a.css\";", &dir, &ctx, &mut chain);
+        // c.css 内容（递归到达，b 导入 c）。
+        assert!(out.contains(".c { color: blue }"), "递归应展开 c.css: {out}");
+        // b.css 内容。
+        assert!(out.contains(".b { color: green }"), "应展开 b.css: {out}");
+        // a.css 内容。
+        assert!(out.contains(".a { color: red }"), "应展开 a.css: {out}");
+        // 环 a→b→a 终止（a 仅出现一次 .a 规则——chain 防二次进入）。
+        assert_eq!(
+            out.matches(".a { color: red }").count(),
+            1,
+            "环检测：a.css 规则仅一次（无无限递归）: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// R2426：`supports()` 条件 → 导入 CSS 包进 `@supports (<cond>) { ... }`（bare 声明也包，
+    /// 委托 matcher 求值）；无 supports 时直接内联。
+    #[test]
+    fn expand_at_imports_supports_wraps_bare_declaration() {
+        let dir = std::env::temp_dir().join(format!("zw_reftest_import_sup_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("g.css"), ".test { background: green }").unwrap();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        let css = r#"@import "g.css" supports(display: block);"#;
+        let mut chain = std::collections::HashSet::new();
+        let out = expand_at_imports(css, &dir, &ctx, &mut chain);
+        // 导入 CSS 被包进 @supports 块（bare 声明包一层括号 → (display: block)）。
+        assert!(
+            out.contains("@supports (display: block)") && out.contains(".test { background: green }"),
+            "supports() 应输出 @supports 包裹 + 导入内容: {out}"
+        );
+        assert!(!out.contains("@import"), "无残留 @import: {out}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// R2426：supports() + media 共存 → media 求值后输出 @supports 包裹（matcher 再求值 supports）。
+    /// media 不匹配 → 整条 @import 删除（supports 包裹也不输出）。
+    #[test]
+    fn expand_at_imports_supports_and_media() {
+        let dir = std::env::temp_dir().join(format!("zw_reftest_import_supm_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("g.css"), ".test { background: green }").unwrap();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        let mut chain = std::collections::HashSet::new();
+        // media 匹配（min-width:1px）+ supports(display:block) → 输出 @supports 包裹。
+        let out1 = expand_at_imports(
+            r#"@import "g.css" supports(display: block) (min-width:1px);"#,
+            &dir,
+            &ctx,
+            &mut chain,
+        );
+        assert!(
+            out1.contains("@supports (display: block)"),
+            "media 匹配应输出 supports 包裹: {out1}"
+        );
+        // media 不匹配（max-width:1px）→ 整条删除。
+        let out2 = expand_at_imports(
+            r#"@import "g.css" supports(display: block) (max-width:1px);"#,
+            &dir,
+            &ctx,
+            &mut chain,
+        );
+        assert!(!out2.contains(".test"), "media 不匹配应整条删除: {out2}");
+        assert!(!out2.contains("@supports"), "media 不匹配不输出 supports 包裹: {out2}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

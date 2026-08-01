@@ -260,6 +260,7 @@ fn parse_single_media_query(input: &str) -> Option<MediaQuery> {
     }
 
     // 尝试提取媒体类型（CSS 关键字不区分大小写）
+    let after_prefix = remaining; // not/only 剥离后、media-type 提取前的剩余（R2426 未知 type 检测）
     let lower_remaining = remaining.to_ascii_lowercase();
     if lower_remaining.starts_with("screen") {
         let after = remaining[6..].trim_start();
@@ -296,6 +297,16 @@ fn parse_single_media_query(input: &str) -> Option<MediaQuery> {
                 .unwrap_or(after)
                 .trim_start();
         }
+    }
+
+    // R2426：未知 media type（裸标识符非 screen/print/all 且非括号条件开头）→ 不匹配
+    // （MQ4 §3.6: "Unknown media types evaluate to false"）。此前 media_type=None 丢失
+    // 「曾出现未知 type」信息，evaluate_media_query 把 None 当 "all"→匹配，致 `@media nonsense`
+    // / `@import "x.css" (..), nonsense` 中未知 type 误判匹配。返回 None（解析失败）让调用方
+    // 按 no-match 处理（与既有 `@media screen` / `(condition)` 行为不变——那些 media_type 非 None
+    // 或 after_prefix 以 `(` 开头）。
+    if media_type.is_none() && !after_prefix.is_empty() && !after_prefix.starts_with('(') {
+        return None;
     }
 
     // 解析括号内的条件

@@ -524,13 +524,24 @@ fn render_with_layout_inner(
 ) {
     // 执行页面 <script>（含 DOM 变更），把 JS 后的最终 HTML 用于后续渲染。
     let mutated_html = apply_scripted_dom_mutations(html, base_dir);
-    let html: &str = &mutated_html;
+    let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
+        config.viewport_width as f64,
+        config.viewport_height as f64,
+        config.media_type,
+    );
+    // R2426：展开 inline `<style>` 内的 @import（harness sync 路径补全——collect_stylesheets
+    // 不抓 @import；passed/linked CSS 的 @import 在 merge_page_css 内展开）。
+    let styled_html = match base_dir {
+        Some(base) => crate::reftest::resources::expand_style_imports(&mutated_html, base, &media_ctx),
+        None => mutated_html,
+    };
+    let html: &str = &styled_html;
 
     // 先构建图像缓存，提取固有尺寸供 paint 阶段使用
     let mut image_cache = build_image_cache(html, base_dir);
     let (image_sizes, image_ratios, image_no_ratio) = extract_image_metrics(&mut image_cache, html);
 
-    let combined_css = merge_page_css(html, css, base_dir);
+    let combined_css = merge_page_css(html, css, base_dir, Some(&media_ctx));
 
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
     pipeline.set_skip_indicators(true);
@@ -632,7 +643,7 @@ fn render_with_layout_inner(
     // 的原 html 不同）——DC-13 结构检查须用它建 labels，否则 layout 树 node_id 与 collect_dom_labels
     //（解析原 html）不匹配 → 真元素误标 "(anon)"（R1499：morning disqus loadDisqus() appendChild
     // 致 mutated_html 与原 html 不同，p/table 误标 anon）。
-    (fb, result.layout.root, result.layout.paint_skip_node_ids, mutated_html)
+    (fb, result.layout.root, result.layout.paint_skip_node_ids, styled_html)
 }
 
 /// DC-13 line 321：通过 `zero-webview` 稳定嵌入边界渲染 HTML 到 FrameBuffer。
@@ -654,11 +665,20 @@ pub fn render_via_webview_to_framebuffer_with_base(
     base_dir: Option<&Path>,
 ) -> FrameBuffer {
     let mutated_html = apply_scripted_dom_mutations(html, base_dir);
-    let html: &str = &mutated_html;
+    let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
+        config.viewport_width as f64,
+        config.viewport_height as f64,
+        config.media_type,
+    );
+    let styled_html = match base_dir {
+        Some(base) => crate::reftest::resources::expand_style_imports(&mutated_html, base, &media_ctx),
+        None => mutated_html,
+    };
+    let html: &str = &styled_html;
 
     let mut image_cache = build_image_cache(html, base_dir);
     let (image_sizes, image_ratios, image_no_ratio) = extract_image_metrics(&mut image_cache, html);
-    let combined_css = merge_page_css(html, css, base_dir);
+    let combined_css = merge_page_css(html, css, base_dir, Some(&media_ctx));
 
     let mut font_loader = create_font_loader();
     let font_scan_css = format!("{combined_css}\n{}", extract_inline_style_css(html));
@@ -701,14 +721,28 @@ pub fn render_via_webview_to_framebuffer_with_base(
 }
 
 /// 合并传入 CSS 与 `base_dir` 下 `<link rel="stylesheet">` 外链（engine / WebView 共用）。
-fn merge_page_css(html: &str, css: &str, base_dir: Option<&Path>) -> String {
+fn merge_page_css(
+    html: &str,
+    css: &str,
+    base_dir: Option<&Path>,
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+) -> String {
     let linked_css = load_linked_stylesheets(html, base_dir);
-    if css.is_empty() {
+    let combined = if css.is_empty() {
         linked_css
     } else if linked_css.is_empty() {
         css.to_string()
     } else {
         format!("{linked_css}\n{css}")
+    };
+    // R2426：展开 passed/linked CSS 内的 @import（harness sync 路径补全——collect_stylesheets
+    // 不抓 @import；inline `<style>` 的 @import 由 render 函数的 expand_style_imports 处理）。
+    match (base_dir, media_ctx) {
+        (Some(base), Some(ctx)) => {
+            let mut chain = std::collections::HashSet::new();
+            crate::reftest::resources::expand_at_imports(&combined, base, ctx, &mut chain)
+        }
+        _ => combined,
     }
 }
 
