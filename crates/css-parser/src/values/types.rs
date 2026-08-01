@@ -1495,6 +1495,13 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "vw" => Some(LengthValue::Vw(num)),
         "vmin" => Some(LengthValue::Vmin(num)),
         "vmax" => Some(LengthValue::Vmax(num)),
+        // CSS Values 4 视口单位（small/large/dynamic viewport）：ZW 视口模型为桌面单视口，
+        // svh/lvh/dvh 在桌面等价于 vh（移动端动态 UI 高度差异未建模）。映射到既有变体，
+        // 修复前这些合法单位返回 None 致声明被丢弃。
+        "svh" | "lvh" | "dvh" => Some(LengthValue::Vh(num)),
+        "svw" | "lvw" | "dvw" => Some(LengthValue::Vw(num)),
+        "svmin" | "lvmin" | "dvmin" => Some(LengthValue::Vmin(num)),
+        "svmax" | "lvmax" | "dvmax" => Some(LengthValue::Vmax(num)),
         "ch" => Some(LengthValue::Ch(num)),
         "%" => Some(LengthValue::Percentage(num)),
         // CSS 绝对长度单位 → 转换为 px（96 DPI）
