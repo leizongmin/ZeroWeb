@@ -695,6 +695,15 @@ fn test_parse_time() {
     assert!(parse_time("abc").is_none());
 }
 
+#[test]
+/// R2361：parse_time 时间单位大小写不敏感（CSS Values §：单位大小写不敏感）。
+/// `500MS`/`2S` 此前落 None 丢 transition/animation duration/delay 声明。
+fn test_parse_time_case_insensitive() {
+    assert!((parse_time("500MS").unwrap() - 0.5).abs() < f64::EPSILON, "MS");
+    assert!((parse_time("2S").unwrap() - 2.0).abs() < f64::EPSILON, "S");
+    assert!((parse_time("200Ms").unwrap() - 0.2).abs() < f64::EPSILON, "Ms mixed");
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // parser.rs coverage
 // ═══════════════════════════════════════════════════════════════════════

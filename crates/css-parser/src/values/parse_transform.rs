@@ -262,15 +262,13 @@ fn extract_parens_content<'a>(value: &'a str, func_name: &str) -> Option<&'a str
 
 /// 解析 CSS 时间值（如 `"0.3s"`、`"200ms"`）。
 ///
-/// 返回秒为单位的 f64 值。
+/// 返回秒为单位的 f64 值。单位大小写不敏感（CSS Values §：500MS ≡ 500ms）。
 pub fn parse_time(value: &str) -> Option<f64> {
-    let value = value.trim();
-    if value.ends_with("ms") {
-        let ms: f64 = value.trim_end_matches("ms").trim().parse().ok()?;
-        Some(ms / 1000.0)
-    } else if value.ends_with('s') {
-        let s: f64 = value.trim_end_matches('s').trim().parse().ok()?;
-        Some(s)
+    let lower = value.trim().to_ascii_lowercase();
+    if let Some(n) = lower.strip_suffix("ms") {
+        n.trim().parse::<f64>().ok().map(|ms| ms / 1000.0)
+    } else if let Some(n) = lower.strip_suffix('s') {
+        n.trim().parse::<f64>().ok()
     } else {
         None
     }
