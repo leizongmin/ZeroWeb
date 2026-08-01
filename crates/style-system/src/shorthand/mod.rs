@@ -13,9 +13,19 @@ type MatchingDecl = (String, String, bool, (u32, u32, u32));
 /// 简写层仅对这三个关键字做整体展开；`revert` 由级联层另行处理，故此处不含。
 /// CSS 关键字大小写不敏感（CSS Syntax §：keyword），且简写收到的 value 是级联直传的
 /// 原始声明值（parser 仅 lowercase 属性名，不 lowercase 值），故必须用 eq_ignore_ascii_case。
+///
+/// 覆盖**全部 5 个 CSS-wide 关键字**（inherit/initial/unset/revert/revert-layer，CSS Cascading
+/// 4 §? / 5 §6.1），与 `cascade::is_css_wide_keyword` 对齐。R2422 修正：此前仅列前 3 个，
+/// 漏 revert/revert-layer——致依赖本 helper 的简写展开器（border 全写/轴/单边、background、
+/// text-emphasis）对 `border: revert`/`background: revert-layer` 等跳过 keyword 分支 → 落值解析
+/// 失败 → 整条声明静默丢弃（driving: css-cascade inline-style-background.html `background:revert`）。
 fn matches_css_wide_keyword(value: &str) -> bool {
     let v = value.trim();
-    v.eq_ignore_ascii_case("inherit") || v.eq_ignore_ascii_case("initial") || v.eq_ignore_ascii_case("unset")
+    v.eq_ignore_ascii_case("inherit")
+        || v.eq_ignore_ascii_case("initial")
+        || v.eq_ignore_ascii_case("unset")
+        || v.eq_ignore_ascii_case("revert")
+        || v.eq_ignore_ascii_case("revert-layer")
 }
 
 /// 展开简写属性声明。

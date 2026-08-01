@@ -164,6 +164,55 @@ fn test_shorthand_keywords_case_insensitive_css_wide() {
 }
 
 #[test]
+/// R2422: CSS-wide 关键字 `revert`/`revert-layer` 在简写层必须被识别（与 `cascade::is_css_wide_keyword`
+/// 对齐，覆盖全 5 个关键字）。修复前 `matches_css_wide_keyword` 仅列 inherit/initial/unset，漏
+/// revert/revert-layer——致 `border: revert-layer`/`background: revert` 等跳过 keyword 分支 → 值解析
+/// 失败 → 整条声明静默丢弃（expand 返回空 vec）。driving: css-cascade inline-style-background.html
+/// `background:revert`、revert-val-005.html。
+fn test_shorthand_keywords_revert_and_revert_layer() {
+    // border: revert-layer → 12 长属性（4 边 × width/style/color），值透传 "revert-layer"。
+    let decls: Vec<(String, String, bool, (u32, u32, u32))> = vec![
+        (
+            "border".to_string(),
+            "revert-layer".to_string(),
+            false,
+            (0u32, 0u32, 0u32),
+        ),
+        (
+            "background".to_string(),
+            "revert".to_string(),
+            false,
+            (0u32, 0u32, 0u32),
+        ),
+    ];
+    let result = crate::shorthand::expand_shorthands(&decls);
+    let border_decls: Vec<_> = result.iter().filter(|(p, _, _, _)| p.starts_with("border-")).collect();
+    assert_eq!(
+        border_decls.len(),
+        12,
+        "border: revert-layer 应展开为 12 条长属性，修复前静默丢弃为 0，实际: {border_decls:?}"
+    );
+    assert!(
+        border_decls.iter().all(|(_, v, _, _)| v == "revert-layer"),
+        "border: revert-layer 展开值应透传关键字原值，实际: {border_decls:?}"
+    );
+    // background: revert → 8 长属性（color/image/repeat/position/size/attachment/clip/origin）。
+    let bg_decls: Vec<_> = result
+        .iter()
+        .filter(|(p, _, _, _)| p.starts_with("background-"))
+        .collect();
+    assert_eq!(
+        bg_decls.len(),
+        8,
+        "background: revert 应展开为 8 条长属性，修复前静默丢弃为 0，实际: {bg_decls:?}"
+    );
+    assert!(
+        bg_decls.iter().all(|(_, v, _, _)| v == "revert"),
+        "background: revert 展开值应透传关键字原值，实际: {bg_decls:?}"
+    );
+}
+
+#[test]
 /// R2355: `looks_like_color` 颜色值消歧大小写不敏感（命名色 + rgb()/hsl() 函数名前缀）。
 /// `border: 1px SOLID RED` 中 RED 应被识别为颜色（非静默丢色回退 currentcolor）。
 fn test_shorthand_color_disambig_case_insensitive_named() {
