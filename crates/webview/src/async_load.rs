@@ -663,6 +663,8 @@ mod tests {
 
     use crate::{WebView, WebViewConfig};
     use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
+    use zero_render_foundation::font::loader::FontLoader;
+    use zero_render_foundation::primitive::FontId;
 
     /// 记录 fetch 调用并立即返回结果的 mock 宿主。
     struct MockFetchHost {
@@ -878,5 +880,66 @@ mod tests {
         }
         assert_eq!(load.stage(), PageLoadStage::Complete);
         assert!(load.drain_loaded_fonts().is_empty(), "失败字体不进 drain");
+    }
+
+    /// R2408+ slice 3 / FR-005：生产 drain 合约端到端代理验证。
+    ///
+    /// 驱动 AsyncPageLoad（生产 async 路径）+ 宿主 drain→load+register+set_resolver
+    /// （镜像 renderer `tick_pending_load_with_budget` / tab_worker 的 drain 块），返回
+    /// 渲染 glyph 的 font_id 集合。product-smoke 走 harness 路径（load_font_faces_into）
+    /// 不覆盖生产 async 路径（R2406 分叉），故本测试是 live-browser 行为的确定性代理。
+    ///
+    /// decoy 先占 id 0（fallback 槽），使 @font-face "MyAhem"（Ahem.ttf）取 id ≥ 1——
+    /// 镜像生产（renderer 先 load_system_fonts 占 id 0+），令声明字体 id 与 fallback 可区分。
+    fn render_glyph_font_ids(live_enabled: bool) -> Vec<u32> {
+        let ahem_path = format!("{}/../../tests/wpt-runner/fonts/Ahem.ttf", env!("CARGO_MANIFEST_DIR"));
+        let ahem = std::fs::read(&ahem_path).expect("Ahem.ttf must exist");
+        let html = r#"<html><head>
+            <style>@font-face { font-family: "MyAhem"; src: url(ahem.ttf); }</style>
+            </head><body><p style="font-family: MyAhem; font-size: 20px">ABC</p></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(ahem.clone());
+        let mut loader = FontLoader::new();
+        let _decoy = loader.load_font(&ahem); // id 0：fallback 槽（镜像生产系统字体先载）
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+            if live_enabled {
+                for (family, bytes) in load.drain_loaded_fonts() {
+                    if let Ok(id) = loader.load_font(&bytes) {
+                        loader.register_family_alias(&family, id);
+                        wv.set_font_resolver(loader.build_font_resolver());
+                        load.request_rerender();
+                    }
+                }
+            } else {
+                // kill-switch 关：丢弃字节（镜像 R2406 前 / ZW_LIVE_FONTFACE=0）。
+                let _ = load.drain_loaded_fonts();
+            }
+        }
+        let result = wv.last_render().expect("render result");
+        result.primitives.glyphs.iter().map(|g| g.font_id.0).collect()
+    }
+
+    #[test]
+    fn live_fontface_renders_declared_font_when_enabled() {
+        let ids = render_glyph_font_ids(true);
+        assert!(!ids.is_empty(), "ABC 应产出 glyph，got {ids:?}");
+        // 声明字体 MyAhem（Ahem）已加载为 id ≥ 1，glyph 全用之而非 fallback id 0。
+        assert!(ids.iter().all(|&id| id >= 1), "glyph 应用声明字体 id≥1，got {ids:?}");
+    }
+
+    #[test]
+    fn live_fontface_falls_back_when_disabled() {
+        let ids = render_glyph_font_ids(false);
+        assert!(!ids.is_empty(), "ABC 应产出 glyph，got {ids:?}");
+        // kill-switch 关：MyAhem 未注册，glyph 回落 FontId(0)（fallback）。
+        assert!(ids.iter().all(|&id| id == 0), "glyph 应回落 id 0，got {ids:?}");
+    }
+
+    #[test]
+    fn fontid_is_zero_fallback_constant() {
+        // 显式锚点：FontId(0) 是 resolve_font_id 的 fallback（painter/mod.rs:331）。
+        assert_eq!(FontId(0).0, 0u32);
     }
 }
