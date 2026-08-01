@@ -1809,6 +1809,10 @@ pub enum JustifyItemsValue {
     Stretch,
     /// baseline。
     Baseline,
+    /// left（CSS Box Align 3 物理位置关键字，LTR 水平映射 start）。R2382。
+    Left,
+    /// right（CSS Box Align 3 物理位置关键字，LTR 水平映射 end）。R2382。
+    Right,
 }
 
 /// CSS justify-self 值。
@@ -1828,6 +1832,10 @@ pub enum JustifySelfValue {
     Stretch,
     /// baseline。
     Baseline,
+    /// left（CSS Box Align 3 物理位置关键字，LTR 水平映射 start）。R2382。
+    Left,
+    /// right（CSS Box Align 3 物理位置关键字，LTR 水平映射 end）。R2382。
+    Right,
 }
 
 /// CSS align-content 值。

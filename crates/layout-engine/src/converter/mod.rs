@@ -774,6 +774,9 @@ fn convert_justify_items(value: &JustifyItemsValue) -> Option<taffy::style::Alig
         JustifyItemsValue::Center => Some(taffy::style::AlignItems::CENTER),
         JustifyItemsValue::Stretch => Some(taffy::style::AlignItems::STRETCH),
         JustifyItemsValue::Baseline => Some(taffy::style::AlignItems::BASELINE),
+        // R2382：left/right 物理位置 → LTR 水平下 start/end（ZW 仅水平 tb 布局）。
+        JustifyItemsValue::Left => Some(taffy::style::AlignItems::START),
+        JustifyItemsValue::Right => Some(taffy::style::AlignItems::END),
     }
 }
 
@@ -790,6 +793,9 @@ fn convert_justify_self(value: &JustifySelfValue) -> Option<taffy::style::AlignS
         JustifySelfValue::Center => Some(taffy::style::AlignSelf::CENTER),
         JustifySelfValue::Stretch => Some(taffy::style::AlignSelf::STRETCH),
         JustifySelfValue::Baseline => Some(taffy::style::AlignSelf::BASELINE),
+        // R2382：left/right 物理位置 → LTR 水平下 start/end（ZW 仅水平 tb 布局）。
+        JustifySelfValue::Left => Some(taffy::style::AlignSelf::START),
+        JustifySelfValue::Right => Some(taffy::style::AlignSelf::END),
     }
 }
 

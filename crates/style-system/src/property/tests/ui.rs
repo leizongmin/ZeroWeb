@@ -1000,6 +1000,11 @@ fn test_apply_justify_items_keywords() {
     assert_eq!(style.justify_items, JustifyItemsValue::Normal);
     assert!(apply_property_value(&mut style, "justify-items", "stretch"));
     assert_eq!(style.justify_items, JustifyItemsValue::Stretch);
+    // R2382：CSS Box Align 3 left/right（物理位置关键字，Chrome 支持）。修复前 None → 被丢。
+    assert!(apply_property_value(&mut style, "justify-items", "left"));
+    assert_eq!(style.justify_items, JustifyItemsValue::Left);
+    assert!(apply_property_value(&mut style, "justify-items", "right"));
+    assert_eq!(style.justify_items, JustifyItemsValue::Right);
 }
 
 /// 验证 justify-items 对无效值返回 false。
@@ -1019,6 +1024,11 @@ fn test_apply_justify_self_keywords() {
     assert_eq!(style.justify_self, JustifySelfValue::End);
     assert!(apply_property_value(&mut style, "justify-self", "baseline"));
     assert_eq!(style.justify_self, JustifySelfValue::Baseline);
+    // R2382：left/right（CSS Box Align 3）。
+    assert!(apply_property_value(&mut style, "justify-self", "left"));
+    assert_eq!(style.justify_self, JustifySelfValue::Left);
+    assert!(apply_property_value(&mut style, "justify-self", "right"));
+    assert_eq!(style.justify_self, JustifySelfValue::Right);
 }
 
 /// 验证 align-content 的 apply_property_value 正确解析所有关键字值。

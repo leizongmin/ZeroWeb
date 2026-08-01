@@ -1407,6 +1407,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 "center" => JustifyItemsValue::Center,
                 "stretch" => JustifyItemsValue::Stretch,
                 "baseline" => JustifyItemsValue::Baseline,
+                // R2382：CSS Box Align 3 物理位置关键字（Chrome 支持）。
+                "left" => JustifyItemsValue::Left,
+                "right" => JustifyItemsValue::Right,
                 _ => return false,
             };
             style.justify_items = v;
@@ -1422,6 +1425,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 "center" => JustifySelfValue::Center,
                 "stretch" => JustifySelfValue::Stretch,
                 "baseline" => JustifySelfValue::Baseline,
+                // R2382：CSS Box Align 3 物理位置关键字（Chrome 支持）。
+                "left" => JustifySelfValue::Left,
+                "right" => JustifySelfValue::Right,
                 _ => return false,
             };
             style.justify_self = v;
