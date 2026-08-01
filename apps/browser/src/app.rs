@@ -849,7 +849,11 @@ impl BrowserApp {
     #[cfg(test)]
     pub fn wait_for_tab_content_ready(&mut self, tab_id: TabId) {
         let _guard = crate::test_sync::tab_runtime_test_guard();
-        for _ in 0..500 {
+        // R2414：上限 30s（3000×10ms）。in-process tab_worker 是独立 OS 线程，在高并行测试
+        // 负载下（多 tab_worker + 测试线程争 CPU）首帧可能 >5s；旧上限 5s 致 wait 超时后
+        // 测试用空/未就绪快照继续 → hover hit-test 返回 None → floating_link flake。
+        // 早返（is_tab_content_ready 即 return）保证正常（<1s 完成）测试零额外开销。
+        for _ in 0..3000 {
             self.tabs.poll(Some(tab_id));
             if self.is_tab_content_ready(tab_id) {
                 return;
