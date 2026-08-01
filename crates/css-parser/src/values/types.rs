@@ -88,6 +88,8 @@ pub enum ColorMixSpace {
     OkLab,
     /// `in oklch` —— OKLCH 极坐标插值（L/C 线性、h 色相短弧）。R2376。
     OkLch,
+    /// `in xyz`/`in xyz-d65` —— CIE XYZ-D65 笛卡尔插值（X/Y/Z 三通道独立线性）。R2378。
+    Xyz,
 }
 
 /// `color-mix()` 的单个分量（颜色 + 可选百分比）。

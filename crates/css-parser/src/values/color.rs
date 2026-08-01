@@ -120,8 +120,8 @@ pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
     }
 
     // color-mix() 函数（CSS Color 4）：color-mix(in <space>, <c1> [<p1>], <c2> [<p2>])。
-    // 支持 srgb/srgb-linear/lab/lch/oklab/oklch（其他色彩空间 xyz defer）。存为未解析
-    // ColorValue::Mix——currentColor 在 paint 时按元素色解析，支持 inherit 透传。
+    // 支持 srgb/srgb-linear/lab/lch/oklab/oklch/xyz（其他色彩空间 xyz-d50/display-p3 defer）。
+    // 存为未解析 ColorValue::Mix——currentColor 在 paint 时按元素色解析，支持 inherit 透传。
     // driving: css-color color-mix-currentcolor-001。
     if value.len() >= 10 && value[..10].eq_ignore_ascii_case("color-mix(") {
         return parse_color_mix(value);
@@ -655,6 +655,21 @@ pub fn srgb_linear_to_srgb_u8(lr: f64, lg: f64, lb: f64) -> (u8, u8, u8) {
     (linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb))
 }
 
+/// sRGB u8 → CIE XYZ-D65 三通道，供 `color-mix(in xyz)` 笛卡尔插值。R2378。
+/// `xyz` ≡ `xyz-d65`（CSS Color 4）；`xyz-d50` 需 D65→D50 Bradford 适配，defer。
+pub fn srgb_u8_to_xyz(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let lr = srgb_decode(r as f64 / 255.0);
+    let lg = srgb_decode(g as f64 / 255.0);
+    let lb = srgb_decode(b as f64 / 255.0);
+    mat3_mul(SRGB_TO_XYZ, lr, lg, lb)
+}
+
+/// CIE XYZ-D65 三通道 → sRGB u8，供 `color-mix(in xyz)` 回转。R2378。
+pub fn xyz_to_srgb_u8(x: f64, y: f64, z: f64) -> (u8, u8, u8) {
+    let (lr, lg, lb) = mat3_mul(XYZ_TO_SRGB, x, y, z);
+    (linear_srgb_to_u8(lr), linear_srgb_to_u8(lg), linear_srgb_to_u8(lb))
+}
+
 /// 3×3 矩阵（行优先 [9]）乘列向量。
 fn mat3_mul(m: [f64; 9], x: f64, y: f64, z: f64) -> (f64, f64, f64) {
     (
@@ -1011,8 +1026,10 @@ fn parse_color_mix(value: &str) -> Option<ColorValue> {
         ColorMixSpace::OkLab
     } else if space.eq_ignore_ascii_case("in oklch") {
         ColorMixSpace::OkLch
+    } else if space.eq_ignore_ascii_case("in xyz") || space.eq_ignore_ascii_case("in xyz-d65") {
+        ColorMixSpace::Xyz
     } else {
-        return None; // 其他色彩空间（srgb-linear/xyz/…）defer
+        return None; // 其他色彩空间（xyz-d50/display-p3/…）defer
     };
     let rest = inner[first_comma + 1..].trim();
     // 顶层逗号分隔两分量

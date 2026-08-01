@@ -425,6 +425,8 @@ fn test_parse_color_mix_lab_oklab_oklch_spaces() {
         ("color-mix(in oklab, red, blue)", ColorMixSpace::OkLab),
         ("color-mix(in oklch, red, blue)", ColorMixSpace::OkLch),
         ("color-mix(in srgb-linear, red, blue)", ColorMixSpace::SrgbLinear),
+        ("color-mix(in xyz, red, blue)", ColorMixSpace::Xyz),
+        ("color-mix(in xyz-d65, red, blue)", ColorMixSpace::Xyz),
     ] {
         match parse_color(input) {
             Some(ColorValue::Mix(spec)) => assert_eq!(spec.space, expect, "{input}"),

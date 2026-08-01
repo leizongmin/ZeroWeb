@@ -3,7 +3,8 @@
 use zero_css_parser::values::{
     ColorMixSpace, ColorValue, RcsAlpha, RcsChannel, RelativeColorFunc, RelativeColorSpec, convert_predefined_to_srgb,
     lab_to_srgb_u8, lch_to_srgb_u8, oklab_to_srgb_u8, oklch_to_srgb_u8, srgb_linear_to_srgb_u8, srgb_u8_to_lab,
-    srgb_u8_to_lch, srgb_u8_to_oklab, srgb_u8_to_oklch, srgb_u8_to_predefined, srgb_u8_to_srgb_linear,
+    srgb_u8_to_lch, srgb_u8_to_oklab, srgb_u8_to_oklch, srgb_u8_to_predefined, srgb_u8_to_srgb_linear, srgb_u8_to_xyz,
+    xyz_to_srgb_u8,
 };
 use zero_render_foundation::color::Color;
 
@@ -63,6 +64,14 @@ pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> 
                     oklab_to_srgb_u8,
                 ),
                 ColorMixSpace::OkLch => mix_oklch(c1, spec.c1.percentage, c2, spec.c2.percentage),
+                ColorMixSpace::Xyz => mix_cartesian(
+                    c1,
+                    spec.c1.percentage,
+                    c2,
+                    spec.c2.percentage,
+                    srgb_u8_to_xyz,
+                    xyz_to_srgb_u8,
+                ),
             }
         }
         // RCS 非 identity：先按元素色解析 origin（currentColor → 元素色），再按函数通道语义计算。
@@ -682,6 +691,7 @@ fn test_resolve_color_mix_lab_oklab_oklch() {
         ColorMixSpace::Lab,
         ColorMixSpace::OkLab,
         ColorMixSpace::OkLch,
+        ColorMixSpace::Xyz,
     ] {
         let r = resolve_color_current(&mk(space), &black_elem);
         assert_ne!((r.r, r.g, r.b), (0, 0, 0), "{space:?} 应解析非黑（非回退）");
@@ -707,6 +717,7 @@ fn test_resolve_color_mix_lab_oklab_oklch() {
         ColorMixSpace::Lab,
         ColorMixSpace::OkLab,
         ColorMixSpace::OkLch,
+        ColorMixSpace::Xyz,
     ] {
         let r = resolve_color_current(&mk_same(space), &black_elem);
         assert_eq!((r.r, r.g, r.b), (0, 128, 0), "{space:?} 同色 mix 应回该色");
