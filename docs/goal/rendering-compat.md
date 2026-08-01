@@ -18,7 +18,7 @@
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
->   - [ ] font-metric 生产激活+A/B — R2202 dormant 基础设施（webview+renderer，env `ZW_PERFONT_LINEHEIGHT=1`）已落地未激活；深 plumbing + 需 product-smoke A/B 量化 CJK 收益 — 待用户授权激活并跑 A/B
+>   - [x] ~~font-metric 生产激活+A/B — R2202 dormant 基础设施（webview+renderer，env `ZW_PERFONT_LINEHEIGHT=1`）已落地未激活；深 plumbing + 需 product-smoke A/B 量化 CJK 收益 — 待用户授权激活并跑 A/B~~ ✅ **已完结（2026-08-01）**：用户授权后 A/B 完成 = **net 负，保持 dormant**（welcome 英文 −0.44pp；morning 中文零变化——全显式 line-height 无 normal 行，「CJK lever」假设证伪）；证据 `evidence/font-metric-activation-ab-2026-08-01.md`（R2393）
 >   - [ ] vertical-mode native R1043 — 四层协调深改，R1043 谱系停止条件曾触发 — 等点名
 >   - [ ] taffy replaced-element border-box sizing R2174 — 深 multi-session — 等点名
 >   - [ ] Phase A slice-3 IFC 深构造（IFC 单一权威化）— 深 architectural，设计已就绪 — 等点名
