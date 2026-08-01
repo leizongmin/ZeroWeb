@@ -311,22 +311,26 @@ impl super::Painter {
             None => return,
         };
 
-        // 仅处理 <img> 元素
-        let elem = match &node.kind {
-            NodeKind::Element(elem) if elem.local_name() == "img" => elem,
-            _ => return,
-        };
-
-        // 获取 src URL 作为图片键
-        let src = elem.get_attribute("src").unwrap_or_default();
-        // R2419：src 缺失时回退到 srcset 首 URL（srcset-only `<img>` 正确性修——
-        // extract_img_resources 已按此回退抓取，painter 同步用首 URL 查 image_cache）。
-        let src = if src.is_empty() {
-            elem.get_attribute("srcset")
-                .and_then(|s| crate::srcset_first_url(&s))
-                .unwrap_or_default()
+        // 获取图片 URL 作为键。R2439：`content:url(...)` 优先（element-becomes-replaced，
+        // 覆盖任何元素含 `<img>` 的正常内容）——src 取自 style.content 的 Url；否则 `<img>`
+        // 用 src 属性（src 缺失回退 srcset 首 URL，R2419）。build_subtree 已抑制 content:url
+        // 元素的子节点，pipeline 已按 image 固有尺寸 sizing。
+        let src = if let zero_style_system::property::types::ContentComputedValue::Url(u) = &style.content {
+            u.clone()
         } else {
-            src
+            match &node.kind {
+                NodeKind::Element(elem) if elem.local_name() == "img" => {
+                    let s = elem.get_attribute("src").unwrap_or_default();
+                    if s.is_empty() {
+                        elem.get_attribute("srcset")
+                            .and_then(|s| crate::srcset_first_url(&s))
+                            .unwrap_or_default()
+                    } else {
+                        s
+                    }
+                }
+                _ => return,
+            }
         };
         if src.is_empty() {
             return;

@@ -980,6 +980,17 @@ fn is_summary_element(doc: &Document, id: NodeId) -> bool {
         .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("summary")))
 }
 
+/// R2439：元素 `content` 属性是否为 `url()`（element-replacement，CSS Content §content-property）。
+/// content:url() 的普通元素应**自身**变 replaced（element-becomes-replaced）：抑制其全部真实
+/// 子节点（含匿名文本），元素盒自身按 image 固有尺寸 sizing + paint 渲染图片（绕 R109 IFC
+/// 不测 inline replaced 的阻塞，见 R2438 child-injection 证伪）。kill-switch `ZW_CONTENT_REPLACE=0`。
+fn is_content_url_element(computed: &ComputedStyle) -> bool {
+    matches!(
+        computed.content,
+        zero_style_system::property::types::ContentComputedValue::Url(_)
+    )
+}
+
 /// margin-trim 首末子判定：元素是否为参与块格式化上下文的 in-flow block-level 子。
 /// 排除 display:none、inline/contents 级（垂直 margin 不参与块轴）、abspos/fixed（脱流）。
 /// display 谓词与 R1285 `br_is_inline_only` 的 block-level 判定一致。
@@ -1239,14 +1250,21 @@ fn build_subtree(
         // 其余子隐藏（HTML 渲染规范 `details:not([open]) > *:not(summary) { display: none }`）。
         // ZW 无 UA CSS 父条件选择器，故在 layout-tree 构建期按 details 状态过滤直接子。
         // 仅保留 summary 元素子（闭合态非 summary 内容不建 layout box → 不渲染）。
-        let children_dom: Vec<NodeId> = if is_closed_details(doc, dom_id) {
-            children_dom
-                .into_iter()
-                .filter(|&c| is_summary_element(doc, c))
-                .collect()
-        } else {
-            children_dom
-        };
+        //
+        // R2439：`content:url()` 普通元素（element-becomes-replaced）→ 抑制**全部**真实子节点
+        //（含匿名文本）；元素盒自身渲染图片（pipeline pre-layout sizing + paint_img_element
+        // 扩展，绕 R109 IFC，见 R2438）。kill-switch `ZW_CONTENT_REPLACE=0`。
+        let children_dom: Vec<NodeId> =
+            if std::env::var("ZW_CONTENT_REPLACE").as_deref() != Ok("0") && is_content_url_element(&computed) {
+                Vec::new()
+            } else if is_closed_details(doc, dom_id) {
+                children_dom
+                    .into_iter()
+                    .filter(|&c| is_summary_element(doc, c))
+                    .collect()
+            } else {
+                children_dom
+            };
 
         // 检测是否为 flex/grid 容器 — 在这些容器中，文本节点成为匿名 flex/grid 项
         let is_flex_or_grid = matches!(

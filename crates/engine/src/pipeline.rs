@@ -216,6 +216,46 @@ impl RenderPipeline {
         map
     }
 
+    /// R2439：`content:url()` 普通元素 element-becomes-replaced 的 sizing pass。
+    ///
+    /// 对 `content:url(...)` 的普通元素（非 `<img>` 自身），按 image 固有尺寸（`image_sizes`
+    /// 经 `extract_css_image_urls` property-agnostic 抓取）设置 width/height（仅 Auto 侧），
+    /// 使元素盒自身 sizing 为图尺寸——build_subtree 已抑制其子节点，paint_img_element 渲染图片。
+    /// 绕 R109 IFC（IFC 不测 inline replaced img，见 R2438 child-injection 证伪）。
+    /// kill-switch `ZW_CONTENT_REPLACE=0`。
+    pub(crate) fn apply_content_url_replaced_sizing(&self, styles: &mut HashMap<NodeId, ComputedStyle>) {
+        if std::env::var("ZW_CONTENT_REPLACE").as_deref() == Ok("0") {
+            return;
+        }
+        use zero_css_parser::values::LengthValue;
+        use zero_style_system::property::types::ContentComputedValue;
+        // 先收集（nid, w, h），避免迭代 styles 时 mutate 借用冲突。
+        // content==Url 已 gate：正常 `<img src=x>`（content Normal）不受影响；仅 content:url
+        // 元素（含 content:url 的 `<img>`，on-replaced-element）触发——content:url 覆盖 src。
+        let mut targets: Vec<(NodeId, f32, f32)> = Vec::new();
+        for (&nid, st) in styles.iter() {
+            if let ContentComputedValue::Url(u) = &st.content {
+                let key = crate::paint::image_resource_key(u, self.document_url.as_deref());
+                if let Some(&(w, h)) = self.image_sizes.get(&key)
+                    && w > 0.0
+                    && h > 0.0
+                {
+                    targets.push((nid, w, h));
+                }
+            }
+        }
+        for (nid, w, h) in targets {
+            if let Some(st) = styles.get_mut(&nid) {
+                if matches!(st.width, LengthValue::Auto) {
+                    st.width = LengthValue::Px(w.into());
+                }
+                if matches!(st.height, LengthValue::Auto) {
+                    st.height = LengthValue::Px(h.into());
+                }
+            }
+        }
+    }
+
     /// 设置 CSS font-family 查找表。
     ///
     /// 由调用方从 `FontLoader::build_font_resolver()` 构建并传入。
@@ -456,6 +496,11 @@ impl RenderPipeline {
         // 3.5 把 ::before/::after 伪元素的 content 文本注入为合成文本子节点（doc 每帧
         // 重建，合成节点无累积、JS 不可见）。build_subtree 随后按普通文本子节点测量/绘制。
         inject_pseudo_text_nodes(&mut doc, &mut styles);
+
+        // 3.6 R2439：`content:url()` 普通元素 element-becomes-replaced——元素盒自身按
+        // image 固有尺寸 sizing（width/height Auto 时设为图尺寸），build_subtree 已抑制其
+        // 子节点，paint_img_element 渲染图片。绕 R109 IFC（见 R2438 child-injection 证伪）。
+        self.apply_content_url_replaced_sizing(&mut styles);
 
         // 4. 计算布局
         let layout_start = Instant::now();
