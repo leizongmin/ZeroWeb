@@ -628,106 +628,110 @@ fn looks_like_length(s: &str) -> bool {
 }
 
 /// 检查字符串是否看起来像颜色值。
+///
+/// R2355：颜色值大小写不敏感（CSS Color §）——`#` 前缀无大小写；`rgb()`/`hsl()` 函数名前缀
+/// 与命名色（含 `currentcolor`/`transparent`）均用 `eq_ignore_ascii_case`。
 fn looks_like_color(s: &str) -> bool {
     if s.starts_with('#') {
         return true;
     }
-    if s.starts_with("rgb") || s.starts_with("hsl") {
+    // rgb()/hsl()（含 rgba()/hsla()）函数名前缀，大小写不敏感
+    if s.len() >= 3 && (s[..3].eq_ignore_ascii_case("rgb") || s[..3].eq_ignore_ascii_case("hsl")) {
         return true;
     }
-    // CSS 命名颜色（常见子集）
-    matches!(
-        s,
-        "black"
-            | "white"
-            | "red"
-            | "green"
-            | "blue"
-            | "yellow"
-            | "orange"
-            | "purple"
-            | "pink"
-            | "brown"
-            | "gray"
-            | "grey"
-            | "cyan"
-            | "magenta"
-            | "lime"
-            | "maroon"
-            | "navy"
-            | "olive"
-            | "teal"
-            | "aqua"
-            | "fuchsia"
-            | "silver"
-            | "gold"
-            | "indigo"
-            | "violet"
-            | "coral"
-            | "salmon"
-            | "tomato"
-            | "skyblue"
-            | "tan"
-            | "wheat"
-            | "khaki"
-            | "beige"
-            | "ivory"
-            | "snow"
-            | "linen"
-            | "azure"
-            | "lavender"
-            | "whitesmoke"
-            | "gainsboro"
-            | "lightgray"
-            | "darkgray"
-            | "dimgray"
-            | "darkred"
-            | "darkgreen"
-            | "darkblue"
-            | "lightblue"
-            | "lightgreen"
-            | "lightcoral"
-            | "deeppink"
-            | "hotpink"
-            | "orangered"
-            | "crimson"
-            | "firebrick"
-            | "chocolate"
-            | "sienna"
-            | "peru"
-            | "goldenrod"
-            | "darkgoldenrod"
-            | "greenyellow"
-            | "chartreuse"
-            | "limegreen"
-            | "palegreen"
-            | "seagreen"
-            | "forestgreen"
-            | "yellowgreen"
-            | "olivedrab"
-            | "darkolivegreen"
-            | "darkcyan"
-            | "darkseagreen"
-            | "lightseagreen"
-            | "mediumseagreen"
-            | "turquoise"
-            | "darkturquoise"
-            | "paleturquoise"
-            | "deepskyblue"
-            | "dodgerblue"
-            | "cornflowerblue"
-            | "royalblue"
-            | "mediumblue"
-            | "midnightblue"
-            | "darkviolet"
-            | "blueviolet"
-            | "mediumpurple"
-            | "darkorchid"
-            | "orchid"
-            | "plum"
-            | "currentcolor"
-            | "transparent"
-    )
+    // CSS 命名颜色（常见子集，大小写不敏感）
+    const NAMED_COLORS: &[&str] = &[
+        "black",
+        "white",
+        "red",
+        "green",
+        "blue",
+        "yellow",
+        "orange",
+        "purple",
+        "pink",
+        "brown",
+        "gray",
+        "grey",
+        "cyan",
+        "magenta",
+        "lime",
+        "maroon",
+        "navy",
+        "olive",
+        "teal",
+        "aqua",
+        "fuchsia",
+        "silver",
+        "gold",
+        "indigo",
+        "violet",
+        "coral",
+        "salmon",
+        "tomato",
+        "skyblue",
+        "tan",
+        "wheat",
+        "khaki",
+        "beige",
+        "ivory",
+        "snow",
+        "linen",
+        "azure",
+        "lavender",
+        "whitesmoke",
+        "gainsboro",
+        "lightgray",
+        "darkgray",
+        "dimgray",
+        "darkred",
+        "darkgreen",
+        "darkblue",
+        "lightblue",
+        "lightgreen",
+        "lightcoral",
+        "deeppink",
+        "hotpink",
+        "orangered",
+        "crimson",
+        "firebrick",
+        "chocolate",
+        "sienna",
+        "peru",
+        "goldenrod",
+        "darkgoldenrod",
+        "greenyellow",
+        "chartreuse",
+        "limegreen",
+        "palegreen",
+        "seagreen",
+        "forestgreen",
+        "yellowgreen",
+        "olivedrab",
+        "darkolivegreen",
+        "darkcyan",
+        "darkseagreen",
+        "lightseagreen",
+        "mediumseagreen",
+        "turquoise",
+        "darkturquoise",
+        "paleturquoise",
+        "deepskyblue",
+        "dodgerblue",
+        "cornflowerblue",
+        "royalblue",
+        "mediumblue",
+        "midnightblue",
+        "darkviolet",
+        "blueviolet",
+        "mediumpurple",
+        "darkorchid",
+        "orchid",
+        "plum",
+        "currentcolor",
+        "transparent",
+    ];
+    NAMED_COLORS.iter().any(|c| s.eq_ignore_ascii_case(c))
 }
 
 /// 展开 border-radius 简写。

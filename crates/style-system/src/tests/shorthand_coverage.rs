@@ -163,6 +163,48 @@ fn test_shorthand_keywords_case_insensitive_css_wide() {
     );
 }
 
+#[test]
+/// R2355: `looks_like_color` 颜色值消歧大小写不敏感（命名色 + rgb()/hsl() 函数名前缀）。
+/// `border: 1px SOLID RED` 中 RED 应被识别为颜色（非静默丢色回退 currentcolor）。
+fn test_shorthand_color_disambig_case_insensitive_named() {
+    let decls: Vec<(String, String, bool, (u32, u32, u32))> = vec![(
+        "border".to_string(),
+        "1px SOLID RED".to_string(),
+        false,
+        (0u32, 0u32, 0u32),
+    )];
+    let result = crate::shorthand::expand_shorthands(&decls);
+    // 应产生 border-top-color 声明，值为识别出的颜色 token "RED"
+    // （修复前 RED 不被 looks_like_color 识别 → 丢色 → border-top-color = "currentcolor" 默认）。
+    let top_color = result
+        .iter()
+        .find_map(|(p, v, _, _)| if p == "border-top-color" { Some(v.clone()) } else { None })
+        .expect("应展开出 border-top-color");
+    assert_eq!(
+        top_color, "RED",
+        "RED 应被识别为颜色 token，实际 border-top-color: {top_color}"
+    );
+}
+
+#[test]
+/// R2355: `RGB(...)` / `HSL(...)` 函数名前缀大小写不敏感。
+fn test_shorthand_color_disambig_case_insensitive_function() {
+    for upper in ["RGB(255, 0, 0)", "HSL(0, 100%, 50%)"] {
+        let value = format!("1px SOLID {upper}");
+        let decls: Vec<(String, String, bool, (u32, u32, u32))> =
+            vec![("border".to_string(), value, false, (0u32, 0u32, 0u32))];
+        let result = crate::shorthand::expand_shorthands(&decls);
+        let top_color = result
+            .iter()
+            .find_map(|(p, v, _, _)| if p == "border-top-color" { Some(v.clone()) } else { None })
+            .unwrap_or_else(|| "currentcolor".to_string());
+        assert_eq!(
+            top_color, upper,
+            "{upper} 应被识别为颜色 token（非丢色回退 currentcolor）"
+        );
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // 伪元素 ::before/::after 计算样式（R487：compute 阶段）
 // ═══════════════════════════════════════════════════════════════════
