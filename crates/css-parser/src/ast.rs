@@ -148,9 +148,9 @@ pub enum CounterSystem {
 /// @counter-style 规则（CSS Counter Styles 3 §3）。
 ///
 /// 格式：`@counter-style <name> { system: cyclic; symbols: "a" "b"; suffix: ") "; }`
-/// 解析 `system`/`symbols`/`prefix`/`suffix`/`fallback` 描述符为类型化字段；
-/// `additive-symbols`/`range`/`negative`/`pad`/`speak-as` 描述符 slice 1 忽略（应用 defer）。
-/// 非法规则（无名 / 无 system / symbols 不足）返回 None 由上层丢弃。
+/// 解析 `system`/`symbols`/`additive-symbols`/`prefix`/`suffix`/`fallback`/`range` 描述符
+/// 为类型化字段；`negative`/`pad`/`speak-as` 描述符 slice 2 仍忽略（应用 defer）。
+/// 非法规则（无名 / 无 system / symbols 不足 / additive 无 additive-symbols）返回 None 由上层丢弃。
 #[derive(Debug, Clone)]
 pub struct CounterStyleRule {
     /// 计数器样式名（`list-style-type` 引用键）。
@@ -159,12 +159,19 @@ pub struct CounterStyleRule {
     pub system: CounterSystem,
     /// `symbols` 描述符（已逐个去引号/空白切分）。
     pub symbols: Vec<String>,
+    /// `additive-symbols` 描述符（`<integer> && <symbol>` 对，已按 weight 降序排序）。
+    /// driving: R2394 slice 2（additive 系统算法所需）。
+    pub additive_symbols: Vec<(i32, String)>,
     /// `prefix` 描述符（缺省 `""`）。
     pub prefix: String,
     /// `suffix` 描述符（缺省 `". "`，period + space；`""` 显式置空）。
     pub suffix: String,
     /// `fallback` 描述符（缺省 `"decimal"`）。
     pub fallback: String,
+    /// `range` 描述符（`[lower upper]` 对列表，`infinite`→i32::{MIN,MAX}）。
+    /// `None` = 缺省（按系统默认 range；slice 2 仅应用此显式 range）。
+    /// driving: R2394 slice 2（extends + range 越界 fallback 所需）。
+    pub range: Option<Vec<(i32, i32)>>,
 }
 
 /// @keyframes 规则。

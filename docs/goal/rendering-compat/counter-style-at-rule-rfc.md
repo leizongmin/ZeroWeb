@@ -1,7 +1,7 @@
 # RFC：`@counter-style` 自定义计数器样式 at-rule（CSS Counter Styles 3）
 
 **日期**: 2026-08-01
-**状态**: Design（待实施；R2279 precedent 覆盖 real spec-gap feature 自主推进）
+**状态**: Design；slice 1 ✅ landed（R2392）；**slice 2（additive/extends/range）应用经 R2394 A/B 量证 net-negative → 应用 defer，parse-retain landed**（见 `evidence/counter-style-slice2-ab-2026-08-01.md`）
 **承接**: R2278（css-counter-styles 73.6%，`@counter-style` at-rule 完全未实现）/ R2390（自主 clean-lever 穷尽，feature 为唯一剩余自主面）
 **WPT footprint**: `css/css-counter-styles/counter-style-at-rule/`（~40 reftest）+ 部分 Latin-symbol 预定义样式
 
@@ -21,9 +21,12 @@ CSS Counter Styles 3 §3 `@counter-style` at-rule 允许作者定义自定义 `l
 - **marker 渲染**：复用既有 list-marker 文本渲染路径（`text_list.rs` Decimal/Roman 分支同款字符串→text）。
 
 ### Deferred（slice 2+，记 follow-up 不阻 slice 1）
-- `additive` 系统（Roman 式加法表，复杂；内置 Roman 已有独立实现）。
-- `extends`/`extends <builtin>` system（依赖 builtin 解析）。
-- `range`/`fallback`/`pad`/`negative` 完整应用语义（slice 1 parse 保留，应用简化）。
+
+> **R2394 A/B 结论**：`additive` / `extends` / `range` 的**应用**（渲染）经 scoped reftest A/B 量证 **net-negative**（driving WPT 案全 font-wall dice/triangle 字形 + system-additive ref 依赖 `document.write` JS + system-extends nbsp/marker 渲染差 + empty-string mismatch 阈值）。**parse-retain 已 land**（`additive_symbols`/`range` 字段 + 解析 + 单测），**应用 defer** 至字体栈补字形 / ref 不依赖 JS。算法实现（additive 贪心 / extends resolve / builtin 表）在 git 历史（R2394 工作树）可复活。
+
+- `additive` 系统（Roman 式加法表，复杂；内置 Roman 已有独立实现）。— **应用 defer（R2394 net-negative）；parse-retain landed**
+- `extends`/`extends <builtin>` system（依赖 builtin 解析）。— **应用 defer（R2394 net-negative）；Extends 变体 + parse landed**
+- `range`/`fallback`/`pad`/`negative` 完整应用语义（slice 1 parse 保留，应用简化）。— `range` parse-retain landed（R2394），应用 defer
 - descriptor 内 `calc()`（descriptor-calc WPT 案）。
 - CJK/Arabic/Hebrew/Japanese 等**预定义**样式（需 script 字体 = font-wall gated，独立于 at-rule）。
 

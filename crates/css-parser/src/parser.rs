@@ -2210,16 +2210,20 @@ impl<'a> Parser<'a> {
         // 收集描述符（后声明覆盖前者——CSS @rule 描述符语义）。
         let mut system: Option<String> = None;
         let mut symbols_raw: Option<String> = None;
+        let mut additive_raw: Option<String> = None;
         let mut prefix: Option<String> = None;
         let mut suffix: Option<String> = None;
         let mut fallback: Option<String> = None;
+        let mut range_raw: Option<String> = None;
         for decl in &declarations {
             match decl.property.to_ascii_lowercase().as_str() {
                 "system" if system.is_none() => system = Some(decl.value.trim().to_string()),
                 "symbols" if symbols_raw.is_none() => symbols_raw = Some(decl.value.trim().to_string()),
+                "additive-symbols" if additive_raw.is_none() => additive_raw = Some(decl.value.trim().to_string()),
                 "prefix" if prefix.is_none() => prefix = Some(strip_css_quotes(decl.value.trim())),
                 "suffix" if suffix.is_none() => suffix = Some(strip_css_quotes(decl.value.trim())),
                 "fallback" if fallback.is_none() => fallback = Some(decl.value.trim().to_string()),
+                "range" if range_raw.is_none() => range_raw = Some(decl.value.trim().to_string()),
                 _ => {}
             }
         }
@@ -2228,12 +2232,18 @@ impl<'a> Parser<'a> {
         let system = parse_counter_system(system.as_deref())?;
         // 解析 symbols（逐个去引号/按空白切分）。
         let symbols: Vec<String> = symbols_raw.as_deref().map(split_counter_symbols).unwrap_or_default();
+        // 解析 additive-symbols（`<integer> && <symbol>` 对，按 weight 降序）。
+        let additive_symbols: Vec<(i32, String)> = additive_raw
+            .as_deref()
+            .map(parse_counter_additive_symbols)
+            .unwrap_or_default();
+        // 解析 range（`[lower upper]` 对；`infinite`→i32 边界）。
+        let range: Option<Vec<(i32, i32)>> = range_raw.as_deref().and_then(parse_counter_range);
 
-        // 合法性（CSS §3.1.4）：cyclic/fixed 须 ≥1 symbol；symbolic/alphabetic/numeric 须 ≥1
-        // （alphabetic 表示大数须 ≥2 但 ≥1 不致非法）；additive 须有 additive-symbols（slice 1
-        // 不支持 → 视为 symbols 不足，整体 defer 丢弃，走 fallback）。
+        // 合法性（CSS §3.1.4）：extends 无需 symbols（继承）；非 additive 系统须 ≥1 symbol；
+        // additive 须有 ≥1 additive-symbols 对（否则整体无效丢弃，走 fallback）。
         let needs_symbols = !matches!(system, CounterSystem::Extends(_));
-        if needs_symbols && symbols.is_empty() {
+        if needs_symbols && symbols.is_empty() && additive_symbols.is_empty() {
             return None;
         }
 
@@ -2241,10 +2251,12 @@ impl<'a> Parser<'a> {
             name,
             system,
             symbols,
+            additive_symbols,
             prefix: prefix.unwrap_or_default(),
             // suffix 缺省 = ". "（period + space）；显式描述符（含空串）已覆盖。
             suffix: suffix.unwrap_or_else(|| ". ".to_string()),
             fallback: fallback.unwrap_or_else(|| "decimal".to_string()),
+            range,
         })
     }
 
@@ -2817,6 +2829,62 @@ fn parse_counter_system(value: Option<&str>) -> Option<CounterSystem> {
 /// driving: R2392。
 fn split_counter_symbols(value: &str) -> Vec<String> {
     value.split_whitespace().map(strip_css_quotes).collect()
+}
+
+/// 解析 `additive-symbols` 描述符（CSS Counter Styles 3 §3.1.8）。
+///
+/// 格式：逗号分隔的 `<integer> && <symbol>` 对，如 `6 \2685, 5 \2684, ...` 或
+/// `3 "a", 2 "b"`。每对中整数与符号（引号串/裸字形）顺序可互换。结果按 weight 降序排序
+/// （贪心分解算法所需）。任一对缺整数或符号 → 该对跳过；全无效返回空 Vec（上层据空判非法）。
+/// driving: R2394 slice 2。
+fn parse_counter_additive_symbols(value: &str) -> Vec<(i32, String)> {
+    let mut pairs: Vec<(i32, String)> = Vec::new();
+    for part in value.split(',') {
+        let tokens: Vec<&str> = part.split_whitespace().collect();
+        if tokens.len() < 2 {
+            continue;
+        }
+        // 整数与符号二元组：整数可能在首或次位置。
+        let (weight, symbol) = match (tokens[0].parse::<i32>().ok(), tokens[1].parse::<i32>().ok()) {
+            (Some(w), None) => (w, strip_css_quotes(tokens[1])),
+            (None, Some(w)) => (w, strip_css_quotes(tokens[0])),
+            _ => continue, // 两端都非整数 / 都为整数 → 非法对，跳过。
+        };
+        pairs.push((weight, symbol));
+    }
+    // 降序排序（贪心分解从最大 weight 起）。稳定排序保留同 weight 声明顺序。
+    pairs.sort_by_key(|b| std::cmp::Reverse(b.0));
+    pairs
+}
+
+/// 解析 `range` 描述符（CSS Counter Styles 3 §3.1.2）。
+///
+/// 格式：逗号分隔的 `[lower upper]` 对，每对两值，`infinite` → i32::{MIN,MAX}。
+/// 如 `1 5`、`1 5, 10 20`、`infinite -1`。仅当所有对解析成功时返回 Some；任一畸形返回 None
+/// （缺省 range 由系统默认决定，slice 2 不应用）。`auto` 关键字返回 None（走系统默认）。
+/// driving: R2394 slice 2。
+fn parse_counter_range(value: &str) -> Option<Vec<(i32, i32)>> {
+    let lower = value.to_ascii_lowercase();
+    if lower.split_whitespace().eq(["auto"]) {
+        return None;
+    }
+    let mut ranges = Vec::new();
+    for part in lower.split(',') {
+        let mut iter = part.split_whitespace();
+        // lower 为 infinite → -∞（i32::MIN）；upper 为 infinite → +∞（i32::MAX）。
+        let lo = parse_range_bound(iter.next()?, false)?;
+        let hi = parse_range_bound(iter.next()?, true)?;
+        ranges.push((lo, hi));
+    }
+    if ranges.is_empty() { None } else { Some(ranges) }
+}
+
+/// 解析单个 range 边界：`infinite` → 极值（lower→MIN，upper→MAX），否则十进制整数。
+fn parse_range_bound(tok: &str, is_upper: bool) -> Option<i32> {
+    match tok {
+        "infinite" => Some(if is_upper { i32::MAX } else { i32::MIN }),
+        _ => tok.parse::<i32>().ok(),
+    }
 }
 
 /// 从 `src` 描述符值中提取所有 `url(...)` 内的 URL（按出现顺序，去引号）。

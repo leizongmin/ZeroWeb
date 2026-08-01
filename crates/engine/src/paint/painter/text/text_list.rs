@@ -47,8 +47,12 @@ fn to_roman(mut num: usize) -> String {
     result
 }
 
-/// R2392：按 `@counter-style` 的 system 算法生成计数器表示（marker body，不含 prefix/suffix）。
+/// R2392/R2394：按 `@counter-style` 的 system 算法生成计数器表示（marker body，不含 prefix/suffix）。
 /// CSS Counter Styles 3 §3.1.4。`None` = 该值无法表示（超出 range / 系统不支持）→ 调用方走 fallback。
+/// R2394 注：additive/range/extends 应用经 A/B 量证为 net-negative（driving WPT 全 font-wall dice/
+/// triangle 字形 + system-additive ref 依赖 document.write JS + system-extends nbsp/marker 渲染差），
+/// 故**应用 defer**（parse-retain，见 ast.rs 字段 + parser.rs 解析）；本函数仅消费已落地 5 系统 +
+/// cyclic 数学取模修正。
 fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i32) -> Option<String> {
     use zero_css_parser::ast::CounterSystem;
     let syms = &rule.symbols;
@@ -57,13 +61,9 @@ fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i32)
         return None;
     }
     match rule.system {
-        // cyclic：symbols[(value-1) % len]（value >= 1）。
-        CounterSystem::Cyclic => {
-            if value < 1 {
-                return None;
-            }
-            Some(syms[((value - 1) as usize) % len].clone())
-        }
+        // R2394：cyclic 用数学取模（rem_euclid），表示任意整数（含 0/负数）；CSS §3.1.4 cyclic
+        // 不限值域。旧 `value < 1 → None` 致 disclosure-* 等 cyclic value 0 永远 fallback。
+        CounterSystem::Cyclic => Some(syms[(value - 1).rem_euclid(len as i32) as usize].clone()),
         // fixed [N]：symbols[value - first]；超出 symbols 范围走 fallback。
         CounterSystem::Fixed(first) => {
             let first = first.unwrap_or(1);
@@ -131,7 +131,7 @@ fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i32)
                 .collect();
             Some(out)
         }
-        // additive / extends：slice 1 未实现应用 → None（走 fallback）。
+        // additive / extends：应用 defer（R2394 A/B 量证 net-negative，见函数注释）→ None（fallback）。
         CounterSystem::Additive | CounterSystem::Extends(_) => None,
     }
 }
@@ -379,7 +379,8 @@ impl super::super::Painter {
             }
             ListStyleTypeValue::None => {}
             // R2392：自定义计数器样式（@counter-style）。查注册表 → 按 system 生成 body
-            // → prefix+body+suffix。未定义 / 超出 range → fallback（slice 1：decimal "N."）。
+            // → prefix+body+suffix。未定义 / 超出 range → fallback（decimal "N."）。
+            // R2394 注：additive/extends 应用 defer（A/B net-negative，见 counter_style_body 注释）。
             ListStyleTypeValue::Custom(name) => {
                 let index = self
                     .get_counter("list-item")
@@ -389,7 +390,7 @@ impl super::super::Painter {
                 let text = match self.counter_styles.get(name) {
                     Some(rule) => match counter_style_body(rule, value) {
                         Some(body) => format!("{}{}{}", rule.prefix, body, rule.suffix),
-                        // body 超出 range → fallback（slice 1：decimal）。
+                        // body 超出 range → fallback（decimal）。
                         None => format!("{index}."),
                     },
                     // 未定义的自定义名 → fallback decimal（CSS Counter Styles 3 §3.1.3）。
@@ -518,9 +519,11 @@ mod tests {
             name: "test".to_string(),
             system,
             symbols: symbols.iter().map(|s| s.to_string()).collect(),
+            additive_symbols: Vec::new(),
             prefix: String::new(),
             suffix: ". ".to_string(),
             fallback: "decimal".to_string(),
+            range: None,
         }
     }
 
@@ -531,7 +534,9 @@ mod tests {
         assert_eq!(counter_style_body(&r, 3).unwrap(), "c");
         assert_eq!(counter_style_body(&r, 4).unwrap(), "a"); // 循环回 a
         assert_eq!(counter_style_body(&r, 6).unwrap(), "c");
-        assert!(counter_style_body(&r, 0).is_none(), "value<1 应 None");
+        // R2394：cyclic 表示任意整数（数学取模）；value 0 → syms[(-1)%3]=syms[2]="c"。
+        assert_eq!(counter_style_body(&r, 0).unwrap(), "c");
+        assert_eq!(counter_style_body(&r, -1).unwrap(), "b"); // (-2)%3=1 → "b"
     }
 
     #[test]
@@ -584,8 +589,8 @@ mod tests {
     }
 
     #[test]
+    /// R2394：additive 系统 → 应用 defer（None，走 fallback）。parse-retain 见 parser 测试。
     fn test_counter_style_additive_deferred() {
-        // additive slice 1 未实现 → None（走 fallback）。
         let r = cs_rule(zero_css_parser::ast::CounterSystem::Additive, &["a"]);
         assert!(counter_style_body(&r, 1).is_none());
     }

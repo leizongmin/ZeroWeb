@@ -116,3 +116,88 @@ fn test_parse_counter_style_malformed_no_body() {
     );
     assert!(ws.rules.iter().any(|r| matches!(r, Rule::Style(_))), "后续规则不应被吞");
 }
+
+// ── R2394 slice 2：additive-symbols / range 描述符解析 ──────────────────────────
+
+#[test]
+/// R2394：`additive-symbols` 裸字形对（CSS §3.1.8）：解析为 (weight, symbol) 对并按 weight 降序。
+fn test_parse_counter_style_additive_symbols() {
+    let css = "@counter-style a { system: additive; additive-symbols: 6 \\2685, 5 \\2684, 4 \\2683; suffix: \"\"; }";
+    let cs = first_counter_style(css);
+    assert_eq!(cs.system, CounterSystem::Additive);
+    // 降序排序（声明已是降序，验证顺序 + 去反斜杠转义）。
+    assert_eq!(
+        cs.additive_symbols,
+        vec![
+            (6, "\u{2685}".to_string()),
+            (5, "\u{2684}".to_string()),
+            (4, "\u{2683}".to_string()),
+        ]
+    );
+}
+
+#[test]
+/// R2394：`additive-symbols` 乱序声明 → 按 weight 降序排序（贪心分解所需）。
+fn test_parse_counter_style_additive_symbols_sorted_desc() {
+    let css = "@counter-style a { system: additive; additive-symbols: 1 \"a\", 3 \"c\", 2 \"b\"; }";
+    let cs = first_counter_style(css);
+    assert_eq!(
+        cs.additive_symbols.iter().map(|(w, _)| *w).collect::<Vec<_>>(),
+        vec![3, 2, 1],
+        "应按 weight 降序"
+    );
+}
+
+#[test]
+/// R2394：`additive-symbols` 引号串 + 整数位置互换（`<integer> && <symbol>` 顺序无关）。
+fn test_parse_counter_style_additive_symbols_quoted_swap() {
+    let css = "@counter-style a { system: additive; additive-symbols: 3 \"a\", \"b\" 2; }";
+    let cs = first_counter_style(css);
+    assert_eq!(cs.additive_symbols.len(), 2);
+    assert_eq!(cs.additive_symbols[0], (3, "a".to_string()));
+    assert_eq!(cs.additive_symbols[1], (2, "b".to_string()));
+}
+
+#[test]
+/// R2394：additive 系统无 additive-symbols → at-rule 无效 → 丢弃。
+fn test_parse_counter_style_additive_no_symbols_invalid() {
+    let css = "@counter-style bad { system: additive; }";
+    let ws = Parser::parse_stylesheet(css);
+    assert!(
+        !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+        "additive 无 additive-symbols 应丢弃"
+    );
+}
+
+#[test]
+/// R2394：`range` 单区间 `1 5` → Some([(1,5)])。
+fn test_parse_counter_style_range_single() {
+    let css = "@counter-style a { system: extends upper-roman; range: 1 5; }";
+    let cs = first_counter_style(css);
+    assert_eq!(cs.range, Some(vec![(1, 5)]));
+}
+
+#[test]
+/// R2394：`range` 多区间逗号分隔 + `infinite`（lower→MIN，upper→MAX）。
+fn test_parse_counter_style_range_multi_infinite() {
+    let css = "@counter-style a { system: extends decimal; range: infinite -1, 5 infinite; }";
+    let cs = first_counter_style(css);
+    assert_eq!(cs.range, Some(vec![(i32::MIN, -1), (5, i32::MAX)]));
+}
+
+#[test]
+/// R2394：`range: auto` → None（走系统默认）。
+fn test_parse_counter_style_range_auto() {
+    let css = "@counter-style a { system: extends decimal; range: auto; }";
+    let cs = first_counter_style(css);
+    assert_eq!(cs.range, None);
+}
+
+#[test]
+/// R2394：`system: extends <name>` 无需 symbols（extends 继承）→ 规则保留。
+fn test_parse_counter_style_extends_no_symbols() {
+    let css = "@counter-style ext { system: extends disclosure-closed; }";
+    let cs = first_counter_style(css);
+    assert_eq!(cs.system, CounterSystem::Extends("disclosure-closed".to_string()));
+    assert!(cs.symbols.is_empty(), "extends 不需要 symbols");
+}
