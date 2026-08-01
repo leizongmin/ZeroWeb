@@ -78,6 +78,12 @@ pub struct InlineFormattingContext {
     pub float_exclusions: Vec<FloatExclusion>,
     /// 生成的行盒列表。
     pub lines: Vec<LineBox>,
+    /// R2431 line-clamp（CSS Overflow 4）：夹到 N 行（容器 `line-clamp: Count(n)` → `Some(n)`）。
+    /// `layout()` 读容器样式设此字段，`break_items_into_lines` 后 truncate `self.lines` 到 N
+    /// 并置 `clamped`。box 高度由下游从 lines 推 → 自然 = N 行。kill-switch `ZW_LINE_CLAMP=0`。
+    pub line_clamp: Option<usize>,
+    /// line-clamp 是否截断了行（第 N 行后有更多内容 → 第 N 行末须渲 ellipsis，slice 2 消费）。
+    pub clamped: bool,
     /// 垂直书写模式（vertical-rl 或 vertical-lr）。
     ///
     /// 当为 true 时，字符沿 y 轴向下推进，"行"变为垂直列，
@@ -243,6 +249,8 @@ impl InlineFormattingContext {
             tab_size: DEFAULT_TAB_SIZE,
             float_exclusions: Vec::new(),
             lines: Vec::new(),
+            line_clamp: None,
+            clamped: false,
             vertical: false,
             vertical_rtl: false,
             block_extent: container_width,
@@ -627,6 +635,27 @@ impl InlineFormattingContext {
         }
         let items = self.collect_inline_items(doc, container, styles);
         self.break_items_into_lines(items);
+        // R2431 line-clamp（CSS Overflow 4）：容器声明 `line-clamp: Count(n)` 时，把行夹到 N。
+        if !self.vertical
+            && std::env::var("ZW_LINE_CLAMP").as_deref() != Ok("0")
+            && let Some(style) = styles.get(&container)
+            && let Some(n) = match &style.line_clamp {
+                zero_style_system::property::types::LineClampComputedValue::Count(n) => Some(*n as usize),
+                _ => None,
+            }
+        {
+            self.apply_line_clamp_cap(n);
+        }
+    }
+
+    /// R2431 line-clamp：把 `self.lines` 夹到 `n` 行并置 `clamped`（n>0 且行数>n 时截断）。
+    /// 从 `layout()` 抽出供单测直接驱动（break_into_lines + apply_line_clamp_cap）。
+    /// 截断保留前 N 行完整几何（float exclusion / inline-box 对齐不变）；下游 height 从 lines 推。
+    pub(crate) fn apply_line_clamp_cap(&mut self, n: usize) {
+        if n > 0 && self.lines.len() > n {
+            self.lines.truncate(n);
+            self.clamped = true;
+        }
     }
 
     /// 递归收集 `id` 子树的所有文本，跳过 `local_name` 在 `exclude` 中的元素子树。
