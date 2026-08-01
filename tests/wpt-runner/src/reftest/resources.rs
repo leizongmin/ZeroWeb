@@ -571,7 +571,20 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
         // ImageKey 仍用原始 url（上面 `simple_hash(url)`），与 painter 端 `image_resource_key`
         // 对齐（painter 拿到的也是 CSS 原始 url() 值）。
         let decoded = percent_decode(url.as_bytes()).decode_utf8_lossy();
-        let path = base.join(decoded.trim_start_matches('/'));
+        let trimmed = decoded.trim_start_matches('/');
+        let primary = base.join(trimmed);
+        // R2427：站点根绝对 URL（如 "/css/support/60x60-green.png"）。WPT 下 `base_dir` 是测试
+        // 文件所在目录而非站点根，`base.join(trimmed)` 解析到 `base_dir/css/support/...` 找不到
+        // → 图片加载失败 → 不渲染（修复前 ~2995 个 WPT 文件的 `/` 绝对路径图片全丢，含
+        // css-box/margin-trim replaced 簇）。回退到 wpt-data 站点根（镜像 `load_linked_stylesheets`
+        // :175 对 `/` 外链样式表的解析）。product-smoke 的 `base_dir` 即站点根，`primary` 先解析
+        // 命中故不受影响（仅当 primary 不存在才尝试回退）。
+        let path = if url.starts_with('/') && !primary.exists() {
+            let alt = Path::new("tests/wpt-runner/wpt-data").join(trimmed);
+            if alt.exists() { alt } else { primary }
+        } else {
+            primary
+        };
 
         // 尝试加载 PNG 文件，失败再尝试 JPEG（真实页面 logo/照片多为 JPEG），再尝试 SVG
         if let Ok(data) = load_png_file(&path) {
