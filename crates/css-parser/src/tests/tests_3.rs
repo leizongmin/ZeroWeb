@@ -373,6 +373,47 @@ fn test_parse_color_hwb_black() {
 }
 
 #[test]
+/// R2375：CSS Color 4 §12 现代系统颜色补全（light color-scheme 默认值）。
+/// 修复前这些合法系统颜色（LinkText/VisitedText/ActiveText/ButtonText/Field/FieldText/
+/// Highlight/HighlightText/SelectedItem/SelectedItemText/Mark/MarkText/AccentColor/
+/// AccentColorText）返回 None → 声明被丢弃（元素回退到继承/initial 色）。现解析为
+/// light-scheme 合理默认值（具体值非关键，CSS deprecated-sameas 测试为相对匹配；
+/// 价值 = 不再静默丢弃合法系统颜色声明）。
+fn test_parse_color_modern_system_colors() {
+    // 每个现代系统颜色都能解析（非 None），且大小写不敏感
+    for name in [
+        "LinkText",
+        "VisitedText",
+        "ActiveText",
+        "ButtonText",
+        "Field",
+        "FieldText",
+        "Highlight",
+        "HighlightText",
+        "SelectedItem",
+        "SelectedItemText",
+        "Mark",
+        "MarkText",
+        "AccentColor",
+        "AccentColorText",
+    ] {
+        assert!(parse_color(name).is_some(), "{name} 应可解析");
+        // 大小写不敏感（与既有 canvas/Canvas 一致）
+        assert!(parse_color(&name.to_lowercase()).is_some(), "{name} 小写应可解析");
+    }
+    // 选定几个断言具体 light-scheme 默认值（防回归）
+    assert_eq!(parse_color("LinkText"), Some(ColorValue::Rgba(0, 0, 238, 255)));
+    assert_eq!(parse_color("Highlight"), Some(ColorValue::Rgba(51, 153, 255, 255)));
+    assert_eq!(parse_color("HighlightText"), Some(ColorValue::Rgba(255, 255, 255, 255)));
+    assert_eq!(parse_color("Field"), Some(ColorValue::Rgba(255, 255, 255, 255)));
+    assert_eq!(parse_color("FieldText"), Some(ColorValue::Rgba(0, 0, 0, 255)));
+    assert_eq!(
+        parse_color("AccentColorText"),
+        Some(ColorValue::Rgba(255, 255, 255, 255))
+    );
+}
+
+#[test]
 /// 测试 hwb() 带透明度：hwb(120 30% 20% / 0.5) — 验证 RGBA 分量合理
 fn test_parse_color_hwb_with_alpha() {
     let result = parse_color("hwb(120 30% 20% / 0.5)");
