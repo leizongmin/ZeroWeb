@@ -335,17 +335,18 @@
 
 ### 轻量修复候选
 
-**当前活跃轻量主线 = CSS 合规缺口定向 code-reading probe（多 vein 并行）**。本 session（R2373-R2378）连续 6 lever **彻底推翻 R2372「双路径穷尽」结论**，并**完成 color-mix 标准空间补全 milestone**（R2376 lab/oklab/oklch + R2377 srgb-linear + R2378 xyz = 5 新空间，2→7 变体，6/6 CSS Color 4 §12 标准插值空间）。
+**当前活跃轻量主线 = CSS 合规缺口定向 code-reading probe（多 vein 并行）**。R2373-R2380 连续 8 lever **彻底推翻 R2372「双路径穷尽」结论**，跨两大 vein：(1) color-mix 标准空间补全 milestone（R2376-R2378，6/6 CSS Color 4 §12 空间）；(2) **CSS 属性 value-级 parse-gap 新 vein**（R2379 outline-style:auto + R2380 aspect-ratio auto<ratio，经 Explore 短阵广扫 15 属性定位）。
 
-★ **R2204 洞见 + R2373-R2378 六连实证**：「CSS2/parser/selector clean lever 九重穷尽」「自主清洁 lever 双路径穷尽」结论**均局限于 reftest-visible + 已扫维度**；**unit-test 驱动的 CSS 合规缺口**经定向代码阅读持续可发现。**故后续 agent 不应信「exhausted」结论停手**——定向对照 spec 清单逐表/逐函数核 parser，仍有 lever。**关键模式**：转换/常量「已存在仅缺接线」类 lever（R2376-R2378 color-mix 空间：转换函数/矩阵早就在，只缺 pub 包装 + variant + arm）经定向核 import 表 + 调用点即定位，零新数学。
+★ **R2204 洞见 + R2373-R2380 八连实证**：「CSS2/parser/selector clean lever 九重穷尽」「自主清洁 lever 双路径穷尽」结论**均局限于 reftest-visible + 已扫维度**；**unit-test 驱动的 CSS 合规缺口**经定向代码阅读持续可发现。**故后续 agent 不应信「exhausted」结论停手**。**两类高产出模式**：① 转换/常量「已存在仅缺接线」（R2376-R2378 color-mix 空间）；② Explore 短阵广扫属性表定位 value-级缺失关键字（R2379-R2380）。
 
 下一轮可接续的具体入口（逐条 verify-then-fix，TDD red→green，优先 unit-test 驱动不强依赖 wpt-data；每修一个跑 scoped test + clippy + fmt + 全量 `make test`，net≥0 land）：
-- **color-mix hue method**（`in oklch longer hue` 等，CSS Color 4 §12.3）：现 lch/oklch 硬编码短弧；需 `ColorMixSpec` 加 `hue: ColorHueMethod` 字段（ColorHueMethod enum 已存在，gradient 在用）+ parse `longer/shorter/increasing/decreasing hue` + mix_lch/mix_oklch 用之。moderate（struct 字段改动 ~4 构造点）。
+- **color-mix hue method**（`in oklch longer hue` 等，CSS Color 4 §12.3）—— color-mix feature 收官：现 mix_lch/mix_oklch 硬编码短弧；需 `ColorMixSpec` 加 `hue: ColorHueMethod` 字段（enum 在 parse_transform.rs 已 Default=Shorter，engine 已有 ColorHueMethod→HueMethod 映射 helpers.rs:822）+ parse_color_mix 解析 `longer/shorter/increasing/decreasing hue` + mix_lch/mix_oklch 复用 render-foundation `interp_hue`（现 private，需 pub）或复制 4-arm 数学。moderate（~5 构造点 + 跨 3 crate）。
+- **新 vein Tier 1 整属性**（Explore 已定位，需 enum+parse+apply+computed，较大面，且若 layout 不消费则低值）：`text-decoration-skip-ink`(none/auto/all)、`field-sizing`(fixed/content)、`white-space-collapse`、`text-box-*`。先核 layout/render 是否消费再决定值不值。
+- **更多 Tier 2 value-级缺口**（扩既有 enum+parse arm，最干净）：定向核其他 CSS 子域 parser 缺失关键字——如 `list-style-type` CSS Lists 3（lower-greek/armenian/georgian/cjk-*/hebrew/hiragana/katakana 等需配套 counter 渲染才高值，先核 marker 渲染）、`text-transform`（full-width/full-size-kana）、`caption-side`/`empty-cells`（CSS Tables）、`break-*`。逐一核 parser + 消费侧。
 - **color-mix 宽色域空间**（display-p3/a98-rgb/prophoto-rgb）：需 gamut 映射，深，defer。
-- **CSS Values 4 单位表续**：`parse_length` 对照 §unit 清单——`lh`/`rlh`（line-height，常数近似同 ex→0.8em，但随作者 line-height 变更误导，弱候选）/ `cap`/`ic`/`ric`/`rcap`（需字体度量 deferred）/ `dppx`/`dpi`/`dpcm`（resolution niche）。
-- **新 vein 定向 code-reading**：CSS Backgrounds（`background-clip:text`、`background-position` 多值边角）/ CSS Text（`text-wrap`/`white-space-collapse` CSS Text 4）/ CSS Box 边角。逐一核 parser 对照 spec。
-- **CSS Syntax §4/§5 其他合规缺口**：MQ L4 比较运算符 `<`/`>`/`<=`/`>=` token 化；CDO/CDC 非顶层上下文。
-- **量本 session lever 的 WPT footprint**（R2207 模式）：scoped `make reftest-oracle DIR=css/css-color` 看 R2376-R2378 color-mix 空间是否有 case 翻绿（需 wpt-data，网络 fetch；不强求）。
+- **CSS Values 4 单位表续**：`lh`/`rlh`（弱）/`cap`/`ic`（需字体度量 deferred）/`dppx`/`dpi`/`dpcm`。
+- **CSS Syntax §4/§5 其他合规缺口**：MQ L4 比较运算符 token 化；CDO/CDC 非顶层上下文。
+- **量本 session lever 的 WPT footprint**（R2207 模式）：scoped `make reftest-oracle DIR=css/css-color` 看 R2376-R2380 是否有 case 翻绿（需 wpt-data，网络 fetch；不强求）。
 - **文档 vs 代码行号漂移续修**（R2203 verify-then-fix 模式）。
 - 每修一个：仅文档→跳过昂贵 make test；连带 `.rs`→跑 scoped test-guard + 必要时全量 `make test`，net≥0 land。
 
