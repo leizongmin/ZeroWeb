@@ -354,6 +354,25 @@ fn test_apply_property_aspect_ratio_divide_by_zero() {
 }
 
 #[test]
+/// R2380：CSS Aspect Ratio §3 组合语法 `auto <ratio>`。修复前 "auto 16/9" 落 find('/') 把
+/// "auto 16" 当 w 解析失败 → 整条声明被丢（false）。修复后剥 auto 前缀取 ratio（ZW 无「偏好
+/// 固有比」建模，取 ratio 近似，严格优于被丢）。大小写不敏感 + 空格变体。
+fn test_apply_property_aspect_ratio_auto_combined() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "aspect-ratio", "auto 16 / 9"));
+    let ratio = style.aspect_ratio.expect("auto <ratio> 应取 ratio");
+    assert!((ratio - 16.0 / 9.0).abs() < 0.01);
+    // 单数值 ratio
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "aspect-ratio", "auto 2"));
+    assert_eq!(style.aspect_ratio, Some(2.0));
+    // 大小写不敏感
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "aspect-ratio", "AUTO 3 / 2"));
+    assert!((style.aspect_ratio.unwrap() - 1.5).abs() < 0.01);
+}
+
+#[test]
 /// apply_property_value 对 vertical-align
 fn test_apply_property_vertical_align() {
     let mut style = ComputedStyle::default();

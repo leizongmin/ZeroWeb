@@ -791,17 +791,28 @@ pub fn apply_property_value_with_quirks(
         }
         // ── Aspect Ratio 属性 ──
         "aspect-ratio" => {
-            if value.eq_ignore_ascii_case("auto") {
+            let v = value.trim();
+            if v.eq_ignore_ascii_case("auto") {
                 style.aspect_ratio = None;
                 return true;
             }
+            // CSS Aspect Ratio §3：`auto <ratio>` 组合语法（auto 偏好固有比，ZW 无该建模，
+            // 取 <ratio> 近似——严格优于修复前 "auto 16/9" 整条被丢）。剥 auto 前缀（须为独立 token）。
+            let ratio_str: &str = if v.len() >= 5
+                && v.as_bytes()[..4].eq_ignore_ascii_case(b"auto")
+                && v.as_bytes()[4].is_ascii_whitespace()
+            {
+                v[4..].trim()
+            } else {
+                v
+            };
             // 支持 "16 / 9" 或单个数值
-            let ratio: f32 = if let Some(slash_pos) = value.find('/') {
-                let w: f32 = match value[..slash_pos].trim().parse() {
+            let ratio: f32 = if let Some(slash_pos) = ratio_str.find('/') {
+                let w: f32 = match ratio_str[..slash_pos].trim().parse() {
                     Ok(v) => v,
                     Err(_) => return false,
                 };
-                let h: f32 = match value[slash_pos + 1..].trim().parse() {
+                let h: f32 = match ratio_str[slash_pos + 1..].trim().parse() {
                     Ok(v) => v,
                     Err(_) => return false,
                 };
@@ -810,7 +821,7 @@ pub fn apply_property_value_with_quirks(
                 }
                 w / h
             } else {
-                match value.parse() {
+                match ratio_str.parse() {
                     Ok(v) => v,
                     Err(_) => return false,
                 }
