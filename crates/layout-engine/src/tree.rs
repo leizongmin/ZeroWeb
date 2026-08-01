@@ -590,7 +590,15 @@ fn apply_replaced_element_sizing(
                 // **有效比例**（CSS aspect-ratio 若设，否则固有 w/h）推导。旧实现恒用固有
                 // w/h，致 `<img style="block-size:55vw;aspect-ratio:2/1">`（固有 8×16）的 width
                 // 被算成 440×(8/16)=220 而非 440×2=880（nested-grid-item-block-size-001 64% diff）。
-                let eff_ratio = computed.aspect_ratio.unwrap_or(w / h); // width/height
+                // R2441：aspect-ratio `auto <ratio>` 组合（CSS Sizing 4 §aspect-ratio）——`auto`
+                // 优先 replaced 固有比。本分支已有 decoded 固有 (w,h)（外层 img_intrinsic_sizes.get），
+                // 故 auto 时 eff_ratio=w/h（固有），显式 <ratio> 仅在无固有比时 fallback（本分支不达）。
+                // 否则沿用显式 aspect_ratio（R976 优先于固有比）或回落固有。
+                let eff_ratio = if computed.aspect_ratio_auto {
+                    w / h
+                } else {
+                    computed.aspect_ratio.unwrap_or(w / h)
+                }; // width/height
                 if width_auto && height_auto {
                     taffy_style.size.width = taffy::style::Dimension::length(w);
                     taffy_style.size.height = taffy::style::Dimension::length(h);
