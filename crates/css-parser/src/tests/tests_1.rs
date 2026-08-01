@@ -862,6 +862,39 @@ fn test_parse_display_values() {
 }
 
 #[test]
+fn test_parse_display_two_value_syntax() {
+    // CSS Display 3 §2.4 两值语法 <display-outside> || <display-inside>（顺序无关）
+    // → 映射到既有 legacy 单 keyword 变体。
+    // block-level inside：
+    assert_eq!(parse_display("block flow"), Some(DisplayValue::Block));
+    assert_eq!(parse_display("block flow-root"), Some(DisplayValue::FlowRoot));
+    assert_eq!(parse_display("block flex"), Some(DisplayValue::Flex));
+    assert_eq!(parse_display("block grid"), Some(DisplayValue::Grid));
+    assert_eq!(parse_display("block table"), Some(DisplayValue::Table));
+    // inline-level inside：
+    assert_eq!(parse_display("inline flow"), Some(DisplayValue::Inline));
+    assert_eq!(parse_display("inline flow-root"), Some(DisplayValue::InlineBlock));
+    assert_eq!(parse_display("inline flex"), Some(DisplayValue::InlineFlex));
+    assert_eq!(parse_display("inline grid"), Some(DisplayValue::InlineGrid));
+    assert_eq!(parse_display("inline table"), Some(DisplayValue::InlineTable));
+    // || 顺序无关：inside 在前同样解析
+    assert_eq!(parse_display("flex inline"), Some(DisplayValue::InlineFlex));
+    assert_eq!(parse_display("grid block"), Some(DisplayValue::Grid));
+    assert_eq!(parse_display("flow-root inline"), Some(DisplayValue::InlineBlock));
+    // 大小写不敏感（与单 keyword 路径一致）
+    assert_eq!(parse_display("Inline Flex"), Some(DisplayValue::InlineFlex));
+    assert_eq!(parse_display("BLOCK GRID"), Some(DisplayValue::Grid));
+    // 非法组合 / 超两值 → None（不回落单值）
+    assert_eq!(parse_display("block inline"), None); // 两个 outside
+    assert_eq!(parse_display("flex grid"), None); // 两个 inside
+    assert_eq!(parse_display("block run-in"), None); // run-in 不支持
+    assert_eq!(parse_display("block flex grid"), None); // 超两值
+    // 单 keyword 路径不受影响（连字符变体仍走 fast-path）
+    assert_eq!(parse_display("inline-flex"), Some(DisplayValue::InlineFlex));
+    assert_eq!(parse_display("flow-root"), Some(DisplayValue::FlowRoot));
+}
+
+#[test]
 fn test_parse_position_values() {
     assert_eq!(parse_position("static"), Some(PositionValue::Static));
     assert_eq!(parse_position("relative"), Some(PositionValue::Relative));

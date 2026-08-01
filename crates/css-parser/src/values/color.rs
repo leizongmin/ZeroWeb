@@ -1751,7 +1751,22 @@ fn parse_named_color(value: &str) -> Option<ColorValue> {
 
 /// 解析 CSS display 属性值。
 pub fn parse_display(value: &str) -> Option<DisplayValue> {
-    match value.trim().to_ascii_lowercase().as_str() {
+    let value = value.trim().to_ascii_lowercase();
+
+    // CSS Display 3 §2.4 两值语法 `<display-outside> || <display-inside>`（`||` 合取子，
+    // 顺序无关），如 `inline flex`→InlineFlex、`block flow-root`→FlowRoot、`block table`→Table。
+    // 映射到既有 legacy 单 keyword 变体（无新布局基建）；单 keyword（含 inline-flex /
+    // flow-root 等连字符变体）走下方既有 match。
+    let tokens: Vec<&str> = value.split_whitespace().collect();
+    if tokens.len() == 2 {
+        // 顺序无关：尝试 (outside, inside) 与反转两种排列
+        return display_two_value(tokens[0], tokens[1]).or_else(|| display_two_value(tokens[1], tokens[0]));
+    }
+    if tokens.len() > 2 {
+        return None;
+    }
+
+    match value.as_str() {
         "block" => Some(DisplayValue::Block),
         "inline" => Some(DisplayValue::Inline),
         "inline-block" => Some(DisplayValue::InlineBlock),
@@ -1776,6 +1791,54 @@ pub fn parse_display(value: &str) -> Option<DisplayValue> {
         "table-footer-group" => Some(DisplayValue::TableFooterGroup),
         _ => None,
     }
+}
+
+/// CSS Display 3 §2.4 两值 display 的 (display-outside, display-inside) → 既有 legacy
+/// DisplayValue 映射。outside ∈ {block, inline}，inside ∈ {flow, flow-root, table, flex,
+/// grid}。调用方对两 token 尝试两种排列以支持 `||`（顺序无关）。输入须已小写化。
+fn display_two_value(outside: &str, inside: &str) -> Option<DisplayValue> {
+    let block_level = outside == "block";
+    if !block_level && outside != "inline" {
+        return None;
+    }
+    Some(match inside {
+        "flow" => {
+            if block_level {
+                DisplayValue::Block
+            } else {
+                DisplayValue::Inline
+            }
+        }
+        "flow-root" => {
+            if block_level {
+                DisplayValue::FlowRoot
+            } else {
+                DisplayValue::InlineBlock
+            }
+        }
+        "flex" => {
+            if block_level {
+                DisplayValue::Flex
+            } else {
+                DisplayValue::InlineFlex
+            }
+        }
+        "grid" => {
+            if block_level {
+                DisplayValue::Grid
+            } else {
+                DisplayValue::InlineGrid
+            }
+        }
+        "table" => {
+            if block_level {
+                DisplayValue::Table
+            } else {
+                DisplayValue::InlineTable
+            }
+        }
+        _ => return None,
+    })
 }
 
 /// 解析 CSS position 属性值。
