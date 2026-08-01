@@ -190,6 +190,73 @@ fn test_canvas_propagation_body_skips_own_bg_color() {
     );
 }
 
+/// R2369：CSS Containment 1 — `contain: layout/paint/strict/content` 在 body（或 html）上
+/// 抑制其背景到画布的特殊传播（CSS2 §14.2）。driving: contain-body-bg-001 / contain-html-bg-001。
+/// body{background:red; contain:layout} → body 红不传播到画布（canvas_propagated_node = None）。
+#[test]
+fn test_canvas_propagation_suppressed_by_body_contain() {
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><body style="background:red; contain:layout"><p>X</p></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(100.0, 100.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(100.0, 100.0);
+    let result = engine.compute(&doc, &styles);
+    let mut painter = Painter::new();
+    painter.viewport_w = 100.0;
+    painter.viewport_h = 100.0;
+    painter.paint(&result.root, &styles, Some(&doc));
+    assert!(
+        painter.canvas_propagated_node.is_none(),
+        "contain:layout 在 body 上应抑制背景到画布的传播（canvas_propagated_node 须为 None）"
+    );
+
+    // 对照：无 contain 时 body 背景传播（canvas_propagated_node = Some）。
+    let html2 = r#"<html><body style="background:red"><p>X</p></body></html>"#;
+    let doc2 = zero_dom::parse_html(html2);
+    let styles2 = sys.compute_styles(&doc2, &[]);
+    let result2 = engine.compute(&doc2, &styles2);
+    let mut painter2 = Painter::new();
+    painter2.viewport_w = 100.0;
+    painter2.viewport_h = 100.0;
+    painter2.paint(&result2.root, &styles2, Some(&doc2));
+    assert!(
+        painter2.canvas_propagated_node.is_some(),
+        "无 contain 时 body 背景应传播到画布（回归守护）"
+    );
+
+    // contain 在 html（根）上 → 整个传播机制禁用（含 body fallback）。
+    // driving: contain-html-bg-001（html{contain:layout} + body{red} → 无红）。
+    let html3 = r#"<html style="contain:layout"><body style="background:red"><p>X</p></body></html>"#;
+    let doc3 = zero_dom::parse_html(html3);
+    let styles3 = sys.compute_styles(&doc3, &[]);
+    let result3 = engine.compute(&doc3, &styles3);
+    let mut painter3 = Painter::new();
+    painter3.viewport_w = 100.0;
+    painter3.viewport_h = 100.0;
+    painter3.paint(&result3.root, &styles3, Some(&doc3));
+    assert!(
+        painter3.canvas_propagated_node.is_none(),
+        "contain:layout 在 html（根）上应禁用整个背景传播机制（含 body fallback）"
+    );
+
+    // 任意 contain 值均抑制：contain:size 在 body 上（driving: contain-body-bg-003）。
+    let html4 = r#"<html><body style="background:red; contain:size"><p>X</p></body></html>"#;
+    let doc4 = zero_dom::parse_html(html4);
+    let styles4 = sys.compute_styles(&doc4, &[]);
+    let result4 = engine.compute(&doc4, &styles4);
+    let mut painter4 = Painter::new();
+    painter4.viewport_w = 100.0;
+    painter4.viewport_h = 100.0;
+    painter4.paint(&result4.root, &styles4, Some(&doc4));
+    assert!(
+        painter4.canvas_propagated_node.is_none(),
+        "contain:size（任意 contain 值）在 body 上也应抑制背景传播"
+    );
+}
+
 /// 测试透明背景不生成填充图元。
 #[test]
 fn test_painter_transparent_background() {

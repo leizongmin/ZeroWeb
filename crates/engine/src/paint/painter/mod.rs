@@ -353,13 +353,25 @@ impl Painter {
                 && html_style.is_some_and(|hs| {
                     hs.background_color != ColorValue::Transparent || has_paintable_bg_image(&hs.background_image)
                 });
-            let (prop_node, prop_style) = if html_has_bg {
-                (html_id, html_style)
-            } else if html_is_display_none {
+            // CSS Containment 1：任意 contain（layout/paint/size/style/strict/content）在 html（根）
+            // 或 body 上抑制其背景到画布的特殊传播（CSS2 §14.2）。html 被 contain → 整个根传播机制
+            // 禁用（含 body fallback，driving: contain-html-bg-001）；body 被 contain → 仅 body fallback
+            // 禁用（driving: contain-body-bg-001..004：layout/paint/size/style 全抑制）。
+            let contain_blocks =
+                |s: Option<&ComputedStyle>| s.is_some_and(|st| !matches!(st.contain, ContainComputedValue::None));
+            let (prop_node, prop_style) = if html_is_display_none {
                 // html display:none → body 作为其后代亦不渲染，不传播。
                 (None, None)
-            } else {
+            } else if contain_blocks(html_style) {
+                // 根（html）被 contain → 整个传播机制禁用（html 自身 + body fallback）。
+                (None, None)
+            } else if html_has_bg {
+                (html_id, html_style)
+            } else if !contain_blocks(body_style) {
+                // html 无背景 → body fallback 传播；body 被 contain 抑制则不传播。
                 (body_id, body_style)
+            } else {
+                (None, None)
             };
             self.canvas_propagated_node = prop_node;
             if let Some(ps) = prop_style
