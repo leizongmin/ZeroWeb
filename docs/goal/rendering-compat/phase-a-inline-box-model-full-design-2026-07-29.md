@@ -6,6 +6,17 @@
 **作者**: Rally R2157
 **关联**: [`master.md`](./master.md) 顶部裁决 / [R2156 evidence](./evidence/r2156-inline-box-model-coherence-landed-2026-07-29.txt) / [R2152–R2155 scoping](./archive/) / [redirect cda1c6d23](../../rendering-compat.md)
 
+> **⚠️ 2026-08-02 实施状态更新（R2420）——本文档以下「Design-only / slice 2 未修」框架为历史**
+>
+> 本文档写于 2026-07-29 R2157，描述了 slice 1（R2156）落地后的 **设计**，把 slice 2/3 标为「待实施」。**实施实际已全部完成并 default-on**，下文「Design-only」「未修」「slice 3 阻塞」等措辞为**历史留档**，不代表当前代码状态：
+> - **slice 2**（多 inline Element 块级堆叠修复）= R2160（probe default-off）→ R2161（gate 紧化 net−20→+1）→ R2162（text-wrap guard + **翻 default-on LANDED**）。
+> - **R2163** 曾 REVERT → default-off（orphan `<a>` 丢 LayoutBox 致 `collect_hit_test_nodes` 漏收 + struct 计数错）。
+> - **slice 3**（orphan LayoutBox 回填）= R2197「external-set」方案 LANDED（`inline_finalization.rs:1022` `backfill_phasea_orphan_boxes`，复用 layout 期 IFC 几何为 orphan 元素建 LayoutBox 加入树 + 登记 `paint_skip`，**修复 R2163 根因**）+ R2198 struct-check paint_skip-aware 后 **slice 2+3 翻 default-on LANDED**。
+> - **kill-switch**：env `ZW_PHASEA_MULTI_INLINE=0`（三处 gate `!= Ok("0")` = default-on）。
+> - **产品增益已验证实现**（2026-08-02 `make product-smoke-legacy`）：19-testpage-minimal 22.39%→**17.23% struct=PASS**、20-mixed-legacy 13.13%→**11.49% struct=PASS**、legacy 51/51 struct PASS（37-form-controls 3.85% PASS，历史 Phase A struct blocker 已解）。
+>
+> **教训**：本文档描述的 R2163-era 阻塞 + R2166「slice 3 三候选 STOP」是设计**调研期**结论；R2197 用第 4 方案「external-set」（layout 期 backfill，非 paint-time side-table，避 R2166 timing 障碍）突破。**后续 session 勿再据本文档「slice 3 阻塞」结论判定 slice 2 仍 default-off**——以代码 gate（`!= Ok("0")`）+ `backfill_phasea_orphan_boxes` 调用 + product-smoke-legacy 实测为准。
+
 ---
 
 ## 0. 背景与裁决对齐
