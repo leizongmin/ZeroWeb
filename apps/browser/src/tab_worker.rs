@@ -153,6 +153,15 @@ fn tab_worker_main(
     }
     let mut wv = builder.build();
     wv.set_prefers_color_scheme(color_scheme);
+    // R2413：初始化 font_resolver（系统字体）+ per-family 行度量——镜像 renderer 进程
+    // `with_io`（main.rs:170-173）。旧版 tab_worker（in-process 回退路径：
+    // `ZERO_BROWSER_MULTIPROCESS=0` 或 renderer binary 不可用时 tab_manager 回退）从不设
+    // resolver → webview font_resolver 为空 → painter resolve_font_id 全回落 FontId(0)，
+    // CSS font-family 被忽略，直至 @font-face 经 R2409 drain 加载后才更新；font_metric_map
+    // 亦漏（R2202 dormant 默认零影响，但激活 ZW_PERFONT_LINEHEIGHT=1 时 in-process 会缺）。
+    // 此初始设置使 in-process 路径与 renderer 一致。
+    wv.set_font_resolver(font_loader.build_font_resolver());
+    wv.set_font_metric_map(font_loader.build_line_metric_map());
     let _ = WebViewConfig::default();
 
     let mut async_load: Option<AsyncPageLoad> = None;
