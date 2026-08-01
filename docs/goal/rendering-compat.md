@@ -23,6 +23,7 @@
 >   - [ ] taffy replaced-element border-box sizing R2174 — 深 multi-session — 等点名
 >   - [ ] Phase A slice-3 IFC 深构造（IFC 单一权威化）— 深 architectural，设计已就绪 — 等点名
 >   - [ ] font-stack C-dep rebuild（R2025 user-blocked）— 等点名
+>   - [ ] 响应式图片 srcset / `<picture>` / CSS `image-set()`（R2412 发现）— `extract_img_resources` 仅取 `<img src>`，不解析 srcset/source；srcset-only 图缺抓、其余仅次优分辨率。正确选源须 DPR+`sizes`+布局（layout-dependent）+ painter effective-src plumbing — 深，须 RFC+布局集成 — 等点名
 > - 真正需用户拍板的 4 类（不兼容/闭源许可证、破坏性 git/文件操作、改 Mission/Done/范围、超大磁盘网络下载工具审批无法覆盖）同上格式追加。当前该 4 类无悬而未决项。
 >
 > **~~⏸️ 旧暂停裁决（2026-07-29，agent 自设；已被上方用户指令推翻，不再约束执行，仅作历史留档）~~**：当时 agent 判定 clean-lever 穷尽、改为「转其他 goal + 低频 plateau-guard」、要求结构性方向须用户点名授权。**此判定与更早的 `2026-07-16 默认决策边界`（已授权上述结构性方向）冲突，agent 当时选了更保守的一方并自我停手，用户 2026-07-29 明确推翻并要求持续推进。**
