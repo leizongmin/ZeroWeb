@@ -484,12 +484,60 @@ pub enum ContentValue {
     /// `url(...)` 图片引用（generated content image，如 `content: url(icon.png)`）。
     /// R1988：伪元素 content:url() 渲染为替换图片。
     Url(String),
+    /// 多 item 混合内容序列（如 `content: "Chapter " counter(c) ": "`）。
+    /// CSS Content §content-property：content 值可是多个 component value 串联，
+    /// 字符串与 counter() 交替（counter() 真实用法）。仅 string + counter() item；
+    /// 含 url()/attr() 的多 item 暂不支持（defer，回退 None 同旧行为）。
+    List(Vec<ContentListItem>),
+}
+
+/// content 混合序列的单个 item（CSS Content §content-property 多 component value）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentListItem {
+    /// 字符串字面量。
+    Str(String),
+    /// counter(name[, style]) 引用。
+    Counter {
+        /// 计数器名称。
+        name: String,
+        /// 可选的列表样式类型。
+        style: Option<String>,
+    },
+}
+
+/// 若 input 恰为单个完整函数调用 `fn_open ... )`（fn_open 含末尾 '('，如 "counter("），
+/// 且匹配闭括号在 input 末尾（无后续 token = 单 item），返回括号内 inner（已 trim）。
+///
+/// 替代 `input.ends_with(')')` 的宽松匹配——后者会误匹配多 item 序列（首 fn( + 末 )）
+/// 或未平衡输入（如 `counter(c counter(d)`）。单 item 分支须确保只捕获真单 item，
+/// 多 item / 畸形交由 parse_content_list 或返回 None。
+fn extract_single_function_inner<'a>(input: &'a str, fn_open: &str) -> Option<&'a str> {
+    if input.len() < fn_open.len() || !input[..fn_open.len()].eq_ignore_ascii_case(fn_open) {
+        return None;
+    }
+    let bytes = input.as_bytes();
+    let mut depth = 1i32; // fn_open 末尾的 '(' 已开一层
+    let mut i = fn_open.len();
+    while i < bytes.len() && depth > 0 {
+        match bytes[i] {
+            b'(' => depth += 1,
+            b')' => depth -= 1,
+            _ => {}
+        }
+        i += 1;
+    }
+    // 须平衡（depth==0）且匹配 ) 在末尾（i==len，无后续 token）才是单 item。
+    if depth != 0 || i != input.len() {
+        return None;
+    }
+    Some(input[fn_open.len()..input.len() - 1].trim())
 }
 
 /// 解析 CSS content 属性值。
 ///
 /// 支持格式：`normal`、`none`、字符串、`attr(name)`、`counter(name)` 或 `counter(name, style)`、
-/// `url(...)`（R1988 generated content image，伪元素 content:url() 渲染为替换图片）。
+/// `url(...)`（R1988 generated content image，伪元素 content:url() 渲染为替换图片）、
+/// 多 item 混合序列（`"Chapter " counter(c)`，CSS Content §content-property）。
 pub fn parse_content(input: &str) -> Option<ContentValue> {
     let input = input.trim();
     if input.eq_ignore_ascii_case("normal") {
@@ -497,6 +545,12 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
     }
     if input.eq_ignore_ascii_case("none") {
         return Some(ContentValue::None);
+    }
+    // 多 item 混合内容优先（如 `"Chapter " counter(c) ": "`）。须在单 item 分支之前：
+    // 单 counter() 分支用 ends_with(')') 会误匹配多 item 输入（首 counter( + 末 )），
+    // 故先让 parse_content_list 拦截 ≥2 item 序列；单 item 它返回 None，自然落回下方分支。
+    if let Some(v) = parse_content_list(input) {
+        return Some(v);
     }
     // 字符串：引号包裹
     if (input.starts_with('"') && input.ends_with('"')) || (input.starts_with('\'') && input.ends_with('\'')) {
@@ -506,8 +560,7 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
         return Some(ContentValue::String(input[1..input.len() - 1].to_string()));
     }
     // attr(name) — CSS Values §4：函数名大小写不敏感（ATTR ≡ attr）；属性名内容保持原样。
-    if (input.len() >= 5 && input[..5].eq_ignore_ascii_case("attr(")) && input.ends_with(')') {
-        let inner = input[5..input.len() - 1].trim();
+    if let Some(inner) = extract_single_function_inner(input, "attr(") {
         if inner.is_empty() {
             return None;
         }
@@ -515,8 +568,7 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
     }
     // counter(name) 或 counter(name, style)
     // counter(name[, style]) — CSS Values §4：函数名大小写不敏感（COUNTER ≡ counter）；计数器名/样式保持原样。
-    if (input.len() >= 8 && input[..8].eq_ignore_ascii_case("counter(")) && input.ends_with(')') {
-        let inner = input[8..input.len() - 1].trim();
+    if let Some(inner) = extract_single_function_inner(input, "counter(") {
         if inner.is_empty() {
             return None;
         }
@@ -530,8 +582,7 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
         return Some(ContentValue::Counter { name, style });
     }
     // url(...) — generated content image（R1988）。支持引号包裹的 url："url('x.png')" / 'url("x.png")'。
-    if (input.len() >= 4 && input[..4].eq_ignore_ascii_case("url(")) && input.ends_with(')') {
-        let inner = input[4..input.len() - 1].trim();
+    if let Some(inner) = extract_single_function_inner(input, "url(") {
         if inner.is_empty() {
             return None;
         }
@@ -542,6 +593,90 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
         return Some(ContentValue::Url(url.to_string()));
     }
     None
+}
+
+/// 解析 content 多 item 混合序列。返回 List 当且仅当 ≥2 个合法 string/counter item；
+/// 否则 None（单 item 由 parse_content 上方分支处理，畸形/含不支持函数亦 None）。
+fn parse_content_list(input: &str) -> Option<ContentValue> {
+    let bytes = input.as_bytes();
+    let mut items: Vec<ContentListItem> = Vec::new();
+    let mut pos = 0;
+    while pos < bytes.len() {
+        // 跳过空白
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos >= bytes.len() {
+            break;
+        }
+        if bytes[pos] == b'"' || bytes[pos] == b'\'' {
+            // 引号字符串（转义解码与单 item String 分支一致：取原始子串）
+            let quote = bytes[pos];
+            pos += 1;
+            let start = pos;
+            while pos < bytes.len() && bytes[pos] != quote {
+                pos += 1;
+            }
+            if pos >= bytes.len() {
+                return None; // 未闭合引号
+            }
+            items.push(ContentListItem::Str(input[start..pos].to_string()));
+            pos += 1; // 消费闭合引号
+        } else {
+            // 函数 token：读 ident 后须紧跟 '('
+            let id_start = pos;
+            while pos < bytes.len() && bytes[pos].is_ascii_alphabetic() {
+                pos += 1;
+            }
+            let ident = &input[id_start..pos];
+            if ident.is_empty() || pos >= bytes.len() || bytes[pos] != b'(' {
+                return None; // 非法 token
+            }
+            // 消费平衡括号
+            let inner_start = pos + 1;
+            let mut depth = 1;
+            pos += 1;
+            while pos < bytes.len() && depth > 0 {
+                match bytes[pos] {
+                    b'(' => depth += 1,
+                    b')' => depth -= 1,
+                    _ => {}
+                }
+                pos += 1;
+            }
+            if depth != 0 {
+                return None; // 未闭合括号
+            }
+            let inner = input[inner_start..pos - 1].trim();
+            if ident.eq_ignore_ascii_case("counter") {
+                let (name, style) = parse_counter_call_args(inner)?;
+                items.push(ContentListItem::Counter { name, style });
+            } else {
+                // attr/url/counters 等在多 item 序列暂不支持 → None（defer，同旧行为）
+                return None;
+            }
+        }
+    }
+    if items.len() >= 2 {
+        Some(ContentValue::List(items))
+    } else {
+        None
+    }
+}
+
+/// 解析 counter() 函数参数 inner（`name` 或 `name, style`）。
+fn parse_counter_call_args(inner: &str) -> Option<(String, Option<String>)> {
+    if inner.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+    let name = parts.first()?.to_string();
+    let style = if parts.len() > 1 {
+        Some(parts[1].to_string())
+    } else {
+        None
+    };
+    Some((name, style))
 }
 
 // ── CSS Quotes 值类型 ──────────────────────────────────────────────

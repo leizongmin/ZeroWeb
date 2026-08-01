@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::values::{
-    AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, ContentValue, parse_container_type,
-    parse_content, parse_quotes,
+    AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, ContentListItem, ContentValue,
+    parse_container_type, parse_content, parse_quotes,
 };
 
 /// Helper: 创建标签选择器。
@@ -496,6 +496,65 @@ fn test_parse_extended_uncovered_cases() {
     // Lines 798-799: parse_content with invalid counter
     let content = parse_content("counter()");
     assert_eq!(content, None);
+
+    // 混合内容序列（`"前缀" counter() "后缀"`）—— counter() 真实用法。
+    // 多 item → List；单 item 仍走既有 variant（零回归）。
+    let content = parse_content("\"Chapter \" counter(chap)");
+    assert_eq!(
+        content,
+        Some(ContentValue::List(vec![
+            ContentListItem::Str("Chapter ".to_string()),
+            ContentListItem::Counter {
+                name: "chap".to_string(),
+                style: None
+            },
+        ]))
+    );
+
+    // counter + 字符串 + counter（带 style）多 item 序列。
+    let content = parse_content("counter(fig, upper-roman) \". \" counter(sub)");
+    assert_eq!(
+        content,
+        Some(ContentValue::List(vec![
+            ContentListItem::Counter {
+                name: "fig".to_string(),
+                style: Some("upper-roman".to_string())
+            },
+            ContentListItem::Str(". ".to_string()),
+            ContentListItem::Counter {
+                name: "sub".to_string(),
+                style: None
+            },
+        ]))
+    );
+
+    // 单引号字符串混合。
+    let content = parse_content("'(' counter(c) ')'");
+    assert_eq!(
+        content,
+        Some(ContentValue::List(vec![
+            ContentListItem::Str("(".to_string()),
+            ContentListItem::Counter {
+                name: "c".to_string(),
+                style: None
+            },
+            ContentListItem::Str(")".to_string()),
+        ]))
+    );
+
+    // 含 url()/attr() 的多 item → defer（None，同旧行为）。
+    assert_eq!(parse_content("\"x\" url(a.png)"), None);
+    assert_eq!(parse_content("\"x\" attr(href)"), None);
+
+    // 单 item counter() 不变 List（仍走既有 Counter variant，零回归）。
+    assert_eq!(
+        parse_content("counter(c)").map(|v| matches!(v, ContentValue::Counter { .. })),
+        Some(true)
+    );
+
+    // 畸形：未闭合引号/括号。
+    assert_eq!(parse_content("\"unterminated counter(c)"), None);
+    assert_eq!(parse_content("counter(c counter(d)"), None);
 
     // Line 1208: parse_quotes with empty list
     let quotes = parse_quotes("\"\"");

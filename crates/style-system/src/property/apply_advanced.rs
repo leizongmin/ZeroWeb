@@ -396,6 +396,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                     ContentValue::Attr(a) => ContentComputedValue::Attr(a),
                     ContentValue::Counter { name, style } => ContentComputedValue::Counter { name, style },
                     ContentValue::Url(u) => ContentComputedValue::Url(u),
+                    ContentValue::List(items) => ContentComputedValue::List(items),
                 };
                 return true;
             }

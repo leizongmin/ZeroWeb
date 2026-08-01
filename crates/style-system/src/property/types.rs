@@ -1331,6 +1331,9 @@ pub enum ContentComputedValue {
     },
     /// `url(...)` 图片引用（generated content image，R1988）。
     Url(String),
+    /// 多 item 混合内容序列（`"Chapter " counter(c) ": "`）。复用 css-parser
+    /// 的 ContentListItem（Str/Counter）；paint 期逐 item 解析拼文本。
+    List(Vec<values::ContentListItem>),
 }
 
 /// CSS grid line 值（用于 grid-column-start/end、grid-row-start/end）。

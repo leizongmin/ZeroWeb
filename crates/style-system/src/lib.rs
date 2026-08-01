@@ -349,7 +349,9 @@ impl StyleSystem {
             };
             if matches!(
                 before.content,
-                property::types::ContentComputedValue::String(_) | property::types::ContentComputedValue::Attr(_)
+                property::types::ContentComputedValue::String(_)
+                    | property::types::ContentComputedValue::Attr(_)
+                    | property::types::ContentComputedValue::List(_)
             ) {
                 computed.before_pseudo = Some(Box::new(before));
             } else if is_q
@@ -362,7 +364,9 @@ impl StyleSystem {
             }
             if matches!(
                 after.content,
-                property::types::ContentComputedValue::String(_) | property::types::ContentComputedValue::Attr(_)
+                property::types::ContentComputedValue::String(_)
+                    | property::types::ContentComputedValue::Attr(_)
+                    | property::types::ContentComputedValue::List(_)
             ) {
                 computed.after_pseudo = Some(Box::new(after));
             } else if is_q

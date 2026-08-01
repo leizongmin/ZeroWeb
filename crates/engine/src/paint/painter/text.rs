@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use crate::measure_char_for_paint;
-use zero_css_parser::values::{ColorValue, FloatValue, LengthValue};
+use zero_css_parser::values::{ColorValue, ContentListItem, FloatValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::inline_finalization::{
     build_text_parent_override_map, resolve_text_align, resolve_text_align_last, resolve_text_indent,
@@ -129,13 +129,21 @@ impl super::Painter {
                 style: counter_style,
             } => {
                 let value = self.get_counter(name).unwrap_or(0);
-                match counter_style.as_deref() {
-                    Some("lower-alpha") | Some("lower-latin") => format_counter_alpha(value, false),
-                    Some("upper-alpha") | Some("upper-latin") => format_counter_alpha(value, true),
-                    Some("lower-roman") => format_counter_roman(value, false),
-                    Some("upper-roman") => format_counter_roman(value, true),
-                    _ => value.to_string(), // decimal (default)
+                format_counter_text(value, counter_style)
+            }
+            // 多 item 混合内容（`"Chapter " counter(c) ": "`）：逐 item 解析拼文本。
+            ContentComputedValue::List(items) => {
+                let mut buf = String::new();
+                for item in items {
+                    match item {
+                        ContentListItem::Str(s) => buf.push_str(s),
+                        ContentListItem::Counter { name, style } => {
+                            let value = self.get_counter(name).unwrap_or(0);
+                            buf.push_str(&format_counter_text(value, style));
+                        }
+                    }
                 }
+                buf
             }
         };
 
@@ -1716,6 +1724,20 @@ pub(super) fn has_direct_paintable_text(
 }
 
 /// 获取 `<img>` 元素的固有尺寸。
+/// 按计数器样式格式化整数值为 content 文本。
+///
+/// 支持 decimal（默认）/ lower|upper-alpha(latin) / lower|upper-roman。
+/// 单 `content: counter(...)` 与混合 `content: "x" counter(...) "y"` 共用此格式化。
+fn format_counter_text(value: i32, style: &Option<String>) -> String {
+    match style.as_deref() {
+        Some("lower-alpha") | Some("lower-latin") => format_counter_alpha(value, false),
+        Some("upper-alpha") | Some("upper-latin") => format_counter_alpha(value, true),
+        Some("lower-roman") => format_counter_roman(value, false),
+        Some("upper-roman") => format_counter_roman(value, true),
+        _ => value.to_string(), // decimal (default)
+    }
+}
+
 ///
 /// 优先使用解码后的真实尺寸；若图片尚未解码，再回退到 HTML `width`/`height` 属性，
 /// 最后使用调用方提供的回退尺寸。
