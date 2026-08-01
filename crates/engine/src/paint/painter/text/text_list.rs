@@ -47,6 +47,41 @@ fn to_roman(mut num: usize) -> String {
     result
 }
 
+/// R2445：lower-greek 计数器表示（CSS Counter Styles 3 §6 预定义）。
+///
+/// 现代希腊小写字母 α-ω（24 个，U+03B1-U+03C9，σ 用 ς？——CSS spec 用 σ）。值 1→α、24→ω；
+/// 超出 24 循环重复（αα=25，spec 对 >24 实现定义，取循环近似）。
+fn to_greek(value: usize) -> String {
+    const GREEK: &[char] = &[
+        'α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'ο', 'π', 'ρ', 'σ', 'τ', 'υ', 'φ', 'χ',
+        'ψ', 'ω',
+    ];
+    if value == 0 {
+        return "0".to_string();
+    }
+    let mut result = String::new();
+    let mut v = value;
+    while v > 0 {
+        // 1-based：余 0 → ω（最后一个），否则对应字母。
+        let idx = (v - 1) % GREEK.len();
+        result.insert(0, GREEK[idx]);
+        v = if v <= GREEK.len() { 0 } else { (v - 1) / GREEK.len() };
+    }
+    result
+}
+
+/// R2445：persian 计数器表示（CSS Counter Styles 3 §6 预定义）。
+///
+/// 波斯-印度数字 ۰-۹（U+06F0-U+06F9）。把十进制各位数字替换为对应波斯数字。
+fn to_persian(value: usize) -> String {
+    const PERSIAN: &[char] = &['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    value
+        .to_string()
+        .chars()
+        .map(|c| PERSIAN[(c as u8 - b'0') as usize])
+        .collect()
+}
+
 /// R2392/R2394：按 `@counter-style` 的 system 算法生成计数器表示（marker body，不含 prefix/suffix）。
 /// CSS Counter Styles 3 §3.1.4。`None` = 该值无法表示（超出 range / 系统不支持）→ 调用方走 fallback。
 /// R2394 注：additive/range/extends 应用经 A/B 量证为 net-negative（driving WPT 全 font-wall dice/
@@ -360,6 +395,35 @@ impl super::super::Painter {
                 } else {
                     format!("{roman}.")
                 };
+                let mut char_x = actual_marker_x;
+                let char_y = marker_y + font_size;
+                for ch in text.chars() {
+                    self.primitives.add_glyph(GlyphPrimitive {
+                        x: char_x,
+                        y: char_y,
+                        font_size: font_size * 0.85,
+                        color,
+                        glyph_id: ch as u32,
+                        font_id: default_font_id,
+                        bitmap_width: None,
+                        bitmap_height: None,
+                        rotation: 0.0,
+                    });
+                    char_x += measure_char_for_paint(ch, font_size * 0.85, false);
+                }
+            }
+            // R2445：lower-greek / persian 预定义计数器样式（CSS Counter Styles 3 §6）。
+            ListStyleTypeValue::LowerGreek | ListStyleTypeValue::Persian => {
+                let index = self
+                    .get_counter("list-item")
+                    .map(|v| v as usize)
+                    .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
+                let body = match style.list_style_type {
+                    ListStyleTypeValue::LowerGreek => to_greek(index),
+                    ListStyleTypeValue::Persian => to_persian(index),
+                    _ => unreachable!(),
+                };
+                let text = format!("{body}.");
                 let mut char_x = actual_marker_x;
                 let char_y = marker_y + font_size;
                 for ch in text.chars() {

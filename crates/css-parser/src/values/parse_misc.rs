@@ -163,6 +163,8 @@ pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
         "upper-roman" => Some(ListStyleTypeValue::UpperRoman),
         "lower-alpha" | "lower-latin" => Some(ListStyleTypeValue::LowerAlpha),
         "upper-alpha" | "upper-latin" => Some(ListStyleTypeValue::UpperAlpha),
+        "lower-greek" => Some(ListStyleTypeValue::LowerGreek),
+        "persian" => Some(ListStyleTypeValue::Persian),
         "none" => Some(ListStyleTypeValue::None),
         _ => {
             // R2392：非 builtin 的 `<custom-ident>` 视为自定义计数器样式名（@counter-style）。

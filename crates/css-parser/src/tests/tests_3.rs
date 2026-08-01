@@ -130,11 +130,20 @@ fn test_parse_list_style_type() {
         Some(ListStyleTypeValue::UpperAlpha)
     );
     assert_eq!(parse_list_style_type("none"), Some(ListStyleTypeValue::None));
+    // R2445：lower-greek / persian 现为 builtin 预定义（α-ω / ۰-۹），非 Custom。
+    assert_eq!(
+        parse_list_style_type("lower-greek"),
+        Some(ListStyleTypeValue::LowerGreek)
+    );
+    assert_eq!(
+        parse_list_style_type("persian"),
+        Some(ListStyleTypeValue::Persian)
+    );
     // R2392：未实现的预定义 / 自定义计数器名（合法 `<custom-ident>`）→ Custom(name)，
     // 渲染时查 CounterStyleRegistry，未命中走 decimal fallback（CSS Counter Styles 3）。
     assert_eq!(
-        parse_list_style_type("lower-greek"),
-        Some(ListStyleTypeValue::Custom("lower-greek".to_string()))
+        parse_list_style_type("armenian"),
+        Some(ListStyleTypeValue::Custom("armenian".to_string()))
     );
     assert_eq!(
         parse_list_style_type("armenian"),

@@ -307,6 +307,10 @@ pub enum ListStyleTypeValue {
     LowerAlpha,
     /// upper-alpha / upper-latin。
     UpperAlpha,
+    /// lower-greek（α-ω，CSS Counter Styles 3 §6 预定义）。R2445。
+    LowerGreek,
+    /// persian（۰-۹ 数字，CSS Counter Styles 3 §6 预定义）。R2445。
+    Persian,
     /// none。
     None,
     /// 自定义计数器样式名（`@counter-style` 定义；CSS Counter Styles 3）。driving: R2392。
