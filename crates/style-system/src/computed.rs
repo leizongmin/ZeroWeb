@@ -183,6 +183,80 @@ fn find_top_level_comma(s: &str) -> Option<usize> {
     None
 }
 
+/// 解析值中嵌入的所有 `env()` 调用（CSS Environment Values）。
+///
+/// 桌面浏览器无 display cutout / notch，`safe-area-inset-*` 解析为 `0px`；其他环境变量
+/// （`titlebar-area-*`、`viewport-*` 等）未定义 → 用 fallback，无 fallback → 保留字面量
+/// `env(name)`（下游解析失败 → 属性取 initial/inherited，同 var() invalid-at-computed-value-time）。
+///
+/// 返回 `Some(new)` 当发生替换，`None` 当值不含 `env(` 或替换后与原值相同（便于调用方判断
+/// 是否需要更新级联值，镜像 [`resolve_var`] 的语义）。
+pub fn resolve_env(value: &str) -> Option<String> {
+    if !value.contains("env(") {
+        return None;
+    }
+    let substituted = substitute_env(value);
+    if substituted != value { Some(substituted) } else { None }
+}
+
+/// 替换值中所有 `env()` 调用为环境值或 fallback。
+fn substitute_env(value: &str) -> String {
+    let mut result = String::new();
+    let mut idx = 0;
+    while let Some(rel) = value[idx..].find("env(") {
+        let start = idx + rel;
+        result.push_str(&value[idx..start]);
+        let inner_start = start + 4;
+        let Some(end) = find_matching_paren(value, inner_start) else {
+            // 未匹配的 `(`：保留剩余原文，终止扫描（防 OOM 死循环，同 substitute_embedded_var）。
+            result.push_str(&value[start..]);
+            return result;
+        };
+        let inner = &value[inner_start..end];
+        let (name, fallback) = split_var_name_fallback(inner);
+        result.push_str(&resolve_env_reference(name, fallback));
+        idx = end + 1;
+    }
+    result.push_str(&value[idx..]);
+    result
+}
+
+/// 解析单个 `env(name, fallback)`：已定义 → 环境值；未定义 → fallback（递归解析其中嵌套 env）；
+/// 无 fallback → 保留字面量（下游 invalid）。
+fn resolve_env_reference(name: &str, fallback: Option<&str>) -> String {
+    if let Some(v) = env_value(name) {
+        return v.to_string();
+    }
+    match fallback {
+        // 递归解析 fallback 中的嵌套 env()（如 env(a, env(b, 1px))）。
+        Some(f) => substitute_env(f),
+        // 未定义且无 fallback：保留字面量 env(name)，下游解析失败 → initial/inherited（同 var()）。
+        None => format!("env({})", name),
+    }
+}
+
+/// 桌面环境下 `env()` 的固定值表。
+///
+/// CSS Environment Values §2：`safe-area-inset-{top,right,bottom,left}` 在桌面浏览器
+/// （无显示缺口）解析为 `0px`。env 名大小写不敏感（CSS 关键字约定，对齐 chromium 行为）。
+fn env_value(name: &str) -> Option<&'static str> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "safe-area-inset-top" | "safe-area-inset-right" | "safe-area-inset-bottom" | "safe-area-inset-left" => {
+            Some("0px")
+        }
+        _ => None,
+    }
+}
+
+/// 先解析 `env()`，再解析 `var()`（CSS Environment Values + CSS Variables）。
+///
+/// env() 须先于 var()：env() 可出现在 var() 的 fallback 中（如 `var(--x, env(safe-area-inset-top))`），
+/// 先替换所有 env() 再解 var() 可正确处理嵌套。供级联值 broad 路径与 length 计算路径共用。
+pub fn resolve_env_and_var(value: &str, custom_properties: &HashMap<String, String>) -> String {
+    let after_env = resolve_env(value).unwrap_or_else(|| value.to_string());
+    resolve_var(&after_env, custom_properties)
+}
+
 /// 将计算样式中的相对长度解析为绝对值。
 ///
 /// 返回一个新的 ComputedStyle，其中所有相对长度都被转换为 px。
@@ -423,11 +497,11 @@ fn calc_contains_percentage(expr: &CalcExpr) -> bool {
     }
 }
 
-/// 解析可能包含 var() 的属性值。
+/// 解析可能包含 var() / env() 的属性值。
 ///
-/// 先解析 var() 引用，再尝试解析为长度值。
+/// 先解析 env() 再解析 var() 引用（见 [`resolve_env_and_var`]），再尝试解析为长度值。
 pub fn compute_value(value: &str, custom_properties: &HashMap<String, String>, _font_size: f64) -> Option<String> {
-    let resolved = resolve_var(value, custom_properties);
+    let resolved = resolve_env_and_var(value, custom_properties);
     if resolved != value { Some(resolved) } else { None }
 }
 
@@ -555,6 +629,79 @@ mod tests {
 
         let result = resolve_var("margin: var(--size);", &custom);
         assert_eq!(result, "margin: 10px;");
+    }
+
+    #[test]
+    fn test_resolve_env_safe_area_inset() {
+        // 桌面环境：safe-area-inset-* 解析为 0px（无显示缺口）。
+        assert_eq!(resolve_env("env(safe-area-inset-top)"), Some("0px".to_string()));
+        assert_eq!(resolve_env("env(safe-area-inset-left)"), Some("0px".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_env_defined_ignores_fallback() {
+        // 已定义 env：忽略 fallback（与 var() 定义优先一致）。
+        assert_eq!(resolve_env("env(safe-area-inset-top, 10px)"), Some("0px".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_env_undefined_uses_fallback() {
+        // 未定义 env：用 fallback（移动端专属环境变量桌面未定义）。
+        assert_eq!(resolve_env("env(titlebar-area-x, 20px)"), Some("20px".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_env_undefined_no_fallback_keeps_literal() {
+        // 未定义且无 fallback：保留字面量（下游解析失败 → initial/inherited，同 var() invalid）。
+        assert_eq!(resolve_env("env(titlebar-area-x)"), None);
+        // None → 调用方保留原值 "env(titlebar-area-x)"，下游 length 解析失败 → initial。
+    }
+
+    #[test]
+    fn test_resolve_env_embedded_in_value() {
+        // env() 嵌入更大值（padding-shorthand component）。
+        assert_eq!(
+            resolve_env("padding: env(safe-area-inset-top) 5px;"),
+            Some("padding: 0px 5px;".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_env_case_insensitive_name() {
+        // env 名大小写不敏感（CSS 关键字约定，对齐 chromium）。
+        assert_eq!(resolve_env("env(SAFE-AREA-INSET-TOP)"), Some("0px".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_env_nested_in_fallback() {
+        // 嵌套 env()：未定义外层 → 递归解 fallback 中的内层 env。
+        assert_eq!(
+            resolve_env("env(undefined-x, env(safe-area-inset-left))"),
+            Some("0px".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_env_then_var_ordering() {
+        // env() 先于 var()：env 出现在 var fallback 中须先替换。
+        let mut custom = HashMap::new();
+        custom.insert("--pad".to_string(), "8px".to_string());
+        // var 定义 → 用 --pad，env fallback 不触发。
+        assert_eq!(
+            resolve_env_and_var("var(--pad, env(safe-area-inset-top))", &custom),
+            "8px"
+        );
+        // var 未定义 → 用 fallback，其中 env() 替换为 0px。
+        assert_eq!(
+            resolve_env_and_var("var(--missing, env(safe-area-inset-top))", &custom),
+            "0px"
+        );
+    }
+
+    #[test]
+    fn test_resolve_env_no_env_returns_none() {
+        assert_eq!(resolve_env("10px"), None);
+        assert_eq!(resolve_env("red"), None);
     }
 
     #[test]

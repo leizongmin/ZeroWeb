@@ -1068,7 +1068,7 @@ impl StyleSystem {
     }
 }
 
-/// 在级联属性值中解析 var() 引用。
+/// 在级联属性值中解析 env() / var() 引用。
 ///
 /// 自定义属性（--*）本身不解析，仅解析标准属性的值。
 fn resolve_var_in_cascaded(
@@ -1081,7 +1081,7 @@ fn resolve_var_in_cascaded(
             if k.starts_with("--") {
                 (k.clone(), v.clone())
             } else {
-                (k.clone(), computed::resolve_var(v, custom_properties))
+                (k.clone(), computed::resolve_env_and_var(v, custom_properties))
             }
         })
         .collect()
