@@ -162,7 +162,7 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "max-inline-size" => {
-            if value == "none" {
+            if value.eq_ignore_ascii_case("none") {
                 style.max_width = LengthValue::Px(f64::INFINITY);
                 return true;
             }
@@ -172,7 +172,7 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "max-block-size" => {
-            if value == "none" {
+            if value.eq_ignore_ascii_case("none") {
                 style.max_height = LengthValue::Px(f64::INFINITY);
                 return true;
             }
@@ -194,7 +194,7 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "max-width" => {
-            if value == "none" {
+            if value.eq_ignore_ascii_case("none") {
                 style.max_width = LengthValue::Px(f64::INFINITY);
                 return true;
             }
@@ -204,7 +204,7 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "max-height" => {
-            if value == "none" {
+            if value.eq_ignore_ascii_case("none") {
                 style.max_height = LengthValue::Px(f64::INFINITY);
                 return true;
             }
@@ -791,7 +791,7 @@ pub fn apply_property_value_with_quirks(
         }
         // ── Aspect Ratio 属性 ──
         "aspect-ratio" => {
-            if value == "auto" {
+            if value.eq_ignore_ascii_case("auto") {
                 style.aspect_ratio = None;
                 return true;
             }

@@ -295,6 +295,13 @@ fn test_apply_property_max_width_none() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "max-width", "none"));
     assert_eq!(style.max_width, LengthValue::Px(f64::INFINITY));
+    // CSS 关键字大小写不敏感：NONE/None ≡ none（探测 apply.rs `value == "none"` 是否大小写敏感）。
+    let mut style2 = ComputedStyle::default();
+    assert!(
+        apply_property_value(&mut style2, "max-width", "NONE"),
+        "max-width: NONE 应等同 none"
+    );
+    assert_eq!(style2.max_width, LengthValue::Px(f64::INFINITY));
 }
 
 #[test]
