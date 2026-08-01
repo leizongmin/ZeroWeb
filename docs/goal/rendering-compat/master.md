@@ -333,15 +333,17 @@
 
 ### 轻量修复候选
 
-**当前活跃轻量主线 = CSS Color / Values / Images 合规缺口定向 code-reading probe**（R2373-R2375 连续三轮证：对照各 spec § 清单逐一定向核 parser/命名表/单位表，持续发现 parser-compliance 缺口）。
+**当前活跃轻量主线 = CSS 合规缺口定向 code-reading probe（多 vein 并行）**。本 session（R2373-R2378）连续 6 lever **彻底推翻 R2372「双路径穷尽」结论**，并**完成 color-mix 标准空间补全 milestone**（R2376 lab/oklab/oklch + R2377 srgb-linear + R2378 xyz = 5 新空间，2→7 变体，6/6 CSS Color 4 §12 标准插值空间）。
 
-★ **R2204 洞见 + R2373-R2375 连续实证**：「CSS2/parser/selector clean lever 九重穷尽」「自主清洁 lever 双路径穷尽」结论**均局限于 reftest-visible + 已扫维度**；**unit-test 驱动的 CSS 合规缺口**经定向代码阅读持续可发现。本 session 连续 land 3 lever（R2373 vi/vb 单位 / R2374 gradient hint / R2375 系统色），逐一**推翻 R2372 exhausted 结论**：① R2359 sv*/lv*/dv* sweep 漏同族 i/b 变体；② `parse_color_stops` 的 `?` 失败传播致裸 hint 丢整渐变（R2204 CDO/CDC 同族 parse-drop）；③ 14 个 CSS Color 4 §12 现代色缺失。**故后续 agent 不应信「exhausted」结论停手**——定向对照 spec 清单逐表/逐函数核 parser，仍有 lever。
+★ **R2204 洞见 + R2373-R2378 六连实证**：「CSS2/parser/selector clean lever 九重穷尽」「自主清洁 lever 双路径穷尽」结论**均局限于 reftest-visible + 已扫维度**；**unit-test 驱动的 CSS 合规缺口**经定向代码阅读持续可发现。**故后续 agent 不应信「exhausted」结论停手**——定向对照 spec 清单逐表/逐函数核 parser，仍有 lever。**关键模式**：转换/常量「已存在仅缺接线」类 lever（R2376-R2378 color-mix 空间：转换函数/矩阵早就在，只缺 pub 包装 + variant + arm）经定向核 import 表 + 调用点即定位，零新数学。
 
 下一轮可接续的具体入口（逐条 verify-then-fix，TDD red→green，优先 unit-test 驱动不强依赖 wpt-data；每修一个跑 scoped test + clippy + fmt + 全量 `make test`，net≥0 land）：
-- **CSS Values 4 单位表续**：`parse_length` 单位 match 对照 CSS Values 4 §unit 清单——`lh`/`rlh`（line-height，可用 normal 常数近似，同 ex→0.8em 模式，但 lh 随作者 line-height 变更误导，弱候选）/ `cap`/`ic`/`ric`/`rcap`（需字体度量，deferred）/ `dppx`/`dpi`/`dpcm`（resolution，niche）。
-- **color-mix 色彩空间补全**（color.rs `parse_color_mix` 现 srgb+lch 两空间）：补 `srgb-linear`（已知线性变换，最易）/`oklab`/`oklch`/`xyz`（需 OKLab 矩阵 / xyz 变换数学，moderate；注意 GRADIENT interpolation 已支持全 6 空间=可参照）。
-- **CSS Syntax §4/§5 其他合规缺口**：media-query 比较运算符 `<`/`>`/`<=`/`>=`（MQ L4）token 化；CDO/CDC 在非顶层上下文应 parse-error 而非忽略——核实现状。
-- **量本 session lever 的 WPT footprint**（R2207 模式）：scoped `make reftest-oracle DIR=css/css-images` 看 R2374 hint 是否有 case 翻绿（需 wpt-data，网络 fetch；不强求）。
+- **color-mix hue method**（`in oklch longer hue` 等，CSS Color 4 §12.3）：现 lch/oklch 硬编码短弧；需 `ColorMixSpec` 加 `hue: ColorHueMethod` 字段（ColorHueMethod enum 已存在，gradient 在用）+ parse `longer/shorter/increasing/decreasing hue` + mix_lch/mix_oklch 用之。moderate（struct 字段改动 ~4 构造点）。
+- **color-mix 宽色域空间**（display-p3/a98-rgb/prophoto-rgb）：需 gamut 映射，深，defer。
+- **CSS Values 4 单位表续**：`parse_length` 对照 §unit 清单——`lh`/`rlh`（line-height，常数近似同 ex→0.8em，但随作者 line-height 变更误导，弱候选）/ `cap`/`ic`/`ric`/`rcap`（需字体度量 deferred）/ `dppx`/`dpi`/`dpcm`（resolution niche）。
+- **新 vein 定向 code-reading**：CSS Backgrounds（`background-clip:text`、`background-position` 多值边角）/ CSS Text（`text-wrap`/`white-space-collapse` CSS Text 4）/ CSS Box 边角。逐一核 parser 对照 spec。
+- **CSS Syntax §4/§5 其他合规缺口**：MQ L4 比较运算符 `<`/`>`/`<=`/`>=` token 化；CDO/CDC 非顶层上下文。
+- **量本 session lever 的 WPT footprint**（R2207 模式）：scoped `make reftest-oracle DIR=css/css-color` 看 R2376-R2378 color-mix 空间是否有 case 翻绿（需 wpt-data，网络 fetch；不强求）。
 - **文档 vs 代码行号漂移续修**（R2203 verify-then-fix 模式）。
 - 每修一个：仅文档→跳过昂贵 make test；连带 `.rs`→跑 scoped test-guard + 必要时全量 `make test`，net≥0 land。
 
