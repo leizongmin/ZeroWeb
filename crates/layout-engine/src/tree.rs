@@ -541,11 +541,23 @@ fn apply_replaced_element_sizing(
                 let h = h.max(1.0);
                 let width_auto = matches!(computed.width, LengthValue::Auto);
                 let height_auto = matches!(computed.height, LengthValue::Auto);
-                // R325：CSS §10 替换元素——仅当至少一侧为 auto 时才用固有宽高比推导另一侧。
+                // R325：CSS §10 替换元素——仅当【恰好一侧为 auto】时才用固有宽高比推导该 auto 侧。
                 // 两侧都显式时【不得】设 aspect_ratio，否则 taffy 会强制比例，把显式 height
                 // 拉到 width 比例（如 <img style="width:200px;height:50px"> 渲染成 200×200
                 // 而非 200×50）。object-fit 控制内容如何填充 box，box 尺寸由两侧显式值决定。
-                if computed.aspect_ratio.is_none() && (width_auto || height_auto) {
+                // R2428：两侧都 auto 时下方会把 size.width/height 都设为固有值（等同两侧显式）。
+                // 此时若【父非 flex/grid 容器】也不得设 aspect_ratio——taffy 会把 ratio 作用到
+                // border-box 宽（含 padding）覆盖显式 height（如 <img padding-right:40> 固有 60×60
+                // 渲染成 100×100 非 100×60，css-box/margin-trim replaced 簇）。flex/grid 容器的
+                // both-auto 仍需 aspect_ratio 推 main-from-cross（R1366 flex-aspect-ratio-img-row-006）。
+                let parent_is_flex_grid = doc.parent_node(dom_id).and_then(|p| styles.get(&p)).is_some_and(|ps| {
+                    matches!(
+                        ps.display,
+                        DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+                    )
+                });
+                let needs_ar = (width_auto ^ height_auto) || (width_auto && height_auto && parent_is_flex_grid);
+                if computed.aspect_ratio.is_none() && needs_ar {
                     taffy_style.aspect_ratio = Some(w / h);
                 }
                 // CSS §10.3/§10.6 替换元素：一侧显式、另一侧 auto 时，auto 侧按
