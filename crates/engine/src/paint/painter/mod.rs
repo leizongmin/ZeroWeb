@@ -1039,10 +1039,12 @@ impl Painter {
                 } => {
                     let w = box_node.width;
                     let h = box_node.height;
-                    let t = super::helpers::length_to_f32(top);
-                    let r = super::helpers::length_to_f32(right);
-                    let b = super::helpers::length_to_f32(bottom);
-                    let l = super::helpers::length_to_f32(left);
+                    // R2365：em/rem/百分比按 border-box 解析（top/bottom→height、left/right→width）。
+                    let fs = super::helpers::length_to_f32(&style.font_size);
+                    let t = super::helpers::resolve_inset_length(top, h, fs);
+                    let r = super::helpers::resolve_inset_length(right, w, fs);
+                    let b = super::helpers::resolve_inset_length(bottom, h, fs);
+                    let l = super::helpers::resolve_inset_length(left, w, fs);
                     let clip_rect = Rect::new(abs_x + l, abs_y + t, w - l - r, h - t - b);
                     super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before, &clip_rect);
                 }

@@ -8,7 +8,9 @@ use std::collections::HashMap;
 
 use zero_css_parser::values::{ColorValue, LengthValue, TransformFunction, TransformValue};
 use zero_render_foundation::color::Color;
-use zero_style_system::{BackgroundImageComputedValue, BoxShadowComputedValue, ComputedStyle, TextShadowComputedValue};
+use zero_style_system::{
+    BackgroundImageComputedValue, BoxShadowComputedValue, ClipPathComputedValue, ComputedStyle, TextShadowComputedValue,
+};
 
 use super::advanced::make_box;
 use crate::paint::Painter;
@@ -609,6 +611,82 @@ fn test_paint_text_shadow_currentcolor_resolves_to_element_color() {
         shadow_glyph.color,
         Color::rgb(255, 0, 0),
         "currentColor 阴影应解析为元素 color（红），非黑色"
+    );
+}
+
+/// 测试 clip-path: inset(<percentage>) 按 border-box 尺寸解析百分比裁剪（CSS Masking §inset）。
+/// driving: R2365 — `inset(10% 20% 10% 20%)` 此前 paint 用 length_to_f32 把百分比丢为 0
+/// → 不裁剪；应 top/bottom = % of height、left/right = % of width。
+#[test]
+fn test_paint_clip_path_inset_percentage_clips() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    // 100×50 框
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.color = ColorValue::CurrentColor; // 避免生成 glyph
+    style.clip_path = ClipPathComputedValue::Inset {
+        top: LengthValue::Percentage(10.0),    // 10% of h=50 → 5
+        right: LengthValue::Percentage(20.0),  // 20% of w=100 → 20
+        bottom: LengthValue::Percentage(10.0), // 5
+        left: LengthValue::Percentage(20.0),   // 20
+        round: None,
+    };
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert!(!fills.is_empty(), "应有背景 fill");
+    // inset 后 clip 宽 = 100 - left(20) - right(20) = 60；fill 被裁剪到 60 宽。
+    // 修复前：百分比被丢为 0 → 不裁剪 → fill 宽仍 100。
+    assert_eq!(
+        fills[0].rect.size.width, 60.0,
+        "inset(%) 应按 border-box 尺寸解析百分比裁剪（top/bottom→height, left/right→width）"
+    );
+    assert_eq!(
+        fills[0].rect.size.height, 40.0,
+        "clip 高 = 50 - top(5) - bottom(5) = 40"
+    );
+}
+
+/// 测试 clip-path: inset(<em>) 按元素 font-size 解析（CSS Masking §inset + CSS Values §length）。
+/// driving: R2365 — inset em 未在 computed 预解析，paint 须按 font-size 解析（否则丢为 0 不裁剪）。
+#[test]
+fn test_paint_clip_path_inset_em_clips() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(10.0); // 1em = 10px
+    style.background_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.color = ColorValue::CurrentColor;
+    // inset(2em 1em 2em 1em) → top/bottom=2em=20, left/right=1em=10
+    style.clip_path = ClipPathComputedValue::Inset {
+        top: LengthValue::Em(2.0),
+        right: LengthValue::Em(1.0),
+        bottom: LengthValue::Em(2.0),
+        left: LengthValue::Em(1.0),
+        round: None,
+    };
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert!(!fills.is_empty(), "应有背景 fill");
+    // clip 宽 = 100 - left(10) - right(10) = 80（修复前 em 丢为 0 → 100 不裁剪）。
+    assert_eq!(fills[0].rect.size.width, 80.0, "inset(em) 应按 font-size 解析");
+    assert_eq!(
+        fills[0].rect.size.height, 10.0,
+        "clip 高 = 50 - top(20) - bottom(20) = 10"
     );
 }
 

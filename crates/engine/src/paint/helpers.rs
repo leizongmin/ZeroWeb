@@ -639,6 +639,24 @@ pub fn length_to_f32(v: &LengthValue) -> f32 {
     }
 }
 
+/// 解析 clip-path `inset()` 单边长度为像素（CSS Masking §inset：`<length-percentage>`）。
+///
+/// inset 的 em/rem 未在 computed 阶段预解析（值位于 `ClipPathValue::Inset` enum 内，
+/// `resolve_length_field` 不触及），故此处补解析；百分比相对 border-box 对应轴
+///（top/bottom→height、left/right→width，由调用方传入对应 `box_dim`）。
+/// vw/vh/ch 等视口/字体度量单位此处近似为 0（clip-path inset 极罕用，且缺视口上下文）。
+///
+/// driving: R2365（与 R2314 border-radius 百分比、R2345 multicol 百分比同 vein）。
+pub fn resolve_inset_length(v: &LengthValue, box_dim: f32, font_size_px: f32) -> f32 {
+    match v {
+        LengthValue::Px(p) => *p as f32,
+        LengthValue::Em(e) => (*e as f32) * font_size_px,
+        LengthValue::Rem(e) => (*e as f32) * 16.0,
+        LengthValue::Percentage(p) => (*p as f32 / 100.0) * box_dim,
+        _ => 0.0,
+    }
+}
+
 /// 将位置 LengthValue 解析为相对于容器尺寸的像素偏移。
 /// 支持百分比和绝对长度值。
 fn resolve_position(v: &LengthValue, container_size: f32) -> f32 {
