@@ -458,6 +458,29 @@ fn test_parse_length_viewport_units_4() {
 }
 
 #[test]
+/// R2373：CSS Values 4 视口 inline/block 单位（vi/vb 及其 small/large/dynamic 变体）。
+/// `vi` = 1% 视口 inline 轴，`vb` = 1% 视口 block 轴。ZW 仅支持水平书写模式布局
+///（vertical-mode R1043 待授权），水平 tb 下 inline=水平、block=垂直，故 vi≡vw、vb≡vh。
+/// 修复前这些合法单位返回 None → 声明被丢弃；现映射到既有变体（与 R2359 sv*/lv*/dv* 同模式）。
+fn test_parse_length_viewport_inline_block_units() {
+    for i in ["vi", "svi", "lvi", "dvi"] {
+        assert!(
+            matches!(parse_length(&format!("100{i}")), Some(LengthValue::Vw(100.0))),
+            "{i}"
+        );
+    }
+    for b in ["vb", "svb", "lvb", "dvb"] {
+        assert!(
+            matches!(parse_length(&format!("50{b}")), Some(LengthValue::Vh(50.0))),
+            "{b}"
+        );
+    }
+    // 大小写不敏感（与既有 vh/vw 一致）
+    assert!(matches!(parse_length("100VI"), Some(LengthValue::Vw(100.0))));
+    assert!(matches!(parse_length("50SVB"), Some(LengthValue::Vh(50.0))));
+}
+
+#[test]
 fn test_parse_length_auto() {
     assert!(matches!(parse_length("auto"), Some(LengthValue::Auto)));
 }

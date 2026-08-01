@@ -1502,6 +1502,11 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "svw" | "lvw" | "dvw" => Some(LengthValue::Vw(num)),
         "svmin" | "lvmin" | "dvmin" => Some(LengthValue::Vmin(num)),
         "svmax" | "lvmax" | "dvmax" => Some(LengthValue::Vmax(num)),
+        // CSS Values 4 视口 inline/block 单位：`vi`=1% 视口 inline 轴、`vb`=1% 视口 block 轴
+        //（含 small/large/dynamic 变体）。ZW 仅水平书写模式布局（vertical-mode R1043 待授权），
+        // 水平 tb 下 inline=水平、block=垂直，故 vi≡vw、vb≡vh（同 R2359 sv*/lv*/dv* 模式）。
+        "vi" | "svi" | "lvi" | "dvi" => Some(LengthValue::Vw(num)),
+        "vb" | "svb" | "lvb" | "dvb" => Some(LengthValue::Vh(num)),
         "ch" => Some(LengthValue::Ch(num)),
         "%" => Some(LengthValue::Percentage(num)),
         // CSS 绝对长度单位 → 转换为 px（96 DPI）
