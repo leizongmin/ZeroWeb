@@ -9,13 +9,16 @@
 //
 // 依赖：puppeteer-core + 系统 chromium；经 ~/use-proxy 代理（chromium 抓上游无关，本地 HTTP）。
 import { join, dirname, extname, normalize, relative, resolve } from 'node:path';
-import { createReadStream, statSync, readdirSync, existsSync } from 'node:fs';
+import { createReadStream, statSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA = join(HERE, '..', 'wpt-data');
 const OUT = join(HERE, '..', 'oracle-shots');
+// R2423：创建输出目录（chromium-oracle-shot.mjs 已 mkdir recursive；本脚本此前假定目录存在，
+// 缺失时 page.screenshot({path}) 写入失败 → 全部捕获静默失败 0 ok/N fail，阻塞 oracle 测量）。
+mkdirSync(OUT, { recursive: true });
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
   '.xht': 'application/xhtml+xml; charset=utf-8', '.xhtml': 'application/xhtml+xml; charset=utf-8',
