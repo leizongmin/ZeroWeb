@@ -313,6 +313,80 @@ fn test_shorthand_border_in_style_computation() {
 }
 
 #[test]
+/// R2356: longhand 关键字大小写不敏感（CSS Syntax §：所有关键字大小写不敏感）。
+/// 覆盖 parse.rs 多个此前大小写敏感的 match 解析器：border-style/text-align/white-space/cursor。
+fn test_longhand_keyword_case_insensitive() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let declarations = vec![
+        Declaration {
+            property: "border-top-style".to_string(),
+            value: "SOLID".to_string(),
+            important: false,
+        },
+        Declaration {
+            property: "text-align".to_string(),
+            value: "CENTER".to_string(),
+            important: false,
+        },
+        Declaration {
+            property: "white-space".to_string(),
+            value: "NOWRAP".to_string(),
+            important: false,
+        },
+        Declaration {
+            property: "cursor".to_string(),
+            value: "POINTER".to_string(),
+            important: false,
+        },
+        Declaration {
+            property: "transform-style".to_string(),
+            value: "PRESERVE-3D".to_string(),
+            important: false,
+        },
+        Declaration {
+            property: "backface-visibility".to_string(),
+            value: "HIDDEN".to_string(),
+            important: false,
+        },
+    ];
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("div")],
+            declarations,
+        })],
+    }];
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(
+        div_style.border_top_style,
+        property::BorderStyleValue::Solid,
+        "border-top-style: SOLID 应识别为 Solid"
+    );
+    assert_eq!(
+        div_style.text_align,
+        property::TextAlignValue::Center,
+        "text-align: CENTER"
+    );
+    assert_eq!(
+        div_style.white_space,
+        property::WhiteSpaceValue::Nowrap,
+        "white-space: NOWRAP"
+    );
+    assert_eq!(div_style.cursor, property::CursorValue::Pointer, "cursor: POINTER");
+    assert_eq!(
+        div_style.transform_style,
+        property::TransformStyleValue::Preserve3d,
+        "transform-style: PRESERVE-3D"
+    );
+    assert_eq!(
+        div_style.backface_visibility,
+        property::BackfaceVisibilityValue::Hidden,
+        "backface-visibility: HIDDEN"
+    );
+}
+
+#[test]
 fn test_shorthand_overflow_in_style_computation() {
     let (doc, _html, _body, div, _p) = make_test_dom();
     let mut sys = StyleSystem::new();

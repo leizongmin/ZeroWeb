@@ -5,7 +5,7 @@ use zero_css_parser::values;
 
 /// 解析 CSS border-style 值。
 pub fn parse_border_style(value: &str) -> Option<BorderStyleValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "none" => Some(BorderStyleValue::None),
         "hidden" => Some(BorderStyleValue::Hidden),
         "dotted" => Some(BorderStyleValue::Dotted),
@@ -22,7 +22,7 @@ pub fn parse_border_style(value: &str) -> Option<BorderStyleValue> {
 
 /// 解析 CSS outline-style 值。
 pub fn parse_outline_style(value: &str) -> Option<OutlineStyleValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "none" => Some(OutlineStyleValue::None),
         "dotted" => Some(OutlineStyleValue::Dotted),
         "dashed" => Some(OutlineStyleValue::Dashed),
@@ -201,7 +201,7 @@ pub fn parse_font_size_adjust(value: &str) -> Option<FontSizeAdjustValue> {
 
 /// 解析 CSS text-align 值。
 pub fn parse_text_align(value: &str) -> Option<TextAlignValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "left" => Some(TextAlignValue::Left),
         "right" => Some(TextAlignValue::Right),
         "center" => Some(TextAlignValue::Center),
@@ -214,7 +214,7 @@ pub fn parse_text_align(value: &str) -> Option<TextAlignValue> {
 
 /// 解析 CSS text-decoration 值。
 pub fn parse_text_decoration(value: &str) -> Option<TextDecorationValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "none" => Some(TextDecorationValue::None),
         "underline" => Some(TextDecorationValue::Underline),
         "overline" => Some(TextDecorationValue::Overline),
@@ -225,7 +225,7 @@ pub fn parse_text_decoration(value: &str) -> Option<TextDecorationValue> {
 
 /// 解析 CSS text-decoration-line 值。
 pub fn parse_text_decoration_line(value: &str) -> Option<TextDecorationLineValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "none" => Some(TextDecorationLineValue::None),
         "underline" => Some(TextDecorationLineValue::Underline),
         "overline" => Some(TextDecorationLineValue::Overline),
@@ -237,7 +237,7 @@ pub fn parse_text_decoration_line(value: &str) -> Option<TextDecorationLineValue
 
 /// 解析 CSS text-transform 值。
 pub fn parse_text_transform(value: &str) -> Option<TextTransformValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "none" => Some(TextTransformValue::None),
         "uppercase" => Some(TextTransformValue::Uppercase),
         "lowercase" => Some(TextTransformValue::Lowercase),
@@ -250,7 +250,7 @@ pub fn parse_text_transform(value: &str) -> Option<TextTransformValue> {
 
 /// 解析 CSS white-space 值。
 pub fn parse_white_space(value: &str) -> Option<WhiteSpaceValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "normal" => Some(WhiteSpaceValue::Normal),
         "pre" => Some(WhiteSpaceValue::Pre),
         "nowrap" => Some(WhiteSpaceValue::Nowrap),
@@ -263,7 +263,7 @@ pub fn parse_white_space(value: &str) -> Option<WhiteSpaceValue> {
 
 /// 解析 CSS word-break 值。
 pub fn parse_word_break(value: &str) -> Option<WordBreakValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "normal" => Some(WordBreakValue::Normal),
         "break-all" => Some(WordBreakValue::BreakAll),
         "keep-all" => Some(WordBreakValue::KeepAll),
@@ -303,7 +303,7 @@ pub fn parse_text_autospace(value: &str) -> Option<TextAutospaceValue> {
 
 /// 解析 CSS line-break 值（CSS Text 3 §5.3）。
 pub fn parse_line_break(value: &str) -> Option<LineBreakValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "auto" => Some(LineBreakValue::Auto),
         "loose" => Some(LineBreakValue::Loose),
         "normal" => Some(LineBreakValue::Normal),
@@ -315,7 +315,7 @@ pub fn parse_line_break(value: &str) -> Option<LineBreakValue> {
 
 /// 解析 CSS writing-mode 值。
 pub fn parse_writing_mode(value: &str) -> Option<WritingModeValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "horizontal-tb" => Some(WritingModeValue::HorizontalTb),
         "vertical-rl" => Some(WritingModeValue::VerticalRl),
         "vertical-lr" => Some(WritingModeValue::VerticalLr),
@@ -371,7 +371,7 @@ pub fn parse_z_index(value: &str) -> Option<ZIndexValue> {
 
 /// 解析 CSS cursor 值。
 pub fn parse_cursor(value: &str) -> Option<CursorValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "auto" => Some(CursorValue::Auto),
         "default" => Some(CursorValue::Default),
         "pointer" => Some(CursorValue::Pointer),

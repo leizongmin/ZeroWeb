@@ -94,7 +94,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
-        "transform-style" => match value.trim() {
+        "transform-style" => match value.trim().to_ascii_lowercase().as_str() {
             "flat" => {
                 style.transform_style = TransformStyleValue::Flat;
                 return true;
@@ -105,7 +105,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
             _ => {}
         },
-        "backface-visibility" => match value.trim() {
+        "backface-visibility" => match value.trim().to_ascii_lowercase().as_str() {
             "visible" => {
                 style.backface_visibility = BackfaceVisibilityValue::Visible;
                 return true;
