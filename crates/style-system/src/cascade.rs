@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::property::{ComputedStyle, apply_property_value_with_quirks};
+use crate::property::{ComputedStyle, PropertyRegistry, apply_property_value_with_quirks};
 use zero_css_parser::values::{LengthValue, parse_length};
 
 /// CSS 声明来源。
@@ -249,6 +249,35 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
     // 按属性名分组（遗留别名先规范化为标准名——见 canonical_property_name）
     let mut by_property: HashMap<String, Vec<CascadedDeclaration>> = HashMap::new();
     for decl in declarations {
+        // `all` 简写（CSS Cascading 4 §3.1 / CSS All 1）：值必须是 CSS-wide 关键字
+        // （initial/inherit/unset/revert/revert-layer）。展开为对所有已知 longhand 属性的
+        // 虚拟声明（**同一 order**），让既有 per-property max-by-order 级联自然解析
+        // longhand-vs-`all` 优先级——同规则内 longhand 后于 `all` 声明则胜，先于则被 `all` 覆盖；
+        // 高特异性规则的 `all` 胜过低特异性规则的 longhand。排除 `direction`/`unicode-bidi`
+        // （CSS All 1 §3：`all` 不重置这两者）；自定义属性 `--*` 不在 known_properties，天然不受影响。
+        // 未实现前 `all` 在此处被 apply 无识别当非法丢，从未生效。driving: css-cascade all-prop-*。
+        // kill-switch `ZW_ALL_SHORTHAND=0`（default-on）关闭则退化为「`all` 不展开 = 旧无效果」。
+        if decl.property.eq_ignore_ascii_case("all")
+            && is_css_wide_keyword(&decl.value)
+            && std::env::var("ZW_ALL_SHORTHAND").as_deref() != Ok("0")
+        {
+            let value = decl.value.clone();
+            let order = decl.order.clone();
+            for prop in PropertyRegistry::known_properties() {
+                if matches!(*prop, "direction" | "unicode-bidi") {
+                    continue;
+                }
+                by_property
+                    .entry((*prop).to_string())
+                    .or_default()
+                    .push(CascadedDeclaration {
+                        property: (*prop).to_string(),
+                        value: value.clone(),
+                        order: order.clone(),
+                    });
+            }
+            continue;
+        }
         let canonical = canonical_property_name(&decl.property).to_string();
         by_property.entry(canonical).or_default().push(decl);
     }
@@ -266,9 +295,13 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
         let winner = decls
             .iter()
             .filter(|d| {
-                !is_invalid_negative_length(&property, &d.value)
-                    && !is_invalid_enum_value(&property, &d.value)
-                    && is_cascade_value_valid(&property, &d.value, quirks, &mut dummy)
+                // CSS-wide 关键字（inherit/initial/unset/revert/revert-layer）对任何属性都合法，
+                // 由 inheritance/compute pass 解析——须短路，否则会被 is_invalid_enum_value
+                // 误判为非法（如 `display: initial` parse_display 返 None → 被丢，display 不重置）。
+                is_css_wide_keyword(&d.value)
+                    || (!is_invalid_negative_length(&property, &d.value)
+                        && !is_invalid_enum_value(&property, &d.value)
+                        && is_cascade_value_valid(&property, &d.value, quirks, &mut dummy))
             })
             .max_by_key(|d| d.order.clone());
         if let Some(w) = winner {
@@ -310,6 +343,7 @@ fn is_css_wide_keyword(value: &str) -> bool {
         || v.eq_ignore_ascii_case("initial")
         || v.eq_ignore_ascii_case("unset")
         || v.eq_ignore_ascii_case("revert")
+        || v.eq_ignore_ascii_case("revert-layer")
 }
 
 /// 从样式表中收集所有匹配的声明。
@@ -393,6 +427,151 @@ mod tests {
         // 同一槽位：后声明的 word-wrap:break-word 胜出。
         assert_eq!(result.get("overflow-wrap"), Some(&"break-word".to_string()));
         assert!(!result.contains_key("word-wrap"));
+    }
+
+    /// R2386：`all` 简写展开为 CSS-wide 关键字——`all: initial` 把 color 重置为 initial。
+    #[test]
+    fn test_all_shorthand_initial_resets_color() {
+        let decls = vec![CascadedDeclaration {
+            property: "all".to_string(),
+            value: "initial".to_string(),
+            order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+        }];
+        let result = cascade(decls, false);
+        assert_eq!(result.get("color"), Some(&"initial".to_string()));
+        assert_eq!(result.get("display"), Some(&"initial".to_string()));
+    }
+
+    /// R2386：`all` 接受全部 CSS-wide 关键字（inherit/unset/revert/revert-layer）。
+    #[test]
+    fn test_all_shorthand_accepts_all_wide_keywords() {
+        for kw in ["inherit", "unset", "revert", "revert-layer", "INITIAL"] {
+            let decls = vec![CascadedDeclaration {
+                property: "all".to_string(),
+                value: kw.to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            }];
+            let result = cascade(decls, false);
+            assert_eq!(
+                result.get("color").map(String::as_str),
+                Some(kw),
+                "all: {kw} 应展开为 color:{kw}"
+            );
+        }
+    }
+
+    /// R2386：`all` 不重置 `direction` / `unicode-bidi`（CSS All 1 §3 排除项）。
+    #[test]
+    fn test_all_shorthand_excludes_direction_and_unicode_bidi() {
+        let decls = vec![CascadedDeclaration {
+            property: "all".to_string(),
+            value: "initial".to_string(),
+            order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+        }];
+        let result = cascade(decls, false);
+        assert!(
+            !result.contains_key("direction"),
+            "all 不应重置 direction（CSS All 1 §3 排除）"
+        );
+        assert!(
+            !result.contains_key("unicode-bidi"),
+            "all 不应重置 unicode-bidi（CSS All 1 §3 排除）"
+        );
+    }
+
+    /// R2386：同规则内 longhand 后于 `all` 声明则胜出（source order 更大）。
+    #[test]
+    fn test_all_shorthand_longhand_after_all_wins() {
+        // `all: initial; color: red;` — color(i=1) order > all(i=0) order → color:red 胜。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "all".to_string(),
+                value: "initial".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "red".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(result.get("color"), Some(&"red".to_string()));
+        // 其余属性仍被 all 重置。
+        assert_eq!(result.get("display"), Some(&"initial".to_string()));
+    }
+
+    /// R2386：同规则内 longhand 先于 `all` 声明则被 `all` 覆盖。
+    #[test]
+    fn test_all_shorthand_longhand_before_all_loses() {
+        // `color: red; all: initial;` — all(i=1) order > color(i=0) order → color:initial 胜。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "red".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "all".to_string(),
+                value: "initial".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(
+            result.get("color"),
+            Some(&"initial".to_string()),
+            "all 在 color 之后声明应覆盖 color"
+        );
+    }
+
+    /// R2386：`all` 非 CSS-wide 关键字值（如 `all: red`）按规范忽略，不展开、不影响任何属性。
+    #[test]
+    fn test_all_shorthand_non_keyword_value_ignored() {
+        let decls = vec![CascadedDeclaration {
+            property: "all".to_string(),
+            value: "red".to_string(),
+            order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+        }];
+        let result = cascade(decls, false);
+        // 非 keyword 的 all 被丢，无任何属性被设置。
+        assert!(result.get("color").is_none());
+        assert!(result.get("display").is_none());
+    }
+
+    /// R2386：端到端——父 color:red，子 `all: initial` 经 inheritance 解析为初始黑。
+    #[test]
+    fn test_all_shorthand_end_to_end_initial_resets_inherited_color() {
+        use crate::inheritance::compute_inherited_style;
+        use crate::property::ComputedStyle;
+        use zero_css_parser::values::ColorValue;
+
+        let mut parent = ComputedStyle::default();
+        parent.color = ColorValue::Rgba(255, 0, 0, 255); // red
+
+        let mut cascaded = std::collections::HashMap::new();
+        cascaded.insert("color".to_string(), "initial".to_string());
+        cascaded.insert("display".to_string(), "initial".to_string());
+
+        let child = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(child.color, ColorValue::Rgba(0, 0, 0, 255)); // initial = black
+        assert_eq!(child.display, zero_css_parser::values::DisplayValue::Inline);
+    }
+
+    /// R2386：`revert-layer` 作为 longhand 值不再被 cascade 丢弃（latent fix：is_css_wide_keyword 补 revert-layer）。
+    #[test]
+    fn test_revert_layer_longhand_not_dropped_at_cascade() {
+        let decls = vec![CascadedDeclaration {
+            property: "color".to_string(),
+            value: "revert-layer".to_string(),
+            order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+        }];
+        let result = cascade(decls, false);
+        assert_eq!(
+            result.get("color"),
+            Some(&"revert-layer".to_string()),
+            "revert-layer longhand 应通过 cascade（此前 is_css_wide_keyword 漏列被丢）"
+        );
     }
 
     /// R2126：apply-on-dummy 合法性探测——非法值声明按未声明处理，较低优先级合法声明胜出。
