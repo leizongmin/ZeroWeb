@@ -266,8 +266,12 @@ pub struct ComputedStyle {
     pub overflow_y: OverflowValue,
 
     // ── Aspect Ratio ──
-    /// aspect-ratio 属性（width / height 比值），None 表示 auto。
+    /// aspect-ratio 属性（width / height 比值），None 表示未声明显式 ratio。
     pub aspect_ratio: Option<f32>,
+    /// R2440：aspect-ratio 是否含 `auto` 关键字（`auto` / `auto <ratio>`）。
+    /// CSS Sizing 4：`auto` 优先用 replaced 元素固有比，`<ratio>` 仅在 auto 无固有比时 fallback。
+    /// apply_replaced_element_sizing 据 auto + img_intrinsic_sizes 覆盖 taffy aspect_ratio 为固有比。
+    pub aspect_ratio_auto: bool,
 
     // ── Cursor ──
     /// cursor 属性。

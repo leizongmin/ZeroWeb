@@ -897,6 +897,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         // Aspect Ratio
         "aspect-ratio" => {
             style.aspect_ratio = default_style.aspect_ratio;
+            style.aspect_ratio_auto = default_style.aspect_ratio_auto;
             true
         }
         // Cursor

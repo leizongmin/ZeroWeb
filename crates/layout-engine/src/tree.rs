@@ -427,6 +427,17 @@ fn apply_replaced_element_sizing(
     if computed.contain.has_size() {
         return;
     }
+    // R2440：`aspect-ratio: auto <ratio>` —— `auto` 优先 replaced 元素的固有比（CSS Sizing 4
+    // §aspect-ratio），显式 <ratio> 仅在无固有比时 fallback。converter 已把显式 ratio 写入
+    // taffy_style.aspect_ratio；此处 auto + 有 decoded 固有尺寸时覆盖为固有比（如 img 固有 1:1
+    // + `auto 10/1` 应按 1:1 而非 10/1）。无固有尺寸（img_intrinsic_sizes 缺失）则保留显式 ratio。
+    if std::env::var("ZW_ASPECT_AUTO").as_deref() != Ok("0")
+        && computed.aspect_ratio_auto
+        && let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id)
+        && ih > 0.0
+    {
+        taffy_style.aspect_ratio = Some(iw / ih);
+    }
     // R1683：embed/object/applet 仅消费 HTML width/height 属性（无 decoded intrinsic / SVG data URI
     // 回退，那是 <img> 专属）。无属性时直接返回保持原行为。
     let is_attr_only_replaced = tag == "embed" || tag == "object" || tag == "applet";

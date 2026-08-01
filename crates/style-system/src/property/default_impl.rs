@@ -172,6 +172,7 @@ impl Default for ComputedStyle {
 
             // Aspect Ratio
             aspect_ratio: None,
+            aspect_ratio_auto: false,
 
             // Cursor
             cursor: CursorValue::Auto,

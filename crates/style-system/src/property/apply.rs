@@ -794,17 +794,19 @@ pub fn apply_property_value_with_quirks(
             let v = value.trim();
             if v.eq_ignore_ascii_case("auto") {
                 style.aspect_ratio = None;
+                style.aspect_ratio_auto = true;
                 return true;
             }
-            // CSS Aspect Ratio §3：`auto <ratio>` 组合语法（auto 偏好固有比，ZW 无该建模，
-            // 取 <ratio> 近似——严格优于修复前 "auto 16/9" 整条被丢）。剥 auto 前缀（须为独立 token）。
-            let ratio_str: &str = if v.len() >= 5
+            // CSS Aspect Ratio §3：`auto <ratio>` 组合语法。R2440：建模 auto flag——
+            // `auto` 优先 replaced 元素固有比，`<ratio>` 仅 fallback（apply_replaced_element_sizing
+            // 据 auto + img_intrinsic_sizes 覆盖为固有比）。剥 auto 前缀（须为独立 token）。
+            let (ratio_str, has_auto): (&str, bool) = if v.len() >= 5
                 && v.as_bytes()[..4].eq_ignore_ascii_case(b"auto")
                 && v.as_bytes()[4].is_ascii_whitespace()
             {
-                v[4..].trim()
+                (v[4..].trim(), true)
             } else {
-                v
+                (v, false)
             };
             // 支持 "16 / 9" 或单个数值
             let ratio: f32 = if let Some(slash_pos) = ratio_str.find('/') {
@@ -827,6 +829,7 @@ pub fn apply_property_value_with_quirks(
                 }
             };
             style.aspect_ratio = Some(ratio);
+            style.aspect_ratio_auto = has_auto;
             return true;
         }
         // ── Cursor 属性 ──
