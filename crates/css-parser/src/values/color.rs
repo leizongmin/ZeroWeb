@@ -1837,6 +1837,11 @@ fn display_two_value(outside: &str, inside: &str) -> Option<DisplayValue> {
                 DisplayValue::InlineTable
             }
         }
+        // CSS Display 3 §2.4 <display-listitem>：`<display-outside>? list-item`。
+        // `block list-item`/`inline list-item` 均映射 ListItem（ZW 单变体不区分 block/inline
+        // level list-item——inline-level list item 系建模缺口，此处按 block-level ListItem
+        // 近似，严格优于声明被丢；单 keyword `list-item` 已走 fast-path）。
+        "list-item" => DisplayValue::ListItem,
         _ => return None,
     })
 }

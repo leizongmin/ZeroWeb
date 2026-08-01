@@ -881,6 +881,10 @@ fn test_parse_display_two_value_syntax() {
     assert_eq!(parse_display("flex inline"), Some(DisplayValue::InlineFlex));
     assert_eq!(parse_display("grid block"), Some(DisplayValue::Grid));
     assert_eq!(parse_display("flow-root inline"), Some(DisplayValue::InlineBlock));
+    // <display-listitem> 两值（CSS Display 3 §2.4）：block/inline list-item → ListItem
+    assert_eq!(parse_display("block list-item"), Some(DisplayValue::ListItem));
+    assert_eq!(parse_display("inline list-item"), Some(DisplayValue::ListItem));
+    assert_eq!(parse_display("list-item block"), Some(DisplayValue::ListItem)); // 顺序无关
     // 大小写不敏感（与单 keyword 路径一致）
     assert_eq!(parse_display("Inline Flex"), Some(DisplayValue::InlineFlex));
     assert_eq!(parse_display("BLOCK GRID"), Some(DisplayValue::Grid));
