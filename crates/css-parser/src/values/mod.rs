@@ -7,6 +7,7 @@ pub mod parse_extended;
 pub mod parse_extended_border;
 pub mod parse_extended_visual;
 pub mod parse_layout;
+pub mod parse_misc;
 pub mod parse_transform;
 pub mod types;
 
@@ -16,6 +17,7 @@ pub use parse_extended::*;
 pub use parse_extended_border::*;
 pub use parse_extended_visual::*;
 pub use parse_layout::*;
+pub use parse_misc::*;
 pub use parse_transform::*;
 pub use types::*;
 
