@@ -1,13 +1,14 @@
 //! 分阶段异步页面加载 — 首帧 HTML、CSS、图片子资源分步推进。
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::mpsc::Receiver;
 
 use zero_engine::image_resource_key;
 use zero_engine::preload::{ResourceHintType, ResourceType, scan_html_resource_hints};
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, extract_css_image_urls, extract_font_faces, extract_html_style_text,
-    extract_img_resources, extract_stylesheet_hrefs,
+    extract_img_resources, extract_import_urls, extract_stylesheet_hrefs,
 };
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
 use zero_render_foundation::image_cache::{ImageKey, decode_data_uri, decode_image_bytes};
@@ -68,6 +69,8 @@ pub struct AsyncPageLoad {
     html: Option<String>,
     css: String,
     css_pending: Vec<(String, Receiver<Result<String, String>>)>,
+    /// R2411：已 fetch 的样式表绝对 URL 集合（含 `<link>` 与递归 `@import`），防 @import 环。
+    css_seen: HashSet<String>,
     img_pending: Vec<(String, u64, BytesFetchRx)>,
     lazy_img_pending: Vec<(String, u64, BytesFetchRx)>,
     font_pending: Vec<(String, String, BytesFetchRx)>,
@@ -90,6 +93,7 @@ impl AsyncPageLoad {
             html: None,
             css: String::new(),
             css_pending: Vec::new(),
+            css_seen: HashSet::new(),
             img_pending: Vec::new(),
             lazy_img_pending: Vec::new(),
             font_pending: Vec::new(),
@@ -120,6 +124,7 @@ impl AsyncPageLoad {
             html: Some(html),
             css: String::new(),
             css_pending: Vec::new(),
+            css_seen: HashSet::new(),
             img_pending: Vec::new(),
             lazy_img_pending: Vec::new(),
             font_pending: Vec::new(),
@@ -331,6 +336,8 @@ impl AsyncPageLoad {
                 Some(u) => u.to_string(),
                 None => href,
             };
+            // R2411：记录已 fetch 的样式表 URL（@import 递归防环用）。
+            self.css_seen.insert(abs.clone());
             self.css_pending
                 .push((abs.clone(), host.fetch_text_meta(&abs, ResourceFetchMeta::STYLESHEET)));
         }
@@ -360,12 +367,25 @@ impl AsyncPageLoad {
         if self.stage != PageLoadStage::FetchingStylesheets {
             return;
         }
+        // R2411：到达样式表的 @import URL 先收集到局部（retain 闭包内 css_pending 正被借用，
+        // 不能在此 fetch）。每个 @import 相对**该样式表 url** 解析（非文档 url）。
+        let mut import_urls: Vec<String> = Vec::new();
         self.css_pending.retain(|(url, rx)| {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     Ok(css) => {
                         self.css.push_str(&css);
                         self.css.push('\n');
+                        for imp in extract_import_urls(&css) {
+                            if imp.starts_with("data:") {
+                                continue;
+                            }
+                            let abs = match url::Url::parse(url).ok().and_then(|b| b.join(&imp).ok()) {
+                                Some(u) => u.to_string(),
+                                None => imp,
+                            };
+                            import_urls.push(abs);
+                        }
                     }
                     Err(e) => tracing::warn!("stylesheet {url} fetch failed: {e}"),
                 }
@@ -375,6 +395,15 @@ impl AsyncPageLoad {
                 true
             }
         });
+        // R2411：递归 fetch @import 引入的样式表（css_seen 防环——每个 url 仅 fetch 一次；
+        // 循环 @import A→B→A 因 css_seen 命中而止）。stage 保持 FetchingStylesheets 直到全部
+        //（含递归）drain 完，再进入 StyledPaint。
+        for abs in import_urls {
+            if self.css_seen.insert(abs.clone()) {
+                self.css_pending
+                    .push((abs.clone(), host.fetch_text_meta(&abs, ResourceFetchMeta::STYLESHEET)));
+            }
+        }
         if self.css_pending.is_empty() {
             tracing::info!(url = %self.url, "page load: stylesheets ready, styled render");
             self.stage = PageLoadStage::StyledPaint;
@@ -941,5 +970,47 @@ mod tests {
     fn fontid_is_zero_fallback_constant() {
         // 显式锚点：FontId(0) 是 resolve_font_id 的 fallback（painter/mod.rs:331）。
         assert_eq!(FontId(0).0, 0u32);
+    }
+
+    /// R2411：外链样式表内的 `@import` 被递归抓取，URL 相对**该样式表**解析（非文档）。
+    #[test]
+    fn import_url_fetched_recursively_relative_to_stylesheet() {
+        let html = r#"<html><head><link rel="stylesheet" href="a.css"></head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        // a.css 内容含 @import theme.css；MockFetchHost 对所有 text fetch 返回同一 body。
+        let body = "@import url(theme.css); .a { color: red; }";
+        let mut host = MockFetchHost::new().with_text(body);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert_eq!(load.stage(), PageLoadStage::Complete);
+        // a.css + 递归 theme.css（相对 a.css 解析为 https://example.com/theme.css）均被抓取。
+        assert!(host.calls.iter().any(|u| u.ends_with("a.css")), "a.css fetched");
+        assert!(
+            host.calls.iter().any(|u| u == "https://example.com/theme.css"),
+            "@import theme.css 递归抓取且相对样式表 url 解析: {:?}",
+            host.calls
+        );
+    }
+
+    /// R2411：循环/重复 @import 不会无限抓取（css_seen 防环），加载终止于 Complete。
+    #[test]
+    fn import_cycle_safe_terminates() {
+        let html = r#"<html><head><link rel="stylesheet" href="a.css"></head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        // body 自指 @import b.css；b.css fetch 返回同一 body 又 @import b.css——css_seen 命中止。
+        let body = "@import url(b.css); .a { color: red; }";
+        let mut host = MockFetchHost::new().with_text(body);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert_eq!(load.stage(), PageLoadStage::Complete, "循环 @import 须终止");
+        // a.css + b.css 各至多一次（css_seen 去重；@import url 不被当图片重复抓取）。
+        let a_count = host.calls.iter().filter(|u| u.ends_with("a.css")).count();
+        let b_count = host.calls.iter().filter(|u| u.ends_with("b.css")).count();
+        assert_eq!(a_count, 1, "a.css 仅一次");
+        assert_eq!(b_count, 1, "b.css 仅一次（css_seen 防环）");
     }
 }

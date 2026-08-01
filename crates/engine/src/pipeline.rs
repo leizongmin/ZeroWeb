@@ -1124,6 +1124,24 @@ pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>)> {
         .collect()
 }
 
+/// 从 CSS 文本提取所有 `@import` 规则的 URL（按出现顺序，已去引号/`url()` 包裹）。
+///
+/// 供生产 async 路径递归抓取被 `@import` 引入的样式表——旧版 css-parser 解析 `@import` 为
+/// `Rule::Import` 但 style-system 显式跳过（注释误称「引擎处理」），实际全链路从不 fetch/应用，
+/// 致 `@import` 引入的 CSS 静默丢失（与 R2406 @font-face 同类子资源 gap）。媒体查询本期不消费
+/// （`@import url(x) screen` 的 `screen` 忽略，无条件导入）。解析失败或无规则返回空。
+pub fn extract_import_urls(css: &str) -> Vec<String> {
+    use zero_css_parser::ast::Rule as CssRule;
+    zero_css_parser::Parser::parse_stylesheet(css)
+        .rules
+        .iter()
+        .filter_map(|rule| match rule {
+            CssRule::Import(imp) => Some(imp.url.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// R1794：从 CSS 文本提取所有**图片类** `url(...)` 引用。
 ///
 /// 与 `extract_font_faces` 互补：本函数扫描**全部** `url(...)`，但**排除**
@@ -1140,7 +1158,8 @@ pub fn extract_css_image_urls(css: &str) -> Vec<String> {
     // painter 一致（painter 经 tokenizer 解码 url 作 image key）。原 raw `find("url(")`
     // 漏转义函数名（driving：uri-015 `U\r\4c ("...")` 不抓 → painter image_cache miss
     // → 背景滞红；escaped-url-001 仅因 6 div 共享一图、div0 纯 `url()` 预抓而幸免）。
-    // @font-face 块内 url 是字体引用（由字体路径抓取），按 token 上下文跳过。
+    // @font-face 块内 url 是字体引用（由字体路径抓取）；@import 的 url() 是样式表引用
+    // （由 @import 路径抓取）——两者按 token 上下文跳过，不当图片处理。
     use zero_css_parser::tokenizer::{Token, Tokenizer};
     let mut urls: Vec<String> = Vec::new();
     let mut brace_depth: i32 = 0;
@@ -1163,7 +1182,16 @@ pub fn extract_css_image_urls(css: &str) -> Vec<String> {
                     font_face_depth = 0;
                 }
             }
-            Token::Url(u) if font_face_depth == 0 => {
+            Token::Semicolon => {
+                // @import / @namespace / @charset 等 at-rule prelude 以 `;` 结束，清待定 at-keyword。
+                pending_at = None;
+            }
+            Token::Url(u)
+                if font_face_depth == 0
+                    && !matches!(pending_at.as_deref(), Some(n) if n.eq_ignore_ascii_case("import")) =>
+            {
+                // R2411：@import 的 url() 是样式表引用（由 @import 路径单独抓取），非图片——跳过，
+                // 否则会被当作 background/list/border-image 重复抓取并解码失败（浪费）。
                 let raw = u.trim();
                 if !raw.is_empty() && !raw.starts_with("data:") && !urls.iter().any(|x: &String| x == raw) {
                     urls.push(raw.to_string());
@@ -1508,6 +1536,20 @@ mod css_image_url_tests {
         assert_eq!(urls, vec!["real.png"]);
     }
 
+    /// R2411：@import 的 url() 是样式表引用，不当图片抓取（否则被当 background 重复 fetch+解码失败）。
+    #[test]
+    fn extract_css_image_urls_skips_import() {
+        let css = r#"
+            @import url(theme.css);
+            @import "reset.css";
+            .a { background-image: url(bg.png); }
+        "#;
+        let urls = extract_css_image_urls(css);
+        // @import url() 与 bare string 均排除（bare string 非 url() token 本就不被收集），
+        // 仅保留真实图片 bg.png。
+        assert_eq!(urls, vec!["bg.png"]);
+    }
+
     #[test]
     fn extract_css_image_urls_dedupes() {
         let css = "a{background-image:url(a.png)}b{background-image:url(a.png)}";
@@ -1637,6 +1679,27 @@ mod font_face_extract_tests {
             })
             .collect();
         assert_eq!(extract_font_faces(css), direct);
+    }
+
+    /// @import URL 提取（`url()` 与 bare string 两种形式，按序，媒体查询忽略）。
+    #[test]
+    fn extract_import_urls_collects_urls() {
+        let css = r#"
+            @import url(theme.css);
+            @import "reset.css" screen, print;
+            p { color: red; }
+        "#;
+        assert_eq!(
+            extract_import_urls(css),
+            vec!["theme.css".to_string(), "reset.css".to_string()],
+            "url() 与 bare string 均提取，媒体查询忽略"
+        );
+    }
+
+    #[test]
+    fn extract_import_urls_empty_when_none() {
+        assert!(extract_import_urls("p { color: red; }").is_empty());
+        assert!(extract_import_urls("").is_empty());
     }
 }
 
