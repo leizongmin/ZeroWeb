@@ -202,19 +202,21 @@ fn parse_filter_number(s: &str) -> Option<f32> {
     }
 }
 
-/// 解析 filter 函数中的角度值（返回度数）。
+/// 解析 filter 函数中的角度值（返回度数）。单位大小写不敏感（CSS Values §），
+/// 支持 deg/grad/turn/rad（grad 须先于 rad——"Xgrad" 后缀含 "rad"）。
 fn parse_filter_angle(s: &str) -> Option<f32> {
-    let s = s.trim();
-    if s.ends_with("deg") {
-        s.trim_end_matches("deg").trim().parse::<f32>().ok()
-    } else if s.ends_with("rad") {
-        let rad: f32 = s.trim_end_matches("rad").trim().parse::<f32>().ok()?;
-        Some(rad.to_degrees())
-    } else if s.ends_with("turn") {
-        let turn: f32 = s.trim_end_matches("turn").trim().parse::<f32>().ok()?;
-        Some(turn * 360.0)
+    let lower = s.trim().to_ascii_lowercase();
+    if let Some(n) = lower.strip_suffix("deg") {
+        n.trim().parse::<f32>().ok()
+    } else if let Some(n) = lower.strip_suffix("grad") {
+        // 400grad = 360deg → 1grad = 0.9deg
+        n.trim().parse::<f32>().ok().map(|g| g * 0.9)
+    } else if let Some(n) = lower.strip_suffix("turn") {
+        n.trim().parse::<f32>().ok().map(|t| t * 360.0)
+    } else if let Some(n) = lower.strip_suffix("rad") {
+        n.trim().parse::<f32>().ok().map(|r| r.to_degrees())
     } else {
-        s.parse::<f32>().ok()
+        lower.parse::<f32>().ok()
     }
 }
 

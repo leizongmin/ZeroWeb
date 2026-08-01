@@ -531,6 +531,22 @@ fn test_filter_hue_rotate_plain() {
 }
 
 #[test]
+/// R2362：hue-rotate 角度 grad 单位 + 大小写不敏感（同 R2360 parse_css_number bug 类）。
+/// `hue-rotate(100grad)`/`hue-rotate(90DEG)` 此前落 None 丢 filter。
+fn test_filter_hue_rotate_angle_units_case() {
+    // grad：400grad=360deg → 100grad=90deg
+    let g = parse_filter("hue-rotate(100grad)").expect("grad must parse");
+    match g {
+        crate::values::FilterValue::HueRotate(a) => assert!((a - 90.0).abs() < 1e-4, "got {a}"),
+        other => panic!("expected HueRotate, got {other:?}"),
+    }
+    // 大小写不敏感
+    assert!(parse_filter("hue-rotate(90DEG)").is_some(), "DEG");
+    assert!(parse_filter("hue-rotate(0.25Turn)").is_some(), "Mixed turn");
+    assert!(parse_filter("hue-rotate(50GRAD)").is_some(), "GRAD");
+}
+
+#[test]
 fn test_filter_invert() {
     let f = parse_filter("invert(0.5)");
     assert!(f.is_some());
