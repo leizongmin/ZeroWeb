@@ -75,6 +75,33 @@ fn test_transform_rotate() {
 }
 
 #[test]
+/// R2360：transform 角度单位完整 + 大小写不敏感。
+/// rotate 经 parse_angle→parse_css_number：此前缺 `grad`（CSS 4 角度单位之一）且
+/// deg/rad/turn 后缀大小写敏感 → `rotate(100grad)`/`rotate(45DEG)` 落 None 丢函数。
+fn test_transform_rotate_angle_units_case() {
+    // grad：400grad = 360deg → 100grad = 90deg
+    let g = parse_transform("rotate(100grad)").expect("grad must parse");
+    match g {
+        TransformValue::List(fs) => match &fs[0] {
+            TransformFunction::Rotate(a) => assert!((a - 90.0).abs() < 1e-9, "got {a}"),
+            other => panic!("expected Rotate, got {other:?}"),
+        },
+        _ => panic!("expected List"),
+    }
+    // 大小写不敏感（DEG/RAD/TURN/GRAD）
+    assert!(parse_transform("rotate(45DEG)").is_some(), "DEG");
+    assert!(parse_transform("rotate(1Turn)").is_some(), "Mixed turn");
+    assert!(parse_transform("rotate(50GRAD)").is_some(), "GRAD");
+    // rad 仍工作（不被 grad 分支误吞：1rad ≈ 57.296deg）
+    let r = parse_transform("rotate(1rad)").expect("rad must parse");
+    if let TransformValue::List(fs) = r {
+        if let TransformFunction::Rotate(a) = fs[0] {
+            assert!((a - 57.2957795).abs() < 1e-4, "rad→deg got {a}");
+        }
+    }
+}
+
+#[test]
 fn test_transform_rotate_x() {
     let t = parse_transform("rotateX(90deg)").unwrap();
     if let TransformValue::List(fs) = t {
