@@ -8,6 +8,16 @@
 /// 匹配声明类型：(属性名, 属性值, 是否 important, 特异性)
 type MatchingDecl = (String, String, bool, (u32, u32, u32));
 
+/// 是否为简写层支持的 CSS-wide 关键字（inherit/initial/unset，大小写不敏感）。
+///
+/// 简写层仅对这三个关键字做整体展开；`revert` 由级联层另行处理，故此处不含。
+/// CSS 关键字大小写不敏感（CSS Syntax §：keyword），且简写收到的 value 是级联直传的
+/// 原始声明值（parser 仅 lowercase 属性名，不 lowercase 值），故必须用 eq_ignore_ascii_case。
+fn matches_css_wide_keyword(value: &str) -> bool {
+    let v = value.trim();
+    v.eq_ignore_ascii_case("inherit") || v.eq_ignore_ascii_case("initial") || v.eq_ignore_ascii_case("unset")
+}
+
 /// 展开简写属性声明。
 ///
 /// 遍历所有匹配声明，将简写属性展开为长属性列表。
@@ -362,8 +372,8 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    // 特殊值 "none" → 仅设置 source
-    if value == "none" {
+    // 特殊值 "none" → 仅设置 source（R2354：关键字大小写不敏感，CSS Syntax §）
+    if value.eq_ignore_ascii_case("none") {
         return vec![mk("border-image-source", "none")];
     }
 
@@ -378,7 +388,8 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
         if t.is_empty() {
             continue;
         }
-        if source.is_none() && (t.starts_with("url(") || t == "none") {
+        // R2354：none 关键字大小写不敏感（CSS Syntax §）
+        if source.is_none() && (t.starts_with("url(") || t.eq_ignore_ascii_case("none")) {
             source = Some(t.to_string());
         } else {
             remaining.push(t.to_string());
@@ -478,8 +489,8 @@ fn parse_rect_values(value: &str) -> Option<(&str, &str, &str, &str)> {
 fn expand_border_all(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    // CSS-wide keywords: 展开为所有子属性
-    if value == "inherit" || value == "initial" || value == "unset" {
+    // CSS-wide keywords: 展开为所有子属性（R2354：大小写不敏感，CSS Syntax §）
+    if matches_css_wide_keyword(value) {
         let mut result = Vec::with_capacity(12);
         for side in &["top", "right", "bottom", "left"] {
             result.push(mk(&format!("border-{side}-width"), value));
@@ -514,8 +525,8 @@ fn expand_border_side(
 ) -> Vec<MatchingDecl> {
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    // CSS-wide keywords: 展开为所有子属性
-    if value == "inherit" || value == "initial" || value == "unset" {
+    // CSS-wide keywords: 展开为所有子属性（R2354：大小写不敏感）
+    if matches_css_wide_keyword(value) {
         return vec![mk(width_prop, value), mk(style_prop, value), mk(color_prop, value)];
     }
 
@@ -578,12 +589,12 @@ fn parse_border_shorthand(value: &str) -> Option<BorderShorthand> {
     Some(BorderShorthand { width, style, color })
 }
 
-/// 检查字符串是否为 border-style 关键字。
+/// 检查字符串是否为 border-style 关键字（R2354：大小写不敏感，CSS Syntax §）。
 fn is_border_style_keyword(s: &str) -> bool {
-    matches!(
-        s,
-        "none" | "hidden" | "dotted" | "dashed" | "solid" | "double" | "groove" | "ridge" | "inset" | "outset"
-    )
+    const KEYWORDS: &[&str] = &[
+        "none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset",
+    ];
+    KEYWORDS.iter().any(|k| s.eq_ignore_ascii_case(k))
 }
 
 /// 检查字符串是否看起来像长度值。
@@ -611,9 +622,9 @@ fn looks_like_length(s: &str) -> bool {
         || s.ends_with("vmax")
         || s.ends_with("ch")
         || s == "0"
-        || s == "thin"
-        || s == "medium"
-        || s == "thick"
+        || s.eq_ignore_ascii_case("thin")
+        || s.eq_ignore_ascii_case("medium")
+        || s.eq_ignore_ascii_case("thick")
 }
 
 /// 检查字符串是否看起来像颜色值。
@@ -758,13 +769,13 @@ fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     // 故用 `is_finite()` 排除这两个非有效 CSS 数字的边界。
     let is_number = |s: &str| s.parse::<f64>().map(|n| n.is_finite()).unwrap_or(false);
 
-    if value == "none" {
+    if value.eq_ignore_ascii_case("none") {
         return vec![mk("flex-grow", "0"), mk("flex-shrink", "0"), mk("flex-basis", "auto")];
     }
-    if value == "auto" {
+    if value.eq_ignore_ascii_case("auto") {
         return vec![mk("flex-grow", "1"), mk("flex-shrink", "1"), mk("flex-basis", "auto")];
     }
-    if value == "initial" {
+    if value.eq_ignore_ascii_case("initial") {
         return vec![mk("flex-grow", "0"), mk("flex-shrink", "1"), mk("flex-basis", "auto")];
     }
 
@@ -810,7 +821,7 @@ fn expand_transition(value: &str, important: bool, specificity: (u32, u32, u32))
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    if value == "none" {
+    if value.eq_ignore_ascii_case("none") {
         return vec![
             mk("transition-property", "none"),
             mk("transition-duration", "0s"),
@@ -973,8 +984,8 @@ fn expand_animation(value: &str, important: bool, specificity: (u32, u32, u32)) 
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    // 特殊值 "none" 表示无动画
-    if value == "none" {
+    // 特殊值 "none" 表示无动画（R2354：关键字大小写不敏感）
+    if value.eq_ignore_ascii_case("none") {
         return vec![
             mk("animation-name", "none"),
             mk("animation-duration", "0s"),
@@ -1360,8 +1371,8 @@ fn expand_outline(value: &str, important: bool, specificity: (u32, u32, u32)) ->
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    // "none" 或 "0" → 全部重置
-    if value == "none" {
+    // "none" → 全部重置（R2354：关键字大小写不敏感）
+    if value.eq_ignore_ascii_case("none") {
         return vec![
             mk("outline-width", "0px"),
             mk("outline-style", "none"),
@@ -1408,12 +1419,12 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
     /// CSS Multicol §3.2：column-count 须为正整数；0 非法（zero-column-width-layout：
     /// `columns: 0` 的 0 不可归 column-count，须归 column-width）。
     fn is_valid_column_count(s: &str) -> bool {
-        s == "auto" || s.parse::<u32>().is_ok_and(|n| n >= 1)
+        s.eq_ignore_ascii_case("auto") || s.parse::<u32>().is_ok_and(|n| n >= 1)
     }
 
     /// 检查值是否为有效的 column-width 值（长度或 auto）
     fn is_valid_column_width(s: &str) -> bool {
-        s == "auto" || looks_like_length(s)
+        s.eq_ignore_ascii_case("auto") || looks_like_length(s)
     }
 
     let parts: Vec<&str> = value.split_whitespace().collect();
@@ -1509,8 +1520,8 @@ fn expand_background(value: &str, important: bool, specificity: (u32, u32, u32))
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    // CSS-wide keywords: 展开为所有子属性
-    if value == "inherit" || value == "initial" || value == "unset" {
+    // CSS-wide keywords: 展开为所有子属性（R2354：大小写不敏感）
+    if matches_css_wide_keyword(value) {
         let subprops = [
             "background-color",
             "background-image",
@@ -1846,7 +1857,7 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    if value == "none" {
+    if value.eq_ignore_ascii_case("none") {
         return vec![
             mk("text-decoration-line", "none"),
             mk("text-decoration-style", "solid"),
@@ -1890,8 +1901,8 @@ fn expand_text_emphasis(value: &str, important: bool, specificity: (u32, u32, u3
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    // CSS-wide keywords：透传到 style longhand
-    if value == "inherit" || value == "initial" || value == "unset" {
+    // CSS-wide keywords：透传到 style longhand（R2354：大小写不敏感）
+    if matches_css_wide_keyword(value) {
         return vec![mk("text-emphasis-style", value)];
     }
 

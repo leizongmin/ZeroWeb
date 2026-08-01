@@ -111,6 +111,58 @@ fn test_gap_shorthand_double_value() {
     assert_eq!(s.column_gap, LengthValue::Px(20.0));
 }
 
+#[test]
+/// R2354: `transition: NONE` 应与 `transition: none` 等价。
+/// 关键字大小写不敏感（CSS Syntax §：所有关键字大小写不敏感）。
+/// transition: none → transition-property 经 apply 层 filter "none" 后为空列表；
+/// 关键回归点：大写 "NONE" 不应作为字面属性名残留（修复前 transition-property = ["NONE"]）。
+fn test_shorthand_keywords_case_insensitive_transition_none() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s_lower = compute_style(&doc, div, &[("transition", "none")]);
+    let s_upper = compute_style(&doc, div, &[("transition", "NONE")]);
+    assert_eq!(s_upper.transition_property, s_lower.transition_property);
+    // none → 空列表；不应残留大写 "NONE" 字面值
+    assert!(s_upper.transition_property.iter().all(|p| p != "NONE"));
+    assert_eq!(s_upper.transition_timing_function, s_lower.transition_timing_function);
+}
+
+#[test]
+/// R2354: `flex: NONE` / `flex: AUTO` 应与全写关键字等价。
+fn test_shorthand_keywords_case_insensitive_flex() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("flex", "NONE")]);
+    assert_eq!(s.flex_grow, 0.0);
+    assert_eq!(s.flex_shrink, 0.0);
+    assert_eq!(s.flex_basis, crate::property::types::FlexBasisValue::Auto);
+
+    let s = compute_style(&doc, div, &[("flex", "AUTO")]);
+    assert_eq!(s.flex_grow, 1.0);
+    assert_eq!(s.flex_shrink, 1.0);
+    assert_eq!(s.flex_basis, crate::property::types::FlexBasisValue::Auto);
+}
+
+#[test]
+/// R2354: CSS-wide 关键字 `INHERIT` 在简写层大小写不敏感（border: INHERIT 不应静默失效）。
+/// 直接断言 expand_shorthands 对 `border: INHERIT` 产出 12 条声明（4 边 × width/style/color），
+/// 而非走 parse_border_shorthand 失败后静默丢弃为空 vec。
+fn test_shorthand_keywords_case_insensitive_css_wide() {
+    let decls: Vec<(String, String, bool, (u32, u32, u32))> =
+        vec![("border".to_string(), "INHERIT".to_string(), false, (0u32, 0u32, 0u32))];
+    let result = crate::shorthand::expand_shorthands(&decls);
+    assert_eq!(
+        result.len(),
+        12,
+        "border: INHERIT 应识别为 CSS-wide 关键字并展开为 12 条长属性，而非静默丢弃"
+    );
+    // CSS-wide 路径下，每条声明的值应为原样透传的 "INHERIT"（修复前会落回 parse 默认值
+    // "medium"/"none"/"currentcolor"，证明 css-wide 关键字未被识别）。
+    assert!(
+        result.iter().all(|(_, v, _, _)| v == "INHERIT"),
+        "border: INHERIT 展开值应透传关键字原值，实际: {:?}",
+        result
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // 伪元素 ::before/::after 计算样式（R487：compute 阶段）
 // ═══════════════════════════════════════════════════════════════════
