@@ -311,6 +311,15 @@ impl super::Painter {
 
         // 获取 src URL 作为图片键
         let src = elem.get_attribute("src").unwrap_or_default();
+        // R2419：src 缺失时回退到 srcset 首 URL（srcset-only `<img>` 正确性修——
+        // extract_img_resources 已按此回退抓取，painter 同步用首 URL 查 image_cache）。
+        let src = if src.is_empty() {
+            elem.get_attribute("srcset")
+                .and_then(|s| crate::srcset_first_url(&s))
+                .unwrap_or_default()
+        } else {
+            src
+        };
         if src.is_empty() {
             return;
         }

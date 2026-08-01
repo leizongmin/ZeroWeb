@@ -1081,24 +1081,34 @@ pub struct ImgResource {
     pub lazy: bool,
 }
 
+/// 从 `srcset` 属性取首个候选 URL（R2419：srcset-only `<img>` 回退 src）。
+///
+/// `srcset="a.jpg 1x, b.jpg 2x"` → `a.jpg`。仅取首候选首 token（最小正确性修：
+/// srcset-only 图无 src 时用首 URL 作 effective src 抓取+渲染；多分辨率 DPR 选源为后续）。
+pub fn srcset_first_url(srcset: &str) -> Option<String> {
+    let first = srcset.split(',').next()?.trim();
+    let url = first.split_whitespace().next()?;
+    (!url.is_empty()).then(|| url.to_string())
+}
+
 /// 提取 HTML 中所有 `<img>` 的 src 与 lazy 属性。
 pub fn extract_img_resources(html: &str) -> Vec<ImgResource> {
     let doc = zero_dom::parse_html(html);
     let mut out = Vec::new();
     for img_id in doc.get_elements_by_tag_name("img") {
-        if let Some(src) = doc.get_attribute(img_id, "src") {
-            let src = src.trim();
-            if src.is_empty() {
-                continue;
-            }
-            let lazy = doc
-                .get_attribute(img_id, "loading")
-                .is_some_and(|v| v.trim().eq_ignore_ascii_case("lazy"));
-            out.push(ImgResource {
-                src: src.to_string(),
-                lazy,
-            });
-        }
+        // R2419：src 缺失/空时回退到 srcset 首 URL（srcset-only `<img>` 正确性修）。
+        let src = doc
+            .get_attribute(img_id, "src")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or_else(|| doc.get_attribute(img_id, "srcset").and_then(|s| srcset_first_url(&s)));
+        let Some(src) = src else {
+            continue;
+        };
+        let lazy = doc
+            .get_attribute(img_id, "loading")
+            .is_some_and(|v| v.trim().eq_ignore_ascii_case("lazy"));
+        out.push(ImgResource { src, lazy });
     }
     out
 }
@@ -1627,6 +1637,33 @@ mod css_image_url_tests {
         let css = extract_html_style_text(html);
         let urls = extract_css_image_urls(&css);
         assert_eq!(urls, vec!["bg.png"]);
+    }
+
+    /// R2419：srcset 首 URL 提取（逗号分隔候选，每候选首 token = URL）。
+    #[test]
+    fn srcset_first_url_parses_first_candidate() {
+        assert_eq!(srcset_first_url("a.jpg 1x, b.jpg 2x").as_deref(), Some("a.jpg"));
+        assert_eq!(srcset_first_url("a.jpg").as_deref(), Some("a.jpg"));
+        assert_eq!(srcset_first_url("  c.png 480w, d.png 800w  ").as_deref(), Some("c.png"));
+        assert!(srcset_first_url("").is_none());
+        assert!(srcset_first_url("  ").is_none());
+    }
+
+    /// R2419：srcset-only `<img>`（无 src）经 extract_img_resources 回退到 srcset 首 URL。
+    #[test]
+    fn extract_img_resources_falls_back_to_srcset() {
+        let html = r#"<html><body>
+            <img srcset="hi.jpg 1x, hi2.jpg 2x">
+            <img src="real.jpg">
+            <img srcset="narrow.jpg 480w, wide.jpg 800w" loading="lazy">
+            </body></html>"#;
+        let imgs = extract_img_resources(html);
+        assert_eq!(imgs.len(), 3, "{imgs:?}");
+        assert_eq!(imgs[0].src, "hi.jpg", "srcset-only 用首 URL");
+        assert!(!imgs[0].lazy, "无 loading=lazy");
+        assert_eq!(imgs[1].src, "real.jpg", "src 优先于 srcset");
+        assert_eq!(imgs[2].src, "narrow.jpg", "srcset-only 用首 URL + lazy 保留");
+        assert!(imgs[2].lazy, "loading=lazy 保留");
     }
 }
 
