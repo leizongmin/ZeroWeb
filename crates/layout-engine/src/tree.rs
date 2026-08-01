@@ -417,6 +417,16 @@ fn apply_replaced_element_sizing(
     if tag != "img" && tag != "canvas" && tag != "embed" && tag != "object" && tag != "applet" {
         return;
     }
+
+    // R2429：`contain: size`（CSS Containment 1）——元素按「无内容」sized，替换元素固有尺寸
+    // 须忽略（intrinsic size → 0）。converter（mod.rs:123 `contain.has_size()`）已把 auto 尺寸
+    // 解析为 0（含 contain-intrinsic-size 覆盖），此处若再用固有尺寸覆盖会把 0 拉回 intrinsic，
+    // 破坏 size containment（driving：css-contain/contain-size-013 `<img contain:size padding:50>`
+    // 固有 60×60 应按 padding-only=100×100，非 160×160）。故 size containment 时早返回，让
+    // converter 的 contain:size 处理（含 CIS）生效。
+    if computed.contain.has_size() {
+        return;
+    }
     // R1683：embed/object/applet 仅消费 HTML width/height 属性（无 decoded intrinsic / SVG data URI
     // 回退，那是 <img> 专属）。无属性时直接返回保持原行为。
     let is_attr_only_replaced = tag == "embed" || tag == "object" || tag == "applet";
