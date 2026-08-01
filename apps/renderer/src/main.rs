@@ -379,6 +379,33 @@ impl RendererRuntime {
             })
         };
 
+        // R2408+ slice 2：drain 已 fetch 的 @font-face 字节 → load_font + register_family_alias
+        // → 刷新 webview font_resolver → 请求重绘。须在 with_measure_ctx_opt 闭包外（闭包内
+        // font_loader 被不可变借做文本度量，此处可 &mut）。env `ZW_LIVE_FONTFACE` kill-switch
+        // 默认开（=0/`false` 关闭，退回 R2406 前丢弃行为）。
+        if zero_webview::live_fontface_enabled() {
+            let loaded = pending.load.drain_loaded_fonts();
+            if !loaded.is_empty() {
+                let mut updated = false;
+                for (family, bytes) in loaded {
+                    match self.font_loader.load_font(&bytes) {
+                        Ok(id) => {
+                            self.font_loader.register_family_alias(&family, id);
+                            updated = true;
+                        }
+                        Err(e) => tracing::warn!(family = %family, err = %e, "live @font-face load failed"),
+                    }
+                }
+                if updated {
+                    let resolver = self.font_loader.build_font_resolver();
+                    if let Some(wv) = self.webview.as_mut() {
+                        wv.set_font_resolver(resolver);
+                    }
+                    pending.load.request_rerender();
+                }
+            }
+        }
+
         let stage = pending.load.stage();
         if publish_after {
             self.sync_cached_html_from_webview();

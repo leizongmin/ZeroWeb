@@ -287,6 +287,29 @@ fn tab_worker_main(
             let changed = with_measure(&font_loader, font_id, || {
                 load.tick(&mut wv, &mut fetch_host, TAB_WORKER_FRAME_BUDGET_MS)
             });
+            // R2408+ slice 2：drain @font-face 字节 → load_font + register_family_alias →
+            // 刷新 webview font_resolver → 请求重绘。须在 with_measure 闭包外（闭包内
+            // font_loader 被不可变借做文本度量）。env `ZW_LIVE_FONTFACE` kill-switch 默认开。
+            if zero_webview::live_fontface_enabled() {
+                let loaded = load.drain_loaded_fonts();
+                if !loaded.is_empty() {
+                    let mut updated = false;
+                    for (family, bytes) in loaded {
+                        match font_loader.load_font(&bytes) {
+                            Ok(id) => {
+                                font_loader.register_family_alias(&family, id);
+                                updated = true;
+                            }
+                            Err(e) => tracing::warn!(family = %family, err = %e, "live @font-face load failed"),
+                        }
+                    }
+                    if updated {
+                        let resolver = font_loader.build_font_resolver();
+                        wv.set_font_resolver(resolver);
+                        load.request_rerender();
+                    }
+                }
+            }
             if changed {
                 if load.stage() != prev_stage {
                     let _ = msg_tx.send(TabWorkerMessage::Stage(load.stage()));

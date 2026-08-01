@@ -6,7 +6,7 @@ use std::sync::mpsc::Receiver;
 use zero_engine::image_resource_key;
 use zero_engine::preload::{ResourceHintType, ResourceType, scan_html_resource_hints};
 use zero_engine::{
-    BudgetAdvance, BudgetedRenderSession, extract_css_image_urls, extract_font_face_urls, extract_html_style_text,
+    BudgetAdvance, BudgetedRenderSession, extract_css_image_urls, extract_font_faces, extract_html_style_text,
     extract_img_resources, extract_stylesheet_hrefs,
 };
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
@@ -50,6 +50,17 @@ impl AsyncFetchHost for InProcessFetchHost {
     }
 }
 
+/// 生产 @font-face 异步加载是否启用（env `ZW_LIVE_FONTFACE`；默认启用，`0`/`false` 关闭）。
+///
+/// kill-switch：关闭后宿主跳过 drain→load→register→resolver 刷新，行为退回 R2406 前
+///（字节抓取后丢弃）。读取方式对齐既有 env 模式（如 `ZERO_BROWSER_MULTIPROCESS`）。
+pub fn live_fontface_enabled() -> bool {
+    match std::env::var("ZW_LIVE_FONTFACE") {
+        Ok(v) => v != "0" && !v.eq_ignore_ascii_case("false"),
+        Err(_) => true,
+    }
+}
+
 /// 分阶段异步加载协调器。
 pub struct AsyncPageLoad {
     url: String,
@@ -59,7 +70,10 @@ pub struct AsyncPageLoad {
     css_pending: Vec<(String, Receiver<Result<String, String>>)>,
     img_pending: Vec<(String, u64, BytesFetchRx)>,
     lazy_img_pending: Vec<(String, u64, BytesFetchRx)>,
-    font_pending: Vec<(String, BytesFetchRx)>,
+    font_pending: Vec<(String, String, BytesFetchRx)>,
+    /// R2408+ slice 2：poll_fonts 收集的已就绪 @font-face 字节 `(family, bytes)`，
+    /// 供宿主在 tick 后经 `drain_loaded_fonts()` 取出并 load+register（drain pattern）。
+    font_loaded: Vec<(String, Vec<u8>)>,
     lazy_urls: Vec<String>,
     document_rx: Option<Receiver<Result<String, String>>>,
     render_session: Option<BudgetedRenderSession>,
@@ -79,6 +93,7 @@ impl AsyncPageLoad {
             img_pending: Vec::new(),
             lazy_img_pending: Vec::new(),
             font_pending: Vec::new(),
+            font_loaded: Vec::new(),
             lazy_urls: Vec::new(),
             document_rx: None,
             render_session: None,
@@ -108,6 +123,7 @@ impl AsyncPageLoad {
             img_pending: Vec::new(),
             lazy_img_pending: Vec::new(),
             font_pending: Vec::new(),
+            font_loaded: Vec::new(),
             lazy_urls: Vec::new(),
             document_rx: None,
             render_session: None,
@@ -129,7 +145,27 @@ impl AsyncPageLoad {
         if self.stage != PageLoadStage::Complete {
             return true;
         }
-        !self.font_pending.is_empty() || !self.lazy_img_pending.is_empty()
+        // R2408+ slice 2：budget_pending 亦视作活跃——字体加载后 request_rerender 置位，
+        // 须保留 load 至该重绘 tick 完成后再判定结束（否则末个字体到达即 complete 会
+        // 丢弃 request_rerender，最终帧用 fallback 字体）。
+        !self.font_pending.is_empty() || !self.lazy_img_pending.is_empty() || self.budget_pending
+    }
+
+    /// 请求下一 tick 重渲染（外部状态变化后调用，如宿主加载 @font-face 后更新 resolver）。
+    ///
+    /// 仅在有 HTML 时置 `budget_pending`，使下一 tick 的 `advance_render` 用新 resolver 重绘。
+    pub fn request_rerender(&mut self) {
+        if self.html.is_some() {
+            self.budget_pending = true;
+        }
+    }
+
+    /// 取出并清空已就绪的 @font-face 字节 `(family, bytes)`（drain pattern）。
+    ///
+    /// 宿主在 `tick` 返回后调用——`poll_fonts` 把 fetch 成功的字节收集到此处，不再丢弃。
+    /// 宿主据此 `load_font` + `register_family_alias` + 刷新 resolver + `request_rerender`。
+    pub fn drain_loaded_fonts(&mut self) -> Vec<(String, Vec<u8>)> {
+        std::mem::take(&mut self.font_loaded)
     }
 
     fn log_stage(&self, label: &str) {
@@ -299,6 +335,10 @@ impl AsyncPageLoad {
                 .push((abs.clone(), host.fetch_text_meta(&abs, ResourceFetchMeta::STYLESHEET)));
         }
         if self.css_pending.is_empty() {
+            // R2408+ slice 2：无外链 CSS 也须抓 @font-face（含 inline `<style>` 声明）。
+            // 旧版仅经 poll_stylesheets（FetchingStylesheets 阶段）调用 begin_font_fetch，
+            // 致纯 inline @font-face 页（无 <link>）从不抓字体。
+            self.begin_font_fetch(host);
             self.begin_image_fetch(webview, host);
         } else {
             tracing::info!(
@@ -347,15 +387,33 @@ impl AsyncPageLoad {
     }
 
     fn begin_font_fetch(&mut self, host: &mut dyn AsyncFetchHost) {
-        let urls = extract_font_face_urls(&self.css);
+        // 合并外链 CSS + inline `<style>`（对齐 begin_image_fetch；修 R2406 次要 bug：
+        // 旧版仅扫 self.css，漏 inline @font-face）。extract_font_faces 保留 family（CSS 声明族名）。
+        let mut css = self.css.clone();
+        if let Some(html) = self.html.as_ref() {
+            css.push('\n');
+            css.push_str(&extract_html_style_text(html));
+        }
+        let faces = extract_font_faces(&css);
         let base = url::Url::parse(&self.url).ok();
-        for href in urls {
-            let abs = match base.as_ref().and_then(|b| b.join(&href).ok()) {
-                Some(u) => u.to_string(),
-                None => href,
-            };
-            self.font_pending
-                .push((abs.clone(), host.fetch_bytes_meta(&abs, ResourceFetchMeta::FONT)));
+        for (family, sources) in faces {
+            for src in &sources {
+                // data: 不走 fetch（与图片 data: 路径一致）；local() 已被 css-parser 排除。
+                if src.starts_with("data:") {
+                    continue;
+                }
+                // 抓取所有非 data 源（woff2/woff/ttf）——fontdue 对 woff2 加载会失败被跳过，
+                // loader 跌代到可解码的源；保证 woff2-first 声明仍能注册（RFC §8.4）。
+                let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
+                    Some(u) => u.to_string(),
+                    None => src.clone(),
+                };
+                self.font_pending.push((
+                    family.clone(),
+                    abs.clone(),
+                    host.fetch_bytes_meta(&abs, ResourceFetchMeta::FONT),
+                ));
+            }
         }
         if !self.font_pending.is_empty() {
             tracing::info!(url = %self.url, count = self.font_pending.len(), "page load: fetch fonts");
@@ -363,10 +421,15 @@ impl AsyncPageLoad {
     }
 
     fn poll_fonts(&mut self, changed: &mut bool) {
-        self.font_pending.retain(|(url, rx)| {
+        self.font_pending.retain(|(family, url, rx)| {
             if let Ok(result) = rx.try_recv() {
                 match result {
-                    Ok(bytes) => tracing::info!(url, bytes = bytes.len(), "page load: font fetched"),
+                    Ok(bytes) => {
+                        tracing::info!(url, bytes = bytes.len(), "page load: font fetched");
+                        // R2408+ slice 2：保留字节供宿主 drain 后 load+register（drain pattern），
+                        // 不再丢弃。family 用于 register_family_alias。
+                        self.font_loaded.push((family.clone(), bytes));
+                    }
                     Err(e) => tracing::warn!("font {url} fetch failed: {e}"),
                 }
                 *changed = true;
@@ -621,6 +684,11 @@ mod tests {
             self.text_body = Ok(body.into());
             self
         }
+
+        fn with_bytes(mut self, body: Vec<u8>) -> Self {
+            self.bytes_body = Ok(body);
+            self
+        }
     }
 
     impl AsyncFetchHost for MockFetchHost {
@@ -721,5 +789,94 @@ mod tests {
             let _ = load.tick(&mut wv, &mut host, 500.0);
         }
         assert_eq!(load.stage(), PageLoadStage::Complete);
+    }
+
+    /// R2408+ slice 2 / FR-003：fetch 成功的 @font-face 字节经 drain 回传（不再丢弃），且 drain 后清空。
+    /// 同时验证 FR-002：family 被保留（"TestFont"），fetch 以 FONT meta 发起。
+    #[test]
+    fn drain_loaded_fonts_returns_fetched_font_bytes_and_family() {
+        let html = r#"<html><head>
+            <style>@font-face { font-family: "TestFont"; src: url(test.woff); }</style>
+            </head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let font_bytes = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        let mut host = MockFetchHost::new().with_bytes(font_bytes.clone());
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        // fetch 以 ResourceFetchMeta::FONT 发起（test.woff 一次）。
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("test.woff")),
+            "font url fetched: {:?}",
+            host.calls
+        );
+        let drained = load.drain_loaded_fonts();
+        assert_eq!(
+            drained,
+            vec![("TestFont".to_string(), font_bytes)],
+            "family + bytes 回传"
+        );
+        assert!(load.drain_loaded_fonts().is_empty(), "drain 清空");
+    }
+
+    /// R2408+ slice 2 / FR-002：纯 inline `<style>` @font-face（无外链 CSS）亦被抓取
+    /// （修复 begin_font_fetch 仅经 FetchingStylesheets 调用的遗漏）。
+    #[test]
+    fn begin_font_fetch_inline_style_without_external_css() {
+        let html = r#"<html><head>
+            <style>@font-face { font-family: InlineFont; src: url(i.woff); }</style>
+            </head><body><p>hi</p></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(vec![1, 2, 3]);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("i.woff")),
+            "inline @font-face fetched"
+        );
+        assert_eq!(
+            load.drain_loaded_fonts(),
+            vec![("InlineFont".to_string(), vec![1, 2, 3])],
+            "inline family drained"
+        );
+    }
+
+    /// R2408+ slice 2 / FR-002：@font-face `src: url(data:...)` 不发起 fetch（与图片 data: 一致）。
+    #[test]
+    fn begin_font_fetch_skips_data_uri_src() {
+        let html = r#"<html><head>
+            <style>@font-face { font-family: DFont; src: url(data:application/font-woff;base64,AAAA); }</style>
+            </head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(vec![9]);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert!(
+            !host.calls.iter().any(|u| u.contains("data:")),
+            "data: src 不应被抓取: {:?}",
+            host.calls
+        );
+        assert!(load.drain_loaded_fonts().is_empty(), "无 data: 字体被加载");
+    }
+
+    /// R2408+ slice 2：fetch 失败的字体不污染 drain（仅 log，drain 为空）。
+    #[test]
+    fn drain_loaded_fonts_empty_on_font_fetch_failure() {
+        let html = r#"<html><head>
+            <style>@font-face { font-family: BadFont; src: url(bad.woff); }</style>
+            </head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = ErrFetchHost;
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert_eq!(load.stage(), PageLoadStage::Complete);
+        assert!(load.drain_loaded_fonts().is_empty(), "失败字体不进 drain");
     }
 }

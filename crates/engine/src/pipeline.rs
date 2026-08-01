@@ -1103,36 +1103,12 @@ pub fn extract_img_resources(html: &str) -> Vec<ImgResource> {
     out
 }
 
-/// 从 CSS 文本提取 `@font-face` 中的 `url(...)`（简单扫描）。
-pub fn extract_font_face_urls(css: &str) -> Vec<String> {
-    let mut urls = Vec::new();
-    let lower = css.to_ascii_lowercase();
-    let mut search_from = 0;
-    while let Some(ff) = lower[search_from..].find("@font-face") {
-        let start = search_from + ff;
-        let block_end = lower[start..].find('}').map(|i| start + i).unwrap_or(css.len());
-        let block = &css[start..block_end];
-        let mut u = 0;
-        while let Some(ui) = block[u..].find("url(") {
-            let rest = &block[u + ui + 4..];
-            let end = rest.find(')').unwrap_or(rest.len());
-            let raw = rest[..end].trim().trim_matches('"').trim_matches('\'');
-            if !raw.is_empty() && !raw.starts_with("data:") {
-                urls.push(raw.to_string());
-            }
-            u += ui + 4;
-        }
-        search_from = block_end;
-    }
-    urls
-}
-
 /// 从 CSS 文本提取所有 `@font-face` 规则的 `(family, url_sources)` 列表（保留 family）。
 ///
-/// 与 [`extract_font_face_urls`] 互补：本函数**保留 family**（`@font-face` 的 `font-family`
-/// 描述符值），返回 `(family, sources)`，供生产 async 加载路径按声明族名注册字体别名
-/// （`FontLoader::register_family_alias`）。`sources` 为 css-parser 解析出的 url() 项（已去
-/// `url()` 包裹与引号，按出现顺序）；family 已去引号（由 `FontFaceRule.family` 保证）。
+/// **保留 family**（`@font-face` 的 `font-family` 描述符值），返回 `(family, sources)`，
+/// 供生产 async 加载路径按声明族名注册字体别名（`FontLoader::register_family_alias`）。
+/// `sources` 为 css-parser 解析出的 url() 项（已去 `url()` 包裹与引号，按出现顺序）；
+/// family 已去引号（由 `FontFaceRule.family` 保证）。
 ///
 /// `data:` / `local()` 的过滤由抓取层（`AsyncPageLoad::begin_font_fetch`）处理，本函数仅做
 /// 透传解析。解析失败或无 @font-face 规则返回空 Vec。
@@ -1150,8 +1126,8 @@ pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>)> {
 
 /// R1794：从 CSS 文本提取所有**图片类** `url(...)` 引用。
 ///
-/// 与 `extract_font_face_urls` 互补：本函数扫描**全部** `url(...)`，但**排除**
-/// `@font-face` 块内的 url（字体由 `extract_font_face_urls` 单独处理，避免重复抓取）
+/// 与 `extract_font_faces` 互补：本函数扫描**全部** `url(...)`，但**排除**
+/// `@font-face` 块内的 url（字体由 `extract_font_faces` 单独处理，避免重复抓取）
 /// 与 `data:` URI（调用方识别，此处亦过滤以保持集合干净）。结果去重并保留首次出现顺序。
 ///
 /// 覆盖 `background-image` / `list-style-image` / `border-image-source` 等所有
