@@ -24,7 +24,7 @@ use zero_style_system::{
     TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
 };
 
-use super::super::color::color_value_to_render;
+use super::super::color::{color_value_to_render, resolve_color_current};
 use super::super::helpers::PrimitiveCounts;
 use super::super::helpers::apply_text_transform;
 
@@ -387,12 +387,13 @@ impl super::Painter {
 
         // R2305：text-shadow 多阴影列表（CSS Text Decoration §3：`none | <shadow>#`）。
         // 预解析非零阴影（offset/blur 全零 = 不可见，跳过；与既有 has_text_shadow 语义一致），
-        // 颜色预解析避免逐 glyph 重复 color_value_to_render。空 Vec = none。
+        // 颜色预解析避免逐 glyph 重复解析。空 Vec = none。
+        // R2364：颜色按元素 `color` 解析 currentColor（省略颜色默认 currentColor，CSS Text Deco §3）。
         let active_text_shadows: Vec<(f32, f32, Color)> = style
             .text_shadow
             .iter()
             .filter(|ts| !(ts.offset_x == 0.0 && ts.offset_y == 0.0 && ts.blur_radius == 0.0))
-            .map(|ts| (ts.offset_x, ts.offset_y, color_value_to_render(&ts.color)))
+            .map(|ts| (ts.offset_x, ts.offset_y, resolve_color_current(&ts.color, &style.color)))
             .collect();
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;

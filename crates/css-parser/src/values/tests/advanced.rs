@@ -1183,6 +1183,43 @@ fn test_parse_text_shadow_color_only_no_blur() {
     assert_eq!(result.color, ColorValue::Rgba(255, 0, 0, 255));
 }
 
+/// 测试 text-shadow / box-shadow 省略颜色时默认 currentColor
+/// （CSS Backgrounds §7.1 `<shadow>`：省略颜色 = currentColor；
+///  CSS Text Decoration §3：text-shadow 同语义，省略颜色取元素 `color`）。
+/// driving: R2364 — 此前默认黑色，致 `color: red; text-shadow: 2px 2px` 渲染黑阴影而非红。
+#[test]
+fn test_parse_shadow_omitted_color_defaults_to_currentcolor() {
+    // text-shadow 无颜色
+    let ts = parse_text_shadow("2px 3px").unwrap();
+    assert_eq!(
+        ts.color,
+        ColorValue::CurrentColor,
+        "text-shadow 省略颜色应默认 currentColor"
+    );
+    // text-shadow 有 blur 无颜色
+    let ts_blur = parse_text_shadow("2px 3px 4px").unwrap();
+    assert_eq!(ts_blur.color, ColorValue::CurrentColor);
+    // box-shadow 无颜色
+    let bs = parse_box_shadow("2px 3px").unwrap();
+    assert_eq!(
+        bs.color,
+        ColorValue::CurrentColor,
+        "box-shadow 省略颜色应默认 currentColor"
+    );
+    // box-shadow 有 blur/spread 无颜色
+    let bs_full = parse_box_shadow("2px 3px 4px 5px").unwrap();
+    assert_eq!(bs_full.color, ColorValue::CurrentColor);
+    // 显式颜色仍保留（不被默认覆盖）
+    assert_eq!(
+        parse_text_shadow("2px 3px red").unwrap().color,
+        ColorValue::Rgba(255, 0, 0, 255)
+    );
+    assert_eq!(
+        parse_box_shadow("2px 3px red").unwrap().color,
+        ColorValue::Rgba(255, 0, 0, 255)
+    );
+}
+
 // ── list-style-image ──
 
 #[test]

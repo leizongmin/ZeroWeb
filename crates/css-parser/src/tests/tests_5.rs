@@ -148,23 +148,23 @@ fn test_parse_text_shadow_none() {
 }
 
 #[test]
-/// 测试 parse_text_shadow 基本偏移（无模糊、无颜色）
+/// 测试 parse_text_shadow 基本偏移（无模糊、无颜色 → currentColor，CSS Text Deco §3）
 fn test_parse_text_shadow_basic() {
     let result = parse_text_shadow("2px 2px").unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(2.0));
     assert_eq!(result.offset_y, LengthValue::Px(2.0));
     assert_eq!(result.blur_radius, LengthValue::Px(0.0));
-    assert_eq!(result.color, ColorValue::Rgba(0, 0, 0, 255));
+    assert_eq!(result.color, ColorValue::CurrentColor);
 }
 
 #[test]
-/// 测试 parse_text_shadow 带模糊半径
+/// 测试 parse_text_shadow 带模糊半径（无颜色 → currentColor）
 fn test_parse_text_shadow_with_blur() {
     let result = parse_text_shadow("2px 2px 4px").unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(2.0));
     assert_eq!(result.offset_y, LengthValue::Px(2.0));
     assert_eq!(result.blur_radius, LengthValue::Px(4.0));
-    assert_eq!(result.color, ColorValue::Rgba(0, 0, 0, 255));
+    assert_eq!(result.color, ColorValue::CurrentColor);
 }
 
 #[test]
@@ -1058,13 +1058,13 @@ fn test_edge_parse_text_shadow_color_first() {
 }
 
 #[test]
-/// 测试 parse_text_shadow 大偏移量。
+/// 测试 parse_text_shadow 大偏移量（无颜色 → currentColor）。
 fn test_edge_parse_text_shadow_large_offset() {
     let result = parse_text_shadow("9999px 8888px 100px").unwrap();
     assert_eq!(result.offset_x, LengthValue::Px(9999.0));
     assert_eq!(result.offset_y, LengthValue::Px(8888.0));
     assert_eq!(result.blur_radius, LengthValue::Px(100.0));
-    assert_eq!(result.color, ColorValue::Rgba(0, 0, 0, 255));
+    assert_eq!(result.color, ColorValue::CurrentColor);
 }
 
 #[test]

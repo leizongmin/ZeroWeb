@@ -1412,21 +1412,23 @@ pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
     }
     let ox = parse_length(parts[0])?;
     let oy = parse_length(parts[1])?;
+    // CSS Text Decoration §3：省略颜色时默认 currentColor（取元素 `color`），非黑色。
+    // driving: R2364（与 box-shadow 同语义）。
     let (blur, color) = if parts.len() >= 3 {
         if let Some(c) = parse_color(parts[2]) {
             (LengthValue::Px(0.0), c)
         } else if let Some(b) = parse_length(parts[2]) {
             let c = if parts.len() >= 4 {
-                parse_color(parts[3]).unwrap_or(ColorValue::Rgba(0, 0, 0, 255))
+                parse_color(parts[3]).unwrap_or(ColorValue::CurrentColor)
             } else {
-                ColorValue::Rgba(0, 0, 0, 255)
+                ColorValue::CurrentColor
             };
             (b, c)
         } else {
-            (LengthValue::Px(0.0), ColorValue::Rgba(0, 0, 0, 255))
+            (LengthValue::Px(0.0), ColorValue::CurrentColor)
         }
     } else {
-        (LengthValue::Px(0.0), ColorValue::Rgba(0, 0, 0, 255))
+        (LengthValue::Px(0.0), ColorValue::CurrentColor)
     };
     Some(TextShadowValue {
         offset_x: ox,
@@ -1547,11 +1549,12 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
     } else {
         LengthValue::Px(0.0)
     };
-    // 颜色在最后一个非长度 token 或默认黑色
+    // CSS Backgrounds §7.1 `<shadow>`：省略颜色时默认 currentColor（取元素 `color`），非黑色。
+    // driving: R2364（box-shadow paint 已就绪处理 currentColor 分支）。
     let color = parts
         .iter()
         .find_map(|p| parse_color(p))
-        .unwrap_or(ColorValue::Rgba(0, 0, 0, 255));
+        .unwrap_or(ColorValue::CurrentColor);
     Some(BoxShadowValue {
         offset_x: ox,
         offset_y: oy,

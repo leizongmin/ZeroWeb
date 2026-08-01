@@ -580,6 +580,38 @@ fn test_paint_text_shadow_color() {
     assert_eq!(shadow_glyph.color, Color::rgb(255, 0, 0), "阴影 glyph 颜色应为红色");
 }
 
+/// 测试 text-shadow 省略颜色（currentColor）按元素 `color` 解析（CSS Text Decoration §3）。
+/// driving: R2364 — `color: red` + `text-shadow: 2px 2px`（省略颜色）应渲染红阴影，
+/// 此前 paint 用 color_value_to_render 把 currentColor 回落黑色。
+#[test]
+fn test_paint_text_shadow_currentcolor_resolves_to_element_color() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(255, 0, 0, 255); // 元素色 = 红
+    style.text_shadow = vec![TextShadowComputedValue {
+        offset_x: 2.0,
+        offset_y: 2.0,
+        blur_radius: 0.0,
+        color: ColorValue::CurrentColor, // 省略颜色 → currentColor
+    }];
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let shadow_glyph = &painter.primitives().glyphs[0];
+    assert_eq!(
+        shadow_glyph.color,
+        Color::rgb(255, 0, 0),
+        "currentColor 阴影应解析为元素 color（红），非黑色"
+    );
+}
+
 /// 测试 text-shadow 与 transform 结合。
 #[test]
 fn test_paint_text_shadow_with_transform() {
