@@ -1198,9 +1198,25 @@ fn parse_color_stops(args: &[&str], is_conic: bool) -> Option<Vec<GradientColorS
         if arg.is_empty() {
             continue;
         }
+        // CSS Images 4 §4.3.8：色标间的裸 <length-percentage> 是 color interpolation hint
+        //（插值提示），指定相邻两色标的中点位置，本身不是色标。修复前裸 %/长度落
+        // parse_color 失败 → None 经 `?` 传播 → 整个渐变被拒（背景回退，无渐变渲染）。
+        // 现正确识别并消费 hint（hint 必须有前导色标，首位裸长度/% 仍非法）。
+        // 渲染侧暂用线性插值——hint 中点偏移为可选 follow-up（需 GradientColorStop 加
+        // hint 字段 + 渲染器改动）；本切片仅 parse-compliance，与 R2204 CDO/CDC 同族。
+        if !stops.is_empty() && is_color_interpolation_hint(arg) {
+            continue;
+        }
         stops.extend(parse_color_stop(arg, is_conic)?);
     }
     Some(stops)
+}
+
+/// 判断 arg 是否为 CSS Images 4 §4.3.8 color interpolation hint（色标间裸 <length-percentage>）：
+/// 能解析为色标位置（长度/%/calc/min/max/clamp）但不能解析为颜色（裸值，无 color 前缀）。
+/// driving: `linear-gradient(red, 30%, blue)` 中间的 `30%` / `20px` / `calc(25%)`。
+fn is_color_interpolation_hint(arg: &str) -> bool {
+    parse_stop_position(arg.trim()).is_some() && parse_color(arg.trim()).is_none()
 }
 
 /// 解析单个色标（如 `red`、`red 50%`、`#00ff00 10px`、`red calc(1px / 0)`）。

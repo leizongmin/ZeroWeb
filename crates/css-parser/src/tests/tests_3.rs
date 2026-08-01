@@ -439,6 +439,42 @@ fn test_parse_gradient_with_multiple_types() {
 }
 
 #[test]
+/// R2374：CSS Images 4 §4.3.8 渐变 color interpolation hint（色标间裸 <length-percentage>）。
+/// `linear-gradient(red, 30%, blue)` 的中间裸 `30%` 是插值提示（指定相邻两色标中点位置），
+/// 不是色标。修复前裸 %/长度落 parse_color 失败 → None 传播 → **整个渐变被拒**（背景回退，
+/// 无渐变渲染）。修复后提示被正确识别并消费，渐变不再被丢弃。
+///（渲染侧暂线性插值——hint 中点偏移为可选 follow-up，需 GradientColorStop 加 hint 字段
+/// + 渲染器改动；本切片仅 parse-compliance：不让 hint 丢掉整条渐变，与 R2204 CDO/CDC 同族。）
+fn test_parse_gradient_color_interpolation_hint() {
+    // % 提示（最常见）：red, 30%, blue → 提示被消费，留 red + blue 两色标
+    let result = parse_gradient("linear-gradient(red, 30%, blue)");
+    assert!(result.is_some(), "% hint 不应丢弃整个渐变");
+    if let GradientValue::Linear(lg) = result.unwrap() {
+        assert_eq!(lg.stops.len(), 2, "hint 被消费，留两色标");
+        assert_eq!(lg.stops[0].color, ColorValue::Rgba(255, 0, 0, 255));
+        assert_eq!(lg.stops[1].color, ColorValue::Rgba(0, 0, 255, 255));
+    } else {
+        panic!("Expected LinearGradient");
+    }
+
+    // 长度提示（px）+ 带位置的色标：red 0%, 20px, blue 100%
+    let result = parse_gradient("linear-gradient(red 0%, 20px, blue 100%)");
+    assert!(result.is_some(), "px hint 不应丢弃整个渐变");
+    if let GradientValue::Linear(lg) = result.unwrap() {
+        assert_eq!(lg.stops.len(), 2);
+    }
+
+    // calc() 提示
+    assert!(parse_gradient("linear-gradient(red, calc(25%), green)").is_some());
+
+    // hint 不能出现在首位（无前导色标，CSS 非法）→ 渐变应失败
+    assert!(
+        parse_gradient("linear-gradient(30%, blue)").is_none(),
+        "首位裸 % 非色标非有效提示，应失败"
+    );
+}
+
+#[test]
 /// 测试 3D 变换函数：translate3d、scale3d、rotate3d、perspective、rotateX、rotateY、rotateZ、matrix。
 fn test_parse_transform_3d_functions() {
     // translate3d
