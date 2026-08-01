@@ -187,6 +187,65 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             specificity,
         ),
 
+        // ── border 逻辑属性轴简写（CSS Logical Properties §3.1）──
+        // border-inline-width/style/color = 该轴 start+end 两边的同名组件，复用
+        // expand_axis_logical（1 值两侧同、2 值 start/end），与 margin-inline 同模式。
+        "border-inline-width" => expand_axis_logical(
+            value,
+            "border-inline-start-width",
+            "border-inline-end-width",
+            important,
+            specificity,
+        ),
+        "border-inline-style" => expand_axis_logical(
+            value,
+            "border-inline-start-style",
+            "border-inline-end-style",
+            important,
+            specificity,
+        ),
+        "border-inline-color" => expand_axis_logical(
+            value,
+            "border-inline-start-color",
+            "border-inline-end-color",
+            important,
+            specificity,
+        ),
+        "border-block-width" => expand_axis_logical(
+            value,
+            "border-block-start-width",
+            "border-block-end-width",
+            important,
+            specificity,
+        ),
+        "border-block-style" => expand_axis_logical(
+            value,
+            "border-block-start-style",
+            "border-block-end-style",
+            important,
+            specificity,
+        ),
+        "border-block-color" => expand_axis_logical(
+            value,
+            "border-block-start-color",
+            "border-block-end-color",
+            important,
+            specificity,
+        ),
+        // border-inline / border-block 全写：<'border-top-width'> || <'border-top-style'>
+        // || <color>，应用于该轴 start+end 两边（6 个 logical longhand），见
+        // expand_border_axis_logical。
+        "border-inline" => expand_border_axis_logical(
+            value,
+            "border-inline-start",
+            "border-inline-end",
+            important,
+            specificity,
+        ),
+        "border-block" => {
+            expand_border_axis_logical(value, "border-block-start", "border-block-end", important, specificity)
+        }
+
         // ── border 全写 ──
         "border" => expand_border_all(value, important, specificity),
 
@@ -512,6 +571,46 @@ fn expand_border_all(value: &str, important: bool, specificity: (u32, u32, u32))
         result.push(mk(&format!("border-{side}-color"), &parsed.color));
     }
     result
+}
+
+/// 展开 border 逻辑轴全写（`border-inline` / `border-block`，CSS Logical Properties §3.1）。
+///
+/// 语法 `<'border-top-width'> || <'border-top-style'> || <color>` 应用于同一逻辑轴的
+/// start 与 end 两边（6 个 logical longhand：start/end × width/style/color）。与
+/// `expand_border_all`（4 物理边 × 3 = 12）对称，逻辑轴仅 2 边 × 3 = 6。简写层不感知元素
+/// 上下文，logical→物理映射由 apply_advanced 按元素 computed writing-mode 完成。
+fn expand_border_axis_logical(
+    value: &str,
+    start_prefix: &str,
+    end_prefix: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    // CSS-wide keywords: 展开为所有 6 个子属性（R2354：大小写不敏感，CSS Syntax §）
+    if matches_css_wide_keyword(value) {
+        return vec![
+            mk(&format!("{start_prefix}-width"), value),
+            mk(&format!("{start_prefix}-style"), value),
+            mk(&format!("{start_prefix}-color"), value),
+            mk(&format!("{end_prefix}-width"), value),
+            mk(&format!("{end_prefix}-style"), value),
+            mk(&format!("{end_prefix}-color"), value),
+        ];
+    }
+
+    let Some(parsed) = parse_border_shorthand(value) else {
+        return vec![];
+    };
+    vec![
+        mk(&format!("{start_prefix}-width"), &parsed.width),
+        mk(&format!("{start_prefix}-style"), &parsed.style),
+        mk(&format!("{start_prefix}-color"), &parsed.color),
+        mk(&format!("{end_prefix}-width"), &parsed.width),
+        mk(&format!("{end_prefix}-style"), &parsed.style),
+        mk(&format!("{end_prefix}-color"), &parsed.color),
+    ]
 }
 
 /// 展开 border 单边简写（如 `border-top: 1px solid red`）。

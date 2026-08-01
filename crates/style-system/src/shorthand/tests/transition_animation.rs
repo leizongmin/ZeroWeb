@@ -174,6 +174,90 @@ fn test_inset_inline_shorthand() {
     assert_eq!(result[1].1, "50px");
 }
 
+// ── border 逻辑属性轴简写（CSS Logical Properties §3.1）──
+
+#[test]
+fn test_border_inline_width_shorthand() {
+    // 1 值 → start/end 同值
+    let result = expand_one("border-inline-width", "2px", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "border-inline-start-width");
+    assert_eq!(result[0].1, "2px");
+    assert_eq!(result[1].0, "border-inline-end-width");
+    assert_eq!(result[1].1, "2px");
+}
+
+#[test]
+fn test_border_inline_width_two_values() {
+    // 2 值 → start, end
+    let result = expand_one("border-inline-width", "2px 4px", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "border-inline-start-width");
+    assert_eq!(result[0].1, "2px");
+    assert_eq!(result[1].0, "border-inline-end-width");
+    assert_eq!(result[1].1, "4px");
+}
+
+#[test]
+fn test_border_block_style_and_color_shorthand() {
+    let style = expand_one("border-block-style", "dashed", false, (0, 0, 1));
+    assert_eq!(style.len(), 2);
+    assert_eq!(style[0].0, "border-block-start-style");
+    assert_eq!(style[1].0, "border-block-end-style");
+    assert!(style.iter().all(|(_, v, _, _)| v == "dashed"));
+
+    let color = expand_one("border-block-color", "red blue", false, (0, 0, 1));
+    assert_eq!(color.len(), 2);
+    assert_eq!(color[0].0, "border-block-start-color");
+    assert_eq!(color[0].1, "red");
+    assert_eq!(color[1].0, "border-block-end-color");
+    assert_eq!(color[1].1, "blue");
+}
+
+#[test]
+fn test_border_inline_full_shorthand() {
+    // <width> || <style> || <color>，应用于 start+end 两边（6 longhand）
+    let result = expand_one("border-inline", "2px solid red", false, (0, 0, 1));
+    assert_eq!(result.len(), 6);
+    // start 三组件
+    assert_eq!(result[0].0, "border-inline-start-width");
+    assert_eq!(result[0].1, "2px");
+    assert_eq!(result[1].0, "border-inline-start-style");
+    assert_eq!(result[1].1, "solid");
+    assert_eq!(result[2].0, "border-inline-start-color");
+    assert_eq!(result[2].1, "red");
+    // end 三组件（与 start 同值——轴简写不支持 per-side 取值）
+    assert_eq!(result[3].0, "border-inline-end-width");
+    assert_eq!(result[3].1, "2px");
+    assert_eq!(result[4].0, "border-inline-end-style");
+    assert_eq!(result[4].1, "solid");
+    assert_eq!(result[5].0, "border-inline-end-color");
+    assert_eq!(result[5].1, "red");
+}
+
+#[test]
+fn test_border_block_full_shorthand_partial() {
+    // 仅 style → width/color 取默认（medium / currentcolor）
+    let result = expand_one("border-block", "dotted", false, (0, 0, 1));
+    assert_eq!(result.len(), 6);
+    assert_eq!(result[1].0, "border-block-start-style");
+    assert_eq!(result[1].1, "dotted");
+    assert_eq!(result[0].1, "medium"); // width 默认
+    assert_eq!(result[2].1, "currentcolor"); // color 默认
+    assert_eq!(result[4].0, "border-block-end-style");
+    assert_eq!(result[4].1, "dotted");
+}
+
+#[test]
+fn test_border_inline_full_css_wide_keyword() {
+    // CSS-wide keyword → 展开 6 子属性透传关键字
+    let result = expand_one("border-inline", "initial", false, (0, 0, 1));
+    assert_eq!(result.len(), 6);
+    assert!(result.iter().all(|(_, v, _, _)| v == "initial"));
+    assert_eq!(result[0].0, "border-inline-start-width");
+    assert_eq!(result[5].0, "border-inline-end-color");
+}
+
 // ── animation 简写测试 ──
 
 #[test]
