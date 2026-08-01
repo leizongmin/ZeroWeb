@@ -387,6 +387,62 @@ fn test_longhand_keyword_case_insensitive() {
 }
 
 #[test]
+/// R2357: 枚举关键字大小写不敏感——cascade.rs `is_invalid_enum_value` 用 css-parser
+/// parse_* 判合法性，大小写敏感会把 `display: FLEX`/`position: ABSOLUTE` 等误判非法
+/// 并在级联时丢弃（回退默认）。验证全大写枚举值能通过级联并应用。
+fn test_enum_keyword_case_insensitive_not_dropped() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let declarations = vec![
+        Declaration {
+            property: "display".to_string(),
+            value: "FLEX".to_string(),
+            important: false,
+        },
+        Declaration {
+            property: "position".to_string(),
+            value: "ABSOLUTE".to_string(),
+            important: false,
+        },
+        Declaration {
+            property: "flex-direction".to_string(),
+            value: "COLUMN".to_string(),
+            important: false,
+        },
+        Declaration {
+            property: "visibility".to_string(),
+            value: "HIDDEN".to_string(),
+            important: false,
+        },
+    ];
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("div")],
+            declarations,
+        })],
+    }];
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    // display: FLEX 不应被级联当非法丢弃（默认是 Block/Inline）
+    assert_eq!(div_style.display, DisplayValue::Flex, "display: FLEX");
+    assert_eq!(
+        div_style.position,
+        property::PositionValue::Absolute,
+        "position: ABSOLUTE"
+    );
+    assert_eq!(
+        div_style.flex_direction,
+        property::FlexDirectionValue::Column,
+        "flex-direction: COLUMN"
+    );
+    assert_eq!(
+        div_style.visibility,
+        property::VisibilityValue::Hidden,
+        "visibility: HIDDEN"
+    );
+}
+
+#[test]
 fn test_shorthand_overflow_in_style_computation() {
     let (doc, _html, _body, div, _p) = make_test_dom();
     let mut sys = StyleSystem::new();

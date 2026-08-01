@@ -1664,7 +1664,7 @@ fn parse_named_color(value: &str) -> Option<ColorValue> {
 
 /// 解析 CSS display 属性值。
 pub fn parse_display(value: &str) -> Option<DisplayValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "block" => Some(DisplayValue::Block),
         "inline" => Some(DisplayValue::Inline),
         "inline-block" => Some(DisplayValue::InlineBlock),
@@ -1693,7 +1693,7 @@ pub fn parse_display(value: &str) -> Option<DisplayValue> {
 
 /// 解析 CSS position 属性值。
 pub fn parse_position(value: &str) -> Option<PositionValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "static" => Some(PositionValue::Static),
         "relative" => Some(PositionValue::Relative),
         "absolute" => Some(PositionValue::Absolute),
@@ -1705,7 +1705,7 @@ pub fn parse_position(value: &str) -> Option<PositionValue> {
 
 /// 解析 CSS overflow 属性值。
 pub fn parse_overflow(value: &str) -> Option<OverflowValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "visible" => Some(OverflowValue::Visible),
         "hidden" => Some(OverflowValue::Hidden),
         "scroll" => Some(OverflowValue::Scroll),
@@ -1768,7 +1768,7 @@ pub fn parse_list_style_position(value: &str) -> Option<ListStylePositionValue> 
 
 /// 解析 CSS flex-direction 属性值。
 pub fn parse_flex_direction(value: &str) -> Option<FlexDirectionValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "row" => Some(FlexDirectionValue::Row),
         "row-reverse" => Some(FlexDirectionValue::RowReverse),
         "column" => Some(FlexDirectionValue::Column),
@@ -1779,7 +1779,7 @@ pub fn parse_flex_direction(value: &str) -> Option<FlexDirectionValue> {
 
 /// 解析 CSS flex-wrap 属性值。
 pub fn parse_flex_wrap(value: &str) -> Option<FlexWrapValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "nowrap" => Some(FlexWrapValue::Nowrap),
         "wrap" => Some(FlexWrapValue::Wrap),
         "wrap-reverse" => Some(FlexWrapValue::WrapReverse),
@@ -1789,7 +1789,7 @@ pub fn parse_flex_wrap(value: &str) -> Option<FlexWrapValue> {
 
 /// 解析 CSS justify-content / align-items 属性值。
 pub fn parse_alignment(value: &str) -> Option<AlignmentValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "flex-start" => Some(AlignmentValue::FlexStart),
         "flex-end" => Some(AlignmentValue::FlexEnd),
         "center" => Some(AlignmentValue::Center),
@@ -1806,7 +1806,7 @@ pub fn parse_alignment(value: &str) -> Option<AlignmentValue> {
 
 /// 解析 CSS box-sizing 属性值。
 pub fn parse_box_sizing(value: &str) -> Option<BoxSizingValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "content-box" => Some(BoxSizingValue::ContentBox),
         "border-box" => Some(BoxSizingValue::BorderBox),
         _ => None,
@@ -1815,7 +1815,7 @@ pub fn parse_box_sizing(value: &str) -> Option<BoxSizingValue> {
 
 /// 解析 CSS visibility 属性值。
 pub fn parse_visibility(value: &str) -> Option<VisibilityValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "visible" => Some(VisibilityValue::Visible),
         "hidden" => Some(VisibilityValue::Hidden),
         "collapse" => Some(VisibilityValue::Collapse),
@@ -2062,7 +2062,7 @@ pub fn parse_spacing(value: &str) -> Option<LengthValue> {
 
 /// 解析 CSS font-weight 属性值。
 pub fn parse_font_weight(value: &str) -> Option<FontWeightValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "bold" => Some(FontWeightValue::Bold),
         "normal" => Some(FontWeightValue::Normal),
         "bolder" => Some(FontWeightValue::Bolder),
@@ -2564,6 +2564,27 @@ mod tests {
         assert_eq!(parse_display("flow-root"), Some(DisplayValue::FlowRoot));
         assert_eq!(parse_display("list-item"), Some(DisplayValue::ListItem));
         assert_eq!(parse_display("unknown"), None);
+    }
+
+    // ── R2357：枚举关键字大小写不敏感 ──────────────────────────────────
+
+    #[test]
+    fn test_parse_enum_keywords_case_insensitive() {
+        // CSS 关键字大小写不敏感（CSS Syntax §）。这些解析器被 style-system cascade.rs
+        // is_invalid_enum_value 用原始值调用判定合法性——大小写敏感会导致 `display: FLEX`
+        // 等被误判非法而在级联时丢弃。全大写应与全小写等价。
+        assert_eq!(parse_display("FLEX"), Some(DisplayValue::Flex));
+        assert_eq!(parse_display("INLINE-BLOCK"), Some(DisplayValue::InlineBlock));
+        assert_eq!(parse_position("ABSOLUTE"), Some(PositionValue::Absolute));
+        assert_eq!(parse_overflow("HIDDEN"), Some(OverflowValue::Hidden));
+        assert_eq!(
+            parse_flex_direction("ROW-REVERSE"),
+            Some(FlexDirectionValue::RowReverse)
+        );
+        assert_eq!(parse_flex_wrap("WRAP-REVERSE"), Some(FlexWrapValue::WrapReverse));
+        assert_eq!(parse_alignment("SPACE-BETWEEN"), Some(AlignmentValue::SpaceBetween));
+        assert_eq!(parse_box_sizing("BORDER-BOX"), Some(BoxSizingValue::BorderBox));
+        assert_eq!(parse_visibility("COLLAPSE"), Some(VisibilityValue::Collapse));
     }
 
     // ── parse_position ──────────────────────────────────────────────────
