@@ -1061,3 +1061,41 @@ fn test_gradient_linear_direction_corners() {
         assert_eq!(lg.direction, expected, "Failed for direction: {}", dir_str);
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// R2357/R2358：枚举/关键字大小写不敏感（CSS Syntax §：所有关键字大小写不敏感）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_animation_enum_keywords_case_insensitive() {
+    // 全大写应与全小写等价（apply_advanced.rs 用原始值调用，大小写敏感会丢失声明）。
+    assert_eq!(
+        parse_animation_direction("ALTERNATE-REVERSE"),
+        Some(AnimationDirectionValue::AlternateReverse)
+    );
+    assert_eq!(
+        parse_animation_fill_mode("BACKWARDS"),
+        Some(AnimationFillModeValue::Backwards)
+    );
+    assert_eq!(
+        parse_animation_play_state("PAUSED"),
+        Some(AnimationPlayStateValue::Paused)
+    );
+}
+
+#[test]
+fn test_timing_function_keywords_case_insensitive() {
+    assert_eq!(parse_timing_function("EASE-IN"), Some(TimingFunctionValue::EaseIn));
+    assert_eq!(parse_timing_function("LINEAR"), Some(TimingFunctionValue::Linear));
+    // 函数名前缀大小写不敏感（数值不变）
+    let cb = parse_timing_function("CUBIC-BEZIER(0.1, 0.9, 0.2, 1.0)").unwrap();
+    let TimingFunctionValue::CubicBezier(x1, y1, x2, y2) = cb else {
+        panic!("Expected CubicBezier");
+    };
+    assert_eq!((x1, y1, x2, y2), (0.1, 0.9, 0.2, 1.0));
+    // steps() 函数名 + 位置关键字大小写不敏感
+    assert_eq!(
+        parse_timing_function("STEPS(4, JUMP-START)"),
+        Some(TimingFunctionValue::Steps(4, Some(StepPosition::Start)))
+    );
+}

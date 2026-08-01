@@ -77,7 +77,7 @@ pub enum AnimationPlayStateValue {
 
 /// 解析 CSS animation-direction 值。
 pub fn parse_animation_direction(value: &str) -> Option<AnimationDirectionValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "normal" => Some(AnimationDirectionValue::Normal),
         "reverse" => Some(AnimationDirectionValue::Reverse),
         "alternate" => Some(AnimationDirectionValue::Alternate),
@@ -88,7 +88,7 @@ pub fn parse_animation_direction(value: &str) -> Option<AnimationDirectionValue>
 
 /// 解析 CSS animation-fill-mode 值。
 pub fn parse_animation_fill_mode(value: &str) -> Option<AnimationFillModeValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "none" => Some(AnimationFillModeValue::None),
         "forwards" => Some(AnimationFillModeValue::Forwards),
         "backwards" => Some(AnimationFillModeValue::Backwards),
@@ -99,7 +99,7 @@ pub fn parse_animation_fill_mode(value: &str) -> Option<AnimationFillModeValue> 
 
 /// 解析 CSS animation-play-state 值。
 pub fn parse_animation_play_state(value: &str) -> Option<AnimationPlayStateValue> {
-    match value.trim() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "running" => Some(AnimationPlayStateValue::Running),
         "paused" => Some(AnimationPlayStateValue::Paused),
         _ => None,
@@ -201,9 +201,11 @@ pub fn parse_animation_iteration_count(value: &str) -> Option<AnimationIteration
 
 /// 解析 CSS transition-timing-function 值。
 pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
-    let value = value.trim();
+    // CSS 关键字与函数名大小写不敏感（CSS Syntax §）。整体小写——数值/逗号/括号不受影响，
+    // cubic-bezier()/steps() 的数字参数解析保持精确。
+    let value = value.trim().to_ascii_lowercase();
 
-    match value {
+    match value.as_str() {
         "ease" => Some(TimingFunctionValue::Ease),
         "linear" => Some(TimingFunctionValue::Linear),
         "ease-in" => Some(TimingFunctionValue::EaseIn),
@@ -212,7 +214,7 @@ pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
         "step-start" => Some(TimingFunctionValue::StepStart),
         "step-end" => Some(TimingFunctionValue::StepEnd),
         _ if value.starts_with("cubic-bezier(") => {
-            let inner = extract_parens_content(value, "cubic-bezier")?;
+            let inner = extract_parens_content(&value, "cubic-bezier")?;
             let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
             if parts.len() != 4 {
                 return None;
@@ -224,7 +226,7 @@ pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
             Some(TimingFunctionValue::CubicBezier(x1, y1, x2, y2))
         }
         _ if value.starts_with("steps(") => {
-            let inner = extract_parens_content(value, "steps")?;
+            let inner = extract_parens_content(&value, "steps")?;
             let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
             let n: i32 = parts.first()?.parse().ok()?;
             let position = if parts.len() > 1 {
@@ -240,7 +242,7 @@ pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
 
 /// 解析 steps() 位置参数。
 fn parse_step_position(s: &str) -> Option<StepPosition> {
-    match s.trim() {
+    match s.trim().to_ascii_lowercase().as_str() {
         "jump-start" | "start" => Some(StepPosition::Start),
         "jump-end" | "end" => Some(StepPosition::End),
         "jump-both" | "both" => Some(StepPosition::Both),
