@@ -639,14 +639,16 @@ pub fn length_to_f32(v: &LengthValue) -> f32 {
     }
 }
 
-/// 解析 clip-path `inset()` 单边长度为像素（CSS Masking §inset：`<length-percentage>`）。
+/// 解析 clip-path basic-shape `<length-percentage>` 为像素（CSS Masking §inset/circle/ellipse/polygon）。
 ///
-/// inset 的 em/rem 未在 computed 阶段预解析（值位于 `ClipPathValue::Inset` enum 内，
-/// `resolve_length_field` 不触及），故此处补解析；百分比相对 border-box 对应轴
-///（top/bottom→height、left/right→width，由调用方传入对应 `box_dim`）。
-/// vw/vh/ch 等视口/字体度量单位此处近似为 0（clip-path inset 极罕用，且缺视口上下文）。
+/// 通用解析器：Px 原值；Em/Rem 按 font-size 解析；Percentage 相对调用方传入的 `box_dim`。
+/// clip-path 的长度值位于 `ClipPathValue::*` enum 内，computed 阶段的 `resolve_length_field`
+/// 不触及，故在 paint 补解析。调用方按形状语义传 `box_dim`：
+/// - inset：top/bottom→height、left/right→width（R2365）
+/// - circle 半径：sqrt(w²+h²)/√2；ellipse rx→width、ry→height（R2366）
+/// - polygon 顶点 / circle·ellipse 圆心 position：x→width、y→height（R2366）
 ///
-/// driving: R2365（与 R2314 border-radius 百分比、R2345 multicol 百分比同 vein）。
+/// vw/vh/ch 等视口/字体度量单位近似为 0（clip-path 极罕用，缺视口上下文）。
 pub fn resolve_inset_length(v: &LengthValue, box_dim: f32, font_size_px: f32) -> f32 {
     match v {
         LengthValue::Px(p) => *p as f32,

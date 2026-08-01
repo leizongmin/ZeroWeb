@@ -9,7 +9,8 @@ use std::collections::HashMap;
 use zero_css_parser::values::{ColorValue, LengthValue, TransformFunction, TransformValue};
 use zero_render_foundation::color::Color;
 use zero_style_system::{
-    BackgroundImageComputedValue, BoxShadowComputedValue, ClipPathComputedValue, ComputedStyle, TextShadowComputedValue,
+    BackgroundImageComputedValue, BoxShadowComputedValue, ClipPathComputedValue, ClipPathRadius, ComputedStyle,
+    TextShadowComputedValue,
 };
 
 use super::advanced::make_box;
@@ -687,6 +688,84 @@ fn test_paint_clip_path_inset_em_clips() {
     assert_eq!(
         fills[0].rect.size.height, 10.0,
         "clip 高 = 50 - top(20) - bottom(20) = 10"
+    );
+}
+
+/// 测试 clip-path: circle(<percentage>) 半径按 sqrt(w²+h²)/√2 解析（CSS basic-shape circle）。
+/// driving: R2366 — `circle(50%)` 此前 paint 用 length_to_f32 把百分比丢为 0 → 退化半径 0
+/// → 裁剪区域为零（元素被完全裁掉）；应 radius = 50%×sqrt(w²+h²)/√2。
+#[test]
+fn test_paint_clip_path_circle_percentage_clips() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 100.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(0, 128, 0, 255);
+    style.color = ColorValue::CurrentColor;
+    style.clip_path = ClipPathComputedValue::Circle {
+        radius: ClipPathRadius::Length(LengthValue::Percentage(50.0)),
+        position: None, // 默认居中 (50,50)
+    };
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // circle(50%) → radius = 50%（100×100 上 sqrt(100²+100²)/√2=100，×0.5=50）→ 内切圆裁剪。
+    // 修复前：radius=0 → 退化多边形 → fill 全部裁零（总面积 0）。
+    let total_area: f32 = painter
+        .primitives()
+        .fills
+        .iter()
+        .map(|f| f.rect.size.width * f.rect.size.height)
+        .sum();
+    assert!(
+        total_area > 1000.0,
+        "circle(50%) 应产生非零裁剪区域（内切圆≈π·50²≈7854），修复前为 0"
+    );
+    // 圆形裁剪区域应小于完整 100×100=10000（确有裁剪）。
+    assert!(total_area < 9500.0, "circle(50%) 应裁掉四角（面积 < 完整框）");
+}
+
+/// 测试 clip-path: polygon(<percentage>) 顶点按 width/height 解析（CSS basic-shape polygon）。
+/// driving: R2366 — `polygon(...)` 顶点百分比此前丢为 0 → 退化（全部顶点在原点）。
+#[test]
+fn test_paint_clip_path_polygon_percentage_clips() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(0, 0, 200, 255);
+    style.color = ColorValue::CurrentColor;
+    // 左半矩形：0% 0%, 50% 0%, 50% 100%, 0% 100% → x∈[0,50], y∈[0,50]
+    style.clip_path = ClipPathComputedValue::Polygon {
+        fill_rule: zero_css_parser::values::PolygonFillRule::NonZero,
+        points: vec![
+            (LengthValue::Percentage(0.0), LengthValue::Percentage(0.0)),
+            (LengthValue::Percentage(50.0), LengthValue::Percentage(0.0)),
+            (LengthValue::Percentage(50.0), LengthValue::Percentage(100.0)),
+            (LengthValue::Percentage(0.0), LengthValue::Percentage(100.0)),
+        ],
+    };
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // 左半裁剪 → 总面积 ≈ 50×50 = 2500。修复前：百分比丢为 0 → 退化 → 0。
+    let total_area: f32 = painter
+        .primitives()
+        .fills
+        .iter()
+        .map(|f| f.rect.size.width * f.rect.size.height)
+        .sum();
+    assert!(
+        (2000.0..=3000.0).contains(&total_area),
+        "polygon 左半(50%) 应裁剪到约 2500px²（50×50），修复前为 0，得到 {total_area}"
     );
 }
 

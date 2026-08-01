@@ -1051,71 +1051,64 @@ impl Painter {
                 ClipPathComputedValue::Circle { radius, position } => {
                     let w = box_node.width;
                     let h = box_node.height;
-                    let r = match radius {
-                        zero_style_system::ClipPathRadius::Length(l) => super::helpers::length_to_f32(l),
-                        zero_style_system::ClipPathRadius::ClosestSide => {
-                            let cx = position
-                                .as_ref()
-                                .map(|(x, _)| super::helpers::length_to_f32(x))
-                                .unwrap_or(w / 2.0);
-                            let cy = position
-                                .as_ref()
-                                .map(|(_, y)| super::helpers::length_to_f32(y))
-                                .unwrap_or(h / 2.0);
-                            cx.min(w - cx).min(cy.min(h - cy))
-                        }
-                        zero_style_system::ClipPathRadius::FarthestSide => {
-                            let cx = position
-                                .as_ref()
-                                .map(|(x, _)| super::helpers::length_to_f32(x))
-                                .unwrap_or(w / 2.0);
-                            let cy = position
-                                .as_ref()
-                                .map(|(_, y)| super::helpers::length_to_f32(y))
-                                .unwrap_or(h / 2.0);
-                            cx.max(w - cx).max(cy.max(h - cy))
-                        }
-                    };
+                    // R2366：em/rem/百分比按 border-box 解析。
+                    // 圆心 position：x%→width、y%→height（CSS basic-shape <position>）。
+                    let fs = super::helpers::length_to_f32(&style.font_size);
                     let cx = position
                         .as_ref()
-                        .map(|(x, _)| super::helpers::length_to_f32(x))
+                        .map(|(x, _)| super::helpers::resolve_inset_length(x, w, fs))
                         .unwrap_or(w / 2.0);
                     let cy = position
                         .as_ref()
-                        .map(|(_, y)| super::helpers::length_to_f32(y))
+                        .map(|(_, y)| super::helpers::resolve_inset_length(y, h, fs))
                         .unwrap_or(h / 2.0);
+                    // 圆半径 %：相对 sqrt(w²+h²)/√2（CSS basic-shape circle）。
+                    let diag = (w * w + h * h).sqrt() / std::f32::consts::SQRT_2;
+                    let r = match radius {
+                        zero_style_system::ClipPathRadius::Length(l) => {
+                            super::helpers::resolve_inset_length(l, diag, fs)
+                        }
+                        zero_style_system::ClipPathRadius::ClosestSide => cx.min(w - cx).min(cy.min(h - cy)),
+                        zero_style_system::ClipPathRadius::FarthestSide => cx.max(w - cx).max(cy.max(h - cy)),
+                    };
                     let polygon = circle_to_polygon(abs_x + cx, abs_y + cy, r, 24);
                     super::helpers::clip_all_primitives_to_polygon(&mut self.primitives, &counts_before, &polygon);
                 }
                 ClipPathComputedValue::Ellipse { rx, ry, position } => {
                     let w = box_node.width;
                     let h = box_node.height;
+                    // R2366：rx%→width、ry%→height；position x%→width、y%→height。
+                    let fs = super::helpers::length_to_f32(&style.font_size);
                     let rx_v = match rx {
-                        zero_style_system::ClipPathRadius::Length(l) => super::helpers::length_to_f32(l),
+                        zero_style_system::ClipPathRadius::Length(l) => super::helpers::resolve_inset_length(l, w, fs),
                         _ => w / 2.0,
                     };
                     let ry_v = match ry {
-                        zero_style_system::ClipPathRadius::Length(l) => super::helpers::length_to_f32(l),
+                        zero_style_system::ClipPathRadius::Length(l) => super::helpers::resolve_inset_length(l, h, fs),
                         _ => h / 2.0,
                     };
                     let cx = position
                         .as_ref()
-                        .map(|(x, _)| super::helpers::length_to_f32(x))
+                        .map(|(x, _)| super::helpers::resolve_inset_length(x, w, fs))
                         .unwrap_or(w / 2.0);
                     let cy = position
                         .as_ref()
-                        .map(|(_, y)| super::helpers::length_to_f32(y))
+                        .map(|(_, y)| super::helpers::resolve_inset_length(y, h, fs))
                         .unwrap_or(h / 2.0);
                     let polygon = ellipse_to_polygon(abs_x + cx, abs_y + cy, rx_v, ry_v, 24);
                     super::helpers::clip_all_primitives_to_polygon(&mut self.primitives, &counts_before, &polygon);
                 }
                 ClipPathComputedValue::Polygon { points, .. } => {
+                    // R2366：顶点 x%→width、y%→height（CSS basic-shape polygon）。
+                    let w = box_node.width;
+                    let h = box_node.height;
+                    let fs = super::helpers::length_to_f32(&style.font_size);
                     let polygon: Vec<(f32, f32)> = points
                         .iter()
                         .map(|(x, y)| {
                             (
-                                abs_x + super::helpers::length_to_f32(x),
-                                abs_y + super::helpers::length_to_f32(y),
+                                abs_x + super::helpers::resolve_inset_length(x, w, fs),
+                                abs_y + super::helpers::resolve_inset_length(y, h, fs),
                             )
                         })
                         .collect();
