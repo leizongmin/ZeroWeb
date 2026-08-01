@@ -2054,6 +2054,7 @@ impl<'a> Parser<'a> {
 
         let mut family = String::new();
         let mut sources: Vec<String> = Vec::new();
+        let mut weight: Option<u16> = None;
         for decl in &declarations {
             if decl.property.eq_ignore_ascii_case("font-family") {
                 family = strip_css_quotes(decl.value.trim());
@@ -2061,6 +2062,8 @@ impl<'a> Parser<'a> {
                 for url in extract_urls_from_src(&decl.value) {
                     sources.push(url);
                 }
+            } else if decl.property.eq_ignore_ascii_case("font-weight") {
+                weight = Self::parse_font_face_weight(&decl.value);
             }
         }
 
@@ -2068,7 +2071,27 @@ impl<'a> Parser<'a> {
             return None;
         }
 
-        Some(FontFaceRule { family, sources })
+        Some(FontFaceRule {
+            family,
+            sources,
+            weight,
+        })
+    }
+
+    /// 解析 `@font-face` 的 `font-weight` 描述符为绝对权重（R2417 font-weight matching）。
+    ///
+    /// `normal`→400、`bold`→700、数字（100-900）原值；`lighter`/`bolder`（相对，@font-face
+    /// 描述符无父上下文）或无法识别 → `None`（调用方视为 normal/400，不构粗体键）。
+    fn parse_font_face_weight(value: &str) -> Option<u16> {
+        let v = value.trim();
+        if v.eq_ignore_ascii_case("normal") {
+            return Some(400);
+        }
+        if v.eq_ignore_ascii_case("bold") {
+            return Some(700);
+        }
+        let n: u16 = v.parse().ok()?;
+        (100..=900).contains(&n).then_some(n)
     }
 
     /// 消耗 @page 规则（CSS Paged Media）。

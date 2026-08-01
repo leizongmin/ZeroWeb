@@ -87,6 +87,10 @@ pub struct FontFaceRule {
     pub family: String,
     /// `src` 描述符中解析出的 URL 列表（按出现顺序，已去 url() 包裹与引号）。
     pub sources: Vec<String>,
+    /// `font-weight` 描述符解析为绝对权重（100-900）：`normal`→400、`bold`→700、
+    /// 数字原值；`lighter`/`bolder`（相对，需父上下文）或缺失 → `None`（视为 normal/400）。
+    /// 供生产注册按 weight 构 `{family}:700` 粗体键（R2417 font-weight matching）。
+    pub weight: Option<u16>,
 }
 
 /// CSS @page 规则（Paged Media）。

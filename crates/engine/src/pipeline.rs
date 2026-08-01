@@ -1103,22 +1103,24 @@ pub fn extract_img_resources(html: &str) -> Vec<ImgResource> {
     out
 }
 
-/// 从 CSS 文本提取所有 `@font-face` 规则的 `(family, url_sources)` 列表（保留 family）。
+/// 从 CSS 文本提取所有 `@font-face` 规则的 `(family, url_sources, weight)` 列表（保留 family + weight）。
 ///
-/// **保留 family**（`@font-face` 的 `font-family` 描述符值），返回 `(family, sources)`，
-/// 供生产 async 加载路径按声明族名注册字体别名（`FontLoader::register_family_alias`）。
-/// `sources` 为 css-parser 解析出的 url() 项（已去 `url()` 包裹与引号，按出现顺序）；
-/// family 已去引号（由 `FontFaceRule.family` 保证）。
+/// **保留 family**（`@font-face` 的 `font-family` 描述符值）与 **weight**（`font-weight`
+/// 描述符解析为绝对权重 100-900，`None` = 未指定/相对，视为 normal/400），供生产 async
+/// 加载路径按声明族名注册字体别名（`FontLoader::register_family_alias`），并按 weight 构
+/// `{family}:700` 粗体键（R2417 font-weight matching——painter `resolve_font_id` 对
+/// `font-weight≥600` 查 `{family}:700`）。`sources` 为 css-parser 解析出的 url() 项（已去
+/// `url()` 包裹与引号，按出现顺序）；family 已去引号。
 ///
 /// `data:` / `local()` 的过滤由抓取层（`AsyncPageLoad::begin_font_fetch`）处理，本函数仅做
 /// 透传解析。解析失败或无 @font-face 规则返回空 Vec。
-pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>)> {
+pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>, Option<u16>)> {
     use zero_css_parser::ast::Rule as CssRule;
     zero_css_parser::Parser::parse_stylesheet(css)
         .rules
         .iter()
         .filter_map(|rule| match rule {
-            CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone())),
+            CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone(), ff.weight)),
             _ => None,
         })
         .collect()
@@ -1649,11 +1651,29 @@ mod font_face_extract_tests {
             vec![
                 (
                     "JetBrains Mono".to_string(),
-                    vec!["jb.woff2".to_string(), "jb.ttf".to_string()]
+                    vec!["jb.woff2".to_string(), "jb.ttf".to_string()],
+                    None
                 ),
-                ("Title".to_string(), vec!["t.woff".to_string()]),
+                ("Title".to_string(), vec!["t.woff".to_string()], None),
             ],
             "family dequoted; sources ordered; format() ignored; non-font-face rules skipped"
+        );
+    }
+
+    /// R2417：extract_font_faces 返回 weight（font-weight 描述符）。
+    #[test]
+    fn extract_font_faces_returns_weight() {
+        let css = r#"
+            @font-face { font-family: "Bold"; src: url(b.woff); font-weight: bold; }
+            @font-face { font-family: "Reg"; src: url(r.woff); }
+        "#;
+        let faces = extract_font_faces(css);
+        assert_eq!(
+            faces,
+            vec![
+                ("Bold".to_string(), vec!["b.woff".to_string()], Some(700)),
+                ("Reg".to_string(), vec!["r.woff".to_string()], None),
+            ]
         );
     }
 
@@ -1670,11 +1690,11 @@ mod font_face_extract_tests {
     fn extract_font_faces_matches_direct_parse() {
         use zero_css_parser::ast::Rule as CssRule;
         let css = r#"@font-face { font-family: X; src: url(a.woff) format("woff"), url(b.ttf); }"#;
-        let direct: Vec<(String, Vec<String>)> = zero_css_parser::Parser::parse_stylesheet(css)
+        let direct: Vec<(String, Vec<String>, Option<u16>)> = zero_css_parser::Parser::parse_stylesheet(css)
             .rules
             .iter()
             .filter_map(|r| match r {
-                CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone())),
+                CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone(), ff.weight)),
                 _ => None,
             })
             .collect();

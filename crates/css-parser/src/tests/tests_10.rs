@@ -412,6 +412,42 @@ fn test_font_face_does_not_break_surrounding_rules() {
     assert!(matches!(ws.rules[2], Rule::Style(_)), "third is style");
 }
 
+/// R2417：`@font-face` 的 `font-weight` 描述符解析为绝对权重。
+#[test]
+fn test_font_face_weight_descriptor() {
+    let cases = [
+        (
+            r#"@font-face { font-family: "A"; src: url(a.woff); font-weight: bold; }"#,
+            Some(700),
+        ),
+        (
+            r#"@font-face { font-family: "A"; src: url(a.woff); font-weight: normal; }"#,
+            Some(400),
+        ),
+        (
+            r#"@font-face { font-family: "A"; src: url(a.woff); font-weight: 600; }"#,
+            Some(600),
+        ),
+        (
+            r#"@font-face { font-family: "A"; src: url(a.woff); font-weight: 900; }"#,
+            Some(900),
+        ),
+        (
+            r#"@font-face { font-family: "A"; src: url(a.woff); font-weight: bolder; }"#,
+            None,
+        ),
+        // 无 font-weight 描述符 → None（视为 normal/400）。
+        (r#"@font-face { font-family: "A"; src: url(a.woff); }"#, None),
+    ];
+    for (css, expected) in cases {
+        let ws = Parser::parse_stylesheet(css);
+        match &ws.rules[0] {
+            Rule::FontFace(ff) => assert_eq!(ff.weight, expected, "css: {css}"),
+            other => panic!("expected FontFace, got {other:?}"),
+        }
+    }
+}
+
 #[test]
 fn test_font_face_missing_family_or_src_dropped() {
     // 缺 src → 规则被丢弃（返回 None），不进入样式表

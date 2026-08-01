@@ -387,10 +387,19 @@ impl RendererRuntime {
             let loaded = pending.load.drain_loaded_fonts();
             if !loaded.is_empty() {
                 let mut updated = false;
-                for (family, bytes) in loaded {
+                for (family, weight, bytes) in loaded {
                     match self.font_loader.load_font(&bytes) {
                         Ok(id) => {
-                            self.font_loader.register_family_alias(&family, id);
+                            // R2417：weight≥600 的 face 注册到 `{family}:700`（painter
+                            // resolve_font_id 对 font-weight≥600 查此键）；**不**注册到 plain
+                            // family——否则 build_font_resolver 的「second face=bold」启发式会把
+                            // family_map[family] 的次序面误配为 :700（顺序依赖错配）。
+                            // regular/未声明 weight 的 face 仍注册到 plain family（旧行为）。
+                            if weight.is_some_and(|w| w >= 600) {
+                                self.font_loader.register_family_alias(&format!("{family}:700"), id);
+                            } else {
+                                self.font_loader.register_family_alias(&family, id);
+                            }
                             updated = true;
                         }
                         Err(e) => tracing::warn!(family = %family, err = %e, "live @font-face load failed"),
