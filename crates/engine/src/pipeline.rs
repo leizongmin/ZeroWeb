@@ -1127,6 +1127,27 @@ pub fn extract_font_face_urls(css: &str) -> Vec<String> {
     urls
 }
 
+/// 从 CSS 文本提取所有 `@font-face` 规则的 `(family, url_sources)` 列表（保留 family）。
+///
+/// 与 [`extract_font_face_urls`] 互补：本函数**保留 family**（`@font-face` 的 `font-family`
+/// 描述符值），返回 `(family, sources)`，供生产 async 加载路径按声明族名注册字体别名
+/// （`FontLoader::register_family_alias`）。`sources` 为 css-parser 解析出的 url() 项（已去
+/// `url()` 包裹与引号，按出现顺序）；family 已去引号（由 `FontFaceRule.family` 保证）。
+///
+/// `data:` / `local()` 的过滤由抓取层（`AsyncPageLoad::begin_font_fetch`）处理，本函数仅做
+/// 透传解析。解析失败或无 @font-face 规则返回空 Vec。
+pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>)> {
+    use zero_css_parser::ast::Rule as CssRule;
+    zero_css_parser::Parser::parse_stylesheet(css)
+        .rules
+        .iter()
+        .filter_map(|rule| match rule {
+            CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
 /// R1794：从 CSS 文本提取所有**图片类** `url(...)` 引用。
 ///
 /// 与 `extract_font_face_urls` 互补：本函数扫描**全部** `url(...)`，但**排除**
@@ -1586,6 +1607,60 @@ mod css_image_url_tests {
         let css = extract_html_style_text(html);
         let urls = extract_css_image_urls(&css);
         assert_eq!(urls, vec!["bg.png"]);
+    }
+}
+
+#[cfg(test)]
+mod font_face_extract_tests {
+    use super::*;
+
+    /// FR-001：多 @font-face 提取 (family, sources)，family 去引号、sources 按序、format() 忽略。
+    #[test]
+    fn extract_font_faces_family_and_sources() {
+        let css = r#"
+            @font-face {
+                font-family: "JetBrains Mono";
+                src: url(jb.woff2) format("woff2"), url(jb.ttf);
+            }
+            @font-face { font-family: 'Title'; src: url(t.woff); }
+            p { color: red; }
+        "#;
+        let faces = extract_font_faces(css);
+        assert_eq!(
+            faces,
+            vec![
+                (
+                    "JetBrains Mono".to_string(),
+                    vec!["jb.woff2".to_string(), "jb.ttf".to_string()]
+                ),
+                ("Title".to_string(), vec!["t.woff".to_string()]),
+            ],
+            "family dequoted; sources ordered; format() ignored; non-font-face rules skipped"
+        );
+    }
+
+    /// FR-001：无 @font-face 返回空 Vec（解析失败/无规则同样为空）。
+    #[test]
+    fn extract_font_faces_empty() {
+        assert!(extract_font_faces("p { color: red; }").is_empty());
+        assert!(extract_font_faces("").is_empty());
+    }
+
+    /// FR-001：纯投影——extract_font_faces 输出与直接解析 FontFaceRule 一致（不额外过滤）。
+    /// data:/local() 的过滤由抓取层负责，本函数只透传 css-parser 结果。
+    #[test]
+    fn extract_font_faces_matches_direct_parse() {
+        use zero_css_parser::ast::Rule as CssRule;
+        let css = r#"@font-face { font-family: X; src: url(a.woff) format("woff"), url(b.ttf); }"#;
+        let direct: Vec<(String, Vec<String>)> = zero_css_parser::Parser::parse_stylesheet(css)
+            .rules
+            .iter()
+            .filter_map(|r| match r {
+                CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(extract_font_faces(css), direct);
     }
 }
 
