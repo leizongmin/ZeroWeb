@@ -80,16 +80,17 @@ pub(super) fn create_font_loader() -> FontLoader {
     loader
 }
 
-/// 从 CSS 文本中提取所有 `@font-face` 规则的 `(family, sources)` 列表。
+/// 从 CSS 文本中提取所有 `@font-face` 规则的 `(family, sources, weight)` 列表。
 ///
-/// 用 `zero_css_parser` 解析样式表，收集 `Rule::FontFace`。解析失败或无规则时返回空。
-pub(super) fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>)> {
+/// 用 `zero_css_parser` 解析样式表，收集 `Rule::FontFace`（含 R2417 `weight` 字段）。
+/// 解析失败或无规则时返回空。
+pub(super) fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>, Option<u16>)> {
     let stylesheet = CssParser::parse_stylesheet(css);
     stylesheet
         .rules
         .iter()
         .filter_map(|rule| match rule {
-            CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone())),
+            CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone(), ff.weight)),
             _ => None,
         })
         .collect()
@@ -144,7 +145,7 @@ pub(super) fn resolve_font_src(href: &str, base_dir: Option<&Path>) -> Option<st
 /// （fontdue 解码 .ttf/.otf；.woff 需解压，当前 fontdue 不支持 woff 容器，会静默失败并
 /// 跳到下一个 src）。加载后 `build_font_resolver` 即可按 family 匹配到该字体。
 pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Path>, css: &str) {
-    for (family, sources) in extract_font_faces(css) {
+    for (family, sources, weight) in extract_font_faces(css) {
         // Ahem 由 FontLoader 特殊处理（按 family 名合成方块），无需加载文件
         if family.eq_ignore_ascii_case("Ahem") {
             continue;
@@ -156,9 +157,17 @@ pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Pa
             if let Ok(data) = std::fs::read(&path)
                 && let Ok(id) = loader.load_font(&data)
             {
-                // 把 @font-face 声明族名注册为该字体的别名（族名可能与字体
-                // 内部 name 表不同，CSS 按声明族名匹配）。
-                loader.register_family_alias(&family, id);
+                // R2417（镜像生产 drain）：weight≥600 的粗体 face 注册到 `{family}:700`
+                // （painter resolve_font_id 对 font-weight≥600 查此键），**不**注册 plain
+                // family——避免 build_font_resolver「second face=bold」启发式按 family_map
+                // 次序面顺序依赖错配（bold 先载则误把 regular 标粗体）。regular/未声明 weight
+                // 注册 plain family（旧行为）。使 harness 多 weight 同族 @font-face 匹配与生产
+                // 一致、顺序无关。
+                if weight.is_some_and(|w| w >= 600) {
+                    loader.register_family_alias(&format!("{family}:700"), id);
+                } else {
+                    loader.register_family_alias(&family, id);
+                }
                 break;
             }
         }
