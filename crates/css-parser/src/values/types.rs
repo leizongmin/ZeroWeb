@@ -80,6 +80,12 @@ pub enum ColorMixSpace {
     Srgb,
     /// `in lch` —— CIE LCH 极坐标插值（L/C 线性、h 色相短弧）。driving: color-mix-percents-01/02。
     Lch,
+    /// `in lab` —— CIE Lab 笛卡尔插值（L/a/b 三通道独立线性）。R2376。
+    Lab,
+    /// `in oklab` —— OKLab 笛卡尔插值（L/a/b 三通道独立线性）。R2376。
+    OkLab,
+    /// `in oklch` —— OKLCH 极坐标插值（L/C 线性、h 色相短弧）。R2376。
+    OkLch,
 }
 
 /// `color-mix()` 的单个分量（颜色 + 可选百分比）。

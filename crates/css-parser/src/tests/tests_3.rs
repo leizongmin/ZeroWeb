@@ -414,6 +414,38 @@ fn test_parse_color_modern_system_colors() {
 }
 
 #[test]
+/// R2376：color-mix 的 lab/oklab/oklch 插值色彩空间解析（CSS Color 4 §12）。
+/// 修复前仅 `in srgb`/`in lch` 支持，`in lab`/`in oklab`/`in oklch` 返回 None
+/// → 整条 color-mix 被丢（颜色回退）。现解析为 `ColorValue::Mix` 带正确 ColorMixSpace。
+fn test_parse_color_mix_lab_oklab_oklch_spaces() {
+    use crate::values::ColorMixSpace;
+    for (input, expect) in [
+        ("color-mix(in lab, red, blue)", ColorMixSpace::Lab),
+        ("color-mix(in oklab, red, blue)", ColorMixSpace::OkLab),
+        ("color-mix(in oklch, red, blue)", ColorMixSpace::OkLch),
+    ] {
+        match parse_color(input) {
+            Some(ColorValue::Mix(spec)) => assert_eq!(spec.space, expect, "{input}"),
+            _ => panic!("{input} 应解析为 Mix（lab/oklab/oklch 空间）"),
+        }
+    }
+    // 大小写不敏感（与既有 srgb/lch 一致）
+    assert!(matches!(
+        parse_color("color-mix(in OKLAB, red, blue)"),
+        Some(ColorValue::Mix(_))
+    ));
+    // 既有空间不回归
+    assert!(matches!(
+        parse_color("color-mix(in srgb, red, blue)"),
+        Some(ColorValue::Mix(_))
+    ));
+    assert!(matches!(
+        parse_color("color-mix(in lch, red, blue)"),
+        Some(ColorValue::Mix(_))
+    ));
+}
+
+#[test]
 /// 测试 hwb() 带透明度：hwb(120 30% 20% / 0.5) — 验证 RGBA 分量合理
 fn test_parse_color_hwb_with_alpha() {
     let result = parse_color("hwb(120 30% 20% / 0.5)");

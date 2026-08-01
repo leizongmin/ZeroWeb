@@ -119,9 +119,10 @@ pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
         return parse_color_with_scheme(chosen, dark);
     }
 
-    // color-mix() 函数（CSS Color 5）：color-mix(in <space>, <c1> [<p1>], <c2> [<p2>])。
-    // 仅 `in srgb` 支持（其他色彩空间 defer）。存为未解析 ColorValue::Mix——currentColor 在
-    // paint 时按元素色解析，支持 inherit 透传。driving: css-color color-mix-currentcolor-001。
+    // color-mix() 函数（CSS Color 4）：color-mix(in <space>, <c1> [<p1>], <c2> [<p2>])。
+    // 支持 srgb/lab/lch/oklab/oklch（其他色彩空间 srgb-linear/xyz defer）。存为未解析
+    // ColorValue::Mix——currentColor 在 paint 时按元素色解析，支持 inherit 透传。
+    // driving: css-color color-mix-currentcolor-001。
     if value.len() >= 10 && value[..10].eq_ignore_ascii_case("color-mix(") {
         return parse_color_mix(value);
     }
@@ -988,8 +989,14 @@ fn parse_color_mix(value: &str) -> Option<ColorValue> {
         ColorMixSpace::Srgb
     } else if space.eq_ignore_ascii_case("in lch") {
         ColorMixSpace::Lch
+    } else if space.eq_ignore_ascii_case("in lab") {
+        ColorMixSpace::Lab
+    } else if space.eq_ignore_ascii_case("in oklab") {
+        ColorMixSpace::OkLab
+    } else if space.eq_ignore_ascii_case("in oklch") {
+        ColorMixSpace::OkLch
     } else {
-        return None; // 其他色彩空间（srgb-linear/oklch/oklab/…）defer
+        return None; // 其他色彩空间（srgb-linear/xyz/…）defer
     };
     let rest = inner[first_comma + 1..].trim();
     // 顶层逗号分隔两分量

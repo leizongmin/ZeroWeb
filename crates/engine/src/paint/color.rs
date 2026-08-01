@@ -38,6 +38,23 @@ pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> 
             match spec.space {
                 ColorMixSpace::Srgb => mix_srgb(c1, spec.c1.percentage, c2, spec.c2.percentage),
                 ColorMixSpace::Lch => mix_lch(c1, spec.c1.percentage, c2, spec.c2.percentage),
+                ColorMixSpace::Lab => mix_cartesian(
+                    c1,
+                    spec.c1.percentage,
+                    c2,
+                    spec.c2.percentage,
+                    srgb_u8_to_lab,
+                    lab_to_srgb_u8,
+                ),
+                ColorMixSpace::OkLab => mix_cartesian(
+                    c1,
+                    spec.c1.percentage,
+                    c2,
+                    spec.c2.percentage,
+                    srgb_u8_to_oklab,
+                    oklab_to_srgb_u8,
+                ),
+                ColorMixSpace::OkLch => mix_oklch(c1, spec.c1.percentage, c2, spec.c2.percentage),
             }
         }
         // RCS 非 identity：先按元素色解析 origin（currentColor → 元素色），再按函数通道语义计算。
@@ -119,6 +136,75 @@ fn mix_lch(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
     let h = (h1 + dh * w2 + 360.0) % 360.0;
     let (r, g, b) = lch_to_srgb_u8(l, c, h);
     // alpha 独立线性插值（premultiplied 权重同 srgb；不透明时 alpha_mult=1）。
+    let a1 = c1.a as f64 / 255.0;
+    let a2 = c2.a as f64 / 255.0;
+    let pa = a1 * (1.0 - w2) + a2 * w2;
+    let final_a = (pa * alpha_mult).clamp(0.0, 1.0);
+    Color::rgba(r, g, b, (final_a * 255.0).round().clamp(0.0, 255.0) as u8)
+}
+
+/// 笛卡尔色彩空间（`in lab` / `in oklab`）color-mix 插值（R2376，CSS Color 4 §12）。
+///
+/// L/a/b 三通道独立线性插值，回转 sRGB；百分比归一化 + alpha 独立线性插值（同 mix_lch
+/// 极坐标版）。`to_space`/`from_space` 注入转换闭包，lab/oklab 共用本函数体。
+fn mix_cartesian(
+    c1: Color,
+    p1: Option<f64>,
+    c2: Color,
+    p2: Option<f64>,
+    to_space: impl Fn(u8, u8, u8) -> (f64, f64, f64),
+    from_space: impl Fn(f64, f64, f64) -> (u8, u8, u8),
+) -> Color {
+    let (p1, p2) = match (p1, p2) {
+        (Some(a), Some(b)) => (a, b),
+        (Some(a), None) => (a, 100.0 - a),
+        (None, Some(b)) => (100.0 - b, b),
+        (None, None) => (50.0, 50.0),
+    };
+    let sum = p1 + p2;
+    if sum <= 0.0 {
+        return Color::rgba(0, 0, 0, 0);
+    }
+    let alpha_mult = (sum / 100.0).min(1.0);
+    let w2 = p2 / sum; // w1 = 1 - w2
+    let (l1, a1, b1) = to_space(c1.r, c1.g, c1.b);
+    let (l2, a2, b2) = to_space(c2.r, c2.g, c2.b);
+    let l = l1 + (l2 - l1) * w2;
+    let a = a1 + (a2 - a1) * w2;
+    let b = b1 + (b2 - b1) * w2;
+    let (r, g, b) = from_space(l, a, b);
+    // alpha 独立线性插值（premultiplied 权重同 srgb；不透明时 alpha_mult=1）。
+    let a1 = c1.a as f64 / 255.0;
+    let a2 = c2.a as f64 / 255.0;
+    let pa = a1 * (1.0 - w2) + a2 * w2;
+    let final_a = (pa * alpha_mult).clamp(0.0, 1.0);
+    Color::rgba(r, g, b, (final_a * 255.0).round().clamp(0.0, 255.0) as u8)
+}
+
+/// `color-mix(in oklch, c1 [p1], c2 [p2])` 的 OKLCH 极坐标插值（R2376，CSS Color 4 §12）。
+///
+/// 与 `mix_lch` 同构（L/C 线性、h 色相短弧），仅换用 OKLab 系转换。
+fn mix_oklch(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>) -> Color {
+    let (p1, p2) = match (p1, p2) {
+        (Some(a), Some(b)) => (a, b),
+        (Some(a), None) => (a, 100.0 - a),
+        (None, Some(b)) => (100.0 - b, b),
+        (None, None) => (50.0, 50.0),
+    };
+    let sum = p1 + p2;
+    if sum <= 0.0 {
+        return Color::rgba(0, 0, 0, 0);
+    }
+    let alpha_mult = (sum / 100.0).min(1.0);
+    let w2 = p2 / sum; // w1 = 1 - w2
+    let (l1, ch1, h1) = srgb_u8_to_oklch(c1.r, c1.g, c1.b);
+    let (l2, ch2, h2) = srgb_u8_to_oklch(c2.r, c2.g, c2.b);
+    let l = l1 + (l2 - l1) * w2;
+    let c = ch1 + (ch2 - ch1) * w2;
+    // 色相短弧：取 |Δh| ≤ 180 的方向插值。
+    let dh = ((h2 - h1 + 540.0) % 360.0) - 180.0;
+    let h = (h1 + dh * w2 + 360.0) % 360.0;
+    let (r, g, b) = oklch_to_srgb_u8(l, c, h);
     let a1 = c1.a as f64 / 255.0;
     let a2 = c2.a as f64 / 255.0;
     let pa = a1 * (1.0 - w2) + a2 * w2;
@@ -560,6 +646,52 @@ fn test_resolve_color_mix() {
     }));
     let r = resolve_color_current(&mix_rg, &ColorValue::CurrentColor);
     assert_eq!((r.r, r.g, r.b), (128, 64, 0), "mix(red 50%, green 50%) = rgb(128,64,0)");
+}
+
+#[test]
+/// R2376：color-mix lab/oklab/oklch 空间解析（engine 侧）。此前这三空间 parse 返回 None
+/// → 颜色回退；现 resolve_color_current 产出真实插值色（介于两端、非回退黑、同色=identity）。
+fn test_resolve_color_mix_lab_oklab_oklch() {
+    use zero_css_parser::values::{ColorMixComponent, ColorMixSpace, ColorMixSpec};
+    let black_elem = ColorValue::Rgba(0, 0, 0, 255);
+    // red 50% ↔ blue 50% → 介于两端、非黑、非红、非蓝
+    let mk = |space| {
+        ColorValue::Mix(Box::new(ColorMixSpec {
+            c1: ColorMixComponent {
+                color: ColorValue::Rgba(255, 0, 0, 255),
+                percentage: Some(50.0),
+            },
+            c2: ColorMixComponent {
+                color: ColorValue::Rgba(0, 0, 255, 255),
+                percentage: Some(50.0),
+            },
+            space,
+        }))
+    };
+    for space in [ColorMixSpace::Lab, ColorMixSpace::OkLab, ColorMixSpace::OkLch] {
+        let r = resolve_color_current(&mk(space), &black_elem);
+        assert_ne!((r.r, r.g, r.b), (0, 0, 0), "{space:?} 应解析非黑（非回退）");
+        assert_ne!((r.r, r.g, r.b), (255, 0, 0), "{space:?} 不应恒等于 red");
+        assert_ne!((r.r, r.g, r.b), (0, 0, 255), "{space:?} 不应恒等于 blue");
+    }
+    // 同色 mix = 该色（identity，三空间均成立）
+    let mk_same = |space| {
+        ColorValue::Mix(Box::new(ColorMixSpec {
+            c1: ColorMixComponent {
+                color: ColorValue::Rgba(0, 128, 0, 255),
+                percentage: Some(50.0),
+            },
+            c2: ColorMixComponent {
+                color: ColorValue::Rgba(0, 128, 0, 255),
+                percentage: Some(50.0),
+            },
+            space,
+        }))
+    };
+    for space in [ColorMixSpace::Lab, ColorMixSpace::OkLab, ColorMixSpace::OkLch] {
+        let r = resolve_color_current(&mk_same(space), &black_elem);
+        assert_eq!((r.r, r.g, r.b), (0, 128, 0), "{space:?} 同色 mix 应回该色");
+    }
 }
 
 #[test]
