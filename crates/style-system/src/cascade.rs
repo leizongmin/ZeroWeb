@@ -292,7 +292,7 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
         // 声明；若该属性全部声明均非法（全为负值/全为无法解析的关键字值等），属性不
         // 进入级联结果，回退到初始值（width/height→auto、max-*→none、display→inline 等，
         // 由 default_impl 提供，均为 CSS 规范初始值）。
-        let winner = decls
+        let valid: Vec<&CascadedDeclaration> = decls
             .iter()
             .filter(|d| {
                 // CSS-wide 关键字（inherit/initial/unset/revert/revert-layer）对任何属性都合法，
@@ -303,13 +303,65 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
                         && !is_invalid_enum_value(&property, &d.value)
                         && is_cascade_value_valid(&property, &d.value, quirks, &mut dummy))
             })
-            .max_by_key(|d| d.order.clone());
-        if let Some(w) = winner {
-            result.insert(property, w.value.clone());
+            .collect();
+        // R2388：`revert-layer`（CSS Cascade 5 §6.1）须回退到「更低优先级层」的值——
+        // 当某属性最高优先级声明是 revert-layer 时，跳过该声明所属 tier，取下一更低
+        // 优先级 tier 的胜出声明（递归）。非 revert-layer CSS 行为不变（最高优先级合法
+        // 声明胜出 = 旧行为）。kill-switch `ZW_REVERT_LAYER=0`（default-on）。
+        if let Some(value) = effective_cascade_value(&valid) {
+            result.insert(property, value);
         }
     }
 
     result
+}
+
+/// R2388：考虑 `revert-layer` 的级联胜出值解析。
+///
+/// 将合法声明按 cascade order 降序排列（最高优先级在前），自高向低遍历 **tier**
+///（同 origin+important+layer 的声明组）。每个 tier 的胜出声明 = 该 tier 内最高优先级者
+///（降序排列后即该 tier 的首个）。若为 `revert-layer`，跳过整个 tier，回退到下一更低
+/// 优先级 tier；否则该声明值即生效（concrete / inherit / initial / unset / revert 终结）。
+/// 全部 tier 均 revert-layer 或无声明 → `None`（属性不进级联结果，由 inheritance 取初值/继承）。
+///
+/// tier 边界判定：因 CascadeOrder 的 Ord 以 (important, origin, is_unlayered, layer_idx)
+/// 为高序位、specificity/position 为低序位，降序排列后同 tier 声明连续相邻，故比较
+/// (origin, important, layer_index) 即可识别 tier 切换。
+fn effective_cascade_value(decls: &[&CascadedDeclaration]) -> Option<String> {
+    if decls.is_empty() {
+        return None;
+    }
+    let revert_layer_active = std::env::var("ZW_REVERT_LAYER").as_deref() != Ok("0");
+    // 降序：最高优先级在前。
+    let mut sorted: Vec<&CascadedDeclaration> = decls.to_vec();
+    sorted.sort_by(|a, b| b.order.cmp(&a.order));
+
+    // highest = 最高优先级声明（降序首）。若 revert-layer 链一路回退到底（无更低层 concrete），
+    // 保留原最高声明值（即 revert-layer 关键字）交 inheritance.rs 按 ≈unset 解析——与
+    // 无更低层时 spec 行为（回退到上一 origin，ZW 几无 UA 样式 ≈ initial）等价，且不破坏
+    // R2386「lone revert-layer 通过 cascade」语义。
+    let highest = sorted[0];
+
+    let mut i = 0;
+    while i < sorted.len() {
+        let tier = cascade_tier_key(&sorted[i].order);
+        // 该 tier 的胜出声明 = sorted[i]（降序首 = tier 内最高优先级）。
+        let candidate = sorted[i];
+        if revert_layer_active && candidate.value.trim().eq_ignore_ascii_case("revert-layer") {
+            // 跳过整个 tier（同 tier 的较低优先级声明亦属「本层」须一并移除）。
+            while i < sorted.len() && cascade_tier_key(&sorted[i].order) == tier {
+                i += 1;
+            }
+            continue;
+        }
+        return Some(candidate.value.clone());
+    }
+    Some(highest.value.clone())
+}
+
+/// 级联 tier 标识（origin + important + layer）——三者相同即同 tier。
+fn cascade_tier_key(order: &CascadeOrder) -> (Origin, bool, Option<usize>) {
+    (order.origin, order.important, order.layer_index)
 }
 
 /// 级联合法性探测：声明值能否被 apply 解析（drop-if-invalid 语义）。
@@ -571,6 +623,118 @@ mod tests {
             result.get("color"),
             Some(&"revert-layer".to_string()),
             "revert-layer longhand 应通过 cascade（此前 is_css_wide_keyword 漏列被丢）"
+        );
+    }
+
+    /// R2388：`revert-layer` 回退到更低优先级层的值——两个 @layer，高层 revert-layer
+    /// 应回退到低层的 concrete 值（driving: revert-layer-001 green 而非 red）。
+    #[test]
+    fn test_revert_layer_falls_back_to_lower_layer() {
+        // layer 0（低优先级）：green；layer 1（高优先级）：revert-layer → 应取 layer 0 的 green。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "background-color".to_string(),
+                value: "green".to_string(),
+                order: CascadeOrder::new(Origin::Author, Some(0), (1, 0, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "background-color".to_string(),
+                value: "revert-layer".to_string(),
+                order: CascadeOrder::new(Origin::Author, Some(1), (1, 0, 0), 1, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(
+            result.get("background-color"),
+            Some(&"green".to_string()),
+            "revert-layer 应回退到更低优先级层的 green"
+        );
+    }
+
+    /// R2388：高层 tier 为 concrete 值时不回退（revert-layer 仅当胜出声明本身是 revert-layer 才触发）。
+    #[test]
+    fn test_revert_layer_not_triggered_when_higher_layer_concrete() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "background-color".to_string(),
+                value: "green".to_string(),
+                order: CascadeOrder::new(Origin::Author, Some(0), (1, 0, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "background-color".to_string(),
+                value: "red".to_string(),
+                order: CascadeOrder::new(Origin::Author, Some(1), (1, 0, 0), 1, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(result.get("background-color"), Some(&"red".to_string()));
+    }
+
+    /// R2388：unlayered 声明优先级高于 layered——unlayered revert-layer 回退到 layered 值。
+    #[test]
+    fn test_revert_layer_unlayered_falls_to_layered() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "blue".to_string(),
+                order: CascadeOrder::new(Origin::Author, Some(0), (1, 0, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "revert-layer".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(
+            result.get("color"),
+            Some(&"blue".to_string()),
+            "unlayered revert-layer 应回退到 layered 的 blue"
+        );
+    }
+
+    /// R2388：revert-layer 无更低层可回退 → 保留 revert-layer 关键字交 inheritance 解析
+    ///（≈unset；与无更低层时回退到上一 origin≈initial 等价，且不破坏 R2386 lone-revert-layer 语义）。
+    #[test]
+    fn test_revert_layer_no_lower_layer_kept_for_inheritance() {
+        let decls = vec![CascadedDeclaration {
+            property: "background-color".to_string(),
+            value: "revert-layer".to_string(),
+            order: CascadeOrder::new(Origin::Author, Some(0), (1, 0, 0), 0, false),
+        }];
+        let result = cascade(decls, false);
+        assert_eq!(
+            result.get("background-color"),
+            Some(&"revert-layer".to_string()),
+            "无更低层时保留 revert-layer 关键字交 inheritance"
+        );
+    }
+
+    /// R2388：revert-layer 链式回退（高层 revert-layer → 中层 revert-layer → 低层 concrete）。
+    #[test]
+    fn test_revert_layer_chained() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "green".to_string(),
+                order: CascadeOrder::new(Origin::Author, Some(0), (1, 0, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "revert-layer".to_string(),
+                order: CascadeOrder::new(Origin::Author, Some(1), (1, 0, 0), 1, false),
+            },
+            CascadedDeclaration {
+                property: "color".to_string(),
+                value: "revert-layer".to_string(),
+                order: CascadeOrder::new(Origin::Author, Some(2), (1, 0, 0), 2, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(
+            result.get("color"),
+            Some(&"green".to_string()),
+            "链式 revert-layer 应一路回退到最低层的 green"
         );
     }
 
