@@ -442,65 +442,160 @@ fn test_place_too_many_values() {
 }
 
 // ── list-style 简写测试 ──
+//
+// R2487：list-style 简写现展开全部 3 个 longhand（type/position/image）。旧实现仅展开
+// type+position 且 is_type 硬编码枚举，漏自定义 @counter-style 名与 R2445-R2450 预定义
+// 计数器样式（lower-greek/georgian/hebrew/...），并丢弃 list-style-image。
+
+/// 从展开结果中按 longhand 名取值（便于多 longhand 断言）。
+fn ls_get<'a>(result: &'a [(String, String, bool, (u32, u32, u32))], prop: &str) -> &'a str {
+    result
+        .iter()
+        .find(|(p, _, _, _)| p == prop)
+        .map(|(_, v, _, _)| v.as_str())
+        .unwrap_or("")
+}
 
 #[test]
-/// list-style: none → type=none, position=outside
+/// list-style: none → type=none, position=outside, image=none（none 同时置 type+image）
 fn test_list_style_none() {
     let result = expand_one("list-style", "none", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].0, "list-style-type");
-    assert_eq!(result[0].1, "none");
-    assert_eq!(result[1].0, "list-style-position");
-    assert_eq!(result[1].1, "outside");
+    assert_eq!(result.len(), 3);
+    assert_eq!(ls_get(&result, "list-style-type"), "none");
+    assert_eq!(ls_get(&result, "list-style-position"), "outside");
+    assert_eq!(ls_get(&result, "list-style-image"), "none");
 }
 
 #[test]
-/// list-style: inside → type=disc(默认), position=inside
+/// list-style: inside → type=disc(初始), position=inside, image=none
 fn test_list_style_position_only() {
     let result = expand_one("list-style", "inside", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].0, "list-style-type");
-    assert_eq!(result[0].1, "disc");
-    assert_eq!(result[1].0, "list-style-position");
-    assert_eq!(result[1].1, "inside");
+    assert_eq!(result.len(), 3);
+    assert_eq!(ls_get(&result, "list-style-type"), "disc");
+    assert_eq!(ls_get(&result, "list-style-position"), "inside");
+    assert_eq!(ls_get(&result, "list-style-image"), "none");
 }
 
 #[test]
-/// list-style: square inside → type=square, position=inside
+/// list-style: square inside → type=square, position=inside, image=none
 fn test_list_style_type_and_position() {
     let result = expand_one("list-style", "square inside", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].0, "list-style-type");
-    assert_eq!(result[0].1, "square");
-    assert_eq!(result[1].0, "list-style-position");
-    assert_eq!(result[1].1, "inside");
+    assert_eq!(result.len(), 3);
+    assert_eq!(ls_get(&result, "list-style-type"), "square");
+    assert_eq!(ls_get(&result, "list-style-position"), "inside");
+    assert_eq!(ls_get(&result, "list-style-image"), "none");
 }
 
 #[test]
 /// list-style: decimal outside → type=decimal, position=outside
 fn test_list_style_decimal_outside() {
     let result = expand_one("list-style", "decimal outside", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].1, "decimal");
-    assert_eq!(result[1].1, "outside");
+    assert_eq!(ls_get(&result, "list-style-type"), "decimal");
+    assert_eq!(ls_get(&result, "list-style-position"), "outside");
 }
 
 #[test]
 /// list-style: lower-roman inside → type=lower-roman, position=inside
 fn test_list_style_lower_roman_inside() {
     let result = expand_one("list-style", "lower-roman inside", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].1, "lower-roman");
-    assert_eq!(result[1].1, "inside");
+    assert_eq!(ls_get(&result, "list-style-type"), "lower-roman");
+    assert_eq!(ls_get(&result, "list-style-position"), "inside");
 }
 
 #[test]
-/// list-style 保留 important 标记
+/// list-style 保留 important 标记与 specificity（3 longhand 全部）
 fn test_list_style_preserves_important() {
     let result = expand_one("list-style", "square inside", true, (0, 1, 0));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 3);
     assert!(result.iter().all(|(_, _, imp, _)| *imp));
     assert!(result.iter().all(|(_, _, _, spec)| *spec == (0, 1, 0)));
+}
+
+// ── R2487 driving：修旧实现缺口（自定义/计数器样式 + image + none 双语义 + 大小写） ──
+
+#[test]
+/// R2487：自定义 @counter-style 名作 type（旧实现落「其他值」→ type 退回 disc）
+fn test_list_style_custom_counter_style_name() {
+    let result = expand_one("list-style", "Custom-Style inside", false, (0, 0, 1));
+    assert_eq!(ls_get(&result, "list-style-type"), "Custom-Style");
+    assert_eq!(ls_get(&result, "list-style-position"), "inside");
+    assert_eq!(ls_get(&result, "list-style-image"), "none");
+}
+
+#[test]
+/// R2487：R2445-R2450 预定义计数器样式作 type（lower-greek/georgian 旧 is_type 枚举漏）
+fn test_list_style_predefined_counter_style() {
+    for style in ["lower-greek", "georgian", "hebrew", "arabic-indic", "cjk-decimal"] {
+        let result = expand_one("list-style", &format!("{style} inside"), false, (0, 0, 1));
+        assert_eq!(ls_get(&result, "list-style-type"), style, "type for {style}");
+        assert_eq!(ls_get(&result, "list-style-position"), "inside");
+    }
+}
+
+#[test]
+/// R2487：list-style-image（url()）现展开（旧实现完全丢弃）
+fn test_list_style_image_url() {
+    let result = expand_one("list-style", "disc url(support/green15x15.png)", false, (0, 0, 1));
+    assert_eq!(result.len(), 3);
+    assert_eq!(ls_get(&result, "list-style-type"), "disc");
+    assert_eq!(ls_get(&result, "list-style-position"), "outside");
+    assert_eq!(ls_get(&result, "list-style-image"), "url(support/green15x15.png)");
+}
+
+#[test]
+/// R2487：paren-aware——url() 含空格不被 split（url('a b.png') 保持一体）
+fn test_list_style_image_url_with_space() {
+    let result = expand_one("list-style", "inside url('support/green 15.png')", false, (0, 0, 1));
+    assert_eq!(ls_get(&result, "list-style-position"), "inside");
+    assert_eq!(ls_get(&result, "list-style-image"), "url('support/green 15.png')");
+    assert_eq!(ls_get(&result, "list-style-type"), "disc");
+}
+
+#[test]
+/// R2487：none 双语义——`none square url(...)` → type=square, image=url, position=outside
+/// （none 不冲突显式 type/image；CSS Lists 3「other values assigned to property they fit」）
+fn test_list_style_none_with_type_and_image() {
+    let result = expand_one(
+        "list-style",
+        "none square url(support/swatch-red.png)",
+        false,
+        (0, 0, 1),
+    );
+    assert_eq!(ls_get(&result, "list-style-type"), "square");
+    assert_eq!(ls_get(&result, "list-style-image"), "url(support/swatch-red.png)");
+    assert_eq!(ls_get(&result, "list-style-position"), "outside");
+}
+
+#[test]
+/// R2487：仅 image（无 type）→ type=初始 disc, image=url, position=outside
+fn test_list_style_image_only_type_initial_disc() {
+    let result = expand_one("list-style", "url(star.png)", false, (0, 0, 1));
+    assert_eq!(ls_get(&result, "list-style-type"), "disc");
+    assert_eq!(ls_get(&result, "list-style-image"), "url(star.png)");
+    assert_eq!(ls_get(&result, "list-style-position"), "outside");
+}
+
+#[test]
+/// R2487：type token 大小写保留（计数器样式名大小写敏感，交 longhand parser 匹配）
+fn test_list_style_type_case_preserved() {
+    let result = expand_one("list-style", "Hiragana inside", false, (0, 0, 1));
+    assert_eq!(ls_get(&result, "list-style-type"), "Hiragana");
+}
+
+#[test]
+/// R2487：position 关键字大小写不敏感（归一为小写）
+fn test_list_style_position_case_insensitive() {
+    let result = expand_one("list-style", "disc INSIDE", false, (0, 0, 1));
+    assert_eq!(ls_get(&result, "list-style-position"), "inside");
+}
+
+#[test]
+/// R2487：CSS-wide keyword 透传 3 longhand（含 image，旧 wide-keyword 漏 image）
+fn test_list_style_wide_keyword_includes_image() {
+    let result = expand_one("list-style", "inherit", false, (0, 0, 1));
+    assert_eq!(result.len(), 3);
+    assert!(result.iter().all(|(_, v, _, _)| v == "inherit"));
+    assert!(result.iter().any(|(p, _, _, _)| p == "list-style-image"));
 }
 
 // ── overscroll-behavior 简写测试 ──
@@ -597,14 +692,16 @@ fn test_shorthand_font_bold_size_line_family() {
 }
 
 #[test]
-/// list-style 简写展开：disc inside → list-style-type=disc, list-style-position=inside
+/// list-style 简写展开：disc inside → list-style-type=disc, list-style-position=inside（R2487：+image=none）
 fn test_shorthand_list_style_disc_inside() {
     let result = expand_one("list-style", "disc inside", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 3);
     assert_eq!(result[0].0, "list-style-type");
     assert_eq!(result[0].1, "disc");
     assert_eq!(result[1].0, "list-style-position");
     assert_eq!(result[1].1, "inside");
+    assert_eq!(result[2].0, "list-style-image");
+    assert_eq!(result[2].1, "none");
 }
 
 #[test]

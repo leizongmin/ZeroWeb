@@ -610,25 +610,29 @@ fn test_border_image_url_with_spaces() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
-/// list-type 为 none 时 position 保持 outside
+/// list-type 为 none 时 position 保持 outside（R2487：现展开 3 longhand，image=none）
 fn test_list_style_type_none_position_outside() {
     let result = expand_one("list-style", "none outside", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 3);
     assert_eq!(result[0].0, "list-style-type");
     assert_eq!(result[0].1, "none");
     assert_eq!(result[1].0, "list-style-position");
     assert_eq!(result[1].1, "outside");
+    assert_eq!(result[2].0, "list-style-image");
+    assert_eq!(result[2].1, "none");
 }
 
 #[test]
-/// list-type 为 url() 值（目前视为 image）
+/// url() 作 list-style-image（R2487：现展开 image longhand，type 退回默认 disc）
 fn test_list_style_type_url() {
     let result = expand_one("list-style", "url(bullet.png)", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
+    assert_eq!(result.len(), 3);
     assert_eq!(result[0].0, "list-style-type");
     assert_eq!(result[0].1, "disc"); // 默认
     assert_eq!(result[1].0, "list-style-position");
     assert_eq!(result[1].1, "outside"); // 默认
+    assert_eq!(result[2].0, "list-style-image");
+    assert_eq!(result[2].1, "url(bullet.png)");
 }
 
 // ═══════════════════════════════════════════════════════════════════

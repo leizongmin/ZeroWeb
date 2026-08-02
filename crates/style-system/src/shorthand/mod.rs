@@ -1525,51 +1525,57 @@ fn expand_list_style(value: &str, important: bool, specificity: (u32, u32, u32))
     if matches_css_wide_keyword(value) {
         return wide_keyword_to_longhands(
             value,
-            &["list-style-position", "list-style-type"],
+            &["list-style-position", "list-style-type", "list-style-image"],
             important,
             specificity,
         );
     }
 
-    // 特殊值 "none" 同时设置 type 和 image
-    if value.eq_ignore_ascii_case("none") {
-        return vec![mk("list-style-type", "none"), mk("list-style-position", "outside")];
-    }
+    // CSS Lists 3 §5.1：`list-style: [<'list-style-position'> || <'list-style-image'> || <'list-style-type'>]`。
+    // R2487 修三处缺口：① 旧实现 is_type 硬编码枚举，漏 R2445-R2450 预定义计数器样式（lower-greek/
+    // georgian/hebrew/...）与全部自定义 @counter-style 名（`Custom-Style` 等）→ 这些 token 落「其他值
+    // 暂不处理」→ type 退回默认 disc；② list-style-image（url()/image()）从不展开；③ 简写未复位 image。
+    // 新实现：position→position 槽；url()/image()→image 槽；其余 token（含 `none` + 任意计数器样式名/
+    // 自定义 ident，**保留大小写**——计数器样式名大小写敏感）→ type 槽。`none` 同时把 type 与 image
+    // 默认置 none（CSS Lists 3：「The none keyword sets list-style-image to none and list-style-type
+    // to none; other values are assigned to the property they fit」）。
+    let tokens = split_outside_parens(value);
+    let mut list_type: Option<String> = None;
+    let mut position = "outside".to_string();
+    let mut image: Option<String> = None;
+    let mut none_seen = false;
 
-    let parts: Vec<&str> = value.split_whitespace().collect();
-    let mut list_type = "disc"; // 默认
-    let mut position = "outside"; // 默认
-
-    let is_position = |s: &str| s.eq_ignore_ascii_case("inside") || s.eq_ignore_ascii_case("outside");
-
-    let is_type = |s: &str| {
-        matches!(
-            s.to_ascii_lowercase().as_str(),
-            "disc"
-                | "circle"
-                | "square"
-                | "decimal"
-                | "decimal-leading-zero"
-                | "lower-roman"
-                | "upper-roman"
-                | "lower-alpha"
-                | "lower-latin"
-                | "upper-alpha"
-                | "upper-latin"
-                | "none"
-        )
-    };
-
-    for part in &parts {
-        if is_position(part) {
-            position = *part;
-        } else if is_type(part) {
-            list_type = *part;
+    for token in &tokens {
+        let t = token.trim();
+        if t.is_empty() {
+            continue;
         }
-        // 其他值（如 url(...)）为 image，暂不处理
+        if t.eq_ignore_ascii_case("inside") || t.eq_ignore_ascii_case("outside") {
+            position = t.to_ascii_lowercase();
+        } else if t.starts_with("url(") || t.starts_with("image(") || t.starts_with("image-set(") {
+            image = Some(t.to_string());
+        } else if t.eq_ignore_ascii_case("none") {
+            none_seen = true;
+        } else {
+            // 任意计数器样式（内置关键字或自定义 @counter-style 名）——保留原样大小写，
+            // 由 list-style-type longhand parser 负责关键字匹配/自定义名解析。
+            list_type = Some(t.to_string());
+        }
     }
 
-    vec![mk("list-style-type", list_type), mk("list-style-position", position)]
+    // type 默认：显式 token > none_seen→none > 初始 disc。
+    let final_type = list_type
+        .clone()
+        .or_else(|| if none_seen { Some("none".to_string()) } else { None })
+        .unwrap_or_else(|| "disc".to_string());
+    // image 默认 none（初始值即 none；显式 url 覆盖；`none` 关键字亦 none——简写须复位 image）。
+    let final_image = image.unwrap_or_else(|| "none".to_string());
+
+    vec![
+        mk("list-style-type", &final_type),
+        mk("list-style-position", &position),
+        mk("list-style-image", &final_image),
+    ]
 }
 
 /// 展开 outline 简写。
