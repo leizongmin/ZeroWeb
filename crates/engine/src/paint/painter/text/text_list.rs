@@ -82,6 +82,33 @@ fn to_persian(value: usize) -> String {
         .collect()
 }
 
+/// R2447：armenian 计数器表示（CSS Counter Styles 3 §6.1 预定义，≡ upper-armenian）。
+///
+/// 传统亚美尼亚数字系统——纯加法（无减法形式，区别于 Roman）。大写亚美尼亚字母块
+/// U+0531-U+0554（36 个字母）按十进制位映射，每 9 个字母一组对应 个/十/百/千位：
+/// 个位 1-9 → U+0531+0..=8 (Ա..Թ)；十位 10-90 → U+0531+9..=17 (Ժ..Ղ)；
+/// 百位 100-900 → U+0531+18..=26 (Ճ..Ջ)；千位 1000-9000 → U+0531+27..=35 (Ռ..Ք)。
+/// range 1-9999；0 或 ≥10000 走 decimal fallback（CSS spec range；driving: armenian-008
+/// 10000→"10000"）。ground-truth 验证：armenian-006 (1-9) / 007 (43=ԽԳ, 7865=ՒՊԿԵ, 9999=ՔՋՂԹ)。
+fn to_armenian(value: usize) -> String {
+    if value == 0 || value > 9999 {
+        return value.to_string();
+    }
+    // (位基数, 该位首字母相对 U+0531 的偏移)：个=0、十=9、百=18、千=27。
+    const OFFSETS: [(usize, usize); 4] = [(1000, 27), (100, 18), (10, 9), (1, 0)];
+    let mut num = value;
+    let mut result = String::new();
+    for (base, offset) in OFFSETS {
+        let digit = num / base;
+        if digit > 0 {
+            let code = 0x0531 + offset + (digit - 1);
+            result.push(char::from_u32(code as u32).expect("armenian uppercase block"));
+            num -= digit * base;
+        }
+    }
+    result
+}
+
 /// R2392/R2394：按 `@counter-style` 的 system 算法生成计数器表示（marker body，不含 prefix/suffix）。
 /// CSS Counter Styles 3 §3.1.4。`None` = 该值无法表示（超出 range / 系统不支持）→ 调用方走 fallback。
 /// R2394 注：additive/range/extends 应用经 A/B 量证为 net-negative（driving WPT 全 font-wall dice/
@@ -413,7 +440,8 @@ impl super::super::Painter {
                 }
             }
             // R2445：lower-greek / persian 预定义计数器样式（CSS Counter Styles 3 §6）。
-            ListStyleTypeValue::LowerGreek | ListStyleTypeValue::Persian => {
+            // R2447：+ armenian（§6.1 additive）。
+            ListStyleTypeValue::LowerGreek | ListStyleTypeValue::Persian | ListStyleTypeValue::Armenian => {
                 let index = self
                     .get_counter("list-item")
                     .map(|v| v as usize)
@@ -421,6 +449,7 @@ impl super::super::Painter {
                 let body = match style.list_style_type {
                     ListStyleTypeValue::LowerGreek => to_greek(index),
                     ListStyleTypeValue::Persian => to_persian(index),
+                    ListStyleTypeValue::Armenian => to_armenian(index),
                     _ => unreachable!(),
                 };
                 let text = format!("{body}.");
@@ -540,10 +569,31 @@ fn is_li(doc: &Document, id: NodeId) -> bool {
 mod tests {
     use super::counter_style_body;
     use super::list_item_counter;
+    use super::to_armenian;
     use zero_dom::parse_html;
 
     fn li(doc: &zero_dom::Document, n: usize) -> zero_dom::NodeId {
         doc.get_elements_by_tag_name("li")[n]
+    }
+
+    /// R2447：armenian 计数器（CSS Counter Styles 3 §6.1）ground-truth 对齐 WPT ref。
+    /// 验证值取自 css-counter-styles/armenian/css3-counter-styles-006/007/008 真实期望输出。
+    #[test]
+    fn armenian_counter_matches_wpt_ground_truth() {
+        // 单位 1-9（armenian-006）
+        assert_eq!(to_armenian(1), "Ա");
+        assert_eq!(to_armenian(9), "Թ");
+        // 十位（armenian-007：10=Ժ, 11=ԺԱ, 43=ԽԳ, 99=ՂԹ）
+        assert_eq!(to_armenian(10), "Ժ");
+        assert_eq!(to_armenian(11), "ԺԱ");
+        assert_eq!(to_armenian(43), "ԽԳ");
+        assert_eq!(to_armenian(99), "ՂԹ");
+        // 百/千混合（armenian-007：7865=ՒՊԿԵ, 9999=ՔՋՂԹ）
+        assert_eq!(to_armenian(7865), "ՒՊԿԵ");
+        assert_eq!(to_armenian(9999), "ՔՋՂԹ");
+        // range 外走 decimal fallback（armenian-008：0→"0", 10000→"10000"）
+        assert_eq!(to_armenian(0), "0");
+        assert_eq!(to_armenian(10000), "10000");
     }
 
     /// R1701：ol start= 与 li value= 计数器语义（fixture 22 ol[start=3] type=A → C/D/J/K）。

@@ -311,6 +311,8 @@ pub enum ListStyleTypeValue {
     LowerGreek,
     /// persian（۰-۹ 数字，CSS Counter Styles 3 §6 预定义）。R2445。
     Persian,
+    /// armenian（传统亚美尼亚数字，additive；CSS Counter Styles 3 §6.1 预定义，≡ upper-armenian）。R2447。
+    Armenian,
     /// none。
     None,
     /// 自定义计数器样式名（`@counter-style` 定义；CSS Counter Styles 3）。driving: R2392。
