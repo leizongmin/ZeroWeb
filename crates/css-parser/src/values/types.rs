@@ -319,6 +319,8 @@ pub enum ListStyleTypeValue {
     Georgian,
     /// hebrew（传统希伯来数字，additive；CSS Counter Styles 3 §6.1 预定义，range 1-10999）。R2450。
     Hebrew,
+    /// arabic-indic（阿拉伯-印度数字 ٠-٩，numeric；CSS Counter Styles 3 §6.1 预定义）。R2451。
+    ArabicIndic,
     /// none。
     None,
     /// 自定义计数器样式名（`@counter-style` 定义；CSS Counter Styles 3）。driving: R2392。

@@ -151,6 +151,11 @@ fn test_parse_list_style_type() {
     assert_eq!(parse_list_style_type("georgian"), Some(ListStyleTypeValue::Georgian));
     // R2450：hebrew（传统希伯来数字，additive）。
     assert_eq!(parse_list_style_type("hebrew"), Some(ListStyleTypeValue::Hebrew));
+    // R2451：arabic-indic（阿拉伯-印度数字，numeric）。
+    assert_eq!(
+        parse_list_style_type("arabic-indic"),
+        Some(ListStyleTypeValue::ArabicIndic)
+    );
     // R2392：未实现的自定义计数器名（合法 `<custom-ident>`）→ Custom(name)，
     // 渲染时查 CounterStyleRegistry，未命中走 decimal fallback（CSS Counter Styles 3）。
     assert_eq!(

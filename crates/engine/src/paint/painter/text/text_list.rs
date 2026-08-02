@@ -82,6 +82,18 @@ fn to_persian(value: usize) -> String {
         .collect()
 }
 
+/// R2451：arabic-indic 计数器表示（CSS Counter Styles 3 §6.1 预定义，numeric system）。
+///
+/// 阿拉伯-印度数字 ٠-٩（U+0660-U+0669，core Arabic block；区别 persian 的 extended U+06F0+）。
+/// numeric system = 各位数字替换（同 persian 算法）。ground-truth 验证：arabic-indic-101（1=١..9=٩）。
+fn to_arabic_indic(value: usize) -> String {
+    value
+        .to_string()
+        .chars()
+        .map(|c| char::from_u32(0x0660 + (c as u8 - b'0') as u32).expect("arabic-indic digit block"))
+        .collect()
+}
+
 /// R2447：armenian 计数器表示（CSS Counter Styles 3 §6.1 预定义，≡ upper-armenian）。
 ///
 /// 传统亚美尼亚数字系统——纯加法（无减法形式，区别于 Roman）。大写亚美尼亚字母块
@@ -560,13 +572,14 @@ impl super::super::Painter {
                 }
             }
             // R2445：lower-greek / persian 预定义计数器样式（CSS Counter Styles 3 §6）。
-            // R2447：+ armenian（§6.1 additive）。R2448：+ lower-armenian（小写）。R2449：+ georgian。R2450：+ hebrew。
+            // R2447：+ armenian（§6.1 additive）。R2448：+ lower-armenian（小写）。R2449：+ georgian。R2450：+ hebrew。R2451：+ arabic-indic。
             ListStyleTypeValue::LowerGreek
             | ListStyleTypeValue::Persian
             | ListStyleTypeValue::Armenian
             | ListStyleTypeValue::LowerArmenian
             | ListStyleTypeValue::Georgian
-            | ListStyleTypeValue::Hebrew => {
+            | ListStyleTypeValue::Hebrew
+            | ListStyleTypeValue::ArabicIndic => {
                 let index = self
                     .get_counter("list-item")
                     .map(|v| v as usize)
@@ -580,6 +593,7 @@ impl super::super::Painter {
                     ListStyleTypeValue::LowerArmenian => to_armenian(index).to_lowercase(),
                     ListStyleTypeValue::Georgian => to_georgian(index),
                     ListStyleTypeValue::Hebrew => to_hebrew(index),
+                    ListStyleTypeValue::ArabicIndic => to_arabic_indic(index),
                     _ => unreachable!(),
                 };
                 let text = format!("{body}.");
@@ -699,6 +713,7 @@ fn is_li(doc: &Document, id: NodeId) -> bool {
 mod tests {
     use super::counter_style_body;
     use super::list_item_counter;
+    use super::to_arabic_indic;
     use super::to_armenian;
     use super::to_georgian;
     use super::to_hebrew;
@@ -777,6 +792,17 @@ mod tests {
         // range 外走 decimal fallback（0→"0", ≥11000→decimal）
         assert_eq!(to_hebrew(0), "0");
         assert_eq!(to_hebrew(11000), "11000");
+    }
+
+    /// R2451：arabic-indic 计数器（CSS Counter Styles 3 §6.1，numeric）ground-truth 对齐
+    /// arabic-indic-101（阿拉伯-印度数字 ٠-٩ U+0660-U+0669，core Arabic block）。
+    #[test]
+    fn arabic_indic_counter_matches_wpt_ground_truth() {
+        assert_eq!(to_arabic_indic(0), "\u{0660}"); // ٠
+        assert_eq!(to_arabic_indic(1), "\u{0661}"); // ١
+        assert_eq!(to_arabic_indic(9), "\u{0669}"); // ٩
+        assert_eq!(to_arabic_indic(10), "\u{0661}\u{0660}"); // ١٠
+        assert_eq!(to_arabic_indic(123), "\u{0661}\u{0662}\u{0663}"); // ١٢٣
     }
 
     /// R1701：ol start= 与 li value= 计数器语义（fixture 22 ol[start=3] type=A → C/D/J/K）。
