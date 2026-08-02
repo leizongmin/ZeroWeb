@@ -171,6 +171,18 @@ pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
         "georgian" => Some(ListStyleTypeValue::Georgian),
         "hebrew" => Some(ListStyleTypeValue::Hebrew),
         "arabic-indic" => Some(ListStyleTypeValue::ArabicIndic),
+        // R2471：CSS Counter Styles 3 §6.1 预定义 numeric system（十进制位数字替换）。
+        "devanagari" => Some(ListStyleTypeValue::Devanagari),
+        "bengali" => Some(ListStyleTypeValue::Bengali),
+        "gujarati" => Some(ListStyleTypeValue::Gujarati),
+        "gurmukhi" => Some(ListStyleTypeValue::Gurmukhi),
+        "kannada" => Some(ListStyleTypeValue::Kannada),
+        "malayalam" => Some(ListStyleTypeValue::Malayalam),
+        "tamil" => Some(ListStyleTypeValue::Tamil),
+        "telugu" => Some(ListStyleTypeValue::Telugu),
+        "lao" => Some(ListStyleTypeValue::Lao),
+        "khmer" => Some(ListStyleTypeValue::Khmer),
+        "myanmar" => Some(ListStyleTypeValue::Myanmar),
         "none" => Some(ListStyleTypeValue::None),
         _ => {
             // R2392：非 builtin 的 `<custom-ident>` 视为自定义计数器样式名（@counter-style）。

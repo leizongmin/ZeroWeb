@@ -94,6 +94,18 @@ fn to_arabic_indic(value: usize) -> String {
         .collect()
 }
 
+/// R2471：通用 numeric system 计数器表示（CSS Counter Styles 3 §6.1）。
+///
+/// 十进制位数字替换：把 value 的各位 ASCII 数字替换为 `base` 起的连续 10 字形块中对应数字
+///（同 arabic-indic 算法，仅 digit 字形块不同）。`base` = 该脚本 DIGIT ZERO 的 Unicode 码点。
+fn to_digit_script(value: usize, base: u32) -> String {
+    value
+        .to_string()
+        .chars()
+        .map(|c| char::from_u32(base + (c as u8 - b'0') as u32).expect("digit script block contiguous 0-9"))
+        .collect()
+}
+
 /// R2447：armenian 计数器表示（CSS Counter Styles 3 §6.1 预定义，≡ upper-armenian）。
 ///
 /// 传统亚美尼亚数字系统——纯加法（无减法形式，区别于 Roman）。大写亚美尼亚字母块
@@ -573,19 +585,34 @@ impl super::super::Painter {
             }
             // R2445：lower-greek / persian 预定义计数器样式（CSS Counter Styles 3 §6）。
             // R2447：+ armenian（§6.1 additive）。R2448：+ lower-armenian（小写）。R2449：+ georgian。R2450：+ hebrew。R2451：+ arabic-indic。
+            // R2471：+ 11 numeric scripts（devanagari/bengali/gujarati/gurmukhi/kannada/malayalam/
+            // tamil/telugu/lao/khmer/myanmar），均 numeric system = to_digit_script(value, base)。
             ListStyleTypeValue::LowerGreek
             | ListStyleTypeValue::Persian
             | ListStyleTypeValue::Armenian
             | ListStyleTypeValue::LowerArmenian
             | ListStyleTypeValue::Georgian
             | ListStyleTypeValue::Hebrew
-            | ListStyleTypeValue::ArabicIndic => {
+            | ListStyleTypeValue::ArabicIndic
+            | ListStyleTypeValue::Devanagari
+            | ListStyleTypeValue::Bengali
+            | ListStyleTypeValue::Gujarati
+            | ListStyleTypeValue::Gurmukhi
+            | ListStyleTypeValue::Kannada
+            | ListStyleTypeValue::Malayalam
+            | ListStyleTypeValue::Tamil
+            | ListStyleTypeValue::Telugu
+            | ListStyleTypeValue::Lao
+            | ListStyleTypeValue::Khmer
+            | ListStyleTypeValue::Myanmar => {
                 let index = self
                     .get_counter("list-item")
                     .map(|v| v as usize)
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
                 // lower-armenian = armenian 算法输出 + Unicode to_lowercase（Armenian 双层壳，
                 // U+0531→U+0561 等；Rust 用 Unicode case folding，ground-truth 验证 1=ա/9999=քջղթ）。
+                // R2471 numeric scripts：base = 该脚本 DIGIT ZERO 码点（U+0966/09E6/0AE6/0A66/
+                // 0CE6/0D66/0BE6/0C66/0ED0/17E0/1040）。
                 let body = match style.list_style_type {
                     ListStyleTypeValue::LowerGreek => to_greek(index),
                     ListStyleTypeValue::Persian => to_persian(index),
@@ -594,6 +621,17 @@ impl super::super::Painter {
                     ListStyleTypeValue::Georgian => to_georgian(index),
                     ListStyleTypeValue::Hebrew => to_hebrew(index),
                     ListStyleTypeValue::ArabicIndic => to_arabic_indic(index),
+                    ListStyleTypeValue::Devanagari => to_digit_script(index, 0x0966),
+                    ListStyleTypeValue::Bengali => to_digit_script(index, 0x09E6),
+                    ListStyleTypeValue::Gujarati => to_digit_script(index, 0x0AE6),
+                    ListStyleTypeValue::Gurmukhi => to_digit_script(index, 0x0A66),
+                    ListStyleTypeValue::Kannada => to_digit_script(index, 0x0CE6),
+                    ListStyleTypeValue::Malayalam => to_digit_script(index, 0x0D66),
+                    ListStyleTypeValue::Tamil => to_digit_script(index, 0x0BE6),
+                    ListStyleTypeValue::Telugu => to_digit_script(index, 0x0C66),
+                    ListStyleTypeValue::Lao => to_digit_script(index, 0x0ED0),
+                    ListStyleTypeValue::Khmer => to_digit_script(index, 0x17E0),
+                    ListStyleTypeValue::Myanmar => to_digit_script(index, 0x1040),
                     _ => unreachable!(),
                 };
                 let text = format!("{body}.");
@@ -715,9 +753,31 @@ mod tests {
     use super::list_item_counter;
     use super::to_arabic_indic;
     use super::to_armenian;
+    use super::to_digit_script;
     use super::to_georgian;
     use super::to_hebrew;
     use zero_dom::parse_html;
+
+    /// R2471：numeric system 计数器（CSS Counter Styles 3 §6.1）ground-truth 对齐 WPT ref。
+    /// 验证值取自 css-counter-styles/{devanagari,bengali,...}/css3-counter-styles-NNN 真实期望。
+    #[test]
+    fn digit_script_counter_matches_wpt_ground_truth() {
+        // devanagari ०-९（U+0966-U+096F）
+        assert_eq!(to_digit_script(0, 0x0966), "०");
+        assert_eq!(to_digit_script(9, 0x0966), "९");
+        assert_eq!(to_digit_script(10, 0x0966), "१०");
+        assert_eq!(to_digit_script(123, 0x0966), "१२३");
+        // bengali ০-৯（U+09E6+）
+        assert_eq!(to_digit_script(1, 0x09E6), "১");
+        // tamil ௦-௯（U+0BE6+）
+        assert_eq!(to_digit_script(0, 0x0BE6), "௦");
+        assert_eq!(to_digit_script(9, 0x0BE6), "௯");
+        // myanmar ၀-၉（U+1040+）
+        assert_eq!(to_digit_script(0, 0x1040), "၀");
+        assert_eq!(to_digit_script(42, 0x1040), "၄၂");
+        // 与 arabic-indic 同算法（ground-truth 一致性）
+        assert_eq!(to_digit_script(123, 0x0660), to_arabic_indic(123));
+    }
 
     fn li(doc: &zero_dom::Document, n: usize) -> zero_dom::NodeId {
         doc.get_elements_by_tag_name("li")[n]

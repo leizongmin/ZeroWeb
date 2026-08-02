@@ -321,6 +321,29 @@ pub enum ListStyleTypeValue {
     Hebrew,
     /// arabic-indic（阿拉伯-印度数字 ٠-٩，numeric；CSS Counter Styles 3 §6.1 预定义）。R2451。
     ArabicIndic,
+    /// R2471：CSS Counter Styles 3 §6.1 预定义 numeric system（十进制位数字替换，同 arabic-indic
+    /// 算法，仅 digit 字形块不同）。
+    Devanagari,
+    /// bengali 数字 ০-৯（U+09E6+，numeric）。R2471。
+    Bengali,
+    /// gujarati 数字 ૦-૯（U+0AE6+，numeric）。R2471。
+    Gujarati,
+    /// gurmukhi 数字 ੦-੯（U+0A66+，numeric）。R2471。
+    Gurmukhi,
+    /// kannada 数字 ೦-೯（U+0CE6+，numeric）。R2471。
+    Kannada,
+    /// malayalam 数字 ൦-൯（U+0D66+，numeric）。R2471。
+    Malayalam,
+    /// tamil 数字 ௦-௯（U+0BE6+，numeric）。R2471。
+    Tamil,
+    /// telugu 数字 ౦-౯（U+0C66+，numeric）。R2471。
+    Telugu,
+    /// lao 数字 ໐-໙（U+0ED0+，numeric）。R2471。
+    Lao,
+    /// khmer 数字 ០-៩（U+17E0+，numeric）。R2471。
+    Khmer,
+    /// myanmar 数字 ၀-၉（U+1040+，numeric）。R2471。
+    Myanmar,
     /// none。
     None,
     /// 自定义计数器样式名（`@counter-style` 定义；CSS Counter Styles 3）。driving: R2392。
