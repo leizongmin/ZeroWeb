@@ -160,7 +160,7 @@ impl super::Painter {
         }
 
         let color = super::super::color::color_value_to_render(&style.color);
-        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
 
@@ -254,7 +254,7 @@ impl super::Painter {
         }
 
         let color = super::super::color::color_value_to_render(&style.color);
-        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
@@ -424,11 +424,11 @@ impl super::Painter {
 
         let (tx, ty) = super::super::helpers::apply_transform_offset(style, abs_x, abs_y);
 
-        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
         // R1224：Ahem font_id 供 inline 元素字体≠容器时字形位图用（如 <span font:Ahem> 在
         // default div 内）。render_fragment macro 按 owner（片段父元素）font_family 选
         // frag_font_id——is_ahem 片段用 ahem_font_id 出 Ahem 方块，非 is_ahem 用 default。
-        let ahem_font_id = self.resolve_font_id(&["Ahem".to_string()], &style.font_weight);
+        let ahem_font_id = self.resolve_font_id(&["Ahem".to_string()], &style.font_weight, &style.font_style);
         // R1464：per-fragment font_id（key = 文本节点 NodeId）。Path B 空 styles 无
         // per-fragment font-family，旧实现 glyph 全用 default_font_id（容器字体）→ 非-Ahem
         // webfont/跨字体 inline 用错字体。据布局存的 text_node_font_families 解析每个文本
@@ -437,7 +437,7 @@ impl super::Painter {
         let text_node_font_ids: HashMap<zero_dom::NodeId, zero_render_foundation::primitive::FontId> = box_node
             .text_node_font_families
             .iter()
-            .map(|(&tn, fam)| (tn, self.resolve_font_id(fam, &style.font_weight)))
+            .map(|(&tn, fam)| (tn, self.resolve_font_id(fam, &style.font_weight, &style.font_style)))
             .collect();
 
         if let (Some(doc), Some(node_id)) = (doc, box_node.node_id) {
@@ -1556,7 +1556,8 @@ impl super::Painter {
                         let ellipsis_char = '\u{2026}';
                         let ellipsis_width = measure_char_for_paint(ellipsis_char, font_size, container_is_ahem);
                         let content_right = content_x + container_width + tx;
-                        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
+                        let default_font_id =
+                            self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
 
                         // 定位：紧跟末行文本末尾；若 + ellipsis 宽超 content_right（末行已占满），
                         // 回退到 content_right 右对齐 + 截掉末行尾部 glyph 让位（镜像 text-overflow
@@ -1656,7 +1657,7 @@ impl super::Painter {
         }
 
         let color = color_value_to_render(&style.color);
-        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
         let content_x = abs_x;
         let content_y = abs_y;
 

@@ -296,36 +296,46 @@ impl Painter {
         &self,
         font_family: &[String],
         font_weight: &zero_css_parser::values::FontWeightValue,
+        font_style: &zero_css_parser::values::types::FontStyleValue,
     ) -> zero_render_foundation::primitive::FontId {
         use zero_css_parser::values::FontWeightValue;
+        use zero_css_parser::values::types::FontStyleValue;
         use zero_render_foundation::primitive::FontId;
 
         let want_bold = matches!(font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
             || matches!(font_weight, FontWeightValue::Absolute(w) if *w >= 600);
+        // R2493：italic/oblique → want_italic，查 `{family}:italic` 键。
+        let want_italic = matches!(font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
+
+        // 按 (want_bold, want_italic) 构候选键序列（逐级 fallback）：bold+italic →
+        // :700:italic → :700 → :italic → plain；bold → :700 → plain；italic → :italic → plain；
+        // regular → plain。缺 italic/bold face 时回落 plain = 现状行为（零回归下限）。
+        let suffixes: &[&str] = match (want_bold, want_italic) {
+            (true, true) => &[":700:italic", ":700", ":italic", ""],
+            (true, false) => &[":700", ""],
+            (false, true) => &[":italic", ""],
+            (false, false) => &[""],
+        };
 
         for family in font_family {
             let name = family.trim_matches('"').trim_matches('\'');
-            if want_bold {
-                let bold_key = format!("{name}:700");
-                if let Some(&id) = self.font_resolver.get(&bold_key) {
+            for &suffix in suffixes {
+                let key = format!("{name}{suffix}");
+                if let Some(&id) = self.font_resolver.get(&key) {
                     return FontId(id);
                 }
-                for (key, &id) in &self.font_resolver {
-                    if key.eq_ignore_ascii_case(&bold_key) {
+                for (rk, &id) in &self.font_resolver {
+                    if rk.eq_ignore_ascii_case(&key) {
                         return FontId(id);
                     }
                 }
             }
-            if let Some(&id) = self.font_resolver.get(name) {
-                return FontId(id);
-            }
-            for (key, &id) in &self.font_resolver {
-                if key.eq_ignore_ascii_case(name) {
-                    return FontId(id);
-                }
-            }
         }
-        if want_bold && let Some(&id) = self.font_resolver.get("sans-serif:700") {
+        // bold fallback 到通用 sans-serif:700（既有行为）。
+        if want_bold
+            && !want_italic
+            && let Some(&id) = self.font_resolver.get("sans-serif:700")
+        {
             return FontId(id);
         }
         FontId(0)

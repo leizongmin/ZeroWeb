@@ -73,11 +73,12 @@ pub struct AsyncPageLoad {
     css_seen: HashSet<String>,
     img_pending: Vec<(String, u64, BytesFetchRx)>,
     lazy_img_pending: Vec<(String, u64, BytesFetchRx)>,
-    font_pending: Vec<(String, Option<u16>, String, BytesFetchRx)>,
+    font_pending: Vec<(String, Option<u16>, bool, String, BytesFetchRx)>,
     /// R2408+ slice 2：poll_fonts 收集的已就绪 @font-face 字节 `(family, weight, bytes)`，
     /// 供宿主在 tick 后经 `drain_loaded_fonts()` 取出并 load+register（drain pattern）。
-    /// weight（R2417）供宿主按 weight 构 `{family}:700` 粗体键。
-    font_loaded: Vec<(String, Option<u16>, Vec<u8>)>,
+    /// weight（R2417）供宿主按 weight 构 `{family}:700` 粗体键；is_italic（R2493）供宿主
+    /// 按 font-style 构 `{family}:italic` italic 键。
+    font_loaded: Vec<(String, Option<u16>, bool, Vec<u8>)>,
     lazy_urls: Vec<String>,
     document_rx: Option<Receiver<Result<String, String>>>,
     render_session: Option<BudgetedRenderSession>,
@@ -170,8 +171,9 @@ impl AsyncPageLoad {
     ///
     /// 宿主在 `tick` 返回后调用——`poll_fonts` 把 fetch 成功的字节收集到此处，不再丢弃。
     /// 宿主据此 `load_font` + `register_family_alias`（weight≥600 时另构 `{family}:700`
-    /// 粗体键，R2417）+ 刷新 resolver + `request_rerender`。
-    pub fn drain_loaded_fonts(&mut self) -> Vec<(String, Option<u16>, Vec<u8>)> {
+    /// 粗体键 R2417；is_italic 时另构 `{family}:italic` italic 键 R2493）+ 刷新 resolver
+    /// + `request_rerender`。
+    pub fn drain_loaded_fonts(&mut self) -> Vec<(String, Option<u16>, bool, Vec<u8>)> {
         std::mem::take(&mut self.font_loaded)
     }
 
@@ -427,7 +429,7 @@ impl AsyncPageLoad {
         }
         let faces = extract_font_faces(&css);
         let base = url::Url::parse(&self.url).ok();
-        for (family, sources, weight) in faces {
+        for (family, sources, weight, is_italic) in faces {
             for src in &sources {
                 // data: 不走 fetch（与图片 data: 路径一致）；local() 已被 css-parser 排除。
                 if src.starts_with("data:") {
@@ -442,6 +444,7 @@ impl AsyncPageLoad {
                 self.font_pending.push((
                     family.clone(),
                     weight,
+                    is_italic,
                     abs.clone(),
                     host.fetch_bytes_meta(&abs, ResourceFetchMeta::FONT),
                 ));
@@ -453,15 +456,16 @@ impl AsyncPageLoad {
     }
 
     fn poll_fonts(&mut self, changed: &mut bool) {
-        self.font_pending.retain(|(family, weight, url, rx)| {
+        self.font_pending.retain(|(family, weight, is_italic, url, rx)| {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     Ok(bytes) => {
                         tracing::info!(url, bytes = bytes.len(), "page load: font fetched");
                         // R2408+ slice 2：保留字节供宿主 drain 后 load+register（drain pattern），
                         // 不再丢弃。family 用于 register_family_alias；weight（R2417）用于按
-                        // weight 构 {family}:700 粗体键。
-                        self.font_loaded.push((family.clone(), *weight, bytes));
+                        // weight 构 {family}:700 粗体键；is_italic（R2493）用于按 font-style 构
+                        // {family}:italic italic 键。
+                        self.font_loaded.push((family.clone(), *weight, *is_italic, bytes));
                     }
                     Err(e) => tracing::warn!("font {url} fetch failed: {e}"),
                 }
@@ -849,8 +853,8 @@ mod tests {
         let drained = load.drain_loaded_fonts();
         assert_eq!(
             drained,
-            vec![("TestFont".to_string(), None, font_bytes)],
-            "family + weight + bytes 回传"
+            vec![("TestFont".to_string(), None, false, font_bytes)],
+            "family + weight + is_italic + bytes 回传"
         );
         assert!(load.drain_loaded_fonts().is_empty(), "drain 清空");
     }
@@ -874,7 +878,7 @@ mod tests {
         );
         assert_eq!(
             load.drain_loaded_fonts(),
-            vec![("InlineFont".to_string(), None, vec![1, 2, 3])],
+            vec![("InlineFont".to_string(), None, false, vec![1, 2, 3])],
             "inline family drained"
         );
     }
@@ -938,7 +942,7 @@ mod tests {
         while load.is_active() {
             let _ = load.tick(&mut wv, &mut host, 500.0);
             if live_enabled {
-                for (family, _weight, bytes) in load.drain_loaded_fonts() {
+                for (family, _weight, _is_italic, bytes) in load.drain_loaded_fonts() {
                     if let Ok(id) = loader.load_font(&bytes) {
                         loader.register_family_alias(&family, id);
                         wv.set_font_resolver(loader.build_font_resolver());
@@ -996,7 +1000,7 @@ mod tests {
         let _decoy = loader.load_font(&ahem); // id 0：fallback 槽（镜像生产系统字体先载）
         while load.is_active() {
             let _ = load.tick(&mut wv, &mut host, 500.0);
-            for (family, weight, bytes) in load.drain_loaded_fonts() {
+            for (family, weight, _is_italic, bytes) in load.drain_loaded_fonts() {
                 if let Ok(id) = loader.load_font(&bytes) {
                     if weight.is_some_and(|w| w >= 600) {
                         loader.register_family_alias(&format!("{family}:700"), id);
@@ -1017,6 +1021,56 @@ mod tests {
         assert!(
             result.primitives.glyphs.iter().any(|g| g.font_id.0 == bold_id),
             "ABC (bold) 应以粗体 face id={bold_id} 渲染，glyph ids: {:?}",
+            result.primitives.glyphs.iter().map(|g| g.font_id.0).collect::<Vec<_>>()
+        );
+        let _ = reg_id;
+    }
+
+    /// R2493：live browser italic @font-face matching——同族 regular + italic 两个 face，
+    /// `<p style="font-family: MyAhem; font-style: italic">` 的 glyph 用**italic face id**（≠ regular）。
+    /// 镜像 renderer/tab_worker drain（italic→`{family}:italic`，regular→plain family）。
+    #[test]
+    fn live_fontface_italic_style_uses_italic_face() {
+        let ahem_path = format!("{}/../../tests/wpt-runner/fonts/Ahem.ttf", env!("CARGO_MANIFEST_DIR"));
+        let ahem = std::fs::read(&ahem_path).expect("Ahem.ttf");
+        let html = r#"<html><head><style>
+            @font-face { font-family: "MyAhem"; src: url(reg.woff); }
+            @font-face { font-family: "MyAhem"; src: url(italic.woff); font-style: italic; }
+            </style></head><body>
+            <p style="font-family: MyAhem; font-style: italic; font-size: 20px">ABC</p>
+            </body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(ahem.clone());
+        let mut loader = FontLoader::new();
+        let _decoy = loader.load_font(&ahem); // id 0：fallback 槽
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+            // 镜像生产 drain：按 (weight, is_italic) 构注册键。
+            for (family, weight, is_italic, bytes) in load.drain_loaded_fonts() {
+                if let Ok(id) = loader.load_font(&bytes) {
+                    let want_bold = weight.is_some_and(|w| w >= 600);
+                    let key = match (want_bold, is_italic) {
+                        (true, true) => format!("{family}:700:italic"),
+                        (true, false) => format!("{family}:700"),
+                        (false, true) => format!("{family}:italic"),
+                        (false, false) => family.clone(),
+                    };
+                    loader.register_family_alias(&key, id);
+                    wv.set_font_resolver(loader.build_font_resolver());
+                    load.request_rerender();
+                }
+            }
+        }
+        let resolver = loader.build_font_resolver();
+        let italic_id = *resolver.get("MyAhem:italic").expect("italic face 注册到 MyAhem:italic");
+        let reg_id = *resolver.get("MyAhem").expect("regular face 注册到 MyAhem");
+        assert_ne!(italic_id, reg_id, "italic id ≠ regular id");
+        // 渲染的 "ABC"（font-style:italic）glyph 用 italic face id。
+        let result = wv.last_render().expect("render result");
+        assert!(
+            result.primitives.glyphs.iter().any(|g| g.font_id.0 == italic_id),
+            "ABC (italic) 应以 italic face id={italic_id} 渲染，glyph ids: {:?}",
             result.primitives.glyphs.iter().map(|g| g.font_id.0).collect::<Vec<_>>()
         );
         let _ = reg_id;

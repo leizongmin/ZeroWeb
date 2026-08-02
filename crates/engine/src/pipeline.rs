@@ -1158,24 +1158,34 @@ pub fn extract_img_resources(html: &str) -> Vec<ImgResource> {
     out
 }
 
-/// 从 CSS 文本提取所有 `@font-face` 规则的 `(family, url_sources, weight)` 列表（保留 family + weight）。
+/// 从 CSS 文本提取所有 `@font-face` 规则的 `(family, url_sources, weight, is_italic)` 列表
+/// （保留 family + weight + is_italic）。
 ///
 /// **保留 family**（`@font-face` 的 `font-family` 描述符值）与 **weight**（`font-weight`
-/// 描述符解析为绝对权重 100-900，`None` = 未指定/相对，视为 normal/400），供生产 async
-/// 加载路径按声明族名注册字体别名（`FontLoader::register_family_alias`），并按 weight 构
-/// `{family}:700` 粗体键（R2417 font-weight matching——painter `resolve_font_id` 对
-/// `font-weight≥600` 查 `{family}:700`）。`sources` 为 css-parser 解析出的 url() 项（已去
-/// `url()` 包裹与引号，按出现顺序）；family 已去引号。
+/// 描述符解析为绝对权重 100-900，`None` = 未指定/相对，视为 normal/400）与 **is_italic**
+/// （`font-style` 描述符为 `italic`/`oblique` → true，否则 false），供生产 async 加载路径
+/// 按声明族名注册字体别名（`FontLoader::register_family_alias`），并按 weight 构
+/// `{family}:700` 粗体键（R2417 font-weight matching）、按 is_italic 构 `{family}:italic`
+/// italic 键（R2493 font-style matching——painter `resolve_font_id` 对 `font-weight≥600`
+/// 查 `{family}:700`、对 `font-style:italic/oblique` 查 `{family}:italic`）。`sources` 为
+/// css-parser 解析出的 url() 项（已去 `url()` 包裹与引号，按出现顺序）；family 已去引号。
 ///
 /// `data:` / `local()` 的过滤由抓取层（`AsyncPageLoad::begin_font_fetch`）处理，本函数仅做
 /// 透传解析。解析失败或无 @font-face 规则返回空 Vec。
-pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>, Option<u16>)> {
+pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>, Option<u16>, bool)> {
     use zero_css_parser::ast::Rule as CssRule;
+    use zero_css_parser::values::types::FontStyleValue;
     zero_css_parser::Parser::parse_stylesheet(css)
         .rules
         .iter()
         .filter_map(|rule| match rule {
-            CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone(), ff.weight)),
+            CssRule::FontFace(ff) => {
+                let is_italic = matches!(
+                    ff.style,
+                    Some(FontStyleValue::Italic) | Some(FontStyleValue::Oblique(_))
+                );
+                Some((ff.family.clone(), ff.sources.clone(), ff.weight, is_italic))
+            }
             _ => None,
         })
         .collect()
@@ -1734,27 +1744,32 @@ mod font_face_extract_tests {
                 (
                     "JetBrains Mono".to_string(),
                     vec!["jb.woff2".to_string(), "jb.ttf".to_string()],
-                    None
+                    None,
+                    false
                 ),
-                ("Title".to_string(), vec!["t.woff".to_string()], None),
+                ("Title".to_string(), vec!["t.woff".to_string()], None, false),
             ],
             "family dequoted; sources ordered; format() ignored; non-font-face rules skipped"
         );
     }
 
-    /// R2417：extract_font_faces 返回 weight（font-weight 描述符）。
+    /// R2417/R2493：extract_font_faces 返回 weight（font-weight 描述符）+ is_italic（font-style）。
     #[test]
-    fn extract_font_faces_returns_weight() {
+    fn extract_font_faces_returns_weight_and_style() {
         let css = r#"
             @font-face { font-family: "Bold"; src: url(b.woff); font-weight: bold; }
             @font-face { font-family: "Reg"; src: url(r.woff); }
+            @font-face { font-family: "Italic"; src: url(i.woff); font-style: italic; }
+            @font-face { font-family: "Oblique"; src: url(o.woff); font-style: oblique; }
         "#;
         let faces = extract_font_faces(css);
         assert_eq!(
             faces,
             vec![
-                ("Bold".to_string(), vec!["b.woff".to_string()], Some(700)),
-                ("Reg".to_string(), vec!["r.woff".to_string()], None),
+                ("Bold".to_string(), vec!["b.woff".to_string()], Some(700), false),
+                ("Reg".to_string(), vec!["r.woff".to_string()], None, false),
+                ("Italic".to_string(), vec!["i.woff".to_string()], None, true),
+                ("Oblique".to_string(), vec!["o.woff".to_string()], None, true),
             ]
         );
     }
@@ -1771,12 +1786,19 @@ mod font_face_extract_tests {
     #[test]
     fn extract_font_faces_matches_direct_parse() {
         use zero_css_parser::ast::Rule as CssRule;
+        use zero_css_parser::values::types::FontStyleValue;
         let css = r#"@font-face { font-family: X; src: url(a.woff) format("woff"), url(b.ttf); }"#;
-        let direct: Vec<(String, Vec<String>, Option<u16>)> = zero_css_parser::Parser::parse_stylesheet(css)
+        let direct: Vec<(String, Vec<String>, Option<u16>, bool)> = zero_css_parser::Parser::parse_stylesheet(css)
             .rules
             .iter()
             .filter_map(|r| match r {
-                CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone(), ff.weight)),
+                CssRule::FontFace(ff) => {
+                    let is_italic = matches!(
+                        ff.style,
+                        Some(FontStyleValue::Italic) | Some(FontStyleValue::Oblique(_))
+                    );
+                    Some((ff.family.clone(), ff.sources.clone(), ff.weight, is_italic))
+                }
                 _ => None,
             })
             .collect();

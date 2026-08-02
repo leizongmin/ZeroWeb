@@ -455,7 +455,7 @@ impl super::super::Painter {
         }
 
         let color = color_value_to_render(&style.color);
-        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
         let marker_size = font_size * 0.4;
         let marker_x = abs_x + box_node.border_left;
         let marker_y = abs_y + box_node.border_top + box_node.padding_top;

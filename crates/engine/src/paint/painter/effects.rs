@@ -896,7 +896,7 @@ impl super::Painter {
             _ => 12.0,
         };
         let color = color_value_to_render(&style.color);
-        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;

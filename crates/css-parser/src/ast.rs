@@ -2,6 +2,8 @@
 //!
 //! 定义 CSS 样式表的抽象语法树结构。
 
+use crate::values::types::FontStyleValue;
+
 /// CSS 样式表 AST。
 #[derive(Debug, Clone)]
 pub struct Stylesheet {
@@ -91,6 +93,10 @@ pub struct FontFaceRule {
     /// 数字原值；`lighter`/`bolder`（相对，需父上下文）或缺失 → `None`（视为 normal/400）。
     /// 供生产注册按 weight 构 `{family}:700` 粗体键（R2417 font-weight matching）。
     pub weight: Option<u16>,
+    /// `font-style` 描述符（R2493 font-style matching）：`normal`/`italic`/`oblique`
+    /// 原值；缺失 → `None`（视为 normal/upright）。供生产注册按 style 构
+    /// `{family}:italic`（italic/oblique）键，painter `resolve_font_id` 选用。
+    pub style: Option<FontStyleValue>,
 }
 
 /// CSS @page 规则（Paged Media）。

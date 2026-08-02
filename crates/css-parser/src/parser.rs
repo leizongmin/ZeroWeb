@@ -4,6 +4,7 @@
 
 use crate::ast::*;
 use crate::tokenizer::{Token, Tokenizer};
+use crate::values::types::FontStyleValue;
 
 /// CSS 解析器。
 ///
@@ -2055,6 +2056,7 @@ impl<'a> Parser<'a> {
         let mut family = String::new();
         let mut sources: Vec<String> = Vec::new();
         let mut weight: Option<u16> = None;
+        let mut style: Option<FontStyleValue> = None;
         for decl in &declarations {
             if decl.property.eq_ignore_ascii_case("font-family") {
                 family = strip_css_quotes(decl.value.trim());
@@ -2064,6 +2066,8 @@ impl<'a> Parser<'a> {
                 }
             } else if decl.property.eq_ignore_ascii_case("font-weight") {
                 weight = Self::parse_font_face_weight(&decl.value);
+            } else if decl.property.eq_ignore_ascii_case("font-style") {
+                style = Self::parse_font_face_style(&decl.value);
             }
         }
 
@@ -2075,6 +2079,7 @@ impl<'a> Parser<'a> {
             family,
             sources,
             weight,
+            style,
         })
     }
 
@@ -2092,6 +2097,25 @@ impl<'a> Parser<'a> {
         }
         let n: u16 = v.parse().ok()?;
         (100..=900).contains(&n).then_some(n)
+    }
+
+    /// 解析 `@font-face` 的 `font-style` 描述符（R2493 font-style matching）。
+    ///
+    /// `normal`→Normal、`italic`→Italic、`oblique`（含可选角度，匹配视为 italic）→Oblique(None)；
+    /// 无法识别 → `None`（调用方视为 normal/upright，不构 italic 键）。
+    fn parse_font_face_style(value: &str) -> Option<FontStyleValue> {
+        let v = value.trim();
+        if v.eq_ignore_ascii_case("normal") {
+            return Some(FontStyleValue::Normal);
+        }
+        if v.eq_ignore_ascii_case("italic") {
+            return Some(FontStyleValue::Italic);
+        }
+        // `oblique` 或 `oblique <angle>`：匹配视为 italic，角度当前忽略（无须精确）。
+        if v.eq_ignore_ascii_case("oblique") || v.to_ascii_lowercase().starts_with("oblique") {
+            return Some(FontStyleValue::Oblique(None));
+        }
+        None
     }
 
     /// 消耗 @page 规则（CSS Paged Media）。
