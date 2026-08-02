@@ -810,7 +810,7 @@ fn test_apply_filter_all_functions() {
     assert!(ok);
     let (ok, _) = apply("filter", "sepia(0.8)");
     assert!(ok);
-    let (ok, _) = apply("filter", "drop-shadow(1 2 3 red)");
+    let (ok, _) = apply("filter", "drop-shadow(1px 2px 3px red)");
     assert!(ok);
 }
 

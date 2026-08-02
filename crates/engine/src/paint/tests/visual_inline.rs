@@ -984,7 +984,7 @@ fn test_filter_drop_shadow() {
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
     let result = pipeline.render_html(
         "<html><body><div>Test</div></body></html>",
-        "div { color: black; font-size: 16px; filter: drop-shadow(2 3 4 black); }",
+        "div { color: black; font-size: 16px; filter: drop-shadow(2px 3px 4px black); }",
     );
     let filters = &result.primitives.filters;
     assert_eq!(filters.len(), 1);

@@ -1250,7 +1250,7 @@ fn test_apply_filter_functions() {
     assert!(ok);
     let (ok, _) = apply("filter", "sepia(1)");
     assert!(ok);
-    let (ok, _) = apply("filter", "drop-shadow(1 2 3 black)");
+    let (ok, _) = apply("filter", "drop-shadow(1px 2px 3px black)");
     assert!(ok);
 }
 

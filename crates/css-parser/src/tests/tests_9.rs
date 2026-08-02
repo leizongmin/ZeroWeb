@@ -2,15 +2,15 @@
 
 use crate::values::hwb_to_rgba;
 use crate::values::{
-    ColorValue, LengthValue, QuotesValue, parse_appearance, parse_background_attachment, parse_background_clip,
-    parse_background_origin, parse_background_repeat, parse_background_repeat_list, parse_background_size,
-    parse_background_size_list, parse_border_collapse, parse_border_image_outset, parse_border_image_repeat,
-    parse_border_image_slice, parse_border_image_source, parse_border_image_width, parse_box_shadow, parse_caret_color,
-    parse_color, parse_column_count, parse_column_width, parse_contain, parse_content, parse_counter_list,
-    parse_filter, parse_filter_list, parse_gradient, parse_grid_area, parse_hyphens, parse_line_clamp,
-    parse_list_style_image, parse_mix_blend_mode, parse_object_fit, parse_quotes, parse_scrollbar_gutter,
-    parse_scrollbar_width, parse_table_layout, parse_text_overflow, parse_text_shadow, parse_text_wrap,
-    parse_will_change,
+    ColorValue, FilterValue, LengthValue, QuotesValue, parse_appearance, parse_background_attachment,
+    parse_background_clip, parse_background_origin, parse_background_repeat, parse_background_repeat_list,
+    parse_background_size, parse_background_size_list, parse_border_collapse, parse_border_image_outset,
+    parse_border_image_repeat, parse_border_image_slice, parse_border_image_source, parse_border_image_width,
+    parse_box_shadow, parse_caret_color, parse_color, parse_column_count, parse_column_width, parse_contain,
+    parse_content, parse_counter_list, parse_filter, parse_filter_list, parse_gradient, parse_grid_area, parse_hyphens,
+    parse_line_clamp, parse_list_style_image, parse_mix_blend_mode, parse_object_fit, parse_quotes,
+    parse_scrollbar_gutter, parse_scrollbar_width, parse_table_layout, parse_text_overflow, parse_text_shadow,
+    parse_text_wrap, parse_will_change,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -572,14 +572,62 @@ fn test_filter_sepia() {
 
 #[test]
 fn test_filter_drop_shadow_basic() {
-    let f = parse_filter("drop-shadow(1 2 3 black)");
-    assert!(f.is_some());
+    // R2485：px 长度（改前裸 parse::<f32>() 对 "2px" 失败 → 整条丢）。
+    let f = parse_filter("drop-shadow(1px 2px 3px black)").expect("px drop-shadow 应解析");
+    assert!(matches!(f, FilterValue::DropShadow(1.0, 2.0, 3.0, _)));
 }
 
 #[test]
 fn test_filter_drop_shadow_no_blur() {
-    let f = parse_filter("drop-shadow(1 2 red)");
-    assert!(f.is_some());
+    // 3 值：第 3 个为 color（非 blur）→ blur=0。
+    let f = parse_filter("drop-shadow(1px 2px red)").expect("px drop-shadow 无 blur 应解析");
+    assert!(matches!(f, FilterValue::DropShadow(1.0, 2.0, 0.0, _)));
+}
+
+#[test]
+fn test_filter_drop_shadow_px_lengths_not_dropped() {
+    // R2485 driving：改前 `drop-shadow(2px 2px red)` 因 "2px".parse::<f32>() 失败被整条丢。
+    let f = parse_filter("drop-shadow(2px 2px red)");
+    assert!(f.is_some(), "px 长度的 drop-shadow 不应被丢弃");
+    assert!(matches!(f.unwrap(), FilterValue::DropShadow(2.0, 2.0, 0.0, _)));
+}
+
+#[test]
+fn test_filter_drop_shadow_two_values_defaults_currentcolor() {
+    // 2 值（无 color/blur）→ blur=0、color=currentcolor（改前 < 3 值被拒 None）。
+    let f = parse_filter("drop-shadow(2px 2px)").expect("2 值 drop-shadow 应解析");
+    assert!(matches!(
+        f,
+        FilterValue::DropShadow(2.0, 2.0, 0.0, ColorValue::CurrentColor)
+    ));
+}
+
+#[test]
+fn test_filter_drop_shadow_color_anywhere() {
+    // color 可在任意位置（与 box-shadow R2477 同文法 `<length>{2,3} && <color>?`）。
+    let f = parse_filter("drop-shadow(red 2px 2px)").expect("color-first 应解析");
+    assert!(matches!(f, FilterValue::DropShadow(2.0, 2.0, 0.0, _)));
+}
+
+#[test]
+fn test_filter_drop_shadow_rgb_color_with_spaces() {
+    // rgb() 含空格色须保持一体（改前 split_whitespace 拆散 → 解析失败）。
+    let f = parse_filter("drop-shadow(2px 2px rgb(10, 20, 30))");
+    assert!(f.is_some(), "rgb() 含空格色不应拆散");
+}
+
+#[test]
+fn test_filter_drop_shadow_unitless_nonzero_rejected() {
+    // 非零 unitless 长度非法（CSS <length> 须单位，除 0 外）→ None。
+    assert!(parse_filter("drop-shadow(2 3 red)").is_none());
+    // 单独 0 合法（unitless-zero）
+    assert!(parse_filter("drop-shadow(0 0 red)").is_some());
+}
+
+#[test]
+fn test_filter_drop_shadow_too_few_lengths() {
+    // 少于 2 个长度 → None。
+    assert!(parse_filter("drop-shadow(2px)").is_none());
 }
 
 #[test]
@@ -621,7 +669,7 @@ fn test_filter_list_multiple_space() {
 #[test]
 fn test_filter_list_drop_shadow_internal_spaces_preserved() {
     // paren-aware：drop-shadow 的参数内空格不应拆分 → 仍是 2 个函数
-    let list = parse_filter_list("drop-shadow(2 4 red) blur(3px)").expect("含空格参数 → Some");
+    let list = parse_filter_list("drop-shadow(2px 4px red) blur(3px)").expect("含空格参数 → Some");
     assert_eq!(
         list.len(),
         2,

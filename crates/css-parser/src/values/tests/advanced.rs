@@ -1289,12 +1289,12 @@ fn test_parse_background_repeat_all_values() {
 }
 
 /// 测试 parse_filter 的 drop-shadow 函数
-/// 验证 drop-shadow(2 3 4 red) 能正确解析为 DropShadow 变体，
+/// 验证 drop-shadow(2px 3px 4px red) 能正确解析为 DropShadow 变体，
 /// 其中包含 x/y/blur 偏移和命名颜色。
-/// 注意：parse_drop_shadow 内部使用 f32::parse，参数应为纯数值而非 "2px" 格式。
+/// R2485：CSS `<length>` 须带单位（px）；改前裸 f32::parse 仅接受 unitless 数字（非法 CSS）。
 #[test]
 fn test_parse_filter_drop_shadow() {
-    let result = parse_filter("drop-shadow(2 3 4 red)");
+    let result = parse_filter("drop-shadow(2px 3px 4px red)");
     match result {
         Some(FilterValue::DropShadow(x, y, blur, color)) => {
             assert_eq!(x, 2.0);

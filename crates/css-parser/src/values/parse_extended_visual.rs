@@ -224,26 +224,44 @@ fn parse_filter_angle(s: &str) -> Option<f32> {
 ///
 /// 格式：`x-offset y-offset blur-radius color` 或 `x-offset y-offset color`。
 fn parse_drop_shadow(inner: &str) -> Option<FilterValue> {
-    // 简化解析：按空格分割，识别颜色值
-    let parts: Vec<&str> = inner.split_whitespace().collect();
-    if parts.len() < 3 {
+    // R2485：CSS Filter Effects `drop-shadow( <length>{2,3} && <color>? )`。
+    // 改前 bug：① 裸 `parts[0].parse::<f32>()` 对 `"2px"` 失败 → **所有 px drop-shadow 整条丢**
+    //    （仅 unitless 数字能过——但非零 unitless 是非法 `<length>`）；② `split_whitespace` 拆散
+    //    `rgb(0, 0, 0)` 含空格色 → 解析失败；③ `< 3` 值（即 2 长度无 color）被拒（应默认 currentcolor）。
+    // 复用 box-shadow（R2477）模式：paren-aware split → 抽首个 color（任意位置）→ 剩余必须全为长度。
+    let parts = split_top_level_whitespace(inner);
+    if parts.len() < 2 {
         return None;
     }
-
-    let x: f32 = parts[0].parse().ok()?;
-    let y: f32 = parts[1].parse().ok()?;
-    // 尝试解析第三个参数为 blur 或 color
-    let (blur, color) = if parts.len() >= 4 {
-        let blur: f32 = parts[2].parse().ok()?;
-        let color = parse_color(parts[3..].join(" ").as_str())?;
-        (blur, color)
+    // 抽取首个可解析颜色（`<color>?` 可在任意位置，缺省 currentcolor）。
+    let mut color = ColorValue::CurrentColor;
+    let mut color_idx = None;
+    for (i, p) in parts.iter().enumerate() {
+        if let Some(c) = parse_color(p) {
+            color = c;
+            color_idx = Some(i);
+            break;
+        }
+    }
+    // 剩余 token（排除 color）必须全为长度，恰 2 或 3 个 → ox/oy(/blur)。
+    let ci = color_idx.unwrap_or(usize::MAX);
+    let lengths: Vec<&str> = parts
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != ci)
+        .map(|(_, s)| s.as_str())
+        .collect();
+    if !(lengths.len() == 2 || lengths.len() == 3) {
+        return None;
+    }
+    let ox = parse_filter_length_px(lengths[0])?;
+    let oy = parse_filter_length_px(lengths[1])?;
+    let blur = if lengths.len() == 3 {
+        parse_filter_length_px(lengths[2])?
     } else {
-        // 第三个参数是颜色
-        let color = parse_color(parts[2..].join(" ").as_str())?;
-        (0.0, color)
+        0.0
     };
-
-    Some(FilterValue::DropShadow(x, y, blur, color))
+    Some(FilterValue::DropShadow(ox, oy, blur, color))
 }
 
 // ── CSS Appearance 值类型 ──────────────────────────────────────────────
