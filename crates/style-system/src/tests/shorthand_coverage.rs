@@ -400,3 +400,73 @@ fn test_bg_shorthand_box_dropped_but_size_parsed() {
         Some("border-box".to_string())
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// R2486：font 简写 `font-size / line-height` 分隔符空格容忍（CSS Fonts §4 font shorthand）
+//
+// CSS 允许 `font: <size> / <line-height> <family>` 的 `/` 两侧有空白。改前 expand_font
+// 仅处理 attached `16px/1.5`（part.contains('/')），spaced `16px / 1.5` 被 split_whitespace
+// 拆成单独 `/` token → 落 family_parts 致 family="/ 1.5 serif" 垃圾、line_height 未设。
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 辅助：直接对 `font: <v>` 调 expand_shorthands，取某 longhand 的展开值。
+fn font_longhand(value: &str, prop: &str) -> Option<String> {
+    let decls: Vec<(String, String, bool, (u32, u32, u32))> =
+        vec![("font".to_string(), value.to_string(), false, (0u32, 0u32, 0u32))];
+    let result = crate::shorthand::expand_shorthands(&decls);
+    result
+        .iter()
+        .find(|(p, _, _, _)| p == prop)
+        .map(|(_, v, _, _)| v.clone())
+}
+
+#[test]
+fn test_font_shorthand_spaced_slash_line_height() {
+    // R2486：`font: 16px / 1.5 serif`（spaced /）→ size=16px、line-height=1.5、family=serif。
+    // 改前 family="/ 1.5 serif" 垃圾、line-height=normal。
+    assert_eq!(font_longhand("16px / 1.5 serif", "font-size"), Some("16px".to_string()));
+    assert_eq!(
+        font_longhand("16px / 1.5 serif", "line-height"),
+        Some("1.5".to_string())
+    );
+    assert_eq!(
+        font_longhand("16px / 1.5 serif", "font-family"),
+        Some("serif".to_string())
+    );
+}
+
+#[test]
+fn test_font_shorthand_attached_slash_line_height_regression() {
+    // 回归：attached `16px/1.5 serif` 仍正确（spaced-修复不应破坏 attached 路径）。
+    assert_eq!(font_longhand("16px/1.5 serif", "font-size"), Some("16px".to_string()));
+    assert_eq!(font_longhand("16px/1.5 serif", "line-height"), Some("1.5".to_string()));
+    assert_eq!(
+        font_longhand("16px/1.5 serif", "font-family"),
+        Some("serif".to_string())
+    );
+}
+
+#[test]
+fn test_font_shorthand_spaced_slash_with_style_weight() {
+    // `font: italic bold 16px / 1.5 serif`（前置 style + weight + spaced /）。
+    assert_eq!(
+        font_longhand("italic bold 16px / 1.5 serif", "font-style"),
+        Some("italic".to_string())
+    );
+    assert_eq!(
+        font_longhand("italic bold 16px / 1.5 serif", "font-weight"),
+        Some("bold".to_string())
+    );
+    assert_eq!(
+        font_longhand("italic bold 16px / 1.5 serif", "font-size"),
+        Some("16px".to_string())
+    );
+    assert_eq!(
+        font_longhand("italic bold 16px / 1.5 serif", "line-height"),
+        Some("1.5".to_string())
+    );
+    assert_eq!(
+        font_longhand("italic bold 16px / 1.5 serif", "font-family"),
+        Some("serif".to_string())
+    );
+}

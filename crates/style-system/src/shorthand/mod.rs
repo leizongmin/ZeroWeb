@@ -2094,11 +2094,24 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     let mut size_found = false;
     let mut family_parts: Vec<&str> = Vec::new();
 
+    // R2486：`font-size / line-height` 的 `/` 允许两侧空白（CSS Fonts §4 font shorthand）。
+    // spaced `/` 经 split_whitespace 成独立 token；用 expect_line_height 旗在遇 `/` 后把下一
+    // token 归 line-height（而非 family）。attached `16px/1.5` 仍走 contains('/') 分支。
+    let mut expect_line_height = false;
     for part in &parts {
+        if expect_line_height {
+            line_height = part.to_string();
+            expect_line_height = false;
+            continue;
+        }
         if size_found {
-            family_parts.push(part);
+            if *part == "/" {
+                expect_line_height = true;
+            } else {
+                family_parts.push(part);
+            }
         } else if part.contains('/') {
-            // size/line-height 格式
+            // attached size/line-height 格式
             let sub: Vec<&str> = part.splitn(2, '/').collect();
             size = sub[0].to_string();
             if sub.len() > 1 {
