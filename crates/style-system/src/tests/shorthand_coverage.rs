@@ -298,3 +298,105 @@ fn test_after_pseudo_and_content_none_no_box() {
     // before 无规则 → None
     assert!(s.before_pseudo.is_none());
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// R2481：background 简写 `<box>` + `/size` bundled 修复（CSS Backgrounds §3.4/§3.10/§3.11）
+//
+// ① `<box>`：单个 box 同时设 origin+clip；两个 box = origin/clip（改前静默丢）。
+// ② `/size`：`/` 分隔 position 与 size（改前 `/size` 整体丢，contain/cover 落 bg_color）。
+// ③ url() 内的 `/`（如 url(support/x.png)）不作为 separator（paren-aware depth-0）。
+// driving：css-backgrounds background-334/335/336（`/size`）。
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 辅助：直接对 `background: <v>` 调 expand_shorthands，取某 longhand 的展开值。
+fn bg_longhand(value: &str, prop: &str) -> Option<String> {
+    let decls: Vec<(String, String, bool, (u32, u32, u32))> =
+        vec![("background".to_string(), value.to_string(), false, (0u32, 0u32, 0u32))];
+    let result = crate::shorthand::expand_shorthands(&decls);
+    result
+        .iter()
+        .find(|(p, _, _, _)| p == prop)
+        .map(|(_, v, _, _)| v.clone())
+}
+
+#[test]
+fn test_bg_shorthand_no_box_keeps_defaults() {
+    assert_eq!(bg_longhand("red", "background-origin"), Some("padding-box".to_string()));
+    assert_eq!(bg_longhand("red", "background-clip"), Some("border-box".to_string()));
+}
+
+#[test]
+fn test_bg_shorthand_size_keyword_after_slash() {
+    // `/ contain` → background-size = contain（改前 /size 整体丢 → size=auto）。
+    assert_eq!(
+        bg_longhand("url(x.png) / contain", "background-size"),
+        Some("contain".to_string())
+    );
+}
+
+#[test]
+fn test_bg_shorthand_size_two_value_with_repeat_after() {
+    // background-334 模式：`... / 100% auto no-repeat` → size=100% auto，no-repeat 仍归 repeat。
+    assert_eq!(
+        bg_longhand(
+            "#CCC url(support/g.png) top left / 100% auto no-repeat",
+            "background-size"
+        ),
+        Some("100% auto".to_string())
+    );
+    assert_eq!(
+        bg_longhand(
+            "#CCC url(support/g.png) top left / 100% auto no-repeat",
+            "background-repeat"
+        ),
+        Some("no-repeat".to_string())
+    );
+    assert_eq!(
+        bg_longhand(
+            "#CCC url(support/g.png) top left / 100% auto no-repeat",
+            "background-color"
+        ),
+        Some("#CCC".to_string())
+    );
+    assert_eq!(
+        bg_longhand(
+            "#CCC url(support/g.png) top left / 100% auto no-repeat",
+            "background-position"
+        ),
+        Some("top left".to_string())
+    );
+}
+
+#[test]
+fn test_bg_shorthand_url_internal_slash_not_separator() {
+    // url() 内的 `/`（路径分隔）不作为 position/size separator；image 保持完整。
+    assert_eq!(
+        bg_longhand("url(support/60x60-green.png)", "background-image"),
+        Some("url(support/60x60-green.png)".to_string())
+    );
+    // 无 `/size` → size 默认 auto
+    assert_eq!(
+        bg_longhand("url(support/60x60-green.png)", "background-size"),
+        Some("auto".to_string())
+    );
+}
+
+#[test]
+fn test_bg_shorthand_box_dropped_but_size_parsed() {
+    // R2481：`<box>` 累积设 origin/clip 经 A/B 证 net −3（attachment-local false-pass unmasks，
+    // host-layer JS-scroll deferred），故**保持 drop**（origin=padding-box、clip=border-box 默认）；
+    // 但 `/size` 仍正确解析（box token 不干扰 size 分类）。
+    assert_eq!(
+        bg_longhand("url(x) content-box / contain", "background-size"),
+        Some("contain".to_string())
+    );
+    // box 被 drop → origin/clip 保持默认（非 content-box）
+    assert_eq!(
+        bg_longhand("url(x) content-box / contain", "background-origin"),
+        Some("padding-box".to_string())
+    );
+    assert_eq!(
+        bg_longhand("url(x) content-box / contain", "background-clip"),
+        Some("border-box".to_string())
+    );
+}
