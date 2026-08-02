@@ -442,7 +442,7 @@
 **★ CSS 属性 value-级 gap vein 经多轮探针（~50 属性：Tables/Text/UI/Overflow/Grid/Flex/Multicol/Backgrounds 全扫）已 Chrome-aligned 穷尽**——勿再盲扫；caption-side 等 Chrome 不支持者补反 diverge；subgrid/宽色域需 layout/gamut（defer）。**下一 lever 须 pivot 到其他 vein**。
 
 下一轮可接续的具体入口（逐条 verify-then-fix，TDD red→green，优先 unit-test 驱动不强依赖 wpt-data；每修一个跑 scoped test + clippy + fmt + 全量 `make test`，net≥0 land）：
-- **reftest-driven vein（pivot 首选）**：scoped `make reftest-upstream FILTER=<dir>` 量未深扫 dir（css-box / css-values / css-backgrounds 边角）找离散 fail → 追踪到 parse/render bug（R2369/R2370 模式；R2372 称 exhausted 但 R2369+ 仍出 lever）。
+- **reftest-driven vein（pivot 首选）**：scoped `make reftest-upstream FILTER=<dir>` 量未深扫 dir（css-box / css-values / css-backgrounds 边角）找离散 fail → 追踪到 parse/render bug（R2369/R2370 模式；R2372 称 exhausted 但 R2369+ 仍出 lever）。**R2459 核验**：`wpt-data/css/` 下 **css-ui(1521 html) / css-sizing(881) / css-values(0,空壳) 三个 dir 完全不在 oracle 快照**（最未扫），value-level（accent-color/caret-color R2459 实测 parse+paint 已实现）已饱和，残余多 sizing/appearance/resize 深案；css-sizing 与 R2174 replaced-element border-box territory 交集大——scoped 探针前先估预期深案比例，勿盲跑全量。
 - **CSS Counter / 生成内容**：`counter()`/`counters()` 解析+渲染配套、`@counter-style`（R2233 待授权）；`<q>` quotes（R2233 待授权）。
 - ~~**CSS `env()` 解析**~~（**R2459 核验 = 本条作废**）：原文「`env(x,fallback)` 现被丢」**stale**——`computed.rs` `resolve_env_reference` 已正确消费 fallback（未定义 env 名 → 用 fallback，递归解析嵌套 env/var，`resolve_env_and_var` 先 env 后 var）；测试覆盖 `env(safe-area-inset-top, 10px)`→0px + `env(undefined-x, env(safe-area-inset-left))`。**勿再以「env fallback 丢失」为 lever**。
 - **孤儿/死代码清理（R2383 发现）**：`parse_basic.rs` 整文件未被 `mod` 声明（非 build），是 color.rs/parse_layout.rs 重导出版本的死副本且有 auto 不一致——建议核后清理（doc/cleanup，须确认无任何 mod 声明再删）。
