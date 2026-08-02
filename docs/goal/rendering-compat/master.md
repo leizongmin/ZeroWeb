@@ -379,6 +379,8 @@
 
 ## 最近轮次摘要
 
+> **📍 R2464（2026-08-02）fix shorthand + CSS-wide keyword gap class（flex-flow/flex/transition/column-rule/animation/border-image）**：系统审计 vein 第 3 个 gap class——token-classifying 简写的 expander 把 `inherit`/`unset`/`revert`/`revert-layer` 当未知 token 分类失败 → 各 longhand 取默认值（如 `flex-flow: inherit`→row/nowrap、`transition: inherit`→property:inherit+其余默认）。TDD 7 red→green（+7 测，`background` 已正确无需修），加 `wide_keyword_to_longhands` 助手 + 6 expander 顶部 guard（镜像 R2354 border 助手）；flex 保留显式 `initial`（spec 0/1/auto，test_flex_initial_keyword 守）。net≥0 by construction（仅改 wide-keyword 路径 broken→correct，token 分类正常值不变）。`make test` 13138/0/74。reftest A/B 免：gap class 已由 box-shadow R2462 钉案。pass-through 类简写（margin/padding/border-w/s/c/inset/overflow/overscroll/gap/axis_logical/border-radius/background）audit 全 OK（split_whitespace/parse_rect_values 天然透传单 token）。
+
 > **📍 R2463（2026-08-02）fix `contain-intrinsic-width/height: inherit` + 系统审计闭环 inherit gap class**：R2462 box-shadow inherit 修复后做系统审计——对所有非继承 known property 检查 inherit_property 是否有 case（`prop: inherit` 须对任意属性生效）→ 仅 **contain-intrinsic-width / -height 两长手缺失**（有 value/initial 路径，独缺 inherit）。TDD red→green（+1 测 test_contain_intrinsic_longhands_explicit_inherit_keyword），加 2 case。**再审计 = 0 missing**：inherit gap class 全闭环（box-shadow R2462 + contain-intrinsic R2463）。net≥0 by construction（同 gap class，仅改显式 inherit 路径）。`make test` 13131/0/74。reftest A/B 免：gap class 已由 box-shadow-currentcolor 13.79%→0% 钉案（R2462）；contain-intrinsic-computed 为 JS parsing 测试非 reftest。
 
 > **📍 R2462（2026-08-02）fix `box-shadow: inherit` 关键字静默失效（CSS wide keyword gap）**：reftest-driven vein 转「按 master.md 残余清单点名 probe」产出真 lever——`inherit_property`（inherit.rs）有 text-shadow 但**缺 box-shadow case** → `box-shadow: inherit` 经 inheritance.rs Inherit arm 调 inherit_property 返回 false → 子元素 box_shadow 留默认 none（应继承父值）。TDD red→green（+1 测 test_box_shadow_explicit_inherit_keyword）；**A/B 钉案**：css-backgrounds box-shadow-currentcolor.html 修复前 13.79% FAIL → 修复后 0.00% PASS（真 reftest flip，非理论修）。net≥0 by construction（仅改 box-shadow:inherit 路径 broken→correct，默认非继承行为不变，test_box_shadow_not_inherited 仍绿）。`make test` 13130/0/74。**意义**：R2460/R2461「clean-lever era 终结」结论**过强**——reftest-driven vein 在「按残余清单点名 probe specific named gap」模式下仍有产出（区别于盲扫全 dir）；后续可续按各 dir 残余清单逐点名。
@@ -395,7 +397,7 @@
 
 ## 通过率快照
 
-- **make test**：13131 passed / 0 failed / 74 ignored（R2463 = contain-intrinsic-width/height inherit + 系统审计闭环 inherit gap class，+1 测，net≥0 by construction）
+- **make test**：13138 passed / 0 failed / 74 ignored（R2464 = shorthand+CSS-wide keyword gap class 修复 flex-flow/flex/transition/column-rule/animation/border-image，+7 测，net≥0 by construction）
 - **reftest oracle**：58.8% oracle-pass（5969/10397，+0.6pp vs R2185 baseline），57.6% credible
 - **product-smoke**：welcome 16.84% / wintertc / morning item-tag:3 全 PASS
 - **product-smoke-legacy**：51/51 struct PASS，19-testpage 17.23%（−5.16pp），20-mixed 11.49%（−1.64pp）

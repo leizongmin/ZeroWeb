@@ -28,6 +28,24 @@ fn matches_css_wide_keyword(value: &str) -> bool {
         || v.eq_ignore_ascii_case("revert-layer")
 }
 
+/// CSS-wide 关键字透传到所有给定 longhand（R2464 shorthand+wide-keyword gap class）。
+///
+/// token-classifying 简写（flex-flow/flex/transition/column-rule/animation/border-image）
+/// 的 expander 会把 wide keyword 当未知 token 分类失败 → 各 longhand 取默认值。本助手
+/// 在 expander 顶部短路：wide keyword → 等价于对所有 longhand 各发一条 `<longhand>: <keyword>`
+/// 声明（镜像 R2354 border 助手，语义 = cascade 各 longhand 独立解析关键字）。
+fn wide_keyword_to_longhands(
+    value: &str,
+    longhands: &[&str],
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
+    longhands
+        .iter()
+        .map(|p| (p.to_string(), value.to_string(), important, specificity))
+        .collect()
+}
+
 /// 展开简写属性声明。
 ///
 /// 遍历所有匹配声明，将简写属性展开为长属性列表。
@@ -303,6 +321,9 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // (flex-direction: row, flex-wrap: nowrap)。始终同时输出两个子属性，
         // 确保简写正确覆盖之前的长写属性值。
         "flex-flow" => {
+            if matches_css_wide_keyword(value) {
+                return wide_keyword_to_longhands(value, &["flex-direction", "flex-wrap"], important, specificity);
+            }
             let mut direction = None;
             let mut wrap = None;
             for token in value.split_whitespace() {
@@ -440,6 +461,21 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
 fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(
+            value,
+            &[
+                "border-image-source",
+                "border-image-slice",
+                "border-image-width",
+                "border-image-outset",
+                "border-image-repeat",
+            ],
+            important,
+            specificity,
+        );
+    }
 
     // 特殊值 "none" → 仅设置 source（R2354：关键字大小写不敏感，CSS Syntax §）
     if value.eq_ignore_ascii_case("none") {
@@ -891,6 +927,16 @@ fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     if value.eq_ignore_ascii_case("initial") {
         return vec![mk("flex-grow", "0"), mk("flex-shrink", "1"), mk("flex-basis", "auto")];
     }
+    // R2464：其余 CSS-wide 关键字（inherit/unset/revert/revert-layer）透传到 grow/shrink/basis
+    //（initial 已由上式特化为 spec 初值 0/1/auto）。
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(
+            value,
+            &["flex-grow", "flex-shrink", "flex-basis"],
+            important,
+            specificity,
+        );
+    }
 
     let parts: Vec<&str> = value.split_whitespace().collect();
     match parts.len() {
@@ -933,6 +979,20 @@ fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
 fn expand_transition(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(
+            value,
+            &[
+                "transition-property",
+                "transition-duration",
+                "transition-timing-function",
+                "transition-delay",
+            ],
+            important,
+            specificity,
+        );
+    }
 
     if value.eq_ignore_ascii_case("none") {
         return vec![
@@ -1096,6 +1156,24 @@ fn split_outside_parens(s: &str) -> Vec<String> {
 fn expand_animation(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(
+            value,
+            &[
+                "animation-name",
+                "animation-duration",
+                "animation-timing-function",
+                "animation-delay",
+                "animation-iteration-count",
+                "animation-direction",
+                "animation-fill-mode",
+                "animation-play-state",
+            ],
+            important,
+            specificity,
+        );
+    }
 
     // 特殊值 "none" 表示无动画（R2354：关键字大小写不敏感）
     if value.eq_ignore_ascii_case("none") {
@@ -1595,6 +1673,15 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
 fn expand_column_rule(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(
+            value,
+            &["column-rule-width", "column-rule-style", "column-rule-color"],
+            important,
+            specificity,
+        );
+    }
 
     let toks = zero_css_parser::values::split_paren_aware_tokens(value);
     let parts: Vec<&str> = toks.iter().map(|s| s.as_str()).collect();

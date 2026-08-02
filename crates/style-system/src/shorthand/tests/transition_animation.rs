@@ -258,6 +258,82 @@ fn test_border_inline_full_css_wide_keyword() {
     assert_eq!(result[5].0, "border-inline-end-color");
 }
 
+// ── R2464 shorthand + CSS-wide keyword gap class ──
+// token-classifying 简写（flex-flow/flex/transition/column-rule/animation/background/
+// border-image）的 expander 把 inherit/initial/unset/revert 当未知 token 分类失败 → 各
+// longhand 取默认值而非透传关键字。镜像 border 助手（R2354）加 matches_css_wide_keyword
+// 顶部 guard。下列断言：wide keyword 必须透传到**所有**展开 longhand（非空且全等）。
+
+#[test]
+fn test_flex_flow_wide_keyword_inherit() {
+    let result = expand_one("flex-flow", "inherit", false, (0, 0, 1));
+    assert!(!result.is_empty());
+    assert!(
+        result.iter().all(|(_, v, _, _)| v == "inherit"),
+        "flex-flow: inherit must pass through to flex-direction/flex-wrap"
+    );
+}
+
+#[test]
+fn test_flex_wide_keyword_inherit() {
+    let result = expand_one("flex", "inherit", false, (0, 0, 1));
+    assert!(!result.is_empty());
+    assert!(
+        result.iter().all(|(_, v, _, _)| v == "inherit"),
+        "flex: inherit must pass through to grow/shrink/basis"
+    );
+}
+
+#[test]
+fn test_transition_wide_keyword_inherit() {
+    let result = expand_one("transition", "inherit", false, (0, 0, 1));
+    assert!(!result.is_empty());
+    assert!(
+        result.iter().all(|(_, v, _, _)| v == "inherit"),
+        "transition: inherit must pass through to all 4 longhands"
+    );
+}
+
+#[test]
+fn test_column_rule_wide_keyword_inherit() {
+    let result = expand_one("column-rule", "inherit", false, (0, 0, 1));
+    assert!(!result.is_empty());
+    assert!(
+        result.iter().all(|(_, v, _, _)| v == "inherit"),
+        "column-rule: inherit must pass through to width/style/color"
+    );
+}
+
+#[test]
+fn test_animation_wide_keyword_inherit() {
+    let result = expand_one("animation", "inherit", false, (0, 0, 1));
+    assert!(!result.is_empty());
+    assert!(
+        result.iter().all(|(_, v, _, _)| v == "inherit"),
+        "animation: inherit must pass through to all longhands"
+    );
+}
+
+#[test]
+fn test_background_wide_keyword_inherit() {
+    let result = expand_one("background", "inherit", false, (0, 0, 1));
+    assert!(!result.is_empty());
+    assert!(
+        result.iter().all(|(_, v, _, _)| v == "inherit"),
+        "background: inherit must pass through to all longhands"
+    );
+}
+
+#[test]
+fn test_border_image_wide_keyword_inherit() {
+    let result = expand_one("border-image", "inherit", false, (0, 0, 1));
+    assert!(!result.is_empty());
+    assert!(
+        result.iter().all(|(_, v, _, _)| v == "inherit"),
+        "border-image: inherit must pass through to all longhands"
+    );
+}
+
 // ── animation 简写测试 ──
 
 #[test]
