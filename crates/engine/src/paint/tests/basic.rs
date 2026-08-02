@@ -160,7 +160,7 @@ fn test_painter_background_color() {
 }
 
 /// R979：CSS §14.2 画布背景传播——html 透明时 body 背景传播到画布，body 自身盒不再绘 bg color。
-/// 旧实现仅跳过 body 的 bg image（effects.rs:69 canvas_propagated_node 检查），仍绘 bg color
+/// 旧实现仅跳过 body 的 bg image（effects.rs:100 canvas_propagated_node 检查），仍绘 bg color
 /// → body 盒 bg color 覆盖画布 image（background-root-007：body red 覆盖画布 tiled image）。
 /// 验证 body 传播到画布时**恰好 1 个** red fill（画布），非 2 个（画布 + body 双绘）。
 #[test]

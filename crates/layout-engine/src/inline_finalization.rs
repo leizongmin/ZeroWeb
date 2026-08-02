@@ -1047,7 +1047,7 @@ fn backfill_phasea_orphan_boxes(
         .into_iter()
         .filter(|&c| crate::tree::phasea_multi_inline_eligible(doc, styles, c))
         .collect();
-    // 容器须 ≥2 eligible 子才触发 multi_inline_block_skip（tree.rs:1415）；否则无 orphan。
+    // 容器须 ≥2 eligible 子才触发 multi_inline_block_skip（tree.rs:1540）；否则无 orphan。
     if orphan_ids.len() < 2 {
         return;
     }

@@ -379,7 +379,7 @@ fn flex_item_base_size(
     container_cross: Option<f32>,
 ) -> f32 {
     let style = box_node.node_id.and_then(|id| styles.get(&id));
-    // R1840：mirror converter §10.1 visibility:collapse 逻辑（converter/mod.rs:241，R1834）。
+    // R1840：mirror converter §10.1 visibility:collapse 逻辑（converter/mod.rs:312，R1834）。
     // flexible collapsed item（flex-grow>0，或 ③ kill-switch ZW_VC_NONFLEX_STRUT=0）→ flex_basis=0，
     // 主尺寸贡献仅 frame（border+padding），与 converter 设 taffy flex_basis=0 一致。
     // 非-flexible collapsed（③ ON，flex-grow==0）保留原 base 作 strut，走下方原逻辑。

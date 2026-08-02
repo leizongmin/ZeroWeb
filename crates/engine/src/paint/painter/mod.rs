@@ -1606,7 +1606,7 @@ impl Painter {
         // 画布已以视口 (0,0) 为 origin 统一绘制其 color+image。若此处再绘 color，body（传播
         // 到画布时，html 透明）的 bg color 会覆盖画布 image（background-root-007：body red
         // 覆盖画布 tiled white-square image，ZW 显红而 chromium 全白）。镜像 paint_background_image
-        // 的 canvas_propagated_node 跳过（effects.rs:69）。
+        // 的 canvas_propagated_node 跳过（effects.rs:100）。
         if box_node
             .node_id
             .is_some_and(|id| self.canvas_propagated_node == Some(id))

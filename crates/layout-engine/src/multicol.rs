@@ -78,7 +78,7 @@ pub fn adjust_multicol_layout(root: &mut LayoutBox, styles: &HashMap<NodeId, Com
 /// 承接 R1817/R1818（code-trace 诊断未经验证属假阳性，A/B 零效果已 revert）。R1820 经
 /// REFTEST_DEBUG 实证确证真根因：multicol-fill-auto-005 ZW 输出容器高 160px（= 自然高度和），
 /// chromium 100px（forced breaks > column-count 时创建溢出列，容器高 = max 列高）。两层：
-/// (1) 主路径 `let _ = position_multicol_children`（multicol.rs:797）丢弃 region_height →
+/// (1) 主路径 `let _ = position_multicol_children`（multicol.rs:927）丢弃 region_height →
 /// 容器高永不按列分配结果重算；(2) 末列 forced break 不创建溢出列（`current_col+1<col_count`
 /// 守卫）。本开关同时启用两层；全 multicol corpus A/B net +1 零 pass 回归后 LANDED default-on。
 /// `ZW_MULTICOL_FORCED_OVERFLOW=0` 可紧急关闭。

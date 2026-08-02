@@ -790,7 +790,7 @@ fn test_shift_siblings_after_ifc_grow_flex_sibling_shifts() {
     );
 }
 
-/// R1505：`display:inline-block`（非 floated）的 `is_block_level=false`（engine.rs:1293 仅
+/// R1505：`display:inline-block`（非 floated）的 `is_block_level=false`（engine.rs:1888 仅
 /// floated inline-block 标 block_level），故旧 `is_shiftable_next` 首个 guard（`c.is_block_level`）
 /// 把它整体排除——`<p>`（Block，含 inline `<a>` → IFC remeasure 长高）后续 inline-block 兄弟
 /// 未下移而重叠（inline-block-non-replaced-width-003/004：`<div style="display:inline-block">`

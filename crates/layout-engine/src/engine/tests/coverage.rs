@@ -173,7 +173,7 @@ fn test_compute_sticky_position() {
 }
 
 /// R326：position:sticky 在 scroll-0「应吸附」场景下，偏移须如 relative 应用。
-/// converter（converter/mod.rs:286）把 `Sticky` 映射为 taffy `Position::Relative`，
+/// converter（converter/mod.rs:434）把 `Sticky` 映射为 taffy `Position::Relative`，
 /// 故 taffy 对 block-level sticky 施加 top/left inset（== relative 行为）。本测实证
 /// 该偏移确实生效——纠正 R323 read-only 审计旧注「sticky 偏移未应用」（实为 taffy 已
 /// 应用，缺的是 scrollport 相对钳制）。sticky 完整正确性需 scrollport 钳制（normal 位
