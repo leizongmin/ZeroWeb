@@ -183,6 +183,9 @@ pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
         "lao" => Some(ListStyleTypeValue::Lao),
         "khmer" => Some(ListStyleTypeValue::Khmer),
         "myanmar" => Some(ListStyleTypeValue::Myanmar),
+        // R2472：cjk-decimal（CJK ideographic digits，非连续 lookup）。cambodian ≡ khmer 别名。
+        "cjk-decimal" => Some(ListStyleTypeValue::CjkDecimal),
+        "cambodian" => Some(ListStyleTypeValue::Khmer),
         "none" => Some(ListStyleTypeValue::None),
         _ => {
             // R2392：非 builtin 的 `<custom-ident>` 视为自定义计数器样式名（@counter-style）。

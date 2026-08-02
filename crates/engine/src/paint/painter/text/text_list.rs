@@ -106,6 +106,20 @@ fn to_digit_script(value: usize, base: u32) -> String {
         .collect()
 }
 
+/// R2472：cjk-decimal 计数器表示（CSS Counter Styles 3 §6.1 预定义 numeric system）。
+///
+/// CJK ideographic digits——非连续码点（0=〇 U+3007，1-9=U+4E00/U+4E8C/U+4E09/U+56DB/
+/// U+4E94/U+516D/U+4E03/U+516B/U+4E5D），须用 lookup table（同 to_persian 模式）。
+/// ground-truth：cjk-decimal-004（10=一〇, 101=一〇一, 1002=一〇〇二）。
+fn to_cjk_decimal(value: usize) -> String {
+    const CJK: &[char] = &['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    value
+        .to_string()
+        .chars()
+        .map(|c| CJK[(c as u8 - b'0') as usize])
+        .collect()
+}
+
 /// R2447：armenian 计数器表示（CSS Counter Styles 3 §6.1 预定义，≡ upper-armenian）。
 ///
 /// 传统亚美尼亚数字系统——纯加法（无减法形式，区别于 Roman）。大写亚美尼亚字母块
@@ -604,7 +618,8 @@ impl super::super::Painter {
             | ListStyleTypeValue::Telugu
             | ListStyleTypeValue::Lao
             | ListStyleTypeValue::Khmer
-            | ListStyleTypeValue::Myanmar => {
+            | ListStyleTypeValue::Myanmar
+            | ListStyleTypeValue::CjkDecimal => {
                 let index = self
                     .get_counter("list-item")
                     .map(|v| v as usize)
@@ -632,6 +647,7 @@ impl super::super::Painter {
                     ListStyleTypeValue::Lao => to_digit_script(index, 0x0ED0),
                     ListStyleTypeValue::Khmer => to_digit_script(index, 0x17E0),
                     ListStyleTypeValue::Myanmar => to_digit_script(index, 0x1040),
+                    ListStyleTypeValue::CjkDecimal => to_cjk_decimal(index),
                     _ => unreachable!(),
                 };
                 let text = format!("{body}.");
@@ -753,6 +769,7 @@ mod tests {
     use super::list_item_counter;
     use super::to_arabic_indic;
     use super::to_armenian;
+    use super::to_cjk_decimal;
     use super::to_digit_script;
     use super::to_georgian;
     use super::to_hebrew;
@@ -777,6 +794,17 @@ mod tests {
         assert_eq!(to_digit_script(42, 0x1040), "၄၂");
         // 与 arabic-indic 同算法（ground-truth 一致性）
         assert_eq!(to_digit_script(123, 0x0660), to_arabic_indic(123));
+    }
+
+    /// R2472：cjk-decimal（CJK ideographic digits，非连续 lookup）ground-truth 对齐
+    /// css-counter-styles/cjk-decimal/css3-counter-styles-004 ref。
+    #[test]
+    fn cjk_decimal_matches_wpt_ground_truth() {
+        assert_eq!(to_cjk_decimal(0), "〇");
+        assert_eq!(to_cjk_decimal(9), "九");
+        assert_eq!(to_cjk_decimal(10), "一〇");
+        assert_eq!(to_cjk_decimal(101), "一〇一");
+        assert_eq!(to_cjk_decimal(1002), "一〇〇二");
     }
 
     fn li(doc: &zero_dom::Document, n: usize) -> zero_dom::NodeId {
