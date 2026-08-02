@@ -2116,6 +2116,7 @@ impl LayoutEngine {
             column_span_offsets: Vec::new(),
             inline_layout: None,
             inline_layout_width: 0.0,
+            line_clamp_clamped: false,
             text_node_font_sizes: HashMap::new(),
             text_node_is_ahem: HashMap::new(),
             text_node_letter_spacing: HashMap::new(),

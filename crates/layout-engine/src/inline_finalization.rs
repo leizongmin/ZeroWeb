@@ -923,6 +923,11 @@ pub(crate) fn compute_final_inline_layouts(
     // （其 test 用真 multicol 已在上方 line 242 排除存储），浮动容器多行存储打破 test/ref 对称致
     // self-source 发散；该 case chromium-Oracle 9.15% 不变 = 非真回归，guard 仅维持 self-source 一致。
     inline_ctx.layout(doc, node_id, styles);
+    // R2467 line-clamp slice 2：镜像 IFC `clamped` 到 LayoutBox，让 paint stored 路径
+    //（pure-Ahem，inline_layout 已被 cap 到 n 行）能据此补 ellipsis——stored 路径下
+    // paint 看到的行数 ≤ n，旧 `line_ys.len() > max` 判定无法独立触发 ellipsis。
+    // 须在 store-gate return 之前设（非 stored 容器也走此，non-stored paint 路径冗余读之）。
+    root.line_clamp_clamped = inline_ctx.clamped;
     // R632：存 font_size/line_height/is_ahem/letter_spacing overrides 供 paint Path B 重跑 IFC 用。
     // compute_final 此前不存（仅 remeasure 路径 line 801/935 存），致走 Path B 的容器（非 pure-Ahem，
     // 含 wrap/auto-wrap 多行块）paint IFC override 全空 → line_height fallback 19.2 (16×1.2) 而非

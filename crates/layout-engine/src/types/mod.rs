@@ -266,6 +266,15 @@ pub struct LayoutBox {
     /// 若不匹配（如 table/multicol 后处理改变了宽度），
     /// paint 回退到重新运行 IFC。
     pub inline_layout_width: f32,
+    /// R2467 line-clamp slice 2：layout 期 IFC `apply_line_clamp_cap` 是否真的截断了行
+    ///（容器 `line-clamp: Count(n)` 且原始行数 > n）。
+    ///
+    /// **为何需要独立标志**：stored 路径（pure-Ahem 容器）下 `inline_layout` 已被 cap 到
+    /// n 行，paint 看到的行数 ≤ n → 旧 `line_ys.len() > max` 判定永不成立 → ellipsis 漏渲。
+    /// 此标志由 layout 期 IFC `clamped` 镜像（`inline_finalization.rs compute_final_*`），
+    /// paint 据此在 stored 路径补 ellipsis（text.rs line-clamp 后处理）。non-stored 路径
+    ///（非 Ahem）paint IFC 用空 styles 重跑不 cap → 全量行 → `line_ys.len() > max` 仍可独立触发。
+    pub line_clamp_clamped: bool,
     /// 文本节点的 font_size 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 后，使用这些正确的 font_size 值
@@ -458,6 +467,7 @@ impl Default for LayoutBox {
             column_span_offsets: Vec::new(),
             inline_layout: None,
             inline_layout_width: 0.0,
+            line_clamp_clamped: false,
             text_node_font_sizes: HashMap::new(),
             text_node_is_ahem: HashMap::new(),
             text_node_letter_spacing: HashMap::new(),

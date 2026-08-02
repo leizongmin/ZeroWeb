@@ -1513,43 +1513,79 @@ impl super::Painter {
                     line_ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                     line_ys.dedup_by(|a, b| (*a - *b).abs() < 0.5);
 
-                    if line_ys.len() > max as usize {
-                        // 需要截断：找到第 max+1 行的 Y 坐标
-                        let cutoff_y = line_ys[max as usize];
-
-                        // 移除截断行及之后的所有 glyph
-                        let glyphs = &mut self.primitives.glyphs;
-                        for g in glyphs[glyphs_before_fragments..].iter_mut() {
-                            if g.y >= cutoff_y - 0.5 {
-                                g.font_size = 0.0;
-                                g.glyph_id = 0;
+                    // R2467 line-clamp slice 2：触发条件双源。
+                    // - `exceeded`：paint 看到的行数 > max（non-stored 路径：paint IFC 用空 styles
+                    //   重跑不 cap → 全量行）。
+                    // - `box_node.line_clamp_clamped`：layout 期 IFC `apply_line_clamp_cap` 真截断
+                    //   （stored 路径：pure-Ahem 容器 inline_layout 已被 cap 到 max 行，paint 看到
+                    //   行数 == max → exceeded=false → 须读此标志才能补 ellipsis）。
+                    // max==0（CSS line-clamp:0 视同 none）或无行 → 不触发。
+                    let exceeded = max >= 1 && line_ys.len() > max as usize;
+                    let clamped = max >= 1 && box_node.line_clamp_clamped;
+                    if exceeded || clamped {
+                        // 截断：移除第 max 行之后的所有 glyph。stored 路径已被 layout cap → 无超出行 →
+                        // 此处 exceeded=false 跳过；non-stored 路径 exceeded=true 主动截。
+                        if exceeded {
+                            let cutoff_y = line_ys[max as usize];
+                            let glyphs = &mut self.primitives.glyphs;
+                            for g in glyphs[glyphs_before_fragments..].iter_mut() {
+                                if g.y >= cutoff_y - 0.5 {
+                                    g.font_size = 0.0;
+                                    g.glyph_id = 0;
+                                }
                             }
                         }
 
-                        // 在最后一行末尾添加省略号
-                        let last_line_y = line_ys[max as usize - 1];
-                        let last_glyph_x = glyphs[glyphs_before_fragments..]
+                        // 在最后一可见行（第 max 行）末尾渲 U+2026 ellipsis（与 WPT line-clamp refs
+                        // 一致：单字符 `…`，非 3 个 ASCII '.'）。`max.min(line_ys.len())` 防越界
+                        //（stored 路径行数 == max）。
+                        let last_idx = (max as usize).min(line_ys.len()).saturating_sub(1);
+                        let last_line_y = line_ys[last_idx];
+
+                        // 末行最右可见 glyph 及其字符 advance（求末行文本 end x）。
+                        let last_glyph = self.primitives.glyphs[glyphs_before_fragments..]
                             .iter()
                             .filter(|g| g.font_size > 0.0 && (g.y - last_line_y).abs() < 0.5)
-                            .map(|g| g.x)
-                            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                            .unwrap_or(content_x + tx);
+                            .max_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+                        let last_adv = last_glyph
+                            .and_then(|g| char::from_u32(g.glyph_id))
+                            .map(|c| measure_char_for_paint(c, font_size, container_is_ahem))
+                            .unwrap_or(0.0);
+                        let last_text_end_x = last_glyph.map(|g| g.x + last_adv).unwrap_or(content_x + tx);
 
-                        let ellipsis_width = measure_char_for_paint('.', font_size, container_is_ahem);
+                        let ellipsis_char = '\u{2026}';
+                        let ellipsis_width = measure_char_for_paint(ellipsis_char, font_size, container_is_ahem);
+                        let content_right = content_x + container_width + tx;
                         let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
-                        for i in 0..3 {
-                            self.primitives.add_glyph(GlyphPrimitive {
-                                x: last_glyph_x + ellipsis_width * (i as f32 + 1.0),
-                                y: last_line_y,
-                                font_size,
-                                color,
-                                glyph_id: '.' as u32,
-                                font_id: default_font_id,
-                                bitmap_width: None,
-                                bitmap_height: None,
-                                rotation: 0.0,
-                            });
-                        }
+
+                        // 定位：紧跟末行文本末尾；若 + ellipsis 宽超 content_right（末行已占满），
+                        // 回退到 content_right 右对齐 + 截掉末行尾部 glyph 让位（镜像 text-overflow
+                        // cutoff，text.rs:1464-1481）。
+                        let ellipsis_x = if last_text_end_x + ellipsis_width <= content_right + 0.5 {
+                            last_text_end_x
+                        } else {
+                            let cut_x = content_right - ellipsis_width;
+                            let glyphs = &mut self.primitives.glyphs;
+                            for g in glyphs[glyphs_before_fragments..].iter_mut() {
+                                if g.font_size > 0.0 && (g.y - last_line_y).abs() < 0.5 && g.x + 0.5 >= cut_x {
+                                    g.font_size = 0.0;
+                                    g.glyph_id = 0;
+                                }
+                            }
+                            cut_x
+                        };
+
+                        self.primitives.add_glyph(GlyphPrimitive {
+                            x: ellipsis_x,
+                            y: last_line_y,
+                            font_size,
+                            color,
+                            glyph_id: ellipsis_char as u32,
+                            font_id: default_font_id,
+                            bitmap_width: None,
+                            bitmap_height: None,
+                            rotation: 0.0,
+                        });
                     }
                 }
 

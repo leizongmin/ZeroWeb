@@ -850,6 +850,41 @@ fn test_text_overflow_ellipsis_needs_hidden_overflow() {
     assert_eq!(dot_count, 0);
 }
 
+// ── line-clamp slice 2 ellipsis 测试（R2467）──
+
+/// line-clamp:2 的 pure-Ahem 块（走 stored 路径：inline_layout 被 R2431 cap 到 2 行）
+/// 须在第 2 行末渲 `…`（U+2026）。修复前 stored 路径 ellipsis 漏渲（line_clamp_clamped 未消费）。
+#[test]
+fn r2467_line_clamp_stored_path_emits_ellipsis() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(400.0, 400.0);
+    // width:80px + font:20px/1 Ahem → 每个 "XXXX"=80px 占 1 行；8 词 → 8 行 → line-clamp:2 截到 2 行。
+    let html = "<html><body style=\"margin:0\">\
+        <div style=\"width:80px; font:20px/1 Ahem; line-clamp:2; overflow:hidden\">\
+        XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX\
+        </div></body></html>";
+    let result = pipeline.render_html(html, "");
+    let has_ellipsis = result.primitives.glyphs.iter().any(|g| g.glyph_id == '\u{2026}' as u32);
+    assert!(
+        has_ellipsis,
+        "R2467: line-clamp stored 路径应在末行末尾渲 U+2026 ellipsis"
+    );
+}
+
+/// line-clamp:5 但内容仅 2 行（不足 N）→ 不截断 → 不应有 ellipsis（防 false ellipsis）。
+#[test]
+fn r2467_line_clamp_no_ellipsis_when_content_fits() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(400.0, 400.0);
+    let html = "<html><body style=\"margin:0\">\
+        <div style=\"width:80px; font:20px/1 Ahem; line-clamp:5; overflow:hidden\">\
+        XXXX XXXX\
+        </div></body></html>";
+    let result = pipeline.render_html(html, "");
+    let has_ellipsis = result.primitives.glyphs.iter().any(|g| g.glyph_id == '\u{2026}' as u32);
+    assert!(!has_ellipsis, "R2467: 内容不足 line-clamp N 行时不应渲 ellipsis");
+}
+
 // ── CSS filter 渲染测试 ──
 
 #[test]
