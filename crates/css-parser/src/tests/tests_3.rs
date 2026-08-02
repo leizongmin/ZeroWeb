@@ -147,11 +147,13 @@ fn test_parse_list_style_type() {
         parse_list_style_type("lower-armenian"),
         Some(ListStyleTypeValue::LowerArmenian)
     );
-    // R2392：未实现的预定义 / 自定义计数器名（合法 `<custom-ident>`）→ Custom(name)，
+    // R2449：georgian（传统格鲁吉亚数字，additive）。
+    assert_eq!(parse_list_style_type("georgian"), Some(ListStyleTypeValue::Georgian));
+    // R2392：未实现的自定义计数器名（合法 `<custom-ident>`）→ Custom(name)，
     // 渲染时查 CounterStyleRegistry，未命中走 decimal fallback（CSS Counter Styles 3）。
     assert_eq!(
-        parse_list_style_type("georgian"),
-        Some(ListStyleTypeValue::Custom("georgian".to_string()))
+        parse_list_style_type("thai"),
+        Some(ListStyleTypeValue::Custom("thai".to_string()))
     );
     // 大小写不敏感
     assert_eq!(parse_list_style_type("DISC"), Some(ListStyleTypeValue::Disc));

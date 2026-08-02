@@ -315,6 +315,8 @@ pub enum ListStyleTypeValue {
     Armenian,
     /// lower-armenian（小写亚美尼亚数字，同 armenian 算法 + to_lowercase；CSS Counter Styles 3 §6.1）。R2448。
     LowerArmenian,
+    /// georgian（传统格鲁吉亚数字，additive；CSS Counter Styles 3 §6.1 预定义，range 1-19999）。R2449。
+    Georgian,
     /// none。
     None,
     /// 自定义计数器样式名（`@counter-style` 定义；CSS Counter Styles 3）。driving: R2392。

@@ -168,6 +168,7 @@ pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
         // CSS Counter Styles 3 §6.1：armenian 是 upper-armenian 的别名（大写亚美尼亚数字）。
         "armenian" | "upper-armenian" => Some(ListStyleTypeValue::Armenian),
         "lower-armenian" => Some(ListStyleTypeValue::LowerArmenian),
+        "georgian" => Some(ListStyleTypeValue::Georgian),
         "none" => Some(ListStyleTypeValue::None),
         _ => {
             // R2392：非 builtin 的 `<custom-ident>` 视为自定义计数器样式名（@counter-style）。

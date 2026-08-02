@@ -109,6 +109,66 @@ fn to_armenian(value: usize) -> String {
     result
 }
 
+/// R2449：georgian 计数器表示（CSS Counter Styles 3 §6.1 预定义）。
+///
+/// 传统格鲁吉亚数字——纯加法（无减法形式）。spec `@counter-style georgian { system: additive;
+/// range: 1 19999; additive-symbols: ... }`。码点取自 spec（非连续，含扩展区字母 ჱ/ჲ/ჳ/ჴ/ჵ），
+/// 37 对按值降序。range 1-19999；0 或 ≥20000 走 decimal fallback（driving: georgian-014）。
+/// ground-truth + spec 双验证：georgian-010/011（1-9, 43=მგ, 7865=ჴყჲე, 9999=ჰშჟთ, 10000=ჵ, 10001=ჵა）。
+fn to_georgian(value: usize) -> String {
+    if value == 0 || value > 19999 {
+        return value.to_string();
+    }
+    let pairs: [(usize, char); 37] = [
+        (10000, '\u{10F5}'),
+        (9000, '\u{10F0}'),
+        (8000, '\u{10EF}'),
+        (7000, '\u{10F4}'),
+        (6000, '\u{10EE}'),
+        (5000, '\u{10ED}'),
+        (4000, '\u{10EC}'),
+        (3000, '\u{10EB}'),
+        (2000, '\u{10EA}'),
+        (1000, '\u{10E9}'),
+        (900, '\u{10E8}'),
+        (800, '\u{10E7}'),
+        (700, '\u{10E6}'),
+        (600, '\u{10E5}'),
+        (500, '\u{10E4}'),
+        (400, '\u{10F3}'),
+        (300, '\u{10E2}'),
+        (200, '\u{10E1}'),
+        (100, '\u{10E0}'),
+        (90, '\u{10DF}'),
+        (80, '\u{10DE}'),
+        (70, '\u{10DD}'),
+        (60, '\u{10F2}'),
+        (50, '\u{10DC}'),
+        (40, '\u{10DB}'),
+        (30, '\u{10DA}'),
+        (20, '\u{10D9}'),
+        (10, '\u{10D8}'),
+        (9, '\u{10D7}'),
+        (8, '\u{10F1}'),
+        (7, '\u{10D6}'),
+        (6, '\u{10D5}'),
+        (5, '\u{10D4}'),
+        (4, '\u{10D3}'),
+        (3, '\u{10D2}'),
+        (2, '\u{10D1}'),
+        (1, '\u{10D0}'),
+    ];
+    let mut num = value;
+    let mut result = String::new();
+    for (val, sym) in &pairs {
+        while num >= *val {
+            result.push(*sym);
+            num -= val;
+        }
+    }
+    result
+}
+
 /// R2392/R2394：按 `@counter-style` 的 system 算法生成计数器表示（marker body，不含 prefix/suffix）。
 /// CSS Counter Styles 3 §3.1.4。`None` = 该值无法表示（超出 range / 系统不支持）→ 调用方走 fallback。
 /// R2394 注：additive/range/extends 应用经 A/B 量证为 net-negative（driving WPT 全 font-wall dice/
@@ -440,11 +500,12 @@ impl super::super::Painter {
                 }
             }
             // R2445：lower-greek / persian 预定义计数器样式（CSS Counter Styles 3 §6）。
-            // R2447：+ armenian（§6.1 additive）。R2448：+ lower-armenian（小写）。
+            // R2447：+ armenian（§6.1 additive）。R2448：+ lower-armenian（小写）。R2449：+ georgian。
             ListStyleTypeValue::LowerGreek
             | ListStyleTypeValue::Persian
             | ListStyleTypeValue::Armenian
-            | ListStyleTypeValue::LowerArmenian => {
+            | ListStyleTypeValue::LowerArmenian
+            | ListStyleTypeValue::Georgian => {
                 let index = self
                     .get_counter("list-item")
                     .map(|v| v as usize)
@@ -456,6 +517,7 @@ impl super::super::Painter {
                     ListStyleTypeValue::Persian => to_persian(index),
                     ListStyleTypeValue::Armenian => to_armenian(index),
                     ListStyleTypeValue::LowerArmenian => to_armenian(index).to_lowercase(),
+                    ListStyleTypeValue::Georgian => to_georgian(index),
                     _ => unreachable!(),
                 };
                 let text = format!("{body}.");
@@ -576,6 +638,7 @@ mod tests {
     use super::counter_style_body;
     use super::list_item_counter;
     use super::to_armenian;
+    use super::to_georgian;
     use zero_dom::parse_html;
 
     fn li(doc: &zero_dom::Document, n: usize) -> zero_dom::NodeId {
@@ -609,6 +672,27 @@ mod tests {
         assert_eq!(to_armenian(10).to_lowercase(), "ժ");
         assert_eq!(to_armenian(43).to_lowercase(), "խգ");
         assert_eq!(to_armenian(9999).to_lowercase(), "քջղթ");
+    }
+
+    /// R2449：georgian 计数器（CSS Counter Styles 3 §6.1）ground-truth + spec 双对齐。
+    /// 验证值取自 css-counter-styles/georgian/css3-counter-styles-010/011/014 真实期望输出。
+    #[test]
+    fn georgian_counter_matches_wpt_ground_truth() {
+        // 单位（georgian-010）
+        assert_eq!(to_georgian(1), "ა");
+        assert_eq!(to_georgian(8), "ჱ"); // 扩展区 U+10F1
+        assert_eq!(to_georgian(9), "თ");
+        // 十/百/千（georgian-011：10=ი, 43=მგ, 7865=ჴყჲე, 9999=ჰშჟთ）
+        assert_eq!(to_georgian(10), "ი");
+        assert_eq!(to_georgian(43), "მგ");
+        assert_eq!(to_georgian(7865), "ჴყჲე");
+        assert_eq!(to_georgian(9999), "ჰშჟთ");
+        // 10000-19999 仍 in range（georgian-011：10000=ჵ, 10001=ჵა）
+        assert_eq!(to_georgian(10000), "ჵ");
+        assert_eq!(to_georgian(10001), "ჵა");
+        // range 外走 decimal fallback（georgian-014：0→"0", 20000→"20000"）
+        assert_eq!(to_georgian(0), "0");
+        assert_eq!(to_georgian(20000), "20000");
     }
 
     /// R1701：ol start= 与 li value= 计数器语义（fixture 22 ol[start=3] type=A → C/D/J/K）。
