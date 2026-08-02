@@ -379,6 +379,8 @@
 
 ## 最近轮次摘要
 
+> **📍 R2459（2026-08-02）feat CSS Values 4 §7.3 `<resolution>` 全单位**：`parse_dpi_value` 仅剥 `dpi` → 现支持 `dpi`/`dpcm`(×2.54)/`dppx`(×96)/`x`(=dppx 别名，×96)，大小写不敏感。TDD red→green（4 新 fail→全过），`make test` 13129 passed/0 failed/74 ignored 净正；media-query `resolution` 媒体特性 value-级合规补全（dpi/bare-number 行为零变更，strictly more-accepting → net≥0 by construction）。
+
 > **📍 R2458（2026-08-02）📋 subpixel glyph 定位 A/B 净负 -3 回退；font-wall 调查**终结**（5 假设 R1069/R1946/R1950/R1410/R2458 全负）；font-wall 真因 = intrinsic FreeType/Skia parity，须 Skia-exact 深步骤 user-gated。
 
 > **📍 R2457（2026-08-02）🚨 R2455 订正：font-wall ≠ fontdue（FreeType 已 default-on R1159/R1094 +232）；font-wall 假设经 R1069/R1946/R1950/R1410 穷尽（hinting/advance/gamma 全负），唯一未测 = subpixel glyph 定位（gx.round）。
@@ -387,15 +389,13 @@
 
 > **📍 R2454（2026-08-02）📋 marker glyph scale 0.85→1.0 A/B = net -17（counter-styles 183→166），回退零代码；R2395 开放观察闭合（0.85× 是 DejaVu 补偿非 lever）。
 
-> **📍 R2452（2026-08-02）docs master.md stale 引用纠偏 + plateau-guard**（product-smoke welcome 17.03% 零回归；css-counter-styles 全量复测 183/250=73.2%；订正通过率快照 184→183 + content 44→49 + `<q>` 已实现 + @counter-style slice 1 已 land 两处 stale）。
-
 ## 轮次详记归档
 
 > **R2167–R2197 + R2199c 轮次详记已归档**（2026-07-29 文档结构性精简）：原 master.md 顶部轮次详记区（R2167→R2197 + R2199c，~190 行 blockquote，含多行续行）已逐字保留 → [`archive/master-pre-slimdown-2026-07-29.md`](./archive/master-pre-slimdown-2026-07-29.md) 顶部轮次详记区（零删减）。更早轮次归档见 [`archive/`](./archive/)。
 
 ## 通过率快照
 
-- **make test**：13023 passed / 0 failed / 74 ignored（R2383 = alignment normal 关键字 + 连带暴露 parse_basic.rs 孤儿死代码，扩展既有测试，product-smoke EXITCODE=0 零回归）
+- **make test**：13129 passed / 0 failed / 74 ignored（R2459 = CSS Values 4 §7.3 `<resolution>` 全单位 dppx/dpcm/x 支持 +6 测试，strictly more-accepting 净正零回归）
 - **reftest oracle**：58.8% oracle-pass（5969/10397，+0.6pp vs R2185 baseline），57.6% credible
 - **product-smoke**：welcome 16.84% / wintertc / morning item-tag:3 全 PASS
 - **product-smoke-legacy**：51/51 struct PASS，19-testpage 17.23%（−5.16pp），20-mixed 11.49%（−1.64pp）
@@ -444,9 +444,9 @@
 下一轮可接续的具体入口（逐条 verify-then-fix，TDD red→green，优先 unit-test 驱动不强依赖 wpt-data；每修一个跑 scoped test + clippy + fmt + 全量 `make test`，net≥0 land）：
 - **reftest-driven vein（pivot 首选）**：scoped `make reftest-upstream FILTER=<dir>` 量未深扫 dir（css-box / css-values / css-backgrounds 边角）找离散 fail → 追踪到 parse/render bug（R2369/R2370 模式；R2372 称 exhausted 但 R2369+ 仍出 lever）。
 - **CSS Counter / 生成内容**：`counter()`/`counters()` 解析+渲染配套、`@counter-style`（R2233 待授权）；`<q>` quotes（R2233 待授权）。
-- **CSS `env()` 解析**（safe-area-inset + fallback，desktop→0 但 `env(x,fallback)` 现被丢）。
+- ~~**CSS `env()` 解析**~~（**R2459 核验 = 本条作废**）：原文「`env(x,fallback)` 现被丢」**stale**——`computed.rs` `resolve_env_reference` 已正确消费 fallback（未定义 env 名 → 用 fallback，递归解析嵌套 env/var，`resolve_env_and_var` 先 env 后 var）；测试覆盖 `env(safe-area-inset-top, 10px)`→0px + `env(undefined-x, env(safe-area-inset-left))`。**勿再以「env fallback 丢失」为 lever**。
 - **孤儿/死代码清理（R2383 发现）**：`parse_basic.rs` 整文件未被 `mod` 声明（非 build），是 color.rs/parse_layout.rs 重导出版本的死副本且有 auto 不一致——建议核后清理（doc/cleanup，须确认无任何 mod 声明再删）。
-- **CSS Values 4 单位表续**：`lh`/`rlh`（弱）/`cap`/`ic`（需字体度量 deferred）/`dppx`/`dpi`/`dpcm`。
+- **CSS Values 4 单位表续**：`lh`/`rlh`（弱）/`cap`/`ic`（需字体度量 deferred）；~~`dppx`/`dpi`/`dpcm`~~ **R2459 已 LANDED**（`<resolution>` 全单位 + `x` 别名 + 大小写不敏感，见上 R2459）。
 - **CSS Syntax §4/§5 其他合规缺口**：MQ L4 比较运算符 token 化；CDO/CDC 非顶层上下文。
 - **文档 vs 代码行号漂移续修**（R2203 verify-then-fix 模式）。
 - 每修一个：仅文档→跳过昂贵 make test；连带 `.rs`→跑 scoped test-guard + 必要时全量 `make test`，net≥0 land。
@@ -500,7 +500,7 @@
 
 ### 测试覆盖率
 
-- **cargo test**：13000+ 测试全部通过（`make test`：13015 passed / 0 failed / 74 ignored，截至 R2370）
+- **cargo test**：13000+ 测试全部通过（`make test`：13129 passed / 0 failed / 74 ignored，截至 R2459）
 - **cargo clippy**：`cargo clippy --workspace --all-targets -D warnings` 通过
 - **#[ignore] 测试**：74 个 ignored（real_website_compat.rs 等因本地网络不稳定的用例，不计入通过率）
 

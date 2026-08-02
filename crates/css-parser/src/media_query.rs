@@ -660,13 +660,31 @@ fn parse_px_value(s: &str) -> Option<f64> {
     s.parse::<f64>().ok()
 }
 
-/// 从 CSS 值字符串解析 dpi 数值。
+/// 从 CSS 值字符串解析分辨率（dpi）数值。
 ///
-/// 支持 `"96dpi"`、`"96"`、`"150.5dpi"` 等格式。
+/// 支持 CSS Values 4 §7.3 `<resolution>` 全部单位（大小写不敏感，CSS Syntax §4.3）：
+/// - `dpi`（dots per inch，换算 1）；
+/// - `dpcm`（dots per cm，1 inch = 2.54 cm → 换算 2.54）；
+/// - `dppx`（dots per px unit，1 px = 1/96 inch → 换算 96）；
+/// - `x`（`dppx` 别名，换算 96）。
+///
+/// 裸数字按 dpi 解析（向后兼容既有 `96` / `150.5` 行为）。
+/// 支持 `"96dpi"`、`"2dppx"`、`"10dpcm"`、`"1x"`、`"96"` 等格式。
 fn parse_dpi_value(s: &str) -> Option<f64> {
-    let s = s.trim();
-    let s = s.strip_suffix("dpi").unwrap_or(s).trim();
-    s.parse::<f64>().ok()
+    let lower = s.trim().to_ascii_lowercase();
+    // 先匹配最长单位（`dppx` 优先于 `dpi`），避免误剥前缀重叠的单位。
+    let (num_str, factor) = if let Some(n) = lower.strip_suffix("dppx") {
+        (n, 96.0)
+    } else if let Some(n) = lower.strip_suffix("dpcm") {
+        (n, 2.54)
+    } else if let Some(n) = lower.strip_suffix("dpi") {
+        (n, 1.0)
+    } else if let Some(n) = lower.strip_suffix("x") {
+        (n, 96.0)
+    } else {
+        (s.trim(), 1.0)
+    };
+    num_str.trim().parse::<f64>().ok().map(|v| v * factor)
 }
 
 /// 找到第一个 `(` 对应的 `)` 的位置。
@@ -1355,6 +1373,62 @@ mod tests {
         assert_eq!(parse_dpi_value("150dpi"), Some(150.0));
         assert_eq!(parse_dpi_value("96"), Some(96.0));
         assert_eq!(parse_dpi_value("invalid"), None);
+    }
+
+    // ── CSS Values 4 §7.3 <resolution> 全单位（dpi/dpcm/dppx/x）转换测试 ──
+
+    #[test]
+    fn test_parse_dpi_value_dppx() {
+        // 1 dppx = 96 dpi；2 dppx = 192 dpi
+        assert_eq!(parse_dpi_value("1dppx"), Some(96.0));
+        assert_eq!(parse_dpi_value("2dppx"), Some(192.0));
+        assert_eq!(parse_dpi_value("1.5dppx"), Some(144.0));
+    }
+
+    #[test]
+    fn test_parse_dpi_value_dpcm() {
+        // 1 dpcm = 2.54 dpi；10 dpcm = 25.4 dpi
+        assert_eq!(parse_dpi_value("1dpcm"), Some(2.54));
+        assert_eq!(parse_dpi_value("10dpcm"), Some(25.4));
+    }
+
+    #[test]
+    fn test_parse_dpi_value_x_alias() {
+        // x 是 dppx 的别名（CSS Values 4 §7.3）：1 x = 96 dpi
+        assert_eq!(parse_dpi_value("1x"), Some(96.0));
+        assert_eq!(parse_dpi_value("2x"), Some(192.0));
+    }
+
+    #[test]
+    fn test_parse_dpi_value_case_insensitive() {
+        // CSS 单位大小写不敏感（CSS Syntax §4.3）
+        assert_eq!(parse_dpi_value("96DPI"), Some(96.0));
+        assert_eq!(parse_dpi_value("2DPPX"), Some(192.0));
+        assert_eq!(parse_dpi_value("1X"), Some(96.0));
+    }
+
+    #[test]
+    fn test_parse_resolution_dppx_full_query() {
+        // 端到端：@media (resolution: 2dppx) 应转换为 Resolution(Exact, 192 dpi)
+        let q = first_query("(resolution: 2dppx)");
+        assert_eq!(
+            q.conditions[0],
+            MediaCondition::Resolution(MediaFeatureOp::Exact, 192.0)
+        );
+    }
+
+    #[test]
+    fn test_eval_resolution_dppx() {
+        // 2dppx = 192 dpi：在 192dpi 设备上匹配，在 96dpi 设备上不匹配
+        let q = first_query("(resolution: 2dppx)");
+
+        let mut ctx_192 = MediaContext::new(1024.0, 768.0);
+        ctx_192.resolution_dpi = 192.0;
+        assert!(evaluate_media_query(&q, &ctx_192));
+
+        let mut ctx_96 = MediaContext::new(1024.0, 768.0);
+        ctx_96.resolution_dpi = 96.0;
+        assert!(!evaluate_media_query(&q, &ctx_96));
     }
 
     // ── 组合测试：新特性与媒体类型混合 ──
