@@ -379,6 +379,8 @@
 
 ## 最近轮次摘要
 
+> **📍 R2461（2026-08-02）📋 reftest-driven vein：css-position scoped 扫描 + 全 fail triage**：css-position self-source **83/97=85.6%**（与快照一致）；14 fail 全分类——hypothetical-dynamic-change-002/003 + position-absolute-dynamic-relayout-004/005/006（5 案）= **JS-driven dynamic relayout**（script-sandbox 执行+重排，deferred 深路径）；position-absolute-in-inline-003~006（4 案）= **IFC 内 abspos 静态位置**（Phase A territory）；position-relative-003/004/005（3 案，1 静态+2 动态）= 百分比 inset，**`convert_length_to_lpa` 已正确保 `Percentage→LengthPercentageAuto::percent`**（converter/mod.rs:615），残余 1.15% diff = taffy 0.7 relative 百分比 inset 解析（taffy-migration territory）/sub-pixel；replaced-object-backdrop（100%）= backdrop+replaced paint-isolation（深）；position-absolute-center-002（1）= abspos centering 单案。**结论：css-position 无 clean discrete lever**。**双 dir（css-ui R2460 + css-position R2461）收敛钉案**：reftest-driven vein 残余 fail 全为 JS-dynamic / IFC(Phase A) / taffy-internal / R2174 / host-layer 深结构，clean-lever era 经 2 dir 实证彻底终结。
+
 > **📍 R2460（2026-08-02）📋 reftest-driven vein：css-ui scoped 扫描 + 全 fail triage**：css-ui **926/986=93.9% self-source**（新数据点，原不在 oracle 快照）；60 fail 全分类为 **深结构**——box-sizing-007~025（~20 案）= **R2174 replaced-element border-box territory**（`<img>` intrinsic+padding+min/max，user-gated）；caret-*/caret-shape-*/caret-eol-*（~15）= host-layer 光标渲染（深）；outline-*（~10）= 多为 sub-pixel/font-wall（0.2-2%）+ outline-013 负 offset clamp 单案（fiddly re-center 几何，低 ROI）；text-overflow-*（~6）= IFC baseline/relative-pos + ellipsis glyph font-wall（Phase A）；widgets（accent-color-checkbox/radio、compute-kind-revert、appearance）= 深。**结论：css-ui 无 clean discrete lever**。同期核验 value-level 已饱和：tab-size/empty-cells/accent-color/caret-color/contain-intrinsic-size/text-indent 全 parse+消费已实现；lh/rlh 非快修（须 line-height 度量 thread 进 `resolve_length` 签名 = borderline-deep）。clean-lever era 经实证终结。
 
 > **📍 R2459（2026-08-02）feat CSS Values 4 §7.3 `<resolution>` 全单位**：`parse_dpi_value` 仅剥 `dpi` → 现支持 `dpi`/`dpcm`(×2.54)/`dppx`(×96)/`x`(=dppx 别名，×96)，大小写不敏感。TDD red→green（4 新 fail→全过），`make test` 13129 passed/0 failed/74 ignored 净正；media-query `resolution` 媒体特性 value-级合规补全（dpi/bare-number 行为零变更，strictly more-accepting → net≥0 by construction）。
@@ -386,8 +388,6 @@
 > **📍 R2458（2026-08-02）📋 subpixel glyph 定位 A/B 净负 -3 回退；font-wall 调查**终结**（5 假设 R1069/R1946/R1950/R1410/R2458 全负）；font-wall 真因 = intrinsic FreeType/Skia parity，须 Skia-exact 深步骤 user-gated。
 
 > **📍 R2457（2026-08-02）🚨 R2455 订正：font-wall ≠ fontdue（FreeType 已 default-on R1159/R1094 +232）；font-wall 假设经 R1069/R1946/R1950/R1410 穷尽（hinting/advance/gamma 全负），唯一未测 = subpixel glyph 定位（gx.round）。
-
-> **📍 R2455（2026-08-02）📋 font-wall 根因确证 = fontdue 光栅化（Ahem 已加载证伪「缺字体」+ R2454 marker-scale 净负）；快修假设穷尽，唯一解 = font-stack C-dep rebuild（深，等授权）。
 
 ## 轮次详记归档
 
