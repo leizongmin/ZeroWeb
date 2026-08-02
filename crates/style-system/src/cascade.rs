@@ -234,6 +234,19 @@ fn is_invalid_enum_value(property: &str, value: &str) -> bool {
 fn canonical_property_name(property: &str) -> &str {
     match property {
         "word-wrap" => "overflow-wrap",
+        // CSS Logical Properties（sizing 族）canonical 化：logical 尺寸属性须规范化为
+        // 水平书写模式的物理等价，使 logical 与 physical 声明在级联中按 specificity/order
+        // 竞争（CSS Logical Props：computed value 由 logical+physical 共同声明的级联决定）。
+        // 否则二者各占独立 canonical 槽位 → 都被应用 → specificity 丢失，终值由 apply 顺序/
+        // HashMap 迭代序决定（错误）。垂直书写模式的轴交换由 converter swap_writing_mode_axes
+        // 在 apply 之后处理（width↔height 互换），不受此处 canonical 化影响。
+        // driving: css-logical/cascading-001。
+        "inline-size" => "width",
+        "block-size" => "height",
+        "min-inline-size" => "min-width",
+        "min-block-size" => "min-height",
+        "max-inline-size" => "max-width",
+        "max-block-size" => "max-height",
         _ => property,
     }
 }
@@ -479,6 +492,72 @@ mod tests {
         // 同一槽位：后声明的 word-wrap:break-word 胜出。
         assert_eq!(result.get("overflow-wrap"), Some(&"break-word".to_string()));
         assert!(!result.contains_key("word-wrap"));
+    }
+
+    /// R2499：CSS Logical Properties sizing 族 canonical 化——logical 尺寸属性须规范化为
+    /// 其水平书写模式的物理等价，使 logical 与 physical 在级联中按 specificity 竞争。
+    /// driving: css-logical/cascading-001（physical+logical 同元素须 cascade 共解）。
+    #[test]
+    fn test_canonical_logical_size_aliases() {
+        // inline-size↔width、block-size↔height 及 min/max 变体。
+        assert_eq!(canonical_property_name("inline-size"), "width");
+        assert_eq!(canonical_property_name("block-size"), "height");
+        assert_eq!(canonical_property_name("min-inline-size"), "min-width");
+        assert_eq!(canonical_property_name("min-block-size"), "min-height");
+        assert_eq!(canonical_property_name("max-inline-size"), "max-width");
+        assert_eq!(canonical_property_name("max-block-size"), "max-height");
+        // 物理名原样返回（已 canonical）。
+        assert_eq!(canonical_property_name("width"), "width");
+        assert_eq!(canonical_property_name("height"), "height");
+    }
+
+    /// R2499：logical 与 physical 尺寸属性共享同一 canonical 槽位 → 按 specificity 竞争，
+    /// 而非各占独立槽位双双应用（致 specificity 丢失、终值由 apply/HashMap 序决定）。
+    /// driving: css-logical/cascading-001（class inline-size:100px vs ID width:10px → ID 须胜）。
+    #[test]
+    fn test_cascade_logical_and_physical_size_share_slot() {
+        // class（specificity 0,1,0）inline-size:100px vs ID（1,0,0）width:10px → ID 胜。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "inline-size".to_string(),
+                value: "100px".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "width".to_string(),
+                value: "10px".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        // canonical "width" 槽位 = ID 的 10px；无残留 "inline-size" 键。
+        assert_eq!(
+            result.get("width"),
+            Some(&"10px".to_string()),
+            "ID width:10px must win over class inline-size:100px (logical+physical compete by specificity)"
+        );
+        assert!(!result.contains_key("inline-size"));
+
+        // 反向：class width:10px vs ID inline-size:100px → ID inline-size 胜（canonical width=100px）。
+        let decls_rev = vec![
+            CascadedDeclaration {
+                property: "width".to_string(),
+                value: "10px".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "inline-size".to_string(),
+                value: "100px".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
+            },
+        ];
+        let result_rev = cascade(decls_rev, false);
+        assert_eq!(
+            result_rev.get("width"),
+            Some(&"100px".to_string()),
+            "ID inline-size:100px must win over class width:10px"
+        );
+        assert!(!result_rev.contains_key("inline-size"));
     }
 
     /// R2386：`all` 简写展开为 CSS-wide 关键字——`all: initial` 把 color 重置为 initial。
