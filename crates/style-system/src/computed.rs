@@ -440,8 +440,8 @@ pub fn resolve_computed_style(
     );
 
     // outline-width 的 em/rem/ch 须解析为 Px（R907 同模式：column-rule-width em 缺
-    // resolve 致 paint 仅匹配 Px）。否则 paint_outline（painter/border.rs:554）经
-    // length_to_f32（helpers.rs:583，Px-only）把 em 丢为 0.0 → outline 消失。
+    // resolve 致 paint 仅匹配 Px）。否则 paint_outline（painter/border.rs:590）经
+    // length_to_f32（helpers.rs:635，Px-only）把 em 丢为 0.0 → outline 消失。
     // outline-offset 0 corpus 用量故不入列（code-guidelines 不做零价值）。
     resolve_length_field(
         &mut resolved.outline_width,

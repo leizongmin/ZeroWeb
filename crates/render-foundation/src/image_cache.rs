@@ -601,7 +601,7 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         SvgIntrinsicKind::ComputedIntrinsic(_, _) => {}
         // R2054：NoRatio 保留真实 abs 固有维（仅 abs 属性存在的维，缺失维 None）——旧实现
         // 丢弃为 (None,None) 致 height-25-no-ratio / width-50-no-ratio 失去固有维走全 default。
-        // 布局 no_ratio 分支（tree.rs:413）用 w_opt/h_opt + unwrap_or(300/150) 正确分派。
+        // 布局 no_ratio 分支（tree.rs:543）用 w_opt/h_opt + unwrap_or(300/150) 正确分派。
         SvgIntrinsicKind::NoRatio { width, height } => data.no_ratio = Some((width, height)),
     }
     Ok(data)

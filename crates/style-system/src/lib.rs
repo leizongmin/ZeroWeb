@@ -702,7 +702,7 @@ impl StyleSystem {
                 }
                 // R1692：HTML 渲染规范 UA font-size/vertical-align（chromium UA `smaller` ≈0.83em，
                 // ZW 无 smaller 关键字 → 用 0.83em 显式）。ZW vertical-align:sub/super 已支持
-                //（parse + layout 基线偏移 inline/mod.rs:2173）。specificity 0,0,0 可被作者覆盖。
+                //（parse + layout 基线偏移 inline/mod.rs:1189）。specificity 0,0,0 可被作者覆盖。
                 "small" => {
                     ua_decl_inputs.push(("font-size".to_string(), "0.83em".to_string(), false, (0, 0, 0), None));
                 }

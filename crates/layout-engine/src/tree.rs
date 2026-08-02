@@ -16,7 +16,7 @@ use crate::inline_block_split::{
 };
 
 /// R1311b：判断 `<br>` 元素是否处于「纯 inline 上下文」——br 且无 block-level in-flow
-/// 同胞。此类 br 由父容器 IFC 作 InlineItem::Br 处理（inline/mod.rs:741），不需要独立
+/// 同胞。此类 br 由父容器 IFC 作 InlineItem::Br 处理（inline/mod.rs:1122），不需要独立
 /// taffy 节点。display 判定与 R1285 一致。
 fn br_is_inline_only(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, id: NodeId) -> bool {
     let is_br = doc

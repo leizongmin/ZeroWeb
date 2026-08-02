@@ -324,7 +324,7 @@ impl InlineFormattingContext {
                             // env-gated `ZW_IFC_IMG_INTRINSIC`（default-on，`=0` 关闭）；
                             // 排除 vertical（R109-blocked，沿用 R1576 gate）；两侧都未知不推导
                             //（避免与 final path `apply_replaced_element_sizing` 的 default-object-size
-                            // 300×150 冲突）。eff_ratio 与 tree.rs:436 一致：CSS aspect-ratio 优先。
+                            // 300×150 冲突）。eff_ratio 与 tree.rs:597 一致：CSS aspect-ratio 优先。
                             if Self::ifc_img_intrinsic_enabled()
                                 && !self.vertical
                                 && (w > 0.0) != (h > 0.0)

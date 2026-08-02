@@ -28,7 +28,7 @@
 //!
 //! # 输出模型
 //!
-//! 分页后子元素 abs 底部下移 → `layout_extent_y`（pipeline.rs:668）自动返回更大文档高 →
+//! 分页后子元素 abs 底部下移 → `layout_extent_y`（pipeline.rs:748）自动返回更大文档高 →
 //! `paint_cull_viewport` 产出 taller cull rect → tall-framebuffer（页边界以空白间隔可见）。
 //! 无需手动扩 body.height（子溢出 body box 但 extent 仍捕获）。
 
