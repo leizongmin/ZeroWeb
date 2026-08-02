@@ -252,9 +252,11 @@ impl PropertyRegistry {
 
             // Contain
             "contain" => Some(Contain(ContainComputedValue::None)),
-            "contain-intrinsic-size" | "contain-intrinsic-width" | "contain-intrinsic-height" => {
-                Some(ContainIntrinsicSize(None, None))
-            }
+            "contain-intrinsic-size"
+            | "contain-intrinsic-width"
+            | "contain-intrinsic-height"
+            | "contain-intrinsic-inline-size"
+            | "contain-intrinsic-block-size" => Some(ContainIntrinsicSize(None, None)),
 
             // UI Appearance
             "appearance" => Some(Appearance(AppearanceComputedValue::Auto)),
@@ -556,6 +558,8 @@ impl PropertyRegistry {
             "contain-intrinsic-size",
             "contain-intrinsic-width",
             "contain-intrinsic-height",
+            "contain-intrinsic-inline-size",
+            "contain-intrinsic-block-size",
             "appearance",
             "accent-color",
             "caret-color",

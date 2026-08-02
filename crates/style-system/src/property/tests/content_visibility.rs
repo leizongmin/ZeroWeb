@@ -125,3 +125,42 @@ fn test_contain_intrinsic_longhands_explicit_inherit_keyword() {
     );
     assert_eq!(child2.contain_intrinsic_height, parent.contain_intrinsic_height);
 }
+
+/// R2468：contain-intrinsic-{inline,block}-size logical longhands（CSS Sizing 4
+/// §intrinsic-size-override）。inline→width、block→height（水平书写模式等价；垂直模式轴
+/// 交换由 converter swap_writing_mode_axes 负责，同 inline-size/block-size）。driving:
+/// css-sizing/contain-intrinsic-size/contain-intrinsic-size-logical-001.html。
+#[test]
+fn test_contain_intrinsic_logical_longhands() {
+    use zero_css_parser::values::LengthValue;
+    let mut style = ComputedStyle::default();
+    assert!(style.contain_intrinsic_width.is_none() && style.contain_intrinsic_height.is_none());
+
+    // inline-size → width
+    assert!(apply_property_value(
+        &mut style,
+        "contain-intrinsic-inline-size",
+        "100px"
+    ));
+    assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(100.0)));
+    assert!(style.contain_intrinsic_height.is_none());
+
+    // block-size → height
+    assert!(apply_property_value(&mut style, "contain-intrinsic-block-size", "50px"));
+    assert_eq!(style.contain_intrinsic_height, Some(LengthValue::Px(50.0)));
+
+    // 可选 `auto` 前缀（静态无 remembered-size，按显式长度处理）
+    assert!(apply_property_value(
+        &mut style,
+        "contain-intrinsic-inline-size",
+        "auto 200px"
+    ));
+    assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(200.0)));
+
+    // 显式 inherit 关键字（logical longhands 与物理同 inherit_property 分支）
+    let mut parent = ComputedStyle::default();
+    parent.contain_intrinsic_width = Some(LengthValue::Px(300.0));
+    let mut child = ComputedStyle::default();
+    assert!(inherit_property(&parent, &mut child, "contain-intrinsic-inline-size"));
+    assert_eq!(child.contain_intrinsic_width, parent.contain_intrinsic_width);
+}

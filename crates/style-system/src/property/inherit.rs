@@ -191,6 +191,16 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.contain_intrinsic_height = parent.contain_intrinsic_height.clone();
             true
         }
+        // R2468：logical longhands 显式 inherit——inline→width、block→height
+        //（水平书写模式等价；垂直模式轴交换由 converter 负责）。
+        "contain-intrinsic-inline-size" => {
+            child.contain_intrinsic_width = parent.contain_intrinsic_width.clone();
+            true
+        }
+        "contain-intrinsic-block-size" => {
+            child.contain_intrinsic_height = parent.contain_intrinsic_height.clone();
+            true
+        }
         "background-image" => {
             child.background_image = parent.background_image.clone();
             true
@@ -1228,8 +1238,13 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.contain = default_style.contain;
             true
         }
-        "contain-intrinsic-size" | "contain-intrinsic-width" | "contain-intrinsic-height" => {
+        "contain-intrinsic-size"
+        | "contain-intrinsic-width"
+        | "contain-intrinsic-height"
+        | "contain-intrinsic-inline-size"
+        | "contain-intrinsic-block-size" => {
             // 重置两个分量到默认（None）；任一 longhand 重置都恢复该维为 None。
+            // R2468：logical longhands 同（inline→width、block→height，重置语义一致）。
             style.contain_intrinsic_width = default_style.contain_intrinsic_width;
             style.contain_intrinsic_height = default_style.contain_intrinsic_height;
             true

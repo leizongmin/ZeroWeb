@@ -8,6 +8,23 @@ use super::parse::*;
 use super::types::*;
 use zero_css_parser::values;
 
+/// R2468：解析 contain-intrinsic-{inline,block}-size longhand 值。
+///
+/// 接受可选 `auto` 前缀 + 单个 `<length>`（如 `auto 100px`、`100px`）。`auto` 在静态无
+/// remembered-size 模型下按显式长度处理（与 contain-intrinsic-size 简写一致）。返回解析出
+/// 的长度或 None（无有效长度 token）。
+fn parse_cis_longhand(value: &str) -> Option<LengthValue> {
+    let v = value.trim();
+    // 剥可选 `auto` 前缀（须独立 token）。
+    let v = if v.len() >= 5 && v.as_bytes()[..4].eq_ignore_ascii_case(b"auto") && v.as_bytes()[4].is_ascii_whitespace()
+    {
+        v[4..].trim()
+    } else {
+        v
+    };
+    values::parse_length(v)
+}
+
 /// 将高级 CSS 属性字符串值设置到 ComputedStyle。
 ///
 /// 处理 Transforms、Transitions、Animations、Scroll Snap、Container、
@@ -940,6 +957,22 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         "contain-intrinsic-height" => {
             if let Some(l) = values::parse_length(value.trim()) {
+                style.contain_intrinsic_height = Some(l);
+                return true;
+            }
+        }
+        // CSS Sizing 4 §intrinsic-size-override：logical longhands。
+        // inline→width、block→height（水平书写模式等价；垂直模式轴交换由 converter
+        // swap_writing_mode_axes 负责，同 inline-size/block-size）。接受可选 `auto` 前缀
+        //（静态无 remembered size，auto 按显式长度处理，与 contain-intrinsic-size 简写一致）。
+        "contain-intrinsic-inline-size" => {
+            if let Some(l) = parse_cis_longhand(value) {
+                style.contain_intrinsic_width = Some(l);
+                return true;
+            }
+        }
+        "contain-intrinsic-block-size" => {
+            if let Some(l) = parse_cis_longhand(value) {
                 style.contain_intrinsic_height = Some(l);
                 return true;
             }
