@@ -411,6 +411,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.overflow_y = parent.overflow_y.clone();
             true
         }
+        "overflow-clip-margin" => {
+            child.overflow_clip_margin = parent.overflow_clip_margin.clone();
+            true
+        }
         // outline（visual-only，低风险）
         "outline-width" => {
             child.outline_width = parent.outline_width.clone();
@@ -919,6 +923,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "overflow-y" => {
             style.overflow_y = default_style.overflow_y;
+            true
+        }
+        "overflow-clip-margin" => {
+            style.overflow_clip_margin = default_style.overflow_clip_margin.clone();
             true
         }
         // Aspect Ratio

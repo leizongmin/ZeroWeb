@@ -789,6 +789,13 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        // CSS Overflow 3 §3：overflow-clip-margin（仅对 overflow:clip 生效，paint 期消费）。
+        "overflow-clip-margin" => {
+            if let Some(v) = values::parse_overflow_clip_margin(value) {
+                style.overflow_clip_margin = v;
+                return true;
+            }
+        }
         // ── Aspect Ratio 属性 ──
         "aspect-ratio" => {
             let v = value.trim();

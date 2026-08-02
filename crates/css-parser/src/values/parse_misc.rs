@@ -126,6 +126,38 @@ pub fn parse_overflow(value: &str) -> Option<OverflowValue> {
     }
 }
 
+/// 解析 CSS overflow-clip-margin 值（CSS Overflow 3 §3）。
+///
+/// 文法 `<visual-box> || <length>`——box ∈ {content-box, padding-box, border-box}
+///（缺省 padding-box）+ length（缺省 0px）。`||` = 二者任意顺序、各至多一次。
+/// 非法值（>2 token / 重复 box / 重复 length / 未知 token / length 不可解析）→ None
+///（整条声明按解析错误丢）。driving: css-overflow/overflow-clip-margin-*。
+pub fn parse_overflow_clip_margin(value: &str) -> Option<OverflowClipMarginValue> {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    if parts.len() > 2 {
+        return None;
+    }
+    let mut box_kind: Option<OverflowClipMarginBox> = None;
+    let mut length: Option<LengthValue> = None;
+    for p in parts {
+        match p.trim() {
+            "content-box" if box_kind.is_none() => box_kind = Some(OverflowClipMarginBox::ContentBox),
+            "padding-box" if box_kind.is_none() => box_kind = Some(OverflowClipMarginBox::PaddingBox),
+            "border-box" if box_kind.is_none() => box_kind = Some(OverflowClipMarginBox::BorderBox),
+            _ => {
+                if length.is_some() {
+                    return None;
+                }
+                length = Some(parse_length(p)?);
+            }
+        }
+    }
+    Some(OverflowClipMarginValue {
+        box_kind: box_kind.unwrap_or(OverflowClipMarginBox::PaddingBox),
+        length: length.unwrap_or(LengthValue::Px(0.0)),
+    })
+}
+
 /// 解析 CSS float 属性值。
 pub fn parse_float(value: &str) -> Option<FloatValue> {
     match value.trim().to_lowercase().as_str() {

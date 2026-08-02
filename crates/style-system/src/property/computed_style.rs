@@ -264,6 +264,10 @@ pub struct ComputedStyle {
     pub overflow_x: OverflowValue,
     /// overflow-y 属性。
     pub overflow_y: OverflowValue,
+    /// overflow-clip-margin 属性（CSS Overflow 3 §3）。仅对 `overflow:clip` 生效：
+    /// 决定裁剪边基准盒（content/padding/border）+ 向外扩展长度。初值 = padding-box / 0
+    ///（与既有 overflow 裁剪到 padding-box 一致，零行为变更）。
+    pub overflow_clip_margin: OverflowClipMarginValue,
 
     // ── Aspect Ratio ──
     /// aspect-ratio 属性（width / height 比值），None 表示未声明显式 ratio。

@@ -6,9 +6,10 @@
 pub use zero_css_parser::values::{
     self, AlignmentValue, BoxSizingValue, ClipPathRadius, ColorValue, ColumnCountValue, ColumnWidthValue, ContainValue,
     ContainerTypeValue, ContentValue, ContentVisibilityValue, CounterActionValue, DisplayValue, FilterValue,
-    FlexDirectionValue, FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue, ObjectFitValue, OverflowValue,
-    PolygonFillRule, PositionValue, QuotesValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue,
-    ScrollSnapTypeValue, TextEmphasisPositionValue, TextEmphasisStyleValue, VerticalAlignValue, VisibilityValue,
+    FlexDirectionValue, FlexWrapValue, FontStyleValue, FontWeightValue, LengthValue, ObjectFitValue,
+    OverflowClipMarginBox, OverflowClipMarginValue, OverflowValue, PolygonFillRule, PositionValue, QuotesValue,
+    ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, TextEmphasisPositionValue,
+    TextEmphasisStyleValue, VerticalAlignValue, VisibilityValue,
 };
 
 /// CSS border-style 值。
@@ -1443,6 +1444,8 @@ pub enum PropertyValue {
     ListStyleImage(ListStyleImageComputedValue),
     /// overflow 值。
     Overflow(OverflowValue),
+    /// overflow-clip-margin 值（CSS Overflow 3 §3）。
+    OverflowClipMargin(OverflowClipMarginValue),
     /// flex-direction 值。
     FlexDirection(FlexDirectionValue),
     /// flex-wrap 值。

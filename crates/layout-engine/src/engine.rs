@@ -11,7 +11,9 @@ use std::collections::{HashMap, HashSet};
 
 use taffy::prelude::*;
 
-use zero_css_parser::values::{ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, PositionValue};
+use zero_css_parser::values::{
+    ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowClipMarginBox, PositionValue,
+};
 // ComputedStyle.direction 是 style-system 自有的 DirectionValue（与 css-parser 的不同枚举）。
 use zero_style_system::DirectionValue;
 
@@ -1854,6 +1856,25 @@ impl LayoutEngine {
         // 取代（chromium/IE 现行行为 = 裁剪）。此处 table cell 与非 cell 用同一 overflow 映射。
         let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
         let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
+        // CSS Overflow 3 §3：overflow-clip-margin 仅对 overflow:clip 生效（paint 期消费）。
+        // length 在此 resolve 为 px（em 按本元素 font-size；%/auto/vmin 等无意义 → 0 = 裁到基准盒边）。
+        // box_kind 初值 PaddingBox、length 初值 0 → 与既有 overflow 裁剪到 padding-box 一致（零行为变更）。
+        let font_size_px = computed.map_or(16.0, |s| match s.font_size {
+            LengthValue::Px(v) => v,
+            _ => 16.0,
+        });
+        let overflow_clip_margin = computed
+            .map(|s| {
+                let m = &s.overflow_clip_margin;
+                let len = match &m.length {
+                    LengthValue::Px(v) => *v,
+                    LengthValue::Em(v) => v * font_size_px,
+                    LengthValue::Rem(v) => v * 16.0,
+                    _ => 0.0,
+                };
+                (m.box_kind, len as f32)
+            })
+            .unwrap_or((OverflowClipMarginBox::PaddingBox, 0.0));
         // CSS 2.1 §9.4.1: display:flow-root 和 display:inline-block 都建立 BFC。
         // CSS Containment §3/§4：contain:layout / contain:paint 也建立独立格式化上下文
         //（BFC）——隔离浮动（祖先 float 不侵入、内部 float 不溢出）+ 阻止与后代的 margin 折叠。
@@ -2091,6 +2112,8 @@ impl LayoutEngine {
             clear,
             overflow_x,
             overflow_y,
+            overflow_clip_margin_box: overflow_clip_margin.0,
+            overflow_clip_margin_length: overflow_clip_margin.1,
             z_index,
             creates_stacking_context,
             scroll_x: 0.0,

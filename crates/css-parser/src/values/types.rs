@@ -286,6 +286,35 @@ pub enum OverflowValue {
     Clip,
 }
 
+/// CSS overflow-clip-margin 的视觉盒基准（CSS Overflow 3 §3）。
+///
+/// 决定 `overflow:clip` 元素的裁剪边从哪个盒起算，再用 [`OverflowClipMarginValue::length`]
+/// 向外（正值）/向内（负值）扩展。仅对 `overflow:clip` 生效——`hidden`/`scroll`/`auto`
+/// 始终按 padding-box 裁剪，忽略 overflow-clip-margin。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverflowClipMarginBox {
+    /// content-box — 内容盒（仅 content，不含 padding/border）。
+    ContentBox,
+    /// padding-box — 内边距盒（content + padding）。**规范初值**（与 ZW 既有 overflow
+    /// 裁剪到 padding-box 一致，故 length=0 + PaddingBox 时零行为变更）。
+    PaddingBox,
+    /// border-box — 边框盒（content + padding + border）。
+    BorderBox,
+}
+
+/// CSS overflow-clip-margin 值（CSS Overflow 3 §3）。
+///
+/// 文法 `<visual-box> || <length>`：视觉盒基准 + 扩展长度。两者皆可缺省
+///（缺省 box = PaddingBox，缺省 length = 0）。length 保留为 [`LengthValue`] 以支持
+/// em/% 在 compute 期按 font-size 解析。
+#[derive(Debug, Clone, PartialEq)]
+pub struct OverflowClipMarginValue {
+    /// 视觉盒基准。
+    pub box_kind: OverflowClipMarginBox,
+    /// 扩展长度（解析期保留单位，compute 期 resolve 为 px）。
+    pub length: LengthValue,
+}
+
 /// CSS list-style-type 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum ListStyleTypeValue {

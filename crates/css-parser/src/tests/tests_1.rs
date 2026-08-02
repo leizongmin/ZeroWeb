@@ -1406,6 +1406,58 @@ fn test_parse_overflow_all() {
 }
 
 #[test]
+/// R2500：overflow-clip-margin 文法 `<visual-box> || <length>`（CSS Overflow 3 §3）。
+fn test_parse_overflow_clip_margin() {
+    use crate::values::{LengthValue, OverflowClipMarginBox, OverflowClipMarginValue};
+    let mk = |box_kind, length| Some(OverflowClipMarginValue { box_kind, length });
+    // 纯长度 → 缺省 PaddingBox。
+    assert_eq!(
+        parse_overflow_clip_margin("10px"),
+        mk(OverflowClipMarginBox::PaddingBox, LengthValue::Px(10.0))
+    );
+    assert_eq!(
+        parse_overflow_clip_margin("0"),
+        mk(OverflowClipMarginBox::PaddingBox, LengthValue::Px(0.0))
+    );
+    // 纯视觉盒 → 缺省 length 0。
+    assert_eq!(
+        parse_overflow_clip_margin("content-box"),
+        mk(OverflowClipMarginBox::ContentBox, LengthValue::Px(0.0))
+    );
+    assert_eq!(
+        parse_overflow_clip_margin("border-box"),
+        mk(OverflowClipMarginBox::BorderBox, LengthValue::Px(0.0))
+    );
+    assert_eq!(
+        parse_overflow_clip_margin("padding-box"),
+        mk(OverflowClipMarginBox::PaddingBox, LengthValue::Px(0.0))
+    );
+    // `||` 任意顺序：box 在前 / 长度在前。
+    assert_eq!(
+        parse_overflow_clip_margin("padding-box 5px"),
+        mk(OverflowClipMarginBox::PaddingBox, LengthValue::Px(5.0))
+    );
+    assert_eq!(
+        parse_overflow_clip_margin("5px padding-box"),
+        mk(OverflowClipMarginBox::PaddingBox, LengthValue::Px(5.0))
+    );
+    assert_eq!(
+        parse_overflow_clip_margin("content-box 5px"),
+        mk(OverflowClipMarginBox::ContentBox, LengthValue::Px(5.0))
+    );
+    // em 单位保留（compute 期 resolve）。
+    assert_eq!(
+        parse_overflow_clip_margin("padding-box 1em"),
+        mk(OverflowClipMarginBox::PaddingBox, LengthValue::Em(1.0))
+    );
+    // 非法：>2 token / 重复 box / 重复 length / 未知 token → None。
+    assert_eq!(parse_overflow_clip_margin("content-box border-box"), None);
+    assert_eq!(parse_overflow_clip_margin("5px 10px"), None);
+    assert_eq!(parse_overflow_clip_margin("content-box 5px 10px"), None);
+    assert_eq!(parse_overflow_clip_margin("bogus"), None);
+}
+
+#[test]
 /// 测试所有 FlexDirectionValue 变体
 fn test_parse_flex_direction_all() {
     assert_eq!(parse_flex_direction("row"), Some(FlexDirectionValue::Row));

@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 pub use zero_css_parser::values::ClearValue;
-use zero_css_parser::values::FloatValue;
+use zero_css_parser::values::{FloatValue, OverflowClipMarginBox};
 use zero_dom::NodeId;
 use zero_style_system::WritingModeValue;
 
@@ -136,6 +136,11 @@ pub struct LayoutBox {
     pub overflow_x: OverflowClip,
     /// 溢出处理。
     pub overflow_y: OverflowClip,
+    /// overflow-clip-margin 视觉盒基准（CSS Overflow 3 §3）。仅 overflow:clip 生效。
+    pub overflow_clip_margin_box: OverflowClipMarginBox,
+    /// overflow-clip-margin 扩展长度（px，已 resolve em/%）。仅 overflow:clip 生效；
+    /// 正值向外扩展、负值向内收缩。0 = 裁剪到基准盒边（零行为变更）。
+    pub overflow_clip_margin_length: f32,
     /// z-index 值（用于堆叠上下文排序）。
     /// 仅对 positioned 元素（absolute/relative/fixed/sticky）生效。
     /// 默认为 0，对应 z-index: auto。
@@ -442,6 +447,8 @@ impl Default for LayoutBox {
             clear: ClearValue::None,
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
+            overflow_clip_margin_box: OverflowClipMarginBox::PaddingBox,
+            overflow_clip_margin_length: 0.0,
             z_index: 0,
             creates_stacking_context: false,
             scroll_x: 0.0,

@@ -183,6 +183,44 @@ fn compute_needs_clip(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedSty
     }
 }
 
+/// 计算 overflow 裁剪矩形（CSS §11.1.1 padding-box + Overflow 3 §3 overflow-clip-margin）。
+///
+/// 非 clip 轴（hidden/scroll/auto）按 padding-box 裁剪（既有行为）；clip 轴按
+/// overflow-clip-margin 的基准盒（content-box/padding-box/border-box）± length 扩展。
+/// 默认（PaddingBox + length 0）或全非 clip → padding-box，与旧实现字节一致（零行为变更）。
+/// 仅调整 clip 轴，hidden/scroll/visible 轴保持 padding-box（零回归）。
+fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
+    use zero_css_parser::values::OverflowClipMarginBox;
+    // padding-box 边（既有 overflow 裁剪基线，CSS §11.1.1 裁到 padding-box）。
+    let pad_x = abs_x + box_node.border_left;
+    let pad_y = abs_y + box_node.border_top;
+    let pad_w = box_node.padding_left + box_node.content_width + box_node.padding_right;
+    let pad_h = box_node.padding_top + box_node.content_height + box_node.padding_bottom;
+    let (mut x, mut y, mut w, mut h) = (pad_x, pad_y, pad_w, pad_h);
+    // 仅当某轴为 clip 时按 overflow-clip-margin 调整该轴（hidden/scroll 始终忽略 margin）。
+    if box_node.overflow_x == OverflowClip::Clip {
+        let (base_x, base_w) = match box_node.overflow_clip_margin_box {
+            OverflowClipMarginBox::ContentBox => (pad_x + box_node.padding_left, box_node.content_width),
+            OverflowClipMarginBox::PaddingBox => (pad_x, pad_w),
+            OverflowClipMarginBox::BorderBox => (abs_x, pad_w + box_node.border_left + box_node.border_right),
+        };
+        let m = box_node.overflow_clip_margin_length;
+        x = base_x - m;
+        w = base_w + 2.0 * m;
+    }
+    if box_node.overflow_y == OverflowClip::Clip {
+        let (base_y, base_h) = match box_node.overflow_clip_margin_box {
+            OverflowClipMarginBox::ContentBox => (pad_y + box_node.padding_top, box_node.content_height),
+            OverflowClipMarginBox::PaddingBox => (pad_y, pad_h),
+            OverflowClipMarginBox::BorderBox => (abs_y, pad_h + box_node.border_top + box_node.border_bottom),
+        };
+        let m = box_node.overflow_clip_margin_length;
+        y = base_y - m;
+        h = base_h + 2.0 * m;
+    }
+    Rect::new(x, y, w, h)
+}
+
 /// 收集 scope 根子树中所有 positioned descendants（z-index:auto pseudo-SC + real-SC，含嵌套），
 /// 按 **tree order**（pre-order DFS）。
 ///
@@ -627,12 +665,8 @@ impl Painter {
             // R793：CSS §11.1.1 — overflow 裁剪到 **padding box**（内容 + padding，border 之内），
             // 非 content box。原实现按 content box 裁剪（起点加 padding、尺寸=content），致溢出内容
             // 落在 content 边与 padding 边之间的条带时被多裁（chromium 保留到 padding 边）。
-            let clip_rect = Rect::new(
-                abs_x + box_node.border_left,
-                abs_y + box_node.border_top,
-                box_node.padding_left + box_node.content_width + box_node.padding_right,
-                box_node.padding_top + box_node.content_height + box_node.padding_bottom,
-            );
+            // R2500：overflow:clip 轴额外按 overflow-clip-margin 扩展（CSS Overflow 3 §3）。
+            let clip_rect = overflow_clip_rect(box_node, abs_x, abs_y);
             super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
         }
 
@@ -1048,12 +1082,8 @@ impl Painter {
             // R793：CSS §11.1.1 — overflow 裁剪到 **padding box**（内容 + padding，border 之内），
             // 非 content box。原实现按 content box 裁剪（起点加 padding、尺寸=content），致溢出内容
             // 落在 content 边与 padding 边之间的条带时被多裁（chromium 保留到 padding 边）。
-            let clip_rect = Rect::new(
-                abs_x + box_node.border_left,
-                abs_y + box_node.border_top,
-                box_node.padding_left + box_node.content_width + box_node.padding_right,
-                box_node.padding_top + box_node.content_height + box_node.padding_bottom,
-            );
+            // R2500：overflow:clip 轴额外按 overflow-clip-margin 扩展（CSS Overflow 3 §3）。
+            let clip_rect = overflow_clip_rect(box_node, abs_x, abs_y);
             super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
         }
 

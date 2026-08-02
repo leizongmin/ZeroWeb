@@ -132,6 +132,11 @@ impl PropertyRegistry {
 
             // Overflow
             "overflow-x" | "overflow-y" => Some(Overflow(OverflowValue::Visible)),
+            // CSS Overflow 3 §3 初值 = padding-box / 0。
+            "overflow-clip-margin" => Some(OverflowClipMargin(OverflowClipMarginValue {
+                box_kind: OverflowClipMarginBox::PaddingBox,
+                length: LengthValue::Px(0.0),
+            })),
 
             // Aspect Ratio
             "aspect-ratio" => Some(Number(f64::NAN)), // NaN 表示 auto
@@ -461,6 +466,7 @@ impl PropertyRegistry {
             "z-index",
             "overflow-x",
             "overflow-y",
+            "overflow-clip-margin",
             "aspect-ratio",
             "cursor",
             "transition-property",

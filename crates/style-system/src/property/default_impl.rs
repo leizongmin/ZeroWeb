@@ -169,6 +169,11 @@ impl Default for ComputedStyle {
             // Overflow
             overflow_x: OverflowValue::Visible,
             overflow_y: OverflowValue::Visible,
+            // CSS Overflow 3 §3 初值 = padding-box / 0（与既有 overflow 裁剪到 padding-box 一致）。
+            overflow_clip_margin: OverflowClipMarginValue {
+                box_kind: OverflowClipMarginBox::PaddingBox,
+                length: LengthValue::Px(0.0),
+            },
 
             // Aspect Ratio
             aspect_ratio: None,
