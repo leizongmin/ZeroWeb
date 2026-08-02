@@ -109,7 +109,7 @@ pub fn resolve_text_align(style: Option<&ComputedStyle>) -> TextAlign {
 ///
 /// **修复**：`compute_final_inline_layouts` 构建 stored IFC 此前只传 `text_align` 漏传
 /// `text_align_last`，致**存储路径**（pure-Ahem 容器，如 justifyall 簇）末行 text-align-last
-/// 不应用——末行恒按 text-align 默认处理。paint 非存储路径已传（text.rs:560），此处补齐使
+/// 不应用——末行恒按 text-align 默认处理。paint 非存储路径已传（text.rs:581），此处补齐使
 /// layout/paint 双路径一致。
 pub fn resolve_text_align_last(style: Option<&ComputedStyle>) -> Option<TextAlign> {
     use zero_style_system::property::{DirectionValue, TextAlignLastValue};
@@ -1047,7 +1047,7 @@ fn backfill_phasea_orphan_boxes(
         .into_iter()
         .filter(|&c| crate::tree::phasea_multi_inline_eligible(doc, styles, c))
         .collect();
-    // 容器须 ≥2 eligible 子才触发 multi_inline_block_skip（tree.rs:1540）；否则无 orphan。
+    // 容器须 ≥2 eligible 子才触发 multi_inline_block_skip（tree.rs:1571）；否则无 orphan。
     if orphan_ids.len() < 2 {
         return;
     }

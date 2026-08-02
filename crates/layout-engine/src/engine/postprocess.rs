@@ -841,7 +841,7 @@ pub(super) fn shift_siblings_after_ifc_grow(
         if c.is_r109_split {
             return false;
         }
-        // R1505：inline-block（非 floated）的 is_block_level=false（engine.rs:1888 仅 floated
+        // R1505：inline-block（非 floated）的 is_block_level=false（engine.rs:1909 仅 floated
         // inline-block 标 block_level），但它在 block 流中作兄弟整盒下移同样安全（内部 IFC 与
         // 容器 y 无关）。inline-block-non-replaced-width-003/004：taffy 低估前置 `<p>`（plain
         // 文本块）致 inline-block `<div>` 定位过高（y=36 重叠 p 16..72），IFC remeasure 长高 p
