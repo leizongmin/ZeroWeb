@@ -313,6 +313,8 @@ pub enum ListStyleTypeValue {
     Persian,
     /// armenian（传统亚美尼亚数字，additive；CSS Counter Styles 3 §6.1 预定义，≡ upper-armenian）。R2447。
     Armenian,
+    /// lower-armenian（小写亚美尼亚数字，同 armenian 算法 + to_lowercase；CSS Counter Styles 3 §6.1）。R2448。
+    LowerArmenian,
     /// none。
     None,
     /// 自定义计数器样式名（`@counter-style` 定义；CSS Counter Styles 3）。driving: R2392。

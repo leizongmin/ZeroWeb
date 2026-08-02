@@ -142,6 +142,11 @@ fn test_parse_list_style_type() {
         parse_list_style_type("upper-armenian"),
         Some(ListStyleTypeValue::Armenian)
     );
+    // R2448：lower-armenian（小写亚美尼亚数字）。
+    assert_eq!(
+        parse_list_style_type("lower-armenian"),
+        Some(ListStyleTypeValue::LowerArmenian)
+    );
     // R2392：未实现的预定义 / 自定义计数器名（合法 `<custom-ident>`）→ Custom(name)，
     // 渲染时查 CounterStyleRegistry，未命中走 decimal fallback（CSS Counter Styles 3）。
     assert_eq!(

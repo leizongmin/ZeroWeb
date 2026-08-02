@@ -440,16 +440,22 @@ impl super::super::Painter {
                 }
             }
             // R2445：lower-greek / persian 预定义计数器样式（CSS Counter Styles 3 §6）。
-            // R2447：+ armenian（§6.1 additive）。
-            ListStyleTypeValue::LowerGreek | ListStyleTypeValue::Persian | ListStyleTypeValue::Armenian => {
+            // R2447：+ armenian（§6.1 additive）。R2448：+ lower-armenian（小写）。
+            ListStyleTypeValue::LowerGreek
+            | ListStyleTypeValue::Persian
+            | ListStyleTypeValue::Armenian
+            | ListStyleTypeValue::LowerArmenian => {
                 let index = self
                     .get_counter("list-item")
                     .map(|v| v as usize)
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
+                // lower-armenian = armenian 算法输出 + Unicode to_lowercase（Armenian 双层壳，
+                // U+0531→U+0561 等；Rust 用 Unicode case folding，ground-truth 验证 1=ա/9999=քջղթ）。
                 let body = match style.list_style_type {
                     ListStyleTypeValue::LowerGreek => to_greek(index),
                     ListStyleTypeValue::Persian => to_persian(index),
                     ListStyleTypeValue::Armenian => to_armenian(index),
+                    ListStyleTypeValue::LowerArmenian => to_armenian(index).to_lowercase(),
                     _ => unreachable!(),
                 };
                 let text = format!("{body}.");
@@ -594,6 +600,15 @@ mod tests {
         // range 外走 decimal fallback（armenian-008：0→"0", 10000→"10000"）
         assert_eq!(to_armenian(0), "0");
         assert_eq!(to_armenian(10000), "10000");
+    }
+
+    /// R2448：lower-armenian = to_armenian + to_lowercase（ground-truth 对齐 lower-armenian-111/114）。
+    #[test]
+    fn lower_armenian_counter_matches_wpt_ground_truth() {
+        assert_eq!(to_armenian(1).to_lowercase(), "ա");
+        assert_eq!(to_armenian(10).to_lowercase(), "ժ");
+        assert_eq!(to_armenian(43).to_lowercase(), "խգ");
+        assert_eq!(to_armenian(9999).to_lowercase(), "քջղթ");
     }
 
     /// R1701：ol start= 与 li value= 计数器语义（fixture 22 ol[start=3] type=A → C/D/J/K）。
