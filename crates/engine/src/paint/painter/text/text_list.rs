@@ -169,6 +169,66 @@ fn to_georgian(value: usize) -> String {
     result
 }
 
+/// R2450：hebrew 计数器表示（CSS Counter Styles 3 §6.1 预定义）。
+///
+/// 传统希伯来数字——纯加法。spec `@counter-style hebrew { system: additive; range: 1 10999;
+/// additive-symbols: ... }`。37 对（码点取自 spec，部分符号为 2 字符：千位 = 字母+geresh U+05F3，
+/// 15-19 用特殊形 טו/טז/יז/יח/יט 避免神圣名）。range 1-10999；0 或 ≥11000 走 decimal fallback。
+/// ground-truth + spec 双验证：hebrew-015/016/016a（1=א, 15=טו, 16=טז, 17=יז, 10999=י׳תתקצט）。
+fn to_hebrew(value: usize) -> String {
+    if value == 0 || value > 10999 {
+        return value.to_string();
+    }
+    let pairs: [(usize, &str); 37] = [
+        (10000, "\u{5D9}\u{5F3}"), // י׳
+        (9000, "\u{5D8}\u{5F3}"),  // ט׳
+        (8000, "\u{5D7}\u{5F3}"),  // ח׳
+        (7000, "\u{5D6}\u{5F3}"),  // ז׳
+        (6000, "\u{5D5}\u{5F3}"),  // ו׳
+        (5000, "\u{5D4}\u{5F3}"),  // ה׳
+        (4000, "\u{5D3}\u{5F3}"),  // ד׳
+        (3000, "\u{5D2}\u{5F3}"),  // ג׳
+        (2000, "\u{5D1}\u{5F3}"),  // ב׳
+        (1000, "\u{5D0}\u{5F3}"),  // א׳
+        (400, "\u{5EA}"),          // ת
+        (300, "\u{5E9}"),          // ש
+        (200, "\u{5E8}"),          // ר
+        (100, "\u{5E7}"),          // ק
+        (90, "\u{5E6}"),           // צ
+        (80, "\u{5E4}"),           // פ
+        (70, "\u{5E2}"),           // ע
+        (60, "\u{5E1}"),           // ס
+        (50, "\u{5E0}"),           // נ
+        (40, "\u{5DE}"),           // מ
+        (30, "\u{5DC}"),           // ל
+        (20, "\u{5DB}"),           // כ
+        (19, "\u{5D9}\u{5D8}"),    // יט
+        (18, "\u{5D9}\u{5D7}"),    // יח
+        (17, "\u{5D9}\u{5D6}"),    // יז
+        (16, "\u{5D8}\u{5D6}"),    // טז
+        (15, "\u{5D8}\u{5D5}"),    // טו
+        (10, "\u{5D9}"),           // י
+        (9, "\u{5D8}"),            // ט
+        (8, "\u{5D7}"),            // ח
+        (7, "\u{5D6}"),            // ז
+        (6, "\u{5D5}"),            // ו
+        (5, "\u{5D4}"),            // ה
+        (4, "\u{5D3}"),            // ד
+        (3, "\u{5D2}"),            // ג
+        (2, "\u{5D1}"),            // ב
+        (1, "\u{5D0}"),            // א
+    ];
+    let mut num = value;
+    let mut result = String::new();
+    for (val, sym) in &pairs {
+        while num >= *val {
+            result.push_str(sym);
+            num -= val;
+        }
+    }
+    result
+}
+
 /// R2392/R2394：按 `@counter-style` 的 system 算法生成计数器表示（marker body，不含 prefix/suffix）。
 /// CSS Counter Styles 3 §3.1.4。`None` = 该值无法表示（超出 range / 系统不支持）→ 调用方走 fallback。
 /// R2394 注：additive/range/extends 应用经 A/B 量证为 net-negative（driving WPT 全 font-wall dice/
@@ -500,12 +560,13 @@ impl super::super::Painter {
                 }
             }
             // R2445：lower-greek / persian 预定义计数器样式（CSS Counter Styles 3 §6）。
-            // R2447：+ armenian（§6.1 additive）。R2448：+ lower-armenian（小写）。R2449：+ georgian。
+            // R2447：+ armenian（§6.1 additive）。R2448：+ lower-armenian（小写）。R2449：+ georgian。R2450：+ hebrew。
             ListStyleTypeValue::LowerGreek
             | ListStyleTypeValue::Persian
             | ListStyleTypeValue::Armenian
             | ListStyleTypeValue::LowerArmenian
-            | ListStyleTypeValue::Georgian => {
+            | ListStyleTypeValue::Georgian
+            | ListStyleTypeValue::Hebrew => {
                 let index = self
                     .get_counter("list-item")
                     .map(|v| v as usize)
@@ -518,6 +579,7 @@ impl super::super::Painter {
                     ListStyleTypeValue::Armenian => to_armenian(index),
                     ListStyleTypeValue::LowerArmenian => to_armenian(index).to_lowercase(),
                     ListStyleTypeValue::Georgian => to_georgian(index),
+                    ListStyleTypeValue::Hebrew => to_hebrew(index),
                     _ => unreachable!(),
                 };
                 let text = format!("{body}.");
@@ -639,6 +701,7 @@ mod tests {
     use super::list_item_counter;
     use super::to_armenian;
     use super::to_georgian;
+    use super::to_hebrew;
     use zero_dom::parse_html;
 
     fn li(doc: &zero_dom::Document, n: usize) -> zero_dom::NodeId {
@@ -693,6 +756,27 @@ mod tests {
         // range 外走 decimal fallback（georgian-014：0→"0", 20000→"20000"）
         assert_eq!(to_georgian(0), "0");
         assert_eq!(to_georgian(20000), "20000");
+    }
+
+    /// R2450：hebrew 计数器（CSS Counter Styles 3 §6.1）ground-truth + spec 双对齐。
+    /// 验证值取自 css-counter-styles/hebrew/css3-counter-styles-015/016/016a 真实期望输出。
+    #[test]
+    fn hebrew_counter_matches_wpt_ground_truth() {
+        // 单位（hebrew-015）
+        assert_eq!(to_hebrew(1), "א");
+        assert_eq!(to_hebrew(8), "ח");
+        assert_eq!(to_hebrew(9), "ט");
+        // 15-19 特殊形（hebrew-016：避免神圣名 יה/יו；15=טו, 16=טז, 17=יז）
+        assert_eq!(to_hebrew(10), "י");
+        assert_eq!(to_hebrew(11), "יא");
+        assert_eq!(to_hebrew(15), "טו");
+        assert_eq!(to_hebrew(16), "טז");
+        assert_eq!(to_hebrew(17), "יז");
+        // 千位 + geresh（hebrew-016a：10999=י׳תתקצט）
+        assert_eq!(to_hebrew(10999), "י\u{5F3}תתקצט");
+        // range 外走 decimal fallback（0→"0", ≥11000→decimal）
+        assert_eq!(to_hebrew(0), "0");
+        assert_eq!(to_hebrew(11000), "11000");
     }
 
     /// R1701：ol start= 与 li value= 计数器语义（fixture 22 ol[start=3] type=A → C/D/J/K）。

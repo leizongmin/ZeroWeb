@@ -169,6 +169,7 @@ pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
         "armenian" | "upper-armenian" => Some(ListStyleTypeValue::Armenian),
         "lower-armenian" => Some(ListStyleTypeValue::LowerArmenian),
         "georgian" => Some(ListStyleTypeValue::Georgian),
+        "hebrew" => Some(ListStyleTypeValue::Hebrew),
         "none" => Some(ListStyleTypeValue::None),
         _ => {
             // R2392：非 builtin 的 `<custom-ident>` 视为自定义计数器样式名（@counter-style）。
