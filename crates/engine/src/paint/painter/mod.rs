@@ -43,7 +43,7 @@ pub struct Painter {
     /// 默认空集（无 multi-inline block 容器的页面）。
     pub paint_skip_nodes: HashSet<NodeId>,
     /// CSS 计数器状态（计数器名 → 当前值）。
-    pub(crate) counters: HashMap<String, i32>,
+    pub(crate) counters: HashMap<String, i64>,
     /// 是否跳过属性指示器（用于 reftest 精确对比）。
     ///
     /// 指示器是绘制在元素边角的调试标记（如 border-collapse 橙色双线），
@@ -1538,7 +1538,7 @@ impl Painter {
     }
 
     /// 获取指定计数器的当前值。
-    pub fn get_counter(&self, name: &str) -> Option<i32> {
+    pub fn get_counter(&self, name: &str) -> Option<i64> {
         self.counters.get(name).copied()
     }
 

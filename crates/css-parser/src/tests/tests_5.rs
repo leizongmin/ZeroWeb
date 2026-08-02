@@ -803,6 +803,15 @@ fn test_parse_counter_action_and_list_edge_cases() {
     assert_eq!(parse_counter_action(""), None);
     // parse_counter_action：非整数值应返回 None
     assert_eq!(parse_counter_action("counter abc"), None);
+    // R2473：i64 大值（>i32::MAX，CJK counter 测试 10^16 量级）须解析成功（原 i32 溢出丢弃）
+    assert_eq!(
+        parse_counter_action("n 9999999999999").map(|v| v.value),
+        Some(Some(9_999_999_999_999_i64)),
+    );
+    assert_eq!(
+        parse_counter_action("n 10000000000000000").map(|v| v.value),
+        Some(Some(10_000_000_000_000_000_i64)),
+    );
 
     // parse_counter_list："none" 返回空列表
     let result = parse_counter_list("none");

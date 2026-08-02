@@ -404,7 +404,10 @@ pub struct CounterActionValue {
     /// 计数器名称。
     pub name: String,
     /// 增量或重置值，None 表示默认（increment=1, reset=0）。
-    pub value: Option<i32>,
+    ///
+    /// R2473：i64（原 i32）—— CSS 计数器值在规范上无界，CJK counter 测试用 10^16 量级
+    /// counter-reset（simp/trad-chinese 等），i32 会静默溢出丢弃声明。i64 覆盖到 ~9.2×10^18。
+    pub value: Option<i64>,
 }
 
 /// 解析单个计数器操作值。
@@ -422,7 +425,7 @@ pub fn parse_counter_action(input: &str) -> Option<CounterActionValue> {
         return None;
     }
     let value = if parts.len() > 1 {
-        Some(parts[1].parse::<i32>().ok()?)
+        Some(parts[1].parse::<i64>().ok()?)
     } else {
         None
     };
@@ -445,8 +448,8 @@ pub fn parse_counter_list(input: &str) -> Option<Vec<CounterActionValue>> {
             return None;
         }
         // 检查下一个 token 是否为整数
-        let value = if tokens.peek().is_some_and(|t| t.parse::<i32>().is_ok()) {
-            tokens.next().and_then(|t| t.parse::<i32>().ok())
+        let value = if tokens.peek().is_some_and(|t| t.parse::<i64>().is_ok()) {
+            tokens.next().and_then(|t| t.parse::<i64>().ok())
         } else {
             None
         };

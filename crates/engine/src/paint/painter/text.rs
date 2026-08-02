@@ -1768,7 +1768,7 @@ pub(super) fn has_direct_paintable_text(
 ///
 /// 支持 decimal（默认）/ lower|upper-alpha(latin) / lower|upper-roman。
 /// 单 `content: counter(...)` 与混合 `content: "x" counter(...) "y"` 共用此格式化。
-fn format_counter_text(value: i32, style: &Option<String>) -> String {
+fn format_counter_text(value: i64, style: &Option<String>) -> String {
     match style.as_deref() {
         Some("lower-alpha") | Some("lower-latin") => format_counter_alpha(value, false),
         Some("upper-alpha") | Some("upper-latin") => format_counter_alpha(value, true),

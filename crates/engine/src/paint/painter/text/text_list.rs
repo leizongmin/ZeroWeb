@@ -273,7 +273,7 @@ fn to_hebrew(value: usize) -> String {
 /// triangle 字形 + system-additive ref 依赖 document.write JS + system-extends nbsp/marker 渲染差），
 /// 故**应用 defer**（parse-retain，见 ast.rs 字段 + parser.rs 解析）；本函数仅消费已落地 5 系统 +
 /// cyclic 数学取模修正。
-fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i32) -> Option<String> {
+fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i64) -> Option<String> {
     use zero_css_parser::ast::CounterSystem;
     let syms = &rule.symbols;
     let len = syms.len();
@@ -283,10 +283,10 @@ fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i32)
     match rule.system {
         // R2394：cyclic 用数学取模（rem_euclid），表示任意整数（含 0/负数）；CSS §3.1.4 cyclic
         // 不限值域。旧 `value < 1 → None` 致 disclosure-* 等 cyclic value 0 永远 fallback。
-        CounterSystem::Cyclic => Some(syms[(value - 1).rem_euclid(len as i32) as usize].clone()),
+        CounterSystem::Cyclic => Some(syms[(value - 1).rem_euclid(len as i64) as usize].clone()),
         // fixed [N]：symbols[value - first]；超出 symbols 范围走 fallback。
         CounterSystem::Fixed(first) => {
-            let first = first.unwrap_or(1);
+            let first = first.unwrap_or(1) as i64;
             if value < first {
                 return None;
             }
@@ -375,7 +375,7 @@ pub(crate) fn build_counter_style_registry(
 }
 
 /// 将计数器值格式化为字母序列（a/b/.../z/aa/ab/...）。
-pub(super) fn format_counter_alpha(value: i32, upper: bool) -> String {
+pub(super) fn format_counter_alpha(value: i64, upper: bool) -> String {
     if value <= 0 {
         return value.to_string();
     }
@@ -392,7 +392,7 @@ pub(super) fn format_counter_alpha(value: i32, upper: bool) -> String {
 }
 
 /// 将计数器值格式化为罗马数字。
-pub(super) fn format_counter_roman(value: i32, upper: bool) -> String {
+pub(super) fn format_counter_roman(value: i64, upper: bool) -> String {
     let s = to_roman(value.max(0) as usize);
     if upper { s } else { s.to_lowercase() }
 }
@@ -677,7 +677,7 @@ impl super::super::Painter {
                     .get_counter("list-item")
                     .map(|v| v as usize)
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
-                let value = index as i32;
+                let value = index as i64;
                 let text = match self.counter_styles.get(name) {
                     Some(rule) => match counter_style_body(rule, value) {
                         Some(body) => format!("{}{}{}", rule.prefix, body, rule.suffix),
