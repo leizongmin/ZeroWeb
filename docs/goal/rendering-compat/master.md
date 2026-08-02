@@ -90,6 +90,8 @@
 >
 > **📍 R2450（2026-08-02）🔧✅ hebrew 预定义计数器样式 LANDED（CSS Counter Styles 3 §6.1；correctness + 4/6 reftest 翻绿——本 cluster 最佳）**。承接 R2449「spec fetch 路径打通，hebrew 可同法核对」。**spec fetch**：`@counter-style hebrew { range: 1 10999; additive-symbols: ... }`——37 对（千位 = 字母+geresh U+05F3，如 1000=א׳；15-19 特殊形 טו/טז/יז/יח/יט 避免神圣名 יה/יו）。**实施**：① `ListStyleTypeValue::Hebrew` + parse_misc `"hebrew"`；② `to_hebrew` helper——纯加法，37 对字面表（`&str` 因部分符号 2 字符，码点用 `\u{XXXX}` escape 镜像 spec），range 1-10999、0 或 ≥11000 走 decimal fallback；③ paint 臂 Hebrew。**ground-truth + spec 双验证**：unit test 钉案 1=א、8=ח、9=ט、10=י、11=יא、15=טו、16=טז、17=יז、10999=י׳תתקצט、0/11000→decimal。**A/B**：**4/6 PASS**（015 0.48% / 016a#0 0.67% / 016a#1 0.86% / 017 0.07% 皆 < 1%）+ 016 FAIL 1.74%（多字形 10-17 font-wall）+ nested 1.29%；**短值 Hebrew 翻绿**（RTL 未阻短值，DejaVu 覆盖 Hebrew + geresh）。**门禁**：make test **13122/0/74**（+1 零回归）；clippy/fmt 干净。**意义**：CSS Counter Styles §6.1 additive 预定义四件套完整（armenian/lower-armenian/georgian/hebrew），本 cluster 累计 **13 reftest 翻绿**（3+3+3+4）；RTL 脚本短值亦突破 font-wall 证算法族普适；剩余 predefined 多为 CJK/Indic（DejaVu 不覆盖 = tofu，须 CJK 字体基建，深结构）。
 >
+> **📍 R2455（2026-08-02）📋 font-wall 根因确证 = fontdue 光栅化（非缺字体/非 marker scale）；Ahem 已加载；R2298 stale 订正；零代码**。承接 R2454（marker scale A/B 净负）。**本轮深核 font-wall 三个快修假设**（counter-styles 73% cap + 多 dir font-wall 的解法）：① **marker scale 0.85→1.0**（R2454 净负 -17，0.85× 是 DejaVu 补偿）；② **缺 Ahem 字体**（深核证伪）——`reftest_fonts.rs:71` harness **已加载** `tests/wpt-runner/fonts/Ahem.ttf`（`load_font` → family_map["Ahem"]），`font_metrics.rs:207` 测试断言 `"Ahem must resolve via build_font_resolver"`（passing）→ `resolve_font_id("Ahem")` 返回真实 Ahem font_id（非 FontId(0) DejaVu），Ahem 方块字形实际渲染；**R2298「ZW 无 Ahem 字体」stale 订正**（Ahem 早 loaded+resolve，font-wall 非「缺字体」）；③ **缺 CJK/Indic 字体**（counter-styles CJK tofu = 真，须 CJK 字体基建）。**确证根因**：font-wall = **fontdue 光栅化**（ZW）vs **chromium FreeType**（glyph bitmap + 度量微差 > 1% 阈值），**非字体缺失、非 scale**。**所有 font-wall 快修假设现穷尽**（marker-scale/Ahem-loaded 双负）→ font-wall 唯一解 = **font-stack C-dep rebuild**（fontdue→FreeType/HarfBuzz，深 multi-session，R2025 user-blocked，须 RFC+授权）。**意义**：font-wall 调查终结——非快修，是光栅化层；counter-styles dir 73% cap + text font-wall + 多 dir 受限均须 font-stack rebuild 解；钉案省后续 agent 重探 font-wall 快修。
+>
 > **📍 R2454（2026-08-02）📋 marker glyph scale 0.85→1.0 A/B = net -17，回退零代码；R2395 开放观察闭合**。承接 R2395「paint_list_marker 所有 marker glyph 字号 0.85×font-size，ref/chromium 疑 1.0×，记观察不动（并发线活跃）」。**并发线（R2394 @counter-style）已完结**，故本轮 A/B 验证。**实施（临时）**：`text_list.rs` 10 处 `font_size * 0.85`（5 marker 臂 × glyph size + advance width）→ `font_size`（1.0×）。**A/B（css-counter-styles canary）**：**183/250 → 166/250（-17，73.2%→66.4%）净负**——0.85× 实为 **DejaVu 字形较 chromium 大的必要补偿**（R2395「chromium 1.0×」假设证伪：ZW DejaVu 在 1.0× 下 marker 偏大致更多 diff）。**即回退**（restore 0.85×，counter-styles 复 183/250 确认 byte-identical）。**意义**：**R2395 marker-scale 观察闭合**——0.85× 非 font-wall lever，是正确的 DejaVu 补偿；font-wall 真因仍是字形覆盖/度量（须 font-stack C-dep rebuild 解，深结构等授权）；钉案省后续 agent 重探 marker scale。
 >
 > **📍 R2451（2026-08-02）🔧✅ arabic-indic 预定义计数器样式 LANDED（CSS Counter Styles 3 §6.1 numeric；correctness + 2/3 reftest 翻绿——core Arabic 数字突破 persian font-wall）**。承接 R2450「additive 四件套完；arabic-indic 数字替换疑 font-wall（同 persian）」。**spec fetch**：`@counter-style arabic-indic { system: numeric; symbols: \660..\669 }`——٠-٩（U+0660-U+0669，**core** Arabic block，区别 persian 的 **extended** U+06F0+）。**实施**：① `ListStyleTypeValue::ArabicIndic` + parse_misc `"arabic-indic"`；② `to_arabic_indic` helper（镜像 to_persian 数字位替换，但用算术 `0x0660 + digit` 而非字面表）；③ paint 臂 ArabicIndic。**ground-truth 验证**：unit test 钉案 0=٠、1=١、9=٩、10=١٠、123=١٢٣（对齐 arabic-indic-101）。**A/B**：**2/3 PASS**（101 0.32% / 103 0.06% 皆 < 1%）+ 102 FAIL 1.26%（多位数字 font-wall）；**core Arabic-Indic 短值突破 font-wall**（persian extended 1.28% blocked，core 0.32% pass——印证字形覆盖差异）。**门禁**：make test **13123/0/74**（+1 零回归）；clippy/fmt 干净。**意义**：CSS Counter Styles §6.1 numeric 预定义四件套完整（decimal/decimal-leading-zero/persian/arabic-indic）；本 cluster 累计 **15 reftest 翻绿**（3+3+3+4+2）；DejaVu 覆盖的预定义计数器样式（additive+numeric+cyclic）现已系统穷尽，残余全 CJK/Indic（tofu，须 CJK 字体基建=深结构等授权）。
@@ -373,6 +375,8 @@
 
 ## 最近轮次摘要
 
+> **📍 R2455（2026-08-02）📋 font-wall 根因确证 = fontdue 光栅化（Ahem 已加载证伪「缺字体」+ R2454 marker-scale 净负）；快修假设穷尽，唯一解 = font-stack C-dep rebuild（深，等授权）。
+
 > **📍 R2454（2026-08-02）📋 marker glyph scale 0.85→1.0 A/B = net -17（counter-styles 183→166），回退零代码；R2395 开放观察闭合（0.85× 是 DejaVu 补偿非 lever）。
 
 > **📍 R2452（2026-08-02）docs master.md stale 引用纠偏 + plateau-guard**（product-smoke welcome 17.03% 零回归；css-counter-styles 全量复测 183/250=73.2%；订正通过率快照 184→183 + content 44→49 + `<q>` 已实现 + @counter-style slice 1 已 land 两处 stale）。
@@ -380,8 +384,6 @@
 > **📍 R2451（2026-08-02）✅ arabic-indic 预定义计数器 LANDED**（CSS Counter Styles 3 §6.1 numeric；A/B 2/3 翻绿——core Arabic 数字 0.32% 突破 persian extended font-wall）。
 
 > **📍 R2450（2026-08-02）✅ hebrew 预定义计数器 LANDED**（§6.1 additive；spec-fetch 37 对 + geresh + 15-19 特殊形；A/B 4/6 翻绿，RTL 短值突破 font-wall）。
-
-> **📍 R2449（2026-08-02）✅ georgian 预定义计数器 LANDED**（§6.1 additive；spec-fetch 37 对含 8000=U+10EF；A/B 3/4 翻绿）。
 
 ## 轮次详记归档
 
