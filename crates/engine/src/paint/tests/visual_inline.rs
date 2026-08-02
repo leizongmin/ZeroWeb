@@ -885,6 +885,33 @@ fn r2467_line_clamp_no_ellipsis_when_content_fits() {
     assert!(!has_ellipsis, "R2467: 内容不足 line-clamp N 行时不应渲 ellipsis");
 }
 
+/// R2469：body{display:none} → body 不生成 principal box，其背景不传播到画布
+///（CSS §9.2.4/§14.2）。driving: css-backgrounds background-color-body-propagation-004
+///（ref=blank，无红填充）。注：display:contents 同理但 ZW 把 contents 当 block 布局
+///（converter maps Contents→Block），body 自身盒仍画 bg → -007 需 display:contents 布局
+///（深，defer），本测仅覆盖 display:none 路径。
+#[test]
+fn r2469_body_no_box_no_canvas_propagation() {
+    use crate::pipeline::RenderPipeline;
+    let is_red = |c: &zero_render_foundation::color::Color| c.r == 255 && c.g == 0 && c.b == 0;
+
+    // display:none → body 无盒，红背景不应传播到画布
+    let mut p = RenderPipeline::new(100.0, 100.0);
+    let r = p.render_html("<html><body style=\"background:red; display:none\"></body></html>", "");
+    assert!(
+        !r.primitives.fills.iter().any(|f| is_red(&f.color)),
+        "R2469: body{{display:none}} 背景不应传播到画布"
+    );
+
+    // 对照：默认 block body → 红背景应传播到画布（确保修复未误伤正常传播）
+    let mut p = RenderPipeline::new(100.0, 100.0);
+    let r = p.render_html("<html><body style=\"background:red\"></body></html>", "");
+    assert!(
+        r.primitives.fills.iter().any(|f| is_red(&f.color)),
+        "R2469: 默认 block body 红背景应传播到画布（对照）"
+    );
+}
+
 // ── CSS filter 渲染测试 ──
 
 #[test]

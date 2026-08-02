@@ -368,6 +368,13 @@ impl Painter {
             // 禁用（driving: contain-body-bg-001..004：layout/paint/size/style 全抑制）。
             let contain_blocks =
                 |s: Option<&ComputedStyle>| s.is_some_and(|st| !matches!(st.contain, ContainComputedValue::None));
+            // CSS §9.2.4/§14.2：display:none（不生成盒）或 display:contents（无 principal box）
+            // 的元素不产生主盒，其背景不传播到画布。R2469：body fallback 须排除这两种情况
+            //（driving: background-color-body-propagation-004 `body{display:none}` /
+            // -007 `body{display:contents}` → ref=blank，旧实现仍画 body 红 bg 致 100% diff）。
+            let no_principal_box = |s: Option<&ComputedStyle>| {
+                s.is_some_and(|st| matches!(st.display, DisplayValue::None | DisplayValue::Contents))
+            };
             let (prop_node, prop_style) = if html_is_display_none {
                 // html display:none → body 作为其后代亦不渲染，不传播。
                 (None, None)
@@ -376,8 +383,9 @@ impl Painter {
                 (None, None)
             } else if html_has_bg {
                 (html_id, html_style)
-            } else if !contain_blocks(body_style) {
-                // html 无背景 → body fallback 传播；body 被 contain 抑制则不传播。
+            } else if !contain_blocks(body_style) && !no_principal_box(body_style) {
+                // html 无背景 → body fallback 传播；body 被 contain 抑制，或 body 无 principal box
+                //（display:none/contents）则不传播。
                 (body_id, body_style)
             } else {
                 (None, None)
