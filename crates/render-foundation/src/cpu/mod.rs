@@ -522,6 +522,8 @@ fn draw_glyph_primitive(
 /// 对于垂直书写模式，字形需要旋转 90° 使文字从上到下排列。
 /// `synthetic_italic`（R2497）：true 时对非旋转字形应用 ~14° 水平 shear
 /// （系统字体无 italic face 时的合成斜体，对齐 chromium）。
+///
+/// kill-switch：env `ZW_SYNTHETIC_ITALIC=0` 关闭（强制不 shear，回退现状 upright）。
 fn blit_glyph_bitmap(
     fb: &mut FrameBuffer,
     bitmap: &crate::font::GlyphBitmap,
@@ -531,6 +533,8 @@ fn blit_glyph_bitmap(
     rotation: f32,
     synthetic_italic: bool,
 ) {
+    // R2497 kill-switch：env 关闭时强制 synthetic_italic=false（不 shear）。
+    let synthetic_italic = synthetic_italic && !matches!(std::env::var("ZW_SYNTHETIC_ITALIC"), Ok(v) if v == "0");
     let start_x = x.round() as i32;
     let start_y = y.round() as i32;
 

@@ -433,9 +433,11 @@ impl super::Painter {
 
         let (tx, ty) = super::super::helpers::apply_transform_offset(style, abs_x, abs_y);
 
-        let default_font_id = self
-            .resolve_font_id(&style.font_family, &style.font_weight, &style.font_style)
-            .0;
+        let (default_font_id, default_resolved_italic) =
+            self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
+        // R2497：容器 font-style:italic/oblique → container_want_italic（macro 据 owner
+        // per-fragment font_style 覆盖，缺省回落此值）。
+        let container_want_italic = matches!(style.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
         // R1224：Ahem font_id 供 inline 元素字体≠容器时字形位图用（如 <span font:Ahem> 在
         // default div 内）。render_fragment macro 按 owner（片段父元素）font_family 选
         // frag_font_id——is_ahem 片段用 ahem_font_id 出 Ahem 方块，非 is_ahem 用 default。
@@ -447,11 +449,17 @@ impl super::Painter {
         // webfont/跨字体 inline 用错字体。据布局存的 text_node_font_families 解析每个文本
         // 节点的 FontId；宏 frag_font_id 据此选字体（无则 default_font_id，零回归）。
         // 放函数作用域（default_font_id 旁）供所有 render_fragment 调用可见。
-        let text_node_font_ids: HashMap<zero_dom::NodeId, zero_render_foundation::primitive::FontId> = box_node
-            .text_node_font_families
-            .iter()
-            .map(|(&tn, fam)| (tn, self.resolve_font_id(fam, &style.font_weight, &style.font_style).0))
-            .collect();
+        // R2497：parallel text_node_font_italic 跟踪每节点 resolved face 是否 italic
+        // （供 macro 算 frag_synthetic_italic = want_italic && !resolved_italic，避 double-shear）。
+        let mut text_node_font_ids: HashMap<zero_dom::NodeId, zero_render_foundation::primitive::FontId> =
+            HashMap::with_capacity(box_node.text_node_font_families.len());
+        let mut text_node_font_italic: HashMap<zero_dom::NodeId, bool> =
+            HashMap::with_capacity(box_node.text_node_font_families.len());
+        for (&tn, fam) in box_node.text_node_font_families.iter() {
+            let (fid, resolved_italic) = self.resolve_font_id(fam, &style.font_weight, &style.font_style);
+            text_node_font_ids.insert(tn, fid);
+            text_node_font_italic.insert(tn, resolved_italic);
+        }
 
         if let (Some(doc), Some(node_id)) = (doc, box_node.node_id) {
             // R109 §9.2.1.1：被 in-flow block 子元素拆分的 inline 父盒自身不渲染文本——
@@ -1096,15 +1104,35 @@ impl super::Painter {
                             // 全回落 default_font_id（容器字体）→ 非-Ahem webfont/跨字体 inline 用错
                             // 字体。改为查 text_node_font_ids（layout 存的 per-fragment font_family
                             // 解析结果），无则 default_font_id（零回归）。
-                            let frag_font_id = if owner_style_opt.is_some_and(|s| {
+                            let is_ahem_frag = owner_style_opt.is_some_and(|s| {
                                 s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"))
-                            }) {
+                            });
+                            let frag_font_id = if is_ahem_frag {
                                 ahem_font_id
                             } else {
                                 text_node_font_ids
                                     .get(&$frag_nid)
                                     .copied()
                                     .unwrap_or(default_font_id)
+                            };
+                            // R2497：per-fragment synthetic italic——want_italic 取 owner
+                            // font_style（per-fragment，缺省回落 container_want_italic）；
+                            // resolved_italic 取该节点 face 是否 italic（text_node_font_italic，
+                            // 缺省 default_resolved_italic）；Ahem 片段恒不合成（测试字体保直立）。
+                            // synthetic = want_italic && !resolved_italic（避 double-shear）。
+                            let frag_synthetic_italic = if is_ahem_frag {
+                                false
+                            } else {
+                                let resolved_italic = text_node_font_italic
+                                    .get(&$frag_nid)
+                                    .copied()
+                                    .unwrap_or(default_resolved_italic);
+                                let want_it = owner_style_opt
+                                    .is_some_and(|s| {
+                                        matches!(s.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_))
+                                    })
+                                    || container_want_italic;
+                                want_it && !resolved_italic
                             };
                             let emphasis_mark: Option<char> =
                                 owner_style_opt.and_then(|s| match s.text_emphasis_style {
@@ -1177,7 +1205,7 @@ impl super::Painter {
                                                 bitmap_width: None,
                                                 bitmap_height: None,
                                                 rotation,
-                    synthetic_italic: false,
+                    synthetic_italic: frag_synthetic_italic,
                                             });
                                             ax += measure_char_for_paint(rc, rt_fs, $is_ahem);
                                         }
@@ -1305,7 +1333,7 @@ impl super::Painter {
                                         bitmap_width: None,
                                         bitmap_height: None,
                                         rotation,
-                    synthetic_italic: false,
+                    synthetic_italic: frag_synthetic_italic,
                                     });
                                 }
 
@@ -1319,7 +1347,7 @@ impl super::Painter {
                                     bitmap_width: None,
                                     bitmap_height: None,
                                     rotation,
-                    synthetic_italic: false,
+                    synthetic_italic: frag_synthetic_italic,
                                 });
 
                                 // R644：Cc 控制字符可见性（CSS Text 3）——fontdue 对 Cc 无字形
@@ -1362,7 +1390,7 @@ impl super::Painter {
                                         bitmap_width: None,
                                         bitmap_height: None,
                                         rotation,
-                    synthetic_italic: false,
+                    synthetic_italic: frag_synthetic_italic,
                                     });
                                 }
 
