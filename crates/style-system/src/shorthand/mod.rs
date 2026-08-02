@@ -1333,6 +1333,9 @@ fn expand_grid_axis(
     specificity: (u32, u32, u32),
 ) -> Vec<MatchingDecl> {
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+    if matches_css_wide_keyword(value) {
+        return vec![mk(start_prop, value), mk(end_prop, value)];
+    }
     if let Some(slash_pos) = value.find('/') {
         let start = value[..slash_pos].trim();
         let end = value[slash_pos + 1..].trim();
@@ -1350,6 +1353,14 @@ fn expand_grid_axis(
 /// `grid-area: 1 / 2 / 3 / 4` → row-start: 1, col-start: 2, row-end: 3, col-end: 4
 fn expand_grid_area(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(
+            value,
+            &["grid-row-start", "grid-row-end", "grid-column-start", "grid-column-end"],
+            important,
+            specificity,
+        );
+    }
     // 用 `/` 分割，但 span 内部可能有空格
     let parts: Vec<&str> = value.split('/').map(|s| s.trim()).collect();
     match parts.len() {
@@ -1511,6 +1522,15 @@ fn expand_list_style(value: &str, important: bool, specificity: (u32, u32, u32))
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(
+            value,
+            &["list-style-position", "list-style-type"],
+            important,
+            specificity,
+        );
+    }
+
     // 特殊值 "none" 同时设置 type 和 image
     if value.eq_ignore_ascii_case("none") {
         return vec![mk("list-style-type", "none"), mk("list-style-position", "outside")];
@@ -1570,6 +1590,14 @@ fn expand_outline(value: &str, important: bool, specificity: (u32, u32, u32)) ->
             mk("outline-color", "currentcolor"),
         ];
     }
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(
+            value,
+            &["outline-width", "outline-style", "outline-color"],
+            important,
+            specificity,
+        );
+    }
 
     let toks = zero_css_parser::values::split_paren_aware_tokens(value);
     let parts: Vec<&str> = toks.iter().map(|s| s.as_str()).collect();
@@ -1605,6 +1633,10 @@ fn expand_outline(value: &str, important: bool, specificity: (u32, u32, u32)) ->
 fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(value, &["column-width", "column-count"], important, specificity);
+    }
 
     /// 检查值是否为有效的 column-count 值（正整数或 auto）。
     /// CSS Multicol §3.2：column-count 须为正整数；0 非法（zero-column-width-layout：
@@ -1955,6 +1987,15 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(
+            value,
+            &["font-style", "font-weight", "font-size", "line-height", "font-family"],
+            important,
+            specificity,
+        );
+    }
+
     let mut weight = "normal".to_string();
     let mut style = "normal".to_string();
     let mut size = "medium".to_string();
@@ -2056,6 +2097,15 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
 fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(
+            value,
+            &["text-decoration-line", "text-decoration-style", "text-decoration-color"],
+            important,
+            specificity,
+        );
+    }
 
     if value.eq_ignore_ascii_case("none") {
         return vec![

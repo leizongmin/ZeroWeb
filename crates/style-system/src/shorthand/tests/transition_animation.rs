@@ -334,6 +334,37 @@ fn test_border_image_wide_keyword_inherit() {
     );
 }
 
+#[test]
+fn test_r2464_audit_other_shorthands_wide_keyword() {
+    // R2464 续审：其余 token-classifying 简写是否透传 wide keyword（收集全部失败）。
+    let failing: Vec<&str> = [
+        "font",
+        "outline",
+        "text-decoration",
+        "list-style",
+        "columns",
+        "place-content",
+        "place-items",
+        "place-self",
+        "grid-template",
+        "grid-area",
+        "grid-column",
+        "grid-row",
+    ]
+    .into_iter()
+    .filter(|sh| {
+        let result = expand_one(sh, "inherit", false, (0, 0, 1));
+        !(result.iter().any(|(_, v, _, _)| v == "inherit")
+            && !result.is_empty()
+            && result.iter().all(|(_, v, _, _)| v == "inherit"))
+    })
+    .collect();
+    assert!(
+        failing.is_empty(),
+        "shorthands NOT passing wide keyword through: {failing:?}"
+    );
+}
+
 // ── animation 简写测试 ──
 
 #[test]
