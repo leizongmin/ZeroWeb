@@ -379,6 +379,8 @@
 
 ## 最近轮次摘要
 
+> **📍 R2460（2026-08-02）📋 reftest-driven vein：css-ui scoped 扫描 + 全 fail triage**：css-ui **926/986=93.9% self-source**（新数据点，原不在 oracle 快照）；60 fail 全分类为 **深结构**——box-sizing-007~025（~20 案）= **R2174 replaced-element border-box territory**（`<img>` intrinsic+padding+min/max，user-gated）；caret-*/caret-shape-*/caret-eol-*（~15）= host-layer 光标渲染（深）；outline-*（~10）= 多为 sub-pixel/font-wall（0.2-2%）+ outline-013 负 offset clamp 单案（fiddly re-center 几何，低 ROI）；text-overflow-*（~6）= IFC baseline/relative-pos + ellipsis glyph font-wall（Phase A）；widgets（accent-color-checkbox/radio、compute-kind-revert、appearance）= 深。**结论：css-ui 无 clean discrete lever**。同期核验 value-level 已饱和：tab-size/empty-cells/accent-color/caret-color/contain-intrinsic-size/text-indent 全 parse+消费已实现；lh/rlh 非快修（须 line-height 度量 thread 进 `resolve_length` 签名 = borderline-deep）。clean-lever era 经实证终结。
+
 > **📍 R2459（2026-08-02）feat CSS Values 4 §7.3 `<resolution>` 全单位**：`parse_dpi_value` 仅剥 `dpi` → 现支持 `dpi`/`dpcm`(×2.54)/`dppx`(×96)/`x`(=dppx 别名，×96)，大小写不敏感。TDD red→green（4 新 fail→全过），`make test` 13129 passed/0 failed/74 ignored 净正；media-query `resolution` 媒体特性 value-级合规补全（dpi/bare-number 行为零变更，strictly more-accepting → net≥0 by construction）。
 
 > **📍 R2458（2026-08-02）📋 subpixel glyph 定位 A/B 净负 -3 回退；font-wall 调查**终结**（5 假设 R1069/R1946/R1950/R1410/R2458 全负）；font-wall 真因 = intrinsic FreeType/Skia parity，须 Skia-exact 深步骤 user-gated。
@@ -386,8 +388,6 @@
 > **📍 R2457（2026-08-02）🚨 R2455 订正：font-wall ≠ fontdue（FreeType 已 default-on R1159/R1094 +232）；font-wall 假设经 R1069/R1946/R1950/R1410 穷尽（hinting/advance/gamma 全负），唯一未测 = subpixel glyph 定位（gx.round）。
 
 > **📍 R2455（2026-08-02）📋 font-wall 根因确证 = fontdue 光栅化（Ahem 已加载证伪「缺字体」+ R2454 marker-scale 净负）；快修假设穷尽，唯一解 = font-stack C-dep rebuild（深，等授权）。
-
-> **📍 R2454（2026-08-02）📋 marker glyph scale 0.85→1.0 A/B = net -17（counter-styles 183→166），回退零代码；R2395 开放观察闭合（0.85× 是 DejaVu 补偿非 lever）。
 
 ## 轮次详记归档
 
@@ -442,11 +442,11 @@
 **★ CSS 属性 value-级 gap vein 经多轮探针（~50 属性：Tables/Text/UI/Overflow/Grid/Flex/Multicol/Backgrounds 全扫）已 Chrome-aligned 穷尽**——勿再盲扫；caption-side 等 Chrome 不支持者补反 diverge；subgrid/宽色域需 layout/gamut（defer）。**下一 lever 须 pivot 到其他 vein**。
 
 下一轮可接续的具体入口（逐条 verify-then-fix，TDD red→green，优先 unit-test 驱动不强依赖 wpt-data；每修一个跑 scoped test + clippy + fmt + 全量 `make test`，net≥0 land）：
-- **reftest-driven vein（pivot 首选）**：scoped `make reftest-upstream FILTER=<dir>` 量未深扫 dir（css-box / css-values / css-backgrounds 边角）找离散 fail → 追踪到 parse/render bug（R2369/R2370 模式；R2372 称 exhausted 但 R2369+ 仍出 lever）。**R2459 核验**：`wpt-data/css/` 下 **css-ui(1521 html) / css-sizing(881) / css-values(0,空壳) 三个 dir 完全不在 oracle 快照**（最未扫），value-level（accent-color/caret-color R2459 实测 parse+paint 已实现）已饱和，残余多 sizing/appearance/resize 深案；css-sizing 与 R2174 replaced-element border-box territory 交集大——scoped 探针前先估预期深案比例，勿盲跑全量。
+- **reftest-driven vein（pivot 首选）**：scoped `make reftest-upstream FILTER=<dir>` 量未深扫 dir（css-box / css-values / css-backgrounds 边角）找离散 fail → 追踪到 parse/render bug（R2369/R2370 模式；R2372 称 exhausted 但 R2369+ 仍出 lever）。**R2460 实测 css-ui = 926/986=93.9% self-source，60 fail 全深**（box-sizing=R2174 / caret=host-layer / outline/text-overflow=IFC+font-wall / widgets=深，详见 R2460 摘要）——css-ui 无 clean lever，clean-lever era 经实证终结。**css-sizing(881) 与 R2174 territory 交集大、css-values(空壳)**，scoped 探针预期深案主导；若续扫须先估深案比例勿盲跑全量。
 - **CSS Counter / 生成内容**：`counter()`/`counters()` 解析+渲染配套、`@counter-style`（R2233 待授权）；`<q>` quotes（R2233 待授权）。
 - ~~**CSS `env()` 解析**~~（**R2459 核验 = 本条作废**）：原文「`env(x,fallback)` 现被丢」**stale**——`computed.rs` `resolve_env_reference` 已正确消费 fallback（未定义 env 名 → 用 fallback，递归解析嵌套 env/var，`resolve_env_and_var` 先 env 后 var）；测试覆盖 `env(safe-area-inset-top, 10px)`→0px + `env(undefined-x, env(safe-area-inset-left))`。**勿再以「env fallback 丢失」为 lever**。
-- **孤儿/死代码清理（R2383 发现）**：`parse_basic.rs` 整文件未被 `mod` 声明（非 build），是 color.rs/parse_layout.rs 重导出版本的死副本且有 auto 不一致——建议核后清理（doc/cleanup，须确认无任何 mod 声明再删）。
-- **CSS Values 4 单位表续**：`lh`/`rlh`（弱）/`cap`/`ic`（需字体度量 deferred）；~~`dppx`/`dpi`/`dpcm`~~ **R2459 已 LANDED**（`<resolution>` 全单位 + `x` 别名 + 大小写不敏感，见上 R2459）。
+- **孤儿/死代码清理（R2383 发现，R2460 再确认）**：`parse_basic.rs` 整文件未被 `mod` 声明（非 build），是 color.rs/parse_layout.rs 重导出版本的死副本且有 auto 不一致——R2460 复核 `parse_tab_size` 在 `parse_basic.rs:1008` 与 `parse_layout.rs:610` 双份共存确证死副本。**CLAUDE.md 准则：发现无关死代码「提及但不删除」，须用户明确要求方可清理**——记此待用户点名。
+- **CSS Values 4 单位表续**：~~`dppx`/`dpi`/`dpcm`~~ **R2459 已 LANDED**（`<resolution>` 全单位 + `x` 别名 + 大小写不敏感，见上 R2459）。**R2460 核验 `lh`/`rlh` 非 clean lever**：`resolve_length`（`computed.rs:18`）签名仅 `(font_size, vw, vh)`，无 line-height 上下文 → 加 `lh` 须 thread 元素 computed line-height 进所有调用点（borderline-deep 签名改）；`rlh` 在根 line-height=`normal` 时依赖 font 度量（font-wall territory）；`cap`/`ic` 同需字体度量 deferred。**勿再以 lh/rlh 为快修 lever**。
 - **CSS Syntax §4/§5 其他合规缺口**：MQ L4 比较运算符 token 化；CDO/CDC 非顶层上下文。
 - **文档 vs 代码行号漂移续修**（R2203 verify-then-fix 模式）。
 - 每修一个：仅文档→跳过昂贵 make test；连带 `.rs`→跑 scoped test-guard + 必要时全量 `make test`，net≥0 land。
@@ -485,6 +485,7 @@
 - **css/css-box 38/67=56.7%**（wpt-data v1.10，R2248 margin-trim 块轴裁剪后：R2247 baseline 28/69=40.6% → 38/67=56.7%，**+10 真翻绿，0 回归**；css-box reftest 即 margin-trim 子集；block-container-block-001/002 + block-start-001~004 + block-end-001/002 全 0.00% strict 真通过；残余 = grid-*/multicol-spanner-004/005/006 + 自折叠/嵌套深案，全 deferred 范围）
 - **css/css-contain 312/429=72.7%**（wpt-data v1.10，R2369 contain-on-html/body 抑制画布背景传播后：contain-body-bg-001..004 + contain-html-bg-001..004 共 8 case 87.50%→0.00%；残余多 contain:layout/paint/size/inline-size containment feature 深实现）
 - **css/css-images 253/460=55.0%**（wpt-data v1.10，R2370 gradient color-stop currentColor 后：color-stop-currentcolor + invalidation 96.08%→0.00%；残余 cross-fade/object-view-box/gradient-colorspace/missing-component 深特性）
+- **css/css-ui 926/986=93.9%**（wpt-data v1.10，R2460 首测 self-source：原完全不在快照；60 fail 全深结构——box-sizing-007~025(~20)=R2174 replaced-element border-box / caret-*(~15)=host-layer 光标 / outline-*(~10)=sub-pixel+font-wall+outline-013 负 offset clamp 单案 / text-overflow-*(~6)=IFC+font-wall / widgets=深；value-level 特性 accent-color/caret-color/outline/tab-size 全已实现 → 无 clean lever）
 - **CSS2/normal-flow 687/746=92.1%**（wpt-data v1.10，R2372 量证：DC-2 CSS 2.1 块布局基础强；59 fail 主为 inline-replaced-width/height + inline-block-replaced-width/height 聚类（replaced-element sizing = R2174 territory）+ min-height-106 等 overflow:auto scrollbar（host 层 scroll deferred）；无清洁 lever）
 - **css/css-text 1742/1826=95.4%**（R2456 复测 self-source：**DC-5 文字排版 css-text 组件已达 95% 目标**；84 fail 残余 = IFC/font-wall/feature 深，无 clean lever）——**plateau 重框**：self-source reftest（test+ref 同经 ZW 渲染）**font-wall 相消**，故 self-source 高通过率 = 布局/算法正确性强（css-text 95.4% / CSS2 92.1% / css-counter-styles 73.2% 受 CJK tofu+@counter-style deep 限非 font-wall）；**chromium-Oracle 一致率低（~47.5%）真因 = fontdue 光栅化 font-wall**（R2455 确证），非布局 bug。
 - **7 目录全量 chromium-Oracle 真一致 47.5%**（post-font-wall 全幅，旧 stale 36.4%）：grid 20/49=40.8% / position 57/97=58.8% / tables 74/115=64.3% / flexbox 298/497=60.0% / text-decor 118/242=48.8% / fonts 100/282=35.5% / multicol 157/452=34.7%（最低，chr<1%，聚合 **824/1734=47.5%**）
