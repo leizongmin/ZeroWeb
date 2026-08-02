@@ -896,7 +896,9 @@ impl super::Painter {
             _ => 12.0,
         };
         let color = color_value_to_render(&style.color);
-        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
+        let default_font_id = self
+            .resolve_font_id(&style.font_family, &style.font_weight, &style.font_style)
+            .0;
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
@@ -914,6 +916,7 @@ impl super::Painter {
                     bitmap_width: None,
                     bitmap_height: None,
                     rotation: 0.0,
+                    synthetic_italic: false,
                 });
         }
 
@@ -932,6 +935,7 @@ impl super::Painter {
                     bitmap_width: None,
                     bitmap_height: None,
                     rotation: 0.0,
+                    synthetic_italic: false,
                 });
         }
     }

@@ -133,6 +133,7 @@ fn test_clip_glyphs_no_clip() {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         },
         GlyphPrimitive {
             x: 100.0,
@@ -144,6 +145,7 @@ fn test_clip_glyphs_no_clip() {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         },
     ];
     let clip_rect = Rect::new(-50.0, -50.0, 300.0, 300.0);
@@ -168,6 +170,7 @@ fn test_clip_glyphs_partially_visible() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
+        synthetic_italic: false,
     }];
     let clip_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
     clip_glyphs(&mut glyphs, 0, &clip_rect);
@@ -192,6 +195,7 @@ fn test_clip_glyphs_completely_outside() {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         },
         GlyphPrimitive {
             x: -20.0,
@@ -203,6 +207,7 @@ fn test_clip_glyphs_completely_outside() {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         },
     ];
     let clip_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
@@ -697,6 +702,7 @@ fn test_apply_opacity_to_new_primitives() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
+        synthetic_italic: false,
     });
 
     // 应用 opacity 只影响新图元
@@ -1031,6 +1037,7 @@ fn test_apply_opacity_all_primitive_types() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
+        synthetic_italic: false,
     });
     prims.strokes.push(StrokePrimitive {
         x1: 0.0,
@@ -1106,6 +1113,7 @@ fn test_clip_glyphs_with_start_index() {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         },
         GlyphPrimitive {
             x: 50.0,
@@ -1117,6 +1125,7 @@ fn test_clip_glyphs_with_start_index() {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         },
     ];
     let clip_rect = Rect::new(0.0, 0.0, 100.0, 100.0);

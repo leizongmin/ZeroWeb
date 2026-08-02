@@ -1209,6 +1209,7 @@ mod tests {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         }];
         clip_glyphs(&mut glyphs, 0, &clip);
         assert_eq!(glyphs[0].glyph_id, 42); // untouched
@@ -1227,6 +1228,7 @@ mod tests {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         }];
         clip_glyphs(&mut glyphs, 0, &clip);
         assert_eq!(glyphs[0].glyph_id, 0); // marked invisible
@@ -1247,6 +1249,7 @@ mod tests {
                 bitmap_width: None,
                 bitmap_height: None,
                 rotation: 0.0,
+                synthetic_italic: false,
             },
             GlyphPrimitive {
                 x: 10.0,
@@ -1258,6 +1261,7 @@ mod tests {
                 bitmap_width: None,
                 bitmap_height: None,
                 rotation: 0.0,
+                synthetic_italic: false,
             },
         ];
         clip_glyphs(&mut glyphs, 1, &clip);
@@ -1301,6 +1305,7 @@ mod tests {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         });
         apply_opacity_to_new_primitives(&mut p, &before, 0.5);
         assert_eq!(p.fills[0].color.a, 100); // 200 * 0.5

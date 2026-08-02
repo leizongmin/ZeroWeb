@@ -1436,7 +1436,7 @@ fn test_glyph_rotation_90_degrees() {
     let mut fb = FrameBuffer::new(40, 40);
     fb.clear(255, 255, 255, 255); // 白色背景
 
-    blit_glyph_bitmap(&mut fb, &bitmap, 10.0, 10.0, Color::BLACK, FRAC_PI_2);
+    blit_glyph_bitmap(&mut fb, &bitmap, 10.0, 10.0, Color::BLACK, FRAC_PI_2, false);
 
     // 顺时针旋转 90° 后，原始 4x2 变成 2x4：
     // 原始 (col=0,row=0) → 旋转后 (rotated_col=0, rotated_row=3) → (px=10, py=13)
@@ -1480,13 +1480,84 @@ fn test_glyph_no_rotation() {
     let mut fb = FrameBuffer::new(20, 20);
     fb.clear(255, 255, 255, 255);
 
-    blit_glyph_bitmap(&mut fb, &bitmap, 5.0, 5.0, Color::BLACK, 0.0);
+    blit_glyph_bitmap(&mut fb, &bitmap, 5.0, 5.0, Color::BLACK, 0.0, false);
 
     // 无旋转：像素在 (5,5), (6,5), (5,6), (6,6)
     assert_eq!(fb.get_pixel(5, 5), [0, 0, 0, 255]);
     assert_eq!(fb.get_pixel(6, 5), [0, 0, 0, 255]);
     assert_eq!(fb.get_pixel(5, 6), [0, 0, 0, 255]);
     assert_eq!(fb.get_pixel(6, 6), [0, 0, 0, 255]);
+}
+
+/// R2497：synthetic italic blit shear——synthetic_italic=true 时每行按 ITALIC_SKEW 水平
+/// 偏移（锚 height/2 上下对称），产出倾斜位图（≠ 非斜体）。
+#[test]
+fn test_glyph_synthetic_italic_shear() {
+    use crate::font::GlyphBitmap;
+
+    // 4 像素高、1 像素宽的竖线（足以观测按行水平偏移）。
+    let bitmap = GlyphBitmap {
+        width: 1,
+        height: 4,
+        data: vec![255, 255, 255, 255],
+        x_offset: 0,
+        y_offset: 0,
+        advance: 0.0,
+    };
+
+    // 非斜体：4 行同列（x=10），垂直竖线。
+    let mut fb_normal = FrameBuffer::new(40, 20);
+    fb_normal.clear(255, 255, 255, 255);
+    blit_glyph_bitmap(&mut fb_normal, &bitmap, 10.0, 5.0, Color::BLACK, 0.0, false);
+    // 行 0..4（py=5..8）全在 px=10。
+    for row in 5..9 {
+        assert_eq!(fb_normal.get_pixel(10, row), [0, 0, 0, 255], "normal row {row} at x=10");
+    }
+
+    // 斜体：锚 height/2=2，shear_dx = (row - 2) * 0.249 round。
+    //   row0 → (0-2)*0.249 = -0.498 → round 0 → px=10
+    //   row1 → (1-2)*0.249 = -0.249 → round 0 → px=10
+    //   row2 → (2-2)*0.249 = 0     → px=10
+    //   row3 → (3-2)*0.249 = 0.249  → round 0 → px=10
+    // 4 高度太小 shear 不足 1px → 用更高位图验证明显偏移。
+    let bitmap_tall = GlyphBitmap {
+        width: 1,
+        height: 10,
+        data: vec![255; 10],
+        x_offset: 0,
+        y_offset: 0,
+        advance: 0.0,
+    };
+    let mut fb_italic = FrameBuffer::new(40, 20);
+    fb_italic.clear(255, 255, 255, 255);
+    blit_glyph_bitmap(&mut fb_italic, &bitmap_tall, 10.0, 5.0, Color::BLACK, 0.0, true);
+    // 锚 height/2=5（相对位图）；row=0 → (0-5)*0.249=-1.245 → round -1 → px=9；
+    // row=9 → (9-5)*0.249=0.996 → round 1 → px=11。顶端左移、底端右移 = 倾斜。
+    assert_eq!(
+        fb_italic.get_pixel(9, 5),
+        [0, 0, 0, 255],
+        "italic top row shifted left to x=9"
+    );
+    assert_eq!(fb_italic.get_pixel(10, 10), [0, 0, 0, 255], "italic anchor row at x=10");
+    assert_eq!(
+        fb_italic.get_pixel(11, 14),
+        [0, 0, 0, 255],
+        "italic bottom row shifted right to x=11"
+    );
+    // 非斜体同位图底端应在 x=10（未偏移），证 shear 差异。
+    let mut fb_tall_normal = FrameBuffer::new(40, 20);
+    fb_tall_normal.clear(255, 255, 255, 255);
+    blit_glyph_bitmap(&mut fb_tall_normal, &bitmap_tall, 10.0, 5.0, Color::BLACK, 0.0, false);
+    assert_eq!(
+        fb_tall_normal.get_pixel(10, 14),
+        [0, 0, 0, 255],
+        "normal bottom row at x=10 (no shear)"
+    );
+    assert_eq!(
+        fb_tall_normal.get_pixel(11, 14),
+        [255, 255, 255, 255],
+        "normal x=11 stays white"
+    );
 }
 
 // ─── DC-8 CPU framebuffer rigor（对称 R664 GPU）───

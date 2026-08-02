@@ -133,6 +133,7 @@ impl CanvasContext {
                     bitmap_width: None,
                     bitmap_height: None,
                     rotation: 0.0,
+                    synthetic_italic: false,
                 });
             offset_x += em_width;
         }
@@ -158,6 +159,7 @@ impl CanvasContext {
                     bitmap_width: None,
                     bitmap_height: None,
                     rotation: 0.0,
+                    synthetic_italic: false,
                 });
             offset_x += em_width;
         }

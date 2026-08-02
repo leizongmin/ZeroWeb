@@ -281,6 +281,11 @@ pub struct GlyphPrimitive {
     /// 旋转角度（弧度）— 用于 writing-mode: vertical-rl/vertical-lr 时旋转字符。
     /// 0.0 = 无旋转，std::f32::consts::FRAC_PI_2 = 顺时针 90°。
     pub rotation: f32,
+    /// 合成斜体标记（R2497 synthetic italic）— true 时 CPU blit 对该 glyph 应用 ~14°
+    /// 水平 shear（italic/oblique 在系统字体无 italic face 时的合成斜体，对齐 chromium）。
+    /// 由 painter 据 `font_style:italic/oblique && resolved face 非 italic` 置位，
+    /// 避免 double-shear（真 italic face 已斜，不再合成）。
+    pub synthetic_italic: bool,
 }
 
 /// CSS filter 函数类型。

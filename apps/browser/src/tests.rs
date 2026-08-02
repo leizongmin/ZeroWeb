@@ -23,6 +23,7 @@ fn append_webview_primitives_translates_fills_and_glyphs() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
+        synthetic_italic: false,
     });
 
     let mut fills = Vec::new();
@@ -1562,6 +1563,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
+        synthetic_italic: false,
     });
     p.transforms.push(TransformPrimitive {
         rect: Rect::new(1.0, 2.0, 10.0, 10.0),
@@ -1682,6 +1684,7 @@ fn transform_webview_primitives_culls_primitives_outside_viewport() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
+        synthetic_italic: false,
     });
     // 视口内 fill（control：应保留）
     p.add_fill(Rect::new(10.0, 10.0, 10.0, 10.0), Color::rgb(0, 0, 255));
@@ -1726,6 +1729,7 @@ fn transform_webview_primitives_preserves_glyph_order() {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         });
     }
     // 不裁剪（None）→ 全保留 → 顺序可直接比对。

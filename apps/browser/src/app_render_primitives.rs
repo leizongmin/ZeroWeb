@@ -431,6 +431,7 @@ pub fn transform_webview_primitives(
             bitmap_width: glyph.bitmap_width,
             bitmap_height: glyph.bitmap_height,
             rotation: glyph.rotation,
+            synthetic_italic: false,
         });
     }
 

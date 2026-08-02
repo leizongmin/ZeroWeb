@@ -492,7 +492,7 @@ fn draw_glyph_primitive(
             let color = glyph.color;
             let x = glyph.x * scale;
             let y = glyph.y * scale;
-            blit_glyph_bitmap(fb, cached, x, y, color, glyph.rotation);
+            blit_glyph_bitmap(fb, cached, x, y, color, glyph.rotation, glyph.synthetic_italic);
         }
         return;
     }
@@ -512,7 +512,7 @@ fn draw_glyph_primitive(
         let color = glyph.color;
         let x = glyph.x * scale;
         let y = glyph.y * scale;
-        blit_glyph_bitmap(fb, &bitmap, x, y, color, glyph.rotation);
+        blit_glyph_bitmap(fb, &bitmap, x, y, color, glyph.rotation, glyph.synthetic_italic);
     }
 }
 
@@ -520,6 +520,8 @@ fn draw_glyph_primitive(
 ///
 /// `rotation` 为弧度，0.0 表示不旋转，FRAC_PI_2 表示顺时针 90°。
 /// 对于垂直书写模式，字形需要旋转 90° 使文字从上到下排列。
+/// `synthetic_italic`（R2497）：true 时对非旋转字形应用 ~14° 水平 shear
+/// （系统字体无 italic face 时的合成斜体，对齐 chromium）。
 fn blit_glyph_bitmap(
     fb: &mut FrameBuffer,
     bitmap: &crate::font::GlyphBitmap,
@@ -527,6 +529,7 @@ fn blit_glyph_bitmap(
     y: f32,
     color: Color,
     rotation: f32,
+    synthetic_italic: bool,
 ) {
     let start_x = x.round() as i32;
     let start_y = y.round() as i32;
@@ -559,10 +562,19 @@ fn blit_glyph_bitmap(
             }
         }
     } else {
-        // 无旋转 — 正常渲染
+        // R2497 synthetic italic：每行水平偏移 shear_dx = (row - height/2) * ITALIC_SKEW。
+        // 锚 height/2 使 shear 上下对称（近似 chromium 基线锚；A/B 后可调）。
+        // ITALIC_SKEW = tan(14°) ≈ 0.249。
+        const ITALIC_SKEW: f32 = 0.249;
+        let anchor = bitmap.height as f32 / 2.0;
         for row in 0..bitmap.height {
+            let shear_dx = if synthetic_italic {
+                ((row as f32 - anchor) * ITALIC_SKEW).round() as i32
+            } else {
+                0
+            };
             for col in 0..bitmap.width {
-                let px = start_x + col as i32;
+                let px = start_x + col as i32 + shear_dx;
                 let py = start_y + row as i32;
                 if px < 0 || py < 0 || px >= fb.width as i32 || py >= fb.height as i32 {
                     continue;

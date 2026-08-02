@@ -139,6 +139,7 @@ mod tests {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         }
     }
 

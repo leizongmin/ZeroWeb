@@ -263,6 +263,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             bitmap_width: None,
             bitmap_height: None,
             rotation: glyph.rotation,
+            synthetic_italic: false,
         });
     }
     primitives.draw_order = params.draw_order.into_iter().map(ipc_draw_op_to_draw_op).collect();

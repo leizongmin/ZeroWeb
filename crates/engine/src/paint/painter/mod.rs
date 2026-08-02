@@ -297,7 +297,7 @@ impl Painter {
         font_family: &[String],
         font_weight: &zero_css_parser::values::FontWeightValue,
         font_style: &zero_css_parser::values::types::FontStyleValue,
-    ) -> zero_render_foundation::primitive::FontId {
+    ) -> (zero_render_foundation::primitive::FontId, bool) {
         use zero_css_parser::values::FontWeightValue;
         use zero_css_parser::values::types::FontStyleValue;
         use zero_render_foundation::primitive::FontId;
@@ -321,12 +321,15 @@ impl Painter {
             let name = family.trim_matches('"').trim_matches('\'');
             for &suffix in suffixes {
                 let key = format!("{name}{suffix}");
+                // R2497：返回 resolved_italic = 命中后缀是否含 "italic"（供 caller 判定
+                // synthetic italic——want_italic 且 resolved face 非 italic 时须合成 shear）。
+                let resolved_italic = suffix.contains("italic");
                 if let Some(&id) = self.font_resolver.get(&key) {
-                    return FontId(id);
+                    return (FontId(id), resolved_italic);
                 }
                 for (rk, &id) in &self.font_resolver {
                     if rk.eq_ignore_ascii_case(&key) {
-                        return FontId(id);
+                        return (FontId(id), resolved_italic);
                     }
                 }
             }
@@ -335,9 +338,9 @@ impl Painter {
         //（含 bold+italic）的 fallback——R2493 曾误窄化为 `!want_italic`，致 bold+italic 且
         // 无匹配 face 的文本回落 FontId(0) 而非 bold sans（丢失 bold 权重）。
         if want_bold && let Some(&id) = self.font_resolver.get("sans-serif:700") {
-            return FontId(id);
+            return (FontId(id), false);
         }
-        FontId(0)
+        (FontId(0), false)
     }
 
     /// 绘制整个布局树。

@@ -504,6 +504,7 @@ fn test_clip_glyphs_outside_rejection() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
+        synthetic_italic: false,
     }];
     clip_glyphs(&mut glyphs, 0, &clip);
     assert_eq!(glyphs[0].glyph_id, 0);
@@ -519,6 +520,7 @@ fn test_clip_glyphs_outside_rejection() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
+        synthetic_italic: false,
     }];
     clip_glyphs(&mut glyphs, 0, &clip);
     assert_eq!(glyphs[0].glyph_id, 0);
@@ -534,6 +536,7 @@ fn test_clip_glyphs_outside_rejection() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
+        synthetic_italic: false,
     }];
     clip_glyphs(&mut glyphs, 0, &clip);
     assert_eq!(glyphs[0].glyph_id, 0);
@@ -549,6 +552,7 @@ fn test_clip_glyphs_outside_rejection() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
+        synthetic_italic: false,
     }];
     clip_glyphs(&mut glyphs, 0, &clip);
     assert_eq!(glyphs[0].glyph_id, 0);
@@ -570,6 +574,7 @@ fn test_clip_glyphs_start_index() {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         },
         // glyph[1] 在 clip 外（应被裁剪）
         GlyphPrimitive {
@@ -582,6 +587,7 @@ fn test_clip_glyphs_start_index() {
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
+            synthetic_italic: false,
         },
     ];
     clip_glyphs(&mut glyphs, 1, &clip);
@@ -605,6 +611,7 @@ fn test_clip_glyphs_inside_not_clipped() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
+        synthetic_italic: false,
     }];
     clip_glyphs(&mut glyphs, 0, &clip);
     assert_eq!(glyphs[0].glyph_id, 65);
