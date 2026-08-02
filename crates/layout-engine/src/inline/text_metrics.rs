@@ -341,11 +341,14 @@ pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
 /// `frag.height` → `store_font_sizes_from_ifc` → `text_node_line_heights` → paint Path B
 /// `with_line_height_overrides`）触达 paint，绕过 R890 发现的「paint Path B 空 styles」阻塞。
 ///
-/// **接通状态（R2202 核对，2026-07-29）**：U1b-wiring 已完成——**reftest runner 已接通**
-/// （`reftest.rs:557` 调 `set_font_metric_map`，line-height:normal 走真实度量）；**生产
-/// webview/renderer 已 dormant 接通**（R2202，env `ZW_PERFONT_LINEHEIGHT=1` 激活，默认关 =
-/// 与旧路径逐字节等价 = 零回归）。即本函数在 runner 中已生效，生产中待 env 激活（属深结构，
-/// 激活 + A/B 见 `master.md` 待决策清单）。详见 `docs/goal/rendering-compat/unified-font-stack-design.md`。
+/// **接通状态（R2202 核对 2026-07-29；R2393 复核 2026-08-01）**：U1b-wiring 已完成——
+/// **reftest runner 已接通**（`reftest.rs:568` 调 `set_font_metric_map`，line-height:normal
+/// 走真实度量）；**生产 webview/renderer dormant 接通**（env `ZW_PERFONT_LINEHEIGHT=1`
+/// 激活，默认关）。**R2393 实证生产激活 = net 负，保持 dormant**（welcome 英文 +0.44pp 恶化；
+/// morning 中文零变化——全显式 line-height 无 normal 行，「CJK lever」假设证伪）→ **勿再以
+/// font-metric 生产激活为 lever**（证据 `evidence/font-metric-activation-ab-2026-08-01.md`）；
+/// 若推进须与 IFC strut/half-leading 真实化打包（深结构 R834 谱系）。详见
+/// `docs/goal/rendering-compat/unified-font-stack-design.md`。
 pub fn resolve_font_metrics_with_provider(
     style: Option<&ComputedStyle>,
     provider: Option<&crate::inline::FontMetricProviderHandle>,

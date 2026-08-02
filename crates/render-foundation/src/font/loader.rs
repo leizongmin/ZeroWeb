@@ -427,14 +427,17 @@ impl FontLoader {
     /// `line_gap` 是字体的行间距（OS/2 sTypoLineGap / hhea lineGap）。chromium 与
     /// fontdue 的 `line-height:normal` = `ascent − descent + line_gap`（按字号缩放）。
     ///
-    /// **接通状态（R2202 核对，2026-07-29）**：`line-height:normal` 经
-    /// `resolve_normal_line_height` 在 provider=Some 时已走真实 `ascent − descent + line_gap`
-    /// ——**reftest runner 已接通**（`reftest.rs:557` 调 `set_font_metric_map`），
-    /// **生产 webview/renderer 已 dormant 接通**（R2202，env `ZW_PERFONT_LINEHEIGHT=1`
-    /// 激活，默认关 = 零回归）。但 IFC `strut_ascent` / `half-leading` 仍用 `0.8·fs` / `1.2`
-    /// 近似（R759 仅修 Ahem 为 1.0）——R834 实证单点改 strut_ascent 反退 welcome，故保留
-    /// 近似（属深结构，见 `master.md` 待决策清单）。本方法供上述 line-height:normal 真实
-    /// 度量路径消费此前被 [`line_metrics`] 丢弃的 `line_gap`。
+    /// **接通状态（R2202 核对 2026-07-29；R2393 复核 2026-08-01）**：`line-height:normal`
+    /// 经 `resolve_normal_line_height` 在 provider=Some 时已走真实 `ascent − descent + line_gap`
+    /// ——**reftest runner 已接通**（`reftest.rs:568` 调 `set_font_metric_map`），
+    /// **生产 webview/renderer dormant 接通**（env `ZW_PERFONT_LINEHEIGHT=1` 激活，默认关）。
+    /// **R2393 实证生产激活 = net 负，保持 dormant**（welcome 英文 +0.44pp 恶化；morning 中文
+    /// 零变化——全显式 line-height 无 normal 行，「CJK lever」假设证伪）→ **勿再以 font-metric
+    /// 生产激活为 lever**（证据 `evidence/font-metric-activation-ab-2026-08-01.md`）。IFC
+    /// `strut_ascent` / `half-leading` 仍用 `0.8·fs` / `1.2` 近似（R759 仅修 Ahem 为 1.0）——
+    /// R834 实证单点改 strut_ascent 反退 welcome，须与 IFC strut/half-leading 真实化打包（深结构
+    /// R834 谱系）。本方法供上述 line-height:normal 真实度量路径消费此前被 [`line_metrics`]
+    /// 丢弃的 `line_gap`。
     pub fn line_metrics_full(&self, font_id: u32, size: f32) -> Option<(f32, f32, f32)> {
         let font = self.fonts.get(&font_id)?;
         let metrics = font.horizontal_line_metrics(size)?;
