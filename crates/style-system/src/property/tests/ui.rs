@@ -701,6 +701,35 @@ fn test_text_shadow_inheritance_through_dom_tree() {
     assert_eq!(child.text_shadow, parent.text_shadow);
 }
 
+// ── box-shadow 显式 inherit 关键字（CSS wide keyword）──
+
+/// 验证 `box-shadow: inherit` 通过 inherit_property 把父元素 box-shadow 传到子元素。
+/// box-shadow 非默认继承属性，但显式 `inherit` 关键字（CSS wide keyword）必须生效。
+/// driving: css-backgrounds box-shadow-*.html 用 `box-shadow: inherit` 的 case；
+/// 历史缺口（master.md R2462 记）：inherit_property 缺 box-shadow case → 静默回落 none。
+#[test]
+fn test_box_shadow_explicit_inherit_keyword() {
+    // 父元素设置 box-shadow（多阴影列表）
+    let mut parent = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut parent,
+        "box-shadow",
+        "4px 8px 6px 2px green, -2px -2px 4px red"
+    ));
+    assert_eq!(parent.box_shadow.len(), 2);
+
+    // 子元素显式 inherit：inherit_property 须识别 box-shadow 并复制父值
+    let mut child = ComputedStyle::default();
+    assert!(
+        inherit_property(&parent, &mut child, "box-shadow"),
+        "box-shadow 须在 inherit_property 中有 case（显式 inherit 关键字）"
+    );
+
+    // 子元素应获得与父元素完全相同的 box-shadow 列表
+    assert_eq!(child.box_shadow.len(), 2);
+    assert_eq!(child.box_shadow, parent.box_shadow);
+}
+
 // ── 边界测试：box-shadow inset 与 normal 正确区分 ──
 
 /// 验证 box-shadow 的 inset 标志与普通（outset）阴影正确区分。

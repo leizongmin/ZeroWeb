@@ -174,6 +174,13 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.background_color = parent.background_color.clone();
             true
         }
+        // box-shadow 非默认继承，但显式 `inherit` 关键字须生效（inheritance.rs Inherit arm
+        // 对所有属性调用本函数）。driving: css-backgrounds box-shadow-currentcolor.html
+        // `box-shadow: inherit`（A/B：R2462 修复前 13.79% FAIL → 修复后 0.00% PASS）。
+        "box-shadow" => {
+            child.box_shadow = parent.box_shadow.clone();
+            true
+        }
         "background-image" => {
             child.background_image = parent.background_image.clone();
             true
