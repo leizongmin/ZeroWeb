@@ -501,8 +501,8 @@ fn test_text_shadow_basic_two_values() {
 
 #[test]
 fn test_text_shadow_with_color_first() {
-    // text-shadow 不支持颜色在前的语法，第一和第二个值必须是长度
-    // 测试颜色在 blur 后的合法语法
+    // R2477：CSS Text Decoration §3 `<length>{2,3} && <color>?` 的 `&&` 允许颜色任意位置。
+    // 此处测长度在前、颜色在末（blur 后）的合法语法。
     let result = parse_text_shadow("2px 2px 4px red");
     assert!(result.is_some());
 }

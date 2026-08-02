@@ -1307,11 +1307,15 @@ fn test_parse_filter_drop_shadow() {
 }
 
 /// 测试 parse_box_shadow 颜色在开头时的拒绝行为
-/// 输入 "red 5px 10px" 将颜色放在 offset-x 位置，parse_length("red") 会失败，
-/// 解析器应返回 None 而非产生错误结果
+/// 输入 "red 5px 10px" 将颜色放在首位。R2477：CSS Backgrounds §7.1
+/// `<inset>? && <length>{2,4} && <color>?` 的 `&&` 允许颜色任意位置 → 合法，
+/// 解析为 ox=5 oy=10 color=red（改前按固定下标 parts[0]=length 致整条丢）。
 #[test]
-fn test_parse_box_shadow_color_at_start_returns_none() {
-    assert_eq!(parse_box_shadow("red 5px 10px"), None);
+fn test_parse_box_shadow_color_at_start() {
+    let s = parse_box_shadow("red 5px 10px").expect("color-first 合法应解析");
+    assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
+    assert_eq!(s.offset_x, LengthValue::Px(5.0));
+    assert_eq!(s.offset_y, LengthValue::Px(10.0));
 }
 
 // ── empty-cells ──

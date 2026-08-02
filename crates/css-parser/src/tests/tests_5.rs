@@ -1060,10 +1060,13 @@ fn test_edge_parse_text_shadow_empty() {
 
 #[test]
 /// 测试 parse_text_shadow 颜色在前 "red 2px 3px"。
-/// 解析器从 parts[0] 开始尝试 parse_length，"red" 不是长度，
-/// 所以 ox 会是 None → 整体返回 None。
+/// R2477：CSS Text Decoration §3 `<length>{2,3} && <color>?` 的 `&&` 允许颜色在任意位置，
+/// `red 2px 3px` 合法 → ox=2 oy=3 color=red（改前按固定下标 parts[0]=length 致丢）。
 fn test_edge_parse_text_shadow_color_first() {
-    assert_eq!(parse_text_shadow("red 2px 3px"), None);
+    let s = parse_text_shadow("red 2px 3px").expect("color-first 合法应解析");
+    assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
+    assert_eq!(s.offset_x, LengthValue::Px(2.0));
+    assert_eq!(s.offset_y, LengthValue::Px(3.0));
 }
 
 #[test]

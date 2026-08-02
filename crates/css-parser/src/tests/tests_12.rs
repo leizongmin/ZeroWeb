@@ -371,6 +371,93 @@ fn test_box_shadow_rgba_with_spaces_keeps_alpha() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// R2477：text/box-shadow 颜色位置敏感性（CSS && 语法，颜色可在任意位置）
+//
+// CSS Text Decoration §3 与 CSS Backgrounds §7.1 的 `<shadow>` 文法均为
+// `<length>{2,3} && <color>?`（text）/ `inset? && <length>{2,4} && <color>?`（box）。
+// `&&` 组合子表示两部分可任意顺序出现：`red 2px 2px`、`2px red 2px`、`2px 2px red`
+// 均合法。旧实现按固定下标取 parts[0..1]=长度、parts[2/3]=模糊/颜色，致：
+//   - 颜色在前（`red 2px 2px`）→ parts[0]=red parse_length 失败 → 整条丢（None）；
+//   - 颜色在中（`2px red 2px`）→ 同上丢；
+//   - `2px 2px red 4px` → red 占 blur 槽（unwrap_or 0），4px 被静默丢。
+// 与 R2476 box-shadow inset-anywhere 同族「parsed-but-dropped / 位置敏感」。
+// driving：WPT css-backgrounds/box-shadow-005 `rgba(0,255,0,1) 10px 10px`、
+// css-pseudo/marker-text-shadow `#0f0 1px 2px 3px`、selectors/focus-within
+// `text-shadow: black 0px 0px 0px`（均颜色在前，改前被丢）。
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_text_shadow_color_first_keyword() {
+    // `red 2px 2px` —— 颜色在前（CSS && 合法）。改前 None（丢）。
+    let s = parse_text_shadow("red 2px 2px").expect("color-first text-shadow 应解析");
+    assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
+    assert_eq!(s.offset_x, LengthValue::Px(2.0));
+    assert_eq!(s.offset_y, LengthValue::Px(2.0));
+    assert_eq!(s.blur_radius, LengthValue::Px(0.0));
+}
+
+#[test]
+fn test_text_shadow_color_first_hex_with_blur() {
+    // `#0f0 1px 2px 3px` —— driving css-pseudo/marker-text-shadow（颜色在前 + 模糊）。
+    let s = parse_text_shadow("#0f0 1px 2px 3px").expect("color-first hex 应解析");
+    assert!(matches!(s.color, ColorValue::Rgba(0, 255, 0, _)));
+    assert_eq!(s.offset_x, LengthValue::Px(1.0));
+    assert_eq!(s.offset_y, LengthValue::Px(2.0));
+    assert_eq!(s.blur_radius, LengthValue::Px(3.0), "3px 应为 blur，非被丢");
+}
+
+#[test]
+fn test_text_shadow_color_middle() {
+    // `2px red 2px` —— 颜色在中。改前 None（parts[1]=red parse_length 失败）。
+    let s = parse_text_shadow("2px red 2px").expect("color-middle text-shadow 应解析");
+    assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
+    assert_eq!(s.offset_x, LengthValue::Px(2.0));
+    assert_eq!(s.offset_y, LengthValue::Px(2.0));
+    assert_eq!(s.blur_radius, LengthValue::Px(0.0));
+}
+
+#[test]
+fn test_text_shadow_blur_after_color_not_dropped() {
+    // `2px 2px red 4px` —— 改前 red 占 parts[2] 被当 color，4px 静默丢（blur=0）。
+    // 正确：长度序列 = 2px 2px 4px → ox=2 oy=2 blur=4；color=red。
+    let s = parse_text_shadow("2px 2px red 4px").expect("应解析");
+    assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
+    assert_eq!(s.blur_radius, LengthValue::Px(4.0), "4px 不得被丢，应为 blur");
+}
+
+#[test]
+fn test_box_shadow_color_first() {
+    // `rgba(0,255,0,1) 10px 10px` —— driving css-backgrounds/box-shadow-005。
+    let s = parse_box_shadow("rgba(0,255,0,1) 10px 10px").expect("color-first box-shadow 应解析");
+    assert!(matches!(s.color, ColorValue::Rgba(0, 255, 0, _)));
+    assert_eq!(s.offset_x, LengthValue::Px(10.0));
+    assert_eq!(s.offset_y, LengthValue::Px(10.0));
+    assert!(!s.inset);
+}
+
+#[test]
+fn test_box_shadow_color_middle_with_spread() {
+    // `10px red 20px 5px 3px` —— 颜色在中 + spread（4 长度）。改前 parts[1]=red → None（丢）。
+    // 抽 red 后长度 = [10,20,5,3] → ox=10 oy=20 blur=5 spread=3。
+    let s = parse_box_shadow("10px red 20px 5px 3px").expect("color-middle box-shadow 应解析");
+    assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
+    assert_eq!(s.offset_x, LengthValue::Px(10.0));
+    assert_eq!(s.offset_y, LengthValue::Px(20.0));
+    assert_eq!(s.blur_radius, LengthValue::Px(5.0));
+    assert_eq!(s.spread_radius, LengthValue::Px(3.0), "3px 应为 spread");
+}
+
+#[test]
+fn test_box_shadow_color_first_with_inset_anywhere() {
+    // 颜色在前 + inset 在末（最常见组合）：`red 10px 10px inset`。
+    let s = parse_box_shadow("red 10px 10px inset").expect("color-first + inset-last 应解析");
+    assert!(matches!(s.color, ColorValue::Rgba(255, 0, 0, _)));
+    assert_eq!(s.offset_x, LengthValue::Px(10.0));
+    assert_eq!(s.offset_y, LengthValue::Px(10.0));
+    assert!(s.inset, "inset 在末尾应识别（R2476 同族）");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // types.rs — calc 和 length 更多边界情况
 // ═══════════════════════════════════════════════════════════════════════
 

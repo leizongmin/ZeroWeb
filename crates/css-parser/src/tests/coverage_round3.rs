@@ -424,8 +424,8 @@ fn test_parse_transform_uncovered_cases() {
     let bg = parse_background_image("invalid-gradient");
     assert_eq!(bg, None);
 
-    // Line 854: parse_text_shadow with multiple shadows
-    let shadow = parse_text_shadow("1px 1px red, 2px 2px blue");
+    // Line 854: parse_text_shadow 单阴影（多阴影列表走 parse_text_shadow_list，逗号段不进 singular）
+    let shadow = parse_text_shadow("1px 1px red");
     assert!(matches!(shadow, Some(_)));
 
     // Line 874: parse_text_shadow with invalid shadow

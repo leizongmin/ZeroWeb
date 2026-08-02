@@ -1408,7 +1408,7 @@ pub struct TextShadowValue {
 
 /// 解析 CSS text-shadow 值。
 ///
-/// 格式：`"none"` | `"<offset-x> <offset-y> [<blur-radius>] [<color>]"`。
+/// 格式：`"none"` | `"<color>? && <offset-x> <offset-y> [<blur-radius>] && <color>?"`。
 pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("none") {
@@ -1419,32 +1419,37 @@ pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
             color: ColorValue::Rgba(0, 0, 0, 255),
         });
     }
-    // 解析 "2px 2px 4px red" 或 "2px 2px" 或 "2px 2px red"
-    // 用括号感知分割，避免 `rgba(0, 0, 0, 0.5)` 被拆碎（同 parse_box_shadow 的修复）
+    // R2477：CSS Text Decoration §3 `<shadow> = <length>{2,3} && <color>?` —— `&&` 组合子
+    // 表示长度与颜色可任意顺序（`red 2px 2px`、`2px red 2px`、`2px 2px red` 均合法）。
+    // 旧实现按固定下标 parts[0..1]=长度、parts[2/3]=模糊/颜色，致颜色在前/中 → parse_length
+    // 失败整条丢，或 `2px 2px red 4px` 中 red 占模糊槽（unwrap_or 0）、4px 被静默丢。
+    // 现用括号感知拆 token，先抽首个可解析为颜色的 token 作 color，剩余必须全为长度并
+    // 按序映射 ox/oy/blur（第二/第三个颜色会因 parse_length 失败被拒，符合 spec 至多一色）。
+    // driving: css-pseudo/marker-text-shadow `#0f0 1px 2px 3px`、selectors/focus-within
+    // `text-shadow: black 0px 0px 0px`（颜色在前）。与 R2476 inset-anywhere 同族。
     let owned = split_paren_aware_tokens(v);
-    let parts: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
-    if parts.len() < 2 {
+    let mut color = ColorValue::CurrentColor;
+    let mut color_found = false;
+    let lengths: Vec<&str> = owned
+        .iter()
+        .filter_map(|s| {
+            if !color_found && let Some(c) = parse_color(s) {
+                color = c;
+                color_found = true;
+                return None;
+            }
+            Some(s.as_str())
+        })
+        .collect();
+    if !(2..=3).contains(&lengths.len()) {
         return None;
     }
-    let ox = parse_length(parts[0])?;
-    let oy = parse_length(parts[1])?;
-    // CSS Text Decoration §3：省略颜色时默认 currentColor（取元素 `color`），非黑色。
-    // driving: R2364（与 box-shadow 同语义）。
-    let (blur, color) = if parts.len() >= 3 {
-        if let Some(c) = parse_color(parts[2]) {
-            (LengthValue::Px(0.0), c)
-        } else if let Some(b) = parse_length(parts[2]) {
-            let c = if parts.len() >= 4 {
-                parse_color(parts[3]).unwrap_or(ColorValue::CurrentColor)
-            } else {
-                ColorValue::CurrentColor
-            };
-            (b, c)
-        } else {
-            (LengthValue::Px(0.0), ColorValue::CurrentColor)
-        }
+    let ox = parse_length(lengths[0])?;
+    let oy = parse_length(lengths[1])?;
+    let blur = if lengths.len() == 3 {
+        parse_length(lengths[2])?
     } else {
-        (LengthValue::Px(0.0), ColorValue::CurrentColor)
+        LengthValue::Px(0.0)
     };
     Some(TextShadowValue {
         offset_x: ox,
@@ -1548,40 +1553,45 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
     // R2476：`inset` 关键字可在值任意位置（前/中/后），CSS Backgrounds §7.1。旧实现仅
     // starts_with("inset") 致 `black 10px 10px 0px 0px inset`（inset 在末尾）漏识别 →
     // inset=false 渲为 outset。扫全部 token 提取 inset 并从 parts 移除。
+    // R2477：颜色同样可在任意位置（同 `<length>{2,4} && <color>?` 的 `&&`），如
+    // `rgba(0,255,0,1) 10px 10px`（css-backgrounds/box-shadow-005）。旧 find_map 已能找
+    // 任意位颜色，但颜色占 parts[0..1] 时 parse_length 失败整条丢、占 parts[2/3] 时被
+    // 当 blur/spread（unwrap_or 0）致真实长度被静默丢。现先抽 inset + 首个颜色，剩余必须
+    // 全为长度并按序映射 ox/oy/blur/spread（spec：至多一色一 inset）。
     let owned = split_paren_aware_tokens(v);
     let mut inset = false;
-    let parts: Vec<&str> = owned
+    let mut color = ColorValue::CurrentColor;
+    let mut color_found = false;
+    let lengths: Vec<&str> = owned
         .iter()
         .filter_map(|s| {
             if s.eq_ignore_ascii_case("inset") {
                 inset = true;
-                None
-            } else {
-                Some(s.as_str())
+                return None;
             }
+            if !color_found && let Some(c) = parse_color(s) {
+                color = c;
+                color_found = true;
+                return None;
+            }
+            Some(s.as_str())
         })
         .collect();
-    if parts.len() < 2 {
+    if !(2..=4).contains(&lengths.len()) {
         return None;
     }
-    let ox = parse_length(parts[0])?;
-    let oy = parse_length(parts[1])?;
-    let blur = if parts.len() >= 3 {
-        parse_length(parts[2]).unwrap_or(LengthValue::Px(0.0))
+    let ox = parse_length(lengths[0])?;
+    let oy = parse_length(lengths[1])?;
+    let blur = if lengths.len() >= 3 {
+        parse_length(lengths[2])?
     } else {
         LengthValue::Px(0.0)
     };
-    let spread = if parts.len() >= 4 {
-        parse_length(parts[3]).unwrap_or(LengthValue::Px(0.0))
+    let spread = if lengths.len() >= 4 {
+        parse_length(lengths[3])?
     } else {
         LengthValue::Px(0.0)
     };
-    // CSS Backgrounds §7.1 `<shadow>`：省略颜色时默认 currentColor（取元素 `color`），非黑色。
-    // driving: R2364（box-shadow paint 已就绪处理 currentColor 分支）。
-    let color = parts
-        .iter()
-        .find_map(|p| parse_color(p))
-        .unwrap_or(ColorValue::CurrentColor);
     Some(BoxShadowValue {
         offset_x: ox,
         offset_y: oy,
