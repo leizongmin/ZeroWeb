@@ -331,11 +331,10 @@ impl Painter {
                 }
             }
         }
-        // bold fallback 到通用 sans-serif:700（既有行为）。
-        if want_bold
-            && !want_italic
-            && let Some(&id) = self.font_resolver.get("sans-serif:700")
-        {
+        // bold fallback 到通用 sans-serif:700（既有行为）。R2495：恢复对所有 bold 文本
+        //（含 bold+italic）的 fallback——R2493 曾误窄化为 `!want_italic`，致 bold+italic 且
+        // 无匹配 face 的文本回落 FontId(0) 而非 bold sans（丢失 bold 权重）。
+        if want_bold && let Some(&id) = self.font_resolver.get("sans-serif:700") {
             return FontId(id);
         }
         FontId(0)
