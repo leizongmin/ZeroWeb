@@ -1083,6 +1083,19 @@ fn resolve_position_component(pos: &BackgroundPositionComputedValue, container_s
             zero_css_parser::values::eval_calc(expr, Some((container_size - image_size) as f64)).unwrap_or(0.0) as f32
         }
         BackgroundPositionComputedValue::TwoValue(_, _) => 0.0,
+        BackgroundPositionComputedValue::EdgeOffset(side, offset) => {
+            // R2478：3/4 值「边缘+偏移」对（CSS Backgrounds §3.6）。offset 从命名边度量，
+            // 递归用 resolve_position_component（offset 必为 length/percent/calc，故不产生
+            // 关键字/TwoValue/EdgeOffset 再入）。left/top = offset 本身；right/bottom 翻转
+            // （位置 = (container-image) - offset），与 bare right/bottom 关键字一致（right 0%≡right）。
+            let off = resolve_position_component(offset, container_size, image_size);
+            match side {
+                zero_css_parser::values::BackgroundEdge::Left | zero_css_parser::values::BackgroundEdge::Top => off,
+                zero_css_parser::values::BackgroundEdge::Right | zero_css_parser::values::BackgroundEdge::Bottom => {
+                    (container_size - image_size) - off
+                }
+            }
+        }
     }
 }
 

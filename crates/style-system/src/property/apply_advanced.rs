@@ -63,6 +63,12 @@ fn position_value_to_computed(
             let vc = position_value_to_computed(*v, style)?;
             BackgroundPositionComputedValue::TwoValue(Box::new(hc), Box::new(vc))
         }
+        Bp::EdgeOffset { side, offset } => {
+            // R2478：3/4 值「边缘+偏移」对 → computed EdgeOffset（offset 递归转换；
+            // offset 必为 Length/Percent/Calc，递归不产生关键字/TwoValue）。
+            let oc = position_value_to_computed(*offset, style)?;
+            BackgroundPositionComputedValue::EdgeOffset(side, Box::new(oc))
+        }
     })
 }
 

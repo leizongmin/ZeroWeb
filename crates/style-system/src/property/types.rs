@@ -832,6 +832,13 @@ pub enum BackgroundPositionComputedValue {
         Box<BackgroundPositionComputedValue>,
         Box<BackgroundPositionComputedValue>,
     ),
+    /// R2478：3/4 值语法「边缘+偏移」对（CSS Backgrounds §3.6）。偏移从命名边度量，
+    /// resolve 期 right/bottom 翻转（位置 = (container-image) - offset）。side 复用
+    /// css-parser BackgroundEdge（left/right=水平，top/bottom=垂直）。
+    EdgeOffset(
+        zero_css_parser::values::BackgroundEdge,
+        Box<BackgroundPositionComputedValue>,
+    ),
 }
 
 /// CSS background-repeat 属性值。

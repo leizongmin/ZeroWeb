@@ -1410,3 +1410,116 @@ fn test_background_position_calc_math_functions() {
     // 非法 calc → None
     assert!(parse_background_position("calc()").is_none());
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// R2478：background-position 3/4 值语法（CSS Backgrounds §3.6 「边缘+偏移」对）
+//
+// `<position>` 3/4 值 = 一个或两个 [side <lp>] 对，<lp> 从命名边度量偏移：
+//   `left 50px center`、`right 25px top 75%`、`left 25px bottom 75%`、`right 25px bottom 25%`。
+// 改前 parts.len()∈{3,4} 落单值分支 → None → 整条声明丢。driving：
+// css-backgrounds/background-position-three-four-values（4 案，改前 12.76% FAIL）。
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_background_position_three_values_keyword_offset() {
+    use crate::values::{BackgroundEdge, BackgroundPositionValue as Bp, parse_background_position};
+    // `left 50px center` → 水平 = EdgeOffset(Left, 50px)，垂直 = Center。
+    let p = parse_background_position("left 50px center").expect("3 值应解析");
+    let Bp::TwoValue(h, v) = p else {
+        panic!("应为 TwoValue，got {p:?}");
+    };
+    assert!(
+        matches!(*h, Bp::EdgeOffset { side: BackgroundEdge::Left, ref offset } if matches!(**offset, Bp::Length(_))),
+        "水平轴应为 EdgeOffset(Left, length)，got {h:?}"
+    );
+    assert!(matches!(*v, Bp::Center), "垂直轴应为 Center，got {v:?}");
+}
+
+#[test]
+fn test_background_position_four_values_two_pairs() {
+    use crate::values::{BackgroundEdge, BackgroundPositionValue as Bp, parse_background_position};
+    // `right 25px top 75%` → 水平 = EdgeOffset(Right, 25px)，垂直 = EdgeOffset(Top, 75%)。
+    let p = parse_background_position("right 25px top 75%").expect("4 值应解析");
+    let Bp::TwoValue(h, v) = p else {
+        panic!("应为 TwoValue，got {p:?}");
+    };
+    assert!(
+        matches!(*h, Bp::EdgeOffset { side: BackgroundEdge::Right, ref offset } if matches!(**offset, Bp::Length(_))),
+        "水平轴应为 EdgeOffset(Right, 25px=length)，got {h:?}"
+    );
+    assert!(
+        matches!(*v, Bp::EdgeOffset { side: BackgroundEdge::Top, ref offset } if matches!(**offset, Bp::Percent(75.0))),
+        "垂直轴应为 EdgeOffset(Top, 75%)，got {v:?}"
+    );
+}
+
+#[test]
+fn test_background_position_four_values_bottom_edge() {
+    use crate::values::{BackgroundEdge, BackgroundPositionValue as Bp, parse_background_position};
+    // `left 25px bottom 75%` → 水平 = EdgeOffset(Left, 25px)，垂直 = EdgeOffset(Bottom, 75%)。
+    let p = parse_background_position("left 25px bottom 75%").expect("4 值应解析");
+    let Bp::TwoValue(h, v) = p else {
+        panic!("应为 TwoValue，got {p:?}");
+    };
+    assert!(
+        matches!(
+            *h,
+            Bp::EdgeOffset {
+                side: BackgroundEdge::Left,
+                ..
+            }
+        ),
+        "水平 Left，got {h:?}"
+    );
+    assert!(
+        matches!(*v, Bp::EdgeOffset { side: BackgroundEdge::Bottom, ref offset } if matches!(**offset, Bp::Percent(75.0))),
+        "垂直应为 EdgeOffset(Bottom, 75%)，got {v:?}"
+    );
+}
+
+#[test]
+fn test_background_position_four_values_order_independent() {
+    use crate::values::{BackgroundEdge, BackgroundPositionValue as Bp, parse_background_position};
+    // `bottom 1px right 2px`：垂直对在前、水平对在后（顺序无关，按关键字分配轴）。
+    let p = parse_background_position("bottom 1px right 2px").expect("4 值乱序应解析");
+    let Bp::TwoValue(h, v) = p else {
+        panic!("应为 TwoValue，got {p:?}");
+    };
+    assert!(
+        matches!(
+            *h,
+            Bp::EdgeOffset {
+                side: BackgroundEdge::Right,
+                ..
+            }
+        ),
+        "水平 Right，got {h:?}"
+    );
+    assert!(
+        matches!(
+            *v,
+            Bp::EdgeOffset {
+                side: BackgroundEdge::Bottom,
+                ..
+            }
+        ),
+        "垂直 Bottom，got {v:?}"
+    );
+}
+
+#[test]
+fn test_background_position_three_four_invalid_same_axis_pair() {
+    use crate::values::parse_background_position;
+    // 两个水平对（left/right 同轴）非法 → None。
+    assert!(parse_background_position("left 10px right 20px").is_none());
+    // center 带偏移非法（center 不可作边缘关键字带 lp）→ 落单值/2 值分支，非 3/4 值；
+    // `left 50px right` 中 right 无偏移但同轴（left+right 均水平）→ None。
+    assert!(parse_background_position("left 50px right").is_none());
+    // 2 值回归不受影响（仍走 2 值分支）
+    use crate::values::BackgroundPositionValue as Bp;
+    assert!(matches!(
+        parse_background_position("left top"),
+        Some(Bp::TwoValue(_, _))
+    ));
+    assert!(matches!(parse_background_position("center"), Some(Bp::Center)));
+}

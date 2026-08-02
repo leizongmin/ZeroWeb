@@ -685,6 +685,32 @@ pub enum BackgroundPositionValue {
     Calc(crate::values::CalcExpr),
     /// 两个值组合（水平 垂直）。
     TwoValue(Box<BackgroundPositionValue>, Box<BackgroundPositionValue>),
+    /// R2478：3/4 值语法「边缘 + 偏移」对（CSS Backgrounds §3.6）：偏移从命名边度量，
+    /// 如 `right 25px`（距右边缘 25px）、`top 75%`。side ∈ {Left,Right,Top,Bottom}
+    ///（center 不可带偏移）；offset ∈ {Length,Percent,Calc}（关键字/TwoValue 不可作 offset）。
+    /// 解析为 TwoValue 的轴分量：EdgeOffset(Left/Right) → 水平轴、EdgeOffset(Top/Bottom) → 垂直轴。
+    EdgeOffset {
+        /// 度量偏移的参考边缘。
+        side: BackgroundEdge,
+        /// 偏移分量（length/percent/calc；right/bottom 边在 resolve 期翻转）。
+        offset: Box<BackgroundPositionValue>,
+    },
+}
+
+/// R2478：background-position / object-position 3/4 值语法的参考边缘（CSS Backgrounds §3.6）。
+///
+/// left/right = 水平轴；top/bottom = 垂直轴。带偏移时（`right 25px`），偏移从该边缘度量；
+/// resolve 期 right/bottom 翻转（位置 = (container-image) - offset）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackgroundEdge {
+    /// 左边缘（偏移从左度量 = offset 本身）。
+    Left,
+    /// 右边缘（偏移从右度量 = (container-image) - offset）。
+    Right,
+    /// 上边缘（偏移从上度量 = offset 本身）。
+    Top,
+    /// 下边缘（偏移从下度量 = (container-image) - offset）。
+    Bottom,
 }
 
 /// 解析 CSS background-position 属性值。
@@ -697,6 +723,13 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
     // 先检查是否为两个值组合（R2313：split_top_level_whitespace paren-aware，
     // 使 calc/min/max 含空白参数的函数保持一体，如 `min(0%, 100%) max(0%, 100%)`）。
     let parts = split_top_level_whitespace(&lower);
+    // R2478：3/4 值语法（CSS Backgrounds §3.6）= 一个或两个「边缘+偏移」对（`left 50px center`、
+    // `right 25px top 75%`）。改前 parts.len()∈{3,4} 落单值分支 → None → 声明丢。
+    // R2478：3/4 值语法（CSS Backgrounds §3.6）= 一个或两个「边缘+偏移」对（`left 50px center`、
+    // `right 25px top 75%`）。改前 parts.len()∈{3,4} 落单值分支 → None → 声明丢。
+    if parts.len() == 3 || parts.len() == 4 {
+        return parse_position_three_four(&parts);
+    }
     if parts.len() == 2 {
         let first = parse_position_component(&parts[0])?;
         let second = parse_position_component(&parts[1])?;
@@ -791,6 +824,104 @@ fn parse_position_component(s: &str) -> Option<BackgroundPositionValue> {
             }
         }
     }
+}
+
+/// R2478：解析 background-position 3/4 值语法（CSS Backgrounds §3.6）。
+///
+/// 文法：`([left|right] <lp>) && ([top|bottom] <lp>)`，3 值时缺一轴 → center。
+/// 每个 `<lp>` 是从前导关键字命名的边缘度量的偏移（`right 25px` = 距右边缘 25px）。
+///
+/// 算法：左→右扫 token，若当前为边缘关键字（left/right/top/bottom，非 center）且下一 token
+/// 可解析为 lp（length/percent/calc），则两者结成 EdgeOffset 对；否则当前 token 为裸关键字。
+/// 按关键字的轴（left/right=水平，top/bottom=垂直，center=补缺轴）分配到 h/v；同轴重复 → None
+///（非法）。driving：css-backgrounds/background-position-three-four-values（4 案）。
+fn parse_position_three_four(parts: &[String]) -> Option<BackgroundPositionValue> {
+    let mut h: Option<BackgroundPositionValue> = None; // 水平轴分量
+    let mut v: Option<BackgroundPositionValue> = None; // 垂直轴分量
+
+    let assign = |axis_slot: &mut Option<BackgroundPositionValue>, val: BackgroundPositionValue| -> Option<()> {
+        if axis_slot.is_some() {
+            None // 同轴已赋值 → 非法
+        } else {
+            *axis_slot = Some(val);
+            Some(())
+        }
+    };
+
+    let mut i = 0;
+    while i < parts.len() {
+        let tok = parts[i].as_str();
+        if let Some(side) = parse_background_edge(tok) {
+            // 边缘关键字 + 可能的偏移
+            if i + 1 < parts.len()
+                && let Some(offset) = parse_position_component(parts[i + 1].as_str())
+                && is_offset_only(&offset)
+            {
+                // [side, offset] 对
+                let edge = BackgroundPositionValue::EdgeOffset {
+                    side,
+                    offset: Box::new(offset),
+                };
+                match side {
+                    BackgroundEdge::Left | BackgroundEdge::Right => assign(&mut h, edge)?,
+                    BackgroundEdge::Top | BackgroundEdge::Bottom => assign(&mut v, edge)?,
+                }
+                i += 2;
+                continue;
+            }
+            // 裸边缘关键字（无偏移）= 该轴的 0%/100%（left/top=0、right/bottom=100%）
+            let kw = match side {
+                BackgroundEdge::Left => BackgroundPositionValue::Left,
+                BackgroundEdge::Right => BackgroundPositionValue::Right,
+                BackgroundEdge::Top => BackgroundPositionValue::Top,
+                BackgroundEdge::Bottom => BackgroundPositionValue::Bottom,
+            };
+            match side {
+                BackgroundEdge::Left | BackgroundEdge::Right => assign(&mut h, kw)?,
+                BackgroundEdge::Top | BackgroundEdge::Bottom => assign(&mut v, kw)?,
+            }
+            i += 1;
+            continue;
+        }
+        if tok == "center" {
+            // center 补缺轴（先 h 后 v）
+            if h.is_none() {
+                assign(&mut h, BackgroundPositionValue::Center)?;
+            } else if v.is_none() {
+                assign(&mut v, BackgroundPositionValue::Center)?;
+            } else {
+                return None; // 两轴已满
+            }
+            i += 1;
+            continue;
+        }
+        // 3/4 值语境中裸 length/percent（无前导关键字）非法
+        return None;
+    }
+
+    let h = h.unwrap_or(BackgroundPositionValue::Center);
+    let v = v.unwrap_or(BackgroundPositionValue::Center);
+    Some(BackgroundPositionValue::TwoValue(Box::new(h), Box::new(v)))
+}
+
+/// 解析 background-position 边缘关键字为 BackgroundEdge（left/right/top/bottom）。
+/// center 不算边缘（不可带偏移）。
+fn parse_background_edge(s: &str) -> Option<BackgroundEdge> {
+    match s {
+        "left" => Some(BackgroundEdge::Left),
+        "right" => Some(BackgroundEdge::Right),
+        "top" => Some(BackgroundEdge::Top),
+        "bottom" => Some(BackgroundEdge::Bottom),
+        _ => None,
+    }
+}
+
+/// 判断分量是否可作 3/4 值语法的偏移（仅 length/percent/calc；关键字/TwoValue/EdgeOffset 不可）。
+fn is_offset_only(v: &BackgroundPositionValue) -> bool {
+    matches!(
+        v,
+        BackgroundPositionValue::Length(_) | BackgroundPositionValue::Percent(_) | BackgroundPositionValue::Calc(_)
+    )
 }
 
 /// CSS background-repeat 属性值。
