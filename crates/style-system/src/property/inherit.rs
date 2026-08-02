@@ -181,6 +181,16 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.box_shadow = parent.box_shadow.clone();
             true
         }
+        // contain-intrinsic-size 长手（R2462 系统审计：非继承属性缺 inherit case，
+        // 显式 `inherit` 关键字须生效，同 box-shadow gap class）。
+        "contain-intrinsic-width" => {
+            child.contain_intrinsic_width = parent.contain_intrinsic_width.clone();
+            true
+        }
+        "contain-intrinsic-height" => {
+            child.contain_intrinsic_height = parent.contain_intrinsic_height.clone();
+            true
+        }
         "background-image" => {
             child.background_image = parent.background_image.clone();
             true

@@ -98,3 +98,30 @@ fn test_contain_intrinsic_size_parse() {
     assert!(apply_property_value(&mut style, "contain-intrinsic-height", "75px"));
     assert_eq!(style.contain_intrinsic_height, Some(LengthValue::Px(75.0)));
 }
+
+/// R2462 系统审计：`contain-intrinsic-width`/`-height` 长手属性非默认继承，但显式
+/// `inherit` 关键字（CSS wide keyword）须经 inherit_property 从父元素复制（同 box-shadow
+/// R2462 gap class）。driving: contain-intrinsic-size 子树用 `inherit` 的 case。
+#[test]
+fn test_contain_intrinsic_longhands_explicit_inherit_keyword() {
+    use zero_css_parser::values::LengthValue;
+    // 父元素分别设置 width / height 长手
+    let mut parent = ComputedStyle::default();
+    parent.contain_intrinsic_width = Some(LengthValue::Px(120.0));
+    parent.contain_intrinsic_height = Some(LengthValue::Px(80.0));
+
+    // 子元素显式 inherit：inherit_property 须识别两个长手并复制父值
+    let mut child = ComputedStyle::default();
+    assert!(
+        inherit_property(&parent, &mut child, "contain-intrinsic-width"),
+        "contain-intrinsic-width 须在 inherit_property 中有 case（显式 inherit 关键字）"
+    );
+    assert_eq!(child.contain_intrinsic_width, parent.contain_intrinsic_width);
+
+    let mut child2 = ComputedStyle::default();
+    assert!(
+        inherit_property(&parent, &mut child2, "contain-intrinsic-height"),
+        "contain-intrinsic-height 须在 inherit_property 中有 case（显式 inherit 关键字）"
+    );
+    assert_eq!(child2.contain_intrinsic_height, parent.contain_intrinsic_height);
+}
