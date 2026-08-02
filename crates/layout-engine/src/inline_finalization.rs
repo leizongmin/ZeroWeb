@@ -184,7 +184,7 @@ pub fn build_text_parent_override_map<T: Copy>(doc: &Document, source: &HashMap<
 /// **仅传 `no_wrap`，不传 `preserve_whitespace`**：preserve 会改变 pre-wrap 空白折叠行为，实测致
 /// letter-spacing-201（pre-wrap + 多空格）测量行断变化而回归。no_wrap 是修 pre/nowrap 容器「测量
 /// 时不换行」的最小充分条件；preserve 仅影响空白折叠，对 box 高度测量非必要，故测量路径保持
-/// preserve=false（与历史行为一致），空白保真由 paint 路径（text.rs:744）负责。
+/// preserve=false（与历史行为一致），空白保真由 paint 路径（text.rs:737）负责。
 pub(crate) fn resolve_no_wrap_for_ifc_measure(style: Option<&ComputedStyle>) -> bool {
     use zero_style_system::property::types::WhiteSpaceValue;
     matches!(

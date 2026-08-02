@@ -151,7 +151,7 @@ pub struct WebView {
     /// CSS font-family → font_id，供 paint 解析 font-weight 粗体 face。
     font_resolver: std::collections::HashMap<String, u32>,
     /// per-family 行度量映射（U1b-wiring，R2202 生产接通）。env-gated
-    /// `ZW_PERFONT_LINEHEIGHT=1` 激活（复用 reftest.rs:553 同款 kill-switch）；默认空 = dormant = 零回归。
+    /// `ZW_PERFONT_LINEHEIGHT=1` 激活（复用 reftest.rs:568 同款 kill-switch）；默认空 = dormant = 零回归。
     font_metric_map: std::collections::HashMap<String, (u32, f32, f32, f32)>,
     /// 用户颜色方案偏好。
     prefers_color_scheme: PrefersColorSchemeValue,
