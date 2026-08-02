@@ -1545,11 +1545,22 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
             inset: false,
         });
     }
-    let lower = v.to_ascii_lowercase();
-    let inset = lower.starts_with("inset");
-    let rest = if inset { v[5..].trim_start() } else { v };
-    let owned = split_paren_aware_tokens(rest);
-    let parts: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+    // R2476：`inset` 关键字可在值任意位置（前/中/后），CSS Backgrounds §7.1。旧实现仅
+    // starts_with("inset") 致 `black 10px 10px 0px 0px inset`（inset 在末尾）漏识别 →
+    // inset=false 渲为 outset。扫全部 token 提取 inset 并从 parts 移除。
+    let owned = split_paren_aware_tokens(v);
+    let mut inset = false;
+    let parts: Vec<&str> = owned
+        .iter()
+        .filter_map(|s| {
+            if s.eq_ignore_ascii_case("inset") {
+                inset = true;
+                None
+            } else {
+                Some(s.as_str())
+            }
+        })
+        .collect();
     if parts.len() < 2 {
         return None;
     }

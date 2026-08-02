@@ -186,6 +186,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             offset_y: shadow.offset_y,
             blur_radius: shadow.blur_radius,
             spread_radius: shadow.spread_radius,
+            inset: false,
         });
     }
     for image in params.images {

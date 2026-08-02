@@ -176,6 +176,7 @@ fn test_shadow_primitive() {
         offset_y: 4.0,
         blur_radius: 8.0,
         spread_radius: 0.0,
+        inset: false,
     });
     assert_eq!(p.shadows.len(), 1);
 }
@@ -251,6 +252,7 @@ fn test_bounding_box_with_shadow() {
         offset_y: 5.0,
         blur_radius: 3.0,
         spread_radius: 2.0,
+        inset: false,
     });
     let bb = p.bounding_box().unwrap();
     assert_eq!(bb.left(), 10.0);
@@ -515,6 +517,7 @@ fn test_len_all_primitive_types() {
         offset_y: 0.0,
         blur_radius: 0.0,
         spread_radius: 0.0,
+        inset: false,
     });
     p.add_image(ImagePrimitive {
         rect: Rect::new(0.0, 0.0, 10.0, 10.0),
@@ -569,6 +572,7 @@ fn test_composite_primitive_opacity_zero() {
         offset_y: 5.0,
         blur_radius: 3.0,
         spread_radius: 0.0,
+        inset: false,
     });
     let shadow = &p.shadows[0];
     assert_eq!(shadow.color.a, 0);
@@ -643,6 +647,7 @@ fn test_edge_shadow_large_blur_radius_bounding_box() {
         offset_y: 0.0,
         blur_radius: 200.0,
         spread_radius: 0.0,
+        inset: false,
     });
     let bb = p.bounding_box().unwrap();
     assert_eq!(bb.left(), -100.0);
@@ -662,6 +667,7 @@ fn test_edge_shadow_negative_offset_bounding_box() {
         offset_y: -20.0,
         blur_radius: 0.0,
         spread_radius: 0.0,
+        inset: false,
     });
     let bb = p.bounding_box().unwrap();
     assert_eq!(bb.left(), 40.0);
@@ -681,6 +687,7 @@ fn test_edge_shadow_large_spread_radius_bounding_box() {
         offset_y: 0.0,
         blur_radius: 0.0,
         spread_radius: 50.0,
+        inset: false,
     });
     let bb = p.bounding_box().unwrap();
     assert_eq!(bb.left(), -30.0);
@@ -700,6 +707,7 @@ fn test_edge_multiple_shadows_bounding_box_merge() {
         offset_y: 5.0,
         blur_radius: 2.0,
         spread_radius: 1.0,
+        inset: false,
     });
     p.add_shadow(ShadowPrimitive {
         rect: Rect::new(200.0, 200.0, 50.0, 50.0),
@@ -708,6 +716,7 @@ fn test_edge_multiple_shadows_bounding_box_merge() {
         offset_y: -5.0,
         blur_radius: 10.0,
         spread_radius: 0.0,
+        inset: false,
     });
     let bb = p.bounding_box().unwrap();
     assert_eq!(bb.left(), 2.0);
@@ -751,6 +760,7 @@ fn test_edge_len_with_shadows_and_images() {
         offset_y: 3.0,
         blur_radius: 5.0,
         spread_radius: 0.0,
+        inset: false,
     });
     p.add_shadow(ShadowPrimitive {
         rect: Rect::new(50.0, 50.0, 100.0, 100.0),
@@ -759,6 +769,7 @@ fn test_edge_len_with_shadows_and_images() {
         offset_y: 0.0,
         blur_radius: 10.0,
         spread_radius: 2.0,
+        inset: false,
     });
     p.add_image(ImagePrimitive {
         rect: Rect::new(0.0, 0.0, 200.0, 200.0),
@@ -792,6 +803,7 @@ fn test_edge_shadow_zero_size_rect() {
         offset_y: 0.0,
         blur_radius: 5.0,
         spread_radius: 3.0,
+        inset: false,
     });
     let bb = p.bounding_box().unwrap();
     assert_eq!(bb.left(), 42.0);

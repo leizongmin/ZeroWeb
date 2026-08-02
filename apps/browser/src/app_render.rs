@@ -973,6 +973,7 @@ impl BrowserApp {
             offset_y,
             blur_radius: blur,
             spread_radius: 0.0,
+            inset: false,
         });
     }
 

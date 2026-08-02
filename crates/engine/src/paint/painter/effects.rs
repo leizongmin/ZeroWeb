@@ -42,7 +42,19 @@ impl super::Painter {
                 continue;
             }
 
-            let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+            // R2476：inset 阴影 perimeter = padding box（border 内），outset = border box。
+            //（CSS Backgrounds §7.1：inner shadow casts as if border-box exterior is opaque,
+            //  perimeter = padding edge。）box_node.width 为 border-box 宽。
+            let rect = if shadow.inset {
+                Rect::new(
+                    abs_x + box_node.border_left,
+                    abs_y + box_node.border_top,
+                    (box_node.width - box_node.border_left - box_node.border_right).max(0.0),
+                    (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0),
+                )
+            } else {
+                Rect::new(abs_x, abs_y, box_node.width, box_node.height)
+            };
             // box-shadow 颜色：`currentColor` 使用元素自身计算 `color`（CSS-Color §resolving）。
             // color_value_to_render 无元素上下文会把 CurrentColor 回落为黑色，致 `color:transparent`
             // 时阴影错误地实心可见。driving: WPT box-shadow-currentcolor（与 text-decoration /
@@ -61,6 +73,7 @@ impl super::Painter {
                 offset_y: shadow.offset_y,
                 blur_radius: shadow.blur_radius,
                 spread_radius: shadow.spread_radius,
+                inset: shadow.inset,
             });
         }
     }

@@ -1048,6 +1048,7 @@ fn test_apply_opacity_all_primitive_types() {
         offset_y: 2.0,
         blur_radius: 5.0,
         spread_radius: 0.0,
+        inset: false,
         color: zero_render_foundation::color::Color::rgba(0, 0, 0, 200),
     });
     // Image primitive — opacity 通过绘制时应用

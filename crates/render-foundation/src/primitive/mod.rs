@@ -239,6 +239,9 @@ pub struct ShadowPrimitive {
     pub blur_radius: f32,
     /// 扩展半径
     pub spread_radius: f32,
+    /// R2476：是否内阴影（inset）。outset（false）= 阴影在盒外向外模糊；inset（true）=
+    /// 阴影在盒内（box 减 offset+spread 收缩的洞），向内模糊，裁切到盒。
+    pub inset: bool,
 }
 
 /// 图片图元

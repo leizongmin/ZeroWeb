@@ -575,6 +575,7 @@ fn shadow_renders_blur_around_rect() {
         offset_y: 5.0,
         blur_radius: 4.0,
         spread_radius: 0.0,
+        inset: false,
     });
 
     let font_loader = FontLoader::new();
@@ -605,6 +606,50 @@ fn shadow_renders_blur_around_rect() {
     // 远离阴影的区域应该是白色
     let far_pixel = fb.get_pixel(5, 5);
     assert_eq!(far_pixel, [255, 255, 255, 255], "far area should be white");
+}
+
+/// R2476：inset 内阴影应在盒**内**渲染（盒内边缘暗化），盒外保持白色（裁切到盒）。
+#[test]
+fn inset_shadow_renders_inside_box() {
+    let mut primitives = RenderPrimitives::new();
+    // 盒 (40,40)-(100,100)，inset 黑阴影 offset(5,5) blur 4
+    primitives.shadows.push(ShadowPrimitive {
+        rect: Rect::new(40.0, 40.0, 60.0, 60.0),
+        color: Color::rgba(0, 0, 0, 200),
+        offset_x: 5.0,
+        offset_y: 5.0,
+        blur_radius: 4.0,
+        spread_radius: 0.0,
+        inset: true,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        100,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    // 盒内左上角（inset 偏移致该侧阴影最厚）应被暗化
+    let inner = fb.get_pixel(43, 43);
+    assert!(inner[0] < 250, "inset shadow 应暗化盒内边缘，got {:?}", inner);
+    // 盒外应保持白色（inset 裁切到盒，不外溢）
+    let outside = fb.get_pixel(30, 30);
+    assert_eq!(outside, [255, 255, 255, 255], "inset shadow 不应外溢到盒外");
+    // 盒中心（远离内边缘）应接近白色（阴影向内淡出，中心几乎无阴影）
+    let center = fb.get_pixel(70, 70);
+    assert!(
+        center[0] > 200,
+        "inset shadow 中心应接近白（向内淡出），got {:?}",
+        center
+    );
 }
 
 #[test]

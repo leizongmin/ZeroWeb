@@ -881,6 +881,7 @@ fn test_gpu_full_scene_shadow() {
         offset_y: 2.0,
         blur_radius: 0.0,
         spread_radius: 0.0,
+        inset: false,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
