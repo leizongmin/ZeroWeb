@@ -576,14 +576,14 @@
 | WPT Runner | ✅ reftest 级 | 1,341 个手写 TestCase + 685 个内联 reftest（13 目录 ≥50） |
 | Reftest Harness | ✅ 可用 | 分类容差、per-test fuzzy 注解、match/mismatch 模式 |
 | CPU 软件渲染 | ✅ 全量图元 | render_full_scene() 支持全部 13 种图元（fills, rounded_rects, gradients, shadows, images, strokes, path_fills, path_strokes, glyphs, clips, transforms, filters, blend_modes） |
-| 产品/真实静态页面视觉 smoke | ✅ 证据已持久化·持续修复 | welcome/morning.work/wintertc fixture + product-smoke + chromium Oracle 工具链就绪；**证据已持久化 `evidence/product-static/`**；**post-R632 diff**：welcome **16.16%**、wintertc 13.59%、morning-work 800×600 **18.15%**；★R630 修复用户痛点「文字堆叠看不清」；残余 diff = 中文字体度量（R633 Phase A 死锁）+ R109 IFC + hljs（需 JS），非证据缺口 |
+| 产品/真实静态页面视觉 smoke | ✅ 证据已持久化·持续修复 | welcome/morning.work/wintertc fixture + product-smoke + chromium Oracle 工具链就绪；**证据已持久化 `evidence/product-static/`**；**post-R632 diff（R2544 re-baseline 复测）**：welcome **17.03%**（81737/480000px，旧快照 16.16% stale）、wintertc 13.59%、morning-work 800×600 **18.15%**；★R630 修复用户痛点「文字堆叠看不清」；残余 diff = 中文字体度量（R633 Phase A 死锁）+ R109 IFC + hljs（需 JS），非证据缺口 |
 
 ---
 
 
 ## 下一步
 
-> **轻量修复主线（用户 2026-07-29 裁决）**：持续做有 driving test、低风险、A/B 零回归的 CSS2/parser/selector clean lever；产品/legacy smoke 可见稳定性修复；文档与代码不一致的纠偏。每修一个跑 `make test` + 相关 smoke + 必要 dir oracle，net≥0 即 land。
+> **轻量修复主线（用户 2026-07-29 裁决；R2542-R2548 双轴穷尽 update）**：~~持续做有 driving test、低风险、A/B 零回归的 CSS2/parser/selector clean lever~~（**R2542-R2548 经 clean-lever 2 模式 [6× feature-existence probe + 1× IFC correctness-review deep-review] + 深结构可切片性全项核验 = 双轴确证穷尽**——候选清单全清零，全剩余深结构项非自主 tractable：Phase A IFC line-box-metric 不可切片 [5 轮 net-negative 史 + 设计 v1.4 须整体 unification] / DC-9 infrastructure-blocked / Phase 2 multicol 深 RFC / font-metric·@counter-style-slice2·individual-transforms 皆 net-negative 史 / R1043·R2174·font-stack user-gated）。**当前活跃自主面 = 仅 ① 低频周期 plateau-guard（make test + product-smoke + product-smoke-legacy 回归守，待行为变更/drift 累积；post-split triple-guard R2544/R2545 三腿全绿）+ ② 文档与代码不一致纠偏**。产品/legacy smoke 可见稳定性修复仍适用。**唯一推向 95% = 用户点名授权深结构专项**（最高 value = Phase A IFC line-box-metric 统一，须接受多轮 A/B 收敛风险）。
 
 ### 待用户决策清单
 
