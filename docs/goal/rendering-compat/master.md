@@ -379,6 +379,8 @@
 
 ## 最近轮次摘要
 
+> **📍 R2544（2026-08-04）📋 post-split plateau-guard（make test + product-smoke）= R2509-R2541 机械拆分链 ZERO 产品回归确认 + stale 快照订正（welcome 16.84%→17.03%、test 13129→13190）；零代码**。承接 R2543「续 plateau-guard / 待用户深结构」。本轮跑 sanctioned 回归守——**这是 R2509-R2541 八连机械 file-split（parser/shorthand/pipeline/document/engine/types/text/lib/tests/visual/app_render）后的首次 product-fixture 验证**（make test 各 split 已 byte-identical 绿，但 make test 不覆盖 product fixture；R541 先例 = welcome +7.65pp 回归藏 14 轮）。**结果全绿**：① `make test` exit 0（13190/0/74，自 R2541 持平，R2542/R2543 零测试增删）；② `make product-smoke` exit 0——**全 struct-check PASS**（welcome 800/375/320 + wintertc 800/375 + morning 800/375/320）+ welcome 桌面 diff **17.03%（81737px，与 R2402-R2436 一致）≤20%**；机械拆分 byte-identical 经 product-smoke 再证零产品渲染漂移。**快照订正**：master.md 旧 welcome 16.84%（stale，实际 17.03% 自 R632 稳定）+ test count 13129（截至 R2459 stale，实际 13190 截至 R2544）。**意义**：post-split 产品回归门禁首次闭合——R2509-R2541 拆分链产品安全确认；plateau 健康。**下一轮**：续低频 plateau-guard 或待用户点名深结构（唯一推向 95% = Phase A IFC line-box-metric 统一）。
+
 > **📍 R2543（2026-08-04）📋 CSS Syntax §4/§5 候选条目清零（CDO/CDC 非顶层 cosmetic + CSS Values 4 math 全实现 re-confirm）— 自主 clean-lever surface 经本轮双 fresh probe 第 6 次确证穷尽；零代码**。承接 R2542「续 plateau-guard / 待用户深结构」。本轮 verify 两路 fresh probe（候选清单剩余项逐一钉案）：**(1) CDO/CDC 非顶层上下文 = cosmetic 非缺口**——R2204 已将 CDO（`<!--`）/CDC（`-->`）tokenize 为 `Token::Comment`（tokenizer.rs:854/909），parser `skip_whitespace`（mod.rs:331-333）随处跳过 `Whitespace | Comment`；CSS 注释本就所有上下文 ignorable（声明值内/选择器前导/块内均同），故 CDO/CDC 非顶层「parse error」仅 spec 诊断标志、零渲染影响，Comment 处理已产出 spec-correct output（如 `p { color: red<!-- --> }`=color:red 正确）；无 driving test 可写（cosmetic）。**(2) CSS Values 4 数学函数（round/mod/rem/sign/abs + trig 7 + pow/sqrt/hypot/exp/log + π/e/infinity/NaN 常量）= re-confirm R2280 已全实现**——`CalcExpr`/`UnaryMathOp`/`BinaryMathOp` 枚举 + `try_parse_unary_math`/`try_parse_binary_math` + `eval_calc_with_context` 全 arm（types.rs）+ 5 综合单测（abs/sign/sqrt/exp/log/constants、pow/hypot/round/mod/rem、trig 含 deg/grad/turn/rad 角度归一）；R2391/R2400 早记「R2280 全实现」，本轮 re-confirm 非新 lever。**意义**：CSS Syntax §4/§5 候选条目全清零（MQ L4/@layer R2542 作废 + CDO/CDC R2543 cosmetic + math R2280 早实现）；自主 clean-lever surface 经 6 次 fresh probe（env R2459 / MQ L4 / @layer / CDO/CDC / math / font-matching 族）确证穷尽——ZW CSS 解析/values/syntax 层 common surface feature-complete。**门禁**：零代码本轮不跑昂贵 make test。**下一轮**：续 plateau-guard（make test + product-smoke + product-smoke-legacy 回归守，R2504-R2542 链多 mechanical/comment/doc，product fixture 久未 re-baseline）或待用户点名深结构（唯一推向 95% = Phase A IFC line-box-metric 统一）。
 
 > **📍 R2542（2026-08-04）🔧✅ engine.rs 行号 doc-drift 续修 3 处 LANDED（R2513 engine.rs 拆分 2163→1419 所致 stale `.rs:NNN` 引用；纯注释零行为变更）+ 自主 clean-lever surface 续证穷尽（MQ L4 比较运算符 / @layer cascade layers 双 fresh probe 均确认已完整实现）**。承接 R2541「file-size FULLY 收官，后续仅 plateau-guard / 待用户深结构」。本轮 verify-then-fix 两路：**(1) doc-drift**（R2482/R2502/R2515 模式）——全仓 `.rs:NNN` 注释引用对 R2513 拆分后越界核查：engine.rs 现 1424 行，3 处引用越界/错位 → 修：`table_layout_tests.rs:132 engine.rs:1007→1170`（is_block_level 现 @1170）、`anonymous_flex_item_tests.rs:793 engine.rs:1888→1170`（1888>1424 不存在）、`r1982_overflow_scroll_container_diag.rs:95 engine.rs:1905→postprocess.rs:1652`（resolve_relative_inset R2513 抽至 engine/postprocess.rs:1652，1905>1424 不存在）；全仓核 engine.rs N>1424 零残留 + shorthand/mod.rs/property/types.rs/painter/text.rs 等 split 文件越界零残留；postprocess.rs:844 `engine.rs:1170`（is_block_level）经核仍正确无需改。**(2) fresh clean-lever probe 双证 stale**——候选清单「MQ L4 比较运算符 token 化」经核 media_query.rs `MediaFeatureOp` 五态（Exact/GreaterThan/GreaterEqual/LessThan/LessEqual）+ `parse_op` + `parse_simple_range`/`try_parse_combined_range` 全 5 运算符 + 双侧范围 `(600px<=width<=1000px)` 已完整实现（R2205/R2437/R2446 多轮已记，候选清单 stale→订正作废）；@layer cascade layers 经核 css-parser `LayerRule`/`consume_layer_rule` + style-system `CascadeOrder.layer_index`+`sort_key`（unlayered>layered、later>earlier）+ matcher `collect_from_rules` layer_counter + revert-layer 全链 + 44 WPT 文件，**已完整实现非缺口**。**门禁**：fmt OK + `cargo clippy --workspace --all-targets -D warnings` 干净（纯注释增量 zero-warning）；纯注释零行为变更不跑昂贵 make test。**意义**：doc-drift 续修（R2513 拆分遗留越界引用清零，注释不再引不存在行号）；双 fresh probe 再证「自主 clean-lever surface 穷尽」。**下一轮**：续 plateau-guard / 待用户点名深结构（唯一推向 95% 路径 = Phase A IFC line-box-metric 统一）。
@@ -656,14 +658,14 @@
 
 ### 产品 smoke（最新）
 
-- **welcome**：16.84%（R632 line-height override 改善，自 R371 16.98%）
+- **welcome**：17.03%（R2544 re-baseline 复测 post-split 无回归，81737/480000px；R632 后稳定；旧快照 16.84% stale）
 - **wintertc**：13.59%（R227+R255 后）
 - **morning-work**：18.15%（R630 多行 y 分行 + R632 line-height 让中文行级度量差异诚实显现）
 - **fullpage**：48.65%（R255 ua_default_display 修 4× 幻影盒 89.14%→48.65%）
 
 ### 测试覆盖率
 
-- **cargo test**：13000+ 测试全部通过（`make test`：13129 passed / 0 failed / 74 ignored，截至 R2459）
+- **cargo test**：13000+ 测试全部通过（`make test`：13190 passed / 0 failed / 74 ignored，截至 R2544；R2542/R2543 零测试增删故自 R2541 持平）
 - **cargo clippy**：`cargo clippy --workspace --all-targets -D warnings` 通过
 - **#[ignore] 测试**：74 个 ignored（real_website_compat.rs 等因本地网络不稳定的用例，不计入通过率）
 
