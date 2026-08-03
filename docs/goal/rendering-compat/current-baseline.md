@@ -54,7 +54,7 @@
 
 ## 测试基线
 
-- 总测试数：~13,015，全绿（`make test`：13015 passed / 0 failed / 74 ignored，截至 R2370）
+- 总测试数：~13,190，全绿（`make test`：13190 passed / 0 failed / 74 ignored，截至 R2523）
 - Coverage：95.46% line, 96.94% function, 94.88% region
 - Inline reftest：685 个，100% 通过（⚠️ 手写简单场景，容差过宽松，**不计入本目标通过率统计**。本目标的通过率必须基于上游真实 WPT reftest）
 - **关键事实**：当前 WPT runner 是 smoke test，不证明渲染正确性。本目标的核心挑战是从"不崩溃"升级到"渲染正确"。（历史：M7 前渲染器仅支持 3/13 种图元；**M7 后 CPU/GPU 均已支持全 13 种图元**——见 Current Proven Baseline 表。当前 reftest 通过率受字体度量 / 布局结构性 plateau 限制，非图元覆盖限制。）

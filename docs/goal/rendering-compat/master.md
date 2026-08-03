@@ -521,7 +521,7 @@
 
 ## 通过率快照
 
-- **make test**：13184 passed / 0 failed / 74 ignored（R2509 parser.rs 拆分复核确认 13184 持平、零回归；R2500 = overflow-clip-margin 特性 + 1 单测；R2499 CSS Logical sizing cascade canonical 化在前）
+- **make test**：13190 passed / 0 failed / 74 ignored（R2523 text-emphasis-color +1 unit / R2522 text-underline-offset +4 unit / R2517 text-decoration-line +1 unit，累加自 R2509 的 13184；每轮零回归 EXIT=0）
 - **reftest oracle**：58.8% oracle-pass（5969/10397，+0.6pp vs R2185 baseline），57.6% credible
 - **product-smoke**：welcome 17.03% / wintertc / morning item-tag:3 全 PASS
 - **product-smoke-legacy**：51/51 struct PASS，19-testpage 17.23%（−5.16pp），20-mixed 11.49%（−1.64pp）
