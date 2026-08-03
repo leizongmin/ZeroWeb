@@ -44,7 +44,7 @@ ZW 对 vertical-rl/lr 的支持是**纯 ZW converter 层 axis-swap emulation**�
 
 - **输入侧**（`converter::apply_vertical_writing_mode`，converter/mod.rs:276-322）：对 taffy `Style` 全轴交换（size.width↔height / margin / padding / border / flex_direction Row↔Column / inset / min/max_size），在 `tree.rs:960` 建 taffy 树时应用。taffy 见到的是「水平模型」输入。
 - **布局**：taffy 按物理 horizontal-tb 算（block 垂直堆叠 / flex Row 水平等），**不知 writing-mode**。grep `crates/taffy-local/src/compute/`（block/flex/grid/float）零 `writing_mode` 分支；唯一提及是 `geometry.rs:74-81` 注释「naively assuming Inline axis is Horizontal... will change if Taffy ever implements the writing_mode property」+ `test.rs:104` test-only `WritingMode` enum。
-- **输出侧**（`engine::extract_layout`，engine.rs:1452）：reverse-swap（x↔y, width↔height, border/padding/margin 对应轴）还原视觉坐标。
+- **输出侧**（`engine::extract_layout`，engine.rs:1025）：reverse-swap（x↔y, width↔height, border/padding/margin 对应轴）还原视觉坐标。
 
 这套 emulation 对**简单 case**（固定尺寸块、纯 block-flow 重排）工作——`vertical_block_flow.rs::apply_vertical_block_flow`（postprocess，R1545 net+1）已修纯 block 容器的子重定位（rl 右到左 / lr 左到右）+ 物理 width（block-size=Σ 子宽）。
 
