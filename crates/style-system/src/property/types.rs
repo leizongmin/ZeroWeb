@@ -127,18 +127,33 @@ pub enum TextDecorationValue {
 }
 
 /// CSS text-decoration-line 值。
-#[derive(Debug, Clone, PartialEq)]
-pub enum TextDecorationLineValue {
-    /// none。
-    None,
+///
+/// 支持多值组合（CSS Text Decoration §3：`underline overline line-through` 可任意组合），
+/// 每条装饰线独立 flag。`none` = 全 false（无装饰）；obsolete `blink` 解析为全 false
+/// （不渲染，与历史 `Blink => return` 行为一致）。driving: WPT css-text-decor
+/// text-decoration-line-010/011/012/013（多值组合）。
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct TextDecorationLineValue {
     /// underline。
-    Underline,
+    pub underline: bool,
     /// overline。
-    Overline,
+    pub overline: bool,
     /// line-through。
-    LineThrough,
-    /// blink。
-    Blink,
+    pub line_through: bool,
+}
+
+impl TextDecorationLineValue {
+    /// `none`：无任何装饰线。
+    pub const NONE: Self = Self {
+        underline: false,
+        overline: false,
+        line_through: false,
+    };
+
+    /// 是否有任何装饰线（驱动绘制；用于 IFC 布局判断与 paint 早退）。
+    pub fn has_any(&self) -> bool {
+        self.underline || self.overline || self.line_through
+    }
 }
 
 /// CSS text-decoration-style 值。

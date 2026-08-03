@@ -25,11 +25,10 @@ use zero_style_system::WritingModeValue;
 ///
 /// 递归扫描 `root_id` 子树所有元素的 `text_decoration_line` / `text_emphasis_style`。
 pub fn subtree_has_text_decoration(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, root_id: NodeId) -> bool {
-    use zero_style_system::property::types::{TextDecorationLineValue, TextEmphasisStyleValue};
+    use zero_style_system::property::types::TextEmphasisStyleValue;
     fn scan(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, id: NodeId) -> bool {
         if let Some(s) = styles.get(&id)
-            && (!matches!(s.text_decoration_line, TextDecorationLineValue::None)
-                || !matches!(s.text_emphasis_style, TextEmphasisStyleValue::None))
+            && (s.text_decoration_line.has_any() || !matches!(s.text_emphasis_style, TextEmphasisStyleValue::None))
         {
             return true;
         }

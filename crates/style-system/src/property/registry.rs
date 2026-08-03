@@ -75,7 +75,7 @@ impl PropertyRegistry {
             // 文本
             "text-align" => Some(TextAlign(TextAlignValue::Start)),
             "text-decoration" => Some(TextDecoration(TextDecorationValue::None)),
-            "text-decoration-line" => Some(TextDecorationLine(TextDecorationLineValue::None)),
+            "text-decoration-line" => Some(TextDecorationLine(TextDecorationLineValue::NONE)),
             "text-decoration-color" => Some(TextDecorationColor(ColorValue::CurrentColor)),
             "text-decoration-style" => Some(TextDecorationStyle(TextDecorationStyleValue::Solid)),
             "text-decoration-thickness" => Some(TextDecorationThickness(TextDecorationThicknessValue::Auto)),

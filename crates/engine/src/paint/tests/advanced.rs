@@ -1031,7 +1031,11 @@ fn test_paint_text_decoration_underline() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -1053,7 +1057,11 @@ fn test_paint_text_decoration_overline() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_decoration_line = TextDecorationLineValue::Overline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: false,
+        overline: true,
+        line_through: false,
+    };
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -1076,7 +1084,11 @@ fn test_paint_text_decoration_line_through() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_decoration_line = TextDecorationLineValue::LineThrough;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: false,
+        overline: false,
+        line_through: true,
+    };
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -1099,7 +1111,7 @@ fn test_paint_text_decoration_none() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_decoration_line = TextDecorationLineValue::None;
+    style.text_decoration_line = TextDecorationLineValue::NONE;
     styles.insert(elem, style);
 
     let mut painter = Painter::new();

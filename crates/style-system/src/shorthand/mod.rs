@@ -1904,7 +1904,10 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
 
     let toks = zero_css_parser::values::split_paren_aware_tokens(value);
     let parts: Vec<&str> = toks.iter().map(|s| s.as_str()).collect();
-    let mut line = "none".to_string();
+    // 多值组合支持（CSS Text Decoration §3）：`text-decoration: underline overline red`
+    // 需把多个 line 关键字累加为 `text-decoration-line: underline overline`（旧实现 `line = part`
+    // 覆盖致仅保留最后一个）。driving: css-text-decor text-decoration-line-010/011/012/013。
+    let mut line_toks: Vec<&str> = Vec::new();
     let mut dec_style = "solid".to_string();
     let mut color = "currentcolor".to_string();
 
@@ -1914,13 +1917,18 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
 
     for part in &parts {
         if is_line(part) {
-            line = part.to_string();
+            line_toks.push(part); // 累加多值（underline overline → "underline overline"）
         } else if is_dec_style(part) {
             dec_style = part.to_string();
         } else if looks_like_color(part) {
             color = part.to_string();
         }
     }
+    let line = if line_toks.is_empty() {
+        "none".to_string()
+    } else {
+        line_toks.join(" ")
+    };
 
     vec![
         mk("text-decoration-line", &line),

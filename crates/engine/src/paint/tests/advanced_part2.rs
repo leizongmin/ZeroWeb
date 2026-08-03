@@ -32,7 +32,7 @@ fn test_paint_text_decoration_blink() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_decoration_line = TextDecorationLineValue::Blink;
+    style.text_decoration_line = TextDecorationLineValue::NONE;
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -53,7 +53,11 @@ fn test_paint_underline_position() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -82,7 +86,11 @@ fn test_paint_line_through_position() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_decoration_line = TextDecorationLineValue::LineThrough;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: false,
+        overline: false,
+        line_through: true,
+    };
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -136,7 +144,11 @@ fn test_paint_opacity_with_decoration() {
     style.background_color = ColorValue::Rgba(255, 0, 0, 255);
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     style.opacity = 0.5;
     styles.insert(elem, style);
 
@@ -213,7 +225,11 @@ fn test_paint_text_decoration_no_text() {
     style.font_size = LengthValue::Px(16.0);
     // color 为 CurrentColor 时不生成 glyph 和 text-decoration
     style.color = ColorValue::CurrentColor;
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -483,7 +499,11 @@ fn test_paint_text_decoration_line_through_extra() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(16.0);
     style.color = ColorValue::Rgba(0, 0, 0, 255);
-    style.text_decoration_line = zero_style_system::property::TextDecorationLineValue::LineThrough;
+    style.text_decoration_line = zero_style_system::property::TextDecorationLineValue {
+        underline: false,
+        overline: false,
+        line_through: true,
+    };
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -733,7 +753,11 @@ fn test_paint_text_decoration_zero_negative_width() {
     let color = Color::rgb(0, 0, 0);
 
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
 
     painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 0.0, color, &style);
     assert!(painter.primitives().fills.is_empty(), "宽度为 0 不应生成装饰填充");
@@ -753,7 +777,11 @@ fn test_paint_text_decoration_inset_shifts_and_extends_line() {
     // 基线：无 inset，solid underline 从 base_x 起、宽 total_width。
     let mut painter = Painter::new();
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     style.text_decoration_style = TextDecorationStyleValue::Solid;
     painter.paint_text_decoration_from_style(base_x, 16.0, font_size, total_width, color, &style);
     let fills = &painter.primitives().fills;
@@ -792,7 +820,11 @@ fn test_paint_text_decoration_inset_zero_width_skipped() {
     let mut painter = Painter::new();
     let color = Color::rgb(0, 0, 0);
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     // start=30, end=30, total_width=50 → line_w = 50-30-30 = -10 ≤ 0 → 跳过。
     style.text_decoration_inset = zero_css_parser::values::TextDecorationInsetValue {
         start: LengthValue::Px(30.0),
@@ -1183,7 +1215,11 @@ fn test_paint_contain_strict_triggers_clip() {
 fn test_decoration_style_solid() {
     let mut painter = Painter::new();
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     style.text_decoration_style = TextDecorationStyleValue::Solid;
 
     painter.paint_text_decoration_from_style(10.0, 20.0, 16.0, 100.0, Color::rgb(0, 0, 255), &style);
@@ -1198,7 +1234,11 @@ fn test_decoration_style_solid() {
 fn test_decoration_style_double() {
     let mut painter = Painter::new();
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     style.text_decoration_style = TextDecorationStyleValue::Double;
 
     painter.paint_text_decoration_from_style(10.0, 20.0, 16.0, 100.0, Color::rgb(255, 0, 0), &style);
@@ -1217,7 +1257,11 @@ fn test_decoration_style_double() {
 fn test_decoration_style_dotted() {
     let mut painter = Painter::new();
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     style.text_decoration_style = TextDecorationStyleValue::Dotted;
 
     painter.paint_text_decoration_from_style(0.0, 16.0, 12.0, 80.0, Color::rgb(0, 128, 0), &style);
@@ -1235,7 +1279,11 @@ fn test_decoration_style_dotted() {
 fn test_decoration_style_dashed() {
     let mut painter = Painter::new();
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     style.text_decoration_style = TextDecorationStyleValue::Dashed;
 
     painter.paint_text_decoration_from_style(0.0, 16.0, 12.0, 80.0, Color::rgb(128, 0, 128), &style);
@@ -1253,7 +1301,11 @@ fn test_decoration_style_dashed() {
 fn test_decoration_style_wavy() {
     let mut painter = Painter::new();
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     style.text_decoration_style = TextDecorationStyleValue::Wavy;
 
     painter.paint_text_decoration_from_style(0.0, 16.0, 12.0, 80.0, Color::rgb(0, 0, 0), &style);
@@ -1271,7 +1323,11 @@ fn test_decoration_style_wavy() {
 fn test_decoration_custom_color() {
     let mut painter = Painter::new();
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     style.text_decoration_color = zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255);
 
     painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 0, 255), &style);
@@ -1289,7 +1345,11 @@ fn test_decoration_custom_color() {
 fn test_decoration_current_color() {
     let mut painter = Painter::new();
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Underline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     style.text_decoration_color = zero_css_parser::values::ColorValue::CurrentColor;
 
     painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 200, 0), &style);
@@ -1305,7 +1365,11 @@ fn test_decoration_current_color() {
 fn test_decoration_overline_position() {
     let mut painter = Painter::new();
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Overline;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: false,
+        overline: true,
+        line_through: false,
+    };
 
     painter.paint_text_decoration_from_style(0.0, 50.0, 20.0, 100.0, Color::rgb(0, 0, 0), &style);
 
@@ -1321,7 +1385,11 @@ fn test_decoration_overline_position() {
 fn test_decoration_line_through_position() {
     let mut painter = Painter::new();
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::LineThrough;
+    style.text_decoration_line = TextDecorationLineValue {
+        underline: false,
+        overline: false,
+        line_through: true,
+    };
 
     painter.paint_text_decoration_from_style(0.0, 50.0, 20.0, 100.0, Color::rgb(0, 0, 0), &style);
 
@@ -1338,11 +1406,11 @@ fn test_decoration_blink_none_no_output() {
     let mut painter = Painter::new();
 
     let mut style = zero_style_system::ComputedStyle::default();
-    style.text_decoration_line = TextDecorationLineValue::Blink;
+    style.text_decoration_line = TextDecorationLineValue::NONE;
     painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 0, 0), &style);
     assert!(painter.primitives().fills.is_empty(), "blink 不应生成装饰");
 
-    style.text_decoration_line = TextDecorationLineValue::None;
+    style.text_decoration_line = TextDecorationLineValue::NONE;
     painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 0, 0), &style);
     assert!(
         painter.primitives().fills.is_empty() && painter.primitives().strokes.is_empty(),

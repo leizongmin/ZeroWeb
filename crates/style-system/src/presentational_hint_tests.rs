@@ -255,7 +255,14 @@ fn phrase_elements_get_ua_italic_and_decoration() {
         let id = doc.get_elements_by_tag_name(tag)[0];
         let s = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));
         assert!(
-            matches!(s.text_decoration_line, TextDecorationLineValue::Underline),
+            matches!(
+                s.text_decoration_line,
+                TextDecorationLineValue {
+                    underline: true,
+                    overline: false,
+                    line_through: false
+                }
+            ),
             "<{tag}> should be underline from UA, got {:?}",
             s.text_decoration_line
         );
@@ -264,7 +271,14 @@ fn phrase_elements_get_ua_italic_and_decoration() {
         let id = doc.get_elements_by_tag_name(tag)[0];
         let s = styles.get(&id).unwrap_or_else(|| panic!("{tag} styled"));
         assert!(
-            matches!(s.text_decoration_line, TextDecorationLineValue::LineThrough),
+            matches!(
+                s.text_decoration_line,
+                TextDecorationLineValue {
+                    underline: false,
+                    overline: false,
+                    line_through: true
+                }
+            ),
             "<{tag}> should be line-through from UA"
         );
     }

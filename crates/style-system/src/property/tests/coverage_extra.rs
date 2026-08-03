@@ -233,25 +233,57 @@ fn test_parse_container_type_computed() {
 fn test_parse_text_decoration_line_all() {
     assert!(matches!(
         parse_text_decoration_line("none"),
-        Some(TextDecorationLineValue::None)
+        Some(TextDecorationLineValue::NONE)
     ));
     assert!(matches!(
         parse_text_decoration_line("underline"),
-        Some(TextDecorationLineValue::Underline)
+        Some(TextDecorationLineValue {
+            underline: true,
+            overline: false,
+            line_through: false
+        })
     ));
     assert!(matches!(
         parse_text_decoration_line("overline"),
-        Some(TextDecorationLineValue::Overline)
+        Some(TextDecorationLineValue {
+            underline: false,
+            overline: true,
+            line_through: false
+        })
     ));
     assert!(matches!(
         parse_text_decoration_line("line-through"),
-        Some(TextDecorationLineValue::LineThrough)
+        Some(TextDecorationLineValue {
+            underline: false,
+            overline: false,
+            line_through: true
+        })
     ));
     assert!(matches!(
         parse_text_decoration_line("blink"),
-        Some(TextDecorationLineValue::Blink)
+        Some(TextDecorationLineValue::NONE)
     ));
     assert!(parse_text_decoration_line("invalid").is_none());
+}
+
+#[test]
+fn test_parse_text_decoration_line_multi_value() {
+    // 多值组合（CSS Text Decoration §3）—— driving: css-text-decor 010/011/012/013。
+    // 两条组合。
+    let v = parse_text_decoration_line("underline overline").unwrap();
+    assert!(v.underline && v.overline && !v.line_through);
+    // 三条全组合（顺序无关）。
+    let v = parse_text_decoration_line("overline line-through underline").unwrap();
+    assert!(v.underline && v.overline && v.line_through);
+    // 大小写不敏感 + underline line-through（最常见组合）。
+    let v = parse_text_decoration_line("Underline Line-Through").unwrap();
+    assert!(v.underline && !v.overline && v.line_through);
+    // 任一非法关键字 → 整值无效。
+    assert!(parse_text_decoration_line("underline bogus").is_none());
+    // none 与其他组合 → none 取消（全 false）。
+    let v = parse_text_decoration_line("underline none").unwrap();
+    assert!(!v.has_any());
+    assert!(v == TextDecorationLineValue::NONE);
 }
 
 #[test]

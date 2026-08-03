@@ -351,7 +351,11 @@ fn test_text_decoration_underline_pipeline() {
     let div_style = styles.get(&div).expect("div 应有计算样式");
     assert_eq!(
         div_style.text_decoration_line,
-        zero_style_system::property::TextDecorationLineValue::Underline,
+        zero_style_system::property::TextDecorationLineValue {
+            underline: true,
+            overline: false,
+            line_through: false
+        },
         "div 的 text-decoration-line 应为 Underline"
     );
 }
@@ -384,7 +388,11 @@ fn test_text_decoration_line_through_pipeline() {
     let div_style = styles.get(&div).expect("div 应有计算样式");
     assert_eq!(
         div_style.text_decoration_line,
-        zero_style_system::property::TextDecorationLineValue::LineThrough,
+        zero_style_system::property::TextDecorationLineValue {
+            underline: false,
+            overline: false,
+            line_through: true
+        },
         "div 的 text-decoration-line 应为 LineThrough"
     );
 }
@@ -417,7 +425,7 @@ fn test_text_decoration_none_pipeline() {
     let div_style = styles.get(&div).expect("div 应有计算样式");
     assert_eq!(
         div_style.text_decoration_line,
-        zero_style_system::property::TextDecorationLineValue::None,
+        zero_style_system::property::TextDecorationLineValue::NONE,
         "div 的 text-decoration-line 应为 None"
     );
 }
@@ -587,7 +595,11 @@ fn test_text_decoration_with_text_shadow_pipeline() {
     // 验证 text-decoration-line 为 Underline
     assert_eq!(
         div_style.text_decoration_line,
-        zero_style_system::property::TextDecorationLineValue::Underline,
+        zero_style_system::property::TextDecorationLineValue {
+            underline: true,
+            overline: false,
+            line_through: false
+        },
         "div 的 text-decoration-line 应为 Underline"
     );
 
@@ -1117,7 +1129,11 @@ fn test_text_decoration_style_dotted_pipeline() {
     let span_style = styles.get(&span).expect("span 应有计算样式");
     assert_eq!(
         span_style.text_decoration_line,
-        zero_style_system::property::TextDecorationLineValue::Underline,
+        zero_style_system::property::TextDecorationLineValue {
+            underline: true,
+            overline: false,
+            line_through: false
+        },
         "text-decoration-line 应为 Underline"
     );
     assert_eq!(
@@ -1152,7 +1168,11 @@ fn test_text_decoration_style_dashed_pipeline() {
     let span_style = styles.get(&span).expect("span 应有计算样式");
     assert_eq!(
         span_style.text_decoration_line,
-        zero_style_system::property::TextDecorationLineValue::LineThrough,
+        zero_style_system::property::TextDecorationLineValue {
+            underline: false,
+            overline: false,
+            line_through: true
+        },
         "text-decoration-line 应为 LineThrough"
     );
     assert_eq!(
@@ -1252,7 +1272,11 @@ fn test_text_decoration_shorthand_named_color_pipeline() {
     let span_style = styles.get(&span).expect("span 应有计算样式");
     assert_eq!(
         span_style.text_decoration_line,
-        zero_style_system::property::TextDecorationLineValue::Underline,
+        zero_style_system::property::TextDecorationLineValue {
+            underline: true,
+            overline: false,
+            line_through: false
+        },
         "text-decoration-line 应为 Underline"
     );
     assert_eq!(
@@ -1287,7 +1311,11 @@ fn test_text_decoration_style_double_pipeline() {
     let span_style = styles.get(&span).expect("span 应有计算样式");
     assert_eq!(
         span_style.text_decoration_line,
-        zero_style_system::property::TextDecorationLineValue::Overline,
+        zero_style_system::property::TextDecorationLineValue {
+            underline: false,
+            overline: true,
+            line_through: false
+        },
         "text-decoration-line 应为 Overline"
     );
     assert_eq!(

@@ -19,8 +19,8 @@ use zero_style_system::{
     BackgroundImageComputedValue, BackgroundOriginComputedValue, BackgroundPositionComputedValue,
     BackgroundRepeatComputedValue, BackgroundSizeComputedValue, CaretColorComputedValue, ComputedStyle,
     FilterComputedValue, HyphensComputedValue, LineClampComputedValue, MixBlendModeComputedValue, QuotesComputedValue,
-    ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, TextDecorationLineValue,
-    TextDecorationStyleValue, TextWrapComputedValue,
+    ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, TextDecorationStyleValue,
+    TextWrapComputedValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -334,13 +334,11 @@ impl super::Painter {
             return;
         }
 
-        let y_offset = match &style.text_decoration_line {
-            TextDecorationLineValue::None | TextDecorationLineValue::Blink => return,
-            TextDecorationLineValue::Underline => font_size * 0.15,
-            TextDecorationLineValue::Overline => -font_size,
-            TextDecorationLineValue::LineThrough => -font_size * 0.35,
-        };
-        let y = baseline_y + y_offset;
+        // 多值组合支持（CSS Text Decoration §3）：`underline overline line-through`
+        // 可任意组合，每条启用的装饰线独立绘制。无任何装饰线（含 obsolete blink）早退。
+        if !style.text_decoration_line.has_any() {
+            return;
+        }
 
         // 装饰颜色：CurrentColor 使用文本颜色
         let color = if matches!(style.text_decoration_color, ColorValue::CurrentColor) {
@@ -374,7 +372,32 @@ impl super::Painter {
             return;
         }
 
-        self.paint_decoration_line(line_x, y, line_w, line_width, color, &style.text_decoration_style);
+        // 每条启用的装饰线在其 y 偏移绘制（单值时仅一条，与历史行为字节一致；
+        // 多值时各线共享 color/width/inset，仅 y 偏移不同）。
+        let decor_style = &style.text_decoration_style;
+        if style.text_decoration_line.underline {
+            self.paint_decoration_line(
+                line_x,
+                baseline_y + font_size * 0.15,
+                line_w,
+                line_width,
+                color,
+                decor_style,
+            );
+        }
+        if style.text_decoration_line.overline {
+            self.paint_decoration_line(line_x, baseline_y - font_size, line_w, line_width, color, decor_style);
+        }
+        if style.text_decoration_line.line_through {
+            self.paint_decoration_line(
+                line_x,
+                baseline_y - font_size * 0.35,
+                line_w,
+                line_width,
+                color,
+                decor_style,
+            );
+        }
     }
 
     /// 绘制文本装饰线的底层实现。

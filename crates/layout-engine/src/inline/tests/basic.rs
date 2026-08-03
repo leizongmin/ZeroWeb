@@ -1719,7 +1719,11 @@ fn test_r1099_subtree_has_text_decoration() {
     let p = doc.first_child(div).unwrap();
     let mut styles = HashMap::new();
     let mut p_style = ComputedStyle::default();
-    p_style.text_decoration_line = TextDecorationLineValue::Underline;
+    p_style.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
     styles.insert(p, p_style);
     assert!(
         subtree_has_text_decoration(&doc, &styles, div),

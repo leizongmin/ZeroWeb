@@ -98,7 +98,11 @@ fn test_text_decoration_shorthand_with_underline() {
     let s = compute_style(&doc, div, &[("text-decoration", "underline blue")]);
     assert!(matches!(
         s.text_decoration_line,
-        crate::property::types::TextDecorationLineValue::Underline
+        crate::property::types::TextDecorationLineValue {
+            underline: true,
+            overline: false,
+            line_through: false
+        }
     ));
 }
 

@@ -96,7 +96,7 @@ impl Default for ComputedStyle {
             // 文本
             text_align: TextAlignValue::Start,
             text_decoration: TextDecorationValue::None,
-            text_decoration_line: TextDecorationLineValue::None,
+            text_decoration_line: TextDecorationLineValue::NONE,
             text_decoration_color: ColorValue::CurrentColor,
             text_decoration_style: TextDecorationStyleValue::Solid,
             text_decoration_thickness: TextDecorationThicknessValue::Auto,

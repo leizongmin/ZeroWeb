@@ -227,15 +227,37 @@ pub fn parse_text_decoration(value: &str) -> Option<TextDecorationValue> {
 }
 
 /// 解析 CSS text-decoration-line 值。
+///
+/// 支持单值与多值组合（`underline overline line-through` 任意组合，CSS Text Decoration
+/// §3）。每个关键字独立累加 flag；`none` 重置为全 false（与其他组合时 `none` 取消所有线）；
+/// obsolete `blink` 接受为合法但不设 flag（不渲染）。任一非法关键字 → 整值无效（None）。
+/// driving: css-text-decor text-decoration-line-010/011/012/013。
 pub fn parse_text_decoration_line(value: &str) -> Option<TextDecorationLineValue> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "none" => Some(TextDecorationLineValue::None),
-        "underline" => Some(TextDecorationLineValue::Underline),
-        "overline" => Some(TextDecorationLineValue::Overline),
-        "line-through" => Some(TextDecorationLineValue::LineThrough),
-        "blink" => Some(TextDecorationLineValue::Blink),
-        _ => None,
+    let mut v = TextDecorationLineValue::NONE;
+    let mut seen = false;
+    for tok in value.split_whitespace() {
+        match tok.to_ascii_lowercase().as_str() {
+            "none" => {
+                v = TextDecorationLineValue::NONE;
+                seen = true;
+            }
+            "underline" => {
+                v.underline = true;
+                seen = true;
+            }
+            "overline" => {
+                v.overline = true;
+                seen = true;
+            }
+            "line-through" => {
+                v.line_through = true;
+                seen = true;
+            }
+            "blink" => seen = true, // obsolete，不渲染（不设 flag）
+            _ => return None,
+        }
     }
+    if seen { Some(v) } else { None }
 }
 
 /// 解析 CSS text-transform 值。

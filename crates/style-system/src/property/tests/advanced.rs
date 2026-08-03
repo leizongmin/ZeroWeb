@@ -885,11 +885,25 @@ fn test_writing_mode_inherit_property() {
 fn test_apply_text_decoration_underline() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "text-decoration-line", "underline"));
-    assert_eq!(style.text_decoration_line, TextDecorationLineValue::Underline);
+    assert_eq!(
+        style.text_decoration_line,
+        TextDecorationLineValue {
+            underline: true,
+            overline: false,
+            line_through: false
+        }
+    );
 
     // 无效值返回 false
     assert!(!apply_property_value(&mut style, "text-decoration-line", "invalid"));
-    assert_eq!(style.text_decoration_line, TextDecorationLineValue::Underline);
+    assert_eq!(
+        style.text_decoration_line,
+        TextDecorationLineValue {
+            underline: true,
+            overline: false,
+            line_through: false
+        }
+    );
 }
 
 #[test]
@@ -898,15 +912,22 @@ fn test_apply_text_decoration_none() {
     let mut style = ComputedStyle::default();
     // 先设置为 underline
     assert!(apply_property_value(&mut style, "text-decoration-line", "underline"));
-    assert_eq!(style.text_decoration_line, TextDecorationLineValue::Underline);
+    assert_eq!(
+        style.text_decoration_line,
+        TextDecorationLineValue {
+            underline: true,
+            overline: false,
+            line_through: false
+        }
+    );
 
     // 重置为 none
     assert!(apply_property_value(&mut style, "text-decoration-line", "none"));
-    assert_eq!(style.text_decoration_line, TextDecorationLineValue::None);
+    assert_eq!(style.text_decoration_line, TextDecorationLineValue::NONE);
 
     // 默认值也是 none
     let style = ComputedStyle::default();
-    assert_eq!(style.text_decoration_line, TextDecorationLineValue::None);
+    assert_eq!(style.text_decoration_line, TextDecorationLineValue::NONE);
 }
 
 #[test]
@@ -946,15 +967,19 @@ fn test_text_transform_not_inherited_decoration() {
     assert!(!PropertyRegistry::is_inherited("text-decoration-line"));
 
     let mut parent = ComputedStyle::default();
-    parent.text_decoration_line = TextDecorationLineValue::Underline;
+    parent.text_decoration_line = TextDecorationLineValue {
+        underline: true,
+        overline: false,
+        line_through: false,
+    };
 
     let mut child = ComputedStyle::default();
-    assert_eq!(child.text_decoration_line, TextDecorationLineValue::None);
+    assert_eq!(child.text_decoration_line, TextDecorationLineValue::NONE);
 
     // inherit_property 对 text-decoration-line 应返回 false
     assert!(!inherit_property(&parent, &mut child, "text-decoration-line"));
     // 子元素值不变
-    assert_eq!(child.text_decoration_line, TextDecorationLineValue::None);
+    assert_eq!(child.text_decoration_line, TextDecorationLineValue::NONE);
 }
 
 #[test]

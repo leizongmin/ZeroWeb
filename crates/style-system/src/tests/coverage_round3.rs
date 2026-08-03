@@ -531,7 +531,14 @@ fn apply_text_decoration_line_line_through() {
         "text-decoration-line",
         "line-through"
     ));
-    assert_eq!(style.text_decoration_line, TextDecorationLineValue::LineThrough);
+    assert_eq!(
+        style.text_decoration_line,
+        TextDecorationLineValue {
+            underline: false,
+            overline: false,
+            line_through: true
+        }
+    );
 }
 
 #[test]
