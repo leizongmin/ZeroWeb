@@ -11,7 +11,7 @@ use zero_layout_engine::LayoutBox;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, RoundedRectPrimitive};
-use zero_style_system::ComputedStyle;
+use zero_style_system::{ComputedStyle, ContentComputedValue};
 
 use crate::measure_char_for_paint;
 use crate::paint::color::color_value_to_render;
@@ -454,7 +454,7 @@ impl super::super::Painter {
             return;
         }
 
-        let color = color_value_to_render(&style.color);
+        let color = color_value_to_render(style.marker_pseudo.as_deref().map(|m| &m.color).unwrap_or(&style.color));
         let default_font_id = self
             .resolve_font_id(&style.font_family, &style.font_weight, &style.font_style)
             .0;
@@ -466,6 +466,45 @@ impl super::super::Painter {
             zero_css_parser::values::ListStylePositionValue::Outside => marker_x - marker_size * 2.5,
             zero_css_parser::values::ListStylePositionValue::Inside => marker_x + marker_size * 0.5,
         };
+
+        // ::marker 伪元素 content 覆盖（CSS Lists 3）：marker_pseudo 存在时，content 决定标记
+        // 文本——`none` 抑制标记；具体生成内容（String/Counter/Counters/List）替代默认
+        // list-style-type 标记；`normal`/Attr/Url 落默认标记。color 已由上方 marker_pseudo.color
+        // 覆盖。marker_pseudo 默认 None → 整块跳过，默认 marker 零行为变更。
+        if let Some(marker_style) = style.marker_pseudo.as_deref() {
+            match &marker_style.content {
+                // content: none → 抑制标记。
+                ContentComputedValue::None => return,
+                // 具体生成内容 → 解析为文本，按 text marker 同位绘字。
+                ContentComputedValue::String(_)
+                | ContentComputedValue::Counter { .. }
+                | ContentComputedValue::Counters { .. }
+                | ContentComputedValue::List(_) => {
+                    if let Some(text) = self.resolve_generated_content_text(&marker_style.content) {
+                        let mut char_x = actual_marker_x;
+                        let char_y = marker_y + font_size;
+                        for ch in text.chars() {
+                            self.primitives.add_glyph(GlyphPrimitive {
+                                x: char_x,
+                                y: char_y,
+                                font_size: font_size * 0.85,
+                                color,
+                                glyph_id: ch as u32,
+                                font_id: default_font_id,
+                                bitmap_width: None,
+                                bitmap_height: None,
+                                rotation: 0.0,
+                                synthetic_italic: false,
+                            });
+                            char_x += measure_char_for_paint(ch, font_size * 0.85, false);
+                        }
+                        return;
+                    }
+                }
+                // normal/Attr/Url → 用默认 list-style-type 标记（color 已覆盖）。
+                _ => {}
+            }
+        }
 
         match &style.list_style_type {
             ListStyleTypeValue::Disc => {

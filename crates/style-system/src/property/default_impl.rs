@@ -355,6 +355,7 @@ impl Default for ComputedStyle {
             mask_mode: MaskModeComputedValue::MatchSource,
             before_pseudo: None,
             after_pseudo: None,
+            marker_pseudo: None,
         }
     }
 }

@@ -531,6 +531,9 @@ pub struct ComputedStyle {
     pub before_pseudo: Option<Box<ComputedStyle>>,
     /// `::after` 伪元素的计算样式（语义同 `before_pseudo`，合成在元素内容后）。
     pub after_pseudo: Option<Box<ComputedStyle>>,
+    /// `::marker` 伪元素的计算样式（CSS Lists 3；仅 `<li>` 计算，继承自本元素 → 默认
+    /// color 等同本元素，paint_list_marker 据此应用 `::marker { color/content }` 覆盖）。
+    pub marker_pseudo: Option<Box<ComputedStyle>>,
 }
 
 impl ComputedStyle {

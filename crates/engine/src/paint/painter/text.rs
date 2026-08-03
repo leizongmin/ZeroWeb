@@ -112,42 +112,32 @@ impl super::Painter {
         exclusions
     }
 
-    /// 绘制列表标记（disc/circle/square/decimal 等）。
-    /// 绘制 CSS `content` 属性生成的文本内容。
+    /// 解析生成内容（`content` 属性）为文本字面量。
     ///
-    /// 当元素的 `content` 属性为 `String` 或 `Counter` 时，
-    /// 在元素的内容区域起始位置绘制对应的文本。
-    /// 支持计数器值的十进制、小写字母、大写字母、小写罗马、大写罗马格式化。
-    pub(crate) fn paint_content(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
-        let text = match &style.content {
-            ContentComputedValue::Normal | ContentComputedValue::None | ContentComputedValue::Attr(_) => return,
-            // R1988：content:url() 由 inject_pseudo_text_nodes 注入 `<img>` 元素渲染，paint_content
-            //（文本路径）不处理图片，直接返回。
-            ContentComputedValue::Url(_) => return,
-            ContentComputedValue::String(s) => s.clone(),
-            ContentComputedValue::Counter {
-                name,
-                style: counter_style,
-            } => {
-                let value = self.get_counter(name).unwrap_or(0);
-                format_counter_text(value, counter_style)
+    /// 返回 `Some(text)` 当 content 为 `String`/`Counter`/`Counters`/`List`（计数器经当前
+    /// counter 作用域状态解析）；返回 `None` 当 `Normal`/`None`/`Attr`/`Url`（后者由别处
+    /// 处理或无文本）。`paint_content`（元素生成内容）与 `paint_list_marker`（`::marker`
+    /// content 覆盖）共用此解析，避免两处重复实现计数器/拼接逻辑。
+    pub(super) fn resolve_generated_content_text(&self, content: &ContentComputedValue) -> Option<String> {
+        match content {
+            ContentComputedValue::String(s) => Some(s.clone()),
+            ContentComputedValue::Counter { name, style } => {
+                Some(format_counter_text(self.get_counter(name).unwrap_or(0), style))
             }
             // counters(name, sep[, style])（CSS Lists 3）：取全部祖先作用域值，按 sep 拼接。
-            ContentComputedValue::Counters {
-                name,
-                separator,
-                style: counter_style,
-            } => {
+            ContentComputedValue::Counters { name, separator, style } => {
                 let scopes: Vec<i64> = match self.get_counter_scopes(name) {
                     Some(s) if !s.is_empty() => s.to_vec(),
                     // 无作用域（计数器未建立）→ 单个默认 0，与 counter() 的 unwrap_or(0) 一致。
                     _ => vec![0],
                 };
-                scopes
-                    .iter()
-                    .map(|&v| format_counter_text(v, counter_style))
-                    .collect::<Vec<_>>()
-                    .join(separator)
+                Some(
+                    scopes
+                        .iter()
+                        .map(|&v| format_counter_text(v, style))
+                        .collect::<Vec<_>>()
+                        .join(separator),
+                )
             }
             // 多 item 混合内容（`"Chapter " counter(c) ": "`）：逐 item 解析拼文本。
             ContentComputedValue::List(items) => {
@@ -156,8 +146,7 @@ impl super::Painter {
                     match item {
                         ContentListItem::Str(s) => buf.push_str(s),
                         ContentListItem::Counter { name, style } => {
-                            let value = self.get_counter(name).unwrap_or(0);
-                            buf.push_str(&format_counter_text(value, style));
+                            buf.push_str(&format_counter_text(self.get_counter(name).unwrap_or(0), style));
                         }
                         ContentListItem::Counters { name, separator, style } => {
                             let scopes: Vec<i64> = match self.get_counter_scopes(name) {
@@ -174,8 +163,27 @@ impl super::Painter {
                         }
                     }
                 }
-                buf
+                Some(buf)
             }
+            // Normal/None/Attr/Url → 无文本。
+            _ => None,
+        }
+    }
+
+    /// 绘制列表标记（disc/circle/square/decimal 等）。
+    /// 绘制 CSS `content` 属性生成的文本内容。
+    ///
+    /// 当元素的 `content` 属性为 `String` 或 `Counter` 时，
+    /// 在元素的内容区域起始位置绘制对应的文本。
+    /// 支持计数器值的十进制、小写字母、大写字母、小写罗马、大写罗马格式化。
+    pub(crate) fn paint_content(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        // R2573：content 文本解析抽出为 resolve_generated_content_text（paint_content 与
+        // paint_list_marker 的 ::marker content 覆盖共用）。Normal/None/Attr/Url 无文本 → None。
+        let text = match self.resolve_generated_content_text(&style.content) {
+            Some(t) => t,
+            // R1988：content:url() 由 inject_pseudo_text_nodes 注入 `<img>` 元素渲染，paint_content
+            //（文本路径）不处理图片；Normal/None/Attr 亦无文本 → 均返回。
+            None => return,
         };
 
         if text.is_empty() {

@@ -336,6 +336,30 @@ impl StyleSystem {
                 quirks_mode,
                 Some("after"),
             );
+            // ::marker 伪元素（CSS Lists 3）：仅 `<li>` 计算（paint_list_marker 同 gate；
+            // ZW 以 tag 名 `li` 判定 list-item，非 display:list-item）。继承自本元素 → 默认
+            // color 等同本元素；仅当 ::marker 实际改变 content 或 color 时存储（省内存 +
+            // paint 仅在 Some 时走覆盖路径，默认 marker 零行为变更）。
+            let is_li = matches!(
+                &node_data.kind,
+                NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("li")
+            );
+            if is_li {
+                let marker = self.compute_element_style_internal(
+                    doc,
+                    node,
+                    stylesheets,
+                    Some(&elem_style),
+                    &saved_custom,
+                    quirks_mode,
+                    Some("marker"),
+                );
+                if !matches!(marker.content, property::types::ContentComputedValue::Normal)
+                    || marker.color != elem_style.color
+                {
+                    computed.marker_pseudo = Some(Box::new(marker));
+                }
+            }
             self.custom_properties = saved_custom;
             // R2246：HTML rendering §quotes — `<q>` 自动引号。depth = `<q>` 祖先数（CSS
             // open-quote 深度）；解析引号对（`quotes` 属性优先，Auto/无声明→英语默认，None→无）。
