@@ -140,10 +140,10 @@
 
 **当前能力/缺口详细基线**：详见 [current-baseline.md](rendering-compat/current-baseline.md)（完整能力矩阵和已知缺口表）。
 
-**关键状态摘要**（截至 2026-07-16）：
+**关键状态摘要**（截至 2026-08-04·R2566）：
 - ✅ **已完成**：CPU/GPU 渲染器全 13 种图元（M7）、浏览器图元消费（M7）、Margin 折叠（R323）、BFC margin 隔离（R323）、Float 核心布局（R895）、Position fixed（R324）、外部样式表加载（R213）、图片子资源贯通（R318）、产品 smoke 证据链
 - ⚠️ **P1-严重缺口**：Inline formatting 所有权分裂、Layout/Paint IFC 双路径、浏览器层 glyph 重排、滚动容器
-- 📊 **测试基线**：总测试数 ~12,001 全绿，覆盖率 95.46% line / 96.94% function / 94.88% region
+- 📊 **测试基线**：总测试数 13190 全绿（`make test` R2563 周期复跑确认；74 ignored = 网络型 real_website_compat 用例），覆盖率 95.46% line / 96.94% function / 94.88% region
 
 ---
 
@@ -294,7 +294,7 @@
 
 **目标**：修复所有剩余渲染缺口，达到上游真实 WPT reftest 各领域通过率 ≥ 95%。
 
-**状态**：⚠️ **当前实际活跃工作** —— 通过 clean lever 修复、产品 smoke 稳定性修复、文档纠偏持续推进；受字体度量 / 布局结构性 plateau 限制
+**状态**：⚠️ **自主 clean-lever surface 经 8 distinct angle 钉案穷尽**（feature-existence×6 + correctness-review×2[IFC+table] + shorthand + value-gap + applied-consumed + reftest-triage + doc-drift + marked-todo，详见 master.md）；活跃自主面仅 ① 低频周期 plateau-guard（R2563 `make test` 13190/0/74 绿）+ ② 文档纠偏；**唯一推向 95% = 用户点名授权深结构专项**（最高 value = Phase A IFC line-box-metric 统一；受字体度量 / 布局结构性 plateau 限制）
 
 ---
 
