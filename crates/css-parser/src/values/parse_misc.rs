@@ -459,6 +459,30 @@ pub fn parse_text_decoration_inset(value: &str) -> Option<TextDecorationInsetVal
     }
 }
 
+/// 解析 CSS text-underline-offset 值（CSS Text Decoration 4 §2.5）。
+///
+/// 支持 `auto` 与 `<length-percentage>`（如 `11px` / `0.5em` / `50%`）。负值=上抬。
+/// 仅认数值长度/百分比，拒绝非法关键字（from-font 等非该属性合法值）。
+pub fn parse_text_underline_offset(value: &str) -> Option<TextUnderlineOffsetValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("auto") {
+        return Some(TextUnderlineOffsetValue::Auto);
+    }
+    match parse_length(v)? {
+        v @ (LengthValue::Px(_)
+        | LengthValue::Em(_)
+        | LengthValue::Rem(_)
+        | LengthValue::Ch(_)
+        | LengthValue::Percentage(_)
+        | LengthValue::Vh(_)
+        | LengthValue::Vw(_)
+        | LengthValue::Vmin(_)
+        | LengthValue::Vmax(_)) => Some(TextUnderlineOffsetValue::Length(v)),
+        // calc/fit-content 等非纯长度 → 拒绝。
+        _ => None,
+    }
+}
+
 /// 解析 CSS text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
 /// `none` | [ [ filled | open ] || [ dot | circle | double-circle | triangle | sesame ] ] | <string>
 /// 关键字组合解析为对应标记字符（filled dot → '•' 等）；<string> 取首字符。

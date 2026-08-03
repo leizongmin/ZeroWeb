@@ -543,6 +543,12 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "text-underline-offset" => {
+            if let Some(v) = values::parse_text_underline_offset(value) {
+                style.text_underline_offset = v;
+                return true;
+            }
+        }
         "text-emphasis-style" => {
             if let Some(v) = values::parse_text_emphasis_style(value) {
                 style.text_emphasis_style = v;

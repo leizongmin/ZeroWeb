@@ -147,6 +147,9 @@ pub struct ComputedStyle {
     /// text-decoration-inset 属性（CSS Text Decoration 4 §2.4，不继承）。R1607。
     /// 装饰线 inline 轴内缩（负值=延伸）；em 在 paint 期按 font_size 解析。
     pub text_decoration_inset: zero_css_parser::values::TextDecorationInsetValue,
+    /// text-underline-offset 属性（CSS Text Decoration 4 §2.5，**继承**）。
+    /// 下划线相对默认位置的额外下沉（正值=下沉，负值=上抬）；仅影响 underline。
+    pub text_underline_offset: zero_css_parser::values::TextUnderlineOffsetValue,
     /// text-emphasis-style 属性（CSS Text Decoration 3 §3.1，继承）。
     pub text_emphasis_style: TextEmphasisStyleValue,
     /// text-emphasis-position 属性（§3.2，继承）。默认 OverRight。

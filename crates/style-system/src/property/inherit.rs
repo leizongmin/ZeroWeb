@@ -59,6 +59,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.text_emphasis_position = parent.text_emphasis_position;
             true
         }
+        "text-underline-offset" => {
+            child.text_underline_offset = parent.text_underline_offset.clone();
+            true
+        }
         "word-spacing" => {
             child.word_spacing = parent.word_spacing.clone();
             true
@@ -739,6 +743,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "text-decoration-inset" => {
             style.text_decoration_inset = default_style.text_decoration_inset.clone();
+            true
+        }
+        "text-underline-offset" => {
+            style.text_underline_offset = default_style.text_underline_offset.clone();
             true
         }
         "text-emphasis-style" => {

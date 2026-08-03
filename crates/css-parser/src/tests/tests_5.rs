@@ -302,6 +302,58 @@ fn test_parse_text_decoration_inset_invalid() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// text-underline-offset 解析测试（CSS Text Decoration 4 §2.5，R2522）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_text_underline_offset_auto() {
+    // auto（默认）= 无额外偏移；大小写无关
+    assert_eq!(
+        parse_text_underline_offset("auto"),
+        Some(TextUnderlineOffsetValue::Auto)
+    );
+    assert_eq!(
+        parse_text_underline_offset("AUTO"),
+        Some(TextUnderlineOffsetValue::Auto)
+    );
+}
+
+#[test]
+fn test_parse_text_underline_offset_length_px() {
+    // 正值 px（driver test 002 用 11px）；负值=上抬
+    assert_eq!(
+        parse_text_underline_offset("11px"),
+        Some(TextUnderlineOffsetValue::Length(LengthValue::Px(11.0)))
+    );
+    assert_eq!(
+        parse_text_underline_offset("-3px"),
+        Some(TextUnderlineOffsetValue::Length(LengthValue::Px(-3.0)))
+    );
+}
+
+#[test]
+fn test_parse_text_underline_offset_length_em_percentage() {
+    // em/rem/% 支持（percentage.html 用例；% 相对 1em）
+    assert_eq!(
+        parse_text_underline_offset("0.5em"),
+        Some(TextUnderlineOffsetValue::Length(LengthValue::Em(0.5)))
+    );
+    assert_eq!(
+        parse_text_underline_offset("50%"),
+        Some(TextUnderlineOffsetValue::Length(LengthValue::Percentage(50.0)))
+    );
+}
+
+#[test]
+fn test_parse_text_underline_offset_invalid() {
+    // 非法关键字（from-font 非该属性合法值）/ 多 token / 非长度 → None
+    assert_eq!(parse_text_underline_offset("from-font"), None);
+    assert_eq!(parse_text_underline_offset("11px 5px"), None);
+    assert_eq!(parse_text_underline_offset("abc"), None);
+    assert_eq!(parse_text_underline_offset(""), None);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // table-layout 解析测试
 // ═══════════════════════════════════════════════════════════════════════
 

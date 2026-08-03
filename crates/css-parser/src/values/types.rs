@@ -570,6 +570,21 @@ pub enum TextDecorationThicknessValue {
     Length(f64),
 }
 
+/// CSS text-underline-offset 值（CSS Text Decoration 4 §2.5）。
+///
+/// 下划线相对默认位置的额外下沉量（正值=远离文字下沉，负值=上抬）。
+/// `auto`（默认）= 不加额外偏移，保留既有 baseline+font_size×0.15 近似位置。
+/// 仅 underline 受影响（overline/line-through 不受）。继承属性。em/rem/% 在 paint
+/// 期按元素 font_size 解析（driver test text-underline-offset-002 用 px，
+/// text-underline-offset-percentage 用 %）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextUnderlineOffsetValue {
+    /// auto（默认）：无额外偏移。
+    Auto,
+    /// 明确长度（px/em/rem/ch/% 等原始 LengthValue，paint 期 resolve）。
+    Length(LengthValue),
+}
+
 /// CSS text-decoration-inset 值（CSS Text Decoration 4 §2.4）。R1607。
 ///
 /// 装饰线在 inline 轴的内缩量：`start` 控制 inline-start 端，`end` 控制 inline-end 端。

@@ -83,6 +83,10 @@ impl PropertyRegistry {
                 start: LengthValue::Px(0.0),
                 end: LengthValue::Px(0.0),
             })),
+            // CSS Text Decoration 4 §2.5：text-underline-offset 继承。
+            "text-underline-offset" => Some(TextUnderlineOffset(
+                zero_css_parser::values::TextUnderlineOffsetValue::Auto,
+            )),
             // CSS Text Decoration 3 §3.1/§3.2：emphasis-style 与 position 均继承。
             "text-emphasis-style" => Some(TextEmphasisStyle(TextEmphasisStyleValue::None)),
             "text-emphasis-position" => Some(TextEmphasisPosition(TextEmphasisPositionValue::OverRight)),
@@ -360,6 +364,7 @@ impl PropertyRegistry {
                 | "font-variant-numeric"
                 | "direction"
                 | "tab-size"
+                | "text-underline-offset"
                 | "accent-color"
                 | "caret-color"
                 | "text-wrap"
@@ -435,6 +440,7 @@ impl PropertyRegistry {
             "text-decoration-style",
             "text-decoration-thickness",
             "text-decoration-inset",
+            "text-underline-offset",
             "text-emphasis-style",
             "text-emphasis-position",
             "text-transform",

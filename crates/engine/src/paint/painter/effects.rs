@@ -372,13 +372,28 @@ impl super::Painter {
             return;
         }
 
+        // R2522：text-underline-offset 下划线额外下沉（CSS Text Decoration 4 §2.5）。
+        // auto = 0（保留既有 baseline+font_size×0.15 位置，字节不变）；正值=下沉、负值=上抬。
+        // 仅 underline 受影响（overline/line-through 不受）。em/rem/% 按 font_size resolve
+        // （% 相对 1em = font_size；driver test 002 用 px、percentage 用 %）。
+        let underline_offset_px = match &style.text_underline_offset {
+            zero_css_parser::values::TextUnderlineOffsetValue::Auto => 0.0,
+            zero_css_parser::values::TextUnderlineOffsetValue::Length(lv) => match lv {
+                LengthValue::Px(n) => *n as f32,
+                LengthValue::Em(n) | LengthValue::Rem(n) => *n as f32 * font_size,
+                LengthValue::Percentage(n) => *n as f32 / 100.0 * font_size,
+                // ch/v* 罕见且须 viewport/字宽上下文 → 视作 0（与 inset_to_px 一致）。
+                _ => 0.0,
+            },
+        };
+
         // 每条启用的装饰线在其 y 偏移绘制（单值时仅一条，与历史行为字节一致；
         // 多值时各线共享 color/width/inset，仅 y 偏移不同）。
         let decor_style = &style.text_decoration_style;
         if style.text_decoration_line.underline {
             self.paint_decoration_line(
                 line_x,
-                baseline_y + font_size * 0.15,
+                baseline_y + font_size * 0.15 + underline_offset_px,
                 line_w,
                 line_width,
                 color,
