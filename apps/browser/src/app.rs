@@ -1971,6 +1971,7 @@ include!("app_input_context_menus.rs");
 // 渲染方法（build_scene 及所有 render_*）
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_render.rs");
+include!("app_render_ui.rs");
 
 // 渲染工具函数（圆角矩形/圆形/几何裁剪等图元构造）
 // 从 app_render.rs 进一步拆分以控制单文件体积
