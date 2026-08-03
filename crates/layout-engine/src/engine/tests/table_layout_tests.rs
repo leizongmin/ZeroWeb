@@ -129,7 +129,7 @@ fn test_table_cell_relative_inset_applied() {
 /// CSS Tables §3.1 要求裸文本生成匿名 cell；ZW 未实现匿名 cell 生成（text node 非 LayoutBox
 /// child），故作为 partial fix：让 compute_final 例外允许 table-internal 行/行组（含直接 text child）
 /// 跑 IFC，使裸文本至少按容器 font/size 渲染（不再 orphan 渲染为 16px 默认）。
-/// 旧实现 engine.rs:1007 is_block_level 不含 TableRowGroup → compute_final 早返 → 裸文本 orphan。
+/// 旧实现 engine.rs:1170 is_block_level 不含 TableRowGroup → compute_final 早返 → 裸文本 orphan。
 /// 驱动：css-tables/table-row-group-color-inheritance-001 oracle 8.99%→0.79%（200px green Ahem X）。
 #[test]
 fn test_table_row_group_bare_text_runs_ifc() {

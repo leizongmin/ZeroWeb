@@ -92,7 +92,7 @@ fn r1982_overflow_visible_container_keeps_explicit_height() {
 #[test]
 fn r1982_position_sticky_at_scroll0_acts_as_relative() {
     // DC-11 sticky：scroll=0 时 sticky 应等价于 relative（offset 应用）。converter:366 把 Sticky
-    // 映射为 taffy Relative，engine.rs:1905 对 Relative|Sticky 应用 inset。本测试实证 sticky
+    // 映射为 taffy Relative，postprocess.rs:1652 resolve_relative_inset 对 Relative|Sticky 应用 inset。本测试实证 sticky
     // 静态 offset 生效（动态 sticking 是 host 层，非静态可验）。
     let html = r#"<html><body style="margin:0">
 <div id="prev" style="height:50px"></div>
