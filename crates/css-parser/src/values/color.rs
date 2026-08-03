@@ -1878,6 +1878,22 @@ mod tests {
             parse_list_style_type("upper-latin"),
             Some(ListStyleTypeValue::UpperAlpha)
         );
+        // R2574：list-style-type: <string>（CSS Lists 3）——引号字符串作固定标记文本。
+        assert_eq!(
+            parse_list_style_type("\"▶\""),
+            Some(ListStyleTypeValue::String("▶".to_string()))
+        );
+        assert_eq!(
+            parse_list_style_type("'Step '"),
+            Some(ListStyleTypeValue::String("Step ".to_string()))
+        );
+        // 空串合法（无标记）。
+        assert_eq!(
+            parse_list_style_type("\"\""),
+            Some(ListStyleTypeValue::String(String::new()))
+        );
+        // 单引号未闭合 → 非 string（落入 keyword/custom-ident，均不匹配）→ None。
+        assert_eq!(parse_list_style_type("'unclosed"), None);
     }
 
     #[test]

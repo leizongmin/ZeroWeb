@@ -185,6 +185,16 @@ pub fn parse_clear(value: &str) -> Option<ClearValue> {
 
 /// 解析 CSS list-style-type 属性值。
 pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
+    // list-style-type: <string>（CSS Lists 3）：引号字符串作为固定标记文本（每个 li 同值）。
+    // 须在 keyword match 之前处理（引号起始的值非合法 ident，会落入 _ 被 is_custom_counter_name
+    // 拒绝丢失）。支持 "..." 与 '...'，空串合法（无标记）。
+    let trimmed = value.trim();
+    if trimmed.len() >= 2
+        && ((trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\'')))
+    {
+        return Some(ListStyleTypeValue::String(trimmed[1..trimmed.len() - 1].to_string()));
+    }
     match value.trim().to_lowercase().as_str() {
         "disc" => Some(ListStyleTypeValue::Disc),
         "circle" => Some(ListStyleTypeValue::Circle),

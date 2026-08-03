@@ -714,6 +714,27 @@ impl super::super::Painter {
                 }
             }
             ListStyleTypeValue::None => {}
+            // list-style-type: <string>（CSS Lists 3）：固定字符串标记（非计数器，每个 li 同值）。
+            // 按文本 marker 同位绘字（≡ Decimal/script arm 字形循环）；空串 → 无标记。
+            ListStyleTypeValue::String(s) => {
+                let mut char_x = actual_marker_x;
+                let char_y = marker_y + font_size;
+                for ch in s.chars() {
+                    self.primitives.add_glyph(GlyphPrimitive {
+                        x: char_x,
+                        y: char_y,
+                        font_size: font_size * 0.85,
+                        color,
+                        glyph_id: ch as u32,
+                        font_id: default_font_id,
+                        bitmap_width: None,
+                        bitmap_height: None,
+                        rotation: 0.0,
+                        synthetic_italic: false,
+                    });
+                    char_x += measure_char_for_paint(ch, font_size * 0.85, false);
+                }
+            }
             // R2392：自定义计数器样式（@counter-style）。查注册表 → 按 system 生成 body
             // → prefix+body+suffix。未定义 / 超出 range → fallback（decimal "N."）。
             // R2394 注：additive/extends 应用 defer（A/B net-negative，见 counter_style_body 注释）。

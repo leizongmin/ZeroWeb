@@ -382,6 +382,9 @@ pub enum ListStyleTypeValue {
     /// 非 builtin 的 `<custom-ident>` → Custom(name)；渲染时查 CounterStyleRegistry，
     /// 未命中走 fallback（默认 decimal）。
     Custom(String),
+    /// `<string>` 标记类型（CSS Lists 3）：引号字符串作为固定标记文本（每个 li 同值，
+    /// 非计数器）。如 `list-style-type: "▶"`。driving: R2574。
+    String(String),
 }
 
 /// CSS list-style-position 值。
