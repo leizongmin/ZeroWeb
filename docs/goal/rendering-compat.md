@@ -140,7 +140,7 @@
 
 **当前能力/缺口详细基线**：详见 [current-baseline.md](rendering-compat/current-baseline.md)（完整能力矩阵和已知缺口表）。
 
-**关键状态摘要**（截至 2026-08-04·R2566）：
+**关键状态摘要**（截至 2026-08-04·R2582）：
 - ✅ **已完成**：CPU/GPU 渲染器全 13 种图元（M7）、浏览器图元消费（M7）、Margin 折叠（R323）、BFC margin 隔离（R323）、Float 核心布局（R895）、Position fixed（R324）、外部样式表加载（R213）、图片子资源贯通（R318）、产品 smoke 证据链
 - ⚠️ **P1-严重缺口**：Inline formatting 所有权分裂、Layout/Paint IFC 双路径、浏览器层 glyph 重排、滚动容器
 - 📊 **测试基线**：总测试数 13190 全绿（`make test` R2563 周期复跑 + R2572-R2577 六连 lever 各轮零回归 13190/0/74 精确持平确认；74 ignored = 网络型 real_website_compat 用例），覆盖率 95.46% line / 96.94% function / 94.88% region
@@ -294,7 +294,7 @@
 
 **目标**：修复所有剩余渲染缺口，达到上游真实 WPT reftest 各领域通过率 ≥ 95%。
 
-**状态**：⚠️ **自主 clean-lever surface 经 R2578 definitive 穷尽**——R2572 订正旧「8 angle 穷尽」框架（过早），续经 4 法 land 六连 lever R2572-R2577（counters() / ::marker / list-style-type:string / border-image-outset / border-image-width / word-break:break-word；directed probe + Explore-agent fan-out + exhaustive field 审计 + exhaustive variant 审计）；R2578 exhaustive value-variant 审计（全值枚举变体→消费核验）= clean lever 零产出（残余全 false-positive / deep / host-layer / 0-test），**双 exhaustive 审计（field+variant）rigorous 证 clean-lever surface definitively 穷尽**。活跃自主面仅 ① 低频周期 plateau-guard（R2577 `make test` 13190/0/74 绿）+ ② 文档纠偏；**唯一推向 95% = 用户点名授权深结构专项**（最高 value = Phase A IFC line-box-metric 统一；次 = R1043 vertical-mode / R2174 taffy border-box / font-stack C-dep / Phase 2 multicol fragmentation / individual+3D transforms；受字体度量 / 布局结构性 plateau 限制）。详见 `rendering-compat/master.md` R2572-R2578。
+**状态**：⚠️ **自主 clean-lever surface 经 6 vein definitively 穷尽**——R2572 订正旧「8 angle 穷尽」框架（过早），续经 4 法 land 六连 lever R2572-R2577（counters() / ::marker / list-style-type:string / border-image-outset / border-image-width / word-break:break-word；directed probe + Explore-agent fan-out + exhaustive field 审计 + exhaustive variant 审计）；R2578 exhaustive value-variant 审计（全值枚举变体→消费核验）= clean lever 零产出（残余全 false-positive / deep / host-layer / 0-test）；R2581 missing-property 批量核验（60 常见 CSS 属性→51 未应用全 deep/niche/host-layer）+ R2582 伪元素 parse-vs-apply 审计（19 伪元素→16 未 apply 全 Phase A IFC-deep/host-layer/niche/OOS）亦 = clean lever 零产出。**6 vein（directed probe + agent fan-out + exhaustive field + exhaustive variant + missing-property 批量 + 伪元素 parse-vs-apply）rigorous 证 clean-lever surface definitively 穷尽**。活跃自主面仅 ① 低频周期 plateau-guard（R2577 `make test` 13190/0/74 绿）+ ② 文档纠偏；**唯一推向 95% = 用户点名授权深结构专项**（最高 value = Phase A IFC line-box-metric 统一，first-letter/first-line 亦属此 territory；次 = R1043 vertical-mode / R2174 taffy border-box / font-stack C-dep / Phase 2 multicol fragmentation / individual+3D transforms；受字体度量 / 布局结构性 plateau 限制）。详见 `rendering-compat/master.md` R2572-R2582。
 
 ---
 
