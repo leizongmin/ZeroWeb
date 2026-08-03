@@ -579,10 +579,11 @@ impl super::Painter {
                 container_width
             };
 
+            // R2577：word-break: break-word（CSS Text 3 legacy）≡ overflow-wrap: break-word。
             let break_word = matches!(
                 style.overflow_wrap,
                 zero_style_system::OverflowWrapValue::BreakWord | zero_style_system::OverflowWrapValue::Anywhere
-            );
+            ) || matches!(style.word_break, zero_style_system::WordBreakValue::BreakWord);
 
             // 根据 white-space 属性设置换行和空白保留行为
             let (mut no_wrap, preserve_whitespace, break_at_newline) = match style.white_space {

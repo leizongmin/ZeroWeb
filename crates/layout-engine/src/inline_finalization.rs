@@ -800,10 +800,11 @@ pub(crate) fn compute_final_inline_layouts(
     };
 
     // 解析 CSS 属性（与 paint_text 相同的配置）
+    // R2577：word-break: break-word（CSS Text 3 legacy）≡ overflow-wrap: break-word（opportunistic 断词防溢出）。
     let break_word = matches!(
         style.overflow_wrap,
         OverflowWrapValue::BreakWord | OverflowWrapValue::Anywhere
-    );
+    ) || matches!(style.word_break, zero_style_system::WordBreakValue::BreakWord);
     let (no_wrap, preserve_whitespace, break_at_newline) = match &style.white_space {
         WhiteSpaceValue::Pre => (true, true, false),
         WhiteSpaceValue::PreWrap => (false, true, false),
@@ -1306,10 +1307,11 @@ pub(crate) fn measure_text_content(
     let break_at_newline = measure_preserve_on && resolve_break_at_newline_for_ifc_measure(measure_style);
     let break_word = measure_style.is_some_and(|s| {
         use zero_style_system::property::types::OverflowWrapValue;
+        // R2577：word-break: break-word ≡ overflow-wrap: break-word。
         matches!(
             s.overflow_wrap,
             OverflowWrapValue::BreakWord | OverflowWrapValue::Anywhere
-        )
+        ) || matches!(s.word_break, zero_style_system::WordBreakValue::BreakWord)
     });
     let mut inline_ctx = InlineFormattingContext::new(width)
         .with_vertical(is_vertical)
