@@ -11,7 +11,7 @@ use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{ImagePrimitive, LineCap, LineStyle, StrokePrimitive};
 use zero_style_system::{
     BorderCollapseValue, BorderImageOutsetComputedComponent, BorderImageRepeatComputedMode,
-    BorderImageSourceComputedValue, BorderStyleValue, ComputedStyle,
+    BorderImageSourceComputedValue, BorderImageWidthComputedComponent, BorderStyleValue, ComputedStyle,
 };
 
 use super::super::color::{color_value_to_render, resolve_color_current};
@@ -222,6 +222,24 @@ impl super::Painter {
         let by = abs_y - o_top;
         let w = box_node.width + o_left + o_right;
         let h = box_node.height + o_top + o_bottom;
+
+        // border-image-width（CSS Backgrounds 3 §7.3）：覆盖 9 宫格区域厚度（绘制用）。
+        // 默认 Number(1.0) = 1×边框宽度 = 边框宽度 → 区域厚度同边框（旧行为）；显式值则
+        // 用指定厚度绘制（可大于边框延伸进 padding/content，或小于）。Auto 简化为边框宽度
+        //（真 auto 用图像固有尺寸，ZW paint 期无解码尺寸）；Percent 相对边框盒对应轴。
+        // shadow bt/br/bb/bl → 下方 9 宫格公式（角/边/中心）自动用新厚度，guard/outset 既用原值不变。
+        let width_px = |c: &BorderImageWidthComputedComponent, bw: f32, box_dim: f32| -> f32 {
+            match c {
+                BorderImageWidthComputedComponent::Auto => bw,
+                BorderImageWidthComputedComponent::Number(n) => n * bw,
+                BorderImageWidthComputedComponent::Length(l) => *l,
+                BorderImageWidthComputedComponent::Percent(p) => (p / 100.0) * box_dim,
+            }
+        };
+        let bt = width_px(&style.border_image_width.top, bt, h);
+        let br = width_px(&style.border_image_width.right, br, w);
+        let bb = width_px(&style.border_image_width.bottom, bb, h);
+        let bl = width_px(&style.border_image_width.left, bl, w);
 
         // 四条边的尺寸
         let edge_h_w = (w - bl - br).max(0.0);
