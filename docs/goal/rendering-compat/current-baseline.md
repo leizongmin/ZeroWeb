@@ -2,7 +2,7 @@
 
 > **说明**：本文档是从 `rendering-compat.md` 主文档移出的详细能力/缺口大表。主文档中只保留简要引用，详情见此处。
 
-截至 2026-07-16，项目渲染兼容性现状（活跃状态以本节和 `docs/goal/rendering-compat/master.md` 顶部裁决包为准）：
+截至 2026-08-04（R2568 复核），项目渲染兼容性现状（活跃状态以本节和 `docs/goal/rendering-compat/master.md` 顶部裁决包为准）：
 
 ## 已有能力
 
@@ -34,7 +34,7 @@
 | **Layout/Paint IFC 双路径** | **文本布局与 glyph 输出一致性** | **P1-严重** | layout 阶段和 paint 阶段不是同一份 IFC 结果；paint 二次运行 IFC 时 style map、float exclusion、container width 可能不同，导致 box 背景位置与 glyph 位置不一致 |
 | ~~**外部样式表加载缺失**~~ | **真实静态网页 CSS** | ✅ **已贯通（R213）** | ✅ **已修复**：`fetch_url`（webview.rs:515）各成功路径现均 `load_html(&html, Some(&external_css))`（非 None；调用点 :561/586/600/611/645）；`prepare_page_subresources`（:263）→ `resolve_external_css`（:363）经 extract_stylesheet_hrefs 提取 `<link rel="stylesheet">` + base URL 解析 + 逐个 HTTP 抓取 + 合并注入级联，抓取/解码失败记 `tracing::warn!`（:386）不阻断（宽松降级）；R213 测试 test_fetch_url_loads_external_stylesheet + ..._missing_does_not_break 覆盖。~~原（已过时）~~： `WebView::fetch_url()` 三条成功路径都会调用 `load_html(&html, None)`；`RenderPipeline::collect_stylesheets()` 只收调用方传入 CSS 和文档内 `<style>`，不抓取 `<link rel="stylesheet">`。morning.work 文章页依赖外链 CSS，当前会静默退化为仅内联样式 |
 | ~~**图片子资源/ImageCache 未贯通**~~ | **Logo/图片密集静态页面** | ✅ **已贯通（R318 实测）** | `<img>` paint 生成 `ImagePrimitive`；`WebView::fetch_image_subresources`（webview.rs:402）在 `fetch_url`（:515）各导航路径抓取 + 解码 `<img src>`（PNG/JPEG 魔数 + SVG via resvg/tiny-skia），写入 `image_cache`；`app_platform.rs` render_cpu/render_gpu/render_frame 三处传 `Some(&mut webview.image_cache())`（非 None）。**R318 实测**：WinterTC 首页 header logo + 13 个参与方 SVG/PNG logo（alibaba/bytedance/cloudflare/deno/fastly/igalia/netlify/nodejs/shopify/suborbital/vercel/azion/matrix）全部正确渲染（非占位 glyph），产品 smoke diff=13.70%（残余为 system-ui 字体度量/line-height，非图片缺口）。原「传 None / Logo 缺失」描述已过时 |
-| **浏览器层 glyph 重排** | **ZeroBrowser 产品渲染路径** | **P1-严重** | ZeroBrowser 在消费 WebView 图元前会按 baseline 对 glyph 做后处理重排；该逻辑可能破坏 engine 已经计算好的 fragment x 坐标，尤其影响 grid/flex 中同一 baseline 的不同卡片文本 |
+| ~~**浏览器层 glyph 重排**~~ | **ZeroBrowser 产品渲染路径** | ✅ **已修复（R2004）** | `transform_webview_primitives`（app_render_primitives.rs:194）+ `append_webview_primitives` 按输入顺序逐个映射 glyph（仅 scale+offset + 裁剪，**无 sort/reorder**），单测 `transform_webview_primitives_preserves_glyph_order`（tests.rs:1711）守此不变量防未来 batching/scanline-sort 优化破坏跨行布局语义。原「按 baseline 后处理重排可能破坏 fragment x 坐标」描述已过时（pre-R2004） |
 | ~~**真实静态页面 smoke 缺失**~~ | **验收有效性** | ✅ **已建立产品 smoke 证据链** | `apps/browser/assets/welcome.html`、morning.work、WinterTC、legacy HTML、窄屏等静态页面已进入 `docs/goal/rendering-compat/evidence/product-static/` 证据链，覆盖 Chromium oracle 截图、diff-summary 和多轮根因分析；后续是扩展 viewport / 结构检查 / 回归门禁，不再表述为"没有真实静态页面 smoke" |
 | ~~**Margin 折叠**~~ | CSS 2.1 布局正确性 | ✅ **已实现（R323 实测）** | taffy 0.7 `CollapsibleMarginSet` 内置；R323 探针 6 case（相邻/父子/border 阻断/负 margin/祖父嵌套/BFC 子不折叠）全过 + margin reftest 5/5 全绿。原「完全未实现」描述过时 |
 | ~~**BFC**~~ | 布局隔离 | ✅ **已实现** | `establishes_bfc`（全条件：overflow/float/abspos/flow-root/flex/grid/table/multicol）接线生产；margin 隔离 R323 实测 6 探针全过；`use_bfc_float_containment` 落地 float containment。原「无 BFC 概念，overflow: hidden 不隔离浮动、不阻止 margin 折叠」描述过时 |
@@ -54,7 +54,7 @@
 
 ## 测试基线
 
-- 总测试数：~13,190，全绿（`make test`：13190 passed / 0 failed / 74 ignored，截至 R2523）
+- 总测试数：~13,190，全绿（`make test`：13190 passed / 0 failed / 74 ignored，截至 R2523；R2554/R2563 周期复跑逐位确认）
 - Coverage：95.46% line, 96.94% function, 94.88% region
 - Inline reftest：685 个，100% 通过（⚠️ 手写简单场景，容差过宽松，**不计入本目标通过率统计**。本目标的通过率必须基于上游真实 WPT reftest）
 - **关键事实**：当前 WPT runner 是 smoke test，不证明渲染正确性。本目标的核心挑战是从"不崩溃"升级到"渲染正确"。（历史：M7 前渲染器仅支持 3/13 种图元；**M7 后 CPU/GPU 均已支持全 13 种图元**——见 Current Proven Baseline 表。当前 reftest 通过率受字体度量 / 布局结构性 plateau 限制，非图元覆盖限制。）
