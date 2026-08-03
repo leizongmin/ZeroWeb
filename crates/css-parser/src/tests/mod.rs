@@ -102,6 +102,7 @@ mod tests_1b;
 mod tests_2;
 mod tests_3;
 mod tests_4;
+mod tests_4b;
 mod tests_5;
 mod tests_9;
 mod tokenizer_coverage;
