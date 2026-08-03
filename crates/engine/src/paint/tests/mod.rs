@@ -18,4 +18,5 @@ mod r2311_background_multilayer_tests;
 mod ui_indicators;
 mod visual;
 mod visual_inline;
+mod visual_part2;
 mod visual_resize_scroll;
