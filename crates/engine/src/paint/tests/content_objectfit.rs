@@ -94,7 +94,7 @@ fn test_paint_content_none_generates_nothing() {
 #[test]
 fn test_paint_content_counter_decimal() {
     let mut painter = Painter::new();
-    painter.counters.insert("section".to_string(), 42);
+    painter.counters.insert("section".to_string(), vec![42]);
 
     let mut style = ComputedStyle::default();
     style.content = ContentComputedValue::Counter {
@@ -135,7 +135,7 @@ fn test_paint_content_counter_missing_uses_zero() {
 #[test]
 fn test_paint_content_counter_lower_alpha() {
     let mut painter = Painter::new();
-    painter.counters.insert("item".to_string(), 3);
+    painter.counters.insert("item".to_string(), vec![3]);
 
     let mut style = ComputedStyle::default();
     style.content = ContentComputedValue::Counter {
@@ -157,7 +157,7 @@ fn test_paint_content_counter_lower_alpha() {
 #[test]
 fn test_paint_content_counter_upper_roman() {
     let mut painter = Painter::new();
-    painter.counters.insert("chapter".to_string(), 4);
+    painter.counters.insert("chapter".to_string(), vec![4]);
 
     let mut style = ComputedStyle::default();
     style.content = ContentComputedValue::Counter {
@@ -211,7 +211,7 @@ fn test_paint_content_current_color_generates_glyphs() {
 #[test]
 fn test_paint_content_counter_lower_roman() {
     let mut painter = Painter::new();
-    painter.counters.insert("appendix".to_string(), 9);
+    painter.counters.insert("appendix".to_string(), vec![9]);
 
     let mut style = ComputedStyle::default();
     style.content = ContentComputedValue::Counter {

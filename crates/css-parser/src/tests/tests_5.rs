@@ -967,6 +967,67 @@ fn test_parse_content_edge_cases() {
     );
     // 空 counter() 应返回 None
     assert_eq!(parse_content("counter()"), None);
+    // counters(name, sep) — CSS Lists 3 嵌套计数器
+    assert_eq!(
+        parse_content("counters(item, \".\")"),
+        Some(ContentValue::Counters {
+            name: "item".to_string(),
+            separator: ".".to_string(),
+            style: None,
+        })
+    );
+    // counters(name, sep, style)
+    assert_eq!(
+        parse_content("counters(item, \".\", lower-roman)"),
+        Some(ContentValue::Counters {
+            name: "item".to_string(),
+            separator: ".".to_string(),
+            style: Some("lower-roman".to_string()),
+        })
+    );
+    // 分隔符含逗号（如 ", "）——不可按逗号 split
+    assert_eq!(
+        parse_content("counters(item, \", \")"),
+        Some(ContentValue::Counters {
+            name: "item".to_string(),
+            separator: ", ".to_string(),
+            style: None,
+        })
+    );
+    // 空分隔符
+    assert_eq!(
+        parse_content("counters(item, \"\")"),
+        Some(ContentValue::Counters {
+            name: "item".to_string(),
+            separator: String::new(),
+            style: None,
+        })
+    );
+    // 函数名大小写不敏感
+    assert_eq!(
+        parse_content("COUNTERS(item, \".\")"),
+        Some(ContentValue::Counters {
+            name: "item".to_string(),
+            separator: ".".to_string(),
+            style: None,
+        })
+    );
+    // 缺分隔符 → None（counters 须 ≥2 参数）
+    assert_eq!(parse_content("counters(item)"), None);
+    assert_eq!(parse_content("counters(item,)"), None);
+    // 畸形：尾随逗号无 style
+    assert_eq!(parse_content("counters(item, \".\",)"), None);
+    // 多 item 含 counters()
+    {
+        use crate::values::ContentListItem;
+        let v = parse_content("\"P\" counters(c, \".\")");
+        assert!(matches!(v, Some(ContentValue::List(_))), "多 item 应解析为 List");
+        if let Some(ContentValue::List(items)) = v {
+            assert_eq!(items.len(), 2);
+            assert!(matches!(items[0], ContentListItem::Str(_)));
+            assert!(matches!(items[1], ContentListItem::Counters { .. }));
+        }
+    }
     // 无效输入
     assert_eq!(parse_content(""), None);
     assert_eq!(parse_content("invalid-value"), None);

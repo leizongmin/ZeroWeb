@@ -484,6 +484,17 @@ pub enum ContentValue {
         /// 可选的列表样式类型。
         style: Option<String>,
     },
+    /// counters() 函数引用（嵌套计数器，CSS Lists 3 §counter-functions）。
+    /// `counters(name, sep[, style])`：取计数器在所有祖先作用域的值，按 sep 拼接
+    ///（如嵌套 `<ol>` 生成 "1.2.1"）。
+    Counters {
+        /// 计数器名称。
+        name: String,
+        /// 分隔字符串（引号字面量内容，可为空串或含逗号）。
+        separator: String,
+        /// 可选的列表样式类型。
+        style: Option<String>,
+    },
     /// `url(...)` 图片引用（generated content image，如 `content: url(icon.png)`）。
     /// R1988：伪元素 content:url() 渲染为替换图片。
     Url(String),
@@ -503,6 +514,15 @@ pub enum ContentListItem {
     Counter {
         /// 计数器名称。
         name: String,
+        /// 可选的列表样式类型。
+        style: Option<String>,
+    },
+    /// counters(name, sep[, style]) 引用（嵌套计数器）。
+    Counters {
+        /// 计数器名称。
+        name: String,
+        /// 分隔字符串。
+        separator: String,
         /// 可选的列表样式类型。
         style: Option<String>,
     },
@@ -584,6 +604,12 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
         };
         return Some(ContentValue::Counter { name, style });
     }
+    // counters(name, sep[, style]) — CSS Lists 3 §counter-functions：嵌套计数器，函数名大小写不敏感。
+    // sep 为引号字符串（可含逗号，故不能按逗号简单 split）；name/sep/style 保持原样。
+    if let Some(inner) = extract_single_function_inner(input, "counters(") {
+        let (name, separator, style) = parse_counters_call_args(inner)?;
+        return Some(ContentValue::Counters { name, separator, style });
+    }
     // url(...) — generated content image（R1988）。支持引号包裹的 url："url('x.png')" / 'url("x.png")'。
     if let Some(inner) = extract_single_function_inner(input, "url(") {
         if inner.is_empty() {
@@ -654,8 +680,11 @@ fn parse_content_list(input: &str) -> Option<ContentValue> {
             if ident.eq_ignore_ascii_case("counter") {
                 let (name, style) = parse_counter_call_args(inner)?;
                 items.push(ContentListItem::Counter { name, style });
+            } else if ident.eq_ignore_ascii_case("counters") {
+                let (name, separator, style) = parse_counters_call_args(inner)?;
+                items.push(ContentListItem::Counters { name, separator, style });
             } else {
-                // attr/url/counters 等在多 item 序列暂不支持 → None（defer，同旧行为）
+                // attr/url 等在多 item 序列暂不支持 → None（defer，同旧行为）
                 return None;
             }
         }
@@ -680,6 +709,48 @@ fn parse_counter_call_args(inner: &str) -> Option<(String, Option<String>)> {
         None
     };
     Some((name, style))
+}
+
+/// 解析 counters() 函数参数 inner（`name, sep` 或 `name, sep, style`）。
+///
+/// CSS Lists 3：`counters(<counter-name>, <string>, <counter-style>?)`。sep 为引号字符串，
+/// **可含逗号**（如 `counters(c, ", ")`），故不可按逗号 split——须先取首逗号前的 name，
+/// 再解析引号包裹的 separator，最后取可选 `, style`。返回 (name, separator, optional style)。
+fn parse_counters_call_args(inner: &str) -> Option<(String, String, Option<String>)> {
+    let inner = inner.trim();
+    // name = 首个逗号前的 ident（计数器名不含逗号）。
+    let comma1 = inner.find(',')?;
+    let name = inner[..comma1].trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let rest = inner[comma1 + 1..].trim();
+    // separator 须为引号字符串（" 或 '）。
+    let bytes = rest.as_bytes();
+    if bytes.is_empty() || (bytes[0] != b'"' && bytes[0] != b'\'') {
+        return None;
+    }
+    let quote = bytes[0];
+    let mut i = 1;
+    while i < bytes.len() && bytes[i] != quote {
+        i += 1;
+    }
+    if i >= bytes.len() {
+        return None; // 未闭合引号
+    }
+    let separator = rest[1..i].to_string();
+    let after = rest[i + 1..].trim();
+    // 可选 `, style`。
+    let style = if after.is_empty() {
+        None
+    } else {
+        let after = after.strip_prefix(',').map(str::trim)?;
+        if after.is_empty() {
+            return None; // 尾随逗号无 style → 畸形
+        }
+        Some(after.to_string())
+    };
+    Some((name, separator, style))
 }
 
 // ── CSS Quotes 值类型 ──────────────────────────────────────────────

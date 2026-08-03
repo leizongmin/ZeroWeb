@@ -132,6 +132,23 @@ impl super::Painter {
                 let value = self.get_counter(name).unwrap_or(0);
                 format_counter_text(value, counter_style)
             }
+            // counters(name, sep[, style])（CSS Lists 3）：取全部祖先作用域值，按 sep 拼接。
+            ContentComputedValue::Counters {
+                name,
+                separator,
+                style: counter_style,
+            } => {
+                let scopes: Vec<i64> = match self.get_counter_scopes(name) {
+                    Some(s) if !s.is_empty() => s.to_vec(),
+                    // 无作用域（计数器未建立）→ 单个默认 0，与 counter() 的 unwrap_or(0) 一致。
+                    _ => vec![0],
+                };
+                scopes
+                    .iter()
+                    .map(|&v| format_counter_text(v, counter_style))
+                    .collect::<Vec<_>>()
+                    .join(separator)
+            }
             // 多 item 混合内容（`"Chapter " counter(c) ": "`）：逐 item 解析拼文本。
             ContentComputedValue::List(items) => {
                 let mut buf = String::new();
@@ -141,6 +158,19 @@ impl super::Painter {
                         ContentListItem::Counter { name, style } => {
                             let value = self.get_counter(name).unwrap_or(0);
                             buf.push_str(&format_counter_text(value, style));
+                        }
+                        ContentListItem::Counters { name, separator, style } => {
+                            let scopes: Vec<i64> = match self.get_counter_scopes(name) {
+                                Some(s) if !s.is_empty() => s.to_vec(),
+                                _ => vec![0],
+                            };
+                            buf.push_str(
+                                &scopes
+                                    .iter()
+                                    .map(|&v| format_counter_text(v, style))
+                                    .collect::<Vec<_>>()
+                                    .join(separator),
+                            );
                         }
                     }
                 }

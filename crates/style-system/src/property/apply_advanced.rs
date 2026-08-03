@@ -418,6 +418,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                     ContentValue::String(s) => ContentComputedValue::String(s),
                     ContentValue::Attr(a) => ContentComputedValue::Attr(a),
                     ContentValue::Counter { name, style } => ContentComputedValue::Counter { name, style },
+                    ContentValue::Counters { name, separator, style } => {
+                        ContentComputedValue::Counters { name, separator, style }
+                    }
                     ContentValue::Url(u) => ContentComputedValue::Url(u),
                     ContentValue::List(items) => ContentComputedValue::List(items),
                 };

@@ -1121,6 +1121,16 @@ pub enum ContentComputedValue {
         /// 可选的列表样式类型。
         style: Option<String>,
     },
+    /// counters() 函数引用（嵌套计数器，CSS Lists 3）。
+    /// `counters(name, sep, [style])`：取计数器在所有祖先作用域的值，按 sep 拼接。
+    Counters {
+        /// 计数器名称。
+        name: String,
+        /// 分隔字符串。
+        separator: String,
+        /// 可选的列表样式类型。
+        style: Option<String>,
+    },
     /// `url(...)` 图片引用（generated content image，R1988）。
     Url(String),
     /// 多 item 混合内容序列（`"Chapter " counter(c) ": "`）。复用 css-parser

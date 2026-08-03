@@ -42,8 +42,10 @@ pub struct Painter {
     /// 故 paint 递归遍历到其 LayoutBox 时须跳过，避免双绘。来自 `LayoutResult::paint_skip_node_ids`。
     /// 默认空集（无 multi-inline block 容器的页面）。
     pub paint_skip_nodes: HashSet<NodeId>,
-    /// CSS 计数器状态（计数器名 → 当前值）。
-    pub(crate) counters: HashMap<String, i64>,
+    /// CSS 计数器作用域栈（计数器名 → 各祖先作用域值，末元素为当前最内层作用域）。
+    /// CSS2 §12.4.1：`counter-reset` 在元素上开启新作用域（push），子树结束后弹出（pop）；
+    /// `counter(name)` 取最内层（末元素），`counters(name, sep)` 取全部作用域按 sep 拼接。
+    pub(crate) counters: HashMap<String, Vec<i64>>,
     /// 是否跳过属性指示器（用于 reftest 精确对比）。
     ///
     /// 指示器是绘制在元素边角的调试标记（如 border-collapse 橙色双线），
@@ -882,12 +884,18 @@ impl Painter {
         // visibility: hidden 不阻止子节点绘制，子节点可以覆盖为 visible
         let (child_offset_x, child_offset_y) = child_content_origin(box_node, abs_x, abs_y);
 
-        // 5b. CSS 计数器处理（在子节点绘制前，按 reset → set → increment 顺序）
-        if let Some(node_id) = box_node.node_id
+        // 5b. CSS 计数器处理（在子节点绘制前，按 reset → set → increment 顺序）。
+        // 记录本元素 reset 的计数器名 → 子树绘制结束后弹出其作用域（CSS2 §12.4.1），
+        // 使嵌套同名计数器（含 counters()）作用域正确隔离。
+        let counter_reset_names: Vec<String> = if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
         {
+            let names = style.counter_reset.iter().map(|a| a.name.clone()).collect();
             self.update_counters(style);
-        }
+            names
+        } else {
+            Vec::new()
+        };
 
         // CSS Tables §17.5.3 列背景：<col>/<colgroup> 的 background-color 在单元格之下、
         // 按列跨满表格高度绘制（几何由 layout 层 collect_table_col_backgrounds 写入）。
@@ -1553,35 +1561,77 @@ impl Painter {
             }
         } // end skip_indicators guard
 
+        // 弹出本元素 counter-reset 创建的作用域（CSS2 §12.4.1：作用域在元素子树结束后关闭）。
+        // 仅本元素 reset 的计数器名；paint_node 单一出口（除 line 695 orphan-skip 早返，
+        // 该早返在 update_counters 之前故无作用域压栈）→ 所有压栈路径必经此处。
+        if !counter_reset_names.is_empty() {
+            self.pop_counter_scopes(&counter_reset_names);
+        }
+
         let _ = is_hidden; // visibility 在 if let 块内处理
     }
 
     /// 更新 CSS 计数器状态（reset → set → increment 顺序）。
+    ///
+    /// `counter-reset` 开启新作用域（push 到栈顶）；`counter-set`/`counter-increment`
+    /// 修改当前最内层作用域（栈顶）；作用域弹出由 paint_node 在子树绘制结束后按本元素
+    /// reset 的计数器名执行（见 paint_node 末尾）。
     pub(crate) fn update_counters(&mut self, style: &ComputedStyle) {
         use zero_css_parser::values::CounterActionValue;
 
-        // 1. counter-reset — 重置计数器为指定值（默认 0）
+        // 1. counter-reset — 开启新作用域，压栈指定值（默认 0）。
         for CounterActionValue { name, value } in &style.counter_reset {
             let v = value.unwrap_or(0);
-            self.counters.insert(name.clone(), v);
+            self.counters.entry(name.clone()).or_default().push(v);
         }
 
-        // 2. counter-set — 直接设置计数器值（不创建新作用域）
+        // 2. counter-set — 设置当前最内层作用域值（不创建新作用域；无作用域则建立）。
         for CounterActionValue { name, value } in &style.counter_set {
             let v = value.unwrap_or(0);
-            self.counters.insert(name.clone(), v);
+            if let Some(stack) = self.counters.get_mut(name) {
+                if let Some(top) = stack.last_mut() {
+                    *top = v;
+                } else {
+                    stack.push(v);
+                }
+            } else {
+                self.counters.insert(name.clone(), vec![v]);
+            }
         }
 
-        // 3. counter-increment — 递增计数器（默认 +1）
+        // 3. counter-increment — 递增当前最内层作用域（默认 +1；无作用域则建立）。
         for CounterActionValue { name, value } in &style.counter_increment {
             let v = value.unwrap_or(1);
-            *self.counters.entry(name.clone()).or_insert(0) += v;
+            let stack = self.counters.entry(name.clone()).or_default();
+            if let Some(top) = stack.last_mut() {
+                *top += v;
+            } else {
+                stack.push(v);
+            }
         }
     }
 
-    /// 获取指定计数器的当前值。
+    /// 获取指定计数器当前最内层作用域的值（`counter(name)`）。
     pub fn get_counter(&self, name: &str) -> Option<i64> {
-        self.counters.get(name).copied()
+        self.counters.get(name).and_then(|stack| stack.last()).copied()
+    }
+
+    /// 获取指定计数器全部祖先作用域值（由外到内），用于 `counters(name, sep)`。
+    pub fn get_counter_scopes(&self, name: &str) -> Option<&[i64]> {
+        self.counters.get(name).map(Vec::as_slice)
+    }
+
+    /// 弹出本元素通过 `counter-reset` 创建的作用域（子树绘制结束后调用）。
+    /// 仅弹本元素 reset 的计数器名；`counter-set`/`counter-increment` 不创建作用域不弹。
+    pub(crate) fn pop_counter_scopes(&mut self, reset_names: &[String]) {
+        for name in reset_names {
+            if let Some(stack) = self.counters.get_mut(name) {
+                stack.pop();
+                if stack.is_empty() {
+                    self.counters.remove(name);
+                }
+            }
+        }
     }
 
     /// 绘制表格列背景（CSS Tables §17.5.3）。
