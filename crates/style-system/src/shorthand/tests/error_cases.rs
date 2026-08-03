@@ -126,120 +126,138 @@ fn test_place_self_too_many_values() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
-/// text-decoration 仅 line 值
+/// text-decoration 仅 line 值（R2592：第 4 longhand text-decoration-thickness 重置 auto）
 fn test_text_decoration_line_only() {
     let result = expand_one("text-decoration", "underline", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "text-decoration-line");
     assert_eq!(result[0].1, "underline");
     assert_eq!(result[1].0, "text-decoration-style");
     assert_eq!(result[1].1, "solid");
     assert_eq!(result[2].0, "text-decoration-color");
     assert_eq!(result[2].1, "currentcolor");
+    assert_eq!(result[3].0, "text-decoration-thickness");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// text-decoration 仅 style 值
 fn test_text_decoration_style_only() {
     let result = expand_one("text-decoration", "dashed", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "text-decoration-line");
     assert_eq!(result[0].1, "none");
     assert_eq!(result[1].0, "text-decoration-style");
     assert_eq!(result[1].1, "dashed");
     assert_eq!(result[2].0, "text-decoration-color");
     assert_eq!(result[2].1, "currentcolor");
+    assert_eq!(result[3].0, "text-decoration-thickness");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// text-decoration 仅 color 值
 fn test_text_decoration_color_only() {
     let result = expand_one("text-decoration", "blue", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "text-decoration-line");
     assert_eq!(result[0].1, "none");
     assert_eq!(result[1].0, "text-decoration-style");
     assert_eq!(result[1].1, "solid");
     assert_eq!(result[2].0, "text-decoration-color");
     assert_eq!(result[2].1, "blue");
+    assert_eq!(result[3].0, "text-decoration-thickness");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// text-decoration line + style
 fn test_text_decoration_line_and_style() {
     let result = expand_one("text-decoration", "underline dotted", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "text-decoration-line");
     assert_eq!(result[0].1, "underline");
     assert_eq!(result[1].0, "text-decoration-style");
     assert_eq!(result[1].1, "dotted");
     assert_eq!(result[2].0, "text-decoration-color");
     assert_eq!(result[2].1, "currentcolor");
+    assert_eq!(result[3].0, "text-decoration-thickness");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// text-decoration line + color
 fn test_text_decoration_line_and_color() {
     let result = expand_one("text-decoration", "underline blue", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "text-decoration-line");
     assert_eq!(result[0].1, "underline");
     assert_eq!(result[1].0, "text-decoration-style");
     assert_eq!(result[1].1, "solid");
     assert_eq!(result[2].0, "text-decoration-color");
     assert_eq!(result[2].1, "blue");
+    assert_eq!(result[3].0, "text-decoration-thickness");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// text-decoration style + color
 fn test_text_decoration_style_and_color() {
     let result = expand_one("text-decoration", "dashed red", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "text-decoration-line");
     assert_eq!(result[0].1, "none");
     assert_eq!(result[1].0, "text-decoration-style");
     assert_eq!(result[1].1, "dashed");
     assert_eq!(result[2].0, "text-decoration-color");
     assert_eq!(result[2].1, "red");
+    assert_eq!(result[3].0, "text-decoration-thickness");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// text-decoration "none" 值
 fn test_text_decoration_none() {
     let result = expand_one("text-decoration", "none", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "text-decoration-line");
     assert_eq!(result[0].1, "none");
     assert_eq!(result[1].0, "text-decoration-style");
     assert_eq!(result[1].1, "solid");
     assert_eq!(result[2].0, "text-decoration-color");
     assert_eq!(result[2].1, "currentcolor");
+    assert_eq!(result[3].0, "text-decoration-thickness");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// text-decoration 顺序独立 - color, line, style
 fn test_text_decoration_order_color_line_style() {
     let result = expand_one("text-decoration", "blue underline wavy", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "text-decoration-line");
     assert_eq!(result[0].1, "underline");
     assert_eq!(result[1].0, "text-decoration-style");
     assert_eq!(result[1].1, "wavy");
     assert_eq!(result[2].0, "text-decoration-color");
     assert_eq!(result[2].1, "blue");
+    assert_eq!(result[3].0, "text-decoration-thickness");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]
 /// text-decoration blink
 fn test_text_decoration_blink() {
     let result = expand_one("text-decoration", "blink", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "text-decoration-line");
     assert_eq!(result[0].1, "blink");
     assert_eq!(result[1].0, "text-decoration-style");
     assert_eq!(result[1].1, "solid");
     assert_eq!(result[2].0, "text-decoration-color");
     assert_eq!(result[2].1, "currentcolor");
+    assert_eq!(result[3].0, "text-decoration-thickness");
+    assert_eq!(result[3].1, "auto");
 }
 
 // ═══════════════════════════════════════════════════════════════════

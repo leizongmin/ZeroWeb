@@ -705,16 +705,50 @@ fn test_shorthand_list_style_disc_inside() {
 }
 
 #[test]
-/// text-decoration 简写展开：underline dotted red → line, style, color
+/// text-decoration 简写展开：underline dotted red → line, style, color, thickness
+/// （R2592：CSS Text Decoration 4 简写含第 4 个 longhand text-decoration-thickness，
+/// 未显式给定则重置为 initial auto）
 fn test_shorthand_text_decoration_line_style_color() {
     let result = expand_one("text-decoration", "underline dotted red", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
+    assert_eq!(result.len(), 4);
     assert_eq!(result[0].0, "text-decoration-line");
     assert_eq!(result[0].1, "underline");
     assert_eq!(result[1].0, "text-decoration-style");
     assert_eq!(result[1].1, "dotted");
     assert_eq!(result[2].0, "text-decoration-color");
     assert_eq!(result[2].1, "red");
+    assert_eq!(result[3].0, "text-decoration-thickness");
+    assert_eq!(result[3].1, "auto");
+}
+
+#[test]
+/// R2592：text-decoration 简写中的 thickness token 路由到 text-decoration-thickness longhand。
+/// driving: css-text-decor text-decoration-shorthands-001(auto)/002(100px)。
+fn test_shorthand_text_decoration_thickness_routing() {
+    // 显式长度 thickness（driving: text-decoration-shorthands-002 green underline 100px）
+    let r = expand_one("text-decoration", "green underline 100px", false, (0, 0, 1));
+    let thickness = r.iter().find(|(p, _, _, _)| p == "text-decoration-thickness").unwrap();
+    assert_eq!(thickness.1, "100px");
+
+    // auto 关键字（driving: text-decoration-shorthands-001 green underline auto）
+    let r = expand_one("text-decoration", "green underline auto", false, (0, 0, 1));
+    let thickness = r.iter().find(|(p, _, _, _)| p == "text-decoration-thickness").unwrap();
+    assert_eq!(thickness.1, "auto");
+
+    // from-font 关键字
+    let r = expand_one("text-decoration", "underline from-font", false, (0, 0, 1));
+    let thickness = r.iter().find(|(p, _, _, _)| p == "text-decoration-thickness").unwrap();
+    assert_eq!(thickness.1, "from-font");
+
+    // 百分比 thickness
+    let r = expand_one("text-decoration", "underline 50%", false, (0, 0, 1));
+    let thickness = r.iter().find(|(p, _, _, _)| p == "text-decoration-thickness").unwrap();
+    assert_eq!(thickness.1, "50%");
+
+    // 无 thickness token → 重置为 initial auto
+    let r = expand_one("text-decoration", "underline", false, (0, 0, 1));
+    let thickness = r.iter().find(|(p, _, _, _)| p == "text-decoration-thickness").unwrap();
+    assert_eq!(thickness.1, "auto");
 }
 
 #[test]

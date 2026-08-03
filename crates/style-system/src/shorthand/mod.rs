@@ -1888,7 +1888,12 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
     if matches_css_wide_keyword(value) {
         return wide_keyword_to_longhands(
             value,
-            &["text-decoration-line", "text-decoration-style", "text-decoration-color"],
+            &[
+                "text-decoration-line",
+                "text-decoration-style",
+                "text-decoration-color",
+                "text-decoration-thickness",
+            ],
             important,
             specificity,
         );
@@ -1899,6 +1904,7 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
             mk("text-decoration-line", "none"),
             mk("text-decoration-style", "solid"),
             mk("text-decoration-color", "currentcolor"),
+            mk("text-decoration-thickness", "auto"),
         ];
     }
 
@@ -1910,10 +1916,28 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
     let mut line_toks: Vec<&str> = Vec::new();
     let mut dec_style = "solid".to_string();
     let mut color = "currentcolor".to_string();
+    // CSS Text Decoration 4：`text-decoration` 简写含第 4 个 longhand `text-decoration-thickness`
+    // （§2.3）。简写应把未显式给定的 longhand 重置为 initial（与 style:solid / color:currentcolor
+    // 同谱），故默认 auto（initial）。R2592。driving: text-decoration-shorthands-001(auto)/002(100px)。
+    let mut thickness = "auto".to_string();
 
     let is_line = |s: &str| matches!(s, "underline" | "overline" | "line-through" | "blink" | "none");
 
     let is_dec_style = |s: &str| matches!(s, "solid" | "double" | "dotted" | "dashed" | "wavy");
+
+    // text-decoration-thickness 值域 = `auto | from-font | <length-percentage>`，与 line/style/color
+    // 值域无交集，故未匹配前三类的 token 落到此分类（旧实现静默丢弃致 thickness 永远是 initial auto）。
+    // thin/medium/thick 是 border-width 关键字非 thickness 合法值，排除避免误分类。
+    let is_thickness = |s: &str| -> bool {
+        if s.eq_ignore_ascii_case("auto") || s.eq_ignore_ascii_case("from-font") {
+            return true;
+        }
+        if let Some(num) = s.strip_suffix('%') {
+            return num.trim().parse::<f64>().map(|n| n.is_finite()).unwrap_or(false);
+        }
+        !(s.eq_ignore_ascii_case("thin") || s.eq_ignore_ascii_case("medium") || s.eq_ignore_ascii_case("thick"))
+            && looks_like_length(s)
+    };
 
     for part in &parts {
         if is_line(part) {
@@ -1922,6 +1946,8 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
             dec_style = part.to_string();
         } else if looks_like_color(part) {
             color = part.to_string();
+        } else if is_thickness(part) {
+            thickness = part.to_string();
         }
     }
     let line = if line_toks.is_empty() {
@@ -1934,6 +1960,7 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
         mk("text-decoration-line", &line),
         mk("text-decoration-style", &dec_style),
         mk("text-decoration-color", &color),
+        mk("text-decoration-thickness", &thickness),
     ]
 }
 
