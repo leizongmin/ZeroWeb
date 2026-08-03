@@ -10,7 +10,8 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{ImagePrimitive, LineCap, LineStyle, StrokePrimitive};
 use zero_style_system::{
-    BorderCollapseValue, BorderImageRepeatComputedMode, BorderImageSourceComputedValue, BorderStyleValue, ComputedStyle,
+    BorderCollapseValue, BorderImageOutsetComputedComponent, BorderImageRepeatComputedMode,
+    BorderImageSourceComputedValue, BorderStyleValue, ComputedStyle,
 };
 
 use super::super::color::{color_value_to_render, resolve_color_current};
@@ -193,8 +194,6 @@ impl super::Painter {
             return;
         }
 
-        let w = box_node.width;
-        let h = box_node.height;
         let key = image_resource_key(&url, self.document_url.as_deref());
 
         // 辅助：创建 ImagePrimitive（每次创建新的 ImageKey，因为 ImageKey 不是 Copy）
@@ -204,9 +203,25 @@ impl super::Painter {
             clip: None,
         };
 
-        // 边框区域的坐标
-        let bx = abs_x;
-        let by = abs_y;
+        // border-image-outset（CSS Backgrounds 3 §7.2）：border-image 绘制区向外扩展。
+        // Number = × 对应边框宽度；Length = 已解析 px。各边 outset 把外矩形向外移，
+        // 9 宫格（角/边/中心）相对外矩形定位 → 仅调整 bx/by/w/h 即可（其余公式不变）。
+        let outset_px = |c: &BorderImageOutsetComputedComponent, bw: f32| -> f32 {
+            match c {
+                BorderImageOutsetComputedComponent::Number(n) => n * bw,
+                BorderImageOutsetComputedComponent::Length(l) => *l,
+            }
+        };
+        let o_top = outset_px(&style.border_image_outset.top, bt);
+        let o_right = outset_px(&style.border_image_outset.right, br);
+        let o_bottom = outset_px(&style.border_image_outset.bottom, bb);
+        let o_left = outset_px(&style.border_image_outset.left, bl);
+
+        // 边框区域坐标（含 outset 外扩；默认 outset=0 → bx=abs_x/by=abs_y，旧行为不变）。
+        let bx = abs_x - o_left;
+        let by = abs_y - o_top;
+        let w = box_node.width + o_left + o_right;
+        let h = box_node.height + o_top + o_bottom;
 
         // 四条边的尺寸
         let edge_h_w = (w - bl - br).max(0.0);
