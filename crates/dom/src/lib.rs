@@ -32,6 +32,7 @@ mod parser;
 mod query;
 mod range;
 mod serializer;
+mod traversal;
 
 pub use document::*;
 pub use event::*;
@@ -43,6 +44,7 @@ pub use node::*;
 pub use parser::*;
 pub use query::*;
 pub use range::*;
+pub use traversal::*;
 
 #[cfg(test)]
 mod tests;
