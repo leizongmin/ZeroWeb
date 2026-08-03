@@ -30,6 +30,10 @@ fn test_property_registry_inheritance() {
     assert!(PropertyRegistry::is_inherited("line-height"));
     assert!(PropertyRegistry::is_inherited("white-space"));
     assert!(PropertyRegistry::is_inherited("text-align"));
+    // CSS Text Decoration 3 §3.1/§3.2：text-emphasis-style/color/position 均继承（R2597）
+    assert!(PropertyRegistry::is_inherited("text-emphasis-color"));
+    assert!(PropertyRegistry::is_inherited("text-emphasis-style"));
+    assert!(PropertyRegistry::is_inherited("text-emphasis-position"));
     // 不应继承的属性
     assert!(!PropertyRegistry::is_inherited("display"));
     assert!(!PropertyRegistry::is_inherited("margin-top"));

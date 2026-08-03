@@ -367,6 +367,8 @@ impl PropertyRegistry {
                 | "tab-size"
                 | "text-underline-offset"
                 | "text-emphasis-color"
+                | "text-emphasis-style"
+                | "text-emphasis-position"
                 | "accent-color"
                 | "caret-color"
                 | "text-wrap"
