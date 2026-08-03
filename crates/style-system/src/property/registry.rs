@@ -90,7 +90,8 @@ impl PropertyRegistry {
             // CSS Text Decoration 3 §3.1/§3.2：emphasis-style 与 position 均继承。
             "text-emphasis-style" => Some(TextEmphasisStyle(TextEmphasisStyleValue::None)),
             "text-emphasis-position" => Some(TextEmphasisPosition(TextEmphasisPositionValue::OverRight)),
-            // text-emphasis-color 未单独实现（用 text_decoration_color 近似）；shorthand 待补
+            // CSS Text Decoration 3 §3.3：text-emphasis-color 继承，默认 currentColor。R2523。
+            "text-emphasis-color" => Some(TextEmphasisColor(ColorValue::CurrentColor)),
             "text-transform" => Some(TextTransform(TextTransformValue::None)),
             "letter-spacing" | "word-spacing" => Some(Length(LengthValue::Px(0.0))),
             "white-space" => Some(WhiteSpace(WhiteSpaceValue::Normal)),
@@ -365,6 +366,7 @@ impl PropertyRegistry {
                 | "direction"
                 | "tab-size"
                 | "text-underline-offset"
+                | "text-emphasis-color"
                 | "accent-color"
                 | "caret-color"
                 | "text-wrap"
@@ -443,6 +445,7 @@ impl PropertyRegistry {
             "text-underline-offset",
             "text-emphasis-style",
             "text-emphasis-position",
+            "text-emphasis-color",
             "text-transform",
             "letter-spacing",
             "word-spacing",

@@ -1505,6 +1505,8 @@ pub enum PropertyValue {
     TextEmphasisStyle(TextEmphasisStyleValue),
     /// text-emphasis-position 值（§3.2）。
     TextEmphasisPosition(TextEmphasisPositionValue),
+    /// text-emphasis-color 值（CSS Text Decoration 3 §3.3，继承）。R2523。
+    TextEmphasisColor(ColorValue),
     /// text-transform 值。
     TextTransform(TextTransformValue),
     /// white-space 值。

@@ -107,6 +107,7 @@ impl Default for ComputedStyle {
             text_underline_offset: zero_css_parser::values::TextUnderlineOffsetValue::Auto,
             text_emphasis_style: TextEmphasisStyleValue::None,
             text_emphasis_position: TextEmphasisPositionValue::OverRight,
+            text_emphasis_color: ColorValue::CurrentColor,
             text_transform: TextTransformValue::None,
             letter_spacing: LengthValue::Px(0.0),
             word_spacing: LengthValue::Px(0.0),

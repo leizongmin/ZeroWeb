@@ -523,12 +523,14 @@ fn test_text_emphasis_shorthand_style_only() {
 }
 
 #[test]
-fn test_text_emphasis_shorthand_strips_color() {
-    // text-emphasis: filled circle red → style: "filled circle"（color 剥离，ZW 暂未存储）
+fn test_text_emphasis_shorthand_expands_color() {
+    // R2523：text-emphasis: filled circle red → color + style 两条 longhand
     let result = expand_one("text-emphasis", "filled circle red", false, (0, 0, 1));
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].0, "text-emphasis-style");
-    assert_eq!(result[0].1, "filled circle");
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "text-emphasis-color");
+    assert_eq!(result[0].1, "red");
+    assert_eq!(result[1].0, "text-emphasis-style");
+    assert_eq!(result[1].1, "filled circle");
 }
 
 #[test]

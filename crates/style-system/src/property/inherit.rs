@@ -59,6 +59,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.text_emphasis_position = parent.text_emphasis_position;
             true
         }
+        "text-emphasis-color" => {
+            child.text_emphasis_color = parent.text_emphasis_color.clone();
+            true
+        }
         "text-underline-offset" => {
             child.text_underline_offset = parent.text_underline_offset.clone();
             true
@@ -755,6 +759,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "text-emphasis-position" => {
             style.text_emphasis_position = default_style.text_emphasis_position;
+            true
+        }
+        "text-emphasis-color" => {
+            style.text_emphasis_color = default_style.text_emphasis_color;
             true
         }
         "text-transform" => {

@@ -561,6 +561,12 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "text-emphasis-color" => {
+            if let Some(v) = parse_color_fn(value) {
+                style.text_emphasis_color = v;
+                return true;
+            }
+        }
         "text-transform" => {
             if let Some(v) = parse_text_transform(value) {
                 style.text_transform = v;

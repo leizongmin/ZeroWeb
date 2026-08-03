@@ -410,7 +410,7 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
 
         // ── text-emphasis 简写（CSS Text Decoration 3 §3.1）──
         // text-emphasis: <text-emphasis-style> || <text-emphasis-color>
-        // text-emphasis-color 暂未在 ComputedStyle 存储，故仅展开 style（剥离 color token）。
+        // R2523：color 与 style 均展开为独立 longhand。
         "text-emphasis" => expand_text_emphasis(value, important, specificity),
 
         // ── list-style 简写 ──
@@ -1940,8 +1940,8 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
 /// 展开 text-emphasis 简写（CSS Text Decoration 3 §3.1）。
 ///
 /// `text-emphasis: <text-emphasis-style> || <text-emphasis-color>`
-/// text-emphasis-color 暂未在 ComputedStyle 存储，故仅展开 style（剥离 color token，
-/// 剩余 token 拼回作为 style 值，支持 `circle`、`filled circle`、`"*"` 等形式）。
+/// color token 展开为 text-emphasis-color longhand，剩余 token 拼回作为 style 值
+/// （支持 `circle`、`filled circle`、`"*"` 等形式）。R2523。
 fn expand_text_emphasis(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
@@ -1953,17 +1953,23 @@ fn expand_text_emphasis(value: &str, important: bool, specificity: (u32, u32, u3
 
     let toks = zero_css_parser::values::split_paren_aware_tokens(value);
     let mut style_parts: Vec<String> = Vec::new();
+    let mut color_part: Option<String> = None;
     for tok in &toks {
         if looks_like_color(tok) {
-            // text-emphasis-color（ZW 暂未存储，剥离）
+            // R2523：text-emphasis-color 现已存储，展开为独立 longhand（CSS Text Decor 3 §3）。
+            color_part = Some(tok.clone());
             continue;
         }
         style_parts.push(tok.clone());
     }
-    if style_parts.is_empty() {
-        return vec![];
+    let mut out: Vec<MatchingDecl> = Vec::new();
+    if let Some(c) = color_part {
+        out.push(mk("text-emphasis-color", &c));
     }
-    vec![mk("text-emphasis-style", &style_parts.join(" "))]
+    if !style_parts.is_empty() {
+        out.push(mk("text-emphasis-style", &style_parts.join(" ")));
+    }
+    out
 }
 
 #[cfg(test)]

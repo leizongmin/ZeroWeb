@@ -243,6 +243,22 @@ fn test_apply_property_color_hex() {
 }
 
 #[test]
+/// R2523：text-emphasis-color（CSS Text Decoration 3 §3.3）apply + 默认 currentColor。
+fn test_apply_property_text_emphasis_color() {
+    // 默认 = currentColor
+    let style = ComputedStyle::default();
+    assert_eq!(style.text_emphasis_color, ColorValue::CurrentColor);
+    // 显式色覆盖
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "text-emphasis-color", "green"));
+    assert_eq!(style.text_emphasis_color, ColorValue::Rgba(0, 128, 0, 255));
+    // 非法值 → false，字段不变
+    let mut style = ComputedStyle::default();
+    assert!(!apply_property_value(&mut style, "text-emphasis-color", "notacolor"));
+    assert_eq!(style.text_emphasis_color, ColorValue::CurrentColor);
+}
+
+#[test]
 /// 测试 apply_property_value 对 opacity
 fn test_apply_property_opacity() {
     let mut style = ComputedStyle::default();

@@ -881,6 +881,13 @@ impl super::Painter {
                                     .filter(|s| s.color != ColorValue::CurrentColor)
                                     .map(|s| color_value_to_render(&s.color))
                                     .unwrap_or(color);
+                                // R2523：text-emphasis-color（CSS Text Decoration 3 §3.3）。
+                                // 显式色覆盖 currentColor；默认 CurrentColor → 沿用 frag_color
+                                //（标记随文字色，字节不变）。
+                                let emphasis_color = owner_style
+                                    .filter(|s| s.text_emphasis_color != ColorValue::CurrentColor)
+                                    .map(|s| color_value_to_render(&s.text_emphasis_color))
+                                    .unwrap_or(frag_color);
                                 // R1021：text-emphasis 标记取自片段 owner 样式（<span> 上设的属性），
                                 // 非容器 style。None/Char 判定 + 位置均来自 owner。
                                 let emphasis_mark: Option<char> =
@@ -968,7 +975,7 @@ impl super::Painter {
                                             x: mark_x,
                                             y: mark_y,
                                             font_size: mark_fs,
-                                            color: frag_color,
+                                            color: emphasis_color,
                                             glyph_id: mark_ch as u32,
                                             font_id: default_font_id,
                                             bitmap_width: None,
@@ -1096,6 +1103,13 @@ impl super::Painter {
 
                             // R1021：text-emphasis 取自片段 owner 样式（<span> 上设）。
                             let owner_style_opt = styles.and_then(|s| s.get(&owner_id));
+                            // R2523：text-emphasis-color（CSS Text Decoration 3 §3.3）。
+                            // 显式色覆盖 currentColor；默认 CurrentColor → 沿用 frag_color
+                            //（标记随文字色，字节不变）。
+                            let emphasis_color = owner_style_opt
+                                .filter(|s| s.text_emphasis_color != ColorValue::CurrentColor)
+                                .map(|s| color_value_to_render(&s.text_emphasis_color))
+                                .unwrap_or(frag_color);
                             // R1224：按片段 owner（父元素）font_family 选 font_id——inline 元素
                             // 字体≠容器时（如 span Ahem in default div）字形位图用 owner 字体
                             // 而非容器 default_font_id。owner_style_opt 缺省（Path B 空 styles）
@@ -1384,7 +1398,7 @@ impl super::Painter {
                                         x: mark_x,
                                         y: mark_y,
                                         font_size: mark_fs,
-                                        color: frag_color,
+                                        color: emphasis_color,
                                         glyph_id: mark_ch as u32,
                                         font_id: frag_font_id,
                                         bitmap_width: None,
