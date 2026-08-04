@@ -183,6 +183,15 @@ pub enum DomMutation {
         /// 待插入节点的 create 句柄（`__n1` 等）。
         child_handle: String,
     },
+    /// `element.outerHTML = html`（P1a，setter）——解析 HTML 片段，把目标元素**整体替换**为
+    /// 片段顶层节点（插入到目标的父节点中目标位置，再移除目标自身）。区别于
+    /// [`Self::SetInnerHtml`]（替换子树，保留目标自身）。
+    SetOuterHtml {
+        /// 目标元素选择器。
+        selector: String,
+        /// 替换用的 HTML 片段。
+        html: String,
+    },
 }
 
 /// 在文档根下按简单选择器查找第一个匹配元素。
@@ -498,6 +507,9 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 // 复用 append_child 的自动 reparent（child 已挂载则从旧 parent 移除 → 移动语义）。
                 insert_nodes_at_position(doc, &[child], node, position)?;
             }
+            DomMutation::SetOuterHtml { selector, html } => {
+                replace_outer_html(doc, selector, html)?;
+            }
         }
     }
 
@@ -697,6 +709,40 @@ fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: 
         kids.into_iter().map(|k| copy_subtree_from(doc, &frag_doc, k)).collect()
     };
     insert_nodes_at_position(doc, &frag_nodes, node, position)
+}
+
+/// `element.outerHTML = html`（setter）——解析 HTML 片段，把目标元素**整体替换**为片段
+/// 顶层节点：在目标的父节点中、目标位置之前逐个插入片段节点，再移除目标自身。供
+/// [`DomMutation::SetOuterHtml`] 应用。复用 [`replace_inner_html`] 的 fragment parse 思路 +
+/// [`copy_subtree_from`]。
+///
+/// 目标需有父节点（文档根无父 → 返错，匹配 spec 对根元素 outerHTML 赋值抛错）。空片段 →
+/// 仅移除目标（spec：`el.outerHTML = ''` 移除元素）。
+fn replace_outer_html(doc: &mut Document, selector: &str, html: &str) -> Result<(), String> {
+    let node = find_by_selector(doc, selector).ok_or_else(|| format!("set_outer_html: no match for {selector}"))?;
+    let parent = doc
+        .get(node)
+        .and_then(|n| n.parent)
+        .ok_or_else(|| format!("set_outer_html: element {selector} has no parent"))?;
+    // 解析顶层 fragment 节点（与 replace_inner_html 同源），逐个插到目标之前。
+    let trimmed = html.trim();
+    if !trimmed.is_empty() {
+        if !trimmed.contains('<') {
+            let t = doc.create_text_node(trimmed);
+            doc.insert_before(parent, t, node).map_err(|e| e.to_string())?;
+        } else {
+            let frag_doc = parse_html(&format!("<!DOCTYPE html><html><body>{trimmed}</body></html>"));
+            let body = find_by_selector(&frag_doc, "body").ok_or("outerHTML fragment parse failed")?;
+            let kids: Vec<NodeId> = frag_doc.get(body).map(|n| n.children.clone()).unwrap_or_default();
+            for k in kids {
+                let copied = copy_subtree_from(doc, &frag_doc, k);
+                doc.insert_before(parent, copied, node).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    // 移除目标自身（整体替换）。
+    doc.remove_child(parent, node).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// 解析 HTML、应用变更并返回序列化后的 HTML。
@@ -1143,6 +1189,15 @@ pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
     find_by_selector(&doc, selector)
         .map(|n| doc.inner_html(n))
+        .unwrap_or_default()
+}
+
+/// 从 HTML 快照查询元素的 outerHTML（含自身 tag/属性 + 子树序列化）。供 `__zw_get_outer_html`
+/// 回调 → shim `el.outerHTML`（getter）。
+pub fn query_outer_html_from_html(html: &str, selector: &str) -> String {
+    let doc = parse_html(html);
+    find_by_selector(&doc, selector)
+        .map(|n| doc.outer_html(n))
         .unwrap_or_default()
 }
 
@@ -1780,6 +1835,32 @@ pub fn register_dom_callbacks(
                 m.lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .push(DomMutation::SetInnerHtml {
+                        selector: args[0].clone(),
+                        html: args[1].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_get_outer_html",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            query_outer_html_from_html(&snap, &sel)
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_set_outer_html",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::SetOuterHtml {
                         selector: args[0].clone(),
                         html: args[1].clone(),
                     });

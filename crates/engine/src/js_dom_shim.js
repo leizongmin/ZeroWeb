@@ -1042,6 +1042,17 @@
         if (prop === 'innerHTML') {
           return handle ? __zw_get_inner_html_handle(handle) : __zw_get_inner_html(sel);
         }
+        // `element.outerHTML`（getter）：含自身 tag/属性 + 子树序列化。仅 sel-based（已挂载）
+        // 元素经 host `__zw_get_outer_html` 真实序列化；handle-only（detached）无 tag host 查询，
+        // best-effort 返 innerHTML（无 wrapper，罕见读取场景）。
+        if (prop === 'outerHTML') {
+          if (sel && typeof __zw_get_outer_html === 'function') {
+            try { return __zw_get_outer_html(sel); } catch (_e) { return ''; }
+          }
+          return handle && typeof __zw_get_inner_html_handle === 'function'
+            ? (__zw_get_inner_html_handle(handle) || '')
+            : '';
+        }
         if (prop === 'parentNode' || prop === 'parentElement') {
           return _parentNodeFor(sel, handle);
         }
@@ -1430,6 +1441,16 @@
             __zw_set_text(sel, String(value));
           }
           // textContent/innerHTML = characterData 类，incr 仅支持 attributes + childList，不 notify。
+        } else if (p === 'outerHTML') {
+          // outerHTML setter：整体替换元素为解析后的片段。仅 sel-based（需父节点）；
+          // handle-only（detached）无父 → 无操作（spec 对无父元素赋 outerHTML 抛错，静默更安全）。
+          if (sel && typeof __zw_set_outer_html === 'function') {
+            try {
+              __zw_set_outer_html(sel, String(value));
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [] });
+            } catch (_e) {}
+          }
+          return true;
         } else if (p === 'className') {
           if (handle) __zw_set_attr_handle(handle, 'class', String(value));
           else __zw_set_attr(sel, 'class', String(value));

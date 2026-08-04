@@ -189,6 +189,77 @@ fn test_apply_insert_adjacent_html_nested_subtree() {
 }
 
 #[test]
+fn test_query_outer_html_serialization() {
+    // outerHTML getter：含自身 tag/属性 + 子树序列化。
+    let html = "<html><body><div id=\"t\" class=\"c\">hi<span>x</span></div></body></html>";
+    let outer = query_outer_html_from_html(html, "#t");
+    assert!(outer.contains("<div"), "outerHTML 含自身 tag\n{outer}");
+    assert!(outer.contains("id=\"t\""), "outerHTML 含属性\n{outer}");
+    assert!(outer.contains("hi<span>x</span>"), "outerHTML 含子树\n{outer}");
+}
+
+#[test]
+fn test_apply_set_outer_html_replaces_element() {
+    // outerHTML setter：目标元素整体替换为解析片段，兄弟位置保留。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div><i>after</i></body></html>";
+    let mutations = vec![DomMutation::SetOuterHtml {
+        selector: "#t".into(),
+        html: "<b>1</b><b>2</b>".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    assert!(!out.contains("<div id=\"t\">"), "outerHTML setter 应移除原元素\n{out}");
+    let i1 = out.find("<b>1</b>").unwrap();
+    let i2 = out.find("<b>2</b>").unwrap();
+    let i_after = out.find("<i>after</i>").unwrap();
+    assert!(
+        i1 < i2 && i2 < i_after,
+        "替换片段应保持顺序且位于原位置（兄弟 after 之前）\n{out}"
+    );
+}
+
+#[test]
+fn test_apply_set_outer_html_empty_removes() {
+    // outerHTML = ''：仅移除元素（spec），兄弟保留。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div><i>keep</i></body></html>";
+    let mutations = vec![DomMutation::SetOuterHtml {
+        selector: "#t".into(),
+        html: "".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    assert!(!out.contains("<div id=\"t\">"), "空片段应移除元素\n{out}");
+    assert!(out.contains("<i>keep</i>"), "兄弟应保留\n{out}");
+}
+
+#[test]
+fn test_apply_set_outer_html_text_fragment() {
+    // outerHTML = 纯文本：替换为单 Text 节点。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
+    let mutations = vec![DomMutation::SetOuterHtml {
+        selector: "#t".into(),
+        html: "just-text".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    assert!(out.contains("just-text"), "纯文本片段应替换为 Text 节点\n{out}");
+    assert!(!out.contains("<div id=\"t\">"), "原元素应被移除\n{out}");
+}
+
+#[test]
+fn test_apply_set_outer_html_nested_fragment() {
+    // outerHTML setter 片段含嵌套子树：完整深拷贝。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
+    let mutations = vec![DomMutation::SetOuterHtml {
+        selector: "#t".into(),
+        html: "<section><p>a<span>y</span></p></section>".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    assert!(
+        out.contains("<section><p>a<span>y</span></p></section>"),
+        "嵌套片段应完整深拷贝替换\n{out}"
+    );
+    assert!(!out.contains("<div id=\"t\">"), "原元素应被移除\n{out}");
+}
+
+#[test]
 fn test_apply_insert_adjacent_text_literal() {
     // insertAdjacentText：文本作**字面 Text 节点**（不解析 HTML）——含 `<` 的文本应转义
     // 为 `&lt;...&gt;` 而非解析成元素。beforeend 追加到目标。
@@ -1383,4 +1454,42 @@ fn test_insert_adjacent_html_e2e() {
         positions.iter().map(String::as_str).collect::<Vec<_>>(),
         vec!["beforeend", "afterbegin", "nowhere"]
     );
+}
+
+#[test]
+fn test_outer_html_e2e() {
+    // 端到端：outerHTML getter 真实序列化（含自身 tag/属性/子树）+ setter 入队 SetOuterHtml。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t' class='c'>hi<span>x</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // getter：含自身 tag/属性 + 子树。
+    sandbox
+        .execute("globalThis.__o = document.querySelector('#t').outerHTML;")
+        .unwrap();
+    let outer = sandbox.execute("globalThis.__o").unwrap().value;
+    assert!(outer.contains("<div"), "getter 含自身 tag\n{outer}");
+    assert!(outer.contains("class=\"c\""), "getter 含属性\n{outer}");
+    assert!(outer.contains("<span>x</span>"), "getter 含子树\n{outer}");
+
+    // setter：入队 SetOuterHtml（selector + html 透传）。
+    sandbox
+        .execute("document.querySelector('#t').outerHTML = '<b>1</b>';")
+        .unwrap();
+    let set_mutation =
+        mutations.lock().unwrap().iter().any(
+            |m| matches!(m, DomMutation::SetOuterHtml { selector, html } if selector == "#t" && html == "<b>1</b>"),
+        );
+    assert!(set_mutation, "outerHTML setter 应入队 SetOuterHtml(#t, <b>1</b>)");
 }
