@@ -724,6 +724,26 @@ fn test_query_selector_nth_last() {
 }
 
 #[test]
+fn test_query_selector_is_where() {
+    let doc = parse_html(
+        "<html><body>\
+         <p class='a'>P-A</p><span class='b'>S-B</span><div class='a'>D-A</div><p class='c'>P-C</p>\
+         </body></html>",
+    );
+    let root = doc.root();
+    // :is(.a, .b) → class a 或 b（P-A, S-B, D-A）。
+    let matched = doc.query_selector_all(root, ":is(.a, .b)");
+    assert_eq!(matched.len(), 3, ":is(.a,.b) 应匹配 3 个");
+    // :where(.c) → class c（P-C）。
+    let c = doc.query_selector(root, ":where(.c)").expect(":where(.c)");
+    assert_eq!(doc.text_content(c), Some("P-C".to_string()));
+    // 组合：p:is(.a) → p 且 class a（P-A；排除 div.a）。
+    let pa = doc.query_selector_all(root, "p:is(.a)");
+    assert_eq!(pa.len(), 1);
+    assert_eq!(doc.text_content(pa[0]), Some("P-A".to_string()));
+}
+
+#[test]
 fn test_query_selector_not_found() {
     let doc = parse_html("<html><body></body></html>");
     let root = doc.root();

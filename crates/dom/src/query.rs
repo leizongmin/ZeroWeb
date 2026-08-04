@@ -54,6 +54,9 @@ pub enum PseudoClass {
     /// `:not(simple)`——否定伪类，匹配**不**满足内嵌简单选择器的元素（CSS3 语义：内嵌仅简单选择器，
     /// 无组合器）。内嵌可为含伪类的简单选择器（如 `:not(:first-child)`）。
     Not(SimpleSelector),
+    /// `:is(s1, s2, …)` / `:where(…)`——选择器列表，匹配满足**任一**内嵌简单选择器的元素。
+    /// `:where` 语义同 `:is`（区别仅在特异性，本引擎无特异性概念，故共用）。
+    Is(Vec<SimpleSelector>),
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -194,6 +197,8 @@ impl SimpleSelector {
             PseudoClass::Empty => pos.is_empty,
             // :not(inner)——否定（内嵌经 matches_full 递归评估，可含伪类）。
             PseudoClass::Not(inner) => !inner.matches_full(elem, pos),
+            // :is/:where(list)——任一内嵌匹配则真。
+            PseudoClass::Is(list) => list.iter().any(|inner| inner.matches_full(elem, pos)),
         })
     }
 }
@@ -216,18 +221,77 @@ pub struct SelectorChain {
     pub combinators: Vec<Combinator>,
 }
 
+/// 按 `sep` 切分字符串，但忽略 `()`/`[]` 内的出现（如 `:is(a > b)` 内的 `>`、`[a=b]`）。
+fn split_outside_brackets(s: &str, sep: u8) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (i, &b) in s.as_bytes().iter().enumerate() {
+        match b {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => {
+                if depth > 0 {
+                    depth -= 1;
+                }
+            }
+            c if c == sep && depth == 0 => {
+                parts.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&s[start..]);
+    parts
+}
+
+/// 按空白切分（后代组合器边界），忽略 `()`/`[]` 内的空白（如 `:is(.a, .b)` 逗号后空格）。
+/// 跳过空段。
+fn split_ws_outside_brackets(s: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    let bytes = s.as_bytes();
+    for i in 0..bytes.len() {
+        match bytes[i] {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => {
+                if depth > 0 {
+                    depth -= 1;
+                }
+            }
+            b' ' | b'\t' | b'\n' | b'\r' if depth == 0 => {
+                if i > start {
+                    parts.push(&s[start..i]);
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < s.len() {
+        parts.push(&s[start..]);
+    }
+    parts
+}
+
 /// 解析含后代/子选择器的选择器链；单段时退化为简单选择器。
 pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
     let trimmed = selector.trim();
     if trimmed.is_empty() {
         return None;
     }
-    let segments: Vec<&str> = trimmed.split('>').map(str::trim).collect();
+    // `>` 切分子选择器段——但须忽略 `()`/`[]` 内的 `>`（如 `:is(a > b)` 内嵌组合器、`[a>b]` 属性值）。
+    let segments: Vec<&str> = split_outside_brackets(trimmed, b'>')
+        .into_iter()
+        .map(str::trim)
+        .collect();
     let mut parts = Vec::new();
     let mut combinators = Vec::new();
 
     for (seg_idx, segment) in segments.iter().enumerate() {
-        let subs: Vec<&str> = segment.split_whitespace().filter(|s| !s.is_empty()).collect();
+        // 空白切分后代组合器——须忽略 `()`/`[]` 内的空白（如 `:is(.a, .b)` 逗号后空格）。
+        let subs: Vec<&str> = split_ws_outside_brackets(segment);
         if subs.is_empty() {
             return None;
         }
@@ -305,6 +369,17 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         "empty" => Some(PseudoClass::Empty),
         // :not(simple)——CSS3 否定伪类，内嵌经 parse_simple_selector（可含伪类，如 :not(:first-child)）。
         "not" => Some(PseudoClass::Not(parse_simple_selector(args?)?)),
+        // :is()/:where()——选择器列表（按 `,` 拆为多个 SimpleSelector，任一匹配）。
+        // `:where` 语义同 `:is`（区别仅特异性，本引擎无特异性概念）。
+        "is" | "where" => {
+            let a = args?;
+            let list: Vec<SimpleSelector> = a.split(',').filter_map(|s| parse_simple_selector(s.trim())).collect();
+            if list.is_empty() {
+                None
+            } else {
+                Some(PseudoClass::Is(list))
+            }
+        }
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
     }
 }
