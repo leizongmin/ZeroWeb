@@ -2375,3 +2375,96 @@ fn test_remove_event_listener_capture_aware() {
         "removeEventListener(fn, true) 应移除 capture 注册（再次派发不触发）"
     );
 }
+
+#[test]
+fn test_style_proxy_methods() {
+    // R2695：style 代理 API。getPropertyValue 读初始 style；setProperty 经 SetStyle 应用；
+    // per-property get/set 保留；cssText get 读原始串、set 经 SetAttr 整体替换。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\" style=\"color: red\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // getPropertyValue 读初始 style 快照（'color: red' → 'red'）。
+    sandbox
+        .execute("globalThis.__gv = document.querySelector('#d').style.getPropertyValue('color');")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__gv").unwrap().value, "red", "getPropertyValue 读初始 color");
+    // per-property get 保留（'color' → 'red'）。
+    sandbox
+        .execute("globalThis.__pg = document.querySelector('#d').style.color;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__pg").unwrap().value, "red", "per-property style.color 保留");
+    // cssText get 读原始串。
+    sandbox
+        .execute("globalThis.__ct = document.querySelector('#d').style.cssText;")
+        .unwrap();
+    assert!(
+        sandbox.execute("globalThis.__ct").unwrap().value.contains("color: red"),
+        "cssText getter 读原始 style 串"
+    );
+
+    // setProperty（dashed 名）+ per-property set → 应用后验证序列化。
+    sandbox
+        .execute(
+            "var d = document.querySelector('#d');\n\
+             d.style.setProperty('background-color', 'blue');\n\
+             d.style.fontSize = '10px';",
+        )
+        .unwrap();
+    let ms1 = mutations.lock().unwrap().clone();
+    let out1 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms1).unwrap();
+    assert!(out1.contains("background-color: blue"), "setProperty 应用\n{out1}");
+    assert!(
+        out1.contains("font-size: 10px") || out1.contains("fontSize: 10px"),
+        "per-property style.fontSize 应用\n{out1}"
+    );
+
+    // cssText set → 整体替换（原 color: red 应消失）。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute("document.querySelector('#d').style.cssText = 'margin: 0; padding: 5px';")
+        .unwrap();
+    let ms2 = mutations.lock().unwrap().clone();
+    let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
+    assert!(out2.contains("margin: 0"), "cssText setter 应用 margin\n{out2}");
+    assert!(out2.contains("padding: 5px"), "cssText setter 应用 padding\n{out2}");
+    assert!(!out2.contains("color: red"), "cssText setter 应整体替换（原 color 消失）\n{out2}");
+}
+
+#[test]
+fn test_style_remove_property() {
+    // R2695：removeProperty 真移除 style 声明（SetStyle 空值仍 push 'prop: '，不移除）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\" style=\"color: red; font-size: 10px\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute("document.querySelector('#d').style.removeProperty('color');")
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(!out.contains("color"), "removeProperty('color') 应真移除 color 声明\n{out}");
+    assert!(out.contains("font-size: 10px"), "removeProperty 不应影响其他属性\n{out}");
+}

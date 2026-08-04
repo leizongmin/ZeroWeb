@@ -819,6 +819,35 @@ R2690–R2691 self-review 续，从「近似返回」转向「行为缺失」。
 
 **已知限制（剩余）**：① `passive`/`signal` options 未处理（passive 对本引擎无滚动默认动作可阻止，signal=AbortSignal 卸载语义属 follow-up）；② IE legacy `attachEvent`/`detachEventForKey` 不走 options 路径（legacy API 无 capture/once 概念，保持原样）；③ `once` 移除在派发**整条 listener 列表后**批量进行（spec 是触发即移除——reentrancy 下同帧内若该 listener 被同事件再次命中理论上仍只触发一次，因快照已固定；极端 reentrancy 边界为 follow-up）。
 
+### P1a style 代理 API — setProperty/getPropertyValue/removeProperty/cssText（本轮 R2695，self-review 续，~13,318 测试）
+
+承接 R2694。self-review pivot 到 `el.style` 代理。旧实现仅 per-property get/set（`style.color`/`style.color='red'`），缺 CSSStyleDeclaration 的方法与 cssText：
+
+| 缺口 | 旧行为 | spec |
+|------|--------|------|
+| `style.setProperty(prop,val)` | get trap 返 '' → 调用即 **TypeError** | 设 dashed CSS 属性（规范方式） |
+| `style.getPropertyValue(prop)` | 同上 TypeError | 读属性值 |
+| `style.removeProperty(prop)` | 同上 TypeError | 真移除声明 |
+| `style.cssText`（get） | parse 找 'cssText' 属性 → '' | 返原始 style 串 |
+| `style.cssText = s`（set） | 误当属性名 `set_style('cssText', s)` | 整体替换 style |
+
+**顺带修 latent bug**：`removeProperty` 需真移除声明，但 `apply_style_property`/`merge_style_property` 对**空值仍 push** `prop: `（与 R2657 `removeAttribute` 设空值不移除布尔属性同类 bug）。新增 `DomMutation::RemoveStyle`/`RemoveStyleOnHandle` + `remove_style_property`（filter 不 push）+ `apply_remove_style` + `__zw_remove_style(__handle)` 回调，使 removeProperty 真移除（区别 setProperty 空值留 `prop: `）。
+
+**修复**：shim 抽 `_styleProxy(sel, handle)` helper（旧内联 proxy 替换）：per-property get/set 保留 + `setProperty`/`getPropertyValue`（复用 `__zw_set_style`/读 style 属性 parse）/`removeProperty`（`__zw_remove_style`）/`cssText` get（读原始串）/cssText set（`__zw_set_attr('style', s)` 整体替换）/`item`/`length`（枚举）/`getPropertyPriority`（返 ''，!important 未跟踪）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge.rs` | `DomMutation::RemoveStyle`/`RemoveStyleOnHandle` + 两 apply arm + `remove_style_property`/`apply_remove_style` + `__zw_remove_style`/`__zw_remove_style_handle` 回调。 |
+| `engine/js_dom_shim.js` | `_styleProxy(sel, handle)`（方法 + cssText + per-property，替换内联 proxy）。 |
+| `engine/js_dom_bridge_tests.rs` | +2 e2e：方法族（getPropertyValue 读初始 / setProperty dashed 应用 / per-property 保留 / cssText get 读串 / cssText set 整替）；removeProperty 真移除（color 消失、font-size 保留）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1419→1421 net +2）+ `make reftest` + **`make product-smoke`**（style 变更影响布局，必跑）。
+
+**为何零回归且净正向**：① per-property get/set 行为等价（`_styleProxy` 的 `get(ps)`/`set(ps,v)` 对属性名走原 readProp/setProp）；② 新方法此前返 ''（调用 TypeError），补齐后仅在显式调用时生效，未用方法的页面零影响；③ `RemoveStyle` 纯新增 mutation，仅由 removeProperty 触发，既有 SetStyle 路径零改动；④ cssText set 从「误设 cssText 属性」纠正为「整体替换 style」（属纠正既有 bug）。
+
+**已知限制（剩余）**：① style 读为 deferred-mutation stale（同脚本内 `setProperty('color','red')` 后 `getPropertyValue('color')` 读旧 snapshot 返 ''——同 setAttribute 既有模式，须 apply 后读真值；e2e 经 `apply_mutations_to_html` 验证）；② `getPropertyPriority` 恒返 ''（`!important` 未跟踪，style-system 层级处理）；③ `setProperty` 第三参 priority 忽略（同 ②）；④ `item`/`length` 按当前 snapshot 解析（非 live，deferred 下近似）。
+
+
 
 
 

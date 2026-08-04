@@ -1070,6 +1070,77 @@
     return out;
   }
 
+  // `el.style` CSSStyleDeclaration 代理：per-property get/set（`style.color`/`style.color='red'`）
+  // + 方法（`setProperty`/`getPropertyValue`/`removeProperty`）+ `cssText` 整体读写 + `item`/`length`
+  // 枚举。旧实现仅 per-property get/set，缺方法（调用即 TypeError）与 cssText（get 返 ''、set 误当
+  // 属性名）。底层走 `__zw_set_style`/`__zw_get_attr('style')`；removeProperty 经 `__zw_remove_style`
+  // 真移除声明（SetStyle 空值仍 push，不移除）；cssText set 经 `__zw_set_attr` 整体替换。
+  function _styleProxy(sel, handle) {
+    var readRaw = function() {
+      return (handle ? __zw_get_attr_handle(handle, 'style') : __zw_get_attr(sel, 'style')) || '';
+    };
+    var readProp = function(name) {
+      var raw = readRaw();
+      if (!raw) return '';
+      var want = String(name).trim().toLowerCase();
+      var parts = raw.split(';');
+      for (var i = 0; i < parts.length; i++) {
+        var kv = parts[i].split(':');
+        if (kv[0] && kv[0].trim().toLowerCase() === want) return (kv[1] || '').trim();
+      }
+      return '';
+    };
+    var setProp = function(name, value) {
+      if (handle) __zw_set_style_handle(handle, String(name), String(value));
+      else __zw_set_style(sel, String(name), String(value));
+      _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+    };
+    var propNames = function() {
+      var raw = readRaw();
+      return raw
+        .split(';')
+        .map(function(s) { return s.split(':')[0].trim(); })
+        .filter(Boolean);
+    };
+    return new Proxy({}, {
+      get: function(_t, p) {
+        var ps = String(p);
+        if (ps === 'cssText') return readRaw();
+        if (ps === 'length') return propNames().length;
+        if (ps === 'getPropertyValue') return function(name) { return readProp(name); };
+        if (ps === 'getPropertyPriority') return function() { return ''; }; // !priority 未跟踪
+        if (ps === 'setProperty') return function(name, value) { setProp(name, value); return undefined; };
+        if (ps === 'removeProperty') {
+          return function(name) {
+            var prev = readProp(name);
+            if (handle && typeof __zw_remove_style_handle === 'function') {
+              __zw_remove_style_handle(handle, String(name));
+            } else if (!handle && typeof __zw_remove_style === 'function') {
+              __zw_remove_style(sel, String(name));
+            }
+            _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+            return prev;
+          };
+        }
+        if (ps === 'item') return function(i) { return propNames()[i | 0] || ''; };
+        return readProp(ps);
+      },
+      set: function(_t, p, v) {
+        var ps = String(p);
+        if (ps === 'cssText') {
+          // 整体替换 style 属性（解析由 host/style-system 在 render 时处理）。
+          if (handle) __zw_set_attr_handle(handle, 'style', String(v));
+          else __zw_set_attr(sel, 'style', String(v));
+          _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+          return true;
+        }
+        setProp(ps, v);
+        return true;
+      }
+    });
+  }
+
+
 
   function _makeProxy(sel, handle) {
     var key = _elKey(sel, handle);
@@ -1121,27 +1192,7 @@
           return _selectSelectedOptions(sel);
         }
         if (prop === 'style') {
-          return new Proxy({}, {
-            set: function(_s, p, v) {
-              if (handle) __zw_set_style_handle(handle, String(p), String(v));
-              else __zw_set_style(sel, String(p), String(v));
-              _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
-              return true;
-            },
-            get: function(_s, p) {
-              var raw = handle ? __zw_get_attr_handle(handle, 'style') : __zw_get_attr(sel, 'style');
-              if (!raw) return '';
-              var parts = raw.split(';');
-              var pstr = String(p);
-              for (var i = 0; i < parts.length; i++) {
-                var kv = parts[i].split(':');
-                if (kv[0] && kv[0].trim().toLowerCase() === pstr.toLowerCase()) {
-                  return (kv[1] || '').trim();
-                }
-              }
-              return '';
-            }
-          });
+          return _styleProxy(sel, handle);
         }
         if (prop === 'classList') return _classListProxy(sel, handle);
         if (prop === 'className') {

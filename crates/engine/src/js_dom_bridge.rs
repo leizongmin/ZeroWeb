@@ -54,6 +54,14 @@ pub enum DomMutation {
         /// CSS 属性值。
         value: String,
     },
+    /// `element.style.removeProperty(prop)` / `style.prop = ''` 真移除声明（区别于 [`SetStyle`] 空值
+    /// 仍 push `prop: `——同 [`RemoveAttr`] 对布尔属性的修正）。P1a style 代理 API。
+    RemoveStyle {
+        /// CSS 选择器句柄。
+        selector: String,
+        /// CSS 属性名。
+        property: String,
+    },
     /// `element.remove()`
     Remove {
         /// CSS 选择器句柄。
@@ -136,6 +144,13 @@ pub enum DomMutation {
         property: String,
         /// CSS 属性值。
         value: String,
+    },
+    /// 对 create 句柄真移除 style 声明（[`RemoveStyle`] 的 handle 版）。
+    RemoveStyleOnHandle {
+        /// 节点句柄。
+        handle: String,
+        /// CSS 属性名。
+        property: String,
     },
     /// 按句柄移除节点。
     RemoveHandle {
@@ -383,6 +398,11 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     find_by_selector(doc, selector).ok_or_else(|| format!("set_style: no match for {selector}"))?;
                 apply_style_property(doc, node, property, value);
             }
+            DomMutation::RemoveStyle { selector, property } => {
+                let node = find_by_selector(doc, selector)
+                    .ok_or_else(|| format!("remove_style: no match for {selector}"))?;
+                apply_remove_style(doc, node, property);
+            }
             DomMutation::Remove { selector } => {
                 if let Some(node) = find_by_selector(doc, selector)
                     && let Some(parent) = doc.get(node).and_then(|n| n.parent)
@@ -487,6 +507,13 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     .copied()
                     .ok_or_else(|| format!("unknown handle {handle}"))?;
                 apply_style_property(doc, node, property, value);
+            }
+            DomMutation::RemoveStyleOnHandle { handle, property } => {
+                let node = handles
+                    .get(handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                apply_remove_style(doc, node, property);
             }
             DomMutation::RemoveHandle { handle } => {
                 if let Some(node) = handles.get(handle).copied()
@@ -634,6 +661,31 @@ fn merge_style_property(style: &str, property: &str, value: &str) -> String {
     });
     parts.push(format!("{}: {}", property.trim(), value.trim()));
     parts.join("; ")
+}
+
+/// 真移除一条 style 声明（`removeProperty`）——滤除匹配属性名的段，不 push 空值
+///（区别于 [`merge_style_property`] 对空值仍 push `prop: `）。
+fn remove_style_property(style: &str, property: &str) -> String {
+    let prop_key = property.trim().to_ascii_lowercase();
+    style
+        .split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .filter(|p| {
+            p.split(':')
+                .next()
+                .map(|k| k.trim().to_ascii_lowercase())
+                .unwrap_or_default()
+                != prop_key
+        })
+        .collect::<Vec<&str>>()
+        .join("; ")
+}
+
+fn apply_remove_style(doc: &mut Document, node: NodeId, property: &str) {
+    let current = doc.get_attribute(node, "style").unwrap_or_default();
+    let removed = remove_style_property(&current, property);
+    doc.set_attribute(node, "style", &removed);
 }
 
 fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str) -> Result<(), String> {
@@ -1924,6 +1976,23 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `el.style.removeProperty(prop)` — 真移除 style 声明（SetStyle 空值仍 push，不移除）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_remove_style",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::RemoveStyle {
+                        selector: args[0].clone(),
+                        property: args[1].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_set_text",
@@ -2161,6 +2230,23 @@ pub fn register_dom_callbacks(
                         handle: args[0].clone(),
                         property: args[1].clone(),
                         value: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    // `el.style.removeProperty(prop)` 的 handle 版（detached createElement 元素）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_remove_style_handle",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::RemoveStyleOnHandle {
+                        handle: args[0].clone(),
+                        property: args[1].clone(),
                     });
             }
             "ok".into()
