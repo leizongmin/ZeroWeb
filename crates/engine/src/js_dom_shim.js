@@ -950,10 +950,10 @@
           }
           return _inputValues[key];
         }
-        if (prop === 'checked') {
-          // P1a checkbox：checked 属性 get（boolean 属性存在性，经 host `__zw_has_attr`）。
+        if (prop === 'checked' || prop === 'hidden' || prop === 'disabled') {
+          // boolean reflected property（checked/hidden/disabled）——属性存在性（经 host `__zw_has_attr`）。
           if (typeof __zw_has_attr === 'function') {
-            try { return __zw_has_attr(sel, 'checked') === '1'; } catch (_e) {}
+            try { return __zw_has_attr(sel, String(prop)) === '1'; } catch (_e) {}
           }
           return false;
         }
@@ -1297,6 +1297,18 @@
             else __zw_set_attr(sel, 'value', String(value));
             moAttr = 'value';
           }
+        } else if (p === 'hidden' || p === 'checked' || p === 'disabled' || p === 'selected') {
+          // boolean reflected property：truthy → 设存在（空值，has_attr=true）；falsy → 真移除
+          // （has_attr=false）。修正旧 fallthrough 写空串致 falsy 仍 present 的 bug。
+          if (value) {
+            if (handle) __zw_set_attr_handle(handle, p, '');
+            else __zw_set_attr(sel, p, '');
+            moAttr = p;
+          } else if (!handle && typeof __zw_remove_attr === 'function') {
+            __zw_remove_attr(sel, p);
+            moAttr = p;
+          }
+          // handle falsy：无 remove-handle 变体 → 不设（detach 元素 append 时默认无该布尔属性）。
         } else {
           if (handle) __zw_set_attr_handle(handle, p, String(value));
           else __zw_set_attr(sel, p, String(value));

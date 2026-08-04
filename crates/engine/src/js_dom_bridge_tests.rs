@@ -415,6 +415,72 @@ fn test_dataset_e2e() {
     );
 }
 
+#[test]
+fn test_boolean_reflected_property_e2e() {
+    // 端到端：boolean reflected property（hidden/checked/disabled/selected）——getter 属性存在性，
+    // setter truthy→设存在 / falsy→真移除（修正旧 fallthrough 写空串致 falsy 仍 present 的 bug）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id='cb' type='checkbox' checked><input id='cb2' type='checkbox'></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // getter：预置 checked → true；无 checked → false；无 hidden → false（presence，非 stale）。
+    assert_eq!(
+        sandbox.execute("document.querySelector('#cb').checked").unwrap().value,
+        "true"
+    );
+    assert_eq!(
+        sandbox.execute("document.querySelector('#cb2').checked").unwrap().value,
+        "false"
+    );
+    assert_eq!(
+        sandbox.execute("document.querySelector('#cb').hidden").unwrap().value,
+        "false"
+    );
+
+    // setter truthy：cb2.checked = true → 记 SetAttr(checked='')（presence）。
+    sandbox
+        .execute("document.querySelector('#cb2').checked = true;")
+        .unwrap();
+    // setter falsy：cb.checked = false → 记 RemoveAttr(checked)（真移除，修正 bug）。
+    sandbox
+        .execute("document.querySelector('#cb').checked = false;")
+        .unwrap();
+    // hidden setter truthy → SetAttr(hidden='')。
+    sandbox.execute("document.querySelector('#cb').hidden = true;").unwrap();
+
+    let ms = mutations.lock().unwrap();
+    let has_set = |sel: &str, name: &str| {
+        ms.iter().any(|m| match m {
+            DomMutation::SetAttr { selector, name: n, .. } => selector == sel && n == name,
+            _ => false,
+        })
+    };
+    let has_rem = |sel: &str, name: &str| {
+        ms.iter().any(|m| match m {
+            DomMutation::RemoveAttr { selector, name: n } => selector == sel && n == name,
+            _ => false,
+        })
+    };
+    assert!(has_set("#cb2", "checked"), "cb2.checked=true 应记 SetAttr(checked)");
+    assert!(
+        has_rem("#cb", "checked"),
+        "cb.checked=false 应记 RemoveAttr(checked)（修正 bug）"
+    );
+    assert!(has_set("#cb", "hidden"), "cb.hidden=true 应记 SetAttr(hidden)");
+}
+
+#[test]
 fn test_collect_element_ids_dedup_preserve_order() {
     let html = "<html><body>\
                     <div id=\"container\"></div>\
