@@ -1264,6 +1264,23 @@
             return undefined;
           };
         }
+        // `element.insertAdjacentHTML(position, text)`（P1a）：解析 HTML 片段并按 position 插入——
+        // `beforeend`（末子）/`afterbegin`（首子）/`beforebegin`（前兄弟）/`afterend`（后兄弟）。
+        // 服务端原子完成（fragment parse + copy + parent 遍历，见 DomMutation::InsertAdjacentHtml）。
+        // 仅 sel-based（已挂载）元素经 host `__zw_insert_adjacent_html`；handle-only（createElement
+        // detached）无 sel → 无操作（beforeend/afterbegin 因脱离文档树无意义，beforebegin/afterend 需
+        // parent——spec 对 detached 元素本就抛错，此处静默无操作更安全）。
+        if (prop === 'insertAdjacentHTML') {
+          return function(position, text) {
+            if (sel && typeof __zw_insert_adjacent_html === 'function') {
+              try {
+                __zw_insert_adjacent_html(sel, String(position), String(text));
+                _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [] });
+              } catch (_e) {}
+            }
+            return undefined;
+          };
+        }
         if (prop === 'querySelector') {
           // 元素**子树**作用域（spec：仅后代，不含元素自身）。经 host `__zw_query_match_sub(sel, q)`
           // 在 elem 子树内查首个匹配。handle（未挂载 DOM，无 sel）→ null（脱离文档树无后代）。

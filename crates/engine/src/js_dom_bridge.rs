@@ -150,6 +150,18 @@ pub enum DomMutation {
         /// 要选中的 option 的 value（option 的 value 属性，无则 text content）。
         value: String,
     },
+    /// `element.insertAdjacentHTML(position, text)`（P1a）——解析 HTML 片段并按 position
+    /// 插入：`beforeend`（末子）/`afterbegin`（首子）/`beforebegin`（前兄弟）/`afterend`
+    ///（后兄弟）。服务端原子完成（fragment parse + `copy_subtree_from` + parent 遍历），
+    /// 区别于 [`Self::SetInnerHtml`]（整体替换子树）。
+    InsertAdjacentHtml {
+        /// 目标元素选择器。
+        selector: String,
+        /// 位置关键字（不区分大小写：beforebegin/afterbegin/beforeend/afterend）。
+        position: String,
+        /// 待解析的 HTML 片段。
+        html: String,
+    },
 }
 
 /// 在文档根下按简单选择器查找第一个匹配元素。
@@ -431,6 +443,15 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     }
                 }
             }
+            DomMutation::InsertAdjacentHtml {
+                selector,
+                position,
+                html,
+            } => {
+                let node = find_by_selector(doc, selector)
+                    .ok_or_else(|| format!("insert_adjacent_html: no match for {selector}"))?;
+                insert_adjacent_html(doc, node, position, html)?;
+            }
         }
     }
 
@@ -526,6 +547,88 @@ fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> 
         }
         _ => doc.create_text_node(""),
     }
+}
+
+/// `element.insertAdjacentHTML(position, html)`——解析 HTML 片段，深拷贝其顶层节点，
+/// 按 position 插入到目标元素相对位置（`beforeend`/`afterbegin`/`beforebegin`/`afterend`）。
+/// 复用 [`replace_inner_html`] 的 fragment parse 思路 + [`copy_subtree_from`]，区别在于
+/// **不替换**现有子树、仅增量插入（保持既有子节点身份不变）。供
+/// [`DomMutation::InsertAdjacentHtml`] 应用。
+///
+/// `beforebegin`/`afterend` 需父节点；元素无父（文档根）返错（匹配 spec 对 detached/root
+/// 元素抛错）。插入顺序保持 fragment 顶层节点顺序。
+fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: &str) -> Result<(), String> {
+    let trimmed = html.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    // 解析顶层 fragment 节点：包入 <body> 解析取 body 子（与 replace_inner_html 同源）。
+    // 先全部 copy 收集，再按 position 插入（原子化，单一出口）。
+    let frag_nodes: Vec<NodeId> = if !trimmed.contains('<') {
+        vec![doc.create_text_node(trimmed)]
+    } else {
+        let frag_doc = parse_html(&format!("<!DOCTYPE html><html><body>{trimmed}</body></html>"));
+        let body = find_by_selector(&frag_doc, "body").ok_or("insertAdjacentHTML fragment parse failed")?;
+        let kids: Vec<NodeId> = frag_doc.get(body).map(|n| n.children.clone()).unwrap_or_default();
+        kids.into_iter().map(|k| copy_subtree_from(doc, &frag_doc, k)).collect()
+    };
+
+    let pos = position.trim().to_ascii_lowercase();
+    match pos.as_str() {
+        "beforeend" => {
+            for child in frag_nodes {
+                doc.append_child(node, child).map_err(|e| e.to_string())?;
+            }
+        }
+        "afterbegin" => {
+            // 插到 node 现有首子之前（保持插入序：依次插到固定首子前）；无子则 append。
+            let first = doc.get(node).and_then(|n| n.children.first().copied());
+            match first {
+                Some(ref_node) => {
+                    for child in frag_nodes {
+                        doc.insert_before(node, child, ref_node).map_err(|e| e.to_string())?;
+                    }
+                }
+                None => {
+                    for child in frag_nodes {
+                        doc.append_child(node, child).map_err(|e| e.to_string())?;
+                    }
+                }
+            }
+        }
+        "beforebegin" | "afterend" => {
+            let parent = doc
+                .get(node)
+                .and_then(|n| n.parent)
+                .ok_or_else(|| format!("insertAdjacentHTML {pos}: element has no parent"))?;
+            if pos == "beforebegin" {
+                for child in frag_nodes {
+                    doc.insert_before(parent, child, node).map_err(|e| e.to_string())?;
+                }
+            } else {
+                // afterend：插到 node 下一兄弟之前（固定 ref，保持插入序）；末位无下一兄弟则 append。
+                let parent_kids: Vec<NodeId> = doc.get(parent).map(|n| n.children.clone()).unwrap_or_default();
+                let next = parent_kids
+                    .iter()
+                    .position(|c| *c == node)
+                    .and_then(|i| parent_kids.get(i + 1).copied());
+                match next {
+                    Some(ref_node) => {
+                        for child in frag_nodes {
+                            doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
+                        }
+                    }
+                    None => {
+                        for child in frag_nodes {
+                            doc.append_child(parent, child).map_err(|e| e.to_string())?;
+                        }
+                    }
+                }
+            }
+        }
+        _ => return Err(format!("insertAdjacentHTML: invalid position {position}")),
+    }
+    Ok(())
 }
 
 /// 解析 HTML、应用变更并返回序列化后的 HTML。
@@ -1637,6 +1740,23 @@ pub fn register_dom_callbacks(
                     .push(DomMutation::SetInnerHtmlOnHandle {
                         handle: args[0].clone(),
                         html: args[1].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_insert_adjacent_html",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::InsertAdjacentHtml {
+                        selector: args[0].clone(),
+                        position: args[1].clone(),
+                        html: args[2].clone(),
                     });
             }
             "ok".into()

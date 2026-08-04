@@ -67,6 +67,128 @@ fn test_apply_create_and_append() {
 }
 
 #[test]
+fn test_apply_insert_adjacent_html_beforeend() {
+    // beforeend：片段作为目标元素末子追加（多节点保持顺序）。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
+    let mutations = vec![DomMutation::InsertAdjacentHtml {
+        selector: "#t".into(),
+        position: "beforeend".into(),
+        html: "<b>1</b><b>2</b>".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    let i1 = out.find("<b>1</b>").unwrap();
+    let i2 = out.find("<b>2</b>").unwrap();
+    // 原文本 x 紧邻首个追加节点（x 不再是末子，故检查 x<b>1</b> 紧邻而非 x</div>）。
+    assert!(out.contains("x<b>1</b>"), "beforeend: 原文本 x 应在追加节点之前\n{out}");
+    assert!(i1 < i2, "beforeend: 片段节点保持顺序\n{out}");
+}
+
+#[test]
+fn test_apply_insert_adjacent_html_afterbegin() {
+    // afterbegin：片段作为目标元素首子插入，原有子节点后移、身份不变。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
+    let mutations = vec![DomMutation::InsertAdjacentHtml {
+        selector: "#t".into(),
+        position: "afterbegin".into(),
+        html: "<b>1</b><b>2</b>".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    let i1 = out.find("<b>1</b>").unwrap();
+    let i2 = out.find("<b>2</b>").unwrap();
+    let ix = out.find("x</div>").unwrap();
+    assert!(i1 < i2 && i2 < ix, "afterbegin: 片段在前、原文本 x 在后\n{out}");
+}
+
+#[test]
+fn test_apply_insert_adjacent_html_beforebegin() {
+    // beforebegin：片段作为目标元素的前兄弟插入到父节点。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
+    let mutations = vec![DomMutation::InsertAdjacentHtml {
+        selector: "#t".into(),
+        position: "beforebegin".into(),
+        html: "<b>1</b>".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    let i_b = out.find("<b>1</b>").unwrap();
+    let i_t = out.find("<div id=\"t\">").unwrap();
+    assert!(i_b < i_t, "beforebegin: 片段应在目标元素之前\n{out}");
+}
+
+#[test]
+fn test_apply_insert_adjacent_html_afterend_last_child() {
+    // afterend 且目标为父节点末子：片段 append 到父节点（末位）。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
+    let mutations = vec![DomMutation::InsertAdjacentHtml {
+        selector: "#t".into(),
+        position: "afterend".into(),
+        html: "<b>1</b><b>2</b>".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    let i_t = out.find("<div id=\"t\">").unwrap();
+    let i1 = out.find("<b>1</b>").unwrap();
+    let i2 = out.find("<b>2</b>").unwrap();
+    assert!(i_t < i1 && i1 < i2, "afterend(末子): 目标在前、片段在后\n{out}");
+}
+
+#[test]
+fn test_apply_insert_adjacent_html_afterend_with_next_sibling() {
+    // afterend 且目标有后继兄弟：片段插到后继兄弟之前。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div><i>after</i></body></html>";
+    let mutations = vec![DomMutation::InsertAdjacentHtml {
+        selector: "#t".into(),
+        position: "afterend".into(),
+        html: "<b>1</b>".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    let i_t = out.find("id=\"t\"").unwrap();
+    let i_b = out.find("<b>1</b>").unwrap();
+    let i_after = out.find("<i>after</i>").unwrap();
+    assert!(
+        i_t < i_b && i_b < i_after,
+        "afterend(有后继): 目标 < 片段 < 后继兄弟\n{out}"
+    );
+}
+
+#[test]
+fn test_apply_insert_adjacent_html_text_only_fragment() {
+    // 纯文本片段（无 <）：作为单 Text 节点插入。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
+    let mutations = vec![DomMutation::InsertAdjacentHtml {
+        selector: "#t".into(),
+        position: "beforeend".into(),
+        html: "hi".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    assert!(out.contains("xhi</div>"), "纯文本片段应追加为文本节点\n{out}");
+}
+
+#[test]
+fn test_apply_insert_adjacent_html_invalid_position() {
+    // 非法 position → apply 返错。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
+    let mutations = vec![DomMutation::InsertAdjacentHtml {
+        selector: "#t".into(),
+        position: "nowhere".into(),
+        html: "<b>1</b>".into(),
+    }];
+    let err = apply_mutations_to_html(html, &mutations).unwrap_err();
+    assert!(err.contains("invalid position"), "非法 position 应返错，实际：{err}");
+}
+
+#[test]
+fn test_apply_insert_adjacent_html_nested_subtree() {
+    // 片段含嵌套子树：深拷贝保留完整结构。
+    let html = "<html><body id=\"b\"><ul id=\"list\"></ul></body></html>";
+    let mutations = vec![DomMutation::InsertAdjacentHtml {
+        selector: "#list".into(),
+        position: "beforeend".into(),
+        html: "<li>a<span>x</span></li>".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    assert!(out.contains("<li>a<span>x</span></li>"), "嵌套子树应完整深拷贝\n{out}");
+}
+
+#[test]
 fn test_apply_with_handles_maps_unique_selectors() {
     // 创建带 id 的元素（唯一）→ 入 map；创建无 id 的同 tag 元素 + 文档已有同 tag → 歧义 → 不入 map。
     let html = "<html><body id=\"b\"><div></div></body></html>";
@@ -979,5 +1101,58 @@ fn test_next_focus_selector() {
     assert_eq!(
         next_focus_selector("<html><body><div>no focusable</div></body></html>", None, true),
         None
+    );
+}
+
+#[test]
+fn test_insert_adjacent_html_e2e() {
+    // 端到端：注入生产 shim + register_dom_callbacks，验证 insertAdjacentHTML JS 契约——
+    // 调用入队 InsertAdjacentHtml mutation（sel + position + html 三参数透传）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><ul id='list'><li>x</li></ul></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // beforeend：追加列表项。
+    sandbox
+        .execute("document.querySelector('#list').insertAdjacentHTML('beforeend', '<li>a</li>');")
+        .unwrap();
+    // afterbegin：首部插入。
+    sandbox
+        .execute("document.querySelector('#list').insertAdjacentHTML('afterbegin', '<li>0</li>');")
+        .unwrap();
+    // 非法 position：shim 不抛（host apply 时才错），但 mutation 仍入队（position 透传）。
+    sandbox
+        .execute("document.querySelector('#list').insertAdjacentHTML('nowhere', '<b/>');")
+        .unwrap();
+
+    let positions: Vec<String> = mutations
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|m| match m {
+            DomMutation::InsertAdjacentHtml { position, .. } => Some(position.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        positions.len(),
+        3,
+        "三次 insertAdjacentHTML 均应入队 InsertAdjacentHtml mutation"
+    );
+    // 校验 position 透传（含非法值，host apply 时才错）。
+    assert_eq!(
+        positions.iter().map(String::as_str).collect::<Vec<_>>(),
+        vec!["beforeend", "afterbegin", "nowhere"]
     );
 }
