@@ -85,3 +85,26 @@ if (prop === 'getBoundingClientRect') {
 3. 起 `rect_bridge.rs`（镜像 `timer_bridge.rs` ~50 行结构）+ lib.rs 导出。
 4. 接 worker（`tab_js_worker.rs` + renderer `js_worker`）set_handler + snapshot 写入。
 5. shim 接线 + kill-switch + 三态 A/B + driving test。
+
+## R2644 plumbing 核验细化（实施前验证结果）
+
+本节补全 checklist 项 1/2/4 的具体机制（核验后确认 renderer 路径可先行）：
+
+1. **rect 数据源 = `WebView::build_hit_test_cache()`**（`apps/renderer/src/main.rs:283`，render 后调）。`HitTestCache::snapshot()` → `HitTestLayoutSnapshot`（每节点 `node_id, x, y, width, height`，见 `paint_export.rs:395 IpcHitTestLayoutNode` / `hit_test_layout_to_ipc`）。**NodeId → rect 数据已存在**，仅需 retain 一份查询用 snapshot。
+2. **共享 snapshot 机制**：`Arc<Mutex<HashMap<u64 /*NodeId*/, Rect4>>>`——renderer 主循环 render 后从 `build_hit_test_cache().snapshot().layout_root` 遍历填入；js_worker 的 RectBridge handler 读它。renderer **同进程**（main loop 与 js_worker 异线程，经 Arc<Mutex> 共享）；browser **跨进程**（须 IPC rect 查询，本切片先 defer，renderer 先行）。
+3. **identity → NodeId 解析在 js_worker 线程可做**：`register_dom_callbacks`（`js_dom_bridge.rs:573`）已在 js_worker 线程跑 `__zw_query_match`/`__zw_get_attr` 等（持 Document 快照解析 selector）。RectBridge handler 同线程，可复用同一解析（identity=handle `__n{n}`/selector → NodeId）→ 查 snapshot rect。
+4. **元素 identity 取法**：shim 元素 proxy 的 compound key（`js_dom_shim.js:137` `_mo_id(handle, sel)`）——getBoundingClientRect 闭包内取该 key 传 `__zw_getBoundingClientRect`（非简单 `__nodeId`，设计原文 `u64` 须改为 `&str` identity；RectBridge 已按 `&str` 实装 @ R2643）。
+
+### 首切片已知限制（接受，follow-up）
+
+- **rect 反映「上次 render」**（stale-but-non-zero）：JS 改样式后同脚本内立即读 `getBoundingClientRect` 见 pre-change rect（因 reflow 未触发）。**force-reflow-on-demand**（gBCR 触发/等待同步 reflow）为 follow-up 深改。首切片对「读已渲染元素 rect」的 JS 净正向，对「改后即读」场景仍 stale——driving test 须选「读已渲染元素」类（非改后即读）。
+- browser 跨进程路径 defer（需 IPC rect query RPC）。
+
+### 修正后实施步骤（renderer 先行）
+
+1. `crates/engine`：加共享 snapshot 类型（`LayoutRectSnapshot = Arc<Mutex<HashMap<u64, Rect4>>>`）+ 从 `HitTestCache::snapshot().layout_root` 填充的 helper。
+2. `apps/renderer/src/main.rs`：render 后（`build_hit_test_cache` @ :283 附近）填 snapshot；把 snapshot clone 传 js_worker。
+3. `apps/renderer/src/js_worker.rs`：构造 `RectBridge` + `register`（镜像 `TimerBridge` @ :214）+ `set_handler`（闭包：identity→NodeId〔复用 register_dom_callbacks 的 Document 解析〕→ snapshot rect）。
+4. `js_dom_shim.js`：`getBoundingClientRect` 取元素 compound key 调 `__zw_getBoundingClientRect`，解析 `x,y,w,h`→DOMRect，无 handler/空→零回落。
+5. kill-switch `ZW_REAL_RECT` + driving reftest（读已渲染元素 rect）+ 三态 A/B。
+
