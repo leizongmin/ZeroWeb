@@ -15,6 +15,8 @@
 >
 > **▶ 轻量修复优先裁决（2026-07-29 用户两次指令）**：用户指令——「**永远不要停止，把待决策的记录到文档，在我没决策之前，继续推进其他剩余任务**」+「**我们主要做轻量修复，调整文档方向确保不会跑偏**」。据此：(1) **主线 = 轻量修复**：沿用 `2026-07-28 方向裁决` 允许范围——CSS2/parser/selector clean lever（driving test + 低风险 + A/B 零回归）、产品/legacy smoke 可见稳定性修复、文档与代码不一致的纠偏（本 goal 滞后严重）；每修 net≥0 即 land。(2) **永不停**：轻量修复持续做，遇需拍板事项记「待用户决策」清单并跳过，继续下一个轻量修复，不因单项阻塞停 goal。(3) **深结构护栏·防跑偏**（纠正早些「一律放行深结构」措辞）：font-metric 生产激活+A/B（R2202 dormant 已落地、**勿继续推激活**）、vertical-mode native R1043、taffy replaced-element border-box R2174、Phase A slice-3 IFC 深构造、font-stack C-dep rebuild 等**深结构多会话方向不自主开工**，记待决策清单等用户点名；clean lever 九重穷尽（R2183-R2190）后若暂无新轻量候选，做文档纠偏 + plateau-guard，**勿借机跳深结构**。(4) 本文「执行协议」生效——CONTINUE 是默认输出、未完成/证据不足/状态不一致是继续信号而非 BLOCK、自主修复不等用户逐步指令。
 >
+> **▶ 主线切换裁决（2026-08-04 用户决策）**：用户裁决——「工作切回父目标 zero-web（恢复 P1 DOM/JS Bridge 原生化），渲染兼容性先缓一缓」。据此：(1) **本 goal 降频守成**，不再作为自主主线推进：保留低频 plateau-guard（`make test` triple-guard 周期拉长——父目标侧有 .rs 变更或每 ~10 轮跑一次，守护 13192 全绿基线）。(2) **待用户决策清单原样保留**：vertical-mode R1043 / taffy R2174 / Phase A IFC / font-stack C-dep / srcset 等深结构继续等点名；用户点名任一深结构 → 立即切回本 goal。(3) 文档纠偏停止主动排程（design-doc 引用核验已近收官），仅在有 .rs 变更引发 drift 时顺手修。(4) 本裁决不推翻 2026-07-29「永不停」指令——守成 + 待命即执行形态，恢复时零成本；父目标主线（P1a 事件循环/fetch/Observer 真实化）与渲染侧无冲突。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
@@ -143,7 +145,7 @@
 **关键状态摘要**（截至 2026-08-04·R2612）：
 - ✅ **已完成**：CPU/GPU 渲染器全 13 种图元（M7）、浏览器图元消费（M7）、Margin 折叠（R323）、BFC margin 隔离（R323）、Float 核心布局（R895）、Position fixed（R324）、外部样式表加载（R213）、图片子资源贯通（R318）、产品 smoke 证据链
 - ⚠️ **P1-严重缺口**：Inline formatting 所有权分裂、Layout/Paint IFC 双路径、滚动容器（「浏览器层 glyph 重排」R2004 已修复——`transform_webview_primitives` 逐个映射仅 scale+offset+clip 无 sort/reorder + 单测 `transform_webview_primitives_preserves_glyph_order` 守护，详见 current-baseline.md / DC-13；不再列 open）
-- 📊 **测试基线**：总测试数 13192 全绿（`make test` R2563 周期复跑 + R2572-R2577 六连 lever 各轮零回归 13190/0/74 精确持平 + R2592 text-decoration shorthand thickness 接线 +1→13191 R2597 持平确认 + R2637 registry box-dimension initial-value 纠偏 + 守卫测试 +1→13192；74 ignored = 网络型 real_website_compat 用例），覆盖率 95.46% line / 96.94% function / 94.88% region
+- 📊 **测试基线**：总测试数 13193 全绿（`make test` R2563 周期复跑 + R2572-R2577 六连 lever 各轮零回归 13190/0/74 精确持平 + R2592 text-decoration shorthand thickness 接线 +1→13191 R2597 持平确认 + R2637 registry box-dimension initial-value 纠偏 + 守卫测试 +1→13192 + R2638 column-gap initial-value 纠偏 + 守卫测试 +1→13193；74 ignored = 网络型 real_website_compat 用例），覆盖率 95.46% line / 96.94% function / 94.88% region
 
 ---
 

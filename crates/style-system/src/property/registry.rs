@@ -132,7 +132,10 @@ impl PropertyRegistry {
             "flex-shrink" => Some(Number(1.0)),
             "flex-basis" => Some(FlexBasis(FlexBasisValue::Auto)),
             "gap" => Some(Length(LengthValue::Px(0.0))),
-            "column-gap" => Some(Length(LengthValue::Px(0.0))),
+            // CSS Box Alignment：column-gap 初始值 = normal（非 0）。须与 ComputedStyle::default()
+            // 一致（default R1040 用 Auto：multicol 解析 1em、flex/grid 解析 0）。Px(0.0) 会使
+            // multicol 列间距错为 0。R2637 第 11 vein 全扫纠偏。
+            "column-gap" => Some(Length(LengthValue::Auto)),
             "row-gap" => Some(Length(LengthValue::Px(0.0))),
             "order" => Some(Integer(0)),
 

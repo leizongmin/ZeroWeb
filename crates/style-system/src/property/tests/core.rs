@@ -39,6 +39,34 @@ fn test_box_dimension_initial_values_are_auto() {
     }
 }
 
+/// R2637（第 11 vein 全扫）：column-gap 初始值 = normal（Auto），非 0。
+///
+/// `ComputedStyle::default()`（R1040）用 `Auto` 保留 normal 语义（multicol 解析 1em、
+/// flex/grid 解析 0）。registry 旧返回 `Px(0.0)` 与 default 漂移，且对 multicol 是
+/// spec-wrong（应为 1em 非 0）。本测试锁定 column-gap == registry == default == Auto。
+#[test]
+fn test_column_gap_initial_value_is_auto() {
+    assert_eq!(
+        PropertyRegistry::initial_value("column-gap"),
+        Some(PropertyValue::Length(LengthValue::Auto)),
+        "column-gap initial value drifted away from Auto (normal)"
+    );
+    assert_eq!(
+        ComputedStyle::default().column_gap,
+        LengthValue::Auto,
+        "column-gap default drifted away from Auto (normal)"
+    );
+    // gap / row-gap 初始值在 default 中为 Px(0.0)（normal 解析 0），registry 须一致。
+    assert_eq!(
+        PropertyRegistry::initial_value("gap"),
+        Some(PropertyValue::Length(LengthValue::Px(0.0)))
+    );
+    assert_eq!(
+        PropertyRegistry::initial_value("row-gap"),
+        Some(PropertyValue::Length(LengthValue::Px(0.0)))
+    );
+}
+
 #[test]
 fn test_property_registry_initial_values() {
     assert!(PropertyRegistry::initial_value("display").is_some());
