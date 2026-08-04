@@ -881,6 +881,29 @@ R2696 验证模式启发：探查 `classList` 发现同类 deferred-stale + whol
 
 **已知限制（剩余）**：① `getAttribute('class')` 仍读 stale snapshot（与 className 缓存视图在脚本内可能不一致——同 `.value` 缓存 vs `getAttribute('value')` 的既有模式）；② `el.class = 'x'`（非标准属性名）走 generic set trap 不更新缓存——非标准用法，real browser `el.class` 亦非反射属性；③ 缓存跨 execute 存活（同 `_inputValues`，typing/连续操作场景需要），导航清空。
 
+### P1a attribute 查询 API（hasAttribute 族）+ removeAttribute 真移除（本轮 R2698，self-review 续）
+
+R2696–R2697 latent-bug 探查模式续。发现两处：
+
+1. **attribute 查询 API 缺失**：element proxy 无 `hasAttribute`/`hasAttributes`/`getAttributeNames`（`toggleAttribute` 见下）——`el.hasAttribute('disabled')`、`el.hasAttribute('data-x')`（常用 visibility/state 检查）调用即 TypeError。host 回调 `__zw_has_attr`/`__zw_attr_names` 已存在（内部 checked/disabled/cloneNode 用），仅未对外暴露。
+2. **`removeAttribute` 非 true 移除（latent）**：element proxy `removeAttribute` 用 `__zw_set_attr(name, '')`（设空值），非 R2657 已有的 `__zw_remove_attr`（RemoveAttr 真移除）。故 `el.removeAttribute('checked')` 残留 `checked=""`（仍 present）→ `el.checked` 仍 true、`hasAttribute('checked')` 误 true。boolean 属性（checked/disabled/hidden/readonly）卸载失效。
+
+**修复**：① `removeAttribute` sel 路径改用 `__zw_remove_attr`（真移除），handle-only/无回调 fallback set-empty（同 boolean-setter R2657 的 sel/handle 区分）；② 暴露 `hasAttribute`（`__zw_has_attr` "1"/"0"）、`hasAttributes`（`__zw_attr_names` 非空）、`getAttributeNames`（`__zw_attr_names` "|"-split）。
+
+**`toggleAttribute` 暂不实现**：它须基于当前存在性决定 add/remove，但同脚本内属性读为 deferred-stale——连续 `toggleAttribute('x')` 都读旧 snapshot 都 add（产生错误 mutation，非仅读错）。正确实现须配合属性存在性缓存（同 `_classCache` 思路），属 follow-up，避免 shipping 一个连续操作下错误的 toggle。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_shim.js` | `removeAttribute` sel 路径改 `__zw_remove_attr`；新增 `hasAttribute`/`hasAttributes`/`getAttributeNames`（toggleAttribute 注释为 follow-up）。 |
+| `engine/js_dom_bridge_tests.rs` | +2 e2e：removeAttribute 真移除（checked 不残留）；hasAttribute/hasAttributes/getAttributeNames（present/absent + 顺序）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1423→1425 net +2）+ `make reftest` + `make product-smoke` + `make product-smoke-legacy`（boolean 属性影响 form-controls 结构）。
+
+**为何零回归且净正向**：① `removeAttribute` 对非 boolean 属性：旧 set-empty → `getAttribute` 返 ''（absent 读亦返 ''），新真移除 → `getAttribute` 返 ''——读值等价；`hasAttribute` 从误 true 纠正为 false（boolean 属性从残留纠正为真移除）；② 新方法此前返 undefined（TypeError），补齐后仅显式调用生效；③ 仅 JS removeAttribute 路径变更，静态 HTML / 既有 SetAttr 路径零改动。
+
+**已知限制（剩余）**：① `toggleAttribute` 未实现（须属性存在性缓存，follow-up）；② `el.attributes`（NamedNodeMap）未实现（属性枚举可用 `getAttributeNames`+`getAttribute` 组合替代，NamedNodeMap live 语义 follow-up）；③ handle-only（detached createElement）元素的 hasAttribute 返 false、removeAttribute set-empty（无 handle 变体回调，detached 元素属性查询受限，同 dataset 既有限制）。
+
+
 
 
 

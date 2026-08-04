@@ -2617,3 +2617,74 @@ fn test_classlist_consecutive_ops() {
         "双 toggle 后 on 应移除（got '{class_val3}'）\n{out3}"
     );
 }
+
+#[test]
+fn test_remove_attribute_truly_removes() {
+    // R2698：removeAttribute 真移除。旧 set-empty 残留 `checked=""`（present）→ el.checked 仍 true。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id=\"i\" checked></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute("document.querySelector('#i').removeAttribute('checked');")
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(!out.contains("checked"), "removeAttribute('checked') 应真移除（不残留 checked=\"\"）\n{out}");
+}
+
+#[test]
+fn test_attribute_query_api() {
+    // R2698：hasAttribute/hasAttributes/getAttributeNames/toggleAttribute。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id=\"i\" type=\"text\" disabled></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // hasAttribute（present/absent）。
+    sandbox
+        .execute(
+            "globalThis.__hd = document.querySelector('#i').hasAttribute('disabled');\n\
+             globalThis.__hid = document.querySelector('#i').hasAttribute('id');\n\
+             globalThis.__no = document.querySelector('#i').hasAttribute('checked');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hd").unwrap().value, "true", "hasAttribute(disabled)");
+    assert_eq!(sandbox.execute("globalThis.__hid").unwrap().value, "true", "hasAttribute(id)");
+    assert_eq!(sandbox.execute("globalThis.__no").unwrap().value, "false", "hasAttribute(checked) absent");
+
+    // hasAttributes + getAttributeNames。
+    sandbox
+        .execute(
+            "globalThis.__hs = document.querySelector('#i').hasAttributes();\n\
+             globalThis.__names = document.querySelector('#i').getAttributeNames().join(',');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hs").unwrap().value, "true", "hasAttributes");
+    assert_eq!(
+        sandbox.execute("globalThis.__names").unwrap().value,
+        "id,type,disabled",
+        "getAttributeNames 顺序"
+    );
+}

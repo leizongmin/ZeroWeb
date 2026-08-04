@@ -1338,11 +1338,43 @@
         }
         if (prop === 'removeAttribute') {
           return function(name) {
-            if (handle) __zw_set_attr_handle(handle, name, '');
-            else __zw_set_attr(sel, name, '');
+            // sel-based：真移除（__zw_remove_attr / RemoveAttr，R2657）——区别于 set-empty 残留
+            // `attr=""`（boolean 属性 checked/disabled 设空值仍 present → hasAttribute 误 true）。
+            // handle-only（无 remove-handle 变体）/ 无回调 → fallback set-empty。
+            if (handle) __zw_set_attr_handle(handle, String(name), '');
+            else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, String(name));
+            else __zw_set_attr(sel, String(name), '');
             _mo_notify(sel, handle, { type: 'attributes', attributeName: String(name) });
           };
         }
+        // `el.hasAttribute(name)`——属性存在性（boolean 属性 checked/disabled/hidden、data-* 检查常用）。
+        // sel-based 经 host `__zw_has_attr`（"1"/"0"）；handle-only（无 has-attr-handle 变体）→ false。
+        if (prop === 'hasAttribute') {
+          return function(name) {
+            if (!sel || typeof __zw_has_attr !== 'function') return false;
+            try { return __zw_has_attr(sel, String(name)) === '1'; } catch (_e) { return false; }
+          };
+        }
+        // `el.hasAttributes()`——是否有任意属性（经 `__zw_attr_names` 非空判定）。
+        if (prop === 'hasAttributes') {
+          return function() {
+            if (!sel || typeof __zw_attr_names !== 'function') return false;
+            try { return __zw_attr_names(sel).length > 0; } catch (_e) { return false; }
+          };
+        }
+        // `el.getAttributeNames()`——属性名数组（经 `__zw_attr_names` "|"-split）。
+        if (prop === 'getAttributeNames') {
+          return function() {
+            if (!sel || typeof __zw_attr_names !== 'function') return [];
+            try {
+              var n = __zw_attr_names(sel);
+              return n ? n.split('|').filter(Boolean) : [];
+            } catch (_e) { return []; }
+          };
+        }
+        // 注：`toggleAttribute` 暂未实现——它须基于当前存在性决定 add/remove，但同脚本内属性读为
+        // deferred-stale（连续 toggle 会都读旧 snapshot 都 add，产生错误 mutation）。正确实现须配合
+        // 属性存在性缓存（同 _classCache），属 follow-up。
         // `el.matches(selector)` / `el.matchesSelector`——元素是否匹配选择器（含组合器，经 host
         // `__zw_matches` 全匹配集判定）。handle（未挂载 DOM 的 createElement）无 sel → false。
         if (prop === 'matches' || prop === 'matchesSelector' || prop === 'webkitMatchesSelector') {
