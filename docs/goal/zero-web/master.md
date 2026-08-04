@@ -112,6 +112,25 @@
 
 ## 最近完成的改进
 
+### P1a Slice 2a — IntersectionObserver 真实化（本轮 R2650，~13,217 测试）
+
+承接 gBCR 基建（R2645-R2649）落地后的 follow-up ④。核验 shim：**生产 worker 路径（`js_dom_shim.js`）完全无 IntersectionObserver**——`new IntersectionObserver(...)` 抛 ReferenceError 中断整个脚本（区别于 MutationObserver/fetch/setTimeout 已真实化）；旧 polyfill（`dom_bridge.rs:1159`，仅 WebView 路径）有桩但永不触发回调。
+
+**关键决策**：IO **纯 JS 侧实现**（镜像 MutationObserver 的 JS 侧拦截 + microtask 派发），**复用已落地 `__zw_getBoundingClientRect` host 回调**（gBCR path C）+ `innerWidth/innerHeight` 算 intersection——**无需新 host Rust 基建**。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim.js` | 新增 IntersectionObserver（MutationObserver 之后）：`_compute`（gBCR rect vs viewport/root rect 算 `_io_intersect` 重叠 + ratio + isIntersecting）/ `_crossed`（threshold 越界 + initial 通知）/ `_schedule`（`_defer` microtask 派发 `obs._callback(entries, obs)`）；observe/unobserve/disconnect/takeRecords；threshold 归一化（number\|number[]→升序去重 clamp [0,1]）；root=null=viewport 或元素 rect；IntersectionObserverEntry 兼容构造。 |
+| `apps/renderer/src/js_worker.rs` | +3 driving test（intersecting→`true:true:full` / not-intersecting→`false:0` initial notification / disconnect→不派发），镜像 MO 测试，复用 gBCR 测试的 snapshot 填充模式。 |
+
+**spec 对齐**：observe 即排队 initial notification（视口内 isIntersecting=true+ratio；视口外 isIntersecting=false+ratio=0 仍派发）。
+
+验证：`make test` **13217/0/74**（exit 0 零回归）+ clippy `-D warnings` 零警告 + fmt clean + `make product-smoke` 全 struct PASS（welcome desktop **17.03%** 精确持平 held baseline + 窄屏全 PASS）。browser worker 经共享 shim 覆盖（IO 逻辑全在共享 shim，区别于 gBCR 的 per-worker host 接线，无需重复测试）。
+
+**为何零回归且净正向**：旧 shim 无 IO → 抛 ReferenceError 中断脚本后续全部 JS；本切片消除之（IO 常驻不抛）。gBCR 未注册（reftest/polyfill/WebView）→ target rect 为零 → isIntersecting=false 仍派发 initial notification（no-throw）；self-source reftest test/ref 同经 shim 净中性；product smoke welcome 17.03% 精确持平证真实页面 JS 链零回归。
+
+**已知限制（follow-up）**：① 仅 observe 时计算（非持续 host tick）——scroll/resize/async-layout 变化的后续通知为 Slice 2b；② handle-identity（createElement）sel 空→零 rect（同 gBCR path A follow-up）；③ rootMargin 暂按 0；④ ResizeObserver（Slice 3）仍未实现（下一切片，复用同一 gBCR rect + size-diff）。
+
 ### P1a gBCR perf 硬化——thread-local Document 缓存（本轮 R2649）
 
 收尾 R2647 限制 3「每 query 一次 HTML parse」。`make_dom_html_rect_handler` 原每次 gBCR 调用全 parse dom_html（`Document` 非 Send 不能跨 Send+Sync 闭包缓存）——循环调用 gBCR = N 次 parse，生产陡坡。

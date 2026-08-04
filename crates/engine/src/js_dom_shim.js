@@ -211,6 +211,167 @@
     return r;
   };
 
+  // ── P1a Slice 2a：IntersectionObserver（JS 侧，复用 gBCR layout-rect snapshot）──
+  // 镜像 MutationObserver：纯 JS，`observe()` 排队 initial notification，经 `_defer`
+  // （microtask）派发 `obs._callback(entries, observer)`。intersection 用 host
+  // `__zw_getBoundingClientRect(sel)`（gBCR path C，已注册时返真实 rect）+ innerWidth/innerHeight
+  // 计算与 root（默认 viewport）的重叠；threshold 越界检测决定是否派发。host 未注册
+  // （reftest/polyfill/WebView 路径）→ target rect 为零 → isIntersecting=false，仍派发 initial
+  // notification（no-throw，零回归）。旧 shim 完全无 IO → `new IntersectionObserver` 抛
+  // ReferenceError **中断整个脚本**，本切片消除之（spec：observe 即排队一次 initial 通知）。
+  // 限制（接受，follow-up）：① 仅 observe 时计算，非持续 host tick——scroll/resize/async-layout
+  //   变化触发的后续通知为 Slice 2b（须 host render-loop tick 或 __zwResolveCallback 重算钩子）；
+  // ② handle-identity（createElement）元素 sel 为空 → 零 rect（同 gBCR 限制，path A follow-up）；
+  // ③ rootMargin 暂按 0 处理（defer 像素/% 展开）；④ root 为元素时取其 selector rect。
+  function _io_domRect(x, y, w, h) {
+    return { x: x, y: y, top: y, left: x, right: x + w, bottom: y + h, width: w, height: h, toJSON: function() { return this; } };
+  }
+  // 读 target/root 的 rect（复用 gBCR）；sel 空 / handler 未注册 / 未命中 → 零 rect。
+  function _io_rectFromSel(sel) {
+    if (sel && typeof __zw_getBoundingClientRect === 'function') {
+      try {
+        var s = __zw_getBoundingClientRect(sel);
+        if (s && s.indexOf(',') >= 0) {
+          var p = s.split(',');
+          return { x: +p[0], y: +p[1], w: +p[2], h: +p[3] };
+        }
+      } catch (_e) {}
+    }
+    return { x: 0, y: 0, w: 0, h: 0 };
+  }
+  function _io_intersect(a, b) {
+    var x0 = Math.max(a.x, b.x), y0 = Math.max(a.y, b.y);
+    var x1 = Math.min(a.x + a.w, b.x + b.w), y1 = Math.min(a.y + a.h, b.y + b.h);
+    if (x1 <= x0 || y1 <= y0) return { x: 0, y: 0, w: 0, h: 0 };
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+  // 归一化 threshold：number | number[] → 升序去重、clamp 到 [0,1] 的数组（空→[0]）。
+  function _io_normThresholds(threshold) {
+    var arr = [];
+    if (typeof threshold === 'number') {
+      arr = [threshold];
+    } else if (Object.prototype.toString.call(threshold) === '[object Array]') {
+      for (var i = 0; i < threshold.length; i++) {
+        if (typeof threshold[i] === 'number') arr.push(threshold[i]);
+      }
+    }
+    if (arr.length === 0) arr = [0];
+    arr.sort(function(a, b) { return a - b; });
+    var uniq = [];
+    for (var j = 0; j < arr.length; j++) {
+      var v = arr[j];
+      if (v < 0) v = 0; else if (v > 1) v = 1;
+      if (uniq.length === 0 || uniq[uniq.length - 1] !== v) uniq.push(v);
+    }
+    return uniq;
+  }
+  function _io_id(handle, sel) {
+    if (handle != null) return 'h:' + handle;
+    if (sel) return 's:' + sel;
+    return null;
+  }
+  globalThis.IntersectionObserver = function(callback, options) {
+    this._callback = callback;
+    var opts = options || {};
+    this._thresholds = _io_normThresholds(opts.threshold);
+    // root：null（默认 viewport）或元素（取其 __zwSelector 的 rect）。
+    this._rootSel = (opts.root && opts.root.__zwSelector) ? opts.root.__zwSelector : null;
+    this._targets = {};        // id (h:handle / s:sel) -> { proxy }
+    this._lastRatio = {};      // id -> 上次派发的 ratio（undefined = 未派发过 → initial）
+    this._scheduled = false;
+  };
+  // 计算单个 target 的 intersection 数据（rect / ratio / isIntersecting）。
+  globalThis.IntersectionObserver.prototype._compute = function(id) {
+    var t = this._targets[id];
+    if (!t) return null;
+    var sel = t.proxy.__zwSelector;
+    var rootRect = this._rootSel
+      ? _io_rectFromSel(this._rootSel)
+      : { x: 0, y: 0, w: globalThis.innerWidth | 0, h: globalThis.innerHeight | 0 };
+    var targetRect = _io_rectFromSel(sel);
+    var inter = _io_intersect(targetRect, rootRect);
+    var targetArea = targetRect.w * targetRect.h;
+    var ratio = targetArea > 0 ? (inter.w * inter.h) / targetArea : 0;
+    return { target: t.proxy, targetRect: targetRect, rootRect: rootRect, inter: inter, ratio: ratio, isIntersecting: inter.w > 0 && inter.h > 0 };
+  };
+  // threshold 越界检测：未派发过（initial）或 ratio 与上次跨过任一 threshold 边界。
+  globalThis.IntersectionObserver.prototype._crossed = function(id, ratio) {
+    var prev = this._lastRatio[id];
+    if (prev == null) return true;
+    for (var i = 0; i < this._thresholds.length; i++) {
+      var th = this._thresholds[i];
+      if ((prev >= th) !== (ratio >= th)) return true;
+    }
+    return false;
+  };
+  // 排队一次 microtask 派发：遍历所有 target，对越阈值的构造 entry 投递 callback。
+  globalThis.IntersectionObserver.prototype._schedule = function() {
+    if (this._scheduled) return;
+    this._scheduled = true;
+    var self = this;
+    _defer(function() {
+      self._scheduled = false;
+      var entries = [];
+      for (var id in self._targets) {
+        var c = self._compute(id);
+        if (!c) continue;
+        if (self._crossed(id, c.ratio)) {
+          entries.push({
+            time: 0,
+            target: c.target,
+            rootBounds: _io_domRect(c.rootRect.x, c.rootRect.y, c.rootRect.w, c.rootRect.h),
+            boundingClientRect: _io_domRect(c.targetRect.x, c.targetRect.y, c.targetRect.w, c.targetRect.h),
+            intersectionRect: _io_domRect(c.inter.x, c.inter.y, c.inter.w, c.inter.h),
+            intersectionRatio: c.ratio,
+            isIntersecting: c.isIntersecting,
+            toJSON: function() { return this; }
+          });
+          self._lastRatio[id] = c.ratio;
+        }
+      }
+      if (entries.length > 0) {
+        try { self._callback(entries, self); } catch (_e) {}
+      }
+    });
+  };
+  globalThis.IntersectionObserver.prototype.observe = function(target) {
+    if (!target) return this;
+    var id = _io_id(target.__zwHandle, target.__zwSelector);
+    if (id != null) {
+      this._targets[id] = { proxy: target };
+      this._schedule();
+    }
+    return this;
+  };
+  globalThis.IntersectionObserver.prototype.unobserve = function(target) {
+    if (!target) return this;
+    var id = _io_id(target.__zwHandle, target.__zwSelector);
+    if (id != null) {
+      delete this._targets[id];
+      delete this._lastRatio[id];
+    }
+    return this;
+  };
+  globalThis.IntersectionObserver.prototype.disconnect = function() {
+    this._targets = {};
+    this._lastRatio = {};
+    return this;
+  };
+  globalThis.IntersectionObserver.prototype.takeRecords = function() {
+    return [];
+  };
+  // IntersectionObserverEntry：兼容构造（部分脚本 `new IntersectionObserverEntry(init)`）。
+  globalThis.IntersectionObserverEntry = function(init) {
+    init = init || {};
+    this.time = init.time || 0;
+    this.rootBounds = init.rootBounds || null;
+    this.boundingClientRect = init.boundingClientRect || null;
+    this.intersectionRect = init.intersectionRect || null;
+    this.isIntersecting = init.isIntersecting || false;
+    this.target = init.target || null;
+    this.intersectionRatio = init.intersectionRatio || 0;
+  };
+
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
   // 同步立即执行回调即可让 setup mutation 被记录并应用到二次渲染（镜像 setTimeout 的 microtask 语义，

@@ -841,6 +841,102 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_intersection_observer_intersecting() {
+        // P1a Slice 2a：observe 视口内元素 → spec initial notification 派发，isIntersecting=true、
+        // ratio≈1（target 完全在 viewport 内）。复用 gBCR：snapshot 填 #t rect，IO 经
+        // `__zw_getBoundingClientRect(sel)` 算与 viewport 重叠（sel = `__zw_query_match('#t')` 返回值，
+        // 与本测试 `find_by_selector(&doc, "#t")` 同 NodeId，见 gBCR test 既有验证）。
+        use zero_dom::parse_html;
+        use zero_engine::{find_by_selector, node_id_to_u64};
+        let mut worker = RendererJsWorker::spawn(20);
+        let html = "<html><body><div id='t' style='width:100px;height:50px'>hi</div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        let doc = parse_html(html);
+        let id_t = find_by_selector(&doc, "#t").expect("#t");
+        worker
+            .rect_snapshot()
+            .lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_t), (10.0, 20.0, 100.0, 50.0)); // 视口内（innerWidth/Height=1280/800）
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 var el = document.querySelector('#t');\
+                 var obs = new IntersectionObserver(function(entries){\
+                   var e = entries[0];\
+                   globalThis.__seen = String(e.isIntersecting) + ':' + String(e.target === el)\
+                     + ':' + (e.intersectionRatio > 0.99 ? 'full' : 'partial');\
+                 });\
+                 obs.observe(el);",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "true:true:full");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_intersection_observer_not_intersecting_initial() {
+        // P1a Slice 2a：observe 视口外元素 → spec 仍派发 initial notification，isIntersecting=false、ratio=0。
+        // （旧 shim 无 IO → `new IntersectionObserver` 抛 ReferenceError 中断脚本；本切片消除之。）
+        use zero_dom::parse_html;
+        use zero_engine::{find_by_selector, node_id_to_u64};
+        let mut worker = RendererJsWorker::spawn(21);
+        let html = "<html><body><div id='t' style='width:10px;height:10px'>hi</div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        let doc = parse_html(html);
+        let id_t = find_by_selector(&doc, "#t").expect("#t");
+        worker
+            .rect_snapshot()
+            .lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_t), (2000.0, 2000.0, 10.0, 10.0)); // 视口外（>1280/800）
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 var obs = new IntersectionObserver(function(entries){\
+                   globalThis.__seen = String(entries[0].isIntersecting) + ':' + String(entries[0].intersectionRatio);\
+                 });\
+                 obs.observe(document.querySelector('#t'));",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "false:0");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_intersection_observer_disconnect() {
+        // P1a Slice 2a：observe 后 disconnect（microtask 派发前）→ _targets 清空 → callback 不派发。
+        use zero_dom::parse_html;
+        use zero_engine::{find_by_selector, node_id_to_u64};
+        let mut worker = RendererJsWorker::spawn(22);
+        let html = "<html><body><div id='t' style='width:100px;height:50px'>hi</div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        let doc = parse_html(html);
+        let id_t = find_by_selector(&doc, "#t").expect("#t");
+        worker
+            .rect_snapshot()
+            .lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_t), (10.0, 20.0, 100.0, 50.0));
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 var obs = new IntersectionObserver(function(_entries){ globalThis.__seen = 'fired'; });\
+                 obs.observe(document.querySelector('#t'));\
+                 obs.disconnect();",
+            )
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "null"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_mutation_observer_property_set() {
         // P1b S2 incr3（镜像 browser）：property set（el.className='x'）触发 attributes 记录。
         let mut worker = RendererJsWorker::spawn(17);

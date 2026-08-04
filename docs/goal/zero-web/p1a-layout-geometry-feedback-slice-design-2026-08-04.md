@@ -185,4 +185,33 @@ R2647 限制 4「browser 路径未接」的收尾。核验 browser 后端：**cr
 
 **为何 thread_local 安全**：每个 js_worker 是独立 OS 线程 → 独立 thread_local 槽，无跨 worker 串扰；html 字符串作键保证 render 后 dom_html 更新触发失效；线程退出随 thread_local 释放（无泄漏，缓存 = 单页 DOM 大小有界）。
 
+## R2650：Slice 2a — IntersectionObserver 真实化（JS 侧，复用 gBCR）
+
+承接 gBCR 基建（Slice 1，R2645-R2649）落地后的 follow-up ④「IntersectionObserver/ResizeObserver（Slice 2/3，复用 gBCR 基建）」。核验 shim：生产 worker 路径（`js_dom_shim.js`）**完全无 IntersectionObserver**——`new IntersectionObserver(...)` 抛 ReferenceError 中断整个脚本（区别于 MutationObserver/fetch/setTimeout 已真实化）。旧 polyfill（`dom_bridge.rs:1159`，仅 WebView 路径）有 observe/unobserve/disconnect/takeRecords + Entry 桩但**永不触发回调**。
+
+**关键决策**：IO **纯 JS 侧实现**（镜像 MutationObserver 的 JS 侧拦截 + microtask 派发模式），**复用已落地的 `__zw_getBoundingClientRect` host 回调**（gBCR path C）+ `innerWidth/innerHeight` 算 target 与 root 的 intersection——**无需新 host Rust 基建**（设计原文 Slice 2 的 host-side tick / AsyncResolver 方案 deferred，JS 侧更简且零 host 风险）。
+
+**已 land（纯 shim `js_dom_shim.js`，commit 本轮）**——MutationObserver 之后插入 IO block：
+
+| 组件 | 行为 |
+|------|------|
+| `IntersectionObserver(callback, options)` | 存 callback；解析 options.threshold（number\|number[] → 升序去重 clamp [0,1]，空→[0]）+ options.root（null=viewport，元素取 `__zwSelector` rect）。`_thresholds`/`_rootSel`/`_targets`/`_lastRatio`/`_scheduled` 状态。 |
+| `_compute(id)` | `__zw_getBoundingClientRect(sel)` 取 target rect（复用 gBCR；未注册/sel 空/未命中→零 rect），与 root rect（viewport `innerWidth×innerHeight` 或 root 元素 rect）算 `_io_intersect` 重叠；ratio = inter.area / target.area；isIntersecting = inter 非零面积。 |
+| `_crossed(id, ratio)` | 越阈值检测：`_lastRatio[id]==null`（首次=initial notification）→ 派发；否则 ratio 与上次跨过任一 threshold 边界才派发。 |
+| `_schedule()` | `_defer`（microtask）派发：遍历 `_targets`，对越阈值者构造 IntersectionObserverEntry（time/boundingClientRect/intersectionRect/intersectionRatio/isIntersecting/rootBounds/target），`obs._callback(entries, obs)`。 |
+| `observe/unobserve/disconnect/takeRecords` | 镜像 MutationObserver；observe 排队 initial notification，disconnect 清 `_targets` 使排队中的派发成空。 |
+| `IntersectionObserverEntry` | 兼容构造（部分脚本 `new IntersectionObserverEntry(init)`）。 |
+
+**spec 对齐**：observe 即排队一次 initial notification（spec §3.2 保证行为）——视口内 target 派发 isIntersecting=true + ratio；视口外派发 isIntersecting=false + ratio=0（仍派发，非丢弃）。
+
+**验证**：`make test` **13217 passed / 0 failed / 74 ignored**（exit 0，零回归）+ workspace clippy `-D warnings` 零警告 + fmt clean + `make product-smoke` 全 struct PASS（welcome desktop **17.03%** 精确持平 held baseline + wintertc/morning desktop + welcome/morning/wintertc 窄屏 375/320 全 PASS）。3 driving test @ renderer worker（intersecting→`true:true:full` / not-intersecting→`false:0` initial notification / disconnect→不派发）；browser worker 经共享 shim 覆盖（无需重复测试，IO 逻辑全在共享 shim，区别于 gBCR 的 per-worker host 接线）。
+
+**为何零回归且净正向**：旧 shim 无 IO → `new IntersectionObserver` 抛 ReferenceError **中断脚本后续全部 JS**；本切片消除之（IO 常驻，不抛）。gBCR 未注册（reftest/polyfill/WebView 路径）→ target rect 为零 → isIntersecting=false，仍派发 initial notification（no-throw）。self-source reftest test/ref 同经 shim → 净中性；product smoke welcome 17.03% 精确持平证真实页面 JS 执行链零回归。
+
+**已知限制（接受，follow-up）**：
+1. **仅 observe 时计算**（非持续 host tick）：scroll/resize/async-layout 变化触发的后续通知为 **Slice 2b**（须 host render-loop tick 或 `__zwResolveCallback` 重算钩子）。首切片覆盖 spec 保证的 initial notification——视口检测/懒加载初始化/feature-detect 的主流模式。
+2. **handle-identity（createElement）元素** sel 为空 → 零 rect（同 gBCR 限制，path A 持久身份映射 follow-up）。
+3. **rootMargin 暂按 0** 处理（defer 像素/% 展开）；root 为元素时取其 selector rect。
+4. **ResizeObserver（Slice 3）** 仍未实现（shim 无；旧 polyfill 有桩不触发）——下一切片，复用同一 gBCR rect 反馈 + size-diff 检测。
+
 
