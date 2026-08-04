@@ -1,9 +1,11 @@
 # ZeroWeb: 基于 Rust 的跨平台浏览器 — 目标执行契约
 
-**版本**: v1.0
-**日期**: 2026-05-30
+**版本**: v1.1
+**日期**: 2026-05-30（2026-08-04 状态刷新）
 **状态**: Active
 **执行模式**: 长期无人值守持续执行（rally run）
+
+> **▶ 恢复推进裁决（2026-08-04 用户决策）**：工作从 rendering-compat 切回父目标，恢复「下一步优先级」P1 DOM/JS Bridge 原生化（P1a 事件循环补全 + fetch/MutationObserver 真实化；P1b V8 原生绑定需独立 RFC）。渲染兼容性降频守成（低频 plateau-guard，深结构等用户点名，见 `rendering-compat.md` 顶部裁决）。本文件基线信息自 2026-05-30「空仓库」刷新至 2026-08-04 实际状态（17 crate + 3 apps 实质实现，~13,192 测试全绿）。
 
 > **说明**
 > 本文是 ZeroWeb 的长期目标执行契约，用于定义目标状态和自动推进条件；它不是当前仓库已达到生产可用、可商用或其他生产级别的声明。当前项目仍是实验性项目，默认仅供学习、研究和工程探索使用。
@@ -160,17 +162,12 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 
 ## Current Proven Baseline
 
-截至 2026-05-30，项目处于调研与架构定义阶段：
+截至 2026-08-04，项目已从调研阶段推进到实质实现阶段（详见 [master.md](zero-web/master.md)）：
 
-- **仓库状态**：几乎为空，仅有 README.md 和 docs/research/ 下的技术调研文档
-- **技术调研完成**：`docs/research/rust-cross-platform-browser-research.md` 已完成四轮迭代，明确了技术路线、依赖选型、OmniTerm 复用边界和平台策略
-- **OmniTerm 可复用资产已识别**：
-  - `omniterm-terminal-render`：场景/Primitive/Backend 分层架构
-  - `omniterm-terminal-render-wgpu`：GPU glyph atlas、pane 缓存、wgpu 合成
-  - `omniterm-terminal-render-soft`：fontdue + swash 字体栈、软件渲染后备
-  - `omniterm-terminal-image`：图片对象缓存与 GC 限制
-  - `omniterm-terminal-ffi/wasm`：ABI 边界和 WASM 友好封装
-- **无代码、无测试、无编译产物、无 CI** — 所有实际工作尚未开始
+- **仓库状态**：Cargo workspace，17 个 crate + 3 个应用全部有实质实现；~13,192 测试全绿（74 ignored 为网络型真实网站用例）；行覆盖率 95.46%（函数 96.94%、区域 94.88%）；clippy 零警告；CI 三平台（ubuntu/macos/windows）
+- **已实现核心能力**：HTML 解析/DOM（html5ever，含 Shadow DOM 基础、MutationObserver、Range/TreeWalker、FocusManager 等）、完全自建 CSS parser + 样式系统（100+ 属性）、taffy 布局、GPU/CPU 双渲染管线（全 13 种图元）、V8 JS 引擎（DOM polyfill 桥接 + ES Modules + Web Workers + WASM 自动桥接）、多进程架构实际运行（IPC + 独立渲染进程二进制）、真实 WebSocket（tungstenite）、CSP 完整实现 + SecurityContext（HSTS/混合内容）、Top 55+ 真实网站兼容性测试、WPT 1341 用例（23 分类 100% 通过率）、可访问性基础、跨平台打包脚本
+- **当前主要缺口**（详见 master.md「下一步优先级」）：① DOM/JS Bridge 为 polyfill 字符串桥接模式——Observer（Mutation/Intersection/Resize）为 stub 不触发回调、fetch() 为 stub 返回空 Response、事件循环为简化版非 spec-compliant（**P1a 修复中 = 当前活跃主线**）；② 渲染兼容性 chromium-Oracle 真一致 ~47.5%（属 rendering-compat 独立目标，深结构等用户点名）
+- **渲染兼容性赛道**：已拆分为独立目标 `docs/goal/rendering-compat.md`（WPT reftest 驱动）
 
 ---
 
@@ -212,9 +209,9 @@ zero-web/
 
 ## Ordered Milestones
 
-里程碑按严格依赖顺序排列。每个里程碑有明确的验收标准和交付物。当前只有**一个活跃里程碑**，后续里程碑仅作规划参考，在当前里程碑完成并归档前不展开详细设计。
+里程碑按严格依赖顺序排列。M1-M11 实质已完成并归档（详见 [master.md](zero-web/master.md) 归档记录与「当前仓库事实」）；M12-M14 为规划参考。当前活跃工作面 = **Done Criteria §3 的 JS/DOM 真实化（P1a）**，详见 master.md「下一步优先级」。
 
-### M1: 项目骨架 + 渲染基础设施迁移（活跃里程碑）
+### M1: 项目骨架 + 渲染基础设施迁移（✅ 已完成，已归档）
 
 **目标**：建立项目结构，迁移 OmniTerm 渲染基础设施，在桌面平台上显示一个窗口并渲染文本。同步建立测试和基准基础设施。
 
@@ -671,18 +668,20 @@ tests/benchmarks/
 
 ## Latest Evidence
 
-**当前状态**（2026-05-30）：
+**当前状态**（2026-08-04，详见 [master.md](zero-web/master.md)）：
 
 | 项 | 状态 |
 |----|------|
-| 仓库代码 | 空仓库，仅有 README.md 和调研文档 |
-| 编译状态 | N/A（无代码） |
-| 测试状态 | N/A（无测试） |
-| 覆盖率 | N/A |
-| WPT 通过率 | N/A |
-| 性能基线 | N/A |
-| CI | 未配置 |
-| 文档 | 仅有技术调研文档 |
+| 仓库代码 | 17 个 crate + 3 个应用，全部有实质实现 |
+| 编译状态 | ✅ `cargo build --workspace` 通过 |
+| 测试状态 | ✅ ~13,192 测试全绿（74 ignored 网络型真实网站用例） |
+| 覆盖率 | ✅ 95.46% line / 96.94% function / 94.88% region |
+| WPT 通过率 | ✅ 1341 用例（23 分类，100% 通过率，按分类追踪） |
+| 性能基线 | ✅ 78+ criterion 基准；首屏 < 2s 验证；增量渲染图元 < 全量 20% |
+| CI | ✅ GitHub Actions 三平台（编译 + clippy + test + build + 发布打包） |
+| 文档 | ✅ 目标文档 + master.md 控制面板 + 归档 + 各 crate README |
+
+**当前活跃主线**（2026-08-04 恢复推进）：P1a DOM/JS Bridge 原生化——事件循环补全 + fetch/MutationObserver 真实化（见 master.md「下一步优先级」）。
 
 ---
 

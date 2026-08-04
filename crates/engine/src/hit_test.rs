@@ -109,6 +109,29 @@ impl HitTestCache {
             parents: snap.parents.into_iter().collect(),
         }
     }
+
+    /// P1a gBCR：把布局树每节点 rect（相对父内容区）写入共享 rect snapshot。
+    /// 直接遍历内部 `layout_root`（避免 [`Self::snapshot`] 的整树 clone）。render 后调；
+    /// 无 `node_id` 的匿名/伪盒跳过。js_worker 的 RectBridge handler 经 identity→NodeId 查此 snapshot。
+    pub fn fill_layout_rect_snapshot(&self, snapshot: &crate::rect_bridge::LayoutRectSnapshot) {
+        if let Ok(mut map) = snapshot.lock() {
+            map.clear();
+            fill_rect_from_layout_box(&self.layout_root, &mut map);
+        }
+    }
+}
+
+/// `LayoutBox` 递归填充 rect snapshot（`fill_layout_rect_snapshot` 的内部实现，直接走 LayoutBox 避 clone）。
+fn fill_rect_from_layout_box(box_node: &LayoutBox, map: &mut HashMap<u64, crate::rect_bridge::Rect4>) {
+    if let Some(id) = box_node.node_id {
+        map.insert(
+            node_id_to_u64(id),
+            (box_node.x, box_node.y, box_node.width, box_node.height),
+        );
+    }
+    for child in &box_node.children {
+        fill_rect_from_layout_box(child, map);
+    }
 }
 
 /// IPC / 快照可传输的命中测试布局节点（仅几何 + node id）。

@@ -773,15 +773,25 @@
             return all.split('|').filter(Boolean).map(_wrapSelector);
           };
         }
-        // 布局测量 API：动态 reftest 极常用 `el.getBoundingClientRect()` 作为
-        // 「强制 reflow」触发器（返回值多不使用）。proxy 对未知属性返回 undefined →
-        // 调用 `getBoundingClientRect()` 会抛 TypeError 中断整个脚本，使其后的
-        // DOM mutation 丢失。返回零 DOMRect 不抛、对纯 reflow 触发语义正确
-        // （harness 在 mutation 应用后统一重渲染）。
-        // 注：offsetWidth/offsetHeight 等是属性访问，返回 undefined 不抛异常、
-        // 仅值错误，作 reflow 触发器时无害；不特例化以免改变 `<` 条件逻辑。
+        // 布局测量 API：`el.getBoundingClientRect()` 返真实 DOMRect（P1a gBCR path C）。
+        // selector-identity 元素（querySelector/getElementById，sel=stable_selector）→ host
+        // `__zw_getBoundingClientRect(sel)` 解析 dom_html→NodeId→layout-rect snapshot 返 "x,y,w,h"。
+        // host 未注册 / 未命中 / handle-identity（createElement，sel 为空）→ 零 rect（= 旧行为，零回归；
+        // 作 reflow 触发器语义仍正确——返回值多被丢弃）。注：rect 反映「上次 render」（stale-but-non-zero），
+        // 改样式后同脚本内即读见 pre-change rect（force-reflow-on-demand 为 follow-up）。
+        // offsetWidth/offsetHeight 等是属性访问返回 undefined 不抛，作 reflow 触发器无害，不特例化。
         if (prop === 'getBoundingClientRect') {
           return function() {
+            if (sel && typeof __zw_getBoundingClientRect === 'function') {
+              try {
+                var s = __zw_getBoundingClientRect(sel);
+                if (s && s.indexOf(',') >= 0) {
+                  var p = s.split(',');
+                  var x = +p[0], y = +p[1], w = +p[2], h = +p[3];
+                  return { x: x, y: y, top: y, left: x, right: x + w, bottom: y + h, width: w, height: h, toJSON: function() { return this; } };
+                }
+              } catch (_e) {}
+            }
             return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: function() { return this; } };
           };
         }

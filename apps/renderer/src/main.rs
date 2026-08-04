@@ -284,6 +284,11 @@ impl RendererRuntime {
                 wv.snapshot_image_cache(),
             )
         };
+        // P1a gBCR：render 后用最新 layout 填 rect snapshot——js_worker 的 RectBridge handler
+        // 经 identity(selector)→NodeId 查此 snapshot 返真实 DOMRect（未填/未命中→零 rect，零回归）。
+        if let Some(cache) = hit_test.as_ref() {
+            cache.fill_layout_rect_snapshot(&self.js_worker.rect_snapshot());
+        }
         let payloads = if allow_network_fetch {
             let mut fetch = |u: &str| self.fetch_get(u).ok();
             paint_export::fetch_image_payloads_with_cache(&html, &url, &mut image_cache, &mut fetch)

@@ -1,7 +1,9 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-07-24
-**执行状态**: 17 个 crate + 3 个应用已实现，~12,001 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + **WASM 自动桥接完整实现**），WPT 测试套件 1341 个用例（23 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip），**平台和输入测试**（18 个 WPT 用例覆盖键盘事件/鼠标事件/触摸布局/滚动容器/视口响应式/HiDPI/IME/CJK 输入/焦点管理 + 15 个视口自适应集成测试 + 19 个字体回退国际化渲染管线集成测试）。**DOM/JS Bridge**：polyfill 桥接模式（30+ DomCommand 变体覆盖 DOM 操作/事件/样式），Fetch/setTimeout/console/localStorage/sessionStorage/MutationObserver/IntersectionObserver/ResizeObserver/CustomEvent 全 polyfill 注入，Observer 类型为 stub 不触发回调，fetch() 为 stub 返回空 Response，事件循环为简化版（非 spec-compliant microtask/task queue）。**rendering-compat 赛道**：reftest 自源 ~57% / chromium-oracle 真一致 ~47%（FreeType-default 后），clean-lever hunt 经 200+ 轮已基本穷尽；字体栈重建 RFC v0.2.3 已就绪（fontdue→FreeType+Harfbuzz 统一度量/光栅/塑形），是 headline ≥95% 的唯一战略杠杆。
+**最后更新**: 2026-08-04
+**执行状态**: 17 个 crate + 3 个应用已实现，~13,192 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + **WASM 自动桥接完整实现**），WPT 测试套件 1341 个用例（23 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip），**平台和输入测试**（18 个 WPT 用例覆盖键盘事件/鼠标事件/触摸布局/滚动容器/视口响应式/HiDPI/IME/CJK 输入/焦点管理 + 15 个视口自适应集成测试 + 19 个字体回退国际化渲染管线集成测试）。**DOM/JS Bridge**：polyfill 桥接模式（30+ DomCommand 变体覆盖 DOM 操作/事件/样式），Fetch/setTimeout/console/localStorage/sessionStorage/MutationObserver/IntersectionObserver/ResizeObserver/CustomEvent 全 polyfill 注入，Observer 类型为 stub 不触发回调，fetch() 为 stub 返回空 Response，事件循环为简化版（非 spec-compliant microtask/task queue）。**rendering-compat 赛道**（独立目标，降频守成中）：reftest 自源 ~57% / chromium-oracle 真一致 ~47%（FreeType-default 后），clean-lever hunt 经 200+ 轮已基本穷尽；字体栈重建 RFC v0.2.3 已就绪（fontdue→FreeType+Harfbuzz 统一度量/光栅/塑形），是 headline ≥95% 的唯一战略杠杆。
+
+> **▶ 恢复推进裁决（2026-08-04 用户决策）**：工作从 rendering-compat 切回父目标，恢复「下一步优先级」P1 DOM/JS Bridge 原生化。**当前活跃主线 = P1a**（事件循环补全 + fetch/MutationObserver 真实化，主要改 `dom_bridge.rs` + `script-sandbox` + `net`，低风险快速见效）；P1b（V8 原生绑定）需独立 RFC，与字体栈 RFC 同级对待。渲染兼容性降频守成：低频 plateau-guard（每 ~10 轮或 .rs 变更后跑 `make test` triple-guard），其深结构（R1043/R2174/Phase A IFC/font-stack C-dep）继续等用户点名，点名即切回。执行模式：自主推进，每轮进度记录到「最近完成的改进」。渲染侧裁决同步记录于 `rendering-compat.md` 顶部。
 
 > **说明**
 > 本文记录的是实验性项目的当前实现进度。测试全绿、CI 通过或里程碑推进，并不等于项目已经适合日常使用、商用或其他生产用途；相关风险仍需自行评估。
@@ -109,6 +111,22 @@
 ---
 
 ## 最近完成的改进
+
+### P1a gBCR 真实化——renderer 路径 getBoundingClientRect 返真实 DOMRect（本轮 R2647，~13,192 测试）
+
+承接 P1a 架构侦察（`p1a-architecture-recon-2026-08-04.md`）+ gBCR 切片设计（`p1a-layout-geometry-feedback-slice-design-2026-08-04.md`）。R2646 曾结论「identity→NodeId 是真架构缺口」，**本轮核验纠偏**：渲染管线每次 render 都 fresh-`parse_html`（`pipeline_budget.rs:106/197`），与 js_worker 持的 `dom_html` 同字符串；slotmap fresh-map + 相同插入顺序 → 确定性 NodeId（守护测试验证）→ **path (C) parse-on-query 对 selector-identity 直接成立**，无需 R2646 建议的 path (A) 持久化 handles map。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/rect_bridge.rs` | `make_dom_html_rect_handler(dom_html, snapshot)`——handler 每 query fresh-parse dom_html→`find_by_selector`→NodeId→查 snapshot（Document 非 Send → 每次解析，path C 已接受）。+ NodeId 确定性守护测试 + handler 单测。 |
+| `crates/engine/src/hit_test.rs` | `HitTestCache::fill_layout_rect_snapshot(&snapshot)`——直接遍历内部 `layout_root` 填 NodeId→rect，避免 `snapshot()` 整树 clone。 |
+| `crates/engine/src/js_dom_shim.js` | `getBoundingClientRect`：selector-identity 元素 → `__zw_getBoundingClientRect(sel)` 解析 `"x,y,w,h"`→真实 DOMRect；未注册/未命中/handle-identity → 零 rect（零回归）。 |
+| `apps/renderer/src/js_worker.rs` | `RendererJsWorker` 加 `rect_snapshot` 字段 + accessor；`js_worker_main` 构造 RectBridge + register + set_handler，kill-switch `ZW_REAL_RECT=0`。+ 2 driving test（real rect / 空 snapshot 零回落）。 |
+| `apps/renderer/src/main.rs` | `publish_webview`：render 后 `hit_test.fill_layout_rect_snapshot(&js_worker.rect_snapshot())`。 |
+
+验证：`make test` 全绿；workspace clippy `-D warnings` 零警告；`cargo fmt` clean。renderer worker 路径新增真实 gBCR；browser/reftest/WebView 路径 `__zw_getBoundingClientRect` 未注册 → shim 回落零 rect（= 旧行为，零回归）。
+
+**已知限制（follow-up）**：① handle-identity（`createElement` 节点）暂不支持（需 path A 持久身份映射）；② stale-but-non-zero（rect 反映上次 render，force-reflow-on-demand 深改）；③ 每 query 一次 HTML parse（Document 非 Send 不能跨调用缓存，perf follow-up）；④ browser 路径未接（in-process headless + cross-process 两后端，下一切片）。
 
 ### -131. 平台和输入测试 Layer 8（本轮，~11,982 测试，1341 WPT 用例）
 
@@ -2635,7 +2653,9 @@ Total: 6219 → 6378 tests (+159)
 
 ---
 
-## 下一步优先级（2026-07-24 更新）
+## 下一步优先级（2026-08-04 更新）
+
+> **2026-08-04 状态更新**：用户裁决工作切回父目标——**P1（DOM/JS Bridge 原生化）恢复为当前活跃主线，P1a 先行**。P0（字体栈）与 P2（渲染补齐）随渲染兼容性降频守成，等用户点名后切回；P3（GPU/Display）保持非紧急。
 
 > 距离上一次优先级回顾（2026-06-06）已过去约 7 周，上一批 10 项优先级全部落地。以下优先级基于当前瓶颈和技术债重新评估，按战略重要性分层。
 
@@ -2647,6 +2667,7 @@ Total: 6219 → 6378 tests (+159)
 - [x] FreeType C-dep 已默认开启（R1159，+232 reftest，已验证可行）
 - [x] 字体栈重建 RFC v0.2.3 已就绪（`docs/goal/rendering-compat/fontdue-replacement-scoping.md`）
 - [ ] 用户审批 RFC，启动实施
+- **2026-08-04**：rendering-compat 侧已将该方向列入待用户决策清单（font-stack C-dep rebuild，R2025 user-blocked），**等用户点名**；点名后切回渲染侧实施
 
 **后续步骤**（RFC 通过后）：
 1. 审查并通过字体栈重建 RFC
@@ -2676,8 +2697,17 @@ Total: 6219 → 6378 tests (+159)
 P1a 低风险、可快速见效（主要改 `dom_bridge.rs` + `script-sandbox` + `net` crate）；P1b 是架构级改造，需要独立 RFC 和风险拆分（与字体栈 RFC 同级对待）。
 
 **当前状态**：
-- [ ] P1a: 事件循环补全 + fetch/MutationObserver 真实化
+- [ ] P1a: 事件循环补全 + fetch/MutationObserver 真实化 — **2026-08-04 恢复为当前活跃主线**
 - [ ] P1b: V8 原生绑定 RFC + 实施
+
+**P1a 探查结论（2026-08-04 恢复推进前评估）**：文档「fetch/Observer 为 stub、DomCommand 30+ 变体」描述**已过时**——生产路径已迁移到 B 代桥接（`crates/engine/src/js_dom_bridge.rs` + `js_dom_shim.js` + `apps/browser/src/tab_js_worker.rs`），**fetch GET 已端到端真实**（`FetchBridge` + `AsyncResolver` + net crate，含真实 HTTP 测试）、**MutationObserver（JS 驱动）已真实触发**（shim Proxy trap 拦截）、setTimeout 已真实延迟（TimerBridge 子线程）。P1a 实际剩余 = 4 切片：
+
+1. **事件循环**（shim 内 JS 侧为主 + 1 条 host 命令）：建 macro-task 队列（microtask-before-macrotask 排序）；setTimeout 回调改投 task queue；rAF 改帧驱动（新增 host `FrameTick` 命令投递，tab_js_worker 命令枚举加变体）；requestIdleCallback 缺失补建（rAF 后空闲窗口）
+2. **fetch 完整化**：shim 透传 method/headers/body → host 返回 (status, headers, body)；AbortSignal 最小支持（`__zw_abort` 回调）；`FetchHandler` 签名升级（`fetch_bridge.rs:19`），用 `default_fetch_handler`（tab_js_worker.rs:289）适配器消化 browser/renderer/reftest 三处构造点
+3. **Observer**：MutationObserver 补「host 侧变更不触发」缺口（`apply_dom_mutations` 后回注 `__zw_mo_host_*` 事件）；IntersectionObserver/ResizeObserver 新建（依赖 `__zw_get_rect` 回调 + 帧 tick）
+4. **A 代路径统一**：`DomCommand`/`parse_command`（dom_bridge.rs:200-319）仅剩单测引用 = 死代码（CLAUDE.md「提及不删」）；`webview.execute_script_with_dom`（A 代）或废弃或转注 B 代 shim；**wpt-runner web_api 用例为空洞通过**（runner 不执行内联 JS，test_cases_web_api.rs:161-181），P1a 后需补 JS 执行路径
+
+切片 1-3 均低风险可独立 land；验证基线 = tab_js_worker 既有测试（fetch 端到端 506-597 / 定时器 600-675 / MutationObserver 五连测 678-834，`wait_for_global` 轮询模式）+ 每切片 `make test` 零回归。P1b（V8 原生绑定）仍需独立 RFC。
 
 ---
 
@@ -2694,6 +2724,7 @@ P1a 低风险、可快速见效（主要改 `dom_bridge.rs` + `script-sandbox` +
 - [x] Print-layout Phase P1a-M1/M2（break-after + natural fill + nested promotion）
 - [ ] Print-layout @page size/margin（R2010-R2011 进行中）
 - [ ] CSS 属性渲染补齐（剩余未渲染属性扫描）
+- **2026-08-04**：本项随渲染兼容性降频守成，不再作为自主推进面；等用户点名渲染深结构时一并恢复
 
 ---
 

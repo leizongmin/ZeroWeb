@@ -130,4 +130,31 @@ if (prop === 'getBoundingClientRect') {
 - **建议**：先做 **(A) 持久化 handles map** 作为 identity 基建首个 sub-slice（最小、对 handle 身份直接生效，selector 经 Document 补），kill-switch 守护、A/B 防回归；稳定后再接 renderer 接线 + shim + driving test。或**pivot** 到更高 ROI 的 P1a 项（见 recon），gBCR 作为长期项排期。
 - 此 finding 不阻塞——按 rally 规则记入控制面，CONTINUE 推进（先 (A) sub-slice 或 pivot 由下轮定）。
 
+## R2647：path (C) 对 selector-identity 可行——renderer gBCR 已 land 并验证
+
+**R2646 结论的纠偏**：R2646 把 identity→NodeId 当作「真架构缺口」，隐含假设是「worker 的 `parse_html(dom_html)` 与渲染管线的 Document 的 NodeId 不一致」。**核验 `pipeline_budget.rs:106/197` 后该假设不成立**：渲染管线每次 render 都 **fresh `parse_html(session.html)`**（不持有持久增量 Document），而 js_worker 持的 `dom_html` 是同一字符串。
+
+→ **slotmap fresh-map + 相同插入顺序 → 确定性 NodeId**（守护测试 `rect_bridge::tests::test_node_id_determinism_across_fresh_parses` 验证同一 HTML 两次 fresh-parse 对 `#t`/`span.c`/`span`/`div` 返回相同 `node_id_to_u64`）。故 **path (C) parse-on-query 对 selector-identity 直接成立**，无需 path (A) 的持久化 handles map。
+
+**已 land（renderer 路径，commit 本轮）**：
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/rect_bridge.rs` | 新增 `make_dom_html_rect_handler(dom_html, snapshot)`：handler 每次 query fresh-parse `dom_html`→`find_by_selector(identity)`→`NodeId`→查 snapshot。注：`Document` 非 `Send` → 不能跨调用缓存于 `Send+Sync` handler，**每 query 一次 parse**（path C 已接受；perf follow-up 可在 js_worker 线程做 thread-local 缓存）。+ 确定性守护测试 + handler 单测。 |
+| `crates/engine/src/hit_test.rs` | `HitTestCache::fill_layout_rect_snapshot(&snapshot)`：直接遍历内部 `layout_root`（`LayoutBox`）填 NodeId→rect，**避免 `snapshot()` 整树 clone**。 |
+| `crates/engine/src/js_dom_shim.js` | `getBoundingClientRect`：selector-identity 元素（`querySelector`/`getElementById`，`sel`=stable_selector）→ `__zw_getBoundingClientRect(sel)` 解析 `"x,y,w,h"`→真实 DOMRect。未注册/未命中/handle-identity → 零 rect（= 旧行为零回归）。 |
+| `apps/renderer/src/js_worker.rs` | `RendererJsWorker` 加 `rect_snapshot: LayoutRectSnapshot` 字段 + `rect_snapshot()` accessor；`js_worker_main` 构造 `RectBridge` + register + `set_handler(make_dom_html_rect_handler(...))`，kill-switch `ZW_REAL_RECT=0` 不注册。+ 2 driving test（real rect / 空 snapshot 零回落）。 |
+| `apps/renderer/src/main.rs` | `publish_webview`：render 后 `hit_test.fill_layout_rect_snapshot(&self.js_worker.rect_snapshot())`。 |
+
+**验证**：`make test` 全绿（renderer 19 worker 测试含 2 新 gBCR；engine rect_bridge 8 测试）；workspace clippy `-D warnings` 零警告；`cargo fmt` clean。
+
+**已知限制（接受，follow-up）**：
+
+1. **handle-identity 不支持**：`createElement` 节点（`sel` 为空）`find_by_selector("__n{n}")` 不匹配 → 零 rect。需 path (A) 持久 handle→selector/NodeId 或 shim 在 append 后更新身份。**本切片覆盖 selector-identity（querySelector/getElementById——测量既有渲染元素的常见情形）**。
+2. **stale-but-non-zero**：rect 反映「上次 render」；JS 改样式后同脚本内即读见 pre-change rect。force-reflow-on-demand 为深改 follow-up。
+3. **每 query 一次 HTML parse**：`Document` 非 `Send` 不能跨调用缓存。perf follow-up：thread-local 缓存或改 selector-keyed snapshot 免 parse。
+4. **browser 路径未接**：browser 有 in-process headless（`headless.rs` WebView）+ cross-process（`process_backend.rs`）两后端；shim 共享但 browser `tab_js_worker` 未注册 RectBridge → browser/reftest/WebView 路径 gBCR 仍零 rect（= 旧行为，零回归）。browser 接线为下一切片。
+
+**为何 selector-identity 净正向且零回归**：renderer worker 路径新增真实 gBCR；browser/reftest/WebView 路径 `__zw_getBoundingClientRect` 未注册 → shim 回落零 rect（= 旧行为）；空 snapshot / 未命中同样回落。三项 driving + 全量 `make test` 守护。
+
 

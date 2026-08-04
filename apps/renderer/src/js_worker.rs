@@ -7,7 +7,8 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use zero_engine::{
-    AsyncResolver, DomMutation, FetchBridge, FetchHandler, TimerBridge, generate_js_dom_shim, register_dom_callbacks,
+    AsyncResolver, DomMutation, FetchBridge, FetchHandler, LayoutRectSnapshot, RectBridge, TimerBridge,
+    generate_js_dom_shim, make_dom_html_rect_handler, new_layout_rect_snapshot, register_dom_callbacks,
 };
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
@@ -17,6 +18,12 @@ use zero_webview::fetch_text_async;
 
 const TAB_JS_EXEC_TIMEOUT_MS: u64 = 15_000;
 const TAB_JS_CHANNEL_TIMEOUT: Duration = Duration::from_millis(TAB_JS_EXEC_TIMEOUT_MS + 5_000);
+
+/// P1a gBCR kill-switch：默认 on；`ZW_REAL_RECT=0` 关闭 RectBridge（`__zw_getBoundingClientRect`
+/// 不注册 → shim 回落零 rect = 当前行为，零回归）。snapshot 为空 / identity 未命中同样回落零 rect。
+fn real_rect_enabled() -> bool {
+    !matches!(std::env::var("ZW_REAL_RECT").as_deref(), Ok("0"))
+}
 
 type ScriptFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 type ModuleFn = Arc<dyn Fn(&str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
@@ -57,21 +64,26 @@ pub struct RendererJsWorker {
     executor: ScriptFn,
     module_executor: ModuleFn,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    /// P1a gBCR：共享 layout-rect snapshot——renderer 主循环 render 后填充，
+    /// js_worker 的 RectBridge handler 读取（经 identity→NodeId 解析后查 rect）。
+    rect_snapshot: LayoutRectSnapshot,
 }
 
 impl RendererJsWorker {
     /// 启动 JS 专用线程。
     pub fn spawn(renderer_id: u64) -> Self {
         let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let rect_snapshot = new_layout_rect_snapshot();
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
         let cmd_for_worker = cmd_tx.clone();
         let mutations_for_worker = Arc::clone(&mutations);
+        let rect_snapshot_for_worker = Arc::clone(&rect_snapshot);
 
         let join = thread::Builder::new()
             .name(format!("renderer-js-{}", renderer_id))
-            .spawn(move || js_worker_main(cmd_rx, cmd_for_worker, mutations_for_worker))
+            .spawn(move || js_worker_main(cmd_rx, cmd_for_worker, mutations_for_worker, rect_snapshot_for_worker))
             .expect("spawn renderer js worker");
 
         let executor: ScriptFn = Arc::new(move |script: &str| {
@@ -108,6 +120,7 @@ impl RendererJsWorker {
             executor,
             module_executor,
             mutations,
+            rect_snapshot,
         }
     }
 
@@ -138,6 +151,12 @@ impl RendererJsWorker {
     /// 脚本执行期间记录的 DOM 变更（由 `__zw_*` 回调写入）。
     pub fn mutations(&self) -> Arc<std::sync::Mutex<Vec<DomMutation>>> {
         Arc::clone(&self.mutations)
+    }
+
+    /// P1a gBCR：共享 layout-rect snapshot 句柄——renderer 主循环 render 后经
+    /// `fill_layout_rect_snapshot` 填充，js_worker 的 RectBridge handler 读取。
+    pub fn rect_snapshot(&self) -> LayoutRectSnapshot {
+        Arc::clone(&self.rect_snapshot)
     }
 
     /// 返回异步回调 resolver（P1b S1）。克隆供跨线程异步完成方（fetch host / 定时器）持有，
@@ -179,6 +198,7 @@ fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
     cmd_tx: Sender<JsWorkerCommand>,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    rect_snapshot: LayoutRectSnapshot,
 ) {
     let js_config = SandboxConfig {
         persistent_context: true,
@@ -195,6 +215,17 @@ fn js_worker_main(
     let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url);
     register_module_compile_callback(&mut *sandbox);
+    // P1a gBCR（Slice 1）：RectBridge 注 `__zw_getBoundingClientRect(identity)` 同步回调。
+    // handler 解析 identity(selector) → NodeId（fresh-parse dom_html，与渲染管线确定性一致）
+    // → 查 rect_snapshot。kill-switch `ZW_REAL_RECT=0` 关闭（回落零 rect = 当前行为，零回归）。
+    if real_rect_enabled() {
+        let rect_bridge = RectBridge::new();
+        rect_bridge.register(&mut *sandbox);
+        rect_bridge.set_handler(make_dom_html_rect_handler(
+            Arc::clone(&dom_html),
+            Arc::clone(&rect_snapshot),
+        ));
+    }
     // P1b S1/S3：AsyncResolver（跨线程 resolve Promise）+ FetchBridge（__zw_fetch 注册 +
     // handler cell）。fetch_bridge 经 SetFetchHandler 命令在 WebView 初始化后注入生产 handler
     // （chicken-and-egg——js_worker spawn 早于 WebView）；未注入时 __zw_fetch resolve 错误 Promise。
@@ -761,6 +792,51 @@ mod tests {
             worker.execute_script_direct("String(globalThis.__diff)").unwrap(),
             "true"
         );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_get_bounding_client_rect_real_rect() {
+        // P1a gBCR path C：selector-identity 元素的 getBoundingClientRect 返真实 DOMRect。
+        // shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html → find_by_selector
+        // → NodeId → 查 rect_snapshot。本测试用「同一 html fresh-parse」的 NodeId 填 snapshot
+        // （模拟 renderer 主循环 render 后填充；NodeId 确定性由 engine 的
+        // `test_node_id_determinism_across_fresh_parses` 保证 = 渲染管线会用同一 NodeId）。
+        use zero_dom::parse_html;
+        use zero_engine::{find_by_selector, node_id_to_u64};
+        let mut worker = RendererJsWorker::spawn(18);
+        let html = "<html><body><div id='t' style='width:100px;height:50px'>hi</div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        // 填 snapshot：解析同一 html 取 #t 的 NodeId（= 渲染管线会用的 NodeId），插入其 rect。
+        let doc = parse_html(html);
+        let id_t = find_by_selector(&doc, "#t").expect("#t");
+        let snap = worker.rect_snapshot();
+        snap.lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_t), (10.0, 20.0, 100.0, 50.0));
+        // 读 gBCR：width/left/top 应反映 snapshot（rect 反映「上次 render」，此处 snapshot 即该 render）。
+        worker
+            .execute_script_direct(
+                "var r = document.querySelector('#t').getBoundingClientRect();\
+                 globalThis.__w = r.width; globalThis.__l = r.left; globalThis.__t = r.top;",
+            )
+            .unwrap();
+        assert_eq!(worker.execute_script_direct("String(globalThis.__w)").unwrap(), "100");
+        assert_eq!(worker.execute_script_direct("String(globalThis.__l)").unwrap(), "10");
+        assert_eq!(worker.execute_script_direct("String(globalThis.__t)").unwrap(), "20");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_get_bounding_client_rect_empty_snapshot_zero() {
+        // 零回归：snapshot 未填（无 render / 未命中）→ handler 返 None → shim 回落零 rect
+        // （= 旧行为；作 reflow 触发器语义仍正确，返回值多被丢弃）。
+        let mut worker = RendererJsWorker::spawn(19);
+        worker.set_dom_snapshot("<html><body><div id='t'>hi</div></body></html>", "about:blank");
+        worker
+            .execute_script_direct("globalThis.__w = document.querySelector('#t').getBoundingClientRect().width;")
+            .unwrap();
+        assert_eq!(worker.execute_script_direct("String(globalThis.__w)").unwrap(), "0");
         worker.shutdown();
     }
 
