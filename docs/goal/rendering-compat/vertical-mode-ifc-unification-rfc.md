@@ -3,7 +3,7 @@
 **版本**：v0.1（R1099，2026-07-06，首版草案 — 多 session 切片计划 + R1043 converter-mirror 设计）
 **日期**：2026-07-06
 **作者**：AI Assistant（rendering-compat rally）
-**状态**：草稿（rally 续跑用，无用户确认门禁；实施按切片逐 session A/B 门禁推进）
+**状态**：⏳ **部分实施 + user-gated**：Slice α-1（container_width WM-aware + decoration-gate）已 LANDED（R1099，`painter/text.rs:532-546` + `inline_finalization.rs:17-24/782`，default 行为 = vertical decoration-free 容器取 content_height）；α-2 经 R1101 verified-unnecessary skip；**α-3（vertical 装饰）/α-4（converter block-flow mirror）/α-5（解 gate）仍 user-gated 未实施**。R109 vertical 经 R1965-R1978 深查确认为**耦合系统**（8 proof 单层修 couple-regress），更深架构 track 已迁 [`r109-vertical-native-layout-design.md`](./r109-vertical-native-layout-design.md)（vertical-native subtree layout，pre-authorized ruling #4 多 session）。行号/路径经 R2626 对齐当前源码（`inline/mod.rs`/`painter/text.rs` 重构后大幅漂移）。
 **复杂度**：复杂（跨模块 / 4 层循环依赖 / 高回滚难度 / >3 依赖）
 
 ---
@@ -15,7 +15,7 @@
 - **明确排除**：taffy 0.8+ 升级（R304 DEFERRED，541 ref 迁移，独立轨道，非本 RFC 范围）；horizontal-tb 任何行为变化（所有改动 WM-gate，horizontal-tb 字节一致零回归）；CJK 字体度量死锁（R633，font-wall 谱系，非布局层）。
 - **核心约束**：① vertical 是**耦合系统**——R1047/R1050/R1052 三证单层修 net-negative（R1052 inline-flow 单修即便字符几何完全规范正确，oracle 仍净 -26 css-text-decor）；任一切片**必须**与其他已修层协调或显式 gate 回避未修层。② horizontal-tb 零回归（WM gate `is_vertical_wm`）。③ 每切片三态门禁：welcome product-smoke <20% + scoped oracle 零回归 + self-source 不降。
 - **推荐方案**：Slice α 多 session 同步修（converter 层 block-flow mirror，**非** postprocess）+ inline-flow container_width WM-aware + line-height vertical 列宽 + vertical 装饰 re-enable；以 α-1（container_width fix，gate 回避装饰）为首个 net-0 探针切片。
-- **首个落地步骤**：实施 Slice α-1（§4.1）——`inline_finalization.rs:123` + `painter/text.rs:797` 的 `container_width` 改 WM-aware（vertical 取 content_height），WM gate 隔离 horizontal-tb，A/B css-writing-modes + css-text-decor oracle 看 net 变化（预期：writing-modes 部分案字符位置正确化、text-decor 因装饰未协调 net-负 → 若 net-负则 gate 到无装饰案或回退等 α-3）。
+- **首个落地步骤**：实施 Slice α-1（§4.1）——`inline_finalization.rs:782` + `painter/text.rs:546` 的 `container_width` 改 WM-aware（vertical 取 content_height），WM gate 隔离 horizontal-tb，A/B css-writing-modes + css-text-decor oracle 看 net 变化（预期：writing-modes 部分案字符位置正确化、text-decor 因装饰未协调 net-负 → 若 net-负则 gate 到无装饰案或回退等 α-3）。
 
 ---
 
@@ -27,8 +27,8 @@ ZeroWeb 的 IFC 对 `vertical-rl`/`vertical-lr` 文本**水平布局**（chars x
 
 R1043 → R1050 → R1051 → R1052 四轮调查已精确定位根因与耦合结构（详见 [`vertical-inline-layout-handoff.md`](./vertical-inline-layout-handoff.md) v1.1）：
 
-- **根因**：IFC `break_items_into_columns` 的 `max_depth = self.container_width`（`inline/mod.rs:1458`），而 `container_width` 取自 `root.content_width`（水平 block 尺寸）。vertical-lr 容器 auto 时 `content_width = 0` → `max_depth = 0` → 每字符触发列断 → chars 横向排列。vertical 应取 `content_height`（竖直 inline 尺寸 = 字符向下推进可用深度）。
-- **轴交换已存在**：R1051 v1.0「缺轴交换」诊断已被 R1052 VIFCDUMP 推翻——`break_items_into_columns`（mod.rs:1456）与 paint 端 `char_advance_is_y`（text.rs:1392-1450）轴交换代码早已存在且正确（commit 942a2948）。
+- **根因**：IFC `break_items_into_columns` 的 `max_depth = self.container_width`（`inline/mod.rs:942`），而 `container_width` 取自 `root.content_width`（水平 block 尺寸）。vertical-lr 容器 auto 时 `content_width = 0` → `max_depth = 0` → 每字符触发列断 → chars 横向排列。vertical 应取 `content_height`（竖直 inline 尺寸 = 字符向下推进可用深度）。
+- **轴交换已存在**：R1051 v1.0「缺轴交换」诊断已被 R1052 VIFCDUMP 推翻——`break_items_into_columns`（mod.rs:940）与 paint 端 `char_advance_is_y`（text.rs:1204）轴交换代码早已存在且正确（commit 942a2948）。
 - **耦合系统**：R1052 实施 Fix A+B（container_width WM-aware + trailing-space 裁剪）后，006d 字符几何**完全规范正确**（col0 run0..4 x=0 常量、y=0/16/32/48/64 单列），但 chromium Oracle **净 -26**（css-text-decor 108→82）。证 vertical 渲染是 4 层耦合系统，单修 inline-flow 不足以匹配 chromium。
 
 ### 1.2 目标
@@ -56,8 +56,8 @@ vertical-mode 渲染正确性依赖**四层协调**。每层当前状态、规�
 | 项 | 现状 |
 |---|---|
 | 规范要求 | vertical-rl/lr：chars 同 x 列、y 按 font-size 递增向下推进；列沿 x（vertical-rl 向左 / vertical-lr 向右）。 |
-| 当前行为 | `max_depth = self.container_width`（`inline/mod.rs:1458`）= `content_width`（水平 block 尺寸）= 0（vertical auto 容器）→ 每字符触发列断 → chars 横向 x 递增、y 恒 0。 |
-| Fix | `container_width` WM-aware：vertical 取 `content_height`（竖直 inline 尺寸）。两接线点：`inline_finalization.rs:123`（layout stored）+ `painter/text.rs:797`（paint Path B re-run）。horizontal-tb 取 content_width（WM gate 零回归）。详见 handoff §2 Fix A。 |
+| 当前行为 | `max_depth = self.container_width`（`inline/mod.rs:942`）= `content_width`（水平 block 尺寸）= 0（vertical auto 容器）→ 每字符触发列断 → chars 横向 x 递增、y 恒 0。 |
+| Fix | `container_width` WM-aware：vertical 取 `content_height`（竖直 inline 尺寸）。两接线点：`inline_finalization.rs:782`（layout stored）+ `painter/text.rs:546`（paint Path B re-run）。horizontal-tb 取 content_width（WM gate 零回归）。详见 handoff §2 Fix A。 |
 | 附带 Fix | trailing-space 裁剪（`break_items_into_columns` 词循环头，CJK per-char 词不应带 trailing space 致 word_height 虚高）。详见 handoff §2 Fix B。 |
 | 单层实证 | R1052 Fix A+B 单修此层：字符几何完全规范正确，但 oracle 净 -26（Layer 3/4 未协调）。 |
 
@@ -76,7 +76,7 @@ vertical-mode 渲染正确性依赖**四层协调**。每层当前状态、规�
 | 项 | 现状 |
 |---|---|
 | 规范要求 | vertical-mode 列宽（= horizontal-mode 行高）= `line-height`。如 `line-height:5` × fs16 = 列宽 80。 |
-| 当前行为 | `break_items_into_columns` 里 `col_width = run.line_height`（mod.rs:1481/1525）看似正确，但 R1052 实测 006d（line-height:5）`col_width=16`（应 80）—— line-height:5 **未传**到 vertical 列宽（计算路径某处丢失或未 WM-aware）。 |
+| 当前行为 | `break_items_into_columns` 里 `col_width = run.line_height`（mod.rs:965/1010）看似正确，但 R1052 实测 006d（line-height:5）`col_width=16`（应 80）—— line-height:5 **未传**到 vertical 列宽（计算路径某处丢失或未 WM-aware）。 |
 | Fix | 排查 line-height 值在 IFC 构建链路（TextRun.line_height ← compute）丢失点；确保 vertical 列宽 = line-height × fs。须 VIFCDUMP 探针确认（handoff §5）。 |
 | 单层实证 | 未独立测（R1052 随 Layer 1 一起观察）。 |
 
@@ -125,7 +125,7 @@ vertical inline 布局缺失致以下子域**全部 R109-blocked**（详见 hand
 
 ### 4.1 Slice α-1 — Layer 1 container_width WM-aware（decoration-gate 探针）
 
-- **范围**：`inline_finalization.rs:123` + `painter/text.rs:797` 的 `container_width` 改 WM-aware（vertical 取 `content_height`）+ handoff §2 Fix B（trailing-space 裁剪）。**Gate**：仅对「vertical 容器且整棵子树无 text-decoration / text-emphasis / ruby」触发（decoration-aware gate，回避 Layer 4 耦合）。
+- **范围**：`inline_finalization.rs:782` + `painter/text.rs:546` 的 `container_width` 改 WM-aware（vertical 取 `content_height`）+ handoff §2 Fix B（trailing-space 裁剪）。**Gate**：仅对「vertical 容器且整棵子树无 text-decoration / text-emphasis / ruby」触发（decoration-aware gate，回避 Layer 4 耦合）。
 - **文件**：`crates/layout-engine/src/inline_finalization.rs`、`crates/engine/src/paint/painter/text.rs`、`crates/layout-engine/src/inline/mod.rs`（Fix B）。加 `has_vertical_decoration_descendant` helper（DOM/style 扫描）。
 - **预期**：css-writing-modes 纯文本 vertical 案（block-flow-direction-* / line-box-direction-* 无装饰者）字符位置正确化，潜在 +N；css-text-decor net-0（装饰案 gated out，未被 α-1 触碰）。
 - **门禁**：A/B `make reftest-oracle DIR=css-writing-modes` + `DIR=css/css-text-decor`。net ≥0 且 writing-modes 有正 yield → LAND；net-0 且无正 yield → 记 evidence，留作 α-3/α-4 前置基础（dormant 不影响）；net-负 → gate 不够精（R1052 三 gate 证简单 gate 不足），升级 gate 或回退。
@@ -139,7 +139,7 @@ vertical inline 布局缺失致以下子域**全部 R109-blocked**（详见 hand
 - **预期**：css-writing-modes line-height-NNN vertical 案列宽正确化。
 - **门禁**：A/B `DIR=css-writing-modes`。net ≥0（α-1 已 gate 装饰，无 Layer 4 干扰）→ LAND。
 - **依赖**：α-1（chars 须先垂直推进，列宽才有意义）。
-- **★ R1101 verified-unnecessary，skip**：新单测 `test_r1100_alpha2_vertical_line_height_column_width`（vertical-rl + line-height:5 + fs16 → 断言 `ctx.lines[0].height` = col_width = 80）**PASS**——post-α-1 tree `resolve_font_metrics`（text_metrics.rs:197 `Number(n) => fs×n`）→ `run.line_height` → `break_items_into_columns` `col_width = run.line_height`（mod.rs:1481/1525/1568）链路**已正确**。R1052「col_width=16」是 pre-α-1 stale 观测（彼时 container_width=0 致 break 异常），post-α-1 不复现。**α-2 无需实施**，单测留作回归守卫。
+- **★ R1101 verified-unnecessary，skip**：新单测 `test_r1100_alpha2_vertical_line_height_column_width`（vertical-rl + line-height:5 + fs16 → 断言 `ctx.lines[0].height` = col_width = 80）**PASS**——post-α-1 tree `resolve_font_metrics`（text_metrics.rs:392 `Number(n) => fs×n`）→ `run.line_height` → `break_items_into_columns` `col_width = run.line_height`（mod.rs:965/1010/1018）链路**已正确**。R1052「col_width=16」是 pre-α-1 stale 观测（彼时 container_width=0 致 break 异常），post-α-1 不复现。**α-2 无需实施**，单测留作回归守卫。
 
 ### 4.3 Slice α-3 — Layer 4 vertical 装饰坐标 re-enable（依赖 α-1）
 
@@ -187,7 +187,7 @@ vertical inline 布局缺失致以下子域**全部 R109-blocked**（详见 hand
 - **可行性 YES**：LAYOUT_DUMP 实测 vertical-rl 块子当前左到右（A x=8 / B x=28），规范应右到左。mirror 公式 `child.x = width - child.x - child.width`（border-box 空间）手算正确（A 0→20 / B 20→0）。
 - **vertical-lr 已正确**：converter+extract_layout 轴交换给 vertical-lr 左到右块流（符合规范），仅 vertical-rl 需 mirror。
 - **float/margin-collapse 风险低**：mirror 是纯位置变换（非重定位），float 后处理更早完成（无冲突），区别于 R1043 postprocess mirror 独立 pass 丢状态。
-- **★ 注入点 refined——extract_layout 过早**：在 engine.rs:1302（HorizontalTb children 调整旁）加 VerticalRl mirror 分支后，外 div width 40→784（content-based block-size 变 full-width）。根因：extract_layout 在 apply_intrinsic_content_sizing / remeasure 等多次重算 pass 中反复调用，输出 mirror 被下游 size-recompute 读到（mirrored 子 x → max right edge → width=784）。**裁决：mirror 须放 compute 流程末尾 final pass（所有 set_style+mark_dirty 重算 + postprocess 之后），或 taffy 级变换**，不能放 extract_layout。下会话 α-4 实施 = engine.rs compute 末尾加 vertical-rl mirror pass。
+- **★ 注入点 refined——extract_layout 过早**：在 engine.rs:768（HorizontalTb children 调整旁）加 VerticalRl mirror 分支后，外 div width 40→784（content-based block-size 变 full-width）。根因：extract_layout 在 apply_intrinsic_content_sizing / remeasure 等多次重算 pass 中反复调用，输出 mirror 被下游 size-recompute 读到（mirrored 子 x → max right edge → width=784）。**裁决：mirror 须放 compute 流程末尾 final pass（所有 set_style+mark_dirty 重算 + postprocess 之后），或 taffy 级变换**，不能放 extract_layout。下会话 α-4 实施 = engine.rs compute 末尾加 vertical-rl mirror pass。
 
 ---
 
@@ -225,9 +225,9 @@ baseline = pre-slice HEAD；treatment = 切片改动。`ORACLE_DUMP_ALL=1 make r
 
 | 路径/模块 | 动作 | 切片 | 目的 | 风险 |
 |---|---|---|---|---|
-| `crates/layout-engine/src/inline_finalization.rs:123` | 修改 | α-1 | container_width WM-aware（layout stored） | horizontal-tb 须 WM gate 零回归 |
-| `crates/engine/src/paint/painter/text.rs:797` | 修改 | α-1 | container_width WM-aware（paint Path B） | paint Path B 空-styles 协调（R890） |
-| `crates/layout-engine/src/inline/mod.rs` (break_items_into_columns:1456-1564) | 修改 | α-1/α-2 | Fix B trailing-space + line-height 列宽 | CJK 词边界 |
+| `crates/layout-engine/src/inline_finalization.rs:782` | 修改 | α-1 | container_width WM-aware（layout stored） | horizontal-tb 须 WM gate 零回归 |
+| `crates/engine/src/paint/painter/text.rs:546` | 修改 | α-1 | container_width WM-aware（paint Path B） | paint Path B 空-styles 协调（R890） |
+| `crates/layout-engine/src/inline/mod.rs` (break_items_into_columns:940-1060) | 修改 | α-1/α-2 | Fix B trailing-space + line-height 列宽 | CJK 词边界 |
 | `crates/engine/src/paint/painter/text.rs` (emphasis site 2 + decor) | 修改 | α-3 | vertical 装饰坐标 re-enable | R1050 site 2 门控 |
 | `crates/engine/src/paint/painter/effects.rs` | 修改 | α-3 | text-decoration vertical 轴 | — |
 | `crates/layout-engine/src/converter/mod.rs` | 修改 | α-4 | block_flow_direction 元数据注入 | R1043 mirror 谱系（最高风险） |
@@ -304,3 +304,4 @@ baseline = pre-slice HEAD；treatment = 切片改动。`ORACLE_DUMP_ALL=1 make r
 | 版本 | 日期 | 变更内容 |
 |---|---|---|
 | v0.1 | 2026-07-06 (R1099) | 首版草案：多 session 切片计划（α-1..α-5）+ R1043 converter-mirror 设计方向 + 验证门禁 + 实施交接 |
+| v0.2 | 2026-08-04 (R2626) | 行号/路径漂移纠偏（`inline/mod.rs`/`painter/text.rs` 重构后）+ 状态同步：标 α-1 LANDED（R1099）+ α-2 skip（R1101）+ α-3/α-4/α-5 user-gated + 更深 track 迁 `r109-vertical-native-layout-design.md`。纠偏：`break_items_into_columns` 1456→940 / `max_depth` 1458→942 / `col_width` 1481/1525/1568→965/1010/1018 / `char_advance_is_y` 1392-1450→1204 / container_width WM-aware `inline_finalization.rs`:123→782 + `painter/text.rs`:797→546 / `resolve_font_metrics Number(n)` 197→392 / engine.rs:1302→768 |
