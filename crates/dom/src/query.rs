@@ -67,6 +67,14 @@ pub enum PseudoClass {
         /// `true` = `:has(> inner)` 直接子作用域；`false` = `:has(inner)` 后代作用域。
         child_scope: bool,
     },
+    /// `:checked`——选中态表单元素（`<input type=checkbox|radio>` 带 `checked` 属性，或
+    /// `<option>` 带 `selected` 属性）。纯元素属性求值（`matches_full` 内）。
+    Checked,
+    /// `:disabled`——禁用态表单控件（button/input/select/textarea/option/optgroup 带
+    /// `disabled` 属性）。注：`<fieldset disabled>` 向后代传播禁用态未实现（follow-up）。
+    Disabled,
+    /// `:enabled`——启用态表单控件（表单控件且非 [`PseudoClass::Disabled`]）。
+    Enabled,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -212,6 +220,10 @@ impl SimpleSelector {
             // :has(inner)——需 Document 子树求值，matches_full 无 Document 访问，延后返 true。
             // 由 Document::element_matches_selector 在 matches_full 后额外评估。
             PseudoClass::Has { .. } => true,
+            // 表单状态伪类——纯元素 tag+属性求值（无 Document/position 依赖）。
+            PseudoClass::Checked => is_checked(elem),
+            PseudoClass::Disabled => is_disabled(elem),
+            PseudoClass::Enabled => is_form_control(elem) && !is_disabled(elem),
         })
     }
 }
@@ -366,6 +378,33 @@ pub fn parse_nth(arg: &str) -> Option<Nth> {
 
 /// 解析伪类名（+可选括号参数）→ `PseudoClass`。`name` 为 `:` 之后、`(` 或下一个分隔符之前的部分。
 /// `args` 为括号内原始字符串（`nth-*` 用），无括号时为 `None`。
+/// 表单控件元素（`:enabled`/`:disabled` 适用范围）：button/input/select/textarea/option/optgroup。
+fn is_form_control(elem: &ElementData) -> bool {
+    matches!(
+        elem.local_name(),
+        "button" | "input" | "select" | "textarea" | "option" | "optgroup"
+    )
+}
+
+/// `:disabled`——表单控件且带 `disabled` 布尔属性。
+fn is_disabled(elem: &ElementData) -> bool {
+    is_form_control(elem) && elem.has_attribute("disabled")
+}
+
+/// `:checked`——checkbox/radio（带 `checked` 属性）或 option（带 `selected` 属性）。
+/// `type` 属性值按 HTML ASCII 大小写不敏感比较。
+fn is_checked(elem: &ElementData) -> bool {
+    match elem.local_name() {
+        "input" => {
+            elem.get_attribute("type")
+                .is_some_and(|t| t.eq_ignore_ascii_case("checkbox") || t.eq_ignore_ascii_case("radio"))
+                && elem.has_attribute("checked")
+        }
+        "option" => elem.has_attribute("selected"),
+        _ => false,
+    }
+}
+
 fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
     match name {
         "nth-child" => Some(PseudoClass::NthChild(parse_nth(args?)?)),
@@ -409,6 +448,10 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
                 Some(PseudoClass::Has { inner, child_scope })
             }
         }
+        // :checked / :disabled / :enabled——表单状态伪类（无参，纯元素属性求值）。
+        "checked" => Some(PseudoClass::Checked),
+        "disabled" => Some(PseudoClass::Disabled),
+        "enabled" => Some(PseudoClass::Enabled),
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
     }
 }

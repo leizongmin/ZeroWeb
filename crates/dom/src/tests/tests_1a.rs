@@ -789,6 +789,81 @@ fn test_query_selector_has() {
 }
 
 #[test]
+fn test_query_selector_form_state_pseudo() {
+    let doc = parse_html(
+        "<html><body>\
+         <input type='checkbox' id='cb-on' checked>\
+         <input type='checkbox' id='cb-off'>\
+         <input type='radio' id='rd-on' checked>\
+         <input type='text' id='txt' checked>\
+         <input type='text' id='txt-dis' disabled>\
+         <button id='btn-dis' disabled>b</button>\
+         <button id='btn'>b2</button>\
+         <select id='sel' disabled>\
+           <option id='opt-a' selected>a</option>\
+           <option id='opt-b'>b</option>\
+         </select>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of =
+        |sels: &[NodeId]| -> Vec<String> { sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect() };
+    // :checked → cb-on（checked checkbox）、rd-on（checked radio）、opt-a（selected option）。
+    // text#txt 虽带 checked 属性但 type=text 非 checkbox/radio → 不匹配。
+    let checked = ids_of(&doc.query_selector_all(root, ":checked"));
+    assert!(
+        checked.contains(&"cb-on".to_string()),
+        "checked checkbox 应匹配 :checked"
+    );
+    assert!(checked.contains(&"rd-on".to_string()), "checked radio 应匹配 :checked");
+    assert!(
+        checked.contains(&"opt-a".to_string()),
+        "selected option 应匹配 :checked"
+    );
+    assert!(
+        !checked.contains(&"cb-off".to_string()),
+        "未选 checkbox 不应匹配 :checked"
+    );
+    assert!(
+        !checked.contains(&"txt".to_string()),
+        "type=text 带 checked 属性不应匹配 :checked"
+    );
+    // :disabled → txt-dis、btn-dis、sel（带 disabled 的表单控件）。opt-a/opt-b 自身无 disabled → 不匹配
+    // （注：fieldset 传播禁用未实现，select 禁用自身匹配但 option 传播禁用为 follow-up）。
+    let disabled = ids_of(&doc.query_selector_all(root, ":disabled"));
+    assert!(disabled.contains(&"txt-dis".to_string()));
+    assert!(disabled.contains(&"btn-dis".to_string()));
+    assert!(disabled.contains(&"sel".to_string()));
+    assert!(!disabled.contains(&"btn".to_string()), "启用 button 不应匹配 :disabled");
+    // :enabled → 表单控件且非禁用：cb-on/cb-off/rd-on/txt/btn。
+    let enabled = ids_of(&doc.query_selector_all(root, ":enabled"));
+    for id in ["cb-on", "cb-off", "rd-on", "txt", "btn"] {
+        assert!(enabled.contains(&id.to_string()), "{id} 应匹配 :enabled");
+    }
+    assert!(
+        !enabled.contains(&"txt-dis".to_string()),
+        "禁用 input 不应匹配 :enabled"
+    );
+    assert!(
+        !enabled.contains(&"btn-dis".to_string()),
+        "禁用 button 不应匹配 :enabled"
+    );
+    // 组合：input:checked + input:disabled 互补，input:text:enabled 命中。
+    let enabled_text = doc.query_selector_all(root, "input:enabled");
+    assert!(
+        enabled_text
+            .iter()
+            .any(|id| doc.get_attribute(*id, "id") == Some("txt".to_string()))
+    );
+    assert!(
+        !enabled_text
+            .iter()
+            .any(|id| doc.get_attribute(*id, "id") == Some("txt-dis".to_string())),
+        "禁用 text 不应在 input:enabled 中"
+    );
+}
+
+#[test]
 fn test_query_selector_not_found() {
     let doc = parse_html("<html><body></body></html>");
     let root = doc.root();
