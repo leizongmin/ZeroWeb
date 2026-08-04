@@ -449,6 +449,93 @@ fn test_polyfill_fetch_returns_response() {
     assert!(result.contains("true"), "fetch 和 Response 应存在: {result}");
 }
 
+// ── P1a fetch 切片：data: URL 同步真实解码测试 ──
+// __fetchDataUrlSync 是 fetch 的同步测试钩子（fetch 返回 Promise，V8 桩不保证
+// .then 同步执行，故绕过 Promise 直接验证解码 + Response 构造）。
+
+#[test]
+fn test_polyfill_fetch_data_url_plain() {
+    let result = eval_polyfill(
+        r#"var r = __fetchDataUrlSync("data:text/plain,hello");
+           JSON.stringify({body: r.body, ct: r.headers.get('content-type'), status: r.status, ok: r.ok});"#,
+    );
+    assert!(result.contains("\"body\":\"hello\""), "plain body 应为 hello: {result}");
+    assert!(
+        result.contains("\"ct\":\"text/plain\""),
+        "content-type 应为 text/plain: {result}"
+    );
+    assert!(result.contains("\"status\":200"), "status 应为 200: {result}");
+    assert!(result.contains("\"ok\":true"), "ok 应为 true: {result}");
+}
+
+#[test]
+fn test_polyfill_fetch_data_url_default_content_type() {
+    let result = eval_polyfill(r#"__fetchDataUrlSync("data:,hi").headers.get('content-type');"#);
+    assert_eq!(
+        result.trim_matches('"'),
+        "text/plain;charset=US-ASCII",
+        "空 mediatype 默认 text/plain;charset=US-ASCII: {result}"
+    );
+}
+
+#[test]
+fn test_polyfill_fetch_data_url_percent_encoded() {
+    let result = eval_polyfill(r#"__fetchDataUrlSync("data:text/plain,hello%20world%21").body;"#);
+    assert_eq!(
+        result.trim_matches('"'),
+        "hello world!",
+        "percent-encoded 应解码: {result}"
+    );
+}
+
+#[test]
+fn test_polyfill_fetch_data_url_base64() {
+    let result = eval_polyfill(r#"__fetchDataUrlSync("data:text/plain;base64,aGVsbG8=").body;"#);
+    assert_eq!(
+        result.trim_matches('"'),
+        "hello",
+        "base64 body 应解码为 hello: {result}"
+    );
+}
+
+#[test]
+fn test_polyfill_fetch_data_url_base64_content_type_stripped() {
+    // ;base64 应从 content-type 中剥离
+    let result =
+        eval_polyfill(r#"__fetchDataUrlSync("data:text/html;base64,PGI+aGk8L2I+").headers.get('content-type');"#);
+    assert_eq!(
+        result.trim_matches('"'),
+        "text/html",
+        "base64 标记不应进 content-type: {result}"
+    );
+}
+
+#[test]
+fn test_polyfill_fetch_data_url_non_data_returns_null() {
+    let result = eval_polyfill(r#"JSON.stringify(__fetchDataUrlSync("https://example.com/x"));"#);
+    assert_eq!(
+        result.trim(),
+        "null",
+        "非 data: URL 应返回 null（fetch 走 stub）: {result}"
+    );
+}
+
+#[test]
+fn test_polyfill_fetch_data_url_malformed_no_comma_returns_null() {
+    let result = eval_polyfill(r#"JSON.stringify(__fetchDataUrlSync("data:text/plain"));"#);
+    assert_eq!(result.trim(), "null", "无逗号 data: 应返回 null: {result}");
+}
+
+#[test]
+fn test_polyfill_fetch_returns_promise_for_data_url() {
+    // fetch(dataUrl) 应返回 Promise（非抛错），且仍由 data: 解码路径供给。
+    let result = eval_polyfill(
+        r#"var p = fetch("data:text/plain,abc");
+           JSON.stringify([typeof p, p && p.constructor && p.constructor.name]);"#,
+    );
+    assert!(result.contains("\"Promise\""), "fetch 应返回 Promise: {result}");
+}
+
 #[test]
 fn test_polyfill_headers_case_insensitive() {
     let result = eval_polyfill(

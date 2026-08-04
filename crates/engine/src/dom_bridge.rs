@@ -991,9 +991,67 @@ pub fn generate_dom_api_polyfill() -> String {
     return r;
   };
 
+  // ── P1a fetch 切片：data: URL 同步真实解码 ──
+  // data: URL 无需 host 网络/事件循环即可在 polyfill 内同步解码为真实 body，
+  // 是 fetch「真实化」首个可独立落地的切片（http(s)/blob 仍 stub，须事件循环 + net）。
+
+  // 纯 JS base64 解码（polyfill 无 atob）→ Latin-1 字符串（ASCII 文本正确；
+  // 多字节 UTF-8 base64 为已知限制，binary body 后续 ArrayBuffer 切片处理）。
+  function _b64decode(str) {
+    var A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    var lut = {};
+    for (var i = 0; i < 64; i++) lut[A[i]] = i;
+    var s = String(str).replace(/=+$/, '');
+    var out = '';
+    for (var i = 0; i < s.length; i += 4) {
+      var c0 = s[i], c1 = s[i + 1], c2 = s[i + 2], c3 = s[i + 3];
+      var b0 = lut[c0] || 0, b1 = lut[c1] || 0, b2 = lut[c2], b3 = lut[c3];
+      out += String.fromCharCode((b0 << 2) | (b1 >> 4));
+      if (c2 !== undefined) out += String.fromCharCode(((b1 & 15) << 4) | ((b2 || 0) >> 2));
+      if (c3 !== undefined) out += String.fromCharCode(((b2 || 0) & 3) << 6 | (b3 || 0));
+    }
+    return out;
+  }
+
+  // 解析 data: URL → { body, contentType } 或 null（非 data: URL）。
+  // 格式：data:[<mediatype>][;base64],<data>；空 mediatype 默认 text/plain;charset=US-ASCII。
+  function _decodeDataUrl(url) {
+    if (typeof url !== 'string' || url.substring(0, 5) !== 'data:') return null;
+    var commaIdx = url.indexOf(',');
+    if (commaIdx < 0) return null;
+    var meta = url.substring(5, commaIdx);
+    var data = url.substring(commaIdx + 1);
+    var isBase64 = meta.slice(-7) === ';base64';
+    var contentType = isBase64 ? meta.slice(0, -7) : meta;
+    if (contentType === '') contentType = 'text/plain;charset=US-ASCII';
+    var body;
+    if (isBase64) {
+      body = _b64decode(data);
+    } else {
+      try { body = decodeURIComponent(data); } catch (e) { body = data; }
+    }
+    return { body: body, contentType: contentType };
+  }
+
+  // 同步构造 data: URL 的真实 Response（供 fetch 与测试共用）。
+  function _fetchDataUrlSync(url) {
+    var d = _decodeDataUrl(url);
+    if (!d) return null;
+    return new globalThis.Response(d.body, {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': d.contentType },
+      url: url
+    });
+  }
+  // 暴露同步测试钩子（fetch 返回 Promise，V8 桩不保证 .then 同步执行）。
+  globalThis.__fetchDataUrlSync = _fetchDataUrlSync;
+
   globalThis.fetch = function(input, init) {
     var req = (input instanceof globalThis.Request) ? input : new globalThis.Request(input, init);
-    // Stub: return empty 200 response. Real network handled by host runtime.
+    // P1a 切片：data: URL 同步真实解码；非 data: URL 仍 stub（真网络须事件循环 + net）。
+    var dataResp = _fetchDataUrlSync(req.url);
+    if (dataResp) return Promise.resolve(dataResp);
     return Promise.resolve(new globalThis.Response(null, {
       status: 200,
       statusText: 'OK',
