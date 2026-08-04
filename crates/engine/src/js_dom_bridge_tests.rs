@@ -1593,3 +1593,73 @@ fn test_prepend_detached_noop_e2e() {
     });
     assert!(!has_adj, "detached 目标 prepend 不应入队 InsertAdjacent* mutation");
 }
+
+#[test]
+fn test_replace_child_e2e() {
+    // replaceChild(new, old)：在 old 位置替换为新节点，返回 old。父 [a,b] → replaceChild(newP,a) → [newP,b]。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let initial = "<html><body><ul id='list'><li id='a'>A</li><li id='b'>B</li></ul></body></html>".to_string();
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    sandbox
+        .execute(
+            "var np = document.createElement('li'); np.id = 'new';\
+             var list = document.querySelector('#list');\
+             var old = list.replaceChild(np, document.querySelector('#a'));\
+             globalThis.__ret = (old && old.id) || '';",
+        )
+        .unwrap();
+    // spec：返回被替换的 old 节点（id=a）。
+    assert_eq!(sandbox.execute("globalThis.__ret").unwrap().value, "a");
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&initial, &ms).unwrap();
+    // new 在 a 原位置，a 被移除，b 保留。
+    assert!(out.contains("<li id=\"new\">"), "replaceChild 应插入新节点\n{out}");
+    assert!(!out.contains("<li id=\"a\">"), "replaceChild 应移除 old\n{out}");
+    assert!(out.contains("<li id=\"b\">B</li>"), "replaceChild 应保留兄弟 b\n{out}");
+    // 顺序：new 在 b 之前。
+    let i_new = out.find("<li id=\"new\">").unwrap();
+    let i_b = out.find("<li id=\"b\">").unwrap();
+    assert!(i_new < i_b, "new 应在 b 之前（a 原位置）\n{out}");
+}
+
+#[test]
+fn test_replace_with_e2e() {
+    // replaceWith(x, y)：用 x,y 替换自身。body [t] → t.replaceWith(x,y) → [x,y]（t 移除）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let initial = "<html><body><div id='t'>x</div></body></html>".to_string();
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    sandbox
+        .execute(
+            "var x=document.createElement('x');var y=document.createElement('y');\
+             document.querySelector('#t').replaceWith(x, 'mid', y);",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&initial, &ms).unwrap();
+    assert!(!out.contains("<div id=\"t\">"), "replaceWith 应移除自身\n{out}");
+    // 顺序：x, mid(text), y 保持参数序。
+    let ix = out.find("<x>").unwrap();
+    let imid = out.find("mid").unwrap();
+    let iy = out.find("<y>").unwrap();
+    assert!(ix < imid && imid < iy, "replaceWith 应保持参数序 x<mid<y\n{out}");
+}

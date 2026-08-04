@@ -1242,10 +1242,41 @@
             return newNode;
           };
         }
+        // `parent.replaceChild(newChild, oldChild)`：在 oldChild 位置前插入 newChild，再移除
+        // oldChild（spec replace 语义）。newChild 须为 create 句柄节点；oldChild 须有 selector
+        //（selector-identity 子节点，作 insert ref）。返回 oldChild（spec）。
+        if (prop === 'replaceChild') {
+          return function(newChild, oldChild) {
+            if (newChild && newChild.__zwHandle && oldChild && oldChild.__zwSelector) {
+              if (handle) __zw_insert_before_handle(handle, newChild.__zwHandle, oldChild.__zwSelector);
+              else __zw_insert_before(sel, newChild.__zwHandle, oldChild.__zwSelector);
+              __zw_remove(oldChild.__zwSelector);
+              _mo_notify(sel, handle, {
+                type: 'childList',
+                addedNodes: [newChild],
+                removedNodes: [oldChild],
+              });
+            }
+            return oldChild;
+          };
+        }
         if (prop === 'remove') {
           return function() {
             if (handle) __zw_remove_handle(handle);
             else __zw_remove(sel);
+          };
+        }
+        // `element.replaceWith(...nodesOrStrings)`：用新节点序列替换自身（self 级，区别于
+        // replaceChild 的 parent 级）。= 先 before(...args) 作前兄弟插入（正序保参数序），再 remove 自身。
+        // 复用 _insertAdjacentVariadic（beforebegin 正序）+ remove。仅 sel-based 目标（需 parent）。
+        if (prop === 'replaceWith') {
+          return function() {
+            if (sel) {
+              _insertAdjacentVariadic(sel, 'beforebegin', arguments, false);
+              if (handle) __zw_remove_handle(handle);
+              else __zw_remove(sel);
+            }
+            return undefined;
           };
         }
         // `Element.append(...nodesOrStrings)`（现代 API，区别于 appendChild）：
