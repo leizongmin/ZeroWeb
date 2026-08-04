@@ -444,11 +444,11 @@ v1.3 §12.6 step-1 称 R885（`font_metrics.rs`）「默认 None，dormant，零
 
 | 因素 | v1.3 描述 | R2605 当前态 | 证据 |
 |------|-----------|--------------|------|
-| ① strut baseline | 0.8 启发式（应 ~0.928em 真实 ascent） | **仍 0.8·fs 启发式**（`font_metric_provider` 字段持有但 `apply_vertical_alignment` 未读） | `inline/mod.rs:195`「None（默认）= apply_vertical_alignment 回退 0.8·fs 启发式（当前行为）」/ `:338`「尚未读取该字段（仍走 0.8·fs 启发式）。step-2（三方协调）才在此消费真实」/ `:1201`「文本行：沿用 line_height*0.8」 |
+| ① strut baseline | 0.8 启发式（应真实 ascent） | **half-leading + dominant_fs × ascent_ratio**；ascent_ratio = R1004 `ascent_ratio_overrides[node]`（**dormant 空 map，从未 populate**）→ 回退 R990 is_ahem-gated（Ahem 0.8 / 非-Ahem 0.928）。**R1004 map = step-2 精确注入点**（从 live provider populate per-node real ratio） | `inline/mod.rs:215 ascent_ratio_overrides: HashMap<NodeId,f32>`（default empty `:271`）/ `:1228-1244 ascent_ratio_lookup`（dormant override → R990 fallback）/ R990 常数在 `ascent_ratio_lookup`（Ahem 0.8/非-Ahem 0.928）；注 `:1201`「line_height*0.8」**注释 stale**（旧 flat 描述，实际代码已 R990+R1004） |
 | ② paint v_offset | font_size（应 ink-height） | 未变更（`render_fragment!` `$baseline_offset = baseline_fs(font_size)`，`text.rs:1100-1332`） | `text.rs` |
 | ③ tight-ink vs ascent | ~7px 差 | 未变更 | R876 §12.2 |
 
-**结论：三方协调（v1.3 §12.6 step-2）仍未实施**——strut 仍 0.8·fs，`font_metric_provider` 字段 held-but-not-read for strut ascent。bridge 已 live（line-height:normal 级），故 step-2 的 provider-plumbing 风险较 v1.3 假设更低（provider 已 proven zero-regression at line-height:normal level）。
+**结论：三方协调（v1.3 §12.6 step-2）仍未实施**——strut ascent 走 R990 is_ahem-gated 常数（R1004 `ascent_ratio_overrides` dormant 空 map 未 populate），`font_metric_provider` 经 line-height:normal 已 live 但未注入 strut。bridge 已 live + R1004 注入点 purpose-built，故 step-2 的 provider-plumbing 风险较 v1.3 假设更低（provider 已 proven zero-regression at line-height:normal level）。
 
 ### 13.3 v1.3 后附加既 land 工作
 
@@ -459,7 +459,7 @@ v1.3 §12.6 step-1 称 R885（`font_metrics.rs`）「默认 None，dormant，零
 ### 13.4 剩余切片 readiness（锐化）
 
 v1.3 §12.6 step-2「三方同改 narrow slice」**仍是精确下一步**，且 readiness 提升：
-- provider 已激活 + proven（line-height:normal 零回归）→ step-2 须做 = 「让 `apply_vertical_alignment` 的 strut ascent 消费 provider 真实 ascent（替 0.8）+ non-stored `v_offset` 消费 ink-height 或 `fragment.baseline`（替 font_size）+ 验 stored/Path B/raster glyph_top_left 不双计」，三方同改 + kill-switch（`ZW_` env）+ 三态 A/B（welcome <20% + linebox/css-text/normal-flow oracle 零回归 + self-source 不降），净负即回退。
+- provider 已激活 + proven（line-height:normal 零回归）→ step-2 须做 = 「populate R1004 `ascent_ratio_overrides` map（从 live provider per-node real ascent ratio，使 `apply_vertical_alignment` strut ascent 走真实度量替 R990 常数）+ non-stored `v_offset` 消费 ink-height 或 `fragment.baseline`（替 font_size）+ 验 stored/Path B/raster glyph_top_left 不双计」，三方同改 + kill-switch（`ZW_` env，default-off）+ 三态 A/B（welcome <20% + linebox/css-text/normal-flow oracle 零回归 + self-source 不降），净负即回退。**R1004 `ascent_ratio_overrides` 是 purpose-built dormant 注入点**（mod.rs:215/405 `with_ascent_ratio_overrides` builder 已就绪），无需新基建。
 - 与 v1.4 R109 匿名块 manifestation 的关系：v1.4「匿名块须从叶子近似升级为跑 IFC 的真容器」是 tree-build + IFC ownership 深构造（墙 ③/Path A/B 同根，deadlock 史 R125/R206/R213）；本 §13 step-2 是更窄的「strut/v_offset 度量三方协调」slice，**不触及 tree-build / 匿名块**，是 v1.4 整体 unification 的一个可独立先行的度量层子切片。
 - 仍受 master.md 控制面 user-gate——**本 addendum 仅同步 design-vs-code 使授权实施时无误导，不自主开工**。
 
