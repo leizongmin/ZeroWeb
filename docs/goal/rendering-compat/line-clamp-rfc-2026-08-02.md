@@ -2,14 +2,14 @@
 
 **日期**：2026-08-02
 **承接**：R2430 survey 识别 line-clamp 为 css-overflow 最大 fail 簇（~130 reftest），parsed-not-consumed。
-**状态**：设计完成，待切片实施（rally 自主模式：lint Fail=0 即放行实施，不等用户确认——R2407 先例）。
+**状态**：⏳ **部分实施**：slice 1（IFC `line_clamp` cap + `apply_line_clamp_cap`，`inline/mod.rs:623/654`）+ slice 2（ellipsis，painter `text.rs:1622-1642` `box_node.line_clamp_clamped` 消费，R2431/R2432/R2467 LANDED，kill-switch `ZW_LINE_CLAMP` default-on）已落地；**slice 3（block-ellipsis string / vertical / multicol 嵌套 / abspos-floats 精确交互）仍 defer**。行号/路径经 R2628 对齐当前源码（style-system `apply_advanced.rs`/`computed_style.rs` 迁 `property/`，painter ellipsis 大幅重构）。
 
 ---
 
 ## 0. 执行摘要
 
 - **目标**：让 `line-clamp: N`（含 legacy `-webkit-line-clamp`）真正生效——把块容器内容夹到 N 行，第 N 行末加省略号（…），box 高度 = N 行。
-- **范围**：basic line-clamp（block 容器，水平书写模式）+ ellipsis；modern `line-clamp` 与 legacy `-webkit-line-clamp` 共用同一路径（apply 已合并，apply_advanced.rs:1057）。
+- **范围**：basic line-clamp（block 容器，水平书写模式）+ ellipsis；modern `line-clamp` 与 legacy `-webkit-line-clamp` 共用同一路径（apply 已合并，property/apply_advanced.rs:1100）。
 - **明确排除**：vertical writing-mode line-clamp、`continue: discard` 级联精确、scroll-markers（另一 CSS4 feature）、overflow-clip-margin（另一 feature）。
 - **核心约束**：① 零文本布局回归（line-clamp 仅在声明时生效，非 clamped 块逐字节不变）；② 双 IFC 路径一致（layout 期与 paint 期两趟 IFC 必须夹到同一 N 行，否则 box 高度 ≠ paint 行数）；③ ellipsis 第 N 行末定位（非单行 text-overflow 的 content_right）。
 - **推荐方案**：IFC `layout()` 读容器 `line_clamp` → `break_items_into_lines` 后 cap `self.lines` 到 N + 标记 clamped → height 自然 = N 行（下游用 lines）→ painter 第 N 行末渲 ellipsis（新增「vertical-triggered ellipsis」，复用 measure/ahem 逻辑，区别于单行 horizontal-triggered）。
@@ -21,9 +21,9 @@
 
 ### 1.1 现状（R2430 实证）
 
-- **parsed + computed 就位**：`parse_line_clamp`（css-parser parse_extended_visual.rs:521）→ `LineClampValue::{None,Count(n)}`；apply（style-system apply_advanced.rs:1057 `"line-clamp" | "-webkit-line-clamp"`）→ `ComputedStyle.line_clamp: LineClampComputedValue`（computed_style.rs:476，default `None`）；default/inherit 全就位。
+- **parsed + computed 就位**：`parse_line_clamp`（css-parser parse_extended_visual.rs:539）→ `LineClampValue::{None,Count(n)}`；apply（style-system property/apply_advanced.rs:1100 `"line-clamp" | "-webkit-line-clamp"`）→ `ComputedStyle.line_clamp: LineClampComputedValue`（property/computed_style.rs:490，default `None`）；default/inherit 全就位。
 - **layout 零消费**：layout-engine / engine 全 codebase grep `line_clamp` 零命中（除 style-system）→ 夹行逻辑完全缺失。
-- **ellipsis 基建（单行）已有**：painter `text-overflow: ellipsis`（text.rs:762 触发 + 1425 截断 + 1474 渲 `…`），但它是 **horizontal-triggered**（`g.x >= content_right`，单行横向溢出），**不能直接复用**于 line-clamp（vertical-triggered：超过 N 行 → 第 N 行末加 `…`）。
+- **ellipsis 基建（单行）已有**：painter `text-overflow: ellipsis`（text.rs:834 触发 `needs_ellipsis` + 1552 截断 + 1590 渲 `…`），但它是 **horizontal-triggered**（`g.x >= content_right`，单行横向溢出），**不能直接复用**于 line-clamp（vertical-triggered：超过 N 行 → 第 N 行末加 `…`）。
 - **driving 簇**：css-overflow/line-clamp/* ~80 + webkit-line-clamp ~28 + block-ellipsis ~13 + line-clamp-with-{abspos,floats,fixed-pos} ~33 ≈ 130 reftest。
 
 ### 1.2 目标
@@ -42,7 +42,7 @@
 
 ### 2.1 IFC cap 注入点（layout）
 
-`InlineFormattingContext::layout()`（inline/mod.rs:615）已有 `styles` + `container` 访问 → 读 `style.line_clamp`，存入新字段 `self.line_clamp: Option<usize>`（Count(n) → Some(n)）。在 `break_items_into_lines(items)`（mod.rs:633）**之后**：
+`InlineFormattingContext::layout()`（inline/mod.rs:623）已有 `styles` + `container` 访问 → 读 `style.line_clamp`，存入新字段 `self.line_clamp: Option<usize>`（Count(n) → Some(n)）。在 `break_items_into_lines(items)`（mod.rs:637）**之后**：
 
 ```text
 if let Some(n) = self.line_clamp {
@@ -53,7 +53,7 @@ if let Some(n) = self.line_clamp {
 }
 ```
 
-**为什么 truncate 在 break 之后**：行已生成（含 floats/abspos exclusion 已算），truncate 仅丢尾部行，保留前 N 行的完整几何（float exclusion / inline-box 对齐不变）。下游 height 计算（inline_finalization.rs:798 `root.content_height` 从 lines 推）自动得到 N 行高度。
+**为什么 truncate 在 break 之后**：行已生成（含 floats/abspos exclusion 已算），truncate 仅丢尾部行，保留前 N 行的完整几何（float exclusion / inline-box 对齐不变）。下游 height 计算（`inline_finalization.rs:930` 设 `root.line_clamp_clamped` + content_height 从（已 cap 的）lines 推）自动得到 N 行高度。
 
 ### 2.2 双 IFC 路径一致性（关键风险）
 
@@ -73,10 +73,10 @@ IFC 在两处独立运行：
 - 触发：块 `line_clamp` 为 `Count` 且 `clamped == true`（有截断）。
 - 定位第 N 行（最后可见行）的末尾 fragment/glyph。
 - 若末尾内容 + `…` 宽 ≤ 行宽：直接在末尾 append `…`。
-- 若超宽：从行末回退到「`…` 能放下」的最后一个 break opportunity（同单行 ellipsis 的 cutoff 逻辑 text.rs:1452-1464，复用 `ellipsis_char_width` / ahem 判定），截后续 + 插 `…`。
+- 若超宽：从行末回退到「`…` 能放下」的最后一个 break opportunity（同单行 ellipsis 的 cutoff 逻辑 text.rs:1564，复用 `ellipsis_char_width` / ahem 判定），截后续 + 插 `…`。
 - `…` y = 第 N 行 baseline（非单行的 content_y）。
 
-**复用**：measure_char_for_paint('.', fs, container_is_ahem)（text.rs:1447）、ahem 判定（text.rs:763）、add_glyph（text.rs:1475）全复用。新增的是「定位第 N 行末」+「vertical-triggered 分支」。
+**复用**：measure_char_for_paint('.', fs, container_is_ahem)（text.rs:1561）、ahem 判定（text.rs:837）、add_glyph（text.rs:1590）全复用。新增的是「定位第 N 行末」+「vertical-triggered 分支」。
 
 ### 2.4 kill-switch + 默认
 
