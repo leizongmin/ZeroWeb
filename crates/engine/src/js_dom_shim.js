@@ -1455,9 +1455,29 @@
             } catch (_e) { return []; }
           };
         }
-        // 注：`toggleAttribute` 暂未实现——它须基于当前存在性决定 add/remove，但同脚本内属性读为
-        // deferred-stale（连续 toggle 会都读旧 snapshot 都 add，产生错误 mutation）。正确实现须配合
-        // 属性存在性缓存（同 _classCache），属 follow-up。
+        // `el.toggleAttribute(name, force?)`——切换属性存在性，返切换后是否存在。决策经 host
+        // `__zw_toggle_attribute`（DomMutation::ToggleAttribute，apply 时读当前存在性决定），故连续
+        // toggle 正确复合（朴素 shim 读 stale snapshot 决定会都 add）。返值用 snapshot presence 近似
+        //（单次正确；连续下 mutation 正确、返值 stale，可接受）。
+        if (prop === 'toggleAttribute') {
+          return function(name, force) {
+            var n = String(name);
+            var hasForce = force !== undefined;
+            var snapHas = (sel && typeof __zw_has_attr === 'function')
+              ? (__zw_has_attr(sel, n) === '1')
+              : false;
+            if (sel && typeof __zw_toggle_attribute === 'function') {
+              var fArg = hasForce ? (force ? '1' : '0') : '';
+              __zw_toggle_attribute(sel, n, fArg);
+              _mo_notify(sel, handle, { type: 'attributes', attributeName: n });
+            } else if (handle) {
+              // handle-only（无 toggle/has-attr handle 变体）：best-effort client-side。
+              var want = hasForce ? !!force : !snapHas;
+              if (want) __zw_set_attr_handle(handle, n, '');
+            }
+            return hasForce ? !!force : !snapHas;
+          };
+        }
         // `el.attributes`（NamedNodeMap 只读快照）——属性枚举（序列化/属性拷贝常用）。
         if (prop === 'attributes') {
           return _attributesProxy(sel, handle);

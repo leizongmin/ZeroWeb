@@ -937,6 +937,25 @@ R2697 引入 `_classCache`、form-input 引入 `_inputValues`，但 `setAttribut
 
 **已知限制（剩余）**：① `getAttribute('class'/'value')` 仍读 stale snapshot（不读缓存——同 R2697 限制①，getAttribute 为 snapshot 既有模式）；② 缓存仅 class/value 两属性（style 无缓存，setAttribute('style') 直接写属性正确）；③ handle-only 元素的 setAttribute 同步缓存但 handle 路径 removeAttribute 走 set-empty（无 remove-handle 变体，detached 元素属性语义受限，同既有）。
 
+### P1a `toggleAttribute`（server-side mutation，连续 toggle 正确）（本轮 R2701，R2698 follow-up）
+
+承接 R2698（attribute 查询 API）。补 R2698 noted follow-up：`toggleAttribute`。R2698 暂不实现因其须基于当前存在性决定 add/remove，但同脚本内属性读为 deferred-stale——朴素 shim 实现（读 snapshot 决定）下连续 `toggleAttribute('x')` 都读旧 snapshot 都 add，产生错误 mutation（残留 x，应 net 移除）。
+
+**修复**（仿 SetStyle server-side merge 思路，避免 stale 决策）：新增 `DomMutation::ToggleAttribute { selector, name, force: Option<bool> }`——apply 时读当前 `has_attribute` 决定 set/remove（force 覆盖）。决策在 apply（evolving state），连续 toggle 正确复合（第一次无→加、第二次有→移除 → net 移除），不受脚本内 stale snapshot 影响。注册 `__zw_toggle_attribute(sel, name, forceStr)`（`"1"`强加/`"0"`强移/缺省切换）。shim `toggleAttribute` 经该回调，返值用 snapshot presence 近似（单次正确；连续下 mutation 正确、返值 stale，可接受——返值为读，deferred 既有模式）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge.rs` | `DomMutation::ToggleAttribute` + apply arm（apply 时 `has_attribute` 决策 set/remove）+ `__zw_toggle_attribute` 回调。 |
+| `engine/js_dom_shim.js` | `toggleAttribute(name, force)`（经 `__zw_toggle_attribute`，handle-only best-effort，返 snapshot presence）。替换 R2698 follow-up 注释。 |
+| `engine/js_dom_bridge_tests.rs` | +1 e2e：单次加返 true + force=false net 移除 / 连续双 toggle net 移除（server-side 决策，验朴素实现会残留）/ force=true 强加。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1427→1428 net +1）+ `make reftest` + `make product-smoke`（attribute/boolean-attr 保险）。
+
+**为何零回归且净正向**：① `ToggleAttribute` 纯新增 mutation + apply arm，仅由新 `toggleAttribute` 触发，既有 SetAttr/RemoveAttr 路径零改动；② shim `toggleAttribute` 此前为 follow-up 注释（不存在），补齐后仅显式调用生效；③ server-side 决策避免朴素实现的连续 toggle 错误（属正确性提升，非既有行为变更）。
+
+**已知限制（剩余）**：① 返值用 snapshot presence（连续 toggle 下返值可能 stale，但 mutation 正确——返值为读，可接受）；② handle-only（detached createElement）元素 best-effort client-side（无 toggle/has-attr handle 变体，detached toggle 罕见）；③ `force` 经回调字符串 `"1"`/`"0"` 传递（回调 args 为 String，布尔序列化约定）。
+
+
 
 
 

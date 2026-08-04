@@ -2690,6 +2690,61 @@ fn test_attribute_query_api() {
 }
 
 #[test]
+fn test_toggle_attribute() {
+    // R2701：toggleAttribute 经 server-side mutation（apply 时决策），连续 toggle 正确复合。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 单次 toggle 加 → 返 true；force=false 移除（即便刚加，server-side 不受 stale 影响）。
+    sandbox
+        .execute(
+            "globalThis.__r1 = document.querySelector('#d').toggleAttribute('hidden');\n\
+             document.querySelector('#d').toggleAttribute('hidden', false);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__r1").unwrap().value, "true", "toggle 加返 true");
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    // toggle(hidden) 加 → ToggleAttribute(want=true)；toggle(hidden,false) → want=false。
+    // apply 顺序：先加 hidden，再移除 → net 无 hidden。
+    assert!(!out.contains("hidden"), "force=false 应移除（net 无 hidden）\n{out}");
+
+    // 连续双 toggle（无 force）：朴素实现都读 stale 都加 → 残留；server-side 决策正确复合 → net 移除。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute(
+            "document.querySelector('#d').toggleAttribute('x');\n\
+             document.querySelector('#d').toggleAttribute('x');",
+        )
+        .unwrap();
+    let ms2 = mutations.lock().unwrap().clone();
+    let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
+    // 两次 toggle(x)：apply 时第一次无 x→加，第二次有 x→移除 → net 无 x（朴素实现都加会残留 x）。
+    assert!(!out2.contains("x"), "连续双 toggle(x) server-side 决策 → net 移除（无 x）\n{out2}");
+
+    // force=true 强加（即便存在也保留）。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute("document.querySelector('#d').toggleAttribute('aria-label', true);")
+        .unwrap();
+    let ms3 = mutations.lock().unwrap().clone();
+    let out3 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms3).unwrap();
+    assert!(out3.contains("aria-label"), "force=true 强加 aria-label\n{out3}");
+}
+
+#[test]
 fn test_element_attributes_nodelist() {
     // R2699：el.attributes（NamedNodeMap 只读快照）——length/item/getNamedItem/数值索引/迭代。
     use std::sync::{Arc, Mutex};
