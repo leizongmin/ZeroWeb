@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, DomMutation, PageScript, apply_mutations_to_html, enclosing_form_selector, extract_page_scripts,
-    has_attribute, is_checkbox, is_submit_button, query_tag_from_html, resolve_document_url, script_dispatch_dom_event,
-    script_text_delete, script_text_input,
+    has_attribute, is_checkbox, is_radio, is_submit_button, query_tag_from_html, resolve_document_url,
+    script_dispatch_dom_event, script_text_delete, script_text_input, toggle_radio_html,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -235,6 +235,31 @@ pub fn apply_toggle_checkbox(ctx: &mut PageScriptContext<'_>, selector: &str) ->
         *ctx.html = new_html;
     }
     // 派发 'change'（dom_html 已含翻转后 checked，listener 经 el.checked / hasAttribute 读到新状态）。
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    let _ = ctx
+        .js_worker
+        .execute_script_direct(&script_dispatch_dom_event(selector, "change", None));
+    let html_snap = ctx.html.clone();
+    let _ = apply_recorded_mutations(ctx, &html_snap);
+    true
+}
+
+/// P1a radio：click `<input type=radio>` → set `checked` on it + `toggle_radio_html` 解析同 name
+/// 组兄弟 unset → 派发 'change' 事件。返回 true（radio toggle 总改 DOM，调用方 rerender）。
+pub fn apply_toggle_radio(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    let snap = ctx.html.clone();
+    if !is_radio(&snap, selector) {
+        return false;
+    }
+    if let Some(new_html) = toggle_radio_html(&snap, selector) {
+        *ctx.html = new_html;
+    }
+    // 派发 'change'（dom_html 已含 target checked + 同组兄弟 unset）。
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()

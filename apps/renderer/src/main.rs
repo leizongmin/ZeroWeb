@@ -457,6 +457,26 @@ impl RendererRuntime {
         Ok(())
     }
 
+    /// P1a radio：click 命中 radio → set checked + 同 name 组兄弟 unset + 派发 'change'。
+    fn toggle_radio_at(&mut self, selector: &str) -> Result<(), String> {
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+            };
+            page_scripts::apply_toggle_radio(&mut ctx, selector)
+        };
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
     fn sync_cached_html_from_webview(&mut self) {
         if let Some(wv) = self.webview.as_ref() {
             let html = wv.html_content().to_string();
@@ -961,6 +981,8 @@ impl RendererRuntime {
                 let _ = self.submit_form_on_click_at(&target);
             } else if zero_engine::is_checkbox(&self.cached_html, &target) {
                 let _ = self.toggle_checkbox_at(&target);
+            } else if zero_engine::is_radio(&self.cached_html, &target) {
+                let _ = self.toggle_radio_at(&target);
             }
         }
         Ok(())

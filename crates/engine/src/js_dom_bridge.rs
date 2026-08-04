@@ -523,6 +523,41 @@ pub fn is_checkbox(html: &str, selector: &str) -> bool {
         && query_attr_from_html(html, selector, "type").eq_ignore_ascii_case("checkbox")
 }
 
+/// P1a radio：判定元素是否为 `<input type=radio>`。
+pub fn is_radio(html: &str, selector: &str) -> bool {
+    query_tag_from_html(html, selector).eq_ignore_ascii_case("input")
+        && query_attr_from_html(html, selector, "type").eq_ignore_ascii_case("radio")
+}
+
+/// P1a radio：toggle `<input type=radio>`——set `checked` on target + `remove_attribute(checked)`
+/// on 同 `name` 组 radio 兄弟（直接操作 Document by NodeId，避免兄弟缺 id 时 selector 歧义）。
+/// 无 `name` 属性 → 仅 set target（无组）。返回新 HTML（非 radio / 未命中 → None）。
+pub fn toggle_radio_html(html: &str, selector: &str) -> Option<String> {
+    let mut doc = parse_html(html);
+    let target = find_by_selector(&doc, selector)?;
+    let is_rd = doc
+        .get_attribute(target, "type")
+        .map(|t| t.eq_ignore_ascii_case("radio"))
+        .unwrap_or(false)
+        && doc
+            .get(target)
+            .map(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("input")))
+            .unwrap_or(false);
+    if !is_rd {
+        return None;
+    }
+    doc.set_attribute(target, "checked", "");
+    if let Some(name) = doc.get_attribute(target, "name") {
+        let root = doc.root();
+        for n in doc.query_selector_all(root, "input[type=radio]") {
+            if n != target && doc.get_attribute(n, "name").as_deref() == Some(name.as_str()) {
+                doc.remove_attribute(n, "checked");
+            }
+        }
+    }
+    Some(doc.outer_html(doc.root()))
+}
+
 /// 从当前 HTML 快照查询 innerHTML。
 pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
@@ -1335,5 +1370,22 @@ mod tests {
             "#t",
         ));
         assert!(!is_checkbox("<html><body><div id='d'></div></body></html>", "#d",));
+    }
+
+    #[test]
+    fn test_toggle_radio_html() {
+        // P1a radio：toggle target → set checked + 同 name 组兄弟 unset（直接 doc 操作）。
+        let html = "<html><body><form>\
+            <input id='a' type='radio' name='g' checked>\
+            <input id='b' type='radio' name='g'>\
+            <input id='c' type='checkbox' checked>\
+            </form></body></html>";
+        // toggle #b → #b checked、#a unchecked（同 name 组）；#c checkbox 不受影响。
+        let out = toggle_radio_html(html, "#b").unwrap();
+        assert!(has_attribute(&out, "#b", "checked"));
+        assert!(!has_attribute(&out, "#a", "checked"));
+        assert!(has_attribute(&out, "#c", "checked"));
+        // 非 radio → None。
+        assert_eq!(toggle_radio_html(html, "#c"), None);
     }
 }
