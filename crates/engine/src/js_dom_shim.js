@@ -1075,6 +1075,17 @@
   // 枚举。旧实现仅 per-property get/set，缺方法（调用即 TypeError）与 cssText（get 返 ''、set 误当
   // 属性名）。底层走 `__zw_set_style`/`__zw_get_attr('style')`；removeProperty 经 `__zw_remove_style`
   // 真移除声明（SetStyle 空值仍 push，不移除）；cssText set 经 `__zw_set_attr` 整体替换。
+  // style 属性名归一：JS per-property 访问用 camelCase（`el.style.fontSize`），CSS 须 kebab-case
+  //（`font-size`）；camelCase 直存 style 属性会被 CSS parser 忽略 → 渲染静默失效。归一 camelCase→
+  // kebab（复用 `_camelToKebab`，对已 kebab 幂等）；`cssFloat`→`float`（JS 保留字特例）；`--custom`
+  // 自定义属性大小写敏感，原样不转。
+  function _stylePropName(name) {
+    var s = String(name).trim();
+    if (s === 'cssFloat') return 'float';
+    if (s.charAt(0) === '-' && s.charAt(1) === '-') return s;
+    return _camelToKebab(s);
+  }
+
   function _styleProxy(sel, handle) {
     var readRaw = function() {
       return (handle ? __zw_get_attr_handle(handle, 'style') : __zw_get_attr(sel, 'style')) || '';
@@ -1082,7 +1093,7 @@
     var readProp = function(name) {
       var raw = readRaw();
       if (!raw) return '';
-      var want = String(name).trim().toLowerCase();
+      var want = _stylePropName(name).toLowerCase();
       var parts = raw.split(';');
       for (var i = 0; i < parts.length; i++) {
         var kv = parts[i].split(':');
@@ -1091,8 +1102,9 @@
       return '';
     };
     var setProp = function(name, value) {
-      if (handle) __zw_set_style_handle(handle, String(name), String(value));
-      else __zw_set_style(sel, String(name), String(value));
+      var prop = _stylePropName(name);
+      if (handle) __zw_set_style_handle(handle, prop, String(value));
+      else __zw_set_style(sel, prop, String(value));
       _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
     };
     var propNames = function() {
@@ -1113,10 +1125,11 @@
         if (ps === 'removeProperty') {
           return function(name) {
             var prev = readProp(name);
+            var prop = _stylePropName(name);
             if (handle && typeof __zw_remove_style_handle === 'function') {
-              __zw_remove_style_handle(handle, String(name));
+              __zw_remove_style_handle(handle, prop);
             } else if (!handle && typeof __zw_remove_style === 'function') {
-              __zw_remove_style(sel, String(name));
+              __zw_remove_style(sel, prop);
             }
             _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
             return prev;

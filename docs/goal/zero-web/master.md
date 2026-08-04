@@ -847,6 +847,24 @@ R2690–R2691 self-review 续，从「近似返回」转向「行为缺失」。
 
 **已知限制（剩余）**：① style 读为 deferred-mutation stale（同脚本内 `setProperty('color','red')` 后 `getPropertyValue('color')` 读旧 snapshot 返 ''——同 setAttribute 既有模式，须 apply 后读真值；e2e 经 `apply_mutations_to_html` 验证）；② `getPropertyPriority` 恒返 ''（`!important` 未跟踪，style-system 层级处理）；③ `setProperty` 第三参 priority 忽略（同 ②）；④ `item`/`length` 按当前 snapshot 解析（非 live，deferred 下近似）。
 
+### P1a style 属性名 camelCase→kebab 归一（本轮 R2696，R2695 验证时发现的 latent 渲染 bug）
+
+R2695 验证 per-property set 时发现：`el.style.fontSize = '10px'` 存原始 **camelCase** `fontSize: 10px` 到 style 属性——**CSS parser 不认 camelCase → 渲染静默失效**。per-property camelCase 是最常用 style API（`backgroundColor`/`fontSize`/`marginTop`/`WebkitTransform`），故真实页面用 JS 改样式普遍失效。reftest/product-smoke 用静态 HTML（kebab）故未暴露（latent）。R2691–R2695 的 tagName/event/style-method 修复都改善 JS 正确性，但本 bug 直接掐断「JS 改样式 → 渲染」最核心链路。
+
+**修复**：shim 加 `_stylePropName(name)`——camelCase→kebab（复用既有 `_camelToKebab`，对已 kebab 幂等）、`cssFloat`→`float`（JS 保留字特例）、`--custom` 自定义属性大小写敏感原样不转。`_styleProxy` 的 `setProp`/`readProp`/`removeProperty` 三处经其归一属性名后再走 host 回调。Rust 端不变（收到的已是 kebab，`merge_style_property`/`remove_style_property` 既有逻辑正确）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_shim.js` | `_stylePropName`（camelCase→kebab + cssFloat→float + --custom 不转）；`_styleProxy` setProp/readProp/removeProperty 归一属性名。 |
+| `engine/js_dom_bridge_tests.rs` | +1 e2e：camelCase 归一（fontSize 读 kebab / backgroundColor→background-color 不残留 camelCase / WebkitTransform→-webkit-transform / cssFloat→float）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1421→1422 net +1）+ `make reftest` + **`make product-smoke`**（style→渲染核心链路，必跑）。
+
+**为何零回归且净正向**：① 已 kebab 属性名（`setProperty('font-size',...)`、静态 HTML）经 `_camelToKebab` 幂等不变；② camelCase 名（仅 JS per-property 访问产生）从「存 camelCase 被渲染忽略」纠正为「存 kebab 正常渲染」，属纠正既有 bug；③ 仅 style 代理路径变更，Rust `__zw_set_style`/`__zw_remove_style` 收 kebab 名，既有 apply 逻辑零改动。
+
+**已知限制（剩余）**：① `cssFloat`→`float` 特例已处理，但 `style.float`（部分旧代码）JS 语法非法（`float` 非保留字其实可访问 `style['float']`）——`_stylePropName('float')`→`_camelToKebab('float')`='float'，正确；② vendor 前缀非 Webkit（Moz/ms/O）的 camelCase（`MozAppearance`→`-moz-appear`）经通用 `_camelToKebab` 正确处理（首字母大写→`-` 前缀）；③ 归一在 JS 侧，Rust 端信任收到的 kebab（若 host 直接调 `__zw_set_style` 传 camelCase 不归一——host 调用方均传 kebab，无此路径）。
+
+
 
 
 

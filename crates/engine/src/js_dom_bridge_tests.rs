@@ -2426,8 +2426,8 @@ fn test_style_proxy_methods() {
     let out1 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms1).unwrap();
     assert!(out1.contains("background-color: blue"), "setProperty 应用\n{out1}");
     assert!(
-        out1.contains("font-size: 10px") || out1.contains("fontSize: 10px"),
-        "per-property style.fontSize 应用\n{out1}"
+        out1.contains("font-size: 10px"),
+        "per-property style.fontSize 须归一为 kebab-case 应用\n{out1}"
     );
 
     // cssText set → 整体替换（原 color: red 应消失）。
@@ -2467,4 +2467,55 @@ fn test_style_remove_property() {
     let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
     assert!(!out.contains("color"), "removeProperty('color') 应真移除 color 声明\n{out}");
     assert!(out.contains("font-size: 10px"), "removeProperty 不应影响其他属性\n{out}");
+}
+
+#[test]
+fn test_style_camel_to_kebab() {
+    // R2696：per-property camelCase style 须归一为 kebab-case 存 style 属性（CSS parser 不认
+    // camelCase → 渲染静默失效）。覆盖 backgroundColor / WebkitTransform（vendor 前缀）/ cssFloat
+    // （→float）/ per-property camelCase 读 kebab 属性。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\" style=\"font-size: 10px\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // per-property camelCase 读 kebab 属性（font-size → fontSize 读出 '10px'）。
+    sandbox
+        .execute("globalThis.__fs = document.querySelector('#d').style.fontSize;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__fs").unwrap().value,
+        "10px",
+        "camelCase 读 kebab 属性"
+    );
+
+    // camelCase set → kebab 存储（不残留 camelCase）。
+    sandbox
+        .execute(
+            "var d = document.querySelector('#d');\n\
+             d.style.backgroundColor = 'red';\n\
+             d.style.WebkitTransform = 'scale(2)';\n\
+             d.style.cssFloat = 'left';",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(out.contains("background-color: red"), "backgroundColor → background-color\n{out}");
+    assert!(!out.contains("backgroundColor"), "不应残留 camelCase backgroundColor\n{out}");
+    assert!(
+        out.contains("-webkit-transform: scale(2)"),
+        "WebkitTransform → -webkit-transform\n{out}"
+    );
+    assert!(out.contains("float: left"), "cssFloat → float\n{out}");
+    assert!(!out.contains("cssFloat"), "不应残留 cssFloat\n{out}");
 }
