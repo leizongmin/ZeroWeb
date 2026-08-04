@@ -1174,16 +1174,25 @@
           };
         }
         if (prop === 'querySelector') {
+          // 元素**子树**作用域（spec：仅后代，不含元素自身）。经 host `__zw_query_match_sub(sel, q)`
+          // 在 elem 子树内查首个匹配。handle（未挂载 DOM，无 sel）→ null（脱离文档树无后代）。
           return function(q) {
-            var hit = __zw_query_match(q);
-            return hit ? _wrapSelector(hit) : null;
+            if (!sel || typeof __zw_query_match_sub !== 'function') return null;
+            try {
+              var hit = __zw_query_match_sub(sel, String(q));
+              return hit ? _wrapSelector(hit) : null;
+            } catch (_e) { return null; }
           };
         }
         if (prop === 'querySelectorAll') {
+          // 元素**子树**作用域（spec：仅后代）。经 host `__zw_query_all_sub(sel, q)`。
           return function(q) {
-            var all = __zw_query_all(q);
-            if (!all) return [];
-            return all.split('|').filter(Boolean).map(_wrapSelector);
+            if (!sel || typeof __zw_query_all_sub !== 'function') return [];
+            try {
+              var all = __zw_query_all_sub(sel, String(q));
+              if (!all) return [];
+              return all.split('|').filter(Boolean).map(_wrapSelector);
+            } catch (_e) { return []; }
           };
         }
         // 布局测量 API：`el.getBoundingClientRect()` 返真实 DOMRect（P1a gBCR path C）。

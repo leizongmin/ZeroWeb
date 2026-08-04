@@ -1,4 +1,3 @@
-
 use super::*;
 
 #[test]
@@ -252,6 +251,42 @@ fn test_closest_matching_selector() {
     assert_eq!(closest_matching_selector(html, "#inner", "span"), "");
     // elem_sel 不存在 → 空串。
     assert_eq!(closest_matching_selector(html, "#nope", "div"), "");
+}
+
+#[test]
+fn test_query_in_subtree_scoping() {
+    // 两个容器各含 .item；container 之外也有 .item。元素子树作用域须仅返该容器后代。
+    let html = "<html><body>\
+                <div id='a'><span class='item'>a1</span><span class='item'>a2</span></div>\
+                <div id='b'><span class='item'>b1</span></div>\
+                <span class='item'>outside</span>\
+                </body></html>";
+    // query_match_in_subtree：#a 子树首个 .item = a1（不返 outside 或 b1）。
+    let a_first = query_match_in_subtree(html, "#a", ".item");
+    let doc = parse_html(html);
+    let n = find_by_selector(&doc, &a_first).expect("须可解析");
+    assert_eq!(doc.text_content(n), Some("a1".to_string()));
+    // #b 子树首个 .item = b1。
+    let b_first = query_match_in_subtree(html, "#b", ".item");
+    let nb = find_by_selector(&doc, &b_first).expect("须可解析");
+    assert_eq!(doc.text_content(nb), Some("b1".to_string()));
+    // query_all_in_subtree：#a 子树全部 .item = a1,a2（2 个，不含 outside/b1）。
+    let a_all = query_all_in_subtree(html, "#a", ".item");
+    let sels: Vec<&str> = a_all.split('|').collect();
+    assert_eq!(sels.len(), 2, "#a 子树应有 2 个 .item（不含外部）");
+    let texts: Vec<String> = sels
+        .iter()
+        .map(|s| doc.text_content(find_by_selector(&doc, s).unwrap()).unwrap())
+        .collect();
+    assert_eq!(texts, vec!["a1".to_string(), "a2".to_string()]);
+    // 子树无匹配 → 空串（#a 内无 .nonexistent）。
+    assert_eq!(query_match_in_subtree(html, "#a", ".nonexistent"), "");
+    assert_eq!(query_all_in_subtree(html, "#a", ".nonexistent"), "");
+    // 含组合器：#a 子树内 `span.item` 仍命中（后代组合器在子树内求值）。
+    assert!(!query_all_in_subtree(html, "#a", "span.item").is_empty());
+    // elem_sel 不存在 → 空串。
+    assert_eq!(query_match_in_subtree(html, "#nope", ".item"), "");
+    assert_eq!(query_all_in_subtree(html, "#nope", ".item"), "");
 }
 
 #[test]

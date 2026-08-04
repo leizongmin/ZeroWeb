@@ -620,6 +620,34 @@ pub fn closest_matching_selector(html: &str, elem_sel: &str, test_sel: &str) -> 
     String::new()
 }
 
+/// `element.querySelector(selector)`——元素**子树**内首个匹配元素（spec：仅后代，不含元素自身），
+/// 返其唯一选择器；无匹配返空串。区别于文档作用域的 [`query_match_selector`]。供
+/// `__zw_query_match_sub` 回调 → shim 元素 `el.querySelector()`。
+pub fn query_match_in_subtree(html: &str, elem_sel: &str, selector: &str) -> String {
+    let doc = parse_html(html);
+    let Some(root) = find_by_selector(&doc, elem_sel) else {
+        return String::new();
+    };
+    doc.query_selector(root, selector.trim())
+        .and_then(|n| unique_selector_for_node(&doc, n))
+        .unwrap_or_default()
+}
+
+/// `element.querySelectorAll(selector)`——元素**子树**内全部匹配元素（spec：仅后代），
+/// 返 `|` 分隔的唯一选择器串；无匹配返空串。区别于文档作用域的 [`query_all_selector_list`]。
+/// 供 `__zw_query_all_sub` 回调 → shim 元素 `el.querySelectorAll()`。
+pub fn query_all_in_subtree(html: &str, elem_sel: &str, selector: &str) -> String {
+    let doc = parse_html(html);
+    let Some(root) = find_by_selector(&doc, elem_sel) else {
+        return String::new();
+    };
+    doc.query_selector_all(root, selector.trim())
+        .into_iter()
+        .filter_map(|id| unique_selector_for_node(&doc, id))
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
 /// 收集文档中所有元素的 `id` 属性值（去重、保序，首次出现优先——与
 /// `getElementById` 取首个匹配语义一致）。供 `__zw_collect_ids` 回调实现
 /// HTML 规范「Window 上的命名属性访问」（`<div id="x">` → 全局 `x`）。
@@ -1050,6 +1078,30 @@ pub fn register_dom_callbacks(
             let test_sel = args.get(1).map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             closest_matching_selector(&snap, &elem_sel, &test_sel)
+        }),
+    );
+
+    // `element.querySelector(selector)` / `element.querySelectorAll(selector)`——元素**子树**作用域
+    // （spec：仅后代，不含元素自身）。elem_sel = 元素唯一选择器，区别于文档作用域的 query_match/all。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_query_match_sub",
+        Box::new(move |args| {
+            let elem_sel = args.first().map(String::from).unwrap_or_default();
+            let sel = args.get(1).map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            query_match_in_subtree(&snap, &elem_sel, &sel)
+        }),
+    );
+
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_query_all_sub",
+        Box::new(move |args| {
+            let elem_sel = args.first().map(String::from).unwrap_or_default();
+            let sel = args.get(1).map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            query_all_in_subtree(&snap, &elem_sel, &sel)
         }),
     );
 
