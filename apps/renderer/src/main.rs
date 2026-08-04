@@ -54,6 +54,18 @@ fn is_printable_key(key: &str) -> bool {
     }
 }
 
+/// P1a change-on-blur：读表单元素的「当前值」用于失焦 change 比对。textarea 的 value 是其
+/// **文本内容**（R2702 value↔内容映射，非 value 属性）；input 取 value 属性。select 不走此路径
+/// （change 在 click 派发）。host 侧 blur_focused/focus_if_text_input/focus_via_tab 共用。
+fn read_input_value_for_change(html: &str, selector: &str) -> String {
+    if zero_engine::query_tag_from_html(html, selector).eq_ignore_ascii_case("textarea") {
+        zero_engine::query_text_from_html(html, selector)
+    } else {
+        zero_engine::query_attr_from_html(html, selector, "value")
+    }
+}
+
+
 fn spawn_browser_ipc_inbound() -> (Receiver<IpcMessage>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
     let join = thread::Builder::new()
@@ -495,7 +507,7 @@ impl RendererRuntime {
         if !self.javascript_enabled {
             return Ok(());
         }
-        let cur_val = zero_engine::query_attr_from_html(&self.cached_html, &old, "value");
+        let cur_val = read_input_value_for_change(&self.cached_html, &old);
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let mut changed = false;
         {
@@ -522,7 +534,7 @@ impl RendererRuntime {
         if !self.javascript_enabled || !zero_engine::is_text_input(&self.cached_html, selector) {
             return Ok(());
         }
-        let val = zero_engine::query_attr_from_html(&self.cached_html, selector, "value");
+        let val = read_input_value_for_change(&self.cached_html, selector);
         self.focus_target = Some(selector.to_string());
         self.focus_value = Some(val);
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
@@ -558,7 +570,7 @@ impl RendererRuntime {
         };
         if zero_engine::is_text_input(&self.cached_html, selector) {
             self.focus_target = Some(selector.to_string());
-            self.focus_value = Some(zero_engine::query_attr_from_html(&self.cached_html, selector, "value"));
+            self.focus_value = Some(read_input_value_for_change(&self.cached_html, selector));
         }
         if changed {
             self.rerender_publish_webview()?;
@@ -1499,6 +1511,28 @@ mod runtime_smoke {
             msgs.push(m);
         }
         msgs
+    }
+
+    #[test]
+    fn read_input_value_for_change_textarea_uses_content() {
+        // R2703：change-on-blur 值比对——textarea 取文本内容（非 value 属性，R2702 value↔内容），
+        // input 取 value 属性。修复前 host 读 value 属性，textarea 无 value 属性 → focus_value/cur_val
+        // 均 '' → textarea change-on-blur 永不触发。
+        let ta = "<html><body><textarea id=\"t\">hello</textarea></body></html>";
+        assert_eq!(
+            read_input_value_for_change(ta, "#t"),
+            "hello",
+            "textarea value 取文本内容"
+        );
+        let inp = "<html><body><input id=\"i\" value=\"world\"></body></html>";
+        assert_eq!(
+            read_input_value_for_change(inp, "#i"),
+            "world",
+            "input value 取 value 属性"
+        );
+        // textarea 带 value 属性（非标准但存在）仍取内容（spec：textarea value 是内容）。
+        let ta2 = "<html><body><textarea id=\"t\" value=\"ignored\">real</textarea></body></html>";
+        assert_eq!(read_input_value_for_change(ta2, "#t"), "real", "textarea 忽略 value 属性取内容");
     }
 
     /// IPC publish 回归门：FrameModel → ViewPainted 帧化（不启动 V8/WebView，避免 in-process 测试卡死）。

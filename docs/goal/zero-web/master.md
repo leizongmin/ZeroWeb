@@ -976,6 +976,23 @@ bridge API 全面完成后（R2690–R2701），续查 P1a「简单表单可用�
 
 **已知限制（剩余）**：① handle-only（detached createElement('textarea')）value 仍走 value 属性（无 `_isTag` handle 刬定 + 内容 handle 查询的接线，detached textarea 罕见）；② textarea 无 caret/selection（Enter 在末尾 append '\n'，真实浏览器按 caret 插——同 R2654 input 限制）；③ `__zw_reset_form_state` 清 `_inputValues` 含 textarea cache（导航清空，跨页不 stale）。
 
+### P1a textarea-aware change-on-blur（本轮 R2703，R2702 host 协调补全）
+
+R2702 协调缺口：shim 端 textarea value↔内容已修，但 host 侧 `blur_focused`/`focus_if_text_input`/`focus_via_tab`（change-on-blur 值追踪）仍读 **value 属性**（`query_attr_from_html("value")`）——textarea 无 value 属性，故 `focus_value`（获焦时记）与 `cur_val`（失焦时比）均恒 '' → textarea **change-on-blur 永不触发**（表单校验/auto-save on blur 断）。
+
+**修复**：加纯函数 `read_input_value_for_change(html, selector)`——textarea 取 `query_text_from_html`（内容），input 取 `query_attr_from_html("value")`（value 属性）。3 站点（blur_focused cur_val / focus_if_text_input val / focus_via_tab focus_value）替换。select 不走此路径（change 在 click 派发）。
+
+| 文件 | 改动 |
+|------|------|
+| `apps/renderer/src/main.rs` | `read_input_value_for_change`（textarea→内容 / input→value 属性）；3 站点替换；+1 单测（textarea 取内容 / input 取 value 属性 / textarea 忽略 value 属性取内容）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归）+ `make reftest` + `make product-smoke`（change-on-blur 影响表单交互）。
+
+**为何零回归且净正向**：① input 路径行为等价（仍 value 属性）；② textarea 从「change 永不触发」（focus_value/cur_val 都 '' 恒等）纠正为「内容变化时触发」，属纠正既有 bug；③ 纯函数 + 3 站点替换，无其他路径变更。
+
+**已知限制（剩余）**：① change-on-blur 仍仅 click 触发的焦点切换（Tab 焦点导航的 textarea change 由 focus_via_tab 走同一 read_input_value_for_change，覆盖）；② host 侧 blur/focus 事件派发时序近似（focus 在 click 后非 mousedown——既有 R2659 限制，非本轮引入）；③ select change 仍由 click 派发（select UI 未实现，change 走 select.value 编程路径）。
+
+
 
 
 
