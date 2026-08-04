@@ -10,6 +10,7 @@
 //! 元素身份 → NodeId 的解析（compound key）封装在 wiring 侧注入的 handler 闭包内，
 //! 故 RectBridge 本身不依赖 DOM/layout 细节，保持通用。
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -123,20 +124,38 @@ fn fill_rect_recursive(node: &HitTestLayoutSnapshot, map: &mut HashMap<u64, Rect
 /// 相同插入顺序 → 确定性 `NodeId`（见 `test_node_id_determinism_across_fresh_parses`），故 handler
 /// 的 `find_by_selector` 解析出的 `NodeId` 与 snapshot 键一致。
 ///
-/// **每次查询 fresh-parse**（不缓存 `Document`）：`zero_dom::Document` 非 `Send`，无法跨调用缓存于
-/// `Send + Sync` handler 闭包。代价 = 每次 gBCR 一次 HTML parse（path C 已接受）；perf follow-up 可
-/// 在 js_worker 线程内做 thread-local 缓存或改 selector-keyed snapshot 免 parse。
+/// **Document 缓存（thread-local）**：`zero_dom::Document` 非 `Send`，无法跨调用缓存于
+/// `Send + Sync` handler 闭包；改用 [`RECT_DOC_CACHE`]（per-thread）——每个 js_worker 线程独立槽，
+/// html 字符串变化才重 parse（同 render 帧多次 gBCR 复用同一 Document，消除循环调用的 parse 陡坡）。
 ///
 /// `identity` = shim 元素 proxy 的 selector（`querySelector`/`getElementById` 返 stable_selector）；
 /// handle-identity（`createElement` 节点）`find_by_selector` 不匹配 → `None` → shim 回落零 rect（follow-up）。
 pub fn make_dom_html_rect_handler(dom_html: Arc<Mutex<String>>, snapshot: LayoutRectSnapshot) -> RectLookupHandler {
     Arc::new(move |identity: &str| -> Option<Rect4> {
         let html = dom_html.lock().ok()?.clone();
-        let doc = zero_dom::parse_html(&html);
-        let node_id = crate::js_dom_bridge::find_by_selector(&doc, identity)?;
+        // html 变化才重 parse；同 html 复用缓存的 Document（消除每 query 一次 parse）。
+        let node_id = RECT_DOC_CACHE.with(|cache| {
+            {
+                let mut c = cache.borrow_mut();
+                let stale = c.as_ref().is_none_or(|(h, _)| h != &html);
+                if stale {
+                    *c = Some((html.clone(), zero_dom::parse_html(&html)));
+                }
+            } // 释放 borrow_mut
+            let c = cache.borrow();
+            let (_, doc) = c.as_ref().expect("cache populated above");
+            crate::js_dom_bridge::find_by_selector(doc, identity)
+        })?;
         let snap = snapshot.lock().ok()?;
         snap.get(&node_id_to_u64(node_id)).copied()
     })
+}
+
+// gBCR handler 的 Document 缓存（per-thread）。Document 非 Send，不能用 Arc<Mutex<>> 跨
+// Send + Sync 闭包；thread_local 是 per-thread，每个 js_worker 线程独立槽，无 Send 约束。
+// 键 = html 字符串；html 变化（render 后 dom_html 更新）触发重 parse。线程退出时随 thread_local 释放。
+thread_local! {
+    static RECT_DOC_CACHE: RefCell<Option<(String, zero_dom::Document)>> = const { RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -301,6 +320,39 @@ mod tests {
             "未命中 selector → None（shim 回落零 rect）"
         );
         assert_eq!(handler("__n1"), None, "handle-identity 暂不支持 → None（follow-up）");
+    }
+
+    /// thread-local Document 缓存：dom_html 变化时缓存失效重 parse（否则 gBCR 会查旧 Document 返错/漏）。
+    /// 验证 html1→html2 切换后 handler 用新 Document 解析（#b 命中、#a 不再存在）。
+    #[test]
+    fn test_dom_html_rect_handler_cache_invalidates_on_html_change() {
+        use crate::js_dom_bridge::find_by_selector;
+        use zero_dom::parse_html;
+        let snapshot = new_layout_rect_snapshot();
+        let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let handler = make_dom_html_rect_handler(Arc::clone(&dom_html), Arc::clone(&snapshot));
+
+        // html1: <div id='a'>——首查询触发 parse + 缓存。
+        let html1 = "<html><body><div id='a'>A</div></body></html>";
+        *dom_html.lock().unwrap() = html1.to_string();
+        let id_a = find_by_selector(&parse_html(html1), "#a").expect("#a in html1");
+        snapshot
+            .lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_a), (1.0, 2.0, 3.0, 4.0));
+        assert_eq!(handler("#a"), Some((1.0, 2.0, 3.0, 4.0)));
+
+        // html2: <span id='b'>（结构不同）→ 缓存须失效重 parse。
+        let html2 = "<html><body><span id='b'>B</span></body></html>";
+        *dom_html.lock().unwrap() = html2.to_string();
+        let id_b = find_by_selector(&parse_html(html2), "#b").expect("#b in html2");
+        let mut snap = snapshot.lock().unwrap();
+        snap.clear();
+        snap.insert(node_id_to_u64(id_b), (5.0, 6.0, 7.0, 8.0));
+        drop(snap);
+        assert_eq!(handler("#b"), Some((5.0, 6.0, 7.0, 8.0)), "html 切换后新 selector 命中");
+        // #a 在 html2 不存在 → None（证缓存已切到 html2 的 Document，非沿用 html1）。
+        assert_eq!(handler("#a"), None, "旧 selector 在新 html 应不存在（缓存已失效）");
     }
 
     /// fill_layout_rect_snapshot 二次填充：clear 后重填（render 更新后换新 rect）。

@@ -175,4 +175,14 @@ R2647 限制 4「browser 路径未接」的收尾。核验 browser 后端：**cr
 
 **剩余 follow-up（未变）**：① handle-identity（createElement）需 path A 持久身份映射；② stale-but-non-zero；③ 每 query 一次 parse（perf）；④ IntersectionObserver/ResizeObserver（Slice 2/3，复用 gBCR 基建）。
 
+## R2649：gBCR perf 硬化——thread-local Document 缓存（消除每 query HTML parse）
+
+收尾 R2647 限制 3「每 query 一次 HTML parse」。`make_dom_html_rect_handler` 原每次 gBCR 调用都 `parse_html(dom_html)`（`Document` 非 `Send` 不能跨 `Send+Sync` 闭包缓存）——循环调用 gBCR（如测量 N 元素）= N 次全 HTML parse，生产陡坡。
+
+**已 land**：改用 `thread_local! { RECT_DOC_CACHE: RefCell<Option<(String, Document)>> }`——per-worker-thread 独立槽（无 `Send` 约束），键 = html 字符串；html 变化（render 后 dom_html 更新）才重 parse，同 render 帧多次 gBCR 复用同一 `Document`。`const { RefCell::new(None) }` 初始化（clippy `missing_const_for_thread_local`）。+ 失效正确性测试（html1→html2 切换后旧 selector 不存在、新 selector 命中）。
+
+**验证**：`make test` 全绿（rect_bridge 9 测试含新缓存失效测试）；workspace clippy `-D warnings` 零警告；fmt clean。行为零变化（缓存透明，html 变化即重 parse）。
+
+**为何 thread_local 安全**：每个 js_worker 是独立 OS 线程 → 独立 thread_local 槽，无跨 worker 串扰；html 字符串作键保证 render 后 dom_html 更新触发失效；线程退出随 thread_local 释放（无泄漏，缓存 = 单页 DOM 大小有界）。
+
 

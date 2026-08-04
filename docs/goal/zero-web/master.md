@@ -112,6 +112,16 @@
 
 ## 最近完成的改进
 
+### P1a gBCR perf 硬化——thread-local Document 缓存（本轮 R2649）
+
+收尾 R2647 限制 3「每 query 一次 HTML parse」。`make_dom_html_rect_handler` 原每次 gBCR 调用全 parse dom_html（`Document` 非 Send 不能跨 Send+Sync 闭包缓存）——循环调用 gBCR = N 次 parse，生产陡坡。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/rect_bridge.rs` | `thread_local! { RECT_DOC_CACHE }`（per-worker-thread，无 Send 约束），键 = html 字符串，html 变化才重 parse；同 render 帧多次 gBCR 复用同一 Document。`const { RefCell::new(None) }` 初始化。+ 失效正确性测试（html 切换后旧 selector 不存在、新 selector 命中）。 |
+
+验证：`make test` 全绿（rect_bridge 9 测试）；workspace clippy `-D warnings` 零警告；fmt clean。行为零变化（缓存透明）。安全：每 worker 独立线程 → 独立槽无串扰；html 键保证失效；线程退出释放。
+
 ### P1a gBCR browser in-process 接线——覆盖剩余 browser 后端（本轮 R2648）
 
 承接 R2647（renderer worker gBCR）。核验 browser 后端：cross-process `process_backend.rs` 不在 browser 进程跑 JS（委托 renderer 进程）→ cross-process browser gBCR 随 R2647 已工作；剩余缺口仅 in-process `tab_worker` 回退路径（`ZERO_BROWSER_MULTIPROCESS=0` 或 renderer binary 不可用）。
