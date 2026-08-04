@@ -707,9 +707,25 @@ fn insert_nodes_at_position(
     target: NodeId,
     position: &str,
 ) -> Result<(), String> {
-    if nodes.is_empty() {
+    // 展开 DocumentFragment → 其子节点（flatten，匹配 spec：insert fragment 等价 insert 其子并清空
+    // fragment）。非 fragment 原样。这样 insertAdjacentElement 接 fragment（经 prepend/before/after）
+    // 自动正确，不留 wrapper、fragment 清空。子节点在后续 append_child/insert_before 移动时自动
+    // 从 fragment detach → fragment 变空。
+    let mut flat: Vec<NodeId> = Vec::with_capacity(nodes.len());
+    for &n in nodes {
+        let is_frag = doc
+            .get(n)
+            .is_some_and(|nd| matches!(nd.kind, NodeKind::DocumentFragment));
+        if is_frag {
+            flat.extend(doc.get(n).map(|nd| nd.children.clone()).unwrap_or_default());
+        } else {
+            flat.push(n);
+        }
+    }
+    if flat.is_empty() {
         return Ok(());
     }
+    let nodes = &flat[..];
     let pos = position.trim().to_ascii_lowercase();
     match pos.as_str() {
         "beforeend" => {

@@ -1291,8 +1291,17 @@
         if (prop === 'replaceChild') {
           return function(newChild, oldChild) {
             if (newChild && newChild.__zwHandle && oldChild && oldChild.__zwSelector) {
-              if (handle) __zw_insert_before_handle(handle, newChild.__zwHandle, oldChild.__zwSelector);
-              else __zw_insert_before(sel, newChild.__zwHandle, oldChild.__zwSelector);
+              // DocumentFragment：flatten 子到 old 前（非插 fragment 节点本身），再移除 old。
+              if (_fragmentHandles[newChild.__zwHandle]) {
+                if (handle && typeof __zw_insert_fragment_before_handle === 'function')
+                  __zw_insert_fragment_before_handle(handle, newChild.__zwHandle, oldChild.__zwSelector);
+                else if (typeof __zw_insert_fragment_before === 'function')
+                  __zw_insert_fragment_before(sel, newChild.__zwHandle, oldChild.__zwSelector);
+              } else if (handle) {
+                __zw_insert_before_handle(handle, newChild.__zwHandle, oldChild.__zwSelector);
+              } else {
+                __zw_insert_before(sel, newChild.__zwHandle, oldChild.__zwSelector);
+              }
               __zw_remove(oldChild.__zwSelector);
               _mo_notify(sel, handle, {
                 type: 'childList',

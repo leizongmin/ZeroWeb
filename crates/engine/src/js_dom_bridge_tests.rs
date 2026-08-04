@@ -1913,3 +1913,90 @@ fn test_insert_before_fragment_flatten_e2e() {
     let ifirst = out.find("<li id=\"first\">").unwrap();
     assert!(ia < ib && ib < ifirst, "flatten 后 a<b<first\n{out}");
 }
+
+#[test]
+fn test_fragment_flatten_all_insertion_paths_e2e() {
+    // R2689：闭合 fragment flatten 同类 bug——prepend/before/after/replaceChild 接 fragment
+    // 须 flatten 子节点（非插 wrapper）。经 JS→mutation→apply 序列化验最终 DOM 序。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let initial = "<html><body><div id='t'>X</div></body></html>".to_string();
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // prepend(fragment)：fragment 子成为 #t 首子（在 X 前）。
+    sandbox
+        .execute(
+            "var f1=document.createDocumentFragment();\
+             var a=document.createElement('a'); var b=document.createElement('b');\
+             f1.appendChild(a); f1.appendChild(b);\
+             document.querySelector('#t').prepend(f1);",
+        )
+        .unwrap();
+    let ms1 = mutations.lock().unwrap().clone();
+    let (out1, _) = apply_mutations_to_html_with_handles(&initial, &ms1).unwrap();
+    // #t 内：a, b, X（fragment 子在前）。
+    let o1a = out1.find("<a>").unwrap();
+    let o1b = out1.find("<b>").unwrap();
+    let o1x = out1.find("X</div>").unwrap();
+    assert!(o1a < o1b && o1b < o1x, "prepend(fragment): a<b<X\n{out1}");
+
+    // before(fragment)：fragment 子作 #t 前兄弟。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute(
+            "var f2=document.createDocumentFragment();\
+             var c=document.createElement('c');\
+             f2.appendChild(c);\
+             document.querySelector('#t').before(f2);",
+        )
+        .unwrap();
+    let ms2 = mutations.lock().unwrap().clone();
+    let (out2, _) = apply_mutations_to_html_with_handles(&out1, &ms2).unwrap();
+    let o2c = out2.find("<c>").unwrap();
+    let o2t = out2.find("<div id=\"t\">").unwrap();
+    assert!(o2c < o2t, "before(fragment): c 在 #t 前\n{out2}");
+
+    // after(fragment)：fragment 子作 #t 后兄弟。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute(
+            "var f3=document.createDocumentFragment();\
+             var d=document.createElement('d');\
+             f3.appendChild(d);\
+             document.querySelector('#t').after(f3);",
+        )
+        .unwrap();
+    let ms3 = mutations.lock().unwrap().clone();
+    let (out3, _) = apply_mutations_to_html_with_handles(&out2, &ms3).unwrap();
+    let o3t = out3.find("<div id=\"t\">").unwrap();
+    let o3d = out3.find("<d>").unwrap();
+    assert!(o3t < o3d, "after(fragment): d 在 #t 后\n{out3}");
+
+    // replaceChild(fragment, old)：fragment 子替换 #t（old=#t）。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute(
+            "var f4=document.createDocumentFragment();\
+             var e=document.createElement('e');\
+             f4.appendChild(e);\
+             var body=document.querySelector('body');\
+             body.replaceChild(f4, document.querySelector('#t'));",
+        )
+        .unwrap();
+    let ms4 = mutations.lock().unwrap().clone();
+    let (out4, _) = apply_mutations_to_html_with_handles(&out3, &ms4).unwrap();
+    assert!(out4.contains("<e>"), "replaceChild(fragment): e 替换 #t\n{out4}");
+    assert!(
+        !out4.contains("<div id=\"t\">"),
+        "replaceChild(fragment): #t 应被移除\n{out4}"
+    );
+}
