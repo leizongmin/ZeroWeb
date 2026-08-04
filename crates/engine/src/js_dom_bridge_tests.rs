@@ -1493,3 +1493,103 @@ fn test_outer_html_e2e() {
         );
     assert!(set_mutation, "outerHTML setter 应入队 SetOuterHtml(#t, <b>1</b>)");
 }
+
+#[test]
+fn test_prepend_order_e2e() {
+    // prepend 多节点 + 字符串混合：参数序 == DOM 序（反序插入 afterbegin 保证）。
+    // prepend(b, "str", i) on <div id=t>existing → <b></b>str<i></i>existing。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let initial = "<html><body><div id='t'>existing</div></body></html>".to_string();
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    sandbox
+        .execute(
+            "var b = document.createElement('b');\
+             var i = document.createElement('i');\
+             document.querySelector('#t').prepend(b, 'str', i);",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&initial, &ms).unwrap();
+    assert!(
+        out.contains("<b></b>str<i></i>existing"),
+        "prepend 应保持参数序（b,str,i）\n{out}"
+    );
+}
+
+#[test]
+fn test_before_after_order_e2e() {
+    // before（前兄弟，正序 beforebegin）+ after（后兄弟，反序 afterend）。
+    // 初始 <div id=t> 处于 body。before(x,y) → x,y 在 t 前；after(p,q) → p,q 在 t 后。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let initial = "<html><body><div id='t'>x</div></body></html>".to_string();
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    sandbox
+        .execute(
+            "var x=document.createElement('x');var y=document.createElement('y');\
+             var p=document.createElement('p');var q=document.createElement('q');\
+             var t=document.querySelector('#t');\
+             t.before(x,y); t.after(p,q);",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&initial, &ms).unwrap();
+    // 期望 body 内顺序：x, y, t, p, q（before 正序在前、after 反序在后均保持参数序）。
+    let ix = out.find("<x>").unwrap();
+    let iy = out.find("<y>").unwrap();
+    let it = out.find("<div id=\"t\">").unwrap();
+    let ip = out.find("<p>").unwrap();
+    let iq = out.find("<q>").unwrap();
+    assert!(
+        ix < iy && iy < it && it < ip && ip < iq,
+        "before/after 应保持参数序 x<y<t<p<q\n{out}"
+    );
+}
+
+#[test]
+fn test_prepend_detached_noop_e2e() {
+    // handle-only（detached）目标 prepend 无操作（无 parent/参考子，不抛）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    // detached div.prepend(...) 不抛、不入队 InsertAdjacent*。
+    sandbox
+        .execute("var d=document.createElement('div'); d.prepend('x'); globalThis.__ok='done';")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__ok").unwrap().value, "done");
+    let has_adj = mutations.lock().unwrap().iter().any(|m| {
+        matches!(
+            m,
+            DomMutation::InsertAdjacentText { .. } | DomMutation::InsertAdjacentElement { .. }
+        )
+    });
+    assert!(!has_adj, "detached 目标 prepend 不应入队 InsertAdjacent* mutation");
+}

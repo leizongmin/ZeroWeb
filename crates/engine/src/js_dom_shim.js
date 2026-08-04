@@ -1275,6 +1275,29 @@
             return undefined;
           };
         }
+        // `element.prepend(...nodesOrStrings)`（现代 API，区别于 appendChild/append）：插为元素
+        // **首子**（保持参数序）。经 insertAdjacent afterbegin + 反序（见 _insertAdjacentVariadic）。
+        // 仅 sel-based 目标；handle-only detached 无操作。
+        if (prop === 'prepend') {
+          return function() {
+            _insertAdjacentVariadic(sel, 'afterbegin', arguments, true);
+            return undefined;
+          };
+        }
+        // `element.before(...nodesOrStrings)`：插为元素**前兄弟**（保持参数序）。beforebegin 正序。
+        if (prop === 'before') {
+          return function() {
+            _insertAdjacentVariadic(sel, 'beforebegin', arguments, false);
+            return undefined;
+          };
+        }
+        // `element.after(...nodesOrStrings)`：插为元素**后兄弟**（保持参数序）。afterend 反序。
+        if (prop === 'after') {
+          return function() {
+            _insertAdjacentVariadic(sel, 'afterend', arguments, true);
+            return undefined;
+          };
+        }
         // `element.insertAdjacentHTML(position, text)`（P1a）：解析 HTML 片段并按 position 插入——
         // `beforeend`（末子）/`afterbegin`（首子）/`beforebegin`（前兄弟）/`afterend`（后兄弟）。
         // 服务端原子完成（fragment parse + copy + parent 遍历，见 DomMutation::InsertAdjacentHtml）。
@@ -1510,6 +1533,31 @@
   function _splitSelectors(joined) {
     if (!joined) return [];
     return joined.split('|').filter(Boolean).map(_wrapSelector);
+  }
+
+  // `prepend`/`before`/`after` 共用：variadic 节点/字符串按 position 经 insertAdjacent*
+  // 回调插入。仅 sel-based（已挂载）目标；handle-only（detached）无操作（同 insertAdjacent 家族）。
+  // `reverseOrder`：afterbegin（prepend）/afterend（after）需反序插入以保持「参数序 == DOM 序」
+  //（每插一项后参考子/兄弟前移）；beforebegin（before）正序即可（参考 = target 固定）。
+  function _insertAdjacentVariadic(sel, position, args, reverseOrder) {
+    if (!sel || typeof __zw_insert_adjacent_element !== 'function') return;
+    var items = [];
+    for (var i = 0; i < args.length; i++) {
+      var a = args[i];
+      if (a == null) continue;
+      items.push(a);
+    }
+    if (reverseOrder) items.reverse();
+    for (var k = 0; k < items.length; k++) {
+      var item = items[k];
+      try {
+        if (typeof item === 'object' && item.__zwHandle) {
+          __zw_insert_adjacent_element(sel, position, item.__zwHandle);
+        } else {
+          __zw_insert_adjacent_text(sel, position, String(item));
+        }
+      } catch (_e) {}
+    }
   }
 
   // 元素的布局 rect（{x,y,w,h}），经 `__zw_getBoundingClientRect`（与 getBoundingClientRect 同源）。
