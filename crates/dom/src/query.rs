@@ -57,6 +57,16 @@ pub enum PseudoClass {
     /// `:is(s1, s2, …)` / `:where(…)`——选择器列表，匹配满足**任一**内嵌简单选择器的元素。
     /// `:where` 语义同 `:is`（区别仅在特异性，本引擎无特异性概念，故共用）。
     Is(Vec<SimpleSelector>),
+    /// `:has(inner)` / `:has(> inner)`——关系伪类，匹配拥有匹配 `inner` 的后代（默认）或直接子
+    /// （`> ` 前缀）的元素。`inner` 为选择器字符串（可为含组合器的链）。需 Document 子树求值——
+    /// [`SimpleSelector::matches_full`] 对 `Has` 延后返 `true`，由
+    /// `Document::element_matches_selector` 实际评估。
+    Has {
+        /// 内嵌选择器字符串（可为含组合器的链，如 `.a .b`）。由 Document 子树求值。
+        inner: String,
+        /// `true` = `:has(> inner)` 直接子作用域；`false` = `:has(inner)` 后代作用域。
+        child_scope: bool,
+    },
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -199,6 +209,9 @@ impl SimpleSelector {
             PseudoClass::Not(inner) => !inner.matches_full(elem, pos),
             // :is/:where(list)——任一内嵌匹配则真。
             PseudoClass::Is(list) => list.iter().any(|inner| inner.matches_full(elem, pos)),
+            // :has(inner)——需 Document 子树求值，matches_full 无 Document 访问，延后返 true。
+            // 由 Document::element_matches_selector 在 matches_full 后额外评估。
+            PseudoClass::Has { .. } => true,
         })
     }
 }
@@ -378,6 +391,22 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
                 None
             } else {
                 Some(PseudoClass::Is(list))
+            }
+        }
+        // :has(inner) / :has(> inner)——关系伪类。`> ` 前缀 = 直接子作用域，否则后代作用域。
+        // inner 为选择器字符串（含组合器），由 Document 子树求值（paren-aware 切分已就绪）。
+        "has" => {
+            let a = args?;
+            let t = a.trim();
+            let (child_scope, inner) = if let Some(rest) = t.strip_prefix('>') {
+                (true, rest.trim().to_string())
+            } else {
+                (false, t.to_string())
+            };
+            if inner.is_empty() {
+                None
+            } else {
+                Some(PseudoClass::Has { inner, child_scope })
             }
         }
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）

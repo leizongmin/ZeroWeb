@@ -1595,13 +1595,52 @@ impl Document {
     }
 
     fn element_matches_selector(&self, node: NodeId, selector: &crate::query::SimpleSelector) -> bool {
-        self.nodes
+        let matched = self
+            .nodes
             .get(node)
             .and_then(|n| match &n.kind {
                 NodeKind::Element(elem) => Some(selector.matches_full(elem, self.compute_element_position(node))),
                 _ => None,
             })
-            .unwrap_or(false)
+            .unwrap_or(false);
+        if !matched {
+            return false;
+        }
+        // :has() 需 Document 子树求值（matches_full 延后返 true），此处额外评估。
+        // 其他伪类已由 matches_full 评估，故非 Has 一律 true。
+        selector.pseudos.iter().all(|p| match p {
+            crate::query::PseudoClass::Has { inner, child_scope } => {
+                self.element_has_matching(node, inner, *child_scope)
+            }
+            _ => true,
+        })
+    }
+
+    /// `:has(inner)` 求值——node 是否拥有匹配 inner 的后代（默认）或直接子（`child_scope`）。
+    fn element_has_matching(&self, node: NodeId, inner: &str, child_scope: bool) -> bool {
+        if child_scope {
+            // :has(> inner)——直接元素子 c **自身**匹配 inner（单简单选择器，常见 `:has(> .foo)`）。
+            // 不搜 c 的后代（那会是 `:has(> * inner)` 语义，致假阳性）。inner 含组合器（如
+            // `:has(> .a .b)`）的相对求值为 follow-up（parse_simple_selector 对含空格者返非预期 → 不匹配）。
+            let children = self.nodes.get(node).map(|n| n.children.to_vec()).unwrap_or_default();
+            let sel = crate::query::parse_simple_selector(inner);
+            for c in children {
+                let is_elem = self
+                    .nodes
+                    .get(c)
+                    .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)));
+                if is_elem
+                    && let Some(sel) = &sel
+                    && self.element_matches_selector(c, sel)
+                {
+                    return true;
+                }
+            }
+            false
+        } else {
+            // :has(inner)——后代匹配（query_selector_all 在 node 子树求值，含组合器链）。
+            !self.query_selector_all(node, inner).is_empty()
+        }
     }
 
     /// 计算元素的 sibling 位置上下文（伪类评估用）。

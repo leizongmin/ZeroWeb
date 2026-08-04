@@ -744,6 +744,51 @@ fn test_query_selector_is_where() {
 }
 
 #[test]
+fn test_query_selector_has() {
+    // 注意：p3 用 <section> 包裹（section 为块级、不触发 p 自动闭合、非 div），
+    // 使 .child 真正成为 p3 的孙节点。若用 <p> 包裹，HTML5 解析器会在 <div> 前自动闭合 <p>，
+    // 致 .child 升格为 p3 的直接子（与「孙」语义相悖）。
+    let doc = parse_html(
+        "<html><body>\
+         <div class='parent' id='p1'><span class='child'>c</span></div>\
+         <div class='parent' id='p2'>no child</div>\
+         <div class='parent' id='p3'><section><div class='child'>x</div></section></div>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of =
+        |sels: &[NodeId]| -> Vec<String> { sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect() };
+    // div:has(.child) → p1（直接子 .child）、p3（后代 .child）。p2 无 .child → 不匹配。
+    let has_child = doc.query_selector_all(root, "div:has(.child)");
+    let ids = ids_of(&has_child);
+    assert!(ids.contains(&"p1".to_string()), "p1 直接子 .child 应匹配 :has(.child)");
+    assert!(ids.contains(&"p3".to_string()), "p3 后代 .child 应匹配 :has(.child)");
+    assert!(!ids.contains(&"p2".to_string()), "p2 无 .child 不应匹配 :has(.child)");
+    // :has(> .child) → 仅直接子为 .child 的（p1）。p3 的直接子是 section（非 .child）→ 不匹配。
+    let has_direct = doc.query_selector_all(root, "div:has(> .child)");
+    let direct_ids = ids_of(&has_direct);
+    assert!(
+        direct_ids.contains(&"p1".to_string()),
+        "p1 直接子 .child 应匹配 :has(> .child)"
+    );
+    assert!(
+        !direct_ids.contains(&"p3".to_string()),
+        "p3 的 .child 是孙（在 section 内），不应匹配 :has(> .child)"
+    );
+    // 后代作用域内嵌组合器：:has(section .child) → 仅 p3（section 内有 .child）。
+    let has_combinator = doc.query_selector_all(root, "div:has(section .child)");
+    let comb_ids = ids_of(&has_combinator);
+    assert!(comb_ids.contains(&"p3".to_string()), "p3 应匹配 :has(section .child)");
+    assert!(
+        !comb_ids.contains(&"p1".to_string()),
+        "p1 无 section 不应匹配 :has(section .child)"
+    );
+    // 负向：无任何后代匹配 → 空集。
+    assert!(doc.query_selector_all(root, "div:has(.nonexistent)").is_empty());
+    assert!(doc.query_selector_all(root, "div:has(> .nonexistent)").is_empty());
+}
+
+#[test]
 fn test_query_selector_not_found() {
     let doc = parse_html("<html><body></body></html>");
     let root = doc.root();
