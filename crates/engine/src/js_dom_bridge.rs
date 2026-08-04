@@ -913,6 +913,88 @@ pub fn element_sibling_selectors(html: &str, elem_sel: &str) -> String {
     format!("{prev}|{next}")
 }
 
+/// JSON 字符串字面量（转义 `"`、`\`、控制字符）。供 [`child_nodes_json`] /
+/// [`sibling_nodes_json`] 序列化文本/注释节点内容（文本可含任意字符，`|` 分隔不安全，故用 JSON）。
+fn json_str(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// 单个节点的 JSON 条目：元素 `{"k":"E","s":<selector>}`、文本 `{"k":"T","v":<text>}`、
+/// 注释 `{"k":"C","v":<text>}`；其他类型（Doctype 等）跳过返 None。
+fn node_entry_json(doc: &Document, id: NodeId) -> Option<String> {
+    let node = doc.get(id)?;
+    Some(match &node.kind {
+        NodeKind::Element(_) => {
+            let sel = unique_selector_for_node(doc, id)?;
+            format!("{{\"k\":\"E\",\"s\":{}}}", json_str(&sel))
+        }
+        NodeKind::Text(t) => format!("{{\"k\":\"T\",\"v\":{}}}", json_str(&t.content)),
+        NodeKind::Comment(c) => format!("{{\"k\":\"C\",\"v\":{}}}", json_str(&c.content)),
+        _ => return None,
+    })
+}
+
+/// 元素的**全部子节点**（含文本/注释，区别于 [`element_children_selectors`] 仅元素子），JSON 数组。
+/// 供 `__zw_child_nodes` 回调 → shim `el.childNodes` / `firstChild` / `lastChild`。
+pub fn child_nodes_json(html: &str, elem_sel: &str) -> String {
+    let doc = parse_html(html);
+    let Some(node) = find_by_selector(&doc, elem_sel) else {
+        return "[]".to_string();
+    };
+    let entries: Vec<String> = doc
+        .child_nodes(node)
+        .into_iter()
+        .filter_map(|c| node_entry_json(&doc, c))
+        .collect();
+    format!("[{}]", entries.join(","))
+}
+
+/// 元素的**前/后节点兄弟**（含文本/注释，区别于 [`element_sibling_selectors`] 仅元素兄弟），
+/// JSON `{"p":<entry|null>,"n":<entry|null>}`。供 `__zw_sibling_nodes` 回调 → shim
+/// `previousSibling` / `nextSibling`。
+pub fn sibling_nodes_json(html: &str, elem_sel: &str) -> String {
+    let empty = "{\"p\":null,\"n\":null}".to_string();
+    let doc = parse_html(html);
+    let Some(node) = find_by_selector(&doc, elem_sel) else {
+        return empty;
+    };
+    let Some(parent) = doc.parent_node(node) else {
+        return empty;
+    };
+    let sibs: Vec<NodeId> = doc.child_nodes(parent);
+    let Some(idx) = sibs.iter().position(|s| *s == node) else {
+        return empty;
+    };
+    let prev = if idx > 0 {
+        node_entry_json(&doc, sibs[idx - 1])
+    } else {
+        None
+    };
+    let next = if idx + 1 < sibs.len() {
+        node_entry_json(&doc, sibs[idx + 1])
+    } else {
+        None
+    };
+    format!(
+        "{{\"p\":{},\"n\":{}}}",
+        prev.unwrap_or_else(|| "null".into()),
+        next.unwrap_or_else(|| "null".into())
+    )
+}
+
 /// `container.contains(other)`——other 是 container 的后代或 container 自身（沿 other 的
 /// parent_node 链）。供 `__zw_contains` 回调 → shim `el.contains(other)`。
 pub fn element_contains(html: &str, container_sel: &str, other_sel: &str) -> bool {
@@ -1434,6 +1516,28 @@ pub fn register_dom_callbacks(
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             element_sibling_selectors(&snap, &elem_sel)
+        }),
+    );
+
+    // 节点级遍历 API（含文本/注释节点）：childNodes/firstChild/lastChild（子列表）、
+    // previousSibling/nextSibling（兄弟对）。JSON 序列化（文本内容含任意字符）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_child_nodes",
+        Box::new(move |args| {
+            let elem_sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            child_nodes_json(&snap, &elem_sel)
+        }),
+    );
+
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_sibling_nodes",
+        Box::new(move |args| {
+            let elem_sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            sibling_nodes_json(&snap, &elem_sel)
         }),
     );
 

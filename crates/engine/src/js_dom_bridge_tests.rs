@@ -199,6 +199,45 @@ fn test_query_outer_html_serialization() {
 }
 
 #[test]
+fn test_child_nodes_json_mixed() {
+    // child_nodes_json：含文本/元素/注释节点，JSON 序列化（文本内容含任意字符安全）。
+    let html = "<html><body><div id=\"t\">text1<span id=\"s\">x</span><!--c-->text2</div></body></html>";
+    let json = child_nodes_json(html, "#t");
+    assert!(json.contains("\"k\":\"T\",\"v\":\"text1\""), "首个子为 text1\n{json}");
+    assert!(json.contains("\"k\":\"E\",\"s\":\"#s\""), "元素子 span → #s\n{json}");
+    assert!(json.contains("\"k\":\"C\",\"v\":\"c\""), "注释子 c\n{json}");
+    assert!(json.contains("\"k\":\"T\",\"v\":\"text2\""), "末子 text2\n{json}");
+    // 计数：4 个顶层条目（text/span/comment/text）。
+    assert_eq!(json.matches("\"k\":").count(), 4, "应含 4 个子节点条目\n{json}");
+}
+
+#[test]
+fn test_child_nodes_json_escape() {
+    // 文本含特殊字符（引号/反斜杠）须 JSON 转义。文本 `a"b\c` → JSON 值 `a\"b\\c`。
+    let html = "<html><body><div id=\"t\">a\"b\\c</div></body></html>";
+    let json = child_nodes_json(html, "#t");
+    assert!(
+        json.contains("a\\\"b\\\\c"),
+        "文本 a\"b\\c 应 JSON 转义为 a\\\"b\\\\c\n{json}"
+    );
+}
+
+#[test]
+fn test_sibling_nodes_json_across_text() {
+    // sibling_nodes_json：span 的前兄弟=text1、后兄弟=注释 c（含非元素节点）。
+    let html = "<html><body><div id=\"t\">text1<span id=\"s\">x</span><!--c-->text2</div></body></html>";
+    let json = sibling_nodes_json(html, "#s");
+    assert!(
+        json.contains("\"p\":{\"k\":\"T\",\"v\":\"text1\"}"),
+        "前兄弟=text1\n{json}"
+    );
+    assert!(
+        json.contains("\"n\":{\"k\":\"C\",\"v\":\"c\"}"),
+        "后兄弟=comment c\n{json}"
+    );
+}
+
+#[test]
 fn test_apply_set_outer_html_replaces_element() {
     // outerHTML setter：目标元素整体替换为解析片段，兄弟位置保留。
     let html = "<html><body id=\"b\"><div id=\"t\">x</div><i>after</i></body></html>";
@@ -1662,4 +1701,71 @@ fn test_replace_with_e2e() {
     let imid = out.find("mid").unwrap();
     let iy = out.find("<y>").unwrap();
     assert!(ix < imid && imid < iy, "replaceWith 应保持参数序 x<mid<y\n{out}");
+}
+
+#[test]
+fn test_node_level_traversal_e2e() {
+    // 节点级遍历：childNodes/firstChild/lastChild（含文本/元素/注释）、
+    // nextSibling/previousSibling（跨非元素节点）。经 JS 读属性 + 断言 nodeType/nodeValue。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t'>text1<span id='s'>x</span><!--c-->text2</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // childNodes：4 个子（text/span/comment/text），nodeType 正确。
+    sandbox
+        .execute(
+            "globalThis.__cn = document.querySelector('#t').childNodes;\
+             globalThis.__len = __cn.length;\
+             globalThis.__types = Array.prototype.map.call(__cn, function(n){return n.nodeType;}).join(',');\
+             globalThis.__t0 = __cn[0].nodeValue;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__len").unwrap().value, "4");
+    // nodeType: text(3), element(1), comment(8), text(3)。
+    assert_eq!(sandbox.execute("globalThis.__types").unwrap().value, "3,1,8,3");
+    assert_eq!(sandbox.execute("globalThis.__t0").unwrap().value, "text1");
+
+    // firstChild/lastChild：文本节点。
+    sandbox
+        .execute(
+            "globalThis.__fc = document.querySelector('#t').firstChild.nodeType;\
+             globalThis.__fv = document.querySelector('#t').firstChild.nodeValue;\
+             globalThis.__lc = document.querySelector('#t').lastChild.nodeValue;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__fc").unwrap().value, "3");
+    assert_eq!(sandbox.execute("globalThis.__fv").unwrap().value, "text1");
+    assert_eq!(sandbox.execute("globalThis.__lc").unwrap().value, "text2");
+
+    // 空元素 childNodes.length=0、firstChild=null。
+    sandbox
+        .execute(
+            "globalThis.__e = document.querySelector('#s').childNodes.length;\
+             globalThis.__ef = document.querySelector('#s').firstChild;",
+        )
+        .unwrap();
+    // #s 含文本 "x"（1 个 text 子）。
+    assert_eq!(sandbox.execute("globalThis.__e").unwrap().value, "1");
+
+    // nextSibling/previousSibling 跨非元素节点：span 的前兄弟=text1、后兄弟=comment。
+    sandbox
+        .execute(
+            "var s = document.querySelector('#s');\
+             globalThis.__ps = s.previousSibling.nodeValue;\
+             globalThis.__ns = s.nextSibling.nodeType;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__ps").unwrap().value, "text1");
+    assert_eq!(sandbox.execute("globalThis.__ns").unwrap().value, "8");
 }

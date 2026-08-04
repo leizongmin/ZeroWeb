@@ -1078,6 +1078,25 @@
             return hit ? _wrapSelector(hit) : null;
           } catch (_e) { return null; }
         }
+        // 节点级遍历（含文本/注释，区别于上面的 element-only 版）：childNodes / firstChild /
+        // lastChild（子列表，经 __zw_child_nodes JSON）/ previousSibling / nextSibling（兄弟，经
+        // __zw_sibling_nodes JSON）。文本/注释节点返静态对象（_wrapNodeEntry）。仅 sel-based 目标。
+        if (prop === 'childNodes') {
+          return _childNodeList(sel, handle);
+        }
+        if (prop === 'firstChild' || prop === 'lastChild') {
+          var cn = _childNodeList(sel, handle);
+          if (!cn.length) return null;
+          return prop === 'firstChild' ? cn[0] : cn[cn.length - 1];
+        }
+        if (prop === 'previousSibling' || prop === 'nextSibling') {
+          if (!sel || typeof __zw_sibling_nodes !== 'function') return null;
+          try {
+            var pair = JSON.parse(__zw_sibling_nodes(sel) || '{"p":null,"n":null}');
+            var en = prop === 'previousSibling' ? pair.p : pair.n;
+            return _wrapNodeEntry(en, _parentNodeFor(sel, handle));
+          } catch (_e) { return null; }
+        }
         // `el.contains(other)`——other 是否为 el 的后代或 el 自身（沿 parent 链）。
         if (prop === 'contains') {
           return function(other) {
@@ -1564,6 +1583,39 @@
   function _splitSelectors(joined) {
     if (!joined) return [];
     return joined.split('|').filter(Boolean).map(_wrapSelector);
+  }
+
+  // 节点级遍历：把 __zw_child_nodes/__zw_sibling_nodes 返的 JSON 条目（{k:'E'|'T'|'C',...}）
+  // 转 proxy/对象。元素 → _wrapSelector；文本/注释 → 纯对象（nodeType 3/8，纯读快照非 live，
+  // parentNode=parentProxy）。文本节点无 selector，故用静态对象（nodeValue/textContent/data 只读）。
+  function _wrapNodeEntry(entry, parentProxy) {
+    if (!entry) return null;
+    if (entry.k === 'E') return _wrapSelector(entry.s);
+    var isComment = entry.k === 'C';
+    var text = entry.v != null ? entry.v : '';
+    return {
+      nodeType: isComment ? 8 : 3,
+      nodeName: isComment ? '#comment' : '#text',
+      nodeValue: text,
+      textContent: text,
+      data: text,
+      length: text.length,
+      parentNode: parentProxy,
+      parentElement: parentProxy,
+      previousSibling: null,
+      nextSibling: null,
+      __zwIsText: true,
+    };
+  }
+
+  // `el.childNodes`（含文本/注释）：解析 __zw_child_nodes JSON 数组 → 节点数组（快照，非 live）。
+  function _childNodeList(sel, handle) {
+    if (!sel || typeof __zw_child_nodes !== 'function') return [];
+    try {
+      var arr = JSON.parse(__zw_child_nodes(sel) || '[]');
+      var parent = handle ? _wrapHandle(handle) : _wrapSelector(sel);
+      return arr.map(function(e) { return _wrapNodeEntry(e, parent); });
+    } catch (_e) { return []; }
   }
 
   // `prepend`/`before`/`after` 共用：variadic 节点/字符串按 position 经 insertAdjacent*
