@@ -1258,8 +1258,21 @@
         if (prop === 'insertBefore') {
           return function(newNode, refNode) {
             if (newNode && newNode.__zwHandle) {
-              // `insertBefore(node, null)` 等价于 appendChild。
-              if (refNode == null) {
+              // DocumentFragment：flatten 子节点（refNode 非 null 时插到 ref 前，null 时 append）。
+              if (_fragmentHandles[newNode.__zwHandle]) {
+                if (refNode == null) {
+                  if (handle && typeof __zw_append_fragment_children_handle === 'function')
+                    __zw_append_fragment_children_handle(handle, newNode.__zwHandle);
+                  else if (typeof __zw_append_fragment_children === 'function')
+                    __zw_append_fragment_children(sel, newNode.__zwHandle);
+                } else if (refNode.__zwSelector) {
+                  if (handle && typeof __zw_insert_fragment_before_handle === 'function')
+                    __zw_insert_fragment_before_handle(handle, newNode.__zwHandle, refNode.__zwSelector);
+                  else if (typeof __zw_insert_fragment_before === 'function')
+                    __zw_insert_fragment_before(sel, newNode.__zwHandle, refNode.__zwSelector);
+                }
+              } else if (refNode == null) {
+                // `insertBefore(node, null)` 等价于 appendChild。
                 if (handle) __zw_append_child_handle(handle, newNode.__zwHandle);
                 else __zw_append_child(sel, newNode.__zwHandle);
               } else if (refNode.__zwSelector) {

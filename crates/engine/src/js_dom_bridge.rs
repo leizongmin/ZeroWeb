@@ -213,6 +213,25 @@ pub enum DomMutation {
         /// DocumentFragment 句柄。
         fragment_handle: String,
     },
+    /// `parent.insertBefore(fragment, ref)`（P1a）——fragment 子节点 flatten 到 parent 的
+    /// ref 位置之前（区别于 [`Self::InsertBefore`] 插节点自身——会留 wrapper 且 fragment 不清空）。
+    InsertFragmentBefore {
+        /// 父节点选择器。
+        parent_selector: String,
+        /// DocumentFragment 句柄。
+        fragment_handle: String,
+        /// 参考节点选择器（fragment 子插到它之前）。
+        ref_selector: String,
+    },
+    /// `parentHandle.insertBefore(fragment, ref)`——父为 create 句柄。
+    InsertFragmentBeforeByHandle {
+        /// 父节点句柄。
+        parent_handle: String,
+        /// DocumentFragment 句柄。
+        fragment_handle: String,
+        /// 参考节点选择器。
+        ref_selector: String,
+    },
 }
 
 /// 在文档根下按简单选择器查找第一个匹配元素。
@@ -541,7 +560,7 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
             } => {
                 let parent = find_by_selector(doc, parent_selector)
                     .ok_or_else(|| format!("append_fragment_children: no parent match for {parent_selector}"))?;
-                append_fragment_children(doc, parent, fragment_handle, &handles)?;
+                move_fragment_children(doc, parent, fragment_handle, None, &handles)?;
             }
             DomMutation::AppendFragmentChildrenByHandle {
                 parent_handle,
@@ -551,7 +570,31 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     .get(parent_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
-                append_fragment_children(doc, parent, fragment_handle, &handles)?;
+                move_fragment_children(doc, parent, fragment_handle, None, &handles)?;
+            }
+            DomMutation::InsertFragmentBefore {
+                parent_selector,
+                fragment_handle,
+                ref_selector,
+            } => {
+                let parent = find_by_selector(doc, parent_selector)
+                    .ok_or_else(|| format!("insert_fragment_before: no parent match for {parent_selector}"))?;
+                let ref_node = find_by_selector(doc, ref_selector)
+                    .ok_or_else(|| format!("insert_fragment_before: no ref match for {ref_selector}"))?;
+                move_fragment_children(doc, parent, fragment_handle, Some(ref_node), &handles)?;
+            }
+            DomMutation::InsertFragmentBeforeByHandle {
+                parent_handle,
+                fragment_handle,
+                ref_selector,
+            } => {
+                let parent = handles
+                    .get(parent_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
+                let ref_node = find_by_selector(doc, ref_selector)
+                    .ok_or_else(|| format!("insert_fragment_before: no ref match for {ref_selector}"))?;
+                move_fragment_children(doc, parent, fragment_handle, Some(ref_node), &handles)?;
             }
         }
     }
@@ -788,23 +831,29 @@ fn replace_outer_html(doc: &mut Document, selector: &str, html: &str) -> Result<
     Ok(())
 }
 
-/// `parent.appendChild(fragment)` 的 flatten 语义：把 DocumentFragment 的**子节点逐个移动**
-/// 到 parent（fragment 自身不入树，append_child 自动从 fragment detach 子节点 → fragment 变空）。
-/// 供 [`DomMutation::AppendFragmentChildren`] / [`DomMutation::AppendFragmentChildrenByHandle`] 应用。
-fn append_fragment_children(
+/// DocumentFragment 的 flatten 语义：把 fragment 的**子节点逐个移动**到 parent——
+/// `ref == None` 时 append（末子），`ref == Some(r)` 时 insert-before r。
+/// fragment 自身不入树（`append_child`/`insert_before` 自动从 fragment detach 子节点 → fragment 变空，
+/// 匹配 spec「insert 后 fragment 清空」）。供 [`DomMutation::AppendFragmentChildren`] /
+/// [`DomMutation::InsertFragmentBefore`] 等应用。
+fn move_fragment_children(
     doc: &mut Document,
     parent: NodeId,
     fragment_handle: &str,
+    ref_node: Option<NodeId>,
     handles: &HashMap<String, NodeId>,
 ) -> Result<(), String> {
     let fragment = handles
         .get(fragment_handle)
         .copied()
         .ok_or_else(|| format!("unknown fragment handle {fragment_handle}"))?;
-    // 快照 fragment 子列表（append 过程中会从 fragment 移除，故先收集）。
+    // 快照 fragment 子列表（移动过程中会从 fragment 移除，故先收集）。
     let kids: Vec<NodeId> = doc.get(fragment).map(|n| n.children.clone()).unwrap_or_default();
     for child in kids {
-        doc.append_child(parent, child).map_err(|e| e.to_string())?;
+        match ref_node {
+            Some(r) => doc.insert_before(parent, child, r).map_err(|e| e.to_string())?,
+            None => doc.append_child(parent, child).map_err(|e| e.to_string())?,
+        };
     }
     Ok(())
 }
@@ -1909,6 +1958,40 @@ pub fn register_dom_callbacks(
                     .push(DomMutation::AppendFragmentChildrenByHandle {
                         parent_handle: args[0].clone(),
                         fragment_handle: args[1].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_insert_fragment_before",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::InsertFragmentBefore {
+                        parent_selector: args[0].clone(),
+                        fragment_handle: args[1].clone(),
+                        ref_selector: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_insert_fragment_before_handle",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::InsertFragmentBeforeByHandle {
+                        parent_handle: args[0].clone(),
+                        fragment_handle: args[1].clone(),
+                        ref_selector: args[2].clone(),
                     });
             }
             "ok".into()

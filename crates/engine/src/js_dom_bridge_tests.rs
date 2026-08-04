@@ -1865,3 +1865,51 @@ fn test_create_document_fragment_e2e() {
     );
     assert!(has_flatten, "appendChild(fragment) 应入队 AppendFragmentChildren");
 }
+
+#[test]
+fn test_insert_before_fragment_flatten_e2e() {
+    // R2688 self-review 修复验证：insertBefore(fragment, ref) 须 flatten 子节点（spec）。
+    // 旧行为：插 fragment 节点本身 → childNodes 漏子（藏在被跳过的 fragment wrapper 内）+
+    //   fragment 未清空。修复后：fragment 子移到 ref 前、fragment 清空。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let initial = "<html><body><ul id='list'><li id='first'>F</li></ul></body></html>".to_string();
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "var f = document.createDocumentFragment();\
+             var a = document.createElement('li'); a.id = 'a';\
+             var b = document.createElement('li'); b.id = 'b';\
+             f.appendChild(a); f.appendChild(b);\
+             var list = document.querySelector('#list');\
+             list.insertBefore(f, list.firstChild);",
+        )
+        .unwrap();
+    // 入队 InsertFragmentBefore（非 InsertBefore 插 fragment 节点本身）。
+    let used_flatten =
+        mutations.lock().unwrap().iter().any(
+            |m| matches!(m, DomMutation::InsertFragmentBefore { parent_selector, .. } if parent_selector == "#list"),
+        );
+    assert!(
+        used_flatten,
+        "insertBefore(fragment, ref) 应入队 InsertFragmentBefore（flatten）"
+    );
+
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&initial, &ms).unwrap();
+    // flatten 后顺序：a, b, first（fragment 子在 first 之前）。
+    let ia = out.find("<li id=\"a\">").unwrap();
+    let ib = out.find("<li id=\"b\">").unwrap();
+    let ifirst = out.find("<li id=\"first\">").unwrap();
+    assert!(ia < ib && ib < ifirst, "flatten 后 a<b<first\n{out}");
+}
