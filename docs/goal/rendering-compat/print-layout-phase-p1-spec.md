@@ -267,7 +267,7 @@ R1995（print-layout-pagination-design.md v0.1）做了范围界定 + fragmentat
 - Screen 模式 LayoutResult 与未接入分页时逐字段相等（NFR-001）。
 - 分页 pass 须有 env kill-switch（`ZW_PRINT_PAGINATE=0` 禁用，NFR-002）。
 - 分页作独立 post-process，不改 multicol / relative / clamp pass 逻辑（NFR-004）。
-- 强制换页检测复用 multicol 已有逻辑（`break_before == BreakValue::Page` + `page_break_before == PageBreakValue::Always`，multicol.rs:692 已含 Page 变体）。
+- 强制换页检测复用 multicol 已有逻辑（`break_before == BreakValue::Page` + `page_break_before == PageBreakValue::Always`，multicol.rs:697 已含 Page 变体）。
 
 ### 6.2 禁止约束（Must Not）
 - 不得在 Screen 模式运行分页 pass（条件分支须先判 media_type==Print）。
@@ -297,12 +297,12 @@ R1995（print-layout-pagination-design.md v0.1）做了范围界定 + fragmentat
 
 | 能力/行为 | 来源类型 | 具体来源 | 备注 |
 |----------|----------|----------|------|
-| 强制换页检测（break_before==Page / page_break_before==Always） | 复用现有模块 | multicol.rs:692（已含 BreakValue::Page）+ style-system ComputedStyle 字段 | 无需新解析 |
+| 强制换页检测（break_before==Page / page_break_before==Always） | 复用现有模块 | multicol.rs:697（已含 BreakValue::Page）+ style-system ComputedStyle 字段 | 无需新解析 |
 | 分片分配算法（children → pages，含 oversized 拆分） | 复用现有模块（纵向版） | multicol.rs:1217 `assign_children_to_columns_with_breaking` → 新 `assign_children_to_pages` | 仅排列方向（纵向堆叠 vs 横向并排）+ 无列宽 |
-| media_type 流入 layout | 仓内自实现（镜像 viewport） | LayoutEngine 字段 + setter（engine.rs）+ pipeline.set_media_type（pipeline.rs:249） | 镜像 set_viewport 模式 |
+| media_type 流入 layout | 仓内自实现（镜像 viewport） | LayoutEngine 字段 + setter（engine.rs）+ pipeline.set_media_type（pipeline/mod.rs:293） | 镜像 set_viewport 模式 |
 | StyleSystem.media_type 读取 | 仓内自实现 | style-system lib.rs：新 getter `media_type()` | 当前私有无 getter（R1998） |
 | 默认页尺寸 | 仓内自实现（常量） | print_pagination.rs：`PRINT_PAGE_HEIGHT_A4 = 1122.5` | P4 前 @page 未解析 |
-| tall-framebuffer 高度 | 复用现有能力 | paint_cull_viewport（pipeline.rs:677）已算 doc_h.max(viewport_h) | Print 时 doc_h = 页数×页高 |
+| tall-framebuffer 高度 | 复用现有能力 | paint_cull_viewport（pipeline/mod.rs:794）已算 doc_h.max(viewport_h) | Print 时 doc_h = 页数×页高 |
 
 ### 6.6 代码变更边界
 - **允许修改**：
@@ -382,23 +382,23 @@ R1995（print-layout-pagination-design.md v0.1）做了范围界定 + fragmentat
 ### 8.1 现状分析
 
 **当前架构**（layout → paint 链路）：
-1. `LayoutEngine::compute_with_img_intrinsic`（engine.rs:161）构建 taffy 树 → `compute_layout_with_measure` → `extract_layout` 得 `root_box`（LayoutBox 树，根 = html）。
+1. `LayoutEngine::compute_with_img_intrinsic`（engine.rs:305）构建 taffy 树 → `compute_layout_with_measure` → `extract_layout` 得 `root_box`（LayoutBox 树，根 = html）。
 2. 一系列 **post-process pass** 递归改写 `root_box`（顺序，engine.rs compute() 内）：
    - `adjust_multicol_layout`（:443 / :715）—— multicol 列分配
    - `apply_relative_offsets_inline`（:458）—— relpos inset
    - `clamp_percentage_max_height`（:571）—— 百分比 max-height
    - 返回 `LayoutResult { root, viewport_width, viewport_height }`（:619）
-3. `RenderPipeline`（pipeline.rs）多处 render 站点调 `layout_engine.compute*` 得 `layout_result` → `painter.paint(&layout_result.root, ...)` → `paint_cull_viewport`（pipeline.rs:677，算 `doc_h.max(viewport_h)`）。
+3. `RenderPipeline`（pipeline.rs）多处 render 站点调 `layout_engine.compute*` 得 `layout_result` → `painter.paint(&layout_result.root, ...)` → `paint_cull_viewport`（pipeline/mod.rs:794，算 `doc_h.max(viewport_h)`）。
 
 **痛点 / 缺口**：
-- **media_type 未流入 layout**：`StyleSystem.media_type`（lib.rs:162，私有，有 setter 无 getter）仅用于 cascade 过滤（lib.rs:366）；`LayoutEngine` 无 media_type 字段、无 Print 条件分支。→ 分页 pass 无法知是否 Print 模式。
+- **media_type 未流入 layout**：`StyleSystem.media_type`（lib.rs:217，私有，有 setter 无 getter）仅用于 cascade 过滤（lib.rs:482）；`LayoutEngine` 无 media_type 字段、无 Print 条件分支。→ 分页 pass 无法知是否 Print 模式。
 - **page-break 计算值未被消费**：`BreakValue`/`PageBreakValue` enum + ComputedStyle 字段已就绪，但 layout 无分页逻辑。
 - **单视口假设**：layout/render 假设单 viewport；Print 须 tall-framebuffer（页序列平铺为高 framebuffer）。
 
 **相关代码**（实证，本轮 code-archaeology）：
 - `multicol.rs:44 ColumnFragment { child_idx, fragment_y_offset, visual_height }` —— 分片数据模型（可复用）。
 - `multicol.rs:1217 assign_children_to_columns_with_breaking(children, col_count, max_col_height, forced_breaks, forced_breaks_after)` —— 分片分配算法（**直接镜像为 `assign_children_to_pages`**）。
-- `multicol.rs:692 forced_breaks[i] = matches!(s.break_before, BreakValue::Column | BreakValue::Page)` —— forced-break 检测已含 Page 变体（共享）。
+- `multicol.rs:697 forced_breaks[i] = matches!(s.break_before, BreakValue::Column | BreakValue::Page)` —— forced-break 检测已含 Page 变体（共享）。
 - `types/mod.rs:30 LayoutBox.y` 注释「相对于父元素的内容区域」—— **相对定位**（R1998 核心发现）。
 
 ### 8.2 目标状态
@@ -459,8 +459,8 @@ LayoutBox 位置**相对父内容区**（`box.y` = 相对父 content-box 原点�
 | 分片容器 | multicol 容器（column-count） | body / 块流根（media_type==Print） |
 | 分片单元 | 容器的直接 block 子 | body 的直接 in-flow block 子 |
 | 排列方向 | 列**横向**并排（column-count 列） | 页**纵向**顺序堆叠 |
-| 单元定位 | `child.y = col_cumulative - fragment_y_offset`（multicol.rs:723） | `unit.y = page_idx * H + intra_page_y` |
-| forced break | `break_before==Column\|Page`（multicol.rs:692） | `break_before==Page` + `page_break_before==Always` |
+| 单元定位 | `child.y = col_cumulative - fragment_y_offset`（multicol.rs:728） | `unit.y = page_idx * H + intra_page_y` |
+| forced break | `break_before==Column\|Page`（multicol.rs:697） | `break_before==Page` + `page_break_before==Always` |
 | oversized 拆分 | column breaking（fragment_y_offset） | page breaking（同机制，纵向） |
 | 输出 | 单 viewport 内列并排 | tall-framebuffer（高 = 页数×H） |
 
@@ -513,7 +513,7 @@ fn assign_children_to_pages(children, page_height, forced_before, forced_after)
 }
 ```
 
-**forced-break 检测**（复用 multicol.rs:692）：
+**forced-break 检测**（复用 multicol.rs:697）：
 ```text
 fn has_forced_break_before(u, styles) -> bool {
     matches!(s.break_before, BreakValue::Page) || matches!(s.page_break_before, PageBreakValue::Always | Left | Right)
@@ -523,11 +523,11 @@ fn has_forced_break_before(u, styles) -> bool {
 #### 8.4.4 media_type 接线图
 
 ```
-RenderPipeline.set_media_type(mt)          [pipeline.rs:249]
+RenderPipeline.set_media_type(mt)          [pipeline/mod.rs:293]
   ├─ self.style_system.set_media_type(mt)   [已有]
   └─ self.layout_engine.set_media_type(mt)  [新增，镜像 set_viewport]
 
-LayoutEngine.compute_with_img_intrinsic()   [engine.rs:161]
+LayoutEngine.compute_with_img_intrinsic()   [engine.rs:305]
   └─ ... adjust_multicol / apply_relative / clamp_percentage_max_height ...
   └─ if self.media_type == Print && print_paginate_enabled() {   [新增 gate]
          crate::print_pagination::paginate_for_print(&mut root_box, PRINT_PAGE_HEIGHT_A4, styles);
@@ -539,8 +539,8 @@ LayoutEngine.compute_with_img_intrinsic()   [engine.rs:161]
 
 #### 8.4.5 输出模型（tall-framebuffer）
 
-- 分页后 body.height = 页数 × page_height；`paint_cull_viewport`（pipeline.rs:677）已算 `doc_h.max(viewport_h)` → cull rect 自动覆盖全部页。
-- framebuffer 高度：render 站点（pipeline.rs:337/446/...）当前用 `self.viewport_height`。Print 模式下 doc_h > viewport_h，须确保 framebuffer 高 = doc_h（paint_cull_viewport 已提供 doc_h）。**接线点**：render 站点用 cull rect 的 height 而非 viewport_height 创建 framebuffer（若当前已如此则零改动；否则 P1a-M1 顺带修）。
+- 分页后 body.height = 页数 × page_height；`paint_cull_viewport`（pipeline/mod.rs:794）已算 `doc_h.max(viewport_h)` → cull rect 自动覆盖全部页。
+- framebuffer 高度：render 站点（pipeline/mod.rs:404/...）当前用 `self.viewport_height`。Print 模式下 doc_h > viewport_h，须确保 framebuffer 高 = doc_h（paint_cull_viewport 已提供 doc_h）。**接线点**：render 站点用 cull rect 的 height 而非 viewport_height 创建 framebuffer（若当前已如此则零改动；否则 P1a-M1 顺带修）。
 - 页边界**分隔线**（P1.5，deferred）：当前页边界以**空白间隔**可见（单元被推到 page_idx×H，中间无内容）；分隔线需 LayoutResult 新字段 `page_breaks: Vec<f32>` + paint 步骤，P1.5 独立切片。
 
 ### 8.5 安全考虑
