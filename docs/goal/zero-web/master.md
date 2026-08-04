@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-08-04
-**执行状态**: 17 个 crate + 3 个应用已实现，~13,192 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + **WASM 自动桥接完整实现**），WPT 测试套件 1341 个用例（23 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip），**平台和输入测试**（18 个 WPT 用例覆盖键盘事件/鼠标事件/触摸布局/滚动容器/视口响应式/HiDPI/IME/CJK 输入/焦点管理 + 15 个视口自适应集成测试 + 19 个字体回退国际化渲染管线集成测试）。**DOM/JS Bridge**：polyfill 桥接模式（30+ DomCommand 变体覆盖 DOM 操作/事件/样式），Fetch/setTimeout/console/localStorage/sessionStorage/MutationObserver/IntersectionObserver/ResizeObserver/CustomEvent 全 polyfill 注入，Observer 类型为 stub 不触发回调，fetch() 为 stub 返回空 Response，事件循环为简化版（非 spec-compliant microtask/task queue）。**注（P1a 进展）**：生产 worker 路径（B 代 shim `js_dom_shim.js`）已迁移——fetch GET 端到端真实、MutationObserver/IntersectionObserver/ResizeObserver 已真实触发回调（P1a Slice 2a/3）、setTimeout 真实延迟；A 代 WebView polyfill 路径仍为上述 stub 描述。**rendering-compat 赛道**（独立目标，降频守成中）：reftest 自源 ~57% / chromium-oracle 真一致 ~47%（FreeType-default 后），clean-lever hunt 经 200+ 轮已基本穷尽；字体栈重建 RFC v0.2.3 已就绪（fontdue→FreeType+Harfbuzz 统一度量/光栅/塑形），是 headline ≥95% 的唯一战略杠杆。
+**执行状态**: 17 个 crate + 3 个应用已实现，~13,192 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + **WASM 自动桥接完整实现**），WPT 测试套件 1341 个用例（23 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip），**平台和输入测试**（18 个 WPT 用例覆盖键盘事件/鼠标事件/触摸布局/滚动容器/视口响应式/HiDPI/IME/CJK 输入/焦点管理 + 15 个视口自适应集成测试 + 19 个字体回退国际化渲染管线集成测试）。**DOM/JS Bridge**：polyfill 桥接模式（30+ DomCommand 变体覆盖 DOM 操作/事件/样式），Fetch/setTimeout/console/localStorage/sessionStorage/MutationObserver/IntersectionObserver/ResizeObserver/CustomEvent 全 polyfill 注入，Observer 类型为 stub 不触发回调，fetch() 为 stub 返回空 Response，事件循环为简化版（非 spec-compliant microtask/task queue）。**注（P1a 进展）**：生产 worker 路径（B 代 shim `js_dom_shim.js`）已迁移——fetch GET 端到端真实、MutationObserver/IntersectionObserver/ResizeObserver 已真实触发回调（P1a Slice 2a/3，renderer 路径含 render-loop 后续通知 tick Slice 2b）、setTimeout 真实延迟；A 代 WebView polyfill 路径仍为上述 stub 描述。**rendering-compat 赛道**（独立目标，降频守成中）：reftest 自源 ~57% / chromium-oracle 真一致 ~47%（FreeType-default 后），clean-lever hunt 经 200+ 轮已基本穷尽；字体栈重建 RFC v0.2.3 已就绪（fontdue→FreeType+Harfbuzz 统一度量/光栅/塑形），是 headline ≥95% 的唯一战略杠杆。
 
 > **▶ 恢复推进裁决（2026-08-04 用户决策）**：工作从 rendering-compat 切回父目标，恢复「下一步优先级」P1 DOM/JS Bridge 原生化。**当前活跃主线 = P1a**（事件循环补全 + fetch/MutationObserver 真实化，主要改 `dom_bridge.rs` + `script-sandbox` + `net`，低风险快速见效）；P1b（V8 原生绑定）需独立 RFC，与字体栈 RFC 同级对待。渲染兼容性降频守成：低频 plateau-guard（每 ~10 轮或 .rs 变更后跑 `make test` triple-guard），其深结构（R1043/R2174/Phase A IFC/font-stack C-dep）继续等用户点名，点名即切回。执行模式：自主推进，每轮进度记录到「最近完成的改进」。渲染侧裁决同步记录于 `rendering-compat.md` 顶部。
 
@@ -111,6 +111,25 @@
 ---
 
 ## 最近完成的改进
+
+### P1a Slice 2b — observer host render-loop tick（本轮 R2652，~13,221 测试）
+
+承接 Slice 2a/3（IO/RO 真实化）。Slice 2a/3 限制 ①「仅 observe 时计算，非持续 host tick」的收尾：observe 仅派发 initial notification，后续真实 layout 变化（render 后 snapshot 填了真实 rect）不再触发回调。本切片补 host render-loop tick——让 IO/RO 像 real browser 一样在 layout 变化后派发后续通知。
+
+**关键决策**：IO/RO 的 `_schedule()` 已复算所有 target 并在 cross-threshold（IO）/ size-change（RO）时派发——故 Slice 2b = 「render 后对每个活跃 observer 调一次 `_schedule()`」。纯 JS 侧 registry + host 单点注入 tick 脚本，**无新 host 命令枚举**（区别于 recon 设想的 FrameTick 命令变体）。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim.js` | `_zwObservers` registry（IO/RO 构造时 push）+ `globalThis.__zw_observers_tick`（遍历活跃 observer 调 `_schedule`，跳过无 target 者；`_defer` microtask 在 execute 末尾 checkpoint drain）。 |
+| `apps/renderer/src/page_scripts.rs` | `pub fn tick_observers(ctx) -> bool`：镜像 `dispatch_dom_event` 的 set_snapshot→clear→execute→apply，script = tick；返回回调是否改 DOM。 |
+| `apps/renderer/src/main.rs` | `publish_webview` 末尾（fill snapshot + publish frame 后）触发 tick——覆盖所有 render（load/event/rerender）；`observer_tick_depth` 重入守卫防 tick→rerender→publish→tick 反馈环（单次外部触发最多 2 次 publish）；kill-switch `ZW_REAL_RECT=0`/JS 关跳过；`tick_observers_inner`（tick → apply mutation → 若改 DOM 单次 rerender）。 |
+| `apps/renderer/src/js_worker.rs` | `real_rect_enabled()` 提为 `pub(crate)`（兼作 tick kill-switch）+ driving test + `wait_eq` 轮询辅助。 |
+
+验证：`make test` 全绿（exit 0，零回归）+ clippy `-D warnings` 零警告 + fmt clean + `make product-smoke` 全 struct PASS（desktop diff≤20% + 窄屏全 PASS，per-render tick 无无限渲染）。driving test：observe→更新 snapshot→`__zw_observers_tick`→RO size-diff 再次派发（__calls 1→2，__last 200x80）；size 未变再 tick→不派发（_lastSize 守）。
+
+**为何零回归且净正向**：observer 仅在 cross/size-change 时派发（本身收敛），depth 守卫兜底防反馈环；gBCR/JS 关时跳过（= 旧行为）。real 页面（welcome/morning/wintertc）经 per-render tick 无无限渲染、struct 全 PASS。
+
+**已知限制（follow-up）**：① browser in-process `tab_worker` 路径未接 tick（mirror follow-up——shim 共享，仅需 `tab_scripts::tick_observers` + `push_snapshot`/render 路径接线；cross-process browser 经 renderer 进程已覆盖）；② observer 注册表 leak = observer 创建总数（有界，WeakRef 注册表为硬化 follow-up）；③ tick 回调的 DOM mutation 仅触发单次 rerender（不递归 tick），故回调链式改 layout 的收敛依赖 observer change-gate。
 
 ### P1a Slice 3 — ResizeObserver 真实化（本轮 R2651，~13,220 测试）
 

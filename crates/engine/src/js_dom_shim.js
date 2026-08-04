@@ -28,6 +28,13 @@
   // 模式只需 2-3 帧即可收敛。
   var _rafBudget = 64;
 
+  // P1a Slice 2b：observer 注册表——host render 后经 `__zw_observers_tick()` 对每个活跃
+  // observer 调 `_schedule()`，使 IO/RO 在 cross-threshold / size-change 时派发后续通知
+  // （observe 仅派发 initial；后续 render 的真实 layout 变化须 host tick 触发复算）。
+  // IO/RO 构造时 push；tick 跳过无活跃 target 者（disconnect 后为 no-op）。
+  // leak = observer 创建总数（有界，per-page；WeakRef 注册表为后续硬化 follow-up）。
+  var _zwObservers = [];
+
   globalThis.__zw_begin_script = function() {
     _deferBudget = 256;
     _rafBudget = 64;
@@ -279,6 +286,7 @@
     this._targets = {};        // id (h:handle / s:sel) -> { proxy }
     this._lastRatio = {};      // id -> 上次派发的 ratio（undefined = 未派发过 → initial）
     this._scheduled = false;
+    _zwObservers.push(this);   // P1a Slice 2b：注册到 tick 表
   };
   // 计算单个 target 的 intersection 数据（rect / ratio / isIntersecting）。
   globalThis.IntersectionObserver.prototype._compute = function(id) {
@@ -389,6 +397,7 @@
     this._targets = {};       // id (h:handle / s:sel) -> { proxy }
     this._lastSize = {};      // id -> {w,h}（undefined = 未派发过 → initial）
     this._scheduled = false;
+    _zwObservers.push(this);  // P1a Slice 2b：注册到 tick 表
   };
   // 排队一次 microtask 派发：遍历所有 target，对尺寸变化（或 initial）的构造 entry 投递 callback。
   globalThis.ResizeObserver.prototype._schedule = function() {
@@ -457,6 +466,22 @@
     this.borderBoxSize = init.borderBoxSize || null;
     this.contentBoxSize = init.contentBoxSize || null;
     this.devicePixelContentBoxSize = init.devicePixelContentBoxSize || null;
+  };
+
+  // P1a Slice 2b：host render（snapshot 已填真实 rect）后调本函数，对每个活跃 observer 调
+  // `_schedule()` 复算——IO `_crossed`（threshold 越界）/ RO size-diff 仅在变化时派发，故收敛。
+  // 跳过无活跃 target 的 observer（disconnect/unobserve-all 后 no-op）。`_defer` microtask 在
+  // 本次 execute 末尾 checkpoint drain，回调同步触发；回调内 DOM mutation 由 host apply+rerender。
+  globalThis.__zw_observers_tick = function() {
+    for (var i = 0; i < _zwObservers.length; i++) {
+      var obs = _zwObservers[i];
+      if (!obs || !obs._targets) continue;
+      var has = false;
+      for (var _k in obs._targets) { has = true; break; }
+      if (has) {
+        try { obs._schedule(); } catch (_e) {}
+      }
+    }
   };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`

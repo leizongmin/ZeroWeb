@@ -21,7 +21,8 @@ const TAB_JS_CHANNEL_TIMEOUT: Duration = Duration::from_millis(TAB_JS_EXEC_TIMEO
 
 /// P1a gBCR kill-switch：默认 on；`ZW_REAL_RECT=0` 关闭 RectBridge（`__zw_getBoundingClientRect`
 /// 不注册 → shim 回落零 rect = 当前行为，零回归）。snapshot 为空 / identity 未命中同样回落零 rect。
-fn real_rect_enabled() -> bool {
+/// P1a Slice 2b：亦用作 observer host-tick 的 kill-switch（gBCR 关 → rect 恒零 → tick 无意义）。
+pub(crate) fn real_rect_enabled() -> bool {
     !matches!(std::env::var("ZW_REAL_RECT").as_deref(), Ok("0"))
 }
 
@@ -430,6 +431,25 @@ mod tests {
         loop {
             if let Ok(v) = worker.execute_script_direct(&probe)
                 && v != "undefined"
+            {
+                return v;
+            }
+            if start.elapsed().as_millis() >= timeout_ms as u128 {
+                return worker.execute_script_direct(&probe).unwrap_or_default();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    // P1a Slice 2b：轮询直到 `globalThis.{key}` === want。observer tick 回调经 `_defer`
+    // （queueMicrotask）在 execute 末尾 checkpoint drain；probe 本身触发 drain，故即便 drain
+    // 跨 execute 也能在下一轮 probe 捕获。带超时兜底。
+    fn wait_eq(worker: &RendererJsWorker, key: &str, want: &str, timeout_ms: u64) -> String {
+        let start = std::time::Instant::now();
+        let probe = format!("String(globalThis.{key})");
+        loop {
+            if let Ok(v) = worker.execute_script_direct(&probe)
+                && v == want
             {
                 return v;
             }
@@ -1010,6 +1030,60 @@ mod tests {
             worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
             "null"
         );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_observer_tick_refires_on_size_change() {
+        // P1a Slice 2b：observe（initial 派发，snapshot v1 100x50）→ 更新 snapshot（size 变化 200x80）
+        // → `__zw_observers_tick` → RO size-diff 再次派发回调（__calls 1→2，__last 200x80）。
+        // size 未变再 tick → 不派发（_lastSize 守，__calls 仍 2）。证明 host render-loop tick 机制。
+        use zero_dom::parse_html;
+        use zero_engine::{find_by_selector, node_id_to_u64};
+        let mut worker = RendererJsWorker::spawn(26);
+        let html = "<html><body><div id='t' style='width:100px;height:50px'>hi</div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        let doc = parse_html(html);
+        let id_t = find_by_selector(&doc, "#t").expect("#t");
+        let snap = worker.rect_snapshot();
+        snap.lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_t), (0.0, 0.0, 100.0, 50.0)); // v1
+        worker
+            .execute_script_direct(
+                "globalThis.__calls = 0;\
+                 globalThis.__last = '';\
+                 var obs = new ResizeObserver(function(entries){\
+                   globalThis.__calls = (globalThis.__calls | 0) + 1;\
+                   globalThis.__last = String(entries[0].contentRect.width) + 'x' + String(entries[0].contentRect.height);\
+                 });\
+                 obs.observe(document.querySelector('#t'));",
+            )
+            .unwrap();
+        // initial 派发（microtask 在 execute 末尾 checkpoint drain；wait_eq probe 兜底）。
+        assert_eq!(wait_eq(&worker, "__calls", "1", 1000), "1");
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__last)").unwrap(),
+            "100x50"
+        );
+        // 更新 snapshot → size 变化 → tick 再次派发。
+        snap.lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_t), (0.0, 0.0, 200.0, 80.0));
+        worker
+            .execute_script_direct("if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();")
+            .unwrap();
+        assert_eq!(wait_eq(&worker, "__calls", "2", 1000), "2");
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__last)").unwrap(),
+            "200x80"
+        );
+        // size 未变再 tick → 不派发（_lastSize 守，__calls 仍 2）。
+        worker
+            .execute_script_direct("if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();")
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        assert_eq!(worker.execute_script_direct("String(globalThis.__calls)").unwrap(), "2");
         worker.shutdown();
     }
 

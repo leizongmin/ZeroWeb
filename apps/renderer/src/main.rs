@@ -136,6 +136,10 @@ struct RendererRuntime {
     inflight_fetches: InflightIpcFetches,
     /// in-process 测试无 browser 进程时，避免阻塞 IPC / 子资源永久 pending。
     stub_network: bool,
+    /// P1a Slice 2b：observer host-tick 重入守卫——`publish_webview` 末尾触发 tick，tick 回调
+    /// 若改 DOM → rerender → 再次 `publish_webview`；depth>0 时跳过 tick，防 tick→rerender→tick
+    /// 链（observer 仅在 cross/size-change 时派发，本身收敛；此守卫为兜底，单次外部触发最多 2 次 publish）。
+    observer_tick_depth: u32,
 }
 
 impl RendererRuntime {
@@ -196,6 +200,7 @@ impl RendererRuntime {
             pending_script_prefetch: None,
             inflight_fetches: InflightIpcFetches::new(),
             stub_network: false,
+            observer_tick_depth: 0,
         }
     }
 
@@ -309,7 +314,36 @@ impl RendererRuntime {
             title,
             payloads,
             self.navigation_epoch,
-        )
+        )?;
+        // P1a Slice 2b：render 填完 rect snapshot 后触发 observer 重算——IO `_crossed`（threshold
+        // 越界）/ RO size-diff 仅在变化时派发，故 observe() 之后的真实 layout 变化能触发 observer 回调
+        // （observe 仅派发 initial）。depth 守卫防 tick→rerender→publish→tick 反馈环（observer 本身
+        // 收敛，此为兜底）；kill-switch：gBCR 关（ZW_REAL_RECT=0，rect 恒零）或 JS 关时跳过。
+        if self.observer_tick_depth == 0 && self.javascript_enabled && crate::js_worker::real_rect_enabled() {
+            self.observer_tick_depth += 1;
+            let tick_res = self.tick_observers_inner();
+            self.observer_tick_depth -= 1;
+            tick_res?;
+        }
+        Ok(())
+    }
+
+    /// P1a Slice 2b：执行 observer tick（`__zw_observers_tick()`）并 apply 回调产生的 DOM mutation。
+    /// 回调改了 DOM → 单次 rerender（rerender 再入 publish_webview，但 depth>0 跳过 tick，有界）。
+    fn tick_observers_inner(&mut self) -> Result<(), String> {
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+            };
+            page_scripts::tick_observers(&mut ctx)
+        };
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
     }
 
     fn sync_cached_html_from_webview(&mut self) {

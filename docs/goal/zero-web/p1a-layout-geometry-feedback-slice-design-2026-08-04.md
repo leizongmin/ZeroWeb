@@ -243,4 +243,30 @@ R2647 限制 4「browser 路径未接」的收尾。核验 browser 后端：**cr
 
 **P1a layout-geometry-feedback 切片进度小结**：Slice 1（gBCR 真实化 R2645-R2649，含 renderer/browser in-process 接线 + thread-local cache）+ Slice 2a（IO R2650）+ Slice 3（RO R2651）均已 land。剩余共同 follow-up = **Slice 2b**（持续 host tick：scroll/resize/async-layout 变化触发的后续 IO/RO 通知，须 host render-loop tick 或 `__zwResolveCallback` 重算钩子）+ **path A**（handle-identity createElement 元素持久身份映射）+ content-box rect（padding/border 扣除）。
 
+## R2652：Slice 2b — observer host render-loop tick（JS 侧 registry + host 单点注入）
+
+承接 Slice 2a/3 限制 ①「仅 observe 时计算，非持续 host tick」。observe 仅派发 initial notification；后续真实 layout 变化（render 后 snapshot 填了真实 rect）不再触发回调——IO/RO 退化成「measure-on-mount-only」。本切片补 host render-loop tick。
+
+**关键决策**：IO/RO 的 `_schedule()` 已复算所有 target，并在 cross-threshold（IO `_crossed`）/ size-change（RO size-diff）时派发——故 Slice 2b 不需 recon 设想的「新增 host `FrameTick` 命令变体」，而是 **「render 后对每个活跃 observer 调一次 `_schedule()`」**：纯 JS 侧 registry + host 在 `publish_webview` 末尾单点注入 tick 脚本。`_defer`（queueMicrotask）在 execute 末尾 V8 checkpoint drain，回调同步触发。
+
+**已 land（commit 本轮）**：
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim.js` | `_zwObservers` registry（IO/RO 构造时 push）+ `globalThis.__zw_observers_tick`：遍历 registry，跳过无活跃 target 者（disconnect/unobserve-all 后 no-op），对活跃者调 `_schedule()`（复用既有 cross/size-change gate）。 |
+| `apps/renderer/src/page_scripts.rs` | `pub fn tick_observers(ctx) -> bool`：镜像 `dispatch_dom_event` 的 `set_dom_snapshot→clear mutations→execute_script_direct(tick)→apply_recorded_mutations`；返回回调是否改 DOM。 |
+| `apps/renderer/src/main.rs` | `publish_webview` 末尾（`fill_layout_rect_snapshot` + `publish_render_with_layout` 后）触发 tick——覆盖所有 render（初始 load / 事件派发 / rerender）；`observer_tick_depth: u32` 重入守卫防 tick→rerender→publish→tick 链（单次外部触发最多 2 次 publish）；kill-switch `ZW_REAL_RECT=0`（兼 gBCR）或 JS 关时跳过；`tick_observers_inner`：tick → apply mutation → 若改 DOM 单次 `rerender_publish_webview`（再入 publish_webview，depth>0 跳过 tick）。 |
+| `apps/renderer/src/js_worker.rs` | `real_rect_enabled()` 提为 `pub(crate)`（兼作 tick kill-switch）+ driving test + `wait_eq` 轮询辅助（probe 本身触发 microtask drain）。 |
+
+**为何收敛/零反馈环**：observer 的 `_schedule()` 仅在 cross-threshold/size-change 时派发——target 几何稳定则不派发；callback 设置固定尺寸 1-2 tick 即收敛。`observer_tick_depth` 守卫为兜底：即便 callback 每次改 layout，也限制单次外部触发最多 2 次 publish（tick 的 rerender 再入 publish_webview 时 depth>0 跳过 tick）。
+
+**验证**：`make test` 全绿（exit 0，零回归——含 renderer runtime 单测、integration 全量）+ workspace clippy `-D warnings` 零警告 + fmt clean + `make product-smoke` 全 struct PASS（welcome/morning/wintertc desktop diff≤20% + 窄屏 375/320 全 PASS，per-render tick 无无限渲染）。driving test @ renderer worker：observe（initial，__calls=1，__last=100x50）→ 更新 snapshot 200x80 → `__zw_observers_tick` → RO size-diff 再次派发（__calls=2，__last=200x80）→ size 未变再 tick → 不派发（__calls 仍 2）。
+
+**已知限制（follow-up）**：
+1. **browser in-process `tab_worker` 路径未接 tick**：mirror follow-up——shim 共享（`__zw_observers_tick` 全 worker 可用），仅需 `apps/browser/src/tab_scripts.rs` 加 `tick_observers` + `tab_worker.rs` 的 `push_snapshot`/render 路径接线。cross-process browser 经 renderer 进程已覆盖（renderer `publish_webview` 已 tick）。
+2. **observer 注册表 leak = observer 创建总数**：每页有界（构造即 push，不随 disconnect 移除）。WeakRef 注册表（V8 支持）为生产硬化 follow-up；当前 disconnect 的 observer tick 时跳过（无 target），仅占数组槽。
+3. **tick 回调 DOM mutation 仅单次 rerender**：不递归 tick，故 callback 链式改 layout（A 改 → 影响 B 的 target）的完全收敛依赖下一外部触发。可接受（主流测量类 callback 一次即收敛）。
+
+**P1a layout-geometry-feedback 切片进度小结（更新）**：Slice 1 + 2a + 3 + **2b（renderer 路径 host tick，本轮）** 均 land。剩余 follow-up：① browser in-process tick 接线（mirror）；② path A handle-identity（createElement 元素持久身份映射）；③ content-box rect（padding/border 扣除）；④ WeakRef 注册表硬化。
+
 

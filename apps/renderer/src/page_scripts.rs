@@ -121,6 +121,25 @@ pub fn dispatch_dom_event(
     }
 }
 
+/// P1a Slice 2b：render 后触发 observer 重算。镜像 `dispatch_dom_event` 的
+/// set_snapshot→clear→execute→apply 流程，script = `__zw_observers_tick()`。
+/// IO/RO 的 `_schedule()` 复算所有 target，仅在 cross-threshold（IO）/ size-change（RO）时
+/// 派发后续通知——让 `observe()` 之后的真实 render（snapshot 已填真实 rect）触发 observer 回调。
+/// 返回 observer 回调是否改了 DOM（调用方据此单次 rerender，防反馈环）。
+pub fn tick_observers(ctx: &mut PageScriptContext<'_>) -> bool {
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    let _ = ctx
+        .js_worker
+        .execute_script_direct("if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();");
+    let html_snap = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snap).is_some()
+}
+
 fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     ctx: &mut PageScriptContext<'_>,
     html: &str,
