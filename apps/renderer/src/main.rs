@@ -540,6 +540,32 @@ impl RendererRuntime {
         Ok(())
     }
 
+    /// P1a Tab 焦点导航：设 event_target 到 `selector`，派发 'focus'；若为文本输入则记 focus 跟踪
+    /// （供后续 change-on-blur），否则不记（blur_focused 已清旧焦点跟踪）。
+    fn focus_via_tab(&mut self, selector: &str) -> Result<(), String> {
+        self.event_target = selector.to_string();
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+            };
+            page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focus", None).html_changed
+        };
+        if zero_engine::is_text_input(&self.cached_html, selector) {
+            self.focus_target = Some(selector.to_string());
+            self.focus_value = Some(zero_engine::query_attr_from_html(&self.cached_html, selector, "value"));
+        }
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
     fn sync_cached_html_from_webview(&mut self) {
         if let Some(wv) = self.webview.as_ref() {
             let html = wv.html_content().to_string();
@@ -1081,7 +1107,21 @@ impl RendererRuntime {
         // （均更新 value + 派发 'input' 事件）；Enter → 单行 input 提交 enclosing form（submit 事件）。
         // 未尊重 keydown preventDefault（follow-up）；无 caret/selection。
         if matches!(params.event_type, KeyboardEventType::Down) {
-            if is_printable_key(&params.key) {
+            if params.key == "Tab" {
+                // P1a Tab 焦点导航：经 FocusManager 算下一/上一可聚焦元素，blur 旧焦点 + focus 新。
+                let forward = !params.shift;
+                let current = self
+                    .focus_target
+                    .clone()
+                    .or_else(|| (self.event_target != "body").then(|| self.event_target.clone()));
+                if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), forward)
+                    && self.focus_target.as_deref() != Some(next.as_str())
+                    && self.event_target != next
+                {
+                    let _ = self.blur_focused();
+                    let _ = self.focus_via_tab(&next);
+                }
+            } else if is_printable_key(&params.key) {
                 let _ = self.apply_text_input_at(&target, &params.key);
             } else if params.key == "Backspace" {
                 let _ = self.apply_text_delete_at(&target);

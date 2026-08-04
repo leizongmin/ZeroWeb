@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use zero_dom::{Document, NodeId, NodeKind, parse_html};
+use zero_dom::{Document, FocusManager, NodeId, NodeKind, parse_html};
 use zero_script_sandbox::Sandbox;
 
 /// 一条 DOM 变更记录（由 JS shim 经 `__zw_*` 回调产生）。
@@ -574,6 +574,21 @@ pub fn is_text_input(html: &str, selector: &str) -> bool {
         );
     }
     false
+}
+
+/// P1a Tab 焦点导航：经 dom `FocusManager`（tabindex 排序：正值升序在前，0/默认在文档序在后）
+/// 算下一/上一可聚焦元素的 stable selector。`current_sel` 为当前焦点（None → 首/末）。无 focusable → None。
+pub fn next_focus_selector(html: &str, current_sel: Option<&str>, forward: bool) -> Option<String> {
+    let doc = parse_html(html);
+    let mut fm = FocusManager::new();
+    fm.scan(&doc);
+    if let Some(sel) = current_sel
+        && let Some(n) = find_by_selector(&doc, sel)
+    {
+        fm.set_focus(Some(n));
+    }
+    let next = if forward { fm.focus_next() } else { fm.focus_previous() }?;
+    stable_selector_for_node(&doc, next)
 }
 
 /// 从当前 HTML 快照查询 innerHTML。
@@ -1434,5 +1449,29 @@ mod tests {
             "#s",
         ));
         assert!(!is_text_input("<html><body><div id='d'></div></body></html>", "#d",));
+    }
+
+    #[test]
+    fn test_next_focus_selector() {
+        // P1a Tab 焦点导航：tabindex>0 升序在前（d=1, c=2），0/默认文档序在后（a, b）→ [d,c,a,b]。
+        let html = "<html><body>\
+            <input id='a'>\
+            <button id='b'>x</button>\
+            <input id='c' tabindex='2'>\
+            <input id='d' tabindex='1'>\
+            </body></html>";
+        // 无 current → first = d（tabindex=1）。
+        assert_eq!(next_focus_selector(html, None, true).as_deref(), Some("#d"));
+        // current=d → c（tabindex=2）。
+        assert_eq!(next_focus_selector(html, Some("#d"), true).as_deref(), Some("#c"));
+        // current=c → a（文档序 tabindex=0/default）。
+        assert_eq!(next_focus_selector(html, Some("#c"), true).as_deref(), Some("#a"));
+        // backward：current=a → prev=c。
+        assert_eq!(next_focus_selector(html, Some("#a"), false).as_deref(), Some("#c"));
+        // 无 focusable → None。
+        assert_eq!(
+            next_focus_selector("<html><body><div>no focusable</div></body></html>", None, true),
+            None
+        );
     }
 }
