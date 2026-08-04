@@ -44,7 +44,7 @@
 | ~~Position: fixed~~ | 视口定位 | ✅ **R324 已修复** | `adjust_fixed_to_viewport` 改为扣除累积祖先偏移（旧「加上」仅 parent_offset=0 时正确）；fixed 在有偏移 positioned 祖先内也视口相对，与 R98 absolute-viewport 约定一致。新单测 + 8 旧单测更新 + 全量 reftest 零回归 |
 | Position: sticky | 滚动吸附 | P2-中等 | 需 host layer 动态调整，未完整实现 |
 | ~~text-shadow~~ | 文字效果 | ✅ **已实现（DC-12）** | paint 阶段已生成并渲染 text-shadow 图元；后续只按具体 reftest 回归处理 |
-| ~~多背景图层~~ | 视觉丰富度 | ✅ **已实现** | effects.rs:134 全图层 `.rev()` 叠加（原「仅第一个」已过时） |
+| ~~多背景图层~~ | 视觉丰富度 | ✅ **已实现** | effects.rs:255 `style.background_image.iter().enumerate().rev()` 全图层逆序叠加（CSS 多图层最后一层在最底，原「仅第一个」已过时） |
 | ~~重复渐变~~ | 视觉丰富度 | ✅ **已实现** | cpu/gradient.rs:28 `if gradient.repeating`（原「未实现」已过时） |
 | ~~clip-path~~ | CSS 裁剪 | ✅ 已实现（M9） | painter/effects_indicators.rs + helpers.rs 全形状裁剪（原「仅生成指示器」已过时） |
 | ~~backdrop-filter~~ | 模糊背景 | ✅ 已实现（M9，R894 实测） | painter/effects.rs；blur 效果正确限定元素盒内（原「完全未实现」已过时） |
