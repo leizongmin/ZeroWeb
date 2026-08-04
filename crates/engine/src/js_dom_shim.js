@@ -1355,6 +1355,30 @@
           var r = _layoutRect(sel, handle);
           return r ? r.x : 0;
         }
+        // scrollWidth/scrollHeight：滚动内容尺寸。布局 rect 无 overflow 数据（不含滚动展开量），
+        // 近似为 client 尺寸（同 offsetWidth/Height 的 border-box 近似）。对「content 是否溢出」
+        // 精确判定不足，但对 `el.scrollHeight > 0` 等 sizing 检查足够（消除旧 undefined 返回）。
+        if (prop === 'scrollWidth') {
+          var r = _layoutRect(sel, handle);
+          return r ? r.w : 0;
+        }
+        if (prop === 'scrollHeight') {
+          var r = _layoutRect(sel, handle);
+          return r ? r.h : 0;
+        }
+        // scrollTop/scrollLeft：滚动偏移。当前无滚动状态跟踪 → 恒 0（无滚动行为，符合默认未滚动语义）。
+        if (prop === 'scrollTop' || prop === 'scrollLeft') {
+          return 0;
+        }
+        // offsetParent：最近 positioned 祖先（position != static）或 body，detached/hidden → null。
+        // 布局 rect 无 style 信息，无法精确算 positioned 祖先；近似：有 rect（已渲染）→ body proxy，
+        // 无 rect（detached/display:none）→ null。dominant 用法 `el.offsetParent === null` 可见性判定
+        // 正确（visible→非 null body / hidden→null）；`offsetTop - offsetParent.offsetTop` 嵌套坐标
+        // 为近似（offsetTop 本就 viewport-relative，见上注）。
+        if (prop === 'offsetParent') {
+          var rp = _layoutRect(sel, handle);
+          return rp ? _wrapSelector('body') : null;
+        }
         return undefined;
       },
       set: function(_t, prop, value) {

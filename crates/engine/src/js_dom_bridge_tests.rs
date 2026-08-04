@@ -619,10 +619,14 @@ fn test_layout_geometry_e2e() {
         Arc::new(Mutex::new("<html><body><div id='d'>x</div></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
-    // mock rect bridge：返 "x=10,y=20,w=100,h=50"（rect_bridge 不在 register_dom_callbacks）。
+    // mock rect bridge：selector → 固定 rect "10,20,100,50"；handle（createElement，以 '__' 开头，
+    // detached）→ 空串（无 rect，匹配真实 detached 元素无布局几何语义）。
     sandbox.register_callback(
         "__zw_getBoundingClientRect",
-        Box::new(|_args| "10,20,100,50".to_string()),
+        Box::new(|args| match args.first() {
+            Some(s) if s.starts_with("__") => String::new(),
+            _ => "10,20,100,50".to_string(),
+        }),
     );
 
     // offsetWidth/Height = rect border-box w/h（精确）。
@@ -671,6 +675,49 @@ fn test_layout_geometry_e2e() {
     assert_eq!(
         sandbox
             .execute("document.querySelector('#d').offsetWidth > 0")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // scrollWidth/scrollHeight ≈ client 尺寸（无 overflow 数据，近似）。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#d').scrollWidth")
+            .unwrap()
+            .value,
+        "100"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#d').scrollHeight")
+            .unwrap()
+            .value,
+        "50"
+    );
+    // scrollTop/scrollLeft：无滚动状态 → 恒 0。
+    assert_eq!(
+        sandbox.execute("document.querySelector('#d').scrollTop").unwrap().value,
+        "0"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#d').scrollLeft")
+            .unwrap()
+            .value,
+        "0"
+    );
+    // offsetParent：有 rect（已渲染）→ 非 null（body proxy 近似），匹配 `=== null` 可见性判定。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#d').offsetParent !== null")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // createElement 元素（无 rect）→ offsetParent = null（detached 语义）。
+    assert_eq!(
+        sandbox
+            .execute("document.createElement('div').offsetParent === null")
             .unwrap()
             .value,
         "true"
