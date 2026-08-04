@@ -2688,3 +2688,66 @@ fn test_attribute_query_api() {
         "getAttributeNames 顺序"
     );
 }
+
+#[test]
+fn test_element_attributes_nodelist() {
+    // R2699：el.attributes（NamedNodeMap 只读快照）——length/item/getNamedItem/数值索引/迭代。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\" class=\"c\" title=\"t\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // length + 数值索引 + item。
+    sandbox
+        .execute(
+            "globalThis.__len = document.querySelector('#d').attributes.length;\n\
+             globalThis.__i0 = document.querySelector('#d').attributes[0].name;\n\
+             globalThis.__item1 = document.querySelector('#d').attributes.item(1).name;\n\
+             globalThis.__item_oob = document.querySelector('#d').attributes.item(9);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__len").unwrap().value, "3", "attributes.length");
+    assert_eq!(sandbox.execute("globalThis.__i0").unwrap().value, "id", "attributes[0].name");
+    assert_eq!(sandbox.execute("globalThis.__item1").unwrap().value, "class", "attributes.item(1).name");
+    assert_eq!(
+        sandbox.execute("globalThis.__item_oob === null").unwrap().value,
+        "true",
+        "out-of-range item → null"
+    );
+
+    // getNamedItem（命中 + value + 未命中 null）。
+    sandbox
+        .execute(
+            "globalThis.__gn = document.querySelector('#d').attributes.getNamedItem('title').value;\n\
+             globalThis.__gnn = document.querySelector('#d').attributes.getNamedItem('nope');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__gn").unwrap().value, "t", "getNamedItem('title').value");
+    assert_eq!(
+        sandbox.execute("globalThis.__gnn === null").unwrap().value,
+        "true",
+        "getNamedItem 未命中 → null"
+    );
+
+    // 迭代（Symbol.iterator）→ 属性名顺序。
+    sandbox
+        .execute(
+            "globalThis.__iter = Array.prototype.map.call(document.querySelector('#d').attributes, function(a){ return a.name; }).join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__iter").unwrap().value,
+        "id,class,title",
+        "attributes 迭代顺序"
+    );
+}

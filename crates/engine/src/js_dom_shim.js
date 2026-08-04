@@ -1096,6 +1096,79 @@
   // 枚举。旧实现仅 per-property get/set，缺方法（调用即 TypeError）与 cssText（get 返 ''、set 误当
   // 属性名）。底层走 `__zw_set_style`/`__zw_get_attr('style')`；removeProperty 经 `__zw_remove_style`
   // 真移除声明（SetStyle 空值仍 push，不移除）；cssText set 经 `__zw_set_attr` 整体替换。
+  // `el.attributes`（NamedNodeMap，只读快照）：length / item(i) / getNamedItem(name) / 数值索引 /
+  // Symbol.iterator，每项 Attr-like {name,value,localName,...}。经 `__zw_attr_names`+`__zw_get_attr`。
+  // handle-only（无 attr_names 变体）→ 空集；setNamedItem/removeNamedItem 只读 no-op（deferred 模式下
+  // 改属性走 setAttribute/removeAttribute，NamedNodeMap 为只读快照视图）。
+  function _attributesProxy(sel, handle) {
+    var readNames = function() {
+      if (!sel || typeof __zw_attr_names !== 'function') return [];
+      try {
+        var n = __zw_attr_names(sel);
+        return n ? n.split('|').filter(Boolean) : [];
+      } catch (_e) { return []; }
+    };
+    var attrObj = function(name) {
+      var v = handle ? __zw_get_attr_handle(handle, name) : __zw_get_attr(sel, name);
+      return {
+        name: name,
+        value: v || '',
+        namespaceURI: null,
+        prefix: null,
+        localName: name,
+        specified: true,
+        ownerElement: _makeProxy(sel, handle)
+      };
+    };
+    return new Proxy({}, {
+      get: function(_t, p) {
+        if (p === 'length') return readNames().length;
+        if (p === 'item') {
+          return function(i) {
+            var names = readNames();
+            var idx = i | 0;
+            return idx >= 0 && idx < names.length ? attrObj(names[idx]) : null;
+          };
+        }
+        if (p === 'getNamedItem') {
+          return function(name) {
+            var names = readNames();
+            var n = String(name);
+            return names.indexOf(n) >= 0 ? attrObj(n) : null;
+          };
+        }
+        if (p === 'setNamedItem' || p === 'removeNamedItem') {
+          return function() { return null; }; // 只读快照
+        }
+        if (p === Symbol.iterator) {
+          return function() {
+            var list = readNames().map(attrObj);
+            var k = 0;
+            return {
+              next: function() {
+                return k < list.length ? { value: list[k++], done: false } : { value: undefined, done: true };
+              }
+            };
+          };
+        }
+        var names = readNames();
+        var idx = parseInt(p, 10);
+        if (!isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < names.length) {
+          return attrObj(names[idx]);
+        }
+        return undefined;
+      },
+      has: function(_t, p) {
+        // Array.prototype.map/forEach 经 `k in O`（HasProperty）判定——须对有效数值索引返 true，
+        // 否则索引被当 hole 跳过（map 出空槽）。匹配 real NamedNodeMap 的 array-like 语义。
+        if (p === 'length') return true;
+        var names = readNames();
+        var idx = parseInt(p, 10);
+        return !isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < names.length;
+      }
+    });
+  }
+
   // style 属性名归一：JS per-property 访问用 camelCase（`el.style.fontSize`），CSS 须 kebab-case
   //（`font-size`）；camelCase 直存 style 属性会被 CSS parser 忽略 → 渲染静默失效。归一 camelCase→
   // kebab（复用 `_camelToKebab`，对已 kebab 幂等）；`cssFloat`→`float`（JS 保留字特例）；`--custom`
@@ -1375,6 +1448,10 @@
         // 注：`toggleAttribute` 暂未实现——它须基于当前存在性决定 add/remove，但同脚本内属性读为
         // deferred-stale（连续 toggle 会都读旧 snapshot 都 add，产生错误 mutation）。正确实现须配合
         // 属性存在性缓存（同 _classCache），属 follow-up。
+        // `el.attributes`（NamedNodeMap 只读快照）——属性枚举（序列化/属性拷贝常用）。
+        if (prop === 'attributes') {
+          return _attributesProxy(sel, handle);
+        }
         // `el.matches(selector)` / `el.matchesSelector`——元素是否匹配选择器（含组合器，经 host
         // `__zw_matches` 全匹配集判定）。handle（未挂载 DOM 的 createElement）无 sel → false。
         if (prop === 'matches' || prop === 'matchesSelector' || prop === 'webkitMatchesSelector') {

@@ -901,7 +901,25 @@ R2696–R2697 latent-bug 探查模式续。发现两处：
 
 **为何零回归且净正向**：① `removeAttribute` 对非 boolean 属性：旧 set-empty → `getAttribute` 返 ''（absent 读亦返 ''），新真移除 → `getAttribute` 返 ''——读值等价；`hasAttribute` 从误 true 纠正为 false（boolean 属性从残留纠正为真移除）；② 新方法此前返 undefined（TypeError），补齐后仅显式调用生效；③ 仅 JS removeAttribute 路径变更，静态 HTML / 既有 SetAttr 路径零改动。
 
-**已知限制（剩余）**：① `toggleAttribute` 未实现（须属性存在性缓存，follow-up）；② `el.attributes`（NamedNodeMap）未实现（属性枚举可用 `getAttributeNames`+`getAttribute` 组合替代，NamedNodeMap live 语义 follow-up）；③ handle-only（detached createElement）元素的 hasAttribute 返 false、removeAttribute set-empty（无 handle 变体回调，detached 元素属性查询受限，同 dataset 既有限制）。
+**已知限制（剩余）**：① `toggleAttribute` 未实现（须属性存在性缓存，follow-up）；② ~~`el.attributes`（NamedNodeMap）未实现~~ ✅ R2699 已补；③ handle-only（detached createElement）元素的 hasAttribute 返 false、removeAttribute set-empty（无 handle 变体回调，detached 元素属性查询受限，同 dataset 既有限制）。
+
+### P1a `el.attributes`（NamedNodeMap 只读快照）（本轮 R2699，self-review 续）
+
+承接 R2698（attribute 查询 API）。补 R2698 限制②：element proxy 无 `el.attributes`——部分库遍历 `el.attributes` 做 DOM 序列化/属性拷贝（如 `for (const a of el.attributes) ...`、`Array.from(el.attributes)`），现返 undefined。命名属性映射（NamedNodeMap）spec：`length`/`item(i)`/`getNamedItem(name)`/数值索引/可迭代（Symbol.iterator），每项 Attr 对象（`name`/`value`/`localName`/`ownerElement`/...）。
+
+**实现**：shim 加 `_attributesProxy(sel, handle)`（只读快照，经既有 `__zw_attr_names`+`__zw_get_attr(__handle)`）：`length`/`item(i)`/`getNamedItem(name)`/数值索引/Symbol.iterator，每项 Attr-like 对象；`setNamedItem`/`removeNamedItem` no-op（只读快照，改属性走 setAttribute/removeAttribute）。**关键**：加 `has` trap（对有效数值索引返 true）——`Array.prototype.map/forEach.call(el.attributes, fn)` 经 `k in O`（HasProperty）判定，无 has trap 则索引被当 hole 跳过（map 出空槽），不匹配 real NamedNodeMap 的 array-like 语义。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_shim.js` | `_attributesProxy`（length/item/getNamedItem/索引/Symbol.iterator/has trap + Attr-like 项）；get trap `prop === 'attributes'` 分支。 |
+| `engine/js_dom_bridge_tests.rs` | +1 e2e：length/数值索引/item（含越界 null）/getNamedItem（命中 value + 未命中 null）/`Array.prototype.map.call` 迭代顺序。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1425→1426 net +1）+ `make reftest`。（纯只读 JS API，无 mutation/render 路径变更，product-smoke 非必需。）
+
+**为何零回归且净正向**：① `el.attributes` 此前返 undefined（访问即错），补齐后仅显式访问生效，未用它的页面零影响；② 只读快照不改任何 mutation 路径（setAttribute/removeAttribute/Rust apply 全不变）；③ `has` trap 仅对 `el.attributes` proxy 生效，不影响其他 proxy。
+
+**已知限制（剩余）**：① NamedNodeMap 为**只读快照**非 live（real browser 的 attributes 是 live——脚本内 setAttribute 后 el.attributes 不即时反映，deferred-snapshot 既有模式，跨 execute 刷新）；② handle-only（detached createElement）元素 `el.attributes` 返空集（无 `__zw_attr_names` handle 变体，同 hasAttribute/getAttributeNames 既有限制）；③ Attr 对象为纯对象（非完整 Attr 接口——缺 `namespaceURI` 精确值等，返 null，主流库只读 name/value）。
+
 
 
 
