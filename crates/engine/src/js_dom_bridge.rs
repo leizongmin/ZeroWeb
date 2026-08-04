@@ -798,6 +798,21 @@ pub fn has_attribute(html: &str, selector: &str, name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// 元素的全部属性本地名（`|` 分隔，文档顺序）；无属性或元素不解析返空串。供 `__zw_attr_names`
+/// 回调 → shim `el.dataset` 枚举（ownKeys）等需要遍历属性名的场景。
+pub fn element_attribute_names(html: &str, selector: &str) -> String {
+    let doc = parse_html(html);
+    let Some(node) = find_by_selector(&doc, selector) else {
+        return String::new();
+    };
+    doc.get(node)
+        .and_then(|n| match &n.kind {
+            NodeKind::Element(e) => Some(e.attribute_names().join("|")),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
 /// P1a checkbox：判定元素是否为 `<input type=checkbox>`。
 pub fn is_checkbox(html: &str, selector: &str) -> bool {
     query_tag_from_html(html, selector).eq_ignore_ascii_case("input")
@@ -1265,6 +1280,17 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // 元素全部属性名（`|` 分隔）→ shim `el.dataset` 枚举（ownKeys：data-* 属性 → camelCase 键）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_attr_names",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            element_attribute_names(&snap, &sel)
+        }),
+    );
+
     // P1a select：读 `<select>` 当前选中 option 的 value（HTML spec 语义：首个 selected option，
     // 无则首 option）。shim `select.value` getter 对 tag=SELECT 调此（非 value 属性）。
     let html = Arc::clone(dom_html);
@@ -1348,6 +1374,24 @@ pub fn register_dom_callbacks(
                     name: args[1].clone(),
                     value: args[2].clone(),
                 });
+            }
+            "ok".into()
+        }),
+    );
+
+    // `element.removeAttribute(name)` / `delete el.dataset.x` —— 真移除属性（区别于 SetAttr 空值；
+    // 布尔/存在性属性须移除才 unset）。记 `DomMutation::RemoveAttr`。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_remove_attr",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::RemoveAttr {
+                        selector: args[0].clone(),
+                        name: args[1].clone(),
+                    });
             }
             "ok".into()
         }),

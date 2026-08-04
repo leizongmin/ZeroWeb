@@ -337,6 +337,84 @@ fn test_element_contains() {
     assert!(!element_contains(html, "#outer", "#nope"));
 }
 
+#[test]
+fn test_element_attribute_names() {
+    let html = "<html><body>\
+                <div id='d' class='row' data-user-id='42' data-role='admin' aria-label='x'><p>t</p></div>\
+                </body></html>";
+    let names = element_attribute_names(html, "#d");
+    let set: std::collections::HashSet<&str> = names.split('|').filter(|s| !s.is_empty()).collect();
+    // 5 属性全列（id/class/data-user-id/data-role/aria-label）。
+    assert_eq!(set.len(), 5, "应列全部 5 个属性");
+    for expect in ["id", "class", "data-user-id", "data-role", "aria-label"] {
+        assert!(set.contains(expect), "缺属性 {expect}");
+    }
+    // 无属性元素（<p>，经组合器定位）→ 空串。
+    assert_eq!(element_attribute_names(html, "#d > p"), "");
+    // 元素不存在 → 空串。
+    assert_eq!(element_attribute_names(html, "#nope"), "");
+}
+
+#[test]
+fn test_dataset_e2e() {
+    // 端到端：注入生产 shim + register_dom_callbacks，验证 dataset JS 契约（camelCase↔kebab、
+    // get/枚举/set-mutation）。set 记 mutation（apply 末尾），故验 mutation 而非同脚本回读（stale）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d' data-user-id='42' data-role='admin'>x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // get：data-user-id → dataset.userId（camelCase 键）。
+    sandbox
+        .execute("globalThis.__r = document.querySelector('#d').dataset.userId;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__r").unwrap().value, "42");
+    // 不存在的键 → undefined。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#d').dataset.nope")
+            .unwrap()
+            .value,
+        "undefined"
+    );
+    // 枚举：Object.keys → data-* 的 camelCase 键（userId,role）。
+    sandbox
+        .execute("globalThis.__k = Object.keys(document.querySelector('#d').dataset).join(',');")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__k").unwrap().value, "userId,role");
+    // has：'userId' in dataset。
+    assert_eq!(
+        sandbox
+            .execute("'userId' in document.querySelector('#d').dataset")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // set：dataset.newKey = 'x' → 记 SetAttr(data-new-key=x) mutation（camelCase→kebab）。
+    sandbox
+        .execute("document.querySelector('#d').dataset.newKey = 'x';")
+        .unwrap();
+    let set_val = mutations.lock().unwrap().iter().find_map(|m| match m {
+        DomMutation::SetAttr { name, value, .. } if name == "data-new-key" => Some(value.clone()),
+        _ => None,
+    });
+    assert_eq!(
+        set_val.as_deref(),
+        Some("x"),
+        "dataset.newKey=x 应记 SetAttr data-new-key=x"
+    );
+}
+
 fn test_collect_element_ids_dedup_preserve_order() {
     let html = "<html><body>\
                     <div id=\"container\"></div>\

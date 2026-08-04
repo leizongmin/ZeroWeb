@@ -1009,6 +1009,11 @@
         if (prop === 'id') {
           return handle ? __zw_get_attr_handle(handle, 'id') : __zw_get_attr(sel, 'id');
         }
+        // `el.dataset`——`data-*` 属性的 camelCase 键对象（get/set/has/delete/枚举）。
+        // dataset.fooBar ↔ data-foo-bar 属性。handle 脱离 DOM 元素枚举受限（无 attr-names-handle）。
+        if (prop === 'dataset') {
+          return _datasetProxy(sel, handle);
+        }
         if (prop === 'textContent') {
           return handle ? __zw_get_text_handle(handle) : __zw_get_text(sel);
         }
@@ -1317,6 +1322,73 @@
   function _splitSelectors(joined) {
     if (!joined) return [];
     return joined.split('|').filter(Boolean).map(_wrapSelector);
+  }
+
+  // dataset 键转换：camelCase ↔ data-kebab-case（fooBar ↔ data-foo-bar）。
+  function _camelToKebab(s) {
+    return s.replace(/[A-Z]/g, function(m) { return '-' + m.toLowerCase(); });
+  }
+  function _kebabToCamel(s) {
+    return s.replace(/-([a-z])/g, function(_, c) { return c.toUpperCase(); });
+  }
+
+  // `el.dataset`——data-* 属性的 camelCase 键对象。get/set/has/delete/枚举（ownKeys）。
+  // 注：mutate（set/delete）记 mutation，apply 在脚本末尾——同脚本内即读见旧值（stale，
+  // 同 setAttribute 既有模式）；枚举读 dom_html 当前属性名。
+  function _datasetProxy(sel, handle) {
+    var attrOf = function(key) { return 'data-' + _camelToKebab(String(key)); };
+    var readAttr = function(name) {
+      return handle ? __zw_get_attr_handle(handle, name) : __zw_get_attr(sel, name);
+    };
+    var hasAttrFn = function(name) {
+      try { return (handle ? false : __zw_has_attr(sel, name)) === '1'; } catch (_e) { return false; }
+    };
+    var dataKeys = function() {
+      // 仅 sel-based 支持枚举（无 attr-names-handle）；data-* → camelCase 键。
+      if (handle || typeof __zw_attr_names !== 'function') return [];
+      try {
+        var names = __zw_attr_names(sel);
+        if (!names) return [];
+        return names.split('|').filter(function(n) { return n.indexOf('data-') === 0; })
+                     .map(function(n) { return _kebabToCamel(n.slice(5)); });
+      } catch (_e) { return []; }
+    };
+    return new Proxy({}, {
+      get: function(_t, key) {
+        if (typeof key !== 'string') return undefined;
+        if (key === 'then') return undefined; // 防 Promise 化误判
+        var name = attrOf(key);
+        // 缺失属性 → undefined（__zw_get_attr 对缺失返空串，须用 has_attr 区分）。
+        if (!hasAttrFn(name)) return undefined;
+        var v = readAttr(name);
+        return v == null ? '' : v;
+      },
+      set: function(_t, key, value) {
+        if (typeof key !== 'string') return false;
+        var name = attrOf(key);
+        if (handle) __zw_set_attr_handle(handle, name, String(value));
+        else __zw_set_attr(sel, name, String(value));
+        _mo_notify(sel, handle, { type: 'attributes', attributeName: name });
+        return true;
+      },
+      has: function(_t, key) {
+        return typeof key === 'string' && hasAttrFn(attrOf(key));
+      },
+      deleteProperty: function(_t, key) {
+        if (typeof key !== 'string') return false;
+        var name = attrOf(key);
+        if (handle) __zw_set_attr_handle(handle, name, '');
+        else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, name);
+        else __zw_set_attr(sel, name, '');
+        _mo_notify(sel, handle, { type: 'attributes', attributeName: name });
+        return true;
+      },
+      ownKeys: function() { return dataKeys(); },
+      getOwnPropertyDescriptor: function(_t, key) {
+        if (typeof key !== 'string' || !hasAttrFn(attrOf(key))) return undefined;
+        return { configurable: true, enumerable: true, value: readAttr(attrOf(key)), writable: true };
+      }
+    });
   }
 
   globalThis.CustomEvent = function(type, options) {
