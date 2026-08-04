@@ -4,6 +4,12 @@
 > **类型**: 技术调研（零源码改动）  
 > **目标**: 为 font-wall C-dep 推荐最高收益的首个改进切片
 
+> **🔧 R2632 引用核验（2026-08-04，R2202 模式）**：逐条源码核验本文 font-stack 引用，纠偏 4 处行号漂移 + 2 处路径漂移；§1-§2 font-stack map 经核有效（§7.4 既裁决）。
+> - **行号纠偏**：① 度量提取 `loader.rs:418-443`→**:441-445**（`line_metrics_full`，§1.1 表 + §1.2 各 1 处）；② freetype_raster 模块 `loader.rs:37-92`→**:17-92**（37 实为模块内 `rasterize` fn，模块起点 = `mod freetype_raster` @17）；③ 单测 `loader.rs:755-785`→**:827-855**（`test_line_metrics_full_exposes_line_gap`，§4.1.3，§4 推荐 DEAD 但引用仍精确化）；④ §8 `blend_pixel` 补行号 **`cpu/mod.rs:616`**。
+> - **路径纠偏**：⑤ §4.2 `crates/layout-engine/src/inline_formatting.rs`→**`crates/layout-engine/src/inline/` 模块**（旧单文件已拆分，IFC strut/half-leading 现在此 + `inline_finalization.rs:971-979`）；⑥ §5.1 同路径漂移（`strut_ascent`/`half-leading` 现在同样位置）。
+> - **经核 valid 保留**：`shaper.rs:74-132`（`shape_with_rustybuzz`，74=doc/75-132 body）、`loader.rs:298-329`（`rasterize_glyph`）、`loader.rs:79-80`（y_offset 注释）、`loader.rs:341-346`（Ahem ascent 块）、§1.1「`freetype-raster` default-on」（匹配 `Cargo.toml:40` `default=["freetype-raster"]`，自 R1159）。
+> - **附带发现（提及不改·code comment 非本文档）**：`loader.rs:6` 模块 doc 注释自称「`freetype-raster` feature，**默认关**」**stale**——实为 default-on（`Cargo.toml:40` 自 R1159）；按 CLAUDE.md「精准修改」本轮纯 .md 不动 .rs。
+
 ## 1. 当前字体栈架构映射
 
 ### 1.1 核心组件定位
@@ -12,7 +18,7 @@
 |------|----------|----------|------|
 | **文本整形 (Shaping)** | `rustybuzz` (OpenType) | `crates/render-foundation/src/font/shaper.rs:74-132` | 默认启用；无 feature gate |
 | **光栅化 (Rasterization)** | `FreeType` (优先) → `fontdue` (回退) | `crates/render-foundation/src/font/loader.rs:298-329` | `freetype-raster` feature (default-on) |
-| **度量提取 (Metrics)** | `fontdue` (ascent/descent/line-gap) | `crates/render-foundation/src/font/loader.rs:418-443` | 从 `fontdue::Font` 提取 |
+| **度量提取 (Metrics)** | `fontdue` (ascent/descent/line-gap) | `crates/render-foundation/src/font/loader.rs:441-445` | 从 `fontdue::Font` 提取 |
 
 ### 1.2 数据流详解
 
@@ -31,7 +37,7 @@ Glyph ID → FreeType (优先，freetype-raster feature)
          → FT_LoadGlyph(LoadFlag::DEFAULT) + FT_RenderGlyph(Normal)
          → fontdue 回退 → GlyphBitmap (灰度位图)
 ```
-- **关键文件**: `loader.rs:298-329` (`rasterize_glyph`) + `loader.rs:37-92` (freetype_raster 模块)
+- **关键文件**: `loader.rs:298-329` (`rasterize_glyph`) + `loader.rs:17-92` (freetype_raster 模块)
 - **配置**: `LoadFlag::DEFAULT` (full hinting)，`RenderMode::Normal` (灰度抗锯齿)
 - **坐标约定**: `y_offset = bitmap_top - height` (见 `loader.rs:79-80` 注释)
 
@@ -40,7 +46,7 @@ Glyph ID → FreeType (优先，freetype-raster feature)
 fontdue::Font → horizontal_line_metrics → (ascent, descent, line_gap)
                → line_metrics_full → (ascent, descent, line_gap)
 ```
-- **关键文件**: `loader.rs:418-443`
+- **关键文件**: `loader.rs:441-445`
 - **当前用途**: Ahem 字体特殊处理 (`loader.rs:341-346`)
 - **IFC 集成**: 度量未完整传导至 IFC (见 MEMORY.md R876/R1088)
 
@@ -152,14 +158,14 @@ Ahem (WPT 标准测试字体) 通过 `rasterize_ahem_glyph` 生成完美填充�
 
 1. **最高 ROI**: 低成本 (1-2 人日) vs 高收益 (20-50 oracle + 解锁 Phase A)
 2. **低风险**: 度量已暴露 (`line_metrics_full`)，仅须 plumbing
-3. **可验证**: 单测覆盖 (loader.rs:755-785 已有 `test_line_metrics_full_exposes_line_gap`)
+3. **可验证**: 单测覆盖 (loader.rs:827-855 已有 `test_line_metrics_full_exposes_line_gap`)
 4. **无 C-依赖**: 纯 Rust 实现，符合「小切片验证」原则
 
 ### 4.2 实施细节
 
 **修改文件**:
 1. `crates/render-foundation/src/font/loader.rs` (度量导出接口)
-2. `crates/layout-engine/src/inline_formatting.rs` (IFC 接收真实度量)
+2. `crates/layout-engine/src/inline/` 模块（旧 `inline_formatting.rs` 已拆分；IFC 接收真实度量，strut/half-leading 见 `inline/font_metrics.rs` + `inline_finalization.rs:971-979`）
 3. `crates/layout-engine/src/lib.rs` (pipeline 调整)
 
 **关键改动**:
@@ -203,7 +209,7 @@ env::var("ZW_REAL_FONT_METRICS").ok().as_deref() == Some("1")
 
 1. **度量传导路径**: `FontLoader → engine → IFC` 的具体插入点？
    - 需确认 `layout-engine` 中哪些模块依赖当前 `(0.8, 1.2)` 近似
-   - 可能涉及 `inline_formatting.rs` 多处 `strut_ascent` / `half-leading` 计算
+   - 可能涉及 `inline/` 模块（`inline_finalization.rs:971-979` + `inline/font_metrics.rs`）多处 `strut_ascent` / `half-leading` 计算
 
 2. **Ahem 与非-Ahem 路径隔离**:
    - Ahem 当前方块生成 (`rasterize_ahem_glyph`) 是否依赖度量近似？
@@ -280,7 +286,7 @@ font-wall **无安全 quick win**：metric DEAD、LoadFlag 穷尽、LCD/gamma �
 
 ## 8. R1553 实测：gamma-correct blend **net-neutral**（font-wall 非 compositing 问题）
 
-> 主循环实测追加：`ZW_GAMMA_CORRECT_BLEND=1`（cpu/mod.rs `blend_pixel` linear-space 混合，仅影响 alpha<255 的字形路径）。
+> 主循环实测追加：`ZW_GAMMA_CORRECT_BLEND=1`（`cpu/mod.rs:616` `blend_pixel` linear-space 混合，仅影响 alpha<255 的字形路径）。
 
 **A/B**（writing-modes 784 案 ORACLE_DUMP_ALL）：gamma ON **134** vs OFF **135**（NET **−1**，avg delta −0.001pp，0 改善 / 1 回归 logical-props-002 0.88→1.02）。line-box-height-vlr-003 单案 3.49→3.48（无变化）。
 
