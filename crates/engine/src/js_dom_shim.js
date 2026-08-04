@@ -237,11 +237,12 @@
   function _io_domRect(x, y, w, h) {
     return { x: x, y: y, top: y, left: x, right: x + w, bottom: y + h, width: w, height: h, toJSON: function() { return this; } };
   }
-  // 读 target/root 的 rect（复用 gBCR）；sel 空 / handler 未注册 / 未命中 → 零 rect。
-  function _io_rectFromSel(sel) {
-    if (sel && typeof __zw_getBoundingClientRect === 'function') {
+  // 读 target/root 的 rect（复用 gBCR）；identity = selector 或 handle（path A）。
+  // 空 / handler 未注册 / 未命中 → 零 rect。
+  function _io_rectFromSel(identity) {
+    if (identity && typeof __zw_getBoundingClientRect === 'function') {
       try {
-        var s = __zw_getBoundingClientRect(sel);
+        var s = __zw_getBoundingClientRect(identity);
         if (s && s.indexOf(',') >= 0) {
           var p = s.split(',');
           return { x: +p[0], y: +p[1], w: +p[2], h: +p[3] };
@@ -300,7 +301,8 @@
     var rootRect = this._rootSel
       ? _io_rectFromSel(this._rootSel)
       : { x: 0, y: 0, w: globalThis.innerWidth | 0, h: globalThis.innerHeight | 0 };
-    var targetRect = _io_rectFromSel(sel);
+    // path A：sel 空（createElement 元素）时用 handle，host 查 handle→selector map 解析。
+    var targetRect = _io_rectFromSel(sel || t.proxy.__zwHandle);
     var inter = _io_intersect(targetRect, rootRect);
     var targetArea = targetRect.w * targetRect.h;
     var ratio = targetArea > 0 ? (inter.w * inter.h) / targetArea : 0;
@@ -413,7 +415,8 @@
       var entries = [];
       for (var id in self._targets) {
         var t = self._targets[id];
-        var r = _io_rectFromSel(t.proxy.__zwSelector);
+        // path A：sel 空（createElement 元素）时用 handle。
+        var r = _io_rectFromSel(t.proxy.__zwSelector || t.proxy.__zwHandle);
         var prev = self._lastSize[id];
         // initial（prev==null）或宽高变化 → 派发并更新 last。
         if (prev == null || prev.w !== r.w || prev.h !== r.h) {
@@ -1106,9 +1109,13 @@
         // offsetWidth/offsetHeight 等是属性访问返回 undefined 不抛，作 reflow 触发器无害，不特例化。
         if (prop === 'getBoundingClientRect') {
           return function() {
-            if (sel && typeof __zw_getBoundingClientRect === 'function') {
+            // identity = selector（querySelector/getElementById 元素）或 handle（createElement
+            // 元素，path A）。sel 空时用 handle，host RectBridge handler 查持久 handle→selector map
+            // 解析；map 未命中/未注册 → 空串 → 零 rect（= 旧行为，零回归）。
+            var id = sel || handle;
+            if (id && typeof __zw_getBoundingClientRect === 'function') {
               try {
-                var s = __zw_getBoundingClientRect(sel);
+                var s = __zw_getBoundingClientRect(id);
                 if (s && s.indexOf(',') >= 0) {
                   var p = s.split(',');
                   var x = +p[0], y = +p[1], w = +p[2], h = +p[3];

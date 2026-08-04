@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    DomEventDetail, PageScript, apply_mutations_to_html, extract_page_scripts, resolve_document_url,
+    DomEventDetail, PageScript, apply_mutations_to_html_with_handles, extract_page_scripts, resolve_document_url,
     script_dispatch_dom_event,
 };
 use zero_webview::WebView;
@@ -223,8 +223,17 @@ fn apply_recorded_mutations(wv: &mut WebView, js_worker: Option<&TabJsWorkerHand
     if recorded.is_empty() {
         return None;
     }
-    match apply_mutations_to_html(html, &recorded) {
-        Ok(new_html) => {
+    match apply_mutations_to_html_with_handles(html, &recorded) {
+        Ok((new_html, handle_selectors)) => {
+            // P1a gBCR path A：merge handle→唯一选择器映射进 worker 持久 map，供 RectBridge
+            // handler 解析 handle-identity（createElement 元素）。upsert；导航时 worker 清空。
+            if !handle_selectors.is_empty() {
+                if let Some(w) = js_worker {
+                    if let Ok(mut map) = w.handle_selector_map().lock() {
+                        map.extend(handle_selectors);
+                    }
+                }
+            }
             wv.reload_html_after_script(&new_html);
             Some(new_html)
         }

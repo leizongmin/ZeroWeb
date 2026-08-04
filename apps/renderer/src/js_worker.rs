@@ -7,8 +7,9 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use zero_engine::{
-    AsyncResolver, DomMutation, FetchBridge, FetchHandler, LayoutRectSnapshot, RectBridge, TimerBridge,
-    generate_js_dom_shim, make_dom_html_rect_handler, new_layout_rect_snapshot, register_dom_callbacks,
+    AsyncResolver, DomMutation, FetchBridge, FetchHandler, HandleSelectorMap, LayoutRectSnapshot, RectBridge,
+    TimerBridge, generate_js_dom_shim, make_dom_html_rect_handler, new_handle_selector_map, new_layout_rect_snapshot,
+    register_dom_callbacks,
 };
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
@@ -68,6 +69,9 @@ pub struct RendererJsWorker {
     /// P1a gBCR：共享 layout-rect snapshot——renderer 主循环 render 后填充，
     /// js_worker 的 RectBridge handler 读取（经 identity→NodeId 解析后查 rect）。
     rect_snapshot: LayoutRectSnapshot,
+    /// P1a gBCR path A：持久 handle→唯一选择器映射——生产 apply 路径（`apply_recorded_mutations`）
+    /// merge 进此 map，js_worker 的 RectBridge handler 读它解析 handle-identity（`__n{n}`）。
+    handle_selector_map: HandleSelectorMap,
 }
 
 impl RendererJsWorker {
@@ -75,16 +79,26 @@ impl RendererJsWorker {
     pub fn spawn(renderer_id: u64) -> Self {
         let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let rect_snapshot = new_layout_rect_snapshot();
+        let handle_selector_map = new_handle_selector_map();
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
         let cmd_for_worker = cmd_tx.clone();
         let mutations_for_worker = Arc::clone(&mutations);
         let rect_snapshot_for_worker = Arc::clone(&rect_snapshot);
+        let handle_selector_map_for_worker = Arc::clone(&handle_selector_map);
 
         let join = thread::Builder::new()
             .name(format!("renderer-js-{}", renderer_id))
-            .spawn(move || js_worker_main(cmd_rx, cmd_for_worker, mutations_for_worker, rect_snapshot_for_worker))
+            .spawn(move || {
+                js_worker_main(
+                    cmd_rx,
+                    cmd_for_worker,
+                    mutations_for_worker,
+                    rect_snapshot_for_worker,
+                    handle_selector_map_for_worker,
+                )
+            })
             .expect("spawn renderer js worker");
 
         let executor: ScriptFn = Arc::new(move |script: &str| {
@@ -122,6 +136,7 @@ impl RendererJsWorker {
             module_executor,
             mutations,
             rect_snapshot,
+            handle_selector_map,
         }
     }
 
@@ -158,6 +173,13 @@ impl RendererJsWorker {
     /// `fill_layout_rect_snapshot` 填充，js_worker 的 RectBridge handler 读取。
     pub fn rect_snapshot(&self) -> LayoutRectSnapshot {
         Arc::clone(&self.rect_snapshot)
+    }
+
+    /// P1a gBCR path A：持久 handle→唯一选择器映射句柄——生产 apply 路径
+    /// （`page_scripts::apply_recorded_mutations`）merge 进此 map，js_worker 的 RectBridge
+    /// handler 读它解析 handle-identity（`__n{n}`，createElement 元素）。
+    pub fn handle_selector_map(&self) -> HandleSelectorMap {
+        Arc::clone(&self.handle_selector_map)
     }
 
     /// 返回异步回调 resolver（P1b S1）。克隆供跨线程异步完成方（fetch host / 定时器）持有，
@@ -200,6 +222,7 @@ fn js_worker_main(
     cmd_tx: Sender<JsWorkerCommand>,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
     rect_snapshot: LayoutRectSnapshot,
+    handle_selector_map: HandleSelectorMap,
 ) {
     let js_config = SandboxConfig {
         persistent_context: true,
@@ -225,6 +248,7 @@ fn js_worker_main(
         rect_bridge.set_handler(make_dom_html_rect_handler(
             Arc::clone(&dom_html),
             Arc::clone(&rect_snapshot),
+            Arc::clone(&handle_selector_map),
         ));
     }
     // P1b S1/S3：AsyncResolver（跨线程 resolve Promise）+ FetchBridge（__zw_fetch 注册 +
@@ -277,6 +301,11 @@ fn js_worker_main(
                 }
                 if url_changed {
                     let _ = sandbox.execute("__zw_reset_form_state && __zw_reset_form_state();");
+                    // P1a gBCR path A：导航 → 旧页 handle 在新页无效，清 handle→selector map
+                    // （apply 路径会在新页 createElement 时重新 merge）。
+                    if let Ok(mut map) = handle_selector_map.lock() {
+                        map.clear();
+                    }
                 }
             }
             JsWorkerCommand::ResolveAsyncCallback { id, result } => {
@@ -862,6 +891,70 @@ mod tests {
             .execute_script_direct("globalThis.__w = document.querySelector('#t').getBoundingClientRect().width;")
             .unwrap();
         assert_eq!(worker.execute_script_direct("String(globalThis.__w)").unwrap(), "0");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_get_bounding_client_rect_handle_identity_create_element() {
+        // P1a gBCR path A：createElement 元素（JS 持 handle `__n{n}`，sel 空）的 getBoundingClientRect
+        // 返真实 rect。流程模拟生产 apply 路径：脚本1 createElement+setId+append（记录 mutations）
+        // → apply_mutations_to_html_with_handles 产出 handle→selector map → merge 进 worker 持久 map
+        // → set_dom_snapshot 新 html（含已 append 元素）→ 填 snapshot → 脚本2 经 handle 测量返真实 rect。
+        use zero_dom::parse_html;
+        use zero_engine::{apply_mutations_to_html_with_handles, find_by_selector, node_id_to_u64};
+        let mut worker = RendererJsWorker::spawn(22);
+        let html0 = "<html><body id='b'></body></html>";
+        worker.set_dom_snapshot(html0, "about:blank");
+        // 脚本1：创建 div、设 id、append（handle 持于 globalThis.__el）。
+        worker
+            .execute_script_direct(
+                "globalThis.__el = document.createElement('div');\
+                 globalThis.__el.id = 'dyn';\
+                 document.body.appendChild(globalThis.__el);",
+            )
+            .unwrap();
+        // 模拟 apply_recorded_mutations：取记录的 mutations 应用到 html0，得新 html + handle→selector map。
+        let recorded = worker.mutations().lock().unwrap().clone();
+        let (html1, handle_map) = apply_mutations_to_html_with_handles(html0, &recorded).unwrap();
+        assert!(
+            html1.contains("<div id=\"dyn\">"),
+            "createElement+setId+append 应产出 <div id=\"dyn\">，got: {html1}"
+        );
+        assert_eq!(handle_map.len(), 1, "唯一选择器映射应只含一个 createElement handle");
+        assert_eq!(
+            handle_map.values().next(),
+            Some(&"#dyn".to_string()),
+            "handle → #dyn（id 唯一）"
+        );
+        // merge map 进 worker 持久 map（= page_scripts::apply_recorded_mutations 的行为）。
+        worker.handle_selector_map().lock().unwrap().extend(handle_map);
+        // 更新 dom_html 为含已 append 元素的新 html（= 下一次 set_dom_snapshot）。
+        worker.set_dom_snapshot(&html1, "about:blank");
+        // 填 snapshot：fresh-parse html1 取 #dyn NodeId（= 渲染管线会用同一 NodeId）。
+        let doc = parse_html(&html1);
+        let id_dyn = find_by_selector(&doc, "#dyn").expect("#dyn in html1");
+        worker
+            .rect_snapshot()
+            .lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_dyn), (30.0, 40.0, 100.0, 50.0));
+        // 脚本2：经 handle（sel 空）测量 → path A 解析 handle→#dyn→NodeId→snapshot rect。
+        worker
+            .execute_script_direct(
+                "var r = globalThis.__el.getBoundingClientRect();\
+                 globalThis.__w = r.width; globalThis.__l = r.left;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__w)").unwrap(),
+            "100",
+            "handle-identity gBCR width 应反映 snapshot"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__l)").unwrap(),
+            "30",
+            "handle-identity gBCR left 应反映 snapshot"
+        );
         worker.shutdown();
     }
 

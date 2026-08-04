@@ -180,8 +180,25 @@ pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> 
     Some(tag)
 }
 
+/// 为节点生成在文档中**唯一**的稳定选择器（P1a gBCR path A handle-identity 用）。
+///
+/// `stable_selector_for_node` 对无 id/class 的元素只返 tag（如 `"div"`），在多同 tag 元素
+/// 的文档里**有歧义**——`find_by_selector` 会返回首个匹配（可能是别的元素），导致 handle→rect
+/// 解析到错误元素。本 helper 仅当选择器在文档中**唯一匹配**（`query_selector_all` 恰好 1 个）时
+/// 返回它，否则返 `None`（调用方回落零 rect，宁可零值不错值）。文本节点无 tag → `None`。
+fn unique_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
+    let sel = stable_selector_for_node(doc, node)?;
+    let matches = doc.query_selector_all(doc.root(), sel.trim());
+    if matches.len() == 1 { Some(sel) } else { None }
+}
+
 /// 将变更列表应用到文档（按顺序）。
-pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Result<(), String> {
+///
+/// 返回 `handle → 唯一稳定选择器` 映射（P1a gBCR path A handle-identity 基建）：遍历本次
+/// 变更中 `CreateElement`/`CreateTextNode` 建立的 ephemeral handles，为每个元素算
+/// [`unique_selector_for_node`]（歧义选择器跳过 → 不入 map → 该 handle 回落零 rect）。
+/// 选择器反映**变更后**的文档状态（同 batch 内后置 SetAttrOnHandle 设的 id/class 已生效）。
+pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Result<HashMap<String, String>, String> {
     let mut handles: HashMap<String, NodeId> = HashMap::new();
 
     for mutation in mutations {
@@ -330,7 +347,16 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
         }
     }
 
-    Ok(())
+    // P1a gBCR path A：为本次 batch 创建的每个 handle 算唯一稳定选择器（歧义者跳过）。
+    // 供 RectBridge handler 解析 handle-identity（`__n{n}`）→ selector → NodeId → rect。
+    let mut handle_selectors: HashMap<String, String> = HashMap::new();
+    for (handle, node) in &handles {
+        if let Some(sel) = unique_selector_for_node(doc, *node) {
+            handle_selectors.insert(handle.clone(), sel);
+        }
+    }
+
+    Ok(handle_selectors)
 }
 
 fn apply_style_property(doc: &mut Document, node: NodeId, property: &str, value: &str) {
@@ -416,10 +442,28 @@ fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> 
 }
 
 /// 解析 HTML、应用变更并返回序列化后的 HTML。
+///
+/// 丢弃 `apply_dom_mutations` 产出的 handle→selector 映射（无 handle-identity 需求的路径用）。
+/// 需要 handle map 的生产路径（renderer/browser 应用变更后回填 RectBridge）用
+/// [`apply_mutations_to_html_with_handles`]。
 pub fn apply_mutations_to_html(html: &str, mutations: &[DomMutation]) -> Result<String, String> {
     let mut doc = parse_html(html);
-    apply_dom_mutations(&mut doc, mutations)?;
+    let _handle_selectors = apply_dom_mutations(&mut doc, mutations)?;
     Ok(doc.outer_html(doc.root()))
+}
+
+/// 同 [`apply_mutations_to_html`]，但额外返回 handle→唯一稳定选择器映射（P1a gBCR path A）。
+///
+/// 生产 apply 路径（renderer `apply_recorded_mutations`、browser mirror）调本函数，把返回的
+/// map merge 进 worker 持久的 [`crate::rect_bridge::HandleSelectorMap`]，供 RectBridge handler
+/// 解析 handle-identity。reftest/测试路径无此需求，继续用 [`apply_mutations_to_html`]。
+pub fn apply_mutations_to_html_with_handles(
+    html: &str,
+    mutations: &[DomMutation],
+) -> Result<(String, HashMap<String, String>), String> {
+    let mut doc = parse_html(html);
+    let handle_selectors = apply_dom_mutations(&mut doc, mutations)?;
+    Ok((doc.outer_html(doc.root()), handle_selectors))
 }
 
 /// 从 HTML 快照查询首个匹配的稳定选择器（供 `__zw_query_match`）。
@@ -1195,6 +1239,80 @@ mod tests {
         ];
         let out = apply_mutations_to_html(html, &mutations).unwrap();
         assert!(out.contains("<p id=\"p1\">hello</p>"));
+    }
+
+    #[test]
+    fn test_apply_with_handles_maps_unique_selectors() {
+        // 创建带 id 的元素（唯一）→ 入 map；创建无 id 的同 tag 元素 + 文档已有同 tag → 歧义 → 不入 map。
+        let html = "<html><body id=\"b\"><div></div></body></html>";
+        let mutations = vec![
+            // __n1: <p id="unique"> —— id 唯一 → "#unique"
+            DomMutation::CreateElement {
+                handle: "__n1".into(),
+                tag: "p".into(),
+            },
+            DomMutation::SetAttrOnHandle {
+                handle: "__n1".into(),
+                name: "id".into(),
+                value: "unique".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "#b".into(),
+                child_handle: "__n1".into(),
+            },
+            // __n2: <div>（无 id）—— 文档已有 1 个 div，加这个共 2 个 → "div" 歧义 → 不入 map
+            DomMutation::CreateElement {
+                handle: "__n2".into(),
+                tag: "div".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "#b".into(),
+                child_handle: "__n2".into(),
+            },
+            // __n3: <span>（无 id）—— 文档无其他 span → "span" 唯一 → 入 map
+            DomMutation::CreateElement {
+                handle: "__n3".into(),
+                tag: "span".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "#b".into(),
+                child_handle: "__n3".into(),
+            },
+        ];
+        let (out, handles) = apply_mutations_to_html_with_handles(html, &mutations).unwrap();
+        // 序列化正确
+        assert!(out.contains("<p id=\"unique\">"));
+        assert!(out.contains("<span>"));
+        // handle→selector 映射：唯一者入选，歧义者排除
+        assert_eq!(handles.get("__n1"), Some(&"#unique".to_string()), "id 唯一 → #unique");
+        assert!(
+            !handles.contains_key("__n2"),
+            "无 id 的 div 文档已有 2 个 → 歧义 → 不入 map（宁可零 rect）"
+        );
+        assert_eq!(handles.get("__n3"), Some(&"span".to_string()), "唯一 span → tag");
+    }
+
+    #[test]
+    fn test_apply_with_handles_uses_post_mutation_state() {
+        // id 在 CreateElement 之后、AppendChild 之前设置（同 batch）→ 末尾算选择器时 id 已生效。
+        let html = "<html><body id=\"b\"></body></html>";
+        let mutations = vec![
+            DomMutation::CreateElement {
+                handle: "__n1".into(),
+                tag: "div".into(),
+            },
+            DomMutation::SetAttrOnHandle {
+                handle: "__n1".into(),
+                name: "id".into(),
+                value: "late".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "#b".into(),
+                child_handle: "__n1".into(),
+            },
+        ];
+        let (_out, handles) = apply_mutations_to_html_with_handles(html, &mutations).unwrap();
+        assert_eq!(handles.get("__n1"), Some(&"#late".to_string()));
     }
 
     #[test]

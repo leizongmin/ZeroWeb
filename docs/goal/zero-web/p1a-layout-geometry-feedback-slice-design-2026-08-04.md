@@ -269,4 +269,41 @@ R2647 限制 4「browser 路径未接」的收尾。核验 browser 后端：**cr
 
 **P1a layout-geometry-feedback 切片进度小结（更新）**：Slice 1 + 2a + 3 + **2b（renderer 路径 host tick，本轮）** 均 land。剩余 follow-up：① browser in-process tick 接线（mirror）；② path A handle-identity（createElement 元素持久身份映射）；③ content-box rect（padding/border 扣除）；④ WeakRef 注册表硬化。
 
+## R2661：path A handle-identity——createElement 元素 gBCR/IO/RO 返真实 rect
+
+承接 gBCR/IO/RO 各切片共同 follow-up「handle-identity（createElement 元素，sel 为空）→ 零 rect」。R2647 path C 解决了 selector-identity（querySelector/getElementById 元素）；但 JS 持原 `createElement` 返回的 handle 引用（组件式 hold-ref 测量）走 handle-identity（`__n{n}`），`find_by_selector("__n{n}")` 不匹配 → 零 rect。本切片补 path A 持久 handle→身份基建。
+
+### 关键设计决策（recon 后确认）
+
+1. **必须 selector 解析，不能直映 handle→NodeId**：worker 的 `apply_dom_mutations` 在「mutated doc D'」上为 createElement 分配 NodeId（slotmap 追加在已有节点之后），而渲染管线/handler 都 fresh-parse 序列化后的 html（文档序分配）。**D' 的 NodeId ≠ fresh-parse 的 NodeId**（如 `insertBefore` 把新元素插中间时）。故唯一稳健映射是 handle→**selector**，再 `find_by_selector`（fresh-parse）→ NodeId（与 snapshot 键一致，R2647 确定性）。
+2. **唯一性闸门（避免错值）**：`stable_selector_for_node` 对无 id/class 元素只返 tag（如 `"div"`），多同 tag 文档里有歧义——`find_by_selector` 返首个匹配可能是**别的元素**（静默错值，比零值更坏）。故仅当选择器在文档中**唯一匹配**（`query_selector_all.len()==1`）才入 map；歧义者跳过 → 该 handle 回落零 rect（宁可零值不错值）。新增 `unique_selector_for_node` helper。
+3. **反映变更后状态**：在 `apply_dom_mutations` **末尾**遍历 ephemeral handles 算选择器（同 batch 内后置 `SetAttrOnHandle` 设的 id/class 已生效）——覆盖 `createElement; el.id='x'; appendChild` 主流模式。
+4. **持久 map + 跨线程共享**：apply 在 renderer 主线程 / browser 主线程跑，handler 在 js_worker 线程读 → 须 `Arc<Mutex<HashMap<String,String>>>`（`HandleSelectorMap`，镜像 `LayoutRectSnapshot` 模式）。worker 持有，clone 给 handler；apply 路径 merge（upsert）。
+5. **导航失效**：`SetDomSnapshot` url 变化（导航）→ worker 清空 map（旧页 handle 在新页无效）。同页跨 batch upsert，handle 持久（JS 持 ref 跨事件/定时器复测）。
+
+### 已 land（commit 本轮）
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_bridge.rs` | `unique_selector_for_node`（stable_selector + 唯一性闸门）；`apply_dom_mutations` 末尾遍历 handles 建 handle→唯一 selector map 并返回（`Result<HashMap<String,String>, String>`）；`apply_mutations_to_html` 丢弃 map（返 String，**零测试改动**）；新增 `apply_mutations_to_html_with_handles` 返 `(String, map)` 供生产路径。+ 3 单测（唯一/歧义/同 batch 后置 id）。 |
+| `crates/engine/src/rect_bridge.rs` | `HandleSelectorMap` 类型 + `new_handle_selector_map()`；`make_dom_html_rect_handler` 加 `handle_map` 第 3 参 + handle-identity 分支（`is_handle_identity`：`__n` 前缀 → 查 map→selector；否则当 selector）。+ 2 单测（handle 命中返真实 rect / 空 map 回落 None）。 |
+| `crates/engine/src/js_dom_shim.js` | gBCR 闭包 `var id = sel \|\| handle`（sel 空→handle）；IO `_compute` 与 RO `_schedule` 的 `_io_rectFromSel` 传 `sel \|\| __zwHandle`。覆盖 createElement 元素的 gBCR + IO + RO。 |
+| `apps/renderer/src/js_worker.rs` | `RendererJsWorker` 加 `handle_selector_map` 字段 + 构造/clone 给 handler + `SetDomSnapshot` url 变化清空 + `pub handle_selector_map()` accessor。+ driving test（createElement+setId+append→apply 产 map→merge→set_dom_snapshot 新 html→填 snapshot→经 handle 测量返真实 rect）。 |
+| `apps/renderer/src/page_scripts.rs` | `apply_recorded_mutations` 改用 `apply_mutations_to_html_with_handles`，merge map 进 `ctx.js_worker.handle_selector_map()`。 |
+| `apps/browser/src/tab_js_worker.rs` | 镜像 renderer：`handle_selector_map` 字段 + 构造 + clone 给 handler + `SetDomSnapshot` url 变化清空 + accessor。 |
+| `apps/browser/src/tab_scripts.rs` | `apply_recorded_mutations` 改用 `apply_mutations_to_html_with_handles`，merge map。 |
+
+**验证**：`make test` 全绿（exit 0，零回归）+ workspace clippy `-D warnings` 零警告 + fmt clean + `make product-smoke` 全 struct PASS（welcome desktop **17.03%** 精确持平 held baseline + 窄屏 375/320 全 PASS）。engine 单测（apply_dom_mutations map 3 + rect_bridge handle 2）+ renderer worker driving test 验证全链路。
+
+**为何零回归且净正向**：旧路径 handle-identity sel 空 → 零 rect；本切片 sel 空→传 handle→查 map→真实 rect（净正向，解锁 SPA 动态元素测量）。map 未命中（歧义跳过 / 未 merge / browser reftest 路径未注册）→ 回落零 rect（= 旧行为）。self-source reftest test/ref 同经 shim → 净中性；product smoke welcome 17.03% 持平证真实页面 JS 执行链零回归。唯一性闸门保证不返错值。
+
+**已知限制（接受，follow-up）**：
+1. **tag-only 歧义元素回落零 rect**：无 id/class 且文档有多个同 tag 的 createElement 元素 → 选择器歧义 → 不入 map → 零 rect（宁可零值）。覆盖有 id/class 的主流模式（`el.id=`/`el.className=` 设后测）。`:nth-child` 结构选择器（dom 选择器引擎暂不支持）可解锁无 id 元素，为 follow-up。
+2. **跨 batch 改 id 不更新 map**：batch 内 self-contained（create+setup+append）；跨 batch `el.id=` 经 SetAttrOnHandle 在 apply 报「unknown handle」（ephemeral handles 仅本 batch）不应用 → dom_html 不变 → 原 selector 仍有效（无 stale）。即跨 batch handle 操作本就受限（既有行为，非本切片引入）。
+3. **stale-but-non-zero（同 gBCR）**：rect 反映「上次 render」；createElement 同脚本内即读见零（元素未 render）。下次 render 后复测见真实 rect（driving test 即此模式）。
+4. **root 为 createElement 元素的 IO**：`opts.root.__zwSelector` 为 null → 回落 viewport（root=create-element 罕见，follow-up）。
+5. **browser in-process observer host-tick（R2652 follow-up ①）仍未接**：与 path A 独立。
+
+**P1a layout-geometry-feedback 切片进度小结（再更新）**：Slice 1 + 2a + 3 + 2b + **path A（handle-identity，本轮）** 均 land。gBCR/IO/RO 现覆盖 selector-identity + handle-identity 两种元素身份。剩余 follow-up：① browser in-process observer tick 接线（R2652 mirror）；② `:nth-child` 结构选择器（解锁 tag-only 歧义元素）；③ content-box rect（padding/border 扣除）；④ WeakRef observer 注册表硬化；⑤ force-reflow-on-demand（改后即读见真实 rect）。
+
 

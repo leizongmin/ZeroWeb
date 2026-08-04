@@ -4,9 +4,10 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    DomEventDetail, DomMutation, PageScript, apply_mutations_to_html, enclosing_form_selector, extract_page_scripts,
-    has_attribute, is_checkbox, is_radio, is_submit_button, query_tag_from_html, resolve_document_url,
-    script_dispatch_dom_event, script_text_delete, script_text_input, toggle_radio_html,
+    DomEventDetail, DomMutation, PageScript, apply_mutations_to_html, apply_mutations_to_html_with_handles,
+    enclosing_form_selector, extract_page_scripts, has_attribute, is_checkbox, is_radio, is_submit_button,
+    query_tag_from_html, resolve_document_url, script_dispatch_dom_event, script_text_delete, script_text_input,
+    toggle_radio_html,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -309,8 +310,16 @@ fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Opti
     if recorded.is_empty() {
         return None;
     }
-    match apply_mutations_to_html(html, &recorded) {
-        Ok(new_html) => {
+    match apply_mutations_to_html_with_handles(html, &recorded) {
+        Ok((new_html, handle_selectors)) => {
+            // P1a gBCR path A：merge handle→唯一选择器映射进 worker 持久 map，供 RectBridge
+            // handler 解析 handle-identity（createElement 元素）。upsert——同 handle 后续 id/class
+            // 变更会更新（同 batch 内）；导航时 worker 清空。空 map（无 createElement）no-op。
+            if !handle_selectors.is_empty()
+                && let Ok(mut map) = ctx.js_worker.handle_selector_map().lock()
+            {
+                map.extend(handle_selectors);
+            }
             *ctx.html = new_html.clone();
             Some(new_html)
         }

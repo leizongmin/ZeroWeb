@@ -97,6 +97,22 @@ pub fn new_layout_rect_snapshot() -> LayoutRectSnapshot {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
+// ── 共享 handle→selector map（path A handle-identity）──
+
+/// 持久 handle → 唯一稳定选择器映射（P1a gBCR path A）。
+///
+/// `createElement` 元素（JS shim 持 handle `__n{n}`）经 `apply_dom_mutations` 建立后，
+/// 其唯一稳定选择器由生产 apply 路径（renderer `apply_recorded_mutations`）merge 进此 map。
+/// RectBridge handler 收到 handle-identity 时查此 map → selector → `find_by_selector` → NodeId
+/// → snapshot rect。`Arc<Mutex<>>` 跨 apply 线程（renderer 主）与 js_worker 线程（handler 读）共享。
+/// 导航（`SetDomSnapshot` url 变化）时由 worker 清空——旧页 handle 在新页无效。
+pub type HandleSelectorMap = Arc<Mutex<HashMap<String, String>>>;
+
+/// 新建空 handle→selector map。
+pub fn new_handle_selector_map() -> HandleSelectorMap {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
 /// 从 `HitTestCache` 的 layout 树遍历填 snapshot——每个有 `node_id` 的节点 → `(x,y,width,height)`。
 ///
 /// 在 render 后调（renderer 主循环）。锁内递归遍历；无 `node_id` 的匿名盒跳过。
@@ -116,8 +132,8 @@ fn fill_rect_recursive(node: &HitTestLayoutSnapshot, map: &mut HashMap<u64, Rect
     }
 }
 
-/// 构造生产 rect 查询 handler——`identity`(selector) → 解析 `dom_html` → [`find_by_selector`]
-/// → `NodeId` → 查 `snapshot`。
+/// 构造生产 rect 查询 handler——`identity`(selector 或 handle) → 解析 `dom_html` →
+/// [`find_by_selector`] → `NodeId` → 查 `snapshot`。
 ///
 /// **为何可行（gBCR path C 的地基）**：渲染管线每次 render 都 fresh-`parse_html` 同一 html 字符串
 /// （`pipeline_budget.rs:106/197`），js_worker 持有的 `dom_html` 是同一字符串；slotmap fresh-map +
@@ -128,11 +144,25 @@ fn fill_rect_recursive(node: &HitTestLayoutSnapshot, map: &mut HashMap<u64, Rect
 /// `Send + Sync` handler 闭包；改用 [`RECT_DOC_CACHE`]（per-thread）——每个 js_worker 线程独立槽，
 /// html 字符串变化才重 parse（同 render 帧多次 gBCR 复用同一 Document，消除循环调用的 parse 陡坡）。
 ///
-/// `identity` = shim 元素 proxy 的 selector（`querySelector`/`getElementById` 返 stable_selector）；
-/// handle-identity（`createElement` 节点）`find_by_selector` 不匹配 → `None` → shim 回落零 rect（follow-up）。
-pub fn make_dom_html_rect_handler(dom_html: Arc<Mutex<String>>, snapshot: LayoutRectSnapshot) -> RectLookupHandler {
+/// **identity 两种形态**：
+/// - selector-identity（`querySelector`/`getElementById`，`sel`=stable_selector）：直接
+///   `find_by_selector(identity)`。
+/// - handle-identity（`createElement` 节点，`__n{n}`，P1a path A）：先查 [`handle_map`] → selector，
+///   再 `find_by_selector(selector)`。map 由生产 apply 路径 merge；未命中/空 map → `None` → 零 rect。
+pub fn make_dom_html_rect_handler(
+    dom_html: Arc<Mutex<String>>,
+    snapshot: LayoutRectSnapshot,
+    handle_map: HandleSelectorMap,
+) -> RectLookupHandler {
     Arc::new(move |identity: &str| -> Option<Rect4> {
         let html = dom_html.lock().ok()?.clone();
+        // handle-identity（__n{n}）→ 查持久 handle→selector map（path A）；否则当 selector 直用。
+        // map 未命中（handle 未创建/歧义跳过/未 merge）→ None → 零 rect（= 旧行为，零回归）。
+        let selector: String = if is_handle_identity(identity) {
+            handle_map.lock().ok()?.get(identity).cloned()?
+        } else {
+            identity.to_string()
+        };
         // html 变化才重 parse；同 html 复用缓存的 Document（消除每 query 一次 parse）。
         let node_id = RECT_DOC_CACHE.with(|cache| {
             {
@@ -144,11 +174,17 @@ pub fn make_dom_html_rect_handler(dom_html: Arc<Mutex<String>>, snapshot: Layout
             } // 释放 borrow_mut
             let c = cache.borrow();
             let (_, doc) = c.as_ref().expect("cache populated above");
-            crate::js_dom_bridge::find_by_selector(doc, identity)
+            crate::js_dom_bridge::find_by_selector(doc, &selector)
         })?;
         let snap = snapshot.lock().ok()?;
         snap.get(&node_id_to_u64(node_id)).copied()
     })
+}
+
+/// handle-identity 判定：shim `createElement` 返的 handle 形如 `__n{n}`（见 `_wrapHandle`）。
+/// 与 shim `_mo_id`/`__zwHandle` 一致——handle 以 `__n` 开头，selector 不以此开头。
+fn is_handle_identity(identity: &str) -> bool {
+    identity.starts_with("__n")
 }
 
 // gBCR handler 的 Document 缓存（per-thread）。Document 非 Send，不能用 Arc<Mutex<>> 跨
@@ -307,7 +343,7 @@ mod tests {
             .insert(node_id_to_u64(id_t), (10.0, 20.0, 100.0, 50.0));
 
         let dom_html = Arc::new(Mutex::new(html.to_string()));
-        let handler = make_dom_html_rect_handler(dom_html, snapshot);
+        let handler = make_dom_html_rect_handler(dom_html, snapshot, new_handle_selector_map());
 
         assert_eq!(
             handler("#t"),
@@ -319,7 +355,7 @@ mod tests {
             None,
             "未命中 selector → None（shim 回落零 rect）"
         );
-        assert_eq!(handler("__n1"), None, "handle-identity 暂不支持 → None（follow-up）");
+        assert_eq!(handler("__n1"), None, "handle-identity 空 map 未命中 → None（零回落）");
     }
 
     /// thread-local Document 缓存：dom_html 变化时缓存失效重 parse（否则 gBCR 会查旧 Document 返错/漏）。
@@ -330,7 +366,8 @@ mod tests {
         use zero_dom::parse_html;
         let snapshot = new_layout_rect_snapshot();
         let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-        let handler = make_dom_html_rect_handler(Arc::clone(&dom_html), Arc::clone(&snapshot));
+        let handler =
+            make_dom_html_rect_handler(Arc::clone(&dom_html), Arc::clone(&snapshot), new_handle_selector_map());
 
         // html1: <div id='a'>——首查询触发 parse + 缓存。
         let html1 = "<html><body><div id='a'>A</div></body></html>";
@@ -353,6 +390,65 @@ mod tests {
         assert_eq!(handler("#b"), Some((5.0, 6.0, 7.0, 8.0)), "html 切换后新 selector 命中");
         // #a 在 html2 不存在 → None（证缓存已切到 html2 的 Document，非沿用 html1）。
         assert_eq!(handler("#a"), None, "旧 selector 在新 html 应不存在（缓存已失效）");
+    }
+
+    /// path A handle-identity：handle `__n1` → 查 handle_map 得 selector → 解析 dom_html → NodeId → rect。
+    /// 验证 handle 分支（map 命中返真实 rect；未注册/未命中/空 map → None 零回落）。
+    #[test]
+    fn test_make_dom_html_rect_handler_resolves_handle_identity() {
+        use crate::js_dom_bridge::find_by_selector;
+        use zero_dom::parse_html;
+        let html = "<!DOCTYPE html><html><body>\
+                    <div id='host'><p id='dyn'>x</p></div>\
+                    </body></html>";
+        // 模拟「createElement+append+setId 后 apply 产出的 map」：__n1 → #dyn。
+        // snapshot 键 = fresh-parse dom_html 中 #dyn 的 NodeId。
+        let doc = parse_html(html);
+        let id_dyn = find_by_selector(&doc, "#dyn").expect("#dyn");
+        let snapshot = new_layout_rect_snapshot();
+        snapshot
+            .lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_dyn), (30.0, 40.0, 100.0, 50.0));
+
+        let dom_html = Arc::new(Mutex::new(html.to_string()));
+        let handle_map = new_handle_selector_map();
+        handle_map
+            .lock()
+            .unwrap()
+            .insert("__n1".to_string(), "#dyn".to_string());
+        let handler = make_dom_html_rect_handler(dom_html, snapshot, handle_map);
+
+        // handle-identity 命中 → 经 #dyn 解析到真实 rect。
+        assert_eq!(
+            handler("__n1"),
+            Some((30.0, 40.0, 100.0, 50.0)),
+            "handle __n1 → map → #dyn → rect"
+        );
+        // selector-identity 仍直工作（同一元素）。
+        assert_eq!(handler("#dyn"), Some((30.0, 40.0, 100.0, 50.0)));
+        // 未注册的 handle → None（零回落）。
+        assert_eq!(handler("__n999"), None, "未注册 handle → None");
+    }
+
+    /// path A：空 handle_map（如 browser in-process 未接线 population）→ 所有 handle 回落 None。
+    #[test]
+    fn test_make_dom_html_rect_handler_empty_map_handle_falls_back() {
+        use crate::js_dom_bridge::find_by_selector;
+        use zero_dom::parse_html;
+        let html = "<html><body><div id='d'></div></body></html>";
+        let doc = parse_html(html);
+        let id_d = find_by_selector(&doc, "#d").expect("#d");
+        let snapshot = new_layout_rect_snapshot();
+        snapshot
+            .lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_d), (1.0, 2.0, 3.0, 4.0));
+        let dom_html = Arc::new(Mutex::new(html.to_string()));
+        // 空 map（browser 路径暂未 merge）→ handle-identity 全回落 None（= 旧行为，零回归）。
+        let handler = make_dom_html_rect_handler(dom_html, snapshot, new_handle_selector_map());
+        assert_eq!(handler("__n1"), None, "空 map → handle 回落 None");
+        assert_eq!(handler("#d"), Some((1.0, 2.0, 3.0, 4.0)), "selector 路径不受影响");
     }
 
     /// fill_layout_rect_snapshot 二次填充：clear 后重填（render 更新后换新 rect）。

@@ -8,8 +8,9 @@ use std::time::Duration;
 
 use zero_browser_shell::TabId;
 use zero_engine::{
-    AsyncResolver, DomMutation, FetchBridge, FetchHandler, LayoutRectSnapshot, RectBridge, TimerBridge,
-    generate_js_dom_shim, make_dom_html_rect_handler, new_layout_rect_snapshot, register_dom_callbacks,
+    AsyncResolver, DomMutation, FetchBridge, FetchHandler, HandleSelectorMap, LayoutRectSnapshot, RectBridge,
+    TimerBridge, generate_js_dom_shim, make_dom_html_rect_handler, new_handle_selector_map, new_layout_rect_snapshot,
+    register_dom_callbacks,
 };
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
@@ -79,6 +80,9 @@ pub struct TabJsWorkerHandle {
     /// P1a gBCR：共享 layout-rect snapshot——tab_worker render 后填充，
     /// js_worker 的 RectBridge handler 读取（经 identity→NodeId 解析后查 rect）。
     rect_snapshot: LayoutRectSnapshot,
+    /// P1a gBCR path A：持久 handle→唯一选择器映射——`tab_scripts::apply_recorded_mutations`
+    /// merge 进此 map，js_worker 的 RectBridge handler 读它解析 handle-identity（`__n{n}`）。
+    handle_selector_map: HandleSelectorMap,
 }
 
 impl TabJsWorkerHandle {
@@ -86,16 +90,26 @@ impl TabJsWorkerHandle {
     pub fn spawn(tab_id: TabId) -> Self {
         let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let rect_snapshot = new_layout_rect_snapshot();
+        let handle_selector_map = new_handle_selector_map();
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
         let cmd_for_worker = cmd_tx.clone();
         let mutations_for_worker = Arc::clone(&mutations);
         let rect_snapshot_for_worker = Arc::clone(&rect_snapshot);
+        let handle_selector_map_for_worker = Arc::clone(&handle_selector_map);
 
         let join = thread::Builder::new()
             .name(format!("tab-js-{}", tab_id.0))
-            .spawn(move || js_worker_main(cmd_rx, cmd_for_worker, mutations_for_worker, rect_snapshot_for_worker))
+            .spawn(move || {
+                js_worker_main(
+                    cmd_rx,
+                    cmd_for_worker,
+                    mutations_for_worker,
+                    rect_snapshot_for_worker,
+                    handle_selector_map_for_worker,
+                )
+            })
             .expect("spawn tab js worker");
 
         let executor: ScriptFn = Arc::new(move |script: &str, timeout_ms: u64| {
@@ -134,6 +148,7 @@ impl TabJsWorkerHandle {
             module_executor,
             mutations,
             rect_snapshot,
+            handle_selector_map,
         }
     }
 
@@ -177,6 +192,12 @@ impl TabJsWorkerHandle {
         Arc::clone(&self.rect_snapshot)
     }
 
+    /// P1a gBCR path A：持久 handle→唯一选择器映射句柄——`tab_scripts::apply_recorded_mutations`
+    /// merge 进此 map，js_worker 的 RectBridge handler 读它解析 handle-identity（`__n{n}`）。
+    pub fn handle_selector_map(&self) -> HandleSelectorMap {
+        Arc::clone(&self.handle_selector_map)
+    }
+
     /// 返回异步回调 resolver（P1b S1 incr3）。克隆供跨线程异步完成方（fetch host /
     /// 定时器）持有，`resolver.resolve(id, result)` 经 cmd channel marshal 回 JS worker
     /// 线程，由 worker 调 `sandbox.resolve_async_callback` resolve 对应 Promise。
@@ -217,6 +238,7 @@ fn js_worker_main(
     cmd_tx: Sender<JsWorkerCommand>,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
     rect_snapshot: LayoutRectSnapshot,
+    handle_selector_map: HandleSelectorMap,
 ) {
     let js_config = SandboxConfig {
         persistent_context: true,
@@ -242,6 +264,7 @@ fn js_worker_main(
         rect_bridge.set_handler(make_dom_html_rect_handler(
             Arc::clone(&dom_html),
             Arc::clone(&rect_snapshot),
+            Arc::clone(&handle_selector_map),
         ));
     }
     // P1b S1/S3：AsyncResolver（跨线程 resolve Promise）+ FetchBridge（__zw_fetch 注册 +
@@ -290,11 +313,18 @@ fn js_worker_main(
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot { html, url } => {
+                // 导航（URL 变化）→ 旧页 handle 在新页无效，清 handle→selector map（path A）。
+                let url_changed = page_url.lock().map(|u| *u != url).unwrap_or(true);
                 if let Ok(mut snap) = dom_html.lock() {
                     *snap = html;
                 }
                 if let Ok(mut u) = page_url.lock() {
                     *u = url;
+                }
+                if url_changed {
+                    if let Ok(mut map) = handle_selector_map.lock() {
+                        map.clear();
+                    }
                 }
             }
             JsWorkerCommand::ResolveAsyncCallback { id, result } => {
