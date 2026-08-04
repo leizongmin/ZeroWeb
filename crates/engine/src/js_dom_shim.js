@@ -844,20 +844,59 @@
     };
   }
 
-  function _dispatchToListeners(key, event) {
+  // 派发某元素 key 上的事件 listener。`nonCaptureOnly`：仅派发非 capture listener（冒泡到祖先时
+  // 用——capture 阶段未实现，祖先的 capture listener 不在冒泡期触发）。`thisObj`：handler 内
+  // `this` 与 `event.currentTarget`（默认 event.target，即 target 节点）。
+  function _dispatchToListeners(key, event, nonCaptureOnly, thisObj) {
     var listeners = _listenerStore[key];
-    if (!listeners || !listeners[event.type]) return true;
+    if (!listeners || !listeners[event.type]) return !event._defaultPrevented;
     var list = listeners[event.type];
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].capture) {
-        list[i].fn.call(event.target, event);
-        if (event._immediateStopped) return !event._defaultPrevented;
+    var ctx = thisObj || event.target;
+    event.currentTarget = ctx;
+    if (!nonCaptureOnly) {
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].capture) {
+          list[i].fn.call(ctx, event);
+          if (event._immediateStopped) return !event._defaultPrevented;
+        }
       }
     }
     for (var j = 0; j < list.length; j++) {
       if (!list[j].capture) {
-        list[j].fn.call(event.target, event);
+        list[j].fn.call(ctx, event);
         if (event._immediateStopped) return !event._defaultPrevented;
+      }
+    }
+    return !event._defaultPrevented;
+  }
+
+  // 派发事件并（若 `event.bubbles`）沿父链**冒泡**到祖先——事件委托基础（`document.addEventListener
+  // ('click', fn)` 捕获子元素点击）。旧实现仅派发 target 自身 listener，祖先 listener 永不触发。
+  // target 节点派发全部 listener（capture+非 capture，保旧行为）；冒泡到祖先时仅派发非 capture。
+  // `event.currentTarget` 随阶段更新为当前节点（target 阶段=target，祖先阶段=该祖先）。
+  // 仅 sel-based target 且 `__zw_parent` 注册时冒泡（polyfill/handle-only detached 无父链 → 仅 target，
+  // 保旧行为）。`globalThis.__zw_no_bubble=true` 可强制关闭（回归兜底）。capture 阶段未实现（已知限制）。
+  function _dispatchWithBubble(targetKey, targetSel, targetHandle, event) {
+    var target = _makeProxy(targetSel, targetHandle);
+    event.target = target;
+    event.currentTarget = target;
+    _dispatchToListeners(targetKey, event);
+    if (event._propagationStopped) return !event._defaultPrevented;
+    if (
+      event.bubbles &&
+      !globalThis.__zw_no_bubble &&
+      targetSel &&
+      typeof __zw_parent === 'function'
+    ) {
+      var cur = targetSel;
+      while (true) {
+        var p;
+        try { p = __zw_parent(cur); } catch (_e) { p = ''; }
+        if (!p) break; // html 根 / 未命中 → 无元素父，停止。
+        var anc = _wrapSelector(p);
+        _dispatchToListeners(_elKey(p, null), event, true, anc);
+        cur = p;
+        if (event._propagationStopped) break;
       }
     }
     return !event._defaultPrevented;
@@ -1212,15 +1251,13 @@
         }
         if (prop === 'dispatchEvent') {
           return function(event) {
-            event.target = _makeProxy(sel, handle);
-            return _dispatchToListeners(key, event);
+            return _dispatchWithBubble(key, sel, handle, event);
           };
         }
         if (prop === 'click') {
           return function() {
             var ev = _makeEvent('click', { bubbles: true, cancelable: true });
-            ev.target = _makeProxy(sel, handle);
-            return _dispatchToListeners(key, ev);
+            return _dispatchWithBubble(key, sel, handle, ev);
           };
         }
         // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：
@@ -1910,8 +1947,6 @@
   _installNamedAccess();
 
   globalThis.__zw_dispatch_event = function(sel, type, detail) {
-    var key = _elKey(sel, null);
-    var el = _wrapSelector(sel);
     var ev;
     if (detail && (detail.key || detail.code)) {
       ev = new KeyboardEvent(type, {
@@ -1923,8 +1958,7 @@
     } else {
       ev = _makeEvent(type, { bubbles: true, cancelable: true });
     }
-    ev.target = el;
-    var ok = _dispatchToListeners(key, ev);
+    var ok = _dispatchWithBubble(_elKey(sel, null), sel, null, ev);
     return ok ? 'ok' : 'prevented';
   };
 })();

@@ -763,6 +763,24 @@ R2680–R2690 self-review 续。承接 R2690（`_parentNodeFor` stub 恒返 body
 
 **已知限制（剩余）**：① polyfill（无 host）路径仍用 `_tagFromSel` 启发式（id-only 猜 DIV）——polyfill 路径无 host tag 查询能力，属可接受近似；② handle-only 元素若未经 `createElement` 记录（如 DocumentFragment，nodeType 11）→ `__zw_get_tag_handle` 返空 → fallback `_tagFromSel(null)`='DIV'，但 fragment 的 tagName 走 isFrag 分支返 `undefined`（nodeName 返 `#document-fragment`），不读 `_realTag`，故无影响；③ `tagName` 每次访问触发 `parse_html`+`find_by_selector`（同 R2690 `__zw_parent`、gBCR 既有开销），非热路径，可接受。
 
+### P1a DOM 事件冒泡（本轮 R2692，self-review 续，~13,312 测试）
+
+R2690–R2691 self-review 续，从「近似返回」转向「行为缺失」。发现 shim `dispatchEvent` / `click` / `__zw_dispatch_event`（host 事件入口）**仅派发 target 自身 listener，不冒泡到祖先**——事件委托（`document.addEventListener('click', fn)` 捕获子元素点击，jQuery/React synthetic events/vanilla delegation 的基础）完全失效：点 `<button>` 不会触发其 `<body>`/`document` 上的 click listener。R2690 的 `__zw_parent` 真实祖先链使本修复可行。
+
+**修复**：shim 加 `_dispatchWithBubble(targetKey, sel, handle, event)`——target 节点派发全部 listener（capture+非 capture，保旧行为）；若 `event.bubbles`，沿 `__zw_parent` 链冒泡，对每个祖先派发**非 capture** listener，`event.currentTarget` 随阶段更新（target 阶段=target、祖先阶段=该祖先），`stopPropagation` 中断。`_dispatchToListeners` 加 `nonCaptureOnly`/`thisObj` 参数（祖先用非 capture、`this`=当前节点）。`dispatchEvent`/`click`/`__zw_dispatch_event` 三入口改用之。仅 sel-based target 且 `__zw_parent` 注册时冒泡（polyfill/handle-only detached 无父链 → 仅 target，保旧行为）；`globalThis.__zw_no_bubble=true` 兜底关闭。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_shim.js` | `_dispatchWithBubble`（target 全派发 + bubbles 沿 `__zw_parent` 冒泡非 capture）；`_dispatchToListeners` 加 `nonCaptureOnly`/`thisObj`；`dispatchEvent`/`click`/`__zw_dispatch_event` 改用之。 |
+| `engine/js_dom_bridge_tests.rs` | +2 e2e：冒泡命中祖先 `#p` + document（html key，事件委托）+ target 阶段 currentTarget=target；stopPropagation 中断（#b stop → #a 不触发）+ bubbles:false 不冒泡。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1413→1415 net +2）+ `make reftest` + `make product-smoke`（事件委托真实化，真实页面 struct 无回归）。
+
+**为何零回归且净正向**：① target 节点派发行为等价（`_dispatchToListeners(key, event)` 默认参，`this`=event.target 不变；仅新增 `event.currentTarget` 被设，handler 读 currentTarget 从 undefined→正确值，严格更对）；② 冒泡仅在 `event.bubbles && __zw_parent 注册` 时启用——polyfill/WebView/handle-only 路径走旧「仅 target」行为不变；③ 旧无冒泡 = real browser 行为的子集，补齐冒泡使事件交付更接近规范，真实页面事件委托现在生效；④ stopPropagation/preventDefault 经 `event` 单对象贯穿整条派发链，语义正确。
+
+**已知限制（剩余）**：① **capture 阶段未实现**——祖先的 capture listener（`addEventListener(type, fn, true)`）不在 root→target 捕获期触发（当前 target 节点的 capture 仍触发，祖先 capture 不触发）；capture 较非 capture 罕见，事件委托主用非 capture，MVP 先覆盖；② `event.currentTarget` 在 document 级（html 节点）为 html 元素 proxy 而非 document 对象（document listener 经 html key 派发命中，currentTarget 取 html 元素——极少代码比较 currentTarget===document）；③ `focus`/`blur` 按 spec 不应冒泡，但 host `__zw_dispatch_event` 统一 `_makeEvent(bubbles:true)`——focus/blur 会冒泡（spec 偏差，既有 `_makeEvent` 调用遗留，非本轮引入；真实影响小，focusin/focusout 为冒泡版）；④ 文本/注释节点非元素，不在冒泡链（spec 事件不 dispatch 到文本节点，正确）。
+
+
 
 
 

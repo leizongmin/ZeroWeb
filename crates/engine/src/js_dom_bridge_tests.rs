@@ -2111,3 +2111,99 @@ fn test_tag_name_real_not_div_heuristic() {
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__tr").unwrap().value, "TR");
 }
+
+#[test]
+fn test_event_bubbling_to_ancestor() {
+    // R2692：事件冒泡。旧 dispatchEvent/__zw_dispatch_event 仅派发 target 自身 listener，
+    // 不冒泡到祖先——事件委托（document/body 上注册的 listener 捕获子元素事件）失效。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"p\"><span id=\"c\">x</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 祖先 #p 与 document(html key) 各注册 click listener。
+    sandbox
+        .execute(
+            "document.querySelector('#p').addEventListener('click', function(e){ globalThis.__p = e.currentTarget.id; });",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "document.addEventListener('click', function(){ globalThis.__doc = true; });",
+        )
+        .unwrap();
+    // 在子 #c 上派发 click → 应冒泡到 #p 和 document（html）。
+    sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__p").unwrap().value, "p", "#p listener 应经冒泡触发");
+    assert_eq!(
+        sandbox.execute("globalThis.__doc").unwrap().value,
+        "true",
+        "document listener 应经冒泡触发（事件委托）"
+    );
+
+    // currentTarget 在 target 阶段 = target 自身。
+    sandbox
+        .execute(
+            "document.querySelector('#c').addEventListener('click', function(e){ globalThis.__ct = e.currentTarget.id; });",
+        )
+        .unwrap();
+    sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__ct").unwrap().value, "c", "target 阶段 currentTarget = target");
+}
+
+#[test]
+fn test_event_bubbling_stop_and_nonbubble() {
+    // R2692 续：stopPropagation 中断冒泡；bubbles:false 的事件不冒泡。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\"><div id=\"b\"><i id=\"c\">x</i></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // #b stopPropagation → #a 不应触发。注册顺序：先 #a 后 #b（冒泡 #c→#b→#a）。
+    sandbox
+        .execute("document.querySelector('#a').addEventListener('click', function(){ globalThis.__a = true; });")
+        .unwrap();
+    sandbox
+        .execute("document.querySelector('#b').addEventListener('click', function(e){ globalThis.__b = true; e.stopPropagation(); });")
+        .unwrap();
+    sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__b === true").unwrap().value, "true", "#b 应触发");
+    assert_eq!(
+        sandbox.execute("globalThis.__a === true").unwrap().value,
+        "false",
+        "#a 不应触发（stopPropagation 中断冒泡）"
+    );
+
+    // bubbles:false 的事件不冒泡：dispatchEvent 自定义非冒泡事件到 #c，#b 不触发。
+    sandbox
+        .execute("document.querySelector('#b').addEventListener('foo', function(){ globalThis.__foo = true; });")
+        .unwrap();
+    sandbox
+        .execute("document.querySelector('#c').dispatchEvent(new Event('foo', { bubbles: false }));")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__foo === true").unwrap().value,
+        "false",
+        "bubbles:false 事件不应冒泡到 #b"
+    );
+}
