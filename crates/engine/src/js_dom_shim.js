@@ -871,6 +871,13 @@
     return String(sel).toUpperCase();
   }
 
+  // P1a select：经 host `__zw_get_tag` 判元素是否为某 tag（selector-identity 元素）。
+  // `_tagFromSel` 是启发式（id-only 选择器猜 DIV），不足以判 SELECT；host 查询准确。
+  function _isTag(sel, tagUpper) {
+    if (!sel || typeof __zw_get_tag !== 'function') return false;
+    try { return __zw_get_tag(sel).toUpperCase() === tagUpper; } catch (_e) { return false; }
+  }
+
   function _parentNodeFor(sel, handle) {
     if (sel === 'html') return null;
     if (sel === 'body' || sel === 'head') return _wrapSelector('html');
@@ -898,6 +905,11 @@
         if (prop === '__zwHandle') return handle;
         if (prop === '__zwSelector') return sel;
         if (prop === 'value') {
+          // P1a select：<select>.value = 选中 option 的 value（HTML spec 语义，非 value 属性）。
+          // selected 会随 host 设值变化，故不缓存（每次查 host 反映最新 dom_html）。
+          if (!handle && sel && typeof __zw_select_value === 'function' && _isTag(sel, 'SELECT')) {
+            try { return __zw_select_value(sel); } catch (_e) { return ''; }
+          }
           // P1a form input：value 属性 get——per-element 缓存，lazy-init 自 value 属性。
           if (_inputValues[key] == null) {
             var va = handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value');
@@ -909,6 +921,20 @@
           // P1a checkbox：checked 属性 get（boolean 属性存在性，经 host `__zw_has_attr`）。
           if (typeof __zw_has_attr === 'function') {
             try { return __zw_has_attr(sel, 'checked') === '1'; } catch (_e) {}
+          }
+          return false;
+        }
+        if (prop === 'selectedIndex') {
+          // P1a select：选中 option 的索引（host `__zw_select_index`）。非 select → -1。
+          if (!handle && sel && typeof __zw_select_index === 'function' && _isTag(sel, 'SELECT')) {
+            try { return parseInt(__zw_select_index(sel), 10); } catch (_e) {}
+          }
+          return -1;
+        }
+        if (prop === 'selected') {
+          // P1a select option：selected 属性存在性（boolean，经 host `__zw_has_attr`）。
+          if (typeof __zw_has_attr === 'function') {
+            try { return __zw_has_attr(sel, 'selected') === '1'; } catch (_e) {}
           }
           return false;
         }
@@ -1153,11 +1179,19 @@
           else __zw_set_attr(sel, 'id', String(value));
           moAttr = 'id';
         } else if (p === 'value') {
-          // P1a form input：value 属性 set——更新缓存 + 记 value 属性 mutation（供 render）。
-          _inputValues[key] = String(value);
-          if (handle) __zw_set_attr_handle(handle, 'value', String(value));
-          else __zw_set_attr(sel, 'value', String(value));
-          moAttr = 'value';
+          // P1a select：编程设 `<select>.value = value` → 记 SelectOption mutation（apply 时
+          // mark 匹配 option selected + deselect 兄弟）。匹配浏览器：编程设值不自动派 change。
+          // 非 select（input/textarea）走 value 属性 mutation。
+          if (!handle && sel && typeof __zw_select_option === 'function' && _isTag(sel, 'SELECT')) {
+            __zw_select_option(sel, String(value));
+            // SelectOption 改的是子 option 的 selected 属性，非 select 元素自身的属性 mutation；
+            // 不发 select 的 attributes MO 通知（语义正确）。
+          } else {
+            _inputValues[key] = String(value);
+            if (handle) __zw_set_attr_handle(handle, 'value', String(value));
+            else __zw_set_attr(sel, 'value', String(value));
+            moAttr = 'value';
+          }
         } else {
           if (handle) __zw_set_attr_handle(handle, p, String(value));
           else __zw_set_attr(sel, p, String(value));

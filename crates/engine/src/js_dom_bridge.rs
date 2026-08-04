@@ -142,6 +142,14 @@ pub enum DomMutation {
         /// 节点句柄。
         handle: String,
     },
+    /// `select.value = value`（P1a select）——编程选中匹配 value 的 option，deselect 同 select
+    /// 内其他 option。区别于 click 触发的 change（需 UI），编程设值**不**自动派 change（匹配浏览器）。
+    SelectOption {
+        /// `<select>` 的选择器。
+        selector: String,
+        /// 要选中的 option 的 value（option 的 value 属性，无则 text content）。
+        value: String,
+    },
 }
 
 /// 在文档根下按简单选择器查找第一个匹配元素。
@@ -405,6 +413,24 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     doc.remove_child(parent, node).map_err(|e| e.to_string())?;
                 }
             }
+            DomMutation::SelectOption { selector, value } => {
+                // P1a select：编程设 select.value——mark 匹配 option selected，deselect 兄弟。
+                let sel =
+                    find_by_selector(doc, selector).ok_or_else(|| format!("select_option: no match for {selector}"))?;
+                let options = doc.query_selector_all(sel, "option");
+                let target = options
+                    .iter()
+                    .copied()
+                    .find(|opt| option_value(doc, *opt).as_str() == value.as_str())
+                    .ok_or_else(|| format!("select_option: no option with value {value}"))?;
+                for opt in options {
+                    if opt == target {
+                        doc.set_attribute(opt, "selected", "");
+                    } else {
+                        doc.remove_attribute(opt, "selected");
+                    }
+                }
+            }
         }
     }
 
@@ -527,11 +553,16 @@ pub fn apply_mutations_to_html_with_handles(
     Ok((doc.outer_html(doc.root()), handle_selectors))
 }
 
-/// 从 HTML 快照查询首个匹配的稳定选择器（供 `__zw_query_match`）。
+/// 从 HTML 快照查询首个匹配元素的**唯一**选择器（供 `__zw_query_match`→querySelector）。
+///
+/// 用 [`unique_selector_for_node`]（`#id`/`tag.class`/`tag` 唯一时返回；歧义时 nth-child 结构
+/// 路径回落）——保证返回的 selector 在 dom_html 中**唯一定位**该元素。querySelector 对无 id/class
+/// 的歧义元素（`<option>`/`<li>` 等）此前返回 `stable_selector`（如 "option"，多 option 时指向首个），
+/// 导致后续 `el.selected`/`el.value` 读错元素；唯一选择器修复之。同一 dom_html 上与旧实现解析到同一元素。
 pub fn query_match_selector(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
     find_by_selector(&doc, selector)
-        .and_then(|n| stable_selector_for_node(&doc, n))
+        .and_then(|n| unique_selector_for_node(&doc, n))
         .unwrap_or_default()
 }
 
@@ -632,6 +663,86 @@ pub fn is_checkbox(html: &str, selector: &str) -> bool {
 pub fn is_radio(html: &str, selector: &str) -> bool {
     query_tag_from_html(html, selector).eq_ignore_ascii_case("input")
         && query_attr_from_html(html, selector, "type").eq_ignore_ascii_case("radio")
+}
+
+/// P1a select：判定元素是否为 `<select>`。
+pub fn is_select(html: &str, selector: &str) -> bool {
+    query_tag_from_html(html, selector).eq_ignore_ascii_case("select")
+}
+
+/// P1a select：读 `<select>` 当前选中 option 的 value（HTML spec 语义）。
+///
+/// 选中 option = 首个（树序）带 `selected` 属性的 `<option>`；无则首个 option（默认选中）。
+/// option value = `value` 属性，无则其 text content（trim）。无 option → 空串。
+pub fn select_value_from_html(html: &str, selector: &str) -> String {
+    let doc = parse_html(html);
+    let Some(sel) = find_by_selector(&doc, selector) else {
+        return String::new();
+    };
+    selected_option(&doc, sel)
+        .map(|(opt, _)| option_value(&doc, opt))
+        .unwrap_or_default()
+}
+
+/// P1a select：读 `<select>` 选中 option 的索引（首个 `selected` option；无则 0；无 option → -1）。
+pub fn select_index_from_html(html: &str, selector: &str) -> i32 {
+    let doc = parse_html(html);
+    let Some(sel) = find_by_selector(&doc, selector) else {
+        return -1;
+    };
+    selected_option(&doc, sel).map(|(_, idx)| idx as i32).unwrap_or(-1)
+}
+
+/// 返回 select 的选中 option（节点, 0-based 索引）：首个带 `selected` 属性者，无则首个 option。
+fn selected_option(doc: &Document, select: NodeId) -> Option<(NodeId, usize)> {
+    let options = doc.query_selector_all(select, "option");
+    let first = options.first().copied();
+    for (idx, opt) in options.iter().enumerate() {
+        if doc.get_attribute(*opt, "selected").is_some() {
+            return Some((*opt, idx));
+        }
+    }
+    first.map(|o| (o, 0))
+}
+
+/// option 的 value：`value` 属性，无则 text content（trim）。
+fn option_value(doc: &Document, opt: NodeId) -> String {
+    if let Some(v) = doc.get_attribute(opt, "value") {
+        return v;
+    }
+    doc.text_content(opt).map(|t| t.trim().to_string()).unwrap_or_default()
+}
+
+/// P1a select：编程设 `select.value = value`——mark 匹配 value 的 option 为 `selected`，
+/// deselect 同 select 内其他 option（HTML spec：单选 select 仅一 option 可选中）。
+/// 匹配规则：option 的 [`option_value`] == `value`（value 属性优先，无则 text content）。
+/// 无匹配 option → 不改（保持当前选中）。返回新 HTML（非 select / 未命中 → None）。
+pub fn set_selected_option_html(html: &str, selector: &str, value: &str) -> Option<String> {
+    let mut doc = parse_html(html);
+    let sel = find_by_selector(&doc, selector)?;
+    let is_sel = doc
+        .get(sel)
+        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("select")));
+    if !is_sel {
+        return None;
+    }
+    let options = doc.query_selector_all(sel, "option");
+    let mut matched: Option<NodeId> = None;
+    for opt in &options {
+        if option_value(&doc, *opt) == value {
+            matched = Some(*opt);
+            break;
+        }
+    }
+    let target = matched?;
+    for opt in &options {
+        if *opt == target {
+            doc.set_attribute(*opt, "selected", "");
+        } else {
+            doc.remove_attribute(*opt, "selected");
+        }
+    }
+    Some(doc.outer_html(doc.root()))
 }
 
 /// P1a radio：toggle `<input type=radio>`——set `checked` on target + `remove_attribute(checked)`
@@ -917,6 +1028,47 @@ pub fn register_dom_callbacks(
             } else {
                 "0".into()
             }
+        }),
+    );
+
+    // P1a select：读 `<select>` 当前选中 option 的 value（HTML spec 语义：首个 selected option，
+    // 无则首 option）。shim `select.value` getter 对 tag=SELECT 调此（非 value 属性）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_select_value",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            select_value_from_html(&snap, &sel)
+        }),
+    );
+
+    // P1a select：读选中 option 的索引（shim `select.selectedIndex` getter）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_select_index",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            select_index_from_html(&snap, &sel).to_string()
+        }),
+    );
+
+    // P1a select：编程设 `select.value = value`——记录 SelectOption mutation（apply 时 mark
+    // 匹配 option selected + deselect 兄弟）。匹配浏览器语义：编程设值不自动派 change。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_select_option",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::SelectOption {
+                        selector: args[0].clone(),
+                        value: args[1].clone(),
+                    });
+            }
+            "ok".into()
         }),
     );
 
@@ -1497,6 +1649,10 @@ mod tests {
         // P1b S1（方案 A）异步回调 resolve 通道 JS 侧契约。
         assert!(shim.contains("globalThis.__zwResolveCallback"));
         assert!(shim.contains("globalThis.__zw_pending"));
+        // P1a select：<select>.value/selectedIndex getter + setter 经 host 回调。
+        assert!(shim.contains("__zw_select_value"));
+        assert!(shim.contains("__zw_select_index"));
+        assert!(shim.contains("__zw_select_option"));
     }
 
     #[test]
@@ -1634,6 +1790,80 @@ mod tests {
         assert!(has_attribute(&out, "#c", "checked"));
         // 非 radio → None。
         assert_eq!(toggle_radio_html(html, "#c"), None);
+    }
+
+    #[test]
+    fn test_select_value_read() {
+        let html = "<html><body><select id='s'>\
+            <option value='a'>A</option>\
+            <option value='b' selected>B</option>\
+            <option value='c'>C</option>\
+            </select></body></html>";
+        assert!(is_select(html, "#s"));
+        // selected option b → "b"。
+        assert_eq!(select_value_from_html(html, "#s"), "b");
+        assert_eq!(select_index_from_html(html, "#s"), 1);
+        // 无 selected 属性 → 默认首个 option。
+        let html2 = "<html><body><select id='s'><option value='x'>X</option><option value='y'>Y</option></select></body></html>";
+        assert_eq!(select_value_from_html(html2, "#s"), "x");
+        assert_eq!(select_index_from_html(html2, "#s"), 0);
+        // option 无 value 属性 → text content。
+        let html3 = "<html><body><select id='s'><option>Plain</option></select></body></html>";
+        assert_eq!(select_value_from_html(html3, "#s"), "Plain");
+        // 无 option → 空串 / -1。
+        let html4 = "<html><body><select id='s'></select></body></html>";
+        assert_eq!(select_value_from_html(html4, "#s"), "");
+        assert_eq!(select_index_from_html(html4, "#s"), -1);
+    }
+
+    #[test]
+    fn test_set_selected_option_html() {
+        let html = "<html><body><select id='s'>\
+            <option value='a' selected>A</option>\
+            <option value='b'>B</option>\
+            <option value='c'>C</option>\
+            </select></body></html>";
+        // 设 value='c' → c selected、a/b deselect。
+        let out = set_selected_option_html(html, "#s", "c").unwrap();
+        assert!(has_attribute(&out, "#s > option:nth-of-type(3)", "selected") || out.contains("value=\"c\" selected"));
+        assert!(!has_attribute(&out, "#s > option:nth-of-type(1)", "selected"));
+        // 经 value 读回 = "c"。
+        assert_eq!(select_value_from_html(&out, "#s"), "c");
+        // 匹配 option 无 value 属性（按 text content）。
+        let html2 = "<html><body><select id='s'><option>One</option><option>Two</option></select></body></html>";
+        let out2 = set_selected_option_html(html2, "#s", "Two").unwrap();
+        assert_eq!(select_value_from_html(&out2, "#s"), "Two");
+        // 无匹配 value → None（不改）。
+        assert_eq!(set_selected_option_html(html, "#s", "zzz"), None);
+        // 非 select → None。
+        assert_eq!(set_selected_option_html(html, "body", "a"), None);
+    }
+
+    #[test]
+    fn test_apply_select_option_mutation() {
+        let html = "<html><body><select id='s'>\
+            <option value='a' selected>A</option>\
+            <option value='b'>B</option>\
+            </select></body></html>";
+        let out = apply_mutations_to_html(
+            html,
+            &[DomMutation::SelectOption {
+                selector: "#s".into(),
+                value: "b".into(),
+            }],
+        )
+        .unwrap();
+        assert_eq!(select_value_from_html(&out, "#s"), "b");
+        // SelectOption 也参与 handle→selector map（apply_dom_mutations 末尾无新 handle，map 空）。
+        let (_, handles) = apply_mutations_to_html_with_handles(
+            html,
+            &[DomMutation::SelectOption {
+                selector: "#s".into(),
+                value: "b".into(),
+            }],
+        )
+        .unwrap();
+        assert!(handles.is_empty(), "SelectOption 不创建 handle");
     }
 
     #[test]

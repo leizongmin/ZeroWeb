@@ -1017,6 +1017,59 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_select_value_read_and_setter() {
+        // P1a select：<select>.value 读（选中 option 的 value）+ selectedIndex + option.selected，
+        // + 编程设 select.value=x（SelectOption mutation，apply 后反映）。
+        use zero_engine::apply_mutations_to_html;
+        let mut worker = RendererJsWorker::spawn(24);
+        // option b 默认 selected。
+        let html = "<html><body><select id='s'>\
+                    <option value='a'>A</option>\
+                    <option value='b' selected>B</option>\
+                    <option value='c'>C</option>\
+                    </select></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        // 读：value='b'、selectedIndex=1、option b selected=true / a selected=false。
+        worker
+            .execute_script_direct(
+                "var s = document.querySelector('#s');\
+                 globalThis.__v = s.value;\
+                 globalThis.__i = s.selectedIndex;\
+                 globalThis.__sb = document.querySelector('#s > option:nth-of-type(2)').selected;\
+                 globalThis.__sa = document.querySelector('#s > option:nth-of-type(1)').selected;",
+            )
+            .unwrap();
+        assert_eq!(worker.execute_script_direct("String(globalThis.__v)").unwrap(), "b");
+        assert_eq!(worker.execute_script_direct("String(globalThis.__i)").unwrap(), "1");
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__sb)").unwrap(),
+            "true",
+            "option b 应 selected"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__sa)").unwrap(),
+            "false",
+            "option a 应未 selected"
+        );
+        // 编程设 select.value='c'（记录 SelectOption mutation）→ apply → 反映。
+        worker
+            .execute_script_direct("document.querySelector('#s').value = 'c';")
+            .unwrap();
+        let recorded = worker.mutations().lock().unwrap().clone();
+        let html1 = apply_mutations_to_html(html, &recorded).unwrap();
+        worker.set_dom_snapshot(&html1, "about:blank");
+        worker
+            .execute_script_direct("globalThis.__v2 = document.querySelector('#s').value;")
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__v2)").unwrap(),
+            "c",
+            "setter 后 select.value 应为 c"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_intersection_observer_intersecting() {
         // P1a Slice 2a：observe 视口内元素 → spec initial notification 派发，isIntersecting=true、
         // ratio≈1（target 完全在 viewport 内）。复用 gBCR：snapshot 填 #t rect，IO 经
