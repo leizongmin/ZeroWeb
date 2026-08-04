@@ -143,6 +143,28 @@
   globalThis.clearInterval = function(handle) {
     delete globalThis.__zw_pending[_timerIdKey(handle)];
   };
+  // requestIdleCallback/cancelIdleCallback：镜像 setTimeout 机制（host __zw_setTimeout + pending 表；
+  // 无 host → _defer 微任务，同 setTimeout fallback）。回调传 IdleDeadline（didTimeout/timeRemaining
+  // 近似——真实 idle 时序须 event-loop 帧 tick 切片，此为基础可用实现，防 ReferenceError + 延迟执行）。
+  function _ricIdKey(handle) { return '__zwric:' + handle; }
+  globalThis.requestIdleCallback = function(fn, options) {
+    var handle = _timerId++;
+    if (typeof fn !== 'function') return handle;
+    var deadline = { didTimeout: false, timeRemaining: function() { return 50; } };
+    var id = _ricIdKey(handle);
+    globalThis.__zw_pending[id] = function() { try { fn(deadline); } catch (_e) {} };
+    if (typeof __zw_setTimeout === 'function') {
+      try { __zw_setTimeout(id, (options && options.timeout) | 0); return handle; }
+      catch (_e) { delete globalThis.__zw_pending[id]; }
+    }
+    // fallback（无 host）：微任务同步触发（同 setTimeout fallback）。
+    delete globalThis.__zw_pending[id];
+    _defer(function() { try { fn(deadline); } catch (_e) {} });
+    return handle;
+  };
+  globalThis.cancelIdleCallback = function(handle) {
+    delete globalThis.__zw_pending[_ricIdKey(handle)];
+  };
 
   // ── P1b S2 incr1/incr2：MutationObserver（JS 侧拦截 + microtask 派发）──
   // 节点身份用「复合 key」：handle-based（JS 创建子树，`createElement` 返 `"__n{n}"`）+

@@ -556,6 +556,37 @@ fn test_layout_geometry_e2e() {
 }
 
 #[test]
+fn test_request_idle_callback_e2e() {
+    // requestIdleCallback 无 host __zw_setTimeout → 走 _defer fallback（微任务，execute 末尾 drain）。
+    // 回调传 IdleDeadline（timeRemaining 近似 50）。cancelIdleCallback 不抛。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__ric_ran = false;\
+             requestIdleCallback(function(d){ globalThis.__ric_ran = true; globalThis.__ric_tr = d.timeRemaining(); });",
+        )
+        .unwrap();
+    // _defer 在上一 execute 末尾 microtask checkpoint drain → 回调已运行。
+    assert_eq!(sandbox.execute("globalThis.__ric_ran").unwrap().value, "true");
+    assert_eq!(sandbox.execute("globalThis.__ric_tr").unwrap().value, "50");
+    // 返 handle 为 number；cancelIdleCallback 不抛。
+    assert_eq!(
+        sandbox
+            .execute("typeof requestIdleCallback(function(){})")
+            .unwrap()
+            .value,
+        "number"
+    );
+    assert_eq!(sandbox.execute("cancelIdleCallback(1), 'ok'").unwrap().value, "ok");
+}
+
+#[test]
 fn test_collect_element_ids_dedup_preserve_order() {
     let html = "<html><body>\
                     <div id=\"container\"></div>\
