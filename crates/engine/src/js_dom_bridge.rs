@@ -566,10 +566,21 @@ pub fn query_match_selector(html: &str, selector: &str) -> String {
         .unwrap_or_default()
 }
 
-/// 从 HTML 快照查询全部匹配的稳定选择器（`|` 分隔，供 `__zw_query_all`）。
+/// 从 HTML 快照查询全部匹配元素的**唯一**选择器（`|` 分隔，供 `__zw_query_all`→querySelectorAll）。
+///
+/// 用 [`unique_selector_for_node`]（`#id`/`tag.class`/`tag` 唯一时返回；歧义时 nth-child 结构路径
+/// 回落）——每个元素返在 dom_html 中**唯一定位**它的选择器。此前用 [`find_all_selectors`]（返
+/// `stable_selector`），对无 id/class 的歧义集合（`querySelectorAll('option')`/`'li'` 等）每个元素
+/// 都返如 "option"，N 个 proxy 全指向首个 option → 读全错；唯一选择器修复之（与 R2663 的
+/// `query_match_selector` 单查询对称）。
 pub fn query_all_selector_list(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
-    find_all_selectors(&doc, selector).join("|")
+    let root = doc.root();
+    doc.query_selector_all(root, selector.trim())
+        .into_iter()
+        .filter_map(|id| unique_selector_for_node(&doc, id))
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 /// 收集文档中所有元素的 `id` 属性值（去重、保序，首次出现优先——与
@@ -1569,6 +1580,32 @@ mod tests {
         let doc = parse_html(html);
         let sels = find_all_selectors(&doc, "p.x");
         assert_eq!(sels.len(), 2);
+    }
+
+    #[test]
+    fn test_query_all_selector_list_unique() {
+        // querySelectorAll 对歧义集合（无 id/class 的 option）每元素返**唯一**选择器（nth-child
+        // 结构路径），而非 stable_selector（"option" 重复→全指向首个）。各 selector 互异且可解析。
+        let html = "<html><body><select id='s'>\
+                    <option value='a'>A</option>\
+                    <option value='b' selected>B</option>\
+                    <option value='c'>C</option>\
+                    </select></body></html>";
+        let list = query_all_selector_list(html, "#s option");
+        let sels: Vec<&str> = list.split('|').collect();
+        assert_eq!(sels.len(), 3, "应返回 3 个 option 的选择器");
+        // 互异（唯一化后无重复）。
+        let uniq: std::collections::HashSet<&str> = sels.iter().copied().collect();
+        assert_eq!(uniq.len(), 3, "3 个 selector 应互异（非全 'option'）");
+        // 每个 selector 在 fresh-parse 上可解析且指向不同 option。
+        let doc = parse_html(html);
+        let mut resolved = Vec::new();
+        for s in &sels {
+            let id = find_by_selector(&doc, s).expect("每个 selector 须可解析");
+            resolved.push(option_value(&doc, id));
+        }
+        resolved.sort();
+        assert_eq!(resolved, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
     }
 
     #[test]

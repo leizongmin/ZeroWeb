@@ -1070,6 +1070,39 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_query_selector_all_unique_identity() {
+        // P1a querySelectorAll 唯一选择器：`querySelectorAll('option')` 每元素返唯一身份（nth-child
+        // 结构路径），各 `.value`/`.selected` 读对（此前全返 "option"→全指向首个 option，读全错）。
+        let mut worker = RendererJsWorker::spawn(25);
+        let html = "<html><body><select id='s'>\
+                    <option value='a'>A</option>\
+                    <option value='b' selected>B</option>\
+                    <option value='c'>C</option>\
+                    </select></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "var opts = document.querySelectorAll('#s option');\
+                 globalThis.__n = opts.length;\
+                 globalThis.__vals = opts.map(function(o){ return o.value; }).join(',');\
+                 globalThis.__sels = opts.map(function(o){ return o.selected ? '1':'0'; }).join(',');",
+            )
+            .unwrap();
+        assert_eq!(worker.execute_script_direct("String(globalThis.__n)").unwrap(), "3");
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__vals)").unwrap(),
+            "a,b,c",
+            "各 option.value 应读对（唯一身份）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__sels)").unwrap(),
+            "0,1,0",
+            "各 option.selected 应读对（b 选中）"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_intersection_observer_intersecting() {
         // P1a Slice 2a：observe 视口内元素 → spec initial notification 派发，isIntersecting=true、
         // ratio≈1（target 完全在 viewport 内）。复用 gBCR：snapshot 填 #t rect，IO 经
