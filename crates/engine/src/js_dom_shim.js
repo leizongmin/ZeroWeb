@@ -9,7 +9,9 @@
   // `.value` set 更新缓存 + 记 value 属性 mutation（供 render）。跨 execute 存活（typing 多键），
   // 导航（URL 变化）经 `__zw_reset_form_state` 清空防跨页 stale value。
   var _inputValues = {};
-
+  // P1a DocumentFragment：已创建的 fragment handle 集合（nodeType=11 标识 + appendChild 时
+  // flatten 检测）。fragment 为 create 句柄，无 selector，故用此 set 区别于普通元素句柄。
+  var _fragmentHandles = {};
   // ── 浏览器运行时桩（定时器、navigator、location 等）──
   var _timerId = 1;
   // 单次脚本执行内 microtask 派发上限（避免 setTimeout 轮询在 checkpoint 中无限链式调度）。
@@ -1106,14 +1108,16 @@
             try { return __zw_contains(sel, otherSel) === '1'; } catch (_e) { return false; }
           };
         }
+        // DocumentFragment handle（nodeType 11 / nodeName '#document-fragment'）。
+        var isFrag = handle && _fragmentHandles[handle];
         if (prop === 'tagName') {
-          return _tagFromSel(sel);
+          return isFrag ? undefined : _tagFromSel(sel);
         }
         if (prop === 'nodeName') {
-          return _tagFromSel(sel);
+          return isFrag ? '#document-fragment' : _tagFromSel(sel);
         }
         if (prop === 'nodeType') {
-          return 1;
+          return isFrag ? 11 : 1;
         }
         if (prop === 'ownerDocument') {
           return globalThis.document;
@@ -1228,8 +1232,15 @@
         if (prop === 'appendChild') {
           return function(child) {
             if (child && child.__zwHandle) {
-              if (handle) __zw_append_child_handle(handle, child.__zwHandle);
-              else __zw_append_child(sel, child.__zwHandle);
+              // DocumentFragment：flatten 子节点到 this（fragment 自身不入树），区别于 append 节点自身。
+              if (_fragmentHandles[child.__zwHandle] && typeof __zw_append_fragment_children === 'function') {
+                if (handle) __zw_append_fragment_children_handle(handle, child.__zwHandle);
+                else __zw_append_fragment_children(sel, child.__zwHandle);
+              } else if (handle) {
+                __zw_append_child_handle(handle, child.__zwHandle);
+              } else {
+                __zw_append_child(sel, child.__zwHandle);
+              }
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [child], removedNodes: [] });
             }
             return child;
@@ -1308,8 +1319,15 @@
               var item = arguments[i];
               if (item == null) continue;
               if (typeof item === 'object' && item.__zwHandle) {
-                if (handle) __zw_append_child_handle(handle, item.__zwHandle);
-                else __zw_append_child(sel, item.__zwHandle);
+                // DocumentFragment：flatten 子节点到 this。
+                if (_fragmentHandles[item.__zwHandle] && typeof __zw_append_fragment_children === 'function') {
+                  if (handle) __zw_append_fragment_children_handle(handle, item.__zwHandle);
+                  else __zw_append_fragment_children(sel, item.__zwHandle);
+                } else if (handle) {
+                  __zw_append_child_handle(handle, item.__zwHandle);
+                } else {
+                  __zw_append_child(sel, item.__zwHandle);
+                }
                 added.push(item);
               } else {
                 var txt = String(item);
@@ -1775,6 +1793,15 @@
     },
     createTextNode: function(text) {
       var handle = __zw_create_text(String(text));
+      return _wrapHandle(handle);
+    },
+    // `document.createDocumentFragment()`：DocumentFragment（nodeType 11，轻量容器）。
+    // 建 fragment（append 子节点经既有 append_child_handle）+ 标记 handle 到 _fragmentHandles
+    //（供 nodeType=11 与 append 时 flatten 检测）。
+    createDocumentFragment: function() {
+      if (typeof __zw_create_document_fragment !== 'function') return _wrapHandle('');
+      var handle = __zw_create_document_fragment();
+      if (handle) _fragmentHandles[handle] = true;
       return _wrapHandle(handle);
     },
     documentElement: _wrapSelector('html'),

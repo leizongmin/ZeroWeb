@@ -192,6 +192,27 @@ pub enum DomMutation {
         /// 替换用的 HTML 片段。
         html: String,
     },
+    /// `document.createDocumentFragment()`（P1a）——创建 DocumentFragment 节点（nodeType 11，
+    /// 轻量容器）。供批量构建后一次性插入（append 时 flatten 子节点到目标）。
+    CreateDocumentFragment {
+        /// 稳定句柄（`__n1` 等）。
+        handle: String,
+    },
+    /// `parent.appendChild(fragment)`（P1a）——把 fragment 的**子节点移动**到 parent（flatten，
+    /// fragment 自身不入树）。区别于 [`Self::AppendChild`]（append 节点自身）。父为选择器。
+    AppendFragmentChildren {
+        /// 父节点选择器。
+        parent_selector: String,
+        /// DocumentFragment 句柄。
+        fragment_handle: String,
+    },
+    /// `parentHandle.appendChild(fragment)`——父为 create 句柄（detached）。
+    AppendFragmentChildrenByHandle {
+        /// 父节点句柄。
+        parent_handle: String,
+        /// DocumentFragment 句柄。
+        fragment_handle: String,
+    },
 }
 
 /// 在文档根下按简单选择器查找第一个匹配元素。
@@ -510,6 +531,28 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
             DomMutation::SetOuterHtml { selector, html } => {
                 replace_outer_html(doc, selector, html)?;
             }
+            DomMutation::CreateDocumentFragment { handle } => {
+                let id = doc.create_document_fragment();
+                handles.insert(handle.clone(), id);
+            }
+            DomMutation::AppendFragmentChildren {
+                parent_selector,
+                fragment_handle,
+            } => {
+                let parent = find_by_selector(doc, parent_selector)
+                    .ok_or_else(|| format!("append_fragment_children: no parent match for {parent_selector}"))?;
+                append_fragment_children(doc, parent, fragment_handle, &handles)?;
+            }
+            DomMutation::AppendFragmentChildrenByHandle {
+                parent_handle,
+                fragment_handle,
+            } => {
+                let parent = handles
+                    .get(parent_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
+                append_fragment_children(doc, parent, fragment_handle, &handles)?;
+            }
         }
     }
 
@@ -742,6 +785,27 @@ fn replace_outer_html(doc: &mut Document, selector: &str, html: &str) -> Result<
     }
     // 移除目标自身（整体替换）。
     doc.remove_child(parent, node).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// `parent.appendChild(fragment)` 的 flatten 语义：把 DocumentFragment 的**子节点逐个移动**
+/// 到 parent（fragment 自身不入树，append_child 自动从 fragment detach 子节点 → fragment 变空）。
+/// 供 [`DomMutation::AppendFragmentChildren`] / [`DomMutation::AppendFragmentChildrenByHandle`] 应用。
+fn append_fragment_children(
+    doc: &mut Document,
+    parent: NodeId,
+    fragment_handle: &str,
+    handles: &HashMap<String, NodeId>,
+) -> Result<(), String> {
+    let fragment = handles
+        .get(fragment_handle)
+        .copied()
+        .ok_or_else(|| format!("unknown fragment handle {fragment_handle}"))?;
+    // 快照 fragment 子列表（append 过程中会从 fragment 移除，故先收集）。
+    let kids: Vec<NodeId> = doc.get(fragment).map(|n| n.children.clone()).unwrap_or_default();
+    for child in kids {
+        doc.append_child(parent, child).map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -1802,6 +1866,52 @@ pub fn register_dom_callbacks(
                     text,
                 });
             handle
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    let c = Arc::clone(&counter);
+    sandbox.register_callback(
+        "__zw_create_document_fragment",
+        Box::new(move |_args| {
+            let n = c.fetch_add(1, Ordering::Relaxed);
+            let handle = format!("__n{n}");
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::CreateDocumentFragment { handle: handle.clone() });
+            handle
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_append_fragment_children",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::AppendFragmentChildren {
+                        parent_selector: args[0].clone(),
+                        fragment_handle: args[1].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_append_fragment_children_handle",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::AppendFragmentChildrenByHandle {
+                        parent_handle: args[0].clone(),
+                        fragment_handle: args[1].clone(),
+                    });
+            }
+            "ok".into()
         }),
     );
 

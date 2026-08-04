@@ -67,6 +67,54 @@ fn test_apply_create_and_append() {
 }
 
 #[test]
+fn test_apply_create_document_fragment_flatten() {
+    // createDocumentFragment + 建 2 子 + AppendFragmentChildren → 子节点 flatten 到目标，
+    // fragment 自身不入树。
+    let html = "<html><body><ul id=\"list\"></ul></body></html>";
+    let mutations = vec![
+        DomMutation::CreateDocumentFragment { handle: "__f".into() },
+        DomMutation::CreateElement {
+            handle: "__n1".into(),
+            tag: "li".into(),
+        },
+        DomMutation::SetAttrOnHandle {
+            handle: "__n1".into(),
+            name: "id".into(),
+            value: "a".into(),
+        },
+        DomMutation::CreateElement {
+            handle: "__n2".into(),
+            tag: "li".into(),
+        },
+        DomMutation::SetAttrOnHandle {
+            handle: "__n2".into(),
+            name: "id".into(),
+            value: "b".into(),
+        },
+        // 建 fragment 子树。
+        DomMutation::AppendChildByHandle {
+            parent_handle: "__f".into(),
+            child_handle: "__n1".into(),
+        },
+        DomMutation::AppendChildByHandle {
+            parent_handle: "__f".into(),
+            child_handle: "__n2".into(),
+        },
+        // flatten：fragment 子移到 #list。
+        DomMutation::AppendFragmentChildren {
+            parent_selector: "#list".into(),
+            fragment_handle: "__f".into(),
+        },
+    ];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    let ia = out.find("<li id=\"a\">").unwrap();
+    let ib = out.find("<li id=\"b\">").unwrap();
+    assert!(ia < ib, "flatten 后两 li 应按序在 #list 内\n{out}");
+    // fragment 应不出现（detached，未入树）。
+    assert!(!out.contains("document-fragment"), "fragment 自身不应入序列化树\n{out}");
+}
+
+#[test]
 fn test_apply_insert_adjacent_html_beforeend() {
     // beforeend：片段作为目标元素末子追加（多节点保持顺序）。
     let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
@@ -1768,4 +1816,52 @@ fn test_node_level_traversal_e2e() {
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__ps").unwrap().value, "text1");
     assert_eq!(sandbox.execute("globalThis.__ns").unwrap().value, "8");
+}
+
+#[test]
+fn test_create_document_fragment_e2e() {
+    // 端到端：createDocumentFragment（nodeType 11 / nodeName）+ 建 fragment 子 + append 到 DOM
+    // → flatten 子节点到目标（fragment 自身不入树）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let initial = "<html><body><ul id='list'></ul></body></html>".to_string();
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "var f = document.createDocumentFragment();\
+             var a = document.createElement('li'); a.id = 'a';\
+             var b = document.createElement('li'); b.id = 'b';\
+             f.appendChild(a); f.appendChild(b);\
+             globalThis.__nt = f.nodeType;\
+             globalThis.__nn = f.nodeName;\
+             document.querySelector('#list').appendChild(f);",
+        )
+        .unwrap();
+    // fragment nodeType 11 / nodeName '#document-fragment'。
+    assert_eq!(sandbox.execute("globalThis.__nt").unwrap().value, "11");
+    assert_eq!(sandbox.execute("globalThis.__nn").unwrap().value, "#document-fragment");
+
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&initial, &ms).unwrap();
+    assert!(out.contains("<li id=\"a\">"), "flatten 后 li#a 应在 #list 内\n{out}");
+    assert!(out.contains("<li id=\"b\">"), "flatten 后 li#b 应在 #list 内\n{out}");
+    let ia = out.find("<li id=\"a\">").unwrap();
+    let ib = out.find("<li id=\"b\">").unwrap();
+    assert!(ia < ib, "flatten 保持子节点顺序 a<b\n{out}");
+
+    // 入队了 AppendFragmentChildren（sel 版）。
+    let has_flatten = mutations.lock().unwrap().iter().any(
+        |m| matches!(m, DomMutation::AppendFragmentChildren { parent_selector, .. } if parent_selector == "#list"),
+    );
+    assert!(has_flatten, "appendChild(fragment) 应入队 AppendFragmentChildren");
 }
