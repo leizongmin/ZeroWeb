@@ -31,6 +31,10 @@ pub enum PseudoClass {
     NthChild(Nth),
     /// `:nth-of-type(an+b)`——在同 tag 元素兄弟中第 n 个。
     NthOfType(Nth),
+    /// `:nth-last-child(an+b)`——在所有元素兄弟中倒数第 n 个。
+    NthLastChild(Nth),
+    /// `:nth-last-of-type(an+b)`——在同 tag 元素兄弟中倒数第 n 个。
+    NthLastOfType(Nth),
     /// `:first-child`——首个元素兄弟。
     FirstChild,
     /// `:last-child`——末个元素兄弟。
@@ -177,6 +181,9 @@ impl SimpleSelector {
         self.pseudos.iter().all(|p| match p {
             PseudoClass::NthChild(nth) => nth.matches(pos.child_index as i32),
             PseudoClass::NthOfType(nth) => nth.matches(pos.type_index as i32),
+            // 倒序位置：nth-last-child 从末尾数（child_count - child_index + 1）。
+            PseudoClass::NthLastChild(nth) => nth.matches((pos.child_count - pos.child_index + 1) as i32),
+            PseudoClass::NthLastOfType(nth) => nth.matches((pos.type_count - pos.type_index + 1) as i32),
             PseudoClass::FirstChild => pos.child_index == 1,
             PseudoClass::LastChild => pos.child_index == pos.child_count,
             PseudoClass::OnlyChild => pos.child_count == 1,
@@ -286,6 +293,8 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
     match name {
         "nth-child" => Some(PseudoClass::NthChild(parse_nth(args?)?)),
         "nth-of-type" => Some(PseudoClass::NthOfType(parse_nth(args?)?)),
+        "nth-last-child" => Some(PseudoClass::NthLastChild(parse_nth(args?)?)),
+        "nth-last-of-type" => Some(PseudoClass::NthLastOfType(parse_nth(args?)?)),
         "first-child" => Some(PseudoClass::FirstChild),
         "last-child" => Some(PseudoClass::LastChild),
         "only-child" => Some(PseudoClass::OnlyChild),

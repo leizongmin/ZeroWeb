@@ -704,6 +704,26 @@ fn test_query_selector_not_pseudo() {
 }
 
 #[test]
+fn test_query_selector_nth_last() {
+    let doc = parse_html("<html><body><ul><li>1</li><li>2</li><li>3</li><li>4</li></ul></body></html>");
+    let root = doc.root();
+    // :nth-last-child(1) = :last-child → "4"。
+    assert_eq!(
+        doc.text_content(doc.query_selector(root, "li:nth-last-child(1)").unwrap()),
+        Some("4".to_string())
+    );
+    // :nth-last-child(2) → "3"。
+    assert_eq!(
+        doc.text_content(doc.query_selector(root, "li:nth-last-child(2)").unwrap()),
+        Some("3".to_string())
+    );
+    // :nth-last-of-type(odd) → 倒数第 1、3 → "4"、"2"。
+    let odds = doc.query_selector_all(root, "li:nth-last-of-type(odd)");
+    let texts: Vec<_> = odds.iter().filter_map(|id| doc.text_content(*id)).collect();
+    assert_eq!(texts, vec!["2".to_string(), "4".to_string()]);
+}
+
+#[test]
 fn test_query_selector_not_found() {
     let doc = parse_html("<html><body></body></html>");
     let root = doc.root();
