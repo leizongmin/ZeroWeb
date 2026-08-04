@@ -5,6 +5,11 @@
 **状态**：草案（rally 模式，待后续 session 按切片执行）
 **前置**：R1116–R1120 七轮调查定论；本 RFC 综合 evidence/r1116–r1120 + master.md 条目。
 
+> **🔧 R2633 引用核验 + 实施状态纠偏（2026-08-04，R2202 模式）**：逐条源码核验本文 ~9 处引用，6 行号 + 1 路径 drift 全纠偏；**切片 2（Bug B column-x）已 LANDED（R1122）**——最高价值状态纠偏。
+> - **行号纠偏**：① `converter/mod.rs:271`（§1 Bug A）+ `:248`（§4 表）→**:344**（`apply_vertical_writing_mode`）；② `inline/mod.rs:1659`（§1 Bug B vrl col-x）→**:1144-1154**；③ `inline/mod.rs:1456`（§4 表 `break_items_into_columns`）→**:940**（R2626 既验）；④ `inline_finalization.rs:591`（§1 Bug D compute_final gate）→**:726**（fn `compute_final_inline_layouts` @607，gate `!is_block_level && !is_table_internal_with_text`）；⑤ `inline_finalization.rs:330`（§7.2 `store_font_sizes_from_ifc` 调用）→**:333**；⑥ `painter/text.rs:1119`（§7.2 Bug E Path B + §7.3 表）→**:812**。
+> - **路径纠偏**：⑦ §7.2 `inline/mod.rs:598-619` `collect_inline_items` →**`inline/collect_items.rs:6`**（`inline/` 模块拆分迁移，同 R2632 font-wall 发现）。
+> - **★ 实施状态纠偏（最高价值）**：**切片 2（Bug B column-x block_extent）已 LANDED = R1122**——`inline/mod.rs:1144-1154` 现 `let mut x = self.block_extent`（**非** `container_width`），附 R1122 注释；本文 §1 Bug B / §3 切片 2 / §7.6 描述为 open 属历史。**切片 4'（Bug E Path B 真实 styles）仍 OPEN**——`painter/text.rs:812` 仍 `HashMap::new()` 空样式（§7.2 描述准确）。R1043 vertical-mode native 整体仍 user-gated（css-writing-modes 80.1%）。
+
 ---
 
 ## 0. 执行摘要
@@ -24,13 +29,13 @@ R1116–R1120 七轮调查锁定 vertical-rl/lr 文本定位是 **4 层耦合系
 
 ### Bug A — vertical auto 容器 content_height 暴涨（R1050/R1052 谱系）
 - **现象**：vertical auto block（caption/cell-content/auto 容器）inline-size（height for vertical）暴涨到 viewport 宽（800−margin=784），应 = 内容 inline extent 或 CB inline-size。
-- **机制**：converter `apply_vertical_writing_mode`（converter/mod.rs:271）swap width↔height 后，taffy 把 vertical auto block 当 horizontal auto-width 块**填满父 content width（784）**；extract_layout swap 回 → physical height=784。table 经 `position_cells_vertical` post-process 修正（h=100），但 caption/cell-content 等未 post-process → 残留 784。
+- **机制**：converter `apply_vertical_writing_mode`（converter/mod.rs:344）swap width↔height 后，taffy 把 vertical auto block 当 horizontal auto-width 块**填满父 content width（784）**；extract_layout swap 回 → physical height=784。table 经 `position_cells_vertical` post-process 修正（h=100），但 caption/cell-content 等未 post-process → 残留 784。
 - **证据**：R1120 dump caption h=784；R1118 cell content_height 经 post-process 已正确（capped 100）。
 - **单独修效果**：cell已 post-process；caption 修 h=100 仍**不 flip caption-side-vrl**（Bug B 把文本推到 x=108，仍错位）。
 
 ### Bug B — IFC column-x 量纲错（break_items_into_columns）
 - **现象**：vertical-rl 单列文本完全不绘制（caption-side-vrl NO green）。
-- **机制**：`inline/mod.rs:1659` vrl 列 x = `self.container_width` 当 block 轴（x）右端；但 vertical 下 `container_width = content_height`（inline 深度/y 轴），**非 block 轴 extent** → 单列 col.y = 784−50=734 → paint `frag_base_x = content_x(58)+734=792 off-screen`。vlr 分支 x 从 0 起 → 不受影响。
+- **机制**：`inline/mod.rs:1144-1154`（**R1122 已修**：现用 `block_extent`，非 `container_width`；历史 vrl 列 x = `self.container_width` 当 block 轴（x）右端）；但 vertical 下 `container_width = content_height`（inline 深度/y 轴），**非 block 轴 extent** → 单列 col.y = 784−50=734 → paint `frag_base_x = content_x(58)+734=792 off-screen`。vlr 分支 x 从 0 起 → 不受影响。
 - **证据**：R1120 ZW_DUMP_FB 诊断 vrl caption NO green；total_cols_width 修法 +2 caption 但破 alignment（Bug C）。
 - **单独修效果**：net-negative −2（alignment 簇 +5-7pp 恶化，Bug C load-bearing）。
 
@@ -42,7 +47,7 @@ R1116–R1120 七轮调查锁定 vertical-rl/lr 文本定位是 **4 层耦合系
 
 ### Bug D — Path A/B 发散（stored IFC vs paint re-run）
 - **现象**：vertical cell 加 stored IFC（Path A）与现 Path B（重跑）在 vlr 上发散（+0.3-0.6pp 恶化）。
-- **机制**：compute_final gate（inline_finalization.rs:591）跳过 TableCell（非 block-level）→ cell 走 Path B；改 Path A 后 vlr 恶化（layer 4）。
+- **机制**：compute_final gate（inline_finalization.rs:726）跳过 TableCell（非 block-level）→ cell 走 Path B；改 Path A 后 vlr 恶化（layer 4）。
 - **证据**：R1118 实验 A/B；R1119 vlr 复核。
 - **结论**：row-progression-vlr 须 Path A/B 统一（layer 4）。
 
@@ -106,9 +111,9 @@ R1116–R1120 七轮调查锁定 vertical-rl/lr 文本定位是 **4 层耦合系
 ### 文件/模块清单
 | 路径 | 切片 | 动作 |
 |---|---|---|
-| converter/mod.rs:248 `apply_vertical_writing_mode` | 1 | vertical auto sizing WM-aware（不填满父 width） |
+| converter/mod.rs:344 `apply_vertical_writing_mode` | 1 | vertical auto sizing WM-aware（不填满父 width） |
 | engine.rs（post-process） | 1 | 或 post-process vertical auto block content_height |
-| inline/mod.rs:1456 `break_items_into_columns` + IFC struct | 2 | 加 block_extent 参数，vrl column-x 用之 |
+| inline/mod.rs:940 `break_items_into_columns` + IFC struct | 2 | 加 block_extent 参数，vrl column-x 用之 |
 | inline_finalization.rs（compute_final 调用方） | 2 | 传 block_extent 给 IFC |
 | table.rs `position_cells_vertical` | 3 | cell IFC wrap pass + width re-position |
 | painter/text.rs + inline_finalization.rs | 4 | Path A/B 统一 |
@@ -163,9 +168,9 @@ R1136 用 R1050DBG 探针实测 row-progression-vrl-002 cell 的 painted IFC：*
 
 **根因链**：
 1. table cell 无 stored IFC（compute_final gate `!is_block_level && !is_table_internal_with_text` 跳过 TableCell）。
-2. 故 `store_font_sizes_from_ifc`（inline_finalization.rs:330）不为 cell 调用 → `text_node_font_sizes`/`text_node_is_ahem` 未填充。
-3. paint Path B（painter/text.rs:1119）`ctx.layout(doc, node_id, &HashMap::new())` 传**空 styles**。
-4. collect_inline_items（inline/mod.rs:598-619）`style.is_some()` 不命中 → default_font_metrics = (16, 16×1.2) → cell 文本按错误度量 wrap。
+2. 故 `store_font_sizes_from_ifc`（inline_finalization.rs:333）不为 cell 调用 → `text_node_font_sizes`/`text_node_is_ahem` 未填充。
+3. paint Path B（painter/text.rs:812）`ctx.layout(doc, node_id, &HashMap::new())` 传**空 styles**。
+4. collect_inline_items（`inline/collect_items.rs:6`）`style.is_some()` 不命中 → default_font_metrics = (16, 16×1.2) → cell 文本按错误度量 wrap。
 
 **与 v0.1 Bug D 的关系**：Bug E 是 Bug D（Path A/B 发散）的**具体机制**——Path B 空 styles 是发散点。v0.1 切片 4「Path A/B 统一」的真正修法 = 给 Path B 的 cell 传真实 styles（或等效 override）。
 
@@ -176,7 +181,7 @@ R1136 用 R1050DBG 探针实测 row-progression-vrl-002 cell 的 painted IFC：*
 | v0.1 切片 | v0.2 修正 |
 |---|---|
 | 切片 3（cell width/wrap 两趟） | **删除「col_width 改垂直测量」子任务**（R1135 证 chromium 用 width-like，ZW 现状已对）。cell extent 分布 lever 转为「cell inline-extent 对齐 chromium 实际值」（须测 chromium oracle 几何，TBD-5）。 |
-| 切片 4（Path A/B 统一） | **具体化为 Bug E 修**：painter/text.rs:1119 给 cell 传真实 styles（is_table_cell gate）。但**必须与 cell extent 分布修（切片 3 修正后）同提交**，否则 net-negative（R1136）。 |
+| 切片 4（Path A/B 统一） | **具体化为 Bug E 修**：painter/text.rs:812 给 cell 传真实 styles（is_table_cell gate）。但**必须与 cell extent 分布修（切片 3 修正后）同提交**，否则 net-negative（R1136）。 |
 | 新 TBD-5 | cell inline-extent 实测 chromium 值：用 oracle PNG 测 row-progression-vrl-002 各 cell 的 y-extent，确定 chromium 分布算法（非 char-proportional？）。阻塞切片 3+4 同修。 |
 
 ### 7.4 修正后的依赖图
