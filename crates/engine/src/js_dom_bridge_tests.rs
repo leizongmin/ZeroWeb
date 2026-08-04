@@ -290,6 +290,53 @@ fn test_query_in_subtree_scoping() {
 }
 
 #[test]
+fn test_element_children_selectors() {
+    // 元素子（跳过文本/注释），文档顺序；#b/#i 唯一 id → 唯一选择器即 "#b"/"#i"。
+    let html = "<html><body>\
+                <div id='p'>text<b id='b'>B</b> <i id='i'>I</i></div>\
+                </body></html>";
+    // 仅元素子 b/i（跳过文本与空白），文档顺序。
+    assert_eq!(element_children_selectors(html, "#p"), "#b|#i");
+    // 无元素子 → 空串。
+    assert_eq!(element_children_selectors(html, "#b"), "");
+    // elem_sel 不存在 → 空串。
+    assert_eq!(element_children_selectors(html, "#nope"), "");
+}
+
+#[test]
+fn test_element_sibling_selectors() {
+    let html = "<html><body>\
+                <div id='a'>A</div>text<div id='b'>B</div><div id='c'>C</div>\
+                </body></html>";
+    // #b 的前元素兄弟 = #a，后元素兄弟 = #c（跳过中间文本节点）。
+    assert_eq!(element_sibling_selectors(html, "#b"), "#a|#c");
+    // #a 首个 → 无前兄弟。
+    assert_eq!(element_sibling_selectors(html, "#a"), "|#b");
+    // #c 末个 → 无后兄弟。
+    assert_eq!(element_sibling_selectors(html, "#c"), "#b|");
+    // elem_sel 不存在 → 两空。
+    assert_eq!(element_sibling_selectors(html, "#nope"), "|");
+}
+
+#[test]
+fn test_element_contains() {
+    let html = "<html><body>\
+                <div id='outer'><section id='mid'><span id='inner'>x</span></section></div>\
+                <div id='other'>y</div>\
+                </body></html>";
+    // 后代：outer 含 inner（深层）。
+    assert!(element_contains(html, "#outer", "#inner"));
+    // 自身：outer 含 outer。
+    assert!(element_contains(html, "#outer", "#outer"));
+    // 非后代：other 不在 outer 内。
+    assert!(!element_contains(html, "#outer", "#other"));
+    // 反向：inner 不含 outer。
+    assert!(!element_contains(html, "#inner", "#outer"));
+    // 容器/other 不存在 → false。
+    assert!(!element_contains(html, "#nope", "#inner"));
+    assert!(!element_contains(html, "#outer", "#nope"));
+}
+
 fn test_collect_element_ids_dedup_preserve_order() {
     let html = "<html><body>\
                     <div id=\"container\"></div>\

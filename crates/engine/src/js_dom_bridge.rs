@@ -648,6 +648,75 @@ pub fn query_all_in_subtree(html: &str, elem_sel: &str, selector: &str) -> Strin
         .join("|")
 }
 
+/// 元素的**元素子**（跳过文本/注释）唯一选择器，`|` 分隔；无返空串。供 `__zw_element_children`
+/// 回调 → shim `el.children` / `firstElementChild` / `lastElementChild` / `childElementCount`。
+pub fn element_children_selectors(html: &str, elem_sel: &str) -> String {
+    let doc = parse_html(html);
+    let Some(node) = find_by_selector(&doc, elem_sel) else {
+        return String::new();
+    };
+    doc.child_nodes(node)
+        .into_iter()
+        .filter(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
+        .filter_map(|c| unique_selector_for_node(&doc, c))
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+/// 元素的**前/后元素兄弟**唯一选择器，`prev|next` 格式（空字段 = 无该方向兄弟）；元素无父或
+/// elem_sel 不解析返 `|`（两空）。供 `__zw_element_siblings` 回调 → shim `previousElementSibling`
+/// / `nextElementSibling`。
+pub fn element_sibling_selectors(html: &str, elem_sel: &str) -> String {
+    let empty = || String::from("|");
+    let doc = parse_html(html);
+    let Some(node) = find_by_selector(&doc, elem_sel) else {
+        return empty();
+    };
+    let Some(parent) = doc.parent_node(node) else {
+        return empty();
+    };
+    let sibs: Vec<NodeId> = doc
+        .child_nodes(parent)
+        .into_iter()
+        .filter(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
+        .collect();
+    let Some(idx) = sibs.iter().position(|s| *s == node) else {
+        return empty();
+    };
+    let prev = if idx > 0 {
+        unique_selector_for_node(&doc, sibs[idx - 1]).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let next = if idx + 1 < sibs.len() {
+        unique_selector_for_node(&doc, sibs[idx + 1]).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    format!("{prev}|{next}")
+}
+
+/// `container.contains(other)`——other 是 container 的后代或 container 自身（沿 other 的
+/// parent_node 链）。供 `__zw_contains` 回调 → shim `el.contains(other)`。
+pub fn element_contains(html: &str, container_sel: &str, other_sel: &str) -> bool {
+    let doc = parse_html(html);
+    let Some(container) = find_by_selector(&doc, container_sel) else {
+        return false;
+    };
+    let Some(mut cur) = find_by_selector(&doc, other_sel) else {
+        return false;
+    };
+    loop {
+        if cur == container {
+            return true;
+        }
+        match doc.parent_node(cur) {
+            Some(p) if p != cur => cur = p,
+            _ => return false,
+        }
+    }
+}
+
 /// 收集文档中所有元素的 `id` 属性值（去重、保序，首次出现优先——与
 /// `getElementById` 取首个匹配语义一致）。供 `__zw_collect_ids` 回调实现
 /// HTML 规范「Window 上的命名属性访问」（`<div id="x">` → 全局 `x`）。
@@ -1102,6 +1171,43 @@ pub fn register_dom_callbacks(
             let sel = args.get(1).map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             query_all_in_subtree(&snap, &elem_sel, &sel)
+        }),
+    );
+
+    // 元素遍历/导航 API：children/firstElementChild/lastElementChild/childElementCount（子列表）、
+    // previousElementSibling/nextElementSibling（兄弟对）、contains（后代判定）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_element_children",
+        Box::new(move |args| {
+            let elem_sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            element_children_selectors(&snap, &elem_sel)
+        }),
+    );
+
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_element_siblings",
+        Box::new(move |args| {
+            let elem_sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            element_sibling_selectors(&snap, &elem_sel)
+        }),
+    );
+
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_contains",
+        Box::new(move |args| {
+            let container_sel = args.first().map(String::from).unwrap_or_default();
+            let other_sel = args.get(1).map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            if element_contains(&snap, &container_sel, &other_sel) {
+                "1".into()
+            } else {
+                "0".into()
+            }
         }),
     );
 

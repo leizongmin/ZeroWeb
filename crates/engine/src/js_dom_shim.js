@@ -1018,6 +1018,37 @@
         if (prop === 'parentNode' || prop === 'parentElement') {
           return _parentNodeFor(sel, handle);
         }
+        // 元素遍历/导航 API（仅元素子/兄弟，跳过文本/注释）。handle（脱离 DOM，无 sel）→ null/[]。
+        if (prop === 'children') {
+          return sel && typeof __zw_element_children === 'function'
+            ? _splitSelectors(__zw_element_children(sel)) : [];
+        }
+        if (prop === 'firstElementChild' || prop === 'lastElementChild' || prop === 'childElementCount') {
+          if (!sel || typeof __zw_element_children !== 'function') {
+            return prop === 'childElementCount' ? 0 : null;
+          }
+          var kids = _splitSelectors(__zw_element_children(sel));
+          if (prop === 'childElementCount') return kids.length;
+          if (!kids.length) return null;
+          return prop === 'firstElementChild' ? kids[0] : kids[kids.length - 1];
+        }
+        if (prop === 'previousElementSibling' || prop === 'nextElementSibling') {
+          if (!sel || typeof __zw_element_siblings !== 'function') return null;
+          try {
+            var parts = __zw_element_siblings(sel).split('|');
+            var hit = prop === 'previousElementSibling' ? parts[0] : parts[1];
+            return hit ? _wrapSelector(hit) : null;
+          } catch (_e) { return null; }
+        }
+        // `el.contains(other)`——other 是否为 el 的后代或 el 自身（沿 parent 链）。
+        if (prop === 'contains') {
+          return function(other) {
+            if (!sel || typeof __zw_contains !== 'function') return false;
+            var otherSel = other && other.__zwSelector;
+            if (!otherSel) return false;
+            try { return __zw_contains(sel, otherSel) === '1'; } catch (_e) { return false; }
+          };
+        }
         if (prop === 'tagName') {
           return _tagFromSel(sel);
         }
@@ -1280,6 +1311,12 @@
 
   function _wrapHandle(handle) {
     return _makeProxy(null, handle);
+  }
+
+  // `|` 分隔的选择器串 → 元素 proxy 数组（空串/无回调 → []）。供 children 等导航 API。
+  function _splitSelectors(joined) {
+    if (!joined) return [];
+    return joined.split('|').filter(Boolean).map(_wrapSelector);
   }
 
   globalThis.CustomEvent = function(type, options) {
