@@ -8,10 +8,12 @@
 
 > **⚠️ 2026-08-02 实施状态更新（R2420）——本文档以下「Design-only / slice 2 未修」框架为历史**
 >
+> **🔧 2026-08-04 行号勘误（R2629）**：本文档 R2156-R2198 era 代码定位（`tree.rs`/`painter/text.rs`/`painter/mod.rs`/`inline_finalization.rs`）经 R2629 对齐当前源码——`tree.rs` element-child loop 1284→**1476**、leaf-path 1271→**1505**、R1480 注释 1266→**1504**、gate 1411→**1536**；`text.rs` Path B IFC 748→**771**、font_size 361→**432**、R639 gate 1202→**1270**；`painter/mod.rs` collect_box_heights 383→**484**；`inline_finalization.rs` compute_final IFC 861→**862**、backfill_phasea_orphan_boxes 1022→**1027**。经核 valid 保留：`postprocess.rs:112`（ib_sizes）/ `hit_test.rs:192`（collect_hit_test_nodes，crates/engine/src/）/ `collect_items.rs:439`（node_id: child_id）。（注：`painter/text.rs:625-626` 有一处 stale 代码注释自称「font_size 已在 line 361 保证」，实际现 :432——代码注释非本文档范围，提及不改。）
+>
 > 本文档写于 2026-07-29 R2157，描述了 slice 1（R2156）落地后的 **设计**，把 slice 2/3 标为「待实施」。**实施实际已全部完成并 default-on**，下文「Design-only」「未修」「slice 3 阻塞」等措辞为**历史留档**，不代表当前代码状态：
 > - **slice 2**（多 inline Element 块级堆叠修复）= R2160（probe default-off）→ R2161（gate 紧化 net−20→+1）→ R2162（text-wrap guard + **翻 default-on LANDED**）。
 > - **R2163** 曾 REVERT → default-off（orphan `<a>` 丢 LayoutBox 致 `collect_hit_test_nodes` 漏收 + struct 计数错）。
-> - **slice 3**（orphan LayoutBox 回填）= R2197「external-set」方案 LANDED（`inline_finalization.rs:1022` `backfill_phasea_orphan_boxes`，复用 layout 期 IFC 几何为 orphan 元素建 LayoutBox 加入树 + 登记 `paint_skip`，**修复 R2163 根因**）+ R2198 struct-check paint_skip-aware 后 **slice 2+3 翻 default-on LANDED**。
+> - **slice 3**（orphan LayoutBox 回填）= R2197「external-set」方案 LANDED（`inline_finalization.rs:1027` `backfill_phasea_orphan_boxes`，复用 layout 期 IFC 几何为 orphan 元素建 LayoutBox 加入树 + 登记 `paint_skip`，**修复 R2163 根因**）+ R2198 struct-check paint_skip-aware 后 **slice 2+3 翻 default-on LANDED**。
 > - **kill-switch**：env `ZW_PHASEA_MULTI_INLINE=0`（三处 gate `!= Ok("0")` = default-on）。
 > - **产品增益已验证实现**（2026-08-02 `make product-smoke-legacy`）：19-testpage-minimal 22.39%→**17.23% struct=PASS**、20-mixed-legacy 13.13%→**11.49% struct=PASS**、legacy 51/51 struct PASS（37-form-controls 3.85% PASS，历史 Phase A struct blocker 已解）。
 >
@@ -66,9 +68,9 @@ td abs_y=143.9 h=55.0     ← 应 ~20px（单行），实 55px（3 行）
 ## 2. 机制（R2152–R2155 定稿 + 本轮 probe 补全）
 
 ### 2.1 build_subtree 子循环（`tree.rs` 非 flex/grid 路径）
-block 容器的 element-child loop（`tree.rs:1284-1326`）为**每个 Element 子**调 `build_subtree` 建 taffy 节点作块级子。inline Element 子（a/i/b/span）由此成块级 taffy 子 → taffy 按块级垂直栈列。
+block 容器的 element-child loop（`tree.rs:1476-1630`）为**每个 Element 子**调 `build_subtree` 建 taffy 节点作块级子。inline Element 子（a/i/b/span）由此成块级 taffy 子 → taffy 按块级垂直栈列。
 
-leaf-path（`tree.rs:1271-1283`）条件：`has_text_child && has_element_child && all_inline && (is_flex_grid_item || InlineBlock || float)`。plain block（p/div/td）不满足最后括号 → 不入 leaf → 走 element-child loop → inline 子被块级化。单 inline 子「看起来正确」是因 IFC + painted_inline_nodes 抑制了双绘，但多 inline 子时块级 taffy 几何主导，栈列可见。
+leaf-path（`tree.rs:1505-1512`）条件：`has_text_child && has_element_child && all_inline && (is_flex_grid_item || InlineBlock || float)`。plain block（p/div/td）不满足最后括号 → 不入 leaf → 走 element-child loop → inline 子被块级化。单 inline 子「看起来正确」是因 IFC + painted_inline_nodes 抑制了双绘，但多 inline 子时块级 taffy 几何主导，栈列可见。
 
 ### 2.2 IFC 双路径
 - layout IFC（`measure_text_content` + `compute_final_inline_layouts`）：`collect_inline_items` 经 R1576 递归收集 inline 子树文本/atomic inline。
@@ -99,17 +101,17 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 
 ### Slice 2 — 多 inline Element 子 block 容器（**R2158 修正：leaf-path 路径 R1492-REFUTED，须改为 IFC→LayoutBox 定位**）
 
-> **⚠️ R2158（2026-07-29）关键修正**：本节原设计「leaf-path（容器整体走 leaf，inline 子不建 taffy 节点）」= **R1492 已 REFUTED 的路径**。R1492（`ZW_PLAIN_INLINE_LEAF=1`）实测 borders oracle 411→401（**-10**），根因 = plain inline 元素（带 bg/border）须保留独立 LayoutBox，回流父 IFC 会丢 LayoutBox → bg/border 丢绘（tree.rs:1266-1270 注释 + R1480 evidence §2「元素仍 block 堆叠（仅 width 维度，完整 inline-box 模型属 R109 多 session）」）。R2156 slice 1 仅因 label 通常无 bg/border 而 orphan 良性——**不可外推到一般 plain inline**。
+> **⚠️ R2158（2026-07-29）关键修正**：本节原设计「leaf-path（容器整体走 leaf，inline 子不建 taffy 节点）」= **R1492 已 REFUTED 的路径**。R1492（`ZW_PLAIN_INLINE_LEAF=1`）实测 borders oracle 411→401（**-10**），根因 = plain inline 元素（带 bg/border）须保留独立 LayoutBox，回流父 IFC 会丢 LayoutBox → bg/border 丢绘（tree.rs:1504-1506 注释 + R1480 evidence §2「元素仍 block 堆叠（仅 width 维度，完整 inline-box 模型属 R109 多 session）」）。R2156 slice 1 仅因 label 通常无 bg/border 而 orphan 良性——**不可外推到一般 plain inline**。
 >
 > **R2156 borders 安全已实测复核**（R2158）：`reftest-oracle CSS2/borders` gate ON=OFF=415（82.0%），R2156 在 borders dir 零漂移（inline-wrapper-with-bg-border-wrapping-atomic 模式在 borders corpus 罕见/缺失）。R2156 自身安全，但本节 slice 2 的 leaf-path 路径对一般多 inline（含 a/i/b 带 border）**必触发 R1492 -10 机制**。
 >
 > **修正后的正确路径 = 深层 Phase A：IFC→LayoutBox 定位**（R1492 建议的「保 inline 子为独立 box，修正容器高 + 移后续兄弟」）。即：inline 元素**保留**独立 LayoutBox（bg/border/hit-test 不破，R1492-safe），但其**位置由父 IFC 行盒决定**（非 taffy 块级栈列）。难点 = IFC 当前把 inline 元素作 text run 扁平收集（无 per-element 定位框），须扩 IFC 输出 per-inline-element 行内位置 + post-process 回填 LayoutBox。属多 session 深度架构，**非单切片**。
 >
-> **★ R2159（2026-07-29）更可处理路径发现：R639-extend + skip-taffy**（优于上方 IFC→LayoutBox backfill）。读 painter text.rs:1202-1290 发现 **R639 Phase A slice 已实现 per-fragment inline bg/border 绘制**（add_fill bg + per-fragment border-top/bottom），但 **gate `owner_h > frag_fs*1.5` 仅多行生效**（单行 inline 排除，依赖 LayoutBox 绘 bg/border = R1492 机制所在）。故深层 Phase A 可重构为：
+> **★ R2159（2026-07-29）更可处理路径发现：R639-extend + skip-taffy**（优于上方 IFC→LayoutBox backfill）。读 painter text.rs:1270-1282 发现 **R639 Phase A slice 已实现 per-fragment inline bg/border 绘制**（add_fill bg + per-fragment border-top/bottom），但 **gate `owner_h > frag_fs*1.5` 仅多行生效**（单行 inline 排除，依赖 LayoutBox 绘 bg/border = R1492 机制所在）。故深层 Phase A 可重构为：
 > - **part 1（skip-taffy）**：tree.rs 对 inline Element 子不建块级 taffy 节点（同 R2156 模式），消除块级栈列。
 > - **part 2（R639-extend）**：painter text.rs 放宽 R639 gate 到单行（`owner_h > 0` 而非 `> 1.5·fs`），让 per-fragment bg/border 覆盖单行 inline（补 part 1 丢的 LayoutBox bg/border）。
 > - **耦合**：part 1 单独 = R1492-refuted（单行 bg/border 丢）；part 2 单独 = 双绘（LayoutBox + fragment 都绘）；**须同 gate 同开**。part 2 复用已有 R639 infra（仅放宽 gate）= 比 IFC→LayoutBox backfill（须新 element-boundary tracking）**更可处理**。
-> - **关键风险点（R2159 已实证 CONFIRMED）**：R639 用 `self.inline_heights.get(&owner_id)`（pre-scan inline 元素高）判多行。**`inline_heights` 由 `collect_box_heights`（painter/mod.rs:383）遍历 LayoutBox 树填充**——skip-taffy 后 inline 元素丢 LayoutBox → 无 `inline_heights` 条目（owner_h=0）→ R639 gate 即便放宽到 `>0` 也不触。故 R639-extend 路径**须加 part 3：迁移 `inline_heights` 数据源**（从 LayoutBox 树改为 DOM/IFC 衍生，让 orphan inline 仍有高）。
+> - **关键风险点（R2159 已实证 CONFIRMED）**：R639 用 `self.inline_heights.get(&owner_id)`（pre-scan inline 元素高）判多行。**`inline_heights` 由 `collect_box_heights`（painter/mod.rs:484）遍历 LayoutBox 树填充**——skip-taffy 后 inline 元素丢 LayoutBox → 无 `inline_heights` 条目（owner_h=0）→ R639 gate 即便放宽到 `>0` 也不触。故 R639-extend 路径**须加 part 3：迁移 `inline_heights` 数据源**（从 LayoutBox 树改为 DOM/IFC 衍生，让 orphan inline 仍有高）。
 > - **part 3（inline_heights 数据源迁移）**：`collect_box_heights` 改为从 IFC 行盒结果计算每个 inline 元素高（其跨行片段的 y 范围），或保留 LayoutBox 源 + 补 IFC 源双轨。这是 R639-extend 路径的额外成本，使其接近 IFC→LayoutBox backfill 的复杂度。
 > - **结论（R2159）**：两条路径（R639-extend + part3 / IFC→LayoutBox backfill）均须 substantial 新 infra，**深层 Phase A 确属多 session**。19-testpage 22% + 20-mixed-legacy 13% 的 multi-inline fix 阻塞于此。
 > - **20-mixed-legacy 13% diff = 同 Phase A**（R2159 确认）：内容列 `<p>...<b><i><font>...</p>` 多 inline 块级栈列→内容过高→table row 过高→左 menu td bgcolor=#eeeeee 延伸至 y=396（chromium 行早结束，下方白）。与 19-testpage 同根（multi-inline block-stacking）。
@@ -212,8 +214,8 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > ROI 不足以 grind——保持 dormant opt-in（ZW_PHASEA_MULTI_INLINE=1）。
 >
 > **★ R2187（2026-07-29）IFC 构造 helper 提取前置 = 非机械（3 真 Path A/B 分歧），其中 1 已解**。
-> 承接 R2166「提 helper」前置，实证读两处 IFC 构造点（Path A `inline_finalization.rs:861`
-> compute_final / Path B `text.rs:748` paint 重跑）比对 `.with_*` 链：**共享 ~17 项但有 3 处真分歧**
+> 承接 R2166「提 helper」前置，实证读两处 IFC 构造点（Path A `inline_finalization.rs:862`
+> compute_final / Path B `text.rs:771` paint 重跑）比对 `.with_*` 链：**共享 ~17 项但有 3 处真分歧**
 >（非拷贝粘贴误差，是 output-affecting 行为差异），故「机械提取一个 helper」**不安全**——提取须先
 > 逐个 A/B 裁决分歧（每个 = 行为决策）：
 > 1. **text-align / text-align-last**：Path A 调 `resolve_text_align[_last]` 共享 resolver，Path B 内联同
@@ -238,7 +240,7 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > `.with_*` 链还有第 4 处同类重复：**text-indent** Path A 调 `resolve_text_indent` resolver，Path B 内联同
 > 公式（Px/Em×fs/Percentage×cw）两份独立拷贝（旧注释自称「双路径同源」= aspirational 非强制）。提升
 > `resolve_text_indent` `pub(crate)`→`pub`，Path B 改调 resolver。net-zero 构造证明：Path B 的 `font_size`
->（text.rs:361）已保证 `style.font_size` Px（非 Px 早 return）→ 与 resolver 内 `font_size_px`（同源 + 16.0
+>（text.rs:432）已保证 `style.font_size` Px（非 Px 早 return）→ 与 resolver 内 `font_size_px`（同源 + 16.0
 > 防御回退在此不可达）等价。实证：welcome 16.84% 字节不变 + make test 12686/0 + product-smoke 全 struct
 > PASS。**Path A/B `.with_*` 链分歧进度 = 4 处中 2 解**：text-align✅(R2187) / text-indent✅(R2188) /
 > tab_size⏳(R2183 非 lever) / container_width-gate⏳(R1043 vertical entangled)。剩 2 处 blocked/risky。
@@ -311,7 +313,7 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > - **paint_skip 通路**：`render_to_framebuffer_with_layout_with_base` 重构 private `render_with_layout_inner`
 >   （4-tuple）+ 两个 pub wrapper（3-tuple 旧 25 调用方零 churn + 4-tuple 新）；main.rs product-smoke + struct-sweep
 >   用 4-tuple 取 paint_skip 传 check_sibling_overlaps。
-> - **翻 default-on**：3 处 gate `== Ok("1")` → `!= Ok("0")`（tree.rs:1411 + inline_finalization backfill + painter
+> - **翻 default-on**：3 处 gate `== Ok("1")` → `!= Ok("0")`（tree.rs:1536 + inline_finalization backfill + painter
 >   text.rs phasea_orphan_fire）。kill-switch `ZW_PHASEA_MULTI_INLINE=0` 紧急回退。
 >
 > **默认路径全门禁绿**：make test **12686/0**；product-smoke 全 8 fixture PASS（含**窄屏 375+320** = R2197 残余已解）；
