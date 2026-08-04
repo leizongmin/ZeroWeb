@@ -134,6 +134,14 @@ pub enum AttributeMatcher {
     Exact(String),
     /// 空格分隔列表包含：`[attr~=value]`
     Includes(String),
+    /// 前缀匹配：`[attr^=value]`（CSS3，值前缀）
+    Prefix(String),
+    /// 后缀匹配：`[attr$=value]`（CSS3，值后缀）
+    Suffix(String),
+    /// 子串匹配：`[attr*=value]`（CSS3，值含子串）
+    Substring(String),
+    /// 连字符匹配：`[attr|=value]`（CSS3，值相等或以 `value-` 开头，用于 lang/区域）
+    DashMatch(String),
 }
 
 impl SimpleSelector {
@@ -183,6 +191,43 @@ impl SimpleSelector {
                         None => return false,
                     };
                     if !attr_val.split_whitespace().any(|v| v == value) {
+                        return false;
+                    }
+                }
+                AttributeMatcher::Prefix(value) => {
+                    let attr_val = match elem.get_attribute(&attr_sel.name) {
+                        Some(v) => v,
+                        None => return false,
+                    };
+                    if !attr_val.starts_with(value) {
+                        return false;
+                    }
+                }
+                AttributeMatcher::Suffix(value) => {
+                    let attr_val = match elem.get_attribute(&attr_sel.name) {
+                        Some(v) => v,
+                        None => return false,
+                    };
+                    if !attr_val.ends_with(value) {
+                        return false;
+                    }
+                }
+                AttributeMatcher::Substring(value) => {
+                    let attr_val = match elem.get_attribute(&attr_sel.name) {
+                        Some(v) => v,
+                        None => return false,
+                    };
+                    if !attr_val.contains(value) {
+                        return false;
+                    }
+                }
+                AttributeMatcher::DashMatch(value) => {
+                    let attr_val = match elem.get_attribute(&attr_sel.name) {
+                        Some(v) => v,
+                        None => return false,
+                    };
+                    // `[attr|=val]`：值等于 val，或以 `val-` 开头（如 `en` 匹配 `en-US`）。
+                    if !(attr_val == *value || attr_val.starts_with(&format!("{value}-"))) {
                         return false;
                     }
                 }
@@ -405,6 +450,57 @@ fn is_checked(elem: &ElementData) -> bool {
     }
 }
 
+/// 属性选择器运算符（CSS3 属性选择器全部 6 种）。
+#[derive(Clone, Copy)]
+enum AttrOp {
+    /// `[attr~=value]`
+    Includes,
+    /// `[attr=value]`
+    Exact,
+    /// `[attr^=value]`
+    Prefix,
+    /// `[attr$=value]`
+    Suffix,
+    /// `[attr*=value]`
+    Substring,
+    /// `[attr|=value]`
+    DashMatch,
+}
+
+/// 解析属性选择器运算符。`content` 为 `[` 与 `]` 之间的内容（如 `href^="https"`）。
+/// 返回 `(运算符, 属性名, 值原始串)`；仅存在（`[attr]`，无运算符）返回 `None`。
+///
+/// 两字符运算符（`~=` `^=` `$=` `*=` `|=`）先于单字符 `=` 检测——属性名不含这些字符，
+/// 且 CSS 语法恒为 `name op value`，故 `find` 命中的首个运算符即真运算符（值内相同字符
+/// 序列位于运算符之后，不会被先命中）。值内引号由 [`strip_attr_quotes`] 处理。
+fn parse_attr_operator(content: &str) -> Option<(AttrOp, &str, &str)> {
+    for (token, op) in [
+        ("~=", AttrOp::Includes),
+        ("^=", AttrOp::Prefix),
+        ("$=", AttrOp::Suffix),
+        ("*=", AttrOp::Substring),
+        ("|=", AttrOp::DashMatch),
+    ] {
+        if let Some(pos) = content.find(token) {
+            return Some((op, &content[..pos], &content[pos + token.len()..]));
+        }
+    }
+    content
+        .find('=')
+        .map(|pos| (AttrOp::Exact, &content[..pos], &content[pos + 1..]))
+}
+
+/// 去除属性值两端一对匹配引号（`"` 或 `'`）。无引号或不成对则原样返回。
+/// 让 `[attr="value"]` / `[attr^='https']` 的带引号形式与裸 `[attr=value]` 等价。
+fn strip_attr_quotes(s: &str) -> String {
+    let bytes = s.as_bytes();
+    if bytes.len() >= 2 && (bytes[0] == b'"' || bytes[0] == b'\'') && bytes[0] == bytes[s.len() - 1] {
+        s[1..s.len() - 1].to_string()
+    } else {
+        s.to_string()
+    }
+}
+
 fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
     match name {
         "nth-child" => Some(PseudoClass::NthChild(parse_nth(args?)?)),
@@ -537,16 +633,21 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
             let end_bracket = r.find(']')?;
             let attr_content = &r[..end_bracket];
 
-            let attr_sel = if let Some(eq_pos) = attr_content.find("~=") {
-                AttributeSelector {
-                    name: attr_content[..eq_pos].trim().to_string(),
-                    matcher: AttributeMatcher::Includes(attr_content[eq_pos + 2..].trim().to_string()),
-                }
-            } else if let Some(eq_pos) = attr_content.find('=') {
-                AttributeSelector {
-                    name: attr_content[..eq_pos].trim().to_string(),
-                    matcher: AttributeMatcher::Exact(attr_content[eq_pos + 1..].trim().to_string()),
-                }
+            // 属性运算符检测：两字符运算符（~= ^= $= *= |=）须先于单字符 `=` 检测，
+            // 否则 `[attr^=v]` 的 `=` 会先命中单字符分支。值去引号（`[a="v"]`→`v`）。
+            // 返回 (运算符, name, value)——运算符为 None 表示 `[attr]` 仅存在。
+            let attr_sel = if let Some((op, name, value)) = parse_attr_operator(attr_content) {
+                let name = name.trim().to_string();
+                let value = strip_attr_quotes(value.trim());
+                let matcher = match op {
+                    AttrOp::Includes => AttributeMatcher::Includes(value),
+                    AttrOp::Exact => AttributeMatcher::Exact(value),
+                    AttrOp::Prefix => AttributeMatcher::Prefix(value),
+                    AttrOp::Suffix => AttributeMatcher::Suffix(value),
+                    AttrOp::Substring => AttributeMatcher::Substring(value),
+                    AttrOp::DashMatch => AttributeMatcher::DashMatch(value),
+                };
+                AttributeSelector { name, matcher }
             } else {
                 AttributeSelector {
                     name: attr_content.trim().to_string(),

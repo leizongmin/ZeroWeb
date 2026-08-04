@@ -864,6 +864,49 @@ fn test_query_selector_form_state_pseudo() {
 }
 
 #[test]
+fn test_query_selector_attribute_operators() {
+    let doc = parse_html(
+        "<html><body>\
+         <a href='https://a.example.com/' id='a-https'>A</a>\
+         <a href='http://b.example.com/x.pdf' id='b-pdf'>B</a>\
+         <a href='/local/page' id='c-local'>C</a>\
+         <div class='nav-item active' id='d-active'>D</div>\
+         <div class='nav-item' id='d-nav'>D2</div>\
+         <p lang='en-US' id='e-en-us'>E</p>\
+         <p lang='en' id='e-en'>E2</p>\
+         <p lang='fr' id='e-fr'>E3</p>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of = |s: &[NodeId]| -> Vec<String> { s.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect() };
+    // ^= 前缀：href^="https" → 仅 https 链接（带引号值去引号后匹配）。
+    let prefix = ids_of(&doc.query_selector_all(root, "[href^=\"https\"]"));
+    assert!(prefix.contains(&"a-https".to_string()), "https 前缀应匹配");
+    assert!(
+        !prefix.iter().any(|i| i.starts_with('b') || i.starts_with('c')),
+        "非 https 前缀不应匹配"
+    );
+    // $= 后缀：href$=pdf → .pdf 结尾。
+    let suffix = ids_of(&doc.query_selector_all(root, "[href$=pdf]"));
+    assert!(suffix.contains(&"b-pdf".to_string()));
+    assert!(!suffix.contains(&"a-https".to_string()));
+    // *= 子串：class*=active → 含 active 的 class。
+    let sub = ids_of(&doc.query_selector_all(root, "[class*=active]"));
+    assert!(sub.contains(&"d-active".to_string()));
+    assert!(!sub.contains(&"d-nav".to_string()));
+    // |= 连字符匹配：lang|=en → lang == en 或以 en- 开头（en-US 命中，fr 不命中）。
+    let dash = ids_of(&doc.query_selector_all(root, "[lang|=en]"));
+    assert!(dash.contains(&"e-en-us".to_string()), "en-US 应匹配 lang|=en");
+    assert!(dash.contains(&"e-en".to_string()), "en 应匹配 lang|=en");
+    assert!(!dash.contains(&"e-fr".to_string()), "fr 不应匹配 lang|=en");
+    // 组合：div.nav-item[class*=active] → 仅 d-active。
+    let combo = ids_of(&doc.query_selector_all(root, "div.nav-item[class*=active]"));
+    assert_eq!(combo, vec!["d-active".to_string()]);
+    // 仅存在性回归：[href] 匹配所有带 href 的 a。
+    assert_eq!(doc.query_selector_all(root, "a[href]").len(), 3);
+}
+
+#[test]
 fn test_query_selector_not_found() {
     let doc = parse_html("<html><body></body></html>");
     let root = doc.root();

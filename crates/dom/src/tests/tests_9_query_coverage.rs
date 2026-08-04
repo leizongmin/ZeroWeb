@@ -45,6 +45,41 @@ fn test_parse_attribute_with_spaces() {
 }
 
 #[test]
+fn test_parse_attribute_css3_operators() {
+    // 四个 CSS3 子串/连字符运算符。
+    let mk = |sel: &str| parse_simple_selector(sel).unwrap().attribute.unwrap();
+    assert!(matches!(
+        mk("[href^=https]").matcher,
+        AttributeMatcher::Prefix(v) if v == "https"
+    ));
+    assert!(matches!(
+        mk("[href$=pdf]").matcher,
+        AttributeMatcher::Suffix(v) if v == "pdf"
+    ));
+    assert!(matches!(
+        mk("[class*=icon]").matcher,
+        AttributeMatcher::Substring(v) if v == "icon"
+    ));
+    assert!(matches!(
+        mk("[lang|=en]").matcher,
+        AttributeMatcher::DashMatch(v) if v == "en"
+    ));
+    // 带引号值应去引号（双引号 / 单引号）。
+    assert!(matches!(
+        mk("[href^=\"https\"]").matcher,
+        AttributeMatcher::Prefix(v) if v == "https"
+    ));
+    assert!(matches!(
+        mk("[data-x^='x-']").matcher,
+        AttributeMatcher::Prefix(v) if v == "x-"
+    ));
+    // 两字符运算符须先于单字符 `=`：`^=` 不能被拆成 Exact(name 含 `^`)。
+    let a = mk("[a^=b]");
+    assert_eq!(a.name, "a");
+    assert!(matches!(a.matcher, AttributeMatcher::Prefix(v) if v == "b"));
+}
+
+#[test]
 fn test_parse_combined_with_attribute() {
     let sel = parse_simple_selector("div#id.cls[data-x=val]").unwrap();
     assert_eq!(sel.tag.as_deref(), Some("div"));
