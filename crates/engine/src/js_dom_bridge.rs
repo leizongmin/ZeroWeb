@@ -464,6 +464,22 @@ pub fn query_tag_from_html(html: &str, selector: &str) -> String {
         .unwrap_or_default()
 }
 
+/// P1a form submit：从元素 selector 沿 DOM 父链（`parent_node`）找 enclosing `<form>` 的
+/// stable selector（无 enclosing form → None）。供 Enter-in-input / submit-button 的 submit 派发。
+pub fn enclosing_form_selector(html: &str, elem_sel: &str) -> Option<String> {
+    let doc = parse_html(html);
+    let mut node = find_by_selector(&doc, elem_sel)?;
+    loop {
+        if let Some(nd) = doc.get(node)
+            && let NodeKind::Element(e) = &nd.kind
+            && e.local_name().eq_ignore_ascii_case("form")
+        {
+            return stable_selector_for_node(&doc, node);
+        }
+        node = doc.parent_node(node)?;
+    }
+}
+
 /// 从当前 HTML 快照查询 innerHTML。
 pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
@@ -1172,5 +1188,20 @@ mod tests {
         let replaced = merge_style_property(&merged, "color", "red");
         assert!(!replaced.contains("blue"));
         assert!(replaced.contains("color: red"));
+    }
+
+    #[test]
+    fn test_enclosing_form_selector() {
+        // P1a form submit：input 在 form 内 → 返 form 的 stable selector。
+        let html = "<html><body><form id='f'><input id='i'></form></body></html>";
+        assert_eq!(enclosing_form_selector(html, "#i").as_deref(), Some("#f"));
+        // input 无 enclosing form → None。
+        let no_form = "<html><body><div><input id='i'></div></body></html>";
+        assert_eq!(enclosing_form_selector(no_form, "#i"), None);
+        // 嵌套：input 在 form 内的 div 内 → 仍解析到 form。
+        let nested = "<html><body><form id='outer'><div><input id='deep'></div></form></body></html>";
+        assert_eq!(enclosing_form_selector(nested, "#deep").as_deref(), Some("#outer"));
+        // 未命中 selector → None。
+        assert_eq!(enclosing_form_selector(html, "#missing"), None);
     }
 }

@@ -1180,6 +1180,32 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_form_submit_dispatches_submit_event() {
+        // P1a form submit：apply_submit_on_enter 经 script_dispatch_dom_event(form_sel,"submit")
+        // → 即 `__zw_dispatch_event(form_sel, 'submit', null)`。本 driving test 验证 submit 事件
+        // 经 shim 派发命中 form 的 submit listener（form-resolution 由 engine 单测覆盖）。
+        let mut worker = RendererJsWorker::spawn(29);
+        worker.set_dom_snapshot(
+            "<html><body><form id='f'><input id='i'></form></body></html>",
+            "about:blank",
+        );
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 document.querySelector('#f').addEventListener('submit', function(_e){\
+                   globalThis.__seen = 'submit-fired';\
+                 });\
+                 __zw_dispatch_event('#f', 'submit', null);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "submit-fired"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_mutation_observer_property_set() {
         // P1b S2 incr3（镜像 browser）：property set（el.className='x'）触发 attributes 记录。
         let mut worker = RendererJsWorker::spawn(17);

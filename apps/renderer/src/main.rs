@@ -397,6 +397,26 @@ impl RendererRuntime {
         Ok(())
     }
 
+    /// P1a form submit：Enter 在单行 input → 解析 enclosing `<form>` 派发 'submit' 事件。
+    fn submit_form_on_enter_at(&mut self, selector: &str) -> Result<(), String> {
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+            };
+            page_scripts::apply_submit_on_enter(&mut ctx, selector)
+        };
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
     fn sync_cached_html_from_webview(&mut self) {
         if let Some(wv) = self.webview.as_ref() {
             let html = wv.html_content().to_string();
@@ -909,12 +929,15 @@ impl RendererRuntime {
         let target = self.event_target.clone();
         self.dispatch_dom_at(Some(target.clone()), 0.0, 0.0, event_type, Some(detail));
         // P1a form input：keydown 默认行为近似——可打印字符 → 注入字符；Backspace → 删末字符
-        // （均更新 value + 派发 'input' 事件）。未尊重 keydown preventDefault（follow-up）；无 caret/selection。
+        // （均更新 value + 派发 'input' 事件）；Enter → 单行 input 提交 enclosing form（submit 事件）。
+        // 未尊重 keydown preventDefault（follow-up）；无 caret/selection。
         if matches!(params.event_type, KeyboardEventType::Down) {
             if is_printable_key(&params.key) {
                 let _ = self.apply_text_input_at(&target, &params.key);
             } else if params.key == "Backspace" {
                 let _ = self.apply_text_delete_at(&target);
+            } else if params.key == "Enter" {
+                let _ = self.submit_form_on_enter_at(&target);
             }
         }
         Ok(())

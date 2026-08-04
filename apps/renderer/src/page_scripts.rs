@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    DomEventDetail, PageScript, apply_mutations_to_html, extract_page_scripts, resolve_document_url,
-    script_dispatch_dom_event, script_text_delete, script_text_input,
+    DomEventDetail, PageScript, apply_mutations_to_html, enclosing_form_selector, extract_page_scripts,
+    query_tag_from_html, resolve_document_url, script_dispatch_dom_event, script_text_delete, script_text_input,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -166,6 +166,30 @@ pub fn apply_text_delete(ctx: &mut PageScriptContext<'_>, selector: &str) -> boo
         .unwrap_or_else(|e| e.into_inner())
         .clear();
     let _ = ctx.js_worker.execute_script_direct(&script_text_delete(selector));
+    let html_snap = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snap).is_some()
+}
+
+/// P1a form submit：Enter 在单行 `<input>`（非 textarea）→ 解析 enclosing `<form>` → 派发
+/// 'submit' 事件（复用 `script_dispatch_dom_event`）。textarea 的 Enter 为换行不提交；input
+/// 无 enclosing form 不提交。返回 submit 回调是否改 DOM（调用方据此单次 rerender）。
+pub fn apply_submit_on_enter(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    let snap = ctx.html.clone();
+    if !query_tag_from_html(&snap, selector).eq_ignore_ascii_case("input") {
+        return false;
+    }
+    let Some(form_sel) = enclosing_form_selector(&snap, selector) else {
+        return false;
+    };
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    let _ = ctx
+        .js_worker
+        .execute_script_direct(&script_dispatch_dom_event(&form_sel, "submit", None));
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
 }
