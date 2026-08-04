@@ -13,7 +13,7 @@
 > **⚠️ v1.0-R383 重大纠正：混合内容目标案前置依赖 Phase A，本 spec 非独立可实施。** R383 LAYOUT_DUMP 深度诊断 multicol-block-no-clip-002 发现：5 个 `<span>`（inline）经 **R109（inline→block converter）被转成 block-level LayoutBox**，multicol 按原子 block 分配到列（非 IFC 流动）；ref 期望 inline 作单一 IFC 跨列流动（span 跨列分裂）。**根因 = R109 entanglement**，非「inline 未分配」。故本 spec 的统一 column-flow **即使实现也修不了混合内容案**（spans 已是 block 盒）——真修复须 **先 Phase A（inline 内容作流动 IFC / R109 解转换）再 multicol 列碎片化**。**两多会话 lever 依赖：Phase A → multicol**。下方 Phase 2 设计保留作 Phase A 完成后的实施基础；**勿在 Phase A 前以混合内容为目标实现统一流**（会重复 R382 spec 的浪费）。R109-independent 的 multicol 失败（嵌套 breaking，Phase 3，真 block 子）可独立推进。
 
 - **一句话目标**：把 multicol 容器的 **block + inline 子元素按文档序统一逐列流动**（CSS Multicol §6 fragmentation + §8 balance），取代当前「taffy 块堆叠 → `assign_children_to_columns_*` 重分配 block 子 → IFC 单独跑 inline（paint 侧仅 pure-inline 分配）」的三段分离模型——该模型**结构性无法表达 block/inline 交错的列流动**，是 css-multicol 16 失败（混合内容 balance / 嵌套 breaking）的根因。
-- **本期范围（Phase 2）**：实现 layout 侧「统一 column-flow」——单层、非嵌套 multicol 容器，`column-fill: balance`（默认）+ `height: auto`，含**混合 block + inline 子元素**（即 paint 侧 `text.rs:713` 门控 `!has_in_flow_children` 为 false 被跳过、当前整块堆叠错渲染的案）。目标案：multicol-block-no-clip-002（1.81%）、multicol-containing-002（3.92%）、multicol-count-computed-003（1.78%）、multicol-collapsing-001（1.68%）等混合内容 balance 案（~6-8 案）。
+- **本期范围（Phase 2）**：实现 layout 侧「统一 column-flow」——单层、非嵌套 multicol 容器，`column-fill: balance`（默认）+ `height: auto`，含**混合 block + inline 子元素**（即 paint 侧 `text.rs:569` 门控 `!has_in_flow_children` 为 false 被跳过、当前整块堆叠错渲染的案）。目标案：multicol-block-no-clip-002（1.81%）、multicol-containing-002（3.92%）、multicol-count-computed-003（1.78%）、multicol-collapsing-001（1.68%）等混合内容 balance 案（~6-8 案）。
 - **明确排除（本期）**：① **嵌套 multicol / column-fill:auto + 明确高度的 breaking**（multicol-breaking-004/005/006/nobackground-004，outer 把 inner 碎片化）= Phase 3（真嵌套碎片化，循环依赖硬核）；② **inline 内容跨列断裂**（单段长文本跨多列）= Phase 2c（行级 fragmentation，依赖 Phase 2b 的统一流基础设施）；③ Phase 1（pure-inline balance 明确高度）**已 A1 gate 证伪关闭**（0/16 失败案匹配，见 column-aware-IFC-spec.md §10），勿再做。
 - **核心约束**：① **零 self-source 回归**（loose 443/490 不退；41 通过 multicol 案 byte-identical 或逐案验证不翻）；② **守 multicol-fill-auto-001 sentinel**（R198/R209 font_size 耦合，0.63% 余量小）；③ **chromium-Oracle z_vs_chr 门禁**（非 self-source——R381 实测 R355/R362 self-source 翻转但 chromium 退步，self-source 非可靠代理）；④ 单 `.rs` ≤2000 行；⑤ 测试用 `make test`/`make reftest`（test-guard 包裹）。
 - **推荐方案**：新增 layout 侧 `flow_children_into_columns` 统一列流函数——按文档序遍历 multicol 容器子节点，维护 `(col_idx, col_y)` 游标；block 子放入当前列（超高则 breaking），inline 子累积成 inline-run，遇 block 边界/列满时对该 run 跑 IFC（用当前列剩余高度作预算）并把行盒定到列内；结果（每列 block 片段 + 每列行盒）存 `LayoutBox` 新字段，paint 直接消费。
@@ -31,7 +31,7 @@
 |------|------|------|------|
 | taffy 块布局 | taffy-local | block 子元素正常堆叠 | 不感知列 |
 | block 子重分配 | `multicol.rs::assign_children_to_columns_*` + `position_multicol_children` | 把 block 子按高度分配到各列（balance=均高顺序填充；auto+breaking=列高限制+碎片化） | **仅处理 block 子**，不碰 inline |
-| inline 内容 | `painter/text.rs:713` 门控 | 仅 `!has_in_flow_children && is_balance_mode && height_auto`（pure-inline balance auto）触发 paint 侧 `target_h=total/col_count` 分配；**混合内容（has_in_flow_children）→ multicol_info=None → inline 整块堆叠错渲染** | paint 侧 5 轮证伪（R157/R198/R203/R317/R122）不可解；layout 侧缺失 |
+| inline 内容 | `painter/text.rs:569` 门控 | 仅 `!has_in_flow_children && is_balance_mode && height_auto`（pure-inline balance auto）触发 paint 侧 `target_h=total/col_count` 分配；**混合内容（has_in_flow_children）→ multicol_info=None → inline 整块堆叠错渲染** | paint 侧 5 轮证伪（R157/R198/R203/R317/R122）不可解；layout 侧缺失 |
 
 **根本问题**：CSS multicol 要求 block + inline 子元素**按文档序统一逐列流动**（一段 inline 文本流到列底，下一段从下列顶续；一个 block 子可能落在某列中间，把 inline 文本断在前列底/后列顶）。三段分离模型把 block（taffy+multicol.rs）与 inline（IFC）解耦处理，**结构性无法表达这种交错流动**。
 
@@ -85,7 +85,7 @@
   验证: z_vs_chr < 1%；self-source 通过
 
 场景: 现有 pure-inline balance 不回归（multicol-fill-auto-001 sentinel + height:auto+balance pure-inline 案）
-  假设 pure-inline balance height:auto multicol（当前 paint 侧 text.rs:948 正确处理）
+  假设 pure-inline balance height:auto multicol（当前 paint 侧 text.rs:854 正确处理）
   当 启用统一列流（MULTICOL_UNIFIED_FLOW=1）
   那么 渲染 byte-identical（统一流对 pure-inline 须复现 paint 侧 total/col_count 分配）
   验证: self-source 443/490 不退；multicol-fill-auto-001 z_vs_chr 不变
@@ -169,9 +169,9 @@
 ### IF-001：`LayoutBox.inline_multicol_columns` 新字段
 
 - **类型**：数据结构（layout → paint 契约）
-- **规格**：`pub inline_multicol_columns: Option<Vec<Vec<InlineLayoutLine>>>`（外层 Vec = 列，内层 = 该列行盒）。复用 `InlineLayoutLine`（types/mod.rs:371）。与 `inline_layout`（单列，Phase A stored-path 消费）**分开字段**避免耦合（同 column-aware-IFC-spec.md §6.3 决策）。
+- **规格**：`pub inline_multicol_columns: Option<Vec<Vec<InlineLayoutLine>>>`（外层 Vec = 列，内层 = 该列行盒）。复用 `InlineLayoutLine`（types/mod.rs:502）。与 `inline_layout`（单列，Phase A stored-path 消费）**分开字段**避免耦合（同 column-aware-IFC-spec.md §6.3 决策）。
 - **错误处理**：None = 未走统一流（paint 回退）。
-- **交叉引用**：types/mod.rs:186 `inline_layout` 并行；column-aware-IFC-spec.md IF-001。
+- **交叉引用**：types/mod.rs:267 `inline_layout` 并行；column-aware-IFC-spec.md IF-001。
 
 ### IF-002：`flow_children_into_columns` 函数（layout 侧）
 
@@ -196,7 +196,7 @@
 - 目标案须用 chromium-Oracle z_vs_chr 验证（非仅 self-source）。
 
 ### 6.2 禁止约束（Must Not）
-- 不放宽 `painter/text.rs:713` 的 `height_auto` 门控（R317 实测 balance 侧 -5 回归）。
+- 不放宽 `painter/text.rs:569` 的 `height_auto` 门控（R317 实测 balance 侧 -5 回归）。
 - 不改 taffy-local 内部（R304 DEFER 升级）。
 - 不引入新 crate 依赖（IFC/列分布全仓内复用）。
 - 不为不可能场景写错误处理（统一流仅目标结构）。
@@ -213,7 +213,7 @@
 ### 6.5 假设（rally 自主模式，待实施第一步 probe 验证）
 - **A1（目标案 diff 根因）**——**R383 LAYOUT_DUMP 深度诊断重大纠正**：原假设「inline 未分配」**不成立**。multicol-block-no-clip-002 的 5 个 `<span>`（display:inline）经 R109（inline→block converter）**被转成 block-level LayoutBox**，与 h4 共 6 个 block 子，multicol 把它们按原子 block 分配到 3 列（blue+h4→col1、orange+pink→col2、yellow→col3，各列顶 y=28/48）。但 ref 期望 **inline 内容作单一 IFC 跨列流动**（blue 4 行+h4+orange 1 行填 col1 至 balance 高 → orange 余+pink 溢 col2 → pink 余+yellow 填 col3，**span 跨列分裂**）。**根因 = R109 entanglement**：spans 已是 block 盒，统一 column-flow 即使实现仍按 block 分配，**修不了这些案**。**真修复须先 Phase A（inline 内容作流动 IFC，R109 解转换）再 multicol 列碎片化——两多会话 lever 依赖（Phase A → multicol）**。状态：根因已定位，**本 spec 的混合内容目标案前置依赖 Phase A，非独立可实施**。
 - **A2（balance 高度可复用）**：统一流的 balance 高度 = 现有 `total_content_height / col_count`（pure-inline paint 侧同公式），对混合内容（block+inline 总高）同样适用。**待 probe**：目标案 chromium 的 balance 高度是否 = 总高/列数。若 chromium 用迭代二分搜索（R199/R321/R322 证 pure-inline 非此），混合内容可能不同。状态：待验证。
-- **A3（IFC 可按列预算跑）**——**R382 probe 已解决（无需扩展 IFC）**：原假设「IFC 须加 height-budget 入参」**不成立**。重读 §8.4 `flush_inline_run`：IFC 产出**宽度换行的全部行盒**（现有 `break_items_into_lines` 能力），统一流再按 balance 高度切片到列——**列切片逻辑在统一流，非 IFC**，故 IFC 接口不变。注：`inline/mod.rs:1462 break_items_into_columns` 是**垂直书写模式**换行（line 1463「垂直模式 container_width=向下推进最大高度」），**非 multicol 列能力**（命名碰撞），与本 spec 无关。状态：已解决，简化实施。
+- **A3（IFC 可按列预算跑）**——**R382 probe 已解决（无需扩展 IFC）**：原假设「IFC 须加 height-budget 入参」**不成立**。重读 §8.4 `flush_inline_run`：IFC 产出**宽度换行的全部行盒**（现有 `break_items_into_lines` 能力），统一流再按 balance 高度切片到列——**列切片逻辑在统一流，非 IFC**，故 IFC 接口不变。注：`inline/mod.rs:940 break_items_into_columns` 是**垂直书写模式**换行（line 941「垂直模式 container_width=向下推进最大高度」），**非 multicol 列能力**（命名碰撞），与本 spec 无关。状态：已解决，简化实施。
 
 ### 6.5A 实现来源说明
 
@@ -222,12 +222,12 @@
 | block 子列分配（等价） | 复用现有 | `multicol.rs::assign_children_to_columns_balanced` + `position_multicol_children` | 统一流 block 路径须 byte-identical 复现 |
 | inline 行盒（按列预算） | 复用现有（无需扩展） | `inline/mod.rs::InlineFormattingContext::break_items_into_lines` 产出宽度换行行盒；统一流 `flush_inline_run` 按 balance 高度切片到列 | A3 已解决：IFC 接口不变，列切片在统一流 |
 | 列几何（col_count/col_width/gap） | 复用现有 | `multicol.rs::compute_column_info` / `compute_single_column_width`（R185 验证公式正确） | |
-| 存储 + paint 消费 | 复用现有模式 | `inline_finalization.rs` 存储模式 + `painter/text.rs:948` 列渲染（列 x 偏移 + 列内 y + 裁剪） | 新字段 `inline_multicol_columns` |
+| 存储 + paint 消费 | 复用现有模式 | `inline_finalization.rs` 存储模式 + `painter/text.rs:854` 列渲染（列 x 偏移 + 列内 y + 裁剪） | 新字段 `inline_multicol_columns` |
 | chromium-Oracle 验证 | 复用现有 | `tests/wpt-runner/scripts/cross-validate.py` + `oracle-shots/` | R381 方法论 |
 
 ### 6.6 代码变更边界
 - **允许修改**：`crates/layout-engine/src/multicol.rs`（或新增 `multicol_unified_flow.rs`）、`crates/layout-engine/src/types/mod.rs`（加字段）、`crates/layout-engine/src/engine.rs`（调用统一流）、`crates/engine/src/paint/painter/text.rs`（消费新字段）、`crates/layout-engine/src/inline/mod.rs`（A3 若需扩展 IFC 预算入参）。
-- **禁止修改**：`crates/taffy-local/**`（R304 DEFER）、`painter/text.rs:713` 门控的 `height_auto` 条件（R317）。
+- **禁止修改**：`crates/taffy-local/**`（R304 DEFER）、`painter/text.rs:569` 门控的 `height_auto` 条件（R317）。
 
 ---
 
@@ -266,7 +266,7 @@
 ### 8.1 现状分析
 - **当前架构**：三段分离（taffy 块堆叠 → `assign_children_to_columns_*` 重分配 block 子 → IFC 单独跑 inline，paint 侧仅 pure-inline 分配）。见 §1.1 表。
 - **痛点**：block/inline 交错流动结构性不可表达；混合内容 multicol 整块堆叠错渲染（16 失败的主因）。
-- **相关代码**：`multicol.rs`（628 行）、`painter/text.rs:700-1010`（multicol 门控+分配）、`inline/mod.rs`（IFC）、`inline_finalization.rs`（存储）。
+- **相关代码**：`multicol.rs`（628 行）、`painter/text.rs:569-964`（multicol 门控+分配）、`inline/mod.rs`（IFC）、`inline_finalization.rs`（存储）。
 
 ### 8.2 目标状态
 - **提议架构**：layout 侧统一 `flow_children_into_columns`，按文档序遍历子节点，block 与 inline 在同一游标下逐列流动；结果存 `inline_multicol_columns`，paint 直接消费。
@@ -385,7 +385,7 @@ env `MULTICOL_UNIFIED_FLOW=0`（默认）即完全回退；任一 Commit 净负�
 | 范围冲突 | ✅ Pass | §1.3 在范围（混合内容 balance auto）与不在范围（嵌套/breaking/pure-inline）无交集 |
 | 约束冲突 | ✅ Pass | §6.1 必须「仅目标结构」与 §6.2 禁止「放宽 :713 门控」互补 |
 | 方案漂移 | ✅ Pass | 方案 A 依赖新字段+新函数+paint 消费，均在 §6.6 允许范围；不碰禁止的 taffy/:713 |
-| 章节引用正确 | ✅ Pass | IF-001 引用 types/mod.rs:186/371（已验存在）；§8.4 引用 inline/mod.rs（已验存在） |
+| 章节引用正确 | ✅ Pass | IF-001 引用 types/mod.rs:267/371（已验存在）；§8.4 引用 inline/mod.rs（已验存在） |
 | 外部事实保守化 | ✅ Pass | taffy 0.7.7、IFC 接口已验；A3（IFC height-budget 能力）标「待核查」未升为 FR |
 | 未验证细节泄漏 | ✅ Pass | A1/A2/A3 未写进 FR 期望值，仅在 §7 首步 probe |
 | 场景预期泄漏 | ✅ Pass | 验收场景期望「z_vs_chr<1%」「byte-identical」是行为非硬编码；未把 A3 未验证的 IFC 接口写进断言 |
