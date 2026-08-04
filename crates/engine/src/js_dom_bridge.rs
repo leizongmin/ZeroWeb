@@ -1042,6 +1042,19 @@ pub fn element_sibling_selectors(html: &str, elem_sel: &str) -> String {
     format!("{prev}|{next}")
 }
 
+/// 元素的**元素父**唯一选择器（`#outer > #inner` 的 inner → `#outer`）；无元素父（根 `<html>` /
+/// elem_sel 不解析）返空串。供 `__zw_parent` 回调 → shim `el.parentNode` / `el.parentElement`
+///（修正旧 stub 对嵌套元素恒返 body 的 bug）。复用 [`element_parent`]。
+pub fn parent_selector_for(html: &str, elem_sel: &str) -> String {
+    let doc = parse_html(html);
+    let Some(node) = find_by_selector(&doc, elem_sel) else {
+        return String::new();
+    };
+    element_parent(&doc, node)
+        .and_then(|p| unique_selector_for_node(&doc, p))
+        .unwrap_or_default()
+}
+
 /// JSON 字符串字面量（转义 `"`、`\`、控制字符）。供 [`child_nodes_json`] /
 /// [`sibling_nodes_json`] 序列化文本/注释节点内容（文本可含任意字符，`|` 分隔不安全，故用 JSON）。
 fn json_str(s: &str) -> String {
@@ -1682,6 +1695,17 @@ pub fn register_dom_callbacks(
             } else {
                 "0".into()
             }
+        }),
+    );
+
+    // `element.parentNode` / `parentElement`——元素父唯一选择器（修正旧 stub 恒返 body）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_parent",
+        Box::new(move |args| {
+            let elem_sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            parent_selector_for(&snap, &elem_sel)
         }),
     );
 

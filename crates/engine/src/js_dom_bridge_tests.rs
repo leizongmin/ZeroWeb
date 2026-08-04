@@ -286,6 +286,18 @@ fn test_sibling_nodes_json_across_text() {
 }
 
 #[test]
+fn test_parent_selector_for_nested() {
+    // parent_selector_for：嵌套元素返真实元素父（修正旧 stub 恒返 body）。
+    let html = "<html><body><div id=\"outer\"><div id=\"inner\">x</div></div></body></html>";
+    assert_eq!(parent_selector_for(html, "#inner"), "#outer", "inner 父 = #outer");
+    assert_eq!(parent_selector_for(html, "#outer"), "body", "outer 父 = body");
+    // html 根无元素父 → 空串。
+    assert_eq!(parent_selector_for(html, "html"), "", "html 根无元素父");
+    // 不解析的选择器 → 空串。
+    assert_eq!(parent_selector_for(html, "#nope"), "", "未命中 → 空串");
+}
+
+#[test]
 fn test_apply_set_outer_html_replaces_element() {
     // outerHTML setter：目标元素整体替换为解析片段，兄弟位置保留。
     let html = "<html><body id=\"b\"><div id=\"t\">x</div><i>after</i></body></html>";
@@ -1999,4 +2011,44 @@ fn test_fragment_flatten_all_insertion_paths_e2e() {
         !out4.contains("<div id=\"t\">"),
         "replaceChild(fragment): #t 应被移除\n{out4}"
     );
+}
+
+#[test]
+fn test_parent_node_nested_e2e() {
+    // R2690：parentNode/parentElement 嵌套正确性（旧 stub 恒返 body）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='outer'><div id='inner'>x</div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // inner.parentNode.id === 'outer'（旧 stub 错返 body → id ''）。
+    sandbox
+        .execute("globalThis.__p = document.querySelector('#inner').parentNode.id;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__p").unwrap().value, "outer");
+    // inner.parentElement 同。
+    sandbox
+        .execute("globalThis.__pe = document.querySelector('#inner').parentElement.id;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__pe").unwrap().value, "outer");
+    // outer.parentNode.tagName === 'BODY'。
+    sandbox
+        .execute("globalThis.__op = document.querySelector('#outer').parentNode.tagName;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__op").unwrap().value, "BODY");
+    // html 根 parentNode === null。
+    sandbox
+        .execute("globalThis.__hp = document.querySelector('html').parentNode === null;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hp").unwrap().value, "true");
 }

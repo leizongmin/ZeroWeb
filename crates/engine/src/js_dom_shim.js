@@ -902,7 +902,18 @@
     try { return __zw_get_tag(sel).toUpperCase() === tagUpper; } catch (_e) { return false; }
   }
 
+  // `el.parentNode` / `parentElement`：经 host `__zw_parent(sel)` 返真实元素父选择器
+  //（修正旧 stub 对嵌套元素恒返 body 的 bug）。handle-only（detached）或无回调 → fallback stub
+  //（detached 元素无真实 parent；html/body/head 用文档结构近似）。
   function _parentNodeFor(sel, handle) {
+    if (sel && typeof __zw_parent === 'function') {
+      try {
+        var p = __zw_parent(sel);
+        if (p) return _wrapSelector(p);
+        return null; // html 根 / 未命中 → 无元素父
+      } catch (_e) { return null; }
+    }
+    // fallback（无 host 回调路径，如 polyfill）：文档结构近似。
     if (sel === 'html') return null;
     if (sel === 'body' || sel === 'head') return _wrapSelector('html');
     return _wrapSelector('body');
