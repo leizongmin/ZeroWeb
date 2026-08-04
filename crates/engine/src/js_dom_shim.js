@@ -5,6 +5,10 @@
   // 精修目标，但纯 JS Proxy 缓存即可达成，无需 rusty_v8 对象绑定）。proxy 无状态（仅委托
   // host 回调），缓存安全；key 复用 `_elKey`（@handle / sel），与 _listenerStore 同生命周期。
   var _proxyCache = {};
+  // P1a form input：per-element-key value 缓存（`.value` 属性）。lazy-init 自 value 属性；
+  // `.value` set 更新缓存 + 记 value 属性 mutation（供 render）。跨 execute 存活（typing 多键），
+  // 导航（URL 变化）经 `__zw_reset_form_state` 清空防跨页 stale value。
+  var _inputValues = {};
 
   // ── 浏览器运行时桩（定时器、navigator、location 等）──
   var _timerId = 1;
@@ -484,6 +488,28 @@
     }
   };
 
+  // P1a form input：host 在 keydown 可打印字符时调本函数——对焦点 input/textarea 把字符 append
+  // 到 value（经 `.value` set 更新缓存 + 记 value 属性 mutation）并派发 'input' 事件。
+  // 非 input/textarea 目标 → no-op。限制（follow-up）：仅 append（无 backspace/delete/caret/selection）。
+  globalThis.__zw_text_input = function(sel, ch) {
+    // 经 __zw_query_match 解析为 canonical stable selector（与 querySelector 同 identity），
+    // 使派发的 input 事件命中 querySelector 注册的 listener（host 传入的 selector 与
+    // querySelector 返回的 __zwSelector 须统一）。
+    var resolved = typeof __zw_query_match === 'function' ? __zw_query_match(sel) : sel;
+    if (!resolved) return;
+    // 真实 tag（host `__zw_get_tag` 查 DOM；shim `_tagFromSel`/el.tagName 对 id-only 选择器仅启发式）。
+    var tag = typeof __zw_get_tag === 'function' ? __zw_get_tag(resolved) : '';
+    tag = (tag || '').toUpperCase();
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA') return;
+    var el = _wrapSelector(resolved);
+    if (!el) return;
+    el.value = (el.value || '') + ch;
+    var ev = _makeEvent('input', { bubbles: true, cancelable: true });
+    el.dispatchEvent(ev);
+  };
+  // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; };
+
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
   // 同步立即执行回调即可让 setup mutation 被记录并应用到二次渲染（镜像 setTimeout 的 microtask 语义，
@@ -858,6 +884,14 @@
       get: function(_t, prop) {
         if (prop === '__zwHandle') return handle;
         if (prop === '__zwSelector') return sel;
+        if (prop === 'value') {
+          // P1a form input：value 属性 get——per-element 缓存，lazy-init 自 value 属性。
+          if (_inputValues[key] == null) {
+            var va = handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value');
+            _inputValues[key] = (va == null) ? '' : va;
+          }
+          return _inputValues[key];
+        }
         if (prop === 'style') {
           return new Proxy({}, {
             set: function(_s, p, v) {
@@ -1094,6 +1128,12 @@
           if (handle) __zw_set_attr_handle(handle, 'id', String(value));
           else __zw_set_attr(sel, 'id', String(value));
           moAttr = 'id';
+        } else if (p === 'value') {
+          // P1a form input：value 属性 set——更新缓存 + 记 value 属性 mutation（供 render）。
+          _inputValues[key] = String(value);
+          if (handle) __zw_set_attr_handle(handle, 'value', String(value));
+          else __zw_set_attr(sel, 'value', String(value));
+          moAttr = 'value';
         } else {
           if (handle) __zw_set_attr_handle(handle, p, String(value));
           else __zw_set_attr(sel, p, String(value));

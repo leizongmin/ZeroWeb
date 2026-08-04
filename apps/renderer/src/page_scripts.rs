@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, PageScript, apply_mutations_to_html, extract_page_scripts, resolve_document_url,
-    script_dispatch_dom_event,
+    script_dispatch_dom_event, script_text_input,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -136,6 +136,22 @@ pub fn tick_observers(ctx: &mut PageScriptContext<'_>) -> bool {
     let _ = ctx
         .js_worker
         .execute_script_direct("if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();");
+    let html_snap = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snap).is_some()
+}
+
+/// P1a form input：向焦点 input/textarea 注入一个文本字符（更新 value 属性 + 派发 'input' 事件）。
+/// 镜像 `dispatch_dom_event` 的 set_snapshot→clear→execute→apply 流程，script = `__zw_text_input`。
+/// 非 input/textarea 目标 shim 内 no-op。返回 value 属性是否变更（调用方据此单次 rerender）。
+/// 调用方须先判定 `key` 为单字符可打印键（见 `main::is_printable_key`）。
+pub fn apply_text_input(ctx: &mut PageScriptContext<'_>, selector: &str, key: &str) -> bool {
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    let _ = ctx.js_worker.execute_script_direct(&script_text_input(selector, key));
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
 }

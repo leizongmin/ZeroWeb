@@ -450,6 +450,20 @@ pub fn query_attr_from_html(html: &str, selector: &str, name: &str) -> String {
         .unwrap_or_default()
 }
 
+/// 从当前 HTML 快照查询元素 tag 名（供 `__zw_get_tag` 回调；shim `_tagFromSel` 对 id-only
+/// 选择器等只能启发式猜测，P1a form input 需真实 tag 判 INPUT/TEXTAREA）。
+pub fn query_tag_from_html(html: &str, selector: &str) -> String {
+    let doc = parse_html(html);
+    find_by_selector(&doc, selector)
+        .and_then(|n| {
+            doc.get(n).and_then(|node| match &node.kind {
+                NodeKind::Element(e) => Some(e.local_name().to_string()),
+                _ => None,
+            })
+        })
+        .unwrap_or_default()
+}
+
 /// 从当前 HTML 快照查询 innerHTML。
 pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
@@ -514,6 +528,15 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
         }
     };
     format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")
+}
+
+/// 构造「向焦点 input/textarea 注入一个文本字符」的 shim 脚本（P1a form input）。
+/// 宿主在 keydown 可打印字符时执行：shim `__zw_text_input(sel, ch)` 把字符 append 到 value
+/// （`.value` set 更新缓存 + 记 value 属性 mutation）并派发 'input' 事件。非 input/textarea → no-op。
+pub fn script_text_input(selector: &str, key: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    let esc_ch = escape_js_string(key);
+    format!("__zw_text_input('{esc_sel}', '{esc_ch}')")
 }
 
 /// 从当前 HTML 快照查询 textContent。
@@ -625,6 +648,18 @@ pub fn register_dom_callbacks(
             }
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             query_attr_from_html(&snap, &args[0], &args[1])
+        }),
+    );
+
+    // P1a form input：真实 tag 名查询（shim `_tagFromSel` 对 id-only 选择器等仅启发式猜测，
+    // `__zw_text_input` 需真实 tag 判 INPUT/TEXTAREA）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_get_tag",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            query_tag_from_html(&snap, &sel)
         }),
     );
 

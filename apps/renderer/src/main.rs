@@ -44,6 +44,16 @@ fn browser_ipc_disconnected(err: &str) -> bool {
     is_disconnected_channel_message(err)
 }
 
+/// P1a form input：判定 key 是否为单字符可打印键（用于向 input/textarea 注入字符）。
+/// 多字符 key 名（"Enter"/"Backspace"/"ArrowLeft"/"Shift"/"Tab"…）与控制字符排除。
+fn is_printable_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    match chars.next() {
+        Some(c) if !c.is_control() => chars.next().is_none(),
+        _ => false,
+    }
+}
+
 fn spawn_browser_ipc_inbound() -> (Receiver<IpcMessage>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
     let join = thread::Builder::new()
@@ -339,6 +349,27 @@ impl RendererRuntime {
                 js_worker: &self.js_worker,
             };
             page_scripts::tick_observers(&mut ctx)
+        };
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
+    /// P1a form input：向 selector 指向的焦点 input/textarea 注入一个字符（更新 value + 派发
+    /// 'input' 事件）；回调改了 DOM 则单次 rerender。调用方须先判定 key 为可打印单字符。
+    fn apply_text_input_at(&mut self, selector: &str, key: &str) -> Result<(), String> {
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+            };
+            page_scripts::apply_text_input(&mut ctx, selector, key)
         };
         if changed {
             self.rerender_publish_webview()?;
@@ -852,10 +883,16 @@ impl RendererRuntime {
             KeyboardEventType::Press => "keypress",
         };
         let detail = DomEventDetail {
-            key: Some(params.key),
-            code: Some(params.code),
+            key: Some(params.key.clone()),
+            code: Some(params.code.clone()),
         };
-        self.dispatch_dom_at(Some(self.event_target.clone()), 0.0, 0.0, event_type, Some(detail));
+        let target = self.event_target.clone();
+        self.dispatch_dom_at(Some(target.clone()), 0.0, 0.0, event_type, Some(detail));
+        // P1a form input：keydown 可打印字符 → 焦点 input/textarea 注入字符（更新 value + 派发 input 事件）。
+        // 默认行为近似：未尊重 keydown preventDefault（follow-up）；仅 append（无 backspace/caret）。
+        if matches!(params.event_type, KeyboardEventType::Down) && is_printable_key(&params.key) {
+            let _ = self.apply_text_input_at(&target, &params.key);
+        }
         Ok(())
     }
 

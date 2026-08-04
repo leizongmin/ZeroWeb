@@ -267,11 +267,16 @@ fn js_worker_main(
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot { html, url } => {
+                // P1a form input：URL 变化（导航）→ 清 shim value 缓存，防跨页同选择器 stale value。
+                let url_changed = page_url.lock().map(|u| *u != url).unwrap_or(true);
                 if let Ok(mut snap) = dom_html.lock() {
                     *snap = html;
                 }
                 if let Ok(mut u) = page_url.lock() {
                     *u = url;
+                }
+                if url_changed {
+                    let _ = sandbox.execute("__zw_reset_form_state && __zw_reset_form_state();");
                 }
             }
             JsWorkerCommand::ResolveAsyncCallback { id, result } => {
@@ -1084,6 +1089,51 @@ mod tests {
             .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(80));
         assert_eq!(worker.execute_script_direct("String(globalThis.__calls)").unwrap(), "2");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_form_text_input_updates_value_and_fires_input() {
+        // P1a form input：`__zw_text_input(sel, ch)` 对 input 元素 append char 到 `.value`（缓存，
+        // listener 立即可见新值）+ 派发 'input' 事件。`.value` lazy-init 自 value 属性（"ab"），
+        // 注入 "c" → "abc"，input listener 读 `el.value` 见 "abc"（不滞后 mutation-apply）。
+        // 非 input/textarea 目标 → no-op（不派发 input）。
+        let mut worker = RendererJsWorker::spawn(27);
+        worker.set_dom_snapshot("<html><body><input id='i' value='ab'></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 var el = document.querySelector('#i');\
+                 el.addEventListener('input', function(_e){ globalThis.__seen = 'input:' + el.value; });\
+                 __zw_text_input('#i', 'c');",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "input:abc"
+        );
+        // 第二次注入 "d" → "abcd"（缓存跨 execute 存活，多键 typing 成立）。
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 __zw_text_input('#i', 'd');",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "input:abcd"
+        );
+        // 非 input 目标（body）→ no-op，无 input 派发。
+        worker
+            .execute_script_direct(
+                "globalThis.__seen2 = 'unchanged';\
+                 __zw_text_input('body', 'x');",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen2)").unwrap(),
+            "unchanged"
+        );
         worker.shutdown();
     }
 
