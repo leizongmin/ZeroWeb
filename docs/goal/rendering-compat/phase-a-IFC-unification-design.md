@@ -1,7 +1,7 @@
 # Phase A — IFC 三路径统一设计（Spec + RFC）
 
-**版本**：v1.2（+ v1.3/v1.4 addendum 见文末）
-**日期**：2026-06-19 起；最近 addendum 2026-07-24（R1985）
+**版本**：v1.2（+ v1.3/v1.4/v1.5 addendum 见文末）
+**日期**：2026-06-19 起；最近 addendum 2026-08-04（R2605）
 **状态**：**设计中，整体未实施**。Phase 1/2 部分 LANDED（R207 PHASEA_STORE_EXT + R355 多行放宽 + R817 linebox Phase 2 +45 case）；**Phase 3（line-box metric unification）未解** = reftest 大盘 57% / 37-form-controls label overlap / vertical-mode 的共同结构性阻塞。v1.4 addendum（R1985）裁决：「勿再以 line-box metric / inline-block identity 为独立 lever 狩猎——fix 须随 Phase A 整体 unification」。pre-authorized ruling #4（多 session）。
 **关联**：`docs/goal/rendering-compat/master.md` R125 / R198 / R205 / R207 / R208 / R209 / R213 / **R306**；DC-13 产品 smoke 文本保真；DC-14 真实一致率
 
@@ -425,6 +425,43 @@ R639 实证 Phase A **非「全有或全无」**：per-fragment inline-bg（+13�
 1. **✅ LANDED R885（commit `d5b7e3ae`，零行为变更 enabling infra）**：`crates/layout-engine/src/inline/font_metrics.rs` 新模块 = `LineMetrics` + `FontMetricProvider` trait + `impl FontMetricProvider for FontLoader`（family→font_id→fontdue `line_metrics_full`→ascent/descent/line_gap）+ `InlineFormattingContext.font_metric_provider`（默认 `None`，dormant）+ builder。在 IFC 注入 font-metric 查询，暴露 per-font ascent/descent/line_gap（ink-height 见 step-2 concept ②，须 render-foundation 暴露 glyph ink bounds）。**仅添加接口，不改 0.8 常数 → 零回归**（grep 证 0 production reads；make test 全绿 incl. 4 新 font_metrics 测试断言真实 Ahem 度量；product-smoke welcome 16.11%≈baseline 16.16%）。
 2. **三方同改 narrow slice**（消费 bridge）：strut 用 real ascent + non-stored v_offset 用 ink-height（或先试 `fragment.baseline` 替代 font_size）+ 验双路径不双计。**三态门禁 A/B**：welcome <20% + linebox/css-text/normal-flow oracle 零回归 + self-source 通过率不降。净负即回退（5th data point）。
 3. 守住 multicol-fill-auto 反向依赖（R198 墙）+ pre-wrap 宽度敏感（R627 -15）。
+
+---
+
+## 13. v1.5 addendum（R2605 会话，2026-08-04，design-vs-code 同步核验）
+
+> 承接 v1.3/v1.4。R2605 sanctioned design 调研（「Phase A 只做设计后实施」，不自主开工实现）核验 IFC line-box-metric 当前代码态 vs 本设计文档，发现 **v1.3 §12.6 step-1 关于 R885 bridge 的「dormant」描述已 stale**——bridge 经多轮演进已激活并消费。本 addendum 同步代码现实 + 锐化剩余切片 readiness，供用户授权实施时无误导。**不改变 master.md 控制面的 user-gate**（IFC line-box-metric 仍 user-gated，repeats R834/R836/R849/R875 net-negative 史）。
+
+### 13.1 R885 font_metrics.rs bridge 状态订正：dormant → 已激活
+
+v1.3 §12.6 step-1 称 R885（`font_metrics.rs`）「默认 None，dormant，零回归」。**R2605 核验此描述 stale**：
+- `crates/engine/src/pipeline/mod.rs:270-280` `set_font_metric_map`（U1b-wiring）= 生产激活路径：从 `FontLoader::build_line_metric_map()` 构建 per-family 行度量 `FontMetricMap` provider，注入 LayoutEngine，经 compute_final_inline_layouts + measure_text_content 双路径触达 IFC。
+- bridge 经 `inline_finalization.rs` ~12 处调用点（614/666/902-903/1125/1151/1325-1326/1376-1377/1442/1516-1517/1559）+ `engine.rs`（173/195/267-268/351/459）触达。
+- `crates/layout-engine/src/inline/text_metrics.rs:409 resolve_normal_line_height` **真消费 provider**：`Some(p) && Some(m) = p.line_metrics(...) → return m.ascent - m.descent + m.line_gap`（fontdue/chromium 真实 hhea），仅 provider 缺省/无法解析时 fallback 常数比率（Ahem 1.0 / 非-Ahem 1.164）。
+- 即 **line-height:normal 已走 per-family 真实度量**（非 dormant）。
+
+### 13.2 三方补偿三因素当前态（R876 §12.2 重核）
+
+| 因素 | v1.3 描述 | R2605 当前态 | 证据 |
+|------|-----------|--------------|------|
+| ① strut baseline | 0.8 启发式（应 ~0.928em 真实 ascent） | **仍 0.8·fs 启发式**（`font_metric_provider` 字段持有但 `apply_vertical_alignment` 未读） | `inline/mod.rs:195`「None（默认）= apply_vertical_alignment 回退 0.8·fs 启发式（当前行为）」/ `:338`「尚未读取该字段（仍走 0.8·fs 启发式）。step-2（三方协调）才在此消费真实」/ `:1201`「文本行：沿用 line_height*0.8」 |
+| ② paint v_offset | font_size（应 ink-height） | 未变更（`render_fragment!` `$baseline_offset = baseline_fs(font_size)`，`text.rs:1100-1332`） | `text.rs` |
+| ③ tight-ink vs ascent | ~7px 差 | 未变更 | R876 §12.2 |
+
+**结论：三方协调（v1.3 §12.6 step-2）仍未实施**——strut 仍 0.8·fs，`font_metric_provider` 字段 held-but-not-read for strut ascent。bridge 已 live（line-height:normal 级），故 step-2 的 provider-plumbing 风险较 v1.3 假设更低（provider 已 proven zero-regression at line-height:normal level）。
+
+### 13.3 v1.3 后附加既 land 工作
+
+- **R1192 font-size-adjust apply**（`text_metrics.rs:362-378`，is_ahem-gated narrow slice，CSS Fonts 3 §3.6）：`adjusted_size = font_size × adjust / aspect`（aspect = Ahem 0.8 常数），adjusted font_size 经 line-height + advance + paint 全链路传播。非 Ahem defer（须 OS/2 sxHeight 派生 + font 接入 layout = 同 Phase A 字体度量架构 gap，Slice 3+）。
+- **R990 is_ahem-gated 常数**（Ahem 0.8 / 非-Ahem 0.928，`inline/mod.rs:212/424`）：strut/normal fallback 比率。
+- `TextFragment.baseline`（`inline_types.rs:132`）+ `baseline_y`（:173/:216）字段已存在（R877 §12.3 既证），non-stored path 消费 `fragment.baseline` 替 font_size 作 `$baseline_offset` 的 plumbing 已就绪。
+
+### 13.4 剩余切片 readiness（锐化）
+
+v1.3 §12.6 step-2「三方同改 narrow slice」**仍是精确下一步**，且 readiness 提升：
+- provider 已激活 + proven（line-height:normal 零回归）→ step-2 须做 = 「让 `apply_vertical_alignment` 的 strut ascent 消费 provider 真实 ascent（替 0.8）+ non-stored `v_offset` 消费 ink-height 或 `fragment.baseline`（替 font_size）+ 验 stored/Path B/raster glyph_top_left 不双计」，三方同改 + kill-switch（`ZW_` env）+ 三态 A/B（welcome <20% + linebox/css-text/normal-flow oracle 零回归 + self-source 不降），净负即回退。
+- 与 v1.4 R109 匿名块 manifestation 的关系：v1.4「匿名块须从叶子近似升级为跑 IFC 的真容器」是 tree-build + IFC ownership 深构造（墙 ③/Path A/B 同根，deadlock 史 R125/R206/R213）；本 §13 step-2 是更窄的「strut/v_offset 度量三方协调」slice，**不触及 tree-build / 匿名块**，是 v1.4 整体 unification 的一个可独立先行的度量层子切片。
+- 仍受 master.md 控制面 user-gate——**本 addendum 仅同步 design-vs-code 使授权实施时无误导，不自主开工**。
 
 
 
