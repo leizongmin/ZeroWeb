@@ -108,3 +108,26 @@ if (prop === 'getBoundingClientRect') {
 4. `js_dom_shim.js`：`getBoundingClientRect` 取元素 compound key 调 `__zw_getBoundingClientRect`，解析 `x,y,w,h`→DOMRect，无 handler/空→零回落。
 5. kill-switch `ZW_REAL_RECT` + driving reftest（读已渲染元素 rect）+ 三态 A/B。
 
+## R2646 scope 深化：identity→NodeId 是真架构缺口（非「低风险快速见效」）
+
+实施 step 2 前核验发现 **R2644 假设「identity→NodeId 解析在 js_worker 可复用」不成立**，slice 实际比 P1a「低风险快速见效」框定大得多：
+
+1. **`apply_dom_mutations`（`js_dom_bridge.rs:177`）的 `handles: HashMap<String, NodeId>` 是 ephemeral**——每次 apply 调用重建、用后即弃，**不持久化**。RectBridge handler 无法查历史 handle→NodeId。
+2. **`find_by_selector` 需 `Document`（已解析）**，而 js_worker 查询回调（`__zw_query_match` 等）走 HTML 字符串（`query_match_selector(&html, &sel)` 返字符串值），**不暴露 NodeId**。
+3. **selector-keyed snapshot 亦不成立**：shim 元素身份 = 任意 selector 或 handle `__n{n}`，与 `stable_selector_for_node` 生成的规范选择器**不保证一致**；handle 更非 selector。
+
+→ **不存在现成 persistent identity→NodeId（或 identity→rect）映射**供 handler 用。须**新建**该映射基建。
+
+### 可行重架构路径（多 session，须选一）
+
+- **(A) 持久化 handles map**：`apply_dom_mutations` 的 `handles` 改为 `Arc<Mutex<HashMap<String,NodeId>>>` 持久跨调用、共享给 RectBridge handler；selector 身份经 `Document`（parse dom_html 或共享 Document）`find_by_selector`。改 `apply_dom_mutations`（browser/renderer/reftest 三处共用，须 A/B）。
+- **(B) identity→rect 直映**：renderer render 后遍历 layout + 为每元素算 stable_selector→rect 入 snapshot；shim 侧 `getBoundingClientRect` 传 stable selector（须 shim 能产出与 host 一致的 stable selector——双向对齐复杂）。
+- **(C) parse-on-query**：handler 每 query 解析 dom_html→Document→find_by_selector→NodeId→rect。自包含但每 query 一次 HTML 解析（贵），且 handle 身份仍须持久 map。
+
+### 结论与建议
+
+- gBCR 真实化是**多 session 架构 slice**（建 persistent identity→rect 映射基建），**非** P1a「低风险快速见效」原框定。RectBridge（R2643）+ layout-rect snapshot（R2645）building blocks 已 land 且无论哪条路径都复用。
+- **建议**：先做 **(A) 持久化 handles map** 作为 identity 基建首个 sub-slice（最小、对 handle 身份直接生效，selector 经 Document 补），kill-switch 守护、A/B 防回归；稳定后再接 renderer 接线 + shim + driving test。或**pivot** 到更高 ROI 的 P1a 项（见 recon），gBCR 作为长期项排期。
+- 此 finding 不阻塞——按 rally 规则记入控制面，CONTINUE 推进（先 (A) sub-slice 或 pivot 由下轮定）。
+
+
