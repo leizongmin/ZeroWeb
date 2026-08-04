@@ -43,7 +43,7 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 | `ZeroWebView` | 已有稳定嵌入 API、可运行 demo，以及跨 crate 和产品层 smoke 测试；Service Worker、WASM 桥接与 `SecurityContext` 安全检查等页面级能力已接入其中 |
 | 浏览器应用 | `zero-browser`、`browser-shell` 和 `zero-renderer` 已打通桌面入口、多进程链路、headless 调试与跨平台打包（Linux / macOS / Windows）+ CI 发布工作流；整体仍处于实验阶段 |
 | 页面 JavaScript | `script-sandbox` 已提供 V8/QuickJS feature gate（含 V8 持久化 Context 复用）、Web Worker、ES Modules，以及 WebAssembly JS API 到 `wasm-sandbox` 的自动桥接；完整 Web API 和站点兼容性仍在推进 |
-| 渲染兼容性（当前主线） | 以 WPT/CSSWG reftest 对齐 Chromium 为验收标准，Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源 reftest 存在假通过，仅作自一致性参考）。broad 一致率（chr<1%）约 57%、strict 像素级处低位 plateau；残余缺口集中在 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性方向，根因是 layout↔paint IFC 度量不一致（Phase-A spread）。详见 [路线图](ROADMAP.md) 与 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md) |
+| 渲染兼容性（当前主线） | 以 WPT/CSSWG reftest 对齐 Chromium 为验收标准，Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源 reftest 存在假通过，仅作自一致性参考）。broad 一致率（chr<1%）约 57%、strict 像素级处低位 plateau；自主 clean-lever 轻量修复面已穷尽（9 vein 审计 exhaust），当前以 plateau-guard 低频回归守卫与文档纠偏为主。残余缺口集中在 vertical writing modes（部分切片已落地，整体仍待推进）、multicol 碎片化、R109 inline-as-block 等结构性方向，根因是 layout↔paint IFC 度量不一致（Phase-A spread）。详见 [路线图](ROADMAP.md) 与 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md) |
 | 安全与可访问性 | CSP 完整实现、HSTS 预加载、混合内容阻止 / 升级、权限模型与站点隔离已落地并统一接入 `SecurityContext`；可访问性基础（`FocusManager` Tab 导航 + ARIA）已起步 |
 | 项目定位 | 适合学习、研究、工程探索，不适合直接当成生产浏览器 |
 

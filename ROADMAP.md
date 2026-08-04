@@ -18,7 +18,7 @@
 
 ## 当前重点
 
-- **Render compact**: WPT/CSSWG reftest 对齐 Chromium Oracle（`make reftest-oracle`），broad 一致率 chr&lt;1% 约 57%、strict 处低位 plateau。残余缺口在 vertical writing modes、multicol 碎片化、R109 inline-as-block 等 layout↔paint IFC 度量不一致（Phase-A spread）。详见 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md)
+- **Render compact**: WPT/CSSWG reftest 对齐 Chromium Oracle（`make reftest-oracle`），broad 一致率 chr&lt;1% 约 57%、strict 处低位 plateau；自主 clean-lever 轻量修复面已 9 vein 审计穷尽，当前以 plateau-guard 低频回归守卫与文档纠偏为主。残余缺口在 vertical writing modes（部分切片已落地，整体仍待推进）、multicol 碎片化、R109 inline-as-block 等 layout↔paint IFC 度量不一致（Phase-A spread）结构性方向。详见 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md)
 - **Legacy HTML 与表单**: 补齐 `<select>`/`<input>`/`<textarea>` 等 UA 默认样式与表单控件，通过 `make product-smoke-legacy` 门禁验收
 - **Browser shell 产品化**: 打通 `browser-shell` 与 WebView/渲染管线的真实验收
 
