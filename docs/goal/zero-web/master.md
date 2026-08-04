@@ -112,6 +112,21 @@
 
 ## 最近完成的改进
 
+### P1a form input — Backspace 删末字符（本轮 R2654，~13,223 测试）
+
+承接 form input（R2653）。补输入编辑互补：Backspace 删焦点 input/textarea 末字符 + 派发 'input'（空值不派发，同 real browser）。`__zw_text_input` / `__zw_text_delete` 共用新抽的 `_resolveInputEl(sel)`（canonical selector 解析 + 真实 tag 判 INPUT/TEXTAREA）。无 caret/selection（删末字符近似——真实浏览器按 caret 删，follow-up）。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim.js` | 抽 `_resolveInputEl(sel)` 共用 helper（消除 input/delete 重复）+ `__zw_text_delete`（`slice(0,-1)`，空值不派发）。 |
+| `crates/engine/src/js_dom_bridge.rs` | `script_text_delete`。 |
+| `apps/renderer/src/page_scripts.rs` | `apply_text_delete`。 |
+| `apps/renderer/src/main.rs` | `handle_keyboard_event` Backspace 分支 + `apply_text_delete_at`。 |
+
+验证：`make test` 全绿（exit 0）+ clippy `-D warnings` 零警告 + fmt clean + `make product-smoke` 全 struct PASS（desktop diff≤20% + 窄屏全 PASS）。driving test：删末字符（abcd→abc→ab）+ 空值 backspace 不派发（同 real browser）。
+
+**已知限制（follow-up）**：无 caret/selection（删末字符近似）；未尊重 keydown preventDefault；browser in-process `tab_worker` 未接（mirror）；Delete 键 / 方向键 / IME 仍缺。
+
 ### P1a form input — input/textarea value + input 事件（本轮 R2653，~13,222 测试）
 
 P1a「简单表单可用」核心缺口：`handle_keyboard_event` 仅派发 keydown/keyup/keypress，**不更新 input/textarea 的 value、不派发 'input' 事件**——表单字段输入不更新值，input 监听器（验证 / 搜索即输 / 受控组件）永不触发。本切片补全。
@@ -128,7 +143,7 @@ P1a「简单表单可用」核心缺口：`handle_keyboard_event` 仅派发 keyd
 
 **为何零回归**：仅 keydown 可打印字符 + 焦点 input/textarea 触发；`.value` / `__zw_text_input` / `__zw_get_tag` / `__zw_reset_form_state` 全为新增；product-smoke 真实页面（welcome/morning/wintertc）struct 全 PASS。
 
-**已知限制（follow-up）**：① 仅 append 字符（无 backspace/delete/caret/selection/IME composition）；② 未尊重 keydown `preventDefault()`（preventDefault 后仍注入，follow-up）；③ browser in-process `tab_worker` 路径未接（mirror follow-up，cross-process browser 经 renderer 已覆盖）；④ `.value` 与 value 属性语义合并（无 dirty-value/clean-value 区分）。
+**已知限制（follow-up）**：① 仅 append 字符 + Backspace 删末字符（无 caret/selection/IME composition；Backspace 见 R2654）；② 未尊重 keydown `preventDefault()`（preventDefault 后仍注入，follow-up）；③ browser in-process `tab_worker` 路径未接（mirror follow-up，cross-process browser 经 renderer 已覆盖）；④ `.value` 与 value 属性语义合并（无 dirty-value/clean-value 区分）。
 
 ### P1a Slice 2b — observer host render-loop tick（本轮 R2652，~13,221 测试）
 

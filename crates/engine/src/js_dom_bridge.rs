@@ -539,6 +539,13 @@ pub fn script_text_input(selector: &str, key: &str) -> String {
     format!("__zw_text_input('{esc_sel}', '{esc_ch}')")
 }
 
+/// 构造「Backspace 删末字符」的 shim 脚本（P1a form input 编辑互补）。宿主在 keydown
+/// Backspace 时执行：shim `__zw_text_delete(sel)` 删 value 末字符并派发 'input' 事件。
+pub fn script_text_delete(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!("__zw_text_delete('{esc_sel}')")
+}
+
 /// 从当前 HTML 快照查询 textContent。
 pub fn query_text_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);

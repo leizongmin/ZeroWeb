@@ -1138,6 +1138,48 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_form_text_delete_removes_last_char_and_fires_input() {
+        // P1a form input 编辑互补：`__zw_text_delete(sel)` 删 value 末字符 + 派发 'input'。
+        // "abcd" → backspace → "abc"，listener 见新值。空值 backspace → 无变化不派发（同 real browser）。
+        let mut worker = RendererJsWorker::spawn(28);
+        worker.set_dom_snapshot("<html><body><input id='i' value='abcd'></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 var el = document.querySelector('#i');\
+                 el.addEventListener('input', function(_e){ globalThis.__seen = 'input:' + el.value; });\
+                 __zw_text_delete('#i');",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "input:abc"
+        );
+        // 再删 → "ab"（多键成立）。
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 __zw_text_delete('#i');",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "input:ab"
+        );
+        // 删到空后再删 → 无 input 派发（__seen 保持 null）。
+        worker.execute_script_direct("__zw_text_delete('#i');").unwrap(); // "a"
+        worker.execute_script_direct("__zw_text_delete('#i');").unwrap(); // ""
+        worker
+            .execute_script_direct("globalThis.__seen = 'sentinel'; __zw_text_delete('#i');")
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "sentinel"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_mutation_observer_property_set() {
         // P1b S2 incr3（镜像 browser）：property set（el.className='x'）触发 attributes 记录。
         let mut worker = RendererJsWorker::spawn(17);

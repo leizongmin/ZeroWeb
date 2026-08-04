@@ -492,21 +492,31 @@
   // 到 value（经 `.value` set 更新缓存 + 记 value 属性 mutation）并派发 'input' 事件。
   // 非 input/textarea 目标 → no-op。限制（follow-up）：仅 append（无 backspace/delete/caret/selection）。
   globalThis.__zw_text_input = function(sel, ch) {
-    // 经 __zw_query_match 解析为 canonical stable selector（与 querySelector 同 identity），
-    // 使派发的 input 事件命中 querySelector 注册的 listener（host 传入的 selector 与
-    // querySelector 返回的 __zwSelector 须统一）。
-    var resolved = typeof __zw_query_match === 'function' ? __zw_query_match(sel) : sel;
-    if (!resolved) return;
-    // 真实 tag（host `__zw_get_tag` 查 DOM；shim `_tagFromSel`/el.tagName 对 id-only 选择器仅启发式）。
-    var tag = typeof __zw_get_tag === 'function' ? __zw_get_tag(resolved) : '';
-    tag = (tag || '').toUpperCase();
-    if (tag !== 'INPUT' && tag !== 'TEXTAREA') return;
-    var el = _wrapSelector(resolved);
+    var el = _resolveInputEl(sel);
     if (!el) return;
     el.value = (el.value || '') + ch;
-    var ev = _makeEvent('input', { bubbles: true, cancelable: true });
-    el.dispatchEvent(ev);
+    el.dispatchEvent(_makeEvent('input', { bubbles: true, cancelable: true }));
   };
+  // P1a form input：Backspace → 删末字符 + 派发 'input'（仅当 value 非空）。无 caret/selection
+  // （删末字符近似——真实浏览器按 caret 删，follow-up）。
+  globalThis.__zw_text_delete = function(sel) {
+    var el = _resolveInputEl(sel);
+    if (!el) return;
+    var cur = el.value || '';
+    if (cur.length === 0) return; // 空值 backspace 无变化，不派发（同 real browser）。
+    el.value = cur.slice(0, -1);
+    el.dispatchEvent(_makeEvent('input', { bubbles: true, cancelable: true }));
+  };
+  // 解析 selector → canonical stable selector（`__zw_query_match`，与 querySelector 同 identity）+
+  // 真实 tag（`__zw_get_tag`，非 `_tagFromSel` 启发式）判 INPUT/TEXTAREA → 返元素 proxy（否则 null）。
+  // __zw_text_input / __zw_text_delete 共用。
+  function _resolveInputEl(sel) {
+    var resolved = typeof __zw_query_match === 'function' ? __zw_query_match(sel) : sel;
+    if (!resolved) return null;
+    var tag = (typeof __zw_get_tag === 'function' ? __zw_get_tag(resolved) : '').toUpperCase();
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA') return null;
+    return _wrapSelector(resolved);
+  }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
   globalThis.__zw_reset_form_state = function() { _inputValues = {}; };
 

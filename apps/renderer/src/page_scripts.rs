@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, PageScript, apply_mutations_to_html, extract_page_scripts, resolve_document_url,
-    script_dispatch_dom_event, script_text_input,
+    script_dispatch_dom_event, script_text_delete, script_text_input,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -152,6 +152,20 @@ pub fn apply_text_input(ctx: &mut PageScriptContext<'_>, selector: &str, key: &s
         .unwrap_or_else(|e| e.into_inner())
         .clear();
     let _ = ctx.js_worker.execute_script_direct(&script_text_input(selector, key));
+    let html_snap = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snap).is_some()
+}
+
+/// P1a form input：Backspace 删焦点 input/textarea 的末字符 + 派发 'input' 事件。
+/// 镜像 `apply_text_input`。返回 value 属性是否变更（调用方据此单次 rerender）。
+pub fn apply_text_delete(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    let _ = ctx.js_worker.execute_script_direct(&script_text_delete(selector));
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
 }
