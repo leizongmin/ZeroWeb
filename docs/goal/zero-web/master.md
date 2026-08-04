@@ -799,6 +799,27 @@ R2690–R2691 self-review 续，从「近似返回」转向「行为缺失」。
 
 **已知限制（剩余）**：① capture 期不区分 `event.eventPhase`（CAPTURING_PHASE/AT_TARGET/BUBBLING_PHASE 未设值——handler 极少读 eventPhase，MVP 不设）；② `currentTarget` 在 document 级仍为 html 元素 proxy（同 R2692 限制②）；③ focus/blur 仍 bubbles:true（同 R2692 限制③）；④ capture listener 注册顺序在同节点内按注册序（spec 行为），跨节点严格 root→target。
 
+### P1a listener options 规范化 — capture-aware removeEventListener + `once`（本轮 R2694，self-review 续，~13,316 测试）
+
+承接 R2692–R2693（事件冒泡 + capture 阶段）。self-review 续查 addEventListener/removeEventListener options 契约，发现两个 spec 偏差：
+
+1. **`removeEventListener` 不认 capture flag**：3 站点（`_globalRemoveEventListener` / 元素 proxy / document 经 proxy）均仅按 `fn` 引用过滤，忽略第三参 `useCapture`。spec 要求 useCapture 须匹配才移除——故 `addEventListener('click', fn, true)` 的 capture 注册，`removeEventListener('click', fn)`（capture=false）**不应**移除它，但旧实现误删（fn 命中即删，不分 capture）。破坏「同 fn 不同 capture 双注册」的精确卸载语义。
+2. **`once` 选项完全忽略**：`{once:true}` 注册的 listener 应派发一次后自动移除，旧实现 entry 不存 `once`、派发逻辑不处理 → listener 重复触发（破坏 one-shot 模式：首次点击绑定、弹窗只显示一次等）。
+
+**修复**：① 新增 `_optOnce(opts)`，两 addEventListener 站点 entry 增 `once` 字段（`{fn, capture, once}`）；② 3 个 removeEventListener 站点改 capture-aware：`filter(l => !(l.fn === fn && l.capture === _optCapture(opts)))`，`Element.prototype.removeEventListener` / `document.removeEventListener` 透传第三参 `opts`；③ `_dispatchToListeners` 改**快照迭代**（`list.slice()`，避免 once 移除扰动迭代），派发后把已触发的 `once` entry 从原 list 按对象引用一次性滤除。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_shim.js` | `_optOnce`；两 addEventListener 存 `once`；3 removeEventListener capture-aware + 透传 opts；`_dispatchToListeners` 快照迭代 + once 派发后移除。 |
+| `engine/js_dom_bridge_tests.rs` | +2 e2e：`once` 单次触发（两次派发计数=1）；capture-aware remove（`remove(fn)` 不删 capture 注册仍触发 / `remove(fn,true)` 删除后不触发）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1417→1419 net +2）+ `make reftest` + `make product-smoke`。
+
+**为何零回归且净正向**：① 非捕获 removeEventListener（默认 `useCapture=undefined` → `_optCapture` 得 false）匹配 capture=false 注册——绝大多数页面只注册非 capture，行为不变；② capture-aware 仅对「同 fn 双注册」精确化（此前误删 capture，现保留），属纠正既有 bug；③ `once` 仅对显式 `{once:true}` 注册的 listener 生效，未用 once 的页面零影响；④ 快照迭代语义等价（`_immediateStopped` 仍中断同节点后续 listener；`break` 替代 `return` 后补 once 移除，不改变派发结果）。
+
+**已知限制（剩余）**：① `passive`/`signal` options 未处理（passive 对本引擎无滚动默认动作可阻止，signal=AbortSignal 卸载语义属 follow-up）；② IE legacy `attachEvent`/`detachEventForKey` 不走 options 路径（legacy API 无 capture/once 概念，保持原样）；③ `once` 移除在派发**整条 listener 列表后**批量进行（spec 是触发即移除——reentrancy 下同帧内若该 listener 被同事件再次命中理论上仍只触发一次，因快照已固定；极端 reentrancy 边界为 follow-up）。
+
+
 
 
 

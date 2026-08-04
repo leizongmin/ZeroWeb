@@ -780,9 +780,15 @@
 
   // addEventListener 第三参 `opts` 的 capture 提取：支持 legacy 布尔形式（`addEventListener(t, fn, true)`
   // = capture）与对象形式（`{ capture: true }`）。旧实现仅认对象形式，布尔 true 被忽略 → capture listener
-  // 注册不上（capture 阶段 R2693 因此对布尔形式失效）。
+  // 注册不上（capture 阶段 R2693 因此对布尔形式失效）。removeEventListener 第三参同语义（useCapture
+  // 须匹配才移除，spec）。
   function _optCapture(opts) {
     return !!(opts === true || (opts && opts.capture));
+  }
+
+  // addEventListener `opts.once` 提取（仅对象形式 `{ once: true }`；布尔形式无 once 语义）。
+  function _optOnce(opts) {
+    return !!(opts && opts.once);
   }
 
   function _globalAddEventListener(type, fn, opts) {
@@ -790,14 +796,20 @@
     var t = String(type);
     if (!_listenerStore[key]) _listenerStore[key] = {};
     if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
-    _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts) });
+    _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts) });
   }
 
-  function _globalRemoveEventListener(type, fn) {
+  // removeEventListener：spec 要求 useCapture（第三参）须与注册时匹配才移除——故
+  // `addEventListener(t, fn, true)` 的 capture 注册仅 `removeEventListener(t, fn, true)` 能移除，
+  // `removeEventListener(t, fn)`（capture=false）不动它。旧实现仅按 fn 过滤，误删 capture 注册。
+  function _globalRemoveEventListener(type, fn, opts) {
     var key = _elKey('html', null);
     var t = String(type);
     if (!_listenerStore[key] || !_listenerStore[key][t]) return;
-    _listenerStore[key][t] = _listenerStore[key][t].filter(function(l) { return l.fn !== fn; });
+    var cap = _optCapture(opts);
+    _listenerStore[key][t] = _listenerStore[key][t].filter(function(l) {
+      return !(l.fn === fn && l.capture === cap);
+    });
   }
 
   globalThis.Node = function Node() {};
@@ -809,8 +821,8 @@
   globalThis.Element.prototype.addEventListener = function(type, fn, opts) {
     _globalAddEventListener(type, fn, opts);
   };
-  globalThis.Element.prototype.removeEventListener = function(type, fn) {
-    _globalRemoveEventListener(type, fn);
+  globalThis.Element.prototype.removeEventListener = function(type, fn, opts) {
+    _globalRemoveEventListener(type, fn, opts);
   };
 
   function _elKey(sel, handle) {
@@ -854,28 +866,41 @@
   // 派发某元素 key 上的事件 listener。`phase`：`'all'`（target 阶段，capture+非 capture，默认）、
   // `'capture'`（仅 capture listener，捕获期祖先用）、`'bubble'`（仅非 capture，冒泡期祖先用）。
   // `thisObj`：handler 内 `this` 与 `event.currentTarget`（默认 event.target）。`stopImmediatePropagation`
-  // 中断当前节点内后续 listener。
+  // 中断当前节点内后续 listener。`once` listener（`{once:true}` 注册）派发后自动移除——用快照迭代，
+  // 派发完一次性从原 list 滤除已触发的 once 条目（不扰动迭代；reentrancy 下按对象引用滤除安全）。
   function _dispatchToListeners(key, event, phase, thisObj) {
     var listeners = _listenerStore[key];
     if (!listeners || !listeners[event.type]) return !event._defaultPrevented;
     var list = listeners[event.type];
     var ctx = thisObj || event.target;
     event.currentTarget = ctx;
+    var snap = list.slice();
+    var firedOnce = null;
+    var fire = function(entry) {
+      entry.fn.call(ctx, event);
+      if (entry.once) {
+        if (!firedOnce) firedOnce = [];
+        firedOnce.push(entry);
+      }
+    };
     if (phase !== 'bubble') {
-      for (var i = 0; i < list.length; i++) {
-        if (list[i].capture) {
-          list[i].fn.call(ctx, event);
-          if (event._immediateStopped) return !event._defaultPrevented;
+      for (var i = 0; i < snap.length; i++) {
+        if (snap[i].capture) {
+          fire(snap[i]);
+          if (event._immediateStopped) break;
         }
       }
     }
-    if (phase !== 'capture') {
-      for (var j = 0; j < list.length; j++) {
-        if (!list[j].capture) {
-          list[j].fn.call(ctx, event);
-          if (event._immediateStopped) return !event._defaultPrevented;
+    if (phase !== 'capture' && !event._immediateStopped) {
+      for (var j = 0; j < snap.length; j++) {
+        if (!snap[j].capture) {
+          fire(snap[j]);
+          if (event._immediateStopped) break;
         }
       }
+    }
+    if (firedOnce) {
+      listeners[event.type] = list.filter(function(e) { return firedOnce.indexOf(e) < 0; });
     }
     return !event._defaultPrevented;
   }
@@ -1256,13 +1281,16 @@
           return function(type, fn, opts) {
             if (!_listenerStore[key]) _listenerStore[key] = {};
             if (!_listenerStore[key][type]) _listenerStore[key][type] = [];
-            _listenerStore[key][type].push({ fn: fn, capture: _optCapture(opts) });
+            _listenerStore[key][type].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts) });
           };
         }
         if (prop === 'removeEventListener') {
-          return function(type, fn) {
+          return function(type, fn, opts) {
             if (!_listenerStore[key] || !_listenerStore[key][type]) return;
-            _listenerStore[key][type] = _listenerStore[key][type].filter(function(l) { return l.fn !== fn; });
+            var cap = _optCapture(opts);
+            _listenerStore[key][type] = _listenerStore[key][type].filter(function(l) {
+              return !(l.fn === fn && l.capture === cap);
+            });
           };
         }
         if (prop === 'attachEvent') {
@@ -1931,8 +1959,8 @@
     addEventListener: function(type, fn, opts) {
       _makeProxy('html', null).addEventListener(type, fn, opts);
     },
-    removeEventListener: function(type, fn) {
-      _makeProxy('html', null).removeEventListener(type, fn);
+    removeEventListener: function(type, fn, opts) {
+      _makeProxy('html', null).removeEventListener(type, fn, opts);
     },
     attachEvent: function(type, fn) {
       _attachEventForKey(_elKey('html', null), type, fn);

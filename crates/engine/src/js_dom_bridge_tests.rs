@@ -2294,3 +2294,84 @@ fn test_event_capture_stop_propagation() {
         "capture stopPropagation 后 bubble 不应触发"
     );
 }
+
+#[test]
+fn test_event_listener_once() {
+    // R2694：`once` 选项。`{once:true}` 注册的 listener 派发一次后自动移除（再次派发不触发）。
+    // 旧实现完全忽略 once → listener 重复触发。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><button id=\"b\">x</button></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "document.querySelector('#b').addEventListener('click', function(){ globalThis.__n = (globalThis.__n|0) + 1; }, { once: true });",
+        )
+        .unwrap();
+    sandbox.execute("__zw_dispatch_event('#b', 'click', null);").unwrap();
+    sandbox.execute("__zw_dispatch_event('#b', 'click', null);").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__n").unwrap().value,
+        "1",
+        "once listener 应仅触发一次（第二次派发不触发）"
+    );
+}
+
+#[test]
+fn test_remove_event_listener_capture_aware() {
+    // R2694：capture-aware removeEventListener。spec：useCapture 须匹配才移除——
+    // `addEventListener(t, fn, true)`（capture）仅 `removeEventListener(t, fn, true)` 能移除；
+    // `removeEventListener(t, fn)`（capture=false）不应动 capture 注册。旧实现按 fn 误删。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"p\"><i id=\"c\">x</i></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // #p 上注册 capture listener（fn），随后 removeEventListener 不带 capture → 不应移除。
+    sandbox
+        .execute(
+            "globalThis.__fn = function(){ globalThis.__cap = (globalThis.__cap|0) + 1; };\n\
+             document.querySelector('#p').addEventListener('click', globalThis.__fn, true);\n\
+             document.querySelector('#p').removeEventListener('click', globalThis.__fn);\n\
+             __zw_dispatch_event('#c', 'click', null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cap").unwrap().value,
+        "1",
+        "removeEventListener(fn) 不带 capture 不应移除 capture 注册（仍触发）"
+    );
+    // 现在 removeEventListener 带 capture=true → 应移除，再次派发不触发。
+    sandbox
+        .execute(
+            "document.querySelector('#p').removeEventListener('click', globalThis.__fn, true);\n\
+             __zw_dispatch_event('#c', 'click', null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cap").unwrap().value,
+        "1",
+        "removeEventListener(fn, true) 应移除 capture 注册（再次派发不触发）"
+    );
+}
