@@ -13,8 +13,8 @@
 
 > **⚠️ v1.0-gate（R381，2026-06-20）：Phase 1 紧急停止——§10 假设 A1 验证为 FALSE**。扫描全 16 个 css-multicol 失败案结构，**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）。每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套。**Phase 1（pure-inline balance）无目标案、零杠杆**；真实 multicol 失败全需 **Phase 2（嵌套/breaking/混合碎片化，多会话硬核）**。spec 自身 §10 协议「A1 不存在→紧急停止转 Phase 2」已生效。下方 Phase 1 设计保留作参考与 Phase 2 的算法基础，**勿再以 Phase 1（pure-inline balance）为单会话 lever 重试**。
 
-- **一句话目标**：把 multicol 容器（`column-count`/`column-width`）的**行内流（inline）内容**在 **layout 阶段**按列高预算碎片化到各列并存储，paint 直接消费存储结果——取代当前 paint 侧 `text.rs:713` 门控重算（已由 R157/R198/R203/R317 四轮实证 net-negative）。
-- **本期范围（Phase 1）**：仅**单层、非嵌套** multicol 容器，`column-fill: balance`（默认）+ **明确高度**（height ≠ auto）+ 纯 inline 内容（无 block 子元素）。该子集当前因 `text.rs:713` 的 `height_auto` 门控**回退为单块渲染（错误）**，layout 侧填充新字段可纯改善。**⚠️ v1.0-gate：该范围在失败集中 0 匹配，Phase 1 停止。**
+- **一句话目标**：把 multicol 容器（`column-count`/`column-width`）的**行内流（inline）内容**在 **layout 阶段**按列高预算碎片化到各列并存储，paint 直接消费存储结果——取代当前 paint 侧 `text.rs:569` 门控重算（已由 R157/R198/R203/R317 四轮实证 net-negative）。
+- **本期范围（Phase 1）**：仅**单层、非嵌套** multicol 容器，`column-fill: balance`（默认）+ **明确高度**（height ≠ auto）+ 纯 inline 内容（无 block 子元素）。该子集当前因 `text.rs:569` 的 `height_auto` 门控**回退为单块渲染（错误）**，layout 侧填充新字段可纯改善。**⚠️ v1.0-gate：该范围在失败集中 0 匹配，Phase 1 停止。**
 - **明确排除（本期）**：① 嵌套 multicol（outer column-fill:auto 把 inner 碎片化，multicol-breaking-004/005/006）= Phase 2（真 fragmentation）；② `column-fill: auto` 顺序填充的 inline 内容（由 multicol.rs block 侧 + paint 协调，独立子问题）；③ block 子元素碎片化（multicol.rs `assign_children_to_columns_*` 已实现，**不重复**）。
 - **核心约束**：① 零 reftest 回归（loose 438/490 不退）；② 不改 height:auto 现有路径（paint 侧门控保持 load-bearing，R317）；③ 单 `.rs` 文件 ≤2000 行；④ 测试用 `make test`/`make reftest`（test-guard 包裹）。
 - **推荐方案**：新增 `LayoutBox.inline_multicol_columns: Option<Vec<Vec<InlineLayoutLine>>>`（每列行盒），layout 侧 `assign_lines_to_columns_balanced`（行盒版，与 block 侧 `assign_children_to_columns_balanced` 同族但作用于 `InlineLayoutLine`），paint 侧优先消费该字段（None 时回退现有逻辑）。
@@ -26,10 +26,10 @@
 
 ### 1.1 背景
 
-css-multicol 是当前 reftest 最大失败聚类之一（17/57 loose 失败，strict 更多）。碎片化**算法已存在**（`multicol.rs::assign_children_to_columns_balanced/_sequential/_with_breaking`，作用于 **block 子元素**），但**行内流（inline 文本）内容的列分布仅在 paint 侧**（`painter/text.rs:713` 的 `compute_multicol_info_for_paint`）做，且被 `height_auto` 门控严格限制：
+css-multicol 是当前 reftest 最大失败聚类之一（17/57 loose 失败，strict 更多）。碎片化**算法已存在**（`multicol.rs::assign_children_to_columns_balanced/_sequential/_with_breaking`，作用于 **block 子元素**），但**行内流（inline 文本）内容的列分布仅在 paint 侧**（`painter/text.rs:569` 的 `compute_multicol_info_for_paint`）做，且被 `height_auto` 门控严格限制：
 
 ```rust
-// painter/text.rs:713（load-bearing，R317 实证不可放宽）
+// painter/text.rs:569（load-bearing，R317 实证不可放宽）
 let multicol_info = if !has_in_flow_children && is_balance_mode && height_auto {
     compute_multicol_info_for_paint(...)  // 仅 height:auto+balance+纯inline 触发
 } else { None };                            // 其余回退单块渲染
@@ -118,7 +118,7 @@ R317 实测放宽该门控（去掉 `height_auto`）：multicol 子集 40/57→3
 场景: 新字段 None 时回退（异常/边界）
   假设 box_node.inline_multicol_columns = None
   当 paint
-  那么 走现有 text.rs:713 门控逻辑（height:auto+balance 走 paint 分布，其余单块）
+  那么 走现有 text.rs:569 门控逻辑（height:auto+balance 走 paint 分布，其余单块）
   验证: make reftest 全量 loose 438/490 不退（height:auto 用例 byte-identical）
 ```
 
@@ -172,7 +172,7 @@ R317 实测放宽该门控（去掉 `height_auto`）：multicol 子集 40/57→3
 - **规格**：`pub inline_multicol_columns: Option<Vec<Vec<InlineLayoutLine>>>`。`None` = 未计算/不适用（paint 走旧路径）；`Some(cols)` 中 `cols[col_idx]` = 该列的行盒列表，行盒 `y` 已 rebase 为列内坐标（从 0 起）。列 x 偏移由 paint 按 `col_idx*(col_width+gap)` 计算（不存字段，避免与 multicol 几何重复）。
 - **错误处理**：若 `cols` 为空 Vec 或 `col_count==0`，paint 视同 `None` 回退。
 - **默认动作**：字段默认 `None`；仅 FR-001 条件全满足时填充。
-- **交叉引用**：复用 `InlineLayoutLine`（types/mod.rs:371），与 `LayoutBox.inline_layout`（已有，存单列行盒）并行。
+- **交叉引用**：复用 `InlineLayoutLine`（types/mod.rs:502），与 `LayoutBox.inline_layout`（已有，存单列行盒）并行。
 
 ### IF-002：`assign_lines_to_columns_balanced` 函数（layout 侧）
 - **类型**：模块函数
@@ -186,11 +186,11 @@ R317 实测放宽该门控（去掉 `height_auto`）：multicol 子集 40/57→3
 
 ### 6.1 必须约束（Must）
 - Phase 1 仅作用于「单层 + balance + 明确高度 + 纯 inline」multicol；其余全部走旧路径（字段 None）。
-- paint 消费新字段时必须逐列裁剪（复用 text.rs:974-984 现有逐列裁剪逻辑）。
+- paint 消费新字段时必须逐列裁剪（复用 text.rs:881 现有逐列裁剪逻辑）。
 - 行盒列分布必须用顺序填充 + 平衡高度（R200 已证正确），不得用 round-robin。
 
 ### 6.2 禁止约束（Must Not）
-- 不得放宽 `text.rs:713` 的 `height_auto` 门控（R317 实证净 -5 回归）。
+- 不得放宽 `text.rs:569` 的 `height_auto` 门控（R317 实证净 -5 回归）。
 - 不得修改 multicol.rs 的 block 子元素碎片化（`assign_children_to_columns_*`，已正确）。
 - 不得在 paint 侧为嵌套 multicol 做 ad-hoc 协调（R203 证 net-negative）。
 - 不得为「只使用一次」的逻辑引入抽象（code-guidelines）。
@@ -217,8 +217,8 @@ R317 实测放宽该门控（去掉 `height_auto`）：multicol 子集 40/57→3
 | IFC 行盒产出 | 复用现有模块 | `inline/mod.rs::InlineFormattingContext::layout` → `Vec<InlineLayoutLine>` | 已实现，无需改 |
 | 行盒列分布算法 | 仓内自实现（同族复用） | 新增 `assign_lines_to_columns_balanced`，逻辑照搬 `multicol.rs::assign_children_to_columns_balanced` | 行盒版，非 block 版 |
 | 列几何（col_count/col_width/gap） | 复用现有模块 | `multicol.rs::compute_column_info` / `balance_column_geometry` | 已实现 |
-| paint 逐列裁剪 | 复用现有模块 | `painter/text.rs:974-984` 现有逐列裁剪 | 已实现 |
-| `InlineLayoutLine` 存储 | 复用现有类型 | `types/mod.rs:371` | 已实现 |
+| paint 逐列裁剪 | 复用现有模块 | `painter/text.rs:881` 现有逐列裁剪 | 已实现 |
+| `InlineLayoutLine` 存储 | 复用现有类型 | `types/mod.rs:502` | 已实现 |
 
 ### 6.6 代码变更边界
 - **允许修改**：
@@ -227,7 +227,7 @@ R317 实测放宽该门控（去掉 `height_auto`）：multicol 子集 40/57→3
   - `crates/engine/src/paint/painter/text.rs`（paint 消费新字段，短路分支）
 - **禁止修改**：
   - `crates/layout-engine/src/multicol.rs::assign_children_to_columns_*`（block 侧，已正确）
-  - `painter/text.rs:713` 门控条件本身（仅在其前加新字段短路分支）
+  - `painter/text.rs:569` 门控条件本身（仅在其前加新字段短路分支）
   - IFC 内部（`inline/mod.rs` 行盒生成逻辑）
 
 ### 6.7 执行技能提示
@@ -287,9 +287,9 @@ R317 实测放宽该门控（去掉 `height_auto`）：multicol 子集 40/57→3
 ## 8. 技术设计（RFC）
 
 ### 8.1 现状分析
-- **当前架构**：multicol inline 内容的列分布**仅在 paint 侧**（text.rs:713 `compute_multicol_info_for_paint`），被 `height_auto` 门控限制为 height:auto+balance+纯inline。block 子元素列分布**在 layout 侧**（multicol.rs）。两者割裂。
+- **当前架构**：multicol inline 内容的列分布**仅在 paint 侧**（text.rs:569 `compute_multicol_info_for_paint`），被 `height_auto` 门控限制为 height:auto+balance+纯inline。block 子元素列分布**在 layout 侧**（multicol.rs）。两者割裂。
 - **问题/痛点**：明确高度 balance multicol 的 inline 内容回退单块（错误）；嵌套 multicol 完全不支持 inline 列分布。paint 侧协调经 5 轮实证 net-negative。
-- **相关代码**：`painter/text.rs:696-717`（门控）、`multicol.rs:244-502`（block 侧碎片化）、`inline/mod.rs`（IFC）、`types/mod.rs:371-394`（InlineLayoutLine/Fragment）。
+- **相关代码**：`painter/text.rs:696-717`（门控）、`multicol.rs:1222`（block 侧碎片化）、`inline/mod.rs`（IFC）、`types/mod.rs:502-520`（InlineLayoutLine/Fragment）。
 
 ### 8.2 目标状态
 - **提议架构**：inline 内容列分布**移到 layout 侧**，结果存 `inline_multicol_columns`，paint 直接消费（短路）。paint 侧 `compute_multicol_info_for_paint` 仅在字段 None 时作为 height:auto 的回退（保持 load-bearing）。
@@ -324,7 +324,7 @@ paint text.rs：
               render line.fragments at (content_x + col_x, content_y + line.y)  // line.y 已列内 rebase
               clip to column rect
   } else {
-      // 现有 text.rs:713 门控逻辑（不变）
+      // 现有 text.rs:569 门控逻辑（不变）
   }
 ```
 
@@ -401,7 +401,7 @@ return cols
 | 范围冲突 | ✅ Pass | §1.3 在范围（单层 balance 明确高度 inline）与不在范围（嵌套/auto-fill/block/baseline-export）无交集 |
 | 约束冲突 | ✅ Pass | §6.1 必须 与 §6.2 禁止 无矛盾（必须「仅作用于 X」与禁止「放宽门控」互补） |
 | 方案漂移 | ✅ Pass | 方案 A（§8.6）依赖新字段 + 新模块，均在 §6.6 允许范围内；不引入与 Must Not 冲突的依赖 |
-| 章节引用正确 | ✅ Pass | IF-001 引用 types/mod.rs:371（已验存在）；§8.4 引用 text.rs:974-984（已验存在） |
+| 章节引用正确 | ✅ Pass | IF-001 引用 types/mod.rs:502（已验存在）；§8.4 引用 text.rs:881（已验存在） |
 | 外部事实保守化 | ✅ Pass | taffy 0.7.7、resvg 等已验；A1/A2 标「待验证」未升为 FR |
 | 未验证细节泄漏 | ✅ Pass | A1（目标用例是否存在）未写进验收场景期望值，仅在实施首步 probe |
 | 场景预期泄漏 | ✅ Pass | 验收场景期望「diff 下降」是行为非硬编码数值；无未验证 API/命名写入断言 |
