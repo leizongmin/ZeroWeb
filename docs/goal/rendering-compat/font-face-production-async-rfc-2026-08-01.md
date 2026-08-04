@@ -3,7 +3,7 @@
 **版本**：v1.0
 **日期**：2026-08-01
 **作者**：Rally 执行 agent
-**状态**：草稿（rally 自主推进模式，无人工确认环节；见 §6.3 决策 7）
+**状态**：✅ **已实施**（slices 1-3 已 land：R2408 `extract_font_faces` pub / R2409 drain pattern 接线 / R2410 live A/B；扩展 R2417 font-weight matching + R2493 italic matching，签名自草拟 2-tuple 扩展为 `Vec<(String, Vec<String>, Option<u16>, bool)>`）。本文为 R2407 历史设计稿：§1.1 为 R2406 审计态（bug 已修）、§3-8 为目标设计（已实现）；行号/路径经 R2622 对齐当前源码。
 **关联**：R2406 重大发现（`docs/goal/rendering-compat/master.md` 顶部裁决块）、`docs/goal/rendering-compat.md` DC-13 / DC-5（css-fonts）、run-rules §无人值守/本地 web server。
 
 ---
@@ -25,11 +25,11 @@
 
 R2406 审计发现：live browser 的 `@font-face` **完全失效**。链路核查：
 
-- **`AsyncPageLoad::poll_fonts`**（`crates/webview/src/async_load.rs:365-378`）：`fetch_bytes_meta` 取到 @font-face 字节后，仅 `tracing::info!("font fetched")` 即**丢弃**——无 `load_font`、无 `register_family_alias`。
-- **`begin_font_fetch`**（`async_load.rs:349-363`）：用 `extract_font_face_urls(&self.css)`（`crates/engine/src/pipeline.rs:1107`，URL-only 扫描），**丢失 family**；且仅扫 `self.css`（外链样式表），**不扫 inline `<style>`**（对照 `begin_image_fetch` 在 `async_load.rs:414-416` 合并了 inline style），故 inline `<style>` 内的 @font-face 也不被抓取——**次要 bug**。
-- **生产宿主**：默认多进程后端（`apps/browser/src/process_backend.rs:24` `use_multiprocess_backend` 默认 true）→ renderer 进程（`apps/renderer/src/main.rs`）。renderer `with_io`（main.rs:153-180）持 `font_loader` + `WebView`，已 `set_font_resolver`（main.rs:170）。renderer tick（main.rs:361-376）以 `IpcAsyncFetchHost` / `StubAsyncFetchHost` 驱动 `pending.load.tick(webview, &mut host, budget_ms)`。tabworker（`apps/browser/src/tab_worker.rs:131-288`）为进程内备选路径，同样持 `font_loader` + `WebView` + `AsyncPageLoad`。
-- **关键借用事实**：renderer tick 在 `text_metrics::with_measure_ctx_opt(font_loader, ...)`（main.rs:362-363）内**不可变借 `&self.font_loader`**（设 thread-local `*const FontLoader` 供布局文本度量读取），webview 为 `&mut`。tick 期间 `font_loader` 不可 mut。→ 字体 mutate 必须在 **tick 之后**。
-- **为何 product-smoke 未抓**：product-smoke / reftest 经 `zero-wpt-runner` 走 harness 路径 `load_font_faces_into`（`tests/wpt-runner/src/reftest/reftest_fonts.rs:146`，**会** load+register），与 live browser async 路径**分叉**——harness 加载 @font-face，production 不加载。故此 bug 是 product-smoke 的**盲区**，必须新增 live-browser 验证（slice 3）。
+- **`AsyncPageLoad::poll_fonts`**（`crates/webview/src/async_load.rs:458`；**R2406 审计态**）：审计时 `fetch_bytes_meta` 取到 @font-face 字节后仅 `tracing::info!` 即**丢弃**——无 `load_font`、无 `register_family_alias`。**R2408+ slice 2 已修复**：现 `poll_fonts` 收集 `(family, weight, is_italic, bytes)` 入 `font_loaded`，经 `drain_loaded_fonts()`（`async_load.rs:176`）回传宿主 load+register。
+- **`begin_font_fetch`**（`async_load.rs:422`；**R2406 审计态**）：审计时用 URL-only 提取器 `extract_font_face_urls`（R2406 时代 `crates/engine/src/pipeline.rs` 内，**已废弃并被取代**）仅扫 `self.css`，**丢失 family**；且不扫 inline `<style>`（对照 `begin_image_fetch`〔`async_load.rs:480`〕合并了 inline style），故 inline `<style>` 内的 @font-face 也不被抓取——**次要 bug**。**R2408+ slice 2 已修复**：提取器 pub 化为 family-preserving `extract_font_faces`（`crates/engine/src/pipeline/extract.rs:185`，R2511 自 `pipeline.rs` 抽出的资源提取族），`begin_font_fetch` 现合并外链 + inline `<style>`。
+- **生产宿主**：默认多进程后端（`apps/browser/src/process_backend.rs:24` `use_multiprocess_backend` 默认 true）→ renderer 进程（`apps/renderer/src/main.rs`）。renderer `with_io`（main.rs:152-185）持 `font_loader` + `WebView`，已 `set_font_resolver`（main.rs:170）。renderer tick（main.rs:361-376）以 `IpcAsyncFetchHost` / `StubAsyncFetchHost` 驱动 `pending.load.tick(webview, &mut host, budget_ms)`。tabworker（`apps/browser/src/tab_worker.rs:131-345`）为进程内备选路径，同样持 `font_loader` + `WebView` + `AsyncPageLoad`。
+- **关键借用事实**：renderer tick 在 `text_metrics::with_measure_ctx_opt(font_loader, ...)`（main.rs:360-363）内**不可变借 `&self.font_loader`**（设 thread-local `*const FontLoader` 供布局文本度量读取），webview 为 `&mut`。tick 期间 `font_loader` 不可 mut。→ 字体 mutate 必须在 **tick 之后**。
+- **为何 product-smoke 未抓**：product-smoke / reftest 经 `zero-wpt-runner` 走 harness 路径 `load_font_faces_into`（`tests/wpt-runner/src/reftest/reftest_fonts.rs:154`，**会** load+register），与 live browser async 路径**分叉**——harness 加载 @font-face，production 不加载。故此 bug 是 product-smoke 的**盲区**，必须新增 live-browser 验证（slice 3）。
 - **既有能力**：`FontLoader`（`crates/render-foundation/src/font/loader.rs`）已具备 `load_font(&[u8]) -> Result<u32>`、`register_family_alias(&str, u32)`、`build_font_resolver() -> HashMap<String,u32>`；`WebView::set_font_resolver(HashMap)`（`crates/webview/src/webview.rs:890`）已存在；harness 已证 load+register+resolver 链路可用。本期**纯接线**，不新增字体能力。
 
 ### 1.2 目标
@@ -70,7 +70,7 @@ R2406 审计发现：live browser 的 `@font-face` **完全失效**。链路核�
 ## 3. 功能需求
 
 ### FR-001：family-preserving 提取器 pub 化（slice 1）
-- **描述**：系统必须在 `crates/engine` 提供 `pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>)>`，返回每个 @font-face 的 `(family, url_sources)`，family 已去引号、sources 已去 `url()` 包裹与引号、按出现顺序。行为对齐既有 harness 私有 `extract_font_faces`（`reftest_fonts.rs:86`）与 css-parser `FontFaceRule { family, sources }`（`crates/css-parser/src/ast.rs:85`）。
+- **描述**：系统必须在 `crates/engine` 提供 `pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>)>`，返回每个 @font-face 的 `(family, url_sources)`，family 已去引号、sources 已去 `url()` 包裹与引号、按出现顺序。行为对齐既有 harness 私有 `extract_font_faces`（`reftest_fonts.rs:87`）与 css-parser `FontFaceRule { family, sources }`（`crates/css-parser/src/ast.rs:87`）。
 - **优先级**：必须
 - **来源**：slice 1 计划 / R2406 fix scope ①
 
@@ -228,7 +228,7 @@ R2406 审计发现：live browser 的 `@font-face` **完全失效**。链路核�
 
 ### IF-001：`extract_font_faces`（engine 公开函数）
 - **类型**：API（仓内库函数）
-- **规格**：`pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>)>`，位于 `crates/engine/src/pipeline.rs`（与 `extract_font_face_urls` 同位）。实现：经 `zero_css_parser::parser::Parser::parse_stylesheet` 收集 `Rule::FontFace(FontFaceRule)` → `(ff.family, ff.sources)`。无 panic（解析失败返回空）。
+- **规格**：`pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>, Option<u16>, bool)>`（R2417/R2493 自 RFC 草拟的 2-tuple 扩展为含 weight + is_italic 的 4-tuple），位于 `crates/engine/src/pipeline/extract.rs`（R2511 自 `pipeline.rs` 抽出的资源提取族）。实现：经 `zero_css_parser::parser::Parser::parse_stylesheet` 收集 `Rule::FontFace(FontFaceRule)` → `(ff.family, ff.sources, ff.weight, ff.is_italic)`。无 panic（解析失败返回空）。
 - **错误处理**：解析失败 → 空 Vec（与既有 harness 行为一致）。
 - **默认动作**：不适用（纯函数）。
 - **交叉引用**：实现来源见 §6.5A；消费方 FR-002。
@@ -279,7 +279,7 @@ R2406 审计发现：live browser 的 `@font-face` **完全失效**。链路核�
 - 资源抓取经 webview `net_pool`（InProcessFetchHost）或 renderer IPC（IpcAsyncFetchHost）；不强依赖外网。
 
 ### 6.5 假设
-- `FontFaceRule { family, sources }` 的 `sources` 已由 css-parser 去除 `url()` 包裹与引号（已验证：`ast.rs:88` 注释 + `tests_10.rs:361` 断言 `sources == ["test.woff"]`）— 状态：已验证。
+- `FontFaceRule { family, sources }` 的 `sources` 已由 css-parser 去除 `url()` 包裹与引号（已验证：`ast.rs:90` 注释 + `tests_10.rs:361` 断言 `sources == ["test.woff"]`）— 状态：已验证。
 - renderer 默认路径为多进程（`use_multiprocess_backend` 默认 true）— 状态：已验证（`process_backend.rs:24`）。
 - `FontLoader::load_font` 对 WOFF1 解码、ttf/otf 直接加载、WOFF2 静默失败 — 状态：已验证（`loader.rs:161` + 注释）。
 - tabworker（进程内）在 `ZERO_BROWSER_MULTIPROCESS=0` 下为活跃路径 — 状态：已验证（`process_backend.rs:24`）。
@@ -288,7 +288,7 @@ R2406 审计发现：live browser 的 `@font-face` **完全失效**。链路核�
 
 | 能力/行为 | 来源类型 | 具体来源 | 备注 |
 |----------|----------|----------|------|
-| family-preserving 提取 | 复用现有模块 | `zero_css_parser` `FontFaceRule` + `Parser::parse_stylesheet`（`crates/css-parser/src/parser.rs:359`、`ast.rs:85`） | 行为对齐 harness `extract_font_faces`（`reftest_fonts.rs:86`） |
+| family-preserving 提取 | 复用现有模块 | `zero_css_parser` `FontFaceRule` + `Parser::parse_stylesheet`（`crates/css-parser/src/parser/mod.rs:279`〔R2509 自 `parser.rs` 拆分〕、`ast.rs:87`） | 行为对齐 harness `extract_font_faces`（`reftest_fonts.rs:87`） |
 | 字体字节加载 | 复用现有模块 | `FontLoader::load_font`（`render-foundation/src/font/loader.rs:161`） | WOFF1 自动解码，WOFF2 失败跳过 |
 | family 别名注册 | 复用现有模块 | `FontLoader::register_family_alias`（`loader.rs:196`） | — |
 | resolver 重建 | 复用现有模块 | `FontLoader::build_font_resolver`（`loader.rs:219`） | — |
@@ -342,7 +342,7 @@ R2406 审计发现：live browser 的 `@font-face` **完全失效**。链路核�
 | `crates/engine/src/pipeline.rs` | 新增 pub fn `extract_font_faces` + 测试 | slice 1 奠基 | 补 `///` doc 满足 missing_docs；可选删 dead `extract_font_face_urls` |
 | `crates/webview/src/async_load.rs` | 改 font_pending 类型 + begin_font_fetch 合并 CSS + poll_fonts 收集 + 新增 drain_loaded_fonts + 测试 | slice 2 核心 | 文件 725 行，+60 内；MockFetchHost 已有 |
 | `apps/renderer/src/main.rs` | tick 后 drain → load/register/set_resolver + 重绘 + env 开关 | slice 2 主路径 | main.rs 近阈值，slice 2 核查行数；借用：drain 在 `with_measure_ctx_opt` 闭包**外** |
-| `apps/browser/src/tab_worker.rs` | 同 renderer 接通 | slice 2 进程内路径 | tick 闭包（line 287-288）外 drain |
+| `apps/browser/src/tab_worker.rs` | 同 renderer 接通 | slice 2 进程内路径 | tick 闭包（`with_measure` :296）外 drain（:303） |
 | env 读取 helper（如需） | 可选新增或复用 | kill-switch | 对齐既有 env 读取模式 |
 
 #### 职责映射
@@ -383,7 +383,7 @@ R2406 审计发现：live browser 的 `@font-face` **完全失效**。链路核�
 ### 8.1 现状分析
 - **当前架构**：`AsyncPageLoad` 分阶段抓取 document → stylesheets → fonts/images → lazy images。`poll_fonts` 取字节后丢弃。生产宿主（renderer 多进程 / tabworker 进程内）持 `FontLoader` + `WebView`（已 `set_font_resolver`）。
 - **问题/痛点**：① @font-face 字节丢弃（R2406 主 bug）；② family 丢失（URL-only 提取）；③ inline `<style>` @font-face 漏抓（次要 bug）。
-- **相关代码**：`async_load.rs:349-378`、`pipeline.rs:1107`、`reftest_fonts.rs:86,146`、`apps/renderer/src/main.rs:153-180,361-376`、`apps/browser/src/tab_worker.rs:131,287-288`。
+- **相关代码**：`async_load.rs:422-475`（`begin_font_fetch` :422 + `poll_fonts` :458）、`crates/engine/src/pipeline/extract.rs:185`（`extract_font_faces`）、`reftest_fonts.rs:87,154`、`apps/renderer/src/main.rs:152-185,361-376`（drain @ :387）、`apps/browser/src/tab_worker.rs:131,296-303`（tick 闭包 :296 + drain :303）。
 
 ### 8.2 目标状态
 - `AsyncPageLoad` 用 family-preserving 提取器抓 @font-face（含 inline `<style>`），收集已就绪 `(family, bytes)`，经 `drain_loaded_fonts()` 回传宿主。
@@ -575,3 +575,4 @@ if live_fontface_enabled() && !loaded.is_empty() {        // env ZW_LIVE_FONTFAC
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
 | v1.0 | 2026-08-01 | 初始版本（R2407）：R2406 重大发现 → drain pattern RFC + slice 计划 |
+| v1.1 | 2026-08-04 | R2622 行号/路径漂移纠偏 + 标记已实施（slices 1-3 + R2417/R2493 已 land）：`extract_font_face_urls`→`extract_font_faces`〔`pipeline.rs`→`pipeline/extract.rs` R2511 抽出〕、`poll_fonts` 365→458（现收集）、`begin_font_fetch` 349→422、`begin_image_fetch` 414→480、`parse_stylesheet` `parser.rs:359`→`parser/mod.rs:279`（R2509 拆分）、`FontFaceRule` ast.rs 85→87 / sources 注释 88→90、`load_font_faces_into` 146→154、harness `extract_font_faces` 86→87、`with_io` 153→152、`with_measure_ctx_opt` 362→360、tab_worker tick 闭包 287-288→296 + drain 303；签名 2→4-tuple 注明 |
