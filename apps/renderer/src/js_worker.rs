@@ -959,6 +959,64 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_get_bounding_client_rect_handle_identity_ambiguous_tag() {
+        // P1a gBCR path A + nth-child 结构路径：无 id/class 的 createElement 元素，文档已有同 tag
+        // 元素（歧义）→ stable_selector 不唯一 → 回落 nth-child 结构路径 → 仍返真实 rect
+        // （path A 限制①「tag-only 歧义→零 rect」的收尾）。
+        use zero_dom::parse_html;
+        use zero_engine::{apply_mutations_to_html_with_handles, find_by_selector, node_id_to_u64};
+        let mut worker = RendererJsWorker::spawn(23);
+        // body 已有一个 div（使新 div 的 "div" 选择器歧义）。
+        let html0 = "<html><body id='b'><div>existing</div></body></html>";
+        worker.set_dom_snapshot(html0, "about:blank");
+        // 脚本1：创建无 id/class 的 div 并 append（歧义 tag）。
+        worker
+            .execute_script_direct(
+                "globalThis.__el = document.createElement('div');\
+                 document.body.appendChild(globalThis.__el);",
+            )
+            .unwrap();
+        let recorded = worker.mutations().lock().unwrap().clone();
+        let (html1, handle_map) = apply_mutations_to_html_with_handles(html0, &recorded).unwrap();
+        assert_eq!(handle_map.len(), 1, "一个 createElement handle");
+        let (handle, sel) = handle_map.iter().next().unwrap();
+        let sel = sel.clone();
+        assert!(
+            sel.contains("nth-child"),
+            "歧义 tag 应回落 nth-child 结构路径，got handle={handle} sel={sel}"
+        );
+        // merge + 更新 dom_html。
+        worker.handle_selector_map().lock().unwrap().extend(handle_map);
+        worker.set_dom_snapshot(&html1, "about:blank");
+        // 用结构路径解析出该 handle 的 NodeId（= 渲染管线会用同一 NodeId），填 snapshot。
+        let doc = parse_html(&html1);
+        let id_el = find_by_selector(&doc, &sel).expect("结构路径须可解析");
+        worker
+            .rect_snapshot()
+            .lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_el), (5.0, 6.0, 80.0, 40.0));
+        // 脚本2：经 handle 测量歧义元素 → 结构路径解析 → 真实 rect（非零）。
+        worker
+            .execute_script_direct(
+                "var r = globalThis.__el.getBoundingClientRect();\
+                 globalThis.__w = r.width; globalThis.__h = r.height;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__w)").unwrap(),
+            "80",
+            "歧义 tag 经结构路径应返真实 width"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__h)").unwrap(),
+            "40",
+            "歧义 tag 经结构路径应返真实 height"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_intersection_observer_intersecting() {
         // P1a Slice 2a：observe 视口内元素 → spec initial notification 派发，isIntersecting=true、
         // ratio≈1（target 完全在 viewport 内）。复用 gBCR：snapshot 填 #t rect，IO 经

@@ -19,6 +19,73 @@ pub struct SimpleSelector {
     pub classes: Vec<String>,
     /// 属性匹配。
     pub attribute: Option<AttributeSelector>,
+    /// 伪类列表（`:nth-child(n)` / `:first-child` 等，AND 语义；需 sibling 位置上下文，由
+    /// [`SimpleSelector::matches_full`] 配合 [`ElementPosition`] 评估，`matches` 自身不检查）。
+    pub pseudos: Vec<PseudoClass>,
+}
+
+/// 伪类（需 sibling/树位置上下文，非元素自身属性）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PseudoClass {
+    /// `:nth-child(an+b)`——在所有元素兄弟中第 n 个。
+    NthChild(Nth),
+    /// `:nth-of-type(an+b)`——在同 tag 元素兄弟中第 n 个。
+    NthOfType(Nth),
+    /// `:first-child`——首个元素兄弟。
+    FirstChild,
+    /// `:last-child`——末个元素兄弟。
+    LastChild,
+    /// `:only-child`——唯一元素兄弟。
+    OnlyChild,
+    /// `:first-of-type`——同 tag 首个。
+    FirstOfType,
+    /// `:last-of-type`——同 tag 末个。
+    LastOfType,
+    /// `:only-of-type`——同 tag 唯一。
+    OnlyOfType,
+    /// `:root`——文档根元素（`<html>`）。
+    Root,
+    /// `:empty`——无子节点（含文本；spec：无 element/text 子，注释允许，本实现简化为无任何子）。
+    Empty,
+}
+
+/// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
+/// `odd`=(2,1)、`even`=(2,0)、纯整数 `5`=(0,5)、`n`=(1,0)、`2n+1`=(2,1)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Nth {
+    /// 系数 a（`n` 的倍数）。
+    pub a: i32,
+    /// 常量 b。
+    pub b: i32,
+}
+
+impl Nth {
+    /// position（1-based）是否匹配 `an+b`：存在非负整数 k 使 position = a*k + b。
+    pub fn matches(self, position: i32) -> bool {
+        if self.a == 0 {
+            position == self.b
+        } else {
+            let diff = position - self.b;
+            diff % self.a == 0 && diff / self.a >= 0
+        }
+    }
+}
+
+/// 元素在兄弟中的位置上下文（伪类评估用，由 `Document` 计算后传入）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ElementPosition {
+    /// 在所有元素兄弟中的 1-based 序号。
+    pub child_index: usize,
+    /// 元素兄弟总数（含自身）。
+    pub child_count: usize,
+    /// 在同 tag 元素兄弟中的 1-based 序号。
+    pub type_index: usize,
+    /// 同 tag 元素兄弟总数（含自身）。
+    pub type_count: usize,
+    /// 是否文档根元素（`<html>`，无元素父）。
+    pub is_root: bool,
+    /// 是否无子节点（`:empty`）。
+    pub is_empty: bool,
 }
 
 /// 属性选择器。
@@ -42,7 +109,11 @@ pub enum AttributeMatcher {
 }
 
 impl SimpleSelector {
-    /// 检查元素是否匹配此选择器。
+    /// 检查元素是否匹配此选择器的**自身部分**（tag/id/class/attr）。
+    ///
+    /// **不检查伪类**——`:nth-child`/`:first-child` 等需 sibling 位置上下文（`ElementPosition`），
+    /// 由 [`Self::matches_full`] 配合 `Document` 计算的位置评估。仅当无伪类时 `matches` 与
+    /// `matches_full` 等价；有伪类时调用方须用 `matches_full`（经 `Document::element_matches_selector`）。
     pub fn matches(&self, elem: &ElementData) -> bool {
         // 标签名匹配
         if let Some(tag) = &self.tag
@@ -91,6 +162,27 @@ impl SimpleSelector {
         }
 
         true
+    }
+
+    /// 检查元素是否匹配此选择器（**含伪类**），需 `Document` 计算的 [`ElementPosition`]。
+    /// 无伪类时退化为 [`Self::matches`]。
+    pub fn matches_full(&self, elem: &ElementData, pos: ElementPosition) -> bool {
+        if !self.matches(elem) {
+            return false;
+        }
+        // 多伪类 AND 语义（如 `li:first-child:last-child`）。
+        self.pseudos.iter().all(|p| match p {
+            PseudoClass::NthChild(nth) => nth.matches(pos.child_index as i32),
+            PseudoClass::NthOfType(nth) => nth.matches(pos.type_index as i32),
+            PseudoClass::FirstChild => pos.child_index == 1,
+            PseudoClass::LastChild => pos.child_index == pos.child_count,
+            PseudoClass::OnlyChild => pos.child_count == 1,
+            PseudoClass::FirstOfType => pos.type_index == 1,
+            PseudoClass::LastOfType => pos.type_index == pos.type_count,
+            PseudoClass::OnlyOfType => pos.type_count == 1,
+            PseudoClass::Root => pos.is_root,
+            PseudoClass::Empty => pos.is_empty,
+        })
     }
 }
 
@@ -145,6 +237,61 @@ pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
 
     Some(SelectorChain { parts, combinators })
 }
+
+/// 解析 `:nth-child(an+b)` 的 `an+b` 参数 → `(a, b)`。
+///
+/// 支持：`odd`→(2,1)、`even`→(2,0)、纯整数 `5`→(0,5)、`n`→(1,0)、`2n`→(2,0)、
+/// `2n+1`→(2,1)、`-n+3`→(-1,3)、`n+2`→(1,2)。无法解析 → `None`。
+pub fn parse_nth(arg: &str) -> Option<Nth> {
+    let s = arg.trim();
+    match s {
+        "odd" => return Some(Nth { a: 2, b: 1 }),
+        "even" => return Some(Nth { a: 2, b: 0 }),
+        _ => {}
+    }
+    if let Some(n_pos) = s.find('n') {
+        // 形如 [a]n[+/-b]
+        let left = s[..n_pos].trim();
+        let a: i32 = match left {
+            "" | "+" => 1,
+            "-" => -1,
+            other => other.parse().ok()?,
+        };
+        let right = s[n_pos + 1..].trim();
+        let b: i32 = if right.is_empty() {
+            0
+        } else {
+            // right 形如 "+1"/"-3"/"1"——i32::parse 不接受前导 '+'，规范化处理。
+            let r = right.replacen('+', "", 1);
+            r.parse().ok()?
+        };
+        Some(Nth { a, b })
+    } else {
+        // 纯整数 b
+        Some(Nth {
+            a: 0,
+            b: s.parse().ok()?,
+        })
+    }
+}
+
+/// 解析伪类名（+可选括号参数）→ `PseudoClass`。`name` 为 `:` 之后、`(` 或下一个分隔符之前的部分。
+/// `args` 为括号内原始字符串（`nth-*` 用），无括号时为 `None`。
+fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
+    match name {
+        "nth-child" => Some(PseudoClass::NthChild(parse_nth(args?)?)),
+        "nth-of-type" => Some(PseudoClass::NthOfType(parse_nth(args?)?)),
+        "first-child" => Some(PseudoClass::FirstChild),
+        "last-child" => Some(PseudoClass::LastChild),
+        "only-child" => Some(PseudoClass::OnlyChild),
+        "first-of-type" => Some(PseudoClass::FirstOfType),
+        "last-of-type" => Some(PseudoClass::LastOfType),
+        "only-of-type" => Some(PseudoClass::OnlyOfType),
+        "root" => Some(PseudoClass::Root),
+        "empty" => Some(PseudoClass::Empty),
+        _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
+    }
+}
 ///
 /// 支持格式：
 /// - `"div"` — 标签名
@@ -153,7 +300,8 @@ pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
 /// - `"[attr]"` — 属性存在
 /// - `"[attr=value]"` — 属性精确匹配
 /// - `"[attr~=value]"` — 属性空格分隔匹配
-/// - `"div#id.class[attr=val]"` — 组合
+/// - `":nth-child(2)"` / `":first-child"` 等 — 伪类（多伪类 AND）
+/// - `"div#id.class[attr=val]:first-child"` — 组合
 pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
     let s = selector.trim();
     if s.is_empty() {
@@ -165,12 +313,13 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
         id: None,
         classes: Vec::new(),
         attribute: None,
+        pseudos: Vec::new(),
     };
 
     let mut rest = s;
 
     // 解析标签名（开头的连续非特殊字符）
-    if let Some(pos) = rest.find(['#', '.', '[']) {
+    if let Some(pos) = rest.find(['#', '.', '[', ':']) {
         if pos > 0 {
             result.tag = Some(rest[..pos].to_string());
         }
@@ -184,7 +333,7 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
     while !rest.is_empty() {
         if let Some(r) = rest.strip_prefix('#') {
             // ID 选择器
-            let end = r.find(['.', '[']).unwrap_or(r.len());
+            let end = r.find(['.', '[', ':']).unwrap_or(r.len());
             if end == 0 {
                 return None; // 空的 ID 选择器
             }
@@ -192,12 +341,33 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
             rest = &r[end..];
         } else if let Some(r) = rest.strip_prefix('.') {
             // 类选择器
-            let end = r.find(['#', '.', '[']).unwrap_or(r.len());
+            let end = r.find(['#', '.', '[', ':']).unwrap_or(r.len());
             if end == 0 {
                 return None; // 空的类选择器
             }
             result.classes.push(r[..end].to_string());
             rest = &r[end..];
+        } else if let Some(r) = rest.strip_prefix(':') {
+            // 伪类：名字直到 `(` 或下一个分隔符；`:nth-child(...)` 含括号参数。
+            let (name, args, next_rest): (&str, Option<&str>, &str) = match r.find('(') {
+                Some(open) => {
+                    // `)` 相对 r[open..] 的偏移 → 换算到 r 的绝对位置。
+                    let close = r[open..].find(')')?;
+                    let arg_end = open + close;
+                    let name = &r[..open];
+                    let args = &r[open + 1..arg_end];
+                    (name, Some(args), &r[arg_end + 1..])
+                }
+                None => {
+                    let end = r.find(['#', '.', '[', ':']).unwrap_or(r.len());
+                    (&r[..end], None, &r[end..])
+                }
+            };
+            if name.is_empty() {
+                return None; // 空伪类名
+            }
+            result.pseudos.push(parse_pseudo(name, args)?);
+            rest = next_rest;
         } else {
             let r = rest.strip_prefix('[')?;
             // 属性选择器
@@ -298,6 +468,48 @@ mod tests {
     fn test_parse_empty_selector() {
         assert!(parse_simple_selector("").is_none());
         assert!(parse_simple_selector("  ").is_none());
+    }
+
+    #[test]
+    fn test_parse_nth_expr() {
+        assert_eq!(parse_nth("odd"), Some(Nth { a: 2, b: 1 }));
+        assert_eq!(parse_nth("even"), Some(Nth { a: 2, b: 0 }));
+        assert_eq!(parse_nth("5"), Some(Nth { a: 0, b: 5 }));
+        assert_eq!(parse_nth("n"), Some(Nth { a: 1, b: 0 }));
+        assert_eq!(parse_nth("2n"), Some(Nth { a: 2, b: 0 }));
+        assert_eq!(parse_nth("2n+1"), Some(Nth { a: 2, b: 1 }));
+        assert_eq!(parse_nth("-n+3"), Some(Nth { a: -1, b: 3 }));
+        assert_eq!(parse_nth("n+2"), Some(Nth { a: 1, b: 2 }));
+        assert!(parse_nth("abc").is_none());
+        // matches：position = a*k + b（k≥0）。
+        assert!(Nth { a: 0, b: 3 }.matches(3) && !Nth { a: 0, b: 3 }.matches(2));
+        assert!(Nth { a: 2, b: 1 }.matches(1) && Nth { a: 2, b: 1 }.matches(3) && !Nth { a: 2, b: 1 }.matches(2));
+        assert!(Nth { a: -1, b: 3 }.matches(1) && Nth { a: -1, b: 3 }.matches(3) && !Nth { a: -1, b: 3 }.matches(4));
+    }
+
+    #[test]
+    fn test_parse_pseudo_selectors() {
+        let sel = parse_simple_selector("li:nth-child(2)").unwrap();
+        assert_eq!(sel.tag.as_deref(), Some("li"));
+        assert_eq!(sel.pseudos, vec![PseudoClass::NthChild(Nth { a: 0, b: 2 })]);
+
+        let sel = parse_simple_selector(":first-child").unwrap();
+        assert_eq!(sel.pseudos, vec![PseudoClass::FirstChild]);
+
+        let sel = parse_simple_selector("tr:nth-of-type(odd)").unwrap();
+        assert_eq!(sel.pseudos, vec![PseudoClass::NthOfType(Nth { a: 2, b: 1 })]);
+
+        // 多伪类 AND + 与 tag/attr 组合。
+        let sel = parse_simple_selector("li.x:first-child:last-child").unwrap();
+        assert_eq!(sel.tag.as_deref(), Some("li"));
+        assert_eq!(sel.classes, vec!["x"]);
+        assert_eq!(sel.pseudos, vec![PseudoClass::FirstChild, PseudoClass::LastChild]);
+
+        // 未识别伪类（:hover）→ 解析失败（保守，避免静默误匹配）。
+        assert!(parse_simple_selector("a:hover").is_none());
+
+        // 空伪类名 → None。
+        assert!(parse_simple_selector("div:").is_none());
     }
 
     #[test]

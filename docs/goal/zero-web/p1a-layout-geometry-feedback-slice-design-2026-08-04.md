@@ -306,4 +306,40 @@ R2647 限制 4「browser 路径未接」的收尾。核验 browser 后端：**cr
 
 **P1a layout-geometry-feedback 切片进度小结（再更新）**：Slice 1 + 2a + 3 + 2b + **path A（handle-identity，本轮）** 均 land。gBCR/IO/RO 现覆盖 selector-identity + handle-identity 两种元素身份。剩余 follow-up：① browser in-process observer tick 接线（R2652 mirror）；② `:nth-child` 结构选择器（解锁 tag-only 歧义元素）；③ content-box rect（padding/border 扣除）；④ WeakRef observer 注册表硬化；⑤ force-reflow-on-demand（改后即读见真实 rect）。
 
+## R2662：`:nth-child`/`:nth-of-type` 伪类 + path A 结构路径回落
+
+承接 path A（R2661）限制 ①「tag-only 歧义元素回落零 rect」。R2661 的 `unique_selector_for_node` 仅当 `stable_selector_for_node`（`#id`/`tag.class`/`tag`）在文档中唯一匹配才入 map；无 id/class 且多同 tag 的 createElement 元素 → 选择器歧义 → 不入 map → 零 rect。本切片补 dom 选择器引擎的伪类支持，并让歧义元素回落 nth-child **结构路径**（始终唯一），收尾 path A 覆盖。
+
+**双重价值**：① path A 覆盖无 id/class 的 createElement 元素；② **修复 querySelector 对 `:nth-child`/`:nth-of-type` 等伪类的支持**——dom 选择器引擎此前完全不支持 pseudo-class，真实页面 `tr:nth-child(2)`/`li:first-child` 类 JS 查询会失败（nth-child 极常见）。
+
+### 关键设计
+
+1. **伪类需 sibling 上下文**：`:nth-child` 等需元素在其兄弟中的位置，非元素自身属性。原 `SimpleSelector::matches(elem)` 是纯自检（tag/id/class/attr），无法评估伪类。
+2. **`ElementPosition` + `matches_full`**：新增 `ElementPosition{child_index,child_count,type_index,type_count,is_root,is_empty}`（由 Document 计算），`SimpleSelector::matches_full(elem, pos)` 评估 self + 伪类（多伪类 AND）。`matches` 保持 self-only（向后兼容，伪类由带 Document 上下文的匹配器评估）。
+3. **匹配路由集中化**：`Document::element_matches_selector`（有 `&self` + `node`）算 position 调 `matches_full`；5 处直接 `.matches(elem)` 调用（find_first_matching / find_first_matching_chain / collect_matching / 2 shadow 变体）改路由经它，统一伪类处理。
+4. **`an+b` 完整支持**：`parse_nth` 解析 `odd`/`even`/纯整数/`n`/`2n`/`2n+1`/`-n+3`/`n+2`；`Nth::matches(position)` 用 `position = a*k+b (k≥0)` 判定。
+5. **结构路径回落**：`unique_selector_for_node` 优先短稳定选择器（唯一时返回）；歧义时 `structural_path_selector` 建 `html > body > div:nth-child(2) > …`（node→root 每层 `tag:nth-child(pos)`，始终唯一）。两种形态都保证 `find_by_selector` 返回节点本身。
+
+### 已 land（commit 本轮）
+
+| 模块 | 变更 |
+|------|------|
+| `dom/src/query.rs` | `PseudoClass` 枚举（NthChild/NthOfType/FirstChild/LastChild/OnlyChild/+OfType/Root/Empty）+ `Nth`(an+b) + `parse_nth` + `ElementPosition` + `SimpleSelector.pseudos: Vec` + `matches_full(elem,pos)`；`parse_simple_selector` 解析 `:pseudo`/`:pseudo(args)`（含多伪类 AND）；未识别伪类（`:hover`）→ 解析失败（保守，避免静默误匹配）。 |
+| `dom/src/document.rs` | `compute_element_position(node)`（parent 元素子的 1-based index/count + 同 tag type index/count + is_root + is_empty）；`element_matches_selector` 调 `matches_full`；5 处直接 `.matches(elem)` 路由经它。 |
+| `dom/src/tests/tests_1a.rs` | nth-child/nth-of-type/结构路径 query_selector 集成测试（含混合 tag nth-of-type、combinator+nth-child）。 |
+| `engine/src/js_dom_bridge.rs` | `structural_path_selector` + `element_parent`/`element_child_index` helper；`unique_selector_for_node` 歧义回落结构路径（**始终返回 Some** for elements）。+ 2 单测（结构路径 round-trip + apply 歧义元素入 map）。 |
+| `renderer/src/js_worker.rs` | driving test：无 id/class 的 createElement div（文档已有同 tag，歧义）→ 结构路径 → gBCR 返真实 rect（非零）。 |
+
+**验证**：`make test` 全绿（exit 0；dom 761→764 +engine +renderer，零回归）+ clippy `-D warnings` 零警告 + fmt clean + `make product-smoke` 全 struct PASS（welcome desktop **17.03%** 持平——证选择器引擎改动未破坏 CSS 样式匹配）。
+
+**为何零回归**：伪类解析是 additive（旧无伪类的选择器解析路径不变）；`matches` 保持 self-only，匹配路由集中化后无伪类选择器行为与旧一致；`unique_selector_for_node` 歧义从「不入 map→零 rect」变为「结构路径→真实 rect」是**净正向**（path A 覆盖扩大），唯一性仍保证（结构路径唯一）。product-smoke 持平证 CSS 样式系统（共用选择器引擎）无回归。
+
+**已知限制（follow-up）**：
+1. **`:nth-child(an+b)` 已支持**，但 `:nth-last-child`/`:nth-last-of-type` 未实现（倒序计数，罕用于 JS 查询，follow-up）。
+2. **未识别伪类解析失败**（`:hover`/`:focus`/`:not()` 等）→ 整个 compound 选择器不匹配。`:not()` 有价值但复杂（需嵌套选择器解析），follow-up。
+3. **`:empty` 简化为「无任何子」**（spec CSS4 允许空白文本；本实现严格——任何子含空白文本 → 非 empty）。
+4. path A 其余 follow-up 不变（browser in-process tick / content-box rect / WeakRef / force-reflow）。
+
+**P1a layout-geometry-feedback 切片进度小结（第三次更新）**：Slice 1 + 2a + 3 + 2b + path A + **path A 结构路径覆盖（`:nth-child`，本轮）** 均 land。gBCR/IO/RO 现覆盖所有元素身份（selector-identity + handle-identity 含歧义 tag）。剩余 follow-up：① browser in-process observer tick（R2652 mirror）；② content-box rect；③ WeakRef observer 注册表；④ force-reflow-on-demand；⑤ `:not()`/`:nth-last-*` 伪类。
+
 

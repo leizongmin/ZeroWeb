@@ -631,6 +631,61 @@ fn test_query_selector_all() {
 }
 
 #[test]
+fn test_query_selector_nth_child() {
+    let doc = parse_html("<html><body><div>a</div><div>b</div><div>c</div></body></html>");
+    let root = doc.root();
+    // :nth-child(2) → 第 2 个 div（"b"）。
+    let r = doc.query_selector(root, "div:nth-child(2)").expect("nth-child(2)");
+    assert_eq!(doc.text_content(r), Some("b".to_string()));
+    // :nth-child(odd) → 第 1、3 个。
+    let odds = doc.query_selector_all(root, "div:nth-child(odd)");
+    assert_eq!(odds.len(), 2);
+    // :first-child / :last-child。
+    assert_eq!(
+        doc.text_content(doc.query_selector(root, "div:first-child").unwrap()),
+        Some("a".to_string())
+    );
+    assert_eq!(
+        doc.text_content(doc.query_selector(root, "div:last-child").unwrap()),
+        Some("c".to_string())
+    );
+}
+
+#[test]
+fn test_query_selector_nth_of_type() {
+    // 混合 tag：p/div 交替；nth-of-type 只在同 tag 中计数。
+    let doc = parse_html("<html><body><p>1</p><div>D1</div><p>2</p><div>D2</div><p>3</p></body></html>");
+    let root = doc.root();
+    // p:nth-of-type(2) → 第 2 个 p（"2"），尽管它是父的第 3 个元素子。
+    let r = doc.query_selector(root, "p:nth-of-type(2)").expect("p:nth-of-type(2)");
+    assert_eq!(doc.text_content(r), Some("2".to_string()));
+    // div:last-of-type → "D2"。
+    assert_eq!(
+        doc.text_content(doc.query_selector(root, "div:last-of-type").unwrap()),
+        Some("D2".to_string())
+    );
+    // p:first-of-type → "1"。
+    assert_eq!(
+        doc.text_content(doc.query_selector(root, "p:first-of-type").unwrap()),
+        Some("1".to_string())
+    );
+}
+
+#[test]
+fn test_query_selector_structural_path_uniqueness() {
+    // 多个无 id/class 的同 tag 元素——nth-child 路径唯一锁定。
+    let doc = parse_html("<html><body><ul><li>1</li><li>2</li><li>3</li></ul></body></html>");
+    let root = doc.root();
+    let r = doc.query_selector(root, "li:nth-child(3)").expect("li:nth-child(3)");
+    assert_eq!(doc.text_content(r), Some("3".to_string()));
+    // 组合 combinator + nth-child：ul > li:nth-child(2)。
+    let r2 = doc
+        .query_selector(root, "ul > li:nth-child(2)")
+        .expect("ul>li:nth-child(2)");
+    assert_eq!(doc.text_content(r2), Some("2".to_string()));
+}
+
+#[test]
 fn test_query_selector_not_found() {
     let doc = parse_html("<html><body></body></html>");
     let root = doc.root();

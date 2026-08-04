@@ -180,16 +180,77 @@ pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> 
     Some(tag)
 }
 
-/// 为节点生成在文档中**唯一**的稳定选择器（P1a gBCR path A handle-identity 用）。
+/// 为节点生成在文档中**唯一**的选择器（P1a gBCR path A handle-identity 用）。
 ///
-/// `stable_selector_for_node` 对无 id/class 的元素只返 tag（如 `"div"`），在多同 tag 元素
-/// 的文档里**有歧义**——`find_by_selector` 会返回首个匹配（可能是别的元素），导致 handle→rect
-/// 解析到错误元素。本 helper 仅当选择器在文档中**唯一匹配**（`query_selector_all` 恰好 1 个）时
-/// 返回它，否则返 `None`（调用方回落零 rect，宁可零值不错值）。文本节点无 tag → `None`。
+/// 优先用 [`stable_selector_for_node`]（`#id` / `tag.class` / `tag`）——在文档中**唯一匹配**
+/// 时返回（最短、最稳）。歧义时（多同 tag 无 id/class）回落到 **nth-child 结构路径**
+/// （`html > body > div:nth-child(2) > …`，按 sibling 位置唯一定位，`:nth-child` 经
+/// dom 选择器引擎解析+匹配）。两种形态都保证 `find_by_selector` 返回该节点本身——宁可结构路径
+/// 冗长不错值。文本节点无 tag → `None`。
 fn unique_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
-    let sel = stable_selector_for_node(doc, node)?;
-    let matches = doc.query_selector_all(doc.root(), sel.trim());
-    if matches.len() == 1 { Some(sel) } else { None }
+    if let Some(sel) = stable_selector_for_node(doc, node) {
+        let matches = doc.query_selector_all(doc.root(), sel.trim());
+        if matches.len() == 1 {
+            return Some(sel);
+        }
+    }
+    structural_path_selector(doc, node)
+}
+
+/// 节点的元素父（跳过文本等非元素节点）。根元素（`<html>`）→ `None`。
+fn element_parent(doc: &Document, node: NodeId) -> Option<NodeId> {
+    let mut cur = doc.get(node)?.parent?;
+    loop {
+        let is_elem = doc.get(cur).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)));
+        if is_elem {
+            return Some(cur);
+        }
+        cur = doc.get(cur)?.parent?;
+    }
+}
+
+/// 节点在其元素父的**元素子**中的 1-based 序号（nth-child 位置）。
+fn element_child_index(doc: &Document, parent: NodeId, node: NodeId) -> Option<usize> {
+    let children = doc.get(parent)?.children.clone();
+    let mut idx = 0usize;
+    for sib in &children {
+        if doc.get(*sib).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))) {
+            idx += 1;
+            if *sib == node {
+                return Some(idx);
+            }
+        }
+    }
+    None
+}
+
+/// 构造 nth-child 结构路径选择器：node→root 每层 `tag:nth-child(pos)`，用 `>` 连接。
+/// 始终唯一（每层 pin 一个具体 sibling 位置）。根元素（`<html>`）用 `:nth-child(1)`
+/// （与 `compute_element_position` 对根置 child_index=1 一致）。
+fn structural_path_selector(doc: &Document, node: NodeId) -> Option<String> {
+    let mut segments: Vec<String> = Vec::new();
+    let mut cur = node;
+    loop {
+        let nd = doc.get(cur)?;
+        let tag = match &nd.kind {
+            NodeKind::Element(e) => e.local_name().to_string(),
+            _ => return None, // 文本节点无结构路径
+        };
+        match element_parent(doc, cur) {
+            Some(parent) => {
+                let pos = element_child_index(doc, parent, cur)?;
+                segments.push(format!("{tag}:nth-child({pos})"));
+                cur = parent;
+            }
+            None => {
+                // 根元素（无元素父 = <html>）。
+                segments.push(format!("{tag}:nth-child(1)"));
+                break;
+            }
+        }
+    }
+    segments.reverse();
+    Some(segments.join(" > "))
 }
 
 /// 将变更列表应用到文档（按顺序）。
@@ -1283,13 +1344,48 @@ mod tests {
         // 序列化正确
         assert!(out.contains("<p id=\"unique\">"));
         assert!(out.contains("<span>"));
-        // handle→selector 映射：唯一者入选，歧义者排除
+        // handle→selector 映射：唯一者用短选择器，歧义者回落 nth-child 结构路径。
         assert_eq!(handles.get("__n1"), Some(&"#unique".to_string()), "id 唯一 → #unique");
-        assert!(
-            !handles.contains_key("__n2"),
-            "无 id 的 div 文档已有 2 个 → 歧义 → 不入 map（宁可零 rect）"
-        );
         assert_eq!(handles.get("__n3"), Some(&"span".to_string()), "唯一 span → tag");
+        let n2_sel = handles.get("__n2").expect("歧义 div 仍入 map（结构路径）");
+        assert!(
+            n2_sel.contains("nth-child"),
+            "无 id 的歧义 div → nth-child 结构路径，got: {n2_sel}"
+        );
+        // 不变量：每个 selector 在 fresh-parse(序列化 html) 上都能解析（path A 依赖此）。
+        let fresh = parse_html(&out);
+        for sel in handles.values() {
+            assert!(
+                find_by_selector(&fresh, sel).is_some(),
+                "selector {sel} 须在 fresh-parse 后可解析"
+            );
+        }
+    }
+
+    #[test]
+    fn test_structural_path_resolves_to_correct_node() {
+        // 多个无 id/class 同 tag 元素：nth-child 结构路径唯一锁定每一个，且 round-trip 正确
+        // （在 mutated doc 与 fresh-parse 序列化 html 上都解析到同一节点）。
+        let html = "<html><body><ul><li>1</li><li>2</li><li>3</li></ul></body></html>";
+        let mutations = vec![
+            DomMutation::CreateElement {
+                handle: "__n9".into(),
+                tag: "li".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "ul".into(),
+                child_handle: "__n9".into(),
+            },
+        ];
+        let (out, handles) = apply_mutations_to_html_with_handles(html, &mutations).unwrap();
+        let sel = handles.get("__n9").expect("__n9 入 map");
+        assert!(sel.contains("nth-child"), "应回落结构路径: {sel}");
+        // 在 fresh-parse(out) 上解析 → 应是第 4 个 li（"4" 无文本，但节点存在且唯一）。
+        let fresh = parse_html(&out);
+        let resolved = find_by_selector(&fresh, sel).expect("结构路径须可解析");
+        // resolved 应是 ul 的最后一个 li（第 4 个）。
+        let all_li = fresh.query_selector_all(fresh.root(), "li");
+        assert_eq!(all_li.last().copied(), Some(resolved), "结构路径解析到 append 的末 li");
     }
 
     #[test]

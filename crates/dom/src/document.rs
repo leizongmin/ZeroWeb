@@ -1531,8 +1531,8 @@ impl Document {
     /// 查找第一个匹配的节点。
     fn find_first_matching(&self, id: NodeId, selector: &crate::query::SimpleSelector) -> Option<NodeId> {
         let node_data = self.nodes.get(id)?;
-        if let NodeKind::Element(elem) = &node_data.kind
-            && selector.matches(elem)
+        if let NodeKind::Element(_) = &node_data.kind
+            && self.element_matches_selector(id, selector)
         {
             return Some(id);
         }
@@ -1547,8 +1547,8 @@ impl Document {
 
     fn find_first_matching_chain(&self, id: NodeId, chain: &crate::query::SelectorChain) -> Option<NodeId> {
         let node_data = self.nodes.get(id)?;
-        if let NodeKind::Element(elem) = &node_data.kind
-            && chain.parts.last().is_some_and(|s| s.matches(elem))
+        if let NodeKind::Element(_) = &node_data.kind
+            && chain.parts.last().is_some_and(|s| self.element_matches_selector(id, s))
             && self.node_matches_selector_chain(id, chain)
         {
             return Some(id);
@@ -1598,10 +1598,68 @@ impl Document {
         self.nodes
             .get(node)
             .and_then(|n| match &n.kind {
-                NodeKind::Element(elem) => Some(selector.matches(elem)),
+                NodeKind::Element(elem) => Some(selector.matches_full(elem, self.compute_element_position(node))),
                 _ => None,
             })
             .unwrap_or(false)
+    }
+
+    /// 计算元素的 sibling 位置上下文（伪类评估用）。
+    ///
+    /// - `child_index`/`child_count`：在元素父节点的**元素**子中 1-based 序号 / 总数。
+    /// - `type_index`/`type_count`：在同 tag 元素子中的序号 / 总数。
+    /// - `is_root`：无元素父（`<html>`）。
+    /// - `is_empty`：无任何子节点（`:empty`）。
+    fn compute_element_position(&self, node: NodeId) -> crate::query::ElementPosition {
+        let mut pos = crate::query::ElementPosition::default();
+        let node_data = match self.nodes.get(node) {
+            Some(n) => n,
+            None => return pos,
+        };
+        pos.is_empty = node_data.children.is_empty();
+        let tag = match &node_data.kind {
+            NodeKind::Element(e) => e.local_name(),
+            _ => return pos,
+        };
+        let Some(parent) = self.parent_element_node(node) else {
+            // 根元素（html）：唯一兄弟、唯一同 tag、是根。
+            pos.is_root = true;
+            pos.child_index = 1;
+            pos.child_count = 1;
+            pos.type_index = 1;
+            pos.type_count = 1;
+            return pos;
+        };
+        let siblings: Vec<NodeId> = self.nodes.get(parent).map(|p| p.children.to_vec()).unwrap_or_default();
+        let mut child_idx = 0usize;
+        let mut type_idx = 0usize;
+        let mut child_total = 0usize;
+        let mut type_total = 0usize;
+        // 先全量统计同 tag 总数 + 定位自身序号。
+        for sib in &siblings {
+            if let Some(NodeKind::Element(e)) = self.nodes.get(*sib).map(|n| &n.kind) {
+                child_total += 1;
+                if e.local_name().eq_ignore_ascii_case(tag) {
+                    type_total += 1;
+                }
+            }
+        }
+        for sib in &siblings {
+            if let Some(NodeKind::Element(e)) = self.nodes.get(*sib).map(|n| &n.kind) {
+                child_idx += 1;
+                if e.local_name().eq_ignore_ascii_case(tag) {
+                    type_idx += 1;
+                }
+                if *sib == node {
+                    break;
+                }
+            }
+        }
+        pos.child_index = child_idx;
+        pos.child_count = child_total;
+        pos.type_index = type_idx;
+        pos.type_count = type_total;
+        pos
     }
 
     fn parent_element_node(&self, node: NodeId) -> Option<NodeId> {
@@ -1637,8 +1695,8 @@ impl Document {
             None => return,
         };
 
-        if let NodeKind::Element(elem) = &node_data.kind
-            && selector.matches(elem)
+        if let NodeKind::Element(_) = &node_data.kind
+            && self.element_matches_selector(id, selector)
         {
             result.push(id);
         }
@@ -1652,8 +1710,8 @@ impl Document {
     /// 在 shadow DOM 内查找第一个匹配的元素，不穿透嵌套的 ShadowRoot 边界。
     fn find_first_matching_shadow(&self, id: NodeId, selector: &crate::query::SimpleSelector) -> Option<NodeId> {
         let node_data = self.nodes.get(id)?;
-        if let NodeKind::Element(elem) = &node_data.kind
-            && selector.matches(elem)
+        if let NodeKind::Element(_) = &node_data.kind
+            && self.element_matches_selector(id, selector)
         {
             return Some(id);
         }
@@ -1679,8 +1737,8 @@ impl Document {
             None => return,
         };
 
-        if let NodeKind::Element(elem) = &node_data.kind
-            && selector.matches(elem)
+        if let NodeKind::Element(_) = &node_data.kind
+            && self.element_matches_selector(id, selector)
         {
             result.push(id);
         }
