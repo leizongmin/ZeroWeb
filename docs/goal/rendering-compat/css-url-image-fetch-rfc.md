@@ -1,7 +1,7 @@
 # R1794 — CSS `url()` 图片抓取 + painter 查找一致性修复
 
 **日期**: 2026-07-20
-**状态**: Active（实施中）
+**状态**: ✅ **已实施**（Part A painter 查找一致性 4 处全改 `image_resource_key`：`effects.rs:243/274` + `text_list.rs:437` + `border.rs:197`；Part B `extract_css_image_urls`〔`pipeline/extract.rs:231`，R2511 自 pipeline.rs 抽出〕+ fetch 接线 + inline `<style>` 覆盖 R2411 LANDED）。原「Active 实施中」stale。本文为 R1794 历史设计稿，§背景 为 R1794 审计态（pre-fix bug 描述）；行号/路径经 R2630 对齐当前源码（painter 迁 `paint/painter/`、pipeline 拆 `pipeline/mod.rs`+`extract.rs`、apply_advanced 迁 `property/`）。
 **承接**: R1793（WebP 解码接入，关闭 goal doc line 76「WebP 解码未接入」）；本 RFC 关闭同条「残余缺口 = CSS `url()` 背景图未抓取」。
 
 ## 背景
@@ -13,21 +13,21 @@ R318 已贯通 `<img src>`（PNG/JPEG/SVG via resvg，R1793 加 WebP）+ `@font-
 **CSS `url()` 图片引用（`background-image` / `list-style-image` / `border-image-source`）目前完全不工作**——
 painter 会为这三类 computed value 生成 `ImagePrimitive { image_key }`，但：
 
-1. **无抓取路径**：`fetch_image_subresources`（webview.rs:371）只处理 `extract_img_srcs`（`<img src>`），
+1. **无抓取路径**：`fetch_image_subresources`（webview.rs:402）只处理 `extract_img_srcs`（`<img src>`），
    不扫描 CSS 文本中的 `url()`；`image_cache` 从无这些图片的像素数据。
 2. **查找 key 不一致（latent bug）**：painter 用 `simple_hash(url)` 哈希**原始 CSS url 字符串**
-   （`effects.rs:121/143` background-image、`text_list.rs:110` list-style-image、
-   `border.rs:182` border-image-source）；而抓取路径用 `image_resource_key(&abs, None)`
+   （`effects.rs:243/274` background-image、`text_list.rs:437` list-style-image、
+   `border.rs:197` border-image-source）；而抓取路径用 `image_resource_key(&abs, None)`
    = `simple_hash(resolve_document_url(document_url, url))` = **解析后的绝对 URL** 哈希。
    相对 url（`url(bg.png)`）两者 key 永不相等 → 即使抓了像素也找不到。
 
 ## De-risking 发现（本轮实证）
 
 - CSS parser 存储原始 url：`BackgroundImageComputedValue::Url(url)` 的 `url` 是 CSS 原文里的字符串
-  （`apply_advanced.rs:991-1009`；test `extended.rs:1409` 断言 `"bg.png"` 原样），**未在 parse 期解析为绝对**。
-- `<img>` 路径**正确**：`build_img_intrinsic_sizes`（pipeline.rs:177）用
+  （`property/apply_advanced.rs:1115`；test `tests/tests_2.rs:1175` 断言 url 原样），**未在 parse 期解析为绝对**。
+- `<img>` 路径**正确**：`build_img_intrinsic_sizes`（pipeline/mod.rs:177）用
   `image_resource_key(&src, document_url)`，与抓取 key 一致。
-- 唯一**正确**的 painter 图片查找是 `text.rs:322`（`<img>` 内容）用 `image_resource_key`。
+- 唯一**正确**的 painter 图片查找是 `text.rs:396`（`<img>` 内容）用 `image_resource_key`。
 - 4 处错误查找见上（effects×2 + text_list×1 + border×1）。
 
 ## 修复方案（两段，必须同 land 才端到端工作）
@@ -38,10 +38,10 @@ painter 会为这三类 computed value 生成 `ImagePrimitive { image_key }`，�
 
 | 文件:行 | 用途 | 改动 |
 |---------|------|------|
-| `paint/painter/effects.rs:121` | background-image first_url_hash（intrinsic size 查找） | `image_resource_key(url, self.document_url.as_deref())` |
-| `paint/painter/effects.rs:143` | background-image 每层 image_key | 同上 |
-| `paint/painter/text/text_list.rs:110` | list-style-image | 同上 |
-| `paint/painter/border.rs:182` | border-image-source | 同上 |
+| `paint/painter/effects.rs:243` | background-image first_url_hash（intrinsic size 查找） | `image_resource_key(url, self.document_url.as_deref())` |
+| `paint/painter/effects.rs:274` | background-image 每层 image_key | 同上 |
+| `paint/painter/text/text_list.rs:437` | list-style-image | 同上 |
+| `paint/painter/border.rs:197` | border-image-source | 同上 |
 
 **零回归证明**：`image_resource_key(src, doc_url)` = `simple_hash(resolve_document_url(doc_url, src))`，
 `resolve_document_url` 对 (a) 绝对 URL（`is_non_relative_href` true）原样返回，
@@ -52,7 +52,7 @@ painter 会为这三类 computed value 生成 `ImagePrimitive { image_key }`，�
 
 ### Part B — CSS `url()` 图片抓取
 
-1. **`extract_css_image_urls(css: &str) -> Vec<String>`**（pipeline.rs，与 `extract_font_face_urls` 同模块同模式）：
+1. **`extract_css_image_urls(css: &str) -> Vec<String>`**（`pipeline/extract.rs:231`，与 `extract_font_faces` 同模块同模式，R2511 自 pipeline.rs 抽出）：
    - 扫描 `url(...)` token（小写化定位 + 原文截取，处理 `"`/`'`/裸引号）。
    - **排除 `@font-face` 块内**的 url（字体由 `extract_font_face_urls` 单独处理，避免重复抓取）。
    - **排除 `data:` URI**（调用方识别，但这里也过滤以保持集合干净）。
