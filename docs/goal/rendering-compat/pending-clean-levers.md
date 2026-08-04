@@ -1,5 +1,7 @@
 # 待消费 clean lever 队列（code-agent hand-off）
 
+> ⚠️ **状态：历史归档 / 队列已耗尽（R740 战略转向）**。本文为 R678-R709 时代的 clean-lever 只读分析，经 R726-R850 实证消费：7 lever LANDED（R689 / R716 / R720→R879 / R695→R842 / R699→R843 / R711→R850 / R679→R749）、3 lever 实证失效（R696 / R678 / R717）、余皆 R109 / taffy / complex structural-gated。R740 裁决「clean lever 队列实质耗尽，勿再盲消费 doc lever」。**master.md 现行结论：clean-lever surface 9 vein 全 exhaust（R2597-R2602），自主面 = plateau-guard + 文档纠偏，唯一推向 95% = 用户授权深结构。** 本文保留作历史根因参考；行号/路径经 R2623 对齐当前源码（`engine.rs` 已拆 `engine/postprocess.rs` / `engine/sizing.rs` 等子模块，`painter/mod.rs` 迁 `paint/painter/mod.rs`，`color.rs` 迁 `values/color.rs`）。
+
 > 来源：R678–R709 LAYOUT_DUMP 脉络跨 12 目录采样（7 top-level + 5 CSS2 subdir）。
 > 12 目录采样结论：**clean LAYOUT lever 全来自 box-model sizing 目录**（tables/normal-flow/position/grid/margin-padding-clear/floats-clear）；render/flow/dynamic 目录（flexbox/multicol/writing-modes/box-display/linebox/borders）均 structural/render/JS-gated，零 clean lever。
 > 本文档汇总 **11 个 clean-ish lever + R678 float-width 簇**，按「effort × yield」排优先级，供 code-agent 消费。每条已 read-only 定位根因 + 代码位置（截至 R709，行号可能随主分支漂移，动手前 `grep` 核验）。
@@ -18,7 +20,7 @@
 | **R716** | ✅ **LANDED** `a559fbd7` | box-offsets-rel-pos-002 **9.18%→0.86% PASS** | engine.rs resolve_relative_inset 补 right/bottom（§9.4.3）；3 调用点共享 |
 | **R720** | ✅ **LANDED R879**（真实根因 ≠ R721 假设） | background-root-{005,008,009,012a,012b} **平均 -72pp**（005 79.75→4.73 / 008/009 75→10.79 / 012a 79→4.24 / 012b 82.70→1.74） | R721「颜色变体」假设被 R721 自身证伪（color=Transparent ✓ 正确）；**R879 发现真根因 = `background-image:none`→`vec![None]` 非空致 canvas 传播 `!is_empty()` 误判有图片** → body green 不传播。修 = `painter/mod.rs` 新 helper `has_paintable_bg_image`（含非 None 图层才 true），2 处检查替换。5 案跌出 top-worst（残余 border/margin/`*{margin:1em}` 布局差未翻 PASS）。101/102/103（100%）= JS-driven 独立。 |
 | **R696** | ❌ **anchor+cluster 全 inline-SVG-content 阻塞**（out-of-scope） | inline-replaced-width-009 **22.08%→22.08% 零变化** | anchor + 008/ib-007/ib-008 全用 `<svg:svg>` + `<svg:rect fill>`；ZW 不渲染内联 SVG 内容（goal line 118 排除），sizing 修不修都不 yield（内容缺失主导）。非-img 默认 300×150 sizing 修正确但因无确认 yield 已回退 |
-| **R678** | ❌ **anchor 发散非 float-width** | font-size-zero-3 **33.53%→33.53% 零变化** | `box_node.float` 已正确 populate（engine.rs:655），shrink-to-fit 实现正确，但 anchor 的 33.53% 不是 float 满宽所致（绿子/高度/位置他因）。float:right 定位顺序风险（x=container_w−used_w）下，无 yield 不值得保留，已回退 |
+| **R678** | ❌ **anchor 发散非 float-width** | font-size-zero-3 **33.53%→33.53% 零变化** | `box_node.float` 已正确 populate（float 字段现于 `converter/mod.rs:84` `float: match style.float` 填充），shrink-to-fit 实现正确，但 anchor 的 33.53% 不是 float 满宽所致（绿子/高度/位置他因）。float:right 定位顺序风险（x=container_w−used_w）下，无 yield 不值得保留，已回退 |
 | **R717** | ❌ **decode 修对但 anchor 复合 bug 阻塞**（实证，R740） | replaced-elements-all-auto **31.66%→32.39% 反而 +0.73pp 回归** | decode_svg_bytes 经 probe 实证修对（7 SVG 全 match CSS spec：ratio-2 1000×500→300×150 等），**decode 修正确且有 probe 单测**，但 anchor 的 ~32% 由 **tree.rs §10.3.2 replaced-sizing + reftest harness img 处理**的复合 bug 主导（correct intrinsic 未转化为 chr-matching layout）；all-auto 反退 0.73pp。decode 修已回退（单独无 yield 且小回归）；**R717 须 decode 修 + tree.rs sizing 修同做**才能 yield，decode 修在 git 历史/master 可复用 |
 | **R679 empty-table** | ✅ **LANDED（R749，空 table 子 facet）** | empty-table-height **30.74%→0.00% PASS**；css-tables 57→58 零回归；css-position 零变化 | `shrink_table_to_block_content` 早退（`block_indices.is_empty()`）致完全空的 display:table 保满宽。新增 `shrink_empty_table_to_padding_border` 收缩 width:auto 空 table 到 padding+border。**Auto-guard**（`matches!(s.width, LengthValue::Auto)`）跳过显式宽 table（Px/Percent/Em/Calc 由 taffy 解析）——无 guard 会回归 absolute-tables-007/012/016 + subpixel-table-width-001（全显式宽）。R679 多 facet（R681-R684 box/content/horizontal/vertical）仍 deferred |
 | **R695** | ✅ **LANDED（R842，indefinite-CB %height → auto）** | height-percentage-005 **88.42%→0.67% PASS**；normal-flow 563→564 **+1/0**；visudet 16→16 **worst-15 字节同**；welcome 16.11% 不变 | 新增 `apply_indefinite_percent_height_to_auto`（engine.rs，~60 行），复用 apply_intrinsic_content_sizing 两趟 set_style+mark_dirty+重算基础设施。自上而下按样式判 CB 明确性（同 `clamp_percentage_max_height` 的 `my_definite_content_height`）：%height + CB 不明确 → taffy size.height=Auto；替换元素补 img_intrinsic_sizes 固有绝对尺寸。第二趟 taffy 自动算非替换块内容高/替换固有。「complex」标签实为 clean slice（既有级联 + 两趟基建）。详见 [`evidence/r695-indefinite-cb-percent-height-2026-06-30.txt`](./evidence/r695-indefinite-cb-percent-height-2026-06-30.txt)。两趟+definiteness 级联模式可供同区组 A（R699/R702）复用 |
@@ -57,13 +59,13 @@
 
 ### R689 · position:static 元素被应用 inset（应忽略）
 - **测试**：`css-position/position-static-001`（17.53%）+ `CSS2/positioning/position-static-001.xht`（3.00%，同 bug twin）
-- **根因**：`converter/mod.rs:71` inset **无条件**传 taffy + `:295` `PositionValue::Static => taffy::style::Position::Relative`（Static 映射 Relative，taffy Relative 应用 inset 偏移）→ static 元素被 top/left/right/bottom 偏移。
-- **fix scope**：`position==Static` 时 inset 归零（converter/mod.rs:71-74 加 position 条件，Static 不传 top/left/right/bottom）。**一行级条件修复**，spec-correct（CSS：inset 仅适用于 non-static position）。
+- **根因**：`converter/mod.rs:71`〔R689 审计态，现 :79 `let is_static` 已条件化〕inset **无条件**传 taffy + `:295`〔现 :434〕`PositionValue::Static => taffy::style::Position::Relative`（Static 映射 Relative，taffy Relative 应用 inset 偏移）→ static 元素被 top/left/right/bottom 偏移。
+- **fix scope**：`position==Static` 时 inset 归零（converter/mod.rs:79-82 加 position 条件，Static 不传 top/left/right/bottom）。**一行级条件修复**，spec-correct（CSS：inset 仅适用于 non-static position）。
 - **风险**：低（无 spec 测试期望 static 元素被 inset 偏移）。
 
 ### R716 · relative 的 right/bottom inset 丢失（resolve_relative_inset 仅读 left/top）
 - **测试**：`CSS2/visuren/box-offsets-rel-pos-002`（9.18%）+ `box-offsets-rel-pos-001`（twin）+ 其他 inline right/bottom-only relative 偏移案
-- **根因（R716 LAYOUT_DUMP + 代码 read-only 确证）**：`engine.rs:1597 resolve_relative_inset`（root relative `:192` + inline-level relative `apply_relative_offsets_inline:1345` 共用）`dx = style.left(Px)` / `dy = style.top(Px)`——**完全忽略 right/bottom**。dump 实证：`img{left:100}` x=108✓（left 应用）/ `img{right:100}` x=208✗（应 108，right 丢）/ `img{top:100}` abs_y=151✓ / `img{bottom:100}` abs_y=251✗（应 151，bottom 丢）。CSS §9.4.3：relative 的 `right`（无 left 时）应向左偏移、`bottom`（无 top 时）应向上偏移。**block-level relative 由 taffy 处理（不受此函数影响），仅 inline-level + root 受此 bug 影响。**
+- **根因（R716 LAYOUT_DUMP + 代码 read-only 确证）**：`engine/postprocess.rs:1652 resolve_relative_inset`（root relative 调用点 `engine.rs:479` + inline-level relative `apply_relative_offsets_inline`〔`postprocess.rs:528`〕共用）`dx = style.left(Px)` / `dy = style.top(Px)`——**完全忽略 right/bottom**。dump 实证：`img{left:100}` x=108✓（left 应用）/ `img{right:100}` x=208✗（应 108，right 丢）/ `img{top:100}` abs_y=151✓ / `img{bottom:100}` abs_y=251✗（应 151，bottom 丢）。CSS §9.4.3：relative 的 `right`（无 left 时）应向左偏移、`bottom`（无 top 时）应向上偏移。**block-level relative 由 taffy 处理（不受此函数影响），仅 inline-level + root 受此 bug 影响。**
 - **fix scope**：扩展 `resolve_relative_inset`——dx：`left` Px→`+left`，elif `right` Px→`-right`；dy：`top` Px→`+top`，elif `bottom` Px→`-bottom`（§9.4.3）。**一函数 ~6 行**，spec-correct。
 - **风险**：低（仅 right/bottom-only relative offset 元素受影响；block-level relative 走 taffy 不变）。
 - **次级 note**：resolve_relative_inset 对 left/top 亦 **Px-only**（Em/Rem/Percent 丢），与 R715 percent-inset taffy 限制谱系；本 lever 聚焦 right/bottom drop（confirmed），Px-only 扩展为可选 follow-up。
@@ -74,34 +76,34 @@
 
 ### R720 · canvas bg 传播标准 render 路径不触发（★最高 yield ~15 案含 3 案 100%，render-feature）
 - **测试**：`CSS2/backgrounds/background-root-005`（80.7%）+ 101/102/103（**100%**）+ 012a/b（85/81%）+ 008/009（76.8%）+ 010/006/018/002/020/007（26-38%）+ background-attachment-applies-to-004（31%）= **~15 案 26-100%**
-- **根因（R720 + R721 minimal-repro 4-case 锐化确证）**：`painter/mod.rs:312-313` `html_has_bg = hs.background_color != ColorValue::Transparent || ...`。**canvas 传播对 HTML5 html-direct bg + body-via-implicit-transparent 均工作**（R721 margin 测试证红/绿填满 viewport）。**唯 explicit `html{background:transparent}` 触发失效**：`background:transparent` shorthand 产出 ColorValue ≠ `Transparent` enum variant（疑 Rgba(0,0,0,0)/Named，shorthand 路径不经 color.rs:16 长hand 规范化）→ `!= Transparent` 误判 TRUE → html_has_bg=true → 取 html 分支（html "bg" 透明→`add_fill` 被守卫跳过）→ **body 永不传播**。隐式 initial `background_color`==Transparent（→ html_has_bg=false→body 分支→工作）。REFTEST_DEBUG（R720）对 background-root-005（explicit transparent）证无 canvas fill 正确，但 R720「传播块静默失效」归因过宽——R721 证传播块对 HTML5/implicit 工作。
-- **fix scope（crisp，hand-off code-agent，低 effort）**：① 规范化 `background:transparent` shorthand → `ColorValue::Transparent`（对齐长hand color.rs:16）；或 ② 修传播检查用 **alpha==0**（非 enum variant 比较，Rgba(0,0,0,0) 也算 transparent）。**+ 补 propagation 通过 render_html 全路径测试**（防再静默失效）。**R721 已 crisp root cause，无需 debug print**。
+- **根因（R720 + R721 minimal-repro 4-case 锐化确证）**：`paint/painter/mod.rs:413-415` `html_has_bg = hs.background_color != ColorValue::Transparent || ...`。**canvas 传播对 HTML5 html-direct bg + body-via-implicit-transparent 均工作**（R721 margin 测试证红/绿填满 viewport）。**唯 explicit `html{background:transparent}` 触发失效**：`background:transparent` shorthand 产出 ColorValue ≠ `Transparent` enum variant（疑 Rgba(0,0,0,0)/Named，shorthand 路径不经 css-parser/src/values/color.rs:30 长hand 规范化）→ `!= Transparent` 误判 TRUE → html_has_bg=true → 取 html 分支（html "bg" 透明→`add_fill` 被守卫跳过）→ **body 永不传播**。隐式 initial `background_color`==Transparent（→ html_has_bg=false→body 分支→工作）。REFTEST_DEBUG（R720）对 background-root-005（explicit transparent）证无 canvas fill 正确，但 R720「传播块静默失效」归因过宽——R721 证传播块对 HTML5/implicit 工作。
+- **fix scope（crisp，hand-off code-agent，低 effort）**：① 规范化 `background:transparent` shorthand → `ColorValue::Transparent`（对齐长hand css-parser/src/values/color.rs:30）；或 ② 修传播检查用 **alpha==0**（非 enum variant 比较，Rgba(0,0,0,0) 也算 transparent）。**+ 补 propagation 通过 render_html 全路径测试**（防再静默失效）。**R721 已 crisp root cause，无需 debug print**。
 - **风险**：低-中（canvas 传播影响每页 body/html 背景铺满；修后须 A/B product-smoke welcome/legacy——body 背景全铺是基础视觉，或暴露其他被白底掩盖的布局问题）。
 - **★ 意义**：浏览器基础视觉（每页 body/html 背景铺满 viewport），修后产品可见度极高；「逻辑存在但静默失效 + 无测试」模式（R491/R507）。
 
 ### R678 · float 0-content / width:auto 取满宽非 shrink-to-fit（★cluster≥5 案跨 3 目录，最高渗透 lever）
 - **测试**：`css-fonts/font-size-zero-3`（33.53%，R678 pin）+ `floats-clear/float-non-replaced-width-007`（21.98%，R704）+ `floats-clear/floats-125`（28.80%，R706）+ `floats-clear/floats-124`（28.24%，推同族）+ `CSS2/positioning/abspos-008`（17.64%，R714：`.control` red float w=784 应 ~185；abspos §10.3.7 shrink-to-fit `.outer` w=185 已正确，发散纯 .control float）
-- **根因**：`float_positioning.rs:16` 注释明言「taffy 将 float 当普通 block（按正常流）」→ float width:auto 被当 in-flow block 拉伸到满宽（784）。ZW `float_positioning.rs` 仅 `shrink_vertical_blocks_to_content`（:47，仅垂直 WM）+ `shrink_inline_blocks_to_content`（:111，仅 inline-block R180），**无水平 WM float shrink 后处理**。
+- **根因**：`float_positioning.rs:14` 注释明言「taffy 将 float 当普通 block（按正常流）」→ float width:auto 被当 in-flow block 拉伸到满宽（784）。ZW `float_positioning.rs` 仅 `shrink_vertical_blocks_to_content`（:47，仅垂直 WM）+ `shrink_inline_blocks_to_content`（:111，仅 inline-block R180），**无水平 WM float shrink 后处理**。
 - **fix scope**：加水平 WM float shrink-to-fit 后处理（扩展 `shrink_inline_blocks_to_content` R180 模式到 float，或 taffy 0-content float 测量 clamp）。ZW-side post-process 可行（float 位置由 float_positioning.rs 独立设，与父 height 解耦）。
 - **风险**：中（须 A/B 排查 float-heavy 测试，但 spec 上现「满宽」行为错）。
 
 ### R696 · svg/canvas replaced 元素无 sizing（★unified cluster≥5 案）
 - **测试**：`CSS2/normal-flow/inline-replaced-width-009`（22.08%）+ 008/ib-007/ib-008 + `css-tables/percent-height-replaced-in-percent-cell-003`（R683，canvas 满宽）
-- **根因**：`tree.rs:165 apply_replaced_element_sizing` line `186 if tag != "img" { return }`——仅 img 走 §10.3.2 sizing；`engine.rs:646` 已把 `img|video|iframe|embed|object|svg|canvas` 全标 `is_replaced=true`，**但 svg/canvas/object/iframe/video early-return 无 sizing**→taffy 当普通元素（满宽 / content 高 0）。
-- **fix scope**：扩展 `apply_replaced_element_sizing`（tree.rs:186）超越 img——对 svg/canvas/object/iframe/video：① 读 width/height HTML attr；② 无 intrinsic width 且无 intrinsic ratio 时 used width 默认 **300px**（§10.3.2），无 intrinsic height 默认 **150px**；③ 有 intrinsic 时按 intrinsic+ratio。**code-located 一处 + 簇 yield≥5**。
+- **根因**：`tree.rs:366 apply_replaced_element_sizing`（img/canvas gate 现 ~:398-405）——仅 img/canvas 走 §10.3.2 sizing；`engine.rs:1081` 已把 `img|video|iframe|embed|object|svg|canvas` 全标 `is_replaced=true`，**但 svg/canvas/object/iframe/video early-return 无 sizing**→taffy 当普通元素（满宽 / content 高 0）。
+- **fix scope**：扩展 `apply_replaced_element_sizing`（tree.rs:366）超越 img——对 svg/canvas/object/iframe/video：① 读 width/height HTML attr；② 无 intrinsic width 且无 intrinsic ratio 时 used width 默认 **300px**（§10.3.2），无 intrinsic height 默认 **150px**；③ 有 intrinsic 时按 intrinsic+ratio。**code-located 一处 + 簇 yield≥5**。
 - **风险**：中（现有 img sizing 不变，新增 svg/canvas 路径，须 A/B）。
 
 ### R717 · `<img src=*.svg>` SVG intrinsic-size 用 viewBox 当固有尺寸（★cluster 5 案 30%，与 R696 正交）
 - **测试**：`CSS2/visudet/replaced-elements-all-auto`（31.66%）+ min-height-20/40 + min-width-40/80（5 案 30-32%）+ height-20/max-height-20/max-width-40/width-40（4 案 9%，R718 确证 explicit-width height 推导同根）= **~9 案 9-32%，同 7 SVG + 约束变体，同根因**
-- **根因（R717 LAYOUT_DUMP + SVG 文件 + 代码 read-only 确证）**：`image_cache.rs:421-422` `let w = size.width()/h = size.height()`（注释「按 SVG 内在尺寸（width/height 属性或 viewBox）栅格化」）——**usvg 的 size.width()/height() 在 width/height attr 缺失时回落到 viewBox 维度**，ZW 直接当固有 size。dump 实证：`<img src=height-25-ratio-2.svg>`（height:25 viewBox:1000×500 无 width）→ img **w=1000**（应 width=height×ratio=50；viewBox width 当固有）；`ratio-2.svg`（仅 viewBox 1000×500）→ img **1000×500**（应默认 300×150）；no-ratio 缺维 → img **100**（应 300/150 默认）。**混淆 viewBox（定义 ratio）与 width/height attr（定义固有 size）。**
-- **fix scope**：image_cache.rs:421-422 SVG intrinsic-size 提取须 ① 仅 width/height attr 作固有 size（usvg 区分 attr-size vs viewBox-fallback）；② 无 attr 时报「无固有 size」让 tree.rs §10.3.2 默认/ratio 逻辑处理（传 viewBox ratio）；③ 默认 100→**300×150**。**2 sub-bug**（viewBox-as-intrinsic + wrong-default），中复杂度。
+- **根因（R717 LAYOUT_DUMP + SVG 文件 + 代码 read-only 确证）**：`image_cache.rs:565-566`（`decode_svg_bytes` :560 内）`let w = size.width().ceil()/h = size.height().ceil()`（注释「按 SVG 内在尺寸（width/height 属性或 viewBox）栅格化」）——**usvg 的 size.width()/height() 在 width/height attr 缺失时回落到 viewBox 维度**，ZW 直接当固有 size。dump 实证：`<img src=height-25-ratio-2.svg>`（height:25 viewBox:1000×500 无 width）→ img **w=1000**（应 width=height×ratio=50；viewBox width 当固有）；`ratio-2.svg`（仅 viewBox 1000×500）→ img **1000×500**（应默认 300×150）；no-ratio 缺维 → img **100**（应 300/150 默认）。**混淆 viewBox（定义 ratio）与 width/height attr（定义固有 size）。**
+- **fix scope**：image_cache.rs:565-566 SVG intrinsic-size 提取须 ① 仅 width/height attr 作固有 size（usvg 区分 attr-size vs viewBox-fallback）；② 无 attr 时报「无固有 size」让 tree.rs §10.3.2 默认/ratio 逻辑处理（传 viewBox ratio）；③ 默认 100→**300×150**。**2 sub-bug**（viewBox-as-intrinsic + wrong-default），中复杂度。
 - **风险**：中（影响所有 `<img src=*.svg>`，须 A/B；与 R696 正交——R696 = 非-img 替换 TAG 无 sizing；R717 = img SVG 源固有 size 提取错，不同 code path 可独立修）。
-- **关联**：R685/R686 image_cache.rs:419 vein（彼判 mix；本案 viewBox-as-intrinsic 子 facet clean 且 high-yield 5 案）。
+- **关联**：R685/R686 image_cache.rs:560 vein（彼判 mix；本案 viewBox-as-intrinsic 子 facet clean 且 high-yield 5 案）。
 
 ### R695 · %height 对 indefinite-CB-height 解析到 CB width（应 compute-to-auto）（★最高单发散 88%）
 - **测试**：`CSS2/normal-flow/height-percentage-005`（**88.44%，全 lever 最高**）
-- **根因**：CSS §10.5——%height 仅当 CB height **显式 specified** 时解析，否则 **compute to auto**。本案 CB 链 grandparent(0,definite)→parent(auto,**indefinite**)→child(100%,**应 auto**)→img(100%,**应 auto→intrinsic 96**)。ZW 把 %height 传 taffy 作 Percent，taffy 0.7.7 在 indefinite-CB-height 时 fallback 到 CB width(784)；**ZW 无 normal-flow %height 后处理**（`engine.rs:1404 clamp_percentage_max_height` 仅处理 max/min-height Percentage，不处理 height Percentage）。
-- **fix scope**：仿 `clamp_percentage_max_height`（engine.rs:1404）加 §10.5 处理：遍历布局树，对 height:Percentage 元素，若其 CB height indefinite（auto / percent-of-indefinite）则把 %height compute-to-auto（→ block 取内容高 / replaced 取 intrinsic；本案 img→96）。须传播 CB-height-definiteness（cascade）；blast radius 须 A/B（definite-CB %height 案如 min-height-094/095 须仍 pass）。
+- **根因**：CSS §10.5——%height 仅当 CB height **显式 specified** 时解析，否则 **compute to auto**。本案 CB 链 grandparent(0,definite)→parent(auto,**indefinite**)→child(100%,**应 auto**)→img(100%,**应 auto→intrinsic 96**)。ZW 把 %height 传 taffy 作 Percent，taffy 0.7.7 在 indefinite-CB-height 时 fallback 到 CB width(784)；**ZW 无 normal-flow %height 后处理**（`engine/postprocess.rs:1426 clamp_percentage_max_height` 仅处理 max/min-height Percentage，不处理 height Percentage）。
+- **fix scope**：仿 `clamp_percentage_max_height`（engine/postprocess.rs:1426）加 §10.5 处理：遍历布局树，对 height:Percentage 元素，若其 CB height indefinite（auto / percent-of-indefinite）则把 %height compute-to-auto（→ block 取内容高 / replaced 取 intrinsic；本案 img→96）。须传播 CB-height-definiteness（cascade）；blast radius 须 A/B（definite-CB %height 案如 min-height-094/095 须仍 pass）。
 - **风险**：中（非一行，须 CB-definiteness 传播，但 spec 明确、本案 88%→~0%）。
 
 ---
@@ -126,8 +128,8 @@
 
 ### R699 · §10.5.1 非-BFC 块父 height 计入 float 子（应排除）
 - **测试**：`CSS2/normal-flow/block-non-replaced-height-011`（16.12%）
-- **根因**：`float_positioning.rs:16`（taffy 把 float 当 in-flow block，**计入父 content height**）→ 非-BFC 父（overflow:visible）继承 float-inclusive height。CSS §10.5.1：block + overflow:visible + height:auto → height = in-flow 子顶到底距离，**floating box 显式 ignored**。
-- **fix scope**：加 ZW parent-height post-process（类 `clamp_percentage_max_height` / R695 §10.5）：对非-BFC 块父（`establishes_bfc` margin_collapse.rs:33 / `is_flow_root` engine.rs:676），重算 height = 仅 in-flow 子的 bottom（排除 float 子）。**次级 issue**：`is_flow_root` 仅查 FlowRoot|InlineBlock，未含 overflow:hidden/clip/auto/scroll BFC——若一并修须 expand BFC 检测。与 R108b（float flow_bottom margin）/R145（flex item float 归零）正交（那些是 float 子**位置**，R699 是**父 height**）。
+- **根因**：`float_positioning.rs:14`（taffy 把 float 当 in-flow block，**计入父 content height**）→ 非-BFC 父（overflow:visible）继承 float-inclusive height。CSS §10.5.1：block + overflow:visible + height:auto → height = in-flow 子顶到底距离，**floating box 显式 ignored**。
+- **fix scope**：加 ZW parent-height post-process（类 `clamp_percentage_max_height` / R695 §10.5）：对非-BFC 块父（`establishes_bfc` margin_collapse.rs:33 / `is_flow_root` engine.rs:1146），重算 height = 仅 in-flow 子的 bottom（排除 float 子）。**次级 issue**：`is_flow_root` 仅查 FlowRoot|InlineBlock，未含 overflow:hidden/clip/auto/scroll BFC——若一并修须 expand BFC 检测。与 R108b（float flow_bottom margin）/R145（flex item float 归零）正交（那些是 float 子**位置**，R699 是**父 height**）。
 
 ---
 
@@ -145,7 +147,7 @@
 
 ### R680 · br-between-block-siblings 匿名块行盒高度（§9.2.1.1，blast radius 风险）
 - **测试**：`css-tables/table-cell-width-0`（20.09%）
-- **根因**：`<br>` 作 block 容器直系子、与 block 兄弟混排时应被匿名块盒包裹（§9.2.1.1），匿名块 IFC 为 br 生成 line-height 行盒（~19px）；ZW br h=0（`inline/mod.rs:762` br→InlineItem::Br IFC 内正确，但 br-between-block-siblings 匿名块 strut 缺失）。
+- **根因**：`<br>` 作 block 容器直系子、与 block 兄弟混排时应被匿名块盒包裹（§9.2.1.1），匿名块 IFC 为 br 生成 line-height 行盒（~19px）；ZW br h=0（`inline/mod.rs:1122` br→InlineItem::Br IFC 内正确，但 br-between-block-siblings 匿名块 strut 缺失）。
 - **fix scope**：补 br-between-block-siblings 匿名块行盒高度。**R109 territory，须评 blast radius**（br-between-blocks 模式常见，修后或惠及多 case 或致位移；依赖当前 h=0 br 行为的 case 可能受影响）。
 
 ---
@@ -160,10 +162,10 @@
 
 > 多 lever 共享 code path 或同区 post-process，消费时须防冲突/重复应用。按「同区→统一 pass」+「正交→可并行」分组。
 
-- **同区组 A — engine.rs parent content-height / sizing post-process（model on `clamp_percentage_max_height` engine.rs:1404）**：**R695**（%height indefinite-CB → auto）+ **R699**（非-BFC 父 height 排除 float 子）+ **R702**（collapse-through 保 inline 高度，margin_collapse.rs:83）三者**都改 parent content-height 算法**。**建议作为统一 parent-sizing post-process pass 的不同 step 实现**（非三个独立 pass），顺序 R702（collapse 保 inline）→ R695（%height→auto）→ R699（排除 float），每步幂等、避免 double-apply；R699 附带次级 `is_flow_root` BFC 检测 expand（engine.rs:676 现仅 FlowRoot|InlineBlock）。
-- **正交组 B — replaced sizing，可并行**：**R696**（tree.rs:186 tag-level，svg/canvas/object/iframe/video）与 **R717**（image_cache.rs:421 img SVG source-intrinsic）不同 code path，独立可并行（hand-off 已注「正交」）。
+- **同区组 A — engine.rs parent content-height / sizing post-process（model on `clamp_percentage_max_height` engine/postprocess.rs:1426）**：**R695**（%height indefinite-CB → auto）+ **R699**（非-BFC 父 height 排除 float 子）+ **R702**（collapse-through 保 inline 高度，margin_collapse.rs:83）三者**都改 parent content-height 算法**。**建议作为统一 parent-sizing post-process pass 的不同 step 实现**（非三个独立 pass），顺序 R702（collapse 保 inline）→ R695（%height→auto）→ R699（排除 float），每步幂等、避免 double-apply；R699 附带次级 `is_flow_root` BFC 检测 expand（engine.rs:1146 现仅 FlowRoot|InlineBlock）。
+- **正交组 B — replaced sizing，可并行**：**R696**（tree.rs:366 tag-level，svg/canvas/object/iframe/video）与 **R717**（image_cache.rs:565 img SVG source-intrinsic）不同 code path，独立可并行（hand-off 已注「正交」）。
 - **同症组 C — shrink-to-fit，不同 path 可并行**：**R678**（float，float_positioning.rs）与 **R679**（table，table.rs）同 0-content shrink-to-fit symptom 但独立 path；**注意** R681-R684 已证 table-width 是多 facet 簇（writing-mode-aware），R679 修须 writing-mode-aware。
-- **包含组 D — relative inset**：**R716**（resolve_relative_inset engine.rs:1597，Px right/bottom，clean LANDED）+ **R711 垂直 % slice**（apply_block_relative_percent_insets，R850 LANDED +10 case）皆已落地；**R711 水平 %**（right-113/relpos-calcs-006 RTL）仍 taffy-deferred（R304）；R711 fix 的 CB-height-definiteness 判定与组 A 的 R695 §10.5 同族（共享 definiteness 逻辑）。
+- **包含组 D — relative inset**：**R716**（resolve_relative_inset engine/postprocess.rs:1652，Px right/bottom，clean LANDED）+ **R711 垂直 % slice**（apply_block_relative_percent_insets，R850 LANDED +10 case）皆已落地；**R711 水平 %**（right-113/relpos-calcs-006 RTL）仍 taffy-deferred（R304）；R711 fix 的 CB-height-definiteness 判定与组 A 的 R695 §10.5 同族（共享 definiteness 逻辑）。
 - **独立可并行**：R720（painter/mod.rs canvas bg）、R689（converter/mod.rs static-inset）、R691（grid track）、R705（clearance 算术）、R692（aspect-ratio，须先 oracle regen）、R680（br 行盒，R109 territory 评 blast radius）——各 lever 独立 code path，无强交互。
 
 ## 已识 structural-gated 区（非 clean lever，多会话架构，勿单点重试）
@@ -178,7 +180,7 @@
 
 ## dormant / masked lever 候选（ZW-side 可修但暂无 clean harvest case）
 
-- **calc() in margin/padding → 0**（R694 次级发现，grid-calc-margin 被 taffy w=0 masked）：`converter/mod.rs:468 convert_length_to_lpa` 的 `LengthValue::Calc(_) => length(0.0)` 把 `calc()` margin/padding 直接归零，对比 `convert_length_to_dimension`（width/height，:374）有 `extract_calc_percentage`。**ZW-side 可修**（extend `extract_calc_percentage` 到 lpa 路径），但全语料 12 个 calc-margin 测试全 dynamic/JS 或被 taffy/grid masked，**无 clean block-context harvest case**——须先有 taffy w=0 修复（R304）或找到 calc-margin 为唯一 issue 的静态 case 才能验证 yield。低优先，待 harvest case 出现再激活。
+- **calc() in margin/padding → 0**（R694 次级发现，grid-calc-margin 被 taffy w=0 masked）：`converter/mod.rs:601 convert_length_to_lpa` 的 `LengthValue::Calc(_) => length(0.0)` 把 `calc()` margin/padding 直接归零，对比 `convert_length_to_dimension`（width/height，:500）有 `extract_calc_percentage`（:1397）。**ZW-side 可修**（extend `extract_calc_percentage` 到 lpa 路径），但全语料 12 个 calc-margin 测试全 dynamic/JS 或被 taffy/grid masked，**无 clean block-context harvest case**——须先有 taffy w=0 修复（R304）或找到 calc-margin 为唯一 issue 的静态 case 才能验证 yield。低优先，待 harvest case 出现再激活。
 
 ## 工具链（read-only 复现 / A/B）
 
