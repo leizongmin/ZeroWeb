@@ -8,6 +8,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use zero_css_parser::values::{DisplayValue, PositionValue, VisibilityValue};
+use zero_style_system::{ComputedStyle, StyleSystem};
+
 use zero_dom::{Document, FocusManager, NodeId, NodeKind, parse_html};
 use zero_script_sandbox::Sandbox;
 
@@ -1637,6 +1640,102 @@ pub fn query_tag_from_mutations(mutations: &[DomMutation], handle: &str) -> Stri
     String::new()
 }
 
+/// `getComputedStyle(el).getPropertyValue(prop)` 的 host 实现：解析 html → 收集 `<style>`（+
+/// color-scheme meta）→ 计算样式（UA 默认 builtin via `ua_default_display`，故 `<div>` 等的
+/// display 无须外链 UA stylesheet）→ 序列化查询属性。供 `__zw_get_computed_style` 回调 → shim
+/// `getComputedStyle`。
+///
+/// **覆盖范围**（首批高频属性）：`display`/`position`/`visibility`/`opacity`（visibility/hidden
+/// 检查 + position 查询主导用例）。其余属性返 ''（follow-up 扩展 color/length 等）。
+///
+/// **限制**：外链 `<link>` CSS 不在 dom_html snapshot 内（snapshot 限制，同 gBCR）；每次查询
+/// 重跑 cascade（O(规则×节点)）——reftest/product-smoke 不循环调用故无 perf 回归，循环场景的
+/// per-snapshot 缓存为 follow-up。
+pub fn computed_style_property(html: &str, selector: &str, prop: &str) -> String {
+    let doc = parse_html(html);
+    let Some(node) = find_by_selector(&doc, selector) else {
+        return String::new();
+    };
+    let sheets = crate::pipeline::collect_stylesheets(&doc, "");
+    let mut sys = StyleSystem::new();
+    // 设默认 viewport（length 属性 % 解析需要；首批属性 viewport 无关，但为后续 length 扩展设）。
+    sys.set_viewport(1280.0, 800.0);
+    let styles = sys.compute_styles(&doc, &sheets);
+    let Some(style) = styles.get(&node) else {
+        return String::new();
+    };
+    serialize_computed_property(style, prop)
+}
+
+/// 把 [`ComputedStyle`] 的单个属性序列化为 CSS 字符串（kebab-case 属性名）。首批：display/
+/// position/visibility/opacity。未覆盖属性返 ''。
+fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String {
+    let p = prop.trim().to_ascii_lowercase();
+    match p.as_str() {
+        "display" => display_value_str(&style.display),
+        "position" => position_value_str(&style.position),
+        "visibility" => visibility_value_str(&style.visibility),
+        "opacity" => {
+            let o = style.opacity;
+            // 整数 opacity 打印无小数点（"1"/"0"），与 real browser getComputedStyle 一致。
+            if o == o.trunc() {
+                format!("{}", o as i32)
+            } else {
+                format!("{o}")
+            }
+        }
+        _ => String::new(),
+    }
+}
+
+fn display_value_str(d: &DisplayValue) -> String {
+    match d {
+        DisplayValue::Block => "block",
+        DisplayValue::Inline => "inline",
+        DisplayValue::InlineBlock => "inline-block",
+        DisplayValue::Flex => "flex",
+        DisplayValue::InlineFlex => "inline-flex",
+        DisplayValue::Grid => "grid",
+        DisplayValue::InlineGrid => "inline-grid",
+        DisplayValue::None => "none",
+        DisplayValue::Contents => "contents",
+        DisplayValue::Flow => "flow",
+        DisplayValue::FlowRoot => "flow-root",
+        DisplayValue::ListItem => "list-item",
+        DisplayValue::Table => "table",
+        DisplayValue::InlineTable => "inline-table",
+        DisplayValue::TableRow => "table-row",
+        DisplayValue::TableCell => "table-cell",
+        DisplayValue::TableCaption => "table-caption",
+        DisplayValue::TableColumn => "table-column",
+        DisplayValue::TableColumnGroup => "table-column-group",
+        DisplayValue::TableRowGroup => "table-row-group",
+        DisplayValue::TableHeaderGroup => "table-header-group",
+        DisplayValue::TableFooterGroup => "table-footer-group",
+    }
+    .to_string()
+}
+
+fn position_value_str(p: &PositionValue) -> String {
+    match p {
+        PositionValue::Static => "static",
+        PositionValue::Relative => "relative",
+        PositionValue::Absolute => "absolute",
+        PositionValue::Fixed => "fixed",
+        PositionValue::Sticky => "sticky",
+    }
+    .to_string()
+}
+
+fn visibility_value_str(v: &VisibilityValue) -> String {
+    match v {
+        VisibilityValue::Visible => "visible",
+        VisibilityValue::Hidden => "hidden",
+        VisibilityValue::Collapse => "collapse",
+    }
+    .to_string()
+}
+
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
 ///
 /// 将 [`generate_js_dom_shim`] 产生的 JS shim 与宿主侧 [`DomMutation`] 收集器连接：
@@ -1838,6 +1937,20 @@ pub fn register_dom_callbacks(
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             query_tag_from_html(&snap, &sel)
+        }),
+    );
+
+    // `getComputedStyle(el).getPropertyValue(prop)`——计算样式（display/position/visibility/
+    // opacity 首批）。每次查询重跑 cascade（无缓存，follow-up）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_get_computed_style",
+        Box::new(move |args| {
+            if args.len() < 2 {
+                return String::new();
+            }
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            computed_style_property(&snap, &args[0], &args[1])
         }),
     );
 

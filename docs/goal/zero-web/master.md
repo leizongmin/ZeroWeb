@@ -992,6 +992,25 @@ R2702 协调缺口：shim 端 textarea value↔内容已修，但 host 侧 `blur
 
 **已知限制（剩余）**：① change-on-blur 仍仅 click 触发的焦点切换（Tab 焦点导航的 textarea change 由 focus_via_tab 走同一 read_input_value_for_change，覆盖）；② host 侧 blur/focus 事件派发时序近似（focus 在 click 后非 mousedown——既有 R2659 限制，非本轮引入）；③ select change 仍由 click 派发（select UI 未实现，change 走 select.value 编程路径）。
 
+### P1a `getComputedStyle` 计算值（本轮 R2704，bridge 最大剩余正确性缺口）
+
+bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 旧返空 CSSStyleDeclaration（任意属性/getPropertyValue 返 ''）——`cs.display === 'none'`、`cs.visibility` 等 visibility/hidden 检查（极常见，框架显隐判定）全断，脚本取错分支。scoping 确认可行：`ua_default_display(tag)` builtin（style-system/src/lib.rs:49）→ `compute_styles(&doc, &[])` 给正确 display（UA 默认无须外链 stylesheet）；`collect_stylesheets` 收集 `<style>` + color-scheme meta。
+
+**实现**：js_dom_bridge.rs 加 `computed_style_property(html, sel, prop)`——parse → `collect_stylesheets(&doc, "")` → `StyleSystem::new()` → `compute_styles` → `find_by_selector` → 序列化。注册 `__zw_get_computed_style(sel, prop)` 回调。shim `getComputedStyle` proxy 改转发回调（属性访问 camelCase 与 getPropertyValue kebab 均经 `_camelToKebab` 归一）。**首批覆盖** display/position/visibility/opacity（简单 enum + f64，覆盖 visibility/hidden + position 主导用例）；其余属性返 ''（fallback 同旧 stub，不劣化）；color/length 等扩展为 follow-up。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge.rs` | `computed_style_property` + `serialize_computed_property` + display/position/visibility 序列化；`__zw_get_computed_style` 回调。 |
+| `engine/js_dom_shim.js` | `getComputedStyle` proxy 转发 `__zw_get_computed_style`（camelCase/kebab 归一；host 未注册/handle-only/未覆盖属性 → '' fallback）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 e2e：div UA display=block / `<style>` position=relative + opacity=0.5 / inline display:none（getPropertyValue kebab）/ inline visibility:hidden。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1428→1429）+ `make reftest` + `make product-smoke`（getComputedStyle 改真实页面 JS 分支，必跑）。
+
+**为何零回归且净正向**：① 旧 getComputedStyle 全属性返 ''（空桩）；新实现首批属性返真值、其余仍 ''（fallback 等价旧桩）——已覆盖属性从「误 ''」纠正为「真值」，未覆盖属性不变；② host 未注册（polyfill/WebView）路径走 '' fallback（同旧）；③ 计算样式只读，不改 mutation/render 路径。
+
+**已知限制（剩余）**：① **属性覆盖首批**（display/position/visibility/opacity）——color/background/length（width/height/margin 等）返 ''，follow-up 扩展（需 ColorValue rgb 序列化 + LengthValue 串化）；② 外链 `<link>` CSS 不在 dom_html snapshot（snapshot 限制，同 gBCR）；③ **无 per-snapshot 缓存**——每次查询/属性访问重跑 cascade（O(规则×节点)）；reftest/product-smoke 不循环调用故无 perf 回归，循环场景（`for...getComputedStyle`）的 per-snapshot style map 缓存为 follow-up；④ `getComputedStyle(el).cssText`/length 仍返 ''/0（未做全声明串化）。
+
+
 
 
 

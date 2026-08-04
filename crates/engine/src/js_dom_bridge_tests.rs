@@ -2745,6 +2745,72 @@ fn test_toggle_attribute() {
 }
 
 #[test]
+fn test_get_computed_style_display_position_visibility_opacity() {
+    // R2704：getComputedStyle 计算值（首批 display/position/visibility/opacity）。旧全属性返 '' →
+    // visibility/hidden 分支全断。现经 __zw_get_computed_style 返真实计算值（UA builtin + <style>）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id=\"d\"></div>\
+         <span id=\"s\" style=\"display:none\"></span>\
+         <style>#d { position: relative; opacity: 0.5 }</style>\
+         <p id=\"hid\" style=\"visibility:hidden\"></p>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // div：UA display=block；<style> 设 position=relative、opacity=0.5。
+    sandbox
+        .execute(
+            "globalThis.__dd = getComputedStyle(document.querySelector('#d')).display;\n\
+             globalThis.__dp = getComputedStyle(document.querySelector('#d')).position;\n\
+             globalThis.__do = getComputedStyle(document.querySelector('#d')).opacity;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__dd").unwrap().value, "block", "div UA display=block");
+    assert_eq!(
+        sandbox.execute("globalThis.__dp").unwrap().value,
+        "relative",
+        "<style> position=relative"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__do").unwrap().value,
+        "0.5",
+        "<style> opacity=0.5"
+    );
+    // span inline display:none；getPropertyValue(kebab) 路径。
+    sandbox
+        .execute(
+            "globalThis.__sd = getComputedStyle(document.querySelector('#s')).getPropertyValue('display');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__sd").unwrap().value,
+        "none",
+        "inline style display:none（getPropertyValue kebab 路径）"
+    );
+    // p inline visibility:hidden。
+    sandbox
+        .execute("globalThis.__pv = getComputedStyle(document.querySelector('#hid')).visibility;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__pv").unwrap().value,
+        "hidden",
+        "inline visibility:hidden"
+    );
+}
+
+#[test]
 fn test_element_attributes_nodelist() {
     // R2699：el.attributes（NamedNodeMap 只读快照）——length/item/getNamedItem/数值索引/迭代。
     use std::sync::{Arc, Mutex};

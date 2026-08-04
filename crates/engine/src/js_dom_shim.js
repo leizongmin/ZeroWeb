@@ -579,25 +579,31 @@
   // 丢弃，仅逼布局发生（css-grid/grid-with-content-dynamic-display-001 line 43 即此
   // 模式，紧接 line 47 的 `display:block` 视觉 mutation 才是测试目的）。
   // 本全局缺失 → 调用抛 ReferenceError **中断整个脚本**，使其后的 DOM mutation 全丢
-  // （区别于 `offsetHeight` 等属性访问返回 undefined 不抛、仅值错，作 reflow 触发器
-  // 无害）。JS 在渲染前执行，无真实 computed 值可返；返回空 CSSStyleDeclaration 桩
-  // （任意属性访问/getPropertyValue 返 ''）不抛，让后续视觉 mutation 正常执行。
-  // 返 '' 对 `if (cs.display === 'none') …` 类条件可能取错分支，但脚本本会整体中断，
-  // stub 严格不劣于中断且对无条件 mutation（主流 reflow-触发模式）净正向。
-  globalThis.getComputedStyle = function(_elt, _pseudo) {
-    var empty = '';
+  // `window.getComputedStyle(elt[, pseudo])`：返 CSSStyleDeclaration。高频作 visibility/hidden
+  // 检查（`cs.display === 'none'`）与 reflow 触发器。经 host `__zw_get_computed_style(sel, prop)`
+  // 返**计算值**（display/position/visibility/opacity 首批；UA 默认 builtin，`<style>` 级联）。
+  // 属性访问（camelCase `.display`/`.backgroundColor`）与 `getPropertyValue(kebab)` 均经
+  // `_camelToKebab` 归一后查询。host 未注册（polyfill/WebView）或未覆盖属性 → ''（fallback，
+  // 不抛，同旧 stub 行为）；handle-only（无 sel）→ ''。
+  globalThis.getComputedStyle = function(elt, _pseudo) {
+    var sel = elt && elt.__zwSelector;
+    var hasHost = sel && typeof __zw_get_computed_style === 'function';
+    var query = function(prop) {
+      if (!hasHost) return '';
+      try { return __zw_get_computed_style(sel, prop); } catch (_e) { return ''; }
+    };
     return new Proxy({}, {
       get: function(_t, prop) {
         var p = String(prop);
-        if (p === 'getPropertyValue' || p === 'getPropertyPriority' || p === 'item') {
-          return function() { return empty; };
+        if (p === 'getPropertyValue') {
+          return function(name) { return query(_camelToKebab(String(name))); };
         }
+        if (p === 'getPropertyPriority' || p === 'item') return function() { return ''; };
         if (p === 'length') return 0;
         if (p === 'parentRule') return null;
-        if (p === 'cssText') return empty;
-        // 其余任意 CSS 属性访问（.height/.display/.textAlign…）返空串；
-        // Symbol 属性（toPrimitive/iterator 等）返 undefined 避免误触发协议。
-        return typeof prop === 'string' ? empty : undefined;
+        if (p === 'cssText') return '';
+        if (typeof prop !== 'string') return undefined; // Symbol 属性返 undefined
+        return query(_camelToKebab(p));
       }
     });
   };
