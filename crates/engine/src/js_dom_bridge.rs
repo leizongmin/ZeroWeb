@@ -558,6 +558,24 @@ pub fn toggle_radio_html(html: &str, selector: &str) -> Option<String> {
     Some(doc.outer_html(doc.root()))
 }
 
+/// P1a change-on-blur：判定元素是否为「失焦派发 change」的文本输入（`<textarea>` 或
+/// `<input>` 非 action 类型——text/email/password/search/number 等文本类；checkbox/radio/
+/// button/submit/image/reset 的 change 在 click 时派发，不在此列）。
+pub fn is_text_input(html: &str, selector: &str) -> bool {
+    let tag = query_tag_from_html(html, selector).to_ascii_lowercase();
+    if tag == "textarea" {
+        return true;
+    }
+    if tag == "input" {
+        let ty = query_attr_from_html(html, selector, "type").to_ascii_lowercase();
+        return !matches!(
+            ty.as_str(),
+            "checkbox" | "radio" | "button" | "submit" | "image" | "reset"
+        );
+    }
+    false
+}
+
 /// 从当前 HTML 快照查询 innerHTML。
 pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
@@ -1387,5 +1405,34 @@ mod tests {
         assert!(has_attribute(&out, "#c", "checked"));
         // 非 radio → None。
         assert_eq!(toggle_radio_html(html, "#c"), None);
+    }
+
+    #[test]
+    fn test_is_text_input() {
+        // P1a change-on-blur：文本输入判定（textarea + input 文本类；排除 action 类型）。
+        assert!(is_text_input(
+            "<html><body><input id='t' type='text'></body></html>",
+            "#t",
+        ));
+        assert!(is_text_input(
+            "<html><body><input id='e' type='email'></body></html>",
+            "#e",
+        ));
+        assert!(is_text_input(
+            "<html><body><textarea id='ta'></textarea></body></html>",
+            "#ta",
+        ));
+        // input 无 type → 默认 text。
+        assert!(is_text_input("<html><body><input id='n'></body></html>", "#n"));
+        // action 类型排除（change 在 click 派发）。
+        assert!(!is_text_input(
+            "<html><body><input id='cb' type='checkbox'></body></html>",
+            "#cb",
+        ));
+        assert!(!is_text_input(
+            "<html><body><input id='s' type='submit'></body></html>",
+            "#s",
+        ));
+        assert!(!is_text_input("<html><body><div id='d'></div></body></html>", "#d",));
     }
 }
