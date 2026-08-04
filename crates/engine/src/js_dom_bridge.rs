@@ -480,6 +480,21 @@ pub fn enclosing_form_selector(html: &str, elem_sel: &str) -> Option<String> {
     }
 }
 
+/// P1a form submit：判定元素是否为 submit button（点击会提交 enclosing form）。
+/// `<input type=submit>` / `<input type=image>` / `<button>`（type 非 "button"——默认 submit）。
+pub fn is_submit_button(html: &str, elem_sel: &str) -> bool {
+    let tag = query_tag_from_html(html, elem_sel);
+    let ty = query_attr_from_html(html, elem_sel, "type").to_ascii_lowercase();
+    if tag.eq_ignore_ascii_case("input") {
+        return ty == "submit" || ty == "image";
+    }
+    if tag.eq_ignore_ascii_case("button") {
+        // type="button" 不提交；type=submit/空/missing → 提交（button 默认 type=submit）。
+        return ty != "button";
+    }
+    false
+}
+
 /// 从当前 HTML 快照查询 innerHTML。
 pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
@@ -1203,5 +1218,40 @@ mod tests {
         assert_eq!(enclosing_form_selector(nested, "#deep").as_deref(), Some("#outer"));
         // 未命中 selector → None。
         assert_eq!(enclosing_form_selector(html, "#missing"), None);
+    }
+
+    #[test]
+    fn test_is_submit_button() {
+        // P1a form submit：submit-button 判定。
+        assert!(is_submit_button(
+            "<html><body><form><input id='b' type='submit'></form></body></html>",
+            "#b",
+        ));
+        assert!(is_submit_button(
+            "<html><body><form><input id='i' type='image'></form></body></html>",
+            "#i",
+        ));
+        // button 默认 type=submit → 提交。
+        assert!(is_submit_button(
+            "<html><body><form><button id='btn'>Go</button></form></body></html>",
+            "#btn",
+        ));
+        assert!(is_submit_button(
+            "<html><body><form><button id='s' type='submit'>Go</button></form></body></html>",
+            "#s",
+        ));
+        // 非提交：
+        assert!(!is_submit_button(
+            "<html><body><form><input id='t' type='text'></form></body></html>",
+            "#t",
+        ));
+        assert!(!is_submit_button(
+            "<html><body><form><button id='nb' type='button'>Go</button></form></body></html>",
+            "#nb",
+        ));
+        assert!(!is_submit_button(
+            "<html><body><form><div id='d'>x</div></form></body></html>",
+            "#d",
+        ));
     }
 }

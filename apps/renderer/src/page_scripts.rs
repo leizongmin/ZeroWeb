@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, PageScript, apply_mutations_to_html, enclosing_form_selector, extract_page_scripts,
-    query_tag_from_html, resolve_document_url, script_dispatch_dom_event, script_text_delete, script_text_input,
+    is_submit_button, query_tag_from_html, resolve_document_url, script_dispatch_dom_event, script_text_delete,
+    script_text_input,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -171,13 +172,29 @@ pub fn apply_text_delete(ctx: &mut PageScriptContext<'_>, selector: &str) -> boo
 }
 
 /// P1a form submit：Enter 在单行 `<input>`（非 textarea）→ 解析 enclosing `<form>` → 派发
-/// 'submit' 事件（复用 `script_dispatch_dom_event`）。textarea 的 Enter 为换行不提交；input
-/// 无 enclosing form 不提交。返回 submit 回调是否改 DOM（调用方据此单次 rerender）。
+/// 'submit' 事件。textarea 的 Enter 为换行不提交；input 无 enclosing form 不提交。
+/// 返回 submit 回调是否改 DOM（调用方据此单次 rerender）。
 pub fn apply_submit_on_enter(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
-    let snap = ctx.html.clone();
-    if !query_tag_from_html(&snap, selector).eq_ignore_ascii_case("input") {
+    // 仅单行 input 的 Enter 触发 submit（textarea 的 Enter 为换行）。
+    if !query_tag_from_html(ctx.html, selector).eq_ignore_ascii_case("input") {
         return false;
     }
+    submit_enclosing_form(ctx, selector)
+}
+
+/// P1a form submit：click 命中 submit button（`<input type=submit/image>` / `<button>` type≠button）
+/// → 解析 enclosing `<form>` → 派发 'submit' 事件。返回 submit 回调是否改 DOM。
+pub fn apply_submit_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    if !is_submit_button(ctx.html, selector) {
+        return false;
+    }
+    submit_enclosing_form(ctx, selector)
+}
+
+/// 共享 submit 核心：解析 enclosing `<form>` → 派发 'submit'（复用 `script_dispatch_dom_event`）
+/// → apply。无触发 gate（调用方先判 Enter-in-input / submit-button）。无 enclosing form → false。
+fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    let snap = ctx.html.clone();
     let Some(form_sel) = enclosing_form_selector(&snap, selector) else {
         return false;
     };

@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-08-04
-**执行状态**: 17 个 crate + 3 个应用已实现，~13,192 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + **WASM 自动桥接完整实现**），WPT 测试套件 1341 个用例（23 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip），**平台和输入测试**（18 个 WPT 用例覆盖键盘事件/鼠标事件/触摸布局/滚动容器/视口响应式/HiDPI/IME/CJK 输入/焦点管理 + 15 个视口自适应集成测试 + 19 个字体回退国际化渲染管线集成测试）。**DOM/JS Bridge**：polyfill 桥接模式（30+ DomCommand 变体覆盖 DOM 操作/事件/样式），Fetch/setTimeout/console/localStorage/sessionStorage/MutationObserver/IntersectionObserver/ResizeObserver/CustomEvent 全 polyfill 注入，Observer 类型为 stub 不触发回调，fetch() 为 stub 返回空 Response，事件循环为简化版（非 spec-compliant microtask/task queue）。**注（P1a 进展）**：生产 worker 路径（B 代 shim `js_dom_shim.js`）已迁移——fetch GET 端到端真实、MutationObserver/IntersectionObserver/ResizeObserver 已真实触发回调（P1a Slice 2a/3，renderer 路径含 render-loop 后续通知 tick Slice 2b）、setTimeout 真实延迟、**input/textarea value + input 事件**（keydown 可打印字符注入，R2653）+ Backspace 删末字符（R2654）+ Enter 提交表单 submit 事件（R2655）；A 代 WebView polyfill 路径仍为上述 stub 描述。**rendering-compat 赛道**（独立目标，降频守成中）：reftest 自源 ~57% / chromium-oracle 真一致 ~47%（FreeType-default 后），clean-lever hunt 经 200+ 轮已基本穷尽；字体栈重建 RFC v0.2.3 已就绪（fontdue→FreeType+Harfbuzz 统一度量/光栅/塑形），是 headline ≥95% 的唯一战略杠杆。
+**执行状态**: 17 个 crate + 3 个应用已实现，~13,192 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + **WASM 自动桥接完整实现**），WPT 测试套件 1341 个用例（23 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip），**平台和输入测试**（18 个 WPT 用例覆盖键盘事件/鼠标事件/触摸布局/滚动容器/视口响应式/HiDPI/IME/CJK 输入/焦点管理 + 15 个视口自适应集成测试 + 19 个字体回退国际化渲染管线集成测试）。**DOM/JS Bridge**：polyfill 桥接模式（30+ DomCommand 变体覆盖 DOM 操作/事件/样式），Fetch/setTimeout/console/localStorage/sessionStorage/MutationObserver/IntersectionObserver/ResizeObserver/CustomEvent 全 polyfill 注入，Observer 类型为 stub 不触发回调，fetch() 为 stub 返回空 Response，事件循环为简化版（非 spec-compliant microtask/task queue）。**注（P1a 进展）**：生产 worker 路径（B 代 shim `js_dom_shim.js`）已迁移——fetch GET 端到端真实、MutationObserver/IntersectionObserver/ResizeObserver 已真实触发回调（P1a Slice 2a/3，renderer 路径含 render-loop 后续通知 tick Slice 2b）、setTimeout 真实延迟、**input/textarea value + input 事件**（keydown 可打印字符注入，R2653）+ Backspace 删末字符（R2654）+ Enter/submit-button 提交表单 submit 事件（R2655-56）；A 代 WebView polyfill 路径仍为上述 stub 描述。**rendering-compat 赛道**（独立目标，降频守成中）：reftest 自源 ~57% / chromium-oracle 真一致 ~47%（FreeType-default 后），clean-lever hunt 经 200+ 轮已基本穷尽；字体栈重建 RFC v0.2.3 已就绪（fontdue→FreeType+Harfbuzz 统一度量/光栅/塑形），是 headline ≥95% 的唯一战略杠杆。
 
 > **▶ 恢复推进裁决（2026-08-04 用户决策）**：工作从 rendering-compat 切回父目标，恢复「下一步优先级」P1 DOM/JS Bridge 原生化。**当前活跃主线 = P1a**（事件循环补全 + fetch/MutationObserver 真实化，主要改 `dom_bridge.rs` + `script-sandbox` + `net`，低风险快速见效）；P1b（V8 原生绑定）需独立 RFC，与字体栈 RFC 同级对待。渲染兼容性降频守成：低频 plateau-guard（每 ~10 轮或 .rs 变更后跑 `make test` triple-guard），其深结构（R1043/R2174/Phase A IFC/font-stack C-dep）继续等用户点名，点名即切回。执行模式：自主推进，每轮进度记录到「最近完成的改进」。渲染侧裁决同步记录于 `rendering-compat.md` 顶部。
 
@@ -112,6 +112,20 @@
 
 ## 最近完成的改进
 
+### P1a form submit — submit-button click 触发（本轮 R2656，~13,226 测试）
+
+承接 form submit on Enter（R2655）。补 submit 触发互补：鼠标 click 命中 submit button（`<input type=submit/image>` / `<button>` type≠button）→ 解析 enclosing `<form>` → 派发 'submit'。两触发共享 `submit_enclosing_form`（form 解析 + dispatch + apply），各自 gate（Enter: tag==INPUT；click: `is_submit_button`）。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_bridge.rs` | `is_submit_button(html, sel)`（input\[type=submit/image\] / button\[type≠button\]）+ 单测（正反例覆盖）。 |
+| `apps/renderer/src/page_scripts.rs` | 抽 `submit_enclosing_form`（共享核心）+ `apply_submit_on_click`；`apply_submit_on_enter` 改用共享核心（DRY）。 |
+| `apps/renderer/src/main.rs` | `handle_mouse_event` Click 后据 `event_target` 判 submit-button → `submit_form_on_click_at`。 |
+
+验证：`make test` 全绿（exit 0）+ clippy `-D warnings` 零警告 + fmt clean + `make product-smoke` 全 struct PASS（desktop diff≤20% + 窄屏全 PASS）。engine 单测 `is_submit_button`（正：input submit/image、button default/submit；反：input text、button type=button、div）。
+
+**已知限制（follow-up）**：① form `action` 默认导航提交未实现（仅 submit 事件派发）；② 未尊重 `preventDefault` 的默认提交语义；③ browser in-process `tab_worker` 未接（mirror）。
+
 ### P1a form submit — Enter 提交表单（本轮 R2655，~13,225 测试）
 
 承接 form input 系列。Enter 在单行 `<input>`（非 textarea）→ 解析 enclosing `<form>` → 派发 'submit' 事件（复用既有 `script_dispatch_dom_event`）。textarea 的 Enter 为换行不提交；input 无 enclosing form 不提交。
@@ -124,7 +138,7 @@
 
 验证：`make test` 全绿（exit 0）+ clippy `-D warnings` 零警告 + fmt clean + `make product-smoke` 全 struct PASS（desktop diff≤20% + 窄屏全 PASS）。engine 单测 `enclosing_form_selector` + renderer driving test（submit 事件经 shim 命中 form listener）。
 
-**已知限制（follow-up）**：① submit-button click 触发 submit 未实现（仅 Enter-in-input）；② form `action` 默认导航提交未实现（仅 submit 事件派发）；③ 未尊重 `preventDefault` 的默认提交语义（先事件派发）；④ browser in-process `tab_worker` 未接（mirror）。
+**已知限制（follow-up）**：① ~~submit-button click 触发 submit 未实现~~（R2656 已实现）；② form `action` 默认导航提交未实现（仅 submit 事件派发）；③ 未尊重 `preventDefault` 的默认提交语义（先事件派发）；④ browser in-process `tab_worker` 未接（mirror）。
 
 ### P1a form input — Backspace 删末字符（本轮 R2654，~13,223 测试）
 
