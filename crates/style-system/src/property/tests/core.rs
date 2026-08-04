@@ -12,6 +12,33 @@ fn test_default_computed_style() {
     assert_eq!(style.overflow_x, OverflowValue::Visible);
 }
 
+/// R2637：守护 box 维度初始值不漂移回 Px(0.0)。
+///
+/// `PropertyRegistry::initial_value` 与 `ComputedStyle::default()` 必须一致——
+/// 生产路径 `apply_initial_value` 读 default（Auto），width/height/min-width/min-height
+/// 的 Px(0.0) 是历史漂移：min-* 的 0 会短路 taffy 内容下限使 flex/grid item 可缩至 0
+/// （default_impl.rs R428-R437 已注释）。本测试锁定四值为 Auto。
+#[test]
+fn test_box_dimension_initial_values_are_auto() {
+    for prop in ["width", "height", "min-width", "min-height"] {
+        assert_eq!(
+            PropertyRegistry::initial_value(prop),
+            Some(PropertyValue::Length(LengthValue::Auto)),
+            "{prop} initial value drifted away from Auto"
+        );
+        // 同时断言 default 与 registry 一致（同一来源真相）。
+        let default = ComputedStyle::default();
+        let default_val = match prop {
+            "width" => &default.width,
+            "height" => &default.height,
+            "min-width" => &default.min_width,
+            "min-height" => &default.min_height,
+            _ => unreachable!(),
+        };
+        assert_eq!(default_val, &LengthValue::Auto, "{prop} default drifted away from Auto");
+    }
+}
+
 #[test]
 fn test_property_registry_initial_values() {
     assert!(PropertyRegistry::initial_value("display").is_some());

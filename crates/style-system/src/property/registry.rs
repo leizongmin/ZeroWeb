@@ -24,8 +24,14 @@ impl PropertyRegistry {
                 zero_css_parser::values::ListStylePositionValue::Outside,
             )),
             "list-style-image" => Some(ListStyleImage(ListStyleImageComputedValue::None)),
-            "width" | "height" => Some(Length(LengthValue::Px(0.0))),
-            "min-width" | "min-height" => Some(Length(LengthValue::Px(0.0))),
+            // CSS §10.2/§10.5：width/height 初始值 = auto（非 0）。须与 `ComputedStyle::default()`
+            // 一致——生产路径 `apply_initial_value` 读 default（Auto），若本表返回 Px(0.0) 会与
+            // default 漂移；width:initial / all:initial 若改走本表会得 0px 短路布局。R2637 纠偏。
+            "width" | "height" => Some(Length(LengthValue::Auto)),
+            // CSS Box / Flexbox §4.5/§6.6：min-width/min-height 初始值 = auto（flex/grid item
+            // 表示「基于内容的自动最小尺寸」）。Px(0.0) 会短路 taffy 内容下限使 item 可缩至 0
+            // （见 default_impl.rs R428-R437 注释）。须与 default 一致。R2637 纠偏。
+            "min-width" | "min-height" => Some(Length(LengthValue::Auto)),
             "max-width" | "max-height" => Some(Length(LengthValue::Px(f64::INFINITY))),
             "margin-top" | "margin-right" | "margin-bottom" | "margin-left" => Some(Length(LengthValue::Px(0.0))),
             "padding-top" | "padding-right" | "padding-bottom" | "padding-left" => Some(Length(LengthValue::Px(0.0))),
