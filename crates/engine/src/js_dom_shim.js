@@ -9,6 +9,11 @@
   // `.value` set 更新缓存 + 记 value 属性 mutation（供 render）。跨 execute 存活（typing 多键），
   // 导航（URL 变化）经 `__zw_reset_form_state` 清空防跨页 stale value。
   var _inputValues = {};
+  // P1a classList：per-element-key class 缓存（`className` / `classList`）。同 _inputValues 动机——
+  // classList.add/remove/toggle 旧实现每次读 stale snapshot 算新 class 再 SetAttr 整体替换，
+  // 同脚本内连续 add 末次覆盖前次（`add('a');add('b')` 丢 'a'）。缓存累积全量，末次 SetAttr 携带
+  // 正确值；className set 同步更新缓存保证一致。导航经 `__zw_reset_form_state` 清空。
+  var _classCache = {};
   // P1a DocumentFragment：已创建的 fragment handle 集合（nodeType=11 标识 + appendChild 时
   // flatten 检测）。fragment 为 create 句柄，无 selector，故用此 set 区别于普通元素句柄。
   var _fragmentHandles = {};
@@ -545,7 +550,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
@@ -829,36 +834,52 @@
     return handle ? ('@' + handle) : sel;
   }
 
+  // 读元素当前 class（缓存优先，lazy-init 自 snapshot）。className get 与 classList 共用，
+  // 使同脚本内连续 class 操作看到累积状态而非各自读 stale snapshot。
+  function _readClass(key, sel, handle) {
+    if (_classCache[key] != null) return _classCache[key];
+    var v = (handle ? __zw_get_attr_handle(handle, 'class') : __zw_get_attr(sel, 'class')) || '';
+    _classCache[key] = v;
+    return v;
+  }
+
   function _classListProxy(sel, handle) {
+    var key = _elKey(sel, handle);
+    var write = function(v) {
+      _classCache[key] = v;
+      if (handle) __zw_set_attr_handle(handle, 'class', v);
+      else __zw_set_attr(sel, 'class', v);
+      _mo_notify(sel, handle, { type: 'attributes', attributeName: 'class' });
+    };
     return {
       add: function(c) {
-        var cur = handle ? __zw_get_attr_handle(handle, 'class') : __zw_get_attr(sel, 'class');
-        var parts = (cur || '').split(/\s+/).filter(Boolean);
+        var parts = _readClass(key, sel, handle).split(/\s+/).filter(Boolean);
         if (parts.indexOf(c) < 0) parts.push(c);
-        var v = parts.join(' ');
-        if (handle) __zw_set_attr_handle(handle, 'class', v);
-        else __zw_set_attr(sel, 'class', v);
+        write(parts.join(' '));
       },
       remove: function(c) {
-        var cur = handle ? __zw_get_attr_handle(handle, 'class') : __zw_get_attr(sel, 'class');
-        var parts = (cur || '').split(/\s+/).filter(Boolean).filter(function(x) { return x !== c; });
-        var v = parts.join(' ');
-        if (handle) __zw_set_attr_handle(handle, 'class', v);
-        else __zw_set_attr(sel, 'class', v);
+        var parts = _readClass(key, sel, handle)
+          .split(/\s+/)
+          .filter(Boolean)
+          .filter(function(x) { return x !== c; });
+        write(parts.join(' '));
       },
       toggle: function(c) {
-        var cur = handle ? __zw_get_attr_handle(handle, 'class') : __zw_get_attr(sel, 'class');
-        var parts = (cur || '').split(/\s+/).filter(Boolean);
+        var parts = _readClass(key, sel, handle).split(/\s+/).filter(Boolean);
         var i = parts.indexOf(c);
-        if (i >= 0) parts.splice(i, 1);
-        else parts.push(c);
-        var v = parts.join(' ');
-        if (handle) __zw_set_attr_handle(handle, 'class', v);
-        else __zw_set_attr(sel, 'class', v);
+        var on;
+        if (i >= 0) {
+          parts.splice(i, 1);
+          on = false;
+        } else {
+          parts.push(c);
+          on = true;
+        }
+        write(parts.join(' '));
+        return on;
       },
       contains: function(c) {
-        var cur = handle ? __zw_get_attr_handle(handle, 'class') : __zw_get_attr(sel, 'class');
-        return (cur || '').split(/\s+/).indexOf(c) >= 0;
+        return _readClass(key, sel, handle).split(/\s+/).indexOf(c) >= 0;
       }
     };
   }
@@ -1209,7 +1230,7 @@
         }
         if (prop === 'classList') return _classListProxy(sel, handle);
         if (prop === 'className') {
-          return handle ? __zw_get_attr_handle(handle, 'class') : __zw_get_attr(sel, 'class');
+          return _readClass(key, sel, handle);
         }
         if (prop === 'id') {
           return handle ? __zw_get_attr_handle(handle, 'id') : __zw_get_attr(sel, 'id');
@@ -1747,6 +1768,7 @@
           }
           return true;
         } else if (p === 'className') {
+          _classCache[key] = String(value);
           if (handle) __zw_set_attr_handle(handle, 'class', String(value));
           else __zw_set_attr(sel, 'class', String(value));
           moAttr = 'class';

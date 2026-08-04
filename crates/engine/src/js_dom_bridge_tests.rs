@@ -2519,3 +2519,101 @@ fn test_style_camel_to_kebab() {
     assert!(out.contains("float: left"), "cssFloat → float\n{out}");
     assert!(!out.contains("cssFloat"), "不应残留 cssFloat\n{out}");
 }
+
+#[test]
+fn test_classlist_consecutive_ops() {
+    // R2697：classList 连续操作不丢类。旧实现每次读 stale snapshot + SetAttr 整体替换，
+    // 同脚本 add('a');add('b');add('c') 仅保留末个（base c）。客户端缓存累积全量后修复。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mk = || -> (V8Sandbox, Arc<Mutex<Vec<DomMutation>>>, Arc<Mutex<String>>) {
+        let mut sb = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sb.execute(generate_js_dom_shim()).unwrap();
+        let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+        let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+            "<html><body><div id=\"d\" class=\"base\"></div></body></html>".to_string(),
+        ));
+        let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+        register_dom_callbacks(&mut sb, &mutations, &dom_html, &page_url);
+        (sb, mutations, dom_html)
+    };
+
+    // ① 连续 add 三类 → apply 后 class 含 base/a/b/c 全部（旧实现仅 'base c'）。
+    let (mut sandbox, mutations, dom_html) = mk();
+    sandbox
+        .execute(
+            "var d = document.querySelector('#d');\n\
+             d.classList.add('a');\n\
+             d.classList.add('b');\n\
+             d.classList.add('c');",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    let class_val: String = out
+        .split("class=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap_or("")
+        .to_string();
+    for cls in ["base", "a", "b", "c"] {
+        assert!(
+            class_val.split_whitespace().any(|t| t == cls),
+            "class 应含 {cls}（got '{class_val}'）\n{out}"
+        );
+    }
+
+    // ② className set + classList add 协作（className 写缓存、classList 读缓存累加）。
+    let (mut sandbox, mutations, dom_html) = mk();
+    sandbox
+        .execute(
+            "var e = document.querySelector('#d');\n\
+             e.className = 'x';\n\
+             e.classList.add('y');",
+        )
+        .unwrap();
+    let ms2 = mutations.lock().unwrap().clone();
+    let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
+    assert!(out2.contains("class=\"x y\""), "className=x 后 classList.add(y) → 'x y'\n{out2}");
+
+    // ③ toggle 首次加（true）/ contains 反映 / 二次移除（false），双 toggle 后 on 消失。
+    let (mut sandbox, mutations, dom_html) = mk();
+    sandbox
+        .execute(
+            "globalThis.__t1 = document.querySelector('#d').classList.toggle('on');\n\
+             globalThis.__has = document.querySelector('#d').classList.contains('on');\n\
+             globalThis.__t2 = document.querySelector('#d').classList.toggle('on');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__t1").unwrap().value, "true", "toggle 首次加返 true");
+    assert_eq!(
+        sandbox.execute("globalThis.__has").unwrap().value,
+        "true",
+        "toggle 后 contains(on) 反映缓存"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t2").unwrap().value,
+        "false",
+        "toggle 二次移除返 false"
+    );
+    let ms3 = mutations.lock().unwrap().clone();
+    let out3 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms3).unwrap();
+    let class_val3: String = out3
+        .split("class=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap_or("")
+        .to_string();
+    assert!(
+        !class_val3.split_whitespace().any(|t| t == "on"),
+        "双 toggle 后 on 应移除（got '{class_val3}'）\n{out3}"
+    );
+}

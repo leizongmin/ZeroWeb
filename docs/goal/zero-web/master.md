@@ -864,6 +864,24 @@ R2695 验证 per-property set 时发现：`el.style.fontSize = '10px'` 存原始
 
 **已知限制（剩余）**：① `cssFloat`→`float` 特例已处理，但 `style.float`（部分旧代码）JS 语法非法（`float` 非保留字其实可访问 `style['float']`）——`_stylePropName('float')`→`_camelToKebab('float')`='float'，正确；② vendor 前缀非 Webkit（Moz/ms/O）的 camelCase（`MozAppearance`→`-moz-appear`）经通用 `_camelToKebab` 正确处理（首字母大写→`-` 前缀）；③ 归一在 JS 侧，Rust 端信任收到的 kebab（若 host 直接调 `__zw_set_style` 传 camelCase 不归一——host 调用方均传 kebab，无此路径）。
 
+### P1a classList/className 客户端缓存（本轮 R2697，R2696 验证时发现的 latent 丢类 bug）
+
+R2696 验证模式启发：探查 `classList` 发现同类 deferred-stale + whole-replace bug。`classList.add('a');add('b');add('c')` 在 `class="base"` 元素上**仅保留末个** → `class="base c"`（'a'/'b' 丢失）。根因：每次 `add` 读 stale snapshot（"base"）算 "base X"，再 `SetAttr('class', ...)` 整体替换——同脚本连续操作末次 SetAttr 覆盖前次。同脚本内加多类（极常见，框架态切换/多类组合）普遍失效。reftest/product-smoke 用静态 HTML 不触发 JS classList 故未暴露（latent）。
+
+**修复**（镜像 `_inputValues` 模式）：新增 `_classCache`（per-element-key class 缓存），`_readClass(key,sel,handle)` lazy-init 自 snapshot。`className` get/set + `classList` add/remove/toggle/contains 全部经缓存——读见累积状态、写更新缓存 + SetAttr。末次 SetAttr 携带全量累积值，apply 后正确（中间 SetAttr 被覆盖无碍）。className set 同步更新缓存，保证 className 与 classList 协作一致。导航经 `__zw_reset_form_state` 清缓存。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_shim.js` | `_classCache` + `_readClass`；`_classListProxy` 改用缓存（add/remove/toggle/contains + write 助手）；className get/set 经缓存；`__zw_reset_form_state` 清 `_classCache`。 |
+| `engine/js_dom_bridge_tests.rs` | +1 e2e（3 子场景独立 sandbox）：连续 add 不丢类（base/a/b/c 全在）/ className+classList 协作（'x y'）/ toggle 返回值 + contains 反映 + 双 toggle 移除。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1422→1423 net +1）+ `make reftest` + `make product-smoke`（class 影响 class 选择器 → 布局，建议跑）。
+
+**为何零回归且净正向**：① 单次 classList 操作行为等价（缓存 init 自 snapshot = 旧读取值，写 SetAttr 值同旧）；② 多次操作从「末次覆盖前次」纠正为「累积」，属纠正既有 bug；③ className get 从 snapshot 改缓存——单次读等价，多次读见累积（严格更对）；④ 仅 className/classList 路径变更，`getAttribute('class')` 仍 snapshot（deferred 既有模式，不变）。
+
+**已知限制（剩余）**：① `getAttribute('class')` 仍读 stale snapshot（与 className 缓存视图在脚本内可能不一致——同 `.value` 缓存 vs `getAttribute('value')` 的既有模式）；② `el.class = 'x'`（非标准属性名）走 generic set trap 不更新缓存——非标准用法，real browser `el.class` 亦非反射属性；③ 缓存跨 execute 存活（同 `_inputValues`，typing/连续操作场景需要），导航清空。
+
+
 
 
 
