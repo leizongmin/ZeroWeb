@@ -937,6 +937,83 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_resize_observer_initial() {
+        // P1a Slice 3：observe → spec initial notification 派发，contentRect.width/height 匹配
+        // snapshot 尺寸（复用 gBCR：snapshot 填 #t rect，RO 经 `__zw_getBoundingClientRect(sel)` 读取）。
+        // sel = `__zw_query_match('#t')` 返回值，与本测试 `find_by_selector(&doc, "#t")` 同 NodeId
+        // （见 gBCR test 既有确定性验证）。
+        use zero_dom::parse_html;
+        use zero_engine::{find_by_selector, node_id_to_u64};
+        let mut worker = RendererJsWorker::spawn(23);
+        let html = "<html><body><div id='t' style='width:100px;height:50px'>hi</div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        let doc = parse_html(html);
+        let id_t = find_by_selector(&doc, "#t").expect("#t");
+        worker
+            .rect_snapshot()
+            .lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_t), (10.0, 20.0, 100.0, 50.0));
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 var el = document.querySelector('#t');\
+                 var obs = new ResizeObserver(function(entries){\
+                   var e = entries[0];\
+                   globalThis.__seen = String(e.target === el) + ':' + String(e.contentRect.width)\
+                     + 'x' + String(e.contentRect.height) + ':' + String(e.borderBoxSize[0].inlineSize);\
+                 });\
+                 obs.observe(el);",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "true:100x50:100");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_resize_observer_zero_fallback() {
+        // P1a Slice 3：gBCR 未命中（snapshot 空）→ contentRect 为零，仍派发 initial notification（no-throw）。
+        // （旧 shim 无 RO → `new ResizeObserver` 抛 ReferenceError 中断脚本；本切片消除之。）
+        let mut worker = RendererJsWorker::spawn(24);
+        worker.set_dom_snapshot("<html><body><div id='t'></div></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 var obs = new ResizeObserver(function(entries){\
+                   globalThis.__seen = String(entries[0].contentRect.width) + 'x'\
+                     + String(entries[0].contentRect.height);\
+                 });\
+                 obs.observe(document.querySelector('#t'));",
+            )
+            .unwrap();
+        let r = wait_for_global(&worker, "__seen", 1000);
+        assert_eq!(r, "0x0");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_resize_observer_disconnect() {
+        // P1a Slice 3：observe 后 disconnect（microtask 派发前）→ _targets 清空 → callback 不派发。
+        let mut worker = RendererJsWorker::spawn(25);
+        worker.set_dom_snapshot("<html><body><div id='t'></div></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 var obs = new ResizeObserver(function(_entries){ globalThis.__seen = 'fired'; });\
+                 obs.observe(document.querySelector('#t'));\
+                 obs.disconnect();",
+            )
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "null"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_mutation_observer_property_set() {
         // P1b S2 incr3（镜像 browser）：property set（el.className='x'）触发 attributes 记录。
         let mut worker = RendererJsWorker::spawn(17);

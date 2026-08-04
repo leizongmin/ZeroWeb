@@ -1,7 +1,7 @@
 # ZeroWeb 运行时控制面板
 
 **最后更新**: 2026-08-04
-**执行状态**: 17 个 crate + 3 个应用已实现，~13,192 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + **WASM 自动桥接完整实现**），WPT 测试套件 1341 个用例（23 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip），**平台和输入测试**（18 个 WPT 用例覆盖键盘事件/鼠标事件/触摸布局/滚动容器/视口响应式/HiDPI/IME/CJK 输入/焦点管理 + 15 个视口自适应集成测试 + 19 个字体回退国际化渲染管线集成测试）。**DOM/JS Bridge**：polyfill 桥接模式（30+ DomCommand 变体覆盖 DOM 操作/事件/样式），Fetch/setTimeout/console/localStorage/sessionStorage/MutationObserver/IntersectionObserver/ResizeObserver/CustomEvent 全 polyfill 注入，Observer 类型为 stub 不触发回调，fetch() 为 stub 返回空 Response，事件循环为简化版（非 spec-compliant microtask/task queue）。**rendering-compat 赛道**（独立目标，降频守成中）：reftest 自源 ~57% / chromium-oracle 真一致 ~47%（FreeType-default 后），clean-lever hunt 经 200+ 轮已基本穷尽；字体栈重建 RFC v0.2.3 已就绪（fontdue→FreeType+Harfbuzz 统一度量/光栅/塑形），是 headline ≥95% 的唯一战略杠杆。
+**执行状态**: 17 个 crate + 3 个应用已实现，~13,192 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + **WASM 自动桥接完整实现**），WPT 测试套件 1341 个用例（23 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip），**平台和输入测试**（18 个 WPT 用例覆盖键盘事件/鼠标事件/触摸布局/滚动容器/视口响应式/HiDPI/IME/CJK 输入/焦点管理 + 15 个视口自适应集成测试 + 19 个字体回退国际化渲染管线集成测试）。**DOM/JS Bridge**：polyfill 桥接模式（30+ DomCommand 变体覆盖 DOM 操作/事件/样式），Fetch/setTimeout/console/localStorage/sessionStorage/MutationObserver/IntersectionObserver/ResizeObserver/CustomEvent 全 polyfill 注入，Observer 类型为 stub 不触发回调，fetch() 为 stub 返回空 Response，事件循环为简化版（非 spec-compliant microtask/task queue）。**注（P1a 进展）**：生产 worker 路径（B 代 shim `js_dom_shim.js`）已迁移——fetch GET 端到端真实、MutationObserver/IntersectionObserver/ResizeObserver 已真实触发回调（P1a Slice 2a/3）、setTimeout 真实延迟；A 代 WebView polyfill 路径仍为上述 stub 描述。**rendering-compat 赛道**（独立目标，降频守成中）：reftest 自源 ~57% / chromium-oracle 真一致 ~47%（FreeType-default 后），clean-lever hunt 经 200+ 轮已基本穷尽；字体栈重建 RFC v0.2.3 已就绪（fontdue→FreeType+Harfbuzz 统一度量/光栅/塑形），是 headline ≥95% 的唯一战略杠杆。
 
 > **▶ 恢复推进裁决（2026-08-04 用户决策）**：工作从 rendering-compat 切回父目标，恢复「下一步优先级」P1 DOM/JS Bridge 原生化。**当前活跃主线 = P1a**（事件循环补全 + fetch/MutationObserver 真实化，主要改 `dom_bridge.rs` + `script-sandbox` + `net`，低风险快速见效）；P1b（V8 原生绑定）需独立 RFC，与字体栈 RFC 同级对待。渲染兼容性降频守成：低频 plateau-guard（每 ~10 轮或 .rs 变更后跑 `make test` triple-guard），其深结构（R1043/R2174/Phase A IFC/font-stack C-dep）继续等用户点名，点名即切回。执行模式：自主推进，每轮进度记录到「最近完成的改进」。渲染侧裁决同步记录于 `rendering-compat.md` 顶部。
 
@@ -111,6 +111,25 @@
 ---
 
 ## 最近完成的改进
+
+### P1a Slice 3 — ResizeObserver 真实化（本轮 R2651，~13,220 测试）
+
+承接 gBCR 基建（Slice 1）+ Slice 2a（IO 真实化）。核验 shim：生产 worker 路径（`js_dom_shim.js`）**完全无 ResizeObserver**——`new ResizeObserver(...)` 抛 ReferenceError 中断整个脚本（与 IO 同）；旧 polyfill（`dom_bridge.rs`，仅 WebView 路径）有 observe/unobserve/disconnect/takeRecords + Entry 桩但**永不触发回调**。
+
+**关键决策**：RO **纯 JS 侧实现**（镜像 IO 的 JS 侧拦截 + microtask 派发），**复用已落地的 `__zw_getBoundingClientRect` host 回调**（gBCR path C）+ size-diff 检测——**无需新 host Rust 基建**。直接复用 IO 的 `_io_rectFromSel`/`_io_domRect`/`_io_id` rect 辅助（gBCR-via-selector 通用工具，无重复）。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim.js` | 新增 ResizeObserver（IO 之后）：`_schedule`（`_defer` microtask 派发 `obs._callback(entries, obs)`）/ observe / unobserve / disconnect / takeRecords；size-diff 检测（首次=initial 必派发，之后仅宽高变化才派发，spec §4）；entry 含 contentRect + borderBoxSize/contentBoxSize/devicePixelContentBoxSize（单元素数组，inlineSize=width/blockSize=height 近似）；ResizeObserverEntry 兼容构造。 |
+| `apps/renderer/src/js_worker.rs` | +3 driving test（initial→`true:100x50:100` / 零回落→`0x0` / disconnect→不派发），镜像 IO 测试。 |
+
+**spec 对齐**：observe 即排队 initial notification（contentRect 匹配 snapshot 尺寸）；后续仅在尺寸变化时派发（spec §4）。
+
+验证：`make test` 全绿（exit 0，零回归）+ clippy `-D warnings` 零警告 + fmt clean + `make product-smoke` 全 struct PASS（desktop diff≤20% + welcome/morning/wintertc 窄屏 375/320 全 PASS）。browser worker 经共享 shim 覆盖（RO 逻辑全在共享 shim，复用 gBCR host 接线，无需重复测试）。
+
+**为何零回归且净正向**：旧 shim 无 RO → 抛 ReferenceError **中断脚本后续全部 JS**；本切片消除之（RO 常驻不抛）。gBCR 未注册（reftest/polyfill/WebView 路径）→ contentRect 为零，仍派发 initial notification（no-throw）。self-source reftest test/ref 同经 shim 净中性；product smoke struct PASS 证真实页面 JS 链零回归。
+
+**已知限制（follow-up）**：① 仅 observe 时计算（非持续 host tick）——resize/async-layout 变化的后续通知为 **Slice 2b**（须 host render-loop tick 或 `__zwResolveCallback` 重算钩子，与 IO 同）；② contentRect 取 gBCR rect（≈border-box，真实浏览器报 content-box，padding/border 扣除为 follow-up）；③ handle-identity（createElement）sel 空→零 rect（同 gBCR/IO 限制，path A 持久身份映射）；④ borderBoxSize/contentBoxSize 近似为单元素数组。
 
 ### P1a Slice 2a — IntersectionObserver 真实化（本轮 R2650，~13,217 测试）
 

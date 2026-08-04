@@ -214,4 +214,33 @@ R2647 限制 4「browser 路径未接」的收尾。核验 browser 后端：**cr
 3. **rootMargin 暂按 0** 处理（defer 像素/% 展开）；root 为元素时取其 selector rect。
 4. **ResizeObserver（Slice 3）** 仍未实现（shim 无；旧 polyfill 有桩不触发）——下一切片，复用同一 gBCR rect 反馈 + size-diff 检测。
 
+## R2651：Slice 3 — ResizeObserver 真实化（JS 侧，复用 gBCR）
+
+承接 Slice 2a（IO）落地后的 follow-up「ResizeObserver（Slice 3），复用同一 gBCR rect 反馈 + size-diff 检测」。核验 shim：生产 worker 路径（`js_dom_shim.js`）**完全无 ResizeObserver**——`new ResizeObserver(...)` 抛 ReferenceError 中断整个脚本（与 IO 同）；旧 polyfill（`dom_bridge.rs`，仅 WebView 路径）有 observe/unobserve/disconnect/takeRecords + Entry 桩但**永不触发回调**。
+
+**关键决策**：RO **纯 JS 侧实现**（镜像 IO 的 JS 侧拦截 + microtask 派发模式），**复用已落地的 `__zw_getBoundingClientRect` host 回调**（gBCR path C）+ size-diff 检测——**无需新 host Rust 基建**（同 IO 决策：host-side tick / AsyncResolver 方案 deferred，JS 侧更简且零 host 风险）。直接复用 IO 已落地的 `_io_rectFromSel`（gBCR-via-selector）/ `_io_domRect`（DOMRect 构造）/ `_io_id`（observe 身份）rect 辅助，无重复实现。
+
+**已 land（纯 shim `js_dom_shim.js`，commit 本轮）**——IntersectionObserver 之后插入 RO block：
+
+| 组件 | 行为 |
+|------|------|
+| `ResizeObserver(callback)` | 存 callback；`_targets`（id→{proxy}）/ `_lastSize`（id→{w,h}，undefined=未派发过=initial）/ `_scheduled` 状态。 |
+| `_schedule()` | `_defer`（microtask）派发：遍历 `_targets`，对每个 target 经 `_io_rectFromSel(sel)` 取当前 size（复用 gBCR）；`_lastSize[id]==null`（首次=initial）**或**宽高变化 → 构造 ResizeObserverEntry（target/contentRect/borderBoxSize/contentBoxSize/devicePixelContentBoxSize）投递 `obs._callback(entries, obs)`，更新 `_lastSize[id]`。 |
+| `observe/unobserve/disconnect/takeRecords` | 镜像 IO；observe 排队 initial notification（重复 observe 已观察 target 不重置 last，size-diff 自然处理 layout 变化），disconnect 清 `_targets` 使排队中的派发成空。 |
+| `ResizeObserverEntry` | 兼容构造（部分脚本 `new ResizeObserverEntry(init)`）。 |
+
+**spec 对齐**：observe 即排队一次 initial notification（spec §4 保证行为）——contentRect 匹配 snapshot 尺寸；后续仅在尺寸变化时派发（同 spec）。entry 形态兼容主流库（contentRect + borderBoxSize/contentBoxSize 数组）。
+
+**验证**：`make test` 全绿（exit 0，零回归）+ workspace clippy `-D warnings` 零警告 + fmt clean + `make product-smoke` 全 struct PASS（welcome/morning/wintertc desktop + 窄屏 375/320 全 PASS，desktop diff≤20%）。3 driving test @ renderer worker（initial→`true:100x50:100` / 零回落→`0x0` / disconnect→不派发）；browser worker 经共享 shim 覆盖（无需重复测试，RO 逻辑全在共享 shim，复用 gBCR host 接线）。
+
+**为何零回归且净正向**：旧 shim 无 RO → `new ResizeObserver` 抛 ReferenceError **中断脚本后续全部 JS**；本切片消除之（RO 常驻，不抛）。gBCR 未注册（reftest/polyfill/WebView 路径）→ contentRect 为零 → 仍派发 initial notification（no-throw）。self-source reftest test/ref 同经 shim → 净中性；product smoke struct PASS 证真实页面 JS 执行链零回归。
+
+**已知限制（接受，follow-up）**：
+1. **仅 observe 时计算**（非持续 host tick）：resize/async-layout 变化触发的后续通知为 **Slice 2b**（须 host render-loop tick 或 `__zwResolveCallback` 重算钩子，与 IO 同）。首切片覆盖 spec 保证的 initial notification——组件挂载测量/虚拟列表 item 量测的主流模式。
+2. **contentRect 取 gBCR rect**（≈border-box）：真实浏览器报 content-box（padding/border 扣除），本切片近似为 border-box。padding/border 扣除为 follow-up（须 host 暴露 content-box rect）。
+3. **handle-identity（createElement）元素** sel 为空 → 零 rect（同 gBCR/IO 限制，path A 持久身份映射 follow-up）。
+4. **borderBoxSize/contentBoxSize 近似为单元素数组**：inlineSize=width、blockSize=height（无 writing-mode 方向区分，horizontal-tb 假设）。
+
+**P1a layout-geometry-feedback 切片进度小结**：Slice 1（gBCR 真实化 R2645-R2649，含 renderer/browser in-process 接线 + thread-local cache）+ Slice 2a（IO R2650）+ Slice 3（RO R2651）均已 land。剩余共同 follow-up = **Slice 2b**（持续 host tick：scroll/resize/async-layout 变化触发的后续 IO/RO 通知，须 host render-loop tick 或 `__zwResolveCallback` 重算钩子）+ **path A**（handle-identity createElement 元素持久身份映射）+ content-box rect（padding/border 扣除）。
+
 

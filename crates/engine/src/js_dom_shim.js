@@ -372,6 +372,93 @@
     this.intersectionRatio = init.intersectionRatio || 0;
   };
 
+  // ── P1a Slice 3：ResizeObserver（JS 侧，复用 gBCR layout-rect snapshot）──
+  // 镜像 IntersectionObserver：纯 JS，`observe()` 排队 initial notification，经 `_defer`
+  // （microtask）派发 `obs._callback(entries, observer)`。size 取 host `__zw_getBoundingClientRect(sel)`
+  // （gBCR path C，直接复用 IO 的 `_io_rectFromSel`/`_io_domRect`/`_io_id` rect 辅助）；
+  // size-diff 检测决定是否派发——首次（无 last）=initial 必派发，之后仅宽高变化才派发（spec §4 语义）。
+  // host 未注册（reftest/polyfill/WebView 路径）→ contentRect 为零，仍派发 initial notification
+  // （no-throw，零回归）。旧 shim 完全无 RO → `new ResizeObserver` 抛 ReferenceError 中断整个脚本
+  // （与 IO 同），本切片消除之。
+  // 限制（接受，follow-up）：① 仅 observe 时计算，非持续 host tick——resize/async-layout 变化触发的
+  //   后续通知为 Slice 2b（与 IO 同，须 host render-loop tick 或 __zwResolveCallback 重算钩子）；
+  // ② contentRect 取 gBCR rect（≈border-box，真实浏览器报 content-box，padding/border 扣除为 follow-up）；
+  // ③ borderBoxSize/contentBoxSize 近似为单元素数组（inlineSize=width、blockSize=height）。
+  globalThis.ResizeObserver = function(callback) {
+    this._callback = callback;
+    this._targets = {};       // id (h:handle / s:sel) -> { proxy }
+    this._lastSize = {};      // id -> {w,h}（undefined = 未派发过 → initial）
+    this._scheduled = false;
+  };
+  // 排队一次 microtask 派发：遍历所有 target，对尺寸变化（或 initial）的构造 entry 投递 callback。
+  globalThis.ResizeObserver.prototype._schedule = function() {
+    if (this._scheduled) return;
+    this._scheduled = true;
+    var self = this;
+    _defer(function() {
+      self._scheduled = false;
+      var entries = [];
+      for (var id in self._targets) {
+        var t = self._targets[id];
+        var r = _io_rectFromSel(t.proxy.__zwSelector);
+        var prev = self._lastSize[id];
+        // initial（prev==null）或宽高变化 → 派发并更新 last。
+        if (prev == null || prev.w !== r.w || prev.h !== r.h) {
+          self._lastSize[id] = { w: r.w, h: r.h };
+          entries.push({
+            target: t.proxy,
+            contentRect: _io_domRect(r.x, r.y, r.w, r.h),
+            // borderBoxSize / contentBoxSize：单元素数组，inlineSize=width、blockSize=height（近似）。
+            borderBoxSize: [{ inlineSize: r.w, blockSize: r.h }],
+            contentBoxSize: [{ inlineSize: r.w, blockSize: r.h }],
+            devicePixelContentBoxSize: [{ inlineSize: r.w, blockSize: r.h }],
+            toJSON: function() { return this; }
+          });
+        }
+      }
+      if (entries.length > 0) {
+        try { self._callback(entries, self); } catch (_e) {}
+      }
+    });
+  };
+  globalThis.ResizeObserver.prototype.observe = function(target) {
+    if (!target) return this;
+    var id = _io_id(target.__zwHandle, target.__zwSelector);
+    if (id != null) {
+      // 已观察的 target 重复 observe：spec 视为 no-op（不重置 last），但 _schedule 的 size-diff
+      // 检测会在 layout 变化时自然派发（last 保留上次派发尺寸）。
+      this._targets[id] = { proxy: target };
+      this._schedule();
+    }
+    return this;
+  };
+  globalThis.ResizeObserver.prototype.unobserve = function(target) {
+    if (!target) return this;
+    var id = _io_id(target.__zwHandle, target.__zwSelector);
+    if (id != null) {
+      delete this._targets[id];
+      delete this._lastSize[id];
+    }
+    return this;
+  };
+  globalThis.ResizeObserver.prototype.disconnect = function() {
+    this._targets = {};
+    this._lastSize = {};
+    return this;
+  };
+  globalThis.ResizeObserver.prototype.takeRecords = function() {
+    return [];
+  };
+  // ResizeObserverEntry：兼容构造（部分脚本 `new ResizeObserverEntry(init)`）。
+  globalThis.ResizeObserverEntry = function(init) {
+    init = init || {};
+    this.target = init.target || null;
+    this.contentRect = init.contentRect || null;
+    this.borderBoxSize = init.borderBoxSize || null;
+    this.contentBoxSize = init.contentBoxSize || null;
+    this.devicePixelContentBoxSize = init.devicePixelContentBoxSize || null;
+  };
+
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
   // 同步立即执行回调即可让 setup mutation 被记录并应用到二次渲染（镜像 setTimeout 的 microtask 语义，
