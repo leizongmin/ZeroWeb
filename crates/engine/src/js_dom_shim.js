@@ -1404,20 +1404,30 @@
         }
         if (prop === 'setAttribute') {
           return function(name, value) {
-            if (handle) __zw_set_attr_handle(handle, name, String(value));
-            else __zw_set_attr(sel, name, String(value));
-            _mo_notify(sel, handle, { type: 'attributes', attributeName: String(name) });
+            var n = String(name);
+            var v = String(value);
+            // 同步客户端缓存：class→_classCache、value→_inputValues，使 setAttribute 与
+            // classList/className、.value getter 协作一致（否则后续 classList.add 读 stale 缓存丢值）。
+            if (n === 'class') _classCache[key] = v;
+            else if (n === 'value') _inputValues[key] = v;
+            if (handle) __zw_set_attr_handle(handle, n, v);
+            else __zw_set_attr(sel, n, v);
+            _mo_notify(sel, handle, { type: 'attributes', attributeName: n });
           };
         }
         if (prop === 'removeAttribute') {
           return function(name) {
+            var n = String(name);
             // sel-based：真移除（__zw_remove_attr / RemoveAttr，R2657）——区别于 set-empty 残留
             // `attr=""`（boolean 属性 checked/disabled 设空值仍 present → hasAttribute 误 true）。
             // handle-only（无 remove-handle 变体）/ 无回调 → fallback set-empty。
-            if (handle) __zw_set_attr_handle(handle, String(name), '');
-            else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, String(name));
-            else __zw_set_attr(sel, String(name), '');
-            _mo_notify(sel, handle, { type: 'attributes', attributeName: String(name) });
+            // 同步客户端缓存（class/value），使后续 classList/.value 反映移除。
+            if (n === 'class') _classCache[key] = '';
+            else if (n === 'value') _inputValues[key] = '';
+            if (handle) __zw_set_attr_handle(handle, n, '');
+            else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
+            else __zw_set_attr(sel, n, '');
+            _mo_notify(sel, handle, { type: 'attributes', attributeName: n });
           };
         }
         // `el.hasAttribute(name)`——属性存在性（boolean 属性 checked/disabled/hidden、data-* 检查常用）。

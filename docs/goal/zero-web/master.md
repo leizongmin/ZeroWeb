@@ -920,6 +920,24 @@ R2696–R2697 latent-bug 探查模式续。发现两处：
 
 **已知限制（剩余）**：① NamedNodeMap 为**只读快照**非 live（real browser 的 attributes 是 live——脚本内 setAttribute 后 el.attributes 不即时反映，deferred-snapshot 既有模式，跨 execute 刷新）；② handle-only（detached createElement）元素 `el.attributes` 返空集（无 `__zw_attr_names` handle 变体，同 hasAttribute/getAttributeNames 既有限制）；③ Attr 对象为纯对象（非完整 Attr 接口——缺 `namespaceURI` 精确值等，返 null，主流库只读 name/value）。
 
+### P1a setAttribute/removeAttribute 同步 class/value 缓存（本轮 R2700，R2697 缓存模型的协调补全）
+
+R2697 引入 `_classCache`、form-input 引入 `_inputValues`，但 `setAttribute`/`removeAttribute` 方法**未同步**这两个缓存——探查确认 latent 协调 bug：`setAttribute('class','a'); classList.add('b')` 在 `class="base"` 上产 `class="base b"`（'a' 丢失）——classList 读 `_classCache`（init 自 stale snapshot "base"），无视 setAttribute 设的 'a'。同 `setAttribute('value','x'); el.value` 读 stale `_inputValues`。根因：class/value 有客户端缓存作「单一真相源」，但 setAttribute/removeAttribute 绕过缓存直接写属性 → 缓存与实际分歧。
+
+**修复**：`setAttribute`/`removeAttribute` 对 `class` 同步 `_classCache`、`value` 同步 `_inputValues`（set 设值、remove 清 ''），使所有 class/value 写入路径（className/classList/.value/setAttribute/removeAttribute）一致更新缓存。removeAttribute('class') 清缓存使后续 classList 从空重建（旧读 stale 残留）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_shim.js` | `setAttribute`/`removeAttribute` 加 class/value 缓存同步分支。 |
+| `engine/js_dom_bridge_tests.rs` | +1 e2e（3 独立 sandbox）：setAttribute('class','a')+classList.add('b')→'a b'；setAttribute('value','x')+.value→'x'；classList.add+removeAttribute('class')+classList.add→'b'。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1426→1427 net +1）+ `make reftest` + `make product-smoke`（class 影响 class 选择器 → 布局）。
+
+**为何零回归且净正向**：① 单独 setAttribute/removeAttribute 行为等价（缓存同步是额外，属性 mutation 值不变）；② 协调场景从「丢值/读 stale」纠正为「一致」（属纠正既有 bug）；③ 仅 class/value 两属性有缓存，其余属性 setAttribute/removeAttribute 不碰缓存（无影响）。
+
+**已知限制（剩余）**：① `getAttribute('class'/'value')` 仍读 stale snapshot（不读缓存——同 R2697 限制①，getAttribute 为 snapshot 既有模式）；② 缓存仅 class/value 两属性（style 无缓存，setAttribute('style') 直接写属性正确）；③ handle-only 元素的 setAttribute 同步缓存但 handle 路径 removeAttribute 走 set-empty（无 remove-handle 变体，detached 元素属性语义受限，同既有）。
+
+
 
 
 

@@ -2751,3 +2751,69 @@ fn test_element_attributes_nodelist() {
         "attributes 迭代顺序"
     );
 }
+
+#[test]
+fn test_set_remove_attr_syncs_cache() {
+    // R2700：setAttribute/removeAttribute 须同步 class/value 客户端缓存，否则后续 classList/.value
+    // 读 stale 缓存丢值（setAttribute('class','a');classList.add('b') 旧丢 'a'）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mk = |html: &str| -> (V8Sandbox, Arc<Mutex<Vec<DomMutation>>>, Arc<Mutex<String>>) {
+        let mut sb = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sb.execute(generate_js_dom_shim()).unwrap();
+        let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+        let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(html.to_string()));
+        let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+        register_dom_callbacks(&mut sb, &mutations, &dom_html, &page_url);
+        (sb, mutations, dom_html)
+    };
+
+    // ① setAttribute('class','a') + classList.add('b') → 'a b'（旧 'base b' 丢 a）。
+    let (mut sandbox, mutations, dom_html) =
+        mk("<html><body><div id=\"d\" class=\"base\"></div></body></html>");
+    sandbox
+        .execute(
+            "var d = document.querySelector('#d');\n\
+             d.setAttribute('class', 'a');\n\
+             d.classList.add('b');",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(out.contains("class=\"a b\""), "setAttribute+classList 协作 → 'a b'\n{out}");
+
+    // ② setAttribute('value','x') + .value 读 → 'x'（旧 stale 读 'old'）。
+    let (mut sandbox, _mutations, _dom_html) =
+        mk("<html><body><input id=\"i\" value=\"old\"></body></html>");
+    sandbox
+        .execute(
+            "document.querySelector('#i').setAttribute('value', 'x');\n\
+             globalThis.__v = document.querySelector('#i').value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__v").unwrap().value,
+        "x",
+        "setAttribute('value','x') 后 .value 读见 'x'"
+    );
+
+    // ③ classList.add('a'); removeAttribute('class'); classList.add('b') → 'b'
+    //    （removeAttribute 清缓存，否则 add('b') 读 stale 'base a' → 'base a b'）。
+    let (mut sandbox, mutations, dom_html) =
+        mk("<html><body><div id=\"d\" class=\"base\"></div></body></html>");
+    sandbox
+        .execute(
+            "var d = document.querySelector('#d');\n\
+             d.classList.add('a');\n\
+             d.removeAttribute('class');\n\
+             d.classList.add('b');",
+        )
+        .unwrap();
+    let ms3 = mutations.lock().unwrap().clone();
+    let out3 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms3).unwrap();
+    assert!(out3.contains("class=\"b\""), "removeAttribute('class') 清缓存后 add('b') → 'b'\n{out3}");
+}
