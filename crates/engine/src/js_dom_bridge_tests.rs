@@ -2207,3 +2207,90 @@ fn test_event_bubbling_stop_and_nonbubble() {
         "bubbles:false 事件不应冒泡到 #b"
     );
 }
+
+#[test]
+fn test_event_capture_phase() {
+    // R2693：capture 阶段。祖先 capture listener（addEventListener 第三参 true）在 root→target
+    // 捕获期触发，先于 target（AT_TARGET）与 bubble。旧实现祖先 capture listener 永不触发。
+    // 同时验证 legacy 布尔第三参 `addEventListener(t, fn, true)` 注册 capture（_optCapture 修复）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\"><div id=\"b\"><i id=\"c\">x</i></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // #a capture（legacy 布尔第三参 true）→ #c target（非 capture）→ #b bubble，记录派发顺序。
+    sandbox
+        .execute(
+            "document.querySelector('#a').addEventListener('click', function(e){ globalThis.__order = (globalThis.__order||'') + 'capA:' + e.currentTarget.id + ';'; }, true);",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "document.querySelector('#c').addEventListener('click', function(e){ globalThis.__order += 'tgt:' + e.currentTarget.id + ';'; });",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "document.querySelector('#b').addEventListener('click', function(e){ globalThis.__order += 'bubB:' + e.currentTarget.id + ';'; });",
+        )
+        .unwrap();
+    sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
+    // 捕获期 #a（root 方向）先于 target #c，先于冒泡期 #b。
+    assert_eq!(
+        sandbox.execute("globalThis.__order").unwrap().value,
+        "capA:a;tgt:c;bubB:b;",
+        "capture(#a) → target(#c) → bubble(#b) 顺序"
+    );
+}
+
+#[test]
+fn test_event_capture_stop_propagation() {
+    // R2693 续：capture 期 stopPropagation → target 与 bubble 阶段不触发。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\"><div id=\"b\"><i id=\"c\">x</i></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // #a capture stopPropagation；#c target；#b bubble。
+    sandbox
+        .execute("document.querySelector('#a').addEventListener('click', function(e){ globalThis.__cap = true; e.stopPropagation(); }, { capture: true });")
+        .unwrap();
+    sandbox
+        .execute("document.querySelector('#c').addEventListener('click', function(){ globalThis.__tgt = true; });")
+        .unwrap();
+    sandbox
+        .execute("document.querySelector('#b').addEventListener('click', function(){ globalThis.__bub = true; });")
+        .unwrap();
+    sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__cap === true").unwrap().value, "true", "#a capture 应触发");
+    assert_eq!(
+        sandbox.execute("globalThis.__tgt === true").unwrap().value,
+        "false",
+        "capture stopPropagation 后 target 不应触发"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__bub === true").unwrap().value,
+        "false",
+        "capture stopPropagation 后 bubble 不应触发"
+    );
+}

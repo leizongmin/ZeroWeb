@@ -778,7 +778,27 @@ R2690–R2691 self-review 续，从「近似返回」转向「行为缺失」。
 
 **为何零回归且净正向**：① target 节点派发行为等价（`_dispatchToListeners(key, event)` 默认参，`this`=event.target 不变；仅新增 `event.currentTarget` 被设，handler 读 currentTarget 从 undefined→正确值，严格更对）；② 冒泡仅在 `event.bubbles && __zw_parent 注册` 时启用——polyfill/WebView/handle-only 路径走旧「仅 target」行为不变；③ 旧无冒泡 = real browser 行为的子集，补齐冒泡使事件交付更接近规范，真实页面事件委托现在生效；④ stopPropagation/preventDefault 经 `event` 单对象贯穿整条派发链，语义正确。
 
-**已知限制（剩余）**：① **capture 阶段未实现**——祖先的 capture listener（`addEventListener(type, fn, true)`）不在 root→target 捕获期触发（当前 target 节点的 capture 仍触发，祖先 capture 不触发）；capture 较非 capture 罕见，事件委托主用非 capture，MVP 先覆盖；② `event.currentTarget` 在 document 级（html 节点）为 html 元素 proxy 而非 document 对象（document listener 经 html key 派发命中，currentTarget 取 html 元素——极少代码比较 currentTarget===document）；③ `focus`/`blur` 按 spec 不应冒泡，但 host `__zw_dispatch_event` 统一 `_makeEvent(bubbles:true)`——focus/blur 会冒泡（spec 偏差，既有 `_makeEvent` 调用遗留，非本轮引入；真实影响小，focusin/focusout 为冒泡版）；④ 文本/注释节点非元素，不在冒泡链（spec 事件不 dispatch 到文本节点，正确）。
+**已知限制（剩余）**：① ~~**capture 阶段未实现**~~ ✅ R2693 已补（完整三阶段 capture→target→bubble）；② `event.currentTarget` 在 document 级（html 节点）为 html 元素 proxy 而非 document 对象（document listener 经 html key 派发命中，currentTarget 取 html 元素——极少代码比较 currentTarget===document）；③ `focus`/`blur` 按 spec 不应冒泡，但 host `__zw_dispatch_event` 统一 `_makeEvent(bubbles:true)`——focus/blur 会冒泡（spec 偏差，既有 `_makeEvent` 调用遗留，非本轮引入；真实影响小，focusin/focusout 为冒泡版）；④ 文本/注释节点非元素，不在冒泡链（spec 事件不 dispatch 到文本节点，正确）。
+
+### P1a 事件 capture 阶段 + addEventListener 布尔第三参（本轮 R2693，self-review 续，~13,314 测试）
+
+承接 R2692（事件冒泡）。R2692 已知限制①：capture 阶段缺失——祖先的 capture listener（`addEventListener(type, fn, true)`）不在 root→target 捕获期触发。本切片补齐，事件派发完整对齐 DOM 规范三阶段（capture → target → bubble）。
+
+**顺带修复**：发现 `addEventListener` 第三参仅认对象形式 `{capture:true}`，**legacy 布尔形式 `addEventListener(t, fn, true)` 被忽略**（`!!(opts && opts.capture)` 对 `opts===true` 得 false）——capture listener 注册不上，capture 阶段对布尔形式失效。新增 `_optCapture(opts)` 统一处理两种形式（`opts===true || opts.capture`），两 addEventListener 站点（global html key + 元素 proxy）共用。
+
+**实现**：`_dispatchToListeners` 第三参由 `nonCaptureOnly` 布尔改为 `phase`（`'all'`/`'capture'`/`'bubble'`）。`_dispatchWithBubble` 重构为：①capture 期沿祖先链 **root→target**（chain 反序）派发 capture-only；②target 期派发 capture+非 capture（AT_TARGET，保旧行为）；③bubble 期（`event.bubbles`）沿 **target→root**（chain 正序）派发非 capture。祖先链一次性构建复用于两期。capture 期 `stopPropagation` 阻断 target/bubble（与 bubble 期 stopPropagation 对称）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_shim.js` | `_optCapture(opts)`（布尔/对象两形式）；`_dispatchToListeners` 改 `phase` 参数；`_dispatchWithBubble` 三阶段（capture root→target / target all / bubble target→root）；两 addEventListener 站点用 `_optCapture`。kill-switch `__zw_no_capture`（捕获期）+ `__zw_no_bubble`（冒泡期）。 |
+| `engine/js_dom_bridge_tests.rs` | +2 e2e：capture 派发顺序（capture `#a` legacy-true → target `#c` → bubble `#b`，串序断言 `capA:a;tgt:c;bubB:b;`）；capture 期 stopPropagation 阻断 target/bubble（`{capture:true}` 对象形式）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1415→1417 net +2）+ `make reftest` + `make product-smoke`（capture 触发不改布局，防 target capture / 双重派发回归）。
+
+**为何零回归且净正向**：① target 阶段行为等价（`'all'` phase = capture 然后非 capture，与旧 target 派发一致）；② capture/bubble 仅在 `__zw_parent` 注册（生产路径）且有祖先链时启用——polyfill/handle-only 走「仅 target」旧行为；③ capture listener 此前永不触发，补齐后仅在页面显式注册 capture（`true`/`{capture:true}`）时触发，未注册 capture 的页面行为不变；④ `_optCapture` 修复使布尔形式 capture 真正注册（此前静默丢失），属纠正既有 bug。
+
+**已知限制（剩余）**：① capture 期不区分 `event.eventPhase`（CAPTURING_PHASE/AT_TARGET/BUBBLING_PHASE 未设值——handler 极少读 eventPhase，MVP 不设）；② `currentTarget` 在 document 级仍为 html 元素 proxy（同 R2692 限制②）；③ focus/blur 仍 bubbles:true（同 R2692 限制③）；④ capture listener 注册顺序在同节点内按注册序（spec 行为），跨节点严格 root→target。
+
 
 
 

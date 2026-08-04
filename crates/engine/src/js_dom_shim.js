@@ -778,12 +778,19 @@
     _listenerStore[key][t] = _listenerStore[key][t].filter(function(l) { return l.fn !== fn; });
   }
 
+  // addEventListener 第三参 `opts` 的 capture 提取：支持 legacy 布尔形式（`addEventListener(t, fn, true)`
+  // = capture）与对象形式（`{ capture: true }`）。旧实现仅认对象形式，布尔 true 被忽略 → capture listener
+  // 注册不上（capture 阶段 R2693 因此对布尔形式失效）。
+  function _optCapture(opts) {
+    return !!(opts === true || (opts && opts.capture));
+  }
+
   function _globalAddEventListener(type, fn, opts) {
     var key = _elKey('html', null);
     var t = String(type);
     if (!_listenerStore[key]) _listenerStore[key] = {};
     if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
-    _listenerStore[key][t].push({ fn: fn, capture: !!(opts && opts.capture) });
+    _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts) });
   }
 
   function _globalRemoveEventListener(type, fn) {
@@ -844,16 +851,17 @@
     };
   }
 
-  // 派发某元素 key 上的事件 listener。`nonCaptureOnly`：仅派发非 capture listener（冒泡到祖先时
-  // 用——capture 阶段未实现，祖先的 capture listener 不在冒泡期触发）。`thisObj`：handler 内
-  // `this` 与 `event.currentTarget`（默认 event.target，即 target 节点）。
-  function _dispatchToListeners(key, event, nonCaptureOnly, thisObj) {
+  // 派发某元素 key 上的事件 listener。`phase`：`'all'`（target 阶段，capture+非 capture，默认）、
+  // `'capture'`（仅 capture listener，捕获期祖先用）、`'bubble'`（仅非 capture，冒泡期祖先用）。
+  // `thisObj`：handler 内 `this` 与 `event.currentTarget`（默认 event.target）。`stopImmediatePropagation`
+  // 中断当前节点内后续 listener。
+  function _dispatchToListeners(key, event, phase, thisObj) {
     var listeners = _listenerStore[key];
     if (!listeners || !listeners[event.type]) return !event._defaultPrevented;
     var list = listeners[event.type];
     var ctx = thisObj || event.target;
     event.currentTarget = ctx;
-    if (!nonCaptureOnly) {
+    if (phase !== 'bubble') {
       for (var i = 0; i < list.length; i++) {
         if (list[i].capture) {
           list[i].fn.call(ctx, event);
@@ -861,41 +869,59 @@
         }
       }
     }
-    for (var j = 0; j < list.length; j++) {
-      if (!list[j].capture) {
-        list[j].fn.call(ctx, event);
-        if (event._immediateStopped) return !event._defaultPrevented;
+    if (phase !== 'capture') {
+      for (var j = 0; j < list.length; j++) {
+        if (!list[j].capture) {
+          list[j].fn.call(ctx, event);
+          if (event._immediateStopped) return !event._defaultPrevented;
+        }
       }
     }
     return !event._defaultPrevented;
   }
 
-  // 派发事件并（若 `event.bubbles`）沿父链**冒泡**到祖先——事件委托基础（`document.addEventListener
-  // ('click', fn)` 捕获子元素点击）。旧实现仅派发 target 自身 listener，祖先 listener 永不触发。
-  // target 节点派发全部 listener（capture+非 capture，保旧行为）；冒泡到祖先时仅派发非 capture。
-  // `event.currentTarget` 随阶段更新为当前节点（target 阶段=target，祖先阶段=该祖先）。
-  // 仅 sel-based target 且 `__zw_parent` 注册时冒泡（polyfill/handle-only detached 无父链 → 仅 target，
-  // 保旧行为）。`globalThis.__zw_no_bubble=true` 可强制关闭（回归兜底）。capture 阶段未实现（已知限制）。
+  // 按规范三阶段派发事件：①capture（root→target 的祖先，capture-only）②target（capture+非 capture，
+  // AT_TARGET）③bubble（target→root 的祖先，非 capture，仅 event.bubbles）。事件委托基础：祖先 listener
+  // 现在经捕获/冒泡两期触发（R2692 仅冒泡、R2693 补捕获）。`event.currentTarget` 随阶段更新。
+  // 仅 sel-based target 且 `__zw_parent` 注册时走 capture/bubble（polyfill/handle-only detached 无父链 →
+  // 仅 target，保旧行为）。kill-switch：`globalThis.__zw_no_capture` 关捕获期、`__zw_no_bubble` 关冒泡期。
   function _dispatchWithBubble(targetKey, targetSel, targetHandle, event) {
     var target = _makeProxy(targetSel, targetHandle);
     event.target = target;
-    event.currentTarget = target;
-    _dispatchToListeners(targetKey, event);
-    if (event._propagationStopped) return !event._defaultPrevented;
-    if (
-      event.bubbles &&
-      !globalThis.__zw_no_bubble &&
-      targetSel &&
-      typeof __zw_parent === 'function'
-    ) {
+
+    // 祖先链 target→root（[直接父, ..., html]）；无 __zw_parent / handle-only → 空 → 仅 target 派发。
+    var chain = [];
+    if (targetSel && typeof __zw_parent === 'function') {
       var cur = targetSel;
       while (true) {
         var p;
         try { p = __zw_parent(cur); } catch (_e) { p = ''; }
-        if (!p) break; // html 根 / 未命中 → 无元素父，停止。
-        var anc = _wrapSelector(p);
-        _dispatchToListeners(_elKey(p, null), event, true, anc);
+        if (!p) break;
+        chain.push(p);
         cur = p;
+      }
+    }
+    var propagate = chain.length > 0;
+
+    // ① capture 阶段：root→target 方向（chain 反序），祖先派发 capture-only。
+    if (propagate && !globalThis.__zw_no_capture) {
+      for (var i = chain.length - 1; i >= 0; i--) {
+        var capAnc = _wrapSelector(chain[i]);
+        _dispatchToListeners(_elKey(chain[i], null), event, 'capture', capAnc);
+        if (event._propagationStopped) return !event._defaultPrevented;
+      }
+    }
+
+    // ② target 阶段：capture + 非 capture（AT_TARGET，保旧行为）。
+    event.currentTarget = target;
+    _dispatchToListeners(targetKey, event, 'all', target);
+    if (event._propagationStopped) return !event._defaultPrevented;
+
+    // ③ bubble 阶段：target→root 方向（chain 正序），祖先派发非 capture（仅 event.bubbles）。
+    if (propagate && event.bubbles && !globalThis.__zw_no_bubble) {
+      for (var k = 0; k < chain.length; k++) {
+        var bAnc = _wrapSelector(chain[k]);
+        _dispatchToListeners(_elKey(chain[k], null), event, 'bubble', bAnc);
         if (event._propagationStopped) break;
       }
     }
@@ -1230,7 +1256,7 @@
           return function(type, fn, opts) {
             if (!_listenerStore[key]) _listenerStore[key] = {};
             if (!_listenerStore[key][type]) _listenerStore[key][type] = [];
-            _listenerStore[key][type].push({ fn: fn, capture: !!(opts && opts.capture) });
+            _listenerStore[key][type].push({ fn: fn, capture: _optCapture(opts) });
           };
         }
         if (prop === 'removeEventListener') {
