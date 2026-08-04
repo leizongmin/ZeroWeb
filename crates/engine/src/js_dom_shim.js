@@ -902,6 +902,13 @@
           }
           return _inputValues[key];
         }
+        if (prop === 'checked') {
+          // P1a checkbox：checked 属性 get（boolean 属性存在性，经 host `__zw_has_attr`）。
+          if (typeof __zw_has_attr === 'function') {
+            try { return __zw_has_attr(sel, 'checked') === '1'; } catch (_e) {}
+          }
+          return false;
+        }
         if (prop === 'style') {
           return new Proxy({}, {
             set: function(_s, p, v) {

@@ -437,6 +437,26 @@ impl RendererRuntime {
         Ok(())
     }
 
+    /// P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 'change' 事件；改 DOM 则 rerender。
+    fn toggle_checkbox_at(&mut self, selector: &str) -> Result<(), String> {
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+            };
+            page_scripts::apply_toggle_checkbox(&mut ctx, selector)
+        };
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
     fn sync_cached_html_from_webview(&mut self) {
         if let Some(wv) = self.webview.as_ref() {
             let html = wv.html_content().to_string();
@@ -933,11 +953,14 @@ impl RendererRuntime {
             self.dispatch_dom_at(None, params.x, params.y, event_type, None);
         }
         // P1a form submit：click 命中 submit button → 提交 enclosing form（submit 事件）。
-        // dispatch_dom_at 已据命中点解析 event_target；非 submit-button 命中则 no-op。
+        // P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 change。
+        // dispatch_dom_at 已据命中点解析 event_target。
         if event_type == "click" {
             let target = self.event_target.clone();
             if zero_engine::is_submit_button(&self.cached_html, &target) {
                 let _ = self.submit_form_on_click_at(&target);
+            } else if zero_engine::is_checkbox(&self.cached_html, &target) {
+                let _ = self.toggle_checkbox_at(&target);
             }
         }
         Ok(())

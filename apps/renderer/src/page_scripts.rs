@@ -4,9 +4,9 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    DomEventDetail, PageScript, apply_mutations_to_html, enclosing_form_selector, extract_page_scripts,
-    is_submit_button, query_tag_from_html, resolve_document_url, script_dispatch_dom_event, script_text_delete,
-    script_text_input,
+    DomEventDetail, DomMutation, PageScript, apply_mutations_to_html, enclosing_form_selector, extract_page_scripts,
+    has_attribute, is_checkbox, is_submit_button, query_tag_from_html, resolve_document_url, script_dispatch_dom_event,
+    script_text_delete, script_text_input,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -209,6 +209,44 @@ fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str) -> boo
         .execute_script_direct(&script_dispatch_dom_event(&form_sel, "submit", None));
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
+}
+
+/// P1a checkbox：click `<input type=checkbox>` → 翻转 `checked` 属性（boolean：存在→`RemoveAttr`，
+/// 不存在→`SetAttr` 空值）+ 派发 'change' 事件。change listener 经 `el.checked` 读翻转后状态。
+/// 返回 true（checked 翻转总改 DOM，调用方 rerender）。
+pub fn apply_toggle_checkbox(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    let snap = ctx.html.clone();
+    if !is_checkbox(&snap, selector) {
+        return false;
+    }
+    let mutation = if has_attribute(&snap, selector, "checked") {
+        DomMutation::RemoveAttr {
+            selector: selector.into(),
+            name: "checked".into(),
+        }
+    } else {
+        DomMutation::SetAttr {
+            selector: selector.into(),
+            name: "checked".into(),
+            value: String::new(),
+        }
+    };
+    if let Ok(new_html) = apply_mutations_to_html(&snap, std::slice::from_ref(&mutation)) {
+        *ctx.html = new_html;
+    }
+    // 派发 'change'（dom_html 已含翻转后 checked，listener 经 el.checked / hasAttribute 读到新状态）。
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    let _ = ctx
+        .js_worker
+        .execute_script_direct(&script_dispatch_dom_event(selector, "change", None));
+    let html_snap = ctx.html.clone();
+    let _ = apply_recorded_mutations(ctx, &html_snap);
+    true
 }
 
 fn execute_chunk<F: Fn(&str) -> Result<String, String>>(

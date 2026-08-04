@@ -23,6 +23,14 @@ pub enum DomMutation {
         /// 属性值。
         value: String,
     },
+    /// `element.removeAttribute(...)`——真正移除属性（区别于 `SetAttr` 空值；
+    /// 布尔属性如 `checked`/`disabled` 需移除才能 unset，P1a checkbox toggle）。
+    RemoveAttr {
+        /// CSS 选择器句柄。
+        selector: String,
+        /// 属性名。
+        name: String,
+    },
     /// `element.textContent = ...`
     SetText {
         /// CSS 选择器句柄。
@@ -182,6 +190,11 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 let node =
                     find_by_selector(doc, selector).ok_or_else(|| format!("set_attr: no match for {selector}"))?;
                 doc.set_attribute(node, name, value);
+            }
+            DomMutation::RemoveAttr { selector, name } => {
+                let node =
+                    find_by_selector(doc, selector).ok_or_else(|| format!("remove_attr: no match for {selector}"))?;
+                doc.remove_attribute(node, name);
             }
             DomMutation::SetText { selector, text } => {
                 let node =
@@ -495,6 +508,21 @@ pub fn is_submit_button(html: &str, elem_sel: &str) -> bool {
     false
 }
 
+/// P1a form control：判定元素是否有某属性（boolean 属性如 `checked`/`disabled` 靠存在性，
+/// `getAttribute` 返空串无法区分存在与空值，故供 `__zw_has_attr` / checkbox toggle）。
+pub fn has_attribute(html: &str, selector: &str, name: &str) -> bool {
+    let doc = parse_html(html);
+    find_by_selector(&doc, selector)
+        .map(|n| doc.get_attribute(n, name).is_some())
+        .unwrap_or(false)
+}
+
+/// P1a checkbox：判定元素是否为 `<input type=checkbox>`。
+pub fn is_checkbox(html: &str, selector: &str) -> bool {
+    query_tag_from_html(html, selector).eq_ignore_ascii_case("input")
+        && query_attr_from_html(html, selector, "type").eq_ignore_ascii_case("checkbox")
+}
+
 /// 从当前 HTML 快照查询 innerHTML。
 pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
@@ -698,6 +726,24 @@ pub fn register_dom_callbacks(
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             query_tag_from_html(&snap, &sel)
+        }),
+    );
+
+    // P1a checkbox：属性存在性查询（boolean 属性 checked/disabled 靠存在性；getAttribute 返空串
+    // 无法区分存在与空值，故 `el.checked` getter / toggle 判定用本回调）。返 "1"/"0"。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_has_attr",
+        Box::new(move |args| {
+            if args.len() < 2 {
+                return "0".to_string();
+            }
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            if has_attribute(&snap, &args[0], &args[1]) {
+                "1".into()
+            } else {
+                "0".into()
+            }
         }),
     );
 
@@ -1253,5 +1299,41 @@ mod tests {
             "<html><body><form><div id='d'>x</div></form></body></html>",
             "#d",
         ));
+    }
+
+    #[test]
+    fn test_remove_attr_and_has_attribute() {
+        // P1a checkbox：RemoveAttr 真正移除属性；has_attribute 判存在性。
+        let html = "<html><body><input id='c' type='checkbox' checked></body></html>";
+        assert!(has_attribute(html, "#c", "checked"));
+        let out = apply_mutations_to_html(
+            html,
+            &[DomMutation::RemoveAttr {
+                selector: "#c".into(),
+                name: "checked".into(),
+            }],
+        )
+        .unwrap();
+        assert!(!out.contains("checked"));
+        assert!(!has_attribute(&out, "#c", "checked"));
+        // 无该属性 → has_attribute false。
+        assert!(!has_attribute(
+            "<html><body><input id='n' type='checkbox'></body></html>",
+            "#n",
+            "checked",
+        ));
+    }
+
+    #[test]
+    fn test_is_checkbox() {
+        assert!(is_checkbox(
+            "<html><body><input id='c' type='checkbox'></body></html>",
+            "#c",
+        ));
+        assert!(!is_checkbox(
+            "<html><body><input id='t' type='text'></body></html>",
+            "#t",
+        ));
+        assert!(!is_checkbox("<html><body><div id='d'></div></body></html>", "#d",));
     }
 }

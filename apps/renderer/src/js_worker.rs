@@ -1206,6 +1206,46 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_checkbox_checked_reflection_and_change_dispatch() {
+        // P1a checkbox：`el.checked` getter 经 `__zw_has_attr` 反映 boolean 属性存在性；
+        // change 事件经 shim 派发命中 listener（toggle 由 host `apply_toggle_checkbox` 覆盖，
+        // engine 单测覆盖 RemoveAttr/has_attribute/is_checkbox）。
+        let mut worker = RendererJsWorker::spawn(30);
+        worker.set_dom_snapshot(
+            "<html><body><input id='on' type='checkbox' checked><input id='off' type='checkbox'></body></html>",
+            "about:blank",
+        );
+        // el.checked 反映存在性。
+        assert_eq!(
+            worker
+                .execute_script_direct("String(document.querySelector('#on').checked)")
+                .unwrap(),
+            "true"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(document.querySelector('#off').checked)")
+                .unwrap(),
+            "false"
+        );
+        // change 派发命中 listener（e.target.checked 读当前状态）。
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 document.querySelector('#off').addEventListener('change', function(e){\
+                   globalThis.__seen = 'change:' + String(e.target.checked);\
+                 });\
+                 __zw_dispatch_event('#off', 'change', null);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "change:false"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_mutation_observer_property_set() {
         // P1b S2 incr3（镜像 browser）：property set（el.className='x'）触发 attributes 记录。
         let mut worker = RendererJsWorker::spawn(17);
