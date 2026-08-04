@@ -9,7 +9,7 @@
 use crate::node::ElementData;
 
 /// 简单选择器（仅支持单层选择器，不支持组合器）。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimpleSelector {
     /// 标签名匹配（大小写不敏感）。
     pub tag: Option<String>,
@@ -47,6 +47,9 @@ pub enum PseudoClass {
     Root,
     /// `:empty`——无子节点（含文本；spec：无 element/text 子，注释允许，本实现简化为无任何子）。
     Empty,
+    /// `:not(simple)`——否定伪类，匹配**不**满足内嵌简单选择器的元素（CSS3 语义：内嵌仅简单选择器，
+    /// 无组合器）。内嵌可为含伪类的简单选择器（如 `:not(:first-child)`）。
+    Not(SimpleSelector),
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -89,7 +92,7 @@ pub struct ElementPosition {
 }
 
 /// 属性选择器。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeSelector {
     /// 属性名。
     pub name: String,
@@ -98,7 +101,7 @@ pub struct AttributeSelector {
 }
 
 /// 属性值匹配模式。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttributeMatcher {
     /// 仅存在：`[attr]`
     Exists,
@@ -182,6 +185,8 @@ impl SimpleSelector {
             PseudoClass::OnlyOfType => pos.type_count == 1,
             PseudoClass::Root => pos.is_root,
             PseudoClass::Empty => pos.is_empty,
+            // :not(inner)——否定（内嵌经 matches_full 递归评估，可含伪类）。
+            PseudoClass::Not(inner) => !inner.matches_full(elem, pos),
         })
     }
 }
@@ -289,6 +294,8 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         "only-of-type" => Some(PseudoClass::OnlyOfType),
         "root" => Some(PseudoClass::Root),
         "empty" => Some(PseudoClass::Empty),
+        // :not(simple)——CSS3 否定伪类，内嵌经 parse_simple_selector（可含伪类，如 :not(:first-child)）。
+        "not" => Some(PseudoClass::Not(parse_simple_selector(args?)?)),
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
     }
 }
@@ -510,6 +517,29 @@ mod tests {
 
         // 空伪类名 → None。
         assert!(parse_simple_selector("div:").is_none());
+    }
+
+    #[test]
+    fn test_parse_not_pseudo() {
+        // :not(.skip) → Not(SimpleSelector{classes:[skip]})。
+        let sel = parse_simple_selector("div:not(.skip)").unwrap();
+        assert_eq!(sel.tag.as_deref(), Some("div"));
+        assert_eq!(sel.pseudos.len(), 1);
+        match &sel.pseudos[0] {
+            PseudoClass::Not(inner) => {
+                assert!(inner.tag.is_none());
+                assert_eq!(inner.classes, vec!["skip"]);
+            }
+            other => panic!("expected Not, got {other:?}"),
+        }
+        // :not(:first-child)——内嵌含伪类。
+        let sel = parse_simple_selector("li:not(:first-child)").unwrap();
+        match &sel.pseudos[0] {
+            PseudoClass::Not(inner) => assert_eq!(inner.pseudos, vec![PseudoClass::FirstChild]),
+            other => panic!("expected Not, got {other:?}"),
+        }
+        // 空 :not() → None。
+        assert!(parse_simple_selector("div:not()").is_none());
     }
 
     #[test]

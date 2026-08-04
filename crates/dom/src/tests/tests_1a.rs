@@ -686,6 +686,24 @@ fn test_query_selector_structural_path_uniqueness() {
 }
 
 #[test]
+fn test_query_selector_not_pseudo() {
+    let doc = parse_html(
+        "<html><body><ul>\
+         <li class='skip'>1</li><li>2</li><li class='skip'>3</li><li>4</li>\
+         </ul></body></html>",
+    );
+    let root = doc.root();
+    // li:not(.skip) → 第 2、4 个 li（"2"、"4"）。
+    let matched = doc.query_selector_all(root, "li:not(.skip)");
+    assert_eq!(matched.len(), 2, ":not(.skip) 应匹配 2 个");
+    let texts: Vec<_> = matched.iter().filter_map(|id| doc.text_content(*id)).collect();
+    assert_eq!(texts, vec!["2".to_string(), "4".to_string()]);
+    // :not(:first-child) → 非首子的 li（"2"、"3"、"4"）。
+    let not_first = doc.query_selector_all(root, "li:not(:first-child)");
+    assert_eq!(not_first.len(), 3);
+}
+
+#[test]
 fn test_query_selector_not_found() {
     let doc = parse_html("<html><body></body></html>");
     let root = doc.root();
