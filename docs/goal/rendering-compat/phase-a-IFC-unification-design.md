@@ -7,15 +7,15 @@
 
 > **⚠️ v1.2 重大修订（R306 Phase 0 探针）**：原 §0/§6.1/§7.1 推荐的「baseline-resolved 单一权威行盒（baseline_y = 几何基线 frag.y+height）」方案经 env-gated A/B 实证**证伪**——font-051 用 `v_offset=frag.height` 渲染 **16.67% FAIL**，默认 `v_offset=is_ahem?0:font_size` **0.00% PASS**（详见 §6.3B）。geometric baseline ≠ fontdue render baseline。原 Phase 1（加 baseline_y=几何基线）作废；Phase 1 重定向为 **Gate 2 放宽（offset 校准不动）**。offset 语义非 Phase A 阻塞点；真硬阻塞 = 墙② multicol + 换行精度。下文 §0/§6.1/§7.1 的「baseline_y」措辞应据此修订理解。
 
-> **v1.3 勘误（R376 会话，post-R355~R373 实证，2026-06-20）**：本设计 v1.2 描述的 Gate 2（`lines.len()<=1 && is_pure_ahem`）已**过时**。R207 `PHASEA_STORE_EXT` + R355 多行放宽后，实际存储条件（`crates/layout-engine/src/inline_finalization.rs:300-339`）已覆盖：① 有直接文本子节点的 block 容器；② 纯 inline-level 叶文本子容器（无 block 子、inline 子无元素后代），仅显式排除混合 inline+block 内容（line 308）。§2.2/§6.3/§7.1 基于旧 Gate 2 的措辞应据此重读。
+> **v1.3 勘误（R376 会话，post-R355~R373 实证，2026-06-20）**：本设计 v1.2 描述的 Gate 2（`lines.len()<=1 && is_pure_ahem`）已**过时**。R207 `PHASEA_STORE_EXT` + R355 多行放宽后，实际存储条件（`crates/layout-engine/src/inline_finalization.rs:731-771` has_text_children / `PHASEA_STORE_EXT` gate）已覆盖：① 有直接文本子节点的 block 容器；② 纯 inline-level 叶文本子容器（无 block 子、inline 子无元素后代），仅显式排除混合 inline+block 内容（`:741`）。§2.2/§6.3/§7.1 基于旧 Gate 2 的措辞应据此重读。
 >
-> **墙 ③（混合内容存储）非当前 lever**：`inline_finalization.rs:308` 显式排除混合 inline+block 内容容器，但**当前 47 个 self-source 失败案无一依赖该排除被移除**——border-bottom-width-006 是匿名块盒*生成*缺失（R361，R109 谱系，非存储），余皆 multicol/baseline/writing-modes/taffy/large-font 簇。移除该排除只会重演 R206 回归（ifc-001/002/003），无 upside。**勿再以「放宽混合内容存储 / Wall ③」为单会话杠杆**（纠正本会话前一轮 CONTINUE 误指）。
+> **墙 ③（混合内容存储）非当前 lever**：`inline_finalization.rs:741` 显式排除混合 inline+block 内容容器，但**当前 47 个 self-source 失败案无一依赖该排除被移除**——border-bottom-width-006 是匿名块盒*生成*缺失（R361，R109 谱系，非存储），余皆 multicol/baseline/writing-modes/taffy/large-font 簇。移除该排除只会重演 R206 回归（ifc-001/002/003），无 upside。**勿再以「放宽混合内容存储 / Wall ③」为单会话杠杆**（纠正本会话前一轮 CONTINUE 误指）。
 >
 > **实际失败分布（47 案）→ 真实剩余 lever**（按计数）：multicol 碎片化 13（Phase 2，paint 侧 R157/R198/R203/R317/R122 五轮死路，须 layout 侧 column-aware IFC）/ flex-baseline 3 + flex-abspos 2（baseline-export / abspos §10.3.7 shrink-to-fit）/ writing-modes 5（轴交换）/ taffy-blocked（max/min-content, table-cell-width-0 REF 的 fit-content-on-flex）/ large-font 2（empty-inline-002 25.78% + ifc-011 1.23%）。
 >
 > **empty-inline-002 诊断（R378 纠正 R376/R377 误判）**：~~R377 据 band 分析误判「span 绿色填充缺失 = paint bug」~~。R378 用 PAINTDBG 插桩（`paint_node` 入口打印 node/display/abs/w/h/border/padding/bg/r109_split/frag_ids）+ 逐像素采样**确证**：空 `<span>`（display:Inline）**被 paint_node 访问且几何正确**（abs=(133,215) w=250 h=350 bt/bb/bl/br=25 pt/pb=100 bg=green，`skip_split_inline_deco=false`），像素 (250,220)/(250,300)/(250,400) 实测全绿 (0,128,0)——**span 渲染正确，非 paint bug**。真 25.78% diff = test 与 ref **结构性形状失配**：test 用 div1 `margin-top:100` + div3 `position:relative;top:-150;z-index:-1` + div3>div `top:-125` 嵌套定位产出绿色形状（内容起 y=135），ref 用更简结构（绿色起 y=35）；relative offset 实测已应用（div3 box.y=250 含 -150）。属 large-font/嵌套定位结构性簇（R125），**非 clean slice，勿再以 paint bug 重查**。
 >
-> **📍 行号勘误（engine.rs 拆分，R2298）**：本文档正文多处 `engine.rs:NNNN`（如 :1152/:1668/:1681/:1720/:1910）为**设计时**位置（engine.rs 未拆分前）。该文件后续重构拆分到 `crates/layout-engine/`（engine crate 根现为 `lib.rs`；IFC/inline/line-box 代码现主要在 `layout-engine/src/inline/`、`layout-engine/src/engine.rs`、`layout-engine/src/inline_finalization.rs`、`layout-engine/src/engine/postprocess.rs`）。实施 Phase A 前须**按函数名重新定位**（行号已 stale，勿直接引用）。
+> **📍 行号勘误（engine.rs 拆分 R2298 + painter/text.rs 重构 R2624 核验）**：本文档 §0-§9 为 v1.0-v1.2 设计期分析，其 `engine.rs:NNNN`（如 :1152/:1668/:1681/:1720/:1910）与 `text.rs:NNNN`（如 :807/:1132/:1208/:1224/:1308/:1349）为**设计时**位置，**已 stale**——`engine.rs` 后续拆分到 `crates/layout-engine/`（engine crate 根现为 `lib.rs`；Gate/store/compute_final 代码现主要在 `layout-engine/src/engine.rs`、`layout-engine/src/engine/postprocess.rs`、`layout-engine/src/inline_finalization.rs`，例如 `store_font_sizes_from_ifc` 现 `inline_finalization.rs:438`）；`crates/engine/src/paint/painter/text.rs` 增至 2004 行，Path A/B 符号大幅漂移（`paint_text` 现 :423 / `use_stored` 现 :656 / `multicol_info` 现 :569 / stored-path `v_offset` 现 :1478 / `baseline_fs` 现 :1506-1507）；`types/mod.rs` 的 `InlineLayoutFragment` 现 :520 / `InlineLayoutLine` 现 :502；`tree.rs` 的 `compute_block_container_split` 消费区现 :1375-1391。**§12（v1.3）/§13（v1.5）为当前真相，已 R2624 对齐当前源码；§0-§9 仅保留作历史分析，实施 Phase A 前须按函数名（非行号）重新定位。**
 >
 > **v1.4 addendum（R1985 会话，R1982b/R1983 实证，2026-07-24）·R109 mixed-children 匿名块机制精确定位 = Phase A IFC unification 的具体 manifestation·非独立可切片 lever**：承接 visuren subdir 狩猎（anonymous-boxes-001a 6.14%，§9.2.1.1）。R1982b 两路径 A/B：div{height:200px} 含 inline content（text + inline-block span height:50%）+ block `<p>` → **INLINE-ONLY**（无 block 子）span height=100 ✓ 正确；**WITH-BLOCK-CHILD**（`<p>` 触发匿名块生成）span #t 在 box 树**找不到**。R1983 box 树 dump：div#anc(h=200) 子 = [div#anc(h=40, **复用 div node_id**)（=「匿名块」错误归因，应 None）, `<p>`]，span 完全不在树。R1985 code-archaeology 定位**精确机制**：`tree.rs:1112-1179` 消费 `compute_block_container_split` 的 `InlineBlockSegment::Inline` 时，对 `is_block_mixed`（block 容器混合内容）分支建**单个 LEAF taffy 节点**（`new_leaf_with_context`，line 1138）——`display:Block` 的叶子，由片段**首个文本节点**作 measure context（line 1125-1129 + 注释 line 1124「多节点片段仅按首节点近似尺寸，已知限制」），`item_node_ids` 仅登记入 `fragment_registry`（line 1160）**不 build_subtree**。即匿名块是「按首文本节点近似测量的叶子」，**非跑 IFC 的容器** → inline-block/inline-replaced 子无 LayoutBox、%height CB 无承载（故 span 丢失）。对照：INLINE-ONLY 时 div 自身是容器跑 IFC，inline-block 子正常 build → 有 LayoutBox（height=100）。★ **裁决**：R109 mixed-children 匿名块「inline 子丢失 identity」= **本设计 Phase A IFC unification 的精确 manifestation**（匿名块须从「叶子近似」升级为「跑 IFC 的真容器」才能保留 atomic inline-level 子 box identity + CB）——**非独立可切片 lever**（触 core tree-build + IFC ownership = 墙 ③/Path A/B 同根，deadlock 史 R125/R206/R213）。fix 须随 Phase A 整体 unification（消灭 Path B / 匿名块跑 IFC 存权威行盒），非单会话切片。★ **对狩猎的 implication**：勿再以 anonymous-boxes-001a / block-in-inline mixed-children 为独立 lever 狩猎——它们是 Phase A unification 的 success signal（unification 后 WITH-BLOCK-CHILD 应找到 span height=100，R1982b probe 即自动 success signal）。向前 = Phase A 整体实施（pre-authorized ruling #4 多 session）或 font-stack 授权。
 
@@ -397,23 +397,23 @@ R306 执行 Phase 0 探针（env `PHASEA_BL=1` 把 stored Path A 的 `v_offset` 
 
 ### 12.1 R848：4 处 IFC 消费点测绘
 IFC 结果被 4 处消费（painter/text.rs）：
-1. **stored path**（text.rs:1308 `if use_stored`，`stored_fragments`）——仅对 **pure-Ahem 块**存储（R84/R829 条件），用 `frag.baseline_y_abs`。
-2. **non-stored path**（text.rs:1349 `for fragment in fragments.iter()`）——真实非-Ahem 文本（welcome/morning/linebox 非-Ahem）走此路径，用 `render_fragment!` 宏，`$baseline_offset = baseline_fs(font_size)`。
+1. **stored path**（text.rs:1465 `if use_stored`，`stored_fragments`）——仅对 **pure-Ahem 块**存储（R84/R829 条件），用 `frag.baseline_y_abs`。
+2. **non-stored path**（text.rs:1502 `for fragment in fragments.iter()`）——真实非-Ahem 文本（welcome/morning/linebox 非-Ahem）走此路径，用 `render_fragment!` 宏，`$baseline_offset = baseline_fs(font_size)`。
 3. **Path B**（all_fragments 多行 y）——R630/R632 已修（多行 y 堆叠 + line-height override）。
-4. **multicol** IFC（text.rs:933 列分配）。
+4. **multicol** IFC（text.rs:~950 列分配）。
 
 ### 12.2 R876：三方补偿根因（welcome 16.11% 平衡机制）
 welcome/morning line-metric 残余由 **三项互相补偿** 凑成当前平衡：
-- **① strut baseline** 用 0.8（inline/mod.rs:1571/1573/1583 `* 0.8`）；CSS 真实 ascent ≈ 0.928em（fontdue line_metrics ascent/em=0.928，line_gap=0）。ZW baseline 比 chromium 高 0.028fs。
+- **① strut baseline** 用 0.8（inline/mod.rs:1233 `container_font_size * 0.8`，R2624 核验：原 :1571 经 R990/R1004 重构上移）；CSS 真实 ascent ≈ 0.928em（fontdue line_metrics ascent/em=0.928，line_gap=0）。ZW baseline 比 chromium 高 0.028fs。
 - **② paint v_offset** 用 `font_size`（text.rs:1359 `$baseline_offset = baseline_fs`）；应使 glyph 绝对位 = baseline − ink_ascent。fontdue tight-ink 'H' height=30（40px 时）vs font_size=40，差 10px → glyph 多上移 10px。
 - **③ tight-ink vs ascent** 7px 差（fontdue 测字身实高 30 vs CSS ascent 37）。
 
 **关键**：改任一项单独 → 平衡破裂 → welcome 退步（R834 改 ① strut 0.8→0.928 welcome +0.07pp；R836/R849/R875 同）。**安全修复须三方同改**：① strut 用真实 ascent + ② paint v_offset 用 ink-height + ③ 验 stored/Path B/raster glyph_top_left 不双计。
 
 ### 12.3 R877：真路径 = non-stored render_fragment!
-R877 实证：改 **stored path** 对真实非-Ahem 文本**零效果**（stored path 仅 pure-Ahem 块触发，其非-Ahem else 分支几乎从不执行——R876 实测 welcome/linebox/sans-serif 探针字节同）。**真路径 = non-stored path**（text.rs:1349 循环，`render_fragment!` 宏 $baseline_offset at ~1359）。
+R877 实证：改 **stored path** 对真实非-Ahem 文本**零效果**（stored path 仅 pure-Ahem 块触发，其非-Ahem else 分支几乎从不执行——R876 实测 welcome/linebox/sans-serif 探针字节同）。**真路径 = non-stored path**（text.rs:1502 循环，`render_fragment!` 宏 $baseline_offset at ~:1520）。
 
-`TextFragment`（inline_types.rs:174）**已有 `baseline` 字段**（line 208，「从片段顶部到基线的距离」）+ `height`（line 182）。R877 原判「需加 line_height/baseline_y 字段」——`baseline` 已存在，**须核实 non-stored path 能否消费 `fragment.baseline` 替代 `font_size` 作 $baseline_offset**（可能已是 sufficient plumbing，无须新字段）。
+`TextFragment`（inline_types.rs:182）**已有 `baseline` 字段**（「从片段顶部到基线的距离」）+ `height`。R877 原判「需加 line_height/baseline_y 字段」——`baseline` 已存在，**须核实 non-stored path 能否消费 `fragment.baseline` 替代 `font_size` 作 $baseline_offset**（可能已是 sufficient plumbing，无须新字段）。
 
 ### 12.4 4 次 net-negative 先例（勿单点重试）
 R834（strut 0.8→0.928）/ R836 / R849 / R875：单点改 strut 或 v_offset 均 welcome net-negative。**R882 确认单 session clean win 脉络已挖尽**，Phase A 三方协调是多 session 任务。
@@ -435,7 +435,7 @@ R639 实证 Phase A **非「全有或全无」**：per-fragment inline-bg（+13�
 ### 13.1 R885 font_metrics.rs bridge 状态订正：dormant → 已激活
 
 v1.3 §12.6 step-1 称 R885（`font_metrics.rs`）「默认 None，dormant，零回归」。**R2605 核验此描述 stale**：
-- `crates/engine/src/pipeline/mod.rs:270-280` `set_font_metric_map`（U1b-wiring）= 生产激活路径：从 `FontLoader::build_line_metric_map()` 构建 per-family 行度量 `FontMetricMap` provider，注入 LayoutEngine，经 compute_final_inline_layouts + measure_text_content 双路径触达 IFC。
+- `crates/engine/src/pipeline/mod.rs:277` `set_font_metric_map`（U1b-wiring）= 生产激活路径：从 `FontLoader::build_line_metric_map()` 构建 per-family 行度量 `FontMetricMap` provider，注入 LayoutEngine，经 compute_final_inline_layouts + measure_text_content 双路径触达 IFC。
 - bridge 经 `inline_finalization.rs` ~12 处调用点（614/666/902-903/1125/1151/1325-1326/1376-1377/1442/1516-1517/1559）+ `engine.rs`（173/195/267-268/351/459）触达。
 - `crates/layout-engine/src/inline/text_metrics.rs:409 resolve_normal_line_height` **真消费 provider**：`Some(p) && Some(m) = p.line_metrics(...) → return m.ascent - m.descent + m.line_gap`（fontdue/chromium 真实 hhea），仅 provider 缺省/无法解析时 fallback 常数比率（Ahem 1.0 / 非-Ahem 1.164）。
 - 即 **line-height:normal 已走 per-family 真实度量**（非 dormant）。
@@ -452,7 +452,7 @@ v1.3 §12.6 step-1 称 R885（`font_metrics.rs`）「默认 None，dormant，零
 
 ### 13.3 v1.3 后附加既 land 工作
 
-- **R1192 font-size-adjust apply**（`text_metrics.rs:362-378`，is_ahem-gated narrow slice，CSS Fonts 3 §3.6）：`adjusted_size = font_size × adjust / aspect`（aspect = Ahem 0.8 常数），adjusted font_size 经 line-height + advance + paint 全链路传播。非 Ahem defer（须 OS/2 sxHeight 派生 + font 接入 layout = 同 Phase A 字体度量架构 gap，Slice 3+）。
+- **R1192 font-size-adjust apply**（`text_metrics.rs:364-378`，is_ahem-gated narrow slice，CSS Fonts 3 §3.6）：`adjusted_size = font_size × adjust / aspect`（aspect = Ahem 0.8 常数），adjusted font_size 经 line-height + advance + paint 全链路传播。非 Ahem defer（须 OS/2 sxHeight 派生 + font 接入 layout = 同 Phase A 字体度量架构 gap，Slice 3+）。
 - **R990 is_ahem-gated 常数**（Ahem 0.8 / 非-Ahem 0.928，`inline/mod.rs:212/424`）：strut/normal fallback 比率。
 - `TextFragment.baseline`（`inline_types.rs:132`）+ `baseline_y`（:173/:216）字段已存在（R877 §12.3 既证），non-stored path 消费 `fragment.baseline` 替 font_size 作 `$baseline_offset` 的 plumbing 已就绪。
 
