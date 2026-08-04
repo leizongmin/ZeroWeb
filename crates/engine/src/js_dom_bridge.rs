@@ -1668,9 +1668,12 @@ pub fn computed_style_property(html: &str, selector: &str, prop: &str) -> String
 }
 
 /// 把 [`ComputedStyle`] 的单个属性序列化为 CSS 字符串（kebab-case 属性名）。首批：display/
-/// position/visibility/opacity。未覆盖属性返 ''。
+/// position/visibility/opacity + 颜色族（color/background-color/border-*-color/outline-color）。
+/// 未覆盖属性返 ''。
 fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String {
     let p = prop.trim().to_ascii_lowercase();
+    // 元素自身计算 color，作 currentColor 解析上下文（color 属性本身则 currentColor→自解析）。
+    let element_color = &style.color;
     match p.as_str() {
         "display" => display_value_str(&style.display),
         "position" => position_value_str(&style.position),
@@ -1684,7 +1687,46 @@ fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String {
                 format!("{o}")
             }
         }
+        "color" => color_to_css(&crate::resolve_color_current(
+            &style.color,
+            element_color,
+        )),
+        "background-color" => color_to_css(&crate::resolve_color_current(
+            &style.background_color,
+            element_color,
+        )),
+        "border-top-color" => color_to_css(&crate::resolve_color_current(
+            &style.border_top_color,
+            element_color,
+        )),
+        "border-right-color" => color_to_css(&crate::resolve_color_current(
+            &style.border_right_color,
+            element_color,
+        )),
+        "border-bottom-color" => color_to_css(&crate::resolve_color_current(
+            &style.border_bottom_color,
+            element_color,
+        )),
+        "border-left-color" => color_to_css(&crate::resolve_color_current(
+            &style.border_left_color,
+            element_color,
+        )),
+        "outline-color" => color_to_css(&crate::resolve_color_current(
+            &style.outline_color,
+            element_color,
+        )),
         _ => String::new(),
+    }
+}
+
+/// 把解析后的 [`Color`]（render-foundation，u8 通道）序列化为 CSS 颜色串。不透明 →
+/// `rgb(r, g, b)`；含透明度 → `rgba(r, g, b, a)`（a 为 0-1 小数，对齐 real browser）。
+fn color_to_css(c: &zero_render_foundation::color::Color) -> String {
+    if c.a == 255 {
+        format!("rgb({}, {}, {})", c.r, c.g, c.b)
+    } else {
+        let alpha = ((c.a as f64 / 255.0) * 1000.0).round() / 1000.0;
+        format!("rgba({}, {}, {}, {})", c.r, c.g, c.b, alpha)
     }
 }
 

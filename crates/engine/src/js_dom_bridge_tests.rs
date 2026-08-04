@@ -2811,6 +2811,65 @@ fn test_get_computed_style_display_position_visibility_opacity() {
 }
 
 #[test]
+fn test_get_computed_style_colors() {
+    // R2705：getComputedStyle 颜色族（color/background-color/border-*-color）。compute_styles 保留
+    // 颜色未解析（Named/CurrentColor），经 paint 层 resolve_color_current 解析为 rgb/rgba 串。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id=\"a\" style=\"color: red; background-color: rgb(0, 128, 0)\"></div>\
+         <div id=\"b\" style=\"border: 1px solid blue\"></div>\
+         <div id=\"c\" style=\"color: transparent\"></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // color: red（named → rgb）+ background-color: rgb(0,128,0)。
+    sandbox
+        .execute(
+            "globalThis.__col = getComputedStyle(document.querySelector('#a')).color;\n\
+             globalThis.__bg = getComputedStyle(document.querySelector('#a')).backgroundColor;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__col").unwrap().value, "rgb(255, 0, 0)", "color: red → rgb(255,0,0)");
+    assert_eq!(
+        sandbox.execute("globalThis.__bg").unwrap().value,
+        "rgb(0, 128, 0)",
+        "background-color: rgb(0,128,0)"
+    );
+    // border: 1px solid blue → border-color (4 边) = rgb(0,0,255)。
+    sandbox
+        .execute(
+            "globalThis.__bt = getComputedStyle(document.querySelector('#b')).getPropertyValue('border-top-color');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__bt").unwrap().value,
+        "rgb(0, 0, 255)",
+        "border shorthand 的 blue → border-top-color rgb(0,0,255)"
+    );
+    // color: transparent → rgba(0,0,0,0)。
+    sandbox
+        .execute("globalThis.__tc = getComputedStyle(document.querySelector('#c')).color;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__tc").unwrap().value,
+        "rgba(0, 0, 0, 0)",
+        "color: transparent → rgba(0,0,0,0)"
+    );
+}
+
+#[test]
 fn test_element_attributes_nodelist() {
     // R2699：el.attributes（NamedNodeMap 只读快照）——length/item/getNamedItem/数值索引/迭代。
     use std::sync::{Arc, Mutex};

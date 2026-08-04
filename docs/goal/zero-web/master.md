@@ -1008,7 +1008,23 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 **为何零回归且净正向**：① 旧 getComputedStyle 全属性返 ''（空桩）；新实现首批属性返真值、其余仍 ''（fallback 等价旧桩）——已覆盖属性从「误 ''」纠正为「真值」，未覆盖属性不变；② host 未注册（polyfill/WebView）路径走 '' fallback（同旧）；③ 计算样式只读，不改 mutation/render 路径。
 
-**已知限制（剩余）**：① **属性覆盖首批**（display/position/visibility/opacity）——color/background/length（width/height/margin 等）返 ''，follow-up 扩展（需 ColorValue rgb 序列化 + LengthValue 串化）；② 外链 `<link>` CSS 不在 dom_html snapshot（snapshot 限制，同 gBCR）；③ **无 per-snapshot 缓存**——每次查询/属性访问重跑 cascade（O(规则×节点)）；reftest/product-smoke 不循环调用故无 perf 回归，循环场景（`for...getComputedStyle`）的 per-snapshot style map 缓存为 follow-up；④ `getComputedStyle(el).cssText`/length 仍返 ''/0（未做全声明串化）。
+**已知限制（剩余）**：① ~~**属性覆盖首批**（display/position/visibility/opacity）~~ ✅ R2705 补颜色族；color/background/length 仍部分缺（length follow-up）；② 外链 `<link>` CSS 不在 dom_html snapshot（snapshot 限制，同 gBCR）；③ **无 per-snapshot 缓存**——每次查询/属性访问重跑 cascade（O(规则×节点)）；reftest/product-smoke 不循环调用故无 perf 回归，循环场景（`for...getComputedStyle`）的 per-snapshot style map 缓存为 follow-up；④ `getComputedStyle(el).cssText`/length 仍返 ''/0（未做全声明串化）。
+
+### P1a `getComputedStyle` 颜色族（本轮 R2705，R2704 续）
+
+承接 R2704（getComputedStyle 首批 display/position/visibility/opacity）。补颜色族：`color`/`background-color`/`border-{top,right,bottom,left}-color`/`outline-color`（框架主题/可见性判定常用）。compute_styles 保留颜色**未解析**（Named/CurrentColor/Mix/RelativeColor），paint 层 `resolve_color_current(color, element_color)` 才解析——本切片**复用该 resolver**（crate 根 `pub use paint::*` 重导出），以元素自身计算 `color` 作 currentColor 上下文，解析为 `Color {r,g,b,a}` 后串行化 `rgb(r, g, b)`（不透明）/ `rgba(r, g, b, a)`（含 alpha）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge.rs` | `serialize_computed_property` 加 7 颜色属性分支（color/background-color/border-*-color/outline-color），经 `crate::resolve_color_current(prop, &style.color)` + `color_to_css`；`color_to_css(Color)` rgb/rgba 串行化。 |
+| `engine/js_dom_bridge_tests.rs` | +1 e2e：color:red→rgb(255,0,0) / background-color:rgb(0,128,0) / border shorthand blue→border-top-color rgb(0,0,255) / transparent→rgba(0,0,0,0)。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1429→1430）+ `make reftest` + `make product-smoke`。
+
+**为何零回归且净正向**：① 颜色属性此前返 ''（未覆盖），现返真值，未覆盖属性不变；② 复用既有 paint resolver（Named/Hsla/Mix/RelativeColor 全支持），无新解析逻辑；③ 计算样式只读，不改 mutation/render。
+
+**已知限制（剩余）**：① length 属性（width/height/margin/padding/border-*-width 等）仍返 ''（computed vs used 值差异 + LengthValue 串化为 follow-up）；② alpha 串行化取整到 1e-3（real browser 用更高精度，颜色 alpha 比对极少精确匹配）；③ `getComputedStyle(el).cssText`/length 仍 ''/0。
+
 
 
 
