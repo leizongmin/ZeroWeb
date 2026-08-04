@@ -10,9 +10,12 @@
 //! 元素身份 → NodeId 的解析（compound key）封装在 wiring 侧注入的 handler 闭包内，
 //! 故 RectBridge 本身不依赖 DOM/layout 细节，保持通用。
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use zero_script_sandbox::Sandbox;
+
+use crate::hit_test::{HitTestLayoutSnapshot, node_id_to_u64};
 
 /// 布局 rect（x, y, w, h），序列化为 `"x,y,w,h"` 供 JS 解析。
 pub type Rect4 = (f32, f32, f32, f32);
@@ -80,6 +83,38 @@ impl Default for RectBridge {
     }
 }
 
+// ── 共享 layout-rect snapshot（render 写 / JS worker 读，跨线程）──
+
+/// 共享 layout-rect snapshot：`NodeId`(u64) → rect。
+///
+/// renderer 主循环 render 后从 `HitTestCache` 填充；js_worker 的 RectBridge handler 读它
+/// （经 identity → NodeId 解析后查 rect）。`Arc<Mutex<>>` 跨 render 线程 / js_worker 线程共享。
+pub type LayoutRectSnapshot = Arc<Mutex<HashMap<u64, Rect4>>>;
+
+/// 新建空 snapshot。
+pub fn new_layout_rect_snapshot() -> LayoutRectSnapshot {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
+/// 从 `HitTestCache` 的 layout 树遍历填 snapshot——每个有 `node_id` 的节点 → `(x,y,width,height)`。
+///
+/// 在 render 后调（renderer 主循环）。锁内递归遍历；无 `node_id` 的匿名盒跳过。
+pub fn fill_layout_rect_snapshot(root: &HitTestLayoutSnapshot, snapshot: &LayoutRectSnapshot) {
+    if let Ok(mut map) = snapshot.lock() {
+        map.clear();
+        fill_rect_recursive(root, &mut map);
+    }
+}
+
+fn fill_rect_recursive(node: &HitTestLayoutSnapshot, map: &mut HashMap<u64, Rect4>) {
+    if let Some(id) = node.node_id {
+        map.insert(node_id_to_u64(id), (node.x, node.y, node.width, node.height));
+    }
+    for child in &node.children {
+        fill_rect_recursive(child, map);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,5 +169,88 @@ mod tests {
         assert_eq!(bridge.lookup("__n42"), Some((0.0, 0.0, 42.0, 42.0)));
         assert_eq!(bridge.lookup("div.main"), Some((5.0, 5.0, 200.0, 100.0)));
         assert_eq!(bridge.lookup("span"), None);
+    }
+
+    /// fill_layout_rect_snapshot：从 HitTestLayoutSnapshot 树填 NodeId→rect；无 node_id 的盒跳过。
+    /// 键 = `node_id_to_u64(node_id)`（与 handler 查询同变换），非原始 ffi 整数。
+    #[test]
+    fn test_fill_layout_rect_snapshot() {
+        use crate::hit_test::{HitTestLayoutSnapshot, node_id_from_u64, node_id_to_u64};
+        let id1 = node_id_from_u64(1);
+        let id2 = node_id_from_u64(2);
+        let root = HitTestLayoutSnapshot {
+            node_id: Some(id1),
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+            children: vec![
+                HitTestLayoutSnapshot {
+                    node_id: Some(id2),
+                    x: 10.0,
+                    y: 20.0,
+                    width: 100.0,
+                    height: 50.0,
+                    children: vec![],
+                },
+                HitTestLayoutSnapshot {
+                    // 匿名盒：无 node_id，应跳过
+                    node_id: None,
+                    x: 5.0,
+                    y: 5.0,
+                    width: 5.0,
+                    height: 5.0,
+                    children: vec![],
+                },
+            ],
+        };
+        let snap = new_layout_rect_snapshot();
+        fill_layout_rect_snapshot(&root, &snap);
+        let map = snap.lock().unwrap();
+        assert_eq!(map.len(), 2, "应有 2 个有 node_id 的节点（匿名盒跳过）");
+        assert_eq!(map.get(&node_id_to_u64(id1)), Some(&(0.0, 0.0, 800.0, 600.0)));
+        assert_eq!(map.get(&node_id_to_u64(id2)), Some(&(10.0, 20.0, 100.0, 50.0)));
+        assert!(
+            map.get(&node_id_to_u64(node_id_from_u64(999))).is_none(),
+            "未填的 node_id 应缺席"
+        );
+    }
+
+    /// fill_layout_rect_snapshot 二次填充：clear 后重填（render 更新后换新 rect）。
+    #[test]
+    fn test_fill_layout_rect_snapshot_clears_before_refill() {
+        use crate::hit_test::{HitTestLayoutSnapshot, node_id_from_u64, node_id_to_u64};
+        let snap = new_layout_rect_snapshot();
+        let id1 = node_id_from_u64(1);
+        let id2 = node_id_from_u64(2);
+        // 首次填：node 1
+        fill_layout_rect_snapshot(
+            &HitTestLayoutSnapshot {
+                node_id: Some(id1),
+                x: 0.0,
+                y: 0.0,
+                width: 100.0,
+                height: 100.0,
+                children: vec![],
+            },
+            &snap,
+        );
+        assert_eq!(snap.lock().unwrap().len(), 1);
+        // 二次填：node 2（node 1 应被 clear 掉）
+        fill_layout_rect_snapshot(
+            &HitTestLayoutSnapshot {
+                node_id: Some(id2),
+                x: 5.0,
+                y: 5.0,
+                width: 50.0,
+                height: 50.0,
+                children: vec![],
+            },
+            &snap,
+        );
+        let map = snap.lock().unwrap();
+        assert_eq!(map.len(), 1, "二次填充前应 clear");
+        assert!(map.get(&node_id_to_u64(id1)).is_none(), "旧 node_id 应被 clear");
+        assert_eq!(map.get(&node_id_to_u64(id2)), Some(&(5.0, 5.0, 50.0, 50.0)));
     }
 }
