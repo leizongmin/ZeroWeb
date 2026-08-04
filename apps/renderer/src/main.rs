@@ -1126,7 +1126,13 @@ impl RendererRuntime {
             } else if params.key == "Backspace" {
                 let _ = self.apply_text_delete_at(&target);
             } else if params.key == "Enter" {
-                let _ = self.submit_form_on_enter_at(&target);
+                // textarea Enter → 插入换行（不提交，real browser 语义；input Enter → submit）。
+                // 否则 textarea 多行输入断裂（apply_text_input 的 '\n' append 经 _resolveInputEl 认 TEXTAREA）。
+                if zero_engine::query_tag_from_html(&self.cached_html, &target).eq_ignore_ascii_case("textarea") {
+                    let _ = self.apply_text_input_at(&target, "\n");
+                } else {
+                    let _ = self.submit_form_on_enter_at(&target);
+                }
             }
         }
         Ok(())

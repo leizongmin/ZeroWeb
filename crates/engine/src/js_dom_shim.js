@@ -1262,10 +1262,15 @@
           if (!handle && sel && typeof __zw_select_value === 'function' && _isTag(sel, 'SELECT')) {
             try { return __zw_select_value(sel); } catch (_e) { return ''; }
           }
-          // P1a form input：value 属性 get——per-element 缓存，lazy-init 自 value 属性。
+          // P1a form input：value get——per-element 缓存，lazy-init。
+          // textarea 的 value 是其**文本内容**（非 value 属性，HTML spec）；input 是 value 属性。
           if (_inputValues[key] == null) {
-            var va = handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value');
-            _inputValues[key] = (va == null) ? '' : va;
+            if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
+              _inputValues[key] = __zw_get_text(sel) || '';
+            } else {
+              var va = handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value');
+              _inputValues[key] = (va == null) ? '' : va;
+            }
           }
           return _inputValues[key];
         }
@@ -1918,16 +1923,22 @@
         } else if (p === 'value') {
           // P1a select：编程设 `<select>.value = value` → 记 SelectOption mutation（apply 时
           // mark 匹配 option selected + deselect 兄弟）。匹配浏览器：编程设值不自动派 change。
-          // 非 select（input/textarea）走 value 属性 mutation。
           if (!handle && sel && typeof __zw_select_option === 'function' && _isTag(sel, 'SELECT')) {
             __zw_select_option(sel, String(value));
             // SelectOption 改的是子 option 的 selected 属性，非 select 元素自身的属性 mutation；
             // 不发 select 的 attributes MO 通知（语义正确）。
           } else {
             _inputValues[key] = String(value);
-            if (handle) __zw_set_attr_handle(handle, 'value', String(value));
-            else __zw_set_attr(sel, 'value', String(value));
-            moAttr = 'value';
+            // textarea 的 value ↔ **文本内容**（非 value 属性，HTML spec）——写 content 而非属性。
+            // input 走 value 属性 mutation。
+            if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
+              __zw_set_text(sel, String(value));
+            } else if (handle) {
+              __zw_set_attr_handle(handle, 'value', String(value));
+            } else {
+              __zw_set_attr(sel, 'value', String(value));
+              moAttr = 'value';
+            }
           }
         } else if (p === 'hidden' || p === 'checked' || p === 'disabled' || p === 'selected') {
           // boolean reflected property：truthy → 设存在（空值，has_attr=true）；falsy → 真移除

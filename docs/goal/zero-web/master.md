@@ -955,6 +955,28 @@ R2697 引入 `_classCache`、form-input 引入 `_inputValues`，但 `setAttribut
 
 **已知限制（剩余）**：① 返值用 snapshot presence（连续 toggle 下返值可能 stale，但 mutation 正确——返值为读，可接受）；② handle-only（detached createElement）元素 best-effort client-side（无 toggle/has-attr handle 变体，detached toggle 罕见）；③ `force` 经回调字符串 `"1"`/`"0"` 传递（回调 args 为 String，布尔序列化约定）。
 
+### P1a textarea value↔内容 + Enter 换行（本轮 R2702，bridge 完成后续 form 缺口）
+
+bridge API 全面完成后（R2690–R2701），续查 P1a「简单表单可用」剩余缺口。textarea 两处：
+
+1. **textarea `.value` 读 value 属性而非文本内容（latent 高价值 bug）**：HTML spec 中 textarea 的 value 是其**文本内容**（`<textarea>ab</textarea>` → value 'ab'），非 value 属性。旧 value getter/setter 对 textarea 走 `__zw_get_attr('value')`/`__zw_set_attr('value',...)` → `<textarea>ab</textarea>.value` 返 ''（错，应 'ab'）。textarea 是第二常用文本输入，任何 `.value` 读全断。
+2. **textarea Enter 为 no-op**：`is_printable_key` 排除 Enter + `submit_form_on_enter` 仅 INPUT → textarea Enter 不插换行也不提交，多行输入断裂。
+
+**修复**：① value getter 对 textarea（`_isTag 'TEXTAREA'`）lazy-init 自 `__zw_get_text`（内容）；value setter 对 textarea 写 `__zw_set_text`（内容，SetText mutation），input 仍走 value 属性。select 路径不变。② `main.rs handle_keyboard_event` Enter 分支：tag==textarea → `apply_text_input_at(target, "\n")`（经 shim `__zw_text_input` append '\n'，复用 ① 的 value↔内容映射）；否则 submit。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_shim.js` | value getter：textarea init 自 `__zw_get_text`；value setter：textarea 写 `__zw_set_text`（内容）。 |
+| `apps/renderer/src/main.rs` | `handle_keyboard_event` Enter 分支：textarea → `apply_text_input_at("\n")`，否则 submit。 |
+| `apps/renderer/src/js_worker.rs` | +1 driving test：`__zw_text_input('#ta','\n')` → value 'ab\n' + input 事件，再加 'c' → 'ab\nc'（textarea value 读内容 + 多行 typing）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；renderer form-text 3 测试 + engine lib 1428）+ `make reftest` + `make product-smoke`。
+
+**为何零回归且净正向**：① input value 路径不变（仍 value 属性），仅 textarea 分流到内容；② textarea value 从「误返 ''」纠正为「返内容」，属纠正既有 bug；③ Enter 路由仅对 textarea 分流（input 仍 submit），input 行为不变；④ textarea 内容渲染本就走 text content（paint 不变），仅 `.value` 属性读值纠正。
+
+**已知限制（剩余）**：① handle-only（detached createElement('textarea')）value 仍走 value 属性（无 `_isTag` handle 刬定 + 内容 handle 查询的接线，detached textarea 罕见）；② textarea 无 caret/selection（Enter 在末尾 append '\n'，真实浏览器按 caret 插——同 R2654 input 限制）；③ `__zw_reset_form_state` 清 `_inputValues` 含 textarea cache（导航清空，跨页不 stale）。
+
+
 
 
 

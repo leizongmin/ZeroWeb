@@ -1418,6 +1418,39 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_form_textarea_newline_via_text_input() {
+        // P1a form input：textarea 的 Enter 经 host 路由为 `__zw_text_input('#ta', '\n')`
+        //（main.rs handle_keyboard_event：textarea Enter → 换行，非 submit）。验证 '\n' append 到
+        // textarea value + 派发 'input'。修复前 textarea Enter 为 no-op（多行输入断裂）。
+        let mut worker = RendererJsWorker::spawn(31);
+        worker.set_dom_snapshot("<html><body><textarea id='ta'>ab</textarea></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 var el = document.querySelector('#ta');\
+                 el.addEventListener('input', function(_e){ globalThis.__seen = 'input:' + el.value; });\
+                 __zw_text_input('#ta', '\\n');",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "input:ab\n"
+        );
+        // 再加 'c' → "ab\nc"（缓存跨 execute 存活，多行 typing 成立）。
+        worker
+            .execute_script_direct(
+                "globalThis.__seen = null;\
+                 __zw_text_input('#ta', 'c');",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__seen)").unwrap(),
+            "input:ab\nc"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_form_text_delete_removes_last_char_and_fires_input() {
         // P1a form input 编辑互补：`__zw_text_delete(sel)` 删 value 末字符 + 派发 'input'。
         // "abcd" → backspace → "abc"，listener 见新值。空值 backspace → 无变化不派发（同 real browser）。
