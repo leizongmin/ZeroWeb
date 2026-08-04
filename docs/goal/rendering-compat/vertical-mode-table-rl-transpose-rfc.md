@@ -7,11 +7,18 @@
 **复杂度**：复杂（跨模块 / 高回滚难度 / table 内部布局 major rewrite）
 **父 RFC**：[`vertical-mode-ifc-unification-rfc.md`](./vertical-mode-ifc-unification-rfc.md) v0.1 §4.4（α-4）—— 本 RFC 是 α-4 generic mirror（R1103-R1105 net-negative 证伪）的 table-specific 替代方向（α-4b）。
 
+> **🔧 R2636 引用核验（2026-08-04，R2202 模式）**：逐条源码核验本文 ~13 处引用，3 行号 + 1 路径 drift 全纠偏；**α-4b-1 LANDED 实施状态确认**（position_cells_vertical + WM 分派 + 3 单测全在码中）——文档 v0.2（R1108）状态准确，无状态漂移。
+> - **行号纠偏**：① `table.rs:931` position_cells（§0/§4.1/§7.1 共 3 处）→**:1072**（fn 现 @ 1072；WM 分派 @ table.rs:303-309：VerticalRl/Lr → `position_cells_vertical`，else `position_cells`）；② `converter/mod.rs:248` apply_vertical_writing_mode（§1.1）→**:344**（R2633/R2634 既验 248→344）；③ `types/mod.rs:159` writing_mode 字段（§4 依赖图前）→**:232**。
+> - **路径纠偏**：④ §4.1 `position_cells_vertical`（table.rs，~165 行）→**`table/table_vertical.rs:17`**（def；table/ 子模块拆分迁移；WM 分派调用点 @ table.rs:307）。
+> - **经核 valid 保留**：`table_types.rs` TableGrid rowspan（TBD-2：rowspan 字段 @ :28，struct @ :56，get_rowspan @ :136——rowspan 表示确存）。
+> - **WM gate 名澄清**：§0/§1.3 的 `is_vertical_table_wm` 是**概念门控名**（代码中无同名函数）；实际门控 = `table.rs:303-306` inline match `WritingModeValue::VerticalRl | VerticalLr`。
+> - **α-4b-1 实施状态确认（与文档一致）**：`position_cells_vertical`（table/table_vertical.rs:17）+ WM 分派（table.rs:305-307）+ 3 单测（writing_mode_tests.rs:353/445/508）全在码中——文档 v0.2 §4.1「★ R1108 LANDED」准确。R1043 vertical-mode native 整体仍 user-gated（css-writing-modes 80.1%；R1965-R1979 vertical 增量 lever 全 net-negative/dormant）。
+
 ---
 
 ## 0. 执行摘要
 
-- **一句话目标**：让 `position_cells`（`crates/layout-engine/src/table.rs:931`）对 `writing-mode: vertical-rl/lr` 的表按规范做**轴转置**（行沿 x 右到左/左到右、cell 沿 y 顶到底），使 row-progression-vrl/vlr 簇（~12 案，80-87% worst）从「渲染为 horizontal-tb」修正到匹配 chromium Oracle。
+- **一句话目标**：让 `position_cells`（`crates/layout-engine/src/table.rs:1072`）对 `writing-mode: vertical-rl/lr` 的表按规范做**轴转置**（行沿 x 右到左/左到右、cell 沿 y 顶到底），使 row-progression-vrl/vlr 簇（~12 案，80-87% worst）从「渲染为 horizontal-tb」修正到匹配 chromium Oracle。
 - **本期范围**：本 RFC **不立即落地全部转置**；它定义**多 session 切片计划**（α-4b-1 … α-4b-5），每切片独立 A/B 门禁（net-0/正即留，net-负即回退），后续 session 按序推进。本期仅交付 RFC + 轴语义定义 + 切片蓝图，零功能源码。
 - **明确排除**：generic block-flow mirror（R1103-R1105 已证 net-negative，永久关闭）；horizontal-tb 表任何行为变化（所有改动 WM-gate `is_vertical_table_wm`，horizontal-tb 字节一致零回归）；taffy 0.8+ 升级（R304 DEFERRED）；CJK 字体度量（font-wall 谱系）。
 - **核心约束**：① **horizontal-tb 零回归**（WM gate 隔离；horizontal-tb 表占 corpus 绝大多数，是 hard gate）。② vertical-rl 与 vertical-lr 方向区分（rl 右到左、lr 左到右）。③ 每切片三态门禁：`make product-smoke`（welcome <20%）+ scoped oracle net ≥0 + self-source 不降 + horizontal-tb 字节一致。④ colspan/rowspan/col-width/border-spacing/row-extras/vertical-align 须在 transposed 轴重新解释（不可遗漏任一，否则几何错）。
@@ -28,7 +35,7 @@ ZeroWeb 的 table 内部布局（`position_cells`）对所有 writing-mode 走 *
 
 `writing-mode: vertical-rl/lr` 的表，规范要求**完全相反的轴映射**（见 §2 轴语义表 + 测试 assert）。当前 ZW 把 vertical-rl 表渲染为 horizontal-tb（行垂直堆叠、cell 水平堆叠），与 chromium Oracle 差异 80-87%（corpus 最高发散簇之一）。
 
-**容器级轴交换已存在**：`converter/mod.rs:248 apply_vertical_writing_mode` 对垂直 WM 容器内的元素在 taffy::Style 层交换轴（inset/size/margin/padding/border/gap/flex-direction），table 相关 display 全映射 `taffy::Block`，故 table **容器盒**经 converter + extract_layout 轴交换后，外层 x/y/width/height 对 vertical-rl 正确。**但** `position_cells` 在 taffy 之后、基于 `TableGrid` 结构定位行/cell，完全独立于 taffy 轴交换——converter 的轴交换只作用于容器盒本身，不传入 TableGrid 的 row/cell 定位逻辑。**即容器几何对、table 内部行/cell 仍 horizontal-tb**。这是 α-4b 须填的缺口。
+**容器级轴交换已存在**：`converter/mod.rs:344 apply_vertical_writing_mode` 对垂直 WM 容器内的元素在 taffy::Style 层交换轴（inset/size/margin/padding/border/gap/flex-direction），table 相关 display 全映射 `taffy::Block`，故 table **容器盒**经 converter + extract_layout 轴交换后，外层 x/y/width/height 对 vertical-rl 正确。**但** `position_cells` 在 taffy 之后、基于 `TableGrid` 结构定位行/cell，完全独立于 taffy 轴交换——converter 的轴交换只作用于容器盒本身，不传入 TableGrid 的 row/cell 定位逻辑。**即容器几何对、table 内部行/cell 仍 horizontal-tb**。这是 α-4b 须填的缺口。
 
 **R1103-R1105 generic mirror 证伪**：postprocess final-pass 的 `mirror_vertical_rl_block_flow`（对所有 vertical-rl 块子镜像 x）net -9（破 9 real WPT 案）。根因：高 yield 案（row-progression-vrl 80-83%）全是 tables，table rows 由 `position_cells` 自定位，generic mirror 触不到 table 内部；而它 mirror 了非 table 的 vertical-rl 块子（小案），这些案原本 left-to-right 恰好匹配 chromium，mirror 反破。**故真 yield 须 table-specific 转置 in position_cells**（本 RFC），非 generic 子树 mirror。
 
@@ -127,14 +134,14 @@ cell 沿 y 迭代（两方向相同）：起始 `cell_y = perimeter_y`，每 cel
 
 依赖图：`α-4b-1（简单表转置）→ α-4b-2（colspan/rowspan）→ α-4b-3（border-spacing 轴）→ α-4b-4（row-extras/vertical-align/caption）→ α-4b-5（集成 + 全量 oracle）`。
 
-每切片必须在分支入口处读 `table_box.writing_mode`（LayoutBox 字段，types/mod.rs:159），HorizontalTb 走原路径（early return 到现有逻辑）。
+每切片必须在分支入口处读 `table_box.writing_mode`（LayoutBox 字段，types/mod.rs:232），HorizontalTb 走原路径（early return 到现有逻辑）。
 
 ### 4.1 Slice α-4b-1 — 简单 vertical-rl/lr 表轴转置（无 colspan、border-spacing:0）
 
-- **★ R1108 LANDED**（commit pending）：`position_cells_vertical`（table.rs，~165 行）+ `layout_table` WM 分派 + 3 单测。A/B css-writing-modes（784 案全量对账）：pass 60→60 net-0；**24 案改善**（4 目标案 row-progression-vrl-002/008 + vlr-003/009 **83%→27%（-54~-57pp）**+ 20 bonus 案 border-conflict-element / contiguous-floated-table / border-spacing vertical 变体连带改善）；1 案轻微回归 caption-side-vlr-005 +1.04pp（α-4b-4 deferred）；**horizontal-tb 表零回归**。门禁全绿（fmt/clippy --workspace/make test/product-smoke 16.57%）。详见 [`evidence/r1108-vertical-mode-alpha4b1-landed-2026-07-06.txt`](./evidence/r1108-vertical-mode-alpha4b1-landed-2026-07-06.txt)。TBD-1 resolved：cell.width 经 extract_layout 轴交换后确为转置后 x 宽（取行内 max 作列 x 宽，A/B 验证几何正确）。
+- **★ R1108 LANDED**（commit pending）：`position_cells_vertical`（`table/table_vertical.rs:17`，~165 行）+ `layout_table` WM 分派 + 3 单测。A/B css-writing-modes（784 案全量对账）：pass 60→60 net-0；**24 案改善**（4 目标案 row-progression-vrl-002/008 + vlr-003/009 **83%→27%（-54~-57pp）**+ 20 bonus 案 border-conflict-element / contiguous-floated-table / border-spacing vertical 变体连带改善）；1 案轻微回归 caption-side-vlr-005 +1.04pp（α-4b-4 deferred）；**horizontal-tb 表零回归**。门禁全绿（fmt/clippy --workspace/make test/product-smoke 16.57%）。详见 [`evidence/r1108-vertical-mode-alpha4b1-landed-2026-07-06.txt`](./evidence/r1108-vertical-mode-alpha4b1-landed-2026-07-06.txt)。TBD-1 resolved：cell.width 经 extract_layout 轴交换后确为转置后 x 宽（取行内 max 作列 x 宽，A/B 验证几何正确）。
 - **范围**：`position_cells` 加 vertical-rl/lr 分支。处理**简单表**：无 colspan/rowspan（所有 cell.col_start+1 == cell.col_end）、`border-spacing: 0`（spacing_x = spacing_y = 0，回避轴互换语义 TBD）、row_extras 暂按横向均分（vertical 表 height 属性 → x 方向行展开）。
 - **轴映射**：按 §2.1-2.3。行沿 x（rl 右到左 / lr 左到右），cell 沿 y 顶到底。`col_widths[i]` → cell 沿 y 高贡献；行宽 = max(cell 内容宽)；cell 高 = 对应 col_width。
-- **文件**：`crates/layout-engine/src/table.rs`（`position_cells:931` 加 WM 分支）。
+- **文件**：`crates/layout-engine/src/table.rs`（`position_cells:1072` 加 WM 分派 @ :303-309）。
 - **预期**：row-progression-vrl-002/004/006/008 + vlr-003/005/007/009 共 8 案，z_vs_chr% 从 80-87% 显著下降（目标 <1% 翻 pass，或至少大幅改善）；horizontal-tb 表零回归。**★ 实测**：4 simple 案（002/008/vlr-003/009）-55pp 巨幅改善；4 span 案（004/006/vlr-005/007 因 colspan/rowspan gate 回退）留 α-4b-2。
 - **门禁**：A/B `make reftest-oracle DIR=css-writing-modes`（看 row-progression 簇 + 全目录 net）+ `make product-smoke`（welcome <20%）+ horizontal-tb 表 byte-diff（采样 css-tables 目录确认 0 字节漂移）。
 - **风险**：① row_extras（table height 在 vertical 下应展开 inline 方向 = y，非 block 方向 = x）可能须特殊处理——α-4b-1 先按「不展开」(row_extras=0) 实测，若 table height 强制 inline 轴展开则 α-4b-4 处理。② cell 内容宽度（cell.width 沿 x）计算依赖 taffy 给 cell 盒的 width——converter 已轴交换 cell 盒 size，故 cell.width 应已是转置后的 x 宽，须 LAYOUT_DUMP 确认（TBD-1）。**★ TBD-1 resolved（R1108）**。
@@ -247,11 +254,11 @@ baseline = pre-slice HEAD；treatment = 切片改动。`ORACLE_DUMP_ALL=1 make r
 
 | 路径/模块 | 动作 | 切片 | 目的 | 风险 |
 |---|---|---|---|---|
-| `crates/layout-engine/src/table.rs:931 position_cells` | 修改 | α-4b-1 | 加 vertical-rl/lr 分支（或分派到并行函数） | horizontal-tb 须 WM gate 零回归 |
+| `crates/layout-engine/src/table.rs:1072 position_cells` | 修改 | α-4b-1 | 加 vertical-rl/lr 分支（或分派到并行函数） | horizontal-tb 须 WM gate 零回归 |
 | `crates/layout-engine/src/table.rs`（colspan 分支） | 修改 | α-4b-2 | colspan 在 transposed 轴 | 不破坏 horizontal-tb colspan |
 | `crates/layout-engine/src/table.rs`（perimeter/spacing） | 修改 | α-4b-3 | border-spacing 轴互换 | TBD-3 chromium 行为待实测 |
 | `crates/layout-engine/src/table.rs`（row_extras/valign/caption） | 修改 | α-4b-4 | 转置轴下的展开/对齐/caption | row_extras 轴 TBD-4 |
-| `crates/layout-engine/src/table_types.rs` | 核查/修改 | α-4b-2 | TableGrid rowspan 表示（TBD-2） | rowspan 跨 x 槽逻辑 |
+| `crates/layout-engine/src/table_types.rs` | 核查/修改 | α-4b-2 | TableGrid rowspan 表示（TBD-2；rowspan 字段 @ :28） | rowspan 跨 x 槽逻辑 |
 
 ### 7.2 推荐修改顺序（按依赖）
 
