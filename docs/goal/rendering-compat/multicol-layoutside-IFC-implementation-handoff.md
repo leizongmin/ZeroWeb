@@ -42,7 +42,7 @@ R581 handoff §6 假设 **H2**（col_ctx 真实-styles IFC 行盒结构 == paint
 
 ### 发现 1：balance 模式 column-width IFC 行盒**已在 layout 侧算好并被丢弃**
 
-`crates/layout-engine/src/inline_finalization.rs:942-956`（`remeasure_inline_only_containers` 内）：
+`crates/layout-engine/src/inline_finalization.rs:1687`（`remeasure_inline_only_containers` 内）：
 
 ```rust
 let content_height = if let Some((cw, cols)) =
@@ -67,7 +67,7 @@ let content_height = if let Some((cw, cols)) =
 
 ### 发现 2：multicol paint **总是用空 styles 重跑 IFC，绕过 R84 stored-font_size 修复**
 
-`crates/engine/src/paint/painter/text.rs:807`：
+`crates/engine/src/paint/painter/text.rs:849`：
 
 ```rust
 let use_stored = multicol_info.is_none() && box_node.inline_layout.is_some() && width_matches;
@@ -75,7 +75,7 @@ let use_stored = multicol_info.is_none() && box_node.inline_layout.is_some() && 
 
 `multicol_info.is_none()` 恒真时才 `use_stored`——**multicol 容器永远不走 stored 路径**，必落 `else` 分支 `ctx.layout(doc, node_id, &HashMap::new())`（text.rs:934，**空 styles**）。
 
-而 R84/R207/R355 正是为消除「paint 空 styles IFC 字体度量不一致」才引入 `inline_layout` 存储（`compute_final_inline_layouts`），却因 `inline_finalization.rs:284-286` 的 `if root.is_multicol { return }` gate **主动跳过** multicol 容器，使其**永远享受不到** stored-font_size 修正。
+而 R84/R207/R355 正是为消除「paint 空 styles IFC 字体度量不一致」才引入 `inline_layout` 存储（`compute_final_inline_layouts`），却因 `inline_finalization.rs:694` 的 `if root.is_multicol { return }` gate **主动跳过** multicol 容器，使其**永远享受不到** stored-font_size 修正。
 
 **含义（关键 A/B 变量）**：若 Phase 2a 把 col_ctx.lines（真实 font_size）存入并用 `use_stored` 机制消费，multicol 容器将**首次获得** R84 字体度量一致性——这可能修复当前被空-styles-重跑掩盖的小 diff，**也可能触发 multicol-fill-auto-001 类回归**（R198/R209 证 font_size 与列分配耦合易回归，余量 0.63%）。这是 Phase 2a 的**首要 A/B 验证变量**，不是「保证 byte-identical」的简单净 0。
 
@@ -87,7 +87,7 @@ let use_stored = multicol_info.is_none() && box_node.inline_layout.is_some() && 
 
 ### 2.1 范围
 
-仅 **pure-inline + `column-fill: balance` + 任意 height** 的单层 multicol 容器（即当前 paint `text.rs:713` 门控 `!has_in_flow_children && is_balance_mode && height_auto` 的子集，**含去掉 `height_auto` 后新增的明确-height balance 案**）。
+仅 **pure-inline + `column-fill: balance` + 任意 height** 的单层 multicol 容器（即当前 paint `text.rs:569` 门控 `!has_in_flow_children && is_balance_mode && height_auto` 的子集，**含去掉 `height_auto` 后新增的明确-height balance 案**）。
 
 **不做**：混合内容（Phase 2b）、嵌套/breaking（Phase 2c）、vertical-rl multicol、column-fill:auto（已有独立路径）。
 
@@ -102,24 +102,24 @@ let use_stored = multicol_info.is_none() && box_node.inline_layout.is_some() && 
 pub inline_multicol_lines: Option<Vec<InlineLayoutLine>>,   // 复用现有 InlineLayoutLine
 ```
 
-复用 `InlineLayoutLine`/`InlineLayoutFragment`（types/mod.rs:377-408，已是 paint 消费的格式），**不新建类型**。`Default::default()` 处（types/mod.rs:355 旁）补 `inline_multicol_lines: None`。
+复用 `InlineLayoutLine`/`InlineLayoutFragment`（types/mod.rs:502-520，已是 paint 消费的格式），**不新建类型**。`Default::default()` 处（types/mod.rs:355 旁）补 `inline_multicol_lines: None`。
 
-**Step 2 — 捕获 col_ctx.lines（`inline_finalization.rs:942-959`）**
+**Step 2 — 捕获 col_ctx.lines（`inline_finalization.rs:322-324`）**
 
 在 `col_ctx.layout(...)` 之后、丢弃之前，把 `col_ctx.lines` 转 `Vec<InlineLayoutLine>` 写入 `box_node.inline_multicol_lines`。**转换须复用** `compute_final_inline_layouts` 现有的 `LineBox→InlineLayoutLine` 映射逻辑（同文件已存在，grep `InlineLayoutLine {` 定位），保证字段填充口径一致。`y` 保留列宽 IFC 的行盒 y（paint 消费时按 §2.3 重算列内 y）。
 
 **守卫**：仅当容器 `is_multicol && !has_block_children`（纯 inline）填充；混合内容留 None（交 Phase 2b）。
 
-**Step 3 — paint 消费（`crates/engine/src/paint/painter/text.rs:807` 与 `966-990`）**
+**Step 3 — paint 消费（`crates/engine/src/paint/painter/text.rs:849` 与 `966-990`）**
 
 改 `use_stored` 判定：multicol 容器若 `inline_multicol_lines.is_some()` 则走 stored 消费分支，复用现有 `stored_fragments`（text.rs:821-848）的展开逻辑，**叠加列分配**：
-- 列分配算法**首版与 paint 现有 even-split 完全一致**（`target_h = total/cols`，`floor(line.y/target_h)` 分列，text.rs:966-990），保证首版 **byte-identical**（隔离发现 2 的 font 一致性变量）。
-- 列内 y 用 `line.y - col_start_y`（同 text.rs:1046），col_x_offset / clip_rect 复用 text.rs:993-1001。
+- 列分配算法**首版与 paint 现有 even-split 完全一致**（`target_h = total/cols`，`floor(line.y/target_h)` 分列，text.rs:853-868），保证首版 **byte-identical**（隔离发现 2 的 font 一致性变量）。
+- 列内 y 用 `line.y - col_start_y`（同 text.rs:956），col_x_offset / clip_rect 复用 text.rs:878-882。
 - 关键：stored 片段的 `font_size` 来自 col_ctx（真实值），**取代**空-styles 重跑的默认值——这是发现 2 的修复落点，也是 A/B 主变量。
 
 **Step 4 — 保留 paint 旧路径作 fallback**
 
-`inline_multicol_lines.is_none()`（混合/auto/vertical/未填充）时维持 text.rs:807 现有 `multicol_info` 分支不变。**禁止改 `text.rs:713` 门控**（R317 证放宽 height_auto 致 -5 回归）。
+`inline_multicol_lines.is_none()`（混合/auto/vertical/未填充）时维持 text.rs:849 现有 `multicol_info` 分支不变。**禁止改 `text.rs:569` 门控**（R317 证放宽 height_auto 致 -5 回归）。
 
 ### 2.3 门控与验证
 
@@ -141,7 +141,7 @@ pub inline_multicol_lines: Option<Vec<InlineLayoutLine>>,   // 复用现有 Inli
 
 目标案（multicol-block-no-clip-002 等）经 R383 LAYOUT_DUMP **已证 R109 entanglement**：其 `<span>` 被 R09 converter 转成 block-level LayoutBox，统一 column-flow 即便实现仍按原子 block 分配，**修不了**。真修复须先 **Phase A**（inline 内容作流动 IFC、解 R109 block 化转换）再 multicol 列碎片化——**两多 session lever 依赖**（Phase A → multicol），非独立可实施。
 
-Phase 2a 落地后，Phase 2b 的「缺口收窄」为：paint `text.rs:713` 的 `has_in_flow_children` 门控改为「有 stored `inline_multicol_lines` 即放行」，但 stored 填充须先解决 R109 block 化（Phase A）。详见 [`multicol-phase2-unified-column-flow-spec.md`](./multicol-phase2-unified-column-flow-spec.md) §6.5 A1。
+Phase 2a 落地后，Phase 2b 的「缺口收窄」为：paint `text.rs:569` 的 `has_in_flow_children` 门控改为「有 stored `inline_multicol_lines` 即放行」，但 stored 填充须先解决 R109 block 化（Phase A）。详见 [`multicol-phase2-unified-column-flow-spec.md`](./multicol-phase2-unified-column-flow-spec.md) §6.5 A1。
 
 ---
 
@@ -176,5 +176,5 @@ multicol-breaking-004/005/006/nobackground-*。碎片化算法（`assign_childre
 ## 7. 代码变更边界（遵守）
 
 - **允许改**：`types/mod.rs`（加字段）、`inline_finalization.rs`（捕获 col_ctx）、`text.rs`（stored-multicol 消费 + use_stored 判定）。
-- **禁止改**：`text.rs:713` 门控条件（R317）、`taffy-local/**`（R304 DEFER）、`multicol.rs` 列分配算法（R200 证正确）。
+- **禁止改**：`text.rs:569` 门控条件（R317）、`taffy-local/**`（R304 DEFER）、`multicol.rs` 列分配算法（R200 证正确）。
 - **禁止**：新建 `multicol_fragment.rs` / `ColumnFragmentationContext` 类型（R199/R200/R579 三轮证伪；复用现有 `InlineLayoutLine`）。
