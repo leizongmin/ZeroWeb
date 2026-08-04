@@ -1049,6 +1049,25 @@
             _mo_notify(sel, handle, { type: 'attributes', attributeName: String(name) });
           };
         }
+        // `el.matches(selector)` / `el.matchesSelector`——元素是否匹配选择器（含组合器，经 host
+        // `__zw_matches` 全匹配集判定）。handle（未挂载 DOM 的 createElement）无 sel → false。
+        if (prop === 'matches' || prop === 'matchesSelector' || prop === 'webkitMatchesSelector') {
+          return function(selector) {
+            if (!sel || typeof __zw_matches !== 'function') return false;
+            try { return __zw_matches(sel, String(selector)) === '1'; } catch (_e) { return false; }
+          };
+        }
+        // `el.closest(selector)`——自身或最近祖先首个匹配元素（proxy），无匹配 null。经 host
+        // `__zw_closest`（parent_node 链 + 全匹配集），返唯一选择器后包 proxy。
+        if (prop === 'closest') {
+          return function(selector) {
+            if (!sel || typeof __zw_closest !== 'function') return null;
+            try {
+              var hit = __zw_closest(sel, String(selector));
+              return hit ? _wrapSelector(hit) : null;
+            } catch (_e) { return null; }
+          };
+        }
         if (prop === 'addEventListener') {
           return function(type, fn, opts) {
             if (!_listenerStore[key]) _listenerStore[key] = {};
