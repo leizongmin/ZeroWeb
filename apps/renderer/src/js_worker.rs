@@ -1103,6 +1103,49 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_select_options_collection() {
+        // P1a select：`select.options` 集合（length/索引/value/selectedIndex）+
+        // `select.selectedOptions`（选中 option 数组）。
+        let mut worker = RendererJsWorker::spawn(26);
+        let html = "<html><body><select id='s'>\
+                    <option value='a'>A</option>\
+                    <option value='b' selected>B</option>\
+                    <option value='c'>C</option>\
+                    </select></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "var s = document.querySelector('#s');\
+                 globalThis.__len = s.options.length;\
+                 globalThis.__v0 = s.options[0].value;\
+                 globalThis.__v2 = s.options[2].value;\
+                 globalThis.__ov = s.options.value;\
+                 globalThis.__oi = s.options.selectedIndex;\
+                 globalThis.__item = s.options.item(1).value;\
+                 globalThis.__selN = s.selectedOptions.length;\
+                 globalThis.__selV = s.selectedOptions[0].value;",
+            )
+            .unwrap();
+        assert_eq!(worker.execute_script_direct("String(globalThis.__len)").unwrap(), "3");
+        assert_eq!(worker.execute_script_direct("String(globalThis.__v0)").unwrap(), "a");
+        assert_eq!(worker.execute_script_direct("String(globalThis.__v2)").unwrap(), "c");
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ov)").unwrap(),
+            "b",
+            "options.value 应 = select.value（选中 b）"
+        );
+        assert_eq!(worker.execute_script_direct("String(globalThis.__oi)").unwrap(), "1");
+        assert_eq!(worker.execute_script_direct("String(globalThis.__item)").unwrap(), "b");
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__selN)").unwrap(),
+            "1",
+            "selectedOptions 应含 1 个（b）"
+        );
+        assert_eq!(worker.execute_script_direct("String(globalThis.__selV)").unwrap(), "b");
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_intersection_observer_intersecting() {
         // P1a Slice 2a：observe 视口内元素 → spec initial notification 派发，isIntersecting=true、
         // ratio≈1（target 完全在 viewport 内）。复用 gBCR：snapshot 填 #t rect，IO 经

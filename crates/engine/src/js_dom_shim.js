@@ -897,6 +897,39 @@
     });
   }
 
+  // P1a select：`select.options` 集合（live）——`length`/索引访问/`item(i)` + `selectedIndex`/`value`
+  // （与 select 同）。每次访问经 `querySelectorAll(sel + ' option')`（live，反映 dom_html）。
+  // 各 option 经 R2664 唯一选择器，`.value`/`.selected` 读对。
+  function _selectOptions(sel) {
+    return new Proxy({}, {
+      get: function(_t, prop) {
+        var list = globalThis.document.querySelectorAll(sel + ' option');
+        if (prop === 'length') return list.length;
+        if (prop === 'item') return function(i) { return list[i] || null; };
+        if (prop === 'selectedIndex') {
+          try { return parseInt(__zw_select_index(sel), 10); } catch (_e) { return -1; }
+        }
+        if (prop === 'value') {
+          try { return __zw_select_value(sel); } catch (_e) { return ''; }
+        }
+        var idx = parseInt(prop, 10);
+        if (!isNaN(idx) && String(idx) === String(prop)) return list[idx];
+        return undefined;
+      }
+    });
+  }
+
+  // P1a select：`select.selectedOptions`——选中 option 数组（各 `.selected`=true）。
+  function _selectSelectedOptions(sel) {
+    var list = globalThis.document.querySelectorAll(sel + ' option');
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].selected) out.push(list[i]);
+    }
+    return out;
+  }
+
+
   function _makeProxy(sel, handle) {
     var key = _elKey(sel, handle);
     if (_proxyCache[key]) return _proxyCache[key];
@@ -937,6 +970,14 @@
             try { return __zw_has_attr(sel, 'selected') === '1'; } catch (_e) {}
           }
           return false;
+        }
+        if (prop === 'options' && !handle && sel && _isTag(sel, 'SELECT')) {
+          // P1a select：`select.options` live 集合（length/索引/item + selectedIndex/value）。
+          return _selectOptions(sel);
+        }
+        if (prop === 'selectedOptions' && !handle && sel && _isTag(sel, 'SELECT')) {
+          // P1a select：`select.selectedOptions` 选中 option 数组。
+          return _selectSelectedOptions(sel);
         }
         if (prop === 'style') {
           return new Proxy({}, {
