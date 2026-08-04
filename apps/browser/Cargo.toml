@@ -44,6 +44,8 @@ ico = "0.5.0"
 
 [dev-dependencies]
 serial_test = { workspace = true }
+# P1a gBCR driving test：解析 html 取 NodeId 填 rect snapshot（与渲染管线确定性一致）。
+zero-dom = { workspace = true }
 
 # Windows：注册 SetConsoleCtrlHandler，让 Ctrl+C 走 shutdown_child_processes
 # 而不是被默认 handler 直接 TerminateProcess（跳过 Drop，孤儿 renderer 锁住 exe）。

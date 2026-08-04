@@ -157,4 +157,22 @@ if (prop === 'getBoundingClientRect') {
 
 **为何 selector-identity 净正向且零回归**：renderer worker 路径新增真实 gBCR；browser/reftest/WebView 路径 `__zw_getBoundingClientRect` 未注册 → shim 回落零 rect（= 旧行为）；空 snapshot / 未命中同样回落。三项 driving + 全量 `make test` 守护。
 
+## R2648：browser in-process 路径 gBCR 接线——覆盖剩余 browser 后端
+
+R2647 限制 4「browser 路径未接」的收尾。核验 browser 后端：**cross-process `process_backend.rs` 不在 browser 进程跑 JS**（grep 无 js_worker/JsExecutor/run_page_scripts）——它委托 renderer 进程执行 JS，而 renderer js_worker 已在 R2647 接 RectBridge → **cross-process browser gBCR 随 R2647 已工作**。剩余缺口仅 **in-process `tab_worker` 回退路径**（`ZERO_BROWSER_MULTIPROCESS=0` 或 renderer binary 不可用时）。
+
+**已 land（browser in-process，commit 本轮）**——镜像 R2647 renderer 接线：
+
+| 模块 | 变更 |
+|------|------|
+| `apps/browser/src/tab_js_worker.rs` | `TabJsWorkerHandle` 加 `rect_snapshot` 字段 + `rect_snapshot()` accessor + `real_rect_enabled()` kill-switch；`js_worker_main` 构造 RectBridge + register + `set_handler(make_dom_html_rect_handler(...))`。+ 2 driving test（real rect / 空 snapshot 零回落），镜像 renderer。 |
+| `apps/browser/src/tab_worker.rs` | `push_snapshot` 闭包加 `js_worker: Option<&TabJsWorkerHandle>` 参数，render 后从 `snapshot.hit_test`（`from_webview` 已建，**复用避免二次 `build_hit_test_cache`**）填 `fill_layout_rect_snapshot`；9 个 call site 传 `_js_worker.as_ref()`。 |
+| `apps/browser/Cargo.toml` | `[dev-dependencies]` 加 `zero-dom`（driving test 解析 html 取 NodeId 填 snapshot）。 |
+
+**验证**：`make test` 全绿（browser tab_js_worker 2 新 gBCR 测试）；workspace clippy `-D warnings` 零警告；fmt clean。
+
+**覆盖现状**：renderer 进程（R2647）+ browser in-process tab_worker（R2648）gBCR 均真实化；cross-process browser 经 renderer 进程已覆盖；reftest/WebView 嵌入路径仍零 rect（未注册回调，= 旧行为，零回归——这些路径无 layout-rect 反馈需求，reftest 用 gBCR 仅作 reflow 触发器，零值正确）。
+
+**剩余 follow-up（未变）**：① handle-identity（createElement）需 path A 持久身份映射；② stale-but-non-zero；③ 每 query 一次 parse（perf）；④ IntersectionObserver/ResizeObserver（Slice 2/3，复用 gBCR 基建）。
+
 

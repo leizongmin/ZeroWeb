@@ -170,8 +170,17 @@ fn tab_worker_main(
     let mut page_script_runner: Option<tab_scripts::PageScriptRunner> = None;
     let mut javascript_enabled = true;
 
-    let push_snapshot = |wv: &WebView, msg_tx: &Sender<TabWorkerMessage>| {
-        let _ = msg_tx.send(TabWorkerMessage::Snapshot(TabSnapshot::from_webview(wv)));
+    let push_snapshot = |wv: &WebView, msg_tx: &Sender<TabWorkerMessage>, js_worker: Option<&TabJsWorkerHandle>| {
+        let snapshot = TabSnapshot::from_webview(wv);
+        // P1a gBCR：render 后用最新 layout 填 rect snapshot——js_worker 的 RectBridge handler
+        // 经 identity(selector)→NodeId 查此 snapshot 返真实 DOMRect（未填/未命中→零 rect，零回归）。
+        // 复用 `snapshot.hit_test`（`from_webview` 已建），避免二次 `build_hit_test_cache`。
+        if let Some(worker) = js_worker
+            && let Some(cache) = snapshot.hit_test.as_ref()
+        {
+            cache.fill_layout_rect_snapshot(&worker.rect_snapshot());
+        }
+        let _ = msg_tx.send(TabWorkerMessage::Snapshot(snapshot));
     };
 
     loop {
@@ -198,7 +207,7 @@ fn tab_worker_main(
                             }
                         });
                     }
-                    push_snapshot(&wv, &msg_tx);
+                    push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
                 }
                 TabWorkerCommand::SetColorScheme(scheme) => {
                     wv.set_prefers_color_scheme(scheme);
@@ -208,7 +217,7 @@ fn tab_worker_main(
                                 wv.render();
                             }
                         });
-                        push_snapshot(&wv, &msg_tx);
+                        push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
                     }
                 }
                 TabWorkerCommand::SetMediaType(media_type) => {
@@ -219,7 +228,7 @@ fn tab_worker_main(
                                 wv.render();
                             }
                         });
-                        push_snapshot(&wv, &msg_tx);
+                        push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
                     }
                 }
                 TabWorkerCommand::DispatchDomEvent {
@@ -245,7 +254,7 @@ fn tab_worker_main(
                         detail.as_ref(),
                     );
                     if result.html_changed {
-                        push_snapshot(&wv, &msg_tx);
+                        push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
                     }
                     let _ = msg_tx.send(TabWorkerMessage::DispatchResult {
                         dispatch_id,
@@ -274,19 +283,19 @@ fn tab_worker_main(
             if let Some(title) = pages::extract_html_title(&html) {
                 wv.set_title(&title);
             }
-            push_snapshot(&wv, &msg_tx);
+            push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
             let title = page_title_from_webview(&wv);
             let _ = msg_tx.send(TabWorkerMessage::Title(title));
         }
 
         if let Some(ref mut runner) = page_script_runner {
             runner.tick(&mut wv, _js_worker.as_ref());
-            push_snapshot(&wv, &msg_tx);
+            push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
             if !runner.is_active() {
                 runner.finish(&mut wv);
                 let title = page_title_from_webview(&wv);
                 let _ = msg_tx.send(TabWorkerMessage::Title(title));
-                push_snapshot(&wv, &msg_tx);
+                push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
                 page_script_runner = None;
             }
         }
@@ -335,7 +344,7 @@ fn tab_worker_main(
                 if load.stage() != prev_stage {
                     let _ = msg_tx.send(TabWorkerMessage::Stage(load.stage()));
                 }
-                push_snapshot(&wv, &msg_tx);
+                push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
             }
             if !load.is_active() {
                 if let Some(err) = load.take_error() {
@@ -352,7 +361,7 @@ fn tab_worker_main(
                     let _ = msg_tx.send(TabWorkerMessage::Title(title));
                 }
                 async_load = None;
-                push_snapshot(&wv, &msg_tx);
+                push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
             }
         }
 

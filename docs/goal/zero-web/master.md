@@ -112,6 +112,20 @@
 
 ## 最近完成的改进
 
+### P1a gBCR browser in-process 接线——覆盖剩余 browser 后端（本轮 R2648）
+
+承接 R2647（renderer worker gBCR）。核验 browser 后端：cross-process `process_backend.rs` 不在 browser 进程跑 JS（委托 renderer 进程）→ cross-process browser gBCR 随 R2647 已工作；剩余缺口仅 in-process `tab_worker` 回退路径（`ZERO_BROWSER_MULTIPROCESS=0` 或 renderer binary 不可用）。
+
+| 模块 | 变更 |
+|------|------|
+| `apps/browser/src/tab_js_worker.rs` | `TabJsWorkerHandle` 加 `rect_snapshot` 字段 + accessor + `real_rect_enabled()` kill-switch；`js_worker_main` 构造 RectBridge + register + set_handler（镜像 renderer）。+ 2 driving test。 |
+| `apps/browser/src/tab_worker.rs` | `push_snapshot` 加 `js_worker` 参数，render 后从 `snapshot.hit_test`（复用，避免二次 build）填 `fill_layout_rect_snapshot`；9 call site 传 `_js_worker.as_ref()`。 |
+| `apps/browser/Cargo.toml` | `[dev-dependencies]` 加 `zero-dom`（driving test 取 NodeId）。 |
+
+验证：`make test` 全绿；workspace clippy `-D warnings` 零警告；fmt clean。覆盖：renderer 进程（R2647）+ browser in-process tab_worker（R2648）+ cross-process browser（经 renderer）gBCR 均真实化；reftest/WebView 嵌入路径仍零 rect（未注册回调，零回归——无反馈需求）。
+
+剩余 follow-up：① handle-identity（createElement，path A 持久身份映射）；② stale-but-non-zero；③ 每 query 一次 parse（perf）；④ IntersectionObserver/ResizeObserver（Slice 2/3）。
+
 ### P1a gBCR 真实化——renderer 路径 getBoundingClientRect 返真实 DOMRect（本轮 R2647，~13,192 测试）
 
 承接 P1a 架构侦察（`p1a-architecture-recon-2026-08-04.md`）+ gBCR 切片设计（`p1a-layout-geometry-feedback-slice-design-2026-08-04.md`）。R2646 曾结论「identity→NodeId 是真架构缺口」，**本轮核验纠偏**：渲染管线每次 render 都 fresh-`parse_html`（`pipeline_budget.rs:106/197`），与 js_worker 持的 `dom_html` 同字符串；slotmap fresh-map + 相同插入顺序 → 确定性 NodeId（守护测试验证）→ **path (C) parse-on-query 对 selector-identity 直接成立**，无需 R2646 建议的 path (A) 持久化 handles map。

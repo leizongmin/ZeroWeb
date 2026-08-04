@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use zero_browser_shell::TabId;
 use zero_engine::{
-    AsyncResolver, DomMutation, FetchBridge, FetchHandler, TimerBridge, generate_js_dom_shim, register_dom_callbacks,
+    AsyncResolver, DomMutation, FetchBridge, FetchHandler, LayoutRectSnapshot, RectBridge, TimerBridge,
+    generate_js_dom_shim, make_dom_html_rect_handler, new_layout_rect_snapshot, register_dom_callbacks,
 };
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
@@ -20,6 +21,12 @@ use zero_webview::fetch_text_async;
 pub const PAGE_SCRIPT_TIMEOUT_MS: u64 = 2_500;
 /// 宿主事件 / `execute_script_direct` 超时。
 pub const TAB_JS_EVENT_TIMEOUT_MS: u64 = 5_000;
+
+/// P1a gBCR kill-switch：默认 on；`ZW_REAL_RECT=0` 关闭 RectBridge（`__zw_getBoundingClientRect`
+/// 不注册 → shim 回落零 rect = 当前行为，零回归）。与 renderer `js_worker::real_rect_enabled` 同实现。
+fn real_rect_enabled() -> bool {
+    !matches!(std::env::var("ZW_REAL_RECT").as_deref(), Ok("0"))
+}
 
 fn channel_timeout_for(exec_timeout_ms: u64) -> Duration {
     Duration::from_millis(exec_timeout_ms + 2_000)
@@ -69,21 +76,26 @@ pub struct TabJsWorkerHandle {
     executor: ScriptFn,
     module_executor: ModuleFn,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    /// P1a gBCR：共享 layout-rect snapshot——tab_worker render 后填充，
+    /// js_worker 的 RectBridge handler 读取（经 identity→NodeId 解析后查 rect）。
+    rect_snapshot: LayoutRectSnapshot,
 }
 
 impl TabJsWorkerHandle {
     /// 启动 JS 专用线程。
     pub fn spawn(tab_id: TabId) -> Self {
         let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let rect_snapshot = new_layout_rect_snapshot();
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
         let cmd_for_worker = cmd_tx.clone();
         let mutations_for_worker = Arc::clone(&mutations);
+        let rect_snapshot_for_worker = Arc::clone(&rect_snapshot);
 
         let join = thread::Builder::new()
             .name(format!("tab-js-{}", tab_id.0))
-            .spawn(move || js_worker_main(cmd_rx, cmd_for_worker, mutations_for_worker))
+            .spawn(move || js_worker_main(cmd_rx, cmd_for_worker, mutations_for_worker, rect_snapshot_for_worker))
             .expect("spawn tab js worker");
 
         let executor: ScriptFn = Arc::new(move |script: &str, timeout_ms: u64| {
@@ -121,6 +133,7 @@ impl TabJsWorkerHandle {
             executor,
             module_executor,
             mutations,
+            rect_snapshot,
         }
     }
 
@@ -156,6 +169,12 @@ impl TabJsWorkerHandle {
     /// 脚本执行期间记录的 DOM 变更（由 `__zw_*` 回调写入）。
     pub fn mutations(&self) -> Arc<std::sync::Mutex<Vec<DomMutation>>> {
         Arc::clone(&self.mutations)
+    }
+
+    /// P1a gBCR：共享 layout-rect snapshot 句柄——tab_worker render 后经
+    /// `HitTestCache::fill_layout_rect_snapshot` 填充，js_worker 的 RectBridge handler 读取。
+    pub fn rect_snapshot(&self) -> LayoutRectSnapshot {
+        Arc::clone(&self.rect_snapshot)
     }
 
     /// 返回异步回调 resolver（P1b S1 incr3）。克隆供跨线程异步完成方（fetch host /
@@ -197,6 +216,7 @@ fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
     cmd_tx: Sender<JsWorkerCommand>,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    rect_snapshot: LayoutRectSnapshot,
 ) {
     let js_config = SandboxConfig {
         persistent_context: true,
@@ -213,6 +233,17 @@ fn js_worker_main(
     let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url);
     register_module_compile_callback(&mut *sandbox);
+    // P1a gBCR（镜像 renderer js_worker）：RectBridge 注 `__zw_getBoundingClientRect(identity)`
+    // 同步回调。handler 解析 identity(selector) → NodeId（fresh-parse dom_html，与渲染管线确定性一致）
+    // → 查 rect_snapshot。kill-switch `ZW_REAL_RECT=0` 关闭（回落零 rect = 当前行为，零回归）。
+    if real_rect_enabled() {
+        let rect_bridge = RectBridge::new();
+        rect_bridge.register(&mut *sandbox);
+        rect_bridge.set_handler(make_dom_html_rect_handler(
+            Arc::clone(&dom_html),
+            Arc::clone(&rect_snapshot),
+        ));
+    }
     // P1b S1/S3：AsyncResolver（跨线程 resolve Promise）+ FetchBridge（__zw_fetch 注册 +
     // handler cell）。fetch_bridge 经 SetFetchHandler 命令在 WebView 初始化后注入生产 handler
     // （chicken-and-egg——js_worker spawn 早于 WebView）；未注入时 __zw_fetch resolve 错误 Promise。
@@ -830,6 +861,47 @@ mod tests {
             .unwrap();
         let r = wait_for_global(&worker, "__seen", 1000);
         assert_eq!(r, "attributes:class");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_get_bounding_client_rect_real_rect() {
+        // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
+        // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html
+        // → find_by_selector → NodeId → 查 rect_snapshot。用「同一 html fresh-parse」的 NodeId 填
+        // snapshot（= tab_worker render 后会用的 NodeId；确定性由 engine 守护测试保证）。
+        use zero_dom::parse_html;
+        use zero_engine::{find_by_selector, node_id_to_u64};
+        let mut worker = TabJsWorkerHandle::spawn(TabId(18));
+        let html = "<html><body><div id='t' style='width:100px;height:50px'>hi</div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        let doc = parse_html(html);
+        let id_t = find_by_selector(&doc, "#t").expect("#t");
+        let snap = worker.rect_snapshot();
+        snap.lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_t), (10.0, 20.0, 100.0, 50.0));
+        worker
+            .execute_script_direct(
+                "var r = document.querySelector('#t').getBoundingClientRect();\
+                 globalThis.__w = r.width; globalThis.__l = r.left; globalThis.__t = r.top;",
+            )
+            .unwrap();
+        assert_eq!(worker.execute_script_direct("String(globalThis.__w)").unwrap(), "100");
+        assert_eq!(worker.execute_script_direct("String(globalThis.__l)").unwrap(), "10");
+        assert_eq!(worker.execute_script_direct("String(globalThis.__t)").unwrap(), "20");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_get_bounding_client_rect_empty_snapshot_zero() {
+        // 零回归：snapshot 未填（无 render / 未命中）→ handler 返 None → shim 回落零 rect。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(19));
+        worker.set_dom_snapshot("<html><body><div id='t'>hi</div></body></html>", "about:blank");
+        worker
+            .execute_script_direct("globalThis.__w = document.querySelector('#t').getBoundingClientRect().width;")
+            .unwrap();
+        assert_eq!(worker.execute_script_direct("String(globalThis.__w)").unwrap(), "0");
         worker.shutdown();
     }
 }

@@ -6123,6 +6123,7 @@ dependencies = [
  "winit",
  "winres",
  "zero-browser-shell",
+ "zero-dom",
  "zero-engine",
  "zero-host-runtime",
  "zero-net",
