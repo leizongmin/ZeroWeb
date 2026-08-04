@@ -745,6 +745,25 @@ R2680–R2689 self-review 续。发现 `_parentNodeFor` 是 **stub**：对非 ht
 
 **已知限制（剩余）**：① handle-only（detached createElement）元素 parentNode 仍走 fallback stub（返 body 近似，detached 无真实父）；② polyfill（无 host）路径用文档结构近似；③ `<html>.parentNode` 返 null（spec 应为 Document 对象，返 null 是可接受近似——极少代码检查文档根父）。
 
+### P1a `tagName`/`nodeName` 真实化（本轮 R2691，self-review 续，~13,310 测试）
+
+R2680–R2690 self-review 续。承接 R2690（`_parentNodeFor` stub 恒返 body）发现同类「近似/恒定返回」缺口：`_tagFromSel` 对 **id-only 选择器恒返 `DIV`**——`stable_selector_for_node` 对任何有 id 的元素返 `#id`，故 `document.getElementById('foo').tagName` 对 `<span id=foo>`/`<input id=foo>`/`<a id=foo>` 等非 DIV 元素错返 `'DIV'`。`el.tagName === 'SPAN'`、`el.tagName.toLowerCase()`、`switch(el.tagName)` 等真实页面常见分支对 id-bearing 非 DIV 元素全断。`_tagFromSel` 仅被 `tagName`/`nodeName` 两 getter 使用（`_isTag`/`_resolveInputEl` 已用真实 `__zw_get_tag`）。
+
+**修复**（仿 R2690 `_parentNodeFor` 模式）：shim 加 `_realTag(sel, handle)`——sel-based 元素优先调既有 host `__zw_get_tag(sel)`（`query_tag_from_html`，已注册），handle-only（detached `createElement`）优先调**新增** host `__zw_get_tag_handle(handle)`（从 `CreateElement { handle, tag }` 记录取真实 tag），无回调/未命中 → fallback `_tagFromSel`（保旧启发式，polyfill/WebView 路径）。`tagName`/`nodeName` getter 改用 `_realTag`。HTML 命名空间 tag 须大写 → 统一 `toUpperCase`（`local_name()` 返小写）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge.rs` | `query_tag_from_mutations(mutations, handle)`（镜像 `query_text_from_mutations`，从 `CreateElement` 记录取 tag）+ 注册 `__zw_get_tag_handle` 回调（renderer/browser 两 worker 共享 `register_dom_callbacks`，一次覆盖全路径）。 |
+| `engine/js_dom_shim.js` | `_realTag(sel, handle)`（sel→`__zw_get_tag` / handle→`__zw_get_tag_handle`，fallback `_tagFromSel`）；`tagName`/`nodeName` getter 改用之。 |
+| `engine/js_dom_bridge_tests.rs` | +2 测试：`query_tag_from_mutations` 单元（命中 span/tr / 未记录→空）+ e2e（`#s`→SPAN、`#i`→INPUT、nodeName 同、`createElement('tr')`→TR；旧 stub 全错返 DIV）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（0 failed，0 回归；engine lib 1411→1413 net +2）。
+
+**为何零回归**：① `_realTag` 新路径仅在 host 回调注册时（生产 worker 路径）启用，返真实 tag；无回调（polyfill/WebView）走 `_tagFromSel` fallback 不变；② `query_tag_from_mutations` 纯新增（镜像既有 `query_*_from_mutations` 三兄弟），`__zw_get_tag_handle` 仅由新 `_realTag` handle 分支触发；③ 仅 tagName/nodeName 行为变（旧错值 DIV→新真值），`_tagFromSel` 仍作 fallback，其余 API 不读 `_realTag`。
+
+**已知限制（剩余）**：① polyfill（无 host）路径仍用 `_tagFromSel` 启发式（id-only 猜 DIV）——polyfill 路径无 host tag 查询能力，属可接受近似；② handle-only 元素若未经 `createElement` 记录（如 DocumentFragment，nodeType 11）→ `__zw_get_tag_handle` 返空 → fallback `_tagFromSel(null)`='DIV'，但 fragment 的 tagName 走 isFrag 分支返 `undefined`（nodeName 返 `#document-fragment`），不读 `_realTag`，故无影响；③ `tagName` 每次访问触发 `parse_html`+`find_by_selector`（同 R2690 `__zw_parent`、gBCR 既有开销），非热路径，可接受。
+
+
 
 
 

@@ -1541,6 +1541,23 @@ pub fn query_text_from_mutations(mutations: &[DomMutation], handle: &str) -> Str
     String::new()
 }
 
+/// 从已记录变更中查询 create 句柄元素的 tag 名（供 `__zw_get_tag_handle` 回调）。
+///
+/// detached `createElement(tag)` 元素无 selector，shim `_tagFromSel` 无法猜其真实 tag
+/// （恒返 `DIV`）。本函数从 [`DomMutation::CreateElement`] 记录的 `tag` 取真实值，
+/// 使 `document.createElement('span').tagName` === `'SPAN'`。句柄未被 createElement
+/// 记录（如 DocumentFragment）→ 空串（shim fallback）。
+pub fn query_tag_from_mutations(mutations: &[DomMutation], handle: &str) -> String {
+    for m in mutations.iter().rev() {
+        if let DomMutation::CreateElement { handle: h, tag } = m
+            && h == handle
+        {
+            return tag.clone();
+        }
+    }
+    String::new()
+}
+
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
 ///
 /// 将 [`generate_js_dom_shim`] 产生的 JS shim 与宿主侧 [`DomMutation`] 收集器连接：
@@ -1844,6 +1861,18 @@ pub fn register_dom_callbacks(
             let handle = args.first().map(String::from).unwrap_or_default();
             let list = m.lock().unwrap_or_else(|e| e.into_inner());
             query_text_from_mutations(&list, &handle)
+        }),
+    );
+
+    // detached createElement 句柄元素的真实 tag 名（shim `tagName`/`nodeName` 对 handle-only
+    // 元素原走 `_tagFromSel` 恒猜 DIV；本回调从 CreateElement 记录取真实 tag）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_get_tag_handle",
+        Box::new(move |args| {
+            let handle = args.first().map(String::from).unwrap_or_default();
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            query_tag_from_mutations(&list, &handle)
         }),
     );
 

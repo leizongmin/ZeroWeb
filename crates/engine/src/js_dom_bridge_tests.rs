@@ -298,6 +298,25 @@ fn test_parent_selector_for_nested() {
 }
 
 #[test]
+fn test_query_tag_from_mutations() {
+    // query_tag_from_mutations：从 CreateElement 记录取真实 tag（detached 元素无 selector，
+    // shim _tagFromSel 恒猜 DIV）。命中 → tag；非该句柄 → 空串。
+    let mutations = vec![
+        DomMutation::CreateElement {
+            handle: "__n1".into(),
+            tag: "span".into(),
+        },
+        DomMutation::CreateElement {
+            handle: "__n2".into(),
+            tag: "tr".into(),
+        },
+    ];
+    assert_eq!(query_tag_from_mutations(&mutations, "__n1"), "span", "命中 __n1 → span");
+    assert_eq!(query_tag_from_mutations(&mutations, "__n2"), "tr", "命中 __n2 → tr");
+    assert_eq!(query_tag_from_mutations(&mutations, "__nope"), "", "未记录句柄 → 空串");
+}
+
+#[test]
 fn test_apply_set_outer_html_replaces_element() {
     // outerHTML setter：目标元素整体替换为解析片段，兄弟位置保留。
     let html = "<html><body id=\"b\"><div id=\"t\">x</div><i>after</i></body></html>";
@@ -2051,4 +2070,44 @@ fn test_parent_node_nested_e2e() {
         .execute("globalThis.__hp = document.querySelector('html').parentNode === null;")
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__hp").unwrap().value, "true");
+}
+
+#[test]
+fn test_tag_name_real_not_div_heuristic() {
+    // R2691：tagName/nodeName 真实化（旧 _tagFromSel 对 #id 选择器恒猜 DIV）。
+    // sel-based：id-bearing 非 DIV 元素返真实 tag；handle-based：detached createElement 返真实 tag。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><span id=\"s\">x</span><input id=\"i\"></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // sel-based：#s 是 <span>（旧 stub 错返 DIV），#i 是 <input>。
+    sandbox
+        .execute("globalThis.__s = document.querySelector('#s').tagName;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__s").unwrap().value, "SPAN");
+    sandbox
+        .execute("globalThis.__i = document.querySelector('#i').tagName;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__i").unwrap().value, "INPUT");
+    // nodeName 同 tagName（元素节点）。
+    sandbox
+        .execute("globalThis.__sn = document.querySelector('#s').nodeName;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__sn").unwrap().value, "SPAN");
+    // 大小写：tagName 在 HTML 命名空间须大写（createElement('svg')→'SVG'）。
+    sandbox
+        .execute("globalThis.__tr = document.createElement('tr').tagName;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__tr").unwrap().value, "TR");
 }

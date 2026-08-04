@@ -895,6 +895,22 @@
     return String(sel).toUpperCase();
   }
 
+  // 真实 tag 名（修正 `_tagFromSel` 对 id-only 选择器恒猜 'DIV' 的正确性 bug——
+  // `document.getElementById('foo').tagName` 对 `<span id=foo>` 错返 'DIV'）。优先 host 回调：
+  // sel-based 元素经 `__zw_get_tag(sel)`（query_tag_from_html，真实 tag），handle-only（detached
+  // createElement）经 `__zw_get_tag_handle(handle)`（CreateElement 记录的 tag）。host 未注册
+  // （polyfill/WebView 路径）或未命中 → fallback `_tagFromSel`（启发式，保旧行为）。
+  // tag 取小写 local_name，tagName/nodeName 在 HTML 命名空间须大写 → 统一 toUpperCase。
+  function _realTag(sel, handle) {
+    if (sel && typeof __zw_get_tag === 'function') {
+      try { var t = __zw_get_tag(sel); if (t) return t.toUpperCase(); } catch (_e) {}
+    }
+    if (handle && typeof __zw_get_tag_handle === 'function') {
+      try { var ht = __zw_get_tag_handle(handle); if (ht) return ht.toUpperCase(); } catch (_e) {}
+    }
+    return _tagFromSel(sel);
+  }
+
   // P1a select：经 host `__zw_get_tag` 判元素是否为某 tag（selector-identity 元素）。
   // `_tagFromSel` 是启发式（id-only 选择器猜 DIV），不足以判 SELECT；host 查询准确。
   function _isTag(sel, tagUpper) {
@@ -1122,10 +1138,10 @@
         // DocumentFragment handle（nodeType 11 / nodeName '#document-fragment'）。
         var isFrag = handle && _fragmentHandles[handle];
         if (prop === 'tagName') {
-          return isFrag ? undefined : _tagFromSel(sel);
+          return isFrag ? undefined : _realTag(sel, handle);
         }
         if (prop === 'nodeName') {
-          return isFrag ? '#document-fragment' : _tagFromSel(sel);
+          return isFrag ? '#document-fragment' : _realTag(sel, handle);
         }
         if (prop === 'nodeType') {
           return isFrag ? 11 : 1;
