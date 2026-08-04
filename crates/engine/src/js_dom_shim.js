@@ -1237,7 +1237,7 @@
         // host 未注册 / 未命中 / handle-identity（createElement，sel 为空）→ 零 rect（= 旧行为，零回归；
         // 作 reflow 触发器语义仍正确——返回值多被丢弃）。注：rect 反映「上次 render」（stale-but-non-zero），
         // 改样式后同脚本内即读见 pre-change rect（force-reflow-on-demand 为 follow-up）。
-        // offsetWidth/offsetHeight 等是属性访问返回 undefined 不抛，作 reflow 触发器无害，不特例化。
+        // offsetWidth/offsetHeight/clientWidth/Top/Left 等布局几何属性从同一 rect 派生（见 get trap 末段）。
         if (prop === 'getBoundingClientRect') {
           return function() {
             // identity = selector（querySelector/getElementById 元素）或 handle（createElement
@@ -1259,6 +1259,29 @@
         }
         if (prop === 'getClientRects') {
           return function() { return []; };
+        }
+        // 布局几何属性：offsetWidth/offsetHeight/clientWidth/clientHeight/offsetTop/offsetLeft。
+        // 旧返 undefined → `el.offsetWidth > 0` visibility 检查误判 false（元素被当隐藏）。
+        // 现从既有 __zw_getBoundingClientRect rect 派生（rect 反映上次 render，stale-but-non-zero
+        // 同 gBCR）。无 rect（未渲染/handle 未映射）→ 0（detached 元素 offsetWidth=0 语义）。
+        // 注：offsetWidth/Height 为 border-box（rect 即 border-box，精确）；clientWidth/Height 应为
+        // content-box（缺 border 数据，此处≈offset，近似）；offsetTop/Left 应相对 offsetParent（此处
+        // 相对 viewport，顶层元素精确、嵌套近似）——近似对 visibility/sizing 检查足够。
+        if (prop === 'offsetWidth' || prop === 'clientWidth') {
+          var r = _layoutRect(sel, handle);
+          return r ? r.w : 0;
+        }
+        if (prop === 'offsetHeight' || prop === 'clientHeight') {
+          var r = _layoutRect(sel, handle);
+          return r ? r.h : 0;
+        }
+        if (prop === 'offsetTop') {
+          var r = _layoutRect(sel, handle);
+          return r ? r.y : 0;
+        }
+        if (prop === 'offsetLeft') {
+          var r = _layoutRect(sel, handle);
+          return r ? r.x : 0;
         }
         return undefined;
       },
@@ -1334,6 +1357,22 @@
   function _splitSelectors(joined) {
     if (!joined) return [];
     return joined.split('|').filter(Boolean).map(_wrapSelector);
+  }
+
+  // 元素的布局 rect（{x,y,w,h}），经 `__zw_getBoundingClientRect`（与 getBoundingClientRect 同源）。
+  // 无回调/未命中/handle 未映射 → null（调用方返 0）。rect 反映上次 render（stale-but-non-zero）。
+  function _layoutRect(sel, handle) {
+    var id = sel || handle;
+    if (id && typeof __zw_getBoundingClientRect === 'function') {
+      try {
+        var s = __zw_getBoundingClientRect(id);
+        if (s && s.indexOf(',') >= 0) {
+          var p = s.split(',');
+          return { x: +p[0], y: +p[1], w: +p[2], h: +p[3] };
+        }
+      } catch (_e) {}
+    }
+    return null;
   }
 
   // dataset 键转换：camelCase ↔ data-kebab-case（fooBar ↔ data-foo-bar）。

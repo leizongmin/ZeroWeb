@@ -481,6 +481,81 @@ fn test_boolean_reflected_property_e2e() {
 }
 
 #[test]
+fn test_layout_geometry_e2e() {
+    // 端到端：offsetWidth/offsetHeight/clientWidth/offsetTop/offsetLeft 从 rect 派生。
+    // rect bridge 不在 register_dom_callbacks，测试注册 mock __zw_getBoundingClientRect。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id='d'>x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    // mock rect bridge：返 "x=10,y=20,w=100,h=50"（rect_bridge 不在 register_dom_callbacks）。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|_args| "10,20,100,50".to_string()),
+    );
+
+    // offsetWidth/Height = rect border-box w/h（精确）。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#d').offsetWidth")
+            .unwrap()
+            .value,
+        "100"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#d').offsetHeight")
+            .unwrap()
+            .value,
+        "50"
+    );
+    // clientWidth/Height ≈ offset（content-box 近似）。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#d').clientWidth")
+            .unwrap()
+            .value,
+        "100"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#d').clientHeight")
+            .unwrap()
+            .value,
+        "50"
+    );
+    // offsetTop/Left = rect y/x（viewport 相对，近似）。
+    assert_eq!(
+        sandbox.execute("document.querySelector('#d').offsetTop").unwrap().value,
+        "20"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#d').offsetLeft")
+            .unwrap()
+            .value,
+        "10"
+    );
+    // visibility 检查（修旧 undefined>0=false bug）。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#d').offsetWidth > 0")
+            .unwrap()
+            .value,
+        "true"
+    );
+}
+
+#[test]
 fn test_collect_element_ids_dedup_preserve_order() {
     let html = "<html><body>\
                     <div id=\"container\"></div>\
