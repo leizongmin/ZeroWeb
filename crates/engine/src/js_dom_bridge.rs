@@ -162,6 +162,27 @@ pub enum DomMutation {
         /// 待解析的 HTML 片段。
         html: String,
     },
+    /// `element.insertAdjacentText(position, text)`（P1a）——把文本作为**字面 Text 节点**
+    ///（不解析 HTML）按 position 插入。区别于 [`Self::InsertAdjacentHtml`]（解析片段）。
+    InsertAdjacentText {
+        /// 目标元素选择器。
+        selector: String,
+        /// 位置关键字（不区分大小写：beforebegin/afterbegin/beforeend/afterend）。
+        position: String,
+        /// 文本内容（原样插入，不解析 `<` 等）。
+        text: String,
+    },
+    /// `element.insertAdjacentElement(position, element)`（P1a）——把既有节点（create 句柄或
+    /// 已挂载元素）按 position 移动插入。复用 [`Document::append_child`] 自动 reparent
+    ///（移除旧 parent）实现「移动」语义。
+    InsertAdjacentElement {
+        /// 目标元素选择器。
+        selector: String,
+        /// 位置关键字（不区分大小写：beforebegin/afterbegin/beforeend/afterend）。
+        position: String,
+        /// 待插入节点的 create 句柄（`__n1` 等）。
+        child_handle: String,
+    },
 }
 
 /// 在文档根下按简单选择器查找第一个匹配元素。
@@ -452,6 +473,31 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     .ok_or_else(|| format!("insert_adjacent_html: no match for {selector}"))?;
                 insert_adjacent_html(doc, node, position, html)?;
             }
+            DomMutation::InsertAdjacentText {
+                selector,
+                position,
+                text,
+            } => {
+                let node = find_by_selector(doc, selector)
+                    .ok_or_else(|| format!("insert_adjacent_text: no match for {selector}"))?;
+                // 字面 Text 节点（不解析 HTML）。
+                let tn = doc.create_text_node(text.as_str());
+                insert_nodes_at_position(doc, &[tn], node, position)?;
+            }
+            DomMutation::InsertAdjacentElement {
+                selector,
+                position,
+                child_handle,
+            } => {
+                let node = find_by_selector(doc, selector)
+                    .ok_or_else(|| format!("insert_adjacent_element: no match for {selector}"))?;
+                let child = handles
+                    .get(child_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                // 复用 append_child 的自动 reparent（child 已挂载则从旧 parent 移除 → 移动语义）。
+                insert_nodes_at_position(doc, &[child], node, position)?;
+            }
         }
     }
 
@@ -549,6 +595,84 @@ fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> 
     }
 }
 
+/// 把一组节点按 position 插入到目标元素 `target` 的相对位置（`beforeend`/`afterbegin`/
+/// `beforebegin`/`afterend`）。供 [`insert_adjacent_html`]（fragment 节点）、
+/// [`DomMutation::InsertAdjacentText`]（单 text 节点）、[`DomMutation::InsertAdjacentElement`]
+///（单既有节点，复用 [`Document::append_child`] 自动 reparent 移动）共用。
+///
+/// 多节点保持顺序：beforeend/afterbegin 固定参考子（首子）一次、依次插入；beforebegin 固定
+/// target 为 ref；afterend 固定 target 下一兄弟为 ref。`beforebegin`/`afterend` 需父节点；
+/// 元素无父（文档根）返错（匹配 spec 对 detached/root 元素抛错）。
+fn insert_nodes_at_position(
+    doc: &mut Document,
+    nodes: &[NodeId],
+    target: NodeId,
+    position: &str,
+) -> Result<(), String> {
+    if nodes.is_empty() {
+        return Ok(());
+    }
+    let pos = position.trim().to_ascii_lowercase();
+    match pos.as_str() {
+        "beforeend" => {
+            for &child in nodes {
+                doc.append_child(target, child).map_err(|e| e.to_string())?;
+            }
+        }
+        "afterbegin" => {
+            // 插到 target 现有首子之前（保持插入序：依次插到固定首子前）；无子则 append。
+            let first = doc.get(target).and_then(|n| n.children.first().copied());
+            match first {
+                Some(ref_node) => {
+                    for &child in nodes {
+                        doc.insert_before(target, child, ref_node).map_err(|e| e.to_string())?;
+                    }
+                }
+                None => {
+                    for &child in nodes {
+                        doc.append_child(target, child).map_err(|e| e.to_string())?;
+                    }
+                }
+            }
+        }
+        "beforebegin" => {
+            let parent = doc
+                .get(target)
+                .and_then(|n| n.parent)
+                .ok_or_else(|| format!("insertAdjacent {pos}: element has no parent"))?;
+            for &child in nodes {
+                doc.insert_before(parent, child, target).map_err(|e| e.to_string())?;
+            }
+        }
+        "afterend" => {
+            let parent = doc
+                .get(target)
+                .and_then(|n| n.parent)
+                .ok_or_else(|| format!("insertAdjacent {pos}: element has no parent"))?;
+            // 插到 target 下一兄弟之前（固定 ref，保持插入序）；末位无下一兄弟则 append。
+            let parent_kids: Vec<NodeId> = doc.get(parent).map(|n| n.children.clone()).unwrap_or_default();
+            let next = parent_kids
+                .iter()
+                .position(|c| *c == target)
+                .and_then(|i| parent_kids.get(i + 1).copied());
+            match next {
+                Some(ref_node) => {
+                    for &child in nodes {
+                        doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
+                    }
+                }
+                None => {
+                    for &child in nodes {
+                        doc.append_child(parent, child).map_err(|e| e.to_string())?;
+                    }
+                }
+            }
+        }
+        _ => return Err(format!("insertAdjacent: invalid position {position}")),
+    }
+    Ok(())
+}
+
 /// `element.insertAdjacentHTML(position, html)`——解析 HTML 片段，深拷贝其顶层节点，
 /// 按 position 插入到目标元素相对位置（`beforeend`/`afterbegin`/`beforebegin`/`afterend`）。
 /// 复用 [`replace_inner_html`] 的 fragment parse 思路 + [`copy_subtree_from`]，区别在于
@@ -572,63 +696,7 @@ fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: 
         let kids: Vec<NodeId> = frag_doc.get(body).map(|n| n.children.clone()).unwrap_or_default();
         kids.into_iter().map(|k| copy_subtree_from(doc, &frag_doc, k)).collect()
     };
-
-    let pos = position.trim().to_ascii_lowercase();
-    match pos.as_str() {
-        "beforeend" => {
-            for child in frag_nodes {
-                doc.append_child(node, child).map_err(|e| e.to_string())?;
-            }
-        }
-        "afterbegin" => {
-            // 插到 node 现有首子之前（保持插入序：依次插到固定首子前）；无子则 append。
-            let first = doc.get(node).and_then(|n| n.children.first().copied());
-            match first {
-                Some(ref_node) => {
-                    for child in frag_nodes {
-                        doc.insert_before(node, child, ref_node).map_err(|e| e.to_string())?;
-                    }
-                }
-                None => {
-                    for child in frag_nodes {
-                        doc.append_child(node, child).map_err(|e| e.to_string())?;
-                    }
-                }
-            }
-        }
-        "beforebegin" | "afterend" => {
-            let parent = doc
-                .get(node)
-                .and_then(|n| n.parent)
-                .ok_or_else(|| format!("insertAdjacentHTML {pos}: element has no parent"))?;
-            if pos == "beforebegin" {
-                for child in frag_nodes {
-                    doc.insert_before(parent, child, node).map_err(|e| e.to_string())?;
-                }
-            } else {
-                // afterend：插到 node 下一兄弟之前（固定 ref，保持插入序）；末位无下一兄弟则 append。
-                let parent_kids: Vec<NodeId> = doc.get(parent).map(|n| n.children.clone()).unwrap_or_default();
-                let next = parent_kids
-                    .iter()
-                    .position(|c| *c == node)
-                    .and_then(|i| parent_kids.get(i + 1).copied());
-                match next {
-                    Some(ref_node) => {
-                        for child in frag_nodes {
-                            doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
-                        }
-                    }
-                    None => {
-                        for child in frag_nodes {
-                            doc.append_child(parent, child).map_err(|e| e.to_string())?;
-                        }
-                    }
-                }
-            }
-        }
-        _ => return Err(format!("insertAdjacentHTML: invalid position {position}")),
-    }
-    Ok(())
+    insert_nodes_at_position(doc, &frag_nodes, node, position)
 }
 
 /// 解析 HTML、应用变更并返回序列化后的 HTML。
@@ -1757,6 +1825,40 @@ pub fn register_dom_callbacks(
                         selector: args[0].clone(),
                         position: args[1].clone(),
                         html: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_insert_adjacent_text",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::InsertAdjacentText {
+                        selector: args[0].clone(),
+                        position: args[1].clone(),
+                        text: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_insert_adjacent_element",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::InsertAdjacentElement {
+                        selector: args[0].clone(),
+                        position: args[1].clone(),
+                        child_handle: args[2].clone(),
                     });
             }
             "ok".into()

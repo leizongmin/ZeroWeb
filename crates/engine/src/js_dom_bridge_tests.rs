@@ -189,6 +189,187 @@ fn test_apply_insert_adjacent_html_nested_subtree() {
 }
 
 #[test]
+fn test_apply_insert_adjacent_text_literal() {
+    // insertAdjacentText：文本作**字面 Text 节点**（不解析 HTML）——含 `<` 的文本应转义
+    // 为 `&lt;...&gt;` 而非解析成元素。beforeend 追加到目标。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
+    let mutations = vec![DomMutation::InsertAdjacentText {
+        selector: "#t".into(),
+        position: "beforeend".into(),
+        text: "<b>not-an-element</b>".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    assert!(
+        out.contains("&lt;b&gt;not-an-element&lt;/b&gt;"),
+        "insertAdjacentText 应转义 HTML 字符（字面文本，不解析）\n{out}"
+    );
+    assert!(
+        !out.contains("<b>not-an-element</b>"),
+        "insertAdjacentText 不应把文本解析成元素\n{out}"
+    );
+}
+
+#[test]
+fn test_apply_insert_adjacent_text_beforebegin_sibling() {
+    // insertAdjacentText beforebegin：文本作前兄弟插入到父节点。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
+    let mutations = vec![DomMutation::InsertAdjacentText {
+        selector: "#t".into(),
+        position: "beforebegin".into(),
+        text: "PRE".into(),
+    }];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    let i_pre = out.find("PRE").unwrap();
+    let i_t = out.find("<div id=\"t\">").unwrap();
+    assert!(i_pre < i_t, "beforebegin: 文本应在目标之前\n{out}");
+}
+
+#[test]
+fn test_apply_insert_adjacent_element_beforeend_child() {
+    // insertAdjacentElement beforeend：create 句柄元素作为目标末子插入。
+    let html = "<html><body id=\"b\"><div id=\"t\"></div></body></html>";
+    let mutations = vec![
+        DomMutation::CreateElement {
+            handle: "__n1".into(),
+            tag: "span".into(),
+        },
+        DomMutation::SetAttrOnHandle {
+            handle: "__n1".into(),
+            name: "id".into(),
+            value: "moved".into(),
+        },
+        DomMutation::InsertAdjacentElement {
+            selector: "#t".into(),
+            position: "beforeend".into(),
+            child_handle: "__n1".into(),
+        },
+    ];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    assert!(
+        out.contains("<div id=\"t\"><span id=\"moved\"></span></div>"),
+        "beforeend: 元素应作末子\n{out}"
+    );
+}
+
+#[test]
+fn test_apply_insert_adjacent_element_reparents() {
+    // insertAdjacentElement 移动语义：__n1 先挂到 #b，再 insertAdjacentElement 到 #t beforeend
+    // → 应从 #b 移除、成为 #t 末子（append_child 自动 reparent）。
+    let html = "<html><body id=\"b\"><div id=\"t\"></div></body></html>";
+    let mutations = vec![
+        DomMutation::CreateElement {
+            handle: "__n1".into(),
+            tag: "span".into(),
+        },
+        DomMutation::SetAttrOnHandle {
+            handle: "__n1".into(),
+            name: "id".into(),
+            value: "moved".into(),
+        },
+        DomMutation::AppendChild {
+            parent_selector: "#b".into(),
+            child_handle: "__n1".into(),
+        },
+        // 移动 __n1 从 #b → #t beforeend。
+        DomMutation::InsertAdjacentElement {
+            selector: "#t".into(),
+            position: "beforeend".into(),
+            child_handle: "__n1".into(),
+        },
+    ];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    // span 现在是 #t 的子（移动），#b 的直接元素子应只剩 #t（span 不再是 #b 子）。
+    assert!(
+        out.contains("<div id=\"t\"><span id=\"moved\"></span></div>"),
+        "reparent: span 应移到 #t 内\n{out}"
+    );
+    // span 不应出现在 #t 之外（即不应是 #b 的直接子）。
+    let i_t_close = out.find("<div id=\"t\"><span id=\"moved\"></span></div>").unwrap();
+    let i_span = out.find("<span id=\"moved\"></span>").unwrap();
+    assert_eq!(
+        i_span,
+        i_t_close + "<div id=\"t\">".len(),
+        "reparent: span 应唯一出现在 #t 内\n{out}"
+    );
+}
+
+#[test]
+fn test_apply_insert_adjacent_element_afterend_sibling() {
+    // insertAdjacentElement afterend：create 元素作目标后兄弟插入到父节点。
+    let html = "<html><body id=\"b\"><div id=\"t\">x</div></body></html>";
+    let mutations = vec![
+        DomMutation::CreateElement {
+            handle: "__n1".into(),
+            tag: "span".into(),
+        },
+        DomMutation::SetAttrOnHandle {
+            handle: "__n1".into(),
+            name: "id".into(),
+            value: "after".into(),
+        },
+        DomMutation::InsertAdjacentElement {
+            selector: "#t".into(),
+            position: "afterend".into(),
+            child_handle: "__n1".into(),
+        },
+    ];
+    let out = apply_mutations_to_html(html, &mutations).unwrap();
+    let i_t = out.find("<div id=\"t\">").unwrap();
+    let i_span = out.find("<span id=\"after\"></span>").unwrap();
+    assert!(i_t < i_span, "afterend: 元素应在目标之后\n{out}");
+}
+
+#[test]
+fn test_insert_adjacent_text_and_element_e2e() {
+    // 端到端：insertAdjacentText/Element JS 契约——调用入队对应 mutation。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><div id='t'></div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // insertAdjacentText：入队 InsertAdjacentText（含字面 < 不解析，position/text 透传）。
+    sandbox
+        .execute("document.querySelector('#t').insertAdjacentText('beforeend', '<b>');")
+        .unwrap();
+    // insertAdjacentElement：create 元素 + 移动插入，返元素本身（非 null）。
+    sandbox
+        .execute(
+            "globalThis.__r = document.querySelector('#t').insertAdjacentElement('afterbegin', document.createElement('span'));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__r === null").unwrap().value, "false");
+    // 非节点参数 → 返 null（不抛）。
+    sandbox
+        .execute("globalThis.__r2 = document.querySelector('#t').insertAdjacentElement('beforeend', 'not-a-node');")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__r2").unwrap().value, "null");
+
+    let ms = mutations.lock().unwrap();
+    let text_mutation = ms
+        .iter()
+        .any(|m| matches!(m, DomMutation::InsertAdjacentText { text, .. } if text == "<b>"));
+    assert!(
+        text_mutation,
+        "insertAdjacentText 应入队 InsertAdjacentText（text=<b> 透传）"
+    );
+    let elem_mutation = ms
+        .iter()
+        .any(|m| matches!(m, DomMutation::InsertAdjacentElement { position, .. } if position == "afterbegin"));
+    assert!(
+        elem_mutation,
+        "insertAdjacentElement 应入队 InsertAdjacentElement（position=afterbegin）"
+    );
+}
+
+#[test]
 fn test_apply_with_handles_maps_unique_selectors() {
     // 创建带 id 的元素（唯一）→ 入 map；创建无 id 的同 tag 元素 + 文档已有同 tag → 歧义 → 不入 map。
     let html = "<html><body id=\"b\"><div></div></body></html>";

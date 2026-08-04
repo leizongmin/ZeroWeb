@@ -1281,6 +1281,42 @@
             return undefined;
           };
         }
+        // `element.insertAdjacentText(position, text)`（P1a）：文本作**字面 Text 节点**（不解析
+        // HTML）按 position 插入——区别于 insertAdjacentHTML（解析片段）。仅 sel-based（已挂载）
+        // 元素经 host `__zw_insert_adjacent_text`；handle-only detached 无操作（同 insertAdjacentHTML）。
+        if (prop === 'insertAdjacentText') {
+          return function(position, text) {
+            if (sel && typeof __zw_insert_adjacent_text === 'function') {
+              try {
+                __zw_insert_adjacent_text(sel, String(position), String(text));
+                _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [] });
+              } catch (_e) {}
+            }
+            return undefined;
+          };
+        }
+        // `element.insertAdjacentElement(position, element)`（P1a）：既有节点按 position 移动插入。
+        // 仅接受 create 句柄节点（element.__zwHandle）；sel-based 参考元素经 host
+        // `__zw_insert_adjacent_element`，复用 append_child 自动 reparent 移动语义。
+        // 返插入的元素（spec）；handle-only 目标或非节点参数 → null（spec 非法 element 抛 TypeError，
+        // 此处宽容返 null 避免中断脚本）。
+        if (prop === 'insertAdjacentElement') {
+          return function(position, element) {
+            if (
+              sel &&
+              element &&
+              typeof __zw_insert_adjacent_element === 'function' &&
+              element.__zwHandle
+            ) {
+              try {
+                __zw_insert_adjacent_element(sel, String(position), element.__zwHandle);
+                _mo_notify(sel, handle, { type: 'childList', addedNodes: [element], removedNodes: [] });
+                return element;
+              } catch (_e) {}
+            }
+            return null;
+          };
+        }
         if (prop === 'querySelector') {
           // 元素**子树**作用域（spec：仅后代，不含元素自身）。经 host `__zw_query_match_sub(sel, q)`
           // 在 elem 子树内查首个匹配。handle（未挂载 DOM，无 sel）→ null（脱离文档树无后代）。
