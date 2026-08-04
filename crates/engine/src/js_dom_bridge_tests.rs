@@ -587,6 +587,53 @@ fn test_request_idle_callback_e2e() {
 }
 
 #[test]
+fn test_clone_node_e2e() {
+    // cloneNode(deep) 复用既有回调组合：create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='src' class='row' data-x='1'><span>child</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // deep clone → 记 CreateElement + 复制源全部属性 + SetInnerHtmlOnHandle。
+    sandbox
+        .execute("document.querySelector('#src').cloneNode(true);")
+        .unwrap();
+    let ms = mutations.lock().unwrap();
+    // CreateElement(tag=div)。
+    let created_tag = ms.iter().find_map(|m| match m {
+        DomMutation::CreateElement { tag, .. } => Some(tag.clone()),
+        _ => None,
+    });
+    assert_eq!(created_tag.as_deref(), Some("div"), "cloneNode 应 CreateElement(div)");
+    // SetAttrOnHandle 复制源全部 3 属性（id/class/data-x，含值）。
+    let has_attr = |name: &str, value: &str| {
+        ms.iter().any(|m| match m {
+            DomMutation::SetAttrOnHandle { name: n, value: v, .. } => n == name && v == value,
+            _ => false,
+        })
+    };
+    assert!(has_attr("id", "src"), "应复制 id=src");
+    assert!(has_attr("class", "row"), "应复制 class=row");
+    assert!(has_attr("data-x", "1"), "应复制 data-x=1");
+    // deep：SetInnerHtmlOnHandle 含源后代 <span>child</span>。
+    let deep = ms.iter().any(|m| match m {
+        DomMutation::SetInnerHtmlOnHandle { html, .. } => html.contains("<span>child</span>"),
+        _ => false,
+    });
+    assert!(deep, "deep clone 应 SetInnerHtmlOnHandle 含源后代");
+}
+
+#[test]
 fn test_collect_element_ids_dedup_preserve_order() {
     let html = "<html><body>\
                     <div id=\"container\"></div>\

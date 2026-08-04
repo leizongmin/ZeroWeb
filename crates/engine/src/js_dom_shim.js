@@ -1162,6 +1162,39 @@
             return _dispatchToListeners(key, ev);
           };
         }
+        // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：
+        // create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。sel-based 源完整；
+        // handle 源 tag/attrs 受限（无 get_tag/attr_names handle 变体，best-effort）。
+        if (prop === 'cloneNode') {
+          return function(deep) {
+            var srcTag = 'div';
+            if (sel && typeof __zw_get_tag === 'function') {
+              try { var t = __zw_get_tag(sel); if (t) srcTag = t; } catch (_e) {}
+            }
+            var nh = __zw_create_element(srcTag);
+            // 复制属性（仅 sel-based 有 attr_names 枚举）。
+            if (sel && typeof __zw_attr_names === 'function') {
+              try {
+                var names = __zw_attr_names(sel);
+                if (names) {
+                  names.split('|').filter(Boolean).forEach(function(n) {
+                    __zw_set_attr_handle(nh, n, __zw_get_attr(sel, n) || '');
+                  });
+                }
+              } catch (_e) {}
+            }
+            // deep：复制后代（innerHTML）。
+            if (deep) {
+              try {
+                var ih = handle
+                  ? __zw_get_inner_html_handle(handle)
+                  : (sel ? __zw_get_inner_html(sel) : null);
+                if (ih) __zw_set_inner_html_handle(nh, ih);
+              } catch (_e) {}
+            }
+            return _wrapHandle(nh);
+          };
+        }
         if (prop === 'appendChild') {
           return function(child) {
             if (child && child.__zwHandle) {
