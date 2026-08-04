@@ -6,6 +6,12 @@
 **状态**：草稿（rally 续跑用，无用户确认门禁；directive #4 已授权 R109 多 session；实施按切片逐 session A/B 门禁推进）
 **复杂度**：高（涉 R109 匿名块 + IFC owner-context + paint border-溢出，跨 layout/paint；高回滚难度；welcome 等真页回归风险）
 
+> **🔧 R2634 引用核验（2026-08-04，R2202 模式）**：逐条源码核验本文 ~13 处引用，3 valid + 7 行号 drift + 1 路径 drift 全纠偏；**4 切片均未实施**（env-gate `ZW_R109_INLINE_WRAP`/`ZW_R109_INLINE_BORDER_BLEED` 代码中不存在，R1735/R1737 既 revert）——状态与文档一致，无实施漂移。
+> - **经核 valid 保留**：`tree.rs:94 r109_wired()`、`inline_block_split.rs:77 block_container_has_mixed_content`、`:122-123` 注释。
+> - **行号纠偏**：① `tree.rs:1131`(§2)+`:1128-1132`(§3 Slice 1b) ctx_node Text fallback→**:1398-1402**；② `painter/text.rs:1207-1282`(§2 border 溢出 paint 区)→**:1271-1355**；③ gate `painter/text.rs:1207`(§2/§3 bleed + §3 Slice 2)→**:1290**；④ `:1213`「避 R638 双计」注释→**:1300**；⑤ `:1205` owner_style.display==Inline→**:1292**；⑥ `inline_finalization.rs:967 measure_text_content`→**:1118**；⑦ `postprocess.rs backfill_r109_anon_block_heights` 补 **:1016**。
+> - **路径纠偏**：⑧ §3 Slice 3 `collect_inline_items`（`inline/mod.rs`）→**`inline/collect_items.rs:6`**（inline/ 模块拆分迁移，同 R2632/R2633 发现）。
+> - **附带观察（不改·状态一致）**：gate 现 `(owner_h > $frag_fs * 1.5 || phasea_orphan_fire)`（Phase A orphan 加，:1285-1290），但 :1300 注释确认「仍多行，不触 single-line」→ Slice 2（单行放宽）仍 OPEN，本文分析准确。
+
 ---
 
 ## 0. 执行摘要
@@ -90,7 +96,7 @@ diff = 15.32%（vs baseline 15.36%，marginal，未 flip）
 
 **两层缺口**：
 
-1. **anonymous block ctx_node fallback**：匿名块的 `ctx_node` 取片段首个 **Text** 节点（[`tree.rs:1131`](../../crates/layout-engine/src/tree.rs)）：
+1. **anonymous block ctx_node fallback**：匿名块的 `ctx_node` 取片段首个 **Text** 节点（[`tree.rs:1398-1402`](../../crates/layout-engine/src/tree.rs)）：
    ```rust
    let ctx_node = item_node_ids.iter().copied()
        .find(|&nid| doc.get(nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
@@ -98,7 +104,7 @@ diff = 15.32%（vs baseline 15.36%，marginal，未 flip）
    ```
    div 片段无直挂 Text（`&nbsp;` 是 div 的子，非 body 的子）→ fallback 到 `dom_id(body)` → 匿名块用 **body 的** measure context（w=16 错误）→ div 的 border/sizing 全丢。
 
-2. **IFC border 溢出 paint 单行 gate**：[`painter/text.rs:1207-1282`](../../crates/engine/src/paint/painter/text.rs) 的 inline border 溢出 paint（border-top at `line_top - bt_w`）gate `owner_h > $frag_fs * 1.5`（**仅多行**，:1213 注释「避 R638 双计」）。div 单行 → owner_h ≈ line-height 90，frag_fs 90 → `90 > 135` false → gate 不触达 → 即使进 IFC，border 也不溢出绘制。
+2. **IFC border 溢出 paint 单行 gate**：[`painter/text.rs:1271-1355`](../../crates/engine/src/paint/painter/text.rs) 的 inline border 溢出 paint（border-top at `line_top - bt_w`）gate `owner_h > $frag_fs * 1.5`（**仅多行**，:1300 注释「避 R638 双计」）。div 单行 → owner_h ≈ line-height 90，frag_fs 90 → `90 > 135` false → gate 不触达 → 即使进 IFC，border 也不溢出绘制。
 
 → 仅放宽 gate 不足；machinery 为 text-node 片段设计，element 片段需更深改造。代码已 revert（R1735 净 0）。
 
@@ -112,12 +118,12 @@ diff = 15.32%（vs baseline 15.36%，marginal，未 flip）
 
 **改动**：
 - (a) [`inline_block_split.rs block_container_has_mixed_content`](../../crates/layout-engine/src/inline_block_split.rs)：加 env `ZW_R109_INLINE_WRAP` 分支，inline 元素子（in-flow，非 out-of-flow）算 inline 内容（`has_text = true`）。
-- (b) [`tree.rs:1128-1132`](../../crates/layout-engine/src/tree.rs) Inline 片段处理：对 **element-only 片段**（无 Text 直挂子），`ctx_node` 取片段内的 inline **元素** 节点（非 fallback 到 container）。
+- (b) [`tree.rs:1398-1402`](../../crates/layout-engine/src/tree.rs) Inline 片段处理：对 **element-only 片段**（无 Text 直挂子），`ctx_node` 取片段内的 inline **元素** 节点（非 fallback 到 container）。
 
-**★ R1737 实测（Slice 1a+1b 已实施 + revert，0 net code）**：A/B border-width-008 diff 15.36→15.32 未 flip，LAYOUT_DUMP 示匿名块 **malformed（w=16 h=110，应 ~270）**。根因 = `measure_text_content`（[inline_finalization.rs:967](../../crates/layout-engine/src/inline_finalization.rs)）对 inline **Element** ctx_node 跑 IFC 测量时**只测文本宽，不计 inline 元素 border/padding**（ZW IFC border 仅在 paint 期 text.rs:1207 bleed 加，measure 期不计）→ 匿名块尺寸错误。即 Slice 1a+1b **不足**，须 Slice 1c：IFC 测量须含 inline-box border/padding（横向 border+padding 计入 line-box 宽）。
+**★ R1737 实测（Slice 1a+1b 已实施 + revert，0 net code）**：A/B border-width-008 diff 15.36→15.32 未 flip，LAYOUT_DUMP 示匿名块 **malformed（w=16 h=110，应 ~270）**。根因 = `measure_text_content`（[inline_finalization.rs:1118](../../crates/layout-engine/src/inline_finalization.rs)）对 inline **Element** ctx_node 跑 IFC 测量时**只测文本宽，不计 inline 元素 border/padding**（ZW IFC border 仅在 paint 期 text.rs:1290 bleed 加，measure 期不计）→ 匿名块尺寸错误。即 Slice 1a+1b **不足**，须 Slice 1c：IFC 测量须含 inline-box border/padding（横向 border+padding 计入 line-box 宽）。
 
 **门禁**：env `ZW_R109_INLINE_WRAP=1` default-off；A/B borders + visuren + CSS2 + welcome product-smoke net≥0。
-**预期**：Slice 1a+1b+1c 后 div 进 IFC，匿名块 w=270（90 border + 90 text + 90 border）。border 溢出 paint（text.rs:1207）对 div 已 fire（owner_h=270 > 1.5·fs，**Slice 2 gate 放宽可能不需要**——待 1c 后验证 owner_h 归属）。border-width-008 此切片后可能 flip。
+**预期**：Slice 1a+1b+1c 后 div 进 IFC，匿名块 w=270（90 border + 90 text + 90 border）。border 溢出 paint（text.rs:1290）对 div 已 fire（owner_h=270 > 1.5·fs，**Slice 2 gate 放宽可能不需要**——待 1c 后验证 owner_h 归属）。border-width-008 此切片后可能 flip。
 **风险**：[block + inline 元素] 容器全量变化（broad）；Slice 1c 改 IFC 测量核心（measure 期加 inline-box border），影响所有 inline 元素 intrinsic sizing，高风险。
 
 ### Slice 1c（R1737 新增）：IFC 测量含 inline-box border/padding
@@ -128,7 +134,7 @@ diff = 15.32%（vs baseline 15.36%，marginal，未 flip）
 
 ### Slice 2：单行 IFC inline border 溢出 paint
 
-**改动**：[`painter/text.rs:1207`](../../crates/engine/src/paint/painter/text.rs) gate `owner_h > $frag_fs * 1.5` 放宽到单行（移除多行 gate 或降阈值到 `owner_h >= frag_fs`），同时避 R638 双计（:1213 注释——R638 是 bg/border 双绘；须核对 R638 谱系，可能须加 `is_first_line`/`has_bleed` 精化 gate 而非裸放宽）。
+**改动**：[`painter/text.rs:1290`](../../crates/engine/src/paint/painter/text.rs) gate `owner_h > $frag_fs * 1.5` 放宽到单行（移除多行 gate 或降阈值到 `owner_h >= frag_fs`），同时避 R638 双计（:1300 注释——R638 是 bg/border 双绘；须核对 R638 谱系，可能须加 `is_first_line`/`has_bleed` 精化 gate 而非裸放宽）。
 
 **门禁**：env `ZW_R109_INLINE_BORDER_BLEED=1` default-off；A/B borders + visuren + CSS2 + welcome net≥0；**重点核查 R638 双计回归**（bg-only 多行 inline、border-only 003 driving test）。
 **预期**：div（Slice 1 后在 IFC）border 溢出 line box 绘制 → border-box [98,368] ≈ chromium [96,366] → **border-width-008 FLIP**。
@@ -136,7 +142,7 @@ diff = 15.32%（vs baseline 15.36%，marginal，未 flip）
 
 ### Slice 3：inline 元素子节点（文本/嵌套 inline）IFC 收集 + fragment owner 归属
 
-**改动**：div 的 `&nbsp;` 文本子节点经匿名块 IFC 收集时，fragment `owner_id` 须 = **div**（inline 元素），非 body/匿名块——否则 Slice 2 的 `owner_style.display == Inline` 判定（:1205）+ border 溢出 paint（读 owner_style.border_*）失败。核对 [`collect_inline_items`](../../crates/layout-engine/src/inline/mod.rs) 对匿名块包裹的 inline 元素的 owner 归属。
+**改动**：div 的 `&nbsp;` 文本子节点经匿名块 IFC 收集时，fragment `owner_id` 须 = **div**（inline 元素），非 body/匿名块——否则 Slice 2 的 `owner_style.display == Inline` 判定（:1292）+ border 溢出 paint（读 owner_style.border_*）失败。核对 [`collect_inline_items`](../../crates/layout-engine/src/inline/collect_items.rs) 对匿名块包裹的 inline 元素的 owner 归属。
 
 **门禁**：随 Slice 2 同 A/B（owner 归属错则 border 不绘，border-width-008 不 flip 即可发现）。
 **风险**：owner 归属影响 ruby overlay（R1022 谱系）、text-decoration 传播等多路径，须核查不破。
@@ -175,5 +181,5 @@ Slice 1-3 全 flip 且全量 A/B net≥0 后：移除 env gate（default-on）+ 
 
 - R1735 evidence：[`evidence/r1735-border-width-008-inline-element-r109-blocked-2026-07-19.txt`](./evidence/r1735-border-width-008-inline-element-r109-blocked-2026-07-19.txt)（实证根因 + naive-fix 证伪）。
 - R109 §9.2.1.1 既有实现：[`r109-anonymous-block-spec.md`](./archive/r109-anonymous-block-spec.md)（text-node 包裹设计，已归档）；本 RFC 扩到 element 包裹。
-- R109 FR-002（容器 bg 涂满匿名块盒）：已由 [`backfill_r109_anon_block_heights`](../../crates/layout-engine/src/postprocess.rs) 解决（R1596）；本 RFC 是 FR-003（inline 元素 border）+ 匿名块包裹扩展。
+- R109 FR-002（容器 bg 涂满匿名块盒）：已由 [`backfill_r109_anon_block_heights`](../../crates/layout-engine/src/engine/postprocess.rs)（:1016）解决（R1596）；本 RFC 是 FR-003（inline 元素 border）+ 匿名块包裹扩展。
 - font-wall：[[r1088-first-letter-phasea-universal-gate]] / [[r1560-skia-raster-fontwall-ruled-out]]（headline 主阻塞，C-dep user-gated，与本 RFC 独立）。
