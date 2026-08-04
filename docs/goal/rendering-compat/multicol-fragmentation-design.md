@@ -22,9 +22,9 @@
 
 | # | 阻塞点 | 位置 | 性质 |
 |---|--------|------|------|
-| **A** | **paint multicol 门控 `height_auto`**：inner 有明确高度（300px）→ `height_auto=false` → `compute_multicol_info_for_paint` 返回 None → inner 的 2 子列布局**从未计算** | `painter/text.rs:710-715` | wiring 缺失 |
+| **A** | **paint multicol 门控 `height_auto`**：inner 有明确高度（300px）→ `height_auto=false` → `compute_multicol_info_for_paint` 返回 None → inner 的 2 子列布局**从未计算** | `painter/text.rs:560-569` | wiring 缺失 |
 | **B** | **`column_span_offsets` paint 路径不渲染碎片化 inline 内容**：outer 的 column breaking 把 inner 碎片化到 col0/1/2（写 column_span_offsets），但该 paint 路径**不重绘 inner 的 IFC 文本到非主位置列** → inner 文本只在 col0 | `painter/mod.rs`（column_span_offsets 消费）+ R131 同源 | wiring 缺失（核心） |
-| **C** | **column-rule §5.2 内容检测只查 `child.x` 主位置**：被碎片化的唯一子元素只在 col0 有 c.x，其余列仅存于 column_span_offsets → 误判「无内容」漏画 rule | `painter/text.rs:185-197` | 已实测**不可单点安全修**（见下） |
+| **C** | **column-rule §5.2 内容检测只查 `child.x` 主位置**：被碎片化的唯一子元素只在 col0 有 c.x，其余列仅存于 column_span_offsets → 误判「无内容」漏画 rule | `text_multicol.rs:130` | 已实测**不可单点安全修**（见下） |
 
 ### 关键纠正：碎片化算法**已存在**，缺口是 wiring
 
@@ -45,19 +45,19 @@
 原 Round 4（column breaking / 两趟循环依赖）的**算法前提不成立**——碎片化算法已存在。真实 Round 4 应改为：
 
 - **Round 4'（wiring）**：让 `column_span_offsets` paint 路径对被碎片化的 IFC 容器子元素，按列高预算（来自 outer column breaking 的 fragment 切片）重绘其 inline 内容到每个非主位置列 + 列裁剪。这是 R131「paint IFC 与 multicol block 分配协调」的具体落地，**paint 侧多轮子系统**（非 layout 两趟）。
-- 前置：放宽 text.rs:711 门控（A），让有明确高度的 inner 也能触发 paint 列分配（但须守 multicol-fill-auto-001 不回归，同 R198 font_size 死锁交互）。
+- 前置：放宽 text.rs:569 门控（A），让有明确高度的 inner 也能触发 paint 列分配（但须守 multicol-fill-auto-001 不回归，同 R198 font_size 死锁交互）。
 
 **预期**：Round 4' 解锁 multicol-breaking-004/006/nobackground-004（3 用例，005 因 balance+balance 嵌套更难独立）。仍是多轮 paint 子系统，非单会话。
 
 ### ⚠️ R317 更新（2026-06-19）— Round 4' paint 侧方向实证证伪
 
-R201 Round 4' 的前置「放宽 text.rs:713 `height_auto` 门控（阻塞点 A）」**经 R317 单点实现 + 实验证伪**。把 `!has_in_flow_children && is_balance_mode && height_auto` 放宽为去掉 `height_auto` 后实测 multicol 子集 **40/57→35/57（净 -5 回归）**：multicol-breaking-001/002、nobackground-001/002/005 翻 FAIL，且目标 multicol-breaking-004 **反而恶化** 5.60→6.17%。
+R201 Round 4' 的前置「放宽 text.rs:569 `height_auto` 门控（阻塞点 A）」**经 R317 单点实现 + 实验证伪**。把 `!has_in_flow_children && is_balance_mode && height_auto` 放宽为去掉 `height_auto` 后实测 multicol 子集 **40/57→35/57（净 -5 回归）**：multicol-breaking-001/002、nobackground-001/002/005 翻 FAIL，且目标 multicol-breaking-004 **反而恶化** 5.60→6.17%。
 
 **根因**：paint 侧 `compute_multicol_info_for_paint` 的列分布用 `total_height/col_count` 均衡分配，对**明确高度 + 嵌套**用例结构性错误（比单块回退更差）。multicol-fill-auto-* 不受影响（column-fill:auto → is_balance_mode=false），假设验证正确，但 balance 侧大面积回归。
 
 **裁决**：阻塞点 A 的「放宽门控」paint 侧方向**关闭**。这是 R203「paint 侧协调不可解」的第 N 次实证（R157/R198/R203/R122/R317）。Round 4'「paint 侧多轮子系统」整条方向 **ruled out**。
 
-**重定向（与 R203/R131 一致）**：真修复须 **layout 侧 column-aware IFC**——在 layout 阶段（非 paint）计算 multicol 容器的 IFC 行盒，按列高预算（balance = `total/count` 顺序填充到平衡高度；auto/fill = 列高限制顺序填充 + breaking）把**行盒**碎片化到各列，结果存 `LayoutBox`（如复用 `inline_layout` 或新增 `inline_column_lines`），paint 直接消费存储结果（**不再走 text.rs:713 paint 门控重算**）。这与 multicol.rs 已有的 **block** 子元素碎片化（`assign_children_to_columns_*`）互补——前者管 inline 行盒，后者管 block 子元素，**非重复**（纠正 §0「勿再建 measure-first 工具」对 inline 行盒场景的误套：该警告针对 block 子元素测量，不适用于 inline 行盒列分布）。
+**重定向（与 R203/R131 一致）**：真修复须 **layout 侧 column-aware IFC**——在 layout 阶段（非 paint）计算 multicol 容器的 IFC 行盒，按列高预算（balance = `total/count` 顺序填充到平衡高度；auto/fill = 列高限制顺序填充 + breaking）把**行盒**碎片化到各列，结果存 `LayoutBox`（如复用 `inline_layout` 或新增 `inline_column_lines`），paint 直接消费存储结果（**不再走 text.rs:569 paint 门控重算**）。这与 multicol.rs 已有的 **block** 子元素碎片化（`assign_children_to_columns_*`）互补——前者管 inline 行盒，后者管 block 子元素，**非重复**（纠正 §0「勿再建 measure-first 工具」对 inline 行盒场景的误套：该警告针对 block 子元素测量，不适用于 inline 行盒列分布）。
 
 **下一步（多会话 spec-rfc）**：设计 layout 侧 IFC 行盒→列碎片化的接口（`InlineFormattingContext` 接受 `ColumnFragmentationContext`，输出 `Vec<Vec<InlineLine>>` 每列行盒），Phase 1 = 死字段 + 测量基线（净 0），守 multicol-fill-auto-001 sentinel。**勿再以 paint 侧门控放宽/协调重试**（R157/R198/R203/R317 共 4 轮证伪）。
 
@@ -82,12 +82,12 @@ R201 Round 4' 的前置「放宽 text.rs:713 `height_auto` 门控（阻塞点 A�
 ## 0. 执行摘要（已纠正）
 
 - **一句话目标**：让 multicol 容器（`column-count`/`column-width`）把行内流内容**按列高碎片化分配到各列**（CSS Multicol §8 balance + §6 fragmentation），而非当前的 paint 阶段近似均分。
-- **核心问题**：当前 multicol 列分配**仅在 paint 阶段**（`painter/text.rs:948`）对 `!has_in_flow_children && balance && height:auto` 的纯行内容器做 `target_h = total_height / col_count` **均高分配**——这是简化近似，非 CSS 规范的 balance 算法，且：
-  1. **不含 block 子元素**的 multicol（混合内容）被 `has_in_flow_children` 门控（text.rs:711）跳过，整列堆叠（R157）。
+- **核心问题**：当前 multicol 列分配**仅在 paint 阶段**（`painter/text.rs:854`）对 `!has_in_flow_children && balance && height:auto` 的纯行内容器做 `target_h = total_height / col_count` **均高分配**——这是简化近似，非 CSS 规范的 balance 算法，且：
+  1. **不含 block 子元素**的 multicol（混合内容）被 `has_in_flow_children` 门控（text.rs:569）跳过，整列堆叠（R157）。
   2. **paint IFC 与 multicol.rs block 分配不协调**——`target_h` 不扣 col1 已被 block 子元素占据的高度（R157 标记的核心缺口）。
   3. **明确高度 + column-fill:auto**（嵌套/breaking 用例）涉及 column breaking（§6），当前完全不支持（R113 两趟循环依赖）。
 - **推荐方案**：**列感知 IFC**——让 IFC 在生成行盒时知道「当前列的可用高度」，按列高把行盒碎片化到各列（R131），协调 block 子元素已占空间。分轮渐进：先纯行内 balance 精确化（最大子集），再混合内容门控放宽，再 breaking。
-- **首个落地步骤**：⚠️ 经 R201 dump 实测纠正——碎片化算法（`assign_children_to_columns_sequential`/`_with_breaking`）**已存在**，**勿再建 measure-first 工具**（会重复 R199→R200 证伪命运）。真实首步 = Round 4' wiring：放宽 text.rs:711 门控 + 让 `column_span_offsets` paint 路径重绘碎片化 IFC 内容到各列。详见上方「R201 dump 实测定性」。
+- **首个落地步骤**：⚠️ 经 R201 dump 实测纠正——碎片化算法（`assign_children_to_columns_sequential`/`_with_breaking`）**已存在**，**勿再建 measure-first 工具**（会重复 R199→R200 证伪命运）。真实首步 = Round 4' wiring：放宽 text.rs:569 门控 + 让 `column_span_offsets` paint 路径重绘碎片化 IFC 内容到各列。详见上方「R201 dump 实测定性」。
 
 ---
 
@@ -99,8 +99,8 @@ R201 Round 4' 的前置「放宽 text.rs:713 `height_auto` 门控（阻塞点 A�
 |------|------|------|
 | 布局 | `layout-engine/multicol.rs` | 计算 `col_count`/`col_width`（`compute_single_column_width`，公式 `W=(container-(count-1)*gap)/count` 已验证正确 R185）；block 子元素由 taffy 堆叠；**不做行内流列分配** |
 | 提取 | `engine.rs extract_layout` | `is_multicol` 标志（line 651）；multicol 容器的 LayoutBox 携带列几何 |
-| 绘制门控 | `painter/text.rs:711` | 仅 `!has_in_flow_children && is_balance_mode && height_auto` 触发 paint 列分配；其余 multicol 整列堆叠 |
-| 列分配 | `painter/text.rs:948-984` | `target_h = total_height/col_count` 均分；按 `line.y/target_h.floor()` 分列；`col_first_y` rebase 到列内 y=0；逐列裁剪 |
+| 绘制门控 | `painter/text.rs:569` | 仅 `!has_in_flow_children && is_balance_mode && height_auto` 触发 paint 列分配；其余 multicol 整列堆叠 |
+| 列分配 | `painter/text.rs:853-882` | `target_h = total_height/col_count` 均分；按 `line.y/target_h.floor()` 分列；`col_first_y` rebase 到列内 y=0；逐列裁剪 |
 
 ### 1.2 根因（4 类失败）
 
@@ -135,7 +135,7 @@ ColumnFragmentationContext {
 }
 ```
 
-IFC 输出 `Vec<ColumnContent>`，每列含其行盒 + 行盒在列内的 y。paint 按列渲染（列 x 偏移 + 列内 y + 裁剪），复用现有 `text.rs:974-984` 的逐列裁剪。
+IFC 输出 `Vec<ColumnContent>`，每列含其行盒 + 行盒在列内的 y。paint 按列渲染（列 x 偏移 + 列内 y + 裁剪），复用现有 `text.rs:881` 的逐列裁剪。
 
 ### 2.2 balance 算法（§8，shortest-column-first）
 
@@ -168,7 +168,7 @@ IFC 输出 `Vec<ColumnContent>`，每列含其行盒 + 行盒在列内的 y。pa
 ### Round 2'：breaking wiring（类 C，R201 Round 4' 重定向）
 
 - **目标用例**：multicol-breaking-004/005/006/nobackground-000/001/003/004（self 0.17-1.21%）。
-- **根因（R201）**：碎片化算法已存在，缺口 = ① paint 门控 `height_auto`（text.rs:711）挡住有明确高度 inner 的子列布局；② `column_span_offsets` paint 路径不重绘碎片化 IFC 内容到非主位置列。
+- **根因（R201）**：碎片化算法已存在，缺口 = ① paint 门控 `height_auto`（text.rs:569）挡住有明确高度 inner 的子列布局；② `column_span_offsets` paint 路径不重绘碎片化 IFC 内容到非主位置列。
 - **风险**：R198/R209 证 multicol-fill-auto-001 经 font_size 存储/列分配耦合易回归（0.63→9.15）；放宽门控须守此用例。R203 证 paint 侧简单协调全 net-negative，须 layout 侧 column-aware IFC（R131）。
 - **门禁**：逐用例 set-diff，multicol-fill-auto-001 不回归。
 
@@ -183,7 +183,7 @@ IFC 输出 `Vec<ColumnContent>`，每列含其行盒 + 行盒在列内的 y。pa
 
 1. **R200 纠正**：列分配（balance）方向**已关闭**——旧 `total/col_count` 顺序填充正确，类 A 残余是精度非算法。
 2. **R201 纠正**：碎片化算法**已存在**，缺口是 wiring（paint 门控 + column_span_offsets 重绘），非新建 measure-first 工具。
-3. **Round 1' baseline 是 flex×multicol 跨子系统**：须厘清 taffy 如何消费 block 项 first baseline（cached_baselines 补丁路径，engine.rs:482），可能需 converter 侧改动。
+3. **Round 1' baseline 是 flex×multicol 跨子系统**：须厘清 taffy 如何消费 block 项 first baseline（cached_baselines 补丁路径，engine.rs:1002），可能需 converter 侧改动。
 4. **Round 2' breaking 是结构里程碑**：column breaking 涉及行盒跨列断裂，须 layout 侧 column-aware IFC（R131）；R203 证 paint 侧不可解。
 5. **font_size Phase A 交互**：multicol 容器被 Phase A font_size 死锁反向依赖（R158/R198/R209）。任何改 multicol 列分配/存储的轮次须验证 multicol-fill-auto-001 不回归（余量 0.63% 小）。
 
