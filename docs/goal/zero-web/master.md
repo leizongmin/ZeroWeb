@@ -1517,6 +1517,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 5 属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` containment 簇序列化（本轮 R2741，getComputedStyle 维护态续）
+
+承接 R2740。补 containment 簇 3 属性（旧均返 ''）：`content-visibility`（`ContentVisibilityValue`：Visible/Hidden/Auto，CSS Containment 2，初值 visible）+ `contain-intrinsic-width`/`contain-intrinsic-height`（`Option<LengthValue>`，None→`none`〔CSS Sizing 4 初值〕/ Some→px 经 [`length_to_css`]）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 3 臂（content-visibility + contain-intrinsic-width/height）；新增 `content_visibility_str`（3 关键字）+ `opt_length_to_css`（None→none / Some→length，复用 `length_to_css`）；import 加 `ContentVisibilityValue`（zero_style_system 经 `pub use zero_css_parser::values::*` 重导出）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_containment`（content-visibility hidden/auto + 默认 visible；contain-intrinsic-width `100px` / height `50px` + 默认 `none`）。 |
+
+**对齐 Chromium**：content-visibility 关键字、contain-intrinsic-* None→none / Some→px 与 Chromium getComputedStyle 一致。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13366 passed / 0 failed / 74 ignored**，13365+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 3 属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
