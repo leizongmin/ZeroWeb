@@ -1607,6 +1607,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 9 属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` background-image + mask-image 序列化（本轮 R2747，getComputedStyle 维护态续）
+
+承接 R2746。补 `background-image` + `mask-image`（旧均返 ''，框架 bg 检测常查）。`Vec<BackgroundImageComputedValue>`：空列表→`none`（初值，覆盖极常见 `backgroundImage === 'none'` 判定）；None/Url 逐层序列化（`url("u")`，同 R2735 list-style-image），多层逗号分隔；**任一 Gradient 层→''**（gradient 全序列化=多 helper 子工程 defer，混合层部分序列化会错列表，故整体返 ''）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"background-image"`+`"mask-image"` 臂；新增 `image_layer_list_to_css`（空→none / None·Url 逐层 / 任一 Gradient→''）；import 加 `BackgroundImageComputedValue`。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_background_mask_image`（url→`url("bg.png")` / none / 多层 `url("a.png"), url("b.png")` / gradient→'' / mask-image url / 默认→none）。 |
+
+**对齐 Chromium**：None/Url 图层与 Chromium getComputedStyle 一致。**Gradient 层 defer**：linear/radial/conic 全序列化（GradientDirection + 色标 + Color 4 插值 + double-position/hints）是多 helper 子工程，遇 gradient 层整体返 ''（不劣化）；后续轮可作独立子项目实施。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13372 passed / 0 failed / 74 ignored**，13371+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 无 struct FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧两属性返 ''，新实现 None/Url 返真值（gradient 仍 ''，不劣化）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
