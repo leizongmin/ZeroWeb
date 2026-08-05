@@ -4134,6 +4134,66 @@ fn test_get_computed_style_counter_actions() {
 }
 
 #[test]
+fn test_get_computed_style_transition_animation() {
+    // R2743：getComputedStyle transition/animation 簇（10 属性，timing-function defer 到后续轮）。
+    let html = "<html><body>\
+        <div id=\"tp\" style=\"transition-property: margin, padding;\"></div>\
+        <div id=\"tps\" style=\"transition-property: opacity;\"></div>\
+        <div id=\"td\" style=\"transition-duration: 0.3s, 0.5s;\"></div>\
+        <div id=\"tde\" style=\"transition-delay: 0.1s;\"></div>\
+        <div id=\"an\" style=\"animation-name: fade, slide;\"></div>\
+        <div id=\"ad\" style=\"animation-duration: 2s;\"></div>\
+        <div id=\"adel\" style=\"animation-delay: 1s;\"></div>\
+        <div id=\"aic\" style=\"animation-iteration-count: infinite;\"></div>\
+        <div id=\"aicn\" style=\"animation-iteration-count: 2.5;\"></div>\
+        <div id=\"adi\" style=\"animation-direction: alternate;\"></div>\
+        <div id=\"afm\" style=\"animation-fill-mode: forwards;\"></div>\
+        <div id=\"aps\" style=\"animation-play-state: paused;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // transition-property：逗号分隔；单值；默认 all。
+    assert_eq!(
+        computed_style_property(html, "#tp", "transition-property"),
+        "margin, padding"
+    );
+    assert_eq!(computed_style_property(html, "#tps", "transition-property"), "opacity");
+    assert_eq!(computed_style_property(html, "#def", "transition-property"), "all");
+    // transition-duration/delay：Ns；默认 0s。
+    assert_eq!(
+        computed_style_property(html, "#td", "transition-duration"),
+        "0.3s, 0.5s"
+    );
+    assert_eq!(computed_style_property(html, "#tde", "transition-delay"), "0.1s");
+    assert_eq!(computed_style_property(html, "#def", "transition-duration"), "0s");
+    // animation-name：逗号分隔；默认 none。
+    assert_eq!(computed_style_property(html, "#an", "animation-name"), "fade, slide");
+    assert_eq!(computed_style_property(html, "#def", "animation-name"), "none");
+    // animation-duration/delay：Ns；默认 0s。
+    assert_eq!(computed_style_property(html, "#ad", "animation-duration"), "2s");
+    assert_eq!(computed_style_property(html, "#adel", "animation-delay"), "1s");
+    // animation-iteration-count：infinite / 数值；默认 1。
+    assert_eq!(
+        computed_style_property(html, "#aic", "animation-iteration-count"),
+        "infinite"
+    );
+    assert_eq!(
+        computed_style_property(html, "#aicn", "animation-iteration-count"),
+        "2.5"
+    );
+    assert_eq!(computed_style_property(html, "#def", "animation-iteration-count"), "1");
+    // animation-direction/fill-mode/play-state：关键字；默认 normal/none/running。
+    assert_eq!(
+        computed_style_property(html, "#adi", "animation-direction"),
+        "alternate"
+    );
+    assert_eq!(computed_style_property(html, "#afm", "animation-fill-mode"), "forwards");
+    assert_eq!(computed_style_property(html, "#aps", "animation-play-state"), "paused");
+    assert_eq!(computed_style_property(html, "#def", "animation-direction"), "normal");
+    assert_eq!(computed_style_property(html, "#def", "animation-fill-mode"), "none");
+    assert_eq!(computed_style_property(html, "#def", "animation-play-state"), "running");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。

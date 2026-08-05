@@ -7,10 +7,11 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::{
-    AlignmentValue, BackgroundEdge, BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorValue,
-    ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue,
-    LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue,
-    TransformFunction, TransformValue, VisibilityValue,
+    AlignmentValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, BackgroundEdge,
+    BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorValue, ContentListItem, DisplayValue,
+    FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, LengthValue,
+    ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, TransformFunction,
+    TransformValue, VisibilityValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -347,6 +348,18 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         // 否则空格分隔 `name integer` 列表（value=None 时取默认：increment=1 / reset=0）。
         "counter-increment" => counter_action_to_css(&style.counter_increment, 1),
         "counter-reset" => counter_action_to_css(&style.counter_reset, 0),
+        // ── transition/animation 簇（R2743）── 列表属性，逗号分隔；空→各 CSS 初值。
+        // timing-function（含 steps() 位置歧义）defer 到后续轮核实，本轮不含。
+        "transition-property" => string_list_to_css(&style.transition_property, "all"),
+        "transition-duration" => time_list_to_css(&style.transition_duration, "0s"),
+        "transition-delay" => time_list_to_css(&style.transition_delay, "0s"),
+        "animation-name" => string_list_to_css(&style.animation_name, "none"),
+        "animation-duration" => time_list_to_css(&style.animation_duration, "0s"),
+        "animation-delay" => time_list_to_css(&style.animation_delay, "0s"),
+        "animation-iteration-count" => iter_count_list_to_css(&style.animation_iteration_count),
+        "animation-direction" => enum_list_to_css(&style.animation_direction, "normal", animation_direction_str),
+        "animation-fill-mode" => enum_list_to_css(&style.animation_fill_mode, "none", animation_fill_mode_str),
+        "animation-play-state" => enum_list_to_css(&style.animation_play_state, "running", animation_play_state_str),
         _ => String::new(),
     }
 }
@@ -1492,6 +1505,83 @@ fn box_4_to_css(
     } else {
         format!("{t} {r} {b} {l}")
     }
+}
+
+/// transition/animation 列表族通用序列化：空列表→`default`（各 CSS 初值），否则逗号分隔。
+/// 对齐 Chromium getComputedStyle（`transition-property: margin, padding` → `margin, padding`）。
+fn string_list_to_css(list: &[String], default: &str) -> String {
+    if list.is_empty() {
+        default.to_string()
+    } else {
+        list.join(", ")
+    }
+}
+
+/// 时间列表（transition/animation duration·delay，f64 秒）：空→`default`（`0s`），
+/// 否则逗号分隔 `Ns`（整数无小数点 `2s` / 小数去尾零 `0.3s`，经 [`format_num`]）。
+fn time_list_to_css(list: &[f64], default: &str) -> String {
+    if list.is_empty() {
+        default.to_string()
+    } else {
+        list.iter().map(|t| format_num(*t, "s")).collect::<Vec<_>>().join(", ")
+    }
+}
+
+/// animation-iteration-count 列表（`Vec<Option<f64>>`）：空→`1`（CSS 初值）；
+/// None→`infinite`，Some(n)→无后缀数（整数 `2` / 小数 `2.5`）。
+fn iter_count_list_to_css(list: &[Option<f64>]) -> String {
+    if list.is_empty() {
+        "1".to_string()
+    } else {
+        list.iter()
+            .map(|c| match c {
+                None => "infinite".to_string(),
+                Some(n) => format_num(*n, ""),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// transition/animation 枚举列表（direction/fill-mode/play-state）通用序列化：
+/// 空→`default`（CSS 初值），否则逐元素经 `f` 映射关键字后逗号分隔。
+fn enum_list_to_css<T>(list: &[T], default: &str, f: impl Fn(&T) -> String) -> String {
+    if list.is_empty() {
+        default.to_string()
+    } else {
+        list.iter().map(f).collect::<Vec<_>>().join(", ")
+    }
+}
+
+/// animation-direction：CSS Animations 方向（normal/reverse/alternate/alternate-reverse）。
+fn animation_direction_str(d: &AnimationDirectionValue) -> String {
+    match d {
+        AnimationDirectionValue::Normal => "normal",
+        AnimationDirectionValue::Reverse => "reverse",
+        AnimationDirectionValue::Alternate => "alternate",
+        AnimationDirectionValue::AlternateReverse => "alternate-reverse",
+    }
+    .to_string()
+}
+
+/// animation-fill-mode：CSS Animations 填充模式（none/forwards/backwards/both）。
+fn animation_fill_mode_str(m: &AnimationFillModeValue) -> String {
+    match m {
+        AnimationFillModeValue::None => "none",
+        AnimationFillModeValue::Forwards => "forwards",
+        AnimationFillModeValue::Backwards => "backwards",
+        AnimationFillModeValue::Both => "both",
+    }
+    .to_string()
+}
+
+/// animation-play-state：CSS Animations 播放状态（running/paused）。
+fn animation_play_state_str(s: &AnimationPlayStateValue) -> String {
+    match s {
+        AnimationPlayStateValue::Running => "running",
+        AnimationPlayStateValue::Paused => "paused",
+    }
+    .to_string()
 }
 
 /// counter-increment / counter-reset：CSS Lists 计数器操作（`Vec<CounterActionValue>`）。
