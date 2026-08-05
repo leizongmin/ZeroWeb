@@ -834,6 +834,82 @@
     }
   };
 
+  // AbortController/AbortSignal——fetch 中止 / 异步流程控制（cancel token 模式，现代 JS 库 / fetch
+  // 高频）。V8 embed 不提供，polyfill 之（本地 Chromium 150 oracle 锚定 R2777）。signal.aborted/
+  // reason（getter）+ abort(reason) + addEventListener('abort') 触发 + AbortSignal.abort()/timeout
+  // 静态工厂 + throwIfAborted()。**关键行为（oracle 锚定）**：abort() 无参时 reason 默认 AbortError
+  // DOMException；abort(val) reason 即 val（不包）；重复 abort 静默 no-op（不抛）；throwIfAborted 在
+  // aborted 时抛 AbortError DOMException。**已知限制**：signal 非真 EventTarget 子类（
+  // `instanceof EventTarget`=false，但 add/removeEventListener/dispatchEvent API 齐备）；AbortSignal.timeout
+  // 依赖 setTimeout 回调真触发（sandbox 事件循环须驱动）。
+  function AbortSignal() {
+    this._aborted = false;
+    this._reason = undefined;
+    this._listeners = [];
+  }
+  AbortSignal.prototype = Object.create(Object.prototype);
+  AbortSignal.prototype.constructor = AbortSignal;
+  Object.defineProperty(AbortSignal.prototype, 'aborted', {
+    configurable: true, enumerable: true,
+    get: function () { return this._aborted; }
+  });
+  Object.defineProperty(AbortSignal.prototype, 'reason', {
+    configurable: true, enumerable: true,
+    get: function () { return this._reason; }
+  });
+  AbortSignal.prototype.addEventListener = function (type, cb) {
+    if (type === 'abort' && typeof cb === 'function') this._listeners.push(cb);
+  };
+  AbortSignal.prototype.removeEventListener = function (type, cb) {
+    if (type !== 'abort') return;
+    var i = this._listeners.indexOf(cb);
+    if (i >= 0) this._listeners.splice(i, 1);
+  };
+  AbortSignal.prototype.dispatchEvent = function () { return true; };
+  AbortSignal.prototype.throwIfAborted = function () {
+    if (this._aborted) {
+      throw (this._reason instanceof DOMException)
+        ? this._reason
+        : new DOMException('signal is aborted without reason', 'AbortError');
+    }
+  };
+  // 统一 abort 逻辑（controller.abort 与 AbortSignal.abort 共用）。
+  function _zw_abort_signal(signal, reason) {
+    if (signal._aborted) return; // 重复 abort 静默 no-op（spec）
+    signal._aborted = true;
+    signal._reason = (typeof reason === 'undefined')
+      ? new DOMException('signal is aborted without reason', 'AbortError')
+      : reason;
+    var ls = signal._listeners.slice();
+    signal._listeners = [];
+    for (var i = 0; i < ls.length; i++) {
+      try { ls[i]({ type: 'abort', target: signal }); } catch (_) {}
+    }
+  }
+  AbortSignal.abort = function (reason) {
+    var s = new AbortSignal();
+    _zw_abort_signal(s, reason);
+    return s;
+  };
+  AbortSignal.timeout = function (ms) {
+    var s = new AbortSignal();
+    if (typeof setTimeout === 'function') {
+      setTimeout(function () { _zw_abort_signal(s, undefined); }, Number(ms) || 0);
+    }
+    return s;
+  };
+  function AbortController() {
+    var signal = new AbortSignal();
+    this._signal = signal;
+    this.abort = function (reason) { _zw_abort_signal(signal, reason); };
+  }
+  Object.defineProperty(AbortController.prototype, 'signal', {
+    configurable: true, enumerable: true,
+    get: function () { return this._signal; }
+  });
+  globalThis.AbortController = globalThis.AbortController || AbortController;
+  globalThis.AbortSignal = globalThis.AbortSignal || AbortSignal;
+
   // TextEncoder/TextDecoder——UTF-8 编解码（fetch body / 字符串↔字节互转高频）。纯 JS UTF-8
   //（BMP + astral 经代理对；fatal=false 容错，非法序列替 U+FFFD）。仅支持 UTF-8（最通用，
   // spec TextEncoder 恒 utf-8；TextDecoder 标签忽略恒按 utf-8 解，非 utf-8 label 为已知限制）。

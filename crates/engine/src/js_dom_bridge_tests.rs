@@ -1356,6 +1356,129 @@ fn test_dom_exception_r2776() {
 }
 
 #[test]
+fn test_abort_controller_signal_r2777() {
+    // R2777：AbortController/AbortSignal（fetch 中止 / 异步流程控制，cancel token 模式，现代 JS 库 /
+    // fetch 高频）。本地 Chromium 150 oracle 锚定。signal.aborted/reason（getter）+ abort(reason) +
+    // addEventListener('abort') 触发 + AbortSignal.abort() 静态 + throwIfAborted()。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // typeof + fresh signal 状态（oracle 锚定：aborted=false / reason=undefined）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "typeof AbortController + '|' + typeof AbortSignal + '|' +\
+                 new AbortController().signal.aborted + '|' +\
+                 String(new AbortController().signal.reason)"
+            )
+            .unwrap()
+            .value,
+        "function|function|false|undefined"
+    );
+    // controller.signal 访问器 + controller.abort 方法（typeof function）。
+    assert_eq!(
+        sandbox
+            .execute("var c = new AbortController(); typeof c.signal + '|' + typeof c.abort")
+            .unwrap()
+            .value,
+        "object|function"
+    );
+    // abort() 无参：aborted=true，默认 reason 为 AbortError DOMException。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var c = new AbortController(); c.abort();\
+                 c.signal.aborted + '|' + (c.signal.reason instanceof DOMException) + '|' + c.signal.reason.name"
+            )
+            .unwrap()
+            .value,
+        "true|true|AbortError"
+    );
+    // abort(msg)：reason 即 msg（不包装）；abort(DOMException)：reason 即该 DOMException。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var a = new AbortController(); a.abort('cancelled');\
+                 var b = new AbortController(); b.abort(new DOMException('x','AbortError'));\
+                 a.signal.reason + '|' + (b.signal.reason instanceof DOMException) + '|' + b.signal.reason.name"
+            )
+            .unwrap()
+            .value,
+        "cancelled|true|AbortError"
+    );
+    // addEventListener('abort') 在 abort() 时触发回调。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var c = new AbortController(); var hit = 'no';\
+                 c.signal.addEventListener('abort', function () { hit = 'yes'; });\
+                 c.abort(); hit"
+            )
+            .unwrap()
+            .value,
+        "yes"
+    );
+    // 重复 abort() 静默 no-op（不抛，spec）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var c = new AbortController(); c.abort('first'); c.abort('second');\
+                 try { c.abort(); 'no-throw'; } catch (e) { 'threw'; }"
+            )
+            .unwrap()
+            .value,
+        "no-throw"
+    );
+    // throwIfAborted：未 aborted 不抛；aborted 抛 AbortError DOMException。
+    assert_eq!(
+        sandbox
+            .execute(
+                "new AbortController().signal.throwIfAborted();\
+                 var c = new AbortController(); c.abort();\
+                 try { c.signal.throwIfAborted(); 'no-throw'; } catch (e) { (e instanceof DOMException) + '|' + e.name; }"
+            )
+            .unwrap()
+            .value,
+        "true|AbortError"
+    );
+    // AbortSignal.abort(reason) 静态工厂：aborted=true / reason 透传。
+    assert_eq!(
+        sandbox
+            .execute("var s = AbortSignal.abort('r'); s.aborted + '|' + s.reason + '|' + (s instanceof AbortSignal)")
+            .unwrap()
+            .value,
+        "true|r|true"
+    );
+    // AbortSignal.timeout 存在（typeof function）且初始 aborted=false（真延迟触发依赖事件循环，不在此断言）。
+    assert_eq!(
+        sandbox
+            .execute("typeof AbortSignal.timeout + '|' + AbortSignal.timeout(100).aborted")
+            .unwrap()
+            .value,
+        "function|false"
+    );
+    // removeEventListener 注册的回调不再触发。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var c = new AbortController(); var hit = 0;\
+                 var cb = function () { hit++; };\
+                 c.signal.addEventListener('abort', cb);\
+                 c.signal.removeEventListener('abort', cb);\
+                 c.abort(); hit"
+            )
+            .unwrap()
+            .value,
+        "0"
+    );
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，
