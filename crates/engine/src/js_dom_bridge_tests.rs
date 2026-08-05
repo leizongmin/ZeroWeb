@@ -3090,10 +3090,11 @@ fn test_get_computed_style_keywords() {
     assert_eq!(computed_style_property(html, "#k", "overflow-y"), "hidden");
     assert_eq!(computed_style_property(html, "#k", "text-align"), "center");
     assert_eq!(computed_style_property(html, "#k", "white-space"), "pre-wrap");
-    // font-weight bold→700（对齐 Chromium 绝对值）、font-style italic、line-height number。
+    // font-weight bold→700（对齐 Chromium 绝对值）、font-style italic、line-height number→used px
+    // （1.5 × 默认 font-size 16px = 24px，R2761 对齐 Chromium getComputedStyle used 值）。
     assert_eq!(computed_style_property(html, "#k", "font-weight"), "700");
     assert_eq!(computed_style_property(html, "#k", "font-style"), "italic");
-    assert_eq!(computed_style_property(html, "#k", "line-height"), "1.5");
+    assert_eq!(computed_style_property(html, "#k", "line-height"), "24px");
     assert_eq!(computed_style_property(html, "#k", "z-index"), "10");
     assert_eq!(computed_style_property(html, "#k", "cursor"), "pointer");
     assert_eq!(computed_style_property(html, "#k", "text-transform"), "uppercase");
@@ -4234,6 +4235,37 @@ fn test_get_computed_style_inset_shorthand_r2760() {
         <div id=\"lh\" style=\"top: 1px; right: 2px; bottom: 3px; left: 4px;\"></div>\
         </body></html>";
     assert_eq!(computed_style_property(html2, "#lh", "inset"), "1px 2px 3px 4px");
+}
+
+#[test]
+fn test_get_computed_style_font_shorthand_r2761() {
+    // R2761：getComputedStyle font 简写（CSSOM 重组省初值）+ line-height number→used px 修复。
+    // 每项期望串经本地 Chromium 150 oracle 提取，TDD red→green 对齐。
+    // 注：默认 font-family ZW 为空（vs Chromium "Times New Roman"）——pre-existing longhand diverge，
+    // 故测显式 family 的 font 简写声明（序列化本身正确）。
+    let html = "<html><body>\
+        <div id=\"f1\" style=\"font: italic bold 14px/1.5 Arial;\"></div>\
+        <div id=\"f3\" style=\"font: bold 12px sans-serif;\"></div>\
+        <div id=\"f4\" style=\"font: bold 14px/2 Helvetica;\"></div>\
+        <div id=\"f5\" style=\"font-family: Arial; font-size: 14px;\"></div>\
+        </body></html>";
+    // 经 longhand 设置（family Arial + size 14px，style/weight/line-height 全初值省）→"14px Arial"。
+    assert_eq!(computed_style_property(html, "#f5", "font"), "14px Arial");
+    // italic + 700(bold) + 14px + line-height 1.5→21px(14×1.5 used px) + Arial。
+    assert_eq!(
+        computed_style_property(html, "#f1", "font"),
+        "italic 700 14px / 21px Arial"
+    );
+    // 700 + 12px + sans-serif（line-height normal 省）。
+    assert_eq!(computed_style_property(html, "#f3", "font"), "700 12px sans-serif");
+    // 700 + 14px + line-height 2→28px(14×2) + Helvetica。
+    assert_eq!(
+        computed_style_property(html, "#f4", "font"),
+        "700 14px / 28px Helvetica"
+    );
+    // line-height longhand number→used px 修复（独立验证，1.5 × 默认 16px = 24px）。
+    let html2 = "<html><body><div id=\"lh\" style=\"line-height: 1.5;\"></div></body></html>";
+    assert_eq!(computed_style_property(html2, "#lh", "line-height"), "24px");
 }
 
 #[test]

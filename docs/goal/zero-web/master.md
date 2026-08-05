@@ -1815,6 +1815,24 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **已知 diverge（pre-existing，记录不阻塞）**：auto/默认 inset（`position:absolute` 无显式偏移）Chromium 返 used-px 偏移（如 `"13px 772px 480px 8px"`），ZW 返 `"auto"`（ZW 不计算 auto inset 的 used 值）——属 longhand 层 used-value diverge，非本简写引入；显式设置的值序列化正确（测试覆盖）。
 
+### P1a `getComputedStyle` font 简写 + line-height number→px 修复（本轮 R2761，getComputedStyle 维护态续）
+
+承接 R2760。续用本地 Chromium 150 oracle 提取确切串，TDD red→green land **font 简写**（CSSOM 重组省初值）+ **line-height longhand diverge 修复**：
+
+- **font 简写**：`<style> <variant> <weight> <stretch> <size>[/<line-height>] <family>`，省初值（style normal / weight 400 / line-height normal）；font-variant/font-stretch ZW 不支持（恒初值→恒省略）。oracle：`font:italic bold 14px/1.5 Arial`→`"italic 700 14px / 21px Arial"`。
+- **★ line-height number→used px diverge 修复**：oracle 揭示 `line-height:1.5`（font-size 16px）Chromium 返 **`"24px"`**（used 值 = font-size×number），ZW 旧 `line_height_str(Number)` 返 **`"1.5"`**（spec computed 值）diverge。改 `line_height_str(Number(n))`→`format_num(font_size_px × n, "px")` 对齐 Chromium getComputedStyle used-value 语义（display-only 序列化层；layout 用 `LineHeightValue` enum 不受影响，welcome smoke 持平证零渲染回归）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `line_height_str` Number→used px（修 diverge）；+1 helper `font_shorthand_to_css`（省初值重组）+ 1 dispatch 项 `font`。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_font_shorthand_r2761`（font 简写 + line-height number→px，oracle 锚定）；旧测试 #k line-height 期望 `"1.5"`→`"24px"` 纠偏。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13388 passed / 0 failed / 74 ignored**，13387+1 新测试 + 1 旧测试纠偏，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① font 简写旧返 `''`、新返正确 CSSOM 重组串；② line-height number→px 修真 diverge（对齐 Chromium used-value，display-only 不触 layout，welcome 持平实证）；③ 纯只读 JS bridge。
+
+**已知 diverge（pre-existing parser，记录不阻塞）**：① 默认 font-family ZW 为空（vs Chromium "Times New Roman"）——longhand 层 diverge；② ZW `expand_font` 不解析**数值** font-weight（`font:700 ...` 把 700 当 size）——关键字 weight（bold/normal）正常；③ font-variant/stretch 不支持（含 `small-caps`/`condensed` 的 font 简写 diverge，罕见）。均 pre-existing parser 限制，序列化对支持的子集正确（测试覆盖关键字 weight / line-height / family）。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
