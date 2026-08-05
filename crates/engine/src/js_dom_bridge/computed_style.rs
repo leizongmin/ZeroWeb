@@ -2,7 +2,7 @@
 //! CSS 字符串（kebab-case 属性名）。从 `js_dom_bridge` 拆出（R2709）以控制主文件行数。
 //!
 //! 覆盖：display/position/visibility/opacity + 颜色族（color/background-color/border-*-color/outline-color/caret-color/accent-color）+ 长度族 + 关键字/枚举族 + font-family/复合族
-//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break）+ vertical-align/unicode-bidi/empty-cells；未覆盖属性返 ''。
+//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break/text-wrap/text-align-last）+ vertical-align/unicode-bidi/empty-cells/resize/appearance；未覆盖属性返 ''。
 
 use std::collections::HashMap;
 
@@ -14,14 +14,15 @@ use zero_css_parser::values::{
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
-    AccentColorComputedValue, AlignContentValue, BackfaceVisibilityValue, BackgroundAttachmentComputedValue,
-    BackgroundClipComputedValue, BackgroundOriginComputedValue, BackgroundPositionComputedValue,
-    BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderCollapseValue, BorderStyleValue,
-    CaptionSideValue, CaretColorComputedValue, ComputedStyle, ContainComputedValue, ContentComputedValue, CursorValue,
-    DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, HyphensComputedValue, IsolationValue,
-    JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, MixBlendModeComputedValue,
-    ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue, StyleSystem, TableLayoutValue,
-    TextAlignValue, TextOverflowValue, TextTransformValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue,
+    AccentColorComputedValue, AlignContentValue, AppearanceComputedValue, BackfaceVisibilityValue,
+    BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundOriginComputedValue,
+    BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderCollapseValue,
+    BorderStyleValue, CaptionSideValue, CaretColorComputedValue, ComputedStyle, ContainComputedValue,
+    ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue,
+    HyphensComputedValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
+    MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
+    ResizeValue, StyleSystem, TableLayoutValue, TextAlignLastValue, TextAlignValue, TextOverflowValue,
+    TextTransformValue, TextWrapComputedValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue,
     VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
@@ -263,6 +264,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         // ── caret-color / accent-color（R2730）── CSS UI 颜色（auto | <color>，复用 R2705 颜色解析）。
         "caret-color" => caret_color_to_css(&style.caret_color, element_color),
         "accent-color" => accent_color_to_css(&style.accent_color, element_color),
+        // ── text-wrap / text-align-last / resize / appearance（R2731）── 单值关键字枚举。
+        "text-wrap" => text_wrap_to_css(&style.text_wrap),
+        "text-align-last" => text_align_last_to_css(&style.text_align_last),
+        "resize" => resize_to_css(&style.resize),
+        "appearance" => appearance_to_css(&style.appearance),
         _ => String::new(),
     }
 }
@@ -293,6 +299,67 @@ fn accent_color_to_css(a: &AccentColorComputedValue, element_color: &ColorValue)
         AccentColorComputedValue::Auto => "auto".to_string(),
         AccentColorComputedValue::Color(col) => color_to_css(&crate::resolve_color_current(col, element_color)),
     }
+}
+
+/// text-wrap：CSS Text 4 行换行模式单值序列化。初值 wrap。
+fn text_wrap_to_css(t: &TextWrapComputedValue) -> String {
+    match t {
+        TextWrapComputedValue::Wrap => "wrap",
+        TextWrapComputedValue::Nowrap => "nowrap",
+        TextWrapComputedValue::Balance => "balance",
+        TextWrapComputedValue::Pretty => "pretty",
+        TextWrapComputedValue::Stable => "stable",
+    }
+    .to_string()
+}
+
+/// text-align-last：CSS Text 最后一行对齐单值序列化。初值 auto。
+fn text_align_last_to_css(t: &TextAlignLastValue) -> String {
+    match t {
+        TextAlignLastValue::Auto => "auto",
+        TextAlignLastValue::Start => "start",
+        TextAlignLastValue::End => "end",
+        TextAlignLastValue::Left => "left",
+        TextAlignLastValue::Right => "right",
+        TextAlignLastValue::Center => "center",
+        TextAlignLastValue::Justify => "justify",
+    }
+    .to_string()
+}
+
+/// resize：CSS UI 可调整尺寸单值序列化。初值 none。
+fn resize_to_css(r: &ResizeValue) -> String {
+    match r {
+        ResizeValue::None => "none",
+        ResizeValue::Both => "both",
+        ResizeValue::Horizontal => "horizontal",
+        ResizeValue::Vertical => "vertical",
+        ResizeValue::Block => "block",
+        ResizeValue::Inline => "inline",
+    }
+    .to_string()
+}
+
+/// appearance：CSS Basic UI 控件外观单值序列化。CamelCase→kebab-case。初值 auto。
+fn appearance_to_css(a: &AppearanceComputedValue) -> String {
+    match a {
+        AppearanceComputedValue::None => "none",
+        AppearanceComputedValue::Auto => "auto",
+        AppearanceComputedValue::Button => "button",
+        AppearanceComputedValue::Checkbox => "checkbox",
+        AppearanceComputedValue::Listbox => "listbox",
+        AppearanceComputedValue::Menulist => "menulist",
+        AppearanceComputedValue::Meter => "meter",
+        AppearanceComputedValue::ProgressBar => "progress-bar",
+        AppearanceComputedValue::PushButton => "push-button",
+        AppearanceComputedValue::Radio => "radio",
+        AppearanceComputedValue::Searchfield => "searchfield",
+        AppearanceComputedValue::SliderHorizontal => "slider-horizontal",
+        AppearanceComputedValue::SquareButton => "square-button",
+        AppearanceComputedValue::Textarea => "textarea",
+        AppearanceComputedValue::Textfield => "textfield",
+    }
+    .to_string()
 }
 
 /// 把数值序列化为带后缀的 CSS 量（对齐 real browser getComputedStyle 数值串）。

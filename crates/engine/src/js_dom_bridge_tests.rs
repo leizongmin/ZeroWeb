@@ -3713,6 +3713,44 @@ fn test_get_computed_style_caret_accent_color() {
 }
 
 #[test]
+fn test_get_computed_style_misc_ui() {
+    // R2731：getComputedStyle text-wrap/text-align-last/resize/appearance 序列化（misc 单值关键字枚举）。
+    let html = "<html><body>\
+        <div id=\"tw-balance\" style=\"text-wrap: balance;\"></div>\
+        <div id=\"tw-pretty\" style=\"text-wrap: pretty;\"></div>\
+        <div id=\"tal-justify\" style=\"text-align-last: justify;\"></div>\
+        <div id=\"tal-right\" style=\"text-align-last: right;\"></div>\
+        <div id=\"rz-both\" style=\"resize: both;\"></div>\
+        <div id=\"rz-horizontal\" style=\"resize: horizontal;\"></div>\
+        <div id=\"ap-none\" style=\"appearance: none;\"></div>\
+        <div id=\"ap-textfield\" style=\"appearance: textfield;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // text-wrap 默认 wrap。
+    assert_eq!(computed_style_property(html, "#def", "text-wrap"), "wrap");
+    assert_eq!(computed_style_property(html, "#tw-balance", "text-wrap"), "balance");
+    assert_eq!(computed_style_property(html, "#tw-pretty", "text-wrap"), "pretty");
+    // text-align-last 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "text-align-last"), "auto");
+    assert_eq!(
+        computed_style_property(html, "#tal-justify", "text-align-last"),
+        "justify"
+    );
+    assert_eq!(computed_style_property(html, "#tal-right", "text-align-last"), "right");
+    // resize 默认 none。
+    assert_eq!(computed_style_property(html, "#def", "resize"), "none");
+    assert_eq!(computed_style_property(html, "#rz-both", "resize"), "both");
+    assert_eq!(computed_style_property(html, "#rz-horizontal", "resize"), "horizontal");
+    // appearance 默认 auto；CamelCase→kebab（textfield 不变，slider-horizontal 会变）。
+    assert_eq!(computed_style_property(html, "#def", "appearance"), "auto");
+    assert_eq!(computed_style_property(html, "#ap-none", "appearance"), "none");
+    assert_eq!(
+        computed_style_property(html, "#ap-textfield", "appearance"),
+        "textfield"
+    );
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
