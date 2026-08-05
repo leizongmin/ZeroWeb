@@ -3236,6 +3236,31 @@ fn test_get_computed_style_filter() {
 }
 
 #[test]
+fn test_get_computed_style_transform_family() {
+    // R2719：getComputedStyle 3D transform 簇（transform-style / backface-visibility / perspective /
+    // perspective-origin，完成 R2715/R2716 启动的 transform 簇）。
+    let html = "<html><body>\
+        <div id=\"ts-3d\" style=\"transform-style: preserve-3d;\"></div>\
+        <div id=\"bv-hidden\" style=\"backface-visibility: hidden;\"></div>\
+        <div id=\"persp\" style=\"perspective: 800px;\"></div>\
+        <div id=\"po\" style=\"perspective-origin: 25% 75%;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // transform-style：默认 flat，显式 preserve-3d。
+    assert_eq!(computed_style_property(html, "#ts-3d", "transform-style"), "preserve-3d");
+    assert_eq!(computed_style_property(html, "#def", "transform-style"), "flat");
+    // backface-visibility：默认 visible，显式 hidden。
+    assert_eq!(computed_style_property(html, "#bv-hidden", "backface-visibility"), "hidden");
+    assert_eq!(computed_style_property(html, "#def", "backface-visibility"), "visible");
+    // perspective：默认 none（Px(0.0)），显式 px。
+    assert_eq!(computed_style_property(html, "#persp", "perspective"), "800px");
+    assert_eq!(computed_style_property(html, "#def", "perspective"), "none");
+    // perspective-origin：默认 50% 50%，显式百分比保留。
+    assert_eq!(computed_style_property(html, "#po", "perspective-origin"), "25% 75%");
+    assert_eq!(computed_style_property(html, "#def", "perspective-origin"), "50% 50%");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。

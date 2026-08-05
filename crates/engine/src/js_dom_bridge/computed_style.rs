@@ -11,11 +11,12 @@ use zero_css_parser::values::{
     OverflowValue, PositionValue, TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_style_system::{
-    BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle, ContainComputedValue,
-    CursorValue, DirectionValue, FilterComputedValue, FlexBasisValue, IsolationValue, LineHeightValue,
-    MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, PointerEventsValue, StyleSystem,
-    TableLayoutValue, TextAlignValue, TextOverflowValue, TextTransformValue, UserSelectValue,
-    WhiteSpaceValue, WritingModeValue, ZIndexValue,
+    BackfaceVisibilityValue, BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle,
+    ContainComputedValue, CursorValue, DirectionValue, FilterComputedValue, FlexBasisValue, IsolationValue,
+    LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
+    PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue,
+    TextTransformValue, TransformStyleValue, UserSelectValue, WhiteSpaceValue, WritingModeValue,
+    ZIndexValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 
@@ -77,7 +78,8 @@ pub fn lookup_computed_property(
 ///   （font-family/flex-direction/wrap/justify-content/align-items/align-self/writing-mode/object-fit/
 ///   isolation/mix-blend-mode/pointer-events/user-select/list-style-type·position）+ 数值族
 ///   （flex-grow/flex-shrink/order/flex-basis/aspect-ratio）+ Transforms（transform 函数列表 /
-///   transform-origin 两长度）+ contain（关键字 / 位掩码组合）+ filter（函数列表）。未覆盖属性返 ''。
+///   transform-origin 两长度 / transform-style / backface-visibility / perspective /
+///   perspective-origin）+ contain（关键字 / 位掩码组合）+ filter（函数列表）。未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -242,6 +244,16 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "contain" => contain_to_css(&style.contain),
         // ── filter（R2718）── CSS Filter Effects 函数列表（空 Vec / None → none）。
         "filter" => filter_to_css(&style.filter, element_color),
+        // ── 3D Transforms 簇（R2719）── transform-style / backface-visibility 枚举 + perspective /
+        // perspective-origin（与 transform / transform-origin 同族，完成 3D transform 簇）。
+        "transform-style" => transform_style_str(&style.transform_style),
+        "backface-visibility" => backface_visibility_str(&style.backface_visibility),
+        "perspective" => perspective_to_css(&style.perspective, font_size_px),
+        "perspective-origin" => format!(
+            "{} {}",
+            length_to_css(&style.perspective_origin_x, font_size_px),
+            length_to_css(&style.perspective_origin_y, font_size_px)
+        ),
         _ => String::new(),
     }
 }
@@ -914,6 +926,34 @@ fn filter_function_to_css(f: &FilterComputedValue, element_color: &ColorValue) -
             format_num(*blur as f64, "px"),
             color_to_css(&crate::resolve_color_current(color, element_color)),
         ),
+    }
+}
+
+/// transform-style：CSS Transforms 2 计算值（flat / preserve-3d）。
+fn transform_style_str(t: &TransformStyleValue) -> String {
+    match t {
+        TransformStyleValue::Flat => "flat",
+        TransformStyleValue::Preserve3d => "preserve-3d",
+    }
+    .to_string()
+}
+
+/// backface-visibility：CSS Transforms 2 计算值（visible / hidden）。
+fn backface_visibility_str(b: &BackfaceVisibilityValue) -> String {
+    match b {
+        BackfaceVisibilityValue::Visible => "visible",
+        BackfaceVisibilityValue::Hidden => "hidden",
+    }
+    .to_string()
+}
+
+/// perspective：CSS Transforms 2 计算值。ZeroWeb 用 `Px(0.0)` 表示 initial 值 `none`
+///（见 `default_impl.rs` / `apply` 的 `none→Px(0.0)`），real browser getComputedStyle 对
+/// perspective:none 返 `"none"`（对齐 [`max_size_to_css`] 的 INFINITY→none 模式）。
+fn perspective_to_css(lv: &LengthValue, font_size_px: f64) -> String {
+    match lv {
+        LengthValue::Px(v) if *v == 0.0 => "none".to_string(),
+        _ => length_to_css(lv, font_size_px),
     }
 }
 
