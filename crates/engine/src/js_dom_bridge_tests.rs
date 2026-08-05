@@ -4377,6 +4377,43 @@ fn test_get_computed_style_border_image_longhands_r2764() {
 }
 
 #[test]
+fn test_get_computed_style_border_image_shorthand_r2765() {
+    // R2765：getComputedStyle border-image 简写（5 子分量 CSSOM 重组）。Chromium 150 oracle 锚定：
+    // ① source==none → 整值 "none"（不论其余 slice/width/outset/repeat 是否非初值）；
+    // ② source!=none → 恒全量 "<source> <slice> / <width> / <outset> <repeat>"（不省初值，width/outset
+    //    各独占一个 `/` 分隔）。用 linear-gradient 源避免 url() 相对/绝对 longhand 既存 diverge。
+    let html = "<html><body>\
+        <div id=\"d\"></div>\
+        <div id=\"slc\" style=\"border-image-slice: 10;\"></div>\
+        <div id=\"g\" style=\"border-image-source: linear-gradient(-45deg, red, blue);\"></div>\
+        <div id=\"full\" style=\"border-image-source: linear-gradient(-45deg, red, blue);\
+                               border-image-slice: 10 fill;\
+                               border-image-width: 20px;\
+                               border-image-outset: 5px;\
+                               border-image-repeat: round;\"></div>\
+        <div id=\"grep\" style=\"border-image-source: linear-gradient(-45deg, red, blue);\
+                                border-image-repeat: round;\"></div>\
+        </body></html>";
+    let grad = "linear-gradient(-45deg, rgb(255, 0, 0), rgb(0, 0, 255))";
+    // source==none（默认 / 或仅设 slice 等其余分量）→ 整值 "none"。
+    assert_eq!(computed_style_property(html, "#d", "border-image"), "none");
+    assert_eq!(computed_style_property(html, "#slc", "border-image"), "none");
+    // source!=none：恒全量 "<source> <slice> / <width> / <outset> <repeat>"。
+    assert_eq!(
+        computed_style_property(html, "#g", "border-image"),
+        format!("{grad} 100% / 1 / 0 stretch")
+    );
+    assert_eq!(
+        computed_style_property(html, "#full", "border-image"),
+        format!("{grad} 10 fill / 20px / 5px round")
+    );
+    assert_eq!(
+        computed_style_property(html, "#grep", "border-image"),
+        format!("{grad} 100% / 1 / 0 round")
+    );
+}
+
+#[test]
 fn test_get_computed_style_border_radius_shorthand() {
     // R2738：getComputedStyle border-radius 简写（CSSOM 4 值最小化）。4 角 longhand 早覆（R2707）。
     let html = "<html><body>\

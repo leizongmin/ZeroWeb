@@ -416,6 +416,9 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         // ── border-image-source / object-position / quotes（R2736）── 简单枚举收尾。
         // border-image-source：None/Url，复用 R2735 list-style-image 的 url() 引号模式。
         "border-image-source" => border_image_source_to_css(&style.border_image_source, element_color, font_size_px),
+        // ── border-image 简写（R2765）── source/slice/width/outset/repeat 5 子分量 CSSOM 重组。
+        // Chromium 150 oracle：source==none→整值 "none"；否则恒全量 "<source> <slice> / <width> / <outset> <repeat>"。
+        "border-image" => border_image_shorthand_to_css(style, element_color, font_size_px),
         // ── border-image 切片族 longhand（R2764）── slice/width/outset 4 值最小化 + repeat 2 值。
         // CSS Border Image §3，Chromium 150 oracle 锚定（slice 默认 100% 修 Percent，paint-neutral）。
         "border-image-slice" => border_image_slice_to_css(&style.border_image_slice),
@@ -858,6 +861,24 @@ fn border_image_repeat_to_css(r: &BorderImageRepeatComputedValue) -> String {
     let h = border_image_repeat_mode_str(&r.horizontal);
     let v = border_image_repeat_mode_str(&r.vertical);
     if h == v { h.to_string() } else { format!("{h} {v}") }
+}
+
+/// `border-image` 简写：5 子分量 CSSOM 重组。Chromium 150 oracle 锚定：
+/// `border-image-source==none` → 整值 `"none"`（不论其余子分量是否非初值）；
+/// 否则恒全量 `"<source> <slice> / <width> / <outset> <repeat>"`（不省初值，width/outset 各独占一个 `/`）。
+/// 复用 4 切片族 longhand 序列化（slice/width/outset/repeat）+ source 序列化。
+fn border_image_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue, font_size_px: f64) -> String {
+    if matches!(style.border_image_source, BorderImageSourceComputedValue::None) {
+        return "none".to_string();
+    }
+    format!(
+        "{} {} / {} / {} {}",
+        border_image_source_to_css(&style.border_image_source, element_color, font_size_px),
+        border_image_slice_to_css(&style.border_image_slice),
+        border_image_width_to_css(&style.border_image_width),
+        border_image_outset_to_css(&style.border_image_outset),
+        border_image_repeat_to_css(&style.border_image_repeat),
+    )
 }
 
 /// quotes：CSS Generated Content 引号。None→none；Auto（初值）→auto；Pairs→逐对开/闭串空格分隔

@@ -1897,6 +1897,26 @@ oracle：默认 slice→`"100%"`、`10 20 30 40`→`"10 20 30 40"`、`10% fill`�
 
 **已知 defer**：border-image **简写**（source+slice+width+outset+repeat 5 子分量复杂 CSSOM 重组，须 oracle 核各分量省初值/`/` 分隔规则），下轮候选。
 
+### P1a `getComputedStyle` border-image 简写（本轮 R2765，border-image 簇收尾）
+
+承接 R2764（4 longhand + slice 默认 diverge 修复已 land）。续用本地 Chromium 150 oracle 提取确切串，TDD red→green land **border-image 简写**（5 子分量 CSSOM 重组）。oracle 揭示**远比预期简单**的核心规则：
+
+- **① source==none 短路**：`border-image-source==none` → 整值 `"none"`，**不论其余 slice/width/outset/repeat 是否非初值**（设了 slice 但 source=none 仍返 "none"）。
+- **② source!=none 恒全量**：不省任何初值，恒 `"<source> <slice> / <width> / <outset> <repeat>"`——slice 与 width 间一个 `/`、width 与 outset 间一个 `/`、outset 后接 repeat（空格）。
+
+oracle 锚定（用 linear-gradient 源避 url() 相对/绝对 longhand 既存 diverge）：默认→`"none"`、仅设 slice→`"none"`、`source=linear-gradient(-45deg,red,blue)` 默认余→`"linear-gradient(-45deg, rgb(255, 0, 0), rgb(0, 0, 255)) 100% / 1 / 0 stretch"`、全设→`"... 10 fill / 20px / 5px round"`、source+repeat round→`"... 100% / 1 / 0 round"`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +`border_image_shorthand_to_css`（source None 短路 → "none"，否则复用 5 longhand helper 拼接 `<src> <slice> / <width> / <outset> <repeat>`）+ 1 dispatch 项（`"border-image"`）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_border_image_shorthand_r2765`（默认/仅 slice 短路 / source-only / 全设 / source+repeat，oracle 锚定）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13392 passed / 0 failed / 74 ignored**，13391+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 简写旧返 `''`、新返正确 CSSOM 重组串；② 复用 R2764 既 land 的 5 个 longhand helper（source/slice/width/outset/repeat），零新子分量逻辑，仅 `/` 与空格拼接；③ source==none 短路是 Chromium 实证行为（非推测），避免 source none 时拼出无意义的 `"none 100% / 1 / 0 stretch"`。
+
+**已知 diverge（pre-existing longhand，记录不阻塞）**：url() 源 ZW 存相对（`url("b.png")`）、Chromium 解析绝对（`url("file:///tmp/b.png")`）——R2757 background 既记的 url() 相对/绝对 diverge，本切片用 linear-gradient 源绕开（测试覆盖），简写本身正确。**border-image 簇（source + 4 longhand + 简写）全收官**。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
