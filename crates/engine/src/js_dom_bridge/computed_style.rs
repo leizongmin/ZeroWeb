@@ -2,7 +2,7 @@
 //! CSS 字符串（kebab-case 属性名）。从 `js_dom_bridge` 拆出（R2709）以控制主文件行数。
 //!
 //! 覆盖：display/position/visibility/opacity + 颜色族 + 长度族 + 关键字/枚举族 + font-family/复合族
-//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break）；未覆盖属性返 ''。
+//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break）+ vertical-align/unicode-bidi/empty-cells；未覆盖属性返 ''。
 
 use std::collections::HashMap;
 
@@ -17,11 +17,12 @@ use zero_style_system::{
     AlignContentValue, BackfaceVisibilityValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
     BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
     BackgroundSizeComputedValue, BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle,
-    ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, FilterComputedValue, FlexBasisValue,
-    HyphensComputedValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
-    MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
-    StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue, TextTransformValue, TransformStyleValue,
-    UserSelectValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
+    ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue,
+    FilterComputedValue, FlexBasisValue, HyphensComputedValue, IsolationValue, JustifyItemsValue, JustifySelfValue,
+    LineBreakValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
+    OverflowWrapValue, PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue,
+    TextTransformValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue,
+    WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -255,6 +256,10 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "overflow-wrap" => overflow_wrap_to_css(&style.overflow_wrap),
         "hyphens" => hyphens_to_css(&style.hyphens),
         "line-break" => line_break_to_css(&style.line_break),
+        // ── vertical-align / unicode-bidi / empty-cells（R2729）── 单值关键字枚举。
+        "vertical-align" => vertical_align_to_css(&style.vertical_align),
+        "unicode-bidi" => unicode_bidi_to_css(&style.unicode_bidi),
+        "empty-cells" => empty_cells_to_css(&style.empty_cells),
         _ => String::new(),
     }
 }
@@ -1424,6 +1429,45 @@ fn line_break_to_css(l: &LineBreakValue) -> String {
         LineBreakValue::Normal => "normal",
         LineBreakValue::Strict => "strict",
         LineBreakValue::Anywhere => "anywhere",
+    }
+    .to_string()
+}
+
+/// vertical-align：CSS 行内/表格单元格垂直对齐单值序列化。初值 baseline。
+/// ZeroWeb enum 仅关键字（无 `<length>`/`<percentage>` 变体）——diverge：CSS 规范允许，Chromium 对
+/// `5px`/`50%` 返 used 值，ZeroWeb 无 length 变体存储故无法表达（解析层丢弃，本序列化如实反映枚举）。
+fn vertical_align_to_css(v: &VerticalAlignValue) -> String {
+    match v {
+        VerticalAlignValue::Baseline => "baseline",
+        VerticalAlignValue::Top => "top",
+        VerticalAlignValue::Middle => "middle",
+        VerticalAlignValue::Bottom => "bottom",
+        VerticalAlignValue::TextTop => "text-top",
+        VerticalAlignValue::TextBottom => "text-bottom",
+        VerticalAlignValue::Sub => "sub",
+        VerticalAlignValue::Super => "super",
+    }
+    .to_string()
+}
+
+/// unicode-bidi：CSS Writing Modes 双向文本算法单值序列化。初值 normal。
+fn unicode_bidi_to_css(u: &UnicodeBidiValue) -> String {
+    match u {
+        UnicodeBidiValue::Normal => "normal",
+        UnicodeBidiValue::Embed => "embed",
+        UnicodeBidiValue::Isolate => "isolate",
+        UnicodeBidiValue::BidiOverride => "bidi-override",
+        UnicodeBidiValue::IsolateOverride => "isolate-override",
+        UnicodeBidiValue::Plaintext => "plaintext",
+    }
+    .to_string()
+}
+
+/// empty-cells：CSS 表格空单元格边框单值序列化。初值 show。
+fn empty_cells_to_css(e: &EmptyCellsComputedValue) -> String {
+    match e {
+        EmptyCellsComputedValue::Show => "show",
+        EmptyCellsComputedValue::Hide => "hide",
     }
     .to_string()
 }

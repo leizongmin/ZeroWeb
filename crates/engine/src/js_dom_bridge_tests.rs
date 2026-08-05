@@ -3656,6 +3656,38 @@ fn test_get_computed_style_text_break_cluster() {
 }
 
 #[test]
+fn test_get_computed_style_va_bidi_empty() {
+    // R2729：getComputedStyle vertical-align/unicode-bidi/empty-cells 序列化（单值关键字枚举）。
+    let html = "<html><body>\
+        <div id=\"va-middle\" style=\"vertical-align: middle;\"></div>\
+        <div id=\"va-text-top\" style=\"vertical-align: text-top;\"></div>\
+        <div id=\"va-sub\" style=\"vertical-align: sub;\"></div>\
+        <div id=\"ub-isolate\" style=\"unicode-bidi: isolate;\"></div>\
+        <div id=\"ub-plaintext\" style=\"unicode-bidi: plaintext;\"></div>\
+        <div id=\"ec-hide\" style=\"empty-cells: hide;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // vertical-align 默认 baseline。
+    assert_eq!(computed_style_property(html, "#def", "vertical-align"), "baseline");
+    assert_eq!(computed_style_property(html, "#va-middle", "vertical-align"), "middle");
+    assert_eq!(
+        computed_style_property(html, "#va-text-top", "vertical-align"),
+        "text-top"
+    );
+    assert_eq!(computed_style_property(html, "#va-sub", "vertical-align"), "sub");
+    // unicode-bidi 默认 normal。
+    assert_eq!(computed_style_property(html, "#def", "unicode-bidi"), "normal");
+    assert_eq!(computed_style_property(html, "#ub-isolate", "unicode-bidi"), "isolate");
+    assert_eq!(
+        computed_style_property(html, "#ub-plaintext", "unicode-bidi"),
+        "plaintext"
+    );
+    // empty-cells 默认 show。
+    assert_eq!(computed_style_property(html, "#def", "empty-cells"), "show");
+    assert_eq!(computed_style_property(html, "#ec-hide", "empty-cells"), "hide");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
