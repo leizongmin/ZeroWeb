@@ -1592,6 +1592,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧简写返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` scroll-margin/padding + mask-mode 序列化（本轮 R2746，getComputedStyle 维护态续）
+
+承接 R2745。补 scroll-snap 边距 + 遮罩模式 9 属性（旧均返 ''）：`scroll-margin-top/right/bottom/left`（f32→px，初值 `0px`）/ `scroll-padding-top/right/bottom/left`（`ScrollPadding`：Auto→`auto` 初值 / Length(v)→px）/ `mask-mode`（Alpha/Luminance/MatchSource，初值 `match-source`）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 9 臂；新增 `scroll_padding_to_css`（Auto/Length）+ `mask_mode_str`（3 关键字）；import 加 `ScrollPadding` + `MaskModeComputedValue`。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_scroll_mask`（scroll-margin 4 边 px + 默认 0px；scroll-padding top/left px + 默认 auto；mask-mode alpha + 默认 match-source）。**注**：`scroll-margin`/`scroll-padding` 简写未实现（仅 longhand），故测试逐 longhand 设值。 |
+
+**对齐 Chromium**：scroll-margin/padding 长度 + mask-mode 关键字与 Chromium getComputedStyle 一致。**已知 defer**：transition/animation **简写**（解析层 `none` 与 unset 信息丢失 + Chromium 序列化歧义，需 Web 核实）、font-variant 简写（需扩 style-system 子属性 storage）、color-scheme（仅存 `color_scheme_dark: bool` 不足以序列化完整值）、mask-image（Vec 多层，background-image 序列化亦未做）、page-break-*（legacy/modern 映射歧义）。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13371 passed / 0 failed / 74 ignored**，13370+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 无 struct FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 9 属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
