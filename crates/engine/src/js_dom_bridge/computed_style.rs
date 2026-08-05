@@ -6,18 +6,18 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::{
-    AlignmentValue, BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorValue,
+    AlignmentValue, BackgroundEdge, BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorValue,
     ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue,
     FontWeightValue, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue,
     PolygonFillRule, PositionValue, TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_style_system::{
-    BackfaceVisibilityValue, BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle,
-    ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, FilterComputedValue,
-    FlexBasisValue, IsolationValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue,
-    OutlineStyleValue, PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue,
-    TextTransformValue, TransformStyleValue, UserSelectValue, WhiteSpaceValue, WillChangeValue,
-    WritingModeValue, ZIndexValue,
+    BackfaceVisibilityValue, BackgroundPositionComputedValue, BorderCollapseValue, BorderStyleValue,
+    CaptionSideValue, ComputedStyle, ContainComputedValue, ContentComputedValue, CursorValue,
+    DirectionValue, FilterComputedValue, FlexBasisValue, IsolationValue, LineHeightValue,
+    MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, PointerEventsValue, StyleSystem,
+    TableLayoutValue, TextAlignValue, TextOverflowValue, TextTransformValue, TransformStyleValue,
+    UserSelectValue, WhiteSpaceValue, WillChangeValue, WritingModeValue, ZIndexValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 
@@ -85,7 +85,7 @@ pub fn lookup_computed_property(
 ///   （flex-grow/flex-shrink/order/flex-basis/aspect-ratio）+ Transforms（transform 函数列表 /
 ///   transform-origin 两长度 / transform-style / backface-visibility / perspective /
 ///   perspective-origin）+ contain（关键字 / 位掩码组合）+ filter（函数列表）+ will-change（列表）
-///   + clip-path（basic-shape 函数）+ content（生成内容 component value）。未覆盖属性返 ''。
+///   + clip-path（basic-shape 函数）+ content（生成内容）+ background-position（bg-position# 多层，关键字→%）。未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -266,6 +266,8 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "clip-path" => clip_path_to_css(&style.clip_path, font_size_px),
         // ── content（R2722）── CSS Generated Content（::before/::after 生成内容，多 component value）。
         "content" => content_to_css(&style.content),
+        // ── background-position（R2724）── CSS Backgrounds <bg-position># 多层（逗号分隔）。
+        "background-position" => background_position_to_css(&style.background_position),
         _ => String::new(),
     }
 }
@@ -1215,6 +1217,70 @@ fn lighter_of(parent: u16) -> u16 {
         400
     } else {
         700
+    }
+}
+
+/// background-position：CSS Backgrounds `<bg-position>#` 多层序列化（逗号分隔层）。
+///
+/// 关键字解析为百分比（center 50% / left 0% / right 100% / top 0% / bottom 100%），对齐 Chromium
+/// getComputedStyle（WPT background-computed.html）；单关键字/单长度按轴展开（缺省轴 = center 50%）。
+fn background_position_to_css(layers: &[BackgroundPositionComputedValue]) -> String {
+    if layers.is_empty() {
+        return String::new();
+    }
+    layers
+        .iter()
+        .map(bg_position_layer_to_css)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// 序列化单层 `<bg-position>`。单值按轴展开（缺省轴 center 50%）；TwoValue 两轴；EdgeOffset 边缘+偏移。
+fn bg_position_layer_to_css(p: &BackgroundPositionComputedValue) -> String {
+    use BackgroundPositionComputedValue as P;
+    match p {
+        // 单关键字：按轴展开（水平关键字→垂直 center 50%；垂直关键字→水平 center 50%）。
+        P::Center => "50% 50%".to_string(),
+        P::Left => "0% 50%".to_string(),
+        P::Right => "100% 50%".to_string(),
+        P::Top => "50% 0%".to_string(),
+        P::Bottom => "50% 100%".to_string(),
+        // 单长度/百分比：水平 = 值，垂直缺省 center 50%。
+        P::Length(f) => format!("{} 50%", format_num(*f as f64, "px")),
+        P::Percent(f) => format!("{} 50%", format_num(*f as f64, "%")),
+        // % calc 无容器尺寸不可解析（非 % calc 已 resolve）→ ''。
+        P::Calc(_) => String::new(),
+        P::TwoValue(h, v) => format!("{} {}", bg_position_axis_to_css(h), bg_position_axis_to_css(v)),
+        P::EdgeOffset(edge, offset) => {
+            format!("{} {}", bg_edge_to_str(edge), bg_position_axis_to_css(offset))
+        }
+    }
+}
+
+/// 序列化 `<bg-position>` 单轴值（关键字→% / Length→px / Percent→%）。TwoValue/EdgeOffset 不应出现于轴位。
+fn bg_position_axis_to_css(v: &BackgroundPositionComputedValue) -> String {
+    use BackgroundPositionComputedValue as P;
+    match v {
+        P::Center => "50%".to_string(),
+        P::Left => "0%".to_string(),
+        P::Right => "100%".to_string(),
+        P::Top => "0%".to_string(),
+        P::Bottom => "100%".to_string(),
+        P::Length(f) => format_num(*f as f64, "px"),
+        P::Percent(f) => format_num(*f as f64, "%"),
+        P::Calc(_) => String::new(),
+        // 防御：轴位不应嵌套 TwoValue/EdgeOffset。
+        P::TwoValue(..) | P::EdgeOffset(..) => String::new(),
+    }
+}
+
+/// `<bg-position>` 边缘关键字（3/4 值 EdgeOffset 的 side）。
+fn bg_edge_to_str(e: &BackgroundEdge) -> &'static str {
+    match e {
+        BackgroundEdge::Left => "left",
+        BackgroundEdge::Right => "right",
+        BackgroundEdge::Top => "top",
+        BackgroundEdge::Bottom => "bottom",
     }
 }
 

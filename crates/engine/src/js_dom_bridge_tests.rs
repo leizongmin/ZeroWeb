@@ -3393,6 +3393,37 @@ fn test_get_computed_style_font_weight_bolder_lighter() {
 }
 
 #[test]
+fn test_get_computed_style_background_position() {
+    // R2724：getComputedStyle background-position 序列化（CSS Backgrounds <bg-position># 多层）。
+    // Chromium 解析关键字为百分比（WPT background-computed.html），单关键字按轴展开（缺省轴 center 50%）。
+    let html = "<html><body>\
+        <div id=\"center\" style=\"background-position: center;\"></div>\
+        <div id=\"lt\" style=\"background-position: left top;\"></div>\
+        <div id=\"rb\" style=\"background-position: right bottom;\"></div>\
+        <div id=\"px\" style=\"background-position: 10px 20px;\"></div>\
+        <div id=\"pct\" style=\"background-position: 25% 75%;\"></div>\
+        <div id=\"multi\" style=\"background-position: center, left top;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // 默认 0% 0%（TwoValue(Percent 0, Percent 0)）。
+    assert_eq!(computed_style_property(html, "#def", "background-position"), "0% 0%");
+    // 单关键字 center → 两轴展开 50% 50%。
+    assert_eq!(computed_style_property(html, "#center", "background-position"), "50% 50%");
+    // TwoValue 关键字 → 解析为 %。
+    assert_eq!(computed_style_property(html, "#lt", "background-position"), "0% 0%");
+    assert_eq!(computed_style_property(html, "#rb", "background-position"), "100% 100%");
+    // TwoValue 长度 → px。
+    assert_eq!(computed_style_property(html, "#px", "background-position"), "10px 20px");
+    // TwoValue 百分比 → %。
+    assert_eq!(computed_style_property(html, "#pct", "background-position"), "25% 75%");
+    // 多背景层：逗号分隔。
+    assert_eq!(
+        computed_style_property(html, "#multi", "background-position"),
+        "50% 50%, 0% 0%"
+    );
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
