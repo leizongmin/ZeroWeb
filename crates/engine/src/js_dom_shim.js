@@ -2795,6 +2795,79 @@
   }
   globalThis.matchMedia = globalThis.matchMedia || matchMedia;
 
+  // MessageEvent——message 事件（Window.postMessage / MessagePort / BroadcastChannel 派发）。extends
+  // Event（R2779），加 data/origin/source/ports。复用 _makeEvent 造数据对象 + 置 [[Prototype]]。
+  function MessageEvent(type, options) {
+    var ev = _makeEvent(type, options);
+    Object.setPrototypeOf(ev, MessageEvent.prototype);
+    ev.data = options && options.data !== undefined ? options.data : null;
+    ev.origin = (options && options.origin) || '';
+    ev.source = (options && options.source) || null;
+    ev.ports = [];
+    return ev;
+  }
+  MessageEvent.prototype = Object.create(Event.prototype);
+  MessageEvent.prototype.constructor = MessageEvent;
+  globalThis.MessageEvent = globalThis.MessageEvent || MessageEvent;
+
+  // MessagePort——消息端口（MessageChannel 双端口之一，部分库经此做结构化通信）。extends EventTarget
+  //（R2779）。postMessage 经 structuredClone（R2773）深拷贝消息 + queueMicrotask（R2774）**异步**派发
+  // 'message' 事件到配对端口（spec 为 task；sandbox 经 execute 末 microtask checkpoint 派发，下 execute
+  // 可读）。onmessage 属性 setter 内部走 addEventListener('message')。**已知限制**：无 transfer 列表
+  //（Transferable 移植，罕见用法）；同执行上下文端口对（跨 worker/进程通信需 host 接线，defer）。
+  function MessagePort() {
+    this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
+    this._other = null; // 配对端口（MessageChannel 构造时互连）
+    this._closed = false;
+    this._onmessage = null;
+  }
+  MessagePort.prototype = Object.create(EventTarget.prototype);
+  MessagePort.prototype.constructor = MessagePort;
+  MessagePort.prototype.postMessage = function (message) {
+    if (this._closed || !this._other) return;
+    var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
+    var other = this._other;
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(function () {
+        if (other._closed) return;
+        other.dispatchEvent(new MessageEvent('message', { data: data, origin: '' }));
+      });
+    }
+  };
+  MessagePort.prototype.start = function () {}; // 始终 active（polyfill 简化）
+  MessagePort.prototype.close = function () {
+    this._closed = true;
+    if (this._other) this._other._other = null; // 断开配对
+    this._other = null;
+  };
+  Object.defineProperty(MessagePort.prototype, 'onmessage', {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._onmessage || null; },
+    set: function (cb) {
+      if (this._onmessage) this.removeEventListener('message', this._onmessage);
+      if (typeof cb === 'function') {
+        this._onmessage = cb;
+        this.addEventListener('message', cb);
+      } else {
+        this._onmessage = null;
+      }
+    },
+  });
+  globalThis.MessagePort = globalThis.MessagePort || MessagePort;
+
+  // MessageChannel——双端口通信通道（port1/port2 互连，postMessage 经异步 message 事件派发到对端）。
+  function MessageChannel() {
+    if (!(this instanceof MessageChannel)) return new MessageChannel();
+    var p1 = new MessagePort();
+    var p2 = new MessagePort();
+    p1._other = p2;
+    p2._other = p1;
+    this.port1 = p1;
+    this.port2 = p2;
+  }
+  globalThis.MessageChannel = globalThis.MessageChannel || MessageChannel;
+
   globalThis.document = {
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);

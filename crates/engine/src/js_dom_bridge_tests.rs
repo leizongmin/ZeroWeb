@@ -1963,6 +1963,79 @@ fn test_match_media_r2781() {
 }
 
 #[test]
+fn test_message_channel_r2782() {
+    // R2782：MessageChannel + MessagePort + MessageEvent（postMessage 双端口，纯 JS）。MessagePort extends
+    // EventTarget（R2779）；postMessage 经 structuredClone（R2773）深拷贝 + queueMicrotask（R2774）异步派发
+    // 'message' 事件（execute 末 microtask checkpoint，下 execute 可读）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // port1/port2 + instanceof MessagePort/EventTarget。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var ch = new MessageChannel();\
+                 typeof ch.port1 + '|' + typeof ch.port2 + '|' +\
+                 (ch.port1 instanceof MessagePort) + '|' + (ch.port2 instanceof EventTarget)"
+            )
+            .unwrap()
+            .value,
+        "object|object|true|true"
+    );
+    // postMessage port1→port2：异步派发（execute 末 microtask），下 execute 可读 __got。
+    sandbox
+        .execute(
+            "ch.port2.onmessage = function (e) { globalThis.__got = e.data.x + 1; };\
+             ch.port1.postMessage({ x: 41 }); 'sent'",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__got").unwrap().value, "42");
+    // structuredClone 深拷贝：postMessage 时克隆，后续 mutate 原对象不影响收到的（R2773 验证）。
+    sandbox
+        .execute(
+            "var orig = { v: 1 };\
+             ch.port2.onmessage = function (e) { globalThis.__msgV = e.data.v; };\
+             ch.port1.postMessage(orig); orig.v = 5; 'sent'",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__msgV").unwrap().value, "1");
+    // 反向 port2→port1。
+    sandbox
+        .execute(
+            "ch.port1.onmessage = function (e) { globalThis.__rev = e.data; };\
+             ch.port2.postMessage('hello'); 'sent'",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__rev").unwrap().value, "hello");
+    // MessageEvent 字段：instanceof MessageEvent & Event + type=message + source=null。
+    sandbox
+        .execute(
+            "ch.port2.onmessage = function (e) {\
+                 globalThis.__mev = (e instanceof MessageEvent) + '|' + (e instanceof Event) + '|' + e.type + '|' + (e.source === null);\
+             }; ch.port1.postMessage('x'); 'sent'"
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__mev").unwrap().value,
+        "true|true|message|true"
+    );
+    // close() 停止派发：postMessage on closed port no-op。
+    sandbox
+        .execute(
+            "var c = new MessageChannel(); globalThis.__cl = 'none';\
+             c.port2.onmessage = function () { globalThis.__cl = 'got'; };\
+             c.port1.close(); c.port1.postMessage('z'); 'sent'",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__cl").unwrap().value, "none");
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，
