@@ -3323,6 +3323,41 @@ fn test_get_computed_style_clip_path() {
 }
 
 #[test]
+fn test_get_computed_style_content() {
+    // R2722：getComputedStyle content 序列化（CSS Generated Content，::before/::after 生成内容）。
+    let html = "<html><body>\
+        <div id=\"none\" style=\"content: none;\"></div>\
+        <div id=\"str\" style=\"content: 'hello';\"></div>\
+        <div id=\"counter\" style=\"content: counter(c);\"></div>\
+        <div id=\"counter-style\" style=\"content: counter(c, upper-roman);\"></div>\
+        <div id=\"counters\" style=\"content: counters(n, '.');\"></div>\
+        <div id=\"url\" style=\"content: url(x.png);\"></div>\
+        <div id=\"list\" style=\"content: 'Chapter ' counter(c);\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // none / normal（默认）。
+    assert_eq!(computed_style_property(html, "#none", "content"), "none");
+    assert_eq!(computed_style_property(html, "#def", "content"), "normal");
+    // 字符串：双引号包裹。
+    assert_eq!(computed_style_property(html, "#str", "content"), "\"hello\"");
+    // counter(name) / counter(name, style)。
+    assert_eq!(computed_style_property(html, "#counter", "content"), "counter(c)");
+    assert_eq!(
+        computed_style_property(html, "#counter-style", "content"),
+        "counter(c, upper-roman)"
+    );
+    // counters(name, "sep")：分隔符引号串化。
+    assert_eq!(computed_style_property(html, "#counters", "content"), "counters(n, \".\")");
+    // url(...)。
+    assert_eq!(computed_style_property(html, "#url", "content"), "url(x.png)");
+    // 多 component value 列表：空格连接。
+    assert_eq!(
+        computed_style_property(html, "#list", "content"),
+        "\"Chapter \" counter(c)"
+    );
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。

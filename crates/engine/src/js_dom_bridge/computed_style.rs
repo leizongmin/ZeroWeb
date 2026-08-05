@@ -6,16 +6,16 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::{
-    AlignmentValue, BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorValue, DisplayValue,
-    FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, LengthValue,
-    ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue,
-    TransformFunction, TransformValue, VisibilityValue,
+    AlignmentValue, BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorValue,
+    ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue,
+    FontWeightValue, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue,
+    PolygonFillRule, PositionValue, TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_style_system::{
     BackfaceVisibilityValue, BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle,
-    ContainComputedValue, CursorValue, DirectionValue, FilterComputedValue, FlexBasisValue, IsolationValue,
-    LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
-    PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue,
+    ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, FilterComputedValue,
+    FlexBasisValue, IsolationValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue,
+    OutlineStyleValue, PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue,
     TextTransformValue, TransformStyleValue, UserSelectValue, WhiteSpaceValue, WillChangeValue,
     WritingModeValue, ZIndexValue,
 };
@@ -81,7 +81,7 @@ pub fn lookup_computed_property(
 ///   （flex-grow/flex-shrink/order/flex-basis/aspect-ratio）+ Transforms（transform 函数列表 /
 ///   transform-origin 两长度 / transform-style / backface-visibility / perspective /
 ///   perspective-origin）+ contain（关键字 / 位掩码组合）+ filter（函数列表）+ will-change（列表）
-///   + clip-path（basic-shape 函数）。未覆盖属性返 ''。
+///   + clip-path（basic-shape 函数）+ content（生成内容 component value）。未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -260,6 +260,8 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "will-change" => will_change_to_css(&style.will_change),
         // ── clip-path（R2721）── CSS Masking basic-shape 函数（none / inset / circle / ellipse / polygon）。
         "clip-path" => clip_path_to_css(&style.clip_path, font_size_px),
+        // ── content（R2722）── CSS Generated Content（::before/::after 生成内容，多 component value）。
+        "content" => content_to_css(&style.content),
         _ => String::new(),
     }
 }
@@ -1071,6 +1073,75 @@ fn box_4_to_css(
     } else {
         format!("{t} {r} {b} {l}")
     }
+}
+
+/// content：按 CSS Generated Content 计算值序列化（::before/::after 生成内容）。
+///
+/// `Normal`/`None`→关键字；`String`→CSS 双引号串（[`css_string_to_css`]）；`Attr`→`attr(name)`；
+/// `Counter`/`Counters`→计数器函数；`Url`→`url(...)`；`List`→多 component value 空格连接。
+fn content_to_css(c: &ContentComputedValue) -> String {
+    use ContentComputedValue as C;
+    match c {
+        C::Normal => "normal".to_string(),
+        C::None => "none".to_string(),
+        C::String(s) => css_string_to_css(s),
+        C::Attr(name) => format!("attr({name})"),
+        C::Counter { name, style } => counter_fn_to_css(name, style.as_deref()),
+        C::Counters { name, separator, style } => {
+            counters_fn_to_css(name, separator, style.as_deref())
+        }
+        C::Url(u) => format!("url({u})"),
+        C::List(items) => items
+            .iter()
+            .map(content_list_item_to_css)
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
+/// 序列化 content 多 component value 序列的单项 [`ContentListItem`]（Str/Counter/Counters）。
+fn content_list_item_to_css(item: &ContentListItem) -> String {
+    use ContentListItem as I;
+    match item {
+        I::Str(s) => css_string_to_css(s),
+        I::Counter { name, style } => counter_fn_to_css(name, style.as_deref()),
+        I::Counters { name, separator, style } => {
+            counters_fn_to_css(name, separator, style.as_deref())
+        }
+    }
+}
+
+/// `counter(name[, style])` 函数序列化。
+fn counter_fn_to_css(name: &str, style: Option<&str>) -> String {
+    match style {
+        Some(s) => format!("counter({name}, {s})"),
+        None => format!("counter({name})"),
+    }
+}
+
+/// `counters(name, "sep"[, style])` 函数序列化（separator 经 CSS 引号串化）。
+fn counters_fn_to_css(name: &str, separator: &str, style: Option<&str>) -> String {
+    let sep = css_string_to_css(separator);
+    match style {
+        Some(s) => format!("counters({name}, {sep}, {s})"),
+        None => format!("counters({name}, {sep})"),
+    }
+}
+
+/// 把字符串字面量序列化为 CSS 双引号串：转义 `\` / `"` / 换行（CSS escape `\A `）。
+fn css_string_to_css(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\A "),
+            _ => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// 序列化单个 [`TransformFunction`]。translate 类长度为 px（混合百分比分支保 `%`）；rotate/skew
