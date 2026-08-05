@@ -1471,17 +1471,25 @@
   }
 
   function _makeEvent(type, options) {
+    options = options || {};
     var ev = {
       type: type,
-      bubbles: !!(options && options.bubbles),
-      cancelable: !!(options && options.cancelable),
-      detail: options && options.detail,
+      bubbles: !!options.bubbles,
+      cancelable: !!options.cancelable,
+      composed: false, // spec Event.composed 初值 false
+      eventPhase: 0, // spec NONE=0
+      isTrusted: false, // spec（合成事件恒 false）
       target: null,
       currentTarget: null,
+      timeStamp: typeof __zw_performance_now === 'function'
+        ? Number(__zw_performance_now())
+        : (typeof Date.now === 'function' ? Date.now() : 0),
+      detail: options.detail, // CustomEvent 用；Event 读得 undefined（spec 一致）
+      defaultPrevented: false, // 公开镜像（dispatch 读 _defaultPrevented，勿删私字段）
       _defaultPrevented: false,
       _propagationStopped: false,
       _immediateStopped: false,
-      preventDefault: function() { if (this.cancelable) this._defaultPrevented = true; },
+      preventDefault: function() { if (this.cancelable) { this.defaultPrevented = true; this._defaultPrevented = true; } },
       stopPropagation: function() { this._propagationStopped = true; },
       stopImmediatePropagation: function() {
         this._immediateStopped = true;
@@ -2616,22 +2624,87 @@
     });
   }
 
-  globalThis.CustomEvent = function(type, options) {
-    return _makeEvent(type, options);
-  };
-
-  globalThis.Event = function(type, options) {
-    return _makeEvent(type, options);
-  };
-
-  globalThis.KeyboardEvent = function(type, options) {
+  // Event/CustomEvent/KeyboardEvent——DOM 事件构造器（R2779 spec-completeness）。_makeEvent 造数据
+  // 对象（含 spec 字段 composed/eventPhase/isTrusted/timeStamp/defaultPrevented），构造器置 [[Prototype]]
+  // 使 instanceof 成立（chromium 一致：new Event() instanceof Event、new CustomEvent() instanceof Event）。
+  // dispatch 读 _-prefixed 私字段（_defaultPrevented 等，勿改名）；公开 defaultPrevented 经 preventDefault
+  // 镜像同步。initEvent legacy API 在 Event.prototype。
+  globalThis.Event = function Event(type, options) {
     var ev = _makeEvent(type, options);
-    if (options) {
-      ev.key = options.key || '';
-      ev.code = options.code || options.key || '';
-    }
+    Object.setPrototypeOf(ev, globalThis.Event.prototype);
     return ev;
   };
+  if (typeof globalThis.Event.prototype.initEvent !== 'function') {
+    globalThis.Event.prototype.initEvent = function (type, bubbles, cancelable) {
+      this.type = type;
+      this.bubbles = !!bubbles;
+      this.cancelable = !!cancelable;
+      this.defaultPrevented = false;
+      this._defaultPrevented = false;
+    };
+  }
+
+  globalThis.CustomEvent = function CustomEvent(type, options) {
+    var ev = _makeEvent(type, options);
+    Object.setPrototypeOf(ev, globalThis.CustomEvent.prototype);
+    return ev;
+  };
+  globalThis.CustomEvent.prototype = Object.create(globalThis.Event.prototype);
+  globalThis.CustomEvent.prototype.constructor = globalThis.CustomEvent;
+
+  globalThis.KeyboardEvent = function KeyboardEvent(type, options) {
+    var ev = _makeEvent(type, options);
+    Object.setPrototypeOf(ev, globalThis.KeyboardEvent.prototype);
+    ev.key = (options && options.key) || '';
+    ev.code = (options && (options.code || options.key)) || '';
+    return ev;
+  };
+  globalThis.KeyboardEvent.prototype = Object.create(globalThis.Event.prototype);
+  globalThis.KeyboardEvent.prototype.constructor = globalThis.KeyboardEvent;
+
+  // EventTarget——事件目标基类型（独立构造器，R2779）。库常用 `new EventTarget()` / `extends EventTarget`
+  // 做事件发射器（pub-sub / 自定义事件总线）。元素 / document / window 经各自 addEventListener 路径；
+  // 本构造器提供自包含 listener map（与 DOM 元素事件系统独立，派发事件不冒泡到 DOM，spec 一致）。
+  // **已知限制**：仅 target 阶段（EventTarget 无 DOM 父链，无跨节点 capture/bubble；capture listener
+  // 在 target 阶段同 fire）；dispatchEvent 返 `!defaultPrevented`（spec 一致）。
+  function EventTarget() {
+    this._et_listeners = {};
+  }
+  EventTarget.prototype.addEventListener = function (type, cb, opts) {
+    if (typeof cb !== 'function' || typeof type !== 'string') return;
+    var capture = opts === true || (opts && opts.capture) ? '|cap' : '';
+    var key = type + capture;
+    (this._et_listeners[key] = this._et_listeners[key] || []).push(cb);
+  };
+  EventTarget.prototype.removeEventListener = function (type, cb, opts) {
+    if (typeof cb !== 'function' || typeof type !== 'string') return;
+    var capture = opts === true || (opts && opts.capture) ? '|cap' : '';
+    var arr = this._et_listeners[type + capture];
+    if (arr) {
+      var i = arr.indexOf(cb);
+      if (i >= 0) arr.splice(i, 1);
+    }
+  };
+  EventTarget.prototype.dispatchEvent = function (event) {
+    if (event == null || typeof event.type !== 'string') {
+      event = _makeEvent(event == null ? '' : String(event && event.type), {});
+    }
+    var target = this;
+    event.target = target;
+    event.currentTarget = target;
+    var suffixes = ['', '|cap'];
+    for (var s = 0; s < suffixes.length; s++) {
+      var arr = target._et_listeners[event.type + suffixes[s]];
+      if (!arr) continue;
+      arr = arr.slice();
+      for (var i = 0; i < arr.length; i++) {
+        if (event._immediateStopped) break;
+        try { arr[i].call(target, event); } catch (_) {}
+      }
+    }
+    return !event._defaultPrevented;
+  };
+  globalThis.EventTarget = globalThis.EventTarget || EventTarget;
 
   globalThis.document = {
     querySelector: function(sel) {

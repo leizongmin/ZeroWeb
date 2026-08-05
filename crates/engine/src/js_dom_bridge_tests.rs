@@ -1581,6 +1581,140 @@ fn test_url_constructor_r2778() {
 }
 
 #[test]
+fn test_event_target_and_event_spec_r2779() {
+    // R2779：EventTarget 独立构造器 + Event/CustomEvent spec-completeness（chromium oracle 锚定）。
+    // 低风险：_makeEvent additive spec 字段 + 构造器置 [[Prototype]]，dispatch 读 _-prefixed 私字段不变。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // Event spec 字段（composed/eventPhase/isTrusted/defaultPrevented/timeStamp>=0）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var e = new Event('click', { bubbles: true, cancelable: true });\
+                 e.type + '|' + e.bubbles + '|' + e.cancelable + '|' + e.composed + '|' +\
+                 e.eventPhase + '|' + e.isTrusted + '|' + e.defaultPrevented + '|' + (e.timeStamp >= 0)"
+            )
+            .unwrap()
+            .value,
+        "click|true|true|false|0|false|false|true"
+    );
+    // instanceof：new Event instanceof Event；new CustomEvent instanceof Event & CustomEvent。
+    assert_eq!(
+        sandbox
+            .execute(
+                "(new Event('x') instanceof Event) + '|' +\
+                 (new CustomEvent('y') instanceof Event) + '|' +\
+                 (new CustomEvent('y') instanceof CustomEvent)"
+            )
+            .unwrap()
+            .value,
+        "true|true|true"
+    );
+    // CustomEvent detail 透传。
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(new CustomEvent('hi', { detail: { a: 1 } }).detail)")
+            .unwrap()
+            .value,
+        "{\"a\":1}"
+    );
+    // preventDefault：cancelable → defaultPrevented true；non-cancelable → false（no-op）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var a = new Event('a', { cancelable: true }); a.preventDefault();\
+                 var b = new Event('b', { cancelable: false }); b.preventDefault();\
+                 a.defaultPrevented + '|' + b.defaultPrevented"
+            )
+            .unwrap()
+            .value,
+        "true|false"
+    );
+    // EventTarget 独立：typeof add/removeEventListener/dispatchEvent = function。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var t = new EventTarget();\
+                 typeof t.addEventListener + '|' + typeof t.removeEventListener + '|' + typeof t.dispatchEvent"
+            )
+            .unwrap()
+            .value,
+        "function|function|function"
+    );
+    // EventTarget dispatch 触发 listener + 设 target/currentTarget === 该 target。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var t = new EventTarget(); var seen = null;\
+                 t.addEventListener('ping', function (e) { seen = e.type + '|' + (e.target === t) + '|' + (e.currentTarget === t); });\
+                 t.dispatchEvent(new Event('ping')); seen"
+            )
+            .unwrap()
+            .value,
+        "ping|true|true"
+    );
+    // dispatchEvent 返 true（未 preventDefault）；cancelable+preventDefault 返 false。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var t = new EventTarget();\
+                 var r1 = t.dispatchEvent(new Event('x'));\
+                 t.addEventListener('y', function (e) { e.preventDefault(); });\
+                 var r2 = t.dispatchEvent(new Event('y', { cancelable: true }));\
+                 r1 + '|' + r2"
+            )
+            .unwrap()
+            .value,
+        "true|false"
+    );
+    // removeEventListener：移除后不再触发。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var t = new EventTarget(); var n = 0;\
+                 var cb = function () { n++; };\
+                 t.addEventListener('e', cb); t.dispatchEvent(new Event('e'));\
+                 t.removeEventListener('e', cb); t.dispatchEvent(new Event('e')); n"
+            )
+            .unwrap()
+            .value,
+        "1"
+    );
+    // stopImmediatePropagation：阻后续 listener（同 target）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var t = new EventTarget(); var order = '';\
+                 t.addEventListener('s', function (e) { order += 'a'; e.stopImmediatePropagation(); });\
+                 t.addEventListener('s', function () { order += 'b'; });\
+                 t.dispatchEvent(new Event('s')); order"
+            )
+            .unwrap()
+            .value,
+        "a"
+    );
+    // class extends EventTarget 模式（现代事件总线惯用法）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "class Bus extends EventTarget { constructor() { super(); } }\
+                 var b = new Bus(); var hit = 0;\
+                 b.addEventListener('z', function () { hit++; });\
+                 b.dispatchEvent(new Event('z')); hit"
+            )
+            .unwrap()
+            .value,
+        "1"
+    );
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，
