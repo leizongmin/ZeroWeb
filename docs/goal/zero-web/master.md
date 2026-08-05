@@ -1472,6 +1472,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **已知限制（剩余）**：① `font-variant-numeric` CSS 允许空格组合多值（如 `lining-nums tabular-nums`），ZeroWeb computed 值为单 enum 仅保留一变体，多值输入 diverge（pre-existing 解析限制，非本序列化引入）；② `getComputedStyle(el).cssText`/length 仍返 ''/0。
 
+### P1a `getComputedStyle` border-radius 简写序列化 + CSSOM 4 值最小化（本轮 R2738，getComputedStyle 维护态续）
+
+承接 R2737。补 `border-radius` **简写**（4 角 longhand `border-{top-left,top-right,bottom-right,bottom-left}-radius` 早由 R2707 长度族经 `length` 闭包覆盖；简写旧返 ''）。复用既有 `box_4_to_css(tl, tr, br, bl, font_size_px)` 做 CSSOM 4 值最小化（全等→1 值 / `TL==BR && TR==BL`→2 值 / `TR==BL`→3 值 / 否则 4 值，同 margin 语法），对齐 Chromium getComputedStyle。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"border-radius"` 臂（复用 `box_4_to_css`，无新 helper / 无新 import；`LengthValue` 既导入）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_border_radius_shorthand`（4 形态：`5px`→`5px` / `5px 10px`→`5px 10px` / `5px 10px 15px`→`5px 10px 15px` / `5px 10px 15px 20px`→4 值；默认→`0px`）。 |
+
+**对齐 Chromium**：border-radius 简写 4 值最小化规则与 Chromium getComputedStyle 一致。**已知限制**：ZeroWeb 无椭圆角双值存储（每角单 `LengthValue`），`border-top-left-radius: 5px 10px` 椭圆角仅存 5px（pre-existing 解析限制，非本序列化引入）。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13363 passed / 0 failed / 74 ignored**，13362+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 8/8 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧简写返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
