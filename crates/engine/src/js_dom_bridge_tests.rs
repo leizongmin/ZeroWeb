@@ -2101,6 +2101,50 @@ fn test_broadcast_channel_r2783() {
 }
 
 #[test]
+fn test_location_read_spec_r2784() {
+    // R2784：location 读侧 spec 化（_parseLocation → new URL R2778，spec-correct）。注册
+    // __zw_get_page_url（返测试 URL）+ __zw_parse_url（使 new URL 路径激活）。验默认端口归一等精度提升。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    // https 默认端口 443 → 归一省略（旧 regex 会保留 :443，spec 改进）。
+    sandbox.register_callback(
+        "__zw_get_page_url",
+        Box::new(|_args: &[String]| "https://example.com:443/path?q=1#sec".to_string()),
+    );
+    sandbox.register_callback(
+        "__zw_parse_url",
+        Box::new(|args: &[String]| -> String {
+            let input = args.first().map(String::as_str).unwrap_or("");
+            let base = args.get(1).map(String::as_str);
+            parse_url_to_json(input, base)
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 默认端口 443 归一省略（host=example.com 非 example.com:443）+ 全组件 spec-correct。
+    assert_eq!(
+        sandbox
+            .execute(
+                "location.protocol + '|' + location.hostname + '|' + location.host + '|' +\
+                 location.pathname + '|' + location.search + '|' + location.hash + '|' +\
+                 location.origin + '|' + location.href"
+            )
+            .unwrap()
+            .value,
+        "https:|example.com|example.com|/path|?q=1|#sec|https://example.com|https://example.com/path?q=1#sec"
+    );
+    // toString === href。
+    assert_eq!(
+        sandbox.execute("location.toString()").unwrap().value,
+        "https://example.com/path?q=1#sec"
+    );
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，

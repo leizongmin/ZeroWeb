@@ -645,21 +645,32 @@
   }
 
   function _parseLocation(href) {
-    var m = String(href || 'about:blank').match(/^([^:]+):\/\/([^\/]*)(\/[^?#]*)?(\?[^#]*)?(#.*)?$/);
+    var h = String(href == null ? '' : href);
+    // 优先 new URL（R2778，spec-correct：percent-encoding / IDNA / 默认端口归一 / 端口解析），仅在
+    // __zw_parse_url 已注册时；否则回退朴素 regex（reftest/裸 sandbox 无回调路径，零回归）。
+    if (typeof URL === 'function' && typeof __zw_parse_url === 'function') {
+      try {
+        var u = new URL(h);
+        return {
+          href: u.href, protocol: u.protocol, host: u.host, hostname: u.hostname,
+          pathname: u.pathname, search: u.search, hash: u.hash, origin: u.origin,
+        };
+      } catch (_) { /* 解析失败 → 回退 regex */ }
+    }
+    var m = h.match(/^([^:]+):\/\/([^\/]*)(\/[^?#]*)?(\?[^#]*)?(#.*)?$/);
     if (!m) {
-      return { href: href || 'about:blank', protocol: 'about:', host: '', hostname: '', pathname: '/', search: '', hash: '', origin: 'null' };
+      return { href: h || 'about:blank', protocol: '', host: '', hostname: '', pathname: '/', search: '', hash: '', origin: 'null' };
     }
     var host = m[2] || '';
-    var hostname = host.split(':')[0] || '';
     return {
-      href: href,
+      href: h,
       protocol: m[1] + ':',
       host: host,
-      hostname: hostname,
+      hostname: host.split(':')[0] || '',
       pathname: m[3] || '/',
       search: m[4] || '',
       hash: m[5] || '',
-      origin: host ? m[1] + '://' + host : 'null'
+      origin: host ? m[1] + '://' + host : 'null',
     };
   }
 
@@ -668,7 +679,7 @@
       return typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : 'about:blank';
     }
     return {
-      get href() { return href(); },
+      get href() { return _parseLocation(href()).href; },
       get protocol() { return _parseLocation(href()).protocol; },
       get host() { return _parseLocation(href()).host; },
       get hostname() { return _parseLocation(href()).hostname; },
@@ -679,7 +690,7 @@
       assign: function() {},
       replace: function() {},
       reload: function() {},
-      toString: function() { return href(); }
+      toString: function() { return _parseLocation(href()).href; }
     };
   }
 
