@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a DOMParser（本轮 R2790，缺失 Web API 续）
+
+承接 R2789（Blob）。续缺失 Web API——land **DOMParser**（解析 HTML/XML 串为只读 Document，模板引擎 / sanitizer / RSS / 服务端 HTML 高频）。**R2789 CONTINUE 指定项**，本轮验证可行并实现。
+
+- **host 回调 `__zw_parse_html_query(html, selector, all)`**（Rust `parse_html_element_json`）：解析**任意 HTML 串**（dom::parse_html）+ 跑 selector 引擎 → 返 JSON 元素快照数组（每元素 `{tag,id,cls,text,outer,attrs}`）。**关键**：解析的文档不在 dom_html 快照中（与 `__zw_query_*` 的唯一选择器路径不同——选择器无处落地），故返**完整元素数据**供 shim 包只读 proxy。`text`=text_content（含后代，spec 一致）；`outer`=outer_html。
+- **shim `_zwParsedDoc` + 只读 `_zwParseEl`**：`parseFromString(str, mimeType)`（text/html | XML/SVG 统一按 HTML 解析）。Document 支持 `querySelector`/`querySelectorAll`/`getElementById`/`getElementsByTagName`/`body`/`head`/`documentElement`；element-proxy 支持 `tagName`/`id`/`className`/`textContent`/`outerHTML`/`innerHTML(派生)` /`getAttribute`/`hasAttribute`/子树 `querySelector`（重解析元素 outerHTML）。
+- **已知限制（记录）**：① **只读**——不支持 setAttribute/appendChild/innerHTML setter 等 mutation（DOMParser 文档 spec 可改，本实现面向读场景，mutation 需 host 写路径，follow-up）；② XML/SVG mimeType 按 HTML 解析（容错，非 well-formed 不报错）；③ innerHTML 由 outerHTML 派生（strip 首/尾 tag，void 元素正确返 ''）；④ getElementById 用 `#id`（含特殊字符 id 未转义，best-effort）；⑤ host 未注册（reftest/pure sandbox）→ DOMParser 可构造、querySelector 返 null（no-throw，零回归）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_bridge.rs` | +`parse_html_element_json(html, selector, all)`（parse_html + selector + outer_html/text_content + json_str 序列化）+ 注册 `__zw_parse_html_query` 回调（arg 取 html/selector/all，不依赖 dom_html 快照）。 |
+| `engine/src/js_dom_shim.js` | +`DOMParser`（`_zwParseEl` 只读 element-proxy + `_zwInnerFromOuter` 派生 + `_zwParsedDoc` Document-like + `parseFromString`），置于 Blob 后。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_dom_parser_r2790`（querySelector tagName/id/className/textContent/getElementById 命中+null/querySelectorAll 计数/body+head+documentElement 非空/子树 query/getAttribute+hasAttribute+null/innerHTML 含子标签/getElementsByTagName/mimeType）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告（attr 序列化用 `.as_ref()` 而非 `.to_string()`，过 `unnecessary_to_owned`）+ `make test` 全绿（**13418 passed / 0 failed / 74 ignored**，13417+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 global + host 回调不改渲染路径）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 global（DOMParser）+ 新 host 回调（仅由 DOMParser 调用，不改既有 query 路径）；② 解析只读（不改 dom_html 快照、不产 mutation）；③ prototype guard（`globalThis.DOMParser = globalThis.DOMParser || ...`）不覆盖既有定义；④ host 未注册时 no-throw 回落。
+
+**附（文件大小观察）**：`js_dom_bridge.rs` 现 2808 行（含 `#[path]` 内联测试模块 `mod tests` 从 ~2745 起），超 2000 准则——为既有状态（R2672 曾拆测试文件，源文件本身内聚），本轮按「精准修改」不自主拆分，仅记录；后续若持续增长可考虑按职责拆 source（query 序列化 / 回调注册 分子模块）。
+
 ### P1a Blob + URL.createObjectURL/revokeObjectURL（本轮 R2789，缺失 Web API 续）
 
 承接 R2788（FormData + probe）。续缺失 Web API——land **Blob**（不可变二进制容器，文件上传 / 下载 / object URL 高频）+ **URL.createObjectURL / revokeObjectURL**（blob: URL 注册表）。纯 JS，零 host 回调，零新 crate。

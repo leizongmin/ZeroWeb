@@ -1010,6 +1010,55 @@ pub fn query_all_selector_list(html: &str, selector: &str) -> String {
         .join("|")
 }
 
+/// `DOMParser` 元素查询 → JSON 数组（R2790）。解析**任意 HTML 串** + 跑 selector，返匹配元素的
+/// 只读快照。与 [`query_match_selector`] 关键不同：解析出的文档**不在 dom_html 快照中**，唯一选择器
+/// 无处落地（selector 须在 dom_html 内解析），故这里返**完整元素数据**（tag/id/cls/text/outer/attrs），
+/// 供 shim 包成只读 element-proxy（DOMParser 不支持 mutation）。`all=false` 首个 / `all=true` 全部。
+/// 供 `__zw_parse_html_query` 回调 → shim `DOMParser.parseFromString`。
+///
+/// 每个 element 快照 JSON：`{"tag","id","cls","text","outer","attrs":{name:value,...}}`。
+/// `text` = `text_content`（含后代文本，与 spec `.textContent` 一致）；`outer` = `outer_html`。
+/// shim 据此暴露 `tagName/id/className/textContent/outerHTML/innerHTML(派生)/getAttribute/子树 query`。
+pub fn parse_html_element_json(html: &str, selector: &str, all: bool) -> String {
+    let doc = parse_html(html);
+    let root = doc.root();
+    let ids: Vec<NodeId> = if all {
+        doc.query_selector_all(root, selector.trim())
+    } else {
+        doc.query_selector(root, selector.trim()).into_iter().collect()
+    };
+    let mut items: Vec<String> = Vec::new();
+    for id in ids {
+        let Some(nd) = doc.get(id) else {
+            continue;
+        };
+        let NodeKind::Element(e) = &nd.kind else {
+            continue;
+        };
+        let tag = e.local_name().to_string();
+        let mut attrs_json: Vec<String> = Vec::new();
+        for attr in &e.attributes {
+            attrs_json.push(format!(
+                "{}:{}",
+                json_str(attr.name.local.as_ref()),
+                json_str(attr.value.as_ref())
+            ));
+        }
+        let text = doc.text_content(id).unwrap_or_default();
+        let outer = doc.outer_html(id);
+        items.push(format!(
+            "{{\"tag\":{},\"id\":{},\"cls\":{},\"text\":{},\"outer\":{},\"attrs\":{{{}}}}}",
+            json_str(&tag),
+            json_str(&doc.get_attribute(id, "id").unwrap_or_default()),
+            json_str(&doc.get_attribute(id, "class").unwrap_or_default()),
+            json_str(&text),
+            json_str(&outer),
+            attrs_json.join(",")
+        ));
+    }
+    format!("[{}]", items.join(","))
+}
+
 /// `element.matches(selector)`——元素是否匹配选择器（含组合器，querySelectorAll 全匹配语义）。
 /// 求全匹配集，判 elem 是否在集中。供 `__zw_matches` 回调 → shim `el.matches()`。
 pub fn element_matches_test_selector(html: &str, elem_sel: &str, test_sel: &str) -> bool {
@@ -1906,6 +1955,20 @@ pub fn register_dom_callbacks(
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             query_all_selector_list(&snap, &sel)
+        }),
+    );
+
+    // `DOMParser.parseFromString(str, type)`（R2790）——解析**任意 HTML 串**为只读 Document。
+    // 与 `__zw_query_*`（基于 dom_html 快照）不同：html 从 arg[0] 取（DOMParser 解析的是传入串，
+    // 非当前页面快照），selector 从 arg[1]，all 标志从 arg[2]（"1"=全部）。返 JSON 元素快照数组。
+    // shim 包成 `_zwParsedDoc` + 只读 element-proxy（querySelector/getElementById/body/textContent/...）。
+    sandbox.register_callback(
+        "__zw_parse_html_query",
+        Box::new(|args: &[String]| -> String {
+            let html = args.first().map(String::as_str).unwrap_or("");
+            let sel = args.get(1).map(String::as_str).unwrap_or("");
+            let all = args.get(2).map(|s| s == "1").unwrap_or(false);
+            parse_html_element_json(html, sel, all)
         }),
     );
 

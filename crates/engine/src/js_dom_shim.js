@@ -1245,6 +1245,93 @@
     }
   };
 
+  // DOMParser——解析 HTML/XML 串为只读 Document（模板引擎 / sanitizer / RSS / 服务端 HTML 高频）。
+  // 委托 host `__zw_parse_html_query(html, selector, all)`（dom::parse_html + selector 引擎），返 JSON
+  // 元素快照数组；shim 包成 `_zwParsedDoc`（Document-like）+ `_zwParseEl`（只读 element-proxy）。
+  // **关键设计**：解析的文档不在 dom_html 快照中（与页面 DOM 隔离），故 querySelector/getElementById/
+  // body 经 host 回调每次**重解析** + 取快照，而非走唯一选择器（无处落地）。子树 query 重解析元素 outerHTML。
+  // **已知限制（记录）**：① **只读**——element-proxy 不支持 setAttribute/appendChild/innerHTML setter
+  //   等 mutation（spec DOMParser 文档可改，但本实现面向读场景；mutation 需 host 写路径，follow-up）；
+  //   ② XML/SVG mimeType 统一按 HTML 解析（容错，非 well-formed 不报错）；③ innerHTML 由 outerHTML 派生
+  //   （strip 首/尾 tag，void 元素正确返 ''）；④ getElementById 用 `#id` 选择器（id 含特殊字符未转义，
+  //   best-effort）；⑤ textContent/getAttribute 只读快照值（无 live 更新）。
+  // host 未注册（reftest/纯 sandbox）→ DOMParser 仍可构造，querySelector 返 null（no-throw，零回归）。
+  function _zwParseEl(info) {
+    info = info || {};
+    var tag = info.tag || '';
+    this.nodeType = 1;
+    this.tagName = tag.toUpperCase();
+    this.nodeName = this.tagName;
+    this.localName = tag;
+    this.id = info.id || '';
+    this.className = info.cls || '';
+    this.textContent = info.text || '';
+    this.outerHTML = info.outer || '';
+    this.innerHTML = _zwInnerFromOuter(this.outerHTML, tag);
+    this._attrs = info.attrs || {};
+  }
+  // innerHTML 从 outerHTML 派生：strip 首 `<tag ...>` + 尾 `</tag>`；void/自闭合无尾标签 → strip 首标签后剩 ''。
+  function _zwInnerFromOuter(outer, tag) {
+    if (!outer || !tag) return '';
+    var s = outer.replace(new RegExp('^<' + tag + '\\b[^>]*>', 'i'), '');
+    return s.replace(new RegExp('</' + tag + '\\s*>$', 'i'), '');
+  }
+  _zwParseEl.prototype.getAttribute = function (name) {
+    name = String(name);
+    return Object.prototype.hasOwnProperty.call(this._attrs, name) ? this._attrs[name] : null;
+  };
+  _zwParseEl.prototype.hasAttribute = function (name) {
+    return Object.prototype.hasOwnProperty.call(this._attrs, String(name));
+  };
+  // 子树 query：重解析本元素 outerHTML（host 二次 parse + select），返只读 element-proxy。
+  _zwParseEl.prototype.querySelector = function (sel) {
+    if (typeof __zw_parse_html_query !== 'function') return null;
+    var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '0'));
+    return arr.length ? new _zwParseEl(arr[0]) : null;
+  };
+  _zwParseEl.prototype.querySelectorAll = function (sel) {
+    if (typeof __zw_parse_html_query !== 'function') return [];
+    var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '1'));
+    var out = [];
+    for (var i = 0; i < arr.length; i++) out.push(new _zwParseEl(arr[i]));
+    return out;
+  };
+  // DOMParser 解析出的 Document（只读）。querySelector/getElementById/body 经 host 回调重解析。
+  function _zwParsedDoc(html) {
+    this._html = html;
+    this.nodeType = 9;
+    this.nodeName = '#document';
+    this.documentElement = this.querySelector('html');
+    this.head = this.querySelector('head');
+    this.body = this.querySelector('body');
+  }
+  _zwParsedDoc.prototype.querySelector = function (sel) {
+    if (typeof __zw_parse_html_query !== 'function') return null;
+    var arr = JSON.parse(__zw_parse_html_query(this._html, String(sel), '0'));
+    return arr.length ? new _zwParseEl(arr[0]) : null;
+  };
+  _zwParsedDoc.prototype.querySelectorAll = function (sel) {
+    if (typeof __zw_parse_html_query !== 'function') return [];
+    var arr = JSON.parse(__zw_parse_html_query(this._html, String(sel), '1'));
+    var out = [];
+    for (var i = 0; i < arr.length; i++) out.push(new _zwParseEl(arr[i]));
+    return out;
+  };
+  _zwParsedDoc.prototype.getElementById = function (id) {
+    return this.querySelector('#' + String(id));
+  };
+  _zwParsedDoc.prototype.getElementsByTagName = function (tag) {
+    return this.querySelectorAll(String(tag));
+  };
+  globalThis.DOMParser = globalThis.DOMParser || function DOMParser() {};
+  globalThis.DOMParser.prototype.parseFromString = function (str, mimeType) {
+    // text/html | text/xml | application/xml | application/xhtml+xml | image/svg+xml 统一按 HTML 解析。
+    var html = str == null ? '' : String(str);
+    var d = new _zwParsedDoc(html);
+    d.mimeType = mimeType || 'text/html';
+    return d;
+  };
+
   // URL——WHATWG URL 解析 + 组件 setter（R2778 解析 + R2780 setter/双向 searchParams 同步）。委托 host
   // `__zw_parse_url`（解析）+ `__zw_set_url_part`（setter），均 spec-correct via `url` crate。组件存内部
   // `_`-prefixed 字段，accessor 暴露读 + 写（setter 经 `_setPart` 回调重解析）。searchParams 为稳定实例 +

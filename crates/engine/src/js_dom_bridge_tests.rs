@@ -6943,3 +6943,121 @@ fn test_blob_and_object_url_r2789() {
     sandbox.execute("URL.revokeObjectURL('blob:null/1-abc')").unwrap();
     assert_eq!(sandbox.execute("typeof URL.revokeObjectURL").unwrap().value, "function");
 }
+
+#[test]
+fn test_dom_parser_r2790() {
+    // R2790：DOMParser.parseFromString → 只读 Document。host `__zw_parse_html_query` 回调返 JSON 元素
+    // 快照；shim 包 _zwParsedDoc + 只读 _zwParseEl（querySelector/getElementById/body/textContent/
+    // getAttribute/子树 query）。**已知限制**：只读（无 mutation）、XML/SVG 按 HTML 解析、innerHTML 派生。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "globalThis.__d = new DOMParser().parseFromString(\n\
+             '<html><head><title>T</title></head><body><div id=\"main\"><p class=\"hi\">hello <b>world</b></p><span id=\"s\">x</span></div></body></html>',\n\
+             'text/html');",
+        )
+        .unwrap();
+    // typeof + instance（DOMParser 可构造、parseFromString 返对象）。
+    assert_eq!(sandbox.execute("typeof DOMParser").unwrap().value, "function");
+    assert_eq!(sandbox.execute("typeof __d.querySelector").unwrap().value, "function");
+    // querySelector：tagName 大写、id、className。
+    assert_eq!(
+        sandbox.execute("__d.querySelector('#main').tagName").unwrap().value,
+        "DIV"
+    );
+    assert_eq!(sandbox.execute("__d.querySelector('p').className").unwrap().value, "hi");
+    // textContent（含后代文本，spec 一致）。
+    assert_eq!(
+        sandbox.execute("__d.querySelector('p').textContent").unwrap().value,
+        "hello world"
+    );
+    // getElementById + 无匹配返 null。
+    assert_eq!(
+        sandbox.execute("__d.getElementById('s').tagName").unwrap().value,
+        "SPAN"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__d.getElementById('nope') === null)")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // querySelectorAll（多个匹配）。
+    assert_eq!(
+        sandbox.execute("__d.querySelectorAll('span').length").unwrap().value,
+        "1"
+    );
+    assert_eq!(
+        sandbox.execute("__d.querySelectorAll('#main b').length").unwrap().value,
+        "1"
+    );
+    // body / documentElement / head 非空。
+    assert_eq!(
+        sandbox
+            .execute("String(__d.body !== null && __d.documentElement !== null && __d.head !== null)")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // 子树 querySelector（element-proxy 上）：#main 内 <b>。
+    assert_eq!(
+        sandbox
+            .execute("__d.querySelector('#main').querySelector('b').textContent")
+            .unwrap()
+            .value,
+        "world"
+    );
+    // getAttribute / hasAttribute。
+    assert_eq!(
+        sandbox
+            .execute("__d.querySelector('p').getAttribute('class')")
+            .unwrap()
+            .value,
+        "hi"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__d.querySelector('p').hasAttribute('class'))")
+            .unwrap()
+            .value,
+        "true"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__d.querySelector('p').getAttribute('none'))")
+            .unwrap()
+            .value,
+        "null"
+    );
+    // innerHTML 由 outerHTML 派生（含 <p 子标签）。
+    assert_eq!(
+        sandbox
+            .execute("String(__d.querySelector('#main').innerHTML.indexOf('<p') >= 0)")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // getElementsByTagName。
+    assert_eq!(
+        sandbox
+            .execute("__d.getElementsByTagName('span').length")
+            .unwrap()
+            .value,
+        "1"
+    );
+    // mimeType 记录。
+    assert_eq!(sandbox.execute("__d.mimeType").unwrap().value, "text/html");
+}
