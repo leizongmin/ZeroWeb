@@ -3858,6 +3858,31 @@ fn test_get_computed_style_grid_container() {
 }
 
 #[test]
+fn test_get_computed_style_table_list_font() {
+    // R2735：getComputedStyle border-spacing + list-style-image + font-size-adjust 序列化。
+    let html = "<html><body>\
+        <div id=\"bs-eq\" style=\"border-spacing: 5px;\"></div>\
+        <div id=\"bs-diff\" style=\"border-spacing: 3px 8px;\"></div>\
+        <div id=\"lsi-url\" style=\"list-style-image: url(star.png);\"></div>\
+        <div id=\"fsa-num\" style=\"font-size-adjust: 0.5;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // border-spacing 默认 0px；等值单值 / 不等两值。
+    assert_eq!(computed_style_property(html, "#def", "border-spacing"), "0px");
+    assert_eq!(computed_style_property(html, "#bs-eq", "border-spacing"), "5px");
+    assert_eq!(computed_style_property(html, "#bs-diff", "border-spacing"), "3px 8px");
+    // list-style-image 默认 none；url() 引号形式。
+    assert_eq!(computed_style_property(html, "#def", "list-style-image"), "none");
+    assert_eq!(
+        computed_style_property(html, "#lsi-url", "list-style-image"),
+        "url(\"star.png\")"
+    );
+    // font-size-adjust 默认 none；number。
+    assert_eq!(computed_style_property(html, "#def", "font-size-adjust"), "none");
+    assert_eq!(computed_style_property(html, "#fsa-num", "font-size-adjust"), "0.5");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。

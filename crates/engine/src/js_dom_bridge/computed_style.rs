@@ -2,7 +2,7 @@
 //! CSS 字符串（kebab-case 属性名）。从 `js_dom_bridge` 拆出（R2709）以控制主文件行数。
 //!
 //! 覆盖：display/position/visibility/opacity + 颜色族（color/background-color/border-*-color/outline-color/caret-color/accent-color）+ 长度族 + 关键字/枚举族 + font-family/复合族
-//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break/text-wrap/text-align-last）+ vertical-align/unicode-bidi/empty-cells/resize/appearance + box-decoration-break/scrollbar-*/touch-action + outline-offset/break-before·after·inside + grid-auto-flow/container-type·name/tab-size；未覆盖属性返 ''。
+//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break/text-wrap/text-align-last）+ vertical-align/unicode-bidi/empty-cells/resize/appearance + box-decoration-break/scrollbar-*/touch-action + outline-offset/break-before·after·inside + grid-auto-flow/container-type·name/tab-size + border-spacing/list-style-image/font-size-adjust；未覆盖属性返 ''。
 
 use std::collections::HashMap;
 
@@ -17,15 +17,16 @@ use zero_style_system::{
     AccentColorComputedValue, AlignContentValue, AppearanceComputedValue, BackfaceVisibilityValue,
     BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundOriginComputedValue,
     BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderCollapseValue,
-    BorderStyleValue, BoxDecorationBreakValue, BreakInsideValue, BreakValue, CaptionSideValue, CaretColorComputedValue,
-    ComputedStyle, ContainComputedValue, ContainerType, ContentComputedValue, CursorValue, DirectionValue,
-    EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, GridAutoFlowValue, HyphensComputedValue,
-    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, MixBlendModeComputedValue,
-    ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue, ResizeValue,
-    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
-    TextAlignLastValue, TextAlignValue, TextOverflowValue, TextTransformValue, TextWrapComputedValue, TouchActionValue,
-    TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue,
-    WordBreakValue, WritingModeValue, ZIndexValue,
+    BorderSpacingComputedValue, BorderStyleValue, BoxDecorationBreakValue, BreakInsideValue, BreakValue,
+    CaptionSideValue, CaretColorComputedValue, ComputedStyle, ContainComputedValue, ContainerType,
+    ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue,
+    FontSizeAdjustValue, GridAutoFlowValue, HyphensComputedValue, IsolationValue, JustifyItemsValue, JustifySelfValue,
+    LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
+    OutlineStyleValue, OverflowWrapValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue,
+    ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
+    TextOverflowValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
+    UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
+    WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -289,6 +290,10 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             Some(n) => n.clone(),
         },
         "tab-size" => tab_size_to_css(&style.tab_size, font_size_px),
+        // ── border-spacing / list-style-image / font-size-adjust（R2735）── 补齐 table/list/font 簇。
+        "border-spacing" => border_spacing_to_css(&style.border_spacing),
+        "list-style-image" => list_style_image_to_css(&style.list_style_image),
+        "font-size-adjust" => font_size_adjust_to_css(&style.font_size_adjust),
         _ => String::new(),
     }
 }
@@ -477,6 +482,34 @@ fn tab_size_to_css(t: &TabSizeValue, font_size_px: f64) -> String {
     match t {
         TabSizeValue::Number(n) => format!("{n}"),
         TabSizeValue::Length(lv) => length_to_css(lv, font_size_px),
+    }
+}
+
+/// border-spacing：CSS Table 单元格间距。两个 px 值；水平==垂直时 Chromium 返单值 `Xpx`，
+/// 否则 `Xpx Ypx`。初值 0px。**补齐 table 簇**（table-layout/caption-side/border-collapse/empty-cells）。
+fn border_spacing_to_css(s: &BorderSpacingComputedValue) -> String {
+    let h = format_num(s.horizontal as f64, "px");
+    if s.horizontal == s.vertical {
+        h
+    } else {
+        format!("{} {}", h, format_num(s.vertical as f64, "px"))
+    }
+}
+
+/// list-style-image：CSS List 列表标记图。None→none；Url(s)→`url("<s>")`（对齐 Chromium 引号形式）。
+/// **补齐 list-style 簇**（type/position 已覆，+image）。
+fn list_style_image_to_css(i: &ListStyleImageComputedValue) -> String {
+    match i {
+        ListStyleImageComputedValue::None => "none".to_string(),
+        ListStyleImageComputedValue::Url(u) => format!("url(\"{u}\")"),
+    }
+}
+
+/// font-size-adjust：CSS Fonts 字号调整。None→none；Number(n)→无单位数（对齐 Chromium）。
+fn font_size_adjust_to_css(f: &FontSizeAdjustValue) -> String {
+    match f {
+        FontSizeAdjustValue::None => "none".to_string(),
+        FontSizeAdjustValue::Number(n) => format_num(*n, ""),
     }
 }
 
