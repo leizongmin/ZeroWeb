@@ -11,10 +11,11 @@ use zero_css_parser::values::{
     PositionValue, TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_style_system::{
-    BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle, CursorValue, DirectionValue,
-    FlexBasisValue, IsolationValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue,
-    OutlineStyleValue, PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue,
-    TextTransformValue, UserSelectValue, WhiteSpaceValue, WritingModeValue, ZIndexValue,
+    BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle, ContainComputedValue,
+    CursorValue, DirectionValue, FlexBasisValue, IsolationValue, LineHeightValue, MixBlendModeComputedValue,
+    ObjectFitComputedValue, OutlineStyleValue, PointerEventsValue, StyleSystem, TableLayoutValue,
+    TextAlignValue, TextOverflowValue, TextTransformValue, UserSelectValue, WhiteSpaceValue,
+    WritingModeValue, ZIndexValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 
@@ -76,7 +77,7 @@ pub fn lookup_computed_property(
 ///   （font-family/flex-direction/wrap/justify-content/align-items/align-self/writing-mode/object-fit/
 ///   isolation/mix-blend-mode/pointer-events/user-select/list-style-type·position）+ 数值族
 ///   （flex-grow/flex-shrink/order/flex-basis/aspect-ratio）+ Transforms（transform 函数列表 /
-///   transform-origin 两长度）。未覆盖属性返 ''。
+///   transform-origin 两长度）+ contain（关键字 / 位掩码组合）。未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -237,6 +238,8 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "transform-origin" => {
             transform_origin_to_css(&style.transform_origin_x, &style.transform_origin_y, font_size_px)
         }
+        // ── contain（R2717）── CSS Containment L1/L2 计算值（关键字 / 位掩码组合）。
+        "contain" => contain_to_css(&style.contain),
         _ => String::new(),
     }
 }
@@ -831,6 +834,45 @@ fn transform_to_css(t: &TransformValue) -> String {
 /// `50% 50%`，恰好等于 `center` 计算值，故 `center` 行为正确）。
 fn transform_origin_to_css(x: &LengthValue, y: &LengthValue, font_size_px: f64) -> String {
     format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px))
+}
+
+/// contain：按 CSS Containment L1/L2 计算值序列化。
+///
+/// `None`/`Strict`/`Content`/`Size`/`Layout`/`Style`/`Paint` → 对应关键字（`strict`/`content`
+/// 保留 shorthand 不展开，与 Chromium getComputedStyle 一致）；`Custom(u8)` 位掩码按 spec 语法序
+///（`size || layout || paint || style`）解码为空格分隔关键字列表。空位掩码→`none`（防御性，
+/// parser 正常不产 Custom(0)）。
+fn contain_to_css(c: &ContainComputedValue) -> String {
+    use ContainComputedValue as C;
+    match c {
+        C::None => "none".to_string(),
+        C::Strict => "strict".to_string(),
+        C::Content => "content".to_string(),
+        C::Size => "size".to_string(),
+        C::Layout => "layout".to_string(),
+        C::Style => "style".to_string(),
+        C::Paint => "paint".to_string(),
+        C::Custom(flags) => {
+            let mut parts: Vec<&str> = Vec::new();
+            if (flags & C::FLAG_SIZE) != 0 {
+                parts.push("size");
+            }
+            if (flags & C::FLAG_LAYOUT) != 0 {
+                parts.push("layout");
+            }
+            if (flags & C::FLAG_PAINT) != 0 {
+                parts.push("paint");
+            }
+            if (flags & C::FLAG_STYLE) != 0 {
+                parts.push("style");
+            }
+            if parts.is_empty() {
+                "none".to_string()
+            } else {
+                parts.join(" ")
+            }
+        }
+    }
 }
 
 /// 序列化单个 [`TransformFunction`]。translate 类长度为 px（混合百分比分支保 `%`）；rotate/skew

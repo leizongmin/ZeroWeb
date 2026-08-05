@@ -3177,6 +3177,34 @@ fn test_get_computed_style_transform_origin() {
 }
 
 #[test]
+fn test_get_computed_style_contain() {
+    // R2717：getComputedStyle contain 序列化（CSS Containment L1/L2 计算值）。
+    // Strict/Content 保留 shorthand 不展开（与 Chromium 一致）；组合值按 spec 语法序 size/layout/paint/style。
+    let html = "<html><body>\
+        <div id=\"none\" style=\"contain: none;\"></div>\
+        <div id=\"strict\" style=\"contain: strict;\"></div>\
+        <div id=\"content\" style=\"contain: content;\"></div>\
+        <div id=\"single\" style=\"contain: layout;\"></div>\
+        <div id=\"combo\" style=\"contain: layout paint;\"></div>\
+        <div id=\"size-style\" style=\"contain: size style;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // none（默认）。
+    assert_eq!(computed_style_property(html, "#none", "contain"), "none");
+    // shorthand 保留。
+    assert_eq!(computed_style_property(html, "#strict", "contain"), "strict");
+    assert_eq!(computed_style_property(html, "#content", "contain"), "content");
+    // 单关键字。
+    assert_eq!(computed_style_property(html, "#single", "contain"), "layout");
+    // 组合：位掩码解码，spec 语法序（layout paint）。
+    assert_eq!(computed_style_property(html, "#combo", "contain"), "layout paint");
+    // 组合：size + style（非连续位）按语法序 size 在前。
+    assert_eq!(computed_style_property(html, "#size-style", "contain"), "size style");
+    // 默认 none。
+    assert_eq!(computed_style_property(html, "#def", "contain"), "none");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
