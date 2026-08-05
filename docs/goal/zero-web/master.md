@@ -1699,6 +1699,25 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① gradient border-image-source 旧返 none（错）、新返正确 gradient（修 real divergence）；② 既有 None/Url 路径不变；③ welcome smoke 持平证渲染零影响。
 
+### P1a `getComputedStyle` 残余简写批量 land（本轮 R2755，getComputedStyle 维护态续 + 本地 chromium oracle 续用）
+
+承接 R2754（本地 Chromium 150 oracle 解锁简写序列化验证）。续用 `/usr/bin/chromium --headless --dump-dom`（结果写 DOM 法，见 `docs/learnings/patterns/local-chromium-getcomputedstyle-oracle.md`）提取确切串，TDD red→green land 4 项残余简写 + 1 处 longhand diverge 修复：
+
+- **`columns` 简写**（column-width || column-count）：CSSOM 序列化省略 auto 值，全 auto→`"auto"`。oracle：`columns:200px 4`→`"200px 4"`、`columns:5`→`"5"`、`columns:12em`→`"192px"`、默认→`"auto"`。
+- **`column-rule` 简写**（width || style || color）：oracle 揭示 **style=none 时省略**（hidden 保留），width 恒显，color 恒显。`column-rule:thick double red`→`"5px double rgb(255, 0, 0)"`、默认→`"3px rgb(0, 0, 0)"`（style none 省）。
+- **`list-style` 简写**（position || image || type）：恒 3 段 `"position image type"`。默认→`"outside none disc"`、`list-style:square inside`→`"inside none square"`。
+- **`text-decoration` 简写**（line || style || color || thickness）：line=none→`"none"`；否则顺序 `"line [thickness if !auto] [style if !solid] [color if !currentcolor]"`。oracle：`underline overline wavy green 3px`→`"underline overline 3px wavy rgb(0, 128, 0)"`。
+- **★ `column-rule-width` longhand diverge 修复**：oracle 揭示 **column-rule-width 的 computed 值独立于 style**——Chromium 对 style=none/hidden 仍返 medium→`3px`（**与 border-width 的 none/hidden→used 0px 语义不同**）。R2737 曾误套 border-width 规则致 default 返 `0px` diverge；本轮移除 style→0px 短路，纠偏为 `3px`（又一处被「需 Web oracle」挡住未暴露的真 diverge，同 R2754 outline-width/flex-basis 谱）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +4 helper（`columns_shorthand_to_css`/`column_rule_shorthand_to_css`/`list_style_shorthand_to_css`/`text_decoration_shorthand_to_css`）+ 4 dispatch 项；修 `column_rule_width_to_css`（移除 style→0px 短路，`_style` 参）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_shorthands_r2755`（4 简写全覆盖 + 多值组合，oracle 锚定确切串）；修 R2737 multicol 测试 `column-rule-width` default 期望 `0px`→`3px`。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13382 passed / 0 failed / 74 ignored**，13381+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 4 简写旧返 `''`（getComputedStyle 未实现简写重组）、新返正确 CSSOM 串；② column-rule-width 修真 diverge（0px→3px 对齐 Chromium）；③ 序列化纯只读 JS bridge，不触及渲染/布局，welcome smoke 持平证零产品影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

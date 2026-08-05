@@ -250,6 +250,9 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             element_color,
         )),
         "text-decoration-thickness" => text_decoration_thickness_to_css(&style.text_decoration_thickness),
+        // ── text-decoration 简写（R2755）── 4 longhand 早覆（上方）；简写 CSSOM 重组
+        // （line=none→"none"；否则 line/thickness/style/color 省初值），Chromium 150 oracle 锚定。
+        "text-decoration" => text_decoration_shorthand_to_css(style, element_color),
         "direction" => direction_str(&style.direction),
         "border-collapse" => border_collapse_str(&style.border_collapse),
         "table-layout" => table_layout_str(&style.table_layout),
@@ -274,6 +277,8 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "user-select" => user_select_str(&style.user_select),
         "list-style-type" => list_style_type_str(&style.list_style_type),
         "list-style-position" => list_style_position_str(&style.list_style_position),
+        // ── list-style 简写（R2755）── position/image/type longhand 早覆；简写恒 3 段 "position image type"。
+        "list-style" => list_style_shorthand_to_css(style),
         // ── 数值/special 族（R2711）──
         "flex-grow" => format_num(style.flex_grow, ""),
         "flex-shrink" => format_num(style.flex_shrink, ""),
@@ -384,6 +389,16 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "column-width" => column_width_to_css(&style.column_width, font_size_px),
         "column-fill" => column_fill_str(&style.column_fill),
         "column-span" => column_span_str(&style.column_span),
+        // ── columns / column-rule 简写（R2755）── longhand 早覆（上方）；简写 CSSOM 重组
+        // （columns 省 auto / column-rule 省 none style），Chromium 150 oracle 锚定。
+        "columns" => columns_shorthand_to_css(&style.column_width, &style.column_count, font_size_px),
+        "column-rule" => column_rule_shorthand_to_css(
+            &style.column_rule_width,
+            &style.column_rule_style,
+            &style.column_rule_color,
+            element_color,
+            font_size_px,
+        ),
         // ── font-variant-numeric / image-rendering（R2737）── 单值关键字枚举（残余纯枚举收尾）。
         "font-variant-numeric" => font_variant_numeric_str(&style.font_variant_numeric),
         "image-rendering" => image_rendering_str(&style.image_rendering),
@@ -738,22 +753,19 @@ fn quotes_to_css(q: &QuotesComputedValue) -> String {
 // column-gap 已由 length 族（R2707）覆盖；此处补 rule-width/style/color + count/width/fill/span。
 
 /// column-rule-width：CSS Multi-column 分隔线宽度。Medium/Thin/Thick→对齐 Chromium used px
-///（3px/1px/5px，CSS Border 的常规 UA 初始值）；Length→px（经 length_to_css）。**当 column-rule-style
-/// 为 none/hidden 时 Chromium 返 0px**（同 border-width used 语义），故取 style 参照（复用 R2707
-/// border_width 模式）。
+///（3px/1px/5px，CSS Border 的常规 UA 初始值）；Length→px（经 length_to_css）。**column-rule-width 的
+/// computed 值独立于 column-rule-style**——Chromium 对 style=none/hidden 仍返 medium→3px（R2755 oracle
+/// 核实），与 border-width 的 none/hidden→used 0px 语义**不同**（R2737 曾误套 border-width 规则致 diverge）。
 fn column_rule_width_to_css(
     w: &ColumnRuleWidthComputedValue,
-    style: &ColumnRuleStyleComputedValue,
+    _style: &ColumnRuleStyleComputedValue,
     font_size_px: f64,
 ) -> String {
-    match style {
-        ColumnRuleStyleComputedValue::None | ColumnRuleStyleComputedValue::Hidden => "0px".to_string(),
-        _ => match w {
-            ColumnRuleWidthComputedValue::Medium => "3px".to_string(),
-            ColumnRuleWidthComputedValue::Thin => "1px".to_string(),
-            ColumnRuleWidthComputedValue::Thick => "5px".to_string(),
-            ColumnRuleWidthComputedValue::Length(l) => length_to_css(l, font_size_px),
-        },
+    match w {
+        ColumnRuleWidthComputedValue::Medium => "3px".to_string(),
+        ColumnRuleWidthComputedValue::Thin => "1px".to_string(),
+        ColumnRuleWidthComputedValue::Thick => "5px".to_string(),
+        ColumnRuleWidthComputedValue::Length(l) => length_to_css(l, font_size_px),
     }
 }
 
@@ -806,6 +818,90 @@ fn column_span_str(s: &ColumnSpanComputedValue) -> String {
         ColumnSpanComputedValue::All => "all",
     }
     .to_string()
+}
+
+// ── CSS Multi-column / Lists / Text-decoration 简写（R2755）─────────────────
+// 复用上方 longhand helper 做 CSSOM 重组；oracle 锚定本地 Chromium 150（见
+// docs/learnings/patterns/local-chromium-getcomputedstyle-oracle.md）。
+
+/// `columns` 简写：`column-width || column-count`（CSS Multicol）。CSSOM 序列化省略 auto 值；
+/// 全 auto→`"auto"`。Chromium oracle：`columns:200px 4`→`"200px 4"`、`columns:5`→`"5"`、
+/// `columns:12em`→`"192px"`（width 解析，count auto 省）、默认→`"auto"`。
+fn columns_shorthand_to_css(
+    width: &ColumnWidthComputedValue,
+    count: &ColumnCountComputedValue,
+    font_size_px: f64,
+) -> String {
+    let w_auto = matches!(width, ColumnWidthComputedValue::Auto);
+    let c_auto = matches!(count, ColumnCountComputedValue::Auto);
+    match (w_auto, c_auto) {
+        (false, false) => {
+            format!(
+                "{} {}",
+                column_width_to_css(width, font_size_px),
+                column_count_to_css(count)
+            )
+        }
+        (false, true) => column_width_to_css(width, font_size_px),
+        (true, false) => column_count_to_css(count),
+        (true, true) => "auto".to_string(),
+    }
+}
+
+/// `column-rule` 简写：`width || style || color`。CSSOM 序列化：**style=none 时省略**（hidden 保留），
+/// width 恒显（独立于 style，见 [`column_rule_width_to_css`]），color 恒显。Chromium oracle：
+/// `column-rule:thick double red`→`"5px double rgb(255, 0, 0)"`、默认→`"3px rgb(0, 0,0)"`（style none 省）。
+fn column_rule_shorthand_to_css(
+    width: &ColumnRuleWidthComputedValue,
+    style_val: &ColumnRuleStyleComputedValue,
+    color: &ColorValue,
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    let mut parts = vec![column_rule_width_to_css(width, style_val, font_size_px)];
+    if !matches!(style_val, ColumnRuleStyleComputedValue::None) {
+        parts.push(column_rule_style_str(style_val));
+    }
+    parts.push(color_to_css(&crate::resolve_color_current(color, element_color)));
+    parts.join(" ")
+}
+
+/// `list-style` 简写：`position || image || type`（CSS Lists）。CSSOM 序列化恒 3 段 `"position image type"`。
+/// Chromium oracle：默认→`"outside none disc"`、`list-style:square inside`→`"inside none square"`。
+fn list_style_shorthand_to_css(style: &ComputedStyle) -> String {
+    format!(
+        "{} {} {}",
+        list_style_position_str(&style.list_style_position),
+        list_style_image_to_css(&style.list_style_image),
+        list_style_type_str(&style.list_style_type),
+    )
+}
+
+/// `text-decoration` 简写：`line || style || color || thickness`（CSS Text Decoration）。CSSOM 序列化
+/// （Chromium oracle）：line=none→整值 `"none"`；否则顺序 `"line [thickness if !auto] [style if !solid]
+/// [color if !currentcolor]"`。`text-decoration:underline overline wavy green 3px`→
+/// `"underline overline 3px wavy rgb(0, 128, 0)"`；color 仅当显式色（非 currentcolor 关键字）才显。
+fn text_decoration_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue) -> String {
+    let line = text_decoration_line_to_css(&style.text_decoration_line);
+    if line == "none" {
+        return "none".to_string();
+    }
+    let mut parts = vec![line];
+    let thickness = text_decoration_thickness_to_css(&style.text_decoration_thickness);
+    if thickness != "auto" {
+        parts.push(thickness);
+    }
+    let style_str = text_decoration_style_str(&style.text_decoration_style);
+    if style_str != "solid" {
+        parts.push(style_str);
+    }
+    if !matches!(style.text_decoration_color, ColorValue::CurrentColor) {
+        parts.push(color_to_css(&crate::resolve_color_current(
+            &style.text_decoration_color,
+            element_color,
+        )));
+    }
+    parts.join(" ")
 }
 
 /// font-variant-numeric：CSS Fonts 数字变体（9 关键字单值，对齐 Chromium 单值场景）。

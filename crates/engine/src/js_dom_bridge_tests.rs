@@ -3929,10 +3929,11 @@ fn test_get_computed_style_multicol_fontvar_img() {
         <div id=\"ir\" style=\"image-rendering: pixelated;\"></div>\
         <div id=\"def\" style=\"color: red;\"></div>\
         </body></html>";
-    // column-rule-width：长度 2px（style 非 none）；thick→5px（UA used px，对齐 Chromium）；默认 style=none→0px。
+    // column-rule-width：长度 2px；thick→5px（UA used px）；默认 style=none 仍 medium→3px（R2755 oracle：
+    // column-rule-width 的 computed 值独立于 style，不套 border-width 的 none/hidden→0px 规则，纠正 R2737 误判）。
     assert_eq!(computed_style_property(html, "#cr", "column-rule-width"), "2px");
     assert_eq!(computed_style_property(html, "#crt", "column-rule-width"), "5px");
-    assert_eq!(computed_style_property(html, "#def", "column-rule-width"), "0px");
+    assert_eq!(computed_style_property(html, "#def", "column-rule-width"), "3px");
     // column-rule-style：dashed/solid；默认 none。
     assert_eq!(computed_style_property(html, "#cr", "column-rule-style"), "dashed");
     assert_eq!(computed_style_property(html, "#crt", "column-rule-style"), "solid");
@@ -3971,6 +3972,77 @@ fn test_get_computed_style_multicol_fontvar_img() {
     // image-rendering：pixelated；初值 auto。
     assert_eq!(computed_style_property(html, "#ir", "image-rendering"), "pixelated");
     assert_eq!(computed_style_property(html, "#def", "image-rendering"), "auto");
+}
+
+#[test]
+fn test_get_computed_style_shorthands_r2755() {
+    // R2755：getComputedStyle 残余简写序列化（columns / column-rule / list-style / text-decoration）。
+    // 每项期望串经本地 Chromium 150 oracle 提取（--dump-dom 写 DOM 法），TDD red→green 对齐确切串。
+    let html = "<html><body>\
+        <div id=\"def\" style=\"color: red;\"></div>\
+        <div id=\"cw\" style=\"column-width: 100px;\"></div>\
+        <div id=\"cn\" style=\"column-count: 3;\"></div>\
+        <div id=\"cb\" style=\"columns: 200px 4;\"></div>\
+        <div id=\"cb2\" style=\"columns: 5;\"></div>\
+        <div id=\"cr\" style=\"column-rule: thick double rgb(255, 0, 0);\"></div>\
+        <div id=\"crp\" style=\"column-rule: 2px solid;\"></div>\
+        <div id=\"crh\" style=\"column-rule-style: hidden;\"></div>\
+        <div id=\"ls\" style=\"list-style: square inside;\"></div>\
+        <div id=\"lsp\" style=\"list-style: lower-alpha outside;\"></div>\
+        <div id=\"lsn\" style=\"list-style: none;\"></div>\
+        <div id=\"td\" style=\"text-decoration: underline overline;\"></div>\
+        <div id=\"tdl\" style=\"text-decoration: line-through;\"></div>\
+        <div id=\"tdp\" style=\"text-decoration: underline dotted rgb(255, 0, 0);\"></div>\
+        <div id=\"tdc\" style=\"text-decoration: underline; text-decoration-color: rgb(170, 187, 204);\"></div>\
+        </body></html>";
+    // columns 简写：auto 省略；全 auto→"auto"；width-only→"W"；count-only→"N"；both→"W N"。
+    assert_eq!(computed_style_property(html, "#def", "columns"), "auto");
+    assert_eq!(computed_style_property(html, "#cw", "columns"), "100px");
+    assert_eq!(computed_style_property(html, "#cn", "columns"), "3");
+    assert_eq!(computed_style_property(html, "#cb", "columns"), "200px 4");
+    assert_eq!(computed_style_property(html, "#cb2", "columns"), "5");
+    // column-rule 简写：style=none 省略（hidden 保留）；width 恒显；color 恒显。
+    // #def 默认（style none）→"3px rgb(255, 0, 0)"（color=currentcolor→元素 red）。
+    assert_eq!(
+        computed_style_property(html, "#def", "column-rule"),
+        "3px rgb(255, 0, 0)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#cr", "column-rule"),
+        "5px double rgb(255, 0, 0)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#crp", "column-rule"),
+        "2px solid rgb(0, 0, 0)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#crh", "column-rule"),
+        "3px hidden rgb(0, 0, 0)"
+    );
+    // list-style 简写：恒 3 段 "position image type"。
+    assert_eq!(computed_style_property(html, "#def", "list-style"), "outside none disc");
+    assert_eq!(computed_style_property(html, "#ls", "list-style"), "inside none square");
+    assert_eq!(
+        computed_style_property(html, "#lsp", "list-style"),
+        "outside none lower-alpha"
+    );
+    assert_eq!(computed_style_property(html, "#lsn", "list-style"), "outside none none");
+    // text-decoration 简写：line=none→"none"；否则 line/thickness(!auto)/style(!solid)/color(!currentcolor)。
+    assert_eq!(computed_style_property(html, "#def", "text-decoration"), "none");
+    assert_eq!(
+        computed_style_property(html, "#td", "text-decoration"),
+        "underline overline"
+    );
+    assert_eq!(computed_style_property(html, "#tdl", "text-decoration"), "line-through");
+    assert_eq!(
+        computed_style_property(html, "#tdp", "text-decoration"),
+        "underline dotted rgb(255, 0, 0)"
+    );
+    // #tdc：line + 显式 color（非 currentcolor）；style solid / thickness auto 省略。
+    assert_eq!(
+        computed_style_property(html, "#tdc", "text-decoration"),
+        "underline rgb(170, 187, 204)"
+    );
 }
 
 #[test]

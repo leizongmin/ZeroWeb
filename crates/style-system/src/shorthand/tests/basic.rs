@@ -378,7 +378,10 @@ fn flex_parts(value: &str) -> (String, String, String) {
 fn test_expand_flex_single_number_is_grow() {
     // 纯数字单值 → grow（CSS §7.1.1，省略 basis→0%，R2754 对齐 Chromium）
     assert_eq!(flex_parts("1"), ("1".to_string(), "1".to_string(), "0%".to_string()));
-    assert_eq!(flex_parts("2.5"), ("2.5".to_string(), "1".to_string(), "0%".to_string()));
+    assert_eq!(
+        flex_parts("2.5"),
+        ("2.5".to_string(), "1".to_string(), "0%".to_string())
+    );
 }
 
 #[test]
