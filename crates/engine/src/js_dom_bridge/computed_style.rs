@@ -48,7 +48,11 @@ pub fn compute_document_styles(html: &str) -> (Document, HashMap<NodeId, Compute
     let mut sys = StyleSystem::new();
     // 设默认 viewport（length 属性 % 解析需要；首批属性 viewport 无关，但为后续 length 扩展设）。
     sys.set_viewport(1280.0, 800.0);
-    let styles = sys.compute_styles(&doc, &sheets);
+    let mut styles = sys.compute_styles(&doc, &sheets);
+    // R2723：getComputedStyle 对齐 Chromium——`bolder`/`lighter` 按父链 resolved 绝对值解析
+    //（CSS Fonts 3 §5.2 计算值语义）。style-system computed 值保关键字供 paint 二值 want_bold
+    // 消费；本 getComputedStyle 专用后处理仅改 gCS 路径的副本，paint/render 零影响。
+    resolve_font_weight_bolder_lighter(&doc, &mut styles);
     (doc, styles)
 }
 
@@ -1142,6 +1146,76 @@ fn css_string_to_css(s: &str) -> String {
     }
     out.push('"');
     out
+}
+
+/// getComputedStyle 专用后处理：把 `bolder`/`lighter` font-weight 按父链 resolved 绝对值解析
+///（CSS Fonts 3 §5.2 计算值语义；Chromium getComputedStyle 返绝对数）。
+///
+/// 自顶向下遍历文档树（栈式 DFS，父先于子出栈处理），保证解析子节点时父节点已解析为绝对值。
+/// 仅改本函数返回的 styles 副本——style-system computed 值仍保关键字供 paint 二值 want_bold，
+/// 故 render/reftest 零影响，只有 getComputedStyle 输出对齐 Chromium。
+fn resolve_font_weight_bolder_lighter(doc: &Document, styles: &mut HashMap<NodeId, ComputedStyle>) {
+    let mut stack = vec![doc.root()];
+    while let Some(id) = stack.pop() {
+        let children = doc.child_nodes(id);
+        // 先以 immutable borrow 决定是否解析 + 方向（释放后再 get_mut 写）。
+        let new_weight = styles.get(&id).and_then(|s| match s.font_weight {
+            FontWeightValue::Bolder => {
+                Some(FontWeightValue::Absolute(bolder_of(parent_font_weight_base(doc, styles, id))))
+            }
+            FontWeightValue::Lighter => {
+                Some(FontWeightValue::Absolute(lighter_of(parent_font_weight_base(doc, styles, id))))
+            }
+            _ => None,
+        });
+        if let Some(w) = new_weight
+            && let Some(style) = styles.get_mut(&id)
+        {
+            style.font_weight = w;
+        }
+        stack.extend(children);
+    }
+}
+
+/// 元素父节点 resolved font-weight 的绝对基数（Normal→400 / Bold→700 / Absolute(n)→n）。
+/// 根元素无父 → 默认 normal = 400。
+fn parent_font_weight_base(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, id: NodeId) -> u16 {
+    doc.parent_node(id)
+        .and_then(|p| styles.get(&p))
+        .map(|s| font_weight_base_absolute(&s.font_weight))
+        .unwrap_or(400)
+}
+
+/// font-weight 的绝对基数。Bolder/Lighter 防御性返 400（父经自顶向下解析后不应出现）。
+fn font_weight_base_absolute(w: &FontWeightValue) -> u16 {
+    match w {
+        FontWeightValue::Absolute(n) => *n,
+        FontWeightValue::Normal => 400,
+        FontWeightValue::Bold => 700,
+        FontWeightValue::Bolder | FontWeightValue::Lighter => 400,
+    }
+}
+
+/// CSS Fonts 3 §5.2 `bolder` 映射表（标准 100-900 经此表；非标准值按区间合理映射）。
+fn bolder_of(parent: u16) -> u16 {
+    if parent < 400 {
+        400
+    } else if parent < 600 {
+        700
+    } else {
+        900
+    }
+}
+
+/// CSS Fonts 3 §5.2 `lighter` 映射表。
+fn lighter_of(parent: u16) -> u16 {
+    if parent < 600 {
+        100
+    } else if parent < 800 {
+        400
+    } else {
+        700
+    }
 }
 
 /// 序列化单个 [`TransformFunction`]。translate 类长度为 px（混合百分比分支保 `%`）；rotate/skew

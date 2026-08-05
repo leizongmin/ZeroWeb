@@ -3358,6 +3358,41 @@ fn test_get_computed_style_content() {
 }
 
 #[test]
+fn test_get_computed_style_font_weight_bolder_lighter() {
+    // R2723：getComputedStyle bolder/lighter 按父链 resolved 绝对值解析（CSS Fonts 3 §5.2，
+    // 对齐 Chromium；ZeroWeb 保关键字供 paint 二值 want_bold，仅 gCS 路径解析）。
+    let html = "<html><body>\
+        <b id=\"bolder-normal\" style=\"font-weight: bolder\"></b>\
+        <div style=\"font-weight: bold\"><b id=\"bolder-bold\" style=\"font-weight: bolder\"></b></div>\
+        <div style=\"font-weight: bold\"><span id=\"lighter-bold\" style=\"font-weight: lighter\"></span></div>\
+        <span id=\"lighter-normal\" style=\"font-weight: lighter\"></span>\
+        <div id=\"explicit\" style=\"font-weight: 500\"></div>\
+        </body></html>";
+    // bolder on normal(400) parent → 700。
+    assert_eq!(
+        computed_style_property(html, "#bolder-normal", "font-weight"),
+        "700"
+    );
+    // bolder on bold(700) parent → 900。
+    assert_eq!(
+        computed_style_property(html, "#bolder-bold", "font-weight"),
+        "900"
+    );
+    // lighter on bold(700) parent → 400。
+    assert_eq!(
+        computed_style_property(html, "#lighter-bold", "font-weight"),
+        "400"
+    );
+    // lighter on normal(400) parent → 100。
+    assert_eq!(
+        computed_style_property(html, "#lighter-normal", "font-weight"),
+        "100"
+    );
+    // 非 bolder/lighter 不受影响（显式数值原样）。
+    assert_eq!(computed_style_property(html, "#explicit", "font-weight"), "500");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
