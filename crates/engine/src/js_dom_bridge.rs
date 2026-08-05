@@ -5,7 +5,7 @@
 //! [`apply_dom_mutations`] 并序列化回 HTML。
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use zero_css_parser::values::{DisplayValue, PositionValue, VisibilityValue};
@@ -1645,22 +1645,41 @@ pub fn query_tag_from_mutations(mutations: &[DomMutation], handle: &str) -> Stri
 /// display 无须外链 UA stylesheet）→ 序列化查询属性。供 `__zw_get_computed_style` 回调 → shim
 /// `getComputedStyle`。
 ///
-/// **覆盖范围**（首批高频属性）：`display`/`position`/`visibility`/`opacity`（visibility/hidden
-/// 检查 + position 查询主导用例）。其余属性返 ''（follow-up 扩展 color/length 等）。
+/// **覆盖范围**：`display`/`position`/`visibility`/`opacity`（visibility/hidden 检查 + position
+/// 查询主导用例）+ 颜色族（color/background-color/border-*-color/outline-color）。其余属性返 ''。
 ///
-/// **限制**：外链 `<link>` CSS 不在 dom_html snapshot 内（snapshot 限制，同 gBCR）；每次查询
-/// 重跑 cascade（O(规则×节点)）——reftest/product-smoke 不循环调用故无 perf 回归，循环场景的
-/// per-snapshot 缓存为 follow-up。
+/// **限制**：外链 `<link>` CSS 不在 dom_html snapshot 内（snapshot 限制，同 gBCR）。**每次调用
+/// 重跑 parse+cascade**——作为无缓存的参考实现；生产回调 `__zw_get_computed_style` 用
+/// [`compute_document_styles`] + [`lookup_computed_property`] 配 per-snapshot 缓存复用 (doc, styles)。
 pub fn computed_style_property(html: &str, selector: &str, prop: &str) -> String {
+    let (doc, styles) = compute_document_styles(html);
+    lookup_computed_property(&doc, &styles, selector, prop)
+}
+
+/// 解析 html 并计算全文档样式，返回 `(Document, NodeId→ComputedStyle)`。供 getComputedStyle
+/// 回调的 per-snapshot 缓存：html 未变时复用此结果，避免每次属性查询重跑 parse+cascade
+/// （O(文档) + O(规则×节点)）。viewport 固定 1280×800（同 getComputedStyle 既有默认）。
+fn compute_document_styles(html: &str) -> (Document, HashMap<NodeId, ComputedStyle>) {
     let doc = parse_html(html);
-    let Some(node) = find_by_selector(&doc, selector) else {
-        return String::new();
-    };
     let sheets = crate::pipeline::collect_stylesheets(&doc, "");
     let mut sys = StyleSystem::new();
     // 设默认 viewport（length 属性 % 解析需要；首批属性 viewport 无关，但为后续 length 扩展设）。
     sys.set_viewport(1280.0, 800.0);
     let styles = sys.compute_styles(&doc, &sheets);
+    (doc, styles)
+}
+
+/// 在已计算的 `(doc, styles)` 上按选择器查询单个属性并序列化。缓存命中路径仅此步
+/// （find_by_selector + HashMap lookup + serialize，O(节点)）。
+fn lookup_computed_property(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    selector: &str,
+    prop: &str,
+) -> String {
+    let Some(node) = find_by_selector(doc, selector) else {
+        return String::new();
+    };
     let Some(style) = styles.get(&node) else {
         return String::new();
     };
@@ -1983,16 +2002,45 @@ pub fn register_dom_callbacks(
     );
 
     // `getComputedStyle(el).getPropertyValue(prop)`——计算样式（display/position/visibility/
-    // opacity 首批）。每次查询重跑 cascade（无缓存，follow-up）。
+    // opacity + 颜色族）。**per-snapshot 缓存**：html_key → (selector → ComputedStyle)。Document 非
+    // Send（含 observer/listener 闭包 + html5ever tendril `Cell`），不能入 `Send + Sync` 闭包；故只
+    // 缓存 `ComputedStyle`（纯值类型，Send）。同 html 同 selector 命中 → 仅 serialize（O(1)）；新
+    // selector → parse+cascade 一次并存入——同一元素的多属性查询（`cs.display;cs.color;cs.visibility`）
+    // 由 3 次全 cascade 摊销为 1 次。html 变（新 snapshot）→ 清空 per-selector 缓存。
     let html = Arc::clone(dom_html);
+    let cs_cache: Arc<Mutex<Option<(String, HashMap<String, ComputedStyle>)>>> =
+        Arc::new(Mutex::new(None));
     sandbox.register_callback(
         "__zw_get_computed_style",
         Box::new(move |args| {
             if args.len() < 2 {
                 return String::new();
             }
+            let sel = &args[0];
+            let prop = &args[1];
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            computed_style_property(&snap, &args[0], &args[1])
+            let mut cache = cs_cache.lock().unwrap_or_else(|e| e.into_inner());
+            // html 变 → 清空 per-selector 缓存，重置 key。
+            let need_reset = cache.as_ref().is_none_or(|(h, _)| h != &*snap);
+            if need_reset {
+                *cache = Some(((*snap).clone(), HashMap::new()));
+            }
+            let (_, map) = cache.as_mut().expect("cs cache populated");
+            // 同 selector 命中 → 直接 serialize（O(1)）。
+            if let Some(style) = map.get(sel) {
+                return serialize_computed_property(style, prop);
+            }
+            // 未命中：parse + cascade，提取该 selector 的 ComputedStyle 并缓存，再 serialize。
+            let (doc, styles) = compute_document_styles(&snap);
+            let Some(node) = find_by_selector(&doc, sel) else {
+                return String::new();
+            };
+            let Some(style) = styles.get(&node) else {
+                return String::new();
+            };
+            let value = serialize_computed_property(style, prop);
+            map.insert((*sel).clone(), style.clone());
+            value
         }),
     );
 

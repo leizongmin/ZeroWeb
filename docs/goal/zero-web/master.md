@@ -1025,6 +1025,25 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 **已知限制（剩余）**：① length 属性（width/height/margin/padding/border-*-width 等）仍返 ''（computed vs used 值差异 + LengthValue 串化为 follow-up）；② alpha 串行化取整到 1e-3（real browser 用更高精度，颜色 alpha 比对极少精确匹配）；③ `getComputedStyle(el).cssText`/length 仍 ''/0。
 
+### P1a `getComputedStyle` per-snapshot 缓存（本轮 R2706，R2704/R2705 perf 鲁棒性续）
+
+承接 R2704/R2705（getComputedStyle 正确性：可见性 + 颜色族）。**perf 鲁棒性**：旧 `__zw_get_computed_style` 每次属性访问重跑 `parse_html`+`compute_styles`（O(文档)+O(规则×节点)）——真实页面 `const cs=getComputedStyle(el); cs.display;cs.color;cs.visibility` = 3 次全 cascade。本切片加 per-snapshot 缓存：连续同元素多属性查询摊销为 1 次 cascade + 余 O(1)。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge.rs` | `computed_style_property` 拆为 `compute_document_styles(html)→(Document, HashMap<NodeId, ComputedStyle>)` + `lookup_computed_property(doc, styles, sel, prop)`（原公开签名保无缓存参考实现）；`__zw_get_computed_style` 回调加 `Arc<Mutex<Option<(String /*html*/, HashMap<String /*selector*/, ComputedStyle>)>>>` 缓存。 |
+| `engine/js_dom_bridge_tests.rs` | +2 测试：`test_computed_style_cache_reuse_composition`（build (doc,styles) once→query N 属性，与无缓存 `computed_style_property` 逐属性等价）+ `test_get_computed_style_cache_invalidation`（改 dom_html snapshot 后再查返新值，不返 stale 缓存）。 |
+
+**与原计划的偏差（Document 非 Send）**：原计划缓存 `(Document, HashMap<NodeId, ComputedStyle>)`。但 `register_callback` 闭包须 `Send + Sync`，而 `zero_dom::Document` **非 Send**——内含 `MutationObserver`/`ListenerEntry`（持 `dyn Fn(...)` 非 Send 闭包）+ html5ever `tendril::NonAtomic`（`Cell<usize>` 非 Sync）。故改为**只缓存 `ComputedStyle`**（纯值类型，Send）：缓存结构 `html_key → (selector → ComputedStyle)`。html 变 → 清空 per-selector 缓存重置 key；同 selector 命中 → 仅 `serialize_computed_property`（O(1)，比 Document 缓存路径的 `find_by_selector` O(节点) 更快）；新 selector → `compute_document_styles` 一次 + clone ComputedStyle 入缓存。代价：查 N 个不同元素 = N 次 cascade（无法跨元素共享一次 cascade），但既定热路径（单元素多属性）已最优解决。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告（修一处新代码 lint：`map_or(true,…)`→`is_none_or(…)`）+ `make test` 全绿（0 failed，0 回归；engine lib 1430→1432）+ `make reftest` 686/686 (100%) + `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2705 baseline 持平）+ 全 struct PASS（wintertc/morning/narrow 375·320）。
+
+**为何零回归且净正向**：① 缓存只读优化，返回值不变（unit 测证与无缓存逐属性等价）；② 缓存 keyed on html snapshot，html 变即失效（invalidation 测证）；③ 命中路径仅 serialize，无 mutation/render 副作用。
+
+**已知限制（剩余）**：① 跨元素查询不共享一次 cascade（Document 非 Send 限制，改 thread_local 可解但引入全局，未做）；② 外链 `<link>` CSS 不在 snapshot 内（同 gBCR 既有 snapshot 限制）；③ fmt 本机 rustfmt 版本与提交风格 drift（js_dom_bridge.rs/_tests.rs/apps/renderer 既有 27+ 处 diff 非本轮引入，CI 不 gate fmt），本轮新代码风格与周围提交一致未额外 reformat。
+
+
+
 
 
 

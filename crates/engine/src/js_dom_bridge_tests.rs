@@ -2870,6 +2870,69 @@ fn test_get_computed_style_colors() {
 }
 
 #[test]
+fn test_computed_style_cache_reuse_composition() {
+    // R2706：getComputedStyle per-snapshot 缓存 = compute_document_styles（一次）+
+    // lookup_computed_property（多次）。验证「build (doc, styles) once → query N 属性」与无缓存
+    // computed_style_property 逐次等价——锁缓存命中路径返回值正确（缓存复用不改变结果）。
+    let html = "<html><body>\
+        <div id=\"d\" style=\"color: red; display: none; opacity: 0.25\"></div>\
+        <style>#d { position: relative }</style>\
+        </body></html>";
+    let (doc, styles) = compute_document_styles(html);
+    // 同一 (doc, styles) 连续查 4 个属性（缓存命中场景）。
+    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "color"), "rgb(255, 0, 0)");
+    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "display"), "none");
+    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "opacity"), "0.25");
+    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "position"), "relative");
+    // 与无缓存参考实现逐属性等价。
+    assert_eq!(computed_style_property(html, "#d", "color"), "rgb(255, 0, 0)");
+    assert_eq!(computed_style_property(html, "#d", "display"), "none");
+    assert_eq!(computed_style_property(html, "#d", "position"), "relative");
+    // 未命中选择器 / 未覆盖属性 → ''。
+    assert_eq!(lookup_computed_property(&doc, &styles, "#missing", "color"), "");
+    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "margin-top"), "");
+}
+
+#[test]
+fn test_get_computed_style_cache_invalidation() {
+    // R2706：getComputedStyle per-snapshot 缓存失效（核心正确性风险）。同一会话内首查填缓存后
+    // 改 dom_html snapshot，再查须反映新 html（不返 stale 缓存值）。缓存 keyed on html。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 首查：div UA display=block（填缓存）。
+    sandbox
+        .execute("globalThis.__v1 = getComputedStyle(document.querySelector('#d')).display;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__v1").unwrap().value, "block");
+
+    // 改 snapshot：注入 <style>#d{display:none}</style>。缓存 keyed on html → 失效 → 重算。
+    *dom_html.lock().unwrap() = "<html><body><div id=\"d\"></div>\
+        <style>#d { display: none }</style></body></html>"
+        .to_string();
+    sandbox
+        .execute("globalThis.__v2 = getComputedStyle(document.querySelector('#d')).display;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__v2").unwrap().value,
+        "none",
+        "html snapshot 变 → 缓存失效重算，返新 display=none（非 stale 的 block）"
+    );
+}
+
+#[test]
 fn test_element_attributes_nodelist() {
     // R2699：el.attributes（NamedNodeMap 只读快照）——length/item/getNamedItem/数值索引/迭代。
     use std::sync::{Arc, Mutex};
