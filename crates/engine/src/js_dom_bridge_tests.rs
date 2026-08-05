@@ -4300,6 +4300,36 @@ fn test_get_computed_style_scroll_mask() {
 }
 
 #[test]
+fn test_get_computed_style_background_mask_image() {
+    // R2747：getComputedStyle background-image + mask-image（None/Url 逐层；gradient defer→''）。
+    let html = "<html><body>\
+        <div id=\"url\" style=\"background-image: url(bg.png);\"></div>\
+        <div id=\"none\" style=\"background-image: none;\"></div>\
+        <div id=\"multi\" style=\"background-image: url(a.png), url(b.png);\"></div>\
+        <div id=\"grad\" style=\"background-image: linear-gradient(to right, red, blue);\"></div>\
+        <div id=\"mask\" style=\"mask-image: url(m.png);\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // url → url("u")（同 list-style-image）；none；多层逗号分隔。
+    assert_eq!(
+        computed_style_property(html, "#url", "background-image"),
+        "url(\"bg.png\")"
+    );
+    assert_eq!(computed_style_property(html, "#none", "background-image"), "none");
+    assert_eq!(
+        computed_style_property(html, "#multi", "background-image"),
+        "url(\"a.png\"), url(\"b.png\")"
+    );
+    // gradient 层 → ''（gradient 全序列化 defer，不劣化；避免混合层错列表）。
+    assert_eq!(computed_style_property(html, "#grad", "background-image"), "");
+    // mask-image 同结构。
+    assert_eq!(computed_style_property(html, "#mask", "mask-image"), "url(\"m.png\")");
+    // 默认 → none。
+    assert_eq!(computed_style_property(html, "#def", "background-image"), "none");
+    assert_eq!(computed_style_property(html, "#def", "mask-image"), "none");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。

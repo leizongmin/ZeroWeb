@@ -16,22 +16,22 @@ use zero_css_parser::values::{
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
     AccentColorComputedValue, AlignContentValue, AppearanceComputedValue, BackfaceVisibilityValue,
-    BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundOriginComputedValue,
-    BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderCollapseValue,
-    BorderImageSourceComputedValue, BorderSpacingComputedValue, BorderStyleValue, BoxDecorationBreakValue,
-    BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue, CaretColorComputedValue,
-    ColumnCountComputedValue, ColumnFillComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue,
-    ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue, ContainerType,
-    ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
-    EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontSizeAdjustValue, FontVariantNumericValue,
-    GridAutoFlowValue, HyphensComputedValue, ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue,
-    LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MaskModeComputedValue, MixBlendModeComputedValue,
-    ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue,
-    ScrollPadding, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue,
-    TableLayoutValue, TextAlignLastValue, TextAlignValue, TextOverflowValue, TextShadowComputedValue,
-    TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue, UnicodeBidiValue,
-    UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue,
-    ZIndexValue,
+    BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundImageComputedValue,
+    BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
+    BackgroundSizeComputedValue, BorderCollapseValue, BorderImageSourceComputedValue, BorderSpacingComputedValue,
+    BorderStyleValue, BoxDecorationBreakValue, BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue,
+    CaretColorComputedValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnRuleStyleComputedValue,
+    ColumnRuleWidthComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle,
+    ContainComputedValue, ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue,
+    DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontSizeAdjustValue,
+    FontVariantNumericValue, GridAutoFlowValue, HyphensComputedValue, ImageRenderingValue, IsolationValue,
+    JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
+    MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue,
+    PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue,
+    ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
+    TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue,
+    TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue,
+    WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -197,6 +197,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "scroll-padding-bottom" => scroll_padding_to_css(&style.scroll_padding_bottom),
         "scroll-padding-left" => scroll_padding_to_css(&style.scroll_padding_left),
         "mask-mode" => mask_mode_str(&style.mask_mode),
+        // ── background-image / mask-image（R2747）── Vec<BackgroundImageComputedValue>。
+        // None/Url 逐层序列化（url("u")，同 list-style-image）；任一 Gradient 层→''（gradient 全序列化
+        // 是多 helper 子工程 defer，避免混合层产生错列表）；空列表→none（初值）。
+        "background-image" => image_layer_list_to_css(&style.background_image),
+        "mask-image" => image_layer_list_to_css(&style.mask_image),
         "text-align" => text_align_str(&style.text_align),
         "white-space" => white_space_str(&style.white_space),
         "font-weight" => font_weight_str(&style.font_weight),
@@ -1647,6 +1652,31 @@ fn scroll_padding_to_css(p: &ScrollPadding) -> String {
         ScrollPadding::Auto => "auto".to_string(),
         ScrollPadding::Length(v) => format_num(*v as f64, "px"),
     }
+}
+
+/// background-image / mask-image：CSS 图层列表（`Vec<BackgroundImageComputedValue>`）。
+/// 空列表→`none`（初值）；None/Url 逐层序列化（`url("u")`，同 [`list_style_image_to_css`]），
+/// 多层逗号分隔。**任一 Gradient 层→''**：gradient 全序列化（linear/radial/conic + 色标 + 插值）
+/// 是多 helper 子工程 defer；混合层若部分序列化会产出错列表，故遇 gradient 整体返 ''（不劣化）。
+fn image_layer_list_to_css(layers: &[BackgroundImageComputedValue]) -> String {
+    if layers
+        .iter()
+        .any(|l| matches!(l, BackgroundImageComputedValue::Gradient(_)))
+    {
+        return String::new();
+    }
+    if layers.is_empty() {
+        return "none".to_string();
+    }
+    layers
+        .iter()
+        .map(|l| match l {
+            BackgroundImageComputedValue::None => "none".to_string(),
+            BackgroundImageComputedValue::Url(u) => format!("url(\"{u}\")"),
+            BackgroundImageComputedValue::Gradient(_) => unreachable!("gradient 已在上方提前返 ''"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// mask-mode：CSS Masking 遮罩模式（alpha/luminance/match-source，初值 match-source）。
