@@ -12,12 +12,13 @@ use zero_css_parser::values::{
     PolygonFillRule, PositionValue, TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_style_system::{
-    BackfaceVisibilityValue, BackgroundPositionComputedValue, BorderCollapseValue, BorderStyleValue,
-    CaptionSideValue, ComputedStyle, ContainComputedValue, ContentComputedValue, CursorValue,
-    DirectionValue, FilterComputedValue, FlexBasisValue, IsolationValue, LineHeightValue,
-    MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, PointerEventsValue, StyleSystem,
-    TableLayoutValue, TextAlignValue, TextOverflowValue, TextTransformValue, TransformStyleValue,
-    UserSelectValue, WhiteSpaceValue, WillChangeValue, WritingModeValue, ZIndexValue,
+    BackfaceVisibilityValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
+    BackgroundSizeComputedValue, BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle,
+    ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, FilterComputedValue,
+    FlexBasisValue, IsolationValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue,
+    OutlineStyleValue, PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue,
+    TextOverflowValue, TextTransformValue, TransformStyleValue, UserSelectValue, WhiteSpaceValue,
+    WillChangeValue, WritingModeValue, ZIndexValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 
@@ -85,7 +86,7 @@ pub fn lookup_computed_property(
 ///   （flex-grow/flex-shrink/order/flex-basis/aspect-ratio）+ Transforms（transform 函数列表 /
 ///   transform-origin 两长度 / transform-style / backface-visibility / perspective /
 ///   perspective-origin）+ contain（关键字 / 位掩码组合）+ filter（函数列表）+ will-change（列表）
-///   + clip-path（basic-shape 函数）+ content（生成内容）+ background-position（bg-position# 多层，关键字→%）。未覆盖属性返 ''。
+///   + clip-path（basic-shape 函数）+ content（生成内容）+ background 簇（position/size/repeat 多层）。未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -268,6 +269,9 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "content" => content_to_css(&style.content),
         // ── background-position（R2724）── CSS Backgrounds <bg-position># 多层（逗号分隔）。
         "background-position" => background_position_to_css(&style.background_position),
+        // ── background-size / background-repeat（R2725）── CSS Backgrounds 多层（逗号分隔）。
+        "background-size" => background_size_to_css(&style.background_size),
+        "background-repeat" => background_repeat_to_css(&style.background_repeat),
         _ => String::new(),
     }
 }
@@ -1282,6 +1286,44 @@ fn bg_edge_to_str(e: &BackgroundEdge) -> &'static str {
         BackgroundEdge::Top => "top",
         BackgroundEdge::Bottom => "bottom",
     }
+}
+
+/// background-size：CSS Backgrounds `<bg-size>#` 多层序列化（逗号分隔）。
+/// Auto/Cover/Contain→关键字；Length→px；Percent→%。
+fn background_size_to_css(layers: &[BackgroundSizeComputedValue]) -> String {
+    if layers.is_empty() {
+        return String::new();
+    }
+    layers
+        .iter()
+        .map(|s| match s {
+            BackgroundSizeComputedValue::Auto => "auto".to_string(),
+            BackgroundSizeComputedValue::Cover => "cover".to_string(),
+            BackgroundSizeComputedValue::Contain => "contain".to_string(),
+            BackgroundSizeComputedValue::Length(f) => format_num(*f as f64, "px"),
+            BackgroundSizeComputedValue::Percent(f) => format_num(*f as f64, "%"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// background-repeat：CSS Backgrounds `<repeat-style>#` 多层序列化（逗号分隔）。
+fn background_repeat_to_css(layers: &[BackgroundRepeatComputedValue]) -> String {
+    if layers.is_empty() {
+        return String::new();
+    }
+    layers
+        .iter()
+        .map(|r| match r {
+            BackgroundRepeatComputedValue::Repeat => "repeat",
+            BackgroundRepeatComputedValue::RepeatX => "repeat-x",
+            BackgroundRepeatComputedValue::RepeatY => "repeat-y",
+            BackgroundRepeatComputedValue::NoRepeat => "no-repeat",
+            BackgroundRepeatComputedValue::Space => "space",
+            BackgroundRepeatComputedValue::Round => "round",
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// 序列化单个 [`TransformFunction`]。translate 类长度为 px（混合百分比分支保 `%`）；rotate/skew

@@ -3424,6 +3424,33 @@ fn test_get_computed_style_background_position() {
 }
 
 #[test]
+fn test_get_computed_style_background_size_repeat() {
+    // R2725：getComputedStyle background-size + background-repeat 序列化（CSS Backgrounds 多层）。
+    let html = "<html><body>\
+        <div id=\"size-cover\" style=\"background-size: cover;\"></div>\
+        <div id=\"size-px\" style=\"background-size: 100px;\"></div>\
+        <div id=\"size-multi\" style=\"background-size: 50%, auto;\"></div>\
+        <div id=\"repeat-x\" style=\"background-repeat: repeat-x;\"></div>\
+        <div id=\"repeat-multi\" style=\"background-repeat: no-repeat, space;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // background-size 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "background-size"), "auto");
+    assert_eq!(computed_style_property(html, "#size-cover", "background-size"), "cover");
+    assert_eq!(computed_style_property(html, "#size-px", "background-size"), "100px");
+    // 多层逗号分隔。
+    assert_eq!(computed_style_property(html, "#size-multi", "background-size"), "50%, auto");
+    // background-repeat 默认 repeat。
+    assert_eq!(computed_style_property(html, "#def", "background-repeat"), "repeat");
+    assert_eq!(computed_style_property(html, "#repeat-x", "background-repeat"), "repeat-x");
+    // 多层逗号分隔。
+    assert_eq!(
+        computed_style_property(html, "#repeat-multi", "background-repeat"),
+        "no-repeat, space"
+    );
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
