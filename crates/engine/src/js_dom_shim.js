@@ -19,6 +19,15 @@
   var _fragmentHandles = {};
   // ── 浏览器运行时桩（定时器、navigator、location 等）──
   var _timerId = 1;
+  // queueMicrotask——调度 microtask（高频：每个异步库 / polyfill / 框架都用）。本 V8 embed 未暴露
+  // 全局 queueMicrotask（probe 确认 undefined），用 `Promise.resolve().then` polyfill——V8 在 execute
+  // 末 perform_microtask_checkpoint 派发，同 spec「当前 task 末、下 task 前」语义。亦使上方 _defer
+  // 走真 queueMicrotask 分支（行为同 Promise.then fallback，零变化）。
+  globalThis.queueMicrotask = globalThis.queueMicrotask || function (cb) {
+    if (typeof cb !== 'function') throw new TypeError('queueMicrotask: callback not callable');
+    Promise.resolve().then(cb);
+  };
+
   // 单次脚本执行内 microtask 派发上限（避免 setTimeout 轮询在 checkpoint 中无限链式调度）。
   var _deferBudget = 256;
 

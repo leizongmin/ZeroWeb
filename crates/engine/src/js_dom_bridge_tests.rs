@@ -1393,6 +1393,35 @@ fn test_structured_clone_r2773() {
 }
 
 #[test]
+fn test_queue_microtask_r2774() {
+    // R2774：queueMicrotask（microtask 调度，高频）。V8 embed 未暴露全局，用 Promise.resolve().then
+    // polyfill；execute 末 microtask checkpoint 派发。callback 在该 execute 末运行（下 execute 可读）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // typeof function（全局已定义）。
+    assert_eq!(sandbox.execute("typeof queueMicrotask").unwrap().value, "function");
+    // callback 在 execute 末 microtask checkpoint 派发——下 execute 可读 __ran。
+    sandbox
+        .execute("globalThis.__ran = false; queueMicrotask(function(){ globalThis.__ran = true; });")
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__ran)").unwrap().value, "true");
+    // 非 callable 抛 TypeError（spec）。
+    assert_eq!(
+        sandbox
+            .execute("try { queueMicrotask('notfn'); 'no-throw' } catch (e) { 'threw' }")
+            .unwrap()
+            .value,
+        "threw"
+    );
+}
+
+#[test]
 fn test_clone_node_e2e() {
     // cloneNode(deep) 复用既有回调组合：create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。
     use std::sync::{Arc, Mutex};

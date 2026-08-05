@@ -2072,6 +2072,25 @@ oracle 锚定：默认/normal/0/0px→`"normal"`、2px→`"2px"`、word-spacing 
 
 **为何零回归且净正向**：① 全新 global（structuredClone），不改既有 API；② 纯 JS 无副作用（递归只读输入、写新对象）；③ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a queueMicrotask（本轮 R2774，缺失 Web API 续）
+
+承接 R2773（structuredClone）。re-probe 发现 **`queueMicrotask` 全局缺失**（V8 embed 未暴露，probe 确认 `undefined`；R2712 recon 误记「V8 原生」实为 undefined）——**高频**（每个异步库 / polyfill / 框架都用）。
+
+land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `execute` 末 `perform_microtask_checkpoint` 派发，同 spec「当前 task 末、下 task 前」语义）；非 callable 抛 `TypeError`。
+
+**附带回益**：shim 内部 `_defer`（MutationObserver / requestIdleCallback fallback）已检查 `typeof queueMicrotask === 'function'` 走真分支——本轮定义后 `_defer` 从 Promise.then fallback 切到真 queueMicrotask（行为等价，均 Promise.then microtask，零变化）。
+
+**fetch bridge 侧核**：`__zw_fetch(id, url)` 仅 GET（无 method/body）——POST/PUT 需扩 bridge + net 层，defer（real-website 高频但非纯 JS）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`globalThis.queueMicrotask`（Promise.resolve().then polyfill，非 callable 抛 TypeError），置于 `_defer` 前。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_queue_microtask_r2774`（typeof function / callback execute 末派发 / 非 callable 抛）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13401 passed / 0 failed / 74 ignored**，13400+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
