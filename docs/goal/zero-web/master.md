@@ -1637,6 +1637,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧简写返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` linear-gradient 序列化（本轮 R2749，getComputedStyle 维护态续）
+
+承接 R2748。补 background-image/mask-image 的 **linear-gradient** 层（覆盖 ~95% 渐变用法；radial/conic 仍 defer→''）。`linear-gradient` / `repeating-linear-gradient` 序列化对齐 Chromium：direction（`ToBottom` 初值省略 / `Angle(a)`→`adeg` / 角关键字 `to right` 等）/ interpolation（`Srgb` 初值省略、余 `in <space>`，极坐标 Lch/Oklch 非默认 hue 附 `<hue-method>`）/ color stops（`<color>[ <pos>]`，color 经 currentcolor 解析 rgb，pos 经 length_to_css）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | 新增 `linear_gradient_to_css`（dir + interp + stops 组装）/ `color_stop_to_css` / `color_interpolation_to_css`（space + 极坐标 hue）；`image_layer_list_to_css` 放行 `Gradient(Linear)` 层（Radial/Conic 仍整体 ''）+ 接 `element_color`/`font_size_px`；import 加 `GradientDirection`/`GradientColorStop`/`ColorInterpolation`/`ColorInterpolationSpace`/`ColorHueMethod`。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_linear_gradient`（`to right`+色标 rgb / 默认方向省略 / `45deg` / 色标位置 `0%`/`100%` / `repeating-` 前缀）；R2747 测试 gradient 用例改 radial-gradient（保留 defer 断言）。 |
+
+**对齐 Chromium**：linear-gradient 全形态（方向/角度/色标位置/repeating）与 Chromium getComputedStyle 一致。**已知限制**：无双位置/色标提示存储（ZeroWeb 模型单 pos/无 hint）；**radial/conic-gradient 仍 defer**（shape/size/at-position 序列化待后续轮）。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13374 passed / 0 failed / 74 ignored**，13373+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 无 struct FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② linear 层旧返 ''、新返真值（radial/conic 仍 ''，不劣化）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
