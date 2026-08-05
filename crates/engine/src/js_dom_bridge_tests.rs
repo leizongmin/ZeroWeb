@@ -4407,6 +4407,8 @@ fn test_get_computed_style_radial_conic_gradient() {
         <div id=\"cl\" style=\"background-image: radial-gradient(circle 50px, red, blue);\"></div>\
         <div id=\"cdef\" style=\"background-image: conic-gradient(red, blue);\"></div>\
         <div id=\"cfrom\" style=\"background-image: conic-gradient(from 90deg, red, blue);\"></div>\
+        <div id=\"cf0\" style=\"background-image: conic-gradient(from 0deg, red, blue);\"></div>\
+        <div id=\"cat\" style=\"background-image: conic-gradient(at 25% 75%, red, blue);\"></div>\
         </body></html>";
     // 默认 ellipse farthest-corner at center 全省略。
     assert_eq!(
@@ -4452,6 +4454,16 @@ fn test_get_computed_style_radial_conic_gradient() {
     assert_eq!(
         computed_style_property(html, "#cfrom", "background-image"),
         "conic-gradient(from 90deg, rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // conic from 0deg（默认）→ 省略（WPT oracle 锚定）。
+    assert_eq!(
+        computed_style_property(html, "#cf0", "background-image"),
+        "conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // conic 非默认 position → at X Y（WPT oracle 锚定）。
+    assert_eq!(
+        computed_style_property(html, "#cat", "background-image"),
+        "conic-gradient(at 25% 75%, rgb(255, 0, 0), rgb(0, 0, 255))"
     );
 }
 
