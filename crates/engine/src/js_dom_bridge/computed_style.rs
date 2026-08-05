@@ -256,6 +256,8 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             element_color,
         )),
         "text-decoration-thickness" => text_decoration_thickness_to_css(&style.text_decoration_thickness),
+        // ── text-underline-offset（R2762）── CSS Text Decoration 4 §2.5，下划线偏移。Auto→auto；Length→px。
+        "text-underline-offset" => text_underline_offset_to_css(&style.text_underline_offset, font_size_px),
         // ── text-decoration 简写（R2755）── 4 longhand 早覆（上方）；简写 CSSOM 重组
         // （line=none→"none"；否则 line/thickness/style/color 省初值），Chromium 150 oracle 锚定。
         "text-decoration" => text_decoration_shorthand_to_css(style, element_color),
@@ -312,6 +314,9 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "contain" => contain_to_css(&style.contain),
         // ── filter（R2718）── CSS Filter Effects 函数列表（空 Vec / None → none）。
         "filter" => filter_to_css(&style.filter, element_color),
+        // ── backdrop-filter（R2762）── 与 filter 同 FilterComputedValue 列表，复用 filter_to_css
+        // （空→none，Chromium oracle 一致）。glass/frosted 效果高频查询。
+        "backdrop-filter" => filter_to_css(&style.backdrop_filter, element_color),
         // ── 3D Transforms 簇（R2719）── transform-style / backface-visibility 枚举 + perspective /
         // perspective-origin（与 transform / transform-origin 同族，完成 3D transform 簇）。
         "transform-style" => transform_style_str(&style.transform_style),
@@ -1264,6 +1269,16 @@ fn text_decoration_thickness_to_css(t: &TextDecorationThicknessValue) -> String 
     match t {
         TextDecorationThicknessValue::Auto => "auto".to_string(),
         TextDecorationThicknessValue::Length(px) => format_num(*px, "px"),
+    }
+}
+
+/// text-underline-offset：CSS Text Decoration 4 §2.5。Auto→`auto`；Length→px（经 length_to_css
+/// 解析残余相对单位）。Chromium 150 oracle：`3px`→`"3px"`、默认→`"auto"`。
+fn text_underline_offset_to_css(o: &zero_css_parser::values::TextUnderlineOffsetValue, font_size_px: f64) -> String {
+    use zero_css_parser::values::TextUnderlineOffsetValue as T;
+    match o {
+        T::Auto => "auto".to_string(),
+        T::Length(lv) => length_to_css(lv, font_size_px),
     }
 }
 

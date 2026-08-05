@@ -1833,6 +1833,24 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **已知 diverge（pre-existing parser，记录不阻塞）**：① 默认 font-family ZW 为空（vs Chromium "Times New Roman"）——longhand 层 diverge；② ZW `expand_font` 不解析**数值** font-weight（`font:700 ...` 把 700 当 size）——关键字 weight（bold/normal）正常；③ font-variant/stretch 不支持（含 `small-caps`/`condensed` 的 font 简写 diverge，罕见）。均 pre-existing parser 限制，序列化对支持的子集正确（测试覆盖关键字 weight / line-height / family）。
 
+### P1a `getComputedStyle` backdrop-filter + text-underline-offset longhand 补齐（本轮 R2762，getComputedStyle longhand 缺口收尾）
+
+承接 R2761（font 简写 + 简写主体收官）。审 getComputedStyle longhand 缺口，TDD red→green land **2 个高频 longhand**（既有 storage+parse 仅缺序列化）：
+
+- **backdrop-filter**：与 filter 同 `Vec<FilterComputedValue>`，复用 `filter_to_css`（空→none / 函数列表空格分隔 / saturate 百分比→数字）。glass/frosted 效果高频查询。oracle：`blur(5px) saturate(180%)`→`"blur(5px) saturate(1.8)"`。
+- **text-underline-offset**（CSS Text Decoration 4 §2.5）：`TextUnderlineOffsetValue` Auto→`auto` / Length→px。oracle：`3px`→`"3px"`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +1 dispatch `backdrop-filter => filter_to_css(...)`（复用）；+1 helper `text_underline_offset_to_css` + 1 dispatch。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_backdrop_filter_underline_offset_r2762`（backdrop-filter none/blur/saturate + underline-offset auto/px，oracle 锚定）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13389 passed / 0 failed / 74 ignored**，13388+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 2 longhand 旧返 `''`、新返正确 CSSOM 串（backdrop-filter 复用 filter 既验路径，零新逻辑）；② 纯只读 JS bridge 不触及渲染/布局。
+
+**审 longhand 缺口结论**：残余缺 longhand（offset-path/distance/rotate〔motion path 未存储〕、scroll-behavior/snap-type/snap-align〔host-layer scroll defer〕、contain-intrinsic-size〔width/height longhand 已覆〕、text-emphasis-style/color/position〔有 storage 待补，下轮候选〕、mask-position/size/repeat/clip/origin〔未存储〕）多为 host-layer/未存储/niche。getComputedStyle **常用 longhand+简写序列化主体收官**（R2704-R2762 系列，~30 属性 + 5 diverge 修复）。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

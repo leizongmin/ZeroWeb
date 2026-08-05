@@ -4269,6 +4269,30 @@ fn test_get_computed_style_font_shorthand_r2761() {
 }
 
 #[test]
+fn test_get_computed_style_backdrop_filter_underline_offset_r2762() {
+    // R2762：getComputedStyle backdrop-filter（复用 filter_to_css）+ text-underline-offset（Auto/Length）。
+    // 每项期望串经本地 Chromium 150 oracle 提取，TDD red→green 对齐。
+    let html = "<html><body>\
+        <div id=\"d\"></div>\
+        <div id=\"bf1\" style=\"backdrop-filter: blur(10px);\"></div>\
+        <div id=\"bf2\" style=\"backdrop-filter: blur(5px) saturate(180%);\"></div>\
+        <div id=\"tuo1\" style=\"text-underline-offset: 3px;\"></div>\
+        <div id=\"tuo2\" style=\"text-underline-offset: auto;\"></div>\
+        </body></html>";
+    // backdrop-filter：复用 filter 序列化（空→none / 函数列表空格分隔 / saturate 百分比→数字）。
+    assert_eq!(computed_style_property(html, "#d", "backdrop-filter"), "none");
+    assert_eq!(computed_style_property(html, "#bf1", "backdrop-filter"), "blur(10px)");
+    assert_eq!(
+        computed_style_property(html, "#bf2", "backdrop-filter"),
+        "blur(5px) saturate(1.8)"
+    );
+    // text-underline-offset：Auto→auto / Length→px。
+    assert_eq!(computed_style_property(html, "#d", "text-underline-offset"), "auto");
+    assert_eq!(computed_style_property(html, "#tuo1", "text-underline-offset"), "3px");
+    assert_eq!(computed_style_property(html, "#tuo2", "text-underline-offset"), "auto");
+}
+
+#[test]
 fn test_get_computed_style_border_radius_shorthand() {
     // R2738：getComputedStyle border-radius 简写（CSSOM 4 值最小化）。4 角 longhand 早覆（R2707）。
     let html = "<html><body>\
