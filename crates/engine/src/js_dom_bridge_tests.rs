@@ -3822,6 +3822,42 @@ fn test_get_computed_style_outline_break() {
 }
 
 #[test]
+fn test_get_computed_style_grid_container() {
+    // R2734：getComputedStyle grid-auto-flow + container-type/name + tab-size 序列化。
+    let html = "<html><body>\
+        <div id=\"gaf-col\" style=\"grid-auto-flow: column;\"></div>\
+        <div id=\"gaf-dense\" style=\"grid-auto-flow: dense;\"></div>\
+        <div id=\"ct-size\" style=\"container-type: size;\"></div>\
+        <div id=\"ct-inline\" style=\"container-type: inline-size;\"></div>\
+        <div id=\"cn-named\" style=\"container-name: sidebar;\"></div>\
+        <div id=\"ts-px\" style=\"tab-size: 24px;\"></div>\
+        <div id=\"ts-num\" style=\"tab-size: 4;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // grid-auto-flow 默认 row；column / dense（ZeroWeb 解析 dense→RowDense 多词）。
+    assert_eq!(computed_style_property(html, "#def", "grid-auto-flow"), "row");
+    assert_eq!(computed_style_property(html, "#gaf-col", "grid-auto-flow"), "column");
+    assert_eq!(
+        computed_style_property(html, "#gaf-dense", "grid-auto-flow"),
+        "row dense"
+    );
+    // container-type 默认 normal；size / inline-size。
+    assert_eq!(computed_style_property(html, "#def", "container-type"), "normal");
+    assert_eq!(computed_style_property(html, "#ct-size", "container-type"), "size");
+    assert_eq!(
+        computed_style_property(html, "#ct-inline", "container-type"),
+        "inline-size"
+    );
+    // container-name 默认 none；显式字符串。
+    assert_eq!(computed_style_property(html, "#def", "container-name"), "none");
+    assert_eq!(computed_style_property(html, "#cn-named", "container-name"), "sidebar");
+    // tab-size 默认 8（CSS 规范初值）；px / number。
+    assert_eq!(computed_style_property(html, "#def", "tab-size"), "8");
+    assert_eq!(computed_style_property(html, "#ts-px", "tab-size"), "24px");
+    assert_eq!(computed_style_property(html, "#ts-num", "tab-size"), "4");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。

@@ -2,7 +2,7 @@
 //! CSS 字符串（kebab-case 属性名）。从 `js_dom_bridge` 拆出（R2709）以控制主文件行数。
 //!
 //! 覆盖：display/position/visibility/opacity + 颜色族（color/background-color/border-*-color/outline-color/caret-color/accent-color）+ 长度族 + 关键字/枚举族 + font-family/复合族
-//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break/text-wrap/text-align-last）+ vertical-align/unicode-bidi/empty-cells/resize/appearance + box-decoration-break/scrollbar-*/touch-action + outline-offset/break-before·after·inside；未覆盖属性返 ''。
+//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break/text-wrap/text-align-last）+ vertical-align/unicode-bidi/empty-cells/resize/appearance + box-decoration-break/scrollbar-*/touch-action + outline-offset/break-before·after·inside + grid-auto-flow/container-type·name/tab-size；未覆盖属性返 ''。
 
 use std::collections::HashMap;
 
@@ -18,13 +18,14 @@ use zero_style_system::{
     BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundOriginComputedValue,
     BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderCollapseValue,
     BorderStyleValue, BoxDecorationBreakValue, BreakInsideValue, BreakValue, CaptionSideValue, CaretColorComputedValue,
-    ComputedStyle, ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue,
-    FilterComputedValue, FlexBasisValue, HyphensComputedValue, IsolationValue, JustifyItemsValue, JustifySelfValue,
-    LineBreakValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
-    OverflowWrapValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
-    StyleSystem, TableLayoutValue, TextAlignLastValue, TextAlignValue, TextOverflowValue, TextTransformValue,
-    TextWrapComputedValue, TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue,
-    VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
+    ComputedStyle, ContainComputedValue, ContainerType, ContentComputedValue, CursorValue, DirectionValue,
+    EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, GridAutoFlowValue, HyphensComputedValue,
+    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, MixBlendModeComputedValue,
+    ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue, ResizeValue,
+    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
+    TextAlignLastValue, TextAlignValue, TextOverflowValue, TextTransformValue, TextWrapComputedValue, TouchActionValue,
+    TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue,
+    WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -280,6 +281,14 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "break-before" => break_value_to_css(&style.break_before),
         "break-after" => break_value_to_css(&style.break_after),
         "break-inside" => break_inside_to_css(&style.break_inside),
+        // ── grid-auto-flow / container-type·name / tab-size（R2734）── Grid 簇起 + Containment 簇。
+        "grid-auto-flow" => grid_auto_flow_to_css(&style.grid_auto_flow),
+        "container-type" => container_type_to_css(&style.container_type),
+        "container-name" => match &style.container_name {
+            None => "none".to_string(),
+            Some(n) => n.clone(),
+        },
+        "tab-size" => tab_size_to_css(&style.tab_size, font_size_px),
         _ => String::new(),
     }
 }
@@ -439,6 +448,36 @@ fn break_inside_to_css(b: &BreakInsideValue) -> String {
         BreakInsideValue::AvoidColumn => "avoid-column",
     }
     .to_string()
+}
+
+/// grid-auto-flow：CSS Grid 自动放置算法单值序列化。初值 row；dense 组合为多词值。
+fn grid_auto_flow_to_css(g: &GridAutoFlowValue) -> String {
+    match g {
+        GridAutoFlowValue::Row => "row",
+        GridAutoFlowValue::Column => "column",
+        GridAutoFlowValue::RowDense => "row dense",
+        GridAutoFlowValue::ColumnDense => "column dense",
+    }
+    .to_string()
+}
+
+/// container-type：CSS Containment 容器类型单值序列化。初值 normal。
+fn container_type_to_css(c: &ContainerType) -> String {
+    match c {
+        ContainerType::Normal => "normal",
+        ContainerType::Size => "size",
+        ContainerType::InlineSize => "inline-size",
+    }
+    .to_string()
+}
+
+/// tab-size：CSS Text 制表符宽度。Number→无单位整数；Length→经 [`length_to_css`] px。
+/// 初值 Number(8) → `8`（CSS 规范初值 8，Chromium getComputedStyle 返 `8`）。
+fn tab_size_to_css(t: &TabSizeValue, font_size_px: f64) -> String {
+    match t {
+        TabSizeValue::Number(n) => format!("{n}"),
+        TabSizeValue::Length(lv) => length_to_css(lv, font_size_px),
+    }
 }
 
 /// 把数值序列化为带后缀的 CSS 量（对齐 real browser getComputedStyle 数值串）。
