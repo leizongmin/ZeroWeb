@@ -1125,7 +1125,7 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13334 passed / 0 failed / 74 ignored**，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2710 baseline 持平 → 未改渲染输出）+ 8 struct PASS / 0 FAIL。
 
-**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms（transform 函数列表 + transform-origin 两长度）** + **contain（关键字 / 位掩码组合）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、content（Counter/Counters 复杂）、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
+**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms（transform 函数列表 + transform-origin 两长度）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、content（Counter/Counters 复杂）、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
 
 ### P1a `getComputedStyle` transform 序列化（本轮 R2715，getComputedStyle 维护态续）
 
@@ -1175,6 +1175,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13342 passed / 0 failed / 74 ignored**，13341+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → getComputedStyle contain 未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。已推送 `536fa8ef..a8291ca4`。
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 contain 返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
+### P1a `getComputedStyle` filter 序列化（本轮 R2718，getComputedStyle 维护态续）
+
+承接 R2717（contain）。补 `filter`（CSS Filter Effects，视觉特效高频查询，旧返 ''）。存储为 `filter: Vec<FilterComputedValue>`（空 Vec = none），镜像 R2715 transform 函数列表模式。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"filter"` 臂；新增 `filter_to_css`（空 Vec→`none` / 否则空格分隔函数）+ `filter_function_to_css`（覆盖全 11 变体：None / blur(px) / brightness·contrast·grayscale·invert·opacity·saturate·sepia 无单位数 / hue-rotate(deg) / drop-shadow(3 长度 px + 颜色经 `resolve_color_current` 解析 currentcolor→元素计算 color，spec 空格分隔非逗号)）；import 加 `ColorValue` + `FilterComputedValue`；文件头 doc 覆盖列表加 filter。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_filter`（none 默认+显式 / blur 单函数 / brightness·contrast 组合 / hue-rotate deg / drop-shadow 颜色解析 rgb()）。 |
+
+**TDD 价值**：driving test 首跑即捕获 `drop-shadow` 序列化逗号 bug（实 `, {}` 应为空格——spec `drop-shadow(<length>{2,3} <color>?)` 空格分隔），fix 后绿。证 getComputedStyle slice 须有 driving test 守真实序列化形态。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13343 passed / 0 failed / 74 ignored**，13342+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → getComputedStyle filter 未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。已推送 `b21ff0f9..7a3d6528`。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 filter 返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
