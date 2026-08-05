@@ -3107,6 +3107,33 @@ fn test_get_computed_style_composite() {
 }
 
 #[test]
+fn test_get_computed_style_numeric_special() {
+    // R2711：getComputedStyle 数值/special 族（flex-grow/flex-shrink/order/flex-basis/aspect-ratio）。
+    let html = "<html><body>\
+        <div id=\"n\" style=\"\
+            flex-grow: 2.5; flex-shrink: 0; order: 3; \
+            flex-basis: 120px; aspect-ratio: 16 / 9; \
+        \"></div>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+
+    // 显式数值/special。
+    assert_eq!(computed_style_property(html, "#n", "flex-grow"), "2.5");
+    assert_eq!(computed_style_property(html, "#n", "flex-shrink"), "0");
+    assert_eq!(computed_style_property(html, "#n", "order"), "3");
+    assert_eq!(computed_style_property(html, "#n", "flex-basis"), "120px");
+    // aspect-ratio: ZeroWeb 只存合并比值 → 数值（Chrome 返 "16 / 9"，diverge，已记 known-limitation）。
+    assert_eq!(computed_style_property(html, "#n", "aspect-ratio"), "1.778");
+
+    // 默认值（ZeroWeb initial：flex-grow=0、flex-shrink=1、order=0、flex-basis=auto、aspect-ratio=auto）。
+    assert_eq!(computed_style_property(html, "#plain", "flex-grow"), "0");
+    assert_eq!(computed_style_property(html, "#plain", "flex-shrink"), "1");
+    assert_eq!(computed_style_property(html, "#plain", "order"), "0");
+    assert_eq!(computed_style_property(html, "#plain", "flex-basis"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "aspect-ratio"), "auto");
+}
+
+#[test]
 fn test_element_attributes_nodelist() {
     // R2699：el.attributes（NamedNodeMap 只读快照）——length/item/getNamedItem/数值索引/迭代。
     use std::sync::{Arc, Mutex};

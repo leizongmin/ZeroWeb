@@ -12,9 +12,9 @@ use zero_css_parser::values::{
 };
 use zero_style_system::{
     BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle, CursorValue, DirectionValue,
-    IsolationValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
-    PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue, TextTransformValue,
-    UserSelectValue, WhiteSpaceValue, WritingModeValue, ZIndexValue,
+    FlexBasisValue, IsolationValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue,
+    OutlineStyleValue, PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue,
+    TextTransformValue, UserSelectValue, WhiteSpaceValue, WritingModeValue, ZIndexValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 
@@ -74,7 +74,8 @@ pub fn lookup_computed_property(
 ///   white-space/font-weight/font-style/line-height/z-index/cursor/text-transform/text-overflow/
 ///   direction/border-collapse/table-layout/caption-side/border-*-style/outline-style）+ 复合/列表族
 ///   （font-family/flex-direction/wrap/justify-content/align-items/align-self/writing-mode/object-fit/
-///   isolation/mix-blend-mode/pointer-events/user-select/list-style-type·position）。未覆盖属性返 ''。
+///   isolation/mix-blend-mode/pointer-events/user-select/list-style-type·position）+ 数值族
+///   （flex-grow/flex-shrink/order/flex-basis/aspect-ratio）。未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -223,6 +224,12 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "user-select" => user_select_str(&style.user_select),
         "list-style-type" => list_style_type_str(&style.list_style_type),
         "list-style-position" => list_style_position_str(&style.list_style_position),
+        // ── 数值/special 族（R2711）──
+        "flex-grow" => format_num(style.flex_grow, ""),
+        "flex-shrink" => format_num(style.flex_shrink, ""),
+        "order" => style.order.to_string(),
+        "flex-basis" => flex_basis_str(&style.flex_basis, font_size_px),
+        "aspect-ratio" => aspect_ratio_str(style.aspect_ratio, style.aspect_ratio_auto),
         _ => String::new(),
     }
 }
@@ -763,4 +770,28 @@ fn list_style_position_str(p: &ListStylePositionValue) -> String {
         ListStylePositionValue::Inside => "inside",
     }
     .to_string()
+}
+
+// ── 数值/special 族序列化（R2711）──
+
+/// flex-basis：auto/content/length（em 已在 resolve 阶段转 Px）。
+fn flex_basis_str(b: &FlexBasisValue, font_size_px: f64) -> String {
+    match b {
+        FlexBasisValue::Auto => "auto".to_string(),
+        FlexBasisValue::Content => "content".to_string(),
+        FlexBasisValue::Length(lv) => length_to_css(lv, font_size_px),
+    }
+}
+
+/// aspect-ratio：None/auto → `auto`；Some(r) 无 auto → 数值；Some(r) + auto → `auto <r>`。
+///
+/// **已知 diverge**：ZeroWeb 只存合并比值（`Option<f32>`），不保留原始 `w / h`——故
+/// `aspect-ratio: 16 / 9`（Chrome 返 `"16 / 9"`）序列化为 `"1.7778"`。单数值（`2`）与 auto
+/// 路径与 Chromium 一致。
+fn aspect_ratio_str(ratio: Option<f32>, auto: bool) -> String {
+    match (ratio, auto) {
+        (None, _) => "auto".to_string(),
+        (Some(r), false) => format_num(r as f64, ""),
+        (Some(r), true) => format!("auto {}", format_num(r as f64, "")),
+    }
 }

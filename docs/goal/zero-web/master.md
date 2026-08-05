@@ -1112,6 +1112,23 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 **已知限制（剩余）**：① `bolder`/`lighter` font-weight 保关键字；② `getComputedStyle(el).cssText`/length 仍 ''/0；③ justify-content/align-items default diverge（ZeroWeb flex-start/stretch vs Chromium normal）；④ 外链 `<link>` CSS 不在 snapshot 内；⑤ font-family 空 Vec → ''（UA 默认字体未入 computed）。
 
+### P1a `getComputedStyle` 数值/special 族（本轮 R2711，R2704-R2710 收尾续）
+
+承接 R2704-R2710。getComputedStyle 收尾——补 flex 布局数值 + aspect-ratio（`cs.flexGrow`/`cs.flexShrink`/`cs.order`/`cs.flexBasis` flex 布局测量极常查、`cs.aspectRatio` 响应式判定）。5 个属性，落 `computed_style.rs`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 5 match 臂（flex-grow/flex-shrink/flex-basis/order/aspect-ratio）；`format_num` 复用（flex-grow/shrink 无单位数）；新增 `flex_basis_str`（Auto→auto/Content→content/Length→`length_to_css`，em 已 resolve）+ `aspect_ratio_str`（None/auto→auto；Some(r)→数值；Some+auto→`auto <r>`）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_numeric_special`（显式 flex-grow 2.5/shrink 0/order 3/flex-basis 120px/aspect-ratio 16-9→1.778 + 默认值 grow 0/shrink 1/order 0/basis auto/aspect auto）。 |
+
+**已知 diverge**：ZeroWeb `aspect_ratio` 只存合并比值（`Option<f32>`），不保留原始 `w / h`——`aspect-ratio: 16 / 9`（Chrome 返 `"16 / 9"`）序列化为 `"1.778"`。单数值（`2`）与 auto 路径与 Chromium 一致。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13334 passed / 0 failed / 74 ignored**，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2710 baseline 持平 → 未改渲染输出）+ 8 struct PASS / 0 FAIL。
+
+**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、transform（函数列表）、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧数值族全返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 
 
 
