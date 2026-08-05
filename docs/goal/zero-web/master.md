@@ -1502,6 +1502,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧两属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` grid 轨道簇序列化（本轮 R2740，getComputedStyle 维护态续）
+
+承接 R2739。补 grid 轨道簇 5 属性（旧均返 ''，grid 布局测量常查）：`grid-template-columns`/`grid-template-rows`/`grid-template-areas`/`grid-auto-columns`/`grid-auto-rows`。这 5 个字段均 `Option<String>` 存**原始 specified 值**（apply.rs 直接 `value.to_string()`），故序列化为 `Some(s)`→原样串 / `None`→CSS 初值（grid-template-*/areas 初值 `none`〔CSS Grid §6.1〕，grid-auto-* 初值 `auto`〔CSS Grid §6.4，非 none〕）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 5 臂（grid-template-columns/rows/areas→`opt_css_string(.., "none")`、grid-auto-columns/rows→`opt_css_string(.., "auto")`）；新增 `opt_css_string(s, default)` helper（5 处共用，无新 import）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_grid_tracks`（grid-template-columns `1fr 1fr 1fr` / `100px minmax(200px,1fr)`；grid-template-rows `50px 50px`；grid-auto-columns `200px` / grid-auto-rows `100px`；grid-template-areas `"a b" "c d"`〔单引号 style 属性规避 HTML 引号嵌套〕；默认 grid-template-*→`none` / grid-auto-*→`auto`）。 |
+
+**对齐 Chromium**：非 repeat 的固定/fr/minmax 轨道 specified==computed，与 Chromium 一致。**已知限制**：存 specified 原文，`repeat()` 不展开（Chromium getComputedStyle 展开 `repeat(3,1fr)`→`1fr 1fr 1fr`）—— pre-existing 解析层限制（apply.rs 未展开 repeat），非本序列化引入；`font-variant` 简写亦 defer（ZeroWeb 仅存 font-variant-numeric 一个子属性，缺 position/caps/east-asian/ligatures/alternates 存储，须先扩 style-system 字段）。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13365 passed / 0 failed / 74 ignored**，13364+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 5 属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
