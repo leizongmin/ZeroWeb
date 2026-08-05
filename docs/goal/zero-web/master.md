@@ -1177,6 +1177,22 @@ getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1�
 
 **帧驱动 rAF 切片完成（R2712 设计 + R2713a shim + R2713b 管线）**：kill-switch `ZW_RAF_FRAME_DRIVEN=1` 在多进程 renderer 路径激活 spec 帧驱动 rAF；默认 OFF 保留 reftest 兼容同步 stub。**后续（不在本期）**：① ON 路径 A/B 量化 + 评估 reftest harness 泵帧改造后是否 default-on；② 真实 `performance.now()` ts 接入；③ in-process 路径 post-render tick 基建（让 rAF/IO-RO 持续跟踪亦在 in-process 工作）。
 
+### P1a IO/RO 持续跟踪核查 — Slice 2b 已就绪（本轮 R2714，recon + 测试补缺）
+
+承接 R2712 recon（IO/RO 标注「initial only / Slice 2b 待办」）。核查 shim `__zw_observers_tick`（post-render tick）→ IO `_schedule`/`_crossed` / RO size-diff 路径，**确认 IO/RO 持续跟踪（Slice 2b）已完整就绪**——master.md 旧「待办」标注过时。
+
+**机制核查**：`__zw_observers_tick`（shim ~507-525）遍历 `_zwObservers` 对每个活跃 observer 调 `_schedule()`；IO `_schedule`（359-385）`_defer` 复算每个 target，`_crossed(id, ratio)`（349-357）threshold 越界检测，越界则构造 entry 派发 callback + 更新 `_lastRatio`——故 layout 变化（snapshot 更新）后 host tick 触发 IO/RO 再派发，**非仅 initial**。RO 已有测试 `renderer_js_worker_observer_tick_refires_on_size_change`（size 变→tick→再派发）证机制成立。
+
+| 文件 | 改动 |
+|------|------|
+| `apps/renderer/src/js_worker.rs` | +1 集成测试 `renderer_js_worker_intersection_observer_refires_on_threshold_cross`：显式 `root: '#root'` + `threshold: 0.5`（几何确定，不受 viewport 影响）；observe initial（target 在 root 外 ratio 0 / isIntersecting false）→ 更新 snapshot（target 移入 root，ratio 1.0 跨 0.5）→ `__zw_observers_tick` → IO 再派发（isIntersecting false→true，__calls 1→2）。补 IO 持续跟踪测试覆盖缺（RO 已有同机制测试）。 |
+
+**纯测试补缺，零生产代码变更**：仅新增 `#[test]`，不改 shim/worker/渲染逻辑。IO 持续跟踪能力本已就绪，本切片补 driving test 守护 + 纠正控制面文档。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `cargo test -p zero-renderer intersection_observer` 4/4（含新测试）通过 + `make test` 全绿（**13339 passed / 0 failed / 74 ignored**，13338+1 新测试，0 回归）。product-smoke 未跑（纯测试补缺，无生产代码 → 无渲染影响可能）。
+
+**P1a 剩余更新（R2714 后）**：① ~~IO/RO 持续跟踪核查~~ ✅ 已就绪（Slice 2b done，本测试证）；② rAF 帧驱动（done，R2713a/b）；③ fetch（网络，跳过）；④ A 代死代码（不删）。**P1a 事件循环 / Observer 主线已基本完成**——setTimeout/ric/microtask/macro-task/MO/IO/RO 持续跟踪 + rAF 帧驱动（dormant）全部就绪；残余 = rAF ON 路径 A/B/default-on 量化、real performance.now ts、in-process post-render tick 基建（均非阻塞 follow-up）。
+
 
 
 

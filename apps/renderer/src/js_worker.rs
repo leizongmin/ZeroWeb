@@ -1417,6 +1417,56 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_intersection_observer_refires_on_threshold_cross() {
+        // R2714：IO 持续跟踪（Slice 2b 已就绪——post-render `__zw_observers_tick` → IO `_schedule`
+        // → `_crossed` threshold 越界 → 再派发）。observe（initial：target 在 root 外 ratio 0）→
+        // 更新 snapshot（target 移入 root，ratio 跨 threshold 0.5）→ tick → 再派发（isIntersecting
+        // false→true，__calls 1→2）。显式 root + threshold 0.5 使几何确定（不受 viewport 影响）。
+        use zero_dom::parse_html;
+        use zero_engine::{find_by_selector, node_id_to_u64};
+        let mut worker = RendererJsWorker::spawn(29);
+        let html = "<html><body><div id='root'><div id='t'>hi</div></div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        let doc = parse_html(html);
+        let id_root = find_by_selector(&doc, "#root").expect("#root");
+        let id_t = find_by_selector(&doc, "#t").expect("#t");
+        let snap = worker.rect_snapshot();
+        // v1：root 200x200，target 在 root 外（1000,1000）→ ratio 0、isIntersecting false。
+        snap.lock().unwrap().insert(node_id_to_u64(id_root), (0.0, 0.0, 200.0, 200.0));
+        snap.lock().unwrap().insert(node_id_to_u64(id_t), (1000.0, 1000.0, 100.0, 100.0));
+        worker
+            .execute_script_direct(
+                "globalThis.__calls = 0;\
+                 globalThis.__intersecting = null;\
+                 var obs = new IntersectionObserver(function(entries){\
+                   globalThis.__calls = (globalThis.__calls | 0) + 1;\
+                   globalThis.__intersecting = String(entries[0].isIntersecting);\
+                 }, { root: document.querySelector('#root'), threshold: 0.5 });\
+                 obs.observe(document.querySelector('#t'));",
+            )
+            .unwrap();
+        // initial 派发（ratio 0，isIntersecting false）。
+        assert_eq!(wait_eq(&worker, "__calls", "1", 1000), "1");
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__intersecting)").unwrap(),
+            "false",
+            "initial：target 在 root 外 → isIntersecting false"
+        );
+        // v2：target 移入 root（10,10）→ ratio 1.0 跨 threshold 0.5 → tick 再派发。
+        snap.lock().unwrap().insert(node_id_to_u64(id_t), (10.0, 10.0, 100.0, 100.0));
+        worker
+            .execute_script_direct("if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();")
+            .unwrap();
+        assert_eq!(wait_eq(&worker, "__calls", "2", 1000), "2");
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__intersecting)").unwrap(),
+            "true",
+            "tick 后 target 移入 root → isIntersecting true"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_form_text_input_updates_value_and_fires_input() {
         // P1a form input：`__zw_text_input(sel, ch)` 对 input 元素 append char 到 `.value`（缓存，
         // listener 立即可见新值）+ 派发 'input' 事件。`.value` lazy-init 自 value 属性（"ab"），
