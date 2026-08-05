@@ -2943,6 +2943,41 @@
   });
   globalThis.BroadcastChannel = globalThis.BroadcastChannel || BroadcastChannel;
 
+  // CSS——CSS 命名空间（escape 选择器转义 + supports 特性检测）。escape 纯 JS（CSSOM escape 算法，
+  // 本地 Chromium 150 oracle 锚定）；supports 委托 host `__zw_css_supports`（known-property gate +
+  // apply，两参声明 / 单参条件 not/括号/声明）。**已知限制**：supports 的 and/or 深嵌套未实现
+  //（罕见，单声明/not/括号覆盖主流）；supports 语义近似「ZW 能 apply」（偏乐观）。
+  globalThis.CSS = globalThis.CSS || {
+    escape: function (str) {
+      var s = String(str);
+      var out = '';
+      for (var i = 0; i < s.length; i++) {
+        var c = s.charAt(i);
+        var code = s.charCodeAt(i);
+        var isIdent = (code >= 0x30 && code <= 0x39) // 0-9
+          || (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a) // A-Z a-z
+          || c === '_' || c === '-' || code >= 0x80; // _ - 非 ASCII
+        if (i === 0 && code >= 0x30 && code <= 0x39) {
+          out += '\\' + code.toString(16) + ' '; // 首字符数字 → \hex + 空格（终止 hex 转义）
+        } else if (i === 0 && c === '-' && (s.length === 1 || (s.charCodeAt(1) >= 0x30 && s.charCodeAt(1) <= 0x39))) {
+          out += '\\-'; // 首字符 - 且后随数字（或仅 -）→ \-
+        } else if (code < 0x20 || code === 0x7f) {
+          out += '\\' + code.toString(16) + ' '; // 控制字符 → \hex + 空格
+        } else if (isIdent) {
+          out += c;
+        } else {
+          out += '\\' + c; // 特殊字符 → \char
+        }
+      }
+      return out;
+    },
+    supports: function (prop, value) {
+      if (typeof __zw_css_supports !== 'function') return false;
+      if (arguments.length >= 2) return __zw_css_supports(String(prop), String(value)) === '1';
+      return __zw_css_supports(String(prop)) === '1';
+    },
+  };
+
   globalThis.document = {
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);

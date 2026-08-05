@@ -1764,6 +1764,42 @@ pub(crate) fn match_media_to_json(query: &str, width: f64, height: f64) -> Strin
     format!(r#"{{"matches":{},"media":{}}}"#, matches, json_str(query))
 }
 
+/// CSS.supports 特性检测（供 JS shim `CSS.supports(prop,val?)` 经 `__zw_css_supports` 回调消费）。
+///
+/// 两参形式 `supports(prop, val)`：ZW 是否 apply 该声明（known-property gate + [`apply_property_value_with_quirks`]）。
+/// 单参形式 `supports(text)`：supports-condition 求值（`not`/括号/声明 `prop: val`；`and`/`or` 深嵌套 defer）。
+/// 语义近似「ZW 能 apply」≈「支持」，对 ZW 解析但部分实现的特性偏乐观（优于假阴性）。
+pub(crate) fn css_supports(prop_or_text: &str, value: Option<&str>) -> bool {
+    let mut style = zero_style_system::ComputedStyle::default();
+    match value {
+        Some(v) => decl_supported(&mut style, prop_or_text.trim(), v.trim()),
+        None => eval_supports_condition(prop_or_text, &mut style),
+    }
+}
+
+/// 声明是否被 ZW 支持（已知属性 + 值可 apply）。
+fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val: &str) -> bool {
+    zero_style_system::PropertyRegistry::known_properties().contains(&prop)
+        && zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false)
+}
+
+/// supports-condition 递归求值：`not <cond>` / `( <cond> )` / 声明 `prop: val`。`and`/`or` 未实现。
+fn eval_supports_condition(text: &str, style: &mut zero_style_system::ComputedStyle) -> bool {
+    let t = text.trim();
+    if let Some(rest) = t.strip_prefix("not ") {
+        return !eval_supports_condition(rest, style);
+    }
+    if t.starts_with('(') && t.ends_with(')') && t.len() >= 2 {
+        return eval_supports_condition(&t[1..t.len() - 1], style);
+    }
+    if let Some(idx) = t.find(':') {
+        let prop = t[..idx].trim();
+        let val = t[idx + 1..].trim();
+        return decl_supported(style, prop, val);
+    }
+    false
+}
+
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
 ///
 /// 将 [`generate_js_dom_shim`] 产生的 JS shim 与宿主侧 [`DomMutation`] 收集器连接：
@@ -1834,6 +1870,22 @@ pub fn register_dom_callbacks(
             let width = args.get(1).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
             let height = args.get(2).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
             match_media_to_json(query, width, height)
+        }),
+    );
+
+    // `CSS.supports(prop, val?)`——CSS 特性检测（modern progressive enhancement 高频）。委托 [`css_supports`]
+    //（known-property gate + apply_property_value_with_quirks；两参声明 / 单参条件 not/括号/声明）。
+    // 返 "1"/"0"（shim 转 bool）。
+    sandbox.register_callback(
+        "__zw_css_supports",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str);
+            if css_supports(prop, value) {
+                "1".into()
+            } else {
+                "0".into()
+            }
         }),
     );
 

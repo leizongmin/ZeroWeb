@@ -2145,6 +2145,65 @@ fn test_location_read_spec_r2784() {
 }
 
 #[test]
+fn test_css_escape_supports_r2785() {
+    // R2785：CSS namespace（escape 选择器转义 + supports 特性检测）。escape 纯 JS（chromium oracle
+    // 锚定）；supports 委托 host __zw_css_supports（known-property gate + apply）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.register_callback(
+        "__zw_css_supports",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str);
+            if css_supports(prop, value) {
+                "1".into()
+            } else {
+                "0".into()
+            }
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // CSS.escape（chromium oracle 锚定：特殊符 \char / 首数字 \hex+space / -a 直留 / 空串不抛）。
+    assert_eq!(sandbox.execute("CSS.escape('a.b#c')").unwrap().value, "a\\.b\\#c");
+    assert_eq!(sandbox.execute("CSS.escape('foo bar')").unwrap().value, "foo\\ bar");
+    assert_eq!(sandbox.execute("CSS.escape('1abc')").unwrap().value, "\\31 abc");
+    assert_eq!(sandbox.execute("CSS.escape('-a')").unwrap().value, "-a");
+    assert_eq!(sandbox.execute("CSS.escape('')").unwrap().value, "");
+    // CSS.supports 两参：已知属性+合法值 true；非法值/未知属性 false。
+    assert_eq!(
+        sandbox
+            .execute("CSS.supports('display','grid') + '|' + CSS.supports('color','red')")
+            .unwrap()
+            .value,
+        "true|true"
+    );
+    assert_eq!(
+        sandbox
+            .execute("CSS.supports('display','bogusxyz') + '|' + CSS.supports('fakeprop','x')")
+            .unwrap()
+            .value,
+        "false|false"
+    );
+    // CSS.supports 单参：括号条件 / 声明 / not。
+    assert_eq!(
+        sandbox
+            .execute("CSS.supports('(display: grid)') + '|' + CSS.supports('display: grid')")
+            .unwrap()
+            .value,
+        "true|true"
+    );
+    assert_eq!(
+        sandbox.execute("CSS.supports('not (display: grid)')").unwrap().value,
+        "false"
+    );
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，
