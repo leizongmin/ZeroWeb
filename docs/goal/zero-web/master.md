@@ -1160,6 +1160,23 @@ getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1�
 
 **下一步（R2713b）**：renderer `tick_observers`（`page_scripts.rs:127-143`）附带执行 `if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(<ts>);`（OFF 时 shim 早返零开销）；worker init（`tab_js_worker.rs`）读 `ZW_RAF_FRAME_DRIVEN` env、execute shim 前 inject `globalThis.__ZW_RAF_FRAME_DRIVEN`；核查 in-process `tab_worker.rs` post-render 回调点。
 
+### P1a 事件循环 Slice 1 帧驱动 rAF — 管线接通（本轮 R2713b，R2712 设计 doc 实施 2/2）
+
+承接 R2713a（shim 帧驱动基建）。接通 post-render tick + worker env inject，完成帧驱动 rAF 端到端管线（kill-switch 默认 OFF，零默认行为变更）。
+
+| 文件 | 改动 |
+|------|------|
+| `apps/renderer/src/page_scripts.rs` | `tick_observers` 的 execute 脚本串附带 `if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(0);`（observer tick 后；ts 暂传 0，真实 DOMHighResTimeStamp 接入为 follow-up）。OFF 时 shim 早返零开销。 |
+| `apps/renderer/src/js_worker.rs` | 加 `pub(crate) fn raf_frame_driven_enabled()`（`ZW_RAF_FRAME_DRIVEN=1`）；execute shim 前 inject `globalThis.__ZW_RAF_FRAME_DRIVEN = true;`（默认 OFF 不注入 → shim `|| false` → 同步 stub）。+1 集成测试 `renderer_js_worker_raf_tick_fires_frame_driven_callbacks`（renderer worker 上下文：flag=true 注册延后 / tick 前不 fire / tick 后按序 fire 2）。 |
+
+**in-process 路径核查结论**：`apps/browser`（in-process `tab_js_worker` 回退路径）**无** `__zw_observers_tick`/`tick_observers` caller——该路径无 post-render tick 基建（pre-existing，IO/RO 持续跟踪在 in-process 亦不工作）。故 **不在 tab_js_worker.rs 注入 flag**（否则 ON 时 rAF 入队但无 tick drain → 永不 fire，比同步 stub 更差）。帧驱动 rAF **仅在多进程 renderer 路径有效**（有 `tick_observers` drain）。in-process 路径保持同步 stub（env 不影响）。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `cargo test -p zero-renderer raf_tick` 通过 + `make test` 全绿（**13338 passed / 0 failed / 74 ignored**，13337+1 新集成测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2713a baseline 持平 → 默认 OFF 零渲染影响）+ 8 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① 默认 OFF → renderer inject 不触发（env unset）→ shim 同步 stub 逐字节不变；② tick_observers 脚本串追加的 `__zw_raf_tick` 在 OFF 时 shim 首行早返，零额外 JS 效果；③ ON 路径集成测试证 renderer worker 端到端正确。
+
+**帧驱动 rAF 切片完成（R2712 设计 + R2713a shim + R2713b 管线）**：kill-switch `ZW_RAF_FRAME_DRIVEN=1` 在多进程 renderer 路径激活 spec 帧驱动 rAF；默认 OFF 保留 reftest 兼容同步 stub。**后续（不在本期）**：① ON 路径 A/B 量化 + 评估 reftest harness 泵帧改造后是否 default-on；② 真实 `performance.now()` ts 接入；③ in-process 路径 post-render tick 基建（让 rAF/IO-RO 持续跟踪亦在 in-process 工作）。
+
 
 
 

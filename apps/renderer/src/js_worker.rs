@@ -27,6 +27,13 @@ pub(crate) fn real_rect_enabled() -> bool {
     !matches!(std::env::var("ZW_REAL_RECT").as_deref(), Ok("0"))
 }
 
+/// P1a 事件循环 slice 1（R2713b）：帧驱动 rAF kill-switch。默认 off——shim rAF 走同步 stub
+///（reftest 兼容，零默认行为变更）；`ZW_RAF_FRAME_DRIVEN=1` 开启：shim rAF 注册队列，render 后
+/// `tick_observers` 调 `__zw_raf_tick` 派发。详见 p1a-event-loop-raf-slice-design-2026-08-05.md。
+pub(crate) fn raf_frame_driven_enabled() -> bool {
+    matches!(std::env::var("ZW_RAF_FRAME_DRIVEN").as_deref(), Ok("1"))
+}
+
 type ScriptFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 type ModuleFn = Arc<dyn Fn(&str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
 
@@ -269,6 +276,11 @@ fn js_worker_main(
     // （子线程 sleep + resolver.resolve → __zwResolveCallback 调用 JS 回调）。
     let timer_bridge = TimerBridge::new(resolver);
     timer_bridge.register(&mut *sandbox);
+    // R2713b：帧驱动 rAF kill-switch——execute shim 前注入 globalThis.__ZW_RAF_FRAME_DRIVEN
+    //（shim 据此分支 rAF 同步 stub / 帧驱动）。默认 OFF 不注入 → shim `|| false` → 同步 stub。
+    if raf_frame_driven_enabled() {
+        let _ = sandbox.execute("globalThis.__ZW_RAF_FRAME_DRIVEN = true;");
+    }
     let shim = generate_js_dom_shim();
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
@@ -1369,6 +1381,38 @@ mod tests {
             .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(80));
         assert_eq!(worker.execute_script_direct("String(globalThis.__calls)").unwrap(), "2");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_raf_tick_fires_frame_driven_callbacks() {
+        // R2713b：renderer worker 帧驱动 rAF——__ZW_RAF_FRAME_DRIVEN=true 时 requestAnimationFrame
+        // 注册延后到 __zw_raf_tick（renderer `tick_observers` 在 post-render 调 `__zw_raf_tick`；
+        // 本测试 JS 侧直调验证 shim 在 renderer worker 上下文正确，env set_var 在并行测试下有竞态
+        // 故 JS 侧注入 flag）。tick 前不 fire，tick 后按序 fire。
+        let mut worker = RendererJsWorker::spawn(28);
+        worker.set_dom_snapshot("<html><body><div id='t'>hi</div></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__ZW_RAF_FRAME_DRIVEN = true;\
+                 globalThis.__count = 0;\
+                 requestAnimationFrame(function(){ globalThis.__count++; });\
+                 requestAnimationFrame(function(){ globalThis.__count++; });",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__count)").unwrap(),
+            "0",
+            "帧驱动：tick 前回调不应 fire"
+        );
+        worker
+            .execute_script_direct("if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(0);")
+            .unwrap();
+        assert_eq!(
+            wait_eq(&worker, "__count", "2", 1000),
+            "2",
+            "tick 后按注册序 fire 两个回调"
+        );
         worker.shutdown();
     }
 
