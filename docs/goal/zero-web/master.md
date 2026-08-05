@@ -2012,6 +2012,25 @@ oracle 锚定：默认/normal/0/0px→`"normal"`、2px→`"2px"`、word-spacing 
 
 **为何零回归且净正向**：① 全新 global（atob/btoa/crypto），不改既有 API；② 纯 JS 无副作用；③ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a TextEncoder/TextDecoder UTF-8（本轮 R2771，缺失 Web API 续）
+
+承接 R2770（atob/btoa/crypto.randomUUID）。续缺失 Web API 子线程——land **TextEncoder（str→UTF-8 `Uint8Array`）+ TextDecoder（bytes→str）**（fetch body / 字符串↔字节互转高频）。纯 JS UTF-8 算法：
+
+- **encode**：ASCII（1B）/ BMP（2-3B）/ astral 代理对（4B）全覆盖。
+- **decode**：多字节重组 + astral→代理对；非法序列替 `U+FFFD`（`fatal=false` 容错）。
+- constructor + prototype（`new TextEncoder()` / `instanceof` 正确）；`encodeInto` 近似（read/written）。
+
+**已知限制（记录）**：仅 UTF-8（`TextEncoder` spec 恒 utf-8；`TextDecoder` 标签忽略恒按 utf-8 解，非 utf-8 label 不支持）；`fatal=true` 抛错未实现（恒容错）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_zw_utf8_encode`/`_zw_utf8_decode` helper + `TextEncoder`/`TextDecoder` constructor（prototype，UTF-8 only）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_text_encoder_decoder_utf8_r2771`（encoding=utf-8 / encode('ZeroWeb')=7 ASCII 字节 / 中文 3B/字 / 字面字节 decode / round-trip 含中文混排）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13398 passed / 0 failed / 74 ignored**，13397+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 global）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 constructor（TextEncoder/TextDecoder），不改既有 API；② 纯 JS 无副作用；③ prototype guard（`globalThis.X = globalThis.X || ...`）不覆盖既有定义。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

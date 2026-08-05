@@ -1205,6 +1205,56 @@ fn test_atob_btoa_crypto_randomuuid_r2770() {
 }
 
 #[test]
+fn test_text_encoder_decoder_utf8_r2771() {
+    // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
+    //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，
+    // 中文 = 3 字节/字，round-trip 保真。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // TextEncoder：encoding=utf-8；encode('ZeroWeb') = 7 ASCII 字节 [90,...,98]。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var a = new TextEncoder().encode('ZeroWeb');\
+                 new TextEncoder().encoding + '|' + a.length + '|' + a[0] + '|' + a[6]"
+            )
+            .unwrap()
+            .value,
+        "utf-8|7|90|98"
+    );
+    // 中文多字节：'中' = U+4E2D → 3 字节 UTF-8。
+    assert_eq!(
+        sandbox.execute("new TextEncoder().encode('中').length").unwrap().value,
+        "3"
+    );
+    // TextDecoder：字面字节序列 → 字符串。
+    assert_eq!(
+        sandbox
+            .execute("new TextDecoder().decode(new Uint8Array([0x5a,0x65,0x72,0x6f]))")
+            .unwrap()
+            .value,
+        "Zero"
+    );
+    // Round-trip（ASCII + 中文混排）保真。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var e = new TextEncoder(), d = new TextDecoder();\
+                 d.decode(e.encode('ZeroWeb 中文'))"
+            )
+            .unwrap()
+            .value,
+        "ZeroWeb 中文"
+    );
+}
+
+#[test]
 fn test_clone_node_e2e() {
     // cloneNode(deep) 复用既有回调组合：create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。
     use std::sync::{Arc, Mutex};

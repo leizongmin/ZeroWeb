@@ -754,6 +754,87 @@
     }
   };
 
+  // TextEncoder/TextDecoder——UTF-8 编解码（fetch body / 字符串↔字节互转高频）。纯 JS UTF-8
+  //（BMP + astral 经代理对；fatal=false 容错，非法序列替 U+FFFD）。仅支持 UTF-8（最通用，
+  // spec TextEncoder 恒 utf-8；TextDecoder 标签忽略恒按 utf-8 解，非 utf-8 label 为已知限制）。
+  function _zw_utf8_encode(str) {
+    str = String(str);
+    var bytes = [];
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      if (c < 0x80) {
+        bytes.push(c);
+      } else if (c < 0x800) {
+        bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+      } else if (c >= 0xd800 && c <= 0xdbff && str.charCodeAt(i + 1) >= 0xdc00 && str.charCodeAt(i + 1) <= 0xdfff) {
+        // 高代理 + 下一个低代理 → astral 码点（4 字节）
+        var lo = str.charCodeAt(++i);
+        var cp = 0x10000 + ((c & 0x3ff) << 10) + (lo & 0x3ff);
+        bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+      } else {
+        bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+      }
+    }
+    return bytes;
+  }
+  function _zw_utf8_decode(bytes) {
+    var s = '';
+    var i = 0;
+    var n = bytes.length;
+    while (i < n) {
+      var b = bytes[i];
+      if (b < 0x80) { s += String.fromCharCode(b); i += 1; }
+      else if (b < 0xc2) { s += '�'; i += 1; } // 非法前导字节 / 连续字节
+      else if (b < 0xe0) { s += String.fromCharCode(((b & 0x1f) << 6) | (bytes[i + 1] & 0x3f)); i += 2; }
+      else if (b < 0xf0) { s += String.fromCharCode(((b & 0x0f) << 12) | ((bytes[i + 1] & 0x3f) << 6) | (bytes[i + 2] & 0x3f)); i += 3; }
+      else {
+        var cp = ((b & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f);
+        cp -= 0x10000;
+        s += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3f)); // astral → 代理对
+        i += 4;
+      }
+    }
+    return s;
+  }
+  globalThis.TextEncoder = globalThis.TextEncoder || function TextEncoder() {
+    if (!(this instanceof TextEncoder)) return new TextEncoder();
+  };
+  globalThis.TextEncoder.prototype = {
+    encoding: 'utf-8',
+    encode: function (str) {
+      var bytes = _zw_utf8_encode(str);
+      var arr = new Uint8Array(bytes.length);
+      for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
+      return arr;
+    },
+    encodeInto: function (str, dst) {
+      var bytes = _zw_utf8_encode(str);
+      var m = Math.min(bytes.length, dst.length);
+      for (var k = 0; k < m; k++) dst[k] = bytes[k];
+      return { read: str.length, written: m };
+    }
+  };
+  globalThis.TextDecoder = globalThis.TextDecoder || function TextDecoder() {
+    if (!(this instanceof TextDecoder)) return new TextDecoder();
+    this.encoding = 'utf-8';
+    this.fatal = false;
+    this.ignoreBOM = false;
+  };
+  globalThis.TextDecoder.prototype = {
+    encoding: 'utf-8',
+    fatal: false,
+    ignoreBOM: false,
+    decode: function (buf) {
+      var bytes;
+      if (buf == null) bytes = new Uint8Array(0);
+      else if (buf instanceof ArrayBuffer) bytes = new Uint8Array(buf);
+      else if (buf && typeof buf.length === 'number') bytes = buf; // TypedArray / array-like
+      else if (buf && buf.buffer) bytes = new Uint8Array(buf.buffer);
+      else bytes = new Uint8Array(0);
+      return _zw_utf8_decode(bytes);
+    }
+  };
+
   globalThis.history = {
     length: 1,
     state: null,
