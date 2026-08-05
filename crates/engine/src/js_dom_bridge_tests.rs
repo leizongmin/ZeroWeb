@@ -4399,8 +4399,8 @@ fn test_get_computed_style_radial_conic_gradient() {
     // R2750：getComputedStyle radial-gradient（WPT oracle 锚定）+ conic-gradient（spec-aligned）。
     let html = "<html><body>\
         <div id=\"def\" style=\"background-image: radial-gradient(red, blue);\"></div>\
-        <div id=\"ctr\" style=\"background-image: radial-gradient(circle at center, red, blue);\"></div>\
-        <div id=\"pos\" style=\"background-image: radial-gradient(circle at 10px 10px, red, blue);\"></div>\
+        <div id=\"ctr\" style=\"background-image: radial-gradient(at center, red, blue);\"></div>\
+        <div id=\"pos\" style=\"background-image: radial-gradient(at 10px 10px, red, blue);\"></div>\
         <div id=\"cir\" style=\"background-image: radial-gradient(circle, red, blue);\"></div>\
         <div id=\"fs\" style=\"background-image: radial-gradient(farthest-side, red, blue);\"></div>\
         <div id=\"cp\" style=\"background-image: radial-gradient(circle at 25% 40%, red, blue);\"></div>\
@@ -4413,15 +4413,15 @@ fn test_get_computed_style_radial_conic_gradient() {
         computed_style_property(html, "#def", "background-image"),
         "radial-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
     );
-    // circle + at center（默认 position）→ position 省略，circle 保留。
+    // position-首位 `at center`（默认 position）→ 省略（R2751 parser fix 支持 position-首位 config）。
     assert_eq!(
         computed_style_property(html, "#ctr", "background-image"),
-        "radial-gradient(circle, rgb(255, 0, 0), rgb(0, 0, 255))"
+        "radial-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
     );
-    // circle + 非默认 position → at X Y。
+    // position-首位 非默认 → at X Y。
     assert_eq!(
         computed_style_property(html, "#pos", "background-image"),
-        "radial-gradient(circle at 10px 10px, rgb(255, 0, 0), rgb(0, 0, 255))"
+        "radial-gradient(at 10px 10px, rgb(255, 0, 0), rgb(0, 0, 255))"
     );
     // circle（默认 size）保留。
     assert_eq!(

@@ -960,6 +960,7 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
             || shape_lower.starts_with("ellipse")
             || shape_lower.starts_with("closest")
             || shape_lower.starts_with("farthest")
+            || shape_lower.starts_with("at ")
             || shape_lower.contains(" at "))
     {
         // 解析 shape + size + at position
@@ -1004,15 +1005,21 @@ fn parse_radial_shape_and_position(s: &str) -> Option<(RadialShape, RadialSize, 
 
     let lower = s.to_ascii_lowercase();
 
-    // 解析 "at x y" 位置
-    if let Some(at_pos) = lower.find(" at ") {
-        let pos_str = &s[at_pos + 4..];
-        if let Some((px, py)) = parse_position_pair(pos_str) {
+    // 解析 "at x y" 位置：position-首位（`at x y`，无 shape 前缀）或 `shape/size at x y`。
+    let at_pos = if lower.starts_with("at ") {
+        Some(0usize)
+    } else {
+        lower.find(" at ").map(|p| p + 1)
+    };
+    if let Some(ap) = at_pos {
+        // ap 指向 "at" 起始（首位=0；` at ` 命中时=find+1 指向其首空格后的 a）。
+        let pos_str = &s[ap + 2..]; // 跳过 "at"
+        if let Some((px, py)) = parse_position_pair(pos_str.trim_start()) {
             pos_x = px;
             pos_y = py;
         }
-        // 解析 at 之前的部分为 shape/size
-        let shape_str = s[..at_pos].trim();
+        // 解析 at 之前的部分为 shape/size（首位时为空 → 默认 ellipse farthest-corner）
+        let shape_str = s[..ap].trim();
         parse_radial_shape_size(shape_str, &mut shape, &mut size);
     } else {
         parse_radial_shape_size(s, &mut shape, &mut size);
