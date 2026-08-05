@@ -1532,6 +1532,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 3 属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` counter-increment + counter-reset 序列化（本轮 R2742，getComputedStyle 维护态续）
+
+承接 R2741。补 `counter-increment` / `counter-reset`（旧均返 ''，CSS 计数器常查）。`Vec<CounterActionValue>`（`{name: String, value: Option<i64>}`）：空→`none`；否则空格分隔 `name integer` 列表（`value=None` 取默认 increment=1 / reset=0），多计数器空格连接（CSS Lists §4.1，非逗号）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"counter-increment"`+`"counter-reset"` 臂；新增 `counter_action_to_css(actions, default)` helper（参数化默认值）；import 加 `CounterActionValue`。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_counter_actions`（counter-increment `h1`→`h1 1`〔默认 1〕/ `c 2`→`c 2`；counter-reset `sec`→`sec 0`〔默认 0〕/ `a 5 b 3`→`a 5 b 3`〔多计数器〕；默认→`none`）。 |
+
+**对齐 Chromium**：counter-increment/reset 的 `name integer` 空格分隔列表 + 默认值（1/0）与 Chromium getComputedStyle 一致。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13367 passed / 0 failed / 74 ignored**，13366+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 无 struct FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧两属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
