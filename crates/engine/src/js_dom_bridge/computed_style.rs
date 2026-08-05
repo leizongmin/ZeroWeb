@@ -1,26 +1,27 @@
 //! getComputedStyle 计算与序列化——把 [`zero_style_system::ComputedStyle`] 的单属性序列化为
 //! CSS 字符串（kebab-case 属性名）。从 `js_dom_bridge` 拆出（R2709）以控制主文件行数。
 //!
-//! 覆盖：display/position/visibility/opacity + 颜色族 + 长度族 + 关键字/枚举族；未覆盖属性返 ''。
+//! 覆盖：display/position/visibility/opacity + 颜色族 + 长度族 + 关键字/枚举族 + font-family/复合族
+//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）；未覆盖属性返 ''。
 
 use std::collections::HashMap;
 
 use zero_css_parser::values::{
     AlignmentValue, BackgroundEdge, BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorValue,
-    ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue,
-    FontWeightValue, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue,
-    PolygonFillRule, PositionValue, TransformFunction, TransformValue, VisibilityValue,
-};
-use zero_style_system::{
-    BackfaceVisibilityValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
-    BackgroundSizeComputedValue, BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle,
-    ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, FilterComputedValue,
-    FlexBasisValue, IsolationValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue,
-    OutlineStyleValue, PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue,
-    TextOverflowValue, TextTransformValue, TransformStyleValue, UserSelectValue, WhiteSpaceValue,
-    WillChangeValue, WritingModeValue, ZIndexValue,
+    ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue,
+    LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue,
+    TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
+use zero_style_system::{
+    BackfaceVisibilityValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
+    BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
+    BackgroundSizeComputedValue, BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle,
+    ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, FilterComputedValue, FlexBasisValue,
+    IsolationValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
+    PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue, TextTransformValue,
+    TransformStyleValue, UserSelectValue, WhiteSpaceValue, WillChangeValue, WritingModeValue, ZIndexValue,
+};
 
 use super::find_by_selector;
 
@@ -116,34 +117,13 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
                 format!("{o}")
             }
         }
-        "color" => color_to_css(&crate::resolve_color_current(
-            &style.color,
-            element_color,
-        )),
-        "background-color" => color_to_css(&crate::resolve_color_current(
-            &style.background_color,
-            element_color,
-        )),
-        "border-top-color" => color_to_css(&crate::resolve_color_current(
-            &style.border_top_color,
-            element_color,
-        )),
-        "border-right-color" => color_to_css(&crate::resolve_color_current(
-            &style.border_right_color,
-            element_color,
-        )),
-        "border-bottom-color" => color_to_css(&crate::resolve_color_current(
-            &style.border_bottom_color,
-            element_color,
-        )),
-        "border-left-color" => color_to_css(&crate::resolve_color_current(
-            &style.border_left_color,
-            element_color,
-        )),
-        "outline-color" => color_to_css(&crate::resolve_color_current(
-            &style.outline_color,
-            element_color,
-        )),
+        "color" => color_to_css(&crate::resolve_color_current(&style.color, element_color)),
+        "background-color" => color_to_css(&crate::resolve_color_current(&style.background_color, element_color)),
+        "border-top-color" => color_to_css(&crate::resolve_color_current(&style.border_top_color, element_color)),
+        "border-right-color" => color_to_css(&crate::resolve_color_current(&style.border_right_color, element_color)),
+        "border-bottom-color" => color_to_css(&crate::resolve_color_current(&style.border_bottom_color, element_color)),
+        "border-left-color" => color_to_css(&crate::resolve_color_current(&style.border_left_color, element_color)),
+        "outline-color" => color_to_css(&crate::resolve_color_current(&style.outline_color, element_color)),
         // ── 长度族（计算值；resolve_computed_style 已把主要相对单位解析为 Px）──
         "width" => length(&style.width),
         "height" => length(&style.height),
@@ -159,24 +139,12 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "padding-right" => length(&style.padding_right),
         "padding-bottom" => length(&style.padding_bottom),
         "padding-left" => length(&style.padding_left),
-        "border-top-width" => {
-            border_width_to_css(&style.border_top_width, &style.border_top_style, font_size_px)
+        "border-top-width" => border_width_to_css(&style.border_top_width, &style.border_top_style, font_size_px),
+        "border-right-width" => border_width_to_css(&style.border_right_width, &style.border_right_style, font_size_px),
+        "border-bottom-width" => {
+            border_width_to_css(&style.border_bottom_width, &style.border_bottom_style, font_size_px)
         }
-        "border-right-width" => border_width_to_css(
-            &style.border_right_width,
-            &style.border_right_style,
-            font_size_px,
-        ),
-        "border-bottom-width" => border_width_to_css(
-            &style.border_bottom_width,
-            &style.border_bottom_style,
-            font_size_px,
-        ),
-        "border-left-width" => border_width_to_css(
-            &style.border_left_width,
-            &style.border_left_style,
-            font_size_px,
-        ),
+        "border-left-width" => border_width_to_css(&style.border_left_width, &style.border_left_style, font_size_px),
         "border-top-left-radius" => length(&style.border_top_left_radius),
         "border-top-right-radius" => length(&style.border_top_right_radius),
         "border-bottom-right-radius" => length(&style.border_bottom_right_radius),
@@ -272,6 +240,10 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         // ── background-size / background-repeat（R2725）── CSS Backgrounds 多层（逗号分隔）。
         "background-size" => background_size_to_css(&style.background_size),
         "background-repeat" => background_repeat_to_css(&style.background_repeat),
+        // ── background-attachment / clip / origin（R2726）── CSS Backgrounds 单值 box-model 枚举。
+        "background-attachment" => background_attachment_to_css(&style.background_attachment),
+        "background-clip" => background_clip_to_css(&style.background_clip),
+        "background-origin" => background_origin_to_css(&style.background_origin),
         _ => String::new(),
     }
 }
@@ -846,11 +818,7 @@ fn aspect_ratio_str(ratio: Option<f32>, auto: bool) -> String {
 fn transform_to_css(t: &TransformValue) -> String {
     match t {
         TransformValue::None => "none".to_string(),
-        TransformValue::List(fns) => fns
-            .iter()
-            .map(transform_function_to_css)
-            .collect::<Vec<_>>()
-            .join(" "),
+        TransformValue::List(fns) => fns.iter().map(transform_function_to_css).collect::<Vec<_>>().join(" "),
     }
 }
 
@@ -1002,7 +970,13 @@ fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
     use ClipPathValue as C;
     match c {
         C::None => "none".to_string(),
-        C::Inset { top, right, bottom, left, round } => {
+        C::Inset {
+            top,
+            right,
+            bottom,
+            left,
+            round,
+        } => {
             let mut inner = box_4_to_css(top, right, bottom, left, font_size_px);
             if let Some(r) = round {
                 inner.push_str(&format!(" round {}", clip_path_radius_to_css(r, font_size_px)));
@@ -1038,9 +1012,7 @@ fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
         C::Polygon { fill_rule, points } => {
             let pts = points
                 .iter()
-                .map(|(x, y)| {
-                    format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px))
-                })
+                .map(|(x, y)| format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px)))
                 .collect::<Vec<_>>()
                 .join(", ");
             match fill_rule {
@@ -1097,15 +1069,9 @@ fn content_to_css(c: &ContentComputedValue) -> String {
         C::String(s) => css_string_to_css(s),
         C::Attr(name) => format!("attr({name})"),
         C::Counter { name, style } => counter_fn_to_css(name, style.as_deref()),
-        C::Counters { name, separator, style } => {
-            counters_fn_to_css(name, separator, style.as_deref())
-        }
+        C::Counters { name, separator, style } => counters_fn_to_css(name, separator, style.as_deref()),
         C::Url(u) => format!("url({u})"),
-        C::List(items) => items
-            .iter()
-            .map(content_list_item_to_css)
-            .collect::<Vec<_>>()
-            .join(" "),
+        C::List(items) => items.iter().map(content_list_item_to_css).collect::<Vec<_>>().join(" "),
     }
 }
 
@@ -1115,9 +1081,7 @@ fn content_list_item_to_css(item: &ContentListItem) -> String {
     match item {
         I::Str(s) => css_string_to_css(s),
         I::Counter { name, style } => counter_fn_to_css(name, style.as_deref()),
-        I::Counters { name, separator, style } => {
-            counters_fn_to_css(name, separator, style.as_deref())
-        }
+        I::Counters { name, separator, style } => counters_fn_to_css(name, separator, style.as_deref()),
     }
 }
 
@@ -1166,12 +1130,12 @@ fn resolve_font_weight_bolder_lighter(doc: &Document, styles: &mut HashMap<NodeI
         let children = doc.child_nodes(id);
         // 先以 immutable borrow 决定是否解析 + 方向（释放后再 get_mut 写）。
         let new_weight = styles.get(&id).and_then(|s| match s.font_weight {
-            FontWeightValue::Bolder => {
-                Some(FontWeightValue::Absolute(bolder_of(parent_font_weight_base(doc, styles, id))))
-            }
-            FontWeightValue::Lighter => {
-                Some(FontWeightValue::Absolute(lighter_of(parent_font_weight_base(doc, styles, id))))
-            }
+            FontWeightValue::Bolder => Some(FontWeightValue::Absolute(bolder_of(parent_font_weight_base(
+                doc, styles, id,
+            )))),
+            FontWeightValue::Lighter => Some(FontWeightValue::Absolute(lighter_of(parent_font_weight_base(
+                doc, styles, id,
+            )))),
             _ => None,
         });
         if let Some(w) = new_weight
@@ -1324,6 +1288,40 @@ fn background_repeat_to_css(layers: &[BackgroundRepeatComputedValue]) -> String 
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// background-attachment：CSS Backgrounds `<attachment>` 单值序列化。
+/// Scroll/Fixed/Local → scroll/fixed/local。ZeroWeb 存单值（非多层 Vec），与解析侧一致。
+fn background_attachment_to_css(a: &BackgroundAttachmentComputedValue) -> String {
+    match a {
+        BackgroundAttachmentComputedValue::Scroll => "scroll",
+        BackgroundAttachmentComputedValue::Fixed => "fixed",
+        BackgroundAttachmentComputedValue::Local => "local",
+    }
+    .to_string()
+}
+
+/// background-clip：CSS Backgrounds `<visual-box>` 单值序列化。
+/// border-box/padding-box/content-box/text。ZeroWeb 存单值（非多层 Vec）。
+fn background_clip_to_css(c: &BackgroundClipComputedValue) -> String {
+    match c {
+        BackgroundClipComputedValue::BorderBox => "border-box",
+        BackgroundClipComputedValue::PaddingBox => "padding-box",
+        BackgroundClipComputedValue::ContentBox => "content-box",
+        BackgroundClipComputedValue::Text => "text",
+    }
+    .to_string()
+}
+
+/// background-origin：CSS Backgrounds `<geometry-box>` 单值序列化。
+/// padding-box/border-box/content-box。ZeroWeb 存单值（非多层 Vec）。
+fn background_origin_to_css(o: &BackgroundOriginComputedValue) -> String {
+    match o {
+        BackgroundOriginComputedValue::PaddingBox => "padding-box",
+        BackgroundOriginComputedValue::BorderBox => "border-box",
+        BackgroundOriginComputedValue::ContentBox => "content-box",
+    }
+    .to_string()
 }
 
 /// 序列化单个 [`TransformFunction`]。translate 类长度为 px（混合百分比分支保 `%`）；rotate/skew

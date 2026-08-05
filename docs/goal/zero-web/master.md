@@ -1125,7 +1125,7 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13334 passed / 0 failed / 74 ignored**，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2710 baseline 持平 → 未改渲染输出）+ 8 struct PASS / 0 FAIL。
 
-**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter + R2719 3D transform 簇 + R2720 will-change + R2721 clip-path + R2722 content + R2723 bolder/lighter font-weight + R2724 background-position + R2725 background-size/repeat，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22，**含 bolder/lighter 父链解析**）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms 全簇（transform 函数列表 + transform-origin + transform-style + backface-visibility + perspective + perspective-origin）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + **will-change（列表）** + **clip-path（basic-shape 函数）** + **content（生成内容 component value）** + **background 簇（position/size/repeat 多层）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、~~bolder/lighter（须父链）~~ ✅ R2723、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、~~3D transform 簇~~ ✅ R2719、~~will-change~~ ✅ R2720、~~clip-path~~ ✅ R2721、~~content~~ ✅ R2722、~~background-position~~ ✅ R2724、~~background-size/repeat~~ ✅ R2725、background-image（gradient 复杂）、轴感知 `<position>` 关键字语法、grid-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
+**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter + R2719 3D transform 簇 + R2720 will-change + R2721 clip-path + R2722 content + R2723 bolder/lighter font-weight + R2724 background-position + R2725 background-size/repeat + R2726 background-attachment/clip/origin，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22，**含 bolder/lighter 父链解析**）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms 全簇（transform 函数列表 + transform-origin + transform-style + backface-visibility + perspective + perspective-origin）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + **will-change（列表）** + **clip-path（basic-shape 函数）** + **content（生成内容 component value）** + **background 簇（position/size/repeat 多层 + attachment/clip/origin 单值）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、~~bolder/lighter（须父链）~~ ✅ R2723、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、~~3D transform 簇~~ ✅ R2719、~~will-change~~ ✅ R2720、~~clip-path~~ ✅ R2721、~~content~~ ✅ R2722、~~background-position~~ ✅ R2724、~~background-size/repeat~~ ✅ R2725、~~background-attachment/clip/origin~~ ✅ R2726、background-image（gradient 复杂）、background-attachment/clip/origin 多层（ZeroWeb 存单值非 Vec，diverge real browser 多层）、轴感知 `<position>` 关键字语法、grid-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
 
 ### P1a `getComputedStyle` transform 序列化（本轮 R2715，getComputedStyle 维护态续）
 
@@ -1288,7 +1288,22 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧两属性返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
-### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
+### P1a `getComputedStyle` background-attachment + background-clip + background-origin 序列化（本轮 R2726，getComputedStyle 维护态续）
+
+承接 R2725（background-size/repeat）。补 `background-attachment` + `background-clip` + `background-origin`，完成常见 background-* 簇（旧均返 ''）。三者在 ZeroWeb computed style 存为**单值**（非 multi-bg Vec，与解析侧 `parse_background_*` 单值一致）：`BackgroundAttachmentComputedValue`（Scroll/Fixed/Local）、`BackgroundClipComputedValue`（BorderBox/PaddingBox/ContentBox/Text）、`BackgroundOriginComputedValue`（PaddingBox/BorderBox/ContentBox）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"background-attachment"` + `"background-clip"` + `"background-origin"` 臂；新增 `background_attachment_to_css`（Scroll→scroll / Fixed→fixed / Local→local）+ `background_clip_to_css`（BorderBox→border-box / PaddingBox→padding-box / ContentBox→content-box / Text→text）+ `background_origin_to_css`（PaddingBox→padding-box / BorderBox→border-box / ContentBox→content-box），均单值序列化；import 加三个 computed value enum；文件头 doc 覆盖列表 background 簇补 attachment/clip/origin。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_background_attachment_clip_origin`（attachment 默认 scroll / fixed / local；clip 默认 border-box / padding-box / content-box / text；origin 默认 padding-box（≠clip 默认）/ border-box / content-box）。 |
+
+**对齐 Chromium**：单值 box-model 关键字序列化与 Chromium getComputedStyle 一致（scroll/fixed/local、border-box/padding-box/content-box/text）。**已知 diverge**：CSS 规范允许 background-attachment/clip/origin 多层逗号分隔（与 background-image 层数对应），ZeroWeb computed 存单值（非 Vec），多层输入只取/存单值——diverge real browser 多层语义；序列化层如实反映单值存储（与解析侧一致），多层存储改造属更深的 parser+computed 改造（记入残余）。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告（修一处 header doc `doc_lazy_continuation`）+ `make test` 全绿（**13351 passed / 0 failed / 74 ignored**，13350+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → background-attachment/clip/origin 未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧三属性返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
+
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
 

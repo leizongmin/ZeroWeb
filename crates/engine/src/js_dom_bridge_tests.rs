@@ -2138,13 +2138,15 @@ fn test_event_bubbling_to_ancestor() {
         )
         .unwrap();
     sandbox
-        .execute(
-            "document.addEventListener('click', function(){ globalThis.__doc = true; });",
-        )
+        .execute("document.addEventListener('click', function(){ globalThis.__doc = true; });")
         .unwrap();
     // 在子 #c 上派发 click → 应冒泡到 #p 和 document（html）。
     sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
-    assert_eq!(sandbox.execute("globalThis.__p").unwrap().value, "p", "#p listener 应经冒泡触发");
+    assert_eq!(
+        sandbox.execute("globalThis.__p").unwrap().value,
+        "p",
+        "#p listener 应经冒泡触发"
+    );
     assert_eq!(
         sandbox.execute("globalThis.__doc").unwrap().value,
         "true",
@@ -2158,7 +2160,11 @@ fn test_event_bubbling_to_ancestor() {
         )
         .unwrap();
     sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
-    assert_eq!(sandbox.execute("globalThis.__ct").unwrap().value, "c", "target 阶段 currentTarget = target");
+    assert_eq!(
+        sandbox.execute("globalThis.__ct").unwrap().value,
+        "c",
+        "target 阶段 currentTarget = target"
+    );
 }
 
 #[test]
@@ -2187,7 +2193,11 @@ fn test_event_bubbling_stop_and_nonbubble() {
         .execute("document.querySelector('#b').addEventListener('click', function(e){ globalThis.__b = true; e.stopPropagation(); });")
         .unwrap();
     sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
-    assert_eq!(sandbox.execute("globalThis.__b === true").unwrap().value, "true", "#b 应触发");
+    assert_eq!(
+        sandbox.execute("globalThis.__b === true").unwrap().value,
+        "true",
+        "#b 应触发"
+    );
     assert_eq!(
         sandbox.execute("globalThis.__a === true").unwrap().value,
         "false",
@@ -2282,7 +2292,11 @@ fn test_event_capture_stop_propagation() {
         .execute("document.querySelector('#b').addEventListener('click', function(){ globalThis.__bub = true; });")
         .unwrap();
     sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
-    assert_eq!(sandbox.execute("globalThis.__cap === true").unwrap().value, "true", "#a capture 应触发");
+    assert_eq!(
+        sandbox.execute("globalThis.__cap === true").unwrap().value,
+        "true",
+        "#a capture 应触发"
+    );
     assert_eq!(
         sandbox.execute("globalThis.__tgt === true").unwrap().value,
         "false",
@@ -2399,12 +2413,20 @@ fn test_style_proxy_methods() {
     sandbox
         .execute("globalThis.__gv = document.querySelector('#d').style.getPropertyValue('color');")
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__gv").unwrap().value, "red", "getPropertyValue 读初始 color");
+    assert_eq!(
+        sandbox.execute("globalThis.__gv").unwrap().value,
+        "red",
+        "getPropertyValue 读初始 color"
+    );
     // per-property get 保留（'color' → 'red'）。
     sandbox
         .execute("globalThis.__pg = document.querySelector('#d').style.color;")
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__pg").unwrap().value, "red", "per-property style.color 保留");
+    assert_eq!(
+        sandbox.execute("globalThis.__pg").unwrap().value,
+        "red",
+        "per-property style.color 保留"
+    );
     // cssText get 读原始串。
     sandbox
         .execute("globalThis.__ct = document.querySelector('#d').style.cssText;")
@@ -2439,7 +2461,10 @@ fn test_style_proxy_methods() {
     let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
     assert!(out2.contains("margin: 0"), "cssText setter 应用 margin\n{out2}");
     assert!(out2.contains("padding: 5px"), "cssText setter 应用 padding\n{out2}");
-    assert!(!out2.contains("color: red"), "cssText setter 应整体替换（原 color 消失）\n{out2}");
+    assert!(
+        !out2.contains("color: red"),
+        "cssText setter 应整体替换（原 color 消失）\n{out2}"
+    );
 }
 
 #[test]
@@ -2465,8 +2490,14 @@ fn test_style_remove_property() {
         .unwrap();
     let ms = mutations.lock().unwrap().clone();
     let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
-    assert!(!out.contains("color"), "removeProperty('color') 应真移除 color 声明\n{out}");
-    assert!(out.contains("font-size: 10px"), "removeProperty 不应影响其他属性\n{out}");
+    assert!(
+        !out.contains("color"),
+        "removeProperty('color') 应真移除 color 声明\n{out}"
+    );
+    assert!(
+        out.contains("font-size: 10px"),
+        "removeProperty 不应影响其他属性\n{out}"
+    );
 }
 
 #[test]
@@ -2510,8 +2541,14 @@ fn test_style_camel_to_kebab() {
         .unwrap();
     let ms = mutations.lock().unwrap().clone();
     let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
-    assert!(out.contains("background-color: red"), "backgroundColor → background-color\n{out}");
-    assert!(!out.contains("backgroundColor"), "不应残留 camelCase backgroundColor\n{out}");
+    assert!(
+        out.contains("background-color: red"),
+        "backgroundColor → background-color\n{out}"
+    );
+    assert!(
+        !out.contains("backgroundColor"),
+        "不应残留 camelCase backgroundColor\n{out}"
+    );
     assert!(
         out.contains("-webkit-transform: scale(2)"),
         "WebkitTransform → -webkit-transform\n{out}"
@@ -2582,7 +2619,10 @@ fn test_classlist_consecutive_ops() {
         .unwrap();
     let ms2 = mutations.lock().unwrap().clone();
     let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
-    assert!(out2.contains("class=\"x y\""), "className=x 后 classList.add(y) → 'x y'\n{out2}");
+    assert!(
+        out2.contains("class=\"x y\""),
+        "className=x 后 classList.add(y) → 'x y'\n{out2}"
+    );
 
     // ③ toggle 首次加（true）/ contains 反映 / 二次移除（false），双 toggle 后 on 消失。
     let (mut sandbox, mutations, dom_html) = mk();
@@ -2593,7 +2633,11 @@ fn test_classlist_consecutive_ops() {
              globalThis.__t2 = document.querySelector('#d').classList.toggle('on');",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__t1").unwrap().value, "true", "toggle 首次加返 true");
+    assert_eq!(
+        sandbox.execute("globalThis.__t1").unwrap().value,
+        "true",
+        "toggle 首次加返 true"
+    );
     assert_eq!(
         sandbox.execute("globalThis.__has").unwrap().value,
         "true",
@@ -2641,7 +2685,10 @@ fn test_remove_attribute_truly_removes() {
         .unwrap();
     let ms = mutations.lock().unwrap().clone();
     let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
-    assert!(!out.contains("checked"), "removeAttribute('checked') 应真移除（不残留 checked=\"\"）\n{out}");
+    assert!(
+        !out.contains("checked"),
+        "removeAttribute('checked') 应真移除（不残留 checked=\"\"）\n{out}"
+    );
 }
 
 #[test]
@@ -2670,9 +2717,21 @@ fn test_attribute_query_api() {
              globalThis.__no = document.querySelector('#i').hasAttribute('checked');",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__hd").unwrap().value, "true", "hasAttribute(disabled)");
-    assert_eq!(sandbox.execute("globalThis.__hid").unwrap().value, "true", "hasAttribute(id)");
-    assert_eq!(sandbox.execute("globalThis.__no").unwrap().value, "false", "hasAttribute(checked) absent");
+    assert_eq!(
+        sandbox.execute("globalThis.__hd").unwrap().value,
+        "true",
+        "hasAttribute(disabled)"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hid").unwrap().value,
+        "true",
+        "hasAttribute(id)"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__no").unwrap().value,
+        "false",
+        "hasAttribute(checked) absent"
+    );
 
     // hasAttributes + getAttributeNames。
     sandbox
@@ -2681,7 +2740,11 @@ fn test_attribute_query_api() {
              globalThis.__names = document.querySelector('#i').getAttributeNames().join(',');",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__hs").unwrap().value, "true", "hasAttributes");
+    assert_eq!(
+        sandbox.execute("globalThis.__hs").unwrap().value,
+        "true",
+        "hasAttributes"
+    );
     assert_eq!(
         sandbox.execute("globalThis.__names").unwrap().value,
         "id,type,disabled",
@@ -2701,9 +2764,8 @@ fn test_toggle_attribute() {
     let mut sandbox = V8Sandbox::with_config(config).unwrap();
     sandbox.execute(generate_js_dom_shim()).unwrap();
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
-    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
-        "<html><body><div id=\"d\"></div></body></html>".to_string(),
-    ));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"d\"></div></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
 
@@ -2714,7 +2776,11 @@ fn test_toggle_attribute() {
              document.querySelector('#d').toggleAttribute('hidden', false);",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__r1").unwrap().value, "true", "toggle 加返 true");
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "true",
+        "toggle 加返 true"
+    );
     let ms = mutations.lock().unwrap().clone();
     let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
     // toggle(hidden) 加 → ToggleAttribute(want=true)；toggle(hidden,false) → want=false。
@@ -2732,7 +2798,10 @@ fn test_toggle_attribute() {
     let ms2 = mutations.lock().unwrap().clone();
     let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
     // 两次 toggle(x)：apply 时第一次无 x→加，第二次有 x→移除 → net 无 x（朴素实现都加会残留 x）。
-    assert!(!out2.contains("x"), "连续双 toggle(x) server-side 决策 → net 移除（无 x）\n{out2}");
+    assert!(
+        !out2.contains("x"),
+        "连续双 toggle(x) server-side 决策 → net 移除（无 x）\n{out2}"
+    );
 
     // force=true 强加（即便存在也保留）。
     mutations.lock().unwrap().clear();
@@ -2777,7 +2846,11 @@ fn test_get_computed_style_display_position_visibility_opacity() {
              globalThis.__do = getComputedStyle(document.querySelector('#d')).opacity;",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__dd").unwrap().value, "block", "div UA display=block");
+    assert_eq!(
+        sandbox.execute("globalThis.__dd").unwrap().value,
+        "block",
+        "div UA display=block"
+    );
     assert_eq!(
         sandbox.execute("globalThis.__dp").unwrap().value,
         "relative",
@@ -2790,9 +2863,7 @@ fn test_get_computed_style_display_position_visibility_opacity() {
     );
     // span inline display:none；getPropertyValue(kebab) 路径。
     sandbox
-        .execute(
-            "globalThis.__sd = getComputedStyle(document.querySelector('#s')).getPropertyValue('display');",
-        )
+        .execute("globalThis.__sd = getComputedStyle(document.querySelector('#s')).getPropertyValue('display');")
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__sd").unwrap().value,
@@ -2841,7 +2912,11 @@ fn test_get_computed_style_colors() {
              globalThis.__bg = getComputedStyle(document.querySelector('#a')).backgroundColor;",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__col").unwrap().value, "rgb(255, 0, 0)", "color: red → rgb(255,0,0)");
+    assert_eq!(
+        sandbox.execute("globalThis.__col").unwrap().value,
+        "rgb(255, 0, 0)",
+        "color: red → rgb(255,0,0)"
+    );
     assert_eq!(
         sandbox.execute("globalThis.__bg").unwrap().value,
         "rgb(0, 128, 0)",
@@ -2906,9 +2981,8 @@ fn test_get_computed_style_cache_invalidation() {
     let mut sandbox = V8Sandbox::with_config(config).unwrap();
     sandbox.execute(generate_js_dom_shim()).unwrap();
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
-    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
-        "<html><body><div id=\"d\"></div></body></html>".to_string(),
-    ));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"d\"></div></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
 
@@ -2969,10 +3043,7 @@ fn test_get_computed_style_lengths() {
     assert_eq!(computed_style_property(html, "#box", "gap"), "12px");
     // border-width：style=solid → 真宽；border-radius px。
     assert_eq!(computed_style_property(html, "#box", "border-top-width"), "3px");
-    assert_eq!(
-        computed_style_property(html, "#box", "border-top-left-radius"),
-        "8px"
-    );
+    assert_eq!(computed_style_property(html, "#box", "border-top-left-radius"), "8px");
     // outline-width：style=solid → 真宽。
     assert_eq!(computed_style_property(html, "#box", "outline-width"), "2px");
     // max-width 指定 → px；min-width auto → "auto"。
@@ -3103,7 +3174,10 @@ fn test_get_computed_style_composite() {
     assert_eq!(computed_style_property(html, "#plain", "pointer-events"), "auto");
     assert_eq!(computed_style_property(html, "#plain", "user-select"), "auto");
     assert_eq!(computed_style_property(html, "#plain", "list-style-type"), "disc");
-    assert_eq!(computed_style_property(html, "#plain", "list-style-position"), "outside");
+    assert_eq!(
+        computed_style_property(html, "#plain", "list-style-position"),
+        "outside"
+    );
 }
 
 #[test]
@@ -3247,10 +3321,16 @@ fn test_get_computed_style_transform_family() {
         <div id=\"def\"></div>\
         </body></html>";
     // transform-style：默认 flat，显式 preserve-3d。
-    assert_eq!(computed_style_property(html, "#ts-3d", "transform-style"), "preserve-3d");
+    assert_eq!(
+        computed_style_property(html, "#ts-3d", "transform-style"),
+        "preserve-3d"
+    );
     assert_eq!(computed_style_property(html, "#def", "transform-style"), "flat");
     // backface-visibility：默认 visible，显式 hidden。
-    assert_eq!(computed_style_property(html, "#bv-hidden", "backface-visibility"), "hidden");
+    assert_eq!(
+        computed_style_property(html, "#bv-hidden", "backface-visibility"),
+        "hidden"
+    );
     assert_eq!(computed_style_property(html, "#def", "backface-visibility"), "visible");
     // perspective：默认 none（Px(0.0)），显式 px。
     assert_eq!(computed_style_property(html, "#persp", "perspective"), "800px");
@@ -3275,12 +3355,18 @@ fn test_get_computed_style_will_change() {
     assert_eq!(computed_style_property(html, "#auto", "will-change"), "auto");
     assert_eq!(computed_style_property(html, "#def", "will-change"), "auto");
     // 关键字标识符。
-    assert_eq!(computed_style_property(html, "#scroll", "will-change"), "scroll-position");
+    assert_eq!(
+        computed_style_property(html, "#scroll", "will-change"),
+        "scroll-position"
+    );
     assert_eq!(computed_style_property(html, "#contents", "will-change"), "contents");
     // 自定义属性名原样。
     assert_eq!(computed_style_property(html, "#custom", "will-change"), "transform");
     // 多属性组合：空格分隔。
-    assert_eq!(computed_style_property(html, "#multi", "will-change"), "transform opacity");
+    assert_eq!(
+        computed_style_property(html, "#multi", "will-change"),
+        "transform opacity"
+    );
 }
 
 #[test]
@@ -3305,11 +3391,20 @@ fn test_get_computed_style_clip_path() {
     // inset 双值（top==bottom, left==right）。
     assert_eq!(computed_style_property(html, "#inset2", "clip-path"), "inset(10% 20%)");
     // inset + round（圆角半径）。
-    assert_eq!(computed_style_property(html, "#inset-round", "clip-path"), "inset(5px round 10px)");
+    assert_eq!(
+        computed_style_property(html, "#inset-round", "clip-path"),
+        "inset(5px round 10px)"
+    );
     // circle 半径 + at 位置。
-    assert_eq!(computed_style_property(html, "#circle", "clip-path"), "circle(50px at 25% 75%)");
+    assert_eq!(
+        computed_style_property(html, "#circle", "clip-path"),
+        "circle(50px at 25% 75%)"
+    );
     // circle() 空（默认 closest-side，无位置）。
-    assert_eq!(computed_style_property(html, "#circle-def", "clip-path"), "circle(closest-side)");
+    assert_eq!(
+        computed_style_property(html, "#circle-def", "clip-path"),
+        "circle(closest-side)"
+    );
     // polygon 默认 nonzero 省略填充规则，顶点逗号分隔。
     assert_eq!(
         computed_style_property(html, "#polygon", "clip-path"),
@@ -3347,7 +3442,10 @@ fn test_get_computed_style_content() {
         "counter(c, upper-roman)"
     );
     // counters(name, "sep")：分隔符引号串化。
-    assert_eq!(computed_style_property(html, "#counters", "content"), "counters(n, \".\")");
+    assert_eq!(
+        computed_style_property(html, "#counters", "content"),
+        "counters(n, \".\")"
+    );
     // url(...)。
     assert_eq!(computed_style_property(html, "#url", "content"), "url(x.png)");
     // 多 component value 列表：空格连接。
@@ -3369,25 +3467,13 @@ fn test_get_computed_style_font_weight_bolder_lighter() {
         <div id=\"explicit\" style=\"font-weight: 500\"></div>\
         </body></html>";
     // bolder on normal(400) parent → 700。
-    assert_eq!(
-        computed_style_property(html, "#bolder-normal", "font-weight"),
-        "700"
-    );
+    assert_eq!(computed_style_property(html, "#bolder-normal", "font-weight"), "700");
     // bolder on bold(700) parent → 900。
-    assert_eq!(
-        computed_style_property(html, "#bolder-bold", "font-weight"),
-        "900"
-    );
+    assert_eq!(computed_style_property(html, "#bolder-bold", "font-weight"), "900");
     // lighter on bold(700) parent → 400。
-    assert_eq!(
-        computed_style_property(html, "#lighter-bold", "font-weight"),
-        "400"
-    );
+    assert_eq!(computed_style_property(html, "#lighter-bold", "font-weight"), "400");
     // lighter on normal(400) parent → 100。
-    assert_eq!(
-        computed_style_property(html, "#lighter-normal", "font-weight"),
-        "100"
-    );
+    assert_eq!(computed_style_property(html, "#lighter-normal", "font-weight"), "100");
     // 非 bolder/lighter 不受影响（显式数值原样）。
     assert_eq!(computed_style_property(html, "#explicit", "font-weight"), "500");
 }
@@ -3408,7 +3494,10 @@ fn test_get_computed_style_background_position() {
     // 默认 0% 0%（TwoValue(Percent 0, Percent 0)）。
     assert_eq!(computed_style_property(html, "#def", "background-position"), "0% 0%");
     // 单关键字 center → 两轴展开 50% 50%。
-    assert_eq!(computed_style_property(html, "#center", "background-position"), "50% 50%");
+    assert_eq!(
+        computed_style_property(html, "#center", "background-position"),
+        "50% 50%"
+    );
     // TwoValue 关键字 → 解析为 %。
     assert_eq!(computed_style_property(html, "#lt", "background-position"), "0% 0%");
     assert_eq!(computed_style_property(html, "#rb", "background-position"), "100% 100%");
@@ -3439,14 +3528,69 @@ fn test_get_computed_style_background_size_repeat() {
     assert_eq!(computed_style_property(html, "#size-cover", "background-size"), "cover");
     assert_eq!(computed_style_property(html, "#size-px", "background-size"), "100px");
     // 多层逗号分隔。
-    assert_eq!(computed_style_property(html, "#size-multi", "background-size"), "50%, auto");
+    assert_eq!(
+        computed_style_property(html, "#size-multi", "background-size"),
+        "50%, auto"
+    );
     // background-repeat 默认 repeat。
     assert_eq!(computed_style_property(html, "#def", "background-repeat"), "repeat");
-    assert_eq!(computed_style_property(html, "#repeat-x", "background-repeat"), "repeat-x");
+    assert_eq!(
+        computed_style_property(html, "#repeat-x", "background-repeat"),
+        "repeat-x"
+    );
     // 多层逗号分隔。
     assert_eq!(
         computed_style_property(html, "#repeat-multi", "background-repeat"),
         "no-repeat, space"
+    );
+}
+
+#[test]
+fn test_get_computed_style_background_attachment_clip_origin() {
+    // R2726：getComputedStyle background-attachment/clip/origin 序列化（单值 box-model 枚举）。
+    let html = "<html><body>\
+        <div id=\"att-fixed\" style=\"background-attachment: fixed;\"></div>\
+        <div id=\"att-local\" style=\"background-attachment: local;\"></div>\
+        <div id=\"clip-pad\" style=\"background-clip: padding-box;\"></div>\
+        <div id=\"clip-content\" style=\"background-clip: content-box;\"></div>\
+        <div id=\"clip-text\" style=\"background-clip: text;\"></div>\
+        <div id=\"origin-border\" style=\"background-origin: border-box;\"></div>\
+        <div id=\"origin-content\" style=\"background-origin: content-box;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // background-attachment 默认 scroll。
+    assert_eq!(computed_style_property(html, "#def", "background-attachment"), "scroll");
+    assert_eq!(
+        computed_style_property(html, "#att-fixed", "background-attachment"),
+        "fixed"
+    );
+    assert_eq!(
+        computed_style_property(html, "#att-local", "background-attachment"),
+        "local"
+    );
+    // background-clip 默认 border-box。
+    assert_eq!(computed_style_property(html, "#def", "background-clip"), "border-box");
+    assert_eq!(
+        computed_style_property(html, "#clip-pad", "background-clip"),
+        "padding-box"
+    );
+    assert_eq!(
+        computed_style_property(html, "#clip-content", "background-clip"),
+        "content-box"
+    );
+    assert_eq!(computed_style_property(html, "#clip-text", "background-clip"), "text");
+    // background-origin 默认 padding-box（注意：与 clip 的 border-box 默认不同）。
+    assert_eq!(
+        computed_style_property(html, "#def", "background-origin"),
+        "padding-box"
+    );
+    assert_eq!(
+        computed_style_property(html, "#origin-border", "background-origin"),
+        "border-box"
+    );
+    assert_eq!(
+        computed_style_property(html, "#origin-content", "background-origin"),
+        "content-box"
     );
 }
 
@@ -3463,11 +3607,13 @@ fn test_raf_frame_driven_on_path() {
     sandbox.execute(generate_js_dom_shim()).unwrap();
     // host 在 execute 前注入 env flag（模拟 worker init 读 ZW_RAF_FRAME_DRIVEN=1）。
     sandbox.execute("globalThis.__ZW_RAF_FRAME_DRIVEN = true;").unwrap();
-    sandbox.execute(
-        "globalThis.__count = 0; globalThis.__ts = 'none';\
+    sandbox
+        .execute(
+            "globalThis.__count = 0; globalThis.__ts = 'none';\
          requestAnimationFrame(function(t){ globalThis.__count++; globalThis.__ts = String(t); });\
          requestAnimationFrame(function(){ globalThis.__count++; });",
-    ).unwrap();
+        )
+        .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__count)").unwrap().value,
         "0",
@@ -3498,11 +3644,13 @@ fn test_raf_frame_driven_cancel() {
     let mut sandbox = V8Sandbox::with_config(config).unwrap();
     sandbox.execute(generate_js_dom_shim()).unwrap();
     sandbox.execute("globalThis.__ZW_RAF_FRAME_DRIVEN = true;").unwrap();
-    sandbox.execute(
-        "globalThis.__fired = 'no';\
+    sandbox
+        .execute(
+            "globalThis.__fired = 'no';\
          var id = requestAnimationFrame(function(){ globalThis.__fired = 'yes'; });\
          cancelAnimationFrame(id);",
-    ).unwrap();
+        )
+        .unwrap();
     sandbox.execute("globalThis.__zw_raf_tick(0);").unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__fired").unwrap().value,
@@ -3523,10 +3671,12 @@ fn test_raf_sync_stub_off_path() {
     let mut sandbox = V8Sandbox::with_config(config).unwrap();
     sandbox.execute(generate_js_dom_shim()).unwrap();
     // 不设 __ZW_RAF_FRAME_DRIVEN（默认 false）。
-    sandbox.execute(
-        "globalThis.__fired = 'no';\
+    sandbox
+        .execute(
+            "globalThis.__fired = 'no';\
          requestAnimationFrame(function(){ globalThis.__fired = 'yes'; });",
-    ).unwrap();
+        )
+        .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__fired").unwrap().value,
         "yes",
@@ -3564,9 +3714,21 @@ fn test_element_attributes_nodelist() {
              globalThis.__item_oob = document.querySelector('#d').attributes.item(9);",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__len").unwrap().value, "3", "attributes.length");
-    assert_eq!(sandbox.execute("globalThis.__i0").unwrap().value, "id", "attributes[0].name");
-    assert_eq!(sandbox.execute("globalThis.__item1").unwrap().value, "class", "attributes.item(1).name");
+    assert_eq!(
+        sandbox.execute("globalThis.__len").unwrap().value,
+        "3",
+        "attributes.length"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__i0").unwrap().value,
+        "id",
+        "attributes[0].name"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__item1").unwrap().value,
+        "class",
+        "attributes.item(1).name"
+    );
     assert_eq!(
         sandbox.execute("globalThis.__item_oob === null").unwrap().value,
         "true",
@@ -3580,7 +3742,11 @@ fn test_element_attributes_nodelist() {
              globalThis.__gnn = document.querySelector('#d').attributes.getNamedItem('nope');",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__gn").unwrap().value, "t", "getNamedItem('title').value");
+    assert_eq!(
+        sandbox.execute("globalThis.__gn").unwrap().value,
+        "t",
+        "getNamedItem('title').value"
+    );
     assert_eq!(
         sandbox.execute("globalThis.__gnn === null").unwrap().value,
         "true",
@@ -3621,8 +3787,7 @@ fn test_set_remove_attr_syncs_cache() {
     };
 
     // ① setAttribute('class','a') + classList.add('b') → 'a b'（旧 'base b' 丢 a）。
-    let (mut sandbox, mutations, dom_html) =
-        mk("<html><body><div id=\"d\" class=\"base\"></div></body></html>");
+    let (mut sandbox, mutations, dom_html) = mk("<html><body><div id=\"d\" class=\"base\"></div></body></html>");
     sandbox
         .execute(
             "var d = document.querySelector('#d');\n\
@@ -3632,11 +3797,13 @@ fn test_set_remove_attr_syncs_cache() {
         .unwrap();
     let ms = mutations.lock().unwrap().clone();
     let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
-    assert!(out.contains("class=\"a b\""), "setAttribute+classList 协作 → 'a b'\n{out}");
+    assert!(
+        out.contains("class=\"a b\""),
+        "setAttribute+classList 协作 → 'a b'\n{out}"
+    );
 
     // ② setAttribute('value','x') + .value 读 → 'x'（旧 stale 读 'old'）。
-    let (mut sandbox, _mutations, _dom_html) =
-        mk("<html><body><input id=\"i\" value=\"old\"></body></html>");
+    let (mut sandbox, _mutations, _dom_html) = mk("<html><body><input id=\"i\" value=\"old\"></body></html>");
     sandbox
         .execute(
             "document.querySelector('#i').setAttribute('value', 'x');\n\
@@ -3651,8 +3818,7 @@ fn test_set_remove_attr_syncs_cache() {
 
     // ③ classList.add('a'); removeAttribute('class'); classList.add('b') → 'b'
     //    （removeAttribute 清缓存，否则 add('b') 读 stale 'base a' → 'base a b'）。
-    let (mut sandbox, mutations, dom_html) =
-        mk("<html><body><div id=\"d\" class=\"base\"></div></body></html>");
+    let (mut sandbox, mutations, dom_html) = mk("<html><body><div id=\"d\" class=\"base\"></div></body></html>");
     sandbox
         .execute(
             "var d = document.querySelector('#d');\n\
@@ -3663,5 +3829,8 @@ fn test_set_remove_attr_syncs_cache() {
         .unwrap();
     let ms3 = mutations.lock().unwrap().clone();
     let out3 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms3).unwrap();
-    assert!(out3.contains("class=\"b\""), "removeAttribute('class') 清缓存后 add('b') → 'b'\n{out3}");
+    assert!(
+        out3.contains("class=\"b\""),
+        "removeAttribute('class') 清缓存后 add('b') → 'b'\n{out3}"
+    );
 }
