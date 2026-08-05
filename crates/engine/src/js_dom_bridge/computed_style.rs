@@ -316,6 +316,15 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         // ── font-variant-numeric / image-rendering（R2737）── 单值关键字枚举（残余纯枚举收尾）。
         "font-variant-numeric" => font_variant_numeric_str(&style.font_variant_numeric),
         "image-rendering" => image_rendering_str(&style.image_rendering),
+        // ── border-radius 簇（R2738）── 4 角 longhand 早覆（line 156-159 经 length 闭包）；
+        // 此处补简写：复用 box_4_to_css 的 CSSOM 4 值最小化（全等→1 值 / TL==BR&&TR==BL→2 值 / BL==TR→3 值）。
+        "border-radius" => box_4_to_css(
+            &style.border_top_left_radius,
+            &style.border_top_right_radius,
+            &style.border_bottom_right_radius,
+            &style.border_bottom_left_radius,
+            font_size_px,
+        ),
         _ => String::new(),
     }
 }

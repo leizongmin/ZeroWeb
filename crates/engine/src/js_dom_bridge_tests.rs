@@ -3972,6 +3972,28 @@ fn test_get_computed_style_multicol_fontvar_img() {
 }
 
 #[test]
+fn test_get_computed_style_border_radius_shorthand() {
+    // R2738：getComputedStyle border-radius 简写（CSSOM 4 值最小化）。4 角 longhand 早覆（R2707）。
+    let html = "<html><body>\
+        <div id=\"br1\" style=\"border-radius: 5px;\"></div>\
+        <div id=\"br2\" style=\"border-radius: 5px 10px;\"></div>\
+        <div id=\"br3\" style=\"border-radius: 5px 10px 15px;\"></div>\
+        <div id=\"br4\" style=\"border-radius: 5px 10px 15px 20px;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // 全等→1 值；TL==BR&&TR==BL→2 值；TR==BL→3 值；否则 4 值（CSSOM 同 margin 语法）。
+    assert_eq!(computed_style_property(html, "#br1", "border-radius"), "5px");
+    assert_eq!(computed_style_property(html, "#br2", "border-radius"), "5px 10px");
+    assert_eq!(computed_style_property(html, "#br3", "border-radius"), "5px 10px 15px");
+    assert_eq!(
+        computed_style_property(html, "#br4", "border-radius"),
+        "5px 10px 15px 20px"
+    );
+    // 默认 4 角均 0px → 最小化 "0px"（对齐 Chromium）。
+    assert_eq!(computed_style_property(html, "#def", "border-radius"), "0px");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
