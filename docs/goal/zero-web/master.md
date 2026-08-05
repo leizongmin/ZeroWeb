@@ -1129,6 +1129,20 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧数值族全返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
+
+getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
+
+**recon 关键结论**：旧框架部分过时——setTimeout/setInterval（TimerBridge host 线程 + AsyncResolver）、requestIdleCallback（R2678）、microtask 队列（V8 原生 queueMicrotask/Promise.then）、macro-task FIFO（`ResolveAsyncCallback` 命令通道）、MutationObserver（JS Proxy trap + microtask）、post-render `__zw_observers_tick` tick（renderer `tick_observers`，`page_scripts.rs:127-143`）**均已存在**。**唯一真缺口 = `requestAnimationFrame` 为同步 stub**（`js_dom_shim.js:559-568`，`fn(0)` 立即执行、无帧 tick、`cancelAnimationFrame` no-op）。IO/RO 有初始通知 + post-render tick 重算（持续跟踪或已部分工作，待核查）。
+
+**reftest 兼容性约束（关键）**：reftest harness（`render_to_framebuffer` 单渲染、不经 `tick_observers`、不泵帧）依赖 rAF 同步 stub——双 rAF reftest 模式（`requestAnimationFrame(() => requestAnimationFrame(() => {setup;}))`）在一次 execute 内完成、DOM 变更进最终 HTML 被单渲染捕获。帧驱动 rAF 会使 reftest 路径永不 fire → 断。
+
+**设计 doc**（[`p1a-event-loop-raf-slice-design-2026-08-05.md`](p1a-event-loop-raf-slice-design-2026-08-05.md)）：kill-switch `ZW_RAF_FRAME_DRIVEN`（默认 OFF = 同步 stub，reftest 兼容，零默认行为变更；ON = 帧驱动）；env→shim plumbing（worker init 读 env、execute shim 前 inject `globalThis.__ZW_RAF_FRAME_DRIVEN`，同现有 host-side env 读法 `tab_js_worker.rs:29`）；shim `_rafPending` 队列 + 新增 `__zw_raf_tick(ts)` host 回调；renderer `tick_observers` 附带调 `__zw_raf_tick`（OFF 时 shim 早返零开销）。复用既有 post-render tick，不新增第二条帧链。同 font-metric dormant 模式（R2202）。
+
+**为何先设计不直接实施**：rAF 改动跨 shim/renderer/worker 三层 + reftest 兼容风险，属架构切片，按 CLAUDE.md「深结构先设计后实施」+ rendering-compat「Phase A 只做设计后实施」惯例，先落可回退设计（kill-switch 默认 OFF）再分 R2713a/b 实施。
+
+**P1a 实际剩余（recon 纠偏后）**：① rAF 帧驱动（本设计，R2713a/b）；② IO/RO 持续跟踪核查（`__zw_observers_tick` 是否已覆盖 vs 仍需 Slice 2b）；③ fetch 完整化（**网络，按任务跳过**）；④ A 代 `DomCommand`/`parse_command` 死代码（CLAUDE.md「提及不删」，仅单测引用）。事件循环 slice 1 的 macro-task 队列/rAF/ric 三项中，ric + macro-task FIFO 已 done，仅 rAF 待落地。
+
 
 
 
