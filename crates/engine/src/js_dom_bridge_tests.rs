@@ -4194,6 +4194,74 @@ fn test_get_computed_style_transition_animation() {
 }
 
 #[test]
+fn test_get_computed_style_timing_function() {
+    // R2744：getComputedStyle transition/animation-timing-function。
+    // 关键字保 keyword 不展开；cubic-bezier 4 数；steps(n) 默认 End 省略（spec-aligned，待 Chromium A/B 核实）。
+    let html = "<html><body>\
+        <div id=\"ease\" style=\"transition-timing-function: ease;\"></div>\
+        <div id=\"lin\" style=\"transition-timing-function: linear;\"></div>\
+        <div id=\"eio\" style=\"transition-timing-function: ease-in-out;\"></div>\
+        <div id=\"cb\" style=\"transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);\"></div>\
+        <div id=\"ss\" style=\"transition-timing-function: step-start;\"></div>\
+        <div id=\"st\" style=\"transition-timing-function: steps(4);\"></div>\
+        <div id=\"sts\" style=\"transition-timing-function: steps(4, start);\"></div>\
+        <div id=\"multi\" style=\"transition-timing-function: ease-in, ease-out;\"></div>\
+        <div id=\"atf\" style=\"animation-timing-function: linear;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // 关键字（保原样）。
+    assert_eq!(
+        computed_style_property(html, "#ease", "transition-timing-function"),
+        "ease"
+    );
+    assert_eq!(
+        computed_style_property(html, "#lin", "transition-timing-function"),
+        "linear"
+    );
+    assert_eq!(
+        computed_style_property(html, "#eio", "transition-timing-function"),
+        "ease-in-out"
+    );
+    // cubic-bezier：4 数逗号分隔（整数 1 无小数点）。
+    assert_eq!(
+        computed_style_property(html, "#cb", "transition-timing-function"),
+        "cubic-bezier(0.25, 0.1, 0.25, 1)"
+    );
+    // step-start；steps(4) 默认 End 省略；steps(4, start) 含位置。
+    assert_eq!(
+        computed_style_property(html, "#ss", "transition-timing-function"),
+        "step-start"
+    );
+    assert_eq!(
+        computed_style_property(html, "#st", "transition-timing-function"),
+        "steps(4)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#sts", "transition-timing-function"),
+        "steps(4, start)"
+    );
+    // 多值逗号分隔。
+    assert_eq!(
+        computed_style_property(html, "#multi", "transition-timing-function"),
+        "ease-in, ease-out"
+    );
+    // animation-timing-function 同结构。
+    assert_eq!(
+        computed_style_property(html, "#atf", "animation-timing-function"),
+        "linear"
+    );
+    // 默认空→ease。
+    assert_eq!(
+        computed_style_property(html, "#def", "transition-timing-function"),
+        "ease"
+    );
+    assert_eq!(
+        computed_style_property(html, "#def", "animation-timing-function"),
+        "ease"
+    );
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。

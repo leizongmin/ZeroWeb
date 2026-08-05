@@ -10,8 +10,8 @@ use zero_css_parser::values::{
     AlignmentValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, BackgroundEdge,
     BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorValue, ContentListItem, DisplayValue,
     FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, LengthValue,
-    ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, TransformFunction,
-    TransformValue, VisibilityValue,
+    ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, StepPosition,
+    TimingFunctionValue, TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -360,6 +360,13 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "animation-direction" => enum_list_to_css(&style.animation_direction, "normal", animation_direction_str),
         "animation-fill-mode" => enum_list_to_css(&style.animation_fill_mode, "none", animation_fill_mode_str),
         "animation-play-state" => enum_list_to_css(&style.animation_play_state, "running", animation_play_state_str),
+        // ── transition/animation-timing-function（R2744）── Vec<TimingFunctionValue>，空→ease（初值）。
+        "transition-timing-function" => {
+            enum_list_to_css(&style.transition_timing_function, "ease", timing_function_to_css)
+        }
+        "animation-timing-function" => {
+            enum_list_to_css(&style.animation_timing_function, "ease", timing_function_to_css)
+        }
         _ => String::new(),
     }
 }
@@ -1582,6 +1589,38 @@ fn animation_play_state_str(s: &AnimationPlayStateValue) -> String {
         AnimationPlayStateValue::Paused => "paused",
     }
     .to_string()
+}
+
+/// transition/animation-timing-function：CSS Easing 单个缓动函数序列化。
+///
+/// 关键字（ease/linear/ease-in/out/in-out）+ step-start/end 对齐 Chromium（保 keyword 不展开为
+/// cubic-bezier）；`cubic-bezier(a,b,c,d)` 4 数逗号分隔。`steps(n, pos)` 按 CSS Easing 1 §4：
+/// 默认位置 End 省略（`steps(n)`）、Start→`start`/End→`end`（legacy canonical）、Both→`jump-both`、
+/// None→`jump-none`。**待 Chromium A/B 核实**（Web 核实本轮被网络阻断，steps 位置 canonical 化为
+/// spec-aligned 最佳推断；若 Chromium 显式含 `end` 或用 `jump-*` 别名，后续轮按 oracle 修正）。
+fn timing_function_to_css(tf: &TimingFunctionValue) -> String {
+    match tf {
+        TimingFunctionValue::Ease => "ease".to_string(),
+        TimingFunctionValue::Linear => "linear".to_string(),
+        TimingFunctionValue::EaseIn => "ease-in".to_string(),
+        TimingFunctionValue::EaseOut => "ease-out".to_string(),
+        TimingFunctionValue::EaseInOut => "ease-in-out".to_string(),
+        TimingFunctionValue::StepStart => "step-start".to_string(),
+        TimingFunctionValue::StepEnd => "step-end".to_string(),
+        TimingFunctionValue::CubicBezier(a, b, c, d) => format!(
+            "cubic-bezier({}, {}, {}, {})",
+            format_num(*a, ""),
+            format_num(*b, ""),
+            format_num(*c, ""),
+            format_num(*d, "")
+        ),
+        TimingFunctionValue::Steps(n, pos) => match pos {
+            None | Some(StepPosition::End) => format!("steps({n})"),
+            Some(StepPosition::Start) => format!("steps({n}, start)"),
+            Some(StepPosition::Both) => format!("steps({n}, jump-both)"),
+            Some(StepPosition::None) => format!("steps({n}, jump-none)"),
+        },
+    }
 }
 
 /// counter-increment / counter-reset：CSS Lists 计数器操作（`Vec<CounterActionValue>`）。
