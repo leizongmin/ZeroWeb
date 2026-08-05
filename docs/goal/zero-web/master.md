@@ -1453,6 +1453,25 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧三属性返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` column-rule*/count/width/fill/span + font-variant-numeric + image-rendering 序列化（本轮 R2737，getComputedStyle 维护态续）
+
+承接 R2736。补 CSS Multi-column 簇残余 + 两个单值枚举收尾（旧均返 ''），全部对齐 Chromium：`column-rule-width`（`ColumnRuleWidthComputedValue`：Medium/Thin/Thick→UA used px **3px/1px/5px**〔CSS Border 常规 UA 初始值〕/ Length→px；**当 column-rule-style 为 none/hidden 时 Chromium 返 0px**〔同 border-width used 语义〕，故取 style 参照复用 R2707 `border_width_to_css` 模式）、`column-rule-style`（10 关键字独立枚举，同 border-style 语义）、`column-rule-color`（currentcolor 经 `resolve_color_current` 解析为 rgb/rgba）、`column-count`（Auto/Number(n)→`auto`/无单位正整数）、`column-width`（Auto/Length→px）、`column-fill`（balance/auto，初值 balance）、`column-span`（none/all，初值 none）、`font-variant-numeric`（9 关键字单值，初值 normal）、`image-rendering`（5 关键字，初值 auto）。**column-gap 已由 R2707 长度族覆盖**，本簇不重复。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 9 臂（column-rule-width/style/color + column-count/width/fill/span + font-variant-numeric + image-rendering）；新增 7 helper（`column_rule_width_to_css`〔带 style→0px 短路 + Medium/Thin/Thick→px 映射〕/`column_rule_style_str`/`column_count_to_css`/`column_width_to_css`/`column_fill_str`/`column_span_str`/`font_variant_numeric_str`/`image_rendering_str`）；column-rule-color 复用 `color_to_css`+`resolve_color_current`；import 加 `ColumnCount/Fill/RuleStyle/RuleWidth/Span/Width` + `FontVariantNumeric`/`ImageRendering` 8 类型。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_multicol_fontvar_img`（column-rule shorthand `2px dashed red`→width `2px`/style `dashed`/color `rgb(255,0,0)` + `thick solid blue`→width `5px`/color `rgb(0,0,255)`；column-count `3`/column-width `100px`/column-fill `auto`/column-span `all`；font-variant-numeric `tabular-nums`；image-rendering `pixelated`；`#def` 默认全验：rule-width `0px`/style `none`/color currentcolor→元素 color `rgb(255,0,0)`/count `auto`/width `auto`/fill `balance`/span `none`/fvn `normal`/ir `auto`）。 |
+
+**对齐 Chromium**：column-rule-width none/hidden→0px used 语义、Medium/Thin/Thick→3/1/5px、column-count 无单位整数、column-rule-color currentcolor 解析——与 Chromium getComputedStyle 一致。**补齐 Multi-column 序列化簇**（count/width/fill/span/rule-* 全覆，仅 column-gap 沿用 R2707）。
+
+**修复上一轮遗留编译错误**：R2737 序列化代码上一轮（session crashed 于 API 429 限流）遗留 `column_rule_width_to_css` 调用处缺第 3 参数 `font_size_px`（签名 3 参 vs 调用 2 参），本轮补齐。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13362 passed / 0 failed / 74 ignored**，13361+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → 九属性未改 welcome 渲染输出）+ 8/8 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧九属性返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
+**已知限制（剩余）**：① `font-variant-numeric` CSS 允许空格组合多值（如 `lining-nums tabular-nums`），ZeroWeb computed 值为单 enum 仅保留一变体，多值输入 diverge（pre-existing 解析限制，非本序列化引入）；② `getComputedStyle(el).cssText`/length 仍返 ''/0。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
