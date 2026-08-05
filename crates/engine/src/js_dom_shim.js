@@ -2868,6 +2868,70 @@
   }
   globalThis.MessageChannel = globalThis.MessageChannel || MessageChannel;
 
+  // BroadcastChannel——同源广播通信（所有同名 channel 实例互收消息，**发送者不收自己**）。extends
+  // EventTarget（R2779）。postMessage 经 structuredClone（R2773）深拷贝 + queueMicrotask（R2782 同款异步
+  // 派发）到所有同名其他实例。注册表 `_bc_registry`（name → channel 数组）同 JS 上下文共享。**已知限制**：
+  // 仅同 JS 上下文广播（跨 worker/进程广播需 host 接线，defer）；sender 不收自己（spec 一致）。
+  var _bc_registry = {};
+  function BroadcastChannel(name) {
+    if (!(this instanceof BroadcastChannel)) return new BroadcastChannel(name);
+    this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
+    this._name = String(name);
+    this._closed = false;
+    this._onmessage = null;
+    (_bc_registry[this._name] = _bc_registry[this._name] || []).push(this);
+  }
+  BroadcastChannel.prototype = Object.create(EventTarget.prototype);
+  BroadcastChannel.prototype.constructor = BroadcastChannel;
+  Object.defineProperty(BroadcastChannel.prototype, 'name', {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._name; },
+  });
+  BroadcastChannel.prototype.postMessage = function (message) {
+    if (this._closed) return;
+    var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
+    var sender = this;
+    var name = this._name;
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(function () {
+        var peers = _bc_registry[name];
+        if (!peers) return;
+        peers = peers.slice();
+        for (var i = 0; i < peers.length; i++) {
+          var p = peers[i];
+          if (p === sender || p._closed) continue;
+          p.dispatchEvent(new MessageEvent('message', { data: data, origin: '' }));
+        }
+      });
+    }
+  };
+  BroadcastChannel.prototype.close = function () {
+    if (this._closed) return;
+    this._closed = true;
+    var peers = _bc_registry[this._name];
+    if (peers) {
+      var i = peers.indexOf(this);
+      if (i >= 0) peers.splice(i, 1);
+      if (peers.length === 0) delete _bc_registry[this._name];
+    }
+  };
+  Object.defineProperty(BroadcastChannel.prototype, 'onmessage', {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._onmessage || null; },
+    set: function (cb) {
+      if (this._onmessage) this.removeEventListener('message', this._onmessage);
+      if (typeof cb === 'function') {
+        this._onmessage = cb;
+        this.addEventListener('message', cb);
+      } else {
+        this._onmessage = null;
+      }
+    },
+  });
+  globalThis.BroadcastChannel = globalThis.BroadcastChannel || BroadcastChannel;
+
   globalThis.document = {
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);

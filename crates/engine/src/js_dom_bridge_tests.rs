@@ -2036,6 +2036,71 @@ fn test_message_channel_r2782() {
 }
 
 #[test]
+fn test_broadcast_channel_r2783() {
+    // R2783：BroadcastChannel（同源广播，纯 JS）。extends EventTarget R2779；postMessage 经
+    // structuredClone R2773 + queueMicrotask R2782 异步派发到所有同名其他实例（sender 不收自己）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // typeof + name + instanceof BroadcastChannel/EventTarget。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var bc = new BroadcastChannel('news');\
+                 typeof BroadcastChannel + '|' + bc.name + '|' +\
+                 (bc instanceof BroadcastChannel) + '|' + (bc instanceof EventTarget)"
+            )
+            .unwrap()
+            .value,
+        "function|news|true|true"
+    );
+    // 广播：a post → b & c 收，a 不收自己（sender skipped）。
+    sandbox
+        .execute(
+            "var a = new BroadcastChannel('ch'); var b = new BroadcastChannel('ch'); var c = new BroadcastChannel('ch');\
+             globalThis.__got = '';\
+             a.onmessage = function () { globalThis.__got += 'a'; };\
+             b.onmessage = function (e) { globalThis.__got += 'b:' + e.data + ';'; };\
+             c.onmessage = function (e) { globalThis.__got += 'c:' + e.data + ';'; };\
+             a.postMessage('hi'); 'sent'"
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__got").unwrap().value, "b:hi;c:hi;");
+    // structuredClone 深拷贝：postMessage 时克隆，后续 mutate 原对象不影响收到的。
+    sandbox
+        .execute(
+            "var msg = { v: 1 }; globalThis.__mv = -1;\
+             b.onmessage = function (e) { globalThis.__mv = e.data.v; };\
+             a.postMessage(msg); msg.v = 99; 'sent'",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__mv").unwrap().value, "1");
+    // 不同 name 无串扰：a（ch）post 不触达 x（other）。
+    sandbox
+        .execute(
+            "var x = new BroadcastChannel('other'); globalThis.__cross = 'none';\
+             x.onmessage = function () { globalThis.__cross = 'got'; };\
+             a.postMessage('to-ch'); 'sent'",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__cross").unwrap().value, "none");
+    // close() → 移出注册表，不再收（仅 c 收，b 已 close）。
+    sandbox
+        .execute(
+            "globalThis.__cl = ''; b.close();\
+             c.onmessage = function () { globalThis.__cl += 'c'; };\
+             a.postMessage('after'); 'sent'",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__cl").unwrap().value, "c");
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，
