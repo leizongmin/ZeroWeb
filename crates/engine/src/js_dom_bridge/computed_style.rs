@@ -18,17 +18,18 @@ use zero_style_system::{
     BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundOriginComputedValue,
     BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderCollapseValue,
     BorderImageSourceComputedValue, BorderSpacingComputedValue, BorderStyleValue, BoxDecorationBreakValue,
-    BreakInsideValue, BreakValue, CaptionSideValue, CaretColorComputedValue, ColumnCountComputedValue,
-    ColumnFillComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnSpanComputedValue,
-    ColumnWidthComputedValue, ComputedStyle, ContainComputedValue, ContainerType, ContentComputedValue, CursorValue,
-    DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontSizeAdjustValue,
-    FontVariantNumericValue, GridAutoFlowValue, HyphensComputedValue, ImageRenderingValue, IsolationValue,
-    JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
+    BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue, CaretColorComputedValue,
+    ColumnCountComputedValue, ColumnFillComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue,
+    ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue, ContainerType,
+    ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue,
+    FontSizeAdjustValue, FontVariantNumericValue, GridAutoFlowValue, HyphensComputedValue, ImageRenderingValue,
+    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
     MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
     QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem,
-    TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue, TextOverflowValue, TextTransformValue,
-    TextWrapComputedValue, TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue,
-    VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
+    TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue, TextOverflowValue, TextShadowComputedValue,
+    TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue, UnicodeBidiValue,
+    UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue,
+    ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -325,6 +326,10 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             &style.border_bottom_left_radius,
             font_size_px,
         ),
+        // ── box-shadow / text-shadow（R2739）── 多阴影列表，空→none。
+        // Chromium/WPT 格式：color 在前（解析 rgb/rgba）+ 全长度（box-shadow 4 长 + inset 末；text-shadow 3 长）。
+        "box-shadow" => box_shadow_to_css(&style.box_shadow, element_color),
+        "text-shadow" => text_shadow_to_css(&style.text_shadow, element_color),
         _ => String::new(),
     }
 }
@@ -1470,6 +1475,53 @@ fn box_4_to_css(
     } else {
         format!("{t} {r} {b} {l}")
     }
+}
+
+/// box-shadow：CSS Box Shadow 计算值序列化。空列表→`none`；否则每个阴影按 Chromium/WPT
+/// 格式 `<color> <ox>px <oy>px <blur>px <spread>px [inset]`（color 在前经 currentcolor 解析，
+/// 4 长度全含即使为 0，inset 在末），多阴影逗号分隔。格式锚定 WPT box-shadow-interpolation/
+/// composition 的 `expect` 串（如 `rgb(100,100,100) 10px 20px 30px 40px inset`）。
+fn box_shadow_to_css(shadows: &[BoxShadowComputedValue], element_color: &ColorValue) -> String {
+    if shadows.is_empty() {
+        return "none".to_string();
+    }
+    shadows
+        .iter()
+        .map(|s| {
+            let color = color_to_css(&crate::resolve_color_current(&s.color, element_color));
+            let inset = if s.inset { " inset" } else { "" };
+            format!(
+                "{color} {} {} {} {}{inset}",
+                format_num(s.offset_x as f64, "px"),
+                format_num(s.offset_y as f64, "px"),
+                format_num(s.blur_radius as f64, "px"),
+                format_num(s.spread_radius as f64, "px"),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// text-shadow：CSS Text Shadow 计算值序列化。空列表→`none`；否则每个阴影按 Chromium/WPT
+/// 格式 `<color> <ox>px <oy>px <blur>px`（color 在前经 currentcolor 解析，3 长度全含即使为 0，
+/// 无 spread/inset——text-shadow spec 无此二者），多阴影逗号分隔。格式与 box-shadow 对齐。
+fn text_shadow_to_css(shadows: &[TextShadowComputedValue], element_color: &ColorValue) -> String {
+    if shadows.is_empty() {
+        return "none".to_string();
+    }
+    shadows
+        .iter()
+        .map(|s| {
+            let color = color_to_css(&crate::resolve_color_current(&s.color, element_color));
+            format!(
+                "{color} {} {} {}",
+                format_num(s.offset_x as f64, "px"),
+                format_num(s.offset_y as f64, "px"),
+                format_num(s.blur_radius as f64, "px"),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// content：按 CSS Generated Content 计算值序列化（::before/::after 生成内容）。

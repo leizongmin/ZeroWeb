@@ -3994,6 +3994,58 @@ fn test_get_computed_style_border_radius_shorthand() {
 }
 
 #[test]
+fn test_get_computed_style_box_text_shadow() {
+    // R2739：getComputedStyle box-shadow + text-shadow 序列化。
+    // Chromium/WPT 格式：color 在前（currentcolor 经元素 color 解析）+ 全长度（box 4 长+inset / text 3 长），
+    // 多阴影逗号分隔，空→none。格式锚定 WPT box-shadow-interpolation/composition 的 expect 串。
+    let html = "<html><body>\
+        <div id=\"bs\" style=\"box-shadow: 5px 5px;\"></div>\
+        <div id=\"bsi\" style=\"box-shadow: inset 0 0 10px red;\"></div>\
+        <div id=\"bss\" style=\"box-shadow: 1px 2px 3px 4px blue;\"></div>\
+        <div id=\"bsm\" style=\"box-shadow: 1px 1px red, 2px 2px blue;\"></div>\
+        <div id=\"cc\" style=\"color: green; box-shadow: 5px 5px;\"></div>\
+        <div id=\"ts\" style=\"text-shadow: 2px 4px;\"></div>\
+        <div id=\"tsc\" style=\"text-shadow: 0 0 10px red;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // box-shadow：color 在前（无 color→currentcolor 默认元素 color=black）+ ox oy blur spread 全含；inset 在末。
+    assert_eq!(
+        computed_style_property(html, "#bs", "box-shadow"),
+        "rgb(0, 0, 0) 5px 5px 0px 0px"
+    );
+    assert_eq!(
+        computed_style_property(html, "#bsi", "box-shadow"),
+        "rgb(255, 0, 0) 0px 0px 10px 0px inset"
+    );
+    assert_eq!(
+        computed_style_property(html, "#bss", "box-shadow"),
+        "rgb(0, 0, 255) 1px 2px 3px 4px"
+    );
+    // 多阴影逗号分隔。
+    assert_eq!(
+        computed_style_property(html, "#bsm", "box-shadow"),
+        "rgb(255, 0, 0) 1px 1px 0px 0px, rgb(0, 0, 255) 2px 2px 0px 0px"
+    );
+    // currentcolor 解析为元素 color（green→rgb(0,128,0)）。
+    assert_eq!(
+        computed_style_property(html, "#cc", "box-shadow"),
+        "rgb(0, 128, 0) 5px 5px 0px 0px"
+    );
+    // text-shadow：color 在前 + ox oy blur 3 长（无 spread/inset）。
+    assert_eq!(
+        computed_style_property(html, "#ts", "text-shadow"),
+        "rgb(0, 0, 0) 2px 4px 0px"
+    );
+    assert_eq!(
+        computed_style_property(html, "#tsc", "text-shadow"),
+        "rgb(255, 0, 0) 0px 0px 10px"
+    );
+    // 默认空列表→none。
+    assert_eq!(computed_style_property(html, "#def", "box-shadow"), "none");
+    assert_eq!(computed_style_property(html, "#def", "text-shadow"), "none");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
