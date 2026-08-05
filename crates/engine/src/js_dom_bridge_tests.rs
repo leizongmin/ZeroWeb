@@ -2991,6 +2991,67 @@ fn test_get_computed_style_lengths() {
 }
 
 #[test]
+fn test_get_computed_style_keywords() {
+    // R2708：getComputedStyle 关键字/枚举族（float/clear/box-sizing/overflow/text-align/
+    // white-space/font-weight/font-style/line-height/z-index/cursor/text-transform/text-overflow/
+    // direction/border-collapse/table-layout/caption-side/border-*-style/outline-style）。
+    let html = "<html><body>\
+        <div id=\"k\" style=\"\
+            float: left; clear: both; box-sizing: border-box; \
+            overflow: hidden; text-align: center; white-space: pre-wrap; \
+            font-weight: bold; font-style: italic; line-height: 1.5; \
+            z-index: 10; cursor: pointer; text-transform: uppercase; \
+            text-overflow: ellipsis; direction: rtl; \
+            border: 2px dashed red; outline: 3px dotted blue; \
+        \"></div>\
+        <table id=\"t\" style=\"border-collapse: collapse; table-layout: fixed;\
+            \"><caption id=\"cap\"></caption><tr><td></td></tr></table>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+
+    // 显式设置的关键字直映。
+    assert_eq!(computed_style_property(html, "#k", "float"), "left");
+    assert_eq!(computed_style_property(html, "#k", "clear"), "both");
+    assert_eq!(computed_style_property(html, "#k", "box-sizing"), "border-box");
+    assert_eq!(computed_style_property(html, "#k", "overflow-x"), "hidden");
+    assert_eq!(computed_style_property(html, "#k", "overflow-y"), "hidden");
+    assert_eq!(computed_style_property(html, "#k", "text-align"), "center");
+    assert_eq!(computed_style_property(html, "#k", "white-space"), "pre-wrap");
+    // font-weight bold→700（对齐 Chromium 绝对值）、font-style italic、line-height number。
+    assert_eq!(computed_style_property(html, "#k", "font-weight"), "700");
+    assert_eq!(computed_style_property(html, "#k", "font-style"), "italic");
+    assert_eq!(computed_style_property(html, "#k", "line-height"), "1.5");
+    assert_eq!(computed_style_property(html, "#k", "z-index"), "10");
+    assert_eq!(computed_style_property(html, "#k", "cursor"), "pointer");
+    assert_eq!(computed_style_property(html, "#k", "text-transform"), "uppercase");
+    assert_eq!(computed_style_property(html, "#k", "text-overflow"), "ellipsis");
+    assert_eq!(computed_style_property(html, "#k", "direction"), "rtl");
+    // border/outline shorthand → longhand style。
+    assert_eq!(computed_style_property(html, "#k", "border-top-style"), "dashed");
+    assert_eq!(computed_style_property(html, "#k", "outline-style"), "dotted");
+    // 表格属性。
+    assert_eq!(computed_style_property(html, "#t", "border-collapse"), "collapse");
+    assert_eq!(computed_style_property(html, "#t", "table-layout"), "fixed");
+
+    // 默认值（initial 关键字）——验证关键字族 fallback 正确。
+    assert_eq!(computed_style_property(html, "#plain", "float"), "none");
+    assert_eq!(computed_style_property(html, "#plain", "box-sizing"), "content-box");
+    assert_eq!(computed_style_property(html, "#plain", "overflow-x"), "visible");
+    assert_eq!(computed_style_property(html, "#plain", "text-align"), "start");
+    assert_eq!(computed_style_property(html, "#plain", "white-space"), "normal");
+    assert_eq!(computed_style_property(html, "#plain", "font-weight"), "400");
+    assert_eq!(computed_style_property(html, "#plain", "font-style"), "normal");
+    assert_eq!(computed_style_property(html, "#plain", "line-height"), "normal");
+    assert_eq!(computed_style_property(html, "#plain", "z-index"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "cursor"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "text-transform"), "none");
+    assert_eq!(computed_style_property(html, "#plain", "text-overflow"), "clip");
+    assert_eq!(computed_style_property(html, "#plain", "direction"), "ltr");
+    assert_eq!(computed_style_property(html, "#plain", "border-top-style"), "none");
+    assert_eq!(computed_style_property(html, "#plain", "outline-style"), "none");
+}
+
+#[test]
 fn test_element_attributes_nodelist() {
     // R2699：el.attributes（NamedNodeMap 只读快照）——length/item/getNamedItem/数值索引/迭代。
     use std::sync::{Arc, Mutex};

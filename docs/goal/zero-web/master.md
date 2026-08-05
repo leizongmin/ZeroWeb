@@ -1061,6 +1061,23 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 **已知限制（剩余）**：① width/height/margin 等 geometric 属性百分比返计算值（`N%`）非 Chromium used 值（需 layout 解析，未做）；② 含 % 的 calc 返 ''（无容器尺寸）；③ `getComputedStyle(el).cssText`/length 仍 ''/0（未做全声明串化）；④ 外链 `<link>` CSS 不在 snapshot 内（同 gBCR 既有限制）。
 
+### P1a `getComputedStyle` 关键字/枚举族（本轮 R2708，R2704/R2705/R2707 续）
+
+承接 R2704（display/position/visibility/opacity）+ R2705（颜色族）+ R2707（长度族）。补**关键字/枚举族**——getComputedStyle 旧对这些属性返 ''，`cs.boxSizing`/`cs.overflow`/`cs.textAlign`/`cs.fontWeight`/`cs.whiteSpace`/`cs.zIndex`/`cs.cursor` 等（布局判定、字体度量、光标、白空格换行控制极常查）全断。本切片覆盖 ~22 个关键字/枚举属性。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge.rs` | `serialize_computed_property` 加关键字/枚举族 match 臂（float/clear/box-sizing/overflow-x·y/text-align/white-space/font-weight/font-style/line-height/z-index/cursor/text-transform/text-overflow/direction/border-collapse/table-layout/caption-side/border-*-style/outline-style）；新增 ~19 个 variant→kebab-case 关键字直映 helper（`float_value_str`/`clear_value_str`/`overflow_value_str`/`box_sizing_str`/`text_align_str`/`white_space_str`/`font_weight_str`/`font_style_str`/`line_height_str`/`z_index_str`/`cursor_str`/`text_transform_str`/`text_overflow_str`/`direction_str`/`border_collapse_str`/`table_layout_str`/`caption_side_str`/`border_style_str`/`outline_style_str`）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_keywords`（显式设值 + 默认 initial 值双覆盖：float/box-sizing/overflow/text-align/white-space/font-weight 700·400/font-style/line-height 1.5·normal/z-index/cursor/text-transform/text-overflow/direction/border·outline-style/border-collapse/table-layout）。 |
+
+**对齐 Chromium 的语义**：① **font-weight 解析为绝对值**——`bold`→`700`、`normal`→`400`、`<number>`→数字（对齐 Chromium getComputedStyle）；`bolder`/`lighter` 须父链解析，此处保关键字（diverge，rare）。② **font-style oblique**——`oblique`/`oblique <deg>`（含角度）。③ **line-height**——`normal`/无单位数（`1.5`）/长度（em 已 resolve 为 Px）。④ **z-index**——`auto`/整数。⑤ **text-overflow**——`clip`/`ellipsis`/字符串。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（13332 passed / 0 failed / 74 ignored，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2707 baseline 持平 → getComputedStyle 关键字族未改 welcome 渲染输出）+ 8 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API，不改 mutation/render 路径；② 旧关键字族全返 ''（空），新实现返真关键字值——已覆盖属性从「误 ''」纠正为「真值」，未覆盖属性仍 '' fallback；③ welcome 产品 smoke diff 精确持平证真实页面 JS 分支未受影响。
+
+**已知限制（剩余）**：① `bolder`/`lighter` font-weight 保关键字非 Chromium 解析值（须父链）；② `getComputedStyle(el).cssText`/length 仍 ''/0；③ font-family/复合枚举（flex-*/grid-*/writing-mode/background-* 等次高频）为 follow-up；④ 外链 `<link>` CSS 不在 snapshot 内（同 gBCR 既有限制）。
+
 
 
 

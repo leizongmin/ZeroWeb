@@ -8,8 +8,15 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use zero_css_parser::values::{DisplayValue, LengthValue, PositionValue, VisibilityValue};
-use zero_style_system::{BorderStyleValue, ComputedStyle, OutlineStyleValue, StyleSystem};
+use zero_css_parser::values::{
+    BoxSizingValue, ClearValue, DisplayValue, FloatValue, FontStyleValue, FontWeightValue, LengthValue,
+    OverflowValue, PositionValue, VisibilityValue,
+};
+use zero_style_system::{
+    BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle, CursorValue, DirectionValue,
+    LineHeightValue, OutlineStyleValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue,
+    TextTransformValue, WhiteSpaceValue, ZIndexValue,
+};
 
 use zero_dom::{Document, FocusManager, NodeId, NodeKind, parse_html};
 use zero_script_sandbox::Sandbox;
@@ -1690,7 +1697,9 @@ fn lookup_computed_property(
 /// display/position/visibility/opacity + 颜色族（color/background-color/border-*-color/outline-color）
 /// + 长度族（width/height/min-max/margin/padding/border-*-width/border-*-radius/outline-width/
 ///   font-size/top/right/bottom/left/gap/letter-spacing/word-spacing/text-indent 等，经
-///   [`length_to_css`]）。未覆盖属性返 ''。
+///   [`length_to_css`]）+ 关键字/枚举族（float/clear/box-sizing/overflow-x·y/text-align/
+///   white-space/font-weight/font-style/line-height/z-index/cursor/text-transform/text-overflow/
+///   direction/border-collapse/table-layout/caption-side/border-*-style/outline-style）。未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -1800,6 +1809,30 @@ fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String {
         "letter-spacing" => length(&style.letter_spacing),
         "word-spacing" => length(&style.word_spacing),
         "text-indent" => length(&style.text_indent),
+        // ── 关键字/枚举族 ──
+        "float" => float_value_str(&style.float),
+        "clear" => clear_value_str(&style.clear),
+        "box-sizing" => box_sizing_str(&style.box_sizing),
+        "overflow-x" => overflow_value_str(&style.overflow_x),
+        "overflow-y" => overflow_value_str(&style.overflow_y),
+        "text-align" => text_align_str(&style.text_align),
+        "white-space" => white_space_str(&style.white_space),
+        "font-weight" => font_weight_str(&style.font_weight),
+        "font-style" => font_style_str(&style.font_style),
+        "line-height" => line_height_str(&style.line_height, font_size_px),
+        "z-index" => z_index_str(&style.z_index),
+        "cursor" => cursor_str(&style.cursor),
+        "text-transform" => text_transform_str(&style.text_transform),
+        "text-overflow" => text_overflow_str(&style.text_overflow),
+        "direction" => direction_str(&style.direction),
+        "border-collapse" => border_collapse_str(&style.border_collapse),
+        "table-layout" => table_layout_str(&style.table_layout),
+        "caption-side" => caption_side_str(&style.caption_side),
+        "border-top-style" => border_style_str(&style.border_top_style),
+        "border-right-style" => border_style_str(&style.border_right_style),
+        "border-bottom-style" => border_style_str(&style.border_bottom_style),
+        "border-left-style" => border_style_str(&style.border_left_style),
+        "outline-style" => outline_style_str(&style.outline_style),
         _ => String::new(),
     }
 }
@@ -1917,6 +1950,225 @@ fn visibility_value_str(v: &VisibilityValue) -> String {
         VisibilityValue::Visible => "visible",
         VisibilityValue::Hidden => "hidden",
         VisibilityValue::Collapse => "collapse",
+    }
+    .to_string()
+}
+
+// ── getComputedStyle 关键字/枚举族序列化（R2708）── 多为 variant→kebab-case 关键字直映。
+
+fn float_value_str(f: &FloatValue) -> String {
+    match f {
+        FloatValue::None => "none",
+        FloatValue::Left => "left",
+        FloatValue::Right => "right",
+        FloatValue::InlineStart => "inline-start",
+        FloatValue::InlineEnd => "inline-end",
+    }
+    .to_string()
+}
+
+fn clear_value_str(c: &ClearValue) -> String {
+    match c {
+        ClearValue::None => "none",
+        ClearValue::Left => "left",
+        ClearValue::Right => "right",
+        ClearValue::Both => "both",
+        ClearValue::InlineStart => "inline-start",
+        ClearValue::InlineEnd => "inline-end",
+    }
+    .to_string()
+}
+
+fn overflow_value_str(o: &OverflowValue) -> String {
+    match o {
+        OverflowValue::Visible => "visible",
+        OverflowValue::Hidden => "hidden",
+        OverflowValue::Scroll => "scroll",
+        OverflowValue::Auto => "auto",
+        OverflowValue::Clip => "clip",
+    }
+    .to_string()
+}
+
+fn box_sizing_str(b: &BoxSizingValue) -> String {
+    match b {
+        BoxSizingValue::ContentBox => "content-box",
+        BoxSizingValue::BorderBox => "border-box",
+    }
+    .to_string()
+}
+
+fn text_align_str(a: &TextAlignValue) -> String {
+    match a {
+        TextAlignValue::Left => "left",
+        TextAlignValue::Right => "right",
+        TextAlignValue::Center => "center",
+        TextAlignValue::Justify => "justify",
+        TextAlignValue::Start => "start",
+        TextAlignValue::End => "end",
+        TextAlignValue::MatchParent => "match-parent",
+    }
+    .to_string()
+}
+
+fn white_space_str(w: &WhiteSpaceValue) -> String {
+    match w {
+        WhiteSpaceValue::Normal => "normal",
+        WhiteSpaceValue::Pre => "pre",
+        WhiteSpaceValue::Nowrap => "nowrap",
+        WhiteSpaceValue::PreWrap => "pre-wrap",
+        WhiteSpaceValue::PreLine => "pre-line",
+        WhiteSpaceValue::BreakSpaces => "break-spaces",
+    }
+    .to_string()
+}
+
+/// real browser getComputedStyle 把 font-weight 解析为绝对值（normal=400、bold=700）。
+/// bolder/lighter 须父链解析，此处保关键字（计算值，与 Chromium 对这些值有 diverge）。
+fn font_weight_str(w: &FontWeightValue) -> String {
+    match w {
+        FontWeightValue::Absolute(n) => n.to_string(),
+        FontWeightValue::Normal => "400".to_string(),
+        FontWeightValue::Bold => "700".to_string(),
+        FontWeightValue::Bolder => "bolder".to_string(),
+        FontWeightValue::Lighter => "lighter".to_string(),
+    }
+}
+
+fn font_style_str(s: &FontStyleValue) -> String {
+    match s {
+        FontStyleValue::Normal => "normal".to_string(),
+        FontStyleValue::Italic => "italic".to_string(),
+        FontStyleValue::Oblique(None) => "oblique".to_string(),
+        FontStyleValue::Oblique(Some(deg)) => format!("oblique {deg}deg"),
+    }
+}
+
+/// line-height：normal→`normal`；number→无单位数（resolve 阶段 em 已转 Px）。
+fn line_height_str(lh: &LineHeightValue, font_size_px: f64) -> String {
+    match lh {
+        LineHeightValue::Normal => "normal".to_string(),
+        LineHeightValue::Number(n) => format_num(*n, ""),
+        LineHeightValue::Length(lv) => length_to_css(lv, font_size_px),
+    }
+}
+
+fn z_index_str(z: &ZIndexValue) -> String {
+    match z {
+        ZIndexValue::Auto => "auto".to_string(),
+        ZIndexValue::Integer(n) => n.to_string(),
+    }
+}
+
+fn cursor_str(c: &CursorValue) -> String {
+    match c {
+        CursorValue::Auto => "auto",
+        CursorValue::Default => "default",
+        CursorValue::Pointer => "pointer",
+        CursorValue::Move => "move",
+        CursorValue::Text => "text",
+        CursorValue::Wait => "wait",
+        CursorValue::Crosshair => "crosshair",
+        CursorValue::Help => "help",
+        CursorValue::NotAllowed => "not-allowed",
+        CursorValue::Grab => "grab",
+        CursorValue::Grabbing => "grabbing",
+        CursorValue::ColResize => "col-resize",
+        CursorValue::RowResize => "row-resize",
+        CursorValue::NsResize => "ns-resize",
+        CursorValue::EwResize => "ew-resize",
+        CursorValue::None => "none",
+        CursorValue::Progress => "progress",
+        CursorValue::Cell => "cell",
+        CursorValue::Copy => "copy",
+        CursorValue::Alias => "alias",
+        CursorValue::AllScroll => "all-scroll",
+        CursorValue::ZoomIn => "zoom-in",
+        CursorValue::ZoomOut => "zoom-out",
+    }
+    .to_string()
+}
+
+fn text_transform_str(t: &TextTransformValue) -> String {
+    match t {
+        TextTransformValue::None => "none",
+        TextTransformValue::Uppercase => "uppercase",
+        TextTransformValue::Lowercase => "lowercase",
+        TextTransformValue::Capitalize => "capitalize",
+        TextTransformValue::FullWidth => "full-width",
+        TextTransformValue::FullSizeKana => "full-size-kana",
+    }
+    .to_string()
+}
+
+fn text_overflow_str(t: &TextOverflowValue) -> String {
+    match t {
+        TextOverflowValue::Clip => "clip".to_string(),
+        TextOverflowValue::Ellipsis => "ellipsis".to_string(),
+        TextOverflowValue::String(s) => s.clone(),
+    }
+}
+
+fn direction_str(d: &DirectionValue) -> String {
+    match d {
+        DirectionValue::Ltr => "ltr",
+        DirectionValue::Rtl => "rtl",
+    }
+    .to_string()
+}
+
+fn border_collapse_str(b: &BorderCollapseValue) -> String {
+    match b {
+        BorderCollapseValue::Separate => "separate",
+        BorderCollapseValue::Collapse => "collapse",
+    }
+    .to_string()
+}
+
+fn table_layout_str(t: &TableLayoutValue) -> String {
+    match t {
+        TableLayoutValue::Auto => "auto",
+        TableLayoutValue::Fixed => "fixed",
+    }
+    .to_string()
+}
+
+fn caption_side_str(c: &CaptionSideValue) -> String {
+    match c {
+        CaptionSideValue::Top => "top",
+        CaptionSideValue::Bottom => "bottom",
+    }
+    .to_string()
+}
+
+fn border_style_str(s: &BorderStyleValue) -> String {
+    match s {
+        BorderStyleValue::None => "none",
+        BorderStyleValue::Hidden => "hidden",
+        BorderStyleValue::Dotted => "dotted",
+        BorderStyleValue::Dashed => "dashed",
+        BorderStyleValue::Solid => "solid",
+        BorderStyleValue::Double => "double",
+        BorderStyleValue::Groove => "groove",
+        BorderStyleValue::Ridge => "ridge",
+        BorderStyleValue::Inset => "inset",
+        BorderStyleValue::Outset => "outset",
+    }
+    .to_string()
+}
+
+fn outline_style_str(s: &OutlineStyleValue) -> String {
+    match s {
+        OutlineStyleValue::None => "none",
+        OutlineStyleValue::Dotted => "dotted",
+        OutlineStyleValue::Dashed => "dashed",
+        OutlineStyleValue::Solid => "solid",
+        OutlineStyleValue::Double => "double",
+        OutlineStyleValue::Groove => "groove",
+        OutlineStyleValue::Ridge => "ridge",
+        OutlineStyleValue::Inset => "inset",
+        OutlineStyleValue::Outset => "outset",
+        OutlineStyleValue::Auto => "auto",
     }
     .to_string()
 }
