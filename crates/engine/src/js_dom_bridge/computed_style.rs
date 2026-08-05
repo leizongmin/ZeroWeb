@@ -25,12 +25,13 @@ use zero_style_system::{
     ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
     EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontSizeAdjustValue, FontVariantNumericValue,
     GridAutoFlowValue, HyphensComputedValue, ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue,
-    LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
-    OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue,
-    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
-    TextAlignLastValue, TextAlignValue, TextOverflowValue, TextShadowComputedValue, TextTransformValue,
-    TextWrapComputedValue, TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue,
-    VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
+    LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MaskModeComputedValue, MixBlendModeComputedValue,
+    ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue,
+    ScrollPadding, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue,
+    TableLayoutValue, TextAlignLastValue, TextAlignValue, TextOverflowValue, TextShadowComputedValue,
+    TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue, UnicodeBidiValue,
+    UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue,
+    ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -186,6 +187,16 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             let y = overflow_value_str(&style.overflow_y);
             if x == y { x } else { format!("{x} {y}") }
         }
+        // ── scroll-margin-* / scroll-padding-* / mask-mode（R2746）── scroll-snap 边距 + 遮罩模式。
+        "scroll-margin-top" => format_num(style.scroll_margin_top as f64, "px"),
+        "scroll-margin-right" => format_num(style.scroll_margin_right as f64, "px"),
+        "scroll-margin-bottom" => format_num(style.scroll_margin_bottom as f64, "px"),
+        "scroll-margin-left" => format_num(style.scroll_margin_left as f64, "px"),
+        "scroll-padding-top" => scroll_padding_to_css(&style.scroll_padding_top),
+        "scroll-padding-right" => scroll_padding_to_css(&style.scroll_padding_right),
+        "scroll-padding-bottom" => scroll_padding_to_css(&style.scroll_padding_bottom),
+        "scroll-padding-left" => scroll_padding_to_css(&style.scroll_padding_left),
+        "mask-mode" => mask_mode_str(&style.mask_mode),
         "text-align" => text_align_str(&style.text_align),
         "white-space" => white_space_str(&style.white_space),
         "font-weight" => font_weight_str(&style.font_weight),
@@ -1627,6 +1638,25 @@ fn timing_function_to_css(tf: &TimingFunctionValue) -> String {
             Some(StepPosition::None) => format!("steps({n}, jump-none)"),
         },
     }
+}
+
+/// scroll-padding-top/right/bottom/left：CSS Scroll Snap padding（`ScrollPadding`）。
+/// Auto→`auto`（初值）；Length(v)→`Npx`（f32→f64 经 [`format_num`]）。
+fn scroll_padding_to_css(p: &ScrollPadding) -> String {
+    match p {
+        ScrollPadding::Auto => "auto".to_string(),
+        ScrollPadding::Length(v) => format_num(*v as f64, "px"),
+    }
+}
+
+/// mask-mode：CSS Masking 遮罩模式（alpha/luminance/match-source，初值 match-source）。
+fn mask_mode_str(m: &MaskModeComputedValue) -> String {
+    match m {
+        MaskModeComputedValue::Alpha => "alpha",
+        MaskModeComputedValue::Luminance => "luminance",
+        MaskModeComputedValue::MatchSource => "match-source",
+    }
+    .to_string()
 }
 
 /// counter-increment / counter-reset：CSS Lists 计数器操作（`Vec<CounterActionValue>`）。

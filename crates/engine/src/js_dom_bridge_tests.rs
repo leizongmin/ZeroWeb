@@ -4276,6 +4276,30 @@ fn test_get_computed_style_overflow_shorthand() {
 }
 
 #[test]
+fn test_get_computed_style_scroll_mask() {
+    // R2746：getComputedStyle scroll-margin-*/scroll-padding-*（Scroll Snap 边距）+ mask-mode。
+    let html = "<html><body>\
+        <div id=\"sm\" style=\"scroll-margin-top: 10px; scroll-margin-right: 20px; scroll-margin-bottom: 30px; scroll-margin-left: 40px;\"></div>\
+        <div id=\"sp\" style=\"scroll-padding-top: 5px; scroll-padding-left: 35px;\"></div>\
+        <div id=\"mm\" style=\"mask-mode: alpha;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // scroll-margin：longhand 各 f32→px（CSS Scroll Snap 2，scroll-margin 简写未实现故逐 longhand 测）；默认 0px。
+    assert_eq!(computed_style_property(html, "#sm", "scroll-margin-top"), "10px");
+    assert_eq!(computed_style_property(html, "#sm", "scroll-margin-right"), "20px");
+    assert_eq!(computed_style_property(html, "#sm", "scroll-margin-bottom"), "30px");
+    assert_eq!(computed_style_property(html, "#sm", "scroll-margin-left"), "40px");
+    assert_eq!(computed_style_property(html, "#def", "scroll-margin-top"), "0px");
+    // scroll-padding：ScrollPadding Auto/Length；默认 auto。
+    assert_eq!(computed_style_property(html, "#sp", "scroll-padding-top"), "5px");
+    assert_eq!(computed_style_property(html, "#sp", "scroll-padding-left"), "35px");
+    assert_eq!(computed_style_property(html, "#def", "scroll-padding-top"), "auto");
+    // mask-mode：alpha/luminance/match-source（初值 match-source）。
+    assert_eq!(computed_style_property(html, "#mm", "mask-mode"), "alpha");
+    assert_eq!(computed_style_property(html, "#def", "mask-mode"), "match-source");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
