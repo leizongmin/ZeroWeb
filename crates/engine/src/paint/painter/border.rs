@@ -182,6 +182,9 @@ impl super::Painter {
         let url = match &style.border_image_source {
             BorderImageSourceComputedValue::None => return,
             BorderImageSourceComputedValue::Url(u) => u.clone(),
+            // gradient border-image-source：getComputedStyle 序列化已支持（R2753），但 paint 层将
+            // 渐变采样为 9-slice 边框图属复杂渲染（暂未实现），暂不绘制（等同 none，不 panic）。
+            BorderImageSourceComputedValue::Gradient(_) => return,
         };
 
         let bt = box_node.border_top;

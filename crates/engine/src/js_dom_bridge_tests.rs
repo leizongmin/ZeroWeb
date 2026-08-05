@@ -4468,6 +4468,34 @@ fn test_get_computed_style_radial_conic_gradient() {
 }
 
 #[test]
+fn test_get_computed_style_border_image_source_gradient() {
+    // R2753：border-image-source gradient 支持（旧仅 None/Url，gradient→none divergence；oracle 锚定）。
+    // currentcolor 经元素 color 解析（#g 设 color:blue → rgb(0,0,255)，匹配 oracle）。
+    let html = "<html><body>\
+        <div id=\"g\" style=\"color: blue; border-image-source: linear-gradient(-45deg, red, currentcolor);\"></div>\
+        <div id=\"r\" style=\"color: blue; border-image-source: radial-gradient(10px at 20px 30px, currentcolor, lime);\"></div>\
+        <div id=\"u\" style=\"border-image-source: url(b.png);\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // linear-gradient（含 -45deg 方向 + currentcolor→元素 color）。
+    assert_eq!(
+        computed_style_property(html, "#g", "border-image-source"),
+        "linear-gradient(-45deg, rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // radial-gradient（10px 半径 + at 20px 30px + currentcolor/lime）。
+    assert_eq!(
+        computed_style_property(html, "#r", "border-image-source"),
+        "radial-gradient(10px at 20px 30px, rgb(0, 0, 255), rgb(0, 255, 0))"
+    );
+    // url 仍正常；默认 none。
+    assert_eq!(
+        computed_style_property(html, "#u", "border-image-source"),
+        "url(\"b.png\")"
+    );
+    assert_eq!(computed_style_property(html, "#def", "border-image-source"), "none");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。

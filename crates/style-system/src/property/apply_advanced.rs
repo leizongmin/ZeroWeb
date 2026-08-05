@@ -1275,6 +1275,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                     zero_css_parser::values::BorderImageSourceValue::Url(url) => {
                         BorderImageSourceComputedValue::Url(url)
                     }
+                    zero_css_parser::values::BorderImageSourceValue::Gradient(g) => {
+                        BorderImageSourceComputedValue::Gradient(g)
+                    }
                 };
                 return true;
             }

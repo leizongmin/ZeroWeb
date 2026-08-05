@@ -11,11 +11,13 @@ pub enum BorderImageSourceValue {
     None,
     /// url(<string>) — 指定边框图片 URL。
     Url(String),
+    /// 渐变函数（linear/radial/conic-gradient，CSS Images）。
+    Gradient(GradientValue),
 }
 
 /// 解析 CSS border-image-source 属性值。
 ///
-/// 支持格式如 `"none"`、`"url(border.png)"`。
+/// 支持格式如 `"none"`、`"url(border.png)"`、`"linear-gradient(...)"` 等。
 pub fn parse_border_image_source(value: &str) -> Option<BorderImageSourceValue> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("none") {
@@ -33,6 +35,10 @@ pub fn parse_border_image_source(value: &str) -> Option<BorderImageSourceValue> 
             return None;
         }
         return Some(BorderImageSourceValue::Url(url.to_string()));
+    }
+    // 渐变函数（linear/radial/conic/repeating-*）。
+    if let Some(g) = parse_gradient(value) {
+        return Some(BorderImageSourceValue::Gradient(g));
     }
     None
 }

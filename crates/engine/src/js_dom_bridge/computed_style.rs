@@ -339,7 +339,7 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "font-size-adjust" => font_size_adjust_to_css(&style.font_size_adjust),
         // ── border-image-source / object-position / quotes（R2736）── 简单枚举收尾。
         // border-image-source：None/Url，复用 R2735 list-style-image 的 url() 引号模式。
-        "border-image-source" => border_image_source_to_css(&style.border_image_source),
+        "border-image-source" => border_image_source_to_css(&style.border_image_source, element_color, font_size_px),
         // object-position：单 <position>，复用 R2724 background-position 的逐层序列化（默认 Center→50% 50%）。
         "object-position" => bg_position_layer_to_css(&style.object_position),
         // quotes：None/Auto/Pairs（auto 初值；pairs→空格分隔双引号串，复用 css_string_to_css 转义）。
@@ -628,10 +628,24 @@ fn font_size_adjust_to_css(f: &FontSizeAdjustValue) -> String {
 /// border-image-source：CSS Border Image 源图。None→none；Url(s)→`url("<s>")`（复用 R2735
 /// list-style-image 的引号形式，对齐 Chromium）。补齐 border-image 子簇（slice/width/repeat/outset
 /// 仍残余，需 track-list/数值序列化）。
-fn border_image_source_to_css(s: &BorderImageSourceComputedValue) -> String {
+fn border_image_source_to_css(
+    s: &BorderImageSourceComputedValue,
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    use zero_css_parser::values::GradientValue;
     match s {
         BorderImageSourceComputedValue::None => "none".to_string(),
         BorderImageSourceComputedValue::Url(u) => format!("url(\"{u}\")"),
+        BorderImageSourceComputedValue::Gradient(GradientValue::Linear(g)) => {
+            linear_gradient_to_css(g, element_color, font_size_px)
+        }
+        BorderImageSourceComputedValue::Gradient(GradientValue::Radial(g)) => {
+            radial_gradient_to_css(g, element_color, font_size_px)
+        }
+        BorderImageSourceComputedValue::Gradient(GradientValue::Conic(g)) => {
+            conic_gradient_to_css(g, element_color, font_size_px)
+        }
     }
 }
 

@@ -139,6 +139,8 @@ pub enum BorderImageSourceComputedValue {
     None,
     /// url(<string>)。
     Url(String),
+    /// 渐变函数（linear/radial/conic-gradient，同 BackgroundImageComputedValue）。
+    Gradient(zero_css_parser::values::GradientValue),
 }
 
 /// CSS border-image-slice 单个分量的计算值。
