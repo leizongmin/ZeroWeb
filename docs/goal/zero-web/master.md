@@ -1622,6 +1622,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧两属性返 ''，新实现 None/Url 返真值（gradient 仍 ''，不劣化）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` margin + padding 简写序列化（本轮 R2748，getComputedStyle 维护态续）
+
+承接 R2747。补 `margin` + `padding` 简写（longhand 早覆 R2707；简写旧返 ''，`getComputedStyle(el).margin` 常查）。复用 R2738 `box_4_to_css` 做 CSSOM 4 值最小化（全等→1 值 / `top==bottom && right==left`→2 值 / `right==left`→3 值 / 否则 4 值），含 `LengthValue::Auto`→`auto`。无新 helper / 无新 import。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"margin"`+`"padding"` 臂（复用 `box_4_to_css`）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_margin_padding_shorthand`（margin 4 形态 `5px`/`5px 10px`/`5px 10px 15px`/`5px 10px 15px 20px` + auto + 默认 `0px`；padding `8px` + 默认 `0px`）。 |
+
+**对齐 Chromium**：margin/padding 简写 4 值最小化 + auto 与 Chromium getComputedStyle 一致。**至此常用简写覆盖 border-radius/overflow/margin/padding**（均 4 值最小化或两值逻辑，复用 box_4_to_css）。残余简写：border/font（复杂，3×4 / 多子属性组合）、outline（色序歧义待核）、transition/animation（解析层信息丢失 defer）、mask（复杂）、scroll-margin/padding（简写未实现）。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13373 passed / 0 failed / 74 ignored**，13372+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 无 struct FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧简写返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
