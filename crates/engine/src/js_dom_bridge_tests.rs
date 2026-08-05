@@ -1715,6 +1715,172 @@ fn test_event_target_and_event_spec_r2779() {
 }
 
 #[test]
+fn test_url_setters_r2780() {
+    // R2780：URL 组件 setter + 双向 searchParams 同步（host callback __zw_set_url_part → url crate setters）。
+    // 注册 __zw_parse_url + __zw_set_url_part 两回调（复用 production 纯函数）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.register_callback(
+        "__zw_parse_url",
+        Box::new(|args: &[String]| -> String {
+            let input = args.first().map(String::as_str).unwrap_or("");
+            let base = args.get(1).map(String::as_str);
+            parse_url_to_json(input, base)
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_set_url_part",
+        Box::new(|args: &[String]| -> String {
+            let prev = args.first().map(String::as_str).unwrap_or("");
+            let part = args.get(1).map(String::as_str).unwrap_or("");
+            let value = args.get(2).map(String::as_str).unwrap_or("");
+            set_url_part(prev, part, value)
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // pathname setter（SPA 路由高频）。
+    assert_eq!(
+        sandbox
+            .execute("var u = new URL('https://example.com/old'); u.pathname = '/new/path'; u.pathname + '|' + u.href")
+            .unwrap()
+            .value,
+        "/new/path|https://example.com/new/path"
+    );
+    // hash setter（SPA 路由）。
+    assert_eq!(
+        sandbox
+            .execute("var u = new URL('https://example.com/p'); u.hash = '#section'; u.hash + '|' + u.href")
+            .unwrap()
+            .value,
+        "#section|https://example.com/p#section"
+    );
+    // protocol setter（http→https）。
+    assert_eq!(
+        sandbox
+            .execute("var u = new URL('http://example.com/p'); u.protocol = 'https:'; u.protocol + '|' + u.href")
+            .unwrap()
+            .value,
+        "https:|https://example.com/p"
+    );
+    // hostname setter + host 联动（_load 全字段重载）。
+    assert_eq!(
+        sandbox
+            .execute("var u = new URL('https://old.example.com/p'); u.hostname = 'new.example.com'; u.hostname + '|' + u.host")
+            .unwrap()
+            .value,
+        "new.example.com|new.example.com"
+    );
+    // port setter（非默认）+ host/href 联动。
+    assert_eq!(
+        sandbox
+            .execute("var u = new URL('https://example.com/p'); u.port = '8443'; u.port + '|' + u.host + '|' + u.href")
+            .unwrap()
+            .value,
+        "8443|example.com:8443|https://example.com:8443/p"
+    );
+    // search setter → searchParams 同步（search→params 方向）。
+    assert_eq!(
+        sandbox
+            .execute("var u = new URL('https://example.com/p?a=1'); u.search = '?x=9&y=8'; u.searchParams.get('x') + '|' + u.searchParams.get('y')")
+            .unwrap()
+            .value,
+        "9|8"
+    );
+    // searchParams append → search/href 同步（params→search 方向，无递归）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var u = new URL('https://example.com/p'); u.searchParams.append('k', 'v'); u.search + '|' + u.href"
+            )
+            .unwrap()
+            .value,
+        "?k=v|https://example.com/p?k=v"
+    );
+    // searchParams 多次 set → search 反映最后值 + 无递归（多次 mutate 不爆栈）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var u = new URL('https://example.com/p'); u.searchParams.set('a','1'); u.searchParams.set('b','2'); u.searchParams.set('a','9'); u.searchParams.get('a') + '|' + u.search"
+            )
+            .unwrap()
+            .value,
+        "9|?a=9&b=2"
+    );
+    // searchParams delete → search 更新。
+    assert_eq!(
+        sandbox
+            .execute("var u = new URL('https://example.com/p?a=1&b=2'); u.searchParams.delete('a'); u.search")
+            .unwrap()
+            .value,
+        "?b=2"
+    );
+    // href setter（整体替换）+ searchParams 同步。
+    assert_eq!(
+        sandbox
+            .execute("var u = new URL('https://example.com/old'); u.href = 'http://other.test/x?z=5#w'; u.host + '|' + u.pathname + '|' + u.searchParams.get('z') + '|' + u.hash")
+            .unwrap()
+            .value,
+        "other.test|/x|5|#w"
+    );
+    // 无效 href setter 抛 TypeError（Url::parse 失败，spec 一致）。
+    assert_eq!(
+        sandbox
+            .execute("var u = new URL('https://example.com/'); try { u.href = 'not a valid url'; 'no-throw'; } catch (e) { e.name; }")
+            .unwrap()
+            .value,
+        "TypeError"
+    );
+    // searchParams 稳定实例（多次访问同对象，spec 一致）。
+    assert_eq!(
+        sandbox
+            .execute("var u = new URL('https://example.com/p'); u.searchParams === u.searchParams")
+            .unwrap()
+            .value,
+        "true"
+    );
+}
+
+#[test]
+fn test_set_url_part_rust_r2780() {
+    // R2780：set_url_part 纯函数单测（直调，验 url crate setter 正确性 + 非法 scheme 返空串不 panic）。
+    use super::*;
+    // pathname setter。
+    let r = set_url_part("https://example.com/old", "pathname", "/new/path");
+    assert!(r.contains("\"pathname\":\"/new/path\""), "pathname setter: {r}");
+    assert!(
+        r.contains("\"href\":\"https://example.com/new/path\""),
+        "href after pathname: {r}"
+    );
+    // search setter。
+    let r = set_url_part("https://example.com/p", "search", "?a=1&b=2");
+    assert!(r.contains("\"search\":\"?a=1&b=2\""), "search setter: {r}");
+    // hash 清除（空串）。
+    let r = set_url_part("https://example.com/p#sec", "hash", "");
+    assert!(r.contains("\"hash\":\"\""), "hash clear: {r}");
+    // port setter。
+    let r = set_url_part("https://example.com/p", "port", "8443");
+    assert!(r.contains("\"port\":\"8443\""), "port setter: {r}");
+    // href setter（整体替换）。
+    let r = set_url_part("https://example.com/old", "href", "http://other.test/x?q=1");
+    assert!(r.contains("\"host\":\"other.test\""), "href replace host: {r}");
+    // 非法 scheme 返空串（不 panic）。
+    assert_eq!(set_url_part("https://example.com/p", "protocol", "ht!tp"), "");
+    // 非法 href 返空串。
+    assert_eq!(set_url_part("https://example.com/p", "href", "not a url"), "");
+    // 未知 part 不改 URL（返回原序列化）。
+    let r = set_url_part("https://example.com/p", "unknownpart", "x");
+    assert!(
+        r.contains("\"href\":\"https://example.com/p\""),
+        "unknown part noop: {r}"
+    );
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，

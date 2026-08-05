@@ -1652,10 +1652,15 @@ pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
         },
         None => url::Url::parse(input),
     };
-    let url = match result {
-        Ok(u) => u,
-        Err(_) => return String::new(),
-    };
+    match result {
+        Ok(u) => serialize_url(&u),
+        Err(_) => String::new(),
+    }
+}
+
+/// `Url` → JSON 组件串（protocol/username/password/hostname/port/host/origin/pathname/search/hash/href）。
+/// `parse_url_to_json` 与 [`set_url_part`] 共用——后者 mutate `Url` 后同样序列化。
+fn serialize_url(url: &url::Url) -> String {
     let scheme = url.scheme();
     let hostname = url.host_str().unwrap_or("");
     let port = url.port().map(|p| p.to_string()).unwrap_or_default();
@@ -1678,6 +1683,68 @@ pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
         json_str(&url.fragment().map(|f| format!("#{f}")).unwrap_or_default()),
         json_str(url.as_str()),
     )
+}
+
+/// URL 组件 setter（供 JS shim URL 属性 setter 经 `__zw_set_url_part` 回调消费）。
+///
+/// 委托 `url` crate 的 `Url` setters（spec-correct：set_scheme/set_host/set_path/set_query 等，
+/// 含 percent-encoding / IDNA / 默认端口归一）。`prev_href` 为当前 href；`part` 标识组件（href 时
+/// 忽略 prev_href，整体重解析 value）；成功返新 JSON 串，失败返空串（shim 抛 TypeError，spec）。
+pub(crate) fn set_url_part(prev_href: &str, part: &str, value: &str) -> String {
+    let mut url = if part == "href" {
+        match url::Url::parse(value) {
+            Ok(u) => u,
+            Err(_) => return String::new(),
+        }
+    } else {
+        match url::Url::parse(prev_href) {
+            Ok(u) => u,
+            Err(_) => return String::new(),
+        }
+    };
+    let ok = match part {
+        "protocol" => url.set_scheme(value.trim_end_matches(':')).is_ok(),
+        "hostname" => url.set_host(Some(value)).is_ok(),
+        "host" => set_url_host_and_port(&mut url, value),
+        "port" => url.set_port(value.parse::<u16>().ok()).is_ok(),
+        "pathname" => {
+            url.set_path(value);
+            true
+        }
+        "search" => {
+            let q = value.strip_prefix('?').unwrap_or(value);
+            url.set_query(if q.is_empty() { None } else { Some(q) });
+            true
+        }
+        "hash" => {
+            let f = value.strip_prefix('#').unwrap_or(value);
+            url.set_fragment(if f.is_empty() { None } else { Some(f) });
+            true
+        }
+        "username" => url.set_username(value).is_ok(),
+        "password" => url
+            .set_password(if value.is_empty() { None } else { Some(value) })
+            .is_ok(),
+        _ => true, // 含 "href"（已整体重解析）
+    };
+    if ok { serialize_url(&url) } else { String::new() }
+}
+
+/// `host` setter 辅助：`host[:port]` 拆分（仅当 `:` 后全数字视为端口），分别 set_host + set_port。
+fn set_url_host_and_port(url: &mut url::Url, value: &str) -> bool {
+    let (host, port) = match value.rfind(':') {
+        Some(i) if !value[i + 1..].is_empty() && value[i + 1..].chars().all(|c| c.is_ascii_digit()) => {
+            (&value[..i], Some(&value[i + 1..]))
+        }
+        _ => (value, None),
+    };
+    if url.set_host(Some(host)).is_err() {
+        return false;
+    }
+    if let Some(p) = port {
+        let _ = url.set_port(p.parse::<u16>().ok());
+    }
+    true
 }
 
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
@@ -1724,6 +1791,19 @@ pub fn register_dom_callbacks(
             let input = args.first().map(String::as_str).unwrap_or("");
             let base = args.get(1).map(String::as_str);
             parse_url_to_json(input, base)
+        }),
+    );
+
+    // URL 属性 setter——组件可写（protocol/host/hostname/port/pathname/search/hash/username/password/
+    // href）。委托 [`set_url_part`]（spec-correct via `url` crate 的 Url setters）；失败返空串（shim 抛
+    // TypeError，spec）。`__zw_parse_url` 已注册时本回调方有意义（shim URL setter 依赖两者）。
+    sandbox.register_callback(
+        "__zw_set_url_part",
+        Box::new(|args: &[String]| -> String {
+            let prev = args.first().map(String::as_str).unwrap_or("");
+            let part = args.get(1).map(String::as_str).unwrap_or("");
+            let value = args.get(2).map(String::as_str).unwrap_or("");
+            set_url_part(prev, part, value)
         }),
     );
 

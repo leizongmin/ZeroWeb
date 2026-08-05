@@ -1005,24 +1005,29 @@
     if (typeof Symbol !== 'undefined') it[Symbol.iterator] = function () { return it; };
     return it;
   }
+  // URLSearchParams 查询串解析（'a=1&b=2' / '?a=1' → [[k,v],...]），constructor 与 _zw_reinit 共用。
+  function _zw_usp_parse(s) {
+    var out = [];
+    if (typeof s !== 'string' || !s) return out;
+    if (s.charAt(0) === '?') s = s.slice(1);
+    var parts = s.split('&');
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      if (p === '') continue;
+      var eq = p.indexOf('=');
+      var k = eq < 0 ? p : p.slice(0, eq);
+      var v = eq < 0 ? '' : p.slice(eq + 1);
+      out.push([decodeURIComponent(k.replace(/\+/g, ' ')), decodeURIComponent(v.replace(/\+/g, ' '))]);
+    }
+    return out;
+  }
   globalThis.URLSearchParams = globalThis.URLSearchParams || function URLSearchParams(init) {
     if (!(this instanceof URLSearchParams)) return new URLSearchParams(init);
     this._p = [];
+    this._onchange = null; // URL 父对象注册的变更回调（searchParams→search 同步，R2780）
     if (init == null) return;
     if (typeof init === 'string') {
-      var s = init;
-      if (s.charAt(0) === '?') s = s.slice(1);
-      if (s) {
-        var parts = s.split('&');
-        for (var i = 0; i < parts.length; i++) {
-          var p = parts[i];
-          if (p === '') continue;
-          var eq = p.indexOf('=');
-          var k = eq < 0 ? p : p.slice(0, eq);
-          var v = eq < 0 ? '' : p.slice(eq + 1);
-          this._p.push([decodeURIComponent(k.replace(/\+/g, ' ')), decodeURIComponent(v.replace(/\+/g, ' '))]);
-        }
-      }
+      this._p = _zw_usp_parse(init);
     } else if (typeof init === 'object') {
       if (typeof init.forEach === 'function') {
         var self = this;
@@ -1035,7 +1040,7 @@
     }
   };
   globalThis.URLSearchParams.prototype = {
-    append: function (n, v) { this._p.push([String(n), String(v)]); },
+    append: function (n, v) { this._p.push([String(n), String(v)]); this._changed(); },
     delete: function (n, v) {
       n = String(n);
       if (arguments.length >= 2) {
@@ -1044,6 +1049,7 @@
       } else {
         this._p = this._p.filter(function (p) { return p[0] !== n; });
       }
+      this._changed();
     },
     get: function (n) { n = String(n); for (var i = 0; i < this._p.length; i++) if (this._p[i][0] === n) return this._p[i][1]; return null; },
     getAll: function (n) { n = String(n); var r = []; for (var i = 0; i < this._p.length; i++) if (this._p[i][0] === n) r.push(this._p[i][1]); return r; },
@@ -1064,8 +1070,13 @@
       }
       if (!found) out.push([n, v]);
       this._p = out;
+      this._changed();
     },
-    sort: function () { this._p.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; }); },
+    sort: function () { this._p.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; }); this._changed(); },
+    // 内部：触发 _onchange（若注册）。供 append/delete/set/sort 复用（searchParams→search 同步）。
+    _changed: function () { if (typeof this._onchange === 'function') this._onchange(); },
+    // 内部：从查询串重载 _p（**不触发** _onchange）。URL.search/href setter 同步 searchParams 时调。
+    _zw_reinit: function (s) { this._p = _zw_usp_parse(s); },
     forEach: function (cb, thisArg) { for (var i = 0; i < this._p.length; i++) cb.call(thisArg, this._p[i][1], this._p[i][0], this); },
     entries: function () { return _zw_iter(this._p.map(function (p) { return [p[0], p[1]]; })); },
     keys: function () { return _zw_iter(this._p.map(function (p) { return p[0]; })); },
@@ -1083,11 +1094,12 @@
     globalThis.URLSearchParams.prototype[Symbol.iterator] = globalThis.URLSearchParams.prototype.entries;
   }
 
-  // URL——WHATWG URL 解析（protocol/host/hostname/port/pathname/search/hash/origin/href/searchParams）。
-  // location.href 操纵 / fetch 相对 URL / 链接解析高频。委托 host `__zw_parse_url(url, base)`（spec-correct
-  // via `url` crate：base 解析 / percent-encoding / IDNA / 默认端口归一），失败抛 TypeError（spec）；
-  // 未注册（纯 sandbox 无 host，如 reftest 无 JS 回调路径）抛 TypeError。**已知限制**：组件无 setter
-  // （只读属性；set 须重新构造，defer）；searchParams 与属性不双向同步（修改 searchParams 不更新 search）。
+  // URL——WHATWG URL 解析 + 组件 setter（R2778 解析 + R2780 setter/双向 searchParams 同步）。委托 host
+  // `__zw_parse_url`（解析）+ `__zw_set_url_part`（setter），均 spec-correct via `url` crate。组件存内部
+  // `_`-prefixed 字段，accessor 暴露读 + 写（setter 经 `_setPart` 回调重解析）。searchParams 为稳定实例 +
+  // `_onchange` 双向同步：mutate searchParams → 重设 search/href（`_applySearchParams`，内部直写字段不调
+  // `_setPart` 故无递归）；set search/href → `_zw_reinit` 同步 searchParams（不触发 `_onchange` 故无递归）。
+  // **已知限制**：href setter 按绝对 URL 重解析（无 base 上下文，相对值失败抛 TypeError，spec 边角）。
   function URL(url, base) {
     if (typeof __zw_parse_url !== 'function') {
       throw new TypeError('URL constructor requires a URL parser (__zw_parse_url not registered)');
@@ -1096,25 +1108,75 @@
     var raw = __zw_parse_url(String(url), base !== undefined ? String(base) : '');
     var p = raw ? JSON.parse(raw) : null;
     if (!p) throw new TypeError('Invalid URL: ' + url);
-    this.protocol = p.protocol;
-    this.username = p.username;
-    this.password = p.password;
-    this.hostname = p.hostname;
-    this.host = p.host;
-    this.port = p.port;
-    this.origin = p.origin;
-    this.pathname = p.pathname;
-    this.search = p.search;
-    this.hash = p.hash;
-    this.href = p.href;
-    // searchParams 复用 URLSearchParams（R2772），从 search 去前导 '?'。
-    var sp = p.search.charAt(0) === '?' ? p.search.slice(1) : p.search;
-    this.searchParams = new URLSearchParams(sp);
+    this._load(p);
+    // searchParams 稳定实例 + 注册 _onchange（mutate → 同步 search/href）。
+    var self = this;
+    this._sp = new URLSearchParams(p.search);
+    this._sp._onchange = function () { self._applySearchParams(); };
   }
-  URL.prototype = Object.create(Object.prototype);
-  URL.prototype.constructor = URL;
-  URL.prototype.toString = function () { return this.href; };
-  URL.prototype.toJSON = function () { return this.href; };
+  // 内部：从解析 JSON 加载全部组件字段（不含 searchParams）。
+  URL.prototype._load = function (p) {
+    this._protocol = p.protocol;
+    this._username = p.username;
+    this._password = p.password;
+    this._hostname = p.hostname;
+    this._host = p.host;
+    this._port = p.port;
+    this._origin = p.origin;
+    this._pathname = p.pathname;
+    this._search = p.search;
+    this._hash = p.hash;
+    this._href = p.href;
+  };
+  // 内部：组件 setter 入口——回调重解析 + 重载字段；search/href 变更时同步 searchParams（不触发其 _onchange）。
+  URL.prototype._setPart = function (part, value) {
+    if (typeof __zw_set_url_part !== 'function') {
+      throw new TypeError('URL setter requires __zw_set_url_part');
+    }
+    var raw = __zw_set_url_part(this._href, part, String(value));
+    if (!raw) throw new TypeError('Invalid URL ' + part + ': ' + value);
+    var p = JSON.parse(raw);
+    this._load(p);
+    // search/href 改变可能变 query → 同步 searchParams（_zw_reinit 不触发 _onchange，无递归）。
+    if (part === 'search' || part === 'href') {
+      this._sp._zw_reinit(p.search);
+    }
+  };
+  // 内部：searchParams 变更回调——把 params.toString() 设回 search/href（直写字段，不调 _setPart，无递归）。
+  URL.prototype._applySearchParams = function () {
+    if (typeof __zw_set_url_part !== 'function') return;
+    var q = this._sp.toString();
+    var raw = __zw_set_url_part(this._href, 'search', q ? '?' + q : '');
+    if (!raw) return;
+    var p = JSON.parse(raw);
+    this._search = p.search;
+    this._href = p.href; // mutate query 仅影响 search + href
+  };
+  // accessor 定义：读返内部字段，写经 _setPart。
+  function _urlAcc(field) {
+    return {
+      get: function () { return this['_' + field]; },
+      set: function (v) { this._setPart(field, v); },
+      configurable: true,
+      enumerable: true,
+    };
+  }
+  var _urlFields = ['protocol', 'username', 'password', 'hostname', 'host', 'port', 'pathname', 'search', 'hash', 'href'];
+  for (var _i = 0; _i < _urlFields.length; _i++) {
+    Object.defineProperty(URL.prototype, _urlFields[_i], _urlAcc(_urlFields[_i]));
+  }
+  Object.defineProperty(URL.prototype, 'origin', {
+    get: function () { return this._origin; },
+    configurable: true,
+    enumerable: true,
+  });
+  Object.defineProperty(URL.prototype, 'searchParams', {
+    get: function () { return this._sp; },
+    configurable: true,
+    enumerable: true,
+  });
+  URL.prototype.toString = function () { return this._href; };
+  URL.prototype.toJSON = function () { return this._href; };
   // canParse 静态——解析成功 true / 失败 false（不抛）。
   URL.canParse = function (url, base) {
     if (typeof __zw_parse_url !== 'function') return false;
