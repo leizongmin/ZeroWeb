@@ -3205,6 +3205,37 @@ fn test_get_computed_style_contain() {
 }
 
 #[test]
+fn test_get_computed_style_filter() {
+    // R2718：getComputedStyle filter 序列化（CSS Filter Effects 函数列表，空格分隔）。
+    let html = "<html><body>\
+        <div id=\"none\" style=\"filter: none;\"></div>\
+        <div id=\"blur\" style=\"filter: blur(5px);\"></div>\
+        <div id=\"combo\" style=\"filter: brightness(1.5) contrast(0.8);\"></div>\
+        <div id=\"hue\" style=\"filter: hue-rotate(90deg);\"></div>\
+        <div id=\"shadow\" style=\"filter: drop-shadow(2px 4px 6px red);\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // none（显式与默认均为空 Vec）。
+    assert_eq!(computed_style_property(html, "#none", "filter"), "none");
+    // 单函数：blur 长度为 px。
+    assert_eq!(computed_style_property(html, "#blur", "filter"), "blur(5px)");
+    // 多函数组合：空格分隔，数值函数无单位。
+    assert_eq!(
+        computed_style_property(html, "#combo", "filter"),
+        "brightness(1.5) contrast(0.8)"
+    );
+    // hue-rotate 角度为 deg。
+    assert_eq!(computed_style_property(html, "#hue", "filter"), "hue-rotate(90deg)");
+    // drop-shadow：3 长度 px + 颜色解析为 rgb()。
+    assert_eq!(
+        computed_style_property(html, "#shadow", "filter"),
+        "drop-shadow(2px 4px 6px rgb(255, 0, 0))"
+    );
+    // 默认 none。
+    assert_eq!(computed_style_property(html, "#def", "filter"), "none");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。

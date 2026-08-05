@@ -6,16 +6,16 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::{
-    AlignmentValue, BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue,
-    FontStyleValue, FontWeightValue, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue,
-    PositionValue, TransformFunction, TransformValue, VisibilityValue,
+    AlignmentValue, BoxSizingValue, ClearValue, ColorValue, DisplayValue, FlexDirectionValue, FlexWrapValue,
+    FloatValue, FontStyleValue, FontWeightValue, LengthValue, ListStylePositionValue, ListStyleTypeValue,
+    OverflowValue, PositionValue, TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_style_system::{
     BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle, ContainComputedValue,
-    CursorValue, DirectionValue, FlexBasisValue, IsolationValue, LineHeightValue, MixBlendModeComputedValue,
-    ObjectFitComputedValue, OutlineStyleValue, PointerEventsValue, StyleSystem, TableLayoutValue,
-    TextAlignValue, TextOverflowValue, TextTransformValue, UserSelectValue, WhiteSpaceValue,
-    WritingModeValue, ZIndexValue,
+    CursorValue, DirectionValue, FilterComputedValue, FlexBasisValue, IsolationValue, LineHeightValue,
+    MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, PointerEventsValue, StyleSystem,
+    TableLayoutValue, TextAlignValue, TextOverflowValue, TextTransformValue, UserSelectValue,
+    WhiteSpaceValue, WritingModeValue, ZIndexValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 
@@ -77,7 +77,7 @@ pub fn lookup_computed_property(
 ///   （font-family/flex-direction/wrap/justify-content/align-items/align-self/writing-mode/object-fit/
 ///   isolation/mix-blend-mode/pointer-events/user-select/list-style-type·position）+ 数值族
 ///   （flex-grow/flex-shrink/order/flex-basis/aspect-ratio）+ Transforms（transform 函数列表 /
-///   transform-origin 两长度）+ contain（关键字 / 位掩码组合）。未覆盖属性返 ''。
+///   transform-origin 两长度）+ contain（关键字 / 位掩码组合）+ filter（函数列表）。未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -240,6 +240,8 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         }
         // ── contain（R2717）── CSS Containment L1/L2 计算值（关键字 / 位掩码组合）。
         "contain" => contain_to_css(&style.contain),
+        // ── filter（R2718）── CSS Filter Effects 函数列表（空 Vec / None → none）。
+        "filter" => filter_to_css(&style.filter, element_color),
         _ => String::new(),
     }
 }
@@ -872,6 +874,46 @@ fn contain_to_css(c: &ContainComputedValue) -> String {
                 parts.join(" ")
             }
         }
+    }
+}
+
+/// filter：按 CSS Filter Effects 计算值序列化为**函数列表**（none / 空格分隔函数）。
+///
+/// 空 `Vec`（= `filter: none`，见 `parse_filter_list`）→ `none`；否则各函数空格连接。
+/// 长度函数 `blur` 为 px；数值函数（brightness/contrast/...）无单位；`hue-rotate` 为 `deg`；
+/// `drop-shadow` 颜色经 [`crate::resolve_color_current`] 解析（currentcolor→元素计算 color）后串行化。
+fn filter_to_css(filters: &[FilterComputedValue], element_color: &ColorValue) -> String {
+    if filters.is_empty() {
+        return "none".to_string();
+    }
+    filters
+        .iter()
+        .map(|f| filter_function_to_css(f, element_color))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// 序列化单个 [`FilterComputedValue`] 函数。
+fn filter_function_to_css(f: &FilterComputedValue, element_color: &ColorValue) -> String {
+    use FilterComputedValue as F;
+    match f {
+        F::None => "none".to_string(),
+        F::Blur(n) => format!("blur({})", format_num(*n as f64, "px")),
+        F::Brightness(n) => format!("brightness({})", format_num(*n as f64, "")),
+        F::Contrast(n) => format!("contrast({})", format_num(*n as f64, "")),
+        F::Grayscale(n) => format!("grayscale({})", format_num(*n as f64, "")),
+        F::HueRotate(n) => format!("hue-rotate({}deg)", format_num(*n as f64, "")),
+        F::Invert(n) => format!("invert({})", format_num(*n as f64, "")),
+        F::Opacity(n) => format!("opacity({})", format_num(*n as f64, "")),
+        F::Saturate(n) => format!("saturate({})", format_num(*n as f64, "")),
+        F::Sepia(n) => format!("sepia({})", format_num(*n as f64, "")),
+        F::DropShadow(x, y, blur, color) => format!(
+            "drop-shadow({} {} {} {})",
+            format_num(*x as f64, "px"),
+            format_num(*y as f64, "px"),
+            format_num(*blur as f64, "px"),
+            color_to_css(&crate::resolve_color_current(color, element_color)),
+        ),
     }
 }
 
