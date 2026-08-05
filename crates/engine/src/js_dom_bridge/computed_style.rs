@@ -21,15 +21,15 @@ use zero_style_system::{
     BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue, CaretColorComputedValue,
     ColumnCountComputedValue, ColumnFillComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue,
     ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue, ContainerType,
-    ContentComputedValue, ContentVisibilityValue, CursorValue, DirectionValue, EmptyCellsComputedValue,
-    FilterComputedValue, FlexBasisValue, FontSizeAdjustValue, FontVariantNumericValue, GridAutoFlowValue,
-    HyphensComputedValue, ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue,
-    LineHeightValue, ListStyleImageComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
-    OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue,
-    ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
-    TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue,
-    TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue,
-    WordBreakValue, WritingModeValue, ZIndexValue,
+    ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue, DirectionValue,
+    EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontSizeAdjustValue, FontVariantNumericValue,
+    GridAutoFlowValue, HyphensComputedValue, ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue,
+    LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
+    OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue,
+    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
+    TextAlignLastValue, TextAlignValue, TextOverflowValue, TextShadowComputedValue, TextTransformValue,
+    TextWrapComputedValue, TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue,
+    VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -343,6 +343,10 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "content-visibility" => content_visibility_str(&style.content_visibility),
         "contain-intrinsic-width" => opt_length_to_css(&style.contain_intrinsic_width, font_size_px),
         "contain-intrinsic-height" => opt_length_to_css(&style.contain_intrinsic_height, font_size_px),
+        // ── counter-increment / counter-reset（R2742）── Vec<CounterActionValue>，空→none；
+        // 否则空格分隔 `name integer` 列表（value=None 时取默认：increment=1 / reset=0）。
+        "counter-increment" => counter_action_to_css(&style.counter_increment, 1),
+        "counter-reset" => counter_action_to_css(&style.counter_reset, 0),
         _ => String::new(),
     }
 }
@@ -1488,6 +1492,20 @@ fn box_4_to_css(
     } else {
         format!("{t} {r} {b} {l}")
     }
+}
+
+/// counter-increment / counter-reset：CSS Lists 计数器操作（`Vec<CounterActionValue>`）。
+/// 空列表→`none`；否则空格分隔 `name integer` 列表（对齐 Chromium；`value=None` 取 `default`
+/// —— increment 默认 1 / reset 默认 0）。多计数器空格连接（非逗号，同 CSS Lists §4.1）。
+fn counter_action_to_css(actions: &[CounterActionValue], default: i64) -> String {
+    if actions.is_empty() {
+        return "none".to_string();
+    }
+    actions
+        .iter()
+        .map(|a| format!("{} {}", a.name, a.value.unwrap_or(default)))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// content-visibility：CSS Containment 2 可见性（Visible/Hidden/Auto，初值 visible）。

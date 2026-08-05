@@ -4113,6 +4113,27 @@ fn test_get_computed_style_containment() {
 }
 
 #[test]
+fn test_get_computed_style_counter_actions() {
+    // R2742：getComputedStyle counter-increment / counter-reset 序列化。
+    let html = "<html><body>\
+        <div id=\"ci\" style=\"counter-increment: h1;\"></div>\
+        <div id=\"ci2\" style=\"counter-increment: c 2;\"></div>\
+        <div id=\"cr\" style=\"counter-reset: sec;\"></div>\
+        <div id=\"crm\" style=\"counter-reset: a 5 b 3;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // counter-increment：空格分隔 name integer；value 省略→默认 1。
+    assert_eq!(computed_style_property(html, "#ci", "counter-increment"), "h1 1");
+    assert_eq!(computed_style_property(html, "#ci2", "counter-increment"), "c 2");
+    // counter-reset：value 省略→默认 0；多计数器空格连接。
+    assert_eq!(computed_style_property(html, "#cr", "counter-reset"), "sec 0");
+    assert_eq!(computed_style_property(html, "#crm", "counter-reset"), "a 5 b 3");
+    // 默认空→none。
+    assert_eq!(computed_style_property(html, "#def", "counter-increment"), "none");
+    assert_eq!(computed_style_property(html, "#def", "counter-reset"), "none");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
