@@ -180,6 +180,12 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "box-sizing" => box_sizing_str(&style.box_sizing),
         "overflow-x" => overflow_value_str(&style.overflow_x),
         "overflow-y" => overflow_value_str(&style.overflow_y),
+        // ── overflow 简写（R2745）── overflow-x/y longhand 早覆；x==y→单值，否则 "x y"（CSS Overflow 3）。
+        "overflow" => {
+            let x = overflow_value_str(&style.overflow_x);
+            let y = overflow_value_str(&style.overflow_y);
+            if x == y { x } else { format!("{x} {y}") }
+        }
         "text-align" => text_align_str(&style.text_align),
         "white-space" => white_space_str(&style.white_space),
         "font-weight" => font_weight_str(&style.font_weight),
