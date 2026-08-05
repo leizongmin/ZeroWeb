@@ -330,6 +330,14 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         // Chromium/WPT 格式：color 在前（解析 rgb/rgba）+ 全长度（box-shadow 4 长 + inset 末；text-shadow 3 长）。
         "box-shadow" => box_shadow_to_css(&style.box_shadow, element_color),
         "text-shadow" => text_shadow_to_css(&style.text_shadow, element_color),
+        // ── Grid 轨道簇（R2740）── Option<String> 存原始 specified 值（apply.rs 未展开 repeat()，
+        // 故 repeat() diverge Chromium 展开，pre-existing 解析限制；非 repeat 的固定/fr/minmax 一致）。
+        // grid-template-* 初始 none；grid-auto-* 初始 auto（CSS Grid §6.1/§6.4）。
+        "grid-template-columns" => opt_css_string(&style.grid_template_columns, "none"),
+        "grid-template-rows" => opt_css_string(&style.grid_template_rows, "none"),
+        "grid-template-areas" => opt_css_string(&style.grid_template_areas, "none"),
+        "grid-auto-columns" => opt_css_string(&style.grid_auto_columns, "auto"),
+        "grid-auto-rows" => opt_css_string(&style.grid_auto_rows, "auto"),
         _ => String::new(),
     }
 }
@@ -1475,6 +1483,14 @@ fn box_4_to_css(
     } else {
         format!("{t} {r} {b} {l}")
     }
+}
+
+/// 把 `Option<String>`（grid-template-* / grid-auto-* 等存原始 specified 串的字段）序列化为 CSS：
+/// `Some(s)`→原样返回；`None`→`default`（grid-template-*/areas 初值 `none`，grid-auto-* 初值 `auto`）。
+/// **已知限制**：存的是 specified 原文，`repeat()` 不展开（Chromium getComputedStyle 展开）—— pre-existing
+/// 解析层限制（apply.rs 直接 `value.to_string()`），非 repeat 的固定/fr/minmax 轨道与 Chromium 一致。
+fn opt_css_string(s: &Option<String>, default: &str) -> String {
+    s.clone().unwrap_or_else(|| default.to_string())
 }
 
 /// box-shadow：CSS Box Shadow 计算值序列化。空列表→`none`；否则每个阴影按 Chromium/WPT

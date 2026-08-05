@@ -4046,6 +4046,43 @@ fn test_get_computed_style_box_text_shadow() {
 }
 
 #[test]
+fn test_get_computed_style_grid_tracks() {
+    // R2740：getComputedStyle grid 轨道簇序列化（Option<String> 存原始 specified 值）。
+    let html = "<html><body>\
+        <div id=\"gtc\" style=\"grid-template-columns: 1fr 1fr 1fr;\"></div>\
+        <div id=\"gtc2\" style=\"grid-template-columns: 100px minmax(200px, 1fr);\"></div>\
+        <div id=\"gtr\" style=\"grid-template-rows: 50px 50px;\"></div>\
+        <div id=\"gac\" style=\"grid-auto-columns: 200px;\"></div>\
+        <div id=\"gar\" style=\"grid-auto-rows: 100px;\"></div>\
+        <div id='gta' style='grid-template-areas: \"a b\" \"c d\";'></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // grid-template-columns/rows：Some→原样 specified 串；None→none（CSS 初值）。
+    assert_eq!(
+        computed_style_property(html, "#gtc", "grid-template-columns"),
+        "1fr 1fr 1fr"
+    );
+    assert_eq!(
+        computed_style_property(html, "#gtc2", "grid-template-columns"),
+        "100px minmax(200px, 1fr)"
+    );
+    assert_eq!(computed_style_property(html, "#gtr", "grid-template-rows"), "50px 50px");
+    // grid-auto-columns/rows：Some→原样；None→auto（CSS Grid §6.4 初值，非 none）。
+    assert_eq!(computed_style_property(html, "#gac", "grid-auto-columns"), "200px");
+    assert_eq!(computed_style_property(html, "#gar", "grid-auto-rows"), "100px");
+    // grid-template-areas：Some→原样 specified 串（含引号）。
+    assert_eq!(
+        computed_style_property(html, "#gta", "grid-template-areas"),
+        "\"a b\" \"c d\""
+    );
+    // 默认：grid-template-* → none；grid-auto-* → auto。
+    assert_eq!(computed_style_property(html, "#def", "grid-template-columns"), "none");
+    assert_eq!(computed_style_property(html, "#def", "grid-auto-columns"), "auto");
+    assert_eq!(computed_style_property(html, "#def", "grid-auto-rows"), "auto");
+    assert_eq!(computed_style_property(html, "#def", "grid-template-areas"), "none");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
