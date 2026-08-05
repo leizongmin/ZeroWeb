@@ -6,13 +6,15 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::{
-    BoxSizingValue, ClearValue, DisplayValue, FloatValue, FontStyleValue, FontWeightValue, LengthValue,
-    OverflowValue, PositionValue, VisibilityValue,
+    AlignmentValue, BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue,
+    FontStyleValue, FontWeightValue, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue,
+    PositionValue, VisibilityValue,
 };
 use zero_style_system::{
     BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle, CursorValue, DirectionValue,
-    LineHeightValue, OutlineStyleValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue,
-    TextTransformValue, WhiteSpaceValue, ZIndexValue,
+    IsolationValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
+    PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue, TextTransformValue,
+    UserSelectValue, WhiteSpaceValue, WritingModeValue, ZIndexValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 
@@ -70,7 +72,9 @@ pub fn lookup_computed_property(
 ///   font-size/top/right/bottom/left/gap/letter-spacing/word-spacing/text-indent 等，经
 ///   [`length_to_css`]）+ 关键字/枚举族（float/clear/box-sizing/overflow-x·y/text-align/
 ///   white-space/font-weight/font-style/line-height/z-index/cursor/text-transform/text-overflow/
-///   direction/border-collapse/table-layout/caption-side/border-*-style/outline-style）。未覆盖属性返 ''。
+///   direction/border-collapse/table-layout/caption-side/border-*-style/outline-style）+ 复合/列表族
+///   （font-family/flex-direction/wrap/justify-content/align-items/align-self/writing-mode/object-fit/
+///   isolation/mix-blend-mode/pointer-events/user-select/list-style-type·position）。未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -204,6 +208,21 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "border-bottom-style" => border_style_str(&style.border_bottom_style),
         "border-left-style" => border_style_str(&style.border_left_style),
         "outline-style" => outline_style_str(&style.outline_style),
+        // ── 复合枚举/列表族（R2710）──
+        "font-family" => font_family_to_css(&style.font_family),
+        "flex-direction" => flex_direction_str(&style.flex_direction),
+        "flex-wrap" => flex_wrap_str(&style.flex_wrap),
+        "justify-content" => alignment_str(&style.justify_content),
+        "align-items" => alignment_str(&style.align_items),
+        "align-self" => alignment_str(&style.align_self),
+        "writing-mode" => writing_mode_str(&style.writing_mode),
+        "object-fit" => object_fit_str(&style.object_fit),
+        "isolation" => isolation_str(&style.isolation),
+        "mix-blend-mode" => mix_blend_mode_str(&style.mix_blend_mode),
+        "pointer-events" => pointer_events_str(&style.pointer_events),
+        "user-select" => user_select_str(&style.user_select),
+        "list-style-type" => list_style_type_str(&style.list_style_type),
+        "list-style-position" => list_style_position_str(&style.list_style_position),
         _ => String::new(),
     }
 }
@@ -540,6 +559,208 @@ fn outline_style_str(s: &OutlineStyleValue) -> String {
         OutlineStyleValue::Inset => "inset",
         OutlineStyleValue::Outset => "outset",
         OutlineStyleValue::Auto => "auto",
+    }
+    .to_string()
+}
+
+// ── 复合枚举/列表族序列化（R2710）──
+
+/// font-family：逗号分隔，每个族名按 CSS ident 规则决定是否加引号（对齐 Chromium：
+/// `"Helvetica Neue", Arial, sans-serif`）。空 Vec → ''（UA 默认字体未入 computed）。
+fn font_family_to_css(families: &[String]) -> String {
+    families
+        .iter()
+        .map(|f| quote_font_family(f))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// 族名是合法 CSS 标识符（非空、首字符非数字/`-数字`、仅 ident 字符）→ 不引号；否则双引号
+///（转义内嵌 `"`、`\`）。对齐 real browser 的 font-family 序列化。
+fn quote_font_family(name: &str) -> String {
+    if is_css_ident(name) {
+        name.to_string()
+    } else {
+        let escaped = name.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{escaped}\"")
+    }
+}
+
+/// 判断字符串是否为合法 CSS 标识符（font-family 不引号条件）。非空；首字符为字母/下划线/
+/// 连字符（但非 `-` 后跟数字，如 `-1`）；其余字符为字母/数字/`-`/`_`。
+fn is_css_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    // 首字符：字母/_；或 `-` 后非数字（CSS：`-` 须后跟 ident 字符，不能直接跟数字）。
+    let first_ok = first.is_ascii_alphabetic()
+        || first == '_'
+        || (first == '-' && !matches!(chars.clone().next(), Some(c) if c.is_ascii_digit()));
+    first_ok && chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn flex_direction_str(d: &FlexDirectionValue) -> String {
+    match d {
+        FlexDirectionValue::Row => "row",
+        FlexDirectionValue::RowReverse => "row-reverse",
+        FlexDirectionValue::Column => "column",
+        FlexDirectionValue::ColumnReverse => "column-reverse",
+    }
+    .to_string()
+}
+
+fn flex_wrap_str(w: &FlexWrapValue) -> String {
+    match w {
+        FlexWrapValue::Nowrap => "nowrap",
+        FlexWrapValue::Wrap => "wrap",
+        FlexWrapValue::WrapReverse => "wrap-reverse",
+    }
+    .to_string()
+}
+
+/// justify-content / align-items / align-self 共用（CSS Box Align 3）。
+fn alignment_str(a: &AlignmentValue) -> String {
+    match a {
+        AlignmentValue::Auto => "auto",
+        AlignmentValue::Normal => "normal",
+        AlignmentValue::FlexStart => "flex-start",
+        AlignmentValue::FlexEnd => "flex-end",
+        AlignmentValue::Center => "center",
+        AlignmentValue::SpaceBetween => "space-between",
+        AlignmentValue::SpaceAround => "space-around",
+        AlignmentValue::SpaceEvenly => "space-evenly",
+        AlignmentValue::Stretch => "stretch",
+        AlignmentValue::Start => "start",
+        AlignmentValue::End => "end",
+        AlignmentValue::Baseline => "baseline",
+    }
+    .to_string()
+}
+
+fn writing_mode_str(w: &WritingModeValue) -> String {
+    match w {
+        WritingModeValue::HorizontalTb => "horizontal-tb",
+        WritingModeValue::VerticalRl => "vertical-rl",
+        WritingModeValue::VerticalLr => "vertical-lr",
+    }
+    .to_string()
+}
+
+fn object_fit_str(o: &ObjectFitComputedValue) -> String {
+    match o {
+        ObjectFitComputedValue::Fill => "fill",
+        ObjectFitComputedValue::Contain => "contain",
+        ObjectFitComputedValue::Cover => "cover",
+        ObjectFitComputedValue::None => "none",
+        ObjectFitComputedValue::ScaleDown => "scale-down",
+    }
+    .to_string()
+}
+
+fn isolation_str(i: &IsolationValue) -> String {
+    match i {
+        IsolationValue::Auto => "auto",
+        IsolationValue::Isolate => "isolate",
+    }
+    .to_string()
+}
+
+fn mix_blend_mode_str(m: &MixBlendModeComputedValue) -> String {
+    match m {
+        MixBlendModeComputedValue::Normal => "normal",
+        MixBlendModeComputedValue::Multiply => "multiply",
+        MixBlendModeComputedValue::Screen => "screen",
+        MixBlendModeComputedValue::Overlay => "overlay",
+        MixBlendModeComputedValue::Darken => "darken",
+        MixBlendModeComputedValue::Lighten => "lighten",
+        MixBlendModeComputedValue::ColorDodge => "color-dodge",
+        MixBlendModeComputedValue::ColorBurn => "color-burn",
+        MixBlendModeComputedValue::HardLight => "hard-light",
+        MixBlendModeComputedValue::SoftLight => "soft-light",
+        MixBlendModeComputedValue::Difference => "difference",
+        MixBlendModeComputedValue::Exclusion => "exclusion",
+        MixBlendModeComputedValue::Hue => "hue",
+        MixBlendModeComputedValue::Saturation => "saturation",
+        MixBlendModeComputedValue::Color => "color",
+        MixBlendModeComputedValue::Luminosity => "luminosity",
+    }
+    .to_string()
+}
+
+fn pointer_events_str(p: &PointerEventsValue) -> String {
+    match p {
+        PointerEventsValue::Auto => "auto",
+        PointerEventsValue::None => "none",
+        PointerEventsValue::VisiblePainted => "visiblePainted",
+        PointerEventsValue::VisibleFill => "visibleFill",
+        PointerEventsValue::VisibleStroke => "visibleStroke",
+        PointerEventsValue::Visible => "visible",
+        PointerEventsValue::Painted => "painted",
+        PointerEventsValue::Fill => "fill",
+        PointerEventsValue::Stroke => "stroke",
+        PointerEventsValue::All => "all",
+        PointerEventsValue::Inherit => "inherit",
+    }
+    .to_string()
+}
+
+fn user_select_str(u: &UserSelectValue) -> String {
+    match u {
+        UserSelectValue::Auto => "auto",
+        UserSelectValue::Text => "text",
+        UserSelectValue::None => "none",
+        UserSelectValue::All => "all",
+        UserSelectValue::Contain => "contain",
+    }
+    .to_string()
+}
+
+/// list-style-type：~28 builtin 关键字 + Custom(name)（`@counter-style` 名，不引号）+
+/// String(s)（`<string>` 标记，双引号）。对齐 Chromium getComputedStyle 序列化。
+fn list_style_type_str(t: &ListStyleTypeValue) -> String {
+    match t {
+        ListStyleTypeValue::Disc => "disc".into(),
+        ListStyleTypeValue::Circle => "circle".into(),
+        ListStyleTypeValue::Square => "square".into(),
+        ListStyleTypeValue::Decimal => "decimal".into(),
+        ListStyleTypeValue::DecimalLeadingZero => "decimal-leading-zero".into(),
+        ListStyleTypeValue::LowerRoman => "lower-roman".into(),
+        ListStyleTypeValue::UpperRoman => "upper-roman".into(),
+        ListStyleTypeValue::LowerAlpha => "lower-alpha".into(),
+        ListStyleTypeValue::UpperAlpha => "upper-alpha".into(),
+        ListStyleTypeValue::LowerGreek => "lower-greek".into(),
+        ListStyleTypeValue::Persian => "persian".into(),
+        ListStyleTypeValue::Armenian => "armenian".into(),
+        ListStyleTypeValue::LowerArmenian => "lower-armenian".into(),
+        ListStyleTypeValue::Georgian => "georgian".into(),
+        ListStyleTypeValue::Hebrew => "hebrew".into(),
+        ListStyleTypeValue::ArabicIndic => "arabic-indic".into(),
+        ListStyleTypeValue::Devanagari => "devanagari".into(),
+        ListStyleTypeValue::Bengali => "bengali".into(),
+        ListStyleTypeValue::Gujarati => "gujarati".into(),
+        ListStyleTypeValue::Gurmukhi => "gurmukhi".into(),
+        ListStyleTypeValue::Kannada => "kannada".into(),
+        ListStyleTypeValue::Malayalam => "malayalam".into(),
+        ListStyleTypeValue::Tamil => "tamil".into(),
+        ListStyleTypeValue::Telugu => "telugu".into(),
+        ListStyleTypeValue::Lao => "lao".into(),
+        ListStyleTypeValue::Khmer => "khmer".into(),
+        ListStyleTypeValue::Myanmar => "myanmar".into(),
+        ListStyleTypeValue::CjkDecimal => "cjk-decimal".into(),
+        ListStyleTypeValue::None => "none".into(),
+        ListStyleTypeValue::Custom(name) => name.clone(),
+        ListStyleTypeValue::String(s) => {
+            let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("\"{escaped}\"")
+        }
+    }
+}
+
+fn list_style_position_str(p: &ListStylePositionValue) -> String {
+    match p {
+        ListStylePositionValue::Outside => "outside",
+        ListStylePositionValue::Inside => "inside",
     }
     .to_string()
 }

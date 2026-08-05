@@ -3052,6 +3052,61 @@ fn test_get_computed_style_keywords() {
 }
 
 #[test]
+fn test_get_computed_style_composite() {
+    // R2710：getComputedStyle 复合/列表族（font-family/flex-*/justify-content/align-*
+    // /writing-mode/object-fit/isolation/mix-blend-mode/pointer-events/user-select/list-style-*）。
+    let html = "<html><body>\
+        <div id=\"c\" style=\"\
+            font-family: 'Helvetica Neue', Arial, sans-serif; \
+            flex-direction: column; flex-wrap: wrap; \
+            justify-content: space-between; align-items: center; align-self: flex-end; \
+            writing-mode: vertical-rl; object-fit: cover; isolation: isolate; \
+            mix-blend-mode: multiply; pointer-events: none; user-select: all; \
+        \"></div>\
+        <ul id=\"l\" style=\"list-style-type: lower-alpha; list-style-position: inside;\
+            \"><li></li></ul>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+
+    // font-family：逗号分隔，带空格的族名加引号，简单 ident（Arial/sans-serif）不引号。
+    assert_eq!(
+        computed_style_property(html, "#c", "font-family"),
+        "\"Helvetica Neue\", Arial, sans-serif"
+    );
+    // flex / alignment / writing-mode / object-fit / 隔离·混合·交互。
+    assert_eq!(computed_style_property(html, "#c", "flex-direction"), "column");
+    assert_eq!(computed_style_property(html, "#c", "flex-wrap"), "wrap");
+    assert_eq!(computed_style_property(html, "#c", "justify-content"), "space-between");
+    assert_eq!(computed_style_property(html, "#c", "align-items"), "center");
+    assert_eq!(computed_style_property(html, "#c", "align-self"), "flex-end");
+    assert_eq!(computed_style_property(html, "#c", "writing-mode"), "vertical-rl");
+    assert_eq!(computed_style_property(html, "#c", "object-fit"), "cover");
+    assert_eq!(computed_style_property(html, "#c", "isolation"), "isolate");
+    assert_eq!(computed_style_property(html, "#c", "mix-blend-mode"), "multiply");
+    assert_eq!(computed_style_property(html, "#c", "pointer-events"), "none");
+    assert_eq!(computed_style_property(html, "#c", "user-select"), "all");
+    // list-style。
+    assert_eq!(computed_style_property(html, "#l", "list-style-type"), "lower-alpha");
+    assert_eq!(computed_style_property(html, "#l", "list-style-position"), "inside");
+
+    // 默认值（ZeroWeb initial：justify-content=flex-start、align-items=stretch、align-self=auto；
+    // 注：Chromium Box Align 3 initial 为 normal，ZeroWeb default 取 flex-start/stretch，diverge）。
+    assert_eq!(computed_style_property(html, "#plain", "flex-direction"), "row");
+    assert_eq!(computed_style_property(html, "#plain", "flex-wrap"), "nowrap");
+    assert_eq!(computed_style_property(html, "#plain", "justify-content"), "flex-start");
+    assert_eq!(computed_style_property(html, "#plain", "align-items"), "stretch");
+    assert_eq!(computed_style_property(html, "#plain", "align-self"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "writing-mode"), "horizontal-tb");
+    assert_eq!(computed_style_property(html, "#plain", "object-fit"), "fill");
+    assert_eq!(computed_style_property(html, "#plain", "isolation"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "mix-blend-mode"), "normal");
+    assert_eq!(computed_style_property(html, "#plain", "pointer-events"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "user-select"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "list-style-type"), "disc");
+    assert_eq!(computed_style_property(html, "#plain", "list-style-position"), "outside");
+}
+
+#[test]
 fn test_element_attributes_nodelist() {
     // R2699：el.attributes（NamedNodeMap 只读快照）——length/item/getNamedItem/数值索引/迭代。
     use std::sync::{Arc, Mutex};

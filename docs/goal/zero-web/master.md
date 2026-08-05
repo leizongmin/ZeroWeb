@@ -1076,7 +1076,7 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API，不改 mutation/render 路径；② 旧关键字族全返 ''（空），新实现返真关键字值——已覆盖属性从「误 ''」纠正为「真值」，未覆盖属性仍 '' fallback；③ welcome 产品 smoke diff 精确持平证真实页面 JS 分支未受影响。
 
-**已知限制（剩余）**：① `bolder`/`lighter` font-weight 保关键字非 Chromium 解析值（须父链）；② `getComputedStyle(el).cssText`/length 仍 ''/0；③ font-family/复合枚举（flex-*/grid-*/writing-mode/background-* 等次高频）为 follow-up；④ 外链 `<link>` CSS 不在 snapshot 内（同 gBCR 既有限制）。
+**已知限制（剩余）**：① `bolder`/`lighter` font-weight 保关键字非 Chromium 解析值（须父链）；② `getComputedStyle(el).cssText`/length 仍 ''/0；③ ~~font-family/复合枚举（flex-*/grid-*/writing-mode/background-* 等次高频）为 follow-up~~ ✅ R2710 补 font-family + flex-*/alignment/writing-mode/object-fit/isolation/mix-blend-mode/pointer-events/user-select/list-style-*；残余 = grid-*/background-* 等更低频枚举；④ 外链 `<link>` CSS 不在 snapshot 内（同 gBCR 既有限制）。
 
 ### 文件行数控制：getComputedStyle 拆为 `computed_style` 子模块（本轮 R2709，refactor）
 
@@ -1092,6 +1092,25 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告（清理 unused imports）+ `make test` 全绿（**13332 passed / 0 failed / 74 ignored**，精确 R2708 持平 → 行为零变更）+ 5 getComputedStyle 测试全过。product-smoke 未跑（纯模块搬运，getComputedStyle 输出逐字不变，R2708 baseline 17.03% 不受影响）。
 
 **行数**：`js_dom_bridge.rs` 3056 → **2531**（-525，-17%）；`computed_style.rs` 545 行。`js_dom_bridge.rs` 仍 >2000（残余 = DomMutation 枚举 + apply_dom_mutations + register_dom_callbacks 核心桥接，pre-existing 非 getComputedStyle 增量；后续可独立拆 `callbacks` 子模块）。
+
+### P1a `getComputedStyle` font-family + 复合/列表族（本轮 R2710，R2704-R2708 续）
+
+承接 R2704（display/position/visibility/opacity）+ R2705（颜色族）+ R2707（长度族）+ R2708（关键字/枚举族）+ R2709（拆 `computed_style` 子模块）。补**font-family + 复合/列表族**——getComputedStyle 旧对这些返 ''，`cs.fontFamily`（字体度量/回退判定极高频）、`cs.flexDirection`/`cs.justifyContent`/`cs.alignItems`（flex 布局判定）、`cs.writingMode`/`cs.objectFit`/`cs.mixBlendMode`/`cs.pointerEvents`/`cs.userSelect`（渲染/交互判定）等全断。覆盖 14 个属性，落在 R2709 新建的 `computed_style.rs`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 14 个 match 臂（font-family/flex-direction/wrap/justify-content/align-items/align-self/writing-mode/object-fit/isolation/mix-blend-mode/pointer-events/user-select/list-style-type/list-style-position）；新增 `font_family_to_css`（逗号分隔 + `quote_font_family` 按合法 CSS ident 决定是否引号）+ `is_css_ident` + 12 个枚举序列化 helper（flex_direction/flex_wrap/alignment 共用 justify+align/writing_mode/object_fit/isolation/mix_blend_mode 16 模式/pointer_events 11/user_select/list_style_type 28 builtin+Custom+String/list_style_position）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_composite`（font-family 引号判定 `'Helvetica Neue', Arial, sans-serif`→`"Helvetica Neue", Arial, sans-serif` + flex/alignment/writing-mode/object-fit/isolation/mix-blend/pointer-events/user-select/list-style 显式值 + 默认值）。 |
+
+**font-family 引号语义**：族名是合法 CSS ident（非空、首字符字母/_/`-`非数字、仅 ident 字符）→ 不引号（Arial/sans-serif）；否则双引号转义（`"Helvetica Neue"`）。对齐 Chromium getComputedStyle。空 Vec → ''（UA 默认字体未入 computed）。
+
+**已知 diverge**：ZeroWeb `justify-content`/`align-items` default 取 `flex-start`/`stretch`（非 CSS Box Align 3 的 `normal`），gCS 返 ZeroWeb computed 值（`flex-start`/`stretch`），与 Chromium 的 `normal` diverge——pre-existing 默认选择，非本切片引入。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告（修 list_style_type match 臂类型统一 `.into()` + is_css_ident `matches!` + 一处 doc_lazy_continuation）+ `make test` 全绿（**13333 passed / 0 failed / 74 ignored**，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2709 baseline 持平 → getComputedStyle 复合族未改 welcome 渲染输出）+ 8 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧复合族全返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
+**已知限制（剩余）**：① `bolder`/`lighter` font-weight 保关键字；② `getComputedStyle(el).cssText`/length 仍 ''/0；③ justify-content/align-items default diverge（ZeroWeb flex-start/stretch vs Chromium normal）；④ 外链 `<link>` CSS 不在 snapshot 内；⑤ font-family 空 Vec → ''（UA 默认字体未入 computed）。
 
 
 
