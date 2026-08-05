@@ -18,15 +18,17 @@ use zero_style_system::{
     BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundOriginComputedValue,
     BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderCollapseValue,
     BorderImageSourceComputedValue, BorderSpacingComputedValue, BorderStyleValue, BoxDecorationBreakValue,
-    BreakInsideValue, BreakValue, CaptionSideValue, CaretColorComputedValue, ComputedStyle, ContainComputedValue,
-    ContainerType, ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue, FilterComputedValue,
-    FlexBasisValue, FontSizeAdjustValue, GridAutoFlowValue, HyphensComputedValue, IsolationValue, JustifyItemsValue,
-    JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MixBlendModeComputedValue,
-    ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue,
-    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
-    TextAlignLastValue, TextAlignValue, TextOverflowValue, TextTransformValue, TextWrapComputedValue, TouchActionValue,
-    TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue,
-    WordBreakValue, WritingModeValue, ZIndexValue,
+    BreakInsideValue, BreakValue, CaptionSideValue, CaretColorComputedValue, ColumnCountComputedValue,
+    ColumnFillComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnSpanComputedValue,
+    ColumnWidthComputedValue, ComputedStyle, ContainComputedValue, ContainerType, ContentComputedValue, CursorValue,
+    DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontSizeAdjustValue,
+    FontVariantNumericValue, GridAutoFlowValue, HyphensComputedValue, ImageRenderingValue, IsolationValue,
+    JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
+    MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
+    QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem,
+    TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue, TextOverflowValue, TextTransformValue,
+    TextWrapComputedValue, TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue,
+    VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -301,6 +303,19 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "object-position" => bg_position_layer_to_css(&style.object_position),
         // quotes：None/Auto/Pairs（auto 初值；pairs→空格分隔双引号串，复用 css_string_to_css 转义）。
         "quotes" => quotes_to_css(&style.quotes),
+        // ── CSS Multi-column 簇（R2737）── column-gap 已覆（R2707 length 族）；补 rule/count/width/fill/span。
+        "column-rule-width" => {
+            column_rule_width_to_css(&style.column_rule_width, &style.column_rule_style, font_size_px)
+        }
+        "column-rule-style" => column_rule_style_str(&style.column_rule_style),
+        "column-rule-color" => color_to_css(&crate::resolve_color_current(&style.column_rule_color, element_color)),
+        "column-count" => column_count_to_css(&style.column_count),
+        "column-width" => column_width_to_css(&style.column_width, font_size_px),
+        "column-fill" => column_fill_str(&style.column_fill),
+        "column-span" => column_span_str(&style.column_span),
+        // ── font-variant-numeric / image-rendering（R2737）── 单值关键字枚举（残余纯枚举收尾）。
+        "font-variant-numeric" => font_variant_numeric_str(&style.font_variant_numeric),
+        "image-rendering" => image_rendering_str(&style.image_rendering),
         _ => String::new(),
     }
 }
@@ -543,6 +558,111 @@ fn quotes_to_css(q: &QuotesComputedValue) -> String {
             .collect::<Vec<_>>()
             .join(" "),
     }
+}
+
+// ── CSS Multi-column 簇（R2737）──────────────────────────────────────────
+// column-gap 已由 length 族（R2707）覆盖；此处补 rule-width/style/color + count/width/fill/span。
+
+/// column-rule-width：CSS Multi-column 分隔线宽度。Medium/Thin/Thick→对齐 Chromium used px
+///（3px/1px/5px，CSS Border 的常规 UA 初始值）；Length→px（经 length_to_css）。**当 column-rule-style
+/// 为 none/hidden 时 Chromium 返 0px**（同 border-width used 语义），故取 style 参照（复用 R2707
+/// border_width 模式）。
+fn column_rule_width_to_css(
+    w: &ColumnRuleWidthComputedValue,
+    style: &ColumnRuleStyleComputedValue,
+    font_size_px: f64,
+) -> String {
+    match style {
+        ColumnRuleStyleComputedValue::None | ColumnRuleStyleComputedValue::Hidden => "0px".to_string(),
+        _ => match w {
+            ColumnRuleWidthComputedValue::Medium => "3px".to_string(),
+            ColumnRuleWidthComputedValue::Thin => "1px".to_string(),
+            ColumnRuleWidthComputedValue::Thick => "5px".to_string(),
+            ColumnRuleWidthComputedValue::Length(l) => length_to_css(l, font_size_px),
+        },
+    }
+}
+
+/// column-rule-style：CSS Multi-column 分隔线样式（10 关键字，同 border-style 语义但独立枚举）。
+fn column_rule_style_str(s: &ColumnRuleStyleComputedValue) -> String {
+    match s {
+        ColumnRuleStyleComputedValue::None => "none",
+        ColumnRuleStyleComputedValue::Hidden => "hidden",
+        ColumnRuleStyleComputedValue::Dotted => "dotted",
+        ColumnRuleStyleComputedValue::Dashed => "dashed",
+        ColumnRuleStyleComputedValue::Solid => "solid",
+        ColumnRuleStyleComputedValue::Double => "double",
+        ColumnRuleStyleComputedValue::Groove => "groove",
+        ColumnRuleStyleComputedValue::Ridge => "ridge",
+        ColumnRuleStyleComputedValue::Inset => "inset",
+        ColumnRuleStyleComputedValue::Outset => "outset",
+    }
+    .to_string()
+}
+
+/// column-count：CSS Multi-column 列数。Auto→auto；Number(n)→无单位正整数（对齐 Chromium）。
+fn column_count_to_css(c: &ColumnCountComputedValue) -> String {
+    match c {
+        ColumnCountComputedValue::Auto => "auto".to_string(),
+        ColumnCountComputedValue::Number(n) => n.to_string(),
+    }
+}
+
+/// column-width：CSS Multi-column 列宽。Auto→auto；Length→px（经 length_to_css 解析残余相对单位）。
+fn column_width_to_css(w: &ColumnWidthComputedValue, font_size_px: f64) -> String {
+    match w {
+        ColumnWidthComputedValue::Auto => "auto".to_string(),
+        ColumnWidthComputedValue::Length(l) => length_to_css(l, font_size_px),
+    }
+}
+
+/// column-fill：CSS Multi-column 列填充。Balance（初值）/Auto（对齐 Chromium）。
+fn column_fill_str(f: &ColumnFillComputedValue) -> String {
+    match f {
+        ColumnFillComputedValue::Balance => "balance",
+        ColumnFillComputedValue::Auto => "auto",
+    }
+    .to_string()
+}
+
+/// column-span：CSS Multi-column 列跨越。None（初值）/All（对齐 Chromium）。
+fn column_span_str(s: &ColumnSpanComputedValue) -> String {
+    match s {
+        ColumnSpanComputedValue::None => "none",
+        ColumnSpanComputedValue::All => "all",
+    }
+    .to_string()
+}
+
+/// font-variant-numeric：CSS Fonts 数字变体（9 关键字单值，对齐 Chromium 单值场景）。
+/// **已知限制**：CSS 允许空格组合多值（如 `lining-nums tabular-nums`），ZeroWeb computed 值为
+/// 单 enum 仅保留一个变体，故多值输入 diverge（pre-existing 解析限制，非本序列化引入）。
+fn font_variant_numeric_str(v: &FontVariantNumericValue) -> String {
+    match v {
+        FontVariantNumericValue::Normal => "normal",
+        FontVariantNumericValue::Ordinal => "ordinal",
+        FontVariantNumericValue::SlashedZero => "slashed-zero",
+        FontVariantNumericValue::LiningNums => "lining-nums",
+        FontVariantNumericValue::OldstyleNums => "oldstyle-nums",
+        FontVariantNumericValue::ProportionalNums => "proportional-nums",
+        FontVariantNumericValue::TabularNums => "tabular-nums",
+        FontVariantNumericValue::DiagonalFractions => "diagonal-fractions",
+        FontVariantNumericValue::StackedFractions => "stacked-fractions",
+    }
+    .to_string()
+}
+
+/// image-rendering：CSS Images 图像缩放算法（5 关键字，对齐 Chromium auto/pixelated/crisp-edges；
+/// smooth/high-quality 为非标准值，ZeroWeb computed 保留 specified 关键字）。
+fn image_rendering_str(r: &ImageRenderingValue) -> String {
+    match r {
+        ImageRenderingValue::Auto => "auto",
+        ImageRenderingValue::Smooth => "smooth",
+        ImageRenderingValue::HighQuality => "high-quality",
+        ImageRenderingValue::Pixelated => "pixelated",
+        ImageRenderingValue::CrispEdges => "crisp-edges",
+    }
+    .to_string()
 }
 
 /// 把数值序列化为带后缀的 CSS 量（对齐 real browser getComputedStyle 数值串）。

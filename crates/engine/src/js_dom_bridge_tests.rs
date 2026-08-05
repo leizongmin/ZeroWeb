@@ -3913,6 +3913,65 @@ fn test_get_computed_style_border_img_obj_pos_quotes() {
 }
 
 #[test]
+fn test_get_computed_style_multicol_fontvar_img() {
+    // R2737：getComputedStyle CSS Multi-column 簇（rule-width/style/color + count/width/fill/span）
+    // + font-variant-numeric + image-rendering 序列化。column-gap 已由 R2707 长度族覆盖。
+    let html = "<html><body>\
+        <div id=\"cr\" style=\"column-rule: 2px dashed red;\"></div>\
+        <div id=\"crt\" style=\"column-rule: thick solid blue;\"></div>\
+        <div id=\"cc\" style=\"column-count: 3;\"></div>\
+        <div id=\"cw\" style=\"column-width: 100px;\"></div>\
+        <div id=\"cf\" style=\"column-fill: auto;\"></div>\
+        <div id=\"cs\" style=\"column-span: all;\"></div>\
+        <div id=\"fvn\" style=\"font-variant-numeric: tabular-nums;\"></div>\
+        <div id=\"ir\" style=\"image-rendering: pixelated;\"></div>\
+        <div id=\"def\" style=\"color: red;\"></div>\
+        </body></html>";
+    // column-rule-width：长度 2px（style 非 none）；thick→5px（UA used px，对齐 Chromium）；默认 style=none→0px。
+    assert_eq!(computed_style_property(html, "#cr", "column-rule-width"), "2px");
+    assert_eq!(computed_style_property(html, "#crt", "column-rule-width"), "5px");
+    assert_eq!(computed_style_property(html, "#def", "column-rule-width"), "0px");
+    // column-rule-style：dashed/solid；默认 none。
+    assert_eq!(computed_style_property(html, "#cr", "column-rule-style"), "dashed");
+    assert_eq!(computed_style_property(html, "#crt", "column-rule-style"), "solid");
+    assert_eq!(computed_style_property(html, "#def", "column-rule-style"), "none");
+    // column-rule-color：显式 red/blue → rgb；默认 currentcolor → 元素 color（#def color:red）。
+    assert_eq!(
+        computed_style_property(html, "#cr", "column-rule-color"),
+        "rgb(255, 0, 0)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#crt", "column-rule-color"),
+        "rgb(0, 0, 255)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#def", "column-rule-color"),
+        "rgb(255, 0, 0)"
+    );
+    // column-count：Number(3)→"3"；默认 auto。
+    assert_eq!(computed_style_property(html, "#cc", "column-count"), "3");
+    assert_eq!(computed_style_property(html, "#def", "column-count"), "auto");
+    // column-width：100px；默认 auto。
+    assert_eq!(computed_style_property(html, "#cw", "column-width"), "100px");
+    assert_eq!(computed_style_property(html, "#def", "column-width"), "auto");
+    // column-fill：auto；初值 balance。
+    assert_eq!(computed_style_property(html, "#cf", "column-fill"), "auto");
+    assert_eq!(computed_style_property(html, "#def", "column-fill"), "balance");
+    // column-span：all；初值 none。
+    assert_eq!(computed_style_property(html, "#cs", "column-span"), "all");
+    assert_eq!(computed_style_property(html, "#def", "column-span"), "none");
+    // font-variant-numeric：tabular-nums；初值 normal。
+    assert_eq!(
+        computed_style_property(html, "#fvn", "font-variant-numeric"),
+        "tabular-nums"
+    );
+    assert_eq!(computed_style_property(html, "#def", "font-variant-numeric"), "normal");
+    // image-rendering：pixelated；初值 auto。
+    assert_eq!(computed_style_property(html, "#ir", "image-rendering"), "pixelated");
+    assert_eq!(computed_style_property(html, "#def", "image-rendering"), "auto");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
