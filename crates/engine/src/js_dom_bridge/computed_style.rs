@@ -132,6 +132,9 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         }
         "color" => color_to_css(&crate::resolve_color_current(&style.color, element_color)),
         "background-color" => color_to_css(&crate::resolve_color_current(&style.background_color, element_color)),
+        // ── background 简写（R2757）── 各 longhand 早覆（image/position/size/repeat/attachment/clip/origin）；
+        // 简写恒完整规范形重组（无省略），Chromium 150 oracle 锚定。单层正确（多层受 ZW 单值存储限）。
+        "background" => background_shorthand_to_css(style, element_color, font_size_px),
         "border-top-color" => color_to_css(&crate::resolve_color_current(&style.border_top_color, element_color)),
         "border-right-color" => color_to_css(&crate::resolve_color_current(&style.border_right_color, element_color)),
         "border-bottom-color" => color_to_css(&crate::resolve_color_current(&style.border_bottom_color, element_color)),
@@ -1892,6 +1895,34 @@ fn enum_list_to_css<T>(list: &[T], default: &str, f: impl Fn(&T) -> String) -> S
     } else {
         list.iter().map(f).collect::<Vec<_>>().join(", ")
     }
+}
+
+/// `background` 简写：CSS Backgrounds 3。CSSOM 序列化恒为完整规范形（**无省略**）：
+/// `"<color> <image> <repeat> <attachment> <position> / <size> <origin> <clip>"`。
+/// Chromium 150 oracle：默认→`"rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box"`；
+/// origin/clip 即使相等也恒双显（`content-box content-box`）。复用各 longhand 序列化重组。
+/// **已知限制**：ZW 对 attachment/clip/origin 存单值（非多层 Vec），故**多层** background 无法
+/// 正确 round-trip（单层正确；多层 longhand 亦单值，diverge 一致）。
+fn background_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue, font_size_px: f64) -> String {
+    let color = color_to_css(&crate::resolve_color_current(&style.background_color, element_color));
+    let image = image_layer_list_to_css(&style.background_image, element_color, font_size_px);
+    // Vec 族 longhand 空 Vec 时返 ''，用 CSS 初值兜底（default_impl 实际已填充，防御极端路径）。
+    let repeat = {
+        let s = background_repeat_to_css(&style.background_repeat);
+        if s.is_empty() { "repeat".to_string() } else { s }
+    };
+    let attachment = background_attachment_to_css(&style.background_attachment);
+    let position = {
+        let s = background_position_to_css(&style.background_position);
+        if s.is_empty() { "0% 0%".to_string() } else { s }
+    };
+    let size = {
+        let s = background_size_to_css(&style.background_size);
+        if s.is_empty() { "auto".to_string() } else { s }
+    };
+    let origin = background_origin_to_css(&style.background_origin);
+    let clip = background_clip_to_css(&style.background_clip);
+    format!("{color} {image} {repeat} {attachment} {position} / {size} {origin} {clip}")
 }
 
 /// `transition` 简写：`<single-transition>#`（CSS Transitions）。CSSOM 序列化（Chromium 150 oracle）：

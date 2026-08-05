@@ -4098,6 +4098,43 @@ fn test_get_computed_style_transition_animation_shorthand_r2756() {
 }
 
 #[test]
+fn test_get_computed_style_background_shorthand_r2757() {
+    // R2757：getComputedStyle background 简写（CSSOM 完整规范形重组，无省略）。
+    // 每项期望串经本地 Chromium 150 oracle 提取（--dump-dom 写 DOM 法），TDD red→green 对齐。
+    // 注：避开 url() 图层（ZW 存相对 URL，oracle 解析绝对 URL，属 pre-existing longhand 差异）。
+    // 注：attachment/box 经 **longhand** 设置——ZW 的 background 简写 parser 对含 rgb()/var() 的值
+    // bail-out（整体作 color，丢 attachment），且 box token 故意 drop（R2479/R2481），故用 longhand
+    // 隔离测试**序列化**正确性（本切片范围），不依赖简写 parser。
+    let html = "<html><body>\
+        <div id=\"def\"></div>\
+        <div id=\"c\" style=\"background: rgb(255, 0, 0);\"></div>\
+        <div id=\"fi\" style=\"background-color: rgb(0, 128, 0); background-attachment: fixed;\"></div>\
+        <div id=\"oc\" style=\"background-origin: content-box; background-clip: padding-box;\"></div>\
+        </body></html>";
+    // background 简写恒完整规范形："<color> <image> <repeat> <attachment> <position> / <size> <origin> <clip>"。
+    // 默认：transparent none repeat scroll 0% 0% / auto padding-box border-box。
+    assert_eq!(
+        computed_style_property(html, "#def", "background"),
+        "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box"
+    );
+    // 纯色（简写声明）：color 改变，其余默认。
+    assert_eq!(
+        computed_style_property(html, "#c", "background"),
+        "rgb(255, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box"
+    );
+    // attachment=fixed（经 longhand 设置，测序列化）。
+    assert_eq!(
+        computed_style_property(html, "#fi", "background"),
+        "rgb(0, 128, 0) none repeat fixed 0% 0% / auto padding-box border-box"
+    );
+    // origin/clip（origin 在前 clip 在后，即使相等也双显；经 longhand 设置，测序列化）。
+    assert_eq!(
+        computed_style_property(html, "#oc", "background"),
+        "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto content-box padding-box"
+    );
+}
+
+#[test]
 fn test_get_computed_style_border_radius_shorthand() {
     // R2738：getComputedStyle border-radius 简写（CSSOM 4 值最小化）。4 角 longhand 早覆（R2707）。
     let html = "<html><body>\

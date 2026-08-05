@@ -1739,6 +1739,25 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **已知 diverge（记录不阻塞）**：`animation: bounce 0s`（显式 0s duration）Chromium 返 `"0s bounce"`，ZW computed duration=0s 与 `animation: bounce`（省略 duration）不可区分→均返 `"bounce"`（computed 不追踪 specified-ness）。
 
+### P1a `getComputedStyle` background 简写（本轮 R2757，getComputedStyle 维护态续）
+
+承接 R2756。续用本地 Chromium 150 oracle 提取确切串，TDD red→green land **background 简写**——CSSOM 序列化恒为完整规范形（**无省略**，与 transition/animation 的省初值模式不同）：
+
+- 序列化形：`"<color> <image> <repeat> <attachment> <position> / <size> <origin> <clip>"`。
+- oracle 揭示 origin/clip **即使相等也恒双显**（`background: content-box`→`"content-box content-box"`），不省略。
+- 复用 8 个 background longhand 序列化（image/position/size/repeat/attachment/clip/origin + color）做纯拼接；Vec 族 longhand 空 Vec 时用 CSS 初值兜底（`0% 0%` / `auto` / `repeat`）。oracle：默认→`"rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box"`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +1 helper `background_shorthand_to_css`（8 longhand 纯拼接 + 空 Vec 初值兜底）+ 1 dispatch 项。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_background_shorthand_r2757`（默认/纯色/attachment/origin-clip，oracle 锚定）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13384 passed / 0 failed / 74 ignored**，13383+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① background 简写旧返 `''`、新返正确 CSSOM 完整规范形；② 纯只读 JS bridge 不触及渲染/布局，welcome smoke 持平证零产品影响。
+
+**已知限制（记录不阻塞，pre-existing 非本切片）**：① **多层 background**——ZW 对 attachment/clip/origin 存单值（非多层 Vec），多层无法正确 round-trip（单层正确，多层 longhand 亦单值，diverge 一致）；② **简写 parser 限制**——`expand_background` 对含 `rgb()`/`var()` 的值 bail-out（整体作 color，丢 attachment），且 box token 故意 drop（R2479/R2481 A/B net −3），故 `background: rgb(0,128,0) fixed` 等声明不会完整展开（**序列化本身正确**，测试经 longhand 设置隔离验证）；③ url() 图层 ZW 存相对 URL，oracle 解析绝对 URL（pre-existing longhand 差异）。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
