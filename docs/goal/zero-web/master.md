@@ -1796,6 +1796,25 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **已知 diverge（pre-existing parser，记录不阻塞）**：单值 `grid-area: header`（CSS 规范四值同设）受 ZW `expand_grid_area`（`shorthand/mod.rs:1363`）仅设 row-start 限——序列化本身正确（测试覆盖 4 值/2 值形式），修 parser 须 css-grid reftest 验布局影响超本切片范围，记入待办。
 
+### P1a `getComputedStyle` inset 简写（本轮 R2760，getComputedStyle 维护态续）
+
+承接 R2759。续用本地 Chromium 150 oracle 提取确切串，TDD red→green land **inset 简写**——CSSOM 4 值最小化（复用 `box_4_to_css`，同 margin/padding/border-radius）：
+
+- 序列化形：top/right/bottom/left 全等→单值 / top==bottom&&right==left→2 值 / left==right→3 值 / 否则 4 值。
+- ZW 既已解析 inset 简写（`parse_rect_values`，`shorthand/mod.rs:347`），4 longhand（top/right/bottom/left）早覆，仅缺简写序列化重组。
+- oracle：`inset:10px`→`"10px"`、`inset:10px 20px`→`"10px 20px"`、`inset:10px 20px 30px 40px`→`"10px 20px 30px 40px"`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +1 dispatch 项 `inset => box_4_to_css(top,right,bottom,left,...)`（复用既有 helper）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_inset_shorthand_r2760`（1/2/3/4 值 + longhand 设置非等值，oracle 锚定）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13387 passed / 0 failed / 74 ignored**，13386+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① inset 简写旧返 `''`、新返正确 CSSOM 4 值最小化串；② 复用既有 `box_4_to_css`（margin/padding/border-radius 既验），零新逻辑；③ 纯只读 JS bridge 不触及渲染/布局。
+
+**已知 diverge（pre-existing，记录不阻塞）**：auto/默认 inset（`position:absolute` 无显式偏移）Chromium 返 used-px 偏移（如 `"13px 772px 480px 8px"`），ZW 返 `"auto"`（ZW 不计算 auto inset 的 used 值）——属 longhand 层 used-value diverge，非本简写引入；显式设置的值序列化正确（测试覆盖）。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

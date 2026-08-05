@@ -4211,6 +4211,32 @@ fn test_get_computed_style_grid_lines_r2759() {
 }
 
 #[test]
+fn test_get_computed_style_inset_shorthand_r2760() {
+    // R2760：getComputedStyle inset 简写（top/right/bottom/left CSSOM 4 值最小化）。
+    // 每项期望串经本地 Chromium 150 oracle 提取，TDD red→green 对齐。ZW 解析 inset 简写
+    // （parse_rect_values），序列化复用 box_4_to_css（同 margin/padding/border-radius）。
+    let html = "<html><body>\
+        <div id=\"i1\" style=\"inset: 10px;\"></div>\
+        <div id=\"i2\" style=\"inset: 10px 20px;\"></div>\
+        <div id=\"i3\" style=\"inset: 10px 20px 30px;\"></div>\
+        <div id=\"i4\" style=\"inset: 10px 20px 30px 40px;\"></div>\
+        <div id=\"mix\" style=\"inset: 5px 5px 5px 5px;\"></div>\
+        </body></html>";
+    // inset 简写 = top/right/bottom/left 的 CSSOM 4 值最小化。
+    assert_eq!(computed_style_property(html, "#i1", "inset"), "10px");
+    assert_eq!(computed_style_property(html, "#i2", "inset"), "10px 20px");
+    assert_eq!(computed_style_property(html, "#i3", "inset"), "10px 20px 30px");
+    assert_eq!(computed_style_property(html, "#i4", "inset"), "10px 20px 30px 40px");
+    // 全等→单值。
+    assert_eq!(computed_style_property(html, "#mix", "inset"), "5px");
+    // 经 longhand 设置非等值（验证简写重组，非仅依赖 shorthand 声明）。
+    let html2 = "<html><body>\
+        <div id=\"lh\" style=\"top: 1px; right: 2px; bottom: 3px; left: 4px;\"></div>\
+        </body></html>";
+    assert_eq!(computed_style_property(html2, "#lh", "inset"), "1px 2px 3px 4px");
+}
+
+#[test]
 fn test_get_computed_style_border_radius_shorthand() {
     // R2738：getComputedStyle border-radius 简写（CSSOM 4 值最小化）。4 角 longhand 早覆（R2707）。
     let html = "<html><body>\

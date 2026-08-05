@@ -191,6 +191,9 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "right" => length(&style.right),
         "bottom" => length(&style.bottom),
         "left" => length(&style.left),
+        // ── inset 简写（R2760）── top/right/bottom/left longhand 早覆；简写 CSSOM 4 值最小化
+        // （复用 box_4_to_css，同 margin/padding/border-radius）。Chromium 150 oracle：`inset:10px`→"10px"。
+        "inset" => box_4_to_css(&style.top, &style.right, &style.bottom, &style.left, font_size_px),
         // ── gap 简写修正 ── gap 是 row-gap/column-gap 简写（CSS Box Alignment 3）。
         // 旧实现仅读 legacy `style.gap`（= shorthand 首值 = row-gap），致 `gap: 5px 10px`
         // 丢 column-gap 返 "5px"（real browser 返 "5px 10px"）。改用 longhand 字段做
