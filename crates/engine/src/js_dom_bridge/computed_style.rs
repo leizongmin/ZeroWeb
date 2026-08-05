@@ -150,6 +150,22 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "padding-right" => length(&style.padding_right),
         "padding-bottom" => length(&style.padding_bottom),
         "padding-left" => length(&style.padding_left),
+        // ── margin / padding 简写（R2748）── longhand 早覆（line 145-152）；复用 box_4_to_css 做
+        // CSSOM 4 值最小化（同 R2738 border-radius：全等→1 值 / top==bottom&&right==left→2 值 / ...）。
+        "margin" => box_4_to_css(
+            &style.margin_top,
+            &style.margin_right,
+            &style.margin_bottom,
+            &style.margin_left,
+            font_size_px,
+        ),
+        "padding" => box_4_to_css(
+            &style.padding_top,
+            &style.padding_right,
+            &style.padding_bottom,
+            &style.padding_left,
+            font_size_px,
+        ),
         "border-top-width" => border_width_to_css(&style.border_top_width, &style.border_top_style, font_size_px),
         "border-right-width" => border_width_to_css(&style.border_right_width, &style.border_right_style, font_size_px),
         "border-bottom-width" => {

@@ -4330,6 +4330,31 @@ fn test_get_computed_style_background_mask_image() {
 }
 
 #[test]
+fn test_get_computed_style_margin_padding_shorthand() {
+    // R2748：getComputedStyle margin + padding 简写（CSSOM 4 值最小化，复用 box_4_to_css）。
+    let html = "<html><body>\
+        <div id=\"m1\" style=\"margin: 5px;\"></div>\
+        <div id=\"m2\" style=\"margin: 5px 10px;\"></div>\
+        <div id=\"m3\" style=\"margin: 5px 10px 15px;\"></div>\
+        <div id=\"m4\" style=\"margin: 5px 10px 15px 20px;\"></div>\
+        <div id=\"ma\" style=\"margin: auto;\"></div>\
+        <div id=\"p1\" style=\"padding: 8px;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // margin：全等→1 值；top==bottom&&right==left→2 值；right==left→3 值；否则 4 值。
+    assert_eq!(computed_style_property(html, "#m1", "margin"), "5px");
+    assert_eq!(computed_style_property(html, "#m2", "margin"), "5px 10px");
+    assert_eq!(computed_style_property(html, "#m3", "margin"), "5px 10px 15px");
+    assert_eq!(computed_style_property(html, "#m4", "margin"), "5px 10px 15px 20px");
+    // margin: auto → auto（LengthValue::Auto 经 length_to_css）。
+    assert_eq!(computed_style_property(html, "#ma", "margin"), "auto");
+    // padding 同结构；默认 margin/padding 均 0px → "0px"。
+    assert_eq!(computed_style_property(html, "#p1", "padding"), "8px");
+    assert_eq!(computed_style_property(html, "#def", "margin"), "0px");
+    assert_eq!(computed_style_property(html, "#def", "padding"), "0px");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
