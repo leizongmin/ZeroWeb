@@ -1682,6 +1682,23 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① parser bug fix 使原本失败的合法输入现解析正确（失败→成功，不劣化）；② css-parser 既有 gradient 测试全绿证无回归；③ welcome smoke 持平证渲染零影响。
 
+### P1a border-image-source gradient 支持（本轮 R2753，gradient 正确性续 + oracle 挖掘）
+
+承接 R2751。本地 WPT oracle 挖掘发现 border-image-source 旧仅 None/Url，gradient 输入→none（divergence；WPT `border-image-source-computed` oracle 确认应支持 gradient）。5 处修复 + paint 安全：css-parser `BorderImageSourceValue` + `parse_border_image_source`（调 `parse_gradient`）；style-system `BorderImageSourceComputedValue` + apply 映射；engine `border_image_source_to_css` Gradient 分派**复用既有 linear/radial/conic_gradient_to_css**（零新 gradient 代码）；paint `border.rs` Gradient→return（9-slice 渐变采样 paint 暂未实现，等同 none 不 panic）。
+
+| 文件 | 改动 |
+|------|------|
+| `css-parser/values/parse_extended_border.rs` | `BorderImageSourceValue` 加 `Gradient(GradientValue)`；`parse_border_image_source` none/url 后调 `parse_gradient`。 |
+| `style-system/property/types/image.rs` + `apply_advanced.rs` | `BorderImageSourceComputedValue` 加 `Gradient` 变体；apply 映射。 |
+| `engine/js_dom_bridge/computed_style.rs` + `paint/painter/border.rs` | `border_image_source_to_css` 接 element_color/font_size_px，Gradient 复用三 gradient helper；paint Gradient→return（安全）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_border_image_source_gradient`（oracle 锚定：linear -45deg + currentcolor→元素 color / radial 10px at 20px 30px + currentcolor/lime / url / 默认 none）。 |
+
+**对齐 Chromium**：border-image-source gradient 序列化精确匹配 WPT oracle。**image-source 家族**（background-image/mask-image/border-image-source）现全支持 gradient。**paint 层 Gradient border-image 暂 return**（9-slice 渐变采样未实现，paint 限制，getComputedStyle 序列化不受影响）。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13376 passed / 0 failed / 74 ignored**，13375+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 无 struct FAIL。
+
+**为何零回归且净正向**：① gradient border-image-source 旧返 none（错）、新返正确 gradient（修 real divergence）；② 既有 None/Url 路径不变；③ welcome smoke 持平证渲染零影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
