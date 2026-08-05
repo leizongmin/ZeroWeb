@@ -1994,6 +1994,24 @@ oracle 锚定：默认/normal/0/0px→`"normal"`、2px→`"2px"`、word-spacing 
 
 **为何零回归且净正向**：① OFF 路径（default/reftest）shim `__zw_raf_tick` 早返，performance.now() 求值后丢弃，零行为变化；② ON 路径仅 ts 从 0 变真值（rAF 回调收更准 timestamp）；③ performance guard 兜底旧 shim 不抛。**rAF slice 全收尾**（frame-driven 基建 + 真 ts 全就绪，default-OFF）。
 
+### P1a atob/btoa + crypto.randomUUID（本轮 R2770，缺失 Web 平台 API 补齐）
+
+承接 R2769（rAF slice 收尾）。probe（V8Sandbox + 注入 shim 后 `typeof` 扫）确认 V8 不提供一组高频 Web API（全 undefined）：`crypto`/`atob`/`btoa`/`structuredClone`/`TextEncoder`/`TextDecoder`/`URLSearchParams`/`AbortController`（`Promise.allSettled`/`Promise.any` 为 V8 原生，无需）。择**最高频 + 最 tractable + 纯 JS 自包含**两项 land（零 host 回调 / 零新依赖）：
+
+- **atob / btoa**（Base64 编解码，data: URL / JWT / 二进制载荷高频）：纯 JS（ZW engine 无 base64 crate，复用 fetch `_b64decode` 同款算法 + LUT）。`btoa` 对 >255（非 Latin-1）抛 `InvalidCharacterError`（spec）；`atob` 容错（忽略空白 / 去尾部 padding，best-effort）。多字节 UTF-8 base64 为已知限制（返 Latin-1）。
+- **crypto.randomUUID**（UUID v4，id 生成 / analytics / React key 高频）：纯 JS（hex 查表 + `Math.random`，固定 version=4 / variant∈89ab）。
+
+**已知限制（记录）**：randomUUID 为 `Math.random`-based（**非 CSPRNG**），对 id 生成主流用途足够，安全敏感场景（token 生成）需 host OS-random 接入（follow-up）；`getRandomValues`（TypedArray 填充）/ `TextEncoder`/`TextDecoder` / `URLSearchParams` / `structuredClone` defer（TypedArray / UTF-8 / 深拷贝更多工作）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`globalThis.atob`/`btoa`（纯 JS Base64，复用 fetch 算法）+ `globalThis.crypto.randomUUID`（UUID v4）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_atob_btoa_crypto_randomuuid_r2770`（btoa/atob round-trip + Chromium 锚定 `btoa('hello')='aGVsbG8='` + btoa 抛 + UUID v4 正则 + 唯一性）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13397 passed / 0 failed / 74 ignored**，13396+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 global）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 global（atob/btoa/crypto），不改既有 API；② 纯 JS 无副作用；③ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

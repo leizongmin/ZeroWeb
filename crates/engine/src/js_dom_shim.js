@@ -706,6 +706,54 @@
     }
   };
 
+  // atob/btoa——Base64 编解码（Web 平台高频：data: URL / JWT / 二进制载荷）。纯 JS（ZW 无 base64
+  // crate 在 engine，复用 fetch _b64decode 同款算法）。btoa 对 >255（非 Latin-1）抛错（spec）；
+  // atob 容错（忽略空白/padding，best-effort）。多字节 UTF-8 base64 为已知限制（返 Latin-1）。
+  var _b64ch = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  var _b64lut = (function () { var l = {}; for (var i = 0; i < 64; i++) l[_b64ch[i]] = i; return l; })();
+  globalThis.btoa = function (s) {
+    s = String(s);
+    var out = '';
+    for (var i = 0; i < s.length; i += 3) {
+      var b1 = s.charCodeAt(i), b2 = s.charCodeAt(i + 1), b3 = s.charCodeAt(i + 2);
+      if (b1 > 255 || b2 > 255 || b3 > 255) throw new Error('InvalidCharacterError');
+      out += _b64ch[b1 >> 2];
+      out += _b64ch[((b1 & 3) << 4) | (isNaN(b2) ? 0 : b2 >> 4)];
+      out += isNaN(b2) ? '=' : _b64ch[((b2 & 15) << 2) | (isNaN(b3) ? 0 : b3 >> 6)];
+      out += isNaN(b3) ? '=' : _b64ch[b3 & 63];
+    }
+    return out;
+  };
+  globalThis.atob = function (s) {
+    s = String(s).replace(/\s+/g, '').replace(/=+$/, '');
+    var out = '';
+    for (var i = 0; i < s.length; i += 4) {
+      var b0 = _b64lut[s[i]] || 0, b1 = _b64lut[s[i + 1]] || 0;
+      var b2 = _b64lut[s[i + 2]], b3 = _b64lut[s[i + 3]];
+      out += String.fromCharCode((b0 << 2) | (b1 >> 4));
+      if (s[i + 2] !== undefined) out += String.fromCharCode(((b1 & 15) << 4) | ((b2 || 0) >> 2));
+      if (s[i + 3] !== undefined) out += String.fromCharCode((((b2 || 0) & 3) << 6) | (b3 || 0));
+    }
+    return out;
+  };
+
+  // crypto——Web Crypto 起步：randomUUID（UUID v4，高频：id 生成 / analytics / React key）。
+  // **已知限制**：Math.random-based（非 CSPRNG），对 id 生成等主流用途足够；安全敏感场景（token
+  // 生成）需 host OS-random 接入（follow-up）。getRandomValues（TypedArray 填充）defer。
+  globalThis.crypto = globalThis.crypto || {
+    randomUUID: function () {
+      var h = '0123456789abcdef';
+      var s = '';
+      for (var i = 0; i < 36; i++) {
+        if (i === 8 || i === 13 || i === 18 || i === 23) s += '-';
+        else if (i === 14) s += '4';
+        else if (i === 19) s += h[(Math.random() * 4) | 0 | 8]; // y ∈ 8,9,a,b
+        else s += h[(Math.random() * 16) | 0];
+      }
+      return s;
+    }
+  };
+
   globalThis.history = {
     length: 1,
     state: null,

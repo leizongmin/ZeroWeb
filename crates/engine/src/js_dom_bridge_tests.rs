@@ -1159,6 +1159,52 @@ fn test_performance_now_e2e() {
 }
 
 #[test]
+fn test_atob_btoa_crypto_randomuuid_r2770() {
+    // R2770：atob/btoa（Base64）+ crypto.randomUUID（UUID v4）。纯 JS（shim），无 host 回调。
+    // probe 确认 V8 不提供这些 Web API（全 undefined）。btoa 对 >255（非 Latin-1）抛；atob 容错；
+    // randomUUID 返 v4 格式 + 唯一。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // btoa / atob round-trip（Chromium 锚定：btoa('hello')='aGVsbG8='）。
+    assert_eq!(sandbox.execute("btoa('hello')").unwrap().value, "aGVsbG8=");
+    assert_eq!(sandbox.execute("atob('aGVsbG8=')").unwrap().value, "hello");
+    assert_eq!(sandbox.execute("atob(btoa('ZeroWeb!'))").unwrap().value, "ZeroWeb!");
+    // btoa 对 >255 抛 InvalidCharacterError（spec）。
+    assert_eq!(
+        sandbox
+            .execute("try { btoa('\\u0100'); 'no-throw' } catch (e) { 'threw' }")
+            .unwrap()
+            .value,
+        "threw"
+    );
+    // crypto.randomUUID：UUID v4 格式（8-4-4-4-12，version=4，variant∈89ab）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var u = crypto.randomUUID(); \
+                 /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(u)"
+            )
+            .unwrap()
+            .value,
+        "true"
+    );
+    // 唯一性（两次调用不同）。
+    assert_eq!(
+        sandbox
+            .execute("crypto.randomUUID() !== crypto.randomUUID()")
+            .unwrap()
+            .value,
+        "true"
+    );
+}
+
+#[test]
 fn test_clone_node_e2e() {
     // cloneNode(deep) 复用既有回调组合：create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。
     use std::sync::{Arc, Mutex};
