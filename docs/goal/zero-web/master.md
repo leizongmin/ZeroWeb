@@ -1125,7 +1125,7 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13334 passed / 0 failed / 74 ignored**，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2710 baseline 持平 → 未改渲染输出）+ 8 struct PASS / 0 FAIL。
 
-**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter + R2719 3D transform 簇 + R2720 will-change + R2721 clip-path + R2722 content，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms 全簇（transform 函数列表 + transform-origin + transform-style + backface-visibility + perspective + perspective-origin）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + **will-change（列表）** + **clip-path（basic-shape 函数）** + **content（生成内容 component value）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、~~3D transform 簇~~ ✅ R2719、~~will-change~~ ✅ R2720、~~clip-path~~ ✅ R2721、~~content~~ ✅ R2722、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
+**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter + R2719 3D transform 簇 + R2720 will-change + R2721 clip-path + R2722 content + R2723 bolder/lighter font-weight，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22，**含 bolder/lighter 父链解析**）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms 全簇（transform 函数列表 + transform-origin + transform-style + backface-visibility + perspective + perspective-origin）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + **will-change（列表）** + **clip-path（basic-shape 函数）** + **content（生成内容 component value）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、~~bolder/lighter（须父链）~~ ✅ R2723、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、~~3D transform 簇~~ ✅ R2719、~~will-change~~ ✅ R2720、~~clip-path~~ ✅ R2721、~~content~~ ✅ R2722、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、background-position/image、grid-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
 
 ### P1a `getComputedStyle` transform 序列化（本轮 R2715，getComputedStyle 维护态续）
 
@@ -1244,6 +1244,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13347 passed / 0 failed / 74 ignored**，13346+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → content 未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。已推送 `4104fa80..c567b3b2`。
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 content 返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
+### P1a `getComputedStyle` bolder/lighter font-weight 解析（本轮 R2723，getComputedStyle 维护态续）
+
+承接 R2722（content）。修最高价值剩余 diverge——`font-weight: bolder`/`lighter` 旧返关键字（"bolder"/"lighter"），Chromium getComputedStyle 返**绝对数**（CSS Fonts 3 §5.2 计算值语义 = 按父链 resolved weight 经映射表解析）。font-weight 是 top-5 高频查询属性。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `compute_document_styles` 加 engine-local 后处理 `resolve_font_weight_bolder_lighter`（栈式 DFS 自顶向下遍历文档树，父先于子解析保证父已 resolved）+ `parent_font_weight_base`（父 resolved 绝对基数）+ `font_weight_base_absolute`（Normal→400 / Bold→700）+ `bolder_of`/`lighter_of`（CSS Fonts 3 §5.2 映射表）。**关键隔离**：仅改 gCS 路径的 styles 副本，style-system computed 值仍保关键字供 paint 二值 want_bold（`Bold|Bolder` 或 `Absolute≥600`）消费——render/reftest 零影响。`font_weight_str` 不变（Absolute 现可达它）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_font_weight_bolder_lighter`（bolder on normal 400→700 / bolder on bold 700→900 / lighter on bold 700→400 / lighter on normal 400→100 / 显式 500 不变）。 |
+
+**映射表**（CSS Fonts 3 §5.2）：bolder `<400→400 / <600→700 / 否则→900`；lighter `<600→100 / <800→400 / 否则→700`。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13348 passed / 0 failed / 74 ignored**，13347+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，**精确 baseline 持平 → 证实 gCS-only 后处理零渲染影响**，paint 路径字节级不变）+ 全 struct PASS / 0 FAIL。已推送 `f14d1bdd..cee95765`。
+
+**为何零回归且净正向**：① 仅改 getComputedStyle 路径的 styles 副本，paint 用独立 render 管线（style-system computed 值未动）；② welcome smoke diff 精确持平（17.03%）证 render 零影响；③ bolder/lighter 从「误关键字」纠正为 spec-correct 绝对值。
 
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
