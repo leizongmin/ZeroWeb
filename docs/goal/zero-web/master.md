@@ -1078,6 +1078,21 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 **已知限制（剩余）**：① `bolder`/`lighter` font-weight 保关键字非 Chromium 解析值（须父链）；② `getComputedStyle(el).cssText`/length 仍 ''/0；③ font-family/复合枚举（flex-*/grid-*/writing-mode/background-* 等次高频）为 follow-up；④ 外链 `<link>` CSS 不在 snapshot 内（同 gBCR 既有限制）。
 
+### 文件行数控制：getComputedStyle 拆为 `computed_style` 子模块（本轮 R2709，refactor）
+
+承接 R2704-R2708（getComputedStyle display/颜色/缓存/长度/关键字族）。`js_dom_bridge.rs` 经 5 轮 getComputedStyle 扩展达 **3056 行**（超 CLAUDE.md §5「单文件 ≤2000 行」；R2704 前已 2590，本会话增量 +466）。本切片把 getComputedStyle 计算与序列化块（~525 行）拆为独立子模块，控制主文件行数 + 为后续 font-family/复合枚举扩展提供干净落点。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs`（新） | 承接 `computed_style_property`/`compute_document_styles`/`lookup_computed_property`/`serialize_computed_property` + 全部序列化 helper（color_to_css/format_num/length_to_css/border_width_to_css/max_size_to_css + 26 个 *_str 关键字 helper）。`compute_document_styles`/`lookup_computed_property`/`serialize_computed_property` 提为 `pub`（register_dom_callbacks + 测试调用）；`use super::find_by_selector` 访问父模块。 |
+| `engine/js_dom_bridge.rs` | 删 ~525 行 getComputedStyle 块；加 `mod computed_style; pub use computed_style::*;`（调用点零改动：crate 根 `pub use js_dom_bridge::*` / 测试 `#[path]` 模块 `use super::*` / register_dom_callbacks 全沿用）；清理 23 个仅 getComputedStyle 用的 enum/style 导入（仅留 `ComputedStyle` 供缓存类型）。 |
+
+**纯 refactor，零行为变更**：函数体逐字未改，仅模块归属 + 3 个 fn→pub fn 可见性。`pub use computed_style::*` 使所有调用点路径不变。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告（清理 unused imports）+ `make test` 全绿（**13332 passed / 0 failed / 74 ignored**，精确 R2708 持平 → 行为零变更）+ 5 getComputedStyle 测试全过。product-smoke 未跑（纯模块搬运，getComputedStyle 输出逐字不变，R2708 baseline 17.03% 不受影响）。
+
+**行数**：`js_dom_bridge.rs` 3056 → **2531**（-525，-17%）；`computed_style.rs` 545 行。`js_dom_bridge.rs` 仍 >2000（残余 = DomMutation 枚举 + apply_dom_mutations + register_dom_callbacks 核心桥接，pre-existing 非 getComputedStyle 增量；后续可独立拆 `callbacks` 子模块）。
+
 
 
 
