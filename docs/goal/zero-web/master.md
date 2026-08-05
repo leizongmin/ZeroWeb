@@ -1667,6 +1667,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② radial/conic 层旧返 ''、新返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a radial-gradient position-首位 config parser fix（本轮 R2751，gradient 正确性续）
+
+承接 R2750（gradient 序列化完整）。修 R2750 发现的 parser bug：radial-gradient position-首位 config（`radial-gradient(at 10px 10px, ...)` 无 shape 前缀）不被识别——config 检测条件需 ` at ` 含前导空格，position-首位无前导空格漏检 → 误当 color stop → 解析失败 → none。WPT `background-image-computed` oracle 确认此形式合法。
+
+| 文件 | 改动 |
+|------|------|
+| `css-parser/values/parse_transform.rs` | `parse_radial_gradient_inner` 外层 config 检测加 `starts_with("at ")`；`parse_radial_shape_and_position` 内层 position 解析统一首位（offset 2）与 ` at ` 命中，首位时 shape_str 为空→默认 ellipse farthest-corner。 |
+| `engine/js_dom_bridge_tests.rs` | gCS `#ctr`/`#pos` 改回 oracle position-首位形式（`at center` / `at 10px 10px`），验证 fix + 精确匹配 oracle。 |
+
+**对齐 Chromium**：position-首位 radial config 现解析正确，匹配 WPT oracle。**gradient 故事 + parser 正确性至此完整**。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + css-parser 116 gradient 测试无回归 + `make test` 全绿（**13375 passed / 0 failed / 74 ignored**，行为变更非新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 无 struct FAIL。
+
+**为何零回归且净正向**：① parser bug fix 使原本失败的合法输入现解析正确（失败→成功，不劣化）；② css-parser 既有 gradient 测试全绿证无回归；③ welcome smoke 持平证渲染零影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
