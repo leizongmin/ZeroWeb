@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::{
     AlignmentValue, BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue,
     FontStyleValue, FontWeightValue, LengthValue, ListStylePositionValue, ListStyleTypeValue, OverflowValue,
-    PositionValue, VisibilityValue,
+    PositionValue, TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_style_system::{
     BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle, CursorValue, DirectionValue,
@@ -230,6 +230,8 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "order" => style.order.to_string(),
         "flex-basis" => flex_basis_str(&style.flex_basis, font_size_px),
         "aspect-ratio" => aspect_ratio_str(style.aspect_ratio, style.aspect_ratio_auto),
+        // ── transform（R2715）── CSS Transforms L1/L2 计算值 = 函数列表（Chromium 返 resolved matrix，diverge）。
+        "transform" => transform_to_css(&style.transform),
         _ => String::new(),
     }
 }
@@ -793,5 +795,91 @@ fn aspect_ratio_str(ratio: Option<f32>, auto: bool) -> String {
         (None, _) => "auto".to_string(),
         (Some(r), false) => format_num(r as f64, ""),
         (Some(r), true) => format!("auto {}", format_num(r as f64, "")),
+    }
+}
+
+/// transform：按 CSS Transforms L1/L2 计算值序列化为**函数列表**（none / 空格分隔函数）。
+///
+/// **已知 diverge**：Chromium getComputedStyle 对非 none transform 返 **resolved matrix**
+///（`matrix(...)` / `matrix3d(...)`）；CSS 规范（L1/L2）+ Firefox 返函数列表（长度解析为 px、
+/// 百分比保留——border-box 相对，须 layout 故保 `%`）。ZeroWeb 返函数列表（spec-correct）。
+fn transform_to_css(t: &TransformValue) -> String {
+    match t {
+        TransformValue::None => "none".to_string(),
+        TransformValue::List(fns) => fns
+            .iter()
+            .map(transform_function_to_css)
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
+/// 序列化单个 [`TransformFunction`]。translate 类长度为 px（混合百分比分支保 `%`）；rotate/skew
+/// 角度为 `deg`；scale 系数无单位；matrix 6 分量无单位。
+fn transform_function_to_css(f: &TransformFunction) -> String {
+    use TransformFunction as Tf;
+    match f {
+        Tf::Translate(tx, ty) => {
+            format!("translate({}, {})", format_num(*tx, "px"), format_num(*ty, "px"))
+        }
+        Tf::TranslateMixed(tx, txp, ty, typ) => {
+            format!("translate({}, {})", mixed_len(*tx, *txp), mixed_len(*ty, *typ))
+        }
+        Tf::TranslateXMixed(v, pct) => format!("translateX({})", mixed_len(*v, *pct)),
+        Tf::TranslateYMixed(v, pct) => format!("translateY({})", mixed_len(*v, *pct)),
+        Tf::TranslateX(v) => format!("translateX({})", format_num(*v, "px")),
+        Tf::TranslateY(v) => format!("translateY({})", format_num(*v, "px")),
+        Tf::Rotate(deg) => format!("rotate({}deg)", format_num(*deg, "")),
+        Tf::Scale(sx, sy) => match sy {
+            Some(sy) => format!("scale({}, {})", format_num(*sx, ""), format_num(*sy, "")),
+            None => format!("scale({})", format_num(*sx, "")),
+        },
+        Tf::ScaleX(sx) => format!("scaleX({})", format_num(*sx, "")),
+        Tf::ScaleY(sy) => format!("scaleY({})", format_num(*sy, "")),
+        Tf::Skew(ax, ay) => match ay {
+            Some(ay) => format!("skew({}deg, {}deg)", format_num(*ax, ""), format_num(*ay, "")),
+            None => format!("skew({}deg)", format_num(*ax, "")),
+        },
+        Tf::RotateX(deg) => format!("rotateX({}deg)", format_num(*deg, "")),
+        Tf::RotateY(deg) => format!("rotateY({}deg)", format_num(*deg, "")),
+        Tf::RotateZ(deg) => format!("rotateZ({}deg)", format_num(*deg, "")),
+        Tf::Translate3d(tx, ty, tz) => format!(
+            "translate3d({}, {}, {})",
+            format_num(*tx, "px"),
+            format_num(*ty, "px"),
+            format_num(*tz, "px")
+        ),
+        Tf::Scale3d(sx, sy, sz) => format!(
+            "scale3d({}, {}, {})",
+            format_num(*sx, ""),
+            format_num(*sy, ""),
+            format_num(*sz, "")
+        ),
+        Tf::Rotate3d(x, y, z, angle) => format!(
+            "rotate3d({}, {}, {}, {}deg)",
+            format_num(*x, ""),
+            format_num(*y, ""),
+            format_num(*z, ""),
+            format_num(*angle, "")
+        ),
+        Tf::Perspective(len) => format!("perspective({})", format_num(*len, "px")),
+        Tf::Matrix(a, b, c, d, e, f) => format!(
+            "matrix({}, {}, {}, {}, {}, {})",
+            format_num(*a, ""),
+            format_num(*b, ""),
+            format_num(*c, ""),
+            format_num(*d, ""),
+            format_num(*e, ""),
+            format_num(*f, "")
+        ),
+    }
+}
+
+/// translate 类混合长度：`is_pct` → `N%`，否则 `Npx`。
+fn mixed_len(v: f64, is_pct: bool) -> String {
+    if is_pct {
+        format_num(v, "%")
+    } else {
+        format_num(v, "px")
     }
 }

@@ -1125,7 +1125,22 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13334 passed / 0 failed / 74 ignored**，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2710 baseline 持平 → 未改渲染输出）+ 8 struct PASS / 0 FAIL。
 
-**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、transform（函数列表）、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
+**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform（函数列表）~~ ✅ R2715、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
+
+### P1a `getComputedStyle` transform 序列化（本轮 R2715，getComputedStyle 维护态续）
+
+getComputedStyle 维护态续——补 `transform`（动画/布局测量高频查询，旧返 ''）。按 CSS Transforms L1/L2 计算值序列化为**函数列表**（none / 空格分隔函数）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"transform"` 臂；新增 `transform_to_css`（None→`none` / List→空格分隔函数）+ `transform_function_to_css`（覆盖全 ~20 变体：translate/X/Y/3d、Mixed 百分比、rotate/X/Y/Z/3d、scale/X/Y/3d、skew、perspective、matrix；translate 类 px / rotate·skew `deg` / scale·matrix 无单位 / Mixed 保 `%`）+ `mixed_len` helper。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_transform`（组合 `translate(10px,20px) rotate(45deg) scale(2)` / `translateX(50%)` 百分比保留 / 默认 `none`）。 |
+
+**已知 diverge**：Chromium getComputedStyle 对非 none transform 返 **resolved matrix**（`matrix(...)` / `matrix3d(...)`）；CSS 规范（L1/L2）+ Firefox 返**函数列表**（长度解析为 px、百分比保留——border-box 相对须 layout 故保 `%`）。ZeroWeb 返函数列表（spec-correct，与 Firefox 一致），diverge 于 Chromium。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13340 passed / 0 failed / 74 ignored**，13339+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → getComputedStyle transform 未改 welcome 渲染输出）+ 8 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 transform 全返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧数值族全返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 

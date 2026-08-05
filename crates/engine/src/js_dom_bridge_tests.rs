@@ -3134,6 +3134,26 @@ fn test_get_computed_style_numeric_special() {
 }
 
 #[test]
+fn test_get_computed_style_transform() {
+    // R2715：getComputedStyle transform 序列化（CSS Transforms L1/L2 计算值 = 函数列表）。
+    // Chromium 返 resolved matrix（diverge）；ZeroWeb 返 parsed 函数列表（spec-correct + Firefox 一致）。
+    let html = "<html><body>\
+        <div id=\"t\" style=\"transform: translate(10px, 20px) rotate(45deg) scale(2);\"></div>\
+        <div id=\"pct\" style=\"transform: translateX(50%);\"></div>\
+        <div id=\"none\"></div>\
+        </body></html>";
+    // 组合：translate + rotate + scale（空格分隔函数列表）。
+    assert_eq!(
+        computed_style_property(html, "#t", "transform"),
+        "translate(10px, 20px) rotate(45deg) scale(2)"
+    );
+    // 百分比 translate 保留（border-box 相对，须 layout 故保 %）。
+    assert_eq!(computed_style_property(html, "#pct", "transform"), "translateX(50%)");
+    // 默认 none。
+    assert_eq!(computed_style_property(html, "#none", "transform"), "none");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
