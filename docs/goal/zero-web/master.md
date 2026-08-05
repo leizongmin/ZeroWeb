@@ -1125,7 +1125,7 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13334 passed / 0 failed / 74 ignored**，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2710 baseline 持平 → 未改渲染输出）+ 8 struct PASS / 0 FAIL。
 
-**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter + R2719 3D transform 簇 + R2720 will-change，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms 全簇（transform 函数列表 + transform-origin + transform-style + backface-visibility + perspective + perspective-origin）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + **will-change（列表）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、~~3D transform 簇~~ ✅ R2719、~~will-change~~ ✅ R2720、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、content（Counter/Counters 复杂）、clip-path、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
+**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter + R2719 3D transform 簇 + R2720 will-change + R2721 clip-path，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms 全簇（transform 函数列表 + transform-origin + transform-style + backface-visibility + perspective + perspective-origin）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + **will-change（列表）** + **clip-path（basic-shape 函数）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、~~3D transform 簇~~ ✅ R2719、~~will-change~~ ✅ R2720、~~clip-path~~ ✅ R2721、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、content（Counter/Counters 复杂）、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
 
 ### P1a `getComputedStyle` transform 序列化（本轮 R2715，getComputedStyle 维护态续）
 
@@ -1216,6 +1216,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13345 passed / 0 failed / 74 ignored**，13344+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → will-change 未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。已推送 `eaffad2d..d0791d29`。
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 will-change 返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
+### P1a `getComputedStyle` clip-path 序列化（本轮 R2721，getComputedStyle 维护态续）
+
+承接 R2720（will-change）。补 `clip-path`（CSS Masking basic-shape，现代 UI 裁剪常用，旧返 ''）。存储为 `ClipPathComputedValue`（= `ClipPathValue` 别名），含 None/Inset/Circle/Ellipse/Polygon 5 变体 + `ClipPathRadius`/`PolygonFillRule` 子枚举。本切片为本 session 最复杂 basic-shape 序列化。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"clip-path"` 臂；新增 `clip_path_to_css`（5 变体：None→none / Inset 4 内缩 box 简写折叠 + 可选 round / Circle 半径 + 可选 at 位置 / Ellipse rx ry + 可选 at 位置 / Polygon 仅 evenodd 输出填充规则 + 顶点逗号分隔）+ `clip_path_radius_to_css`（Length→length_to_css / ClosestSide / FarthestSide）+ `box_4_to_css`（box 4 维折叠 1/2/3/4 值，同 margin 语法，按序列化字符串比较）；import 加 `ClipPathValue` + `ClipPathRadius` + `PolygonFillRule`；文件头 doc 覆盖列表加 clip-path。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_clip_path`（none / inset 单值折叠 / inset 双值 / inset round / circle 半径+at / circle() 默认 closest-side / polygon nonzero 省略规则 / polygon evenodd）。 |
+
+**TDD 价值**：driving test 首跑捕获 `round`/`at` 应在括号内（非括号外）的序列化 bug（inset/circle/ellipse 三处同模式错误），fix 后绿。再证 getComputedStyle slice 须 driving test 守真实序列化形态。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13346 passed / 0 failed / 74 ignored**，13345+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → clip-path 未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。已推送 `0f453019..ec6f77c7`。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 clip-path 返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
