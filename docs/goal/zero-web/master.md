@@ -1487,6 +1487,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧简写返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` box-shadow + text-shadow 序列化（本轮 R2739，getComputedStyle 维护态续）
+
+承接 R2738。补 box-shadow + text-shadow（旧均返 ''，常用于阴影/可见性检测）。**格式锚定 WPT `box-shadow-interpolation`/`composition` 的 `expect` 串**（如 `rgb(100,100,100) 10px 20px 30px 40px inset`），对齐 Chromium：`box-shadow` = `<color> <ox>px <oy>px <blur>px <spread>px [inset]`（color 在前经 currentcolor 解析、4 长度全含即使为 0、inset 在末），`text-shadow` = `<color> <ox>px <oy>px <blur>px`（color 在前、3 长度全含、无 spread/inset——text-shadow spec 无此二者），多阴影逗号分隔，空列表→`none`。color 复用 R2705 `resolve_color_current`+`color_to_css`；长度复用 `format_num(v as f64, "px")`（结构存 f32）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"box-shadow"`+`"text-shadow"` 臂；新增 `box_shadow_to_css`（空→none；每阴影 color-first + 4 长 + inset 末）+ `text_shadow_to_css`（空→none；每阴影 color-first + 3 长）；import 加 `BoxShadowComputedValue`/`TextShadowComputedValue`。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_box_text_shadow`（box-shadow：无 color→currentcolor 默认 black `rgb(0,0,0) 5px 5px 0px 0px` / inset `rgb(255,0,0) 0px 0px 10px 0px inset` / 含 spread `rgb(0,0,255) 1px 2px 3px 4px` / 多阴影逗号分隔 / currentcolor→元素 color green `rgb(0,128,0) 5px 5px 0px 0px`；text-shadow：`rgb(0,0,0) 2px 4px 0px` / `rgb(255,0,0) 0px 0px 10px`；默认→`none`）。 |
+
+**对齐 Chromium**：box-shadow/text-shadow 的 color-first + 全长度格式与 Chromium getComputedStyle / WPT expect 一致。**已知限制**：① alpha 经 u8 往返精度（`rgba(0,0,0,0.3)`→`rgba(0,0,0,0.298)`，pre-existing R2705 限制，非本序列化引入，测试用 solid color 规避）；② `getComputedStyle(el).cssText`/length 仍返 ''/0。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13364 passed / 0 failed / 74 ignored**，13363+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 8/8 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧两属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
