@@ -4525,6 +4525,40 @@ fn test_get_computed_style_grid_tracks() {
 }
 
 #[test]
+fn test_get_computed_style_grid_template_shorthand_r2766() {
+    // R2766：getComputedStyle grid-template 简写（rows/columns/areas 三 longhand 重组）。Chromium 150 oracle 锚定：
+    // 全 none→"none"；areas==none→"<rows> / <cols>"（rows/cols 各自可 none）；areas!=none→引号区域与行尺寸逐行
+    // 交错 + " / " + cols（area 数 != 行尺寸数→"" 空串，Chromium 同样不可序列化）。
+    let html = "<html><body>\
+        <div id=\"d\"></div>\
+        <div id=\"simple\" style=\"grid-template: 100px 200px / 1fr 1fr 1fr;\"></div>\
+        <div id=\"cols\" style=\"grid-template-columns: 1fr 1fr;\"></div>\
+        <div id=\"rows\" style=\"grid-template-rows: 100px 200px;\"></div>\
+        <div id=\"areas\" style='grid-template: \"a a a\" 50px \"b b b\" 1fr \"c c c\" 2fr / 1fr 1fr 1fr;'></div>\
+        </body></html>";
+    // 全 none（默认）→ "none"。
+    assert_eq!(computed_style_property(html, "#d", "grid-template"), "none");
+    // areas==none：恒 "<rows> / <cols>"（cols 缺省→none / rows 缺省→none）。
+    assert_eq!(
+        computed_style_property(html, "#simple", "grid-template"),
+        "100px 200px / 1fr 1fr 1fr"
+    );
+    assert_eq!(
+        computed_style_property(html, "#cols", "grid-template"),
+        "none / 1fr 1fr"
+    );
+    assert_eq!(
+        computed_style_property(html, "#rows", "grid-template"),
+        "100px 200px / none"
+    );
+    // areas!=none：引号区域与行尺寸逐行交错 + " / " + cols。
+    assert_eq!(
+        computed_style_property(html, "#areas", "grid-template"),
+        "\"a a a\" 50px \"b b b\" 1fr \"c c c\" 2fr / 1fr 1fr 1fr"
+    );
+}
+
+#[test]
 fn test_get_computed_style_containment() {
     // R2741：getComputedStyle containment 簇（content-visibility + contain-intrinsic-width/height）。
     let html = "<html><body>\

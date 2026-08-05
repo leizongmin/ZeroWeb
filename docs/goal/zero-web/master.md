@@ -1917,6 +1917,27 @@ oracle 锚定（用 linear-gradient 源避 url() 相对/绝对 longhand 既存 d
 
 **已知 diverge（pre-existing longhand，记录不阻塞）**：url() 源 ZW 存相对（`url("b.png")`）、Chromium 解析绝对（`url("file:///tmp/b.png")`）——R2757 background 既记的 url() 相对/绝对 diverge，本切片用 linear-gradient 源绕开（测试覆盖），简写本身正确。**border-image 簇（source + 4 longhand + 简写）全收官**。
 
+### P1a `getComputedStyle` grid-template 简写（本轮 R2766，grid-template 重组）
+
+承接 R2765（border-image 簇收尾）。续用本地 Chromium 150 oracle 提取确切串，TDD red→green land **grid-template 简写**（rows/columns/areas 三 longhand——`Option<String>` 存原始 specified 串——重组）。oracle 揭示核心规则：
+
+- **① 全 none**（rows/cols/areas 均 None）→ `"none"`。
+- **② areas==none** → 恒 `"<rows> / <cols>"`（rows/cols 各自可为 none：仅设列→`none / 1fr 1fr`、仅设行→`100px 200px / none`）。
+- **③ areas!=none** → 引号区域串（`"a a" "b b"`）逐行交错进行尺寸：`"<area0> <size0> <area1> <size1> ... / <cols>"`，且**仅当 area 数 == 行尺寸数**可重组（Chromium 对不等数同样返 `""` 空串不可序列化）。
+
+oracle 锚定：默认→`"none"`、`100px 200px / 1fr 1fr 1fr`→`"100px 200px / 1fr 1fr 1fr"`、仅列→`"none / 1fr 1fr"`、仅行→`"100px 200px / none"`、areas 三行→`"a a a" 50px "b b b" 1fr "c c c" 2fr / 1fr 1fr 1fr`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +`grid_template_shorthand_to_css`（全 none→"none"；areas==none→`{rows} / {cols}`；areas!=none→交错或返空串）+ `split_grid_area_strings`（引号串拆分）+ `interleave_grid_template_areas`（计数匹配交错）+ 1 dispatch 项（`"grid-template"`）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_grid_template_shorthand_r2766`（默认 / 简单 / 仅列 / 仅行 / areas 三行交错，oracle 锚定）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13393 passed / 0 failed / 74 ignored**，13392+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 简写旧返 `''`、新返正确 CSSOM 重组串；② 复用 R2740 既 land 的 3 longhand（rows/cols/areas Option<String>），仅重组逻辑；③ areas 交错器计数守卫保证不可重组时返空串（同 Chromium，不劣化）。
+
+**已知 diverge（pre-existing，记录不阻塞）**：① repeat() ZW 不展开（apply.rs 直接 `to_string`，Chromium getComputedStyle 展开，R2740 longhand 既记限制）；② line-name `[x]` 混入 rows 时按空白拆会把 `[x]` 当一 token（areas 形式少混 line-name，罕见）；③ areas 形式 cols 缺省时拼 `... / none`（极边，areas 形式惯例带 cols，未 oracle 验证该边）。均 pre-existing/极边，序列化对常见形式正确。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

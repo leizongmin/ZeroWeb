@@ -511,6 +511,10 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "grid-template-columns" => opt_css_string(&style.grid_template_columns, "none"),
         "grid-template-rows" => opt_css_string(&style.grid_template_rows, "none"),
         "grid-template-areas" => opt_css_string(&style.grid_template_areas, "none"),
+        // ── grid-template 简写（R2766）── rows/columns/areas 三 longhand（Option<String> 原始串）重组。
+        // Chromium 150 oracle：全 none→"none"；areas==none→"<rows> / <cols>"；areas!=none→引号区域与行尺寸
+        // 逐行交错 + " / " + cols（area 数 != 行尺寸数 → "" 空串，Chromium 同样不可序列化）。
+        "grid-template" => grid_template_shorthand_to_css(style),
         "grid-auto-columns" => opt_css_string(&style.grid_auto_columns, "auto"),
         "grid-auto-rows" => opt_css_string(&style.grid_auto_rows, "auto"),
         // ── grid 线定位 longhand + 简写（R2759）── grid-column/row-start/end longhand + grid-column/row/area
@@ -2575,6 +2579,67 @@ fn opt_length_to_css(lv: &Option<LengthValue>, font_size_px: f64) -> String {
 /// 解析层限制（apply.rs 直接 `value.to_string()`），非 repeat 的固定/fr/minmax 轨道与 Chromium 一致。
 fn opt_css_string(s: &Option<String>, default: &str) -> String {
     s.clone().unwrap_or_else(|| default.to_string())
+}
+
+/// `grid-template` 简写：rows/columns/areas 三 longhand（`Option<String>` 存原始 specified 串）重组。
+/// Chromium 150 oracle 锚定：
+/// - 全 none → `"none"`；
+/// - areas==none → `"<rows> / <cols>"`（rows/cols 各自可为 `none`，如仅设列时 `none / 1fr 1fr`）；
+/// - areas!=none → 把引号区域串逐行交错进行尺寸：`"<area0> <size0> <area1> <size1> ... / <cols>"`，
+///   且仅当 area 数 == 行尺寸数可重组（Chromium 对不等数同样返 `""` 空串不可序列化）。
+fn grid_template_shorthand_to_css(style: &ComputedStyle) -> String {
+    let rows = style.grid_template_rows.as_deref();
+    let cols = style.grid_template_columns.as_deref();
+    let areas = style.grid_template_areas.as_deref();
+    if rows.is_none() && cols.is_none() && areas.is_none() {
+        return "none".to_string();
+    }
+    let rows_str = rows.unwrap_or("none");
+    let cols_str = cols.unwrap_or("none");
+    let rows_part = match areas {
+        None => rows_str.to_string(),
+        Some(a) => match interleave_grid_template_areas(a, rows_str) {
+            Some(s) => s,
+            // area 数 != 行尺寸数：Chromium 同样不可序列化，返空串（同未实现 fallback）。
+            None => return String::new(),
+        },
+    };
+    format!("{rows_part} / {cols_str}")
+}
+
+/// 把 grid-template-areas（`"a a" "b b"`，引号串空格连接）拆为带引号的 area 串列表。
+fn split_grid_area_strings(areas: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut in_quote = false;
+    for ch in areas.chars() {
+        if ch == '"' {
+            in_quote = !in_quote;
+            current.push(ch);
+            if !in_quote {
+                tokens.push(std::mem::take(&mut current));
+            }
+        } else if in_quote {
+            current.push(ch);
+        }
+    }
+    tokens
+}
+
+/// 交错 grid-template-areas 与 grid-template-rows：area 数 == 行尺寸数时返
+/// `"<area0> <size0> <area1> <size1> ..."`，否则 `None`（不可重组）。
+fn interleave_grid_template_areas(areas: &str, rows: &str) -> Option<String> {
+    let area_tokens = split_grid_area_strings(areas);
+    let sizes: Vec<&str> = rows.split_whitespace().collect();
+    if area_tokens.is_empty() || area_tokens.len() != sizes.len() {
+        return None;
+    }
+    let mut parts: Vec<String> = Vec::with_capacity(area_tokens.len() * 2);
+    for (a, s) in area_tokens.iter().zip(sizes.iter()) {
+        parts.push(a.clone());
+        parts.push((*s).to_string());
+    }
+    Some(parts.join(" "))
 }
 
 /// box-shadow：CSS Box Shadow 计算值序列化。空列表→`none`；否则每个阴影按 Chromium/WPT
