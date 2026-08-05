@@ -1,7 +1,7 @@
 //! getComputedStyle 计算与序列化——把 [`zero_style_system::ComputedStyle`] 的单属性序列化为
 //! CSS 字符串（kebab-case 属性名）。从 `js_dom_bridge` 拆出（R2709）以控制主文件行数。
 //!
-//! 覆盖：display/position/visibility/opacity + 颜色族 + 长度族 + 关键字/枚举族 + font-family/复合族
+//! 覆盖：display/position/visibility/opacity + 颜色族（color/background-color/border-*-color/outline-color/caret-color/accent-color）+ 长度族 + 关键字/枚举族 + font-family/复合族
 //! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break）+ vertical-align/unicode-bidi/empty-cells；未覆盖属性返 ''。
 
 use std::collections::HashMap;
@@ -14,15 +14,15 @@ use zero_css_parser::values::{
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
-    AlignContentValue, BackfaceVisibilityValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
-    BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
-    BackgroundSizeComputedValue, BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle,
-    ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue,
-    FilterComputedValue, FlexBasisValue, HyphensComputedValue, IsolationValue, JustifyItemsValue, JustifySelfValue,
-    LineBreakValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
-    OverflowWrapValue, PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue,
-    TextTransformValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue,
-    WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
+    AccentColorComputedValue, AlignContentValue, BackfaceVisibilityValue, BackgroundAttachmentComputedValue,
+    BackgroundClipComputedValue, BackgroundOriginComputedValue, BackgroundPositionComputedValue,
+    BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderCollapseValue, BorderStyleValue,
+    CaptionSideValue, CaretColorComputedValue, ComputedStyle, ContainComputedValue, ContentComputedValue, CursorValue,
+    DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, HyphensComputedValue, IsolationValue,
+    JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, MixBlendModeComputedValue,
+    ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue, StyleSystem, TableLayoutValue,
+    TextAlignValue, TextOverflowValue, TextTransformValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue,
+    VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -260,6 +260,9 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "vertical-align" => vertical_align_to_css(&style.vertical_align),
         "unicode-bidi" => unicode_bidi_to_css(&style.unicode_bidi),
         "empty-cells" => empty_cells_to_css(&style.empty_cells),
+        // ── caret-color / accent-color（R2730）── CSS UI 颜色（auto | <color>，复用 R2705 颜色解析）。
+        "caret-color" => caret_color_to_css(&style.caret_color, element_color),
+        "accent-color" => accent_color_to_css(&style.accent_color, element_color),
         _ => String::new(),
     }
 }
@@ -272,6 +275,23 @@ fn color_to_css(c: &zero_render_foundation::color::Color) -> String {
     } else {
         let alpha = ((c.a as f64 / 255.0) * 1000.0).round() / 1000.0;
         format!("rgba({}, {}, {}, {})", c.r, c.g, c.b, alpha)
+    }
+}
+
+/// caret-color：CSS UI 光标颜色（auto | <color>）。Auto→auto（CSS UI 4 初值，Chromium 返 auto）；
+/// Color→经 [`crate::resolve_color_current`] 解析 currentcolor 后 rgb/rgba（复用 R2705 颜色路径）。
+fn caret_color_to_css(c: &CaretColorComputedValue, element_color: &ColorValue) -> String {
+    match c {
+        CaretColorComputedValue::Auto => "auto".to_string(),
+        CaretColorComputedValue::Color(col) => color_to_css(&crate::resolve_color_current(col, element_color)),
+    }
+}
+
+/// accent-color：CSS UI 表单控件强调色（auto | <color>）。Auto→auto；Color→rgb/rgba（复用 R2705）。
+fn accent_color_to_css(a: &AccentColorComputedValue, element_color: &ColorValue) -> String {
+    match a {
+        AccentColorComputedValue::Auto => "auto".to_string(),
+        AccentColorComputedValue::Color(col) => color_to_css(&crate::resolve_color_current(col, element_color)),
     }
 }
 

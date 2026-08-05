@@ -3688,6 +3688,31 @@ fn test_get_computed_style_va_bidi_empty() {
 }
 
 #[test]
+fn test_get_computed_style_caret_accent_color() {
+    // R2730：getComputedStyle caret-color + accent-color 序列化（CSS UI 颜色 auto | <color>）。
+    let html = "<html><body>\
+        <div id=\"cc-red\" style=\"caret-color: red;\"></div>\
+        <div id=\"cc-cc\" style=\"color: blue; caret-color: currentcolor;\"></div>\
+        <div id=\"ac-green\" style=\"accent-color: #00ff00;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // caret-color 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "caret-color"), "auto");
+    assert_eq!(
+        computed_style_property(html, "#cc-red", "caret-color"),
+        "rgb(255, 0, 0)"
+    );
+    // currentcolor 解析为元素自身 color（blue → rgb(0,0,255)）。
+    assert_eq!(computed_style_property(html, "#cc-cc", "caret-color"), "rgb(0, 0, 255)");
+    // accent-color 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "accent-color"), "auto");
+    assert_eq!(
+        computed_style_property(html, "#ac-green", "accent-color"),
+        "rgb(0, 255, 0)"
+    );
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
