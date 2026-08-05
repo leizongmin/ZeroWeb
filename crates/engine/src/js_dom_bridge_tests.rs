@@ -1881,6 +1881,88 @@ fn test_set_url_part_rust_r2780() {
 }
 
 #[test]
+fn test_match_media_r2781() {
+    // R2781：window.matchMedia（host callback __zw_match_media → zero_css_parser::media_query）。
+    // 响应式设计 / viewport 查询高频（shim 曾缺失）。viewport 默认 1280x800（shim innerWidth/innerHeight）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.register_callback(
+        "__zw_match_media",
+        Box::new(|args: &[String]| -> String {
+            let query = args.first().map(String::as_str).unwrap_or("");
+            let width = args.get(1).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+            let height = args.get(2).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+            match_media_to_json(query, width, height)
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // (min-width: 768px) @1280 → true；(max-width: 500px) @1280 → false。
+    assert_eq!(
+        sandbox
+            .execute("matchMedia('(min-width: 768px)').matches + '|' + matchMedia('(max-width: 500px)').matches")
+            .unwrap()
+            .value,
+        "true|false"
+    );
+    // media 字段返回 query 串。
+    assert_eq!(
+        sandbox.execute("matchMedia('(min-width: 768px)').media").unwrap().value,
+        "(min-width: 768px)"
+    );
+    // orientation：landscape @1280x800 → true；portrait → false（is_portrait = h > w）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "matchMedia('(orientation: landscape)').matches + '|' + matchMedia('(orientation: portrait)').matches"
+            )
+            .unwrap()
+            .value,
+        "true|false"
+    );
+    // prefers-color-scheme 默认 light：light → true；dark → false。
+    assert_eq!(
+        sandbox
+            .execute("matchMedia('(prefers-color-scheme: light)').matches + '|' + matchMedia('(prefers-color-scheme: dark)').matches")
+            .unwrap()
+            .value,
+        "true|false"
+    );
+    // 逗号分隔 query list（OR 语义）：任一 match → true。
+    assert_eq!(
+        sandbox
+            .execute("matchMedia('(max-width: 1px), (min-width: 768px)').matches")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // viewport 覆盖：@500 → (min-width: 768px) → false。
+    assert_eq!(
+        sandbox
+            .execute("globalThis.innerWidth = 500; matchMedia('(min-width: 768px)').matches")
+            .unwrap()
+            .value,
+        "false"
+    );
+    // MediaQueryList extends EventTarget（R2779）+ legacy addListener/removeListener。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var m = matchMedia('(min-width: 1px)');\
+                 (m instanceof MediaQueryList) + '|' + (m instanceof EventTarget) + '|' +\
+                 typeof m.addListener + '|' + typeof m.removeListener"
+            )
+            .unwrap()
+            .value,
+        "true|true|function|function"
+    );
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，

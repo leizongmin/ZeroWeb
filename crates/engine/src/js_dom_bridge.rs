@@ -1747,6 +1747,23 @@ fn set_url_host_and_port(url: &mut url::Url, value: &str) -> bool {
     true
 }
 
+/// 媒体查询求值为 JSON 串（供 JS shim `window.matchMedia(query)` 经 `__zw_match_media` 回调消费）。
+///
+/// 委托 `zero_css_parser::media_query`（spec-correct：min/max-width/height、orientation、resolution、
+/// prefers-color-scheme 等）。逗号分隔的 query list 取**或**（任一 match 即 matches=true）。返回
+/// `{"matches":bool,"media":<query>}`。viewport 宽高由 JS 侧传入（innerWidth/innerHeight，生产由
+/// host 更新为真 viewport）。提取为纯函数便于单测复用。
+pub(crate) fn match_media_to_json(query: &str, width: f64, height: f64) -> String {
+    let ctx = zero_css_parser::media_query::MediaContext::new(width, height);
+    let matches = zero_css_parser::media_query::parse_media_query(query)
+        .map(|mqs| {
+            mqs.iter()
+                .any(|mq| zero_css_parser::media_query::evaluate_media_query(mq, &ctx))
+        })
+        .unwrap_or(false);
+    format!(r#"{{"matches":{},"media":{}}}"#, matches, json_str(query))
+}
+
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
 ///
 /// 将 [`generate_js_dom_shim`] 产生的 JS shim 与宿主侧 [`DomMutation`] 收集器连接：
@@ -1804,6 +1821,19 @@ pub fn register_dom_callbacks(
             let part = args.get(1).map(String::as_str).unwrap_or("");
             let value = args.get(2).map(String::as_str).unwrap_or("");
             set_url_part(prev, part, value)
+        }),
+    );
+
+    // `window.matchMedia(query)`——响应式设计 / viewport 查询高频。委托 [`match_media_to_json`]（spec-correct
+    // via `zero_css_parser::media_query`，含 min/max-width/height、orientation、prefers-color-scheme）。
+    // JS 侧传 query + viewport 宽高（innerWidth/innerHeight）；返 `{"matches","media"}` JSON。
+    sandbox.register_callback(
+        "__zw_match_media",
+        Box::new(|args: &[String]| -> String {
+            let query = args.first().map(String::as_str).unwrap_or("");
+            let width = args.get(1).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+            let height = args.get(2).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+            match_media_to_json(query, width, height)
         }),
     );
 

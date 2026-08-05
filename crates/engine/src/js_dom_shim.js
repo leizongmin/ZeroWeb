@@ -2768,6 +2768,33 @@
   };
   globalThis.EventTarget = globalThis.EventTarget || EventTarget;
 
+  // matchMedia——window.matchMedia(query) 响应式设计 / viewport 查询（modern 站点高频，shim 曾缺失）。
+  // 委托 host `__zw_match_media(query, w, h)`（spec-correct via zero_css_parser::media_query）。返
+  // MediaQueryList（extends EventTarget R2779）：media/matches + addEventListener('change') + legacy
+  // addListener/removeListener。**已知限制**：change 事件需 host resize 跟踪派发（当前无，addListener
+  // 注册有效但不触发；matches 为查询时刻快照，spec 一致）。
+  function MediaQueryList(media, matches) {
+    this._et_listeners = {}; // EventTarget 内部 listener map（EventTarget 构造器未自动调，手动初始化）
+    this.media = media;
+    this.matches = matches;
+  }
+  MediaQueryList.prototype = Object.create(EventTarget.prototype);
+  MediaQueryList.prototype.constructor = MediaQueryList;
+  // legacy 别名（旧 API：addListener/removeListener → change 事件）。
+  MediaQueryList.prototype.addListener = function (cb) { this.addEventListener('change', cb); };
+  MediaQueryList.prototype.removeListener = function (cb) { this.removeEventListener('change', cb); };
+  globalThis.MediaQueryList = globalThis.MediaQueryList || MediaQueryList;
+  function matchMedia(query) {
+    var q = String(query);
+    var matches = false;
+    if (typeof __zw_match_media === 'function') {
+      var raw = __zw_match_media(q, globalThis.innerWidth || 0, globalThis.innerHeight || 0);
+      try { var p = JSON.parse(raw); matches = !!p.matches; } catch (_) {}
+    }
+    return new MediaQueryList(q, matches);
+  }
+  globalThis.matchMedia = globalThis.matchMedia || matchMedia;
+
   globalThis.document = {
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);
