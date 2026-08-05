@@ -1143,6 +1143,23 @@ getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1�
 
 **P1a 实际剩余（recon 纠偏后）**：① rAF 帧驱动（本设计，R2713a/b）；② IO/RO 持续跟踪核查（`__zw_observers_tick` 是否已覆盖 vs 仍需 Slice 2b）；③ fetch 完整化（**网络，按任务跳过**）；④ A 代 `DomCommand`/`parse_command` 死代码（CLAUDE.md「提及不删」，仅单测引用）。事件循环 slice 1 的 macro-task 队列/rAF/ric 三项中，ric + macro-task FIFO 已 done，仅 rAF 待落地。
 
+### P1a 事件循环 Slice 1 帧驱动 rAF — shim 落地（本轮 R2713a，R2712 设计 doc 实施 1/2）
+
+承接 R2712（帧驱动 rAF 设计 doc）。落地设计 doc 的「首批提交 R2713a」：shim 侧帧驱动 rAF 基建，kill-switch 默认 OFF = 零默认行为变更。renderer tick 接通 + worker env inject 为 R2713b（下一轮）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_shim.js` | 加 `globalThis.__ZW_RAF_FRAME_DRIVEN`（默认 false，host 注入覆盖）+ `_rafPending` 队列；`requestAnimationFrame` 按 flag 分支（ON=注册到队列延后 `__zw_raf_tick` / OFF=旧同步 stub 预算内立即 `fn(0)`，OFF 路径返回值仍 `_timerId++` 逐字节不变）；`cancelAnimationFrame` ON=删队列 / OFF=no-op；新增 `globalThis.__zw_raf_tick(ts)` host 回调（OFF 早返零开销；ON 快照队列→清空→按序 `cb(ts)`，rAF 内重注册入下一帧）。 |
+| `engine/js_dom_bridge_tests.rs` | +3 V8 sandbox 测试：`test_raf_frame_driven_on_path`（ON：tick 前不 fire / tick 后按序 fire 两个 / 传 ts=16.7）、`test_raf_frame_driven_cancel`（ON：cancelAnimationFrame 后不 fire）、`test_raf_sync_stub_off_path`（OFF：rAF 立即同步 fire + `__zw_raf_tick` no-op，零默认行为变更守护）。 |
+
+**kill-off 安全**：env `ZW_RAF_FRAME_DRIVEN` 默认 unset/OFF → rAF 走旧同步 stub（OFF 路径 `_timerId++` 返回值 + 预算 + `fn(0)` 逐字节不变）→ reftest 双 rAF 模式不受影响。`__zw_raf_tick` OFF 路径首行 `if (!__ZW_RAF_FRAME_DRIVEN) return` 零开销。renderer 未接通前 ON 路径仅由单测驱动（`__zw_raf_tick` 直调），不进生产。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13337 passed / 0 failed / 74 ignored**，13334+3 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2712 baseline 持平 → 默认 OFF 零渲染影响）+ 8 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① 默认 OFF = 同步 stub 逐字节不变（OFF 路径单测守护）；② 帧驱动 ON 路径仅由 kill-switch 激活，默认不触发；③ ON 路径单测证 fire-on-tick / cancel / ts 传递正确。
+
+**下一步（R2713b）**：renderer `tick_observers`（`page_scripts.rs:127-143`）附带执行 `if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(<ts>);`（OFF 时 shim 早返零开销）；worker init（`tab_js_worker.rs`）读 `ZW_RAF_FRAME_DRIVEN` env、execute shim 前 inject `globalThis.__ZW_RAF_FRAME_DRIVEN`；核查 in-process `tab_worker.rs` post-render 回调点。
+
 
 
 

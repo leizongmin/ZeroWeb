@@ -3134,6 +3134,93 @@ fn test_get_computed_style_numeric_special() {
 }
 
 #[test]
+fn test_raf_frame_driven_on_path() {
+    // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
+    // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    // host 在 execute 前注入 env flag（模拟 worker init 读 ZW_RAF_FRAME_DRIVEN=1）。
+    sandbox.execute("globalThis.__ZW_RAF_FRAME_DRIVEN = true;").unwrap();
+    sandbox.execute(
+        "globalThis.__count = 0; globalThis.__ts = 'none';\
+         requestAnimationFrame(function(t){ globalThis.__count++; globalThis.__ts = String(t); });\
+         requestAnimationFrame(function(){ globalThis.__count++; });",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__count)").unwrap().value,
+        "0",
+        "帧驱动：tick 前回调不应 fire"
+    );
+    // host render 后调 __zw_raf_tick(16.7) → 按注册序 fire 两个、传 ts、清空队列。
+    sandbox.execute("globalThis.__zw_raf_tick(16.7);").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__count)").unwrap().value,
+        "2",
+        "tick 后按注册序 fire 两个回调"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ts").unwrap().value,
+        "16.7",
+        "回调收到 ts 参数"
+    );
+}
+
+#[test]
+fn test_raf_frame_driven_cancel() {
+    // R2713a：cancelAnimationFrame（ON 路径）移除待 fire 回调；tick 后不 fire。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox.execute("globalThis.__ZW_RAF_FRAME_DRIVEN = true;").unwrap();
+    sandbox.execute(
+        "globalThis.__fired = 'no';\
+         var id = requestAnimationFrame(function(){ globalThis.__fired = 'yes'; });\
+         cancelAnimationFrame(id);",
+    ).unwrap();
+    sandbox.execute("globalThis.__zw_raf_tick(0);").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__fired").unwrap().value,
+        "no",
+        "cancelAnimationFrame 后回调不 fire"
+    );
+}
+
+#[test]
+fn test_raf_sync_stub_off_path() {
+    // R2713a：OFF 路径（env unset = 默认）保留同步 stub——rAF 立即同步 fire（reftest 兼容），
+    // __zw_raf_tick 为 no-op。零默认行为变更的回归守护。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    // 不设 __ZW_RAF_FRAME_DRIVEN（默认 false）。
+    sandbox.execute(
+        "globalThis.__fired = 'no';\
+         requestAnimationFrame(function(){ globalThis.__fired = 'yes'; });",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__fired").unwrap().value,
+        "yes",
+        "OFF 路径：rAF 立即同步 fire（reftest 兼容，零默认行为变更）"
+    );
+    // __zw_raf_tick OFF 路径 no-op（不应抛错、不重复 fire）。
+    sandbox.execute("globalThis.__zw_raf_tick(0);").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__fired").unwrap().value, "yes");
+}
+
+#[test]
 fn test_element_attributes_nodelist() {
     // R2699：el.attributes（NamedNodeMap 只读快照）——length/item/getNamedItem/数值索引/迭代。
     use std::sync::{Arc, Mutex};

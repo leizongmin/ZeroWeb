@@ -39,6 +39,14 @@
   // 模式只需 2-3 帧即可收敛。
   var _rafBudget = 64;
 
+  // P1a 事件循环 slice 1（R2713a）：帧驱动 rAF kill-switch + 注册队列。
+  // `__ZW_RAF_FRAME_DRIVEN` 由 host（worker init 读 env `ZW_RAF_FRAME_DRIVEN`）在 execute 前注入：
+  // unset/false = 同步 stub（reftest 兼容，rAF 立即 fn(0)）；true = 帧驱动（rAF 注册到
+  // `_rafPending`，render 后 host 调 `__zw_raf_tick(ts)` 派发）。OFF 时 `__zw_raf_tick` 早返零开销。
+  // 详见 docs/goal/zero-web/p1a-event-loop-raf-slice-design-2026-08-05.md。
+  globalThis.__ZW_RAF_FRAME_DRIVEN = globalThis.__ZW_RAF_FRAME_DRIVEN || false;
+  var _rafPending = {}; // id -> fn（帧驱动路径注册队列；OFF 路径不填充）
+
   // P1a Slice 2b：observer 注册表——host render 后经 `__zw_observers_tick()` 对每个活跃
   // observer 调 `_schedule()`，使 IO/RO 在 cross-threshold / size-change 时派发后续通知
   // （observe 仅派发 initial；后续 render 的真实 layout 变化须 host tick 触发复算）。
@@ -557,13 +565,28 @@
   // 同步立即执行回调即可让 setup mutation 被记录并应用到二次渲染（镜像 setTimeout 的 microtask 语义，
   // 但同步以保证回调在 sandbox 生命周期内必然执行）。
   globalThis.requestAnimationFrame = function(fn) {
-    if (typeof fn === 'function' && _rafBudget > 0) {
+    var id = _timerId++;
+    if (globalThis.__ZW_RAF_FRAME_DRIVEN) {
+      // 帧驱动（R2713a）：延后到 host render 后的 __zw_raf_tick 派发（spec rAF 语义）。
+      if (typeof fn === 'function') _rafPending[id] = fn;
+    } else if (typeof fn === 'function' && _rafBudget > 0) {
+      // 同步 stub（reftest 兼容，默认路径）：预算内立即 fn(0)，让 double-rAF setup mutation
+      // 进入最终 HTML 被 harness 单渲染捕获。
       _rafBudget--;
       try { fn(0); } catch (_e) {}
     }
-    return _timerId++;
+    return id;
   };
-  globalThis.cancelAnimationFrame = function(_id) {};
+  globalThis.cancelAnimationFrame = function(id) {
+    if (globalThis.__ZW_RAF_FRAME_DRIVEN) delete _rafPending[id];
+    // OFF 路径 no-op（旧行为）。
+  };
+  // host 在 render 后调用（renderer tick_observers；OFF 时早返零开销）。ts = DOMHighResTimeStamp（ms）。
+  globalThis.__zw_raf_tick = function(ts) {
+    if (!globalThis.__ZW_RAF_FRAME_DRIVEN) return;
+    var cbs = _rafPending; _rafPending = {}; // 本帧快照、清空（rAF 内重注册入下一帧队列）
+    for (var id in cbs) { try { cbs[id](ts); } catch (_e) {} }
+  };
   globalThis.webkitRequestAnimationFrame = globalThis.requestAnimationFrame;
   globalThis.mozRequestAnimationFrame = globalThis.requestAnimationFrame;
 
