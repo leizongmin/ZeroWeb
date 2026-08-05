@@ -4046,6 +4046,58 @@ fn test_get_computed_style_shorthands_r2755() {
 }
 
 #[test]
+fn test_get_computed_style_transition_animation_shorthand_r2756() {
+    // R2756：getComputedStyle transition / animation 简写（CSSOM 列表 zip 重组）。
+    // 每项期望串经本地 Chromium 150 oracle 提取（--dump-dom 写 DOM 法），TDD red→green 对齐。
+    let html = "<html><body>\
+        <div id=\"def\"></div>\
+        <div id=\"tn\" style=\"transition: none;\"></div>\
+        <div id=\"t1\" style=\"transition: margin 2s;\"></div>\
+        <div id=\"t2\" style=\"transition: margin 2s ease-in 1s;\"></div>\
+        <div id=\"t5\" style=\"transition: 2s;\"></div>\
+        <div id=\"tm\" style=\"transition: margin 2s ease-in 1s, padding 0.5s;\"></div>\
+        <div id=\"an\" style=\"animation: none;\"></div>\
+        <div id=\"a1\" style=\"animation: bounce 2s;\"></div>\
+        <div id=\"a2\" style=\"animation: bounce 2s linear infinite alternate;\"></div>\
+        <div id=\"ad\" style=\"animation: 2s;\"></div>\
+        <div id=\"ap\" style=\"animation: bounce paused;\"></div>\
+        <div id=\"anm\" style=\"animation: bounce 2s ease-in 1s, spin 1s linear 2;\"></div>\
+        </body></html>";
+    // transition 简写：默认（空列表）→"all"；none→"none"；省初值（property=all 仅在其余全初值时显）。
+    assert_eq!(computed_style_property(html, "#def", "transition"), "all");
+    assert_eq!(computed_style_property(html, "#tn", "transition"), "none");
+    assert_eq!(computed_style_property(html, "#t1", "transition"), "margin 2s");
+    assert_eq!(
+        computed_style_property(html, "#t2", "transition"),
+        "margin 2s ease-in 1s"
+    );
+    // #t5：property=all（初值）省略，仅 duration 显。
+    assert_eq!(computed_style_property(html, "#t5", "transition"), "2s");
+    // 多条目逗号连接，逐索引 zip。
+    assert_eq!(
+        computed_style_property(html, "#tm", "transition"),
+        "margin 2s ease-in 1s, padding 0.5s"
+    );
+    // animation 简写：默认（空列表）→"none"；none→"none"；顺序 dur/tf/delay/iter/dir/fill/play/name 省初值。
+    assert_eq!(computed_style_property(html, "#def", "animation"), "none");
+    assert_eq!(computed_style_property(html, "#an", "animation"), "none");
+    assert_eq!(computed_style_property(html, "#a1", "animation"), "2s bounce");
+    assert_eq!(
+        computed_style_property(html, "#a2", "animation"),
+        "2s linear infinite alternate bounce"
+    );
+    // #ad：name=none（初值）省略，仅 duration 显。
+    assert_eq!(computed_style_property(html, "#ad", "animation"), "2s");
+    // #ap：play-state=paused 显（running 初值省），duration 0s 省。
+    assert_eq!(computed_style_property(html, "#ap", "animation"), "paused bounce");
+    // 多条目逗号连接，逐索引 zip。
+    assert_eq!(
+        computed_style_property(html, "#anm", "animation"),
+        "2s ease-in 1s bounce, 1s linear 2 spin"
+    );
+}
+
+#[test]
 fn test_get_computed_style_border_radius_shorthand() {
     // R2738：getComputedStyle border-radius 简写（CSSOM 4 值最小化）。4 角 longhand 早覆（R2707）。
     let html = "<html><body>\

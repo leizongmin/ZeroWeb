@@ -1066,7 +1066,7 @@ fn apply_transition_property_none() {
         "transition-property",
         "none"
     ));
-    assert!(style.transition_property.is_empty());
+    assert_eq!(style.transition_property, vec!["none".to_string()]); // R2756：保留 "none" 对齐 Chromium
 }
 
 #[test]

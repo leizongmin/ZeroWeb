@@ -1718,6 +1718,27 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① 4 简写旧返 `''`（getComputedStyle 未实现简写重组）、新返正确 CSSOM 串；② column-rule-width 修真 diverge（0px→3px 对齐 Chromium）；③ 序列化纯只读 JS bridge，不触及渲染/布局，welcome smoke 持平证零产品影响。
 
+### P1a `getComputedStyle` transition/animation 简写 + 「none」存储 diverge 修复（本轮 R2756，getComputedStyle 维护态续）
+
+承接 R2755。续用本地 Chromium 150 oracle 提取确切串，TDD red→green land **2 列表简写 + 1 存储层 diverge 修复**：
+
+- **transition 简写**：CSSOM 列表 zip——每条目 `property duration timing-function delay` 省初值；`property=all` 仅在其余全初值时显（避免空串）；默认空列表→`"all"`；多条目逗号连接。oracle：`margin 2s ease-in 1s, padding 0.5s`→`"margin 2s ease-in 1s, padding 0.5s"`。
+- **animation 简写**：顺序 `duration / timing-function / delay / iteration-count / direction / fill-mode / play-state / name` 各 longhand 省初值；全初值→`"none"`；多条目逗号连接。oracle：`bounce 2s linear infinite alternate`→`"2s linear infinite alternate bounce"`。
+- **★ transition-property/animation-name「none」存储 diverge 修复**：oracle 揭示 `transition: none`→`"none"`、`animation: 2s`（name 省略）→`"2s"`，但 ZW 旧 apply（`apply_advanced.rs`）对两 longhand `.filter(s != "none")` 致 `transition: none` 被吞成空列表（→`"all"` diverge）、`animation: 2s` 的 name `"none"` 被吞成空列表（→`"none"` diverge）。核验该 filter **冗余**——transition 引擎（`transition.rs:70` `if property=="none" skip`）+ 动画管线（`pipeline/mod.rs:1015` `n != "none"` 过滤）**均已有 "none" 守卫**，apply 层 filter 是重复防御。移除两处 filter 后 diverge 修复，引擎行为零变化（守卫既在）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +2 helper（`transition_shorthand_to_css`/`animation_shorthand_to_css`，列表 zip 省初值重组）+ 2 dispatch 项。 |
+| `style-system/property/apply_advanced.rs` | 移除 `transition-property`/`animation-name` 的 `.filter(s != "none")`（冗余，引擎已有 "none" 守卫）+ 注释更新。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_transition_animation_shorthand_r2756`（transition/animation 简写全覆盖含多条目 zip，oracle 锚定）。 |
+| `style-system/tests/{apply_coverage,coverage_round3,advanced}.rs` | 5 个旧测试断言 `is_empty()`→`vec!["none"]` 纠偏（适配 filter 移除后的正确存储）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13383 passed / 0 failed / 74 ignored**，13382+1 新测试，5 旧测试断言纠偏，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS（**「none」存储层变更经产品 smoke 证 transition/animation 引擎零回归**）。
+
+**为何零回归且净正向**：① 2 简写旧返 `''`、新返正确 CSSOM 列表重组串；② 「none」filter 移除修真 diverge（`transition: none`/`animation: 2s` 对齐 Chromium），且经核验引擎两处 "none" 守卫既在 → 存储层变更零引擎行为变化，welcome smoke 持平实证；③ 5 旧测试断言纠偏反映正确存储语义。
+
+**已知 diverge（记录不阻塞）**：`animation: bounce 0s`（显式 0s duration）Chromium 返 `"0s bounce"`，ZW computed duration=0s 与 `animation: bounce`（省略 duration）不可区分→均返 `"bounce"`（computed 不追踪 specified-ness）。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

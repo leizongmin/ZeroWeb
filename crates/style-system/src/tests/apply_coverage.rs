@@ -1070,18 +1070,21 @@ fn test_apply_animation_iteration_count_infinite() {
 
 #[test]
 fn test_apply_transition_property_none() {
+    // R2756：保留 "none"（不滤空）以区分 `transition: none`（→["none"]）与未设置（→[]），
+    // 对齐 Chromium getComputedStyle；transition 引擎在 transition.rs 跳过 "none" 名。
     let (ok, s) = apply("transition-property", "none");
     assert!(ok);
-    assert!(s.transition_property.is_empty());
+    assert_eq!(s.transition_property, vec!["none".to_string()]);
 }
 
 // === animation-name none ===
 
 #[test]
 fn test_apply_animation_name_none() {
+    // R2756：保留 "none"（动画管线 pipeline/mod.rs 过滤 `n != "none"`，不入动画系统）。
     let (ok, s) = apply("animation-name", "none");
     assert!(ok);
-    assert!(s.animation_name.is_empty());
+    assert_eq!(s.animation_name, vec!["none".to_string()]);
 }
 
 // === font-family 不区分大小写 ===

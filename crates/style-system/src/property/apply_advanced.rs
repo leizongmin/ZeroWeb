@@ -141,12 +141,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         },
         // ── Transitions ──
         "transition-property" => {
-            // transition-property: none 表示无过渡属性，结果为空列表
-            style.transition_property = value
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| s != "none")
-                .collect();
+            // 保留 "none"（不滤空）：transition 引擎已在 transition.rs 跳过 "none"/空名，
+            // 故保留使 getComputedStyle 序列化能区分 `transition: none`（→ ["none"]→"none"）
+            // 与未设置（→ []→"all"），对齐 Chromium（R2756 修旧 filter 致 none 被吞→"all" diverge）。
+            style.transition_property = value.split(',').map(|s| s.trim().to_string()).collect();
             return true;
         }
         "transition-duration" => {
@@ -236,12 +234,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
 
         // ── Animation 属性 ──
         "animation-name" => {
-            // animation-name: none 表示无动画，结果为空列表
-            style.animation_name = value
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| s != "none")
-                .collect();
+            // 保留 "none"（不滤空）：动画管线已在 pipeline/mod.rs 过滤 `n != "none"`（不入动画
+            // 系统），故保留使 getComputedStyle 能区分 `animation: 2s`（name 省略→["none"]）等
+            // 情形的简写序列化，对齐 Chromium（R2756 修旧 filter 致省略 name 时 list 被吞）。
+            style.animation_name = value.split(',').map(|s| s.trim().to_string()).collect();
             return true;
         }
         "animation-duration" => {

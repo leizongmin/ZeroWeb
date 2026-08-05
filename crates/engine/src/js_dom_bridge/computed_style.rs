@@ -491,6 +491,10 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "animation-timing-function" => {
             enum_list_to_css(&style.animation_timing_function, "ease", timing_function_to_css)
         }
+        // ── transition / animation 简写（R2756）── longhand 早覆（上方列表族）；简写 CSSOM 重组
+        // （逐索引 zip 等长列表，省初值，逗号连接），Chromium 150 oracle 锚定。
+        "transition" => transition_shorthand_to_css(style),
+        "animation" => animation_shorthand_to_css(style),
         _ => String::new(),
     }
 }
@@ -1888,6 +1892,124 @@ fn enum_list_to_css<T>(list: &[T], default: &str, f: impl Fn(&T) -> String) -> S
     } else {
         list.iter().map(f).collect::<Vec<_>>().join(", ")
     }
+}
+
+/// `transition` 简写：`<single-transition>#`（CSS Transitions）。CSSOM 序列化（Chromium 150 oracle）：
+/// 每条目 = property / duration / timing-function / delay，各 longhand 省初值；property=all 仅在
+/// 其余 longhand 全初值时显（避免空串）。`transition:margin 2s ease-in 1s`→`"margin 2s ease-in 1s"`；
+/// 默认（空列表）→`"all"`；`transition:none`→`"none"`。4 longhand 列表等长（`expand_transition`
+/// 保证），逐索引 zip 后逗号连接。
+fn transition_shorthand_to_css(style: &ComputedStyle) -> String {
+    let n = style.transition_property.len();
+    if n == 0 {
+        return "all".to_string();
+    }
+    (0..n)
+        .map(|i| {
+            let prop = style.transition_property[i].as_str();
+            let dur = format_num(style.transition_duration.get(i).copied().unwrap_or(0.0), "s");
+            let tf = style
+                .transition_timing_function
+                .get(i)
+                .map(timing_function_to_css)
+                .unwrap_or_else(|| "ease".to_string());
+            let delay = format_num(style.transition_delay.get(i).copied().unwrap_or(0.0), "s");
+            let all_rest_initial = dur == "0s" && tf == "ease" && delay == "0s";
+            let mut parts = Vec::new();
+            if prop != "all" || all_rest_initial {
+                parts.push(prop.to_string());
+            }
+            if dur != "0s" {
+                parts.push(dur);
+            }
+            if tf != "ease" {
+                parts.push(tf);
+            }
+            if delay != "0s" {
+                parts.push(delay);
+            }
+            parts.join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// `animation` 简写：`<single-animation>#`（CSS Animations）。CSSOM 序列化（Chromium 150 oracle）：
+/// 每条目顺序 duration / timing-function / delay / iteration-count / direction / fill-mode /
+/// play-state / name，各 longhand 省初值（0s/ease/0s/1/normal/none/running/none）；全初值→`"none"`。
+/// `animation:bounce 2s linear infinite alternate`→`"2s linear infinite alternate bounce"`。
+/// 8 longhand 列表等长（`expand_animation` 保证），逐索引 zip 后逗号连接。
+/// **已知 diverge**：`animation: bounce 0s`（显式 0s duration）Chromium 返 `"0s bounce"`，但 ZW
+/// computed duration=0s 与 `animation: bounce`（省略 duration）不可区分→均返 `"bounce"`（罕见病理输入，
+/// 同 R2754/R2755 谱「computed 不追踪 specified-ness」，记录不阻塞）。
+fn animation_shorthand_to_css(style: &ComputedStyle) -> String {
+    let n = style.animation_name.len();
+    if n == 0 {
+        return "none".to_string();
+    }
+    (0..n)
+        .map(|i| {
+            let name = style.animation_name[i].as_str();
+            let dur = format_num(style.animation_duration.get(i).copied().unwrap_or(0.0), "s");
+            let tf = style
+                .animation_timing_function
+                .get(i)
+                .map(timing_function_to_css)
+                .unwrap_or_else(|| "ease".to_string());
+            let delay = format_num(style.animation_delay.get(i).copied().unwrap_or(0.0), "s");
+            let iter = match style.animation_iteration_count.get(i) {
+                None => "1".to_string(),
+                Some(None) => "infinite".to_string(),
+                Some(Some(v)) => format_num(*v, ""),
+            };
+            let dir = style
+                .animation_direction
+                .get(i)
+                .map(animation_direction_str)
+                .unwrap_or_else(|| "normal".to_string());
+            let fill = style
+                .animation_fill_mode
+                .get(i)
+                .map(animation_fill_mode_str)
+                .unwrap_or_else(|| "none".to_string());
+            let play = style
+                .animation_play_state
+                .get(i)
+                .map(animation_play_state_str)
+                .unwrap_or_else(|| "running".to_string());
+            let mut parts = Vec::new();
+            if dur != "0s" {
+                parts.push(dur);
+            }
+            if tf != "ease" {
+                parts.push(tf);
+            }
+            if delay != "0s" {
+                parts.push(delay);
+            }
+            if iter != "1" {
+                parts.push(iter);
+            }
+            if dir != "normal" {
+                parts.push(dir);
+            }
+            if fill != "none" {
+                parts.push(fill);
+            }
+            if play != "running" {
+                parts.push(play);
+            }
+            if name != "none" {
+                parts.push(name.to_string());
+            }
+            if parts.is_empty() {
+                "none".to_string()
+            } else {
+                parts.join(" ")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// animation-direction：CSS Animations 方向（normal/reverse/alternate/alternate-reverse）。

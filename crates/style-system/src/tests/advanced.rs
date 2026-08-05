@@ -871,7 +871,7 @@ fn test_opacity_inheritance() {
 }
 
 #[test]
-/// transition-property: none 表示无过渡属性，结果为空列表
+/// transition-property: none → 保留 ["none"]（R2756：区分 `transition: none` 与未设置，对齐 Chromium）
 fn test_transition_property_none() {
     let (doc, _html, _body, div, _p) = make_test_dom();
     let mut sys = StyleSystem::new();
@@ -889,12 +889,12 @@ fn test_transition_property_none() {
 
     let styles = sys.compute_styles(&doc, &stylesheets);
     let div_style = styles.get(&div).expect("div should have style");
-    // transition: none → transition-property 解析为空列表
-    assert!(div_style.transition_property.is_empty());
+    // transition: none → transition-property = ["none"]（引擎在 transition.rs 跳过 "none" 名）
+    assert_eq!(div_style.transition_property, vec!["none".to_string()]);
 }
 
 #[test]
-/// animation-name: none 表示无动画，结果为空列表
+/// animation-name: none → 保留 ["none"]（R2756：动画管线过滤 `n != "none"`，不入动画系统）
 fn test_animation_name_none() {
     let (doc, _html, _body, div, _p) = make_test_dom();
     let mut sys = StyleSystem::new();
@@ -912,8 +912,8 @@ fn test_animation_name_none() {
 
     let styles = sys.compute_styles(&doc, &stylesheets);
     let div_style = styles.get(&div).expect("div should have style");
-    // animation: none → animation-name 解析为空列表
-    assert!(div_style.animation_name.is_empty());
+    // animation: none → animation-name = ["none"]
+    assert_eq!(div_style.animation_name, vec!["none".to_string()]);
 }
 
 #[test]
