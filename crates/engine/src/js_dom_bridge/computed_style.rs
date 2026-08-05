@@ -6,9 +6,10 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::{
-    AlignmentValue, BoxSizingValue, ClearValue, ColorValue, DisplayValue, FlexDirectionValue, FlexWrapValue,
-    FloatValue, FontStyleValue, FontWeightValue, LengthValue, ListStylePositionValue, ListStyleTypeValue,
-    OverflowValue, PositionValue, TransformFunction, TransformValue, VisibilityValue,
+    AlignmentValue, BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorValue, DisplayValue,
+    FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, LengthValue,
+    ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue,
+    TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_style_system::{
     BackfaceVisibilityValue, BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle,
@@ -79,8 +80,8 @@ pub fn lookup_computed_property(
 ///   isolation/mix-blend-mode/pointer-events/user-select/list-style-type·position）+ 数值族
 ///   （flex-grow/flex-shrink/order/flex-basis/aspect-ratio）+ Transforms（transform 函数列表 /
 ///   transform-origin 两长度 / transform-style / backface-visibility / perspective /
-///   perspective-origin）+ contain（关键字 / 位掩码组合）+ filter（函数列表）+ will-change（列表）。
-///   未覆盖属性返 ''。
+///   perspective-origin）+ contain（关键字 / 位掩码组合）+ filter（函数列表）+ will-change（列表）
+///   + clip-path（basic-shape 函数）。未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -257,6 +258,8 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         ),
         // ── will-change（R2720）── CSS Will Change 列表（空 Vec / Auto → auto）。
         "will-change" => will_change_to_css(&style.will_change),
+        // ── clip-path（R2721）── CSS Masking basic-shape 函数（none / inset / circle / ellipse / polygon）。
+        "clip-path" => clip_path_to_css(&style.clip_path, font_size_px),
         _ => String::new(),
     }
 }
@@ -976,6 +979,98 @@ fn will_change_to_css(list: &[WillChangeValue]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// clip-path：按 CSS Masking 计算值序列化 basic-shape 函数。
+///
+/// `None`→`none`；`inset()` 四内缩按 box 简写折叠（1/2/3/4 值，同 margin 语法）+ 可选 `round`；
+/// `circle()`/`ellipse()` 半径 + 可选 ` at <pos>`；`polygon()` 填充规则（仅 evenodd 输出）+ 逗号分隔顶点。
+/// 长度经 [`length_to_css`]；半径关键字 closest-side/farthest-side 原样。
+fn clip_path_to_css(c: &ClipPathValue, font_size_px: f64) -> String {
+    use ClipPathValue as C;
+    match c {
+        C::None => "none".to_string(),
+        C::Inset { top, right, bottom, left, round } => {
+            let mut inner = box_4_to_css(top, right, bottom, left, font_size_px);
+            if let Some(r) = round {
+                inner.push_str(&format!(" round {}", clip_path_radius_to_css(r, font_size_px)));
+            }
+            format!("inset({inner})")
+        }
+        C::Circle { radius, position } => {
+            let mut inner = clip_path_radius_to_css(radius, font_size_px);
+            if let Some((x, y)) = position {
+                inner.push_str(&format!(
+                    " at {} {}",
+                    length_to_css(x, font_size_px),
+                    length_to_css(y, font_size_px)
+                ));
+            }
+            format!("circle({inner})")
+        }
+        C::Ellipse { rx, ry, position } => {
+            let mut inner = format!(
+                "{} {}",
+                clip_path_radius_to_css(rx, font_size_px),
+                clip_path_radius_to_css(ry, font_size_px)
+            );
+            if let Some((x, y)) = position {
+                inner.push_str(&format!(
+                    " at {} {}",
+                    length_to_css(x, font_size_px),
+                    length_to_css(y, font_size_px)
+                ));
+            }
+            format!("ellipse({inner})")
+        }
+        C::Polygon { fill_rule, points } => {
+            let pts = points
+                .iter()
+                .map(|(x, y)| {
+                    format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            match fill_rule {
+                PolygonFillRule::NonZero => format!("polygon({pts})"),
+                PolygonFillRule::EvenOdd => format!("polygon(evenodd, {pts})"),
+            }
+        }
+    }
+}
+
+/// 序列化 clip-path 半径（circle/ellipse）。具体长度经 [`length_to_css`]；关键字原样。
+fn clip_path_radius_to_css(r: &ClipPathRadius, font_size_px: f64) -> String {
+    match r {
+        ClipPathRadius::Length(lv) => length_to_css(lv, font_size_px),
+        ClipPathRadius::ClosestSide => "closest-side".to_string(),
+        ClipPathRadius::FarthestSide => "farthest-side".to_string(),
+    }
+}
+
+/// 把 4 个 box 维度（top right bottom left，如 inset 内缩 / margin）序列化为 CSS box 简写：
+/// 全等→1 值；top==bottom && left==right→2 值；left==right→3 值；否则 4 值（同 margin 语法）。
+/// 比较按序列化后的字符串（等价 LengthValue 必序列化等价）。
+fn box_4_to_css(
+    top: &LengthValue,
+    right: &LengthValue,
+    bottom: &LengthValue,
+    left: &LengthValue,
+    font_size_px: f64,
+) -> String {
+    let t = length_to_css(top, font_size_px);
+    let r = length_to_css(right, font_size_px);
+    let b = length_to_css(bottom, font_size_px);
+    let l = length_to_css(left, font_size_px);
+    if t == r && r == b && b == l {
+        t
+    } else if t == b && r == l {
+        format!("{t} {r}")
+    } else if r == l {
+        format!("{t} {r} {b}")
+    } else {
+        format!("{t} {r} {b} {l}")
+    }
 }
 
 /// 序列化单个 [`TransformFunction`]。translate 类长度为 px（混合百分比分支保 `%`）；rotate/skew

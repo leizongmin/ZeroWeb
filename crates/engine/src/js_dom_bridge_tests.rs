@@ -3284,6 +3284,45 @@ fn test_get_computed_style_will_change() {
 }
 
 #[test]
+fn test_get_computed_style_clip_path() {
+    // R2721：getComputedStyle clip-path 序列化（CSS Masking basic-shape 函数）。
+    let html = "<html><body>\
+        <div id=\"none\" style=\"clip-path: none;\"></div>\
+        <div id=\"inset1\" style=\"clip-path: inset(10%);\"></div>\
+        <div id=\"inset2\" style=\"clip-path: inset(10% 20%);\"></div>\
+        <div id=\"inset-round\" style=\"clip-path: inset(5px round 10px);\"></div>\
+        <div id=\"circle\" style=\"clip-path: circle(50px at 25% 75%);\"></div>\
+        <div id=\"circle-def\" style=\"clip-path: circle();\"></div>\
+        <div id=\"polygon\" style=\"clip-path: polygon(0% 0%, 100% 0%, 50% 100%);\"></div>\
+        <div id=\"polygon-ee\" style=\"clip-path: polygon(evenodd, 0% 0%, 100% 0%, 50% 100%);\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // none。
+    assert_eq!(computed_style_property(html, "#none", "clip-path"), "none");
+    assert_eq!(computed_style_property(html, "#def", "clip-path"), "none");
+    // inset 单值折叠（解析展开 4 值全等 → 重新折叠为 1 值）。
+    assert_eq!(computed_style_property(html, "#inset1", "clip-path"), "inset(10%)");
+    // inset 双值（top==bottom, left==right）。
+    assert_eq!(computed_style_property(html, "#inset2", "clip-path"), "inset(10% 20%)");
+    // inset + round（圆角半径）。
+    assert_eq!(computed_style_property(html, "#inset-round", "clip-path"), "inset(5px round 10px)");
+    // circle 半径 + at 位置。
+    assert_eq!(computed_style_property(html, "#circle", "clip-path"), "circle(50px at 25% 75%)");
+    // circle() 空（默认 closest-side，无位置）。
+    assert_eq!(computed_style_property(html, "#circle-def", "clip-path"), "circle(closest-side)");
+    // polygon 默认 nonzero 省略填充规则，顶点逗号分隔。
+    assert_eq!(
+        computed_style_property(html, "#polygon", "clip-path"),
+        "polygon(0% 0%, 100% 0%, 50% 100%)"
+    );
+    // polygon evenodd 输出填充规则。
+    assert_eq!(
+        computed_style_property(html, "#polygon-ee", "clip-path"),
+        "polygon(evenodd, 0% 0%, 100% 0%, 50% 100%)"
+    );
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
