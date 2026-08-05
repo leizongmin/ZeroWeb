@@ -2888,9 +2888,9 @@ fn test_computed_style_cache_reuse_composition() {
     assert_eq!(computed_style_property(html, "#d", "color"), "rgb(255, 0, 0)");
     assert_eq!(computed_style_property(html, "#d", "display"), "none");
     assert_eq!(computed_style_property(html, "#d", "position"), "relative");
-    // 未命中选择器 / 未覆盖属性 → ''。
+    // 未命中选择器 → ''；margin-top R2707 起已覆盖（长度族）→ div 默认 0px。
     assert_eq!(lookup_computed_property(&doc, &styles, "#missing", "color"), "");
-    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "margin-top"), "");
+    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "margin-top"), "0px");
 }
 
 #[test]
@@ -2930,6 +2930,64 @@ fn test_get_computed_style_cache_invalidation() {
         "none",
         "html snapshot 变 → 缓存失效重算，返新 display=none（非 stale 的 block）"
     );
+}
+
+#[test]
+fn test_get_computed_style_lengths() {
+    // R2707：getComputedStyle 长度族（width/height/min-max/margin/padding/border-width/
+    // border-radius/outline-width/font-size/gap/letter-spacing/text-indent 等）。compute_styles
+    // 已把相对单位解析为 Px，故 px 指定值精确；百分比/auto 保留（无 layout 不解析为 used 值）。
+    // border/outline-width 在 style:none 时返 "0px"（对齐 real browser used 行为）；max-*:none → "none"。
+    let html = "<html><body>\
+        <div id=\"box\" style=\"\
+            width: 100px; height: 50%; \
+            margin-top: 10px; margin-right: 20px; margin-bottom: 10px; margin-left: 20px; \
+            padding: 5px; \
+            border-top-width: 3px; border-top-style: solid; \
+            border-top-left-radius: 8px; \
+            outline-width: 2px; outline-style: solid; \
+            max-width: 500px; min-width: auto; \
+            font-size: 20px; \
+            gap: 12px; letter-spacing: 0.1em; \
+        \"></div>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+
+    // px 指定 → 精确（Chrome 一致）。
+    assert_eq!(computed_style_property(html, "#box", "width"), "100px");
+    assert_eq!(computed_style_property(html, "#box", "margin-top"), "10px");
+    assert_eq!(computed_style_property(html, "#box", "margin-right"), "20px");
+    assert_eq!(computed_style_property(html, "#box", "margin-bottom"), "10px");
+    assert_eq!(computed_style_property(html, "#box", "margin-left"), "20px");
+    assert_eq!(computed_style_property(html, "#box", "padding-top"), "5px");
+    assert_eq!(computed_style_property(html, "#box", "padding-left"), "5px");
+    // 百分比 → 保留（计算值，无 layout 不解析 used 值）。
+    assert_eq!(computed_style_property(html, "#box", "height"), "50%");
+    // em → 解析为 px（letter-spacing 0.1em @ font-size 20px = 2px）。
+    assert_eq!(computed_style_property(html, "#box", "letter-spacing"), "2px");
+    assert_eq!(computed_style_property(html, "#box", "font-size"), "20px");
+    assert_eq!(computed_style_property(html, "#box", "gap"), "12px");
+    // border-width：style=solid → 真宽；border-radius px。
+    assert_eq!(computed_style_property(html, "#box", "border-top-width"), "3px");
+    assert_eq!(
+        computed_style_property(html, "#box", "border-top-left-radius"),
+        "8px"
+    );
+    // outline-width：style=solid → 真宽。
+    assert_eq!(computed_style_property(html, "#box", "outline-width"), "2px");
+    // max-width 指定 → px；min-width auto → "auto"。
+    assert_eq!(computed_style_property(html, "#box", "max-width"), "500px");
+    assert_eq!(computed_style_property(html, "#box", "min-width"), "auto");
+
+    // 默认 div（无 border/outline）：border/outline-width 返 "0px"（style:none → used=0）。
+    assert_eq!(computed_style_property(html, "#plain", "border-top-width"), "0px");
+    assert_eq!(computed_style_property(html, "#plain", "outline-width"), "0px");
+    // 默认 max-width/max-height:none → "none"；默认 margin:0 → "0px"；默认 width:auto → "auto"。
+    assert_eq!(computed_style_property(html, "#plain", "max-width"), "none");
+    assert_eq!(computed_style_property(html, "#plain", "max-height"), "none");
+    assert_eq!(computed_style_property(html, "#plain", "margin-top"), "0px");
+    assert_eq!(computed_style_property(html, "#plain", "width"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "font-size"), "16px");
 }
 
 #[test]

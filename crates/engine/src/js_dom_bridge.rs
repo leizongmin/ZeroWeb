@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use zero_css_parser::values::{DisplayValue, PositionValue, VisibilityValue};
-use zero_style_system::{ComputedStyle, StyleSystem};
+use zero_css_parser::values::{DisplayValue, LengthValue, PositionValue, VisibilityValue};
+use zero_style_system::{BorderStyleValue, ComputedStyle, OutlineStyleValue, StyleSystem};
 
 use zero_dom::{Document, FocusManager, NodeId, NodeKind, parse_html};
 use zero_script_sandbox::Sandbox;
@@ -1686,13 +1686,27 @@ fn lookup_computed_property(
     serialize_computed_property(style, prop)
 }
 
-/// 把 [`ComputedStyle`] 的单个属性序列化为 CSS 字符串（kebab-case 属性名）。首批：display/
-/// position/visibility/opacity + 颜色族（color/background-color/border-*-color/outline-color）。
-/// 未覆盖属性返 ''。
+/// 把 [`ComputedStyle`] 的单个属性序列化为 CSS 字符串（kebab-case 属性名）。覆盖：
+/// display/position/visibility/opacity + 颜色族（color/background-color/border-*-color/outline-color）
+/// + 长度族（width/height/min-max/margin/padding/border-*-width/border-*-radius/outline-width/
+///   font-size/top/right/bottom/left/gap/letter-spacing/word-spacing/text-indent 等，经
+///   [`length_to_css`]）。未覆盖属性返 ''。
+///
+/// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
+/// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
+///（real browser 对 width/height/margin 等 geometric 属性返 used 值——需 layout 解析百分比，
+/// 此处无 layout 故返计算值；对 font-size/border-radius/gap/letter-spacing 等非 geometric 属性
+/// 与 real browser 一致）。
 fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String {
     let p = prop.trim().to_ascii_lowercase();
     // 元素自身计算 color，作 currentColor 解析上下文（color 属性本身则 currentColor→自解析）。
     let element_color = &style.color;
+    // 元素 font-size（resolve 阶段已为 Px）供长度族兜底解析残余相对单位（em/rem/vw 等）。
+    let font_size_px = match &style.font_size {
+        LengthValue::Px(v) => *v,
+        _ => 16.0,
+    };
+    let length = |lv: &LengthValue| length_to_css(lv, font_size_px);
     match p.as_str() {
         "display" => display_value_str(&style.display),
         "position" => position_value_str(&style.position),
@@ -1734,6 +1748,58 @@ fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String {
             &style.outline_color,
             element_color,
         )),
+        // ── 长度族（计算值；resolve_computed_style 已把主要相对单位解析为 Px）──
+        "width" => length(&style.width),
+        "height" => length(&style.height),
+        "min-width" => length(&style.min_width),
+        "min-height" => length(&style.min_height),
+        "max-width" => max_size_to_css(&style.max_width, font_size_px),
+        "max-height" => max_size_to_css(&style.max_height, font_size_px),
+        "margin-top" => length(&style.margin_top),
+        "margin-right" => length(&style.margin_right),
+        "margin-bottom" => length(&style.margin_bottom),
+        "margin-left" => length(&style.margin_left),
+        "padding-top" => length(&style.padding_top),
+        "padding-right" => length(&style.padding_right),
+        "padding-bottom" => length(&style.padding_bottom),
+        "padding-left" => length(&style.padding_left),
+        "border-top-width" => {
+            border_width_to_css(&style.border_top_width, &style.border_top_style, font_size_px)
+        }
+        "border-right-width" => border_width_to_css(
+            &style.border_right_width,
+            &style.border_right_style,
+            font_size_px,
+        ),
+        "border-bottom-width" => border_width_to_css(
+            &style.border_bottom_width,
+            &style.border_bottom_style,
+            font_size_px,
+        ),
+        "border-left-width" => border_width_to_css(
+            &style.border_left_width,
+            &style.border_left_style,
+            font_size_px,
+        ),
+        "border-top-left-radius" => length(&style.border_top_left_radius),
+        "border-top-right-radius" => length(&style.border_top_right_radius),
+        "border-bottom-right-radius" => length(&style.border_bottom_right_radius),
+        "border-bottom-left-radius" => length(&style.border_bottom_left_radius),
+        "outline-width" => match &style.outline_style {
+            OutlineStyleValue::None => "0px".to_string(),
+            _ => length(&style.outline_width),
+        },
+        "font-size" => length(&style.font_size),
+        "top" => length(&style.top),
+        "right" => length(&style.right),
+        "bottom" => length(&style.bottom),
+        "left" => length(&style.left),
+        "gap" => length(&style.gap),
+        "row-gap" => length(&style.row_gap),
+        "column-gap" => length(&style.column_gap),
+        "letter-spacing" => length(&style.letter_spacing),
+        "word-spacing" => length(&style.word_spacing),
+        "text-indent" => length(&style.text_indent),
         _ => String::new(),
     }
 }
@@ -1746,6 +1812,64 @@ fn color_to_css(c: &zero_render_foundation::color::Color) -> String {
     } else {
         let alpha = ((c.a as f64 / 255.0) * 1000.0).round() / 1000.0;
         format!("rgba({}, {}, {}, {})", c.r, c.g, c.b, alpha)
+    }
+}
+
+/// 把数值序列化为带后缀的 CSS 量（对齐 real browser getComputedStyle 数值串）。
+/// 整数无小数点（`16px`/`50%`/`0px`），小数去尾零（`19.2px`）。四舍五入到 1e-3 抑制
+/// f64 累积噪声（如 em 解析 `1.2 * 16 = 19.200000000000003` → `19.2px`）。
+fn format_num(v: f64, suffix: &str) -> String {
+    let r = (v * 1000.0).round() / 1000.0;
+    if r == r.trunc() {
+        format!("{}{}", r as i64, suffix)
+    } else {
+        format!("{r}{suffix}")
+    }
+}
+
+/// 把已计算的 [`LengthValue`] 序列化为 CSS 字符串（getComputedStyle 长度族）。
+///
+/// `compute_styles` 经 `resolve_computed_style` 已把主要字段的 em/rem/vw/vh/vmin/vmax/ch/非 % calc
+/// 解析为 `Px`；此处对残余相对单位（resolve 未覆盖的字段如 text-indent 的 em）用 `font_size_px`
+/// 兜底解析为 px。百分比/auto/关键字保留为计算值（`N%`/`auto`/`min-content`/…）；含 % 的 calc
+/// 无容器尺寸无法解析为绝对值 → ''。
+fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
+    // viewport 与 compute_document_styles 一致（getComputedStyle 默认 1280×800）。
+    const VW: f64 = 1280.0;
+    const VH: f64 = 800.0;
+    match lv {
+        LengthValue::Px(v) => format_num(*v, "px"),
+        LengthValue::Percentage(v) => format_num(*v, "%"),
+        LengthValue::Auto => "auto".to_string(),
+        LengthValue::MinContent => "min-content".to_string(),
+        LengthValue::MaxContent => "max-content".to_string(),
+        LengthValue::FitContent(_) => "fit-content".to_string(),
+        // 含 % 的 calc 无容器尺寸无法解析（非 % calc 已被 resolve_computed_style 转 Px）→ ''。
+        LengthValue::Calc(_) => String::new(),
+        // em/rem/vw/vh/vmin/vmax/ch：兜底解析残余相对单位为 px。
+        other => format_num(
+            zero_style_system::resolve_length(other, font_size_px, Some(VW), Some(VH)),
+            "px",
+        ),
+    }
+}
+
+/// 序列化 `border-*-width` 的计算值。real browser getComputedStyle 对 border-width 返 used 值：
+/// `border-style: none/hidden` → `"0px"`（ZeroWeb computed 值保留 specified 宽度供 inherit，
+/// 见 `computed.rs` csswg #2768 注；gCS 须对齐 Chromium 的 used 行为，故 none/hidden 归零）。
+fn border_width_to_css(width: &LengthValue, style: &BorderStyleValue, font_size_px: f64) -> String {
+    match style {
+        BorderStyleValue::None | BorderStyleValue::Hidden => "0px".to_string(),
+        _ => length_to_css(width, font_size_px),
+    }
+}
+
+/// 序列化 `max-width`/`max-height` 的计算值。ZeroWeb 用 `Px(f64::INFINITY)` 表示 initial 值
+/// `none`（见 `default_impl.rs`），real browser getComputedStyle 对 max-size:none 返 `"none"`。
+fn max_size_to_css(lv: &LengthValue, font_size_px: f64) -> String {
+    match lv {
+        LengthValue::Px(v) if v.is_infinite() => "none".to_string(),
+        _ => length_to_css(lv, font_size_px),
     }
 }
 

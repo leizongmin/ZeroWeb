@@ -1023,7 +1023,7 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 **为何零回归且净正向**：① 颜色属性此前返 ''（未覆盖），现返真值，未覆盖属性不变；② 复用既有 paint resolver（Named/Hsla/Mix/RelativeColor 全支持），无新解析逻辑；③ 计算样式只读，不改 mutation/render。
 
-**已知限制（剩余）**：① length 属性（width/height/margin/padding/border-*-width 等）仍返 ''（computed vs used 值差异 + LengthValue 串化为 follow-up）；② alpha 串行化取整到 1e-3（real browser 用更高精度，颜色 alpha 比对极少精确匹配）；③ `getComputedStyle(el).cssText`/length 仍 ''/0。
+**已知限制（剩余）**：① ~~length 属性（width/height/margin/padding/border-*-width 等）仍返 ''~~ ✅ R2707 补长度族（px 精确 / 百分比·auto 计算值 / border·outline-width none→0px / max-* none）；残余 = geometric 属性百分比返计算值非 used 值（需 layout）；② alpha 串行化取整到 1e-3（real browser 用更高精度，颜色 alpha 比对极少精确匹配）；③ `getComputedStyle(el).cssText`/length 仍 ''/0。
 
 ### P1a `getComputedStyle` per-snapshot 缓存（本轮 R2706，R2704/R2705 perf 鲁棒性续）
 
@@ -1041,6 +1041,25 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 **为何零回归且净正向**：① 缓存只读优化，返回值不变（unit 测证与无缓存逐属性等价）；② 缓存 keyed on html snapshot，html 变即失效（invalidation 测证）；③ 命中路径仅 serialize，无 mutation/render 副作用。
 
 **已知限制（剩余）**：① 跨元素查询不共享一次 cascade（Document 非 Send 限制，改 thread_local 可解但引入全局，未做）；② 外链 `<link>` CSS 不在 snapshot 内（同 gBCR 既有 snapshot 限制）；③ fmt 本机 rustfmt 版本与提交风格 drift（js_dom_bridge.rs/_tests.rs/apps/renderer 既有 27+ 处 diff 非本轮引入，CI 不 gate fmt），本轮新代码风格与周围提交一致未额外 reformat。
+
+### P1a `getComputedStyle` 长度族（本轮 R2707，R2704/R2705 正确性续）
+
+承接 R2704/R2705（getComputedStyle display/position/visibility/opacity + 颜色族）+ R2706（per-snapshot 缓存）。补**长度族**——getComputedStyle 旧对所有长度属性返 ''，`cs.width`/`cs.marginTop`/`cs.fontSize` 等（框架布局测量、动画、拖拽、动态 reflow 极常查）全断。本切片覆盖 ~30 个长度属性。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge.rs` | `serialize_computed_property` 加长度族 match 臂（width/height/min-max/margin/padding/border-*-width/border-*-radius/outline-width/font-size/top·right·bottom·left/gap/row-gap/column-gap/letter-spacing/word-spacing/text-indent）；新增 `length_to_css(lv, font_size_px)`（Px→`Npx`/Percentage→`N%`/Auto→`auto`/MinContent·MaxContent·FitContent→关键字/含 % calc→''；残余 em/rem/vw 用 `zero_style_system::resolve_length` 兜底解析）+ `format_num`（整数无小数点，四舍五入到 1e-3 抑制 f64 噪声）+ `border_width_to_css`（border-style:none/hidden→`0px`，对齐 Chromium used 值）+ `max_size_to_css`（`Px(INFINITY)`→`none`）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_lengths`（px 精确/百分比保留/em 解析/border·outline-width none→0px/max-* none→none/min-width auto/font-size）；更新 R2706 测试 margin-top 断言 ''→`0px`（长度族现已覆盖）。 |
+
+**对齐 Chromium 的两处语义**：① **border/outline-width used 值**——ZeroWeb computed border-width 按 csswg #2768 始终为 specified 值（none/hidden 不归零，供 `border-width:inherit` 继承），但 Chromium getComputedStyle 对 border-width 返 **used** 值（none/hidden→`0px`）。gCS 层对齐 Chromium：style:none/hidden → `0px`。② **max-width/max-height:none**——ZeroWeb 用 `Px(INFINITY)` 表示 initial `none`，gCS 序列化为 `none`。
+
+**长度族返计算值（非 used 值）**：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，故 px 指定值与 Chromium 精确一致；百分比/auto 保留为 `N%`/`auto`（Chromium 对 width/height/margin 等 geometric 属性返 used 值需 layout 解析百分比，此处无 layout 故返计算值；对 font-size/border-radius/gap/letter-spacing 等非 geometric 属性与 Chromium 一致）。
+
+验证：`cargo clippy -p zero-engine --all-targets -D warnings` 零警告（修一处 doc_lazy_continuation）+ `make test` 全绿（13331 passed / 0 failed / 74 ignored，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2706 baseline 持平 → getComputedStyle 长度族未改 welcome 渲染输出）+ 8 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API，不改 mutation/render 路径；② 旧全长度属性返 ''（空），新实现返真值（px 指定精确 / 百分比·auto 计算值 / 未覆盖仍 '' fallback）——已覆盖属性从「误 ''」纠正为「真值」，未覆盖属性不变；③ welcome 产品 smoke diff 精确持平证真实页面 JS 分支未受影响。
+
+**已知限制（剩余）**：① width/height/margin 等 geometric 属性百分比返计算值（`N%`）非 Chromium used 值（需 layout 解析，未做）；② 含 % 的 calc 返 ''（无容器尺寸）；③ `getComputedStyle(el).cssText`/length 仍 ''/0（未做全声明串化）；④ 外链 `<link>` CSS 不在 snapshot 内（同 gBCR 既有限制）。
 
 
 
