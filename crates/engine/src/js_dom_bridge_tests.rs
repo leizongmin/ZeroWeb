@@ -4559,6 +4559,29 @@ fn test_get_computed_style_grid_template_shorthand_r2766() {
 }
 
 #[test]
+fn test_get_computed_style_letter_spacing_normal_r2767() {
+    // R2767：letter-spacing 0→normal diverge 修复。Chromium 150 oracle 把 0 值（默认 / normal /
+    // 显式 0/0px）恒归一为 "normal"（normal 与 0 layout 等价）；非 0 长度才返 "Npx"。
+    // ZW parse 把 normal→Px(0.0)，故 Px(0.0)→"normal" 精确对齐。word-spacing 不归一（恒 "0px"）。
+    let html = "<html><body>\
+        <div id=\"d\"></div>\
+        <div id=\"norm\" style=\"letter-spacing: normal;\"></div>\
+        <div id=\"zero\" style=\"letter-spacing: 0;\"></div>\
+        <div id=\"val\" style=\"letter-spacing: 2px;\"></div>\
+        <div id=\"ws\" style=\"word-spacing: normal;\"></div>\
+        </body></html>";
+    // letter-spacing：默认 / normal / 显式 0 → "normal"（Chromium 归一）。
+    assert_eq!(computed_style_property(html, "#d", "letter-spacing"), "normal");
+    assert_eq!(computed_style_property(html, "#norm", "letter-spacing"), "normal");
+    assert_eq!(computed_style_property(html, "#zero", "letter-spacing"), "normal");
+    // 非 0 长度 → "Npx"。
+    assert_eq!(computed_style_property(html, "#val", "letter-spacing"), "2px");
+    // word-spacing 不归一：normal → "0px"（与 letter-spacing 行为不同，对齐 Chromium）。
+    assert_eq!(computed_style_property(html, "#ws", "word-spacing"), "0px");
+    assert_eq!(computed_style_property(html, "#d", "word-spacing"), "0px");
+}
+
+#[test]
 fn test_get_computed_style_containment() {
     // R2741：getComputedStyle containment 簇（content-visibility + contain-intrinsic-width/height）。
     let html = "<html><body>\

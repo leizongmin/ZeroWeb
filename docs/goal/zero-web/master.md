@@ -1938,6 +1938,25 @@ oracle 锚定：默认→`"none"`、`100px 200px / 1fr 1fr 1fr`→`"100px 200px 
 
 **已知 diverge（pre-existing，记录不阻塞）**：① repeat() ZW 不展开（apply.rs 直接 `to_string`，Chromium getComputedStyle 展开，R2740 longhand 既记限制）；② line-name `[x]` 混入 rows 时按空白拆会把 `[x]` 当一 token（areas 形式少混 line-name，罕见）；③ areas 形式 cols 缺省时拼 `... / none`（极边，areas 形式惯例带 cols，未 oracle 验证该边）。均 pre-existing/极边，序列化对常见形式正确。
 
+### P1a `getComputedStyle` letter-spacing 0→normal diverge 修复（本轮 R2767，spot-check 高频属性）
+
+承接 R2766（grid-template 简写）。pivot 事件循环前对高频 getComputedStyle 属性做 spot-check 核 diverge——font-weight（400/700）/word-spacing 默认（0px）/z-index（auto）/opacity/font-size 全一致，**仅 letter-spacing 默认 diverge**：ZW 旧返 `"0px"`、Chromium 返 `"normal"`。
+
+**根因**：ZW `parse_letter_or_word_spacing`（parse_misc.rs:597）把 `normal`→`LengthValue::Px(0.0)`（layout 等价存储），default 亦 `Px(0.0)`，故序列化得 `"0px"`。
+
+**oracle 关键发现**：Chromium 对**所有 0 形** letter-spacing（默认 / normal / 显式 `0`/`0px`）恒归一为 `"normal"`（normal 与 0 layout 等价，getComputedStyle 归一），非 0 长度才 `"Npx"`。故 `Px(0.0)→"normal"` 精确对齐——**非启发式**（显式 `letter-spacing:0` 亦返 `"normal"`，无边角 diverge）。word-spacing 不归一（恒 `"0px"`，与 letter-spacing 行为不同，对齐 Chromium）。
+
+oracle 锚定：默认/normal/0/0px→`"normal"`、2px→`"2px"`、word-spacing normal/0→`"0px"`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +`letter_spacing_to_css`（`Px(0.0)`→`"normal"`，否则 `length_to_css`）+ letter-spacing arm 改用之。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_letter_spacing_normal_r2767`（默认/normal/0→"normal"、2px、word-spacing 不归一，oracle 锚定）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13394 passed / 0 failed / 74 ignored**，13393+1 新测试，0 回归；既有 `letter-spacing:0.1em`→"2px" 测试不变）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① `Px(0.0)→"normal"` 仅影响零值序列化（display-only），非零值走原 `length_to_css` 不变；② 纯序列化层逆映射，零 layout/parse 改动；③ 对齐 Chromium 的 0 归一（含显式 `0`），无边角 diverge。又一处「storage 简化非序列化阻塞」实证（同 R2754/R2763 diverge 谱）。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

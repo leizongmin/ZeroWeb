@@ -208,7 +208,10 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         }
         "row-gap" => length(&style.row_gap),
         "column-gap" => length(&style.column_gap),
-        "letter-spacing" => length(&style.letter_spacing),
+        // letter-spacing：Chromium 150 oracle 把 0 值（默认 / normal / 显式 0/0px）恒归一为 "normal"
+        //（normal 与 0 在 layout 等价；ZW parse 已把 normal→Px(0.0)，故 Px(0.0)→"normal" 精确对齐）。
+        // 非 0 长度才返 "Npx"。word-spacing 不归一（恒 "0px"）。
+        "letter-spacing" => letter_spacing_to_css(&style.letter_spacing, font_size_px),
         "word-spacing" => length(&style.word_spacing),
         "text-indent" => length(&style.text_indent),
         // ── 关键字/枚举族 ──
@@ -1104,6 +1107,17 @@ fn format_num(v: f64, suffix: &str) -> String {
 /// 解析为 `Px`；此处对残余相对单位（resolve 未覆盖的字段如 text-indent 的 em）用 `font_size_px`
 /// 兜底解析为 px。百分比/auto/关键字保留为计算值（`N%`/`auto`/`min-content`/…）；含 % 的 calc
 /// 无容器尺寸无法解析为绝对值 → ''。
+/// letter-spacing：Chromium 150 oracle 把 0 值（默认 / `normal` / 显式 `0`/`0px`）恒归一为
+/// `"normal"`（normal 与 0 在 layout 等价）。ZW parse 已把 `normal`→`Px(0.0)`，故此处
+/// `Px(0.0)`→`"normal"` 精确对齐；非 0 长度走 [`length_to_css`]。
+fn letter_spacing_to_css(lv: &LengthValue, font_size_px: f64) -> String {
+    if *lv == LengthValue::Px(0.0) {
+        "normal".to_string()
+    } else {
+        length_to_css(lv, font_size_px)
+    }
+}
+
 fn length_to_css(lv: &LengthValue, font_size_px: f64) -> String {
     // viewport 与 compute_document_styles 一致（getComputedStyle 默认 1280×800）。
     const VW: f64 = 1280.0;
