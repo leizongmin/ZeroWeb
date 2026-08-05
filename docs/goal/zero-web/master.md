@@ -2091,6 +2091,23 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a Blob + URL.createObjectURL/revokeObjectURL（本轮 R2789，缺失 Web API 续）
+
+承接 R2788（FormData + probe）。续缺失 Web API——land **Blob**（不可变二进制容器，文件上传 / 下载 / object URL 高频）+ **URL.createObjectURL / revokeObjectURL**（blob: URL 注册表）。纯 JS，零 host 回调，零新 crate。
+
+- **Blob**：constructor(parts, options) → `size`（各 part UTF-8 字节长之和）+ `type`（options.type 小写）；`slice(start,end,contentType)`（best-effort size clamp）；`text()`/`arrayBuffer()` 返 Promise（`Promise.all` 拼接 part 文本 → execute 末 microtask checkpoint drain）。part 类型：string / ArrayBuffer / TypedArray / DataView / Blob（递归）。
+- **URL.createObjectURL(obj)**：生成 `blob:<origin>/<seq>-<rand>` 并注册 `_zwBlobStore`；**revokeObjectURL** 移除。
+- **已知限制（记录）**：① slice 不真切字节（best-effort size clamp + type 重设，足够 size 检查）；② blob: URL 不被 net/fetch 解析为内容（无 blob→字节回流，follow-up）；③ 无 `stream()`（Streams API defer）；④ File 未实现（File = Blob + name，follow-up）。**核心价值**：消除 `new Blob()` / `URL.createObjectURL()` ReferenceError（库可正常构造 + 传给 img.src/a.href）+ `size`/`type`/`text()` 可读。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`Blob`（constructor + `_partSize`/`_partText` + prototype slice/text/arrayBuffer）置于 FormData 后；+`URL.createObjectURL`/`revokeObjectURL`（`_zwBlobStore` 注册表）置于 URL 赋值后。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_blob_and_object_url_r2789`（instanceof/size UTF-8/多 part/type 小写/text Promise 拼接+字节解码/arrayBuffer/slice clamp/createObjectURL 串+唯一/revoke no-throw）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13417 passed / 0 failed / 74 ignored**，13416+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 global）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 global（Blob + URL 静态方法），不改既有 API；② 纯 JS 无副作用（Blob 构造只读 parts、写自身字段）；③ prototype/静态方法 guard（`globalThis.X = ...` / `if (!URL.createObjectURL)`）不覆盖既有定义；④ Promise 链经既有 microtask checkpoint drain，无新调度路径。
+
 ### P1a FormData（本轮 R2788，缺失 Web API 续）
 
 续缺失 Web API 子线程。R2787 一并 probe 了 ~40 个候选 global 的 V8 原生/缺失分布——**Intl（+NumberFormat/DateTimeFormat）、Object.hasOwn、Array.at、String.replaceAll/matchAll、Array.flat/flatMap/findLast、Object.fromEntries、WeakRef、FinalizationRegistry、BigInt、AggregateError、Symbol.dispose、Reflect、Proxy 均为 V8 原生**（无需 polyfill）；**缺失**：DOMParser（需 host HTML parse，非纯 JS，defer）、FormData、Blob/FileReader、URL.createObjectURL、customElements（Web Components，深，defer）、crypto.subtle、Element.animate（深，defer）。择**纯 JS 自包含 + 高频 + 零 host 回调**的 **FormData** land：镜像 URLSearchParams pair-store 模式（`_p=[[name,value]]` 保序、允许重名）。

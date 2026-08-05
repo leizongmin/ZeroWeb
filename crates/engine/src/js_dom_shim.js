@@ -1183,6 +1183,68 @@
     globalThis.FormData.prototype[Symbol.iterator] = globalThis.FormData.prototype.entries;
   }
 
+  // Blob——不可变二进制数据容器（文件上传 / 下载 / object URL 高频）。纯 JS：parts 为
+  // [string|ArrayBuffer|TypedArray|DataView|Blob]；size = 各 part 字节长之和；type = options.type（小写）。
+  // text()/arrayBuffer() 返 Promise（V8 原生 Promise + execute 末 microtask checkpoint drain）。
+  // **已知限制（记录）**：① string part 字节长按 UTF-8（_zw_utf8_encode length），与 spec 一致；
+  //   ② slice 仅按 size 范围裁剪（不真正切字节——返浅拷原 parts 的 Blob，size 经 start/end clamp；
+  //   足够 size 检查 / type 重设，真正字节级 slice 为 follow-up）；③ 无 stream()（Streams API defer）；
+  //   ④ end-encoding 的 type 不解析 charset（原样小写）。File 未实现（File = Blob + name，follow-up）。
+  var _zwBlobStore = {}; // url → Blob（createObjectURL 注册表，revokeObjectURL 清理）
+  globalThis.Blob = globalThis.Blob || function Blob(parts, options) {
+    if (!(this instanceof Blob)) return new Blob(parts, options);
+    parts = parts || [];
+    this._parts = parts;
+    var size = 0;
+    for (var i = 0; i < parts.length; i++) size += Blob._partSize(parts[i]);
+    this.size = size;
+    this.type = (options && options.type != null) ? String(options.type).toLowerCase() : '';
+  };
+  // part 字节长：string→UTF-8；ArrayBuffer/TypedArray/DataView→byteLength；Blob→size；余 0。
+  globalThis.Blob._partSize = function (p) {
+    if (p == null) return 0;
+    if (typeof p === 'string') return _zw_utf8_encode(p).length;
+    if (p.byteLength != null) return p.byteLength | 0; // ArrayBuffer / TypedArray / DataView
+    if (p.size != null) return p.size | 0;             // Blob
+    return 0;
+  };
+  // part → 文本（用于 text() 拼接）：string 原样；TypedArray/ArrayBuffer 经 TextDecoder；Blob 递归（Promise）。
+  globalThis.Blob._partText = function (p) {
+    if (typeof p === 'string') return p;
+    if (p == null) return '';
+    if (p instanceof ArrayBuffer || p.buffer != null || typeof p.length === 'number') {
+      return new TextDecoder().decode(p);
+    }
+    if (p instanceof Blob) return p.text(); // Promise<string>（递归）
+    return '';
+  };
+  globalThis.Blob.prototype = {
+    // slice：返新 Blob（best-effort——按 size clamp，type 可重设；不真正切字节，浅拷原 parts）。
+    slice: function (start, end, contentType) {
+      var s = start != null ? (start | 0) : 0;
+      if (s < 0) s = Math.max(0, this.size + s);
+      var e = end != null ? (end | 0) : this.size;
+      if (e < 0) e = Math.max(0, this.size + e);
+      e = Math.min(e, this.size);
+      var sz = s < e ? (e - s) : 0;
+      var b = new Blob([], { type: contentType != null ? String(contentType) : this.type });
+      b._parts = this._parts; // 浅拷（不真切字节；size 经 clamp 反映范围）
+      b.size = sz;
+      return b;
+    },
+    // text()：Promise<string>——拼接各 part 文本（string/字节经 TextDecoder/Blob 递归）。
+    text: function () {
+      var parts = this._parts;
+      var pro = [];
+      for (var i = 0; i < parts.length; i++) pro.push(Blob._partText(parts[i]));
+      return Promise.all(pro).then(function (strs) { return strs.join(''); });
+    },
+    // arrayBuffer()：Promise<Uint8Array>——text() UTF-8 编码（字节视图）。
+    arrayBuffer: function () {
+      return this.text().then(function (s) { return _zw_utf8_encode(s); });
+    }
+  };
+
   // URL——WHATWG URL 解析 + 组件 setter（R2778 解析 + R2780 setter/双向 searchParams 同步）。委托 host
   // `__zw_parse_url`（解析）+ `__zw_set_url_part`（setter），均 spec-correct via `url` crate。组件存内部
   // `_`-prefixed 字段，accessor 暴露读 + 写（setter 经 `_setPart` 回调重解析）。searchParams 为稳定实例 +
@@ -1272,6 +1334,28 @@
     return !!__zw_parse_url(String(url), base !== undefined ? String(base) : '');
   };
   globalThis.URL = globalThis.URL || URL;
+
+  // URL.createObjectURL / revokeObjectURL——blob: URL 注册表（`<img src>` / `<a download>` /
+  // 文件预览高频）。纯 JS：createObjectURL 生成 `blob:<origin>/<n>` 并在 `_zwBlobStore` 注册 Blob，
+  // 返 URL 串；revokeObjectURL 从 store 移除。**已知限制（记录）**：blob: URL 不被 net/fetch 实际
+  // 解析为内容（无 blob store→字节回流路径，follow-up）——但消除 `URL.createObjectURL is not a
+  // function` ReferenceError，库可正常调用 + 传给 img.src/a.href。origin 取 location.origin 或 'null'。
+  if (!globalThis.URL.createObjectURL) {
+    globalThis.URL.createObjectURL = function (obj) {
+      var origin = (globalThis.location && globalThis.location.origin) || 'null';
+      // 单调 id（counter）+ Math.random 去重（不依赖未定义 crypto.randomUUID 顺序）。
+      globalThis.__zwBlobSeq = (globalThis.__zwBlobSeq | 0) + 1;
+      var url = 'blob:' + origin + '/' + globalThis.__zwBlobSeq + '-' +
+        Math.floor(Math.random() * 1e9).toString(36);
+      _zwBlobStore[url] = obj;
+      return url;
+    };
+  }
+  if (!globalThis.URL.revokeObjectURL) {
+    globalThis.URL.revokeObjectURL = function (url) {
+      if (url && Object.prototype.hasOwnProperty.call(_zwBlobStore, url)) delete _zwBlobStore[url];
+    };
+  }
 
   // structuredClone——深拷贝（postMessage / React state / immer-like 高频）。递归：primitive/array/
   // plain object/Date/RegExp/Map/Set/ArrayBuffer/TypedArray；循环引用经 WeakMap 记忆不爆栈；

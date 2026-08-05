@@ -6845,3 +6845,101 @@ fn test_form_data_r2788() {
     assert_eq!(sandbox.execute("[...fd.keys()].join(',')").unwrap().value, "a,c,n");
     assert_eq!(sandbox.execute("[...fd.values()].join(',')").unwrap().value, "X,new,42");
 }
+
+#[test]
+fn test_blob_and_object_url_r2789() {
+    // R2789：Blob（不可变二进制容器）+ URL.createObjectURL/revokeObjectURL（blob: URL 注册表）。
+    // 纯 JS，零 host 回调。size 按 UTF-8 字节；type 小写；text()/arrayBuffer() 返 Promise（execute 末
+    // microtask checkpoint drain → 下 execute 可读）。createObjectURL 返 blob: 串并注册。
+    // **已知限制**：slice 不真切字节（best-effort size clamp）；blob: URL 不被 net 解析为内容。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // typeof + instanceof；无 new 亦可构造。
+    assert_eq!(sandbox.execute("typeof Blob").unwrap().value, "function");
+    assert_eq!(
+        sandbox.execute("String(new Blob() instanceof Blob)").unwrap().value,
+        "true"
+    );
+    // size：空 Blob=0；string part 按 UTF-8 字节（'ZeroWeb'=7，中文 '中'=3）。
+    assert_eq!(sandbox.execute("new Blob().size").unwrap().value, "0");
+    assert_eq!(sandbox.execute("new Blob(['ZeroWeb']).size").unwrap().value, "7");
+    assert_eq!(sandbox.execute("new Blob(['中']).size").unwrap().value, "3");
+    // 多 part 求和 + ArrayBuffer part（4 字节）。
+    assert_eq!(
+        sandbox
+            .execute("new Blob(['ab', new Uint8Array([0,0,0,0])]).size")
+            .unwrap()
+            .value,
+        "6"
+    );
+    // type：小写归一；无 options → ''。
+    assert_eq!(
+        sandbox
+            .execute("new Blob(['x'], {type:'APPLICATION/JSON'}).type")
+            .unwrap()
+            .value,
+        "application/json"
+    );
+    assert_eq!(sandbox.execute("new Blob(['x']).type").unwrap().value, "");
+    // text()：Promise<string>——string part 原样；多 part 拼接；execute 末 drain → 下 execute 读。
+    sandbox
+        .execute(
+            "globalThis.__t = '(pending)';\
+             new Blob(['hello',' ','world']).text().then(function(s){ globalThis.__t = s; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__t)").unwrap().value, "hello world");
+    // text() 解码字节 part（TypedArray 经 TextDecoder）。
+    sandbox
+        .execute(
+            "globalThis.__b = '(pending)';\
+             new Blob([new Uint8Array([0x68,0x69])]).text().then(function(s){ globalThis.__b = s; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__b)").unwrap().value, "hi");
+    // arrayBuffer()：Promise<Uint8Array>——'AB' UTF-8 = [65,66]。
+    sandbox
+        .execute(
+            "globalThis.__ab = '(pending)';\
+             new Blob(['AB']).arrayBuffer().then(function(a){ globalThis.__ab = a.length + ':' + a[0] + ',' + a[1]; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__ab)").unwrap().value, "2:65,66");
+    // slice：best-effort size clamp（start/end 范围）+ type 重设。
+    assert_eq!(
+        sandbox.execute("new Blob(['ZeroWeb']).slice(1,4).size").unwrap().value,
+        "3"
+    );
+    assert_eq!(
+        sandbox
+            .execute("new Blob(['ZeroWeb']).slice(0,4,'text/plain').type")
+            .unwrap()
+            .value,
+        "text/plain"
+    );
+    // URL.createObjectURL：返 blob: 串 + 唯一性（两次不同）+ typeof function。
+    assert_eq!(sandbox.execute("typeof URL.createObjectURL").unwrap().value, "function");
+    assert_eq!(
+        sandbox
+            .execute("URL.createObjectURL(new Blob(['x'])).split(':')[0]")
+            .unwrap()
+            .value,
+        "blob"
+    );
+    assert_eq!(
+        sandbox
+            .execute("URL.createObjectURL(new Blob(['a'])) !== URL.createObjectURL(new Blob(['b']))")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // revokeObjectURL：no-throw（不抛即视为清理成功）。
+    sandbox.execute("URL.revokeObjectURL('blob:null/1-abc')").unwrap();
+    assert_eq!(sandbox.execute("typeof URL.revokeObjectURL").unwrap().value, "function");
+}
