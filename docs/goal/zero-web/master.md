@@ -1957,6 +1957,25 @@ oracle 锚定：默认/normal/0/0px→`"normal"`、2px→`"2px"`、word-spacing 
 
 **为何零回归且净正向**：① `Px(0.0)→"normal"` 仅影响零值序列化（display-only），非零值走原 `length_to_css` 不变；② 纯序列化层逆映射，零 layout/parse 改动；③ 对齐 Chromium 的 0 归一（含显式 `0`），无边角 diverge。又一处「storage 简化非序列化阻塞」实证（同 R2754/R2763 diverge 谱）。
 
+### P1a `performance.now()`（本轮 R2768，事件循环 slice，pivot 自 getComputedStyle）
+
+承接 R2767（letter-spacing diverge）。先 spot-check 3 批高频 getComputedStyle 属性核 diverge——**仅残余三类非 clean diverge**：① font-family 默认 ZW 空 vs Chromium "Times New Roman"（platform/font-stack 依赖）；② transform-origin/width/height 百分比 Chromium 返 used px（geometric，需 layout，ZW gCS 不跑布局）；③ font-variant/font-stretch ZW 不支持返 ""（unsupported feature）。**结论：getComputedStyle spot-check 经 R2767 后穷尽**。
+
+**pivot 事件循环**：Explore-agent 全量侦察 P1a 异步管线——fetch/timer/setTimeout/setInterval/requestIdleCallback/MutationObserver/microtask 队列全 REAL；rAF frame-driven PARTIAL（off by default，timestamp=0）；**performance.now() 完全缺失**（analytics/动画高频查询）。TDD red→green land **performance.now()**（DOMHighResTimeStamp，ms 自 time origin 起，单调，子毫秒）：
+
+- **bridge**（`js_dom_bridge.rs`）：`register_dom_callbacks` capture `Instant` time origin + 注册 `__zw_performance_now` 回调（`perf_origin.elapsed().as_secs_f64() * 1000.0`，Instant 单调且 Send+Sync，闭包仅借 `&origin` 故 `Fn`）。
+- **shim**（`js_dom_shim.js`）：`globalThis.performance.now`——host 回调优先（`Number(__zw_performance_now())`），未注册走 `Date.now()` 兜底（polyfill/reftest 路径仍单调非负）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_bridge.rs` | +`__zw_performance_now` 回调（Instant time origin + elapsed ms）。 |
+| `engine/src/js_dom_shim.js` | +`globalThis.performance.now`（host 优先，Date.now 兜底）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_performance_now_e2e`（typeof number / 非负 / 单调非减，register_dom_callbacks 真路径）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13395 passed / 0 failed / 74 ignored**，13394+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 global 不改既有 JS 分支）+ 全 struct PASS。
+
+**为何零回归且净正向**：① performance 全新 global，不改任何既有 API；② host 回调纯读 Instant（无副作用）；③ shim host-优先 + Date.now 兜底保证未注册路径不抛错。**为 rAF 真 timestamp 铺路**（performance.now 是 rAF timestamp 的依赖，下轮候选）。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

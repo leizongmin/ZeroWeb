@@ -696,6 +696,16 @@
   globalThis.outerHeight = 800;
   globalThis.devicePixelRatio = 1;
 
+  // performance.now()——DOMHighResTimeStamp（ms，自 time origin 起，单调）。host `__zw_performance_now`
+  // 返 elapsed ms（子毫秒）；未注册（polyfill/reftest 路径）走 Date.now() 兜底（仍单调非负）。
+  globalThis.performance = globalThis.performance || {
+    now: function() {
+      return typeof __zw_performance_now === 'function'
+        ? Number(__zw_performance_now())
+        : (typeof Date.now === 'function' ? Date.now() : 0);
+    }
+  };
+
   globalThis.history = {
     length: 1,
     state: null,

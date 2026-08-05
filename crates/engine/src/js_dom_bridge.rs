@@ -1665,6 +1665,15 @@ pub fn register_dom_callbacks(
         Box::new(move |_args| url.lock().unwrap_or_else(|e| e.into_inner()).clone()),
     );
 
+    // `performance.now()`——DOMHighResTimeStamp（ms，单调时钟，自 time origin 起，子毫秒精度）。
+    // analytics / 动画计时 / rAF timestamp 高频查询。time origin = 回调注册时刻（页面/脚本启动近似），
+    // 回调返 elapsed ms（f64 串）。Instant 单调且 Send+Sync，闭包仅借 &origin 故为 Fn。
+    let perf_origin = std::time::Instant::now();
+    sandbox.register_callback(
+        "__zw_performance_now",
+        Box::new(move |_args| format!("{}", perf_origin.elapsed().as_secs_f64() * 1000.0)),
+    );
+
     let html = Arc::clone(dom_html);
     sandbox.register_callback(
         "__zw_query_match",

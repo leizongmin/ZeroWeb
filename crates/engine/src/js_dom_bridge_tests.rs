@@ -1126,6 +1126,39 @@ fn test_request_idle_callback_e2e() {
 }
 
 #[test]
+fn test_performance_now_e2e() {
+    // R2768：performance.now()——DOMHighResTimeStamp（ms，单调，自 time origin 起，子毫秒）。
+    // register_dom_callbacks 注册 __zw_performance_now（Instant elapsed ms）。验：typeof number、
+    // 非负、两次调用单调非减（Monotonic）。host 未注册时 shim 走 Date.now() 兜底（test_request_idle
+    // 路径覆盖，此处测注册后真值）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // performance.now() 返 number。
+    assert_eq!(sandbox.execute("typeof performance.now()").unwrap().value, "number");
+    // 非负。
+    assert_eq!(sandbox.execute("performance.now() >= 0").unwrap().value, "true");
+    // 单调非减：连续两次调用 t2 >= t1（host Instant 单调）。
+    assert_eq!(
+        sandbox
+            .execute("var t1 = performance.now(); performance.now() >= t1")
+            .unwrap()
+            .value,
+        "true"
+    );
+}
+
+#[test]
 fn test_clone_node_e2e() {
     // cloneNode(deep) 复用既有回调组合：create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。
     use std::sync::{Arc, Mutex};
