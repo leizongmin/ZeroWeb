@@ -1125,7 +1125,7 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13334 passed / 0 failed / 74 ignored**，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2710 baseline 持平 → 未改渲染输出）+ 8 struct PASS / 0 FAIL。
 
-**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms（transform 函数列表 + transform-origin 两长度）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
+**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms（transform 函数列表 + transform-origin 两长度）** + **contain（关键字 / 位掩码组合）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、content（Counter/Counters 复杂）、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
 
 ### P1a `getComputedStyle` transform 序列化（本轮 R2715，getComputedStyle 维护态续）
 
@@ -1160,6 +1160,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 transform-origin 返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
 **附注（rustfmt skew，非本轮引入）**：本仓存在 rustfmt 1.9.0（CI `dtolnay/rust-toolchain@stable`）与 R2714/R2715 era 历史提交的格式 skew——`cargo fmt --all -- --check` 全树性 dirty（1.9.0 把 fit-120 的链式调用压成单行，历史提交为多行）。本轮新增行已 1.9.0-clean；全树 fmt-normalization 宜作独立机械提交处理（非 feature commit 范畴，遵「精准修改」不顺手改）。CI 仅在 approved PR 上跑 fmt（main 直推不触发），故当前 main fmt-red 为 latent，不阻塞 rally 推进。
+
+### P1a `getComputedStyle` contain 序列化（本轮 R2717，getComputedStyle 维护态续）
+
+承接 R2715/R2716（transform / transform-origin）。补 `contain`（CSS Containment L1/L2，containment 是现代框架 perf 常用查询，旧返 ''）。存储为 `ContainComputedValue` 枚举（None/Strict/Content/Size/Layout/Style/Paint + `Custom(u8)` 位掩码，FLAG_SIZE/LAYOUT/STYLE/PAINT = 0x01/02/04/08）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"contain"` 臂；新增 `contain_to_css`（命名变体→关键字，`strict`/`content` 保留 shorthand 不展开对齐 Chromium；`Custom(u8)` 按 spec 语法序 `size layout paint style` 位解码为空格分隔列表，空掩码防御性 `none`）；import 加 `ContainComputedValue`；文件头 doc 覆盖列表加 contain。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_contain`（none / strict 保留 / content 保留 / 单关键字 layout / 组合 `layout paint` / 非连续位组合 `size style` 语法序 / 默认 none）。 |
+
+**对齐 Chromium**：getComputedStyle 对 `strict`/`content` 保留 shorthand 关键字不展开为 `size layout paint style`；组合值按 spec 语法序 `size || layout || paint || style` 序列化。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13342 passed / 0 failed / 74 ignored**，13341+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → getComputedStyle contain 未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。已推送 `536fa8ef..a8291ca4`。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 contain 返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
