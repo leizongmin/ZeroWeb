@@ -15,8 +15,8 @@ use zero_style_system::{
     ContainComputedValue, CursorValue, DirectionValue, FilterComputedValue, FlexBasisValue, IsolationValue,
     LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
     PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue,
-    TextTransformValue, TransformStyleValue, UserSelectValue, WhiteSpaceValue, WritingModeValue,
-    ZIndexValue,
+    TextTransformValue, TransformStyleValue, UserSelectValue, WhiteSpaceValue, WillChangeValue,
+    WritingModeValue, ZIndexValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 
@@ -79,7 +79,8 @@ pub fn lookup_computed_property(
 ///   isolation/mix-blend-mode/pointer-events/user-select/list-style-type·position）+ 数值族
 ///   （flex-grow/flex-shrink/order/flex-basis/aspect-ratio）+ Transforms（transform 函数列表 /
 ///   transform-origin 两长度 / transform-style / backface-visibility / perspective /
-///   perspective-origin）+ contain（关键字 / 位掩码组合）+ filter（函数列表）。未覆盖属性返 ''。
+///   perspective-origin）+ contain（关键字 / 位掩码组合）+ filter（函数列表）+ will-change（列表）。
+///   未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -254,6 +255,8 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             length_to_css(&style.perspective_origin_x, font_size_px),
             length_to_css(&style.perspective_origin_y, font_size_px)
         ),
+        // ── will-change（R2720）── CSS Will Change 列表（空 Vec / Auto → auto）。
+        "will-change" => will_change_to_css(&style.will_change),
         _ => String::new(),
     }
 }
@@ -955,6 +958,24 @@ fn perspective_to_css(lv: &LengthValue, font_size_px: f64) -> String {
         LengthValue::Px(v) if *v == 0.0 => "none".to_string(),
         _ => length_to_css(lv, font_size_px),
     }
+}
+
+/// will-change：CSS Will Change 计算值。空 `Vec`（默认 + `will-change: auto`，见
+/// `parse_will_change_list`）→ `auto`；否则各标识符空格连接（`scroll-position` / `contents` /
+/// 自定义属性名原样）。对齐 Chromium getComputedStyle。
+fn will_change_to_css(list: &[WillChangeValue]) -> String {
+    if list.is_empty() {
+        return "auto".to_string();
+    }
+    list.iter()
+        .map(|v| match v {
+            WillChangeValue::Auto => "auto",
+            WillChangeValue::ScrollPosition => "scroll-position",
+            WillChangeValue::Contents => "contents",
+            WillChangeValue::Custom(s) => s.as_str(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// 序列化单个 [`TransformFunction`]。translate 类长度为 px（混合百分比分支保 `%`）；rotate/skew

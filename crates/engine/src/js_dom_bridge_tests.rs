@@ -3261,6 +3261,29 @@ fn test_get_computed_style_transform_family() {
 }
 
 #[test]
+fn test_get_computed_style_will_change() {
+    // R2720：getComputedStyle will-change 序列化（CSS Will Change 列表，perf hint 常查）。
+    let html = "<html><body>\
+        <div id=\"auto\" style=\"will-change: auto;\"></div>\
+        <div id=\"scroll\" style=\"will-change: scroll-position;\"></div>\
+        <div id=\"contents\" style=\"will-change: contents;\"></div>\
+        <div id=\"custom\" style=\"will-change: transform;\"></div>\
+        <div id=\"multi\" style=\"will-change: transform opacity;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // auto（显式与默认均为空 Vec）。
+    assert_eq!(computed_style_property(html, "#auto", "will-change"), "auto");
+    assert_eq!(computed_style_property(html, "#def", "will-change"), "auto");
+    // 关键字标识符。
+    assert_eq!(computed_style_property(html, "#scroll", "will-change"), "scroll-position");
+    assert_eq!(computed_style_property(html, "#contents", "will-change"), "contents");
+    // 自定义属性名原样。
+    assert_eq!(computed_style_property(html, "#custom", "will-change"), "transform");
+    // 多属性组合：空格分隔。
+    assert_eq!(computed_style_property(html, "#multi", "will-change"), "transform opacity");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
