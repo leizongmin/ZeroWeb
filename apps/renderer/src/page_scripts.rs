@@ -130,9 +130,10 @@ pub fn dispatch_dom_event(
 /// 返回 observer 回调是否改了 DOM（调用方据此单次 rerender，防反馈环）。
 ///
 /// R2713b：同一 post-render tick 附带 `__zw_raf_tick`——帧驱动 rAF（`ZW_RAF_FRAME_DRIVEN=1`）的
-/// 待 fire 回调在此派发（OFF 时 shim 早返零开销）。ts 暂传 0（真实 DOMHighResTimeStamp 接入为
-/// follow-up，见 p1a-event-loop-raf-slice-design §3.3）。observer tick 先于 rAF，rAF 回调见到的
-/// DOM 反映 observer 本帧变更；两者 mutation 合并由 `apply_recorded_mutations` 单次 rerender。
+/// 待 fire 回调在此派发（OFF 时 shim 早返零开销）。ts 传 `performance.now()`（R2768 land 的
+/// DOMHighResTimeStamp，单调 ms 自 time origin 起）；performance 缺失（旧 shim）兜底 0。observer
+/// tick 先于 rAF，rAF 回调见到的 DOM 反映 observer 本帧变更；两者 mutation 合并由
+/// `apply_recorded_mutations` 单次 rerender。
 pub fn tick_observers(ctx: &mut PageScriptContext<'_>) -> bool {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
@@ -142,7 +143,7 @@ pub fn tick_observers(ctx: &mut PageScriptContext<'_>) -> bool {
         .clear();
     let _ = ctx.js_worker.execute_script_direct(
         "if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();\
-         if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(0);",
+         if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(globalThis.performance?performance.now():0);",
     );
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()

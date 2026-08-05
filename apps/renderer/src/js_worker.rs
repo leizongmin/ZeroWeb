@@ -1417,6 +1417,26 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_performance_now_available() {
+        // R2769：renderer worker 上下文 performance.now() 可用（register_dom_callbacks 注册
+        // __zw_performance_now，R2768 land）——证明 tick_observers 的
+        // `__zw_raf_tick(performance.now())`（page_scripts.rs）真 ts 参数在 renderer 路径有效。
+        let mut worker = RendererJsWorker::spawn(33);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        assert_eq!(
+            worker.execute_script_direct("typeof performance.now").unwrap(),
+            "function",
+            "performance.now 应为 function"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(performance.now() >= 0)").unwrap(),
+            "true",
+            "performance.now() 非负（renderer 上下文真单调时钟）"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_intersection_observer_refires_on_threshold_cross() {
         // R2714：IO 持续跟踪（Slice 2b 已就绪——post-render `__zw_observers_tick` → IO `_schedule`
         // → `_crossed` threshold 越界 → 再派发）。observe（initial：target 在 root 外 ratio 0）→

@@ -1976,6 +1976,24 @@ oracle 锚定：默认/normal/0/0px→`"normal"`、2px→`"2px"`、word-spacing 
 
 **为何零回归且净正向**：① performance 全新 global，不改任何既有 API；② host 回调纯读 Instant（无副作用）；③ shim host-优先 + Date.now 兜底保证未注册路径不抛错。**为 rAF 真 timestamp 铺路**（performance.now 是 rAF timestamp 的依赖，下轮候选）。
 
+### P1a rAF tick 接 performance.now() 真 timestamp（本轮 R2769，rAF slice 收尾）
+
+承接 R2768（performance.now() land）。精读 rAF 设计 doc（`p1a-event-loop-raf-slice-design-2026-08-05.md`）核对实现进度——**rAF frame-driven 基建 R2713a/b 全 land**（shim `_rafPending` 队列 + `__zw_raf_tick` + `__ZW_RAF_FRAME_DRIVEN` 分支 + renderer `tick_observers` 附带 tick + worker env 注入 + ON/OFF/cancel 单测，default-OFF 保 reftest 兼容）。
+
+**doc §8 三 follow-up 复盘（纠偏 stale）**：① performance.now〔R2768 land〕② **IO/RO 持续跟踪〔R2714 既 land**，doc stale——IO threshold 越界再派发单测 `renderer_js_worker_intersection_observer_refires_on_threshold_cross` 在〕③ rAF 真 timestamp〔本轮〕。
+
+**唯剩**：`page_scripts.rs:145` `tick_observers` 现 `__zw_raf_tick(0)`（传 0）。修：改 `__zw_raf_tick(globalThis.performance?performance.now():0)`——ON 路径 rAF 回调收真 DOMHighResTimeStamp（R2768 performance.now），performance 缺失兜底 0；OFF 路径 shim `__zw_raf_tick` 早返零影响。
+
+| 文件 | 改动 |
+|------|------|
+| `apps/renderer/src/page_scripts.rs` | `tick_observers` rAF tick `__zw_raf_tick(0)`→`__zw_raf_tick(globalThis.performance?performance.now():0)` + 注释更新。 |
+| `apps/renderer/src/js_worker.rs` | +1 单测 `renderer_js_worker_performance_now_available`（renderer 上下文 performance.now 为 function 且非负，证 tick 真参数有效）。 |
+| `docs/goal/zero-web/p1a-event-loop-raf-slice-design-2026-08-05.md` | §8 三 follow-up 标记 LANDED（performance.now R2768 / IO-tracking R2714 / rAF-ts R2769），doc stale 纠偏。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13396 passed / 0 failed / 74 ignored**，13395+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，OFF 路径零影响）+ 全 struct PASS。
+
+**为何零回归且净正向**：① OFF 路径（default/reftest）shim `__zw_raf_tick` 早返，performance.now() 求值后丢弃，零行为变化；② ON 路径仅 ts 从 0 变真值（rAF 回调收更准 timestamp）；③ performance guard 兜底旧 shim 不抛。**rAF slice 全收尾**（frame-driven 基建 + 真 ts 全就绪，default-OFF）。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

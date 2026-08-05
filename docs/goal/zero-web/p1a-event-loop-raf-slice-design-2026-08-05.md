@@ -188,5 +188,5 @@ in-process 回退路径（`ZERO_BROWSER_MULTIPROCESS=0`）若也走类似 post-r
 ## 8. 后续（不在本期）
 
 - ON 路径 A/B 量化后决定是否 default-on（需评估 reftest 改造代价：reftest harness 泵帧 vs 保留 OFF）。
-- IO/RO 持续跟踪核查（`__zw_observers_tick` 是否已覆盖，或仍需 Slice 2b）。
-- `performance.now()` 真实单调时钟接入（rAF ts 精度）。
+- ~~IO/RO 持续跟踪核查（`__zw_observers_tick` 是否已覆盖，或仍需 Slice 2b）~~。**R2714 已 land**：post-render `__zw_observers_tick` → IO `_schedule` → `_crossed` threshold 越界再派发（renderer worker 测试 `renderer_js_worker_intersection_observer_refires_on_threshold_cross` 覆盖）。
+- ~~`performance.now()` 真实单调时钟接入（rAF ts 精度）~~。**R2768 已 land** performance.now()（`__zw_performance_now` host 回调 + shim `globalThis.performance.now`），**R2769 接入 rAF ts**：`tick_observers`（`page_scripts.rs:145`）改 `__zw_raf_tick(performance.now())`（旧传 0），ON 路径 rAF 回调收真 DOMHighResTimeStamp；OFF 路径 shim 早返零影响。
