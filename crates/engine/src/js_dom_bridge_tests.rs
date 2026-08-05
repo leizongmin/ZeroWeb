@@ -3751,6 +3751,46 @@ fn test_get_computed_style_misc_ui() {
 }
 
 #[test]
+fn test_get_computed_style_container_ui() {
+    // R2732：getComputedStyle box-decoration-break/scrollbar-*/touch-action 序列化（容器交互/UI 枚举）。
+    let html = "<html><body>\
+        <div id=\"bdb-clone\" style=\"box-decoration-break: clone;\"></div>\
+        <div id=\"sw-thin\" style=\"scrollbar-width: thin;\"></div>\
+        <div id=\"sg-stable\" style=\"scrollbar-gutter: stable;\"></div>\
+        <div id=\"sg-both\" style=\"scrollbar-gutter: stable both-edges;\"></div>\
+        <div id=\"ta-panx\" style=\"touch-action: pan-x;\"></div>\
+        <div id=\"ta-manip\" style=\"touch-action: manipulation;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // box-decoration-break 默认 slice。
+    assert_eq!(computed_style_property(html, "#def", "box-decoration-break"), "slice");
+    assert_eq!(
+        computed_style_property(html, "#bdb-clone", "box-decoration-break"),
+        "clone"
+    );
+    // scrollbar-width 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "scrollbar-width"), "auto");
+    assert_eq!(computed_style_property(html, "#sw-thin", "scrollbar-width"), "thin");
+    // scrollbar-gutter 默认 auto；stable / stable both-edges。
+    assert_eq!(computed_style_property(html, "#def", "scrollbar-gutter"), "auto");
+    assert_eq!(
+        computed_style_property(html, "#sg-stable", "scrollbar-gutter"),
+        "stable"
+    );
+    assert_eq!(
+        computed_style_property(html, "#sg-both", "scrollbar-gutter"),
+        "stable both-edges"
+    );
+    // touch-action 默认 auto；pan-x / manipulation。
+    assert_eq!(computed_style_property(html, "#def", "touch-action"), "auto");
+    assert_eq!(computed_style_property(html, "#ta-panx", "touch-action"), "pan-x");
+    assert_eq!(
+        computed_style_property(html, "#ta-manip", "touch-action"),
+        "manipulation"
+    );
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。

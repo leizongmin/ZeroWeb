@@ -2,7 +2,7 @@
 //! CSS 字符串（kebab-case 属性名）。从 `js_dom_bridge` 拆出（R2709）以控制主文件行数。
 //!
 //! 覆盖：display/position/visibility/opacity + 颜色族（color/background-color/border-*-color/outline-color/caret-color/accent-color）+ 长度族 + 关键字/枚举族 + font-family/复合族
-//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break/text-wrap/text-align-last）+ vertical-align/unicode-bidi/empty-cells/resize/appearance；未覆盖属性返 ''。
+//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break/text-wrap/text-align-last）+ vertical-align/unicode-bidi/empty-cells/resize/appearance + box-decoration-break/scrollbar-*/touch-action；未覆盖属性返 ''。
 
 use std::collections::HashMap;
 
@@ -17,12 +17,13 @@ use zero_style_system::{
     AccentColorComputedValue, AlignContentValue, AppearanceComputedValue, BackfaceVisibilityValue,
     BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundOriginComputedValue,
     BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderCollapseValue,
-    BorderStyleValue, CaptionSideValue, CaretColorComputedValue, ComputedStyle, ContainComputedValue,
-    ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue,
-    HyphensComputedValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
-    MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
-    ResizeValue, StyleSystem, TableLayoutValue, TextAlignLastValue, TextAlignValue, TextOverflowValue,
-    TextTransformValue, TextWrapComputedValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue,
+    BorderStyleValue, BoxDecorationBreakValue, CaptionSideValue, CaretColorComputedValue, ComputedStyle,
+    ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue,
+    FilterComputedValue, FlexBasisValue, HyphensComputedValue, IsolationValue, JustifyItemsValue, JustifySelfValue,
+    LineBreakValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
+    OverflowWrapValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
+    StyleSystem, TableLayoutValue, TextAlignLastValue, TextAlignValue, TextOverflowValue, TextTransformValue,
+    TextWrapComputedValue, TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue,
     VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
@@ -269,6 +270,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "text-align-last" => text_align_last_to_css(&style.text_align_last),
         "resize" => resize_to_css(&style.resize),
         "appearance" => appearance_to_css(&style.appearance),
+        // ── box-decoration-break / scrollbar-* / touch-action（R2732）── 容器交互/UI 单值枚举。
+        "box-decoration-break" => box_decoration_break_to_css(&style.box_decoration_break),
+        "scrollbar-width" => scrollbar_width_to_css(&style.scrollbar_width),
+        "scrollbar-gutter" => scrollbar_gutter_to_css(&style.scrollbar_gutter),
+        "touch-action" => touch_action_to_css(&style.touch_action),
         _ => String::new(),
     }
 }
@@ -358,6 +364,48 @@ fn appearance_to_css(a: &AppearanceComputedValue) -> String {
         AppearanceComputedValue::SquareButton => "square-button",
         AppearanceComputedValue::Textarea => "textarea",
         AppearanceComputedValue::Textfield => "textfield",
+    }
+    .to_string()
+}
+
+/// box-decoration-break：CSS Box 装饰断行单值序列化。初值 slice。
+fn box_decoration_break_to_css(b: &BoxDecorationBreakValue) -> String {
+    match b {
+        BoxDecorationBreakValue::Slice => "slice",
+        BoxDecorationBreakValue::Clone => "clone",
+    }
+    .to_string()
+}
+
+/// scrollbar-width：CSS Scrollbars 单值序列化。初值 auto（CSS 规范；ZeroWeb 一致）。
+fn scrollbar_width_to_css(s: &ScrollbarWidthComputedValue) -> String {
+    match s {
+        ScrollbarWidthComputedValue::Auto => "auto",
+        ScrollbarWidthComputedValue::Thin => "thin",
+        ScrollbarWidthComputedValue::None => "none",
+    }
+    .to_string()
+}
+
+/// scrollbar-gutter：CSS Overflow 4 单值序列化。初值 auto；StableBothEdges→`stable both-edges`。
+fn scrollbar_gutter_to_css(s: &ScrollbarGutterComputedValue) -> String {
+    match s {
+        ScrollbarGutterComputedValue::Auto => "auto",
+        ScrollbarGutterComputedValue::Stable => "stable",
+        ScrollbarGutterComputedValue::StableBothEdges => "stable both-edges",
+    }
+    .to_string()
+}
+
+/// touch-action：CSS Pointer Events 单值序列化。初值 auto；PanXPanY→`pan-x pan-y`（空格分隔）。
+fn touch_action_to_css(t: &TouchActionValue) -> String {
+    match t {
+        TouchActionValue::Auto => "auto",
+        TouchActionValue::None => "none",
+        TouchActionValue::PanX => "pan-x",
+        TouchActionValue::PanY => "pan-y",
+        TouchActionValue::PanXPanY => "pan-x pan-y",
+        TouchActionValue::Manipulation => "manipulation",
     }
     .to_string()
 }
