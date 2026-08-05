@@ -7147,3 +7147,112 @@ fn test_file_reader_r2791() {
     assert_eq!(sandbox.execute("String(globalThis.__ab_ready)").unwrap().value, "2");
     assert_eq!(sandbox.execute("String(globalThis.__ab_st)").unwrap().value, "aborted");
 }
+
+#[test]
+fn test_file_r2792() {
+    // R2792：File（=Blob 子类 + name/lastModified，文件上传构造高频）。完成 Blob→File→FileReader→FormData
+    // 文件处理簇。constructor 复用 Blob 构造；prototype=Object.create(Blob.prototype) 继承 slice/text/
+    // arrayBuffer；File is-a Blob 故 FormData/FileReader 自动互通。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // typeof + instanceof（File 同时是 Blob 和 File）。
+    assert_eq!(sandbox.execute("typeof File").unwrap().value, "function");
+    assert_eq!(
+        sandbox
+            .execute(
+                "var f = new File(['hello'], 'greet.txt'); String(f instanceof File) + ',' + String(f instanceof Blob)"
+            )
+            .unwrap()
+            .value,
+        "true,true"
+    );
+    // name + 继承 size/type（type 从 options 取，默认 ''）。
+    assert_eq!(sandbox.execute("f.name").unwrap().value, "greet.txt");
+    assert_eq!(sandbox.execute("f.size").unwrap().value, "5");
+    assert_eq!(sandbox.execute("f.type").unwrap().value, "");
+    // type 从 options.type 取。
+    assert_eq!(
+        sandbox
+            .execute("new File(['x'], 'a.txt', {type:'text/plain'}).type")
+            .unwrap()
+            .value,
+        "text/plain"
+    );
+    // lastModified：默认 Date.now()（非负整数）；显式值透传（含 0）。
+    sandbox
+        .execute("globalThis.__lm = new File(['x'], 'a').lastModified;")
+        .unwrap();
+    let lm = sandbox.execute("String(globalThis.__lm >= 0)").unwrap().value;
+    assert_eq!(lm, "true", "默认 lastModified 应为非负（Date.now）");
+    assert_eq!(
+        sandbox
+            .execute("new File(['x'], 'a', {lastModified:0}).lastModified")
+            .unwrap()
+            .value,
+        "0"
+    );
+    assert_eq!(
+        sandbox
+            .execute("new File(['x'], 'a', {lastModified:1700000000000}).lastModified")
+            .unwrap()
+            .value,
+        "1700000000000"
+    );
+    // lastModifiedDate 为 Date 实例。
+    assert_eq!(
+        sandbox
+            .execute("String(new File(['x'],'a', {lastModified:0}).lastModifiedDate instanceof Date)")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // 继承 Blob 方法：text() 返 Promise（execute 末 drain → 下 execute 可读）。
+    sandbox
+        .execute(
+            "globalThis.__ft = '(pending)';\
+             new File(['hello',' ','file']).text().then(function(s){ globalThis.__ft = s; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__ft)").unwrap().value, "hello file");
+    // 继承 slice（返 Blob，size clamp）。
+    assert_eq!(
+        sandbox
+            .execute("new File(['ZeroWeb'],'f').slice(1,4).size")
+            .unwrap()
+            .value,
+        "3"
+    );
+    // 互通：FormData.append(name, file) — File is-a Blob，value 经 String() 归一（spec 非 Blob 转 USVString；
+    // 本 FormData 实现恒字符串化，File 作为整体入列不读内容——与 fetch POST 一起为 follow-up，此处仅验 no-throw）。
+    sandbox
+        .execute("var fd = new FormData(); fd.append('upload', new File(['data'],'up.txt'));")
+        .unwrap();
+    assert_eq!(sandbox.execute("String(fd.has('upload'))").unwrap().value, "true");
+    // 互通：FileReader.readAsDataURL(file) — File is-a Blob，readAsDataURL 读其字节。
+    sandbox
+        .execute(
+            "globalThis.__furl = '(pending)';\
+             var rd = new FileReader();\
+             rd.onload = function(e){ globalThis.__furl = e.target.result; };\
+             rd.readAsDataURL(new File(['hi'],'h.txt',{type:'text/plain'}));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__furl)").unwrap().value,
+        "data:text/plain;base64,aGk="
+    );
+    // 无 new 调用亦可构造。
+    assert_eq!(
+        sandbox
+            .execute("String(File(['x'],'y') instanceof File)")
+            .unwrap()
+            .value,
+        "true"
+    );
+}

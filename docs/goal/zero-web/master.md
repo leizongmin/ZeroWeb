@@ -2091,6 +2091,24 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a File（本轮 R2792，缺失 Web API 续）
+
+承接 R2791（FileReader）。续缺失 Web API——land **File**（Blob 子类 + 文件名/时间戳，`<input type=file>` / 文件上传构造高频）。**完成 Blob→File→FileReader→FormData 文件处理簇**。
+
+- **constructor(bits, name, options)**：复用 `Blob.call(this, parts, options)`（File 实例 `instanceof Blob` 为真 → Blob 构造体在 this 设 `_parts`/`size`/`type`）+ `name`/`lastModified`（默认 `Date.now()`）/`lastModifiedDate`（Date 实例，deprecated 但库仍读）。
+- **继承**：`prototype = Object.create(Blob.prototype)` → 继承 slice/text/arrayBuffer；File is-a Blob 故 **FormData.append(name, file) / FileReader.readAsDataURL(file) 自动互通**。
+- **TDD 抓 bug**：初版 `lastModified = options.lastModified | 0` 把毫秒时间戳（如 1700000000000）截断为 Int32（溢出）——TDD red 暴露，改 `+options.lastModified`（unary plus 保 Number 精度，含 0/大值）。
+- **已知限制（记录）**：① `lastModifiedDate` 取 lastModified 构造（spec deprecated 但库仍读）；② 无 `webkitRelativePath`（目录上传，rare，defer）；③ 不校验 name 非空（spec 允许）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`File`（constructor 复用 Blob.call + name/lastModified(+coerce)/lastModifiedDate + `Object.create(Blob.prototype)` 继承），置于 Blob 后。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_file_r2792`（typeof/instanceof File+Blob/name/size/type 继承/lastModified 默认+0+大值/lastModifiedDate Date 实例/继承 text()/slice/互通 FormData.append+FileReader.readAsDataURL/无 new 构造）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13420 passed / 0 failed / 74 ignored**，13419+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 global）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 global（File），不改既有 API；② 纯 JS 无副作用（复用 Blob 构造只读 parts）；③ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义；④ Object.create(Blob.prototype) 继承不改 Blob.prototype 本身。
+
 ### P1a FileReader（本轮 R2791，缺失 Web API 续）
 
 承接 R2790（DOMParser）。续缺失 Web API——land **FileReader**（异步读 Blob，文件上传 / 图片预览 / data URL 高频）。纯 JS，builds on `Blob.text()`/`arrayBuffer()`（R2789）+ `btoa`（R2770）。**readAsDataURL 为 Blob 未覆盖的唯一能力**（图片预览 `img.src = reader.result` 高频）。

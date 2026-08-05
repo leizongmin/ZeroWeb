@@ -1245,6 +1245,25 @@
     }
   };
 
+  // File——Blob 子类 + 文件名/时间戳（`<input type=file>` / 文件上传构造高频）。完成 Blob→File→
+  // FileReader→FormData 文件处理簇。constructor 复用 `Blob.call(this, parts, options)`（File 实例
+  // `instanceof Blob` 为真，故 Blob 构造体在 this 上设 `_parts`/`size`/`type`），再加 `name`/
+  // `lastModified`（默认 `Date.now()`，V8 原生单调时钟）/`lastModifiedDate`（deprecated 但常见）。
+  // prototype = Object.create(Blob.prototype) → 继承 slice/text/arrayBuffer；File is-a Blob 故
+  // FormData.append(name, file) / FileReader.readAsDataURL(file) 自动互通。
+  // **已知限制（记录）**：① `lastModifiedDate` 取 lastModified 构造（spec 已 deprecated 但库仍读）；
+  //   ② 无 webkitRelativePath（目录上传，rare，defer）；③ 不校验 name 非空（spec 允许空名）。
+  function File(parts, name, options) {
+    if (!(this instanceof File)) return new File(parts, name, options);
+    Blob.call(this, parts, options); // 复用 Blob 构造（this instanceof Blob 为真 → 设 _parts/size/type）
+    this.name = name == null ? '' : String(name);
+    this.lastModified = (options && options.lastModified != null) ? +options.lastModified : Date.now();
+    this.lastModifiedDate = new Date(this.lastModified);
+  }
+  File.prototype = Object.create(Blob.prototype);
+  File.prototype.constructor = File;
+  globalThis.File = globalThis.File || File;
+
   // FileReader——异步读 Blob（文件上传 / 图片预览 / data URL 高频）。纯 JS，builds on Blob.text()/
   // arrayBuffer()（R2789）+ btoa（R2770）。**readAsDataURL 为 Blob 未覆盖的唯一能力**（图片预览
   // `img.src = reader.result` 高频）。事件经 microtask：readyState=LOADING（同步）→ loadstart（同步）
