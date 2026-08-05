@@ -1125,7 +1125,7 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13334 passed / 0 failed / 74 ignored**，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2710 baseline 持平 → 未改渲染输出）+ 8 struct PASS / 0 FAIL。
 
-**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter + R2719 3D transform 簇 + R2720 will-change + R2721 clip-path + R2722 content + R2723 bolder/lighter font-weight，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22，**含 bolder/lighter 父链解析**）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms 全簇（transform 函数列表 + transform-origin + transform-style + backface-visibility + perspective + perspective-origin）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + **will-change（列表）** + **clip-path（basic-shape 函数）** + **content（生成内容 component value）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、~~bolder/lighter（须父链）~~ ✅ R2723、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、~~3D transform 簇~~ ✅ R2719、~~will-change~~ ✅ R2720、~~clip-path~~ ✅ R2721、~~content~~ ✅ R2722、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、background-position/image、grid-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
+**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter + R2719 3D transform 簇 + R2720 will-change + R2721 clip-path + R2722 content + R2723 bolder/lighter font-weight + R2724 background-position，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22，**含 bolder/lighter 父链解析**）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms 全簇（transform 函数列表 + transform-origin + transform-style + backface-visibility + perspective + perspective-origin）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + **will-change（列表）** + **clip-path（basic-shape 函数）** + **content（生成内容 component value）** + **background-position（<bg-position># 多层，关键字→%）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、~~bolder/lighter（须父链）~~ ✅ R2723、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、~~3D transform 簇~~ ✅ R2719、~~will-change~~ ✅ R2720、~~clip-path~~ ✅ R2721、~~content~~ ✅ R2722、~~background-position~~ ✅ R2724、background-image/size/repeat、轴感知 `<position>` 关键字语法、grid-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
 
 ### P1a `getComputedStyle` transform 序列化（本轮 R2715，getComputedStyle 维护态续）
 
@@ -1259,6 +1259,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13348 passed / 0 failed / 74 ignored**，13347+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，**精确 baseline 持平 → 证实 gCS-only 后处理零渲染影响**，paint 路径字节级不变）+ 全 struct PASS / 0 FAIL。已推送 `f14d1bdd..cee95765`。
 
 **为何零回归且净正向**：① 仅改 getComputedStyle 路径的 styles 副本，paint 用独立 render 管线（style-system computed 值未动）；② welcome smoke diff 精确持平（17.03%）证 render 零影响；③ bolder/lighter 从「误关键字」纠正为 spec-correct 绝对值。
+
+### P1a `getComputedStyle` background-position 序列化（本轮 R2724，getComputedStyle 维护态续）
+
+承接 R2723（bolder/lighter）。补 `background-position`（CSS Backgrounds `<bg-position>#` 多层，background 簇最常见项，旧返 ''）。存储为 `Vec<BackgroundPositionComputedValue>`（Center/Left/Right/Top/Bottom/Length/Percent/Calc/TwoValue/EdgeOffset）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"background-position"` 臂；新增 `background_position_to_css`（多层逗号分隔）+ `bg_position_layer_to_css`（单层：关键字→% 按轴展开，缺省轴 center 50% / TwoValue 两轴 / EdgeOffset 边缘+偏移）+ `bg_position_axis_to_css`（单轴关键字→%：center 50% / left 0% / right 100% / top 0% / bottom 100%）+ `bg_edge_to_str`；import 加 `BackgroundPositionComputedValue` + `BackgroundEdge`；文件头 doc 覆盖列表加 background-position。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_background_position`（默认 0% 0% / center→50% 50% / left top→0% 0% / right bottom→100% 100% / px / % / 多层逗号分隔）。 |
+
+**对齐 Chromium**（WPT `background-computed.html`）：关键字解析为百分比，单关键字/单长度按轴展开（缺省轴 = center 50%）。已知 minor diverge：3/4 值 EdgeOffset 的 right/bottom 偏移 Chromium 按容器尺寸解析翻转，ZeroWeb 无 layout 保 `right Npx` 原样（罕见，doc 标注）。
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13349 passed / 0 failed / 74 ignored**，13348+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → background-position 未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。已推送 `8f8a2df9..8625da26`。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 background-position 返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
