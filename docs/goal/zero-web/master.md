@@ -1125,7 +1125,7 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13334 passed / 0 failed / 74 ignored**，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2710 baseline 持平 → 未改渲染输出）+ 8 struct PASS / 0 FAIL。
 
-**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms（transform 函数列表 + transform-origin 两长度）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、content（Counter/Counters 复杂）、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
+**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter + R2719 3D transform 簇，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms 全簇（transform 函数列表 + transform-origin + transform-style + backface-visibility + perspective + perspective-origin）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、~~3D transform 簇~~ ✅ R2719、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、content（Counter/Counters 复杂）、clip-path、will-change、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
 
 ### P1a `getComputedStyle` transform 序列化（本轮 R2715，getComputedStyle 维护态续）
 
@@ -1190,6 +1190,19 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13343 passed / 0 failed / 74 ignored**，13342+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → getComputedStyle filter 未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。已推送 `b21ff0f9..7a3d6528`。
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 filter 返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
+### P1a `getComputedStyle` 3D transform 簇序列化（本轮 R2719，getComputedStyle 维护态续）
+
+承接 R2715/R2716（transform / transform-origin）。补 3D transform 簇 4 属性，完成 transform 簇——全 trivial，模式均前序已立（枚举 helper / 长度 helper / none-handling）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 4 臂：`transform-style`（`transform_style_str`：Flat→flat / Preserve3d→preserve-3d）/ `backface-visibility`（`backface_visibility_str`：Visible→visible / Hidden→hidden）/ `perspective`（`perspective_to_css`：Px(0.0)=none initial 对齐 max_size_to_css 模式，否则 length_to_css）/ `perspective-origin`（2 LengthValue 经 length_to_css 空格连接，镜像 transform-origin）；import 加 `TransformStyleValue` + `BackfaceVisibilityValue`；文件头 doc 覆盖列表扩 Transforms 簇。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_transform_family`（每属性默认+显式：transform-style flat/preserve-3d、backface-visibility visible/hidden、perspective none/800px、perspective-origin 50% 50%/25% 75%）。 |
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13344 passed / 0 failed / 74 ignored**，13343+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → 3D transform 簇未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。已推送 `21950c1d..f24fac8c`。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 4 属性返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
