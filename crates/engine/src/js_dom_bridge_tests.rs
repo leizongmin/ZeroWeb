@@ -1249,6 +1249,113 @@ fn test_crypto_get_random_values_r2775() {
 }
 
 #[test]
+fn test_dom_exception_r2776() {
+    // R2776：DOMException（Web IDL 异常类型，本地 Chromium 150 oracle 锚定）。众多 Web API 抛出它；
+    // name/message/legacy code + 25 legacy 常量；instance 非 Error 子类；toString="name: message"。
+    // 同时验收 R2776 升级的已 land API 错误类型（btoa→InvalidCharacterError / getRandomValues→
+    // QuotaExceededError / structuredClone→DataCloneError）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // typeof DOMException = function。
+    assert_eq!(sandbox.execute("typeof DOMException").unwrap().value, "function");
+    // new DOMException(msg, name)：name/message/code + toString="name: message"（oracle 锚定）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var e = new DOMException('bad char', 'InvalidCharacterError');\
+                 e.name + '|' + e.message + '|' + e.code + '|' + (e + '')"
+            )
+            .unwrap()
+            .value,
+        "InvalidCharacterError|bad char|5|InvalidCharacterError: bad char"
+    );
+    // 无 name 参数：name='Error'/code=0；无参 message=''。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var a = new DOMException('hi'); var b = new DOMException();\
+                 a.name + '|' + a.code + '|' + b.name + '|' + b.message + '|' + b.code"
+            )
+            .unwrap()
+            .value,
+        "Error|0|Error||0"
+    );
+    // instance 非 Error 子类（浏览器行为一致），但 instanceof DOMException 为 true。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var e = new DOMException('m', 'DataCloneError');\
+                 (e instanceof DOMException) + '|' + (e instanceof Error)"
+            )
+            .unwrap()
+            .value,
+        "true|false"
+    );
+    // legacy 常量（oracle 锚定子集）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "DOMException.DATA_CLONE_ERR + '|' + DOMException.QUOTA_EXCEEDED_ERR + '|' +\
+                 DOMException.INVALID_CHARACTER_ERR + '|' + DOMException.NOT_SUPPORTED_ERR + '|' +\
+                 DOMException.SECURITY_ERR"
+            )
+            .unwrap()
+            .value,
+        "25|22|5|9|18"
+    );
+    // name→code 映射：DataCloneError=25 / QuotaExceededError=22 / NotSupportedError=9（legacy name）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "new DOMException('a','DataCloneError').code + '|' +\
+                 new DOMException('b','QuotaExceededError').code + '|' +\
+                 new DOMException('c','NotSupportedError').code"
+            )
+            .unwrap()
+            .value,
+        "25|22|9"
+    );
+    // 无 new 调用亦返 DOMException 实例（同 Error 语义）。
+    assert_eq!(
+        sandbox
+            .execute("DOMException('x', 'SyntaxError') instanceof DOMException")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // ★ 升级验收：btoa 抛 InvalidCharacterError DOMException（R2776 升级自裸 Error）。
+    assert_eq!(
+        sandbox
+            .execute("try { btoa('\\u0100'); '' } catch (e) { e.name + '|' + (e instanceof DOMException) }")
+            .unwrap()
+            .value,
+        "InvalidCharacterError|true"
+    );
+    // ★ 升级验收：getRandomValues >65536 抛 QuotaExceededError DOMException（升级自 RangeError）。
+    assert_eq!(
+        sandbox
+            .execute("try { crypto.getRandomValues(new Uint8Array(65537)); '' } catch (e) { e.name + '|' + e.code }")
+            .unwrap()
+            .value,
+        "QuotaExceededError|22"
+    );
+    // ★ 升级验收：structuredClone(function) 抛 DataCloneError DOMException（升级自 TypeError）。
+    assert_eq!(
+        sandbox
+            .execute("try { structuredClone(function(){}); '' } catch (e) { e.name + '|' + e.code }")
+            .unwrap()
+            .value,
+        "DataCloneError|25"
+    );
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，

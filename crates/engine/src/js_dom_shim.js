@@ -715,9 +715,65 @@
     }
   };
 
+  // DOMException——Web IDL 异常类型（name + message + legacy code）。众多 Web API 抛出它（fetch /
+  // storage / atob / crypto / structuredClone 等），各 API 用 name 子类区分语义（InvalidCharacterError
+  // / DataCloneError / QuotaExceededError 等）。V8 embed 不提供，polyfill 之（本地 Chromium 150 oracle
+  // 锚定 R2776）。**关键行为（oracle 锚定）**：无 name 参数时 name='Error'/code=0；name∈legacy 表时
+  // code=对应值（余 0）；instance 非 Error 子类（浏览器 DOMException 亦非 Error 子类）；toString="name: message"。
+  var _ZW_DE_CODE = {
+    IndexSizeError: 1, HierarchyRequestError: 3, WrongDocumentError: 4,
+    InvalidCharacterError: 5, NoModificationAllowedError: 7, NotFoundError: 8,
+    NotSupportedError: 9, InUseAttributeError: 10, InvalidStateError: 11,
+    SyntaxError: 12, InvalidModificationError: 13, NamespaceError: 14,
+    InvalidAccessError: 15, TypeMismatchError: 17, SecurityError: 18,
+    NetworkError: 19, AbortError: 20, URLMismatchError: 21, QuotaExceededError: 22,
+    TimeoutError: 23, InvalidNodeTypeError: 24, DataCloneError: 25
+  };
+  function DOMException(message, name) {
+    // 允许无 new 调用（同 Error 语义）。
+    var self = (this instanceof DOMException) ? this : Object.create(DOMException.prototype);
+    self.message = (message === undefined) ? '' : String(message);
+    self.name = (name === undefined) ? 'Error' : String(name);
+    self.code = _ZW_DE_CODE[self.name] || 0;
+    return self;
+  }
+  DOMException.prototype = Object.create(Object.prototype);
+  DOMException.prototype.constructor = DOMException;
+  DOMException.prototype.toString = function () {
+    return this.message === '' ? this.name : this.name + ': ' + this.message;
+  };
+  // legacy 常量（Web IDL §1.2 code 值；部分码无现代 name，仅常量）。
+  DOMException.INDEX_SIZE_ERR = 1;
+  DOMException.DOMSTRING_SIZE_ERR = 2;
+  DOMException.HIERARCHY_REQUEST_ERR = 3;
+  DOMException.WRONG_DOCUMENT_ERR = 4;
+  DOMException.INVALID_CHARACTER_ERR = 5;
+  DOMException.NO_DATA_ALLOWED_ERR = 6;
+  DOMException.NO_MODIFICATION_ALLOWED_ERR = 7;
+  DOMException.NOT_FOUND_ERR = 8;
+  DOMException.NOT_SUPPORTED_ERR = 9;
+  DOMException.INUSE_ATTRIBUTE_ERR = 10;
+  DOMException.INVALID_STATE_ERR = 11;
+  DOMException.SYNTAX_ERR = 12;
+  DOMException.INVALID_MODIFICATION_ERR = 13;
+  DOMException.NAMESPACE_ERR = 14;
+  DOMException.INVALID_ACCESS_ERR = 15;
+  DOMException.VALIDATION_ERR = 16;
+  DOMException.TYPE_MISMATCH_ERR = 17;
+  DOMException.SECURITY_ERR = 18;
+  DOMException.NETWORK_ERR = 19;
+  DOMException.ABORT_ERR = 20;
+  DOMException.URL_MISMATCH_ERR = 21;
+  DOMException.QUOTA_EXCEEDED_ERR = 22;
+  DOMException.TIMEOUT_ERR = 23;
+  DOMException.INVALID_NODE_TYPE_ERR = 24;
+  DOMException.DATA_CLONE_ERR = 25;
+  globalThis.DOMException = globalThis.DOMException || DOMException;
+
   // atob/btoa——Base64 编解码（Web 平台高频：data: URL / JWT / 二进制载荷）。纯 JS（ZW 无 base64
-  // crate 在 engine，复用 fetch _b64decode 同款算法）。btoa 对 >255（非 Latin-1）抛错（spec）；
-  // atob 容错（忽略空白/padding，best-effort）。多字节 UTF-8 base64 为已知限制（返 Latin-1）。
+  // crate 在 engine，复用 fetch _b64decode 同款算法）。btoa 对 >255（非 Latin-1）抛 InvalidCharacterError
+  // DOMException（spec，R2776 升级自裸 Error）；atob 容错（忽略空白/padding，best-effort）。多字节 UTF-8
+  // base64 为已知限制（返 Latin-1）。
   var _b64ch = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   var _b64lut = (function () { var l = {}; for (var i = 0; i < 64; i++) l[_b64ch[i]] = i; return l; })();
   globalThis.btoa = function (s) {
@@ -725,7 +781,8 @@
     var out = '';
     for (var i = 0; i < s.length; i += 3) {
       var b1 = s.charCodeAt(i), b2 = s.charCodeAt(i + 1), b3 = s.charCodeAt(i + 2);
-      if (b1 > 255 || b2 > 255 || b3 > 255) throw new Error('InvalidCharacterError');
+      if (b1 > 255 || b2 > 255 || b3 > 255)
+        throw new DOMException('The string to be encoded contains characters outside of the Latin1 range.', 'InvalidCharacterError');
       out += _b64ch[b1 >> 2];
       out += _b64ch[((b1 & 3) << 4) | (isNaN(b2) ? 0 : b2 >> 4)];
       out += isNaN(b2) ? '=' : _b64ch[((b2 & 15) << 2) | (isNaN(b3) ? 0 : b3 >> 6)];
@@ -769,7 +826,8 @@
       if (typeof ArrayBuffer === 'undefined' || !ArrayBuffer.isView(arr)) {
         throw new TypeError('getRandomValues: argument must be a TypedArray');
       }
-      if (arr.byteLength > 65536) throw new RangeError('getRandomValues: byteLength exceeds 65536');
+      if (arr.byteLength > 65536)
+        throw new DOMException("The ArrayBufferView byte length (" + arr.byteLength + ") exceeds 65536.", 'QuotaExceededError');
       var view = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
       for (var i = 0; i < view.length; i++) view[i] = (Math.random() * 256) | 0;
       return arr;
@@ -956,8 +1014,8 @@
   function _zw_structured_clone(val, seen) {
     if (val === null) return val;
     var t = typeof val;
-    if (t === 'function') throw new TypeError('structuredClone: function not cloneable');
-    if (t === 'symbol') throw new TypeError('structuredClone: symbol not cloneable');
+    if (t === 'function') throw new DOMException('function could not be cloned.', 'DataCloneError');
+    if (t === 'symbol') throw new DOMException('symbol could not be cloned.', 'DataCloneError');
     if (t !== 'object') return val; // primitive（number/string/boolean/undefined/bigint）原样
     if (seen.has(val)) return seen.get(val); // 循环引用 → 已记忆的克隆
     if (val instanceof Date) { var d = new Date(val.getTime()); seen.set(val, d); return d; }
