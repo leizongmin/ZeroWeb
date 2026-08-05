@@ -336,6 +336,20 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "align-content" => align_content_to_css(&style.align_content),
         "justify-items" => justify_items_to_css(&style.justify_items),
         "justify-self" => justify_self_to_css(&style.justify_self),
+        // ── place-content / place-items / place-self 简写（R2758）── align+justify longhand 早覆；
+        // 简写 CSSOM 2 值最小化（align==justify→单值，否则 "align justify"），Chromium 150 oracle 锚定。
+        "place-content" => place_2value_min(
+            &align_content_to_css(&style.align_content),
+            &alignment_str(&style.justify_content),
+        ),
+        "place-items" => place_2value_min(
+            &alignment_str(&style.align_items),
+            &justify_items_to_css(&style.justify_items),
+        ),
+        "place-self" => place_2value_min(
+            &alignment_str(&style.align_self),
+            &justify_self_to_css(&style.justify_self),
+        ),
         // ── word-break / overflow-wrap / hyphens / line-break（R2728）── CSS Text 换行/断词单值枚举。
         "word-break" => word_break_to_css(&style.word_break),
         "overflow-wrap" => overflow_wrap_to_css(&style.overflow_wrap),
@@ -2725,6 +2739,20 @@ fn justify_self_to_css(j: &JustifySelfValue) -> String {
         JustifySelfValue::Right => "right",
     }
     .to_string()
+}
+
+/// `place-content` / `place-items` / `place-self` 简写 CSSOM 2 值最小化（CSS Box Alignment）：
+/// align==justify→单值，否则 `"align justify"`。Chromium 150 oracle：`place-content:center start`→
+/// `"center start"`、`place-self:center`→`"center"`（单值设两轴同值）。
+/// **已知 diverge（pre-existing，记录不阻塞）**：place-content/items 默认值受 ZW 的 justify-content
+/// 默认 FlexStart / align-items 默认 Stretch 影响（ZW 默认 vs Chromium normal）——根因为 layout-coupled
+/// 默认值，非本序列化引入；显式设置的值（含单值同值）序列化正确。
+fn place_2value_min(align: &str, justify: &str) -> String {
+    if align == justify {
+        align.to_string()
+    } else {
+        format!("{align} {justify}")
+    }
 }
 
 /// word-break：CSS Text `<word-break>` 单值序列化。初值 normal。

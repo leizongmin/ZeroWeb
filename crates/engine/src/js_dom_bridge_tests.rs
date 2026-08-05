@@ -4135,6 +4135,35 @@ fn test_get_computed_style_background_shorthand_r2757() {
 }
 
 #[test]
+fn test_get_computed_style_place_shorthands_r2758() {
+    // R2758：getComputedStyle place-content/items/self 简写（align+justify CSSOM 2 值最小化）。
+    // 每项期望串经本地 Chromium 150 oracle 提取（--dump-dom 写 DOM 法），TDD red→green 对齐。
+    // 注：place-content/items 默认值受 ZW layout-coupled 默认（justify-content FlexStart / align-items
+    // Stretch vs Chromium normal）影响 diverge——测**显式设置**的值（含单值同值），序列化本身正确。
+    let html = "<html><body>\
+        <div id=\"pc1\" style=\"place-content: center;\"></div>\
+        <div id=\"pc2\" style=\"place-content: center start;\"></div>\
+        <div id=\"pc3\" style=\"place-content: space-between;\"></div>\
+        <div id=\"pi1\" style=\"place-items: center;\"></div>\
+        <div id=\"pi2\" style=\"place-items: center start;\"></div>\
+        <div id=\"ps0\" style=\"color: red;\"></div>\
+        <div id=\"ps1\" style=\"place-self: center;\"></div>\
+        <div id=\"ps2\" style=\"place-self: start end;\"></div>\
+        </body></html>";
+    // place-content：align==justify→单值，否则 "align justify"。
+    assert_eq!(computed_style_property(html, "#pc1", "place-content"), "center");
+    assert_eq!(computed_style_property(html, "#pc2", "place-content"), "center start");
+    assert_eq!(computed_style_property(html, "#pc3", "place-content"), "space-between");
+    // place-items：同 2 值最小化。
+    assert_eq!(computed_style_property(html, "#pi1", "place-items"), "center");
+    assert_eq!(computed_style_property(html, "#pi2", "place-items"), "center start");
+    // place-self：默认 align-self/justify-self 均 auto→"auto"（默认匹配 Chromium）。
+    assert_eq!(computed_style_property(html, "#ps0", "place-self"), "auto");
+    assert_eq!(computed_style_property(html, "#ps1", "place-self"), "center");
+    assert_eq!(computed_style_property(html, "#ps2", "place-self"), "start end");
+}
+
+#[test]
 fn test_get_computed_style_border_radius_shorthand() {
     // R2738：getComputedStyle border-radius 简写（CSSOM 4 值最小化）。4 角 longhand 早覆（R2707）。
     let html = "<html><body>\

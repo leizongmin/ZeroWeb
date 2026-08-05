@@ -1758,6 +1758,25 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **已知限制（记录不阻塞，pre-existing 非本切片）**：① **多层 background**——ZW 对 attachment/clip/origin 存单值（非多层 Vec），多层无法正确 round-trip（单层正确，多层 longhand 亦单值，diverge 一致）；② **简写 parser 限制**——`expand_background` 对含 `rgb()`/`var()` 的值 bail-out（整体作 color，丢 attachment），且 box token 故意 drop（R2479/R2481 A/B net −3），故 `background: rgb(0,128,0) fixed` 等声明不会完整展开（**序列化本身正确**，测试经 longhand 设置隔离验证）；③ url() 图层 ZW 存相对 URL，oracle 解析绝对 URL（pre-existing longhand 差异）。
 
+### P1a `getComputedStyle` place-content/items/self 简写（本轮 R2758，getComputedStyle 维护态续）
+
+承接 R2757。续用本地 Chromium 150 oracle 提取确切串，TDD red→green land **3 个 place-* 简写**——CSSOM 2 值最小化（align+justify 二合一）：
+
+- 序列化形：align==justify→单值，否则 `"align justify"`。
+- `place-content`=align-content+justify-content / `place-items`=align-items+justify-items / `place-self`=align-self+justify-self；6 longhand 早覆仅缺 CSSOM 重组，单值无列表/多层复杂度（本 session 最干净 lever）。
+- oracle：`place-content:center start`→`"center start"`、`place-self:center`→`"center"`（单值设两轴同值）、`place-self` 默认→`"auto"`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +1 helper `place_2value_min`（align==justify→单值 else "align justify"）+ 3 dispatch 项（place-content/items/self）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_place_shorthands_r2758`（3 简写显式值 + place-self 默认，oracle 锚定）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13385 passed / 0 failed / 74 ignored**，13384+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 3 简写旧返 `''`、新返正确 CSSOM 2 值最小化串；② 纯只读 JS bridge 不触及渲染/布局。
+
+**已知 diverge（pre-existing，记录不阻塞）**：place-content/items **默认值**受 ZW layout-coupled 默认影响——ZW `justify-content` 默认 FlexStart / `align-items` 默认 Stretch vs Chromium 均默认 normal（故 ZW place-content 默认=`"normal flex-start"`、place-items 默认=`"stretch normal"`，diverge Chromium `"normal"`）。根因为布局耦合默认值，非本序列化引入；**显式设置的值（含单值同值）序列化正确**（测试覆盖）。修默认须 reftest+smoke 验证布局影响，超本切片范围。place-self 默认（auto/auto）匹配 Chromium 无 diverge。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
