@@ -1205,6 +1205,50 @@ fn test_atob_btoa_crypto_randomuuid_r2770() {
 }
 
 #[test]
+fn test_crypto_get_random_values_r2775() {
+    // R2775：crypto.getRandomValues（TypedArray 字节填充，Math.random-based 同 randomUUID 一致）。
+    // 填底层字节 buffer → 任意 typed 视图随机值；spec 限 TypedArray + ≤65536 字节。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 返回同一数组 + 长度不变 + 每字节在 [0,256)（已填充）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var a = new Uint8Array(4); var r = crypto.getRandomValues(a);\
+                 r === a && a.length === 4 && a[0] >= 0 && a[0] < 256 && a[3] >= 0 && a[3] < 256"
+            )
+            .unwrap()
+            .value,
+        "true"
+    );
+    // Uint32Array 经字节 buffer 填充 → 随机 Uint32（值在 [0, 2^32)）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var u = crypto.getRandomValues(new Uint32Array(1));\
+                 u[0] >= 0 && u[0] < 4294967296"
+            )
+            .unwrap()
+            .value,
+        "true"
+    );
+    // >65536 字节抛 RangeError（spec）。
+    assert_eq!(
+        sandbox
+            .execute("try { crypto.getRandomValues(new Uint8Array(65537)); 'no-throw' } catch (e) { 'threw' }")
+            .unwrap()
+            .value,
+        "threw"
+    );
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，

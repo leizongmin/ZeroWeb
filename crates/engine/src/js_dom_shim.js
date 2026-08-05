@@ -746,9 +746,10 @@
     return out;
   };
 
-  // crypto——Web Crypto 起步：randomUUID（UUID v4，高频：id 生成 / analytics / React key）。
-  // **已知限制**：Math.random-based（非 CSPRNG），对 id 生成等主流用途足够；安全敏感场景（token
-  // 生成）需 host OS-random 接入（follow-up）。getRandomValues（TypedArray 填充）defer。
+  // crypto——Web Crypto 起步：randomUUID（UUID v4）+ getRandomValues（TypedArray 填充）。高频
+  //（id 生成 / analytics / 随机字节）。**已知限制**：Math.random-based（**非 CSPRNG**），对 id 生成 /
+  // 非安全随机字节主流用途足够；安全敏感场景（token / 密钥）需 host OS-random（如 getrandom crate）
+  // 接入（follow-up，届时 randomUUID + getRandomValues 一并升级 CSPRNG）。
   globalThis.crypto = globalThis.crypto || {
     randomUUID: function () {
       var h = '0123456789abcdef';
@@ -760,6 +761,18 @@
         else s += h[(Math.random() * 16) | 0];
       }
       return s;
+    },
+    // getRandomValues(typedArray)：spec 限定 TypedArray（Int8..Uint32 / BigInt64/BigUint64），≤65536
+    // 字节。填**底层字节 buffer**（Uint8Array 视图）→ 任意 typed 视图得随机值（含多字节 / 共享 buffer
+    // 偏移）。Math.random 字节级（非 CSPRNG）。
+    getRandomValues: function (arr) {
+      if (typeof ArrayBuffer === 'undefined' || !ArrayBuffer.isView(arr)) {
+        throw new TypeError('getRandomValues: argument must be a TypedArray');
+      }
+      if (arr.byteLength > 65536) throw new RangeError('getRandomValues: byteLength exceeds 65536');
+      var view = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+      for (var i = 0; i < view.length; i++) view[i] = (Math.random() * 256) | 0;
+      return arr;
     }
   };
 
