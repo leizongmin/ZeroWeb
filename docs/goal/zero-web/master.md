@@ -1577,6 +1577,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧两属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` overflow 简写序列化（本轮 R2745，getComputedStyle 维护态续）
+
+承接 R2744。补 `overflow` 简写（overflow-x/y longhand 早覆；简写旧返 ''）。复用 `overflow_value_str`：x==y→单值（`overflow: hidden`→`hidden`），否则 `x y`（`overflow: hidden scroll`→`hidden scroll`），默认 `visible`（CSS Overflow 3）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"overflow"` 臂（复用 `overflow_value_str`，x==y 单值 / 否则两值）；无新 helper / 无新 import。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_overflow_shorthand`（`hidden`→`hidden`〔单值〕/ `hidden scroll`→`hidden scroll`〔两值〕/ 默认→`visible`）。 |
+
+**对齐 Chromium**：overflow 简写两值最小化与 Chromium getComputedStyle 一致。**getComputedStyle 序列化主体至此基本收官**——全主要属性簇 + 常用简写（border-radius/overflow）覆盖；残余 gap：transition/animation **简写**（需 zip 子属性列表成 per-transition 组，复杂 defer）、font-variant 简写（需扩 style-system 子属性存储，深 defer）。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13370 passed / 0 failed / 74 ignored**，13369+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 无 struct FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧简写返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
