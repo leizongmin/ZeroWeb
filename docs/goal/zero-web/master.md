@@ -1562,6 +1562,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 10 属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` transition/animation-timing-function 序列化（本轮 R2744，getComputedStyle 维护态续）
+
+承接 R2743（transition/animation 簇 10 属性）。补 timing-function 收尾 transition/animation 簇（旧均返 ''，缓动函数常查）。`Vec<TimingFunctionValue>`，空→`ease`（CSS 初值）。复用 `enum_list_to_css`：关键字（ease/linear/ease-in/out/in-out）+ step-start/end 保 keyword 不展开为 cubic-bezier；`cubic-bezier(a,b,c,d)` 4 数逗号分隔；`steps(n, pos)` 按 CSS Easing 1 §4——默认 End 省略（`steps(n)`）、Start→`start`/End→`end`（legacy canonical）/Both→`jump-both`/None→`jump-none`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"transition-timing-function"`+`"animation-timing-function"` 臂（复用 `enum_list_to_css(.., "ease", timing_function_to_css)`）；新增 `timing_function_to_css`（8 确定 keyword/cubic-bezier/step 形式 + steps spec-aligned 位置）；import 加 `TimingFunctionValue` + `StepPosition`。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_timing_function`（ease/linear/ease-in-out 关键字；cubic-bezier(0.25, 0.1, 0.25, 1)；step-start；steps(4)〔默认 End 省略〕/ steps(4, start)；多值 ease-in, ease-out；animation-timing-function linear；默认→ease）。 |
+
+**对齐 Chromium**：关键字/cubic-bezier/step-start/end 确定无误。**steps() 位置参数待 Chromium A/B 核实**：canonical 化为 spec-aligned 最佳推断（Web 核实本轮被网络阻断）；若 Chromium 显式含 `end` 或用 `jump-*` 别名，后续轮按 oracle 修正。**transition/animation 簇至此 12 属性全覆**（R2743 10 + R2744 timing-function 2）。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13369 passed / 0 failed / 74 ignored**，13368+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 无 struct FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧两属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
