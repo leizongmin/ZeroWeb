@@ -2,7 +2,7 @@
 //! CSS 字符串（kebab-case 属性名）。从 `js_dom_bridge` 拆出（R2709）以控制主文件行数。
 //!
 //! 覆盖：display/position/visibility/opacity + 颜色族 + 长度族 + 关键字/枚举族 + font-family/复合族
-//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）；未覆盖属性返 ''。
+//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break）；未覆盖属性返 ''。
 
 use std::collections::HashMap;
 
@@ -18,10 +18,10 @@ use zero_style_system::{
     BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
     BackgroundSizeComputedValue, BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle,
     ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, FilterComputedValue, FlexBasisValue,
-    IsolationValue, JustifyItemsValue, JustifySelfValue, LineHeightValue, MixBlendModeComputedValue,
-    ObjectFitComputedValue, OutlineStyleValue, PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue,
-    TextOverflowValue, TextTransformValue, TransformStyleValue, UserSelectValue, WhiteSpaceValue, WillChangeValue,
-    WritingModeValue, ZIndexValue,
+    HyphensComputedValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
+    MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
+    StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue, TextTransformValue, TransformStyleValue,
+    UserSelectValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -250,6 +250,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "align-content" => align_content_to_css(&style.align_content),
         "justify-items" => justify_items_to_css(&style.justify_items),
         "justify-self" => justify_self_to_css(&style.justify_self),
+        // ── word-break / overflow-wrap / hyphens / line-break（R2728）── CSS Text 换行/断词单值枚举。
+        "word-break" => word_break_to_css(&style.word_break),
+        "overflow-wrap" => overflow_wrap_to_css(&style.overflow_wrap),
+        "hyphens" => hyphens_to_css(&style.hyphens),
+        "line-break" => line_break_to_css(&style.line_break),
         _ => String::new(),
     }
 }
@@ -1376,6 +1381,49 @@ fn justify_self_to_css(j: &JustifySelfValue) -> String {
         JustifySelfValue::Baseline => "baseline",
         JustifySelfValue::Left => "left",
         JustifySelfValue::Right => "right",
+    }
+    .to_string()
+}
+
+/// word-break：CSS Text `<word-break>` 单值序列化。初值 normal。
+fn word_break_to_css(w: &WordBreakValue) -> String {
+    match w {
+        WordBreakValue::Normal => "normal",
+        WordBreakValue::BreakAll => "break-all",
+        WordBreakValue::KeepAll => "keep-all",
+        WordBreakValue::BreakWord => "break-word",
+    }
+    .to_string()
+}
+
+/// overflow-wrap：CSS Text `<overflow-wrap>` 单值序列化。初值 normal。
+fn overflow_wrap_to_css(w: &OverflowWrapValue) -> String {
+    match w {
+        OverflowWrapValue::Normal => "normal",
+        OverflowWrapValue::BreakWord => "break-word",
+        OverflowWrapValue::Anywhere => "anywhere",
+    }
+    .to_string()
+}
+
+/// hyphens：CSS Text 单值序列化。ZeroWeb 初值 None（diverge：CSS 规范初值 manual，Chromium 返 manual）。
+fn hyphens_to_css(h: &HyphensComputedValue) -> String {
+    match h {
+        HyphensComputedValue::None => "none",
+        HyphensComputedValue::Manual => "manual",
+        HyphensComputedValue::Auto => "auto",
+    }
+    .to_string()
+}
+
+/// line-break：CSS Text 单值序列化。初值 auto。
+fn line_break_to_css(l: &LineBreakValue) -> String {
+    match l {
+        LineBreakValue::Auto => "auto",
+        LineBreakValue::Loose => "loose",
+        LineBreakValue::Normal => "normal",
+        LineBreakValue::Strict => "strict",
+        LineBreakValue::Anywhere => "anywhere",
     }
     .to_string()
 }

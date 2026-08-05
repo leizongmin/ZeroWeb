@@ -3624,6 +3624,38 @@ fn test_get_computed_style_alignment_cluster() {
 }
 
 #[test]
+fn test_get_computed_style_text_break_cluster() {
+    // R2728：getComputedStyle word-break/overflow-wrap/hyphens/line-break 序列化（CSS Text 换行/断词簇）。
+    let html = "<html><body>\
+        <div id=\"wb-all\" style=\"word-break: break-all;\"></div>\
+        <div id=\"wb-keep\" style=\"word-break: keep-all;\"></div>\
+        <div id=\"ow-word\" style=\"overflow-wrap: break-word;\"></div>\
+        <div id=\"ow-any\" style=\"overflow-wrap: anywhere;\"></div>\
+        <div id=\"hyph-auto\" style=\"hyphens: auto;\"></div>\
+        <div id=\"hyph-manual\" style=\"hyphens: manual;\"></div>\
+        <div id=\"lb-strict\" style=\"line-break: strict;\"></div>\
+        <div id=\"lb-anywhere\" style=\"line-break: anywhere;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // word-break 默认 normal。
+    assert_eq!(computed_style_property(html, "#def", "word-break"), "normal");
+    assert_eq!(computed_style_property(html, "#wb-all", "word-break"), "break-all");
+    assert_eq!(computed_style_property(html, "#wb-keep", "word-break"), "keep-all");
+    // overflow-wrap 默认 normal。
+    assert_eq!(computed_style_property(html, "#def", "overflow-wrap"), "normal");
+    assert_eq!(computed_style_property(html, "#ow-word", "overflow-wrap"), "break-word");
+    assert_eq!(computed_style_property(html, "#ow-any", "overflow-wrap"), "anywhere");
+    // hyphens：ZeroWeb 默认 none（diverge：CSS 规范/Chromium 初值 manual）。
+    assert_eq!(computed_style_property(html, "#def", "hyphens"), "none");
+    assert_eq!(computed_style_property(html, "#hyph-auto", "hyphens"), "auto");
+    assert_eq!(computed_style_property(html, "#hyph-manual", "hyphens"), "manual");
+    // line-break 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "line-break"), "auto");
+    assert_eq!(computed_style_property(html, "#lb-strict", "line-break"), "strict");
+    assert_eq!(computed_style_property(html, "#lb-anywhere", "line-break"), "anywhere");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
