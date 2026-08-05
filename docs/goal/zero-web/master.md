@@ -1652,6 +1652,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② linear 层旧返 ''、新返真值（radial/conic 仍 ''，不劣化）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` radial + conic gradient 序列化（本轮 R2750，getComputedStyle 维护态续）
+
+承接 R2749（linear-gradient）。补 radial-gradient + conic-gradient 层，**完成 gradient 故事**（background-image/mask-image 三渐变全覆）。radial 规则锚定 WPT `background-image-computed`/`gradient-position-computed` oracle：默认 ellipse farthest-corner at center 全省略 / `circle`（默认 size）保留 / 非默认 size 关键字保留 / `circle`+显式半径→半径（circle 省略）/ 非默认 position→`at <X> <Y>`（解析期 center→50%·top→0%·bottom→100% 已归一）。conic spec-aligned（无 WPT conic oracle，待 A/B 核实）：`from <angle>` / `at <pos>`，默认省略。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | 新增 `radial_gradient_to_css`（shape/size + position config 组装）/ `radial_size_str`（size 关键字+形状）/ `conic_gradient_to_css`（from angle + position）/ `is_center`（50%/50% 默认判定）；`image_layer_list_to_css` 放行 Radial/Conic 层；import 加 `RadialGradient`/`RadialShape`/`RadialSize`/`ConicGradient`。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_radial_conic_gradient`（9 case：radial 默认省略 / circle / farthest-side / circle+pos% / circle+半径 / circle at center 省略 / circle at 10px；conic 默认 / from 90deg）；更新 R2747 `#grad`（radial 现序列化）。 |
+
+**对齐 Chromium**：radial 全形态匹配 WPT oracle；conic spec-aligned 待 A/B。**已知 parser 限制（非序列化 bug）**：radial-gradient 首参为纯 position（`at 10px 10px` 无 shape 前缀）不被 config 检测识别（`parse_radial_gradient_inner` 需 shape 前缀或 ` at ` 含前导空格）→ none；shape-首位 position（`circle at ...`）正常。**gradient 故事至此完整**（linear+radial+conic 三渐变 + None/Url）。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13375 passed / 0 failed / 74 ignored**，13374+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 无 struct FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② radial/conic 层旧返 ''、新返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
