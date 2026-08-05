@@ -2978,6 +2978,10 @@
     },
   };
 
+  // document.cookie 的 in-JS 存储（name → value）。document.cookie setter 写入，getter 序列化。
+  // 不接真 cookie jar（host-layer defer）；per-上下文（无 origin 隔离）。
+  var _doc_cookies = {};
+
   globalThis.document = {
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);
@@ -3028,6 +3032,26 @@
     characterSet: 'UTF-8',
     charset: 'UTF-8',
     readyState: 'complete',
+    // document.cookie——get 返 "n=v; n=v" 串（仅 name=value，无属性）；set 解析 "n=v; Path=...; Max-Age=..."
+    // 取首个 name=value 存/覆盖。**已知限制**：in-JS 存储（不接真 cookie jar / 不随 fetch 发送 / 无 origin
+    // 隔离 / 无 expiry 淘汰——网络/origin 集成属 host-layer defer）；set-then-read 常见模式 tractable。
+    get cookie() {
+      var parts = [];
+      for (var k in _doc_cookies) {
+        if (Object.prototype.hasOwnProperty.call(_doc_cookies, k)) parts.push(k + '=' + _doc_cookies[k]);
+      }
+      return parts.join('; ');
+    },
+    set cookie(str) {
+      var s = String(str == null ? '' : str);
+      var first = s.split(';')[0];
+      var eq = first.indexOf('=');
+      if (eq < 0) return; // 无 name=value → 忽略
+      var name = first.slice(0, eq).trim();
+      var value = first.slice(eq + 1);
+      if (!name) return;
+      _doc_cookies[name] = value;
+    },
     styleSheets: _emptyCollection(),
     forms: _liveQueryCollection('form'),
     images: _liveQueryCollection('img'),

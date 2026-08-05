@@ -2204,6 +2204,52 @@ fn test_css_escape_supports_r2785() {
 }
 
 #[test]
+fn test_document_cookie_r2786() {
+    // R2786：document.cookie get/set（in-JS 存储，set-then-read 常见模式）。**已知限制**：不接真 cookie jar
+    // / 无 origin 隔离 / 无 expiry（host-layer defer）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 初始空。
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "");
+    // set 单 cookie（带属性，仅取 name=value）。
+    sandbox
+        .execute("document.cookie = 'theme=dark; Path=/; Max-Age=3600'")
+        .unwrap();
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "theme=dark");
+    // set 第二个 cookie → getter 串含两者。
+    sandbox.execute("document.cookie = 'lang=en'").unwrap();
+    assert!(sandbox.execute("document.cookie").unwrap().value.contains("theme=dark"));
+    assert!(sandbox.execute("document.cookie").unwrap().value.contains("lang=en"));
+    // 覆盖同名 cookie（name 唯一）。
+    sandbox.execute("document.cookie = 'theme=light'").unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.cookie.split('; ').sort().join('; ')")
+            .unwrap()
+            .value,
+        "lang=en; theme=light"
+    );
+    // value 含 '='（split on 首 '='，value 保留后续 '='）。
+    sandbox.execute("document.cookie = 'token=a=b=c'").unwrap();
+    assert!(
+        sandbox
+            .execute("document.cookie")
+            .unwrap()
+            .value
+            .contains("token=a=b=c")
+    );
+    // 无 name=value（无 '=' 串）→ 忽略，不影响存储。
+    sandbox.execute("document.cookie = 'justtext'").unwrap();
+    assert!(!sandbox.execute("document.cookie").unwrap().value.contains("justtext"));
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，
