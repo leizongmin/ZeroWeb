@@ -835,6 +835,98 @@
     }
   };
 
+  // URLSearchParams——query string 解析/序列化（location.search / fetch query 高频）。
+  // 纯 JS（V8 原生 encodeURIComponent/decodeURIComponent + Symbol.iterator）。application/x-www-form-urlencoded
+  // 语义：space→`+`；构造支持 string（`?` 前缀可省）/ 对象 / [k,v] 可迭代。
+  function _zw_iter(arr) {
+    var i = 0;
+    var it = {
+      next: function () {
+        if (i < arr.length) { return { value: arr[i++], done: false }; }
+        return { value: undefined, done: true };
+      }
+    };
+    if (typeof Symbol !== 'undefined') it[Symbol.iterator] = function () { return it; };
+    return it;
+  }
+  globalThis.URLSearchParams = globalThis.URLSearchParams || function URLSearchParams(init) {
+    if (!(this instanceof URLSearchParams)) return new URLSearchParams(init);
+    this._p = [];
+    if (init == null) return;
+    if (typeof init === 'string') {
+      var s = init;
+      if (s.charAt(0) === '?') s = s.slice(1);
+      if (s) {
+        var parts = s.split('&');
+        for (var i = 0; i < parts.length; i++) {
+          var p = parts[i];
+          if (p === '') continue;
+          var eq = p.indexOf('=');
+          var k = eq < 0 ? p : p.slice(0, eq);
+          var v = eq < 0 ? '' : p.slice(eq + 1);
+          this._p.push([decodeURIComponent(k.replace(/\+/g, ' ')), decodeURIComponent(v.replace(/\+/g, ' '))]);
+        }
+      }
+    } else if (typeof init === 'object') {
+      if (typeof init.forEach === 'function') {
+        var self = this;
+        init.forEach(function (val, key) { self._p.push([String(key), String(val)]); });
+      } else {
+        for (var key in init) {
+          if (Object.prototype.hasOwnProperty.call(init, key)) this._p.push([String(key), String(init[key])]);
+        }
+      }
+    }
+  };
+  globalThis.URLSearchParams.prototype = {
+    append: function (n, v) { this._p.push([String(n), String(v)]); },
+    delete: function (n, v) {
+      n = String(n);
+      if (arguments.length >= 2) {
+        v = String(v);
+        this._p = this._p.filter(function (p) { return !(p[0] === n && p[1] === v); });
+      } else {
+        this._p = this._p.filter(function (p) { return p[0] !== n; });
+      }
+    },
+    get: function (n) { n = String(n); for (var i = 0; i < this._p.length; i++) if (this._p[i][0] === n) return this._p[i][1]; return null; },
+    getAll: function (n) { n = String(n); var r = []; for (var i = 0; i < this._p.length; i++) if (this._p[i][0] === n) r.push(this._p[i][1]); return r; },
+    has: function (n, v) {
+      n = String(n);
+      var hasV = arguments.length >= 2; if (hasV) v = String(v);
+      for (var i = 0; i < this._p.length; i++) {
+        if (this._p[i][0] === n && (!hasV || this._p[i][1] === v)) return true;
+      }
+      return false;
+    },
+    set: function (n, v) {
+      n = String(n); v = String(v);
+      var found = false; var out = [];
+      for (var i = 0; i < this._p.length; i++) {
+        if (this._p[i][0] === n) { if (!found) { out.push([n, v]); found = true; } }
+        else out.push(this._p[i]);
+      }
+      if (!found) out.push([n, v]);
+      this._p = out;
+    },
+    sort: function () { this._p.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; }); },
+    forEach: function (cb, thisArg) { for (var i = 0; i < this._p.length; i++) cb.call(thisArg, this._p[i][1], this._p[i][0], this); },
+    entries: function () { return _zw_iter(this._p.map(function (p) { return [p[0], p[1]]; })); },
+    keys: function () { return _zw_iter(this._p.map(function (p) { return p[0]; })); },
+    values: function () { return _zw_iter(this._p.map(function (p) { return p[1]; })); },
+    toString: function () {
+      var out = [];
+      for (var i = 0; i < this._p.length; i++) {
+        out.push(encodeURIComponent(this._p[i][0]).replace(/%20/g, '+') + '=' + encodeURIComponent(this._p[i][1]).replace(/%20/g, '+'));
+      }
+      return out.join('&');
+    }
+  };
+  // 自身可迭代（for (const [k,v] of params)）：[Symbol.iterator] → entries。
+  if (typeof Symbol !== 'undefined') {
+    globalThis.URLSearchParams.prototype[Symbol.iterator] = globalThis.URLSearchParams.prototype.entries;
+  }
+
   globalThis.history = {
     length: 1,
     state: null,

@@ -1255,6 +1255,85 @@ fn test_text_encoder_decoder_utf8_r2771() {
 }
 
 #[test]
+fn test_url_search_params_r2772() {
+    // R2772：URLSearchParams（query 解析/序列化，location.search/fetch query 高频）。纯 JS。
+    // 构造（string/?前缀/对象）+ get/getAll/has/set/append/delete + toString（space→+）+ 可迭代。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 构造 + get（`?` 前缀可省）。
+    assert_eq!(
+        sandbox
+            .execute("new URLSearchParams('?a=1&b=2').get('a')")
+            .unwrap()
+            .value,
+        "1"
+    );
+    assert_eq!(
+        sandbox
+            .execute("new URLSearchParams('a=1&b=2').get('b')")
+            .unwrap()
+            .value,
+        "2"
+    );
+    // 缺键 get → null；getAll 多值。
+    assert_eq!(
+        sandbox
+            .execute("String(new URLSearchParams('a=1').get('z'))")
+            .unwrap()
+            .value,
+        "null"
+    );
+    assert_eq!(
+        sandbox
+            .execute("new URLSearchParams('a=1&a=2').getAll('a').join(',')")
+            .unwrap()
+            .value,
+        "1,2"
+    );
+    // has / append / set / delete。
+    assert_eq!(
+        sandbox.execute("new URLSearchParams('a=1').has('a')").unwrap().value,
+        "true"
+    );
+    sandbox
+        .execute("globalThis.__p = new URLSearchParams('a=1&b=2'); __p.append('c', '3'); __p.set('a', '9'); __p.delete('b');")
+        .unwrap();
+    assert_eq!(sandbox.execute("__p.get('a')").unwrap().value, "9");
+    assert_eq!(sandbox.execute("String(__p.has('b'))").unwrap().value, "false");
+    assert_eq!(sandbox.execute("__p.get('c')").unwrap().value, "3");
+    // toString（space→+，round-trip）。
+    assert_eq!(
+        sandbox
+            .execute("new URLSearchParams('q=hello+world&n=42').toString()")
+            .unwrap()
+            .value,
+        "q=hello+world&n=42"
+    );
+    // 对象构造。
+    assert_eq!(
+        sandbox
+            .execute("new URLSearchParams({ x: '1', y: '2' }).toString()")
+            .unwrap()
+            .value,
+        "x=1&y=2"
+    );
+    // 可迭代：for...of 收集键。
+    assert_eq!(
+        sandbox
+            .execute("var ks = []; for (var kv of new URLSearchParams('a=1&b=2')) ks.push(kv[0]); ks.join(',')")
+            .unwrap()
+            .value,
+        "a,b"
+    );
+}
+
+#[test]
 fn test_clone_node_e2e() {
     // cloneNode(deep) 复用既有回调组合：create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。
     use std::sync::{Arc, Mutex};

@@ -2031,6 +2031,27 @@ oracle 锚定：默认/normal/0/0px→`"normal"`、2px→`"2px"`、word-spacing 
 
 **为何零回归且净正向**：① 全新 constructor（TextEncoder/TextDecoder），不改既有 API；② 纯 JS 无副作用；③ prototype guard（`globalThis.X = globalThis.X || ...`）不覆盖既有定义。
 
+### P1a URLSearchParams（本轮 R2772，缺失 Web API 续）
+
+承接 R2771（TextEncoder/TextDecoder）。续缺失 Web API 子线程——land **URLSearchParams**（query string 解析/序列化，`location.search` / fetch query 高频）。纯 JS（V8 原生 `encodeURIComponent`/`decodeURIComponent` + `Symbol.iterator`）。
+
+- **constructor**：string（`?` 前缀可省）/ 对象 / `[k,v]` 可迭代。
+- **方法**：`append` / `delete`（含 value 参数）/ `get` / `getAll` / `has`（含 value 参数）/ `set` / `sort` / `forEach` / `entries` / `keys` / `values` / `toString`。
+- `[Symbol.iterator]`=entries 使实例可 `for...of`。application/x-www-form-urlencoded 语义：space↔`+`。
+
+**实现关键**：`entries`/`keys`/`values` 返**真迭代器**（`_zw_iter` helper：`next()` 返 `{value,done}` 并自增游标 + `[Symbol.iterator]` 返 self）——初版误返裸数组致 `for...of` 调 `array.next()` 抛错（TDD red 暴露迭代协议细节），后修正（游标自增漏写亦经 TDD 暴露：infinite-loop 致 `Array.push` 触发 RangeError Invalid array length）。
+
+**已知限制（记录）**：`size` getter 未实现（rare）；`entries/keys/values` 返迭代器（spec 一致，spread `[...x.entries()]` 仍可用）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_zw_iter` helper + `URLSearchParams` constructor（prototype，全方法 + `[Symbol.iterator]`）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_url_search_params_r2772`（构造+get/getAll/has/append/set/delete/toString round-trip/对象构造/for...of）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13399 passed / 0 failed / 74 ignored**，13398+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 global）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 constructor（URLSearchParams），不改既有 API；② 纯 JS 无副作用；③ prototype guard 不覆盖既有定义。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
