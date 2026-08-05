@@ -4164,6 +4164,53 @@ fn test_get_computed_style_place_shorthands_r2758() {
 }
 
 #[test]
+fn test_get_computed_style_grid_lines_r2759() {
+    // R2759：getComputedStyle grid 线定位 longhand（grid-column/row-start/end）+ 简写
+    // （grid-column/row/area，CSSOM 最小化）。每项期望串经本地 Chromium 150 oracle 提取，TDD 对齐。
+    let html = "<html><body>\
+        <div id=\"d\"></div>\
+        <div id=\"cs\" style=\"grid-column-start: 2;\"></div>\
+        <div id=\"cname\" style=\"grid-column-start: main;\"></div>\
+        <div id=\"gc1\" style=\"grid-column: 2;\"></div>\
+        <div id=\"gc2\" style=\"grid-column: 2 / 4;\"></div>\
+        <div id=\"gc3\" style=\"grid-column: 1 / span 2;\"></div>\
+        <div id=\"gc4\" style=\"grid-column: span 2;\"></div>\
+        <div id=\"gr\" style=\"grid-row: span 3 / 5;\"></div>\
+        <div id=\"ga1\" style=\"grid-area: 1 / 1 / 3 / 3;\"></div>\
+        <div id=\"ga3\" style=\"grid-area: 2 / 3;\"></div>\
+        </body></html>";
+    // longhand：Auto→auto / Line(n)→n / Span(n)→span n / Name(s)→s。
+    assert_eq!(computed_style_property(html, "#d", "grid-column-start"), "auto");
+    assert_eq!(computed_style_property(html, "#cs", "grid-column-start"), "2");
+    assert_eq!(computed_style_property(html, "#cname", "grid-column-start"), "main");
+    assert_eq!(computed_style_property(html, "#gc4", "grid-column-start"), "span 2");
+    // grid-column 简写：start==end→单值；end==auto 且 start 非 Name→单值；Name 保留 "name / auto"。
+    assert_eq!(computed_style_property(html, "#d", "grid-column"), "auto");
+    assert_eq!(computed_style_property(html, "#gc1", "grid-column"), "2");
+    assert_eq!(computed_style_property(html, "#gc2", "grid-column"), "2 / 4");
+    assert_eq!(computed_style_property(html, "#gc3", "grid-column"), "1 / span 2");
+    assert_eq!(computed_style_property(html, "#gc4", "grid-column"), "span 2");
+    assert_eq!(computed_style_property(html, "#cname", "grid-column"), "main / auto");
+    // grid-row 简写：同 grid-column 规则。
+    assert_eq!(computed_style_property(html, "#gr", "grid-row"), "span 3 / 5");
+    // grid-area 简写：4 槽 trailing-drop 最小化。注：单值 `grid-area: header`（CSS 应四值同设）
+    // 受 ZW expand_grid_area 仅设 row-start 的 pre-existing parser diverge 限——此处测 ZW 正确解析的
+    // 4 值 / 2 值形式（序列化本身正确，单值 diverge 另记）。
+    assert_eq!(computed_style_property(html, "#d", "grid-area"), "auto");
+    assert_eq!(computed_style_property(html, "#ga1", "grid-area"), "1 / 1 / 3 / 3");
+    assert_eq!(computed_style_property(html, "#ga3", "grid-area"), "2 / 3");
+    // #gc1（cs=2，re/ce=auto，cs 非 Name）→grid-area drop ce/re→"auto / 2"。
+    assert_eq!(computed_style_property(html, "#gc1", "grid-area"), "auto / 2");
+    // #cname（cs=Name main，阻止 ce 省）→grid-area 全 4 槽 "auto / main / auto / auto"。
+    assert_eq!(
+        computed_style_property(html, "#cname", "grid-area"),
+        "auto / main / auto / auto"
+    );
+    // #gr（rs=span3, re=5, ce=auto）→drop ce（cs=auto 非 Name），re=5 留→"span 3 / auto / 5"。
+    assert_eq!(computed_style_property(html, "#gr", "grid-area"), "span 3 / auto / 5");
+}
+
+#[test]
 fn test_get_computed_style_border_radius_shorthand() {
     // R2738：getComputedStyle border-radius 简写（CSSOM 4 值最小化）。4 角 longhand 早覆（R2707）。
     let html = "<html><body>\

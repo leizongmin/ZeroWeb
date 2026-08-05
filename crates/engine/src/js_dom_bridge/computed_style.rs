@@ -25,8 +25,8 @@ use zero_style_system::{
     ColumnRuleWidthComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle,
     ContainComputedValue, ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue,
     DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontSizeAdjustValue,
-    FontVariantNumericValue, GridAutoFlowValue, HyphensComputedValue, ImageRenderingValue, IsolationValue,
-    JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
+    FontVariantNumericValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue,
+    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
     MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue,
     PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue,
     ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
@@ -480,6 +480,15 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "grid-template-areas" => opt_css_string(&style.grid_template_areas, "none"),
         "grid-auto-columns" => opt_css_string(&style.grid_auto_columns, "auto"),
         "grid-auto-rows" => opt_css_string(&style.grid_auto_rows, "auto"),
+        // ── grid 线定位 longhand + 简写（R2759）── grid-column/row-start/end longhand + grid-column/row/area
+        // 简写（CSSOM 最小化），Chromium 150 oracle 锚定。
+        "grid-column-start" => grid_line_to_css(&style.grid_column_start),
+        "grid-column-end" => grid_line_to_css(&style.grid_column_end),
+        "grid-row-start" => grid_line_to_css(&style.grid_row_start),
+        "grid-row-end" => grid_line_to_css(&style.grid_row_end),
+        "grid-column" => grid_line_pair_to_css(&style.grid_column_start, &style.grid_column_end),
+        "grid-row" => grid_line_pair_to_css(&style.grid_row_start, &style.grid_row_end),
+        "grid-area" => grid_area_to_css(style),
         // ── containment 簇（R2741）── content-visibility（3 关键字，初值 visible）+
         // contain-intrinsic-width/height（Option<LengthValue>，None→none，CSS Sizing 4 初值 none）。
         "content-visibility" => content_visibility_str(&style.content_visibility),
@@ -2753,6 +2762,58 @@ fn place_2value_min(align: &str, justify: &str) -> String {
     } else {
         format!("{align} {justify}")
     }
+}
+
+/// `<grid-line>` 单值序列化（grid-column/row-start/end longhand + grid-area 分量）：
+/// Auto→`auto`、Line(n)→`n`（负数 from-end）、Span(n)→`span n`、Name(s)→`s`。
+/// Chromium 150 oracle：`2`/`span 2`/`main`/`auto`。
+fn grid_line_to_css(line: &GridLineValue) -> String {
+    match line {
+        GridLineValue::Auto => "auto".to_string(),
+        GridLineValue::Line(n) => n.to_string(),
+        GridLineValue::Span(n) => format!("span {}", n),
+        GridLineValue::Name(s) => s.clone(),
+    }
+}
+
+/// grid-column / grid-row 简写（start / end 2 值最小化）。Chromium 150 oracle：
+/// start==end→单值；否则 end==auto 且 start 非 custom-ident(Name)→单值 start；否则 `"start / end"`。
+/// `grid-column:2`→`"2"`、`grid-column:main`→`"main / auto"`（Name 保留 auto end 避歧义）。
+fn grid_line_pair_to_css(start: &GridLineValue, end: &GridLineValue) -> String {
+    let s = grid_line_to_css(start);
+    let e = grid_line_to_css(end);
+    if s == e || (e == "auto" && !matches!(start, GridLineValue::Name(_))) {
+        s
+    } else {
+        format!("{s} / {e}")
+    }
+}
+
+/// grid-area 简写（row-start / column-start / row-end / column-end 4 槽 trailing-drop 最小化）。
+/// Chromium 150 oracle 规则：① 四值全等→单值；② 否则从末尾 drop 可省槽——ce 可省 iff ce==auto 且
+/// cs 非 Name，re 可省 iff（ce 已省）且 re==auto 且 rs 非 Name；rs/cs 恒留（≥2 值）。
+/// `grid-area:1/1/3/3`→`"1 / 1 / 3 / 3"`、`grid-area:2/3`→`"2 / 3"`、`grid-area:header`→`"header"`、
+/// `grid-column-start:main`（cs=Name）→grid-area=`"auto / main / auto / auto"`（Name 阻止 ce 省）。
+fn grid_area_to_css(style: &ComputedStyle) -> String {
+    let rs = grid_line_to_css(&style.grid_row_start);
+    let cs = grid_line_to_css(&style.grid_column_start);
+    let re = grid_line_to_css(&style.grid_row_end);
+    let ce = grid_line_to_css(&style.grid_column_end);
+    if rs == cs && cs == re && re == ce {
+        return rs;
+    }
+    let mut slots = vec![rs.clone(), cs.clone(), re.clone(), ce];
+    let cs_is_name = matches!(style.grid_column_start, GridLineValue::Name(_));
+    let rs_is_name = matches!(style.grid_row_start, GridLineValue::Name(_));
+    // ce（slot 3）可省 iff ce==auto 且 cs 非 Name。
+    if slots[3] == "auto" && !cs_is_name {
+        slots.truncate(3);
+        // re（现末尾）可省 iff re==auto 且 rs 非 Name。
+        if slots[2] == "auto" && !rs_is_name {
+            slots.truncate(2);
+        }
+    }
+    slots.join(" / ")
 }
 
 /// word-break：CSS Text `<word-break>` 单值序列化。初值 normal。

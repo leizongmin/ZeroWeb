@@ -1777,6 +1777,25 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **已知 diverge（pre-existing，记录不阻塞）**：place-content/items **默认值**受 ZW layout-coupled 默认影响——ZW `justify-content` 默认 FlexStart / `align-items` 默认 Stretch vs Chromium 均默认 normal（故 ZW place-content 默认=`"normal flex-start"`、place-items 默认=`"stretch normal"`，diverge Chromium `"normal"`）。根因为布局耦合默认值，非本序列化引入；**显式设置的值（含单值同值）序列化正确**（测试覆盖）。修默认须 reftest+smoke 验证布局影响，超本切片范围。place-self 默认（auto/auto）匹配 Chromium 无 diverge。
 
+### P1a `getComputedStyle` grid 线定位 longhand + 简写（本轮 R2759，getComputedStyle 维护态续）
+
+承接 R2758。续用本地 Chromium 150 oracle 提取确切串，TDD red→green land **4 longhand + 3 简写**（grid 线定位族）：
+
+- **4 longhand**（grid-column-start/end、grid-row-start/end）：`<grid-line>` 单值 Auto→`auto` / Line(n)→`n` / Span(n)→`span n` / Name(s)→`s`。
+- **grid-column / grid-row 简写**（start/end 2 值最小化）：start==end→单值，否则 end==auto 且 start 非 Name→单值；Name 保留 `"name / auto"`（避歧义）。oracle：`grid-column:2`→`"2"`、`grid-column:main`→`"main / auto"`。
+- **grid-area 简写**（rs/cs/re/ce 4 槽 trailing-drop 最小化）：全等→单值；否则从末尾 drop ce（iff ce==auto 且 cs 非 Name）/ re（iff ce 已 drop 且 re==auto 且 rs 非 Name），rs/cs 恒留。oracle：`grid-area:1/1/3/3`→`"1 / 1 / 3 / 3"`、`grid-area:2/3`→`"2 / 3"`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +`GridLineValue` import；+3 helper（`grid_line_to_css`/`grid_line_pair_to_css`/`grid_area_to_css`）+ 7 dispatch 项（4 longhand + grid-column/row/area）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_grid_lines_r2759`（longhand 全变体 + 3 简写 CSSOM 最小化，oracle 锚定）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告（合并 `grid_line_pair_to_css` 同体 if 分支避 identical_blocks）+ `make test` 全绿（**13386 passed / 0 failed / 74 ignored**，13385+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 4 longhand 旧返 `''`、3 简写旧返 `''`，新返正确 CSSOM 线定位串；② 纯只读 JS bridge 不触及渲染/布局。
+
+**已知 diverge（pre-existing parser，记录不阻塞）**：单值 `grid-area: header`（CSS 规范四值同设）受 ZW `expand_grid_area`（`shorthand/mod.rs:1363`）仅设 row-start 限——序列化本身正确（测试覆盖 4 值/2 值形式），修 parser 须 css-grid reftest 验布局影响超本切片范围，记入待办。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
