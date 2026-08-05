@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-05
+**最后更新**: 2026-08-06
 **执行状态**: 17 个 crate + 3 个应用已实现，~13,308 个测试全绿，整体行覆盖率 95.46%（函数 96.94%、区域 94.88%），16/16 crate 有 criterion 基准测试（78+ 个基准），V8 JS 引擎已集成（含持久化 Context + **WASM 自动桥接完整实现**），WPT 测试套件 1341 个用例（23 分类，**100% 通过率**，**按分类通过率追踪就位**），Web Workers 和 ES Modules 支持已实现，无头浏览器协议 Phase 1-5 已完成，浏览器设置+会话持久化已实现，增量布局计算，HTTP 响应缓存集成到 WebView，渲染管线优化（填充批处理 + 视口剔除 + draw call 统计），**WebSocket 真实实现**（tungstenite 替换桩实现，支持 ws/wss 连接、文本/二进制消息、错误类型），**CSS 全面渲染集成**（排版/表格/交互/计数器/背景/边框图像/clip-path/mix-blend-mode/动画/过渡/变换/UI 控件/写作模式/断词/包含/吸附 等 100+ 属性），**CSS 行内布局集成**（text-align/text-indent/float/tab-size/white-space/word-break/letter-spacing/word-spacing），**CSP 完整实现**（script-src-attr/style-src-attr/unsafe-eval/wasm-unsafe-eval/unsafe-hashes/strict-dynamic/report-sample/scheme-source/data:blob: 修复），**多进程架构实际运行**（IPC 管道传输 + 进程管理器 + 渲染进程二进制 + 18 个集成测试），**性能目标验证**（中等复杂度页面首屏 < 2s 测试通过 + 基准测试），**安全管线集成测试**（52 个跨 crate 安全管线测试 + 19 个 WPT 安全扩展测试），**SecurityContext 统一安全门面**（HSTS 预加载 40+ 域名 + 混合内容阻止/升级执行引擎 + WebView 集成），**Top 20+ 真实网站兼容性测试**（20/20 站点通过 + 15 个扩展站点 + HTTP 解压/User-Agent 修复），**增量渲染性能验证**（incremental_paint 图元数 < 全量 20%），**可访问性基础**（FocusManager Tab 导航 + tabindex 排序 + 19 个 ARIA WPT 测试），**跨平台打包脚本**（Linux AppImage/deb + macOS .app + Windows .zip），**平台和输入测试**（18 个 WPT 用例覆盖键盘事件/鼠标事件/触摸布局/滚动容器/视口响应式/HiDPI/IME/CJK 输入/焦点管理 + 15 个视口自适应集成测试 + 19 个字体回退国际化渲染管线集成测试）。**DOM/JS Bridge**：polyfill 桥接模式（30+ DomCommand 变体覆盖 DOM 操作/事件/样式），Fetch/setTimeout/console/localStorage/sessionStorage/MutationObserver/IntersectionObserver/ResizeObserver/CustomEvent 全 polyfill 注入，Observer 类型为 stub 不触发回调，fetch() 为 stub 返回空 Response，事件循环为简化版（非 spec-compliant microtask/task queue）。**注（P1a 进展）**：生产 worker 路径（B 代 shim `js_dom_shim.js`）已迁移——fetch GET 端到端真实、MutationObserver/IntersectionObserver/ResizeObserver 已真实触发回调（P1a Slice 2a/3，renderer 路径含 render-loop 后续通知 tick Slice 2b）、setTimeout 真实延迟、**input/textarea value + input 事件**（keydown 可打印字符注入，R2653）+ Backspace 删末字符（R2654）+ Enter/submit-button 提交表单 submit 事件（R2655-56）+ checkbox click 翻转 + change 事件（R2657，含 RemoveAttr mutation 修 latent bug）+ radio click 翻转 + name 组兄弟 unset（R2658）+ focus/blur/change-on-blur（R2659）+ Tab/Shift+Tab 焦点导航（R2660）+ **gBCR/IO/RO path A handle-identity**（createElement 元素经持久 handle→唯一 selector map 返真实 rect，R2661）+ **`:nth-child`/`:nth-of-type` 伪类选择器**（dom 选择器引擎伪类支持 + path A 歧义元素回落 nth-child 结构路径，R2662）+ **`<select>` 表单控件**（value/selectedIndex 读 + 编程 setter，querySelector 返唯一选择器，R2663）+ **querySelectorAll 唯一选择器**（歧义集合每元素返唯一身份，R2664）+ **`:not()` 伪类**（CSS3 否定，内嵌可含伪类如 `:not(:first-child)`，R2665）+ **`select.options`/`selectedOptions` 集合**（R2666）+ **`:nth-last-child`/`:nth-last-of-type` 伪类**（CSS3 结构伪类族收尾，R2667）+ **`:is()`/`:where()` 选择器列表伪类**（含 paren-aware 解析，R2668）+ **`:has()` 关系伪类**（Selectors L4，后代/直接子作用域 + Document 子树求值，R2669）+ **`:checked`/`:disabled`/`:enabled` 表单状态伪类**（CSS3 UI，元素 tag+属性求值，R2670）+ **CSS3 属性选择器运算符 `^=`/`$=`/`*=`/`|=`**（含值去引号，补全 AttributeMatcher，R2671）+ **`element.matches()`/`element.closest()` DOM API**（消费选择器引擎，含组合器；附 js_dom_bridge 测试模块拆分至 <2000 行，R2672）+ **`element.querySelector`/`querySelectorAll` 改元素子树作用域**（修正文档作用域 bug，R2673）+ **元素遍历/导航 API 簇**（children/firstElementChild/lastElementChild/childElementCount/previousElementSibling/nextElementSibling/contains，DOM 遍历基础，R2674）+ **`element.dataset`**（data-* 属性 camelCase 键对象，含 attr_names/remove_attr bridge，R2675）+ **布尔反射属性 setter/getter 修正**（hidden/checked/disabled/selected falsy→真移除 + hidden/disabled getter；附复活 R2672 拆分误丢 #[test] 的 collect_ids 测试，R2676）+ **布局几何属性**（offsetWidth/offsetHeight/clientWidth/clientHeight/offsetTop/offsetLeft 从 gBCR rect 派生，修 visibility 检查 bug，R2677）+ **requestIdleCallback/cancelIdleCallback**（事件循环切片首刀，镜像 setTimeout 机制 + IdleDeadline 近似，R2678）+ **`element.cloneNode()`**（复用既有回调组合：create+copy-attrs+deep innerHTML，R2679）+ **`element.insertAdjacentHTML()`**（4 position HTML 片段插入 beforeend/afterbegin/beforebegin/afterend，服务端原子 fragment parse+copy_subtree_from+parent 遍历，新增 DomMutation::InsertAdjacentHtml 变体，R2680）+ **布局几何族补全**（scrollWidth/scrollHeight≈client 尺寸、scrollTop/scrollLeft=0、offsetParent 有 rect→body proxy / detached→null，R2681）+ **`insertAdjacentElement`/`insertAdjacentText`**（补全 insertAdjacent* 家族：前者移动既有节点复用 append_child reparent、后者插字面 Text 节点不解析 HTML；抽取 insert_nodes_at_position 共用 helper，R2682）+ **`element.outerHTML` getter/setter**（getter 复用 Document::outer_html 真实序列化含 tag/属性/子树；setter 新增 DomMutation::SetOuterHtml 解析片段插入父节点目标位置后移除自身=整体替换，R2683）+ **现代插入 API 簇 `prepend`/`before`/`after`**（variadic 节点/字符串，复用 insertAdjacentElement/Text 回调；prepend=afterbegin反序/before=beforebegin正序/after=afterend反序保 DOM 序=参数序，R2684）+ **replace 族 `replaceChild`/`replaceWith`**（收尾 mutation API：replaceChild=insert_before(new,old)+remove(old) 返 old；replaceWith=before(...args)+remove(self) 复用 _insertAdjacentVariadic，R2685）+ **节点级遍历簇 `childNodes`/`firstChild`/`lastChild`/`nextSibling`/`previousSibling`**（含文本/注释节点，区别于既有 element-only 版；新增 child_nodes_json/sibling_nodes_json host 回调 JSON 序列化 + _wrapNodeEntry 文本节点静态对象，R2686）+ **`createDocumentFragment`**（nodeType 11，批量构建后 append 时 flatten 子节点到目标；新增 CreateDocumentFragment/AppendFragmentChildren 变体 + appendChild/append fragment 检测，R2687）+ **insertBefore(fragment) flatten 修复**（R2680–R2687 self-review 发现：insertBefore(fragment,ref) 旧插 fragment 节点本身致 childNodes 漏子+fragment 未清空；重构 move_fragment_children(parent,frag,ref:Option) + 新增 InsertFragmentBefore 变体正确 flatten，R2688）+ **fragment flatten 全路径闭合**（insert_nodes_at_position 自动展开 DocumentFragment 子节点→ prepend/before/after（经 insertAdjacentElement）+ replaceChild（复用 InsertFragmentBefore）接 fragment 全部正确 flatten，不留 wrapper、fragment 清空，R2689）+ **parentNode/parentElement 嵌套正确性修复**（self-review：_parentNodeFor 旧 stub 对嵌套元素恒返 body，新增 __zw_parent 回调 + parent_selector_for 返真实元素父，R2690）；A 代 WebView polyfill 路径仍为上述 stub 描述。**rendering-compat 赛道**（独立目标，降频守成中）：reftest 自源 ~57% / chromium-oracle 真一致 ~47%（FreeType-default 后），clean-lever hunt 经 200+ 轮已基本穷尽；字体栈重建 RFC v0.2.3 已就绪（fontdue→FreeType+Harfbuzz 统一度量/光栅/塑形），是 headline ≥95% 的唯一战略杠杆。
 
 > **▶ 恢复推进裁决（2026-08-04 用户决策）**：工作从 rendering-compat 切回父目标，恢复「下一步优先级」P1 DOM/JS Bridge 原生化。**当前活跃主线 = P1a**（事件循环补全 + fetch/MutationObserver 真实化，主要改 `dom_bridge.rs` + `script-sandbox` + `net`，低风险快速见效）；P1b（V8 原生绑定）需独立 RFC，与字体栈 RFC 同级对待。渲染兼容性降频守成：低频 plateau-guard（每 ~10 轮或 .rs 变更后跑 `make test` triple-guard），其深结构（R1043/R2174/Phase A IFC/font-stack C-dep）继续等用户点名，点名即切回。执行模式：自主推进，每轮进度记录到「最近完成的改进」。渲染侧裁决同步记录于 `rendering-compat.md` 顶部。
@@ -2090,6 +2090,169 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13401 passed / 0 failed / 74 ignored**，13400+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
+
+### P1a FormData（本轮 R2788，缺失 Web API 续）
+
+续缺失 Web API 子线程。R2787 一并 probe 了 ~40 个候选 global 的 V8 原生/缺失分布——**Intl（+NumberFormat/DateTimeFormat）、Object.hasOwn、Array.at、String.replaceAll/matchAll、Array.flat/flatMap/findLast、Object.fromEntries、WeakRef、FinalizationRegistry、BigInt、AggregateError、Symbol.dispose、Reflect、Proxy 均为 V8 原生**（无需 polyfill）；**缺失**：DOMParser（需 host HTML parse，非纯 JS，defer）、FormData、Blob/FileReader、URL.createObjectURL、customElements（Web Components，深，defer）、crypto.subtle、Element.animate（深，defer）。择**纯 JS 自包含 + 高频 + 零 host 回调**的 **FormData** land：镜像 URLSearchParams pair-store 模式（`_p=[[name,value]]` 保序、允许重名）。
+
+- **方法**：`append`/`delete`/`get`/`getAll`/`has`/`set`/`forEach`/`entries`/`keys`/`values` + `[Symbol.iterator]`=entries。value 经 `String(value)` 归一（spec 非 Blob 转 USVString）。
+- **已知限制（记录）**：constructor `form` 参数 best-effort（枚举 input/select/textarea 命名字段、checkbox/radio 仅 checked、file/submit/button 排除；任一步失败静默）；不覆盖 select-multiple/file/disabled 完整语义（多数库空构造再 append，本路径完整支持）。fetch POST 消费 multipart 为网络侧 follow-up。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`FormData` constructor（best-effort form 枚举）+ prototype（全方法 + `[Symbol.iterator]`），置于 URLSearchParams 后。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_form_data_r2788`（instanceof/append+get/getAll/has/set/delete/数字归一/[...fd] spread/forEach/keys/values）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13416 passed / 0 failed / 74 ignored**，13414+2 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 global）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 global（FormData），不改既有 API；② 纯 JS 无副作用；③ prototype guard（`globalThis.X = globalThis.X || ...`）不覆盖既有定义。
+
+### P1a Promise.any/allSettled 复核 — V8 原生锁测试（本轮 R2787，缺失 Web API 续）
+
+承接 R2774。CONTINUE 指定复核 **Promise.any / Promise.allSettled**——ES2021 语言内置（非 Web API），probe 确认 `typeof === 'function'`，**V8 原生提供，无需 polyfill**。land 锁测试**固化能力**（防 embed 配置/版本变化移除）+ 文档化语义：execute 末 `perform_microtask_checkpoint` drain Promise 链 → 下 execute 可读结果。
+
+- **allSettled**：永不 reject，按序返 status 描述符（fulfilled→value / rejected→reason）。
+- **any**：返首个 fulfilled（跳过先到的 reject）；全 reject reject `AggregateError`（`errors`=原因数组，亦 V8 原生，probe 确认）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_promise_any_all_settled_native_r2787`（typeof function / allSettled 混合 status 序列 / any 首个 fulfilled / any 全 reject→AggregateError instanceof+errors）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13415 passed / 0 failed / 74 ignored**，13414+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 纯测试补缺，零生产代码变更；② 仅断言 V8 原生能力，不改 shim/渲染逻辑。
+
+### P1a document.cookie get/set（本轮 R2786，缺失 Web API 续）
+
+续缺失 Web API——land **document.cookie** get/set（auth/偏好状态常见）。in-JS 存储（name→value map），getter 串接 `'name=value; name2=value2'`；setter 取 `name=value` 首 `=` split（value 保留后续 `=`），同名覆盖。**已知限制**：不接真 cookie jar / 无 origin 隔离 / 无 expiry / 无 path-domain 匹配（host-layer defer）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`document.cookie` getter/setter（in-JS `_cookies` map + 串接/解析）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_document_cookie_r2786`（初始空/set+get/多 cookie 串/同名覆盖/value 含 `/无 name 忽略）。 |
+
+验证：`make test` 全绿（**13414 passed / 0 failed / 74 ignored**，13413+1，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
+
+### P1a CSS namespace（CSS.escape + CSS.supports）（本轮 R2785，缺失 Web API 续）
+
+续缺失 Web API——land **CSS.escape(ident)**（选择器安全转义）+ **CSS.supports(prop,val?)**（特性检测，modern progressive enhancement 高频）。委托 host `__zw_css_supports`（known-property gate + apply；两参声明 / 单参条件 not/括号/声明）；CSS.escape 纯 JS（CSS ident 转义规则）。**已知限制**：CSS.supports 仅 known-property 集（unknown 恒 false，非通通用解析）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` + `engine/src/js_dom_bridge.rs` | +`CSS.escape` 纯 JS + `CSS.supports` → host `__zw_css_supports`（`css_supports`）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_css_escape_supports_r2785`（escape 特殊字符 / supports 两参+单参 not/括号）。 |
+
+验证：`make test` 全绿（**13413 passed / 0 failed / 74 ignored**，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
+
+### P1a location 读侧 spec 化（本轮 R2784，缺失 Web API 续）
+
+续缺失 Web API——land **location 读侧 spec 化**：`new URL` 提精度（委托 host `__zw_parse_url` via `url` crate）+ href/toString canonical（不再 stub）。location 各组件（protocol/host/hostname/port/pathname/search/hash/origin）从 spec-correct 解析派生。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` + `engine/src/js_dom_bridge.rs` | location `_makeLocation` 改用 `__zw_parse_url` 解析派生组件 + canonical href/toString。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_location_read_spec_r2784`（protocol/host/pathname/search/hash/origin 真实解析值）。 |
+
+验证：`make test` 全绿（**13412 passed / 0 failed / 74 ignored**，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
+
+### P1a BroadcastChannel 同源广播（本轮 R2783，缺失 Web API 续）
+
+续缺失 Web API——land **BroadcastChannel**（同源标签页/worker 广播，postMessage 同 channel 名广播除自身外所有实例）。in-JS channel 注册表（`name→Set<instance>`），`postMessage` 遍历同 channel 实例派发 MessageEvent。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`BroadcastChannel`（channel 注册表 + postMessage 广播 + onmessage）+ `MessageEvent` 复用。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_broadcast_channel_r2783`（同 channel 两实例 postMessage 互收 / 自身不收）。 |
+
+验证：`make test` 全绿（**13411 passed / 0 failed / 74 ignored**，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
+
+### P1a MessageChannel + MessagePort + MessageEvent（本轮 R2782，缺失 Web API 续）
+
+续缺失 Web API——land **MessageChannel**（两端 MessagePort 通信）+ **MessagePort**（postMessage/start/close/onmessage）+ **MessageEvent**（data/origin/source/ports）。in-JS 端口对（port1/port2 互投），microtask 派发。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`MessageChannel`/`MessagePort`/`MessageEvent`（端口对 + 队列 + microtask 派发）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_message_channel_r2782`（port1→port2 postMessage 收 MessageEvent / data 透传）。 |
+
+验证：`make test` 全绿（**13410 passed / 0 failed / 74 ignored**，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
+
+### P1a window.matchMedia（本轮 R2781，缺失 Web API 续）
+
+续缺失 Web API——land **window.matchMedia(query)** + **MediaQueryList**（matches/media/addListener/removeListener/onchange）。委托 host `__zw_match_media`（`match_media_to_json` via zero_css_parser::media_query，含 min/max-width/height、orientation、prefers-color-scheme）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` + `engine/src/js_dom_bridge.rs` | +`matchMedia`/`MediaQueryList` → host `__zw_match_media`（传 query + viewport 宽高）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_match_media_r2781`（min-width 匹配/不匹配 / orientation / prefers-color-scheme）。 |
+
+验证：`make test` 全绿（**13409 passed / 0 failed / 74 ignored**，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
+
+### P1a URL 组件 setter + 双向 searchParams（本轮 R2780，缺失 Web API 续）
+
+承接 R2778（URL 构造器）。land **URL 组件 setter**（protocol/host/hostname/port/pathname/search/hash/username/password/href 可写）+ **searchParams 双向同步**（mutate searchParams→重设 search/href；set search/href→searchParams 重载）。委托 host `__zw_set_url_part`（`set_url_part` via url crate Url setters）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` + `engine/src/js_dom_bridge.rs` | URL accessor 加写侧（`_setPart` 回调重解析）+ searchParams `_onchange`/`_zw_reinit` 双向同步。 |
+| `engine/src/js_dom_bridge_tests.rs` | +2 测试 `test_url_setters_r2780` / `test_set_url_part_rust_r2780`（各组件 setter 生效 + searchParams↔search 双向）。 |
+
+验证：`make test` 全绿（**13408 passed / 0 failed / 74 ignored**，13406+2，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
+
+### P1a EventTarget + Event/CustomEvent spec-completeness（本轮 R2779，缺失 Web API 续）
+
+续缺失 Web API——land **EventTarget**（addEventListener/removeEventListener/dispatchEvent，含 capture/bubble/once）+ **Event/CustomEvent** spec 补全（bubbles/cancelable/composed/target/currentTarget/stopPropagation/stopImmediatePropagation/preventDefault/timeStamp）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`EventTarget` 构造 + Event/CustomEvent 补全字段/方法 + 派发传播路径。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_event_target_event_r2779`（add/dispatch/remove + once + stopPropagation + CustomEvent detail）。 |
+
+验证：`make test` 全绿（**13406 passed / 0 failed / 74 ignored**，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
+
+### P1a URL 构造器（本轮 R2778，缺失 Web API 续）
+
+续缺失 Web API——land **`new URL(url, base)`** 构造器（WHATWG URL 解析）。委托 host `__zw_parse_url`（`parse_url_to_json` via `url` crate，spec-correct）；解析失败抛 TypeError。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` + `engine/src/js_dom_bridge.rs` | +`URL` 构造 + 组件读（protocol/host/pathname/search/hash/origin/href/toJSON）→ host `__zw_parse_url`。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_url_constructor_r2778`（绝对/相对 base 解析 + 各组件 + 失败抛 TypeError）。 |
+
+验证：`make test` 全绿（**13405 passed / 0 failed / 74 ignored**，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
+
+### P1a AbortController/AbortSignal（本轮 R2777，缺失 Web API 续）
+
+续缺失 Web API——land **AbortController**（signal.abort(reason) + controller.abort()）+ **AbortSignal**（aborted/reason/onabort + addEventListener）。fetch / 异步取消高频。纯 JS（EventTarget 派生 abort 事件）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`AbortController`/`AbortSignal`（aborted 状态 + abort 事件派发 + onabort）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_abort_controller_r2777`（controller.abort → signal.aborted=true + onabort 触发 + reason 传递）。 |
+
+验证：`make test` 全绿（**13404 passed / 0 failed / 74 ignored**，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
+
+### P1a DOMException + 错误类型 spec-aligned 升级（本轮 R2776，缺失 Web API 续）
+
+续缺失 Web API——land **DOMException**（name/message/code + 常用 name 常量）+ **已 land API 错误类型 spec-aligned 升级**（atob/btoa→InvalidCharacterError、structuredClone→DataCloneError、TextDecoder fatal→EncodingError 等，从泛 Error 升级为具名 DOMException）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`DOMException` 构造 + 各 API 抛出点改具名 DOMException。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_dom_exception_r2776`（name/message + instanceof + 各 API 具名错误）。 |
+
+验证：`make test` 全绿（**13403 passed / 0 failed / 74 ignored**，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
+
+### P1a crypto.getRandomValues（本轮 R2775，缺失 Web API 续）
+
+承接 R2770（atob/btoa/crypto.randomUUID）。land **crypto.getRandomValues(typedArray)**（TypedArray 字节填充，CSPRNG 近似——Math.random-based 同 randomUUID，填底层 buffer → 任意 typed 视图随机值）。spec 限 TypedArray 整型 + ≤65536 字节。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`crypto.getRandomValues`（逐字节填 typedArray.buffer + 长度/类型校验 + 返回同数组）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_crypto_get_random_values_r2775`（返回同一数组 + 长度不变 + 每字节在范围 + Uint8Array/Uint32Array）。 |
+
+验证：`make test` 全绿（**13402 passed / 0 failed / 74 ignored**，13401+1，0 回归）+ product-smoke welcome **17.03%** flat + 全 struct PASS。
 
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 

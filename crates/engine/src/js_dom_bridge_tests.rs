@@ -6720,3 +6720,128 @@ fn test_get_computed_style_outline_and_border_shorthands() {
         "0px none rgb(0, 0, 0)"
     );
 }
+
+#[test]
+fn test_promise_any_all_settled_native_r2787() {
+    // R2787：Promise.any / Promise.allSettled 复核（CONTINUE 指定）。ES2021 语言内置（非 Web API），
+    // V8 原生提供——probe 确认 `typeof === 'function'`，无需 polyfill。本测试**锁住能力**
+    //（防 V8 embed 配置 / 版本变化移除）+ 文档化语义：execute 末 `perform_microtask_checkpoint`
+    // drain Promise 链 → 下 execute 可读结果。
+    //   - allSettled：永不 reject，按序返 status 描述符（fulfilled→value / rejected→reason）。
+    //   - any：返首个 fulfilled 值（跳过先到的 reject）；全 reject 抛 AggregateError（errors=原因数组）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 两者均为原生 function（V8 内置，非 shim 定义）。
+    assert_eq!(sandbox.execute("typeof Promise.any").unwrap().value, "function");
+    assert_eq!(sandbox.execute("typeof Promise.allSettled").unwrap().value, "function");
+
+    // allSettled：混合 fulfilled/rejected → 永不 reject，按序返 status 描述符。
+    sandbox
+        .execute(
+            "globalThis.__settled = '(pending)';\
+             Promise.allSettled([Promise.resolve(1), Promise.reject('boom'), Promise.resolve(3)])\
+               .then(function(r){\
+                 globalThis.__settled = r.map(function(e){\
+                   return e.status + ':' + (e.value !== undefined ? e.value : e.reason);\
+                 }).join(',');\
+               });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__settled)").unwrap().value,
+        "fulfilled:1,rejected:boom,fulfilled:3"
+    );
+
+    // any：返首个 fulfilled（跳过先到的 reject）。
+    sandbox
+        .execute(
+            "globalThis.__any = '(pending)';\
+             Promise.any([Promise.reject('x'), Promise.resolve('win'), Promise.resolve('late')])\
+               .then(function(v){ globalThis.__any = v; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__any)").unwrap().value, "win");
+
+    // any：全 reject → reject AggregateError（errors=原因数组）；.catch 验证实例 + errors。
+    sandbox
+        .execute(
+            "globalThis.__agg = '(pending)';\
+             Promise.any([Promise.reject('a'), Promise.reject('b')])\
+               .catch(function(e){\
+                 globalThis.__agg = (e instanceof AggregateError) + ':' + e.errors.join(',');\
+               });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__agg)").unwrap().value, "true:a,b");
+}
+
+#[test]
+fn test_form_data_r2788() {
+    // R2788：FormData（表单字段集合，表单序列化 / fetch multipart body 高频）。纯 JS，镜像
+    // URLSearchParams pair-store 模式。**已知限制**：constructor `form` 参数 best-effort（renderer
+    // 路径真实字段枚举 follow-up），多数库空构造再 append——本测试覆盖 manual API 全路径。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // typeof function（全局已定义）；无 new 调用亦可构造（spec 允许）。
+    assert_eq!(sandbox.execute("typeof FormData").unwrap().value, "function");
+    assert_eq!(
+        sandbox
+            .execute("String(new FormData() instanceof FormData)")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // append + get/getAll/has：允许多个同名值，保插入序，get 返首个。
+    sandbox
+        .execute(
+            "var fd = new FormData();\
+             fd.append('a','1'); fd.append('b','2'); fd.append('a','3');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("fd.get('a')").unwrap().value, "1");
+    assert_eq!(sandbox.execute("fd.get('z')").unwrap().value, "null");
+    assert_eq!(sandbox.execute("fd.getAll('a').join(',')").unwrap().value, "1,3");
+    assert_eq!(sandbox.execute("String(fd.has('b'))").unwrap().value, "true");
+    assert_eq!(sandbox.execute("String(fd.has('z'))").unwrap().value, "false");
+    // set：替换所有同名（保留原首次位置），无则追加。
+    sandbox.execute("fd.set('a','X')").unwrap();
+    assert_eq!(sandbox.execute("fd.getAll('a').join(',')").unwrap().value, "X");
+    sandbox.execute("fd.set('c','new')").unwrap();
+    assert_eq!(sandbox.execute("fd.get('c')").unwrap().value, "new");
+    // delete：移除所有同名。
+    sandbox.execute("fd.delete('b')").unwrap();
+    assert_eq!(sandbox.execute("String(fd.has('b'))").unwrap().value, "false");
+    // value 经 String() 归一（数字 → 字符串，spec 非 Blob 转 USVString）。
+    sandbox.execute("fd.append('n', 42)").unwrap();
+    assert_eq!(sandbox.execute("fd.get('n')").unwrap().value, "42");
+    // 迭代协议：[Symbol.iterator]=entries → for...of / spread 取 [k,v] 对；forEach 回调序。
+    assert_eq!(
+        sandbox
+            .execute("[...fd].map(function(p){return p[0]+'='+p[1];}).join('|')")
+            .unwrap()
+            .value,
+        "a=X|c=new|n=42"
+    );
+    assert_eq!(
+        sandbox
+            .execute("(function(){var o=[];fd.forEach(function(v,k){o.push(k+':'+v);});return o.join(',');})()")
+            .unwrap()
+            .value,
+        "a:X,c:new,n:42"
+    );
+    // keys / values 迭代器。
+    assert_eq!(sandbox.execute("[...fd.keys()].join(',')").unwrap().value, "a,c,n");
+    assert_eq!(sandbox.execute("[...fd.values()].join(',')").unwrap().value, "X,new,42");
+}

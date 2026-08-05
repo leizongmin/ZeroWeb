@@ -1105,6 +1105,84 @@
     globalThis.URLSearchParams.prototype[Symbol.iterator] = globalThis.URLSearchParams.prototype.entries;
   }
 
+  // FormData——表单字段集合（表单序列化 / fetch multipart body 高频）。镜像 URLSearchParams 的
+  // pair-store 模式（`_p` = [[name,value]] 保序、允许重名）；纯 JS 自包含，零 host 回调。与 USP 不同：
+  // ① value 经 `String(value)` 归一（spec 非 Blob 值转 USVString；Blob/File 未实现故恒字符串）；
+  // ② append/set 接受可选 `filename`（仅对 Blob 值有意义，字符串值忽略——spec 一致）；
+  // ③ 无 toString 序列化（FormData 不直接字符串化，由 fetch 消费为 multipart——fetch POST defer 故
+  //    当前 end-to-end 仅构造/迭代，仍消除 `new FormData` ReferenceError 中断脚本）。
+  // **已知限制（记录）**：constructor `form` 参数为 best-effort——若传入 `<form>` 元素，尝试枚举其
+  // input/select/textarea 命名字段（checkbox/radio 仅 checked 入列），任一步失败静默跳过（不抛）；
+  // 不覆盖 select-multiple / file input / disabled / form-attribute 等完整表单语义（renderer 路径
+  // 真实字段枚举为 follow-up；多数库 `new FormData()` 空构造再 append，本路径完整支持）。
+  globalThis.FormData = globalThis.FormData || function FormData(form) {
+    if (!(this instanceof FormData)) return new FormData(form);
+    this._p = [];
+    if (form != null && typeof form === 'object' && typeof form.querySelectorAll === 'function') {
+      // best-effort form 字段枚举；失败静默（不抛、不破坏脚本）。
+      try {
+        var fields = form.querySelectorAll('input, select, textarea');
+        for (var i = 0; i < fields.length; i++) {
+          var f = fields[i];
+          var name = f.getAttribute ? f.getAttribute('name') : f.name;
+          if (!name) continue;
+          var type = ((f.getAttribute ? f.getAttribute('type') : f.type) || '').toLowerCase();
+          if (type === 'checkbox' || type === 'radio') {
+            if (f.checked) this._p.push([String(name), f.value != null ? String(f.value) : 'on']);
+          } else if (type !== 'file' && type !== 'submit' && type !== 'button' && type !== 'reset' && type !== 'image') {
+            this._p.push([String(name), f.value != null ? String(f.value) : '']);
+          }
+        }
+      } catch (_e) { /* best-effort：枚举失败则按空 FormData */ }
+    }
+  };
+  globalThis.FormData.prototype = {
+    append: function (name, value /*, filename */) {
+      // filename 仅对 Blob 值有意义（未实现 Blob），字符串值忽略——spec 一致。
+      this._p.push([String(name), String(value)]);
+    },
+    delete: function (name) {
+      name = String(name);
+      this._p = this._p.filter(function (e) { return e[0] !== name; });
+    },
+    get: function (name) {
+      name = String(name);
+      for (var i = 0; i < this._p.length; i++) if (this._p[i][0] === name) return this._p[i][1];
+      return null;
+    },
+    getAll: function (name) {
+      name = String(name);
+      var r = [];
+      for (var i = 0; i < this._p.length; i++) if (this._p[i][0] === name) r.push(this._p[i][1]);
+      return r;
+    },
+    has: function (name) {
+      name = String(name);
+      for (var i = 0; i < this._p.length; i++) if (this._p[i][0] === name) return true;
+      return false;
+    },
+    set: function (name, value /*, filename */) {
+      name = String(name); value = String(value);
+      var found = false; var out = [];
+      for (var i = 0; i < this._p.length; i++) {
+        if (this._p[i][0] === name) { if (!found) { out.push([name, value]); found = true; } }
+        else out.push(this._p[i]);
+      }
+      if (!found) out.push([name, value]);
+      this._p = out;
+    },
+    forEach: function (cb, thisArg) {
+      for (var i = 0; i < this._p.length; i++) cb.call(thisArg, this._p[i][1], this._p[i][0], this);
+    },
+    entries: function () { return _zw_iter(this._p.map(function (e) { return [e[0], e[1]]; })); },
+    keys: function () { return _zw_iter(this._p.map(function (e) { return e[0]; })); },
+    values: function () { return _zw_iter(this._p.map(function (e) { return e[1]; })); }
+  };
+  // 自身可迭代（for (const [k,v] of formData)）：[Symbol.iterator] → entries。
+  if (typeof Symbol !== 'undefined') {
+    globalThis.FormData.prototype[Symbol.iterator] = globalThis.FormData.prototype.entries;
+  }
+
   // URL——WHATWG URL 解析 + 组件 setter（R2778 解析 + R2780 setter/双向 searchParams 同步）。委托 host
   // `__zw_parse_url`（解析）+ `__zw_set_url_part`（setter），均 spec-correct via `url` crate。组件存内部
   // `_`-prefixed 字段，accessor 暴露读 + 写（setter 经 `_setPart` 回调重解析）。searchParams 为稳定实例 +
