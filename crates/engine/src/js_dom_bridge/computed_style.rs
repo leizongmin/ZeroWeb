@@ -30,10 +30,10 @@ use zero_style_system::{
     MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue,
     PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue,
     ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
-    TextDecorationLineValue, TextDecorationStyleValue, TextDecorationThicknessValue, TextOverflowValue,
-    TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
-    UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
-    WritingModeValue, ZIndexValue,
+    TextDecorationLineValue, TextDecorationStyleValue, TextDecorationThicknessValue, TextEmphasisPositionValue,
+    TextEmphasisStyleValue, TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue,
+    TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue,
+    WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -258,6 +258,16 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "text-decoration-thickness" => text_decoration_thickness_to_css(&style.text_decoration_thickness),
         // ── text-underline-offset（R2762）── CSS Text Decoration 4 §2.5，下划线偏移。Auto→auto；Length→px。
         "text-underline-offset" => text_underline_offset_to_css(&style.text_underline_offset, font_size_px),
+        // ── text-emphasis 簇（R2763）── CJK 文本强调。style（char→keyword 逆映射）/ color（currentcolor→rgb）/
+        // position（over/under + left，省默认 right）longhand + 简写（style + color）。Chromium 150 oracle 锚定。
+        "text-emphasis-style" => text_emphasis_style_to_css(&style.text_emphasis_style),
+        "text-emphasis-color" => color_to_css(&crate::resolve_color_current(&style.text_emphasis_color, element_color)),
+        "text-emphasis-position" => text_emphasis_position_to_css(&style.text_emphasis_position),
+        "text-emphasis" => format!(
+            "{} {}",
+            text_emphasis_style_to_css(&style.text_emphasis_style),
+            color_to_css(&crate::resolve_color_current(&style.text_emphasis_color, element_color)),
+        ),
         // ── text-decoration 简写（R2755）── 4 longhand 早覆（上方）；简写 CSSOM 重组
         // （line=none→"none"；否则 line/thickness/style/color 省初值），Chromium 150 oracle 锚定。
         "text-decoration" => text_decoration_shorthand_to_css(style, element_color),
@@ -1280,6 +1290,41 @@ fn text_underline_offset_to_css(o: &zero_css_parser::values::TextUnderlineOffset
         T::Auto => "auto".to_string(),
         T::Length(lv) => length_to_css(lv, font_size_px),
     }
+}
+
+/// text-emphasis-style：ZW 存解析后的标记 char（`TextEmphasisStyleValue::Char`），序列化时**逆映射**
+/// 回 CSS keyword 形（`parse_text_emphasis_style` 用标准 CSS 字符，见 parse_misc.rs:530）。
+/// filled 省略（初值），open 显；非 10 个标准字符→`<string>` 引号化。Chromium 150 oracle：
+/// `dot`→`"dot"`、`open circle`→`"open circle"`、`sesame`→`"sesame"`、`"*"`→`"\"*\""`、默认→`"none"`。
+fn text_emphasis_style_to_css(s: &TextEmphasisStyleValue) -> String {
+    match s {
+        TextEmphasisStyleValue::None => "none".to_string(),
+        TextEmphasisStyleValue::Char(c) => match *c {
+            '\u{2022}' => "dot".to_string(),                // • filled dot
+            '\u{25E6}' => "open dot".to_string(),           // ◦
+            '\u{25CF}' => "circle".to_string(),             // ● filled circle
+            '\u{25CB}' => "open circle".to_string(),        // ○
+            '\u{25C9}' => "double-circle".to_string(),      // ◉ filled
+            '\u{25CE}' => "open double-circle".to_string(), // ◎
+            '\u{25B2}' => "triangle".to_string(),           // ▲ filled
+            '\u{25B3}' => "open triangle".to_string(),      // △
+            '\u{FE45}' => "sesame".to_string(),             // ﹅ filled
+            '\u{FE46}' => "open sesame".to_string(),        // ﹆
+            other => css_string_to_css(&other.to_string()), // <string>（非标准字符）
+        },
+    }
+}
+
+/// text-emphasis-position：CSS Text Decoration 3 §3.2。over/under 恒显；left 显（right 初值省）。
+/// Chromium 150 oracle：默认 over right→`"over"`、`under left`→`"under left"`。
+fn text_emphasis_position_to_css(p: &TextEmphasisPositionValue) -> String {
+    match p {
+        TextEmphasisPositionValue::OverRight => "over",
+        TextEmphasisPositionValue::OverLeft => "over left",
+        TextEmphasisPositionValue::UnderRight => "under",
+        TextEmphasisPositionValue::UnderLeft => "under left",
+    }
+    .to_string()
 }
 
 fn text_overflow_str(t: &TextOverflowValue) -> String {

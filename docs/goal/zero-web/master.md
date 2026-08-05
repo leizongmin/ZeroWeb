@@ -1851,6 +1851,28 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **审 longhand 缺口结论**：残余缺 longhand（offset-path/distance/rotate〔motion path 未存储〕、scroll-behavior/snap-type/snap-align〔host-layer scroll defer〕、contain-intrinsic-size〔width/height longhand 已覆〕、text-emphasis-style/color/position〔有 storage 待补，下轮候选〕、mask-position/size/repeat/clip/origin〔未存储〕）多为 host-layer/未存储/niche。getComputedStyle **常用 longhand+简写序列化主体收官**（R2704-R2762 系列，~30 属性 + 5 diverge 修复）。
 
+### P1a `getComputedStyle` text-emphasis 簇（本轮 R2763，CJK 文本强调序列化）
+
+承接 R2762。续用本地 Chromium 150 oracle 提取确切串，TDD red→green land **CJK 文本强调簇**（3 longhand + 简写）：
+
+- **text-emphasis-style**：ZW 存解析后 `Char(char)`（标记字符），oracle 返 keyword 形。核 `parse_text_emphasis_style` 用标准 CSS 字符表（`parse_misc.rs:530`，U+2022/U+25CF/U+25CB/U+FE45 等），故序列化**逆映射** char→keyword（10 标准字符→"filled 省/open 显 + shape"，非标准字符→`<string>` 引号化）。
+- **text-emphasis-color**：currentcolor→rgb。
+- **text-emphasis-position**：over/under 恒显；left 显（right 初值省）。
+- **text-emphasis 简写**：`<style> <color>`（恒双段）。
+
+oracle：`dot`→`"dot"`、`open circle`→`"open circle"`、`sesame`→`"sesame"`、`"*"`→`"\"*\""`、`under left`→`"under left"`、`text-emphasis:filled circle green`→`"circle rgb(0, 128, 0)"`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +`TextEmphasisStyleValue`/`TextEmphasisPositionValue` import；+2 helper（`text_emphasis_style_to_css`〔char→keyword 逆映射〕/`text_emphasis_position_to_css`）+ 4 dispatch 项（style/color/position + 简写）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_text_emphasis_r2763`（style 全 keyword 变体 + string + color + position + 简写，oracle 锚定）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13390 passed / 0 failed / 74 ignored**，13389+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 4 属性旧返 `''`、新返正确 CSSOM 串；② 纯只读 JS bridge 不触及渲染/布局。
+
+**methodology 价值**：ZW 的简化 `Char(char)` 存储初看似阻塞（不可恢复 keyword），但核 parse 用标准 CSS 字符表后**逆映射可行**——又一处「storage 简化非序列化阻塞」实证（同 R2754/R2755 diverge 谱）。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

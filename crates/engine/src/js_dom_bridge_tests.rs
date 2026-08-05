@@ -4293,6 +4293,55 @@ fn test_get_computed_style_backdrop_filter_underline_offset_r2762() {
 }
 
 #[test]
+fn test_get_computed_style_text_emphasis_r2763() {
+    // R2763：getComputedStyle text-emphasis 簇（style/color/position longhand + 简写）。
+    // 每项期望串经本地 Chromium 150 oracle 提取，TDD red→green 对齐。
+    let html = "<html><body>\
+        <div id=\"d\"></div>\
+        <div id=\"s1\" style=\"text-emphasis-style: dot;\"></div>\
+        <div id=\"s3\" style=\"text-emphasis-style: open circle;\"></div>\
+        <div id=\"s4\" style=\"text-emphasis-style: sesame;\"></div>\
+        <div id=\"s5\" style='text-emphasis-style: \"*\";'></div>\
+        <div id=\"c1\" style=\"text-emphasis-color: rgb(255, 0, 0);\"></div>\
+        <div id=\"p1\" style=\"text-emphasis-position: under left;\"></div>\
+        <div id=\"sh\" style=\"text-emphasis: filled circle rgb(0, 128, 0);\"></div>\
+        </body></html>";
+    // text-emphasis-style：char→keyword 逆映射（filled 省，open 显；string 引号化）。
+    assert_eq!(computed_style_property(html, "#d", "text-emphasis-style"), "none");
+    assert_eq!(computed_style_property(html, "#s1", "text-emphasis-style"), "dot");
+    assert_eq!(
+        computed_style_property(html, "#s3", "text-emphasis-style"),
+        "open circle"
+    );
+    assert_eq!(computed_style_property(html, "#s4", "text-emphasis-style"), "sesame");
+    assert_eq!(computed_style_property(html, "#s5", "text-emphasis-style"), "\"*\"");
+    // text-emphasis-color：currentcolor→rgb（默认元素 black→rgb(0,0,0)）。
+    assert_eq!(
+        computed_style_property(html, "#d", "text-emphasis-color"),
+        "rgb(0, 0, 0)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#c1", "text-emphasis-color"),
+        "rgb(255, 0, 0)"
+    );
+    // text-emphasis-position：over/under 恒显；left 显（right 初值省）。
+    assert_eq!(computed_style_property(html, "#d", "text-emphasis-position"), "over");
+    assert_eq!(
+        computed_style_property(html, "#p1", "text-emphasis-position"),
+        "under left"
+    );
+    // text-emphasis 简写：style + color（恒双段）。
+    assert_eq!(
+        computed_style_property(html, "#d", "text-emphasis"),
+        "none rgb(0, 0, 0)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#sh", "text-emphasis"),
+        "circle rgb(0, 128, 0)"
+    );
+}
+
+#[test]
 fn test_get_computed_style_border_radius_shorthand() {
     // R2738：getComputedStyle border-radius 简写（CSSOM 4 值最小化）。4 角 longhand 早覆（R2707）。
     let html = "<html><body>\
