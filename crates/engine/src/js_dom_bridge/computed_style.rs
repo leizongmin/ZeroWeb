@@ -2,7 +2,7 @@
 //! CSS 字符串（kebab-case 属性名）。从 `js_dom_bridge` 拆出（R2709）以控制主文件行数。
 //!
 //! 覆盖：display/position/visibility/opacity + 颜色族（color/background-color/border-*-color/outline-color/caret-color/accent-color）+ 长度族 + 关键字/枚举族 + font-family/复合族
-//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break/text-wrap/text-align-last）+ vertical-align/unicode-bidi/empty-cells/resize/appearance + box-decoration-break/scrollbar-*/touch-action；未覆盖属性返 ''。
+//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break/text-wrap/text-align-last）+ vertical-align/unicode-bidi/empty-cells/resize/appearance + box-decoration-break/scrollbar-*/touch-action + outline-offset/break-before·after·inside；未覆盖属性返 ''。
 
 use std::collections::HashMap;
 
@@ -17,8 +17,8 @@ use zero_style_system::{
     AccentColorComputedValue, AlignContentValue, AppearanceComputedValue, BackfaceVisibilityValue,
     BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundOriginComputedValue,
     BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderCollapseValue,
-    BorderStyleValue, BoxDecorationBreakValue, CaptionSideValue, CaretColorComputedValue, ComputedStyle,
-    ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue,
+    BorderStyleValue, BoxDecorationBreakValue, BreakInsideValue, BreakValue, CaptionSideValue, CaretColorComputedValue,
+    ComputedStyle, ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue,
     FilterComputedValue, FlexBasisValue, HyphensComputedValue, IsolationValue, JustifyItemsValue, JustifySelfValue,
     LineBreakValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
     OverflowWrapValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
@@ -275,6 +275,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "scrollbar-width" => scrollbar_width_to_css(&style.scrollbar_width),
         "scrollbar-gutter" => scrollbar_gutter_to_css(&style.scrollbar_gutter),
         "touch-action" => touch_action_to_css(&style.touch_action),
+        // ── outline-offset / break-*（R2733）── 补齐 outline 簇 + CSS Fragmentation 簇。
+        "outline-offset" => length(&style.outline_offset),
+        "break-before" => break_value_to_css(&style.break_before),
+        "break-after" => break_value_to_css(&style.break_after),
+        "break-inside" => break_inside_to_css(&style.break_inside),
         _ => String::new(),
     }
 }
@@ -406,6 +411,32 @@ fn touch_action_to_css(t: &TouchActionValue) -> String {
         TouchActionValue::PanY => "pan-y",
         TouchActionValue::PanXPanY => "pan-x pan-y",
         TouchActionValue::Manipulation => "manipulation",
+    }
+    .to_string()
+}
+
+/// break-before / break-after：CSS Fragmentation 单值序列化（共享 [`BreakValue`]）。
+/// 初值 auto。ZeroWeb enum 仅 6 变体（CSS 规范另含 recto/verso/left/right/region 等，未存储）。
+/// CamelCase→kebab：AvoidPage→avoid-page、AvoidColumn→avoid-column。
+fn break_value_to_css(b: &BreakValue) -> String {
+    match b {
+        BreakValue::Auto => "auto",
+        BreakValue::Avoid => "avoid",
+        BreakValue::Column => "column",
+        BreakValue::Page => "page",
+        BreakValue::AvoidPage => "avoid-page",
+        BreakValue::AvoidColumn => "avoid-column",
+    }
+    .to_string()
+}
+
+/// break-inside：CSS Fragmentation 单值序列化。初值 auto。
+fn break_inside_to_css(b: &BreakInsideValue) -> String {
+    match b {
+        BreakInsideValue::Auto => "auto",
+        BreakInsideValue::Avoid => "avoid",
+        BreakInsideValue::AvoidPage => "avoid-page",
+        BreakInsideValue::AvoidColumn => "avoid-column",
     }
     .to_string()
 }

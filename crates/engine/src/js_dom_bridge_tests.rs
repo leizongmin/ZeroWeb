@@ -3791,6 +3791,37 @@ fn test_get_computed_style_container_ui() {
 }
 
 #[test]
+fn test_get_computed_style_outline_break() {
+    // R2733：getComputedStyle outline-offset + break-* 序列化（补齐 outline 簇 + Fragmentation 簇）。
+    let html = "<html><body>\
+        <div id=\"oo-px\" style=\"outline-offset: 4px;\"></div>\
+        <div id=\"oo-neg\" style=\"outline-offset: -2px;\"></div>\
+        <div id=\"bb-avoid\" style=\"break-before: avoid;\"></div>\
+        <div id=\"bb-column\" style=\"break-before: column;\"></div>\
+        <div id=\"ba-avoid-page\" style=\"break-after: avoid-page;\"></div>\
+        <div id=\"bi-avoid\" style=\"break-inside: avoid;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // outline-offset 默认 0px。
+    assert_eq!(computed_style_property(html, "#def", "outline-offset"), "0px");
+    assert_eq!(computed_style_property(html, "#oo-px", "outline-offset"), "4px");
+    assert_eq!(computed_style_property(html, "#oo-neg", "outline-offset"), "-2px");
+    // break-before 默认 auto；avoid / column。
+    assert_eq!(computed_style_property(html, "#def", "break-before"), "auto");
+    assert_eq!(computed_style_property(html, "#bb-avoid", "break-before"), "avoid");
+    assert_eq!(computed_style_property(html, "#bb-column", "break-before"), "column");
+    // break-after 默认 auto；avoid-page（CamelCase→kebab）。
+    assert_eq!(computed_style_property(html, "#def", "break-after"), "auto");
+    assert_eq!(
+        computed_style_property(html, "#ba-avoid-page", "break-after"),
+        "avoid-page"
+    );
+    // break-inside 默认 auto；avoid。
+    assert_eq!(computed_style_property(html, "#def", "break-inside"), "auto");
+    assert_eq!(computed_style_property(html, "#bi-avoid", "break-inside"), "avoid");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
