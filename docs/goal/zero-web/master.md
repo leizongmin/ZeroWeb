@@ -1873,6 +1873,30 @@ oracle：`dot`→`"dot"`、`open circle`→`"open circle"`、`sesame`→`"sesame
 
 **methodology 价值**：ZW 的简化 `Char(char)` 存储初看似阻塞（不可恢复 keyword），但核 parse 用标准 CSS 字符表后**逆映射可行**——又一处「storage 简化非序列化阻塞」实证（同 R2754/R2755 diverge 谱）。
 
+### P1a `getComputedStyle` border-image 切片族 longhand + slice 默认 diverge 修复（本轮 R2764）
+
+承接 R2763。审 longhand 缺口（R2762 既记 border-image 切片族缺序列化），TDD red→green land **4 longhand** + **slice 默认 diverge 修复**：
+
+- **border-image-slice**：4 值最小化（Number→`n`/Percent→`n%`）+ fill 真→末尾 ` fill`。
+- **border-image-width**：4 值最小化（Auto/Number/Length→px/Percent）。
+- **border-image-outset**：4 值最小化（Number/Length→px）。
+- **border-image-repeat**：水平/垂直 2 值（stretch/repeat/round/space，相等单值）。
+- **★ slice 默认值 diverge 修复**：oracle 揭示默认 border-image-slice=`"100%"`（CSS 初值 Percent），ZW 旧 default_impl 存 `Number(100.0)`（→`"100"` diverge）；核 paint 仅读 `.fill`（9-slice 采样未实现，`border.rs:251`），Number→Percent **paint-neutral**，修 default_impl 4 组件对齐 Chromium。
+
+oracle：默认 slice→`"100%"`、`10 20 30 40`→`"10 20 30 40"`、`10% fill`→`"10% fill"`、width 默认→`"1"`、outset 默认→`"0"`、repeat 默认→`"stretch"`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | +`box4_str_min`（字符串 4 值最小化）+ 4 helper（slice/width/outset/repeat）+ 4 dispatch 项；+border-image ComputedComponent 类型 import。 |
+| `style-system/property/default_impl.rs` | border-image-slice 默认 `Number(100.0)`→`Percent(100.0)`（4 组件，paint-neutral 对齐 CSS 初值）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_border_image_longhands_r2764`（4 longhand 默认+显式值，oracle 锚定）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13391 passed / 0 failed / 74 ignored**，13390+1 新测试，0 回归；slice 默认 Number→Percent 全 workspace 零回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 4 longhand 旧返 `''`、新返正确 CSSOM 4 值最小化串；② slice 默认 Percent 修真 diverge（对齐 Chromium），paint-neutral（9-slice 未实现）；③ 复用 `box4_str_min`（同 box_4_to_css 模式），零新逻辑。
+
+**已知 defer**：border-image **简写**（source+slice+width+outset+repeat 5 子分量复杂 CSSOM 重组，须 oracle 核各分量省初值/`/` 分隔规则），下轮候选。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

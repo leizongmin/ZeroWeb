@@ -19,8 +19,11 @@ use zero_style_system::{
     AccentColorComputedValue, AlignContentValue, AppearanceComputedValue, BackfaceVisibilityValue,
     BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundImageComputedValue,
     BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
-    BackgroundSizeComputedValue, BorderCollapseValue, BorderImageSourceComputedValue, BorderSpacingComputedValue,
-    BorderStyleValue, BoxDecorationBreakValue, BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue,
+    BackgroundSizeComputedValue, BorderCollapseValue, BorderImageOutsetComputedComponent,
+    BorderImageOutsetComputedValue, BorderImageRepeatComputedMode, BorderImageRepeatComputedValue,
+    BorderImageSliceComputedComponent, BorderImageSliceComputedValue, BorderImageSourceComputedValue,
+    BorderImageWidthComputedComponent, BorderImageWidthComputedValue, BorderSpacingComputedValue, BorderStyleValue,
+    BoxDecorationBreakValue, BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue,
     CaretColorComputedValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnRuleStyleComputedValue,
     ColumnRuleWidthComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle,
     ContainComputedValue, ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue,
@@ -413,6 +416,12 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         // ── border-image-source / object-position / quotes（R2736）── 简单枚举收尾。
         // border-image-source：None/Url，复用 R2735 list-style-image 的 url() 引号模式。
         "border-image-source" => border_image_source_to_css(&style.border_image_source, element_color, font_size_px),
+        // ── border-image 切片族 longhand（R2764）── slice/width/outset 4 值最小化 + repeat 2 值。
+        // CSS Border Image §3，Chromium 150 oracle 锚定（slice 默认 100% 修 Percent，paint-neutral）。
+        "border-image-slice" => border_image_slice_to_css(&style.border_image_slice),
+        "border-image-width" => border_image_width_to_css(&style.border_image_width),
+        "border-image-outset" => border_image_outset_to_css(&style.border_image_outset),
+        "border-image-repeat" => border_image_repeat_to_css(&style.border_image_repeat),
         // object-position：单 <position>，复用 R2724 background-position 的逐层序列化（默认 Center→50% 50%）。
         "object-position" => bg_position_layer_to_css(&style.object_position),
         // quotes：None/Auto/Pairs（auto 初值；pairs→空格分隔双引号串，复用 css_string_to_css 转义）。
@@ -783,6 +792,72 @@ fn border_image_source_to_css(
             conic_gradient_to_css(g, element_color, font_size_px)
         }
     }
+}
+
+/// 4 值 CSSOM 最小化（字符串版，供 border-image slice/width/outset 复用）：
+/// 全等→1 / top==bottom&&right==left→2 / right==left→3 / 否则 4。
+fn box4_str_min(top: &str, right: &str, bottom: &str, left: &str) -> String {
+    if top == right && right == bottom && bottom == left {
+        top.to_string()
+    } else if top == bottom && right == left {
+        format!("{top} {right}")
+    } else if right == left {
+        format!("{top} {right} {bottom}")
+    } else {
+        format!("{top} {right} {bottom} {left}")
+    }
+}
+
+/// border-image-slice：CSS Border Image §3.2。Number→`n` / Percent→`n%`；4 值最小化；fill 真→末尾 ` fill`。
+/// Chromium 150 oracle：默认→`"100%"`、`10 20 30 40`→`"10 20 30 40"`、`10% fill`→`"10% fill"`。
+fn border_image_slice_to_css(s: &BorderImageSliceComputedValue) -> String {
+    let cmp = |c: &BorderImageSliceComputedComponent| match c {
+        BorderImageSliceComputedComponent::Number(n) => format_num(*n as f64, ""),
+        BorderImageSliceComputedComponent::Percent(n) => format_num(*n as f64, "%"),
+    };
+    let mut out = box4_str_min(&cmp(&s.top), &cmp(&s.right), &cmp(&s.bottom), &cmp(&s.left));
+    if s.fill {
+        out.push_str(" fill");
+    }
+    out
+}
+
+/// border-image-width：Auto→`auto` / Number→`n` / Length→px / Percent→`n%`；4 值最小化。
+/// Chromium 150 oracle：默认→`"1"`、`10px 20px`→`"10px 20px"`、`auto`→`"auto"`。
+fn border_image_width_to_css(w: &BorderImageWidthComputedValue) -> String {
+    let cmp = |c: &BorderImageWidthComputedComponent| match c {
+        BorderImageWidthComputedComponent::Auto => "auto".to_string(),
+        BorderImageWidthComputedComponent::Number(n) => format_num(*n as f64, ""),
+        BorderImageWidthComputedComponent::Length(px) => format_num(*px as f64, "px"),
+        BorderImageWidthComputedComponent::Percent(n) => format_num(*n as f64, "%"),
+    };
+    box4_str_min(&cmp(&w.top), &cmp(&w.right), &cmp(&w.bottom), &cmp(&w.left))
+}
+
+/// border-image-outset：Number→`n` / Length→px；4 值最小化。Chromium 150 oracle：默认→`"0"`、`5px 10px`→`"5px 10px"`。
+fn border_image_outset_to_css(o: &BorderImageOutsetComputedValue) -> String {
+    let cmp = |c: &BorderImageOutsetComputedComponent| match c {
+        BorderImageOutsetComputedComponent::Number(n) => format_num(*n as f64, ""),
+        BorderImageOutsetComputedComponent::Length(px) => format_num(*px as f64, "px"),
+    };
+    box4_str_min(&cmp(&o.top), &cmp(&o.right), &cmp(&o.bottom), &cmp(&o.left))
+}
+
+/// border-image-repeat：水平/垂直；stretch/repeat/round/space。相等→单值，否则 `"horizontal vertical"`。
+/// Chromium 150 oracle：默认→`"stretch"`、`round repeat`→`"round repeat"`。
+fn border_image_repeat_mode_str(m: &BorderImageRepeatComputedMode) -> &'static str {
+    match m {
+        BorderImageRepeatComputedMode::Stretch => "stretch",
+        BorderImageRepeatComputedMode::Repeat => "repeat",
+        BorderImageRepeatComputedMode::Round => "round",
+        BorderImageRepeatComputedMode::Space => "space",
+    }
+}
+
+fn border_image_repeat_to_css(r: &BorderImageRepeatComputedValue) -> String {
+    let h = border_image_repeat_mode_str(&r.horizontal);
+    let v = border_image_repeat_mode_str(&r.vertical);
+    if h == v { h.to_string() } else { format!("{h} {v}") }
 }
 
 /// quotes：CSS Generated Content 引号。None→none；Auto（初值）→auto；Pairs→逐对开/闭串空格分隔

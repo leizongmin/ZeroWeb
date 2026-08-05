@@ -4342,6 +4342,41 @@ fn test_get_computed_style_text_emphasis_r2763() {
 }
 
 #[test]
+fn test_get_computed_style_border_image_longhands_r2764() {
+    // R2764：getComputedStyle border-image 切片族 longhand（slice/width/outset 4 值最小化 + repeat 2 值）。
+    // 每项期望串经本地 Chromium 150 oracle 提取，TDD red→green 对齐。
+    let html = "<html><body>\
+        <div id=\"d\"></div>\
+        <div id=\"s1\" style=\"border-image-slice: 10 20 30 40;\"></div>\
+        <div id=\"s2\" style=\"border-image-slice: 10% fill;\"></div>\
+        <div id=\"w1\" style=\"border-image-width: 10px 20px;\"></div>\
+        <div id=\"w2\" style=\"border-image-width: auto;\"></div>\
+        <div id=\"r1\" style=\"border-image-repeat: round repeat;\"></div>\
+        <div id=\"o1\" style=\"border-image-outset: 5px 10px;\"></div>\
+        </body></html>";
+    // border-image-slice：默认 100%（R2764 修 Percent）/ 4 值最小化 / fill 末尾。
+    assert_eq!(computed_style_property(html, "#d", "border-image-slice"), "100%");
+    assert_eq!(
+        computed_style_property(html, "#s1", "border-image-slice"),
+        "10 20 30 40"
+    );
+    assert_eq!(computed_style_property(html, "#s2", "border-image-slice"), "10% fill");
+    // border-image-width：默认 1 / 4 值最小化 / auto。
+    assert_eq!(computed_style_property(html, "#d", "border-image-width"), "1");
+    assert_eq!(computed_style_property(html, "#w1", "border-image-width"), "10px 20px");
+    assert_eq!(computed_style_property(html, "#w2", "border-image-width"), "auto");
+    // border-image-outset：默认 0 / 4 值最小化。
+    assert_eq!(computed_style_property(html, "#d", "border-image-outset"), "0");
+    assert_eq!(computed_style_property(html, "#o1", "border-image-outset"), "5px 10px");
+    // border-image-repeat：默认 stretch / 相等单值否则双值。
+    assert_eq!(computed_style_property(html, "#d", "border-image-repeat"), "stretch");
+    assert_eq!(
+        computed_style_property(html, "#r1", "border-image-repeat"),
+        "round repeat"
+    );
+}
+
+#[test]
 fn test_get_computed_style_border_radius_shorthand() {
     // R2738：getComputedStyle border-radius 简写（CSSOM 4 值最小化）。4 角 longhand 早覆（R2707）。
     let html = "<html><body>\

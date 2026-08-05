@@ -324,10 +324,12 @@ impl Default for ComputedStyle {
             // Border Image (Source / Slice / Width / Repeat / Outset)
             border_image_source: BorderImageSourceComputedValue::None,
             border_image_slice: BorderImageSliceComputedValue {
-                top: BorderImageSliceComputedComponent::Number(100.0),
-                right: BorderImageSliceComputedComponent::Number(100.0),
-                bottom: BorderImageSliceComputedComponent::Number(100.0),
-                left: BorderImageSliceComputedComponent::Number(100.0),
+                // R2764：CSS 初值 100%（Percent），paint 仅读 .fill（9-slice 采样未实现），
+                // 故 Number→Percent 修正 paint-neutral，对齐 Chromium getComputedStyle "100%"。
+                top: BorderImageSliceComputedComponent::Percent(100.0),
+                right: BorderImageSliceComputedComponent::Percent(100.0),
+                bottom: BorderImageSliceComputedComponent::Percent(100.0),
+                left: BorderImageSliceComputedComponent::Percent(100.0),
                 fill: false,
             },
             border_image_width: BorderImageWidthComputedValue {
