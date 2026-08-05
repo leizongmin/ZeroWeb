@@ -1547,6 +1547,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧两属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` transition/animation 簇序列化（本轮 R2743，getComputedStyle 维护态续）
+
+承接 R2742。补 transition/animation 簇 10 属性（旧均返 ''，动画/过渡常查），列表逗号分隔 + 各 CSS 初值：`transition-property`（`Vec<String>`，初值 `all`）/ `transition-duration`·`delay`（`Vec<f64>` 秒，初值 `0s`）/ `animation-name`（初值 `none`）/ `animation-duration`·`delay`（初值 `0s`）/ `animation-iteration-count`（`Vec<Option<f64>>`，初值 `1`；`None`→`infinite`）/ `animation-direction`（normal/reverse/alternate/alternate-reverse，初值 normal）/ `animation-fill-mode`（none/forwards/backwards/both，初值 none）/ `animation-play-state`（running/paused，初值 running）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 10 臂；新增 `string_list_to_css`（空→default / 逗号 join）、`time_list_to_css`（f64 秒→`Ns`）、`iter_count_list_to_css`（None→infinite / 空→1）、`enum_list_to_css`（泛型空→default / 逗号 join）+ `animation_direction/fill_mode/play_state_str` 关键字映射；import 加 `AnimationDirection/FillMode/PlayState Value`（zero_css_parser::values 经 `pub use parse_transform::*` 重导出）。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_transition_animation`（transition-property `margin, padding`/单值/默认 all；duration `0.3s, 0.5s`/delay `0.1s`/默认 0s；animation-name `fade, slide`/默认 none；duration `2s`/delay `1s`；iteration-count `infinite`/`2.5`/默认 1；direction `alternate`/默认 normal；fill-mode `forwards`/默认 none；play-state `paused`/默认 running）。 |
+
+**对齐 Chromium**：列表逗号分隔 + 各 CSS 初值 + 关键字与 Chromium getComputedStyle 一致。**timing-function（transition/animation-timing-function）defer**：`steps()` 位置参数序列化（`jump-start`/`start` 别名 canonical 化）需核实 Chromium 格式，无 WPT 参照故不猜测，留待后续轮。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13368 passed / 0 failed / 74 ignored**，13367+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 无 struct FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 10 属性返 ''，新实现返真值；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。
