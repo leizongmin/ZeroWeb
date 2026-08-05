@@ -30,9 +30,10 @@ use zero_style_system::{
     MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue,
     PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue,
     ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
-    TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue,
-    TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue,
-    WordBreakValue, WritingModeValue, ZIndexValue,
+    TextDecorationLineValue, TextDecorationStyleValue, TextDecorationThicknessValue, TextOverflowValue,
+    TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
+    UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
+    WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -177,16 +178,25 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "border-top-right-radius" => length(&style.border_top_right_radius),
         "border-bottom-right-radius" => length(&style.border_bottom_right_radius),
         "border-bottom-left-radius" => length(&style.border_bottom_left_radius),
-        "outline-width" => match &style.outline_style {
-            OutlineStyleValue::None => "0px".to_string(),
-            _ => length(&style.outline_width),
-        },
+        // outline-width：real browser getComputedStyle 返 computed 值（medium→3px），
+        // 与 border-width 不同——outline-width 的 used 值不因 outline-style:none 归零
+        // （outline 不绘制但宽度保留）。旧实现误套 border-width 的 none→0px 规则致 default
+        // 返 "0px" 与 Chromium "3px" diverge（R2754 oracle 核实）。
+        "outline-width" => length(&style.outline_width),
         "font-size" => length(&style.font_size),
         "top" => length(&style.top),
         "right" => length(&style.right),
         "bottom" => length(&style.bottom),
         "left" => length(&style.left),
-        "gap" => length(&style.gap),
+        // ── gap 简写修正 ── gap 是 row-gap/column-gap 简写（CSS Box Alignment 3）。
+        // 旧实现仅读 legacy `style.gap`（= shorthand 首值 = row-gap），致 `gap: 5px 10px`
+        // 丢 column-gap 返 "5px"（real browser 返 "5px 10px"）。改用 longhand 字段做
+        // 2 值最小化（row==col→单值，否则 "row col"），与 box_4_to_css 同 CSSOM 思路。
+        "gap" => {
+            let rg = length(&style.row_gap);
+            let cg = length(&style.column_gap);
+            if rg == cg { rg } else { format!("{rg} {cg}") }
+        }
         "row-gap" => length(&style.row_gap),
         "column-gap" => length(&style.column_gap),
         "letter-spacing" => length(&style.letter_spacing),
@@ -228,6 +238,18 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "cursor" => cursor_str(&style.cursor),
         "text-transform" => text_transform_str(&style.text_transform),
         "text-overflow" => text_overflow_str(&style.text_overflow),
+        // ── text-decoration 簇 longhand（R2754）── 4 longhand 早有 storage（types.rs），
+        // 补 getComputedStyle 序列化：line（多 flag 组合，规范序 underline overline
+        // line-through，空→none）/ style（5 关键字）/ color（currentcolor 解析）/
+        // thickness（auto/from-font/length）。简写 text-decoration 重组 defer（CSSOM
+        // 简写规则待 oracle 核实）。
+        "text-decoration-line" => text_decoration_line_to_css(&style.text_decoration_line),
+        "text-decoration-style" => text_decoration_style_str(&style.text_decoration_style),
+        "text-decoration-color" => color_to_css(&crate::resolve_color_current(
+            &style.text_decoration_color,
+            element_color,
+        )),
+        "text-decoration-thickness" => text_decoration_thickness_to_css(&style.text_decoration_thickness),
         "direction" => direction_str(&style.direction),
         "border-collapse" => border_collapse_str(&style.border_collapse),
         "table-layout" => table_layout_str(&style.table_layout),
@@ -257,6 +279,14 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "flex-shrink" => format_num(style.flex_shrink, ""),
         "order" => style.order.to_string(),
         "flex-basis" => flex_basis_str(&style.flex_basis, font_size_px),
+        // ── flex / flex-flow 简写（R2754）── flex="<grow> <shrink> <basis>"（恒 3 段）；
+        // flex-flow="<direction> <wrap>"（恒 2 段）。Chromium oracle 锚定（flex:1→"1 1 0%"）。
+        "flex" => flex_shorthand_to_css(&style.flex_basis, font_size_px, style.flex_grow, style.flex_shrink),
+        "flex-flow" => format!(
+            "{} {}",
+            flex_direction_str(&style.flex_direction),
+            flex_wrap_str(&style.flex_wrap)
+        ),
         "aspect-ratio" => aspect_ratio_str(style.aspect_ratio, style.aspect_ratio_auto),
         // ── transform（R2715）── CSS Transforms L1/L2 计算值 = 函数列表（Chromium 返 resolved matrix，diverge）。
         "transform" => transform_to_css(&style.transform),
@@ -365,6 +395,46 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             &style.border_bottom_right_radius,
             &style.border_bottom_left_radius,
             font_size_px,
+        ),
+        // ── border 简写簇（R2754）── per-side 简写 "<width> <style> <color>"（width 经
+        // none/hidden→0px used 规则，复用 border_width_to_css）；全边 border 仅当 4 边 width/style/color
+        // 序列化全等时返单边值，否则 ''（Chromium oracle：border-top:1px;border-bottom:2px → border=""）。
+        "border-top" => border_side_shorthand(
+            &style.border_top_width,
+            &style.border_top_style,
+            &style.border_top_color,
+            element_color,
+            font_size_px,
+        ),
+        "border-right" => border_side_shorthand(
+            &style.border_right_width,
+            &style.border_right_style,
+            &style.border_right_color,
+            element_color,
+            font_size_px,
+        ),
+        "border-bottom" => border_side_shorthand(
+            &style.border_bottom_width,
+            &style.border_bottom_style,
+            &style.border_bottom_color,
+            element_color,
+            font_size_px,
+        ),
+        "border-left" => border_side_shorthand(
+            &style.border_left_width,
+            &style.border_left_style,
+            &style.border_left_color,
+            element_color,
+            font_size_px,
+        ),
+        "border" => border_shorthand(style, element_color, font_size_px),
+        // ── outline 简写（R2754）── "<color> <style> <width>"（与 border 的 width-style-color
+        // 顺序相反！恒 3 段含 none/0px；Chromium oracle：default "rgb(0,0,0) none 3px"）。
+        "outline" => format!(
+            "{} {} {}",
+            color_to_css(&crate::resolve_color_current(&style.outline_color, element_color)),
+            outline_style_str(&style.outline_style),
+            length(&style.outline_width),
         ),
         // ── box-shadow / text-shadow（R2739）── 多阴影列表，空→none。
         // Chromium/WPT 格式：color 在前（解析 rgb/rgba）+ 全长度（box-shadow 4 长 + inset 末；text-shadow 3 长）。
@@ -1022,6 +1092,48 @@ fn text_transform_str(t: &TextTransformValue) -> String {
     .to_string()
 }
 
+/// `text-decoration-line`：多 flag 组合（CSS Text Decoration §3.1）。规范序
+/// `underline overline line-through`，空（含 obsolete blink）→ `none`。对齐 Chromium
+/// getComputedStyle（`text-decoration: overline underline` → `text-decoration-line` 重组为
+/// `underline overline`）。
+fn text_decoration_line_to_css(l: &TextDecorationLineValue) -> String {
+    let mut parts = Vec::new();
+    if l.underline {
+        parts.push("underline");
+    }
+    if l.overline {
+        parts.push("overline");
+    }
+    if l.line_through {
+        parts.push("line-through");
+    }
+    if parts.is_empty() {
+        "none".to_string()
+    } else {
+        parts.join(" ")
+    }
+}
+
+/// `text-decoration-style`：5 关键字（CSS Text Decoration §3.2，初值 solid）。
+fn text_decoration_style_str(s: &TextDecorationStyleValue) -> String {
+    match s {
+        TextDecorationStyleValue::Solid => "solid",
+        TextDecorationStyleValue::Double => "double",
+        TextDecorationStyleValue::Dotted => "dotted",
+        TextDecorationStyleValue::Dashed => "dashed",
+        TextDecorationStyleValue::Wavy => "wavy",
+    }
+    .to_string()
+}
+
+/// `text-decoration-thickness`（CSS Text Decoration 4 §2.3）：auto/from-font 或长度（px）。
+fn text_decoration_thickness_to_css(t: &TextDecorationThicknessValue) -> String {
+    match t {
+        TextDecorationThicknessValue::Auto => "auto".to_string(),
+        TextDecorationThicknessValue::Length(px) => format_num(*px, "px"),
+    }
+}
+
 fn text_overflow_str(t: &TextOverflowValue) -> String {
     match t {
         TextOverflowValue::Clip => "clip".to_string(),
@@ -1564,6 +1676,75 @@ fn box_4_to_css(
         format!("{t} {r} {b}")
     } else {
         format!("{t} {r} {b} {l}")
+    }
+}
+
+/// `flex` 简写序列化：`"<grow> <shrink> <basis>"`（CSS Flexbox §7.1，恒 3 段）。
+/// 对齐 Chromium getComputedStyle（`flex: 2 1 50px`→`"2 1 50px"` / `flex: 1`→`"1 1 0%"` /
+/// default→`"0 1 auto"`）。basis 经 [`flex_basis_str`]（Auto/content/length/percentage）。
+fn flex_shorthand_to_css(basis: &FlexBasisValue, font_size_px: f64, grow: f64, shrink: f64) -> String {
+    format!(
+        "{} {} {}",
+        format_num(grow, ""),
+        format_num(shrink, ""),
+        flex_basis_str(basis, font_size_px)
+    )
+}
+
+/// 单边 border 简写（border-top/right/bottom/left）：`"<width> <style> <color>"`。
+/// width 经 [`border_width_to_css`]（border-style:none/hidden→used "0px"，对齐 Chromium）；
+/// color 经 currentcolor 解析。Chromium oracle：`border-top: 3px dashed blue`→`"3px dashed rgb(0,0,255)"`。
+fn border_side_shorthand(
+    width: &LengthValue,
+    style_val: &BorderStyleValue,
+    color: &ColorValue,
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    format!(
+        "{} {} {}",
+        border_width_to_css(width, style_val, font_size_px),
+        border_style_str(style_val),
+        color_to_css(&crate::resolve_color_current(color, element_color)),
+    )
+}
+
+/// `border` 全边简写：仅当 4 边的 width/style/color 序列化串全等时返该串，否则 `""`
+/// （CSSOM：longhand 不一致时简写不可序列化；Chromium oracle：border-top:1px + border-bottom:2px
+/// → `border=""`，border:3px dashed blue → `"3px dashed rgb(0,0,255)"`）。
+fn border_shorthand(style: &ComputedStyle, element_color: &ColorValue, font_size_px: f64) -> String {
+    let top = border_side_shorthand(
+        &style.border_top_width,
+        &style.border_top_style,
+        &style.border_top_color,
+        element_color,
+        font_size_px,
+    );
+    let right = border_side_shorthand(
+        &style.border_right_width,
+        &style.border_right_style,
+        &style.border_right_color,
+        element_color,
+        font_size_px,
+    );
+    let bottom = border_side_shorthand(
+        &style.border_bottom_width,
+        &style.border_bottom_style,
+        &style.border_bottom_color,
+        element_color,
+        font_size_px,
+    );
+    let left = border_side_shorthand(
+        &style.border_left_width,
+        &style.border_left_style,
+        &style.border_left_color,
+        element_color,
+        font_size_px,
+    );
+    if top == right && right == bottom && bottom == left {
+        top
+    } else {
+        String::new()
     }
 }
 

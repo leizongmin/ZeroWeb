@@ -3011,7 +3011,7 @@ fn test_get_computed_style_lengths() {
     // R2707：getComputedStyle 长度族（width/height/min-max/margin/padding/border-width/
     // border-radius/outline-width/font-size/gap/letter-spacing/text-indent 等）。compute_styles
     // 已把相对单位解析为 Px，故 px 指定值精确；百分比/auto 保留（无 layout 不解析为 used 值）。
-    // border/outline-width 在 style:none 时返 "0px"（对齐 real browser used 行为）；max-*:none → "none"。
+    // border-width 在 style:none 时返 "0px"（used=0）；outline-width 则保留 computed medium→3px（R2754）；max-*:none → "none"。
     let html = "<html><body>\
         <div id=\"box\" style=\"\
             width: 100px; height: 50%; \
@@ -3050,9 +3050,11 @@ fn test_get_computed_style_lengths() {
     assert_eq!(computed_style_property(html, "#box", "max-width"), "500px");
     assert_eq!(computed_style_property(html, "#box", "min-width"), "auto");
 
-    // 默认 div（无 border/outline）：border/outline-width 返 "0px"（style:none → used=0）。
+    // 默认 div（无 border）：border-width 返 "0px"（border-style:none → used=0，对齐 Chromium）。
     assert_eq!(computed_style_property(html, "#plain", "border-top-width"), "0px");
-    assert_eq!(computed_style_property(html, "#plain", "outline-width"), "0px");
+    // R2754：outline-width 不套 border 的 none→0 规则——outline-style:none 时 outline-width 仍保留
+    // computed 值（medium→3px），Chromium getComputedStyle 返 "3px"（与 border-width 行为不同）。
+    assert_eq!(computed_style_property(html, "#plain", "outline-width"), "3px");
     // 默认 max-width/max-height:none → "none"；默认 margin:0 → "0px"；默认 width:auto → "auto"。
     assert_eq!(computed_style_property(html, "#plain", "max-width"), "none");
     assert_eq!(computed_style_property(html, "#plain", "max-height"), "none");
@@ -4733,5 +4735,150 @@ fn test_set_remove_attr_syncs_cache() {
     assert!(
         out3.contains("class=\"b\""),
         "removeAttribute('class') 清缓存后 add('b') → 'b'\n{out3}"
+    );
+}
+
+#[test]
+fn test_get_computed_style_gap_shorthand() {
+    // R2754：gap 简写 = row-gap/column-gap 双轴（CSS Box Alignment 3）。旧实现仅读 legacy
+    // gap 字段（= row-gap），致 `gap: 5px 10px` 丢 column-gap 返 "5px"。改用 longhand 字段
+    // 做 2 值最小化（row==col→单值，否则 "row col"）。Chromium oracle：单值→"5px"，双值→"5px 10px"。
+    let html = "<html><body>\
+        <div id=\"g1\" style=\"gap: 5px;\"></div>\
+        <div id=\"g2\" style=\"gap: 5px 10px;\"></div>\
+        </body></html>";
+    assert_eq!(computed_style_property(html, "#g1", "gap"), "5px");
+    assert_eq!(computed_style_property(html, "#g1", "row-gap"), "5px");
+    assert_eq!(computed_style_property(html, "#g1", "column-gap"), "5px");
+    assert_eq!(computed_style_property(html, "#g2", "gap"), "5px 10px");
+    assert_eq!(computed_style_property(html, "#g2", "row-gap"), "5px");
+    assert_eq!(computed_style_property(html, "#g2", "column-gap"), "10px");
+}
+
+#[test]
+fn test_get_computed_style_text_decoration_longhands() {
+    // R2754：text-decoration 4 longhand 早有 storage，补 getComputedStyle 序列化。
+    // line（多 flag 规范序 underline overline line-through，空→none）/ style / color（currentcolor
+    // 解析）/ thickness（auto/from-font/length）。Chromium oracle 锚定。
+    let html = "<html><body>\
+        <div id=\"td\" style=\"text-decoration: underline dotted red 2px;\"></div>\
+        <div id=\"td2\" style=\"text-decoration: line-through overline;\"></div>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+    assert_eq!(
+        computed_style_property(html, "#td", "text-decoration-line"),
+        "underline"
+    );
+    assert_eq!(computed_style_property(html, "#td", "text-decoration-style"), "dotted");
+    assert_eq!(
+        computed_style_property(html, "#td", "text-decoration-color"),
+        "rgb(255, 0, 0)"
+    );
+    assert_eq!(computed_style_property(html, "#td", "text-decoration-thickness"), "2px");
+    // 多值组合按规范序重组（输入 line-through overline → overline line-through）。
+    assert_eq!(
+        computed_style_property(html, "#td2", "text-decoration-line"),
+        "overline line-through"
+    );
+    // 默认值：line=none / style=solid / thickness=auto。
+    assert_eq!(computed_style_property(html, "#plain", "text-decoration-line"), "none");
+    assert_eq!(
+        computed_style_property(html, "#plain", "text-decoration-style"),
+        "solid"
+    );
+    assert_eq!(
+        computed_style_property(html, "#plain", "text-decoration-thickness"),
+        "auto"
+    );
+}
+
+#[test]
+fn test_get_computed_style_flex_shorthand() {
+    // R2754：flex 简写 = "<grow> <shrink> <basis>"（恒 3 段）。关键：spec §7.1.1 省略 basis 时
+    // flex-basis=0%（百分比），故 `flex: 1`→"1 1 0%"（Chromium oracle；旧 ZW basis="0"→"0px" diverge）。
+    // none→"0 0 auto" / auto→"1 1 auto" / 显式 basis 原样。
+    let html = "<html><body>\
+        <div id=\"fl\" style=\"flex: 2 1 50px;\"></div>\
+        <div id=\"flone\" style=\"flex: 1;\"></div>\
+        <div id=\"fln\" style=\"flex: none;\"></div>\
+        <div id=\"fla\" style=\"flex: auto;\"></div>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+    assert_eq!(computed_style_property(html, "#fl", "flex"), "2 1 50px");
+    assert_eq!(computed_style_property(html, "#flone", "flex"), "1 1 0%");
+    assert_eq!(computed_style_property(html, "#flone", "flex-basis"), "0%");
+    assert_eq!(computed_style_property(html, "#fln", "flex"), "0 0 auto");
+    assert_eq!(computed_style_property(html, "#fla", "flex"), "1 1 auto");
+    assert_eq!(computed_style_property(html, "#plain", "flex"), "0 1 auto");
+}
+
+#[test]
+fn test_get_computed_style_flex_flow_shorthand() {
+    // R2754：flex-flow = "<direction> <wrap>"（恒 2 段）。Chromium oracle：column wrap→"column wrap"，
+    // 单值 wrap→"row wrap"（direction 缺省 row），default→"row nowrap"。
+    let html = "<html><body>\
+        <div id=\"ff\" style=\"flex-flow: column wrap;\"></div>\
+        <div id=\"ffw\" style=\"flex-flow: wrap;\"></div>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+    assert_eq!(computed_style_property(html, "#ff", "flex-flow"), "column wrap");
+    assert_eq!(computed_style_property(html, "#ffw", "flex-flow"), "row wrap");
+    assert_eq!(computed_style_property(html, "#plain", "flex-flow"), "row nowrap");
+}
+
+#[test]
+fn test_get_computed_style_outline_and_border_shorthands() {
+    // R2754：outline = "<color> <style> <width>"（注意与 border 的 width-style-color 顺序相反！），
+    // 恒 3 段含 none。border/per-side = "<width> <style> <color>"，全边 border 仅 4 边全等时返单边值
+    // 否则 ''。outline-width 不套 border 的 none→0 规则（保留 computed medium→3px）。
+    // Chromium oracle 锚定全部断言。
+    let html = "<html><body>\
+        <div id=\"o\" style=\"outline: 2px solid red;\"></div>\
+        <div id=\"olt\" style=\"outline: thick solid #0f0;\"></div>\
+        <div id=\"b\" style=\"border: 3px dashed blue;\"></div>\
+        <div id=\"bt\" style=\"border-top: 3px dashed blue;\"></div>\
+        <div id=\"bdiff\" style=\"border-top: 1px solid; border-bottom: 2px solid;\"></div>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+    // outline 简写（color style width 顺序）。
+    assert_eq!(
+        computed_style_property(html, "#o", "outline"),
+        "rgb(255, 0, 0) solid 2px"
+    );
+    assert_eq!(
+        computed_style_property(html, "#olt", "outline"),
+        "rgb(0, 255, 0) solid 5px"
+    );
+    // outline 默认：style=none 仍保留 width medium→3px（与 border-width 不同）。
+    assert_eq!(
+        computed_style_property(html, "#plain", "outline"),
+        "rgb(0, 0, 0) none 3px"
+    );
+    assert_eq!(computed_style_property(html, "#plain", "outline-width"), "3px");
+    // border 简写：4 边全等 → "width style color"；不一致 → ''。
+    assert_eq!(
+        computed_style_property(html, "#b", "border"),
+        "3px dashed rgb(0, 0, 255)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#b", "border-top"),
+        "3px dashed rgb(0, 0, 255)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#bt", "border-top"),
+        "3px dashed rgb(0, 0, 255)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#bdiff", "border-top"),
+        "1px solid rgb(0, 0, 0)"
+    );
+    assert_eq!(
+        computed_style_property(html, "#bdiff", "border-bottom"),
+        "2px solid rgb(0, 0, 0)"
+    );
+    assert_eq!(computed_style_property(html, "#bdiff", "border"), "");
+    assert_eq!(
+        computed_style_property(html, "#plain", "border"),
+        "0px none rgb(0, 0, 0)"
     );
 }

@@ -259,7 +259,7 @@ fn test_flex_single_value() {
     let result = expand_one("flex", "2", false, (0, 0, 1));
     assert_eq!(result[0].1, "2"); // grow
     assert_eq!(result[1].1, "1"); // shrink (default)
-    assert_eq!(result[2].1, "0"); // basis (default 0)
+    assert_eq!(result[2].1, "0%"); // basis（R2754：省略 basis→0%，对齐 Chromium）
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn test_flex_two_values() {
     let result = expand_one("flex", "2 1", false, (0, 0, 1));
     assert_eq!(result[0].1, "2"); // grow
     assert_eq!(result[1].1, "1"); // shrink
-    assert_eq!(result[2].1, "0"); // basis
+    assert_eq!(result[2].1, "0%"); // basis（R2754：省略 basis→0%）
 }
 
 #[test]
@@ -376,9 +376,9 @@ fn flex_parts(value: &str) -> (String, String, String) {
 
 #[test]
 fn test_expand_flex_single_number_is_grow() {
-    // 纯数字单值 → grow（CSS §7.1）
-    assert_eq!(flex_parts("1"), ("1".to_string(), "1".to_string(), "0".to_string()));
-    assert_eq!(flex_parts("2.5"), ("2.5".to_string(), "1".to_string(), "0".to_string()));
+    // 纯数字单值 → grow（CSS §7.1.1，省略 basis→0%，R2754 对齐 Chromium）
+    assert_eq!(flex_parts("1"), ("1".to_string(), "1".to_string(), "0%".to_string()));
+    assert_eq!(flex_parts("2.5"), ("2.5".to_string(), "1".to_string(), "0%".to_string()));
 }
 
 #[test]
@@ -397,8 +397,9 @@ fn test_expand_flex_single_width_is_basis() {
 
 #[test]
 fn test_expand_flex_two_numbers_are_grow_shrink() {
-    assert_eq!(flex_parts("1 2"), ("1".to_string(), "2".to_string(), "0".to_string()));
-    assert_eq!(flex_parts("0 0"), ("0".to_string(), "0".to_string(), "0".to_string()));
+    // 双数字 → grow/shrink，省略 basis→0%（R2754 对齐 Chromium）
+    assert_eq!(flex_parts("1 2"), ("1".to_string(), "2".to_string(), "0%".to_string()));
+    assert_eq!(flex_parts("0 0"), ("0".to_string(), "0".to_string(), "0%".to_string()));
 }
 
 #[test]

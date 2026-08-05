@@ -945,7 +945,13 @@ fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         // 单值：<number> → grow；否则（<width>/关键字）→ basis
         1 => {
             if is_number(parts[0]) {
-                vec![mk("flex-grow", parts[0]), mk("flex-shrink", "1"), mk("flex-basis", "0")]
+                // R2754：spec §7.1.1 省略 basis 时 flex-basis=0%（百分比，非长度 0）；
+                // Chromium getComputedStyle `flex: 1` → flex-basis "0%"（oracle 核实）。
+                vec![
+                    mk("flex-grow", parts[0]),
+                    mk("flex-shrink", "1"),
+                    mk("flex-basis", "0%"),
+                ]
             } else {
                 vec![mk("flex-grow", "0"), mk("flex-shrink", "1"), mk("flex-basis", parts[0])]
             }
@@ -954,7 +960,8 @@ fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         2 => {
             let (grow, second) = (parts[0], parts[1]);
             if is_number(second) {
-                vec![mk("flex-grow", grow), mk("flex-shrink", second), mk("flex-basis", "0")]
+                // R2754：同单值，省略 basis → 0%。
+                vec![mk("flex-grow", grow), mk("flex-shrink", second), mk("flex-basis", "0%")]
             } else {
                 vec![mk("flex-grow", grow), mk("flex-shrink", "1"), mk("flex-basis", second)]
             }
