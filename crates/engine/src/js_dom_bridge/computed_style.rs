@@ -2,7 +2,7 @@
 //! CSS 字符串（kebab-case 属性名）。从 `js_dom_bridge` 拆出（R2709）以控制主文件行数。
 //!
 //! 覆盖：display/position/visibility/opacity + 颜色族 + 长度族 + 关键字/枚举族 + font-family/复合族
-//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）；未覆盖属性返 ''。
+//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）；未覆盖属性返 ''。
 
 use std::collections::HashMap;
 
@@ -14,13 +14,14 @@ use zero_css_parser::values::{
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
-    BackfaceVisibilityValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
+    AlignContentValue, BackfaceVisibilityValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
     BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
     BackgroundSizeComputedValue, BorderCollapseValue, BorderStyleValue, CaptionSideValue, ComputedStyle,
     ContainComputedValue, ContentComputedValue, CursorValue, DirectionValue, FilterComputedValue, FlexBasisValue,
-    IsolationValue, LineHeightValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
-    PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue, TextOverflowValue, TextTransformValue,
-    TransformStyleValue, UserSelectValue, WhiteSpaceValue, WillChangeValue, WritingModeValue, ZIndexValue,
+    IsolationValue, JustifyItemsValue, JustifySelfValue, LineHeightValue, MixBlendModeComputedValue,
+    ObjectFitComputedValue, OutlineStyleValue, PointerEventsValue, StyleSystem, TableLayoutValue, TextAlignValue,
+    TextOverflowValue, TextTransformValue, TransformStyleValue, UserSelectValue, WhiteSpaceValue, WillChangeValue,
+    WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -244,6 +245,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "background-attachment" => background_attachment_to_css(&style.background_attachment),
         "background-clip" => background_clip_to_css(&style.background_clip),
         "background-origin" => background_origin_to_css(&style.background_origin),
+        // ── align-content / justify-items / justify-self（R2727）── CSS Box Alignment 单值枚举
+        // （补齐 align-items/align-self/justify-content R2710 后的 alignment 簇缺口）。
+        "align-content" => align_content_to_css(&style.align_content),
+        "justify-items" => justify_items_to_css(&style.justify_items),
+        "justify-self" => justify_self_to_css(&style.justify_self),
         _ => String::new(),
     }
 }
@@ -1320,6 +1326,56 @@ fn background_origin_to_css(o: &BackgroundOriginComputedValue) -> String {
         BackgroundOriginComputedValue::PaddingBox => "padding-box",
         BackgroundOriginComputedValue::BorderBox => "border-box",
         BackgroundOriginComputedValue::ContentBox => "content-box",
+    }
+    .to_string()
+}
+
+/// align-content：CSS Box Alignment `<content-distribution>` 单值序列化。
+/// Chromium getComputedStyle 初值 = normal（CSS Align 3）。ZeroWeb computed 默认 Normal。
+fn align_content_to_css(a: &AlignContentValue) -> String {
+    match a {
+        AlignContentValue::Auto => "auto",
+        AlignContentValue::Normal => "normal",
+        AlignContentValue::Start => "start",
+        AlignContentValue::End => "end",
+        AlignContentValue::Center => "center",
+        AlignContentValue::Stretch => "stretch",
+        AlignContentValue::Baseline => "baseline",
+        AlignContentValue::SpaceBetween => "space-between",
+        AlignContentValue::SpaceAround => "space-around",
+        AlignContentValue::SpaceEvenly => "space-evenly",
+    }
+    .to_string()
+}
+
+/// justify-items：CSS Box Alignment 单值序列化。初值 = normal（CSS Align 3）。
+fn justify_items_to_css(j: &JustifyItemsValue) -> String {
+    match j {
+        JustifyItemsValue::Auto => "auto",
+        JustifyItemsValue::Normal => "normal",
+        JustifyItemsValue::Start => "start",
+        JustifyItemsValue::End => "end",
+        JustifyItemsValue::Center => "center",
+        JustifyItemsValue::Stretch => "stretch",
+        JustifyItemsValue::Baseline => "baseline",
+        JustifyItemsValue::Left => "left",
+        JustifyItemsValue::Right => "right",
+    }
+    .to_string()
+}
+
+/// justify-self：CSS Box Alignment 单值序列化。初值 = auto（CSS Align 3）。
+fn justify_self_to_css(j: &JustifySelfValue) -> String {
+    match j {
+        JustifySelfValue::Auto => "auto",
+        JustifySelfValue::Normal => "normal",
+        JustifySelfValue::Start => "start",
+        JustifySelfValue::End => "end",
+        JustifySelfValue::Center => "center",
+        JustifySelfValue::Stretch => "stretch",
+        JustifySelfValue::Baseline => "baseline",
+        JustifySelfValue::Left => "left",
+        JustifySelfValue::Right => "right",
     }
     .to_string()
 }

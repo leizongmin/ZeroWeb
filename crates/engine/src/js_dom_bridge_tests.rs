@@ -3595,6 +3595,35 @@ fn test_get_computed_style_background_attachment_clip_origin() {
 }
 
 #[test]
+fn test_get_computed_style_alignment_cluster() {
+    // R2727：getComputedStyle align-content/justify-items/justify-self 序列化（Box Alignment 簇补齐）。
+    let html = "<html><body>\
+        <div id=\"ac-center\" style=\"align-content: center;\"></div>\
+        <div id=\"ac-between\" style=\"align-content: space-between;\"></div>\
+        <div id=\"ji-start\" style=\"justify-items: start;\"></div>\
+        <div id=\"ji-right\" style=\"justify-items: right;\"></div>\
+        <div id=\"js-end\" style=\"justify-self: end;\"></div>\
+        <div id=\"js-stretch\" style=\"justify-self: stretch;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // align-content 默认 normal。
+    assert_eq!(computed_style_property(html, "#def", "align-content"), "normal");
+    assert_eq!(computed_style_property(html, "#ac-center", "align-content"), "center");
+    assert_eq!(
+        computed_style_property(html, "#ac-between", "align-content"),
+        "space-between"
+    );
+    // justify-items 默认 normal。
+    assert_eq!(computed_style_property(html, "#def", "justify-items"), "normal");
+    assert_eq!(computed_style_property(html, "#ji-start", "justify-items"), "start");
+    assert_eq!(computed_style_property(html, "#ji-right", "justify-items"), "right");
+    // justify-self 默认 auto（注意：与 justify-items 的 normal 默认不同）。
+    assert_eq!(computed_style_property(html, "#def", "justify-self"), "auto");
+    assert_eq!(computed_style_property(html, "#js-end", "justify-self"), "end");
+    assert_eq!(computed_style_property(html, "#js-stretch", "justify-self"), "stretch");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
