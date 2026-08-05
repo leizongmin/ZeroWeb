@@ -4306,7 +4306,7 @@ fn test_get_computed_style_background_mask_image() {
         <div id=\"url\" style=\"background-image: url(bg.png);\"></div>\
         <div id=\"none\" style=\"background-image: none;\"></div>\
         <div id=\"multi\" style=\"background-image: url(a.png), url(b.png);\"></div>\
-        <div id=\"grad\" style=\"background-image: linear-gradient(to right, red, blue);\"></div>\
+        <div id=\"grad\" style=\"background-image: radial-gradient(circle, red, blue);\"></div>\
         <div id=\"mask\" style=\"mask-image: url(m.png);\"></div>\
         <div id=\"def\"></div>\
         </body></html>";
@@ -4320,7 +4320,7 @@ fn test_get_computed_style_background_mask_image() {
         computed_style_property(html, "#multi", "background-image"),
         "url(\"a.png\"), url(\"b.png\")"
     );
-    // gradient 层 → ''（gradient 全序列化 defer，不劣化；避免混合层错列表）。
+    // radial-gradient 层 → ''（radial/conic 序列化 defer，linear 见 R2749；避免混合层错列表）。
     assert_eq!(computed_style_property(html, "#grad", "background-image"), "");
     // mask-image 同结构。
     assert_eq!(computed_style_property(html, "#mask", "mask-image"), "url(\"m.png\")");
@@ -4352,6 +4352,43 @@ fn test_get_computed_style_margin_padding_shorthand() {
     assert_eq!(computed_style_property(html, "#p1", "padding"), "8px");
     assert_eq!(computed_style_property(html, "#def", "margin"), "0px");
     assert_eq!(computed_style_property(html, "#def", "padding"), "0px");
+}
+
+#[test]
+fn test_get_computed_style_linear_gradient() {
+    // R2749：getComputedStyle background-image linear-gradient 层序列化（radial/conic 仍 defer）。
+    let html = "<html><body>\
+        <div id=\"d\" style=\"background-image: linear-gradient(to right, red, blue);\"></div>\
+        <div id=\"defdir\" style=\"background-image: linear-gradient(red, blue);\"></div>\
+        <div id=\"ang\" style=\"background-image: linear-gradient(45deg, red, blue);\"></div>\
+        <div id=\"pos\" style=\"background-image: linear-gradient(to right, red 0%, blue 100%);\"></div>\
+        <div id=\"rep\" style=\"background-image: repeating-linear-gradient(red, blue);\"></div>\
+        </body></html>";
+    // to right + 色标解析为 rgb。
+    assert_eq!(
+        computed_style_property(html, "#d", "background-image"),
+        "linear-gradient(to right, rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // 默认方向 to bottom 省略。
+    assert_eq!(
+        computed_style_property(html, "#defdir", "background-image"),
+        "linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // 角度 → Xdeg。
+    assert_eq!(
+        computed_style_property(html, "#ang", "background-image"),
+        "linear-gradient(45deg, rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // 色标位置。
+    assert_eq!(
+        computed_style_property(html, "#pos", "background-image"),
+        "linear-gradient(to right, rgb(255, 0, 0) 0%, rgb(0, 0, 255) 100%)"
+    );
+    // repeating- 前缀。
+    assert_eq!(
+        computed_style_property(html, "#rep", "background-image"),
+        "repeating-linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
 }
 
 #[test]

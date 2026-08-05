@@ -8,10 +8,11 @@ use std::collections::HashMap;
 
 use zero_css_parser::values::{
     AlignmentValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, BackgroundEdge,
-    BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorValue, ContentListItem, DisplayValue,
-    FlexDirectionValue, FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, LengthValue,
-    ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, StepPosition,
-    TimingFunctionValue, TransformFunction, TransformValue, VisibilityValue,
+    BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorHueMethod, ColorInterpolation,
+    ColorInterpolationSpace, ColorValue, ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue,
+    FontStyleValue, FontWeightValue, GradientColorStop, GradientDirection, LengthValue, ListStylePositionValue,
+    ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, StepPosition, TimingFunctionValue,
+    TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -216,8 +217,8 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         // ── background-image / mask-image（R2747）── Vec<BackgroundImageComputedValue>。
         // None/Url 逐层序列化（url("u")，同 list-style-image）；任一 Gradient 层→''（gradient 全序列化
         // 是多 helper 子工程 defer，避免混合层产生错列表）；空列表→none（初值）。
-        "background-image" => image_layer_list_to_css(&style.background_image),
-        "mask-image" => image_layer_list_to_css(&style.mask_image),
+        "background-image" => image_layer_list_to_css(&style.background_image, element_color, font_size_px),
+        "mask-image" => image_layer_list_to_css(&style.mask_image, element_color, font_size_px),
         "text-align" => text_align_str(&style.text_align),
         "white-space" => white_space_str(&style.white_space),
         "font-weight" => font_weight_str(&style.font_weight),
@@ -1672,13 +1673,20 @@ fn scroll_padding_to_css(p: &ScrollPadding) -> String {
 
 /// background-image / mask-image：CSS 图层列表（`Vec<BackgroundImageComputedValue>`）。
 /// 空列表→`none`（初值）；None/Url 逐层序列化（`url("u")`，同 [`list_style_image_to_css`]），
-/// 多层逗号分隔。**任一 Gradient 层→''**：gradient 全序列化（linear/radial/conic + 色标 + 插值）
-/// 是多 helper 子工程 defer；混合层若部分序列化会产出错列表，故遇 gradient 整体返 ''（不劣化）。
-fn image_layer_list_to_css(layers: &[BackgroundImageComputedValue]) -> String {
-    if layers
-        .iter()
-        .any(|l| matches!(l, BackgroundImageComputedValue::Gradient(_)))
-    {
+/// linear-gradient 层经 [`linear_gradient_to_css`] 序列化；**任一 radial/conic-gradient 层→''**
+///（radial/conic 序列化 defer，混合层部分序列化会错列表，故整体返 '' 不劣化）。多层逗号分隔。
+fn image_layer_list_to_css(
+    layers: &[BackgroundImageComputedValue],
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    use zero_css_parser::values::GradientValue;
+    if layers.iter().any(|l| {
+        matches!(
+            l,
+            BackgroundImageComputedValue::Gradient(GradientValue::Radial(_) | GradientValue::Conic(_))
+        )
+    }) {
         return String::new();
     }
     if layers.is_empty() {
@@ -1689,10 +1697,83 @@ fn image_layer_list_to_css(layers: &[BackgroundImageComputedValue]) -> String {
         .map(|l| match l {
             BackgroundImageComputedValue::None => "none".to_string(),
             BackgroundImageComputedValue::Url(u) => format!("url(\"{u}\")"),
-            BackgroundImageComputedValue::Gradient(_) => unreachable!("gradient 已在上方提前返 ''"),
+            BackgroundImageComputedValue::Gradient(GradientValue::Linear(g)) => {
+                linear_gradient_to_css(g, element_color, font_size_px)
+            }
+            BackgroundImageComputedValue::Gradient(_) => unreachable!("radial/conic 已在上方提前返 ''"),
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// linear-gradient / repeating-linear-gradient：CSS Images 线性渐变序列化（对齐 Chromium）。
+/// `<prefix>(<dir>, [in <space>], <stop>, ...)`：dir `ToBottom` 初值省略 / `Angle(a)`→`adeg` /
+/// 角关键字 `to right` 等；插值 `Srgb` 初值省略、余 `in <space>`（极坐标 Lch/Oklch 非默认 hue
+/// 附 ` <hue-method>`）；色标 `<color>[ <pos>]`（color 经 currentcolor 解析，pos 经 length_to_css）。
+/// **已知限制**：无双位置/色标提示存储（ZeroWeb 模型单 pos/无 hint）；radial/conic defer。
+fn linear_gradient_to_css(
+    g: &zero_css_parser::values::LinearGradient,
+    element_color: &ColorValue,
+    font_size_px: f64,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    match g.direction {
+        GradientDirection::ToBottom => {} // 初值，省略
+        GradientDirection::ToTop => parts.push("to top".to_string()),
+        GradientDirection::ToLeft => parts.push("to left".to_string()),
+        GradientDirection::ToRight => parts.push("to right".to_string()),
+        GradientDirection::ToTopLeft => parts.push("to top left".to_string()),
+        GradientDirection::ToTopRight => parts.push("to top right".to_string()),
+        GradientDirection::ToBottomLeft => parts.push("to bottom left".to_string()),
+        GradientDirection::ToBottomRight => parts.push("to bottom right".to_string()),
+        GradientDirection::Angle(a) => parts.push(format!("{}deg", format_num(a, ""))),
+    }
+    if g.interpolation.space != ColorInterpolationSpace::Srgb {
+        parts.push(color_interpolation_to_css(&g.interpolation));
+    }
+    for s in &g.stops {
+        parts.push(color_stop_to_css(s, element_color, font_size_px));
+    }
+    let prefix = if g.repeating {
+        "repeating-linear-gradient"
+    } else {
+        "linear-gradient"
+    };
+    format!("{}({})", prefix, parts.join(", "))
+}
+
+/// 渐变色标：`<color>[ <position>]`（color 经 currentcolor 解析为 rgb/rgba；pos 经 length_to_css）。
+fn color_stop_to_css(s: &GradientColorStop, element_color: &ColorValue, font_size_px: f64) -> String {
+    let color = color_to_css(&crate::resolve_color_current(&s.color, element_color));
+    match &s.position {
+        None => color,
+        Some(pos) => format!("{} {}", color, length_to_css(pos, font_size_px)),
+    }
+}
+
+/// 渐变颜色插值（CSS Color 4 `in <colorspace> [<hue-method>]`）。极坐标 Lch/Oklch 且 hue 非
+/// 默认 Shorter 时附 hue-method；否则仅 `in <space>`。
+fn color_interpolation_to_css(ci: &ColorInterpolation) -> String {
+    let space = match ci.space {
+        ColorInterpolationSpace::Srgb => "srgb",
+        ColorInterpolationSpace::SrgbLinear => "srgb-linear",
+        ColorInterpolationSpace::Lab => "lab",
+        ColorInterpolationSpace::Oklab => "oklab",
+        ColorInterpolationSpace::Lch => "lch",
+        ColorInterpolationSpace::Oklch => "oklch",
+    };
+    let polar = matches!(ci.space, ColorInterpolationSpace::Lch | ColorInterpolationSpace::Oklch);
+    if polar && ci.hue != ColorHueMethod::Shorter {
+        let hue = match ci.hue {
+            ColorHueMethod::Shorter => "shorter hue",
+            ColorHueMethod::Longer => "longer hue",
+            ColorHueMethod::Increasing => "increasing hue",
+            ColorHueMethod::Decreasing => "decreasing hue",
+        };
+        format!("in {space} {hue}")
+    } else {
+        format!("in {space}")
+    }
 }
 
 /// mask-mode：CSS Masking 遮罩模式（alpha/luminance/match-source，初值 match-source）。
