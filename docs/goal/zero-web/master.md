@@ -1438,6 +1438,21 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧三属性返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
+### P1a `getComputedStyle` border-image-source + object-position + quotes 序列化（本轮 R2736，getComputedStyle 维护态续）
+
+承接 R2735。简单枚举收尾下一批——补 3 属性（旧均返 ''），全部为简单结构（无 pivot 到 background-image gradient 或 cssText/length 的必要）：`border-image-source`（`BorderImageSourceComputedValue::None | Url(String)`，初值 none；复用 R2735 `list_style_image_to_css` 的 `url("<s>")` 引号模式）、`object-position`（单 `BackgroundPositionComputedValue`，非多层；复用 R2724 `bg_position_layer_to_css` 逐层序列化器，默认 `Center`→`50% 50%`）、`quotes`（`QuotesComputedValue::None | Auto | Pairs(Vec<(String,String)>)`，初值 auto；`None→none`/`Auto→auto`/`Pairs→` 逐对开闭串空格分隔双引号化，复用既有 `css_string_to_css` 转义 `\`/`"`/换行，对齐 Chromium `quotes: "«" "»" "‹" "›"`→`"«" "»" "‹" "›"`）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"border-image-source"` + `"object-position"` + `"quotes"` 臂；新增 `border_image_source_to_css`（None/Url，同 list-style-image 引号形式）+ `quotes_to_css`（None/Auto/Pairs，Pairs 用 `css_string_to_css` 转义）；object-position 直接复用 `bg_position_layer_to_css(&style.object_position)`（无需新 helper）；import 加 `BorderImageSourceComputedValue`/`QuotesComputedValue`；文件头 doc 覆盖列表补三项。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_border_img_obj_pos_quotes`（border-image-source 默认 none/url(border.png)→`url("border.png")`；object-position 默认 `50% 50%`/`top left`→`0% 0%`/`10px 20px`；quotes 初值 auto/none/pairs 四串→`"«" "»" "‹" "›"`）。 |
+
+**对齐 Chromium**：border-image-source `url("...")` 引号、object-position `<position>` 两轴序列化（关键字→%、Length→px，同 background-position）、quotes pairs 双引号串空格分隔——与 Chromium getComputedStyle 一致。**补齐 border-image 子簇 source**（slice/width/repeat/outset 仍残余，需 track-list/数值序列化）。
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13361 passed / 0 failed / 74 ignored**，13360+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → 三属性未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧三属性返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

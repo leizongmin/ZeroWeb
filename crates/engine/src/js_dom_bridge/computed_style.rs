@@ -2,7 +2,7 @@
 //! CSS 字符串（kebab-case 属性名）。从 `js_dom_bridge` 拆出（R2709）以控制主文件行数。
 //!
 //! 覆盖：display/position/visibility/opacity + 颜色族（color/background-color/border-*-color/outline-color/caret-color/accent-color）+ 长度族 + 关键字/枚举族 + font-family/复合族
-//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break/text-wrap/text-align-last）+ vertical-align/unicode-bidi/empty-cells/resize/appearance + box-decoration-break/scrollbar-*/touch-action + outline-offset/break-before·after·inside + grid-auto-flow/container-type·name/tab-size + border-spacing/list-style-image/font-size-adjust；未覆盖属性返 ''。
+//! + Transforms 全簇 + contain + filter + will-change + clip-path + content + background 簇（position/size/repeat/attachment/clip/origin）+ Box Alignment 簇（align-items/self、justify-content/items/self、align-content）+ CSS Text 换行/断词（word-break/overflow-wrap/hyphens/line-break/text-wrap/text-align-last）+ vertical-align/unicode-bidi/empty-cells/resize/appearance + box-decoration-break/scrollbar-*/touch-action + outline-offset/break-before·after·inside + grid-auto-flow/container-type·name/tab-size + border-spacing/list-style-image/font-size-adjust + border-image-source/object-position/quotes；未覆盖属性返 ''。
 
 use std::collections::HashMap;
 
@@ -17,16 +17,16 @@ use zero_style_system::{
     AccentColorComputedValue, AlignContentValue, AppearanceComputedValue, BackfaceVisibilityValue,
     BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundOriginComputedValue,
     BackgroundPositionComputedValue, BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BorderCollapseValue,
-    BorderSpacingComputedValue, BorderStyleValue, BoxDecorationBreakValue, BreakInsideValue, BreakValue,
-    CaptionSideValue, CaretColorComputedValue, ComputedStyle, ContainComputedValue, ContainerType,
-    ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue,
-    FontSizeAdjustValue, GridAutoFlowValue, HyphensComputedValue, IsolationValue, JustifyItemsValue, JustifySelfValue,
-    LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
-    OutlineStyleValue, OverflowWrapValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue,
-    ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
-    TextOverflowValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
-    UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
-    WritingModeValue, ZIndexValue,
+    BorderImageSourceComputedValue, BorderSpacingComputedValue, BorderStyleValue, BoxDecorationBreakValue,
+    BreakInsideValue, BreakValue, CaptionSideValue, CaretColorComputedValue, ComputedStyle, ContainComputedValue,
+    ContainerType, ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue, FilterComputedValue,
+    FlexBasisValue, FontSizeAdjustValue, GridAutoFlowValue, HyphensComputedValue, IsolationValue, JustifyItemsValue,
+    JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue, MixBlendModeComputedValue,
+    ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue,
+    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
+    TextAlignLastValue, TextAlignValue, TextOverflowValue, TextTransformValue, TextWrapComputedValue, TouchActionValue,
+    TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue,
+    WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -294,6 +294,13 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "border-spacing" => border_spacing_to_css(&style.border_spacing),
         "list-style-image" => list_style_image_to_css(&style.list_style_image),
         "font-size-adjust" => font_size_adjust_to_css(&style.font_size_adjust),
+        // ── border-image-source / object-position / quotes（R2736）── 简单枚举收尾。
+        // border-image-source：None/Url，复用 R2735 list-style-image 的 url() 引号模式。
+        "border-image-source" => border_image_source_to_css(&style.border_image_source),
+        // object-position：单 <position>，复用 R2724 background-position 的逐层序列化（默认 Center→50% 50%）。
+        "object-position" => bg_position_layer_to_css(&style.object_position),
+        // quotes：None/Auto/Pairs（auto 初值；pairs→空格分隔双引号串，复用 css_string_to_css 转义）。
+        "quotes" => quotes_to_css(&style.quotes),
         _ => String::new(),
     }
 }
@@ -510,6 +517,31 @@ fn font_size_adjust_to_css(f: &FontSizeAdjustValue) -> String {
     match f {
         FontSizeAdjustValue::None => "none".to_string(),
         FontSizeAdjustValue::Number(n) => format_num(*n, ""),
+    }
+}
+
+/// border-image-source：CSS Border Image 源图。None→none；Url(s)→`url("<s>")`（复用 R2735
+/// list-style-image 的引号形式，对齐 Chromium）。补齐 border-image 子簇（slice/width/repeat/outset
+/// 仍残余，需 track-list/数值序列化）。
+fn border_image_source_to_css(s: &BorderImageSourceComputedValue) -> String {
+    match s {
+        BorderImageSourceComputedValue::None => "none".to_string(),
+        BorderImageSourceComputedValue::Url(u) => format!("url(\"{u}\")"),
+    }
+}
+
+/// quotes：CSS Generated Content 引号。None→none；Auto（初值）→auto；Pairs→逐对开/闭串空格分隔
+/// 双引号化（复用 [`css_string_to_css`] 转义 `\`/`"`/换行），对齐 Chromium getComputedStyle
+///（`quotes: "«" "»" "‹" "›"` → `"«" "»" "‹" "›"`）。
+fn quotes_to_css(q: &QuotesComputedValue) -> String {
+    match q {
+        QuotesComputedValue::None => "none".to_string(),
+        QuotesComputedValue::Auto => "auto".to_string(),
+        QuotesComputedValue::Pairs(pairs) => pairs
+            .iter()
+            .flat_map(|(open, close)| [css_string_to_css(open), css_string_to_css(close)])
+            .collect::<Vec<_>>()
+            .join(" "),
     }
 }
 

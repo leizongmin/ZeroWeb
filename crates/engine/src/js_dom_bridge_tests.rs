@@ -3883,6 +3883,36 @@ fn test_get_computed_style_table_list_font() {
 }
 
 #[test]
+fn test_get_computed_style_border_img_obj_pos_quotes() {
+    // R2736：getComputedStyle border-image-source + object-position + quotes 序列化。
+    let html = "<html><body>\
+        <div id=\"bis-url\" style=\"border-image-source: url(border.png);\"></div>\
+        <div id=\"op-kw\" style=\"object-position: top left;\"></div>\
+        <div id=\"op-px\" style=\"object-position: 10px 20px;\"></div>\
+        <div id=\"q-none\" style=\"quotes: none;\"></div>\
+        <div id='q-pairs' style='quotes: \"\u{00ab}\" \"\u{00bb}\" \"\u{2039}\" \"\u{203a}\";'></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // border-image-source 默认 none；url() 引号形式（同 list-style-image）。
+    assert_eq!(computed_style_property(html, "#def", "border-image-source"), "none");
+    assert_eq!(
+        computed_style_property(html, "#bis-url", "border-image-source"),
+        "url(\"border.png\")"
+    );
+    // object-position 默认 Center→50% 50%；关键字两值 / 长度两值（复用 background-position 序列化）。
+    assert_eq!(computed_style_property(html, "#def", "object-position"), "50% 50%");
+    assert_eq!(computed_style_property(html, "#op-kw", "object-position"), "0% 0%");
+    assert_eq!(computed_style_property(html, "#op-px", "object-position"), "10px 20px");
+    // quotes 初值 auto；none；pairs→空格分隔双引号串。
+    assert_eq!(computed_style_property(html, "#def", "quotes"), "auto");
+    assert_eq!(computed_style_property(html, "#q-none", "quotes"), "none");
+    assert_eq!(
+        computed_style_property(html, "#q-pairs", "quotes"),
+        "\"\u{00ab}\" \"\u{00bb}\" \"\u{2039}\" \"\u{203a}\""
+    );
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。
