@@ -21,15 +21,15 @@ use zero_style_system::{
     BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue, CaretColorComputedValue,
     ColumnCountComputedValue, ColumnFillComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue,
     ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle, ContainComputedValue, ContainerType,
-    ContentComputedValue, CursorValue, DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue,
-    FontSizeAdjustValue, FontVariantNumericValue, GridAutoFlowValue, HyphensComputedValue, ImageRenderingValue,
-    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
-    MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue,
-    QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem,
-    TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue, TextOverflowValue, TextShadowComputedValue,
-    TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue, UnicodeBidiValue,
-    UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue, WritingModeValue,
-    ZIndexValue,
+    ContentComputedValue, ContentVisibilityValue, CursorValue, DirectionValue, EmptyCellsComputedValue,
+    FilterComputedValue, FlexBasisValue, FontSizeAdjustValue, FontVariantNumericValue, GridAutoFlowValue,
+    HyphensComputedValue, ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue,
+    LineHeightValue, ListStyleImageComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue,
+    OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue,
+    ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
+    TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue,
+    TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue,
+    WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
 use super::find_by_selector;
@@ -338,6 +338,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "grid-template-areas" => opt_css_string(&style.grid_template_areas, "none"),
         "grid-auto-columns" => opt_css_string(&style.grid_auto_columns, "auto"),
         "grid-auto-rows" => opt_css_string(&style.grid_auto_rows, "auto"),
+        // ── containment 簇（R2741）── content-visibility（3 关键字，初值 visible）+
+        // contain-intrinsic-width/height（Option<LengthValue>，None→none，CSS Sizing 4 初值 none）。
+        "content-visibility" => content_visibility_str(&style.content_visibility),
+        "contain-intrinsic-width" => opt_length_to_css(&style.contain_intrinsic_width, font_size_px),
+        "contain-intrinsic-height" => opt_length_to_css(&style.contain_intrinsic_height, font_size_px),
         _ => String::new(),
     }
 }
@@ -1482,6 +1487,25 @@ fn box_4_to_css(
         format!("{t} {r} {b}")
     } else {
         format!("{t} {r} {b} {l}")
+    }
+}
+
+/// content-visibility：CSS Containment 2 可见性（Visible/Hidden/Auto，初值 visible）。
+fn content_visibility_str(v: &ContentVisibilityValue) -> String {
+    match v {
+        ContentVisibilityValue::Visible => "visible",
+        ContentVisibilityValue::Hidden => "hidden",
+        ContentVisibilityValue::Auto => "auto",
+    }
+    .to_string()
+}
+
+/// 把 `Option<LengthValue>`（contain-intrinsic-width/height 等）序列化：None→`none`（初值），
+/// Some→经 [`length_to_css`] 解析为 px（含残余相对单位兜底）。
+fn opt_length_to_css(lv: &Option<LengthValue>, font_size_px: f64) -> String {
+    match lv {
+        None => "none".to_string(),
+        Some(l) => length_to_css(l, font_size_px),
     }
 }
 
