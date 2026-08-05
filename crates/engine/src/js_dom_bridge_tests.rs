@@ -3154,6 +3154,29 @@ fn test_get_computed_style_transform() {
 }
 
 #[test]
+fn test_get_computed_style_transform_origin() {
+    // R2716：getComputedStyle transform-origin 序列化（2 LengthValue，空格连接）。
+    // Chromium 返 used 值（border-box 中心绝对 px，diverge）；ZeroWeb 返计算值（spec-correct + Firefox 一致）。
+    let html = "<html><body>\
+        <div id=\"px\" style=\"transform-origin: 10px 20px;\"></div>\
+        <div id=\"pct\" style=\"transform-origin: 25% 75%;\"></div>\
+        <div id=\"center\" style=\"transform-origin: center;\"></div>\
+        <div id=\"single\" style=\"transform-origin: 0px;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // 显式 px（computed == used，与 real browser 一致）。
+    assert_eq!(computed_style_property(html, "#px", "transform-origin"), "10px 20px");
+    // 显式百分比保留为计算值（Chromium 返 used px，diverge）。
+    assert_eq!(computed_style_property(html, "#pct", "transform-origin"), "25% 75%");
+    // 关键字 center 计算值 = 50% 50%（apply 未解析关键字降级为默认，恰等于 center 计算值，行为正确）。
+    assert_eq!(computed_style_property(html, "#center", "transform-origin"), "50% 50%");
+    // 单值：x 指定，y 默认 50%。
+    assert_eq!(computed_style_property(html, "#single", "transform-origin"), "0px 50%");
+    // 默认值 50% 50%。
+    assert_eq!(computed_style_property(html, "#def", "transform-origin"), "50% 50%");
+}
+
+#[test]
 fn test_raf_frame_driven_on_path() {
     // R2713a：帧驱动 rAF（__ZW_RAF_FRAME_DRIVEN=true）。requestAnimationFrame 注册回调延后到
     // host render 后的 __zw_raf_tick；tick 前不 fire，tick 后按注册序 fire 并传 ts、清空队列。

@@ -75,7 +75,8 @@ pub fn lookup_computed_property(
 ///   direction/border-collapse/table-layout/caption-side/border-*-style/outline-style）+ 复合/列表族
 ///   （font-family/flex-direction/wrap/justify-content/align-items/align-self/writing-mode/object-fit/
 ///   isolation/mix-blend-mode/pointer-events/user-select/list-style-type·position）+ 数值族
-///   （flex-grow/flex-shrink/order/flex-basis/aspect-ratio）。未覆盖属性返 ''。
+///   （flex-grow/flex-shrink/order/flex-basis/aspect-ratio）+ Transforms（transform 函数列表 /
+///   transform-origin 两长度）。未覆盖属性返 ''。
 ///
 /// **长度族返回计算值**（非 used 值）：`compute_styles` 已把 em/rem/vw/vh/非 % calc 解析为 Px，
 /// 故 px 指定值与 real browser getComputedStyle 精确一致；百分比/auto 保留为 `N%`/`auto`
@@ -232,6 +233,10 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "aspect-ratio" => aspect_ratio_str(style.aspect_ratio, style.aspect_ratio_auto),
         // ── transform（R2715）── CSS Transforms L1/L2 计算值 = 函数列表（Chromium 返 resolved matrix，diverge）。
         "transform" => transform_to_css(&style.transform),
+        // ── transform-origin（R2716）── 2 LengthValue 经 length_to_css，空格连接。
+        "transform-origin" => {
+            transform_origin_to_css(&style.transform_origin_x, &style.transform_origin_y, font_size_px)
+        }
         _ => String::new(),
     }
 }
@@ -812,6 +817,20 @@ fn transform_to_css(t: &TransformValue) -> String {
             .collect::<Vec<_>>()
             .join(" "),
     }
+}
+
+/// transform-origin：按 CSS Transforms L1 计算值序列化为两个长度（空格连接）。
+///
+/// 存储为 `transform_origin_x`/`transform_origin_y` 两个 `LengthValue`，默认均为 `50%`
+///（即关键字 `center` 的计算值）。经 [`length_to_css`]：px 指定值精确、百分比保留为 `N%`。
+///
+/// **已知 diverge（同 transform / width·height used-value）**：Chromium getComputedStyle 对
+/// transform-origin 返 **used** 值（border-box 中心绝对 px，如 `100px 50px`）；CSS 规范 + Firefox
+/// 返**计算值**（百分比/指定 px）。ZeroWeb 返计算值（spec-correct）。单值 `center`/`top`/`left` 等
+/// 轴感知 `<position>` 关键字语法解析为独立 follow-up（当前 apply 仅解析长度，关键字降级为默认
+/// `50% 50%`，恰好等于 `center` 计算值，故 `center` 行为正确）。
+fn transform_origin_to_css(x: &LengthValue, y: &LengthValue, font_size_px: f64) -> String {
+    format!("{} {}", length_to_css(x, font_size_px), length_to_css(y, font_size_px))
 }
 
 /// 序列化单个 [`TransformFunction`]。translate 类长度为 px（混合百分比分支保 `%`）；rotate/skew
