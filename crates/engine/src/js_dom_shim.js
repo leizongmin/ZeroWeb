@@ -1083,6 +1083,45 @@
     globalThis.URLSearchParams.prototype[Symbol.iterator] = globalThis.URLSearchParams.prototype.entries;
   }
 
+  // URL——WHATWG URL 解析（protocol/host/hostname/port/pathname/search/hash/origin/href/searchParams）。
+  // location.href 操纵 / fetch 相对 URL / 链接解析高频。委托 host `__zw_parse_url(url, base)`（spec-correct
+  // via `url` crate：base 解析 / percent-encoding / IDNA / 默认端口归一），失败抛 TypeError（spec）；
+  // 未注册（纯 sandbox 无 host，如 reftest 无 JS 回调路径）抛 TypeError。**已知限制**：组件无 setter
+  // （只读属性；set 须重新构造，defer）；searchParams 与属性不双向同步（修改 searchParams 不更新 search）。
+  function URL(url, base) {
+    if (typeof __zw_parse_url !== 'function') {
+      throw new TypeError('URL constructor requires a URL parser (__zw_parse_url not registered)');
+    }
+    if (!(this instanceof URL)) return new URL(url, base); // 允许无 new
+    var raw = __zw_parse_url(String(url), base !== undefined ? String(base) : '');
+    var p = raw ? JSON.parse(raw) : null;
+    if (!p) throw new TypeError('Invalid URL: ' + url);
+    this.protocol = p.protocol;
+    this.username = p.username;
+    this.password = p.password;
+    this.hostname = p.hostname;
+    this.host = p.host;
+    this.port = p.port;
+    this.origin = p.origin;
+    this.pathname = p.pathname;
+    this.search = p.search;
+    this.hash = p.hash;
+    this.href = p.href;
+    // searchParams 复用 URLSearchParams（R2772），从 search 去前导 '?'。
+    var sp = p.search.charAt(0) === '?' ? p.search.slice(1) : p.search;
+    this.searchParams = new URLSearchParams(sp);
+  }
+  URL.prototype = Object.create(Object.prototype);
+  URL.prototype.constructor = URL;
+  URL.prototype.toString = function () { return this.href; };
+  URL.prototype.toJSON = function () { return this.href; };
+  // canParse 静态——解析成功 true / 失败 false（不抛）。
+  URL.canParse = function (url, base) {
+    if (typeof __zw_parse_url !== 'function') return false;
+    return !!__zw_parse_url(String(url), base !== undefined ? String(base) : '');
+  };
+  globalThis.URL = globalThis.URL || URL;
+
   // structuredClone——深拷贝（postMessage / React state / immer-like 高频）。递归：primitive/array/
   // plain object/Date/RegExp/Map/Set/ArrayBuffer/TypedArray；循环引用经 WeakMap 记忆不爆栈；
   // function/symbol 抛 DataCloneError（spec）。**已知限制**：symbol-keyed 属性不拷（Object.keys 仅

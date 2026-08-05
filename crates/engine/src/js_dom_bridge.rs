@@ -1639,6 +1639,47 @@ pub fn query_tag_from_mutations(mutations: &[DomMutation], handle: &str) -> Stri
     String::new()
 }
 
+/// WHATWG URL 解析为 JSON 串（供 JS shim `new URL(url, base)` 经 `__zw_parse_url` 回调消费）。
+///
+/// 委托 `url` crate（spec-correct：base 解析 / percent-encoding / IDNA / 默认端口归一）。成功返
+/// JSON 串（protocol/username/password/hostname/port/host/origin/pathname/search/hash/href）；
+/// 失败（含 base 无效）返空串（shim 抛 TypeError，spec 一致）。提取为纯函数便于单测复用。
+pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
+    let result = match base.filter(|b| !b.is_empty()) {
+        Some(base_str) => match url::Url::parse(base_str) {
+            Ok(base_url) => url::Url::options().base_url(Some(&base_url)).parse(input),
+            Err(_) => return String::new(),
+        },
+        None => url::Url::parse(input),
+    };
+    let url = match result {
+        Ok(u) => u,
+        Err(_) => return String::new(),
+    };
+    let scheme = url.scheme();
+    let hostname = url.host_str().unwrap_or("");
+    let port = url.port().map(|p| p.to_string()).unwrap_or_default();
+    let host = if port.is_empty() {
+        hostname.to_string()
+    } else {
+        format!("{hostname}:{port}")
+    };
+    format!(
+        r#"{{"protocol":{},"username":{},"password":{},"hostname":{},"port":{},"host":{},"origin":{},"pathname":{},"search":{},"hash":{},"href":{}}}"#,
+        json_str(&format!("{scheme}:")),
+        json_str(url.username()),
+        json_str(url.password().unwrap_or("")),
+        json_str(hostname),
+        json_str(&port),
+        json_str(&host),
+        json_str(&url.origin().ascii_serialization()),
+        json_str(url.path()),
+        json_str(&url.query().map(|q| format!("?{q}")).unwrap_or_default()),
+        json_str(&url.fragment().map(|f| format!("#{f}")).unwrap_or_default()),
+        json_str(url.as_str()),
+    )
+}
+
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
 ///
 /// 将 [`generate_js_dom_shim`] 产生的 JS shim 与宿主侧 [`DomMutation`] 收集器连接：
@@ -1672,6 +1713,18 @@ pub fn register_dom_callbacks(
     sandbox.register_callback(
         "__zw_performance_now",
         Box::new(move |_args| format!("{}", perf_origin.elapsed().as_secs_f64() * 1000.0)),
+    );
+
+    // `new URL(url, base)`——WHATWG URL 解析（protocol/host/hostname/port/pathname/search/hash/origin/
+    // href）。location.href 操纵 / fetch 相对 URL / 链接解析高频。委托 [`parse_url_to_json`]（spec-correct
+    // via `url` crate）；解析失败返空串（shim 抛 TypeError，spec 一致）。
+    sandbox.register_callback(
+        "__zw_parse_url",
+        Box::new(|args: &[String]| -> String {
+            let input = args.first().map(String::as_str).unwrap_or("");
+            let base = args.get(1).map(String::as_str);
+            parse_url_to_json(input, base)
+        }),
     );
 
     let html = Arc::clone(dom_html);

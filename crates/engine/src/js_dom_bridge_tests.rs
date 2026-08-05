@@ -1479,6 +1479,108 @@ fn test_abort_controller_signal_r2777() {
 }
 
 #[test]
+fn test_url_constructor_r2778() {
+    // R2778：URL 构造器（WHATWG URL 解析，委托 host __zw_parse_url → url crate）。本测试注册
+    // __zw_parse_url 回调（生产在 register_dom_callbacks 注册），复用 parse_url_to_json 纯函数。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    // 注册 __zw_parse_url 回调（复用 production 纯函数 parse_url_to_json）。
+    sandbox.register_callback(
+        "__zw_parse_url",
+        Box::new(|args: &[String]| -> String {
+            let input = args.first().map(String::as_str).unwrap_or("");
+            let base = args.get(1).map(String::as_str);
+            parse_url_to_json(input, base)
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 绝对 URL：各属性（protocol 带 ':'、host/hostname、port、pathname、search 带 '?'、hash 带 '#'、origin）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var u = new URL('https://example.com/a/b?x=1&y=2#top');\
+                 u.protocol + '|' + u.hostname + '|' + u.host + '|' + u.port + '|' +\
+                 u.pathname + '|' + u.search + '|' + u.hash + '|' + u.origin"
+            )
+            .unwrap()
+            .value,
+        "https:|example.com|example.com||/a/b|?x=1&y=2|#top|https://example.com"
+    );
+    // href 规范化 + toString + toJSON（三者一致）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var u = new URL('https://example.com/a/b?x=1#top');\
+                 u.href + '|' + u.toString() + '|' + u.toJSON()"
+            )
+            .unwrap()
+            .value,
+        "https://example.com/a/b?x=1#top|https://example.com/a/b?x=1#top|https://example.com/a/b?x=1#top"
+    );
+    // searchParams（复用 URLSearchParams）：get / has。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var u = new URL('https://example.com/?a=1&b=two');\
+                 u.searchParams.get('a') + '|' + u.searchParams.get('b') + '|' + u.searchParams.has('c')"
+            )
+            .unwrap()
+            .value,
+        "1|two|false"
+    );
+    // base 解析：绝对路径相对（替换 base path）。
+    assert_eq!(
+        sandbox
+            .execute("new URL('/path/page', 'https://example.com/base/index').href")
+            .unwrap()
+            .value,
+        "https://example.com/path/page"
+    );
+    // base 解析：scheme-relative（继承 base scheme）。
+    assert_eq!(
+        sandbox
+            .execute("new URL('//cdn.example.com/lib.js', 'https://example.com/').href")
+            .unwrap()
+            .value,
+        "https://cdn.example.com/lib.js"
+    );
+    // 端口：非默认端口保留，默认端口（:80）归一省略。
+    assert_eq!(
+        sandbox
+            .execute("new URL('http://example.com:8080/p').host + '|' + new URL('http://example.com:80/p').host")
+            .unwrap()
+            .value,
+        "example.com:8080|example.com"
+    );
+    // 无效 URL 抛 TypeError（spec）。
+    assert_eq!(
+        sandbox
+            .execute("try { new URL('not a valid url'); 'no-throw'; } catch (e) { e.name; }")
+            .unwrap()
+            .value,
+        "TypeError"
+    );
+    // canParse：有效 true / 无效 false（不抛）。
+    assert_eq!(
+        sandbox
+            .execute("URL.canParse('https://e.com') + '|' + URL.canParse('abc def')")
+            .unwrap()
+            .value,
+        "true|false"
+    );
+    // 无 new 调用亦返 URL 实例。
+    assert_eq!(
+        sandbox.execute("URL('https://example.com/').hostname").unwrap().value,
+        "example.com"
+    );
+}
+
+#[test]
 fn test_text_encoder_decoder_utf8_r2771() {
     // R2771：TextEncoder（str→UTF-8 Uint8Array）+ TextDecoder（bytes→str）。纯 JS UTF-8
     //（BMP + astral 代理对）。fetch body / 字符串↔字节互转高频。encode 'ZeroWeb' = ASCII 7 字节，
