@@ -65,7 +65,6 @@ fn read_input_value_for_change(html: &str, selector: &str) -> String {
     }
 }
 
-
 fn spawn_browser_ipc_inbound() -> (Receiver<IpcMessage>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
     let join = thread::Builder::new()
@@ -1532,7 +1531,11 @@ mod runtime_smoke {
         );
         // textarea 带 value 属性（非标准但存在）仍取内容（spec：textarea value 是内容）。
         let ta2 = "<html><body><textarea id=\"t\" value=\"ignored\">real</textarea></body></html>";
-        assert_eq!(read_input_value_for_change(ta2, "#t"), "real", "textarea 忽略 value 属性取内容");
+        assert_eq!(
+            read_input_value_for_change(ta2, "#t"),
+            "real",
+            "textarea 忽略 value 属性取内容"
+        );
     }
 
     /// IPC publish 回归门：FrameModel → ViewPainted 帧化（不启动 V8/WebView，避免 in-process 测试卡死）。

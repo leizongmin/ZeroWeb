@@ -5,8 +5,8 @@
 //! [`apply_dom_mutations`] 并序列化回 HTML。
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use zero_style_system::ComputedStyle;
 
@@ -395,11 +395,7 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     find_by_selector(doc, selector).ok_or_else(|| format!("remove_attr: no match for {selector}"))?;
                 doc.remove_attribute(node, name);
             }
-            DomMutation::ToggleAttribute {
-                selector,
-                name,
-                force,
-            } => {
+            DomMutation::ToggleAttribute { selector, name, force } => {
                 // 决策在 apply 时（读当前存在性）——连续 toggle 复合正确（每次读 evolving state），
                 // 不受脚本内 stale snapshot 影响（朴素 shim 实现连续 toggle 都 add 的 bug）。
                 let node = find_by_selector(doc, selector)
@@ -432,8 +428,8 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 apply_style_property(doc, node, property, value);
             }
             DomMutation::RemoveStyle { selector, property } => {
-                let node = find_by_selector(doc, selector)
-                    .ok_or_else(|| format!("remove_style: no match for {selector}"))?;
+                let node =
+                    find_by_selector(doc, selector).ok_or_else(|| format!("remove_style: no match for {selector}"))?;
                 apply_remove_style(doc, node, property);
             }
             DomMutation::Remove { selector } => {
@@ -1643,7 +1639,6 @@ pub fn query_tag_from_mutations(mutations: &[DomMutation], handle: &str) -> Stri
     String::new()
 }
 
-
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
 ///
 /// 将 [`generate_js_dom_shim`] 产生的 JS shim 与宿主侧 [`DomMutation`] 收集器连接：
@@ -1855,8 +1850,7 @@ pub fn register_dom_callbacks(
     // selector → parse+cascade 一次并存入——同一元素的多属性查询（`cs.display;cs.color;cs.visibility`）
     // 由 3 次全 cascade 摊销为 1 次。html 变（新 snapshot）→ 清空 per-selector 缓存。
     let html = Arc::clone(dom_html);
-    let cs_cache: Arc<Mutex<Option<(String, HashMap<String, ComputedStyle>)>>> =
-        Arc::new(Mutex::new(None));
+    let cs_cache: Arc<Mutex<Option<(String, HashMap<String, ComputedStyle>)>>> = Arc::new(Mutex::new(None));
     sandbox.register_callback(
         "__zw_get_computed_style",
         Box::new(move |args| {

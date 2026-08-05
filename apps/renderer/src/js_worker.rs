@@ -1432,8 +1432,12 @@ mod tests {
         let id_t = find_by_selector(&doc, "#t").expect("#t");
         let snap = worker.rect_snapshot();
         // v1：root 200x200，target 在 root 外（1000,1000）→ ratio 0、isIntersecting false。
-        snap.lock().unwrap().insert(node_id_to_u64(id_root), (0.0, 0.0, 200.0, 200.0));
-        snap.lock().unwrap().insert(node_id_to_u64(id_t), (1000.0, 1000.0, 100.0, 100.0));
+        snap.lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_root), (0.0, 0.0, 200.0, 200.0));
+        snap.lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_t), (1000.0, 1000.0, 100.0, 100.0));
         worker
             .execute_script_direct(
                 "globalThis.__calls = 0;\
@@ -1448,18 +1452,24 @@ mod tests {
         // initial 派发（ratio 0，isIntersecting false）。
         assert_eq!(wait_eq(&worker, "__calls", "1", 1000), "1");
         assert_eq!(
-            worker.execute_script_direct("String(globalThis.__intersecting)").unwrap(),
+            worker
+                .execute_script_direct("String(globalThis.__intersecting)")
+                .unwrap(),
             "false",
             "initial：target 在 root 外 → isIntersecting false"
         );
         // v2：target 移入 root（10,10）→ ratio 1.0 跨 threshold 0.5 → tick 再派发。
-        snap.lock().unwrap().insert(node_id_to_u64(id_t), (10.0, 10.0, 100.0, 100.0));
+        snap.lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_t), (10.0, 10.0, 100.0, 100.0));
         worker
             .execute_script_direct("if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();")
             .unwrap();
         assert_eq!(wait_eq(&worker, "__calls", "2", 1000), "2");
         assert_eq!(
-            worker.execute_script_direct("String(globalThis.__intersecting)").unwrap(),
+            worker
+                .execute_script_direct("String(globalThis.__intersecting)")
+                .unwrap(),
             "true",
             "tick 后 target 移入 root → isIntersecting true"
         );
@@ -1517,7 +1527,10 @@ mod tests {
         //（main.rs handle_keyboard_event：textarea Enter → 换行，非 submit）。验证 '\n' append 到
         // textarea value + 派发 'input'。修复前 textarea Enter 为 no-op（多行输入断裂）。
         let mut worker = RendererJsWorker::spawn(31);
-        worker.set_dom_snapshot("<html><body><textarea id='ta'>ab</textarea></body></html>", "about:blank");
+        worker.set_dom_snapshot(
+            "<html><body><textarea id='ta'>ab</textarea></body></html>",
+            "about:blank",
+        );
         worker
             .execute_script_direct(
                 "globalThis.__seen = null;\
