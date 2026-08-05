@@ -1125,7 +1125,7 @@ bridge API 全 + form 全后，最大剩余正确性缺口：`getComputedStyle` 
 
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13334 passed / 0 failed / 74 ignored**，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 R2710 baseline 持平 → 未改渲染输出）+ 8 struct PASS / 0 FAIL。
 
-**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter + R2719 3D transform 簇，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms 全簇（transform 函数列表 + transform-origin + transform-style + backface-visibility + perspective + perspective-origin）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、~~3D transform 簇~~ ✅ R2719、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、content（Counter/Counters 复杂）、clip-path、will-change、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
+**getComputedStyle 收尾状态**：经 R2704-R2711 共 8 切片 + R2715 transform + R2716 transform-origin + R2717 contain + R2718 filter + R2719 3D transform 簇 + R2720 will-change，覆盖 display/position/visibility/opacity + 颜色族 + 长度族（~30）+ 关键字/枚举族（~22）+ font-family/复合族（14）+ 数值/special 族（5）+ **Transforms 全簇（transform 函数列表 + transform-origin + transform-style + backface-visibility + perspective + perspective-origin）** + **contain（关键字 / 位掩码组合）** + **filter（函数列表）** + **will-change（列表）** + per-snapshot 缓存 + 子模块化拆分。**常见用例已全面覆盖**；残余 minor = cssText/length（大机械量）、bolder/lighter（须父链）、~~transform~~ ✅ R2715、~~transform-origin~~ ✅ R2716、~~contain~~ ✅ R2717、~~filter~~ ✅ R2718、~~3D transform 簇~~ ✅ R2719、~~will-change~~ ✅ R2720、轴感知 `<position>` 关键字语法（top/left 单值轴归属）、content（Counter/Counters 复杂）、clip-path、grid-*/background-* 低频枚举、外链 `<link>` CSS。getComputedStyle 转入维护态，主线 pivot 到 P1a 事件循环 slice 1。
 
 ### P1a `getComputedStyle` transform 序列化（本轮 R2715，getComputedStyle 维护态续）
 
@@ -1203,6 +1203,19 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13344 passed / 0 failed / 74 ignored**，13343+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → 3D transform 簇未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。已推送 `21950c1d..f24fac8c`。
 
 **为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 4 属性返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
+
+### P1a `getComputedStyle` will-change 序列化（本轮 R2720，getComputedStyle 维护态续）
+
+承接 R2719（3D transform 簇）。补 `will-change`（CSS Will Change，perf hint 常查，旧返 ''）。存储为 `will_change: Vec<WillChangeValue>`（默认 + `auto` 均空 Vec），镜像 filter/contain 列表模式。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/js_dom_bridge/computed_style.rs` | `serialize_computed_property` 加 `"will-change"` 臂；新增 `will_change_to_css`（空 Vec→`auto` / 否则空格分隔：Auto→auto / ScrollPosition→scroll-position / Contents→contents / Custom→属性名原样）；import 加 `WillChangeValue`；文件头 doc 覆盖列表加 will-change。 |
+| `engine/js_dom_bridge_tests.rs` | +1 测试 `test_get_computed_style_will_change`（auto 默认+显式 / scroll-position / contents / transform 自定义 / transform opacity 多属性组合）。 |
+
+验证：`cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13345 passed / 0 failed / 74 ignored**，13344+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平 → will-change 未改 welcome 渲染输出）+ 全 struct PASS / 0 FAIL。已推送 `eaffad2d..d0791d29`。
+
+**为何零回归且净正向**：① getComputedStyle 纯只读 API 不改 mutation/render；② 旧 will-change 返 ''，新实现返真值（未覆盖仍 '' fallback）；③ welcome smoke diff 持平证真实页面 JS 分支未受影响。
 
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
