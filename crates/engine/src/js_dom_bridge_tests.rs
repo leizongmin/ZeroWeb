@@ -4320,8 +4320,11 @@ fn test_get_computed_style_background_mask_image() {
         computed_style_property(html, "#multi", "background-image"),
         "url(\"a.png\"), url(\"b.png\")"
     );
-    // radial-gradient 层 → ''（radial/conic 序列化 defer，linear 见 R2749；避免混合层错列表）。
-    assert_eq!(computed_style_property(html, "#grad", "background-image"), "");
+    // radial-gradient(circle, ...) 层 → 序列化（R2750 radial 已实现；见 test_get_computed_style_radial_conic_gradient 全覆盖）。
+    assert_eq!(
+        computed_style_property(html, "#grad", "background-image"),
+        "radial-gradient(circle, rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
     // mask-image 同结构。
     assert_eq!(computed_style_property(html, "#mask", "mask-image"), "url(\"m.png\")");
     // 默认 → none。
@@ -4388,6 +4391,67 @@ fn test_get_computed_style_linear_gradient() {
     assert_eq!(
         computed_style_property(html, "#rep", "background-image"),
         "repeating-linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+}
+
+#[test]
+fn test_get_computed_style_radial_conic_gradient() {
+    // R2750：getComputedStyle radial-gradient（WPT oracle 锚定）+ conic-gradient（spec-aligned）。
+    let html = "<html><body>\
+        <div id=\"def\" style=\"background-image: radial-gradient(red, blue);\"></div>\
+        <div id=\"ctr\" style=\"background-image: radial-gradient(circle at center, red, blue);\"></div>\
+        <div id=\"pos\" style=\"background-image: radial-gradient(circle at 10px 10px, red, blue);\"></div>\
+        <div id=\"cir\" style=\"background-image: radial-gradient(circle, red, blue);\"></div>\
+        <div id=\"fs\" style=\"background-image: radial-gradient(farthest-side, red, blue);\"></div>\
+        <div id=\"cp\" style=\"background-image: radial-gradient(circle at 25% 40%, red, blue);\"></div>\
+        <div id=\"cl\" style=\"background-image: radial-gradient(circle 50px, red, blue);\"></div>\
+        <div id=\"cdef\" style=\"background-image: conic-gradient(red, blue);\"></div>\
+        <div id=\"cfrom\" style=\"background-image: conic-gradient(from 90deg, red, blue);\"></div>\
+        </body></html>";
+    // 默认 ellipse farthest-corner at center 全省略。
+    assert_eq!(
+        computed_style_property(html, "#def", "background-image"),
+        "radial-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // circle + at center（默认 position）→ position 省略，circle 保留。
+    assert_eq!(
+        computed_style_property(html, "#ctr", "background-image"),
+        "radial-gradient(circle, rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // circle + 非默认 position → at X Y。
+    assert_eq!(
+        computed_style_property(html, "#pos", "background-image"),
+        "radial-gradient(circle at 10px 10px, rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // circle（默认 size）保留。
+    assert_eq!(
+        computed_style_property(html, "#cir", "background-image"),
+        "radial-gradient(circle, rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // 非默认 size 关键字 farthest-side 保留（ellipse 默认形状省略）。
+    assert_eq!(
+        computed_style_property(html, "#fs", "background-image"),
+        "radial-gradient(farthest-side, rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // circle + 非默认 position。
+    assert_eq!(
+        computed_style_property(html, "#cp", "background-image"),
+        "radial-gradient(circle at 25% 40%, rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // circle + 显式半径 → 半径（circle 省略）。
+    assert_eq!(
+        computed_style_property(html, "#cl", "background-image"),
+        "radial-gradient(50px, rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // conic 默认 from 0deg at center 全省略。
+    assert_eq!(
+        computed_style_property(html, "#cdef", "background-image"),
+        "conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))"
+    );
+    // conic from <angle>。
+    assert_eq!(
+        computed_style_property(html, "#cfrom", "background-image"),
+        "conic-gradient(from 90deg, rgb(255, 0, 0), rgb(0, 0, 255))"
     );
 }
 

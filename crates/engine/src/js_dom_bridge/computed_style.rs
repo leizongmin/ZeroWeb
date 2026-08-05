@@ -9,10 +9,10 @@ use std::collections::HashMap;
 use zero_css_parser::values::{
     AlignmentValue, AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, BackgroundEdge,
     BoxSizingValue, ClearValue, ClipPathRadius, ClipPathValue, ColorHueMethod, ColorInterpolation,
-    ColorInterpolationSpace, ColorValue, ContentListItem, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue,
-    FontStyleValue, FontWeightValue, GradientColorStop, GradientDirection, LengthValue, ListStylePositionValue,
-    ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, StepPosition, TimingFunctionValue,
-    TransformFunction, TransformValue, VisibilityValue,
+    ColorInterpolationSpace, ColorValue, ConicGradient, ContentListItem, DisplayValue, FlexDirectionValue,
+    FlexWrapValue, FloatValue, FontStyleValue, FontWeightValue, GradientColorStop, GradientDirection, LengthValue,
+    ListStylePositionValue, ListStyleTypeValue, OverflowValue, PolygonFillRule, PositionValue, RadialGradient,
+    RadialShape, RadialSize, StepPosition, TimingFunctionValue, TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{
@@ -1673,22 +1673,13 @@ fn scroll_padding_to_css(p: &ScrollPadding) -> String {
 
 /// background-image / mask-image：CSS 图层列表（`Vec<BackgroundImageComputedValue>`）。
 /// 空列表→`none`（初值）；None/Url 逐层序列化（`url("u")`，同 [`list_style_image_to_css`]），
-/// linear-gradient 层经 [`linear_gradient_to_css`] 序列化；**任一 radial/conic-gradient 层→''**
-///（radial/conic 序列化 defer，混合层部分序列化会错列表，故整体返 '' 不劣化）。多层逗号分隔。
+/// linear/radial/conic-gradient 层各经对应 helper 序列化。多层逗号分隔。
 fn image_layer_list_to_css(
     layers: &[BackgroundImageComputedValue],
     element_color: &ColorValue,
     font_size_px: f64,
 ) -> String {
     use zero_css_parser::values::GradientValue;
-    if layers.iter().any(|l| {
-        matches!(
-            l,
-            BackgroundImageComputedValue::Gradient(GradientValue::Radial(_) | GradientValue::Conic(_))
-        )
-    }) {
-        return String::new();
-    }
     if layers.is_empty() {
         return "none".to_string();
     }
@@ -1700,7 +1691,12 @@ fn image_layer_list_to_css(
             BackgroundImageComputedValue::Gradient(GradientValue::Linear(g)) => {
                 linear_gradient_to_css(g, element_color, font_size_px)
             }
-            BackgroundImageComputedValue::Gradient(_) => unreachable!("radial/conic 已在上方提前返 ''"),
+            BackgroundImageComputedValue::Gradient(GradientValue::Radial(g)) => {
+                radial_gradient_to_css(g, element_color, font_size_px)
+            }
+            BackgroundImageComputedValue::Gradient(GradientValue::Conic(g)) => {
+                conic_gradient_to_css(g, element_color, font_size_px)
+            }
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -1740,6 +1736,102 @@ fn linear_gradient_to_css(
         "linear-gradient"
     };
     format!("{}({})", prefix, parts.join(", "))
+}
+
+/// radial-gradient / repeating-radial-gradient：CSS Images 径向渐变序列化。
+/// 规则锚定 WPT `background-image-computed`/`gradient-position-computed` oracle：
+/// - 默认 `<ellipse> <farthest-corner> at center` 全省略 → `radial-gradient(stops)`
+/// - `circle`（默认 size）保留；非默认 size 关键字（closest-side 等）保留；`circle <kw>` 双保留
+/// - 显式半径 `Length(r)` → `r`（circle 关键字省略）；ellipse 双长度 ZeroWeb 仅存单 length（解析限制）
+/// - 非默认 position → `at <X> <Y>`（center/top/bottom/left/right 解析期已归一为 50%/0%/100%）
+fn radial_gradient_to_css(g: &RadialGradient, element_color: &ColorValue, font_size_px: f64) -> String {
+    // config 组件：shape/size + position 空格连接（同 oracle「circle at 25% 40%」）。
+    let mut config_inner: Vec<String> = Vec::new();
+    match (&g.shape, &g.size) {
+        (RadialShape::Ellipse, RadialSize::FarthestCorner) => {} // 默认，省略
+        (RadialShape::Circle, RadialSize::FarthestCorner) => config_inner.push("circle".to_string()),
+        (_, RadialSize::ClosestSide) => config_inner.push(radial_size_str(&g.size, &g.shape)),
+        (_, RadialSize::FarthestSide) => config_inner.push(radial_size_str(&g.size, &g.shape)),
+        (_, RadialSize::ClosestCorner) => config_inner.push(radial_size_str(&g.size, &g.shape)),
+        (_, RadialSize::Length(l)) => config_inner.push(length_to_css(l, font_size_px)),
+    }
+    if !is_center(&g.position_x, &g.position_y) {
+        config_inner.push(format!(
+            "at {} {}",
+            length_to_css(&g.position_x, font_size_px),
+            length_to_css(&g.position_y, font_size_px)
+        ));
+    }
+    let mut parts: Vec<String> = Vec::new();
+    let config = config_inner.join(" ");
+    if !config.is_empty() {
+        parts.push(config);
+    }
+    if g.interpolation.space != ColorInterpolationSpace::Srgb {
+        parts.push(color_interpolation_to_css(&g.interpolation));
+    }
+    for s in &g.stops {
+        parts.push(color_stop_to_css(s, element_color, font_size_px));
+    }
+    let prefix = if g.repeating {
+        "repeating-radial-gradient"
+    } else {
+        "radial-gradient"
+    };
+    format!("{}({})", prefix, parts.join(", "))
+}
+
+/// radial size 关键字 + 形状组合：`circle farthest-side` / `farthest-side`（ellipse 默认形状省略）。
+fn radial_size_str(size: &RadialSize, shape: &RadialShape) -> String {
+    let kw = match size {
+        RadialSize::ClosestSide => "closest-side",
+        RadialSize::FarthestSide => "farthest-side",
+        RadialSize::ClosestCorner => "closest-corner",
+        _ => "",
+    };
+    match shape {
+        RadialShape::Circle => format!("circle {kw}"),
+        RadialShape::Ellipse => kw.to_string(),
+    }
+}
+
+/// conic-gradient / repeating-conic-gradient：CSS Images 锥向渐变序列化（spec-aligned，无 WPT conic
+/// computed oracle，待 Chromium A/B 核实）。`<prefix>([from <angle>]? [at <pos>]?, stops)`：
+/// 默认 from 0deg + at center 全省略；非默认 from→`from <deg>deg`、position→`at <X> <Y>`。
+fn conic_gradient_to_css(g: &ConicGradient, element_color: &ColorValue, font_size_px: f64) -> String {
+    let mut config_inner: Vec<String> = Vec::new();
+    if g.from_angle != 0.0 {
+        config_inner.push(format!("from {}deg", format_num(g.from_angle, "")));
+    }
+    if !is_center(&g.position_x, &g.position_y) {
+        config_inner.push(format!(
+            "at {} {}",
+            length_to_css(&g.position_x, font_size_px),
+            length_to_css(&g.position_y, font_size_px)
+        ));
+    }
+    let mut parts: Vec<String> = Vec::new();
+    let config = config_inner.join(" ");
+    if !config.is_empty() {
+        parts.push(config);
+    }
+    if g.interpolation.space != ColorInterpolationSpace::Srgb {
+        parts.push(color_interpolation_to_css(&g.interpolation));
+    }
+    for s in &g.stops {
+        parts.push(color_stop_to_css(s, element_color, font_size_px));
+    }
+    let prefix = if g.repeating {
+        "repeating-conic-gradient"
+    } else {
+        "conic-gradient"
+    };
+    format!("{}({})", prefix, parts.join(", "))
+}
+
+/// position 是否为默认 center（50% 50%）。解析期 center→`Percentage(50.0)`。
+fn is_center(x: &LengthValue, y: &LengthValue) -> bool {
+    matches!(x, LengthValue::Percentage(v) if *v == 50.0) && matches!(y, LengthValue::Percentage(v) if *v == 50.0)
 }
 
 /// 渐变色标：`<color>[ <position>]`（color 经 currentcolor 解析为 rgb/rgba；pos 经 length_to_css）。
