@@ -1334,6 +1334,65 @@ fn test_url_search_params_r2772() {
 }
 
 #[test]
+fn test_structured_clone_r2773() {
+    // R2773：structuredClone（深拷贝，postMessage/React state 高频）。递归 + 循环引用（WeakMap）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // primitive 原样返回。
+    assert_eq!(sandbox.execute("structuredClone(42)").unwrap().value, "42");
+    assert_eq!(sandbox.execute("structuredClone('hi')").unwrap().value, "hi");
+    assert_eq!(sandbox.execute("String(structuredClone(null))").unwrap().value, "null");
+    // 嵌套对象深拷贝独立（改 clone 不影响原）。
+    assert_eq!(
+        sandbox
+            .execute("var a = { x: 1, n: { y: 2 } }; var b = structuredClone(a); b.n.y = 99; a.n.y")
+            .unwrap()
+            .value,
+        "2"
+    );
+    // 数组深拷贝独立。
+    assert_eq!(
+        sandbox
+            .execute("var a = [1, [2, 3]]; var b = structuredClone(a); b[1][0] = 99; a[1][0]")
+            .unwrap()
+            .value,
+        "2"
+    );
+    // Date 保类型 + 值。
+    assert_eq!(
+        sandbox
+            .execute("structuredClone(new Date(2020, 0, 1)).getTime() === new Date(2020, 0, 1).getTime()")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // RegExp 保 flags。
+    assert_eq!(sandbox.execute("structuredClone(/abc/gi).flags").unwrap().value, "gi");
+    // 循环引用不爆栈（self-ref 解到 clone 自身）。
+    assert_eq!(
+        sandbox
+            .execute("var a = {}; a.self = a; var b = structuredClone(a); b.self === b")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // function 抛 DataCloneError（spec）。
+    assert_eq!(
+        sandbox
+            .execute("try { structuredClone(function(){}); 'no-throw' } catch (e) { 'threw' }")
+            .unwrap()
+            .value,
+        "threw"
+    );
+}
+
+#[test]
 fn test_clone_node_e2e() {
     // cloneNode(deep) 复用既有回调组合：create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。
     use std::sync::{Arc, Mutex};

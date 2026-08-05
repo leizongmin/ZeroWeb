@@ -2052,6 +2052,26 @@ oracle 锚定：默认/normal/0/0px→`"normal"`、2px→`"2px"`、word-spacing 
 
 **为何零回归且净正向**：① 全新 constructor（URLSearchParams），不改既有 API；② 纯 JS 无副作用；③ prototype guard 不覆盖既有定义。
 
+### P1a structuredClone（本轮 R2773，缺失 Web API 续）
+
+承接 R2772（URLSearchParams）。续缺失 Web API 子线程——land **structuredClone**（深拷贝，`postMessage` / React state / immer-like 高频）。递归 `_zw_structured_clone`：
+
+- primitive 原样；array + plain object 逐属性深拷贝（`Object.create(getPrototypeOf)` 保留 prototype）。
+- Date（`getTime` 重建）/ RegExp（`source`+`flags` 重建）/ Map（键值递归）/ Set（值递归）/ ArrayBuffer（byte 复制）/ TypedArray+DataView（copy 构造）。
+- **循环引用经 WeakMap 记忆**不爆栈（`seen.set` 先于子属性递归，self-ref 解到 clone 自身）。
+- function/symbol 抛 `TypeError`（spec `DataCloneError` 语义）。
+
+**已知限制（记录）**：symbol-keyed 属性不拷（`Object.keys` 仅 string-keyed，罕见）；class 实例 prototype 保留但构造器不重跑（同 spec 平台对象外行为）；Error/Blob/File 等平台对象未专项处理（走 plain-object 路径，常见 state 足够）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_zw_structured_clone`（递归 + WeakMap 循环检测 + 各类型 arm）+ `globalThis.structuredClone`。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_structured_clone_r2773`（primitive / 嵌套对象独立 / 数组独立 / Date 保类型 / RegExp flags / 循环引用 / function 抛）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13400 passed / 0 failed / 74 ignored**，13399+1 新测试，0 回归；baseline 跨 13400 门槛）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 global）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 global（structuredClone），不改既有 API；② 纯 JS 无副作用（递归只读输入、写新对象）；③ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
+
 ### P1a 事件循环 Slice 1 帧驱动 rAF 设计（本轮 R2712，设计 doc，pivot 到 P1a 主线）
 
 getComputedStyle 收尾（R2704-R2711）后 pivot 到 P1a 事件循环 slice 1。先 Explore-agent 全量侦察事件循环管线（`tab_js_worker.rs`/`js_dom_shim.js`/`timer_bridge.rs`/`page_scripts.rs`），核对旧「P1a 4 切片」框架实际进度。

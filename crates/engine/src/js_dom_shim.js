@@ -927,6 +927,47 @@
     globalThis.URLSearchParams.prototype[Symbol.iterator] = globalThis.URLSearchParams.prototype.entries;
   }
 
+  // structuredClone——深拷贝（postMessage / React state / immer-like 高频）。递归：primitive/array/
+  // plain object/Date/RegExp/Map/Set/ArrayBuffer/TypedArray；循环引用经 WeakMap 记忆不爆栈；
+  // function/symbol 抛 DataCloneError（spec）。**已知限制**：symbol-keyed 属性不拷（Object.keys 仅
+  // string-keyed）；class 实例 prototype 保留但构造器不重跑（同 spec 平台对象外行为）。
+  function _zw_structured_clone(val, seen) {
+    if (val === null) return val;
+    var t = typeof val;
+    if (t === 'function') throw new TypeError('structuredClone: function not cloneable');
+    if (t === 'symbol') throw new TypeError('structuredClone: symbol not cloneable');
+    if (t !== 'object') return val; // primitive（number/string/boolean/undefined/bigint）原样
+    if (seen.has(val)) return seen.get(val); // 循环引用 → 已记忆的克隆
+    if (val instanceof Date) { var d = new Date(val.getTime()); seen.set(val, d); return d; }
+    if (val instanceof RegExp) { var r = new RegExp(val.source, val.flags); seen.set(val, r); return r; }
+    if (val instanceof Map) {
+      var m = new Map(); seen.set(val, m);
+      val.forEach(function (v, k) { m.set(_zw_structured_clone(k, seen), _zw_structured_clone(v, seen)); });
+      return m;
+    }
+    if (val instanceof Set) {
+      var st = new Set(); seen.set(val, st);
+      val.forEach(function (v) { st.add(_zw_structured_clone(v, seen)); });
+      return st;
+    }
+    if (val instanceof ArrayBuffer) {
+      var ab = new ArrayBuffer(val.byteLength); new Uint8Array(ab).set(new Uint8Array(val));
+      seen.set(val, ab); return ab;
+    }
+    if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(val)) {
+      var ta = new val.constructor(val); // TypedArray/DataView 拷贝构造
+      seen.set(val, ta); return ta;
+    }
+    var out = Array.isArray(val) ? [] : Object.create(Object.getPrototypeOf(val));
+    seen.set(val, out); // 先记忆，再递归子属性（解循环）
+    var keys = Object.keys(val);
+    for (var i = 0; i < keys.length; i++) out[keys[i]] = _zw_structured_clone(val[keys[i]], seen);
+    return out;
+  }
+  globalThis.structuredClone = globalThis.structuredClone || function structuredClone(value) {
+    return _zw_structured_clone(value, typeof WeakMap !== 'undefined' ? new WeakMap() : new Map());
+  };
+
   globalThis.history = {
     length: 1,
     state: null,
