@@ -7061,3 +7061,89 @@ fn test_dom_parser_r2790() {
     // mimeType 记录。
     assert_eq!(sandbox.execute("__d.mimeType").unwrap().value, "text/html");
 }
+
+#[test]
+fn test_file_reader_r2791() {
+    // R2791：FileReader（异步读 Blob，文件上传/图片预览高频）。纯 JS builds on Blob.text()/arrayBuffer()
+    //（R2789）+ btoa（R2770）。readAsText/ArrayBuffer/BinaryString/DataURL + abort + onload/onloadend/
+    // onloadstart 事件 + result/readyState。**readAsDataURL 为 Blob 未覆盖唯一能力**。
+    // **已知限制**：loadstart 同步；abort best-effort（不中断 in-flight Promise）；无 addEventListener。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // typeof + 常量（EMPTY/LOADING/DONE，静态 + 原型）。
+    assert_eq!(sandbox.execute("typeof FileReader").unwrap().value, "function");
+    assert_eq!(sandbox.execute("String(FileReader.EMPTY)").unwrap().value, "0");
+    assert_eq!(sandbox.execute("String(FileReader.DONE)").unwrap().value, "2");
+    // readAsText：result=Blob 文本；onload/onloadend 在 execute 末 checkpoint drain → 下 execute 可读。
+    sandbox
+        .execute(
+            "globalThis.__r = '(pending)'; globalThis.__st = [];\
+             var rd = new FileReader();\
+             rd.onloadstart = function(){ globalThis.__st.push('start'); };\
+             rd.onload = function(e){ globalThis.__st.push('load'); globalThis.__r = e.target.result; };\
+             rd.onloadend = function(){ globalThis.__st.push('end'); };\
+             rd.readAsText(new Blob(['hello',' ','world']));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__r)").unwrap().value, "hello world");
+    assert_eq!(
+        sandbox.execute("globalThis.__st.join(',')").unwrap().value,
+        "start,load,end"
+    );
+    assert_eq!(sandbox.execute("String(rd.readyState)").unwrap().value, "2"); // DONE
+    assert_eq!(sandbox.execute("String(rd.result)").unwrap().value, "hello world");
+    // readAsArrayBuffer：result=Uint8Array（'AB' → [65,66]）。
+    sandbox
+        .execute(
+            "globalThis.__ab = '(pending)';\
+             var rd2 = new FileReader();\
+             rd2.onload = function(e){ globalThis.__ab = e.target.result.length + ':' + e.target.result[0]; };\
+             rd2.readAsArrayBuffer(new Blob(['AB']));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__ab)").unwrap().value, "2:65");
+    // readAsDataURL：data:<type>;base64,<b64>（'hi' → btoa='aGk='）。
+    sandbox
+        .execute(
+            "globalThis.__url = '(pending)';\
+             var rd3 = new FileReader();\
+             rd3.onload = function(e){ globalThis.__url = e.target.result; };\
+             rd3.readAsDataURL(new Blob(['hi'], {type:'text/plain'}));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__url)").unwrap().value,
+        "data:text/plain;base64,aGk="
+    );
+    // readAsBinaryString：逐字节 Latin-1 串（'AB' → 'AB'）。
+    sandbox
+        .execute(
+            "globalThis.__bs = '(pending)';\
+             var rd4 = new FileReader();\
+             rd4.onload = function(e){ globalThis.__bs = e.target.result; };\
+             rd4.readAsBinaryString(new Blob(['AB']));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__bs)").unwrap().value, "AB");
+    // abort：best-effort——在 LOADING（readAsText Promise 未 drain）时 abort → 派发 abort + loadend。
+    // 注：本 execute 内 loadstart 已同步派发，abort 置 DONE；readAsText 的 Promise 仍会在 checkpoint
+    // drain（best-effort，不中断）——测 abort 本身 no-throw + readyState=DONE。
+    sandbox
+        .execute(
+            "globalThis.__ab_st = '(pending)';\
+             var rd5 = new FileReader();\
+             rd5.onabort = function(){ globalThis.__ab_st = 'aborted'; };\
+             rd5.readAsText(new Blob(['x']));\
+             rd5.abort();\
+             globalThis.__ab_ready = rd5.readyState;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__ab_ready)").unwrap().value, "2");
+    assert_eq!(sandbox.execute("String(globalThis.__ab_st)").unwrap().value, "aborted");
+}

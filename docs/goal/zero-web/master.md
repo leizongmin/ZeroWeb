@@ -2091,6 +2091,23 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a FileReader（本轮 R2791，缺失 Web API 续）
+
+承接 R2790（DOMParser）。续缺失 Web API——land **FileReader**（异步读 Blob，文件上传 / 图片预览 / data URL 高频）。纯 JS，builds on `Blob.text()`/`arrayBuffer()`（R2789）+ `btoa`（R2770）。**readAsDataURL 为 Blob 未覆盖的唯一能力**（图片预览 `img.src = reader.result` 高频）。
+
+- **方法**：`readAsText` / `readAsArrayBuffer` / `readAsBinaryString` / `readAsDataURL`（逐字节 Latin-1 → `btoa` → `data:<type>;base64,<b64>`）+ `abort`。
+- **事件/状态**：`onloadstart`/`onprogress`/`onload`/`onloadend`/`onerror`/`onabort` handler 属性 + `result`/`error`/`readyState` + `EMPTY`/`LOADING`/`DONE` 常量（静态 + 原型）。事件经 microtask：readyState=LOADING（同步）+ loadstart（同步）→ Blob Promise resolve（execute 末 checkpoint drain）→ result 赋值 + readyState=DONE → progress + load + loadend。ProgressEvent-like `{type,target,lengthComputable,loaded,total}`。
+- **已知限制（记录）**：① loadstart 同步派发（spec 为 task 异步，多数代码只关心 load/loadend，零影响）；② abort best-effort——置 DONE + 派发 abort/loadend，**不中断 in-flight Blob Promise**（纯 JS 无取消原语，Promise 仍 drain）；③ encoding 参数忽略（恒 UTF-8，同 TextDecoder 限制）；④ 不扩展 EventTarget（仅 onXxx handler，非 addEventListener——覆盖 `reader.onload = ...` 主流用法）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`FileReader`（constructor + 常量 + `_fire`/`_start`/`_done`/`_fail` + 4 readAs* + abort），置于 Blob 后。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_file_reader_r2791`（typeof+常量 / readAsText result+start·load·end 事件序+readyState+result / readAsArrayBuffer 字节 / readAsDataURL `data:..;base64,aGk=` / readAsBinaryString / abort no-throw+DONE+onabort）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13419 passed / 0 failed / 74 ignored**，13418+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 global）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 global（FileReader），不改既有 API；② 纯 JS 无副作用（仅消费 Blob Promise + 派发 handler）；③ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义；④ 事件经既有 microtask checkpoint，无新调度路径。
+
 ### P1a DOMParser（本轮 R2790，缺失 Web API 续）
 
 承接 R2789（Blob）。续缺失 Web API——land **DOMParser**（解析 HTML/XML 串为只读 Document，模板引擎 / sanitizer / RSS / 服务端 HTML 高频）。**R2789 CONTINUE 指定项**，本轮验证可行并实现。

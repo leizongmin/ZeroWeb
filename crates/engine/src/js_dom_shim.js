@@ -1245,6 +1245,111 @@
     }
   };
 
+  // FileReader——异步读 Blob（文件上传 / 图片预览 / data URL 高频）。纯 JS，builds on Blob.text()/
+  // arrayBuffer()（R2789）+ btoa（R2770）。**readAsDataURL 为 Blob 未覆盖的唯一能力**（图片预览
+  // `img.src = reader.result` 高频）。事件经 microtask：readyState=LOADING（同步）→ loadstart（同步）
+  // → Blob Promise resolve（execute 末 checkpoint drain）→ result 赋值 + readyState=DONE → load + loadend。
+  // **已知限制（记录）**：① loadstart 同步派发（spec 为 task 异步，多数代码只关心 load/loadend，零影响）；
+  //   ② 无真 abort（abort 仅置 readyState=DONE + 派发 abort/loadend，不中断已 in-flight 的 Blob Promise——
+  //   纯 JS 无取消原语，best-effort）；③ encoding 参数忽略（恒 UTF-8，同 TextDecoder 限制）；
+  //   ④ 不扩展 EventTarget（仅 onXxx handler 属性，非 addEventListener——覆盖 `reader.onload = ...` 主流用法）；
+  //   ⑤ readAsDataURL 对非 Latin-1 字节按逐字节 Latin-1→btoa（与 spec 一致：base64 编码原始字节）。
+  function FileReader() {
+    this.readyState = 0; // EMPTY
+    this.result = null;
+    this.error = null;
+    this.onloadstart = null;
+    this.onprogress = null;
+    this.onload = null;
+    this.onabort = null;
+    this.onerror = null;
+    this.onloadend = null;
+  }
+  FileReader.EMPTY = 0;
+  FileReader.LOADING = 1;
+  FileReader.DONE = 2;
+  FileReader.prototype.EMPTY = 0;
+  FileReader.prototype.LOADING = 1;
+  FileReader.prototype.DONE = 2;
+  // 派发命名事件：构造 ProgressEvent-like {type,target,lengthComputable,loaded,total}，调 onXxx handler。
+  FileReader.prototype._fire = function (type, loaded, total) {
+    var ev = {
+      type: type,
+      target: this,
+      lengthComputable: total != null && total >= 0,
+      loaded: loaded || 0,
+      total: total != null ? total : 0
+    };
+    var h = this['on' + type];
+    if (typeof h === 'function') {
+      try { h.call(this, ev); } catch (_e) { /* handler 异常不中断读取流程 */ }
+    }
+  };
+  // 读取启动：readyState=LOADING + 派发 loadstart（同步）。
+  FileReader.prototype._start = function (blob) {
+    this.readyState = 1;
+    this.result = null;
+    this.error = null;
+    this._total = (blob && blob.size != null) ? blob.size : 0;
+    this._fire('loadstart', 0, this._total);
+  };
+  // 读取成功收尾：result 赋值 + readyState=DONE + 派发 load + loadend。
+  FileReader.prototype._done = function (result) {
+    this.readyState = 2;
+    this.result = result;
+    this._fire('progress', this._total, this._total);
+    this._fire('load', this._total, this._total);
+    this._fire('loadend', this._total, this._total);
+  };
+  // 读取失败收尾：error 赋值 + readyState=DONE + 派发 error + loadend。
+  FileReader.prototype._fail = function (err) {
+    this.readyState = 2;
+    this.error = err;
+    this._fire('error', 0, this._total);
+    this._fire('loadend', 0, this._total);
+  };
+  FileReader.prototype.readAsText = function (blob /*, encoding */) {
+    var self = this;
+    this._start(blob);
+    blob.text().then(function (s) { self._done(s); }, function (e) { self._fail(e); });
+    return; // void（spec）
+  };
+  FileReader.prototype.readAsArrayBuffer = function (blob) {
+    var self = this;
+    this._start(blob);
+    blob.arrayBuffer().then(function (a) { self._done(a); }, function (e) { self._fail(e); });
+  };
+  // readAsBinaryString：逐字节 Latin-1 串（spec 保留方法，已弃用但仍可用）。
+  FileReader.prototype.readAsBinaryString = function (blob) {
+    var self = this;
+    this._start(blob);
+    blob.arrayBuffer().then(function (buf) {
+      var s = '';
+      for (var i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
+      self._done(s);
+    }, function (e) { self._fail(e); });
+  };
+  // readAsDataURL：data:<type>;base64,<b64>——逐字节 Latin-1 → btoa（base64 编码原始字节，spec 一致）。
+  FileReader.prototype.readAsDataURL = function (blob) {
+    var self = this;
+    this._start(blob);
+    blob.arrayBuffer().then(function (buf) {
+      var s = '';
+      for (var i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
+      var type = (blob && blob.type) || '';
+      self._done('data:' + type + ';base64,' + btoa(s));
+    }, function (e) { self._fail(e); });
+  };
+  // abort：best-effort——仅 EMPTY/DONE 时 no-op；否则置 DONE + 派发 abort + loadend（不中断 in-flight Promise）。
+  FileReader.prototype.abort = function () {
+    if (this.readyState === 0 || this.readyState === 2) return;
+    this.readyState = 2;
+    this.result = null;
+    this._fire('abort', 0, this._total);
+    this._fire('loadend', 0, this._total);
+  };
+  globalThis.FileReader = globalThis.FileReader || FileReader;
+
   // DOMParser——解析 HTML/XML 串为只读 Document（模板引擎 / sanitizer / RSS / 服务端 HTML 高频）。
   // 委托 host `__zw_parse_html_query(html, selector, all)`（dom::parse_html + selector 引擎），返 JSON
   // 元素快照数组；shim 包成 `_zwParsedDoc`（Document-like）+ `_zwParseEl`（只读 element-proxy）。
