@@ -11181,3 +11181,89 @@ fn test_constraint_validation_r2825() {
         "per-element 隔离：#j 仍 valid"
     );
 }
+
+#[test]
+fn test_exec_command_and_select_r2826() {
+    // R2826：legacy 编辑/剪贴板命令表面——document.execCommand / queryCommand* / element.select()。
+    // 旧 copy 按钮 `el.select(); document.execCommand('copy')` + clipboard.js feature-detect
+    // `queryCommandSupported('copy')` + contentEditable 编辑器 format 命令。headless 无真剪贴板/格式化
+    // → permissive stub（execCommand→true / queryCommandSupported/Enabled→true / queryCommandValue→'' / select→undefined）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id='i' value='txt'></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // execCommand / queryCommand* permissive stubs（legacy copy + feature-detect 不抛）。
+    sandbox
+        .execute(
+            "globalThis.__copy = document.execCommand('copy');\
+             globalThis.__bold = document.execCommand('bold');\
+             globalThis.__sup = document.queryCommandSupported('copy');\
+             globalThis.__en = document.queryCommandEnabled('copy');\
+             globalThis.__val = document.queryCommandValue('fontSize');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__copy)").unwrap().value,
+        "true",
+        "execCommand('copy')→true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__bold)").unwrap().value,
+        "true",
+        "execCommand('bold')→true（format 不真应用，permissive）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sup)").unwrap().value,
+        "true",
+        "queryCommandSupported('copy')→true（feature-detect 通过）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__en)").unwrap().value,
+        "true",
+        "queryCommandEnabled→true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__val)").unwrap().value,
+        "",
+        "queryCommandValue→''"
+    );
+
+    // element.select() no-op 返 undefined（legacy copy 模式配对，不抛）。
+    sandbox
+        .execute("globalThis.__sel = document.querySelector('#i').select();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sel)").unwrap().value,
+        "undefined",
+        "element.select() no-op 返 undefined"
+    );
+
+    // 完整 legacy copy 模式不抛：select + execCommand('copy')。
+    sandbox
+        .execute(
+            "globalThis.__ok = 'no';\
+             try {\
+               var el = document.querySelector('#i');\
+               el.select();\
+               document.execCommand('copy');\
+               globalThis.__ok = 'yes';\
+             } catch (e) { globalThis.__ok = 'err:' + e.message; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ok)").unwrap().value,
+        "yes",
+        "legacy copy 模式（select+execCommand('copy')）不抛"
+    );
+}

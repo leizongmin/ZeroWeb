@@ -3259,6 +3259,12 @@
         if (prop === 'validity') return _validityState(key);
         if (prop === 'validationMessage') return _customValidity[key] != null ? _customValidity[key] : '';
         if (prop === 'willValidate') return true;
+        // `el.select()`（HTMLInputElement/TextArea，R2826）——选中文本（legacy copy 模式
+        // `el.select(); document.execCommand('copy')` 配对）。headless 无真文本选择 → no-op 返 undefined
+        //（与 execCommand('copy') permissive stub 一致——不真选/不真复制，modern 路径走 navigator.clipboard）。
+        if (prop === 'select') {
+          return function() { return undefined; };
+        }
         // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：
         // create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。sel-based 源完整；
         // handle 源 tag/attrs 受限（无 get_tag/attr_names handle 变体，best-effort）。
@@ -4845,6 +4851,15 @@
       // 构造器接收 (type, options)；createEvent 返**空 type** 事件（initEvent/initCustomEvent 设 type）。
       return new Ctor('');
     },
+    // execCommand / queryCommand*（R2826）——legacy 编辑/剪贴板命令表面（旧 copy 按钮
+    // `el.select(); document.execCommand('copy')` / clipboard.js feature-detect `queryCommandSupported('copy')`
+    // / contentEditable 编辑器 format 命令）。headless 无真剪贴板/格式化 → permissive stub：
+    // execCommand 返 true（copy/cut 不真写剪贴板——modern 路径走 navigator.clipboard；format 命令不真应用）；
+    // queryCommandSupported/Enabled 返 true（feature-detect 通过）；queryCommandValue 返 ''。
+    execCommand: function (_commandId, _showUI, _value) { return true; },
+    queryCommandSupported: function (_commandId) { return true; },
+    queryCommandEnabled: function (_commandId) { return true; },
+    queryCommandValue: function (_commandId) { return ''; },
     // `document.createTreeWalker(root, whatToShow, filter)` / `createNodeIterator(...)`——DOM 子树遍历器
     //（库 / sanitizer / a11y tree walker 高频）。whatToShow 掩码 + acceptNode FILTER_ACCEPT/REJECT/SKIP。
     // 经 `_makeNodeWalker`（eager pre-order via childNodes 递归）。两者共用工厂（接口同：nextNode/previousNode）。

@@ -2091,6 +2091,27 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a execCommand + queryCommand\* + select()（本轮 R2826，缺失 Web API 续）
+
+承接 R2825（Constraint Validation）。land **legacy 编辑/剪贴板命令表面**——`document.execCommand` / `queryCommandSupported/Enabled/Value` / `element.select()`。旧 copy 按钮 `el.select(); document.execCommand('copy')`（navigator.clipboard 前主流，clipboard.js 等仍作 fallback）+ clipboard.js feature-detect `queryCommandSupported('copy')` + contentEditable 编辑器（TinyMCE/CKEditor）format 命令高频。probe 确认 shim 0 实现。**为何 tractable**：headless 无真剪贴板/格式化 → permissive stub（execCommand→true / queryCommandSupported/Enabled→true / queryCommandValue→'' / select→undefined），纯 JS 常量返，零 host 回调。
+
+- **`execCommand(cmd, showUI?, value?)`** → `true`：copy/cut 不真写剪贴板（modern 路径走 navigator.clipboard R2817）；format 命令（bold/italic/...）不真应用（contentEditable 无真选区/格式）。让 legacy 代码 feature-detect + 调用不抛。
+- **`queryCommandSupported(cmd)` / `queryCommandEnabled(cmd)`** → `true`：clipboard.js feature-detect 通过。**`queryCommandValue(cmd)`** → `''`。
+- **`element.select()`** → `undefined` no-op：legacy copy 模式 `select()+execCommand('copy')` 配对，headless 无真文本选择。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | document literal createEvent 后加 execCommand/queryCommandSupported/queryCommandEnabled/queryCommandValue（permissive stub）+ element get-trap willValidate 后加 `select`（no-op 返 undefined）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_exec_command_and_select_r2826`（execCommand('copy'/'bold')→true + queryCommandSupported/Enabled→true + queryCommandValue→'' + element.select()→undefined + 完整 legacy copy 模式 select+execCommand 不抛）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13454 passed / 0 failed / 74 ignored**，13453+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新增 document 方法 + element 方法（additive，不改既有）；② 纯 JS permissive stub（零 host 回调、零渲染副作用——execCommand/select 不触布局/剪贴板）；③ 让 legacy copy 模式 + contentEditable 编辑器 feature-detect 通过 + 调用不抛（permissive，documented headless 限制）。
+
+**已知限制（记录）**：① execCommand copy/cut 不真写剪贴板（modern 路径 navigator.clipboard）；② format 命令（bold/italic/createLink 等）不真应用（contentEditable 无真选区/格式状态）；③ select() 不真选文本（headless 无真选区）；④ queryCommandState（编辑器读格式状态）未实现（深，需真选区 + 格式状态），返值缺失但 queryCommandValue 返 '' 覆盖读路径。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面趋近穷尽——剩余多为深项/host-layer：`document.elementFromPoint`（layout rect 全量 hit-test）/ Element.animate（Web Animations）/ customElements upgrade/lifecycle（element proxy 接 ctor）/ Shadow DOM attachShadow / node.normalize（罕见 + 架构重）/ fetch 非 GET（net 层，跳过）；可选窄项 getClientRects（getBoundingClientRect 已覆，API 完成度低增量）/ scrollIntoViewIfNeeded（WebKit）/ pointer lock；rendering-compat 侧续降频守成（held baseline 13454 全绿）。
+
 ### P1a Constraint Validation API（本轮 R2825，缺失 Web API 续）
 
 承接 R2824（Page Visibility）。**pivot 自 createEvent**：probe 发现 `document.createEvent` + `initEvent` + `initCustomEvent` **已 land**（R2779/R2811 区，type→ctor 全 map），上一轮 CONTINUE stale。改 land **Constraint Validation API**——表单校验库高频（checkValidity gate submit / setCustomValidity 自定义错误 / validity.valid 读 / validationMessage 显示）。probe 确认 shim 0 实现（checkValidity/reportValidity/setCustomValidity/validity/validationMessage 全缺）。
