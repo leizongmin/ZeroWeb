@@ -223,10 +223,10 @@
 
 - [ ] 所有现有测试持续全绿（`cargo test` 零失败），包含移除 `#[ignore]` 后的全部测试
 - [ ] **真实网站测试保留 `#[ignore]`**：`tests/integration/src/real_website_compat.rs` 中的真实网站兼容性测试因本地网络不稳定，保留 `#[ignore]` 标记，不计入本目标通过率统计。其余所有测试零 `#[ignore]`
-- [ ] 所有新增渲染修复必须有对应单元测试覆盖
+- [x] 所有新增渲染修复必须有对应单元测试覆盖，**且把对应的上游 WPT reftest 用例导入常驻断言集（测试资产化，2026-08-06 落地）**：`make import-wpt TEST=<wpt 路径> REF=<ref 路径> [NOTE="R21xx 备注"]` —— 文件本体进入 `tests/wpt-runner/wpt-data/`（独立 repo），条目记入 `tests/wpt-runner/imported-tests.txt` 账本（随修复提交），manifest 自动重新生成
 - [ ] `cargo build` 零错误、`cargo clippy` 零警告
-- [ ] Reftest 通过率报告持久化到 `docs/goal/rendering-compat/evidence/` 目录
-- [ ] 每轮执行的 reftest 通过率变化可追溯（有历史记录）
+- [x] Reftest 通过率报告持久化到 `docs/goal/rendering-compat/evidence/wpt-trends/`（`scripts/record-wpt-trend.sh` → `trend.csv` 绝对数 + JSON 快照；本地 `make reftest-trend`，每周 CI 自动记录，2026-08-06 落地）
+- [x] 每轮执行的 reftest 通过率变化可追溯（`evidence/wpt-trends/trend.csv` 历史记录，含日期/模式/绝对数/git_sha，2026-08-06 落地）
 
 **状态**：详见 dc-progress.md
 

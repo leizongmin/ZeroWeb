@@ -1,0 +1,14 @@
+# WPT Reftest 常驻断言集账本（测试资产化）
+#
+# 用途：每次修复渲染兼容性问题时，把对应的上游 WPT reftest 用例「导入」为
+# 常驻断言集——文件本体进入 tests/wpt-runner/wpt-data/（独立 repo，
+# leizongmin/zeroweb-wpt-data），本账本记录导入条目作为审计线索，
+# 保证 wpt-data 被 rm -rf 重拉后资产化不丢。
+#
+# 操作入口：make import-wpt PATH=<test> REF=<ref>（或直接
+#   bash tests/wpt-runner/scripts/import-wpt-reftests.sh --add <test> <ref>）
+# 政策：见 docs/goal/rendering-compat.md「测试资产化」节。
+#
+# 格式（空格分隔，# 开头为注释）：
+#   <test_path> <ref_path> <relation> <导入日期> <关联修复/备注>
+css/CSS2/text/text-align-white-space-001.xht css/CSS2/text/text-align-white-space-001-ref.xht == 2026-08-07 P1 落地验证

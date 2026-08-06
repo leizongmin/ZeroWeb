@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle capture-oracle product-smoke product-smoke-legacy
+.PHONY: setup-rusty-v8 fetch-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle capture-oracle product-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -131,6 +131,25 @@ product-smoke: target/test-guard
 	# DC-13 最窄 viewport（320px）结构门——守 R1502（split-gate article/disqus Flex-兄弟位移）+
 	# R1503（sub-pixel sliver 高度过滤）。@320 比 @375 更逼换行，曾暴露 article/disqus 32400px² 重叠。
 	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke apps/browser/assets/morning-work/article.html --base-dir apps/browser/assets/morning-work --width 320 --struct-check --expect-class article:1
+
+# 测试资产化（P1）：把单个上游 WPT reftest 用例导入常驻断言集。
+# 文件本体进入 wpt-data/（独立 repo），条目追加到 imported-tests.txt 账本，
+# manifest 重新生成。每次渲染兼容性修复都应附带导入对应用例（见
+# docs/goal/rendering-compat.md DC-7「测试资产化」）。
+# 用法: make import-wpt TEST=css/CSS2/text/text-align-001.xht REF=css/CSS2/text/text-align-001-ref.xht NOTE="R21xx 修复"
+import-wpt: fetch-wpt-data
+	bash tests/wpt-runner/scripts/import-wpt-reftests.sh --add $(TEST) $(REF) $(if $(NOTE),--note "$(NOTE)")
+
+# WPT 趋势基线（P2）：跑上游 reftest 全量，把绝对数追加到
+# docs/goal/rendering-compat/evidence/wpt-trends/trend.csv（test-guard 包裹）。
+# oracle 变体记录 DC-14 credible pass（需先 make capture-oracle 生成 oracle-shots）。
+# 用法: make reftest-trend [NOTE="R21xx 修复后"]
+#       make reftest-trend-oracle [NOTE="..."]
+reftest-trend: fetch-wpt-data target/test-guard
+	./target/test-guard -- bash scripts/record-wpt-trend.sh $(if $(NOTE),--note "$(NOTE)")
+
+reftest-trend-oracle: fetch-wpt-data target/test-guard
+	./target/test-guard -- bash scripts/record-wpt-trend.sh --oracle $(if $(NOTE),--note "$(NOTE)")
 
 # Legacy Static Web smoke（DC-13，goal rendering-compat.md line 316）：跑 20 页
 # HTML 3.2/4 + CSS1/2 静态 fixture，每页 chromium oracle vs ZeroWeb CPU diff%。

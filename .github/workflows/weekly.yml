@@ -280,3 +280,79 @@ jobs:
           files: |
             release/*.zip
             release/SHA256SUMS.txt
+
+  # WPT 趋势基线（调研 P2）：每周记录上游 reftest 绝对数 →
+  # docs/goal/rendering-compat/evidence/wpt-trends/trend.csv 并提交回 main。
+  # 口径：同源绝对数（自一致性参考，非达标依据；oracle 口径需本地 oracle-shots）。
+  reftest-trend:
+    needs: changes
+    if: needs.changes.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Determine rusty_v8 version
+        shell: bash
+        run: |
+          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
+
+      - name: Cache rusty_v8
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/zero-web/rusty_v8
+          key: rusty_v8-${{ env.RUSTY_V8_VERSION }}-x86_64-unknown-linux-gnu
+
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Download rusty_v8 archive
+        shell: bash
+        run: bash scripts/download-rusty-v8.sh
+
+      - name: Fetch wpt-data
+        run: make fetch-wpt-data
+
+      - name: Build zero-wpt-runner (release)
+        run: cargo build --release --bin zero-wpt-runner
+
+      - name: Record WPT trend (upstream absolute counts)
+        run: bash scripts/record-wpt-trend.sh
+        continue-on-error: true
+
+      - name: Upload trend report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wpt-trend
+          path: docs/goal/rendering-compat/evidence/wpt-trends/
+          retention-days: 14
+
+      - name: Commit trend data back to main
+        if: success()
+        run: |
+          git config user.name "zero-web-bot"
+          git config user.email "zero-web-bot@users.noreply.github.com"
+          git add docs/goal/rendering-compat/evidence/wpt-trends/
+          if git diff --cached --quiet; then
+            echo "No trend changes to commit."
+          else
+            git commit -m "chore(wpt): 更新 WPT 趋势基线（绝对数，weekly cron）"
+            git push origin HEAD:main
+            echo "Trend data committed and pushed."
+          fi
