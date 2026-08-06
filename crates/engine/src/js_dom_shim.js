@@ -14,6 +14,11 @@
   // 同脚本内连续 add 末次覆盖前次（`add('a');add('b')` 丢 'a'）。缓存累积全量，末次 SetAttr 携带
   // 正确值；className set 同步更新缓存保证一致。导航经 `__zw_reset_form_state` 清空。
   var _classCache = {};
+  // Constraint Validation（R2825）：per-element-key 自定义校验消息（setCustomValidity 设置）。
+  // 空串/未设=valid；非空=customError + validity.valid=false + validationMessage=msg。原生约束
+  // （required/pattern/type 等）headless 不强制（permissive valid）。同 _inputValues/_classCache 经
+  // `__zw_reset_form_state` 清空防跨页 stale。
+  var _customValidity = {};
   // reflected 字符串/数值属性（title/lang/dir/tabindex）per-element-key 缓存。同 _inputValues/_classCache
   // 动机——`__zw_set_attr` 仅入队 mutation（异步 apply），同步 set→get 往返须客户端缓存（get 优先读缓存）。
   // 值结构：{ title?: string, lang?: string, dir?: string, tabindex?: number }。
@@ -577,7 +582,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
@@ -2227,6 +2232,19 @@
     return handle ? ('@' + handle) : sel;
   }
 
+  // Constraint Validation ValidityState（R2825）。customError 由 setCustomValidity 跟踪（非空消息→invalid）；
+  // 原生约束（valueMissing/typeMismatch/patternMismatch/tooLong/tooShort/rangeUnderflow/rangeOverflow/
+  // stepMismatch/badInput）headless 不强制，恒 false（permissive valid——表单校验库 checkValidity 走 valid 路径）。
+  function _validityState(key) {
+    var hasCustom = _customValidity[key] != null && _customValidity[key] !== '';
+    return {
+      valueMissing: false, typeMismatch: false, patternMismatch: false,
+      tooLong: false, tooShort: false, rangeUnderflow: false, rangeOverflow: false,
+      stepMismatch: false, badInput: false, customError: hasCustom,
+      valid: !hasCustom,
+    };
+  }
+
   // 读元素当前 class（缓存优先，lazy-init 自 snapshot）。className get 与 classList 共用，
   // 使同脚本内连续 class 操作看到累积状态而非各自读 stale snapshot。
   function _readClass(key, sel, handle) {
@@ -3219,6 +3237,28 @@
             return _dispatchWithBubble(key, sel, handle, ev);
           };
         }
+        // Constraint Validation API（R2825）——表单校验库（checkValidity gate submit / setCustomValidity
+        // 自定义错误 / validity.valid 读 / validationMessage 显示）高频。customError 由 _customValidity 跟踪；
+        // 原生约束 headless 不强制（permissive valid）。checkValidity/reportValidity invalid 时派发 'invalid'
+        // 事件（cancelable，非 bubble，经 _dispatchWithBubble）。
+        if (prop === 'checkValidity' || prop === 'reportValidity') {
+          return function() {
+            var v = _validityState(key);
+            if (!v.valid) {
+              _dispatchWithBubble(key, sel, handle, _makeEvent('invalid', { cancelable: true, bubbles: false }));
+            }
+            return v.valid;
+          };
+        }
+        if (prop === 'setCustomValidity') {
+          return function(msg) {
+            _customValidity[key] = (msg == null) ? '' : String(msg);
+            return undefined;
+          };
+        }
+        if (prop === 'validity') return _validityState(key);
+        if (prop === 'validationMessage') return _customValidity[key] != null ? _customValidity[key] : '';
+        if (prop === 'willValidate') return true;
         // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：
         // create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。sel-based 源完整；
         // handle 源 tag/attrs 受限（无 get_tag/attr_names handle 变体，best-effort）。

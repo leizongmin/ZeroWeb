@@ -2091,6 +2091,28 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a Constraint Validation API（本轮 R2825，缺失 Web API 续）
+
+承接 R2824（Page Visibility）。**pivot 自 createEvent**：probe 发现 `document.createEvent` + `initEvent` + `initCustomEvent` **已 land**（R2779/R2811 区，type→ctor 全 map），上一轮 CONTINUE stale。改 land **Constraint Validation API**——表单校验库高频（checkValidity gate submit / setCustomValidity 自定义错误 / validity.valid 读 / validationMessage 显示）。probe 确认 shim 0 实现（checkValidity/reportValidity/setCustomValidity/validity/validationMessage 全缺）。
+
+- **`validity`**（getter）：返 ValidityState——customError 由 `_customValidity[key]` 跟踪（非空消息→customError=true/valid=false），**原生约束**（valueMissing/typeMismatch/patternMismatch/tooLong/tooShort/rangeUnderflow/rangeOverflow/stepMismatch/badInput）headless **不强制恒 false**（permissive valid——表单校验库 checkValidity 走 valid 路径不抛）。
+- **`setCustomValidity(msg)`**：`_customValidity[key]=String(msg)`（空串清除）；**`validationMessage`**（getter）= 消息或 ''；**`willValidate`** = true。
+- **`checkValidity()` / `reportValidity()`**：返 `validity.valid`；invalid 时派发 **'invalid'** 事件（cancelable，非 bubble，经 `_dispatchWithBubble`，复用 R2779 Event 基建）；reportValidity 同 checkValidity（headless 无 UI 弹出）。
+- **per-element 隔离**：`_customValidity[key]` per `_elKey(sel,handle)`，导航经 `__zw_reset_form_state` 清空（同 _inputValues/_classCache）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_customValidity` map（+ reset join）+ `_validityState(key)` helper + element get-trap click 后加 checkValidity/reportValidity（invalid 派发 'invalid' 事件）/setCustomValidity/validity/validationMessage/willValidate。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_constraint_validation_r2825`（默认 valid（validity.valid/customError/msg/checkValidity/willValidate）+ setCustomValidity('err')→invalid（valid/customError/msg/checkValidity）+ setCustomValidity('') 恢复 + 'invalid' 事件 checkValidity 失败时派发 + per-element 隔离 #j 不受 #i 影响）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13453 passed / 0 failed / 74 ignored**，13452+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新增方法/getter（additive，不改既有 click/dispatch）；② customError 纯 JS state（零 host 回调、零渲染副作用）；③ 'invalid' 事件复用 `_dispatchWithBubble` + R2779 `_makeEvent`（零新机制）；④ per-element `_customValidity[key]` 经 `__zw_reset_form_state` 清空（同既有 form state 模式）。
+
+**已知限制（记录）**：① 原生约束（required/pattern/type/min/max/step 等）不强制——invalid 仅 customError 触发（headless 无真校验逻辑，permissive valid，documented）；② reportValidity 不弹 UI（headless 无 native 弹窗）；③ preventDefault-on-invalid → checkValidity 返 true 未实现（罕见，返 valid 非 defaultPrevented 语义）。
+
+**下一步**：续缺失 Web API——剩余多为深项/host-layer：`document.elementFromPoint`（需 layout rect 全量 hit-test）/ Element.animate（Web Animations，深）/ customElements upgrade/lifecycle（element proxy 接 ctor，深）/ node.normalize（罕见 + 架构重，defer）/ fetch 非 GET method（net 层，跳过）；可选小项 `HTMLInputElement.select()`（no-op stub）/ pointer lock；rendering-compat 侧续降频守成（held baseline 13453 全绿）。
+
 ### P1a Page Visibility + 焦点状态（本轮 R2824，缺失 Web API 续）
 
 承接 R2823（CharacterData）。land **Page Visibility API + 焦点状态表面**——`document.hidden` / `visibilityState` / `hasFocus()` + webkit 前缀 legacy。analytics/RUM 高频（GA 核心：读 `visibilityState`/`hidden` 判页面活跃度调整上报；`hasFocus` gate 操作；visibilitychange 监听）。**probe 确认 shim 0 实现**（activeElement/focus/blur 已 land R2814 区，但 visibility + hasFocus 全缺）。**为何 tractable**：headless 页面恒「可见 + 已聚焦」→ 纯常量 getter，零 host 回调。

@@ -11047,3 +11047,137 @@ fn test_page_visibility_and_focus_r2824() {
         "document.webkitVisibilityState === 'visible'（legacy 前缀）"
     );
 }
+
+#[test]
+fn test_constraint_validation_r2825() {
+    // R2825：Constraint Validation API——checkValidity/reportValidity/setCustomValidity/validity/
+    // validationMessage/willValidate。表单校验库高频（checkValidity gate submit / setCustomValidity
+    // 自定义错误 / validity.valid 读）。customError 由 setCustomValidity 跟踪；原生约束 headless 不强制
+    // （permissive valid）。checkValidity invalid 时派发 'invalid' 事件。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id='i'><input id='j'></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 默认 valid：validity.valid=true / customError=false / validationMessage='' / checkValidity=true / willValidate=true。
+    sandbox
+        .execute(
+            "globalThis.__i = document.querySelector('#i');\
+             globalThis.__defValid = globalThis.__i.validity.valid;\
+             globalThis.__defCustom = globalThis.__i.validity.customError;\
+             globalThis.__defMsg = globalThis.__i.validationMessage;\
+             globalThis.__defCv = globalThis.__i.checkValidity();\
+             globalThis.__wv = globalThis.__i.willValidate;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__defValid)").unwrap().value,
+        "true",
+        "默认 validity.valid=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__defCustom)").unwrap().value,
+        "false",
+        "默认 customError=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__defMsg)").unwrap().value,
+        "",
+        "默认 validationMessage=''"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__defCv)").unwrap().value,
+        "true",
+        "默认 checkValidity()=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__wv)").unwrap().value,
+        "true",
+        "willValidate=true"
+    );
+
+    // setCustomValidity('err') → customError=true / valid=false / validationMessage='err' / checkValidity=false。
+    sandbox
+        .execute(
+            "globalThis.__i.setCustomValidity('err');\
+             globalThis.__cvValid = globalThis.__i.validity.valid;\
+             globalThis.__cvCustom = globalThis.__i.validity.customError;\
+             globalThis.__cvMsg = globalThis.__i.validationMessage;\
+             globalThis.__cvCheck = globalThis.__i.checkValidity();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cvValid)").unwrap().value,
+        "false",
+        "setCustomValidity 后 valid=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cvCustom)").unwrap().value,
+        "true",
+        "customError=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cvMsg)").unwrap().value,
+        "err",
+        "validationMessage='err'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cvCheck)").unwrap().value,
+        "false",
+        "checkValidity()=false"
+    );
+
+    // setCustomValidity('') 清空 → 恢复 valid。
+    sandbox
+        .execute(
+            "globalThis.__i.setCustomValidity('');\
+             globalThis.__clrValid = globalThis.__i.validity.valid;\
+             globalThis.__clrCv = globalThis.__i.checkValidity();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__clrValid)").unwrap().value,
+        "true",
+        "setCustomValidity('') 恢复 valid=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__clrCv)").unwrap().value,
+        "true",
+        "清空后 checkValidity()=true"
+    );
+
+    // 'invalid' 事件在 checkValidity 失败时派发（per-element，#i 设错，监听 #i 的 invalid）。
+    sandbox
+        .execute(
+            "globalThis.__fired = 'no';\
+             globalThis.__i.addEventListener('invalid', function(){ globalThis.__fired = 'yes'; });\
+             globalThis.__i.setCustomValidity('x');\
+             globalThis.__i.checkValidity();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fired)").unwrap().value,
+        "yes",
+        "checkValidity 失败派发 'invalid' 事件"
+    );
+
+    // per-element 隔离：#j 未设 customValidity 仍 valid（#i 的 setCustomValidity 不影响 #j）。
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#j').checkValidity())")
+            .unwrap()
+            .value,
+        "true",
+        "per-element 隔离：#j 仍 valid"
+    );
+}
