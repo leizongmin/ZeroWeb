@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a document.contentType + Node.normalize（本轮 R2853，缺失 Web API 续 / 剩余表面收尾）
+
+承接 R2851（IMG/IFRAME 维度 IDL）。close 最后剩余 Web API 表面缺口。`document.contentType` 返 'text/html'（HTML 文档 MIME，content-sniffing / HTTP-utility 代码读，旧 fallthrough undefined）；`Node.normalize()` no-op——snapshot 模型元素文本为单一串（无独立 Text 子节点暴露），故 DOM 态已「normalized」，no-op 语义正确（非误导 stub），防 rich-text 编辑器 / innerHTML 后清理的 `el.normalize()` 防御性调用抛 TypeError。
+
+- **关键设计点**：① **document.contentType**——document 对象字面量加 `contentType: 'text/html'`（spec HTML 文档 MIME）。② **Node.normalize()**——element get-trap 加 `prop === 'normalize'` 返 no-op `function(){}`；snapshot 模型 childNodes 不暴露独立 Text 节点，故无相邻 Text 可合并、无空 Text 可移除，DOM 态已 normalized → no-op 语义正确。③ 复用既有 document 对象字面量 + element get-trap infra，零新 host 回调。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | document 对象字面量 +`contentType: 'text/html'`；element get-trap +`normalize` no-op 方法（cloneNode 块前）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_document_content_type_and_node_normalize_r2853`（contentType='text/html' + normalize() 返 undefined + textContent 不变 + body/documentElement.normalize() 不抛）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13479 passed / 0 failed / 74 ignored**，13478+1 新测试，0 回归；engine lib 1578 测试零回归）。
+
+**为何零回归且净正向**：① document.contentType 纯 additive 字面量属性（不影响既有 document 属性）；② normalize no-op 仅当页面调用 `el.normalize()` 时触发（welcome 不用）；③ 复用既有 infra（零新 host 回调）；④ contentType 从 undefined→'text/html'、normalize 从 TypeError→no-op，对读 contentType / 防御性 normalize 的库是改善。
+
+**已知限制（记录）**：① normalize no-op（无 Text 子节点可合并，snapshot 架构既限——若未来 childNodes 暴露独立 Text 节点须升级为真合并）；② canvas/video width-height defer（特殊缺省/bitmap）；③ document.xmlEncoding/xmlVersion（deprecated XML，null for HTML）未含（罕用）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面 definitively 穷尽（R2820-R2853 覆全主表面）。剩余全深/host-layer（attachShadow Shadow DOM / createRange Range / scrollIntoViewIfNeeded 滚动 / fonts FontFaceSet / 真 WAAPI / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13479 全绿），真实推向分阶段里程碑（2026 65%）待用户点名深结构。
+
 ### P1a IMG/IFRAME 维度 IDL width/height + naturalWidth/Height（本轮 R2851，缺失 Web API 续 / 替换元素尺寸 IDL）
 
 承接 R2850（inert/autocomplete）。probe 发现 IMG/IFRAME `.width`/`.height`（reflected unsigned long）+ IMG `.naturalWidth`/`.naturalHeight` 全无 get-trap handler（仅 Image ctor 的 setAttribute + pointer event coord 两处无关命中）。响应式/布局 JS 读 img.width 高频，css-images WPT driving。
