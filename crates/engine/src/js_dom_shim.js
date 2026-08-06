@@ -21,6 +21,12 @@
   // P1a DocumentFragment：已创建的 fragment handle 集合（nodeType=11 标识 + appendChild 时
   // flatten 检测）。fragment 为 create 句柄，无 selector，故用此 set 区别于普通元素句柄。
   var _fragmentHandles = {};
+  // P1a Comment（R2816）：已创建的 comment handle 集合（nodeType=8 / nodeName '#comment' 标识）。
+  // comment 为 create 句柄无 selector，故用此 set 区别于普通元素句柄（同 _fragmentHandles 模式）。
+  var _commentHandles = {};
+  // P1a Text（R2816）：已创建的 text handle 集合（nodeType=3 / nodeName '#text' 标识）——修正旧实现 created
+  // text 节点误报 nodeType 1（element）的 bug（与 _commentHandles 对称）。createTextNode 经 __zw_create_text。
+  var _textHandles = {};
   // ── 浏览器运行时桩（定时器、navigator、location 等）──
   var _timerId = 1;
   // queueMicrotask——调度 microtask（高频：每个异步库 / polyfill / 框架都用）。本 V8 embed 未暴露
@@ -2724,16 +2730,26 @@
             return FOLLOWING; // 兜底
           };
         }
-        // DocumentFragment handle（nodeType 11 / nodeName '#document-fragment'）。
+        // DocumentFragment handle（nodeType 11 / '#document-fragment'）/ Comment（nodeType 8 / '#comment'）/
+        // Text（nodeType 3 / '#text'）——均为 create 句柄无 selector，经 handle set 区别于普通元素句柄。
         var isFrag = handle && _fragmentHandles[handle];
+        var isComment = handle && _commentHandles[handle];
+        var isText = handle && _textHandles[handle];
         if (prop === 'tagName') {
-          return isFrag ? undefined : _realTag(sel, handle);
+          return (isFrag || isComment || isText) ? undefined : _realTag(sel, handle);
         }
         if (prop === 'nodeName') {
-          return isFrag ? '#document-fragment' : _realTag(sel, handle);
+          return isFrag ? '#document-fragment'
+            : isComment ? '#comment'
+            : isText ? '#text'
+            : _realTag(sel, handle);
         }
         if (prop === 'nodeType') {
-          return isFrag ? 11 : 1;
+          return isFrag ? 11 : (isComment ? 8 : (isText ? 3 : 1));
+        }
+        // Text/Comment 节点的 nodeValue/data = 文本（经 __zw_get_text_handle 读回，element 的 nodeValue 为 null）。
+        if ((isText || isComment) && (prop === 'nodeValue' || prop === 'data')) {
+          return handle ? __zw_get_text_handle(handle) : '';
         }
         if (prop === 'ownerDocument') {
           return globalThis.document;
@@ -4416,6 +4432,15 @@
     },
     createTextNode: function(text) {
       var handle = __zw_create_text(String(text));
+      if (handle) _textHandles[handle] = true;
+      return _wrapHandle(handle);
+    },
+    // `document.createComment(text)`——注释节点（nodeType 8，框架 placeholder/anchor 高频）。镜像 createTextNode，
+    // 经 host `__zw_create_comment`（apply 时 doc.create_comment）。textContent/data/nodeValue 读回注释内容。
+    createComment: function(text) {
+      var handle = (typeof __zw_create_comment === 'function')
+        ? __zw_create_comment(String(text)) : __zw_create_text(String(text));
+      if (handle) _commentHandles[handle] = true;
       return _wrapHandle(handle);
     },
     // `document.createEvent(type)`——legacy 合成事件工厂（jQuery<3 / 旧库 / 分析脚本高频）。返空 type 事件，

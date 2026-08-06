@@ -10111,3 +10111,107 @@ fn test_node_relation_implementation_r2815() {
         "a.cDP(parent)=CONTAINS|PRECEDING=10"
     );
 }
+
+#[test]
+fn test_create_comment_r2816() {
+    // R2816：document.createComment——注释节点（nodeType 8）。host DomMutation::CreateComment 变体 + apply
+    //（doc.create_comment）+ __zw_create_comment callback；shim _commentHandles 标识 nodeType/nodeName +
+    // textContent/nodeValue/data 经 query_text_from_mutations（CreateComment arm）读回。框架 placeholder/anchor。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // createComment 返节点：nodeType=8 / nodeName '#comment' / tagName undefined / nodeValue=data=textContent=文本。
+    sandbox
+        .execute(
+            "globalThis.__c = document.createComment('hi there');\
+             globalThis.__nt = __c.nodeType;\
+             globalThis.__nn = __c.nodeName;\
+             globalThis.__tag = __c.tagName;\
+             globalThis.__nv = __c.nodeValue;\
+             globalThis.__data = __c.data;\
+             globalThis.__tc = __c.textContent;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nt)").unwrap().value,
+        "8",
+        "createComment nodeType=8"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nn)").unwrap().value,
+        "#comment",
+        "nodeName '#comment'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tag)").unwrap().value,
+        "undefined",
+        "comment tagName undefined"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nv)").unwrap().value,
+        "hi there",
+        "nodeValue=注释文本"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__data)").unwrap().value,
+        "hi there",
+        "data=注释文本"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tc)").unwrap().value,
+        "hi there",
+        "textContent=注释文本"
+    );
+
+    // 区别于 createTextNode（nodeType=3）。
+    sandbox
+        .execute(
+            "globalThis.__t = document.createTextNode('txt');\
+             globalThis.__tnt = __t.nodeType;\
+             globalThis.__cnt = __c.nodeType;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tnt)").unwrap().value,
+        "3",
+        "createTextNode nodeType=3"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cnt)").unwrap().value,
+        "8",
+        "createComment 仍 nodeType=8（区别 text）"
+    );
+
+    // host 记 CreateComment mutation（验证 host 桥接）。
+    let muts = mutations.lock().unwrap();
+    let has_comment = muts
+        .iter()
+        .any(|m| matches!(m, DomMutation::CreateComment { text, .. } if text == "hi there"));
+    drop(muts);
+    assert!(
+        has_comment,
+        "createComment 须经 __zw_create_comment 记 DomMutation::CreateComment"
+    );
+
+    // 空串/数字参数 lenient 转 string 不抛。
+    sandbox
+        .execute(
+            "globalThis.__ok = (function(){ try { document.createComment(''); document.createComment(42); return 'ok'; } catch(e){ return 'threw'; } })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ok)").unwrap().value,
+        "ok",
+        "createComment lenient 不抛"
+    );
+}

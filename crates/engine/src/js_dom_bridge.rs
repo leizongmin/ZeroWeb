@@ -97,6 +97,14 @@ pub enum DomMutation {
         /// 文本内容。
         text: String,
     },
+    /// `document.createComment(text)`（R2816）——注释节点（nodeType 8），框架 placeholder/anchor 高频。
+    /// 镜像 [`Self::CreateTextNode`]（host `doc.create_comment` 已存在）。
+    CreateComment {
+        /// 稳定句柄。
+        handle: String,
+        /// 注释内容。
+        text: String,
+    },
     /// `parent.appendChild(child)` — 子节点用 create 时返回的句柄。
     AppendChild {
         /// 父节点选择器。
@@ -445,6 +453,10 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
             }
             DomMutation::CreateTextNode { handle, text } => {
                 let id = doc.create_text_node(text);
+                handles.insert(handle.clone(), id);
+            }
+            DomMutation::CreateComment { handle, text } => {
+                let id = doc.create_comment(text);
                 handles.insert(handle.clone(), id);
             }
             DomMutation::AppendChild {
@@ -2189,6 +2201,11 @@ pub fn query_inner_html_from_mutations(mutations: &[DomMutation], handle: &str) 
         {
             return text.clone();
         }
+        if let DomMutation::CreateComment { handle: h, text } = m
+            && h == handle
+        {
+            return text.clone();
+        }
         if let DomMutation::SetTextOnHandle { handle: h, text } = m
             && h == handle
         {
@@ -2279,6 +2296,11 @@ pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: 
 pub fn query_text_from_mutations(mutations: &[DomMutation], handle: &str) -> String {
     for m in mutations.iter().rev() {
         if let DomMutation::CreateTextNode { handle: h, text } = m
+            && h == handle
+        {
+            return text.clone();
+        }
+        if let DomMutation::CreateComment { handle: h, text } = m
             && h == handle
         {
             return text.clone();
@@ -3079,6 +3101,25 @@ pub fn register_dom_callbacks(
             m.lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .push(DomMutation::CreateTextNode {
+                    handle: handle.clone(),
+                    text,
+                });
+            handle
+        }),
+    );
+
+    // `__zw_create_comment(text)`——document.createComment（R2816）。镜像 `__zw_create_text`（注释 nodeType 8）。
+    let m = Arc::clone(mutations);
+    let c = Arc::clone(&counter);
+    sandbox.register_callback(
+        "__zw_create_comment",
+        Box::new(move |args| {
+            let text = args.first().map(String::from).unwrap_or_default();
+            let n = c.fetch_add(1, Ordering::Relaxed);
+            let handle = format!("__n{n}");
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::CreateComment {
                     handle: handle.clone(),
                     text,
                 });

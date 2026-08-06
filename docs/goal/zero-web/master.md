@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a document.createComment + text-node nodeType 修正（本轮 R2816，缺失 Web API 续）
+
+承接 R2815（DOMImplementation + 节点关系）。land **`document.createComment(text)`**——注释节点（nodeType 8，框架 placeholder/anchor 高频，Vue/React/lit 标记节点）。**probe 先行**：broad grep 发现 `insertAdjacentHTML`/`insertAdjacentElement`/`insertAdjacentText`/`DOMParser` 均已存在（host-backed），故择 `createComment`（document.create* 家族唯一缺口）。host `doc.create_comment` 已存在（bridge.rs:751），故为 clean mirror。
+
+- **host 桥（bridge.rs）**：`DomMutation::CreateComment { handle, text }` 变体 + apply（`doc.create_comment(text)` + handles.insert）+ `__zw_create_comment` callback（mirror `__zw_create_text`）+ `query_inner_html_from_mutations`/`query_text_from_mutations` 读回 arm（comment textContent 经此）。
+- **shim**：`document.createComment(text)` 经 `__zw_create_comment`（回落 `__zw_create_text` 当 host 未注册）+ `_commentHandles[handle]=true` 标识。
+- **proxy get-trap 节点类型标识**：`_commentHandles`（nodeType 8 / '#comment'）+ **`_textHandles`（nodeType 3 / '#text'）**——**修正 pre-existing bug**：created text 节点旧误报 nodeType 1（element，无 _textHandles 追踪），现报 3。tagName 对 text/comment 返 undefined；nodeValue/data 对 text/comment 返注释/文本（经 `__zw_get_text_handle`）。
+- **为何顺带修 text**：R2816 test 核 `createTextNode` nodeType 时暴露 created text 报 1（应 3）——同 create* 家族 + 同 handle-set 机制，对称修正（避免 comment 报 8 而 text 报 1 的不一致），trivial mirror，非无关重构。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_bridge.rs` | +`DomMutation::CreateComment` 变体 + apply arm + `__zw_create_comment` callback + query_inner_html/query_text 读回 arm。 |
+| `engine/src/js_dom_shim.js` | +`_commentHandles`/`_textHandles` set + `document.createComment`（mirror createTextNode，记 _commentHandles）+ createTextNode 记 _textHandles + proxy get-trap nodeType/nodeName/nodeValue 按 frag/comment/text/element 分支。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_create_comment_r2816`（nodeType=8/'#comment'/tagName undefined/nodeValue=data=textContent=文本 / 区别 createTextNode nodeType=3 / host CreateComment mutation 记录 / lenient 空串·数字不抛）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13444 passed / 0 failed / 74 ignored**，13443+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① `CreateComment` 全新 DomMutation 变体（apply arm 镜像 CreateTextNode，compiler 强制 exhaustive match 已覆盖）+ 全新 callback（不改既有）+ `document.createComment` 新方法；② `_commentHandles`/`_textHandles` 为全新 set（additive，不改 _fragmentHandles）；③ text-node nodeType 修正是 bugfix（旧报 1 错误→现报 3 正确，createTextNode/clone_node/append 既有测试全绿证零回归）；④ comment textContent 经既有 `__zw_get_text_handle`→`query_text_from_mutations`（CreateComment arm），零新读路径。
+
 ### P1a DOMImplementation + 节点关系方法（getRootNode/compareDocumentPosition/isSameNode）（本轮 R2815，缺失 Web API 续）
 
 承接 R2814（history）。land **节点关系/工具方法簇 + DOMImplementation**（probe 先行：broad grep 确认 5 候选均缺失——`contains`/`hasAttributes`/`toggleAttribute` 已存在，customElements/history 已 land，故择此簇）。
