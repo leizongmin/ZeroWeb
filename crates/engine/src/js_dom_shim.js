@@ -14,6 +14,10 @@
   // 同脚本内连续 add 末次覆盖前次（`add('a');add('b')` 丢 'a'）。缓存累积全量，末次 SetAttr 携带
   // 正确值；className set 同步更新缓存保证一致。导航经 `__zw_reset_form_state` 清空。
   var _classCache = {};
+  // reflected 字符串/数值属性（title/lang/dir/tabindex）per-element-key 缓存。同 _inputValues/_classCache
+  // 动机——`__zw_set_attr` 仅入队 mutation（异步 apply），同步 set→get 往返须客户端缓存（get 优先读缓存）。
+  // 值结构：{ title?: string, lang?: string, dir?: string, tabindex?: number }。
+  var _reflectedAttrs = {};
   // P1a DocumentFragment：已创建的 fragment handle 集合（nodeType=11 标识 + appendChild 时
   // flatten 检测）。fragment 为 create 句柄，无 selector，故用此 set 区别于普通元素句柄。
   var _fragmentHandles = {};
@@ -2393,6 +2397,22 @@
         if (prop === 'id') {
           return handle ? __zw_get_attr_handle(handle, 'id') : __zw_get_attr(sel, 'id');
         }
+        // reflected 字符串属性（title/lang/dir）——get 反射同名 attribute（无 → ''）；同步 set→get 优先读
+        // _reflectedAttrs 缓存（__zw_set_attr 异步入队，无缓存则 set 后 get 读 stale 快照）。
+        if (prop === 'title' || prop === 'lang' || prop === 'dir') {
+          var rc = _reflectedAttrs[key];
+          if (rc && Object.prototype.hasOwnProperty.call(rc, prop)) return rc[prop];
+          return (handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop)) || '';
+        }
+        // `el.tabIndex`——反射 tabindex 属性为数值；无属性 → -1（spec：非 tab 序元素默认 -1；
+        // natively focusable 默认 0 简化为 -1，常见用法足）。同步 set→get 优先读缓存。
+        if (prop === 'tabIndex') {
+          var rtc = _reflectedAttrs[key];
+          if (rtc && Object.prototype.hasOwnProperty.call(rtc, 'tabindex')) return rtc['tabindex'];
+          var tiraw = handle ? __zw_get_attr_handle(handle, 'tabindex') : __zw_get_attr(sel, 'tabindex');
+          var tin = parseInt(tiraw, 10);
+          return isNaN(tin) ? -1 : tin;
+        }
         // `el.dataset`——`data-*` 属性的 camelCase 键对象（get/set/has/delete/枚举）。
         // dataset.fooBar ↔ data-foo-bar 属性。handle 脱离 DOM 元素枚举受限（无 attr-names-handle）。
         if (prop === 'dataset') {
@@ -3009,6 +3029,23 @@
           if (handle) __zw_set_attr_handle(handle, 'id', String(value));
           else __zw_set_attr(sel, 'id', String(value));
           moAttr = 'id';
+        } else if (p === 'title' || p === 'lang' || p === 'dir') {
+          // reflected 字符串属性 set——写同名 attribute + 同步客户端缓存（set 后 get 读缓存）。
+          var rcb = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
+          rcb[p] = String(value);
+          if (handle) __zw_set_attr_handle(handle, p, String(value));
+          else __zw_set_attr(sel, p, String(value));
+          moAttr = p;
+        } else if (p === 'tabIndex') {
+          // tabIndex set——反射为 tabindex 属性（数值）；NaN 忽略（spec 抛，lenient 不抛）。同步缓存。
+          var tisv = parseInt(value, 10);
+          if (!isNaN(tisv)) {
+            var rtc2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
+            rtc2['tabindex'] = tisv;
+            if (handle) __zw_set_attr_handle(handle, 'tabindex', String(tisv));
+            else __zw_set_attr(sel, 'tabindex', String(tisv));
+            moAttr = 'tabindex';
+          }
         } else if (p === 'value') {
           // P1a select：编程设 `<select>.value = value` → 记 SelectOption mutation（apply 时
           // mark 匹配 option selected + deselect 兄弟）。匹配浏览器：编程设值不自动派 change。

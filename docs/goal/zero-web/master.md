@@ -2091,6 +2091,23 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a element reflected 属性簇：tabIndex / title / lang / dir（本轮 R2805，缺失 Web API 续）
+
+承接 R2804（Selection/Range）。续缺失 Web API——land **element reflected 属性簇**（`tabIndex`/`title`/`lang`/`dir`，a11y / i18n / tooltip / 焦点序高频）。照既有 `id`/`className`/`value` reflected 模式（Proxy get+set trap）。**实现踩坑（已修正）**：`__zw_set_attr` 仅**入队** `DomMutation::SetAttr`（异步 apply），而 `__zw_get_attr` 读 dom_html 快照——同步 set→get 往返读 stale。`value`/`className` 经客户端缓存（`_inputValues`/`_classCache`）解决；本轮加 `_reflectedAttrs` per-element-key 缓存同理（get 优先读缓存）。
+
+- **get trap**：`title`/`lang`/`dir` → `_reflectedAttrs[key][prop]` 缓存优先，否则 `__zw_get_attr(prop)||''`（无属性 → ''）；`tabIndex` → 缓存优先，否则 `parseInt(__zw_get_attr('tabindex'),10)`，无属性 → **-1**（spec：非 tab 序元素默认 -1；natively focusable 默认 0 简化为 -1，常见用法足）。
+- **set trap**：`title`/`lang`/`dir` → 写缓存 + `__zw_set_attr(p, value)` + moAttr=p；`tabIndex` → `parseInt(value,10)`，NaN **lenient 忽略**（spec 抛，不抛避免中断脚本），否则写缓存 + `__zw_set_attr('tabindex', n)`。
+- **已知限制（记录）**：① set 后**同步属性读**经缓存正确往返；**getAttribute 读 stale 快照**（mutation 异步入队——同 value/className 既有限制，非本轮引入）；② tabIndex 无属性默认 -1（natively focusable 0 简化为 -1）；③ NaN lenient 不抛。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_reflectedAttrs` per-element-key 缓存（同 `_inputValues`/`_classCache` 模式）+ Proxy get trap（title/lang/dir/tabIndex 缓存优先 + attr 反射）+ set trap（写缓存 + __zw_set_attr + moAttr）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_element_reflected_props_r2805`（get 反射既有 attr：tabIndex=3/title=hi/lang=ja/dir=rtl / 无属性默认：tabIndex -1 + title·lang·dir '' / set 同步属性往返：tabIndex 5·title tip·lang en·dir ltr / tabIndex NaN lenient 忽略读回原值）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13433 passed / 0 failed / 74 ignored**，13432+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① Proxy get+set trap 新增 4 属性分支（不改既有 prop 分支）；② `_reflectedAttrs` 缓存新增（不改 `_inputValues`/`_classCache`）；③ get 缓存优先无副作用（set 才写）；④ 复用既有 `__zw_get_attr`/`__zw_set_attr` host 回调，零 host 改动。
+
 ### P1a Selection / Range / getSelection（本轮 R2804，缺失 Web API 续）
 
 承接 R2803（TreeWalker）。续缺失 Web API——land **`window.getSelection()` + `Selection` 单例 + `document.createRange()` + `Range`**（文本选择 / 编辑器 / copy-paste / find-in-page 高频，medium-deep）。**先验证可行 + scope 到纯 JS 干净子集**：headless 无真用户选择——Selection 单例默认空（`rangeCount=0`/`isCollapsed=true`/`toString=''`/`anchorNode=null`/`type='None'`），selection-state-checking 脚本（`if (getSelection().toString()) ...`）正确跳过选择分支。programmatic Range 经 setStart/setEnd/selectNode* 设边界；toString 提取选区文本。

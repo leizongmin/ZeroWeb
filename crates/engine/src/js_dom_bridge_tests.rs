@@ -8536,3 +8536,122 @@ fn test_selection_range_r2804() {
         "removeAllRanges 后 type 须回 'None'"
     );
 }
+
+#[test]
+fn test_element_reflected_props_r2805() {
+    // R2805：element reflected 属性簇（tabIndex/title/lang/dir）。get 反射同名 attribute（tabIndex 数值，
+    // 无→-1；title/lang/dir 无→''），set 写 attribute。照 id/className reflected 模式（get+set trap）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><a id=a href=# tabindex=3 title=hi lang=ja dir=rtl>x</a><div id=d>y</div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // get：反射 attribute（tabIndex 数值 / title·lang·dir 串）。
+    sandbox
+        .execute(
+            "var a = document.getElementById('a');\
+             globalThis.__ti = a.tabIndex;\
+             globalThis.__tt = a.title; globalThis.__tl = a.lang; globalThis.__td = a.dir;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ti)").unwrap().value,
+        "3",
+        "tabIndex 须反射 tabindex 属性值"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tt)").unwrap().value,
+        "hi",
+        "title 须反射 title 属性"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tl)").unwrap().value,
+        "ja",
+        "lang 须反射 lang 属性"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__td)").unwrap().value,
+        "rtl",
+        "dir 须反射 dir 属性"
+    );
+
+    // 无属性默认：tabIndex → -1；title/lang/dir → ''。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             globalThis.__dti = d.tabIndex;\
+             globalThis.__dtt = d.title; globalThis.__dtl = d.lang; globalThis.__dtd = d.dir;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dti)").unwrap().value,
+        "-1",
+        "无 tabindex 属性 tabIndex 须 -1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dtt)").unwrap().value,
+        "",
+        "无 title 属性 title 须 ''"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dtl)").unwrap().value,
+        "",
+        "无 lang 属性 lang 须 ''"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dtd)").unwrap().value,
+        "",
+        "无 dir 属性 dir 须 ''"
+    );
+
+    // set：写 attribute 并经属性反射同步读回（mutation 异步入队，getAttribute 读 stale 快照——同
+    // value/className 既有限制；属性 get 经客户端缓存同步往返，是正确可测行为）。
+    sandbox
+        .execute(
+            "d.tabIndex = 5; d.title = 'tip'; d.lang = 'en'; d.dir = 'ltr';\
+             globalThis.__sti = d.tabIndex;\
+             globalThis.__stt = d.title; globalThis.__stl = d.lang; globalThis.__std = d.dir;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sti)").unwrap().value,
+        "5",
+        "tabIndex set 后读回 5"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__stt)").unwrap().value,
+        "tip",
+        "title set 后读回"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__stl)").unwrap().value,
+        "en",
+        "lang set 后读回"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__std)").unwrap().value,
+        "ltr",
+        "dir set 后读回"
+    );
+
+    // tabIndex set 非数值（NaN）lenient 忽略（不写 attribute，读回仍原值）。
+    sandbox
+        .execute("d.tabIndex = 'abc'; globalThis.__nti = d.tabIndex;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nti)").unwrap().value,
+        "5",
+        "tabIndex set NaN 须 lenient 忽略（读回原 5）"
+    );
+}
