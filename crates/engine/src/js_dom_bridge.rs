@@ -1059,6 +1059,29 @@ pub fn parse_html_element_json(html: &str, selector: &str, all: bool) -> String 
     format!("[{}]", items.join(","))
 }
 
+/// `crypto.subtle.digest(algo, data)`（R2793）——SHA-1/256/384/512 哈希（SRI / JWT / 内容哈希高频）。
+/// 委托 RustCrypto `sha1`/`sha2`（digest 0.10 生态）。**字节传递**：JS 侧把 BufferSource 转
+/// `number[]` → 逗号分隔十进制串（"72,73,..."）避免 UTF-8 编码歧义；本函数 split + parse 回 `Vec<u8>`，
+/// 算哈希，返**逗号分隔十进制串**（shim 转 `Uint8Array`）。algo 归一大小写 + 接受 `SHA-256`/`SHA256`
+/// 两种写法；unsupported algo 返**空串**（shim reject `NotSupportedError`）。
+/// 供 `__zw_crypto_subtle_digest` 回调 → shim `crypto.subtle.digest`。
+pub fn crypto_subtle_digest(algo: &str, bytes_csv: &str) -> String {
+    use sha2::{Digest, Sha256, Sha384, Sha512};
+    let data: Vec<u8> = bytes_csv
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.trim().parse::<u8>().ok())
+        .collect();
+    let hash: Vec<u8> = match algo.to_ascii_uppercase().as_str() {
+        "SHA-1" | "SHA1" => sha1::Sha1::digest(&data).to_vec(),
+        "SHA-256" | "SHA256" => Sha256::digest(&data).to_vec(),
+        "SHA-384" | "SHA384" => Sha384::digest(&data).to_vec(),
+        "SHA-512" | "SHA512" => Sha512::digest(&data).to_vec(),
+        _ => return String::new(),
+    };
+    hash.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
+}
+
 /// `element.matches(selector)`——元素是否匹配选择器（含组合器，querySelectorAll 全匹配语义）。
 /// 求全匹配集，判 elem 是否在集中。供 `__zw_matches` 回调 → shim `el.matches()`。
 pub fn element_matches_test_selector(html: &str, elem_sel: &str, test_sel: &str) -> bool {
@@ -1969,6 +1992,17 @@ pub fn register_dom_callbacks(
             let sel = args.get(1).map(String::as_str).unwrap_or("");
             let all = args.get(2).map(|s| s == "1").unwrap_or(false);
             parse_html_element_json(html, sel, all)
+        }),
+    );
+
+    // `crypto.subtle.digest(algo, data)`（R2793）——SHA-1/256/384/512 哈希。algo 从 arg[0]（串），
+    // 字节从 arg[1]（逗号分隔十进制串）。返逗号分隔十进制 hash 串（unsupported → 空，shim reject）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_digest",
+        Box::new(|args: &[String]| -> String {
+            let algo = args.first().map(String::as_str).unwrap_or("");
+            let bytes = args.get(1).map(String::as_str).unwrap_or("");
+            crypto_subtle_digest(algo, bytes)
         }),
     );
 

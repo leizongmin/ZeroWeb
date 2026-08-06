@@ -113,6 +113,10 @@ pollster = "0.4"
 # WebSocket（无头浏览器协议）
 tungstenite = "0.29"
 
+# 哈希（crypto.subtle.digest：SHA-1/256/384/512，RustCrypto；digest 0.10 已为 transitive dep）
+sha1 = "0.10"
+sha2 = "0.10"
+
 # 内部 crate 依赖
 zero-dom = { path = "crates/dom" }
 zero-css-parser = { path = "crates/css-parser" }

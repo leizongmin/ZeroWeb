@@ -7256,3 +7256,96 @@ fn test_file_r2792() {
         "true"
     );
 }
+
+#[test]
+fn test_crypto_subtle_digest_r2793() {
+    // R2793：crypto.subtle.digest（SHA-1/256/384/512，SRI/JWT/内容哈希高频）。host RustCrypto sha1/sha2。
+    // 返 Promise<ArrayBuffer>（Uint8Array）。TDD 用已知向量 hex 锚定（SHA-256('abc')/SHA-1('abc')/空输入）。
+    // scope 仅 digest（HMAC/sign/encrypt defer）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // hex 辅助：Uint8Array → 低位补零 hex 串（execute 末 Promise drain → 下 execute 读）。
+    let mut hex_of = |expr: &str| -> String {
+        sandbox.execute(expr).unwrap();
+        sandbox
+            .execute("Array.from(globalThis.__dig).map(function(b){return ('0'+b.toString(16)).slice(-2);}).join('')")
+            .unwrap()
+            .value
+    };
+    // SHA-256('abc') = ba7816bf...015ad（NIST FIPS 180-4 测试向量）。
+    assert_eq!(
+        hex_of(
+            "globalThis.__dig='(pending)';\
+             crypto.subtle.digest('SHA-256', new TextEncoder().encode('abc')).then(function(b){ globalThis.__dig = new Uint8Array(b); });"
+        ),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    // SHA-1('abc') = a9993e36...0d89d（NIST 测试向量）。
+    assert_eq!(
+        hex_of(
+            "globalThis.__dig='(pending)';\
+             crypto.subtle.digest('SHA-1', new TextEncoder().encode('abc')).then(function(b){ globalThis.__dig = new Uint8Array(b); });"
+        ),
+        "a9993e364706816aba3e25717850c26c9cd0d89d"
+    );
+    // SHA-512('abc') 前 16 hex（ddaf35a1...）。
+    let h512 = hex_of(
+        "globalThis.__dig='(pending)';\
+         crypto.subtle.digest('SHA-512', new TextEncoder().encode('abc')).then(function(b){ globalThis.__dig = new Uint8Array(b); });",
+    );
+    assert_eq!(h512.len(), 128); // 64 字节
+    assert_eq!(&h512[..16], "ddaf35a193617aba");
+    // SHA-256('') 空输入 = e3b0c442...b855。
+    assert_eq!(
+        hex_of(
+            "globalThis.__dig='(pending)';\
+             crypto.subtle.digest('SHA-256', new Uint8Array(0)).then(function(b){ globalThis.__dig = new Uint8Array(b); });"
+        ),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    // algo 对象形式 {name:'SHA-256'} + SHA-256 等价 SHA256（无连字符）。
+    assert_eq!(
+        hex_of(
+            "globalThis.__dig='(pending)';\
+             crypto.subtle.digest({name:'SHA-256'}, new TextEncoder().encode('abc')).then(function(b){ globalThis.__dig = new Uint8Array(b); });"
+        ),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    // 字符串输入经 TextEncoder（'abc' 同 UTF-8 字节）。
+    assert_eq!(
+        hex_of(
+            "globalThis.__dig='(pending)';\
+             crypto.subtle.digest('SHA256', 'abc').then(function(b){ globalThis.__dig = new Uint8Array(b); });"
+        ),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    // SHA-384('abc') 长度 96 hex（48 字节）。
+    let h384 = hex_of(
+        "globalThis.__dig='(pending)';\
+         crypto.subtle.digest('SHA-384', new TextEncoder().encode('abc')).then(function(b){ globalThis.__dig = new Uint8Array(b); });",
+    );
+    assert_eq!(h384.len(), 96);
+    assert_eq!(&h384[..16], "cb00753f45a35e8b");
+    // unsupported algo → reject NotSupportedError（catch 验证 name）。
+    sandbox
+        .execute(
+            "globalThis.__err='(pending)';\
+             crypto.subtle.digest('MD5', new Uint8Array([1])).catch(function(e){ globalThis.__err = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__err)").unwrap().value,
+        "NotSupportedError"
+    );
+}

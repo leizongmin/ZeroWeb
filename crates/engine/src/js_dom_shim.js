@@ -845,6 +845,47 @@
     }
   };
 
+  // BufferSource → number[]（字节值，0-255）：ArrayBuffer / TypedArray / DataView / array-like / string（经
+  // TextEncoder）。供 crypto.subtle.digest 把 data 传 host（逗号分隔十进制串，避免 UTF-8 编码歧义）。
+  function _zw_bufToBytes(data) {
+    if (typeof data === 'string') data = new TextEncoder().encode(data);
+    if (data == null) return [];
+    var view;
+    if (data instanceof ArrayBuffer) view = new Uint8Array(data);
+    else if (data && data.buffer) view = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength != null ? data.byteLength : data.length);
+    else if (typeof data.length === 'number') view = data; // array-like（含 TypedArray 已覆盖上一支）
+    else return [];
+    var out = [];
+    for (var i = 0; i < view.length; i++) out.push(view[i] & 0xff);
+    return out;
+  }
+  // crypto.subtle.digest（R2793）——SHA-1/256/384/512 哈希（SRI / JWT / 内容哈希高频）。委托 host
+  // `__zw_crypto_subtle_digest(algo, bytesCsv)`（RustCrypto sha1/sha2）；返 Promise<ArrayBuffer>（Uint8Array）。
+  // algo 取串或 {name}；unsupported algo / host 未注册 → reject NotSupportedError。**scope 仅 digest**
+  //（HMAC/sign/verify/encrypt/importKey/deriveBits defer——WebCrypto 大表面，digest 为最高频子集）。
+  globalThis.crypto.subtle = globalThis.crypto.subtle || {
+    digest: function (algo, data) {
+      var a = (typeof algo === 'object' && algo) ? algo.name : algo;
+      a = (a == null ? '' : String(a)).toUpperCase();
+      return new Promise(function (resolve, reject) {
+        var bytes = _zw_bufToBytes(data);
+        if (typeof __zw_crypto_subtle_digest !== 'function') {
+          reject(new DOMException('crypto.subtle.digest requires host callback', 'NotSupportedError'));
+          return;
+        }
+        var out = __zw_crypto_subtle_digest(a, bytes.join(','));
+        if (!out) {
+          reject(new DOMException("Unsupported hash algorithm: '" + a + "'", 'NotSupportedError'));
+          return;
+        }
+        var parts = out.split(',');
+        var arr = new Uint8Array(parts.length);
+        for (var i = 0; i < parts.length; i++) arr[i] = +parts[i];
+        resolve(arr);
+      });
+    }
+  };
+
   // AbortController/AbortSignal——fetch 中止 / 异步流程控制（cancel token 模式，现代 JS 库 / fetch
   // 高频）。V8 embed 不提供，polyfill 之（本地 Chromium 150 oracle 锚定 R2777）。signal.aborted/
   // reason（getter）+ abort(reason) + addEventListener('abort') 触发 + AbortSignal.abort()/timeout

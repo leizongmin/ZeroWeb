@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a crypto.subtle.digest（本轮 R2793，缺失 Web API 续）
+
+承接 R2792（File）。续缺失 Web API——land **crypto.subtle.digest**（SHA-1/256/384/512，SRI / JWT / 内容哈希 / 指纹高频）。**首项需新依赖**：加 RustCrypto `sha2` + `sha1`（0.10 生态，`digest 0.10.7` 已为 transitive dep，兼容；pure-Rust，审计，无 C 编译）。**本 goal 首个新 workspace dep**——SHA-256 纯 JS 实现慢且易错，sha2 为标准方案。
+
+- **host 回调 `__zw_crypto_subtle_digest(algo, bytesCsv)`**（Rust `crypto_subtle_digest`）：字节经**逗号分隔十进制串**双向传递（避免 UTF-8 编码歧义）；`sha1::Sha1`/`sha2::{Sha256,Sha384,Sha512}` 算 hash，返逗号分隔十进制串；unsupported algo 返空串（shim reject）。
+- **shim `crypto.subtle.digest(algo, data)`**：algo 取串或 `{name}`（归一大小写 + 接受 `SHA-256`/`SHA256`）；data 经 `_zw_bufToBytes`（ArrayBuffer/TypedArray/DataView/array-like，string 经 TextEncoder）；返 `Promise<ArrayBuffer>`（Uint8Array）；host 未注册 → reject `NotSupportedError`。
+- **scope 仅 digest**（HMAC/sign/verify/encrypt/importKey/deriveBits defer——WebCrypto 大表面，digest 为最高频子集）。
+- **TDD 已知向量锚定**（NIST FIPS 180-4）：SHA-256/SHA-1('abc')、SHA-512/384('abc') 长度+前缀、SHA-256('')、algo 对象形式、字符串输入、MD5 reject NotSupportedError。
+
+| 文件 | 改动 |
+|------|------|
+| `Cargo.toml` + `crates/engine/Cargo.toml` | +workspace dep `sha1`/`sha2`（0.10）+ engine dep。 |
+| `engine/src/js_dom_bridge.rs` | +`crypto_subtle_digest(algo, bytes_csv)`（sha1/sha2 Digest）+ 注册 `__zw_crypto_subtle_digest` 回调。 |
+| `engine/src/js_dom_shim.js` | +`_zw_bufToBytes` helper + `globalThis.crypto.subtle.digest`（Promise + algo 归一 + 错误拒绝），置于 crypto literal 后。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_crypto_subtle_digest_r2793`（hex_of 闭包 + SHA-256/1/512/384('abc') NIST 向量 + 空 SHA-256 + algo 对象 + 字符串输入 + MD5 reject）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13421 passed / 0 failed / 74 ignored**，13420+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 host 回调 + crypto.subtle，不改渲染路径）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 host 回调（仅由 crypto.subtle.digest 调用，不改既有路径）+ crypto.subtle 新对象（guard 不覆盖既有）；② 哈希纯函数无副作用（只读输入字节）；③ sha1/sha2 为标准 RustCrypto crate，digest 0.10 生态已存在；④ Promise 经既有 microtask checkpoint，无新调度路径。
+
 ### P1a File（本轮 R2792，缺失 Web API 续）
 
 承接 R2791（FileReader）。续缺失 Web API——land **File**（Blob 子类 + 文件名/时间戳，`<input type=file>` / 文件上传构造高频）。**完成 Blob→File→FileReader→FormData 文件处理簇**。
