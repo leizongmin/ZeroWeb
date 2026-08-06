@@ -3114,6 +3114,54 @@
     ctx.clearRect = function (x, y, w, hh) {
       __zw_canvas_op(h, 'clearRect', String(x), String(y), String(w), String(hh));
     };
+    // ── slice 2：path 曲线 / 状态栈 / transforms / line 样式 / globalAlpha（R2796）──
+    ctx.quadraticCurveTo = function (cpx, cpy, x, y) {
+      __zw_canvas_op(h, 'quadraticCurveTo', String(cpx), String(cpy), String(x), String(y));
+    };
+    ctx.bezierCurveTo = function (cp1x, cp1y, cp2x, cp2y, x, y) {
+      __zw_canvas_op(h, 'bezierCurveTo', String(cp1x), String(cp1y), String(cp2x), String(cp2y), String(x), String(y));
+    };
+    ctx.ellipse = function (x, y, rx, ry, rotation, start, end /*, ccw */) {
+      __zw_canvas_op(h, 'ellipse', String(x), String(y), String(rx), String(ry), String(rotation), String(start), String(end));
+    };
+    ctx.arcTo = function (x1, y1, x2, y2, r) {
+      __zw_canvas_op(h, 'arcTo', String(x1), String(y1), String(x2), String(y2), String(r));
+    };
+    ctx.rect = function (x, y, w, hh) {
+      __zw_canvas_op(h, 'rect', String(x), String(y), String(w), String(hh));
+    };
+    ctx.clip = function () { __zw_canvas_op(h, 'clip'); };
+    ctx.save = function () { __zw_canvas_op(h, 'save'); };
+    ctx.restore = function () { __zw_canvas_op(h, 'restore'); };
+    ctx.translate = function (tx, ty) { __zw_canvas_op(h, 'translate', String(tx), String(ty)); };
+    ctx.rotate = function (angle) { __zw_canvas_op(h, 'rotate', String(angle)); };
+    ctx.scale = function (sx, sy) { __zw_canvas_op(h, 'scale', String(sx), String(sy)); };
+    ctx.setTransform = function (a, b, c, d, e, ff) {
+      __zw_canvas_op(h, 'setTransform', String(a), String(b), String(c), String(d), String(e), String(ff));
+    };
+    ctx.transform = function (a, b, c, d, e, ff) {
+      __zw_canvas_op(h, 'transform', String(a), String(b), String(c), String(d), String(e), String(ff));
+    };
+    // globalAlpha / lineDash / lineJoin / lineCap：getter+setter（client-side 存值 + push host）。
+    ctx._ga = 1.0;
+    Object.defineProperty(ctx, 'globalAlpha', {
+      set: function (v) { this._ga = +v; __zw_canvas_op(h, 'setGlobalAlpha', String(v)); },
+      get: function () { return this._ga; }
+    });
+    ctx.setLineDash = function (segs) {
+      var s = (segs && segs.length != null) ? Array.prototype.join.call(segs, ',') : String(segs);
+      __zw_canvas_op(h, 'setLineDash', s);
+    };
+    ctx._lj = 'miter';
+    Object.defineProperty(ctx, 'lineJoin', {
+      set: function (v) { this._lj = String(v); __zw_canvas_op(h, 'setLineJoin', String(v)); },
+      get: function () { return this._lj; }
+    });
+    ctx._lc = 'butt';
+    Object.defineProperty(ctx, 'lineCap', {
+      set: function (v) { this._lc = String(v); __zw_canvas_op(h, 'setLineCap', String(v)); },
+      get: function () { return this._lc; }
+    });
     ctx.getImageData = function (x, y, w, hh) {
       if (typeof __zw_canvas_op !== 'function') return null;
       var r = String(__zw_canvas_op(h, 'getImageData', String(x), String(y), String(w), String(hh)));

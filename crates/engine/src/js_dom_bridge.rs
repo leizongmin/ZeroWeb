@@ -1090,6 +1090,24 @@ fn parse_canvas_color(s: &str) -> zero_render_foundation::color::Color {
         .unwrap_or_else(|| Color::rgba(0, 0, 0, 255))
 }
 
+/// canvas `lineJoin` 串 → LineJoin（spec: miter/round/bevel；未知回落 Miter = 默认）。
+fn parse_line_join(s: &str) -> zero_canvas::LineJoin {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "round" => zero_canvas::LineJoin::Round,
+        "bevel" => zero_canvas::LineJoin::Bevel,
+        _ => zero_canvas::LineJoin::Miter,
+    }
+}
+
+/// canvas `lineCap` 串 → LineCap（spec: butt/round/square；未知回落 Butt = 默认）。
+fn parse_line_cap(s: &str) -> zero_canvas::LineCap {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "round" => zero_canvas::LineCap::Round,
+        "square" => zero_canvas::LineCap::Square,
+        _ => zero_canvas::LineCap::Butt,
+    }
+}
+
 /// `HTMLCanvasElement.getContext('2d')` 派发（R2795，canvas slice 1）。host 持 `CanvasContext` 注册表
 ///（`Arc<Mutex<(next_id, HashMap<id, CanvasContext>)>>`），JS 经 `__zw_canvas_op(handle, op, ...args)`
 /// 串参派发（避免 JSON/serde 依赖）。**关键**：zero-canvas `fill_rect`/`stroke_rect` 便捷法**不写
@@ -1206,6 +1224,119 @@ pub fn canvas_context_op(
         "clearRect" => {
             if let Some(ctx) = reg.1.get_mut(&hid()) {
                 ctx.clear_rect(f(0), f(1), f(2), f(3));
+            }
+            "ok".into()
+        }
+        // ── slice 2：path 曲线 / 状态栈 / transforms / line 样式 / globalAlpha（R2796）──
+        "quadraticCurveTo" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.quadratic_curve_to(f(0), f(1), f(2), f(3));
+            }
+            "ok".into()
+        }
+        "bezierCurveTo" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.bezier_curve_to(f(0), f(1), f(2), f(3), f(4), f(5));
+            }
+            "ok".into()
+        }
+        "ellipse" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.ellipse(f(0), f(1), f(2), f(3), f(4), f(5), f(6));
+            }
+            "ok".into()
+        }
+        "arcTo" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.arc_to(f(0), f(1), f(2), f(3), f(4));
+            }
+            "ok".into()
+        }
+        // rect 路径命令：CanvasContext 无 rect() 方法，用 MoveTo+3 LineTo（匹配 Path2D::rect，不 auto-close）。
+        "rect" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                let (x, y, w, h) = (f(0), f(1), f(2), f(3));
+                ctx.move_to(x, y);
+                ctx.line_to(x + w, y);
+                ctx.line_to(x + w, y + h);
+                ctx.line_to(x, y + h);
+            }
+            "ok".into()
+        }
+        "clip" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.clip();
+            }
+            "ok".into()
+        }
+        "save" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.save();
+            }
+            "ok".into()
+        }
+        "restore" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.restore();
+            }
+            "ok".into()
+        }
+        "translate" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.translate(f(0), f(1));
+            }
+            "ok".into()
+        }
+        "rotate" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.rotate(f(0));
+            }
+            "ok".into()
+        }
+        "scale" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.scale(f(0), f(1));
+            }
+            "ok".into()
+        }
+        "setTransform" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_transform(f(0), f(1), f(2), f(3), f(4), f(5));
+            }
+            "ok".into()
+        }
+        "transform" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.transform(f(0), f(1), f(2), f(3), f(4), f(5));
+            }
+            "ok".into()
+        }
+        "setGlobalAlpha" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_global_alpha(f(0));
+            }
+            "ok".into()
+        }
+        "setLineDash" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                let segs: Vec<f32> = arg(0)
+                    .split(',')
+                    .filter(|s| !s.trim().is_empty())
+                    .filter_map(|s| s.trim().parse::<f32>().ok())
+                    .collect();
+                ctx.set_line_dash(segs);
+            }
+            "ok".into()
+        }
+        "setLineJoin" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_line_join(parse_line_join(arg(0)));
+            }
+            "ok".into()
+        }
+        "setLineCap" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_line_cap(parse_line_cap(arg(0)));
             }
             "ok".into()
         }

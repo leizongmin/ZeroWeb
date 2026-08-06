@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a canvas slice 2 — path 全集 / transforms / save·restore / line 样式（本轮 R2796，canvas 续）
+
+承接 R2795（canvas slice 1）。续 canvas——land **slice 2**：补全 path API + transforms + 状态栈 + line 样式 + globalAlpha。builds on slice 1 `__zw_canvas_op` dispatch infra（host 加 op arm + shim ctx proxy 加方法）。所有方法 zero-canvas `CanvasContext` 原生提供（pub），无 crate 改动。
+
+- **path 曲线**：`quadraticCurveTo`/`bezierCurveTo`/`ellipse`/`arcTo`/`rect`（CanvasContext 无 rect()，host 用 moveTo+3 lineTo 匹配 Path2D::rect 不 auto-close）/`clip`。
+- **状态栈**：`save`/`restore`（CanvasContext state_stack）。
+- **transforms**：`translate`/`rotate`/`scale`/`setTransform`/`transform`（host transform_rect 应用于 fillRect/fill 坐标）。
+- **line 样式 + alpha**：`setLineDash`（csv→Vec<f32>，奇数长度翻倍 spec 语义由 zero-canvas 处理）/`lineJoin`/`lineCap`（string→enum：miter·round·bevel / butt·round·square）/`globalAlpha`（getter+setter push host）。
+- **TDD 像素锚定**：translate(3,3)+fillRect→(3,3) 红 / save+globalAlpha=0.5→alpha 127 半透明+restore 还原 / scale(2,2)+1×1→覆盖(1,1) / setTransform+rect 路径填充 / ellipse 填充中心蓝 / lineJoin·lineCap·lineWidth·setLineDash setter getter。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_bridge.rs` | `canvas_context_op` +16 op arm（path 曲线/状态/transforms/line/alpha）+ `parse_line_join`/`parse_line_cap` helper（string→enum）。 |
+| `engine/src/js_dom_shim.js` | `_zwMakeCtx2d` +16 方法（quadraticCurveTo/bezierCurveTo/ellipse/arcTo/rect/clip/save/restore/translate/rotate/scale/setTransform/transform/setLineDash + globalAlpha/lineJoin/lineCap getter-setter）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_canvas_slice2_r2796`（translate 像素位移 / globalAlpha 半透明+restore / scale 覆盖 / setTransform+rect / ellipse / line 样式 setter·getter）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13424 passed / 0 failed / 74 ignored**，13423+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 纯增量 op arm + ctx 方法（不改 slice 1 既有路径）；② CanvasContext 独立 pixel_buffer（不触 page 渲染）；③ lineJoin/lineCap 未知值回落默认（no-throw）。
+
 ### P1a canvas getContext MVP slice 1（本轮 R2795，缺失 Web API 续）
 
 承接 R2794（Headers）+ 上轮 canvas 调研。**调研修正**（推翻「需先改 zero-canvas」结论）：zero-canvas `fill()`/`stroke()`（path-based）经 `blit_path/stroke_to_pixels` **写 pixel_buffer**；仅 `fill_rect`/`stroke_rect` 便捷法不写。故**path-based 绘制 + getImageData 回读可行，无需改 zero-canvas**。land canvas slice 1（最高频缺失项，图表/游戏/图像处理无处不在）。

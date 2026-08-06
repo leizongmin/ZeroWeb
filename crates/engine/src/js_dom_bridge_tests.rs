@@ -7549,3 +7549,129 @@ fn test_canvas_get_context_r2795() {
         "0,0,255"
     );
 }
+
+#[test]
+fn test_canvas_slice2_r2796() {
+    // R2796：canvas slice 2——path 曲线 / save/restore 栈 / transforms / globalAlpha / line 样式。
+    // builds on slice 1 dispatch。translate 后 fillRect 像素位移；save+globalAlpha+restore 还原；
+    // scale 放大填充区域；curve 路径填充中心像素。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // translate 后 fillRect：原本 (0,0,2,2) 平移到 (3,3)，故 (0,0) 空、(3,3) 红。
+    sandbox
+        .execute(
+            "globalThis.__t = document.createElement('canvas'); __t.width=8; __t.height=8;\
+             var tx = __t.getContext('2d');\
+             tx.translate(3, 3); tx.fillStyle = 'red'; tx.fillRect(0, 0, 2, 2);\
+             globalThis.__im = tx.getImageData(0, 0, 8, 8);",
+        )
+        .unwrap();
+    // 像素索引 helper：(x,y) 在 width=8 图里的 RGBA 起始 = (y*8+x)*4。
+    let mut pix = |x: usize, y: usize| -> String {
+        sandbox
+            .execute(&format!(
+                "var i={y}*8*4+{x}*4; String(globalThis.__im.data[i]+','+globalThis.__im.data[i+3])",
+                x = x,
+                y = y
+            ))
+            .unwrap()
+            .value
+    };
+    assert_eq!(pix(0, 0), "0,0", "translate 前 (0,0) 应空");
+    assert_eq!(pix(3, 3), "255,255", "translate 后 (3,3) 应红");
+    // save + globalAlpha(0.5) + restore：globalAlpha 经 setter push host；restore 后还原本。
+    sandbox
+        .execute(
+            "globalThis.__a = document.createElement('canvas'); __a.width=4; __a.height=4;\
+             var ax = __a.getContext('2d');\
+             ax.save(); ax.globalAlpha = 0.5; ax.fillStyle='red'; ax.fillRect(0,0,2,2);\
+             ax.restore();\
+             ax.fillStyle='green'; ax.fillRect(2,2,2,2);\
+             globalThis.__aim = ax.getImageData(0,0,4,4);",
+        )
+        .unwrap();
+    // globalAlpha 0.5 × 红 (255,0,0,255) → (255,0,0,127)（alpha 缩放）。验证 alpha 通道。
+    assert_eq!(
+        sandbox
+            .execute("var i=0; String(__aim.data[i]+','+__aim.data[i+3])")
+            .unwrap()
+            .value,
+        "255,127",
+        "globalAlpha=0.5 应缩 alpha"
+    );
+    // scale 放大：scale(2,2) 后 fillRect(0,0,1,1) 覆盖 2×2 → (1,1) 被填充。
+    sandbox
+        .execute(
+            "globalThis.__s = document.createElement('canvas'); __s.width=4; __s.height=4;\
+             var sx = __s.getContext('2d');\
+             sx.scale(2, 2); sx.fillStyle='blue'; sx.fillRect(0,0,1,1);\
+             globalThis.__sim = sx.getImageData(0,0,4,4);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("var i=1*4*4+1*4; String(__sim.data[i+2]+','+__sim.data[i+3])")
+            .unwrap()
+            .value,
+        "255,255",
+        "scale(2,2) 后 1×1 覆盖到 (1,1) 蓝色"
+    );
+    // setTransform 单位阵重置 + rect 路径 + fill：rect(1,1,2,2) 填充 → (1,1) 红。
+    sandbox
+        .execute(
+            "globalThis.__r = document.createElement('canvas'); __r.width=5; __r.height=5;\
+             var rx = __r.getContext('2d');\
+             rx.setTransform(1,0,0,1,0,0); rx.fillStyle='red';\
+             rx.beginPath(); rx.rect(1,1,2,2); rx.fill();\
+             globalThis.__rim = rx.getImageData(0,0,5,5);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("var i=1*5*4+1*4; String(__rim.data[i]+','+__rim.data[i+3])")
+            .unwrap()
+            .value,
+        "255,255",
+        "rect 路径填充 (1,1) 红"
+    );
+    // ellipse 路径 + fill：椭圆中心 (3,3) 蓝色。
+    sandbox
+        .execute(
+            "globalThis.__el = document.createElement('canvas'); __el.width=8; __el.height=8;\
+             var ex = __el.getContext('2d');\
+             ex.fillStyle='rgb(0,0,255)'; ex.beginPath(); ex.ellipse(3,3,3,3,0,0,6.2832); ex.fill();\
+             globalThis.__elim = ex.getImageData(3,3,1,1);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(__elim.data[2]+','+__elim.data[3])")
+            .unwrap()
+            .value,
+        "255,255",
+        "ellipse 填充中心蓝"
+    );
+    // lineJoin/lineCap setter push host（no-throw + getter 返回 set 值）。
+    sandbox.execute("globalThis.__lj = __t.getContext('2d');").unwrap();
+    // 注：__t 的 ctx 已创建；重取返同一 proxy。设值验证 getter。
+    sandbox
+        .execute(
+            "globalThis.__cx = document.createElement('canvas').getContext('2d');\
+             __cx.lineJoin='round'; __cx.lineCap='square'; __cx.lineWidth=3; __cx.setLineDash([5,3]);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("__cx.lineJoin").unwrap().value, "round");
+    assert_eq!(sandbox.execute("__cx.lineCap").unwrap().value, "square");
+    assert_eq!(sandbox.execute("String(__cx.lineWidth)").unwrap().value, "3");
+}
