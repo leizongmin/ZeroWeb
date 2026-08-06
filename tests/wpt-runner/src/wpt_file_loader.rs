@@ -169,7 +169,9 @@ impl FileReftestCase {
 /// 须一致处理，否则 `Path::join` 拼出带空格的文件名报「No such file」并把测试误排除出
 /// 分母（R552，R551 谱系）。
 pub(super) fn resolve_ref_path(wpt_data_dir: &Path, test_path: &Path, ref_path: &str) -> PathBuf {
-    let ref_path = ref_path.trim();
+    // 剥离 query（如 `transform-interpolation-ref.html?matrix`——WPT 参数化 ref，
+    // runner 不支持参数化渲染，剥离后加载同一文件；2026-08-07）
+    let ref_path = ref_path.split('?').next().unwrap_or(ref_path).trim();
     if ref_path.starts_with('/') {
         wpt_data_dir.join(ref_path.trim_start_matches('/'))
     } else {

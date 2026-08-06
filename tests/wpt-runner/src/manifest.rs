@@ -324,6 +324,20 @@ pub fn extract_reftest_links(html: &str) -> Vec<ReftestReference> {
     let mut pos = 0;
 
     while pos < html.len() {
+        // 跳过 HTML 注释：注释内的 `<link>` 不应参与解析（2026-08-07，
+        // 例：css-transform-inherit-rotate.html 中被注释的 match link）
+        if let Some(comment_start) = html[pos..].find("<!--") {
+            let abs_cs = pos + comment_start;
+            if let Some(link_start) = html[pos..].find("<link")
+                && abs_cs < pos + link_start
+            {
+                pos = match html[abs_cs..].find("-->") {
+                    Some(e) => abs_cs + e + 3,
+                    None => html.len(),
+                };
+                continue;
+            }
+        }
         // 查找 <link 标签
         if let Some(link_start) = html[pos..].find("<link") {
             let abs_start = pos + link_start;

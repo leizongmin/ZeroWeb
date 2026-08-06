@@ -16,6 +16,11 @@
 #   3. 记录 wpt-data ref 到 trend 记录（scripts/record-wpt-trend.sh 自动读取）
 #
 # 依赖：git, curl
+#
+# 已知套件打包缺口（升级时按需补）：
+#   - css/filter-effects 等子域未打包（zeroweb-wpt-data 为裁剪子集）
+#   - css/reference/ref-nothing-below.xht 等个别 ref 文件缺失
+#   影响：少量 case 因 ref 缺失被排除出分母；common/ 已由本脚本自动补齐。
 
 set -euo pipefail
 
@@ -27,6 +32,46 @@ WPT_DATA_REPO="https://github.com/leizongmin/zeroweb-wpt-data.git"
 # 从 Makefile 读取当前 ref
 current_ref() {
   grep -oP 'WPT_DATA_REF\s*\?=\s*\K.*' "${REPO_ROOT}/Makefile" | tr -d ' '
+}
+
+# 补齐套件缺的 common/ 基础设施资源（资源缺口，2026-08-07 修复）：
+# wpt-data 独立 repo 不打包 WPT 的 common/（blank.html / reftest-wait.js 等），
+# 缺失会导致大量 reftest 加载失败。从上游 wpt 仓库拉取到本地 wpt-data/common/。
+WPT_UPSTREAM_BASE="https://raw.githubusercontent.com/web-platform-tests/wpt/master"
+fetch_common_resources() {
+  local target="${WPT_DATA_DIR}/common"
+  mkdir -p "$target"
+  local listing
+  listing=$(curl -s --max-time 30 "https://api.github.com/repos/web-platform-tests/wpt/contents/common" || true)
+  local ok=0 fail=0
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    local code
+    code=$(curl -s -o "${target}/${f}" -w "%{http_code}" --max-time 20 "${WPT_UPSTREAM_BASE}/common/${f}" || true)
+    if [[ "$code" == "200" ]]; then
+      ok=$((ok + 1))
+    else
+      rm -f "${target}/${f}"
+      fail=$((fail + 1))
+    fi
+  done < <(echo "$listing" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+if isinstance(d, list):
+    print('\n'.join(e['name'] for e in d if e.get('type') == 'file'))
+" 2>/dev/null || true)
+  echo "  common/ 资源：成功 ${ok}，失败 ${fail}"
+  # 完整性校验：关键文件必须存在
+  for key in blank.html reftest-wait.js; do
+    if [[ ! -f "${target}/${key}" ]]; then
+      echo "Error: 关键资源缺失 ${target}/${key}——套件不完整，请检查网络后重试"
+      return 1
+    fi
+  done
+  echo "  common/ 完整性校验通过（blank.html / reftest-wait.js 在）"
 }
 
 usage() {
@@ -78,6 +123,9 @@ rm -rf "${TMP_DIR}/wpt-data/.git"
 
 rm -rf "$WPT_DATA_DIR"
 mv "${TMP_DIR}/wpt-data" "$WPT_DATA_DIR"
+
+# 补齐 common/ 资源并校验完整性
+fetch_common_resources || exit 1
 
 NEW_COUNT=$(find "$WPT_DATA_DIR" -type f | wc -l)
 NEW_MANIFEST_ENTRIES=$(python3 -c "import json,sys; d=json.load(open('${WPT_DATA_DIR}/reftest-manifest.json')); print(len(d.get('reftest_entries',[])))" 2>/dev/null || echo "?")

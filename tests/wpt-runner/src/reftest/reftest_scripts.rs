@@ -11,7 +11,7 @@ use zero_engine::{
     DomMutation, apply_mutations_to_html, extract_page_scripts, generate_js_dom_shim, register_dom_callbacks,
 };
 
-pub(super) fn apply_scripted_dom_mutations(html: &str, base_dir: Option<&Path>) -> String {
+pub(super) fn apply_scripted_dom_mutations(html: &str, base_dir: Option<&Path>, wpt_root: Option<&Path>) -> String {
     let scripts = extract_page_scripts(html);
     let onload_handlers = extract_onload_handlers(html);
     if scripts.is_empty() && onload_handlers.is_empty() {
@@ -54,13 +54,15 @@ pub(super) fn apply_scripted_dom_mutations(html: &str, base_dir: Option<&Path>) 
     for script in &scripts {
         let code: Option<String> = match script {
             PageScript::Inline(c) | PageScript::InlineModule(c) => Some(c.clone()),
-            PageScript::External(src) | PageScript::ExternalModule(src) => match fetch_external_script(src, base_dir) {
-                Ok(c) => Some(c),
-                Err(e) => {
-                    eprintln!("  [reftest JS] external script {src}: {e}");
-                    None
+            PageScript::External(src) | PageScript::ExternalModule(src) => {
+                match fetch_external_script(src, base_dir, wpt_root) {
+                    Ok(c) => Some(c),
+                    Err(e) => {
+                        eprintln!("  [reftest JS] external script {src}: {e}");
+                        None
+                    }
                 }
-            },
+            }
         };
         let Some(code) = code else { continue };
         if code.trim().is_empty() {
@@ -121,18 +123,31 @@ pub(super) fn extract_onload_handlers(html: &str) -> Vec<String> {
     out
 }
 
-/// 从 `base_dir` 解析外链脚本 `src` 并读取本地文件内容（reftest 离线运行）。
+/// 解析并读取外链脚本（reftest 离线运行，失败返回 `Err` 由调用方跳过、不阻塞）。
 ///
-/// `src` 可能是相对路径或绝对路径；相对路径按 `base_dir` 解析。失败返回 `Err`
-/// （调用方跳过该脚本，不阻塞 reftest）。
-pub(super) fn fetch_external_script(src: &str, base_dir: Option<&Path>) -> Result<String, String> {
-    let path = std::path::Path::new(src);
-    let resolved = if path.is_absolute() {
-        path.to_path_buf()
+/// WPT URL 语义（R546/R551 谱系补齐，2026-08-07）：
+/// - 以 `/` 开头的 src（如 `/common/reftest-wait.js`）是**套件根相对 URL**，
+///   相对 wpt_root（wpt-data 根）解析——不能按文件系统绝对路径处理；
+/// - src 可能带 query（如 `foo.js?x=1`，少见），剥离后再加载。
+pub(super) fn fetch_external_script(
+    src: &str,
+    base_dir: Option<&Path>,
+    wpt_root: Option<&Path>,
+) -> Result<String, String> {
+    let src = src.split('?').next().unwrap_or(src);
+    let resolved = if src.starts_with('/') {
+        match wpt_root {
+            Some(root) => root.join(src.trim_start_matches('/')),
+            None => {
+                return Err(format!(
+                    "absolute WPT path {src} but wpt_root not configured (set ReftestConfig::wpt_root)"
+                ));
+            }
+        }
     } else if let Some(base) = base_dir {
         base.join(src)
     } else {
-        path.to_path_buf()
+        std::path::Path::new(src).to_path_buf()
     };
     std::fs::read_to_string(&resolved).map_err(|e| format!("{}: {e}", resolved.display()))
 }

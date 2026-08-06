@@ -56,12 +56,20 @@ pub fn save_fb_as_png(fb: &FrameBuffer, path: &Path) {
 ///
 /// 返回 (不同像素数, 最大单通道色差)。
 pub fn compare_pixels(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8) -> (usize, u8) {
-    compare_pixels_labeled(fb1, fb2, threshold, "")
+    let (d, m, _subpixel) = compare_pixels_labeled(fb1, fb2, threshold, "");
+    (d, m)
 }
 
 /// 带标签的像素对比 —— 标签会附加到 REFTEST_BBOX 诊断行，便于定位差异归属。
-pub fn compare_pixels_labeled(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8, label: &str) -> (usize, u8) {
+///
+/// 返回 `(diff_pixels, max_channel_diff, subpixel_diff)`：
+/// `subpixel_diff` 是通道差**恰好为 1** 的差异像素数（D2 审计建议的诊断维度）——
+/// 这类差异通常来自 f32 布局亚像素坐标漂移/AA 抖动（见
+/// docs/goal/rendering-compat/evidence/f32-layout-precision-audit-2026-08-07.md），
+/// **不参与通过判定**，仅用于量化浮点噪声对 oracle 一致率的影响面。
+pub fn compare_pixels_labeled(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8, label: &str) -> (usize, u8, usize) {
     let mut diff_pixels = 0usize;
+    let mut subpixel_diff = 0usize;
     let mut max_diff = 0u8;
     // 调试工具：设置 REFTEST_BBOX 环境变量时，打印差异像素的包围盒，
     // 帮助定位失败用例的差异区域（图像分析工具不可靠时的精确替代）。
@@ -91,6 +99,9 @@ pub fn compare_pixels_labeled(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u
 
         if channel_max > threshold {
             diff_pixels += 1;
+            if channel_max == 1 {
+                subpixel_diff += 1;
+            }
             if track_bbox {
                 let px = (i / 4) % fw;
                 let py = (i / 4) / fw;
@@ -114,7 +125,7 @@ pub fn compare_pixels_labeled(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u
         eprintln!("[REFTEST_BBOX] {label} x=[{min_x},{max_x}] y=[{min_y},{max_y}] fb_w={fw}");
     }
 
-    (diff_pixels, max_diff)
+    (diff_pixels, max_diff, subpixel_diff)
 }
 
 /// 将帧缓冲保存为 PNG 文件。

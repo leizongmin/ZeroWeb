@@ -900,6 +900,7 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
         let reftest_case = case.to_reftest_case();
         let mut config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
         config.media_type = options.media_type;
+        config.wpt_root = Some(wpt_data_dir.clone());
         let base_dir = case.base_dir.as_deref();
 
         if options.use_gpu {
@@ -1026,6 +1027,7 @@ fn cmd_layout_dump(options: &CliOptions, filter: Option<&str>) {
     for case in &filtered {
         let mut config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
         config.media_type = options.media_type;
+        config.wpt_root = Some(wpt_data_dir.clone());
         let base_dir = case.base_dir.as_deref();
 
         // 只渲染 test 页；ref 页布局不在 dump 范围
@@ -1403,7 +1405,18 @@ fn format_reftest_report(
         for r in results {
             if !r.passed {
                 report.push_str(&format!("  ✗ {}\n", r.id));
-                report.push_str(&format!("    {}\n\n", r.message));
+                report.push_str(&format!("    {}\n", r.message));
+                // D2 亚像素统计：通道差恰好为 1 的像素占比（诊断维度，不参与判定）
+                report.push_str(&format!(
+                    "    (subpixel={}/{} — 亚像素级差异占比 {:.1}%，见 f32-layout-precision-audit)\n\n",
+                    r.subpixel_diff_pixels,
+                    r.diff_pixels,
+                    if r.diff_pixels > 0 {
+                        r.subpixel_diff_pixels as f64 / r.diff_pixels as f64 * 100.0
+                    } else {
+                        0.0
+                    }
+                ));
             }
         }
     }
@@ -1484,7 +1497,8 @@ fn format_reftest_report_json(
         json.push_str(&format!("      \"diff_ratio\": {:.6},\n", r.diff_ratio));
         json.push_str(&format!("      \"diff_pixels\": {},\n", r.diff_pixels));
         json.push_str(&format!("      \"total_pixels\": {},\n", r.total_pixels));
-        json.push_str(&format!("      \"max_channel_diff\": {}", r.max_channel_diff));
+        json.push_str(&format!("      \"max_channel_diff\": {},\n", r.max_channel_diff));
+        json.push_str(&format!("      \"subpixel_diff_pixels\": {}", r.subpixel_diff_pixels));
         if r.message.is_empty() {
             json.push_str("\n    }");
         } else {

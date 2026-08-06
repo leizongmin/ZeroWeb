@@ -9,7 +9,7 @@
 
 #![allow(dead_code)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use zero_engine::RenderPipeline;
 use zero_engine::paint::simple_hash;
@@ -134,6 +134,9 @@ pub struct ReftestResult {
     pub diff_ratio: f64,
     /// 最大单通道颜色差异。
     pub max_channel_diff: u8,
+    /// 亚像素级差异像素数（通道差恰好为 1，通常来自 f32 坐标漂移/AA 抖动）。
+    /// 诊断维度，不参与通过判定（D2，见 f32-layout-precision-audit）。
+    pub subpixel_diff_pixels: usize,
     /// 失败原因（通过时为空）。
     pub message: String,
     /// DC-14 非平凡性：测试帧是否「接近纯色」（退化/空白渲染）。
@@ -163,6 +166,10 @@ pub struct ReftestConfig {
     pub min_mismatch_ratio: f64,
     /// 渲染媒体类型（DC-12 @media print/screen 级联过滤；R1991）。默认 `Screen` = 零行为变更。
     pub media_type: zero_css_parser::media_query::MediaType,
+    /// wpt-data 根目录：用于解析以 `/` 开头的 WPT 绝对路径资源
+    /// （如 `/common/reftest-wait.js`——WPT URL 语义，非文件系统绝对路径；
+    /// R546 谱系已修 ref 路径，2026-08-07 补 external script 路径）。
+    pub wpt_root: Option<PathBuf>,
 }
 
 impl Default for ReftestConfig {
@@ -174,6 +181,7 @@ impl Default for ReftestConfig {
             max_diff_ratio: 0.01,
             max_channel_diff: 5,
             category: ReftestCategory::Unknown,
+            wpt_root: None,
             fuzzy_override: None,
             min_mismatch_ratio: 0.005,
             media_type: zero_css_parser::media_query::MediaType::Screen,
@@ -291,6 +299,7 @@ pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_di
             total_pixels: 0,
             diff_ratio: 0.0,
             max_channel_diff: 0,
+            subpixel_diff_pixels: 0,
             test_near_solid: false,
             message: format!(
                 "Size mismatch: test={}x{} ref={}x{}",
@@ -301,7 +310,8 @@ pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_di
 
     let total_pixels = (test_fb.width as usize) * (test_fb.height as usize);
     let eff_channel_diff = config.effective_max_channel_diff();
-    let (diff_pixels, max_channel_diff) = compare_pixels_labeled(&test_fb, &ref_fb, eff_channel_diff, &case.id);
+    let (diff_pixels, max_channel_diff, subpixel_diff_pixels) =
+        compare_pixels_labeled(&test_fb, &ref_fb, eff_channel_diff, &case.id);
     let diff_ratio = if total_pixels > 0 {
         diff_pixels as f64 / total_pixels as f64
     } else {
@@ -357,6 +367,7 @@ pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_di
         total_pixels,
         diff_ratio,
         max_channel_diff,
+        subpixel_diff_pixels,
         message,
         test_near_solid: frame_is_near_solid(&test_fb),
     }
@@ -383,6 +394,7 @@ pub fn run_reftest_gpu_with_base(case: &ReftestCase, config: &ReftestConfig, bas
             total_pixels: 0,
             diff_ratio: 0.0,
             max_channel_diff: 0,
+            subpixel_diff_pixels: 0,
             test_near_solid: false,
             message: format!(
                 "Size mismatch: test={}x{} ref={}x{}",
@@ -393,7 +405,8 @@ pub fn run_reftest_gpu_with_base(case: &ReftestCase, config: &ReftestConfig, bas
 
     let total_pixels = (test_fb.width as usize) * (test_fb.height as usize);
     let eff_channel_diff = config.effective_max_channel_diff();
-    let (diff_pixels, max_channel_diff) = compare_pixels_labeled(&test_fb, &ref_fb, eff_channel_diff, &case.id);
+    let (diff_pixels, max_channel_diff, subpixel_diff_pixels) =
+        compare_pixels_labeled(&test_fb, &ref_fb, eff_channel_diff, &case.id);
     let diff_ratio = if total_pixels > 0 {
         diff_pixels as f64 / total_pixels as f64
     } else {
@@ -436,6 +449,7 @@ pub fn run_reftest_gpu_with_base(case: &ReftestCase, config: &ReftestConfig, bas
         total_pixels,
         diff_ratio,
         max_channel_diff,
+        subpixel_diff_pixels,
         message,
         test_near_solid: frame_is_near_solid(&test_fb),
     }
@@ -523,7 +537,7 @@ fn render_with_layout_inner(
     String,
 ) {
     // 执行页面 <script>（含 DOM 变更），把 JS 后的最终 HTML 用于后续渲染。
-    let mutated_html = apply_scripted_dom_mutations(html, base_dir);
+    let mutated_html = apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref());
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
         config.viewport_width as f64,
         config.viewport_height as f64,
@@ -664,7 +678,7 @@ pub fn render_via_webview_to_framebuffer_with_base(
     config: &ReftestConfig,
     base_dir: Option<&Path>,
 ) -> FrameBuffer {
-    let mutated_html = apply_scripted_dom_mutations(html, base_dir);
+    let mutated_html = apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref());
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
         config.viewport_width as f64,
         config.viewport_height as f64,
