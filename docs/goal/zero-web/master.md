@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a reflected 全局属性续 inert + autocomplete（本轮 R2850，缺失 Web API 续 / reflected-attr 表面续）
+
+承接 R2849（option.index）。probe 发现 `inert`（boolean attr，缺省 false）+ `autocomplete`（enumerated 串，spec missing-default **"on"**）旧 fallthrough 返 undefined。模态/无障碍（inert 隔离交互）/ 表单自动填充（autocomplete）读这些属性高频。延续 R2848 reflected-attr 模式。
+
+- **关键设计点**：扩 R2848 getter/setter 块条件（+inert/autocomplete）。① **inert**——同 autofocus boolean presence：getter 走 `__zw_has_attr(_handle)`（缺省 false）；setter truthy 设空值 presence / falsy 真移除（`__zw_remove_attr`），handle falsy 不设。② **autocomplete**——enumerated 串反射：getter 返 attr 值（缺省 / `__zw_get_attr` 返 `""` → `"on"`，spec missing-default 一致）；setter 写任意串到 attr（无 canonical）。③ 复用既有 reflected-attr infra（`_reflectedAttrs` 缓存 + `__zw_get/set/has_attr(_handle)`/`__zw_remove_attr`），零新 host 回调。
+- **TDD red→green**：初版 autocomplete 缺省判定 `acRaw == null` 漏 `__zw_get_attr` 缺省返 `""`（非 null）→ plain autocomplete 返 `""` 非 `"on"`；改 `(acRaw == null || acRaw === '')` 修正。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | R2848 getter 块条件 +inert/autocomplete（inert 走 boolean presence，autocomplete 走 enumerated 串反射缺省 "on"）；R2848 setter 块条件 +inert/autocomplete（inert boolean presence，autocomplete 写串）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_reflected_global_attrs_inert_autocomplete_r2850`（div[inert] present→true / input[autocomplete="off"]→"off" / plain 缺省 inert=false+autocomplete="on" / setter inert=true + autocomplete='given-name' 缓存即时 / apply 后 attr 写回核验）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13477 passed / 0 failed / 74 ignored**，13476+1 新测试，0 回归；engine lib 1576 测试零回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（welcome 不读这些属性，新路径不触发）。
+
+**为何零回归且净正向**：① 仅扩 R2848 块条件（+2 prop 名），autofocus/draggable/spellcheck/translate 既有行为不变（R2848 测试作回归守卫）；② 仅当页面读写 inert/autocomplete 时触发（welcome 不用）；③ 复用既有 reflected-attr infra（零新 host 回调）；④ autocomplete 从 undefined→spec 串（缺省 "on"），对读这些属性的库是改善。
+
+**已知限制（记录）**：① autocomplete 不做 detail token 规范化（spec 对 `off`/`on`/section-* tokens 有 canonical 算法——本实现原样返/写 attr 值，常见用法足）；② inert 仅 IDL 反射（无真交互隔离——pointer/focus 阻断需 host-layer 输入路由 defer）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面续扫——更多 reflected 全局属性（enterkeyhint/itemscope/nomodule）/ `node.normalize`（snapshot 模型低价值）/ img.naturalWidth/Height（headless 无真图加载）；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / 真 WAAPI / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13477 全绿）。
+
 ### P1a `<option>`.index（本轮 R2849，缺失 Web API 续 / 表单 IDL，rowIndex 模式复用）
 
 承接 R2848（reflected 全局属性）。probe 发现 `<option>`.index 缺失（旧 fallthrough undefined）。form 库读 option.index 定位选项位置高频。

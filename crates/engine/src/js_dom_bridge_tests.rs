@@ -13491,3 +13491,90 @@ fn test_option_index_r2849() {
         "detached option（createElement，不在 select）→ index=0"
     );
 }
+
+#[test]
+fn test_reflected_global_attrs_inert_autocomplete_r2850() {
+    // R2850：reflected 全局属性 inert（boolean attr，缺省 false）/ autocomplete（enumerated 串，缺省 "on"）。
+    // 旧 fallthrough 返 undefined。inert 同 autofocus（presence）；autocomplete 缺省 → "on"（spec missing-default）。
+    // 模态/无障碍（inert 隔离交互）/ 表单自动填充（autocomplete）读这些属性高频。延续 R2848 模式。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // div[inert] present；input[autocomplete="off"]；plain 无两属性。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id='d' inert></div>\
+         <input id='a' autocomplete='off'>\
+         <div id='plain'></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 读：div[inert] present → inert=true；input[autocomplete="off"] → "off"；plain 缺省 inert=false / autocomplete="on"。
+    sandbox
+        .execute(
+            "globalThis.__di = document.querySelector('#d').inert;\
+             globalThis.__aa = document.querySelector('#a').autocomplete;\
+             var p = document.querySelector('#plain');\
+             globalThis.__pi = p.inert;\
+             globalThis.__pa = p.autocomplete;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__di)").unwrap().value,
+        "true",
+        "div[inert] present → inert=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__aa)").unwrap().value,
+        "off",
+        "input[autocomplete='off'] → autocomplete='off'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pi)").unwrap().value,
+        "false",
+        "plain inert 缺省 → false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pa)").unwrap().value,
+        "on",
+        "plain autocomplete 缺省 → 'on'（spec missing-default）"
+    );
+
+    // setter：同步 set→get 优先读缓存（即时）。inert=true→presence；autocomplete='given-name'→attr 串。
+    sandbox
+        .execute(
+            "var e = document.querySelector('#plain');\
+             e.inert = true; e.autocomplete = 'given-name';\
+             globalThis.__si = e.inert;\
+             globalThis.__sa = e.autocomplete;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__si)").unwrap().value,
+        "true",
+        "setter inert=true → true（缓存即时）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sa)").unwrap().value,
+        "given-name",
+        "setter autocomplete='given-name' → 'given-name'（任意值写 attr）"
+    );
+
+    // apply mutations → 核验 attr 写回（inert presence / autocomplete='given-name'）。
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms).unwrap();
+    assert!(out.contains("id=\"plain\" inert"), "inert setter 写 presence\n{out}");
+    assert!(
+        out.contains("autocomplete=\"given-name\""),
+        "autocomplete setter 写 'given-name'\n{out}"
+    );
+}

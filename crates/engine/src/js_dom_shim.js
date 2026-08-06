@@ -3332,19 +3332,25 @@
           if (arc && Object.prototype.hasOwnProperty.call(arc, _ariaName)) return arc[_ariaName];
           return (handle ? __zw_get_attr_handle(handle, _ariaName) : __zw_get_attr(sel, _ariaName)) || '';
         }
-        // reflected 布尔/枚举全局属性（R2848）：autofocus/draggable/spellcheck/translate——
-        // 旧 fallthrough 返 undefined（spec 须布尔）。getter 优先读 _reflectedAttrs 缓存（setter 写解析布尔，
-        // 同步 set→get 即时），无缓存则从 host attr 解析。spec 默认：autofocus/draggable=false，
-        // spellcheck/translate=true。autofocus 为 boolean attr（presence 判定，has_attr）。
-        if (prop === 'autofocus' || prop === 'draggable' || prop === 'spellcheck' || prop === 'translate') {
+        // reflected 布尔/枚举全局属性（R2848/R2850）：autofocus/draggable/spellcheck/translate（R2848）
+        // + inert/autocomplete（R2850）——旧 fallthrough 返 undefined（spec 须布尔/串）。getter 优先读
+        // _reflectedAttrs 缓存（setter 写解析值，同步 set→get 即时），无缓存则 host attr 解析。spec 默认：
+        // autofocus/draggable/inert=false，spellcheck/translate=true，autocomplete="on"（missing-default）。
+        // autofocus/inert 为 boolean attr（presence 判定，has_attr）；autocomplete 为 enumerated 串反射。
+        if (prop === 'autofocus' || prop === 'draggable' || prop === 'spellcheck' || prop === 'translate' || prop === 'inert' || prop === 'autocomplete') {
           var rfc = _reflectedAttrs[key];
           if (rfc && Object.prototype.hasOwnProperty.call(rfc, prop)) return rfc[prop];
-          if (prop === 'autofocus') {
+          if (prop === 'autofocus' || prop === 'inert') {
             // boolean attr：presence（has_attr）→ true；缺省 → false。
             if (handle) {
-              try { return __zw_has_attr_handle(handle, 'autofocus') === '1'; } catch (_e) { return false; }
+              try { return __zw_has_attr_handle(handle, prop) === '1'; } catch (_e) { return false; }
             }
-            return typeof __zw_has_attr === 'function' && __zw_has_attr(sel, 'autofocus') === '1';
+            return typeof __zw_has_attr === 'function' && __zw_has_attr(sel, prop) === '1';
+          }
+          if (prop === 'autocomplete') {
+            // enumerated 串反射：attr 值（缺省 → "on"，spec missing-default）。__zw_get_attr 缺省返 "" 故 "" 亦判缺省。
+            var acRaw = handle ? __zw_get_attr_handle(handle, 'autocomplete') : __zw_get_attr(sel, 'autocomplete');
+            return (acRaw == null || acRaw === '') ? 'on' : String(acRaw);
           }
           var rfRaw = handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop);
           rfRaw = (rfRaw == null) ? '' : String(rfRaw).toLowerCase();
@@ -4325,20 +4331,27 @@
             moAttr = p;
           }
           // handle falsy：无 remove-handle 变体 → 不设（detach 元素 append 时默认无该布尔属性）。
-        } else if (p === 'autofocus' || p === 'draggable' || p === 'spellcheck' || p === 'translate') {
-          // reflected 布尔/枚举全局属性（R2848）：归一布尔 → 缓存 + 写 attr（autofocus=boolean presence，
-          // draggable/spellcheck="true"/"false"，translate="yes"/"no"）。falsy autofocus 真移除。
-          var sv = !!value;
+        } else if (p === 'autofocus' || p === 'draggable' || p === 'spellcheck' || p === 'translate' || p === 'inert' || p === 'autocomplete') {
+          // reflected 布尔/枚举全局属性（R2848/R2850）：autofocus/draggable/spellcheck/translate（R2848）
+          // + inert/autocomplete（R2850）。autofocus/inert=boolean presence（truthy 设空值 / falsy 真移除）；
+          // autocomplete=enumerated 串（任意值写 attr）；draggable/spellcheck="true"/"false"；translate="yes"/"no"。
           var rc4 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
-          rc4[p] = sv;
-          if (p === 'autofocus') {
-            if (sv) {
-              if (handle) __zw_set_attr_handle(handle, 'autofocus', '');
-              else { __zw_set_attr(sel, 'autofocus', ''); moAttr = 'autofocus'; }
+          if (p === 'autofocus' || p === 'inert') {
+            var bsv = !!value;
+            rc4[p] = bsv;
+            if (bsv) {
+              if (handle) __zw_set_attr_handle(handle, p, '');
+              else { __zw_set_attr(sel, p, ''); moAttr = p; }
             } else if (!handle && typeof __zw_remove_attr === 'function') {
-              __zw_remove_attr(sel, 'autofocus'); moAttr = 'autofocus';
+              __zw_remove_attr(sel, p); moAttr = p;
             }
+          } else if (p === 'autocomplete') {
+            rc4[p] = String(value);
+            if (handle) __zw_set_attr_handle(handle, 'autocomplete', String(value));
+            else { __zw_set_attr(sel, 'autocomplete', String(value)); moAttr = 'autocomplete'; }
           } else {
+            var sv = !!value;
+            rc4[p] = sv;
             var attrV = (p === 'translate') ? (sv ? 'yes' : 'no') : (sv ? 'true' : 'false');
             if (handle) __zw_set_attr_handle(handle, p, attrV);
             else { __zw_set_attr(sel, p, attrV); moAttr = p; }
