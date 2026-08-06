@@ -3843,6 +3843,10 @@
     createNodeIterator: function (root, whatToShow, filter) {
       return _makeNodeWalker(root, whatToShow, filter);
     },
+    // `document.createRange()`——新建 Range（R2804，Selection/Range）。详见 `_makeRange`。
+    createRange: function () {
+      return _makeRange();
+    },
     // `document.createDocumentFragment()`：DocumentFragment（nodeType 11，轻量容器）。
     // 建 fragment（append 子节点经既有 append_child_handle）+ 标记 handle 到 _fragmentHandles
     //（供 nodeType=11 与 append 时 flatten 检测）。
@@ -3932,6 +3936,127 @@
   Object.defineProperty(globalThis.document, 'defaultView', {
     get: function() { return globalThis.window; }
   });
+
+  // Selection / Range（R2804，缺失 Web API 续）。headless 无真用户选择——Selection 单例默认空
+  //（rangeCount=0/isCollapsed=true/toString=''/anchorNode=null/focusNode=null/type='None'），selection-state-
+  // checking 脚本（`if (getSelection().toString()) ...`）正确跳过选择分支。programmatic Range 经 setStart/
+  // setEnd/selectNode* 设边界；toString 提取选区文本（精确覆盖 selectNode*/同文本节点 setStart·setEnd）。
+  var _selection = null; // Selection 单例（惰性建，getSelection 返同一对象，spec 一致）
+
+  // 递归收集 node 子树内文本节点 data（文档序，经 childNodes——element 子可递归，文本为静态叶）。
+  function _descendantText(node, out) {
+    if (!node) return;
+    if (node.nodeType === 3 || node.__zwIsText) { out.push(node.nodeValue || ''); return; }
+    var kids = node.childNodes;
+    if (kids && kids.length) { for (var i = 0; i < kids.length; i++) _descendantText(kids[i], out); }
+  }
+
+  // 构造 Range（document.createRange / selectNode* 等用）。**已知限制**：① toString 精确覆盖 selectNode/
+  // selectNodeContents（整节点子树文本）+ 同文本节点 setStart/setEnd（slice 偏移）；其余 setStart/setEnd
+  // 组合 best-effort 取 commonAncestor 子树文本（跨节点偏移不精确截取）；② cloneContents best-effort 仅文本
+  // 节点（DOM 克隆 defer）；③ deleteContents/extractContents/insertNode/surroundContents defer（DOM 变更复杂）；
+  // ④ getBoundingClientRect/getClientRects 返空（无 layout 选择几何）；⑤ 无真 live（proxy 快照）。
+  function _makeRange() {
+    return {
+      startContainer: null, startOffset: 0, endContainer: null, endOffset: 0,
+      commonAncestorContainer: null, collapsed: true, _mode: null,
+      setStart: function (node, off) { this.startContainer = node; this.startOffset = off | 0; this._recalc(); return this; },
+      setEnd: function (node, off) { this.endContainer = node; this.endOffset = off | 0; this._recalc(); return this; },
+      setStartBefore: function (node) { var p = node && node.parentNode; return p ? this.setStart(p, this._indexOf(p, node)) : this; },
+      setStartAfter: function (node) { var p = node && node.parentNode; return p ? this.setStart(p, this._indexOf(p, node) + 1) : this; },
+      setEndBefore: function (node) { var p = node && node.parentNode; return p ? this.setEnd(p, this._indexOf(p, node)) : this; },
+      setEndAfter: function (node) { var p = node && node.parentNode; return p ? this.setEnd(p, this._indexOf(p, node) + 1) : this; },
+      selectNode: function (node) {
+        var p = (node && node.parentNode) || node;
+        var i = this._indexOf(p, node);
+        this.startContainer = p; this.startOffset = i;
+        this.endContainer = p; this.endOffset = i + 1;
+        this.commonAncestorContainer = p; this.collapsed = false; this._mode = { node: node, kind: 'node' };
+        return this;
+      },
+      selectNodeContents: function (node) {
+        var cnt = node && node.childNodes ? node.childNodes.length : 0;
+        this.startContainer = node; this.startOffset = 0;
+        this.endContainer = node; this.endOffset = cnt;
+        this.commonAncestorContainer = node; this.collapsed = cnt === 0; this._mode = { node: node, kind: 'contents' };
+        return this;
+      },
+      collapse: function (toStart) {
+        if (toStart) { this.endContainer = this.startContainer; this.endOffset = this.startOffset; }
+        else { this.startContainer = this.endContainer; this.startOffset = this.endOffset; }
+        this.collapsed = true; this._mode = null; return this;
+      },
+      _indexOf: function (parent, node) {
+        var kids = parent && parent.childNodes;
+        if (!kids) return 0;
+        for (var i = 0; i < kids.length; i++) if (kids[i] === node) return i;
+        return 0;
+      },
+      _recalc: function () {
+        this._mode = null;
+        this.collapsed = (this.startContainer === this.endContainer && this.startOffset === this.endOffset);
+        this.commonAncestorContainer = this.startContainer; // best-effort（spec 须最近共同祖先）
+      },
+      toString: function () {
+        // 精确：selectNode/selectNodeContents → 整节点子树文本。
+        if (this._mode) { var out = []; _descendantText(this._mode.node, out); return out.join(''); }
+        // 精确：同文本节点 setStart/setEnd → slice 偏移。
+        if (this.startContainer && this.startContainer === this.endContainer &&
+            (this.startContainer.nodeType === 3 || this.startContainer.__zwIsText)) {
+          var v = this.startContainer.nodeValue || '';
+          var a = Math.min(this.startOffset, this.endOffset);
+          var b = Math.max(this.startOffset, this.endOffset);
+          return v.slice(a, b);
+        }
+        // best-effort：取 commonAncestor 子树文本（跨节点偏移不精确截取）。
+        if (this.commonAncestorContainer) { var o2 = []; _descendantText(this.commonAncestorContainer, o2); return o2.join(''); }
+        return '';
+      },
+      cloneContents: function () {
+        // best-effort DocumentFragment：仅含选区文本（一个文本节点）。DOM 克隆 defer。
+        var f = globalThis.document.createDocumentFragment();
+        var t = this.toString();
+        if (t) f.appendChild(globalThis.document.createTextNode(t));
+        return f;
+      },
+      getBoundingClientRect: function () { return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }; },
+      getClientRects: function () { return []; }
+    };
+  }
+
+  // Selection 单例工厂。addRange 简化为单 range（多 range 仅 Firefox，主流单 range）。
+  function _getSelection() {
+    if (_selection) return _selection;
+    _selection = {
+      _ranges: [],
+      get rangeCount() { return this._ranges.length; },
+      get isCollapsed() { return this._ranges.length === 0 || this._ranges.every(function (r) { return r.collapsed; }); },
+      get anchorNode() { return this._ranges[0] ? this._ranges[0].startContainer : null; },
+      get anchorOffset() { return this._ranges[0] ? this._ranges[0].startOffset : 0; },
+      get focusNode() { return this._ranges[0] ? this._ranges[0].endContainer : null; },
+      get focusOffset() { return this._ranges[0] ? this._ranges[0].endOffset : 0; },
+      get type() { return this._ranges.length === 0 ? 'None' : (this.isCollapsed ? 'Caret' : 'Range'); },
+      toString: function () { return this._ranges.map(function (r) { return r.toString(); }).join(''); },
+      getRangeAt: function (i) { return this._ranges[i | 0] || null; },
+      removeAllRanges: function () { this._ranges = []; },
+      empty: function () { this._ranges = []; },
+      removeRange: function (range) { this._ranges = this._ranges.filter(function (r) { return r !== range; }); },
+      addRange: function (range) { this._ranges = [range]; /* 多 range（FF）简化为单 */ },
+      collapse: function (node, off) {
+        if (!node) { this._ranges = []; return; }
+        var r = _makeRange(); r.setStart(node, off | 0); r.collapse(true);
+        this._ranges = [r];
+      },
+      collapseToStart: function () { if (this._ranges[0]) { this._ranges[0].collapse(true); } },
+      collapseToEnd: function () { if (this._ranges[0]) { this._ranges[0].collapse(false); } },
+      extend: function (node, off) { if (this._ranges[0]) { this._ranges[0].setEnd(node, off | 0); } },
+      containsNode: function () { return false; } // best-effort（无真选择几何）
+    };
+    return _selection;
+  }
+  globalThis.getSelection = _getSelection;
+  globalThis.Selection = function Selection() {};
+  globalThis.Range = function Range() {};
 
   // HTML 规范「Window 上的命名属性访问」：带 id 的元素应作为全局变量可访问
   // （`<div id="container">…</div>` → JS `container.appendChild(...)`）。动态 reftest

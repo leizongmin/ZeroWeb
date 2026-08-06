@@ -2091,6 +2091,24 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a Selection / Range / getSelection（本轮 R2804，缺失 Web API 续）
+
+承接 R2803（TreeWalker）。续缺失 Web API——land **`window.getSelection()` + `Selection` 单例 + `document.createRange()` + `Range`**（文本选择 / 编辑器 / copy-paste / find-in-page 高频，medium-deep）。**先验证可行 + scope 到纯 JS 干净子集**：headless 无真用户选择——Selection 单例默认空（`rangeCount=0`/`isCollapsed=true`/`toString=''`/`anchorNode=null`/`type='None'`），selection-state-checking 脚本（`if (getSelection().toString()) ...`）正确跳过选择分支。programmatic Range 经 setStart/setEnd/selectNode* 设边界；toString 提取选区文本。
+
+- **`Selection` 单例**（`window.getSelection()` 返同一对象，spec 一致）：getter `rangeCount`/`isCollapsed`/`anchorNode`/`anchorOffset`/`focusNode`/`focusOffset`/`type`（None/Caret/Range）+ 方法 `toString`（聚合 range 文本）/`getRangeAt`/`removeAllRanges`/`empty`/`removeRange`/`addRange`（简化单 range，主流单 range，FF 多 range defer）/`collapse`/`collapseToStart`/`collapseToEnd`/`extend`/`containsNode`（best-effort false）。
+- **`Range`**（`document.createRange()` → `_makeRange`）：`setStart`/`setEnd`/`setStartBefore`/`setStartAfter`/`setEndBefore`/`setEndAfter`/`selectNode`/`selectNodeContents`/`collapse` + `collapsed`/`startContainer`/`startOffset`/`endContainer`/`endOffset`/`commonAncestorContainer` + `toString` + `cloneContents`（best-effort 文本 fragment）+ `getBoundingClientRect`/`getClientRects`（stub 空，无 layout）。
+- **`toString` 精确覆盖**：① selectNode/selectNodeContents → `_descendantText(node)`（递归 childNodes 收集文本，文档序，与 TreeWalker 同导航）；② 同文本节点 setStart/setEnd → `nodeValue.slice(minOff,maxOff)`；其余 setStart/setEnd 组合 best-effort 取 commonAncestor 子树文本（跨节点偏移不精确截取）。
+- **已知限制（记录）**：① `cloneContents` best-effort 仅文本节点（DOM 克隆 defer）；② **`deleteContents`/`extractContents`/`insertNode`/`surroundContents` defer**（DOM 变更复杂）；③ `getBoundingClientRect`/`getClientRects` 返空（无 layout 选择几何）；④ `addRange` 简化单 range；⑤ 无真 live（proxy 快照）；⑥ `instanceof Range/Selection` 不支持（构造器占位）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_selection` 单例 + `_descendantText`（递归文本收集）+ `_makeRange`（边界方法 + toString 精确分支 + cloneContents best-effort + geometry stub）+ `_getSelection`（getter + 方法）+ `globalThis.getSelection`/`Selection`/`Range` + document `createRange`。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_selection_range_r2804`（getSelection 单例 / 默认空 toString=''·rangeCount=0·isCollapsed·type='None'·anchorNode=null / selectNodeContents(p)='hello' / 多文本后代 #r='helloworld' / 同文本节点 setStart·setEnd slice 'el' / addRange→rangeCount=1·type='Range' / removeAllRanges 回空）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13432 passed / 0 failed / 74 ignored**，13431+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 globals（getSelection/Selection/Range）+ document 新增 createRange + 新内部 helper（不改既有属性/方法）；② Selection 单例惰性建（首访才建，无副作用）；③ Range/Selection 只读 proxy 树文本（经既有 childNodes 导航，零 host 回调新增）；④ 默认空选择不改任何既有状态。
+
 ### P1a document.createTreeWalker / createNodeIterator + NodeFilter（本轮 R2803，缺失 Web API 续）
 
 承接 R2802（createEvent）。续缺失 Web API——land **`document.createTreeWalker` / `createNodeIterator` + `NodeFilter`**（DOM 子树遍历器，库 / sanitizer / a11y tree walker / 内容提取高频）。**先验证可行**：proxy 导航 firstChild/childNodes/nextSibling 经 host 回调（`__zw_child_nodes`/`__zw_sibling_nodes`），element 子为 selector-based proxy 可递归 `.childNodes`，文本/注释为静态叶节点——故 eager pre-order 经 `childNodes` 递归**可行**（避开 text 节点 nextSibling 缺失）。纯 JS，零 host 回调新增。

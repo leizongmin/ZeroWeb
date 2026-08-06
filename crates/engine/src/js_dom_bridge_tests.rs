@@ -8366,3 +8366,173 @@ fn test_document_tree_walker_r2803() {
         "previousNode 须可逆向遍历"
     );
 }
+
+#[test]
+fn test_selection_range_r2804() {
+    // R2804：window.getSelection + Selection 单例 + document.createRange + Range（文本选择/编辑器/copy-paste）。
+    // headless 无真选择——Selection 默认空（rangeCount=0/isCollapsed=true/toString=''/type='None'）。
+    // Range.toString 精确覆盖 selectNode*/同文本节点 setStart·setEnd。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=r><p>hello</p><span>world</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // Selection 单例：window.getSelection() === window.getSelection()（同一对象）。
+    sandbox
+        .execute("globalThis.__same = (window.getSelection() === window.getSelection());")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__same)").unwrap().value,
+        "true",
+        "getSelection 须返单例（同一对象）"
+    );
+
+    // 默认空选择（headless 无真用户选择）。
+    sandbox
+        .execute(
+            "var s = window.getSelection();\
+             globalThis.__ts = s.toString();\
+             globalThis.__rc = s.rangeCount;\
+             globalThis.__ic = s.isCollapsed;\
+             globalThis.__ty = s.type;\
+             globalThis.__an = s.anchorNode;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ts)").unwrap().value,
+        "",
+        "默认 selection.toString 须为空"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rc)").unwrap().value,
+        "0",
+        "默认 rangeCount 须为 0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ic)").unwrap().value,
+        "true",
+        "默认 isCollapsed 须为 true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ty)").unwrap().value,
+        "None",
+        "默认 type 须为 'None'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__an)").unwrap().value,
+        "null",
+        "默认 anchorNode 须为 null"
+    );
+
+    // createRange + selectNodeContents(p)：toString = p 子树文本 'hello'。
+    sandbox
+        .execute(
+            "var p = document.getElementById('r').firstElementChild; /* <p>hello</p> */\
+             var r = document.createRange();\
+             r.selectNodeContents(p);\
+             globalThis.__rp = r.toString();\
+             globalThis.__rcl = r.collapsed;\
+             globalThis.__rsc = (r.startContainer === p);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rp)").unwrap().value,
+        "hello",
+        "selectNodeContents(p).toString 须为 'hello'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rcl)").unwrap().value,
+        "false",
+        "selectNodeContents 后 collapsed 须为 false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rsc)").unwrap().value,
+        "true",
+        "selectNodeContents startContainer 须为 p"
+    );
+
+    // selectNodeContents(#r)：多文本后代，toString = 'helloworld'。
+    sandbox
+        .execute(
+            "var rr = document.createRange(); rr.selectNodeContents(document.getElementById('r'));\
+             globalThis.__rr = rr.toString();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rr)").unwrap().value,
+        "helloworld",
+        "selectNodeContents(#r) 须收集多文本后代 'helloworld'"
+    );
+
+    // 同文本节点 setStart/setEnd slice：'hello'.slice(1,3) = 'el'。
+    sandbox
+        .execute(
+            "var tn = document.getElementById('r').firstElementChild.firstChild; /* text 'hello' */\
+             var rt = document.createRange(); rt.setStart(tn, 1); rt.setEnd(tn, 3);\
+             globalThis.__rt = rt.toString();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rt)").unwrap().value,
+        "el",
+        "同文本节点 setStart/setEnd 须 slice(1,3)='el'"
+    );
+
+    // addRange → rangeCount=1 / selection.toString = range 文本 / type='Range' / isCollapsed=false。
+    sandbox
+        .execute(
+            "var rp = document.createRange(); rp.selectNodeContents(document.getElementById('r').firstElementChild);\
+             window.getSelection().addRange(rp);\
+             globalThis.__src = window.getSelection().rangeCount;\
+             globalThis.__srt = window.getSelection().toString();\
+             globalThis.__sty = window.getSelection().type;\
+             globalThis.__sic = window.getSelection().isCollapsed;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__src)").unwrap().value,
+        "1",
+        "addRange 后 rangeCount 须为 1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__srt)").unwrap().value,
+        "hello",
+        "selection.toString 须为 range 文本 'hello'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sty)").unwrap().value,
+        "Range",
+        "addRange 后 type 须为 'Range'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sic)").unwrap().value,
+        "false",
+        "addRange 后 isCollapsed 须为 false"
+    );
+
+    // removeAllRanges → 回空。
+    sandbox.execute("window.getSelection().removeAllRanges();").unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(window.getSelection().rangeCount)")
+            .unwrap()
+            .value,
+        "0",
+        "removeAllRanges 后 rangeCount 须回 0"
+    );
+    assert_eq!(
+        sandbox.execute("String(window.getSelection().type)").unwrap().value,
+        "None",
+        "removeAllRanges 后 type 须回 'None'"
+    );
+}
