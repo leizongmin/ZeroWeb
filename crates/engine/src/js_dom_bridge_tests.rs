@@ -8039,3 +8039,84 @@ fn test_document_metadata_r2800() {
         "无 <title> 元素时 document.title 须为空串"
     );
 }
+
+#[test]
+fn test_element_focus_active_element_r2801() {
+    // R2801：element.focus()/blur() + document.activeElement（焦点状态追踪，纯 JS）。Proxy get trap 返回
+    // focus/blur 函数操作 _activeElKey；activeElement getter 返 _proxyCache[_activeElKey] || body。
+    // proxy 经 _proxyCache 缓存，故 activeElement 与原引用同对象（=== 成立）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id='i' value='x'><button id='b'>ok</button></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 默认 activeElement === body（无焦点回落）。
+    assert_eq!(
+        sandbox
+            .execute("String(document.activeElement === document.body)")
+            .unwrap()
+            .value,
+        "true",
+        "默认 document.activeElement 须 === document.body"
+    );
+    // input.focus() → activeElement === input（同引用）。
+    sandbox
+        .execute(
+            "globalThis.__i = document.getElementById('i');\
+             globalThis.__i.focus();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(document.activeElement === globalThis.__i)")
+            .unwrap()
+            .value,
+        "true",
+        "input.focus() 后 activeElement 须 === input"
+    );
+    // 跨元素切换：button.focus() → activeElement === button。
+    sandbox
+        .execute(
+            "globalThis.__b = document.getElementById('b');\
+             globalThis.__b.focus();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(document.activeElement === globalThis.__b)")
+            .unwrap()
+            .value,
+        "true",
+        "button.focus() 后 activeElement 须切换到 button"
+    );
+    // blur() → activeElement 回落 body。
+    sandbox.execute("globalThis.__b.blur();").unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(document.activeElement === document.body)")
+            .unwrap()
+            .value,
+        "true",
+        "button.blur() 后 activeElement 须回落 body"
+    );
+    // blur 非当前焦点元素不影响 activeElement：input.blur()（非 active）后 activeElement 仍 body。
+    sandbox.execute("globalThis.__i.blur();").unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(document.activeElement === document.body)")
+            .unwrap()
+            .value,
+        "true",
+        "blur 非当前焦点元素不影响 activeElement"
+    );
+}

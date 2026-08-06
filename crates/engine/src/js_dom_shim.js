@@ -2523,6 +2523,15 @@
             try { return __zw_has_attr(sel, String(name)) === '1'; } catch (_e) { return false; }
           };
         }
+        // `el.focus()` / `el.blur()`——焦点状态追踪（document.activeElement 对）。纯 in-JS 状态：
+        // focus 记当前 key，blur 清当前 key。**已知限制**：① 无真键盘焦点（纯状态，无输入焦点点亮）；
+        // ② 不派发 focus/blur 事件；③ 不校验可聚焦性（非聚焦元素仍记焦点）；④ 无 tabindex 焦点序。
+        if (prop === 'focus') {
+          return function() { _activeElKey = key; };
+        }
+        if (prop === 'blur') {
+          return function() { if (_activeElKey === key) _activeElKey = null; };
+        }
         // `el.hasAttributes()`——是否有任意属性（经 `__zw_attr_names` 非空判定）。
         if (prop === 'hasAttributes') {
           return function() {
@@ -3695,6 +3704,10 @@
   // getter 首访读 document.querySelector('title').textContent（空白折叠）；setter 仅更新缓存。
   var _doc_title = null;
 
+  // document.activeElement 焦点追踪。null = 无焦点（activeElement 回落 body）；非空 = 焦点元素 key
+  //（_elKey(sel,handle)）。focus()/blur() 经 Proxy get trap 操作。纯状态追踪，无真输入焦点/无事件派发。
+  var _activeElKey = null;
+
   globalThis.document = {
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);
@@ -3765,6 +3778,11 @@
     get URL() { return globalThis.location ? globalThis.location.href : ''; },
     get documentURI() { return globalThis.location ? globalThis.location.href : ''; },
     get referrer() { return ''; },
+    // document.activeElement——当前焦点元素（focus()/blur() 操作 _activeElKey）；无焦点回落 body（spec）。
+    get activeElement() {
+      if (_activeElKey && _proxyCache[_activeElKey]) return _proxyCache[_activeElKey];
+      return globalThis.document.body;
+    },
     // document.cookie——get 返 "n=v; n=v" 串（仅 name=value，无属性）；set 解析 "n=v; Path=...; Max-Age=..."
     // 取首个 name=value 存/覆盖。**已知限制**：in-JS 存储（不接真 cookie jar / 不随 fetch 发送 / 无 origin
     // 隔离 / 无 expiry 淘汰——网络/origin 集成属 host-layer defer）；set-then-read 常见模式 tractable。

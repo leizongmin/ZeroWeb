@@ -2091,6 +2091,24 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a element.focus()/blur() + document.activeElement（本轮 R2801，缺失 Web API 续）
+
+承接 R2800（document 元数据属性）。续缺失 Web API——land **`element.focus()`/`blur()` + `document.activeElement`**（表单焦点追踪，a11y / 自动聚焦 / 表单验证 / `:focus` 相关脚本高频）。纯 JS 状态追踪，零 host 回调。**核验实现路径**：element proxy 为 `new Proxy({}, get-trap)`（**不继承 Element.prototype**），故 focus/blur 加于 Proxy get trap（同 getAttribute/setAttribute 模式，按 `prop` 返回函数）。
+
+- **`el.focus()`**：Proxy get trap 返 `function(){ _activeElKey = key; }`（key = `_elKey(sel,handle)`）——记当前焦点元素 key。
+- **`el.blur()`**：返 `function(){ if (_activeElKey === key) _activeElKey = null; }`——仅清当前焦点（非当前焦点元素 blur 不影响 activeElement，spec 一致）。
+- **`document.activeElement`** getter：`_proxyCache[_activeElKey] || document.body`——proxy 经 `_proxyCache` 缓存，故返回**同对象引用**（`===` 成立，spec 一致）；无焦点回落 `<body>`。
+- **已知限制（记录）**：① 无真键盘焦点（纯状态追踪，无输入焦点点亮）；② **不派发 focus/blur 事件**；③ 不校验可聚焦性（非聚焦元素仍记焦点）；④ 无 tabindex 焦点序（Tab 键导航 defer）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_activeElKey` 闭包 var + Proxy get trap `focus`/`blur` case（返函数，记/清 key）+ document `activeElement` getter（`_proxyCache[_activeElKey] \|\| body`）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_element_focus_active_element_r2801`（默认 activeElement===body / input.focus()→===input / 跨元素切 button / blur()→回落 body / blur 非当前焦点不影响）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13429 passed / 0 failed / 74 ignored**，13428+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① Proxy get trap 新增 focus/blur case（不改既有 prop 分支）；② 纯 in-JS 状态（`_activeElKey`），无 host 回调 / 无副作用；③ activeElement getter 只读 `_proxyCache` 缓存（既有结构）；④ focus/blur 无事件派发，不触既有事件路径。
+
 ### P1a document 元数据属性：title / URL / documentURI / referrer（本轮 R2800，缺失 Web API 续）
 
 承接 R2799（canvas slice 5 drawImage）。canvas off-DOM 表面已基本完整，pivot 回缺失 Web API thread。**先系统性 probe**（上轮 CONTINUE 误判 `document.readyState` 缺失——实测 `readyState: 'complete'` + `addEventListener` 已存在），核出**真正缺失**：`document.title` / `document.URL` / `document.documentURI` / `document.referrer` 全缺（classList/dataset/screen/innerWidth/structuredClone/history/MutationObserver/ResizeObserver/IntersectionObserver 均已存在）。land 这组**纯 JS、零 host 回调、零新依赖**的高频 document 元数据属性。
