@@ -2091,6 +2091,31 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a Headers（本轮 R2794，缺失 Web API 续）
+
+承接 R2793（crypto.subtle.digest）。续缺失 Web API——land **Headers**（HTTP 头集合，fetch / Service Worker / header-map 高频）。镜像 FormData pair-store 模式，纯 JS，零 host 回调。**canvas getContext 经调研 defer**（fill_rect 写 primitives 不写 pixel_buffer；raster 函数全 `pub(crate)` 无公共 flush——canvas 非一步桥接，需 zero-canvas API 改 + 设计，见下方「canvas 设计待办」）。
+
+- **方法**：`append`/`delete`/`get`/`getSetCookie`/`has`/`set`/`forEach`/`entries`/`keys`/`values` + `[Symbol.iterator]`。constructor init 接受 record 对象 / `[[name,value],...]` 序列 / 另一 Headers。
+- **spec 语义**：header name **小写归一**（不区分大小写）；多值 `append` → `get` 用 `', '` 合并（非 Set-Cookie）；`getSetCookie` 返 Set-Cookie 数组（特例——合并会丢多 cookie 分隔）；迭代按插入序、暴露小写 name。
+- **已知限制（记录）**：① name 仅小写+trim（不做 byte-value 严格校验，lenient）；② 迭代按插入序（spec 字典序，浏览器实测插入序——与主流一致）；③ 无写回 fetch（fetch POST defer，本实现为构造/读/迭代）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_hdrNorm` helper + `Headers`（constructor + prototype 全方法 + `[Symbol.iterator]`），置于 FormData 后。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_headers_r2794`（typeof/instanceof/record 构造+get 大小写归一/append ', ' 合并/set 替换/delete/数组序列构造/Headers 构造/getSetCookie 数组/迭代 spread+forEach/keys+values）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13422 passed / 0 failed / 74 ignored**，13421+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 global）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 global（Headers），不改既有 API；② 纯 JS 无副作用；③ prototype guard（`globalThis.X = globalThis.X || ...`）不覆盖既有定义。
+
+### 📐 canvas getContext 设计待办（R2793 CONTINUE 调研结论，2026-08-06）
+
+canvas getContext（最高频剩余缺失项）经调研**非一步可 land**，需设计先行：
+- **zero-canvas `fill_rect`/`fill` 等写 `primitives`（RenderPrimitives，render-pipeline 消费），不写 `pixel_buffer`**；仅 `clear_rect`/`put_image_data` 直写 `pixel_buffer`。
+- **raster-to-pixel 函数全 `pub(crate)`**（`blit_rect_to_pixels`/`blit_path_to_pixels`/`blit_stroke_to_pixels`），无公共 flush/snapshot-to-pixels 方法。
+- 故 `fillRect → getImageData` 立即回读**不支持**（返空像素）；canvas MVP 测试性需先解决「primitives → pixel_buffer 公共 raster 路径」。
+- **设计方向**（待 spec-rfc 出 RFC）：① zero-canvas 加 `pub fn rasterize_to_pixels(&mut self)`（drain primitives → pixel_buffer，供 getImageData/toDataURL 前 flush）；② engine 加 host 回调 `__zw_canvas_op(handle, op, args)` + CanvasContext 注册表（Arc<Mutex<HashMap<u64,CanvasContext>>>）；③ shim `HTMLCanvasElement` + `getContext('2d')` → CanvasRenderingContext2D proxy；④ slice 1 = rects + fillStyle + getImageData/toDataURL 读回；slice 2 = paths（arc/fill/stroke）；slice 3 = 文本（font/glyph）+ 页面内渲染集成。深结构多 slice，等设计 doc 后逐 slice 推进。
+
 ### P1a crypto.subtle.digest（本轮 R2793，缺失 Web API 续）
 
 承接 R2792（File）。续缺失 Web API——land **crypto.subtle.digest**（SHA-1/256/384/512，SRI / JWT / 内容哈希 / 指纹高频）。**首项需新依赖**：加 RustCrypto `sha2` + `sha1`（0.10 生态，`digest 0.10.7` 已为 transitive dep，兼容；pure-Rust，审计，无 C 编译）。**本 goal 首个新 workspace dep**——SHA-256 纯 JS 实现慢且易错，sha2 为标准方案。

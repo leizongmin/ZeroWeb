@@ -1224,6 +1224,95 @@
     globalThis.FormData.prototype[Symbol.iterator] = globalThis.FormData.prototype.entries;
   }
 
+  // Headers——HTTP 头集合（fetch / Service Worker / header-map 高频）。镜像 FormData pair-store
+  // 模式，但**header name 小写归一**（spec：name 不区分大小写，规范化为小写）+ **多值 append 用
+  // ', ' 合并**（spec：get 返非 Set-Cookie 头的值以 ', ' 连接）。纯 JS，零 host 回调。init 接受
+  // record 对象 / [[name,value],...] 序列 / 另一 Headers。`getSetCookie` 返 Set-Cookie 数组（spec
+  // 特例——get 合并 Set-Cookie 会丢多个 cookie 的分隔，故单独返数组）。
+  // **已知限制（记录）**：① name 仅小写 + trim（不做 byte-value 严格校验，lenient）；② 迭代按插入序
+  //   （spec 为字典序，浏览器实测为插入序——与主流一致）；③ entries/iteration 暴露**小写** name（spec
+  //   一致）；④ 无 Headers 的 mutation 写回 fetch（fetch POST defer，本实现为构造/读/迭代）。
+  function _hdrNorm(name) {
+    return String(name).toLowerCase().trim();
+  }
+  globalThis.Headers = globalThis.Headers || function Headers(init) {
+    if (!(this instanceof Headers)) return new Headers(init);
+    this._h = {}; // lowername -> string[]（保 append 序与多值）
+    if (init == null) return;
+    if (Array.isArray(init)) {
+      for (var i = 0; i < init.length; i++) {
+        var pair = init[i];
+        if (pair && pair.length >= 2) this.append(pair[0], pair[1]);
+      }
+    } else if (typeof init.forEach === 'function') {
+      // Headers-like（forEach 回调 (value, name, headers)）。
+      var self = this;
+      init.forEach(function (v, k) { self.append(k, v); });
+    } else if (typeof init === 'object') {
+      for (var k in init) {
+        if (Object.prototype.hasOwnProperty.call(init, k)) this.append(k, init[k]);
+      }
+    }
+  };
+  globalThis.Headers.prototype = {
+    append: function (name, value) {
+      name = _hdrNorm(name);
+      if (!name) return;
+      (this._h[name] = this._h[name] || []).push(String(value));
+    },
+    delete: function (name) {
+      delete this._h[_hdrNorm(name)];
+    },
+    get: function (name) {
+      name = _hdrNorm(name);
+      var v = this._h[name];
+      return v && v.length ? v.join(', ') : null;
+    },
+    // getSetCookie：Set-Cookie 数组（spec 特例——get 合并 Set-Cookie 丢分隔，故单独返数组）。
+    getSetCookie: function () {
+      var v = this._h['set-cookie'];
+      return v ? v.slice() : [];
+    },
+    has: function (name) {
+      return Object.prototype.hasOwnProperty.call(this._h, _hdrNorm(name));
+    },
+    set: function (name, value) {
+      name = _hdrNorm(name);
+      if (!name) return;
+      this._h[name] = [String(value)];
+    },
+    forEach: function (cb, thisArg) {
+      for (var k in this._h) {
+        if (Object.prototype.hasOwnProperty.call(this._h, k)) cb.call(thisArg, this._h[k].join(', '), k, this);
+      }
+    },
+    entries: function () {
+      var out = [];
+      for (var k in this._h) {
+        if (Object.prototype.hasOwnProperty.call(this._h, k)) out.push([k, this._h[k].join(', ')]);
+      }
+      return _zw_iter(out);
+    },
+    keys: function () {
+      var out = [];
+      for (var k in this._h) {
+        if (Object.prototype.hasOwnProperty.call(this._h, k)) out.push(k);
+      }
+      return _zw_iter(out);
+    },
+    values: function () {
+      var out = [];
+      for (var k in this._h) {
+        if (Object.prototype.hasOwnProperty.call(this._h, k)) out.push(this._h[k].join(', '));
+      }
+      return _zw_iter(out);
+    }
+  };
+  // 自身可迭代（for (const [k,v] of headers)）：[Symbol.iterator] → entries。
+  if (typeof Symbol !== 'undefined') {
+    globalThis.Headers.prototype[Symbol.iterator] = globalThis.Headers.prototype.entries;
+  }
+
   // Blob——不可变二进制数据容器（文件上传 / 下载 / object URL 高频）。纯 JS：parts 为
   // [string|ArrayBuffer|TypedArray|DataView|Blob]；size = 各 part 字节长之和；type = options.type（小写）。
   // text()/arrayBuffer() 返 Promise（V8 原生 Promise + execute 末 microtask checkpoint drain）。

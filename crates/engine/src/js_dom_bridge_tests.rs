@@ -7349,3 +7349,85 @@ fn test_crypto_subtle_digest_r2793() {
         "NotSupportedError"
     );
 }
+
+#[test]
+fn test_headers_r2794() {
+    // R2794：Headers（HTTP 头集合，fetch/SW/header-map 高频）。镜像 FormData，header name 小写归一 +
+    // 多值 append 用 ', ' 合并 + getSetCookie 特例。纯 JS，零 host 回调。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // typeof + 无 new 构造 + instanceof。
+    assert_eq!(sandbox.execute("typeof Headers").unwrap().value, "function");
+    assert_eq!(
+        sandbox
+            .execute("String(new Headers() instanceof Headers)")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // record 对象构造 + get/has（name 小写归一：'Content-Type' → 'content-type' 查）。
+    sandbox
+        .execute("var h = new Headers({'Content-Type':'text/plain','X-Custom':'a'});")
+        .unwrap();
+    assert_eq!(sandbox.execute("h.get('Content-Type')").unwrap().value, "text/plain");
+    assert_eq!(sandbox.execute("h.get('content-type')").unwrap().value, "text/plain");
+    assert_eq!(sandbox.execute("h.get('missing')").unwrap().value, "null");
+    assert_eq!(sandbox.execute("String(h.has('X-Custom'))").unwrap().value, "true");
+    assert_eq!(sandbox.execute("String(h.has('x-custom'))").unwrap().value, "true");
+    // append 多值 → get ', ' 合并（spec）。
+    sandbox.execute("h.append('X-Custom','b');").unwrap();
+    assert_eq!(sandbox.execute("h.get('X-Custom')").unwrap().value, "a, b");
+    // set 替换所有同名值。
+    sandbox.execute("h.set('X-Custom','only');").unwrap();
+    assert_eq!(sandbox.execute("h.get('X-Custom')").unwrap().value, "only");
+    // delete。
+    sandbox.execute("h.delete('X-Custom');").unwrap();
+    assert_eq!(sandbox.execute("String(h.has('X-Custom'))").unwrap().value, "false");
+    // 数组对序列构造。
+    assert_eq!(
+        sandbox
+            .execute("new Headers([['A','1'],['B','2']]).get('A')")
+            .unwrap()
+            .value,
+        "1"
+    );
+    // 另一 Headers 构造（forEach 分支）。
+    assert_eq!(
+        sandbox
+            .execute("new Headers(new Headers({'K':'v'})).get('K')")
+            .unwrap()
+            .value,
+        "v"
+    );
+    // getSetCookie：多个 Set-Cookie 返数组（不合并，spec 特例）。
+    sandbox
+        .execute("var c = new Headers(); c.append('Set-Cookie','a=1'); c.append('Set-Cookie','b=2');")
+        .unwrap();
+    assert_eq!(sandbox.execute("c.getSetCookie().join('|')").unwrap().value, "a=1|b=2");
+    // 迭代：[Symbol.iterator]=entries → spread 取 [k,v]，key 为小写。
+    sandbox.execute("var it = new Headers({'Z':'1','A':'2'});").unwrap();
+    assert_eq!(
+        sandbox
+            .execute("[...it].map(function(p){return p[0]+'='+p[1];}).join(',')")
+            .unwrap()
+            .value,
+        "z=1,a=2"
+    );
+    // forEach 回调。
+    assert_eq!(
+        sandbox
+            .execute("(function(){var o=[];it.forEach(function(v,k){o.push(k+':'+v);});return o.join(',');})()")
+            .unwrap()
+            .value,
+        "z:1,a:2"
+    );
+    // keys / values 迭代器。
+    assert_eq!(sandbox.execute("[...it.keys()].join(',')").unwrap().value, "z,a");
+    assert_eq!(sandbox.execute("[...it.values()].join(',')").unwrap().value, "1,2");
+}
