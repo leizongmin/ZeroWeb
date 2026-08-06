@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a `input.valueAsNumber` IDL 属性（getter+setter）（本轮 R2836，缺失 Web API 续 / number 输入值↔数值）
+
+承接 R2835（Audio+media 方法）。probe 确认 `valueAsNumber` 缺失（input IDL 属性补全）。land **`input.valueAsNumber`**——number/range 输入值↔数值转换（计算器/数量输入/校验库读 NaN 判非法）高频。
+
+- **关键设计点**：① **getter**（get-trap，仅 INPUT `_realTag` gate，sel+handle 双身份）：type=number/range 时 `parseFloat(value)`（空/无效→NaN，parseFloat 对 '12px' 宽容近似 number 解析）；其他 type→NaN（date/month/week/time/datetime-local 类型 defer）。② **setter**（set-trap）：type=number/range 时 `NaN→''`，否则 `String(n)`→设 value 属性 + `_inputValues` 缓存（复用 value 同步路径 + MO notify）；其他 type / 非 INPUT no-op（分支终止不 fallthrough 致误设 'valueAsNumber' 内容属性）。③ value 读复用既有 `_inputValues` 缓存 + attr 回落。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +get-trap `valueAsNumber`（INPUT gate，number/range parseFloat，其他 NaN）+ set-trap `valueAsNumber` 分支（number/range NaN→''/String(n)→设 value，其他 no-op）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_input_value_as_number_r2836`（getter：整数/浮点/空→NaN/无效→NaN/text→NaN/range；setter：数值→字符串化、NaN→''；setter 经 value 属性 mutation apply 验证）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13464 passed / 0 failed / 74 ignored**，13463+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平——纯 additive IDL 属性无 layout/render .rs 改动）+ 全 8 struct PASS。
+
+**为何零回归且净正向**：① 全新增 IDL 属性（additive，gate INPUT + type number/range，其他 type/元素透传不变）；② value setter 复用既有 value 同步路径（零新 mutation 类型）；③ getter parseFloat 无副作用。
+
+**已知限制（记录）**：① parseFloat 宽容（'12px'→12，spec 严格 number 解析应 NaN——number input value 罕见非数字，可接受）；② date/month/week/time/datetime-local 类型 valueAsNumber 未实现（需各类型格式↔时间戳转换，defer）；③ setter 对 number/range 外 type 静默忽略（spec 对部分类型抛，lenient 不抛）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面已穷尽（R2820-R2836 覆 modern 动画/编辑/表单（校验+集合+files+indeterminate+valueAsNumber）/select（options/selectedOptions/selectedIndex/动态填充 new Option+add）/事件/序列化/可见性/剪贴板/焦点/位置/URL/性能/存储/几何读/document 集合/Image+Audio ctor+media 方法 主表面）。剩余全为深项/host-layer：`document.elementFromPoint`（layout rect 全量 hit-test，深）/ customElements upgrade/lifecycle（element proxy 接 ctor，深）/ Shadow DOM attachShadow（深）/ node.normalize（罕见 + 架构重，defer）/ 真 Web Animations timeline（深）/ date/time input valueAsNumber（各类型格式转换）/ media 时长/音量属性（需 media 解码 infra）/ 真 files 上传 host 路径 / fetch 非 GET（net，跳过）；极窄可选 option.index（select 表面补全，需 host 父-select 索引回调）/ scrollIntoViewIfNeeded（WebKit）/ pointer lock；rendering-compat 侧续降频守成（held baseline 13464 全绿）。
+
 ### P1a `new Audio()` ctor + HTMLMediaElement 方法桩（本轮 R2835，缺失 Web API 续 / 音频构造 + 媒体方法）
 
 承接 R2834（Image ctor）。probe 确认 `Audio`/`Video` 全缺（`Video` 非 HTML 标准命名构造器——仅 Image/Option/Audio 三者）。land **`new Audio([src])`**——音效/播客/通知音频构造高频（`new Audio(url).play()`）。返 createElement('audio') proxy（镜像 Image R2834），设 src；允许 new 与无 new。

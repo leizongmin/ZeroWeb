@@ -12032,3 +12032,103 @@ fn test_audio_constructor_and_media_methods_r2835() {
         "Audio() 无 new 亦返 AUDIO proxy"
     );
 }
+
+#[test]
+fn test_input_value_as_number_r2836() {
+    // R2836：input.valueAsNumber IDL 属性（getter+setter）——number/range 输入值↔数值转换（计算器/数量输入/
+    // 校验库读 NaN 判非法）。getter：type=number/range parseFloat(value)（空/无效→NaN），其他 type→NaN；
+    // setter：NaN→''，否则 String(n)→设 value。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='n' type='number' value='42'>\
+         <input id='nf' type='number' value='3.14'>\
+         <input id='ne' type='number' value=''>\
+         <input id='nb' type='number' value='abc'>\
+         <input id='t' type='text' value='99'>\
+         <input id='r' type='range' value='7' min='0' max='10'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // getter：整数 / 浮点 / 空→NaN / 无效→NaN / 非 number type→NaN / range 亦可。
+    sandbox
+        .execute(
+            "globalThis.__n = document.querySelector('#n').valueAsNumber;\
+             globalThis.__nf = document.querySelector('#nf').valueAsNumber;\
+             globalThis.__ne = isNaN(document.querySelector('#ne').valueAsNumber);\
+             globalThis.__nb = isNaN(document.querySelector('#nb').valueAsNumber);\
+             globalThis.__t = isNaN(document.querySelector('#t').valueAsNumber);\
+             globalThis.__r = document.querySelector('#r').valueAsNumber;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__n)").unwrap().value,
+        "42",
+        "number input value=42 → valueAsNumber=42"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nf)").unwrap().value,
+        "3.14",
+        "number input value=3.14 → valueAsNumber=3.14"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ne)").unwrap().value,
+        "true",
+        "number input 空 value → valueAsNumber=NaN"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nb)").unwrap().value,
+        "true",
+        "number input value=abc → valueAsNumber=NaN"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t)").unwrap().value,
+        "true",
+        "text input → valueAsNumber=NaN（非 number/range）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r)").unwrap().value,
+        "7",
+        "range input value=7 → valueAsNumber=7"
+    );
+
+    // setter：number input 设数值 → value 字符串化；设 NaN → value=''。
+    sandbox
+        .execute(
+            "var el = document.querySelector('#n');\
+             el.valueAsNumber = 100;\
+             globalThis.__setV = el.value;\
+             el.valueAsNumber = NaN;\
+             globalThis.__setNaN = el.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__setV)").unwrap().value,
+        "100",
+        "valueAsNumber=100 → value='100'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__setNaN)").unwrap().value,
+        "",
+        "valueAsNumber=NaN → value=''"
+    );
+
+    // setter 经 host value 属性 mutation（apply 后 value 属性更新）。
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms).unwrap();
+    assert!(
+        out.contains("<input id=\"n\" type=\"number\" value=\"\">"),
+        "valueAsNumber=NaN setter 经 value 属性 mutation（apply 后 value=''）\n{out}"
+    );
+}

@@ -2869,6 +2869,20 @@
           }
           return _inputValues[key];
         }
+        // `input.valueAsNumber`（HTMLInputElement，R2836）——number/range 输入值↔数值转换（计算器/数量输入/
+        // 校验库读 NaN 判非法）。type=number/range：parseFloat(value)（空/无效→NaN，parseFloat 对 '12px'
+        // 等宽容近似 number 解析）；其他 type→NaN（date/month/week/time/datetime-local defer）。仅 INPUT。
+        if (prop === 'valueAsNumber' && _realTag(sel, handle) === 'INPUT') {
+          try {
+            var vasT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
+            if (vasT.toLowerCase() !== 'number' && vasT.toLowerCase() !== 'range') return NaN;
+            var vasV = _inputValues[key];
+            if (vasV == null) vasV = (handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value')) || '';
+            if (vasV === '') return NaN;
+            var vasN = parseFloat(vasV);
+            return isNaN(vasN) ? NaN : vasN;
+          } catch (_e) { return NaN; }
+        }
         // `input.files`（HTMLInputElement，R2830）——FileList（上传表单读 length/迭代）。headless
         // 无真文件 → 共享空 FileList（length 0）；仅 INPUT（_isTag gate），非 input → undefined。
         if (prop === 'files' && _isTag(sel, 'INPUT')) {
@@ -3909,6 +3923,19 @@
             } else {
               __zw_set_attr(sel, 'value', String(value));
               moAttr = 'value';
+            }
+          }
+        } else if (p === 'valueAsNumber') {
+          // `input.valueAsNumber = n`（HTMLInputElement，R2836）——number/range：NaN→''，否则 String(n)→设
+          // value 属性 + 缓存（复用 value 同步路径）。其他 type / 非 INPUT：no-op（date/time defer；分支
+          // 终止不 fallthrough 致误设 'valueAsNumber' 内容属性）。仅 INPUT（_realTag gate）。
+          if (_realTag(sel, handle) === 'INPUT') {
+            var vsT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
+            if (vsT.toLowerCase() === 'number' || vsT.toLowerCase() === 'range') {
+              var vsS = (typeof value === 'number' && isNaN(value)) ? '' : String(value);
+              _inputValues[key] = vsS;
+              if (handle) __zw_set_attr_handle(handle, 'value', vsS);
+              else { __zw_set_attr(sel, 'value', vsS); moAttr = 'value'; }
             }
           }
         } else if (p === 'indeterminate') {
