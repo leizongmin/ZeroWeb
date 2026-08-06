@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a CSSStyleSheet 只读 CSSOM（本轮 R2808，缺失 Web API 续）
+
+承接 R2807（aria 反射）。启动**最高价值深项 CSSStyleSheet CSSOM** 的第一个 slice——**只读**（CSS-in-JS 规则检视 / 动态样式读取 / polyfill 高频）。**先验证可行**：`zero_css_parser::Parser::parse_stylesheet` → `Stylesheet{rules}` + `Rule::Style(StyleRule{selectors,declarations})` 已存在；无现成 Selector 序列化器（`unique_selector_for_node` 是 node→selector 反方向），故**自写 pragmatic 序列化器**。`document.styleSheets` 原为 `_emptyCollection()` 桩。
+
+- **host 序列化器** `css_selector_to_string`：Selector AST → CSS 字符串。覆盖 TypeSelector(tag/*) + SubclassSelector(id/class/attribute/pseudoClass·Element/nesting) + Combinator(后代/>/+/~)。**实现踩坑（已修正）**：parts 数组实为 **CSS 左→右序**（parts[0]=最左，parts[n-1]=subject），combinator `parts[i].1` 连接 parts[i] 与其**右**元素 parts[i+1]（非 doc 注释"与左元素"——以实测为准）；正向遍历 + parts[i-1].1 作 parts[i] 前组合器。功能性伪类（:not/:is/:nth-*）best-effort 简化（参数不重建）。
+- **host `style_rules_wire(html, sel)`**：解析 `<style>` 文本 → parse_stylesheet → StyleRule 序列化为 `\x1f`（规则间）/`\x1e`（selectorText·cssText）wire（避开 JSON 转义，serde_json 非 engine dep）。@-rule/keyframes defer。
+- **host 回调 `__zw_style_rules`**：捕获 dom_html → `style_rules_wire`。
+- **shim `_makeStyleSheet(owner)`**：`cssRules` 惰性经 `__zw_style_rules` wire → CSSRule 数组（{type:1, selectorText, cssText, parentStyleSheet, style:null}）+ ownerNode/href(null)/type/disabled + insertRule/deleteRule/**stub defer**（写→cascade 重算深）。`document.styleSheets` 改 getter：`__zw_query_all('style')` → CSSStyleSheet 数组（live，每次重查）。
+- **已知限制（记录）**：① **仅读**（insertRule/deleteRule stub——写→cascade 重算 defer，后续 slice）；② 仅 `<style>`（`<link rel=stylesheet>` defer 网络）；③ CSSRule.style per-rule CSSStyleDeclaration defer（null）；④ 功能性伪类序列化 best-effort；⑤ styleSheets 每次访问重查（非缓存，document.styleSheets[0] 跨访问非同对象）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_bridge.rs` | +`attr_matcher_str`/`pseudo_class_str`/`css_selector_to_string`（pragmatic Selector 序列化）+ `css_declarations_to_string` + `style_rules_wire` + 注册 `__zw_style_rules` 回调。 |
+| `engine/src/js_dom_shim.js` | +`_makeStyleSheet`（cssRules 惰性 wire→CSSRule + insertRule/deleteRule stub）+ document `styleSheets` getter（`<style>`→CSSStyleSheet 数组）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_document_stylesheets_r2808`（styleSheets.length=1 + ownerNode=STYLE / cssRules.length=2 / rule[0] selectorText 'p' + cssText 含 'color: red' + type=1 / rule[1] selectorText '.a > b'（组合器）+ cssText 含 'font-size: 14px' / 无 style 时 length=0）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13436 passed / 0 failed / 74 ignored**，13435+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新 host 序列化器 + 回调（仅由 `__zw_style_rules` 调用，不改既有路径）+ 全新 shim 工厂/getter（document.styleSheets 由桩升级，原桩返空集合→现返真数组，additive）+ 新测试；② 只读路径（cssRules 经 parse_stylesheet 纯解析，无渲染副作用）；③ CSSStyleSheet 惰性建（首访 cssRules 才解析）。
+
 ### P1a element.role + aria-* 反射簇（本轮 R2807，缺失 Web API 续）
 
 承接 R2806（reflected 簇 #2）。续缺失 Web API——land **`element.role` + `aria-*` 反射属性**（ARIA a11y 高频——每个可访问页面用 role/aria-label/aria-labelledby 等）。**关键设计**：ARIA IDL→content 属性名映射**不同于** `_camelToKebab`——`ariaLabelledBy`→`aria-labelledby`（**单 hyphen**，非 `_camelToKebab` 的双 hyphen `aria-labelled-by`）。新增专用 `_ariaAttrName` helper：`aria` + 大写首字母 + 余 → `aria-` + 全小写(余)，通用覆盖**全部** aria IDL 属性（ariaLabel/ariaLabelledBy/ariaDescribedBy/ariaValueNow/ariaExpanded/...）。

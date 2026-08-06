@@ -8847,3 +8847,116 @@ fn test_element_aria_r2807() {
         "无 aria-label ariaLabel 须 ''"
     );
 }
+
+#[test]
+fn test_document_stylesheets_r2808() {
+    // R2808：CSSStyleSheet 只读 CSSOM——document.styleSheets 真 backing `<style>` + cssRules 读 +
+    // CSSRule.selectorText/cssText/type。host 经 `__zw_style_rules`（parse_stylesheet + Selector 序列化）。
+    // insertRule/deleteRule/`<link>` defer。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { color: red; } .a > b { font-size: 14px; }</style></head><body><p>x</p></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // document.styleSheets.length === 1（一个 <style>）；ownerNode 为 style 元素。
+    sandbox
+        .execute(
+            "globalThis.__sheets = document.styleSheets;\
+             globalThis.__len = __sheets.length;\
+             globalThis.__sheet = __sheets[0];\
+             globalThis.__ownerTag = __sheet.ownerNode ? __sheet.ownerNode.tagName : '';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len)").unwrap().value,
+        "1",
+        "styleSheets 须含 1 个 <style>"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ownerTag)").unwrap().value,
+        "STYLE",
+        "sheet.ownerNode 须为 <style> 元素"
+    );
+
+    // cssRules.length === 2；rule[0] selectorText 'p' + cssText 含 'color: red' + type=1。
+    sandbox
+        .execute(
+            "globalThis.__rc = globalThis.__sheet.cssRules.length;\
+             globalThis.__r0s = globalThis.__sheet.cssRules[0].selectorText;\
+             globalThis.__r0c = globalThis.__sheet.cssRules[0].cssText;\
+             globalThis.__r0t = globalThis.__sheet.cssRules[0].type;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rc)").unwrap().value,
+        "2",
+        "cssRules 须含 2 条规则"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r0s)").unwrap().value,
+        "p",
+        "cssRules[0].selectorText 须 'p'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__r0c.indexOf('color: red') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "cssRules[0].cssText 须含 'color: red'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r0t)").unwrap().value,
+        "1",
+        "cssRules[0].type 须 1（STYLE_RULE）"
+    );
+
+    // rule[1] selectorText '.a > b'（组合器序列化）+ cssText 含 'font-size: 14px'。
+    sandbox
+        .execute(
+            "globalThis.__r1s = globalThis.__sheet.cssRules[1].selectorText;\
+             globalThis.__r1c = globalThis.__sheet.cssRules[1].cssText;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1s)").unwrap().value,
+        ".a > b",
+        "cssRules[1].selectorText 须含组合器 '.a > b'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__r1c.indexOf('font-size: 14px') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "cssRules[1].cssText 须含 'font-size: 14px'"
+    );
+
+    // 无 <style> 文档 → styleSheets.length === 0。
+    let dom_html2: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><p>no style</p></body></html>".to_string()));
+    let mutations2: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let page_url2: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let mut sandbox2 = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox2.execute(generate_js_dom_shim()).unwrap();
+    register_dom_callbacks(&mut sandbox2, &mutations2, &dom_html2, &page_url2);
+    assert_eq!(
+        sandbox2.execute("String(document.styleSheets.length)").unwrap().value,
+        "0",
+        "无 <style> 时 styleSheets.length 须 0"
+    );
+}

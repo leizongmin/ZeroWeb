@@ -3900,6 +3900,57 @@
     };
   }
 
+  // CSSStyleSheet（R2808，CSSOM 只读）——`<style>` 元素的样式表。cssRules 惰性经 host `__zw_style_rules`
+  //（解析 `<style>` 文本→StyleRule 序列化 \x1f/\x1e wire）→ CSSRule 数组。**已知限制**：① 仅读（insertRule/
+  // deleteRule stub——写→cascade 重算深，defer）；② 仅 `<style>`（`<link rel=stylesheet>` defer 网络）；
+  // ③ CSSRule.style per-rule CSSStyleDeclaration defer（null）；④ 每次访问 styleSheets 重新查询（反映 live DOM，
+  // 非缓存——document.styleSheets[0] 跨访问非同对象）。
+  function _makeStyleSheet(owner) {
+    var sel = owner && owner.__zwSelector;
+    var rulesCache = null;
+    function getRules() {
+      if (rulesCache) return rulesCache;
+      rulesCache = [];
+      if (sel && typeof __zw_style_rules === 'function') {
+        try {
+          var wire = String(__zw_style_rules(sel));
+          if (wire) {
+            var entries = wire.split('\x1f');
+            for (var i = 0; i < entries.length; i++) {
+              var parts = entries[i].split('\x1e');
+              if (parts.length >= 2) {
+                rulesCache.push({
+                  type: 1, // CSSRule.STYLE_RULE
+                  selectorText: parts[0],
+                  cssText: parts[1],
+                  style: null, // per-rule CSSStyleDeclaration defer
+                  parentStyleSheet: ss
+                });
+              }
+            }
+          }
+        } catch (_e) { rulesCache = []; }
+      }
+      return rulesCache;
+    }
+    var ss = {
+      type: 'text/css',
+      href: null,
+      ownerNode: owner,
+      owningElement: owner,
+      disabled: false,
+      title: '',
+      parentStyleSheet: null,
+      get cssRules() { return getRules(); },
+      get rules() { return getRules(); },
+      insertRule: function (_ruleText, index) { return index != null ? (index | 0) : 0; },
+      deleteRule: function (_index) {},
+      addRule: function () { return -1; },
+      removeRule: function () {}
+    };
+    return ss;
+  }
+
   globalThis.document = {
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);
@@ -4020,7 +4071,15 @@
       if (!name) return;
       _doc_cookies[name] = value;
     },
-    styleSheets: _emptyCollection(),
+    // `document.styleSheets`（R2808）——真 backing：`<style>` 元素 → CSSStyleSheet 数组（经
+    // `__zw_query_all('style')` 查询 + `_makeStyleSheet`）。每次访问重新查询（live DOM）。
+    get styleSheets() {
+      var sels = (typeof __zw_query_all === 'function')
+        ? String(__zw_query_all('style')).split('|').filter(Boolean) : [];
+      var out = [];
+      for (var i = 0; i < sels.length; i++) out.push(_makeStyleSheet(_wrapSelector(sels[i])));
+      return out;
+    },
     forms: _liveQueryCollection('form'),
     images: _liveQueryCollection('img'),
     scripts: _liveQueryCollection('script'),
