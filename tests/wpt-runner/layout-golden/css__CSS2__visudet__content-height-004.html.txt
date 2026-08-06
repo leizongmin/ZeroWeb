@@ -1,0 +1,14 @@
+=== LAYOUT_DUMP (abs_y / height / margin-top / padding-top) ===
+html                     abs_y=    0.0 h= 291.0 mt=  0.0 pt=  0.0 x=   0.0 w= 800.0 dmt=  0.0
+  (anon)                   abs_y=    0.0 h=   0.0 mt=  0.0 pt=  0.0 x=   0.0 w=   0.0 dmt=  0.0
+  body                     abs_y=   16.0 h= 267.0 mt= 16.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  8.0
+    p                        abs_y=   16.0 h=  19.0 mt= 16.0 pt=  0.0 x=   8.0 w= 784.0 dmt= 16.0
+    aside                    abs_y=   51.0 h=  58.0 mt=  0.0 pt=  0.0 x=   8.0 w= 300.0 dmt=  0.0
+      div                      abs_y=   51.0 h=  58.2 mt=  0.0 pt=  0.0 x=   8.0 w=  55.0 dmt=  0.0
+        span                     abs_y=   51.0 h=  58.0 mt=  0.0 pt=  0.0 x=   8.0 w=  55.0 dmt=  0.0
+      div                      abs_y=   51.0 h=  58.2 mt=  0.0 pt=  0.0 x=  63.0 w=  55.0 dmt=  0.0
+        span                     abs_y=   51.0 h=  58.0 mt=  0.0 pt=  0.0 x=  63.0 w=  55.0 dmt=  0.0
+      div                      abs_y=   51.0 h=  58.2 mt=  0.0 pt=  0.0 x= 118.0 w=  55.0 dmt=  0.0
+        span                     abs_y=   51.0 h=  58.0 mt=  0.0 pt=  0.0 x= 118.0 w=  55.0 dmt=  0.0
+      div                      abs_y=   51.0 h=  58.2 mt=  0.0 pt=  0.0 x= 173.0 w=  82.5 dmt=  0.0
+        span                     abs_y=   51.0 h=  58.0 mt=  0.0 pt=  0.0 x= 173.0 w=  82.5 dmt=  0.0

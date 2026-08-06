@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle capture-oracle product-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update
+.PHONY: setup-rusty-v8 fetch-wpt-data update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle capture-oracle product-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -173,6 +173,11 @@ layout-golden: fetch-wpt-data target/test-guard
 
 layout-golden-update: fetch-wpt-data target/test-guard
 	./target/test-guard -- bash scripts/run-layout-golden.sh --update $(FILTER)
+
+# 月度工程报告（P6/C2）：从 git 历史 + WPT 趋势自动生成 docs/monthly/YYYY-MM.md。
+# 用法: make monthly-report [MONTH=2026-07]（默认上月）
+monthly-report:
+	bash scripts/generate-monthly-report.sh $(MONTH)
 
 # Legacy Static Web smoke（DC-13，goal rendering-compat.md line 316）：跑 20 页
 # HTML 3.2/4 + CSS1/2 静态 fixture，每页 chromium oracle vs ZeroWeb CPU diff%。
