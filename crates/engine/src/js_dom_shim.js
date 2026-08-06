@@ -4878,6 +4878,16 @@
       if (_activeElKey && _proxyCache[_activeElKey]) return _proxyCache[_activeElKey];
       return globalThis.document.body;
     },
+    // Page Visibility + 焦点状态（R2824）——headless 页面恒「可见 + 已聚焦」。hidden=false /
+    // visibilityState='visible' / hasFocus()=true（analytics/RUM 高频：GA 读 visibilityState/hidden，
+    // hasFocus gate 操作；visibilitychange 事件 addEventListener 注册有效但永不触发——headless 无
+    // 可见性变化源，documented）。webkit 前缀（legacy analytics / 旧 GA / jQuery 插件 feature-detect
+    // `document.webkitHidden || document.hidden`）。
+    get hidden() { return false; },
+    get visibilityState() { return 'visible'; },
+    webkitHidden: false,
+    webkitVisibilityState: 'visible',
+    hasFocus: function () { return true; },
     // document.cookie——get 返 "n=v; n=v" 串（仅 name=value，无属性）；set 解析 "n=v; Path=...; Max-Age=..."
     // 取首个 name=value 存/覆盖。**已知限制**：in-JS 存储（不接真 cookie jar / 不随 fetch 发送 / 无 origin
     // 隔离 / 无 expiry 淘汰——网络/origin 集成属 host-layer defer）；set-then-read 常见模式 tractable。

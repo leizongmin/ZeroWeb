@@ -11000,3 +11000,50 @@ fn test_character_data_methods_r2823() {
         "comment appendData（CharacterData mixin）"
     );
 }
+
+#[test]
+fn test_page_visibility_and_focus_r2824() {
+    // R2824：Page Visibility + 焦点状态——document.hidden / visibilityState / hasFocus()
+    // （+ webkit 前缀 legacy）。analytics/RUM 高频（GA 读 visibilityState/hidden，hasFocus gate 操作）。
+    // headless 恒「可见 + 已聚焦」：hidden=false / visibilityState='visible' / hasFocus=true。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 标准属性：hidden=false / visibilityState='visible' / hasFocus()=true。
+    assert_eq!(
+        sandbox.execute("String(document.hidden)").unwrap().value,
+        "false",
+        "document.hidden === false（headless 可见）"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.visibilityState)").unwrap().value,
+        "visible",
+        "document.visibilityState === 'visible'"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.hasFocus())").unwrap().value,
+        "true",
+        "document.hasFocus() === true（headless 已聚焦）"
+    );
+    // webkit 前缀（legacy analytics / 旧 GA feature-detect）。
+    assert_eq!(
+        sandbox.execute("String(document.webkitHidden)").unwrap().value,
+        "false",
+        "document.webkitHidden === false（legacy 前缀）"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.webkitVisibilityState)").unwrap().value,
+        "visible",
+        "document.webkitVisibilityState === 'visible'（legacy 前缀）"
+    );
+}

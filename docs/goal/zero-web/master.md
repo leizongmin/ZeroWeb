@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a Page Visibility + 焦点状态（本轮 R2824，缺失 Web API 续）
+
+承接 R2823（CharacterData）。land **Page Visibility API + 焦点状态表面**——`document.hidden` / `visibilityState` / `hasFocus()` + webkit 前缀 legacy。analytics/RUM 高频（GA 核心：读 `visibilityState`/`hidden` 判页面活跃度调整上报；`hasFocus` gate 操作；visibilitychange 监听）。**probe 确认 shim 0 实现**（activeElement/focus/blur 已 land R2814 区，但 visibility + hasFocus 全缺）。**为何 tractable**：headless 页面恒「可见 + 已聚焦」→ 纯常量 getter，零 host 回调。
+
+- **`hidden`** → `false` / **`visibilityState`** → `'visible'`（spec 三态 'visible'/'hidden'/'prerender'，headless 恒 visible）。
+- **`hasFocus()`** → `true`（headless 页面已聚焦）。
+- **`webkitHidden`/`webkitVisibilityState`**（legacy 前缀）：旧 GA / jQuery 插件 feature-detect `document.webkitHidden || document.hidden`，常量镜像标准属性。
+- **已知限制（记录）**：无 host 可见性/窗口焦点跟踪 → `visibilitychange` 事件 `addEventListener` 注册有效但**永不触发**（headless 无可见性变化源）；三值恒定（hidden=false / visibilityState='visible' / hasFocus=true）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | document literal activeElement getter 后加 `get hidden()`/`get visibilityState()`（常量）+ `webkitHidden`/`webkitVisibilityState`（常量属性）+ `hasFocus` 方法（返 true）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_page_visibility_and_focus_r2824`（hidden=false / visibilityState='visible' / hasFocus()=true / webkitHidden=false / webkitVisibilityState='visible'）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13452 passed / 0 failed / 74 ignored**，13451+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新增 document 属性（additive，不改既有 activeElement/focus/blur）；② 纯常量 getter（零 host 回调、零渲染副作用）；③ 让 analytics 脚本 feature-detect 通过 + 走「页面活跃」路径（permissive，documented headless 限制）。
+
+**下一步**：续缺失 Web API——剩余多为深项/host-layer：`document.elementFromPoint`（需 layout rect 全量 hit-test）/ DOMParser（需 host HTML parse 回调）/ Element.animate（Web Animations，深）/ customElements upgrade/lifecycle（element proxy 接 ctor，深）/ node.normalize（罕见 + 架构重，defer）/ fetch 非 GET method（net 层，跳过）；可选小项 `document.createEvent`（legacy 事件）/ `HTMLInputElement.select()`（no-op stub）；rendering-compat 侧续降频守成（held baseline 13452 全绿）。
+
 ### P1a CharacterData 方法 + Text.splitText（本轮 R2823，缺失 Web API 续）
 
 承接 R2822（replaceChildren）。land **CharacterData 数据编辑簇**——`appendData/deleteData/insertData/replaceData/substringData` + `length` + `Text.splitText`。contentEditable 编辑库（ProseMirror / Slate / Quill / Draft）+ Range/Selection 高频——这些库建/拆/编辑 text 节点。**probe 确认 shim 0 实现**（CharacterData 方法全缺失）。**为何 tractable**：handle-based 文本/注释节点（createTextNode/createComment 所建）经 `__zw_get_text_handle`（`query_text_from_mutations` **反向 replay** 取最新值——故多次编辑链式 compose 正确）读 + `__zw_set_text_handle`（追加 SetTextOnHandle）写。
