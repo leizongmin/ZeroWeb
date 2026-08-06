@@ -3289,31 +3289,24 @@
         // createTextNode 回调，无需新增 Rust 端 callback。
         if (prop === 'append') {
           return function() {
-            var added = [];
-            for (var i = 0; i < arguments.length; i++) {
-              var item = arguments[i];
-              if (item == null) continue;
-              if (typeof item === 'object' && item.__zwHandle) {
-                // DocumentFragment：flatten 子节点到 this。
-                if (_fragmentHandles[item.__zwHandle] && typeof __zw_append_fragment_children === 'function') {
-                  if (handle) __zw_append_fragment_children_handle(handle, item.__zwHandle);
-                  else __zw_append_fragment_children(sel, item.__zwHandle);
-                } else if (handle) {
-                  __zw_append_child_handle(handle, item.__zwHandle);
-                } else {
-                  __zw_append_child(sel, item.__zwHandle);
-                }
-                added.push(item);
-              } else {
-                var txt = String(item);
-                var tn = __zw_create_text(txt);
-                if (handle) __zw_append_child_handle(handle, tn);
-                else __zw_append_child(sel, tn);
-                added.push({ __zwHandle: tn, __zwSelector: '' });
-              }
-            }
+            var added = _appendVariadic(sel, handle, arguments);
             if (added.length > 0) {
               _mo_notify(sel, handle, { type: 'childList', addedNodes: added, removedNodes: [] });
+            }
+            return undefined;
+          };
+        }
+        // `element.replaceChildren(...nodesOrStrings)`（现代 API，R2822）：移除全部现有子 + 追加新子
+        // （clear-and-populate 原子语义，Vue3/lit/Svelte/手写代码高频）。清空经 set_inner_html('')，
+        // 追加复用 _appendVariadic；MO childList 同时上报 removedNodes（旧子快照）+ addedNodes（新子）。
+        if (prop === 'replaceChildren') {
+          return function() {
+            var removed = _childNodeList(sel, handle);
+            if (handle && typeof __zw_set_inner_html_handle === 'function') __zw_set_inner_html_handle(handle, '');
+            else if (typeof __zw_set_inner_html === 'function') __zw_set_inner_html(sel, '');
+            var added = _appendVariadic(sel, handle, arguments);
+            if (removed.length > 0 || added.length > 0) {
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: added, removedNodes: removed });
             }
             return undefined;
           };
@@ -3895,6 +3888,34 @@
         }
       } catch (_e) {}
     }
+  }
+
+  // append/replaceChildren 共用：variadic 节点/字符串追加到 this 末尾（DocumentFragment flatten）。
+  // 返 added 列表（供 MO childList notify）。节点经 handle/selector append_child；字符串建 text 节点 append。
+  function _appendVariadic(sel, handle, args) {
+    var added = [];
+    for (var i = 0; i < args.length; i++) {
+      var item = args[i];
+      if (item == null) continue;
+      if (typeof item === 'object' && item.__zwHandle) {
+        // DocumentFragment：flatten 子节点到 this。
+        if (_fragmentHandles[item.__zwHandle] && typeof __zw_append_fragment_children === 'function') {
+          if (handle) __zw_append_fragment_children_handle(handle, item.__zwHandle);
+          else __zw_append_fragment_children(sel, item.__zwHandle);
+        } else if (handle) {
+          __zw_append_child_handle(handle, item.__zwHandle);
+        } else {
+          __zw_append_child(sel, item.__zwHandle);
+        }
+        added.push(item);
+      } else {
+        var tn = __zw_create_text(String(item));
+        if (handle) __zw_append_child_handle(handle, tn);
+        else __zw_append_child(sel, tn);
+        added.push({ __zwHandle: tn, __zwSelector: '' });
+      }
+    }
+    return added;
   }
 
   // 元素的布局 rect（{x,y,w,h}），经 `__zw_getBoundingClientRect`（与 getBoundingClientRect 同源）。

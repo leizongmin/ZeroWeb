@@ -10856,3 +10856,58 @@ fn test_performance_mark_measure_observer_r2821() {
         "takeRecords entry name 'tr'"
     );
 }
+
+#[test]
+fn test_element_replace_children_r2822() {
+    // R2822：Element.replaceChildren(...nodesOrStrings)——移除全部现有子 + 追加新子（clear-and-populate
+    // 原子语义，Vue3/lit/Svelte/手写代码高频）。清空经 SetInnerHtml('')，追加复用 _appendVariadic（与 append 共用）。
+    // 验证经 apply_mutations_to_html_with_handles（proxy 读 stale 快照，故核 mutation 产出的 HTML）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let initial = "<html><body>\
+        <div id='t'>old1<span>old2</span>old3</div>\
+        <div id='u'>keep1<p>keep2</p>keep3</div>\
+        <div id='v'>oldtext</div>\
+        </body></html>"
+        .to_string();
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 三种用法（不同元素，互不干扰）：#t 清空+追加节点+字符串；#u 无参仅清空；#v 纯字符串清空+追加。
+    sandbox
+        .execute(
+            "var b=document.createElement('b'); var i=document.createElement('i');\
+             document.querySelector('#t').replaceChildren(b, 'mid', i);\
+             document.querySelector('#u').replaceChildren();\
+             document.querySelector('#v').replaceChildren('hello');",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&initial, &ms).unwrap();
+
+    // #t：清空 old1/old2/old3 + 追加 b, mid, i（参数序）。
+    assert!(
+        out.contains("<div id=\"t\"><b></b>mid<i></i></div>"),
+        "#t 清空旧子+追加新子（b,mid,i 参数序）\n{out}"
+    );
+    // #u：无参 → 内容空。
+    assert!(
+        out.contains("<div id=\"u\"></div>"),
+        "#u 无参 replaceChildren 清空\n{out}"
+    );
+    // #v：纯字符串清空+追加。
+    assert!(out.contains("<div id=\"v\">hello</div>"), "#v 纯字符串清空+追加\n{out}");
+    // 旧内容全部消失（证清空生效）。
+    assert!(
+        !out.contains("old1") && !out.contains("old2") && !out.contains("keep1") && !out.contains("oldtext"),
+        "旧子应全清空\n{out}"
+    );
+}

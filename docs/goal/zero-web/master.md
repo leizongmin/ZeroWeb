@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a Element.replaceChildren（本轮 R2822，缺失 Web API 续）
+
+承接 R2821（PerformanceObserver）。**pivot 自 node.normalize**：probe 发现 node.normalize 虽列候选但属「罕见」（master 既记）**且架构重**——bridge 为 stateless HTML 重解析模型（每查询 `parse_html(html)`），childNodes 文本节点为静态快照无 selector/handle，merge 需新 DomMutation 变体 + Rust HTML tree surgery + reserialize（~60-100 行，价值/风险差）。改 land **`Element.replaceChildren(...nodesOrStrings)`**——现代 clear-and-populate 原子语义（Vue3 / lit-html / Svelte / 手写代码高频，React18 reconciliation 亦用），probe 确认 shim 0 实现（matches/closest/Blob/FileReader 经核均已 land）。**为何 tractable**：复用既有 `__zw_set_inner_html`（清空）+ append 路径（追加），零新 host 回调。
+
+- **清空**：`__zw_set_inner_html[_handle](sel/handle, '')` 移除全部现有子（SetInnerHtml mutation）。
+- **追加**：复用 append 路径——节点经 `__zw_append_child[_handle]`（DocumentFragment flatten），字符串经 `__zw_create_text` + append。
+- **MO childList**：`_mo_notify` 同时上报 `removedNodes`（清空前 `_childNodeList` 旧子快照）+ `addedNodes`（新子），spec childList 语义一致。
+- **重构（DRY，最小机械）**：抽 `_appendVariadic(sel, handle, args)` helper（append loop 原样移入），`append` + `replaceChildren` 共用——避免 22 行 loop 复制（code-guidelines 简单至上：用两处的抽象值得引入）。append 行为零变化（20 e2e mutation 测试全过证非回归）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_appendVariadic` helper（append/replaceChildren 共用 variadic 追加）+ `append` 改调之（body 移入 helper，行为等价）+ 新 `replaceChildren` get-trap（清空 + `_appendVariadic` + MO removedNodes/addedNodes）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_element_replace_children_r2822`（三元素一 sandbox 互不干扰：#t 清空旧子+追加节点+字符串 mid 参数序 / #u 无参仅清空 / #v 纯字符串清空+追加；旧内容 old1/old2/keep1/oldtext 全消失证清空；经 apply_mutations_to_html_with_handles 核 HTML）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13450 passed / 0 failed / 74 ignored**，13449+1 新测试，0 回归；append/prepend/before/after/replace_with 20 e2e 全过证重构非回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① `replaceChildren` 全新方法（additive）+ `append` 重构行为等价（loop 原样移入 helper，20 e2e 测试守护）；② 复用既有 `__zw_set_inner_html` + append 路径（零新 host 回调、零渲染副作用）；③ MO notify 经既有 `_mo_notify` + `_childNodeList`（零新机制）；④ `_appendVariadic` 为 shim IIFE 内部（不污染 globalThis）。
+
+**下一步**：续缺失 Web API——node.normalize（罕见，需新 DomMutation + Rust HTML tree surgery，价值/风险差，可 defer）/ Element.animate（Web Animations，深）/ customElements upgrade/lifecycle（element proxy 接 ctor，深）/ DOMParser（需 host HTML parse）/ fetch 非 GET method（net 层，跳过）；rendering-compat 侧续降频守成（held baseline 13450 全绿）。
+
 ### P1a performance.mark/measure + PerformanceObserver（本轮 R2821，缺失 Web API 续）
 
 承接 R2820（navigator.geolocation）。land **Performance API 扩展**——`performance.mark/measure` + entry buffer + `PerformanceObserver`。analytics/RUM（web-vitals / Sentry / Google Analytics）高频——web-vitals 库经 PerformanceObserver 取 LCP/CLS/longtask，应用代码经 `mark/measure + getEntriesByName` 测耗时。**probe 关键发现**：`dom_bridge.rs`（A 代 `generate_dom_api_polyfill`，1238-1272）已有 PerformanceObserver + mark/measure，但该 fn **无生产调用方**（死代码）——生产路径（browser `tab_js_worker` + renderer `js_worker`）仅注入 B 代 `js_dom_shim.js`，其 `performance` 只有 `now()`（R2768），故 mark/measure/PerformanceObserver/getEntries* 在生产**全 undefined**。本轮补到 B 代 shim。
