@@ -47,7 +47,7 @@ Options:
   --wpt-data <dir>  Path to wpt-data directory (for reftest-upstream)
   --width <px>      Viewport width (default: 800)
   --height <px>     Viewport height (default: 600)
-  --jobs <n>        Number of parallel test jobs (default: CPU count - 1, GPU 1)
+  --jobs <n>        Number of parallel test jobs (default: min(CPU-1, 8), GPU 1)
   --media <type>    Rendering media type: print|screen (default: screen; applies @media print/screen cascade)
   --category <cat>  Reftest category filter (layout|text|all)
   --output <path>   Reftest report output path
@@ -1601,12 +1601,19 @@ fn effective_jobs(options: &CliOptions) -> usize {
         .unwrap_or_else(|| if options.use_gpu { 1 } else { default_parallel_jobs() })
 }
 
+/// reftest 默认并行度硬上限。实测（16 核机）并行扩展在 ~8 线程即饱和：
+/// jobs=1→1.0×、jobs=8→5.5×、jobs=15→5.8×——瓶颈是 CPU 软光栅的内存带宽，
+/// 再加线程几乎不提速（15→8 仅慢 5%），却多耗近一倍内存，逼近 test-guard
+/// 全树 16GB 上限（每个 job 持有独立 RenderPipeline + 字体/图像缓存 + 帧缓冲）。
+/// 故默认封顶 8：速度持平、内存压力减半。用户可 --jobs 显式覆盖。
+const DEFAULT_MAX_JOBS: usize = 8;
+
 fn default_parallel_jobs() -> usize {
     std::thread::available_parallelism()
         .map(|jobs| jobs.get())
         .unwrap_or(1)
         .saturating_sub(1)
-        .max(1)
+        .clamp(1, DEFAULT_MAX_JOBS)
 }
 
 fn print_usage() {
