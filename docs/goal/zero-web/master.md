@@ -2091,6 +2091,29 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a performance.mark/measure + PerformanceObserver（本轮 R2821，缺失 Web API 续）
+
+承接 R2820（navigator.geolocation）。land **Performance API 扩展**——`performance.mark/measure` + entry buffer + `PerformanceObserver`。analytics/RUM（web-vitals / Sentry / Google Analytics）高频——web-vitals 库经 PerformanceObserver 取 LCP/CLS/longtask，应用代码经 `mark/measure + getEntriesByName` 测耗时。**probe 关键发现**：`dom_bridge.rs`（A 代 `generate_dom_api_polyfill`，1238-1272）已有 PerformanceObserver + mark/measure，但该 fn **无生产调用方**（死代码）——生产路径（browser `tab_js_worker` + renderer `js_worker`）仅注入 B 代 `js_dom_shim.js`，其 `performance` 只有 `now()`（R2768），故 mark/measure/PerformanceObserver/getEntries* 在生产**全 undefined**。本轮补到 B 代 shim。
+
+- **`performance.mark(name)`**：产 PerformanceEntry `{name, entryType:'mark', startTime:_perfNow(), duration:0}` 入 `_perfEntries` buffer + 记 `_perfMarks[name]=startTime`（measure 查表用）+ `_notifyEntry`（通知 observer）。
+- **`performance.measure(name, startMark?, endMark?)`**：`_resolveMarkTime` 解析 start/end——undefined→（end 用 now / start 用 0）/ number→原值 / string→`_perfMarks` 查表；**查无 mark 名抛 TypeError**（spec 一致：measure 引用未注册 mark 应报错；正确用法先 mark 后 measure）；duration = end - start（反序标记可负，罕见）。
+- **`getEntries/getEntriesByType/getEntriesByName(name,type?)`**：读 buffer（slice/filter 快照）；`clearMarks(name?)/clearMeasures(name?)`：清 buffer + marks 表。
+- **`timeOrigin`**：0（相对原点：now() 返自原点起 elapsed ms；绝对 epoch 语义未提供）。
+- **`PerformanceObserver(cb)`**：`observe({entryTypes:[...]}` 或 `{type:'...'}`）注册 entryType；新 entry 经 `_notifyEntry` 向匹配的活跃 observer 排队，**每 observer 至多一个 `_defer` microtask flush**（去抖：pending 期间累积 buffered，单次 flush 一次性派发 `PerformanceObserverEntryList`）；`disconnect` 移出活跃表停止派发；`takeRecords` 取并清缓冲；`supportedEntryTypes` 静态（10 类：element/event/first-input/lcp/longtask/mark/measure/navigation/paint/resource）。
+- **为何纯 JS 完整实现**：mark/measure/getEntries/observer 是一致特征集（半实现无用）；纯 JS（零 host 回调、零渲染副作用——复用 R2768 `_perfNow` + R2774 `_defer` microtask）。
+- **已知限制（记录）**：① observer 派发经 microtask 非 task（spec 为任务队列，sandbox 经 execute 末 microtask checkpoint 近似，下 execute 可读）；② 仅 user-timing entryType（mark/measure）真产生 entry——navigation/resource/paint/longtask/lcp 等 entry 无 host 注入（observe 有效但不触发，需 host perf timeline 集成，defer）；③ timeOrigin=0 非 epoch（绝对时序计算脚本得 0，documented）；④ measure 反序标记 duration 可负（罕见）；⑤ buffered flag 未实现（observe 时不下发历史 entry，spec 默认 buffered=false 一致）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | `_perfNow`（提取 now 逻辑）+ `_perfEntries`/`_perfMarks`/`_perfObservers` + `_resolveMarkTime`/`_makeObserverList`/`_notifyEntry` helper + `performance` 扩展（mark/measure/getEntries*/clearMarks/clearMeasures/timeOrigin，保留 R2768 now）+ `PerformanceObserver`（observe/disconnect/takeRecords/supportedEntryTypes）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_performance_mark_measure_observer_r2821`（mark entry 字段 + getEntriesByType/getEntriesByName + measure duration 计算（>=0）+ 从原点 measure + 未知 mark 抛 TypeError + clearMarks/clearMeasures 清空 + PerformanceObserver typeof + supportedEntryTypes + observer（entryTypes/type 两形式）经 microtask 收 entry + disconnect 停止派发 + takeRecords 取并清）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13449 passed / 0 failed / 74 ignored**，13448+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① `performance` 对象扩展 + 新 `PerformanceObserver` 全 additive（不改既有 now() 语义——R2768 host 回调逻辑原样提取到 `_perfNow`）；② 纯 JS（零 host 回调、零渲染副作用——复用 `_perfNow` + `_defer` microtask）；③ observer 派发经 microtask callback 包于 `_defer` try/catch（callback 抛错不中断脚本）；④ entry buffer/observer 表为 shim IIFE 内部（不污染 globalThis）。
+
+**下一步**：续缺失 Web API——node.normalize（罕见，合并邻接 text 节点，纯 JS tractable）/ 深项 customElements upgrade/lifecycle（element proxy 接 ctor）/ XPath evaluate（需 host XPath engine）/ fetch 非 GET method（需 net 层）；rendering-compat 侧续降频守成（held baseline 13449 全绿）。
+
 ### P1a navigator.geolocation（本轮 R2820，缺失 Web API 续）
 
 承接 R2819（isEqualNode）。land **`navigator.geolocation`**——地理位置 API（**补全 navigator.\* device-API feature-detection 表面**：clipboard✓ R2817 / permissions✓ R2817 后 geolocation 是最后一块常见 device API）。地图/天气/本地化脚本 feature-detect `navigator.geolocation` 后调 `getCurrentPosition`。**probe 先行**（broad grep 确认 geolocation/getCurrentPosition/watchPosition 在 JS 侧均 0 缺失；`security/permission.rs` 的 `Geolocation` 权限枚举与 JS API 无关）。

@@ -10683,3 +10683,176 @@ fn test_navigator_geolocation_r2820() {
         "getCurrentPosition 无回调 lenient 不抛"
     );
 }
+
+#[test]
+fn test_performance_mark_measure_observer_r2821() {
+    // R2821：Performance API 扩展（performance.mark/measure + entry buffer + PerformanceObserver）。
+    // analytics/RUM（web-vitals/Sentry/GA）高频。mark/measure 产 PerformanceEntry 存 entry buffer；
+    // PerformanceObserver observe 匹配 entryType 时经 _defer microtask 异步派发（execute 末 checkpoint，
+    // 下 execute 可读，同 R2774/R2814）。dom_bridge.rs 的 PerformanceObserver/mark/measure 为 A 代死代码
+    // （generate_dom_api_polyfill 无生产调用方），生产路径仅注入本 shim——故补到 B 代 shim。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // performance.mark 产 entry（entryType='mark'/duration 0）+ entry buffer 可读。
+    sandbox
+        .execute("globalThis.__mk = performance.mark('a'); performance.mark('b');")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__mk.entryType)").unwrap().value,
+        "mark",
+        "mark entry entryType='mark'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__mk.duration)").unwrap().value,
+        "0",
+        "mark entry duration 0"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(performance.getEntriesByType('mark').length)")
+            .unwrap()
+            .value,
+        "2",
+        "entry buffer 含 2 mark"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(performance.getEntriesByName('a').length)")
+            .unwrap()
+            .value,
+        "1",
+        "getEntriesByName('a')"
+    );
+
+    // performance.measure 计算 duration = mark(b).start - mark(a).start（>=0）；从原点 measure duration>=0；
+    // 未知 mark 名抛 TypeError。
+    sandbox
+        .execute(
+            "globalThis.__ms = performance.measure('ab', 'a', 'b');\
+             globalThis.__mo = performance.measure('from-origin').duration >= 0;\
+             globalThis.__err = 'no';\
+             try { performance.measure('x', 'missing'); } catch(e){ globalThis.__err = (e instanceof TypeError) ? 'TypeError' : 'other'; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ms.entryType)").unwrap().value,
+        "measure",
+        "measure entry entryType='measure'"
+    );
+    let dur = sandbox.execute("String(globalThis.__ms.duration)").unwrap().value;
+    let dur_n: f64 = dur.parse().unwrap_or(-1.0);
+    assert!(dur_n >= 0.0, "measure duration >= 0（a 先于 b 标记）, got {}", dur);
+    assert_eq!(
+        sandbox.execute("String(globalThis.__mo)").unwrap().value,
+        "true",
+        "measure 从原点 duration>=0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__err)").unwrap().value,
+        "TypeError",
+        "measure 引用未知 mark 名抛 TypeError"
+    );
+
+    // clearMarks / clearMeasures 清 buffer。
+    sandbox
+        .execute("performance.clearMarks(); performance.clearMeasures();")
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(performance.getEntries().length)")
+            .unwrap()
+            .value,
+        "0",
+        "clearMarks+clearMeasures 清空 entry buffer"
+    );
+
+    // PerformanceObserver：typeof function + supportedEntryTypes 含 mark/measure。
+    assert_eq!(
+        sandbox.execute("typeof PerformanceObserver").unwrap().value,
+        "function",
+        "PerformanceObserver 存在"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(PerformanceObserver.supportedEntryTypes.indexOf('measure') !== -1)")
+            .unwrap()
+            .value,
+        "true",
+        "supportedEntryTypes 含 'measure'"
+    );
+
+    // observe({entryTypes:['mark']}) + mark → 经 microtask 派发 list.getEntries() 含两 mark 名（排序）。
+    sandbox
+        .execute(
+            "globalThis.__got = 'none';\
+             var obs = new PerformanceObserver(function(list){\
+               globalThis.__got = list.getEntries().map(function(e){ return e.name; }).sort().join(',');\
+             });\
+             obs.observe({ entryTypes: ['mark'] });\
+             performance.mark('m1'); performance.mark('m2');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__got)").unwrap().value,
+        "m1,m2",
+        "observer（entryTypes）经 microtask 收两 mark"
+    );
+
+    // observe({type:'measure'}) → measure 'mz' 经 microtask 派发（单独 execute 让 flush 先于 disconnect 跑）。
+    sandbox
+        .execute(
+            "globalThis.__g2 = 'none';\
+             var obs2 = new PerformanceObserver(function(list){\
+               var e = list.getEntries();\
+               globalThis.__g2 = e.length + ':' + (e[0] && e[0].name);\
+             });\
+             obs2.observe({ type: 'measure' });\
+             performance.measure('mz');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__g2)").unwrap().value,
+        "1:mz",
+        "observer（type form）经 microtask 收 measure 'mz'"
+    );
+    // disconnect 后后续 measure 'mz2' 不再派发（__g2 保持 disconnect 前值）。
+    sandbox
+        .execute("obs2.disconnect(); performance.measure('mz2');")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__g2)").unwrap().value,
+        "1:mz",
+        "disconnect 后不再派发（__g2 未变）"
+    );
+
+    // takeRecords 取并清缓冲（observe + mark 后 takeRecords 返该 entry）。
+    sandbox
+        .execute(
+            "var obs3 = new PerformanceObserver(function(){});\
+             obs3.observe({ entryTypes: ['mark'] });\
+             performance.mark('tr');\
+             globalThis.__rec = obs3.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rec.length)").unwrap().value,
+        "1",
+        "takeRecords 返缓冲 entry"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rec[0].name)").unwrap().value,
+        "tr",
+        "takeRecords entry name 'tr'"
+    );
+}

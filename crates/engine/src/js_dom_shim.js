@@ -736,15 +736,137 @@
   globalThis.scrollBy = function() {};
   globalThis.scrollIntoView = function() {};
 
-  // performance.now()——DOMHighResTimeStamp（ms，自 time origin 起，单调）。host `__zw_performance_now`
-  // 返 elapsed ms（子毫秒）；未注册（polyfill/reftest 路径）走 Date.now() 兜底（仍单调非负）。
-  globalThis.performance = globalThis.performance || {
-    now: function() {
-      return typeof __zw_performance_now === 'function'
-        ? Number(__zw_performance_now())
-        : (typeof Date.now === 'function' ? Date.now() : 0);
+  // Performance API（R2768 now + R2821 mark/measure/entry buffer + PerformanceObserver）——
+  // DOMHighResTimeStamp（ms，自 time origin 起单调）。host `__zw_performance_now` 返 elapsed ms（子毫秒）；
+  // 未注册（polyfill/reftest 路径）走 Date.now() 兜底。mark/measure 产 PerformanceEntry 存 entry buffer，
+  // 经 getEntries/getEntriesByType/getEntriesByName 读；PerformanceObserver observe 匹配 entryType 时
+  // 经 _defer microtask 异步派发（execute 末 checkpoint，同 R2774/R2814）。analytics/RUM（web-vitals /
+  // Sentry / GA）高频。
+  function _perfNow() {
+    return typeof __zw_performance_now === 'function'
+      ? Number(__zw_performance_now())
+      : (typeof Date.now === 'function' ? Date.now() : 0);
+  }
+  // entry buffer + mark startTime 表 + 活跃 observer 表（shim IIFE 内部，不污染 globalThis）。
+  var _perfEntries = [];
+  var _perfMarks = {};
+  var _perfObservers = [];
+  // 解析 measure 的 start/end 标记：undefined→（end 用 now / start 用 0）/ number→原值 / string→marks 表查
+  // （查无抛 TypeError，spec 一致：measure 引用未注册 mark 名应报错；正确用法先 mark 后 measure）。
+  function _resolveMarkTime(mark, isEnd) {
+    if (mark === undefined) return isEnd ? _perfNow() : 0;
+    if (typeof mark === 'number') return mark;
+    if (Object.prototype.hasOwnProperty.call(_perfMarks, mark)) return _perfMarks[mark];
+    throw new TypeError("Failed to execute 'measure' on 'Performance': The mark '" + mark + "' does not exist.");
+  }
+  // observer 派发用 entry list（getEntries/getEntriesByType/getEntriesByName over 传入快照）。
+  function _makeObserverList(entries) {
+    return {
+      getEntries: function () { return entries.slice(); },
+      getEntriesByType: function (t) {
+        return entries.filter(function (e) { return e.entryType === t; });
+      },
+      getEntriesByName: function (n, t) {
+        return entries.filter(function (e) { return e.name === n && (t === undefined || e.entryType === t); });
+      },
+    };
+  }
+  // 新 entry 入 buffer 时，向所有 observe 该 entryType 的活跃 observer 排队，每 observer 至多一个 microtask flush
+  // （去抖：pending 期间累积，单次 flush 一次性派发全部 buffered）。
+  function _notifyEntry(entry) {
+    for (var i = 0; i < _perfObservers.length; i++) {
+      var obs = _perfObservers[i];
+      if (obs._types.indexOf(entry.entryType) !== -1) {
+        obs._buffered.push(entry);
+        if (!obs._pending) {
+          obs._pending = true;
+          (function (o) {
+            _defer(function () {
+              o._pending = false;
+              var recs = o._buffered;
+              o._buffered = [];
+              o._cb(_makeObserverList(recs));
+            });
+          })(obs);
+        }
+      }
     }
+  }
+
+  globalThis.performance = globalThis.performance || {
+    now: _perfNow,
+    // timeOrigin = 0（相对原点：now() 返自原点起 elapsed ms；绝对 epoch 语义未提供，文档记录）。
+    timeOrigin: 0,
+    mark: function (name) {
+      var entry = { name: String(name), entryType: 'mark', startTime: _perfNow(), duration: 0 };
+      _perfEntries.push(entry);
+      _perfMarks[entry.name] = entry.startTime;
+      _notifyEntry(entry);
+      return entry;
+    },
+    measure: function (name, startMark, endMark) {
+      var start = _resolveMarkTime(startMark, false);
+      var end = _resolveMarkTime(endMark, true);
+      var entry = { name: String(name), entryType: 'measure', startTime: start, duration: end - start };
+      _perfEntries.push(entry);
+      _notifyEntry(entry);
+      return entry;
+    },
+    getEntries: function () { return _perfEntries.slice(); },
+    getEntriesByType: function (type) {
+      return _perfEntries.filter(function (e) { return e.entryType === type; });
+    },
+    getEntriesByName: function (name, type) {
+      return _perfEntries.filter(function (e) {
+        return e.name === name && (type === undefined || e.entryType === type);
+      });
+    },
+    clearMarks: function (name) {
+      _perfEntries = _perfEntries.filter(function (e) {
+        return !(e.entryType === 'mark' && (name === undefined || e.name === name));
+      });
+      if (name === undefined) { _perfMarks = {}; }
+      else { delete _perfMarks[name]; }
+    },
+    clearMeasures: function (name) {
+      _perfEntries = _perfEntries.filter(function (e) {
+        return !(e.entryType === 'measure' && (name === undefined || e.name === name));
+      });
+    },
   };
+
+  // PerformanceObserver（R2821）——观察 performance entry（mark/measure/longtask/paint/navigation/resource 等）。
+  // observe({entryTypes:[...]} 或 {type:'...'}) 注册 entryType；新 entry 经 _notifyEntry 排队，每 observer 至多
+  // 一个 _defer microtask flush（spec 为任务队列派发，sandbox 经 execute 末 microtask 近似）；disconnect 移出
+  // 活跃表停止派发；takeRecords 取并清缓冲；supportedEntryTypes 静态（feature-detect 高频）。
+  function PerformanceObserver(callback) {
+    this._cb = callback;
+    this._types = [];
+    this._buffered = [];
+    this._pending = false;
+  }
+  PerformanceObserver.prototype.observe = function (options) {
+    var t = (options && options.entryTypes)
+      ? options.entryTypes
+      : (options && options.type ? [options.type] : []);
+    for (var i = 0; i < t.length; i++) {
+      if (this._types.indexOf(t[i]) === -1) this._types.push(t[i]);
+    }
+    if (_perfObservers.indexOf(this) === -1) _perfObservers.push(this);
+  };
+  PerformanceObserver.prototype.disconnect = function () {
+    this._types = [];
+    this._buffered = [];
+    var idx = _perfObservers.indexOf(this);
+    if (idx !== -1) _perfObservers.splice(idx, 1);
+  };
+  PerformanceObserver.prototype.takeRecords = function () {
+    var r = this._buffered;
+    this._buffered = [];
+    return r;
+  };
+  PerformanceObserver.supportedEntryTypes = ['element', 'event', 'first-input', 'largest-contentful-paint', 'longtask', 'mark', 'measure', 'navigation', 'paint', 'resource'];
+  globalThis.PerformanceObserver = PerformanceObserver;
 
   // DOMException——Web IDL 异常类型（name + message + legacy code）。众多 Web API 抛出它（fetch /
   // storage / atob / crypto / structuredClone 等），各 API 用 name 子类区分语义（InvalidCharacterError
