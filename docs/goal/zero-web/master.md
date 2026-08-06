@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a 反射属性 IDL（label.htmlFor / input.defaultValue / input.defaultChecked）（本轮 R2840，缺失 Web API 续 / form reset 元数据）
+
+承接 R2839（form 反射 IDL）。probe 确认 `label.htmlFor` / `input.defaultValue` / `input.defaultChecked` 全缺（无通用反射）。land ——form reset / 校验库读这些判「值/选中态是否改过」高频。
+
+- **关键设计点**：① **getter**（`_realTag` gate，sel+handle 双身份）：`label.htmlFor` 反射 `for` 属性；`input.defaultValue` 反射**初始** `value` 属性（区别 `.value` 当前态——改 `.value` 不影响 `defaultValue`）；`input.defaultChecked` 反射 `checked` 属性存在性（sel 经 `__zw_has_attr`，handle 经 `__zw_has_attr_handle`）。② **setter**（attr 名映射）：`htmlFor→for`、`defaultValue→value`（仅设属性，不联动 .value 当前态——spec 联动条件罕见 defer）、`defaultChecked` boolean 反射 `checked`（truthy→设存在，falsy→移除）。③ 映射必须显式——catch-all 会用属性名作 attr 名（`htmlFor`/`defaultValue`）致 spurious 属性，故独立 set-trap 分支。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +get-trap htmlFor（LABEL→for）/defaultValue（INPUT→value）/defaultChecked（INPUT→checked 存在性）；+set-trap htmlFor→for / defaultValue→value / defaultChecked→checked boolean（LABEL/INPUT gate + attr 名映射）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_reflected_idl_htmlfor_defaultvalue_r2840`（htmlFor 反射 + defaultValue 区别 .value 当前态 + defaultChecked=checked 存在 + setter 经 SetAttr mutation apply 验 attr 名映射）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13467 passed / 0 failed / 74 ignored**，13466+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS + **`make product-smoke-legacy` 42 fixture 0 struct FAIL（37-form-controls PASS 3.85%）**——form 变更按 run-rules 跑 legacy 验零结构性回归。
+
+**为何零回归且净正向**：① 全新增 get/set-trap 分支（LABEL/INPUT gate，不改既有元素属性路径）；② additive 反射属性（不改既有 `.value`/`.checked`/`.for` 语义）；③ setter attr 名映射显式（避免 catch-all spurious 属性）。
+
+**已知限制（记录）**：① `input.form`（返所属 form 元素）未含——需父链遍历找 ancestor form，可续；② `.checked` 当前态与 `defaultChecked` 在 shim 同返 checked 属性存在性（shim 无独立 JS-toggle 跟踪——`.checked` 既有 limitation，非本切片）；③ `defaultValue` setter 不联动 `.value`（spec 仅当当前值=旧 default 时联动，罕见 defer）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面近穷尽（R2820-R2840 覆 ... + form 反射 IDL + htmlFor/defaultValue/defaultChecked 主表面）。剩余元素特定 IDL：`input.form`（父链遍历）/`<textarea>` selectionStart/End（中频，selection 状态）/`<table>` rowIndex/cellIndex/rows/cells（中频，需 host 结构回调）/`<img>` naturalWidth/Height（headless 低价值）；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / node.normalize / 真 WAAPI / date/time valueAsNumber / media 时长属性 / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13467 全绿）。
+
 ### P1a HTMLFormElement 反射 IDL 属性（action/method/enctype/target）（本轮 R2839，缺失 Web API 续 / form 提交元数据）
 
 承接 R2838（anchor URL 分解）。probe 发现 `<form>` 反射 IDL 属性（action/method/enctype/target）全缺（无通用反射机制，catch-all 对其返 undefined）。land ——form 序列化 / AJAX 提交库（jQuery form / Axios 插件）读 `form.action`/`form.method` 构提交请求高频。

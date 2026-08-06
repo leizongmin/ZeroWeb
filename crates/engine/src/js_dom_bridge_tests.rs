@@ -12387,3 +12387,107 @@ fn test_form_reflected_idl_attrs_r2839() {
     // div.action 不应得 form 的默认 'get'-style 处理；接受 catch-all 任一返值（undefined/空/原始串）。
     let _nf = sandbox.execute("String(globalThis.__notformAction)").unwrap().value;
 }
+
+#[test]
+fn test_reflected_idl_htmlfor_defaultvalue_r2840() {
+    // R2840：反射属性 IDL——label.htmlFor（for 属性）、input.defaultValue（初始 value 属性，区别 .value
+    // 当前态）、input.defaultChecked（checked 属性存在性）。form reset / 校验库读这些判「值/选中态是否改过」。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <label id='l' for='nameInput'>Name</label>\
+         <input id='nameInput' type='text' value='initial'>\
+         <input id='chk' type='checkbox' checked>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // label.htmlFor 反射 for 属性。
+    sandbox
+        .execute("globalThis.__htmlFor = document.querySelector('#l').htmlFor;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__htmlFor)").unwrap().value,
+        "nameInput",
+        "label.htmlFor 反射 for 属性"
+    );
+
+    // input.defaultValue = 初始 value 属性（'initial'）；.value 当前态可独立改变，defaultValue 不变。
+    sandbox
+        .execute(
+            "var i = document.querySelector('#nameInput');\
+             globalThis.__dv0 = i.defaultValue;\
+             globalThis.__val0 = i.value;\
+             i.value = 'changed';\
+             globalThis.__dv1 = i.defaultValue;\
+             globalThis.__val1 = i.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dv0)").unwrap().value,
+        "initial",
+        "input.defaultValue=初始 value 属性"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__val0)").unwrap().value,
+        "initial",
+        "input.value 初始=defaultValue"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dv1)").unwrap().value,
+        "initial",
+        "改 .value 后 defaultValue 不变（区别当前态）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__val1)").unwrap().value,
+        "changed",
+        "改 .value 后 .value=changed"
+    );
+
+    // input.defaultChecked = checked 属性存在性（true）。.checked 当前态同（shim 无独立 toggle 态）。
+    sandbox
+        .execute(
+            "var c = document.querySelector('#chk');\
+             globalThis.__dc = c.defaultChecked;\
+             globalThis.__ck = c.checked;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dc)").unwrap().value,
+        "true",
+        "input.defaultChecked=checked 属性存在"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ck)").unwrap().value,
+        "true",
+        "input.checked=true（同 defaultChecked）"
+    );
+
+    // setter：label.htmlFor = x 设 for 属性（attr 名映射）；input.defaultValue = x 设 value 属性。
+    sandbox
+        .execute(
+            "document.querySelector('#l').htmlFor = 'emailInput';\
+             document.querySelector('#nameInput').defaultValue = 'reset';",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms).unwrap();
+    assert!(
+        out.contains("<label id=\"l\" for=\"emailInput\">"),
+        "label.htmlFor setter 设 for 属性（attr 名映射 htmlFor→for）\n{out}"
+    );
+    assert!(
+        out.contains("value=\"reset\""),
+        "input.defaultValue setter 设 value 属性（attr 名映射 defaultValue→value）\n{out}"
+    );
+}

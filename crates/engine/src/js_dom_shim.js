@@ -2999,6 +2999,26 @@
           }
           return fv;
         }
+        // `label.htmlFor`（HTMLLabelElement，R2840）——反射 `for` 属性（label↔control 关联，表单库读）。
+        if (prop === 'htmlFor' && _realTag(sel, handle) === 'LABEL') {
+          return (handle ? __zw_get_attr_handle(handle, 'for') : __zw_get_attr(sel, 'for')) || '';
+        }
+        // `input.defaultValue`（HTMLInputElement，R2840）——反射**初始** `value` 属性（区别 `.value` 当前态；
+        // form reset 逻辑 / 校验库读 defaultValue 判「值是否改过」）。
+        if (prop === 'defaultValue' && _realTag(sel, handle) === 'INPUT') {
+          return (handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value')) || '';
+        }
+        // `input.defaultChecked`（HTMLInputElement，R2840）——反射 `checked` 属性存在性（初始选中态，区别
+        // `.checked` 当前态；复选框 reset 逻辑读）。sel 经 `__zw_has_attr`，handle 经 `__zw_has_attr_handle`。
+        if (prop === 'defaultChecked' && _realTag(sel, handle) === 'INPUT') {
+          if (handle && typeof __zw_has_attr_handle === 'function') {
+            try { return __zw_has_attr_handle(handle, 'checked') === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_has_attr === 'function') {
+            try { return __zw_has_attr(sel, 'checked') === '1'; } catch (_e) {}
+          }
+          return false;
+        }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
         if (prop === 'text' && _realTag(sel, handle) === 'OPTION') {
@@ -3983,6 +4003,29 @@
         } else if (p === 'indeterminate') {
           // JS-only IDL 布尔（非 reflected attr）—— per-element state map（默认 false）。无属性 mutation。
           _indeterminate[key] = !!value;
+        } else if (p === 'htmlFor') {
+          // `label.htmlFor = x`（R2840）——反射 `for` 属性（attr 名映射 htmlFor→for）。仅 LABEL。
+          if (_realTag(sel, handle) === 'LABEL') {
+            if (handle) __zw_set_attr_handle(handle, 'for', String(value));
+            else { __zw_set_attr(sel, 'for', String(value)); moAttr = 'for'; }
+          }
+        } else if (p === 'defaultValue') {
+          // `input.defaultValue = x`（R2840）——反射 `value` 属性（初始值；attr 名映射 defaultValue→value）。
+          // 仅设 value 属性，不联动 .value 当前态（spec 仅当当前值等于旧 defaultValue 时联动——罕见 defer）。
+          if (_realTag(sel, handle) === 'INPUT') {
+            if (handle) __zw_set_attr_handle(handle, 'value', String(value));
+            else { __zw_set_attr(sel, 'value', String(value)); moAttr = 'value'; }
+          }
+        } else if (p === 'defaultChecked') {
+          // `input.defaultChecked = x`（R2840）——boolean 反射 `checked` 属性（truthy→设存在，falsy→移除）。
+          if (_realTag(sel, handle) === 'INPUT') {
+            if (value) {
+              if (handle) __zw_set_attr_handle(handle, 'checked', '');
+              else { __zw_set_attr(sel, 'checked', ''); moAttr = 'checked'; }
+            } else if (!handle && typeof __zw_remove_attr === 'function') {
+              __zw_remove_attr(sel, 'checked'); moAttr = 'checked';
+            }
+          }
         } else if (p === 'hidden' || p === 'checked' || p === 'disabled' || p === 'selected') {
           // boolean reflected property：truthy → 设存在（空值，has_attr=true）；falsy → 真移除
           // （has_attr=false）。修正旧 fallthrough 写空串致 falsy 仍 present 的 bug。
