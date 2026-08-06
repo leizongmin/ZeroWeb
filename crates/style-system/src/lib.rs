@@ -1099,6 +1099,10 @@ impl StyleSystem {
         // 4.5. 在级联值中解析 var() 引用
         let resolved_cascaded = resolve_var_in_cascaded(&cascaded, &self.custom_properties);
 
+        // 4.6. R2873：var() pending-substitution 第二阶段——把含 var() 的简写（4.5 步已代入）
+        // 重新展开为长属性。须在 var() 解析之后、计算继承样式之前。
+        let resolved_cascaded = shorthand::expand_pending_shorthands(resolved_cascaded);
+
         // 5. 计算继承样式（prefers-color-scheme 参与 color-scheme used-scheme 合成）
         let prefers_dark = matches!(self.prefers_color_scheme, PrefersColorSchemeValue::Dark);
         let style = inheritance::compute_inherited_style_with_quirks(

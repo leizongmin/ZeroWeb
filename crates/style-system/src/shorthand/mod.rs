@@ -48,6 +48,176 @@ fn wide_keyword_to_longhands(
         .collect()
 }
 
+/// R2873：常见简写属性展开后的长属性名集合（用于 `var()` pending-substitution）。
+///
+/// 仅覆盖常见简写。未列出的简写在值含 `var()` 时走既有「展开失败 → 丢弃」行为（无回归，
+/// 仅是该项不享受 pending-substitution）。
+fn pending_shorthand_longhands(property: &str) -> Option<&'static [&'static str]> {
+    Some(match property {
+        "margin" => &["margin-top", "margin-right", "margin-bottom", "margin-left"],
+        "padding" => &["padding-top", "padding-right", "padding-bottom", "padding-left"],
+        "border-width" => &[
+            "border-top-width",
+            "border-right-width",
+            "border-bottom-width",
+            "border-left-width",
+        ],
+        "border-style" => &[
+            "border-top-style",
+            "border-right-style",
+            "border-bottom-style",
+            "border-left-style",
+        ],
+        "border-color" => &[
+            "border-top-color",
+            "border-right-color",
+            "border-bottom-color",
+            "border-left-color",
+        ],
+        "border" => &[
+            "border-top-width",
+            "border-top-style",
+            "border-top-color",
+            "border-right-width",
+            "border-right-style",
+            "border-right-color",
+            "border-bottom-width",
+            "border-bottom-style",
+            "border-bottom-color",
+            "border-left-width",
+            "border-left-style",
+            "border-left-color",
+        ],
+        "border-top" => &["border-top-width", "border-top-style", "border-top-color"],
+        "border-right" => &["border-right-width", "border-right-style", "border-right-color"],
+        "border-bottom" => &["border-bottom-width", "border-bottom-style", "border-bottom-color"],
+        "border-left" => &["border-left-width", "border-left-style", "border-left-color"],
+        "border-radius" => &[
+            "border-top-left-radius",
+            "border-top-right-radius",
+            "border-bottom-right-radius",
+            "border-bottom-left-radius",
+        ],
+        "inset" => &["top", "right", "bottom", "left"],
+        "gap" => &["gap", "row-gap", "column-gap"],
+        "overflow" => &["overflow-x", "overflow-y"],
+        "overscroll-behavior" => &["overscroll-behavior-x", "overscroll-behavior-y"],
+        "flex" => &["flex-grow", "flex-shrink", "flex-basis"],
+        "flex-flow" => &["flex-direction", "flex-wrap"],
+        "background" => &[
+            "background-image",
+            "background-position",
+            "background-size",
+            "background-repeat",
+            "background-attachment",
+            "background-origin",
+            "background-clip",
+            "background-color",
+        ],
+        "font" => &["font-style", "font-weight", "font-size", "line-height", "font-family"],
+        "text-decoration" => &[
+            "text-decoration-line",
+            "text-decoration-style",
+            "text-decoration-color",
+            "text-decoration-thickness",
+        ],
+        "text-emphasis" => &["text-emphasis-style", "text-emphasis-color"],
+        "list-style" => &["list-style-image", "list-style-position", "list-style-type"],
+        "outline" => &["outline-width", "outline-style", "outline-color"],
+        "columns" => &["column-count", "column-width"],
+        "column-rule" => &["column-rule-width", "column-rule-style", "column-rule-color"],
+        "border-image" => &[
+            "border-image-source",
+            "border-image-slice",
+            "border-image-width",
+            "border-image-outset",
+            "border-image-repeat",
+        ],
+        "animation" => &[
+            "animation-name",
+            "animation-duration",
+            "animation-timing-function",
+            "animation-delay",
+            "animation-iteration-count",
+            "animation-direction",
+            "animation-fill-mode",
+            "animation-play-state",
+        ],
+        "transition" => &[
+            "transition-property",
+            "transition-duration",
+            "transition-timing-function",
+            "transition-delay",
+        ],
+        "place-items" => &["align-items", "justify-items"],
+        "place-content" => &["align-content", "justify-content"],
+        "place-self" => &["align-self", "justify-self"],
+        "grid-column" => &["grid-column-start", "grid-column-end"],
+        "grid-row" => &["grid-row-start", "grid-row-end"],
+        "margin-block" => &["margin-block-start", "margin-block-end"],
+        "margin-inline" => &["margin-inline-start", "margin-inline-end"],
+        "padding-block" => &["padding-block-start", "padding-block-end"],
+        "padding-inline" => &["padding-inline-start", "padding-inline-end"],
+        "inset-block" => &["inset-block-start", "inset-block-end"],
+        "inset-inline" => &["inset-inline-start", "inset-inline-end"],
+        _ => return None,
+    })
+}
+
+/// R2873：pending-substitution 标记前缀（SOH 分隔，CSS 值不可能出现 SOH）。
+///
+/// 标记格式：`\x01zwsp\x01{shorthand}\x01{raw_value}`。`raw_value` 仍含未解析的 `var()`；
+/// 经 `resolve_env_and_var` 处理后 `var()` 被代入，前缀结构保持不变。
+pub(crate) const ZWSP_SENTINEL_PREFIX: &str = "\x01zwsp\x01";
+
+/// R2873：var() pending-substitution 第二阶段——在 `var()` 解析后，把标记为 pending 的
+/// 长属性用解析后的简写值重新展开并应用回该长属性。
+///
+/// 规范语义（CSS Variables §2 + CSS Cascade）：含 `var()` 的简写在解析期无法展开，故把
+/// 简写的每个长属性设为携带原简写文本的「pending substitution value」，各自独立参与级联；
+/// `var()` 解析后，用代入后的简写值重新展开，并应用到「仍是 pending 标记」的长属性
+/// （被显式长属性 cascade 覆盖的，值已不是标记，自然跳过——等价于显式长属性胜出）。
+///
+/// kill-switch：`ZW_SHORTHAND_VAR=0` 关闭（回退到旧行为）。
+pub fn expand_pending_shorthands(
+    mut resolved: std::collections::HashMap<String, String>,
+) -> std::collections::HashMap<String, String> {
+    if std::env::var("ZW_SHORTHAND_VAR").as_deref() == Ok("0") {
+        return resolved;
+    }
+    let mut updates: Vec<(String, Option<String>)> = Vec::new();
+    for (prop, val) in resolved.iter() {
+        let Some(rest) = val.strip_prefix(ZWSP_SENTINEL_PREFIX) else {
+            continue;
+        };
+        let Some(delim) = rest.find('\x01') else {
+            continue;
+        };
+        let shorthand = &rest[..delim];
+        // raw 已经 resolve_env_and_var 处理（var() 已代入）；仍含 var() = 解析失败 → 展开必失败。
+        let raw = &rest[delim + 1..];
+        let expanded = expand_one(shorthand, raw, false, (0, 0, 0));
+        let new_val = expanded
+            .iter()
+            .find(|(p, _, _, _)| p == prop)
+            .map(|(_, v, _, _)| v.clone());
+        updates.push((prop.clone(), new_val));
+    }
+    for (prop, new_val) in updates {
+        match new_val {
+            Some(v) => {
+                resolved.insert(prop, v);
+            }
+            // 简写重新展开未产生该长属性（代入后值非法）→ 该长属性按未声明处理
+            //（取 initial/inherit，与规范 invalid-at-computed-time 一致）。
+            None => {
+                resolved.remove(&prop);
+            }
+        }
+    }
+    resolved
+}
+
 /// 展开简写属性声明。
 ///
 /// 遍历所有匹配声明，将简写属性展开为长属性列表。
@@ -84,6 +254,20 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
     // 自行拒绝（R2127）。driving：escapes-014/015/016（与 R2132 tokenizer `\` 路由联合）。
     if value.starts_with(char::is_whitespace) || value.ends_with(char::is_whitespace) {
         return vec![];
+    }
+
+    // R2873：CSS 变量在简写值中的 pending-substitution。简写在 cascade 前展开，但含
+    // `var()` 的值此时无法解析（var 在 cascade 后才解析），强行展开会丢弃整条简写
+    // （driving：css-variables vars-font-shorthand-001 / vars-background-shorthand-001 /
+    // wide-keyword-fallback-001 的 `border-style: var(--unknown, inherit)`）。改为把简写
+    // 的每个长属性标记为 pending（携带原简写名+原值），var() 解析后由
+    // `expand_pending_shorthands` 重新展开。kill-switch：`ZW_SHORTHAND_VAR=0`。
+    if std::env::var("ZW_SHORTHAND_VAR").as_deref() != Ok("0")
+        && value.contains("var(")
+        && let Some(longhands) = pending_shorthand_longhands(property)
+    {
+        let sentinel = format!("{ZWSP_SENTINEL_PREFIX}{property}\x01{value}");
+        return longhands.iter().map(|lh| mk(lh, &sentinel)).collect();
     }
 
     match property {
