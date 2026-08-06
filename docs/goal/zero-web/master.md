@@ -2091,6 +2091,23 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a Event 子类簇 #2：HashChange/PopState/Storage/Progress/Transition/Animation（本轮 R2812，缺失 Web API 续）
+
+承接 R2811（Event 子类簇 #1）。续事件构造器表面——land **Event 子类簇 #2**（均 extends Event）：`HashChangeEvent`(oldURL/newURL，SPA hash 路由) / `PopStateEvent`(state，history 路由) / `StorageEvent`(key/newValue/oldValue/url/storageArea，跨标签页 storage 同步) / `ProgressEvent`(lengthComputable/loaded/total，XHR/资源加载进度) / `TransitionEvent`(propertyName/elapsedTime/pseudoElement) / `AnimationEvent`(animationName/elapsedTime/pseudoElement，CSS 过渡/动画回调)。**先 probe 验证**（grep 确认 6 个均为 0 缺失，无既有）。
+
+- **复用 R2811 `_defineEventSubclass` 工厂**：6 子类各一行 `_defineEventSubclass(name, 'Event', [[field,key,default],...])`——零 host 回调、纯 JS、低风险。feature-detection（typeof==='function'）+ `new X(type, init)` 合成派发（高频）。
+- **createEvent 重构为 map 查找**：8→15 entry 的三元链改 `{type: Ctor}` map（行为等价、`map[t] && typeof==='function'` 守卫回落 Event），含 6 新 type（hashchangeevent/popstateevent/storageevent/progressevent/transitionevent/animationevent）。重构因链已超 ~6 entry 不scale（idiomatic lookup）。
+- **已知限制（记录）**：① 仅构造期填字段（无真事件派发——同 Event/KeyboardEvent 既有简化）；② 6 子类均 extends Event（无 UIEvent/MouseEvent 中间层，spec 一致——它们本就 extends Event）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +6 子类（HashChangeEvent/PopStateEvent/StorageEvent/ProgressEvent/TransitionEvent/AnimationEvent，复用 _defineEventSubclass，InputEvent 后）；createEvent 三元链→map 查找 +6 type。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_event_subclasses2_r2812`（6 构造器 typeof=function + instanceof Event / HashChange oldURL·newURL / PopState state / Storage key·newValue·oldValue·url·storageArea 默认 null / Progress lengthComputable·loaded·total + 默认 false / Transition propertyName·elapsedTime + Animation animationName·elapsedTime / createEvent('StorageEvent')·('ProgressEvent') instanceof + 未知回落 Event）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13440 passed / 0 failed / 74 ignored**，13439+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 6 子类全新 global（additive，guard 幂等）+ 复用 R2811 工厂（不改既有构造器）；② createEvent map 重构行为等价（守卫 + 回落 Event 不变，仅扩 type 覆盖）；③ 纯 JS 无 host 回调无渲染副作用。
+
 ### P1a Event 子类簇：UIEvent/MouseEvent/FocusEvent/WheelEvent/PointerEvent/InputEvent（本轮 R2811，缺失 Web API 续）
 
 承接 R2810（CSSRule.style）。**先 probe 验证**（上轮 CONTINUE 猜 `CSS.escape` 缺失——probe 发现**已存在** line 3795 且 Chromium-oracle 锚定，避免冗余 land）；改核 Event 子类表面：现存仅 Event/CustomEvent/KeyboardEvent/MessageEvent，缺现代输入事件簇（feature-detection `'PointerEvent' in window` + `new MouseEvent('click',{clientX,...})` 合成派发——测试 / 库 / 事件总线高频）。

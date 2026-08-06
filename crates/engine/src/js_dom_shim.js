@@ -3652,6 +3652,29 @@
     ['data', 'data', null], ['isComposing', 'isComposing', false],
     ['inputType', 'inputType', ''], ['dataTransfer', 'dataTransfer', null],
   ]);
+  // Event 子类簇 #2（R2812）——均 extends Event：HashChangeEvent（SPA hash 路由）/ PopStateEvent（history
+  // 路由）/ StorageEvent（跨标签页 storage 同步）/ ProgressEvent（XHR/资源加载进度）/ TransitionEvent·
+  // AnimationEvent（CSS 过渡/动画回调）。feature-detection + `new X(type, init)` 合成派发高频。复用
+  // [`_defineEventSubclass`]（R2811）。**已知限制**：仅构造期填字段（无真事件派发——同既有简化）。
+  _defineEventSubclass('HashChangeEvent', 'Event', [
+    ['oldURL', 'oldURL', ''], ['newURL', 'newURL', ''],
+  ]);
+  _defineEventSubclass('PopStateEvent', 'Event', [
+    ['state', 'state', null],
+  ]);
+  _defineEventSubclass('StorageEvent', 'Event', [
+    ['key', 'key', null], ['newValue', 'newValue', null], ['oldValue', 'oldValue', null],
+    ['url', 'url', ''], ['storageArea', 'storageArea', null],
+  ]);
+  _defineEventSubclass('ProgressEvent', 'Event', [
+    ['lengthComputable', 'lengthComputable', false], ['loaded', 'loaded', 0], ['total', 'total', 0],
+  ]);
+  _defineEventSubclass('TransitionEvent', 'Event', [
+    ['propertyName', 'propertyName', ''], ['elapsedTime', 'elapsedTime', 0], ['pseudoElement', 'pseudoElement', ''],
+  ]);
+  _defineEventSubclass('AnimationEvent', 'Event', [
+    ['animationName', 'animationName', ''], ['elapsedTime', 'elapsedTime', 0], ['pseudoElement', 'pseudoElement', ''],
+  ]);
 
   // EventTarget——事件目标基类型（独立构造器，R2779）。库常用 `new EventTarget()` / `extends EventTarget`
   // 做事件发射器（pub-sub / 自定义事件总线）。元素 / document / window 经各自 addEventListener 路径；
@@ -4195,21 +4218,28 @@
       return _wrapHandle(handle);
     },
     // `document.createEvent(type)`——legacy 合成事件工厂（jQuery<3 / 旧库 / 分析脚本高频）。返空 type 事件，
-    // 经 initEvent/initCustomEvent 填充后 dispatchEvent。type 大小写不敏感 + spec 别名（Event/Events/HTMLEvents
-    // → Event；CustomEvent → CustomEvent；KeyboardEvent → KeyboardEvent；MouseEvent/UIEvent/FocusEvent/
-    // WheelEvent/PointerEvent/InputEvent 同名→对应构造器，R2811）；未知回落 Event（lenient，spec 抛
-    // NotSupportedError——本沙箱不抛，避免中断脚本）。复用现有构造器（R2779 / R2811）。
+    // 经 initEvent/initCustomEvent 填充后 dispatchEvent。type 大小写不敏感 + spec 别名（custom↔CustomEvent）；
+    // 已知 Event 子类 type→对应构造器（R2779 / R2811 / R2812）；未知回落 Event（lenient，spec 抛
+    // NotSupportedError——本沙箱不抛，避免中断脚本）。
     createEvent: function(type) {
       var t = String(type == null ? '' : type).toLowerCase();
-      var Ctor = globalThis.CustomEvent && (t === 'customevent' || t === 'custom') ? globalThis.CustomEvent
-        : globalThis.KeyboardEvent && t === 'keyboardevent' ? globalThis.KeyboardEvent
-        : globalThis.MouseEvent && t === 'mouseevent' ? globalThis.MouseEvent
-        : globalThis.UIEvent && t === 'uievent' ? globalThis.UIEvent
-        : globalThis.FocusEvent && t === 'focusevent' ? globalThis.FocusEvent
-        : globalThis.WheelEvent && t === 'wheelevent' ? globalThis.WheelEvent
-        : globalThis.PointerEvent && t === 'pointerevent' ? globalThis.PointerEvent
-        : globalThis.InputEvent && t === 'inputevent' ? globalThis.InputEvent
-        : globalThis.Event;
+      var map = {
+        customevent: globalThis.CustomEvent, custom: globalThis.CustomEvent,
+        keyboardevent: globalThis.KeyboardEvent,
+        mouseevent: globalThis.MouseEvent,
+        uievent: globalThis.UIEvent,
+        focusevent: globalThis.FocusEvent,
+        wheelevent: globalThis.WheelEvent,
+        pointerevent: globalThis.PointerEvent,
+        inputevent: globalThis.InputEvent,
+        hashchangeevent: globalThis.HashChangeEvent,
+        popstateevent: globalThis.PopStateEvent,
+        storageevent: globalThis.StorageEvent,
+        progressevent: globalThis.ProgressEvent,
+        transitionevent: globalThis.TransitionEvent,
+        animationevent: globalThis.AnimationEvent,
+      };
+      var Ctor = (map[t] && typeof map[t] === 'function') ? map[t] : globalThis.Event;
       // 构造器接收 (type, options)；createEvent 返**空 type** 事件（initEvent/initCustomEvent 设 type）。
       return new Ctor('');
     },

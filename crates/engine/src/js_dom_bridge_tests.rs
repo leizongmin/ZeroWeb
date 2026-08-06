@@ -9438,3 +9438,187 @@ fn test_event_subclasses_r2811() {
         "createEvent('MouseEvent') instanceof MouseEvent"
     );
 }
+
+#[test]
+fn test_event_subclasses2_r2812() {
+    // R2812：Event 子类簇 #2——HashChangeEvent / PopStateEvent / StorageEvent / ProgressEvent /
+    // TransitionEvent / AnimationEvent（均 extends Event）。SPA hash/history 路由 + 跨标签页 storage 同步 +
+    // XHR/资源加载进度 + CSS 过渡/动画回调高频。复用 R2811 _defineEventSubclass 工厂 + createEvent map 扩展。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // feature-detection：6 构造器均为 function + instanceof Event。
+    sandbox
+        .execute(
+            "globalThis.__fns = ['HashChangeEvent','PopStateEvent','StorageEvent','ProgressEvent',\
+               'TransitionEvent','AnimationEvent']\
+               .map(function(n){ return typeof globalThis[n] === 'function'; }).every(Boolean);\
+             globalThis.__chain = new ProgressEvent('load') instanceof Event;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fns)").unwrap().value,
+        "true",
+        "6 构造器须均为 function"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__chain)").unwrap().value,
+        "true",
+        "子类 instanceof Event"
+    );
+
+    // HashChangeEvent: oldURL/newURL（SPA hash 路由）。
+    sandbox
+        .execute(
+            "globalThis.__he = new HashChangeEvent('hashchange', { oldURL: '#/a', newURL: '#/b' });\
+             globalThis.__heOld = __he.oldURL; globalThis.__heNew = __he.newURL;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__heOld)").unwrap().value,
+        "#/a",
+        "HashChangeEvent oldURL"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__heNew)").unwrap().value,
+        "#/b",
+        "HashChangeEvent newURL"
+    );
+
+    // PopStateEvent: state（history 路由）。
+    sandbox
+        .execute("globalThis.__ps = new PopStateEvent('popstate', { state: { page: 2 } }); globalThis.__psS = __ps.state.page;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__psS)").unwrap().value,
+        "2",
+        "PopStateEvent state"
+    );
+
+    // StorageEvent: key/newValue/oldValue/url/storageArea（跨标签页 storage 同步）。
+    sandbox
+        .execute(
+            "globalThis.__se = new StorageEvent('storage', { key: 'k', newValue: 'v2', oldValue: 'v1', url: 'http://x' });\
+             globalThis.__seKey = __se.key; globalThis.__seNew = __se.newValue; globalThis.__seOld = __se.oldValue;\
+             globalThis.__seUrl = __se.url; globalThis.__seArea = __se.storageArea;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__seKey)").unwrap().value,
+        "k",
+        "StorageEvent key"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__seNew)").unwrap().value,
+        "v2",
+        "StorageEvent newValue"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__seOld)").unwrap().value,
+        "v1",
+        "StorageEvent oldValue"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__seUrl)").unwrap().value,
+        "http://x",
+        "StorageEvent url"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__seArea)").unwrap().value,
+        "null",
+        "StorageEvent storageArea 默认 null"
+    );
+
+    // ProgressEvent: lengthComputable/loaded/total + 默认（XHR/资源加载进度）。
+    sandbox
+        .execute(
+            "globalThis.__pe = new ProgressEvent('progress', { lengthComputable: true, loaded: 50, total: 100 });\
+             globalThis.__peLC = __pe.lengthComputable; globalThis.__peL = __pe.loaded; globalThis.__peT = __pe.total;\
+             globalThis.__peDef = new ProgressEvent('load').lengthComputable;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__peLC)").unwrap().value,
+        "true",
+        "ProgressEvent lengthComputable"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__peL)").unwrap().value,
+        "50",
+        "ProgressEvent loaded"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__peT)").unwrap().value,
+        "100",
+        "ProgressEvent total"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__peDef)").unwrap().value,
+        "false",
+        "ProgressEvent lengthComputable 默认 false"
+    );
+
+    // TransitionEvent / AnimationEvent: propertyName/animationName + elapsedTime + pseudoElement。
+    sandbox
+        .execute(
+            "globalThis.__te = new TransitionEvent('transitionend', { propertyName: 'opacity', elapsedTime: 0.5 });\
+             globalThis.__teP = __te.propertyName; globalThis.__teE = __te.elapsedTime;\
+             globalThis.__ae = new AnimationEvent('animationend', { animationName: 'fade', elapsedTime: 1.2 });\
+             globalThis.__aeN = __ae.animationName; globalThis.__aeE = __ae.elapsedTime;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__teP)").unwrap().value,
+        "opacity",
+        "TransitionEvent propertyName"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__teE)").unwrap().value,
+        "0.5",
+        "TransitionEvent elapsedTime"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__aeN)").unwrap().value,
+        "fade",
+        "AnimationEvent animationName"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__aeE)").unwrap().value,
+        "1.2",
+        "AnimationEvent elapsedTime"
+    );
+
+    // createEvent 映射（map）含 6 新 type：createEvent('StorageEvent') instanceof StorageEvent。
+    sandbox
+        .execute(
+            "globalThis.__cse = document.createEvent('StorageEvent') instanceof StorageEvent;\
+             globalThis.__cpr = document.createEvent('ProgressEvent') instanceof ProgressEvent;\
+             globalThis.__cuk = document.createEvent('UnknownEvent') instanceof Event;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cse)").unwrap().value,
+        "true",
+        "createEvent('StorageEvent') instanceof StorageEvent"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cpr)").unwrap().value,
+        "true",
+        "createEvent('ProgressEvent') instanceof ProgressEvent"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cuk)").unwrap().value,
+        "true",
+        "createEvent(未知 type) 回落 instanceof Event"
+    );
+}
