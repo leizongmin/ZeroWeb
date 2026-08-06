@@ -9239,3 +9239,202 @@ fn test_stylesheets_rule_style_r2810() {
         "cssText 写后 style.width 须 '100px'"
     );
 }
+
+#[test]
+fn test_event_subclasses_r2811() {
+    // R2811：Event 子类簇——UIEvent / MouseEvent / FocusEvent / WheelEvent / PointerEvent / InputEvent。
+    // 现代输入事件表面：feature-detection（typeof === 'function'）+ `new MouseEvent('click',{clientX,...})`
+    // 合成派发。经 _defineEventSubclass 工厂（复用 _makeEvent + 原型链 extends parent）。getModifierState 仅
+    // 跟踪 Alt/Control/Meta/Shift；WheelEvent 有 DOM_DELTA_* 静态常量；createEvent 映射含 mouseevent。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // feature-detection：6 构造器均为 function。
+    sandbox
+        .execute(
+            "globalThis.__fns = ['UIEvent','MouseEvent','FocusEvent','WheelEvent','PointerEvent','InputEvent']\
+               .map(function(n){ return typeof globalThis[n] === 'function'; })\
+               .every(Boolean);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fns)").unwrap().value,
+        "true",
+        "6 个 Event 子类构造器须均为 function"
+    );
+
+    // MouseEvent 字段 + instanceof 链（MouseEvent→UIEvent→Event）+ getModifierState。
+    sandbox
+        .execute(
+            "globalThis.__me = new MouseEvent('click', { bubbles: true, clientX: 10, clientY: 20, button: 2, shiftKey: true });\
+             globalThis.__meType = __me.type;\
+             globalThis.__meBub = __me.bubbles;\
+             globalThis.__meCX = __me.clientX;\
+             globalThis.__meButton = __me.button;\
+             globalThis.__meDef = __me.screenX;\
+             globalThis.__meRel = __me.relatedTarget;\
+             globalThis.__meChain = (__me instanceof MouseEvent) && (__me instanceof UIEvent) && (__me instanceof Event);\
+             globalThis.__meShift = __me.getModifierState('Shift');\
+             globalThis.__meAlt = __me.getModifierState('Alt');\
+             globalThis.__meCaps = __me.getModifierState('CapsLock');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__meType)").unwrap().value,
+        "click",
+        "MouseEvent type"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__meBub)").unwrap().value,
+        "true",
+        "MouseEvent bubbles 经 _makeEvent"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__meCX)").unwrap().value,
+        "10",
+        "MouseEvent clientX 来自 options"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__meButton)").unwrap().value,
+        "2",
+        "MouseEvent button"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__meDef)").unwrap().value,
+        "0",
+        "MouseEvent 默认 screenX=0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__meRel)").unwrap().value,
+        "null",
+        "MouseEvent relatedTarget 默认 null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__meChain)").unwrap().value,
+        "true",
+        "MouseEvent instanceof MouseEvent & UIEvent & Event（原型链）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__meShift)").unwrap().value,
+        "true",
+        "getModifierState('Shift') 跟踪 shiftKey"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__meAlt)").unwrap().value,
+        "false",
+        "getModifierState('Alt') 未设→false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__meCaps)").unwrap().value,
+        "false",
+        "getModifierState('CapsLock') 未跟踪→false"
+    );
+
+    // WheelEvent delta + DOM_DELTA_* 常量 + instanceof MouseEvent。
+    sandbox
+        .execute(
+            "globalThis.__we = new WheelEvent('wheel', { deltaY: 120, deltaMode: 1 });\
+             globalThis.__weDY = __we.deltaY;\
+             globalThis.__weDM = __we.deltaMode;\
+             globalThis.__weConst = WheelEvent.DOM_DELTA_LINE;\
+             globalThis.__weChain = (__we instanceof WheelEvent) && (__we instanceof MouseEvent);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__weDY)").unwrap().value,
+        "120",
+        "WheelEvent deltaY"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__weDM)").unwrap().value,
+        "1",
+        "WheelEvent deltaMode"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__weConst)").unwrap().value,
+        "1",
+        "WheelEvent.DOM_DELTA_LINE=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__weChain)").unwrap().value,
+        "true",
+        "WheelEvent instanceof MouseEvent"
+    );
+
+    // PointerEvent 字段 + instanceof MouseEvent。
+    sandbox
+        .execute(
+            "globalThis.__pe = new PointerEvent('pointerdown', { pointerType: 'mouse', isPrimary: true, pressure: 0.5 });\
+             globalThis.__pePT = __pe.pointerType;\
+             globalThis.__pePri = __pe.isPrimary;\
+             globalThis.__peChain = (__pe instanceof PointerEvent) && (__pe instanceof MouseEvent);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pePT)").unwrap().value,
+        "mouse",
+        "PointerEvent pointerType"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pePri)").unwrap().value,
+        "true",
+        "PointerEvent isPrimary"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__peChain)").unwrap().value,
+        "true",
+        "PointerEvent instanceof MouseEvent"
+    );
+
+    // FocusEvent / InputEvent instanceof UIEvent；FocusEvent.relatedTarget / InputEvent.data+inputType。
+    sandbox
+        .execute(
+            "globalThis.__fe = new FocusEvent('blur');\
+             globalThis.__feChain = (__fe instanceof FocusEvent) && (__fe instanceof UIEvent);\
+             globalThis.__ie = new InputEvent('input', { data: 'x', inputType: 'insertText' });\
+             globalThis.__ieChain = (__ie instanceof InputEvent) && (__ie instanceof UIEvent);\
+             globalThis.__ieData = __ie.data;\
+             globalThis.__ieType = __ie.inputType;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__feChain)").unwrap().value,
+        "true",
+        "FocusEvent instanceof UIEvent"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ieChain)").unwrap().value,
+        "true",
+        "InputEvent instanceof UIEvent"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ieData)").unwrap().value,
+        "x",
+        "InputEvent data"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ieType)").unwrap().value,
+        "insertText",
+        "InputEvent inputType"
+    );
+
+    // createEvent('MouseEvent') instanceof MouseEvent（映射扩展）。
+    sandbox
+        .execute("globalThis.__cme = document.createEvent('MouseEvent') instanceof MouseEvent;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cme)").unwrap().value,
+        "true",
+        "createEvent('MouseEvent') instanceof MouseEvent"
+    );
+}

@@ -3579,6 +3579,80 @@
   globalThis.KeyboardEvent.prototype = Object.create(globalThis.Event.prototype);
   globalThis.KeyboardEvent.prototype.constructor = globalThis.KeyboardEvent;
 
+  // Event 子类簇（R2811）——UIEvent / MouseEvent / FocusEvent / WheelEvent / PointerEvent / InputEvent。
+  // 现代输入事件表面：feature-detection（`'PointerEvent' in window`）+ `new MouseEvent('click',{clientX,...})`
+  // 合成派发（测试 / 库 / 事件总线高频）。统一经 [`_defineEventSubclass`] 工厂建（复用 `_makeEvent` + 原型链
+  // extends parent）。**已知限制**：① 仅构造期填字段（无真事件循环派发——同 Event/KeyboardEvent 既有简化）；
+  // ② getModifierState 仅跟踪 Alt/Control/Meta/Shift（CapsLock/NumLock 等未跟踪→false）；③ pageX/pageY
+  // 存值非计算（spec 计算自 clientX+scroll，本沙箱无滚动→取存值或 0）。
+  function _defineEventSubclass(name, parentName, props) {
+    if (globalThis[name]) return globalThis[name];
+    var Parent = globalThis[parentName] || globalThis.Event;
+    var Ctor = function (type, options) {
+      var ev = _makeEvent(type, options);
+      Object.setPrototypeOf(ev, Ctor.prototype);
+      var o = options || {};
+      for (var i = 0; i < props.length; i++) {
+        var p = props[i];
+        ev[p[0]] = o[p[1]] != null ? o[p[1]] : p[2];
+      }
+      return ev;
+    };
+    Ctor.prototype = Object.create(Parent.prototype);
+    Ctor.prototype.constructor = Ctor;
+    globalThis[name] = Ctor;
+    return Ctor;
+  }
+  // UIEvent（Event 子类）：view（默认 null）/ detail（默认 0）。
+  _defineEventSubclass('UIEvent', 'Event', [
+    ['view', 'view', null],
+    ['detail', 'detail', 0],
+  ]);
+  // MouseEvent（UIEvent 子类）：坐标 / 修饰键 / button / buttons / relatedTarget。
+  var MouseEventCtor = _defineEventSubclass('MouseEvent', 'UIEvent', [
+    ['screenX', 'screenX', 0], ['screenY', 'screenY', 0],
+    ['clientX', 'clientX', 0], ['clientY', 'clientY', 0],
+    ['pageX', 'pageX', 0], ['pageY', 'pageY', 0],
+    ['offsetX', 'offsetX', 0], ['offsetY', 'offsetY', 0],
+    ['ctrlKey', 'ctrlKey', false], ['shiftKey', 'shiftKey', false],
+    ['altKey', 'altKey', false], ['metaKey', 'metaKey', false],
+    ['button', 'button', 0], ['buttons', 'buttons', 0],
+    ['relatedTarget', 'relatedTarget', null], ['region', 'region', null],
+  ]);
+  // getModifierState——修饰键状态查询（PointerEvent/WheelEvent 经原型链继承）。仅 4 个 tracked 修饰键。
+  MouseEventCtor.prototype.getModifierState = function (key) {
+    var k = String(key);
+    if (k === 'Alt') return !!this.altKey;
+    if (k === 'Control') return !!this.ctrlKey;
+    if (k === 'Meta') return !!this.metaKey;
+    if (k === 'Shift') return !!this.shiftKey;
+    return false;
+  };
+  // FocusEvent（UIEvent 子类）：relatedTarget。
+  _defineEventSubclass('FocusEvent', 'UIEvent', [
+    ['relatedTarget', 'relatedTarget', null],
+  ]);
+  // WheelEvent（MouseEvent 子类）：delta + deltaMode + DOM_DELTA_* 静态常量。
+  var WheelEventCtor = _defineEventSubclass('WheelEvent', 'MouseEvent', [
+    ['deltaX', 'deltaX', 0], ['deltaY', 'deltaY', 0], ['deltaZ', 'deltaZ', 0],
+    ['deltaMode', 'deltaMode', 0],
+  ]);
+  WheelEventCtor.DOM_DELTA_PIXEL = 0;
+  WheelEventCtor.DOM_DELTA_LINE = 1;
+  WheelEventCtor.DOM_DELTA_PAGE = 2;
+  // PointerEvent（MouseEvent 子类）：pointer 字段。
+  _defineEventSubclass('PointerEvent', 'MouseEvent', [
+    ['pointerId', 'pointerId', 0], ['width', 'width', 1], ['height', 'height', 1],
+    ['pressure', 'pressure', 0], ['tiltX', 'tiltX', 0], ['tiltY', 'tiltY', 0],
+    ['pointerType', 'pointerType', ''], ['isPrimary', 'isPrimary', false],
+    ['twist', 'twist', 0], ['tangentialPressure', 'tangentialPressure', 0],
+  ]);
+  // InputEvent（UIEvent 子类）：data / inputType / isComposing / dataTransfer。
+  _defineEventSubclass('InputEvent', 'UIEvent', [
+    ['data', 'data', null], ['isComposing', 'isComposing', false],
+    ['inputType', 'inputType', ''], ['dataTransfer', 'dataTransfer', null],
+  ]);
+
   // EventTarget——事件目标基类型（独立构造器，R2779）。库常用 `new EventTarget()` / `extends EventTarget`
   // 做事件发射器（pub-sub / 自定义事件总线）。元素 / document / window 经各自 addEventListener 路径；
   // 本构造器提供自包含 listener map（与 DOM 元素事件系统独立，派发事件不冒泡到 DOM，spec 一致）。
@@ -4122,12 +4196,19 @@
     },
     // `document.createEvent(type)`——legacy 合成事件工厂（jQuery<3 / 旧库 / 分析脚本高频）。返空 type 事件，
     // 经 initEvent/initCustomEvent 填充后 dispatchEvent。type 大小写不敏感 + spec 别名（Event/Events/HTMLEvents
-    // → Event；CustomEvent → CustomEvent；KeyboardEvent → KeyboardEvent）；未知回落 Event（lenient，spec 抛
-    // NotSupportedError——本沙箱不抛，避免中断脚本）。复用现有构造器（R2779）。
+    // → Event；CustomEvent → CustomEvent；KeyboardEvent → KeyboardEvent；MouseEvent/UIEvent/FocusEvent/
+    // WheelEvent/PointerEvent/InputEvent 同名→对应构造器，R2811）；未知回落 Event（lenient，spec 抛
+    // NotSupportedError——本沙箱不抛，避免中断脚本）。复用现有构造器（R2779 / R2811）。
     createEvent: function(type) {
       var t = String(type == null ? '' : type).toLowerCase();
       var Ctor = globalThis.CustomEvent && (t === 'customevent' || t === 'custom') ? globalThis.CustomEvent
         : globalThis.KeyboardEvent && t === 'keyboardevent' ? globalThis.KeyboardEvent
+        : globalThis.MouseEvent && t === 'mouseevent' ? globalThis.MouseEvent
+        : globalThis.UIEvent && t === 'uievent' ? globalThis.UIEvent
+        : globalThis.FocusEvent && t === 'focusevent' ? globalThis.FocusEvent
+        : globalThis.WheelEvent && t === 'wheelevent' ? globalThis.WheelEvent
+        : globalThis.PointerEvent && t === 'pointerevent' ? globalThis.PointerEvent
+        : globalThis.InputEvent && t === 'inputevent' ? globalThis.InputEvent
         : globalThis.Event;
       // 构造器接收 (type, options)；createEvent 返**空 type** 事件（initEvent/initCustomEvent 设 type）。
       return new Ctor('');

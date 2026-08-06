@@ -2091,6 +2091,29 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a Event 子类簇：UIEvent/MouseEvent/FocusEvent/WheelEvent/PointerEvent/InputEvent（本轮 R2811，缺失 Web API 续）
+
+承接 R2810（CSSRule.style）。**先 probe 验证**（上轮 CONTINUE 猜 `CSS.escape` 缺失——probe 发现**已存在** line 3795 且 Chromium-oracle 锚定，避免冗余 land）；改核 Event 子类表面：现存仅 Event/CustomEvent/KeyboardEvent/MessageEvent，缺现代输入事件簇（feature-detection `'PointerEvent' in window` + `new MouseEvent('click',{clientX,...})` 合成派发——测试 / 库 / 事件总线高频）。
+
+- **`_defineEventSubclass(name, parentName, props)`**（工厂，复用 6 次——抽象合理）：guard 幂等；`new Ctor(type,options)` 经 `_makeEvent` 建 base + `Object.setPrototypeOf(ev, Ctor.prototype)` + 从 options 拷贝子类专有字段（`o[key]!=null ? o[key] : default`）；`Ctor.prototype = Object.create(Parent.prototype)` + constructor 回填。
+- **UIEvent**（extends Event）：view(null)/detail(0)。
+- **MouseEvent**（extends UIEvent）：screenX/Y·clientX/Y·pageX/Y·offsetX/Y（默认 0）+ ctrl/shift/alt/metaKey（默认 false）+ button/buttons（0）+ relatedTarget/region（null）+ `getModifierState(key)`（仅 Alt/Control/Meta/Shift tracked，CapsLock/NumLock 等未跟踪→false；PointerEvent/WheelEvent 经原型链继承）。
+- **FocusEvent**（extends UIEvent）：relatedTarget(null)。
+- **WheelEvent**（extends MouseEvent）：deltaX/Y/Z（0）+ deltaMode（0）+ 静态常量 DOM_DELTA_PIXEL=0/LINE=1/PAGE=2。
+- **PointerEvent**（extends MouseEvent）：pointerId(0)/width/height(1)/pressure(0)/tiltX/Y(0)/pointerType('')/isPrimary(false)/twist/tangentialPressure(0)。
+- **InputEvent**（extends UIEvent）：data(null)/isComposing(false)/inputType('')/dataTransfer(null)。
+- **createEvent 映射扩展**：`mouseevent`/`uievent`/`focusevent`/`wheelevent`/`pointerevent`/`inputevent` → 对应构造器（R2802 映射补充）。
+- **已知限制（记录）**：① 仅构造期填字段（无真事件循环派发——同 Event/KeyboardEvent 既有简化）；② getModifierState 仅 4 tracked 修饰键；③ pageX/pageY 存值非计算（spec 计算自 clientX+scroll，本沙箱无滚动→存值或 0）；④ 无真事件分发（headless，合成事件仅当对象用）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_defineEventSubclass`（Event 子类工厂）+ UIEvent/MouseEvent（含 getModifierState）/FocusEvent/WheelEvent（含 DOM_DELTA_* 常量）/PointerEvent/InputEvent 定义（KeyboardEvent 后）；createEvent 映射 +6 type。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_event_subclasses_r2811`（6 构造器 typeof=function / MouseEvent 字段+instanceof 链 MouseEvent→UIEvent→Event+getModifierState Shift/Alt/CapsLock / WheelEvent deltaY+deltaMode+DOM_DELTA_LINE+instanceof MouseEvent / PointerEvent pointerType+isPrimary+instanceof MouseEvent / FocusEvent·InputEvent instanceof UIEvent+InputEvent data/inputType / createEvent('MouseEvent') instanceof MouseEvent）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13439 passed / 0 failed / 74 ignored**，13438+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 6 子类为全新 global（additive，guard 幂等不覆盖既有）+ 全新工厂（不改 Event/CustomEvent/KeyboardEvent 既有定义）；② 工厂复用既有 `_makeEvent`（base 字段一致）+ 原型链 extends（instanceof 正确）；③ createEvent 映射仅新增分支（未知仍回落 Event）；④ getModifierState 为纯函数无副作用。
+
 ### P1a CSSRule.style per-rule CSSStyleDeclaration（本轮 R2810，缺失 Web API 续）
 
 承接 R2809（CSSStyleSheet 写路径）。续 CSSStyleSheet CSSOM——land **CSSRule.style per-rule CSSStyleDeclaration**（CSSOM 规则编辑表面最后一块：`sheet.cssRules[0].style.color='blue'` 动态改既有规则单属性，CSS-in-JS 细粒度编辑高频——styled-components/emotion 的核心读改路径）。**复用 R2809 flush 机制**：style mutation → 重建 body → 更新 `rule.cssText`（selectorText 不变）→ 触发 parentSheet `flushToOwner`（写源 `<style>`，下次 render 重解析 cascade；视觉异步，JS 契约同步）。
