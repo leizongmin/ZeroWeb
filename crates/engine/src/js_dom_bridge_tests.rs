@@ -11751,3 +11751,94 @@ fn test_option_constructor_and_select_add_r2832() {
         "new Option(...,selected=true) → .selected=true（handle has-attr 变体）"
     );
 }
+
+#[test]
+fn test_document_collections_r2833() {
+    // R2833：document 集合完整性 + 正确性——forms/scripts/images/links 已 land（_liveQueryCollection），
+    // 本轮补缺 embeds/plugins/anchors + 修正 links（旧返全部 <a>，spec 仅 a[href]+area[href]）+ 加 has trap
+    // 使 Array.prototype.map/forEach.call(coll) 迭代工作（HasProperty 判定索引存在性）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <form id='f1'></form><form id='f2'></form>\
+         <script>var x=1;</script>\
+         <img src='a.png'><img src='b.png'>\
+         <a href='http://h'>L</a><a name='anc'>A</a>\
+         <embed src='e.swf'><object data='o'></object>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "globalThis.__forms = document.forms.length;\
+             globalThis.__scripts = document.scripts.length;\
+             globalThis.__images = document.images.length;\
+             globalThis.__links = document.links.length;\
+             globalThis.__anchors = document.anchors.length;\
+             globalThis.__embeds = document.embeds.length;\
+             globalThis.__plugins = document.plugins.length;\
+             globalThis.__f0id = document.forms[0].getAttribute('id');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__forms)").unwrap().value,
+        "2",
+        "document.forms.length=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__scripts)").unwrap().value,
+        "1",
+        "document.scripts.length=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__images)").unwrap().value,
+        "2",
+        "document.images.length=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__links)").unwrap().value,
+        "1",
+        "document.links.length=1（仅 a[href]，不含 a[name]）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__anchors)").unwrap().value,
+        "1",
+        "document.anchors.length=1（仅 a[name]）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__embeds)").unwrap().value,
+        "2",
+        "document.embeds.length=2（embed+object）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__plugins)").unwrap().value,
+        "2",
+        "document.plugins.length=2（embed+object）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__f0id)").unwrap().value,
+        "f1",
+        "document.forms[0].id='f1'（索引访问）"
+    );
+
+    // 迭代支持（for...of / 索引遍历）——库常见用法。
+    sandbox
+        .execute("globalThis.__formIds = Array.prototype.map.call(document.forms, function(f){return f.getAttribute('id');}).join(',');")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__formIds)").unwrap().value,
+        "f1,f2",
+        "document.forms 可 Array.map 迭代（f1,f2）"
+    );
+}

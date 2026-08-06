@@ -2599,15 +2599,37 @@
     return '?';
   }
 
+  // `sel` 支持单选择器串或多选择器数组——多 tag 集合（links=a[href]+area[href]、embeds/plugins=
+  // embed+object）须逐选择器查询后 concat（querySelectorAll 顶层不支持逗号选择器列表，仅 :is()/:where()
+  // 内部支持）。disjoint tag 故无需去重。R2833：扩展自单串以修正 links（旧返全部 `<a>`，spec 仅 a[href]）。
+  // `has` trap（R2833）使 `Array.prototype.map/forEach/filter.call(coll, fn)` 等数组方法工作——它们先经
+  // HasProperty 判定索引存在性，无 has trap 时 {length:0} target 对数值索引恒判 absent 致迭代得空。
   function _liveQueryCollection(sel) {
+    var sels = Array.isArray(sel) ? sel : [sel];
+    function snapshot() {
+      var list = [];
+      for (var i = 0; i < sels.length; i++) {
+        var found = globalThis.document.querySelectorAll(sels[i]);
+        for (var j = 0; j < found.length; j++) list.push(found[j]);
+      }
+      return list;
+    }
     return new Proxy({ length: 0 }, {
       get: function(_t, prop) {
-        var list = globalThis.document.querySelectorAll(sel);
+        var list = snapshot();
         if (prop === 'length') return list.length;
         if (prop === 'item') return function(i) { return list[i] || null; };
         var idx = parseInt(prop, 10);
         if (!isNaN(idx) && String(idx) === String(prop)) return list[idx];
         return list[prop];
+      },
+      has: function(_t, prop) {
+        var idx = parseInt(prop, 10);
+        if (!isNaN(idx) && String(idx) === String(prop)) {
+          var list = snapshot();
+          return idx >= 0 && idx < list.length;
+        }
+        return false;
       }
     });
   }
@@ -5170,7 +5192,12 @@
     forms: _liveQueryCollection('form'),
     images: _liveQueryCollection('img'),
     scripts: _liveQueryCollection('script'),
-    links: _liveQueryCollection('a'),
+    // links = a[href] + area[href]（R2833 修正：旧 `_liveQueryCollection('a')` 返全部 `<a>` 含 name-only
+    // 锚，spec 仅带 href 的 a/area）。embeds/plugins = embed + object（同 spec）；anchors = a[name]（legacy 命名锚）。
+    links: _liveQueryCollection(['a[href]', 'area[href]']),
+    embeds: _liveQueryCollection(['embed', 'object']),
+    plugins: _liveQueryCollection(['embed', 'object']),
+    anchors: _liveQueryCollection('a[name]'),
     addEventListener: function(type, fn, opts) {
       _makeProxy('html', null).addEventListener(type, fn, opts);
     },

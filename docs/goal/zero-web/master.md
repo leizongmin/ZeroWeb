@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a document 集合完整性 + 正确性（embeds/plugins/anchors 补缺 + links 修正 + 迭代 has trap）（本轮 R2833，缺失 Web API 续）
+
+承接 R2832（new Option/select.add）。probe 发现 `document.forms`/`images`/`scripts`/`links` **已 land**（`_liveQueryCollection`），但：① `embeds`/`plugins`/`anchors` **缺失**；② `links` **错误**——`_liveQueryCollection('a')` 返全部 `<a>` 含 name-only 锚，spec 仅 `a[href]`+`area[href]`；③ `_liveQueryCollection` Proxy 缺 `has` trap，`Array.prototype.map/forEach/filter.call(coll, fn)` 经 HasProperty 判索引存在性，`{length:0}` target 对数值索引恒判 absent → 迭代得空（jQuery `$(document.forms).map(...)` / 表单迭代库常见）。
+
+- **关键设计点**：① `_liveQueryCollection(sel)` 扩展 `sel` 支持单选择器串**或数组**——多 tag 集合（links/embeds/plugins）逐选择器查询后 concat（querySelectorAll 顶层不支持逗号选择器列表，仅 `:is()`/`:where()` 内部支持；disjoint tag 无需去重）。② 抽 `snapshot()` 内部 helper（get/has 共用，避免重复）。③ 新增 `has` trap——数值索引经 snapshot 判 `idx ∈ [0,len)`，使数组方法迭代工作。④ `links` 改 `_liveQueryCollection(['a[href]','area[href]'])`（spec 修正）；新增 `embeds`/`plugins`（`['embed','object']`）、`anchors`（`'a[name]'`，legacy 命名锚）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | `_liveQueryCollection` 支持 sel 数组 + 抽 snapshot() + 加 has trap（数值索引存在性）；`links` 改 `['a[href]','area[href]']`；新增 `embeds`/`plugins`/`anchors`（5195-5201）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_document_collections_r2833`（forms/scripts/images/links/anchors/embeds/plugins 计数 + links 仅 a[href] 不含 a[name] + anchors 仅 a[name] + embeds/plugins=embed+object + 索引访问 + Array.map 迭代）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13461 passed / 0 failed / 74 ignored**，13460+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平——_liveQueryCollection 增 has trap 经 welcome smoke 证零回归）+ 全 8 struct PASS。
+
+**为何零回归且净正向**：① `_liveQueryCollection` 的 sel-array + snapshot + has trap 对既有单串调用（forms/images/scripts）行为等价（snapshot 输出同 querySelectorAll；has trap 仅使原本静默失效的数组迭代工作，不改 get 语义）；② links 修正仅排除无 href 锚（document.links 无依赖测试，0 影响）；③ embeds/plugins/anchors 全新增（additive）。
+
+**已知限制（记录）**：① `has` trap 每次索引判定 re-query（O(n) DOM 查询/判定，数组方法 O(n) 索引 → O(n²) 查询；典型集合 <10 项可接受，大集合如 document.images@100 图 = 10⁴ 查询，shim 可接受）；② `.namedItem(name)` 未实现（HTMLCollection 命名访问 `document.forms['x']`，legacy，少见）；③ 非真 live（属性级 re-query 非 DOM-mutation 驱动，但 snapshot 架构本无 live 语义）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面已穷尽（R2820-R2833 覆 modern 动画/编辑/表单（校验+集合+files+indeterminate）/select（options/selectedOptions/selectedIndex/动态填充 new Option+add）/事件/序列化/可见性/剪贴板/焦点/位置/URL/性能/存储/几何读/document 集合 主表面）。剩余全为深项/host-layer：`document.elementFromPoint`（layout rect 全量 hit-test，深）/ customElements upgrade/lifecycle（element proxy 接 ctor，深）/ Shadow DOM attachShadow（深）/ node.normalize（罕见 + 架构重，defer）/ 真 Web Animations timeline（深）/ 真 files 上传 host 路径 / fetch 非 GET（net，跳过）；极窄可选 valueAsNumber（number input 转换）/ option.index（select 表面补全）/ scrollIntoViewIfNeeded（WebKit）/ pointer lock / `new Audio()`（HTMLAudioElement ctor，类 Image，headless 无音频设备）/ Image ctor 增强（现返 plain object 非 DOM 元素，appendChild 失效）；rendering-compat 侧续降频守成（held baseline 13461 全绿）。
+
 ### P1a `new Option()` + `select.add()` + HTMLOptionElement 读属性（本轮 R2832，缺失 Web API 续 / 动态 select 填充）
 
 承接 R2831（input.indeterminate）。land **动态 select 填充表面**——`new Option(text, value, defaultSelected, selected)` 构造器 + `select.add(element, before?)` + `option.text`/`label`/`defaultSelected`/`selected` 读。级联 select / 动态下拉填充（`select.add(new Option('Apple','a'))`）表单应用高频。probe 确认 shim 0 实现（Option 全局缺、select.add 缺、option.text/label/defaultSelected 缺）。
