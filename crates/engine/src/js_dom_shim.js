@@ -3019,6 +3019,29 @@
           }
           return false;
         }
+        // `.form`（form-associated 控件 INPUT/SELECT/TEXTAREA/BUTTON，R2841）——返所属 <form> 元素
+        // （form owner）。form 校验 / 序列化库读 input.form 找 owner form 上下文高频。**spec 顺序**：
+        // ① `form` 属性关联优先（`<input form="id">` → getElementById(id)，即使无 ancestor form）；
+        // ② 否则最近 ancestor <form>（经 `_ancestorChain` 上行）。handle-only detached / 无 owner → null。
+        if (prop === 'form') {
+          var fcTag = _realTag(sel, handle);
+          if (fcTag === 'INPUT' || fcTag === 'SELECT' || fcTag === 'TEXTAREA' || fcTag === 'BUTTON') {
+            try {
+              var formAttr = handle ? __zw_get_attr_handle(handle, 'form') : (sel ? __zw_get_attr(sel, 'form') : '');
+              if (formAttr && globalThis.document && globalThis.document.getElementById) {
+                var byId = globalThis.document.getElementById(formAttr);
+                if (byId) return byId;
+              }
+              if (sel) {
+                var fchain = _ancestorChain(sel);
+                for (var fi = 1; fi < fchain.length; fi++) {
+                  if ((__zw_get_tag(fchain[fi]) || '').toUpperCase() === 'FORM') return _wrapSelector(fchain[fi]);
+                }
+              }
+            } catch (_e) {}
+            return null;
+          }
+        }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
         if (prop === 'text' && _realTag(sel, handle) === 'OPTION') {

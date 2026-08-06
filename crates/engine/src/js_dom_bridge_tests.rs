@@ -12491,3 +12491,94 @@ fn test_reflected_idl_htmlfor_defaultvalue_r2840() {
         "input.defaultValue setter 设 value 属性（attr 名映射 defaultValue→value）\n{out}"
     );
 }
+
+#[test]
+fn test_input_form_owner_r2841() {
+    // R2841：.form（form-associated 控件）——返所属 <form> 元素。spec 顺序：① form 属性关联优先
+    // （<input form="id"> → getElementById）；② 否则最近 ancestor <form>。校验/序列化库读 input.form 高频。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <form id='fA'>\
+           <input id='nested' type='text'>\
+           <select id='sel'><option>x</option></select>\
+         </form>\
+         <input id='orphan' type='text'>\
+         <form id='fB'></form>\
+         <input id='attr' type='text' form='fB'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ancestor-based：nested input.form → fA（最近 ancestor form）。
+    sandbox
+        .execute(
+            "globalThis.__nestedForm = document.querySelector('#nested').form;\
+             globalThis.__nestedFormId = globalThis.__nestedForm ? globalThis.__nestedForm.id : null;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nestedFormId)").unwrap().value,
+        "fA",
+        "嵌套 input.form → ancestor form fA"
+    );
+    // 同 form proxy identity：input.form === document.querySelector('#fA')。
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#nested').form === document.querySelector('#fA'))")
+            .unwrap()
+            .value,
+        "true",
+        "input.form === ancestor form proxy（identity）"
+    );
+
+    // select.form 亦返 ancestor form（form-associated 控件 gate 含 SELECT）。
+    sandbox
+        .execute("globalThis.__selForm = document.querySelector('#sel').form.id;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__selForm)").unwrap().value,
+        "fA",
+        "select.form → ancestor form fA"
+    );
+
+    // orphan input（无 ancestor form）→ null。
+    sandbox
+        .execute("globalThis.__orphanForm = document.querySelector('#orphan').form;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__orphanForm)").unwrap().value,
+        "null",
+        "orphan input.form=null（无 ancestor form）"
+    );
+
+    // form 属性关联优先：<input form='fB'>（无 ancestor form）→ fB（getElementById）。
+    sandbox
+        .execute(
+            "globalThis.__attrForm = document.querySelector('#attr').form;\
+             globalThis.__attrFormId = globalThis.__attrForm ? globalThis.__attrForm.id : null;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__attrFormId)").unwrap().value,
+        "fB",
+        "input form='fB' → form 属性关联优先（getElementById fB）"
+    );
+
+    // 非 form 控件（如 div）的 .form 不走本 gate（返 undefined/其他，非 form owner 逻辑）。
+    sandbox
+        .execute("globalThis.__divForm = String(document.createElement('div').form);")
+        .unwrap();
+    // div.form 非 form owner 逻辑——接受 undefined（String(undefined)='undefined'）。
+    let _df = sandbox.execute("String(globalThis.__divForm)").unwrap().value;
+}

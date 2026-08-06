@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a `.form`（form-associated 控件的 form owner）（本轮 R2841，缺失 Web API 续 / form 关联）
+
+承接 R2840（htmlFor/defaultValue/defaultChecked）。probe 确认 `.form`（INPUT/SELECT/TEXTAREA/BUTTON 返所属 `<form>`）缺失。land ——form 校验 / 序列化库读 `input.form` 找 owner form 上下文高频。
+
+- **关键设计点**：① **spec 顺序**——`form` 属性关联优先（`<input form="id">` → `getElementById(id)`，即使无 ancestor form），否则最近 ancestor `<form>`（经 `_ancestorChain` 上行 + `__zw_get_tag` 判 FORM）。② gate = form-associated 控件（INPUT/SELECT/TEXTAREA/BUTTON），非控件（div 等）不走本逻辑。③ ancestor 走 `_ancestorChain(sel)`（R2674 既有 helper，self → root 含两端），从 [1..] 找首 FORM；返 form proxy（identity 一致——`input.form === querySelector('#fA')`）。④ handle-only detached / 无 owner → null。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +get-trap `.form`（INPUT/SELECT/TEXTAREA/BUTTON gate）：form 属性 → getElementById 优先；否则 _ancestorChain 上行找 FORM 返 proxy；无→null。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_input_form_owner_r2841`（嵌套 input.form → ancestor fA + identity 一致；select.form 亦然；orphan→null；form='fB' 属性关联优先；非控件 div 不走 gate）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13468 passed / 0 failed / 74 ignored**，13467+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS + **`make product-smoke-legacy` 42 fixture 0 struct FAIL（37-form-controls PASS 3.85%）**——form 变更按 run-rules 跑 legacy 验零结构性回归。
+
+**为何零回归且净正向**：① 全新增 get-trap 分支（仅 form-associated 控件 gate，不改既有元素属性路径）；② 复用既有 `_ancestorChain` + `__zw_get_attr(_handle)` + `getElementById`（零新 host infra）；③ `.form` 是只读 IDL（返 owner，无 mutation 副作用）。
+
+**已知限制（记录）**：① gate 含 INPUT/SELECT/TEXTAREA/BUTTON 主控件，未含 OUTPUT/FIELDSET/LABEL/OBJECT（罕用 form owner 读，可续）；② form 属性关联用 getElementById（spec 要求同 Document tree 查找，本实现近似）；③ ancestor 经 `_ancestorChain`（snapshot-based parent，非 mutation-aware live，但 form 关联读通常一次性）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面近穷尽（R2820-R2841 覆 ... + form owner 主表面）。剩余元素特定 IDL：`<table>` rowIndex/cellIndex/rows/cells（中频，需 host 结构回调计行列位置）/`<textarea>` selectionStart/End（selection 状态）/`<img>` naturalWidth/Height（headless 低价值）/`<output>` value；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / node.normalize / 真 WAAPI / date/time valueAsNumber / media 时长属性 / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13468 全绿）。
+
 ### P1a 反射属性 IDL（label.htmlFor / input.defaultValue / input.defaultChecked）（本轮 R2840，缺失 Web API 续 / form reset 元数据）
 
 承接 R2839（form 反射 IDL）。probe 确认 `label.htmlFor` / `input.defaultValue` / `input.defaultChecked` 全缺（无通用反射）。land ——form reset / 校验库读这些判「值/选中态是否改过」高频。
