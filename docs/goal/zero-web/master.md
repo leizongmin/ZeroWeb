@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a `<tr>`.rowIndex + `<td>`/`<th>`.cellIndex（本轮 R2842，缺失 Web API 续 / 表格结构位置）
+
+承接 R2841（.form owner）。probe 确认表格结构位置 IDL（rowIndex/cellIndex）缺失。land ——data-table / 表格操作库读这些定位行/列高频。
+
+- **关键设计点**：① **client-side 实现**（零新 host 回调）——`_proxyCache` 按 sel 缓存 proxy（identity-stable，R2841 验证），故可经 identity 比较计位。② **rowIndex**（TR gate）：`_ancestorChain` 找 owning TABLE → `_wrapSelector(table).querySelectorAll('tr')`（R2673 元素作用域，document order）→ identity 比较得位；跨 thead/tbody/tfoot 全行；detached / 无 table → -1。③ **cellIndex**（TD/TH gate）：`_ancestorChain` 找 owning TR → `querySelectorAll(':is(td, th)')`（:is() 内部支持逗号列表，顶层不支持故用 :is；td+th 混计 document order）→ identity 得位；无 row → -1。
+- **关键发现（测试暴露）**：HTML 解析器**丢弃 table 外的 `<tr>`**（`<tr>` 非法直接子属 table 外）——故「无 table 的 tr」无法用 orphan tr 测（不存在），改用 `createElement('tr')` detached 测 -1。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +get-trap `rowIndex`（TR gate，_ancestorChain→TABLE + querySelectorAll('tr') + identity）+ `cellIndex`（TD/TH gate，_ancestorChain→TR + querySelectorAll(':is(td,th)') + identity）；无 owner→-1。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_table_row_cell_index_r2842`（thead 行 rowIndex=0 + tbody 跨 thead 计 1/2 + 各 table 独立计 + detached tr -1 + cellIndex td/th 混计 document order 0/1）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13469 passed / 0 failed / 74 ignored**，13468+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS + **`make product-smoke-legacy` 42 fixture 0 struct FAIL**——表格（结构性元素）变更按 run-rules 跑 legacy 验零结构性回归。
+
+**为何零回归且净正向**：① 全新增 get-trap 分支（仅 TR/TD/TH gate，不改既有元素属性路径）；② 复用既有 `_ancestorChain` + 元素作用域 querySelectorAll + `_proxyCache` identity（零新 host infra）；③ 只读位置计值（无 mutation 副作用）。
+
+**已知限制（记录）**：① `sectionRowIndex`（行在 section 内位置）未含——可续（同模式找 thead/tbody/tfoot）；② `table.rows`/`table.tBodies`/`tbody.rows` 集合未含——table-scoped collection，可续；③ 嵌套 table 的 querySelectorAll('tr') 含内层 table 行（spec 应排除，罕见不究）；④ identity 比较依赖 sel 稳定性（host 唯一 sel 计算，已 R2841 验证）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面近穷尽（R2820-R2842 覆 ... + 表格结构位置 主表面）。剩余元素特定 IDL：`sectionRowIndex` + table/tbody 集合（同模式可续）/`<textarea>` selectionStart/End（selection 状态）/`<output>` value/`<img>` naturalWidth（headless 低价值）；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / node.normalize / 真 WAAPI / date/time valueAsNumber / media 时长属性 / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13469 全绿）。
+
 ### P1a `.form`（form-associated 控件的 form owner）（本轮 R2841，缺失 Web API 续 / form 关联）
 
 承接 R2840（htmlFor/defaultValue/defaultChecked）。probe 确认 `.form`（INPUT/SELECT/TEXTAREA/BUTTON 返所属 `<form>`）缺失。land ——form 校验 / 序列化库读 `input.form` 找 owner form 上下文高频。

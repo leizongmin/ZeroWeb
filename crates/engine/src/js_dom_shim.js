@@ -3042,6 +3042,42 @@
             return null;
           }
         }
+        // `<tr>.rowIndex`（HTMLTableRowElement，R2842）——行在 table 中的位置（0-based，跨 thead/tbody/tfoot
+        // 全部行，document order）；-1 若不在 table。data-table / 表格操作库读 rowIndex 定位行高频。
+        // 经 _ancestorChain 找 owning TABLE + 元素作用域 querySelectorAll('tr')（R2673）+ proxy identity 计位。
+        if (prop === 'rowIndex' && _realTag(sel, handle) === 'TR') {
+          if (!sel) return -1;
+          try {
+            var riChain = _ancestorChain(sel);
+            var riTable = null;
+            for (var ri = 1; ri < riChain.length; ri++) {
+              if ((__zw_get_tag(riChain[ri]) || '').toUpperCase() === 'TABLE') { riTable = riChain[ri]; break; }
+            }
+            if (!riTable) return -1;
+            var riRows = _wrapSelector(riTable).querySelectorAll('tr');
+            var riSelf = _wrapSelector(sel);
+            for (var rk = 0; rk < riRows.length; rk++) if (riRows[rk] === riSelf) return rk;
+            return -1;
+          } catch (_e) { return -1; }
+        }
+        // `<td>`/`<th>`.cellIndex（HTMLTableCellElement，R2842）——单元格在行中的位置（0-based，td+th 混计
+        // document order）；-1 若不在行。表格操作库读 cellIndex 定位列高频。经 :is(td, th) 单查询保序
+        // （querySelectorAll 顶层不支持逗号列表，:is() 内部支持）。
+        if (prop === 'cellIndex' && (_realTag(sel, handle) === 'TD' || _realTag(sel, handle) === 'TH')) {
+          if (!sel) return -1;
+          try {
+            var ciChain = _ancestorChain(sel);
+            var ciTr = null;
+            for (var ci = 1; ci < ciChain.length; ci++) {
+              if ((__zw_get_tag(ciChain[ci]) || '').toUpperCase() === 'TR') { ciTr = ciChain[ci]; break; }
+            }
+            if (!ciTr) return -1;
+            var ciCells = _wrapSelector(ciTr).querySelectorAll(':is(td, th)');
+            var ciSelf = _wrapSelector(sel);
+            for (var ck = 0; ck < ciCells.length; ck++) if (ciCells[ck] === ciSelf) return ck;
+            return -1;
+          } catch (_e) { return -1; }
+        }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
         if (prop === 'text' && _realTag(sel, handle) === 'OPTION') {

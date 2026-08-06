@@ -12582,3 +12582,108 @@ fn test_input_form_owner_r2841() {
     // div.form 非 form owner 逻辑——接受 undefined（String(undefined)='undefined'）。
     let _df = sandbox.execute("String(globalThis.__divForm)").unwrap().value;
 }
+
+#[test]
+fn test_table_row_cell_index_r2842() {
+    // R2842：<tr>.rowIndex（行在 table 中位置，跨 thead/tbody/tfoot document order）+ <td>/<th>.cellIndex
+    // （单元格在行中位置，td+th 混计）。data-table / 表格操作库读这些定位高频。client-side 经
+    // _ancestorChain + 元素作用域 querySelectorAll + proxy identity 计位；无 owner → -1。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <table id='t1'>\
+           <thead><tr id='hr'><th>A</th><th>B</th></tr></thead>\
+           <tbody>\
+             <tr id='r0'><td id='c00'>1</td><td id='c01'>2</td></tr>\
+             <tr id='r1'><td id='c10'>3</td><th id='h10'>4</th></tr>\
+           </tbody>\
+         </table>\
+         <table id='t2'><tr id='r0b'><td>x</td></tr></table>\
+         <tr id='orphan'><td>no-table</td></tr>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // rowIndex：跨 thead+tbody document order——hr=0, r0=1, r1=2。
+    sandbox
+        .execute(
+            "globalThis.__hr = document.querySelector('#hr').rowIndex;\
+             globalThis.__r0 = document.querySelector('#r0').rowIndex;\
+             globalThis.__r1 = document.querySelector('#r1').rowIndex;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hr)").unwrap().value,
+        "0",
+        "thead 行 rowIndex=0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r0)").unwrap().value,
+        "1",
+        "tbody 首行 rowIndex=1（跨 thead 计）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1)").unwrap().value,
+        "2",
+        "tbody 次行 rowIndex=2"
+    );
+    // 不同 table 的 r0b 在 t2 中 rowIndex=0（各 table 独立计）。
+    sandbox
+        .execute("globalThis.__r0b = document.querySelector('#r0b').rowIndex;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r0b)").unwrap().value,
+        "0",
+        "t2 中行 rowIndex=0（各 table 独立）"
+    );
+    // detached tr（createElement，未挂入 table）→ -1。注：HTML 解析器丢弃 table 外的 <tr>，
+    // 故无法用 orphan tr 测；用 createElement('tr') detached 测 -1。
+    sandbox
+        .execute("globalThis.__detached = document.createElement('tr').rowIndex;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__detached)").unwrap().value,
+        "-1",
+        "detached tr（无 table）rowIndex=-1"
+    );
+
+    // cellIndex：行内 td+th document order——c00=0, c01=1, c10=0, h10=1（td+th 混计）。
+    sandbox
+        .execute(
+            "globalThis.__c00 = document.querySelector('#c00').cellIndex;\
+             globalThis.__c01 = document.querySelector('#c01').cellIndex;\
+             globalThis.__c10 = document.querySelector('#c10').cellIndex;\
+             globalThis.__h10 = document.querySelector('#h10').cellIndex;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c00)").unwrap().value,
+        "0",
+        "td cellIndex=0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c01)").unwrap().value,
+        "1",
+        "td cellIndex=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c10)").unwrap().value,
+        "0",
+        "r1 首格 cellIndex=0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__h10)").unwrap().value,
+        "1",
+        "th cellIndex=1（td+th 混计 document order）"
+    );
+}
