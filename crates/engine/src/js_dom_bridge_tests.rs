@@ -7851,3 +7851,105 @@ fn test_canvas_slice4_r2798() {
         "fill 区须为 fillStyle（fill 画在 shadow 之上覆盖重叠）"
     );
 }
+
+#[test]
+fn test_canvas_draw_image_r2799() {
+    // R2799：canvas slice 5——drawImage（图像合成到 canvas，3 spec 重载）。host draw_image* 已存在且
+    // 真写 pixel_buffer（draw_image_sized：最近邻采样 + transform + source-over alpha 混合 + global_alpha）。
+    // shim 源限 canvas 元素（canvas-to-canvas，经源 getImageData 取全 RGBA wire）；HTMLImageElement defer。
+    // TDD：drawImage(image,dx,dy) 源 red→dst 读回 red / drawImageScaled 1×1→3×3 / drawImageSliced 切片 sx。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ── drawImage(image, dx, dy)：src 2×2 red → dst 4×4 at (1,1)。覆盖 dst (1,1)..(2,2)；(0,0) 透明。
+    sandbox
+        .execute(
+            "var s1 = document.createElement('canvas'); s1.width=2; s1.height=2;\
+             var sc1 = s1.getContext('2d'); sc1.fillStyle='red'; sc1.fillRect(0,0,2,2);\
+             var d1 = document.createElement('canvas'); d1.width=4; d1.height=4;\
+             var dc1 = d1.getContext('2d'); dc1.drawImage(s1, 1, 1);\
+             globalThis.__a_hit = dc1.getImageData(1,1,1,1);\
+             globalThis.__a_miss = dc1.getImageData(0,0,1,1);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("[__a_hit.data[0],__a_hit.data[1],__a_hit.data[2],__a_hit.data[3]].join(',')")
+            .unwrap()
+            .value,
+        "255,0,0,255",
+        "drawImage(image,dx,dy) 源 red 须栅格到 dst"
+    );
+    assert_eq!(
+        sandbox
+            .execute("[__a_miss.data[0],__a_miss.data[1],__a_miss.data[2],__a_miss.data[3]].join(',')")
+            .unwrap()
+            .value,
+        "0,0,0,0",
+        "drawImage 区外须保持透明"
+    );
+
+    // ── drawImageScaled(image, dx, dy, dw, dh)：src 1×1 green → dst 缩放到 3×3。(2,2) 须 green。
+    sandbox
+        .execute(
+            "var s2 = document.createElement('canvas'); s2.width=1; s2.height=1;\
+             var sc2 = s2.getContext('2d'); sc2.fillStyle='#00ff00'; sc2.fillRect(0,0,1,1);\
+             var d2 = document.createElement('canvas'); d2.width=4; d2.height=4;\
+             var dc2 = d2.getContext('2d'); dc2.drawImage(s2, 0, 0, 3, 3);\
+             globalThis.__b = dc2.getImageData(2,2,1,1);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("[__b.data[0],__b.data[1],__b.data[2],__b.data[3]].join(',')")
+            .unwrap()
+            .value,
+        "0,255,0,255",
+        "drawImageScaled 1×1→3×3 须缩放栅格"
+    );
+
+    // ── drawImageSliced(image, sx,sy,sw,sh, dx,dy,dw,dh)：src 2×1（(0,0)red / (1,0)green）。
+    // 切片 (0,0,1,1)→dst(0,0,2,2) red；切片 (1,0,1,1)→dst(2,0,2,2) green。证明 sx 被采样。
+    sandbox
+        .execute(
+            "var s3 = document.createElement('canvas'); s3.width=2; s3.height=1;\
+             var sc3 = s3.getContext('2d');\
+             var im3 = sc3.getImageData(0,0,2,1);\
+             im3.data[0]=255; im3.data[1]=0; im3.data[2]=0; im3.data[3]=255;\
+             im3.data[4]=0; im3.data[5]=255; im3.data[6]=0; im3.data[7]=255;\
+             sc3.putImageData(im3, 0, 0);\
+             var d3 = document.createElement('canvas'); d3.width=4; d3.height=4;\
+             var dc3 = d3.getContext('2d');\
+             dc3.drawImage(s3, 0,0,1,1, 0,0,2,2);\
+             dc3.drawImage(s3, 1,0,1,1, 2,0,2,2);\
+             globalThis.__c_red = dc3.getImageData(0,0,1,1);\
+             globalThis.__c_green = dc3.getImageData(2,0,1,1);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("[__c_red.data[0],__c_red.data[1],__c_red.data[2],__c_red.data[3]].join(',')")
+            .unwrap()
+            .value,
+        "255,0,0,255",
+        "drawImageSliced 切片 (0,0) red 须栅格"
+    );
+    assert_eq!(
+        sandbox
+            .execute("[__c_green.data[0],__c_green.data[1],__c_green.data[2],__c_green.data[3]].join(',')")
+            .unwrap()
+            .value,
+        "0,255,0,255",
+        "drawImageSliced 切片 sx=1 须采样 (1,0) green"
+    );
+}

@@ -1144,6 +1144,37 @@ fn parse_composite_operation(s: &str) -> zero_canvas::CompositeOperation {
     }
 }
 
+/// canvas ImageData 线串 `"w:h;r,g,b,a,..."`（getImageData 对偶格式）→ `ImageData`。
+/// 供 `drawImage` 系列桥接：shim 经源 canvas 的 getImageData 取全 RGBA wire 串，作为 drawImage 源传入。
+/// 解析失败（无 `;`/无 `:`）返空 ImageData（draw_image_sized 对 0×0 早退，安全）。
+fn parse_image_data_wire(s: &str) -> zero_canvas::ImageData {
+    let s = s.trim();
+    let Some((dim, csv)) = s.split_once(';') else {
+        return zero_canvas::ImageData {
+            width: 0,
+            height: 0,
+            data: vec![],
+        };
+    };
+    let (w, h) = match dim.split_once(':') {
+        Some((w, h)) => (
+            w.trim().parse::<u32>().unwrap_or(0),
+            h.trim().parse::<u32>().unwrap_or(0),
+        ),
+        None => (0, 0),
+    };
+    let data: Vec<u8> = csv
+        .split(',')
+        .filter(|t| !t.trim().is_empty())
+        .filter_map(|t| t.trim().parse::<u8>().ok())
+        .collect();
+    zero_canvas::ImageData {
+        width: w,
+        height: h,
+        data,
+    }
+}
+
 /// `HTMLCanvasElement.getContext('2d')` 派发（R2795，canvas slice 1）。host 持 `CanvasContext` 注册表
 ///（`Arc<Mutex<(next_id, HashMap<id, CanvasContext>)>>`），JS 经 `__zw_canvas_op(handle, op, ...args)`
 /// 串参派发（避免 JSON/serde 依赖）。**关键**：zero-canvas `fill_rect`/`stroke_rect` 便捷法**不写
@@ -1428,6 +1459,34 @@ pub fn canvas_context_op(
                     data,
                 };
                 ctx.put_image_data(&img, dx, dy);
+            }
+            "ok".into()
+        }
+        // ── drawImage 系列（R2799，canvas slice 5）：源 canvas → 本 ctx。host draw_image* 已存在且
+        // 真写 pixel_buffer（draw_image_sized：最近邻采样 + transform + source-over alpha 混合 + global_alpha）。
+        // args[0] = 源 ImageData wire（shim 经源 canvas getImageData 取），后续为目标几何。
+        // **已知限制**：固定 source-over（不消费 globalCompositeOperation）；源限 canvas（img decode defer）。
+        "drawImage" => {
+            let img = parse_image_data_wire(arg(0));
+            let (dx, dy) = (f(1), f(2));
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.draw_image(&img, dx, dy);
+            }
+            "ok".into()
+        }
+        "drawImageScaled" => {
+            let img = parse_image_data_wire(arg(0));
+            let (dx, dy, dw, dh) = (f(1), f(2), f(3), f(4));
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.draw_image_with_size(&img, dx, dy, dw, dh);
+            }
+            "ok".into()
+        }
+        "drawImageSliced" => {
+            let img = parse_image_data_wire(arg(0));
+            let (sx, sy, sw, sh, dx, dy, dw, dh) = (f(1), f(2), f(3), f(4), f(5), f(6), f(7), f(8));
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.draw_image_sliced(&img, sx, sy, sw, sh, dx, dy, dw, dh);
             }
             "ok".into()
         }

@@ -3217,6 +3217,34 @@
       __zw_canvas_op(h, 'putImageData', String(dx | 0), String(dy | 0),
         String(img.width | 0), String(img.height | 0), chunks.join(''));
     };
+    // drawImage（R2799，canvas slice 5）：源 canvas → 本 ctx。3 spec 重载（arg 数 3/5/9）：
+    //   drawImage(image, dx, dy) / drawImage(image, dx, dy, dw, dh) /
+    //   drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh)。
+    // **源限 canvas 元素**（canvas-to-canvas）：经源 canvas 既有 getImageData 取全 RGBA wire 串作源传 host；
+    // HTMLImageElement/`<img>` decode defer。host draw_image* 真栅格（source-over alpha 混合）。
+    ctx.drawImage = function (image) {
+      if (typeof __zw_canvas_op !== 'function') return;
+      // 源须为 canvas 元素（有 _ctx._handle + width/height）。未 getContext 则惰性建。
+      if (!image || typeof image.getContext !== 'function') return;
+      if (!image._ctx) image.getContext('2d');
+      if (!image._ctx) return;
+      var srcHandle = image._ctx._handle;
+      var sw = image.width | 0;
+      var sh = image.height | 0;
+      if (sw <= 0 || sh <= 0) return;
+      var wire = String(__zw_canvas_op(srcHandle, 'getImageData', '0', '0', String(sw), String(sh)));
+      var a = arguments;
+      if (a.length === 3) {
+        __zw_canvas_op(h, 'drawImage', wire, String(a[1]), String(a[2]));
+      } else if (a.length === 5) {
+        __zw_canvas_op(h, 'drawImageScaled', wire,
+          String(a[1]), String(a[2]), String(a[3]), String(a[4]));
+      } else if (a.length === 9) {
+        __zw_canvas_op(h, 'drawImageSliced', wire,
+          String(a[1]), String(a[2]), String(a[3]), String(a[4]),
+          String(a[5]), String(a[6]), String(a[7]), String(a[8]));
+      }
+    };
     ctx.getImageData = function (x, y, w, hh) {
       if (typeof __zw_canvas_op !== 'function') return null;
       var r = String(__zw_canvas_op(h, 'getImageData', String(x), String(y), String(w), String(hh)));
