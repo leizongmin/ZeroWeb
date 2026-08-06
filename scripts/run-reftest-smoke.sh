@@ -24,7 +24,7 @@ fi
 # 读取清单（去注释/空行）
 mapfile -t CASES < <(grep -vE '^\s*(#|$)' "$SMOKE_LIST" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
-if [[ "$1" == "--list" ]]; then
+if [[ "${1:-}" == "--list" ]]; then
   printf '%s\n' "${CASES[@]:-（空清单）}"
   exit 0
 fi

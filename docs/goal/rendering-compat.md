@@ -27,6 +27,7 @@
 >   - [ ] font-stack C-dep rebuild（R2025 user-blocked）— 等点名
 >   - [ ] 响应式图片 srcset / `<picture>` / CSS `image-set()`（R2412 发现）— `extract_img_resources` 仅取 `<img src>`，不解析 srcset/source；srcset-only 图缺抓、其余仅次优分辨率。正确选源须 DPR+`sizes`+布局（layout-dependent）+ painter effective-src plumbing — 深，须 RFC+布局集成 — 等点名
 > - 真正需用户拍板的 4 类（不兼容/闭源许可证、破坏性 git/文件操作、改 Mission/Done/范围、超大磁盘网络下载工具审批无法覆盖）同上格式追加。当前该 4 类无悬而未决项。
+>   - [ ] **Mission 95% 的时间账本校准（A1）** — 改 Mission/Done/范围 — Ladybird 7 年/8 人全职/428 贡献者才到同源 93.33%（2026-08-05 实测，官方算法复算），ZeroWeb 当前 oracle ~57% + G0 单维护者；95% 作为短期冲刺目标与幂律现实不匹配是 plateau 反复的根源之一。决策输入见 [`rendering-compat/ladybird-timeline-calibration-2026-08-07.md`](rendering-compat/ladybird-timeline-calibration-2026-08-07.md)，推荐「95% 保留为长期愿景 + 分阶段里程碑（2026 65% → 2027 80% → 长期 95%）」— 追加于 2026-08-07
 >
 > **~~⏸️ 旧暂停裁决（2026-07-29，agent 自设；已被上方用户指令推翻，不再约束执行，仅作历史留档）~~**：当时 agent 判定 clean-lever 穷尽、改为「转其他 goal + 低频 plateau-guard」、要求结构性方向须用户点名授权。**此判定与更早的 `2026-07-16 默认决策边界`（已授权上述结构性方向）冲突，agent 当时选了更保守的一方并自我停手，用户 2026-07-29 明确推翻并要求持续推进。**
 

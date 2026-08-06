@@ -7,6 +7,18 @@
 #   css/CSS2（基础盒模型/定位/浮动）、css/css-flexbox、css/css-grid、
 #   css/css-text、css/css-position、css/css-tables 等
 # 与「测试资产化」（imported-tests.txt）联动：新修复通过的上游用例，
-# 若代表性足够，可同时加入本清单。
-#
-# 当前为空：等待从最近一次全量通过结果中填充。
+css/CSS2/abspos/abspos-containing-block-initial-004a.xht
+css/CSS2/abspos/abspos-containing-block-initial-004b.xht
+css/CSS2/abspos/abspos-containing-block-initial-004c.xht
+css/CSS2/abspos/abspos-containing-block-initial-004d.xht
+css/CSS2/abspos/abspos-containing-block-initial-004e.xht
+css/CSS2/backgrounds/background-001.xht
+css/CSS2/backgrounds/background-002.xht
+css/CSS2/backgrounds/background-003.xht
+css/CSS2/backgrounds/background-004.xht
+css/CSS2/backgrounds/background-005.xht
+css/CSS2/floats-clear/adjacent-floats-001.xht
+css/CSS2/floats-clear/adjoining-float-before-clearance.html
+css/CSS2/floats-clear/adjoining-float-nested-forced-clearance-002.html
+css/CSS2/floats-clear/adjoining-float-nested-forced-clearance-003.html
+css/CSS2/floats-clear/adjoining-float-nested-forced-clearance-004.html

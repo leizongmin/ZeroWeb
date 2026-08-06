@@ -1,0 +1,5 @@
+# cargo-fuzz 运行时产物（不应提交）
+/corpus/
+/artifacts/
+/coverage/
+/target/
