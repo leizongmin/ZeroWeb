@@ -8960,3 +8960,124 @@ fn test_document_stylesheets_r2808() {
         "无 <style> 时 styleSheets.length 须 0"
     );
 }
+
+#[test]
+fn test_stylesheets_write_r2809() {
+    // R2809：CSSStyleSheet 写路径——insertRule/deleteRule。维护 client cache（同步读回真值）+ flush 重建
+    // `<style>` 文本经 __zw_set_text（下次 render cascade，视觉异步；JS 契约同步）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { color: red; }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 初始 cssRules.length === 1（'p'）。
+    sandbox
+        .execute("globalThis.__sheet = document.styleSheets[0]; globalThis.__l0 = globalThis.__sheet.cssRules.length;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__l0)").unwrap().value,
+        "1",
+        "初始 cssRules 须 1 条"
+    );
+
+    // insertRule('div { color: blue; }', 0)：返 0 + length=2 + [0]='div'（插入首位）+ [1]='p'（原规则后移）。
+    sandbox
+        .execute(
+            "globalThis.__idx = globalThis.__sheet.insertRule('div { color: blue; }', 0);\
+             globalThis.__l1 = globalThis.__sheet.cssRules.length;\
+             globalThis.__s0 = globalThis.__sheet.cssRules[0].selectorText;\
+             globalThis.__s1 = globalThis.__sheet.cssRules[1].selectorText;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__idx)").unwrap().value,
+        "0",
+        "insertRule 须返插入 index 0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__l1)").unwrap().value,
+        "2",
+        "insertRule 后 cssRules.length 须 2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s0)").unwrap().value,
+        "div",
+        "cssRules[0] 须为插入的 'div'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s1)").unwrap().value,
+        "p",
+        "cssRules[1] 须为原 'p'（后移）"
+    );
+    // 插入规则的 cssText 含 'color: blue'。
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__sheet.cssRules[0].cssText.indexOf('color: blue') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "插入规则 cssText 须含 'color: blue'"
+    );
+
+    // insertRule 不带 index → 末尾追加，返末尾 index。
+    sandbox
+        .execute(
+            "globalThis.__idx2 = globalThis.__sheet.insertRule('span { color: green; }');\
+             globalThis.__l2 = globalThis.__sheet.cssRules.length;\
+             globalThis.__sEnd = globalThis.__sheet.cssRules[2].selectorText;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__idx2)").unwrap().value,
+        "2",
+        "末尾 insertRule 须返 index 2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__l2)").unwrap().value,
+        "3",
+        "末尾追加后 length 须 3"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sEnd)").unwrap().value,
+        "span",
+        "末尾规则须 'span'"
+    );
+
+    // deleteRule(0)：移除 'div' + length=2 + [0]='p'（回原首位）。
+    sandbox
+        .execute(
+            "globalThis.__sheet.deleteRule(0);\
+             globalThis.__l3 = globalThis.__sheet.cssRules.length;\
+             globalThis.__s0b = globalThis.__sheet.cssRules[0].selectorText;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__l3)").unwrap().value,
+        "2",
+        "deleteRule 后 length 须 2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s0b)").unwrap().value,
+        "p",
+        "deleteRule(0) 后 [0] 须回 'p'"
+    );
+
+    // 写回 `<style>` 文本（flush）：mutations 含 SetText（验证写源生效，cascade 下次 render）。
+    let muts = mutations.lock().unwrap();
+    let has_set_text = muts.iter().any(|m| matches!(m, DomMutation::SetText { .. }));
+    drop(muts);
+    assert!(
+        has_set_text,
+        "insertRule/deleteRule 须经 __zw_set_text 写回 <style> 文本（flush）"
+    );
+}

@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a CSSStyleSheet 写路径：insertRule / deleteRule（本轮 R2809，缺失 Web API 续）
+
+承接 R2808（CSSStyleSheet 只读）。续 CSSStyleSheet CSSOM——land **写路径**（insertRule/deleteRule，CSS-in-JS 写入杀手特性）。**设计**：维护 client-side cssRules cache（同步读回真值，解决 R2808 异步 mutation 读 stale 问题）+ insertRule/deleteRule 修改 cache 后从 cache **重建 `<style>` 文本**（join cssText）经 `__zw_set_text` 写回 owner 元素（写源→下次 render 重解析 cascade；**视觉生效异步**，JS 契约同步）。`_ruleFromText` helper 按**首 `{` 切分** selector/body（best-effort，非完整 CSS 解析）。
+
+- **`insertRule(ruleText, index?)`**：`getRules()` 确保 cache 填充 → `_ruleFromText(ruleText)` 建 CSSRule → splice 入 cache[index]（clamp 0..len；index 省略=末尾）→ `flushToOwner()` 重建写回 → 返 index。
+- **`deleteRule(index)`**：splice 移除 cache[index] → `flushToOwner()` 重建写回。
+- **`flushToOwner()`**：`getRules().map(r=>r.cssText).join('\n')` → `__zw_set_text(sel, text)`（入队 SetText mutation）。
+- **`_ruleFromText(text)`**：首 `{` 切分 → `{type:1, selectorText, cssText:'sel { body }', style:null}`；无 `{` → 空 body。
+- **已知限制（记录）**：① **视觉生效于下次 render**（写源 SetText 入队，cascade 异步——非同步重算；JS 契约经 cache 同步）；② 重建文本丢原格式/注释（规则语义保留）；③ ruleText 仅按首 `{` 切分（嵌套/复杂规则 best-effort）；④ CSSRule.style per-rule defer；⑤ 仅 `<style>`（`<link>` defer 网络）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | `_makeStyleSheet` +`_ruleFromText` + `flushToOwner` + insertRule/deleteRule 由 stub 升级为真实现（cache splice + flush 重建写回 `__zw_set_text`）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_stylesheets_write_r2809`（insertRule('div{color:blue}',0)→返 0 + length 1→2 + [0]='div' [1]='p' 后移 + cssText 含 'color: blue' / insertRule 无 index→末尾追加返末 index / deleteRule(0)→length 2 + [0]回 'p' / mutations 含 SetText 证 flush 写回）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13437 passed / 0 failed / 74 ignored**，13436+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① insertRule/deleteRule 由 stub 升级（stub 原返 index/无操作，现真实现——additive）；② client cache 为同步真值（不触既有读路径）；③ flush 经既有 `__zw_set_text`（同 textContent 写，无新 host 回调）；④ 重建文本写源（下次 render 重解析，不改当前渲染路径）。
+
 ### P1a CSSStyleSheet 只读 CSSOM（本轮 R2808，缺失 Web API 续）
 
 承接 R2807（aria 反射）。启动**最高价值深项 CSSStyleSheet CSSOM** 的第一个 slice——**只读**（CSS-in-JS 规则检视 / 动态样式读取 / polyfill 高频）。**先验证可行**：`zero_css_parser::Parser::parse_stylesheet` → `Stylesheet{rules}` + `Rule::Style(StyleRule{selectors,declarations})` 已存在；无现成 Selector 序列化器（`unique_selector_for_node` 是 node→selector 反方向），故**自写 pragmatic 序列化器**。`document.styleSheets` 原为 `_emptyCollection()` 桩。

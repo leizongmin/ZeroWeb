@@ -3900,11 +3900,23 @@
     };
   }
 
-  // CSSStyleSheet（R2808，CSSOM 只读）——`<style>` 元素的样式表。cssRules 惰性经 host `__zw_style_rules`
-  //（解析 `<style>` 文本→StyleRule 序列化 \x1f/\x1e wire）→ CSSRule 数组。**已知限制**：① 仅读（insertRule/
-  // deleteRule stub——写→cascade 重算深，defer）；② 仅 `<style>`（`<link rel=stylesheet>` defer 网络）；
-  // ③ CSSRule.style per-rule CSSStyleDeclaration defer（null）；④ 每次访问 styleSheets 重新查询（反映 live DOM，
-  // 非缓存——document.styleSheets[0] 跨访问非同对象）。
+  // CSSStyleSheet（R2808 读 / R2809 写）——`<style>` 元素的样式表。cssRules 惰性经 host `__zw_style_rules`
+  //（解析 `<style>` 文本→StyleRule 序列化 \x1f/\x1e wire）→ CSSRule 数组（client cache）。
+  // insertRule/deleteRule（R2809）：维护 client cache（同步读回真值）+ 从 cache 重建 `<style>` 文本经
+  // `__zw_set_text` 写回（写源→下次 render 重解析 cascade；视觉生效异步，JS 契约同步）。
+  // **已知限制**：① 视觉生效于下次 render（写源 SetText 入队，cascade 异步）；② 仅 `<style>`（`<link>` defer 网络）；
+  // ③ CSSRule.style per-rule CSSStyleDeclaration defer（null）；④ 每次访问 styleSheets 重新查询（live DOM，非缓存）；
+  // ⑤ insertRule ruleText 仅按首 `{` 切分 selector/body（best-effort，非完整 CSS 解析）。
+  function _ruleFromText(text, parentSheet) {
+    var t = String(text == null ? '' : text).trim();
+    var brace = t.indexOf('{');
+    if (brace >= 0) {
+      var s = t.slice(0, brace).trim();
+      var body = t.slice(brace + 1).replace(/}\s*$/, '').trim();
+      return { type: 1, selectorText: s, cssText: s + ' { ' + body + ' }', style: null, parentStyleSheet: parentSheet };
+    }
+    return { type: 1, selectorText: t, cssText: t + ' { }', style: null, parentStyleSheet: parentSheet };
+  }
   function _makeStyleSheet(owner) {
     var sel = owner && owner.__zwSelector;
     var rulesCache = null;
@@ -3933,6 +3945,12 @@
       }
       return rulesCache;
     }
+    // 从 cache 重建 `<style>` 文本（join cssText）+ 写回 owner 元素（下次 render 重解析 cascade）。
+    function flushToOwner() {
+      if (!sel || typeof __zw_set_text !== 'function') return;
+      var text = getRules().map(function (r) { return r.cssText; }).join('\n');
+      try { __zw_set_text(sel, text); } catch (_e) {}
+    }
     var ss = {
       type: 'text/css',
       href: null,
@@ -3943,8 +3961,27 @@
       parentStyleSheet: null,
       get cssRules() { return getRules(); },
       get rules() { return getRules(); },
-      insertRule: function (_ruleText, index) { return index != null ? (index | 0) : 0; },
-      deleteRule: function (_index) {},
+      // insertRule(ruleText, index?)：splice 新规则入 cache + flush 重建 `<style>` 文本；返插入 index。
+      insertRule: function (ruleText, index) {
+        getRules(); // 确保从 host 填充 cache（若未读）
+        var rule = _ruleFromText(ruleText, ss);
+        var idx = (index == null) ? rulesCache.length : (index | 0);
+        if (idx < 0) idx = 0;
+        if (idx > rulesCache.length) idx = rulesCache.length;
+        rulesCache.splice(idx, 0, rule);
+        flushToOwner();
+        return idx;
+      },
+      // deleteRule(index)：移除 cache[index] + flush 重建。
+      deleteRule: function (index) {
+        getRules();
+        var idx = (index | 0);
+        if (idx >= 0 && idx < rulesCache.length) {
+          rulesCache.splice(idx, 1);
+          flushToOwner();
+        }
+      },
+      // IE legacy 别名（addRule 返回 -1 = 失败 marker；CSS-in-JS 罕用，stub）。
       addRule: function () { return -1; },
       removeRule: function () {}
     };
