@@ -12687,3 +12687,107 @@ fn test_table_row_cell_index_r2842() {
         "th cellIndex=1（td+th 混计 document order）"
     );
 }
+
+#[test]
+fn test_table_section_index_and_collections_r2843() {
+    // R2843：<tr>.sectionRowIndex（行在 thead/tbody/tfoot section 内位置）+ <table>.rows / <table>.tBodies
+    //（table 内全部行 / tbody 集合，返真数组）。延续 R2842 表格表面。data-table 库迭代 table.rows 高频。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <table id='t1'>\
+           <thead><tr id='h1'><th>H1</th></tr><tr id='h2'><th>H2</th></tr></thead>\
+           <tbody><tr id='b1'><td>B1</td></tr></tbody>\
+           <tbody><tr id='b2'><td>B2</td></tr><tr id='b3'><td>B3</td></tr></tbody>\
+         </table>\
+         <table id='t2'><tbody><tr id='x1'><td>x</td></tr></tbody></table>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // sectionRowIndex：行在所属 section 内位置——thead 的 h1=0/h2=1；tbody1 的 b1=0；tbody2 的 b2=0/b3=1。
+    sandbox
+        .execute(
+            "globalThis.__h1 = document.querySelector('#h1').sectionRowIndex;\
+             globalThis.__h2 = document.querySelector('#h2').sectionRowIndex;\
+             globalThis.__b1 = document.querySelector('#b1').sectionRowIndex;\
+             globalThis.__b2 = document.querySelector('#b2').sectionRowIndex;\
+             globalThis.__b3 = document.querySelector('#b3').sectionRowIndex;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__h1)").unwrap().value,
+        "0",
+        "thead h1 sectionRowIndex=0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__h2)").unwrap().value,
+        "1",
+        "thead h2 sectionRowIndex=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b1)").unwrap().value,
+        "0",
+        "tbody1 b1 sectionRowIndex=0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b2)").unwrap().value,
+        "0",
+        "tbody2 b2 sectionRowIndex=0（新 section 重计）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b3)").unwrap().value,
+        "1",
+        "tbody2 b3 sectionRowIndex=1"
+    );
+
+    // table.rows：t1 全部行（跨 thead+2 tbody，document order，5 行）。
+    sandbox
+        .execute(
+            "globalThis.__t1Rows = document.querySelector('#t1').rows.length;\
+             globalThis.__t2Rows = document.querySelector('#t2').rows.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t1Rows)").unwrap().value,
+        "5",
+        "t1.rows.length=5（h1,h2,b1,b2,b3）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t2Rows)").unwrap().value,
+        "1",
+        "t2.rows.length=1（各 table 独立）"
+    );
+
+    // table.rows 真数组：可 Array.map 迭代 + 索引访问。
+    sandbox
+        .execute(
+            "globalThis.__rowsMap = Array.prototype.map.call(document.querySelector('#t1').rows, function(r){return r.id;}).join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rowsMap)").unwrap().value,
+        "h1,h2,b1,b2,b3",
+        "table.rows 可 Array.map 迭代（document order）"
+    );
+
+    // table.tBodies：t1 有 2 个 tbody。
+    sandbox
+        .execute("globalThis.__t1Bodies = document.querySelector('#t1').tBodies.length;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t1Bodies)").unwrap().value,
+        "2",
+        "t1.tBodies.length=2"
+    );
+}

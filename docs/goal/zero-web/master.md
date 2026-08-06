@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a `<tr>`.sectionRowIndex + `<table>`.rows/tBodies（本轮 R2843，缺失 Web API 续 / 表格结构表面收尾）
+
+承接 R2842（rowIndex/cellIndex）。延续表格结构表面——land `sectionRowIndex` + `table.rows`/`table.tBodies`。data-table 库迭代 `table.rows` 高频。
+
+- **关键设计点**：① **sectionRowIndex**（TR）：同 rowIndex 模式——`_ancestorChain` 找最近 thead/tbody/tfoot section → 元素作用域 querySelectorAll('tr') + identity；html5ever 为 table-直属 tr 插入隐式 tbody 故通常有 section。② **table.rows**（TABLE gate）：`_wrapSelector(sel).querySelectorAll('tr')`——元素作用域（R2673），返**真数组**（querySelectorAll 返 `split|map(_wrapSelector)` 真 Array，原生支持 length/索引/迭代/Array 方法，R2843 测 Array.map.call 验）。③ **table.tBodies**（TABLE）：querySelectorAll('tbody')。④ gate `rows` 仅 TABLE——textarea.rows 落 set-trap catch-al 反射 rows 属性（不冲突）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +get-trap sectionRowIndex（TR，_ancestorChain→section + identity）/ table.rows（TABLE，querySelectorAll('tr') 真数组）/ table.tBodies（TABLE，querySelectorAll('tbody')）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_table_section_index_and_collections_r2843`（sectionRowIndex 跨 thead+2 tbody 各 section 独立计 + table.rows.length=5/各 table 独立 + Array.map 迭代 document order + tBodies.length=2）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13470 passed / 0 failed / 74 ignored**，13469+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS + **`make product-smoke-legacy` 42 fixture 0 struct FAIL**——表格（结构性元素）变更按 run-rules 跑 legacy 验零结构性回归。
+
+**为何零回归且净正向**：① 全新增 get-trap 分支（仅 TR/TABLE gate，不改既有元素属性路径）；② 复用既有 `_ancestorChain` + 元素作用域 querySelectorAll + identity（零新 host infra）；③ table.rows gate 仅 TABLE，textarea.rows 落 catch-al（不冲突）；④ 只读位置/集合计值（无 mutation 副作用）。
+
+**已知限制（记录）**：① `table.caption`/`tHead`/`tFoot`（caption/thead/tfoot 元素）+ `tbody.rows`/`thead.rows`（section-scoped 行）未含——可续（同模式）；② table.rows 返静态真数组非 live HTMLCollection（snapshot 架构无 live，documented）；③ `.item(i)`/`.namedItem(name)` 方法未提供（真数组无 HTMLCollection 方法，用索引访问）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面近穷尽（R2820-R2843 覆 ... + 表格结构位置 + section/集合 主表面）。剩余元素特定 IDL：`table.caption`/`tHead`/`tFoot` + `tbody.rows`（同模式可续）/`<textarea>` selectionStart/End（selection 状态）/`<output>` value/`<img>` naturalWidth（headless 低价值）；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / node.normalize / 真 WAAPI / date/time valueAsNumber / media 时长属性 / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13470 全绿）。
+
 ### P1a `<tr>`.rowIndex + `<td>`/`<th>`.cellIndex（本轮 R2842，缺失 Web API 续 / 表格结构位置）
 
 承接 R2841（.form owner）。probe 确认表格结构位置 IDL（rowIndex/cellIndex）缺失。land ——data-table / 表格操作库读这些定位行/列高频。

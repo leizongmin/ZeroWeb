@@ -3078,6 +3078,36 @@
             return -1;
           } catch (_e) { return -1; }
         }
+        // `<tr>`.sectionRowIndex（HTMLTableRowElement，R2843）——行在其 section（thead/tbody/tfoot）内的位置
+        //（0-based）；-1 若无 section（html5ever 为 table-直属 tr 插入隐式 tbody，故通常有 section）。
+        // 同 rowIndex 模式：_ancestorChain 找最近 thead/tbody/tfoot → 元素作用域 querySelectorAll('tr') + identity。
+        if (prop === 'sectionRowIndex' && _realTag(sel, handle) === 'TR') {
+          if (!sel) return -1;
+          try {
+            var srChain = _ancestorChain(sel);
+            var srSection = null;
+            for (var si = 1; si < srChain.length; si++) {
+              var stag = (__zw_get_tag(srChain[si]) || '').toUpperCase();
+              if (stag === 'THEAD' || stag === 'TBODY' || stag === 'TFOOT') { srSection = srChain[si]; break; }
+            }
+            if (!srSection) return -1;
+            var srRows = _wrapSelector(srSection).querySelectorAll('tr');
+            var srSelf = _wrapSelector(sel);
+            for (var ssk = 0; ssk < srRows.length; ssk++) if (srRows[ssk] === srSelf) return ssk;
+            return -1;
+          } catch (_e) { return -1; }
+        }
+        // `<table>`.rows / `<table>`.tBodies（HTMLTableElement，R2843）——table 内全部行 / 全部 tbody
+        //（元素作用域 querySelectorAll 返真数组，支持 length/索引/迭代/Array 方法）。data-table 库迭代
+        // table.rows 高频。gate 仅 TABLE（textarea.rows 落 catch-al 反射 rows 属性，不冲突）。
+        if (prop === 'rows' && _realTag(sel, handle) === 'TABLE') {
+          if (!sel) return [];
+          try { return _wrapSelector(sel).querySelectorAll('tr'); } catch (_e) { return []; }
+        }
+        if (prop === 'tBodies' && _realTag(sel, handle) === 'TABLE') {
+          if (!sel) return [];
+          try { return _wrapSelector(sel).querySelectorAll('tbody'); } catch (_e) { return []; }
+        }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
         if (prop === 'text' && _realTag(sel, handle) === 'OPTION') {
