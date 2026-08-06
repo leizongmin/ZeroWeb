@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a node.isEqualNode（本轮 R2819，缺失 Web API 续）
+
+承接 R2818（XMLSerializer + adopt/import）。land **`node.isEqualNode(other)`**——节点结构相等（**node-equality 三件套最后一块**：isSameNode R2815 身份 + compareDocumentPosition R2815 位置 + isEqualNode 结构）。testing/diff 库（React testing、virtual-dom diff）高频。**probe 先行**（isEqualNode 0 缺失；`__zw_get_outer_html`/`__zw_get_inner_html_handle`/`__zw_get_text_handle` 均已注册可复用）。
+
+- **`_nodeSig(sel, handle)`**（helper）：节点结构签名——type 前缀 + 序列化（comment→`'8:'+nodeValue` / text→`'3:'+nodeValue` / 元素→`'1:'+outerHTML`）。type 前缀使 text≠comment（nodeType 异）。
+- **`node.isEqualNode(other)`**：`_nodeSig(this) === _nodeSig(other)`（other 经 `__zwSelector`/`__zwHandle` 取 sel/handle）。元素 outerHTML 含 tag+属性+子树（host 递归序列化），故等价于递归结构比对。
+- **为何用序列化签名而非递归手写**：host outerHTML 已递归序列化子树（含属性/文本），签名比对复用它 = 免手写 childNodes 递归 + 属性集比对（code-guidelines 简单至上，避免重复造轮子）。
+- **已知限制（记录）**：① **属性序敏感**（spec isEqualNode 属性序无关，但 outerHTML 按序序列化——属性序不同的两节点会判不等；实际库属性序一致，足够）；② handle/detached 元素 outerHTML 仅 innerHTML 回落（pre-existing）；③ 仅 proxy 节点（document.isEqualNode 罕见，未挂 document literal）。
+- **实现踩坑（已修正）**：test 初版用两 `<div id='a'>`/`<div id='b'>` 测「同结构」——但 id 属性不同→outerHTML 不同→isEqualNode 正确判 false（spec 比较含 id）。改用 `#wrap` 包 4 无 id div（仅 class）经 `.children` 取，去 id 冲突。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_nodeSig`（type 前缀 + 序列化签名 helper）+ proxy get-trap `isEqualNode`（签名比对，挂 isSameNode 后）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_isequalnode_r2819`（同结构 a==b true / 不同 class a==c false / 不同子文本 a==d false / 自身 true / null false / 同 text nodeValue 等 / 不同 text 不等 / text≠comment nodeType 异）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13447 passed / 0 failed / 74 ignored**，13446+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① isEqualNode 为 proxy get-trap 新分支（additive，不改既有 prop 分支）；② `_nodeSig` 为全新 helper（复用既有 host 序列化回调，零新 host 回调、零渲染副作用）；③ 仅读比对（无 mutation）。
+
 ### P1a XMLSerializer + document.adoptNode/importNode（本轮 R2818，缺失 Web API 续）
 
 承接 R2817（现代交互 stubs）。land **功能性序列化/导入簇**（非 stub）——补 DOM 序列化 + 跨文档导入表面。**probe 先行**（broad grep 确认 XMLSerializer/serializeToString/adoptNode/importNode 均 0 缺失；`__zw_get_outer_html`/`__zw_get_inner_html[_handle]` + cloneNode 已存在可复用）。

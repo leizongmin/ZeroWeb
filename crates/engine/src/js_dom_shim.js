@@ -2324,6 +2324,27 @@
     };
   }
 
+  // 节点结构签名（供 isEqualNode，R2819）：type 前缀 + 序列化（元素→outerHTML 含 tag/属性/子树；
+  // text→nodeValue；comment→nodeValue）。两节点签名相等即结构相等。**已知限制**：属性序敏感
+  //（spec isEqualNode 属性序无关——outerHTML 按序序列化，故属性序不同会判不等；实际库属性序一致，足够）。
+  function _nodeSig(sel, handle) {
+    if (handle && _commentHandles[handle]) {
+      var cv = (typeof __zw_get_text_handle === 'function') ? (__zw_get_text_handle(handle) || '') : '';
+      return '8:' + cv;
+    }
+    if (handle && _textHandles[handle]) {
+      var tv = (typeof __zw_get_text_handle === 'function') ? (__zw_get_text_handle(handle) || '') : '';
+      return '3:' + tv;
+    }
+    if (sel && typeof __zw_get_outer_html === 'function') {
+      try { return '1:' + __zw_get_outer_html(sel); } catch (_e) {}
+    }
+    if (handle && typeof __zw_get_inner_html_handle === 'function') {
+      try { return '1:' + (__zw_get_inner_html_handle(handle) || ''); } catch (_e) {}
+    }
+    return '?';
+  }
+
   function _liveQueryCollection(sel) {
     return new Proxy({ length: 0 }, {
       get: function(_t, prop) {
@@ -2733,6 +2754,17 @@
             var otherSel = other.__zwSelector || '';
             var otherHandle = other.__zwHandle || null;
             return _elKey(sel, handle) === _elKey(otherSel, otherHandle);
+          };
+        }
+        // `el.isEqualNode(other)`——节点结构相等（node-equality 三件套：isSameNode 身份 / compareDocumentPosition
+        // 位置 / isEqualNode 结构）。testing/diff 库高频。经 `_nodeSig` 序列化签名比对（元素 outerHTML / text·comment
+        // nodeValue）。**已知限制**：属性序敏感（spec 序无关）；handle/detached 元素 outerHTML 仅 innerHTML 回落。
+        if (prop === 'isEqualNode') {
+          return function(other) {
+            if (!other || typeof other !== 'object') return false;
+            var oSel = other.__zwSelector || '';
+            var oHandle = other.__zwHandle || null;
+            return _nodeSig(sel, handle) === _nodeSig(oSel, oHandle);
           };
         }
         // `el.compareDocumentPosition(other)`——bitmask 描述 other 相对 el 的文档位置（树算法 / 库排序高频）。

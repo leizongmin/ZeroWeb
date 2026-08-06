@@ -10447,3 +10447,97 @@ fn test_xmlserializer_importnode_r2818() {
         "浅/深克隆互异"
     );
 }
+
+#[test]
+fn test_isequalnode_r2819() {
+    // R2819：node.isEqualNode——节点结构相等（node-equality 三件套最后一块）。经 _nodeSig 序列化签名比对
+    //（元素 outerHTML / text·comment nodeValue）。属性序敏感（spec 序无关，实际库一致）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id='wrap'>\
+         <div class='x'><span>hi</span></div>\
+         <div class='x'><span>hi</span></div>\
+         <div class='y'><span>hi</span></div>\
+         <div class='x'><span>bye</span></div>\
+         </div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 同结构（a==b，均无 id 冲突）true / 不同 class（a==c）false / 不同子文本（a==d）false / 自身 true / null false。
+    sandbox
+        .execute(
+            "globalThis.__kids = document.querySelector('#wrap').children;\
+             globalThis.__a = __kids[0]; globalThis.__b = __kids[1];\
+             globalThis.__c = __kids[2]; globalThis.__d = __kids[3];\
+             globalThis.__eq_ab = __a.isEqualNode(__b);\
+             globalThis.__eq_ac = __a.isEqualNode(__c);\
+             globalThis.__eq_ad = __a.isEqualNode(__d);\
+             globalThis.__eq_aa = __a.isEqualNode(__a);\
+             globalThis.__eq_null = __a.isEqualNode(null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eq_ab)").unwrap().value,
+        "true",
+        "同结构（class+子树）isEqualNode true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eq_ac)").unwrap().value,
+        "false",
+        "不同 class 不等"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eq_ad)").unwrap().value,
+        "false",
+        "不同子文本不等"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eq_aa)").unwrap().value,
+        "true",
+        "自身相等"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eq_null)").unwrap().value,
+        "false",
+        "isEqualNode(null) false"
+    );
+
+    // text 节点：同 nodeValue 等 / 不同不等 / text≠comment（同 nodeValue 但 nodeType 异）。
+    sandbox
+        .execute(
+            "globalThis.__t1 = document.createTextNode('x');\
+             globalThis.__t2 = document.createTextNode('x');\
+             globalThis.__t3 = document.createTextNode('y');\
+             globalThis.__cm = document.createComment('x');\
+             globalThis.__eq_tt = __t1.isEqualNode(__t2);\
+             globalThis.__eq_t12t3 = __t1.isEqualNode(__t3);\
+             globalThis.__eq_tcm = __t1.isEqualNode(__cm);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eq_tt)").unwrap().value,
+        "true",
+        "同 text nodeValue 相等"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eq_t12t3)").unwrap().value,
+        "false",
+        "不同 text nodeValue 不等"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eq_tcm)").unwrap().value,
+        "false",
+        "text≠comment（nodeType 异）"
+    );
+}
