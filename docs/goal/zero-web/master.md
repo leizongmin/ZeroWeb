@@ -2091,6 +2091,24 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a document.createEvent + initCustomEvent（本轮 R2802，缺失 Web API 续）
+
+承接 R2801（focus/activeElement）。续缺失 Web API——land **`document.createEvent` + `initCustomEvent`**（legacy 合成事件工厂，jQuery<3 / 旧库 / 分析脚本高频）。**先可靠 probe**（枚举 proxy get trap 全部 `prop==='...'`，85 项含 click/dispatchEvent/focus/全几何/导航/属性——element 层基本非缺口；element.click() 已存在，排除误判），核出 createEvent/createTreeWalker/Range·Selection/customElements/animate 真正缺失。择**复用现有构造器（R2779 Event/CustomEvent/KeyboardEvent）、纯 JS、零 host 回调**的 createEvent land。
+
+- **`document.createEvent(type)`**：type 大小写不敏感 + spec 别名映射——`'event'/'events'/'htmlevents'`→`Event`，`'customevent'/'custom'`→`CustomEvent`，`'keyboardevent'`→`KeyboardEvent`，未知→`Event`（lenient，spec 抛 NotSupportedError——本沙箱不抛避免中断脚本）。返 `new Ctor('')`（空 type，经 initEvent/initCustomEvent 填充）。
+- **`CustomEvent.prototype.initCustomEvent(type, bubbles, cancelable, detail)`**：镜像 initEvent 设 type/bubbles/cancelable + 设 detail（guard 幂等，与既有 initEvent 模式一致）。
+- **`initEvent`（Event.prototype）已存在**（R2779）；dispatchEvent 路径既有（R2779）。createEvent→initEvent→dispatchEvent 三部曲完整。
+- **已知限制（记录）**：① 未知 type 回落 Event（spec 抛 NotSupportedError，lenient 不抛）；② initMouseEvent/initKeyboardEvent defer（MouseEvent 构造器未建，深）；③ isTrusted 恒 false（合成事件 spec 一致）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | document +`createEvent(type)` 工厂（映射→现有构造器，返 `new Ctor('')`）+ `CustomEvent.prototype.initCustomEvent`（guard 幂等）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_document_create_event_r2802`（createEvent('Event') instanceof Event + initEvent 设 type/bubbles/cancelable / createEvent('CustomEvent') instanceof CustomEvent & Event + initCustomEvent 设 detail / 大小写+别名 HTMLEvents·Events / dispatch 烟雾：createEvent+initEvent+dispatchEvent 触发 listener）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13430 passed / 0 failed / 74 ignored**，13429+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① document 新增 createEvent 方法 + CustomEvent.prototype 新增 initCustomEvent（不改既有属性/构造器）；② 复用现有 Event/CustomEvent/KeyboardEvent 构造器，零新依赖；③ 工厂返 `new Ctor('')` 纯构造（无副作用）；④ guard 幂等不覆盖既有定义。
+
 ### P1a element.focus()/blur() + document.activeElement（本轮 R2801，缺失 Web API 续）
 
 承接 R2800（document 元数据属性）。续缺失 Web API——land **`element.focus()`/`blur()` + `document.activeElement`**（表单焦点追踪，a11y / 自动聚焦 / 表单验证 / `:focus` 相关脚本高频）。纯 JS 状态追踪，零 host 回调。**核验实现路径**：element proxy 为 `new Proxy({}, get-trap)`（**不继承 Element.prototype**），故 focus/blur 加于 Proxy get trap（同 getAttribute/setAttribute 模式，按 `prop` 返回函数）。

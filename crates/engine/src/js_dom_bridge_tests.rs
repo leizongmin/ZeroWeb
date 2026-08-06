@@ -8120,3 +8120,128 @@ fn test_element_focus_active_element_r2801() {
         "blur 非当前焦点元素不影响 activeElement"
     );
 }
+
+#[test]
+fn test_document_create_event_r2802() {
+    // R2802：document.createEvent + initCustomEvent（legacy 合成事件工厂）。createEvent 映射 type→现有构造器
+    //（Event/CustomEvent/KeyboardEvent）返 new X('')，initEvent/initCustomEvent 填充。复用 R2779 事件构造器。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // createEvent('Event') instanceof Event + initEvent 设 type/bubbles/cancelable。
+    sandbox
+        .execute(
+            "var e = document.createEvent('Event');\
+             globalThis.__isEvt = (e instanceof Event);\
+             e.initEvent('click', true, false);\
+             globalThis.__t = e.type; globalThis.__b = e.bubbles; globalThis.__c = e.cancelable;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__isEvt)").unwrap().value,
+        "true",
+        "createEvent('Event') instanceof Event"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t)").unwrap().value,
+        "click",
+        "initEvent 设 type"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b)").unwrap().value,
+        "true",
+        "initEvent 设 bubbles"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c)").unwrap().value,
+        "false",
+        "initEvent 设 cancelable"
+    );
+
+    // createEvent('CustomEvent') instanceof CustomEvent + initCustomEvent 设 detail。
+    sandbox
+        .execute(
+            "var ce = document.createEvent('CustomEvent');\
+             globalThis.__isCe = (ce instanceof CustomEvent) && (ce instanceof Event);\
+             ce.initCustomEvent('foo', false, true, {a: 1});\
+             globalThis.__ct = ce.type; globalThis.__cb = ce.bubbles; globalThis.__cc = ce.cancelable;\
+             globalThis.__cd = ce.detail.a;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__isCe)").unwrap().value,
+        "true",
+        "createEvent('CustomEvent') instanceof CustomEvent & Event"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ct)").unwrap().value,
+        "foo",
+        "initCustomEvent 设 type"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cb)").unwrap().value,
+        "false",
+        "initCustomEvent 设 bubbles"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cc)").unwrap().value,
+        "true",
+        "initCustomEvent 设 cancelable"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cd)").unwrap().value,
+        "1",
+        "initCustomEvent 设 detail"
+    );
+
+    // 大小写不敏感 + spec 别名（HTMLEvents / Events → Event）。
+    sandbox
+        .execute(
+            "var h = document.createEvent('HTMLEvents'); h.initEvent('x', true, false);\
+             var ev = document.createEvent('Events'); ev.initEvent('y', false, false);\
+             var ceu = document.createEvent('CustomEvent'); ceu.initCustomEvent('z', true, false, 9);\
+             globalThis.__h = h.type; globalThis.__ev = ev.type; globalThis.__ceu = ceu.detail;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__h)").unwrap().value,
+        "x",
+        "createEvent('HTMLEvents') → Event"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev)").unwrap().value,
+        "y",
+        "createEvent('Events') → Event"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ceu)").unwrap().value,
+        "9",
+        "createEvent('CustomEvent') + initCustomEvent detail"
+    );
+
+    // dispatch 烟雾：createEvent + initEvent + dispatchEvent 触发 listener。
+    sandbox
+        .execute(
+            "globalThis.__hits = 0;\
+             var el = document.createElement('div');\
+             el.addEventListener('ping', function () { globalThis.__hits++; });\
+             var pe = document.createEvent('Event'); pe.initEvent('ping', false, false);\
+             el.dispatchEvent(pe);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hits)").unwrap().value,
+        "1",
+        "createEvent + initEvent + dispatchEvent 须触发 listener"
+    );
+}

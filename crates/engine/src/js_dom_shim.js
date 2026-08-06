@@ -3442,6 +3442,18 @@
   };
   globalThis.CustomEvent.prototype = Object.create(globalThis.Event.prototype);
   globalThis.CustomEvent.prototype.constructor = globalThis.CustomEvent;
+  // initCustomEvent——legacy 合成事件初始化（与 createEvent('CustomEvent') + initEvent 配对，spec）。
+  // 镜像 initEvent 设 type/bubbles/cancelable + 设 detail。guard 幂等（不覆盖既有定义）。
+  if (typeof globalThis.CustomEvent.prototype.initCustomEvent !== 'function') {
+    globalThis.CustomEvent.prototype.initCustomEvent = function (type, bubbles, cancelable, detail) {
+      this.type = type;
+      this.bubbles = !!bubbles;
+      this.cancelable = !!cancelable;
+      this.detail = detail;
+      this.defaultPrevented = false;
+      this._defaultPrevented = false;
+    };
+  }
 
   globalThis.KeyboardEvent = function KeyboardEvent(type, options) {
     var ev = _makeEvent(type, options);
@@ -3743,6 +3755,18 @@
     createTextNode: function(text) {
       var handle = __zw_create_text(String(text));
       return _wrapHandle(handle);
+    },
+    // `document.createEvent(type)`——legacy 合成事件工厂（jQuery<3 / 旧库 / 分析脚本高频）。返空 type 事件，
+    // 经 initEvent/initCustomEvent 填充后 dispatchEvent。type 大小写不敏感 + spec 别名（Event/Events/HTMLEvents
+    // → Event；CustomEvent → CustomEvent；KeyboardEvent → KeyboardEvent）；未知回落 Event（lenient，spec 抛
+    // NotSupportedError——本沙箱不抛，避免中断脚本）。复用现有构造器（R2779）。
+    createEvent: function(type) {
+      var t = String(type == null ? '' : type).toLowerCase();
+      var Ctor = globalThis.CustomEvent && (t === 'customevent' || t === 'custom') ? globalThis.CustomEvent
+        : globalThis.KeyboardEvent && t === 'keyboardevent' ? globalThis.KeyboardEvent
+        : globalThis.Event;
+      // 构造器接收 (type, options)；createEvent 返**空 type** 事件（initEvent/initCustomEvent 设 type）。
+      return new Ctor('');
     },
     // `document.createDocumentFragment()`：DocumentFragment（nodeType 11，轻量容器）。
     // 建 fragment（append 子节点经既有 append_child_handle）+ 标记 handle 到 _fragmentHandles
