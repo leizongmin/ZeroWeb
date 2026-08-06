@@ -3169,16 +3169,29 @@
             return -1;
           } catch (_e) { return -1; }
         }
-        // `<table>`.rows / `<table>`.tBodies（HTMLTableElement，R2843）——table 内全部行 / 全部 tbody
-        //（元素作用域 querySelectorAll 返真数组，支持 length/索引/迭代/Array 方法）。data-table 库迭代
-        // table.rows 高频。gate 仅 TABLE（textarea.rows 落 catch-al 反射 rows 属性，不冲突）。
-        if (prop === 'rows' && _realTag(sel, handle) === 'TABLE') {
-          if (!sel) return [];
-          try { return _wrapSelector(sel).querySelectorAll('tr'); } catch (_e) { return []; }
+        // `<table>`.rows（HTMLTableElement，R2843）/ section.rows（HTMLTableSectionElement，R2845）——
+        // table 内全部行（跨 thead/tbody/tfoot document order）/ section（thead/tbody/tfoot）作用域内行。
+        // 元素作用域 querySelectorAll('tr') 返真数组（length/索引/迭代/Array 方法）。gate = TABLE 或
+        // THEAD/TBODY/TFOOT（section-scoped）；textarea.rows 落 set-trap catch-al 反射不冲突（textarea 非 section）。
+        if (prop === 'rows') {
+          var rTag = _realTag(sel, handle);
+          if (rTag === 'TABLE' || rTag === 'THEAD' || rTag === 'TBODY' || rTag === 'TFOOT') {
+            if (!sel) return [];
+            try { return _wrapSelector(sel).querySelectorAll('tr'); } catch (_e) { return []; }
+          }
         }
         if (prop === 'tBodies' && _realTag(sel, handle) === 'TABLE') {
           if (!sel) return [];
           try { return _wrapSelector(sel).querySelectorAll('tbody'); } catch (_e) { return []; }
+        }
+        // `<table>`.caption / `<table>`.tHead / `<table>`.tFoot（HTMLTableElement，R2845）——table 的首个
+        // caption / thead / tfoot 子元素（Chromium 150 oracle：querySelector 首匹配；无 → null）。表格分析 /
+        // 序列化库读结构高频。仅 getter（setter 须 remove 既有 + insert 新建属 table 头部位置，复杂且罕见——
+        // 落 catch-al 反射内容属性，documented 限制）。gate 仅 TABLE。
+        if ((prop === 'caption' || prop === 'tHead' || prop === 'tFoot') && _realTag(sel, handle) === 'TABLE') {
+          if (!sel) return null;
+          var cTag = prop === 'tHead' ? 'thead' : (prop === 'tFoot' ? 'tfoot' : 'caption');
+          try { return _wrapSelector(sel).querySelector(cTag); } catch (_e) { return null; }
         }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。

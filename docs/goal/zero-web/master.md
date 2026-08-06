@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a table.caption/tHead/tFoot + section.rows（本轮 R2845，缺失 Web API 续 / 表格结构表面收尾）
+
+承接 R2844（text-control 选区）。land 表格结构表面收尾——`table.caption`/`table.tHead`/`table.tFoot`（首个 caption/thead/tfoot 子元素或 null）+ `section.rows`（thead/tbody/tfoot 作用域内行）。表格分析 / 序列化库读结构高频。延续 R2843 querySelector(All) 模式。
+
+- **关键设计点**：① **caption/tHead/tFoot**（TABLE gate，getter-only）：`_wrapSelector(sel).querySelector('caption'|'thead'|'tfoot')` 返首匹配元素或 null（Chromium 150 oracle 锚定）；setter 须 remove 既有 + insert 新建于 table 头部位置，复杂且罕见 → 落 catch-al 反射内容属性（documented 限制）。② **section.rows**（thead/tbody/tfoot gate）：扩 R2843 `rows` 条件——`_realTag ∈ {TABLE, THEAD, TBODY, TFOOT}`，section 作用域 `querySelectorAll('tr')` 返 section-scoped 行（tbody#tb1.rows=[b1,b2]，非全 table 行）；textarea.rows 落 set-trap catch-al 反射不冲突（textarea 非 section，get-trap 不命中 rows 分支）。③ 复用既有元素作用域 querySelector/querySelectorAll（R2673）+ 真数组（length/索引/迭代/Array 方法），零新 host infra。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | get-trap `rows` 扩 gate（+THEAD/TBODY/TFOOT）；+get-trap caption/tHead/tFoot（TABLE，querySelector 首匹配或 null）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_table_caption_thead_tfoot_section_rows_r2845`（caption 有/无 + tHead/tFoot 有/无 + section.rows tbody=2/thead=1/tfoot=1 + Array.map 迭代 + table.rows=4 跨 section 不变）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13472 passed / 0 failed / 74 ignored**，13471+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS + **`make product-smoke-legacy` 42 fixture 0 struct FAIL**——表格结构性元素按 run-rules 跑 legacy 验零结构性回归。
+
+**为何零回归且净正向**：① `rows` 扩 gate 仅加 section（thead/tbody/tfoot），TABLE 行为不变（R2843 测试作回归守卫）；② caption/tHead/tFoot 全新增 get-trap 分支（仅 TABLE gate，不改既有元素属性路径）；③ 纯读（querySelector/All 返既有元素 proxy，无 mutation 副作用）；④ 复用既有元素作用域查询 infra（零新 host 回调）。
+
+**已知限制（记录）**：① caption/tHead/tFoot 仅 getter（setter 落 catch-al 反射内容属性，复杂 host 操作 defer）；② querySelector('caption') 返首后代匹配——嵌套 table 的内层 caption/thead/tfoot 可能误返（罕见不究，同 R2843 querySelectorAll('tr') 嵌套限制）；③ section.rows 含嵌套 table 内层 tr（querySelectorAll 后代匹配，spec 应排除，罕见不究）；④ 集合返静态真数组非 live HTMLCollection（snapshot 架构，documented）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面**已穷尽**（R2820-R2845 覆 ... + 表格结构全表面〔rowIndex/cellIndex/sectionRowIndex/rows/caption/tHead/tFoot/tBodies〕+ text-control 选区 主表面）。剩余元素特定 IDL 全极低价值/中复杂：`<output>` value（罕见）/`<img>` naturalWidth（headless 低价值）；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / node.normalize / 真 WAAPI / date/time valueAsNumber / media 时长属性 / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13472 全绿）。
+
 ### P1a text-control 选区 IDL（selectionStart/End/Direction + setSelectionRange + select）（本轮 R2844，缺失 Web API 续 / textarea 选区状态跟踪）
 
 承接 R2843（表格结构收尾）。land text-control（input text-type / textarea）选区 IDL——`selectionStart`/`selectionEnd`/`selectionDirection` getter + `setSelectionRange` + `select` + 属性 setter。文本编辑器（CodeMirror/Monaco/Slate/Quill）/ 自动选择（全选/光标定位）/ Range 算法读选区状态高频。

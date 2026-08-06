@@ -12962,3 +12962,120 @@ fn test_text_control_selection_r2844() {
         "selectionEnd=-5 → clamp 0 后升回 start=5（end 不低于 start）"
     );
 }
+
+#[test]
+fn test_table_caption_thead_tfoot_section_rows_r2845() {
+    // R2845：table.caption/tHead/tFoot（首个 caption/thead/tfoot 子元素或 null）+ section.rows（thead/tbody/tfoot
+    // 作用域内行）。延续 R2843 表格表面。表格分析 / 序列化库读结构高频。Chromium 150 oracle 锚定。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <table id='t1'>\
+           <caption id='cap'>My Caption</caption>\
+           <thead id='th'><tr id='h1'><th>H</th></tr></thead>\
+           <tfoot id='tf'><tr id='f1'><td>F</td></tr></tfoot>\
+           <tbody id='tb1'><tr id='b1'><td>B1</td></tr><tr id='b2'><td>B2</td></tr></tbody>\
+         </table>\
+         <table id='t2'><tbody><tr id='x1'><td>x</td></tr></tbody></table>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // table.caption：t1 首 caption（id=cap）；t2 无 → null。
+    sandbox
+        .execute(
+            "globalThis.__cap = document.querySelector('#t1').caption ? document.querySelector('#t1').caption.id : 'null';\
+             globalThis.__cap2 = String(document.querySelector('#t2').caption);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cap)").unwrap().value,
+        "cap",
+        "t1.caption 返首个 caption 元素（id=cap）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cap2)").unwrap().value,
+        "null",
+        "t2 无 caption → null"
+    );
+
+    // table.tHead / table.tFoot：t1 有 thead/tfoot（id）；t2 无 → null。
+    sandbox
+        .execute(
+            "globalThis.__th = document.querySelector('#t1').tHead ? document.querySelector('#t1').tHead.id : 'null';\
+             globalThis.__th2 = String(document.querySelector('#t2').tHead);\
+             globalThis.__tf = document.querySelector('#t1').tFoot ? document.querySelector('#t1').tFoot.id : 'null';\
+             globalThis.__tf2 = String(document.querySelector('#t2').tFoot);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__th)").unwrap().value,
+        "th",
+        "t1.tHead 返首个 thead（id=th）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__th2)").unwrap().value,
+        "null",
+        "t2 无 thead → null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tf)").unwrap().value,
+        "tf",
+        "t1.tFoot 返首个 tfoot（id=tf）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tf2)").unwrap().value,
+        "null",
+        "t2 无 tfoot → null"
+    );
+
+    // section.rows：tbody#tb1 作用域内行（b1,b2，2 行，section-scoped）；thead/tfoot 同。
+    sandbox
+        .execute(
+            "globalThis.__tbRows = document.querySelector('#tb1').rows.length;\
+             globalThis.__tbRowsMap = Array.prototype.map.call(document.querySelector('#tb1').rows, function(r){return r.id;}).join(',');\
+             globalThis.__thRows = document.querySelector('#th').rows.length;\
+             globalThis.__tfRows = document.querySelector('#tf').rows.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tbRows)").unwrap().value,
+        "2",
+        "tbody#tb1.rows.length=2（section-scoped b1,b2）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tbRowsMap)").unwrap().value,
+        "b1,b2",
+        "tbody.rows 迭代 document order（b1,b2）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__thRows)").unwrap().value,
+        "1",
+        "thead.rows.length=1（h1）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tfRows)").unwrap().value,
+        "1",
+        "tfoot.rows.length=1（f1）"
+    );
+
+    // table.rows 仍跨全 section（4 行：h1/f1/b1/b2），与 R2843 一致——rows gate 同时支持 TABLE 与 section。
+    sandbox
+        .execute("globalThis.__t1Rows = document.querySelector('#t1').rows.length;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t1Rows)").unwrap().value,
+        "4",
+        "table.rows.length=4（跨 thead/tfoot/tbody 全行，R2843 行为不变）"
+    );
+}
