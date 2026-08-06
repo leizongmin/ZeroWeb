@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a canvas getContext MVP slice 1（本轮 R2795，缺失 Web API 续）
+
+承接 R2794（Headers）+ 上轮 canvas 调研。**调研修正**（推翻「需先改 zero-canvas」结论）：zero-canvas `fill()`/`stroke()`（path-based）经 `blit_path/stroke_to_pixels` **写 pixel_buffer**；仅 `fill_rect`/`stroke_rect` 便捷法不写。故**path-based 绘制 + getImageData 回读可行，无需改 zero-canvas**。land canvas slice 1（最高频缺失项，图表/游戏/图像处理无处不在）。
+
+- **host**：`CanvasContext` 注册表（`Arc<Mutex<(u64, HashMap<u64,CanvasContext>)>>`）+ `__zw_canvas_op(handle, op, ...args)` 串参派发（避免 serde）。Rust `canvas_context_op` 派发 getContext2d/setFillStyle/setStrokeStyle/setLineWidth/beginPath/closePath/moveTo/lineTo/arc/fill/stroke/fillRect/strokeRect/clearRect/getImageData。颜色复用 `css_parser::parse_color` + `color_value_to_render` → `Color`。
+- **shim**：`createElement('canvas')` → standalone canvas 对象（width/height 默认 300×150 + getContext，**非 host-backed 元素 proxy**——canvas 经 context 离屏绘制，DOM 集成 follow-up）；`getContext('2d')` 首次创建 host 上下文返 proxy（CanvasRenderingContext2D：fillStyle/strokeStyle/lineWidth getter+setter push host + beginPath/.../fill/stroke/fillRect（经 path 实现以 rasterize）/getImageData → {width,height,data:Uint8ClampedArray}）。
+- **关键设计**：`fillRect` shim 经 host `beginPath+moveTo+lines+closePath+fill`（rasterize 到 pixel_buffer），绕过 `fill_rect` 便捷法不写 pixel_buffer 之限制 → `getImageData` 可回读。
+- **已知限制（记录）**：① canvas 为 standalone 对象（无 host handle，**不进 DOM 树**/appendChild 未支持——canvas 主要离屏用，DOM 集成 follow-up）；② 仅 2d（webgl defer）；③ `toDataURL` 未实现（需 PNG 编码，slice 3）；④ 文本（fillText/font）需 font 栈，slice 2/3；⑤ page 内渲染（canvas 作为元素显示）后续 slice。
+- **TDD 像素锚定**：fillRect('red')→getImageData 红像素 (255,0,0,255) / 透明默认 (0,0,0,0) / '#00ff00' hex / rgb()+arc 圆心蓝像素。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_bridge.rs` | +`parse_canvas_color` + `canvas_context_op`（~15 op 派发，path-based fillRect）+ 注册表 + `__zw_canvas_op` 回调（register_dom_callbacks 末）。 |
+| `engine/src/js_dom_shim.js` | +`_zwMakeCanvas`（standalone canvas）+ `_zwMakeCtx2d`（ctx proxy + style getter/setter + path/rect/readback）+ `createElement('canvas')` 分支。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_canvas_get_context_r2795`（createElement canvas + 300×150 默认 + getContext('2d')/webgl→null + fillRect red→getImageData (255,0,0,255) + 透明默认 + hex 绿 + arc 蓝圆心）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13423 passed / 0 failed / 74 ignored**，13422+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平，纯 additive 新 host 回调 + createElement canvas 分支，不改既有渲染路径）+ 全 struct PASS。
+
+**为何零回归且净正向**：① canvas 为 standalone 对象 + 新 host 回调（仅由 canvas 调用，不改既有路径）；② createElement 仅对 `tag==='canvas'` 分支，其余 tag 逐字节不变；③ 绘制只读 host CanvasContext（独立 pixel_buffer，不触 page 渲染）；④ 修一处 import 路径（`crate::color_value_to_render` 而非 `crate::paint::color::...`）。
+
 ### P1a Headers（本轮 R2794，缺失 Web API 续）
 
 承接 R2793（crypto.subtle.digest）。续缺失 Web API——land **Headers**（HTTP 头集合，fetch / Service Worker / header-map 高频）。镜像 FormData pair-store 模式，纯 JS，零 host 回调。**canvas getContext 经调研 defer**（fill_rect 写 primitives 不写 pixel_buffer；raster 函数全 `pub(crate)` 无公共 flush——canvas 非一步桥接，需 zero-canvas API 改 + 设计，见下方「canvas 设计待办」）。
@@ -2108,13 +2128,14 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（Headers），不改既有 API；② 纯 JS 无副作用；③ prototype guard（`globalThis.X = globalThis.X || ...`）不覆盖既有定义。
 
-### 📐 canvas getContext 设计待办（R2793 CONTINUE 调研结论，2026-08-06）
+### 📐 canvas 后续 slice 规划（R2795 slice 1 已 land，2026-08-06）
 
-canvas getContext（最高频剩余缺失项）经调研**非一步可 land**，需设计先行：
-- **zero-canvas `fill_rect`/`fill` 等写 `primitives`（RenderPrimitives，render-pipeline 消费），不写 `pixel_buffer`**；仅 `clear_rect`/`put_image_data` 直写 `pixel_buffer`。
-- **raster-to-pixel 函数全 `pub(crate)`**（`blit_rect_to_pixels`/`blit_path_to_pixels`/`blit_stroke_to_pixels`），无公共 flush/snapshot-to-pixels 方法。
-- 故 `fillRect → getImageData` 立即回读**不支持**（返空像素）；canvas MVP 测试性需先解决「primitives → pixel_buffer 公共 raster 路径」。
-- **设计方向**（待 spec-rfc 出 RFC）：① zero-canvas 加 `pub fn rasterize_to_pixels(&mut self)`（drain primitives → pixel_buffer，供 getImageData/toDataURL 前 flush）；② engine 加 host 回调 `__zw_canvas_op(handle, op, args)` + CanvasContext 注册表（Arc<Mutex<HashMap<u64,CanvasContext>>>）；③ shim `HTMLCanvasElement` + `getContext('2d')` → CanvasRenderingContext2D proxy；④ slice 1 = rects + fillStyle + getImageData/toDataURL 读回；slice 2 = paths（arc/fill/stroke）；slice 3 = 文本（font/glyph）+ 页面内渲染集成。深结构多 slice，等设计 doc 后逐 slice 推进。
+canvas getContext **slice 1 已 land**（R2795，见上）。R2793 调研结论修正：`fill()`/`stroke()`（path-based）**写 pixel_buffer**（经 `blit_path/stroke_to_pixels`），仅 `fill_rect`/`stroke_rect` 便捷法不写——故 path-based 绘制 + getImageData 回读**无需改 zero-canvas**（slice 1 即验证）。**后续 slice**：
+- **slice 2**：完整 path API（quadraticCurveTo/bezierCurveTo/rect 路径命令/ellipse/clip）+ save/restore 栈 + transform（scale/rotate/translate/setTransform）+ globalAlpha + 更多 line 样式（lineCap/join/dash）。
+- **slice 3**：文本（`fillText`/`strokeText`/`measureText`/font 栈经 render-foundation 字体）+ `toDataURL`（需 PNG 编码，探 render-foundation 或加 png crate）。
+- **slice 4**：页面内渲染集成（canvas 作为 DOM 元素显示其 pixel_buffer 到页面——须 standalone canvas 接 host handle 进 DOM 树 + paint 阶段消费 pixel_buffer；本 slice 改动跨 engine paint + dom，深结构，需设计）。
+- canvas DOM 集成（appendChild/挂载）：slice 1 canvas 为 standalone 对象不进 DOM 树，跟随 slice 4。
+
 
 ### P1a crypto.subtle.digest（本轮 R2793，缺失 Web API 续）
 

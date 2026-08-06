@@ -1082,6 +1082,159 @@ pub fn crypto_subtle_digest(algo: &str, bytes_csv: &str) -> String {
     hash.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
 }
 
+/// canvas 颜色串 → render Color（复用 CSS 颜色解析：named/hex/rgb/hsl 等）。解析失败回落黑色。
+fn parse_canvas_color(s: &str) -> zero_render_foundation::color::Color {
+    use zero_render_foundation::color::Color;
+    zero_css_parser::values::parse_color(s.trim())
+        .map(|cv| crate::color_value_to_render(&cv))
+        .unwrap_or_else(|| Color::rgba(0, 0, 0, 255))
+}
+
+/// `HTMLCanvasElement.getContext('2d')` 派发（R2795，canvas slice 1）。host 持 `CanvasContext` 注册表
+///（`Arc<Mutex<(next_id, HashMap<id, CanvasContext>)>>`），JS 经 `__zw_canvas_op(handle, op, ...args)`
+/// 串参派发（避免 JSON/serde 依赖）。**关键**：zero-canvas `fill_rect`/`stroke_rect` 便捷法**不写
+/// pixel_buffer**（仅记 primitives），但 `fill()`/`stroke()`（path-based）经 `blit_path/stroke_to_pixels`
+/// **写 pixel_buffer**——故 `fillRect` shim 经 beginPath+moveTo+lines+fill 实现（rasterize，getImageData
+/// 可回读）。`getContext2d` 创建上下文返 id；`getImageData` 返 `"{w},{h};{r},{g},{b},{a},..."`。
+/// 供 `__zw_canvas_op` 回调 → shim canvas element + CanvasRenderingContext2D proxy。
+pub fn canvas_context_op(
+    reg: &mut (u64, HashMap<u64, zero_canvas::CanvasContext>),
+    handle: &str,
+    op: &str,
+    args: &[String],
+) -> String {
+    let arg = |i: usize| args.get(i).map(String::as_str).unwrap_or("0");
+    let f = |i: usize| arg(i).trim().parse::<f32>().unwrap_or(0.0);
+    let hid = || handle.trim().parse::<u64>().unwrap_or(0);
+    match op {
+        "getContext2d" => {
+            let (next, ctxs) = reg;
+            let id = *next;
+            *next += 1;
+            let w = arg(0).trim().parse::<u32>().unwrap_or(300);
+            let h = arg(1).trim().parse::<u32>().unwrap_or(150);
+            ctxs.insert(id, zero_canvas::CanvasContext::new(w, h));
+            id.to_string()
+        }
+        "setFillStyle" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_fill_color(parse_canvas_color(arg(0)));
+            }
+            "ok".into()
+        }
+        "setStrokeStyle" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_stroke_color(parse_canvas_color(arg(0)));
+            }
+            "ok".into()
+        }
+        "setLineWidth" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_line_width(f(0));
+            }
+            "ok".into()
+        }
+        "beginPath" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.begin_path();
+            }
+            "ok".into()
+        }
+        "closePath" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.close_path();
+            }
+            "ok".into()
+        }
+        "moveTo" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.move_to(f(0), f(1));
+            }
+            "ok".into()
+        }
+        "lineTo" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.line_to(f(0), f(1));
+            }
+            "ok".into()
+        }
+        "arc" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.arc(f(0), f(1), f(2), f(3), f(4));
+            }
+            "ok".into()
+        }
+        "fill" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.fill();
+            }
+            "ok".into()
+        }
+        "stroke" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.stroke();
+            }
+            "ok".into()
+        }
+        // fillRect：经 path（rasterize 到 pixel_buffer，绕过 fill_rect 便捷法不写 pixel_buffer 之限制）。
+        "fillRect" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                let (x, y, w, h) = (f(0), f(1), f(2), f(3));
+                ctx.begin_path();
+                ctx.move_to(x, y);
+                ctx.line_to(x + w, y);
+                ctx.line_to(x + w, y + h);
+                ctx.line_to(x, y + h);
+                ctx.close_path();
+                ctx.fill();
+            }
+            "ok".into()
+        }
+        "strokeRect" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                let (x, y, w, h) = (f(0), f(1), f(2), f(3));
+                ctx.begin_path();
+                ctx.move_to(x, y);
+                ctx.line_to(x + w, y);
+                ctx.line_to(x + w, y + h);
+                ctx.line_to(x, y + h);
+                ctx.close_path();
+                ctx.stroke();
+            }
+            "ok".into()
+        }
+        "clearRect" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.clear_rect(f(0), f(1), f(2), f(3));
+            }
+            "ok".into()
+        }
+        "getImageData" => {
+            let (x, y, w, h) = (
+                arg(0).trim().parse::<u32>().unwrap_or(0),
+                arg(1).trim().parse::<u32>().unwrap_or(0),
+                arg(2).trim().parse::<u32>().unwrap_or(0),
+                arg(3).trim().parse::<u32>().unwrap_or(0),
+            );
+            if let Some(ctx) = reg.1.get(&hid()) {
+                let img = ctx.get_image_data(x, y, w, h);
+                let mut out = format!("{}:{};", img.width, img.height);
+                let mut first = true;
+                for b in &img.data {
+                    if !first {
+                        out.push(',');
+                    }
+                    first = false;
+                    out.push_str(&b.to_string());
+                }
+                return out;
+            }
+            "0:0;".into()
+        }
+        _ => "ok".into(),
+    }
+}
+
 /// `element.matches(selector)`——元素是否匹配选择器（含组合器，querySelectorAll 全匹配语义）。
 /// 求全匹配集，判 elem 是否在集中。供 `__zw_matches` 回调 → shim `el.matches()`。
 pub fn element_matches_test_selector(html: &str, elem_sel: &str, test_sel: &str) -> bool {
@@ -2828,6 +2981,22 @@ pub fn register_dom_callbacks(
                     .push(DomMutation::RemoveHandle { handle: handle.clone() });
             }
             "ok".into()
+        }),
+    );
+
+    // `HTMLCanvasElement.getContext('2d')`（R2795，canvas slice 1）——host 持 CanvasContext 注册表，
+    // `__zw_canvas_op(handle, op, ...args)` 串参派发（详见 [`canvas_context_op`]）。getContext2d 创建
+    // 上下文返 id；getImageData 返 "w:h;r,g,b,a,..."；其余 op 返 "ok"。host 未注册 → shim no-throw 回落。
+    let canvas_reg: Arc<Mutex<(u64, HashMap<u64, zero_canvas::CanvasContext>)>> =
+        Arc::new(Mutex::new((1, HashMap::new())));
+    sandbox.register_callback(
+        "__zw_canvas_op",
+        Box::new(move |args: &[String]| -> String {
+            let handle = args.first().map(String::as_str).unwrap_or("0");
+            let op = args.get(1).map(String::as_str).unwrap_or("");
+            let rest = if args.len() > 2 { &args[2..] } else { &[] };
+            let mut reg = canvas_reg.lock().unwrap_or_else(|e| e.into_inner());
+            canvas_context_op(&mut reg, handle, op, rest)
         }),
     );
 }

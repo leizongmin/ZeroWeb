@@ -3053,6 +3053,81 @@
     return _makeProxy(null, handle);
   }
 
+  // canvas 元素 + 2d 上下文 proxy（R2795，canvas slice 1）。host 持 CanvasContext 注册表，JS 经
+  // `__zw_canvas_op(handle, op, ...args)` 串参派发。`getContext('2d')` 首次调时创建 host 上下文（返 id），
+  // 后续返回同一 proxy。host 未注册 → getContext 返 null（no-throw 回落）。width/height 默认 300×150（spec）。
+  // **fillRect 经 path 实现**（host fill_rect 便捷法不写 pixel_buffer，path-based fill 经 blit 写）。
+  // **canvas 为 standalone 对象**（非 host-backed 元素 proxy——canvas 主要经 context 离屏绘制，不需 DOM
+  // 树挂载；DOM 集成/appendChild 为 follow-up）。
+  function _zwMakeCanvas() {
+    var el = {
+      nodeType: 1,
+      tagName: 'CANVAS',
+      nodeName: 'CANVAS',
+      localName: 'canvas',
+      width: 300,
+      height: 150,
+      style: {},
+      _ctx: null
+    };
+    el.getContext = function (type) {
+      if (String(type) !== '2d') return null; // 仅 2d；webgl/webgl2 defer
+      if (el._ctx) return el._ctx;
+      if (typeof __zw_canvas_op !== 'function') return null;
+      var id = __zw_canvas_op('0', 'getContext2d', String(el.width), String(el.height));
+      if (!id || String(id).charAt(0) === '!') return null;
+      el._ctx = _zwMakeCtx2d(String(id));
+      el._ctx.canvas = el;
+      return el._ctx;
+    };
+    return el;
+  }
+  function _zwMakeCtx2d(h) {
+    var ctx = { _handle: h, canvas: null, _fs: '#000000', _ss: '#000000', _lw: 1.0 };
+    Object.defineProperty(ctx, 'fillStyle', {
+      set: function (v) { this._fs = String(v); __zw_canvas_op(h, 'setFillStyle', String(v)); },
+      get: function () { return this._fs; }
+    });
+    Object.defineProperty(ctx, 'strokeStyle', {
+      set: function (v) { this._ss = String(v); __zw_canvas_op(h, 'setStrokeStyle', String(v)); },
+      get: function () { return this._ss; }
+    });
+    Object.defineProperty(ctx, 'lineWidth', {
+      set: function (v) { this._lw = +v; __zw_canvas_op(h, 'setLineWidth', String(v)); },
+      get: function () { return this._lw; }
+    });
+    ctx.beginPath = function () { __zw_canvas_op(h, 'beginPath'); };
+    ctx.closePath = function () { __zw_canvas_op(h, 'closePath'); };
+    ctx.moveTo = function (x, y) { __zw_canvas_op(h, 'moveTo', String(x), String(y)); };
+    ctx.lineTo = function (x, y) { __zw_canvas_op(h, 'lineTo', String(x), String(y)); };
+    ctx.arc = function (x, y, r, s, e) {
+      __zw_canvas_op(h, 'arc', String(x), String(y), String(r), String(s), String(e));
+    };
+    ctx.fill = function () { __zw_canvas_op(h, 'fill'); };
+    ctx.stroke = function () { __zw_canvas_op(h, 'stroke'); };
+    ctx.fillRect = function (x, y, w, hh) {
+      __zw_canvas_op(h, 'fillRect', String(x), String(y), String(w), String(hh));
+    };
+    ctx.strokeRect = function (x, y, w, hh) {
+      __zw_canvas_op(h, 'strokeRect', String(x), String(y), String(w), String(hh));
+    };
+    ctx.clearRect = function (x, y, w, hh) {
+      __zw_canvas_op(h, 'clearRect', String(x), String(y), String(w), String(hh));
+    };
+    ctx.getImageData = function (x, y, w, hh) {
+      if (typeof __zw_canvas_op !== 'function') return null;
+      var r = String(__zw_canvas_op(h, 'getImageData', String(x), String(y), String(w), String(hh)));
+      if (!r) return null;
+      var parts = r.split(';');
+      var dims = parts[0].split(':');
+      var nums = parts[1] ? parts[1].split(',') : [];
+      var arr = new Uint8ClampedArray(nums.length);
+      for (var i = 0; i < nums.length; i++) arr[i] = +nums[i];
+      return { width: +dims[0], height: +dims[1], data: arr };
+    };
+    return ctx;
+  }
+
   // `|` 分隔的选择器串 → 元素 proxy 数组（空串/无回调 → []）。供 children 等导航 API。
   function _splitSelectors(joined) {
     if (!joined) return [];
@@ -3505,7 +3580,9 @@
       return globalThis.document.querySelectorAll(tag);
     },
     createElement: function(tag) {
-      var handle = __zw_create_element(String(tag));
+      tag = String(tag);
+      if (tag.toLowerCase() === 'canvas') return _zwMakeCanvas();
+      var handle = __zw_create_element(tag);
       return _wrapHandle(handle);
     },
     // `createElementNS(ns, tag)`：HTML 命名空间元素与 createElement 等价；

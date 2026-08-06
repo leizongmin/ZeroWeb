@@ -7431,3 +7431,121 @@ fn test_headers_r2794() {
     assert_eq!(sandbox.execute("[...it.keys()].join(',')").unwrap().value, "z,a");
     assert_eq!(sandbox.execute("[...it.values()].join(',')").unwrap().value, "1,2");
 }
+
+#[test]
+fn test_canvas_get_context_r2795() {
+    // R2795：HTMLCanvasElement.getContext('2d')（canvas slice 1）。host CanvasContext 注册表 +
+    // __zw_canvas_op 派发。fill()/stroke() 写 pixel_buffer（path-based rasterize），fillRect 经 path
+    // 实现（绕过 fill_rect 便捷法不写 pixel_buffer）。getImageData 回读验证像素。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // createElement('canvas') + width/height 默认 300×150 + getContext('2d')。
+    sandbox
+        .execute(
+            "globalThis.__c = document.createElement('canvas');\
+             globalThis.__ctx = __c.getContext('2d');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("typeof __c.getContext").unwrap().value, "function");
+    assert_eq!(
+        sandbox.execute("String(__c.width + 'x' + __c.height)").unwrap().value,
+        "300x150"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__ctx !== null && typeof __ctx.fillRect === 'function')")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // 自定义尺寸 + getContext('webgl') → null（仅 2d）。
+    sandbox.execute("__c.width = 4; __c.height = 4;").unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(document.createElement('canvas').getContext('webgl') === null)")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // fillRect('red') + getImageData 回读：红色像素（255,0,0,255）。
+    // 重新创建 4×4 canvas + ctx（尺寸变化后重取 ctx 反映新尺寸）。
+    sandbox
+        .execute(
+            "globalThis.__c2 = document.createElement('canvas'); __c2.width=4; __c2.height=4;\
+             globalThis.__ctx2 = __c2.getContext('2d');\
+             __ctx2.fillStyle = 'red';\
+             __ctx2.fillRect(0, 0, 4, 4);\
+             globalThis.__img = __ctx2.getImageData(0, 0, 4, 4);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(__img.width + 'x' + __img.height)")
+            .unwrap()
+            .value,
+        "4x4"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__img.data[0] + ',' + __img.data[1] + ',' + __img.data[2] + ',' + __img.data[3])")
+            .unwrap()
+            .value,
+        "255,0,0,255"
+    );
+    // 未填充区域：getImageData 另一 canvas（默认透明 0,0,0,0）。
+    sandbox
+        .execute(
+            "globalThis.__e = document.createElement('canvas'); __e.width=2; __e.height=2;\
+             globalThis.__blank = __e.getContext('2d').getImageData(0,0,2,2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(__blank.data[0] + ',' + __blank.data[3])")
+            .unwrap()
+            .value,
+        "0,0"
+    );
+    // fillStyle #00ff00（hex 解析）→ 绿色像素。
+    sandbox
+        .execute(
+            "globalThis.__g = document.createElement('canvas'); __g.width=2; __g.height=2;\
+             var gx = __g.getContext('2d'); gx.fillStyle = '#00ff00'; gx.fillRect(0,0,2,2);\
+             globalThis.__gp = gx.getImageData(0,0,2,2).data;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(__gp[0] + ',' + __gp[1] + ',' + __gp[2])")
+            .unwrap()
+            .value,
+        "0,255,0"
+    );
+    // path API：beginPath + arc + fill（圆形区域中心像素为填充色）。
+    sandbox
+        .execute(
+            "globalThis.__p = document.createElement('canvas'); __p.width=10; __p.height=10;\
+             var px = __p.getContext('2d'); px.fillStyle = 'rgb(0,0,255)';\
+             px.beginPath(); px.arc(5, 5, 4, 0, 6.2832); px.fill();\
+             globalThis.__pp = px.getImageData(5, 5, 1, 1).data;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(__pp[0] + ',' + __pp[1] + ',' + __pp[2])")
+            .unwrap()
+            .value,
+        "0,0,255"
+    );
+}
