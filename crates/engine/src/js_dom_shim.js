@@ -3584,6 +3584,27 @@
             } catch (_e) { return []; }
           };
         }
+        // `form.elements`（HTMLFormControlsCollection，R2829）——表单控件集合（jQuery serialize /
+        // FormData / 校验库迭代高频）。仅 HTMLFormElement（_realTag==='FORM' gate）；非 form → undefined。
+        // `_formControls(sel)` 查 '*' 全后代客户端按 tag 过滤（tree order）+ namedItem。
+        if (prop === 'elements' && _realTag(sel, handle) === 'FORM') {
+          var controls = _formControls(sel);
+          // array-like collection + namedItem（id 或 name 首匹配）。
+          controls.namedItem = function (name) {
+            var n = String(name);
+            for (var i = 0; i < controls.length; i++) {
+              var c = controls[i];
+              if (c && c.id === n) return c;
+              try { if (c && c.getAttribute && c.getAttribute('name') === n) return c; } catch (_e2) {}
+            }
+            return null;
+          };
+          return controls;
+        }
+        // `form.length`（HTMLFormElement）= 控件数；非 form 透传（不拦截）。
+        if (prop === 'length' && _realTag(sel, handle) === 'FORM') {
+          return _formControls(sel).length;
+        }
         // 布局测量 API：`el.getBoundingClientRect()` 返真实 DOMRect（P1a gBCR path C）。
         // selector-identity 元素（querySelector/getElementById，sel=stable_selector）→ host
         // `__zw_getBoundingClientRect(sel)` 解析 dom_html→NodeId→layout-rect snapshot 返 "x,y,w,h"。
@@ -4122,6 +4143,28 @@
       } catch (_e) {}
     }
     return null;
+  }
+
+  // form.elements 表单控件集合（R2829）：form 后代中 input/button/select/textarea，**tree order**。
+  // host `__zw_query_all_sub` 不支持逗号列表 / '*' 通用选择器 → 经 `childNodes` 递归下降遍历子树
+  //（tree order 天然）客户端按 tag 过滤。供 form.elements（+ namedItem）+ form.length 共用。
+  var _formControlTags = { INPUT: 1, BUTTON: 1, SELECT: 1, TEXTAREA: 1 };
+  function _formControls(sel) {
+    var controls = [];
+    if (!sel) return controls;
+    // 递归下降：childNodes 遍历子树（element 子递归，text/comment 跳过），tag 命中收集。
+    function walk(parentProxy) {
+      var kids = (parentProxy && parentProxy.childNodes) || [];
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (k && k.nodeType === 1) {
+          if (_formControlTags[k.tagName]) controls.push(k);
+          walk(k);
+        }
+      }
+    }
+    try { walk(_wrapSelector(sel)); } catch (_e) {}
+    return controls;
   }
 
   // dataset 键转换：camelCase ↔ data-kebab-case（fooBar ↔ data-foo-bar）。

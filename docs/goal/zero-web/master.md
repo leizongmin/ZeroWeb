@@ -2091,6 +2091,28 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a form.elements + form.length（HTMLFormControlsCollection）（本轮 R2829，缺失 Web API 续）
+
+承接 R2828（getClientRects）。land **`form.elements`（HTMLFormControlsCollection）+ `form.length` + `namedItem`**——表单序列化/校验库（jQuery `serialize`/`serializeArray` / `new FormData(form)` / 校验库迭代 `form.elements`）高频。probe 确认 shim 0 实现。仅 HTMLFormElement（`_realTag==='FORM'` gate）；非 form → undefined。
+
+- **`_formControls(sel)`**（helper）：form 后代中 input/button/select/textarea，**tree order**。**踩坑（已修正）**：host `__zw_query_all_sub` **不支持逗号选择器列表**（`'input,button,select,textarea'` 返空）**亦不支持 `'*'` 通用选择器**（返空）——改经 `childNodes` **递归下降**遍历子树（element 子递归 / text·comment 跳过，tree order 天然）客户端按 tag 过滤（`_formControlTags`）。
+- **`form.elements`**（getter）：`_formControls(sel)` + `namedItem(name)`（id 或 name 首匹配）；返 JS 数组（length/索引/迭代/namedItem）。**`form.length`**（getter）= `_formControls(sel).length`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_formControlTags` 表 + `_formControls(sel)` helper（childNodes 递归下降 + tag 过滤）+ get-trap querySelectorAll 后加 `elements`（FORM gate + namedItem）+ `length`（FORM gate）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_form_elements_r2829`（form.elements length=4 + [0]=input/[3]=button tree order + namedItem('s')=SELECT + 迭代得 'a,s,t,b' name 序 + form.length=4 + 非 form（body）.elements=undefined）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13457 passed / 0 failed / 74 ignored**，13456+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**踩坑（已修正）**：① 初版用 `'input,button,select,textarea'` 逗号列表 → host query 不支持返空（elements=0）；② 改 `'*'` 通用选择器 → 亦返空（host query 不支持 `*`）；③ 经临时 dbg 测试 probe 确认（tagName=FORM / STAR=空 / INPUT=input 单 tag 可）→ 改 `childNodes` 递归下降 tree-order 遍历后过。
+
+**为何零回归且净正向**：① 全新增 form 属性（additive，gate FORM，非 form 透传不拦截）；② 复用既有 `childNodes`（`__zw_child_nodes`）+ `_wrapSelector`（零新 host 回调、零渲染副作用）；③ `_formControls` 为 shim IIFE 内部 helper。
+
+**已知限制（记录）**：① 返 JS 数组非真 HTMLFormControlsCollection（无 `.item()` 但有 namedItem + 索引/length/迭代，更 permissive）；② 每次访问重建（非 live snapshot，spec live——表单结构稳定场景足够）；③ `img`/`object`/`output`/`fieldset` 等次要 listed elements 未含（仅核心 input/button/select/textarea，覆盖序列化主流）；④ keygen 废弃不含。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面**已穷尽**（R2820-R2829 覆 modern 动画/编辑/表单/事件/序列化/校验/可见性/剪贴板/焦点/位置/URL/性能/存储/几何读/表单集合 主表面）。剩余全为深项/host-layer：`document.elementFromPoint`（layout rect 全量 hit-test）/ customElements upgrade/lifecycle（element proxy 接 ctor）/ Shadow DOM attachShadow / node.normalize（罕见 + 架构重，defer）/ 真 Web Animations timeline / `input.files` FileList（需文件上传 host 路径）/ fetch 非 GET（net 层，跳过）；可选窄项 scrollIntoViewIfNeeded（WebKit）/ pointer lock / valueAsNumber；rendering-compat 侧续降频守成（held baseline 13457 全绿）。
+
 ### P1a Element.getClientRects 返 bounding rect（本轮 R2828，缺失 Web API 续 / 元素几何读修复）
 
 承接 R2827（Element.animate）。probe 发现 `getClientRects` **已存在但返空 `[]`**（line 3614 旧 stub）——与 `getBoundingClientRect` 返真 rect 不一致，破 popper.js / tether / 浮层定位库读 `getClientRects()[0]`（得 undefined）。**修复**：让 getClientRects 返单元素 bounding rect 数组（与 getBoundingClientRect 同源）。**DRY 重构**：抽 `_domRectFromId(id)` helper（解析 `__zw_getBoundingClientRect` "x,y,w,h" → 完整 DOMRect），getBoundingClientRect + getClientRects 共用——getBoundingClientRect body 原样移入 helper（行为等价，test_layout_geometry_e2e + observer 测试全过证非回归）。

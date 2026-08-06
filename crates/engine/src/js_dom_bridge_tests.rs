@@ -11428,3 +11428,88 @@ fn test_element_get_client_rects_r2828() {
         "handle-only detached 无 layout → getClientRects 返 []"
     );
 }
+
+#[test]
+fn test_form_elements_r2829() {
+    // R2829：form.elements（HTMLFormControlsCollection）+ form.length + namedItem。表单序列化/校验库
+    //（jQuery serialize / FormData / 校验库迭代）高频。仅 HTMLFormElement（gate）；非 form → undefined。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='f'>\
+         <input name='a' value='1'>\
+         <select name='s'><option>x</option></select>\
+         <textarea name='t'></textarea>\
+         <button name='b'>go</button>\
+         </form></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // form.elements：4 控件（input/select/textarea/button，tree order）+ length + 索引 + namedItem。
+    sandbox
+        .execute(
+            "globalThis.__f = document.querySelector('#f');\
+             globalThis.__els = globalThis.__f.elements;\
+             globalThis.__len = globalThis.__els.length;\
+             globalThis.__first = globalThis.__els[0].getAttribute('name');\
+             globalThis.__last = globalThis.__els[3].getAttribute('name');\
+             globalThis.__named = globalThis.__els.namedItem('s').tagName;\
+             globalThis.__iter = (function(){\
+               var names = [];\
+               for (var i = 0; i < globalThis.__els.length; i++) names.push(globalThis.__els[i].getAttribute('name'));\
+               return names.join(',');\
+             })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len)").unwrap().value,
+        "4",
+        "form.elements.length=4（input/select/textarea/button）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__first)").unwrap().value,
+        "a",
+        "elements[0]=input（tree order 首个）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__last)").unwrap().value,
+        "b",
+        "elements[3]=button（tree order 末个）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__named)").unwrap().value,
+        "SELECT",
+        "namedItem('s')=select（按 name 查）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__iter)").unwrap().value,
+        "a,s,t,b",
+        "迭代 form.elements 得 4 控件 name 序"
+    );
+
+    // form.length = 控件数。
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#f').length)")
+            .unwrap()
+            .value,
+        "4",
+        "form.length=4"
+    );
+
+    // 非 form 元素 .elements → undefined（gate：仅 HTMLFormElement）。
+    assert_eq!(
+        sandbox.execute("String(document.body.elements)").unwrap().value,
+        "undefined",
+        "非 form 元素 .elements=undefined"
+    );
+}
