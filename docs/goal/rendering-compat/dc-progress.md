@@ -4,21 +4,21 @@
 
 ## DC-1: WPT Reftest 基础设施就位
 
-- [ ] 能够从上游 WPT 仓库（`https://github.com/web-platform-tests/wpt`）fetch 并解析 reftest test list（**扩展**现有 `manifest.rs`，不重写）
-- [ ] 解析上游 WPT MANIFEST.json 中每个 reftest 的 `fuzzy()` 元数据（maxDiff、maxPixel），并传递给像素对比引擎
-- [ ] 能够用 CPU 软件渲染器对 ZeroWeb 渲染输出截图（**复用**现有 `render_scene_to_framebuffer`）
-- [ ] 能够用 GPU 渲染器对 ZeroWeb 渲染输出截图
-- [ ] **自动化 headless Chromium 截图**：通过 Puppeteer/Playwright 脚本自动在 headless Chromium 中渲染 reftest HTML 并截图，作为参考基线（零手动操作）
-- [ ] **Viewport 对齐**：ZeroWeb 截图和 Chromium 截图在相同 viewport 尺寸下捕获（默认 800×600，可配置）
-- [ ] **JS 执行支持**：Reftest harness 在截图前通过 `script-sandbox` V8 runtime 执行页面 JavaScript
-- [ ] **分类容差机制**：支持按 reftest 分类设置不同像素容差阈值：
+- [x] 能够从上游 WPT 仓库（`https://github.com/web-platform-tests/wpt`）fetch 并解析 reftest test list（**扩展**现有 `manifest.rs`，不重写）—— `tests/wpt-runner/src/manifest.rs` + `make fetch-wpt-data`
+- [x] 解析上游 WPT MANIFEST.json 中每个 reftest 的 `fuzzy()` 元数据（maxDiff、maxPixel），并传递给像素对比引擎—— `ReftestConfig.fuzzy_overrides`（reftest.rs:162）从 MANIFEST.json 读 per-test fuzzy
+- [x] 能够用 CPU 软件渲染器对 ZeroWeb 渲染输出截图（**复用**现有 `render_scene_to_framebuffer`）—— `render-foundation/src/cpu/mod.rs:284`
+- [x] 能够用 GPU 渲染器对 ZeroWeb 渲染输出截图—— `render_to_framebuffer_gpu_with_base`（reftest.rs:384）
+- [x] **自动化 headless Chromium 截图**：通过 Puppeteer/Playwright 脚本自动在 headless Chromium 中渲染 reftest HTML 并截图，作为参考基线（零手动操作）—— `scripts/capture-chromium-screenshots.mjs` + `scripts/capture-oracle-per-dir.mjs`（`make capture-oracle DIR=...`）
+- [x] **Viewport 对齐**：ZeroWeb 截图和 Chromium 截图在相同 viewport 尺寸下捕获（默认 800×600，可配置）—— `--width 800 --height 600` 默认（main.rs:48-49）
+- [x] **JS 执行支持**：Reftest harness 在截图前通过 `script-sandbox` V8 runtime 执行页面 JavaScript—— reftest.rs:460（`<script>` 经 V8 runtime 执行）
+- [x] **分类容差机制**：支持按 reftest 分类设置不同像素容差阈值（详见 DC-14 三态分类 + 容差锁定 `test_strict_tolerance_dc14_locked`）：
   - 布局类（不含文字渲染）：严格容差（max_diff_ratio ≤ 0.1%, max_channel_diff ≤ 2）
   - 文字类：宽松容差（max_diff_ratio ≤ 0.5%, max_channel_diff ≤ 5）
   - 优先使用 WPT fuzzy 注解的 per-test 容差，无注解时使用分类默认值
   - **容差锁定**：以上数值为硬性上限，不允许通过「实测校准」等理由放宽容差。如果文字类 reftest 因字体渲染差异导致大面积失败，应在 master.md 中记录具体原因，通过修复渲染来降低失败率，而非放宽容差
   - **禁止**设置过宽松的默认容差来掩盖真实渲染差距
-- [ ] **范围外 reftest 过滤**：导入时自动过滤或标记范围外 reftest（SVG、Canvas、WebGL），维护 skip list 文件（如 `tests/wpt-runner/reftest-skip-list.txt`）。**Skip list 约束**：仅允许跳过明确不在范围内的 reftest（SVG、Canvas、WebGL、动画帧级验证等）。**不允许**跳过范围内但已知的困难 case 或预期会失败的 case。Skip list 中每一项必须有注释说明跳过原因和对应的范围外分类
-- [ ] 通过率报告按 WPT 目录分类输出（文本 + JSON 格式）
+- [x] **范围外 reftest 过滤**：导入时自动过滤或标记范围外 reftest（SVG、Canvas、WebGL），维护 skip list 文件（如 `tests/wpt-runner/reftest-skip-list.txt`）。**Skip list 约束**：仅允许跳过明确不在范围内的 reftest（SVG、Canvas、WebGL、动画帧级验证等）。**不允许**跳过范围内但已知的困难 case 或预期会失败的 case。Skip list 中每一项必须有注释说明跳过原因和对应的范围外分类 —— `tests/wpt-runner/reftest-skip-list.txt` 存在
+- [x] 通过率报告按 WPT 目录分类输出（文本 + JSON 格式）—— `--json` / `--tap` 输出格式（main.rs:43-44）+ per-dir 分解
 - [x] Reftest 运行可通过单一命令执行——`make reftest`（Makefile:74，test-guard 包裹 `cargo run --release --bin zero-wpt-runner -- reftest`）
 - [x] CI 管线中集成 reftest 运行（至少 CPU 模式）——`.github/workflows/ci.yml` `reftest` job（workflow_dispatch：fetch-wpt-data + reftest-smoke 快门禁 + 全量 CPU reftest --format json + 报告 artifact 上传）+ `.github/workflows/weekly.yml` `reftest-trend` job（schedule + dispatch，周记录趋势）
 

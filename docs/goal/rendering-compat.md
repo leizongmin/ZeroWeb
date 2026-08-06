@@ -166,20 +166,20 @@
 
 ### DC-1: WPT Reftest 基础设施就位
 
-- [ ] 能够从上游 WPT 仓库 fetch 并解析 reftest test list（**扩展**现有 `manifest.rs`，不重写）
-- [ ] 解析上游 WPT MANIFEST.json 中每个 reftest 的 `fuzzy()` 元数据，并传递给像素对比引擎
-- [ ] 能够用 CPU 软件渲染器对 ZeroWeb 渲染输出截图（**复用**现有 `render_scene_to_framebuffer`）
-- [ ] 能够用 GPU 渲染器对 ZeroWeb 渲染输出截图
-- [ ] **自动化 headless Chromium 截图**：通过 Puppeteer/Playwright 脚本自动在 headless Chromium 中渲染 reftest HTML 并截图，作为参考基线（零手动操作）
-- [ ] **Viewport 对齐**：ZeroWeb 截图和 Chromium 截图在相同 viewport 尺寸下捕获（默认 800×600，可配置）
-- [ ] **JS 执行支持**：Reftest harness 在截图前通过 `script-sandbox` V8 runtime 执行页面 JavaScript
-- [ ] **分类容差机制**：支持按 reftest 分类设置不同像素容差阈值（布局类 ≤ 0.1%，文字类 ≤ 0.5%）；优先使用 WPT fuzzy 注解；容差锁定不可放宽
-- [ ] **范围外 reftest 过滤**：导入时自动过滤或标记范围外 reftest（SVG、Canvas、WebGL），维护 skip list 文件
-- [ ] 通过率报告按 WPT 目录分类输出（文本 + JSON 格式）
+- [x] 能够从上游 WPT 仓库 fetch 并解析 reftest test list（**扩展**现有 `manifest.rs`，不重写）
+- [x] 解析上游 WPT MANIFEST.json 中每个 reftest 的 `fuzzy()` 元数据，并传递给像素对比引擎
+- [x] 能够用 CPU 软件渲染器对 ZeroWeb 渲染输出截图（**复用**现有 `render_scene_to_framebuffer`）
+- [x] 能够用 GPU 渲染器对 ZeroWeb 渲染输出截图
+- [x] **自动化 headless Chromium 截图**：通过 Puppeteer/Playwright 脚本自动在 headless Chromium 中渲染 reftest HTML 并截图，作为参考基线（零手动操作）
+- [x] **Viewport 对齐**：ZeroWeb 截图和 Chromium 截图在相同 viewport 尺寸下捕获（默认 800×600，可配置）
+- [x] **JS 执行支持**：Reftest harness 在截图前通过 `script-sandbox` V8 runtime 执行页面 JavaScript
+- [x] **分类容差机制**：支持按 reftest 分类设置不同像素容差阈值（布局类 ≤ 0.1%，文字类 ≤ 0.5%）；优先使用 WPT fuzzy 注解；容差锁定不可放宽
+- [x] **范围外 reftest 过滤**：导入时自动过滤或标记范围外 reftest（SVG、Canvas、WebGL），维护 skip list 文件
+- [x] 通过率报告按 WPT 目录分类输出（文本 + JSON 格式）
 - [x] Reftest 运行可通过单一命令执行——`make reftest`（Makefile:74，test-guard 包裹 `cargo run --release --bin zero-wpt-runner -- reftest`）
 - [x] CI 管线中集成 reftest 运行（至少 CPU 模式）——`.github/workflows/ci.yml` `reftest` job（workflow_dispatch：fetch-wpt-data + reftest-smoke 快门禁 + 全量 CPU reftest --format json + 报告 artifact 上传）+ `.github/workflows/weekly.yml` `reftest-trend` job（schedule + dispatch，周记录趋势）
 
-**状态**：详见 dc-progress.md
+**状态**：✅ **全部就位**——fetch/parse test list（manifest.rs）、MANIFEST.json fuzzy 元数据、CPU+GPU 截图、headless Chromium oracle 抓取、viewport 对齐（800×600）、V8 JS 执行、分类容差锁定（DC-14）、范围外 skip list、文本+JSON 报告、单一命令（`make reftest`）、CI 集成（ci.yml `reftest` + weekly.yml `reftest-trend`）全实现；详见 dc-progress.md
 
 ### DC-2: CSS 2.1 核心通过率 ≥ 95%（基于上游真实 WPT reftest）
 
