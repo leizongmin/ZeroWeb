@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a `<option>`.index（本轮 R2849，缺失 Web API 续 / 表单 IDL，rowIndex 模式复用）
+
+承接 R2848（reflected 全局属性）。probe 发现 `<option>`.index 缺失（旧 fallthrough undefined）。form 库读 option.index 定位选项位置高频。
+
+- **关键设计点**：① 同 R2842 rowIndex 模式——OPTION gate + `_ancestorChain(sel)` 找 owning SELECT（上行链最近 SELECT）+ 元素作用域 `_wrapSelector(select).querySelectorAll('option')`（document order）+ `_wrapSelector(sel)` proxy identity 计位（0-based）。② optgroup 内 option 仍按 document order 计（querySelectorAll 跨 optigroup 保序，spec 一致）。③ detached / handle-based / 无 select → 0（Chromium detached option→0 一致；option spec 无 -1 语义，区别于 rowIndex/tr 的 -1）。④ 复用既有 _ancestorChain + querySelectorAll + _wrapSelector identity infra，零新 host 回调。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | get-trap +`option.index` 块（sectionRowIndex 后，OPTION gate，_ancestorChain→SELECT + querySelectorAll('option') + identity）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_option_index_r2849`（3-option select + optgroup：a=0/b=1/c=2〔optgroup 内 document order〕+ 另一 select x=0 + detached createElement option→0）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13476 passed / 0 failed / 74 ignored**，13475+1 新测试，0 回归；engine lib 1575 测试零回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（welcome 无 `<select>`，新路径不触发）。
+
+**为何零回归且净正向**：① OPTION gate 严格（`_realTag==='OPTION'`），不影响其他元素的 `index`（select.selectedIndex 走既有 path @line 3004）；② 纯读（querySelectorAll + identity，无 mutation 副作用）；③ welcome 无 select，新路径不触发；④ 复用 R2842 既有 infra（零新 host 回调）。
+
+**已知限制（记录）**：① handle-based option（`new Option()` 未挂载 DOM）→ 0（handle 不在 DOM 快照，querySelectorAll 不含——同 rowIndex handle 限制；挂载后 selector-based 正确）；② option 集合静态（snapshot 架构非 live）；③ 嵌套 select 的内层 option 可能误计（querySelectorAll 后代匹配，同 R2843 限制，罕见不究）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面近穷尽（R2820-R2849 覆表单反射 + 表格结构 + text-control 选区 + 事件基建 + 观察者 record + reflected 全局属性 + option.index 主表面）。剩余元素特定 IDL 全极低价值：`<img>` naturalWidth/Height（headless 无真图加载）；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / 真 WAAPI / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13476 全绿）。
+
 ### P1a reflected 布尔/枚举全局属性 autofocus/draggable/spellcheck/translate（本轮 R2848，缺失 Web API 续 / reflected-attr 表面续）
 
 承接 R2847（MutationRecord）。probe（get-trap 未显式 handle 的 string prop 落 undefined）发现 4 个常见 reflected 全局属性旧 fallthrough 返 **undefined**（spec 须布尔）：`autofocus`（boolean attr，缺省 false）、`draggable`（enum，缺省 false）、`spellcheck`（boolean，spec 缺省 **true**）、`translate`（enum，spec 缺省 **true**）。表单（autofocus）/ 拖拽库（draggable）/ 编辑器（spellcheck）/ 本地化（translate）读这些属性高频。延续 R2840 reflected-attr 模式。

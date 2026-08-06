@@ -13421,3 +13421,73 @@ fn test_reflected_global_attrs_autofocus_draggable_spellcheck_translate_r2848() 
     );
     assert!(out.contains("translate=\"yes\""), "translate setter 写 'yes'\n{out}");
 }
+
+#[test]
+fn test_option_index_r2849() {
+    // R2849：`<option>`.index（HTMLOptionElement）——option 在其 select 中的 0-based 位置（document order）；
+    // 0 若不在 select（detached / handle-based，与 Chromium detached→0 一致）。form 库读 option.index 高频。
+    // 同 R2842 rowIndex 模式：_ancestorChain 找 owning SELECT + 元素作用域 querySelectorAll('option') + identity。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // 3 options in #s1；#s2 第一个 option 为 target（index 0）；含 optgroup（option 仍按 document order 计）。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <select id='s1'>\
+           <option id='a'>A</option>\
+           <option id='b'>B</option>\
+           <optgroup><option id='c'>C</option></optgroup>\
+         </select>\
+         <select id='s2'><option id='x'>X</option></select>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 读 option.index：a=0 / b=1 / c=2（optgroup 内仍 document order）/ x=0（另一 select）。
+    sandbox
+        .execute(
+            "globalThis.__ia = document.querySelector('#a').index;\
+             globalThis.__ib = document.querySelector('#b').index;\
+             globalThis.__ic = document.querySelector('#c').index;\
+             globalThis.__ix = document.querySelector('#x').index;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ia)").unwrap().value,
+        "0",
+        "#a 为 s1 首个 option → index=0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ib)").unwrap().value,
+        "1",
+        "#b 为 s1 第二个 option → index=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ic)").unwrap().value,
+        "2",
+        "#c 在 optgroup 内但 document order 仍 → index=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ix)").unwrap().value,
+        "0",
+        "#x 为 s2 首个 option → index=0（另一 select 作用域）"
+    );
+
+    // detached option（createElement，不在 select）→ 0（Chromium detached→0 一致）。
+    sandbox
+        .execute("globalThis.__d = document.createElement('option').index;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d)").unwrap().value,
+        "0",
+        "detached option（createElement，不在 select）→ index=0"
+    );
+}

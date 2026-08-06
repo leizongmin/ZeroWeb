@@ -14,7 +14,9 @@
 
 ## 最近轮次摘要
 
-> **📍 R2848（2026-08-07）🔧 reflected 布尔/枚举全局属性 land（autofocus/draggable/spellcheck/translate / 缺失 Web API 续，主线在 zero-web）：承接 R2847。probe（get-trap 未显式 handle 的 string prop 落 undefined）发现 4 个常见 reflected 全局属性旧 fallthrough 返 **undefined**（spec 须布尔）：`autofocus`（boolean attr，缺省 false）、`draggable`（enum，缺省 false）、`spellcheck`（boolean，spec 缺省 **true**）、`translate`（enum，spec 缺省 **true**）。延续 R2840 reflected-attr 模式（htmlFor/defaultValue/defaultChecked）。**land spec-correct**：① get-trap 加 4-prop 块——优先读 `_reflectedAttrs` 缓存（setter 写解析布尔，同步 set→get 即时），无缓存则 host attr 解析：autofocus 走 `__zw_has_attr(_handle)` presence；draggable `"true"`→true 余→false；spellcheck `"false"`→false 余→true（含缺省）；translate `"no"`→false 余→true。② set-trap 加 4-prop 块——归一布尔 → 缓存 + 写 attr：autofocus=boolean presence（truthy 设空值 / falsy 真移除），draggable/spellcheck=`"true"`/`"false"`，translate=`"yes"`/`"no"`。表单（autofocus）/ 拖拽库（draggable）/ 编辑器（spellcheck）/ 本地化（translate）读这些属性高频。**门禁全绿**：fmt clean / workspace clippy 零警告 / `make test` **13475/0/74**（R2847 13474 + 1 新测试，零回归；engine lib 1574 测试零回归）/ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（reflected attr getter/setter，welcome 不读这些属性故新路径不触发，无 layout/render .rs 改动）。**已知限制（记录）**：draggable 缺省（auto）简化为 false（spec：img/a[href] 等原生 draggable 元素缺省 true——需 tag 感知，罕见 defer）；spellcheck/translate 缺省 true 经 host attr 缺失判定（无 attr → true，spec 一致）；`inert`/`autocomplete` 等更多 reflected 全局属性未含（可续同模式）。**门禁**：.rs（engine shim+测试）+ 两 master doc；pre-commit guard PASS。**下一轮**：缺失 Web API 纯 JS tractable 表面续扫（更多 reflected 全局属性 inert/autocomplete/contentEditable边缘 / option.index〔selector-based 可续 R2842 模式，handle-based 需 host 树遍历〕）；rendering-compat 侧续降频守成（held baseline 13475 全绿）。**
+> **📍 R2849（2026-08-07）🔧 `<option>`.index land（HTMLOptionElement / 表单 IDL 续，主线在 zero-web）：承接 R2848。probe 发现 `<option>`.index 缺失（旧 fallthrough undefined）。form 库读 option.index 定位选项位置高频。**land**——同 R2842 rowIndex 模式：OPTION gate + `_ancestorChain` 找 owning SELECT + 元素作用域 `querySelectorAll('option')` + proxy identity 计位（0-based document order）；optgroup 内 option 仍按 document order 计；detached / handle-based / 无 select → 0（Chromium detached→0 一致，非 -1——option spec 无 -1 语义）。零新 host infra（复用 _ancestorChain + querySelectorAll + _wrapSelector identity）。**门禁全绿**：fmt clean / workspace clippy 零警告 / `make test` **13476/0/74**（R2848 13475 + 1 新测试，零回归；engine lib 1575 测试零回归）/ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（纯 additive OPTION getter，welcome 无 `<select>` 故新路径不触发，无 layout/render .rs 改动）。**已知限制（记录）**：handle-based option（`new Option()` 未挂载）→ 0（handle 不在 DOM 快照，querySelectorAll 不含——同 rowIndex handle 限制；挂载后 selector-based 正确）；option 集合非 live（snapshot 架构）。**门禁**：.rs（engine shim+测试）+ 两 master doc；pre-commit guard PASS。**下一轮**：缺失 Web API 纯 JS tractable 表面近穷尽（R2820-R2849 覆表单反射 + 表格结构 + text-control 选区 + 事件基建 + 观察者 record + reflected 全局属性 + option.index）；剩余元素特定 IDL 全极低价值（img naturalWidth/Height〔headless 无真图加载〕）或全深/host-layer；rendering-compat 侧续降频守成（held baseline 13476 全绿）。**
+
+
 
 
 
@@ -289,7 +291,7 @@
 
 ### 测试覆盖率
 
-- **cargo test**：13000+ 测试全部通过（`make test`：**13475 passed / 0 failed / 74 ignored，截至 R2848**；R2638 后 held baseline 13193 经父目标 zero-web P1 DOM/JS Bridge 系列〔R2704-R2848〕+282 推进至 13475，rendering-compat surface 零回归；R2848 reflected 全局属性 autofocus/draggable/spellcheck/translate +1 13474→13475；R2554 + R2563 + R2583 + R2604 + R2613 + R2845 + R2846 + R2847 + R2848 周期复跑逐位确认）
+- **cargo test**：13000+ 测试全部通过（`make test`：**13476 passed / 0 failed / 74 ignored，截至 R2849**；R2638 后 held baseline 13193 经父目标 zero-web P1 DOM/JS Bridge 系列〔R2704-R2849〕+283 推进至 13476，rendering-compat surface 零回归；R2849 option.index +1 13475→13476；R2554 + R2563 + R2583 + R2604 + R2613 + R2845 + R2846 + R2847 + R2848 + R2849 周期复跑逐位确认）
 - **cargo clippy**：`cargo clippy --workspace --all-targets -D warnings` 通过
 - **#[ignore] 测试**：74 个 ignored（real_website_compat.rs 等因本地网络不稳定的用例，不计入通过率）
 

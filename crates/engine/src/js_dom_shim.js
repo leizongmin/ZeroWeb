@@ -3198,6 +3198,24 @@
             return -1;
           } catch (_e) { return -1; }
         }
+        // `<option>`.index（HTMLOptionElement，R2849）——option 在其 select 中的位置（0-based，document order）；
+        // 0 若不在 select（detached / handle-based，与 Chromium detached→0 一致）。form 库读 option.index 定位高频。
+        // 同 R2842 rowIndex 模式：_ancestorChain 找 owning SELECT + 元素作用域 querySelectorAll('option') + identity。
+        if (prop === 'index' && _realTag(sel, handle) === 'OPTION') {
+          if (!sel) return 0;
+          try {
+            var oiChain = _ancestorChain(sel);
+            var oiSelect = null;
+            for (var oi = 1; oi < oiChain.length; oi++) {
+              if ((__zw_get_tag(oiChain[oi]) || '').toUpperCase() === 'SELECT') { oiSelect = oiChain[oi]; break; }
+            }
+            if (!oiSelect) return 0;
+            var oiOpts = _wrapSelector(oiSelect).querySelectorAll('option');
+            var oiSelf = _wrapSelector(sel);
+            for (var ok = 0; ok < oiOpts.length; ok++) if (oiOpts[ok] === oiSelf) return ok;
+            return 0;
+          } catch (_e) { return 0; }
+        }
         // `<table>`.rows（HTMLTableElement，R2843）/ section.rows（HTMLTableSectionElement，R2845）——
         // table 内全部行（跨 thead/tbody/tfoot document order）/ section（thead/tbody/tfoot）作用域内行。
         // 元素作用域 querySelectorAll('tr') 返真数组（length/索引/迭代/Array 方法）。gate = TABLE 或
