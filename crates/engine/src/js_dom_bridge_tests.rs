@@ -8655,3 +8655,101 @@ fn test_element_reflected_props_r2805() {
         "tabIndex set NaN 须 lenient 忽略（读回原 5）"
     );
 }
+
+#[test]
+fn test_element_reflected_props2_r2806() {
+    // R2806：reflected 簇 #2——contentEditable/isContentEditable + accessKey（编辑器栈锚 + a11y）。
+    // contentEditable 字符串反射（无 → 'inherit'）+ client cache 同步往返；isContentEditable 计算 bool；
+    // accessKey 字符串反射（无 → ''）+ cache。draggable/spellcheck 为枚举属性（非 presence-bool）defer。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=e contenteditable=true accesskey=w>x</div><div id=p>y</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // contentEditable get：有属性 → 'true'；accessKey get → 'w'。
+    sandbox
+        .execute(
+            "var e = document.getElementById('e');\
+             globalThis.__ce = e.contentEditable;\
+             globalThis.__ak = e.accessKey;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ce)").unwrap().value,
+        "true",
+        "contentEditable 须反射 contenteditable='true'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ak)").unwrap().value,
+        "w",
+        "accessKey 须反射 accesskey='w'"
+    );
+
+    // 无属性默认：contentEditable → 'inherit'；accessKey → ''。
+    sandbox
+        .execute(
+            "var p = document.getElementById('p');\
+             globalThis.__pce = p.contentEditable;\
+             globalThis.__pak = p.accessKey;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pce)").unwrap().value,
+        "inherit",
+        "无 contenteditable 属性 contentEditable 须 'inherit'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pak)").unwrap().value,
+        "",
+        "无 accesskey 属性 accessKey 须 ''"
+    );
+
+    // contentEditable set + 同步读回 + isContentEditable=true。
+    sandbox
+        .execute(
+            "p.contentEditable = 'true';\
+             globalThis.__sce = p.contentEditable;\
+             globalThis.__ice = p.isContentEditable;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sce)").unwrap().value,
+        "true",
+        "contentEditable set='true' 后读回"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ice)").unwrap().value,
+        "true",
+        "isContentEditable 须当 contentEditable='true' 时 true"
+    );
+
+    // contentEditable set 'false' → isContentEditable=false。
+    sandbox
+        .execute("p.contentEditable = 'false'; globalThis.__ice2 = p.isContentEditable;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ice2)").unwrap().value,
+        "false",
+        "contentEditable='false' 时 isContentEditable 须 false"
+    );
+
+    // accessKey set + 同步读回。
+    sandbox
+        .execute("p.accessKey = 'k'; globalThis.__sak = p.accessKey;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sak)").unwrap().value,
+        "k",
+        "accessKey set 后读回"
+    );
+}

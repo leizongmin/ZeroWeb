@@ -2413,6 +2413,27 @@
           var tin = parseInt(tiraw, 10);
           return isNaN(tin) ? -1 : tin;
         }
+        // `el.contentEditable`——反射 contenteditable 属性（无 → 'inherit'，spec）；同步 set→get 优先读缓存。
+        if (prop === 'contentEditable') {
+          var cec = _reflectedAttrs[key];
+          if (cec && Object.prototype.hasOwnProperty.call(cec, 'contenteditable')) return cec['contenteditable'];
+          return (handle ? __zw_get_attr_handle(handle, 'contenteditable') : __zw_get_attr(sel, 'contenteditable')) || 'inherit';
+        }
+        // `el.isContentEditable`——计算 bool（contentEditable === 'true'）。**简化**：不沿祖先链解析
+        // 'inherit'（spec：inherit 时看最近可编辑祖先）——本沙箱无渲染期可编辑态，元素自身 'true' 即 true。
+        if (prop === 'isContentEditable') {
+          var ced = _reflectedAttrs[key];
+          var cval = ced && Object.prototype.hasOwnProperty.call(ced, 'contenteditable')
+            ? ced['contenteditable']
+            : ((handle ? __zw_get_attr_handle(handle, 'contenteditable') : __zw_get_attr(sel, 'contenteditable')) || 'inherit');
+          return cval === 'true';
+        }
+        // `el.accessKey`——反射 accesskey 属性（无 → ''）；同步 set→get 优先读缓存。
+        if (prop === 'accessKey') {
+          var akc = _reflectedAttrs[key];
+          if (akc && Object.prototype.hasOwnProperty.call(akc, 'accesskey')) return akc['accesskey'];
+          return (handle ? __zw_get_attr_handle(handle, 'accesskey') : __zw_get_attr(sel, 'accesskey')) || '';
+        }
         // `el.dataset`——`data-*` 属性的 camelCase 键对象（get/set/has/delete/枚举）。
         // dataset.fooBar ↔ data-foo-bar 属性。handle 脱离 DOM 元素枚举受限（无 attr-names-handle）。
         if (prop === 'dataset') {
@@ -3046,6 +3067,21 @@
             else __zw_set_attr(sel, 'tabindex', String(tisv));
             moAttr = 'tabindex';
           }
+        } else if (p === 'contentEditable') {
+          // contentEditable set——反射 contenteditable 属性（lenient：spec 仅接受 true/false/plaintext-only
+          // 否则抛 SyntaxError，本沙箱不抛直接设串避免中断脚本）。同步缓存。
+          var cec2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
+          cec2['contenteditable'] = String(value);
+          if (handle) __zw_set_attr_handle(handle, 'contenteditable', String(value));
+          else __zw_set_attr(sel, 'contenteditable', String(value));
+          moAttr = 'contenteditable';
+        } else if (p === 'accessKey') {
+          // accessKey set——反射 accesskey 属性（串）。同步缓存。
+          var akc2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
+          akc2['accesskey'] = String(value);
+          if (handle) __zw_set_attr_handle(handle, 'accesskey', String(value));
+          else __zw_set_attr(sel, 'accesskey', String(value));
+          moAttr = 'accesskey';
         } else if (p === 'value') {
           // P1a select：编程设 `<select>.value = value` → 记 SelectOption mutation（apply 时
           // mark 匹配 option selected + deselect 兄弟）。匹配浏览器：编程设值不自动派 change。

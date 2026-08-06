@@ -2091,6 +2091,24 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a element reflected 簇 #2：contentEditable / isContentEditable / accessKey（本轮 R2806，缺失 Web API 续）
+
+承接 R2805（reflected 簇 #1）。续缺失 Web API——land **`contentEditable`/`isContentEditable` + `accessKey`**（rich text editor 栈锚 + a11y）。contentEditable 锚编辑器栈（与 Selection/Range/TreeWalker 配对）。**实现修正**：原计划含 draggable/spellcheck，**核验发现其为枚举属性**（`draggable="false"`/`spellcheck="false"` 有意义，非 presence-boolean）——放既有布尔分支（`__zw_has_attr` 存在性）会误判 `="false"` 为 true，故**移除 draggable/spellcheck defer**（需枚举处理），本轮仅 land 字符串反射（正确）的 contentEditable/accessKey。
+
+- **`contentEditable`**（字符串反射，`_reflectedAttrs` 缓存）：get → 缓存优先，否则 `__zw_get_attr('contenteditable') || 'inherit'`（spec 无属性默认 'inherit'）；set → 写缓存 + `__zw_set_attr`（lenient：spec 仅接受 true/false/plaintext-only 否则抛 SyntaxError，不抛直接设串避免中断脚本）。
+- **`isContentEditable`**（计算 bool，只读）：contentEditable 值 === 'true'。**简化**：不沿祖先链解析 'inherit'（spec：inherit 看最近可编辑祖先）——本沙箱无渲染期可编辑态，元素自身 'true' 即 true。
+- **`accessKey`**（字符串反射，缓存）：get → 缓存优先，否则 `__zw_get_attr('accesskey') || ''`；set → 写缓存 + `__zw_set_attr('accesskey', value)`。
+- **已知限制（记录）**：① set 后同步属性读经缓存往返（getAttribute 读 stale 快照——同簇 #1 既有限制）；② isContentEditable 不沿祖先链（inherit 简化）；③ contentEditable set lenient 不校验；④ draggable/spellcheck defer（枚举属性，需独立处理非 presence-bool）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | Proxy get trap +`contentEditable`（缓存 + 'inherit' 默认）+`isContentEditable`（计算 bool）+`accessKey`（缓存 + '' 默认）；set trap +`contentEditable`/`accessKey`（写缓存 + __zw_set_attr）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_element_reflected_props2_r2806`（contentEditable get 'true'/默认 'inherit' / accessKey get 'w'/默认 '' / contentEditable set 往返 + isContentEditable=true / set 'false'→isContentEditable=false / accessKey set 往返）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13434 passed / 0 failed / 74 ignored**，13433+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① Proxy get+set trap 新增 3 属性分支（不改既有 prop 分支）；② 复用 R2805 `_reflectedAttrs` 缓存（无新结构）；③ get 缓存优先无副作用；④ draggable/spellcheck 移除避免枚举语义误判（不引入错误行为）。
+
 ### P1a element reflected 属性簇：tabIndex / title / lang / dir（本轮 R2805，缺失 Web API 续）
 
 承接 R2804（Selection/Range）。续缺失 Web API——land **element reflected 属性簇**（`tabIndex`/`title`/`lang`/`dir`，a11y / i18n / tooltip / 焦点序高频）。照既有 `id`/`className`/`value` reflected 模式（Proxy get+set trap）。**实现踩坑（已修正）**：`__zw_set_attr` 仅**入队** `DomMutation::SetAttr`（异步 apply），而 `__zw_get_attr` 读 dom_html 快照——同步 set→get 往返读 stale。`value`/`className` 经客户端缓存（`_inputValues`/`_classCache`）解决；本轮加 `_reflectedAttrs` per-element-key 缓存同理（get 优先读缓存）。
