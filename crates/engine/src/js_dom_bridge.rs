@@ -1108,6 +1108,42 @@ fn parse_line_cap(s: &str) -> zero_canvas::LineCap {
     }
 }
 
+/// canvas `globalCompositeOperation` 串 → CompositeOperation（spec canonical 名；未知回落 SourceOver = 默认）。
+/// **已知限制（记录）**：composite 仅经 `composite_pixel` 在 `blit_rect_to_pixels`（rect-fill 便捷法 + stroke 路径）
+/// 生效；path-based `fill()`（`blit_path_to_pixels`）**不消费** composite——故 shim `fillRect`（path 实现）
+/// 不受 composite 影响。getter/setter 状态往返真实（host 持 state，save/restore 含）。
+fn parse_composite_operation(s: &str) -> zero_canvas::CompositeOperation {
+    use zero_canvas::CompositeOperation as C;
+    match s.trim().to_ascii_lowercase().as_str() {
+        "source-over" => C::SourceOver,
+        "destination-over" => C::DestinationOver,
+        "destination-out" => C::DestinationOut,
+        "destination-atop" => C::DestinationAtop,
+        "destination-in" => C::DestinationIn,
+        "source-in" => C::SourceIn,
+        "source-atop" => C::SourceAtop,
+        "lighter" => C::Lighter,
+        "copy" => C::Copy,
+        "xor" => C::Xor,
+        "multiply" => C::Multiply,
+        "screen" => C::Screen,
+        "overlay" => C::Overlay,
+        "darken" => C::Darken,
+        "lighten" => C::Lighten,
+        "color-dodge" => C::ColorDodge,
+        "color-burn" => C::ColorBurn,
+        "hard-light" => C::HardLight,
+        "soft-light" => C::SoftLight,
+        "difference" => C::Difference,
+        "exclusion" => C::Exclusion,
+        "hue" => C::Hue,
+        "saturation" => C::Saturation,
+        "color" => C::Color,
+        "luminosity" => C::Luminosity,
+        _ => C::SourceOver,
+    }
+}
+
 /// `HTMLCanvasElement.getContext('2d')` 派发（R2795，canvas slice 1）。host 持 `CanvasContext` 注册表
 ///（`Arc<Mutex<(next_id, HashMap<id, CanvasContext>)>>`），JS 经 `__zw_canvas_op(handle, op, ...args)`
 /// 串参派发（避免 JSON/serde 依赖）。**关键**：zero-canvas `fill_rect`/`stroke_rect` 便捷法**不写
@@ -1337,6 +1373,61 @@ pub fn canvas_context_op(
         "setLineCap" => {
             if let Some(ctx) = reg.1.get_mut(&hid()) {
                 ctx.set_line_cap(parse_line_cap(arg(0)));
+            }
+            "ok".into()
+        }
+        // ── slice 4：globalCompositeOperation / shadow / putImageData（R2798）──
+        // composite 状态真实（host 持 state，save/restore 含）；effect 仅经 composite_pixel 在 rect-blit/stroke
+        // 生效，path-based fill 不消费（见 parse_composite_operation 注释）。
+        "setCompositeOperation" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_composite_operation(parse_composite_operation(arg(0)));
+            }
+            "ok".into()
+        }
+        "setShadowColor" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_shadow_color(parse_canvas_color(arg(0)));
+            }
+            "ok".into()
+        }
+        "setShadowBlur" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_shadow_blur(f(0));
+            }
+            "ok".into()
+        }
+        "setShadowOffsetX" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_shadow_offset_x(f(0));
+            }
+            "ok".into()
+        }
+        "setShadowOffsetY" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.set_shadow_offset_y(f(0));
+            }
+            "ok".into()
+        }
+        // putImageData（get_imageData 对偶）：args = [dx, dy, w, h, "r,g,b,a,..."]。
+        // 直接写 pixel_buffer（put_image_data copy_from_slice，1:1 替换，无 composite/alpha 合成）。
+        "putImageData" => {
+            let dx = arg(0).trim().parse::<u32>().unwrap_or(0);
+            let dy = arg(1).trim().parse::<u32>().unwrap_or(0);
+            let w = arg(2).trim().parse::<u32>().unwrap_or(0);
+            let h = arg(3).trim().parse::<u32>().unwrap_or(0);
+            let data: Vec<u8> = arg(4)
+                .split(',')
+                .filter(|s| !s.trim().is_empty())
+                .filter_map(|s| s.trim().parse::<u8>().ok())
+                .collect();
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                let img = zero_canvas::ImageData {
+                    width: w,
+                    height: h,
+                    data,
+                };
+                ctx.put_image_data(&img, dx, dy);
             }
             "ok".into()
         }

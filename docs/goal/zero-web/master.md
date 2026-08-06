@@ -2091,6 +2091,24 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a canvas slice 4 — off-DOM 2D 表面补全：putImageData / globalCompositeOperation / shadow（本轮 R2798，canvas 续）
+
+承接 R2797（slice 3 toDataURL）。续 canvas——补 off-DOM 2D 表面三项（builds on slice 1-3 dispatch infra）。**核心：先核验每项真写 pixel_buffer（非仅记 primitives），scope 到确实 rasterize 的项**。核验结论：三项均真写 pixel_buffer（composite 部分路径，见下）。
+
+- **`putImageData`**（get_imageData 对偶，最高频 / 最干净）：`CanvasContext::put_image_data`（context_impl）**直接 `copy_from_slice` 1:1 写 pixel_buffer**（无 composite / 无 alpha 合成，spec 一致）。host op：args `[dx, dy, w, h, "r,g,b,a,..."]` → 构 `ImageData{w,h,data}` → `put_image_data`。shim `ctx.putImageData(img, dx, dy)`：序列化 `img.data` → csv 派发。
+- **`globalCompositeOperation`**：host `set_composite_operation`（state 真实，save/restore 含）。**核验**：`composite_pixel` 在 `blit_rect_to_pixels`（rect-fill 便捷法 + **stroke 路径**）消费，但 `blit_path_to_pixels`（**fill 路径**）**不消费**——故 shim `fillRect`（path 实现）不受 composite 影响（**已知限制，记录**）。shim getter 取客户端镜像串（同 lineJoin/lineCap 模式，免 host 往返），`parse_composite_operation` 映射 25 个 spec canonical 名（unknown→SourceOver）。
+- **shadow 属性**（`shadowColor`/`shadowBlur`/`shadowOffsetX`/`shadowOffsetY`）：**核验**：`fill()`/`stroke()` 经 `draw_shadow_path`、`fill_rect` 经 `draw_shadow_rect`——**均调 `blit_*_to_pixels` 写 pixel_buffer**（偏移 shadow_offset 顶点 + alpha×blur_factor），fill 路径**也生效**。`has_shadow()` = `shadow_color.a>0 && (blur>0 || offset≠0)`。shim getter 取客户端镜像。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_bridge.rs` | +`parse_composite_operation`（25 名映射）+ 6 op（`setCompositeOperation`/`setShadowColor`/`setShadowBlur`/`setShadowOffsetX`/`setShadowOffsetY`/`putImageData`）于 `canvas_context_op`。 |
+| `engine/src/js_dom_shim.js` | `_zwMakeCtx2d` +`globalCompositeOperation`/`shadowColor`/`shadowBlur`/`shadowOffsetX`/`shadowOffsetY` getter+setter（客户端镜像 + push host）+ `putImageData`（data→csv 派发）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_canvas_slice4_r2798`（putImageData 写入→getImageData 读回一致 pixel 0/3 / compositeOperation default source-over + set/get 往返 / shadow：fillRect 后 offset 处读 shadowColor red + fill 区读 green）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13426 passed / 0 failed / 74 ignored**，13425+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 6 op 全为 slice 1-3 既有 `__zw_canvas_op` 派发的新分支（`_ => "ok"` 上方，不改既有 op）；② canvas 为 standalone 对象 + 独立 pixel_buffer，只读 host CanvasContext，不触 page 渲染；③ 三项 zero-canvas API（put_image_data / set_composite_operation / set_shadow_*）均既有公共方法，无 zero-canvas 改动；④ shadow/composite 写 pixel_buffer 路径为 canvas crate 既有 raster，本轮仅暴露桥接。
+
 ### P1a canvas slice 3 — toDataURL PNG 导出（本轮 R2797，canvas 续）
 
 承接 R2796（slice 2）。续 canvas——land **toDataURL**（PNG 导出，截图 / 图表导出 / 上传高频）。加 `png` crate（0.18，miniz_oxide 已 transitive）为 engine dep。**fillText/strokeText defer**（fill_text 写 glyph primitives 不写 pixel_buffer——文本读回不可行，须 font-stack→pixel_buffer plumbing，与 slice 4 页面渲染配对）。
@@ -2167,13 +2185,18 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（Headers），不改既有 API；② 纯 JS 无副作用；③ prototype guard（`globalThis.X = globalThis.X || ...`）不覆盖既有定义。
 
-### 📐 canvas 后续 slice 规划（R2795 slice 1 已 land，2026-08-06）
+### 📐 canvas slice 规划（slice 1-4 已 land，2026-08-06）
 
-canvas getContext **slice 1 已 land**（R2795，见上）。R2793 调研结论修正：`fill()`/`stroke()`（path-based）**写 pixel_buffer**（经 `blit_path/stroke_to_pixels`），仅 `fill_rect`/`stroke_rect` 便捷法不写——故 path-based 绘制 + getImageData 回读**无需改 zero-canvas**（slice 1 即验证）。**后续 slice**：
-- **slice 2**：完整 path API（quadraticCurveTo/bezierCurveTo/rect 路径命令/ellipse/clip）+ save/restore 栈 + transform（scale/rotate/translate/setTransform）+ globalAlpha + 更多 line 样式（lineCap/join/dash）。
-- **slice 3**：文本（`fillText`/`strokeText`/`measureText`/font 栈经 render-foundation 字体）+ `toDataURL`（需 PNG 编码，探 render-foundation 或加 png crate）。
-- **slice 4**：页面内渲染集成（canvas 作为 DOM 元素显示其 pixel_buffer 到页面——须 standalone canvas 接 host handle 进 DOM 树 + paint 阶段消费 pixel_buffer；本 slice 改动跨 engine paint + dom，深结构，需设计）。
-- canvas DOM 集成（appendChild/挂载）：slice 1 canvas 为 standalone 对象不进 DOM 树，跟随 slice 4。
+canvas off-DOM 2D 绘制 + 导出**基本完整**。slice 1（R2795 drawing + readback）+ slice 2（R2796 path/transforms/state/line）+ slice 3（R2797 toDataURL PNG 导出）+ slice 4（R2798 off-DOM 表面补全：putImageData / globalCompositeOperation / shadow）**均已 land**。R2793 调研结论修正：`fill()`/`stroke()`（path-based）**写 pixel_buffer**（经 `blit_path/stroke_to_pixels`），仅 `fill_rect`/`stroke_rect` 便捷法不写——故 path-based 绘制 + getImageData 回读**无需改 zero-canvas**（slice 1 即验证）。
+
+**已 land 能力**：fillRect/strokeRect/clearRect（path rasterize）+ 完整 path API（moveTo/lineTo/arc/quadratic/bezier/ellipse/arcTo/rect/clip）+ state 栈（save/restore）+ transforms（translate/rotate/scale/setTransform/transform）+ styles（fill/stroke/lineWidth/lineCap/lineJoin/lineDash/globalAlpha）+ **putImageData / getImageData / createImageData** + **globalCompositeOperation**（25 名，effect 仅 stroke/rect-blit，fill 路径不消费——已知限制）+ **shadow**（shadowColor/Blur/OffsetX/OffsetY，fill/stroke 均生效）+ **toDataURL**（PNG）。
+
+**后续设计项（深 canvas，非一步桥接）**：
+- **文本**（`fillText`/`strokeText`/`measureText`）：`fill_text` 写 glyph primitives 不写 pixel_buffer——文本读回不可行，须 font-stack→pixel_buffer plumbing（与页面内渲染配对）。
+- **页面内渲染集成**（canvas 作为 DOM 元素显示其 pixel_buffer 到页面）：须 standalone canvas 接 host handle 进 DOM 树 + paint 阶段消费 pixel_buffer；改动跨 engine paint + dom，深结构，需设计。
+- **canvas DOM 集成**（appendChild/挂载）：slice 1 canvas 为 standalone 对象不进 DOM 树，跟随页面内渲染。
+- **渐变**（createLinearGradient/RadialGradient）真栅格：当前 GradientStop 仅记数据，raster 不消费，需 blit 路径插值。
+- **off-DOM 表面残余**：globalCompositeOperation 对 fill 路径生效（需 blit_path_to_pixels 接 composite_pixel）；drawImage 系列桥接（host API 已有，未暴露 shim）。
 
 
 ### P1a crypto.subtle.digest（本轮 R2793，缺失 Web API 续）

@@ -3176,6 +3176,47 @@
       set: function (v) { this._lc = String(v); __zw_canvas_op(h, 'setLineCap', String(v)); },
       get: function () { return this._lc; }
     });
+    // ── slice 4：globalCompositeOperation / shadow / putImageData（R2798）──
+    // 客户端镜像串 + push host（同 lineJoin/lineCap 模式）。getter 取客户端镜像，免 host 往返。
+    // **已知限制**：composite 仅对 stroke/rect-blit 生效（host composite_pixel），path-based fillRect 不消费。
+    ctx._gco = 'source-over';
+    Object.defineProperty(ctx, 'globalCompositeOperation', {
+      set: function (v) { this._gco = String(v); __zw_canvas_op(h, 'setCompositeOperation', String(v)); },
+      get: function () { return this._gco; }
+    });
+    ctx._sc = 'rgba(0, 0, 0, 0)';
+    Object.defineProperty(ctx, 'shadowColor', {
+      set: function (v) { this._sc = String(v); __zw_canvas_op(h, 'setShadowColor', String(v)); },
+      get: function () { return this._sc; }
+    });
+    ctx._sb = 0;
+    Object.defineProperty(ctx, 'shadowBlur', {
+      set: function (v) { this._sb = +v; __zw_canvas_op(h, 'setShadowBlur', String(v)); },
+      get: function () { return this._sb; }
+    });
+    ctx._sox = 0;
+    Object.defineProperty(ctx, 'shadowOffsetX', {
+      set: function (v) { this._sox = +v; __zw_canvas_op(h, 'setShadowOffsetX', String(v)); },
+      get: function () { return this._sox; }
+    });
+    ctx._soy = 0;
+    Object.defineProperty(ctx, 'shadowOffsetY', {
+      set: function (v) { this._soy = +v; __zw_canvas_op(h, 'setShadowOffsetY', String(v)); },
+      get: function () { return this._soy; }
+    });
+    // putImageData(imagedata, dx, dy)：序列化 data → csv，dx/dy/w/h 串参派发。host 1:1 写 pixel_buffer。
+    ctx.putImageData = function (img, dx, dy) {
+      if (!img || !img.data) return;
+      var d = img.data;
+      var n = d.length;
+      // 分片拼接（避免超大数据单次 += 触发大字符串重分配；测试用小图，正常路径即可）。
+      var chunks = [];
+      for (var i = 0; i < n; i++) {
+        chunks.push((i ? ',' : '') + d[i]);
+      }
+      __zw_canvas_op(h, 'putImageData', String(dx | 0), String(dy | 0),
+        String(img.width | 0), String(img.height | 0), chunks.join(''));
+    };
     ctx.getImageData = function (x, y, w, hh) {
       if (typeof __zw_canvas_op !== 'function') return null;
       var r = String(__zw_canvas_op(h, 'getImageData', String(x), String(y), String(w), String(hh)));

@@ -7748,3 +7748,106 @@ fn test_canvas_to_data_url_r2797() {
         "data:"
     );
 }
+
+#[test]
+fn test_canvas_slice4_r2798() {
+    // R2798：canvas slice 4——off-DOM 2D 表面补全（putImageData / globalCompositeOperation / shadow）。
+    // 经核验三项均真写 pixel_buffer（非仅记 primitives）：
+    // ① putImageData：put_image_data 1:1 copy_from_slice 写 pixel_buffer（get_imageData 对偶）；
+    // ② globalCompositeOperation：host 持 state（save/restore 含），composite_pixel 在 rect-blit/stroke 消费
+    //    （path-based fill 不消费——已知限制）；本测验证状态往返（default + set/get）；
+    // ③ shadow：fill() 经 draw_shadow_path 偏移栅格到 pixel_buffer，offset 处可读得 shadowColor。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ── ① putImageData：写自定义 RGBA → getImageData 读回一致（pixel 0 与 pixel 3）。
+    sandbox
+        .execute(
+            "var c = document.createElement('canvas'); c.width=2; c.height=2;\
+             var cx = c.getContext('2d');\
+             var im = cx.getImageData(0,0,2,2);\
+             im.data[0]=10; im.data[1]=20; im.data[2]=30; im.data[3]=255;\
+             im.data[4]=40; im.data[5]=50; im.data[6]=60; im.data[7]=255;\
+             im.data[8]=70; im.data[9]=80; im.data[10]=90; im.data[11]=255;\
+             im.data[12]=100; im.data[13]=110; im.data[14]=120; im.data[15]=255;\
+             cx.putImageData(im, 0, 0);\
+             globalThis.__back = cx.getImageData(0,0,2,2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("[__back.data[0],__back.data[1],__back.data[2],__back.data[3]].join(',')")
+            .unwrap()
+            .value,
+        "10,20,30,255",
+        "putImageData 写入后 getImageData 读回须一致（pixel 0）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("[__back.data[12],__back.data[13],__back.data[14],__back.data[15]].join(',')")
+            .unwrap()
+            .value,
+        "100,110,120,255",
+        "putImageData 写入后 getImageData 读回须一致（pixel 3）"
+    );
+
+    // ── ② globalCompositeOperation：default 'source-over' + set/get 往返（状态真实）。
+    sandbox
+        .execute(
+            "var c2 = document.createElement('canvas');\
+             globalThis.__cx2 = c2.getContext('2d');\
+             globalThis.__def = __cx2.globalCompositeOperation;\
+             __cx2.globalCompositeOperation = 'lighter';\
+             globalThis.__g1 = __cx2.globalCompositeOperation;\
+             __cx2.globalCompositeOperation = 'multiply';\
+             globalThis.__g2 = __cx2.globalCompositeOperation;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__def)").unwrap().value,
+        "source-over",
+        "globalCompositeOperation 默认 source-over"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__g1)").unwrap().value, "lighter");
+    assert_eq!(sandbox.execute("String(globalThis.__g2)").unwrap().value, "multiply");
+
+    // ── ③ shadow：fillRect green + shadowColor red + shadowOffsetX=5。
+    // fill 区 [0,10]×[0,10]；shadow 偏移后 [5,15]×[0,10]。(12,2) 仅 shadow 区→red；(2,2) fill-only→green
+    // （fill 先画 shadow 再画 fill，重叠区 [5,10] 被 green 覆盖）。
+    sandbox
+        .execute(
+            "var c3 = document.createElement('canvas'); c3.width=30; c3.height=20;\
+             var cx3 = c3.getContext('2d');\
+             cx3.shadowColor='rgba(255,0,0,255)'; cx3.shadowOffsetX=5;\
+             cx3.fillStyle='#00ff00'; cx3.fillRect(0,0,10,10);\
+             globalThis.__sh = cx3.getImageData(12,2,1,1);\
+             globalThis.__fi = cx3.getImageData(2,2,1,1);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("[__sh.data[0],__sh.data[1],__sh.data[2],__sh.data[3]].join(',')")
+            .unwrap()
+            .value,
+        "255,0,0,255",
+        "shadow 偏移处须为 shadowColor（draw_shadow_path 栅格到 pixel_buffer）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("[__fi.data[0],__fi.data[1],__fi.data[2],__fi.data[3]].join(',')")
+            .unwrap()
+            .value,
+        "0,255,0,255",
+        "fill 区须为 fillStyle（fill 画在 shadow 之上覆盖重叠）"
+    );
+}
