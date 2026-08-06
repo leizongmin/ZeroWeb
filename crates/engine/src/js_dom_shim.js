@@ -3596,22 +3596,17 @@
             // identity = selector（querySelector/getElementById 元素）或 handle（createElement
             // 元素，path A）。sel 空时用 handle，host RectBridge handler 查持久 handle→selector map
             // 解析；map 未命中/未注册 → 空串 → 零 rect（= 旧行为，零回归）。
-            var id = sel || handle;
-            if (id && typeof __zw_getBoundingClientRect === 'function') {
-              try {
-                var s = __zw_getBoundingClientRect(id);
-                if (s && s.indexOf(',') >= 0) {
-                  var p = s.split(',');
-                  var x = +p[0], y = +p[1], w = +p[2], h = +p[3];
-                  return { x: x, y: y, top: y, left: x, right: x + w, bottom: y + h, width: w, height: h, toJSON: function() { return this; } };
-                }
-              } catch (_e) {}
-            }
-            return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: function() { return this; } };
+            return _domRectFromId(sel || handle) || { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: function() { return this; } };
           };
         }
+        // `el.getClientRects()`（R2828）——DOMRectList（浮层定位库 popper.js/tether 取 [0] 测量）。
+        // headless 无逐 line-box 布局 → 返**单元素 bounding rect** 数组（与 getBoundingClientRect 同源 _domRectFromId）；
+        // inline 多行收缩为单 rect（无 per-line-box，documented）；handle-only detached 无 layout → []。
         if (prop === 'getClientRects') {
-          return function() { return []; };
+          return function() {
+            var r = _domRectFromId(sel || handle);
+            return r ? [r] : [];
+          };
         }
         // 布局几何属性：offsetWidth/offsetHeight/clientWidth/clientHeight/offsetTop/offsetLeft。
         // 旧返 undefined → `el.offsetWidth > 0` visibility 检查误判 false（元素被当隐藏）。
@@ -4103,6 +4098,26 @@
         if (s && s.indexOf(',') >= 0) {
           var p = s.split(',');
           return { x: +p[0], y: +p[1], w: +p[2], h: +p[3] };
+        }
+      } catch (_e) {}
+    }
+    return null;
+  }
+
+  // getBoundingClientRect/getClientRects 共用（R2828）：从 `__zw_getBoundingClientRect(id)` 解析
+  // "x,y,w,h" → 完整 DOMRect（x/y/top/left/right/bottom/width/height + toJSON）。id = selector 或 handle。
+  // 未注册 / 未命中 / 无 layout（handle-only detached）→ null（getBoundingClientRect 落零 rect，getClientRects 落 []）。
+  function _domRectFromId(id) {
+    if (id && typeof __zw_getBoundingClientRect === 'function') {
+      try {
+        var s = __zw_getBoundingClientRect(id);
+        if (s && s.indexOf(',') >= 0) {
+          var p = s.split(',');
+          var x = +p[0], y = +p[1], w = +p[2], h = +p[3];
+          return {
+            x: x, y: y, top: y, left: x, right: x + w, bottom: y + h,
+            width: w, height: h, toJSON: function () { return this; },
+          };
         }
       } catch (_e) {}
     }

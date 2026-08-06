@@ -2091,6 +2091,29 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a Element.getClientRects 返 bounding rect（本轮 R2828，缺失 Web API 续 / 元素几何读修复）
+
+承接 R2827（Element.animate）。probe 发现 `getClientRects` **已存在但返空 `[]`**（line 3614 旧 stub）——与 `getBoundingClientRect` 返真 rect 不一致，破 popper.js / tether / 浮层定位库读 `getClientRects()[0]`（得 undefined）。**修复**：让 getClientRects 返单元素 bounding rect 数组（与 getBoundingClientRect 同源）。**DRY 重构**：抽 `_domRectFromId(id)` helper（解析 `__zw_getBoundingClientRect` "x,y,w,h" → 完整 DOMRect），getBoundingClientRect + getClientRects 共用——getBoundingClientRect body 原样移入 helper（行为等价，test_layout_geometry_e2e + observer 测试全过证非回归）。
+
+- **`_domRectFromId(id)`**（helper）：selector/handle → DOMRect（x/y/top/left/right/bottom/width/height + toJSON）；未注册/未命中/无 layout → null。
+- **`getClientRects()`**：`_domRectFromId(...) ? [rect] : []`——返**单 bounding rect 数组**（inline 多行收缩为单 rect，headless 无逐 line-box 布局，documented）；handle-only detached 无 layout → []。
+- **`getBoundingClientRect()`**：改调 `_domRectFromId(...) || ZERO_RECT`（行为等价）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_domRectFromId(id)` helper + getBoundingClientRect 改调之（行为等价）+ getClientRects 改返 `[rect]`（旧 `[]`）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_element_get_client_rects_r2828`（mock rect bridge：selector→"10,20,100,50" / handle→''；getClientRects length=1 + [0] 含完整 DOMRect 字段 + 与 getBoundingClientRect 同源 + spread 可迭代 + handle-only detached→[]）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13456 passed / 0 failed / 74 ignored**，13455+1 新测试，0 回归；test_layout_geometry_e2e + observer 测试全过证 getBoundingClientRect 重构非回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**踩坑（已修正）**：test 初版未注册 rect bridge mock → test harness 无 layout snapshot → `__zw_getBoundingClientRect` 返空 → getClientRects 返 [] → `[0]` undefined 抛。改 register mock rect bridge（selector→rect / handle→''，镜像 test_layout_geometry_e2e 模式）后过。
+
+**为何零回归且净正向**：① getClientRects 行为改进（[]→[rect]，popper.js 等定位库不再得 undefined）+ getBoundingClientRect 重构行为等价（rect 字段形状原样保留）；② 复用既有 `__zw_getBoundingClientRect` 回调（零新 host 回调、零渲染副作用）；③ `_domRectFromId` 为 shim IIFE 内部 helper。
+
+**已知限制（记录）**：① inline 多行元素收缩为单 bounding rect（无逐 line-box，headless 无 per-line 布局）；② 返 JS 数组非真 DOMRectList（无 `.item()` 方法，但数组可索引/length/spread/forEach，更 permissive）；③ rect 反映上次 render（stale-but-non-zero，同 getBoundingClientRect）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面**已穷尽**（R2820-R2828 覆 modern 动画/编辑/表单/事件/序列化/校验/可见性/剪贴板/焦点/位置/URL/性能/存储/几何读 主表面）。剩余全为深项/host-layer：`document.elementFromPoint`（layout rect 全量 hit-test）/ customElements upgrade/lifecycle（element proxy 接 ctor）/ Shadow DOM attachShadow / node.normalize（罕见 + 架构重，defer）/ 真 Web Animations timeline / fetch 非 GET（net 层，跳过）；可选窄项 scrollIntoViewIfNeeded（WebKit）/ pointer lock；rendering-compat 侧续降频守成（held baseline 13456 全绿）。
+
 ### P1a Element.animate（Web Animations API permissive stub）（本轮 R2827，缺失 Web API 续）
 
 承接 R2826（execCommand）。land **`Element.animate(keyframes, options)`**——Web Animations API。modern 动画库（Framer Motion / GSAP / Lottie / Motion One）feature-detect `el.animate` + 链式（`await anim.finished` / `anim.onfinish`）高频。probe 确认 shim 0 实现（仅 AnimationEvent 存在，CSS 动画事件无关）。**为何 tractable**：headless 无真时间轴 / 关键帧应用 → permissive stub——动画「瞬间完成」（playState 'running'→'finished' + `finished` Promise resolve + `onfinish` 触发），让动画库链式回调走通（关键帧不真应用，documented）。

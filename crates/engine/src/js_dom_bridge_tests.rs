@@ -11350,3 +11350,81 @@ fn test_element_animate_r2827() {
         "reverse 存在"
     );
 }
+
+#[test]
+fn test_element_get_client_rects_r2828() {
+    // R2828：Element.getClientRects——旧返空 []（破 popper.js/tether 读 getClientRects()[0]）。
+    // 现返单元素 bounding rect 数组（与 getBoundingClientRect 同源 _domRectFromId）。inline 多行收缩为
+    // 单 rect（无 per-line-box，documented）；handle-only detached 无 layout → []。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><div id='d'></div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    // mock rect bridge（rect bridge 不在 register_dom_callbacks）：selector → 固定 rect "10,20,100,50"；
+    // handle（createElement，以 '__' 开头，detached）→ 空串（无 layout，匹配真实 detached 无几何语义）。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| match args.first() {
+            Some(s) if s.starts_with("__") => String::new(),
+            _ => "10,20,100,50".to_string(),
+        }),
+    );
+
+    // getClientRects 返数组 length=1 + [0] 含完整 DOMRect 字段（与 getBoundingClientRect 同源）。
+    sandbox
+        .execute(
+            "globalThis.__rects = document.querySelector('#d').getClientRects();\
+             globalThis.__len = globalThis.__rects.length;\
+             globalThis.__r0 = globalThis.__rects[0];\
+             globalThis.__keys = ['x','y','top','left','right','bottom','width','height']\
+               .map(function(k){ return k + ':' + (globalThis.__r0[k] !== undefined ? 'y' : 'n'); }).join(',');\
+             globalThis.__same = (function(){\
+               var b = document.querySelector('#d').getBoundingClientRect();\
+               return b.x === globalThis.__r0.x && b.width === globalThis.__r0.width && b.bottom === globalThis.__r0.bottom;\
+             })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len)").unwrap().value,
+        "1",
+        "getClientRects 返数组 length=1（单 bounding rect）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__keys)").unwrap().value,
+        "x:y,y:y,top:y,left:y,right:y,bottom:y,width:y,height:y",
+        "[0] 含完整 DOMRect 字段（x/y/top/left/right/bottom/width/height）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__same)").unwrap().value,
+        "true",
+        "getClientRects[0] 与 getBoundingClientRect 同源 rect"
+    );
+
+    // spread 可迭代（[...rects] 取首元素）——现代库常用模式。
+    sandbox
+        .execute("globalThis.__spread = [...document.querySelector('#d').getClientRects()].length;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__spread)").unwrap().value,
+        "1",
+        "getClientRects 可 spread 迭代（数组）"
+    );
+
+    // handle-only detached 元素（createElement，无 layout）→ []。
+    sandbox
+        .execute("globalThis.__detached = document.createElement('div').getClientRects().length;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__detached)").unwrap().value,
+        "0",
+        "handle-only detached 无 layout → getClientRects 返 []"
+    );
+}
