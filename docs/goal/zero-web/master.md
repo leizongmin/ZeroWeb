@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a IMG/IFRAME 维度 IDL width/height + naturalWidth/Height（本轮 R2851，缺失 Web API 续 / 替换元素尺寸 IDL）
+
+承接 R2850（inert/autocomplete）。probe 发现 IMG/IFRAME `.width`/`.height`（reflected unsigned long）+ IMG `.naturalWidth`/`.naturalHeight` 全无 get-trap handler（仅 Image ctor 的 setAttribute + pointer event coord 两处无关命中）。响应式/布局 JS 读 img.width 高频，css-images WPT driving。
+
+- **关键设计点**：① **`.width`/`.height`**（IMG/IFRAME gate，reflected unsigned long）—— getter 优先读 `_reflectedAttrs` 缓存（sync set→get），无缓存则 `parseInt(attr)`，缺省/负/NaN→0（spec「reflect unsigned long」算法）；setter `parseInt(value)` 归一（NaN/负→0）→ 缓存数值 + 写 width/height 内容属性。② **`.naturalWidth`/`.naturalHeight`**（IMG gate）—— 恒返 0（headless 无真图加载、onload 不触发 → 固有尺寸 0，spec unloaded→0 一致）。③ 复用既有 `_reflectedAttrs` 缓存 + `__zw_get/set_attr(_handle)` infra，零新 host 回调。
+- **CANVAS（缺省 300/150 且 setter 改 bitmap，特殊）/ VIDEO/EMBED defer**——非纯 unsigned long 反射，需单独处理。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | get-trap +width/height/naturalWidth/naturalHeight 块（IMG/IFRAME gate，unsigned long 反射 + IMG natural 恒 0）；set-trap +width/height IMG/IFRAME 分支（parseInt 归一 + 缓存 + 写 attr）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_img_dimension_idl_width_height_natural_r2851`（img[width/height] 反射 + 缺省→0 + naturalWidth/Height=0 + iframe.width 反射 + setter width=200 缓存即时 + apply 后 attr 写回）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13478 passed / 0 failed / 74 ignored**，13477+1 新测试，0 回归；engine lib 1577 测试零回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（welcome 无 IMG/IFRAME，新路径不触发）。
+
+**为何零回归且净正向**：① IMG/IFRAME gate 严格，不影响其他元素的 width/height（div.width 仍 undefined，正确）；② 纯 additive IDL getter/setter，无 layout/render .rs 改动；③ 仅当页面读写 img/iframe.width/height 时触发；④ getter 从 undefined→spec 数值，对响应式/布局库是改善。
+
+**已知限制（记录）**：① naturalWidth/Height 恒 0（headless 无图加载，需 onload+decode infra defer）；② CANVAS width/height（缺省 300/150 + setter 改 bitmap）/ VIDEO/EMBED defer；③ setter 用 parseInt 近似 ToUint32（超界/负数规范 ToUint32 wrap defer，常见非负用法足）；④ naturalWidth/Height setter 落 catch-al 设 spurious 属性（spec readonly，罕见不究）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面近穷尽（R2820-R2851 覆表单反射 + 表格结构 + text-control 选区 + 事件基建 + 观察者 record + reflected 全局属性 + option.index + 替换元素维度 IDL）。剩余全深/host-layer（attachShadow Shadow DOM / createRange Range / scrollIntoViewIfNeeded 滚动 / customElements lifecycle / 真 WAAPI / 真 files 上传 / fetch 非 GET〔net〕）或边际 no-op（node.normalize）；rendering-compat 侧续降频守成（held baseline 13478 全绿）。
+
 ### P1a reflected 全局属性续 inert + autocomplete（本轮 R2850，缺失 Web API 续 / reflected-attr 表面续）
 
 承接 R2849（option.index）。probe 发现 `inert`（boolean attr，缺省 false）+ `autocomplete`（enumerated 串，spec missing-default **"on"**）旧 fallthrough 返 undefined。模态/无障碍（inert 隔离交互）/ 表单自动填充（autocomplete）读这些属性高频。延续 R2848 reflected-attr 模式。

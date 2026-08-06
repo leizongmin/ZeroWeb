@@ -13578,3 +13578,99 @@ fn test_reflected_global_attrs_inert_autocomplete_r2850() {
         "autocomplete setter 写 'given-name'\n{out}"
     );
 }
+
+#[test]
+fn test_img_dimension_idl_width_height_natural_r2851() {
+    // R2851：IMG/IFRAME width/height（reflected unsigned long，缺省/非负整数失败→0）+ IMG naturalWidth/Height
+    // （固有像素尺寸，headless 无真图加载→0，spec unloaded→0）。旧 fallthrough 返 undefined。响应式/布局 JS 高频。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // img 显式 width/height；img2 无属性；iframe 显式 width。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <img id='i1' src='a.png' width='100' height='50'>\
+         <img id='i2' src='b.png'>\
+         <iframe id='f1' width='320'></iframe>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 读：i1 width=100/height=50；i2 缺省 width=0/height=0；naturalWidth/Height 恒 0（headless）；iframe width=320。
+    sandbox
+        .execute(
+            "var i1 = document.querySelector('#i1');\
+             globalThis.__i1w = i1.width;\
+             globalThis.__i1h = i1.height;\
+             globalThis.__i1nw = i1.naturalWidth;\
+             globalThis.__i1nh = i1.naturalHeight;\
+             var i2 = document.querySelector('#i2');\
+             globalThis.__i2w = i2.width;\
+             globalThis.__i2h = i2.height;\
+             globalThis.__f1w = document.querySelector('#f1').width;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__i1w)").unwrap().value,
+        "100",
+        "img[width='100'] → width=100（reflected unsigned long）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__i1h)").unwrap().value,
+        "50",
+        "img[height='50'] → height=50"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__i1nw)").unwrap().value,
+        "0",
+        "img.naturalWidth=0（headless 无真图加载，spec unloaded→0）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__i1nh)").unwrap().value,
+        "0",
+        "img.naturalHeight=0（headless）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__i2w)").unwrap().value,
+        "0",
+        "img 无 width 属性 → width=0（缺省）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__i2h)").unwrap().value,
+        "0",
+        "img 无 height 属性 → height=0（缺省）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__f1w)").unwrap().value,
+        "320",
+        "iframe[width='320'] → width=320（IFRAME 同 reflected unsigned long）"
+    );
+
+    // setter：img.width=200 → 缓存数值即时 + apply 后 attr 写回；非负整数解析（'12px'→12 近似）。
+    sandbox
+        .execute(
+            "var e = document.querySelector('#i2');\
+             e.width = 200;\
+             globalThis.__sw = e.width;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sw)").unwrap().value,
+        "200",
+        "setter img.width=200 → 200（缓存数值即时 sync）"
+    );
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms).unwrap();
+    assert!(
+        out.contains("id=\"i2\" src=\"b.png\" width=\"200\""),
+        "img.width=200 setter 写 width 内容属性\n{out}"
+    );
+}

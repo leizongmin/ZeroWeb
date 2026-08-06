@@ -3358,6 +3358,24 @@
           if (prop === 'spellcheck') return rfRaw !== 'false'; // "false"→false，余（含缺省）→true（spec 默认 true）
           return rfRaw !== 'no';                               // translate："no"→false，余→true（默认 true）
         }
+        // reflected unsigned-long 维度属性（R2851）：IMG/IFRAME `.width`/`.height`（反射 width/height 内容属性
+        // 为非负整数，缺省/不可解析 → 0；spec「reflect unsigned long」算法）+ IMG `.naturalWidth`/`.naturalHeight`
+        // （固有像素尺寸，headless 无真图加载 → 恒 0，spec unloaded→0 一致）。响应式/布局 JS 读 img.width 高频。
+        // CANVAS（缺省 300/150 且 setter 改 bitmap，特殊）/ VIDEO/EMBED defer。
+        if (prop === 'width' || prop === 'height' || prop === 'naturalWidth' || prop === 'naturalHeight') {
+          var rgTag = _realTag(sel, handle);
+          if (rgTag === 'IMG' && (prop === 'naturalWidth' || prop === 'naturalHeight')) {
+            return 0;  // headless 无真图加载（onload 不触发）→ 固有尺寸 0（spec unloaded→0）。
+          }
+          if ((rgTag === 'IMG' || rgTag === 'IFRAME') && (prop === 'width' || prop === 'height')) {
+            // sync set→get 优先读缓存（setter 写数值）；无缓存则解析 width/height 内容属性（缺省/非负整数失败 → 0）。
+            var drc = _reflectedAttrs[key];
+            if (drc && Object.prototype.hasOwnProperty.call(drc, prop)) return drc[prop];
+            var dRaw = handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop);
+            var dN = parseInt(dRaw, 10);
+            return (isNaN(dN) || dN < 0) ? 0 : dN;
+          }
+        }
         // `el.dataset`——`data-*` 属性的 camelCase 键对象（get/set/has/delete/枚举）。
         // dataset.fooBar ↔ data-foo-bar 属性。handle 脱离 DOM 元素枚举受限（无 attr-names-handle）。
         if (prop === 'dataset') {
@@ -4356,6 +4374,15 @@
             if (handle) __zw_set_attr_handle(handle, p, attrV);
             else { __zw_set_attr(sel, p, attrV); moAttr = p; }
           }
+        } else if ((p === 'width' || p === 'height') && (_realTag(sel, handle) === 'IMG' || _realTag(sel, handle) === 'IFRAME')) {
+          // reflected unsigned-long 维度 setter（R2851）：parseInt 归一（NaN/负 → 0）→ 缓存数值 + 写 width/height
+          // 内容属性（getter 优先读缓存保 sync set→get）。
+          var wv = parseInt(value, 10);
+          if (isNaN(wv) || wv < 0) wv = 0;
+          var wrc = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
+          wrc[p] = wv;
+          if (handle) __zw_set_attr_handle(handle, p, String(wv));
+          else { __zw_set_attr(sel, p, String(wv)); moAttr = p; }
         } else {
           if (handle) __zw_set_attr_handle(handle, p, String(value));
           else __zw_set_attr(sel, p, String(value));

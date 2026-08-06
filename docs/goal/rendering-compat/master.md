@@ -14,7 +14,9 @@
 
 ## 最近轮次摘要
 
-> **📍 R2850（2026-08-07）🔧 reflected 全局属性续 land（inert + autocomplete / 缺失 Web API 续，主线在 zero-web）：承接 R2849。probe 发现 `inert`（boolean attr，缺省 false）+ `autocomplete`（enumerated 串，spec missing-default **"on"**）旧 fallthrough 返 undefined。延续 R2848 reflected-attr 模式。**land**：扩 R2848 getter/setter 块——`inert` 同 autofocus（boolean presence via `__zw_has_attr(_handle)`，truthy 设空值 / falsy 真移除）；`autocomplete` enumerated 串反射（attr 值，缺省 / `__zw_get_attr` 返 `""` → `"on"`，spec 一致；setter 写任意串到 attr）。模态/无障碍（inert 隔离交互）/ 表单自动填充（autocomplete）读这些属性高频。**TDD red→green**：初版 autocomplete 缺省判定 `acRaw == null` 漏 `__zw_get_attr` 缺省返 `""`（非 null）→ 返 `""` 非 `"on"`；改 `(acRaw == null || acRaw === '')` 修正。**门禁全绿**：fmt clean / workspace clippy 零警告 / `make test` **13477/0/74**（R2849 13476 + 1 新测试，零回归；engine lib 1576 测试零回归）/ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（reflected attr getter/setter，welcome 不读这些属性故新路径不触发，无 layout/render .rs 改动）。**已知限制（记录）**：autocomplete 不做 detail token 规范化（spec 对 `off`/`on`/section-* tokens 有 canonical 算法——本实现原样返/写 attr 值，常见用法足）；inert 仅 IDL 反射（无真交互隔离，host-layer defer）。**门禁**：.rs（engine shim+测试）+ 两 master doc；pre-commit guard PASS。**下一轮**：缺失 Web API 纯 JS tractable 表面续扫（更多 reflected 全局属性 enterkeyhint/itemscope / img naturalWidth/Height〔headless 低价值〕 / node.normalize）或 plateau-guard；rendering-compat 侧续降频守成（held baseline 13477 全绿）。**
+> **📍 R2851（2026-08-07）🔧 IMG/IFRAME 维度 IDL land（width/height reflected unsigned long + naturalWidth/Height / 缺失 Web API 续，主线在 zero-web）：承接 R2850。probe 发现 IMG/IFRAME `.width`/`.height`（reflected unsigned long，旧 fallthrough undefined）+ IMG `.naturalWidth`/`.naturalHeight`（缺失）全无 get-trap handler（仅 Image ctor 的 setAttribute + pointer event coord 两处无关命中）。响应式/布局 JS 读 img.width 高频，css-images WPT driving。**land**：① `.width`/`.height`（IMG/IFRAME gate）—— reflected unsigned long：`parseInt(attr)` 缺省/负/NaN→0（spec「reflect unsigned long」算法）；sync set→get 优先读 `_reflectedAttrs` 缓存。② setter parseInt 归一 → 缓存数值 + 写 width/height 内容属性。③ `.naturalWidth`/`.naturalHeight`（IMG gate）—— 恒 0（headless 无真图加载 / onload 不触发 → 固有尺寸 0，spec unloaded→0 一致）。**门禁全绿**：fmt clean / workspace clippy 零警告 / `make test` **13478/0/74**（R2850 13477 + 1 新测试，零回归；engine lib 1577 测试零回归）/ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（纯 additive IDL getter/setter，welcome 无 IMG/IFRAME 故新路径不触发，无 layout/render .rs 改动）。**已知限制（记录）**：naturalWidth/Height 恒 0（headless 无图加载，需 onload+decode infra defer）；CANVAS width/height（缺省 300/150 且 setter 改 bitmap，特殊）+ VIDEO/EMBED defer；setter 用 parseInt 近似 ToUint32（超界/负数规范 ToUint32 defer）。**门禁**：.rs（engine shim+测试）+ 两 master doc；pre-commit guard PASS。**下一轮**：缺失 Web API 纯 JS tractable 表面近穷尽；剩余全深/host-layer（attachShadow Shadow DOM / createRange Range / scrollIntoViewIfNeeded 滚动 / 真 files 上传 / fetch 非 GET〔net〕）或边际 no-op（node.normalize）；rendering-compat 侧续降频守成（held baseline 13478 全绿）。**
+
+
 
 
 
@@ -293,7 +295,7 @@
 
 ### 测试覆盖率
 
-- **cargo test**：13000+ 测试全部通过（`make test`：**13477 passed / 0 failed / 74 ignored，截至 R2850**；R2638 后 held baseline 13193 经父目标 zero-web P1 DOM/JS Bridge 系列〔R2704-R2850〕+284 推进至 13477，rendering-compat surface 零回归；R2850 reflected 全局属性 inert/autocomplete +1 13476→13477；R2554 + R2563 + R2583 + R2604 + R2613 + R2845-R2850 周期复跑逐位确认）
+- **cargo test**：13000+ 测试全部通过（`make test`：**13478 passed / 0 failed / 74 ignored，截至 R2851**；R2638 后 held baseline 13193 经父目标 zero-web P1 DOM/JS Bridge 系列〔R2704-R2851〕+285 推进至 13478，rendering-compat surface 零回归；R2851 IMG/IFRAME 维度 IDL +1 13477→13478；R2554 + R2563 + R2583 + R2604 + R2613 + R2845-R2851 周期复跑逐位确认）
 - **cargo clippy**：`cargo clippy --workspace --all-targets -D warnings` 通过
 - **#[ignore] 测试**：74 个 ignored（real_website_compat.rs 等因本地网络不稳定的用例，不计入通过率）
 
