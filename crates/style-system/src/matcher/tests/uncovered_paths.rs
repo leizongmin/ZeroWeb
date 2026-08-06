@@ -634,6 +634,20 @@ fn test_property_supported_edge_cases() {
     assert!(is_property_supported("container-name", "sidebar"));
     assert!(is_property_supported("container-name", "main content"));
     assert!(is_property_supported("container-name", "123"));
+
+    // R2856：CSS 全局关键字对所有属性合法（at-supports-012 `(padding:inherit)` 须支持）。
+    assert!(is_property_supported("padding", "inherit"));
+    assert!(is_property_supported("padding", "INHERIT"), "大小写不敏感");
+    assert!(is_property_supported("width", "initial"));
+    assert!(is_property_supported("color", "unset"));
+    assert!(is_property_supported("margin", "revert"));
+    assert!(is_property_supported("display", "revert-layer"));
+    assert!(
+        is_property_supported("padding", "inherit !important"),
+        "全局关键字 + !important"
+    );
+    // 非全局关键字仍走属性专属解析（length 不识别 garbage）。
+    assert!(!is_property_supported("padding", "garbage"));
 }
 
 // ── matches_selector_recursive 边界条件 ──

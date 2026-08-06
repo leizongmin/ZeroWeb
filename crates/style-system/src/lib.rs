@@ -103,12 +103,50 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
     })
 }
 
-/// R2246：HTML rendering §quotes（`<q>` 元素自动引号）— 英语默认引号对。
+/// R2856：`<q>` 元素 `quotes: auto` 时按内容语言解析的默认引号对表（CSS Generated
+/// Content §4.2 + CLDR typographical 引号数据）。
 ///
-/// chromium/HTML 规范对未声明 `quotes` 的 `<q>`：depth 0 用双弯引号 “ ”（U+201C/U+201D），
-/// depth 1+ 用单弯引号 ‘ ’（U+2018/U+2019）。非英语 locale 的 per-lang 默认表未实现
-///（WPT css-content 多为英语，此默认覆盖主流案）。
-fn q_default_quote_pair(depth: usize) -> (String, String) {
+/// 每条目为引号对列表（primary + 可选 nested）；`<q>` 嵌套取 `pairs[min(depth, len-1)]`。
+/// 仅收录 quotes-034 所测语言 + 英语 root；其他语言按 CLDR 增补须附 driving test，避免
+/// 引入未验证数据。driving: WPT css-content quotes-034。
+fn lang_quote_table(lang: &str) -> Option<&'static [(&'static str, &'static str)]> {
+    // 每条目：[primary open/close, nested open/close（可省，省则嵌套复用 primary）]
+    let pairs: &'static [(&'static str, &'static str)] = match lang {
+        "en" => &[("\u{201C}", "\u{201D}"), ("\u{2018}", "\u{2019}")], // " " / ' '
+        "fr" => &[("\u{00AB}", "\u{00BB}"), ("\u{2039}", "\u{203A}")], // « » / ‹ ›
+        "de" => &[("\u{201E}", "\u{201C}"), ("\u{201A}", "\u{2018}")], // „ " / ‚ '
+        "fi" => &[("\u{201D}", "\u{201D}")],                           // "
+        "he" => &[("\u{201D}", "\u{201D}")],                           // "
+        "ja" => &[("\u{300C}", "\u{300D}"), ("\u{300E}", "\u{300F}")], // 「 」 / 『 』
+        _ => return None,
+    };
+    Some(pairs)
+}
+
+/// R2856：BCP 47 区域 fallback 解析语言默认引号对——从最长前缀（含 region/script）逐级
+/// 缩短匹配（`fr-FR` → `fr` → root）。返未收录语言的 `None`（调用方回落英语 root）。
+fn lang_quote_pairs(lang: &str) -> Option<&'static [(&'static str, &'static str)]> {
+    let lower = lang.to_ascii_lowercase();
+    let tags: Vec<&str> = lower.split('-').collect();
+    for end in (1..=tags.len()).rev() {
+        let key = tags[..end].join("-");
+        if let Some(pairs) = lang_quote_table(&key) {
+            return Some(pairs);
+        }
+    }
+    None
+}
+
+/// R2856：`<q>` 元素 `quotes: auto` 的默认引号对——按内容语言（区域 fallback）解析，
+/// 未收录语言回落英语 root（depth 0 “ ”，depth 1+ ‘ ’）。
+fn q_default_quote_pair(lang: Option<&str>, depth: usize) -> (String, String) {
+    if let Some(l) = lang.filter(|s| !s.is_empty())
+        && let Some(pairs) = lang_quote_pairs(l)
+    {
+        let idx = depth.min(pairs.len() - 1);
+        return (pairs[idx].0.to_string(), pairs[idx].1.to_string());
+    }
+    // 英语 root 兜底（depth 0 双引号 / depth 1+ 单引号）。
     if depth == 0 {
         ("\u{201C}".to_string(), "\u{201D}".to_string())
     } else {
@@ -116,19 +154,39 @@ fn q_default_quote_pair(depth: usize) -> (String, String) {
     }
 }
 
+/// R2856：沿 DOM 祖先链解析元素的有效内容语言（`xml:lang` 优先于 `lang`，XML 规范；
+/// 最近的祖先属性胜出，与 `:lang()` 选择器语义一致）。空属性终止继承（HTML：空 lang =
+/// 无语言）。
+fn effective_lang(doc: &Document, mut node: NodeId) -> Option<String> {
+    loop {
+        if let Some(lang) = doc
+            .get_attribute(node, "xml:lang")
+            .or_else(|| doc.get_attribute(node, "lang"))
+        {
+            return if lang.is_empty() { None } else { Some(lang) };
+        }
+        node = match doc.parent_node(node) {
+            Some(p) => p,
+            None => break,
+        };
+    }
+    None
+}
+
 /// R2246：解析 `<q>` 元素在给定 `depth` 的开/闭引号字符串。
 ///
 /// `depth` = 该 `<q>` 的 `<q>` 祖先数（CSS `open-quote` 深度；`<q>`-only 嵌套 ≡ 祖先数）。
+/// `lang` = 元素有效内容语言（R2856：`quotes: auto` 兜底按语言解析，区域 fallback）。
 /// `quotes` 属性优先：`Pairs` 取 `pairs[min(depth, len-1)]`（空 Pairs 回落默认）；
 /// `Auto`/无声明 → [`q_default_quote_pair`]；`None` → 无引号（返回 `None`，`<q>` 不注入）。
-/// driving: WPT css-content quotes-*（`<q>` 自动引号）。
-pub fn resolve_q_quotes(quotes: &QuotesComputedValue, depth: usize) -> Option<(String, String)> {
+/// driving: WPT css-content quotes-*（`<q>` 自动引号 + quotes-034 区域 fallback）。
+pub fn resolve_q_quotes(quotes: &QuotesComputedValue, lang: Option<&str>, depth: usize) -> Option<(String, String)> {
     match quotes {
         QuotesComputedValue::None => None,
-        QuotesComputedValue::Auto => Some(q_default_quote_pair(depth)),
+        QuotesComputedValue::Auto => Some(q_default_quote_pair(lang, depth)),
         QuotesComputedValue::Pairs(pairs) => {
             if pairs.is_empty() {
-                Some(q_default_quote_pair(depth))
+                Some(q_default_quote_pair(lang, depth))
             } else {
                 let idx = depth.min(pairs.len() - 1);
                 Some((pairs[idx].0.clone(), pairs[idx].1.clone()))
@@ -367,7 +425,12 @@ impl StyleSystem {
             // before_pseudo/after_pseudo + pipeline 文本节点注入渲染。driving: WPT css-content quotes-*。
             let is_q = matches!(&node_data.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("q"));
             let q_quotes = if is_q {
-                resolve_q_quotes(&computed.quotes, count_q_ancestors(doc, node))
+                // R2856：`<q>` 自动引号按**父元素**的内容语言解析（CSS spec quotes-030：quotes
+                // based on the parent language, not the element's own lang——`<q lang="ja">` 在
+                // 英语父级中仍用英语 depth-1 单引号，自身 lang 仅影响其子级）；depth = `<q>` 祖先数。
+                let depth = count_q_ancestors(doc, node);
+                let lang = doc.parent_node(node).and_then(|p| effective_lang(doc, p));
+                resolve_q_quotes(&computed.quotes, lang.as_deref(), depth)
             } else {
                 None
             };
@@ -1667,35 +1730,68 @@ mod tests;
 mod q_quotes_tests {
     use super::*;
 
-    /// R2246：resolve_q_quotes 引号对解析——None 无引号；Auto 英语默认（depth 0 “ ”，
-    /// depth 1+ ‘ ’）；Pairs 取对应 depth（clamp 到末对）。
+    /// R2246/R2856：resolve_q_quotes 引号对解析——None 无引号；Auto 按内容语言（区域
+    /// fallback）解析默认引号；Pairs 取对应 depth（clamp 到末对）。
     #[test]
     fn test_resolve_q_quotes() {
         use property::types::QuotesComputedValue;
         // None → 无引号。
-        assert!(resolve_q_quotes(&QuotesComputedValue::None, 0).is_none(), "None 无引号");
-        // Auto depth 0 → “ ”，depth 1 → ‘ ’。
-        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, 0).unwrap();
+        assert!(
+            resolve_q_quotes(&QuotesComputedValue::None, None, 0).is_none(),
+            "None 无引号"
+        );
+        // Auto 无 lang（英语 root）depth 0 → “ ”，depth 1 → ‘ ’。
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, None, 0).unwrap();
         assert_eq!(o, "\u{201C}", "Auto depth 0 开引号 “");
         assert_eq!(c, "\u{201D}", "Auto depth 0 闭引号 ”");
-        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, 1).unwrap();
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, None, 1).unwrap();
         assert_eq!(o, "\u{2018}", "Auto depth 1 开引号 ‘");
         assert_eq!(c, "\u{2019}", "Auto depth 1 闭引号 ’");
+        // R2856：Auto 按内容语言解析（quotes-034 区域 fallback）。
+        // fr / fr-FR → « »；de → „ "；fi → " "；ja → 「 」；未知 aa → 英语 root。
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("fr"), 0).unwrap();
+        assert_eq!((o.as_str(), c.as_str()), ("\u{00AB}", "\u{00BB}"), "fr → « »");
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("fr-FR"), 0).unwrap();
+        assert_eq!(
+            (o.as_str(), c.as_str()),
+            ("\u{00AB}", "\u{00BB}"),
+            "fr-FR → fr fallback « »"
+        );
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("de"), 0).unwrap();
+        assert_eq!((o.as_str(), c.as_str()), ("\u{201E}", "\u{201C}"), "de → „ “");
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("fi"), 0).unwrap();
+        assert_eq!((o.as_str(), c.as_str()), ("\u{201D}", "\u{201D}"), "fi → ” ”");
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("ja"), 0).unwrap();
+        assert_eq!((o.as_str(), c.as_str()), ("\u{300C}", "\u{300D}"), "ja → 「 」");
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("aa"), 0).unwrap();
+        assert_eq!(
+            (o.as_str(), c.as_str()),
+            ("\u{201C}", "\u{201D}"),
+            "aa 未知 → 英语 root “ ”"
+        );
+        // fr 嵌套（depth 1）→ ‹ ›（language nested pair）。
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("fr"), 1).unwrap();
+        assert_eq!((o.as_str(), c.as_str()), ("\u{2039}", "\u{203A}"), "fr depth 1 → ‹ ›");
+        // 大小写不敏感：DE / FR-fr。
+        let (o, _) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("DE"), 0).unwrap();
+        assert_eq!(o, "\u{201E}", "DE 大写 → de „");
+        let (o, _) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("FR-fr"), 0).unwrap();
+        assert_eq!(o, "\u{00AB}", "FR-fr 大小写 → fr «");
         // Pairs → 取对应 depth，clamp 到末对。
         let pairs = QuotesComputedValue::Pairs(vec![
             ("«".to_string(), "»".to_string()),
             ("‹".to_string(), "›".to_string()),
         ]);
-        let (o, c) = resolve_q_quotes(&pairs, 0).unwrap();
+        let (o, c) = resolve_q_quotes(&pairs, None, 0).unwrap();
         assert_eq!((o.as_str(), c.as_str()), ("«", "»"), "Pairs depth 0");
-        let (o, c) = resolve_q_quotes(&pairs, 1).unwrap();
+        let (o, c) = resolve_q_quotes(&pairs, None, 1).unwrap();
         assert_eq!((o.as_str(), c.as_str()), ("‹", "›"), "Pairs depth 1");
         // depth 超过 Pairs 长度 → clamp 到末对。
-        let (o, c) = resolve_q_quotes(&pairs, 5).unwrap();
+        let (o, c) = resolve_q_quotes(&pairs, None, 5).unwrap();
         assert_eq!((o.as_str(), c.as_str()), ("‹", "›"), "Pairs depth 5 clamp");
-        // 空 Pairs → 回落英语默认。
-        let (o, _) = resolve_q_quotes(&QuotesComputedValue::Pairs(vec![]), 0).unwrap();
-        assert_eq!(o, "\u{201C}", "空 Pairs 回落默认 depth 0");
+        // 空 Pairs → 回落按 lang 解析的默认。
+        let (o, _) = resolve_q_quotes(&QuotesComputedValue::Pairs(vec![]), Some("fr"), 0).unwrap();
+        assert_eq!(o, "\u{00AB}", "空 Pairs 回落 fr 默认 «");
     }
 
     /// 辅助：在 doc 中按标签名查找首个元素 NodeId。

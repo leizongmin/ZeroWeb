@@ -1428,6 +1428,16 @@ fn is_property_supported(property: &str, value: &str) -> bool {
     // @supports 声明可带 `!important`（CSS Conditional §7），求值支持性时忽略之。
     // driving: WPT css-supports-004 `(color: green !important)`。
     let trimmed = strip_important(value).trim();
+    // CSS 全局关键字（inherit/initial/unset/revert/revert-layer）对所有属性合法——任意属性
+    // 都可取全局关键字值，故 `(padding: inherit)` 须判支持（不能因 padding 的长度解析器不
+    // 识别 inherit 而判 false）。driving: WPT at-supports-012 `(padding:inherit)` in conjunction。
+    let lower_val = trimmed.to_ascii_lowercase();
+    if matches!(
+        lower_val.as_str(),
+        "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+    ) {
+        return true;
+    }
 
     match lower.as_str() {
         // 布尔特性：有值即为支持
