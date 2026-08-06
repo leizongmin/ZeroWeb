@@ -11930,3 +11930,105 @@ fn test_image_constructor_r2834() {
         "Image() 无 new 亦返 IMG proxy"
     );
 }
+
+#[test]
+fn test_audio_constructor_and_media_methods_r2835() {
+    // R2835：HTMLAudioElement 构造器 new Audio([src]) + HTMLMediaElement play/pause/load/canPlayType no-op。
+    // 音效/播客/通知音频构造高频（new Audio(url).play()）。headless 无音频设备——play 返 resolved Promise、
+    // pause/load no-op、canPlayType 返 ''，使媒体 UI 主模式（play().then(...)）不抛。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><video id='v'></video></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // new Audio(src) → tagName=AUDIO + src 反射。
+    sandbox
+        .execute(
+            "globalThis.__au = new Audio('beep.mp3');\
+             globalThis.__auTag = globalThis.__au.tagName;\
+             globalThis.__auSrc = globalThis.__au.getAttribute('src');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__auTag)").unwrap().value,
+        "AUDIO",
+        "new Audio().tagName=AUDIO"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__auSrc)").unwrap().value,
+        "beep.mp3",
+        "new Audio('beep.mp3') src 反射"
+    );
+
+    // play() 返 resolved Promise（spec 一致）；pause()/load()/canPlayType() no-op 不抛。
+    // 经 microtask checkpoint（execute 末）派发 .then，下 execute 可读 __played。
+    sandbox
+        .execute(
+            "globalThis.__au2 = new Audio('x.mp3');\
+             globalThis.__playType = typeof globalThis.__au2.play;\
+             globalThis.__au2.play().then(function(){ globalThis.__played = 'yes'; });\
+             globalThis.__au2.pause();\
+             globalThis.__au2.load();\
+             globalThis.__cpt = globalThis.__au2.canPlayType('audio/mpeg');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__playType)").unwrap().value,
+        "function",
+        "audio.play 为 function"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cpt)").unwrap().value,
+        "",
+        "audio.canPlayType 返空串（保守不可播放）"
+    );
+    // play().then 回调经 microtask checkpoint 派发——下个 execute 读到 __played。
+    sandbox.execute("void 0").unwrap(); // 触发 microtask checkpoint
+    assert_eq!(
+        sandbox.execute("String(globalThis.__played)").unwrap().value,
+        "yes",
+        "audio.play().then 回调经 microtask 派发（resolved Promise）"
+    );
+
+    // sel-based <video> 元素亦有 media 方法（play no-op 不抛）。
+    sandbox
+        .execute(
+            "globalThis.__vid = document.querySelector('#v');\
+             globalThis.__vidPlay = typeof globalThis.__vid.play;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__vidPlay)").unwrap().value,
+        "function",
+        "<video>.play 为 function（sel-based 亦有 media 方法）"
+    );
+
+    // 非 media 元素（如 div）无 play 方法（get-trap 返 undefined，gate 仅 AUDIO/VIDEO）。
+    sandbox
+        .execute(
+            "globalThis.__div = document.createElement('div'); globalThis.__divPlay = typeof globalThis.__div.play;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__divPlay)").unwrap().value,
+        "undefined",
+        "div 无 play（gate 仅 AUDIO/VIDEO）"
+    );
+
+    // 无 new 调用亦返 audio proxy。
+    assert_eq!(
+        sandbox.execute("String(Audio().tagName)").unwrap().value,
+        "AUDIO",
+        "Audio() 无 new 亦返 AUDIO proxy"
+    );
+}

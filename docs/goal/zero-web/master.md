@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a `new Audio()` ctor + HTMLMediaElement 方法桩（本轮 R2835，缺失 Web API 续 / 音频构造 + 媒体方法）
+
+承接 R2834（Image ctor）。probe 确认 `Audio`/`Video` 全缺（`Video` 非 HTML 标准命名构造器——仅 Image/Option/Audio 三者）。land **`new Audio([src])`**——音效/播客/通知音频构造高频（`new Audio(url).play()`）。返 createElement('audio') proxy（镜像 Image R2834），设 src；允许 new 与无 new。
+
+- **关键设计点**：① 纯 element proxy 镜像 Image——构造 + src 反射 + DOM 挂载走既有路径，零新 infra。② **HTMLMediaElement 方法桩**（play/pause/load/canPlayType）加 element get-trap，仅 AUDIO/VIDEO（`_realTag` gate，sel + handle 双身份——`new Audio()` 创建的 handle-based 亦可调）：headless 无音视频设备，**play 返 `Promise.resolve(undefined)`**（spec：HTMLMediaElement.play() 返 Promise，链式 `.then(...)` 经 execute 末 microtask checkpoint 派发），pause/load no-op，canPlayType 返 `''`（保守「不可播放」）。③ gate 仅 AUDIO/VIDEO——非 media 元素（div 等）`play`=undefined（不污染通用元素 surface）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`Audio(src)` 构造器（createElement('audio') proxy + setAttribute src）+ guarded assign；+element get-trap play/pause/load/canPlayType no-op 桩（AUDIO/VIDEO gate，play 返 resolved Promise）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_audio_constructor_and_media_methods_r2835`（tagName=AUDIO + src 反射 + play 为 function + play().then 经 microtask 派发 + canPlayType 空串 + <video>.play sel-based 亦有 + div 无 play gate + 无 new 调用）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13463 passed / 0 failed / 74 ignored**，13462+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平——纯 JS shim 无 layout/render .rs 改动）+ 全 8 struct PASS。
+
+**为何零回归且净正向**：① 全新增 global（Audio）+ 新增 element get-trap 分支（仅 AUDIO/VIDEO gate，不改既有元素属性/方法路径）；② media 方法仅对 audio/video 元素生效（非 media 元素 play=undefined 不变）；③ play 返 Promise.resolve 无副作用；④ 守卫不覆盖既有定义。
+
+**已知限制（记录）**：① `instanceof Audio`=false（shim 返 Proxy，同 Image/Option 谱）；② headless 无真音视频播放（play 仅 resolve 不发声；无 currentTime/duration/volume 真值——media 时长/音量属性未实现，defer）；③ canPlayType 恒 ''（保守，媒体库可能据此跳过音频——headless 可接受）；④ 无真 media 事件（canplay/canplaythrough/ended 不触发，仅 construction + play Promise 链可用）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面已穷尽（R2820-R2835 覆 modern 动画/编辑/表单（校验+集合+files+indeterminate）/select（options/selectedOptions/selectedIndex/动态填充 new Option+add）/事件/序列化/可见性/剪贴板/焦点/位置/URL/性能/存储/几何读/document 集合/Image+Audio ctor + media 方法 主表面）。剩余全为深项/host-layer：`document.elementFromPoint`（layout rect 全量 hit-test，深）/ customElements upgrade/lifecycle（element proxy 接 ctor，深）/ Shadow DOM attachShadow（深）/ node.normalize（罕见 + 架构重，defer）/ 真 Web Animations timeline（深）/ media 时长/音量属性（需 media 解码 infra）/ 真 files 上传 host 路径 / fetch 非 GET（net，跳过）；极窄可选 valueAsNumber（number input 转换）/ option.index（select 表面补全，需 host 父-select 索引回调）/ scrollIntoViewIfNeeded（WebKit）/ pointer lock；rendering-compat 侧续降频守成（held baseline 13463 全绿）。
+
 ### P1a `new Image()` ctor 增强 → 真 img 元素（本轮 R2834，缺失 Web API 续 / 图片预加载 + DOM 挂载）
 
 承接 R2833（document 集合）。probe 发现 `new Image()` **已 land 但为低质 stub**——返 plain object `{src,width,height,onload,onerror,onabort}`（非 DOM 元素，无 tagName，`document.body.appendChild(new Image())` 失效）。**高频 + WPT 影响**：`new Image()` 用于图片预加载（`new Image().src=url` 预取 / onload 探测）+ DOM 挂载；上游 WPT css-images / css-backgrounds / content-visibility 多个 fixture 经 `new Image()` 构造（旧 stub 致图不挂载不渲染）。**land**：改 `new Image(width, height)` 返 `createElement('img')` proxy（镜像 Option R2832 模式），设 width/height 内容属性；允许 new 与无 new。

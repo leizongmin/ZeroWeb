@@ -2069,6 +2069,17 @@
   }
   globalThis.Image = globalThis.Image || Image;
 
+  // `new Audio([src])`（HTMLAudioElement 构造器，R2835）——音效/播客/通知音频构造高频（`new Audio(url).play()`）。
+  // 返 createElement('audio') proxy（镜像 Image R2834），设 src；允许 new 与无 new。headless 无音频设备——
+  // play/pause/load 为 no-op（play 返 resolved Promise，spec），经下方 HTMLMediaElement 方法桩。`instanceof
+  // Audio`=false（shim 返 Proxy，同 Image/Option 谱，documented）。
+  function Audio(src) {
+    var el = globalThis.document.createElement('audio');
+    if (src !== undefined) { try { el.setAttribute('src', String(src)); } catch (_e) {} }
+    return el;
+  }
+  globalThis.Audio = globalThis.Audio || Audio;
+
   // `new Option(text, value, defaultSelected, selected)`（HTMLOptionElement 构造器，R2832）——动态选项
   // 创建（`select.add(new Option('Apple','a'))` 动态下拉填充高频）。返 createElement('option') proxy，
   // 设 text/value/selected；允许 new 与无 new（返值覆盖 this）。shim 元素为 Proxy 非 ctor 实例，故
@@ -2915,6 +2926,22 @@
             }
             return undefined;
           };
+        }
+        // HTMLMediaElement 方法（play/pause/load/canPlayType，R2835）——仅 AUDIO/VIDEO（_realTag gate，
+        // 支持 sel + handle 两种身份——new Audio 创建的 handle-based 亦可调）。headless 无音视频设备：
+        // play 返 resolved Promise（spec：HTMLMediaElement.play() 返 Promise），pause/load no-op，
+        // canPlayType 返 ''（保守「不可播放」）。使 `new Audio(url).play().then(...)` 不抛（媒体 UI 主模式）。
+        if (prop === 'play' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          return function () { return Promise.resolve(undefined); };
+        }
+        if (prop === 'pause' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          return function () {};
+        }
+        if (prop === 'load' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          return function () {};
+        }
+        if (prop === 'canPlayType' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          return function () { return ''; };
         }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
