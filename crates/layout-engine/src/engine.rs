@@ -1096,6 +1096,9 @@ impl LayoutEngine {
             resolve_float_physical(&s.float, matches!(s.direction, DirectionValue::Rtl))
         });
         let clear = computed.map_or(ClearValue::None, |s| {
+            // CSS 2.1 §9.10：`clear` 仅适用于 block-level 元素。internal table 元素（row/cell/column/
+            // column-group/row-group/header/footer/caption）与 inline-level（inline-table）非 block-level，
+            // clear 须忽略（= None）。driving: WPT css/CSS2/floats-clear/clear-applies-to-004..015。
             if matches!(
                 s.display,
                 DisplayValue::TableRowGroup
@@ -1105,6 +1108,8 @@ impl LayoutEngine {
                     | DisplayValue::TableCell
                     | DisplayValue::TableColumn
                     | DisplayValue::TableColumnGroup
+                    | DisplayValue::TableCaption
+                    | DisplayValue::InlineTable
             ) {
                 ClearValue::None
             } else {

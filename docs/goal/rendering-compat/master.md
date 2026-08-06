@@ -14,6 +14,8 @@
 
 ## 最近轮次摘要
 
+
+> **📍 R2854（2026-08-07）🔧 clear display-gate 补全 land（+TableCaption +InlineTable / rendering-compat 真渲染修复，driving WPT reftest flip）：承接 R2853。fresh scoped reftest `css/CSS2/floats-clear`（166/214 self-source）发现 clear-applies-to-004/005/006/014/015 五案 ~3.83% 簇。**调研**：existing clear display-gate（engine.rs:1098）已覆 TableRowGroup/HeaderGroup/FooterGroup/Row/Cell/Column/ColumnGroup → clear=None（CSS 2.1 §9.10 clear 仅适用 block-level），**漏 TableCaption + InlineTable**。**land**：gate 扩 +TableCaption + InlineTable（spec-correct：internal table caption + inline-level inline-table 非 block-level）。**验证**：clear-applies-to-015（table-caption）reftest **flip ✅ PASS**（self-source 167/214，+1，零回归）；004/005/006/014 余量来自 table 布局精度（非 clear，R109/table territory deep）故仍 fail。**门禁全绿**：fmt clean / clippy 零警告 / `make test` **13482/0/74**（R2853 13479 + 3 新 layout-engine 单测 r2854_clear_display_gate，零回归）/ floats-clear reftest 167/214（+1 = 015 flip）/ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（layout 改动验零回归）。**已知限制（记录）**：clear-applies-to-014（inline-table）clear 已被 gate 忽略但其 fail 是 inline-table 布局精度（非 clear）；004/005/006 已在既有 gate（clear=None），fail 是 table 布局。**门禁**：.rs（layout-engine engine.rs gate + 3 单测）+ rendering-compat master.md；pre-commit guard PASS。**
 > **📍 R2853（2026-08-07）🔧 document.contentType + Node.normalize land（剩余 Web API 表面收尾 / 主线在 zero-web）：承接 R2852。close 最后剩余 Web API 表面缺口：① `document.contentType` = 'text/html'（HTML 文档 MIME，content-sniffing / HTTP-utility 代码读，旧 fallthrough undefined）；② `Node.normalize()` no-op——snapshot 模型元素文本为单一串（无独立 Text 子节点暴露），故 DOM 态已「normalized」，no-op 语义正确（非误导 stub），防 rich-text 编辑器 / innerHTML 后清理的 `el.normalize()` 防御性调用抛 TypeError。**门禁全绿**：fmt clean / clippy 零警告 / `make test` **13479/0/74**（R2851 13478 + 1 新测试，零回归；engine lib 1578 零回归）。**已知限制**：normalize no-op（无 Text 子节点可合并，架构既限）；canvas/video width-height defer（特殊缺省/bitmap）。**门禁**：.rs（engine shim+测试）；pre-commit guard PASS。**
 
 > **📍 R2852（2026-08-07）🔧 reftest-smoke grep -P 可移植性修复（run-reftest-smoke.sh / DC-1 reftest 基建）：承接 R2851。run-reftest-smoke.sh 用 `grep -oP '...\K...'`（Perl 正则）提取 Passed 计数——BSD grep（macOS）不支持 -P/\K，会致 smoke 门禁在 macOS 恒误报 FAIL（CI reftest job 跑 ubuntu 故 latent，但破 macOS dev / 矩阵扩展）。**改可移植 awk**（`awk '/^  Passed:/{print $2; exit}'`，GNU+BSD 通用）；行为验证 PASS→1→✓ / FAIL→空→✗。补并行 session 074f87e4 的 `$1` unbound 修复（同文件不同 bug）。**端到端验证**：`make reftest-smoke` 跑并行 session 填充的 15 representative case **15/15 PASS**（awk fix + populated list 协同 functional）。**门禁**：bash -n + 行为 mock OK / fmt clean / clippy 零警告 / `make test` 13478/0/74（.sh-only，cargo suite 不受影响）；pre-commit guard PASS。**
@@ -299,7 +301,7 @@
 
 ### 测试覆盖率
 
-- **cargo test**：13000+ 测试全部通过（`make test`：**13479 passed / 0 failed / 74 ignored，截至 R2853**；R2638 后 held baseline 13193 经父目标 zero-web P1 DOM/JS Bridge 系列〔R2704-R2853〕+286 推进至 13479，rendering-compat surface 零回归；R2853 document.contentType+node.normalize +1 13478→13479；R2554 + R2563 + R2583 + R2604 + R2613 + R2845-R2853 周期复跑逐位确认）
+- **cargo test**：13000+ 测试全部通过（`make test`：**13482 passed / 0 failed / 74 ignored，截至 R2854**；R2638 后 held baseline 13193 经父目标 zero-web + rendering-compat 系列〔R2704-R2854〕+289 推进至 13482，rendering-compat surface 零回归；R2854 clear display-gate 补全 + 3 layout-engine 单测 13479→13482；R2554 + R2563 + R2583 + R2604 + R2613 + R2845-R2854 周期复跑逐位确认）
 - **cargo clippy**：`cargo clippy --workspace --all-targets -D warnings` 通过
 - **#[ignore] 测试**：74 个 ignored（real_website_compat.rs 等因本地网络不稳定的用例，不计入通过率）
 
