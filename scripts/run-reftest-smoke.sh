@@ -50,7 +50,9 @@ echo "════════════════════════�
 failed=0
 for case_id in "${CASES[@]}"; do
   output=$("$RUNNER" reftest-upstream "$case_id" 2>&1 || true)
-  passed=$(echo "$output" | grep -oP '^  Passed:\s*\K[0-9]+' || echo 0)
+  # 提取 `  Passed:  N` 摘要行的数值（runner format_reftest_report 输出）。用 awk 而非 `grep -oP`
+  #（Perl 正则 \K）——后者在 BSD grep（macOS）不可用，会致 smoke 门禁在 macOS 恒误报 FAIL。
+  passed=$(echo "$output" | awk '/^  Passed:/{print $2; exit}')
   if [[ "$passed" == "1" ]]; then
     echo "  ✓ ${case_id}"
   else
