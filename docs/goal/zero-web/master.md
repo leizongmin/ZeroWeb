@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a reflected 布尔/枚举全局属性 autofocus/draggable/spellcheck/translate（本轮 R2848，缺失 Web API 续 / reflected-attr 表面续）
+
+承接 R2847（MutationRecord）。probe（get-trap 未显式 handle 的 string prop 落 undefined）发现 4 个常见 reflected 全局属性旧 fallthrough 返 **undefined**（spec 须布尔）：`autofocus`（boolean attr，缺省 false）、`draggable`（enum，缺省 false）、`spellcheck`（boolean，spec 缺省 **true**）、`translate`（enum，spec 缺省 **true**）。表单（autofocus）/ 拖拽库（draggable）/ 编辑器（spellcheck）/ 本地化（translate）读这些属性高频。延续 R2840 reflected-attr 模式。
+
+- **关键设计点（spec-correct）**：① **getter**（4-prop 块，aria 块后）——优先读 `_reflectedAttrs` 缓存（setter 写解析布尔，同步 set→get 即时），无缓存则 host attr 解析：autofocus 走 `__zw_has_attr(_handle)` presence 判定（boolean attr）；draggable `rfRaw==='true'`→true 余（`"false"`/`""`/缺省）→false；spellcheck `rfRaw!=='false'`→true（含缺省，spec 默认 true）；translate `rfRaw!=='no'`→true（默认 true）。② **setter**（4-prop 块，hidden/checked 块后）——归一布尔 → 缓存 + 写 attr：autofocus=boolean presence（truthy `__zw_set_attr('','')` / falsy 真移除 `__zw_remove_attr`）；draggable/spellcheck 写 `"true"`/`"false"`；translate 写 `"yes"`/`"no"`。③ Chromium oracle 锚定默认值（autofocus/draggable=false，spellcheck/translate=true）。
+- **复用既有 reflected-attr infra**：`_reflectedAttrs` 缓存 + `__zw_get_attr(_handle)`/`__zw_has_attr(_handle)`/`__zw_set_attr(_handle)`/`__zw_remove_attr`，零新 host 回调。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | get-trap +4-prop reflected 块（aria 块后）；set-trap +4-prop 块（hidden/checked 块后）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_reflected_global_attrs_..._r2848`（attr-present 读取 4 属性 + plain 缺省默认值 + setter 同步 set→get 缓存即时 + apply 后 attr 写回核验 autofocus presence / draggable="true" / spellcheck="false" / translate="yes"）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13475 passed / 0 failed / 74 ignored**，13474+1 新测试，0 回归；engine lib 1574 测试零回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（welcome 不读这些属性，新路径不触发）。
+
+**为何零回归且净正向**：① 4-prop gate 严格（显式 prop 名），不改既有 reflected/boolean 属性路径（title/lang/dir/tabIndex/contentEditable/hidden/checked 不变）；② 仅当页面读写 autofocus/draggable/spellcheck/translate 时触发（welcome 不用）；③ 复用既有 reflected-attr infra（零新 host 回调）；④ getter 从 undefined→spec 布尔，对读这些属性的库是改善。
+
+**已知限制（记录）**：① draggable 缺省（auto）简化为 false（spec：img/a[href] 等原生 draggable 元素缺省 true——需 tag 感知，罕见 defer）；② 更多 reflected 全局属性（`inert`/`autocomplete`/`enterkeyhint` 等）未含（可续同模式）；③ spellcheck/translate 缺省 true 经 host attr 缺失判定（无 attr → true，spec 一致）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面续扫——更多 reflected 全局属性（inert/autocomplete）或 `option.index`（selector-based 可续 R2842 rowIndex 模式〔_ancestorChain→SELECT + querySelectorAll('option') + identity〕，handle-based 需 host 树遍历故部分）；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / 真 WAAPI / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13475 全绿）。
+
 ### P1a MutationRecord instanceof + spec 字段完整性（本轮 R2847，缺失 Web API 续 / 观察者 record spec-completeness）
 
 承接 R2846（output.value/defaultValue）。probe 发现 MutationObserver 回调收到的 record 为 plain object（`var rec = {}`）——`instanceof MutationRecord` 假、toStringTag `[object Object]` 非 `[object MutationRecord]`、缺 spec 字段（previousSibling/nextSibling/attributeNamespace/oldValue 缺省 null，addedNodes/removedNodes 缺省 []）。MO 实现功能正确，唯 record 未建为 MutationRecord 实例 + 字段不全。

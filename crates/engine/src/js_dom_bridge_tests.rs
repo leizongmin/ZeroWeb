@@ -13289,3 +13289,135 @@ fn test_mutation_record_instanceof_spec_fields_r2847() {
         "removedNodes 缺省 []（spec，length 0）"
     );
 }
+
+#[test]
+fn test_reflected_global_attrs_autofocus_draggable_spellcheck_translate_r2848() {
+    // R2848：reflected 布尔/枚举全局属性 autofocus/draggable/spellcheck/translate——旧 fallthrough 返 undefined
+    // （spec 须布尔）。spec 默认：autofocus=false / draggable=false / spellcheck=true / translate=true。
+    // autofocus=boolean attr（presence）；draggable/spellcheck="true"/"false"；translate="yes"/"no"。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // autofocus 默认缺省 / draggable="true" attr / spellcheck="false" attr / translate="no" attr。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='a' autofocus>\
+         <div id='d' draggable='true'></div>\
+         <div id='s' spellcheck='false'></div>\
+         <div id='t' translate='no'></div>\
+         <div id='plain'></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 读：autofocus(a, present)→true；draggable(d,"true")→true；spellcheck(s,"false")→false；
+    // translate(t,"no")→false；plain 全缺省：autofocus=false / draggable=false / spellcheck=true / translate=true。
+    sandbox
+        .execute(
+            "globalThis.__af = document.querySelector('#a').autofocus;\
+             globalThis.__dg = document.querySelector('#d').draggable;\
+             globalThis.__sc = document.querySelector('#s').spellcheck;\
+             globalThis.__tr = document.querySelector('#t').translate;\
+             var p = document.querySelector('#plain');\
+             globalThis.__paf = p.autofocus;\
+             globalThis.__pdg = p.draggable;\
+             globalThis.__psc = p.spellcheck;\
+             globalThis.__ptr = p.translate;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__af)").unwrap().value,
+        "true",
+        "a[autofocus] present → autofocus=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dg)").unwrap().value,
+        "true",
+        "div[draggable='true'] → draggable=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sc)").unwrap().value,
+        "false",
+        "div[spellcheck='false'] → spellcheck=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tr)").unwrap().value,
+        "false",
+        "div[translate='no'] → translate=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__paf)").unwrap().value,
+        "false",
+        "plain autofocus 缺省 → false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pdg)").unwrap().value,
+        "false",
+        "plain draggable 缺省 → false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__psc)").unwrap().value,
+        "true",
+        "plain spellcheck 缺省 → true（spec 默认）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ptr)").unwrap().value,
+        "true",
+        "plain translate 缺省 → true（spec 默认）"
+    );
+
+    // setter：同步 set→get 优先读缓存（即时）。autofocus=true 设 presence；draggable=true→attr "true"；
+    // spellcheck=false→attr "false"；translate=true→attr "yes"。apply 后 attr 写回核验。
+    sandbox
+        .execute(
+            "var e = document.querySelector('#plain');\
+             e.autofocus = true; e.draggable = true; e.spellcheck = false; e.translate = true;\
+             globalThis.__saf = e.autofocus;\
+             globalThis.__sdg = e.draggable;\
+             globalThis.__ssc = e.spellcheck;\
+             globalThis.__str = e.translate;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__saf)").unwrap().value,
+        "true",
+        "setter autofocus=true → true（缓存即时）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sdg)").unwrap().value,
+        "true",
+        "setter draggable=true → true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ssc)").unwrap().value,
+        "false",
+        "setter spellcheck=false → false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__str)").unwrap().value,
+        "true",
+        "setter translate=true → true"
+    );
+
+    // apply mutations → 核验 attr 写回（autofocus presence / draggable="true" / spellcheck="false" / translate="yes"）。
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms).unwrap();
+    assert!(
+        out.contains("id=\"plain\" autofocus"),
+        "autofocus setter 写 presence\n{out}"
+    );
+    assert!(out.contains("draggable=\"true\""), "draggable setter 写 'true'\n{out}");
+    assert!(
+        out.contains("spellcheck=\"false\""),
+        "spellcheck setter 写 'false'\n{out}"
+    );
+    assert!(out.contains("translate=\"yes\""), "translate setter 写 'yes'\n{out}");
+}

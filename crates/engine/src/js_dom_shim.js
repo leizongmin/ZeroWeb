@@ -3314,6 +3314,26 @@
           if (arc && Object.prototype.hasOwnProperty.call(arc, _ariaName)) return arc[_ariaName];
           return (handle ? __zw_get_attr_handle(handle, _ariaName) : __zw_get_attr(sel, _ariaName)) || '';
         }
+        // reflected 布尔/枚举全局属性（R2848）：autofocus/draggable/spellcheck/translate——
+        // 旧 fallthrough 返 undefined（spec 须布尔）。getter 优先读 _reflectedAttrs 缓存（setter 写解析布尔，
+        // 同步 set→get 即时），无缓存则从 host attr 解析。spec 默认：autofocus/draggable=false，
+        // spellcheck/translate=true。autofocus 为 boolean attr（presence 判定，has_attr）。
+        if (prop === 'autofocus' || prop === 'draggable' || prop === 'spellcheck' || prop === 'translate') {
+          var rfc = _reflectedAttrs[key];
+          if (rfc && Object.prototype.hasOwnProperty.call(rfc, prop)) return rfc[prop];
+          if (prop === 'autofocus') {
+            // boolean attr：presence（has_attr）→ true；缺省 → false。
+            if (handle) {
+              try { return __zw_has_attr_handle(handle, 'autofocus') === '1'; } catch (_e) { return false; }
+            }
+            return typeof __zw_has_attr === 'function' && __zw_has_attr(sel, 'autofocus') === '1';
+          }
+          var rfRaw = handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop);
+          rfRaw = (rfRaw == null) ? '' : String(rfRaw).toLowerCase();
+          if (prop === 'draggable') return rfRaw === 'true';   // "true"→true，余（"false"/""/缺省 auto）→false（简化）
+          if (prop === 'spellcheck') return rfRaw !== 'false'; // "false"→false，余（含缺省）→true（spec 默认 true）
+          return rfRaw !== 'no';                               // translate："no"→false，余→true（默认 true）
+        }
         // `el.dataset`——`data-*` 属性的 camelCase 键对象（get/set/has/delete/枚举）。
         // dataset.fooBar ↔ data-foo-bar 属性。handle 脱离 DOM 元素枚举受限（无 attr-names-handle）。
         if (prop === 'dataset') {
@@ -4287,6 +4307,24 @@
             moAttr = p;
           }
           // handle falsy：无 remove-handle 变体 → 不设（detach 元素 append 时默认无该布尔属性）。
+        } else if (p === 'autofocus' || p === 'draggable' || p === 'spellcheck' || p === 'translate') {
+          // reflected 布尔/枚举全局属性（R2848）：归一布尔 → 缓存 + 写 attr（autofocus=boolean presence，
+          // draggable/spellcheck="true"/"false"，translate="yes"/"no"）。falsy autofocus 真移除。
+          var sv = !!value;
+          var rc4 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
+          rc4[p] = sv;
+          if (p === 'autofocus') {
+            if (sv) {
+              if (handle) __zw_set_attr_handle(handle, 'autofocus', '');
+              else { __zw_set_attr(sel, 'autofocus', ''); moAttr = 'autofocus'; }
+            } else if (!handle && typeof __zw_remove_attr === 'function') {
+              __zw_remove_attr(sel, 'autofocus'); moAttr = 'autofocus';
+            }
+          } else {
+            var attrV = (p === 'translate') ? (sv ? 'yes' : 'no') : (sv ? 'true' : 'false');
+            if (handle) __zw_set_attr_handle(handle, p, attrV);
+            else { __zw_set_attr(sel, p, attrV); moAttr = p; }
+          }
         } else {
           if (handle) __zw_set_attr_handle(handle, p, String(value));
           else __zw_set_attr(sel, p, String(value));
