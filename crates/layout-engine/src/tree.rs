@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use taffy::prelude::*;
-use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, PositionValue};
+use zero_css_parser::values::{DisplayValue, FlexDirectionValue, FloatValue, LengthValue, PositionValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, WritingModeValue};
 
@@ -1098,6 +1098,58 @@ fn build_subtree(
             }
             if idx + 1 == in_flow_block.len() && ps.margin_trim.block_end {
                 taffy_style.margin.bottom = zero;
+            }
+        }
+    }
+
+    // margin-trim（css-box-4 §margin-trim）— flex 容器主轴（horizontal-tb，单行）：
+    // row → 主轴 = inline，`margin_trim.inline_start`/`inline_end` 裁首子 margin-left / 末子
+    // margin-right；column → 主轴 = block，`block_start`/`block_end` 裁首子 margin-top / 末子
+    // margin-bottom。单项时首末为同一子 → 两侧均裁（flex-grow/shrink 得空间填容器）。
+    // **bounded defer**：row-reverse/column-reverse（物理首末反向）、RTL row、cross 轴 trim、
+    // 多行（wrap）逐行首末——均需 taffy 行信息或方向映射，暂不处理（driving tests 皆 LTR 单行）。
+    // kill-switch 同 block 分支 `ZW_MARGIN_TRIM=0`（default-on）。driving: css/css-box/margin-trim/
+    // flex-row-grow / flex-row-shrink / flex-column-grow / flex-column-shrink。
+    if std::env::var("ZW_MARGIN_TRIM").as_deref() != Ok("0")
+        && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
+        && let Some(parent_id) = doc.parent_node(dom_id)
+        && let Some(ps) = styles.get(&parent_id)
+        && matches!(ps.display, DisplayValue::Flex)
+        && is_block_level_in_flow(&computed.display, &computed.position)
+        && matches!(ps.flex_direction, FlexDirectionValue::Row | FlexDirectionValue::Column)
+    {
+        let in_flow_flex: Vec<NodeId> = doc
+            .child_nodes(parent_id)
+            .iter()
+            .copied()
+            .filter(|&s| {
+                styles
+                    .get(&s)
+                    .is_some_and(|st| is_block_level_in_flow(&st.display, &st.position))
+            })
+            .collect();
+        if let Some(idx) = in_flow_flex.iter().position(|&s| s == dom_id) {
+            let zero = taffy::style::LengthPercentageAuto::length(0.0_f32);
+            let is_first = idx == 0;
+            let is_last = idx + 1 == in_flow_flex.len();
+            match ps.flex_direction {
+                FlexDirectionValue::Row => {
+                    if is_first && ps.margin_trim.inline_start {
+                        taffy_style.margin.left = zero;
+                    }
+                    if is_last && ps.margin_trim.inline_end {
+                        taffy_style.margin.right = zero;
+                    }
+                }
+                FlexDirectionValue::Column => {
+                    if is_first && ps.margin_trim.block_start {
+                        taffy_style.margin.top = zero;
+                    }
+                    if is_last && ps.margin_trim.block_end {
+                        taffy_style.margin.bottom = zero;
+                    }
+                }
+                _ => {}
             }
         }
     }
