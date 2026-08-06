@@ -26,6 +26,10 @@
     item: function (_i) { return null; },
     [Symbol.iterator]: function* () {},
   };
+  // HTMLInputElement.indeterminate（R2831）：JS-only IDL 布尔（**非 reflected attr**——无 indeterminate
+  // 内容属性，纯 JS 状态）。checkbox「全选」tri-state UI 高频（父 checkbox 半选态）。per-element-key，
+  // 默认 false。同 _inputValues/_classCache 经 `__zw_reset_form_state` 清空。
+  var _indeterminate = {};
   // reflected 字符串/数值属性（title/lang/dir/tabindex）per-element-key 缓存。同 _inputValues/_classCache
   // 动机——`__zw_set_attr` 仅入队 mutation（异步 apply），同步 set→get 往返须客户端缓存（get 优先读缓存）。
   // 值结构：{ title?: string, lang?: string, dir?: string, tabindex?: number }。
@@ -589,7 +593,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
@@ -2815,6 +2819,11 @@
         if (prop === 'files' && _isTag(sel, 'INPUT')) {
           return _emptyFileList;
         }
+        // `input.indeterminate`（HTMLInputElement，R2831）——JS-only IDL 布尔（非 reflected attr），
+        // per-element `_indeterminate` map（默认 false）。checkbox「全选」tri-state UI 高频。仅 INPUT。
+        if (prop === 'indeterminate' && _isTag(sel, 'INPUT')) {
+          return _indeterminate[key] === true;
+        }
         if (prop === 'checked' || prop === 'hidden' || prop === 'disabled') {
           // boolean reflected property（checked/hidden/disabled）——属性存在性（经 host `__zw_has_attr`）。
           if (typeof __zw_has_attr === 'function') {
@@ -3790,6 +3799,9 @@
               moAttr = 'value';
             }
           }
+        } else if (p === 'indeterminate') {
+          // JS-only IDL 布尔（非 reflected attr）—— per-element state map（默认 false）。无属性 mutation。
+          _indeterminate[key] = !!value;
         } else if (p === 'hidden' || p === 'checked' || p === 'disabled' || p === 'selected') {
           // boolean reflected property：truthy → 设存在（空值，has_attr=true）；falsy → 真移除
           // （has_attr=false）。修正旧 fallthrough 写空串致 falsy 仍 present 的 bug。

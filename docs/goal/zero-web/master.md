@@ -2091,6 +2091,27 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a HTMLInputElement.indeterminate（JS-only 布尔）（本轮 R2831，缺失 Web API 续）
+
+承接 R2830（input.files）。**pivot 自 select.selectedOptions**：probe 发现 `selectedOptions`/`selectedIndex`/`select.options`/`option.selected` **已 land**（P1a select 区，line 2598-2844），上一轮 CONTINUE stale。改 land **`input.indeterminate`**——checkbox「全选」tri-state UI 高频（父 checkbox 半选态：`parent.indeterminate = any && !all`）。probe 确认 shim 0 实现。
+
+- **关键设计点**：`indeterminate` 是 **JS-only IDL 布尔**（**非 reflected attr**——无 `indeterminate` 内容属性，纯 JS 状态），区别于 `checked`（reflected attr 经 `__zw_has_attr`）。故 per-element `_indeterminate[key]` map（默认 false）。
+- **get**（INPUT gate via `_isTag`）：`_indeterminate[key] === true`；非 input → undefined。
+- **set**（set-trap 拦截 `p === 'indeterminate'`，在 boolean-reflected 分支前）：`_indeterminate[key] = !!value`；**不设属性 / 不 MO notify**（非属性变更）。reset 经 `__zw_reset_form_state`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_indeterminate` map（+ reset join）+ get-trap `files` 后加 `indeterminate`（INPUT gate，读 map）+ set-trap boolean-reflected 前加 `indeterminate`（写 map，无 attr）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_input_indeterminate_r2831`（默认 false + set true round-trip + set false 恢复 + tri-state「全选」模式 any&&!all → true + 非 input .indeterminate=undefined）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13459 passed / 0 failed / 74 ignored**，13458+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新增 input 属性（additive，gate INPUT，非 input 透传）；② set-trap 拦截在 boolean-reflected 前（不误设 `indeterminate` 属性，保持 JS-only 语义）；③ 纯 JS per-element state（零 host 回调、零渲染副作用——headless 不渲染 dash 态，仅状态 round-trip）；④ `_indeterminate[key]` 经 `__zw_reset_form_state` 清空（同既有 form state）。
+
+**已知限制（记录）**：① headless 不渲染 indeterminate dash 视觉态（仅 JS 状态 round-trip，documented）；② 非 INPUT 元素 set 仍写 map（get gate INPUT 故读 undefined——轻微 set/get 不对称，harmless）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面**已穷尽**（R2820-R2831 覆 modern 动画/编辑/表单（校验+集合+files+indeterminate）/select（options/selectedOptions/selectedIndex）/事件/序列化/可见性/剪贴板/焦点/位置/URL/性能/存储/几何读 主表面）。剩余全为深项/host-layer 或极窄：`document.elementFromPoint`（layout rect 全量 hit-test，深）/ customElements upgrade/lifecycle（element proxy 接 ctor，深）/ Shadow DOM attachShadow（深）/ node.normalize（罕见 + 架构重，defer）/ 真 Web Animations timeline（深）/ 真 files 上传 host 路径 / fetch 非 GET（net，跳过）；极窄可选 valueAsNumber（number input 转换）/ option.index（select 表面补全）/ scrollIntoViewIfNeeded（WebKit）/ pointer lock；rendering-compat 侧续降频守成（held baseline 13459 全绿）。
+
 ### P1a HTMLInputElement.files（空 FileList）（本轮 R2830，缺失 Web API 续）
 
 承接 R2829（form.elements）。land **`input.files`（FileList）**——上传表单读 `input.files.length` / 迭代 / `files[0]` 高频（文件上传 UI、拖拽上传库）。headless 无真文件 → 共享**空 FileList**（length 0 + item→null + 可迭代），让上传 JS 不抛（无文件 → length 0 → 跳过上传逻辑，permissive）。仅 INPUT（`_isTag` gate）；非 input → undefined。

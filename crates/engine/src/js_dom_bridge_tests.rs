@@ -11569,3 +11569,76 @@ fn test_input_files_filelist_r2830() {
         "非 input .files=undefined"
     );
 }
+
+#[test]
+fn test_input_indeterminate_r2831() {
+    // R2831：HTMLInputElement.indeterminate——JS-only IDL 布尔（非 reflected attr）。checkbox「全选」
+    // tri-state UI 高频（父 checkbox 半选态）。per-element state（默认 false）；get/set round-trip。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id='c' type='checkbox'><div id='d'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 默认 false；set true round-trip；set false 恢复。
+    sandbox
+        .execute(
+            "globalThis.__cb = document.querySelector('#c');\
+             globalThis.__def = globalThis.__cb.indeterminate;\
+             globalThis.__cb.indeterminate = true;\
+             globalThis.__afterTrue = globalThis.__cb.indeterminate;\
+             globalThis.__cb.indeterminate = false;\
+             globalThis.__afterFalse = globalThis.__cb.indeterminate;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__def)").unwrap().value,
+        "false",
+        "默认 indeterminate=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__afterTrue)").unwrap().value,
+        "true",
+        "set true round-trip"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__afterFalse)").unwrap().value,
+        "false",
+        "set false 恢复"
+    );
+
+    // 「全选」tri-state 模式：3 子 checkbox 部分选 → 父 indeterminate。
+    sandbox
+        .execute(
+            "globalThis.__children = [true, false, true];\
+             globalThis.__all = globalThis.__children.every(function(v){ return v; });\
+             globalThis.__any = globalThis.__children.some(function(v){ return v; });\
+             globalThis.__cb.indeterminate = globalThis.__any && !globalThis.__all;\
+             globalThis.__tri = globalThis.__cb.indeterminate;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tri)").unwrap().value,
+        "true",
+        "tri-state：部分选 → 父 indeterminate=true"
+    );
+
+    // 非 input 元素 .indeterminate → undefined（gate：仅 INPUT）。
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#d').indeterminate)")
+            .unwrap()
+            .value,
+        "undefined",
+        "非 input .indeterminate=undefined"
+    );
+}
