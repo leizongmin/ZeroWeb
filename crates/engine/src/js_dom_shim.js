@@ -2957,6 +2957,28 @@
         if (prop === 'canPlayType' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
           return function () { return ''; };
         }
+        // HTMLAnchorElement/HTMLAreaElement URL 分解 IDL 属性（href/pathname/search/hash/host/hostname/port/
+        // protocol/origin/username/password，R2838）——经 `__zw_parse_url`（R2778 url crate）解析 href 属性
+        // （base = 页面 location.href）取组件。`a.href` getter 返**绝对** URL（区别 getAttribute('href') 返
+        // 原始串——jQuery .prop('href') vs .attr('href')）；其余组件返解析值；无 href / 未注册回调 / 解析失败
+        // → 空值（href getter 回落原始串）。SPA 路由（读 a.pathname/a.search）/链接分析/analytics 高频。
+        // **已知限制**：仅 getter；组件 setter（a.pathname='/x'）经 set-trap catch-all 误设 spurious 属性
+        // （罕见，defer——a.href setter 经 catch-all 正确设 href 属性）。
+        if ((_realTag(sel, handle) === 'A' || _realTag(sel, handle) === 'AREA') &&
+            (prop === 'href' || prop === 'pathname' || prop === 'search' || prop === 'hash' ||
+             prop === 'host' || prop === 'hostname' || prop === 'port' || prop === 'protocol' ||
+             prop === 'origin' || prop === 'username' || prop === 'password')) {
+          var aRaw = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
+          if (!aRaw) return '';
+          if (typeof __zw_parse_url !== 'function') return prop === 'href' ? aRaw : '';
+          try {
+            var aBase = globalThis.location ? globalThis.location.href : '';
+            var aJson = __zw_parse_url(aRaw, aBase);
+            if (!aJson) return prop === 'href' ? aRaw : '';
+            var aVal = JSON.parse(aJson)[prop];
+            return aVal == null ? '' : aVal;
+          } catch (_e) { return prop === 'href' ? aRaw : ''; }
+        }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
         if (prop === 'text' && _realTag(sel, handle) === 'OPTION') {

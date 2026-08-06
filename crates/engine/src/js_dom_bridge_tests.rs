@@ -12132,3 +12132,144 @@ fn test_input_value_as_number_r2836() {
         "valueAsNumber=NaN setter 经 value 属性 mutation（apply 后 value=''）\n{out}"
     );
 }
+
+#[test]
+fn test_anchor_url_decomposition_r2838() {
+    // R2838：HTMLAnchorElement/HTMLAreaElement URL 分解 IDL 属性（href/pathname/search/hash/host/hostname/
+    // port/protocol/origin）——经 __zw_parse_url 解析 href 属性取组件。SPA 路由/链接分析/analytics 高频。
+    // a.href getter 返绝对 URL（区别 getAttribute 返原始串——jQuery .prop vs .attr）；相对 href 经 base 解析。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <a id='abs' href='https://example.com:8080/path?q=1#h'>abs</a>\
+         <a id='rel' href='/rel'>rel</a>\
+         <a id='none'>nohref</a>\
+         </body></html>"
+            .to_string(),
+    ));
+    // 页面 base URL 用于相对 href 解析。
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/base/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 绝对 href 全组件解析。
+    sandbox
+        .execute(
+            "var a = document.querySelector('#abs');\
+             globalThis.__href = a.href;\
+             globalThis.__protocol = a.protocol;\
+             globalThis.__host = a.host;\
+             globalThis.__hostname = a.hostname;\
+             globalThis.__port = a.port;\
+             globalThis.__pathname = a.pathname;\
+             globalThis.__search = a.search;\
+             globalThis.__hash = a.hash;\
+             globalThis.__origin = a.origin;\
+             globalThis.__rawHref = a.getAttribute('href');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__href)").unwrap().value,
+        "https://example.com:8080/path?q=1#h",
+        "a.href 绝对 URL"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__protocol)").unwrap().value,
+        "https:",
+        "a.protocol"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__host)").unwrap().value,
+        "example.com:8080",
+        "a.host"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hostname)").unwrap().value,
+        "example.com",
+        "a.hostname"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__port)").unwrap().value,
+        "8080",
+        "a.port"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pathname)").unwrap().value,
+        "/path",
+        "a.pathname"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__search)").unwrap().value,
+        "?q=1",
+        "a.search"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hash)").unwrap().value,
+        "#h",
+        "a.hash"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__origin)").unwrap().value,
+        "https://example.com:8080",
+        "a.origin"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rawHref)").unwrap().value,
+        "https://example.com:8080/path?q=1#h",
+        "getAttribute('href') 原始串（绝对时同 href）"
+    );
+
+    // 相对 href：getAttribute 返原始 '/rel'，a.href 经 base 解析返绝对 URL；组件正确。
+    sandbox
+        .execute(
+            "var r = document.querySelector('#rel');\
+             globalThis.__relRaw = r.getAttribute('href');\
+             globalThis.__relHref = r.href;\
+             globalThis.__relPath = r.pathname;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__relRaw)").unwrap().value,
+        "/rel",
+        "相对 href getAttribute 返原始 '/rel'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__relHref)").unwrap().value,
+        "http://test.local/rel",
+        "相对 href a.href 经 base 解析返绝对 URL"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__relPath)").unwrap().value,
+        "/rel",
+        "相对 href a.pathname='/rel'"
+    );
+
+    // 无 href → 空值。
+    sandbox
+        .execute("globalThis.__noneHref = document.querySelector('#none').href;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__noneHref)").unwrap().value,
+        "",
+        "无 href 的 a.href=''"
+    );
+
+    // href setter：设 href 属性（经 set-trap catch-al __zw_set_attr 记 SetAttr mutation）。SetAttr 异步 apply，
+    // 无 href 客户端缓存故同 execute 内 getAttribute 读 stale 快照——apply 后验 HTML 含新 href 属性。
+    sandbox
+        .execute("document.querySelector('#none').href = 'https://set.example.org/x';")
+        .unwrap();
+    let ms2 = mutations.lock().unwrap().clone();
+    let (out2, _h2) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms2).unwrap();
+    assert!(
+        out2.contains("<a id=\"none\" href=\"https://set.example.org/x\">"),
+        "a.href setter 经 SetAttr mutation（apply 后 href 属性写入）\n{out2}"
+    );
+}

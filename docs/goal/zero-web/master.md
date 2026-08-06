@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a HTMLAnchorElement/HTMLAreaElement URL 分解 IDL 属性（本轮 R2838，缺失 Web API 续 / 链接 URL 组件）
+
+承接 R2837（plateau-guard）。probe 发现 `<a>`/`<area>` 的 URL 分解 IDL 属性（href/pathname/search/hash/host/hostname/port/protocol/origin/username/password）**全缺**（0 命中）。land ——经既有 `__zw_parse_url`（R2778 url crate）解析 href 属性（base = 页面 location.href）取组件。**SPA 路由**（读 `a.pathname`/`a.search` 决定路由）/链接分析/analytics/jQuery `.prop('href')` 高频。
+
+- **关键设计点**：① **仅 getter**（get-trap，A/AREA `_realTag` gate，sel+handle 双身份）：读 href 属性 → `__zw_parse_url(rawHref, base)` → JSON.parse 取组件。② `a.href` getter 返**绝对** URL（区别 `getAttribute('href')` 返原始串——jQuery `.prop('href')` vs `.attr('href')` 经典区分；相对 href 经 base 解析）。③ 无 href / 未注册 `__zw_parse_url`（裸 sandbox）/ 解析失败 → href getter 回落原始串、其余空。④ href setter 经既有 set-trap catch-al（`__zw_set_attr` 记 SetAttr）正确工作——零新 set 代码。
+- **复用既有 infra**：`__zw_parse_url`（R2778）+ `__zw_get_attr(_handle)`，零新 host 回调、零新 mutation 类型。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +get-trap A/AREA URL 分解属性分支（href/pathname/search/hash/host/hostname/port/protocol/origin/username/password 经 __zw_parse_url 解析取组件，href 返绝对 URL，失败回落）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_anchor_url_decomposition_r2838`（绝对 href 全组件 + getAttribute vs a.href 区分 + 相对 href 经 base 解析 + 无 href 空 + href setter 经 SetAttr mutation apply 验证）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13465 passed / 0 failed / 74 ignored**，13464+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平——纯 additive getter 无 layout/render .rs 改动）+ 全 8 struct PASS。
+
+**为何零回归且净正向**：① 全新增 get-trap 分支（仅 A/AREA gate，不改既有元素属性路径）；② 复用既有 `__zw_parse_url` 回调（零新 host infra）；③ href setter 经既有 catch-al（零新 set 代码）；④ 失败回落原始串（零抛错）。
+
+**已知限制（记录）**：① 仅 getter——URL 组件 setter（`a.pathname='/x'`）经 set-trap catch-al 误设 spurious 属性（罕见用法，defer；href setter 正确）；② origin 对 opaque/non-special scheme 返 "null"（url crate 行为，spec 一致）；③ reftest/裸 sandbox 不调 register_dom_callbacks → `__zw_parse_url` 未注册 → href getter 回落原始串、组件空（同其他 `__zw_` 回调，零回归）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面近穷尽（R2820-R2838 覆 ... + anchor URL 分解 主表面）。剩余全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / node.normalize / 真 WAAPI / date/time valueAsNumber / media 时长属性 / 真 files 上传 / fetch 非 GET〔net〕）或极窄（option.index〔需 host 父-select 索引回调〕/ scrollIntoViewIfNeeded〔WebKit〕/ pointer lock〔已 no-op〕）；rendering-compat 侧续降频守成（held baseline 13465 全绿）。
+
 ### P1a `input.valueAsNumber` IDL 属性（getter+setter）（本轮 R2836，缺失 Web API 续 / number 输入值↔数值）
 
 承接 R2835（Audio+media 方法）。probe 确认 `valueAsNumber` 缺失（input IDL 属性补全）。land **`input.valueAsNumber`**——number/range 输入值↔数值转换（计算器/数量输入/校验库读 NaN 判非法）高频。
