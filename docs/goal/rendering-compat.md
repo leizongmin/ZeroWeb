@@ -24,7 +24,7 @@
 >   - [ ] vertical-mode native R1043 — 四层协调深改，R1043 谱系停止条件曾触发 — 等点名
 >   - [ ] taffy replaced-element border-box sizing R2174 — 深 multi-session — 等点名
 >   - [ ] Phase A slice-3 IFC 深构造（IFC 单一权威化）— 深 architectural，设计已就绪 — 等点名
->   - [ ] font-stack C-dep rebuild（R2025 user-blocked）— 等点名
+>   - [ ] font-stack C-dep rebuild（R2025 user-blocked）— 等点名 — **★ R2867 战略澄清：本项是 DC-2~5（oracle ≥95%）与 2026 65% oracle 里程碑的 critical-path / 最高杠杆用户动作**（oracle ~47.5% 真因 = fontdue font-wall，R2455 确证；font-wall 仅 C-dep rebuild 可解，非 C-dep font-metric 激活 R2202/R2393 已实测 net-negative；text-heavy 测 oracle-pass 须 layout 正确 AND font 匹配 → layout 深结构无法独力达 65% oracle）
 >   - [ ] 响应式图片 srcset / `<picture>` / CSS `image-set()`（R2412 发现）— `extract_img_resources` 仅取 `<img src>`，不解析 srcset/source；srcset-only 图缺抓、其余仅次优分辨率。正确选源须 DPR+`sizes`+布局（layout-dependent）+ painter effective-src plumbing — 深，须 RFC+布局集成 — 等点名
 > - 真正需用户拍板的 4 类（不兼容/闭源许可证、破坏性 git/文件操作、改 Mission/Done/范围、超大磁盘网络下载工具审批无法覆盖）同上格式追加。当前该 4 类无悬而未决项。
 >   - [x] ~~**Mission 95% 的时间账本校准（A1）** — 改 Mission/Done/范围 — Ladybird 7 年/8 人全职/428 贡献者才到同源 93.33%（2026-08-05 实测，官方算法复算），ZeroWeb 当前 oracle ~57% + G0 单维护者；95% 作为短期冲刺目标与幂律现实不匹配是 plateau 反复的根源之一~~ ✅ **已拍板（2026-08-07）**：采纳分阶段里程碑（2026 65% → 2027 80% → 长期 95%），Mission 已更新
