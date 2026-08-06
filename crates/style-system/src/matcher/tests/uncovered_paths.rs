@@ -648,6 +648,14 @@ fn test_property_supported_edge_cases() {
     );
     // 非全局关键字仍走属性专属解析（length 不识别 garbage）。
     assert!(!is_property_supported("padding", "garbage"));
+    // R2856：background: url() 图须判支持（at-supports-017）。
+    assert!(is_property_supported("background", "url(\"http://example.com/x.jpg\")"));
+    assert!(is_property_supported("background-image", "url(foo.png)"));
+    assert!(
+        is_property_supported("background", "URL(\"x.jpg\")"),
+        "url 大小写不敏感"
+    );
+    assert!(!is_property_supported("background", "not-an-image"));
 }
 
 // ── matches_selector_recursive 边界条件 ──

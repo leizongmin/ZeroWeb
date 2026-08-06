@@ -1490,7 +1490,13 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         | "border-bottom-right-radius"
         | "border-bottom-left-radius" => parse_length(trimmed).is_some(),
         "transform" => parse_transform(trimmed).is_some(),
-        "background" | "background-image" => parse_gradient(trimmed).is_some() || parse_color(trimmed).is_some(),
+        "background" | "background-image" => {
+            // background 接受 image（gradient / url()）或 color。`url()` 图（含 `<img>` 子资源
+            // 路径）ZW 支持（R318 图片贯通 + M7 image 图元），须判支持。driving: WPT at-supports-017。
+            parse_gradient(trimmed).is_some()
+                || parse_color(trimmed).is_some()
+                || trimmed.to_ascii_lowercase().starts_with("url(")
+        }
         "scroll-snap-type" => parse_scroll_snap_type(trimmed).is_some(),
         "scroll-snap-align" => parse_scroll_snap_align(trimmed).is_some(),
         "scroll-snap-stop" => parse_scroll_snap_stop(trimmed).is_some(),
