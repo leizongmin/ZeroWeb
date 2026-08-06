@@ -75,11 +75,13 @@ reftest: fetch-wpt-data target/test-guard
 	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest
 
 # 上游 WPT reftest（wpt-data/，self-source 同源 ref）。test-guard 包裹（OOM 防护）。
+# 全量 ~9967 案实测 ~28min，故 --time-limit 3600（60min，高于 test-guard 默认 1800s），
+# 否则全量跑正卡默认 30min 超时被整树杀掉（退出 124）；单目录过滤则远低于此。
 # 用法: make reftest-upstream                     全量上游（慢）
 #       make reftest-upstream FILTER=css-tables   单目录/子串过滤（case.id.contains）
 #       make reftest-upstream FILTER=css/CSS2/backgrounds
 reftest-upstream: fetch-wpt-data target/test-guard
-	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest-upstream $(FILTER)
+	./target/test-guard --time-limit 3600 -- cargo run --release --bin zero-wpt-runner -- reftest-upstream $(FILTER)
 
 # DC-14 独立 Oracle：渲染上游 WPT test 页 vs chromium oracle-shots，报告真一致率
 # （chromium-Oracle pass-rate，替代 self-ref 的 ~46.5% 假通过）。oracle-shots 由
