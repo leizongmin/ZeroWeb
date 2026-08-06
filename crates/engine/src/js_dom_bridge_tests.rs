@@ -13079,3 +13079,109 @@ fn test_table_caption_thead_tfoot_section_rows_r2845() {
         "table.rows.length=4（跨 thead/tfoot/tbody 全行，R2843 行为不变）"
     );
 }
+
+#[test]
+fn test_output_value_default_value_r2846() {
+    // R2846：HTMLOutputElement.value（getter=textContent，setter 同步 textContent）+ defaultValue（初始文本内容，
+    // lazy 捕获一次，跨 value 变更保持稳定）。表单计算器 `<output>` 显示结果高频。Chromium 150 oracle 锚定。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <output id='o1'>12</output>\
+         <output id='o2'></output>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // value getter = textContent；defaultValue getter = 初始 textContent（同 value，未变更时相等）。
+    // 每 execute 内声明局部元素 var（_proxyCache identity-stable）。
+    sandbox
+        .execute(
+            "var a = document.querySelector('#o1');\
+             globalThis.__v1 = a.value;\
+             globalThis.__dv1 = a.defaultValue;\
+             globalThis.__v2 = document.querySelector('#o2').value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__v1)").unwrap().value,
+        "12",
+        "o1.value=textContent '12'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dv1)").unwrap().value,
+        "12",
+        "o1.defaultValue=初始 textContent '12'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__v2)").unwrap().value,
+        "",
+        "o2 空 output → value=''"
+    );
+
+    // value setter 仅更新 dirty 当前值（client 缓存即时）；spec：value 独立于 textContent——
+    // 设 .value 不触碰 DOM text（<output> 按 children 渲染非 value），故 textContent 仍='12'。
+    // defaultValue 不被 value 变更影响（捕获稳定）。每 execute 内声明局部元素 var（_proxyCache identity-stable）。
+    sandbox
+        .execute(
+            "var o = document.querySelector('#o1');\
+             o.value = 99;\
+             globalThis.__v1b = o.value;\
+             globalThis.__tc1 = o.textContent;\
+             globalThis.__dv1b = o.defaultValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__v1b)").unwrap().value,
+        "99",
+        "o1.value=99 → value='99'（client 缓存即时）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tc1)").unwrap().value,
+        "12",
+        "o1.value setter 不触碰 textContent（仍='12'，spec value 独立于 text）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dv1b)").unwrap().value,
+        "12",
+        "defaultValue 跨 value 变更保持稳定（仍='12'）"
+    );
+
+    // defaultValue setter 更新捕获值；value（dirty）不受影响。
+    sandbox
+        .execute(
+            "var d = document.querySelector('#o1');\
+             d.defaultValue = 'dd';\
+             globalThis.__dv1c = d.defaultValue;\
+             globalThis.__v1c = d.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dv1c)").unwrap().value,
+        "dd",
+        "defaultValue='dd' setter 更新捕获值"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__v1c)").unwrap().value,
+        "99",
+        "dirty 时设 defaultValue 不改 value（仍='99'）"
+    );
+
+    // value setter 不写 DOM text（spec：value 独立于 textContent）——apply 后 output 仍含初值 '12'，无 text mutation。
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms).unwrap();
+    assert!(
+        out.contains("<output id=\"o1\">12</output>"),
+        "output.value=99 不写 DOM text（apply 后 textContent 仍='12'，value 独立）\n{out}"
+    );
+}

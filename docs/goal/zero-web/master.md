@@ -2091,6 +2091,27 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a HTMLOutputElement.value + defaultValue（本轮 R2846，缺失 Web API 续 / 表单反射表面收尾，spec-correct）
+
+承接并修复上一 session 遗留未提交 WIP（原 R2846 用 textarea-mirror 模型，测试 `make test` 失败）。land HTMLOutputElement.value + defaultValue——表单计算器 `<output>` 显示计算结果高频。**关键：spec-correct 模型——value 独立于 textContent**（HTML LS §4.10.12：`<output>` 按 children 渲染非 value，设 `.value` 永不触碰 DOM text 节点，与 textarea〔value↔text〕严格区分）。
+
+- **根因双重（修复上一 session WIP）**：① 代码层面——原 textarea-mirror 模型（设 output.value 调 `__zw_set_text` 写 DOM text）在异步快照架构下致 immediate-read 时序失败（设 `o.value=99` 后立即读 `o.textContent` 得 stale '12'，host mutation 未 apply）；② spec 层面——textarea-mirror 本身错误，output.value 应独立于 textContent。
+- **关键设计点（spec-correct）**：① **value getter**（OUTPUT gate）：`dirty?_outputValue:_outputDefault`——`_outputValue[key]` 存在即 dirty 返当前值，否则返 defaultValue（lazy textContent，首次读捕获）。② **value setter**：dirty + 存当前值到 `_outputValue[key]`，**不写 DOM text**（spec value 独立于 text）。③ **defaultValue getter/setter**：lazy 捕获 textContent = 默认值，跨 value 变更稳定；setter 仅更新 `_outputDefault[key]`，不联动 dirty value、不写 text。④ **无 `value` 内容属性**：output 无 value 内容属性（纯 IDL），故 defaultValue 亦无 attr 反射（= lazy textContent 非 attr）。⑤ Chromium 150 oracle 锚定：`<output>12</output>` → value=defaultValue='12'；`o.value=99` → value='99'、textContent **仍 '12'**、defaultValue '12' 稳定；`o.defaultValue='dd'` → defaultValue='dd'、dirty value 仍 '99'。
+- **state 复用 `__zw_reset_form_state`**：`_outputDefault` + 新增 `_outputValue` 同 `_inputValues` 一并清空（导航跨页防 stale）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_outputValue` state + reset；value get-trap OUTPUT 分支（dirty/default）+ value set-trap OUTPUT 分支（dirty store 不写 text）；defaultValue get/set 既 R2846 WIP（lazy textContent）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_output_value_default_value_r2846`（value=default=textContent 初值 + 空 output + value setter dirty 即时 + **textContent 独立仍 '12'** + defaultValue 稳定 + defaultValue setter 不改 dirty value + apply 后 output 仍含初值 '12' 证无 text mutation）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13473 passed / 0 failed / 74 ignored**，13472+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（纯 additive JS getter/setter，welcome 无 `<output>` 故新路径不触发，无 layout/render .rs 改动）。
+
+**为何零回归且净正向**：① OUTPUT gate 严格（`_realTag==='OUTPUT'`），不影响 input/textarea 既有 value 路径（textarea text 写回不变）；② 纯 JS state map + getter/setter，零 host 回调新增、零 mutation 副作用（value setter 不写 text 反而比 WIP 更干净）；③ welcome 无 `<output>`，新代码路径不触发；④ 复用既有 `_outputDefault`/`__zw_reset_form_state` infra。
+
+**已知限制（记录）**：① output 无 `value` 内容属性（纯 IDL，defaultValue 亦无 attr 反射）；② form reset 不重置 dirty value（无 reset 接线，defer）；③ `htmlFor`（DOMSettableTokenList）复杂罕见 defer。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面已穷尽（R2820-R2846 覆表单反射 + 表格结构 + text-control 选区 主表面）。剩余元素特定 IDL 全极低价值：`<img>` naturalWidth/Height（headless 无真图加载低价值）/ option.index（需 host 父-select 索引回调）；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / node.normalize / 真 WAAPI / date/time valueAsNumber / media 时长属性 / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13473 全绿）。
+
 ### P1a table.caption/tHead/tFoot + section.rows（本轮 R2845，缺失 Web API 续 / 表格结构表面收尾）
 
 承接 R2844（text-control 选区）。land 表格结构表面收尾——`table.caption`/`table.tHead`/`table.tFoot`（首个 caption/thead/tfoot 子元素或 null）+ `section.rows`（thead/tbody/tfoot 作用域内行）。表格分析 / 序列化库读结构高频。延续 R2843 querySelector(All) 模式。

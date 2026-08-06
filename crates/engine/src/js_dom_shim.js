@@ -36,6 +36,11 @@
   // headless 无真 caret/选择渲染，故 selection 为纯 JS 跟踪（供文本编辑器 / 自动选择 / Range 算法读状态）。
   // 同 _inputValues/_classCache 经 `__zw_reset_form_state` 清空。
   var _textSelection = {};
+  // HTMLOutputElement（R2846）：value 独立于 textContent（<output> 按 children 渲染非 value；spec：设 .value
+  // 不触碰 DOM text）。_outputDefault = 默认值（= 初始 textContent，lazy 捕获一次跨 value 变更稳定）；
+  // _outputValue = dirty 后的当前值（key 存在即 dirty）。同 _inputValues 经 `__zw_reset_form_state` 清空。
+  var _outputDefault = {};
+  var _outputValue = {};
   // reflected 字符串/数值属性（title/lang/dir/tabindex）per-element-key 缓存。同 _inputValues/_classCache
   // 动机——`__zw_set_attr` 仅入队 mutation（异步 apply），同步 set→get 往返须客户端缓存（get 优先读缓存）。
   // 值结构：{ title?: string, lang?: string, dir?: string, tabindex?: number }。
@@ -599,7 +604,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
@@ -2903,6 +2908,15 @@
           if (!handle && sel && typeof __zw_select_value === 'function' && _isTag(sel, 'SELECT')) {
             try { return __zw_select_value(sel); } catch (_e) { return ''; }
           }
+          // HTMLOutputElement.value（R2846）：spec 独立于 textContent——<output> 按 children 渲染非 value，
+          // 设 .value 不触碰 DOM text。dirty（_outputValue 存在）→ 当前值；否则 → defaultValue（lazy textContent）。
+          if (_realTag(sel, handle) === 'OUTPUT') {
+            if (_outputValue[key] != null) return _outputValue[key];
+            if (_outputDefault[key] == null) {
+              _outputDefault[key] = handle ? (__zw_get_text_handle(handle) || '') : (__zw_get_text(sel) || '');
+            }
+            return _outputDefault[key];
+          }
           // P1a form input：value get——per-element 缓存，lazy-init。
           // textarea 的 value 是其**文本内容**（非 value 属性，HTML spec）；input 是 value 属性。
           if (_inputValues[key] == null) {
@@ -3214,6 +3228,15 @@
             try { return __zw_has_attr(sel, 'selected') === '1'; } catch (_e) {}
           }
           return false;
+        }
+        // HTMLOutputElement.defaultValue（R2846）：初始文本内容（lazy 捕获一次，跨 value 变更保持稳定——
+        // Chromium 150 oracle：value=99 后 defaultValue 仍=初值）。output.value getter/setter 见上方 value 块 +
+        // set-trap。表单计算器 `<output>` 显示结果高频。仅 OUTPUT；htmlFor 为 DOMSettableTokenList（复杂罕见，defer）。
+        if (prop === 'defaultValue' && _realTag(sel, handle) === 'OUTPUT') {
+          if (_outputDefault[key] == null) {
+            _outputDefault[key] = handle ? (__zw_get_text_handle(handle) || '') : (__zw_get_text(sel) || '');
+          }
+          return _outputDefault[key];
         }
         if (prop === 'style') {
           return _styleProxy(sel, handle);
@@ -4157,6 +4180,10 @@
             __zw_select_option(sel, String(value));
             // SelectOption 改的是子 option 的 selected 属性，非 select 元素自身的属性 mutation；
             // 不发 select 的 attributes MO 通知（语义正确）。
+          } else if (_realTag(sel, handle) === 'OUTPUT') {
+            // HTMLOutputElement.value setter（R2846）：dirty + 存当前值。spec：value 独立于 textContent——
+            // <output> 按 children 渲染非 value，故设 .value 不写 DOM text（与 textarea 区分）。
+            _outputValue[key] = String(value);
           } else {
             _inputValues[key] = String(value);
             // textarea 的 value ↔ **文本内容**（非 value 属性，HTML spec）——写 content 而非属性。
@@ -4218,6 +4245,10 @@
           if (_realTag(sel, handle) === 'INPUT') {
             if (handle) __zw_set_attr_handle(handle, 'value', String(value));
             else { __zw_set_attr(sel, 'value', String(value)); moAttr = 'value'; }
+          } else if (_realTag(sel, handle) === 'OUTPUT') {
+            // `output.defaultValue = x`（R2846）——更新捕获的初值缓存（不联动 textContent/.value 当前态——
+            // spec 仅当未 dirty 时联动，罕见 defer；Chromium 150 oracle：dirty 时设 defaultValue 不改 value）。
+            _outputDefault[key] = String(value);
           }
         } else if (p === 'defaultChecked') {
           // `input.defaultChecked = x`（R2840）——boolean 反射 `checked` 属性（truthy→设存在，falsy→移除）。
