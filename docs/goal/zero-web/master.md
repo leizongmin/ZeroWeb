@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a MutationRecord instanceof + spec 字段完整性（本轮 R2847，缺失 Web API 续 / 观察者 record spec-completeness）
+
+承接 R2846（output.value/defaultValue）。probe 发现 MutationObserver 回调收到的 record 为 plain object（`var rec = {}`）——`instanceof MutationRecord` 假、toStringTag `[object Object]` 非 `[object MutationRecord]`、缺 spec 字段（previousSibling/nextSibling/attributeNamespace/oldValue 缺省 null，addedNodes/removedNodes 缺省 []）。MO 实现功能正确，唯 record 未建为 MutationRecord 实例 + 字段不全。
+
+- **关键设计点（spec-correct）**：① 定义 `globalThis.MutationRecord` 构造器——plain prototype + `Symbol.toStringTag='MutationRecord'`（供 `instanceof` + `Object.prototype.toString`）；构造器无公开入参（字段由 _mo_notify 注入，spec 不暴露构造器）。② `_mo_notify` record 改 `Object.create(MutationRecord.prototype)` + 归一化全 spec 字段：`type`/`target`（target 指向 observe() 时 proxy，既有行为）+ `addedNodes`/`removedNodes` 缺省 `[]` + `previousSibling`/`nextSibling`/`attributeName`/`attributeNamespace`/`oldValue` 缺省 `null`。③ Chromium oracle 锚定：childList record 的 attributeName/previousSibling/oldValue 须为 null 非 undefined。
+- **复用既有 MO infra**：仅改 record 构造点（_mo_notify 内），通知/派发/microtask/observe/disconnect/takeRecords 全不变；零新 host 回调。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`globalThis.MutationRecord` 构造器（prototype + toStringTag）；_mo_notify record 改 Object.create(MR.prototype) + 归一化全 spec 字段缺省值。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_mutation_record_instanceof_spec_fields_r2847`（observe handle-based parent + appendChild → record instanceof MutationRecord + toStringTag + type=childList + addedNodes.length=1 + previousSibling/nextSibling/attributeName/attributeNamespace/oldValue 全 null + removedNodes.length=0）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13474 passed / 0 failed / 74 ignored**，13473+1 新测试，0 回归；engine lib 1573 测试 MO record 变更零回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（纯 additive record 构造，welcome 不用 MO）。
+
+**为何零回归且净正向**：① 仅改 record 构造点（_mo_notify），MO 通知/派发路径全不变（既有 MO 测试作回归守卫）；② Object.create(MR.prototype) + 字段填充，record 字段更全（previousSibling 等从 undefined→null，对读 record.previousSibling 的库是改善）；③ welcome 不用 MutationObserver，新路径不触发；④ 零新 host 回调。
+
+**已知限制（记录）**：① addedNodes/removedNodes 为真 Array 非 NodeList（shim 近似，`instanceof NodeList` 不成立，罕见不究）；② MutationRecord 构造器无公开入参（spec 不暴露）；③ characterData/subtree/attributeOldValue 通知未实现（既有 MO 限制，defer）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面已穷尽（R2820-R2847 覆表单反射 + 表格结构 + text-control 选区 + 事件基建 + 观察者 record spec-completeness 主表面）。剩余元素特定 IDL 全极低价值：`<img>` naturalWidth/Height（headless 无真图加载）/ option.index（需 host 父-select 索引回调）；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / node.normalize / 真 WAAPI / date/time valueAsNumber / media 时长属性 / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13474 全绿）。
+
 ### P1a HTMLOutputElement.value + defaultValue（本轮 R2846，缺失 Web API 续 / 表单反射表面收尾，spec-correct）
 
 承接并修复上一 session 遗留未提交 WIP（原 R2846 用 textarea-mirror 模型，测试 `make test` 失败）。land HTMLOutputElement.value + defaultValue——表单计算器 `<output>` 显示计算结果高频。**关键：spec-correct 模型——value 独立于 textContent**（HTML LS §4.10.12：`<output>` 按 children 渲染非 value，设 `.value` 永不触碰 DOM text 节点，与 textarea〔value↔text〕严格区分）。

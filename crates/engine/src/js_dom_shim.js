@@ -257,9 +257,17 @@
       if (!opts) continue;
       if (baseRecord.type === 'attributes' && !opts.attributes) continue;
       if (baseRecord.type === 'childList' && !opts.childList) continue;
-      var rec = {};
-      for (var k in baseRecord) rec[k] = baseRecord[k];
+      var rec = Object.create(globalThis.MutationRecord.prototype);
+      rec.type = baseRecord.type;
       rec.target = obs._targetProxies[id];
+      // spec 字段：addedNodes/removedNodes 缺省 []（类数组），sibling/attributeNamespace/oldValue 缺省 null。
+      rec.addedNodes = baseRecord.addedNodes || [];
+      rec.removedNodes = baseRecord.removedNodes || [];
+      rec.previousSibling = baseRecord.previousSibling || null;
+      rec.nextSibling = baseRecord.nextSibling || null;
+      rec.attributeName = baseRecord.attributeName || null;
+      rec.attributeNamespace = baseRecord.attributeNamespace || null;
+      rec.oldValue = baseRecord.oldValue || null;
       obs._records.push(rec);
       _mo_scheduleFlush();
     }
@@ -304,6 +312,13 @@
     this._records = [];
     return r;
   };
+  // MutationRecord（R2847）：Web IDL 接口——回调收到的 record 须 `instanceof MutationRecord` +
+  // `[object MutationRecord]` toStringTag + 完整 spec 字段（previousSibling/nextSibling/
+  // attributeNamespace/oldValue 缺省 null，addedNodes/removedNodes 缺省 []）。库做
+  // `record instanceof MutationRecord` 特征检测 / 读 record.previousSibling 须得 null 非 undefined。
+  // 无公开构造器入参（字段由 _mo_notify 注入）；仅建 prototype + toStringTag 供 instanceof/序列化。
+  globalThis.MutationRecord = function() {};
+  globalThis.MutationRecord.prototype[Symbol.toStringTag] = 'MutationRecord';
 
   // ── P1a Slice 2a：IntersectionObserver（JS 侧，复用 gBCR layout-rect snapshot）──
   // 镜像 MutationObserver：纯 JS，`observe()` 排队 initial notification，经 `_defer`

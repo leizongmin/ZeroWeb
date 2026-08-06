@@ -13185,3 +13185,107 @@ fn test_output_value_default_value_r2846() {
         "output.value=99 不写 DOM text（apply 后 textContent 仍='12'，value 独立）\n{out}"
     );
 }
+
+#[test]
+fn test_mutation_record_instanceof_spec_fields_r2847() {
+    // R2847：MutationObserver 回调收到的 record 须 `instanceof MutationRecord` + `[object MutationRecord]`
+    // toStringTag + 完整 spec 字段（previousSibling/nextSibling/attributeNamespace/oldValue 缺省 null，
+    // addedNodes/removedNodes 缺省 []）。库做 instanceof 特征检测 / 读 record.previousSibling 须得 null 非 undefined。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // execute 1：observe handle-based parent，appendChild child（childList mutation）。
+    // 回调经 execute 末 microtask checkpoint 派发 → globalThis.__recs 在本 execute 末就绪。
+    sandbox
+        .execute(
+            "var obs = new MutationObserver(function(records){ globalThis.__recs = records; });\
+             var parent = document.createElement('div');\
+             obs.observe(parent, { childList: true });\
+             var child = document.createElement('span');\
+             parent.appendChild(child);",
+        )
+        .unwrap();
+
+    // execute 2：读捕获 record + 断言 instanceof / toStringTag / spec 字段缺省值。
+    sandbox
+        .execute(
+            "var r = globalThis.__recs && globalThis.__recs[0];\
+             globalThis.__len = globalThis.__recs ? globalThis.__recs.length : -1;\
+             globalThis.__isMR = r instanceof MutationRecord;\
+             globalThis.__tag = Object.prototype.toString.call(r);\
+             globalThis.__type = r && r.type;\
+             globalThis.__addedLen = r && r.addedNodes.length;\
+             globalThis.__prevSib = r && r.previousSibling;\
+             globalThis.__nextSib = r && r.nextSibling;\
+             globalThis.__attrName = r && r.attributeName;\
+             globalThis.__attrNs = r && r.attributeNamespace;\
+             globalThis.__oldVal = r && r.oldValue;\
+             globalThis.__removedLen = r && r.removedNodes.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len)").unwrap().value,
+        "1",
+        "1 childList record（appendChild 触发）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__isMR)").unwrap().value,
+        "true",
+        "record instanceof MutationRecord（R2847）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tag)").unwrap().value,
+        "[object MutationRecord]",
+        "toStringTag = [object MutationRecord]"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__type)").unwrap().value,
+        "childList",
+        "type = childList"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__addedLen)").unwrap().value,
+        "1",
+        "addedNodes 含 1（span）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__prevSib)").unwrap().value,
+        "null",
+        "previousSibling 缺省 null（spec）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nextSib)").unwrap().value,
+        "null",
+        "nextSibling 缺省 null（spec）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__attrName)").unwrap().value,
+        "null",
+        "attributeName 缺省 null（childList record，spec）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__attrNs)").unwrap().value,
+        "null",
+        "attributeNamespace 缺省 null（spec）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__oldVal)").unwrap().value,
+        "null",
+        "oldValue 缺省 null（spec）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__removedLen)").unwrap().value,
+        "0",
+        "removedNodes 缺省 []（spec，length 0）"
+    );
+}
