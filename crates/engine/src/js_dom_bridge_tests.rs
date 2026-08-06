@@ -9622,3 +9622,175 @@ fn test_event_subclasses2_r2812() {
         "createEvent(未知 type) 回落 instanceof Event"
     );
 }
+
+#[test]
+fn test_custom_elements_r2813() {
+    // R2813：customElements (CustomElementRegistry) scoped registry slice——web components 生态门控。
+    // define/get/getName/whenDefined（同步 bookkeeping + whenDefined Promise）+ upgrade stub defer。
+    // 诚实 defer element upgrade + lifecycle 回调（element proxy 非 ctor 实例 + 需 mutation 观察——深项）。
+    // Promise.then 经 execute 末 microtask checkpoint 派发（同 R2774），下 execute 可读。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // feature-detection：typeof customElements === 'object'。
+    assert_eq!(
+        sandbox.execute("typeof customElements").unwrap().value,
+        "object",
+        "window.customElements 须存在（object）"
+    );
+
+    // define（class extends HTMLElement）+ get 返同 ctor + getName 反查。
+    sandbox
+        .execute(
+            "globalThis.MyEl = class MyEl extends HTMLElement {};\
+             customElements.define('my-el', globalThis.MyEl);\
+             globalThis.__same = (customElements.get('my-el') === globalThis.MyEl);\
+             globalThis.__name = customElements.getName(globalThis.MyEl);\
+             globalThis.__missing = customElements.get('no-such');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__same)").unwrap().value,
+        "true",
+        "get(name) 返已注册 ctor"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__name)").unwrap().value,
+        "my-el",
+        "getName(ctor) 反查 name"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__missing)").unwrap().value,
+        "undefined",
+        "get(未注册) 返 undefined"
+    );
+
+    // 无效名抛：'div'（无连字符）/ 'MyEl'（大写）/ 'font-face'（reserved）。
+    sandbox
+        .execute(
+            "function _try(fn){ try { fn(); return 'no-throw'; } catch(e){ return 'threw'; } }\
+             globalThis.__bad1 = _try(function(){ customElements.define('div', function(){}); });\
+             globalThis.__bad2 = _try(function(){ customElements.define('MyEl', function(){}); });\
+             globalThis.__bad3 = _try(function(){ customElements.define('font-face', function(){}); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__bad1)").unwrap().value,
+        "threw",
+        "无连字符名须抛"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__bad2)").unwrap().value,
+        "threw",
+        "大写名须抛"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__bad3)").unwrap().value,
+        "threw",
+        "reserved 名须抛"
+    );
+
+    // 重复名抛 / 重复 ctor 抛 / ctor 非 function 抛。
+    sandbox
+        .execute(
+            "globalThis.__dupName = _try(function(){ customElements.define('my-el', function(){}); });\
+             globalThis.__dupCtor = _try(function(){ customElements.define('other-el', globalThis.MyEl); });\
+             globalThis.__notFn = _try(function(){ customElements.define('ok-el', 42); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dupName)").unwrap().value,
+        "threw",
+        "重复名须抛"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dupCtor)").unwrap().value,
+        "threw",
+        "重复 ctor 须抛"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__notFn)").unwrap().value,
+        "threw",
+        "ctor 非 function 须抛"
+    );
+
+    // whenDefined 已定义 → Promise<ctor> resolve（execute 末 microtask 派发，下 execute 可读）。
+    sandbox
+        .execute(
+            "globalThis.__wdCtor = null; globalThis.__wd = false;\
+             customElements.whenDefined('my-el').then(function(c){ globalThis.__wdCtor = (c === globalThis.MyEl); globalThis.__wd = true; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__wd)").unwrap().value,
+        "true",
+        "whenDefined(已定义) resolve"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__wdCtor)").unwrap().value,
+        "true",
+        "whenDefined resolve 值为 ctor"
+    );
+
+    // whenDefined pending → define 触发 resolve（先挂起，下 execute define，再下 execute 读）。
+    sandbox
+        .execute(
+            "globalThis.__later = false; globalThis.__laterCtor = null;\
+             customElements.whenDefined('pending-el').then(function(c){ globalThis.__laterCtor = c; globalThis.__later = true; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__later)").unwrap().value,
+        "false",
+        "未 define 前 whenDefined pending 不 resolve"
+    );
+    sandbox
+        .execute("globalThis.PendingEl = class extends HTMLElement {}; customElements.define('pending-el', globalThis.PendingEl);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__later)").unwrap().value,
+        "true",
+        "define 触发挂起的 whenDefined resolve"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__laterCtor === globalThis.PendingEl)")
+            .unwrap()
+            .value,
+        "true",
+        "挂起 resolve 值为 define 的 ctor"
+    );
+
+    // whenDefined 无效名 → Promise reject（.catch）。
+    sandbox
+        .execute(
+            "globalThis.__rej = false;\
+             customElements.whenDefined('BadName').catch(function(){ globalThis.__rej = true; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rej)").unwrap().value,
+        "true",
+        "whenDefined(无效名) reject"
+    );
+
+    // upgrade(root) no-op 不抛（defer，element proxy 非 ctor 实例）。
+    sandbox
+        .execute("globalThis.__up = _try(function(){ customElements.upgrade(document.body); });")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__up)").unwrap().value,
+        "no-throw",
+        "upgrade no-op 不抛"
+    );
+}

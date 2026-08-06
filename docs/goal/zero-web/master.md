@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a customElements (CustomElementRegistry) scoped registry（本轮 R2813，缺失 Web API 续）
+
+承接 R2812（Event 子类簇 #2）。land **缺失 Web API 中最高价值项 customElements**（web components 生态门控——lit/stencil/fast 及所有 custom-element 库 feature-detect `window.customElements` + define/whenDefined）。**先 probe**：`HTMLElement`/`Element`/`Node` 已存在（line 1896-1901，原型链 Node→Element→HTMLElement，故 `class extends HTMLElement` 可用）；element 为 generic Proxy（非 ctor 实例）→ 决定 **scoped registry slice**。
+
+- **registry 单例**（`globalThis.customElements`）：`_ce_registry`(name→{ctor,options}) + `_ce_byCtor`(Map ctor→name 反查) + `_ce_pending`(name→[resolve] whenDefined 挂起) + `_CE_RESERVED`(8 reserved 名) + `_ce_validName`（PotentialCustomElementName 简化：`^[a-z][a-z0-9.-]*-[a-z0-9.-]*$` + 非 reserved）。
+- **`define(name, ctor, options)`**：校验 valid name（否则抛）/ ctor 是 function（TypeError）/ 名未占用 / ctor 未复用 → 入 registry + 触发 pending whenDefined resolve。
+- **`get(name)`**：返 ctor 或 undefined。**`getName(ctor)`**：返 name 或 null（Map 反查）。
+- **`whenDefined(name)`**：valid + 已定义→`Promise.resolve(ctor)`；valid + 未定义→挂起 Promise（define 触发 resolve）；invalid→`Promise.reject`（spec 一致，不同步抛）。resolve 异步（microtask，同 R2774）。
+- **`upgrade(root)`**：stub no-op（返 undefined，不抛）。
+- **诚实 defer（记录）**：① **element 实例化 upgrade**（`__zw_create_element` 返 generic Proxy，非 ctor 实例——upgrade 深项）；② **lifecycle 回调** connectedCallback/disconnectedCallback/attributeChangedCallback（需 element 创建路径接 ctor + observedAttributes + mutation 观察——深项后续 slice）。本 slice 提供 feature-detection + 注册 + 查询 + whenDefined await（库 bootstrap 高频），**不谎称 upgrade 生效**。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`customElements` 单例（define/get/getName/whenDefined/upgrade + `_ce_validName`/`_CE_RESERVED`/registry state），HTMLElement 原型链后（line 1907）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_custom_elements_r2813`（typeof=object / define+get 返 ctor+getName 反查+get 缺失 undefined / 无效名抛 div·MyEl·font-face / 重复名·重复 ctor·非 function 抛 / whenDefined 已定义 resolve ctor / pending 挂起→define 触发 resolve / 无效名 reject / upgrade no-op 不抛）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13441 passed / 0 failed / 74 ignored**，13440+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① `customElements` 全新 global（additive，guard 幂等）+ 全新 registry state（不改既有构造器/element proxy）；② 纯 JS registry bookkeeping（无 host 回调、无渲染副作用）；③ whenDefined 经既有 native Promise + execute 末 microtask checkpoint（同 R2774 既有机制）；④ upgrade stub 不抛（不中断脚本）。
+
 ### P1a Event 子类簇 #2：HashChange/PopState/Storage/Progress/Transition/Animation（本轮 R2812，缺失 Web API 续）
 
 承接 R2811（Event 子类簇 #1）。续事件构造器表面——land **Event 子类簇 #2**（均 extends Event）：`HashChangeEvent`(oldURL/newURL，SPA hash 路由) / `PopStateEvent`(state，history 路由) / `StorageEvent`(key/newValue/oldValue/url/storageArea，跨标签页 storage 同步) / `ProgressEvent`(lengthComputable/loaded/total，XHR/资源加载进度) / `TransitionEvent`(propertyName/elapsedTime/pseudoElement) / `AnimationEvent`(animationName/elapsedTime/pseudoElement，CSS 过渡/动画回调)。**先 probe 验证**（grep 确认 6 个均为 0 缺失，无既有）。

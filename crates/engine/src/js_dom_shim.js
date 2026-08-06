@@ -1906,6 +1906,71 @@
     _globalRemoveEventListener(type, fn, opts);
   };
 
+  // customElements（CustomElementRegistry，R2813）——web components 生态门控（lit / stencil / fast 及所有
+  // custom-element 库 feature-detect `window.customElements` + define/whenDefined）。**scoped registry slice**：
+  // define/get/getName/whenDefined（同步 bookkeeping + whenDefined Promise）+ upgrade stub。**诚实 defer**：
+  // element 实例化 upgrade（element 创建路径 `__zw_create_element` 返 generic Proxy，非 ctor 实例）+
+  // connectedCallback/disconnectedCallback/attributeChangedCallback（需 mutation 观察）——深项，记后续 slice。
+  // 本 slice 提供 feature-detection + 注册 + 查询 + whenDefined await（库 bootstrap 高频），不谎称 upgrade 生效。
+  var _ce_registry = {};       // name → { ctor, options }
+  var _ce_byCtor = new Map();  // ctor → name（getName 反查）
+  var _ce_pending = {};        // name → [resolve]（whenDefined 挂起，define 时触发）
+  var _CE_RESERVED = {
+    'annotation-xml': 1, 'color-profile': 1, 'font-face': 1, 'font-face-src': 1,
+    'font-face-uri': 1, 'font-face-format': 1, 'font-face-name': 1, 'missing-glyph': 1,
+  };
+  // 有效 custom element 名：首字符小写 ASCII 字母 + 含连字符 + 仅小写字母/数字/./-（spec PotentialCustomElementName
+  // 简化，不含 uppercase / PASCII）。reserved 名拒。
+  function _ce_validName(name) {
+    if (typeof name !== 'string') return false;
+    return /^[a-z][a-z0-9.-]*-[a-z0-9.-]*$/.test(name) && !_CE_RESERVED[name];
+  }
+  globalThis.customElements = globalThis.customElements || {
+    define: function (name, ctor, options) {
+      if (!_ce_validName(name)) {
+        throw new Error("Failed to execute 'define' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name");
+      }
+      if (typeof ctor !== 'function') {
+        throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': parameter 2 is not a constructor");
+      }
+      if (_ce_registry[name]) {
+        throw new Error("Failed to execute 'define' on 'CustomElementRegistry': the name \"" + name + "\" has already been used with this registry");
+      }
+      if (_ce_byCtor.has(ctor)) {
+        throw new Error("Failed to execute 'define' on 'CustomElementRegistry': this constructor has already been used with this registry");
+      }
+      _ce_registry[name] = { ctor: ctor, options: options || {} };
+      _ce_byCtor.set(ctor, name);
+      var waiters = _ce_pending[name];
+      if (waiters) {
+        delete _ce_pending[name];
+        for (var i = 0; i < waiters.length; i++) { try { waiters[i](ctor); } catch (_e) {} }
+      }
+    },
+    get: function (name) {
+      var entry = _ce_registry[name];
+      return entry ? entry.ctor : undefined;
+    },
+    getName: function (ctor) {
+      return _ce_byCtor.get(ctor) || null;
+    },
+    // whenDefined(name)：valid name → Promise<ctor>（已定义立即 resolve，否则挂起至 define 触发）；
+    // invalid name → Promise reject（spec 一致，不同步抛）。Promise resolve 异步（microtask）。
+    whenDefined: function (name) {
+      if (!_ce_validName(name)) {
+        return Promise.reject(new Error("Failed to execute 'whenDefined' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name"));
+      }
+      var entry = _ce_registry[name];
+      if (entry) return Promise.resolve(entry.ctor);
+      return new Promise(function (resolve) {
+        (_ce_pending[name] = _ce_pending[name] || []).push(resolve);
+      });
+    },
+    // upgrade(root)：升级 root 子树 custom elements。**defer**（element 创建未接 ctor——proxy 非 ctor 实例，
+    // upgrade 深项后续 slice）。spec 返 undefined，本 stub no-op 不抛（避免中断脚本）。
+    upgrade: function (_root) {},
+  };
+
   function _elKey(sel, handle) {
     return handle ? ('@' + handle) : sel;
   }
