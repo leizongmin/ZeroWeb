@@ -179,6 +179,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1    # Window
 | [ROADMAP.md](ROADMAP.md) | 对外路线图，说明已经做完什么、正在推什么、接下来补什么 |
 | [CHANGELOG.md](CHANGELOG.md) | 对外发布层面的变更记录 |
 | [docs/architecture.md](docs/architecture.md) | 面向贡献者的整体架构与阅读路径 |
+| [docs/governance/contribution-responsibility.md](docs/governance/contribution-responsibility.md) | 贡献责任、风险等级、责任域和 owner 路由 |
 | [docs/releases/github-metadata.md](docs/releases/github-metadata.md) | GitHub 仓库介绍、Topics、tag 和 release 标题建议 |
 | [docs/releases/v0.1.0-alpha.0.md](docs/releases/v0.1.0-alpha.0.md) | 首个预发布版本的 release 文案草稿 |
 | [docs/specs/zero-web-spec-rfc.md](docs/specs/zero-web-spec-rfc.md) | 主规格与技术 RFC |
@@ -192,15 +193,17 @@ powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1    # Window
 想提改动的话，先看这几份文档：
 
 - [CONTRIBUTING.md](CONTRIBUTING.md)
+- [docs/governance/contribution-responsibility.md](docs/governance/contribution-responsibility.md)
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - [SECURITY.md](SECURITY.md)
 
 提 PR 前，至少把这几件事做了：
 
 - 变更目标和边界清晰
+- 风险等级和责任域已说明；合入前有人类责任维护者接管
 - 改动范围尽量小且聚焦
 - 对应测试和文档同步更新
-- `cargo test` 与 `cargo clippy` 通过
+- `make test` 与 `cargo clippy` 通过
 
 ## 许可证
 

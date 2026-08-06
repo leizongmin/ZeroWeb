@@ -223,7 +223,12 @@ tests/
 
 ### 提交前质量门禁
 
-执行 `git commit` 前，必须先在本地跑通 `cargo fmt` 和 `cargo clippy`，禁止跳过：
+文档与 GitHub 元数据豁免：当且仅当全部待提交文件都位于 `docs/**`、`.github/**`，或文件扩展名为 `.md` 时，可跳过 `cargo fmt`、`cargo clippy`、构建、测试、reftest、基准和覆盖率。豁免项目代码检查时，仍必须：
+- 执行 `git diff --check`
+- 调用 `lei-pre-commit-guard` 并获得 **PASS**
+- 按变更类型执行相关 Markdown 链接、YAML、CODEOWNERS 或其他配置语法检查
+
+只要待提交内容包含任一不符合上述范围的文件，就不适用豁免。执行 `git commit` 前，必须先在本地跑通 `cargo fmt` 和 `cargo clippy`，禁止跳过：
 - `cargo fmt --all -- --check` 必须无 diff（有 diff 先 `cargo fmt --all` 修复再提交）
 - `cargo clippy --workspace --all-targets -- -D warnings` 必须无 warning/error（CI 用 `-D warnings` 强制，本地须同等严格）
 - 若默认 feature（v8）因环境（如缺 rusty_v8 预编译库）无法本地编译，至少在能编译的 feature 下跑 clippy（如 `--no-default-features --features quickjs`），并在提交说明中注明覆盖范围

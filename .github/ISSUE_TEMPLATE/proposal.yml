@@ -14,6 +14,8 @@ body:
       options:
         - label: I reviewed the README, architecture overview, and relevant spec or crate docs.
           required: true
+        - label: I reviewed the contribution responsibility policy and identified the affected responsibility domains.
+          required: true
         - label: I understand this proposal may need discussion before code changes are accepted.
           required: true
 
@@ -58,6 +60,36 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Proposed Risk Class
+      description: The Responsible Maintainer makes the final classification. Do not disclose C3 security details here.
+      options:
+        - C0 - Open
+        - C1 - Managed core
+        - C2 - Critical boundary
+        - C3 - Restricted; continue through the private security process
+    validations:
+      required: true
+
+  - type: textarea
+    id: domains
+    attributes:
+      label: Affected Responsibility Domains
+      description: List the domains from docs/governance/contribution-responsibility.md and explain each boundary crossed.
+      placeholder: e.g. Runtime Trust Boundary + Stable Embedding API
+    validations:
+      required: true
+
+  - type: textarea
+    id: responsibility
+    attributes:
+      label: Responsibility Plan
+      description: Identify the proposed sponsor/RM, required domain owners, post-merge responsibility, and fallback or rollback plan. Maintainers make the final assignment.
+    validations:
+      required: true
+
   - type: textarea
     id: validation
     attributes:
@@ -65,4 +97,3 @@ body:
       description: What tests, benchmarks, compatibility checks, or acceptance gates should prove this proposal works?
     validations:
       required: true
-

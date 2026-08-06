@@ -1,0 +1,77 @@
+# Default fallback. No tracked path may be left without an owner.
+* @leizongmin
+
+# Governance and supply chain (C2).
+/.github/CODEOWNERS @leizongmin
+/.github/workflows/ @leizongmin
+/.github/dependabot.yml @leizongmin
+/Cargo.toml @leizongmin
+/Cargo.lock @leizongmin
+/deny.toml @leizongmin
+/Makefile @leizongmin
+/LICENSE @leizongmin
+/AGENTS.md @leizongmin
+/CONTRIBUTING.md @leizongmin
+/SECURITY.md @leizongmin
+/scripts/download-* @leizongmin
+/scripts/package-* @leizongmin
+
+# Web semantics (C1).
+/crates/dom/ @leizongmin
+/crates/css-parser/ @leizongmin
+/crates/style-system/ @leizongmin
+/crates/layout-engine/ @leizongmin
+/crates/engine/ @leizongmin
+/crates/canvas/ @leizongmin
+
+# Patched dependency (C2).
+/crates/taffy-local/ @leizongmin
+
+# Rendering and platform (C1, with semantic C2 overrides in policy).
+/crates/render-foundation/ @leizongmin
+/crates/host-runtime/ @leizongmin
+
+# Runtime trust boundaries (C2).
+/crates/net/ @leizongmin
+/crates/security/ @leizongmin
+/crates/storage/ @leizongmin
+/crates/protocol/ @leizongmin
+/crates/script-sandbox/ @leizongmin
+/crates/wasm-sandbox/ @leizongmin
+/crates/page-runtime/ @leizongmin
+/apps/renderer/ @leizongmin
+
+# Stable embedding API (C2).
+/crates/webview/ @leizongmin
+
+# Product (C1).
+/crates/browser-shell/ @leizongmin
+/apps/browser/ @leizongmin
+/apps/webview-demo/ @leizongmin
+
+# Quality control (C1, with baseline and metric changes at C2).
+/tests/integration/ @leizongmin
+/tests/wpt-runner/ @leizongmin
+/tests/benchmarks/ @leizongmin
+/scripts/test-guard.rs @leizongmin
+/scripts/check-coverage.sh @leizongmin
+/scripts/run-benchmarks.sh @leizongmin
+/scripts/run-oracle-capture.sh @leizongmin
+/scripts/install-oracle-chrome.sh @leizongmin
+/scripts/smoke-test-browser.sh @leizongmin
+/scripts/e2e-wayland-focus.sh @leizongmin
+
+# Normative documentation and contribution interfaces (C1/C2 by semantics).
+/docs/specs/ @leizongmin
+/docs/goal/ @leizongmin
+/docs/governance/ @leizongmin
+/docs/architecture.md @leizongmin
+/ROADMAP.md @leizongmin
+/CHANGELOG.md @leizongmin
+/CODE_OF_CONDUCT.md @leizongmin
+/.github/pull_request_template.md @leizongmin
+/.github/ISSUE_TEMPLATE/ @leizongmin
+
+# Informational documentation and developer tools (C0/C1 by semantics).
+/docs/research/ @leizongmin
+/tools/icon-gen/ @leizongmin

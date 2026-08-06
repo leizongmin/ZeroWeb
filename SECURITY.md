@@ -22,6 +22,17 @@ ZeroWeb 还在快速迭代，但安全问题还是要按安全问题来处理。
 
 如果现在没有私密渠道，就开一个不带 exploit 细节的最小公开 issue，只说你需要一个安全沟通渠道。
 
+## 与贡献责任边界的关系
+
+未披露漏洞、利用样例、临时修复分支、私密 advisory 编号、密钥和凭据都属于 C3 受限信息：
+
+- 只能在 private vulnerability reporting / security advisory 或维护者指定的私密通道中讨论
+- 由私密通道内指定的人类责任维护者接管，AI 和 bot 不能成为批准主体
+- 公开 issue、proposal、PR、commit message 和 `CODEOWNERS` 不得包含相关细节或私密编号
+- 对外披露完成后，公开修复仍需按 [贡献责任边界](docs/governance/contribution-responsibility.md) 执行 review、验证和 adoption
+
+如果公开 PR 意外泄漏未修复漏洞，请停止普通 review，并立即转入上述私密流程。
+
 ## 报告里最好带上什么
 
 请尽量提供：
