@@ -10541,3 +10541,145 @@ fn test_isequalnode_r2819() {
         "text≠comment（nodeType 异）"
     );
 }
+
+#[test]
+fn test_navigator_geolocation_r2820() {
+    // R2820：navigator.geolocation——地理位置 API（地图/天气/本地化 feature-detect 后调 getCurrentPosition）。
+    // headless 无真 GPS → fake 零坐标位置（latitude/longitude 0，accuracy Infinity = 无精度承诺），让 location
+    // 脚本走 success 路径不抛。getCurrentPosition/watchPosition 经 _defer microtask 异步调 success（execute 末
+    // checkpoint 派发，下 execute 可读，同 R2774/R2814）；watchPosition 返唯一 watch id；clearWatch no-op。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // navigator.geolocation 存在 + 三方法为 function。
+    assert_eq!(
+        sandbox.execute("typeof navigator.geolocation").unwrap().value,
+        "object",
+        "navigator.geolocation 存在"
+    );
+    assert_eq!(
+        sandbox
+            .execute("typeof navigator.geolocation.getCurrentPosition")
+            .unwrap()
+            .value,
+        "function",
+        "getCurrentPosition 为 function"
+    );
+    assert_eq!(
+        sandbox
+            .execute("typeof navigator.geolocation.watchPosition")
+            .unwrap()
+            .value,
+        "function",
+        "watchPosition 为 function"
+    );
+    assert_eq!(
+        sandbox
+            .execute("typeof navigator.geolocation.clearWatch")
+            .unwrap()
+            .value,
+        "function",
+        "clearWatch 为 function"
+    );
+
+    // getCurrentPosition 经 microtask 调 success 携 fake 零坐标位置（__lat 初值 -999 证回调真触发）。
+    sandbox
+        .execute(
+            "globalThis.__lat = -999;\
+             navigator.geolocation.getCurrentPosition(function(p){\
+               globalThis.__lat = p.coords.latitude;\
+               globalThis.__lng = p.coords.longitude;\
+               globalThis.__alt = String(p.coords.altitude);\
+               globalThis.__acc = String(p.coords.accuracy);\
+               globalThis.__hdg = String(p.coords.heading);\
+               globalThis.__spd = String(p.coords.speed);\
+               globalThis.__ts = p.timestamp;\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__lat)").unwrap().value,
+        "0",
+        "getCurrentPosition success coords.latitude===0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__lng)").unwrap().value,
+        "0",
+        "coords.longitude===0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__alt)").unwrap().value,
+        "null",
+        "coords.altitude===null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__acc)").unwrap().value,
+        "Infinity",
+        "coords.accuracy===Infinity（无精度承诺）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hdg)").unwrap().value,
+        "null",
+        "coords.heading===null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__spd)").unwrap().value,
+        "null",
+        "coords.speed===null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ts)").unwrap().value,
+        "0",
+        "timestamp===0"
+    );
+
+    // watchPosition 返唯一正 watch id（首个为 1）+ 经 microtask 调 success；clearWatch no-op 不抛。
+    sandbox
+        .execute(
+            "globalThis.__id = navigator.geolocation.watchPosition(function(p){ globalThis.__wl = p.coords.latitude; });\
+             globalThis.__id2 = navigator.geolocation.watchPosition(function(){});\
+             globalThis.__cleared = 'no';\
+             try { navigator.geolocation.clearWatch(globalThis.__id); globalThis.__cleared = 'yes'; } catch(_e){}",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__id)").unwrap().value,
+        "1",
+        "watchPosition 返唯一 id（首个为 1）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__id2)").unwrap().value,
+        "2",
+        "watchPosition 多次返递增 id"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cleared)").unwrap().value,
+        "yes",
+        "clearWatch no-op 不抛"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__wl)").unwrap().value,
+        "0",
+        "watchPosition success coords.latitude===0"
+    );
+
+    // getCurrentPosition 无 success 回调静默 no-op 不抛（lenient，非真 GPS 不强求回调）。
+    sandbox
+        .execute("globalThis.__n = 'no'; try { navigator.geolocation.getCurrentPosition(); globalThis.__n = 'yes'; } catch(_e){}")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__n)").unwrap().value,
+        "yes",
+        "getCurrentPosition 无回调 lenient 不抛"
+    );
+}

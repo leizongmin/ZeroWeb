@@ -2091,6 +2091,28 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a navigator.geolocation（本轮 R2820，缺失 Web API 续）
+
+承接 R2819（isEqualNode）。land **`navigator.geolocation`**——地理位置 API（**补全 navigator.\* device-API feature-detection 表面**：clipboard✓ R2817 / permissions✓ R2817 后 geolocation 是最后一块常见 device API）。地图/天气/本地化脚本 feature-detect `navigator.geolocation` 后调 `getCurrentPosition`。**probe 先行**（broad grep 确认 geolocation/getCurrentPosition/watchPosition 在 JS 侧均 0 缺失；`security/permission.rs` 的 `Geolocation` 权限枚举与 JS API 无关）。
+
+- **`_makeGeoPosition()`**（helper）：fake 零坐标位置——`{coords:{latitude:0,longitude:0,altitude:null,accuracy:Infinity,altitudeAccuracy:null,heading:null,speed:null},timestamp:0}`。accuracy=Infinity = 无精度承诺（headless 无真 GPS），让 location 脚本走 success 路径不抛。
+- **`getCurrentPosition(success,error?,options?)`**：success 非 callable 静默 no-op（lenient）；否则经 `_defer` microtask 异步调 success 携 fake 位置（execute 末 checkpoint 派发，下 execute 可读，同 R2774/R2814）。
+- **`watchPosition(success,error?,options?)`**：`_geoWatchId++` 返唯一正 watch id（递增 1,2,3…）+ 经 `_defer` 异步调 success（单次）；options（enableHighAccuracy/timeout/maximumAge）忽略（headless）。
+- **`clearWatch(id)`**：no-op（无真 watch）。
+- **为何纯 JS async stub**：headless 无真 GPS，fake 零坐标 permissive（脚本走 success 路径不抛）；真定位须 host 接入 OS location（深，defer）。
+- **已知限制（记录）**：① fake 零坐标（0,0）非真定位——location 脚本得「中太平洋」坐标，走 success 路径不抛但非用户真位置，documented；② accuracy=Infinity 可能使 `accuracy < threshold` 检查走「低精度」分支（permissive，安全）；③ watchPosition 仅单次 success（无后续位置更新，无位置源）；④ 仅同 JS 上下文（无跨 worker/进程，host 接线 defer）；⑤ PositionError 路径未触发（无真错误源，error 回调永不调）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_geoWatchId` 计数 + `_makeGeoPosition` 工厂 + `navigator.geolocation`（getCurrentPosition/watchPosition/clearWatch，挂 permissions 后）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_navigator_geolocation_r2820`（typeof object + 三方法 function + getCurrentPosition 经 microtask 调 success coords.latitude===0/longitude 0/altitude null/accuracy Infinity/heading null/speed null/timestamp 0 + watchPosition 返递增 id（1,2）+ clearWatch no-op 不抛 + 无回调 lenient 不抛）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13448 passed / 0 failed / 74 ignored**，13447+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① `navigator.geolocation` 全新属性（additive，不改既有 navigator 字段）；② 纯 JS async stub（零 host 回调、零渲染副作用——经既有 `_defer` microtask）；③ fake 位置让 location 脚本 feature-detect 通过 + 走 success 路径不抛（permissive）；④ `_geoWatchId`/`_makeGeoPosition` 为 shim IIFE 内部（不污染 globalThis）。
+
+**下一步**：续缺失 Web API——PerformanceObserver（perf 监控，中频，需 perf entry buffer）/ node.normalize（罕见，合并邻接 text 节点）/ 深项 customElements upgrade/lifecycle（element proxy 接 ctor）/ XPath evaluate（需 host XPath engine）；rendering-compat 侧续降频守成（held baseline 13448 全绿）。
+
 ### P1a node.isEqualNode（本轮 R2819，缺失 Web API 续）
 
 承接 R2818（XMLSerializer + adopt/import）。land **`node.isEqualNode(other)`**——节点结构相等（**node-equality 三件套最后一块**：isSameNode R2815 身份 + compareDocumentPosition R2815 位置 + isEqualNode 结构）。testing/diff 库（React testing、virtual-dom diff）高频。**probe 先行**（isEqualNode 0 缺失；`__zw_get_outer_html`/`__zw_get_inner_html_handle`/`__zw_get_text_handle` 均已注册可复用）。

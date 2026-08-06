@@ -1823,6 +1823,23 @@
   globalThis.Worker = function() {
   };
 
+  // geolocation（R2820）——navigator.geolocation watch id 计数 + fake 零坐标位置工厂。
+  var _geoWatchId = 0;
+  function _makeGeoPosition() {
+    return {
+      coords: {
+        latitude: 0,
+        longitude: 0,
+        altitude: null,
+        accuracy: Infinity,
+        altitudeAccuracy: null,
+        heading: null,
+        speed: null,
+      },
+      timestamp: 0,
+    };
+  }
+
   globalThis.navigator = {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ZeroBrowser/0.1 Chrome/120.0.0.0',
     appName: 'Netscape',
@@ -1863,6 +1880,26 @@
           addEventListener: function() {}, removeEventListener: function() {},
         });
       },
+    },
+    // geolocation（R2820）——地理位置 API（地图/天气/本地化 feature-detect 后调 getCurrentPosition）。
+    // headless 无真 GPS → fake 零坐标位置（latitude/longitude 0，accuracy Infinity = 无精度承诺），让
+    // location 脚本走 success 路径不抛；getCurrentPosition/watchPosition 经 _defer microtask 异步调 success
+    //（execute 末 checkpoint 派发，下 execute 可读，同 R2774/R2814）；watchPosition 返唯一 watch id；
+    // clearWatch no-op。
+    geolocation: {
+      getCurrentPosition: function(success, _error, _options) {
+        if (typeof success !== 'function') return;
+        _defer(function() { success(_makeGeoPosition()); });
+      },
+      watchPosition: function(success, _error, _options) {
+        _geoWatchId = _geoWatchId + 1;
+        var id = _geoWatchId;
+        if (typeof success === 'function') {
+          _defer(function() { success(_makeGeoPosition()); });
+        }
+        return id;
+      },
+      clearWatch: function(_id) {},
     }
   };
 
