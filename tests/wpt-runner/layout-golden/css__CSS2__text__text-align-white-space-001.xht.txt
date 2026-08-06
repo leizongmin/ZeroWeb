@@ -1,0 +1,19 @@
+=== LAYOUT_DUMP (abs_y / height / margin-top / padding-top) ===
+html                     abs_y=    0.0 h=  55.9 mt=  0.0 pt=  0.0 x=   0.0 w= 800.0 dmt=  0.0
+  (anon)                   abs_y=    0.0 h=   0.0 mt=  0.0 pt=  0.0 x=   0.0 w=   0.0 dmt=  0.0
+  body                     abs_y=   16.0 h=  19.0 mt= 16.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  8.0
+    p                        abs_y=   16.0 h=  18.6 mt= 16.0 pt=  0.0 x=   8.0 w= 784.0 dmt= 16.0
+      strong                   abs_y=   16.0 h=  19.0 mt=  0.0 pt=  0.0 x=   8.0 w=  48.0 dmt=  0.0
+    div                      abs_y=   50.6 h=   0.0 mt=  0.0 pt=  0.0 x=   8.0 w= 120.0 dmt=  0.0
+      div                      abs_y=   50.6 h= 120.0 mt=  0.0 pt=  0.0 x=   8.0 w= 120.0 dmt=  0.0
+        span.red                 abs_y=   46.6 h=  20.0 mt=  0.0 pt=  0.0 x=   8.0 w=  80.0 dmt=  0.0
+        span.green               abs_y=   46.6 h=  20.0 mt=  0.0 pt=  0.0 x=  88.0 w=  20.0 dmt=  0.0
+        span.red                 abs_y=   66.6 h=  20.0 mt=  0.0 pt=  0.0 x=   8.0 w=  80.0 dmt=  0.0
+        span.green               abs_y=   66.6 h=  20.0 mt=  0.0 pt=  0.0 x=  88.0 w=  20.0 dmt=  0.0
+        span.red                 abs_y=   86.6 h=  20.0 mt=  0.0 pt=  0.0 x=   8.0 w=  80.0 dmt=  0.0
+        span.red                 abs_y=  106.6 h=  20.0 mt=  0.0 pt=  0.0 x=   8.0 w=  80.0 dmt=  0.0
+        span.green               abs_y=  106.6 h=  20.0 mt=  0.0 pt=  0.0 x=  88.0 w=  20.0 dmt=  0.0
+        span.red                 abs_y=  126.6 h=  20.0 mt=  0.0 pt=  0.0 x=   8.0 w=  80.0 dmt=  0.0
+        span.green               abs_y=  126.6 h=  20.0 mt=  0.0 pt=  0.0 x=  88.0 w=  20.0 dmt=  0.0
+        span.red                 abs_y=  146.6 h=  20.0 mt=  0.0 pt=  0.0 x=   8.0 w=  80.0 dmt=  0.0
+      div                      abs_y=   50.6 h=  60.0 mt=  0.0 pt=  0.0 x=   8.0 w= 120.0 dmt=  0.0

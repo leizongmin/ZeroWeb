@@ -1,0 +1,30 @@
+[package]
+name = "zero-css-parser-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# 独立 workspace（cargo-fuzz 惯例）：不参与主 workspace 的 check/clippy/test，
+# 仅由 cargo-fuzz / 手动 cargo check 使用。
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+zero-css-parser = { path = ".." }
+
+[[bin]]
+name = "fuzz_css_tokenizer"
+path = "fuzz_targets/fuzz_css_tokenizer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_css_parser"
+path = "fuzz_targets/fuzz_css_parser.rs"
+test = false
+doc = false
+bench = false

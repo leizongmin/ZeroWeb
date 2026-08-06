@@ -1,0 +1,12 @@
+# WPT Reftest Smoke 清单（B2：PR CI 秒级分层门禁）
+#
+# 每行一个 case id（reftest-upstream FILTER 子串匹配，见 make reftest-upstream）。
+# 清单中的用例必须是**已知确定通过**的代表性 case——任何一条失败即门禁失败。
+#
+# 填充方式：从 make reftest-upstream 全量结果中挑已通过的 case，按领域覆盖：
+#   css/CSS2（基础盒模型/定位/浮动）、css/css-flexbox、css/css-grid、
+#   css/css-text、css/css-position、css/css-tables 等
+# 与「测试资产化」（imported-tests.txt）联动：新修复通过的上游用例，
+# 若代表性足够，可同时加入本清单。
+#
+# 当前为空：等待从最近一次全量通过结果中填充。

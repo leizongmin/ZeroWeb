@@ -365,6 +365,13 @@ jobs:
       - name: Fetch wpt-data
         run: make fetch-wpt-data
 
+      # B2 分层：先跑秒级 smoke 门禁（reftest-smoke.txt 清单，已知必须通过），
+      # 再跑全量 reftest（慢）。smoke 失败即 job 失败，全量报告仍可下载。
+      - name: Run reftest smoke (fast gate, must pass)
+        run: |
+          cargo build --release --bin zero-wpt-runner
+          bash scripts/run-reftest-smoke.sh
+
       - name: Run reftest suite (CPU rendering)
         run: cargo run --release --bin zero-wpt-runner -- reftest --format json
 

@@ -31,6 +31,10 @@ NOTE=""
 FILTER=""
 DRY_RUN=false
 
+# wpt-data 套件版本（C3：从 Makefile WPT_DATA_REF 读取，随每次记录带上，
+# 保证不同套件版本间的绝对数可比性）
+WPT_DATA_REF="$(grep -oP 'WPT_DATA_REF\s*\?=\s*\K.*' "${REPO_ROOT}/Makefile" | tr -d ' ' || echo "unknown")"
+
 usage() {
   sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
@@ -126,9 +130,9 @@ fi
 mkdir -p "$TREND_DIR"
 if [[ ! -f "$TREND_CSV" ]]; then
   echo "# WPT 趋势基线（绝对数口径，见 docs/goal/rendering-compat.md「测试资产化」）" > "$TREND_CSV"
-  echo "# date,mode,total,passed,rate_pct,extra,git_sha,note" >> "$TREND_CSV"
+  echo "# date,mode,wpt_data_ref,total,passed,rate_pct,extra,git_sha,note" >> "$TREND_CSV"
 fi
-echo "${DATE},${MODE},${total},${passed},${rate},${extra},${SHA},${NOTE_SAFE}" >> "$TREND_CSV"
+echo "${DATE},${MODE},${WPT_DATA_REF},${total},${passed},${rate},${extra},${SHA},${NOTE_SAFE}" >> "$TREND_CSV"
 
 # ── JSON 快照 ──
 SNAPSHOT="${TREND_DIR}/${DATE}-${MODE}.json"
@@ -136,6 +140,7 @@ cat > "$SNAPSHOT" <<EOF
 {
   "date": "${DATE}",
   "mode": "${MODE}",
+  "wpt_data_ref": "${WPT_DATA_REF}",
   "total": ${total},
   "passed": ${passed},
   "rate_pct": ${rate},

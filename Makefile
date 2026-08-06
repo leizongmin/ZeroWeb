@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle capture-oracle product-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle
+.PHONY: setup-rusty-v8 fetch-wpt-data update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle capture-oracle product-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -10,6 +10,12 @@ WPT_DATA_REF  ?= v1.10
 WPT_DATA_DIR  ?= tests/wpt-runner/wpt-data
 fetch-wpt-data:
 	@if [ -d "$(WPT_DATA_DIR)" ] && [ -n "$$(ls -A $(WPT_DATA_DIR) 2>/dev/null)" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi
+
+# 升级 wpt-data 套件到新 tag（A2：套件随上游滚动，否则通过率无法对比）。
+# 用法: make update-wpt-data REF=v2.0        升级到指定 tag
+#       make update-wpt-data CHECK=1         查看远端可用 tag（只读）
+update-wpt-data:
+	bash scripts/update-wpt-data.sh $(if $(CHECK),--check,$(REF))
 
 build: setup-rusty-v8
 	cargo build --workspace
@@ -150,6 +156,23 @@ reftest-trend: fetch-wpt-data target/test-guard
 
 reftest-trend-oracle: fetch-wpt-data target/test-guard
 	./target/test-guard -- bash scripts/record-wpt-trend.sh --oracle $(if $(NOTE),--note "$(NOTE)")
+
+# Reftest smoke 分层门禁（B2）：跑 reftest-smoke.txt 清单（已知通过的
+# 代表性 case，秒级），用作 PR CI 快门禁；全量留给 reftest / reftest-trend。
+# 清单填充：从全量通过结果中挑代表性 case 写入 tests/wpt-runner/reftest-smoke.txt。
+reftest-smoke: fetch-wpt-data target/test-guard
+	./target/test-guard -- bash scripts/run-reftest-smoke.sh
+
+# 布局树 dump golden 回归（B1/P3）：渲染测试页 → dump 布局树 → 与 golden 对比。
+# golden 存 tests/wpt-runner/layout-golden/（提交进 git，测试资产化）。
+# 用法: make layout-golden [FILTER=css/CSS2/backgrounds]   对比（diff 退出 1）
+#       make layout-golden-update [FILTER=...]             生成/更新 golden
+#       （新用例先 --update 生成基线并提交，此后作为布局回归常驻断言）
+layout-golden: fetch-wpt-data target/test-guard
+	./target/test-guard -- bash scripts/run-layout-golden.sh $(FILTER)
+
+layout-golden-update: fetch-wpt-data target/test-guard
+	./target/test-guard -- bash scripts/run-layout-golden.sh --update $(FILTER)
 
 # Legacy Static Web smoke（DC-13，goal rendering-compat.md line 316）：跑 20 页
 # HTML 3.2/4 + CSS1/2 静态 fixture，每页 chromium oracle vs ZeroWeb CPU diff%。

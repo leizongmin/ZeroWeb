@@ -32,6 +32,8 @@ Commands:
   summary           Run tests and print summary only
   reftest           Run WPT reftest suite (rendering comparison tests)
   reftest-upstream  Run upstream WPT reftest files from wpt-data/
+  layout-dump [filter]  B1: dump layout tree for upstream test pages (golden compare,
+                       see scripts/run-layout-golden.sh)
   reftest-oracle [filter]  DC-14: render upstream test pages vs chromium oracle-shots (true pass-rate)
   struct-sweep [filter]   DC-13: sibling-overlap struct-check sweep over upstream test pages
   product-smoke <html>  Render a product static fixture to CPU PNG (DC-13)
@@ -188,6 +190,7 @@ fn main() {
         "summary" => cmd_summary(&options, filter.as_deref()),
         "reftest" => cmd_reftest(&options, filter.as_deref()),
         "reftest-upstream" => cmd_reftest_upstream(&options, filter.as_deref()),
+        "layout-dump" => cmd_layout_dump(&options, filter.as_deref()),
         "reftest-oracle" => cmd_reftest_oracle(&options, filter.as_deref()),
         "struct-sweep" => cmd_struct_sweep(&options, filter.as_deref()),
         "--help" | "-h" => print_usage(),
@@ -978,6 +981,59 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
 
     if fail_count > 0 {
         std::process::exit(1);
+    }
+}
+
+/// `layout-dump` 子命令（B1/P3 布局树 dump golden）— 渲染上游 WPT reftest 的 test 页，
+/// 输出布局树 dump（stderr，格式与 product-smoke --struct-check 的 LAYOUT_DUMP 一致：
+/// 固定 1 位小数，便于 golden 对比）。
+///
+/// 配合 scripts/run-layout-golden.sh 使用：
+///   bash scripts/run-layout-golden.sh --update [filter]   # 生成/更新 golden
+///   bash scripts/run-layout-golden.sh [filter]            # 对比（不一致退出 1）
+/// golden 存 tests/wpt-runner/layout-golden/（提交进 git，测试资产化）。
+fn cmd_layout_dump(options: &CliOptions, filter: Option<&str>) {
+    use reftest::{dump_layout_tree, render_to_framebuffer_with_layout_with_base};
+
+    let wpt_data_dir = match &options.wpt_data {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => std::path::PathBuf::from("tests/wpt-runner/wpt-data"),
+    };
+
+    if !wpt_data_dir.is_dir() {
+        eprintln!("Error: wpt-data directory not found: {}", wpt_data_dir.display());
+        eprintln!("Run `make fetch-wpt-data` first.");
+        std::process::exit(1);
+    }
+
+    let file_cases = wpt_file_loader::load_file_reftests(&wpt_data_dir);
+
+    // 过滤（与 reftest-upstream 同语义：子串匹配 case.id）
+    let filtered: Vec<&wpt_file_loader::FileReftestCase> = file_cases
+        .iter()
+        .filter(|case| {
+            if let Some(f) = filter {
+                case.id.contains(f)
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    eprintln!("Dumping layout tree for {} case(s)...", filtered.len());
+    eprintln!("(输出为 LAYOUT_DUMP 格式，供 scripts/run-layout-golden.sh 做 golden 对比)");
+
+    for case in &filtered {
+        let mut config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
+        config.media_type = options.media_type;
+        let base_dir = case.base_dir.as_deref();
+
+        // 只渲染 test 页；ref 页布局不在 dump 范围
+        let (_, root, rendered_html) =
+            render_to_framebuffer_with_layout_with_base(&case.test_html, "", &config, base_dir);
+
+        eprintln!("\n##### {} #####", case.id);
+        dump_layout_tree(&root, &rendered_html);
     }
 }
 
