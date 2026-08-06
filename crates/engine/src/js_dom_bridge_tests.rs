@@ -10911,3 +10911,92 @@ fn test_element_replace_children_r2822() {
         "旧子应全清空\n{out}"
     );
 }
+
+#[test]
+fn test_character_data_methods_r2823() {
+    // R2823：CharacterData 数据编辑（appendData/deleteData/insertData/replaceData/substringData + length）
+    // + Text.splitText。仅 handle-based 文本/注释节点（createTextNode/createComment）。读经
+    // query_text_from_mutations 反向 replay 取最新值（多次编辑 compose 正确），写追加 SetTextOnHandle。
+    // contentEditable 编辑库（ProseMirror/Slate/Quill）+ Range/Selection 高频。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // appendData / length / substringData / deleteData / insertData / replaceData 链式 compose。
+    // 'Hello' +appendData(' World')→'Hello World'(len 11) →substringData(6,5)='World'
+    // →deleteData(0,6)→'World' →insertData(0,'JS ')→'JS World' →replaceData(0,3,'Hi')→'HiWorld'（'JS ' 含空格 3 字符被 'Hi' 替）
+    sandbox
+        .execute(
+            "globalThis.__t = document.createTextNode('Hello');\
+             globalThis.__t.appendData(' World');\
+             globalThis.__len = globalThis.__t.length;\
+             globalThis.__sub = globalThis.__t.substringData(6, 5);\
+             globalThis.__t.deleteData(0, 6);\
+             globalThis.__afterDel = globalThis.__t.data;\
+             globalThis.__t.insertData(0, 'JS ');\
+             globalThis.__t.replaceData(0, 3, 'Hi');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len)").unwrap().value,
+        "11",
+        "appendData 后 length=11（'Hello World'）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sub)").unwrap().value,
+        "World",
+        "substringData(6,5)='World'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__afterDel)").unwrap().value,
+        "World",
+        "deleteData(0,6)→'World'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t.data)").unwrap().value,
+        "HiWorld",
+        "insertData(0,'JS ')+replaceData(0,3,'Hi')→'HiWorld'（'JS ' 含空格被 'Hi' 替）"
+    );
+
+    // splitText：原节点保 [0,offset)，返新 text 节点含 [offset,)；两节点均 handle-based 可读。
+    sandbox
+        .execute(
+            "globalThis.__t2 = document.createTextNode('abcdef');\
+             globalThis.__tail = globalThis.__t2.splitText(2);\
+             globalThis.__head = globalThis.__t2.data;\
+             globalThis.__taildata = globalThis.__tail.data;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__head)").unwrap().value,
+        "ab",
+        "splitText(2) 原节点保 'ab'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__taildata)").unwrap().value,
+        "cdef",
+        "splitText(2) 返新节点 'cdef'"
+    );
+
+    // CharacterData mixin 亦适用 comment 节点（appendData）。
+    sandbox
+        .execute(
+            "globalThis.__c = document.createComment('cmt');\
+             globalThis.__c.appendData('!');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c.data)").unwrap().value,
+        "cmt!",
+        "comment appendData（CharacterData mixin）"
+    );
+}

@@ -2091,6 +2091,28 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a CharacterData 方法 + Text.splitText（本轮 R2823，缺失 Web API 续）
+
+承接 R2822（replaceChildren）。land **CharacterData 数据编辑簇**——`appendData/deleteData/insertData/replaceData/substringData` + `length` + `Text.splitText`。contentEditable 编辑库（ProseMirror / Slate / Quill / Draft）+ Range/Selection 高频——这些库建/拆/编辑 text 节点。**probe 确认 shim 0 实现**（CharacterData 方法全缺失）。**为何 tractable**：handle-based 文本/注释节点（createTextNode/createComment 所建）经 `__zw_get_text_handle`（`query_text_from_mutations` **反向 replay** 取最新值——故多次编辑链式 compose 正确）读 + `__zw_set_text_handle`（追加 SetTextOnHandle）写。
+
+- **appendData(s)**：`set(get()+s)`；**deleteData(o,c)**：删 [o,o+c)；**insertData(o,s)**：在 o 插 s；**replaceData(o,c,s)**：[o,o+c) 替为 s；**substringData(o,c)**：读 [o,o+c)（不改）；**length**：`get().length`（UTF-16 code units，spec 一致）。offset/count 越界 clamp（spec 抛 IndexSizeError，permissive 不抛——documented）。
+- **splitText(o)**（仅 text）：原节点 `set([0,o))`，返新 text 节点（createTextNode 建，含 [o,)）——两节点均 handle-based 可后续编辑。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | get-trap nodeValue/data 读块后加 CharacterData 簇（length/appendData/deleteData/insertData/replaceData/substringData，guarded `isText\|\|isComment`）+ splitText（guarded `isText`）。读 `__zw_get_text_handle` / 写 `__zw_set_text_handle`（compose 经反向 replay）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_character_data_methods_r2823`（appendData+length(11)+substringData(6,5)='World'+deleteData(0,6)→'World'+insertData(0,'JS ')+replaceData(0,3,'Hi')→'HiWorld' 链式 compose + splitText(2) 原 'ab'/新 'cdef' + comment appendData mixin）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13451 passed / 0 failed / 74 ignored**，13450+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**踩坑（已修正）**：test 初版 replaceData(0,3,'Hi') 期望 'Hi World'——但 'JS ' 含空格共 3 字符被 'Hi' 替→正确为 'HiWorld'（实现正确，期望错）。**实现一次过**（red→green 修正期望）。
+
+**为何零回归且净正向**：① CharacterData 簇 + splitText 全新方法（additive，不改既有 nodeValue/data 读写）；② 复用既有 `__zw_get/set_text_handle` 回调（零新 host 回调、零渲染副作用）；③ offset 越界 clamp 不抛（permissive，不中断脚本）；④ 仅 handle-based 节点（parsed 文本节点静态快照无 handle——documented 限制，编辑库建节点路径覆盖）。
+
+**已知限制（记录）**：① 仅 handle-based 文本/注释节点（createTextNode/createComment）——parsed DOM 文本节点（childNodes 快照）无 handle 不支持（编辑库建节点路径覆盖，documented）；② offset/count 越界 clamp 非 spec 抛（permissive）；③ `length` 为 UTF-16 code units（astral 字符算 2，spec 一致）。
+
+**下一步**：续缺失 Web API——`document.hasFocus()`（焦点面收尾，activeElement 已 land，trivial）/ `document.elementFromPoint`（需 layout rect 全量 hit-test，深）/ DOMParser（需 host HTML parse 回调）/ Element.animate（Web Animations，深）/ customElements upgrade/lifecycle（深）/ node.normalize（罕见 + 架构重，defer）；rendering-compat 侧续降频守成（held baseline 13451 全绿）。
+
 ### P1a Element.replaceChildren（本轮 R2822，缺失 Web API 续）
 
 承接 R2821（PerformanceObserver）。**pivot 自 node.normalize**：probe 发现 node.normalize 虽列候选但属「罕见」（master 既记）**且架构重**——bridge 为 stateless HTML 重解析模型（每查询 `parse_html(html)`），childNodes 文本节点为静态快照无 selector/handle，merge 需新 DomMutation 变体 + Rust HTML tree surgery + reserialize（~60-100 行，价值/风险差）。改 land **`Element.replaceChildren(...nodesOrStrings)`**——现代 clear-and-populate 原子语义（Vue3 / lit-html / Svelte / 手写代码高频，React18 reconciliation 亦用），probe 确认 shim 0 实现（matches/closest/Blob/FileReader 经核均已 land）。**为何 tractable**：复用既有 `__zw_set_inner_html`（清空）+ append 路径（追加），零新 host 回调。

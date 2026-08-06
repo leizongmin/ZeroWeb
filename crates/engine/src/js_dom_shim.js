@@ -2985,6 +2985,76 @@
         if ((isText || isComment) && (prop === 'nodeValue' || prop === 'data')) {
           return handle ? __zw_get_text_handle(handle) : '';
         }
+        // CharacterData 数据编辑方法（R2823，text/comment 节点）+ Text.splitText。仅 handle-based
+        // 文本/注释节点（createTextNode/createComment 所建——parsed DOM 文本节点为 _wrapNodeEntry 静态
+        // 快照无 handle）。读经 __zw_get_text_handle（query_text_from_mutations 反向 replay 取最新值，
+        // 故多次编辑 compose 正确），写经 __zw_set_text_handle（追加 SetTextOnHandle mutation）。offset
+        // 越界 clamp（spec 抛 IndexSizeError，此处 permissive 不抛）。contentEditable 编辑库（ProseMirror
+        // / Slate / Quill）+ Range/Selection 高频。
+        if ((isText || isComment) && prop === 'length') {
+          return handle ? __zw_get_text_handle(handle).length : 0;
+        }
+        if ((isText || isComment) && prop === 'appendData') {
+          return function (s) {
+            if (handle) __zw_set_text_handle(handle, __zw_get_text_handle(handle) + String(s == null ? '' : s));
+            return undefined;
+          };
+        }
+        if ((isText || isComment) && prop === 'deleteData') {
+          return function (offset, count) {
+            if (!handle) return undefined;
+            var cur = __zw_get_text_handle(handle);
+            var o = offset | 0, c = count | 0;
+            if (o < 0) o = 0;
+            if (c < 0) c = 0;
+            __zw_set_text_handle(handle, cur.slice(0, o) + cur.slice(o + c));
+            return undefined;
+          };
+        }
+        if ((isText || isComment) && prop === 'insertData') {
+          return function (offset, s) {
+            if (!handle) return undefined;
+            var cur = __zw_get_text_handle(handle);
+            var o = offset | 0;
+            if (o < 0) o = 0;
+            __zw_set_text_handle(handle, cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o));
+            return undefined;
+          };
+        }
+        if ((isText || isComment) && prop === 'replaceData') {
+          return function (offset, count, s) {
+            if (!handle) return undefined;
+            var cur = __zw_get_text_handle(handle);
+            var o = offset | 0, c = count | 0;
+            if (o < 0) o = 0;
+            if (c < 0) c = 0;
+            __zw_set_text_handle(handle, cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o + c));
+            return undefined;
+          };
+        }
+        if ((isText || isComment) && prop === 'substringData') {
+          return function (offset, count) {
+            if (!handle) return '';
+            var cur = __zw_get_text_handle(handle);
+            var o = offset | 0, c = count | 0;
+            if (o < 0) o = 0;
+            if (c < 0) c = 0;
+            return cur.slice(o, o + c);
+          };
+        }
+        // Text.splitText(offset)——在 offset 拆分：原节点保 [0,offset)，返新 text 节点含 [offset,)。
+        // 仅 text（comment 无 splitText）。offset clamp 到 [0,length]；新节点经 createTextNode 建（handle-based，可后续编辑）。
+        if (isText && prop === 'splitText') {
+          return function (offset) {
+            var cur = handle ? __zw_get_text_handle(handle) : '';
+            var o = offset | 0;
+            if (o < 0) o = 0;
+            if (o > cur.length) o = cur.length;
+            var tail = cur.slice(o);
+            if (handle) __zw_set_text_handle(handle, cur.slice(0, o));
+            return globalThis.document.createTextNode(tail);
+          };
+        }
         if (prop === 'ownerDocument') {
           return globalThis.document;
         }
