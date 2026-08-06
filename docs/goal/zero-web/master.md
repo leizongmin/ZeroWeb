@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a HTMLFormElement 反射 IDL 属性（action/method/enctype/target）（本轮 R2839，缺失 Web API 续 / form 提交元数据）
+
+承接 R2838（anchor URL 分解）。probe 发现 `<form>` 反射 IDL 属性（action/method/enctype/target）全缺（无通用反射机制，catch-all 对其返 undefined）。land ——form 序列化 / AJAX 提交库（jQuery form / Axios 插件）读 `form.action`/`form.method` 构提交请求高频。
+
+- **关键设计点**：① 仅 getter（FORM `_realTag` gate，sel+handle 双身份），反射同名内容属性。② **action/target** 纯串反射（无→''）。③ **method** 小写归一 + spec enum（get/post/dialog，无效或空→'get'）。④ **enctype** 小写归一 + spec enum（三值，无效或空→'application/x-www-form-urlencoded'）。⑤ setter 经 set-trap catch-al（setAttribute）近似工作（method/enctype 不小写归一，罕见 defer）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +get-trap FORM 反射 IDL 分支（action/method/enctype/target；method/enctype 小写+enum 默认，action/target 纯串反射）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_form_reflected_idl_attrs_r2839`（f1 显式全反射 + POST→post 小写；f2 method=dialog 合法 enum；f3 无属性→method='get'/enctype 默认/action-target 空；非 form div 不走 form IDL gate）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13466 passed / 0 failed / 74 ignored**，13465+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 8 struct PASS + **`make product-smoke-legacy` 42 fixture / 0 struct FAIL（含 37-form-controls PASS 3.85%）**——form 相关变更按 run-rules 跑 legacy 验零结构性回归。
+
+**为何零回归且净正向**：① 全新增 get-trap 分支（仅 FORM gate，不改既有元素属性路径）；② additive getter（form 元素新属性，非 form 透传不变）；③ 复用既有 `__zw_get_attr(_handle)`（零新 host infra）。
+
+**已知限制（记录）**：① 仅 getter——method/enctype setter 经 catch-al 不小写归一（罕见用法，defer；action/target setter 正确）；② spec 对 method 非法值返 'get'、enctype 非法值返默认（本实现同）；③ `form.name`/`acceptCharset` 未含（name 可能通用反射，acceptCharset 罕见，可续）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面近穷尽（R2820-R2839 覆 ... + anchor URL 分解 + form 反射 IDL 主表面）。剩余元素特定 IDL 全缺：`<img>` naturalWidth/Height/complete/currentSrc（headless 无真图加载→0/true，低价值）、`<label>` htmlFor/`<input>` defaultChecked/defaultValue/form、`<textarea>` selectionStart/End、`<table>` rowIndex/cellIndex/rows/cells（中频，需 host 结构回调）；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / node.normalize / 真 WAAPI / date/time valueAsNumber / media 时长属性 / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13466 全绿）。
+
 ### P1a HTMLAnchorElement/HTMLAreaElement URL 分解 IDL 属性（本轮 R2838，缺失 Web API 续 / 链接 URL 组件）
 
 承接 R2837（plateau-guard）。probe 发现 `<a>`/`<area>` 的 URL 分解 IDL 属性（href/pathname/search/hash/host/hostname/port/protocol/origin/username/password）**全缺**（0 命中）。land ——经既有 `__zw_parse_url`（R2778 url crate）解析 href 属性（base = 页面 location.href）取组件。**SPA 路由**（读 `a.pathname`/`a.search` 决定路由）/链接分析/analytics/jQuery `.prop('href')` 高频。

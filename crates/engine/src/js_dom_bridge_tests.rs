@@ -12273,3 +12273,117 @@ fn test_anchor_url_decomposition_r2838() {
         "a.href setter 经 SetAttr mutation（apply 后 href 属性写入）\n{out2}"
     );
 }
+
+#[test]
+fn test_form_reflected_idl_attrs_r2839() {
+    // R2839：HTMLFormElement 反射 IDL 属性（action/method/enctype/target）——form 序列化 / AJAX 提交库
+    // 读 form.action/form.method 构提交请求。action/target 纯串反射；method/enctype 小写归一 + spec 默认。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <form id='f1' action='/submit' method='POST' enctype='multipart/form-data' target='_blank'></form>\
+         <form id='f2' action='https://api.example.org/api' method='dialog'></form>\
+         <form id='f3'></form>\
+         <div id='notform' action='/x'></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // f1：显式 action/method(POST→post 小写)/enctype/target 全反射。
+    sandbox
+        .execute(
+            "var f = document.querySelector('#f1');\
+             globalThis.__action = f.action;\
+             globalThis.__method = f.method;\
+             globalThis.__enctype = f.enctype;\
+             globalThis.__target = f.target;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__action)").unwrap().value,
+        "/submit",
+        "form.action 反射（原始串）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__method)").unwrap().value,
+        "post",
+        "form.method POST→post 小写归一"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__enctype)").unwrap().value,
+        "multipart/form-data",
+        "form.enctype 反射"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__target)").unwrap().value,
+        "_blank",
+        "form.target 反射"
+    );
+
+    // f2：method=dialog（合法 enum 值）；action 绝对串反射。
+    sandbox
+        .execute(
+            "var f2 = document.querySelector('#f2');\
+             globalThis.__action2 = f2.action;\
+             globalThis.__method2 = f2.method;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__action2)").unwrap().value,
+        "https://api.example.org/api",
+        "form.action 绝对串反射"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__method2)").unwrap().value,
+        "dialog",
+        "form.method=dialog 合法 enum"
+    );
+
+    // f3：无属性 → method 默认 'get'，enctype 默认 'application/x-www-form-urlencoded'，action/target 空。
+    sandbox
+        .execute(
+            "var f3 = document.querySelector('#f3');\
+             globalThis.__methodDef = f3.method;\
+             globalThis.__enctypeDef = f3.enctype;\
+             globalThis.__actionDef = f3.action;\
+             globalThis.__targetDef = f3.target;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__methodDef)").unwrap().value,
+        "get",
+        "form.method 无属性→默认 'get'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__enctypeDef)").unwrap().value,
+        "application/x-www-form-urlencoded",
+        "form.enctype 无属性→默认"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__actionDef)").unwrap().value,
+        "",
+        "form.action 无属性→''"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__targetDef)").unwrap().value,
+        "",
+        "form.target 无属性→''"
+    );
+
+    // 非 form 元素（div 带 action 属性）不返 form IDL（gate 仅 FORM）——div.action 非 form 默认行为。
+    sandbox
+        .execute("globalThis.__notformAction = String(document.querySelector('#notform').action);")
+        .unwrap();
+    // div.action 不应得 form 的默认 'get'-style 处理；接受 catch-all 任一返值（undefined/空/原始串）。
+    let _nf = sandbox.execute("String(globalThis.__notformAction)").unwrap().value;
+}

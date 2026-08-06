@@ -2979,6 +2979,26 @@
             return aVal == null ? '' : aVal;
           } catch (_e) { return prop === 'href' ? aRaw : ''; }
         }
+        // HTMLFormElement 反射 IDL 属性（action/method/enctype/target，R2839）——form 序列化 / AJAX 提交库
+        // （jQuery/Axios form 插件）读 form.action/form.method 构提交请求高频。反射同名内容属性；
+        // **method/enctype 有 spec 默认值 + 小写归一**（method: get/post/dialog，无效或空→'get'；
+        // enctype: 三值，无效或空→'application/x-www-form-urlencoded'）。action/target 为纯串反射（无→''）。
+        // setter 经 set-trap catch-al（setAttribute）近似工作（method/enctype 不小写归一，罕见 defer）。
+        if (_realTag(sel, handle) === 'FORM' &&
+            (prop === 'action' || prop === 'method' || prop === 'enctype' || prop === 'target')) {
+          var fv = handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop);
+          fv = fv || '';
+          if (prop === 'method') {
+            fv = fv.toLowerCase();
+            if (fv !== 'get' && fv !== 'post' && fv !== 'dialog') fv = 'get';
+          } else if (prop === 'enctype') {
+            fv = fv.toLowerCase();
+            if (fv !== 'application/x-www-form-urlencoded' && fv !== 'multipart/form-data' && fv !== 'text/plain') {
+              fv = 'application/x-www-form-urlencoded';
+            }
+          }
+          return fv;
+        }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
         if (prop === 'text' && _realTag(sel, handle) === 'OPTION') {
