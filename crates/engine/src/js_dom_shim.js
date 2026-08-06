@@ -1936,6 +1936,13 @@
   globalThis.Node.prototype = {};
   globalThis.Element.prototype = Object.create(globalThis.Node.prototype);
   globalThis.HTMLElement.prototype = Object.create(globalThis.Element.prototype);
+  // Node.DOCUMENT_POSITION_* 静态常量（compareDocumentPosition bitmask，R2815）——库常读 Node.DOCUMENT_POSITION_FOLLOWING 等。
+  globalThis.Node.DOCUMENT_POSITION_DISCONNECTED = 1;
+  globalThis.Node.DOCUMENT_POSITION_PRECEDING = 2;
+  globalThis.Node.DOCUMENT_POSITION_FOLLOWING = 4;
+  globalThis.Node.DOCUMENT_POSITION_CONTAINS = 8;
+  globalThis.Node.DOCUMENT_POSITION_CONTAINED_BY = 16;
+  globalThis.Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC = 32;
   globalThis.Element.prototype.addEventListener = function(type, fn, opts) {
     _globalAddEventListener(type, fn, opts);
   };
@@ -2230,6 +2237,42 @@
     if (sel === 'html') return null;
     if (sel === 'body' || sel === 'head') return _wrapSelector('html');
     return _wrapSelector('body');
+  }
+
+  // 祖先链（self → root，含两端，sel 数组）——经 `__zw_parent` 上行。guard 防环。供 getRootNode /
+  // compareDocumentPosition（R2815）。sel 缺失（handle-only detached）→ 空数组。
+  function _ancestorChain(sel) {
+    var chain = [];
+    if (!sel || typeof __zw_parent !== 'function') return chain;
+    var cur = sel, guard = 0;
+    while (cur && guard < 4096) {
+      chain.push(cur);
+      var p = '';
+      try { p = __zw_parent(cur) || ''; } catch (_e) { p = ''; }
+      if (!p || p === cur) break;
+      cur = p;
+      guard++;
+    }
+    return chain;
+  }
+
+  // 最小 detached Document（供 document.implementation.createDocument/createHTMLDocument，R2815）。
+  // **已知限制**：hollow——无 detached tree proxy infra，querySelector 返 null（jQuery/DOMPurify 真 detached
+  // 解析需后续 detached-tree slice）。满足 feature-detection + 基本 node 工厂。
+  function _makeDetachedDocument(title) {
+    return {
+      nodeType: 9,
+      nodeName: '#document',
+      documentElement: { nodeType: 1, tagName: 'HTML', nodeName: 'HTML', childNodes: [] },
+      head: { nodeType: 1, tagName: 'HEAD', nodeName: 'HEAD', childNodes: [] },
+      body: { nodeType: 1, tagName: 'BODY', nodeName: 'BODY', childNodes: [] },
+      title: title != null ? String(title) : '',
+      querySelector: function() { return null; },
+      querySelectorAll: function() { return []; },
+      getElementById: function() { return null; },
+      createElement: function(t) { var n = String(t).toUpperCase(); return { nodeType: 1, tagName: n, nodeName: n }; },
+      createTextNode: function(t) { return { nodeType: 3, nodeName: '#text', nodeValue: String(t) }; },
+    };
   }
 
   function _liveQueryCollection(sel) {
@@ -2623,6 +2666,62 @@
             var otherSel = other && other.__zwSelector;
             if (!otherSel) return false;
             try { return __zw_contains(sel, otherSel) === '1'; } catch (_e) { return false; }
+          };
+        }
+        // `el.getRootNode()`——沿 parent 链到根（通常 html），返根 proxy。sel 缺失 → 返自身。
+        if (prop === 'getRootNode') {
+          return function() {
+            if (!sel) return _makeProxy(sel, handle);
+            var chain = _ancestorChain(sel);
+            return _wrapSelector(chain.length ? chain[chain.length - 1] : sel);
+          };
+        }
+        // `el.isSameNode(other)`——节点身份相等（deprecated，等价 ===；proxy 缓存使同节点同 proxy，
+        // 但经 _elKey 比较更鲁棒：sel/handle 一致即同节点）。
+        if (prop === 'isSameNode') {
+          return function(other) {
+            if (!other) return false;
+            var otherSel = other.__zwSelector || '';
+            var otherHandle = other.__zwHandle || null;
+            return _elKey(sel, handle) === _elKey(otherSel, otherHandle);
+          };
+        }
+        // `el.compareDocumentPosition(other)`——bitmask 描述 other 相对 el 的文档位置（树算法 / 库排序高频）。
+        // 经 `_ancestorChain`（self/other→root）+ LCA + `__zw_element_children` 子序比较。已知限制：仅 sel-based
+        // element（text/comment 节点无 sel → DISCONNECTED 兜底）；不同树 → DISCONNECTED|IMPL。
+        if (prop === 'compareDocumentPosition') {
+          return function(other) {
+            var FOLLOWING = 4, PRECEDING = 2, CONTAINS = 8, CONTAINED_BY = 16, DISCONNECTED = 1, IMPL = 32;
+            var otherSel = other && other.__zwSelector;
+            if (!sel || !otherSel) return DISCONNECTED | IMPL;
+            if (sel === otherSel) return 0;
+            var aChain = _ancestorChain(sel);
+            var bChain = _ancestorChain(otherSel);
+            if (!aChain.length || !bChain.length) return DISCONNECTED | IMPL;
+            if (aChain[aChain.length - 1] !== bChain[bChain.length - 1]) return DISCONNECTED | IMPL;
+            // other 是 this 的祖先 → other contains this + other precedes this（doc 序）。
+            if (aChain.indexOf(otherSel) >= 0) return CONTAINS | PRECEDING;
+            // this 是 other 的祖先 → this contains other + other follows this。
+            if (bChain.indexOf(sel) >= 0) return CONTAINED_BY | FOLLOWING;
+            // 共同祖先非直系：root→node 反转链找 LCA；扫描 LCA element children 的**原始 selector 串**
+            //（_splitSelectors 会包成 proxy，故直接 split '|'），经 `__zw_contains`（节点包含，selector-format
+            // 无关）定位含 this / other 的子，序比较。
+            var ra = aChain.slice().reverse(), rb = bChain.slice().reverse();
+            var i = 0;
+            while (i < ra.length && i < rb.length && ra[i] === rb[i]) i++;
+            var lca = ra[i - 1];
+            if (lca && typeof __zw_element_children === 'function' && typeof __zw_contains === 'function') {
+              try {
+                var kids = String(__zw_element_children(lca) || '').split('|').filter(Boolean);
+                var ti = -1, oi = -1;
+                for (var k = 0; k < kids.length && (ti < 0 || oi < 0); k++) {
+                  if (ti < 0 && __zw_contains(kids[k], sel) === '1') ti = k;
+                  if (oi < 0 && __zw_contains(kids[k], otherSel) === '1') oi = k;
+                }
+                if (ti >= 0 && oi >= 0) return ti < oi ? FOLLOWING : PRECEDING;
+              } catch (_e) {}
+            }
+            return FOLLOWING; // 兜底
           };
         }
         // DocumentFragment handle（nodeType 11 / nodeName '#document-fragment'）。
@@ -4366,6 +4465,15 @@
       var handle = __zw_create_document_fragment();
       if (handle) _fragmentHandles[handle] = true;
       return _wrapHandle(handle);
+    },
+    // `document.implementation`（DOMImplementation，R2815）——feature-detection（jQuery support 等查 hasFeature）
+    // + createDocument/createHTMLDocument（返最小 hollow detached Document）。**已知限制**：detached tree 无
+    // proxy infra，querySelector 返 null（jQuery/DOMPurify 真 detached 解析需后续 detached-tree slice）。
+    implementation: {
+      hasFeature: function() { return true; }, // spec：deprecated，恒返 true
+      createDocument: function() { return _makeDetachedDocument(''); },
+      createHTMLDocument: function(title) { return _makeDetachedDocument(title); },
+      createDocumentType: function() { return null; },
     },
     documentElement: _wrapSelector('html'),
     body: _wrapSelector('body'),

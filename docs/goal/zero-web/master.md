@@ -2091,6 +2091,27 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a DOMImplementation + 节点关系方法（getRootNode/compareDocumentPosition/isSameNode）（本轮 R2815，缺失 Web API 续）
+
+承接 R2814（history）。land **节点关系/工具方法簇 + DOMImplementation**（probe 先行：broad grep 确认 5 候选均缺失——`contains`/`hasAttributes`/`toggleAttribute` 已存在，customElements/history 已 land，故择此簇）。
+
+- **`document.implementation`（DOMImplementation）**：`hasFeature`→恒 true（spec deprecated 语义，jQuery support 等查）；`createDocument`/`createHTMLDocument(title)`→`_makeDetachedDocument`（最小 hollow detached Document，nodeType 9 + documentElement/head/body + querySelector→null + createElement/createTextNode）；`createDocumentType`→null。**已知限制**：detached tree 无 proxy infra，querySelector 返 null（jQuery/DOMPurify 真 detached 解析需后续 detached-tree slice）。
+- **`node.getRootNode()`**：`_ancestorChain(sel)` 上行到根（通常 html），返根 proxy（=== documentElement）。
+- **`node.isSameNode(other)`**：经 `_elKey(sel,handle)` 比较（deprecated，等价 ===；proxy 缓存使同节点同 proxy，elKey 更鲁棒）。
+- **`node.compareDocumentPosition(other)`**：bitmask（经 `_ancestorChain` self/other→root + LCA + `__zw_element_children` 子序）。other 祖先→CONTAINS|PRECEDING(10)；this 祖先→CONTAINED_BY|FOLLOWING(20)；兄弟序→ti<oi?FOLLOWING(4):PRECEDING(2)；自身→0；异树→DISCONNECTED|IMPL(33)。
+- **`Node.DOCUMENT_POSITION_*` 静态常量**（DISCONNECTED=1/PRECEDING=2/FOLLOWING=4/CONTAINS=8/CONTAINED_BY=16/IMPL=32）——库常读。
+- **实现踩坑（已修正）**：LCA 子序比较初版用 `_splitSelectors(__zw_element_children(lca))` 返 **proxy 对象数组**（非字符串），`__zw_contains(proxy, ...)` 触发 `TypeError: Cannot convert object to primitive value`（host `String::from` 无法转 v8 对象）。改 **直接 `String(...).split('|')`** 取原始 selector 串 + `__zw_contains`（节点包含，format 无关）定位子——既避 proxy 包装又避 selector 格式不一致。
+- **已知限制（记录）**：① compareDocumentPosition 仅 sel-based element（text/comment 节点无 sel → DISCONNECTED 兜底）；② DOMImplementation detached doc hollow（无真 querySelector）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`Node.DOCUMENT_POSITION_*` 常量 + `_ancestorChain`（parent 链）+ `_makeDetachedDocument`（hollow detached doc）+ proxy get-trap `getRootNode`/`isSameNode`/`compareDocumentPosition`（bitmask + LCA + __zw_contains 子序）+ `document.implementation`（hasFeature/createDocument/createHTMLDocument）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_node_relation_implementation_r2815`（hasFeature true + createHTMLDocument body/title / getRootNode===documentElement / isSameNode 自身·他节点 / Node 常量 / compareDocumentPosition: html↔body 20·10 + a↔b 兄弟 4·2 + parent↔a 20·10 + 自身 0）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13443 passed / 0 failed / 74 ignored**，13442+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 新增 global 常量 + 全新 helper（`_ancestorChain`/`_makeDetachedDocument`）+ proxy get-trap 新分支（不改既有 prop 分支）+ `document.implementation` 新属性（additive）；② 纯 JS（getRootNode/isSameNode/compareDocumentPosition 经既有 host 回调 `__zw_parent`/`__zw_element_children`/`__zw_contains`，零新 host 回调）；③ detached doc 为全新对象（不影响主 document）；④ compareDocumentPosition 仅读（无副作用）。
+
 ### P1a history session history stack：pushState/replaceState/back/forward/go + popstate（本轮 R2814，缺失 Web API 续）
 
 承接 R2813（customElements）。**probe 先行**（broad grep：发现 `contains`/`hasAttributes`/`toggleAttribute` 均已存在，customElements/implementation/history 为 stub；CSS.escape 教训复现——避免冗余）。择 **history**——SPA 路由核心（react-router / vue-router / @reach 等所有 SPA 路由器 feature-detect `history.pushState` + 读 `history.state` + 监 `popstate`），原为全 stub no-op，现实现真实 in-memory session history stack。

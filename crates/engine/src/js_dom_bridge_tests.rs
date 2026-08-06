@@ -9961,3 +9961,153 @@ fn test_history_pushstate_r2814() {
         "go(越界) clamp 不抛"
     );
 }
+
+#[test]
+fn test_node_relation_implementation_r2815() {
+    // R2815：document.implementation (DOMImplementation) + 节点关系方法（getRootNode/compareDocumentPosition/
+    // isSameNode）+ Node.DOCUMENT_POSITION_* 常量。compareDocumentPosition bitmask 经 _ancestorChain + LCA +
+    // __zw_element_children 子序比较。createComment defer（需 host DomMutation 桥）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='parent'><div id='a'>A</div><div id='b'>B</div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // document.implementation.hasFeature 恒 true + createHTMLDocument 返 hollow doc（body/title）。
+    sandbox
+        .execute(
+            "globalThis.__hf = document.implementation.hasFeature('HTML', '1.0');\
+             globalThis.__hdoc = document.implementation.createHTMLDocument('hi');\
+             globalThis.__hbody = __hdoc.body.tagName; globalThis.__htitle = __hdoc.title;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hf)").unwrap().value,
+        "true",
+        "hasFeature 恒 true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hbody)").unwrap().value,
+        "BODY",
+        "createHTMLDocument doc.body.tagName BODY"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__htitle)").unwrap().value,
+        "hi",
+        "createHTMLDocument title 透传"
+    );
+
+    // getRootNode：#a 的根为 html（documentElement）。
+    sandbox
+        .execute(
+            "globalThis.__a = document.querySelector('#a');\
+             globalThis.__root = __a.getRootNode().tagName;\
+             globalThis.__rootIsDocEl = (__a.getRootNode() === document.documentElement);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__root)").unwrap().value,
+        "HTML",
+        "getRootNode 返根 html"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rootIsDocEl)").unwrap().value,
+        "true",
+        "getRootNode() === document.documentElement"
+    );
+
+    // isSameNode：自身 true / 他节点 false。
+    sandbox
+        .execute(
+            "globalThis.__b = document.querySelector('#b');\
+             globalThis.__same = __a.isSameNode(document.querySelector('#a'));\
+             globalThis.__diff = __a.isSameNode(__b);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__same)").unwrap().value,
+        "true",
+        "isSameNode 自身 true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__diff)").unwrap().value,
+        "false",
+        "isSameNode 他节点 false"
+    );
+
+    // compareDocumentPosition bitmask + Node 常量。
+    sandbox
+        .execute(
+            "globalThis.__F = Node.DOCUMENT_POSITION_FOLLOWING;\
+             globalThis.__Ct = Node.DOCUMENT_POSITION_CONTAINS;\
+             globalThis.__self = __a.compareDocumentPosition(__a);\
+             globalThis.__htmlBody = document.documentElement.compareDocumentPosition(document.body);\
+             globalThis.__bodyHtml = document.body.compareDocumentPosition(document.documentElement);\
+             globalThis.__parent = document.querySelector('#parent');\
+             globalThis.__ab = __a.compareDocumentPosition(__b);\
+             globalThis.__ba = __b.compareDocumentPosition(__a);\
+             globalThis.__parentA = __parent.compareDocumentPosition(__a);\
+             globalThis.__aParent = __a.compareDocumentPosition(__parent);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__F)").unwrap().value,
+        "4",
+        "Node.DOCUMENT_POSITION_FOLLOWING=4"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__Ct)").unwrap().value,
+        "8",
+        "Node.DOCUMENT_POSITION_CONTAINS=8"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__self)").unwrap().value,
+        "0",
+        "compareDocumentPosition(自身)=0"
+    );
+    // html 含 body，body 跟随 html → CONTAINED_BY(16)|FOLLOWING(4)=20。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__htmlBody)").unwrap().value,
+        "20",
+        "html.cDP(body)=CONTAINED_BY|FOLLOWING=20"
+    );
+    // body 看 html：html 含 body + html 先于 body → CONTAINS(8)|PRECEDING(2)=10。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__bodyHtml)").unwrap().value,
+        "10",
+        "body.cDP(html)=CONTAINS|PRECEDING=10"
+    );
+    // a 先于 b（兄弟）→ b 跟随 a → FOLLOWING(4)。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ab)").unwrap().value,
+        "4",
+        "a.cDP(b)=FOLLOWING=4（a 先于 b）"
+    );
+    // b 看 a → a 先于 b → PRECEDING(2)。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ba)").unwrap().value,
+        "2",
+        "b.cDP(a)=PRECEDING=2"
+    );
+    // parent 含 a，a 跟随 → CONTAINED_BY|FOLLOWING=20。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__parentA)").unwrap().value,
+        "20",
+        "parent.cDP(a)=CONTAINED_BY|FOLLOWING=20"
+    );
+    // a 看 parent → CONTAINS|PRECEDING=10。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__aParent)").unwrap().value,
+        "10",
+        "a.cDP(parent)=CONTAINS|PRECEDING=10"
+    );
+}
