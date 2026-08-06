@@ -6201,6 +6201,7 @@ name = "zero-engine"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "png 0.18.1",
  "sha1",
  "sha2",
  "slotmap",

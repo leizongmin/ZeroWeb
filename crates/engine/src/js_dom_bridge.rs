@@ -1340,6 +1340,31 @@ pub fn canvas_context_op(
             }
             "ok".into()
         }
+        // toDataURL（R2797，canvas slice 3）：pixel_buffer（经 get_image_data 取全 RGBA）→ PNG 编码 →
+        // 返**逗号分隔十进制串**（shim 转 Latin-1 → btoa → `data:image/png;base64,...`）。复用 png crate
+        //（miniz_oxide 已 transitive）；编码失败返空串（shim 回落 `data:,`）。仅 'image/png'（jpeg/webp defer）。
+        "toDataURL" => {
+            if let Some(ctx) = reg.1.get(&hid()) {
+                let w = ctx.width().max(1);
+                let h = ctx.height().max(1);
+                let img = ctx.get_image_data(0, 0, w, h);
+                let mut out: Vec<u8> = Vec::new();
+                {
+                    let mut enc = png::Encoder::new(&mut out, w, h);
+                    enc.set_color(png::ColorType::Rgba);
+                    enc.set_depth(png::BitDepth::Eight);
+                    if let Ok(mut writer) = enc.write_header() {
+                        if writer.write_image_data(&img.data).is_err() {
+                            return String::new();
+                        }
+                    } else {
+                        return String::new();
+                    }
+                }
+                return out.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
+            }
+            String::new()
+        }
         "getImageData" => {
             let (x, y, w, h) = (
                 arg(0).trim().parse::<u32>().unwrap_or(0),

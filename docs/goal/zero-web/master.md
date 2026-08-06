@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a canvas slice 3 — toDataURL PNG 导出（本轮 R2797，canvas 续）
+
+承接 R2796（slice 2）。续 canvas——land **toDataURL**（PNG 导出，截图 / 图表导出 / 上传高频）。加 `png` crate（0.18，miniz_oxide 已 transitive）为 engine dep。**fillText/strokeText defer**（fill_text 写 glyph primitives 不写 pixel_buffer——文本读回不可行，须 font-stack→pixel_buffer plumbing，与 slice 4 页面渲染配对）。
+
+- **host op `toDataURL`**：`ctx.get_image_data(0,0,w,h)` 取全 RGBA（pixel_buffer 为 `pub(crate)`，经 getImageData 公共路径读）→ `png::Encoder`（Rgba + EightBit）编码 → 返**逗号分隔十进制串**（PNG 字节）。编码失败返空串（shim 回落 `data:,`）。仅 'image/png'（jpeg/webp defer）。
+- **shim `canvas.toDataURL()`**：csv → Latin-1 串 → `btoa`（复用 R2770，无 base64 dep）→ `data:image/png;base64,<b64>`。无 ctx 时惰性创建。
+- **TDD**：fillRect red → toDataURL 含 `data:image/png;base64,` 前缀 + `atob` 解码为合法 **PNG 签名**（137,80,78,71,13,10,26,10 = `\x89PNG\r\n\x1a\n`）+ 非空 + 与空白 canvas 不同 + 无 ctx 可调用（惰性）。
+
+| 文件 | 改动 |
+|------|------|
+| `Cargo.toml` + `crates/engine/Cargo.toml` | +workspace/engine dep `png`（0.18）。 |
+| `engine/src/js_dom_bridge.rs` | `canvas_context_op` +`toDataURL` arm（get_image_data 全 RGBA → png::Encoder → csv 字节）。 |
+| `engine/src/js_dom_shim.js` | `_zwMakeCanvas` +`el.toDataURL()`（csv→Latin-1→btoa→data URL，惰性 ctx）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_canvas_to_data_url_r2797`（前缀 / PNG 签名 / 非空 / 空白不同 / 无 ctx 惰性）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13425 passed / 0 failed / 74 ignored**，13424+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 新 host op（仅由 canvas.toDataURL 调用）+ 新 canvas 方法（纯增量）；② png 为标准 crate（miniz_oxide 已 transitive）；③ CanvasContext 独立 pixel_buffer 不触 page 渲染；④ 复用 btoa（无 base64 dep）。
+
 ### P1a canvas slice 2 — path 全集 / transforms / save·restore / line 样式（本轮 R2796，canvas 续）
 
 承接 R2795（canvas slice 1）。续 canvas——land **slice 2**：补全 path API + transforms + 状态栈 + line 样式 + globalAlpha。builds on slice 1 `__zw_canvas_op` dispatch infra（host 加 op arm + shim ctx proxy 加方法）。所有方法 zero-canvas `CanvasContext` 原生提供（pub），无 crate 改动。

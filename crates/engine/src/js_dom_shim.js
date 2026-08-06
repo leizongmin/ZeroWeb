@@ -3080,6 +3080,20 @@
       el._ctx.canvas = el;
       return el._ctx;
     };
+    // toDataURL（R2797，canvas slice 3）：PNG 导出。host 编码 ctx.pixel_buffer → PNG（csv 字节）→
+    // shim 转 Latin-1 → btoa → `data:image/png;base64,...`（复用 btoa，无 base64 dep）。仅 'image/png'
+    //（type 参数忽略，jpeg/webp defer）；host 未注册 / 编码失败 → `data:,` 回落。无 ctx 时惰性创建。
+    el.toDataURL = function (_type) {
+      if (typeof __zw_canvas_op !== 'function') return 'data:,';
+      if (!el._ctx) el.getContext('2d');
+      if (!el._ctx) return 'data:,';
+      var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));
+      if (!csv) return 'data:,';
+      var nums = csv.split(',');
+      var s = '';
+      for (var i = 0; i < nums.length; i++) s += String.fromCharCode(+nums[i]);
+      return 'data:image/png;base64,' + btoa(s);
+    };
     return el;
   }
   function _zwMakeCtx2d(h) {

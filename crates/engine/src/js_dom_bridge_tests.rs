@@ -7675,3 +7675,76 @@ fn test_canvas_slice2_r2796() {
     assert_eq!(sandbox.execute("__cx.lineCap").unwrap().value, "square");
     assert_eq!(sandbox.execute("String(__cx.lineWidth)").unwrap().value, "3");
 }
+
+#[test]
+fn test_canvas_to_data_url_r2797() {
+    // R2797：canvas slice 3——toDataURL（PNG 导出）。host png::Encoder 编码 pixel_buffer → csv 字节；
+    // shim 转 Latin-1 → btoa → data:image/png;base64,。TDD：合法 PNG 签名（137,80,78,71,13,10,26,10）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // fillRect red 后 toDataURL：data:image/png;base64, 前缀 + 非空 base64。
+    sandbox
+        .execute(
+            "var c = document.createElement('canvas'); c.width=3; c.height=3;\
+             var cx = c.getContext('2d'); cx.fillStyle='red'; cx.fillRect(0,0,3,3);\
+             globalThis.__url = c.toDataURL();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__url.slice(0, 'data:image/png;base64,'.length) === 'data:image/png;base64,'")
+            .unwrap()
+            .value,
+        "true",
+        "toDataURL 应返 data:image/png;base64, 前缀"
+    );
+    // base64 部分 → atob 解码 → 检 PNG 签名（\\x89 P N G \\r \\n \\x1a \\n = 137,80,78,71,13,10,26,10）。
+    sandbox
+        .execute(
+            "var b = atob(globalThis.__url.split(',')[1]);\
+             globalThis.__sig = b.charCodeAt(0)+','+b.charCodeAt(1)+','+b.charCodeAt(2)+','+b.charCodeAt(3)+','+b.charCodeAt(4)+','+b.charCodeAt(5)+','+b.charCodeAt(6)+','+b.charCodeAt(7);\
+             globalThis.__len = b.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sig)").unwrap().value,
+        "137,80,78,71,13,10,26,10",
+        "解码后须为合法 PNG 签名"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len > 0)").unwrap().value,
+        "true",
+        "PNG 非空"
+    );
+    // toDataURL 与无绘制（空白）canvas 的 PNG 不同（内容反映绘制）——两 URL 不同。
+    sandbox
+        .execute("globalThis.__blank = document.createElement('canvas').toDataURL();")
+        .unwrap();
+    // 注：空白 canvas（默认 300×150）比 3×3 大得多，PNG 不同。验证两者不同（内容/尺寸差异）。
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__blank !== globalThis.__url)")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // toDataURL 在未 getContext 的 canvas 上可调用（惰性创建 ctx）。
+    assert_eq!(
+        sandbox
+            .execute("document.createElement('canvas').toDataURL().slice(0,5)")
+            .unwrap()
+            .value,
+        "data:"
+    );
+}
