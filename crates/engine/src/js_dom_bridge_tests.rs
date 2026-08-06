@@ -10333,3 +10333,117 @@ fn test_modern_interaction_stubs_r2817() {
         "pageXOffset 恒 0"
     );
 }
+
+#[test]
+fn test_xmlserializer_importnode_r2818() {
+    // R2818：XMLSerializer.serializeToString + document.adoptNode/importNode。serializeToString 委托节点
+    // outerHTML（元素）/ nodeValue（text·comment）/ documentElement（document）；adoptNode 单文档 identity；
+    // importNode 委托 cloneNode（深/浅克隆独立性）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='src' class='row'><span>hi</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // XMLSerializer 构造器 + serializeToString(元素) 含 tag + class。
+    sandbox
+        .execute(
+            "globalThis.__xs = new XMLSerializer();\
+             globalThis.__isFn = typeof XMLSerializer.prototype.serializeToString === 'function';\
+             globalThis.__el = document.querySelector('#src');\
+             globalThis.__ser = __xs.serializeToString(__el);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__isFn)").unwrap().value,
+        "true",
+        "serializeToString 为 function"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__ser.indexOf('<div') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "serializeToString(元素) 含 '<div'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__ser.indexOf('class=\"row\"') >= 0 || globalThis.__ser.indexOf(\"class='row'\") >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "serializeToString(元素) 含 class 属性"
+    );
+
+    // serializeToString(text/comment) → nodeValue/data。
+    sandbox
+        .execute(
+            "globalThis.__tn = document.createTextNode('hello');\
+             globalThis.__cm = document.createComment('note');\
+             globalThis.__serTn = __xs.serializeToString(__tn);\
+             globalThis.__serCm = __xs.serializeToString(__cm);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__serTn)").unwrap().value,
+        "hello",
+        "serializeToString(text)=nodeValue"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__serCm)").unwrap().value,
+        "note",
+        "serializeToString(comment)=data"
+    );
+
+    // document.adoptNode → 返同对象（identity）。
+    sandbox
+        .execute("globalThis.__adopted = (document.adoptNode(__el) === __el);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__adopted)").unwrap().value,
+        "true",
+        "adoptNode 单文档 identity 返同对象"
+    );
+
+    // document.importNode 深/浅克隆：副本独立于源 + deep 含子树 span。
+    sandbox
+        .execute(
+            "globalThis.__shallow = document.importNode(__el, false);\
+             globalThis.__deep = document.importNode(__el, true);\
+             globalThis.__deepHasSpan = __deep.outerHTML.indexOf('<span') >= 0;\
+             globalThis.__indep = (__deep !== __el);\
+             globalThis.__shallowTag = __shallow.tagName;\
+             globalThis.__shallowNeqDeep = (__shallow !== __deep);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__deepHasSpan)").unwrap().value,
+        "true",
+        "importNode(deep=true) 含子树 span"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__indep)").unwrap().value,
+        "true",
+        "importNode 副本独立于源"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__shallowTag)").unwrap().value,
+        "DIV",
+        "importNode(浅) 仍为 DIV 元素（外层克隆）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__shallowNeqDeep)").unwrap().value,
+        "true",
+        "浅/深克隆互异"
+    );
+}

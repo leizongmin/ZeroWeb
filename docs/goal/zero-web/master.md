@@ -2091,6 +2091,24 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a XMLSerializer + document.adoptNode/importNode（本轮 R2818，缺失 Web API 续）
+
+承接 R2817（现代交互 stubs）。land **功能性序列化/导入簇**（非 stub）——补 DOM 序列化 + 跨文档导入表面。**probe 先行**（broad grep 确认 XMLSerializer/serializeToString/adoptNode/importNode 均 0 缺失；`__zw_get_outer_html`/`__zw_get_inner_html[_handle]` + cloneNode 已存在可复用）。
+
+- **`XMLSerializer`** 构造器 + `serializeToString(node)`：Document（nodeType 9）→ documentElement；元素（1）→ `outerHTML`（sel-based 经 `__zw_get_outer_html`，handle 经 innerHTML 回落）；text/comment（3/8）→ `nodeValue`/`data`。SVG 导出 / XML utils / 序列化对比高频。
+- **`document.adoptNode(node)`**：单文档沙箱 → identity no-op（spec：同文档 adopt 返节点自身）。返 node。
+- **`document.importNode(node, deep?)`**：委托 `node.cloneNode(!!deep)`（复用既有 clone 机制——建副本 + 复制属性 + deep 复制子树）。无 cloneNode（非元素/detached）→ 返 node。
+- **已知限制（记录）**：① XMLSerializer 仅 HTML 序列化（无真 XML namespace 声明）；② handle/detached 元素 outerHTML 仅有 innerHTML 回落（无自身 tag wrapper——pre-existing 限制，R2816 同源）；③ adoptNode 单文档 identity（无真跨文档迁移）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`XMLSerializer` 构造器 + `serializeToString`（documentNode→documentElement / 元素→outerHTML / text·comment→nodeValue）；document +`adoptNode`（identity）/ `importNode`（cloneNode 委托）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_xmlserializer_importnode_r2818`（serializeToString 为 function + 元素含 `<div`+class / text=nodeValue 'hello' + comment=data 'note' / adoptNode identity 返同对象 / importNode deep 含子树 span + 副本独立 + 浅克隆 tagName 'DIV' + 浅深互异）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13446 passed / 0 failed / 74 ignored**，13445+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① XMLSerializer 全新构造器 + serializeToString（委托既有 outerHTML/nodeValue，零新 host 回调）；② adoptNode/importNode 为 document 新方法（additive，importNode 委托既有 cloneNode）；③ 纯 JS（无渲染副作用）；④ 测试避 handle 元素 outerHTML 无 tag wrapper 的 pre-existing 限制（浅克隆用 tagName 而非 outerHTML 断言）。
+
 ### P1a 现代交互 API stubs 簇：clipboard/permissions/fullscreen/scroll（本轮 R2817，缺失 Web API 续）
 
 承接 R2816（createComment）。land **现代交互 API stubs 簇**——高频 feature-detection 点（modern 脚本 `if(navigator.clipboard)` / `el.requestFullscreen()` / `window.scrollTo()` gate 后调用），headless 无真剪贴板/全屏/滚动 → resolving Promise 或 no-op，让脚本路径执行不抛。**probe 先行**（broad grep 确认 10 候选均 0 缺失）。

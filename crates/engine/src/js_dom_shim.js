@@ -1606,6 +1606,20 @@
     return d;
   };
 
+  // XMLSerializer（R2818）——节点 → HTML/XML 字符串（serializeToString，SVG 导出 / XML utils / 序列化对比高频）。
+  // 委托节点既有 outerHTML（sel-based 经 __zw_get_outer_html / handle 经 innerHTML 回落）+ text/comment nodeValue。
+  // **已知限制**：与 DOMParser 对称——仅 HTML 序列化（无真 XML namespace 声明），document 节点取 documentElement。
+  globalThis.XMLSerializer = globalThis.XMLSerializer || function XMLSerializer() {};
+  globalThis.XMLSerializer.prototype.serializeToString = function (node) {
+    if (node == null) return '';
+    var n = node.nodeType === 9 ? node.documentElement : node; // Document → documentElement
+    if (n == null) return '';
+    // 元素（nodeType 1）→ outerHTML；text/comment（3/8）→ nodeValue/data；其余 best-effort outerHTML。
+    if (n.nodeType === 3 || n.nodeType === 8) return String(n.nodeValue != null ? n.nodeValue : n.data || '');
+    var oh = n.outerHTML;
+    return oh != null ? String(oh) : '';
+  };
+
   // URL——WHATWG URL 解析 + 组件 setter（R2778 解析 + R2780 setter/双向 searchParams 同步）。委托 host
   // `__zw_parse_url`（解析）+ `__zw_set_url_part`（setter），均 spec-correct via `url` crate。组件存内部
   // `_`-prefixed 字段，accessor 暴露读 + 写（setter 经 `_setPart` 回调重解析）。searchParams 为稳定实例 +
@@ -4530,6 +4544,14 @@
       var handle = __zw_create_document_fragment();
       if (handle) _fragmentHandles[handle] = true;
       return _wrapHandle(handle);
+    },
+    // `document.adoptNode(node)`（R2818）——跨文档收养。单文档沙箱 → identity no-op（spec：同文档 adopt
+    // 返节点自身）。返节点（不抛，feature-detection / 库跨文档逻辑兼容）。
+    adoptNode: function(node) { return node; },
+    // `document.importNode(node, deep?)`（R2818）——跨文档导入（克隆）。委托 `node.cloneNode(deep)`
+    //（复用既有 clone 机制——建副本 + 复制属性 + deep 时复制子树）。无 cloneNode（非元素/detached）→ 返 node。
+    importNode: function(node, deep) {
+      return node && typeof node.cloneNode === 'function' ? node.cloneNode(!!deep) : node;
     },
     // `document.implementation`（DOMImplementation，R2815）——feature-detection（jQuery support 等查 hasFeature）
     // + createDocument/createHTMLDocument（返最小 hollow detached Document）。**已知限制**：detached tree 无
