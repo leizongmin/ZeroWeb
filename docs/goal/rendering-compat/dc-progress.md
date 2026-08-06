@@ -19,8 +19,8 @@
   - **禁止**设置过宽松的默认容差来掩盖真实渲染差距
 - [ ] **范围外 reftest 过滤**：导入时自动过滤或标记范围外 reftest（SVG、Canvas、WebGL），维护 skip list 文件（如 `tests/wpt-runner/reftest-skip-list.txt`）。**Skip list 约束**：仅允许跳过明确不在范围内的 reftest（SVG、Canvas、WebGL、动画帧级验证等）。**不允许**跳过范围内但已知的困难 case 或预期会失败的 case。Skip list 中每一项必须有注释说明跳过原因和对应的范围外分类
 - [ ] 通过率报告按 WPT 目录分类输出（文本 + JSON 格式）
-- [ ] Reftest 运行可通过单一命令执行（如 `cargo run --bin wpt-reftest`）
-- [ ] CI 管线中集成 reftest 运行（至少 CPU 模式）
+- [x] Reftest 运行可通过单一命令执行——`make reftest`（Makefile:74，test-guard 包裹 `cargo run --release --bin zero-wpt-runner -- reftest`）
+- [x] CI 管线中集成 reftest 运行（至少 CPU 模式）——`.github/workflows/ci.yml` `reftest` job（workflow_dispatch：fetch-wpt-data + reftest-smoke 快门禁 + 全量 CPU reftest --format json + 报告 artifact 上传）+ `.github/workflows/weekly.yml` `reftest-trend` job（schedule + dispatch，周记录趋势）
 
 ## DC-2: CSS 2.1 核心通过率 ≥ 95%（基于上游真实 WPT reftest）
 

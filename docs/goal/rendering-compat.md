@@ -176,8 +176,8 @@
 - [ ] **分类容差机制**：支持按 reftest 分类设置不同像素容差阈值（布局类 ≤ 0.1%，文字类 ≤ 0.5%）；优先使用 WPT fuzzy 注解；容差锁定不可放宽
 - [ ] **范围外 reftest 过滤**：导入时自动过滤或标记范围外 reftest（SVG、Canvas、WebGL），维护 skip list 文件
 - [ ] 通过率报告按 WPT 目录分类输出（文本 + JSON 格式）
-- [ ] Reftest 运行可通过单一命令执行（如 `cargo run --bin wpt-reftest`）
-- [ ] CI 管线中集成 reftest 运行（至少 CPU 模式）
+- [x] Reftest 运行可通过单一命令执行——`make reftest`（Makefile:74，test-guard 包裹 `cargo run --release --bin zero-wpt-runner -- reftest`）
+- [x] CI 管线中集成 reftest 运行（至少 CPU 模式）——`.github/workflows/ci.yml` `reftest` job（workflow_dispatch：fetch-wpt-data + reftest-smoke 快门禁 + 全量 CPU reftest --format json + 报告 artifact 上传）+ `.github/workflows/weekly.yml` `reftest-trend` job（schedule + dispatch，周记录趋势）
 
 **状态**：详见 dc-progress.md
 
