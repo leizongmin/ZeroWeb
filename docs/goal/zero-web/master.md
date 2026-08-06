@@ -2091,6 +2091,24 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a document 元数据属性：title / URL / documentURI / referrer（本轮 R2800，缺失 Web API 续）
+
+承接 R2799（canvas slice 5 drawImage）。canvas off-DOM 表面已基本完整，pivot 回缺失 Web API thread。**先系统性 probe**（上轮 CONTINUE 误判 `document.readyState` 缺失——实测 `readyState: 'complete'` + `addEventListener` 已存在），核出**真正缺失**：`document.title` / `document.URL` / `document.documentURI` / `document.referrer` 全缺（classList/dataset/screen/innerWidth/structuredClone/history/MutationObserver/ResizeObserver/IntersectionObserver 均已存在）。land 这组**纯 JS、零 host 回调、零新依赖**的高频 document 元数据属性。
+
+- **`document.title`**（极高频：每页 set/read 标题、分析、SPA 路由、tab 管理）：getter 首访**惰性读** `document.querySelector('title').textContent`（经既有 `__zw_query_match`）+ **空白折叠**（`replace(/\s+/g,' ').trim()`，spec 一致）+ 缓存；setter 更新 in-JS 缓存（`_doc_title`，同 `_doc_cookies` 闭包 var 模式）。
+- **`document.URL` / `document.documentURI`** = `location.href`（页面 URL，spec 一致；复用 R2784 location）。
+- **`document.referrer`** = `''`（无 referrer 追踪，net-layer defer；standalone 渲染/reftest 无来源页，spec 空串可接受）。
+- **已知限制（记录）**：① title setter 仅更新 in-JS 缓存，**不写回 host DOM `<title>`**（快照 proxy 只读，无 head/title 建链）；② 不创建 `<head><title>`（spec 无 head 时应建——本沙箱无渲染 title 需求）；③ referrer 恒空串（不接 net referrer）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_doc_title` 闭包 var + document getter/setter：`title`（惰性读 + 空白折叠 + 缓存 / setter 缓存）+ `URL`/`documentURI`（= location.href）+ `referrer`（=''），置于 `charset` 后。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_document_metadata_r2800`（含 `<title>` 多空白 HTML → title 'Hello World' 空白折叠 / set+readback 'New Title' / set '' / URL===location.href / documentURI===location.href / referrer '' / 独立 fresh sandbox 无 title → ''）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13428 passed / 0 failed / 74 ignored**，13427+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 纯 document 对象新增 getter/setter（不改既有属性 / 方法）；② 零 host 回调 / 零新依赖（复用既有 `__zw_query_match` + location）；③ title getter 仅读（惰性缓存无副作用）；④ URL/documentURI/referrer 为只读 getter，不触渲染路径。
+
 ### P1a canvas slice 5 — drawImage 图像合成（本轮 R2799，canvas 续）
 
 承接 R2798（slice 4 off-DOM 表面补全）。续 canvas——land **drawImage**（图像合成到 canvas，3 spec 重载；图像处理 / 游戏精灵 / 照片编辑 / 图层合成高频）。host `draw_image`/`draw_image_with_size`/`draw_image_sliced` 已存在且**已核验真写 pixel_buffer**（`draw_image_sized`：最近邻源采样 + transform + canvas 裁剪 + **source-over alpha 混合**（src_alpha=0 跳过 / 255 覆盖 / 否则 proper composite）+ global_alpha）。本轮仅暴露桥接，零 zero-canvas 改动。

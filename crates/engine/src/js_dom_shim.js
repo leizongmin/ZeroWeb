@@ -3691,6 +3691,10 @@
   // 不接真 cookie jar（host-layer defer）；per-上下文（无 origin 隔离）。
   var _doc_cookies = {};
 
+  // document.title 缓存。null = 未初始化（惰性读 <title> 文本）；string = 显式 set 或已读。
+  // getter 首访读 document.querySelector('title').textContent（空白折叠）；setter 仅更新缓存。
+  var _doc_title = null;
+
   globalThis.document = {
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);
@@ -3743,6 +3747,24 @@
     characterSet: 'UTF-8',
     charset: 'UTF-8',
     readyState: 'complete',
+    // document.title——getter 返首 <title> 文本（空白折叠，spec 一致）；首访惰性读 querySelector('title')
+    // 并缓存；setter 更新缓存。**已知限制**：① setter 仅更新 in-JS 缓存，不写回 host DOM <title>（快照 proxy
+    // 只读，无 head/title 建链）；② 不创建 <head><title>（spec 无 head 时应建——本沙箱无渲染 title 需求）。
+    get title() {
+      if (_doc_title !== null) return _doc_title;
+      var t = null;
+      try { t = globalThis.document.querySelector('title'); } catch (e) { t = null; }
+      _doc_title = t && t.textContent ? String(t.textContent).replace(/\s+/g, ' ').trim() : '';
+      return _doc_title;
+    },
+    set title(v) {
+      _doc_title = v == null ? '' : String(v);
+    },
+    // document.URL / documentURI = 页面 URL（= location.href）；referrer = ''（无 referrer 追踪，
+    // net-layer defer；standalone 渲染/reftest 无来源页，spec 空串可接受）。
+    get URL() { return globalThis.location ? globalThis.location.href : ''; },
+    get documentURI() { return globalThis.location ? globalThis.location.href : ''; },
+    get referrer() { return ''; },
     // document.cookie——get 返 "n=v; n=v" 串（仅 name=value，无属性）；set 解析 "n=v; Path=...; Max-Age=..."
     // 取首个 name=value 存/覆盖。**已知限制**：in-JS 存储（不接真 cookie jar / 不随 fetch 发送 / 无 origin
     // 隔离 / 无 expiry 淘汰——网络/origin 集成属 host-layer defer）；set-then-read 常见模式 tractable。

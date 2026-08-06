@@ -7953,3 +7953,89 @@ fn test_canvas_draw_image_r2799() {
         "drawImageSliced 切片 sx=1 须采样 (1,0) green"
     );
 }
+
+#[test]
+fn test_document_metadata_r2800() {
+    // R2800：document 元数据属性——title（get/set，纯 JS）+ URL/documentURI（= location.href）+ referrer（''）。
+    // title getter 首访读 querySelector('title').textContent（空白折叠）+ 缓存；setter 仅缓存（不写回 host DOM）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config.clone()).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // 含 <title> 多空白文本的 HTML（验 getter 空白折叠）。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><title>  Hello   World  </title></head><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // title getter：从 <title> 读 + 空白折叠（"Hello World"，非 "  Hello   World  "）。
+    assert_eq!(
+        sandbox.execute("String(document.title)").unwrap().value,
+        "Hello World",
+        "document.title getter 须读 <title> 并空白折叠"
+    );
+    // title setter + 读回（in-JS 缓存）。
+    sandbox
+        .execute("document.title = 'New Title'; globalThis.__t1 = document.title;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t1)").unwrap().value,
+        "New Title",
+        "document.title setter 须缓存并可读回"
+    );
+    // set 空串。
+    sandbox
+        .execute("document.title = ''; globalThis.__t2 = document.title;")
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__t2)").unwrap().value, "");
+
+    // URL / documentURI = location.href；referrer = ''。
+    sandbox
+        .execute(
+            "globalThis.__url = document.URL;\
+             globalThis.__uri = document.documentURI;\
+             globalThis.__ref = document.referrer;\
+             globalThis.__loc = location.href;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__url === globalThis.__loc)")
+            .unwrap()
+            .value,
+        "true",
+        "document.URL 须 === location.href"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__uri === globalThis.__loc)")
+            .unwrap()
+            .value,
+        "true",
+        "document.documentURI 须 === location.href"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ref)").unwrap().value,
+        "",
+        "document.referrer 须为空串（无 referrer 追踪）"
+    );
+
+    // 无 <title> 的 HTML → title 为空串（无 title 元素）。用独立 fresh sandbox（避免缓存干扰）。
+    let mut sandbox2 = V8Sandbox::with_config(config).unwrap();
+    sandbox2.execute(generate_js_dom_shim()).unwrap();
+    let dom_html2: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let mutations2: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let page_url2: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox2, &mutations2, &dom_html2, &page_url2);
+    assert_eq!(
+        sandbox2.execute("String(document.title)").unwrap().value,
+        "",
+        "无 <title> 元素时 document.title 须为空串"
+    );
+}
