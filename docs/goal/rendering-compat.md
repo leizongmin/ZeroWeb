@@ -151,10 +151,10 @@
 
 **当前能力/缺口详细基线**：详见 [current-baseline.md](rendering-compat/current-baseline.md)（完整能力矩阵和已知缺口表）。
 
-**关键状态摘要**（截至 2026-08-04·R2612）：
+**关键状态摘要**（截至 2026-08-07·R2863）：
 - ✅ **已完成**：CPU/GPU 渲染器全 13 种图元（M7）、浏览器图元消费（M7）、Margin 折叠（R323）、BFC margin 隔离（R323）、Float 核心布局（R895）、Position fixed（R324）、外部样式表加载（R213）、图片子资源贯通（R318）、产品 smoke 证据链
 - ⚠️ **P1-严重缺口**：Inline formatting 所有权分裂、Layout/Paint IFC 双路径、滚动容器（「浏览器层 glyph 重排」R2004 已修复——`transform_webview_primitives` 逐个映射仅 scale+offset+clip 无 sort/reorder + 单测 `transform_webview_primitives_preserves_glyph_order` 守护，详见 current-baseline.md / DC-13；不再列 open）
-- 📊 **测试基线**：总测试数 13193 全绿（`make test` R2563 周期复跑 + R2572-R2577 六连 lever 各轮零回归 13190/0/74 精确持平 + R2592 text-decoration shorthand thickness 接线 +1→13191 R2597 持平确认 + R2637 registry box-dimension initial-value 纠偏 + 守卫测试 +1→13192 + R2638 column-gap initial-value 纠偏 + 守卫测试 +1→13193；74 ignored = 网络型 real_website_compat 用例），覆盖率 95.46% line / 96.94% function / 94.88% region
+- 📊 **测试基线**：总测试数 13484 全绿（`make test` R2563 周期复跑 + R2572-R2577 六连 lever 各轮零回归 13190/0/74 精确持平 + R2592 text-decoration shorthand thickness 接线 +1→13191 R2597 持平确认 + R2637 registry box-dimension initial-value 纠偏 + 守卫测试 +1→13192 + R2638 column-gap initial-value 纠偏 + 守卫测试 +1→13193（rendering-compat 侧 held）；R2638 后经父目标 zero-web P1a DOM/JS Bridge + 缺失 Web API 系列（R2704-R2863）+291 推进至 13484（R2862 plateau-guard 复跑确认）；74 ignored = 网络型 real_website_compat 用例），覆盖率 95.46% line / 96.94% function / 94.88% region
 
 ---
 
@@ -230,8 +230,8 @@
 
 ### DC-7: 测试与质量不可退让
 
-- [ ] 所有现有测试持续全绿（`cargo test` 零失败），包含移除 `#[ignore]` 后的全部测试
-- [ ] **真实网站测试保留 `#[ignore]`**：`tests/integration/src/real_website_compat.rs` 中的真实网站兼容性测试因本地网络不稳定，保留 `#[ignore]` 标记，不计入本目标通过率统计。其余所有测试零 `#[ignore]`
+- [x] 所有现有测试持续全绿（`cargo test` 零失败）—— held baseline **13484/0/74**（74 ignored = real_website_compat 网络型用例，见下条）
+- [x] **真实网站测试保留 `#[ignore]`**：`tests/integration/src/real_website_compat.rs` 中的真实网站兼容性测试因本地网络不稳定，保留 `#[ignore]` 标记，不计入本目标通过率统计。其余所有测试零 `#[ignore]`
 - [x] 所有新增渲染修复必须有对应单元测试覆盖，**且把对应的上游 WPT reftest 用例导入常驻断言集（测试资产化，2026-08-06 落地）**：`make import-wpt TEST=<wpt 路径> REF=<ref 路径> [NOTE="R21xx 备注"]` —— 文件本体进入 `tests/wpt-runner/wpt-data/`（独立 repo），条目记入 `tests/wpt-runner/imported-tests.txt` 账本（随修复提交），manifest 自动重新生成
 - [ ] `cargo build` 零错误、`cargo clippy` 零警告
 - [x] Reftest 通过率报告持久化到 `docs/goal/rendering-compat/evidence/wpt-trends/`（`scripts/record-wpt-trend.sh` → `trend.csv` 绝对数 + JSON 快照；本地 `make reftest-trend`，每周 CI 自动记录，2026-08-06 落地）
