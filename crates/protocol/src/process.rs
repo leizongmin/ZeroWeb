@@ -69,6 +69,7 @@ pub fn child_process_args(role: ProcessRole, instance_id: u64) -> Vec<String> {
         ProcessRole::Browser => "browser",
         ProcessRole::Renderer => "renderer",
         ProcessRole::Network => "network",
+        ProcessRole::ImageDecoder => "image-decoder",
     };
     vec![format!("--type={type_name}"), format!("--instance-id={instance_id}")]
 }

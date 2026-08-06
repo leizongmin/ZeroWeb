@@ -10,6 +10,7 @@ zero-engine = { workspace = true }
 zero-page-runtime = { workspace = true }
 zero-host-runtime = { workspace = true }
 zero-render-foundation = { workspace = true }
+zero-protocol = { workspace = true }
 zero-net = { workspace = true }
 zero-script-sandbox = { workspace = true }
 zero-storage = { workspace = true }

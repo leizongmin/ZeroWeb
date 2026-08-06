@@ -67,7 +67,9 @@ impl<R: Read, W: Write> PipeTransport<R, W> {
 /// 判断通道错误消息是否表示 IPC 对端已断开（管道关闭 / Broken pipe）。
 pub fn is_disconnected_channel_message(message: &str) -> bool {
     let m = message.to_ascii_lowercase();
-    m.contains("broken pipe")
+    m.contains("failed to fill whole buffer")
+        || m.contains("unexpected end of file")
+        || m.contains("broken pipe")
         || m.contains("connection reset")
         || m.contains("connection aborted")
         || m.contains("os error 109")

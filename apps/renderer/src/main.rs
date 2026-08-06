@@ -1191,6 +1191,8 @@ impl RendererRuntime {
             IpcMessageKind::DispatchDomEvent(params) => self.handle_dispatch_dom_event(msg.id, params),
             IpcMessageKind::FetchRequest(_)
             | IpcMessageKind::FetchResponse(_)
+            | IpcMessageKind::ImageDecodeRequest(_)
+            | IpcMessageKind::ImageDecodeResult(_)
             | IpcMessageKind::TitleChanged(_)
             | IpcMessageKind::UrlChanged(_)
             | IpcMessageKind::LoadComplete

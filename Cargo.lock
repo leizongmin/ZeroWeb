@@ -6241,6 +6241,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-image-decoder"
+version = "0.1.0"
+dependencies = [
+ "png 0.17.16",
+ "tracing",
+ "tracing-subscriber",
+ "zero-protocol",
+ "zero-render-foundation",
+]
+
+[[package]]
 name = "zero-integration-tests"
 version = "0.1.0"
 dependencies = [
@@ -6435,6 +6446,7 @@ dependencies = [
  "zero-host-runtime",
  "zero-net",
  "zero-page-runtime",
+ "zero-protocol",
  "zero-render-foundation",
  "zero-script-sandbox",
  "zero-security",

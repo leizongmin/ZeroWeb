@@ -14,6 +14,7 @@
 #![allow(clippy::doc_lazy_continuation)]
 
 mod async_load;
+mod image_decoder;
 mod net_pool;
 pub mod webview;
 pub mod webview_builder;

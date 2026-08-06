@@ -10,7 +10,9 @@ use zero_engine::{
     image_resource_key, resolve_document_url,
 };
 use zero_net::{CacheLookup, HttpCache, HttpClient, NetError, is_file_url};
-use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri, decode_image_bytes};
+use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
+
+use crate::image_decoder::decode_image;
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
 use zero_security::{ResourceCheckResult, SecurityContext};
@@ -449,7 +451,7 @@ impl WebView {
                         continue;
                     }
                 };
-                match decode_image_bytes(&bytes) {
+                match decode_image(&bytes) {
                     Ok(img) => (img, image_resource_key(&abs, None)),
                     Err(e) => {
                         tracing::warn!("image {abs} decode failed (PNG/JPEG/WebP): {e}");

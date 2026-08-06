@@ -11,7 +11,9 @@ use zero_engine::{
     extract_img_resources, extract_import_urls, extract_stylesheet_hrefs,
 };
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
-use zero_render_foundation::image_cache::{ImageKey, decode_data_uri, decode_image_bytes};
+use zero_render_foundation::image_cache::{ImageKey, decode_data_uri};
+
+use crate::image_decoder::decode_image;
 
 use crate::net_pool::{fetch_bytes_async_meta, fetch_text_async_meta};
 use crate::webview::WebView;
@@ -577,7 +579,7 @@ impl AsyncPageLoad {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     Ok(bytes) => {
-                        if let Ok(img) = decode_image_bytes(&bytes) {
+                        if let Ok(img) = decode_image(&bytes) {
                             // 非 BothAbs SVG 进 no_ratio（default object size sizing）；其余进 sizes。
                             let intrinsic_ratio = img.intrinsic_ratio();
                             if let Some(r) = intrinsic_ratio {
@@ -625,7 +627,7 @@ impl AsyncPageLoad {
         self.img_pending.retain(|(url, key, rx)| {
             if let Ok(result) = rx.try_recv() {
                 match result {
-                    Ok(bytes) => match decode_image_bytes(&bytes) {
+                    Ok(bytes) => match decode_image(&bytes) {
                         Ok(img) => {
                             // 非 BothAbs SVG 进 no_ratio（default object size sizing）；其余进 sizes。
                             if let Some(r) = img.intrinsic_ratio() {

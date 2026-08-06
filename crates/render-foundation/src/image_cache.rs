@@ -492,6 +492,14 @@ fn is_webp_magic(bytes: &[u8]) -> bool {
     bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP"
 }
 
+/// 是否为可独立进程解码的栅格图像字节（PNG/JPEG/WebP magic 检测）。
+///
+/// D1：image-decoder 独立进程只处理栅格格式；SVG（依赖资源加载）与
+/// data URI 保持在调用进程内解码。供 webview 侧解码分发使用。
+pub fn is_raster_image_bytes(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"\x89PNG") || bytes.starts_with(&[0xFF, 0xD8, 0xFF]) || is_webp_magic(bytes)
+}
+
 /// R1705：解析 `data:` URI 并解码为 `ImageData`（renderer 多进程路径 + wpt-runner 共用）。
 ///
 /// `data:[<mediatype>][;base64],<payload>` —— header 含 `base64` 则 base64 解码 payload，

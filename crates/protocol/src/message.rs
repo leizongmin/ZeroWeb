@@ -71,6 +71,12 @@ pub enum IpcMessageKind {
     /// 网络响应。
     FetchResponse(FetchResponseParams),
 
+    // ── 图像解码（渲染→image-decoder 进程）──
+    /// 解码请求（D1：PNG/JPEG/WebP 在独立进程解码，隔离编解码器漏洞）。
+    ImageDecodeRequest(ImageDecodeParams),
+    /// 解码结果。
+    ImageDecodeResult(ImageDecodeResultParams),
+
     // ── 存储请求（渲染→浏览器→存储）──
     /// localStorage/sessionStorage 操作。
     StorageOp(StorageOpParams),
@@ -189,6 +195,32 @@ pub struct FetchResponseParams {
     pub headers: Vec<(String, String)>,
     /// 响应体。
     pub body: Vec<u8>,
+}
+
+/// 图像解码请求（D1：image-decoder 独立进程）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageDecodeParams {
+    /// 请求 ID（响应中回带，用于匹配）。
+    pub request_id: u64,
+    /// 图像 MIME（如 image/png、image/jpeg、image/webp；SVG 不进本通道）。
+    pub mime: String,
+    /// 图像原始字节。
+    pub bytes: Vec<u8>,
+}
+
+/// 图像解码结果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageDecodeResultParams {
+    /// 与请求一致的 ID。
+    pub request_id: u64,
+    /// 解码成功时的宽。
+    pub width: u32,
+    /// 解码成功时的高。
+    pub height: u32,
+    /// 解码成功时的 RGBA 像素（width × height × 4）。
+    pub rgba: Vec<u8>,
+    /// 解码失败信息（成功时为空）。
+    pub error: Option<String>,
 }
 
 /// 存储操作参数。

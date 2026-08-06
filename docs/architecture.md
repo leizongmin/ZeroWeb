@@ -29,6 +29,7 @@
 |------|------|
 | `apps/browser` | 桌面浏览器应用入口，基于 `browser-shell` + `webview` + `host-runtime`，提供窗口模式与 `--headless` / remote debugging（WebSocket）入口 |
 | `apps/renderer` | 独立渲染进程入口（`zero-renderer`），负责多进程 IPC 下的页面渲染与脚本执行，通过 stdin/stdout 管道与浏览器主进程通信 |
+| `apps/image-decoder` | 图像解码进程（`zero-image-decoder`，D1）：PNG/JPEG/WebP 在独立进程解码（隔离编解码器漏洞），由渲染进程内 webview 经管道 spawn；env `ZW_IMAGE_DECODER_PROCESS=1` 启用，未启用/SVG/降级路径回退进程内解码 |
 | `apps/webview-demo` | 最小演示程序，用于串起宿主窗口和渲染基础设施（wgpu/CPU 渲染静态文本） |
 
 ### 产品层和 API 层
