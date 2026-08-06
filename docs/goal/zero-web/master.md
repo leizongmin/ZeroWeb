@@ -2091,6 +2091,27 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a Element.animate（Web Animations API permissive stub）（本轮 R2827，缺失 Web API 续）
+
+承接 R2826（execCommand）。land **`Element.animate(keyframes, options)`**——Web Animations API。modern 动画库（Framer Motion / GSAP / Lottie / Motion One）feature-detect `el.animate` + 链式（`await anim.finished` / `anim.onfinish`）高频。probe 确认 shim 0 实现（仅 AnimationEvent 存在，CSS 动画事件无关）。**为何 tractable**：headless 无真时间轴 / 关键帧应用 → permissive stub——动画「瞬间完成」（playState 'running'→'finished' + `finished` Promise resolve + `onfinish` 触发），让动画库链式回调走通（关键帧不真应用，documented）。
+
+- **`_makeAnimation(options)`**（helper）：Animation 对象——`playState`/`currentTime`/`startTime`/`playbackRate`/`duration`/`id`/`onfinish`/`oncancel`/`onremove` + 方法 `play/pause/cancel/finish/reverse/updatePlaybackRate/commitStyles/persist` + `addEventListener/removeEventListener/dispatchEvent`（no-op）+ `finished`（Promise，Object.defineProperty getter）。
+- **瞬间完成**：创建即 `playState='running'`；execute 末 `_defer` microtask → `playState='finished'` + `currentTime=duration` + resolve `finished` + 调 `onfinish`（cancel 则切 `idle` 不完成）。options 提取 duration（number 或 object.duration）+ id。
+- **为何纯 JS permissive**：无 host 时间轴 / 关键帧插值（动画不真播放）；`finished` Promise + `onfinish` 让链式回调（await anim.finished / onfinish=fn）走通——modern 动画库的核心消费模式。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_makeAnimation(options)` helper（Animation 对象 + 瞬间完成 _defer）+ element get-trap select 后加 `animate`（调 _makeAnimation）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_element_animate_r2827`（初始 playState='running'（同步读）+ duration=200（options number）+ microtask 后 playState='finished' + finished Promise resolve + onfinish 触发 + options 对象形式（id='x'）+ cancel→idle + reverse 存在）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13455 passed / 0 failed / 74 ignored**，13454+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新增 element 方法 + helper（additive，不改既有）；② 纯 JS permissive stub（零 host 回调、零渲染副作用——动画不真播放，仅状态 + microtask 回调）；③ `finished` Promise + `onfinish` 经既有 `_defer` microtask（零新机制）；④ Animation 对象为 shim IIFE 内部 helper 返回（不污染 globalThis）。
+
+**已知限制（记录）**：① 关键帧不真应用（无 host 时间轴 / 关键帧插值 / 样式 commit——动画视觉无效果，documented）；② `finished` 在 cancel 后不 reject（spec reject AbortError，本 stub 保持 pending，罕见）；③ 无真 `currentTime` 推进（瞬间跳到 duration）；④ 全局 `Animation` / `KeyframeEffect` 构造器未暴露（罕用，el.animate 覆盖主流）；⑤ timeline / Document.timeline 未实现（深）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面**已趋近穷尽**（本轮 Element.animate 后，modern 动画/编辑/表单/事件/序列化/校验/可见性/剪贴板/焦点/位置/URL/性能/存储 主表面均覆）。剩余多为深项/host-layer：`document.elementFromPoint`（layout rect 全量 hit-test）/ customElements upgrade/lifecycle（element proxy 接 ctor）/ Shadow DOM attachShadow / node.normalize（罕见 + 架构重，defer）/ fetch 非 GET（net 层，跳过）/ 真 Web Animations timeline（深）；可选窄项 getClientRects（getBoundingClientRect 已覆）/ scrollIntoViewIfNeeded（WebKit）/ pointer lock；rendering-compat 侧续降频守成（held baseline 13455 全绿）。
+
 ### P1a execCommand + queryCommand\* + select()（本轮 R2826，缺失 Web API 续）
 
 承接 R2825（Constraint Validation）。land **legacy 编辑/剪贴板命令表面**——`document.execCommand` / `queryCommandSupported/Enabled/Value` / `element.select()`。旧 copy 按钮 `el.select(); document.execCommand('copy')`（navigator.clipboard 前主流，clipboard.js 等仍作 fallback）+ clipboard.js feature-detect `queryCommandSupported('copy')` + contentEditable 编辑器（TinyMCE/CKEditor）format 命令高频。probe 确认 shim 0 实现。**为何 tractable**：headless 无真剪贴板/格式化 → permissive stub（execCommand→true / queryCommandSupported/Enabled→true / queryCommandValue→'' / select→undefined），纯 JS 常量返，零 host 回调。

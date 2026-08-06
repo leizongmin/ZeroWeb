@@ -11267,3 +11267,86 @@ fn test_exec_command_and_select_r2826() {
         "legacy copy 模式（select+execCommand('copy')）不抛"
     );
 }
+
+#[test]
+fn test_element_animate_r2827() {
+    // R2827：Element.animate（Web Animations API permissive stub）。headless 无真时间轴 → 动画瞬间完成
+    //（playState 'running'→'finished' + finished Promise resolve + onfinish 触发，经 _defer microtask）。
+    // modern 动画库（Framer Motion/GSAP/Lottie）feature-detect + 链式高频。关键帧不真应用（documented）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><div id='d'></div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // animate 返 Animation 对象；初始 playState='running'（同步读，checkpoint 前）；duration 从 options 取。
+    sandbox
+        .execute(
+            "globalThis.__anim = document.querySelector('#d').animate([{opacity:0},{opacity:1}], 200);\
+             globalThis.__psInitial = globalThis.__anim.playState;\
+             globalThis.__dur = globalThis.__anim.duration;\
+             globalThis.__got = 'no';\
+             globalThis.__anim.finished.then(function(a){ globalThis.__got = a.playState; });\
+             globalThis.__anim.onfinish = function(){ globalThis.__of = 'fired'; };",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__psInitial)").unwrap().value,
+        "running",
+        "初始 playState='running'（同步读，checkpoint 前）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dur)").unwrap().value,
+        "200",
+        "duration 从 options（number）取 200"
+    );
+    // microtask checkpoint 后：playState='finished' + finished Promise resolve + onfinish 触发。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__anim.playState)").unwrap().value,
+        "finished",
+        "microtask 后 playState='finished'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__got)").unwrap().value,
+        "finished",
+        "finished Promise resolve（携 playState='finished'）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__of)").unwrap().value,
+        "fired",
+        "onfinish 触发"
+    );
+
+    // options 对象形式（duration + id）+ 方法存在不抛 + cancel 切 idle。
+    sandbox
+        .execute(
+            "globalThis.__a2 = document.querySelector('#d').animate([], { duration: 50, id: 'x' });\
+             globalThis.__id = globalThis.__a2.id;\
+             globalThis.__a2.cancel();\
+             globalThis.__a2ps = globalThis.__a2.playState;\
+             globalThis.__rev = typeof globalThis.__a2.reverse;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__id)").unwrap().value,
+        "x",
+        "options.id 提取"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a2ps)").unwrap().value,
+        "idle",
+        "cancel() 切 idle"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rev)").unwrap().value,
+        "function",
+        "reverse 存在"
+    );
+}

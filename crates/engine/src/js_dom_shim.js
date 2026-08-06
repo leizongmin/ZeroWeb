@@ -2245,6 +2245,59 @@
     };
   }
 
+  // Web Animations Animation 对象（el.animate permissive stub，R2827）。headless 无真时间轴 / 关键帧应用
+  // → 动画「瞬间完成」：创建即 playState='running'，execute 末 _defer microtask 后 playState='finished' +
+  // finished Promise resolve + onfinish 触发（除非 cancel）。让 modern 动画库（Framer Motion / GSAP / Lottie）
+  // feature-detect `el.animate` + 链式（await anim.finished / anim.onfinish）通过——动画不真播放，但回调链走通。
+  function _makeAnimation(options) {
+    var anim = {
+      playState: 'running',
+      currentTime: 0,
+      startTime: 0,
+      playbackRate: 1,
+      duration: 0,
+      id: '',
+      onfinish: null,
+      oncancel: null,
+      onremove: null,
+      _cancelled: false,
+      play: function () { anim.playState = 'running'; },
+      pause: function () { anim.playState = 'paused'; },
+      cancel: function () { anim._cancelled = true; anim.playState = 'idle'; },
+      finish: function () { anim.playState = 'finished'; },
+      reverse: function () { anim.playbackRate = -anim.playbackRate; return anim; },
+      updatePlaybackRate: function (rate) { anim.playbackRate = rate; },
+      commitStyles: function () {},
+      persist: function () {},
+      addEventListener: function () {},
+      removeEventListener: function () {},
+      dispatchEvent: function () { return true; },
+    };
+    // options：number=duration(ms) / object={duration,id,...}。提取 duration（finish 后 currentTime 用）+ id。
+    if (options != null) {
+      if (typeof options === 'number') anim.duration = options;
+      else {
+        if (typeof options.duration === 'number') anim.duration = options.duration;
+        if (options.id != null) anim.id = String(options.id);
+      }
+    }
+    var resolveFinish;
+    anim._finishedP = new Promise(function (r) { resolveFinish = r; });
+    Object.defineProperty(anim, 'finished', { get: function () { return anim._finishedP; } });
+    // headless 瞬间完成（无真时间轴）—— microtask 后 finished + onfinish（cancel 则 idle 不完成）。
+    _defer(function () {
+      if (!anim._cancelled) {
+        anim.playState = 'finished';
+        anim.currentTime = anim.duration;
+        resolveFinish(anim);
+        if (typeof anim.onfinish === 'function') {
+          try { anim.onfinish({ type: 'finish', target: anim, currentTime: anim.currentTime }); } catch (_e) {}
+        }
+      }
+    });
+    return anim;
+  }
+
   // 读元素当前 class（缓存优先，lazy-init 自 snapshot）。className get 与 classList 共用，
   // 使同脚本内连续 class 操作看到累积状态而非各自读 stale snapshot。
   function _readClass(key, sel, handle) {
@@ -3264,6 +3317,12 @@
         //（与 execCommand('copy') permissive stub 一致——不真选/不真复制，modern 路径走 navigator.clipboard）。
         if (prop === 'select') {
           return function() { return undefined; };
+        }
+        // `el.animate(keyframes, options)`（Web Animations API，R2827）——modern 动画库（Framer Motion /
+        // GSAP / Lottie）feature-detect + 链式。headless 无真时间轴 → `_makeAnimation` permissive stub
+        //（瞬间完成：playState 'running'→'finished' + finished Promise + onfinish）。关键帧不真应用（documented）。
+        if (prop === 'animate') {
+          return function (_keyframes, options) { return _makeAnimation(options); };
         }
         // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：
         // create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。sel-based 源完整；
