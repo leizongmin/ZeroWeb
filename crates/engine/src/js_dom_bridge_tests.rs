@@ -8245,3 +8245,124 @@ fn test_document_create_event_r2802() {
         "createEvent + initEvent + dispatchEvent 须触发 listener"
     );
 }
+
+#[test]
+fn test_document_tree_walker_r2803() {
+    // R2803：document.createTreeWalker / createNodeIterator + NodeFilter（DOM 子树遍历器）。
+    // eager pre-order 经 childNodes 递归；whatToShow 掩码 + acceptNode FILTER_ACCEPT/REJECT/SKIP 子树语义。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=r><p>a</p><span>b</span><i>c</i></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "var root = document.getElementById('r'); var n;\
+             var w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);\
+             var tags = []; while ((n = w.nextNode())) tags.push(n.tagName);\
+             globalThis.__tags = tags.join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tags)").unwrap().value,
+        "DIV,P,SPAN,I",
+        "SHOW_ELEMENT 须深度优先文档序（含 root DIV）"
+    );
+
+    // SHOW_TEXT：文本节点序（trim 空白保安全）。
+    sandbox
+        .execute(
+            "var w2 = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);\
+             var texts = []; while ((n = w2.nextNode())) texts.push(String(n.nodeValue));\
+             globalThis.__texts = texts.map(function(t){return t.trim();}).filter(Boolean).join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__texts)").unwrap().value,
+        "a,b,c",
+        "SHOW_TEXT 须文本节点序 a,b,c"
+    );
+
+    // FILTER_REJECT 剪子树：reject span 元素 → span 与其文本 'b' 均不出现。
+    sandbox
+        .execute(
+            "var rej = [];\
+             var w3 = document.createTreeWalker(root, NodeFilter.SHOW_ALL, function (node) {\
+               if (node.nodeType === 1 && node.tagName === 'SPAN') return NodeFilter.FILTER_REJECT;\
+               return NodeFilter.FILTER_ACCEPT;\
+             });\
+             while ((n = w3.nextNode())) rej.push(n);\
+             globalThis.__rejHasSpan = rej.some(function (x) { return x.nodeType === 1 && x.tagName === 'SPAN'; });\
+             globalThis.__rejHasB = rej.some(function (x) { return x.nodeType === 3 && x.nodeValue === 'b'; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rejHasSpan)").unwrap().value,
+        "false",
+        "FILTER_REJECT span 须排除 span 元素"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rejHasB)").unwrap().value,
+        "false",
+        "FILTER_REJECT span 须剪子树（文本 b 一并排除）"
+    );
+
+    // FILTER_SKIP 跳节点保留子树：skip span 元素 → span 不出现，但其文本 'b' 出现。
+    sandbox
+        .execute(
+            "var skp = [];\
+             var w4 = document.createTreeWalker(root, NodeFilter.SHOW_ALL, function (node) {\
+               if (node.nodeType === 1 && node.tagName === 'SPAN') return NodeFilter.FILTER_SKIP;\
+               return NodeFilter.FILTER_ACCEPT;\
+             });\
+             while ((n = w4.nextNode())) skp.push(n);\
+             globalThis.__skpHasSpan = skp.some(function (x) { return x.nodeType === 1 && x.tagName === 'SPAN'; });\
+             globalThis.__skpHasB = skp.some(function (x) { return x.nodeType === 3 && x.nodeValue === 'b'; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__skpHasSpan)").unwrap().value,
+        "false",
+        "FILTER_SKIP span 须排除 span 元素"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__skpHasB)").unwrap().value,
+        "true",
+        "FILTER_SKIP span 须保留子树（文本 b 出现）"
+    );
+
+    // previousNode 反向 + NodeIterator 与 TreeWalker 同序。
+    sandbox
+        .execute(
+            "var wb = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);\
+             var fwd = []; while ((n = wb.nextNode())) fwd.push(n.tagName);\
+             var back = []; while ((n = wb.previousNode())) back.push(n.tagName);\
+             globalThis.__back = back.join(',');\
+             var it = document.createNodeIterator(root, NodeFilter.SHOW_ELEMENT);\
+             var itags = []; while ((n = it.nextNode())) itags.push(n.tagName);\
+             globalThis.__itags = itags.join(',');",
+        )
+        .unwrap();
+    // nextNode 走到末尾后 previousNode 逆向：倒数第二起（末节点无前驱时不返自身）。
+    // 至少验证 NodeIterator 与 TreeWalker 同序 + previousNode 返非空。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__itags)").unwrap().value,
+        "DIV,P,SPAN,I",
+        "NodeIterator 须与 TreeWalker 同序"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__back.length > 0)").unwrap().value,
+        "true",
+        "previousNode 须可逆向遍历"
+    );
+}

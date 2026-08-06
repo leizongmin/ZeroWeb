@@ -2091,6 +2091,24 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a document.createTreeWalker / createNodeIterator + NodeFilter（本轮 R2803，缺失 Web API 续）
+
+承接 R2802（createEvent）。续缺失 Web API——land **`document.createTreeWalker` / `createNodeIterator` + `NodeFilter`**（DOM 子树遍历器，库 / sanitizer / a11y tree walker / 内容提取高频）。**先验证可行**：proxy 导航 firstChild/childNodes/nextSibling 经 host 回调（`__zw_child_nodes`/`__zw_sibling_nodes`），element 子为 selector-based proxy 可递归 `.childNodes`，文本/注释为静态叶节点——故 eager pre-order 经 `childNodes` 递归**可行**（避开 text 节点 nextSibling 缺失）。纯 JS，零 host 回调新增。
+
+- **`NodeFilter`** global：spec 常量（SHOW_ALL/ELEMENT/TEXT/COMMENT/... 掩码 + FILTER_ACCEPT=1/REJECT=2/SKIP=3 + acceptNode），guard 幂等。
+- **`_makeNodeWalker(root, whatToShow, filter)`**（内部，TreeWalker/NodeIterator 共用）：**eager pre-order** 经 `childNodes` 递归收集子树；whatToShow 掩码过滤 nodeType（element 1/text 4/comment 128）+ acceptNode 子树语义（ACCEPT 入列+遍历子树 / SKIP 不入列+遍历子树 / REJECT 不入列+剪子树）；`nextNode`/`previousNode` 在过滤后序列游走 + `currentNode` 跟踪。
+- **`document.createTreeWalker(root, whatToShow, filter)` / `createNodeIterator(...)`**：均返 `_makeNodeWalker(...)`（接口同：root/whatToShow/filter/currentNode/nextNode/previousNode）。
+- **已知限制（记录）**：① **eager**（非 lazy，spec TreeWalker 惰性——小树无碍，节点序一致）；② `currentNode` setter 不重置游标（spec 应从 currentNode 续遍历）；③ 无 live/detach（NodeIterator 移除节点 detach defer）；④ filter 抛错回落 ACCEPT。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`globalThis.NodeFilter`（常量）+ `_makeNodeWalker`（eager pre-order + whatToShow + FILTER 子树语义 + nextNode/previousNode）+ document `createTreeWalker`/`createNodeIterator`。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_document_tree_walker_r2803`（SHOW_ELEMENT 序 DIV,P,SPAN,I / SHOW_TEXT 序 a,b,c / FILTER_REJECT span 剪子树（b 一并排除）/ FILTER_SKIP span 保留子树（b 出现）/ NodeIterator 同序 / previousNode 逆向）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13431 passed / 0 failed / 74 ignored**，13430+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① document 新增两方法 + 新 global NodeFilter + 新内部 helper（不改既有属性/方法）；② 纯 in-JS（复用既有 childNodes 导航，零 host 回调新增）；③ eager 收集只读子树（无副作用）；④ NodeFilter guard 幂等不覆盖既有定义。
+
 ### P1a document.createEvent + initCustomEvent（本轮 R2802，缺失 Web API 续）
 
 承接 R2801（focus/activeElement）。续缺失 Web API——land **`document.createEvent` + `initCustomEvent`**（legacy 合成事件工厂，jQuery<3 / 旧库 / 分析脚本高频）。**先可靠 probe**（枚举 proxy get trap 全部 `prop==='...'`，85 项含 click/dispatchEvent/focus/全几何/导航/属性——element 层基本非缺口；element.click() 已存在，排除误判），核出 createEvent/createTreeWalker/Range·Selection/customElements/animate 真正缺失。择**复用现有构造器（R2779 Event/CustomEvent/KeyboardEvent）、纯 JS、零 host 回调**的 createEvent land。

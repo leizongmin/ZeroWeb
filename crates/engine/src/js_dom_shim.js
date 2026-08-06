@@ -3720,6 +3720,72 @@
   //（_elKey(sel,handle)）。focus()/blur() 经 Proxy get trap 操作。纯状态追踪，无真输入焦点/无事件派发。
   var _activeElKey = null;
 
+  // NodeFilter 常量（spec）——createTreeWalker/createNodeIterator 的 whatToShow 掩码 + acceptNode 返回值。
+  globalThis.NodeFilter = globalThis.NodeFilter || {
+    SHOW_ALL: 0xFFFFFFFF,
+    SHOW_ELEMENT: 0x1,
+    SHOW_TEXT: 0x4,
+    SHOW_CDATA_SECTION: 0x8,
+    SHOW_PROCESSING_INSTRUCTION: 0x10,
+    SHOW_COMMENT: 0x80,
+    SHOW_DOCUMENT: 0x100,
+    SHOW_DOCUMENT_TYPE: 0x200,
+    SHOW_DOCUMENT_FRAGMENT: 0x400,
+    FILTER_ACCEPT: 1,
+    FILTER_REJECT: 2,
+    FILTER_SKIP: 3,
+    acceptNode: function () { return 1; }
+  };
+
+  // 内部：构造 TreeWalker/NodeIterator 共用的节点遍历器（R2803）。**eager pre-order** 经 `childNodes`
+  // 递归收集子树（element 子为 selector-based proxy 可递归；文本/注释为静态叶节点），按 whatToShow 掩码 +
+  // acceptNode 过滤。nextNode/previousNode 在过滤后序列上游走。TreeWalker 与 NodeIterator 共用（接口同）。
+  // **已知限制**：① eager（非 lazy，spec TreeWalker 惰性——小树无碍，结果序一致）；② currentNode setter
+  // 不重置游标（spec 应从 currentNode 续遍历）；③ 无 live/detach（NodeIterator 移除节点 detach defer）。
+  function _makeNodeWalker(root, whatToShow, filter) {
+    var wts = (whatToShow == null) ? 0xFFFFFFFF : (whatToShow | 0);
+    var filterFn = null;
+    if (typeof filter === 'function') filterFn = filter;
+    else if (filter && typeof filter.acceptNode === 'function') filterFn = filter.acceptNode;
+    function maskFor(node) {
+      var nt = node && node.nodeType;
+      // proxy 树仅含 element(1)/text(3)/comment(8)；其他 nodeType 不展示。
+      return nt === 1 ? 0x1 : nt === 3 ? 0x4 : nt === 8 ? 0x80 : 0;
+    }
+    function check(node) {
+      if ((wts & maskFor(node)) === 0) return 3; // 不在 whatToShow → SKIP（不入列，但仍遍历子树）
+      if (!filterFn) return 1; // 无 filter → ACCEPT
+      try { return filterFn(node) | 0; } catch (_e) { return 1; }
+    }
+    var accepted = [];
+    // 深度优先 pre-order：ACCEPT/SKIP 入子树，REJECT 剪子树。
+    function walk(node) {
+      if (!node) return;
+      var r = check(node);
+      if (r === 1) accepted.push(node);
+      if (r !== 2 && node.childNodes) {
+        var kids = node.childNodes;
+        for (var i = 0; i < kids.length; i++) walk(kids[i]);
+      }
+    }
+    walk(root);
+    var idx = -1;
+    return {
+      root: root,
+      whatToShow: wts,
+      filter: filter || null,
+      currentNode: root,
+      nextNode: function () {
+        if (idx < accepted.length - 1) { idx++; this.currentNode = accepted[idx]; return accepted[idx]; }
+        return null;
+      },
+      previousNode: function () {
+        if (idx > 0) { idx--; this.currentNode = accepted[idx]; return accepted[idx]; }
+        return null;
+      }
+    };
+  }
+
   globalThis.document = {
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);
@@ -3767,6 +3833,15 @@
         : globalThis.Event;
       // 构造器接收 (type, options)；createEvent 返**空 type** 事件（initEvent/initCustomEvent 设 type）。
       return new Ctor('');
+    },
+    // `document.createTreeWalker(root, whatToShow, filter)` / `createNodeIterator(...)`——DOM 子树遍历器
+    //（库 / sanitizer / a11y tree walker 高频）。whatToShow 掩码 + acceptNode FILTER_ACCEPT/REJECT/SKIP。
+    // 经 `_makeNodeWalker`（eager pre-order via childNodes 递归）。两者共用工厂（接口同：nextNode/previousNode）。
+    createTreeWalker: function (root, whatToShow, filter) {
+      return _makeNodeWalker(root, whatToShow, filter);
+    },
+    createNodeIterator: function (root, whatToShow, filter) {
+      return _makeNodeWalker(root, whatToShow, filter);
     },
     // `document.createDocumentFragment()`：DocumentFragment（nodeType 11，轻量容器）。
     // 建 fragment（append 子节点经既有 append_child_handle）+ 标记 handle 到 _fragmentHandles
