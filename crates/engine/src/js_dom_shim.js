@@ -3819,6 +3819,12 @@
         // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：
         // create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。sel-based 源完整；
         // handle 源 tag/attrs 受限（无 get_tag/attr_names handle 变体，best-effort）。
+        // `Node.normalize()`（R2853）——合并相邻 Text 子节点 + 移除空 Text。snapshot 模型下元素文本为
+        // 单一串（无独立 Text 子节点暴露），故 normalize 为语义正确的 no-op（DOM 态已「normalized」）。
+        // 提供 no-op 防 `el.normalize()` 防御性调用（rich-text 编辑器 / innerHTML 后清理）抛 TypeError。
+        if (prop === 'normalize') {
+          return function() {};
+        }
         if (prop === 'cloneNode') {
           return function(deep) {
             var srcTag = 'div';
@@ -5615,6 +5621,7 @@
     compatMode: 'CSS1Compat',
     characterSet: 'UTF-8',
     charset: 'UTF-8',
+    contentType: 'text/html',
     readyState: 'complete',
     // fullscreen（R2817）——headless 无真全屏：fullscreenElement 恒 null，exitFullscreen 返 resolving Promise。
     fullscreenElement: null,

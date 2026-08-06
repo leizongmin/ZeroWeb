@@ -13674,3 +13674,64 @@ fn test_img_dimension_idl_width_height_natural_r2851() {
         "img.width=200 setter 写 width 内容属性\n{out}"
     );
 }
+
+#[test]
+fn test_document_content_type_and_node_normalize_r2853() {
+    // R2853：document.contentType（'text/html'，spec HTML 文档 MIME）+ Node.normalize()（no-op，
+    // snapshot 模型文本为单一串故语义正确——DOM 态已 normalized，防防御性调用抛 TypeError）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'>hello</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // document.contentType = 'text/html'（spec HTML 文档）。
+    sandbox.execute("globalThis.__ct = document.contentType;").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ct)").unwrap().value,
+        "text/html",
+        "document.contentType = 'text/html'（HTML 文档 MIME）"
+    );
+
+    // Node.normalize()：可调用（不抛 TypeError），返 undefined（spec void），文本不变。
+    sandbox
+        .execute(
+            "var d = document.querySelector('#div');\
+             globalThis.__normReturn = document.querySelector('#d').normalize();\
+             globalThis.__tc = document.querySelector('#d').textContent;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__normReturn)").unwrap().value,
+        "undefined",
+        "normalize() 返 undefined（spec void）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tc)").unwrap().value,
+        "hello",
+        "normalize() no-op：textContent 不变（'hello'）"
+    );
+
+    // 多元素 normalize() 均可调用（不抛）——防 rich-text 编辑器 / innerHTML 后清理的防御性调用崩溃。
+    sandbox
+        .execute(
+            "var ok = true;\
+             try { document.body.normalize(); document.documentElement.normalize(); } catch (e) { ok = false; }\
+             globalThis.__allOk = ok;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__allOk)").unwrap().value,
+        "true",
+        "body/documentElement.normalize() 均可调用（不抛 TypeError）"
+    );
+}
