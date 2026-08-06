@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a history session history stack：pushState/replaceState/back/forward/go + popstate（本轮 R2814，缺失 Web API 续）
+
+承接 R2813（customElements）。**probe 先行**（broad grep：发现 `contains`/`hasAttributes`/`toggleAttribute` 均已存在，customElements/implementation/history 为 stub；CSS.escape 教训复现——避免冗余）。择 **history**——SPA 路由核心（react-router / vue-router / @reach 等所有 SPA 路由器 feature-detect `history.pushState` + 读 `history.state` + 监 `popstate`），原为全 stub no-op，现实现真实 in-memory session history stack。
+
+- **state**：`_hist_entries`（cursor 0 = 初始 entry）+ `_hist_cursor` + `_hist_current()`。
+- **getter**：`length`（entries 数）/ `state`（当前 entry state）/ `scrollRestoration`（'auto' no-op setter，feature-detection）。
+- **`pushState(state, unused, url?)`**：截断 forward entries + push 新 entry + 推进 cursor（spec 不触发 popstate）。
+- **`replaceState(state, unused, url?)`**：原地替换当前 entry state/url（不触发 popstate）。
+- **`back()`/`forward()`/`go(delta)`**：移 cursor + `_defer` 异步派发 popstate（`new PopStateEvent('popstate',{state})` → window listener 经 `_dispatchToListeners(_elKey('html',null),...)`，复用 R2812 + 既有全局事件系统）。go 越界 clamp 不抛。
+- **诚实 defer（记录）**：① 仅 in-memory（不接真导航/host page_url——pushState url 仅记 entries，**不更新 `location`**，同源导航 defer host 桥）；② popstate 仅 dispatch window listener（headless 无真用户 back 按钮，浏览器 chrome 导航 defer）；③ popstate 经 `_defer` microtask（spec 为 task，本沙箱异步模型近似）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | history stub → 真实现：`_hist_entries`/`_hist_cursor`/`_hist_current`/`_hist_dispatchPopState`（_defer + PopStateEvent→window）+ length/state/scrollRestoration getter + pushState（截断+push）/replaceState/back/forward/go（clamp）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_history_pushstate_r2814`（初始 length=1/state=null / pushState 推进 length+state / replaceState 不增 length 替换 state / scrollRestoration 'auto' / 安装 popstate listener + back()→microtask 派发 state.page=1 + cursor 回退 state 反映 / forward()→state.page=20 / go(-2) 回初始 state=null / back 后 pushState 截断 forward length=2 / go(越界) clamp 不抛）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13442 passed / 0 failed / 74 ignored**，13441+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① history stub→真实现（additive——stub 原全 no-op，现真 state stack，不破坏既有 no-op 调用方）；② 纯 JS in-memory（无 host 回调、无渲染副作用、不更新 location）；③ popstate 经既有 `_defer` microtask + 既有全局事件系统 + R2812 PopStateEvent（零新机制）；④ go 越界 clamp 不抛（不中断脚本）。
+
 ### P1a customElements (CustomElementRegistry) scoped registry（本轮 R2813，缺失 Web API 续）
 
 承接 R2812（Event 子类簇 #2）。land **缺失 Web API 中最高价值项 customElements**（web components 生态门控——lit/stencil/fast 及所有 custom-element 库 feature-detect `window.customElements` + define/whenDefined）。**先 probe**：`HTMLElement`/`Element`/`Node` 已存在（line 1896-1901，原型链 Node→Element→HTMLElement，故 `class extends HTMLElement` 可用）；element 为 generic Proxy（非 ctor 实例）→ 决定 **scoped registry slice**。

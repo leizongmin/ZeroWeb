@@ -9794,3 +9794,170 @@ fn test_custom_elements_r2813() {
         "upgrade no-op 不抛"
     );
 }
+
+#[test]
+fn test_history_pushstate_r2814() {
+    // R2814：history session history stack——SPA 路由核心（react-router / vue-router 等）。原 stub no-op，
+    // 现实现 in-memory entries + cursor：pushState/replaceState 维护 state/length，back/forward/go 移 cursor
+    // + _defer 异步派发 popstate（window listener，复用 R2812 PopStateEvent）。popstate 经 execute 末
+    // microtask 派发，下 execute 可读（同 R2774）。已知限制：仅 in-memory（不更新 location / 不接 host 导航）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 初始 length=1 / state=null；pushState 推进 length + state；replaceState 原地替换 state 不增 length。
+    sandbox
+        .execute(
+            "globalThis.__initLen = history.length;\
+             globalThis.__initState = history.state;\
+             history.pushState({ page: 1 }, '', '/a');\
+             globalThis.__len2 = history.length; globalThis.__st2 = history.state.page;\
+             history.pushState({ page: 2 }, '', '/b');\
+             globalThis.__len3 = history.length; globalThis.__st3 = history.state.page;\
+             history.replaceState({ page: 20 }, '', '/b2');\
+             globalThis.__len3b = history.length; globalThis.__st3b = history.state.page;\
+             globalThis.__sr = history.scrollRestoration;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__initLen)").unwrap().value,
+        "1",
+        "初始 length=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__initState)").unwrap().value,
+        "null",
+        "初始 state=null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len2)").unwrap().value,
+        "2",
+        "pushState 后 length=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__st2)").unwrap().value,
+        "1",
+        "pushState state.page=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len3)").unwrap().value,
+        "3",
+        "二次 pushState length=3"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__st3)").unwrap().value,
+        "2",
+        "state.page=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len3b)").unwrap().value,
+        "3",
+        "replaceState 不增 length=3"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__st3b)").unwrap().value,
+        "20",
+        "replaceState state.page=20"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sr)").unwrap().value,
+        "auto",
+        "scrollRestoration='auto'"
+    );
+
+    // 安装 popstate listener + back() → cursor 回退到 {page:1}（execute 末 microtask 派发 popstate）。
+    sandbox
+        .execute(
+            "globalThis.__popState = null;\
+             addEventListener('popstate', function(e){ globalThis.__popState = e.state; });\
+             history.back();",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "globalThis.__popPage = globalThis.__popState ? globalThis.__popState.page : null;\
+             globalThis.__curState = history.state.page; globalThis.__curLen = history.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__popPage)").unwrap().value,
+        "1",
+        "back() popstate 携带 state.page=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__curState)").unwrap().value,
+        "1",
+        "back() 后 history.state 回到 entry page=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__curLen)").unwrap().value,
+        "3",
+        "back() 不改 length=3"
+    );
+
+    // forward() → cursor 前进到 {page:20}，popstate 携带 {page:20}。
+    sandbox.execute("history.forward();").unwrap();
+    sandbox
+        .execute("globalThis.__fwdPop = globalThis.__popState.page; globalThis.__fwdCur = history.state.page;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fwdPop)").unwrap().value,
+        "20",
+        "forward() popstate state.page=20"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fwdCur)").unwrap().value,
+        "20",
+        "forward() 后 state.page=20"
+    );
+
+    // go(-2) → cursor 回到 idx0（state=null）；go(0) 不动。
+    sandbox.execute("history.go(-2);").unwrap();
+    sandbox
+        .execute("globalThis.__goStateIsNull = (history.state === null);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__goStateIsNull)").unwrap().value,
+        "true",
+        "go(-2) 回到初始 entry state=null"
+    );
+
+    // 截断：cursor 在 idx0 时 pushState → forward entries 截断 + 新 entry → length=2。
+    sandbox
+        .execute(
+            "history.pushState({ page: 9 }, '', '/x');\
+             globalThis.__truncLen = history.length; globalThis.__truncSt = history.state.page;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__truncLen)").unwrap().value,
+        "2",
+        "back 后 pushState 截断 forward → length=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__truncSt)").unwrap().value,
+        "9",
+        "截断后 state.page=9"
+    );
+
+    // go(99) 越界 clamp 到末尾不抛（state 末 entry）。
+    sandbox
+        .execute(
+            "globalThis.__oob = (function(){ try { history.go(99); return 'ok'; } catch(e){ return 'threw'; } })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__oob)").unwrap().value,
+        "ok",
+        "go(越界) clamp 不抛"
+    );
+}

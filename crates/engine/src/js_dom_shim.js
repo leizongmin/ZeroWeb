@@ -1743,14 +1743,51 @@
     return _zw_structured_clone(value, typeof WeakMap !== 'undefined' ? new WeakMap() : new Map());
   };
 
+  // history（session history，R2814）——SPA 路由核心（react-router / vue-router / @reach 等）。原为全 stub
+  // no-op，现实现真实 in-memory session history stack：pushState/replaceState 维护 entries + cursor，state/length
+  // 反映当前；back/forward/go 移 cursor + 异步派发 popstate（window listener，复用 R2812 PopStateEvent）。
+  // **已知限制（记录）**：① 仅 in-memory（不接真导航/host page_url——pushState url 仅记 entries，不更新
+  // `location`，同源导航 defer host 桥）；② popstate 仅 dispatch 给 window listener（headless 无真用户
+  // back 按钮，浏览器 chrome 导航 defer）；③ popstate 经 `_defer` microtask 派发（spec 为 task，本沙箱异步
+  // 模型近似）；④ go(delta) 同步移 cursor + microtask 派发（spec 批量合并简化）。
+  var _hist_entries = [{ state: null, url: '' }]; // cursor 0 = 初始 entry
+  var _hist_cursor = 0;
+  function _hist_current() { return _hist_entries[_hist_cursor]; }
+  function _hist_dispatchPopState() {
+    // spec：back/forward/go 触发 popstate（pushState/replaceState 不触发），异步派发。
+    var st = _hist_current().state;
+    _defer(function () {
+      var ev = new PopStateEvent('popstate', { state: st });
+      ev.target = globalThis;
+      _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
+    });
+  }
   globalThis.history = {
-    length: 1,
-    state: null,
-    back: function() {},
-    forward: function() {},
-    go: function() {},
-    pushState: function() {},
-    replaceState: function() {}
+    get length() { return _hist_entries.length; },
+    get state() { return _hist_current().state; },
+    get scrollRestoration() { return 'auto'; },
+    set scrollRestoration(_v) { /* headless 无真滚动恢复，no-op */ },
+    // pushState(state, unused, url?)：截断 forward entries + push 新 entry + 推进 cursor（不触发 popstate）。
+    pushState: function (state, _unused, url) {
+      _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
+      _hist_entries.push({ state: state, url: url != null ? String(url) : _hist_current().url });
+      _hist_cursor = _hist_entries.length - 1;
+    },
+    // replaceState(state, unused, url?)：原地替换当前 entry 的 state/url（不触发 popstate）。
+    replaceState: function (state, _unused, url) {
+      var cur = _hist_current();
+      cur.state = state;
+      if (url != null) cur.url = String(url);
+    },
+    back: function () { if (_hist_cursor > 0) { _hist_cursor--; _hist_dispatchPopState(); } },
+    forward: function () { if (_hist_cursor < _hist_entries.length - 1) { _hist_cursor++; _hist_dispatchPopState(); } },
+    go: function (delta) {
+      var d = (delta == null) ? -1 : (delta | 0);
+      var target = _hist_cursor + d;
+      if (target < 0) target = 0;
+      if (target > _hist_entries.length - 1) target = _hist_entries.length - 1;
+      if (target !== _hist_cursor) { _hist_cursor = target; _hist_dispatchPopState(); }
+    },
   };
 
   globalThis.Worker = function() {
