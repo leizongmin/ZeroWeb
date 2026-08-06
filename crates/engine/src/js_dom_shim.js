@@ -3900,22 +3900,116 @@
     };
   }
 
-  // CSSStyleSheet（R2808 读 / R2809 写）——`<style>` 元素的样式表。cssRules 惰性经 host `__zw_style_rules`
-  //（解析 `<style>` 文本→StyleRule 序列化 \x1f/\x1e wire）→ CSSRule 数组（client cache）。
+  // CSSStyleSheet（R2808 读 / R2809 写 / R2810 per-rule style）——`<style>` 元素的样式表。cssRules 惰性经
+  // host `__zw_style_rules`（解析 `<style>` 文本→StyleRule 序列化 \x1f/\x1e wire）→ CSSRule 数组（client cache）。
   // insertRule/deleteRule（R2809）：维护 client cache（同步读回真值）+ 从 cache 重建 `<style>` 文本经
   // `__zw_set_text` 写回（写源→下次 render 重解析 cascade；视觉生效异步，JS 契约同步）。
+  // CSSRule.style（R2810）：per-rule CSSStyleDeclaration，backed by 规则声明块，mutation 同样 flush 写回。
   // **已知限制**：① 视觉生效于下次 render（写源 SetText 入队，cascade 异步）；② 仅 `<style>`（`<link>` defer 网络）；
-  // ③ CSSRule.style per-rule CSSStyleDeclaration defer（null）；④ 每次访问 styleSheets 重新查询（live DOM，非缓存）；
-  // ⑤ insertRule ruleText 仅按首 `{` 切分 selector/body（best-effort，非完整 CSS 解析）。
-  function _ruleFromText(text, parentSheet) {
+  // ③ 每次访问 styleSheets 重新查询（live DOM，非缓存）；④ insertRule ruleText 仅按首 `{` 切分（best-effort）。
+  // CSS Declaration 块文本（`prop: value; prop2: value2`）→ 有序 [{name, value}]。name 归一小写。
+  // 供 [`_makeRuleStyle`] 解析 rule.cssText body 与 style.cssText 整体写。
+  function _parseDeclarations(text) {
+    var decls = [];
+    var segs = String(text == null ? '' : text).split(';');
+    for (var i = 0; i < segs.length; i++) {
+      var seg = segs[i];
+      var c = seg.indexOf(':');
+      if (c < 0) continue;
+      var name = seg.slice(0, c).trim();
+      var val = seg.slice(c + 1).trim();
+      if (name) decls.push({ name: name.toLowerCase(), value: val });
+    }
+    return decls;
+  }
+
+  // CSSRule.style per-rule CSSStyleDeclaration（R2810）——backed by 规则声明块（从 rule.cssText 的 `{ ... }`
+  // body 解析为有序 declarations）。per-property get/set（camelCase↔kebab，复用 `_stylePropName`）+
+  // getPropertyValue/setProperty/removeProperty + cssText 整体读写 + item/length 枚举。任一 mutation →
+  // 重建 body → 更新 rule.cssText（selectorText 不变）→ 触发 parentSheet flushToOwner（复用 R2809 写回
+  // `<style>` 源）。**已知限制**：① 视觉生效于下次 render（flush 写源→cascade 异步，同 R2809）；
+  // ② `!important` 并入 value（getPropertyValue 含 '!important'、getPropertyPriority 返 ''，同 element.style
+  // 既有简化）；③ 仅 type===1 StyleRule（@-rule 无 style）；④ set 空串 = remove（spec 一致，避免 emit `prop: `）。
+  function _makeRuleStyle(rule, flushFn) {
+    var bodyText = function () {
+      var t = rule.cssText || '';
+      var lo = t.indexOf('{');
+      var hi = t.lastIndexOf('}');
+      return lo >= 0 ? t.slice(lo + 1, hi >= 0 ? hi : t.length) : t;
+    };
+    var decls = _parseDeclarations(bodyText());
+    function findIdx(name) {
+      var want = String(name).toLowerCase();
+      for (var i = 0; i < decls.length; i++) if (decls[i].name === want) return i;
+      return -1;
+    }
+    function declsText() {
+      return decls.map(function (d) { return d.name + ': ' + d.value; }).join('; ');
+    }
+    function rebuild() {
+      var sel = rule.selectorText != null ? rule.selectorText : '';
+      rule.cssText = sel + ' { ' + declsText() + ' }';
+      if (typeof flushFn === 'function') { try { flushFn(); } catch (_e) {} }
+    }
+    function readProp(name) {
+      var i = findIdx(_stylePropName(name));
+      return i >= 0 ? decls[i].value : '';
+    }
+    function setProp(name, value) {
+      var prop = _stylePropName(name).toLowerCase();
+      var v = String(value == null ? '' : value).trim();
+      var idx = findIdx(prop);
+      if (v === '') { // 空串 = remove（spec 一致）
+        if (idx >= 0) { decls.splice(idx, 1); rebuild(); }
+        return;
+      }
+      if (idx >= 0) decls[idx].value = v;
+      else decls.push({ name: prop, value: v });
+      rebuild();
+    }
+    function removeProp(name) {
+      var prop = _stylePropName(name).toLowerCase();
+      var i = findIdx(prop);
+      if (i < 0) return '';
+      var prev = decls[i].value;
+      decls.splice(i, 1);
+      rebuild();
+      return prev;
+    }
+    return new Proxy({}, {
+      get: function (_t, p) {
+        var ps = String(p);
+        if (ps === 'cssText') return declsText();
+        if (ps === 'length') return decls.length;
+        if (ps === 'getPropertyValue') return function (name) { return readProp(name); };
+        if (ps === 'getPropertyPriority') return function () { return ''; };
+        if (ps === 'setProperty') return function (name, value) { setProp(name, value); return undefined; };
+        if (ps === 'removeProperty') return function (name) { return removeProp(name); };
+        if (ps === 'item') return function (i) { var d = decls[i | 0]; return d ? d.name : ''; };
+        return readProp(ps);
+      },
+      set: function (_t, p, v) {
+        var ps = String(p);
+        if (ps === 'cssText') { decls = _parseDeclarations(String(v == null ? '' : v)); rebuild(); return true; }
+        setProp(ps, v);
+        return true;
+      }
+    });
+  }
+
+  function _ruleFromText(text, parentSheet, flushFn) {
     var t = String(text == null ? '' : text).trim();
     var brace = t.indexOf('{');
+    var rule;
     if (brace >= 0) {
       var s = t.slice(0, brace).trim();
       var body = t.slice(brace + 1).replace(/}\s*$/, '').trim();
-      return { type: 1, selectorText: s, cssText: s + ' { ' + body + ' }', style: null, parentStyleSheet: parentSheet };
+      rule = { type: 1, selectorText: s, cssText: s + ' { ' + body + ' }', style: null, parentStyleSheet: parentSheet };
+    } else {
+      rule = { type: 1, selectorText: t, cssText: t + ' { }', style: null, parentStyleSheet: parentSheet };
     }
-    return { type: 1, selectorText: t, cssText: t + ' { }', style: null, parentStyleSheet: parentSheet };
+    rule.style = _makeRuleStyle(rule, flushFn);
+    return rule;
   }
   function _makeStyleSheet(owner) {
     var sel = owner && owner.__zwSelector;
@@ -3931,13 +4025,15 @@
             for (var i = 0; i < entries.length; i++) {
               var parts = entries[i].split('\x1e');
               if (parts.length >= 2) {
-                rulesCache.push({
+                var r = {
                   type: 1, // CSSRule.STYLE_RULE
                   selectorText: parts[0],
                   cssText: parts[1],
-                  style: null, // per-rule CSSStyleDeclaration defer
+                  style: null, // 由 _makeRuleStyle 填（per-rule CSSStyleDeclaration，R2810）
                   parentStyleSheet: ss
-                });
+                };
+                r.style = _makeRuleStyle(r, flushToOwner);
+                rulesCache.push(r);
               }
             }
           }
@@ -3964,7 +4060,7 @@
       // insertRule(ruleText, index?)：splice 新规则入 cache + flush 重建 `<style>` 文本；返插入 index。
       insertRule: function (ruleText, index) {
         getRules(); // 确保从 host 填充 cache（若未读）
-        var rule = _ruleFromText(ruleText, ss);
+        var rule = _ruleFromText(ruleText, ss, flushToOwner);
         var idx = (index == null) ? rulesCache.length : (index | 0);
         if (idx < 0) idx = 0;
         if (idx > rulesCache.length) idx = rulesCache.length;

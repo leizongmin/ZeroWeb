@@ -9081,3 +9081,161 @@ fn test_stylesheets_write_r2809() {
         "insertRule/deleteRule 须经 __zw_set_text 写回 <style> 文本（flush）"
     );
 }
+
+#[test]
+fn test_stylesheets_rule_style_r2810() {
+    // R2810：CSSRule.style per-rule CSSStyleDeclaration——sheet.cssRules[0].style 单声明读/写。
+    // backed by 规则声明块（从 cssText body 解析有序 declarations）+ mutation flush 写回 `<style>` 源
+    // （复用 R2809 flushToOwner）。per-property get/set（camelCase↔kebab）+ getPropertyValue/setProperty/
+    // removeProperty + cssText + item/length。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { color: red; font-size: 14px; }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // document.styleSheets 每次访问重建新 sheet（R2808 已知限制 ⑤，live DOM 重查）——故 rule/style 须
+    // 一次捕获并复用引用，跨访问读取会落到新对象（host stale）。CSS-in-JS 常规用法即持引用编辑。
+    sandbox
+        .execute(
+            "globalThis.__rule = document.styleSheets[0].cssRules[0];\
+             globalThis.__st = __rule.style;",
+        )
+        .unwrap();
+
+    // style 读既有声明：style.color='red' / getPropertyValue('font-size')='14px' / length=2 / item(0)='color'。
+    sandbox
+        .execute(
+            "globalThis.__c = __st.color;\
+             globalThis.__fs = __st.getPropertyValue('font-size');\
+             globalThis.__len = __st.length;\
+             globalThis.__item0 = __st.item(0);\
+             globalThis.__camel = __st.fontSize;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c)").unwrap().value,
+        "red",
+        "style.color 须读回既有 'red'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fs)").unwrap().value,
+        "14px",
+        "getPropertyValue('font-size') 须 '14px'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__camel)").unwrap().value,
+        "14px",
+        "camelCase style.fontSize 须 '14px'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len)").unwrap().value,
+        "2",
+        "style.length 须 2（color + font-size）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__item0)").unwrap().value,
+        "color",
+        "style.item(0) 须 'color'"
+    );
+
+    // set 既有属性：style.color='blue' → 同一 rule.cssText 反映 'color: blue' + flush 写回（SetText）。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute("globalThis.__st.color = 'blue'; globalThis.__rc = __rule.cssText;")
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__rc.indexOf('color: blue') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "style.color='blue' 后 rule.cssText 须含 'color: blue'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__rc.indexOf('color: red') >= 0)")
+            .unwrap()
+            .value,
+        "false",
+        "旧值 'color: red' 须被替换移除"
+    );
+    let muts = mutations.lock().unwrap();
+    let has_set_text = muts.iter().any(|m| matches!(m, DomMutation::SetText { .. }));
+    drop(muts);
+    assert!(
+        has_set_text,
+        "style mutation 须经 flush __zw_set_text 写回 <style> 文本"
+    );
+
+    // setProperty 新增属性 + camelCase set + cssText 整体读。
+    sandbox
+        .execute(
+            "globalThis.__st.setProperty('background', 'yellow');\
+             globalThis.__st.marginTop = '8px';\
+             globalThis.__decl = __st.cssText;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__decl.indexOf('background: yellow') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "setProperty('background','yellow') 须入声明块"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__decl.indexOf('margin-top: 8px') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "camelCase style.marginTop='8px' 须归一为 'margin-top: 8px'"
+    );
+
+    // removeProperty('color') → 返旧值 'blue' + 声明块不再含 color。
+    sandbox
+        .execute(
+            "globalThis.__prev = __st.removeProperty('color');\
+             globalThis.__hasColor = __st.cssText.indexOf('color:') >= 0;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__prev)").unwrap().value,
+        "blue",
+        "removeProperty 须返被移除的旧值 'blue'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hasColor)").unwrap().value,
+        "false",
+        "removeProperty('color') 后声明块不再含 'color:'"
+    );
+
+    // cssText 整体写 → 替换全部声明（同一 style 对象读 width）。
+    sandbox
+        .execute(
+            "globalThis.__st.cssText = 'width: 100px; height: 50px';\
+             globalThis.__after = __st.length;\
+             globalThis.__w = __st.width;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__after)").unwrap().value,
+        "2",
+        "cssText 整体写后 length 须为 2（替换全部）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__w)").unwrap().value,
+        "100px",
+        "cssText 写后 style.width 须 '100px'"
+    );
+}

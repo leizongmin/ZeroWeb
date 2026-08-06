@@ -2091,6 +2091,30 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a CSSRule.style per-rule CSSStyleDeclaration（本轮 R2810，缺失 Web API 续）
+
+承接 R2809（CSSStyleSheet 写路径）。续 CSSStyleSheet CSSOM——land **CSSRule.style per-rule CSSStyleDeclaration**（CSSOM 规则编辑表面最后一块：`sheet.cssRules[0].style.color='blue'` 动态改既有规则单属性，CSS-in-JS 细粒度编辑高频——styled-components/emotion 的核心读改路径）。**复用 R2809 flush 机制**：style mutation → 重建 body → 更新 `rule.cssText`（selectorText 不变）→ 触发 parentSheet `flushToOwner`（写源 `<style>`，下次 render 重解析 cascade；视觉异步，JS 契约同步）。
+
+- **`_parseDeclarations(text)`**（模块级 helper）：声明块文本（`prop: value; prop2: value2`）→ 有序 `[{name, value}]`，name 归一小写。供 `_makeRuleStyle` 解析 cssText body 与 style.cssText 整体写。
+- **`_makeRuleStyle(rule, flushFn)`**：从 `rule.cssText` 的 `{ ... }` body 解析为有序 declarations（client-side JS mini-parser，无新 host 回调）。Proxy 暴露 CSSStyleDeclaration 表面：
+  - **per-property get/set**（camelCase↔kebab，复用既有 `_stylePropName`）：`style.color` / `style.fontSize` / `style.fontSize='16px'`。
+  - **`getPropertyValue(name)`** / **`setProperty(name, value)`** / **`removeProperty(name)`**（返旧值）。
+  - **`cssText`** get（声明块文本）/ set（整体替换声明）。
+  - **`length`** / **`item(i)`**（声明名枚举）。
+  - **`getPropertyPriority`** 返 ''（`!important` 未独立跟踪，同 element.style 既有简化）。
+- **挂载点**：`getRules()`（host wire 建 rule）+ `_ruleFromText`（insertRule 建 rule）建 rule 后 `r.style = _makeRuleStyle(r, flushToOwner)`。flushFn 闭包复用各 sheet 的 `flushToOwner`。
+- **`rebuild()` 一致性**：任一 mutation 后 `rule.cssText = selectorText + ' { ' + declsText() + ' }'`（与 host `style_rules_wire` 的 `selectorText { decls }` 格式一致，round-trip 干净）→ 调 flushFn。set 空串 = remove（spec 一致，避免 emit `prop: ` 垃圾）。
+- **已知限制（记录）**：① 视觉生效于下次 render（flush 写源→cascade 异步，同 R2809）；② `!important` 并入 value（getPropertyValue 含 `!important` 后缀、getPropertyPriority 返 ''，同 element.style 既有简化）；③ 仅 type===1 StyleRule（@-rule 无 style）；④ set 空串 = remove（spec 一致）；⑤ rule/style 须持引用编辑（document.styleSheets 每次访问重建新 sheet，跨访问读取落 host stale——R2808 已知限制 ⑤，CSS-in-JS 常规用法即持引用）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_parseDeclarations`（声明块→有序 decls helper）+ `_makeRuleStyle`（per-rule CSSStyleDeclaration Proxy：per-prop get/set + getPropertyValue/setProperty/removeProperty + cssText + item/length + rebuild→flush）；`getRules()`/`_ruleFromText` 建 rule 后挂 `.style`；`_ruleFromText` +flushFn 参数。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_stylesheets_rule_style_r2810`（持 rule 引用：style.color 读 'red' / getPropertyValue('font-size')='14px' / camelCase fontSize='14px' / length=2 + item(0)='color' / set color='blue'→rule.cssText 含 'color: blue' + 去 'red' + mutations SetText 证 flush / setProperty('background','yellow') + marginTop='8px'→归一 'margin-top: 8px' / removeProperty('color') 返 'blue' + 声明块去 color / cssText 整体写 'width:100px;height:50px'→length=2 + width='100px'）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13438 passed / 0 failed / 74 ignored**，13437+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① per-rule style 为全新 Proxy（rule.style 由 null 升级，additive）+ 全新 helper（`_parseDeclarations`/`_makeRuleStyle`，不改既有路径）；② flush 复用 R2809 `flushToOwner`（无新 host 回调，同 `__zw_set_text` 写源）；③ body 解析纯 client-side（无渲染副作用，仅 style mutation 才 flush）；④ `_stylePropName` 复用既有归一（camelCase↔kebab 与 element.style 一致）。
+
 ### P1a CSSStyleSheet 写路径：insertRule / deleteRule（本轮 R2809，缺失 Web API 续）
 
 承接 R2808（CSSStyleSheet 只读）。续 CSSStyleSheet CSSOM——land **写路径**（insertRule/deleteRule，CSS-in-JS 写入杀手特性）。**设计**：维护 client-side cssRules cache（同步读回真值，解决 R2808 异步 mutation 读 stale 问题）+ insertRule/deleteRule 修改 cache 后从 cache **重建 `<style>` 文本**（join cssText）经 `__zw_set_text` 写回 owner 元素（写源→下次 render 重解析 cascade；**视觉生效异步**，JS 契约同步）。`_ruleFromText` helper 按**首 `{` 切分** selector/body（best-effort，非完整 CSS 解析）。
