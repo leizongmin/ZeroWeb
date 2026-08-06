@@ -2091,6 +2091,27 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a 现代交互 API stubs 簇：clipboard/permissions/fullscreen/scroll（本轮 R2817，缺失 Web API 续）
+
+承接 R2816（createComment）。land **现代交互 API stubs 簇**——高频 feature-detection 点（modern 脚本 `if(navigator.clipboard)` / `el.requestFullscreen()` / `window.scrollTo()` gate 后调用），headless 无真剪贴板/全屏/滚动 → resolving Promise 或 no-op，让脚本路径执行不抛。**probe 先行**（broad grep 确认 10 候选均 0 缺失）。
+
+- **`navigator.clipboard`**：`readText()`→`Promise.resolve('')`（headless 空）/ `writeText(text)`/`read()`/`write(data)`→`Promise.resolve(undefined)`。
+- **`navigator.permissions`**：`query({name})`→`Promise.resolve({name, state:'prompt', onchange:null, addEventListener/removeEventListener})`（中性 state）。
+- **`element.requestFullscreen()`**→`Promise.resolve(undefined)`；**`element.requestPointerLock()`**→no-op（spec 返 void）。
+- **`document.fullscreenElement`**=null / **`fullscreenEnabled`**=true / **`exitFullscreen()`**→`Promise.resolve(undefined)`。
+- **element scroll**：`scrollIntoView()`/`scrollTo()`/`scrollBy()`→no-op（返 undefined）。
+- **window scroll**：`scrollTo()`/`scroll()`/`scrollBy()`→no-op；`scrollX`/`scrollY`/`pageXOffset`/`pageYOffset`=0（恒 0 偏移）。
+- **已知限制（记录）**：① clipboard/permissions/fullscreen 为 stub（不真读写剪贴板/不触发权限/不真全屏——headless 无对应能力）；② scroll no-op（无真滚动，偏移恒 0）；③ 所有 Promise resolving（permissive，避免 unhandled rejection 中断脚本）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | navigator +`clipboard`（readText/writeText/read/write Promise）+ `permissions`（query）；window +`scrollX/scrollY/pageXOffset/pageYOffset`=0 + `scrollTo`/`scroll`/`scrollBy`/`scrollIntoView` no-op；element proxy get-trap +`requestFullscreen`（Promise）/`requestPointerLock`/`scrollIntoView`/`scrollTo`/`scrollBy` no-op；document +`fullscreenElement`=null/`fullscreenEnabled`=true/`exitFullscreen`（Promise）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_modern_interaction_stubs_r2817`（clipboard typeof object + writeText Promise resolves + readText resolves '' / permissions.query state 'prompt':name / requestFullscreen Promise resolves + fullscreenElement null + exitFullscreen Promise resolves / scrollIntoView·scrollTo·window.scrollTo no-op undefined + scrollX·pageXOffset 恒 0）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13445 passed / 0 failed / 74 ignored**，13444+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① navigator/window/document 新增属性 + element get-trap 新分支（全 additive，不改既有）；② 纯 JS stub（零 host 回调、零渲染副作用——scroll/fullscreen no-op 不触布局）；③ Promise resolving 经既有 native Promise + execute 末 microtask（同 R2774/R2814）；④ feature-detection 点存在让脚本 gate 通过，不改变既有行为。
+
 ### P1a document.createComment + text-node nodeType 修正（本轮 R2816，缺失 Web API 续）
 
 承接 R2815（DOMImplementation + 节点关系）。land **`document.createComment(text)`**——注释节点（nodeType 8，框架 placeholder/anchor 高频，Vue/React/lit 标记节点）。**probe 先行**：broad grep 发现 `insertAdjacentHTML`/`insertAdjacentElement`/`insertAdjacentText`/`DOMParser` 均已存在（host-backed），故择 `createComment`（document.create* 家族唯一缺口）。host `doc.create_comment` 已存在（bridge.rs:751），故为 clean mirror。

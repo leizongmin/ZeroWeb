@@ -10215,3 +10215,121 @@ fn test_create_comment_r2816() {
         "createComment lenient 不抛"
     );
 }
+
+#[test]
+fn test_modern_interaction_stubs_r2817() {
+    // R2817：现代交互 API stubs 簇——navigator.clipboard/permissions + element.requestFullscreen +
+    // document.fullscreen/exitFullscreen + element/window scroll。headless 无真剪贴板/全屏/滚动 → resolving
+    // Promise（clipboard/fullscreen）或 no-op（scroll）。高频 feature-detection 点不抛。Promise 经 execute
+    // 末 microtask checkpoint 派发，下 execute 可读（同 R2774/R2814）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // navigator.clipboard：typeof object + writeText/readText 返 Promise（execute 末 microtask 派发）。
+    assert_eq!(
+        sandbox.execute("typeof navigator.clipboard").unwrap().value,
+        "object",
+        "navigator.clipboard 存在"
+    );
+    sandbox
+        .execute(
+            "globalThis.__wb = false; globalThis.__rt = 'X';\
+             navigator.clipboard.writeText('hi').then(function(){ globalThis.__wb = true; });\
+             navigator.clipboard.readText().then(function(t){ globalThis.__rt = t; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__wb)").unwrap().value,
+        "true",
+        "clipboard.writeText Promise resolves"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rt)").unwrap().value,
+        "",
+        "clipboard.readText resolves ''（headless 空）"
+    );
+
+    // navigator.permissions.query → Promise<PermissionStatus state 'prompt'>。
+    sandbox
+        .execute(
+            "globalThis.__perm = null;\
+             navigator.permissions.query({ name: 'clipboard' }).then(function(s){ globalThis.__perm = s.state + ':' + s.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__perm)").unwrap().value,
+        "prompt:clipboard",
+        "permissions.query → state 'prompt' + name 透传"
+    );
+
+    // element.requestFullscreen → Promise resolves；document.fullscreenElement null + exitFullscreen Promise。
+    sandbox
+        .execute(
+            "globalThis.__fs = false;\
+             document.body.requestFullscreen().then(function(){ globalThis.__fs = true; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fs)").unwrap().value,
+        "true",
+        "requestFullscreen Promise resolves"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.fullscreenElement)").unwrap().value,
+        "null",
+        "fullscreenElement 恒 null"
+    );
+    sandbox
+        .execute("globalThis.__ef = false; document.exitFullscreen().then(function(){ globalThis.__ef = true; });")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ef)").unwrap().value,
+        "true",
+        "exitFullscreen Promise resolves"
+    );
+
+    // element scroll 方法 no-op 返 undefined；window scroll 同；scrollX/pageXOffset 恒 0。
+    sandbox
+        .execute(
+            "globalThis.__siv = document.body.scrollIntoView();\
+             globalThis.__sto = document.body.scrollTo(0, 0);\
+             globalThis.__wst = window.scrollTo(0, 0);\
+             globalThis.__sX = window.scrollX; globalThis.__pXO = window.pageXOffset;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__siv)").unwrap().value,
+        "undefined",
+        "scrollIntoView no-op 返 undefined"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sto)").unwrap().value,
+        "undefined",
+        "scrollTo no-op 返 undefined"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__wst)").unwrap().value,
+        "undefined",
+        "window.scrollTo no-op 返 undefined"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sX)").unwrap().value,
+        "0",
+        "scrollX 恒 0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pXO)").unwrap().value,
+        "0",
+        "pageXOffset 恒 0"
+    );
+}

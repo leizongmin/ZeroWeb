@@ -725,6 +725,16 @@
   globalThis.outerWidth = 1280;
   globalThis.outerHeight = 800;
   globalThis.devicePixelRatio = 1;
+  // scroll（R2817）——window 滚动方法/属性。headless 无真滚动 → no-op 方法 + 恒 0 偏移（scrollX/scrollY/
+  // pageXOffset/pageYOffset）。feature-detect + scroll-to-section 脚本不抛。
+  globalThis.scrollX = 0;
+  globalThis.scrollY = 0;
+  globalThis.pageXOffset = 0;
+  globalThis.pageYOffset = 0;
+  globalThis.scrollTo = function() {};
+  globalThis.scroll = globalThis.scrollTo;
+  globalThis.scrollBy = function() {};
+  globalThis.scrollIntoView = function() {};
 
   // performance.now()——DOMHighResTimeStamp（ms，自 time origin 起，单调）。host `__zw_performance_now`
   // 返 elapsed ms（子毫秒）；未注册（polyfill/reftest 路径）走 Date.now() 兜底（仍单调非负）。
@@ -1820,7 +1830,26 @@
     plugins: _emptyCollection(),
     mimeTypes: _emptyCollection(),
     javaEnabled: function() { return false; },
-    taintEnabled: function() { return false; }
+    taintEnabled: function() { return false; },
+    // clipboard（R2817）——异步剪贴板 API（复制按钮 ubiquitous）。headless 无真剪贴板 → resolving
+    // Promise stubs（readText→''，writeText/read/write→undefined），让 modern 脚本 feature-detect 后路径执行不抛。
+    clipboard: {
+      readText: function() { return Promise.resolve(''); },
+      writeText: function(_text) { return Promise.resolve(undefined); },
+      read: function() { return Promise.resolve([]); },
+      write: function(_data) { return Promise.resolve(undefined); },
+    },
+    // permissions（R2817）——权限查询（clipboard/geolocation 等 feature-detect 配对）。headless → state 'prompt'
+    //（中性，既非 granted 非 denied）。
+    permissions: {
+      query: function(desc) {
+        var name = (desc && desc.name) || '';
+        return Promise.resolve({
+          name: name, state: 'prompt', onchange: null,
+          addEventListener: function() {}, removeEventListener: function() {},
+        });
+      },
+    }
   };
 
   globalThis.console = globalThis.console || {
@@ -2803,6 +2832,17 @@
         }
         if (prop === 'blur') {
           return function() { if (_activeElKey === key) _activeElKey = null; };
+        }
+        // 全屏 / 指针锁 / 滚动（R2817）——headless 无真全屏/指针锁/滚动 → Promise resolve（fullscreen）
+        // 或 no-op（pointerLock/scroll*）。feature-detect + modern 交互脚本不抛。
+        if (prop === 'requestFullscreen') {
+          return function() { return Promise.resolve(undefined); };
+        }
+        if (prop === 'requestPointerLock') {
+          return function() {};
+        }
+        if (prop === 'scrollIntoView' || prop === 'scrollTo' || prop === 'scrollBy') {
+          return function() {};
         }
         // `el.hasAttributes()`——是否有任意属性（经 `__zw_attr_names` 非空判定）。
         if (prop === 'hasAttributes') {
@@ -4507,6 +4547,10 @@
     characterSet: 'UTF-8',
     charset: 'UTF-8',
     readyState: 'complete',
+    // fullscreen（R2817）——headless 无真全屏：fullscreenElement 恒 null，exitFullscreen 返 resolving Promise。
+    fullscreenElement: null,
+    fullscreenEnabled: true,
+    exitFullscreen: function() { return Promise.resolve(undefined); },
     // document.title——getter 返首 <title> 文本（空白折叠，spec 一致）；首访惰性读 querySelector('title')
     // 并缓存；setter 更新缓存。**已知限制**：① setter 仅更新 in-JS 缓存，不写回 host DOM <title>（快照 proxy
     // 只读，无 head/title 建链）；② 不创建 <head><title>（spec 无 head 时应建——本沙箱无渲染 title 需求）。
