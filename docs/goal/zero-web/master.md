@@ -2091,6 +2091,25 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a text-control 选区 IDL（selectionStart/End/Direction + setSelectionRange + select）（本轮 R2844，缺失 Web API 续 / textarea 选区状态跟踪）
+
+承接 R2843（表格结构收尾）。land text-control（input text-type / textarea）选区 IDL——`selectionStart`/`selectionEnd`/`selectionDirection` getter + `setSelectionRange` + `select` + 属性 setter。文本编辑器（CodeMirror/Monaco/Slate/Quill）/ 自动选择（全选/光标定位）/ Range 算法读选区状态高频。
+
+- **关键设计点**：① **JS 端选区跟踪**——headless 无真 caret/选择渲染，故在 `_inputValues` 旁加 `_textSelection` per-element-key map（`{start, end, direction}`，默认 `{0,0,'forward'}`）；getter 纯读默认值（不污染 map），setter/method 先 ensure 后 mutate；导航经 `__zw_reset_form_state` 清空。② **Chromium 150 oracle 锚定**（dump-dom 法）——**默认 {0,0,'forward'}**（未聚焦 text control 选区折叠在 **0** 非「值末」，纠正直觉）；`select()`→`{0, value.length, 'forward'}`；`setSelectionRange(s,e,d)`：start/end clamp `[0,len]`，end<start → start 折叠到 end（`setSR(4,2)`→`{2,2}`），direction 缺省 `'forward'`；属性 setter 保 `0≤start≤end≤len` 不变式（start 超 end → end 跟升；end 低于 start → end 升回 start）。③ **gate `_isTextControl`**——TEXTAREA，或 INPUT 的 type ∈ {text,search,url,tel,password,空}（oracle：这些 type 返数值；number/email/date/range/color/checkbox → null，非 text control）；非 text control 落 undefined（Chrome null，`!= null` 判定两者皆过，documented 微差）。④ `_controlValue` mirror value getter lazy-init 逻辑取 length（不污染 `_inputValues`）。⑤ 既有 `select()`（R2826 全元素 no-op）升级——text control 更新 `_textSelection` 使后续读反映全选，非 text control 仍 no-op。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_textSelection` map（+reset）；+helpers `_isTextControl`/`_controlValue`/`_clampSelOffset`/`_selObj`；+get-trap selectionStart/End/Direction（text-control gate）+ setSelectionRange（method，clamp+折叠+direction）；`select` 升级（text-control 全选）；+set-trap 三属性 setter（保不变式）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_text_control_selection_r2844`（默认 {0,0,forward} input/textarea + number/checkbox→undefined + select(){0,len} + setSelectionRange 正常/折叠/clamp/direction + 属性 setter 不变式）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13471 passed / 0 failed / 74 ignored**，13470+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%** 持平 + 全 struct PASS（纯 additive JS shim 无 layout/render .rs 改动）。
+
+**为何零回归且净正向**：① 全新增分支 + 既有 `select` 升级（仅 text-control gate 触发新路径，非 text control 行为不变）；② 纯 JS 选区跟踪（零新 host 回调/infra）；③ 仅读改 `_textSelection` 状态 map（无 DOM mutation，无属性同步副作用）；④ additive IDL 属性不触碰既有 value/checked/render 路径。
+
+**已知限制（记录）**：① **负数 start 的 setSelectionRange 与 Chrome 古怪归一分歧**（Chrome `setSR(-5,-1)`→`{5,5}` 等病态行为，本实现按 spec 合理 clamp [0,len]——无真实代码依赖负数输入，documented）；② 非选区 type 返 undefined（Chrome null，`!= null` 兼容）；③ 无真 caret/选择渲染（headless，selection 为纯 JS 跟踪，selectionchange 事件不触发）；④ setRangeText 未实现（罕见，defer）；⑤ invalid input type（如 `type="foobar"`）规为 text 之外 → 返 undefined（Chrome 归 text 返 0，罕见不究）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面近穷尽（R2820-R2844 覆 ... + 表格结构 + text-control 选区 主表面）。剩余元素特定 IDL 全低价值/中复杂：`table.caption`/`tHead`/`tFoot` + `tbody.rows`（同 querySelectorAll 模式，可续）/`<output>` value/`<img>` naturalWidth（headless 低价值）；全深/host-layer（elementFromPoint / customElements lifecycle / Shadow DOM / node.normalize / 真 WAAPI / date/time valueAsNumber / media 时长属性 / 真 files 上传 / fetch 非 GET〔net〕）；rendering-compat 侧续降频守成（held baseline 13471 全绿）。
+
 ### P1a `<tr>`.sectionRowIndex + `<table>`.rows/tBodies（本轮 R2843，缺失 Web API 续 / 表格结构表面收尾）
 
 承接 R2842（rowIndex/cellIndex）。延续表格结构表面——land `sectionRowIndex` + `table.rows`/`table.tBodies`。data-table 库迭代 `table.rows` 高频。

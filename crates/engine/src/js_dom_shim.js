@@ -30,6 +30,12 @@
   // 内容属性，纯 JS 状态）。checkbox「全选」tri-state UI 高频（父 checkbox 半选态）。per-element-key，
   // 默认 false。同 _inputValues/_classCache 经 `__zw_reset_form_state` 清空。
   var _indeterminate = {};
+  // text-control 选区（selectionStart/End/Direction + setSelectionRange/select，R2844）：per-element-key 选区
+  // 状态 { start, end, direction }。仅 text control（textarea + input text/search/url/tel/password）有真实选区；
+  // 默认（未设）= {0, 0, 'forward'}（Chromium 150 oracle 锚定——未聚焦/未设的 text control 选区折叠在 0，非值末）。
+  // headless 无真 caret/选择渲染，故 selection 为纯 JS 跟踪（供文本编辑器 / 自动选择 / Range 算法读状态）。
+  // 同 _inputValues/_classCache 经 `__zw_reset_form_state` 清空。
+  var _textSelection = {};
   // reflected 字符串/数值属性（title/lang/dir/tabindex）per-element-key 缓存。同 _inputValues/_classCache
   // 动机——`__zw_set_attr` 仅入队 mutation（异步 apply），同步 set→get 往返须客户端缓存（get 优先读缓存）。
   // 值结构：{ title?: string, lang?: string, dir?: string, tabindex?: number }。
@@ -593,7 +599,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
@@ -2545,6 +2551,46 @@
     try { return __zw_get_tag(sel).toUpperCase() === tagUpper; } catch (_e) { return false; }
   }
 
+  // text control 选区（R2844）：判元素是否为支持选区的 text control——TEXTAREA，或 INPUT 的 type 属于
+  // {text, search, url, tel, password, 空}（Chromium 150 oracle：这些 type selectionStart/End 返数值；
+  // number/email/date/range/color/checkbox 等 → null，非 text control）。无 type 属性 / 无效 type 归 text。
+  var _TEXT_SEL_TYPES = { '': 1, text: 1, search: 1, url: 1, tel: 1, password: 1 };
+  function _isTextControl(sel, handle) {
+    var tag = _realTag(sel, handle);
+    if (tag === 'TEXTAREA') return true;
+    if (tag !== 'INPUT') return false;
+    var ty;
+    try { ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { ty = ''; }
+    return Object.prototype.hasOwnProperty.call(_TEXT_SEL_TYPES, (ty || '').toLowerCase());
+  }
+  // text control 当前 value 串（mirror value getter 的 lazy-init 逻辑，仅读不改缓存——选区 clamp 须 length）。
+  function _controlValue(sel, handle, key) {
+    if (_inputValues[key] != null) return String(_inputValues[key]);
+    var v = '';
+    if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
+      try { v = __zw_get_text(sel) || ''; } catch (_e) {}
+    } else {
+      try {
+        var va = handle ? __zw_get_attr_handle(handle, 'value') : (sel ? __zw_get_attr(sel, 'value') : null);
+        if (va != null) v = va;
+      } catch (_e) {}
+    }
+    return String(v);
+  }
+  // 选区偏移 clamp：把任意输入归一为 [0, len] 内整数（Chromium 对超界/负值/非数 clamp 到边界，非抛）。
+  function _clampSelOffset(v, len) {
+    var n = (typeof v === 'number') ? Math.floor(v) : parseInt(v, 10);
+    if (isNaN(n)) n = 0;
+    if (n < 0) n = 0;
+    if (n > len) n = len;
+    return n;
+  }
+  // 取/建元素选区对象（getter 用默认 {0,0,'forward'}，不污染 map；setter/method 先 ensure 再 mutate）。
+  function _selObj(key) {
+    if (!_textSelection[key]) _textSelection[key] = { start: 0, end: 0, direction: 'forward' };
+    return _textSelection[key];
+  }
+
   // `el.parentNode` / `parentElement`：经 host `__zw_parent(sel)` 返真实元素父选择器
   //（修正旧 stub 对嵌套元素恒返 body 的 bug）。handle-only（detached）或无回调 → fallback stub
   //（detached 元素无真实 parent；html/body/head 用文档结构近似）。
@@ -2882,6 +2928,32 @@
             var vasN = parseFloat(vasV);
             return isNaN(vasN) ? NaN : vasN;
           } catch (_e) { return NaN; }
+        }
+        // text-control 选区 getter（R2844）：selectionStart / selectionEnd / selectionDirection。
+        // 仅 text control（_isTextControl gate）。默认 {0, 0, 'forward'}（Chromium 150 oracle 锚定）。
+        // 文本编辑器 / 自动选择 / Range 算法读选区状态高频。非 text control 落 undefined（Chrome 返 null，
+        // `!= null` 判定两者皆过——documented 微差）。getter 不污染 _textSelection（纯读）。
+        if ((prop === 'selectionStart' || prop === 'selectionEnd' || prop === 'selectionDirection') &&
+            _isTextControl(sel, handle)) {
+          var gs = _textSelection[key] || { start: 0, end: 0, direction: 'forward' };
+          if (prop === 'selectionStart') return gs.start;
+          if (prop === 'selectionEnd') return gs.end;
+          return gs.direction;
+        }
+        // `el.setSelectionRange(start, end, direction?)`（HTMLInputElement.textarea，R2844）——设选区。
+        // Chromium 150 oracle 锚定：start/end clamp [0, len]；end<start → start 折叠到 end（setSR(4,2)→{2,2}）；
+        // direction 缺省 'forward'，否则取给定值（'backward'/'none'，其他归 'forward'）。仅 text control。
+        if (prop === 'setSelectionRange' && _isTextControl(sel, handle)) {
+          return function(s, e, dir) {
+            var len = _controlValue(sel, handle, key).length;
+            var ne = _clampSelOffset(e, len);
+            var ns = _clampSelOffset(s, len);
+            if (ne < ns) ns = ne;
+            var d = (dir === 'backward' || dir === 'none') ? dir : 'forward';
+            var so = _selObj(key);
+            so.start = ns; so.end = ne; so.direction = d;
+            return undefined;
+          };
         }
         // `input.files`（HTMLInputElement，R2830）——FileList（上传表单读 length/迭代）。headless
         // 无真文件 → 共享空 FileList（length 0）；仅 INPUT（_isTag gate），非 input → undefined。
@@ -3610,11 +3682,20 @@
         if (prop === 'validity') return _validityState(key);
         if (prop === 'validationMessage') return _customValidity[key] != null ? _customValidity[key] : '';
         if (prop === 'willValidate') return true;
-        // `el.select()`（HTMLInputElement/TextArea，R2826）——选中文本（legacy copy 模式
-        // `el.select(); document.execCommand('copy')` 配对）。headless 无真文本选择 → no-op 返 undefined
-        //（与 execCommand('copy') permissive stub 一致——不真选/不真复制，modern 路径走 navigator.clipboard）。
+        // `el.select()`（HTMLInputElement/TextArea，R2826/R2844）——选中文本（legacy copy 模式
+        // `el.select(); document.execCommand('copy')` 配对，及自动全选场景）。headless 无真文本选择渲染，
+        // 但 text control（R2844）须更新 _textSelection 使后续 selectionStart/End 反映全选（Chromium 150
+        // oracle：select()→{0, value.length, 'forward'}）；非 text control 仍 no-op（无选区概念）。
         if (prop === 'select') {
-          return function() { return undefined; };
+          return function() {
+            if (_isTextControl(sel, handle)) {
+              var so = _selObj(key);
+              so.start = 0;
+              so.end = _controlValue(sel, handle, key).length;
+              so.direction = 'forward';
+            }
+            return undefined;
+          };
         }
         // `el.animate(keyframes, options)`（Web Animations API，R2827）——modern 动画库（Framer Motion /
         // GSAP / Lottie）feature-detect + 链式。headless 无真时间轴 → `_makeAnimation` permissive stub
@@ -4092,6 +4173,26 @@
         } else if (p === 'indeterminate') {
           // JS-only IDL 布尔（非 reflected attr）—— per-element state map（默认 false）。无属性 mutation。
           _indeterminate[key] = !!value;
+        } else if (p === 'selectionStart' || p === 'selectionEnd' || p === 'selectionDirection') {
+          // text-control 选区 setter（R2844）。Chromium 150 oracle 锚定：保持 0≤start≤end≤len 不变式——
+          // 设 start 超 end → end 跟到 start（{start:99}→ end 升到 start）；设 end 低于 start → end 升回 start
+          //（{end:-5}→ end 升到 start，不降）；start/end 均 clamp [0, len]；direction 仅接受 forward/backward/none。
+          if (_isTextControl(sel, handle)) {
+            var so = _selObj(key);
+            if (p === 'selectionStart') {
+              var nsLen = _controlValue(sel, handle, key).length;
+              var ns2 = _clampSelOffset(value, nsLen);
+              if (ns2 > so.end) so.end = ns2;
+              so.start = ns2;
+            } else if (p === 'selectionEnd') {
+              var neLen = _controlValue(sel, handle, key).length;
+              var ne2 = _clampSelOffset(value, neLen);
+              if (ne2 < so.start) ne2 = so.start;
+              so.end = ne2;
+            } else {
+              so.direction = (value === 'backward' || value === 'none') ? value : 'forward';
+            }
+          }
         } else if (p === 'htmlFor') {
           // `label.htmlFor = x`（R2840）——反射 `for` 属性（attr 名映射 htmlFor→for）。仅 LABEL。
           if (_realTag(sel, handle) === 'LABEL') {

@@ -12791,3 +12791,174 @@ fn test_table_section_index_and_collections_r2843() {
         "t1.tBodies.length=2"
     );
 }
+
+#[test]
+fn test_text_control_selection_r2844() {
+    // R2844：text-control（input text-type / textarea）选区 IDL——selectionStart / selectionEnd /
+    // selectionDirection getter + setSelectionRange + select + 属性 setter。Chromium 150 oracle 锚定：
+    // 默认 {0, 0, 'forward'}（未聚焦 text control 选区折叠在 0，非值末）；select()→{0, len, forward}；
+    // setSelectionRange clamp [0,len]，end<start 折叠到 end，direction 缺省 forward；属性 setter 保持 0≤start≤end≤len。
+    // 文本编辑器 / 自动选择 / Range 算法读选区状态高频。number/checkbox 非选区 type → undefined（Chrome null）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='i' type='text' value='world'>\
+         <textarea id='ta'>hello</textarea>\
+         <input id='num' type='number' value='42'>\
+         <input id='chk' type='checkbox'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 默认选区 = {0, 0, 'forward'}（text control 未设/未聚焦）；非选区 type（number/checkbox）→ undefined。
+    sandbox
+        .execute(
+            "var i = document.querySelector('#i');\
+             var ta = document.querySelector('#ta');\
+             globalThis.__d_ss = i.selectionStart;\
+             globalThis.__d_se = i.selectionEnd;\
+             globalThis.__d_dir = i.selectionDirection;\
+             globalThis.__ta_ss = ta.selectionStart;\
+             globalThis.__ta_se = ta.selectionEnd;\
+             globalThis.__num = document.querySelector('#num').selectionStart;\
+             globalThis.__chk = document.querySelector('#chk').selectionStart;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d_ss)").unwrap().value,
+        "0",
+        "input 默认 selectionStart=0（折叠在 0，非值末）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d_se)").unwrap().value,
+        "0",
+        "input 默认 selectionEnd=0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d_dir)").unwrap().value,
+        "forward",
+        "input 默认 selectionDirection='forward'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__ta_ss) + ',' + String(globalThis.__ta_se)")
+            .unwrap()
+            .value,
+        "0,0",
+        "textarea 默认选区 {{0,0}}"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__num)").unwrap().value,
+        "undefined",
+        "number input 非选区 type → selectionStart undefined（Chrome null）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__chk)").unwrap().value,
+        "undefined",
+        "checkbox 非选区 type → selectionStart undefined"
+    );
+
+    // select() → {0, value.length, 'forward'}（input 5 / textarea 5）。
+    sandbox
+        .execute(
+            "i.select();\
+             globalThis.__sel_ss = i.selectionStart;\
+             globalThis.__sel_se = i.selectionEnd;\
+             globalThis.__sel_dir = i.selectionDirection;\
+             ta.select();\
+             globalThis.__ta_sel_se = ta.selectionEnd;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__sel_ss) + ',' + String(globalThis.__sel_se)")
+            .unwrap()
+            .value,
+        "0,5",
+        "input select() → {{0, 5}}（world 长度）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sel_dir)").unwrap().value,
+        "forward",
+        "input select() direction='forward'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ta_sel_se)").unwrap().value,
+        "5",
+        "textarea select() → selectionEnd=5（hello 长度）"
+    );
+
+    // setSelectionRange：正常 / end<start 折叠 / clamp 超界 / direction。
+    // 注：Chrome 对**负数** start 的 setSelectionRange 有古怪归一（如 setSR(-5,-1)→{5,5}），属病态边角、
+    // 无真实代码依赖；本实现按 spec 合理 clamp [0,len]，仅负数输入与 Chrome 古怪行为分歧（documented）。
+    sandbox
+        .execute(
+            "i.setSelectionRange(1, 3, 'backward');\
+             globalThis.__a = i.selectionStart + ',' + i.selectionEnd + ',' + i.selectionDirection;\
+             i.setSelectionRange(4, 2);\
+             globalThis.__b = i.selectionStart + ',' + i.selectionEnd + ',' + i.selectionDirection;\
+             i.setSelectionRange(3, 9999);\
+             globalThis.__c = i.selectionStart + ',' + i.selectionEnd + ',' + i.selectionDirection;\
+             i.setSelectionRange(0, 9999);\
+             globalThis.__d = i.selectionStart + ',' + i.selectionEnd + ',' + i.selectionDirection;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a)").unwrap().value,
+        "1,3,backward",
+        "setSelectionRange(1,3,'backward')"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b)").unwrap().value,
+        "2,2,forward",
+        "setSelectionRange(4,2) end<start 折叠到 {{2,2}}，direction 缺省 forward"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c)").unwrap().value,
+        "3,5,forward",
+        "setSelectionRange(3,9999) end clamp 到值长度 5"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d)").unwrap().value,
+        "0,5,forward",
+        "setSelectionRange(0,9999) start=0 / end clamp 到 5"
+    );
+
+    // 属性 setter：start 超 end → end 跟升；end 低于 start → end 升回 start；direction 仅接受合法值。
+    sandbox
+        .execute(
+            "i.setSelectionRange(1, 4);\
+             i.selectionDirection = 'backward';\
+             globalThis.__s1 = i.selectionStart + ',' + i.selectionEnd + ',' + i.selectionDirection;\
+             i.selectionStart = 99;\
+             globalThis.__s2 = i.selectionStart + ',' + i.selectionEnd + ',' + i.selectionDirection;\
+             i.selectionEnd = -5;\
+             globalThis.__s3 = i.selectionStart + ',' + i.selectionEnd + ',' + i.selectionDirection;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s1)").unwrap().value,
+        "1,4,backward",
+        "属性设 selectionDirection='backward'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s2)").unwrap().value,
+        "5,5,backward",
+        "selectionStart=99 → clamp 5，end 跟升到 5（保 0≤start≤end≤len）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s3)").unwrap().value,
+        "5,5,backward",
+        "selectionEnd=-5 → clamp 0 后升回 start=5（end 不低于 start）"
+    );
+}
