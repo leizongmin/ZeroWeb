@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a `new Image()` ctor 增强 → 真 img 元素（本轮 R2834，缺失 Web API 续 / 图片预加载 + DOM 挂载）
+
+承接 R2833（document 集合）。probe 发现 `new Image()` **已 land 但为低质 stub**——返 plain object `{src,width,height,onload,onerror,onabort}`（非 DOM 元素，无 tagName，`document.body.appendChild(new Image())` 失效）。**高频 + WPT 影响**：`new Image()` 用于图片预加载（`new Image().src=url` 预取 / onload 探测）+ DOM 挂载；上游 WPT css-images / css-backgrounds / content-visibility 多个 fixture 经 `new Image()` 构造（旧 stub 致图不挂载不渲染）。**land**：改 `new Image(width, height)` 返 `createElement('img')` proxy（镜像 Option R2832 模式），设 width/height 内容属性；允许 new 与无 new。
+
+- **关键设计点**：① 返 createElement('img') proxy——真 img 元素（tagName=IMG），`appendChild` / `setAttribute` / 事件 handler 全走既有元素 proxy 路径，零新 infra。② width/height 构造器参数 → setAttribute('width'/'height')（spec 映射内容属性）。③ `globalThis.Image = globalThis.Image || Image` 守卫不覆盖既有定义。
+- **行为变化（improvement，非回归）**：旧 plain object 的 `img.onload = fn` 设直接属性（读回 fn）；新 proxy 经 set-trap 写 `onload` 属性（stringified），get-trap 不反射 on* 读回（**element proxy 既有限制**，影响所有元素非 Image 特有）。on* 读回非真实需求（WPT fixture set-and-forget），settable 不抛即满足；headless 无真图片加载故 onload/onerror 不触发（同旧）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | `globalThis.Image = function(){return{...}}` plain-object stub → `function Image(w,h){var el=document.createElement('img'); setAttribute width/height; return el;}` + guarded assign（镜像 Option R2832）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_image_constructor_r2834`（tagName=IMG + width/height 属性 + src 反射 + appendChild 挂入 body 验证 + onload/onerror settable 不抛 + 无 new 调用）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13462 passed / 0 failed / 74 ignored**，13461+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 8 struct PASS。
+
+**为何零回归且净正向**：① 全 engine 测试无依赖 `new Image()` plain-object 形态（仅 WPT fixture 用 `new Image()` 作真图，本轮改善其挂载）；② 变更纯 JS shim（无 layout/render .rs 改动）；③ 对 WPT fixture 净改善（图现经 appendChild 挂载可渲染，旧 stub 静默失效）；④ 守卫不覆盖既有 Image 定义。
+
+**已知限制（记录）**：① `instanceof Image`=false（shim 返 Proxy 非 ctor 实例，同 Option/Image 谱）；② headless 无真图片加载（onload/onerror 不触发，仅 settable）；③ on* 读回属 element proxy 既有限制（非本切片范围）；④ `new Image()` 在无 document 上下文（裸 sandbox 不调 register_dom_callbacks）会抛——同 Option，实际 document 始终在 shim 初始化时就绪。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面已穷尽（R2820-R2834 覆 modern 动画/编辑/表单（校验+集合+files+indeterminate）/select（options/selectedOptions/selectedIndex/动态填充 new Option+add）/事件/序列化/可见性/剪贴板/焦点/位置/URL/性能/存储/几何读/document 集合/Image ctor 主表面）。剩余全为深项/host-layer：`document.elementFromPoint`（layout rect 全量 hit-test，深）/ customElements upgrade/lifecycle（element proxy 接 ctor，深）/ Shadow DOM attachShadow（深）/ node.normalize（罕见 + 架构重，defer）/ 真 Web Animations timeline（深）/ 真 files 上传 host 路径 / fetch 非 GET（net，跳过）；极窄可选 valueAsNumber（number input 转换）/ option.index（select 表面补全）/ scrollIntoViewIfNeeded（WebKit）/ pointer lock / `new Audio()`（HTMLAudioElement ctor，类 Image，headless 无音频设备）；rendering-compat 侧续降频守成（held baseline 13462 全绿）。
+
 ### P1a document 集合完整性 + 正确性（embeds/plugins/anchors 补缺 + links 修正 + 迭代 has trap）（本轮 R2833，缺失 Web API 续）
 
 承接 R2832（new Option/select.add）。probe 发现 `document.forms`/`images`/`scripts`/`links` **已 land**（`_liveQueryCollection`），但：① `embeds`/`plugins`/`anchors` **缺失**；② `links` **错误**——`_liveQueryCollection('a')` 返全部 `<a>` 含 name-only 锚，spec 仅 `a[href]`+`area[href]`；③ `_liveQueryCollection` Proxy 缺 `has` trap，`Array.prototype.map/forEach/filter.call(coll, fn)` 经 HasProperty 判索引存在性，`{length:0}` target 对数值索引恒判 absent → 迭代得空（jQuery `$(document.forms).map(...)` / 表单迭代库常见）。

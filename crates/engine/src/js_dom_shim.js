@@ -2056,9 +2056,18 @@
     table: function() {}
   };
 
-  globalThis.Image = function() {
-    return { src: '', width: 0, height: 0, onload: null, onerror: null, onabort: null };
-  };
+  // `new Image(width, height)`（HTMLImageElement 构造器，R2834）——图片预加载（`new Image().src = url` 预取 /
+  // onload 探测）+ DOM 挂载（`document.body.appendChild(img)`）高频；WPT css-images / css-backgrounds /
+  // content-visibility fixtures 经 `new Image()` 构造。旧实现返 plain object（非 DOM 元素，appendChild 失效，
+  // 无 tagName）；现返 createElement('img') proxy（镜像 Option R2832 模式），设 width/height 属性；允许 new
+  // 与无 new（返值覆盖 this）。shim 元素为 Proxy 非 ctor 实例，故 `instanceof Image` 不成立（documented）。
+  function Image(width, height) {
+    var el = globalThis.document.createElement('img');
+    if (width !== undefined) { try { el.setAttribute('width', String(width)); } catch (_e) {} }
+    if (height !== undefined) { try { el.setAttribute('height', String(height)); } catch (_e) {} }
+    return el;
+  }
+  globalThis.Image = globalThis.Image || Image;
 
   // `new Option(text, value, defaultSelected, selected)`（HTMLOptionElement 构造器，R2832）——动态选项
   // 创建（`select.add(new Option('Apple','a'))` 动态下拉填充高频）。返 createElement('option') proxy，

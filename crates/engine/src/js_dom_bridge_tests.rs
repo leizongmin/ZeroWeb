@@ -11842,3 +11842,91 @@ fn test_document_collections_r2833() {
         "document.forms 可 Array.map 迭代（f1,f2）"
     );
 }
+
+#[test]
+fn test_image_constructor_r2834() {
+    // R2834：HTMLImageElement 构造器 new Image(w,h)——图片预加载 + DOM 挂载高频（WPT css-images /
+    // css-backgrounds / content-visibility fixtures 经 new Image() 构造）。旧返 plain object（appendChild 失效、
+    // 无 tagName）；现返 createElement('img') proxy（镜像 Option R2832），设 width/height 属性。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='host'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // new Image() → tagName=IMG（真 DOM 元素，非旧 plain object）。
+    sandbox
+        .execute("globalThis.__img = new Image(); globalThis.__tag = globalThis.__img.tagName;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tag)").unwrap().value,
+        "IMG",
+        "new Image().tagName=IMG（真 img 元素）"
+    );
+
+    // new Image(100, 50) → width/height 属性设置（spec：构造器参数映射 width/height 内容属性）。
+    sandbox
+        .execute(
+            "globalThis.__img2 = new Image(100, 50);\
+             globalThis.__w = globalThis.__img2.getAttribute('width');\
+             globalThis.__h = globalThis.__img2.getAttribute('height');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__w)").unwrap().value,
+        "100",
+        "new Image(100,50).width 属性=100"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__h)").unwrap().value,
+        "50",
+        "new Image(100,50).height 属性=50"
+    );
+
+    // src 反射 + appendChild DOM 挂载（旧 plain object 致 appendChild 失效——本轮修复核心）。
+    sandbox
+        .execute(
+            "globalThis.__img3 = new Image();\
+             globalThis.__img3.src = 'logo.png';\
+             document.body.appendChild(globalThis.__img3);",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms).unwrap();
+    assert!(
+        out.contains("<img src=\"logo.png\">"),
+        "new Image() 经 src 反射 + appendChild 挂入 body（旧 plain object 无效）\n{out}"
+    );
+
+    // onload/onerror 可设不抛（headless 无真图片加载，handler 不触发——settable 不抛即可；on* 读回属
+    // element proxy 既有限制，非 Image 特有，不在本切片范围）。设后元素仍有效（tagName=IMG）。
+    sandbox
+        .execute(
+            "globalThis.__img4 = new Image();\
+             globalThis.__img4.onload = function(){};\
+             globalThis.__img4.onerror = function(){};\
+             globalThis.__tag4 = globalThis.__img4.tagName;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tag4)").unwrap().value,
+        "IMG",
+        "new Image() 设 onload/onerror 后仍为 IMG 元素（set 不抛）"
+    );
+
+    // 无 new 调用亦返 img proxy。
+    assert_eq!(
+        sandbox.execute("String(Image().tagName)").unwrap().value,
+        "IMG",
+        "Image() 无 new 亦返 IMG proxy"
+    );
+}
