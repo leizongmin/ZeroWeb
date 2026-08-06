@@ -2292,6 +2292,24 @@ pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: 
     String::new()
 }
 
+/// 从已记录变更中判定 create 句柄元素是否设有某属性（脚本执行期间只读）。句柄元素不存在于
+/// HTML 快照（由 `createElement` 创建），`has_attribute` 快照查询对其恒 false；本函数扫
+/// [`DomMutation::SetAttrOnHandle`] 记录按名判定存在性（值无关，boolean 属性 `selected`/
+/// `disabled` 等存在即 true）。供 `__zw_has_attr_handle` 回调 → `new Option()` 创建的句柄
+/// option 的 `.selected`/`.defaultSelected` 读。
+pub fn has_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: &str) -> bool {
+    mutations.iter().any(|m| {
+        matches!(
+            m,
+            DomMutation::SetAttrOnHandle {
+                handle: h,
+                name: n,
+                ..
+            } if h == handle && n == name
+        )
+    })
+}
+
 /// 从已记录变更中查询 create 句柄上的 textContent。
 pub fn query_text_from_mutations(mutations: &[DomMutation], handle: &str) -> String {
     for m in mutations.iter().rev() {
@@ -2927,6 +2945,24 @@ pub fn register_dom_callbacks(
             }
             let list = m.lock().unwrap_or_else(|e| e.into_inner());
             query_attr_from_mutations(&list, &args[0], &args[1])
+        }),
+    );
+
+    // create 句柄元素的属性存在性（`new Option()` 创建的句柄 option `.selected`/`.defaultSelected`
+    // 读——句柄元素不在 HTML 快照，sel-based `__zw_has_attr` 对其恒 false）。返 "1"/"0"。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_has_attr_handle",
+        Box::new(move |args| {
+            if args.len() < 2 {
+                return "0".to_string();
+            }
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            if has_attr_from_mutations(&list, &args[0], &args[1]) {
+                "1".into()
+            } else {
+                "0".into()
+            }
         }),
     );
 

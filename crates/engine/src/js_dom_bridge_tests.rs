@@ -11642,3 +11642,112 @@ fn test_input_indeterminate_r2831() {
         "非 input .indeterminate=undefined"
     );
 }
+
+#[test]
+fn test_option_constructor_and_select_add_r2832() {
+    // R2832：动态 select 填充表面——new Option() 构造器 + select.add() + option.text/label/defaultSelected。
+    // 表单应用动态下拉（级联 select / 动态选项）高频。new Option 返 createElement('option') proxy；
+    // select.add 追加 option；option.text/label/defaultSelected 读。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><select id='s'><option value='0'>zero</option></select></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // new Option(text, value, defaultSelected, selected)：tag=OPTION + text/value/selected 设置。
+    sandbox
+        .execute(
+            "globalThis.__o = new Option('Apple', 'a', true, false);\
+             globalThis.__tag = globalThis.__o.tagName;\
+             globalThis.__text = globalThis.__o.text;\
+             globalThis.__value = globalThis.__o.getAttribute('value');\
+             globalThis.__defSel = globalThis.__o.defaultSelected;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tag)").unwrap().value,
+        "OPTION",
+        "new Option().tagName=OPTION"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__o.text)").unwrap().value,
+        "Apple",
+        "new Option text='Apple'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__value)").unwrap().value,
+        "a",
+        "new Option value='a'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__defSel)").unwrap().value,
+        "true",
+        "new Option defaultSelected=true（defaultSelected 参数）"
+    );
+
+    // select.add(option) 追加；动态填充后 select.value 可读新选项。
+    sandbox
+        .execute(
+            "globalThis.__s = document.querySelector('#s');\
+             globalThis.__s.add(new Option('Banana', 'b'));\
+             globalThis.__s.add(new Option('Cherry', 'c'));",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let (out, _handles) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms).unwrap();
+    assert!(
+        out.contains("<option value=\"b\">Banana</option>") && out.contains("<option value=\"c\">Cherry</option>"),
+        "select.add 追加两 option（b=Banana, c=Cherry）\n{out}"
+    );
+
+    // option.label：有 label 属性用 label，否则回落 text。
+    sandbox
+        .execute(
+            "globalThis.__oLab = new Option('TxtOnly');\
+             globalThis.__lab1 = globalThis.__oLab.label;\
+             globalThis.__oLab2 = new Option('inner');\
+             globalThis.__oLab2.setAttribute('label', 'LabAttr');\
+             globalThis.__lab2 = globalThis.__oLab2.label;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__lab1)").unwrap().value,
+        "TxtOnly",
+        "option.label 无属性回落 text"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__lab2)").unwrap().value,
+        "LabAttr",
+        "option.label 有属性用 label"
+    );
+
+    // new Option 无 new 调用亦可（返 proxy）。
+    assert_eq!(
+        sandbox.execute("String(Option('X','x').tagName)").unwrap().value,
+        "OPTION",
+        "Option() 无 new 亦返 OPTION proxy"
+    );
+
+    // handle-based option 的 .selected 读：4th 参数 selected=true → 设 selected 属性 → .selected=true
+    //（经 __zw_has_attr_handle，句柄元素不在 HTML 快照，sel-based __zw_has_attr 对其恒 false）。
+    sandbox
+        .execute(
+            "globalThis.__oS = new Option('Sel', 's', false, true);\
+             globalThis.__selTrue = globalThis.__oS.selected;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__selTrue)").unwrap().value,
+        "true",
+        "new Option(...,selected=true) → .selected=true（handle has-attr 变体）"
+    );
+}

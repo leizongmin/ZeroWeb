@@ -2060,6 +2060,19 @@
     return { src: '', width: 0, height: 0, onload: null, onerror: null, onabort: null };
   };
 
+  // `new Option(text, value, defaultSelected, selected)`（HTMLOptionElement 构造器，R2832）——动态选项
+  // 创建（`select.add(new Option('Apple','a'))` 动态下拉填充高频）。返 createElement('option') proxy，
+  // 设 text/value/selected；允许 new 与无 new（返值覆盖 this）。shim 元素为 Proxy 非 ctor 实例，故
+  // `instanceof Option` 不成立（documented；返回的 proxy 经 tagName='OPTION' + option.text 等可识别）。
+  function Option(text, value, defaultSelected, selected) {
+    var el = globalThis.document.createElement('option');
+    if (text !== undefined) { try { el.textContent = String(text); } catch (_e) {} }
+    if (value !== undefined) { try { el.setAttribute('value', String(value)); } catch (_e) {} }
+    if (defaultSelected || selected) { try { el.setAttribute('selected', ''); } catch (_e) {} }
+    return el;
+  }
+  globalThis.Option = globalThis.Option || Option;
+
   function _createStorage() {
     var _data = {};
     return {
@@ -2839,8 +2852,12 @@
           return -1;
         }
         if (prop === 'selected') {
-          // P1a select option：selected 属性存在性（boolean，经 host `__zw_has_attr`）。
-          if (typeof __zw_has_attr === 'function') {
+          // P1a select option：selected 属性存在性（boolean）。sel-based 经 host `__zw_has_attr`；
+          // handle-based（`new Option()` 创建）经 `__zw_has_attr_handle`（句柄不在快照）。
+          if (handle && typeof __zw_has_attr_handle === 'function') {
+            try { return __zw_has_attr_handle(handle, 'selected') === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_has_attr === 'function') {
             try { return __zw_has_attr(sel, 'selected') === '1'; } catch (_e) {}
           }
           return false;
@@ -2852,6 +2869,43 @@
         if (prop === 'selectedOptions' && !handle && sel && _isTag(sel, 'SELECT')) {
           // P1a select：`select.selectedOptions` 选中 option 数组。
           return _selectSelectedOptions(sel);
+        }
+        // `select.add(element, before?)`（HTMLOptionsCollection，R2832）——追加 option（或插 before 前）。
+        // 仅 SELECT（_realTag gate）；与 `new Option()` 配对做动态下拉填充。appendChild / insertBefore 复用。
+        if (prop === 'add' && _realTag(sel, handle) === 'SELECT') {
+          return function (element, before) {
+            if (!element || !element.__zwHandle) return undefined;
+            if (before == null) {
+              if (handle) __zw_append_child_handle(handle, element.__zwHandle);
+              else __zw_append_child(sel, element.__zwHandle);
+            } else if (before.__zwSelector) {
+              if (handle) __zw_insert_before_handle(handle, element.__zwHandle, before.__zwSelector);
+              else __zw_insert_before(sel, element.__zwHandle, before.__zwSelector);
+            }
+            return undefined;
+          };
+        }
+        // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
+        // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
+        if (prop === 'text' && _realTag(sel, handle) === 'OPTION') {
+          // text = 显示文本（= textContent）。
+          return handle ? __zw_get_text_handle(handle) : __zw_get_text(sel);
+        }
+        if (prop === 'label' && _realTag(sel, handle) === 'OPTION') {
+          // label 属性；缺省回落 text。
+          var lab = handle ? __zw_get_attr_handle(handle, 'label') : __zw_get_attr(sel, 'label');
+          return lab || (handle ? __zw_get_text_handle(handle) : __zw_get_text(sel)) || '';
+        }
+        if (prop === 'defaultSelected' && _realTag(sel, handle) === 'OPTION') {
+          // defaultSelected = 'selected' 属性存在性（boolean reflected）。sel-based 经 `__zw_has_attr`；
+          // handle-based（`new Option()` 创建）经 `__zw_has_attr_handle`（句柄不在快照）。
+          if (handle && typeof __zw_has_attr_handle === 'function') {
+            try { return __zw_has_attr_handle(handle, 'selected') === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_has_attr === 'function') {
+            try { return __zw_has_attr(sel, 'selected') === '1'; } catch (_e) {}
+          }
+          return false;
         }
         if (prop === 'style') {
           return _styleProxy(sel, handle);

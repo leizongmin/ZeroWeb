@@ -2091,6 +2091,27 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a `new Option()` + `select.add()` + HTMLOptionElement 读属性（本轮 R2832，缺失 Web API 续 / 动态 select 填充）
+
+承接 R2831（input.indeterminate）。land **动态 select 填充表面**——`new Option(text, value, defaultSelected, selected)` 构造器 + `select.add(element, before?)` + `option.text`/`label`/`defaultSelected`/`selected` 读。级联 select / 动态下拉填充（`select.add(new Option('Apple','a'))`）表单应用高频。probe 确认 shim 0 实现（Option 全局缺、select.add 缺、option.text/label/defaultSelected 缺）。
+
+- **关键设计点**：① `new Option()` 返 `createElement('option')` proxy（设 text/value/selected），允许 new 与无 new；shim 元素为 Proxy 非 ctor 实例故 `instanceof Option` 不成立（documented）。② `select.add(element, before?)` 仅 SELECT（`_realTag` gate），`before==null` 走 appendChild、`before` 有 selector 走 insertBefore（复用既有 handle/sel 双路径回调）。③ option 读属性（text/label/defaultSelected/selected）经 `_realTag==='OPTION'` gate，支持 sel + handle 两种身份（new Option 创建的 handle-based 亦可读）。
+- **handle-based has-attr 缺口修复**：句柄元素（createElement 创建）不在 HTML 快照，sel-based `__zw_has_attr` 对其恒 false——原 `option.selected`/`defaultSelected` 读对 `new Option()` 创建的 option 恒 false（既有 documented 限制）。新增 host `__zw_has_attr_handle` 回调 + `has_attr_from_mutations` helper（扫 `SetAttrOnHandle` 按名判定存在性），`selected`/`defaultSelected` 读 handle 走之、sel 走 `__zw_has_attr`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`Option` 构造器（createElement('option') proxy，设 text/value/selected）+ `select.add`（SELECT gate，appendChild/insertBefore 复用）+ option `text`/`label`/`defaultSelected` 读（OPTION gate，handle+sel 双路径）+ `selected`/`defaultSelected` 读改走 `__zw_has_attr_handle`（handle）/ `__zw_has_attr`（sel）。 |
+| `engine/src/js_dom_bridge.rs` | +`has_attr_from_mutations` helper（扫 SetAttrOnHandle 按名判定存在性）+ register `__zw_has_attr_handle` 回调（"1"/"0"）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_option_constructor_and_select_add_r2832`（new Option tag/text/value/defaultSelected + select.add 追加两 option + option.label 有/无属性 + 无 new 调用 + handle-based `.selected`=true）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13460 passed / 0 failed / 74 ignored**，13459+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 8 struct PASS。
+
+**为何零回归且净正向**：① 全新增 global（Option）+ additive option 读属性 + 新 host 回调（不改既有 JS 分支）；② `globalThis.Option = globalThis.Option || Option` 守卫不覆盖既有定义；③ handle has-attr 修复仅影响 handle-based option 的 selected/defaultSelected 读（原恒 false 现正确，sel-based 路径不变）；④ select.add 复用既有 append_child/insert_before 回调（零新 mutation 类型）。
+
+**已知限制（记录）**：① `instanceof Option`=false（shim 返 Proxy 非 ctor 实例，documented）；② handle-based has-attr 按 `SetAttrOnHandle` 名判定存在性（无 RemoveAttrOnHandle 变体，`setAttribute('x','')` 设空值仍判 present——boolean 属性正确，与既有 handle remove=set-empty 设计一致）；③ select.add 的 before 仅支持 selector-based（handle-based before 未接，罕见）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面已穷尽（R2820-R2832 覆 modern 动画/编辑/表单（校验+集合+files+indeterminate）/select（options/selectedOptions/selectedIndex/动态填充 new Option+add）/事件/序列化/可见性/剪贴板/焦点/位置/URL/性能/存储/几何读 主表面）。剩余全为深项/host-layer：`document.elementFromPoint`（layout rect 全量 hit-test，深）/ customElements upgrade/lifecycle（element proxy 接 ctor，深）/ Shadow DOM attachShadow（深）/ node.normalize（罕见 + 架构重，defer）/ 真 Web Animations timeline（深）/ 真 files 上传 host 路径 / fetch 非 GET（net，跳过）；极窄可选 valueAsNumber（number input 转换）/ option.index（select 表面补全）/ scrollIntoViewIfNeeded（WebKit）/ pointer lock；rendering-compat 侧续降频守成（held baseline 13460 全绿）。
+
 ### P1a HTMLInputElement.indeterminate（JS-only 布尔）（本轮 R2831，缺失 Web API 续）
 
 承接 R2830（input.files）。**pivot 自 select.selectedOptions**：probe 发现 `selectedOptions`/`selectedIndex`/`select.options`/`option.selected` **已 land**（P1a select 区，line 2598-2844），上一轮 CONTINUE stale。改 land **`input.indeterminate`**——checkbox「全选」tri-state UI 高频（父 checkbox 半选态：`parent.indeterminate = any && !all`）。probe 确认 shim 0 实现。
