@@ -2434,6 +2434,20 @@
           if (akc && Object.prototype.hasOwnProperty.call(akc, 'accesskey')) return akc['accesskey'];
           return (handle ? __zw_get_attr_handle(handle, 'accesskey') : __zw_get_attr(sel, 'accesskey')) || '';
         }
+        // `el.role`——反射 role 属性（无 → ''）；同步 set→get 优先读缓存。
+        if (prop === 'role') {
+          var rlc = _reflectedAttrs[key];
+          if (rlc && Object.prototype.hasOwnProperty.call(rlc, 'role')) return rlc['role'];
+          return (handle ? __zw_get_attr_handle(handle, 'role') : __zw_get_attr(sel, 'role')) || '';
+        }
+        // `el.ariaXxx`——反射 aria-* 属性（ariaLabel↔aria-label, ariaLabelledBy↔aria-labelledby, ...）。
+        // 经 `_ariaAttrName` 通用映射覆盖全部 aria IDL 属性；无 → ''。同步 set→get 优先读缓存。
+        var _ariaName = _ariaAttrName(prop);
+        if (_ariaName) {
+          var arc = _reflectedAttrs[key];
+          if (arc && Object.prototype.hasOwnProperty.call(arc, _ariaName)) return arc[_ariaName];
+          return (handle ? __zw_get_attr_handle(handle, _ariaName) : __zw_get_attr(sel, _ariaName)) || '';
+        }
         // `el.dataset`——`data-*` 属性的 camelCase 键对象（get/set/has/delete/枚举）。
         // dataset.fooBar ↔ data-foo-bar 属性。handle 脱离 DOM 元素枚举受限（无 attr-names-handle）。
         if (prop === 'dataset') {
@@ -3082,6 +3096,22 @@
           if (handle) __zw_set_attr_handle(handle, 'accesskey', String(value));
           else __zw_set_attr(sel, 'accesskey', String(value));
           moAttr = 'accesskey';
+        } else if (p === 'role') {
+          // role set——反射 role 属性（串）。同步缓存。
+          var rlc2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
+          rlc2['role'] = String(value);
+          if (handle) __zw_set_attr_handle(handle, 'role', String(value));
+          else __zw_set_attr(sel, 'role', String(value));
+          moAttr = 'role';
+        } else if (_ariaAttrName(p)) {
+          // ariaXxx set——反射 aria-* 属性（ariaLabel→aria-label, ariaLabelledBy→aria-labelledby...）。
+          // 通用映射覆盖全部 aria IDL 属性。同步缓存。
+          var ariaAttr = _ariaAttrName(p);
+          var arc2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
+          arc2[ariaAttr] = String(value);
+          if (handle) __zw_set_attr_handle(handle, ariaAttr, String(value));
+          else __zw_set_attr(sel, ariaAttr, String(value));
+          moAttr = ariaAttr;
         } else if (p === 'value') {
           // P1a select：编程设 `<select>.value = value` → 记 SelectOption mutation（apply 时
           // mark 匹配 option selected + deselect 兄弟）。匹配浏览器：编程设值不自动派 change。
@@ -3424,6 +3454,17 @@
   // dataset 键转换：camelCase ↔ data-kebab-case（fooBar ↔ data-foo-bar）。
   function _camelToKebab(s) {
     return s.replace(/[A-Z]/g, function(m) { return '-' + m.toLowerCase(); });
+  }
+
+  // ARIA IDL 属性名 → content 属性名（element.ariaXxx ↔ aria-xxx）。
+  // **不同于 _camelToKebab**：ariaLabelledBy → aria-labelledby（单 hyphen，非 aria-labelled-by）。
+  // 规则：aria + 大写首字母 + 余 → aria- + 全小写(余)。非 aria 前缀 / 首字母非大写 → null。
+  function _ariaAttrName(prop) {
+    if (typeof prop !== 'string' || prop.length < 5 || prop.slice(0, 4) !== 'aria') return null;
+    var rest = prop.slice(4);
+    var head = rest.charAt(0);
+    if (head < 'A' || head > 'Z') return null;
+    return 'aria-' + rest.toLowerCase();
   }
   function _kebabToCamel(s) {
     return s.replace(/-([a-z])/g, function(_, c) { return c.toUpperCase(); });

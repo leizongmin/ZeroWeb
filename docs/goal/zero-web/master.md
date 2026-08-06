@@ -2091,6 +2091,24 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a element.role + aria-* 反射簇（本轮 R2807，缺失 Web API 续）
+
+承接 R2806（reflected 簇 #2）。续缺失 Web API——land **`element.role` + `aria-*` 反射属性**（ARIA a11y 高频——每个可访问页面用 role/aria-label/aria-labelledby 等）。**关键设计**：ARIA IDL→content 属性名映射**不同于** `_camelToKebab`——`ariaLabelledBy`→`aria-labelledby`（**单 hyphen**，非 `_camelToKebab` 的双 hyphen `aria-labelled-by`）。新增专用 `_ariaAttrName` helper：`aria` + 大写首字母 + 余 → `aria-` + 全小写(余)，通用覆盖**全部** aria IDL 属性（ariaLabel/ariaLabelledBy/ariaDescribedBy/ariaValueNow/ariaExpanded/...）。
+
+- **`element.role`**（字符串反射，`_reflectedAttrs` 缓存）：get → 缓存优先，否则 `__zw_get_attr('role') || ''`；set → 写缓存 + `__zw_set_attr('role', value)`。
+- **`element.ariaXxx`**（通用字符串反射，缓存）：经 `_ariaAttrName(prop)` 映射到 `aria-xxx` content 属性（ariaLabel↔aria-label, ariaLabelledBy↔aria-labelledby, ariaValueNow↔aria-valuenow）；get → 缓存优先，否则 `__zw_get_attr(ariaName) || ''`；set → 写缓存 + `__zw_set_attr(ariaName, value)`。
+- **覆盖范围**：通用映射一次性覆盖 ~50 个 aria IDL 属性（无需逐个枚举）。
+- **已知限制（记录）**：set 后同步属性读经缓存往返（getAttribute 读 stale 快照——同簇 #1/#2 既有限制）。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_ariaAttrName`（ariaLabelledBy→aria-labelledby 单 hypen 映射，区别于 _camelToKebab）+ Proxy get trap `role` + 通用 `aria*`（缓存 + attr||''）+ set trap `role` + 通用 `aria*`（写缓存 + __zw_set_attr）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_element_aria_r2807`（role get 'button' / ariaLabel 'Save' / ariaLabelledBy→aria-labelledby 'l1' / ariaValueNow→aria-valuenow '50' / set role·ariaLabel·ariaExpanded 往返 / 无属性默认 ''）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13435 passed / 0 failed / 74 ignored**，13434+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① Proxy get+set trap 新增 role + 通用 aria* 分支（不改既有 prop 分支）；② 复用 R2805 `_reflectedAttrs` 缓存（无新结构）；③ `_ariaAttrName` 纯函数无副作用；④ 通用映射避免逐属性枚举（一处覆盖全部 aria）。
+
 ### P1a element reflected 簇 #2：contentEditable / isContentEditable / accessKey（本轮 R2806，缺失 Web API 续）
 
 承接 R2805（reflected 簇 #1）。续缺失 Web API——land **`contentEditable`/`isContentEditable` + `accessKey`**（rich text editor 栈锚 + a11y）。contentEditable 锚编辑器栈（与 Selection/Range/TreeWalker 配对）。**实现修正**：原计划含 draggable/spellcheck，**核验发现其为枚举属性**（`draggable="false"`/`spellcheck="false"` 有意义，非 presence-boolean）——放既有布尔分支（`__zw_has_attr` 存在性）会误判 `="false"` 为 true，故**移除 draggable/spellcheck defer**（需枚举处理），本轮仅 land 字符串反射（正确）的 contentEditable/accessKey。

@@ -8753,3 +8753,97 @@ fn test_element_reflected_props2_r2806() {
         "accessKey set 后读回"
     );
 }
+
+#[test]
+fn test_element_aria_r2807() {
+    // R2807：element.role + aria-* 反射簇（ARIA a11y 高频）。通用 _ariaAttrName 映射 ariaXxx↔aria-xxx
+    //（ariaLabelledBy→aria-labelledby 单 hyphen，非 _camelToKebab 的双 hyphen）。_reflectedAttrs 缓存同步往返。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><button id=b role=button aria-label=Save aria-labelledby=l1 aria-valuenow=50>x</button></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // role get（读 role 属性）+ aria* get（读 aria-* 属性，验单/多词映射）。
+    sandbox
+        .execute(
+            "var b = document.getElementById('b');\
+             globalThis.__role = b.role;\
+             globalThis.__al = b.ariaLabel;\
+             globalThis.__alb = b.ariaLabelledBy;\
+             globalThis.__avn = b.ariaValueNow;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__role)").unwrap().value,
+        "button",
+        "role 须反射 role 属性"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__al)").unwrap().value,
+        "Save",
+        "ariaLabel 须反射 aria-label"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__alb)").unwrap().value,
+        "l1",
+        "ariaLabelledBy 须反射 aria-labelledby（单 hyphen）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__avn)").unwrap().value,
+        "50",
+        "ariaValueNow 须反射 aria-valuenow"
+    );
+
+    // set + 同步读回（缓存往返）：role + aria*。
+    sandbox
+        .execute(
+            "b.role = 'link'; b.ariaLabel = 'Submit'; b.ariaExpanded = 'true';\
+             globalThis.__srole = b.role;\
+             globalThis.__sal = b.ariaLabel;\
+             globalThis.__sae = b.ariaExpanded;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__srole)").unwrap().value,
+        "link",
+        "role set 后读回"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sal)").unwrap().value,
+        "Submit",
+        "ariaLabel set 后读回"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sae)").unwrap().value,
+        "true",
+        "ariaExpanded set 后读回（aria-expanded）"
+    );
+
+    // 无属性默认 ''（role + aria*）。
+    sandbox
+        .execute(
+            "var d = document.createElement('div');\
+             globalThis.__dr = d.role; globalThis.__dal = d.ariaLabel;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dr)").unwrap().value,
+        "",
+        "无 role 属性 role 须 ''"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dal)").unwrap().value,
+        "",
+        "无 aria-label ariaLabel 须 ''"
+    );
+}
