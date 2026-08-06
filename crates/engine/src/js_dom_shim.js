@@ -19,6 +19,13 @@
   // （required/pattern/type 等）headless 不强制（permissive valid）。同 _inputValues/_classCache 经
   // `__zw_reset_form_state` 清空防跨页 stale。
   var _customValidity = {};
+  // HTMLInputElement.files 空 FileList（R2830）：headless 无真文件 → 共享空 FileList（length 0 +
+  // item→null + 可迭代）。上传表单读 `input.files.length` 不抛（无文件 → 0，跳过上传逻辑）。
+  var _emptyFileList = {
+    length: 0,
+    item: function (_i) { return null; },
+    [Symbol.iterator]: function* () {},
+  };
   // reflected 字符串/数值属性（title/lang/dir/tabindex）per-element-key 缓存。同 _inputValues/_classCache
   // 动机——`__zw_set_attr` 仅入队 mutation（异步 apply），同步 set→get 往返须客户端缓存（get 优先读缓存）。
   // 值结构：{ title?: string, lang?: string, dir?: string, tabindex?: number }。
@@ -2802,6 +2809,11 @@
             }
           }
           return _inputValues[key];
+        }
+        // `input.files`（HTMLInputElement，R2830）——FileList（上传表单读 length/迭代）。headless
+        // 无真文件 → 共享空 FileList（length 0）；仅 INPUT（_isTag gate），非 input → undefined。
+        if (prop === 'files' && _isTag(sel, 'INPUT')) {
+          return _emptyFileList;
         }
         if (prop === 'checked' || prop === 'hidden' || prop === 'disabled') {
           // boolean reflected property（checked/hidden/disabled）——属性存在性（经 host `__zw_has_attr`）。

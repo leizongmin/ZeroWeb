@@ -2091,6 +2091,26 @@ land `globalThis.queueMicrotask` = `Promise.resolve().then(cb)` polyfill（V8 `e
 
 **为何零回归且净正向**：① 全新 global（queueMicrotask），不改既有 API；② Promise.then microtask 无副作用；③ `_defer` 切真分支行为等价（均 Promise.then）；④ `globalThis.X = globalThis.X || ...` 守卫不覆盖既有定义。
 
+### P1a HTMLInputElement.files（空 FileList）（本轮 R2830，缺失 Web API 续）
+
+承接 R2829（form.elements）。land **`input.files`（FileList）**——上传表单读 `input.files.length` / 迭代 / `files[0]` 高频（文件上传 UI、拖拽上传库）。headless 无真文件 → 共享**空 FileList**（length 0 + item→null + 可迭代），让上传 JS 不抛（无文件 → length 0 → 跳过上传逻辑，permissive）。仅 INPUT（`_isTag` gate）；非 input → undefined。
+
+- **`_emptyFileList`**（共享常量）：`{length:0, item:fn→null, [Symbol.iterator]: 空生成器}`——可 `for...of`/spread（空），可 `.length`/`.item()`。
+- **`input.files`**（getter，INPUT gate）：返 `_emptyFileList`。
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim.js` | +`_emptyFileList` 共享常量 + get-trap `value` 后加 `files`（INPUT gate，返 _emptyFileList）。 |
+| `engine/src/js_dom_bridge_tests.rs` | +1 测试 `test_input_files_filelist_r2830`（input.files length=0 + item(0)=null + spread 空 + 非 input .files=undefined）。 |
+
+验证：`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**13458 passed / 0 failed / 74 ignored**，13457+1 新测试，0 回归）+ `make product-smoke` welcome desktop **17.03%**（≤20% 门禁，精确 baseline 持平）+ 全 struct PASS。
+
+**为何零回归且净正向**：① 全新增 input 属性（additive，gate INPUT，非 input 透传）；② 共享空常量（零 host 回调、零渲染副作用、零分配——每次访问返同一对象）；③ 让上传表单 JS feature-detect + 读 length 不抛（permissive，documented headless 无文件）。
+
+**已知限制（记录）**：① headless 无真文件 → 恒空 FileList（真文件上传需 host 文件选择路径，深 defer）；② 返共享常量非每次新 FileList（空列表不可变，足够）；③ `instanceof FileList` 不成立（无全局 FileList 构造器，罕见用法）。
+
+**下一步**：缺失 Web API 纯 JS tractable 表面**已穷尽**（R2820-R2830 覆 modern 动画/编辑/表单（含校验+集合+files）/事件/序列化/可见性/剪贴板/焦点/位置/URL/性能/存储/几何读 主表面）。剩余全为深项/host-layer：`document.elementFromPoint`（layout rect 全量 hit-test）/ customElements upgrade/lifecycle（element proxy 接 ctor）/ Shadow DOM attachShadow / node.normalize（罕见 + 架构重，defer）/ 真 Web Animations timeline / 真 files 上传 host 路径 / fetch 非 GET（net 层，跳过）；可选窄项 scrollIntoViewIfNeeded（WebKit）/ pointer lock / select.selectedOptions / valueAsNumber；rendering-compat 侧续降频守成（held baseline 13458 全绿）。
+
 ### P1a form.elements + form.length（HTMLFormControlsCollection）（本轮 R2829，缺失 Web API 续）
 
 承接 R2828（getClientRects）。land **`form.elements`（HTMLFormControlsCollection）+ `form.length` + `namedItem`**——表单序列化/校验库（jQuery `serialize`/`serializeArray` / `new FormData(form)` / 校验库迭代 `form.elements`）高频。probe 确认 shim 0 实现。仅 HTMLFormElement（`_realTag==='FORM'` gate）；非 form → undefined。

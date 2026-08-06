@@ -11513,3 +11513,59 @@ fn test_form_elements_r2829() {
         "非 form 元素 .elements=undefined"
     );
 }
+
+#[test]
+fn test_input_files_filelist_r2830() {
+    // R2830：HTMLInputElement.files（空 FileList）。上传表单读 input.files.length / 迭代高频。
+    // headless 无真文件 → 空 FileList（length 0 + item→null + 可迭代），让上传 JS 不抛（无文件→0 跳过上传）。
+    // 仅 INPUT（_isTag gate）；非 input → undefined。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id='f' type='file'><div id='d'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // input.files：空 FileList（length 0 + item(0)=null + spread 空）。
+    sandbox
+        .execute(
+            "globalThis.__files = document.querySelector('#f').files;\
+             globalThis.__len = globalThis.__files.length;\
+             globalThis.__item = String(globalThis.__files.item(0));\
+             globalThis.__spread = [...globalThis.__files].length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len)").unwrap().value,
+        "0",
+        "input.files.length=0（headless 无文件）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__item)").unwrap().value,
+        "null",
+        "input.files.item(0)=null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__spread)").unwrap().value,
+        "0",
+        "input.files 可 spread 迭代（空）"
+    );
+
+    // 非 input 元素 .files → undefined（gate：仅 INPUT）。
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#d').files)")
+            .unwrap()
+            .value,
+        "undefined",
+        "非 input .files=undefined"
+    );
+}
