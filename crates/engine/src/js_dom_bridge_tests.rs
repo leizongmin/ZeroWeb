@@ -10272,7 +10272,8 @@ fn test_modern_interaction_stubs_r2817() {
         "permissions.query → state 'prompt' + name 透传"
     );
 
-    // element.requestFullscreen → Promise resolves；document.fullscreenElement null + exitFullscreen Promise。
+    // element.requestFullscreen → Promise resolves + 设 fullscreenElement=body；exitFullscreen 清 + resolve。
+    // （R2817 时 fullscreenElement 恒 null；R2938 升级为 spec-alike 状态追踪，详见 test_fullscreen_api_r2938。）
     sandbox
         .execute(
             "globalThis.__fs = false;\
@@ -10285,9 +10286,12 @@ fn test_modern_interaction_stubs_r2817() {
         "requestFullscreen Promise resolves"
     );
     assert_eq!(
-        sandbox.execute("String(document.fullscreenElement)").unwrap().value,
-        "null",
-        "fullscreenElement 恒 null"
+        sandbox
+            .execute("String(document.fullscreenElement === document.body)")
+            .unwrap()
+            .value,
+        "true",
+        "R2938 fullscreenElement 反映全屏元素（body）"
     );
     sandbox
         .execute("globalThis.__ef = false; document.exitFullscreen().then(function(){ globalThis.__ef = true; });")
@@ -10296,6 +10300,11 @@ fn test_modern_interaction_stubs_r2817() {
         sandbox.execute("String(globalThis.__ef)").unwrap().value,
         "true",
         "exitFullscreen Promise resolves"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.fullscreenElement)").unwrap().value,
+        "null",
+        "R2938 exitFullscreen 后 fullscreenElement 复 null"
     );
 
     // element scroll 方法 no-op 返 undefined；window scroll 同；scrollX/pageXOffset 恒 0。
@@ -10331,6 +10340,175 @@ fn test_modern_interaction_stubs_r2817() {
         sandbox.execute("String(globalThis.__pXO)").unwrap().value,
         "0",
         "pageXOffset 恒 0"
+    );
+}
+
+#[test]
+fn test_fullscreen_api_r2938() {
+    // R2938 Fullscreen API（spec-alike）：element.requestFullscreen() 返 Promise——grant 路径设 fullscreenElement +
+    // 派 fullscreenchange + resolve；deny 路径（fullscreenEnabled=false）派 fullscreenerror + reject TypeError。
+    // document.exitFullscreen() 清状态 + 派 fullscreenchange + resolve；非全屏态 resolve 不派事件。
+    // fullscreenElement/fullscreenEnabled 反映状态；fullscreenchange/fullscreenerror 经 document listener +
+    // document.onfullscreenchange/onfullscreenerror IDL handler 触发。headless 无真 OS 全屏，但语义可观察。
+    // https://fullscreen.spec.whatwg.org/
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><div id='d'></div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // fullscreenEnabled 默认 true；fullscreenElement 初值 null。
+    assert_eq!(
+        sandbox.execute("String(document.fullscreenEnabled)").unwrap().value,
+        "true",
+        "fullscreenEnabled 默认 true"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.fullscreenElement)").unwrap().value,
+        "null",
+        "fullscreenElement 初值 null"
+    );
+
+    // grant 路径：requestFullscreen 设 fullscreenElement + 派 fullscreenchange（listener 内读 fullscreenElement）+ resolve。
+    sandbox
+        .execute(
+            "globalThis.__fc = 0; globalThis.__fe = 'x';\
+             document.addEventListener('fullscreenchange', function(){\
+               globalThis.__fc++;\
+               globalThis.__fe = document.fullscreenElement ? document.fullscreenElement.id : '(null)';\
+             });\
+             globalThis.__ok = false;\
+             document.getElementById('d').requestFullscreen().then(function(){ globalThis.__ok = true; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fc)").unwrap().value,
+        "1",
+        "requestFullscreen 派发一次 fullscreenchange"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fe)").unwrap().value,
+        "d",
+        "fullscreenchange handler 内 fullscreenElement === 全屏元素（id='d'）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ok)").unwrap().value,
+        "true",
+        "requestFullscreen Promise resolves"
+    );
+
+    // 相同元素重复 requestFullscreen → no-op（不重复派 fullscreenchange，仍 resolve）。
+    sandbox
+        .execute(
+            "globalThis.__ok2 = false;\
+             document.getElementById('d').requestFullscreen().then(function(){ globalThis.__ok2 = true; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fc)").unwrap().value,
+        "1",
+        "相同元素重复 requestFullscreen 不再派 fullscreenchange（no-op）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ok2)").unwrap().value,
+        "true",
+        "重复 requestFullscreen 仍 resolve"
+    );
+
+    // exitFullscreen → 清状态 + 派 fullscreenchange + resolve。
+    sandbox
+        .execute(
+            "globalThis.__ef = false;\
+             document.exitFullscreen().then(function(){ globalThis.__ef = true; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fc)").unwrap().value,
+        "2",
+        "exitFullscreen 派发 fullscreenchange（第二次）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ef)").unwrap().value,
+        "true",
+        "exitFullscreen Promise resolves"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.fullscreenElement)").unwrap().value,
+        "null",
+        "exitFullscreen 后 fullscreenElement 复 null"
+    );
+
+    // 非全屏态 exitFullscreen → resolve，不派事件（计数不变）。
+    sandbox
+        .execute(
+            "globalThis.__ef2 = 'p';\
+             document.exitFullscreen().then(function(){ globalThis.__ef2 = 'resolved'; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ef2)").unwrap().value,
+        "resolved",
+        "非全屏态 exitFullscreen 仍 resolve"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fc)").unwrap().value,
+        "2",
+        "非全屏态 exitFullscreen 不派 fullscreenchange"
+    );
+
+    // document.onfullscreenchange IDL handler：注册后由 fullscreenchange 触发。
+    sandbox
+        .execute(
+            "globalThis.__ofc = 0;\
+             document.onfullscreenchange = function(){ globalThis.__ofc++; };\
+             document.body.requestFullscreen();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ofc)").unwrap().value,
+        "1",
+        "document.onfullscreenchange IDL handler 触发"
+    );
+    sandbox.execute("document.exitFullscreen();").unwrap(); // 清理全屏态
+
+    // deny 路径：host `__zw_fullscreen_enabled` 返 '0' → fullscreenEnabled=false → requestFullscreen reject
+    // TypeError + 派 fullscreenerror（document listener + document.onfullscreenerror IDL handler 触发）。
+    sandbox.register_callback("__zw_fullscreen_enabled", Box::new(|_args: &[String]| "0".to_string()));
+    assert_eq!(
+        sandbox.execute("String(document.fullscreenEnabled)").unwrap().value,
+        "false",
+        "host 禁用后 fullscreenEnabled=false"
+    );
+    sandbox
+        .execute(
+            "globalThis.__ferr = 0; globalThis.__rej = null;\
+             document.addEventListener('fullscreenerror', function(){ globalThis.__ferr++; });\
+             document.onfullscreenerror = function(){ globalThis.__ferr += 10; };\
+             document.body.requestFullscreen().then(function(){ globalThis.__rej = 'resolved'; },\
+               function(err){ globalThis.__rej = (err instanceof TypeError) ? 'TypeError' : 'other'; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ferr)").unwrap().value,
+        "11",
+        "deny 路径派 fullscreenerror（document listener + document.onfullscreenerror）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rej)").unwrap().value,
+        "TypeError",
+        "deny 路径 reject TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.fullscreenElement)").unwrap().value,
+        "null",
+        "deny 路径不设 fullscreenElement"
     );
 }
 

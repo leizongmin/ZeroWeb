@@ -3861,10 +3861,26 @@
         if (prop === 'blur') {
           return function() { if (_activeElKey === key) _activeElKey = null; };
         }
-        // 全屏 / 指针锁 / 滚动（R2817）——headless 无真全屏/指针锁/滚动 → Promise resolve（fullscreen）
-        // 或 no-op（pointerLock/scroll*）。feature-detect + modern 交互脚本不抛。
+        // R2938 `el.requestFullscreen()`——全屏请求（spec 返 Promise，headless 无真 OS 全屏）。grant/deny 二分：
+        // fullscreenEnabled=true（默认）→ 设 fullscreenElement + 派 fullscreenchange + resolve；=false →
+        // 派 fullscreenerror + reject TypeError（spec「fullscreen is unavailable」）。相同元素重复请求 → no-op
+        // resolve（不重复派 fullscreenchange，spec 一致）。`key/sel/handle` 为闭包捕获的本元素身份。
         if (prop === 'requestFullscreen') {
-          return function() { return Promise.resolve(undefined); };
+          return function() {
+            return new Promise(function (resolve, reject) {
+              if (!globalThis.document.fullscreenEnabled) {
+                _fireFullscreenEvent('fullscreenerror');
+                reject(new TypeError('fullscreen is unavailable'));
+                return;
+              }
+              if (_fsKey === key) { resolve(undefined); return; } // 已是全屏元素 → no-op
+              _fsKey = key;
+              _fsSel = sel;
+              _fsHandle = handle;
+              _fireFullscreenEvent('fullscreenchange');
+              resolve(undefined);
+            });
+          };
         }
         if (prop === 'requestPointerLock') {
           return function() {};
@@ -5839,6 +5855,26 @@
   //（_elKey(sel,handle)）。focus()/blur() 经 Proxy get trap 操作。纯状态追踪，无真输入焦点/无事件派发。
   var _activeElKey = null;
 
+  // R2938 Fullscreen API 状态追踪。headless 无真 OS 全屏（host 无窗口全屏信号源），但 spec 语义需可观察：
+  // fullscreenElement = 当前全屏元素（_elKey(sel,handle) 三元组或 null）；requestFullscreen/exitFullscreen
+  // 经此状态 + fullscreenchange/fullscreenerror 事件实现 spec-alike 语义。fullscreenEnabled 经 host
+  // `__zw_fullscreen_enabled`（'0'=禁用，如 iframe sandbox / 窗口特性拒绝全屏），无注册→true。
+  // https://fullscreen.spec.whatwg.org/#dom-element-requestfullscreen
+  var _fsSel = null;
+  var _fsHandle = null;
+  var _fsKey = null; // _elKey(sel,handle) of 全屏元素；用于「相同元素重复请求 no-op」判定 + null 表示非全屏
+
+  // R2938 全屏事件派发（fullscreenchange/fullscreenerror）。spec：在 document 上派发，bubbles、非 cancelable。
+  // document/window listener 同存于 _elKey('html', null)（document.addEventListener 转发 html proxy，window
+  // dispatchEvent/addEventListener 同 key），故一次 _dispatchToListeners 触达 document.addEventListener +
+  // window.addEventListener + document/window 对应 on* IDL handler。currentTarget = document（spec 事件 target）。
+  function _fireFullscreenEvent(type) {
+    try {
+      var ev = _makeEvent(type, { bubbles: true, cancelable: false });
+      _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis.document);
+    } catch (_e) {}
+  }
+
   // NodeFilter 常量（spec）——createTreeWalker/createNodeIterator 的 whatToShow 掩码 + acceptNode 返回值。
   globalThis.NodeFilter = globalThis.NodeFilter || {
     SHOW_ALL: 0xFFFFFFFF,
@@ -6255,10 +6291,28 @@
     charset: 'UTF-8',
     contentType: 'text/html',
     readyState: 'complete',
-    // fullscreen（R2817）——headless 无真全屏：fullscreenElement 恒 null，exitFullscreen 返 resolving Promise。
-    fullscreenElement: null,
-    fullscreenEnabled: true,
-    exitFullscreen: function() { return Promise.resolve(undefined); },
+    // fullscreen（R2817 stub → R2938 spec-alike 状态追踪 + 事件）。headless 无真 OS 全屏，但 fullscreenElement
+    // 反映 requestFullscreen/exitFullscreen 设置的元素（_makeProxy(_fsSel,_fsHandle) 或 null）；fullscreenEnabled
+    // 经 host `__zw_fullscreen_enabled`（'0'=禁用），无注册→true；exitFullscreen 清状态 + 派 fullscreenchange。
+    // https://fullscreen.spec.whatwg.org/#dom-document-fullscreenelement
+    get fullscreenElement() {
+      if (!_fsKey) return null;
+      return _makeProxy(_fsSel, _fsHandle);
+    },
+    get fullscreenEnabled() {
+      if (typeof __zw_fullscreen_enabled === 'function') {
+        try { return __zw_fullscreen_enabled() === '1'; } catch (_e) {}
+      }
+      return true;
+    },
+    exitFullscreen: function () {
+      return new Promise(function (resolve) {
+        if (!_fsKey) { resolve(undefined); return; } // 非全屏 → resolve，不派事件（spec）
+        _fsKey = null; _fsSel = null; _fsHandle = null;
+        _fireFullscreenEvent('fullscreenchange');
+        resolve(undefined);
+      });
+    },
     // document.title——getter 返首 <title> 文本（空白折叠，spec 一致）；首访惰性读 querySelector('title')
     // 并缓存；setter 更新缓存。**已知限制**：① setter 仅更新 in-JS 缓存，不写回 host DOM <title>（快照 proxy
     // 只读，无 head/title 建链）；② 不创建 <head><title>（spec 无 head 时应建——本沙箱无渲染 title 需求）。
@@ -6394,6 +6448,28 @@
   Object.defineProperty(globalThis.document, 'defaultView', {
     get: function() { return globalThis.window; }
   });
+  // R2938 document IDL onfullscreenchange/onfullscreenerror（spec Document 事件 handler 属性）。document 为
+  // 普通对象（非 Proxy，无法经 on* get/set trap）→ defineProperty getter/setter：setter 注册/移除 listener
+  //（document.addEventListener 转发 html key，与 _fireFullscreenEvent 派发点一致 → 可触）；getter 返存储 fn。
+  // element 侧 onfullscreenchange/onfullscreenerror 经 R2933 通用 on* 路由已支持，无需此处定义。
+  var _docOnFsHandlers = {};
+  function _defineDocFullscreenHandler(type) {
+    Object.defineProperty(globalThis.document, 'on' + type, {
+      configurable: true,
+      get: function () { return _docOnFsHandlers[type] || null; },
+      set: function (fn) {
+        var prev = _docOnFsHandlers[type];
+        if (typeof prev === 'function') globalThis.document.removeEventListener(type, prev);
+        if (typeof fn === 'function') {
+          _docOnFsHandlers[type] = fn;
+          globalThis.document.addEventListener(type, fn);
+        } else {
+          _docOnFsHandlers[type] = null;
+        }
+      },
+    });
+  }
+  ['fullscreenchange', 'fullscreenerror'].forEach(_defineDocFullscreenHandler);
 
   // Selection / Range（R2804，缺失 Web API 续）。headless 无真用户选择——Selection 单例默认空
   //（rangeCount=0/isCollapsed=true/toString=''/anchorNode=null/focusNode=null/type='None'），selection-state-
