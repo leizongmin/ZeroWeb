@@ -6220,10 +6220,11 @@
   // 构造 Range（document.createRange / selectNode* 等用）。**已知限制**：① toString 精确覆盖 selectNode/
   // selectNodeContents（整节点子树文本）+ 同文本节点 setStart/setEnd（slice 偏移）；其余 setStart/setEnd
   // 组合 best-effort 取 commonAncestor 子树文本（跨节点偏移不精确截取）；② deleteContents/extractContents/
-  // insertNode/cloneContents（R2929）经既有 mutation-emitting proxy（remove/insertBefore/appendChild/cloneNode）
-  // 真实变更——精确覆盖 start==end 元素容器的 offset 区间（selectNode/selectNodeContents 后），sel/handle 子
-  // 均支持；跨容器/文本节点部分切片仍 best-effort；③ surroundContents defer（stale-snapshot + 已删 ref 致 apply
-  // 失败的顺序问题，需独立设计）；④ getBoundingClientRect/getClientRects 返空（无 layout 选择几何）；⑤ 无真 live。
+  // insertNode/cloneContents/surroundContents（R2929/R2930）经既有 mutation-emitting proxy
+  //（remove/insertBefore/appendChild/cloneNode）真实变更——精确覆盖 start==end 元素容器的 offset 区间
+  //（selectNode/selectNodeContents 后），sel/handle 子均支持；surroundContents 精确落位仅在覆盖块延伸到容器
+  // 末尾（selectNodeContents 包整元素内容），非尾部 best-effort 落末尾；跨容器/文本节点部分切片仍 best-effort；
+  // ③ getBoundingClientRect/getClientRects 返空（无 layout 选择几何）；④ 无真 live。
   function _makeRange() {
     return {
       startContainer: null, startOffset: 0, endContainer: null, endOffset: 0,
@@ -6340,6 +6341,26 @@
           }
         } catch (_e) {}
         return node;
+      },
+      surroundContents: function (newParent) {
+        // R2930：spec 把范围内容「提取进 newParent」再「把 newParent 插到范围原位」——rich-text wrap 高频
+        //（如把选区包进 <b>）。实现（避 stale-ref apply 失败 + nth-child 选择器 sibling 前移失效）：
+        // ① 正序 clone 覆盖子进 newParent；② 逆序 remove 覆盖原件（nth-child 逆序稳定）；③ appendChild newParent。
+        // **精确落位仅在覆盖块延伸到容器末尾时**（selectNodeContents 包整元素内容——headline 用法）：覆盖块为
+        // 容器尾部，逆序移除后 newParent appendChild 即落原位。非尾部（覆盖块后有兄弟）→ newParent 落容器末尾
+        //（位置近似）：非尾部精确插位须 id-stable ref 或 host 回调（nth-child 经移除前移失效），defer。
+        // collapsed（0 覆盖子）→ insertNode(newParent)。跨容器/文本切片 → best-effort no-op（defer）。
+        if (!newParent || !this.startContainer) return;
+        var kids = this._coveredChildren();
+        if (kids === null) return; // 跨容器/文本切片 defer
+        if (kids.length === 0) { this.insertNode(newParent); return; }
+        for (var i = 0; i < kids.length; i++) {
+          try { newParent.appendChild(kids[i].cloneNode(true)); } catch (_e) {}
+        }
+        for (var j = kids.length - 1; j >= 0; j--) {
+          try { if (typeof kids[j].remove === 'function') kids[j].remove(); } catch (_e) {}
+        }
+        try { this.startContainer.appendChild(newParent); } catch (_e) {}
       },
       cloneRange: function () {
         // 复制 Range（独立边界，互不影响）。spec AbstractRange 边界 + _mode/commonAncestor。

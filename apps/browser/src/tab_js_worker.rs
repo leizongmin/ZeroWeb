@@ -1521,6 +1521,54 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_range_surround_contents_r2930() {
+        // R2930 Range surroundContents（镜像 renderer）：selectNodeContents 包整元素内容 → wrap。验证 apply 后结构。
+        use zero_engine::apply_mutations_to_html;
+        let mut worker = TabJsWorkerHandle::spawn(TabId(17));
+        let html = "<html><body><div id='sc'><span>A</span><span>B</span></div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "var r = document.createRange();\
+                 r.selectNodeContents(document.getElementById('sc'));\
+                 var wrap = document.createElement('div'); wrap.id = 'w';\
+                 globalThis.__ret = r.surroundContents(wrap);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ret)").unwrap(),
+            "undefined",
+            "surroundContents 返回 undefined"
+        );
+        let recorded = worker.mutations().lock().unwrap().clone();
+        let html1 = apply_mutations_to_html(html, &recorded).expect("apply surround mutations");
+        worker.set_dom_snapshot(&html1, "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__scN = document.getElementById('sc').children.length;\
+                 globalThis.__scChildId = document.getElementById('sc').children[0].id;\
+                 globalThis.__wN = document.getElementById('w').children.length;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__scN)").unwrap(),
+            "1",
+            "surroundContents 后 #sc 仅 1 子（wrap）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__scChildId)").unwrap(),
+            "w",
+            "#sc 子 id=w"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__wN)").unwrap(),
+            "2",
+            "wrap 含 2 个克隆子"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html

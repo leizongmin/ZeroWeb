@@ -1478,6 +1478,68 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_range_surround_contents_r2930() {
+        // R2930 Range surroundContents：selectNodeContents 包整元素内容（覆盖块延伸到容器末尾）→ clone 内容进
+        // newParent + 逆序删原件 + appendChild newParent。headline 用法（rich-text wrap）。验证 apply 后结构：
+        // 容器仅含 newParent（1 子），newParent 含克隆内容。
+        use zero_engine::apply_mutations_to_html;
+        let mut worker = RendererJsWorker::spawn(37);
+        let html = "<html><body><div id='sc'><span>A</span><span>B</span></div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "var r = document.createRange();\
+                 r.selectNodeContents(document.getElementById('sc'));\
+                 var wrap = document.createElement('div'); wrap.id = 'w';\
+                 globalThis.__ret = r.surroundContents(wrap);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ret)").unwrap(),
+            "undefined",
+            "surroundContents 返回 undefined（spec）"
+        );
+        let recorded = worker.mutations().lock().unwrap().clone();
+        let html1 = apply_mutations_to_html(html, &recorded).expect("apply surround mutations");
+        worker.set_dom_snapshot(&html1, "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__scN = document.getElementById('sc').children.length;\
+                 globalThis.__scChildTag = document.getElementById('sc').children[0].tagName;\
+                 globalThis.__scChildId = document.getElementById('sc').children[0].id;\
+                 globalThis.__wN = document.getElementById('w').children.length;\
+                 globalThis.__wFirst = document.getElementById('w').children[0].tagName;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__scN)").unwrap(),
+            "1",
+            "surroundContents 后 #sc 仅 1 子（wrap）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__scChildTag)").unwrap(),
+            "DIV",
+            "#sc 唯一子为 wrap（DIV）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__scChildId)").unwrap(),
+            "w",
+            "#sc 子 id=w"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__wN)").unwrap(),
+            "2",
+            "wrap 含 2 个克隆子（原 span A/B）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__wFirst)").unwrap(),
+            "SPAN",
+            "wrap 首子为 SPAN"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C：selector-identity 元素的 getBoundingClientRect 返真实 DOMRect。
         // shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html → find_by_selector
