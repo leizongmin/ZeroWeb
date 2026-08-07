@@ -1540,6 +1540,64 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_page_lifecycle_r2931() {
+        // R2931 页面生命周期/分析簇：navigator.sendBeacon（卸载 beacon，accept-and-return-true）+
+        // PageTransitionEvent 构造器 + pageshow 首次注册 _defer 派发（window + document 路径）。
+        let mut worker = RendererJsWorker::spawn(38);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__beacon1 = navigator.sendBeacon('/analytics', { x: 1 });\
+                 globalThis.__beacon2 = navigator.sendBeacon();\
+                 globalThis.__pt1 = new PageTransitionEvent('pageshow', { persisted: true }).persisted;\
+                 globalThis.__pt2 = new PageTransitionEvent('pageshow').persisted;\
+                 globalThis.__ev = (document.createEvent('PageTransitionEvent').constructor === globalThis.PageTransitionEvent);\
+                 globalThis.__ps = 'no'; globalThis.__ps2 = 'no';\
+                 window.addEventListener('pageshow', function (e) {\
+                   globalThis.__ps = e.type + ':' + String(e.persisted);\
+                 });\
+                 document.addEventListener('pageshow', function (e) {\
+                   globalThis.__ps2 = e.type;\
+                 });",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__beacon1)").unwrap(),
+            "true",
+            "sendBeacon(url, data) → true（accept）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__beacon2)").unwrap(),
+            "false",
+            "sendBeacon() 缺 url → false"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__pt1)").unwrap(),
+            "true",
+            "PageTransitionEvent persisted:true → persisted true"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__pt2)").unwrap(),
+            "false",
+            "PageTransitionEvent 默认 persisted false"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ev)").unwrap(),
+            "true",
+            "createEvent('PageTransitionEvent') 构造器匹配"
+        );
+        // pageshow 经首次注册 _defer 派发（execute 末 drain）；window + document 两路径 listener 均收。
+        let ps = wait_eq(&worker, "__ps", "pageshow:false", 2000);
+        assert_eq!(
+            ps, "pageshow:false",
+            "window pageshow listener 触发（type + persisted:false）"
+        );
+        let ps2 = wait_eq(&worker, "__ps2", "pageshow", 2000);
+        assert_eq!(ps2, "pageshow", "document pageshow listener 亦触发（同一次 dispatch）");
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C：selector-identity 元素的 getBoundingClientRect 返真实 DOMRect。
         // shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html → find_by_selector

@@ -1569,6 +1569,61 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_page_lifecycle_r2931() {
+        // R2931 页面生命周期/分析簇（镜像 renderer）：sendBeacon + PageTransitionEvent + pageshow 派发。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(18));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__beacon1 = navigator.sendBeacon('/analytics', { x: 1 });\
+                 globalThis.__beacon2 = navigator.sendBeacon();\
+                 globalThis.__pt1 = new PageTransitionEvent('pageshow', { persisted: true }).persisted;\
+                 globalThis.__pt2 = new PageTransitionEvent('pageshow').persisted;\
+                 globalThis.__ps = 'no';\
+                 window.addEventListener('pageshow', function (e) {\
+                   globalThis.__ps = e.type + ':' + String(e.persisted);\
+                 });",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__beacon1)").unwrap(),
+            "true",
+            "sendBeacon(url, data) → true"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__beacon2)").unwrap(),
+            "false",
+            "sendBeacon() 缺 url → false"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__pt1)").unwrap(),
+            "true",
+            "PageTransitionEvent persisted:true → true"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__pt2)").unwrap(),
+            "false",
+            "PageTransitionEvent 默认 persisted false"
+        );
+        // pageshow 经首次注册 _defer 派发（execute 末 drain）→ 轮询读。
+        let mut ps = String::new();
+        for _ in 0..400 {
+            ps = worker
+                .execute_script_direct("String(globalThis.__ps)")
+                .unwrap_or_default();
+            if ps == "pageshow:false" {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            ps, "pageshow:false",
+            "window pageshow listener 触发（type + persisted:false）"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html

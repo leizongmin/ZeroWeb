@@ -2034,6 +2034,22 @@
       _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
     });
   }
+
+  // R2931 pageshow 派发（pagehide 不自动派发——headless 无 unload）。headless 无 host load 事件钩子，
+  // 且 shim install 与 page script 为独立 execute（install 期 _defer 早于 page listener 注册）→ 采
+  // 「首次注册 pageshow listener 时 _defer 派发一次」（globalThis/document addEventListener 触发）。
+  // 保证 listener 捕获，近似 load 后 pageshow 语义（persisted:false）。仅触发一次（_pageshowFired 守）。
+  // PageTransitionEvent 在 ~5448 行 _defineEventSubclass 注册，_defer 回调运行时（全 shim 安装后）已就绪。
+  var _pageshowFired = false;
+  function _maybeFirePageShow() {
+    if (_pageshowFired) return;
+    _pageshowFired = true;
+    _defer(function () {
+      var ev = new PageTransitionEvent('pageshow', { persisted: false });
+      ev.target = globalThis;
+      _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
+    });
+  }
   globalThis.history = {
     get length() { return _hist_entries.length; },
     get state() { return _hist_current().state; },
@@ -2111,6 +2127,12 @@
       writeText: function(_text) { return Promise.resolve(undefined); },
       read: function() { return Promise.resolve([]); },
       write: function(_data) { return Promise.resolve(undefined); },
+    },
+    // sendBeacon（R2931）——页面卸载/后台分析 beacon（fire-and-forget POST，analytics/RUM 高频：GA 等
+    // unload 时上报）。headless 无真网络发送（避免无人值守测试依赖外部网络）→ accept-and-return-true
+    //（spec：返 true = 成功入队 best-effort；data 类型不限，忽略）。url 缺省（null/undefined）→ false。
+    sendBeacon: function(url, _data) {
+      return url != null;
     },
     // permissions（R2817）——权限查询（clipboard/geolocation 等 feature-detect 配对）。headless → state 'prompt'
     //（中性，既非 granted 非 denied）。
@@ -2276,6 +2298,7 @@
     if (!_listenerStore[key]) _listenerStore[key] = {};
     if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
     _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts) });
+    if (t === 'pageshow') _maybeFirePageShow(); // R2931：首次 pageshow listener → _defer 派发一次
   }
 
   // removeEventListener：spec 要求 useCapture（第三参）须与注册时匹配才移除——故
@@ -5446,6 +5469,11 @@
   _defineEventSubclass('AnimationEvent', 'Event', [
     ['animationName', 'animationName', ''], ['elapsedTime', 'elapsedTime', 0], ['pseudoElement', 'pseudoElement', ''],
   ]);
+  // R2931 PageTransitionEvent——pageshow/pagehide 生命周期事件（persisted 标 bfcache 恢复）。pageshow 经
+  // _maybeFirePageShow 首次注册派发；pagehide 仅支持构造 + addEventListener（headless 无 unload 不自动派发）。
+  _defineEventSubclass('PageTransitionEvent', 'Event', [
+    ['persisted', 'persisted', false],
+  ]);
 
   // EventTarget——事件目标基类型（独立构造器，R2779）。库常用 `new EventTarget()` / `extends EventTarget`
   // 做事件发射器（pub-sub / 自定义事件总线）。元素 / document / window 经各自 addEventListener 路径；
@@ -6035,6 +6063,7 @@
         progressevent: globalThis.ProgressEvent,
         transitionevent: globalThis.TransitionEvent,
         animationevent: globalThis.AnimationEvent,
+        pagetransitionevent: globalThis.PageTransitionEvent,
       };
       var Ctor = (map[t] && typeof map[t] === 'function') ? map[t] : globalThis.Event;
       // 构造器接收 (type, options)；createEvent 返**空 type** 事件（initEvent/initCustomEvent 设 type）。
@@ -6179,6 +6208,7 @@
     anchors: _liveQueryCollection('a[name]'),
     addEventListener: function(type, fn, opts) {
       _makeProxy('html', null).addEventListener(type, fn, opts);
+      if (String(type) === 'pageshow') _maybeFirePageShow(); // R2931：首次 pageshow listener → _defer 派发一次
     },
     removeEventListener: function(type, fn, opts) {
       _makeProxy('html', null).removeEventListener(type, fn, opts);
