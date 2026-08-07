@@ -173,6 +173,11 @@ impl ProcessTabBackend {
             }
             IpcMessageKind::UrlChanged(url) => snap.url = Some(url),
             IpcMessageKind::ViewPainted(params) => {
+                // C2 接线：env ZW_COMPOSITOR_PROCESS=1 时同步转发帧到合成器进程
+                // （默认关 = 零行为变更；失败静默不阻断主通路）
+                if crate::compositor_client::enabled() {
+                    crate::compositor_client::forward_frame((*params).clone());
+                }
                 if params.navigation_epoch != snap.navigation_epoch {
                     tracing::debug!(
                         "忽略 stale ViewPainted tab {} epoch {} != {}",

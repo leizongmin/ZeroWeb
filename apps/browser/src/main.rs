@@ -25,6 +25,7 @@
 mod app;
 mod clipboard;
 mod colors;
+mod compositor_client;
 mod favicon_fetch;
 mod fetch_proxy;
 mod headless;
