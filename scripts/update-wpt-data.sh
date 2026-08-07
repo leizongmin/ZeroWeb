@@ -17,10 +17,13 @@
 #
 # 依赖：git, curl
 #
-# 已知套件打包缺口（升级时按需补）：
-#   - css/filter-effects 等子域未打包（zeroweb-wpt-data 为裁剪子集）
-#   - css/reference/ref-nothing-below.xht 等个别 ref 文件缺失
-#   影响：少量 case 因 ref 缺失被排除出分母；common/ 已由本脚本自动补齐。
+# 已知套件打包缺口（升级时按需补，2026-08-07 状态）：
+#   - css/filter-effects 已用 scripts/fetch-wpt-subdir.sh 补入本地 wpt-data
+#     （652 文件；该子域不在 skip list，属于范围内）——升级新 ref 后需重新补
+#   - css/css-masking、css/css-shapes 未打包但**在 reftest-skip-list.txt**
+#     （SVG 渲染不在范围），无需补
+#   - css/reference/ref-nothing-below.xht 等个别 ref 文件缺失（影响少量 case）
+#   common/ 已由本脚本自动补齐。
 
 set -euo pipefail
 
