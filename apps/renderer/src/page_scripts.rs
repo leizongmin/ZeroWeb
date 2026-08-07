@@ -873,4 +873,48 @@ mod tests {
         );
         worker.shutdown();
     }
+
+    /// R2953：事件循环混合异步顺序回归测试。锁住 spec 行为（经 probe 验证当前实现已正确）：
+    /// ① 微任务链（M1→M2）在下一 macrotask 前整链排空；② 嵌套 setTimeout（T1 内排 T1b）按注册序
+    /// FIFO——T2（脚本期注册，早于 T1b）先于 T1b 触发。预期顺序 T1,M1,M2,T2,T1b。
+    /// 覆盖 microtask-before-next-macrotask + 微任务链排空 + timer 注册序 FIFO（R2952 协调线程保证）。
+    #[test]
+    fn event_loop_mixed_async_order_r2953() {
+        let mut worker = RendererJsWorker::spawn(130);
+        worker.set_dom_snapshot("<html><body></body></html>", "https://example.com/page");
+        worker
+            .execute_script_direct(
+                "globalThis.__log = [];\
+                 setTimeout(function(){\
+                   globalThis.__log.push('T1');\
+                   Promise.resolve().then(function(){\
+                     globalThis.__log.push('M1');\
+                     Promise.resolve().then(function(){ globalThis.__log.push('M2'); });\
+                   });\
+                   setTimeout(function(){ globalThis.__log.push('T1b'); }, 0);\
+                 });\
+                 setTimeout(function(){ globalThis.__log.push('T2'); }, 0);",
+            )
+            .unwrap();
+        // 轮询直到全部 5 个回调触发。
+        let probe = "String(globalThis.__log.length)";
+        let start = std::time::Instant::now();
+        loop {
+            if worker.execute_script_direct(probe).unwrap_or_default() == "5" {
+                break;
+            }
+            if start.elapsed().as_millis() >= 2000 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let log = worker
+            .execute_script_direct("String(globalThis.__log.join(','))")
+            .unwrap();
+        assert_eq!(
+            log, "T1,M1,M2,T2,T1b",
+            "混合异步顺序 spec 一致：T1 → 微任务链 M1,M2 整链排空（下一 macrotask 前）→ T2（注册早于 T1b）→ T1b"
+        );
+        worker.shutdown();
+    }
 }
