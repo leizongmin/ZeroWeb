@@ -1649,6 +1649,60 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_element_on_handlers_r2933() {
+        // R2933 element 级 IDL on-event handler：onclick/oninput setter 路由到 per-element listener store
+        //（先于 set trap 末尾属性 fallthrough，否则 fn 被当字符串属性写）；getter 返存储 fn；=null 移除；
+        // dispatchEvent 触发。parsed 元素（sel-based）+ created 元素（handle-based）均覆盖。
+        let mut worker = RendererJsWorker::spawn(40);
+        worker.set_dom_snapshot("<html><body><div id='d'></div></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var d = document.getElementById('d');\
+                 globalThis.__dc = 0; globalThis.__did = 'no'; globalThis.__dnull = 'no';\
+                 function dh(e) { if (e && e.type === 'click') globalThis.__dc++; }\
+                 d.onclick = dh;\
+                 globalThis.__did = (d.onclick === dh);\
+                 d.dispatchEvent(new Event('click'));\
+                 d.onclick = null;\
+                 globalThis.__dnull = (d.onclick === null);\
+                 d.dispatchEvent(new Event('click'));\
+                 var btn = document.createElement('button');\
+                 globalThis.__bc = 0;\
+                 function bh() { globalThis.__bc++; }\
+                 btn.oninput = bh;\
+                 globalThis.__bid = (btn.oninput === bh);\
+                 btn.dispatchEvent(new Event('input'));",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__did)").unwrap(),
+            "true",
+            "parsed 元素 d.onclick = dh → getter 返同一 fn（identity）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__dc)").unwrap(),
+            "1",
+            "dispatchEvent click → onclick 触发一次（=null 后不再触发）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__dnull)").unwrap(),
+            "true",
+            "d.onclick = null → getter 返 null（移除）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__bid)").unwrap(),
+            "true",
+            "created 元素 btn.oninput = bh → getter 返同一 fn"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__bc)").unwrap(),
+            "1",
+            "created 元素 dispatchEvent input → oninput 触发"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C：selector-identity 元素的 getBoundingClientRect 返真实 DOMRect。
         // shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html → find_by_selector

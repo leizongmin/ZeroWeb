@@ -1683,6 +1683,42 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_element_on_handlers_r2933() {
+        // R2933 element 级 IDL on-event handler（镜像 renderer）：onclick/oninput setter 路由 + getter + 移除 + dispatch 触发。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(20));
+        worker.set_dom_snapshot("<html><body><div id='d'></div></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var d = document.getElementById('d');\
+                 globalThis.__dc = 0; globalThis.__did = 'no'; globalThis.__dnull = 'no';\
+                 function dh(e) { if (e && e.type === 'click') globalThis.__dc++; }\
+                 d.onclick = dh;\
+                 globalThis.__did = (d.onclick === dh);\
+                 d.dispatchEvent(new Event('click'));\
+                 d.onclick = null;\
+                 globalThis.__dnull = (d.onclick === null);\
+                 d.dispatchEvent(new Event('click'));",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__did)").unwrap(),
+            "true",
+            "parsed 元素 d.onclick = dh → getter 返同一 fn"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__dc)").unwrap(),
+            "1",
+            "dispatchEvent click → onclick 触发一次（=null 后不再触发）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__dnull)").unwrap(),
+            "true",
+            "d.onclick = null → getter 返 null"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html

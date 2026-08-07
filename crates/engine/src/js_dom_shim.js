@@ -1,5 +1,8 @@
 (function() {
   var _listenerStore = {};
+  // R2933 element 级 IDL on-event handler 存储（per-element-key → { eventType: fn }）。on* setter 把 fn
+  // 同时记此 + 注册进 _listenerStore[key]（使 dispatchEvent 触发）；getter 返此存储 fn（或 null）。
+  var _onHandlers = {};
   // P1b S2 incr3：元素 proxy 缓存——同一 (sel, handle) 复用同一 Proxy 实例，使
   // `querySelector('#t') === querySelector('#t')` 为真（node === identity，v8::External
   // 精修目标，但纯 JS Proxy 缓存即可达成，无需 rusty_v8 对象绑定）。proxy 无状态（仅委托
@@ -3898,6 +3901,12 @@
             } catch (_e) { return null; }
           };
         }
+        // R2933 element 级 IDL on-event handler getter（onclick/oninput/... → 存储的 fn 或 null）。
+        // `on`+小写字母 = handler（generic，无白名单）。与 set trap 的 on* 路由对偶。
+        if (typeof prop === 'string' && /^on[a-z]/.test(prop)) {
+          var _gt = String(prop).slice(2);
+          return (_onHandlers[key] && _onHandlers[key][_gt]) || null;
+        }
         if (prop === 'addEventListener') {
           return function(type, fn, opts) {
             if (!_listenerStore[key]) _listenerStore[key] = {};
@@ -4360,6 +4369,27 @@
       set: function(_t, prop, value) {
         var p = String(prop);
         var moAttr = null;
+        // R2933 element 级 IDL on-event handler（onclick/oninput/onkeydown/onchange/...）。须先于末尾 fallthrough
+        //（否则 fn 被当字符串属性写入 onclick="function..."）。`on`+小写字母 = handler（generic，覆盖 onclick/
+        // oninput/onload/onsubmit/onpointer* 等所有当前/未来事件，无白名单）。setter 路由到 per-element listener
+        // store（同 addEventListener 的 _listenerStore[key]）：移旧 fn + 加新 fn；非 function → 移除（spec IDL）。
+        if (typeof prop === 'string' && /^on[a-z]/.test(p)) {
+          var _ot = p.slice(2);
+          var _prevH = _onHandlers[key] && _onHandlers[key][_ot];
+          if (typeof _prevH === 'function' && _listenerStore[key] && _listenerStore[key][_ot]) {
+            _listenerStore[key][_ot] = _listenerStore[key][_ot].filter(function (l) { return l.fn !== _prevH; });
+          }
+          if (typeof value === 'function') {
+            if (!_onHandlers[key]) _onHandlers[key] = {};
+            _onHandlers[key][_ot] = value;
+            if (!_listenerStore[key]) _listenerStore[key] = {};
+            if (!_listenerStore[key][_ot]) _listenerStore[key][_ot] = [];
+            _listenerStore[key][_ot].push({ fn: value, capture: false, once: false });
+          } else {
+            if (_onHandlers[key]) _onHandlers[key][_ot] = null;
+          }
+          return true;
+        }
         if (p === 'textContent' || p === 'innerHTML') {
           if (p === 'innerHTML') {
             if (handle) __zw_set_inner_html_handle(handle, String(value));
