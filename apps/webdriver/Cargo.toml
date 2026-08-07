@@ -1,0 +1,21 @@
+[package]
+name = "zero-webdriver"
+description = "ZeroWeb WebDriver 服务 — W3C WebDriver 协议 M0 切片（wdspec 覆盖的第一步）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "zero-webdriver"
+path = "src/main.rs"
+
+[dependencies]
+zero-webview = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[features]
+default = ["v8"]
+v8 = ["zero-webview/v8"]
+quickjs = ["zero-webview/quickjs"]

@@ -32,6 +32,7 @@ members = [
     "apps/browser",
     "apps/renderer",
     "apps/image-decoder",
+    "apps/webdriver",
     "apps/webview-demo",
 
     # 测试基础设施
