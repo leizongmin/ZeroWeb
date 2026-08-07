@@ -2308,6 +2308,41 @@ pub fn script_dispatch_script_event(abs_src: &str, ty: &str) -> String {
     format!("__zw_dispatch_script_event('{esc_url}', '{esc_ty}')")
 }
 
+/// 顶层 try-catch 包装捕获的页面脚本错误所写入的 sentinel 全局名。包装器在成功时将其留为
+/// `undefined`，抛错时设为错误消息字符串。调用方经 [`page_script_error_check`] 读取。
+pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";
+
+/// 将 classic 页面 `<script>` 体包进顶层 try-catch，使未捕获的 throw 被捕获进 sentinel 全局
+/// （[`PAGE_SCRIPT_ERROR_GLOBAL`]）而非污染持久 V8 Isolate。
+///
+/// **背景**：persistent_context 模式跨 execute 复用同一 Isolate。页面脚本抛出的未捕获异常若直达
+/// V8，embedder 侧 `TryCatch::reset()` 在当前 rusty_v8（150.2.0）下无法清掉跨 execute 的 pending
+/// exception——下一条 execute 的新 TryCatch 会观测到它并返回 "Runtime error: null"，使**页面上任何
+/// 抛错的 `<script>` 都会废掉其后所有脚本**，并使 host 的 window.onerror 报告（R2940）失效。
+/// 在页面脚本层包 try-catch：throw 被这里捕获→调用方读 sentinel 得 Err→`run_page_scripts` 据此
+/// 报 window.onerror，且 Isolate 保持干净。
+///
+/// **作用域**：`code` 内的 `var`/`function` 声明提升到脚本顶层作用域（try 块对它们透明），与未包装
+/// 行为一致；顶层 `let`/`const`/`class` 会变为 try 块作用域——classic 内联脚本罕见，module 走
+/// `execute_module`。成功时 sentinel 留 `undefined`（非字符串），抛错时设为消息字符串，二者经
+/// [`page_script_error_check`] 的 `===undefined` 判别可靠区分（即便 `throw undefined` 也只产生
+/// 字符串 "undefined"，不与 undefined 值混淆）。
+pub fn script_wrap_page_caught(code: &str) -> String {
+    format!(
+        "globalThis.{g}=undefined;\ntry{{\n{code}\n}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e);}}",
+        g = PAGE_SCRIPT_ERROR_GLOBAL
+    )
+}
+
+/// 读取 [`script_wrap_page_caught`] 写入的 sentinel：返回空串表示成功（无抛错），非空串为错误消息。
+/// 调用方据此把抛错 surface 为 `Err`。作为独立 execute（包装器执行后 Isolate 干净，本次读取可靠）。
+pub fn page_script_error_check() -> String {
+    format!(
+        "(globalThis.{g}===undefined)?'':globalThis.{g}",
+        g = PAGE_SCRIPT_ERROR_GLOBAL
+    )
+}
+
 /// 从当前 HTML 快照查询 textContent。
 pub fn query_text_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);

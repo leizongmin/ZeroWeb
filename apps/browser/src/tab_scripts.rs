@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    DomEventDetail, PageScript, apply_mutations_to_html_with_handles, extract_page_scripts, resolve_document_url,
-    script_dispatch_dom_event, script_report_error,
+    DomEventDetail, PageScript, apply_mutations_to_html_with_handles, extract_page_scripts, page_script_error_check,
+    resolve_document_url, script_dispatch_dom_event, script_report_error, script_wrap_page_caught,
 };
 use zero_webview::WebView;
 
@@ -330,7 +330,9 @@ fn execute_script_chunk(
         worker.execute_module(code, module_url, &deps)?;
     } else if let Some(worker) = js_worker {
         if page_script {
-            worker.execute_page_script(code).map_err(|e| e.to_string())?;
+            // classic 页面脚本：顶层 try-catch 包装捕获抛错（防持久 Isolate 中毒 + 让 R2940 报告生效；
+            // 见 zero_engine::script_wrap_page_caught）。成功 Ok；抛错 Err(msg)。
+            run_page_script_caught(worker, code)?;
         } else {
             worker.execute_script_direct(code).map_err(|e| e.to_string())?;
         }
@@ -338,6 +340,19 @@ fn execute_script_chunk(
         wv.execute_script(code).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// 执行 classic 页面 `<script>` 体，顶层 try-catch 包装未捕获 throw（[`script_wrap_page_caught`]）。
+/// 成功 → `Ok(())`；抛错 → sentinel 读出消息 → `Err(msg)`（调用方 `PageScriptRunner::tick` 据此报
+/// window.onerror，R2940）。包装器 execute 不会抛（try-catch 兜底），随后的 sentinel 读取 execute
+/// 在干净 Isolate 上可靠。镜像 renderer `page_scripts::run_page_script_caught`。
+fn run_page_script_caught(worker: &TabJsWorkerHandle, code: &str) -> Result<(), String> {
+    let _ = worker.execute_page_script(&script_wrap_page_caught(code));
+    match worker.execute_page_script(&page_script_error_check()) {
+        Ok(v) if v.is_empty() => Ok(()),
+        Ok(msg) => Err(msg),
+        Err(e) => Err(e),
+    }
 }
 
 /// R2940：将未捕获脚本错误经 worker 报告进 shim——`window.onerror`（legacy 5-arg）+ window 'error' 事件，

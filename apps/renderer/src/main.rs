@@ -165,6 +165,15 @@ struct RendererRuntime {
     focus_target: Option<String>,
     /// P1a change-on-blur：焦点元素获焦时的 value（失焦时与当前 value 比，变化才派发 change）。
     focus_value: Option<String>,
+    /// R2942 mirror：子资源 fetch/decode 失败 `(kind, url)`（stylesheet/image）。load 完成时从
+    /// `AsyncPageLoad.take_failed_resources` drain 并 stash，脚本阶段经 `finish_page_load` 派 window 'error'。
+    pending_resource_errors: Vec<(String, String)>,
+    /// R2943 mirror：img 元素级 load/error `(绝对 URL, "load"/"error")`。load 完成时 drain 并 stash，
+    /// 脚本阶段经 `finish_page_load` 派 `__zw_dispatch_img_event`。
+    pending_img_events: Vec<(String, &'static str)>,
+    /// R2944 mirror：stylesheet 元素级 load/error `(绝对 URL, "load"/"error")`。load 完成时 drain 并 stash，
+    /// 脚本阶段经 `finish_page_load` 派 `__zw_dispatch_link_event`。
+    pending_link_events: Vec<(String, &'static str)>,
 }
 
 impl RendererRuntime {
@@ -228,6 +237,9 @@ impl RendererRuntime {
             observer_tick_depth: 0,
             focus_target: None,
             focus_value: None,
+            pending_resource_errors: Vec::new(),
+            pending_img_events: Vec::new(),
+            pending_link_events: Vec::new(),
         }
     }
 
@@ -253,20 +265,33 @@ impl RendererRuntime {
     fn after_page_html_loaded_with_cache(&mut self, fetch_cache: HashMap<String, String>) -> Result<(), String> {
         let js_enabled = self.javascript_enabled;
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let mut ctx = PageScriptContext {
-            html: &mut self.cached_html,
-            url: &current_url,
-            js_worker: &self.js_worker,
+        let skip = page_scripts::should_skip_scripts(&current_url);
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &current_url,
+                js_worker: &self.js_worker,
+            };
+            let fetch_from_cache = |url: &str| {
+                fetch_cache
+                    .get(url)
+                    .cloned()
+                    .ok_or_else(|| format!("script fetch failed: {url}"))
+            };
+            run_page_scripts(&mut ctx, js_enabled, fetch_from_cache)
         };
-        let fetch_from_cache = |url: &str| {
-            fetch_cache
-                .get(url)
-                .cloned()
-                .ok_or_else(|| format!("script fetch failed: {url}"))
-        };
-        let changed = run_page_scripts(&mut ctx, js_enabled, fetch_from_cache);
         if changed {
             self.rerender_publish_webview()?;
+        }
+        // R2940–R2944 mirror：脚本阶段收尾——派发页面生命周期（DOMContentLoaded + load）+ 子资源 fetch 失败
+        // window 'error' + img/link 元素级 load/error。与 browser tab_scripts::PageScriptRunner::finish 对齐，
+        // 使默认多进程路径具备事件 API parity（此前仅 --single-process 路径派发）。JS 关 / view-source 跳过。
+        // 无脚本但 JS 启用的页面（仅 `<body onload>`）也派发——finish_page_load 内 lifecycle 无条件执行。
+        if js_enabled && !skip {
+            let resource_errors = std::mem::take(&mut self.pending_resource_errors);
+            let img_events = std::mem::take(&mut self.pending_img_events);
+            let link_events = std::mem::take(&mut self.pending_link_events);
+            page_scripts::finish_page_load(&self.js_worker, resource_errors, img_events, link_events);
         }
         Ok(())
     }
@@ -714,6 +739,18 @@ impl RendererRuntime {
         let page_url = pending.page_url;
         let run_scripts = pending.run_scripts_after;
         let emit_complete = pending.emit_load_complete;
+
+        // R2942/R2943/R2944 mirror：load 完成（!is_active 且无 error）时 drain 子资源加载结果，
+        // stash 到 self 供后续脚本阶段 `finish_page_load` 派发（脚本阶段在 prefetch 完成后才跑，
+        // 晚于本点，故须暂存）。drain 在 take_error 之后、error 分支已 return，确保仅成功 load 才 drain。
+        self.pending_resource_errors = pending
+            .load
+            .take_failed_resources()
+            .into_iter()
+            .map(|r| (r.kind.to_string(), r.url))
+            .collect();
+        self.pending_img_events = pending.load.take_img_element_events();
+        self.pending_link_events = pending.load.take_link_element_events();
 
         self.sync_cached_html_from_webview();
         self.try_publish_progress(true)?;

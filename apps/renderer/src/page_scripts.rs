@@ -6,8 +6,9 @@ use tracing::warn;
 use zero_engine::{
     DomEventDetail, DomMutation, PageScript, apply_mutations_to_html, apply_mutations_to_html_with_handles,
     enclosing_form_selector, extract_page_scripts, has_attribute, is_checkbox, is_radio, is_submit_button,
-    query_tag_from_html, resolve_document_url, script_dispatch_dom_event, script_text_delete, script_text_input,
-    toggle_radio_html,
+    page_script_error_check, query_tag_from_html, resolve_document_url, script_dispatch_dom_event,
+    script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event, script_report_error,
+    script_text_delete, script_text_input, script_wrap_page_caught, toggle_radio_html,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -51,15 +52,25 @@ pub fn run_page_scripts<F: Fn(&str) -> Result<String, String>>(
             PageScript::InlineModule(_) => base.clone(),
             _ => String::new(),
         };
+        // R2944 mirror：外部脚本的绝对 src（fetch 成功+执行后派 script 元素 'load'；fetch 失败在下方分支派 'error'）。
+        let external_abs: Option<String> = match &script {
+            PageScript::External(src) | PageScript::ExternalModule(src) => Some(resolve_document_url(&base, src)),
+            _ => None,
+        };
 
         let code = match script {
             PageScript::Inline(code) | PageScript::InlineModule(code) => code,
-            PageScript::External(src) | PageScript::ExternalModule(src) => {
-                let abs = resolve_document_url(&base, &src);
+            PageScript::External(_) | PageScript::ExternalModule(_) => {
+                let abs = external_abs.clone().unwrap_or_default();
                 match fetch_text(&abs) {
                     Ok(code) => code,
                     Err(e) => {
                         warn!("external script fetch {abs}: {e}");
+                        // R2942 mirror：外部脚本 fetch 失败 → 即时派 window 'error'（脚本 fetch 同步失败，
+                        // 早于后续脚本 onerror 注册即触发，匹配 real browser「fetch 失败即报」语义）。
+                        report_resource_error(ctx.js_worker, "script", &abs);
+                        // R2944 mirror：外部脚本元素 'error'（spec：script 元素 error 仅 fetch 失败触发）。
+                        dispatch_script_event(ctx.js_worker, &abs, "error");
                         continue;
                     }
                 }
@@ -68,7 +79,13 @@ pub fn run_page_scripts<F: Fn(&str) -> Result<String, String>>(
 
         if let Err(e) = execute_chunk(ctx, &html, is_module, &module_url, &code, &fetch_text) {
             warn!("page script error: {e}");
+            // R2940 mirror：未捕获脚本错误 → window.onerror（legacy 5-arg）+ window 'error' ErrorEvent，
+            // 使 Sentry / analytics / GA 等错误上报库 hook 触发（与 browser tab_scripts 对齐）。
+            report_uncaught_error(ctx.js_worker, &base, &e);
             continue;
+        } else if let Some(abs) = external_abs.as_deref() {
+            // R2944 mirror：外部脚本 fetch+执行成功 → script 元素 'load'（spec：classic/module 脚本执行成功后派 load）。
+            dispatch_script_event(ctx.js_worker, abs, "load");
         }
 
         if let Some(new_html) = apply_recorded_mutations(ctx, &html) {
@@ -81,6 +98,98 @@ pub fn run_page_scripts<F: Fn(&str) -> Result<String, String>>(
         return true;
     }
     false
+}
+
+/// R2940–R2944 mirror：页面脚本阶段收尾——派发页面生命周期 + 子资源/元素级事件进 shim，与 browser
+/// `tab_scripts::PageScriptRunner::finish` 对齐（renderer 默认多进程路径此前缺这套派发）。
+///
+/// - **R2941**：DOMContentLoaded + load（DOMContentLoaded 先于 load，spec）。analytics onload / jQuery
+///   ready / 框架 mount 高频 hook 经此触发。即使页面无 `<script>`（仅 `<body onload>` 内联 handler），
+///   JS 启用页也应派发——调用方在 `run_page_scripts` 之后无条件调用本函数（gate 由调用方按 JS 启用判断）。
+/// - **R2942**：`resource_errors` = `(kind, url)` 子资源 fetch/decode 失败 → window 'error'（stylesheet/image），
+///   延后到 load 之后派发（资源 fetch 失败发生在 async_load 期早于脚本，故延后确保 handler 已注册）。
+/// - **R2943/R2944**：`img_events` / `link_events` = `(绝对 URL, "load"/"error")` 元素级 load/error——经
+///   `__zw_dispatch_img_event` / `__zw_dispatch_link_event` 派发到匹配 src/href 的元素（img/link.onload/onerror）。
+///
+/// 全部 best-effort（失败仅 `warn!`，不影响后续）。事件由调用方从 `AsyncPageLoad` drain 后传入
+///（renderer main 在 load 完成时 drain、stash，脚本阶段消费）。
+pub fn finish_page_load(
+    js_worker: &RendererJsWorker,
+    resource_errors: Vec<(String, String)>,
+    img_events: Vec<(String, &'static str)>,
+    link_events: Vec<(String, &'static str)>,
+) {
+    // R2941：脚本阶段完成 → 派发 DOMContentLoaded + load。
+    dispatch_page_lifecycle(js_worker);
+    // R2942：在 load 之后派发子资源 fetch/decode 失败的 window 'error'（stylesheet/image）。
+    for (kind, url) in &resource_errors {
+        report_resource_error(js_worker, kind, url);
+    }
+    // R2943：img 元素级 load/error——延后到 load 之后（同 R2942 理由，确保 handler 已注册）。
+    for (url, ty) in &img_events {
+        dispatch_img_event(js_worker, url, ty);
+    }
+    // R2944：stylesheet 元素级 load/error——延后到 load 之后（同上理由）。
+    for (url, ty) in &link_events {
+        dispatch_link_event(js_worker, url, ty);
+    }
+}
+
+/// R2941 mirror：派发页面生命周期事件（DOMContentLoaded + load）进 shim。均派发到 'html' 选择器
+///（document/window listener 同存 `_elKey('html', null)` 键）→ `document.addEventListener('DOMContentLoaded')` /
+/// `window.addEventListener('load')` / `window.onload` / `document.onDOMContentLoaded` 触发。best-effort。
+fn dispatch_page_lifecycle(js_worker: &RendererJsWorker) {
+    let dcl = script_dispatch_dom_event("html", "DOMContentLoaded", None);
+    let load = script_dispatch_dom_event("html", "load", None);
+    if let Err(e) = js_worker.execute_script_direct(&format!("{dcl}; {load}")) {
+        warn!("dispatch page lifecycle: {e}");
+    }
+}
+
+/// R2940 mirror：未捕获脚本错误经 worker 报告进 shim——`window.onerror`（legacy 5-arg）+ window 'error' 事件，
+/// 使 Sentry / analytics / GA 等错误上报库 hook 触发。best-effort。
+fn report_uncaught_error(js_worker: &RendererJsWorker, source: &str, message: &str) {
+    let report = script_report_error(message, source, 0, 0);
+    if let Err(e) = js_worker.execute_script_direct(&report) {
+        warn!("report uncaught script error: {e}");
+    }
+}
+
+/// R2942 mirror：派发子资源 fetch/decode 失败的 window 'error' 事件进 shim（经 `__zw_report_error` hook →
+/// window.onerror legacy 5-arg + window 'error' ErrorEvent）。`kind` = "script" / "stylesheet" / "image"。best-effort。
+fn report_resource_error(js_worker: &RendererJsWorker, kind: &str, url: &str) {
+    let msg = format!("Error loading {kind}: {url}");
+    let report = script_report_error(&msg, url, 0, 0);
+    if let Err(e) = js_worker.execute_script_direct(&report) {
+        warn!("report resource error ({kind} {url}): {e}");
+    }
+}
+
+/// R2943 mirror：派发 img 元素级 load/error 事件进 shim。经 `script_dispatch_img_event` 生成
+/// `__zw_dispatch_img_event(url, type)`——shim 按 src 绝对 URL 匹配 `<img>` 元素 proxy 派发。best-effort。
+fn dispatch_img_event(js_worker: &RendererJsWorker, url: &str, ty: &str) {
+    let report = script_dispatch_img_event(url, ty);
+    if let Err(e) = js_worker.execute_script_direct(&report) {
+        warn!("dispatch img event ({ty} {url}): {e}");
+    }
+}
+
+/// R2944 mirror：派发 stylesheet 元素级 load/error 事件进 shim。经 `script_dispatch_link_event` 生成
+/// `__zw_dispatch_link_event(url, type)`——shim 按 href 绝对 URL 匹配 `<link>` 元素 proxy 派发。best-effort。
+fn dispatch_link_event(js_worker: &RendererJsWorker, url: &str, ty: &str) {
+    let report = script_dispatch_link_event(url, ty);
+    if let Err(e) = js_worker.execute_script_direct(&report) {
+        warn!("dispatch link event ({ty} {url}): {e}");
+    }
+}
+
+/// R2944 mirror：派发外部 `<script src>` 元素级 load/error 事件进 shim。经 `script_dispatch_script_event`
+/// 生成 `__zw_dispatch_script_event(url, type)`——shim 按 src 绝对 URL 匹配 `<script>` 元素 proxy 派发。best-effort。
+fn dispatch_script_event(js_worker: &RendererJsWorker, url: &str, ty: &str) {
+    let report = script_dispatch_script_event(url, ty);
+    if let Err(e) = js_worker.execute_script_direct(&report) {
+        warn!("dispatch script event ({ty} {url}): {e}");
+    }
 }
 
 /// 向页面元素派发 DOM 事件。
@@ -302,9 +411,22 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
         let deps: Vec<(String, String)> = registry.into_iter().collect();
         ctx.js_worker.execute_module(code, module_url, &deps)?;
     } else {
-        ctx.js_worker.execute_script_direct(code)?;
+        // classic 页面脚本：顶层 try-catch 包装捕获抛错（防持久 Isolate 中毒 + 让 R2940 报告生效）。
+        run_page_script_caught(ctx.js_worker, code)?;
     }
     Ok(())
+}
+
+/// 执行 classic 页面 `<script>` 体，顶层 try-catch 包装未捕获 throw（[`script_wrap_page_caught`]）。
+/// 成功 → `Ok(())`；抛错 → sentinel 读出消息 → `Err(msg)`（调用方 `run_page_scripts` 据此报 window.onerror）。
+/// 包装器 execute 不会抛（try-catch 兜底），随后的 sentinel 读取 execute 在干净 Isolate 上可靠。
+fn run_page_script_caught(js_worker: &RendererJsWorker, code: &str) -> Result<(), String> {
+    let _ = js_worker.execute_script_direct(&script_wrap_page_caught(code));
+    match js_worker.execute_script_direct(&page_script_error_check()) {
+        Ok(v) if v.is_empty() => Ok(()),
+        Ok(msg) => Err(msg),
+        Err(e) => Err(e),
+    }
 }
 
 fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Option<String> {
@@ -340,4 +462,187 @@ fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Opti
 /// 渲染进程是否允许直连网络（仅测试；生产路径应经 Browser 进程 `FetchRequest`）。
 pub fn should_skip_scripts(url: &str) -> bool {
     url.starts_with("view-source:")
+}
+
+#[cfg(test)]
+mod tests {
+    //! R2940–R2944 renderer mirror 驱动测试——验证默认多进程路径（renderer `page_scripts`）与 browser
+    //! `tab_scripts` 的事件 API parity。经 `RendererJsWorker`（装同款 `js_dom_shim`）直接驱动
+    //! `run_page_scripts` + `finish_page_load`，轮询 `globalThis.__*` 断言事件派发。
+    use super::*;
+    use crate::js_worker::RendererJsWorker;
+
+    /// 轮询 `globalThis.{key}` 直到非 undefined（或超时返当前值）。镜像 `js_worker::tests` 模式——
+    /// 事件派发经 `execute_script_direct` 同步执行，listener 在调用内触发；超时兜底防 flaky。
+    fn wait_for_global(worker: &RendererJsWorker, key: &str, timeout_ms: u64) -> String {
+        let start = std::time::Instant::now();
+        let probe = format!("String(globalThis.{key})");
+        loop {
+            if let Ok(v) = worker.execute_script_direct(&probe)
+                && v != "undefined"
+            {
+                return v;
+            }
+            if start.elapsed().as_millis() >= timeout_ms as u128 {
+                return worker.execute_script_direct(&probe).unwrap_or_default();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    /// 在 worker 上跑 `run_page_scripts`（inline 脚本经 execute 执行；external fetch 恒失败）。
+    /// 用独立 `html` buffer——脚本副作用（listener 注册 / 抛错）发生在 worker 持久 V8 上下文，buffer
+    /// 仅承载 mutation apply（测试不断言 DOM 变更）。
+    fn run_scripts(html: &str, worker: &RendererJsWorker) {
+        let mut buf = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut buf,
+            url: "https://example.com/page",
+            js_worker: worker,
+        };
+        let _ = run_page_scripts(&mut ctx, true, |_u| Err::<String, String>("no external fetch".into()));
+    }
+
+    /// R2941 mirror：finish_page_load 派发 DOMContentLoaded + load。inline 脚本注册 window listener，
+    /// run_page_scripts 执行注册，finish_page_load 派发——listener 触发（analytics onload / jQuery ready）。
+    #[test]
+    fn finish_page_load_dispatches_lifecycle_r2941() {
+        let mut worker = RendererJsWorker::spawn(110);
+        let html = "<html><body>\
+            <script>\
+              window.addEventListener('DOMContentLoaded', function(){ globalThis.__dcl = 'fired'; });\
+              window.addEventListener('load', function(){ globalThis.__load = 'fired'; });\
+            </script>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new());
+        assert_eq!(
+            wait_for_global(&worker, "__dcl", 1000),
+            "fired",
+            "DOMContentLoaded 派发"
+        );
+        assert_eq!(wait_for_global(&worker, "__load", 1000), "fired", "load 派发");
+        worker.shutdown();
+    }
+
+    /// R2941 mirror：无 `<script>` 页仍派发 lifecycle。调用方在 `run_page_scripts`（无脚本 → no-op）之后
+    /// 无条件调用 `finish_page_load`——使扩展/polyfill 预注册的 window load listener 触发（镜像 browser
+    /// `PageScriptRunner::start` 对无脚本 JS 启用页仍返回 runner 让 finish() 派 lifecycle 的语义）。
+    #[test]
+    fn finish_page_load_lifecycle_for_scriptless_page_r2941() {
+        let mut worker = RendererJsWorker::spawn(111);
+        // 无 `<script>` 页面；listener 由「预装 polyfill」直接注册（不经 run_page_scripts）。
+        let html = "<html><body><p>no scripts</p></body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        let _ = worker
+            .execute_script_direct("window.addEventListener('load', function(){ globalThis.__load = 'fired'; });");
+        // run_page_scripts 无脚本直接返回 false（no-op），finish_page_load 仍派 load。
+        run_scripts(html, &worker);
+        finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new());
+        assert_eq!(
+            wait_for_global(&worker, "__load", 1000),
+            "fired",
+            "无脚本页 finish_page_load 仍派发 load（lifecycle 不依赖 <script> 存在）"
+        );
+        worker.shutdown();
+    }
+
+    /// R2940 mirror：第二个 inline 脚本抛错 → execute_chunk Err → report_uncaught_error → window.onerror
+    /// 触发（Sentry/analytics hook）。第一个脚本先注册 window.onerror。
+    #[test]
+    fn run_page_scripts_reports_uncaught_error_r2940() {
+        let mut worker = RendererJsWorker::spawn(112);
+        let html = "<html><body>\
+            <script>window.onerror = function(msg){ globalThis.__err = String(msg); return true; };</script>\
+            <script>throw new Error('boom-renderer');</script>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        let err = wait_for_global(&worker, "__err", 1000);
+        assert!(
+            err.contains("boom-renderer"),
+            "window.onerror 应收到抛错信息，got: {err}"
+        );
+        worker.shutdown();
+    }
+
+    /// R2942 mirror：finish_page_load 派发 stylesheet fetch 失败的 window 'error'（经 __zw_report_error hook
+    /// → window.onerror legacy 5-arg）。模拟 host 从 AsyncPageLoad.take_failed_resources drain 注入。
+    #[test]
+    fn finish_page_load_dispatches_resource_window_error_r2942() {
+        let mut worker = RendererJsWorker::spawn(113);
+        let html = "<html><body>\
+            <script>window.onerror = function(msg, src){ globalThis.__rerr = String(msg) + '|' + String(src); return true; };</script>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        finish_page_load(
+            &worker,
+            vec![("stylesheet".to_string(), "https://example.com/missing.css".to_string())],
+            Vec::new(),
+            Vec::new(),
+        );
+        let got = wait_for_global(&worker, "__rerr", 1000);
+        assert!(got.contains("stylesheet"), "window 'error' 含资源 kind，got: {got}");
+        assert!(got.contains("missing.css"), "window 'error' 含资源 url，got: {got}");
+        worker.shutdown();
+    }
+
+    /// R2943 mirror：finish_page_load 派发 img 元素级 load——经 __zw_dispatch_img_event 按 src 绝对 URL
+    /// 匹配 `<img>` 元素 proxy 派发（img.onload/addEventListener('load') 触发）。
+    #[test]
+    fn finish_page_load_dispatches_img_event_r2943() {
+        let mut worker = RendererJsWorker::spawn(114);
+        let html = "<html><body>\
+            <img id='i1' src='https://example.com/a.png'>\
+            <script>\
+              var img = document.querySelectorAll('img')[0];\
+              img.addEventListener('load', function(){ globalThis.__imgload = 'fired'; });\
+              img.addEventListener('error', function(){ globalThis.__imgerr = 'fired'; });\
+            </script>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        finish_page_load(
+            &worker,
+            Vec::new(),
+            vec![("https://example.com/a.png".to_string(), "load")],
+            Vec::new(),
+        );
+        assert_eq!(
+            wait_for_global(&worker, "__imgload", 1000),
+            "fired",
+            "img load 元素级事件派发"
+        );
+        worker.shutdown();
+    }
+
+    /// R2944 mirror：finish_page_load 派发 stylesheet (`<link>`) 元素级 load——经 __zw_dispatch_link_event
+    /// 按 href 绝对 URL 匹配 `<link>` 元素 proxy 派发（link.onload 触发）。
+    #[test]
+    fn finish_page_load_dispatches_link_event_r2944() {
+        let mut worker = RendererJsWorker::spawn(115);
+        let html = "<html><body>\
+            <link rel='stylesheet' href='https://example.com/s.css'>\
+            <script>\
+              var link = document.querySelectorAll('link')[0];\
+              link.addEventListener('load', function(){ globalThis.__linkload = 'fired'; });\
+            </script>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        finish_page_load(
+            &worker,
+            Vec::new(),
+            Vec::new(),
+            vec![("https://example.com/s.css".to_string(), "load")],
+        );
+        assert_eq!(
+            wait_for_global(&worker, "__linkload", 1000),
+            "fired",
+            "link load 元素级事件派发"
+        );
+        worker.shutdown();
+    }
 }
