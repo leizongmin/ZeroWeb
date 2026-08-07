@@ -6223,12 +6223,49 @@
   globalThis.window = globalThis;
   globalThis.addEventListener = _globalAddEventListener;
   globalThis.removeEventListener = _globalRemoveEventListener;
+  // R2932 `window.dispatchEvent`——window 为 EventTarget（spec 有 dispatchEvent）。复用 window listener
+  // 派发路径（_elKey('html', null) + 'all' phase），返 `!defaultPrevented`（spec）。使合成事件可测 on* handler。
+  globalThis.dispatchEvent = function(event) {
+    if (!event || typeof event.type !== 'string') return true;
+    if (!event.target) event.target = globalThis;
+    return _dispatchToListeners(_elKey('html', null), event, 'all', globalThis);
+  };
   globalThis.window.attachEvent = function(type, fn) {
     _attachEventForKey(_elKey('html', null), type, fn);
   };
   globalThis.window.detachEvent = function(type, fn) {
     _detachEventForKey(_elKey('html', null), type, fn);
   };
+  // R2932 window IDL on-event handler 属性（onload/onerror/onmessage/onpopstate/onhashchange/onpageshow/...）。
+  // window===globalThis 为 V8 内置全局对象（非 Proxy，无法拦截 on* 赋值）→ 经 Object.defineProperty 为每个
+  // 标准 window 事件类型定义 getter/setter：setter 把 fn 经 _globalAddEventListener 注册为 listener（先移除旧），
+  // getter 返存储的 fn。等价 addEventListener（spec IDL handler 语义）。pageshow setter 经 _globalAddEventListener
+  // 触发首次注册 _defer 派发（同 R2931）。**已知限制**：onerror/onload 等的「真事件」需 host 集成（错误拦截/
+  // load 派发——headless 无 host load 钩子），此处仅注册 listener + 属性可读写 + 合成 dispatchEvent / 既有派发
+  // 路径（pageshow/popstate/hashchange）可触。element 级 on* handler（onclick 等）未含（element Proxy 另处理）。
+  var _winOnHandlers = {};
+  function _defineWinOnHandler(type) {
+    Object.defineProperty(globalThis, 'on' + type, {
+      configurable: true,
+      get: function () { return _winOnHandlers[type] || null; },
+      set: function (fn) {
+        var prev = _winOnHandlers[type];
+        if (typeof prev === 'function') _globalRemoveEventListener(type, prev);
+        if (typeof fn === 'function') {
+          _winOnHandlers[type] = fn;
+          _globalAddEventListener(type, fn);
+        } else {
+          _winOnHandlers[type] = null;
+        }
+      },
+    });
+  }
+  // WindowEventHandlers + GlobalEventHandlers（window 级常用）：页面生命周期 / 路由 / 消息 / 输入 / 可见性。
+  [
+    'afterprint', 'beforeprint', 'beforeunload', 'hashchange', 'languagechange', 'message', 'messageerror',
+    'offline', 'online', 'pagehide', 'pageshow', 'popstate', 'rejectionhandled', 'storage', 'unhandledrejection',
+    'unload', 'load', 'error', 'resize', 'scroll', 'focus', 'blur',
+  ].forEach(_defineWinOnHandler);
   Object.defineProperty(globalThis.document, 'defaultView', {
     get: function() { return globalThis.window; }
   });

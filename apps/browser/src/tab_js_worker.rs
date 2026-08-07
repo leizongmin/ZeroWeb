@@ -1624,6 +1624,65 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_window_on_handlers_r2932() {
+        // R2932 window IDL on-event handler（镜像 renderer）：on* setter 注册 listener + 移除语义 + dispatch 触发。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(19));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__c1 = 0; globalThis.__c2 = 0; globalThis.__id = 'no';\
+                 globalThis.__null = 'no'; globalThis.__ps = 'no';\
+                 function h1() { globalThis.__c1++; }\
+                 function h2() { globalThis.__c2++; }\
+                 window.onload = h1;\
+                 globalThis.__id = (window.onload === h1);\
+                 window.dispatchEvent(new Event('load'));\
+                 window.onload = h2;\
+                 window.dispatchEvent(new Event('load'));\
+                 window.onload = null;\
+                 globalThis.__null = (window.onload === null);\
+                 window.dispatchEvent(new Event('load'));\
+                 window.onpageshow = function (e) {\
+                   globalThis.__ps = e.type + ':' + String(e.persisted);\
+                 };",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__id)").unwrap(),
+            "true",
+            "window.onload = h1 → getter 返同一 fn"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__c1)").unwrap(),
+            "1",
+            "dispatch load → h1 触发一次"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__c2)").unwrap(),
+            "1",
+            "重赋 onload=h2 → h2 触发一次（h1 已移除）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__null)").unwrap(),
+            "true",
+            "window.onload = null → 移除"
+        );
+        // onpageshow setter 触发 R2931 派发（轮询读）。
+        let mut ps = String::new();
+        for _ in 0..400 {
+            ps = worker
+                .execute_script_direct("String(globalThis.__ps)")
+                .unwrap_or_default();
+            if ps == "pageshow:false" {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(ps, "pageshow:false", "onpageshow setter 触发 pageshow 派发");
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html
