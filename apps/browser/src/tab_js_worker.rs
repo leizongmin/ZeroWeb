@@ -1432,6 +1432,95 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_range_mutation_ops_r2929() {
+        // R2929 Range 变更操作（镜像 renderer js_worker）：deleteContents/extractContents/insertNode/真实
+        // cloneContents。经既有 mutation-emitting proxy 真实变更。验证 fragment 内容（同步）+ apply 后结构。
+        use zero_engine::apply_mutations_to_html;
+        let mut worker = TabJsWorkerHandle::spawn(TabId(16));
+        let html = "<html><body>\
+                    <div id='cc'><span>A</span><span>B</span><span>C</span></div>\
+                    <div id='ec'><span>A</span><span>B</span><span>C</span></div>\
+                    <div id='dc'><span>A</span><span>B</span><span>C</span></div>\
+                    <div id='ic'><p>0</p></div>\
+                    </body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "var r1 = document.createRange(); r1.selectNodeContents(document.getElementById('cc'));\
+                 var cc = r1.cloneContents();\
+                 globalThis.__ccN = cc.childNodes.length;\
+                 globalThis.__ccT = cc.childNodes[0].tagName;\
+                 var r2 = document.createRange(); r2.selectNodeContents(document.getElementById('ec'));\
+                 var ec = r2.extractContents();\
+                 globalThis.__ecN = ec.childNodes.length;\
+                 globalThis.__ecT = ec.childNodes[1].tagName;\
+                 var r3 = document.createRange(); r3.selectNodeContents(document.getElementById('dc'));\
+                 r3.deleteContents();\
+                 var r4 = document.createRange(); r4.selectNodeContents(document.getElementById('ic'));\
+                 r4.collapse(true);\
+                 globalThis.__insRet = (r4.insertNode(document.createElement('b')) !== undefined);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ccN)").unwrap(),
+            "3",
+            "cloneContents fragment 3 子"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ccT)").unwrap(),
+            "SPAN",
+            "cloneContents [0].tagName SPAN（真实克隆）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ecN)").unwrap(),
+            "3",
+            "extractContents fragment 3 子"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ecT)").unwrap(),
+            "SPAN",
+            "extractContents [1].tagName SPAN"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__insRet)").unwrap(),
+            "true",
+            "insertNode 返回插入的节点"
+        );
+        let recorded = worker.mutations().lock().unwrap().clone();
+        let html1 = apply_mutations_to_html(html, &recorded).expect("apply range mutations");
+        worker.set_dom_snapshot(&html1, "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__dcN = document.getElementById('dc').children.length;\
+                 globalThis.__ecSrc = document.getElementById('ec').children.length;\
+                 globalThis.__ccSrc = document.getElementById('cc').children.length;\
+                 globalThis.__icN = document.getElementById('ic').children.length;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__dcN)").unwrap(),
+            "0",
+            "deleteContents 后 #dc 0 子"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ecSrc)").unwrap(),
+            "0",
+            "extractContents 后 #ec 0 子"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ccSrc)").unwrap(),
+            "3",
+            "cloneContents 不改源 → #cc 仍 3 子"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__icN)").unwrap(),
+            "2",
+            "insertNode 后 #ic 2 子"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html

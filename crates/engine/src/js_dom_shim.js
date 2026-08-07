@@ -6219,9 +6219,11 @@
 
   // 构造 Range（document.createRange / selectNode* 等用）。**已知限制**：① toString 精确覆盖 selectNode/
   // selectNodeContents（整节点子树文本）+ 同文本节点 setStart/setEnd（slice 偏移）；其余 setStart/setEnd
-  // 组合 best-effort 取 commonAncestor 子树文本（跨节点偏移不精确截取）；② cloneContents best-effort 仅文本
-  // 节点（DOM 克隆 defer）；③ deleteContents/extractContents/insertNode/surroundContents defer（DOM 变更复杂）；
-  // ④ getBoundingClientRect/getClientRects 返空（无 layout 选择几何）；⑤ 无真 live（proxy 快照）。
+  // 组合 best-effort 取 commonAncestor 子树文本（跨节点偏移不精确截取）；② deleteContents/extractContents/
+  // insertNode/cloneContents（R2929）经既有 mutation-emitting proxy（remove/insertBefore/appendChild/cloneNode）
+  // 真实变更——精确覆盖 start==end 元素容器的 offset 区间（selectNode/selectNodeContents 后），sel/handle 子
+  // 均支持；跨容器/文本节点部分切片仍 best-effort；③ surroundContents defer（stale-snapshot + 已删 ref 致 apply
+  // 失败的顺序问题，需独立设计）；④ getBoundingClientRect/getClientRects 返空（无 layout 选择几何）；⑤ 无真 live。
   function _makeRange() {
     return {
       startContainer: null, startOffset: 0, endContainer: null, endOffset: 0,
@@ -6263,6 +6265,92 @@
         this.collapsed = (this.startContainer === this.endContainer && this.startOffset === this.endOffset);
         this.commonAncestorContainer = this.startContainer; // best-effort（spec 须最近共同祖先）
       },
+      // R2929：收集 range 覆盖的「顶层子节点」（start==end 元素容器 + offset 区间）。selectNode/
+      // selectNodeContents 后的精确情况。跨容器 / 文本节点部分切片 → null（toString 已处理文本 slice）。
+      _coveredChildren: function () {
+        if (!this.startContainer || this.startContainer !== this.endContainer) return null;
+        var sc = this.startContainer;
+        if (sc.nodeType !== 1 && !sc.tagName) return null; // 非元素容器（文本切片）→ defer
+        var kids = sc.childNodes;
+        if (!kids || !kids.length) return [];
+        var a = Math.max(0, Math.min(this.startOffset | 0, kids.length));
+        var b = Math.max(a, Math.min(this.endOffset | 0, kids.length));
+        var out = [];
+        for (var i = a; i < b; i++) if (kids[i]) out.push(kids[i]);
+        return out;
+      },
+      deleteContents: function () {
+        // 删除范围内子节点（逆序 remove，保索引稳定）。复用 child.remove()（sel→__zw_remove / handle→__zw_remove_handle）。
+        var kids = this._coveredChildren();
+        if (kids) {
+          for (var i = kids.length - 1; i >= 0; i--) {
+            try {
+              if (typeof kids[i].remove === 'function') kids[i].remove();
+              else this.startContainer.removeChild(kids[i]);
+            } catch (_e) {}
+          }
+          this.collapse(true);
+        }
+        return;
+      },
+      extractContents: function () {
+        // 提取范围内容到 DocumentFragment。sel 子无法直接 move（appendChild 须 child handle），故 clone 到
+        // fragment + 移除原件（净效果等价：文档去内容、fragment 得内容；fragment 内为克隆非原件，documented）。
+        // 克隆正序（保文档序进 fragment）；移除**逆序**——nth-child 结构选择器逆序稳定（移除末尾不前移兄长），
+        // 正序移除会因 sibling 前移致选择器错位（删错节点）。同 deleteContents 的逆序移除。
+        var f = globalThis.document.createDocumentFragment();
+        var kids = this._coveredChildren();
+        if (kids) {
+          for (var i = 0; i < kids.length; i++) {
+            try { f.appendChild(kids[i].cloneNode(true)); } catch (_e) {}
+          }
+          for (var j = kids.length - 1; j >= 0; j--) {
+            try { if (typeof kids[j].remove === 'function') kids[j].remove(); } catch (_e) {}
+          }
+          this.collapse(true);
+        }
+        return f;
+      },
+      cloneContents: function () {
+        // R2929：真实子树克隆（cloneNode deep）到 fragment。元素容器 + offset 区间精确；
+        // 跨容器/文本节点容器回落文本（既有 best-effort）。
+        var f = globalThis.document.createDocumentFragment();
+        var kids = this._coveredChildren();
+        if (kids) {
+          for (var i = 0; i < kids.length; i++) {
+            try { f.appendChild(kids[i].cloneNode(true)); } catch (_e) {}
+          }
+        } else {
+          var t = this.toString();
+          if (t) f.appendChild(globalThis.document.createTextNode(t));
+        }
+        return f;
+      },
+      insertNode: function (node) {
+        // 在 startContainer 的 startOffset 位置插入 node（created 节点）。off < 子数 → insertBefore(ref)，否则
+        // appendChild。复用既有 insertBefore/appendChild（emit mutation）。返回 node（spec）。
+        if (!node || !this.startContainer) return node;
+        try {
+          var kids = this.startContainer.childNodes;
+          var off = this.startOffset | 0;
+          if (kids && off < kids.length && kids[off]) {
+            this.startContainer.insertBefore(node, kids[off]);
+          } else {
+            this.startContainer.appendChild(node);
+          }
+        } catch (_e) {}
+        return node;
+      },
+      cloneRange: function () {
+        // 复制 Range（独立边界，互不影响）。spec AbstractRange 边界 + _mode/commonAncestor。
+        var r = _makeRange();
+        r.startContainer = this.startContainer; r.startOffset = this.startOffset;
+        r.endContainer = this.endContainer; r.endOffset = this.endOffset;
+        r.commonAncestorContainer = this.commonAncestorContainer;
+        r.collapsed = this.collapsed; r._mode = this._mode;
+        return r;
+      },
+      detach: function () { /* no-op（spec 已废弃 Range.detach，保留供老库调用） */ },
       toString: function () {
         // 精确：selectNode/selectNodeContents → 整节点子树文本。
         if (this._mode) { var out = []; _descendantText(this._mode.node, out); return out.join(''); }
@@ -6277,13 +6365,6 @@
         // best-effort：取 commonAncestor 子树文本（跨节点偏移不精确截取）。
         if (this.commonAncestorContainer) { var o2 = []; _descendantText(this.commonAncestorContainer, o2); return o2.join(''); }
         return '';
-      },
-      cloneContents: function () {
-        // best-effort DocumentFragment：仅含选区文本（一个文本节点）。DOM 克隆 defer。
-        var f = globalThis.document.createDocumentFragment();
-        var t = this.toString();
-        if (t) f.appendChild(globalThis.document.createTextNode(t));
-        return f;
       },
       getBoundingClientRect: function () { return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }; },
       getClientRects: function () { return []; }
