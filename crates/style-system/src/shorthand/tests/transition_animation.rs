@@ -455,3 +455,41 @@ fn test_animation_shorthand_single_is_unchanged() {
     assert_eq!(result[1].1, "0.5s");
     assert!(!result[0].1.contains(','));
 }
+
+// R2920：vendor 前缀 shorthand 别名须在简写展开前 canonical 化为标准名，否则透传后 apply
+// 阶段无简写匹配 → no-op。验证 `-webkit-` 前缀简写与标准名产生 byte-identical 展开结果。
+#[test]
+fn test_webkit_transition_alias_expands_as_standard() {
+    let standard = expand_one("transition", "opacity 0.3s ease-in 0.1s", false, (0, 0, 1));
+    let prefixed = expand_one("-webkit-transition", "opacity 0.3s ease-in 0.1s", false, (0, 0, 1));
+    assert_eq!(prefixed, standard);
+    // 无 -webkit- 残留键（全部展开为标准 longhand）。
+    assert!(prefixed.iter().all(|(p, _, _, _)| !p.starts_with("-webkit-")));
+}
+
+#[test]
+fn test_webkit_animation_alias_expands_as_standard() {
+    let standard = expand_one("animation", "spin 1s linear infinite", false, (0, 0, 1));
+    let prefixed = expand_one("-webkit-animation", "spin 1s linear infinite", false, (0, 0, 1));
+    assert_eq!(prefixed, standard);
+    assert!(prefixed.iter().all(|(p, _, _, _)| !p.starts_with("-webkit-")));
+}
+
+#[test]
+fn test_webkit_flex_alias_expands_as_standard() {
+    let standard = expand_one("flex", "1", false, (0, 0, 1));
+    let prefixed = expand_one("-webkit-flex", "1", false, (0, 0, 1));
+    assert_eq!(prefixed, standard);
+    assert!(prefixed.iter().all(|(p, _, _, _)| !p.starts_with("-webkit-")));
+}
+
+/// R2920：未列入安全表的 `-webkit-` 简写别名（历史值语法差异）须**不**canonical 化——
+/// 保持原样透传（后续 no-op），避免误把分歧语法的值当标准解析。`-webkit-border-radius`
+/// 历史 per-corner/elliptical 语义与标准不同故排除。
+#[test]
+fn test_webkit_border_radius_alias_not_canonicalized() {
+    let result = expand_one("-webkit-border-radius", "10px", false, (0, 0, 1));
+    // 未规范化 → 当非简写透传，原样保留 -webkit- 属性名（apply 阶段 no-op）。
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].0, "-webkit-border-radius");
+}

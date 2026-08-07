@@ -245,6 +245,19 @@ pub fn expand_shorthands(declarations: &[MatchingDecl]) -> Vec<MatchingDecl> {
 
 /// 展开单个声明。
 fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    // R2920：vendor 前缀 shorthand 别名 canonical 化——须在简写展开前（即 expand_one 顶部）
+    // 规范化。否则 `-webkit-flex`/`-webkit-transition`/`-webkit-animation` 落到下方 match 无对应
+    // 分支 → 当非简写透传 → 经 cascade canonical_property_name 规范化为标准名时已是简写 →
+    // apply 阶段无简写匹配（apply 只消费 longhand）→ 静默 no-op。longhand -webkit- 别名
+    //（user-select/transform 簇等）在 cascade canonical_property_name 处理（R2919/R2920），不
+    // 经此路径。仅显式列安全 1:1 简写别名（值语法与标准完全一致）；`-webkit-border-radius`/
+    // `-webkit-background` 历史值语法差异（per-corner/elliptical/no-suffix）故排除。
+    let property = match property {
+        "-webkit-flex" => "flex",
+        "-webkit-transition" => "transition",
+        "-webkit-animation" => "animation",
+        other => other,
+    };
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
     // 简写值首尾空白守卫：consume_declaration 的 deferred-ws（R2127）已保证声明值

@@ -259,6 +259,16 @@ fn canonical_property_name(property: &str) -> &str {
         "-webkit-appearance" => "appearance",
         "-webkit-box-shadow" => "box-shadow",
         "-webkit-background-size" => "background-size",
+        // R2920：3D Transforms 簇 vendor 前缀 longhand 别名（值语法与标准完全一致；transform/
+        // origin/perspective/backface/transform-style 均为 longhand，无 shorthand 展开路径，故
+        // cascade canonical 点即可；不依赖外部资源故无 broken-image 风险）。早期移动端优化页
+        // 常仅用 `-webkit-transform` 无 unprefixed 回退，此处使其生效。
+        "-webkit-transform" => "transform",
+        "-webkit-transform-origin" => "transform-origin",
+        "-webkit-transform-style" => "transform-style",
+        "-webkit-backface-visibility" => "backface-visibility",
+        "-webkit-perspective" => "perspective",
+        "-webkit-perspective-origin" => "perspective-origin",
         _ => property,
     }
 }
@@ -534,6 +544,19 @@ mod tests {
         assert_eq!(canonical_property_name("-webkit-appearance"), "appearance");
         assert_eq!(canonical_property_name("-webkit-box-shadow"), "box-shadow");
         assert_eq!(canonical_property_name("-webkit-background-size"), "background-size");
+        // R2920：3D Transforms 簇（值语法与标准一致，均为 longhand）。
+        assert_eq!(canonical_property_name("-webkit-transform"), "transform");
+        assert_eq!(canonical_property_name("-webkit-transform-origin"), "transform-origin");
+        assert_eq!(canonical_property_name("-webkit-transform-style"), "transform-style");
+        assert_eq!(
+            canonical_property_name("-webkit-backface-visibility"),
+            "backface-visibility"
+        );
+        assert_eq!(canonical_property_name("-webkit-perspective"), "perspective");
+        assert_eq!(
+            canonical_property_name("-webkit-perspective-origin"),
+            "perspective-origin"
+        );
         // 标准名原样返回（已 canonical）。
         assert_eq!(canonical_property_name("user-select"), "user-select");
         assert_eq!(canonical_property_name("box-shadow"), "box-shadow");
