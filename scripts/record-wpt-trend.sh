@@ -90,7 +90,10 @@ RC=$?
 set -e
 cat "$OUTPUT_FILE" | tail -40
 
-if [[ $RC -ne 0 ]]; then
+# reftest-upstream 在存在失败 case 时退出 1（门禁语义，2026-08-07 CI 暴露）；
+# trend 记录是报告语义——RC==1 且输出含完整报告即视为「跑完」，继续记录
+#（失败 case 是数据而非错误）。RC 为其他值（崩溃/中断）才是真失败。
+if [[ $RC -ne 0 && $RC -ne 1 ]]; then
   echo "Error: zero-wpt-runner 退出码 $RC（上方为输出尾部）"
   exit $RC
 fi
