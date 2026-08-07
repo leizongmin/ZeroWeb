@@ -1382,6 +1382,55 @@ pub fn crypto_subtle_aes_gcm(mode: &str, key_csv: &str, iv_csv: &str, data_csv: 
     }
 }
 
+/// `crypto.subtle.deriveBits` 的 HKDF 实现（R2958）——HKDF-SHA-1/256/384/512（RFC 5869）。**密钥协商派生**
+/// 高频（TLS 1.3 / MLS / WebRTC DTLS-SRTP / E2EE 协议的输入密钥材料→会话密钥）。PRF = HMAC-<hash>（复用
+/// `compute_hmac`）。Extract：`PRK = HMAC(salt, IKM)`（空 salt → HashLen 零）；Expand：`T(i)=HMAC(PRK, T(i-1)||info||i)`，
+/// `OKM = T(1)||..||T(N)` 截断 dklen。ikm_csv/salt_csv/info_csv = 逗号分隔十进制字节串；返派生密钥 csv。
+/// 供 `__zw_crypto_subtle_hkdf` 回调 → shim `crypto.subtle.deriveBits("HKDF", ...)`。
+/// https://datatracker.ietf.org/doc/html/rfc5869
+pub fn crypto_subtle_hkdf(hash_algo: &str, ikm_csv: &str, salt_csv: &str, info_csv: &str, dklen: usize) -> String {
+    let ikm = bytes_from_csv(ikm_csv);
+    let salt = bytes_from_csv(salt_csv);
+    let info = bytes_from_csv(info_csv);
+    if dklen == 0 {
+        return String::new();
+    }
+    // PRF = HMAC-<hash>；block_size / hash_len 按 hash（SHA-1/256=64；SHA-384/512=128）。
+    let (block_size, hash_len): (usize, usize) = match hash_algo.to_ascii_uppercase().as_str() {
+        "SHA-1" | "SHA1" => (64, 20),
+        "SHA-256" | "SHA256" => (64, 32),
+        "SHA-384" | "SHA384" => (128, 48),
+        "SHA-512" | "SHA512" => (128, 64),
+        _ => return String::new(),
+    };
+    let hmac: Box<dyn Fn(&[u8], &[u8]) -> Vec<u8>> = match hash_algo.to_ascii_uppercase().as_str() {
+        "SHA-1" | "SHA1" => Box::new(|k: &[u8], d: &[u8]| compute_hmac::<sha1::Sha1>(k, d, block_size)),
+        "SHA-256" | "SHA256" => Box::new(|k: &[u8], d: &[u8]| compute_hmac::<sha2::Sha256>(k, d, block_size)),
+        "SHA-384" | "SHA384" => Box::new(|k: &[u8], d: &[u8]| compute_hmac::<sha2::Sha384>(k, d, block_size)),
+        "SHA-512" | "SHA512" => Box::new(|k: &[u8], d: &[u8]| compute_hmac::<sha2::Sha512>(k, d, block_size)),
+        _ => unreachable!(),
+    };
+    // Extract：空 salt → HashLen 零（RFC 5869 §2.2）；PRK = HMAC(salt, IKM)。
+    let salt_filled = if salt.is_empty() { vec![0u8; hash_len] } else { salt };
+    let prk = hmac(&salt_filled, &ikm);
+    // Expand：N = ceil(dklen / hash_len)（≤ 255，RFC 5869 §2.3）；T(i)=HMAC(PRK, T(i-1)||info||i)。
+    let n = dklen.div_ceil(hash_len);
+    if n > 255 {
+        return String::new();
+    }
+    let mut t: Vec<u8> = Vec::new();
+    let mut okm: Vec<u8> = Vec::with_capacity(dklen);
+    for i in 1..=n {
+        let mut msg = t.clone();
+        msg.extend_from_slice(&info);
+        msg.push(i as u8);
+        t = hmac(&prk, &msg);
+        okm.extend_from_slice(&t);
+    }
+    okm.truncate(dklen);
+    okm.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
+}
+
 /// canvas 颜色串 → render Color（复用 CSS 颜色解析：named/hex/rgb/hsl 等）。解析失败回落黑色。
 fn parse_canvas_color(s: &str) -> zero_render_foundation::color::Color {
     use zero_render_foundation::color::Color;
@@ -2959,6 +3008,20 @@ pub fn register_dom_callbacks(
             let data = args.get(3).map(String::as_str).unwrap_or("");
             let aad = args.get(4).map(String::as_str).unwrap_or("");
             crypto_subtle_aes_gcm(mode, key, iv, data, aad)
+        }),
+    );
+
+    // `crypto.subtle.deriveBits("HKDF", ...)`（R2958）——HKDF-SHA-1/256/384/512（RFC 5869）。
+    // arg[0]=hash 名，arg[1]=ikm csv，arg[2]=salt csv，arg[3]=info csv，arg[4]=dklen（字节）。返派生密钥 csv。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_hkdf",
+        Box::new(|args: &[String]| -> String {
+            let hash = args.first().map(String::as_str).unwrap_or("");
+            let ikm = args.get(1).map(String::as_str).unwrap_or("");
+            let salt = args.get(2).map(String::as_str).unwrap_or("");
+            let info = args.get(3).map(String::as_str).unwrap_or("");
+            let dklen: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
+            crypto_subtle_hkdf(hash, ikm, salt, info, dklen)
         }),
     );
 

@@ -1170,6 +1170,9 @@
     if (name === 'AES-GCM') {
       return { name: 'AES-GCM' };
     }
+    if (name === 'HKDF') {
+      return { name: 'HKDF' };
+    }
     return null;
   }
 
@@ -1273,7 +1276,7 @@
         if (algo.name === 'AES-GCM' && raw.length !== 16 && raw.length !== 32) {
           reject(new DOMException('AES-GCM key must be 128 or 256 bits (16/32 bytes)', 'DataError')); return;
         }
-        var allowedUsages = algo.name === 'PBKDF2' ? ['deriveBits', 'deriveKey']
+        var allowedUsages = (algo.name === 'PBKDF2' || algo.name === 'HKDF') ? ['deriveBits', 'deriveKey']
           : algo.name === 'AES-GCM' ? ['encrypt', 'decrypt']
           : ['sign', 'verify'];
         var u = _zw_normalizeUsages(usages, allowedUsages);
@@ -1322,14 +1325,17 @@
         resolve(!!ok);
       });
     },
-    // deriveBits(algorithm, key, length) → Promise<ArrayBuffer>。PBKDF2：algorithm {name:"PBKDF2", salt, iterations, hash}，
-    // key = importKey("raw", password, {name:"PBKDF2"}) 所得；length 为**位数**（须正 8 倍数）；key.usages 须含 "deriveBits"。
-    // host `__zw_crypto_subtle_pbkdf2(hash, keyCsv, saltCsv, iterations, dkLen)`。https://w3c.github.io/webcrypto/#SubtleCrypto-method-deriveBits
+    // deriveBits(algorithm, key, length) → Promise<ArrayBuffer>。length 为**位数**（须正 8 倍数）；key.usages 须含 "deriveBits"。
+    // PBKDF2：algorithm {name:"PBKDF2", salt, iterations, hash}，key = importKey("raw", password, {name:"PBKDF2"})。
+    //   host `__zw_crypto_subtle_pbkdf2(hash, keyCsv, saltCsv, iterations, dkLen)`。
+    // HKDF（RFC 5869）：algorithm {name:"HKDF", salt?, info?, hash}，key = importKey("raw", ikm, {name:"HKDF"})。
+    //   host `__zw_crypto_subtle_hkdf(hash, keyCsv, saltCsv, infoCsv, dkLen)`（空 salt → host 填 HashLen 零）。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-deriveBits  https://datatracker.ietf.org/doc/html/rfc5869
     deriveBits: function (algorithm, key, length) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
         name = String(name == null ? '' : name).toUpperCase();
-        if (name !== 'PBKDF2' || !key || key.algorithm.name !== 'PBKDF2') {
+        if ((name !== 'PBKDF2' && name !== 'HKDF') || !key || key.algorithm.name !== name) {
           reject(new DOMException('Unsupported deriveBits algorithm or key', 'NotSupportedError')); return;
         }
         if (!key.usages || key.usages.indexOf('deriveBits') < 0) {
@@ -1338,18 +1344,27 @@
         if (typeof length !== 'number' || length <= 0 || length % 8 !== 0) {
           reject(new DOMException('deriveBits length must be a positive multiple of 8', 'OperationError')); return;
         }
-        var hash = _zw_hashName(typeof algorithm === 'object' ? algorithm.hash : null);
-        var iters = Math.floor(Number(algorithm.iterations));
-        var saltBytes = _zw_bufToBytes(algorithm.salt);
-        if (!hash || !(iters > 0)) {
-          reject(new DOMException('deriveBits PBKDF2 requires salt/iterations/hash', 'OperationError')); return;
-        }
-        if (typeof __zw_crypto_subtle_pbkdf2 !== 'function') {
-          reject(new DOMException('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
-        }
         var dkLen = length / 8;
         var keyCsv = (key._raw || []).map(String).join(',');
-        var out = __zw_crypto_subtle_pbkdf2(hash, keyCsv, saltBytes.join(','), String(iters), String(dkLen));
+        var hash = _zw_hashName(typeof algorithm === 'object' ? algorithm.hash : null);
+        var saltBytes = _zw_bufToBytes(algorithm.salt);
+        var out = '';
+        if (name === 'PBKDF2') {
+          var iters = Math.floor(Number(algorithm.iterations));
+          if (!hash || !(iters > 0)) {
+            reject(new DOMException('deriveBits PBKDF2 requires salt/iterations/hash', 'OperationError')); return;
+          }
+          if (typeof __zw_crypto_subtle_pbkdf2 !== 'function') {
+            reject(new DOMException('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
+          }
+          out = __zw_crypto_subtle_pbkdf2(hash, keyCsv, saltBytes.join(','), String(iters), String(dkLen));
+        } else { // HKDF
+          if (!hash || typeof __zw_crypto_subtle_hkdf !== 'function') {
+            reject(new DOMException('deriveBits HKDF requires hash + host callback', 'NotSupportedError')); return;
+          }
+          var infoBytes = _zw_bufToBytes(algorithm.info);
+          out = __zw_crypto_subtle_hkdf(hash, keyCsv, saltBytes.join(','), infoBytes.join(','), String(dkLen));
+        }
         if (!out) {
           reject(new DOMException("Unsupported deriveBits hash: '" + hash + "'", 'NotSupportedError')); return;
         }

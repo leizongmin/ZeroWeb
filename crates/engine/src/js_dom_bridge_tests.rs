@@ -7956,6 +7956,143 @@ fn test_crypto_subtle_aes_gcm_r2957() {
 }
 
 #[test]
+fn test_crypto_subtle_hkdf_r2958() {
+    // R2958：crypto.subtle deriveBits("HKDF", ...)——HKDF-SHA-1/256/384/512（RFC 5869）。密钥协商派生
+    // （TLS 1.3 / MLS / WebRTC DTLS-SRTP / E2EE 协议）。复用 R2955 compute_hmac 作 PRF。TDD 用 RFC 5869
+    // TC1（带 salt+info）/TC3（空 salt+info，测 HashLen 零填充）SHA-256 向量锚定 + 错误路径。
+    // https://datatracker.ietf.org/doc/html/rfc5869#section-A  https://w3c.github.io/webcrypto/
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "function hex2b(h){var a=[];for(var i=0;i<h.length;i+=2)a.push(parseInt(h.substr(i,2),16));return new Uint8Array(a);}\
+             function b2hex(u){var s='';for(var i=0;i<u.length;i++){s+=('0'+u[i].toString(16)).slice(-2);}return s;}",
+        )
+        .unwrap();
+
+    // RFC 5869 TC1：IKM=0x0b×22，salt=000102...0c，info=f0f1...f9，L=42 → OKM=3cb25f25...185865。
+    let mut hex_dk = |derive: &str| -> String {
+        sandbox.execute(derive).unwrap();
+        sandbox.execute("b2hex(globalThis.__dk)").unwrap().value
+    };
+    assert_eq!(
+        hex_dk(
+            "globalThis.__dk='(pending)';\
+             var IKM='0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b';\
+             var SALT='000102030405060708090a0b0c';\
+             var INFO='f0f1f2f3f4f5f6f7f8f9';\
+             crypto.subtle.importKey('raw', hex2b(IKM), {name:'HKDF'}, false, ['deriveBits'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'HKDF',hash:'SHA-256',salt:hex2b(SALT),info:hex2b(INFO)}, k, 336); })\
+               .then(function(b){ globalThis.__dk = new Uint8Array(b); });"
+        ),
+        "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
+    );
+    // RFC 5869 TC3：IKM=0x0b×22，空 salt + 空 info（host 填 HashLen 零），L=42 → OKM=8da4e775...a96c8。
+    assert_eq!(
+        hex_dk(
+            "globalThis.__dk='(pending)';\
+             var IKM='0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b';\
+             crypto.subtle.importKey('raw', hex2b(IKM), {name:'HKDF'}, false, ['deriveBits'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'HKDF',hash:'SHA-256'}, k, 336); })\
+               .then(function(b){ globalThis.__dk = new Uint8Array(b); });"
+        ),
+        "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8"
+    );
+    // HKDF-SHA-1（RFC 5869 TC4 等价输入）：IKM=0x0b×22，salt=000102...0c，info=f0f1...f9，L=42 → OKM。
+    let sha1_dk = hex_dk(
+        "globalThis.__dk='(pending)';\
+         var IKM='0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b';\
+         crypto.subtle.importKey('raw', hex2b(IKM), {name:'HKDF'}, false, ['deriveBits'])\
+           .then(function(k){ return crypto.subtle.deriveBits({name:'HKDF',hash:'SHA-1',salt:hex2b('000102030405060708090a0b0c'),info:hex2b('f0f1f2f3f4f5f6f7f8f9')}, k, 336); })\
+           .then(function(b){ globalThis.__dk = new Uint8Array(b); });",
+    );
+    assert_eq!(
+        sha1_dk,
+        "d6000ffb5b50bd3970b260017798fb9c8df9ce2e2c16b6cd709cca07dc3cf9cf26d6c6d750d0aaf5ac94"
+    );
+
+    // importKey 字段：HKDF CryptoKey type="secret"，algorithm.name="HKDF"，usages。
+    sandbox
+        .execute(
+            "globalThis.__k=null;\
+             crypto.subtle.importKey('raw', new Uint8Array(4), {name:'HKDF'}, false, ['deriveBits','deriveKey'])\
+               .then(function(k){ globalThis.__k = k; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute(
+                "String(globalThis.__k && globalThis.__k.type === 'secret'\
+                   && globalThis.__k.algorithm.name === 'HKDF'\
+                   && globalThis.__k.usages.join(',') === 'deriveBits,deriveKey')"
+            )
+            .unwrap()
+            .value,
+        "true"
+    );
+
+    // deriveBits 缺 "deriveBits" usage（仅 'deriveKey'）→ reject InvalidAccessError。
+    sandbox
+        .execute(
+            "globalThis.__e1='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(4), {name:'HKDF'}, false, ['deriveKey'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'HKDF',hash:'SHA-256'}, k, 256); })\
+               .catch(function(e){ globalThis.__e1 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e1)").unwrap().value,
+        "InvalidAccessError"
+    );
+    // importKey HKDF 非法 usage（'sign' 不属 {deriveBits,deriveKey}）→ reject SyntaxError。
+    sandbox
+        .execute(
+            "globalThis.__e2='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(4), {name:'HKDF'}, false, ['sign'])\
+               .catch(function(e){ globalThis.__e2 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__e2)").unwrap().value, "SyntaxError");
+    // deriveBits algorithm/key 不匹配（PBKDF2 key 用于 HKDF）→ reject NotSupportedError。
+    sandbox
+        .execute(
+            "globalThis.__e3='(pending)';\
+             crypto.subtle.importKey('raw', 'p', {name:'PBKDF2'}, false, ['deriveBits'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'HKDF',hash:'SHA-256'}, k, 256); })\
+               .catch(function(e){ globalThis.__e3 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e3)").unwrap().value,
+        "NotSupportedError"
+    );
+    // length 非 8 倍数（17）→ reject OperationError。
+    sandbox
+        .execute(
+            "globalThis.__e4='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(4), {name:'HKDF'}, false, ['deriveBits'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'HKDF',hash:'SHA-256'}, k, 17); })\
+               .catch(function(e){ globalThis.__e4 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e4)").unwrap().value,
+        "OperationError"
+    );
+}
+
+#[test]
 fn test_headers_r2794() {
     // R2794：Headers（HTTP 头集合，fetch/SW/header-map 高频）。镜像 FormData，header name 小写归一 +
     // 多值 append 用 ', ' 合并 + getSetCookie 特例。纯 JS，零 host 回调。
