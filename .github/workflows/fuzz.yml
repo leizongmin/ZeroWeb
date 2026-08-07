@@ -1,0 +1,50 @@
+name: Fuzz
+
+# CSS 解析器模糊测试（C1：调研建议落地）
+# 每周日定时跑 fuzz_css_tokenizer / fuzz_css_parser 各 10 分钟；
+# 发现崩溃 → job 失败 + 崩溃样本上传 artifact（修复后作为回归用例）。
+#
+# 说明：cargo-fuzz 需要 nightly toolchain；fuzz crate 独立于 workspace。
+
+on:
+  schedule:
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Fuzz CSS tokenizer (10 min)
+        run: |
+          cd crates/css-parser/fuzz
+          cargo +nightly fuzz run fuzz_css_tokenizer -- -max_total_time=600 -timeout=5 -max_len=4096
+
+      - name: Fuzz CSS parser (10 min)
+        run: |
+          cd crates/css-parser/fuzz
+          cargo +nightly fuzz run fuzz_css_parser -- -max_total_time=600 -timeout=5 -max_len=8192
+
+      - name: Upload crash artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: crates/css-parser/fuzz/artifacts/
+          retention-days: 14
