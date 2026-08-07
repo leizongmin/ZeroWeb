@@ -1235,6 +1235,62 @@
     return res;
   }
 
+  // 派生核心（deriveBits/deriveKey 共用）：PBKDF2/HKDF 分派 + host 调用 + csv→arr，**不做 usage 校验**
+  //（usage 校验由调用方负责——deriveBits 检 "deriveBits"，deriveKey 检 "deriveKey"）。
+  function _zw_performDerive(algorithm, key, length) {
+    return new Promise(function (resolve, reject) {
+      var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
+      name = String(name == null ? '' : name).toUpperCase();
+      var dkLen = length / 8;
+      var keyCsv = (key._raw || []).map(String).join(',');
+      var hash = _zw_hashName(typeof algorithm === 'object' ? algorithm.hash : null);
+      var saltBytes = _zw_bufToBytes(algorithm.salt);
+      var out = '';
+      if (name === 'PBKDF2') {
+        var iters = Math.floor(Number(algorithm.iterations));
+        if (!hash || !(iters > 0)) {
+          reject(new DOMException('PBKDF2 requires salt/iterations/hash', 'OperationError')); return;
+        }
+        if (typeof __zw_crypto_subtle_pbkdf2 !== 'function') {
+          reject(new DOMException('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
+        }
+        out = __zw_crypto_subtle_pbkdf2(hash, keyCsv, saltBytes.join(','), String(iters), String(dkLen));
+      } else { // HKDF
+        if (!hash || typeof __zw_crypto_subtle_hkdf !== 'function') {
+          reject(new DOMException('HKDF requires hash + host callback', 'NotSupportedError')); return;
+        }
+        var infoBytes = _zw_bufToBytes(algorithm.info);
+        out = __zw_crypto_subtle_hkdf(hash, keyCsv, saltBytes.join(','), infoBytes.join(','), String(dkLen));
+      }
+      if (!out) {
+        reject(new DOMException("Unsupported deriveBits hash: '" + hash + "'", 'NotSupportedError')); return;
+      }
+      var parts = out.split(',');
+      var arr = new Uint8Array(parts.length);
+      for (var i = 0; i < parts.length; i++) arr[i] = +parts[i];
+      resolve(arr);
+    });
+  }
+
+  // 派生/生成的目标密钥长度（位）。AES → 256（spec 默认）；HMAC → hash 块大小（SHA-1/256=512，SHA-384/512=1024）。
+  function _zw_keyLengthBits(algo) {
+    var n = String((typeof algo === 'object' && algo) ? algo.name : algo).toUpperCase();
+    if (n === 'AES-GCM' || n === 'AES-CBC' || n === 'AES-CTR' || n === 'AES-KW') return 256;
+    if (n === 'HMAC') {
+      var h = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
+      return (h === 'SHA-384' || h === 'SHA-512') ? 1024 : 512;
+    }
+    return 0; // 未知
+  }
+
+  // n 个随机字节（Uint8Array）。复用 crypto.getRandomValues（R2770，**Math.random 非 CSPRNG**——安全敏感场景已知限制）。
+  function _zw_randomBytes(n) {
+    var a = new Uint8Array(n);
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(a);
+    else for (var i = 0; i < n; i++) a[i] = (Math.random() * 256) | 0;
+    return a;
+  }
+
   globalThis.crypto.subtle = globalThis.crypto.subtle || {
     digest: function (algo, data) {
       var a = (typeof algo === 'object' && algo) ? algo.name : algo;
@@ -1344,34 +1400,28 @@
         if (typeof length !== 'number' || length <= 0 || length % 8 !== 0) {
           reject(new DOMException('deriveBits length must be a positive multiple of 8', 'OperationError')); return;
         }
-        var dkLen = length / 8;
-        var keyCsv = (key._raw || []).map(String).join(',');
-        var hash = _zw_hashName(typeof algorithm === 'object' ? algorithm.hash : null);
-        var saltBytes = _zw_bufToBytes(algorithm.salt);
-        var out = '';
-        if (name === 'PBKDF2') {
-          var iters = Math.floor(Number(algorithm.iterations));
-          if (!hash || !(iters > 0)) {
-            reject(new DOMException('deriveBits PBKDF2 requires salt/iterations/hash', 'OperationError')); return;
-          }
-          if (typeof __zw_crypto_subtle_pbkdf2 !== 'function') {
-            reject(new DOMException('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
-          }
-          out = __zw_crypto_subtle_pbkdf2(hash, keyCsv, saltBytes.join(','), String(iters), String(dkLen));
-        } else { // HKDF
-          if (!hash || typeof __zw_crypto_subtle_hkdf !== 'function') {
-            reject(new DOMException('deriveBits HKDF requires hash + host callback', 'NotSupportedError')); return;
-          }
-          var infoBytes = _zw_bufToBytes(algorithm.info);
-          out = __zw_crypto_subtle_hkdf(hash, keyCsv, saltBytes.join(','), infoBytes.join(','), String(dkLen));
+        _zw_performDerive(algorithm, key, length).then(resolve, reject);
+      });
+    },
+    // deriveKey(algorithm, baseKey, derivedKeyAlgo, extractable, usages) → Promise<CryptoKey>。
+    // 按 derivedKeyAlgo 决定派生长度（AES→256，HMAC→块大小），deriveBits 后 importKey（baseKey.usages 须含 "deriveKey"）。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-deriveKey
+    deriveKey: function (algorithm, baseKey, derivedKeyAlgo, extractable, usages) {
+      return new Promise(function (resolve, reject) {
+        var dka = _zw_normalizeImportAlgorithm(derivedKeyAlgo);
+        if (!dka) {
+          reject(new DOMException('Unsupported derived key algorithm', 'NotSupportedError')); return;
         }
-        if (!out) {
-          reject(new DOMException("Unsupported deriveBits hash: '" + hash + "'", 'NotSupportedError')); return;
+        var lenBits = _zw_keyLengthBits(dka);
+        if (!lenBits) {
+          reject(new DOMException('Cannot determine derived key length', 'NotSupportedError')); return;
         }
-        var parts = out.split(',');
-        var arr = new Uint8Array(parts.length);
-        for (var i = 0; i < parts.length; i++) arr[i] = +parts[i];
-        resolve(arr);
+        if (!baseKey || !baseKey.usages || baseKey.usages.indexOf('deriveKey') < 0) {
+          reject(new DOMException('Key usages do not include "deriveKey"', 'InvalidAccessError')); return;
+        }
+        _zw_performDerive(algorithm, baseKey, lenBits).then(function (bits) {
+          return crypto.subtle.importKey('raw', bits, dka, extractable, usages);
+        }).then(resolve, reject);
       });
     },
     // encrypt(algorithm, key, data) → Promise<ArrayBuffer>。AES-GCM：algorithm {name:"AES-GCM", iv, additionalData?, tagLength?}，
@@ -1404,6 +1454,43 @@
         }
         var arr = _zw_aesGcmCall('decrypt', algorithm, key, _zw_bufToBytes(data), reject);
         if (arr) resolve(arr);
+      });
+    },
+    // generateKey(algorithm, extractable, usages) → Promise<CryptoKey>。AES-GCM → 256 位随机密钥；
+    // HMAC → hash 块大小随机密钥。**随机源 = crypto.getRandomValues（Math.random 非 CSPRNG，已知限制）**。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey
+    generateKey: function (algorithm, extractable, usages) {
+      return new Promise(function (resolve, reject) {
+        var algo = _zw_normalizeImportAlgorithm(algorithm);
+        if (!algo) {
+          reject(new DOMException('Unsupported or missing algorithm', 'NotSupportedError')); return;
+        }
+        if (algo.name === 'AES-GCM') {
+          var u = _zw_normalizeUsages(usages, ['encrypt', 'decrypt']);
+          if (!u) { reject(new DOMException('Invalid key usages for AES-GCM', 'SyntaxError')); return; }
+          resolve(new CryptoKey('secret', extractable, algo, u, Array.from(_zw_randomBytes(32))));
+        } else if (algo.name === 'HMAC') {
+          var hu = _zw_normalizeUsages(usages, ['sign', 'verify']);
+          if (!hu) { reject(new DOMException('Invalid key usages for HMAC', 'SyntaxError')); return; }
+          resolve(new CryptoKey('secret', extractable, algo, hu, Array.from(_zw_randomBytes(_zw_keyLengthBits(algo) / 8))));
+        } else {
+          reject(new DOMException('Unsupported generateKey algorithm', 'NotSupportedError'));
+        }
+      });
+    },
+    // exportKey(format, key) → Promise<ArrayBuffer>。仅 "raw"（jwk defer）；非 extractable key → reject。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-exportKey
+    exportKey: function (format, key) {
+      return new Promise(function (resolve, reject) {
+        var fmt = String(format == null ? '' : format).toUpperCase();
+        if (fmt !== 'RAW') {
+          reject(new DOMException("Unsupported exportKey format: '" + fmt + "' (only 'raw' supported)", 'NotSupportedError')); return;
+        }
+        if (!key || !key.extractable) {
+          reject(new DOMException('Key is not extractable', 'InvalidAccessError')); return;
+        }
+        var raw = key._raw || [];
+        resolve(new Uint8Array(raw));
       });
     }
   };

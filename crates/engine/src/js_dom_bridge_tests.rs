@@ -8093,6 +8093,163 @@ fn test_crypto_subtle_hkdf_r2958() {
 }
 
 #[test]
+fn test_crypto_subtle_keyops_r2959() {
+    // R2959：crypto.subtle generateKey / deriveKey / exportKey——补全 SubtleCrypto 方法表面（全 10 方法）。
+    // generateKey（AES-GCM 256 位 / HMAC 块大小随机）、deriveKey（deriveBits + importKey 包装，AES→256/HMAC→块大小）、
+    // exportKey（raw，非 extractable 拒绝）。round-trip + deriveKey↔deriveBits 一致 + 错误路径。
+    // https://w3c.github.io/webcrypto/
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // generateKey AES-GCM：CryptoKey type="secret" + 32 字节随机 + encrypt/decrypt round-trip。
+    sandbox
+        .execute(
+            "globalThis.__rt='(pending)'; globalThis.__klen='(pending)';\
+             crypto.subtle.generateKey({name:'AES-GCM'}, true, ['encrypt','decrypt'])\
+               .then(function(k){ globalThis.__klen = String(k._raw.length); globalThis.__genk = k;\
+                 var iv=new Uint8Array([1,2,3,4,5,6,7,8,9,10,11,12]);\
+                 return crypto.subtle.encrypt({name:'AES-GCM', iv:iv}, k, new TextEncoder().encode('hi')); })\
+               .then(function(ct){ globalThis.__ct = new Uint8Array(ct);\
+                 return crypto.subtle.decrypt({name:'AES-GCM', iv:new Uint8Array([1,2,3,4,5,6,7,8,9,10,11,12])}, globalThis.__genk, globalThis.__ct); })\
+               .then(function(pt){ globalThis.__rt = new TextDecoder().decode(pt); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__klen)").unwrap().value, "32");
+    assert_eq!(sandbox.execute("String(globalThis.__rt)").unwrap().value, "hi");
+    // generateKey HMAC{SHA-256}：64 字节随机（块大小）+ sign/verify round-trip。
+    sandbox
+        .execute(
+            "globalThis.__hmac='(pending)';\
+             crypto.subtle.generateKey({name:'HMAC',hash:'SHA-256'}, true, ['sign','verify'])\
+               .then(function(k){ globalThis.__hk = k; return crypto.subtle.sign('HMAC', k, new TextEncoder().encode('msg')); })\
+               .then(function(sig){ globalThis.__sig = new Uint8Array(sig);\
+                 return crypto.subtle.verify('HMAC', globalThis.__hk, globalThis.__sig, new TextEncoder().encode('msg')); })\
+               .then(function(ok){ globalThis.__hmac = String(ok); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__hmac)").unwrap().value, "true");
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hk && globalThis.__hk._raw.length)")
+            .unwrap()
+            .value,
+        "64"
+    );
+
+    // deriveKey PBKDF2→AES-GCM：派生密钥 encrypt/decrypt round-trip + exportKey(raw) == deriveBits(256)（证内部派 256 位）。
+    sandbox
+        .execute(
+            "globalThis.__drt='(pending)'; globalThis.__dcons='(pending)';\
+             var params={name:'PBKDF2',hash:'SHA-256',salt:new TextEncoder().encode('salt'),iterations:100};\
+             crypto.subtle.importKey('raw', new TextEncoder().encode('password'), {name:'PBKDF2'}, false, ['deriveKey','deriveBits'])\
+               .then(function(pw){\
+                 var p=Promise.resolve(crypto.subtle.deriveKey(params, pw, {name:'AES-GCM'}, true, ['encrypt','decrypt']));\
+                 var b=Promise.resolve(crypto.subtle.deriveBits(params, pw, 256));\
+                 return Promise.all([p,b]);\
+               }).then(function(r){ var dk=r[0], bits=new Uint8Array(r[1]); globalThis.__dk=dk;\
+                 // 一致：deriveKey 派 256 位 == deriveBits(256)（逐字节比）。
+                 return crypto.subtle.exportKey('raw', dk).then(function(ex){\
+                   var a=new Uint8Array(ex); var ok=(a.length===bits.length);\
+                   for(var i=0;ok&&i<a.length;i++){if(a[i]!==bits[i])ok=false;} globalThis.__dcons=String(ok); });\
+               }).then(function(){\
+                 var iv=new Uint8Array([1,2,3,4,5,6,7,8,9,10,11,12]);\
+                 return crypto.subtle.encrypt({name:'AES-GCM', iv:iv}, globalThis.__dk, new TextEncoder().encode('secret'));\
+               }).then(function(ct){ globalThis.__dct = new Uint8Array(ct);\
+                 return crypto.subtle.decrypt({name:'AES-GCM', iv:new Uint8Array([1,2,3,4,5,6,7,8,9,10,11,12])}, globalThis.__dk, globalThis.__dct); })\
+               .then(function(pt){ globalThis.__drt = new TextDecoder().decode(pt); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__dcons)").unwrap().value, "true");
+    assert_eq!(sandbox.execute("String(globalThis.__drt)").unwrap().value, "secret");
+    // deriveKey PBKDF2→HMAC：派生密钥 sign round-trip（verify true）。
+    sandbox
+        .execute(
+            "globalThis.__dsign='(pending)';\
+             var params={name:'PBKDF2',hash:'SHA-256',salt:'salt',iterations:50};\
+             crypto.subtle.importKey('raw', 'pw', {name:'PBKDF2'}, false, ['deriveKey'])\
+               .then(function(pw){ return crypto.subtle.deriveKey(params, pw, {name:'HMAC',hash:'SHA-256'}, false, ['sign','verify']); })\
+               .then(function(k){ globalThis.__dhk=k; return crypto.subtle.sign('HMAC', k, 'data'); })\
+               .then(function(sig){ return crypto.subtle.verify('HMAC', globalThis.__dhk, new Uint8Array(sig), 'data'); })\
+               .then(function(ok){ globalThis.__dsign = String(ok); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__dsign)").unwrap().value, "true");
+
+    // exportKey raw：返 _raw（== importKey 输入）。
+    sandbox
+        .execute(
+            "globalThis.__ex='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]), {name:'AES-GCM'}, true, ['encrypt'])\
+               .then(function(k){ return crypto.subtle.exportKey('raw', k); })\
+               .then(function(b){ var a=new Uint8Array(b); var s=''; for(var i=0;i<a.length;i++) s+=a[i]+','; globalThis.__ex=s; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ex)").unwrap().value,
+        "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,"
+    );
+    // exportKey 非 extractable → reject InvalidAccessError。
+    sandbox
+        .execute(
+            "globalThis.__e1='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['encrypt'])\
+               .then(function(k){ return crypto.subtle.exportKey('raw', k); })\
+               .catch(function(e){ globalThis.__e1 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e1)").unwrap().value,
+        "InvalidAccessError"
+    );
+    // exportKey 非 raw 格式（'jwk'）→ reject NotSupportedError。
+    sandbox
+        .execute(
+            "globalThis.__e2='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, true, ['encrypt'])\
+               .then(function(k){ return crypto.subtle.exportKey('jwk', k); })\
+               .catch(function(e){ globalThis.__e2 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e2)").unwrap().value,
+        "NotSupportedError"
+    );
+    // deriveKey baseKey 缺 "deriveKey" usage（仅 'deriveBits'）→ reject InvalidAccessError。
+    sandbox
+        .execute(
+            "globalThis.__e3='(pending)';\
+             var params={name:'PBKDF2',hash:'SHA-256',salt:'s',iterations:10};\
+             crypto.subtle.importKey('raw', 'p', {name:'PBKDF2'}, false, ['deriveBits'])\
+               .then(function(pw){ return crypto.subtle.deriveKey(params, pw, {name:'AES-GCM'}, false, ['encrypt']); })\
+               .catch(function(e){ globalThis.__e3 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e3)").unwrap().value,
+        "InvalidAccessError"
+    );
+    // generateKey 非法 usage（AES-GCM 'sign'）→ reject SyntaxError。
+    sandbox
+        .execute(
+            "globalThis.__e4='(pending)';\
+             crypto.subtle.generateKey({name:'AES-GCM'}, true, ['sign'])\
+               .catch(function(e){ globalThis.__e4 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__e4)").unwrap().value, "SyntaxError");
+}
+
+#[test]
 fn test_headers_r2794() {
     // R2794：Headers（HTTP 头集合，fetch/SW/header-map 高频）。镜像 FormData，header name 小写归一 +
     // 多值 append 用 ', ' 合并 + getSetCookie 特例。纯 JS，零 host 回调。
