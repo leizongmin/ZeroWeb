@@ -1167,6 +1167,9 @@
     if (name === 'PBKDF2') {
       return { name: 'PBKDF2' };
     }
+    if (name === 'AES-GCM') {
+      return { name: 'AES-GCM' };
+    }
     return null;
   }
 
@@ -1204,6 +1207,31 @@
     return arr;
   }
 
+  // AES-GCM 调用（encrypt/decrypt 共用）：校验 iv(12B)/tagLength(128)/host 后调 `__zw_crypto_subtle_aes_gcm`，
+  // 返 Uint8Array；失败调 reject 返 null。AAD 经 algorithm.additionalData（可选）。
+  function _zw_aesGcmCall(op, algorithm, key, dataBytes, reject) {
+    var iv = _zw_bufToBytes(algorithm.iv);
+    if (iv.length !== 12) {
+      reject(new DOMException('AES-GCM iv must be 12 bytes (96 bits)', 'OperationError')); return null;
+    }
+    if (algorithm.tagLength != null && (algorithm.tagLength | 0) !== 128) {
+      reject(new DOMException('Only AES-GCM tagLength=128 supported', 'NotSupportedError')); return null;
+    }
+    var aadBytes = algorithm.additionalData != null ? _zw_bufToBytes(algorithm.additionalData) : [];
+    if (typeof __zw_crypto_subtle_aes_gcm !== 'function') {
+      reject(new DOMException('crypto.subtle AES-GCM requires host callback', 'NotSupportedError')); return null;
+    }
+    var keyCsv = (key._raw || []).map(String).join(',');
+    var out = __zw_crypto_subtle_aes_gcm(op, keyCsv, iv.join(','), dataBytes.join(','), aadBytes.join(','));
+    if (!out) {
+      reject(new DOMException('AES-GCM ' + op + ' failed (bad key/iv/tag)', 'OperationError')); return null;
+    }
+    var parts = out.split(',');
+    var res = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) res[i] = +parts[i];
+    return res;
+  }
+
   globalThis.crypto.subtle = globalThis.crypto.subtle || {
     digest: function (algo, data) {
       var a = (typeof algo === 'object' && algo) ? algo.name : algo;
@@ -1227,7 +1255,8 @@
     },
     // importKey(format, keyData, algorithm, extractable, usages) → Promise<CryptoKey>。HMAC：format 须 "raw"
     //（jwk/pkcs8/spki defer）；algorithm {name:"HMAC",hash:"SHA-XXX"}，usages ⊆ {sign,verify}。PBKDF2：
-    // {name:"PBKDF2"}，usages ⊆ {deriveBits,deriveKey}。含非法 usage → SyntaxError。
+    // {name:"PBKDF2"}，usages ⊆ {deriveBits,deriveKey}。AES-GCM：{name:"AES-GCM"}，usages ⊆ {encrypt,decrypt}，
+    // key 须 128/256 位（16/32 字节）。含非法 usage → SyntaxError，bad key 长度 → DataError。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-importKey
     importKey: function (format, keyData, algorithm, extractable, usages) {
       return new Promise(function (resolve, reject) {
@@ -1239,12 +1268,18 @@
         if (fmt !== 'RAW') {
           reject(new DOMException("Unsupported importKey format: '" + fmt + "' (only 'raw' supported)", 'NotSupportedError')); return;
         }
-        var allowedUsages = algo.name === 'PBKDF2' ? ['deriveBits', 'deriveKey'] : ['sign', 'verify'];
+        var raw = _zw_bufToBytes(keyData);
+        // AES-GCM 密钥长度校验（spec：128/256 位；192 位本实现不支持）。
+        if (algo.name === 'AES-GCM' && raw.length !== 16 && raw.length !== 32) {
+          reject(new DOMException('AES-GCM key must be 128 or 256 bits (16/32 bytes)', 'DataError')); return;
+        }
+        var allowedUsages = algo.name === 'PBKDF2' ? ['deriveBits', 'deriveKey']
+          : algo.name === 'AES-GCM' ? ['encrypt', 'decrypt']
+          : ['sign', 'verify'];
         var u = _zw_normalizeUsages(usages, allowedUsages);
         if (!u) {
           reject(new DOMException("Invalid key usages for " + algo.name, 'SyntaxError')); return;
         }
-        var raw = _zw_bufToBytes(keyData);
         resolve(new CryptoKey('secret', extractable, algo, u, raw));
       });
     },
@@ -1322,6 +1357,38 @@
         var arr = new Uint8Array(parts.length);
         for (var i = 0; i < parts.length; i++) arr[i] = +parts[i];
         resolve(arr);
+      });
+    },
+    // encrypt(algorithm, key, data) → Promise<ArrayBuffer>。AES-GCM：algorithm {name:"AES-GCM", iv, additionalData?, tagLength?}，
+    // 返 ct||tag（tag 固定 128 位）。key.usages 须含 "encrypt"。https://w3c.github.io/webcrypto/#SubtleCrypto-method-encrypt
+    encrypt: function (algorithm, key, data) {
+      return new Promise(function (resolve, reject) {
+        var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
+        name = String(name == null ? '' : name).toUpperCase();
+        if (name !== 'AES-GCM' || !key || key.algorithm.name !== 'AES-GCM') {
+          reject(new DOMException('Unsupported encrypt algorithm or key', 'NotSupportedError')); return;
+        }
+        if (!key.usages || key.usages.indexOf('encrypt') < 0) {
+          reject(new DOMException('Key usages do not include "encrypt"', 'InvalidAccessError')); return;
+        }
+        var arr = _zw_aesGcmCall('encrypt', algorithm, key, _zw_bufToBytes(data), reject);
+        if (arr) resolve(arr);
+      });
+    },
+    // decrypt(algorithm, key, data) → Promise<ArrayBuffer>。data 为 ct||tag（tag 校验失败 → reject OperationError）。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-decrypt
+    decrypt: function (algorithm, key, data) {
+      return new Promise(function (resolve, reject) {
+        var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
+        name = String(name == null ? '' : name).toUpperCase();
+        if (name !== 'AES-GCM' || !key || key.algorithm.name !== 'AES-GCM') {
+          reject(new DOMException('Unsupported decrypt algorithm or key', 'NotSupportedError')); return;
+        }
+        if (!key.usages || key.usages.indexOf('decrypt') < 0) {
+          reject(new DOMException('Key usages do not include "decrypt"', 'InvalidAccessError')); return;
+        }
+        var arr = _zw_aesGcmCall('decrypt', algorithm, key, _zw_bufToBytes(data), reject);
+        if (arr) resolve(arr);
       });
     }
   };

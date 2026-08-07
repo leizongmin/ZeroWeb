@@ -26,6 +26,7 @@ tracing = { workspace = true }
 slotmap = { workspace = true }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
+aes-gcm = { workspace = true }
 png = { workspace = true }
 
 [dev-dependencies]

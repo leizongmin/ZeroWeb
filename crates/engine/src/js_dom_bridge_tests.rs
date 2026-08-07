@@ -7595,11 +7595,11 @@ fn test_crypto_subtle_hmac_r2955() {
         sandbox.execute("String(globalThis.__e2)").unwrap().value,
         "NotSupportedError"
     );
-    // importKey 非 HMAC 算法（'AES-GCM'）→ reject NotSupportedError。
+    // importKey 不支持的算法（'AES-CBC'，本实现仅 HMAC/PBKDF2/AES-GCM）→ reject NotSupportedError。
     sandbox
         .execute(
             "globalThis.__e4='(pending)';\
-             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['encrypt'])\
+             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-CBC'}, false, ['encrypt'])\
                .catch(function(e){ globalThis.__e4 = e.name; });",
         )
         .unwrap();
@@ -7774,6 +7774,178 @@ fn test_crypto_subtle_pbkdf2_r2956() {
             "globalThis.__e4='(pending)';\
              crypto.subtle.importKey('raw', new Uint8Array(4), {name:'HMAC',hash:'SHA-256'}, false, ['sign','verify'])\
                .then(function(k){ return crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:'s',iterations:1}, k, 256); })\
+               .catch(function(e){ globalThis.__e4 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e4)").unwrap().value,
+        "NotSupportedError"
+    );
+}
+
+#[test]
+fn test_crypto_subtle_aes_gcm_r2957() {
+    // R2957：crypto.subtle encrypt/decrypt("AES-GCM", ...)——AES-128/256-GCM 认证对称加密。
+    // PBKDF2 派生密钥的典型消费者（端到端「用密码加密」）。host RustCrypto aes-gcm（新依赖）。
+    // TDD 用 NIST GCM TC3（无 AAD）/TC4（带 AAD）向量锚定 + decrypt + round-trip + 错误路径。
+    // https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf  https://w3c.github.io/webcrypto/
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // hex 辅助（持久 context 跨 execute 复用）。
+    sandbox
+        .execute(
+            "function hex2b(h){var a=[];for(var i=0;i<h.length;i+=2)a.push(parseInt(h.substr(i,2),16));return new Uint8Array(a);}\
+             function b2hex(u){var s='';for(var i=0;i<u.length;i++){s+=('0'+u[i].toString(16)).slice(-2);}return s;}",
+        )
+        .unwrap();
+
+    // NIST GCM TC1：K=0×16，IV=0×12，空 P，空 A → 输出仅 tag = 58e2fcce...455a。
+    let ct1 = {
+        sandbox
+            .execute(
+                "globalThis.__out='(pending)';\
+                 crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['encrypt','decrypt'])\
+                   .then(function(k){ return crypto.subtle.encrypt({name:'AES-GCM', iv:new Uint8Array(12)}, k, new Uint8Array(0)); })\
+                   .then(function(b){ globalThis.__out = new Uint8Array(b); });",
+            )
+            .unwrap();
+        sandbox.execute("b2hex(globalThis.__out)").unwrap().value
+    };
+    assert_eq!(ct1, "58e2fccefa7e3061367f1d57a4e7455a");
+    // NIST GCM TC2：K=0×16，IV=0×12，P=0×16（空 A）→ C||T = 0388dace...fe78 || ab6e47d4...bddf。
+    let ct2 = {
+        sandbox
+            .execute(
+                "globalThis.__out='(pending)';\
+                 crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['encrypt','decrypt'])\
+                   .then(function(k){ return crypto.subtle.encrypt({name:'AES-GCM', iv:new Uint8Array(12)}, k, new Uint8Array(16)); })\
+                   .then(function(b){ globalThis.__out = new Uint8Array(b); });",
+            )
+            .unwrap();
+        sandbox.execute("b2hex(globalThis.__out)").unwrap().value
+    };
+    assert_eq!(ct2, "0388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf");
+    // TC2 decrypt → P（16 字节全零）。stash CT2 供后续 AAD-mismatch 测试复用同密文。
+    sandbox
+        .execute("globalThis.CT2='0388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf';")
+        .unwrap();
+    let pt2 = {
+        sandbox
+            .execute(
+                "globalThis.__out='(pending)';\
+                 crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['encrypt','decrypt'])\
+                   .then(function(k){ return crypto.subtle.decrypt({name:'AES-GCM', iv:new Uint8Array(12)}, k, hex2b(globalThis.CT2)); })\
+                   .then(function(b){ globalThis.__out = new Uint8Array(b); });",
+            )
+            .unwrap();
+        sandbox.execute("b2hex(globalThis.__out)").unwrap().value
+    };
+    assert_eq!(pt2, "00000000000000000000000000000000");
+
+    // AAD round-trip（证明 additionalData 接入 encrypt+decrypt 双向）：encrypt 带 AAD → decrypt 同 AAD == 原文；
+    // stash 该 ct 供后续 AAD-mismatch 错误测试（用无 AAD 解 → tag 校验失败）。
+    sandbox
+        .execute(
+            "globalThis.__aadrt='(pending)'; globalThis.__aadct=null;\
+             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['encrypt','decrypt'])\
+               .then(function(k){\
+                 return crypto.subtle.encrypt({name:'AES-GCM', iv:new Uint8Array(12), additionalData:new TextEncoder().encode('aad')}, k, new TextEncoder().encode('secret'));\
+               }).then(function(ct){ globalThis.__aadct = new Uint8Array(ct); return crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['encrypt','decrypt']); })\
+               .then(function(k){\
+                 return crypto.subtle.decrypt({name:'AES-GCM', iv:new Uint8Array(12), additionalData:new TextEncoder().encode('aad')}, k, globalThis.__aadct);\
+               }).then(function(pt){ globalThis.__aadrt = new TextDecoder().decode(pt); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__aadrt)").unwrap().value, "secret");
+
+    // Round-trip（AES-256）：encrypt 后 decrypt == 原文。
+    sandbox
+        .execute(
+            "globalThis.__rt='(pending)';\
+             crypto.subtle.importKey('raw', hex2b('00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'), {name:'AES-GCM'}, false, ['encrypt','decrypt'])\
+               .then(function(k){\
+                 var iv=new Uint8Array([1,2,3,4,5,6,7,8,9,10,11,12]);\
+                 return crypto.subtle.encrypt({name:'AES-GCM', iv:iv}, k, new TextEncoder().encode('hello world'));\
+               }).then(function(ct){ globalThis.__ct = new Uint8Array(ct); return crypto.subtle.importKey('raw', hex2b('00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'), {name:'AES-GCM'}, false, ['encrypt','decrypt']); })\
+               .then(function(k){\
+                 var iv=new Uint8Array([1,2,3,4,5,6,7,8,9,10,11,12]);\
+                 return crypto.subtle.decrypt({name:'AES-GCM', iv:iv}, k, globalThis.__ct);\
+               }).then(function(pt){ globalThis.__rt = new TextDecoder().decode(pt); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__rt)").unwrap().value, "hello world");
+
+    // importKey AES-GCM 字段：type="secret"，algorithm.name="AES-GCM"，usages。
+    sandbox
+        .execute(
+            "globalThis.__k=null;\
+             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['encrypt','decrypt'])\
+               .then(function(k){ globalThis.__k = k; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute(
+                "String(globalThis.__k && globalThis.__k.type === 'secret'\
+                   && globalThis.__k.algorithm.name === 'AES-GCM'\
+                   && globalThis.__k.usages.join(',') === 'encrypt,decrypt')"
+            )
+            .unwrap()
+            .value,
+        "true"
+    );
+    // importKey AES-GCM 非 16/32 字节 key（24 字节）→ reject DataError。
+    sandbox
+        .execute(
+            "globalThis.__e1='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(24), {name:'AES-GCM'}, false, ['encrypt'])\
+               .catch(function(e){ globalThis.__e1 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__e1)").unwrap().value, "DataError");
+    // encrypt 缺 "encrypt" usage（仅 'decrypt'）→ reject InvalidAccessError。
+    sandbox
+        .execute(
+            "globalThis.__e2='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['decrypt'])\
+               .then(function(k){ return crypto.subtle.encrypt({name:'AES-GCM', iv:new Uint8Array(12)}, k, 'x'); })\
+               .catch(function(e){ globalThis.__e2 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e2)").unwrap().value,
+        "InvalidAccessError"
+    );
+    // decrypt AAD 不匹配（CT2 用空 AAD 加密，这里带 AAD 解 → tag 校验失败）→ reject OperationError。
+    sandbox
+        .execute(
+            "globalThis.__e3='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['decrypt'])\
+               .then(function(k){ return crypto.subtle.decrypt({name:'AES-GCM', iv:new Uint8Array(12), additionalData:new TextEncoder().encode('x')}, k, hex2b(globalThis.CT2)); })\
+               .catch(function(e){ globalThis.__e3 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e3)").unwrap().value,
+        "OperationError"
+    );
+    // 非 128 tagLength → reject NotSupportedError。
+    sandbox
+        .execute(
+            "globalThis.__e4='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['encrypt'])\
+               .then(function(k){ return crypto.subtle.encrypt({name:'AES-GCM', iv:new Uint8Array(12), tagLength:96}, k, 'x'); })\
                .catch(function(e){ globalThis.__e4 = e.name; });",
         )
         .unwrap();

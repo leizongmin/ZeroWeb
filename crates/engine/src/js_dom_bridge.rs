@@ -1338,6 +1338,50 @@ pub fn crypto_subtle_pbkdf2(
     out.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
 }
 
+/// AES-GCM 单次操作（encrypt→`ct||tag` / decrypt→plaintext），AAD 经 `Payload` 传入。
+/// tag 校验失败 / 未知 mode → None（shim reject OperationError）。
+fn aes_gcm_run<C: aes_gcm::aead::Aead>(
+    cipher: &C,
+    mode: &str,
+    nonce: &aes_gcm::aead::generic_array::GenericArray<u8, C::NonceSize>,
+    payload: aes_gcm::aead::Payload,
+) -> Option<Vec<u8>> {
+    match mode {
+        "encrypt" => cipher.encrypt(nonce, payload).ok(),
+        "decrypt" => cipher.decrypt(nonce, payload).ok(),
+        _ => None,
+    }
+}
+
+/// `crypto.subtle.encrypt/decrypt` 的 AES-GCM 实现（R2957）——AES-128/256-GCM 认证对称加密。
+/// **PBKDF2 派生密钥的典型消费者**，端到端「用密码加密」流程（TLS 级对称加密 + 完整性 + AAD）。
+/// mode "encrypt"（返 ct||tag）/ "decrypt"（输入 ct||tag，返 plaintext）；key 16/32 字节（128/256 位，
+/// AES-192 因 aes-gcm crate 默认未导出 `Aes192Gcm` 暂不支持——罕见）；iv 12 字节（GCM 标准 nonce）；
+/// aad 附加认证数据；tag 固定 128 位（spec 默认，最常见）。返 csv，error（bad key/iv 长度、tag 校验失败）→ 空串。
+/// https://datatracker.ietf.org/doc/html/rfc5116  https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
+pub fn crypto_subtle_aes_gcm(mode: &str, key_csv: &str, iv_csv: &str, data_csv: &str, aad_csv: &str) -> String {
+    use aes_gcm::aead::{KeyInit, Payload, generic_array::GenericArray};
+    use aes_gcm::{Aes128Gcm, Aes256Gcm};
+    let key = bytes_from_csv(key_csv);
+    let iv = bytes_from_csv(iv_csv);
+    let data = bytes_from_csv(data_csv);
+    let aad = bytes_from_csv(aad_csv);
+    if iv.len() != 12 {
+        return String::new();
+    }
+    let nonce = GenericArray::from_slice(&iv);
+    let payload = Payload { msg: &data, aad: &aad };
+    let result: Option<Vec<u8>> = match key.len() {
+        16 => aes_gcm_run(&Aes128Gcm::new(GenericArray::from_slice(&key)), mode, nonce, payload),
+        32 => aes_gcm_run(&Aes256Gcm::new(GenericArray::from_slice(&key)), mode, nonce, payload),
+        _ => None,
+    };
+    match result {
+        Some(v) => v.iter().map(u8::to_string).collect::<Vec<_>>().join(","),
+        None => String::new(),
+    }
+}
+
 /// canvas 颜色串 → render Color（复用 CSS 颜色解析：named/hex/rgb/hsl 等）。解析失败回落黑色。
 fn parse_canvas_color(s: &str) -> zero_render_foundation::color::Color {
     use zero_render_foundation::color::Color;
@@ -2901,6 +2945,20 @@ pub fn register_dom_callbacks(
             let iterations: u32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
             let dklen: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
             crypto_subtle_pbkdf2(hash, password, salt, iterations, dklen)
+        }),
+    );
+
+    // `crypto.subtle.encrypt/decrypt("AES-GCM", ...)`（R2957）——AES-128/256-GCM。
+    // arg[0]=mode("encrypt"/"decrypt")，arg[1]=key csv，arg[2]=iv csv，arg[3]=data csv，arg[4]=aad csv。返 csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_aes_gcm",
+        Box::new(|args: &[String]| -> String {
+            let mode = args.first().map(String::as_str).unwrap_or("");
+            let key = args.get(1).map(String::as_str).unwrap_or("");
+            let iv = args.get(2).map(String::as_str).unwrap_or("");
+            let data = args.get(3).map(String::as_str).unwrap_or("");
+            let aad = args.get(4).map(String::as_str).unwrap_or("");
+            crypto_subtle_aes_gcm(mode, key, iv, data, aad)
         }),
     );
 
