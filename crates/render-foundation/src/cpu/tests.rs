@@ -1915,3 +1915,59 @@ fn render_full_scene_overlay_covers_ui_glyphs() {
         center
     );
 }
+
+/// S3 区域光栅化：region 内的像素与全量渲染一致，且 region 外图元被跳过。
+#[test]
+fn render_full_scene_region_matches_full_within_region() {
+    let mut font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(256);
+    let mut primitives = RenderPrimitives::new();
+    // 两个 fills：一个在 region 内（左半），一个在 region 外（右半）
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+        color: Color::rgba(255, 0, 0, 255),
+    });
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(200.0, 0.0, 100.0, 100.0),
+        color: Color::rgba(0, 0, 255, 255),
+    });
+
+    let full = render_full_scene(
+        200,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    // region = 左半（0,0,100,100）：只绘制左 fills
+    let region = render_full_scene_region(
+        200,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(Rect::new(0.0, 0.0, 100.0, 100.0)),
+    );
+
+    // region 内像素：region 渲染 == 全量渲染
+    for i in 0..(100 * 100 * 4) {
+        assert_eq!(region.data[i], full.data[i], "region 内像素应与全量一致 @ {i}");
+    }
+    // region 内应为红色（左 fills 绘制）
+    assert_eq!(&region.data[..4], &[255, 0, 0, 255]);
+    // region 外（右半）应为背景白（右 fills 被跳过）
+    let right_pixel = &region.data[(0 * 200 + 150) * 4..(0 * 200 + 150) * 4 + 4];
+    assert_eq!(right_pixel, &[255, 255, 255, 255], "region 外图元应被跳过");
+}

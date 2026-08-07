@@ -18,6 +18,8 @@
 mod effects;
 mod gradient;
 mod shadow;
+
+use crate::geometry::Rect;
 mod stroke;
 
 use crate::color::Color;
@@ -89,7 +91,6 @@ pub fn render_full_scene_threaded(
 /// 将所有 RenderPrimitives 图元渲染到 CPU 帧缓冲。
 ///
 /// 这是 M7 新增的完整渲染入口，接受 `RenderPrimitives` 并渲染所有 13 种图元类型。
-#[allow(clippy::too_many_arguments)] // 光栅化全参数（文件内多处同款）
 pub fn render_full_scene(
     width: u32,
     height: u32,
@@ -102,6 +103,41 @@ pub fn render_full_scene(
     overlay_fills: &[FillPrimitive],
     overlay_glyphs: &[GlyphDraw],
     overlay_rounded_rects: &[RoundedRectPrimitive],
+) -> FrameBuffer {
+    render_full_scene_region(
+        width,
+        height,
+        scale_factor,
+        primitives,
+        font_loader,
+        glyph_cache,
+        image_cache,
+        ui_glyphs,
+        overlay_fills,
+        overlay_glyphs,
+        overlay_rounded_rects,
+        None,
+    )
+}
+
+/// 区域光栅化（S3 增量重绘）——只绘制与 `region`（CSS 逻辑像素）相交的图元。
+///
+/// `region=None` 时与 `render_full_scene` 完全一致（全量）。增量消费方
+///（RFC S3）把 RenderStats.dirty_rects 传入，跳过区域外图元的光栅化。
+#[allow(clippy::too_many_arguments)] // 光栅化全参数（文件内多处同款）
+pub fn render_full_scene_region(
+    width: u32,
+    height: u32,
+    scale_factor: f32,
+    primitives: &RenderPrimitives,
+    font_loader: &FontLoader,
+    glyph_cache: &mut GlyphCache,
+    image_cache: Option<&mut ImageCache>,
+    ui_glyphs: &[GlyphDraw],
+    overlay_fills: &[FillPrimitive],
+    overlay_glyphs: &[GlyphDraw],
+    overlay_rounded_rects: &[RoundedRectPrimitive],
+    region: Option<Rect>,
 ) -> FrameBuffer {
     let scale = normalize_scale_factor(scale_factor);
     let physical_width = scale_dimension(width, scale);
@@ -118,9 +154,25 @@ pub fn render_full_scene(
     let use_draw_order = std::env::var("ZERO_DRAW_ORDER").as_deref() != Ok("0") && !primitives.draw_order.is_empty();
 
     if use_draw_order {
-        render_draw_order(&mut fb, primitives, scale, font_loader, glyph_cache, image_cache);
+        render_draw_order(
+            &mut fb,
+            primitives,
+            scale,
+            font_loader,
+            glyph_cache,
+            image_cache,
+            region,
+        );
     } else {
-        render_typed_buckets(&mut fb, primitives, scale, font_loader, glyph_cache, image_cache);
+        render_typed_buckets(
+            &mut fb,
+            primitives,
+            scale,
+            font_loader,
+            glyph_cache,
+            image_cache,
+            region,
+        );
     }
 
     // Chrome / WebView 文字（GlyphDraw，在 overlay 之前）
@@ -157,51 +209,84 @@ fn render_typed_buckets(
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
     mut image_cache: Option<&mut ImageCache>,
+    region: Option<Rect>,
 ) {
     // 渲染顺序遵循 CSS painting order:
     // shadows → backgrounds (fills/rounded_rects/gradients) → images →
     // borders (strokes/path_fills/path_strokes) → content (glyphs) →
     // overlay → filters → blend_modes
 
+    // S3 区域裁剪：图元矩形与 region 不相交则跳过（region=None 全量）
+    let in_region = |rect: Rect| region.is_none_or(|r| r.intersects(&rect));
+
     // 1. 阴影（绘制在最底层）
     for shadow in &primitives.shadows {
+        if !in_region(shadow.rect) {
+            continue;
+        }
         shadow::render_shadow(fb, shadow, scale);
     }
 
     // 2. 填充矩形（背景色）
     for fill in &primitives.fills {
+        if !in_region(fill.rect) {
+            continue;
+        }
         fill_rect(fb, fill, scale);
     }
 
     // 3. 圆角矩形
     for rr in &primitives.rounded_rects {
+        if !in_region(rr.rect) {
+            continue;
+        }
         fill_rounded_rect(fb, rr, scale);
     }
 
     // 4. 渐变
     for gradient in &primitives.gradients {
+        if !in_region(gradient.rect) {
+            continue;
+        }
         gradient::render_gradient(fb, gradient, scale);
     }
 
     // 5. 图片
     if let Some(ref mut cache) = image_cache {
         for image in &primitives.images {
+            if !in_region(image.rect) {
+                continue;
+            }
             render_image(fb, image, scale, cache);
         }
     }
 
     // 6. 线段（边框等）
     for stroke in &primitives.strokes {
+        if !in_region(Rect::new(
+            stroke.x1.min(stroke.x2),
+            stroke.y1.min(stroke.y2),
+            (stroke.x1 - stroke.x2).abs(),
+            (stroke.y1 - stroke.y2).abs(),
+        )) {
+            continue;
+        }
         stroke::render_stroke(fb, stroke, scale);
     }
 
     // 7. 路径填充
     for path_fill in &primitives.path_fills {
+        if !in_region(path_vertices_rect(&path_fill.vertices)) {
+            continue;
+        }
         stroke::render_path_fill(fb, path_fill, scale);
     }
 
     // 8. 路径描边
     for path_stroke in &primitives.path_strokes {
+        if !in_region(path_vertices_rect(&path_stroke.vertices)) {
+            continue;
+        }
         stroke::render_path_stroke(fb, path_stroke, scale);
     }
 
@@ -231,6 +316,24 @@ fn render_typed_buckets(
     }
 }
 
+/// 路径图元包围盒（区域裁剪辅助；vertices 为扁平 (x, y) 序列）。
+fn path_vertices_rect(vertices: &[f32]) -> Rect {
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+    for pair in vertices.chunks_exact(2) {
+        min_x = min_x.min(pair[0]);
+        min_y = min_y.min(pair[1]);
+        max_x = max_x.max(pair[0]);
+        max_y = max_y.max(pair[1]);
+    }
+    if min_x > max_x {
+        return Rect::ZERO;
+    }
+    Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
+}
+
 /// 按插入顺序渲染（DC-10 默认路径，满足 CSS painting order）。
 ///
 /// 按 `draw_order` 记录的真实插入顺序逐个渲染图元。背景、边框、子内容、
@@ -243,43 +346,65 @@ fn render_draw_order(
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
     mut image_cache: Option<&mut ImageCache>,
+    region: Option<Rect>,
 ) {
+    // S3 区域裁剪：图元矩形与 region 不相交则跳过（region=None 全量）
+    let in_region = |rect: Rect| region.is_none_or(|r| r.intersects(&rect));
+
     for op in &primitives.draw_order {
         match op {
             DrawOp::Shadow(i) => {
-                if let Some(p) = primitives.shadows.get(*i) {
+                if let Some(p) = primitives.shadows.get(*i)
+                    && in_region(p.rect)
+                {
                     shadow::render_shadow(fb, p, scale);
                 }
             }
             DrawOp::Fill(i) => {
-                if let Some(p) = primitives.fills.get(*i) {
+                if let Some(p) = primitives.fills.get(*i)
+                    && in_region(p.rect)
+                {
                     fill_rect(fb, p, scale);
                 }
             }
             DrawOp::RoundedRect(i) => {
-                if let Some(p) = primitives.rounded_rects.get(*i) {
+                if let Some(p) = primitives.rounded_rects.get(*i)
+                    && in_region(p.rect)
+                {
                     fill_rounded_rect(fb, p, scale);
                 }
             }
             DrawOp::Gradient(i) => {
-                if let Some(p) = primitives.gradients.get(*i) {
+                if let Some(p) = primitives.gradients.get(*i)
+                    && in_region(p.rect)
+                {
                     gradient::render_gradient(fb, p, scale);
                 }
             }
             DrawOp::Image(i) => {
                 if let Some(p) = primitives.images.get(*i)
                     && let Some(ref mut cache) = image_cache
+                    && in_region(p.rect)
                 {
                     render_image(fb, p, scale, cache);
                 }
             }
             DrawOp::Stroke(i) => {
-                if let Some(p) = primitives.strokes.get(*i) {
+                if let Some(p) = primitives.strokes.get(*i)
+                    && in_region(Rect::new(
+                        p.x1.min(p.x2),
+                        p.y1.min(p.y2),
+                        (p.x1 - p.x2).abs(),
+                        (p.y1 - p.y2).abs(),
+                    ))
+                {
                     stroke::render_stroke(fb, p, scale);
                 }
             }
             DrawOp::PathFill(i) => {
-                if let Some(p) = primitives.path_fills.get(*i) {
+                if let Some(p) = primitives.path_fills.get(*i)
+                    && in_region(path_vertices_rect(&p.vertices))
+                {
                     stroke::render_path_fill(fb, p, scale);
                 }
             }
