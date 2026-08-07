@@ -1,0 +1,1787 @@
+#[test]
+fn test_tag_name_real_not_div_heuristic() {
+    // R2691：tagName/nodeName 真实化（旧 _tagFromSel 对 #id 选择器恒猜 DIV）。
+    // sel-based：id-bearing 非 DIV 元素返真实 tag；handle-based：detached createElement 返真实 tag。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><span id=\"s\">x</span><input id=\"i\"></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // sel-based：#s 是 <span>（旧 stub 错返 DIV），#i 是 <input>。
+    sandbox
+        .execute("globalThis.__s = document.querySelector('#s').tagName;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__s").unwrap().value, "SPAN");
+    sandbox
+        .execute("globalThis.__i = document.querySelector('#i').tagName;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__i").unwrap().value, "INPUT");
+    // nodeName 同 tagName（元素节点）。
+    sandbox
+        .execute("globalThis.__sn = document.querySelector('#s').nodeName;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__sn").unwrap().value, "SPAN");
+    // 大小写：tagName 在 HTML 命名空间须大写（createElement('svg')→'SVG'）。
+    sandbox
+        .execute("globalThis.__tr = document.createElement('tr').tagName;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__tr").unwrap().value, "TR");
+}
+
+#[test]
+fn test_event_bubbling_to_ancestor() {
+    // R2692：事件冒泡。旧 dispatchEvent/__zw_dispatch_event 仅派发 target 自身 listener，
+    // 不冒泡到祖先——事件委托（document/body 上注册的 listener 捕获子元素事件）失效。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"p\"><span id=\"c\">x</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 祖先 #p 与 document(html key) 各注册 click listener。
+    sandbox
+        .execute(
+            "document.querySelector('#p').addEventListener('click', function(e){ globalThis.__p = e.currentTarget.id; });",
+        )
+        .unwrap();
+    sandbox
+        .execute("document.addEventListener('click', function(){ globalThis.__doc = true; });")
+        .unwrap();
+    // 在子 #c 上派发 click → 应冒泡到 #p 和 document（html）。
+    sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__p").unwrap().value,
+        "p",
+        "#p listener 应经冒泡触发"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__doc").unwrap().value,
+        "true",
+        "document listener 应经冒泡触发（事件委托）"
+    );
+
+    // currentTarget 在 target 阶段 = target 自身。
+    sandbox
+        .execute(
+            "document.querySelector('#c').addEventListener('click', function(e){ globalThis.__ct = e.currentTarget.id; });",
+        )
+        .unwrap();
+    sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ct").unwrap().value,
+        "c",
+        "target 阶段 currentTarget = target"
+    );
+}
+
+#[test]
+fn test_event_bubbling_stop_and_nonbubble() {
+    // R2692 续：stopPropagation 中断冒泡；bubbles:false 的事件不冒泡。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\"><div id=\"b\"><i id=\"c\">x</i></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // #b stopPropagation → #a 不应触发。注册顺序：先 #a 后 #b（冒泡 #c→#b→#a）。
+    sandbox
+        .execute("document.querySelector('#a').addEventListener('click', function(){ globalThis.__a = true; });")
+        .unwrap();
+    sandbox
+        .execute("document.querySelector('#b').addEventListener('click', function(e){ globalThis.__b = true; e.stopPropagation(); });")
+        .unwrap();
+    sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__b === true").unwrap().value,
+        "true",
+        "#b 应触发"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__a === true").unwrap().value,
+        "false",
+        "#a 不应触发（stopPropagation 中断冒泡）"
+    );
+
+    // bubbles:false 的事件不冒泡：dispatchEvent 自定义非冒泡事件到 #c，#b 不触发。
+    sandbox
+        .execute("document.querySelector('#b').addEventListener('foo', function(){ globalThis.__foo = true; });")
+        .unwrap();
+    sandbox
+        .execute("document.querySelector('#c').dispatchEvent(new Event('foo', { bubbles: false }));")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__foo === true").unwrap().value,
+        "false",
+        "bubbles:false 事件不应冒泡到 #b"
+    );
+}
+
+#[test]
+fn test_event_capture_phase() {
+    // R2693：capture 阶段。祖先 capture listener（addEventListener 第三参 true）在 root→target
+    // 捕获期触发，先于 target（AT_TARGET）与 bubble。旧实现祖先 capture listener 永不触发。
+    // 同时验证 legacy 布尔第三参 `addEventListener(t, fn, true)` 注册 capture（_optCapture 修复）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\"><div id=\"b\"><i id=\"c\">x</i></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // #a capture（legacy 布尔第三参 true）→ #c target（非 capture）→ #b bubble，记录派发顺序。
+    sandbox
+        .execute(
+            "document.querySelector('#a').addEventListener('click', function(e){ globalThis.__order = (globalThis.__order||'') + 'capA:' + e.currentTarget.id + ';'; }, true);",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "document.querySelector('#c').addEventListener('click', function(e){ globalThis.__order += 'tgt:' + e.currentTarget.id + ';'; });",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "document.querySelector('#b').addEventListener('click', function(e){ globalThis.__order += 'bubB:' + e.currentTarget.id + ';'; });",
+        )
+        .unwrap();
+    sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
+    // 捕获期 #a（root 方向）先于 target #c，先于冒泡期 #b。
+    assert_eq!(
+        sandbox.execute("globalThis.__order").unwrap().value,
+        "capA:a;tgt:c;bubB:b;",
+        "capture(#a) → target(#c) → bubble(#b) 顺序"
+    );
+}
+
+#[test]
+fn test_event_capture_stop_propagation() {
+    // R2693 续：capture 期 stopPropagation → target 与 bubble 阶段不触发。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\"><div id=\"b\"><i id=\"c\">x</i></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // #a capture stopPropagation；#c target；#b bubble。
+    sandbox
+        .execute("document.querySelector('#a').addEventListener('click', function(e){ globalThis.__cap = true; e.stopPropagation(); }, { capture: true });")
+        .unwrap();
+    sandbox
+        .execute("document.querySelector('#c').addEventListener('click', function(){ globalThis.__tgt = true; });")
+        .unwrap();
+    sandbox
+        .execute("document.querySelector('#b').addEventListener('click', function(){ globalThis.__bub = true; });")
+        .unwrap();
+    sandbox.execute("__zw_dispatch_event('#c', 'click', null);").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cap === true").unwrap().value,
+        "true",
+        "#a capture 应触发"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__tgt === true").unwrap().value,
+        "false",
+        "capture stopPropagation 后 target 不应触发"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__bub === true").unwrap().value,
+        "false",
+        "capture stopPropagation 后 bubble 不应触发"
+    );
+}
+
+#[test]
+fn test_event_listener_once() {
+    // R2694：`once` 选项。`{once:true}` 注册的 listener 派发一次后自动移除（再次派发不触发）。
+    // 旧实现完全忽略 once → listener 重复触发。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><button id=\"b\">x</button></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "document.querySelector('#b').addEventListener('click', function(){ globalThis.__n = (globalThis.__n|0) + 1; }, { once: true });",
+        )
+        .unwrap();
+    sandbox.execute("__zw_dispatch_event('#b', 'click', null);").unwrap();
+    sandbox.execute("__zw_dispatch_event('#b', 'click', null);").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__n").unwrap().value,
+        "1",
+        "once listener 应仅触发一次（第二次派发不触发）"
+    );
+}
+
+#[test]
+fn test_remove_event_listener_capture_aware() {
+    // R2694：capture-aware removeEventListener。spec：useCapture 须匹配才移除——
+    // `addEventListener(t, fn, true)`（capture）仅 `removeEventListener(t, fn, true)` 能移除；
+    // `removeEventListener(t, fn)`（capture=false）不应动 capture 注册。旧实现按 fn 误删。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"p\"><i id=\"c\">x</i></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // #p 上注册 capture listener（fn），随后 removeEventListener 不带 capture → 不应移除。
+    sandbox
+        .execute(
+            "globalThis.__fn = function(){ globalThis.__cap = (globalThis.__cap|0) + 1; };\n\
+             document.querySelector('#p').addEventListener('click', globalThis.__fn, true);\n\
+             document.querySelector('#p').removeEventListener('click', globalThis.__fn);\n\
+             __zw_dispatch_event('#c', 'click', null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cap").unwrap().value,
+        "1",
+        "removeEventListener(fn) 不带 capture 不应移除 capture 注册（仍触发）"
+    );
+    // 现在 removeEventListener 带 capture=true → 应移除，再次派发不触发。
+    sandbox
+        .execute(
+            "document.querySelector('#p').removeEventListener('click', globalThis.__fn, true);\n\
+             __zw_dispatch_event('#c', 'click', null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cap").unwrap().value,
+        "1",
+        "removeEventListener(fn, true) 应移除 capture 注册（再次派发不触发）"
+    );
+}
+
+#[test]
+fn test_style_proxy_methods() {
+    // R2695：style 代理 API。getPropertyValue 读初始 style；setProperty 经 SetStyle 应用；
+    // per-property get/set 保留；cssText get 读原始串、set 经 SetAttr 整体替换。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\" style=\"color: red\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // getPropertyValue 读初始 style 快照（'color: red' → 'red'）。
+    sandbox
+        .execute("globalThis.__gv = document.querySelector('#d').style.getPropertyValue('color');")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__gv").unwrap().value,
+        "red",
+        "getPropertyValue 读初始 color"
+    );
+    // per-property get 保留（'color' → 'red'）。
+    sandbox
+        .execute("globalThis.__pg = document.querySelector('#d').style.color;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__pg").unwrap().value,
+        "red",
+        "per-property style.color 保留"
+    );
+    // cssText get 读原始串。
+    sandbox
+        .execute("globalThis.__ct = document.querySelector('#d').style.cssText;")
+        .unwrap();
+    assert!(
+        sandbox.execute("globalThis.__ct").unwrap().value.contains("color: red"),
+        "cssText getter 读原始 style 串"
+    );
+
+    // setProperty（dashed 名）+ per-property set → 应用后验证序列化。
+    sandbox
+        .execute(
+            "var d = document.querySelector('#d');\n\
+             d.style.setProperty('background-color', 'blue');\n\
+             d.style.fontSize = '10px';",
+        )
+        .unwrap();
+    let ms1 = mutations.lock().unwrap().clone();
+    let out1 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms1).unwrap();
+    assert!(out1.contains("background-color: blue"), "setProperty 应用\n{out1}");
+    assert!(
+        out1.contains("font-size: 10px"),
+        "per-property style.fontSize 须归一为 kebab-case 应用\n{out1}"
+    );
+
+    // cssText set → 整体替换（原 color: red 应消失）。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute("document.querySelector('#d').style.cssText = 'margin: 0; padding: 5px';")
+        .unwrap();
+    let ms2 = mutations.lock().unwrap().clone();
+    let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
+    assert!(out2.contains("margin: 0"), "cssText setter 应用 margin\n{out2}");
+    assert!(out2.contains("padding: 5px"), "cssText setter 应用 padding\n{out2}");
+    assert!(
+        !out2.contains("color: red"),
+        "cssText setter 应整体替换（原 color 消失）\n{out2}"
+    );
+}
+
+#[test]
+fn test_style_remove_property() {
+    // R2695：removeProperty 真移除 style 声明（SetStyle 空值仍 push 'prop: '，不移除）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\" style=\"color: red; font-size: 10px\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute("document.querySelector('#d').style.removeProperty('color');")
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(
+        !out.contains("color"),
+        "removeProperty('color') 应真移除 color 声明\n{out}"
+    );
+    assert!(
+        out.contains("font-size: 10px"),
+        "removeProperty 不应影响其他属性\n{out}"
+    );
+}
+
+#[test]
+fn test_style_camel_to_kebab() {
+    // R2696：per-property camelCase style 须归一为 kebab-case 存 style 属性（CSS parser 不认
+    // camelCase → 渲染静默失效）。覆盖 backgroundColor / WebkitTransform（vendor 前缀）/ cssFloat
+    // （→float）/ per-property camelCase 读 kebab 属性。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\" style=\"font-size: 10px\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // per-property camelCase 读 kebab 属性（font-size → fontSize 读出 '10px'）。
+    sandbox
+        .execute("globalThis.__fs = document.querySelector('#d').style.fontSize;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__fs").unwrap().value,
+        "10px",
+        "camelCase 读 kebab 属性"
+    );
+
+    // camelCase set → kebab 存储（不残留 camelCase）。
+    sandbox
+        .execute(
+            "var d = document.querySelector('#d');\n\
+             d.style.backgroundColor = 'red';\n\
+             d.style.WebkitTransform = 'scale(2)';\n\
+             d.style.cssFloat = 'left';",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(
+        out.contains("background-color: red"),
+        "backgroundColor → background-color\n{out}"
+    );
+    assert!(
+        !out.contains("backgroundColor"),
+        "不应残留 camelCase backgroundColor\n{out}"
+    );
+    assert!(
+        out.contains("-webkit-transform: scale(2)"),
+        "WebkitTransform → -webkit-transform\n{out}"
+    );
+    assert!(out.contains("float: left"), "cssFloat → float\n{out}");
+    assert!(!out.contains("cssFloat"), "不应残留 cssFloat\n{out}");
+}
+
+#[test]
+fn test_classlist_consecutive_ops() {
+    // R2697：classList 连续操作不丢类。旧实现每次读 stale snapshot + SetAttr 整体替换，
+    // 同脚本 add('a');add('b');add('c') 仅保留末个（base c）。客户端缓存累积全量后修复。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mk = || -> (V8Sandbox, Arc<Mutex<Vec<DomMutation>>>, Arc<Mutex<String>>) {
+        let mut sb = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sb.execute(generate_js_dom_shim()).unwrap();
+        let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+        let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+            "<html><body><div id=\"d\" class=\"base\"></div></body></html>".to_string(),
+        ));
+        let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+        register_dom_callbacks(&mut sb, &mutations, &dom_html, &page_url);
+        (sb, mutations, dom_html)
+    };
+
+    // ① 连续 add 三类 → apply 后 class 含 base/a/b/c 全部（旧实现仅 'base c'）。
+    let (mut sandbox, mutations, dom_html) = mk();
+    sandbox
+        .execute(
+            "var d = document.querySelector('#d');\n\
+             d.classList.add('a');\n\
+             d.classList.add('b');\n\
+             d.classList.add('c');",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    let class_val: String = out
+        .split("class=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap_or("")
+        .to_string();
+    for cls in ["base", "a", "b", "c"] {
+        assert!(
+            class_val.split_whitespace().any(|t| t == cls),
+            "class 应含 {cls}（got '{class_val}'）\n{out}"
+        );
+    }
+
+    // ② className set + classList add 协作（className 写缓存、classList 读缓存累加）。
+    let (mut sandbox, mutations, dom_html) = mk();
+    sandbox
+        .execute(
+            "var e = document.querySelector('#d');\n\
+             e.className = 'x';\n\
+             e.classList.add('y');",
+        )
+        .unwrap();
+    let ms2 = mutations.lock().unwrap().clone();
+    let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
+    assert!(
+        out2.contains("class=\"x y\""),
+        "className=x 后 classList.add(y) → 'x y'\n{out2}"
+    );
+
+    // ③ toggle 首次加（true）/ contains 反映 / 二次移除（false），双 toggle 后 on 消失。
+    let (mut sandbox, mutations, dom_html) = mk();
+    sandbox
+        .execute(
+            "globalThis.__t1 = document.querySelector('#d').classList.toggle('on');\n\
+             globalThis.__has = document.querySelector('#d').classList.contains('on');\n\
+             globalThis.__t2 = document.querySelector('#d').classList.toggle('on');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__t1").unwrap().value,
+        "true",
+        "toggle 首次加返 true"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__has").unwrap().value,
+        "true",
+        "toggle 后 contains(on) 反映缓存"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t2").unwrap().value,
+        "false",
+        "toggle 二次移除返 false"
+    );
+    let ms3 = mutations.lock().unwrap().clone();
+    let out3 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms3).unwrap();
+    let class_val3: String = out3
+        .split("class=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap_or("")
+        .to_string();
+    assert!(
+        !class_val3.split_whitespace().any(|t| t == "on"),
+        "双 toggle 后 on 应移除（got '{class_val3}'）\n{out3}"
+    );
+}
+
+#[test]
+fn test_remove_attribute_truly_removes() {
+    // R2698：removeAttribute 真移除。旧 set-empty 残留 `checked=""`（present）→ el.checked 仍 true。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id=\"i\" checked></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute("document.querySelector('#i').removeAttribute('checked');")
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(
+        !out.contains("checked"),
+        "removeAttribute('checked') 应真移除（不残留 checked=\"\"）\n{out}"
+    );
+}
+
+#[test]
+fn test_attribute_query_api() {
+    // R2698：hasAttribute/hasAttributes/getAttributeNames/toggleAttribute。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id=\"i\" type=\"text\" disabled></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // hasAttribute（present/absent）。
+    sandbox
+        .execute(
+            "globalThis.__hd = document.querySelector('#i').hasAttribute('disabled');\n\
+             globalThis.__hid = document.querySelector('#i').hasAttribute('id');\n\
+             globalThis.__no = document.querySelector('#i').hasAttribute('checked');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hd").unwrap().value,
+        "true",
+        "hasAttribute(disabled)"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hid").unwrap().value,
+        "true",
+        "hasAttribute(id)"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__no").unwrap().value,
+        "false",
+        "hasAttribute(checked) absent"
+    );
+
+    // hasAttributes + getAttributeNames。
+    sandbox
+        .execute(
+            "globalThis.__hs = document.querySelector('#i').hasAttributes();\n\
+             globalThis.__names = document.querySelector('#i').getAttributeNames().join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hs").unwrap().value,
+        "true",
+        "hasAttributes"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__names").unwrap().value,
+        "id,type,disabled",
+        "getAttributeNames 顺序"
+    );
+}
+
+#[test]
+fn test_toggle_attribute() {
+    // R2701：toggleAttribute 经 server-side mutation（apply 时决策），连续 toggle 正确复合。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"d\"></div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 单次 toggle 加 → 返 true；force=false 移除（即便刚加，server-side 不受 stale 影响）。
+    sandbox
+        .execute(
+            "globalThis.__r1 = document.querySelector('#d').toggleAttribute('hidden');\n\
+             document.querySelector('#d').toggleAttribute('hidden', false);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "true",
+        "toggle 加返 true"
+    );
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    // toggle(hidden) 加 → ToggleAttribute(want=true)；toggle(hidden,false) → want=false。
+    // apply 顺序：先加 hidden，再移除 → net 无 hidden。
+    assert!(!out.contains("hidden"), "force=false 应移除（net 无 hidden）\n{out}");
+
+    // 连续双 toggle（无 force）：朴素实现都读 stale 都加 → 残留；server-side 决策正确复合 → net 移除。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute(
+            "document.querySelector('#d').toggleAttribute('x');\n\
+             document.querySelector('#d').toggleAttribute('x');",
+        )
+        .unwrap();
+    let ms2 = mutations.lock().unwrap().clone();
+    let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
+    // 两次 toggle(x)：apply 时第一次无 x→加，第二次有 x→移除 → net 无 x（朴素实现都加会残留 x）。
+    assert!(
+        !out2.contains("x"),
+        "连续双 toggle(x) server-side 决策 → net 移除（无 x）\n{out2}"
+    );
+
+    // force=true 强加（即便存在也保留）。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute("document.querySelector('#d').toggleAttribute('aria-label', true);")
+        .unwrap();
+    let ms3 = mutations.lock().unwrap().clone();
+    let out3 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms3).unwrap();
+    assert!(out3.contains("aria-label"), "force=true 强加 aria-label\n{out3}");
+}
+
+#[test]
+fn test_get_computed_style_display_position_visibility_opacity() {
+    // R2704：getComputedStyle 计算值（首批 display/position/visibility/opacity）。旧全属性返 '' →
+    // visibility/hidden 分支全断。现经 __zw_get_computed_style 返真实计算值（UA builtin + <style>）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id=\"d\"></div>\
+         <span id=\"s\" style=\"display:none\"></span>\
+         <style>#d { position: relative; opacity: 0.5 }</style>\
+         <p id=\"hid\" style=\"visibility:hidden\"></p>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // div：UA display=block；<style> 设 position=relative、opacity=0.5。
+    sandbox
+        .execute(
+            "globalThis.__dd = getComputedStyle(document.querySelector('#d')).display;\n\
+             globalThis.__dp = getComputedStyle(document.querySelector('#d')).position;\n\
+             globalThis.__do = getComputedStyle(document.querySelector('#d')).opacity;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dd").unwrap().value,
+        "block",
+        "div UA display=block"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dp").unwrap().value,
+        "relative",
+        "<style> position=relative"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__do").unwrap().value,
+        "0.5",
+        "<style> opacity=0.5"
+    );
+    // span inline display:none；getPropertyValue(kebab) 路径。
+    sandbox
+        .execute("globalThis.__sd = getComputedStyle(document.querySelector('#s')).getPropertyValue('display');")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__sd").unwrap().value,
+        "none",
+        "inline style display:none（getPropertyValue kebab 路径）"
+    );
+    // p inline visibility:hidden。
+    sandbox
+        .execute("globalThis.__pv = getComputedStyle(document.querySelector('#hid')).visibility;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__pv").unwrap().value,
+        "hidden",
+        "inline visibility:hidden"
+    );
+}
+
+#[test]
+fn test_get_computed_style_colors() {
+    // R2705：getComputedStyle 颜色族（color/background-color/border-*-color）。compute_styles 保留
+    // 颜色未解析（Named/CurrentColor），经 paint 层 resolve_color_current 解析为 rgb/rgba 串。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id=\"a\" style=\"color: red; background-color: rgb(0, 128, 0)\"></div>\
+         <div id=\"b\" style=\"border: 1px solid blue\"></div>\
+         <div id=\"c\" style=\"color: transparent\"></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // color: red（named → rgb）+ background-color: rgb(0,128,0)。
+    sandbox
+        .execute(
+            "globalThis.__col = getComputedStyle(document.querySelector('#a')).color;\n\
+             globalThis.__bg = getComputedStyle(document.querySelector('#a')).backgroundColor;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__col").unwrap().value,
+        "rgb(255, 0, 0)",
+        "color: red → rgb(255,0,0)"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__bg").unwrap().value,
+        "rgb(0, 128, 0)",
+        "background-color: rgb(0,128,0)"
+    );
+    // border: 1px solid blue → border-color (4 边) = rgb(0,0,255)。
+    sandbox
+        .execute(
+            "globalThis.__bt = getComputedStyle(document.querySelector('#b')).getPropertyValue('border-top-color');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__bt").unwrap().value,
+        "rgb(0, 0, 255)",
+        "border shorthand 的 blue → border-top-color rgb(0,0,255)"
+    );
+    // color: transparent → rgba(0,0,0,0)。
+    sandbox
+        .execute("globalThis.__tc = getComputedStyle(document.querySelector('#c')).color;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__tc").unwrap().value,
+        "rgba(0, 0, 0, 0)",
+        "color: transparent → rgba(0,0,0,0)"
+    );
+}
+
+#[test]
+fn test_computed_style_cache_reuse_composition() {
+    // R2706：getComputedStyle per-snapshot 缓存 = compute_document_styles（一次）+
+    // lookup_computed_property（多次）。验证「build (doc, styles) once → query N 属性」与无缓存
+    // computed_style_property 逐次等价——锁缓存命中路径返回值正确（缓存复用不改变结果）。
+    let html = "<html><body>\
+        <div id=\"d\" style=\"color: red; display: none; opacity: 0.25\"></div>\
+        <style>#d { position: relative }</style>\
+        </body></html>";
+    let (doc, styles) = compute_document_styles(html);
+    // 同一 (doc, styles) 连续查 4 个属性（缓存命中场景）。
+    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "color"), "rgb(255, 0, 0)");
+    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "display"), "none");
+    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "opacity"), "0.25");
+    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "position"), "relative");
+    // 与无缓存参考实现逐属性等价。
+    assert_eq!(computed_style_property(html, "#d", "color"), "rgb(255, 0, 0)");
+    assert_eq!(computed_style_property(html, "#d", "display"), "none");
+    assert_eq!(computed_style_property(html, "#d", "position"), "relative");
+    // 未命中选择器 → ''；margin-top R2707 起已覆盖（长度族）→ div 默认 0px。
+    assert_eq!(lookup_computed_property(&doc, &styles, "#missing", "color"), "");
+    assert_eq!(lookup_computed_property(&doc, &styles, "#d", "margin-top"), "0px");
+}
+
+#[test]
+fn test_get_computed_style_cache_invalidation() {
+    // R2706：getComputedStyle per-snapshot 缓存失效（核心正确性风险）。同一会话内首查填缓存后
+    // 改 dom_html snapshot，再查须反映新 html（不返 stale 缓存值）。缓存 keyed on html。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"d\"></div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 首查：div UA display=block（填缓存）。
+    sandbox
+        .execute("globalThis.__v1 = getComputedStyle(document.querySelector('#d')).display;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__v1").unwrap().value, "block");
+
+    // 改 snapshot：注入 <style>#d{display:none}</style>。缓存 keyed on html → 失效 → 重算。
+    *dom_html.lock().unwrap() = "<html><body><div id=\"d\"></div>\
+        <style>#d { display: none }</style></body></html>"
+        .to_string();
+    sandbox
+        .execute("globalThis.__v2 = getComputedStyle(document.querySelector('#d')).display;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__v2").unwrap().value,
+        "none",
+        "html snapshot 变 → 缓存失效重算，返新 display=none（非 stale 的 block）"
+    );
+}
+
+#[test]
+fn test_get_computed_style_lengths() {
+    // R2707：getComputedStyle 长度族（width/height/min-max/margin/padding/border-width/
+    // border-radius/outline-width/font-size/gap/letter-spacing/text-indent 等）。compute_styles
+    // 已把相对单位解析为 Px，故 px 指定值精确；百分比/auto 保留（无 layout 不解析为 used 值）。
+    // border-width 在 style:none 时返 "0px"（used=0）；outline-width 则保留 computed medium→3px（R2754）；max-*:none → "none"。
+    let html = "<html><body>\
+        <div id=\"box\" style=\"\
+            width: 100px; height: 50%; \
+            margin-top: 10px; margin-right: 20px; margin-bottom: 10px; margin-left: 20px; \
+            padding: 5px; \
+            border-top-width: 3px; border-top-style: solid; \
+            border-top-left-radius: 8px; \
+            outline-width: 2px; outline-style: solid; \
+            max-width: 500px; min-width: auto; \
+            font-size: 20px; \
+            gap: 12px; letter-spacing: 0.1em; \
+        \"></div>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+
+    // px 指定 → 精确（Chrome 一致）。
+    assert_eq!(computed_style_property(html, "#box", "width"), "100px");
+    assert_eq!(computed_style_property(html, "#box", "margin-top"), "10px");
+    assert_eq!(computed_style_property(html, "#box", "margin-right"), "20px");
+    assert_eq!(computed_style_property(html, "#box", "margin-bottom"), "10px");
+    assert_eq!(computed_style_property(html, "#box", "margin-left"), "20px");
+    assert_eq!(computed_style_property(html, "#box", "padding-top"), "5px");
+    assert_eq!(computed_style_property(html, "#box", "padding-left"), "5px");
+    // 百分比 → 保留（计算值，无 layout 不解析 used 值）。
+    assert_eq!(computed_style_property(html, "#box", "height"), "50%");
+    // em → 解析为 px（letter-spacing 0.1em @ font-size 20px = 2px）。
+    assert_eq!(computed_style_property(html, "#box", "letter-spacing"), "2px");
+    assert_eq!(computed_style_property(html, "#box", "font-size"), "20px");
+    assert_eq!(computed_style_property(html, "#box", "gap"), "12px");
+    // border-width：style=solid → 真宽；border-radius px。
+    assert_eq!(computed_style_property(html, "#box", "border-top-width"), "3px");
+    assert_eq!(computed_style_property(html, "#box", "border-top-left-radius"), "8px");
+    // outline-width：style=solid → 真宽。
+    assert_eq!(computed_style_property(html, "#box", "outline-width"), "2px");
+    // max-width 指定 → px；min-width auto → "auto"。
+    assert_eq!(computed_style_property(html, "#box", "max-width"), "500px");
+    assert_eq!(computed_style_property(html, "#box", "min-width"), "auto");
+
+    // 默认 div（无 border）：border-width 返 "0px"（border-style:none → used=0，对齐 Chromium）。
+    assert_eq!(computed_style_property(html, "#plain", "border-top-width"), "0px");
+    // R2754：outline-width 不套 border 的 none→0 规则——outline-style:none 时 outline-width 仍保留
+    // computed 值（medium→3px），Chromium getComputedStyle 返 "3px"（与 border-width 行为不同）。
+    assert_eq!(computed_style_property(html, "#plain", "outline-width"), "3px");
+    // 默认 max-width/max-height:none → "none"；默认 margin:0 → "0px"；默认 width:auto → "auto"。
+    assert_eq!(computed_style_property(html, "#plain", "max-width"), "none");
+    assert_eq!(computed_style_property(html, "#plain", "max-height"), "none");
+    assert_eq!(computed_style_property(html, "#plain", "margin-top"), "0px");
+    assert_eq!(computed_style_property(html, "#plain", "width"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "font-size"), "16px");
+}
+
+#[test]
+fn test_get_computed_style_keywords() {
+    // R2708：getComputedStyle 关键字/枚举族（float/clear/box-sizing/overflow/text-align/
+    // white-space/font-weight/font-style/line-height/z-index/cursor/text-transform/text-overflow/
+    // direction/border-collapse/table-layout/caption-side/border-*-style/outline-style）。
+    let html = "<html><body>\
+        <div id=\"k\" style=\"\
+            float: left; clear: both; box-sizing: border-box; \
+            overflow: hidden; text-align: center; white-space: pre-wrap; \
+            font-weight: bold; font-style: italic; line-height: 1.5; \
+            z-index: 10; cursor: pointer; text-transform: uppercase; \
+            text-overflow: ellipsis; direction: rtl; \
+            border: 2px dashed red; outline: 3px dotted blue; \
+        \"></div>\
+        <table id=\"t\" style=\"border-collapse: collapse; table-layout: fixed;\
+            \"><caption id=\"cap\"></caption><tr><td></td></tr></table>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+
+    // 显式设置的关键字直映。
+    assert_eq!(computed_style_property(html, "#k", "float"), "left");
+    assert_eq!(computed_style_property(html, "#k", "clear"), "both");
+    assert_eq!(computed_style_property(html, "#k", "box-sizing"), "border-box");
+    assert_eq!(computed_style_property(html, "#k", "overflow-x"), "hidden");
+    assert_eq!(computed_style_property(html, "#k", "overflow-y"), "hidden");
+    assert_eq!(computed_style_property(html, "#k", "text-align"), "center");
+    assert_eq!(computed_style_property(html, "#k", "white-space"), "pre-wrap");
+    // font-weight bold→700（对齐 Chromium 绝对值）、font-style italic、line-height number→used px
+    // （1.5 × 默认 font-size 16px = 24px，R2761 对齐 Chromium getComputedStyle used 值）。
+    assert_eq!(computed_style_property(html, "#k", "font-weight"), "700");
+    assert_eq!(computed_style_property(html, "#k", "font-style"), "italic");
+    assert_eq!(computed_style_property(html, "#k", "line-height"), "24px");
+    assert_eq!(computed_style_property(html, "#k", "z-index"), "10");
+    assert_eq!(computed_style_property(html, "#k", "cursor"), "pointer");
+    assert_eq!(computed_style_property(html, "#k", "text-transform"), "uppercase");
+    assert_eq!(computed_style_property(html, "#k", "text-overflow"), "ellipsis");
+    assert_eq!(computed_style_property(html, "#k", "direction"), "rtl");
+    // border/outline shorthand → longhand style。
+    assert_eq!(computed_style_property(html, "#k", "border-top-style"), "dashed");
+    assert_eq!(computed_style_property(html, "#k", "outline-style"), "dotted");
+    // 表格属性。
+    assert_eq!(computed_style_property(html, "#t", "border-collapse"), "collapse");
+    assert_eq!(computed_style_property(html, "#t", "table-layout"), "fixed");
+
+    // 默认值（initial 关键字）——验证关键字族 fallback 正确。
+    assert_eq!(computed_style_property(html, "#plain", "float"), "none");
+    assert_eq!(computed_style_property(html, "#plain", "box-sizing"), "content-box");
+    assert_eq!(computed_style_property(html, "#plain", "overflow-x"), "visible");
+    assert_eq!(computed_style_property(html, "#plain", "text-align"), "start");
+    assert_eq!(computed_style_property(html, "#plain", "white-space"), "normal");
+    assert_eq!(computed_style_property(html, "#plain", "font-weight"), "400");
+    assert_eq!(computed_style_property(html, "#plain", "font-style"), "normal");
+    assert_eq!(computed_style_property(html, "#plain", "line-height"), "normal");
+    assert_eq!(computed_style_property(html, "#plain", "z-index"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "cursor"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "text-transform"), "none");
+    assert_eq!(computed_style_property(html, "#plain", "text-overflow"), "clip");
+    assert_eq!(computed_style_property(html, "#plain", "direction"), "ltr");
+    assert_eq!(computed_style_property(html, "#plain", "border-top-style"), "none");
+    assert_eq!(computed_style_property(html, "#plain", "outline-style"), "none");
+}
+
+#[test]
+fn test_get_computed_style_composite() {
+    // R2710：getComputedStyle 复合/列表族（font-family/flex-*/justify-content/align-*
+    // /writing-mode/object-fit/isolation/mix-blend-mode/pointer-events/user-select/list-style-*）。
+    let html = "<html><body>\
+        <div id=\"c\" style=\"\
+            font-family: 'Helvetica Neue', Arial, sans-serif; \
+            flex-direction: column; flex-wrap: wrap; \
+            justify-content: space-between; align-items: center; align-self: flex-end; \
+            writing-mode: vertical-rl; object-fit: cover; isolation: isolate; \
+            mix-blend-mode: multiply; pointer-events: none; user-select: all; \
+        \"></div>\
+        <ul id=\"l\" style=\"list-style-type: lower-alpha; list-style-position: inside;\
+            \"><li></li></ul>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+
+    // font-family：逗号分隔，带空格的族名加引号，简单 ident（Arial/sans-serif）不引号。
+    assert_eq!(
+        computed_style_property(html, "#c", "font-family"),
+        "\"Helvetica Neue\", Arial, sans-serif"
+    );
+    // flex / alignment / writing-mode / object-fit / 隔离·混合·交互。
+    assert_eq!(computed_style_property(html, "#c", "flex-direction"), "column");
+    assert_eq!(computed_style_property(html, "#c", "flex-wrap"), "wrap");
+    assert_eq!(computed_style_property(html, "#c", "justify-content"), "space-between");
+    assert_eq!(computed_style_property(html, "#c", "align-items"), "center");
+    assert_eq!(computed_style_property(html, "#c", "align-self"), "flex-end");
+    assert_eq!(computed_style_property(html, "#c", "writing-mode"), "vertical-rl");
+    assert_eq!(computed_style_property(html, "#c", "object-fit"), "cover");
+    assert_eq!(computed_style_property(html, "#c", "isolation"), "isolate");
+    assert_eq!(computed_style_property(html, "#c", "mix-blend-mode"), "multiply");
+    assert_eq!(computed_style_property(html, "#c", "pointer-events"), "none");
+    assert_eq!(computed_style_property(html, "#c", "user-select"), "all");
+    // list-style。
+    assert_eq!(computed_style_property(html, "#l", "list-style-type"), "lower-alpha");
+    assert_eq!(computed_style_property(html, "#l", "list-style-position"), "inside");
+
+    // 默认值（ZeroWeb initial：justify-content=flex-start、align-items=stretch、align-self=auto；
+    // 注：Chromium Box Align 3 initial 为 normal，ZeroWeb default 取 flex-start/stretch，diverge）。
+    assert_eq!(computed_style_property(html, "#plain", "flex-direction"), "row");
+    assert_eq!(computed_style_property(html, "#plain", "flex-wrap"), "nowrap");
+    assert_eq!(computed_style_property(html, "#plain", "justify-content"), "flex-start");
+    assert_eq!(computed_style_property(html, "#plain", "align-items"), "stretch");
+    assert_eq!(computed_style_property(html, "#plain", "align-self"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "writing-mode"), "horizontal-tb");
+    assert_eq!(computed_style_property(html, "#plain", "object-fit"), "fill");
+    assert_eq!(computed_style_property(html, "#plain", "isolation"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "mix-blend-mode"), "normal");
+    assert_eq!(computed_style_property(html, "#plain", "pointer-events"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "user-select"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "list-style-type"), "disc");
+    assert_eq!(
+        computed_style_property(html, "#plain", "list-style-position"),
+        "outside"
+    );
+}
+
+#[test]
+fn test_get_computed_style_numeric_special() {
+    // R2711：getComputedStyle 数值/special 族（flex-grow/flex-shrink/order/flex-basis/aspect-ratio）。
+    let html = "<html><body>\
+        <div id=\"n\" style=\"\
+            flex-grow: 2.5; flex-shrink: 0; order: 3; \
+            flex-basis: 120px; aspect-ratio: 16 / 9; \
+        \"></div>\
+        <div id=\"plain\"></div>\
+        </body></html>";
+
+    // 显式数值/special。
+    assert_eq!(computed_style_property(html, "#n", "flex-grow"), "2.5");
+    assert_eq!(computed_style_property(html, "#n", "flex-shrink"), "0");
+    assert_eq!(computed_style_property(html, "#n", "order"), "3");
+    assert_eq!(computed_style_property(html, "#n", "flex-basis"), "120px");
+    // aspect-ratio: ZeroWeb 只存合并比值 → 数值（Chrome 返 "16 / 9"，diverge，已记 known-limitation）。
+    assert_eq!(computed_style_property(html, "#n", "aspect-ratio"), "1.778");
+
+    // 默认值（ZeroWeb initial：flex-grow=0、flex-shrink=1、order=0、flex-basis=auto、aspect-ratio=auto）。
+    assert_eq!(computed_style_property(html, "#plain", "flex-grow"), "0");
+    assert_eq!(computed_style_property(html, "#plain", "flex-shrink"), "1");
+    assert_eq!(computed_style_property(html, "#plain", "order"), "0");
+    assert_eq!(computed_style_property(html, "#plain", "flex-basis"), "auto");
+    assert_eq!(computed_style_property(html, "#plain", "aspect-ratio"), "auto");
+}
+
+#[test]
+fn test_get_computed_style_transform() {
+    // R2715：getComputedStyle transform 序列化（CSS Transforms L1/L2 计算值 = 函数列表）。
+    // Chromium 返 resolved matrix（diverge）；ZeroWeb 返 parsed 函数列表（spec-correct + Firefox 一致）。
+    let html = "<html><body>\
+        <div id=\"t\" style=\"transform: translate(10px, 20px) rotate(45deg) scale(2);\"></div>\
+        <div id=\"pct\" style=\"transform: translateX(50%);\"></div>\
+        <div id=\"none\"></div>\
+        </body></html>";
+    // 组合：translate + rotate + scale（空格分隔函数列表）。
+    assert_eq!(
+        computed_style_property(html, "#t", "transform"),
+        "translate(10px, 20px) rotate(45deg) scale(2)"
+    );
+    // 百分比 translate 保留（border-box 相对，须 layout 故保 %）。
+    assert_eq!(computed_style_property(html, "#pct", "transform"), "translateX(50%)");
+    // 默认 none。
+    assert_eq!(computed_style_property(html, "#none", "transform"), "none");
+}
+
+#[test]
+fn test_get_computed_style_transform_origin() {
+    // R2716：getComputedStyle transform-origin 序列化（2 LengthValue，空格连接）。
+    // Chromium 返 used 值（border-box 中心绝对 px，diverge）；ZeroWeb 返计算值（spec-correct + Firefox 一致）。
+    let html = "<html><body>\
+        <div id=\"px\" style=\"transform-origin: 10px 20px;\"></div>\
+        <div id=\"pct\" style=\"transform-origin: 25% 75%;\"></div>\
+        <div id=\"center\" style=\"transform-origin: center;\"></div>\
+        <div id=\"single\" style=\"transform-origin: 0px;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // 显式 px（computed == used，与 real browser 一致）。
+    assert_eq!(computed_style_property(html, "#px", "transform-origin"), "10px 20px");
+    // 显式百分比保留为计算值（Chromium 返 used px，diverge）。
+    assert_eq!(computed_style_property(html, "#pct", "transform-origin"), "25% 75%");
+    // 关键字 center 计算值 = 50% 50%（apply 未解析关键字降级为默认，恰等于 center 计算值，行为正确）。
+    assert_eq!(computed_style_property(html, "#center", "transform-origin"), "50% 50%");
+    // 单值：x 指定，y 默认 50%。
+    assert_eq!(computed_style_property(html, "#single", "transform-origin"), "0px 50%");
+    // 默认值 50% 50%。
+    assert_eq!(computed_style_property(html, "#def", "transform-origin"), "50% 50%");
+}
+
+#[test]
+fn test_get_computed_style_contain() {
+    // R2717：getComputedStyle contain 序列化（CSS Containment L1/L2 计算值）。
+    // Strict/Content 保留 shorthand 不展开（与 Chromium 一致）；组合值按 spec 语法序 size/layout/paint/style。
+    let html = "<html><body>\
+        <div id=\"none\" style=\"contain: none;\"></div>\
+        <div id=\"strict\" style=\"contain: strict;\"></div>\
+        <div id=\"content\" style=\"contain: content;\"></div>\
+        <div id=\"single\" style=\"contain: layout;\"></div>\
+        <div id=\"combo\" style=\"contain: layout paint;\"></div>\
+        <div id=\"size-style\" style=\"contain: size style;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // none（默认）。
+    assert_eq!(computed_style_property(html, "#none", "contain"), "none");
+    // shorthand 保留。
+    assert_eq!(computed_style_property(html, "#strict", "contain"), "strict");
+    assert_eq!(computed_style_property(html, "#content", "contain"), "content");
+    // 单关键字。
+    assert_eq!(computed_style_property(html, "#single", "contain"), "layout");
+    // 组合：位掩码解码，spec 语法序（layout paint）。
+    assert_eq!(computed_style_property(html, "#combo", "contain"), "layout paint");
+    // 组合：size + style（非连续位）按语法序 size 在前。
+    assert_eq!(computed_style_property(html, "#size-style", "contain"), "size style");
+    // 默认 none。
+    assert_eq!(computed_style_property(html, "#def", "contain"), "none");
+}
+
+#[test]
+fn test_get_computed_style_filter() {
+    // R2718：getComputedStyle filter 序列化（CSS Filter Effects 函数列表，空格分隔）。
+    let html = "<html><body>\
+        <div id=\"none\" style=\"filter: none;\"></div>\
+        <div id=\"blur\" style=\"filter: blur(5px);\"></div>\
+        <div id=\"combo\" style=\"filter: brightness(1.5) contrast(0.8);\"></div>\
+        <div id=\"hue\" style=\"filter: hue-rotate(90deg);\"></div>\
+        <div id=\"shadow\" style=\"filter: drop-shadow(2px 4px 6px red);\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // none（显式与默认均为空 Vec）。
+    assert_eq!(computed_style_property(html, "#none", "filter"), "none");
+    // 单函数：blur 长度为 px。
+    assert_eq!(computed_style_property(html, "#blur", "filter"), "blur(5px)");
+    // 多函数组合：空格分隔，数值函数无单位。
+    assert_eq!(
+        computed_style_property(html, "#combo", "filter"),
+        "brightness(1.5) contrast(0.8)"
+    );
+    // hue-rotate 角度为 deg。
+    assert_eq!(computed_style_property(html, "#hue", "filter"), "hue-rotate(90deg)");
+    // drop-shadow：3 长度 px + 颜色解析为 rgb()。
+    assert_eq!(
+        computed_style_property(html, "#shadow", "filter"),
+        "drop-shadow(2px 4px 6px rgb(255, 0, 0))"
+    );
+    // 默认 none。
+    assert_eq!(computed_style_property(html, "#def", "filter"), "none");
+}
+
+#[test]
+fn test_get_computed_style_transform_family() {
+    // R2719：getComputedStyle 3D transform 簇（transform-style / backface-visibility / perspective /
+    // perspective-origin，完成 R2715/R2716 启动的 transform 簇）。
+    let html = "<html><body>\
+        <div id=\"ts-3d\" style=\"transform-style: preserve-3d;\"></div>\
+        <div id=\"bv-hidden\" style=\"backface-visibility: hidden;\"></div>\
+        <div id=\"persp\" style=\"perspective: 800px;\"></div>\
+        <div id=\"po\" style=\"perspective-origin: 25% 75%;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // transform-style：默认 flat，显式 preserve-3d。
+    assert_eq!(
+        computed_style_property(html, "#ts-3d", "transform-style"),
+        "preserve-3d"
+    );
+    assert_eq!(computed_style_property(html, "#def", "transform-style"), "flat");
+    // backface-visibility：默认 visible，显式 hidden。
+    assert_eq!(
+        computed_style_property(html, "#bv-hidden", "backface-visibility"),
+        "hidden"
+    );
+    assert_eq!(computed_style_property(html, "#def", "backface-visibility"), "visible");
+    // perspective：默认 none（Px(0.0)），显式 px。
+    assert_eq!(computed_style_property(html, "#persp", "perspective"), "800px");
+    assert_eq!(computed_style_property(html, "#def", "perspective"), "none");
+    // perspective-origin：默认 50% 50%，显式百分比保留。
+    assert_eq!(computed_style_property(html, "#po", "perspective-origin"), "25% 75%");
+    assert_eq!(computed_style_property(html, "#def", "perspective-origin"), "50% 50%");
+}
+
+#[test]
+fn test_get_computed_style_will_change() {
+    // R2720：getComputedStyle will-change 序列化（CSS Will Change 列表，perf hint 常查）。
+    let html = "<html><body>\
+        <div id=\"auto\" style=\"will-change: auto;\"></div>\
+        <div id=\"scroll\" style=\"will-change: scroll-position;\"></div>\
+        <div id=\"contents\" style=\"will-change: contents;\"></div>\
+        <div id=\"custom\" style=\"will-change: transform;\"></div>\
+        <div id=\"multi\" style=\"will-change: transform opacity;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // auto（显式与默认均为空 Vec）。
+    assert_eq!(computed_style_property(html, "#auto", "will-change"), "auto");
+    assert_eq!(computed_style_property(html, "#def", "will-change"), "auto");
+    // 关键字标识符。
+    assert_eq!(
+        computed_style_property(html, "#scroll", "will-change"),
+        "scroll-position"
+    );
+    assert_eq!(computed_style_property(html, "#contents", "will-change"), "contents");
+    // 自定义属性名原样。
+    assert_eq!(computed_style_property(html, "#custom", "will-change"), "transform");
+    // 多属性组合：空格分隔。
+    assert_eq!(
+        computed_style_property(html, "#multi", "will-change"),
+        "transform opacity"
+    );
+}
+
+#[test]
+fn test_get_computed_style_clip_path() {
+    // R2721：getComputedStyle clip-path 序列化（CSS Masking basic-shape 函数）。
+    let html = "<html><body>\
+        <div id=\"none\" style=\"clip-path: none;\"></div>\
+        <div id=\"inset1\" style=\"clip-path: inset(10%);\"></div>\
+        <div id=\"inset2\" style=\"clip-path: inset(10% 20%);\"></div>\
+        <div id=\"inset-round\" style=\"clip-path: inset(5px round 10px);\"></div>\
+        <div id=\"circle\" style=\"clip-path: circle(50px at 25% 75%);\"></div>\
+        <div id=\"circle-def\" style=\"clip-path: circle();\"></div>\
+        <div id=\"polygon\" style=\"clip-path: polygon(0% 0%, 100% 0%, 50% 100%);\"></div>\
+        <div id=\"polygon-ee\" style=\"clip-path: polygon(evenodd, 0% 0%, 100% 0%, 50% 100%);\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // none。
+    assert_eq!(computed_style_property(html, "#none", "clip-path"), "none");
+    assert_eq!(computed_style_property(html, "#def", "clip-path"), "none");
+    // inset 单值折叠（解析展开 4 值全等 → 重新折叠为 1 值）。
+    assert_eq!(computed_style_property(html, "#inset1", "clip-path"), "inset(10%)");
+    // inset 双值（top==bottom, left==right）。
+    assert_eq!(computed_style_property(html, "#inset2", "clip-path"), "inset(10% 20%)");
+    // inset + round（圆角半径）。
+    assert_eq!(
+        computed_style_property(html, "#inset-round", "clip-path"),
+        "inset(5px round 10px)"
+    );
+    // circle 半径 + at 位置。
+    assert_eq!(
+        computed_style_property(html, "#circle", "clip-path"),
+        "circle(50px at 25% 75%)"
+    );
+    // circle() 空（默认 closest-side，无位置）。
+    assert_eq!(
+        computed_style_property(html, "#circle-def", "clip-path"),
+        "circle(closest-side)"
+    );
+    // polygon 默认 nonzero 省略填充规则，顶点逗号分隔。
+    assert_eq!(
+        computed_style_property(html, "#polygon", "clip-path"),
+        "polygon(0% 0%, 100% 0%, 50% 100%)"
+    );
+    // polygon evenodd 输出填充规则。
+    assert_eq!(
+        computed_style_property(html, "#polygon-ee", "clip-path"),
+        "polygon(evenodd, 0% 0%, 100% 0%, 50% 100%)"
+    );
+}
+
+#[test]
+fn test_get_computed_style_content() {
+    // R2722：getComputedStyle content 序列化（CSS Generated Content，::before/::after 生成内容）。
+    let html = "<html><body>\
+        <div id=\"none\" style=\"content: none;\"></div>\
+        <div id=\"str\" style=\"content: 'hello';\"></div>\
+        <div id=\"counter\" style=\"content: counter(c);\"></div>\
+        <div id=\"counter-style\" style=\"content: counter(c, upper-roman);\"></div>\
+        <div id=\"counters\" style=\"content: counters(n, '.');\"></div>\
+        <div id=\"url\" style=\"content: url(x.png);\"></div>\
+        <div id=\"list\" style=\"content: 'Chapter ' counter(c);\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // none / normal（默认）。
+    assert_eq!(computed_style_property(html, "#none", "content"), "none");
+    assert_eq!(computed_style_property(html, "#def", "content"), "normal");
+    // 字符串：双引号包裹。
+    assert_eq!(computed_style_property(html, "#str", "content"), "\"hello\"");
+    // counter(name) / counter(name, style)。
+    assert_eq!(computed_style_property(html, "#counter", "content"), "counter(c)");
+    assert_eq!(
+        computed_style_property(html, "#counter-style", "content"),
+        "counter(c, upper-roman)"
+    );
+    // counters(name, "sep")：分隔符引号串化。
+    assert_eq!(
+        computed_style_property(html, "#counters", "content"),
+        "counters(n, \".\")"
+    );
+    // url(...)。
+    assert_eq!(computed_style_property(html, "#url", "content"), "url(x.png)");
+    // 多 component value 列表：空格连接。
+    assert_eq!(
+        computed_style_property(html, "#list", "content"),
+        "\"Chapter \" counter(c)"
+    );
+}
+
+#[test]
+fn test_get_computed_style_font_weight_bolder_lighter() {
+    // R2723：getComputedStyle bolder/lighter 按父链 resolved 绝对值解析（CSS Fonts 3 §5.2，
+    // 对齐 Chromium；ZeroWeb 保关键字供 paint 二值 want_bold，仅 gCS 路径解析）。
+    let html = "<html><body>\
+        <b id=\"bolder-normal\" style=\"font-weight: bolder\"></b>\
+        <div style=\"font-weight: bold\"><b id=\"bolder-bold\" style=\"font-weight: bolder\"></b></div>\
+        <div style=\"font-weight: bold\"><span id=\"lighter-bold\" style=\"font-weight: lighter\"></span></div>\
+        <span id=\"lighter-normal\" style=\"font-weight: lighter\"></span>\
+        <div id=\"explicit\" style=\"font-weight: 500\"></div>\
+        </body></html>";
+    // bolder on normal(400) parent → 700。
+    assert_eq!(computed_style_property(html, "#bolder-normal", "font-weight"), "700");
+    // bolder on bold(700) parent → 900。
+    assert_eq!(computed_style_property(html, "#bolder-bold", "font-weight"), "900");
+    // lighter on bold(700) parent → 400。
+    assert_eq!(computed_style_property(html, "#lighter-bold", "font-weight"), "400");
+    // lighter on normal(400) parent → 100。
+    assert_eq!(computed_style_property(html, "#lighter-normal", "font-weight"), "100");
+    // 非 bolder/lighter 不受影响（显式数值原样）。
+    assert_eq!(computed_style_property(html, "#explicit", "font-weight"), "500");
+}
+
+#[test]
+fn test_get_computed_style_background_position() {
+    // R2724：getComputedStyle background-position 序列化（CSS Backgrounds <bg-position># 多层）。
+    // Chromium 解析关键字为百分比（WPT background-computed.html），单关键字按轴展开（缺省轴 center 50%）。
+    let html = "<html><body>\
+        <div id=\"center\" style=\"background-position: center;\"></div>\
+        <div id=\"lt\" style=\"background-position: left top;\"></div>\
+        <div id=\"rb\" style=\"background-position: right bottom;\"></div>\
+        <div id=\"px\" style=\"background-position: 10px 20px;\"></div>\
+        <div id=\"pct\" style=\"background-position: 25% 75%;\"></div>\
+        <div id=\"multi\" style=\"background-position: center, left top;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // 默认 0% 0%（TwoValue(Percent 0, Percent 0)）。
+    assert_eq!(computed_style_property(html, "#def", "background-position"), "0% 0%");
+    // 单关键字 center → 两轴展开 50% 50%。
+    assert_eq!(
+        computed_style_property(html, "#center", "background-position"),
+        "50% 50%"
+    );
+    // TwoValue 关键字 → 解析为 %。
+    assert_eq!(computed_style_property(html, "#lt", "background-position"), "0% 0%");
+    assert_eq!(computed_style_property(html, "#rb", "background-position"), "100% 100%");
+    // TwoValue 长度 → px。
+    assert_eq!(computed_style_property(html, "#px", "background-position"), "10px 20px");
+    // TwoValue 百分比 → %。
+    assert_eq!(computed_style_property(html, "#pct", "background-position"), "25% 75%");
+    // 多背景层：逗号分隔。
+    assert_eq!(
+        computed_style_property(html, "#multi", "background-position"),
+        "50% 50%, 0% 0%"
+    );
+}
+
+#[test]
+fn test_get_computed_style_background_size_repeat() {
+    // R2725：getComputedStyle background-size + background-repeat 序列化（CSS Backgrounds 多层）。
+    let html = "<html><body>\
+        <div id=\"size-cover\" style=\"background-size: cover;\"></div>\
+        <div id=\"size-px\" style=\"background-size: 100px;\"></div>\
+        <div id=\"size-multi\" style=\"background-size: 50%, auto;\"></div>\
+        <div id=\"repeat-x\" style=\"background-repeat: repeat-x;\"></div>\
+        <div id=\"repeat-multi\" style=\"background-repeat: no-repeat, space;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // background-size 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "background-size"), "auto");
+    assert_eq!(computed_style_property(html, "#size-cover", "background-size"), "cover");
+    assert_eq!(computed_style_property(html, "#size-px", "background-size"), "100px");
+    // 多层逗号分隔。
+    assert_eq!(
+        computed_style_property(html, "#size-multi", "background-size"),
+        "50%, auto"
+    );
+    // background-repeat 默认 repeat。
+    assert_eq!(computed_style_property(html, "#def", "background-repeat"), "repeat");
+    assert_eq!(
+        computed_style_property(html, "#repeat-x", "background-repeat"),
+        "repeat-x"
+    );
+    // 多层逗号分隔。
+    assert_eq!(
+        computed_style_property(html, "#repeat-multi", "background-repeat"),
+        "no-repeat, space"
+    );
+}
+
+#[test]
+fn test_get_computed_style_background_attachment_clip_origin() {
+    // R2726：getComputedStyle background-attachment/clip/origin 序列化（单值 box-model 枚举）。
+    let html = "<html><body>\
+        <div id=\"att-fixed\" style=\"background-attachment: fixed;\"></div>\
+        <div id=\"att-local\" style=\"background-attachment: local;\"></div>\
+        <div id=\"clip-pad\" style=\"background-clip: padding-box;\"></div>\
+        <div id=\"clip-content\" style=\"background-clip: content-box;\"></div>\
+        <div id=\"clip-text\" style=\"background-clip: text;\"></div>\
+        <div id=\"origin-border\" style=\"background-origin: border-box;\"></div>\
+        <div id=\"origin-content\" style=\"background-origin: content-box;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // background-attachment 默认 scroll。
+    assert_eq!(computed_style_property(html, "#def", "background-attachment"), "scroll");
+    assert_eq!(
+        computed_style_property(html, "#att-fixed", "background-attachment"),
+        "fixed"
+    );
+    assert_eq!(
+        computed_style_property(html, "#att-local", "background-attachment"),
+        "local"
+    );
+    // background-clip 默认 border-box。
+    assert_eq!(computed_style_property(html, "#def", "background-clip"), "border-box");
+    assert_eq!(
+        computed_style_property(html, "#clip-pad", "background-clip"),
+        "padding-box"
+    );
+    assert_eq!(
+        computed_style_property(html, "#clip-content", "background-clip"),
+        "content-box"
+    );
+    assert_eq!(computed_style_property(html, "#clip-text", "background-clip"), "text");
+    // background-origin 默认 padding-box（注意：与 clip 的 border-box 默认不同）。
+    assert_eq!(
+        computed_style_property(html, "#def", "background-origin"),
+        "padding-box"
+    );
+    assert_eq!(
+        computed_style_property(html, "#origin-border", "background-origin"),
+        "border-box"
+    );
+    assert_eq!(
+        computed_style_property(html, "#origin-content", "background-origin"),
+        "content-box"
+    );
+}
+
+#[test]
+fn test_get_computed_style_alignment_cluster() {
+    // R2727：getComputedStyle align-content/justify-items/justify-self 序列化（Box Alignment 簇补齐）。
+    let html = "<html><body>\
+        <div id=\"ac-center\" style=\"align-content: center;\"></div>\
+        <div id=\"ac-between\" style=\"align-content: space-between;\"></div>\
+        <div id=\"ji-start\" style=\"justify-items: start;\"></div>\
+        <div id=\"ji-right\" style=\"justify-items: right;\"></div>\
+        <div id=\"js-end\" style=\"justify-self: end;\"></div>\
+        <div id=\"js-stretch\" style=\"justify-self: stretch;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // align-content 默认 normal。
+    assert_eq!(computed_style_property(html, "#def", "align-content"), "normal");
+    assert_eq!(computed_style_property(html, "#ac-center", "align-content"), "center");
+    assert_eq!(
+        computed_style_property(html, "#ac-between", "align-content"),
+        "space-between"
+    );
+    // justify-items 默认 normal。
+    assert_eq!(computed_style_property(html, "#def", "justify-items"), "normal");
+    assert_eq!(computed_style_property(html, "#ji-start", "justify-items"), "start");
+    assert_eq!(computed_style_property(html, "#ji-right", "justify-items"), "right");
+    // justify-self 默认 auto（注意：与 justify-items 的 normal 默认不同）。
+    assert_eq!(computed_style_property(html, "#def", "justify-self"), "auto");
+    assert_eq!(computed_style_property(html, "#js-end", "justify-self"), "end");
+    assert_eq!(computed_style_property(html, "#js-stretch", "justify-self"), "stretch");
+}
+
+#[test]
+fn test_get_computed_style_text_break_cluster() {
+    // R2728：getComputedStyle word-break/overflow-wrap/hyphens/line-break 序列化（CSS Text 换行/断词簇）。
+    let html = "<html><body>\
+        <div id=\"wb-all\" style=\"word-break: break-all;\"></div>\
+        <div id=\"wb-keep\" style=\"word-break: keep-all;\"></div>\
+        <div id=\"ow-word\" style=\"overflow-wrap: break-word;\"></div>\
+        <div id=\"ow-any\" style=\"overflow-wrap: anywhere;\"></div>\
+        <div id=\"hyph-auto\" style=\"hyphens: auto;\"></div>\
+        <div id=\"hyph-manual\" style=\"hyphens: manual;\"></div>\
+        <div id=\"lb-strict\" style=\"line-break: strict;\"></div>\
+        <div id=\"lb-anywhere\" style=\"line-break: anywhere;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // word-break 默认 normal。
+    assert_eq!(computed_style_property(html, "#def", "word-break"), "normal");
+    assert_eq!(computed_style_property(html, "#wb-all", "word-break"), "break-all");
+    assert_eq!(computed_style_property(html, "#wb-keep", "word-break"), "keep-all");
+    // overflow-wrap 默认 normal。
+    assert_eq!(computed_style_property(html, "#def", "overflow-wrap"), "normal");
+    assert_eq!(computed_style_property(html, "#ow-word", "overflow-wrap"), "break-word");
+    assert_eq!(computed_style_property(html, "#ow-any", "overflow-wrap"), "anywhere");
+    // hyphens：ZeroWeb 默认 none（diverge：CSS 规范/Chromium 初值 manual）。
+    assert_eq!(computed_style_property(html, "#def", "hyphens"), "none");
+    assert_eq!(computed_style_property(html, "#hyph-auto", "hyphens"), "auto");
+    assert_eq!(computed_style_property(html, "#hyph-manual", "hyphens"), "manual");
+    // line-break 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "line-break"), "auto");
+    assert_eq!(computed_style_property(html, "#lb-strict", "line-break"), "strict");
+    assert_eq!(computed_style_property(html, "#lb-anywhere", "line-break"), "anywhere");
+}
+
+#[test]
+fn test_get_computed_style_va_bidi_empty() {
+    // R2729：getComputedStyle vertical-align/unicode-bidi/empty-cells 序列化（单值关键字枚举）。
+    let html = "<html><body>\
+        <div id=\"va-middle\" style=\"vertical-align: middle;\"></div>\
+        <div id=\"va-text-top\" style=\"vertical-align: text-top;\"></div>\
+        <div id=\"va-sub\" style=\"vertical-align: sub;\"></div>\
+        <div id=\"ub-isolate\" style=\"unicode-bidi: isolate;\"></div>\
+        <div id=\"ub-plaintext\" style=\"unicode-bidi: plaintext;\"></div>\
+        <div id=\"ec-hide\" style=\"empty-cells: hide;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // vertical-align 默认 baseline。
+    assert_eq!(computed_style_property(html, "#def", "vertical-align"), "baseline");
+    assert_eq!(computed_style_property(html, "#va-middle", "vertical-align"), "middle");
+    assert_eq!(
+        computed_style_property(html, "#va-text-top", "vertical-align"),
+        "text-top"
+    );
+    assert_eq!(computed_style_property(html, "#va-sub", "vertical-align"), "sub");
+    // unicode-bidi 默认 normal。
+    assert_eq!(computed_style_property(html, "#def", "unicode-bidi"), "normal");
+    assert_eq!(computed_style_property(html, "#ub-isolate", "unicode-bidi"), "isolate");
+    assert_eq!(
+        computed_style_property(html, "#ub-plaintext", "unicode-bidi"),
+        "plaintext"
+    );
+    // empty-cells 默认 show。
+    assert_eq!(computed_style_property(html, "#def", "empty-cells"), "show");
+    assert_eq!(computed_style_property(html, "#ec-hide", "empty-cells"), "hide");
+}
+
+#[test]
+fn test_get_computed_style_caret_accent_color() {
+    // R2730：getComputedStyle caret-color + accent-color 序列化（CSS UI 颜色 auto | <color>）。
+    let html = "<html><body>\
+        <div id=\"cc-red\" style=\"caret-color: red;\"></div>\
+        <div id=\"cc-cc\" style=\"color: blue; caret-color: currentcolor;\"></div>\
+        <div id=\"ac-green\" style=\"accent-color: #00ff00;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // caret-color 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "caret-color"), "auto");
+    assert_eq!(
+        computed_style_property(html, "#cc-red", "caret-color"),
+        "rgb(255, 0, 0)"
+    );
+    // currentcolor 解析为元素自身 color（blue → rgb(0,0,255)）。
+    assert_eq!(computed_style_property(html, "#cc-cc", "caret-color"), "rgb(0, 0, 255)");
+    // accent-color 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "accent-color"), "auto");
+    assert_eq!(
+        computed_style_property(html, "#ac-green", "accent-color"),
+        "rgb(0, 255, 0)"
+    );
+}
+
+#[test]
+fn test_get_computed_style_misc_ui() {
+    // R2731：getComputedStyle text-wrap/text-align-last/resize/appearance 序列化（misc 单值关键字枚举）。
+    let html = "<html><body>\
+        <div id=\"tw-balance\" style=\"text-wrap: balance;\"></div>\
+        <div id=\"tw-pretty\" style=\"text-wrap: pretty;\"></div>\
+        <div id=\"tal-justify\" style=\"text-align-last: justify;\"></div>\
+        <div id=\"tal-right\" style=\"text-align-last: right;\"></div>\
+        <div id=\"rz-both\" style=\"resize: both;\"></div>\
+        <div id=\"rz-horizontal\" style=\"resize: horizontal;\"></div>\
+        <div id=\"ap-none\" style=\"appearance: none;\"></div>\
+        <div id=\"ap-textfield\" style=\"appearance: textfield;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // text-wrap 默认 wrap。
+    assert_eq!(computed_style_property(html, "#def", "text-wrap"), "wrap");
+    assert_eq!(computed_style_property(html, "#tw-balance", "text-wrap"), "balance");
+    assert_eq!(computed_style_property(html, "#tw-pretty", "text-wrap"), "pretty");
+    // text-align-last 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "text-align-last"), "auto");
+    assert_eq!(
+        computed_style_property(html, "#tal-justify", "text-align-last"),
+        "justify"
+    );
+    assert_eq!(computed_style_property(html, "#tal-right", "text-align-last"), "right");
+    // resize 默认 none。
+    assert_eq!(computed_style_property(html, "#def", "resize"), "none");
+    assert_eq!(computed_style_property(html, "#rz-both", "resize"), "both");
+    assert_eq!(computed_style_property(html, "#rz-horizontal", "resize"), "horizontal");
+    // appearance 默认 auto；CamelCase→kebab（textfield 不变，slider-horizontal 会变）。
+    assert_eq!(computed_style_property(html, "#def", "appearance"), "auto");
+    assert_eq!(computed_style_property(html, "#ap-none", "appearance"), "none");
+    assert_eq!(
+        computed_style_property(html, "#ap-textfield", "appearance"),
+        "textfield"
+    );
+}
+
+#[test]
+fn test_get_computed_style_container_ui() {
+    // R2732：getComputedStyle box-decoration-break/scrollbar-*/touch-action 序列化（容器交互/UI 枚举）。
+    let html = "<html><body>\
+        <div id=\"bdb-clone\" style=\"box-decoration-break: clone;\"></div>\
+        <div id=\"sw-thin\" style=\"scrollbar-width: thin;\"></div>\
+        <div id=\"sg-stable\" style=\"scrollbar-gutter: stable;\"></div>\
+        <div id=\"sg-both\" style=\"scrollbar-gutter: stable both-edges;\"></div>\
+        <div id=\"ta-panx\" style=\"touch-action: pan-x;\"></div>\
+        <div id=\"ta-manip\" style=\"touch-action: manipulation;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // box-decoration-break 默认 slice。
+    assert_eq!(computed_style_property(html, "#def", "box-decoration-break"), "slice");
+    assert_eq!(
+        computed_style_property(html, "#bdb-clone", "box-decoration-break"),
+        "clone"
+    );
+    // scrollbar-width 默认 auto。
+    assert_eq!(computed_style_property(html, "#def", "scrollbar-width"), "auto");
+    assert_eq!(computed_style_property(html, "#sw-thin", "scrollbar-width"), "thin");
+    // scrollbar-gutter 默认 auto；stable / stable both-edges。
+    assert_eq!(computed_style_property(html, "#def", "scrollbar-gutter"), "auto");
+    assert_eq!(
+        computed_style_property(html, "#sg-stable", "scrollbar-gutter"),
+        "stable"
+    );
+    assert_eq!(
+        computed_style_property(html, "#sg-both", "scrollbar-gutter"),
+        "stable both-edges"
+    );
+    // touch-action 默认 auto；pan-x / manipulation。
+    assert_eq!(computed_style_property(html, "#def", "touch-action"), "auto");
+    assert_eq!(computed_style_property(html, "#ta-panx", "touch-action"), "pan-x");
+    assert_eq!(
+        computed_style_property(html, "#ta-manip", "touch-action"),
+        "manipulation"
+    );
+}
+
+#[test]
+fn test_get_computed_style_outline_break() {
+    // R2733：getComputedStyle outline-offset + break-* 序列化（补齐 outline 簇 + Fragmentation 簇）。
+    let html = "<html><body>\
+        <div id=\"oo-px\" style=\"outline-offset: 4px;\"></div>\
+        <div id=\"oo-neg\" style=\"outline-offset: -2px;\"></div>\
+        <div id=\"bb-avoid\" style=\"break-before: avoid;\"></div>\
+        <div id=\"bb-column\" style=\"break-before: column;\"></div>\
+        <div id=\"ba-avoid-page\" style=\"break-after: avoid-page;\"></div>\
+        <div id=\"bi-avoid\" style=\"break-inside: avoid;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // outline-offset 默认 0px。
+    assert_eq!(computed_style_property(html, "#def", "outline-offset"), "0px");
+    assert_eq!(computed_style_property(html, "#oo-px", "outline-offset"), "4px");
+    assert_eq!(computed_style_property(html, "#oo-neg", "outline-offset"), "-2px");
+    // break-before 默认 auto；avoid / column。
+    assert_eq!(computed_style_property(html, "#def", "break-before"), "auto");
+    assert_eq!(computed_style_property(html, "#bb-avoid", "break-before"), "avoid");
+    assert_eq!(computed_style_property(html, "#bb-column", "break-before"), "column");
+    // break-after 默认 auto；avoid-page（CamelCase→kebab）。
+    assert_eq!(computed_style_property(html, "#def", "break-after"), "auto");
+    assert_eq!(
+        computed_style_property(html, "#ba-avoid-page", "break-after"),
+        "avoid-page"
+    );
+    // break-inside 默认 auto；avoid。
+    assert_eq!(computed_style_property(html, "#def", "break-inside"), "auto");
+    assert_eq!(computed_style_property(html, "#bi-avoid", "break-inside"), "avoid");
+}
+
+#[test]
+fn test_get_computed_style_grid_container() {
+    // R2734：getComputedStyle grid-auto-flow + container-type/name + tab-size 序列化。
+    let html = "<html><body>\
+        <div id=\"gaf-col\" style=\"grid-auto-flow: column;\"></div>\
+        <div id=\"gaf-dense\" style=\"grid-auto-flow: dense;\"></div>\
+        <div id=\"ct-size\" style=\"container-type: size;\"></div>\
+        <div id=\"ct-inline\" style=\"container-type: inline-size;\"></div>\
+        <div id=\"cn-named\" style=\"container-name: sidebar;\"></div>\
+        <div id=\"ts-px\" style=\"tab-size: 24px;\"></div>\
+        <div id=\"ts-num\" style=\"tab-size: 4;\"></div>\
+        <div id=\"def\"></div>\
+        </body></html>";
+    // grid-auto-flow 默认 row；column / dense（ZeroWeb 解析 dense→RowDense 多词）。
+    assert_eq!(computed_style_property(html, "#def", "grid-auto-flow"), "row");
+    assert_eq!(computed_style_property(html, "#gaf-col", "grid-auto-flow"), "column");
+    assert_eq!(
+        computed_style_property(html, "#gaf-dense", "grid-auto-flow"),
+        "row dense"
+    );
+    // container-type 默认 normal；size / inline-size。
+    assert_eq!(computed_style_property(html, "#def", "container-type"), "normal");
+    assert_eq!(computed_style_property(html, "#ct-size", "container-type"), "size");
+    assert_eq!(
+        computed_style_property(html, "#ct-inline", "container-type"),
+        "inline-size"
+    );
+    // container-name 默认 none；显式字符串。
+    assert_eq!(computed_style_property(html, "#def", "container-name"), "none");
+    assert_eq!(computed_style_property(html, "#cn-named", "container-name"), "sidebar");
+    // tab-size 默认 8（CSS 规范初值）；px / number。
+    assert_eq!(computed_style_property(html, "#def", "tab-size"), "8");
+    assert_eq!(computed_style_property(html, "#ts-px", "tab-size"), "24px");
+    assert_eq!(computed_style_property(html, "#ts-num", "tab-size"), "4");
+}
