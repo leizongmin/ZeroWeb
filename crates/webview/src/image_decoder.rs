@@ -133,3 +133,81 @@ pub fn decode_image(bytes: &[u8]) -> Result<ImageData, String> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::webview::base64_decode;
+
+    /// 1x1 红色 PNG（最小合法 PNG）。
+    const ONE_PX_RED_PNG_B64: &str =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+    fn test_png() -> Vec<u8> {
+        base64_decode(ONE_PX_RED_PNG_B64).expect("测试 PNG 解码")
+    }
+
+    fn set_env_process(on: bool, bin: Option<&std::path::Path>) {
+        // edition 2024：env 修改为 unsafe（测试单线程环境无并发，安全）
+        unsafe {
+            if on {
+                std::env::set_var("ZW_IMAGE_DECODER_PROCESS", "1");
+            } else {
+                std::env::remove_var("ZW_IMAGE_DECODER_PROCESS");
+            }
+            match bin {
+                Some(b) => std::env::set_var("ZW_IMAGE_DECODER_BIN", b),
+                None => std::env::remove_var("ZW_IMAGE_DECODER_BIN"),
+            }
+        }
+    }
+
+    #[test]
+    fn non_raster_svg_goes_inline() {
+        // SVG（依赖资源加载）不启代理，进程内解码（C4 分发验证）
+        set_env_process(true, None);
+        let svg = b"<svg xmlns='http://www.w3.org/2000/svg' width='2' height='2'/>";
+        let img = decode_image(svg).expect("SVG 应进程内解码成功");
+        assert_eq!(img.width, 2);
+        assert_eq!(img.height, 2);
+        set_env_process(false, None);
+    }
+
+    #[test]
+    fn proxy_mode_decodes_png_correctly() {
+        // 代理模式（env 开）下 decode_image 全链路像素正确。
+        // 注意：PROXY 为进程级 static（跨测试共享），本测试不依赖
+        // spawn 成功/失败的具体路径——核心验证是「代理模式启用时
+        // 解码结果仍正确」；fail-open 回退由代码路径（match None →
+        // decode_inline）保证，并有 apps/image-decoder 集成测试兜底。
+        set_env_process(true, None);
+
+        // 真实二进制（同 target 目录）优先走代理；未构建时 spawn 失败
+        // 回退进程内——两条路径都应产出正确像素。
+        let exe = std::env::current_exe().expect("current_exe");
+        if let Some(bin) = exe
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("zero-image-decoder"))
+            .filter(|p| p.exists())
+        {
+            set_env_process(true, Some(&bin));
+        }
+
+        let img = decode_image(&test_png()).expect("代理模式解码成功");
+        assert_eq!(img.width, 1);
+        assert_eq!(img.height, 1);
+        // 1x1 红色 PNG（alpha=127）：红色通道 255 即像素正确
+        assert_eq!(img.pixels[0], 255, "R 通道应为 255");
+        set_env_process(false, None);
+    }
+
+    #[test]
+    fn env_off_uses_inline_decode() {
+        // 默认路径：env 关闭 → 进程内解码（零行为变更验证）
+        set_env_process(false, None);
+        let img = decode_image(&test_png()).expect("进程内解码成功");
+        assert_eq!(img.width, 1);
+        assert_eq!(img.pixels[0], 255, "R 通道应为 255");
+    }
+}
