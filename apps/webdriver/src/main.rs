@@ -159,6 +159,33 @@ impl Driver {
     }
 }
 
+// ── M1：元素定位与交互（Rust 侧查询真实页面 DOM）──
+//
+// 能力边界（2026-08-07 实测确定）：
+//   - execute_script_with_dom 的 DOM 是 JS 沙箱内的**虚拟 DOM**（dom_bridge
+//     polyfill），与渲染的页面 DOM（zero-dom）无关——JS 查询页面元素不可行
+//   - 因此 Find Element 用 Rust 侧查询：从 cached_html 重新 parse 页面 DOM
+//     （zero_dom::query_selector）——与渲染一致（reload 后 cached_html 同步更新）
+//   - Element Click 当前为**存在性验证**（事件注入需引擎级 dispatch，M2 经
+//     renderer 桥接实现——对照 Ladybird 全端点，调研报告 §3.3）
+//   - Execute Script 作用于 JS 沙箱（虚拟 DOM 语义），如实保留
+
+/// WebDriver 元素引用键（规范固定值）。
+const ELEMENT_KEY: &str = "element-6066-11e4-a52e-4f735466cecf";
+
+/// 元素引用格式：`selector`（M1：query_selector 返回首个匹配，index 恒 0）。
+fn encode_element_ref(selector: &str) -> String {
+    selector.to_string()
+}
+
+/// 在页面的真实 DOM（cached_html 重新 parse）中查询元素。
+fn find_element_in_page(session: &Session, selector: &str) -> Result<bool, String> {
+    let html = session.webview.html_content();
+    let doc = zero_dom::parse_html(html);
+    let root = doc.root();
+    Ok(doc.query_selector(root, selector).is_some())
+}
+
 // ── 端点路由 ──
 
 fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream) {
@@ -207,6 +234,56 @@ fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream
             Ok(title) => json_response(stream, serde_json::json!({ "value": title })),
             Err(e) => error_response(stream, 404, "no such session", &e),
         },
+        // POST /session/{id}/element — Find Element（M1，css selector，Rust 侧查询真实 DOM）
+        ("POST", ["session", id, "element"]) => {
+            let selector = match serde_json::from_slice::<serde_json::Value>(&req.body) {
+                Ok(v) => v.get("value").and_then(|u| u.as_str()).unwrap_or("").to_string(),
+                Err(_) => String::new(),
+            };
+            if selector.is_empty() {
+                error_response(stream, 400, "invalid argument", "missing value (css selector)");
+                return;
+            }
+            match driver.sessions.get(*id) {
+                Some(session) => match find_element_in_page(session, &selector) {
+                    Ok(true) => {
+                        let reference = encode_element_ref(&selector);
+                        json_response(stream, serde_json::json!({ "value": { ELEMENT_KEY: reference } }));
+                    }
+                    Ok(false) => error_response(stream, 404, "no such element", "element not found"),
+                    Err(e) => error_response(stream, 500, "unknown error", &e),
+                },
+                None => error_response(stream, 404, "no such session", "session not found"),
+            }
+        }
+        // POST /session/{id}/element/{ref}/click — Element Click（M1：存在性验证，
+        // 事件注入需引擎级 dispatch，M2 经 renderer 桥接实现）
+        ("POST", ["session", id, "element", reference, "click"]) => match driver.sessions.get(*id) {
+            Some(session) => match find_element_in_page(session, reference) {
+                Ok(true) => json_response(stream, serde_json::json!({ "value": null })),
+                Ok(false) => error_response(stream, 404, "no such element", "element not found"),
+                Err(e) => error_response(stream, 500, "unknown error", &e),
+            },
+            None => error_response(stream, 404, "no such session", "session not found"),
+        },
+        // POST /session/{id}/execute/sync — Execute Script（M1）
+        ("POST", ["session", id, "execute", "sync"]) => {
+            let script = match serde_json::from_slice::<serde_json::Value>(&req.body) {
+                Ok(v) => v.get("script").and_then(|u| u.as_str()).unwrap_or("").to_string(),
+                Err(_) => String::new(),
+            };
+            if script.is_empty() {
+                error_response(stream, 400, "invalid argument", "missing script");
+                return;
+            }
+            match driver.sessions.get_mut(*id) {
+                Some(session) => match session.webview.execute_script_with_dom(&script) {
+                    Ok(result) => json_response(stream, serde_json::json!({ "value": result })),
+                    Err(e) => error_response(stream, 500, "javascript error", &e.to_string()),
+                },
+                None => error_response(stream, 404, "no such session", "session not found"),
+            }
+        }
         // DELETE /session/{id} — Delete Session
         ("DELETE", ["session", id]) => {
             if driver.delete_session(id) {

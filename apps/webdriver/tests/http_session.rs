@@ -42,6 +42,103 @@ fn spawn_driver() -> (DriverProcess, u16) {
     panic!("zero-webdriver 未就绪");
 }
 
+/// 本地测试 HTTP 服务器：固定返回带标题 + 按钮（onclick 改标题）的 HTML 页。
+fn spawn_test_page_server_with_button() -> (std::thread::JoinHandle<()>, u16) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let handle = std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let body = "<html><head><title>WebDriver Test</title></head><body>\
+                        <button id=\"btn\" onclick=\"document.title='Clicked!'\">Click me</button>\
+                        </body></html>";
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+    (handle, port)
+}
+
+#[test]
+fn webdriver_element_interaction() {
+    let (_driver, port) = spawn_driver();
+    let (_page_server, page_port) = spawn_test_page_server_with_button();
+
+    // New Session
+    let (status, body) = http_request(port, "POST", "/session", Some("{}"));
+    assert_eq!(status, 200);
+    let v: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let session_id = v["value"]["sessionId"].as_str().expect("sessionId").to_string();
+
+    // Navigate
+    let url = format!("http://127.0.0.1:{page_port}/");
+    let (status, _) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/url"),
+        Some(&serde_json::json!({ "url": url }).to_string()),
+    );
+    assert_eq!(status, 200);
+
+    // Find Element（css selector）
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element"),
+        Some(&serde_json::json!({ "using": "css selector", "value": "#btn" }).to_string()),
+    );
+    assert_eq!(status, 200, "Find Element 应 200: {body}");
+    let v: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let element_key = "element-6066-11e4-a52e-4f735466cecf";
+    let reference = v["value"][element_key].as_str().expect("element reference").to_string();
+
+    // 未找到元素 → no such element
+    let (status, _) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element"),
+        Some(&serde_json::json!({ "using": "css selector", "value": "#missing" }).to_string()),
+    );
+    assert_eq!(status, 404, "不存在的元素应 404");
+
+    // Execute Script（JS 沙箱语义——如实断言：表达式求值可用；
+    // 页面 DOM 操作为 M2 renderer 桥接能力）
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/execute/sync"),
+        Some(&serde_json::json!({ "script": "1 + 1", "args": [] }).to_string()),
+    );
+    assert_eq!(status, 200);
+    let v: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(v["value"], "2");
+
+    // Element Click（M1：存在性验证；onclick 事件注入为 M2 引擎级能力）
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element/{reference}/click"),
+        None,
+    );
+    assert_eq!(status, 200, "Element Click 应 200: {body}");
+
+    // Click 不存在的引用 → no such element
+    let (status, _) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element/not-there/click"),
+        None,
+    );
+    assert_eq!(status, 404, "不存在的元素引用应 404");
+}
+
 /// 本地测试 HTTP 服务器：固定返回带标题的 HTML 页。
 fn spawn_test_page_server() -> (std::thread::JoinHandle<()>, u16) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
