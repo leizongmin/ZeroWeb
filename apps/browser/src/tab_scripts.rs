@@ -176,13 +176,15 @@ impl PageScriptRunner {
 
 /// R2941：派发页面生命周期事件（DOMContentLoaded + load）进 shim。均派发到 'html' 选择器
 ///（document/window listener 同存 `_elKey('html', null)` 键）→ `document.addEventListener('DOMContentLoaded')` /
-/// `window.addEventListener('load')` / `window.onload` / `document.onDOMContentLoaded` 触发。best-effort
-///（报告失败仅 `warn!`，不影响后续）。复用 `script_dispatch_dom_event` 生成 `__zw_dispatch_event` 调用串。
+/// `window.addEventListener('load')` / `window.onload` / `document.onDOMContentLoaded` / `<body onload>`（R2946
+/// 反射）触发。派发前先调 `__zw_reflect_body_handlers`——覆盖无 `<script>` 页面（不经 __zw_begin_script，
+/// 反射不会随脚本执行触发）。best-effort（报告失败仅 `warn!`，不影响后续）。
 fn dispatch_page_lifecycle(js_worker: Option<&TabJsWorkerHandle>) {
     let Some(worker) = js_worker else { return };
+    let reflect = zero_engine::script_reflect_body_handlers();
     let dcl = script_dispatch_dom_event("html", "DOMContentLoaded", None);
     let load = script_dispatch_dom_event("html", "load", None);
-    if let Err(e) = worker.execute_script_direct(&format!("{dcl}; {load}")) {
+    if let Err(e) = worker.execute_script_direct(&format!("{reflect} {dcl}; {load}")) {
         warn!("dispatch page lifecycle: {e}");
     }
 }

@@ -11077,6 +11077,64 @@ fn test_link_script_element_events_r2944() {
 }
 
 #[test]
+fn test_body_onload_reflection_r2946() {
+    // R2946 <body on*> → window.on* 反射（HTML spec body→window event handler reflection）。
+    // <body onload="..."> 经 __zw_reflect_body_handlers（__zw_begin_script 内 / lifecycle 派发前调用）
+    // 编译为 window.onload，使 __zw_dispatch_event('html','load') 触发——与 window.addEventListener('load')
+    // / window.onload = fn 路径合一。每页一次（page URL 去重），JS 设值优先（window.onload = custom 不被覆盖）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body onload=\"globalThis.__hit='body-onload'\" onresize=\"globalThis.__resize='body-resize'\"></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 反射（__zw_begin_script 内调）+ 派 load → body onload 触发。
+    sandbox
+        .execute("__zw_begin_script && __zw_begin_script(); __zw_dispatch_event('html','load',null);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hit)").unwrap().value,
+        "body-onload",
+        "<body onload> 反射为 window.onload，load 派发触发"
+    );
+
+    // 另一 on* 类型（onresize）也反射；派 resize 触发。
+    sandbox.execute("__zw_dispatch_event('html','resize',null);").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__resize)").unwrap().value,
+        "body-resize",
+        "<body onresize> 反射为 window.onresize，resize 派发触发"
+    );
+
+    // JS 设值优先：window.onload = custom 后再反射（导航新 URL 触发重反射）不应覆盖。
+    sandbox
+        .execute(
+            "globalThis.__hit = null;\
+             globalThis.onload = function(){ globalThis.__hit = 'js-onload'; };",
+        )
+        .unwrap();
+    // 模拟导航：换 page URL → 反射去重失效 → 重反射，但 window.onload 已是 JS 设值 → 不覆盖。
+    *page_url.lock().unwrap() = "https://example.com/page2".to_string();
+    sandbox.execute("__zw_begin_script && __zw_begin_script();").unwrap();
+    sandbox.execute("__zw_dispatch_event('html','load',null);").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hit)").unwrap().value,
+        "js-onload",
+        "JS 设值的 window.onload 优先于 body onload 反射（不被覆盖）"
+    );
+}
+
+#[test]
 fn test_xmlserializer_importnode_r2818() {
     // R2818：XMLSerializer.serializeToString + document.adoptNode/importNode。serializeToString 委托节点
     // outerHTML（元素）/ nodeValue（text·comment）/ documentElement（document）；adoptNode 单文档 identity；

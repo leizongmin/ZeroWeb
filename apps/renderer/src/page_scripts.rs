@@ -137,11 +137,14 @@ pub fn finish_page_load(
 
 /// R2941 mirror：派发页面生命周期事件（DOMContentLoaded + load）进 shim。均派发到 'html' 选择器
 ///（document/window listener 同存 `_elKey('html', null)` 键）→ `document.addEventListener('DOMContentLoaded')` /
-/// `window.addEventListener('load')` / `window.onload` / `document.onDOMContentLoaded` 触发。best-effort。
+/// `window.addEventListener('load')` / `window.onload` / `document.onDOMContentLoaded` / `<body onload>`（R2946
+/// 反射）触发。派发前先调 `__zw_reflect_body_handlers`——覆盖无 `<script>` 页面（不经 __zw_begin_script，
+/// 反射不会随脚本执行触发）。best-effort。
 fn dispatch_page_lifecycle(js_worker: &RendererJsWorker) {
+    let reflect = zero_engine::script_reflect_body_handlers();
     let dcl = script_dispatch_dom_event("html", "DOMContentLoaded", None);
     let load = script_dispatch_dom_event("html", "load", None);
-    if let Err(e) = js_worker.execute_script_direct(&format!("{dcl}; {load}")) {
+    if let Err(e) = js_worker.execute_script_direct(&format!("{reflect} {dcl}; {load}")) {
         warn!("dispatch page lifecycle: {e}");
     }
 }
@@ -544,6 +547,45 @@ mod tests {
             wait_for_global(&worker, "__load", 1000),
             "fired",
             "无脚本页 finish_page_load 仍派发 load（lifecycle 不依赖 <script> 存在）"
+        );
+        worker.shutdown();
+    }
+
+    /// R2946 mirror：`<body onload="...">` 内联 handler 经 body→window 反射为 window.onload，
+    /// finish_page_load 派 load 时触发（此前 body onload 在两路径均不触发——R2945 测试时发现的缺口）。
+    /// 无 `<script>` 页面，反射由 finish_page_load 内 dispatch_page_lifecycle 前置的 __zw_reflect_body_handlers 触发。
+    #[test]
+    fn finish_page_load_fires_body_onload_r2946() {
+        let mut worker = RendererJsWorker::spawn(116);
+        let html = "<html><body onload=\"globalThis.__bodyload='fired'\"></body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        // 无 <script>：run_page_scripts no-op，finish_page_load 反射 body onload + 派 load 触发。
+        run_scripts(html, &worker);
+        finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new());
+        assert_eq!(
+            wait_for_global(&worker, "__bodyload", 1000),
+            "fired",
+            "<body onload> 经反射为 window.onload，finish_page_load 派 load 触发"
+        );
+        worker.shutdown();
+    }
+
+    /// R2946 mirror：有 `<script>` 页面，body onload 反射在首个脚本执行前（__zw_begin_script）发生，
+    /// 随后脚本可读 window.onload（=反射的 body handler）——验证反射时序对脚本可见。
+    #[test]
+    fn body_onload_reflected_before_first_script_r2946() {
+        let mut worker = RendererJsWorker::spawn(117);
+        let html = "<html><body onload=\"globalThis.__bodyload='fired'\">\
+                    <script>if (typeof window.onload === 'function') { window.onload({}); }</script>\
+                    </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        // run_page_scripts 抽 <script> 执行；execute_chunk 的 __zw_begin_script 前置反射 body onload → window.onload，
+        // 随后脚本读 window.onload（function）并调用 → __bodyload 触发（证明反射早于脚本、对脚本可见）。
+        run_scripts(html, &worker);
+        assert_eq!(
+            wait_for_global(&worker, "__bodyload", 1000),
+            "fired",
+            "body onload 反射早于首脚本执行，脚本可读 window.onload 并调用"
         );
         worker.shutdown();
     }

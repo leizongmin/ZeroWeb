@@ -2343,6 +2343,13 @@ pub fn page_script_error_check() -> String {
     )
 }
 
+/// 调用 shim 的 `<body on*>` → `window.on*` 反射（R2946）。宿主在派发页面生命周期事件（load 等）前执行，
+/// 覆盖**无 `<script>` 页面**（其不经 `__zw_begin_script`，故反射不会随脚本执行触发）。有脚本页已在
+/// `__zw_begin_script` 内反射过，此处幂等 no-op（按 page URL 去重）。返 shim 调用串。
+pub fn script_reflect_body_handlers() -> &'static str {
+    "globalThis.__zw_reflect_body_handlers&&globalThis.__zw_reflect_body_handlers();"
+}
+
 /// 从当前 HTML 快照查询 textContent。
 pub fn query_text_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);

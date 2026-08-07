@@ -49,6 +49,9 @@ pub(super) fn apply_scripted_dom_mutations(html: &str, base_dir: Option<&Path>, 
         eprintln!("  [reftest JS] DOM shim init warning: {e}");
         return html.to_string();
     }
+    // reftest harness 自有更完整的 <body>/<frameset>/<html> onload 处理（下方直接执行 handler 体 + 派发
+    // 'load'）；禁用 R2946 body→window 反射以避免双 fire（重复 mutation 致 apply_mutations_to_html 失败）。
+    let _ = sandbox.execute("globalThis.__zw_no_body_reflect = true;");
 
     // 按文档序执行每个脚本。外链脚本从 base_dir 读取本地文件（reftest 离线运行）。
     for script in &scripts {

@@ -119,6 +119,8 @@
   globalThis.__zw_begin_script = function() {
     _deferBudget = 256;
     _rafBudget = 64;
+    // R2946：每页首次脚本执行前反射 <body on*> → window.on*（幂等，按 page URL 去重）。
+    if (typeof _zw_reflect_body_window_handlers === 'function') _zw_reflect_body_window_handlers();
   };
 
   // P1b S1（方案 A）异步回调 resolve 通道（JS 侧契约）：
@@ -2586,6 +2588,44 @@
     if (!_listenerStore[key][type]) _listenerStore[key][type] = [];
     _listenerStore[key][type].push({ fn: fn, capture: false, once: false });
   }
+
+  // R2946 <body on*> 内容属性 → window.on* 反射（HTML spec：body 元素的 WindowEventHandlers 内容属性
+  // 反射为 window 的事件处理器 IDL 属性）。`<body onload="init()">` 经此把 init 编译为 window.onload，
+  // 使既有 lifecycle 'load' 派发到 'html'（window listener 键 _elKey('html', null)）触发——与
+  // window.addEventListener('load') / window.onload = fn 路径合一。element 级 inline handler
+  //（_ensureInlineHandler，dispatch 到元素本身触发）互补：body onload spec 派发到 window 非 body。
+  // **每页一次**：按 page URL 去重（_bodyReflectUrl），导航后 URL 变 → 重新反射。**JS 优先**：仅当
+  // window.on<type> 未被 JS 设值（typeof === 'function'）时反射——页面脚本 `window.onload = custom`
+  // 不被覆盖（spec：IDL 设值优先于内容属性反射）。编译同 _ensureInlineHandler（new Function + with 双 scope），
+  // this=window（window.onload 经 R2932 accessor 注册，dispatch 时 fn.call(globalThis)）。
+  // 调用点：① __zw_begin_script（每脚本执行前，覆盖有脚本页 + 让脚本可读到反射后的 window.onload）；
+  // ② host lifecycle 派发前（__zw_reflect_body_handlers，覆盖无脚本页）。两者幂等。
+  var _bodyReflectUrl = null;
+  var _BODY_WIN_HANDLER_TYPES = [
+    'load', 'error', 'resize', 'scroll', 'hashchange', 'pageshow', 'pagehide', 'beforeunload',
+    'unload', 'message', 'online', 'offline', 'popstate', 'storage', 'focus', 'blur',
+  ];
+  function _zw_reflect_body_window_handlers() {
+    // kill-switch：reftest harness 自有更完整的 <body>/<frameset>/<html> onload 处理（直接执行 handler 体
+    // + 派发 'load'），启用本反射会与其重复触发 body onload（双 fire → 重复 mutation → apply 失败）。
+    // harness 在 shim init 后置 `globalThis.__zw_no_body_reflect = true`；生产路径（browser/renderer）不禁用。
+    if (globalThis.__zw_no_body_reflect) return;
+    var url = (typeof __zw_get_page_url === 'function') ? __zw_get_page_url() : '';
+    if (_bodyReflectUrl === url) return; // 每页一次
+    _bodyReflectUrl = url;
+    for (var i = 0; i < _BODY_WIN_HANDLER_TYPES.length; i++) {
+      var t = _BODY_WIN_HANDLER_TYPES[i];
+      if (typeof globalThis['on' + t] === 'function') continue; // JS 已设值，不覆盖
+      var code = null;
+      try { code = __zw_get_attr('body', 'on' + t); } catch (_e) {}
+      if (code) {
+        try {
+          globalThis['on' + t] = new Function('event', 'with(document){with(this){' + code + '}}');
+        } catch (_e) {}
+      }
+    }
+  }
+  globalThis.__zw_reflect_body_handlers = _zw_reflect_body_window_handlers;
 
   // 按规范三阶段派发事件：①capture（root→target 的祖先，capture-only）②target（capture+非 capture，
   // AT_TARGET）③bubble（target→root 的祖先，非 capture，仅 event.bubbles）。事件委托基础：祖先 listener
