@@ -1126,10 +1126,80 @@
     for (var i = 0; i < view.length; i++) out.push(view[i] & 0xff);
     return out;
   }
-  // crypto.subtle.digest（R2793）——SHA-1/256/384/512 哈希（SRI / JWT / 内容哈希高频）。委托 host
-  // `__zw_crypto_subtle_digest(algo, bytesCsv)`（RustCrypto sha1/sha2）；返 Promise<ArrayBuffer>（Uint8Array）。
-  // algo 取串或 {name}；unsupported algo / host 未注册 → reject NotSupportedError。**scope 仅 digest**
-  //（HMAC/sign/verify/encrypt/importKey/deriveBits defer——WebCrypto 大表面，digest 为最高频子集）。
+  // crypto.subtle（R2793 digest + R2955 HMAC sign/verify/importKey）。digest 委托 host
+  // `__zw_crypto_subtle_digest`；HMAC sign/verify 委托 `__zw_crypto_subtle_hmac`（手写 HMAC，复用 sha1/sha2）。
+  // **scope**：digest 全 hash；HMAC 全 hash（importKey raw + sign + verify）；其余 WebCrypto（RSA/ECDSA/AES/
+  // HKDF/PBKDF2/jwk/exportKey）仍 defer——大表面，HMAC 为对称 MAC 最高频子集（JWT HS256 / 请求签名 / webhook 校验）。
+  // https://w3c.github.io/webcrypto/#SubtleCrypto-method-sign  https://datatracker.ietf.org/doc/html/rfc2104
+
+  // CryptoKey——密钥对象（importKey 返回值）。type（"secret"/"public"/"private"）+ extractable +
+  // algorithm（归一化对象）+ usages（字符串数组）。HMAC 密钥材料存 `_raw`（字节 number[]）——polyfill：host
+  // 每次 sign/verify 用，不在 host 持久化（headless 简化）；`extractable=false` 时 exportKey 仍 defer，
+  // 故 _raw 技术可访问（exportKey 未实现，无泄漏面）。
+  // https://w3c.github.io/webcrypto/#CryptoKey-interface
+  function CryptoKey(type, extractable, algorithm, usages, raw) {
+    this.type = type;
+    this.extractable = !!extractable;
+    this.algorithm = algorithm;
+    this.usages = usages;
+    this._raw = raw || null;
+  }
+
+  // hash 名归一化：接受串或 {name:...} → 大写 "SHA-XXX"，或 null。
+  function _zw_hashName(h) {
+    var n = (typeof h === 'object' && h) ? h.name : h;
+    if (n == null) return null;
+    return String(n).toUpperCase();
+  }
+
+  // importKey 的 algorithm 归一化：{name:"HMAC", hash:"SHA-XXX"} 或 null（非 HMAC / 缺 hash）。
+  function _zw_normalizeImportAlgorithm(algo) {
+    if (!algo) return null;
+    var name = (typeof algo === 'object' && algo) ? algo.name : algo;
+    if (!name) return null;
+    name = String(name).toUpperCase();
+    if (name === 'HMAC') {
+      var hash = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
+      if (!hash) return null;
+      return { name: 'HMAC', hash: hash };
+    }
+    return null;
+  }
+
+  // usages 归一化：去重 + 仅保留 allowed 内项；含非法项 → null（reject SyntaxError）。
+  function _zw_normalizeUsages(usages, allowed) {
+    if (usages == null) usages = [];
+    if (typeof usages.length !== 'number') return null;
+    var out = [], seen = {};
+    for (var i = 0; i < usages.length; i++) {
+      var u = String(usages[i]);
+      if (allowed.indexOf(u) < 0) return null;
+      if (!seen[u]) {
+        seen[u] = 1;
+        out.push(u);
+      }
+    }
+    return out;
+  }
+
+  // HMAC MAC 计算（sign/verify 复用）：返 Uint8Array；host 未注册 / unsupported hash → 调 reject 返 null。
+  function _zw_hmacMac(algo, key, dataBytes, reject) {
+    if (typeof __zw_crypto_subtle_hmac !== 'function') {
+      reject(new DOMException('crypto.subtle HMAC requires host callback', 'NotSupportedError'));
+      return null;
+    }
+    var keyCsv = (key._raw || []).map(String).join(',');
+    var macCsv = __zw_crypto_subtle_hmac(algo.hash, keyCsv, dataBytes.join(','));
+    if (!macCsv) {
+      reject(new DOMException("Unsupported HMAC hash: '" + algo.hash + "'", 'NotSupportedError'));
+      return null;
+    }
+    var parts = macCsv.split(',');
+    var arr = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) arr[i] = +parts[i];
+    return arr;
+  }
+
   globalThis.crypto.subtle = globalThis.crypto.subtle || {
     digest: function (algo, data) {
       var a = (typeof algo === 'object' && algo) ? algo.name : algo;
@@ -1150,8 +1220,69 @@
         for (var i = 0; i < parts.length; i++) arr[i] = +parts[i];
         resolve(arr);
       });
+    },
+    // importKey(format, keyData, algorithm, extractable, usages) → Promise<CryptoKey>。HMAC：format 须 "raw"
+    //（jwk/pkcs8/spki defer）；algorithm {name:"HMAC",hash:"SHA-XXX"}；usages ⊆ {sign,verify}（含非法 → SyntaxError）。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-importKey
+    importKey: function (format, keyData, algorithm, extractable, usages) {
+      return new Promise(function (resolve, reject) {
+        var algo = _zw_normalizeImportAlgorithm(algorithm);
+        if (!algo) {
+          reject(new DOMException('Unsupported or missing algorithm', 'NotSupportedError')); return;
+        }
+        var fmt = String(format == null ? '' : format).toUpperCase();
+        if (fmt !== 'RAW') {
+          reject(new DOMException("Unsupported importKey format: '" + fmt + "' (only 'raw' for HMAC)", 'NotSupportedError')); return;
+        }
+        var u = _zw_normalizeUsages(usages, ['sign', 'verify']);
+        if (!u) {
+          reject(new DOMException('Invalid key usages for HMAC', 'SyntaxError')); return;
+        }
+        var raw = _zw_bufToBytes(keyData);
+        resolve(new CryptoKey('secret', extractable, algo, u, raw));
+      });
+    },
+    // sign(algorithm, key, data) → Promise<ArrayBuffer>。HMAC：algorithm "HMAC"/{name:"HMAC"}，hash 取自 key.algorithm.hash。
+    // key.usages 须含 "sign" → 否则 InvalidAccessError。https://w3c.github.io/webcrypto/#SubtleCrypto-method-sign
+    sign: function (algorithm, key, data) {
+      return new Promise(function (resolve, reject) {
+        var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
+        name = String(name == null ? '' : name).toUpperCase();
+        if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
+          reject(new DOMException('Unsupported sign algorithm or key', 'NotSupportedError')); return;
+        }
+        if (!key.usages || key.usages.indexOf('sign') < 0) {
+          reject(new DOMException('Key usages do not include "sign"', 'InvalidAccessError')); return;
+        }
+        var mac = _zw_hmacMac(key.algorithm, key, _zw_bufToBytes(data), reject);
+        if (mac) resolve(mac);
+      });
+    },
+    // verify(algorithm, key, signature, data) → Promise<boolean>。计算 MAC 后定长比较（无早退，常时近似）。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-verify
+    verify: function (algorithm, key, signature, data) {
+      return new Promise(function (resolve, reject) {
+        var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
+        name = String(name == null ? '' : name).toUpperCase();
+        if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
+          reject(new DOMException('Unsupported verify algorithm or key', 'NotSupportedError')); return;
+        }
+        if (!key.usages || key.usages.indexOf('verify') < 0) {
+          reject(new DOMException('Key usages do not include "verify"', 'InvalidAccessError')); return;
+        }
+        var mac = _zw_hmacMac(key.algorithm, key, _zw_bufToBytes(data), reject);
+        if (!mac) return;
+        var sig = _zw_bufToBytes(signature);
+        if (mac.length !== sig.length) { resolve(false); return; }
+        var ok = 1;
+        for (var i = 0; i < mac.length; i++) {
+          if ((mac[i] & 0xff) !== (sig[i] & 0xff)) ok = 0;
+        }
+        resolve(!!ok);
+      });
     }
   };
+  globalThis.CryptoKey = globalThis.CryptoKey || CryptoKey;
 
   // AbortController/AbortSignal——fetch 中止 / 异步流程控制（cancel token 模式，现代 JS 库 / fetch
   // 高频）。V8 embed 不提供，polyfill 之（本地 Chromium 150 oracle 锚定 R2777）。signal.aborted/

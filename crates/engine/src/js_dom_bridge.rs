@@ -1233,6 +1233,63 @@ pub fn crypto_subtle_digest(algo: &str, bytes_csv: &str) -> String {
     hash.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
 }
 
+/// 逗号分隔十进制字节串（"72,73,..."）→ `Vec<u8>`。空段跳过，非数字静默丢弃（与 digest 一致）。
+fn bytes_from_csv(csv: &str) -> Vec<u8> {
+    csv.split(',')
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.trim().parse::<u8>().ok())
+        .collect()
+}
+
+/// 通用 HMAC（RFC 2104）：`MAC = H((K⊕opad) || H((K⊕ipad) || data))`。`block_size` 为 hash 块大小
+///（SHA-1/256 = 64；SHA-384/512 = 128）。手写以复用既有 `sha1`/`sha2` 原语，避免引入 `hmac` 依赖。
+/// https://datatracker.ietf.org/doc/html/rfc2104
+fn compute_hmac<D: sha2::Digest>(key: &[u8], data: &[u8], block_size: usize) -> Vec<u8> {
+    // 1. 密钥归一：len > B → K = H(K)（输出恒 ≤ B）；pad 到 B 字节。
+    let mut k = if key.len() > block_size {
+        D::digest(key).to_vec()
+    } else {
+        key.to_vec()
+    };
+    k.resize(block_size, 0u8);
+    // 2. ipad (0x36) / opad (0x5c)。
+    let mut ipad = vec![0x36u8; block_size];
+    let mut opad = vec![0x5cu8; block_size];
+    for i in 0..block_size {
+        ipad[i] ^= k[i];
+        opad[i] ^= k[i];
+    }
+    // 3. inner = H(ipad || data)。
+    let mut inner = D::new();
+    inner.update(&ipad);
+    inner.update(data);
+    let inner_hash = inner.finalize();
+    // 4. MAC = H(opad || inner)。
+    let mut outer = D::new();
+    outer.update(&opad);
+    outer.update(&inner_hash);
+    outer.finalize().to_vec()
+}
+
+/// `crypto.subtle.sign/verify` 的 HMAC 实现（R2955）——HMAC-SHA-1/256/384/512。**JWT HS256 / 请求签名 /
+/// webhook 校验**（Stripe / AWS Sig v4 风格）高频。key_csv/data_csv = 逗号分隔十进制字节串；返 MAC
+/// 逗号分隔十进制串（unsupported hash → 空串，shim reject `NotSupportedError`）。
+/// 供 `__zw_crypto_subtle_hmac` 回调 → shim `crypto.subtle.sign("HMAC", ...)` / `verify`。
+/// **scope**：仅 HMAC（RSASSA/ECDSA/AES/HKDF/PBKDF2 仍 defer——大表面，HMAC 为对称 MAC 最高频子集）。
+pub fn crypto_subtle_hmac(hash_algo: &str, key_csv: &str, data_csv: &str) -> String {
+    use sha2::{Sha256, Sha384, Sha512};
+    let key = bytes_from_csv(key_csv);
+    let data = bytes_from_csv(data_csv);
+    let mac: Vec<u8> = match hash_algo.to_ascii_uppercase().as_str() {
+        "SHA-1" | "SHA1" => compute_hmac::<sha1::Sha1>(&key, &data, 64),
+        "SHA-256" | "SHA256" => compute_hmac::<Sha256>(&key, &data, 64),
+        "SHA-384" | "SHA384" => compute_hmac::<Sha384>(&key, &data, 128),
+        "SHA-512" | "SHA512" => compute_hmac::<Sha512>(&key, &data, 128),
+        _ => return String::new(),
+    };
+    mac.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
+}
+
 /// canvas 颜色串 → render Color（复用 CSS 颜色解析：named/hex/rgb/hsl 等）。解析失败回落黑色。
 fn parse_canvas_color(s: &str) -> zero_render_foundation::color::Color {
     use zero_render_foundation::color::Color;
@@ -2770,6 +2827,18 @@ pub fn register_dom_callbacks(
             let algo = args.first().map(String::as_str).unwrap_or("");
             let bytes = args.get(1).map(String::as_str).unwrap_or("");
             crypto_subtle_digest(algo, bytes)
+        }),
+    );
+
+    // `crypto.subtle.sign/verify("HMAC", ...)`（R2955）——HMAC-SHA-1/256/384/512。
+    // arg[0]=hash 名（"SHA-256"），arg[1]=key 字节 csv，arg[2]=data 字节 csv。返 MAC csv（unsupported → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_hmac",
+        Box::new(|args: &[String]| -> String {
+            let hash = args.first().map(String::as_str).unwrap_or("");
+            let key = args.get(1).map(String::as_str).unwrap_or("");
+            let data = args.get(2).map(String::as_str).unwrap_or("");
+            crypto_subtle_hmac(hash, key, data)
         }),
     );
 

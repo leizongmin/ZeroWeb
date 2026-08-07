@@ -7450,6 +7450,179 @@ fn test_crypto_subtle_digest_r2793() {
 }
 
 #[test]
+fn test_crypto_subtle_hmac_r2955() {
+    // R2955：crypto.subtle HMAC（sign/verify/importKey + CryptoKey 对象）。JWT HS256 / 请求签名 / webhook
+    // 校验高频。host 手写 HMAC（RFC 2104，复用 sha1/sha2 原语）。TDD 用 RFC 4231 测试向量锚定（TC1/TC2
+    // SHA-256 + SHA-1 已知向量），+ verify 正/篡改/错长 + importKey/sign 错误路径。
+    // https://datatracker.ietf.org/doc/html/rfc4231#section-4  https://w3c.github.io/webcrypto/
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // importKey + CryptoKey 字段：type="secret"，algorithm.name/hash，extractable=false，usages 去重（'sign' 重复 → 单）。
+    sandbox
+        .execute(
+            "globalThis.__k=null;\
+             crypto.subtle.importKey('raw', new Uint8Array(20).fill(0x0b), {name:'HMAC',hash:'SHA-256'}, false, ['sign','verify','sign'])\
+               .then(function(k){ globalThis.__k = k; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute(
+                "String(globalThis.__k && globalThis.__k.type === 'secret'\
+                   && globalThis.__k.algorithm.name === 'HMAC'\
+                   && globalThis.__k.algorithm.hash === 'SHA-256'\
+                   && globalThis.__k.extractable === false\
+                   && globalThis.__k.usages.join(',') === 'sign,verify')"
+            )
+            .unwrap()
+            .value,
+        "true"
+    );
+
+    // sign hex 辅助：执行 importKey→sign 链，下 execute 读 globalThis.__mac hex（微任务链 execute 末排空）。
+    let mut hex_mac = |import_and_sign: &str| -> String {
+        sandbox.execute(import_and_sign).unwrap();
+        sandbox
+            .execute("Array.from(globalThis.__mac).map(function(b){return ('0'+b.toString(16)).slice(-2);}).join('')")
+            .unwrap()
+            .value
+    };
+
+    // RFC 4231 TC1：key=0x0b×20，data="Hi There"，SHA-256 → b0344c61...cff7。
+    assert_eq!(
+        hex_mac(
+            "globalThis.__mac='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(20).fill(0x0b), {name:'HMAC',hash:'SHA-256'}, false, ['sign'])\
+               .then(function(k){ return crypto.subtle.sign('HMAC', k, new TextEncoder().encode('Hi There')); })\
+               .then(function(b){ globalThis.__mac = new Uint8Array(b); });"
+        ),
+        "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+    );
+    // RFC 4231 TC2：key="Jefe"，data="what do ya want for nothing?"，SHA-256 → 5bdcc146...ec3843。
+    assert_eq!(
+        hex_mac(
+            "globalThis.__mac='(pending)';\
+             crypto.subtle.importKey('raw', new TextEncoder().encode('Jefe'), {name:'HMAC',hash:'SHA-256'}, false, ['sign'])\
+               .then(function(k){ return crypto.subtle.sign('HMAC', k, 'what do ya want for nothing?'); })\
+               .then(function(b){ globalThis.__mac = new Uint8Array(b); });"
+        ),
+        "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+    );
+    // HMAC-SHA-1：key="key"，data="The quick brown fox jumps over the lazy dog" → de7c9b85...db4d9（20 字节）。
+    assert_eq!(
+        hex_mac(
+            "globalThis.__mac='(pending)';\
+             crypto.subtle.importKey('raw', new TextEncoder().encode('key'), {name:'HMAC',hash:'SHA-1'}, false, ['sign'])\
+               .then(function(k){ return crypto.subtle.sign('HMAC', k, 'The quick brown fox jumps over the lazy dog'); })\
+               .then(function(b){ globalThis.__mac = new Uint8Array(b); });"
+        ),
+        "de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9"
+    );
+    // HMAC-SHA-512 长度 128 hex（64 字节），TC1 key/data。
+    let h512 = hex_mac(
+        "globalThis.__mac='(pending)';\
+         crypto.subtle.importKey('raw', new Uint8Array(20).fill(0x0b), {name:'HMAC',hash:'SHA-512'}, false, ['sign'])\
+           .then(function(k){ return crypto.subtle.sign('HMAC', k, 'Hi There'); })\
+           .then(function(b){ globalThis.__mac = new Uint8Array(b); });",
+    );
+    assert_eq!(h512.len(), 128);
+    assert_eq!(&h512[..16], "87aa7cdea5ef619d");
+
+    // verify 正确签名 → true（TC1 的 mac）。
+    sandbox
+        .execute(
+            "globalThis.__v='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(20).fill(0x0b), {name:'HMAC',hash:'SHA-256'}, false, ['verify'])\
+               .then(function(k){\
+                 var sig = new Uint8Array([0xb0,0x34,0x4c,0x61,0xd8,0xdb,0x38,0x53,0x5c,0xa8,0xaf,0xce,0xaf,0x0b,0xf1,0x2b,0x88,0x1d,0xc2,0x00,0xc9,0x83,0x3d,0xa7,0x26,0xe9,0x37,0x6c,0x2e,0x32,0xcf,0xf7]);\
+                 return crypto.subtle.verify('HMAC', k, sig, new TextEncoder().encode('Hi There'));\
+               }).then(function(ok){ globalThis.__v = String(ok); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__v)").unwrap().value, "true");
+    // verify 篡改签名（首字节改 0x00）→ false。
+    sandbox
+        .execute(
+            "globalThis.__v2='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(20).fill(0x0b), {name:'HMAC',hash:'SHA-256'}, false, ['verify'])\
+               .then(function(k){\
+                 var sig = new Uint8Array([0x00,0x34,0x4c,0x61,0xd8,0xdb,0x38,0x53,0x5c,0xa8,0xaf,0xce,0xaf,0x0b,0xf1,0x2b,0x88,0x1d,0xc2,0x00,0xc9,0x83,0x3d,0xa7,0x26,0xe9,0x37,0x6c,0x2e,0x32,0xcf,0xf7]);\
+                 return crypto.subtle.verify('HMAC', k, sig, new TextEncoder().encode('Hi There'));\
+               }).then(function(ok){ globalThis.__v2 = String(ok); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__v2)").unwrap().value, "false");
+    // verify 错误长度签名（3 字节）→ false。
+    sandbox
+        .execute(
+            "globalThis.__v3='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(20).fill(0x0b), {name:'HMAC',hash:'SHA-256'}, false, ['verify'])\
+               .then(function(k){ return crypto.subtle.verify('HMAC', k, new Uint8Array([1,2,3]), 'Hi There'); })\
+               .then(function(ok){ globalThis.__v3 = String(ok); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__v3)").unwrap().value, "false");
+
+    // importKey 非法 usage（'encrypt' 不属 {sign,verify}）→ reject SyntaxError。
+    sandbox
+        .execute(
+            "globalThis.__e1='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(4), {name:'HMAC',hash:'SHA-256'}, false, ['encrypt'])\
+               .catch(function(e){ globalThis.__e1 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__e1)").unwrap().value, "SyntaxError");
+    // importKey 非 raw 格式（'jwk'）→ reject NotSupportedError。
+    sandbox
+        .execute(
+            "globalThis.__e2='(pending)';\
+             crypto.subtle.importKey('jwk', {}, {name:'HMAC',hash:'SHA-256'}, false, ['sign'])\
+               .catch(function(e){ globalThis.__e2 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e2)").unwrap().value,
+        "NotSupportedError"
+    );
+    // importKey 非 HMAC 算法（'AES-GCM'）→ reject NotSupportedError。
+    sandbox
+        .execute(
+            "globalThis.__e4='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['encrypt'])\
+               .catch(function(e){ globalThis.__e4 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e4)").unwrap().value,
+        "NotSupportedError"
+    );
+    // sign 无 "sign" usage（仅 'verify'）→ reject InvalidAccessError。
+    sandbox
+        .execute(
+            "globalThis.__e3='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(4), {name:'HMAC',hash:'SHA-256'}, false, ['verify'])\
+               .then(function(k){ return crypto.subtle.sign('HMAC', k, 'x'); })\
+               .catch(function(e){ globalThis.__e3 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e3)").unwrap().value,
+        "InvalidAccessError"
+    );
+}
+
+#[test]
 fn test_headers_r2794() {
     // R2794：Headers（HTTP 头集合，fetch/SW/header-map 高频）。镜像 FormData，header name 小写归一 +
     // 多值 append 用 ', ' 合并 + getSetCookie 特例。纯 JS，零 host 回调。
