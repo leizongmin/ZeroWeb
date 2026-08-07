@@ -112,6 +112,16 @@
 
 ## 最近完成的改进
 
+### P1b V8 原生绑定架构 RFC（草稿 v0.1，本轮 R2954，控制面交付物）
+
+`master.md` 反复标注「P1b（V8 原生绑定）需独立 RFC，与字体栈 RFC 同级对待」——本轮落地该 RFC 草稿 [`docs/specs/p1b-v8-native-bindings-rfc.md`](../../specs/p1b-v8-native-bindings-rfc.md)。**rally 无人值守，本稿为控制面交付物（状态 草稿/待用户评审），不暂停等待确认；S0 PoC 的职责即验证两个阻塞性 TBD（rusty_v8 internal-slot + weak-handle API），结果回写 RFC。**
+
+RFC 内容：① 现状 polyfill 字符串桥（`register_callback` String 编解码 + 7157 行 JS shim + 3674 行 bridge）的 5 个痛点（SPA 性能 P1 / customElements Proxy-vs-class P2 / 类型保真 P3 / 维护体量 P4 / 持久 Context 异常中毒 P5）；② 3 方案对比（全原生 / 增量热路径 / 混合 DOM-Node）→ **推荐方案 C 混合**（原生 NodeId 包装 v8 对象 + 高层 API 保留 shim 改调原生 node 方法）；③ 详细设计（模块拆分 dom_bindings/{node,element,document,event_target,collections,gc}.rs，值传递表，原生异常传递，customElements class 实例化）；④ 分阶段切片 S0–S7（每切片 kill-switch + A/B 行为对照门 + bench，可独立 land/revert），里程碑 M1 SPA 热路径 / M2 customElements / M3 收尾；⑤ 风险（GC 悬垂/泄漏、行为不一致）+ 缓解；⑥ 阻塞性 TBD（rusty_v8 API 验证）。
+
+**与字体栈 RFC 同级、工作面不重叠**（本 RFC 改 engine DOM 桥；字体栈改 render-foundation/font 栈），可并行。**等用户审批后启动 S0 实施**（首切片：dom_bindings 骨架 + gc + PoC 原生 nodeType/tagName getter + bench 对照，零行为变更）。
+
+**下一步**：P1b RFC 草稿就位（等用户审批）。续 P1a 剩余——① customElements upgrade（需本 RFC S5 实施）；② browser 单进程 FontFace.load() 镜像（需 bytes-fetch 路径）；③ task source 优先级（事件循环边缘）。或：若用户审批 P1b RFC，启动 S0（dom_bindings 骨架 + PoC）。
+
 ### P1a 事件循环混合异步顺序回归测试（本轮 R2953，~14,137 测试）
 
 事件循环 slice 2 排查：经 probe 验证当前实现**已 spec 正确**处理混合异步顺序——微任务链（`Promise.then` → `Promise.then`）在下一 macrotask 前整链排空，嵌套 `setTimeout` 按注册序 FIFO 触发（顺序 `T1,M1,M2,T2,T1b`）。无代码 gap 需修——把 probe 转为常驻回归测试 `event_loop_mixed_async_order_r2953`，断言精确 spec 顺序，保护此行为免遭未来回归。覆盖 microtask-before-next-macrotask + 微任务链排空 + timer 注册序 FIFO（R2952 协调线程保证）。
@@ -6998,7 +7008,7 @@ P1a 低风险、可快速见效（主要改 `dom_bridge.rs` + `script-sandbox` +
 
 **当前状态**：
 - [ ] P1a: 事件循环补全 + fetch/MutationObserver 真实化 — **2026-08-04 恢复为当前活跃主线**
-- [ ] P1b: V8 原生绑定 RFC + 实施
+- [~] P1b: V8 原生绑定 RFC（**v0.1 草稿已落地** [`docs/specs/p1b-v8-native-bindings-rfc.md`](../../specs/p1b-v8-native-bindings-rfc.md)，方案 C 混合 DOM-Node，分阶段切片 S0–S7，待用户审批 + S0 PoC 验证 GC/TBD）+ 实施
 
 **P1a 探查结论（2026-08-04 恢复推进前评估）**：文档「fetch/Observer 为 stub、DomCommand 30+ 变体」描述**已过时**——生产路径已迁移到 B 代桥接（`crates/engine/src/js_dom_bridge.rs` + `js_dom_shim.js` + `apps/browser/src/tab_js_worker.rs`），**fetch GET 已端到端真实**（`FetchBridge` + `AsyncResolver` + net crate，含真实 HTTP 测试）、**MutationObserver（JS 驱动）已真实触发**（shim Proxy trap 拦截）、setTimeout 已真实延迟（TimerBridge 子线程）。P1a 实际剩余 = 4 切片：
 
