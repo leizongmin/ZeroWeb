@@ -1,6 +1,16 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v1.0（设计稿，待实施规划）｜ 日期：2026-08-07 ｜ 状态：设计
+版本：v1.1 ｜ 日期：2026-08-07 ｜ 状态：**实施中（C1 ✅ / C2 骨架 ✅ / C3 待 GPU 环境）**
+
+> 实施状态（2026-08-07 更新）：
+> - **C1（合成执行层显式化）✅**：`backing_store::BackingStoreManager` 双缓冲
+>   已落地（render-foundation），swap/resize 单测通过
+> - **C2（合成器独立进程）✅ 骨架**：`zero-compositor` 进程 + protocol
+>   Compositor 消息族（CompositorFrame / CompositorFrameResult）已落地，
+>   帧提交 → 双缓冲 → 回执的集成测试通过。**剩余**：renderer 帧传输接线
+>   （当前 renderer 仍直发 browser，切到 compositor 属显示路径改造）
+> - **C3（GPU 隔离）⏳ 待 GPU 环境**：wgpu 上下文迁移需真实验证
+>   （本地 wgpu 测试阻塞，CI 真 Vulkan 后端可验证）
 
 > 依据：Ladybird 2026-05 合成器独立进程 + 2026-06 WebContent 不再直接访问
 > GPU（canvas/WebGL 命令在沙箱化合成器进程回放，共享内存传输）（调研报告
@@ -62,6 +72,17 @@
 ## 六、与其他 RFC 的关系
 
 - 前置/并行：`render-threading-rfc-2026-08-07.md`（C2 可在 S2 后实施——渲染线程
-  产出的 DisplayList 就是合成器进程的输入边界）
-- 依赖 D1 的 protocol 消息模式先例
+  产出的 DisplayList 就是合成器进程的输入边界；S2 的 `render_full_scene_threaded`
+  与 BackingStoreManager 已落地，见该 RFC 状态）
+- 依赖 D1 的 protocol 消息模式先例（ImageDecode 请求/响应 → Compositor 消息族已按同款落地）
 - GPU 隔离（C3）与渲染线程 RFC 的「GPU 光栅化线程」合并规划（同一 wgpu 上下文迁移）
+
+## 七、C3 实施路径（待 GPU 环境，明确步骤）
+
+1. renderer 帧传输接线（C2 剩余）：renderer 的 ViewPainted 发送改为 CompositorFrame
+   → compositor 双缓冲 → browser 从 compositor 读取 front（显示路径改造）
+2. wgpu 上下文迁移：`render-foundation/gpu` 的实例/设备/队列创建移入 compositor 进程
+   （CompositorFrame 增加 GPU 命令回放段，SharedMemoryChannel 传输）
+3. renderer 移除 GPU 直接访问（访问全部经 compositor 命令回放）
+4. compositor seccomp 沙箱（Linux）：最小权限进程（LibSandbox 模式）
+5. 验证（CI 真 Vulkan 后端）：GPU 路径 A/B 与基线一致 + 崩溃隔离测试
