@@ -516,6 +516,7 @@
   - 明确排除：servo、stylo、webrender、rust-cssparser、lightningcss、mozjs
 - **C-002**: CSS 解析器**必须**完全自建，因为所有成熟的 Rust CSS 解析库（rust-cssparser、lightningcss）均为 MPL 许可
 - **C-003**: JavaScript 页面引擎**必须**使用 V8（通过 rusty_v8），QuickJS 仅作为 feature-gated 扩展脚本沙箱
+  - **决策记录（B2，2026-08-07）**：单默认引擎是**有意决策**而非权宜——(a) 双引擎浏览器级等价成本极高（DOM/IDL/GC 生命周期/事件循环两套绑定，调研结论见 `docs/research/rust-cross-platform-browser-research.md` §5）；(b) Ladybird 教训：LibJS 自研 6 年+ 仍是最大单点投入，且其 Swift 插曲（2024-08 → 2026-02 放弃）证明「愿景完整度 < 生态成熟度」的选型原则（调研报告 §5.3 L1）。**trait 抽象边界预留（`page_js = v8 | quickjs`）但不承诺双引擎等价**；首个可用内核只稳定支持 V8，QuickJS 仅作扩展/用户脚本沙箱
 - **C-004**: 渲染管线**必须**基于 wgpu 构建，支持 GPU 和 CPU 双路径渲染
 - **C-005**: 窗口管理**必须**基于 winit，确保跨平台一致性
 - **C-006**: 布局算法**必须**基于 taffy 进行扩展，而非从零实现 Flexbox/Grid 基础算法
@@ -1045,6 +1046,7 @@ enum IpcMessage {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v1.4 | 2026-08-07 | C-003 补充决策记录（B2）：单默认 JS 引擎为有意决策，引用 Ladybird Swift 教训与双引擎等价成本；trait 抽象预留但不承诺等价 |
 | v1.3 | 2026-05-30 | 更新 §8.1 As-Is 分析：wgpu GPU 渲染后端已在 render-foundation gpu 模块实现（atlas.rs、pipeline.rs、renderer.rs）；host-runtime 新增 run_with_window() 用于 GPU surface 创建；Demo 切换到 wgpu GPU 渲染路径；代码规模增至 3,616 行 / 32 文件 / 69 测试 / 零 clippy 警告；从「尚未实现」列表移除 wgpu GPU 后端和 GPU surface 创建 |
 | v1.2 | 2026-05-30 | 更新 §8.1 As-Is 分析以反映 M1 代码进展（2,112 行源码、55 测试、5 基准）；补充 render-foundation 和 host-runtime 实现细节；标注 run-benchmarks.sh 路径问题 |
 | v1.1 | 2026-05-30 | 状态更新为 Confirmed；解决 TBD-1（MSRV = Rust 1.85）；更新 C-008 约束 |
