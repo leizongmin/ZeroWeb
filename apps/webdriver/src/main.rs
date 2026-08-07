@@ -256,11 +256,15 @@ fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream
                 None => error_response(stream, 404, "no such session", "session not found"),
             }
         }
-        // POST /session/{id}/element/{ref}/click — Element Click（M1：存在性验证，
-        // 事件注入需引擎级 dispatch，M2 经 renderer 桥接实现）
-        ("POST", ["session", id, "element", reference, "click"]) => match driver.sessions.get(*id) {
+        // POST /session/{id}/element/{ref}/click — Element Click
+        //（M2：真实 DOM 事件派发——run_page_scripts + __zw_dispatch_event，
+        // 触发页面 addEventListener/onclick 监听器；先验证元素存在）
+        ("POST", ["session", id, "element", reference, "click"]) => match driver.sessions.get_mut(*id) {
             Some(session) => match find_element_in_page(session, reference) {
-                Ok(true) => json_response(stream, serde_json::json!({ "value": null })),
+                Ok(true) => match session.webview.dispatch_event(reference, "click") {
+                    Ok(()) => json_response(stream, serde_json::json!({ "value": null })),
+                    Err(e) => error_response(stream, 500, "unknown error", &e.to_string()),
+                },
                 Ok(false) => error_response(stream, 404, "no such element", "element not found"),
                 Err(e) => error_response(stream, 500, "unknown error", &e),
             },

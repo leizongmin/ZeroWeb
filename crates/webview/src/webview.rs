@@ -5,9 +5,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use zero_engine::{
-    BudgetAdvance, BudgetedRenderSession, MediaType, PipelineTimings, PrefersColorSchemeValue, RenderPipeline,
-    RenderResult, extract_css_image_urls, extract_html_style_text, extract_img_srcs, extract_stylesheet_hrefs,
-    image_resource_key, resolve_document_url,
+    BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
+    RenderPipeline, RenderResult, apply_mutations_to_html, extract_css_image_urls, extract_html_style_text,
+    extract_img_srcs, extract_page_scripts, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key,
+    register_dom_callbacks, resolve_document_url, script_dispatch_dom_event,
 };
 use zero_net::{CacheLookup, HttpCache, HttpClient, NetError, is_file_url};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
@@ -109,6 +110,9 @@ pub struct WebView {
     http_client: HttpClient,
     /// 进程内 JavaScript 沙箱（`external_script` 为 None 时使用）。
     js_sandbox: Option<Box<dyn zero_script_sandbox::Sandbox>>,
+    /// DOM shim（generate_js_dom_shim）是否已注入沙箱（M2：幂等保护——
+    /// 重复执行会重置 _nodeMap 丢失监听器，故只注入一次）。
+    js_shim_initialized: bool,
     /// 外部 JS 执行器（专用 JS 线程）。
     external_script: Option<ExternalScriptExecutor>,
     /// 当前 URL。
@@ -199,6 +203,7 @@ impl WebView {
             pipeline,
             http_client,
             js_sandbox,
+            js_shim_initialized: false,
             external_script,
             current_url: None,
             title: None,
@@ -1024,6 +1029,107 @@ impl WebView {
         // 检查是否有 WASM 桥接请求
         let bridge_result = self.process_wasm_bridge(&result)?;
         Ok(bridge_result)
+    }
+
+    /// 执行页面 `<script>`（M2：真实 DOM 桥——与 wpt-runner reftest 同机制：
+    /// generate_js_dom_shim + register_dom_callbacks，DOM 操作记录为 mutation
+    /// 后应用回 HTML 并重新渲染）。
+    ///
+    /// 注意：本方法执行的是**页面真实 DOM 桥**（mutation 应用机制），与
+    /// `execute_script_with_dom`（JS 侧虚拟 DOM polyfill）不同——页面交互
+    /// （事件监听器注册等）须用本方法。
+    pub fn run_page_scripts(&mut self) -> Result<String, WebViewError> {
+        let html = self.cached_html.clone();
+        let scripts = extract_page_scripts(&html);
+        if scripts.is_empty() {
+            return Ok(html);
+        }
+        let sandbox = self
+            .js_sandbox
+            .as_mut()
+            .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
+
+        let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+            std::sync::Arc::new(std::sync::Mutex::new(html.clone()));
+        let page_url: std::sync::Arc<std::sync::Mutex<String>> =
+            std::sync::Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
+        register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url);
+
+        // DOM shim 只注入一次（重复执行会重置 _nodeMap 丢失监听器）
+        if !self.js_shim_initialized {
+            if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
+                return Err(WebViewError::Script(format!("DOM shim init: {e}")));
+            }
+            self.js_shim_initialized = true;
+        }
+        for script in scripts {
+            let code = match script {
+                zero_engine::pipeline::PageScript::Inline(c) | zero_engine::pipeline::PageScript::InlineModule(c) => c,
+                zero_engine::pipeline::PageScript::External(_)
+                | zero_engine::pipeline::PageScript::ExternalModule(_) => {
+                    continue; // 外链脚本：进程内模式不加载（与 reftest 离线语义一致）
+                }
+            };
+            let full = format!("__zw_begin_script && __zw_begin_script();\n{code}");
+            if let Err(e) = sandbox.execute(&full) {
+                tracing::warn!("页面脚本执行警告: {e}");
+            }
+        }
+        let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if recorded.is_empty() {
+            return Ok(html);
+        }
+        let mutated = apply_mutations_to_html(&html, &recorded)
+            .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
+        if mutated != html {
+            let _ = self.load_html(&mutated, None);
+        }
+        Ok(mutated)
+    }
+
+    /// 向页面元素派发 DOM 事件（M2：如 click/submit），触发页面注册的
+    /// 监听器（addEventListener / onclick 属性经 shim 桥接）。基于
+    /// `__zw_dispatch_event` shim（reftest 已验证的机制），mutation 应用
+    /// 后重新渲染。
+    pub fn dispatch_event(&mut self, selector: &str, event_type: &str) -> Result<(), WebViewError> {
+        self.run_page_scripts()?; // 确保监听器已注册
+        let script = script_dispatch_dom_event(selector, event_type, None);
+        let sandbox = self
+            .js_sandbox
+            .as_mut()
+            .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
+
+        let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+            std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
+        let page_url: std::sync::Arc<std::sync::Mutex<String>> =
+            std::sync::Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
+        register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url);
+
+        // 确保 shim 已注入（无页面脚本时 run_page_scripts 提前返回，shim 未初始化）
+        if !self.js_shim_initialized {
+            sandbox
+                .execute(generate_js_dom_shim())
+                .map_err(|e| WebViewError::Script(format!("DOM shim init: {e}")))?;
+            self.js_shim_initialized = true;
+        }
+
+        sandbox
+            .execute(&script)
+            .map_err(|e| WebViewError::Script(format!("dispatch {event_type}: {e}")))?;
+        let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if recorded.is_empty() {
+            return Ok(());
+        }
+        let mutated = apply_mutations_to_html(&self.cached_html, &recorded)
+            .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
+        if mutated != self.cached_html {
+            let _ = self.load_html(&mutated, None);
+        }
+        Ok(())
     }
 
     /// 注入 CSS（重新渲染）。
