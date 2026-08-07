@@ -46,10 +46,50 @@ fn scale_dimension(value: u32, scale: f32) -> u32 {
     ((value as f32 * scale).round() as u32).max(1)
 }
 
+/// 在独立工作线程中执行 `render_full_scene`（#3 渲染线程化 RFC S2 基础设施）。
+///
+/// 使用 `std::thread::scope` 安全借用 `&mut` 状态（scope 保证线程在借用
+/// 结束前 join）；调用方同步等待结果。当前为「线程内光栅化 + 同步等待」
+///（正确性/架构准备，无并行收益）——异步化（发起后不阻塞）为后续切片。
+#[allow(clippy::too_many_arguments)] // 光栅化全参数（本文件多处同款）
+pub fn render_full_scene_threaded(
+    width: u32,
+    height: u32,
+    scale_factor: f32,
+    primitives: &RenderPrimitives,
+    font_loader: &FontLoader,
+    glyph_cache: &mut GlyphCache,
+    image_cache: Option<&mut ImageCache>,
+    ui_glyphs: &[GlyphDraw],
+    overlay_fills: &[FillPrimitive],
+    overlay_glyphs: &[GlyphDraw],
+    overlay_rounded_rects: &[RoundedRectPrimitive],
+) -> FrameBuffer {
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            render_full_scene(
+                width,
+                height,
+                scale_factor,
+                primitives,
+                font_loader,
+                glyph_cache,
+                image_cache,
+                ui_glyphs,
+                overlay_fills,
+                overlay_glyphs,
+                overlay_rounded_rects,
+            )
+        })
+        .join()
+        .expect("渲染线程 panic")
+    })
+}
+
 /// 将所有 RenderPrimitives 图元渲染到 CPU 帧缓冲。
 ///
 /// 这是 M7 新增的完整渲染入口，接受 `RenderPrimitives` 并渲染所有 13 种图元类型。
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // 光栅化全参数（文件内多处同款）
 pub fn render_full_scene(
     width: u32,
     height: u32,

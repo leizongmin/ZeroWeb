@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use zero_engine::RenderPipeline;
 use zero_engine::paint::simple_hash;
-use zero_render_foundation::cpu::render_full_scene;
+use zero_render_foundation::cpu::{render_full_scene, render_full_scene_threaded};
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
 use zero_render_foundation::surface::FrameBuffer;
@@ -660,19 +660,38 @@ fn render_with_layout_inner(
     };
 
     // 使用已构建的图像缓存（包含固有尺寸信息）
-    let fb = render_full_scene(
-        config.viewport_width,
-        fb_height,
-        config.scale_factor,
-        &result.primitives,
-        font_loader,
-        &mut glyph_cache,
-        Some(&mut image_cache),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    // S2 可选线程化（#3 渲染线程化 RFC）：ZW_RENDER_THREAD=1 时光栅化在
+    // 独立线程执行（thread::scope），结果与单线程逐像素一致——默认关，
+    // 测试确定性优先；env 用于验证线程路径正确性。
+    let fb = if std::env::var("ZW_RENDER_THREAD").is_ok_and(|v| v == "1") {
+        render_full_scene_threaded(
+            config.viewport_width,
+            fb_height,
+            config.scale_factor,
+            &result.primitives,
+            font_loader,
+            &mut glyph_cache,
+            Some(&mut image_cache),
+            &[],
+            &[],
+            &[],
+            &[],
+        )
+    } else {
+        render_full_scene(
+            config.viewport_width,
+            fb_height,
+            config.scale_factor,
+            &result.primitives,
+            font_loader,
+            &mut glyph_cache,
+            Some(&mut image_cache),
+            &[],
+            &[],
+            &[],
+            &[],
+        )
+    };
     // render_full_scene 仅借 result.primitives（借用已结束）；移出 layout 根供结构检查。
     // 一并返回 mutated_html（render_html 实际解析的 HTML，经 script DOM 变更后可能与调用方传入
     // 的原 html 不同）——DC-13 结构检查须用它建 labels，否则 layout 树 node_id 与 collect_dom_labels
