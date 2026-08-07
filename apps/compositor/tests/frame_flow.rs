@@ -77,4 +77,30 @@ fn compositor_accepts_frames_and_confirms() {
             other => panic!("意外消息: {other:?}"),
         }
     }
+
+    // 拉取最新帧：纯红 fill 帧 → front 像素应为红色
+    transport
+        .send(IpcMessage {
+            id: 100,
+            kind: IpcMessageKind::GetCompositorFrame,
+        })
+        .expect("send get frame");
+    let resp: IpcMessage = transport.recv().expect("recv frame data");
+    match resp.kind {
+        IpcMessageKind::CompositorFrameData {
+            frame_id,
+            width,
+            height,
+            rgba,
+        } => {
+            assert_eq!(frame_id, 2, "应是最新帧（第 2 帧）");
+            assert_eq!((width, height), (640, 480));
+            assert_eq!(rgba.len(), (640 * 480 * 4) as usize, "帧像素完整");
+            // 纯红 fill 覆盖全视口 → 所有像素应为 (255,0,0,255)
+            assert_eq!(&rgba[..4], &[255, 0, 0, 255], "首像素应为纯红");
+            let last = &rgba[rgba.len() - 4..];
+            assert_eq!(last, &[255, 0, 0, 255], "末像素应为纯红");
+        }
+        other => panic!("意外消息: {other:?}"),
+    }
 }

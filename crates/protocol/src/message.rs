@@ -85,6 +85,20 @@ pub enum IpcMessageKind {
         /// 合成器内递增的帧序号。
         frame_id: u64,
     },
+    /// 拉取最新已合成帧（显示消费方 → 合成器）。
+    GetCompositorFrame,
+    /// 已合成帧数据（合成器 → 显示消费方）：front 缓冲像素。
+    /// 大体积优化（SharedMemoryChannel）留后续；当前消息内直接传输。
+    CompositorFrameData {
+        /// 帧序号（无帧时为 0）。
+        frame_id: u64,
+        /// 宽度（像素）。
+        width: u32,
+        /// 高度（像素）。
+        height: u32,
+        /// RGBA 像素（width × height × 4；无帧时为空）。
+        rgba: Vec<u8>,
+    },
 
     // ── 存储请求（渲染→浏览器→存储）──
     /// localStorage/sessionStorage 操作。

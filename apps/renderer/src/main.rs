@@ -1198,6 +1198,8 @@ impl RendererRuntime {
             | IpcMessageKind::ImageDecodeResult(_)
             | IpcMessageKind::CompositorFrame(_)
             | IpcMessageKind::CompositorFrameResult { .. }
+            | IpcMessageKind::GetCompositorFrame
+            | IpcMessageKind::CompositorFrameData { .. }
             | IpcMessageKind::TitleChanged(_)
             | IpcMessageKind::UrlChanged(_)
             | IpcMessageKind::LoadComplete

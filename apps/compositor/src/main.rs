@@ -91,6 +91,29 @@ fn main() {
                     break;
                 }
             }
+            // 显示消费方拉取最新已合成帧（front 缓冲像素）
+            IpcMessageKind::GetCompositorFrame => {
+                let (width, height, rgba) = match backing.as_ref() {
+                    Some(store) => {
+                        let front = store.front();
+                        (front.width, front.height, front.data.clone())
+                    }
+                    None => (0, 0, Vec::new()),
+                };
+                let resp = IpcMessage {
+                    id: msg.id,
+                    kind: IpcMessageKind::CompositorFrameData {
+                        frame_id: frame_count,
+                        width,
+                        height,
+                        rgba,
+                    },
+                };
+                if let Err(e) = transport.send(resp) {
+                    tracing::warn!("compositor: 帧数据响应失败: {e}");
+                    break;
+                }
+            }
             _ => {
                 tracing::warn!("compositor: 忽略未知消息");
             }
