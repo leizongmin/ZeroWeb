@@ -7623,6 +7623,167 @@ fn test_crypto_subtle_hmac_r2955() {
 }
 
 #[test]
+fn test_crypto_subtle_pbkdf2_r2956() {
+    // R2956：crypto.subtle deriveBits("PBKDF2", ...)——PBKDF2-HMAC-SHA-1/256/384/512 密码派生密钥。
+    // 复用 R2955 compute_hmac 作 PRF。TDD 用 RFC 6070 SHA-1 向量（c=1/2/4096）+ SHA-256 已知向量锚定，
+    // + 多块自一致（dkLen=64 首 32 字节 == dkLen=32 输出）+ deriveBits/importKey 错误路径。
+    // https://datatracker.ietf.org/doc/html/rfc2898#section-5.2  https://datatracker.ietf.org/doc/html/rfc6070
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // derive hex 辅助：执行 importKey→deriveBits 链，下 execute 读 globalThis.__dk hex。
+    let mut hex_dk = |derive: &str| -> String {
+        sandbox.execute(derive).unwrap();
+        sandbox
+            .execute("Array.from(globalThis.__dk).map(function(b){return ('0'+b.toString(16)).slice(-2);}).join('')")
+            .unwrap()
+            .value
+    };
+
+    // RFC 6070 SHA-1：P="password", S="salt", c=1, dkLen=20 → 0c60c80f...e037a6。
+    assert_eq!(
+        hex_dk(
+            "globalThis.__dk='(pending)';\
+             crypto.subtle.importKey('raw', new TextEncoder().encode('password'), {name:'PBKDF2'}, false, ['deriveBits'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-1',salt:new TextEncoder().encode('salt'),iterations:1}, k, 160); })\
+               .then(function(b){ globalThis.__dk = new Uint8Array(b); });"
+        ),
+        "0c60c80f961f0e71f3a9b524af6012062fe037a6"
+    );
+    // RFC 6070 SHA-1：c=2 → ea6c014d...de8957。
+    assert_eq!(
+        hex_dk(
+            "globalThis.__dk='(pending)';\
+             crypto.subtle.importKey('raw', 'password', {name:'PBKDF2'}, false, ['deriveBits'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-1',salt:'salt',iterations:2}, k, 160); })\
+               .then(function(b){ globalThis.__dk = new Uint8Array(b); });"
+        ),
+        "ea6c014dc72d6f8ccd1ed92ace1d41f0d8de8957"
+    );
+    // RFC 6070 SHA-1：c=4096（测迭代循环）→ 4b007901...429c1。
+    assert_eq!(
+        hex_dk(
+            "globalThis.__dk='(pending)';\
+             crypto.subtle.importKey('raw', 'password', {name:'PBKDF2'}, false, ['deriveBits'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-1',salt:'salt',iterations:4096}, k, 160); })\
+               .then(function(b){ globalThis.__dk = new Uint8Array(b); });"
+        ),
+        "4b007901b765489abead49d926f721d065a429c1"
+    );
+    // PBKDF2-HMAC-SHA-256：P="password", S="salt", c=1, dkLen=32 → 120fb6cf...70be17b。
+    assert_eq!(
+        hex_dk(
+            "globalThis.__dk='(pending)';\
+             crypto.subtle.importKey('raw', 'password', {name:'PBKDF2'}, false, ['deriveBits'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:'salt',iterations:1}, k, 256); })\
+               .then(function(b){ globalThis.__dk = new Uint8Array(b); });"
+        ),
+        "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"
+    );
+    // PBKDF2-HMAC-SHA-256：c=2 → ae4d0c95...474c43。
+    assert_eq!(
+        hex_dk(
+            "globalThis.__dk='(pending)';\
+             crypto.subtle.importKey('raw', 'password', {name:'PBKDF2'}, false, ['deriveBits'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:'salt',iterations:2}, k, 256); })\
+               .then(function(b){ globalThis.__dk = new Uint8Array(b); });"
+        ),
+        "ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43"
+    );
+    // 多块自一致：dkLen=64（2 个 SHA-256 块）首 32 字节 == dkLen=32 输出（T_1 确定性，证 INT_32_BE 块序 + 截断正确）。
+    let dk64 = hex_dk(
+        "globalThis.__dk='(pending)';\
+         crypto.subtle.importKey('raw', 'password', {name:'PBKDF2'}, false, ['deriveBits'])\
+           .then(function(k){ return crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:'salt',iterations:1}, k, 512); })\
+           .then(function(b){ globalThis.__dk = new Uint8Array(b); });",
+    );
+    assert_eq!(dk64.len(), 128); // 64 字节
+    assert_eq!(
+        &dk64[..64],
+        "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"
+    );
+
+    // importKey 字段：PBKDF2 CryptoKey type="secret"，algorithm.name="PBKDF2"，usages。
+    sandbox
+        .execute(
+            "globalThis.__k=null;\
+             crypto.subtle.importKey('raw', 'p', {name:'PBKDF2'}, false, ['deriveBits','deriveKey'])\
+               .then(function(k){ globalThis.__k = k; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute(
+                "String(globalThis.__k && globalThis.__k.type === 'secret'\
+                   && globalThis.__k.algorithm.name === 'PBKDF2'\
+                   && globalThis.__k.usages.join(',') === 'deriveBits,deriveKey')"
+            )
+            .unwrap()
+            .value,
+        "true"
+    );
+
+    // deriveBits 缺 "deriveBits" usage（仅 'deriveKey'）→ reject InvalidAccessError。
+    sandbox
+        .execute(
+            "globalThis.__e1='(pending)';\
+             crypto.subtle.importKey('raw', 'p', {name:'PBKDF2'}, false, ['deriveKey'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:'s',iterations:1}, k, 256); })\
+               .catch(function(e){ globalThis.__e1 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e1)").unwrap().value,
+        "InvalidAccessError"
+    );
+    // importKey PBKDF2 非法 usage（'sign' 不属 {deriveBits,deriveKey}）→ reject SyntaxError。
+    sandbox
+        .execute(
+            "globalThis.__e2='(pending)';\
+             crypto.subtle.importKey('raw', 'p', {name:'PBKDF2'}, false, ['sign'])\
+               .catch(function(e){ globalThis.__e2 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__e2)").unwrap().value, "SyntaxError");
+    // deriveBits length 非 8 倍数（17）→ reject OperationError。
+    sandbox
+        .execute(
+            "globalThis.__e3='(pending)';\
+             crypto.subtle.importKey('raw', 'p', {name:'PBKDF2'}, false, ['deriveBits'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:'s',iterations:1}, k, 17); })\
+               .catch(function(e){ globalThis.__e3 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e3)").unwrap().value,
+        "OperationError"
+    );
+    // deriveBits algorithm/key 不匹配（HMAC key 用于 PBKDF2）→ reject NotSupportedError。
+    sandbox
+        .execute(
+            "globalThis.__e4='(pending)';\
+             crypto.subtle.importKey('raw', new Uint8Array(4), {name:'HMAC',hash:'SHA-256'}, false, ['sign','verify'])\
+               .then(function(k){ return crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:'s',iterations:1}, k, 256); })\
+               .catch(function(e){ globalThis.__e4 = e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e4)").unwrap().value,
+        "NotSupportedError"
+    );
+}
+
+#[test]
 fn test_headers_r2794() {
     // R2794：Headers（HTTP 头集合，fetch/SW/header-map 高频）。镜像 FormData，header name 小写归一 +
     // 多值 append 用 ', ' 合并 + getSetCookie 特例。纯 JS，零 host 回调。

@@ -1290,6 +1290,54 @@ pub fn crypto_subtle_hmac(hash_algo: &str, key_csv: &str, data_csv: &str) -> Str
     mac.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
 }
 
+/// `crypto.subtle.deriveBits` 的 PBKDF2 实现（R2956）——PBKDF2-HMAC-SHA-1/256/384/512。**密码派生密钥**
+/// 高频（密码管理器 / 加密备份 / 「用密码加密」流程的密钥派生步骤）。PRF = HMAC-<hash>（复用
+/// `compute_hmac`，block_size 内置于闭包）。password_csv/salt_csv = 逗号分隔十进制字节串；iterations 为
+/// 循环次数；dklen 为派生字节长度。返派生密钥 csv（unsupported hash / iterations=0 / dklen=0 → 空，shim reject）。
+/// 供 `__zw_crypto_subtle_pbkdf2` 回调 → shim `crypto.subtle.deriveBits("PBKDF2", ...)`。
+/// https://datatracker.ietf.org/doc/html/rfc2898#section-5.2
+pub fn crypto_subtle_pbkdf2(
+    hash_algo: &str,
+    password_csv: &str,
+    salt_csv: &str,
+    iterations: u32,
+    dklen: usize,
+) -> String {
+    let password = bytes_from_csv(password_csv);
+    let salt = bytes_from_csv(salt_csv);
+    if iterations == 0 || dklen == 0 {
+        return String::new();
+    }
+    // PRF = HMAC-<hash>；block_size 按 hash（SHA-1/256=64；SHA-384/512=128）内置于闭包。
+    let hmac: Box<dyn Fn(&[u8], &[u8]) -> Vec<u8>> = match hash_algo.to_ascii_uppercase().as_str() {
+        "SHA-1" | "SHA1" => Box::new(|k: &[u8], d: &[u8]| compute_hmac::<sha1::Sha1>(k, d, 64)),
+        "SHA-256" | "SHA256" => Box::new(|k: &[u8], d: &[u8]| compute_hmac::<sha2::Sha256>(k, d, 64)),
+        "SHA-384" | "SHA384" => Box::new(|k: &[u8], d: &[u8]| compute_hmac::<sha2::Sha384>(k, d, 128)),
+        "SHA-512" | "SHA512" => Box::new(|k: &[u8], d: &[u8]| compute_hmac::<sha2::Sha512>(k, d, 128)),
+        _ => return String::new(),
+    };
+    let mut out: Vec<u8> = Vec::with_capacity(dklen);
+    let mut block_index: u32 = 1;
+    while out.len() < dklen {
+        // U_1 = PRF(password, salt || INT_32_BE(block_index))。
+        let mut msg = salt.clone();
+        msg.extend_from_slice(&block_index.to_be_bytes());
+        let mut u = hmac(&password, &msg);
+        let mut t = u.clone();
+        // U_2..U_c = PRF(password, U_{j-1})；T_i = U_1 ⊕ ... ⊕ U_c。
+        for _ in 1..iterations {
+            u = hmac(&password, &u);
+            for (tb, ub) in t.iter_mut().zip(u.iter()) {
+                *tb ^= *ub;
+            }
+        }
+        out.extend_from_slice(&t);
+        block_index += 1;
+    }
+    out.truncate(dklen);
+    out.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
+}
+
 /// canvas 颜色串 → render Color（复用 CSS 颜色解析：named/hex/rgb/hsl 等）。解析失败回落黑色。
 fn parse_canvas_color(s: &str) -> zero_render_foundation::color::Color {
     use zero_render_foundation::color::Color;
@@ -2839,6 +2887,20 @@ pub fn register_dom_callbacks(
             let key = args.get(1).map(String::as_str).unwrap_or("");
             let data = args.get(2).map(String::as_str).unwrap_or("");
             crypto_subtle_hmac(hash, key, data)
+        }),
+    );
+
+    // `crypto.subtle.deriveBits("PBKDF2", ...)`（R2956）——PBKDF2-HMAC-SHA-1/256/384/512。
+    // arg[0]=hash 名，arg[1]=password csv，arg[2]=salt csv，arg[3]=iterations，arg[4]=dklen（字节）。返派生密钥 csv。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_pbkdf2",
+        Box::new(|args: &[String]| -> String {
+            let hash = args.first().map(String::as_str).unwrap_or("");
+            let password = args.get(1).map(String::as_str).unwrap_or("");
+            let salt = args.get(2).map(String::as_str).unwrap_or("");
+            let iterations: u32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let dklen: usize = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
+            crypto_subtle_pbkdf2(hash, password, salt, iterations, dklen)
         }),
     );
 

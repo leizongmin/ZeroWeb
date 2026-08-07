@@ -1152,7 +1152,8 @@
     return String(n).toUpperCase();
   }
 
-  // importKey 的 algorithm 归一化：{name:"HMAC", hash:"SHA-XXX"} 或 null（非 HMAC / 缺 hash）。
+  // importKey 的 algorithm 归一化：{name:"HMAC", hash:"SHA-XXX"} / {name:"PBKDF2"} / null（unsupported）。
+  // HMAC 需 hash；PBKDF2 不需（hash 在 deriveBits 参数里）。
   function _zw_normalizeImportAlgorithm(algo) {
     if (!algo) return null;
     var name = (typeof algo === 'object' && algo) ? algo.name : algo;
@@ -1162,6 +1163,9 @@
       var hash = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
       if (!hash) return null;
       return { name: 'HMAC', hash: hash };
+    }
+    if (name === 'PBKDF2') {
+      return { name: 'PBKDF2' };
     }
     return null;
   }
@@ -1222,7 +1226,8 @@
       });
     },
     // importKey(format, keyData, algorithm, extractable, usages) → Promise<CryptoKey>。HMAC：format 须 "raw"
-    //（jwk/pkcs8/spki defer）；algorithm {name:"HMAC",hash:"SHA-XXX"}；usages ⊆ {sign,verify}（含非法 → SyntaxError）。
+    //（jwk/pkcs8/spki defer）；algorithm {name:"HMAC",hash:"SHA-XXX"}，usages ⊆ {sign,verify}。PBKDF2：
+    // {name:"PBKDF2"}，usages ⊆ {deriveBits,deriveKey}。含非法 usage → SyntaxError。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-importKey
     importKey: function (format, keyData, algorithm, extractable, usages) {
       return new Promise(function (resolve, reject) {
@@ -1232,11 +1237,12 @@
         }
         var fmt = String(format == null ? '' : format).toUpperCase();
         if (fmt !== 'RAW') {
-          reject(new DOMException("Unsupported importKey format: '" + fmt + "' (only 'raw' for HMAC)", 'NotSupportedError')); return;
+          reject(new DOMException("Unsupported importKey format: '" + fmt + "' (only 'raw' supported)", 'NotSupportedError')); return;
         }
-        var u = _zw_normalizeUsages(usages, ['sign', 'verify']);
+        var allowedUsages = algo.name === 'PBKDF2' ? ['deriveBits', 'deriveKey'] : ['sign', 'verify'];
+        var u = _zw_normalizeUsages(usages, allowedUsages);
         if (!u) {
-          reject(new DOMException('Invalid key usages for HMAC', 'SyntaxError')); return;
+          reject(new DOMException("Invalid key usages for " + algo.name, 'SyntaxError')); return;
         }
         var raw = _zw_bufToBytes(keyData);
         resolve(new CryptoKey('secret', extractable, algo, u, raw));
@@ -1279,6 +1285,43 @@
           if ((mac[i] & 0xff) !== (sig[i] & 0xff)) ok = 0;
         }
         resolve(!!ok);
+      });
+    },
+    // deriveBits(algorithm, key, length) → Promise<ArrayBuffer>。PBKDF2：algorithm {name:"PBKDF2", salt, iterations, hash}，
+    // key = importKey("raw", password, {name:"PBKDF2"}) 所得；length 为**位数**（须正 8 倍数）；key.usages 须含 "deriveBits"。
+    // host `__zw_crypto_subtle_pbkdf2(hash, keyCsv, saltCsv, iterations, dkLen)`。https://w3c.github.io/webcrypto/#SubtleCrypto-method-deriveBits
+    deriveBits: function (algorithm, key, length) {
+      return new Promise(function (resolve, reject) {
+        var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
+        name = String(name == null ? '' : name).toUpperCase();
+        if (name !== 'PBKDF2' || !key || key.algorithm.name !== 'PBKDF2') {
+          reject(new DOMException('Unsupported deriveBits algorithm or key', 'NotSupportedError')); return;
+        }
+        if (!key.usages || key.usages.indexOf('deriveBits') < 0) {
+          reject(new DOMException('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
+        }
+        if (typeof length !== 'number' || length <= 0 || length % 8 !== 0) {
+          reject(new DOMException('deriveBits length must be a positive multiple of 8', 'OperationError')); return;
+        }
+        var hash = _zw_hashName(typeof algorithm === 'object' ? algorithm.hash : null);
+        var iters = Math.floor(Number(algorithm.iterations));
+        var saltBytes = _zw_bufToBytes(algorithm.salt);
+        if (!hash || !(iters > 0)) {
+          reject(new DOMException('deriveBits PBKDF2 requires salt/iterations/hash', 'OperationError')); return;
+        }
+        if (typeof __zw_crypto_subtle_pbkdf2 !== 'function') {
+          reject(new DOMException('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
+        }
+        var dkLen = length / 8;
+        var keyCsv = (key._raw || []).map(String).join(',');
+        var out = __zw_crypto_subtle_pbkdf2(hash, keyCsv, saltBytes.join(','), String(iters), String(dkLen));
+        if (!out) {
+          reject(new DOMException("Unsupported deriveBits hash: '" + hash + "'", 'NotSupportedError')); return;
+        }
+        var parts = out.split(',');
+        var arr = new Uint8Array(parts.length);
+        for (var i = 0; i < parts.length; i++) arr[i] = +parts[i];
+        resolve(arr);
       });
     }
   };
