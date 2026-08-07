@@ -37,7 +37,16 @@ fn main() {
     let mut glyph_cache = GlyphCache::new(1024);
     let mut frame_count: u64 = 0;
 
-    tracing::info!("zero-compositor 就绪（C2：IPC 图元 → 线程化光栅化 → 双缓冲）");
+    // C3 GPU 光栅化（env ZW_COMPOSITOR_GPU=1）：headless wgpu 上下文在合成器
+    // 进程内（对照 Ladybird GPU 隔离）；初始化失败/GPU 不可用 → 回退 CPU。
+    // 现状：GPU 渲染器覆盖 fills/glyphs 图元子集（render_scene_ext）。
+    let gpu_enabled = std::env::var("ZW_COMPOSITOR_GPU").is_ok_and(|v| v == "1");
+    let mut gpu_renderer: Option<zero_render_foundation::gpu::renderer::GpuRenderer> = None;
+
+    tracing::info!(
+        "zero-compositor 就绪（C2：IPC 图元 → 线程化光栅化 → 双缓冲；GPU={}）",
+        gpu_enabled
+    );
 
     loop {
         let msg: IpcMessage = match transport.recv() {
@@ -60,21 +69,68 @@ fn main() {
                 let store = backing.get_or_insert_with(|| BackingStoreManager::new(w, h));
                 store.resize(w, h);
 
-                // IPC 图元 → 渲染图元 → 线程化光栅化到 back buffer → swap
+                // IPC 图元 → 渲染图元 → 光栅化到 back buffer → swap
                 let primitives = convert::to_render_primitives(&frame);
-                let fb = render_full_scene_threaded(
-                    w,
-                    h,
-                    1.0,
-                    &primitives,
-                    &font_loader,
-                    &mut glyph_cache,
-                    None,
-                    &[],
-                    &[],
-                    &[],
-                    &[],
-                );
+                let fb = if gpu_enabled {
+                    // C3：GPU 光栅化（headless wgpu 上下文在本进程内；
+                    // 初始化失败回退 CPU，fail-open）
+                    if gpu_renderer.is_none() {
+                        gpu_renderer = zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(w, h).ok();
+                    }
+                    match gpu_renderer.as_mut() {
+                        Some(gpu) => {
+                            gpu.render_scene_ext(&primitives.fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+                            match gpu.read_pixels() {
+                                Some(pixels) => {
+                                    let mut fb = zero_render_foundation::surface::FrameBuffer::new(w, h);
+                                    let len = fb.data.len().min(pixels.len());
+                                    fb.data[..len].copy_from_slice(&pixels[..len]);
+                                    fb
+                                }
+                                None => render_full_scene_threaded(
+                                    w,
+                                    h,
+                                    1.0,
+                                    &primitives,
+                                    &font_loader,
+                                    &mut glyph_cache,
+                                    None,
+                                    &[],
+                                    &[],
+                                    &[],
+                                    &[],
+                                ),
+                            }
+                        }
+                        None => render_full_scene_threaded(
+                            w,
+                            h,
+                            1.0,
+                            &primitives,
+                            &font_loader,
+                            &mut glyph_cache,
+                            None,
+                            &[],
+                            &[],
+                            &[],
+                            &[],
+                        ),
+                    }
+                } else {
+                    render_full_scene_threaded(
+                        w,
+                        h,
+                        1.0,
+                        &primitives,
+                        &font_loader,
+                        &mut glyph_cache,
+                        None,
+                        &[],
+                        &[],
+                        &[],
+                        &[],
+                    )
+                };
                 *store.back_mut() = fb;
                 store.swap();
                 tracing::info!(
