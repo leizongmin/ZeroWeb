@@ -42,6 +42,7 @@ pub use reftest_compare::{
 };
 use reftest_fonts::*;
 use reftest_scripts::*;
+use zero_render_foundation::font::loader::FontLoader;
 
 /// Reftest 分类 — 用于确定默认容差级别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -525,6 +526,15 @@ pub fn render_to_framebuffer_with_layout_and_paint_skip_with_base(
     render_with_layout_inner(html, css, config, base_dir)
 }
 
+/// 进程级缓存的「默认字体」FontLoader（系统 + CJK + Ahem + 回退链）。
+///
+/// 默认字体集合跨所有 reftest case 完全一致，fontdue `from_bytes` 解析（尤以 ~16MB
+/// NotoSansCJK）是单案串行成本的大头（见 `render_with_layout_inner` 注释）。
+/// `build_font_resolver` / `build_line_metric_map` 取 `&self`（只读），故无 `@font-face`
+/// 的 case 可经此单例零成本复用；全进程只 build 一次，rayon 多线程并发只读安全。
+static BASE_FONT_LOADER: std::sync::OnceLock<zero_render_foundation::font::loader::FontLoader> =
+    std::sync::OnceLock::new();
+
 fn render_with_layout_inner(
     html: &str,
     css: &str,
@@ -566,24 +576,35 @@ fn render_with_layout_inner(
     pipeline.set_image_ratios(image_ratios);
     pipeline.set_image_no_ratio(image_no_ratio);
 
-    // 构建字体查找表（在 render_html 之前，以便 Painter 解析 CSS font-family）
-    let mut font_loader = create_font_loader();
-    // 加载 CSS @font-face 声明的自定义字体：扫描外链/传入 CSS + 文档内联 <style>
-    //（@font-face 常在内联 <style>），按 base_dir 解析 src 到本地文件。
+    // 字体查找表（在 render_html 之前，供 Painter 解析 CSS font-family）。
+    // 扫描外链/传入 CSS + 内联 <style> 的 @font-face（常声明在内联 <style>）。
     let font_scan_css = format!("{combined_css}\n{}", extract_inline_style_css(html));
-    load_font_faces_into(&mut font_loader, base_dir, &font_scan_css);
-    let font_resolver = font_loader.build_font_resolver();
-    pipeline.set_font_resolver(font_resolver);
+    let has_font_face = !extract_font_faces(&font_scan_css).is_empty();
+    // U1b-wiring per-font line-height（env-gated，默认关 = 零回归）。
+    let perfont_lineheight = std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1");
 
-    // U1b-wiring 激活 A/B（per-font line-height，env-gated）：注入 per-family 度量映射，
-    // 使 line-height:normal 走 per-family hhea（+ populate TextRun.font_id，C3 前置）。
-    // 默认关 = 常数度量 = 零回归。测 R1636 未隔离的 per-family hhea 对显式 family 信号。
-    if std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1") {
+    // 杠杆4：默认字体（系统 + CJK + Ahem + 回退链）跨 case 完全一致，而 fontdue
+    // from_bytes 解析（尤以 ~16MB NotoSansCJK）占单案 ~85% 串行成本（实测每 render
+    // ~0.4s，每 case 2 render ≈ 0.8s，而单案总成本仅 ~0.9s）。build_font_resolver /
+    // build_line_metric_map 均取 &self，故无 @font-face 的多数 case 复用进程级缓存的
+    // base loader（BASE_FONT_LOADER），零 re-parse；仅声明 @font-face 的少数 case
+    //（字体测试）走 fresh owned loader（含 re-parse + 自定义字体），保持原行为。
+    let fresh_loader: Option<FontLoader> = if has_font_face {
+        let mut fl = create_font_loader();
+        load_font_faces_into(&mut fl, base_dir, &font_scan_css);
+        Some(fl)
+    } else {
+        None
+    };
+    let font_loader: &FontLoader = fresh_loader
+        .as_ref()
+        .unwrap_or_else(|| BASE_FONT_LOADER.get_or_init(create_font_loader));
+    pipeline.set_font_resolver(font_loader.build_font_resolver());
+    if perfont_lineheight {
         pipeline.set_font_metric_map(font_loader.build_line_metric_map());
     }
 
-    let result =
-        runner_text_metrics::with_measure_ctx(&font_loader, 0u32, || pipeline.render_html(html, &combined_css));
+    let result = runner_text_metrics::with_measure_ctx(font_loader, 0u32, || pipeline.render_html(html, &combined_css));
 
     // DEBUG: dump layout box tree geometry (absolute y / margin-top / padding-top)
     // 用途：诊断产品 smoke 垂直偏移（如 welcome 36px 顶部偏移）。
@@ -644,7 +665,7 @@ fn render_with_layout_inner(
         fb_height,
         config.scale_factor,
         &result.primitives,
-        &font_loader,
+        font_loader,
         &mut glyph_cache,
         Some(&mut image_cache),
         &[],

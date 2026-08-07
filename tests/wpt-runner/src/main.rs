@@ -717,6 +717,7 @@ fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
     let start = std::time::Instant::now();
 
     let results: Vec<ReftestResult> = parallel_map(&filtered, jobs, |(idx, case)| {
+        let _timer = CaseTimer::new(&case.id);
         let mut config = configs[*idx].clone();
         config.viewport_width = options.viewport_width as u32;
         config.viewport_height = options.viewport_height as u32;
@@ -900,6 +901,7 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
 
     let results: Vec<ReftestResult> = parallel_map(&filtered, jobs, |case| {
         let reftest_case = case.to_reftest_case();
+        let _timer = CaseTimer::new(&reftest_case.id);
         let mut config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
         config.media_type = options.media_type;
         config.wpt_root = Some(wpt_data_dir.clone());
