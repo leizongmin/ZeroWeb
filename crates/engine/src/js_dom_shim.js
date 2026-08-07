@@ -6662,9 +6662,9 @@
   // https://drafts.csswg.org/css-font-loading/#FontFaceSet-interface
   var _fontsListeners = {};
   var _fontsReadyResolve = null;
+  var _fontFaceSetFaces = []; // FontFace 对象列表（add/delete 管理；values/forEach/size/迭代反映）
   var _fontFaceSet = {
     status: 'loaded', // 'loading' | 'loaded'（headless 简化：初始即 loaded，settle 时不改）
-    size: 0,
     onloading: null, onloadingdone: null, onloadingerror: null,
     ready: new Promise(function (resolve) { _fontsReadyResolve = resolve; }),
     addEventListener: function (type, fn) {
@@ -6682,17 +6682,37 @@
       if (l) for (var i = 0; i < l.length; i++) { try { l[i].call(this, ev); } catch (_e) {} }
       return true;
     },
-    // minimal/stub：check/load/values/forEach/迭代——满足存在性探测与常见 `fonts.check('1em Foo')` 用法。
+    // R2949：FontFace 对象集合管理（add/delete/values/forEach/size/迭代反映 _fontFaceSetFaces）。
+    // check/load 仍 minimal（不真按 spec 解析字体描述符）。
     check: function () { return true; },
     load: function () { return this.ready; },
-    values: function () { return [][Symbol.iterator](); },
-    entries: function () { return [][Symbol.iterator](); },
-    keys: function () { return [][Symbol.iterator](); },
-    forEach: function () {},
-    add: function () { return this; }, clear: function () {}, delete: function () { return false; },
+    values: function () { return _fontFaceSetFaces[Symbol.iterator](); },
+    entries: function () {
+      var arr = _fontFaceSetFaces.map(function (f) { return [f, f]; });
+      return arr[Symbol.iterator]();
+    },
+    keys: function () { return _fontFaceSetFaces[Symbol.iterator](); },
+    forEach: function (cb) {
+      for (var i = 0; i < _fontFaceSetFaces.length; i++) {
+        try { cb(_fontFaceSetFaces[i], i, this); } catch (_e) {}
+      }
+    },
+    add: function (face) {
+      if (face && _fontFaceSetFaces.indexOf(face) < 0) _fontFaceSetFaces.push(face);
+      return this;
+    },
+    clear: function () { _fontFaceSetFaces = []; },
+    delete: function (face) {
+      var i = _fontFaceSetFaces.indexOf(face);
+      if (i >= 0) { _fontFaceSetFaces.splice(i, 1); return true; }
+      return false;
+    },
   };
+  Object.defineProperty(_fontFaceSet, 'size', {
+    get: function () { return _fontFaceSetFaces.length; },
+  });
   if (Symbol && Symbol.iterator) {
-    _fontFaceSet[Symbol.iterator] = function () { return [][Symbol.iterator](); };
+    _fontFaceSet[Symbol.iterator] = function () { return _fontFaceSetFaces[Symbol.iterator](); };
   }
   Object.defineProperty(globalThis.document, 'fonts', { configurable: true, value: _fontFaceSet });
   // R2947 宿主字体 settle 入口：hadLoaded/hadError 为 bool（本轮 drain 的 font_events 是否含 loaded/error）。
@@ -6711,6 +6731,73 @@
       }
     } catch (_e) {}
   };
+  // R2949 FontFace——单字体面（CSS Font Loading API face 层，补全 R2947 set 层）。
+  // `new FontFace(family, source, descriptors)`：family 字符串、source = URL 字串（binary source 非标准 headless 不支持）、
+  // descriptors = {style, weight, stretch, unicodeRange, variant, featureSettings}（默认 normal/400）。.status =
+  // 'unloaded'|'loading'|'loaded'|'error'。.load() 返 Promise<FontFace>——经 host `__zw_load_font(family, src, id,
+  // weightNum, isItalic)` 异步加载（worker 投递 → runtime fetch_get 字节 + load_font/register/set_resolver +
+  // async_resolver.resolve），成功 status='loaded' resolve(this)，失败 status='error' reject。.loaded getter 同 .load()
+  //（spec：loaded 属性返 load Promise）。weightNum/isItalic 供 host register_family_alias 按 weight/style 构键
+  //（R2417/R2493）。host 桥不可用时（engine/reftest/polyfill 无注入）fallback：status='loaded' resolve（不谎称失败）。
+  var _fontFaceLoadId = 0;
+  function _parseFontWeight(w) {
+    if (w == null) return 400;
+    var s = String(w).trim();
+    if (s === 'normal') return 400;
+    if (s === 'bold') return 700;
+    var n = parseInt(s, 10);
+    return isNaN(n) ? 400 : n;
+  }
+  function FontFace(family, source, descriptors) {
+    this.family = String(family != null ? family : '');
+    this._src = typeof source === 'string' ? source : '';
+    var d = descriptors || {};
+    this.style = d.style != null ? String(d.style) : 'normal';
+    this.weight = d.weight != null ? String(d.weight) : 'normal';
+    this.stretch = d.stretch != null ? String(d.stretch) : 'normal';
+    this.unicodeRange = d.unicodeRange != null ? String(d.unicodeRange) : 'U+0-10FFFF';
+    this.variant = d.variant != null ? String(d.variant) : 'normal';
+    this.featureSettings = d.featureSettings != null ? String(d.featureSettings) : 'normal';
+    this.status = 'unloaded';
+    this._loadPromise = null;
+  }
+  FontFace.prototype.load = function () {
+    var self = this;
+    if (this._loadPromise) return this._loadPromise;
+    this.status = 'loading';
+    var weightNum = _parseFontWeight(this.weight);
+    var isItalic = this.style === 'italic' || this.style === 'oblique';
+    this._loadPromise = new Promise(function (resolve, reject) {
+      if (typeof __zw_load_font !== 'function') {
+        // host 桥未注入（engine/reftest/polyfill）→ fallback resolve（不谎称失败，测试/polyfill 可用）。
+        self.status = 'loaded';
+        resolve(self);
+        return;
+      }
+      var id = '__ff_' + (++_fontFaceLoadId);
+      globalThis.__zw_pending[id] = function (raw) {
+        if (typeof raw === 'string' && raw.indexOf('ok') === 0) {
+          self.status = 'loaded';
+          resolve(self);
+        } else {
+          self.status = 'error';
+          reject(new Error('Failed to load FontFace "' + self.family + '" from ' + self._src));
+        }
+      };
+      try {
+        __zw_load_font(self.family, self._src, id, weightNum, isItalic);
+      } catch (e) {
+        delete globalThis.__zw_pending[id];
+        self.status = 'error';
+        reject(e);
+      }
+    });
+    return this._loadPromise;
+  };
+  Object.defineProperty(FontFace.prototype, 'loaded', {
+    get: function () { return this.load(); },
+  });
+  globalThis.FontFace = globalThis.FontFace || FontFace;
 
   // Selection / Range（R2804，缺失 Web API 续）。headless 无真用户选择——Selection 单例默认空
   //（rangeCount=0/isCollapsed=true/toString=''/anchorNode=null/focusNode=null/type='None'），selection-state-

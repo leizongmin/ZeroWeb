@@ -650,6 +650,90 @@ impl RendererRuntime {
         self.tick_pending_load_with_budget(RENDER_FRAME_BUDGET_MS)
     }
 
+    /// R2949 FontFace.load()：drain JS 投递的字体加载请求 → fetch_get 字节 → load_font +
+    /// register_family_alias（复用既有 @font-face 加载逻辑）→ 刷新 resolver + 请求重绘 →
+    /// async_resolver.resolve 解析 Promise。失败（fetch/load）resolve "err" 使 shim reject。
+    /// 复用既有字体加载代码路径（与 drain_loaded_fonts 一致），仅触发条件不同（@font-face 由
+    /// async_load poll_fonts 收集；FontFace.load() 由 JS __zw_load_font 投递）。
+    fn tick_font_face_loads(&mut self) {
+        if !zero_webview::live_fontface_enabled() {
+            // 与 @font-face live 加载同 kill-switch；关闭时仍 resolve 各请求为 err（font 不会加载）。
+            let pending: Vec<zero_engine::FontLoadRequest> = self
+                .js_worker
+                .pending_font_loads()
+                .lock()
+                .map(|mut q| std::mem::take(&mut *q))
+                .unwrap_or_default();
+            for req in pending {
+                self.js_worker
+                    .async_resolver()
+                    .resolve(&req.resolve_id, "err:live-fontface-disabled");
+            }
+            return;
+        }
+        let pending: Vec<zero_engine::FontLoadRequest> = self
+            .js_worker
+            .pending_font_loads()
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default();
+        if pending.is_empty() {
+            return;
+        }
+        let resolver = self.js_worker.async_resolver();
+        let mut updated = false;
+        for req in pending {
+            // fetch_get 阻塞 IPC 取字节（与 image payload fetch 同机制；stub_network 时 Err）。
+            let bytes = match self.fetch_get(&req.src) {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!(family = %req.family, src = %req.src, err = %e, "FontFace.load fetch failed");
+                    resolver.resolve(&req.resolve_id, "err:fetch");
+                    continue;
+                }
+            };
+            match self.register_loaded_font(&req.family, req.weight, req.is_italic, &bytes) {
+                true => {
+                    updated = true;
+                    resolver.resolve(&req.resolve_id, "ok");
+                }
+                false => {
+                    resolver.resolve(&req.resolve_id, "err:load");
+                }
+            }
+        }
+        if updated {
+            let font_resolver = self.font_loader.build_font_resolver();
+            if let Some(wv) = self.webview.as_mut() {
+                wv.set_font_resolver(font_resolver);
+            }
+            // 请求重绘使新字体生效——经 pending_load（若有）的 request_rerender，否则直接 try_publish。
+            if let Some(pending) = self.pending_load.as_mut() {
+                pending.load.request_rerender();
+            } else {
+                let _ = self.try_publish_progress(false);
+            }
+        }
+    }
+
+    /// 加载字体字节并按 (weight, style) 注册 alias（R2417/R2493 键规则）。返 true=注册成功（需刷新 resolver）。
+    /// 抽自 drain_loaded_fonts 字体加载块，供 @font-face（async_load）与 FontFace.load()（JS 投递）共用。
+    fn register_loaded_font(&mut self, family: &str, weight: Option<u16>, is_italic: bool, bytes: &[u8]) -> bool {
+        let Ok(id) = self.font_loader.load_font(bytes) else {
+            tracing::warn!(family = %family, "font load_font failed");
+            return false;
+        };
+        let want_bold = weight.is_some_and(|w| w >= 600);
+        let key = match (want_bold, is_italic) {
+            (true, true) => format!("{family}:700:italic"),
+            (true, false) => format!("{family}:700"),
+            (false, true) => format!("{family}:italic"),
+            (false, false) => family.to_string(),
+        };
+        self.font_loader.register_family_alias(&key, id);
+        true
+    }
+
     fn tick_pending_load_with_budget(&mut self, budget_ms: f64) -> Result<(), String> {
         let Some(mut pending) = self.pending_load.take() else {
             return Ok(());
@@ -692,26 +776,13 @@ impl RendererRuntime {
             if !loaded.is_empty() {
                 let mut updated = false;
                 for (family, weight, is_italic, bytes) in loaded {
-                    match self.font_loader.load_font(&bytes) {
-                        Ok(id) => {
-                            // R2417/R2493：按 (weight, style) 构注册键——bold+italic →
-                            // `{family}:700:italic`、bold → `{family}:700`、italic →
-                            // `{family}:italic`、regular → plain `{family}`。painter
-                            // resolve_font_id 按 want_bold×want_italic 组合查 + 逐级 fallback。
-                            // bold/italic face **不**注册到 plain family——否则
-                            // build_font_resolver 的「second face=bold」启发式会把
-                            // family_map[family] 的次序面误配（顺序依赖错配，R2417）。
-                            let want_bold = weight.is_some_and(|w| w >= 600);
-                            let key = match (want_bold, is_italic) {
-                                (true, true) => format!("{family}:700:italic"),
-                                (true, false) => format!("{family}:700"),
-                                (false, true) => format!("{family}:italic"),
-                                (false, false) => family.clone(),
-                            };
-                            self.font_loader.register_family_alias(&key, id);
-                            updated = true;
-                        }
-                        Err(e) => tracing::warn!(family = %family, err = %e, "live @font-face load failed"),
+                    // R2417/R2493（weight, style）注册键规则抽入 register_loaded_font，
+                    // 与 FontFace.load()（tick_font_face_loads）共用——bold/italic face 不注册到 plain family
+                    //（否则 build_font_resolver 的「second face=bold」启发式顺序依赖错配，R2417）。
+                    if self.register_loaded_font(&family, weight, is_italic, &bytes) {
+                        updated = true;
+                    } else {
+                        tracing::warn!(family = %family, "live @font-face load failed");
                     }
                 }
                 if updated {
@@ -1300,6 +1371,10 @@ impl RendererRuntime {
                     tracing::error!("脚本预取 tick 错误: {e}");
                 }
             }
+
+            // R2949 FontFace.load()：drain JS 投递的字体加载请求（任意时刻可来，故每轮检查）。
+            // fetch_get 字节 + load_font/register/set_resolver + async_resolver.resolve 解析 Promise。
+            self.tick_font_face_loads();
 
             match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
                 Ok(Some(msg)) => {

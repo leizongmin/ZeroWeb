@@ -11341,6 +11341,146 @@ fn test_datatransfer_itemlist_r2948() {
 }
 
 #[test]
+fn test_fontface_load_r2949() {
+    // R2949 FontFace（CSS Font Loading API face 层）：constructor + descriptors + .status + .load() Promise
+    // + .loaded getter + document.fonts.add/delete/size/values。.load() 经 host `__zw_load_font` 投递 + host
+    // `resolve_async_callback(id, "ok"/"err")` 解析 Promise。本测试用 mock __zw_load_font（捕获 resolve_id
+    // 经 __zw_pending 键读出）+ 直调 resolve_async_callback 模拟 runtime 完成加载。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    // mock __zw_load_font：no-op（runtime 侧 fetch+register 由 resolve_async_callback 模拟）。
+    sandbox.register_callback("__zw_load_font", Box::new(|_args: &[String]| String::new()));
+
+    // constructor + descriptors + 初始 status='unloaded'。
+    sandbox
+        .execute(
+            "globalThis.__ff = new FontFace('MyFont', 'https://example.com/f.woff2',\
+             { style: 'italic', weight: 'bold' });\
+             globalThis.__fam = __ff.family;\
+             globalThis.__st = __ff.style;\
+             globalThis.__wt = __ff.weight;\
+             globalThis.__status0 = __ff.status;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fam)").unwrap().value,
+        "MyFont",
+        "FontFace.family"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__st)").unwrap().value,
+        "italic",
+        "FontFace.style"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__wt)").unwrap().value,
+        "bold",
+        "FontFace.weight"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__status0)").unwrap().value,
+        "unloaded",
+        "FontFace 初始 status='unloaded'"
+    );
+
+    // .load() 投递请求（__zw_load_font mock）→ Promise pending，status='loading'，__zw_pending 多一个 '__ff_' 键。
+    sandbox
+        .execute(
+            "globalThis.__beforeKeys = Object.keys(globalThis.__zw_pending).length;\
+             __ff.load().then(function(f){ globalThis.__loaded = f.family + ':' + f.status; },\
+             function(e){ globalThis.__loaded = 'reject:' + e.message; });\
+             globalThis.__statusLoading = __ff.status;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__statusLoading)").unwrap().value,
+        "loading",
+        ".load() 后 status='loading'"
+    );
+    // 取 resolve_id（__zw_pending 的 '__ff_' 键）。
+    let resolve_id = sandbox
+        .execute(
+            "String(Object.keys(globalThis.__zw_pending).filter(function(k){return k.indexOf('__ff_')===0;})[0] || '')",
+        )
+        .unwrap()
+        .value;
+    assert!(
+        !resolve_id.is_empty(),
+        "FontFace.load() 投递请求（__zw_pending 含 __ff_ 键）"
+    );
+
+    // host 完成加载（resolve "ok"）→ Promise resolve，status='loaded'。microtask 在下次 execute 排空。
+    sandbox.resolve_async_callback(&resolve_id, "ok");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__loaded)").unwrap().value,
+        "MyFont:loaded",
+        "host resolve 'ok' → FontFace.load() Promise resolve，status='loaded'"
+    );
+
+    // document.fonts.add/delete/size + values 迭代。
+    sandbox
+        .execute(
+            "document.fonts.add(__ff);\
+             globalThis.__size = document.fonts.size;\
+             globalThis.__first = document.fonts.values().next().value.family;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__size)").unwrap().value,
+        "1",
+        "document.fonts.add → size=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__first)").unwrap().value,
+        "MyFont",
+        "document.fonts.values() 迭代得添加的 FontFace"
+    );
+
+    // .loaded getter 返 load Promise（已 loaded → 立即 resolve 同一 Promise）。
+    sandbox
+        .execute("__ff.loaded.then(function(){ globalThis.__loadedAgain = 'yes'; });")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__loadedAgain)").unwrap().value,
+        "yes",
+        ".loaded getter 返 load Promise（已 loaded 复用同一 Promise resolve）"
+    );
+
+    // load 失败（新 FontFace，resolve "err"）→ Promise reject，status='error'。
+    sandbox
+        .execute(
+            "globalThis.__ff2 = new FontFace('BadFont', 'https://example.com/missing.woff2');\
+             globalThis.__id2 = '';\
+             __ff2.load().then(function(f){ globalThis.__res2='ok:'+f.status; },\
+             function(e){ globalThis.__res2='reject:'+e.message; });\
+             globalThis.__id2 = Object.keys(globalThis.__zw_pending).filter(function(k){return k.indexOf('__ff_')===0;})[0];",
+        )
+        .unwrap();
+    let id2 = sandbox.execute("String(globalThis.__id2)").unwrap().value;
+    sandbox.resolve_async_callback(&id2, "err:fetch");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__res2)").unwrap().value,
+        "reject:Failed to load FontFace \"BadFont\" from https://example.com/missing.woff2",
+        "host resolve 'err' → Promise reject，status='error'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ff2.status)").unwrap().value,
+        "error",
+        "失败 FontFace status='error'"
+    );
+}
+
+#[test]
 fn test_xmlserializer_importnode_r2818() {
     // R2818：XMLSerializer.serializeToString + document.adoptNode/importNode。serializeToString 委托节点
     // outerHTML（元素）/ nodeValue（text·comment）/ documentElement（document）；adoptNode 单文档 identity；

@@ -83,6 +83,9 @@ pub struct RendererJsWorker {
     /// P1a elementFromPoint：共享 hit-test 缓存槽——renderer 主循环 render 后 swap 最新
     /// `Arc<HitTestCache>`，js_worker 的 `ElementFromPointBridge` 读它求 `(x,y)` 命中元素。
     element_from_point_cache: ElementFromPointCache,
+    /// R2949 FontFace.load() 请求队列——`__zw_load_font` 回调（worker 线程）push，renderer 主循环
+    /// drain 后 fetch_get 字节 + load_font/register/set_resolver + async_resolver.resolve 解析 Promise。
+    font_loads: Arc<std::sync::Mutex<Vec<zero_engine::FontLoadRequest>>>,
 }
 
 impl RendererJsWorker {
@@ -92,6 +95,9 @@ impl RendererJsWorker {
         let rect_snapshot = new_layout_rect_snapshot();
         let handle_selector_map = new_handle_selector_map();
         let element_from_point_cache = new_element_from_point_cache();
+        // R2949 FontFace.load() 桥——queue 与 runtime 共享，bridge 移入 worker 线程注册 __zw_load_font。
+        let font_bridge = zero_engine::FontLoadBridge::new();
+        let font_loads = font_bridge.queue();
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
@@ -111,6 +117,7 @@ impl RendererJsWorker {
                     rect_snapshot_for_worker,
                     handle_selector_map_for_worker,
                     element_from_point_cache_for_worker,
+                    font_bridge,
                 )
             })
             .expect("spawn renderer js worker");
@@ -152,6 +159,7 @@ impl RendererJsWorker {
             rect_snapshot,
             handle_selector_map,
             element_from_point_cache,
+            font_loads,
         }
     }
 
@@ -182,6 +190,12 @@ impl RendererJsWorker {
     /// 脚本执行期间记录的 DOM 变更（由 `__zw_*` 回调写入）。
     pub fn mutations(&self) -> Arc<std::sync::Mutex<Vec<DomMutation>>> {
         Arc::clone(&self.mutations)
+    }
+
+    /// R2949 FontFace.load() 请求队列句柄——`__zw_load_font` 回调（worker 线程）push，renderer 主循环
+    /// drain 后处理（fetch_get 字节 + load_font/register/set_resolver + async_resolver.resolve）。
+    pub fn pending_font_loads(&self) -> Arc<std::sync::Mutex<Vec<zero_engine::FontLoadRequest>>> {
+        Arc::clone(&self.font_loads)
     }
 
     /// P1a gBCR：共享 layout-rect snapshot 句柄——renderer 主循环 render 后经
@@ -245,6 +259,7 @@ fn js_worker_main(
     rect_snapshot: LayoutRectSnapshot,
     handle_selector_map: HandleSelectorMap,
     element_from_point_cache: ElementFromPointCache,
+    font_bridge: zero_engine::FontLoadBridge,
 ) {
     let js_config = SandboxConfig {
         persistent_context: true,
@@ -292,6 +307,8 @@ fn js_worker_main(
     });
     let fetch_bridge = FetchBridge::new(resolver.clone());
     fetch_bridge.register(&mut *sandbox);
+    // R2949 FontFace.load() 桥——__zw_load_font 回调 push 请求到共享队列（runtime drain 后 fetch+register+resolve）。
+    font_bridge.register(&mut *sandbox);
     // P1b S5：TimerBridge 注 __zw_setTimeout——shim setTimeout/setInterval 真实延迟
     // （子线程 sleep + resolver.resolve → __zwResolveCallback 调用 JS 回调）。
     let timer_bridge = TimerBridge::new(resolver);
