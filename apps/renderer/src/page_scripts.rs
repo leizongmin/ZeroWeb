@@ -838,4 +838,39 @@ mod tests {
         assert_eq!(families, "BadFont,MyFont", "document.fonts 迭代得反映的 family");
         worker.shutdown();
     }
+
+    /// R2952：setTimeout(fn, 0) FIFO 顺序——多个 0-delay 定时器按注册序触发（修此前 per-timer
+    /// 子线程竞态致顺序不确定）。单协调线程 + (expiry, seq) min-heap 保证。
+    #[test]
+    fn settimeout_zero_delay_fifo_order_r2952() {
+        let mut worker = RendererJsWorker::spawn(122);
+        worker.set_dom_snapshot("<html><body></body></html>", "https://example.com/page");
+        // 注册 20 个 setTimeout(fn, 0)，各 push 自己的索引。
+        worker
+            .execute_script_direct(
+                "globalThis.__order = [];\
+                 for (var i = 0; i < 20; i++) { (function(k){ setTimeout(function(){ globalThis.__order.push(k); }, 0); })(i); }",
+            )
+            .unwrap();
+        // 轮询直到全部 20 个回调触发。
+        let probe = "String(globalThis.__order.length)";
+        let start = std::time::Instant::now();
+        loop {
+            if worker.execute_script_direct(probe).unwrap_or_default() == "20" {
+                break;
+            }
+            if start.elapsed().as_millis() >= 2000 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let order = worker
+            .execute_script_direct("String(globalThis.__order.join(','))")
+            .unwrap();
+        assert_eq!(
+            order, "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19",
+            "setTimeout(fn, 0) 按注册序 FIFO 触发（单协调线程，非竞态）"
+        );
+        worker.shutdown();
+    }
 }
