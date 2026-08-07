@@ -1919,7 +1919,7 @@ fn render_full_scene_overlay_covers_ui_glyphs() {
 /// S3 区域光栅化：region 内的像素与全量渲染一致，且 region 外图元被跳过。
 #[test]
 fn render_full_scene_region_matches_full_within_region() {
-    let mut font_loader = FontLoader::new();
+    let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(256);
     let mut primitives = RenderPrimitives::new();
     // 两个 fills：一个在 region 内（左半），一个在 region 外（右半）
@@ -1968,6 +1968,6 @@ fn render_full_scene_region_matches_full_within_region() {
     // region 内应为红色（左 fills 绘制）
     assert_eq!(&region.data[..4], &[255, 0, 0, 255]);
     // region 外（右半）应为背景白（右 fills 被跳过）
-    let right_pixel = &region.data[(0 * 200 + 150) * 4..(0 * 200 + 150) * 4 + 4];
+    let right_pixel = &region.data[150 * 4..150 * 4 + 4];
     assert_eq!(right_pixel, &[255, 255, 255, 255], "region 外图元应被跳过");
 }

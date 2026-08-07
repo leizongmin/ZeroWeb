@@ -91,6 +91,7 @@ pub fn render_full_scene_threaded(
 /// 将所有 RenderPrimitives 图元渲染到 CPU 帧缓冲。
 ///
 /// 这是 M7 新增的完整渲染入口，接受 `RenderPrimitives` 并渲染所有 13 种图元类型。
+#[allow(clippy::too_many_arguments)] // 光栅化全参数（文件内多处同款）
 pub fn render_full_scene(
     width: u32,
     height: u32,
