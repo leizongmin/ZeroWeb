@@ -40,3 +40,12 @@ css/css-tables/absolute-tables-009.tentative.html
 css/CSS2/text/bidi-flag-emoji-02.html
 css/CSS2/text/bidi-flag-emoji.html
 css/CSS2/text/bidi-span-001.html
+css/css-text-decor/line-through-vertical.html
+css/css-text-decor/ruby-text-decoration-01.html
+css/css-text-decor/text-decoration-color-recalc-002.html
+css/css-variables/css-vars-custom-property-case-sensitive-001.html
+css/css-variables/css-vars-custom-property-inheritance.html
+css/css-variables/registered-property-light-dark.html
+css/css-ruby/abs-in-ruby-base-container.html
+css/css-ruby/abs-in-ruby-base.html
+css/css-ruby/abs-in-ruby-container.html

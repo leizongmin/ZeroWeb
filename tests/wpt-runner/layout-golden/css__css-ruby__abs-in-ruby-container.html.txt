@@ -1,0 +1,8 @@
+=== LAYOUT_DUMP (abs_y / height / margin-top / padding-top) ===
+html                     abs_y=    0.0 h= 158.0 mt=  0.0 pt=  0.0 x=   0.0 w= 800.0 dmt=  0.0
+  (anon)                   abs_y=    0.0 h=   0.0 mt=  0.0 pt=  0.0 x=   0.0 w=   0.0 dmt=  0.0
+  body                     abs_y=    8.0 h= 150.0 mt=  8.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  8.0
+    ruby.rel                 abs_y=    8.0 h= 150.0 mt=  0.0 pt=  0.0 x=   8.0 w=  50.0 dmt=  0.0
+      rbc                      abs_y=    8.0 h= 150.0 mt=  0.0 pt=  0.0 x=   8.0 w=  50.0 dmt=  0.0
+        rb                       abs_y=    8.0 h=   0.0 mt=  0.0 pt=  0.0 x=   8.0 w=  50.0 dmt=  0.0
+          span.abs                 abs_y=  -42.0 h= 150.0 mt=  0.0 pt=  0.0 x=   8.0 w=  50.0 dmt=  0.0
