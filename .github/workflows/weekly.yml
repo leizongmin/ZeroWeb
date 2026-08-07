@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '0 10 * * 6'
   workflow_dispatch:
+    inputs:
+      # A1：dispatch 时可选只跑 reftest-trend（避免 6 平台构建矩阵）
+      run_reftest_trend:
+        description: 'Run reftest-trend job only (skip build matrix)'
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -50,7 +56,10 @@ jobs:
 
   build:
     needs: changes
-    if: needs.changes.outputs.should_build == 'true'
+    # A1：dispatch「仅 trend」模式跳过 6 平台构建矩阵
+    if: >
+      needs.changes.outputs.should_build == 'true'
+      && !(github.event_name == 'workflow_dispatch' && inputs.run_reftest_trend)
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -286,9 +295,12 @@ jobs:
   # 口径：同源绝对数（自一致性参考，非达标依据；oracle 口径需本地 oracle-shots）。
   reftest-trend:
     needs: changes
-    if: needs.changes.outputs.should_build == 'true'
+    # schedule：有新 commit 才跑；dispatch：按 inputs 选择（仅 trend 时跳过 changes 门禁）
+    if: >
+      (github.event_name == 'workflow_dispatch' && inputs.run_reftest_trend)
+      || (github.event_name == 'schedule' && needs.changes.outputs.should_build == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
