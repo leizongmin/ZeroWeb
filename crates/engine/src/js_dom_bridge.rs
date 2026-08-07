@@ -3937,9 +3937,21 @@ pub fn register_dom_callbacks(
     );
 }
 
-/// 注入到 V8 的 DOM shim（与 `__zw_*` 回调配套）。
+/// 注入到 V8 的 DOM shim（与 `__zw_*` 回调配套）。shim 原为单文件 7610 行（2000 行准则 3.8×），R2963 拆为
+/// `js_dom_shim/part01..06.js`（按行边界字节精确切分，各 <1350 行）。首次调用经 `OnceLock` 拼接（泄漏一次，
+/// 返 `&'static str`，264 调用点零改动）；拼接字节与原单文件逐字节一致 → 零行为变更。
 pub fn generate_js_dom_shim() -> &'static str {
-    include_str!("js_dom_shim.js")
+    static SHIM: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SHIM.get_or_init(|| {
+        let mut s = String::new();
+        s.push_str(include_str!("js_dom_shim/part01.js"));
+        s.push_str(include_str!("js_dom_shim/part02.js"));
+        s.push_str(include_str!("js_dom_shim/part03.js"));
+        s.push_str(include_str!("js_dom_shim/part04.js"));
+        s.push_str(include_str!("js_dom_shim/part05.js"));
+        s.push_str(include_str!("js_dom_shim/part06.js"));
+        s
+    })
 }
 
 #[cfg(test)]

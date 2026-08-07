@@ -1,0 +1,1250 @@
+    self.status = 0;
+    self.statusText = '';
+    self.responseText = '';
+    self.response = '';
+    self.onreadystatechange = null;
+    self.onload = null;
+    self.onerror = null;
+    self.open = function(_method, _url) { self.readyState = 1; };
+    self.send = function(_body) {
+      self.readyState = 4;
+      self.status = 404;
+      self.statusText = 'Not Found';
+      if (typeof self.onreadystatechange === 'function') self.onreadystatechange();
+      if (typeof self.onload === 'function') self.onload();
+    };
+    self.abort = function() {};
+    self.setRequestHeader = function() {};
+    self.getResponseHeader = function() { return null; };
+    self.getAllResponseHeaders = function() { return ''; };
+  };
+
+  function _ieEventType(type) {
+    var s = String(type);
+    return s.indexOf('on') === 0 ? s.slice(2) : s;
+  }
+
+  function _attachEventForKey(key, type, fn) {
+    var t = _ieEventType(type);
+    if (!_listenerStore[key]) _listenerStore[key] = {};
+    if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
+    _listenerStore[key][t].push({ fn: fn, capture: false });
+  }
+
+  function _detachEventForKey(key, type, fn) {
+    var t = _ieEventType(type);
+    if (!_listenerStore[key] || !_listenerStore[key][t]) return;
+    _listenerStore[key][t] = _listenerStore[key][t].filter(function(l) { return l.fn !== fn; });
+  }
+
+  // addEventListener 第三参 `opts` 的 capture 提取：支持 legacy 布尔形式（`addEventListener(t, fn, true)`
+  // = capture）与对象形式（`{ capture: true }`）。旧实现仅认对象形式，布尔 true 被忽略 → capture listener
+  // 注册不上（capture 阶段 R2693 因此对布尔形式失效）。removeEventListener 第三参同语义（useCapture
+  // 须匹配才移除，spec）。
+  function _optCapture(opts) {
+    return !!(opts === true || (opts && opts.capture));
+  }
+
+  // addEventListener `opts.once` 提取（仅对象形式 `{ once: true }`；布尔形式无 once 语义）。
+  function _optOnce(opts) {
+    return !!(opts && opts.once);
+  }
+
+  function _globalAddEventListener(type, fn, opts) {
+    var key = _elKey('html', null);
+    var t = String(type);
+    if (!_listenerStore[key]) _listenerStore[key] = {};
+    if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
+    _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts) });
+    if (t === 'pageshow') _maybeFirePageShow(); // R2931：首次 pageshow listener → _defer 派发一次
+  }
+
+  // removeEventListener：spec 要求 useCapture（第三参）须与注册时匹配才移除——故
+  // `addEventListener(t, fn, true)` 的 capture 注册仅 `removeEventListener(t, fn, true)` 能移除，
+  // `removeEventListener(t, fn)`（capture=false）不动它。旧实现仅按 fn 过滤，误删 capture 注册。
+  function _globalRemoveEventListener(type, fn, opts) {
+    var key = _elKey('html', null);
+    var t = String(type);
+    if (!_listenerStore[key] || !_listenerStore[key][t]) return;
+    var cap = _optCapture(opts);
+    _listenerStore[key][t] = _listenerStore[key][t].filter(function(l) {
+      return !(l.fn === fn && l.capture === cap);
+    });
+  }
+
+  globalThis.Node = function Node() {};
+  globalThis.Element = function Element() {};
+  globalThis.HTMLElement = function HTMLElement() {};
+  globalThis.Node.prototype = {};
+  globalThis.Element.prototype = Object.create(globalThis.Node.prototype);
+  globalThis.HTMLElement.prototype = Object.create(globalThis.Element.prototype);
+  // Node.DOCUMENT_POSITION_* 静态常量（compareDocumentPosition bitmask，R2815）——库常读 Node.DOCUMENT_POSITION_FOLLOWING 等。
+  globalThis.Node.DOCUMENT_POSITION_DISCONNECTED = 1;
+  globalThis.Node.DOCUMENT_POSITION_PRECEDING = 2;
+  globalThis.Node.DOCUMENT_POSITION_FOLLOWING = 4;
+  globalThis.Node.DOCUMENT_POSITION_CONTAINS = 8;
+  globalThis.Node.DOCUMENT_POSITION_CONTAINED_BY = 16;
+  globalThis.Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC = 32;
+  globalThis.Element.prototype.addEventListener = function(type, fn, opts) {
+    _globalAddEventListener(type, fn, opts);
+  };
+  globalThis.Element.prototype.removeEventListener = function(type, fn, opts) {
+    _globalRemoveEventListener(type, fn, opts);
+  };
+
+  // customElements（CustomElementRegistry，R2813）——web components 生态门控（lit / stencil / fast 及所有
+  // custom-element 库 feature-detect `window.customElements` + define/whenDefined）。**scoped registry slice**：
+  // define/get/getName/whenDefined（同步 bookkeeping + whenDefined Promise）+ upgrade stub。**诚实 defer**：
+  // element 实例化 upgrade（element 创建路径 `__zw_create_element` 返 generic Proxy，非 ctor 实例）+
+  // connectedCallback/disconnectedCallback/attributeChangedCallback（需 mutation 观察）——深项，记后续 slice。
+  // 本 slice 提供 feature-detection + 注册 + 查询 + whenDefined await（库 bootstrap 高频），不谎称 upgrade 生效。
+  var _ce_registry = {};       // name → { ctor, options }
+  var _ce_byCtor = new Map();  // ctor → name（getName 反查）
+  var _ce_pending = {};        // name → [resolve]（whenDefined 挂起，define 时触发）
+  var _CE_RESERVED = {
+    'annotation-xml': 1, 'color-profile': 1, 'font-face': 1, 'font-face-src': 1,
+    'font-face-uri': 1, 'font-face-format': 1, 'font-face-name': 1, 'missing-glyph': 1,
+  };
+  // 有效 custom element 名：首字符小写 ASCII 字母 + 含连字符 + 仅小写字母/数字/./-（spec PotentialCustomElementName
+  // 简化，不含 uppercase / PASCII）。reserved 名拒。
+  function _ce_validName(name) {
+    if (typeof name !== 'string') return false;
+    return /^[a-z][a-z0-9.-]*-[a-z0-9.-]*$/.test(name) && !_CE_RESERVED[name];
+  }
+  globalThis.customElements = globalThis.customElements || {
+    define: function (name, ctor, options) {
+      if (!_ce_validName(name)) {
+        throw new Error("Failed to execute 'define' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name");
+      }
+      if (typeof ctor !== 'function') {
+        throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': parameter 2 is not a constructor");
+      }
+      if (_ce_registry[name]) {
+        throw new Error("Failed to execute 'define' on 'CustomElementRegistry': the name \"" + name + "\" has already been used with this registry");
+      }
+      if (_ce_byCtor.has(ctor)) {
+        throw new Error("Failed to execute 'define' on 'CustomElementRegistry': this constructor has already been used with this registry");
+      }
+      _ce_registry[name] = { ctor: ctor, options: options || {} };
+      _ce_byCtor.set(ctor, name);
+      var waiters = _ce_pending[name];
+      if (waiters) {
+        delete _ce_pending[name];
+        for (var i = 0; i < waiters.length; i++) { try { waiters[i](ctor); } catch (_e) {} }
+      }
+    },
+    get: function (name) {
+      var entry = _ce_registry[name];
+      return entry ? entry.ctor : undefined;
+    },
+    getName: function (ctor) {
+      return _ce_byCtor.get(ctor) || null;
+    },
+    // whenDefined(name)：valid name → Promise<ctor>（已定义立即 resolve，否则挂起至 define 触发）；
+    // invalid name → Promise reject（spec 一致，不同步抛）。Promise resolve 异步（microtask）。
+    whenDefined: function (name) {
+      if (!_ce_validName(name)) {
+        return Promise.reject(new Error("Failed to execute 'whenDefined' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name"));
+      }
+      var entry = _ce_registry[name];
+      if (entry) return Promise.resolve(entry.ctor);
+      return new Promise(function (resolve) {
+        (_ce_pending[name] = _ce_pending[name] || []).push(resolve);
+      });
+    },
+    // upgrade(root)：升级 root 子树 custom elements。**defer**（element 创建未接 ctor——proxy 非 ctor 实例，
+    // upgrade 深项后续 slice）。spec 返 undefined，本 stub no-op 不抛（避免中断脚本）。
+    upgrade: function (_root) {},
+  };
+
+  function _elKey(sel, handle) {
+    return handle ? ('@' + handle) : sel;
+  }
+
+  // Constraint Validation ValidityState（R2825）。customError 由 setCustomValidity 跟踪（非空消息→invalid）；
+  // 原生约束（valueMissing/typeMismatch/patternMismatch/tooLong/tooShort/rangeUnderflow/rangeOverflow/
+  // stepMismatch/badInput）headless 不强制，恒 false（permissive valid——表单校验库 checkValidity 走 valid 路径）。
+  function _validityState(key) {
+    var hasCustom = _customValidity[key] != null && _customValidity[key] !== '';
+    return {
+      valueMissing: false, typeMismatch: false, patternMismatch: false,
+      tooLong: false, tooShort: false, rangeUnderflow: false, rangeOverflow: false,
+      stepMismatch: false, badInput: false, customError: hasCustom,
+      valid: !hasCustom,
+    };
+  }
+
+  // Web Animations Animation 对象（el.animate permissive stub，R2827）。headless 无真时间轴 / 关键帧应用
+  // → 动画「瞬间完成」：创建即 playState='running'，execute 末 _defer microtask 后 playState='finished' +
+  // finished Promise resolve + onfinish 触发（除非 cancel）。让 modern 动画库（Framer Motion / GSAP / Lottie）
+  // feature-detect `el.animate` + 链式（await anim.finished / anim.onfinish）通过——动画不真播放，但回调链走通。
+  function _makeAnimation(options) {
+    var anim = {
+      playState: 'running',
+      currentTime: 0,
+      startTime: 0,
+      playbackRate: 1,
+      duration: 0,
+      id: '',
+      onfinish: null,
+      oncancel: null,
+      onremove: null,
+      _cancelled: false,
+      play: function () { anim.playState = 'running'; },
+      pause: function () { anim.playState = 'paused'; },
+      cancel: function () { anim._cancelled = true; anim.playState = 'idle'; },
+      finish: function () { anim.playState = 'finished'; },
+      reverse: function () { anim.playbackRate = -anim.playbackRate; return anim; },
+      updatePlaybackRate: function (rate) { anim.playbackRate = rate; },
+      commitStyles: function () {},
+      persist: function () {},
+      addEventListener: function () {},
+      removeEventListener: function () {},
+      dispatchEvent: function () { return true; },
+    };
+    // options：number=duration(ms) / object={duration,id,...}。提取 duration（finish 后 currentTime 用）+ id。
+    if (options != null) {
+      if (typeof options === 'number') anim.duration = options;
+      else {
+        if (typeof options.duration === 'number') anim.duration = options.duration;
+        if (options.id != null) anim.id = String(options.id);
+      }
+    }
+    var resolveFinish;
+    anim._finishedP = new Promise(function (r) { resolveFinish = r; });
+    Object.defineProperty(anim, 'finished', { get: function () { return anim._finishedP; } });
+    // headless 瞬间完成（无真时间轴）—— microtask 后 finished + onfinish（cancel 则 idle 不完成）。
+    _defer(function () {
+      if (!anim._cancelled) {
+        anim.playState = 'finished';
+        anim.currentTime = anim.duration;
+        resolveFinish(anim);
+        if (typeof anim.onfinish === 'function') {
+          try { anim.onfinish({ type: 'finish', target: anim, currentTime: anim.currentTime }); } catch (_e) {}
+        }
+      }
+    });
+    return anim;
+  }
+
+  // 读元素当前 class（缓存优先，lazy-init 自 snapshot）。className get 与 classList 共用，
+  // 使同脚本内连续 class 操作看到累积状态而非各自读 stale snapshot。
+  function _readClass(key, sel, handle) {
+    if (_classCache[key] != null) return _classCache[key];
+    var v = (handle ? __zw_get_attr_handle(handle, 'class') : __zw_get_attr(sel, 'class')) || '';
+    _classCache[key] = v;
+    return v;
+  }
+
+  function _classListProxy(sel, handle) {
+    var key = _elKey(sel, handle);
+    var write = function(v) {
+      _classCache[key] = v;
+      if (handle) __zw_set_attr_handle(handle, 'class', v);
+      else __zw_set_attr(sel, 'class', v);
+      _mo_notify(sel, handle, { type: 'attributes', attributeName: 'class' });
+    };
+    return {
+      add: function(c) {
+        var parts = _readClass(key, sel, handle).split(/\s+/).filter(Boolean);
+        if (parts.indexOf(c) < 0) parts.push(c);
+        write(parts.join(' '));
+      },
+      remove: function(c) {
+        var parts = _readClass(key, sel, handle)
+          .split(/\s+/)
+          .filter(Boolean)
+          .filter(function(x) { return x !== c; });
+        write(parts.join(' '));
+      },
+      toggle: function(c) {
+        var parts = _readClass(key, sel, handle).split(/\s+/).filter(Boolean);
+        var i = parts.indexOf(c);
+        var on;
+        if (i >= 0) {
+          parts.splice(i, 1);
+          on = false;
+        } else {
+          parts.push(c);
+          on = true;
+        }
+        write(parts.join(' '));
+        return on;
+      },
+      contains: function(c) {
+        return _readClass(key, sel, handle).split(/\s+/).indexOf(c) >= 0;
+      }
+    };
+  }
+
+  // 派发某元素 key 上的事件 listener。`phase`：`'all'`（target 阶段，capture+非 capture，默认）、
+  // `'capture'`（仅 capture listener，捕获期祖先用）、`'bubble'`（仅非 capture，冒泡期祖先用）。
+  // `thisObj`：handler 内 `this` 与 `event.currentTarget`（默认 event.target）。`stopImmediatePropagation`
+  // 中断当前节点内后续 listener。`once` listener（`{once:true}` 注册）派发后自动移除——用快照迭代，
+  // 派发完一次性从原 list 滤除已触发的 once 条目（不扰动迭代；reentrancy 下按对象引用滤除安全）。
+  function _dispatchToListeners(key, event, phase, thisObj) {
+    var listeners = _listenerStore[key];
+    if (!listeners || !listeners[event.type]) return !event._defaultPrevented;
+    var list = listeners[event.type];
+    var ctx = thisObj || event.target;
+    event.currentTarget = ctx;
+    var snap = list.slice();
+    var firedOnce = null;
+    var fire = function(entry) {
+      entry.fn.call(ctx, event);
+      if (entry.once) {
+        if (!firedOnce) firedOnce = [];
+        firedOnce.push(entry);
+      }
+    };
+    if (phase !== 'bubble') {
+      for (var i = 0; i < snap.length; i++) {
+        if (snap[i].capture) {
+          fire(snap[i]);
+          if (event._immediateStopped) break;
+        }
+      }
+    }
+    if (phase !== 'capture' && !event._immediateStopped) {
+      for (var j = 0; j < snap.length; j++) {
+        if (!snap[j].capture) {
+          fire(snap[j]);
+          if (event._immediateStopped) break;
+        }
+      }
+    }
+    if (firedOnce) {
+      listeners[event.type] = list.filter(function(e) { return firedOnce.indexOf(e) < 0; });
+    }
+    return !event._defaultPrevented;
+  }
+
+  // R2934 inline HTML event handler 编译（`<button onclick="...">`）：on* getter 无 JS 设值时回落编译
+  // 元素的 on* 属性串为函数（spec 近似：`new Function('event', 'with(document){with(this){ <code> }}')`，
+  // this=元素），缓存 + 注册进 _listenerStore[key]（使 dispatchEvent/click 触发）。JS 设值优先（set trap 覆盖），
+  // =null 移除（不再回落重编译，spec onclick=null 清除）。缓存 false 标记「已查无 inline」避重复 host 查询。
+  // 由 on* getter（返回编译 fn）+ _dispatchWithBubble target 阶段（点击触发）调用。
+  function _ensureInlineHandler(key, sel, handle, type) {
+    if (_onHandlers[key] && _onHandlers[key][type] !== undefined) return; // 已编译 fn / 已查无 false / JS 设值
+    var attr = 'on' + type;
+    var code = null;
+    try {
+      code = handle ? __zw_get_attr_handle(handle, attr) : (sel ? __zw_get_attr(sel, attr) : null);
+    } catch (_e) {}
+    if (!_onHandlers[key]) _onHandlers[key] = {};
+    if (!code) { _onHandlers[key][type] = false; return; } // 查无 → 缓存 false（getter 返 null）
+    var fn = null;
+    try { fn = new Function('event', 'with(document) { with(this) { ' + code + ' } }'); }
+    catch (_e) { _onHandlers[key][type] = false; return; } // 编译失败（语法错）→ 视为无 handler
+    _onHandlers[key][type] = fn;
+    if (!_listenerStore[key]) _listenerStore[key] = {};
+    if (!_listenerStore[key][type]) _listenerStore[key][type] = [];
+    _listenerStore[key][type].push({ fn: fn, capture: false, once: false });
+  }
+
+  // R2946 <body on*> 内容属性 → window.on* 反射（HTML spec：body 元素的 WindowEventHandlers 内容属性
+  // 反射为 window 的事件处理器 IDL 属性）。`<body onload="init()">` 经此把 init 编译为 window.onload，
+  // 使既有 lifecycle 'load' 派发到 'html'（window listener 键 _elKey('html', null)）触发——与
+  // window.addEventListener('load') / window.onload = fn 路径合一。element 级 inline handler
+  //（_ensureInlineHandler，dispatch 到元素本身触发）互补：body onload spec 派发到 window 非 body。
+  // **每页一次**：按 page URL 去重（_bodyReflectUrl），导航后 URL 变 → 重新反射。**JS 优先**：仅当
+  // window.on<type> 未被 JS 设值（typeof === 'function'）时反射——页面脚本 `window.onload = custom`
+  // 不被覆盖（spec：IDL 设值优先于内容属性反射）。编译同 _ensureInlineHandler（new Function + with 双 scope），
+  // this=window（window.onload 经 R2932 accessor 注册，dispatch 时 fn.call(globalThis)）。
+  // 调用点：① __zw_begin_script（每脚本执行前，覆盖有脚本页 + 让脚本可读到反射后的 window.onload）；
+  // ② host lifecycle 派发前（__zw_reflect_body_handlers，覆盖无脚本页）。两者幂等。
+  var _bodyReflectUrl = null;
+  var _BODY_WIN_HANDLER_TYPES = [
+    'load', 'error', 'resize', 'scroll', 'hashchange', 'pageshow', 'pagehide', 'beforeunload',
+    'unload', 'message', 'online', 'offline', 'popstate', 'storage', 'focus', 'blur',
+  ];
+  function _zw_reflect_body_window_handlers() {
+    // kill-switch：reftest harness 自有更完整的 <body>/<frameset>/<html> onload 处理（直接执行 handler 体
+    // + 派发 'load'），启用本反射会与其重复触发 body onload（双 fire → 重复 mutation → apply 失败）。
+    // harness 在 shim init 后置 `globalThis.__zw_no_body_reflect = true`；生产路径（browser/renderer）不禁用。
+    if (globalThis.__zw_no_body_reflect) return;
+    var url = (typeof __zw_get_page_url === 'function') ? __zw_get_page_url() : '';
+    if (_bodyReflectUrl === url) return; // 每页一次
+    _bodyReflectUrl = url;
+    for (var i = 0; i < _BODY_WIN_HANDLER_TYPES.length; i++) {
+      var t = _BODY_WIN_HANDLER_TYPES[i];
+      if (typeof globalThis['on' + t] === 'function') continue; // JS 已设值，不覆盖
+      var code = null;
+      try { code = __zw_get_attr('body', 'on' + t); } catch (_e) {}
+      if (code) {
+        try {
+          globalThis['on' + t] = new Function('event', 'with(document){with(this){' + code + '}}');
+        } catch (_e) {}
+      }
+    }
+  }
+  globalThis.__zw_reflect_body_handlers = _zw_reflect_body_window_handlers;
+
+  // 按规范三阶段派发事件：①capture（root→target 的祖先，capture-only）②target（capture+非 capture，
+  // AT_TARGET）③bubble（target→root 的祖先，非 capture，仅 event.bubbles）。事件委托基础：祖先 listener
+  // 现在经捕获/冒泡两期触发（R2692 仅冒泡、R2693 补捕获）。`event.currentTarget` 随阶段更新。
+  // 仅 sel-based target 且 `__zw_parent` 注册时走 capture/bubble（polyfill/handle-only detached 无父链 →
+  // 仅 target，保旧行为）。kill-switch：`globalThis.__zw_no_capture` 关捕获期、`__zw_no_bubble` 关冒泡期。
+  function _dispatchWithBubble(targetKey, targetSel, targetHandle, event) {
+    var target = _makeProxy(targetSel, targetHandle);
+    event.target = target;
+
+    // 祖先链 target→root（[直接父, ..., html]）；无 __zw_parent / handle-only → 空 → 仅 target 派发。
+    var chain = [];
+    if (targetSel && typeof __zw_parent === 'function') {
+      var cur = targetSel;
+      while (true) {
+        var p;
+        try { p = __zw_parent(cur); } catch (_e) { p = ''; }
+        if (!p) break;
+        chain.push(p);
+        cur = p;
+      }
+    }
+    var propagate = chain.length > 0;
+
+    // ① capture 阶段：root→target 方向（chain 反序），祖先派发 capture-only。
+    if (propagate && !globalThis.__zw_no_capture) {
+      for (var i = chain.length - 1; i >= 0; i--) {
+        var capKey = _elKey(chain[i], null);
+        _ensureInlineHandler(capKey, chain[i], null, event.type); // R2935 祖先 inline on* handler 触发
+        var capAnc = _wrapSelector(chain[i]);
+        _dispatchToListeners(capKey, event, 'capture', capAnc);
+        if (event._propagationStopped) return !event._defaultPrevented;
+      }
+    }
+
+    // ② target 阶段：capture + 非 capture（AT_TARGET，保旧行为）。
+    event.currentTarget = target;
+    _ensureInlineHandler(targetKey, targetSel, targetHandle, event.type); // R2934 inline on* handler 触发
+    _dispatchToListeners(targetKey, event, 'all', target);
+    if (event._propagationStopped) return !event._defaultPrevented;
+
+    // ③ bubble 阶段：target→root 方向（chain 正序），祖先派发非 capture（仅 event.bubbles）。
+    if (propagate && event.bubbles && !globalThis.__zw_no_bubble) {
+      for (var k = 0; k < chain.length; k++) {
+        var bKey = _elKey(chain[k], null);
+        _ensureInlineHandler(bKey, chain[k], null, event.type); // R2935 祖先 inline on* handler 冒泡触发
+        var bAnc = _wrapSelector(chain[k]);
+        _dispatchToListeners(bKey, event, 'bubble', bAnc);
+        if (event._propagationStopped) break;
+      }
+    }
+    return !event._defaultPrevented;
+  }
+
+  function _makeEvent(type, options) {
+    options = options || {};
+    var ev = {
+      type: type,
+      bubbles: !!options.bubbles,
+      cancelable: !!options.cancelable,
+      composed: false, // spec Event.composed 初值 false
+      eventPhase: 0, // spec NONE=0
+      isTrusted: false, // spec（合成事件恒 false）
+      target: null,
+      currentTarget: null,
+      timeStamp: typeof __zw_performance_now === 'function'
+        ? Number(__zw_performance_now())
+        : (typeof Date.now === 'function' ? Date.now() : 0),
+      detail: options.detail, // CustomEvent 用；Event 读得 undefined（spec 一致）
+      defaultPrevented: false, // 公开镜像（dispatch 读 _defaultPrevented，勿删私字段）
+      _defaultPrevented: false,
+      _propagationStopped: false,
+      _immediateStopped: false,
+      preventDefault: function() { if (this.cancelable) { this.defaultPrevented = true; this._defaultPrevented = true; } },
+      stopPropagation: function() { this._propagationStopped = true; },
+      stopImmediatePropagation: function() {
+        this._immediateStopped = true;
+        this._propagationStopped = true;
+      }
+    };
+    return ev;
+  }
+
+  function _tagFromSel(sel) {
+    if (!sel) return 'DIV';
+    if (sel.charAt(0) === '#') return 'DIV';
+    if (sel.indexOf('.') >= 0) {
+      var dot = sel.indexOf('.');
+      var tag = sel.slice(0, dot);
+      return tag ? tag.toUpperCase() : 'DIV';
+    }
+    return String(sel).toUpperCase();
+  }
+
+  // 真实 tag 名（修正 `_tagFromSel` 对 id-only 选择器恒猜 'DIV' 的正确性 bug——
+  // `document.getElementById('foo').tagName` 对 `<span id=foo>` 错返 'DIV'）。优先 host 回调：
+  // sel-based 元素经 `__zw_get_tag(sel)`（query_tag_from_html，真实 tag），handle-only（detached
+  // createElement）经 `__zw_get_tag_handle(handle)`（CreateElement 记录的 tag）。host 未注册
+  // （polyfill/WebView 路径）或未命中 → fallback `_tagFromSel`（启发式，保旧行为）。
+  // tag 取小写 local_name，tagName/nodeName 在 HTML 命名空间须大写 → 统一 toUpperCase。
+  function _realTag(sel, handle) {
+    if (sel && typeof __zw_get_tag === 'function') {
+      try { var t = __zw_get_tag(sel); if (t) return t.toUpperCase(); } catch (_e) {}
+    }
+    if (handle && typeof __zw_get_tag_handle === 'function') {
+      try { var ht = __zw_get_tag_handle(handle); if (ht) return ht.toUpperCase(); } catch (_e) {}
+    }
+    return _tagFromSel(sel);
+  }
+
+  // P1a select：经 host `__zw_get_tag` 判元素是否为某 tag（selector-identity 元素）。
+  // `_tagFromSel` 是启发式（id-only 选择器猜 DIV），不足以判 SELECT；host 查询准确。
+  function _isTag(sel, tagUpper) {
+    if (!sel || typeof __zw_get_tag !== 'function') return false;
+    try { return __zw_get_tag(sel).toUpperCase() === tagUpper; } catch (_e) { return false; }
+  }
+
+  // text control 选区（R2844）：判元素是否为支持选区的 text control——TEXTAREA，或 INPUT 的 type 属于
+  // {text, search, url, tel, password, 空}（Chromium 150 oracle：这些 type selectionStart/End 返数值；
+  // number/email/date/range/color/checkbox 等 → null，非 text control）。无 type 属性 / 无效 type 归 text。
+  var _TEXT_SEL_TYPES = { '': 1, text: 1, search: 1, url: 1, tel: 1, password: 1 };
+  function _isTextControl(sel, handle) {
+    var tag = _realTag(sel, handle);
+    if (tag === 'TEXTAREA') return true;
+    if (tag !== 'INPUT') return false;
+    var ty;
+    try { ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { ty = ''; }
+    return Object.prototype.hasOwnProperty.call(_TEXT_SEL_TYPES, (ty || '').toLowerCase());
+  }
+  // text control 当前 value 串（mirror value getter 的 lazy-init 逻辑，仅读不改缓存——选区 clamp 须 length）。
+  function _controlValue(sel, handle, key) {
+    if (_inputValues[key] != null) return String(_inputValues[key]);
+    var v = '';
+    if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
+      try { v = __zw_get_text(sel) || ''; } catch (_e) {}
+    } else {
+      try {
+        var va = handle ? __zw_get_attr_handle(handle, 'value') : (sel ? __zw_get_attr(sel, 'value') : null);
+        if (va != null) v = va;
+      } catch (_e) {}
+    }
+    return String(v);
+  }
+  // 选区偏移 clamp：把任意输入归一为 [0, len] 内整数（Chromium 对超界/负值/非数 clamp 到边界，非抛）。
+  function _clampSelOffset(v, len) {
+    var n = (typeof v === 'number') ? Math.floor(v) : parseInt(v, 10);
+    if (isNaN(n)) n = 0;
+    if (n < 0) n = 0;
+    if (n > len) n = len;
+    return n;
+  }
+  // 取/建元素选区对象（getter 用默认 {0,0,'forward'}，不污染 map；setter/method 先 ensure 再 mutate）。
+  function _selObj(key) {
+    if (!_textSelection[key]) _textSelection[key] = { start: 0, end: 0, direction: 'forward' };
+    return _textSelection[key];
+  }
+
+  // `el.parentNode` / `parentElement`：经 host `__zw_parent(sel)` 返真实元素父选择器
+  //（修正旧 stub 对嵌套元素恒返 body 的 bug）。handle-only（detached）或无回调 → fallback stub
+  //（detached 元素无真实 parent；html/body/head 用文档结构近似）。
+  function _parentNodeFor(sel, handle) {
+    if (sel && typeof __zw_parent === 'function') {
+      try {
+        var p = __zw_parent(sel);
+        if (p) return _wrapSelector(p);
+        return null; // html 根 / 未命中 → 无元素父
+      } catch (_e) { return null; }
+    }
+    // fallback（无 host 回调路径，如 polyfill）：文档结构近似。
+    if (sel === 'html') return null;
+    if (sel === 'body' || sel === 'head') return _wrapSelector('html');
+    return _wrapSelector('body');
+  }
+
+  // 祖先链（self → root，含两端，sel 数组）——经 `__zw_parent` 上行。guard 防环。供 getRootNode /
+  // compareDocumentPosition（R2815）。sel 缺失（handle-only detached）→ 空数组。
+  function _ancestorChain(sel) {
+    var chain = [];
+    if (!sel || typeof __zw_parent !== 'function') return chain;
+    var cur = sel, guard = 0;
+    while (cur && guard < 4096) {
+      chain.push(cur);
+      var p = '';
+      try { p = __zw_parent(cur) || ''; } catch (_e) { p = ''; }
+      if (!p || p === cur) break;
+      cur = p;
+      guard++;
+    }
+    return chain;
+  }
+
+  // 最小 detached Document（供 document.implementation.createDocument/createHTMLDocument，R2815）。
+  // **已知限制**：hollow——无 detached tree proxy infra，querySelector 返 null（jQuery/DOMPurify 真 detached
+  // 解析需后续 detached-tree slice）。满足 feature-detection + 基本 node 工厂。
+  function _makeDetachedDocument(title) {
+    return {
+      nodeType: 9,
+      nodeName: '#document',
+      documentElement: { nodeType: 1, tagName: 'HTML', nodeName: 'HTML', childNodes: [] },
+      head: { nodeType: 1, tagName: 'HEAD', nodeName: 'HEAD', childNodes: [] },
+      body: { nodeType: 1, tagName: 'BODY', nodeName: 'BODY', childNodes: [] },
+      title: title != null ? String(title) : '',
+      querySelector: function() { return null; },
+      querySelectorAll: function() { return []; },
+      getElementById: function() { return null; },
+      createElement: function(t) { var n = String(t).toUpperCase(); return { nodeType: 1, tagName: n, nodeName: n }; },
+      createTextNode: function(t) { return { nodeType: 3, nodeName: '#text', nodeValue: String(t) }; },
+    };
+  }
+
+  // 节点结构签名（供 isEqualNode，R2819）：type 前缀 + 序列化（元素→outerHTML 含 tag/属性/子树；
+  // text→nodeValue；comment→nodeValue）。两节点签名相等即结构相等。**已知限制**：属性序敏感
+  //（spec isEqualNode 属性序无关——outerHTML 按序序列化，故属性序不同会判不等；实际库属性序一致，足够）。
+  function _nodeSig(sel, handle) {
+    if (handle && _commentHandles[handle]) {
+      var cv = (typeof __zw_get_text_handle === 'function') ? (__zw_get_text_handle(handle) || '') : '';
+      return '8:' + cv;
+    }
+    if (handle && _textHandles[handle]) {
+      var tv = (typeof __zw_get_text_handle === 'function') ? (__zw_get_text_handle(handle) || '') : '';
+      return '3:' + tv;
+    }
+    if (sel && typeof __zw_get_outer_html === 'function') {
+      try { return '1:' + __zw_get_outer_html(sel); } catch (_e) {}
+    }
+    if (handle && typeof __zw_get_inner_html_handle === 'function') {
+      try { return '1:' + (__zw_get_inner_html_handle(handle) || ''); } catch (_e) {}
+    }
+    return '?';
+  }
+
+  // `sel` 支持单选择器串或多选择器数组——多 tag 集合（links=a[href]+area[href]、embeds/plugins=
+  // embed+object）须逐选择器查询后 concat（querySelectorAll 顶层不支持逗号选择器列表，仅 :is()/:where()
+  // 内部支持）。disjoint tag 故无需去重。R2833：扩展自单串以修正 links（旧返全部 `<a>`，spec 仅 a[href]）。
+  // `has` trap（R2833）使 `Array.prototype.map/forEach/filter.call(coll, fn)` 等数组方法工作——它们先经
+  // HasProperty 判定索引存在性，无 has trap 时 {length:0} target 对数值索引恒判 absent 致迭代得空。
+  function _liveQueryCollection(sel) {
+    var sels = Array.isArray(sel) ? sel : [sel];
+    function snapshot() {
+      var list = [];
+      for (var i = 0; i < sels.length; i++) {
+        var found = globalThis.document.querySelectorAll(sels[i]);
+        for (var j = 0; j < found.length; j++) list.push(found[j]);
+      }
+      return list;
+    }
+    return new Proxy({ length: 0 }, {
+      get: function(_t, prop) {
+        var list = snapshot();
+        if (prop === 'length') return list.length;
+        if (prop === 'item') return function(i) { return list[i] || null; };
+        var idx = parseInt(prop, 10);
+        if (!isNaN(idx) && String(idx) === String(prop)) return list[idx];
+        return list[prop];
+      },
+      has: function(_t, prop) {
+        var idx = parseInt(prop, 10);
+        if (!isNaN(idx) && String(idx) === String(prop)) {
+          var list = snapshot();
+          return idx >= 0 && idx < list.length;
+        }
+        return false;
+      }
+    });
+  }
+
+  // P1a select：`select.options` 集合（live）——`length`/索引访问/`item(i)` + `selectedIndex`/`value`
+  // （与 select 同）。每次访问经 `querySelectorAll(sel + ' option')`（live，反映 dom_html）。
+  // 各 option 经 R2664 唯一选择器，`.value`/`.selected` 读对。
+  function _selectOptions(sel) {
+    return new Proxy({}, {
+      get: function(_t, prop) {
+        var list = globalThis.document.querySelectorAll(sel + ' option');
+        if (prop === 'length') return list.length;
+        if (prop === 'item') return function(i) { return list[i] || null; };
+        if (prop === 'selectedIndex') {
+          try { return parseInt(__zw_select_index(sel), 10); } catch (_e) { return -1; }
+        }
+        if (prop === 'value') {
+          try { return __zw_select_value(sel); } catch (_e) { return ''; }
+        }
+        var idx = parseInt(prop, 10);
+        if (!isNaN(idx) && String(idx) === String(prop)) return list[idx];
+        return undefined;
+      }
+    });
+  }
+
+  // P1a select：`select.selectedOptions`——选中 option 数组（各 `.selected`=true）。
+  function _selectSelectedOptions(sel) {
+    var list = globalThis.document.querySelectorAll(sel + ' option');
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].selected) out.push(list[i]);
+    }
+    return out;
+  }
+
+  // `el.style` CSSStyleDeclaration 代理：per-property get/set（`style.color`/`style.color='red'`）
+  // + 方法（`setProperty`/`getPropertyValue`/`removeProperty`）+ `cssText` 整体读写 + `item`/`length`
+  // 枚举。旧实现仅 per-property get/set，缺方法（调用即 TypeError）与 cssText（get 返 ''、set 误当
+  // 属性名）。底层走 `__zw_set_style`/`__zw_get_attr('style')`；removeProperty 经 `__zw_remove_style`
+  // 真移除声明（SetStyle 空值仍 push，不移除）；cssText set 经 `__zw_set_attr` 整体替换。
+  // `el.attributes`（NamedNodeMap，只读快照）：length / item(i) / getNamedItem(name) / 数值索引 /
+  // Symbol.iterator，每项 Attr-like {name,value,localName,...}。经 `__zw_attr_names`+`__zw_get_attr`。
+  // handle-only（无 attr_names 变体）→ 空集；setNamedItem/removeNamedItem 只读 no-op（deferred 模式下
+  // 改属性走 setAttribute/removeAttribute，NamedNodeMap 为只读快照视图）。
+  function _attributesProxy(sel, handle) {
+    var readNames = function() {
+      if (!sel || typeof __zw_attr_names !== 'function') return [];
+      try {
+        var n = __zw_attr_names(sel);
+        return n ? n.split('|').filter(Boolean) : [];
+      } catch (_e) { return []; }
+    };
+    var attrObj = function(name) {
+      var v = handle ? __zw_get_attr_handle(handle, name) : __zw_get_attr(sel, name);
+      return {
+        name: name,
+        value: v || '',
+        namespaceURI: null,
+        prefix: null,
+        localName: name,
+        specified: true,
+        ownerElement: _makeProxy(sel, handle)
+      };
+    };
+    return new Proxy({}, {
+      get: function(_t, p) {
+        if (p === 'length') return readNames().length;
+        if (p === 'item') {
+          return function(i) {
+            var names = readNames();
+            var idx = i | 0;
+            return idx >= 0 && idx < names.length ? attrObj(names[idx]) : null;
+          };
+        }
+        if (p === 'getNamedItem') {
+          return function(name) {
+            var names = readNames();
+            var n = String(name);
+            return names.indexOf(n) >= 0 ? attrObj(n) : null;
+          };
+        }
+        if (p === 'setNamedItem' || p === 'removeNamedItem') {
+          return function() { return null; }; // 只读快照
+        }
+        if (p === Symbol.iterator) {
+          return function() {
+            var list = readNames().map(attrObj);
+            var k = 0;
+            return {
+              next: function() {
+                return k < list.length ? { value: list[k++], done: false } : { value: undefined, done: true };
+              }
+            };
+          };
+        }
+        var names = readNames();
+        var idx = parseInt(p, 10);
+        if (!isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < names.length) {
+          return attrObj(names[idx]);
+        }
+        return undefined;
+      },
+      has: function(_t, p) {
+        // Array.prototype.map/forEach 经 `k in O`（HasProperty）判定——须对有效数值索引返 true，
+        // 否则索引被当 hole 跳过（map 出空槽）。匹配 real NamedNodeMap 的 array-like 语义。
+        if (p === 'length') return true;
+        var names = readNames();
+        var idx = parseInt(p, 10);
+        return !isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < names.length;
+      }
+    });
+  }
+
+  // style 属性名归一：JS per-property 访问用 camelCase（`el.style.fontSize`），CSS 须 kebab-case
+  //（`font-size`）；camelCase 直存 style 属性会被 CSS parser 忽略 → 渲染静默失效。归一 camelCase→
+  // kebab（复用 `_camelToKebab`，对已 kebab 幂等）；`cssFloat`→`float`（JS 保留字特例）；`--custom`
+  // 自定义属性大小写敏感，原样不转。
+  // vendor 前缀特例（CSSOM §CSSStyleDeclaration）：IDL 属性 `webkitXxx` → CSS 属性 `-webkit-xxx`
+  //（`webkitLineClamp` → `-webkit-line-clamp`）——通用 `_camelToKebab` 产 `webkit-line-clamp`
+  //（丢前导 `-`）→ CSS parser 不认 → 渲染静默失效。仅 webkit 前缀用无连字符 camelCase 暴露
+  //（moz/ms/o 前缀 IDL 为 `MozXxx`/`msXxx`/`Oxxx`，罕见，保持通用路径）。
+  function _stylePropName(name) {
+    var s = String(name).trim();
+    if (s === 'cssFloat') return 'float';
+    if (s.charAt(0) === '-' && s.charAt(1) === '-') return s;
+    var m = /^webkit([A-Z])(.*)$/.exec(s);
+    if (m) return '-webkit-' + m[1].toLowerCase() + _camelToKebab(m[2]);
+    return _camelToKebab(s);
+  }
+
+  function _styleProxy(sel, handle) {
+    var readRaw = function() {
+      return (handle ? __zw_get_attr_handle(handle, 'style') : __zw_get_attr(sel, 'style')) || '';
+    };
+    var readProp = function(name) {
+      var raw = readRaw();
+      if (!raw) return '';
+      var want = _stylePropName(name).toLowerCase();
+      var parts = raw.split(';');
+      for (var i = 0; i < parts.length; i++) {
+        var kv = parts[i].split(':');
+        if (kv[0] && kv[0].trim().toLowerCase() === want) return (kv[1] || '').trim();
+      }
+      return '';
+    };
+    var setProp = function(name, value) {
+      var prop = _stylePropName(name);
+      if (handle) __zw_set_style_handle(handle, prop, String(value));
+      else __zw_set_style(sel, prop, String(value));
+      _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+    };
+    var propNames = function() {
+      var raw = readRaw();
+      return raw
+        .split(';')
+        .map(function(s) { return s.split(':')[0].trim(); })
+        .filter(Boolean);
+    };
+    return new Proxy({}, {
+      get: function(_t, p) {
+        var ps = String(p);
+        if (ps === 'cssText') return readRaw();
+        if (ps === 'length') return propNames().length;
+        if (ps === 'getPropertyValue') return function(name) { return readProp(name); };
+        if (ps === 'getPropertyPriority') return function() { return ''; }; // !priority 未跟踪
+        if (ps === 'setProperty') return function(name, value) { setProp(name, value); return undefined; };
+        if (ps === 'removeProperty') {
+          return function(name) {
+            var prev = readProp(name);
+            var prop = _stylePropName(name);
+            if (handle && typeof __zw_remove_style_handle === 'function') {
+              __zw_remove_style_handle(handle, prop);
+            } else if (!handle && typeof __zw_remove_style === 'function') {
+              __zw_remove_style(sel, prop);
+            }
+            _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+            return prev;
+          };
+        }
+        if (ps === 'item') return function(i) { return propNames()[i | 0] || ''; };
+        return readProp(ps);
+      },
+      set: function(_t, p, v) {
+        var ps = String(p);
+        if (ps === 'cssText') {
+          // 整体替换 style 属性（解析由 host/style-system 在 render 时处理）。
+          if (handle) __zw_set_attr_handle(handle, 'style', String(v));
+          else __zw_set_attr(sel, 'style', String(v));
+          _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+          return true;
+        }
+        setProp(ps, v);
+        return true;
+      }
+    });
+  }
+
+
+
+  function _makeProxy(sel, handle) {
+    var key = _elKey(sel, handle);
+    if (_proxyCache[key]) return _proxyCache[key];
+    var proxy = new Proxy({}, {
+      get: function(_t, prop) {
+        if (prop === '__zwHandle') return handle;
+        if (prop === '__zwSelector') return sel;
+        if (prop === 'value') {
+          // P1a select：<select>.value = 选中 option 的 value（HTML spec 语义，非 value 属性）。
+          // selected 会随 host 设值变化，故不缓存（每次查 host 反映最新 dom_html）。
+          if (!handle && sel && typeof __zw_select_value === 'function' && _isTag(sel, 'SELECT')) {
+            try { return __zw_select_value(sel); } catch (_e) { return ''; }
+          }
+          // HTMLOutputElement.value（R2846）：spec 独立于 textContent——<output> 按 children 渲染非 value，
+          // 设 .value 不触碰 DOM text。dirty（_outputValue 存在）→ 当前值；否则 → defaultValue（lazy textContent）。
+          if (_realTag(sel, handle) === 'OUTPUT') {
+            if (_outputValue[key] != null) return _outputValue[key];
+            if (_outputDefault[key] == null) {
+              _outputDefault[key] = handle ? (__zw_get_text_handle(handle) || '') : (__zw_get_text(sel) || '');
+            }
+            return _outputDefault[key];
+          }
+          // P1a form input：value get——per-element 缓存，lazy-init。
+          // textarea 的 value 是其**文本内容**（非 value 属性，HTML spec）；input 是 value 属性。
+          if (_inputValues[key] == null) {
+            if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
+              _inputValues[key] = __zw_get_text(sel) || '';
+            } else {
+              var va = handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value');
+              _inputValues[key] = (va == null) ? '' : va;
+            }
+          }
+          return _inputValues[key];
+        }
+        // `input.valueAsNumber`（HTMLInputElement，R2836）——number/range 输入值↔数值转换（计算器/数量输入/
+        // 校验库读 NaN 判非法）。type=number/range：parseFloat(value)（空/无效→NaN，parseFloat 对 '12px'
+        // 等宽容近似 number 解析）；其他 type→NaN（date/month/week/time/datetime-local defer）。仅 INPUT。
+        if (prop === 'valueAsNumber' && _realTag(sel, handle) === 'INPUT') {
+          try {
+            var vasT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
+            if (vasT.toLowerCase() !== 'number' && vasT.toLowerCase() !== 'range') return NaN;
+            var vasV = _inputValues[key];
+            if (vasV == null) vasV = (handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value')) || '';
+            if (vasV === '') return NaN;
+            var vasN = parseFloat(vasV);
+            return isNaN(vasN) ? NaN : vasN;
+          } catch (_e) { return NaN; }
+        }
+        // text-control 选区 getter（R2844）：selectionStart / selectionEnd / selectionDirection。
+        // 仅 text control（_isTextControl gate）。默认 {0, 0, 'forward'}（Chromium 150 oracle 锚定）。
+        // 文本编辑器 / 自动选择 / Range 算法读选区状态高频。非 text control 落 undefined（Chrome 返 null，
+        // `!= null` 判定两者皆过——documented 微差）。getter 不污染 _textSelection（纯读）。
+        if ((prop === 'selectionStart' || prop === 'selectionEnd' || prop === 'selectionDirection') &&
+            _isTextControl(sel, handle)) {
+          var gs = _textSelection[key] || { start: 0, end: 0, direction: 'forward' };
+          if (prop === 'selectionStart') return gs.start;
+          if (prop === 'selectionEnd') return gs.end;
+          return gs.direction;
+        }
+        // `el.setSelectionRange(start, end, direction?)`（HTMLInputElement.textarea，R2844）——设选区。
+        // Chromium 150 oracle 锚定：start/end clamp [0, len]；end<start → start 折叠到 end（setSR(4,2)→{2,2}）；
+        // direction 缺省 'forward'，否则取给定值（'backward'/'none'，其他归 'forward'）。仅 text control。
+        if (prop === 'setSelectionRange' && _isTextControl(sel, handle)) {
+          return function(s, e, dir) {
+            var len = _controlValue(sel, handle, key).length;
+            var ne = _clampSelOffset(e, len);
+            var ns = _clampSelOffset(s, len);
+            if (ne < ns) ns = ne;
+            var d = (dir === 'backward' || dir === 'none') ? dir : 'forward';
+            var so = _selObj(key);
+            so.start = ns; so.end = ne; so.direction = d;
+            return undefined;
+          };
+        }
+        // `input.files`（HTMLInputElement，R2830）——FileList（上传表单读 length/迭代）。headless
+        // 无真文件 → 共享空 FileList（length 0）；仅 INPUT（_isTag gate），非 input → undefined。
+        if (prop === 'files' && _isTag(sel, 'INPUT')) {
+          return _emptyFileList;
+        }
+        // `input.indeterminate`（HTMLInputElement，R2831）——JS-only IDL 布尔（非 reflected attr），
+        // per-element `_indeterminate` map（默认 false）。checkbox「全选」tri-state UI 高频。仅 INPUT。
+        if (prop === 'indeterminate' && _isTag(sel, 'INPUT')) {
+          return _indeterminate[key] === true;
+        }
+        if (prop === 'checked' || prop === 'hidden' || prop === 'disabled') {
+          // boolean reflected property（checked/hidden/disabled）——属性存在性（经 host `__zw_has_attr`）。
+          if (typeof __zw_has_attr === 'function') {
+            try { return __zw_has_attr(sel, String(prop)) === '1'; } catch (_e) {}
+          }
+          return false;
+        }
+        if (prop === 'selectedIndex') {
+          // P1a select：选中 option 的索引（host `__zw_select_index`）。非 select → -1。
+          if (!handle && sel && typeof __zw_select_index === 'function' && _isTag(sel, 'SELECT')) {
+            try { return parseInt(__zw_select_index(sel), 10); } catch (_e) {}
+          }
+          return -1;
+        }
+        if (prop === 'selected') {
+          // P1a select option：selected 属性存在性（boolean）。sel-based 经 host `__zw_has_attr`；
+          // handle-based（`new Option()` 创建）经 `__zw_has_attr_handle`（句柄不在快照）。
+          if (handle && typeof __zw_has_attr_handle === 'function') {
+            try { return __zw_has_attr_handle(handle, 'selected') === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_has_attr === 'function') {
+            try { return __zw_has_attr(sel, 'selected') === '1'; } catch (_e) {}
+          }
+          return false;
+        }
+        if (prop === 'options' && !handle && sel && _isTag(sel, 'SELECT')) {
+          // P1a select：`select.options` live 集合（length/索引/item + selectedIndex/value）。
+          return _selectOptions(sel);
+        }
+        if (prop === 'selectedOptions' && !handle && sel && _isTag(sel, 'SELECT')) {
+          // P1a select：`select.selectedOptions` 选中 option 数组。
+          return _selectSelectedOptions(sel);
+        }
+        // `select.add(element, before?)`（HTMLOptionsCollection，R2832）——追加 option（或插 before 前）。
+        // 仅 SELECT（_realTag gate）；与 `new Option()` 配对做动态下拉填充。appendChild / insertBefore 复用。
+        if (prop === 'add' && _realTag(sel, handle) === 'SELECT') {
+          return function (element, before) {
+            if (!element || !element.__zwHandle) return undefined;
+            if (before == null) {
+              if (handle) __zw_append_child_handle(handle, element.__zwHandle);
+              else __zw_append_child(sel, element.__zwHandle);
+            } else if (before.__zwSelector) {
+              if (handle) __zw_insert_before_handle(handle, element.__zwHandle, before.__zwSelector);
+              else __zw_insert_before(sel, element.__zwHandle, before.__zwSelector);
+            }
+            return undefined;
+          };
+        }
+        // HTMLMediaElement 方法（play/pause/load/canPlayType，R2835）——仅 AUDIO/VIDEO（_realTag gate，
+        // 支持 sel + handle 两种身份——new Audio 创建的 handle-based 亦可调）。headless 无音视频设备：
+        // play 返 resolved Promise（spec：HTMLMediaElement.play() 返 Promise），pause/load no-op，
+        // canPlayType 返 ''（保守「不可播放」）。使 `new Audio(url).play().then(...)` 不抛（媒体 UI 主模式）。
+        if (prop === 'play' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          return function () { return Promise.resolve(undefined); };
+        }
+        if (prop === 'pause' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          return function () {};
+        }
+        if (prop === 'load' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          return function () {};
+        }
+        if (prop === 'canPlayType' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          return function () { return ''; };
+        }
+        // HTMLAnchorElement/HTMLAreaElement URL 分解 IDL 属性（href/pathname/search/hash/host/hostname/port/
+        // protocol/origin/username/password，R2838）——经 `__zw_parse_url`（R2778 url crate）解析 href 属性
+        // （base = 页面 location.href）取组件。`a.href` getter 返**绝对** URL（区别 getAttribute('href') 返
+        // 原始串——jQuery .prop('href') vs .attr('href')）；其余组件返解析值；无 href / 未注册回调 / 解析失败
+        // → 空值（href getter 回落原始串）。SPA 路由（读 a.pathname/a.search）/链接分析/analytics 高频。
+        // **已知限制**：仅 getter；组件 setter（a.pathname='/x'）经 set-trap catch-all 误设 spurious 属性
+        // （罕见，defer——a.href setter 经 catch-all 正确设 href 属性）。
+        if ((_realTag(sel, handle) === 'A' || _realTag(sel, handle) === 'AREA') &&
+            (prop === 'href' || prop === 'pathname' || prop === 'search' || prop === 'hash' ||
+             prop === 'host' || prop === 'hostname' || prop === 'port' || prop === 'protocol' ||
+             prop === 'origin' || prop === 'username' || prop === 'password')) {
+          var aRaw = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
+          if (!aRaw) return '';
+          if (typeof __zw_parse_url !== 'function') return prop === 'href' ? aRaw : '';
+          try {
+            var aBase = globalThis.location ? globalThis.location.href : '';
+            var aJson = __zw_parse_url(aRaw, aBase);
+            if (!aJson) return prop === 'href' ? aRaw : '';
+            var aVal = JSON.parse(aJson)[prop];
+            return aVal == null ? '' : aVal;
+          } catch (_e) { return prop === 'href' ? aRaw : ''; }
+        }
+        // HTMLFormElement 反射 IDL 属性（action/method/enctype/target，R2839）——form 序列化 / AJAX 提交库
+        // （jQuery/Axios form 插件）读 form.action/form.method 构提交请求高频。反射同名内容属性；
+        // **method/enctype 有 spec 默认值 + 小写归一**（method: get/post/dialog，无效或空→'get'；
+        // enctype: 三值，无效或空→'application/x-www-form-urlencoded'）。action/target 为纯串反射（无→''）。
+        // setter 经 set-trap catch-al（setAttribute）近似工作（method/enctype 不小写归一，罕见 defer）。
+        if (_realTag(sel, handle) === 'FORM' &&
+            (prop === 'action' || prop === 'method' || prop === 'enctype' || prop === 'target')) {
+          var fv = handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop);
+          fv = fv || '';
+          if (prop === 'method') {
+            fv = fv.toLowerCase();
+            if (fv !== 'get' && fv !== 'post' && fv !== 'dialog') fv = 'get';
+          } else if (prop === 'enctype') {
+            fv = fv.toLowerCase();
+            if (fv !== 'application/x-www-form-urlencoded' && fv !== 'multipart/form-data' && fv !== 'text/plain') {
+              fv = 'application/x-www-form-urlencoded';
+            }
+          }
+          return fv;
+        }
+        // `label.htmlFor`（HTMLLabelElement，R2840）——反射 `for` 属性（label↔control 关联，表单库读）。
+        if (prop === 'htmlFor' && _realTag(sel, handle) === 'LABEL') {
+          return (handle ? __zw_get_attr_handle(handle, 'for') : __zw_get_attr(sel, 'for')) || '';
+        }
+        // `input.defaultValue`（HTMLInputElement，R2840）——反射**初始** `value` 属性（区别 `.value` 当前态；
+        // form reset 逻辑 / 校验库读 defaultValue 判「值是否改过」）。
+        if (prop === 'defaultValue' && _realTag(sel, handle) === 'INPUT') {
+          return (handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value')) || '';
+        }
+        // `input.defaultChecked`（HTMLInputElement，R2840）——反射 `checked` 属性存在性（初始选中态，区别
+        // `.checked` 当前态；复选框 reset 逻辑读）。sel 经 `__zw_has_attr`，handle 经 `__zw_has_attr_handle`。
+        if (prop === 'defaultChecked' && _realTag(sel, handle) === 'INPUT') {
+          if (handle && typeof __zw_has_attr_handle === 'function') {
+            try { return __zw_has_attr_handle(handle, 'checked') === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_has_attr === 'function') {
+            try { return __zw_has_attr(sel, 'checked') === '1'; } catch (_e) {}
+          }
+          return false;
+        }
+        // `.form`（form-associated 控件 INPUT/SELECT/TEXTAREA/BUTTON，R2841）——返所属 <form> 元素
+        // （form owner）。form 校验 / 序列化库读 input.form 找 owner form 上下文高频。**spec 顺序**：
+        // ① `form` 属性关联优先（`<input form="id">` → getElementById(id)，即使无 ancestor form）；
+        // ② 否则最近 ancestor <form>（经 `_ancestorChain` 上行）。handle-only detached / 无 owner → null。
+        if (prop === 'form') {
+          var fcTag = _realTag(sel, handle);
+          if (fcTag === 'INPUT' || fcTag === 'SELECT' || fcTag === 'TEXTAREA' || fcTag === 'BUTTON') {
+            try {
+              var formAttr = handle ? __zw_get_attr_handle(handle, 'form') : (sel ? __zw_get_attr(sel, 'form') : '');
+              if (formAttr && globalThis.document && globalThis.document.getElementById) {
+                var byId = globalThis.document.getElementById(formAttr);
+                if (byId) return byId;
+              }
+              if (sel) {
+                var fchain = _ancestorChain(sel);
+                for (var fi = 1; fi < fchain.length; fi++) {
+                  if ((__zw_get_tag(fchain[fi]) || '').toUpperCase() === 'FORM') return _wrapSelector(fchain[fi]);
+                }
+              }
+            } catch (_e) {}
+            return null;
+          }
+        }
+        // `<tr>.rowIndex`（HTMLTableRowElement，R2842）——行在 table 中的位置（0-based，跨 thead/tbody/tfoot
+        // 全部行，document order）；-1 若不在 table。data-table / 表格操作库读 rowIndex 定位行高频。
+        // 经 _ancestorChain 找 owning TABLE + 元素作用域 querySelectorAll('tr')（R2673）+ proxy identity 计位。
+        if (prop === 'rowIndex' && _realTag(sel, handle) === 'TR') {
+          if (!sel) return -1;
+          try {
+            var riChain = _ancestorChain(sel);
+            var riTable = null;
+            for (var ri = 1; ri < riChain.length; ri++) {
+              if ((__zw_get_tag(riChain[ri]) || '').toUpperCase() === 'TABLE') { riTable = riChain[ri]; break; }
+            }
+            if (!riTable) return -1;
+            var riRows = _wrapSelector(riTable).querySelectorAll('tr');
+            var riSelf = _wrapSelector(sel);
+            for (var rk = 0; rk < riRows.length; rk++) if (riRows[rk] === riSelf) return rk;
+            return -1;
+          } catch (_e) { return -1; }
+        }
+        // `<td>`/`<th>`.cellIndex（HTMLTableCellElement，R2842）——单元格在行中的位置（0-based，td+th 混计
+        // document order）；-1 若不在行。表格操作库读 cellIndex 定位列高频。经 :is(td, th) 单查询保序
+        // （querySelectorAll 顶层不支持逗号列表，:is() 内部支持）。
+        if (prop === 'cellIndex' && (_realTag(sel, handle) === 'TD' || _realTag(sel, handle) === 'TH')) {
+          if (!sel) return -1;
+          try {
+            var ciChain = _ancestorChain(sel);
+            var ciTr = null;
+            for (var ci = 1; ci < ciChain.length; ci++) {
+              if ((__zw_get_tag(ciChain[ci]) || '').toUpperCase() === 'TR') { ciTr = ciChain[ci]; break; }
+            }
+            if (!ciTr) return -1;
+            var ciCells = _wrapSelector(ciTr).querySelectorAll(':is(td, th)');
+            var ciSelf = _wrapSelector(sel);
+            for (var ck = 0; ck < ciCells.length; ck++) if (ciCells[ck] === ciSelf) return ck;
+            return -1;
+          } catch (_e) { return -1; }
+        }
+        // `<tr>`.sectionRowIndex（HTMLTableRowElement，R2843）——行在其 section（thead/tbody/tfoot）内的位置
+        //（0-based）；-1 若无 section（html5ever 为 table-直属 tr 插入隐式 tbody，故通常有 section）。
+        // 同 rowIndex 模式：_ancestorChain 找最近 thead/tbody/tfoot → 元素作用域 querySelectorAll('tr') + identity。
+        if (prop === 'sectionRowIndex' && _realTag(sel, handle) === 'TR') {
+          if (!sel) return -1;
+          try {
+            var srChain = _ancestorChain(sel);
+            var srSection = null;
+            for (var si = 1; si < srChain.length; si++) {
+              var stag = (__zw_get_tag(srChain[si]) || '').toUpperCase();
+              if (stag === 'THEAD' || stag === 'TBODY' || stag === 'TFOOT') { srSection = srChain[si]; break; }
+            }
+            if (!srSection) return -1;
+            var srRows = _wrapSelector(srSection).querySelectorAll('tr');
+            var srSelf = _wrapSelector(sel);
+            for (var ssk = 0; ssk < srRows.length; ssk++) if (srRows[ssk] === srSelf) return ssk;
+            return -1;
+          } catch (_e) { return -1; }
+        }
+        // `<option>`.index（HTMLOptionElement，R2849）——option 在其 select 中的位置（0-based，document order）；
+        // 0 若不在 select（detached / handle-based，与 Chromium detached→0 一致）。form 库读 option.index 定位高频。
+        // 同 R2842 rowIndex 模式：_ancestorChain 找 owning SELECT + 元素作用域 querySelectorAll('option') + identity。
+        if (prop === 'index' && _realTag(sel, handle) === 'OPTION') {
+          if (!sel) return 0;
+          try {
+            var oiChain = _ancestorChain(sel);
+            var oiSelect = null;
+            for (var oi = 1; oi < oiChain.length; oi++) {
+              if ((__zw_get_tag(oiChain[oi]) || '').toUpperCase() === 'SELECT') { oiSelect = oiChain[oi]; break; }
+            }
+            if (!oiSelect) return 0;
+            var oiOpts = _wrapSelector(oiSelect).querySelectorAll('option');
+            var oiSelf = _wrapSelector(sel);
+            for (var ok = 0; ok < oiOpts.length; ok++) if (oiOpts[ok] === oiSelf) return ok;
+            return 0;
+          } catch (_e) { return 0; }
+        }
+        // `<table>`.rows（HTMLTableElement，R2843）/ section.rows（HTMLTableSectionElement，R2845）——
+        // table 内全部行（跨 thead/tbody/tfoot document order）/ section（thead/tbody/tfoot）作用域内行。
+        // 元素作用域 querySelectorAll('tr') 返真数组（length/索引/迭代/Array 方法）。gate = TABLE 或
+        // THEAD/TBODY/TFOOT（section-scoped）；textarea.rows 落 set-trap catch-al 反射不冲突（textarea 非 section）。
+        if (prop === 'rows') {
+          var rTag = _realTag(sel, handle);
+          if (rTag === 'TABLE' || rTag === 'THEAD' || rTag === 'TBODY' || rTag === 'TFOOT') {
+            if (!sel) return [];
+            try { return _wrapSelector(sel).querySelectorAll('tr'); } catch (_e) { return []; }
+          }
+        }
+        if (prop === 'tBodies' && _realTag(sel, handle) === 'TABLE') {
+          if (!sel) return [];
+          try { return _wrapSelector(sel).querySelectorAll('tbody'); } catch (_e) { return []; }
+        }
+        // `<table>`.caption / `<table>`.tHead / `<table>`.tFoot（HTMLTableElement，R2845）——table 的首个
+        // caption / thead / tfoot 子元素（Chromium 150 oracle：querySelector 首匹配；无 → null）。表格分析 /
+        // 序列化库读结构高频。仅 getter（setter 须 remove 既有 + insert 新建属 table 头部位置，复杂且罕见——
+        // 落 catch-al 反射内容属性，documented 限制）。gate 仅 TABLE。
+        if ((prop === 'caption' || prop === 'tHead' || prop === 'tFoot') && _realTag(sel, handle) === 'TABLE') {
+          if (!sel) return null;
+          var cTag = prop === 'tHead' ? 'thead' : (prop === 'tFoot' ? 'tfoot' : 'caption');
+          try { return _wrapSelector(sel).querySelector(cTag); } catch (_e) { return null; }
+        }
+        // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
+        // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
+        if (prop === 'text' && _realTag(sel, handle) === 'OPTION') {
+          // text = 显示文本（= textContent）。
+          return handle ? __zw_get_text_handle(handle) : __zw_get_text(sel);
+        }
+        if (prop === 'label' && _realTag(sel, handle) === 'OPTION') {
+          // label 属性；缺省回落 text。
+          var lab = handle ? __zw_get_attr_handle(handle, 'label') : __zw_get_attr(sel, 'label');
+          return lab || (handle ? __zw_get_text_handle(handle) : __zw_get_text(sel)) || '';
+        }
+        if (prop === 'defaultSelected' && _realTag(sel, handle) === 'OPTION') {
+          // defaultSelected = 'selected' 属性存在性（boolean reflected）。sel-based 经 `__zw_has_attr`；
+          // handle-based（`new Option()` 创建）经 `__zw_has_attr_handle`（句柄不在快照）。
+          if (handle && typeof __zw_has_attr_handle === 'function') {
+            try { return __zw_has_attr_handle(handle, 'selected') === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_has_attr === 'function') {
+            try { return __zw_has_attr(sel, 'selected') === '1'; } catch (_e) {}
+          }
+          return false;
+        }
+        // HTMLOutputElement.defaultValue（R2846）：初始文本内容（lazy 捕获一次，跨 value 变更保持稳定——
+        // Chromium 150 oracle：value=99 后 defaultValue 仍=初值）。output.value getter/setter 见上方 value 块 +
+        // set-trap。表单计算器 `<output>` 显示结果高频。仅 OUTPUT；htmlFor 为 DOMSettableTokenList（复杂罕见，defer）。
+        if (prop === 'defaultValue' && _realTag(sel, handle) === 'OUTPUT') {
+          if (_outputDefault[key] == null) {
+            _outputDefault[key] = handle ? (__zw_get_text_handle(handle) || '') : (__zw_get_text(sel) || '');
+          }
+          return _outputDefault[key];
+        }
+        if (prop === 'style') {
+          return _styleProxy(sel, handle);
+        }
+        if (prop === 'classList') return _classListProxy(sel, handle);
+        if (prop === 'className') {
+          return _readClass(key, sel, handle);
+        }
+        if (prop === 'id') {
+          return handle ? __zw_get_attr_handle(handle, 'id') : __zw_get_attr(sel, 'id');
+        }
+        // reflected 字符串属性（title/lang/dir）——get 反射同名 attribute（无 → ''）；同步 set→get 优先读
+        // _reflectedAttrs 缓存（__zw_set_attr 异步入队，无缓存则 set 后 get 读 stale 快照）。
+        if (prop === 'title' || prop === 'lang' || prop === 'dir') {
+          var rc = _reflectedAttrs[key];
+          if (rc && Object.prototype.hasOwnProperty.call(rc, prop)) return rc[prop];
+          return (handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop)) || '';
+        }
+        // `el.tabIndex`——反射 tabindex 属性为数值；无属性 → -1（spec：非 tab 序元素默认 -1；
+        // natively focusable 默认 0 简化为 -1，常见用法足）。同步 set→get 优先读缓存。
+        if (prop === 'tabIndex') {
+          var rtc = _reflectedAttrs[key];
+          if (rtc && Object.prototype.hasOwnProperty.call(rtc, 'tabindex')) return rtc['tabindex'];
+          var tiraw = handle ? __zw_get_attr_handle(handle, 'tabindex') : __zw_get_attr(sel, 'tabindex');
+          var tin = parseInt(tiraw, 10);
+          return isNaN(tin) ? -1 : tin;
+        }
+        // `el.contentEditable`——反射 contenteditable 属性（无 → 'inherit'，spec）；同步 set→get 优先读缓存。
+        if (prop === 'contentEditable') {
+          var cec = _reflectedAttrs[key];
+          if (cec && Object.prototype.hasOwnProperty.call(cec, 'contenteditable')) return cec['contenteditable'];
+          return (handle ? __zw_get_attr_handle(handle, 'contenteditable') : __zw_get_attr(sel, 'contenteditable')) || 'inherit';
+        }
+        // `el.isContentEditable`——计算 bool（contentEditable === 'true'）。**简化**：不沿祖先链解析
+        // 'inherit'（spec：inherit 时看最近可编辑祖先）——本沙箱无渲染期可编辑态，元素自身 'true' 即 true。
+        if (prop === 'isContentEditable') {
+          var ced = _reflectedAttrs[key];
+          var cval = ced && Object.prototype.hasOwnProperty.call(ced, 'contenteditable')
+            ? ced['contenteditable']
+            : ((handle ? __zw_get_attr_handle(handle, 'contenteditable') : __zw_get_attr(sel, 'contenteditable')) || 'inherit');
+          return cval === 'true';
+        }
+        // `el.accessKey`——反射 accesskey 属性（无 → ''）；同步 set→get 优先读缓存。
+        if (prop === 'accessKey') {
+          var akc = _reflectedAttrs[key];
+          if (akc && Object.prototype.hasOwnProperty.call(akc, 'accesskey')) return akc['accesskey'];
+          return (handle ? __zw_get_attr_handle(handle, 'accesskey') : __zw_get_attr(sel, 'accesskey')) || '';

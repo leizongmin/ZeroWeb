@@ -112,6 +112,26 @@
 
 ## 最近完成的改进
 
+### 工程治理——js_dom_shim.js 拆分（7610→6×<1350，字节精确，本轮 R2963，~14,144 测试）
+
+继 R2962 拆 `js_dom_bridge_tests.rs` 后，本轮拆 `js_dom_shim.js`（7610 行，2000 行准则 3.8×）——R2955-R2961 七轮 Web API 添加累积的主 shim 文件，264 测试经 `generate_js_dom_shim()` 加载。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim.js` | 删除（拆分后单文件不再存在）。 |
+| `crates/engine/src/js_dom_shim/part01..06.js` | 新增 6 分片（1152–1346 行，均 <2000），按**行边界字节精确**切分（Python 脚本按换行符 offset 切，`part01+...+part06` 与原文件逐字节一致，已脚本断言验证）。 |
+| `crates/engine/src/js_dom_bridge.rs` | `generate_js_dom_shim()`：`include_str!` 单文件 → `OnceLock<String>` 拼接 6 分片（首次调用泄漏一次，返 `&'static str`）。**264 调用点零改动**（签名 `-> &'static str` 不变）。 |
+
+**为何字节精确切分而非按主题**：shim 是单一 IIFE `(function(){...})()`，共享闭包/状态（_listenerStore/_defer/observer registry 等），按主题切需识别内聚边界且易漏。**按行边界（换行符 offset）纯字符串切分** → 拼接字节与原文件逐字节一致 → JS 运行时行为零变化（无需理解内部结构）。脚本断言 `reconstruction == original` 保证。
+
+**为何 OnceLock 保持 &'static str**：264 测试调用 `sandbox.execute(generate_js_dom_shim())`（execute 取 `&str`）。改 `include_str!`（`&'static str`）为 String 拼接需改 264 调用点为 `&generate...`。OnceLock 拼接后泄漏返 `&'static str` → 签名不变 → 调用点零改动。首次调用拼接（~微秒，一次性），之后直接返 `&'static str`。
+
+**为何零回归**：拼接字节逐字节等于原文件（脚本断言）→ 注入 V8 的 shim 串不变 → 全部 JS 行为不变。`make test`（cargo-nextest 全 workspace）全绿 **14144 passed / 71 skipped / 0 failed**（264 shim 测试全绿，无回归）+ clippy `-D warnings` 零警告 + fmt clean。
+
+**剩余文件大小**：`js_dom_bridge.rs`（3947 行，2×）仍超 2000——Rust 源码，函数间有依赖（callbacks/helpers 共享 dom_html/mutations Arc），机械拆分风险高（需按职责重组 + `use`/可见性调整），记后续切片。本轮闭合 shim（3.8×）+ tests（8×，R2962）两大超标文件。
+
+**下一步**：文件大小治理主体闭合（tests + shim 拆完）。续 P1a——① browser 单进程 FontFace.load() 镜像（R2949 follow-up）；② task source 优先级（事件循环边缘）；③ 持续流式 SSE；④ customElements upgrade（需 P1b RFC 审批）；⑤ 续补 defer Web API；或拆 js_dom_bridge.rs（3947，需按职责重组）。
+
 ### 工程治理——js_dom_bridge_tests.rs 拆分（16285→10×<1800）+ flaky 测试修复（本轮 R2962，~14,144 测试）
 
 经 R2955-R2961 七轮 Web API 添加，`crates/engine/src/js_dom_bridge_tests.rs` 增至 **16285 行**（2000 行准则的 8×）。本轮按 CLAUDE.md「文件大小控制」+ run-rules「单文件不超 2000 行」拆分。
