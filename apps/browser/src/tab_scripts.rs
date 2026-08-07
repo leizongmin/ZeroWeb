@@ -39,6 +39,10 @@ pub struct PageScriptRunner {
     /// AsyncPageLoad.take_link_element_events drain 后注入）。finish() 经 `__zw_dispatch_link_event` 派发到
     /// 匹配 href 的 `<link>` 元素（link.onload/onerror）。
     link_events: Vec<(String, &'static str)>,
+    /// R2947：@font-face 加载结果 `(family, "loaded"/"error")`（由 tab_worker 从
+    /// AsyncPageLoad.take_font_events drain 后注入）。finish() 经 `__zw_font_settle` 派 FontFaceSet
+    /// 'loadingdone'/'loadingerror' + 解析 `document.fonts.ready`。
+    font_events: Vec<(String, &'static str)>,
 }
 
 impl PageScriptRunner {
@@ -65,6 +69,7 @@ impl PageScriptRunner {
             resource_errors: Vec::new(),
             img_events: Vec::new(),
             link_events: Vec::new(),
+            font_events: Vec::new(),
         })
     }
 
@@ -83,6 +88,12 @@ impl PageScriptRunner {
     /// `__zw_dispatch_link_event` 派发到匹配 href 的 `<link>` 元素。
     pub fn set_link_events(&mut self, events: Vec<(String, &'static str)>) {
         self.link_events = events;
+    }
+
+    /// R2947：注入 @font-face 加载结果 `(family, "loaded"/"error")`，finish() 经 `__zw_font_settle`
+    /// 派 FontFaceSet 'loadingdone'/'loadingerror' + 解析 `document.fonts.ready`。
+    pub fn set_font_events(&mut self, events: Vec<(String, &'static str)>) {
+        self.font_events = events;
     }
 
     /// 是否还有待执行脚本。
@@ -171,6 +182,22 @@ impl PageScriptRunner {
         for (url, ty) in &self.link_events {
             dispatch_link_event(js_worker, url, ty);
         }
+        // R2947：@font-face 加载 settle——经 `__zw_font_settle` 派 FontFaceSet 'loadingdone'/'loadingerror'
+        // + 解析 document.fonts.ready。无 @font-face 页面仍 settle（仅 resolve ready，不派事件）。
+        let had_loaded = self.font_events.iter().any(|(_, t)| *t == "loaded");
+        let had_error = self.font_events.iter().any(|(_, t)| *t == "error");
+        dispatch_font_settle(js_worker, had_loaded, had_error);
+    }
+}
+
+/// R2947：派发 @font-face 加载 settle 进 shim。经 `script_font_settle` 生成 `__zw_font_settle(...)`——
+/// shim 派 FontFaceSet 'loadingdone'（had_loaded）/ 'loadingerror'（had_error）+ 解析 `document.fonts.ready`。
+/// best-effort（失败仅 `warn!`）。镜像 renderer `page_scripts::dispatch_font_settle`。
+fn dispatch_font_settle(js_worker: Option<&TabJsWorkerHandle>, had_loaded: bool, had_error: bool) {
+    let Some(worker) = js_worker else { return };
+    let report = zero_engine::script_font_settle(had_loaded, had_error);
+    if let Err(e) = worker.execute_script_direct(&report) {
+        warn!("dispatch font settle: {e}");
     }
 }
 

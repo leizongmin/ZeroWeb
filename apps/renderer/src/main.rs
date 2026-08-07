@@ -174,6 +174,10 @@ struct RendererRuntime {
     /// R2944 mirror：stylesheet 元素级 load/error `(绝对 URL, "load"/"error")`。load 完成时 drain 并 stash，
     /// 脚本阶段经 `finish_page_load` 派 `__zw_dispatch_link_event`。
     pending_link_events: Vec<(String, &'static str)>,
+    /// R2947：@font-face 加载结果 `(family, "loaded"/"error")`。load 完成时从
+    /// `AsyncPageLoad.take_font_events` drain 并 stash，脚本阶段经 `finish_page_load` 派 FontFaceSet
+    /// 'loadingdone'/'loadingerror' + 解析 `document.fonts.ready`。
+    pending_font_events: Vec<(String, &'static str)>,
 }
 
 impl RendererRuntime {
@@ -240,6 +244,7 @@ impl RendererRuntime {
             pending_resource_errors: Vec::new(),
             pending_img_events: Vec::new(),
             pending_link_events: Vec::new(),
+            pending_font_events: Vec::new(),
         }
     }
 
@@ -291,7 +296,8 @@ impl RendererRuntime {
             let resource_errors = std::mem::take(&mut self.pending_resource_errors);
             let img_events = std::mem::take(&mut self.pending_img_events);
             let link_events = std::mem::take(&mut self.pending_link_events);
-            page_scripts::finish_page_load(&self.js_worker, resource_errors, img_events, link_events);
+            let font_events = std::mem::take(&mut self.pending_font_events);
+            page_scripts::finish_page_load(&self.js_worker, resource_errors, img_events, link_events, font_events);
         }
         Ok(())
     }
@@ -751,6 +757,7 @@ impl RendererRuntime {
             .collect();
         self.pending_img_events = pending.load.take_img_element_events();
         self.pending_link_events = pending.load.take_link_element_events();
+        self.pending_font_events = pending.load.take_font_events();
 
         self.sync_cached_html_from_webview();
         self.try_publish_progress(true)?;

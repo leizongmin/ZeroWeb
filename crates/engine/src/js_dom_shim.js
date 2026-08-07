@@ -6564,6 +6564,66 @@
   }
   ['fullscreenchange', 'fullscreenerror', 'pointerlockchange', 'pointerlockerror', 'DOMContentLoaded'].forEach(_defineDocOnHandler);
 
+  // R2947 CSS Font Loading API：`document.fonts` FontFaceSet——@font-face 字体加载事件的 JS 入口。
+  // 常见用法：`document.fonts.ready.then(重排/重测)`（字体加载库 / icon font / FOUT 处理）、
+  // `document.fonts.addEventListener('loadingdone'/'loadingerror', cb)`、`document.fonts.status`。
+  // 宿主在 load 完成时（finish_page_load）经 `__zw_font_settle(hadLoaded, hadError)` 触发：
+  // 有成功加载 → 派 'loadingdone'；有失败 → 派 'loadingerror'；并 resolve `.ready` Promise（settle 语义，
+  // 不论成败 ready 都 resolve——spec：ready 在字体集「不再 loading」时 resolve）。无 @font-face 页面 ready
+  // 仍 resolve（font set 从不进入 loading）。minimal EventTarget（listener store + IDL handler + dispatchEvent）。
+  // https://drafts.csswg.org/css-font-loading/#FontFaceSet-interface
+  var _fontsListeners = {};
+  var _fontsReadyResolve = null;
+  var _fontFaceSet = {
+    status: 'loaded', // 'loading' | 'loaded'（headless 简化：初始即 loaded，settle 时不改）
+    size: 0,
+    onloading: null, onloadingdone: null, onloadingerror: null,
+    ready: new Promise(function (resolve) { _fontsReadyResolve = resolve; }),
+    addEventListener: function (type, fn) {
+      if (typeof fn !== 'function') return;
+      (_fontsListeners[type] = _fontsListeners[type] || []).push(fn);
+    },
+    removeEventListener: function (type, fn) {
+      var l = _fontsListeners[type];
+      if (l) _fontsListeners[type] = l.filter(function (f) { return f !== fn; });
+    },
+    dispatchEvent: function (ev) {
+      var idl = this['on' + ev.type];
+      if (typeof idl === 'function') { try { idl.call(this, ev); } catch (_e) {} }
+      var l = _fontsListeners[ev.type];
+      if (l) for (var i = 0; i < l.length; i++) { try { l[i].call(this, ev); } catch (_e) {} }
+      return true;
+    },
+    // minimal/stub：check/load/values/forEach/迭代——满足存在性探测与常见 `fonts.check('1em Foo')` 用法。
+    check: function () { return true; },
+    load: function () { return this.ready; },
+    values: function () { return [][Symbol.iterator](); },
+    entries: function () { return [][Symbol.iterator](); },
+    keys: function () { return [][Symbol.iterator](); },
+    forEach: function () {},
+    add: function () { return this; }, clear: function () {}, delete: function () { return false; },
+  };
+  if (Symbol && Symbol.iterator) {
+    _fontFaceSet[Symbol.iterator] = function () { return [][Symbol.iterator](); };
+  }
+  Object.defineProperty(globalThis.document, 'fonts', { configurable: true, value: _fontFaceSet });
+  // R2947 宿主字体 settle 入口：hadLoaded/hadError 为 bool（本轮 drain 的 font_events 是否含 loaded/error）。
+  // 派 loadingdone/loadingerror + resolve ready。best-effort（失败静默，不影响后续）。
+  globalThis.__zw_font_settle = function (hadLoaded, hadError) {
+    try {
+      var fs = globalThis.document && globalThis.document.fonts;
+      if (!fs) return;
+      fs.status = 'loaded';
+      if (hadLoaded) fs.dispatchEvent(new Event('loadingdone'));
+      if (hadError) fs.dispatchEvent(new Event('loadingerror'));
+      if (typeof _fontsReadyResolve === 'function') {
+        var resolve = _fontsReadyResolve;
+        _fontsReadyResolve = null; // 仅 resolve 一次（spec：ready 是单 Promise，settle 一次）
+        try { resolve(fs); } catch (_e) {}
+      }
+    } catch (_e) {}
+  };
+
   // Selection / Range（R2804，缺失 Web API 续）。headless 无真用户选择——Selection 单例默认空
   //（rangeCount=0/isCollapsed=true/toString=''/anchorNode=null/focusNode=null/type='None'），selection-state-
   // checking 脚本（`if (getSelection().toString()) ...`）正确跳过选择分支。programmatic Range 经 setStart/

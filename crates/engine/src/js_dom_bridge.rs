@@ -2350,6 +2350,18 @@ pub fn script_reflect_body_handlers() -> &'static str {
     "globalThis.__zw_reflect_body_handlers&&globalThis.__zw_reflect_body_handlers();"
 }
 
+/// 构造「字体 settle」shim 调用串（R2947）。宿主在 `finish_page_load`（页面脚本阶段收尾）调用：
+/// `had_loaded`/`had_error` 据本轮 drain 的 `AsyncPageLoad.take_font_events()` 推导。shim `__zw_font_settle`
+/// 派发 FontFaceSet 'loadingdone'（有成功）/ 'loadingerror'（有失败）+ resolve `document.fonts.ready`
+/// Promise（settle 语义，不论成败；无 @font-face 页面 had_loaded=had_error=false → 仅 resolve ready，不派事件）。
+pub fn script_font_settle(had_loaded: bool, had_error: bool) -> String {
+    format!(
+        "globalThis.__zw_font_settle&&globalThis.__zw_font_settle({},{});",
+        if had_loaded { "true" } else { "false" },
+        if had_error { "true" } else { "false" }
+    )
+}
+
 /// 从当前 HTML 快照查询 textContent。
 pub fn query_text_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);

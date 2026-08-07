@@ -110,6 +110,8 @@ pub fn run_page_scripts<F: Fn(&str) -> Result<String, String>>(
 ///   延后到 load 之后派发（资源 fetch 失败发生在 async_load 期早于脚本，故延后确保 handler 已注册）。
 /// - **R2943/R2944**：`img_events` / `link_events` = `(绝对 URL, "load"/"error")` 元素级 load/error——经
 ///   `__zw_dispatch_img_event` / `__zw_dispatch_link_event` 派发到匹配 src/href 的元素（img/link.onload/onerror）。
+/// - **R2947**：`font_events` = `(family, "loaded"/"error")` @font-face 加载结果——经 `__zw_font_settle`
+///   派发 FontFaceSet 'loadingdone'/'loadingerror' + 解析 `document.fonts.ready` Promise。
 ///
 /// 全部 best-effort（失败仅 `warn!`，不影响后续）。事件由调用方从 `AsyncPageLoad` drain 后传入
 ///（renderer main 在 load 完成时 drain、stash，脚本阶段消费）。
@@ -118,6 +120,7 @@ pub fn finish_page_load(
     resource_errors: Vec<(String, String)>,
     img_events: Vec<(String, &'static str)>,
     link_events: Vec<(String, &'static str)>,
+    font_events: Vec<(String, &'static str)>,
 ) {
     // R2941：脚本阶段完成 → 派发 DOMContentLoaded + load。
     dispatch_page_lifecycle(js_worker);
@@ -133,6 +136,11 @@ pub fn finish_page_load(
     for (url, ty) in &link_events {
         dispatch_link_event(js_worker, url, ty);
     }
+    // R2947：@font-face 加载 settle——派 FontFaceSet 'loadingdone'/'loadingerror' + 解析 document.fonts.ready。
+    // 无 @font-face 页面（font_events 空）仍 settle（仅 resolve ready，不派事件）。
+    let had_loaded = font_events.iter().any(|(_, t)| *t == "loaded");
+    let had_error = font_events.iter().any(|(_, t)| *t == "error");
+    dispatch_font_settle(js_worker, had_loaded, had_error);
 }
 
 /// R2941 mirror：派发页面生命周期事件（DOMContentLoaded + load）进 shim。均派发到 'html' 选择器
@@ -192,6 +200,16 @@ fn dispatch_script_event(js_worker: &RendererJsWorker, url: &str, ty: &str) {
     let report = script_dispatch_script_event(url, ty);
     if let Err(e) = js_worker.execute_script_direct(&report) {
         warn!("dispatch script event ({ty} {url}): {e}");
+    }
+}
+
+/// R2947 mirror：派发 @font-face 加载 settle 进 shim。经 `script_font_settle` 生成 `__zw_font_settle(...)`——
+/// shim 派 FontFaceSet 'loadingdone'（had_loaded）/ 'loadingerror'（had_error）+ 解析 `document.fonts.ready`。
+/// best-effort。无 @font-face 页面（had_loaded=had_error=false）仅解析 ready（字体集从不 loading）。
+fn dispatch_font_settle(js_worker: &RendererJsWorker, had_loaded: bool, had_error: bool) {
+    let report = zero_engine::script_font_settle(had_loaded, had_error);
+    if let Err(e) = js_worker.execute_script_direct(&report) {
+        warn!("dispatch font settle: {e}");
     }
 }
 
@@ -519,7 +537,7 @@ mod tests {
             </body></html>";
         worker.set_dom_snapshot(html, "https://example.com/page");
         run_scripts(html, &worker);
-        finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new());
+        finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new(), Vec::new());
         assert_eq!(
             wait_for_global(&worker, "__dcl", 1000),
             "fired",
@@ -542,7 +560,7 @@ mod tests {
             .execute_script_direct("window.addEventListener('load', function(){ globalThis.__load = 'fired'; });");
         // run_page_scripts 无脚本直接返回 false（no-op），finish_page_load 仍派 load。
         run_scripts(html, &worker);
-        finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new());
+        finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new(), Vec::new());
         assert_eq!(
             wait_for_global(&worker, "__load", 1000),
             "fired",
@@ -561,7 +579,7 @@ mod tests {
         worker.set_dom_snapshot(html, "https://example.com/page");
         // 无 <script>：run_page_scripts no-op，finish_page_load 反射 body onload + 派 load 触发。
         run_scripts(html, &worker);
-        finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new());
+        finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new(), Vec::new());
         assert_eq!(
             wait_for_global(&worker, "__bodyload", 1000),
             "fired",
@@ -624,6 +642,7 @@ mod tests {
             vec![("stylesheet".to_string(), "https://example.com/missing.css".to_string())],
             Vec::new(),
             Vec::new(),
+            Vec::new(),
         );
         let got = wait_for_global(&worker, "__rerr", 1000);
         assert!(got.contains("stylesheet"), "window 'error' 含资源 kind，got: {got}");
@@ -650,6 +669,7 @@ mod tests {
             &worker,
             Vec::new(),
             vec![("https://example.com/a.png".to_string(), "load")],
+            Vec::new(),
             Vec::new(),
         );
         assert_eq!(
@@ -679,11 +699,88 @@ mod tests {
             Vec::new(),
             Vec::new(),
             vec![("https://example.com/s.css".to_string(), "load")],
+            Vec::new(),
         );
         assert_eq!(
             wait_for_global(&worker, "__linkload", 1000),
             "fired",
             "link load 元素级事件派发"
+        );
+        worker.shutdown();
+    }
+
+    /// R2947 mirror：`document.fonts.ready` Promise 在 finish_page_load 后解析（字体加载库 / FOUT 处理高频 hook）。
+    /// 页面注册 `document.fonts.ready.then(...)`，finish_page_load 经 `__zw_font_settle` 解析 ready。
+    #[test]
+    fn finish_page_load_resolves_fonts_ready_r2947() {
+        let mut worker = RendererJsWorker::spawn(118);
+        let html = "<html><body><script>\
+                    document.fonts.ready.then(function(){ globalThis.__fontsready = 'resolved'; });\
+                    </script></body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        // 无 @font-face（font_events 空）→ settle 仍 resolve ready（字体集从不 loading）。
+        finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        assert_eq!(
+            wait_for_global(&worker, "__fontsready", 1000),
+            "resolved",
+            "document.fonts.ready 在 finish_page_load 后解析"
+        );
+        worker.shutdown();
+    }
+
+    /// R2947 mirror：有 @font-face 加载成功 → FontFaceSet 'loadingdone' 事件派发（含 addEventListener + IDL handler）。
+    #[test]
+    fn finish_page_load_dispatches_loadingdone_r2947() {
+        let mut worker = RendererJsWorker::spawn(119);
+        let html = "<html><body><script>\
+                    document.fonts.addEventListener('loadingdone', function(){ globalThis.__loadingdone='fired'; });\
+                    document.fonts.onloadingdone = function(){ globalThis.__idl='fired'; };\
+                    </script></body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        // 一个 @font-face 加载成功（had_loaded=true）→ 派 loadingdone。
+        finish_page_load(
+            &worker,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![("MyFont".to_string(), "loaded")],
+        );
+        assert_eq!(
+            wait_for_global(&worker, "__loadingdone", 1000),
+            "fired",
+            "FontFaceSet loadingdone 事件派发（addEventListener）"
+        );
+        assert_eq!(
+            wait_for_global(&worker, "__idl", 1000),
+            "fired",
+            "FontFaceSet onloadingdone IDL handler 触发"
+        );
+        worker.shutdown();
+    }
+
+    /// R2947 mirror：@font-face 加载失败 → FontFaceSet 'loadingerror' 事件派发。
+    #[test]
+    fn finish_page_load_dispatches_loadingerror_r2947() {
+        let mut worker = RendererJsWorker::spawn(120);
+        let html = "<html><body><script>\
+                    document.fonts.addEventListener('loadingerror', function(){ globalThis.__loadingerr='fired'; });\
+                    </script></body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        // 一个 @font-face 加载失败（had_error=true）→ 派 loadingerror。
+        finish_page_load(
+            &worker,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![("BadFont".to_string(), "error")],
+        );
+        assert_eq!(
+            wait_for_global(&worker, "__loadingerr", 1000),
+            "fired",
+            "FontFaceSet loadingerror 事件派发（@font-face 加载失败）"
         );
         worker.shutdown();
     }

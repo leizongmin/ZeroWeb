@@ -388,6 +388,14 @@ fn tab_worker_main(
                             r.set_link_events(link_events);
                         }
                     }
+                    // R2947：drain @font-face 加载结果——finish() 经 __zw_font_settle 派 FontFaceSet
+                    // 'loadingdone'/'loadingerror' + 解析 document.fonts.ready（字体加载库 / icon font / FOUT）。
+                    let font_events = load.take_font_events();
+                    if !font_events.is_empty() {
+                        if let Some(r) = page_script_runner.as_mut() {
+                            r.set_font_events(font_events);
+                        }
+                    }
                     let title = page_title_from_webview(&wv);
                     let _ = msg_tx.send(TabWorkerMessage::Title(title));
                 }

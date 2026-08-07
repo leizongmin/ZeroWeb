@@ -11135,6 +11135,89 @@ fn test_body_onload_reflection_r2946() {
 }
 
 #[test]
+fn test_fontface_set_events_r2947() {
+    // R2947 CSS Font Loading API：document.fonts FontFaceSet——.ready Promise（settle 时解析）、
+    // 'loadingdone'/'loadingerror' 事件（addEventListener + IDL handler）、status、check()。
+    // 宿主经 __zw_font_settle(hadLoaded, hadError) 触发（finish_page_load 调用）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // document.fonts 存在 + .ready 是 Promise + status 初始 'loaded'。
+    assert_eq!(
+        sandbox
+            .execute("String(document.fonts instanceof Object)")
+            .unwrap()
+            .value,
+        "true",
+        "document.fonts 存在"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.fonts.status)").unwrap().value,
+        "loaded",
+        "FontFaceSet 初始 status='loaded'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(document.fonts.check('1em Foo'))")
+            .unwrap()
+            .value,
+        "true",
+        "FontFaceSet.check() 返 true"
+    );
+
+    // 注册 ready.then + loadingdone/error listener + IDL handler。
+    sandbox
+        .execute(
+            "globalThis.__hit = [];\
+             document.fonts.ready.then(function(){ globalThis.__hit.push('ready'); });\
+             document.fonts.addEventListener('loadingdone', function(){ globalThis.__hit.push('ael-done'); });\
+             document.fonts.onloadingdone = function(){ globalThis.__hit.push('idl-done'); };\
+             document.fonts.addEventListener('loadingerror', function(){ globalThis.__hit.push('ael-err'); });",
+        )
+        .unwrap();
+
+    // settle(true, false)：有成功加载 → loadingdone（ael + IDL）+ ready 解析。
+    sandbox.execute("globalThis.__zw_font_settle(true, false);").unwrap();
+    let has = |sandbox: &mut V8Sandbox, s: &str| -> bool {
+        sandbox
+            .execute(&format!("String(globalThis.__hit.indexOf('{s}') >= 0)"))
+            .unwrap()
+            .value
+            == "true"
+    };
+    assert!(has(&mut sandbox, "ael-done"), "loadingdone addEventListener 触发");
+    assert!(has(&mut sandbox, "idl-done"), "onloadingdone IDL 触发");
+    assert!(has(&mut sandbox, "ready"), "ready Promise 解析");
+    // ready 仅 resolve 一次：再 settle 不重复触发 then。
+    sandbox.execute("globalThis.__zw_font_settle(false, false);").unwrap();
+    let ready_count = sandbox
+        .execute("String(globalThis.__hit.filter(function(x){return x==='ready';}).length)")
+        .unwrap()
+        .value;
+    assert_eq!(
+        ready_count, "1",
+        "ready Promise 仅 resolve 一次（spec：单 Promise settle 一次）"
+    );
+
+    // settle(_, true)：有失败 → loadingerror。
+    sandbox.execute("globalThis.__zw_font_settle(false, true);").unwrap();
+    assert!(
+        has(&mut sandbox, "ael-err"),
+        "loadingerror 事件派发（@font-face 加载失败）"
+    );
+}
+
+#[test]
 fn test_xmlserializer_importnode_r2818() {
     // R2818：XMLSerializer.serializeToString + document.adoptNode/importNode。serializeToString 委托节点
     // outerHTML（元素）/ nodeValue（text·comment）/ documentElement（document）；adoptNode 单文档 identity；

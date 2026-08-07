@@ -81,6 +81,10 @@ pub struct AsyncPageLoad {
     /// weight（R2417）供宿主按 weight 构 `{family}:700` 粗体键；is_italic（R2493）供宿主
     /// 按 font-style 构 `{family}:italic` italic 键。
     font_loaded: Vec<(String, Option<u16>, bool, Vec<u8>)>,
+    /// R2947：@font-face 加载结果 `(family, "loaded"/"error")`，供宿主派发 FontFaceSet
+    /// 'loadingdone'/'loadingerror' 事件 + 解析 `document.fonts.ready` Promise。poll_fonts 收集
+    /// （成功 + 失败，失败此前仅 warn 丢弃）；经 `take_font_events()` drain。
+    font_events: Vec<(String, &'static str)>,
     lazy_urls: Vec<String>,
     document_rx: Option<Receiver<Result<String, String>>>,
     render_session: Option<BudgetedRenderSession>,
@@ -123,6 +127,7 @@ impl AsyncPageLoad {
             lazy_img_pending: Vec::new(),
             font_pending: Vec::new(),
             font_loaded: Vec::new(),
+            font_events: Vec::new(),
             lazy_urls: Vec::new(),
             document_rx: None,
             render_session: None,
@@ -174,6 +179,7 @@ impl AsyncPageLoad {
             lazy_img_pending: Vec::new(),
             font_pending: Vec::new(),
             font_loaded: Vec::new(),
+            font_events: Vec::new(),
             lazy_urls: Vec::new(),
             document_rx: None,
             render_session: None,
@@ -221,6 +227,13 @@ impl AsyncPageLoad {
     /// + `request_rerender`。
     pub fn drain_loaded_fonts(&mut self) -> Vec<(String, Option<u16>, bool, Vec<u8>)> {
         std::mem::take(&mut self.font_loaded)
+    }
+
+    /// R2947：取出并清空 @font-face 加载结果 `(family, "loaded"/"error")`（drain pattern）。
+    /// 宿主在 load 完成时 drain，据此派发 FontFaceSet 'loadingdone'/'loadingerror' + 解析
+    /// `document.fonts.ready` Promise（字体加载库 / icon font / FOUT 处理高频 hook）。
+    pub fn take_font_events(&mut self) -> Vec<(String, &'static str)> {
+        std::mem::take(&mut self.font_events)
     }
 
     fn log_stage(&self, label: &str) {
@@ -520,8 +533,14 @@ impl AsyncPageLoad {
                         // weight 构 {family}:700 粗体键；is_italic（R2493）用于按 font-style 构
                         // {family}:italic italic 键。
                         self.font_loaded.push((family.clone(), *weight, *is_italic, bytes));
+                        // R2947：记录加载成功，供宿主派发 FontFaceSet 'loadingdone' + 解析 ready。
+                        self.font_events.push((family.clone(), "loaded"));
                     }
-                    Err(e) => tracing::warn!("font {url} fetch failed: {e}"),
+                    Err(e) => {
+                        tracing::warn!("font {url} fetch failed: {e}");
+                        // R2947：记录加载失败，供宿主派发 FontFaceSet 'loadingerror'。
+                        self.font_events.push((family.clone(), "error"));
+                    }
                 }
                 *changed = true;
                 false
