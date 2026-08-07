@@ -77,6 +77,15 @@ pub enum IpcMessageKind {
     /// 解码结果。
     ImageDecodeResult(ImageDecodeResultParams),
 
+    // ── 合成（渲染→compositor 进程，C2）──
+    /// 帧提交（图元快照 → 合成器进程，BackingStore 双缓冲管理）。
+    CompositorFrame(Box<crate::paint_snapshot::PaintSnapshotParams>),
+    /// 帧已合成确认（合成器 → 渲染）。
+    CompositorFrameResult {
+        /// 合成器内递增的帧序号。
+        frame_id: u64,
+    },
+
     // ── 存储请求（渲染→浏览器→存储）──
     /// localStorage/sessionStorage 操作。
     StorageOp(StorageOpParams),

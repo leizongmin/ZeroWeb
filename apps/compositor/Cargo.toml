@@ -1,0 +1,19 @@
+[package]
+name = "zero-compositor"
+description = "ZeroWeb 合成器进程（C2 骨架）— 接收渲染帧，BackingStore 双缓冲管理"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "zero-compositor"
+path = "src/main.rs"
+
+[dependencies]
+zero-protocol = { workspace = true }
+zero-render-foundation = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

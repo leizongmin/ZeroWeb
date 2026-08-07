@@ -6172,6 +6172,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-compositor"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+ "zero-protocol",
+ "zero-render-foundation",
+]
+
+[[package]]
 name = "zero-css-parser"
 version = "0.1.0"
 dependencies = [

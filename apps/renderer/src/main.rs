@@ -1196,6 +1196,8 @@ impl RendererRuntime {
             | IpcMessageKind::FetchResponse(_)
             | IpcMessageKind::ImageDecodeRequest(_)
             | IpcMessageKind::ImageDecodeResult(_)
+            | IpcMessageKind::CompositorFrame(_)
+            | IpcMessageKind::CompositorFrameResult { .. }
             | IpcMessageKind::TitleChanged(_)
             | IpcMessageKind::UrlChanged(_)
             | IpcMessageKind::LoadComplete
