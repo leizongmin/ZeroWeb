@@ -3459,6 +3459,37 @@
             return _wrapSelector(chain.length ? chain[chain.length - 1] : sel);
           };
         }
+        // `el.isConnected`（只读 boolean，spec Node.isConnected：节点是否连入 document）——框架 / 库
+        // 高频判活（jQuery cleanData、React commit-phase、mutation handler `if (!node.isConnected) return`；
+        // 缺失则恒 undefined（falsy）→ 在档元素被误判 detached，脚本取错分支）。
+        // ① sel-based（parsed 元素 / querySelector·getElementById 结果 / html·body·head）→ 经 `__zw_contains
+        //   ('html', sel)`（element_contains 自含，html 自身亦命中）判定是否在 documentElement 子树内——亦
+        //   正确反映 `el.remove()` / `removeChild` 后的 detach（selector 不再在档 → 返 '0'）；无 `__zw_contains`
+        //   回调路径 → fallback true（sel-based parsed 元素构造即在树内）。
+        // ② handle-only（createElement / createTextNode / createComment / DocumentFragment，未挂载）→ false；
+        // ③ 已 appendChild 的 handle 元素 best-effort：`__zw_getBoundingClientRect(handle)` 非空 ⇒ 已在布局
+        //   树（= 已连入文档）→ true（复用 R2661 handle→NodeId 解析）。**已知限制**：append 后未跑 layout
+        //   的同一 execute 内可能暂报 false（layout-dependent probe）；text/comment 节点无布局 rect → append
+        //   后仍报 false（少见 `textNode.isConnected` 检查，documented）。Document 节点恒 connected（见 literal）。
+        if (prop === 'isConnected') {
+          if (sel) {
+            if (typeof __zw_contains === 'function') {
+              try { return __zw_contains('html', sel) === '1'; } catch (_e) { return true; }
+            }
+            return true;
+          }
+          if (handle && typeof __zw_getBoundingClientRect === 'function') {
+            try { return __zw_getBoundingClientRect(handle) !== ''; } catch (_e) { return false; }
+          }
+          return false;
+        }
+        // `el.hasChildNodes()`（spec Node.hasChildNodes：是否有任意子节点含文本/注释）——树遍历 / diff /
+        // 子节点存在性检查高频。经既有 `_childNodeList`（元素查 `__zw_child_nodes`；handle-only 返 []）取
+        // length>0。text/comment 节点本身无子（spec）；DocumentFragment 子节点经 host flatten 跟踪，
+        // handle-only _childNodeList 暂返 [] → 报 false（detached fragment 检查少见，documented）。
+        if (prop === 'hasChildNodes') {
+          return function() { return _childNodeList(sel, handle).length > 0; };
+        }
         // `el.isSameNode(other)`——节点身份相等（deprecated，等价 ===；proxy 缓存使同节点同 proxy，
         // 但经 _elKey 比较更鲁棒：sel/handle 一致即同节点）。
         if (prop === 'isSameNode') {
@@ -5618,6 +5649,12 @@
     documentElement: _wrapSelector('html'),
     body: _wrapSelector('body'),
     head: _wrapSelector('head'),
+    // node-level 身份与连入态（Document 节点恒 connected + 恒有 documentElement 子）。`document.nodeType`
+    // =9 / nodeName='#document'（Node 接口常查 `node.nodeType === 9` / `=== Node.DOCUMENT_NODE`）。
+    nodeType: 9,
+    nodeName: '#document',
+    isConnected: true,
+    hasChildNodes: function () { return true; },
     compatMode: 'CSS1Compat',
     characterSet: 'UTF-8',
     charset: 'UTF-8',

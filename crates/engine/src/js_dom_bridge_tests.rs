@@ -13735,3 +13735,149 @@ fn test_document_content_type_and_node_normalize_r2853() {
         "body/documentElement.normalize() 均可调用（不抛 TypeError）"
     );
 }
+
+#[test]
+fn test_node_is_connected_and_has_child_nodes_r2922() {
+    // R2922：Node.isConnected（只读 boolean，节点是否连入 document）+ Node.hasChildNodes()（是否有任意
+    // 子节点含文本/注释）。两者为 Node 接口最高频判活 / 子存在性 API（jQuery cleanData、React commit、
+    // mutation handler、树遍历 diff），旧 shim 完全缺失 → isConnected 恒 undefined（falsy）误判在档元素为
+    // detached。isConnected：sel-based 经 __zw_contains('html', sel)（element_contains 自含，html 自身命中）
+    // 判定在 documentElement 子树内，亦正确反映 removeChild 后 detach；handle-only（createElement 等）→ false。
+    // hasChildNodes：经 _childNodeList length>0。Document literal 恒 connected + 恒有 documentElement 子。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'>hello</div><span id='empty'></span></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ── Document 节点：nodeType=9 / nodeName='#document' / 恒 connected / 恒有子。──
+    sandbox
+        .execute(
+            "globalThis.__docNt = document.nodeType;\
+             globalThis.__docNn = document.nodeName;\
+             globalThis.__docConn = document.isConnected;\
+             globalThis.__docHcn = document.hasChildNodes();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__docNt)").unwrap().value,
+        "9",
+        "document.nodeType = 9（DOCUMENT_NODE）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__docNn)").unwrap().value,
+        "#document",
+        "document.nodeName = '#document'"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__docConn").unwrap().value,
+        "true",
+        "document.isConnected = true（根节点恒连入）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__docHcn").unwrap().value,
+        "true",
+        "document.hasChildNodes() = true（恒有 documentElement）"
+    );
+
+    // ── isConnected：sel-based 在档元素（含 documentElement/body/查询结果）= true。──
+    sandbox
+        .execute(
+            "globalThis.__htmlConn = document.documentElement.isConnected;\
+             globalThis.__bodyConn = document.body.isConnected;\
+             globalThis.__headConn = document.head.isConnected;\
+             globalThis.__dConn = document.querySelector('#d').isConnected;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__htmlConn").unwrap().value, "true");
+    assert_eq!(sandbox.execute("globalThis.__bodyConn").unwrap().value, "true");
+    assert_eq!(sandbox.execute("globalThis.__headConn").unwrap().value, "true");
+    assert_eq!(
+        sandbox.execute("globalThis.__dConn").unwrap().value,
+        "true",
+        "querySelector('#d').isConnected = true（在档）"
+    );
+
+    // ── isConnected：handle-only 节点（createElement/createTextNode/createFragment 未挂载）= false。──
+    // 注：register_dom_callbacks 不注 __zw_getBoundingClientRect，故 handle-only 无 probe 路径 → false。
+    sandbox
+        .execute(
+            "globalThis.__elConn = document.createElement('div').isConnected;\
+             globalThis.__tnConn = document.createTextNode('x').isConnected;\
+             globalThis.__fragConn = document.createDocumentFragment().isConnected;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__elConn").unwrap().value,
+        "false",
+        "createElement('div').isConnected = false（detached）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__tnConn").unwrap().value,
+        "false",
+        "createTextNode('x').isConnected = false（detached）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__fragConn").unwrap().value,
+        "false",
+        "createDocumentFragment().isConnected = false（恒 detached）"
+    );
+
+    // ── hasChildNodes：有子（#d 含 'hello' 文本节点）/ body（含 #d·#empty·文本）= true；
+    //    空元素（#empty）/ handle-only createElement = false。──
+    sandbox
+        .execute(
+            "globalThis.__bodyHcn = document.body.hasChildNodes();\
+             globalThis.__dHcn = document.querySelector('#d').hasChildNodes();\
+             globalThis.__emptyHcn = document.querySelector('#empty').hasChildNodes();\
+             globalThis.__elHcn = document.createElement('div').hasChildNodes();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__bodyHcn").unwrap().value,
+        "true",
+        "body.hasChildNodes() = true（含子元素 + 文本）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dHcn").unwrap().value,
+        "true",
+        "#d.hasChildNodes() = true（含 'hello' 文本节点）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__emptyHcn").unwrap().value,
+        "false",
+        "#empty.hasChildNodes() = false（无子）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__elHcn").unwrap().value,
+        "false",
+        "createElement('div').hasChildNodes() = false（detached 无子）"
+    );
+
+    // ── isConnected：removeChild 后 detach（sel-based 经 __zw_contains 反映在档态）。──
+    // 先捕获 #d proxy（sel='#d'），再换 snapshot 为不含 #d 的 html（模拟 removeChild 已应用），
+    // 旧 proxy.isConnected 应翻 false（__zw_contains('html','#d') 读新 snapshot → '0'）。**置于末尾**：
+    // 换 snapshot 移除 #d，破坏后续 #d 查询，故 hasChildNodes 等须在此之前完成。
+    sandbox
+        .execute("globalThis.__dRef = document.querySelector('#d'); globalThis.__connBefore = globalThis.__dRef.isConnected;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__connBefore").unwrap().value, "true");
+    *dom_html.lock().unwrap() = "<html><body><span id='empty'></span></body></html>".to_string();
+    sandbox
+        .execute("globalThis.__connAfter = globalThis.__dRef.isConnected;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__connAfter").unwrap().value,
+        "false",
+        "#d 移出 document 后 isConnected = false（__zw_contains 反映 detach）"
+    );
+}
