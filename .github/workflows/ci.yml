@@ -375,6 +375,11 @@ jobs:
       - name: Run reftest smoke gate (must pass)
         run: bash scripts/run-reftest-smoke.sh
 
+      # A3 flaky 门禁：wpt-runner 测试重跑 3 轮（test-threads=1），
+      # 任一失败即判 flaky——CI 上不稳定的测试不能带 flaky 合入。
+      - name: Flakiness check (3 rounds, must be stable)
+        run: bash scripts/check-test-flakiness.sh zero-wpt-runner
+
   reftest:
     runs-on: ubuntu-latest
     timeout-minutes: 45
