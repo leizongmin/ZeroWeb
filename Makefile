@@ -68,16 +68,18 @@ test: target/test-guard
 	# 多模块，致 test-guard 1800s 总超时连累整树）。本地 make test 用 --exclude 跳过该 crate；
 	# CI 直接跑 `cargo test --workspace`（ci.yml，真 Vulkan 后端）正常全量执行该 crate 测试。
 	# 需本地验证 render-foundation 时：test-guard -- cargo test -p zero-render-foundation。
-	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo test --workspace --exclude zero-render-foundation -- --test-threads=2
+	# --test-threads=8（2026-08-07 实测：2→8 线程全量 4min→1m50s，测试为 CPU 密集、
+	# 独立无共享端口/显示，8 线程下 51/51 全过；16 线程再省仅 ~15%，收益递减）。
+	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo test --workspace --exclude zero-render-foundation -- --test-threads=8
 
 # WPT reftest（release 构建，约 4× 快于 debug；同样被 test-guard 包裹）。
 reftest: fetch-wpt-data target/test-guard
 	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest
 
 # 上游 WPT reftest（wpt-data/，self-source 同源 ref）。test-guard 包裹（OOM 防护）。
-# 全量 ~9967 案实测 ~28min，故 --time-limit 3600（60min，高于 test-guard 默认 1800s），
-# 否则全量跑正卡默认 30min 超时被整树杀掉（退出 124）；单目录过滤则远低于此。
-# 用法: make reftest-upstream                     全量上游（慢）
+# 全量 ~16600 案（2026-08-07 @font-face loader 缓存后）实测 ~25s，远低于
+# test-guard 默认 1800s 超时；--time-limit 3600 保留作兜底（不匹配 OOM 死循环）。
+# 用法: make reftest-upstream                     全量上游（快，~25s）
 #       make reftest-upstream FILTER=css-tables   单目录/子串过滤（case.id.contains）
 #       make reftest-upstream FILTER=css/CSS2/backgrounds
 reftest-upstream: fetch-wpt-data target/test-guard
