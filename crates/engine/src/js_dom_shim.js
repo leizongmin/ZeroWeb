@@ -5539,6 +5539,44 @@
   _defineEventSubclass('ClipboardEvent', 'Event', [
     ['clipboardData', 'clipboardData', null],
   ]);
+  // R2937 DragEvent——拖放事件（dragstart/drag/dragend/dragenter/dragover/dragleave/drop），extends MouseEvent
+  // + dataTransfer（DataTransfer）。事件类型经 generic addEventListener/on*/dispatchEvent 触发；构造器供
+  // 合成派发（库 / 测试 / file-drop handler）。draggable 属性 R2848 已实现。
+  _defineEventSubclass('DragEvent', 'MouseEvent', [
+    ['dataTransfer', 'dataTransfer', null],
+  ]);
+
+  // R2937 DataTransfer——拖放载荷容器（format→string map + effectAllowed/dropEffect + files/items 只读视图）。
+  // headless 无真拖拽源（无 OS 文件 / 无 pointer-drag 几何），但 D&D 库（SortableJS / react-dnd fallback /
+  // file-drop handler）经 setData/getData 读写 payload，drop handler 读 dataTransfer.getData('text/plain') 等。
+  // 实现：in-JS format map；types = Object.keys(map)；files/items 只读空（无真文件）；setDragImage no-op。
+  function DataTransfer() {
+    this._dt_data = {};
+    this.effectAllowed = 'none';
+    this.dropEffect = 'none';
+    this._dt_files = [];
+  }
+  DataTransfer.prototype.setData = function (format, data) {
+    this._dt_data[String(format)] = String(data);
+  };
+  DataTransfer.prototype.getData = function (format) {
+    return this._dt_data[String(format)] || '';
+  };
+  DataTransfer.prototype.clearData = function (format) {
+    if (format == null) this._dt_data = {};
+    else delete this._dt_data[String(format)];
+  };
+  DataTransfer.prototype.setDragImage = function (_img, _x, _y) { /* headless 无真拖拽图像，no-op */ };
+  Object.defineProperty(DataTransfer.prototype, 'types', {
+    get: function () { return Object.keys(this._dt_data); },
+  });
+  Object.defineProperty(DataTransfer.prototype, 'files', {
+    get: function () { return this._dt_files; },
+  });
+  Object.defineProperty(DataTransfer.prototype, 'items', {
+    get: function () { return []; },
+  });
+  globalThis.DataTransfer = DataTransfer;
 
   // EventTarget——事件目标基类型（独立构造器，R2779）。库常用 `new EventTarget()` / `extends EventTarget`
   // 做事件发射器（pub-sub / 自定义事件总线）。元素 / document / window 经各自 addEventListener 路径；
@@ -6130,6 +6168,7 @@
         animationevent: globalThis.AnimationEvent,
         pagetransitionevent: globalThis.PageTransitionEvent,
         clipboardevent: globalThis.ClipboardEvent,
+        dragevent: globalThis.DragEvent,
       };
       var Ctor = (map[t] && typeof map[t] === 'function') ? map[t] : globalThis.Event;
       // 构造器接收 (type, options)；createEvent 返**空 type** 事件（initEvent/initCustomEvent 设 type）。

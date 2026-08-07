@@ -1826,6 +1826,54 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_drag_and_drop_r2937() {
+        // R2937 Drag & Drop API（镜像 renderer）：DataTransfer + DragEvent + dispatch + ondrop。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(24));
+        let html = "<html><body><div id='dz'></div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "var dt = new DataTransfer();\
+                 dt.setData('text/plain', 'hello');\
+                 globalThis.__dt1 = dt.getData('text/plain');\
+                 globalThis.__types = dt.types.join(',');\
+                 var dz = document.getElementById('dz');\
+                 globalThis.__drop = 'no';\
+                 dz.addEventListener('drop', function (e) {\
+                   globalThis.__drop = e.type + ':' + e.dataTransfer.getData('text/plain') + ':'\
+                     + (e.constructor === globalThis.DragEvent);\
+                 });\
+                 globalThis.__ondrop = 'no';\
+                 dz.ondrop = function (e) { globalThis.__ondrop = e.type; };\
+                 var dt2 = new DataTransfer();\
+                 dt2.setData('text/plain', 'payload');\
+                 dz.dispatchEvent(new DragEvent('drop', { dataTransfer: dt2, bubbles: true }));",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__dt1)").unwrap(),
+            "hello",
+            "DataTransfer.setData/getData"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__types)").unwrap(),
+            "text/plain",
+            "DataTransfer.types"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__drop)").unwrap(),
+            "drop:payload:true",
+            "dispatchEvent DragEvent('drop') → drop listener 触发（dataTransfer + 构造器）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ondrop)").unwrap(),
+            "drop",
+            "ondrop handler 触发"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html
