@@ -1719,6 +1719,44 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_inline_html_handlers_r2934() {
+        // R2934 inline HTML event handler（镜像 renderer）：on* 属性编译 + dispatch/click 触发 + scope + JS 覆盖。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(21));
+        let html = "<html><body>\
+                    <button id='b' onclick=\"globalThis.__inline='yes'\"></button>\
+                    <span id='s' onclick=\"globalThis.__tag=this.tagName\"></span>\
+                    </body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "var b = document.getElementById('b');\
+                 globalThis.__typeof = typeof b.onclick;\
+                 globalThis.__inline = 'no';\
+                 b.dispatchEvent(new Event('click'));\
+                 var s = document.getElementById('s');\
+                 globalThis.__tag = 'no';\
+                 s.dispatchEvent(new Event('click'));",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__typeof)").unwrap(),
+            "function",
+            "inline onclick → getter 返编译的 function"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__inline)").unwrap(),
+            "yes",
+            "dispatchEvent click → inline handler 触发"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__tag)").unwrap(),
+            "SPAN",
+            "inline handler with(this) scope → this.tagName === 'SPAN'"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html

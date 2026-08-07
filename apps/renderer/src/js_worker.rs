@@ -1703,6 +1703,70 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_inline_html_handlers_r2934() {
+        // R2934 inline HTML event handler：`<button onclick="...">` on* 属性编译为函数（new Function + with(this)
+        // scope），on* getter 返编译 fn；dispatchEvent/click 触发；JS 设值覆盖 inline；无 inline 元素 onclick===null。
+        let mut worker = RendererJsWorker::spawn(41);
+        let html = "<html><body>\
+                    <button id='b' onclick=\"globalThis.__inline='yes'\">\
+                      <span id='s' onclick=\"globalThis.__tag=this.tagName\"></span>\
+                    </button>\
+                    <button id='b2' onclick=\"globalThis.__cfired='yes'\"></button>\
+                    <div id='d'></div>\
+                    </body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "var b = document.getElementById('b');\
+                 globalThis.__typeof = typeof b.onclick;\
+                 globalThis.__inline = 'no';\
+                 b.dispatchEvent(new Event('click'));\
+                 var s = document.getElementById('s');\
+                 globalThis.__tag = 'no';\
+                 s.dispatchEvent(new Event('click'));\
+                 b.onclick = function () { globalThis.__js = 'yes'; };\
+                 globalThis.__js = 'no';\
+                 b.dispatchEvent(new Event('click'));\
+                 globalThis.__cfired = 'no';\
+                 document.getElementById('b2').click();\
+                 var d = document.getElementById('d');\
+                 globalThis.__disnull = (d.onclick === null);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__typeof)").unwrap(),
+            "function",
+            "inline onclick → getter 返编译的 function"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__inline)").unwrap(),
+            "yes",
+            "dispatchEvent click → inline handler 触发"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__tag)").unwrap(),
+            "SPAN",
+            "inline handler with(this) scope → this.tagName === 'SPAN'"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__js)").unwrap(),
+            "yes",
+            "JS 覆盖 inline → JS handler 触发"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__cfired)").unwrap(),
+            "yes",
+            "click() 方法触发 inline handler"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__disnull)").unwrap(),
+            "true",
+            "无 inline 无 JS → onclick === null"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C：selector-identity 元素的 getBoundingClientRect 返真实 DOMRect。
         // shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html → find_by_selector

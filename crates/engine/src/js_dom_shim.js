@@ -2564,6 +2564,29 @@
     return !event._defaultPrevented;
   }
 
+  // R2934 inline HTML event handler 编译（`<button onclick="...">`）：on* getter 无 JS 设值时回落编译
+  // 元素的 on* 属性串为函数（spec 近似：`new Function('event', 'with(document){with(this){ <code> }}')`，
+  // this=元素），缓存 + 注册进 _listenerStore[key]（使 dispatchEvent/click 触发）。JS 设值优先（set trap 覆盖），
+  // =null 移除（不再回落重编译，spec onclick=null 清除）。缓存 false 标记「已查无 inline」避重复 host 查询。
+  // 由 on* getter（返回编译 fn）+ _dispatchWithBubble target 阶段（点击触发）调用。
+  function _ensureInlineHandler(key, sel, handle, type) {
+    if (_onHandlers[key] && _onHandlers[key][type] !== undefined) return; // 已编译 fn / 已查无 false / JS 设值
+    var attr = 'on' + type;
+    var code = null;
+    try {
+      code = handle ? __zw_get_attr_handle(handle, attr) : (sel ? __zw_get_attr(sel, attr) : null);
+    } catch (_e) {}
+    if (!_onHandlers[key]) _onHandlers[key] = {};
+    if (!code) { _onHandlers[key][type] = false; return; } // 查无 → 缓存 false（getter 返 null）
+    var fn = null;
+    try { fn = new Function('event', 'with(document) { with(this) { ' + code + ' } }'); }
+    catch (_e) { _onHandlers[key][type] = false; return; } // 编译失败（语法错）→ 视为无 handler
+    _onHandlers[key][type] = fn;
+    if (!_listenerStore[key]) _listenerStore[key] = {};
+    if (!_listenerStore[key][type]) _listenerStore[key][type] = [];
+    _listenerStore[key][type].push({ fn: fn, capture: false, once: false });
+  }
+
   // 按规范三阶段派发事件：①capture（root→target 的祖先，capture-only）②target（capture+非 capture，
   // AT_TARGET）③bubble（target→root 的祖先，非 capture，仅 event.bubbles）。事件委托基础：祖先 listener
   // 现在经捕获/冒泡两期触发（R2692 仅冒泡、R2693 补捕获）。`event.currentTarget` 随阶段更新。
@@ -2598,6 +2621,7 @@
 
     // ② target 阶段：capture + 非 capture（AT_TARGET，保旧行为）。
     event.currentTarget = target;
+    _ensureInlineHandler(targetKey, targetSel, targetHandle, event.type); // R2934 inline on* handler 触发
     _dispatchToListeners(targetKey, event, 'all', target);
     if (event._propagationStopped) return !event._defaultPrevented;
 
@@ -3903,8 +3927,10 @@
         }
         // R2933 element 级 IDL on-event handler getter（onclick/oninput/... → 存储的 fn 或 null）。
         // `on`+小写字母 = handler（generic，无白名单）。与 set trap 的 on* 路由对偶。
+        // R2934：无 JS 设值时回落编译 inline on* 属性（<button onclick="...">）。
         if (typeof prop === 'string' && /^on[a-z]/.test(prop)) {
           var _gt = String(prop).slice(2);
+          _ensureInlineHandler(key, sel, handle, _gt);
           return (_onHandlers[key] && _onHandlers[key][_gt]) || null;
         }
         if (prop === 'addEventListener') {
