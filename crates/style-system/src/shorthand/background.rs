@@ -47,43 +47,76 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
         size: String::new(),
     };
 
-    // 渐变函数检查（优先于 var() 检查，因为渐变可能包含 var() 引用）
-    let gradient_funcs = [
+    // R2878：函数式背景图（url()/渐变/image-set）括号感知提取为 bg_image，剩余 tokens 经
+    // BgSlots 分类（color/position/repeat/attachment/size）。替代旧「含渐变 → 整个值当 image」
+    // 早返回——旧路径丢失 color/position/size（driving：css-variables vars-background-shorthand-001
+    // d4 `background: green linear-gradient(red,red) var(--foo,)` → R2873 var-sub 后
+    // `green linear-gradient(red,red) center / 0 0`，应拆为 color=green / image=渐变 /
+    // position=center / size=0 0；R2878 渲染器现消费 size:0 0 → 0×0 不可见，故 d4 = solid green）。
+    // 须在 var()/rgb() color 早返回 **之前** 提取——渐变内含 rgb()/逗号会被 color 分支误吞。
+    let image_funcs = [
+        "url(",
         "linear-gradient(",
         "repeating-linear-gradient(",
         "radial-gradient(",
         "repeating-radial-gradient(",
         "conic-gradient(",
         "repeating-conic-gradient(",
+        "image-set(",
     ];
-    for func in &gradient_funcs {
-        if value.contains(func) {
-            bg_image = value.to_string();
-            return vec![
-                mk("background-color", "transparent"),
-                mk("background-image", &bg_image),
-                mk("background-repeat", "repeat"),
-                mk("background-position", "0% 0%"),
-                mk("background-attachment", "scroll"),
-                mk("background-clip", "border-box"),
-                mk("background-origin", "padding-box"),
-                mk("background-size", "auto"),
-            ];
+    let earliest: Option<usize> = image_funcs.iter().filter_map(|f| value.find(f)).min();
+    // working = 移除 image 函数后的剩余值（供后续 color/position/size 分类）。
+    let working_owned: String = match earliest {
+        Some(start) => {
+            let bytes = value.as_bytes();
+            let mut depth = 0i32;
+            let mut found_open = false;
+            let mut end = value.len();
+            for (i, &b) in bytes.iter().enumerate().skip(start) {
+                match b {
+                    b'(' => {
+                        depth += 1;
+                        found_open = true;
+                    }
+                    b')' if depth > 0 => depth -= 1,
+                    _ => {}
+                }
+                if found_open && depth == 0 {
+                    end = i + 1;
+                    break;
+                }
+            }
+            bg_image = value[start..end].to_string();
+            let head = value[..start].trim();
+            let tail = value[end..].trim();
+            let mut s = String::new();
+            if !head.is_empty() {
+                s.push_str(head);
+            }
+            if !tail.is_empty() {
+                if !s.is_empty() {
+                    s.push(' ');
+                }
+                s.push_str(tail);
+            }
+            s
         }
-    }
+        None => value.to_string(),
+    };
+    let working = working_owned.trim();
 
-    // 如果包含 var() 或颜色函数 rgb()/rgba()/hsl()/hsla()，整体作为 background-color
-    // 这些值包含逗号和空格，不能通过简单的 split_whitespace 解析
-    if value.contains("var(")
-        || value.contains("rgb(")
-        || value.contains("rgba(")
-        || value.contains("hsl(")
-        || value.contains("hsla(")
+    // 剩余值若含未解析 var() 或裸颜色函数 rgb()/hsl()，整体作为 background-color
+    //（这些值含逗号/空格，不能 split_whitespace；图函数已在上方提取为 bg_image）
+    if working.contains("var(")
+        || working.contains("rgb(")
+        || working.contains("rgba(")
+        || working.contains("hsl(")
+        || working.contains("hsla(")
     {
-        let bg_color = value.to_string();
+        let bg_color = working.to_string();
         return vec![
             mk("background-color", &bg_color),
-            mk("background-image", "none"),
+            mk("background-image", if bg_image.is_empty() { "none" } else { &bg_image }),
             mk("background-repeat", "repeat"),
             mk("background-position", "0% 0%"),
             mk("background-attachment", "scroll"),
@@ -93,43 +126,15 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
         ];
     }
 
-    // R2481：分离 position 部分与 size 部分（depth-0 `/`，url() 内的 `/` 被排除）。
-    let (pos_part, size_part) = split_bg_position_and_size(value);
+    // R2481：分离 position 部分与 size 部分（depth-0 `/`，url()/渐变内的 `/` 被排除）。
+    let (pos_part, size_part) = split_bg_position_and_size(working);
 
-    // 如果 pos 部分包含 url()，提取 url() 部分作为 image，剩余 tokens 继续解析
-    if pos_part.contains("url(") {
-        if let Some(start) = pos_part.find("url(") {
-            let mut depth = 0u32;
-            let mut found_open = false;
-            let mut end = start;
-            for (i, c) in pos_part[start..].char_indices() {
-                if c == '(' {
-                    depth += 1;
-                    found_open = true;
-                }
-                if c == ')' && depth > 0 {
-                    depth -= 1;
-                }
-                if found_open && depth == 0 {
-                    end = start + i + 1;
-                    break;
-                }
-            }
-            bg_image = pos_part[start..end].to_string();
+    // 逐 token 分类 pos-side（图函数已提取，pos_part 仅含 color/position/repeat/attachment/box）。
+    for token in pos_part.split_whitespace() {
+        if token.is_empty() {
+            continue;
         }
-        // 解析剩余部分（url() 之外的 tokens）—— pos-side（length/percent→position）
-        let remaining = pos_part.replace(&bg_image, "");
-        for token in remaining.split_whitespace() {
-            if token.is_empty() {
-                continue;
-            }
-            classify_bg_token(token, &mut slots, false);
-        }
-    } else {
-        // 没有 url()，逐 token 解析 pos-side
-        for token in pos_part.split_whitespace() {
-            classify_bg_token(token, &mut slots, false);
-        }
+        classify_bg_token(token, &mut slots, false);
     }
 
     // R2481：size 部分（`/` 之后）—— size-side（length/percent/auto/contain/cover→size；
@@ -301,6 +306,20 @@ fn classify_bg_token(token: &str, slots: &mut BgSlots, size_side: bool) {
             bg_append(&mut slots.position, token);
         }
         return;
+    }
+    // R2878：裸 `0`（unitless-zero）是合法 `<length>`（CSS Values §：仅 0 允许无单位），
+    // 归 position（pos-side）或 size（size-side）。修旧路径把 `/ 0 0` 的 bare-0 token 误归
+    // background-color（driving：vars-background-shorthand-001 d4 `... / 0 0` 经简写展开）。
+    // 非 0 的无单位数字对 `<length>` 非法，不在此处理（落入下方 color default）。
+    if let Ok(n) = token.parse::<f32>() {
+        if n == 0.0 {
+            if size_side {
+                bg_append(&mut slots.size, token);
+            } else {
+                bg_append(&mut slots.position, token);
+            }
+            return;
+        }
     }
     // 默认：作为 background-color（颜色值）
     slots.color = token.to_string();

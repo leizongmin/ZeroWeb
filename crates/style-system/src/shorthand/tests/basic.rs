@@ -572,3 +572,34 @@ fn test_shorthand_boundary_whitespace_drops_declaration() {
     assert_eq!(result[0].1, "10px");
     assert_eq!(result[1].1, "20px");
 }
+
+// ── R2879：background 简写 gradient+color+size 拆分（R2877 重写 + R2878 size:0 渲染器）──
+
+#[test]
+fn test_background_shorthand_gradient_color_size_split() {
+    // `green linear-gradient(red,red) center / 0 0` 应拆为：
+    // color=green / image=gradient / position=center / size="0 0"（旧 gradient 早返回把整串当 image）。
+    let result = expand_one(
+        "background",
+        "green linear-gradient(red, red) center / 0 0",
+        false,
+        (0, 0, 1),
+    );
+    let map: std::collections::HashMap<&str, &str> =
+        result.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    assert_eq!(map.get("background-color"), Some(&"green"));
+    assert_eq!(map.get("background-image"), Some(&"linear-gradient(red, red)"));
+    assert_eq!(map.get("background-position"), Some(&"center"));
+    // bare-0 token（unitless-zero）归 size 而非 color（R2878 classify_bg_token 修正）。
+    assert_eq!(map.get("background-size"), Some(&"0 0"));
+}
+
+#[test]
+fn test_background_shorthand_bare_gradient_alone() {
+    // 纯渐变（无 color/position/size）仍正确——image=渐变，color=transparent（默认）。
+    let result = expand_one("background", "linear-gradient(green, green)", false, (0, 0, 1));
+    let map: std::collections::HashMap<&str, &str> =
+        result.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    assert_eq!(map.get("background-image"), Some(&"linear-gradient(green, green)"));
+    assert_eq!(map.get("background-color"), Some(&"transparent"));
+}
