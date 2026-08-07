@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, PageScript, apply_mutations_to_html_with_handles, extract_page_scripts, resolve_document_url,
-    script_dispatch_dom_event,
+    script_dispatch_dom_event, script_report_error,
 };
 use zero_webview::WebView;
 
@@ -91,6 +91,8 @@ impl PageScriptRunner {
 
         if let Err(e) = execute_script_chunk(wv, js_worker, &self.html, is_module, &module_url, &code, true) {
             warn!("page script error ({}): {e}", label);
+            // R2940：报告未捕获脚本错误到 window.onerror / window 'error' 事件（Sentry/analytics hook）。
+            report_uncaught_script_error(js_worker, &self.base, &e);
         }
 
         if let Some(new_html) = apply_recorded_mutations(wv, js_worker, &self.html) {
@@ -214,6 +216,17 @@ fn execute_script_chunk(
         wv.execute_script(code).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// R2940：将未捕获脚本错误经 worker 报告进 shim——`window.onerror`（legacy 5-arg）+ window 'error' 事件，
+/// 使 Sentry / analytics / GA 等错误上报库的 hook 触发。报告本身是 best-effort：失败仅记日志，不影响后续
+/// 脚本执行（worker 已在 execute_script_chunk 开头 set_dom_snapshot，此处复用该上下文直接执行报告串）。
+fn report_uncaught_script_error(js_worker: Option<&TabJsWorkerHandle>, source: &str, message: &str) {
+    let Some(worker) = js_worker else { return };
+    let report = script_report_error(message, source, 0, 0);
+    if let Err(e) = worker.execute_script_direct(&report) {
+        warn!("report uncaught script error: {e}");
+    }
 }
 
 fn apply_recorded_mutations(wv: &mut WebView, js_worker: Option<&TabJsWorkerHandle>, html: &str) -> Option<String> {

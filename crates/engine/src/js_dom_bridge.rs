@@ -2267,6 +2267,19 @@ pub fn script_text_delete(selector: &str) -> String {
     format!("__zw_text_delete('{esc_sel}')")
 }
 
+/// 构造「报告未捕获脚本错误」的 shim 脚本（R2940 onerror host 集成）。宿主在页面 `<script>` 执行
+/// 出错（ScriptError）时执行：shim `__zw_report_error(msg, src, line, col)` 调 legacy window.onerror
+///（5-arg 签名）+ 派发 ErrorEvent 'error' 到 window（addEventListener('error') listener），使 Sentry /
+/// analytics / GA 等错误上报库的 hook 触发。`message` 取首行（V8 stack trace 多行，window.onerror 的
+/// message 为单行）；`source` = 页面 URL；lineno/colno 当前 best-effort 传 0（V8 错误未暴露结构化行列）。
+/// https://html.spec.whatwg.org/#runtime-script-errors
+pub fn script_report_error(message: &str, source: &str, lineno: u32, colno: u32) -> String {
+    let first_line = message.lines().next().unwrap_or("").trim();
+    let esc_msg = escape_js_string(first_line);
+    let esc_src = escape_js_string(source);
+    format!("__zw_report_error('{esc_msg}', '{esc_src}', {lineno}, {colno})")
+}
+
 /// 从当前 HTML 快照查询 textContent。
 pub fn query_text_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);

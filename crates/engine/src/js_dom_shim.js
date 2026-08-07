@@ -5622,6 +5622,15 @@
     get: function () { return []; },
   });
   globalThis.DataTransfer = DataTransfer;
+  // R2940 ErrorEvent——未捕获脚本错误 / 资源加载失败事件（window.onerror / window 'error'）。
+  // 字段：message（错误消息）/ filename（源脚本 URL）/ lineno / colno / error（Error 对象，headless 无真
+  // Error → null）。Sentry / 错误上报库经 `window.addEventListener('error', e => e.message)` 读字段。
+  // 构造期填字段（同 Event 子类既有简化）；host `__zw_report_error` 派发此事件到 window。
+  // https://html.spec.whatwg.org/#errorevent
+  _defineEventSubclass('ErrorEvent', 'Event', [
+    ['message', 'message', ''], ['filename', 'filename', ''],
+    ['lineno', 'lineno', 0], ['colno', 'colno', 0], ['error', 'error', null],
+  ]);
 
   // EventTarget——事件目标基类型（独立构造器，R2779）。库常用 `new EventTarget()` / `extends EventTarget`
   // 做事件发射器（pub-sub / 自定义事件总线）。元素 / document / window 经各自 addEventListener 路径；
@@ -6240,6 +6249,7 @@
         pagetransitionevent: globalThis.PageTransitionEvent,
         clipboardevent: globalThis.ClipboardEvent,
         dragevent: globalThis.DragEvent,
+        errorevent: globalThis.ErrorEvent,
       };
       var Ctor = (map[t] && typeof map[t] === 'function') ? map[t] : globalThis.Event;
       // 构造器接收 (type, options)；createEvent 返**空 type** 事件（initEvent/initCustomEvent 设 type）。
@@ -6754,6 +6764,41 @@
     } catch (_e) {}
   }
   _installNamedAccess();
+
+  // R2940 `__zw_report_error(message, source, lineno, colno)`——host 侧未捕获脚本错误报告入口。
+  // 宿主（tab_scripts 执行页面 <script> 出错时）调用此 hook，shim 派发 window 'error' 事件 +
+  // 调 legacy window.onerror，使 Sentry / analytics / GA 等错误上报库的 hook 触发。
+  // **spec 特殊处理**：window.onerror 为 legacy 5-arg 签名 (msg, source, lineno, colno, error)，非 (event)。
+  // R2932 将 onerror 注册为 'error' listener（接 event 对象），故：① 先从 listener store 移除 onerror、
+  // 用 legacy 签名直接调（返 true → 错误「已处理」，preventDefault 抑制默认动作）；② dispatch 'error'
+  // ErrorEvent 到 window（html key）→ window.addEventListener('error') listener 触发（接 ErrorEvent）；
+  // ③ 装回 onerror listener。如此 onerror 仅 legacy 调一次，不与 event 派发重复触发。
+  // https://html.spec.whatwg.org/#runtime-script-errors
+  globalThis.__zw_report_error = function (message, source, lineno, colno) {
+    try {
+      var msg = String(message == null ? '' : message);
+      var src = String(source == null ? '' : source);
+      var line = Number(lineno) || 0;
+      var col = Number(colno) || 0;
+      var ev = new ErrorEvent('error', {
+        message: msg, filename: src, lineno: line, colno: col, error: null,
+        bubbles: false, cancelable: true, composed: false,
+      });
+      var onErrFn = _winOnHandlers['error'];
+      if (typeof onErrFn === 'function') {
+        _globalRemoveEventListener('error', onErrFn); // 暂移除，避免 dispatch 时 onerror 被 event 形式二次触发
+        try {
+          if (onErrFn.call(globalThis, msg, src, line, col, null) === true) {
+            ev.preventDefault(); // onerror 返 true → 错误已处理（spec：抑制默认动作，cancelable:true 故生效）
+          }
+        } catch (_e) {}
+      }
+      _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
+      if (typeof onErrFn === 'function') {
+        _globalAddEventListener('error', onErrFn); // 装回
+      }
+    } catch (_e) {}
+  };
 
   globalThis.__zw_dispatch_event = function(sel, type, detail) {
     var ev;

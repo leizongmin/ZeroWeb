@@ -10664,6 +10664,138 @@ fn test_pointer_lock_api_r2939() {
 }
 
 #[test]
+fn test_window_onerror_report_r2940() {
+    // R2940 onerror host 集成：ErrorEvent 构造器 + createEvent('ErrorEvent') + __zw_report_error hook。
+    // hook 派发 window 'error' 事件（addEventListener 接 ErrorEvent 读 .message/.filename/.lineno/.colno）+
+    // 调 legacy window.onerror（spec 特殊 5-arg 签名 msg/src/line/col/err），不重复触发 onerror（dispatch 前
+    // 暂移除 onerror listener、legacy 调、dispatch 完装回）。onerror 返 true → defaultPrevented（错误已处理）。
+    // host（tab_scripts）执行页面 <script> 出错时经 zero_engine::script_report_error 生成调用串执行此 hook。
+    // https://html.spec.whatwg.org/#runtime-script-errors
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://test.local/page".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ErrorEvent 构造器（字段 message/filename/lineno/colno/error）+ createEvent('ErrorEvent') 返 ErrorEvent 实例。
+    sandbox
+        .execute(
+            "globalThis.__ev = new ErrorEvent('error', {message:'boom', filename:'a.js', lineno:7, colno:3});\
+             globalThis.__ce = document.createEvent('ErrorEvent');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev.message)").unwrap().value,
+        "boom",
+        "ErrorEvent.message"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev.filename)").unwrap().value,
+        "a.js",
+        "ErrorEvent.filename"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev.lineno)").unwrap().value,
+        "7",
+        "ErrorEvent.lineno"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev.colno)").unwrap().value,
+        "3",
+        "ErrorEvent.colno"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev.error)").unwrap().value,
+        "null",
+        "ErrorEvent.error（headless 无真 Error 对象 → null）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__ev instanceof ErrorEvent)")
+            .unwrap()
+            .value,
+        "true",
+        "ErrorEvent instanceof"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__ce instanceof ErrorEvent)")
+            .unwrap()
+            .value,
+        "true",
+        "createEvent('ErrorEvent') 返 ErrorEvent 实例"
+    );
+
+    // __zw_report_error：window.addEventListener('error') 接 ErrorEvent + window.onerror legacy 5-arg，不重复触发。
+    sandbox
+        .execute(
+            "globalThis.__ael = null; globalThis.__oe = null; globalThis.__oeCount = 0;\
+             window.addEventListener('error', function(e){\
+               globalThis.__ael = e.message + '|' + e.filename + '|' + e.lineno + '|' + e.colno;\
+             });\
+             window.onerror = function(msg, src, line, col, err){\
+               globalThis.__oeCount++;\
+               globalThis.__oe = String(msg) + '|' + String(src) + '|' + line + '|' + col + '|' + String(err);\
+               return false;\
+             };\
+             __zw_report_error('TypeError: x is undefined', 'https://test.local/a.js', 42, 9);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ael)").unwrap().value,
+        "TypeError: x is undefined|https://test.local/a.js|42|9",
+        "addEventListener('error') listener 接 ErrorEvent（字段透传）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__oe)").unwrap().value,
+        "TypeError: x is undefined|https://test.local/a.js|42|9|null",
+        "window.onerror legacy 5-arg 签名（msg/src/line/col/err）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__oeCount)").unwrap().value,
+        "1",
+        "onerror 仅触发一次（不与 event 派发重复）"
+    );
+
+    // onerror 返 true → defaultPrevented（错误「已处理」，spec：抑制默认动作）。
+    sandbox
+        .execute(
+            "globalThis.__dp = 'unset';\
+             window.onerror = function(){ return true; };\
+             window.addEventListener('error', function(e){ globalThis.__dp = String(e.defaultPrevented); });\
+             __zw_report_error('handled', 'b.js', 1, 1);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dp)").unwrap().value,
+        "true",
+        "onerror 返 true → ErrorEvent.defaultPrevented"
+    );
+
+    // 仅 addEventListener('error')（无 onerror）也能触发——hook 不依赖 onerror 存在。
+    sandbox
+        .execute(
+            "window.onerror = null;\
+             globalThis.__only2 = null;\
+             window.addEventListener('error', function(e){ globalThis.__only2 = e.message; });\
+             __zw_report_error('solo', 'c.js', 5, 5);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__only2)").unwrap().value,
+        "solo",
+        "无 onerror 时 addEventListener('error') 仍触发"
+    );
+}
+
+#[test]
 fn test_xmlserializer_importnode_r2818() {
     // R2818：XMLSerializer.serializeToString + document.adoptNode/importNode。serializeToString 委托节点
     // outerHTML（元素）/ nodeValue（text·comment）/ documentElement（document）；adoptNode 单文档 identity；
