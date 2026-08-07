@@ -6800,30 +6800,29 @@
     } catch (_e) {}
   };
 
-  // R2943 `__zw_dispatch_img_event(absUrl, type)`——host 侧 img 元素级 load/error 派发入口。宿主在 img fetch
-  // 完成（成功 → 'load' / 失败 → 'error'）时调用。shim 按 src 绝对 URL 匹配 `<img>` 元素 proxy——遍历
-  // `__zw_query_all('img')` 返的唯一 selector，读各 img 的 src 属性，经 `__zw_parse_url` 解析为绝对 URL
-  // 与 absUrl 比较，命中则用**该元素自身 selector** 经 `__zw_dispatch_event` 派发（保证 listener store key
-  // 与 page JS 经 querySelectorAll/getElementsByTagName 获取 proxy 时一致 → img.onload/onerror +
-  // addEventListener('load'/'error') 触发）。绕开 selector 歧义（不同取元素方式可能产生不同 selector）。
-  // **已知限制**：仅覆盖 DOM 内的 `<img>`（async_load 仅 fetch 解析出的 img，不含动态 new Image()）。
-  globalThis.__zw_dispatch_img_event = function (absUrl, type) {
+  // R2943/R2944 `__zw_dispatch_element_event(tag, attr, absUrl, type)`——host 侧元素级 load/error 派发入口
+  //（img R2943 / link R2944 / script R2944 通用）。按 URL 绝对值匹配 `__zw_query_all(tag)` 返的元素 proxy：
+  // 读各元素的 `attr` 属性（src/href），相对值经 `__zw_parse_url` 解析为绝对，与 absUrl 比较，命中则用
+  // **该元素自身 selector** 经 `__zw_dispatch_event` 派发（保证 listener store key 与 page JS 经
+  // querySelectorAll/getElementsByTagName 获取 proxy 时一致 → onload/onerror + addEventListener 触发）。
+  // 绕开 selector 歧义（不同取元素方式可能产生不同 selector）。**限制**：仅 DOM 内元素（不含动态创建）。
+  globalThis.__zw_dispatch_element_event = function (tag, attr, absUrl, type) {
     try {
       if (typeof __zw_query_all !== 'function' || typeof __zw_dispatch_event !== 'function') return;
-      var sels = __zw_query_all('img');
+      var sels = __zw_query_all(String(tag));
       if (!sels) return;
       var list = sels.split('|').filter(Boolean);
       var pageUrl = typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : '';
       var target = String(absUrl == null ? '' : absUrl);
       for (var i = 0; i < list.length; i++) {
         var sel = list[i];
-        var rawSrc = typeof __zw_get_attr === 'function' ? __zw_get_attr(sel, 'src') : '';
-        if (!rawSrc) continue;
-        var resolved = rawSrc;
-        // 相对 src 解析为绝对（与 host 的 absUrl 同源同 base，url crate 规范化一致）。
-        if (pageUrl && rawSrc.indexOf('://') < 0 && typeof __zw_parse_url === 'function') {
+        var rawVal = typeof __zw_get_attr === 'function' ? __zw_get_attr(sel, attr) : '';
+        if (!rawVal) continue;
+        var resolved = rawVal;
+        // 相对 URL 解析为绝对（与 host 的 absUrl 同源同 base，url crate 规范化一致）。
+        if (pageUrl && rawVal.indexOf('://') < 0 && typeof __zw_parse_url === 'function') {
           try {
-            var parsed = JSON.parse(__zw_parse_url(rawSrc, pageUrl));
+            var parsed = JSON.parse(__zw_parse_url(rawVal, pageUrl));
             if (parsed && parsed.href) resolved = parsed.href;
           } catch (_e) {}
         }
@@ -6832,6 +6831,16 @@
         }
       }
     } catch (_e) {}
+  };
+  // 元素级派发便捷封装（R2943 img / R2944 link / script）。
+  globalThis.__zw_dispatch_img_event = function (absUrl, type) {
+    __zw_dispatch_element_event('img', 'src', absUrl, type);
+  };
+  globalThis.__zw_dispatch_link_event = function (absHref, type) {
+    __zw_dispatch_element_event('link', 'href', absHref, type);
+  };
+  globalThis.__zw_dispatch_script_event = function (absSrc, type) {
+    __zw_dispatch_element_event('script', 'src', absSrc, type);
   };
 
   globalThis.__zw_dispatch_event = function(sel, type, detail) {

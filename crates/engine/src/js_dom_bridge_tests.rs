@@ -10981,6 +10981,102 @@ fn test_img_element_events_r2943() {
 }
 
 #[test]
+fn test_link_script_element_events_r2944() {
+    // R2944 link/script 元素级 onload/onerror：`__zw_dispatch_link_event(href,type)` / `__zw_dispatch_script_event(src,type)`
+    // 经通用 `__zw_dispatch_element_event(tag,attr,url,type)` 按 href/src 绝对 URL 匹配元素 proxy，用其自身
+    // selector 派发（保证 listener key 匹配）。模拟 host 在样式表/外部脚本 fetch 成功（load）/ 失败（error）时调用。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head>\
+         <link rel='stylesheet' href='https://example.com/a.css'>\
+         <script src='https://example.com/s.js'></script>\
+         </head><body></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // link.onload/onerror + script.onload/onerror 注册（querySelectorAll 取唯一 selector proxy）。
+    sandbox
+        .execute(
+            "globalThis.__hit = [];\
+             var link = document.querySelectorAll('link')[0];\
+             link.onload = function(){ globalThis.__hit.push('link-load'); };\
+             link.onerror = function(){ globalThis.__hit.push('link-error'); };\
+             var sc = document.querySelectorAll('script')[0];\
+             sc.onload = function(){ globalThis.__hit.push('script-load'); };\
+             sc.onerror = function(){ globalThis.__hit.push('script-error'); };",
+        )
+        .unwrap();
+
+    // host 派发：link load + link error + script load + script error（绝对 URL）。
+    sandbox
+        .execute(
+            "__zw_dispatch_link_event('https://example.com/a.css', 'load');\
+             __zw_dispatch_link_event('https://example.com/a.css', 'error');\
+             __zw_dispatch_script_event('https://example.com/s.js', 'load');\
+             __zw_dispatch_script_event('https://example.com/s.js', 'error');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hit.indexOf('link-load') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "link onload 触发"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hit.indexOf('link-error') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "link onerror 触发"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hit.indexOf('script-load') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "script onload 触发（外部脚本 fetch+执行成功）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hit.indexOf('script-error') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "script onerror 触发（外部脚本 fetch 失败）"
+    );
+    // 未匹配 href/src 不派发。
+    sandbox
+        .execute(
+            "globalThis.__before = globalThis.__hit.length;\
+             __zw_dispatch_link_event('https://example.com/missing.css', 'load');\
+             __zw_dispatch_script_event('https://example.com/missing.js', 'load');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hit.length === globalThis.__before)")
+            .unwrap()
+            .value,
+        "true",
+        "未匹配 href/src 的派发不触发任何 listener"
+    );
+}
+
+#[test]
 fn test_xmlserializer_importnode_r2818() {
     // R2818：XMLSerializer.serializeToString + document.adoptNode/importNode。serializeToString 委托节点
     // outerHTML（元素）/ nodeValue（text·comment）/ documentElement（document）；adoptNode 单文档 identity；

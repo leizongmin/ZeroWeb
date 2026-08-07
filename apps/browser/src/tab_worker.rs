@@ -380,6 +380,14 @@ fn tab_worker_main(
                             r.set_img_events(img_events);
                         }
                     }
+                    // R2944：drain stylesheet 元素级 load/error 事件——finish() 经 __zw_dispatch_link_event 派发到
+                    // 匹配 href 的 <link> 元素（link.onload/onerror）。
+                    let link_events = load.take_link_element_events();
+                    if !link_events.is_empty() {
+                        if let Some(r) = page_script_runner.as_mut() {
+                            r.set_link_events(link_events);
+                        }
+                    }
                     let title = page_title_from_webview(&wv);
                     let _ = msg_tx.send(TabWorkerMessage::Title(title));
                 }

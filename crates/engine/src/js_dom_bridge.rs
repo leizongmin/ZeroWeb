@@ -2290,6 +2290,24 @@ pub fn script_dispatch_img_event(abs_url: &str, ty: &str) -> String {
     format!("__zw_dispatch_img_event('{esc_url}', '{esc_ty}')")
 }
 
+/// 构造「派发 `<link rel=stylesheet>` 元素级 load/error 事件」的 shim 脚本（R2944）。宿主在样式表 fetch
+/// 完成（成功 → "load" / 失败 → "error"）时执行：shim `__zw_dispatch_link_event(absHref, type)` 按 href 绝对
+/// URL 匹配 `<link>` 元素 proxy 并用其自身 selector 派发（link.onload/onerror 触发）。
+pub fn script_dispatch_link_event(abs_href: &str, ty: &str) -> String {
+    let esc_url = escape_js_string(abs_href);
+    let esc_ty = escape_js_string(ty);
+    format!("__zw_dispatch_link_event('{esc_url}', '{esc_ty}')")
+}
+
+/// 构造「派发外部 `<script src>` 元素级 load/error 事件」的 shim 脚本（R2944）。宿主在外部脚本 fetch 完成
+///（成功+执行 → "load" / fetch 失败 → "error"）时执行：shim `__zw_dispatch_script_event(absSrc, type)` 按
+/// src 绝对 URL 匹配 `<script>` 元素 proxy 并用其自身 selector 派发（script.onload/onerror 触发）。
+pub fn script_dispatch_script_event(abs_src: &str, ty: &str) -> String {
+    let esc_url = escape_js_string(abs_src);
+    let esc_ty = escape_js_string(ty);
+    format!("__zw_dispatch_script_event('{esc_url}', '{esc_ty}')")
+}
+
 /// 从当前 HTML 快照查询 textContent。
 pub fn query_text_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);

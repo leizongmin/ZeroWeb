@@ -93,6 +93,10 @@ pub struct AsyncPageLoad {
     /// `__zw_dispatch_img_event` 派发到匹配 src 的 `<img>` 元素（img.onload/onerror）。成功 → "load"，
     /// fetch/decode 失败 → "error"；经 `take_img_element_events()` drain。
     img_element_events: Vec<(String, &'static str)>,
+    /// R2944：stylesheet 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，供宿主经
+    /// `__zw_dispatch_link_event` 派发到匹配 href 的 `<link>` 元素（link.onload/onerror）。成功 → "load"，
+    /// fetch 失败 → "error"；经 `take_link_element_events()` drain。
+    link_element_events: Vec<(String, &'static str)>,
 }
 
 /// R2942：子资源 fetch/decode 失败记录。`kind` = "stylesheet" / "image"；`url` = 资源绝对 URL。
@@ -126,6 +130,7 @@ impl AsyncPageLoad {
             last_error: None,
             failed_resources: Vec::new(),
             img_element_events: Vec::new(),
+            link_element_events: Vec::new(),
         }
     }
 
@@ -143,6 +148,12 @@ impl AsyncPageLoad {
     /// `__zw_dispatch_img_event` 派发到匹配 src 的 `<img>` 元素。
     pub fn take_img_element_events(&mut self) -> Vec<(String, &'static str)> {
         std::mem::take(&mut self.img_element_events)
+    }
+
+    /// R2944：取出并清除 stylesheet 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，供宿主经
+    /// `__zw_dispatch_link_event` 派发到匹配 href 的 `<link>` 元素。
+    pub fn take_link_element_events(&mut self) -> Vec<(String, &'static str)> {
+        std::mem::take(&mut self.link_element_events)
     }
 
     /// 是否因错误结束。
@@ -170,6 +181,7 @@ impl AsyncPageLoad {
             last_error: None,
             failed_resources: Vec::new(),
             img_element_events: Vec::new(),
+            link_element_events: Vec::new(),
         }
     }
 
@@ -414,6 +426,7 @@ impl AsyncPageLoad {
                     Ok(css) => {
                         self.css.push_str(&css);
                         self.css.push('\n');
+                        self.link_element_events.push((url.clone(), "load"));
                         for imp in extract_import_urls(&css) {
                             if imp.starts_with("data:") {
                                 continue;
@@ -431,6 +444,7 @@ impl AsyncPageLoad {
                             kind: "stylesheet",
                             url: url.clone(),
                         });
+                        self.link_element_events.push((url.clone(), "error"));
                     }
                 }
                 *changed = true;
@@ -943,6 +957,28 @@ mod tests {
         assert!(errors.iter().any(|u| u.ends_with("a.png")));
         assert!(errors.iter().any(|u| u.ends_with("b.png")));
         assert!(load.take_img_element_events().is_empty(), "drain 后清空");
+    }
+
+    /// R2944：stylesheet 元素级 load/error 事件收集——fetch 失败 → "error"，成功 → "load"。
+    #[test]
+    fn link_element_events_collect_load_and_error() {
+        // ErrFetchHost：两条样式表均 fetch 失败 → 两条 "error"。
+        let html = r#"<html><head>
+            <link rel="stylesheet" href="a.css">
+            <link rel="stylesheet" href="b.css">
+            </head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = ErrFetchHost;
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        let events = load.take_link_element_events();
+        let errors: Vec<&String> = events.iter().filter(|(_, t)| *t == "error").map(|(u, _)| u).collect();
+        assert_eq!(errors.len(), 2, "两条 stylesheet fetch 失败均收集为 error: {events:?}");
+        assert!(errors.iter().any(|u| u.ends_with("a.css")));
+        assert!(errors.iter().any(|u| u.ends_with("b.css")));
+        assert!(load.take_link_element_events().is_empty(), "drain 后清空");
     }
 
     /// R2408+ slice 2 / FR-003：fetch 成功的 @font-face 字节经 drain 回传（不再丢弃），且 drain 后清空。

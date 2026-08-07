@@ -35,6 +35,10 @@ pub struct PageScriptRunner {
     /// AsyncPageLoad.take_img_element_events drain 后注入）。finish() 经 `__zw_dispatch_img_event` 派发到
     /// 匹配 src 的 `<img>` 元素（img.onload/onerror）。
     img_events: Vec<(String, &'static str)>,
+    /// R2944：stylesheet 元素级 load/error 事件 `(绝对 URL, "load"/"error")`（由 tab_worker 从
+    /// AsyncPageLoad.take_link_element_events drain 后注入）。finish() 经 `__zw_dispatch_link_event` 派发到
+    /// 匹配 href 的 `<link>` 元素（link.onload/onerror）。
+    link_events: Vec<(String, &'static str)>,
 }
 
 impl PageScriptRunner {
@@ -60,6 +64,7 @@ impl PageScriptRunner {
             original_html,
             resource_errors: Vec::new(),
             img_events: Vec::new(),
+            link_events: Vec::new(),
         })
     }
 
@@ -72,6 +77,12 @@ impl PageScriptRunner {
     /// `__zw_dispatch_img_event` 派发到匹配 src 的 `<img>` 元素。
     pub fn set_img_events(&mut self, events: Vec<(String, &'static str)>) {
         self.img_events = events;
+    }
+
+    /// R2944：注入 stylesheet 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，finish() 经
+    /// `__zw_dispatch_link_event` 派发到匹配 href 的 `<link>` 元素。
+    pub fn set_link_events(&mut self, events: Vec<(String, &'static str)>) {
+        self.link_events = events;
     }
 
     /// 是否还有待执行脚本。
@@ -93,6 +104,11 @@ impl PageScriptRunner {
             PageScript::InlineModule(_) => self.base.clone(),
             _ => String::new(),
         };
+        // R2944：外部脚本的绝对 src（fetch 成功+执行后派 script 元素 'load'；fetch 失败已在内联分支派 'error'）。
+        let external_abs: Option<String> = match script {
+            PageScript::External(src) | PageScript::ExternalModule(src) => Some(resolve_document_url(&self.base, src)),
+            _ => None,
+        };
 
         let code = match script {
             PageScript::Inline(code) | PageScript::InlineModule(code) => code.clone(),
@@ -105,6 +121,8 @@ impl PageScriptRunner {
                         // R2942：外部脚本 fetch 失败 → 即时派发 window 'error'（脚本 fetch 在 tick 期同步失败，
                         // 早于后续内联脚本的 onerror 注册即触发，匹配 real browser「fetch 失败即报」语义）。
                         report_resource_error(js_worker, "script", &abs);
+                        // R2944：外部脚本元素 'error'（fetch 失败，spec script 元素 error 仅 fetch 失败触发）。
+                        dispatch_script_event(js_worker, &abs, "error");
                         self.index += 1;
                         return PageScriptTickResult::Continue;
                     }
@@ -116,6 +134,9 @@ impl PageScriptRunner {
             warn!("page script error ({}): {e}", label);
             // R2940：报告未捕获脚本错误到 window.onerror / window 'error' 事件（Sentry/analytics hook）。
             report_uncaught_script_error(js_worker, &self.base, &e);
+        } else if let Some(abs) = external_abs.as_deref() {
+            // R2944：外部脚本 fetch+执行成功 → script 元素 'load'（spec：classic/module 脚本执行成功后派 load）。
+            dispatch_script_event(js_worker, abs, "load");
         }
 
         if let Some(new_html) = apply_recorded_mutations(wv, js_worker, &self.html) {
@@ -144,6 +165,11 @@ impl PageScriptRunner {
         //（img.onload/onerror）。延后到 load 之后（同 R2942 理由，确保 handler 已注册）。
         for (url, ty) in &self.img_events {
             dispatch_img_event(js_worker, url, ty);
+        }
+        // R2944：stylesheet 元素级 load/error——经 `__zw_dispatch_link_event` 派发到匹配 href 的 <link> 元素
+        //（link.onload/onerror）。延后到 load 之后（同上理由）。
+        for (url, ty) in &self.link_events {
+            dispatch_link_event(js_worker, url, ty);
         }
     }
 }
@@ -182,6 +208,28 @@ fn dispatch_img_event(js_worker: Option<&TabJsWorkerHandle>, url: &str, ty: &str
     let report = zero_engine::script_dispatch_img_event(url, ty);
     if let Err(e) = worker.execute_script_direct(&report) {
         warn!("dispatch img event ({ty} {url}): {e}");
+    }
+}
+
+/// R2944：派发 stylesheet 元素级 load/error 事件进 shim。经 `script_dispatch_link_event` 生成
+/// `__zw_dispatch_link_event(url, type)`——shim 按 href 绝对 URL 匹配 `<link>` 元素 proxy 派发
+///（link.onload/onerror 触发）。`ty` = "load" / "error"。best-effort。
+fn dispatch_link_event(js_worker: Option<&TabJsWorkerHandle>, url: &str, ty: &str) {
+    let Some(worker) = js_worker else { return };
+    let report = zero_engine::script_dispatch_link_event(url, ty);
+    if let Err(e) = worker.execute_script_direct(&report) {
+        warn!("dispatch link event ({ty} {url}): {e}");
+    }
+}
+
+/// R2944：派发外部 `<script src>` 元素级 load/error 事件进 shim。经 `script_dispatch_script_event` 生成
+/// `__zw_dispatch_script_event(url, type)`——shim 按 src 绝对 URL 匹配 `<script>` 元素 proxy 派发
+///（script.onload/onerror 触发）。`ty` = "load"（fetch+执行成功）/ "error"（fetch 失败）。best-effort。
+fn dispatch_script_event(js_worker: Option<&TabJsWorkerHandle>, url: &str, ty: &str) {
+    let Some(worker) = js_worker else { return };
+    let report = zero_engine::script_dispatch_script_event(url, ty);
+    if let Err(e) = worker.execute_script_direct(&report) {
+        warn!("dispatch script event ({ty} {url}): {e}");
     }
 }
 
