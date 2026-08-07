@@ -8250,6 +8250,106 @@ fn test_crypto_subtle_keyops_r2959() {
 }
 
 #[test]
+fn test_crypto_csprng_r2960() {
+    // R2960：crypto.getRandomValues / randomUUID 升级 OS-random（getrandom crate，host 回调）。
+    // 升级前 Math.random（非 CSPRNG，predictable——token/密钥/IV 安全弱点）。本测试验 host 路径属性
+    // （长度/字节范围/两次不同/v4 格式/参数校验）+ host 未注册时 Math.random 回退仍工作。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // host 回调已注册（OS-random 路径生效）。
+    assert_eq!(
+        sandbox
+            .execute("String(typeof __zw_crypto_get_random_values === 'function')")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // getRandomValues：长度保持 + 字节范围 0-255（两次调用不同——OS 随机几乎必异）。
+    sandbox
+        .execute(
+            "var a1 = crypto.getRandomValues(new Uint8Array(16));\
+             var a2 = crypto.getRandomValues(new Uint8Array(16));\
+             var same = 1, inRange = 1;\
+             for (var i = 0; i < 16; i++) { if (a1[i] !== a2[i]) same = 0; if (a1[i] < 0 || a1[i] > 255 || a2[i] > 255) inRange = 0; }\
+             globalThis.__rv = String(a1.length === 16 && a2.length === 16 && inRange === 1 && same === 0);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__rv)").unwrap().value, "true");
+    // getRandomValues 共享 buffer 偏移视图（Uint32Array 视图看随机 32 位值）。
+    sandbox
+        .execute(
+            "var u32 = new Uint32Array(2); crypto.getRandomValues(u32);\
+             globalThis.__u32 = String(u32[0] !== u32[1]);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__u32)").unwrap().value, "true");
+    // randomUUID：v4 格式（version=4，variant∈89ab）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(crypto.randomUUID())"
+            )
+            .unwrap()
+            .value,
+        "true"
+    );
+    // getRandomValues 参数校验：非 TypedArray → TypeError；>65536 字节 → QuotaExceededError。
+    assert_eq!(
+        sandbox
+            .execute("try { crypto.getRandomValues([1,2,3]); 'no-throw' } catch (e) { e instanceof TypeError ? 'TypeError' : e.name }")
+            .unwrap()
+            .value,
+        "TypeError"
+    );
+    assert_eq!(
+        sandbox
+            .execute("try { crypto.getRandomValues(new Uint8Array(65537)); 'no-throw' } catch (e) { e.name }")
+            .unwrap()
+            .value,
+        "QuotaExceededError"
+    );
+
+    // 回退路径：host 未注册（纯 shim）→ Math.random 仍工作（getRandomValues 填 + randomUUID v4 格式）。
+    let mut fb = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    fb.execute(generate_js_dom_shim()).unwrap();
+    assert_eq!(
+        fb.execute("String(typeof __zw_crypto_get_random_values === 'function')")
+            .unwrap()
+            .value,
+        "false"
+    );
+    assert_eq!(
+        fb.execute(
+            "var a = crypto.getRandomValues(new Uint8Array(4)); String(a.length === 4 && a[0] >= 0 && a[0] <= 255)"
+        )
+        .unwrap()
+        .value,
+        "true"
+    );
+    assert_eq!(
+        fb.execute("/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(crypto.randomUUID())")
+            .unwrap()
+            .value,
+        "true"
+    );
+}
+
+#[test]
 fn test_headers_r2794() {
     // R2794：Headers（HTTP 头集合，fetch/SW/header-map 高频）。镜像 FormData，header name 小写归一 +
     // 多值 append 用 ', ' 合并 + getSetCookie 特例。纯 JS，零 host 回调。

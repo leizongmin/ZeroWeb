@@ -1210,6 +1210,18 @@ pub fn parse_html_element_json(html: &str, selector: &str, all: bool) -> String 
     format!("[{}]", items.join(","))
 }
 
+/// `crypto.getRandomValues` 的 OS 随机源（R2960）——`getrandom` crate（CSPRNG，Linux getrandom(2) /
+/// macOS SecRandomCopyBytes / Windows BcryptGenRandom）。n 字节随机数 → 逗号分隔十进制串。
+/// **getrandom 失败返空串**（shim 回退 Math.random——engine polyfill 路径亦走该回退）。
+/// 供 `__zw_crypto_get_random_values` 回调 → shim `crypto.getRandomValues` / `randomUUID`。
+pub fn crypto_random_bytes(n: usize) -> String {
+    let mut buf = vec![0u8; n];
+    if getrandom::fill(&mut buf).is_err() {
+        return String::new();
+    }
+    buf.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
+}
+
 /// `crypto.subtle.digest(algo, data)`（R2793）——SHA-1/256/384/512 哈希（SRI / JWT / 内容哈希高频）。
 /// 委托 RustCrypto `sha1`/`sha2`（digest 0.10 生态）。**字节传递**：JS 侧把 BufferSource 转
 /// `number[]` → 逗号分隔十进制串（"72,73,..."）避免 UTF-8 编码歧义；本函数 split + parse 回 `Vec<u8>`，
@@ -2968,6 +2980,15 @@ pub fn register_dom_callbacks(
             let algo = args.first().map(String::as_str).unwrap_or("");
             let bytes = args.get(1).map(String::as_str).unwrap_or("");
             crypto_subtle_digest(algo, bytes)
+        }),
+    );
+
+    // `crypto.getRandomValues` / `randomUUID` OS 随机源（R2960）——arg[0]=字节数。返逗号分隔十进制随机字节串。
+    sandbox.register_callback(
+        "__zw_crypto_get_random_values",
+        Box::new(|args: &[String]| -> String {
+            let n: usize = args.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+            crypto_random_bytes(n)
         }),
     );
 

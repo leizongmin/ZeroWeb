@@ -123,6 +123,9 @@ sha2 = "0.10"
 # 对称加密（crypto.subtle AES-GCM：AES-128/192/256-GCM，RustCrypto；R2957）
 aes-gcm = "0.10"
 
+# CSPRNG（crypto.getRandomValues/randomUUID OS 随机源，R2960）
+getrandom = "0.3"
+
 # PNG 编码（canvas.toDataURL：pixel_buffer → PNG）
 png = "0.18"
 

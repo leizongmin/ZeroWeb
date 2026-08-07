@@ -1081,33 +1081,47 @@
     return out;
   };
 
-  // crypto——Web Crypto 起步：randomUUID（UUID v4）+ getRandomValues（TypedArray 填充）。高频
-  //（id 生成 / analytics / 随机字节）。**已知限制**：Math.random-based（**非 CSPRNG**），对 id 生成 /
-  // 非安全随机字节主流用途足够；安全敏感场景（token / 密钥）需 host OS-random（如 getrandom crate）
-  // 接入（follow-up，届时 randomUUID + getRandomValues 一并升级 CSPRNG）。
+  // crypto——Web Crypto 随机源：randomUUID（UUID v4）+ getRandomValues（TypedArray 填充）。高频
+  //（id 生成 / CSRF token / analytics / 密钥/IV 随机）。R2960 升级 CSPRNG：经 host
+  // `__zw_crypto_get_random_values(n)`（getrandom crate，OS 随机）；host 未注册（engine polyfill / reftest 路径）
+  // → 回退 Math.random（非 CSPRNG，仅非安全场景）。
+  // 填 view 字节：host 足量则 OS-random，否则 Math.random 回退。
+  function _zw_randomFill(view) {
+    var csv = (typeof __zw_crypto_get_random_values === 'function')
+      ? __zw_crypto_get_random_values(view.length) : '';
+    var parts = csv ? csv.split(',') : null;
+    if (parts && parts.length >= view.length) {
+      for (var i = 0; i < view.length; i++) view[i] = +parts[i] & 0xff;
+    } else {
+      for (var k = 0; k < view.length; k++) view[k] = (Math.random() * 256) | 0;
+    }
+    return view;
+  }
   globalThis.crypto = globalThis.crypto || {
+    // randomUUID（UUID v4，RFC 4122）：16 随机字节（_zw_randomFill，OS-random R2960），设 version(4)/variant
+    // 位，格式化 8-4-4-4-12 hex。spec：time_hi_and_version 高 4 位=4，clock_seq_hi variant=10xxxxxx。
     randomUUID: function () {
+      var b = new Uint8Array(16);
+      _zw_randomFill(b);
+      b[6] = (b[6] & 0x0f) | 0x40; // version 4
+      b[8] = (b[8] & 0x3f) | 0x80; // variant 10xxxxxx（y ∈ 8,9,a,b）
       var h = '0123456789abcdef';
       var s = '';
-      for (var i = 0; i < 36; i++) {
-        if (i === 8 || i === 13 || i === 18 || i === 23) s += '-';
-        else if (i === 14) s += '4';
-        else if (i === 19) s += h[(Math.random() * 4) | 0 | 8]; // y ∈ 8,9,a,b
-        else s += h[(Math.random() * 16) | 0];
+      for (var i = 0; i < 16; i++) {
+        s += h[(b[i] >> 4) & 0xf] + h[b[i] & 0xf];
+        if (i === 3 || i === 5 || i === 7 || i === 9) s += '-';
       }
       return s;
     },
     // getRandomValues(typedArray)：spec 限定 TypedArray（Int8..Uint32 / BigInt64/BigUint64），≤65536
-    // 字节。填**底层字节 buffer**（Uint8Array 视图）→ 任意 typed 视图得随机值（含多字节 / 共享 buffer
-    // 偏移）。Math.random 字节级（非 CSPRNG）。
+    // 字节。填**底层字节 buffer**（Uint8Array 视图）→ 任意 typed 视图得随机值（含多字节 / 共享 buffer 偏移）。
     getRandomValues: function (arr) {
       if (typeof ArrayBuffer === 'undefined' || !ArrayBuffer.isView(arr)) {
         throw new TypeError('getRandomValues: argument must be a TypedArray');
       }
       if (arr.byteLength > 65536)
         throw new DOMException("The ArrayBufferView byte length (" + arr.byteLength + ") exceeds 65536.", 'QuotaExceededError');
-      var view = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
-      for (var i = 0; i < view.length; i++) view[i] = (Math.random() * 256) | 0;
+      _zw_randomFill(new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength));
       return arr;
     }
   };
