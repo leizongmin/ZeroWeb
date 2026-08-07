@@ -10513,6 +10513,157 @@ fn test_fullscreen_api_r2938() {
 }
 
 #[test]
+fn test_pointer_lock_api_r2939() {
+    // R2939 Pointer Lock API（spec-alike，镜像 R2938 Fullscreen）：element.requestPointerLock() 返 Promise
+    //（grant→resolve + 设 pointerLockElement + 派 pointerlockchange；deny→reject TypeError + 派 pointerlockerror）；
+    // document.exitPointerLock() 返 **void**（undefined，与 exitFullscreen 返 Promise 不同）+ 清状态 + 派
+    // pointerlockchange；pointerLockElement 反映状态；pointerlockchange/pointerlockerror 经 document listener +
+    // document.onpointerlockchange/onpointerlockerror IDL handler 触发。
+    // https://w3c.github.io/pointerlock/
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='c'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // pointerLockElement 初值 null。
+    assert_eq!(
+        sandbox.execute("String(document.pointerLockElement)").unwrap().value,
+        "null",
+        "pointerLockElement 初值 null"
+    );
+
+    // grant 路径：requestPointerLock 设 pointerLockElement + 派 pointerlockchange + resolve。
+    sandbox
+        .execute(
+            "globalThis.__plc = 0; globalThis.__ple = 'x';\
+             document.addEventListener('pointerlockchange', function(){\
+               globalThis.__plc++;\
+               globalThis.__ple = document.pointerLockElement ? document.pointerLockElement.id : '(null)';\
+             });\
+             globalThis.__ok = false;\
+             document.getElementById('c').requestPointerLock().then(function(){ globalThis.__ok = true; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__plc)").unwrap().value,
+        "1",
+        "requestPointerLock 派发一次 pointerlockchange"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ple)").unwrap().value,
+        "c",
+        "pointerlockchange handler 内 pointerLockElement === 锁定元素（id='c'）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ok)").unwrap().value,
+        "true",
+        "requestPointerLock Promise resolves"
+    );
+
+    // 相同元素重复 requestPointerLock → no-op（计数不变仍 resolve）。
+    sandbox
+        .execute(
+            "globalThis.__ok2 = false;\
+             document.getElementById('c').requestPointerLock().then(function(){ globalThis.__ok2 = true; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__plc)").unwrap().value,
+        "1",
+        "相同元素重复 requestPointerLock 不再派 pointerlockchange（no-op）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ok2)").unwrap().value,
+        "true",
+        "重复 requestPointerLock 仍 resolve"
+    );
+
+    // exitPointerLock → 清状态 + 派 pointerlockchange；返 void（undefined，与 exitFullscreen 返 Promise 不同）。
+    sandbox
+        .execute("globalThis.__ex = typeof document.exitPointerLock();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ex)").unwrap().value,
+        "undefined",
+        "exitPointerLock 返 void（undefined，spec 非 Promise）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__plc)").unwrap().value,
+        "2",
+        "exitPointerLock 派发 pointerlockchange（第二次）"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.pointerLockElement)").unwrap().value,
+        "null",
+        "exitPointerLock 后 pointerLockElement 复 null"
+    );
+
+    // 非锁定态 exitPointerLock → no-op，不派事件（计数不变）。
+    sandbox.execute("document.exitPointerLock();").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__plc)").unwrap().value,
+        "2",
+        "非锁定态 exitPointerLock 不派 pointerlockchange"
+    );
+
+    // document.onpointerlockchange IDL handler：注册后由 pointerlockchange 触发。
+    sandbox
+        .execute(
+            "globalThis.__oplc = 0;\
+             document.onpointerlockchange = function(){ globalThis.__oplc++; };\
+             document.body.requestPointerLock();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__oplc)").unwrap().value,
+        "1",
+        "document.onpointerlockchange IDL handler 触发"
+    );
+    sandbox.execute("document.exitPointerLock();").unwrap(); // 清理锁定态
+
+    // deny 路径：host `__zw_pointer_lock_enabled` 返 '0' → requestPointerLock reject TypeError + 派 pointerlockerror
+    //（document listener + document.onpointerlockerror IDL handler 触发）。
+    sandbox.register_callback(
+        "__zw_pointer_lock_enabled",
+        Box::new(|_args: &[String]| "0".to_string()),
+    );
+    sandbox
+        .execute(
+            "globalThis.__plerr = 0; globalThis.__rej = null;\
+             document.addEventListener('pointerlockerror', function(){ globalThis.__plerr++; });\
+             document.onpointerlockerror = function(){ globalThis.__plerr += 10; };\
+             document.body.requestPointerLock().then(function(){ globalThis.__rej = 'resolved'; },\
+               function(err){ globalThis.__rej = (err instanceof TypeError) ? 'TypeError' : 'other'; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__plerr)").unwrap().value,
+        "11",
+        "deny 路径派 pointerlockerror（document listener + document.onpointerlockerror）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rej)").unwrap().value,
+        "TypeError",
+        "deny 路径 reject TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.pointerLockElement)").unwrap().value,
+        "null",
+        "deny 路径不设 pointerLockElement"
+    );
+}
+
+#[test]
 fn test_xmlserializer_importnode_r2818() {
     // R2818：XMLSerializer.serializeToString + document.adoptNode/importNode。serializeToString 委托节点
     // outerHTML（元素）/ nodeValue（text·comment）/ documentElement（document）；adoptNode 单文档 identity；

@@ -3869,7 +3869,7 @@
           return function() {
             return new Promise(function (resolve, reject) {
               if (!globalThis.document.fullscreenEnabled) {
-                _fireFullscreenEvent('fullscreenerror');
+                _fireDocEvent('fullscreenerror');
                 reject(new TypeError('fullscreen is unavailable'));
                 return;
               }
@@ -3877,13 +3877,36 @@
               _fsKey = key;
               _fsSel = sel;
               _fsHandle = handle;
-              _fireFullscreenEvent('fullscreenchange');
+              _fireDocEvent('fullscreenchange');
               resolve(undefined);
             });
           };
         }
+        // R2939 `el.requestPointerLock()`——指针锁请求（spec 返 Promise，headless 无真 OS 指针锁）。grant/deny
+        // 二分：可用（host `__zw_pointer_lock_enabled` 未注册或返 '1'，默认）→ 设 pointerLockElement + 派
+        // pointerlockchange + resolve；禁用（返 '0'）→ 派 pointerlockerror + reject TypeError。相同元素重复
+        // 请求 → no-op resolve。镜像 R2938 Fullscreen。
+        // https://w3c.github.io/pointerlock/#dom-element-requestpointerlock
         if (prop === 'requestPointerLock') {
-          return function() {};
+          return function () {
+            return new Promise(function (resolve, reject) {
+              if (typeof __zw_pointer_lock_enabled === 'function') {
+                var ok = true;
+                try { ok = __zw_pointer_lock_enabled() === '1'; } catch (_e) {}
+                if (!ok) {
+                  _fireDocEvent('pointerlockerror');
+                  reject(new TypeError('pointer lock is unavailable'));
+                  return;
+                }
+              }
+              if (_plKey === key) { resolve(undefined); return; } // 已锁定元素 → no-op
+              _plKey = key;
+              _plSel = sel;
+              _plHandle = handle;
+              _fireDocEvent('pointerlockchange');
+              resolve(undefined);
+            });
+          };
         }
         if (prop === 'scrollIntoView' || prop === 'scrollTo' || prop === 'scrollBy') {
           return function() {};
@@ -5855,20 +5878,26 @@
   //（_elKey(sel,handle)）。focus()/blur() 经 Proxy get trap 操作。纯状态追踪，无真输入焦点/无事件派发。
   var _activeElKey = null;
 
-  // R2938 Fullscreen API 状态追踪。headless 无真 OS 全屏（host 无窗口全屏信号源），但 spec 语义需可观察：
-  // fullscreenElement = 当前全屏元素（_elKey(sel,handle) 三元组或 null）；requestFullscreen/exitFullscreen
-  // 经此状态 + fullscreenchange/fullscreenerror 事件实现 spec-alike 语义。fullscreenEnabled 经 host
-  // `__zw_fullscreen_enabled`（'0'=禁用，如 iframe sandbox / 窗口特性拒绝全屏），无注册→true。
+  // R2938 Fullscreen + R2939 Pointer Lock 状态追踪。headless 无真 OS 全屏 / 指针锁（host 无窗口全屏 / 鼠标
+  // 捕获信号源），但 spec 语义需可观察：fullscreenElement / pointerLockElement = 当前锁定元素（_elKey(sel,handle)
+  // 三元组或 null）；requestFullscreen/requestPointerLock/exit* 经此状态 + change/error 事件实现 spec-alike 语义。
+  // fullscreenEnabled 经 host `__zw_fullscreen_enabled`；requestPointerLock 可用性经 host `__zw_pointer_lock_enabled`
+  //（均 '0'=禁用，如 iframe sandbox / Feature-Policy / 窗口特性拒绝），无注册→允许。
   // https://fullscreen.spec.whatwg.org/#dom-element-requestfullscreen
+  // https://w3c.github.io/pointerlock/#dom-element-requestpointerlock
   var _fsSel = null;
   var _fsHandle = null;
-  var _fsKey = null; // _elKey(sel,handle) of 全屏元素；用于「相同元素重复请求 no-op」判定 + null 表示非全屏
+  var _fsKey = null; // _elKey(sel,handle) of 全屏元素；「相同元素重复请求 no-op」判定 + null 表示非全屏
+  var _plSel = null;
+  var _plHandle = null;
+  var _plKey = null; // _elKey(sel,handle) of 指针锁元素；同 _fsKey 语义
 
-  // R2938 全屏事件派发（fullscreenchange/fullscreenerror）。spec：在 document 上派发，bubbles、非 cancelable。
-  // document/window listener 同存于 _elKey('html', null)（document.addEventListener 转发 html proxy，window
-  // dispatchEvent/addEventListener 同 key），故一次 _dispatchToListeners 触达 document.addEventListener +
-  // window.addEventListener + document/window 对应 on* IDL handler。currentTarget = document（spec 事件 target）。
-  function _fireFullscreenEvent(type) {
+  // R2938/R2939 文档级事件派发（fullscreenchange/fullscreenerror/pointerlockchange/pointerlockerror）。
+  // spec：在 document 上派发，bubbles、非 cancelable。document/window listener 同存于 _elKey('html', null)
+  //（document.addEventListener 转发 html proxy，window dispatchEvent/addEventListener 同 key），故一次
+  // _dispatchToListeners 触达 document.addEventListener + window.addEventListener + document/window 对应
+  // on* IDL handler。currentTarget = document（spec 事件 target）。
+  function _fireDocEvent(type) {
     try {
       var ev = _makeEvent(type, { bubbles: true, cancelable: false });
       _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis.document);
@@ -6309,9 +6338,23 @@
       return new Promise(function (resolve) {
         if (!_fsKey) { resolve(undefined); return; } // 非全屏 → resolve，不派事件（spec）
         _fsKey = null; _fsSel = null; _fsHandle = null;
-        _fireFullscreenEvent('fullscreenchange');
+        _fireDocEvent('fullscreenchange');
         resolve(undefined);
       });
+    },
+    // pointerLock（R2939，镜像 R2938 Fullscreen）。headless 无真 OS 指针锁，但 pointerLockElement 反映
+    // requestPointerLock/exitPointerLock 设置的元素（_makeProxy(_plSel,_plHandle) 或 null）；exitPointerLock
+    // 清状态 + 派 pointerlockchange。**注**：exitPointerLock 返 void（undefined，spec 与 exitFullscreen
+    // 返 Promise 不同——Pointer Lock spec 的 exitPointerLock 无返回值）。
+    // https://w3c.github.io/pointerlock/#dom-document-pointerlockelement
+    get pointerLockElement() {
+      if (!_plKey) return null;
+      return _makeProxy(_plSel, _plHandle);
+    },
+    exitPointerLock: function () {
+      if (!_plKey) return; // 非锁定 → no-op，不派事件（spec）
+      _plKey = null; _plSel = null; _plHandle = null;
+      _fireDocEvent('pointerlockchange');
     },
     // document.title——getter 返首 <title> 文本（空白折叠，spec 一致）；首访惰性读 querySelector('title')
     // 并缓存；setter 更新缓存。**已知限制**：① setter 仅更新 in-JS 缓存，不写回 host DOM <title>（快照 proxy
@@ -6448,28 +6491,28 @@
   Object.defineProperty(globalThis.document, 'defaultView', {
     get: function() { return globalThis.window; }
   });
-  // R2938 document IDL onfullscreenchange/onfullscreenerror（spec Document 事件 handler 属性）。document 为
-  // 普通对象（非 Proxy，无法经 on* get/set trap）→ defineProperty getter/setter：setter 注册/移除 listener
-  //（document.addEventListener 转发 html key，与 _fireFullscreenEvent 派发点一致 → 可触）；getter 返存储 fn。
-  // element 侧 onfullscreenchange/onfullscreenerror 经 R2933 通用 on* 路由已支持，无需此处定义。
-  var _docOnFsHandlers = {};
-  function _defineDocFullscreenHandler(type) {
+  // R2938/R2939 document IDL on-event handler（spec Document handler 属性：onfullscreenchange/onfullscreenerror /
+  // onpointerlockchange/onpointerlockerror）。document 为普通对象（非 Proxy，无法经 on* get/set trap）→
+  // defineProperty getter/setter：setter 注册/移除 listener（document.addEventListener 转发 html key，与
+  // _fireDocEvent 派发点一致 → 可触）；getter 返存储 fn。element 侧 on* 经 R2933 通用 on* 路由已支持，无需此处定义。
+  var _docOnHandlers = {};
+  function _defineDocOnHandler(type) {
     Object.defineProperty(globalThis.document, 'on' + type, {
       configurable: true,
-      get: function () { return _docOnFsHandlers[type] || null; },
+      get: function () { return _docOnHandlers[type] || null; },
       set: function (fn) {
-        var prev = _docOnFsHandlers[type];
+        var prev = _docOnHandlers[type];
         if (typeof prev === 'function') globalThis.document.removeEventListener(type, prev);
         if (typeof fn === 'function') {
-          _docOnFsHandlers[type] = fn;
+          _docOnHandlers[type] = fn;
           globalThis.document.addEventListener(type, fn);
         } else {
-          _docOnFsHandlers[type] = null;
+          _docOnHandlers[type] = null;
         }
       },
     });
   }
-  ['fullscreenchange', 'fullscreenerror'].forEach(_defineDocFullscreenHandler);
+  ['fullscreenchange', 'fullscreenerror', 'pointerlockchange', 'pointerlockerror'].forEach(_defineDocOnHandler);
 
   // Selection / Range（R2804，缺失 Web API 续）。headless 无真用户选择——Selection 单例默认空
   //（rangeCount=0/isCollapsed=true/toString=''/anchorNode=null/focusNode=null/type='None'），selection-state-
