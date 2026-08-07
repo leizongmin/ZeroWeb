@@ -16,10 +16,34 @@ use hashbrown::HashMap;
 #[cfg(feature = "freetype-raster")]
 mod freetype_raster {
     use crate::font::{FontError, GlyphBitmap};
-    use std::cell::OnceCell;
+    use std::cell::{OnceCell, RefCell};
+    use std::collections::HashMap;
 
     thread_local! {
         static FT_LIB: OnceCell<freetype::Library> = const { OnceCell::new() };
+        // face 缓存（2026-08-07 CJK 优化）：Face<Rc<Vec<u8>>> 自含字体字节，
+        // 一次解析（19MB TTC ~6.6ms）后复用——此前每次 new_memory_face2
+        // 重新解析整字体是 CJK 栅格化重尾根因（探针实测 6.6ms/字 → 目标 <0.1ms）。
+        // 容量上限 8（按字体字节 hash 键），超限清空重建（低频字体轮换场景）。
+        static FT_FACE_CACHE: RefCell<HashMap<u64, freetype::Face<Vec<u8>>>> = RefCell::new(HashMap::new());
+    }
+
+    const FACE_CACHE_MAX: usize = 8;
+
+    /// 采样 FNV-1a 哈希（缓存键；O(1)）。
+    ///
+    /// 2026-08-07 探针实测：全量遍历 19MB CJK TTC 在 debug 下 ~50ms/次
+    ///（CJK 栅格化重尾主因之一）——改为**前 4KB + 总长**采样（不同字体的
+    /// 头部表数据几乎必然不同，冲突概率可忽略；每次调用成本 ~微秒）。
+    fn bytes_hash(bytes: &[u8]) -> u64 {
+        let window = &bytes[..bytes.len().min(4096)];
+        let mut h: u64 = 0xcbf29ce484222325;
+        for &b in window {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        h ^= bytes.len() as u64;
+        h
     }
 
     /// 在线程局部 FreeType Library 上跑一次闭包（懒初始化）。
@@ -34,58 +58,75 @@ mod freetype_raster {
     ///
     /// `font_bytes`：字体 sfnt 字节（来自 FontLoader.font_data）。`size`：字号 px。
     /// 失败（字形缺失 / FreeType 错误）由调用方回退 fontdue。
+    ///
+    /// 性能（2026-08-07 探针，NotoSansCJK 19MB）：face 缓存（RefCell borrow
+    /// 贯穿，免 clone——Face<Vec<u8>> clone 会复制 19MB）后每次栅格化不再
+    /// 重新解析字体（6.6ms/字 → 目标 <0.1ms/字）。
     pub(crate) fn rasterize(font_bytes: &[u8], code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
         if size <= 0.0 {
             return Err(FontError::NotFound(format!("non-positive size {size}")));
         }
-        with_lib(|lib| {
-            let face = lib
-                .new_memory_face2(font_bytes.to_vec(), 0)
-                .map_err(|e| FontError::ParseFailed(format!("FreeType new_memory_face: {e:?}")))?;
-            face.set_char_size((size * 64.0) as isize, (size * 64.0) as isize, 0, 0)
-                .map_err(|e| FontError::ParseFailed(format!("FreeType set_char_size: {e:?}")))?;
-            let idx = face
-                .get_char_index(code_point as usize)
-                .ok_or_else(|| FontError::NotFound(format!("no glyph index for {code_point:?}")))?;
-            // LoadFlag::DEFAULT（含 TARGET_NORMAL = full hinting）。R1069 A/B 实测（css-text
-            // Oracle 1650 案）：DEFAULT 381 pass > LIGHT(TARGET_LIGHT) 371 > NO_HINTING 357 ≈
-            // fontdue 基线。NOHINT==fontdue 证 fontdue tight-ink 即 unhinted，FreeType full
-            // hinting 向 chromium（hinted）收敛——故 DEFAULT 为最优，勿改 LIGHT/NOHINT。
-            face.load_glyph(idx, freetype::face::LoadFlag::DEFAULT)
-                .map_err(|e| FontError::ParseFailed(format!("FreeType load_glyph: {e:?}")))?;
-            let glyph = face.glyph();
-            glyph
-                .render_glyph(freetype::RenderMode::Normal)
-                .map_err(|e| FontError::ParseFailed(format!("FreeType render_glyph: {e:?}")))?;
-            let bitmap = glyph.bitmap();
-            let width = bitmap.width().max(0) as u16;
-            let height = bitmap.rows().max(0) as u16;
-            let pitch = bitmap.pitch().unsigned_abs() as usize;
-            // 灰度位图按行拷贝到紧凑 width×height 缓冲（pitch 可 ≥ width）。
-            let mut data = vec![0u8; width as usize * height as usize];
-            if width > 0 && height > 0 && pitch > 0 {
-                let src = bitmap.buffer();
-                let copy_w = (width as usize).min(pitch).min(src.len());
-                for y in 0..height as usize {
-                    let src_off = y * pitch;
-                    if src_off + copy_w <= src.len() {
-                        let dst_off = y * width as usize;
-                        data[dst_off..dst_off + copy_w].copy_from_slice(&src[src_off..src_off + copy_w]);
+        // thread_local with 不允许借用逃逸：cache borrow 与 face 使用都在闭包内
+        FT_FACE_CACHE.with(|cache_cell| {
+            let mut cache = cache_cell.borrow_mut();
+            with_lib(|lib| {
+                let key = bytes_hash(font_bytes);
+                if !cache.contains_key(&key) {
+                    if cache.len() >= FACE_CACHE_MAX {
+                        cache.clear(); // 低频字体轮换：清空重建
+                    }
+                    let face = lib
+                        .new_memory_face2(font_bytes.to_vec(), 0)
+                        .map_err(|e| FontError::ParseFailed(format!("FreeType new_memory_face: {e:?}")))?;
+                    cache.insert(key, face);
+                }
+                // face 方法均为 &self：RefCell borrow 贯穿，免 clone
+                let face = cache.get(&key).expect("face 已插入");
+                face.set_char_size((size * 64.0) as isize, (size * 64.0) as isize, 0, 0)
+                    .map_err(|e| FontError::ParseFailed(format!("FreeType set_char_size: {e:?}")))?;
+                let idx = face
+                    .get_char_index(code_point as usize)
+                    .ok_or_else(|| FontError::NotFound(format!("no glyph index for {code_point:?}")))?;
+                // LoadFlag::DEFAULT（含 TARGET_NORMAL = full hinting）。R1069 A/B 实测（css-text
+                // Oracle 1650 案）：DEFAULT 381 pass > LIGHT(TARGET_LIGHT) 371 > NO_HINTING 357 ≈
+                // fontdue 基线。NOHINT==fontdue 证 fontdue tight-ink 即 unhinted，FreeType full
+                // hinting 向 chromium（hinted）收敛——故 DEFAULT 为最优，勿改 LIGHT/NOHINT。
+                face.load_glyph(idx, freetype::face::LoadFlag::DEFAULT)
+                    .map_err(|e| FontError::ParseFailed(format!("FreeType load_glyph: {e:?}")))?;
+                let glyph = face.glyph();
+                glyph
+                    .render_glyph(freetype::RenderMode::Normal)
+                    .map_err(|e| FontError::ParseFailed(format!("FreeType render_glyph: {e:?}")))?;
+                let bitmap = glyph.bitmap();
+                let width = bitmap.width().max(0) as u16;
+                let height = bitmap.rows().max(0) as u16;
+                let pitch = bitmap.pitch().unsigned_abs() as usize;
+                // 灰度位图按行拷贝到紧凑 width×height 缓冲（pitch 可 ≥ width）。
+                let mut data = vec![0u8; width as usize * height as usize];
+                if width > 0 && height > 0 && pitch > 0 {
+                    let src = bitmap.buffer();
+                    let copy_w = (width as usize).min(pitch).min(src.len());
+                    for y in 0..height as usize {
+                        let src_off = y * pitch;
+                        if src_off + copy_w <= src.len() {
+                            let dst_off = y * width as usize;
+                            data[dst_off..dst_off + copy_w].copy_from_slice(&src[src_off..src_off + copy_w]);
+                        }
                     }
                 }
-            }
-            let x_offset = glyph.bitmap_left() as i16;
-            let top = glyph.bitmap_top();
-            // y_offset = bitmap_top − height（见模块注释坐标推导）。
-            let y_offset = (top - height as i32) as i16;
-            let advance = glyph.advance().x as f64 / 64.0;
-            Ok(GlyphBitmap {
-                data,
-                width,
-                height,
-                x_offset,
-                y_offset,
-                advance: advance as f32,
+                let x_offset = glyph.bitmap_left() as i16;
+                let top = glyph.bitmap_top();
+                // y_offset = bitmap_top − height（见模块注释坐标推导）。
+                let y_offset = (top - height as i32) as i16;
+                let advance = glyph.advance().x as f64 / 64.0;
+                Ok(GlyphBitmap {
+                    data,
+                    width,
+                    height,
+                    x_offset,
+                    y_offset,
+                    advance: advance as f32,
+                })
             })
         })
     }
@@ -1507,5 +1548,73 @@ mod tests {
             0.0
         };
         eprintln!("sum: real={sum_real:.2} est={sum_est:.2} total_err={total_err:+.1}%");
+    }
+}
+
+// ── CJK 栅格化性能探针（临时诊断，2026-08-07）──
+#[cfg(test)]
+mod cjk_raster_probe {
+    use super::*;
+    use std::time::Instant;
+
+    fn load_system_cjk_font() -> Option<Vec<u8>> {
+        for path in [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+        ] {
+            if let Ok(bytes) = std::fs::read(path) {
+                return Some(bytes);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn cjk_raster_cost_probe() {
+        let Some(bytes) = load_system_cjk_font() else {
+            eprintln!("无系统 CJK 字体，跳过");
+            return;
+        };
+        eprintln!("CJK 字体: {} KB", bytes.len() / 1024);
+        let chars = ['测', '中', '文', '字', '体', '栅', '格', '化', '优', '化'];
+        let size = 16.0f32;
+
+        // fontdue
+        let font = fontdue::Font::from_bytes(bytes.clone(), fontdue::FontSettings::default()).expect("fontdue");
+        let mut total = 0.0f64;
+        for _ in 0..50 {
+            let t = Instant::now();
+            for &c in &chars {
+                let _ = font.rasterize(c, size);
+            }
+            total += t.elapsed().as_secs_f64();
+        }
+        eprintln!("fontdue: {:.3} ms/字", total / 50.0 / chars.len() as f64 * 1000.0);
+
+        // freetype_raster（face 缓存生效验证：前 3 次含首次解析 vs 后 47 次命中缓存）
+        let mut first_total = 0.0f64;
+        let mut rest_total = 0.0f64;
+        let mut ok = 0;
+        for i in 0..50 {
+            let t = Instant::now();
+            for &c in &chars {
+                if freetype_raster::rasterize(&bytes, c, size).is_ok() {
+                    ok += 1;
+                }
+            }
+            let d = t.elapsed().as_secs_f64();
+            if i < 3 {
+                first_total += d;
+            } else {
+                rest_total += d;
+            }
+        }
+        eprintln!(
+            "freetype_raster: 前 3 次 {:.3} ms/字，后 47 次 {:.3} ms/字 (成功 {}/{})",
+            first_total / 3.0 / chars.len() as f64 * 1000.0,
+            rest_total / 47.0 / chars.len() as f64 * 1000.0,
+            ok,
+            50 * chars.len()
+        );
     }
 }
