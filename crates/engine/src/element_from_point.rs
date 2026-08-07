@@ -39,6 +39,18 @@ pub fn selector_at_point(cache: &HitTestCache, x: f32, y: f32) -> Option<String>
     cache.hit_test_element(x, y).map(|hit| selector_from_element_hit(&hit))
 }
 
+/// R2925 `(x, y)` 处所有命中元素选择器，按绘制序（最前/最深在前 → 最后/最浅在后）。
+///
+/// 复用 [`HitTestCache::elements_at_point`]（收集所有包含盒 + 深度降序 + 元素去重）+
+/// [`selector_from_element_hit`]。`elementFromPoint`（[`selector_at_point`]）即本序列首元素。
+pub fn selectors_at_point(cache: &HitTestCache, x: f32, y: f32) -> Vec<String> {
+    cache
+        .elements_at_point(x, y)
+        .into_iter()
+        .map(|hit| selector_from_element_hit(&hit))
+        .collect()
+}
+
 /// 锁内 clone `Arc<HitTestCache>` 出 → `selector_at_point`。NaN 坐标提前拦截（见下方注释）。
 /// `register` 回调与 [`ElementFromPointBridge::lookup`] 共用，避免逻辑重复。
 fn lookup_in_cell(cache_cell: &ElementFromPointCache, x: f32, y: f32) -> Option<String> {
@@ -48,6 +60,18 @@ fn lookup_in_cell(cache_cell: &ElementFromPointCache, x: f32, y: f32) -> Option<
     }
     let cache_opt: Option<Arc<HitTestCache>> = cache_cell.lock().ok().and_then(|c| c.clone());
     cache_opt.and_then(|cache| selector_at_point(&cache, x, y))
+}
+
+/// 锁内 clone `Arc<HitTestCache>` 出 → `selectors_at_point`（R2925 `elementsFromPoint`）。
+/// NaN 坐标 / 未注入 cache → 空向量。`register` 的 `__zw_elementsFromPoint` 回调共用。
+fn selectors_in_cell(cache_cell: &ElementFromPointCache, x: f32, y: f32) -> Vec<String> {
+    if x.is_nan() || y.is_nan() {
+        return Vec::new();
+    }
+    let cache_opt: Option<Arc<HitTestCache>> = cache_cell.lock().ok().and_then(|c| c.clone());
+    cache_opt
+        .map(|cache| selectors_at_point(&cache, x, y))
+        .unwrap_or_default()
 }
 
 /// P1a `document.elementFromPoint` bridge——`__zw_elementFromPoint(x, y)` 注册 + 命中查询。
@@ -68,6 +92,8 @@ impl ElementFromPointBridge {
 
     /// 注册 `__zw_elementFromPoint(x, y)` 同步回调——shim `document.elementFromPoint` 调此。
     /// 返稳定选择器串（命中）；未注入 cache / 坐标非法 / 无命中 → 空串（shim 返 `null`）。
+    /// 同时注册 `__zw_elementsFromPoint(x, y)`（R2925）——返 `|` 分隔选择器串（最前在前；空命中 →
+    /// 空串 → shim 返空数组）。两回调共享同一 `cache_cell`。
     pub fn register(&self, sandbox: &mut dyn Sandbox) {
         let cache_cell = Arc::clone(&self.cache_cell);
         sandbox.register_callback(
@@ -77,6 +103,15 @@ impl ElementFromPointBridge {
                 let x: f32 = args.first().and_then(|s| s.parse().ok()).unwrap_or(f32::NAN);
                 let y: f32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(f32::NAN);
                 lookup_in_cell(&cache_cell, x, y).unwrap_or_default()
+            }),
+        );
+        let cache_cell = Arc::clone(&self.cache_cell);
+        sandbox.register_callback(
+            "__zw_elementsFromPoint",
+            Box::new(move |args: &[String]| -> String {
+                let x: f32 = args.first().and_then(|s| s.parse().ok()).unwrap_or(f32::NAN);
+                let y: f32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(f32::NAN);
+                selectors_in_cell(&cache_cell, x, y).join("|")
             }),
         );
     }
@@ -157,6 +192,24 @@ mod tests {
     fn selector_at_point_outside_all_returns_none() {
         let cache = sample_cache();
         assert_eq!(selector_at_point(&cache, 900.0, 900.0), None);
+    }
+
+    /// R2925：`(50,40)` 命中嵌套 → [`child #inner, root div`]（最深/最前在前 → 最后/最浅在后）。
+    /// 首元素 = `elementFromPoint` 结果（`selectors_at_point` 与 `selector_at_point` 一致）。
+    #[test]
+    fn selectors_at_point_orders_front_to_back() {
+        let cache = sample_cache();
+        let sels = selectors_at_point(&cache, 50.0, 40.0);
+        assert_eq!(sels, vec!["#inner".to_string(), "div".to_string()]);
+        assert_eq!(selector_at_point(&cache, 50.0, 40.0).as_deref(), Some("#inner"));
+    }
+
+    /// R2925：`(5,5)` 仅落 root → `[div]`；`(900,900)` 落空 → `[]`。
+    #[test]
+    fn selectors_at_point_root_only_and_empty() {
+        let cache = sample_cache();
+        assert_eq!(selectors_at_point(&cache, 5.0, 5.0), vec!["div".to_string()]);
+        assert!(selectors_at_point(&cache, 900.0, 900.0).is_empty());
     }
 
     /// bridge.lookup 镜像回调逻辑：注入 cache 后命中返选择器。

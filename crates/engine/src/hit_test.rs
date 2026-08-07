@@ -1,6 +1,6 @@
 //! 布局树命中测试 — 用于链接点击等交互。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use slotmap::{Key, KeyData};
 use zero_dom::{Document, NodeId, NodeKind};
@@ -58,6 +58,30 @@ impl HitTestCache {
         let mut best = (0, self.doc_root);
         deepest_node_at(&self.layout_root, 0.0, 0.0, x, y, 0, &mut best);
         element_hit_from_cache(&self.layout_root, best.1, &self.nodes, &self.parents)
+    }
+
+    /// 命中测试：返回 `(x,y)` 处所有元素，按绘制序（最前/最深在前 → 最后/最浅在后）。
+    ///
+    /// 收集所有包含该点的盒（[`collect_nodes_at`]），按深度降序（深度≈绘制层级，最深元素绘制
+    /// 在最前），每盒经 [`nearest_element_cached`] 取其元素并去重（同元素多盒仅保留最深=最前那次）。
+    /// [`HitTestCache::hit_test_element`]（=`elementFromPoint`）即本序列的首元素。z-index/绝对定位
+    /// 的精确绘制序未建模（树深近似，见 elementFromPoint 已知限制）。
+    pub fn elements_at_point(&self, x: f32, y: f32) -> Vec<ElementHit> {
+        let mut hits: Vec<(usize, NodeId)> = Vec::new();
+        collect_nodes_at(&self.layout_root, 0.0, 0.0, x, y, 0, &mut hits);
+        // 深度降序：最前/最深在前（sort_by_key + Reverse 稳定，同深保文档序）。
+        hits.sort_by_key(|b| std::cmp::Reverse(b.0));
+        let mut seen: HashSet<NodeId> = HashSet::new();
+        let mut out = Vec::new();
+        for (_, node) in hits {
+            let element = nearest_element_cached(node, &self.nodes, &self.parents);
+            if seen.insert(element)
+                && let Some(hit) = element_hit_from_cache(&self.layout_root, element, &self.nodes, &self.parents)
+            {
+                out.push(hit);
+            }
+        }
+        out
     }
 
     /// 导出可跨进程传输的快照（不含完整 DOM）。
@@ -353,6 +377,34 @@ fn deepest_node_at(
 
     for child in &layout.children {
         deepest_node_at(child, box_x, box_y, point_x, point_y, depth + 1, best);
+    }
+}
+
+/// 收集所有包含 `(point_x, point_y)` 的盒节点（含深度），供 [`HitTestCache::elements_at_point`]。
+/// 镜像 [`deepest_node_at`] 的包含判定与坐标累积（同 `LayoutBox` 坐标相对父内容区须累积），
+/// 但收集全部命中盒而非仅最深。点不在盒内则不递归（与 `deepest_node_at` 一致）。
+fn collect_nodes_at(
+    layout: &LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+    point_x: f32,
+    point_y: f32,
+    depth: usize,
+    out: &mut Vec<(usize, NodeId)>,
+) {
+    let box_x = abs_x + layout.x;
+    let box_y = abs_y + layout.y;
+
+    if point_x < box_x || point_y < box_y || point_x >= box_x + layout.width || point_y >= box_y + layout.height {
+        return;
+    }
+
+    if let Some(node_id) = layout.node_id {
+        out.push((depth, node_id));
+    }
+
+    for child in &layout.children {
+        collect_nodes_at(child, box_x, box_y, point_x, point_y, depth + 1, out);
     }
 }
 

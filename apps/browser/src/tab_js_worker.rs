@@ -1103,6 +1103,100 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_elements_from_point_r2925() {
+        // R2925 elementsFromPoint（镜像 renderer）：`document.elementsFromPoint(x, y)` → 视口 (x,y)
+        // 处全部元素（绘制序，最前在前）。注入合成 HitTestCache（root div + 子 p#inner），断言命中栈。
+        use std::sync::Arc;
+        use zero_engine::{
+            HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, node_id_from_u64,
+        };
+        let mut worker = TabJsWorkerHandle::spawn(TabId(12));
+        let html = "<html><body><div><p id='inner'>x</p></div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        let id0 = node_id_from_u64(0);
+        let id1 = node_id_from_u64(1);
+        let id2 = node_id_from_u64(2);
+        let cache = HitTestCache::from_snapshot(HitTestCacheSnapshot {
+            doc_root: id0,
+            layout_root: HitTestLayoutSnapshot {
+                node_id: Some(id1),
+                x: 0.0,
+                y: 0.0,
+                width: 800.0,
+                height: 600.0,
+                children: vec![HitTestLayoutSnapshot {
+                    node_id: Some(id2),
+                    x: 10.0,
+                    y: 20.0,
+                    width: 100.0,
+                    height: 50.0,
+                    children: vec![],
+                }],
+            },
+            nodes: vec![
+                (
+                    id1,
+                    HitTestNodeSnapshot {
+                        tag_name: "div".into(),
+                        id: None,
+                        class_name: None,
+                        href: None,
+                        src: None,
+                    },
+                ),
+                (
+                    id2,
+                    HitTestNodeSnapshot {
+                        tag_name: "p".into(),
+                        id: Some("inner".into()),
+                        class_name: None,
+                        href: None,
+                        src: None,
+                    },
+                ),
+            ],
+            parents: vec![(id2, id1)],
+        });
+        *worker.element_from_point_cache().lock().unwrap() = Some(Arc::new(cache));
+        worker
+            .execute_script_direct(
+                "var list = document.elementsFromPoint(50, 40);\
+                 globalThis.__n1 = list.length;\
+                 globalThis.__f1 = list.length ? list[0].tagName : 'null';\
+                 globalThis.__s1 = list.length > 1 ? list[1].tagName : 'null';\
+                 globalThis.__n2 = document.elementsFromPoint(5, 5).length;\
+                 globalThis.__n3 = document.elementsFromPoint(900, 900).length;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__n1)").unwrap(),
+            "2",
+            "(50,40) 命中栈 = 2 元素（p#inner + root div）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__f1)").unwrap(),
+            "P",
+            "首元素 = p#inner（最前/最深）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__s1)").unwrap(),
+            "DIV",
+            "次元素 = root div（最后/最浅）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__n2)").unwrap(),
+            "1",
+            "(5,5) 仅 root div → 1 元素"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__n3)").unwrap(),
+            "0",
+            "(900,900) 落空 → 空数组"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html

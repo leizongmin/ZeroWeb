@@ -5608,6 +5608,15 @@
       var sel = __zw_elementFromPoint(String(x), String(y));
       return sel ? _wrapSelector(sel) : null;
     },
+    // R2925 elementsFromPoint：`document.elementsFromPoint(x, y)` → 视口 (x,y) 处全部元素（绘制序，
+    // 最前在前）。经 host `__zw_elementsFromPoint(x, y)` 返 `|` 分隔选择器 → split + _wrapSelector。
+    // 未注册 / 空命中 → 空数组（spec）。
+    elementsFromPoint: function(x, y) {
+      if (typeof __zw_elementsFromPoint !== 'function') return [];
+      var wire = __zw_elementsFromPoint(String(x), String(y));
+      if (!wire) return [];
+      return wire.split('|').filter(Boolean).map(_wrapSelector);
+    },
     querySelectorAll: function(sel) {
       var all = __zw_query_all(sel);
       if (!all) return [];
