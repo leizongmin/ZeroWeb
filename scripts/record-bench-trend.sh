@@ -72,8 +72,9 @@ echo "$ROWS" | jq -r --arg date "$DATE" --arg pc "$PLATFORM_CLASS" --arg sha "$S
     .[] | "\($date),\($pc),\(.id),\(.p50 // ""),\(.p95 // ""),\(.max // ""),\(.unit),\($sha),\($note)"
 ' >> "$TREND_CSV"
 
-# JSON 快照（整份报告，可回溯）
-SNAPSHOT="$TREND_DIR/${DATE}-${PLATFORM_CLASS}.json"
+# JSON 快照（整份报告，可回溯；带时间戳命名——同一天多次运行各留一份，
+# 2026-08-08 曾因定向报告覆盖全量报告快照丢失 93 个指标）
+SNAPSHOT="$TREND_DIR/${DATE}-$(date +%H%M%S)-${PLATFORM_CLASS}.json"
 cp "$REPORT" "$SNAPSHOT"
 
 echo "record-bench-trend: 已记录 $(echo "$ROWS" | jq 'length') 个指标 → $TREND_CSV / $SNAPSHOT"

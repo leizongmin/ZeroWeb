@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "kind": "bench-report",
+  "generated_at": "20260808_022939",
+  "git_sha": "ad94f073",
+  "git_dirty": true,
+  "suspect": false,
+  "run_config": {
+    "config_hash": "a3bd66703cd27bd2752673846b8199c4465a732a1b98816b4284499baf79ff1f",
+    "profile": "release",
+    "bench_list": [
+      "zero-browser-shell:browser_shell_bench",
+      "zero-canvas:canvas_bench",
+      "zero-css-parser:css_bench",
+      "zero-dom:dom_bench",
+      "zero-engine:engine_bench",
+      "zero-host-runtime:host_runtime_bench",
+      "zero-layout-engine:layout_bench",
+      "zero-net:net_bench",
+      "zero-protocol:protocol_bench",
+      "zero-render-foundation:render_bench",
+      "zero-script-sandbox:script_sandbox_bench",
+      "zero-security:security_bench",
+      "zero-storage:storage_bench",
+      "zero-style-system:style_bench",
+      "zero-wasm-sandbox:wasm_bench",
+      "zero-webview:webview_bench"
+    ],
+    "page_scenarios": [
+      "medium",
+      "morning",
+      "welcome\n"
+    ],
+    "viewport": [
+      800,
+      600
+    ],
+    "iterations": 15
+  },
+  "platform": {
+    "platform_class": "linux-x86_64",
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13500H",
+    "cpu_cores": 16,
+    "os": "linux"
+  },
+  "microbenches": [
+    {
+      "id": "zero-css-parser/complex_selector_parse_100",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 261125.4909090909,
+      "p95": 267199.42644628097,
+      "max": 267632.1511363636,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/css_parse_100kb",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 1517116.7283950618,
+      "p95": 1626371.873015873,
+      "max": 1705154.0092592593,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/css_parse_by_size/rules/100",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 232701.19262295082,
+      "p95": 237102.8893442623,
+      "max": 242182.9180327869,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/css_parse_by_size/rules/1000",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 2418469.5,
+      "p95": 2513345.887218045,
+      "max": 2557518.435714286,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/css_parse_by_size/rules/500",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 1169383.9833333334,
+      "p95": 1208052.125,
+      "max": 1230052.8921568627,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/css_parse_by_size/rules/5000",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 12903610.458333334,
+      "p95": 13184678.0625,
+      "max": 14662370.5,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/tokenizer_1000_rules",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 975286.3111111111,
+      "p95": 990555.64,
+      "max": 1015078.5222222222,
+      "samples": 20
+    }
+  ],
+  "pages": [
+    {
+      "scenario": "welcome",
+      "fixture": "apps/browser/assets/welcome.html",
+      "viewport": [
+        800,
+        600
+      ],
+      "samples": 14,
+      "stages": {
+        "parse_ms": {
+          "p50": 0.16533499999999998,
+          "p95": 0.172385,
+          "max": 0.17305500000000001
+        },
+        "style_ms": {
+          "p50": 2.66981,
+          "p95": 2.713277,
+          "max": 2.756301
+        },
+        "layout_ms": {
+          "p50": 1.72896,
+          "p95": 1.798885,
+          "max": 1.841585
+        },
+        "paint_ms": {
+          "p50": 14.279069999999999,
+          "p95": 14.428186,
+          "max": 14.463188
+        },
+        "total_ms": {
+          "p50": 19.022094,
+          "p95": 19.138122,
+          "max": 19.276765
+        }
+      },
+      "first_paint_wall_ms": {
+        "p50": 27.867289,
+        "p95": 28.120231999999998,
+        "max": 29.84255
+      }
+    },
+    {
+      "scenario": "medium",
+      "fixture": "tests/benchmarks/fixtures/medium.html",
+      "viewport": [
+        800,
+        600
+      ],
+      "samples": 14,
+      "stages": {
+        "parse_ms": {
+          "p50": 13.382306,
+          "p95": 16.410278,
+          "max": 16.492896
+        },
+        "style_ms": {
+          "p50": 213.97579199999998,
+          "p95": 220.55096,
+          "max": 221.37778799999998
+        },
+        "layout_ms": {
+          "p50": 91.73957200000001,
+          "p95": 95.968324,
+          "max": 101.3708
+        },
+        "paint_ms": {
+          "p50": 1464.2038790000001,
+          "p95": 1481.297622,
+          "max": 1483.494609
+        },
+        "total_ms": {
+          "p50": 1786.211726,
+          "p95": 1803.0720410000001,
+          "max": 1818.625129
+        }
+      },
+      "first_paint_wall_ms": {
+        "p50": 1909.0897,
+        "p95": 1921.971569,
+        "max": 1960.181425
+      }
+    },
+    {
+      "scenario": "morning",
+      "fixture": "apps/browser/assets/morning-work/article.html",
+      "viewport": [
+        800,
+        600
+      ],
+      "samples": 14,
+      "stages": {
+        "parse_ms": {
+          "p50": 0.370666,
+          "p95": 0.529535,
+          "max": 0.532123
+        },
+        "style_ms": {
+          "p50": 6.750367,
+          "p95": 10.862151,
+          "max": 12.600264
+        },
+        "layout_ms": {
+          "p50": 3.073648,
+          "p95": 3.990787,
+          "max": 5.292413
+        },
+        "paint_ms": {
+          "p50": 87.399263,
+          "p95": 92.748082,
+          "max": 93.337809
+        },
+        "total_ms": {
+          "p50": 98.29846,
+          "p95": 103.448997,
+          "max": 109.507266
+        }
+      },
+      "first_paint_wall_ms": {
+        "p50": 142.10541500000002,
+        "p95": 147.407634,
+        "max": 153.14309500000002
+      }
+    }
+  ],
+  "resource": {
+    "method": "vmhwm",
+    "peak_rss_mb": 506.96875
+  },
+  "startup_ms": 514.409146
+}

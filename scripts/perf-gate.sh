@@ -44,6 +44,13 @@ if [ "$(jq '[.microbenches[] | select(.error != null)] | length' "$REPORT")" -gt
     exit 1
 fi
 
+# suspect 报告（测量期间系统负载升高——另一条流 WPT/测试叠加）→ 不可信，不判定
+if [ "$(jq -r '.suspect // false' "$REPORT")" = "true" ]; then
+    echo "perf-gate: INCONCLUSIVE — 报告标记 suspect（测量期间系统负载升高，可能被另一条流污染），"
+    echo "  结果不可信，请机器空闲时重跑（bench-report.sh 已带负载守卫自动重试提示）。"
+    exit 3
+fi
+
 PLATFORM_CLASS=$(jq -r '.platform.platform_class' "$REPORT")
 [ -n "$BASELINE" ] || BASELINE="$BASELINE_DIR/$PLATFORM_CLASS.json"
 

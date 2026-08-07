@@ -122,3 +122,25 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
   SKIP 不门禁。
 - 首次 CI 基线：由首个成功的 weekly/dispatch benchmark-trend 运行 capture 并提交回 main
   （justification「初始 CI 基线」）。
+
+### 8.1 共享机器（双流并行）的测量保护（2026-08-08）
+
+本机为双流并行开发（见 run-rules.md 并行规则），另一条流会不定期跑 WPT 全量
+（reftest，重 CPU，~10 分钟级）——µs 级微基准在其运行窗口内集体超标
+（实测 csp_parse_1000 在 WPT 运行期间 +20~40%、隔离重跑回到基线），
+全量 bench-gate 与 WPT 全量会频繁碰撞。保护机制：
+
+1. **负载守卫**（bench-report.sh）：loadavg 1min 超阈值（默认逻辑核数×0.75，
+   `ZERO_WEB_BENCH_BUSY_THRESHOLD` 可调）→ 快速失败 exit 3 并提示重试；
+   `ZW_BENCH_ALLOW_BUSY=1` 强制运行（不推荐）。
+2. **suspect 标记**（bench-report.sh + perf-gate.sh）：测量**结束后** loadavg 再超阈值 →
+   报告 `suspect: true`，perf-gate 判定 **INCONCLUSIVE（exit 3）** 不比较——防止
+   中途叠加的 WPT 污染产出假 FAIL / 假收紧。
+3. **定向测量**：`ZERO_WEB_BENCH_CRATES=zero-css-parser,zero-dom` 只测指定 crate
+   （~2 分钟窗口，碰撞概率小），供局部优化验证 / 忙时小窗口测量；
+   基线更新经 `record-bench-trend.sh --auto-tighten` 逐指标 min 合并（仅收紧）。
+4. **不因噪声放宽基线**：µs 级基准的噪声用上述机制回避，禁止用 --relax 吸收
+   「对方在跑测试」类噪声（会掩盖真实回归）；确认为环境噪声的指标保持原基线。
+
+**经验**：共享机器的长时间测量（>5 分钟）天然脆弱，优先短窗口定向测量 +
+  逐指标收紧；权威门禁以 dedicated runner 的 weekly CI 为准。

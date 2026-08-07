@@ -63,6 +63,19 @@ if [ "${ZERO_WEB_BENCH_QUICK:-}" = "1" ]; then
     QUICK_MODE=1
 fi
 
+# 负载守卫（2026-08-08：本机为双流共享，另一条流会不定期跑 WPT 全量——重 CPU 负载下
+# µs 级微基准集体超标、报告不可信。loadavg 1min 超阈值（默认 = 逻辑核数 × 0.75）时
+# 快速失败并提示重试，避免产出垃圾报告。ZW_BENCH_ALLOW_BUSY=1 强制跳过守卫）。
+BUSY_THRESHOLD=${ZERO_WEB_BENCH_BUSY_THRESHOLD:-$(($(nproc 2>/dev/null || echo 16) * 3 / 4))}
+if [ "$QUICK_MODE" != "1" ] && [ "${ZW_BENCH_ALLOW_BUSY:-}" != "1" ]; then
+    LOAD1=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null | cut -d. -f1 || echo 0)
+    if [ -n "$LOAD1" ] && [ "$LOAD1" -gt "$BUSY_THRESHOLD" ]; then
+        echo "bench-report: ABORT — 系统繁忙（loadavg 1min=$LOAD1 > 阈值 $BUSY_THRESHOLD，可能另一条流正在跑 WPT/测试），"
+        echo "  测量结果不可信，稍后重试。强制运行：ZW_BENCH_ALLOW_BUSY=1（不推荐，产出不可信报告）。"
+        exit 3
+    fi
+fi
+
 # ---------- 元数据 ----------
 GIT_SHA=$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
 if git -C "$PROJECT_ROOT" status --porcelain | grep -q .; then
@@ -108,10 +121,22 @@ FAILED=()
 MICROBENCHES_JSONL="$TMP_DIR/microbenches.jsonl"
 : > "$MICROBENCHES_JSONL"
 
+# 定向测量（ZERO_WEB_BENCH_CRATES=zero-css-parser,zero-dom — 局部优化验证 / 忙时小窗口测量）
+CRATES_FILTER=""
+if [ -n "${ZERO_WEB_BENCH_CRATES:-}" ]; then
+    CRATES_FILTER=",$ZERO_WEB_BENCH_CRATES,"
+fi
+BENCH_CRATES=()
+for crate in $(printf '%s\n' "${!BENCH_MAP[@]}" | sort); do
+    if [ -z "$CRATES_FILTER" ] || [[ "$CRATES_FILTER" == *",$crate,"* ]]; then
+        BENCH_CRATES+=("$crate")
+    fi
+done
+
 # ---------- 1. criterion 微基准 ----------
 if [ "$QUICK_MODE" = "1" ]; then
     # 编译检查：16 个 bench 全部 --no-run 通过才算过
-    for crate in $(printf '%s\n' "${!BENCH_MAP[@]}" | sort); do
+    for crate in "${BENCH_CRATES[@]}"; do
         bench_name="${BENCH_MAP[$crate]}"
         echo "--- $crate ($bench_name) --no-run ---" | tee -a "$REPORT_TXT"
         if cargo bench -p "$crate" --bench "$bench_name" --no-run > "$TMP_DIR/bench.log" 2>&1; then
@@ -126,7 +151,7 @@ else
     # 真实测量：每次跑前快照 target/criterion 已有 sample.json，跑后 diff 出新文件
     #（同一 group 的旧数据在下一 crate 跑时会被 criterion 覆写，comm 只取本次新增）。
     rm -rf "$PROJECT_ROOT/target/criterion"
-    for crate in $(printf '%s\n' "${!BENCH_MAP[@]}" | sort); do
+    for crate in "${BENCH_CRATES[@]}"; do
         bench_name="${BENCH_MAP[$crate]}"
         echo "--- $crate ($bench_name) ---" | tee -a "$REPORT_TXT"
         # 只取 new/（当前运行）——criterion 默认 Baseline::Save 会把上次运行留在 base/
@@ -206,6 +231,17 @@ else
     CPU_CORES="unknown"
 fi
 
+# 测量后负载校验（2026-08-08：共享机器上另一条流的 WPT 全量可能中途叠加——
+# 报告标记 suspect=true 供 perf-gate.sh 提示「结果不可信」，不参与收紧）
+SUSPECT=false
+if [ "$QUICK_MODE" != "1" ]; then
+    LOAD1_AFTER=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null | cut -d. -f1 || echo 0)
+    if [ -n "$LOAD1_AFTER" ] && [ "$LOAD1_AFTER" -gt "$BUSY_THRESHOLD" ]; then
+        SUSPECT=true
+        echo "[WARN] 测量期间系统负载升高（loadavg=$LOAD1_AFTER），报告标记 suspect（可能被另一条流的 WPT/测试叠加污染）" | tee -a "$REPORT_TXT"
+    fi
+fi
+
 # ---------- 组装报告 ----------
 MICROBENCHES_ARR=$(jq -s -c . "$MICROBENCHES_JSONL")
 jq -n \
@@ -225,8 +261,9 @@ jq -n \
     --argjson pages "$PAGES_JSON" \
     --argjson resource "$RESOURCE_JSON" \
     --argjson startup_ms "$STARTUP_MS" \
+    --argjson suspect "$SUSPECT" \
     '{schema_version: $schema_version, kind: "bench-report", generated_at: $generated_at,
-      git_sha: $git_sha, git_dirty: $git_dirty,
+      git_sha: $git_sha, git_dirty: $git_dirty, suspect: $suspect,
       run_config: {config_hash: $config_hash, profile: "release", bench_list: $bench_list,
                    page_scenarios: $scenarios, viewport: [800, 600], iterations: $iterations},
       platform: {platform_class: $platform_class, cpu_model: $cpu_model, cpu_cores: $cpu_cores, os: $os},
@@ -236,7 +273,7 @@ jq -n \
 # ---------- 摘要 + 退出码 ----------
 echo "" | tee -a "$REPORT_TXT"
 echo "=== Summary ===" | tee -a "$REPORT_TXT"
-echo "Passed: ${#PASSED[@]} / ${#BENCH_MAP[@]} (microbenches)" | tee -a "$REPORT_TXT"
+echo "Passed: ${#PASSED[@]} / ${#BENCH_CRATES[@]} (microbenches)" | tee -a "$REPORT_TXT"
 if [ ${#FAILED[@]} -gt 0 ]; then
     echo "Failed: ${FAILED[*]}" | tee -a "$REPORT_TXT"
 fi

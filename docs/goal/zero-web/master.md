@@ -137,6 +137,36 @@
 
 **下一步**：renderer 路径事件 API parity 闭合。续 P1a 剩余——① font 元素级事件（@font-face font.onload，需 FontFaceSet API）；② DataTransferItemList 精细 API；③ spec-compliant 事件循环（P1a 原始大目标，需独立设计）；④ `<body onload>` → window.onload 反射（body/window event handler reflection）。
 
+### CSS 解析器 O(n²)→O(n) 优化（byte_offset 热路径，2026-08-08，perf-gate 首个收紧闭环）
+
+perf-gate 首跑暴露 zero-css-parser 对规则数 O(n²)（100 规则 6.2ms → 5000 规则 14.7s）。
+根因：`tokenizer.rs` `byte_offset()` 对**每个 token** `source.char_indices().nth(pos)`
+从字符串头重扫前缀（重复 UTF-8 解码），单次 O(pos)、总计 O(n²)——`tokenizer_1000_rules`
+纯分词 p95=583ms ≈ 全解析 584ms 证明整个 O(n²) 在 tokenizer（parser 层核实 O(n)）。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/css-parser/src/tokenizer.rs` | `Tokenizer` 新增 `byte_pos: usize`（`consume()` 增量 `+= c.len_utf8()`；两处 `pos -= 1` 回退成对减 UTF-8 长度；pos 变更点全仓 grep 证实仅 3 处无遗漏）；`byte_offset()` 改 O(1) 直读；`source` 字段删除（修复后无读取者）。 |
+| `scripts/bench-report.sh` | 新增**负载守卫**（loadavg 1min > 逻辑核×0.75 → 快速失败 exit 3）+ **测量后 suspect 标记**（中途叠加负载 → 报告 `suspect: true`）+ **定向测量** `ZERO_WEB_BENCH_CRATES=zero-css-parser,zero-dom`（~2 分钟窗口，忙时局部验证）。 |
+| `scripts/perf-gate.sh` | suspect 报告 → **INCONCLUSIVE（exit 3）** 不判定（防另一条流 WPT 全量中途叠加产生假 FAIL/假收紧）。 |
+| 文档 | 学习文档 css-parser-quadratic-scaling.md 标记已修复 + 修复前后数据；policy 文档 §8.1 共享机器测量保护。 |
+
+**效果（perf-gate 实测 + auto-tighten 已收紧基线）**：css_parse_100kb 549.4ms→1.63ms
+（~337x）、by_size 5000 14.7s→13.2ms（~1115x）、tokenizer 583.5ms→0.99ms（~589x）；
+缩放变线性（100→1000 规则 237µs→2.5ms）。基线 10 个指标收紧（7 个 css-parser + 3 个页面
+指标），gate 全 PASS。
+
+**共享机器噪声处置**（用户告知另一条流不定期跑 WPT 全量）：µs 级微基准在其窗口内
+集体超标（csp_parse_1000 +20~40%，隔离重跑回到基线，与本次改动零依赖）——确认环境
+噪声，未用 --relax 吸收（防掩盖真实回归），改用负载守卫 + suspect 标记 + 定向测量
+回避；权威门禁以 dedicated runner 的 weekly CI 为准。
+
+验证：`cargo test -p zero-css-parser` 2820 全绿（offset 断言测试无漂移）+ 定向 bench
+实测 + auto-tighten 收紧 + gate PASS + `make test` 全绿 + clippy 零警告。
+
+**已知限制（follow-up）**：`line_column_from_offset` 同为 O(offset)/次但无生产调用方
+（仅测试），若未来逐 token 诊断用会重新引入 O(n²)——已记学习文档 follow-up。
+
 ### P1a link/script 元素级 onload/onerror（本轮 R2944，~14,117 测试）
 
 承接 img 元素级 onload/onerror（R2943），补 stylesheet (`<link rel=stylesheet>`) + 外部 `<script src>` 元素级 load/error。R2943 仅 img，link/script.onload/onerror 仍不触发——CSS 就绪回调、动态脚本加载检测（`script.onload` then `eval`）、样式表失败回退等模式不可用。本切片通用化 R2943 的 src 匹配派发机制，覆盖 link/script。

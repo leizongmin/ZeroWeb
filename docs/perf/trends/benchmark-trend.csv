@@ -113,3 +113,30 @@
 2026-08-08,linux-x86_64,page/morning/first_paint_wall_ms,147.729923,154.720452,155.443074,ms,d167fb9b,初始基线轮
 2026-08-08,linux-x86_64,resource/peak_rss_mb,,506.52734375,,MB,d167fb9b,初始基线轮
 2026-08-08,linux-x86_64,startup_ms,,498.830471,,ms,d167fb9b,初始基线轮
+2026-08-08,linux-x86_64,mb/zero-css-parser/complex_selector_parse_100,261125.4909090909,267199.42644628097,267632.1511363636,ns,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,mb/zero-css-parser/css_parse_100kb,1517116.7283950618,1626371.873015873,1705154.0092592593,ns,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,mb/zero-css-parser/css_parse_by_size/rules/100,232701.19262295082,237102.8893442623,242182.9180327869,ns,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,mb/zero-css-parser/css_parse_by_size/rules/1000,2418469.5,2513345.887218045,2557518.435714286,ns,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,mb/zero-css-parser/css_parse_by_size/rules/500,1169383.9833333334,1208052.125,1230052.8921568627,ns,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,mb/zero-css-parser/css_parse_by_size/rules/5000,12903610.458333334,13184678.0625,14662370.5,ns,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,mb/zero-css-parser/tokenizer_1000_rules,975286.3111111111,990555.64,1015078.5222222222,ns,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/welcome/parse_ms,0.16533499999999998,0.172385,0.17305500000000001,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/welcome/style_ms,2.66981,2.713277,2.756301,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/welcome/layout_ms,1.72896,1.798885,1.841585,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/welcome/paint_ms,14.279069999999999,14.428186,14.463188,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/welcome/total_ms,19.022094,19.138122,19.276765,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/medium/parse_ms,13.382306,16.410278,16.492896,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/medium/style_ms,213.97579199999998,220.55096,221.37778799999998,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/medium/layout_ms,91.73957200000001,95.968324,101.3708,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/medium/paint_ms,1464.2038790000001,1481.297622,1483.494609,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/medium/total_ms,1786.211726,1803.0720410000001,1818.625129,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/morning/parse_ms,0.370666,0.529535,0.532123,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/morning/style_ms,6.750367,10.862151,12.600264,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/morning/layout_ms,3.073648,3.990787,5.292413,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/morning/paint_ms,87.399263,92.748082,93.337809,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/morning/total_ms,98.29846,103.448997,109.507266,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/welcome/first_paint_wall_ms,27.867289,28.120231999999998,29.84255,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/medium/first_paint_wall_ms,1909.0897,1921.971569,1960.181425,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,page/morning/first_paint_wall_ms,142.10541500000002,147.407634,153.14309500000002,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,resource/peak_rss_mb,,506.96875,,MB,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,startup_ms,,514.409146,,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复

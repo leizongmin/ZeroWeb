@@ -73,38 +73,45 @@
     },
     {
       "id": "mb/zero-css-parser/complex_selector_parse_100",
-      "p95": 6177298.583333333,
-      "tier": "budget"
+      "p95": 267199.42644628097,
+      "tier": "budget",
+      "tightened_at": "2026-08-07T18:30:56Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_100kb",
-      "p95": 549420982,
-      "tier": "budget"
+      "p95": 1626371.873015873,
+      "tier": "budget",
+      "tightened_at": "2026-08-07T18:30:56Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/100",
-      "p95": 6229632.566666666,
-      "tier": "budget"
+      "p95": 237102.8893442623,
+      "tier": "budget",
+      "tightened_at": "2026-08-07T18:30:56Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/1000",
-      "p95": 584182647,
-      "tier": "budget"
+      "p95": 2513345.887218045,
+      "tier": "budget",
+      "tightened_at": "2026-08-07T18:30:56Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/500",
-      "p95": 145550339,
-      "tier": "budget"
+      "p95": 1208052.125,
+      "tier": "budget",
+      "tightened_at": "2026-08-07T18:30:56Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/5000",
-      "p95": 14709974848,
-      "tier": "budget"
+      "p95": 13184678.0625,
+      "tier": "budget",
+      "tightened_at": "2026-08-07T18:30:56Z"
     },
     {
       "id": "mb/zero-css-parser/tokenizer_1000_rules",
-      "p95": 583539415,
-      "tier": "budget"
+      "p95": 990555.64,
+      "tier": "budget",
+      "tightened_at": "2026-08-07T18:30:56Z"
     },
     {
       "id": "mb/zero-dom/dom/batch_append_child_1000",
@@ -524,8 +531,9 @@
     },
     {
       "id": "page/medium/layout_ms",
-      "p95": 96.033755,
-      "tier": "budget"
+      "p95": 95.968324,
+      "tier": "budget",
+      "tightened_at": "2026-08-07T18:30:56Z"
     },
     {
       "id": "page/medium/paint_ms",
@@ -566,8 +574,9 @@
     },
     {
       "id": "page/welcome/first_paint_wall_ms",
-      "p95": 30.176996000000003,
-      "tier": "budget"
+      "p95": 28.120231999999998,
+      "tier": "budget",
+      "tightened_at": "2026-08-07T18:30:56Z"
     },
     {
       "id": "page/medium/first_paint_wall_ms",
@@ -576,8 +585,9 @@
     },
     {
       "id": "page/morning/first_paint_wall_ms",
-      "p95": 154.720452,
-      "tier": "budget"
+      "p95": 147.407634,
+      "tier": "budget",
+      "tightened_at": "2026-08-07T18:30:56Z"
     },
     {
       "id": "resource/peak_rss_mb",

@@ -172,10 +172,16 @@ pub fn line_column_from_offset(source: &str, offset: usize) -> (usize, usize) {
 pub struct Tokenizer {
     /// 输入字符。
     chars: Vec<char>,
-    /// 当前位置。
+    /// 当前位置（字符索引）。
     pos: usize,
-    /// 原始输入（用于计算字节偏移量）。
-    source: String,
+    /// 当前字符位置的字节偏移（随 consume 增量维护，O(1) 读取）。
+    ///
+    /// 2026-08-08 性能修复：旧实现 `byte_offset()` 每 token 从字符串头
+    /// `char_indices().nth(pos)` 重扫前缀，O(n) 每次 → 整段分词 O(n²)
+    /// （5000 规则 CSS 解析 14.7s；见 docs/learnings/performance/
+    /// css-parser-quadratic-scaling.md）。所有消费均经 `consume()`，仅
+    /// 两处回退（pos -= 1）需同步减回退字符的 UTF-8 长度。
+    byte_pos: usize,
 }
 
 impl Tokenizer {
@@ -193,7 +199,7 @@ impl Tokenizer {
             return Self {
                 chars: input.chars().collect(),
                 pos: 0,
-                source: input.to_string(),
+                byte_pos: 0,
             };
         }
         // CSS Syntax §3.3 输入预处理：所有 U+0000 (NULL) 须替换为 U+FFFD REPLACEMENT
@@ -202,8 +208,11 @@ impl Tokenizer {
         // 是合法 ident 字符，并入相邻标识符（与 chromium 一致）。转义 NULL（`\0`）已在
         // consume_escape 处理，此处覆盖原始 NULL。仅当含 NULL 时走此归一化分支。
         let chars: Vec<char> = input.chars().map(|c| if c == '\0' { '\u{FFFD}' } else { c }).collect();
-        let source: String = chars.iter().collect();
-        Self { chars, pos: 0, source }
+        Self {
+            chars,
+            pos: 0,
+            byte_pos: 0,
+        }
     }
 
     /// 获取当前位置。
@@ -212,12 +221,10 @@ impl Tokenizer {
     }
 
     /// 获取当前字符位置对应的字节偏移量。
+    ///
+    /// O(1)：由 `consume()` 增量维护（2026-08-08 修复 O(n²) 分词热路径）。
     fn byte_offset(&self) -> usize {
-        self.source
-            .char_indices()
-            .nth(self.pos)
-            .map(|(i, _)| i)
-            .unwrap_or(self.source.len())
+        self.byte_pos
     }
 
     /// 收集所有 token（不带位置信息）。
@@ -250,6 +257,8 @@ impl Tokenizer {
         if self.pos < self.chars.len() {
             let c = self.chars[self.pos];
             self.pos += 1;
+            // 增量维护字节偏移（O(1)）；与 `pos -= 1` 回退处的减操作成对
+            self.byte_pos += c.len_utf8();
             Some(c)
         } else {
             None
@@ -928,6 +937,7 @@ impl Iterator for Tokenizer {
 
                 if is_number {
                     self.pos -= 1; // 回退，让 consume_number 处理符号
+                    self.byte_pos -= self.chars[self.pos].len_utf8(); // 与 consume 增量成对
                     let number = self.consume_number();
 
                     if self.consume_if('%') {
@@ -945,6 +955,7 @@ impl Iterator for Tokenizer {
                     && (Self::is_ident_start(next) || next == '\\' || next == '-')
                 {
                     self.pos -= 1; // 回退
+                    self.byte_pos -= self.chars[self.pos].len_utf8(); // 与 consume 增量成对
                     self.consume_ident_like()
                 } else if sign == '|' && self.peek() == Some('|') {
                     self.consume();
