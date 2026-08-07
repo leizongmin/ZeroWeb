@@ -144,6 +144,7 @@ ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 - CI：GitHub Actions — 在 ubuntu/macos/windows 上运行 cargo check、clippy（deny warnings）、test、build
 - 文档注释：公共 API 必须有 `///` 文档注释
 - 日志：使用 `tracing` crate，不使用 `println!`
+- **规范驱动注释（第三轮调研建议 #2，2026-08-07）**：实现 web 规范行为（HTML/CSS/DOM/JS API 语义）处，必须添加对应规范链接注释（如 `// https://html.spec.whatwg.org/#xxx`、`// https://drafts.csswg.org/css-xxx/`）；规范算法的未实现步骤标 `// FIXME:`；优化路径标 `// OPTIMIZATION:` 并说明理由。依据：Ladybird 全库 4,750 处 spec 链接注释是 90%+ WPT 的代码层基石（调研报告 §6.3 质量文化注记），规范链接同时是 AI 生成代码时的锚点
 
 ## 架构指南
 

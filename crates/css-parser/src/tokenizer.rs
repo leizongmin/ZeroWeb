@@ -223,6 +223,7 @@ impl Tokenizer {
     /// 收集所有 token（不带位置信息）。
     ///
     /// 便捷方法，等价于 `.map(|s| s.token).collect()`。
+    // https://drafts.csswg.org/css-syntax-3/#tokenization
     pub fn collect_tokens(self) -> Vec<Token> {
         self.map(|s| s.token).collect()
     }

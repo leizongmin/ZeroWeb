@@ -280,6 +280,7 @@ fn canonical_property_name(property: &str) -> &str {
 /// # 返回值
 ///
 /// 返回一个 HashMap，键为属性名，值为胜出的声明值。
+// https://drafts.csswg.org/css-cascade-4/#cascading
 pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<String, String> {
     // 按属性名分组（遗留别名先规范化为标准名——见 canonical_property_name）
     let mut by_property: HashMap<String, Vec<CascadedDeclaration>> = HashMap::new();
