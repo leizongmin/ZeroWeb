@@ -55,6 +55,12 @@
   var _shadowRoots = {};
   var _shadowHandles = {};
   var _shadowHandleMeta = {};
+  // R2927 handle-children registry：容器 handle（shadow root / fragment）→ 其子节点 proxy 列表。
+  // 这些容器无 selector（handle-only），既有 childNodes/children 经 `__zw_child_nodes(sel)` 读（须 sel）
+  // → 恒返 []。本 registry 在 appendChild（容器父）时同步记录子节点，供 childNodes/firstChild/
+  // lastChild/firstElementChild/lastElementChild/childElementCount 读。仅 handle-append 模式覆盖
+  //（innerHTML 设内容经 host parse 无 handle，未跟踪——follow-up）。导航清空。
+  var _handleChildren = {};
   // P1a Comment（R2816）：已创建的 comment handle 集合（nodeType=8 / nodeName '#comment' 标识）。
   // comment 为 create 句柄无 selector，故用此 set 区别于普通元素句柄（同 _fragmentHandles 模式）。
   var _commentHandles = {};
@@ -691,7 +697,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
@@ -3489,6 +3495,13 @@
             ? _splitSelectors(__zw_element_children(sel)) : [];
         }
         if (prop === 'firstElementChild' || prop === 'lastElementChild' || prop === 'childElementCount') {
+          // R2927：容器 handle（shadow/fragment）从 registry 读元素子（无 selector，须 registry）。
+          if (_isContainerHandle(handle)) {
+            var ek = _handleElementChildren(handle);
+            if (prop === 'childElementCount') return ek.length;
+            if (!ek.length) return null;
+            return prop === 'firstElementChild' ? ek[0] : ek[ek.length - 1];
+          }
           if (!sel || typeof __zw_element_children !== 'function') {
             return prop === 'childElementCount' ? 0 : null;
           }
@@ -3509,10 +3522,12 @@
         // lastChild（子列表，经 __zw_child_nodes JSON）/ previousSibling / nextSibling（兄弟，经
         // __zw_sibling_nodes JSON）。文本/注释节点返静态对象（_wrapNodeEntry）。仅 sel-based 目标。
         if (prop === 'childNodes') {
+          // R2927：容器 handle（shadow/fragment）从 registry 读子节点（无 selector，须 registry）。
+          if (_isContainerHandle(handle)) return _handleChildNodes(handle);
           return _childNodeList(sel, handle);
         }
         if (prop === 'firstChild' || prop === 'lastChild') {
-          var cn = _childNodeList(sel, handle);
+          var cn = _isContainerHandle(handle) ? _handleChildNodes(handle) : _childNodeList(sel, handle);
           if (!cn.length) return null;
           return prop === 'firstChild' ? cn[0] : cn[cn.length - 1];
         }
@@ -3991,6 +4006,13 @@
               } else {
                 __zw_append_child(sel, child.__zwHandle);
               }
+              // R2927：容器父（shadow/fragment handle）同步记录子节点到 registry（供 childNodes 等读）。
+              if (_isContainerHandle(handle)) {
+                _recordHandleChild(handle, child);
+              } else if (_fragmentHandles[child.__zwHandle]) {
+                // fragment 被 flatten 进非容器父（sel-based 等）→ fragment 清空（spec：fragment append 后空）。
+                _handleChildren[child.__zwHandle] = [];
+              }
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [child], removedNodes: [] });
             }
             return child;
@@ -4000,6 +4022,8 @@
           return function(child) {
             if (child && child.__zwHandle) {
               __zw_remove_handle(child.__zwHandle);
+              // R2927：容器父同步从 registry 移除子节点。
+              if (_isContainerHandle(handle)) _unrecordHandleChild(handle, child);
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
             }
             return child;
@@ -4571,6 +4595,51 @@
     _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode };
     _shadowRoots[key] = { handle: rootHandle, mode: mode };
     return _wrapHandle(rootHandle);
+  }
+
+  // R2927 handle-children registry 辅助（容器 = shadow root / fragment handle）。这些容器无 selector，
+  // 既有 childNodes/children 经 `__zw_child_nodes(sel)` 读（须 sel）恒返 []——registry 在 appendChild
+  // 时同步记录子节点，使容器子树可观察（解锁 imperative custom-element shadow 构建模式自测）。
+  function _isContainerHandle(h) {
+    return !!(h && (_shadowHandles[h] || _fragmentHandles[h]));
+  }
+  // 容器的子节点 proxy 列表（registry 未建 → 空）。
+  function _handleChildNodes(h) {
+    return (h && _handleChildren[h]) ? _handleChildren[h] : [];
+  }
+  // 容器的**元素**子 proxy 列表（过滤 text/comment，按 nodeType）。
+  function _handleElementChildren(h) {
+    var kids = _handleChildNodes(h);
+    var out = [];
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (k && k.nodeType === 1) out.push(k);
+    }
+    return out;
+  }
+  // 记录 child 进容器 parent 的 registry。child 为 fragment 时 flatten 其 registry 子节点（并清空
+  // child registry，spec：fragment append 后清空）。仅 handle-based child 可记录。
+  function _recordHandleChild(parentHandle, child) {
+    if (!parentHandle || !child || !child.__zwHandle) return;
+    var arr = _handleChildren[parentHandle] || (_handleChildren[parentHandle] = []);
+    if (_fragmentHandles[child.__zwHandle]) {
+      // fragment flatten：移入 fragment 的已记录子节点，清空 fragment registry。
+      var fkids = _handleChildren[child.__zwHandle];
+      if (fkids) {
+        for (var i = 0; i < fkids.length; i++) arr.push(fkids[i]);
+        _handleChildren[child.__zwHandle] = [];
+      }
+    } else {
+      arr.push(child);
+    }
+  }
+  // 从容器 registry 移除 child（removeChild 用）。
+  function _unrecordHandleChild(parentHandle, child) {
+    if (!parentHandle || !child || !child.__zwHandle) return;
+    var arr = _handleChildren[parentHandle];
+    if (!arr) return;
+    var ch = child.__zwHandle;
+    _handleChildren[parentHandle] = arr.filter(function(k) { return !k || k.__zwHandle !== ch; });
   }
 
   // canvas 元素 + 2d 上下文 proxy（R2795，canvas slice 1）。host 持 CanvasContext 注册表，JS 经

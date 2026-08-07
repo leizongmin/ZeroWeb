@@ -1271,6 +1271,84 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_handle_children_registry_r2927() {
+        // R2927 handle-children registry（镜像 renderer）：容器 handle（shadow root / fragment）经
+        // appendChild 记录子节点 → childNodes/firstChild/firstElementChild/childElementCount 可观察
+        //（旧实现 handle-only 恒返 []）。removeChild 同步更新；fragment flatten 进非容器父后清空（spec）。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(14));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var host = document.createElement('div');\
+                 var sr = host.attachShadow({ mode: 'open' });\
+                 var span1 = document.createElement('span');\
+                 sr.appendChild(span1);\
+                 globalThis.__cn1 = sr.childNodes.length;\
+                 globalThis.__ff1 = (sr.firstChild === span1);\
+                 globalThis.__fe1 = (sr.firstElementChild === span1);\
+                 globalThis.__ec1 = sr.childElementCount;\
+                 var tn = document.createTextNode('hi');\
+                 sr.appendChild(tn);\
+                 globalThis.__cn2 = sr.childNodes.length;\
+                 globalThis.__ec2 = sr.childElementCount;\
+                 sr.removeChild(span1);\
+                 globalThis.__cn3 = sr.childNodes.length;\
+                 var frag = document.createDocumentFragment();\
+                 frag.appendChild(document.createElement('b'));\
+                 globalThis.__fc = frag.childNodes.length;\
+                 document.body.appendChild(frag);\
+                 globalThis.__fc2 = frag.childNodes.length;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__cn1)").unwrap(),
+            "1",
+            "appendChild 1 子 → childNodes 1"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ff1)").unwrap(),
+            "true",
+            "firstChild === span1"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__fe1)").unwrap(),
+            "true",
+            "firstElementChild === span1"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ec1)").unwrap(),
+            "1",
+            "childElementCount 1"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__cn2)").unwrap(),
+            "2",
+            "append textNode → childNodes 2"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__ec2)").unwrap(),
+            "1",
+            "childElementCount 仍 1（text 过滤）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__cn3)").unwrap(),
+            "1",
+            "removeChild span1 → childNodes 1（剩 textNode）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__fc)").unwrap(),
+            "1",
+            "fragment appendChild → fragment.childNodes 1"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__fc2)").unwrap(),
+            "0",
+            "fragment flatten 进 body 后清空 → childNodes 0（spec）"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html
