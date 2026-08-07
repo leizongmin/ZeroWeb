@@ -16,6 +16,10 @@ use zero_protocol::message::{IpcMessage, IpcMessageKind};
 use zero_protocol::transport::stdio_transport;
 use zero_protocol::{IpcChannel, is_disconnected_channel_message};
 use zero_render_foundation::backing_store::BackingStoreManager;
+use zero_render_foundation::cpu::render_full_scene_threaded;
+use zero_render_foundation::font::{FontLoader, GlyphCache};
+
+mod convert;
 
 use std::io;
 
@@ -27,11 +31,13 @@ fn main() {
 
     let mut transport = stdio_transport().unwrap_or_else(|e| panic!("compositor: stdio transport: {e}"));
 
-    // 双缓冲：尺寸随首帧初始化
+    // 双缓冲：尺寸随首帧初始化；光栅化所需的字体/字形缓存（进程级单例）
     let mut backing: Option<BackingStoreManager> = None;
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(1024);
     let mut frame_count: u64 = 0;
 
-    tracing::info!("zero-compositor 就绪（C2 骨架：BackingStore 双缓冲）");
+    tracing::info!("zero-compositor 就绪（C2：IPC 图元 → 线程化光栅化 → 双缓冲）");
 
     loop {
         let msg: IpcMessage = match transport.recv() {
@@ -53,11 +59,28 @@ fn main() {
                 let h = frame.viewport_height.max(1);
                 let store = backing.get_or_insert_with(|| BackingStoreManager::new(w, h));
                 store.resize(w, h);
-                // 骨架：写 back（清空示意）→ swap → front 为最新帧（供显示消费方读取）
-                store.back_mut().data.clear();
-                store.back_mut().data.resize((w as usize) * (h as usize) * 4, 0);
+
+                // IPC 图元 → 渲染图元 → 线程化光栅化到 back buffer → swap
+                let primitives = convert::to_render_primitives(&frame);
+                let fb = render_full_scene_threaded(
+                    w,
+                    h,
+                    1.0,
+                    &primitives,
+                    &font_loader,
+                    &mut glyph_cache,
+                    None,
+                    &[],
+                    &[],
+                    &[],
+                    &[],
+                );
+                *store.back_mut() = fb;
                 store.swap();
-                tracing::info!("compositor: 帧 #{frame_count} 已合成（{w}x{h}），front 就绪");
+                tracing::info!(
+                    "compositor: 帧 #{frame_count} 已光栅化并合成（{w}x{h}，fills={}）",
+                    primitives.fills.len()
+                );
 
                 let resp = IpcMessage {
                     id: msg.id,
