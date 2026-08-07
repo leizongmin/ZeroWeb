@@ -1757,6 +1757,37 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_inline_handler_ancestor_bubble_r2935() {
+        // R2935 祖先 inline handler 冒泡触发（镜像 renderer）：capture/bubble 祖先阶段 ensure inline handler。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(22));
+        let html = "<html><body>\
+                    <div id='outer' onclick=\"globalThis.__outer=this.id\">\
+                      <div id='inner' onclick=\"globalThis.__inner=this.id\">\
+                        <button id='btn'>x</button>\
+                      </div>\
+                    </div>\
+                    </body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__outer = 'no'; globalThis.__inner = 'no';\
+                 document.getElementById('btn').dispatchEvent(new Event('click', { bubbles: true }));",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__inner)").unwrap(),
+            "inner",
+            "祖先 inner inline handler 冒泡触发（this=inner）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__outer)").unwrap(),
+            "outer",
+            "祖父 outer inline handler 冒泡触发（this=outer）"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html

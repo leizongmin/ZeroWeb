@@ -2613,8 +2613,10 @@
     // ① capture 阶段：root→target 方向（chain 反序），祖先派发 capture-only。
     if (propagate && !globalThis.__zw_no_capture) {
       for (var i = chain.length - 1; i >= 0; i--) {
+        var capKey = _elKey(chain[i], null);
+        _ensureInlineHandler(capKey, chain[i], null, event.type); // R2935 祖先 inline on* handler 触发
         var capAnc = _wrapSelector(chain[i]);
-        _dispatchToListeners(_elKey(chain[i], null), event, 'capture', capAnc);
+        _dispatchToListeners(capKey, event, 'capture', capAnc);
         if (event._propagationStopped) return !event._defaultPrevented;
       }
     }
@@ -2628,8 +2630,10 @@
     // ③ bubble 阶段：target→root 方向（chain 正序），祖先派发非 capture（仅 event.bubbles）。
     if (propagate && event.bubbles && !globalThis.__zw_no_bubble) {
       for (var k = 0; k < chain.length; k++) {
+        var bKey = _elKey(chain[k], null);
+        _ensureInlineHandler(bKey, chain[k], null, event.type); // R2935 祖先 inline on* handler 冒泡触发
         var bAnc = _wrapSelector(chain[k]);
-        _dispatchToListeners(_elKey(chain[k], null), event, 'bubble', bAnc);
+        _dispatchToListeners(bKey, event, 'bubble', bAnc);
         if (event._propagationStopped) break;
       }
     }

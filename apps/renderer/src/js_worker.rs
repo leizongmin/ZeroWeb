@@ -1767,6 +1767,47 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_inline_handler_ancestor_bubble_r2935() {
+        // R2935 祖先 inline handler 冒泡触发：R2934 仅 target 阶段 ensure；补 capture/bubble 祖先阶段 →
+        // <div onclick><button> 点 button 冒泡到 div 触发其 inline handler（this=祖先 currentTarget）。
+        // 非 bubbles 事件不触发祖先 inline。
+        let mut worker = RendererJsWorker::spawn(42);
+        let html = "<html><body>\
+                    <div id='outer' onclick=\"globalThis.__outer=this.id\">\
+                      <div id='inner' onclick=\"globalThis.__inner=this.id\">\
+                        <button id='btn'>x</button>\
+                      </div>\
+                    </div>\
+                    <div id='o2' onclick=\"globalThis.__o2='yes'\"><button id='b2'>x</button></div>\
+                    </body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__outer = 'no'; globalThis.__inner = 'no';\
+                 document.getElementById('btn').dispatchEvent(new Event('click', { bubbles: true }));\
+                 globalThis.__o2 = 'no';\
+                 document.getElementById('b2').dispatchEvent(new Event('click', { bubbles: false }));",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__inner)").unwrap(),
+            "inner",
+            "祖先 inner inline handler 冒泡触发（this=inner）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__outer)").unwrap(),
+            "outer",
+            "祖父 outer inline handler 冒泡触发（this=outer）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__o2)").unwrap(),
+            "no",
+            "非 bubbles 事件不触发祖先 inline handler"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C：selector-identity 元素的 getBoundingClientRect 返真实 DOMRect。
         // shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html → find_by_selector
