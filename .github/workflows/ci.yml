@@ -325,13 +325,17 @@ jobs:
         run: |
           echo "Skipping release build for ${{ matrix.target }} (QuickJS runtime build, V8 release builds use v8_runtime=true)."
 
-  reftest:
+  # B2 分层门禁（A2 闭环）：smoke job 秒级，PR 审阅通过（OWNER approved）
+  # 即触发——reftest-smoke.txt 清单（33 条跨领域代表性 case）必须全过。
+  # 全量 reftest 留 workflow_dispatch（慢，见下）。
+  smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    needs: build-and-test
-    if: github.event_name == 'workflow_dispatch'
+    timeout-minutes: 20
+    if: github.event_name == 'workflow_dispatch' || (github.event.review.state == 'approved' && github.event.review.author_association == 'OWNER')
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -339,7 +343,7 @@ jobs:
       - name: Determine rusty_v8 version
         shell: bash
         run: |
-          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"v8\"/{n;s/version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
 
       - name: Cache rusty_v8
         uses: actions/cache@v6
@@ -365,12 +369,51 @@ jobs:
       - name: Fetch wpt-data
         run: make fetch-wpt-data
 
-      # B2 分层：先跑秒级 smoke 门禁（reftest-smoke.txt 清单，已知必须通过），
-      # 再跑全量 reftest（慢）。smoke 失败即 job 失败，全量报告仍可下载。
-      - name: Run reftest smoke (fast gate, must pass)
+      - name: Build zero-wpt-runner (release)
+        run: cargo build --release --bin zero-wpt-runner
+
+      - name: Run reftest smoke gate (must pass)
+        run: bash scripts/run-reftest-smoke.sh
+
+  reftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: build-and-test
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Determine rusty_v8 version
+        shell: bash
         run: |
-          cargo build --release --bin zero-wpt-runner
-          bash scripts/run-reftest-smoke.sh
+          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
+
+      - name: Cache rusty_v8
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/zero-web/rusty_v8
+          key: rusty_v8-${{ env.RUSTY_V8_VERSION }}-x86_64-unknown-linux-gnu
+
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Download rusty_v8 archive
+        shell: bash
+        run: bash scripts/download-rusty-v8.sh
+
+      - name: Fetch wpt-data
+        run: make fetch-wpt-data
 
       - name: Run reftest suite (CPU rendering)
         run: cargo run --release --bin zero-wpt-runner -- reftest --format json
