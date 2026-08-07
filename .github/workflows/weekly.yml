@@ -365,6 +365,9 @@ jobs:
             echo "No trend changes to commit."
           else
             git commit -m "chore(wpt): 更新 WPT 趋势基线（绝对数，weekly cron）"
+            # 全量 reftest 耗时 ~11 分钟，期间远端 main 可能有并发提交
+            # （第三次验证暴露：push 被拒 fetch first）——rebase 后重推
+            git pull --rebase origin main
             git push origin HEAD:main
             echo "Trend data committed and pushed."
           fi
