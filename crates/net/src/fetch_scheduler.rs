@@ -229,7 +229,6 @@ impl Default for PerOriginFetchScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::mpsc::TryRecvError;
 
     #[test]
     fn queues_beyond_per_origin_limit() {
