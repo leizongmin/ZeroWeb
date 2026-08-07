@@ -179,6 +179,9 @@ fn tab_worker_main(
             && let Some(cache) = snapshot.hit_test.as_ref()
         {
             cache.fill_layout_rect_snapshot(&worker.rect_snapshot());
+            // P1a elementFromPoint：render 后 swap 最新 `Arc<HitTestCache>` 进共享槽（无数据 clone，
+            // 仅引用计数）→ js_worker 的 `__zw_elementFromPoint` 读它求 `(x,y)` 命中元素。
+            *worker.element_from_point_cache().lock().unwrap() = Some(std::sync::Arc::new(cache.clone()));
         }
         let _ = msg_tx.send(TabWorkerMessage::Snapshot(snapshot));
     };

@@ -8,9 +8,10 @@ use std::time::Duration;
 
 use zero_browser_shell::TabId;
 use zero_engine::{
-    AsyncResolver, DomMutation, FetchBridge, FetchHandler, FetchRequest, FetchResponse, HandleSelectorMap,
-    LayoutRectSnapshot, RectBridge, TimerBridge, generate_js_dom_shim, make_dom_html_rect_handler,
-    new_handle_selector_map, new_layout_rect_snapshot, register_dom_callbacks,
+    AsyncResolver, DomMutation, ElementFromPointBridge, ElementFromPointCache, FetchBridge, FetchHandler, FetchRequest,
+    FetchResponse, HandleSelectorMap, LayoutRectSnapshot, RectBridge, TimerBridge, generate_js_dom_shim,
+    make_dom_html_rect_handler, new_element_from_point_cache, new_handle_selector_map, new_layout_rect_snapshot,
+    register_dom_callbacks,
 };
 use zero_net::{HttpClient, HttpMethod, HttpRequest};
 use zero_script_sandbox::{
@@ -83,6 +84,9 @@ pub struct TabJsWorkerHandle {
     /// P1a gBCR path A：持久 handle→唯一选择器映射——`tab_scripts::apply_recorded_mutations`
     /// merge 进此 map，js_worker 的 RectBridge handler 读它解析 handle-identity（`__n{n}`）。
     handle_selector_map: HandleSelectorMap,
+    /// P1a elementFromPoint：共享 hit-test 缓存槽——tab_worker render 后 swap 最新
+    /// `Arc<HitTestCache>`，js_worker 的 `ElementFromPointBridge` 读它求 `(x,y)` 命中元素。
+    element_from_point_cache: ElementFromPointCache,
 }
 
 impl TabJsWorkerHandle {
@@ -91,6 +95,7 @@ impl TabJsWorkerHandle {
         let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let rect_snapshot = new_layout_rect_snapshot();
         let handle_selector_map = new_handle_selector_map();
+        let element_from_point_cache = new_element_from_point_cache();
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
@@ -98,6 +103,7 @@ impl TabJsWorkerHandle {
         let mutations_for_worker = Arc::clone(&mutations);
         let rect_snapshot_for_worker = Arc::clone(&rect_snapshot);
         let handle_selector_map_for_worker = Arc::clone(&handle_selector_map);
+        let element_from_point_cache_for_worker = Arc::clone(&element_from_point_cache);
 
         let join = thread::Builder::new()
             .name(format!("tab-js-{}", tab_id.0))
@@ -108,6 +114,7 @@ impl TabJsWorkerHandle {
                     mutations_for_worker,
                     rect_snapshot_for_worker,
                     handle_selector_map_for_worker,
+                    element_from_point_cache_for_worker,
                 )
             })
             .expect("spawn tab js worker");
@@ -149,6 +156,7 @@ impl TabJsWorkerHandle {
             mutations,
             rect_snapshot,
             handle_selector_map,
+            element_from_point_cache,
         }
     }
 
@@ -198,6 +206,12 @@ impl TabJsWorkerHandle {
         Arc::clone(&self.handle_selector_map)
     }
 
+    /// P1a elementFromPoint：共享 hit-test 缓存槽句柄——tab_worker render 后 swap 最新
+    /// `Arc<HitTestCache>`，js_worker 的 `ElementFromPointBridge` 读它求 `(x,y)` 命中元素。
+    pub fn element_from_point_cache(&self) -> ElementFromPointCache {
+        Arc::clone(&self.element_from_point_cache)
+    }
+
     /// 返回异步回调 resolver（P1b S1 incr3）。克隆供跨线程异步完成方（fetch host /
     /// 定时器）持有，`resolver.resolve(id, result)` 经 cmd channel marshal 回 JS worker
     /// 线程，由 worker 调 `sandbox.resolve_async_callback` resolve 对应 Promise。
@@ -239,6 +253,7 @@ fn js_worker_main(
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
     rect_snapshot: LayoutRectSnapshot,
     handle_selector_map: HandleSelectorMap,
+    element_from_point_cache: ElementFromPointCache,
 ) {
     let js_config = SandboxConfig {
         persistent_context: true,
@@ -267,6 +282,12 @@ fn js_worker_main(
             Arc::clone(&handle_selector_map),
         ));
     }
+    // P1a elementFromPoint（镜像 renderer js_worker）：`ElementFromPointBridge` 注
+    // `__zw_elementFromPoint(x, y)` 同步回调。回调锁内 clone `Arc<HitTestCache>`（tab_worker
+    // render 后 swap 进共享槽）→ `hit_test_element` + `selector_from_element_hit` → 稳定选择器。
+    // 未注入 cache / 无命中 → 空串（shim 返 null）。
+    let element_from_point_bridge = ElementFromPointBridge::new(element_from_point_cache);
+    element_from_point_bridge.register(&mut *sandbox);
     // P1b S1/S3：AsyncResolver（跨线程 resolve Promise）+ FetchBridge（__zw_fetch 注册 +
     // handler cell）。fetch_bridge 经 SetFetchHandler 命令在 WebView 初始化后注入生产 handler
     // （chicken-and-egg——js_worker spawn 早于 WebView）；未注入时 __zw_fetch resolve 错误 Promise。
@@ -992,6 +1013,92 @@ mod tests {
             .unwrap();
         let r = wait_for_global(&worker, "__seen", 1000);
         assert_eq!(r, "attributes:class");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_element_from_point_r2924() {
+        // R2924 elementFromPoint（镜像 renderer js_worker）：`document.elementFromPoint(x, y)` →
+        // 视口 (x,y) 命中的最深元素。注入合成 HitTestCache（root div + 子 p#inner），shim 经
+        // `__zw_elementFromPoint` 求命中选择器 → `_wrapSelector` → `.tagName`（`_realTag` 查 dom_html）。
+        use std::sync::Arc;
+        use zero_engine::{
+            HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, node_id_from_u64,
+        };
+        let mut worker = TabJsWorkerHandle::spawn(TabId(11));
+        let html = "<html><body><div><p id='inner'>x</p></div></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        // 合成 HitTestCache：root div(0,0,800,600) + 子 p#inner(10,20,100,50)（坐标相对父内容区）。
+        let id0 = node_id_from_u64(0); // Document 节点（非元素）
+        let id1 = node_id_from_u64(1); // div
+        let id2 = node_id_from_u64(2); // p#inner
+        let cache = HitTestCache::from_snapshot(HitTestCacheSnapshot {
+            doc_root: id0,
+            layout_root: HitTestLayoutSnapshot {
+                node_id: Some(id1),
+                x: 0.0,
+                y: 0.0,
+                width: 800.0,
+                height: 600.0,
+                children: vec![HitTestLayoutSnapshot {
+                    node_id: Some(id2),
+                    x: 10.0,
+                    y: 20.0,
+                    width: 100.0,
+                    height: 50.0,
+                    children: vec![],
+                }],
+            },
+            nodes: vec![
+                (
+                    id1,
+                    HitTestNodeSnapshot {
+                        tag_name: "div".into(),
+                        id: None,
+                        class_name: None,
+                        href: None,
+                        src: None,
+                    },
+                ),
+                (
+                    id2,
+                    HitTestNodeSnapshot {
+                        tag_name: "p".into(),
+                        id: Some("inner".into()),
+                        class_name: None,
+                        href: None,
+                        src: None,
+                    },
+                ),
+            ],
+            parents: vec![(id2, id1)],
+        });
+        *worker.element_from_point_cache().lock().unwrap() = Some(Arc::new(cache));
+        worker
+            .execute_script_direct(
+                "var hit = document.elementFromPoint(50, 40);\
+                 globalThis.__t1 = hit ? hit.tagName : 'null';\
+                 var root = document.elementFromPoint(5, 5);\
+                 globalThis.__t2 = root ? root.tagName : 'null';\
+                 var miss = document.elementFromPoint(900, 900);\
+                 globalThis.__t3 = miss ? miss.tagName : 'null';",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__t1)").unwrap(),
+            "P",
+            "(50,40) 命中最深子元素 p#inner"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__t2)").unwrap(),
+            "DIV",
+            "(5,5) 仅落在 root div 内（子外）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__t3)").unwrap(),
+            "null",
+            "(900,900) 落在所有元素外 → null（spec）"
+        );
         worker.shutdown();
     }
 

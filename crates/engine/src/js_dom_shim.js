@@ -5600,6 +5600,14 @@
     getElementById: function(id) {
       return globalThis.document.querySelector('#' + id);
     },
+    // R2924 elementFromPoint：`document.elementFromPoint(x, y)` → 视口 CSS 像素 (x,y) 命中的最深元素。
+    // 经 host `__zw_elementFromPoint(x, y)`（renderer/browser render 后 swap 进 HitTestCache）求命中选择器
+    // → _wrapSelector。未注册（engine/reftest/polyfill 无渲染）/ 无命中 → null（spec）。
+    elementFromPoint: function(x, y) {
+      if (typeof __zw_elementFromPoint !== 'function') return null;
+      var sel = __zw_elementFromPoint(String(x), String(y));
+      return sel ? _wrapSelector(sel) : null;
+    },
     querySelectorAll: function(sel) {
       var all = __zw_query_all(sel);
       if (!all) return [];
