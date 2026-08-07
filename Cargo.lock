@@ -6431,6 +6431,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-webdriver"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+ "zero-webview",
+]
+
+[[package]]
 name = "zero-webview"
 version = "0.1.0"
 dependencies = [
