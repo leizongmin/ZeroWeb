@@ -27,6 +27,10 @@ pub struct PageScriptRunner {
     base: String,
     html: String,
     original_html: String,
+    /// R2942：子资源 fetch/decode 失败记录 `(kind, url)`（stylesheet/image，由 tab_worker 从
+    /// AsyncPageLoad.take_failed_resources drain 后经 `set_resource_errors` 注入）。finish() 在页面
+    /// load 之后派发对应 window 'error' 事件（确保脚本注册的 onerror handler 已就位）。
+    resource_errors: Vec<(String, String)>,
 }
 
 impl PageScriptRunner {
@@ -50,7 +54,13 @@ impl PageScriptRunner {
             base,
             html,
             original_html,
+            resource_errors: Vec::new(),
         })
+    }
+
+    /// R2942：注入子资源 fetch/decode 失败记录（stylesheet/image），finish() 在 load 之后派发 window 'error'。
+    pub fn set_resource_errors(&mut self, errors: Vec<(String, String)>) {
+        self.resource_errors = errors;
     }
 
     /// 是否还有待执行脚本。
@@ -81,6 +91,9 @@ impl PageScriptRunner {
                     Ok(code) => code,
                     Err(e) => {
                         warn!("external script fetch {abs}: {e}");
+                        // R2942：外部脚本 fetch 失败 → 即时派发 window 'error'（脚本 fetch 在 tick 期同步失败，
+                        // 早于后续内联脚本的 onerror 注册即触发，匹配 real browser「fetch 失败即报」语义）。
+                        report_resource_error(js_worker, "script", &abs);
                         self.index += 1;
                         return PageScriptTickResult::Continue;
                     }
@@ -110,6 +123,12 @@ impl PageScriptRunner {
         // R2941：脚本阶段完成 → 派发 DOMContentLoaded + load（DOMContentLoaded 先于 load，spec）。
         // analytics onload / jQuery ready / 框架 mount 高频 hook 经此触发。
         dispatch_page_lifecycle(js_worker);
+        // R2942：在 load 之后派发子资源 fetch/decode 失败的 window 'error'（stylesheet/image）——
+        // 此时脚本注册的 onerror handler 已就位（资源 fetch 失败发生在 async_load 期，早于脚本，
+        // 故延后到 load 之后派发以确保 handler 可触）。
+        for (kind, url) in &self.resource_errors {
+            report_resource_error(js_worker, kind, url);
+        }
     }
 }
 
@@ -123,6 +142,18 @@ fn dispatch_page_lifecycle(js_worker: Option<&TabJsWorkerHandle>) {
     let load = script_dispatch_dom_event("html", "load", None);
     if let Err(e) = worker.execute_script_direct(&format!("{dcl}; {load}")) {
         warn!("dispatch page lifecycle: {e}");
+    }
+}
+
+/// R2942：派发子资源 fetch/decode 失败的 window 'error' 事件进 shim（经 R2940 `__zw_report_error` hook →
+/// window.onerror legacy 5-arg + window 'error' ErrorEvent）。`kind` = "script" / "stylesheet" / "image"。
+/// best-effort（失败仅 `warn!`）。spec：资源 fetch 失败派发 window 'error'（同源资源；headless lenient）。
+fn report_resource_error(js_worker: Option<&TabJsWorkerHandle>, kind: &str, url: &str) {
+    let Some(worker) = js_worker else { return };
+    let msg = format!("Error loading {kind}: {url}");
+    let report = script_report_error(&msg, url, 0, 0);
+    if let Err(e) = worker.execute_script_direct(&report) {
+        warn!("report resource error ({kind} {url}): {e}");
     }
 }
 

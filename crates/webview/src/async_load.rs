@@ -86,6 +86,19 @@ pub struct AsyncPageLoad {
     render_session: Option<BudgetedRenderSession>,
     budget_pending: bool,
     last_error: Option<String>,
+    /// R2942：子资源 fetch/decode 失败记录，供宿主派发 window 'error' 事件（错误上报库 hook）。
+    /// stylesheet fetch 失败 + image fetch/decode 失败收集于此；经 `take_failed_resources()` drain。
+    failed_resources: Vec<FailedResource>,
+}
+
+/// R2942：子资源 fetch/decode 失败记录。`kind` = "stylesheet" / "image"；`url` = 资源绝对 URL。
+/// 宿主（tab_worker → PageScriptRunner::finish）在页面 load 之后派发 window 'error'（确保脚本注册的
+/// onerror handler 已就位）。外部 `<script src>` fetch 失败不经此（在 tab_scripts tick 即时派发）。
+pub struct FailedResource {
+    /// 资源类型："stylesheet" / "image"（decode 失败同 image）。
+    pub kind: &'static str,
+    /// 资源绝对 URL。
+    pub url: String,
 }
 
 impl AsyncPageLoad {
@@ -107,12 +120,18 @@ impl AsyncPageLoad {
             render_session: None,
             budget_pending: false,
             last_error: None,
+            failed_resources: Vec::new(),
         }
     }
 
     /// 取出并清除加载失败原因（主文档抓取失败等）。
     pub fn take_error(&mut self) -> Option<String> {
         self.last_error.take()
+    }
+
+    /// R2942：取出并清除子资源 fetch/decode 失败记录（stylesheet/image），供宿主派发 window 'error'。
+    pub fn take_failed_resources(&mut self) -> Vec<FailedResource> {
+        std::mem::take(&mut self.failed_resources)
     }
 
     /// 是否因错误结束。
@@ -138,6 +157,7 @@ impl AsyncPageLoad {
             render_session: None,
             budget_pending: true,
             last_error: None,
+            failed_resources: Vec::new(),
         }
     }
 
@@ -393,7 +413,13 @@ impl AsyncPageLoad {
                             import_urls.push(abs);
                         }
                     }
-                    Err(e) => tracing::warn!("stylesheet {url} fetch failed: {e}"),
+                    Err(e) => {
+                        tracing::warn!("stylesheet {url} fetch failed: {e}");
+                        self.failed_resources.push(FailedResource {
+                            kind: "stylesheet",
+                            url: url.clone(),
+                        });
+                    }
                 }
                 *changed = true;
                 false
@@ -641,9 +667,21 @@ impl AsyncPageLoad {
                             }
                             webview.image_cache().insert_with_key(ImageKey::new(*key), img);
                         }
-                        Err(e) => tracing::warn!("image {url} decode failed: {e}"),
+                        Err(e) => {
+                            tracing::warn!("image {url} decode failed: {e}");
+                            self.failed_resources.push(FailedResource {
+                                kind: "image",
+                                url: url.clone(),
+                            });
+                        }
                     },
-                    Err(e) => tracing::warn!("image {url} fetch failed: {e}"),
+                    Err(e) => {
+                        tracing::warn!("image {url} fetch failed: {e}");
+                        self.failed_resources.push(FailedResource {
+                            kind: "image",
+                            url: url.clone(),
+                        });
+                    }
                 }
                 *changed = true;
                 false
@@ -830,6 +868,47 @@ mod tests {
             let _ = load.tick(&mut wv, &mut host, 500.0);
         }
         assert_eq!(load.stage(), PageLoadStage::Complete);
+    }
+
+    /// R2942：stylesheet fetch 失败收集到 failed_resources（供宿主派发 window 'error'），drain 后清空。
+    #[test]
+    fn failed_resources_collects_stylesheet_fetch_failure() {
+        let html = r#"<html><head>
+            <link rel="stylesheet" href="a.css">
+            <link rel="stylesheet" href="b.css">
+            </head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = ErrFetchHost;
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        let failed = load.take_failed_resources();
+        assert_eq!(
+            failed.iter().filter(|r| r.kind == "stylesheet").count(),
+            2,
+            "两条 stylesheet fetch 失败均收集"
+        );
+        let urls: HashSet<String> = failed.iter().map(|r| r.url.clone()).collect();
+        assert!(urls.contains("https://example.com/a.css"), "{urls:?}");
+        assert!(urls.contains("https://example.com/b.css"), "{urls:?}");
+        assert!(load.take_failed_resources().is_empty(), "drain 后清空");
+    }
+
+    /// R2942：image fetch 失败收集到 failed_resources（kind "image"）。
+    #[test]
+    fn failed_resources_collects_image_fetch_failure() {
+        let html = r#"<html><body><img src="broken.png"></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = ErrFetchHost;
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        let failed = load.take_failed_resources();
+        assert_eq!(failed.len(), 1, "一条 image fetch 失败");
+        assert_eq!(failed[0].kind, "image");
+        assert!(failed[0].url.ends_with("broken.png"));
     }
 
     /// R2408+ slice 2 / FR-003：fetch 成功的 @font-face 字节经 drain 回传（不再丢弃），且 drain 后清空。

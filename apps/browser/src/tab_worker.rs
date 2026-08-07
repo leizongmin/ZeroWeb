@@ -360,6 +360,18 @@ fn tab_worker_main(
                     let _ = msg_tx.send(TabWorkerMessage::Title("加载失败".to_string()));
                 } else {
                     page_script_runner = tab_scripts::PageScriptRunner::start(&wv, javascript_enabled);
+                    // R2942：drain async_load 期收集的子资源 fetch/decode 失败（stylesheet/image），
+                    // 注入 runner——finish() 在页面 load 之后派发对应 window 'error'（onerror handler 已就位）。
+                    let failed: Vec<(String, String)> = load
+                        .take_failed_resources()
+                        .into_iter()
+                        .map(|r| (r.kind.to_string(), r.url))
+                        .collect();
+                    if !failed.is_empty() {
+                        if let Some(r) = page_script_runner.as_mut() {
+                            r.set_resource_errors(failed);
+                        }
+                    }
                     let title = page_title_from_webview(&wv);
                     let _ = msg_tx.send(TabWorkerMessage::Title(title));
                 }
