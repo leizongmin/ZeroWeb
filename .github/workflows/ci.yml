@@ -118,6 +118,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev libxcb-xfixes0-dev libxkbcommon-dev libfontconfig1-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev mesa-vulkan-drivers
 
+      # cargo-nextest 测试执行器（2026-08-07 起 make test 同款）：二进制间并行 +
+      # per-test 隔离（较 cargo test 的 --test-threads=1 更快更稳）。taiki-e/install-action
+      # 用官方预编译二进制（~10s），比 cargo install（~2-5min/job）快。
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
       - name: Download rusty_v8 archive
         if: runner.os != 'Windows' && matrix.v8_runtime != false
         shell: bash
@@ -238,7 +246,7 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: |
-          cargo test ${{ matrix.features }} \
+          cargo nextest run ${{ matrix.features }} \
             -p zero-dom \
             -p zero-css-parser \
             -p zero-style-system \
@@ -252,38 +260,38 @@ jobs:
             -p zero-protocol \
             -p zero-wasm-sandbox \
             -p zero-page-runtime \
-            --target ${{ matrix.target }} -- --test-threads=1
+            --target ${{ matrix.target }}
 
       - name: Run V8-backed core tests
         if: matrix.v8_runtime != false && runner.os != 'Windows'
         timeout-minutes: 20
         shell: bash
         run: |
-          cargo test ${{ matrix.features }} \
+          cargo nextest run ${{ matrix.features }} \
             -p zero-script-sandbox \
             -p zero-webview \
-            --target ${{ matrix.target }} -- --test-threads=1
+            --target ${{ matrix.target }}
 
       - name: Run app tests
         if: matrix.v8_runtime != false
         timeout-minutes: 40
         shell: bash
         run: |
-          cargo test ${{ matrix.features }} \
+          cargo nextest run ${{ matrix.features }} \
             -p zero-browser \
             -p zero-renderer \
             -p zero-webview-demo \
-            --target ${{ matrix.target }} -- --test-threads=1
+            --target ${{ matrix.target }}
 
       - name: Run integration and WPT runner tests
         if: matrix.v8_runtime != false
         timeout-minutes: 20
         shell: bash
         run: |
-          RUST_BACKTRACE=1 cargo test ${{ matrix.features }} \
+          RUST_BACKTRACE=1 cargo nextest run ${{ matrix.features }} \
             -p zero-integration-tests \
             -p zero-wpt-runner \
-            --target ${{ matrix.target }} -- --test-threads=1
+            --target ${{ matrix.target }}
 
       - name: Run render CPU tests
         timeout-minutes: 10
@@ -293,7 +301,7 @@ jobs:
           # QuickJS 构建只需 --no-default-features 跳过 freetype-raster
           RENDER_FEATURES="${{ matrix.features }}"
           RENDER_FEATURES="${RENDER_FEATURES//--features quickjs/}"
-          cargo test $RENDER_FEATURES -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=1
+          cargo nextest run $RENDER_FEATURES -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }}
 
       - name: Note unsupported V8 runtime tests
         if: matrix.v8_runtime == false
@@ -305,7 +313,7 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: |
-          cargo test ${{ matrix.features }} \
+          cargo nextest run ${{ matrix.features }} \
             -p zero-script-sandbox \
             -p zero-webview \
             -p zero-browser \
@@ -313,7 +321,7 @@ jobs:
             -p zero-webview-demo \
             -p zero-integration-tests \
             -p zero-wpt-runner \
-            --target ${{ matrix.target }} -- --test-threads=1
+            --target ${{ matrix.target }}
 
       - name: Build release
         if: matrix.release_build != false && github.event_name == 'workflow_dispatch' && inputs.run_release_builds == true
