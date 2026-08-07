@@ -1,0 +1,6 @@
+# cargo-nextest 配置（2026-08-07 评估）。
+# slow-timeout：本地无 GPU 后端时 render-foundation 的 wgpu headless 测试会挂起
+# （>30min，见 Makefile test target 注释）——60s 未完成 + 再 2 周期（共 ~3min）后
+# 杀进程树，替代 cargo test 的 --exclude 方案（本地全量、CI 一致性）。
+[profile.default]
+slow-timeout = { period = "60s", terminate-after = 2 }

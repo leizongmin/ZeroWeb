@@ -63,14 +63,13 @@ target/test-guard: scripts/test-guard.rs
 # 全量测试（被 test-guard 包裹）。无人值守 / rally / CI 请用此 target，
 # 不要裸跑 cargo test。可调阈值：./target/test-guard --per-proc-mem 8 --total-mem 20 -- cargo test --workspace
 test: target/test-guard
-	# 本地（WSL2 等）无可用 GPU 后端时，zero-render-foundation 的 wgpu headless 设备测试会在
-	# surface 配置 / 渲染回读路径上间歇性长时间阻塞（>30min，跨 renderer/tests.rs 与 surface.rs
-	# 多模块，致 test-guard 1800s 总超时连累整树）。本地 make test 用 --exclude 跳过该 crate；
-	# CI 直接跑 `cargo test --workspace`（ci.yml，真 Vulkan 后端）正常全量执行该 crate 测试。
-	# 需本地验证 render-foundation 时：test-guard -- cargo test -p zero-render-foundation。
-	# --test-threads=8（2026-08-07 实测：2→8 线程全量 4min→1m50s，测试为 CPU 密集、
-	# 独立无共享端口/显示，8 线程下 51/51 全过；16 线程再省仅 ~15%，收益递减）。
-	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo test --workspace --exclude zero-render-foundation -- --test-threads=8
+	# cargo-nextest 执行器（2026-08-07 评估后采用，需 `cargo install cargo-nextest`）：
+	# - 全量含 zero-render-foundation 14084 测试 1m29s（比 cargo test 8 线程 1m58s 快 ~30%）
+	# - 本地无 GPU 后端时 wgpu headless 测试间歇性挂起（>30min）由 nextest slow-timeout
+	#   （.config/nextest.toml，60s + 2 周期后杀进程树）防御——本地不再 --exclude 该 crate，
+	#   测试覆盖与 CI（真 Vulkan 后端，cargo test --workspace）对齐
+	# - 二进制间并行、单测输出仅失败详情；#[ignore] 测试跳过（71 个，与 cargo test 一致）
+	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo nextest run --workspace
 
 # WPT reftest（release 构建，约 4× 快于 debug；同样被 test-guard 包裹）。
 reftest: fetch-wpt-data target/test-guard
