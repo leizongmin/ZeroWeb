@@ -183,9 +183,9 @@ impl RendererRuntime {
         let (font_loader, font_id, font_resolver) = load_system_fonts();
         set_char_measure_fn(text_metrics::measure_char);
         let js_worker = RendererJsWorker::spawn(renderer_id);
-        // P1b S3（镜像 browser tab_worker）：注入生产 fetch handler（经 net pool 真实 HTTP GET）。
-        // js_worker 早于 WebView 创建，但 fetch_text_async 自带 net pool（OnceLock），无需 WebView
-        // 句柄，故可在 spawn 后立即注入。test 构建不注入（renderer runtime 单测用合成 handler）。
+        // P1b S3 / R2923（镜像 browser tab_worker）：注入生产 fetch handler（经 zero_net::HttpClient::send
+        // 真实 HTTP，支持全方法/头/体）。js_worker 早于 WebView 创建，但 HttpClient::new() 自建 reqwest
+        // client，无需 WebView 句柄，故可在 spawn 后立即注入。test 构建不注入（renderer runtime 单测用合成 handler）。
         #[cfg(not(test))]
         js_worker.set_fetch_handler(crate::js_worker::default_fetch_handler());
         // B3：renderer 内部持有 WebView，渲染/字体/脚本全经 WebView（与 tabworker 同一页面运行时）。

@@ -120,34 +120,99 @@
     }
   };
 
-  // P1b S3 incr-c：fetch 返回 Response 对象（spec-compliance：ok/status/text()/json()）。
-  // body 经 `__zw_fetch` 抓取；`__zwResolveCallback` 触发 pending resolver，包装为 Response。
-  // body 以 `__zw_fetch_error` 开头 → ok:false（错误标记约定，见 register_fetch_callback）。
+  // P1b S3 incr-c / R2923 fetch 完整化：fetch 返回 Response 对象（spec-compliance：ok/status/
+  // statusText/headers/text()/json()）。host 经 `__zw_fetch` 抓取返 `__zwfr:` wire
+  //（status\x1fstatusText\x1fheadersWire\x1fbody）或 `__zw_fetch_error:` 错误标记 → shim 包装为 Response。
+  // body 为 wire 末字段（取第 3 个 \x1f 后全部，可含 \x1f）。错误 / 旧 body-only wire → 兜底 _makeResponse。
+  function _parseHeadersWire(wire) {
+    var out = {};
+    if (!wire) return out;
+    var parts = wire.split('\x1e');
+    for (var i = 0; i + 1 < parts.length; i += 2) out[parts[i]] = parts[i + 1];
+    return out;
+  }
+  // 旧 / 错误路径：body 为裸文本（status 200）或 `__zw_fetch_error:` 前缀（ok:false）。增 headers:{}（向后兼容）。
   function _makeResponse(body) {
     var ok = typeof body === 'string' && body.indexOf('__zw_fetch_error') !== 0;
     return {
       ok: ok,
       status: ok ? 200 : 0,
       statusText: ok ? 'OK' : 'Error',
+      headers: {},
       text: function() { return Promise.resolve(ok ? body : ''); },
       json: function() { return Promise.resolve(JSON.parse(ok ? body : 'null')); }
     };
   }
+  // 解析 host→JS wire 为 Response。`__zwfr:` 前缀 → status/statusText/headers/body；
+  // `__zw_fetch_error:` 或非 wire → 落 _makeResponse（错误 / 旧路径兼容）。
+  function _makeResponseFromWire(raw) {
+    if (typeof raw !== 'string') return _makeResponse('__zw_fetch_error:bad-wire');
+    if (raw.indexOf('__zw_fetch_error') === 0) return _makeResponse(raw);
+    if (raw.indexOf('__zwfr:') !== 0) return _makeResponse(raw);
+    var rest = raw.slice(7); // strip '__zwfr:'
+    var p1 = rest.indexOf('\x1f');
+    var p2 = p1 >= 0 ? rest.indexOf('\x1f', p1 + 1) : -1;
+    var p3 = p2 >= 0 ? rest.indexOf('\x1f', p2 + 1) : -1;
+    if (p1 < 0 || p2 < 0 || p3 < 0) return _makeResponse('__zw_fetch_error:malformed');
+    var status = parseInt(rest.slice(0, p1), 10) || 0;
+    var statusText = rest.slice(p1 + 1, p2);
+    var headersWire = rest.slice(p2 + 1, p3);
+    var body = rest.slice(p3 + 1); // 末字段，可含 \x1f
+    var ok = status >= 200 && status < 300;
+    var headers = _parseHeadersWire(headersWire);
+    return {
+      ok: ok,
+      status: status,
+      statusText: statusText,
+      headers: headers,
+      text: function() { return Promise.resolve(body); },
+      json: function() { return Promise.resolve(JSON.parse(body)); }
+    };
+  }
+  // 收集 headers 源（Object / [[k,v]] / Headers-like forEach）→ `name\x1evalue\x1e...` wire（空 → ''）。
+  function _headersToWire(src) {
+    if (!src) return '';
+    var pairs = [];
+    if (typeof src.forEach === 'function') {
+      src.forEach(function(v, k) { pairs.push([String(k), String(v)]); });
+    } else if (Array.isArray(src)) {
+      for (var i = 0; i < src.length; i++) {
+        var e = src[i];
+        if (Array.isArray(e)) pairs.push([String(e[0]), String(e[1])]);
+      }
+    } else {
+      for (var k in src) {
+        if (Object.prototype.hasOwnProperty.call(src, k)) pairs.push([String(k), String(src[k])]);
+      }
+    }
+    var out = '';
+    for (var j = 0; j < pairs.length; j++) out += (j > 0 ? '\x1e' : '') + pairs[j][0] + '\x1e' + pairs[j][1];
+    return out;
+  }
 
-  // P1b S3 incr-a：`fetch(url)` 经 `__zw_fetch(id, url)` 回调异步抓取 + Promise（incr-c
-  // 起 resolve Response 对象）。`__zw_fetch` 未注册（engine/renderer/reftest 路径无
-  // browser fetch handler）时 resolve ok:false Response（stub，避免悬挂，零回归）。
+  // R2923 fetch 完整化：`fetch(input, init)` 透传 method/headers/body → host 返 status/headers/body。
+  // input = URL 字符串或 Request-like（.url/.method/.headers/.body）；init = { method, headers, body }。
+  // method 默认 GET；GET/HEAD 无 body。`__zw_fetch` 未注册（engine/reftest/polyfill 无 host fetch handler）
+  // 时 resolve ok:false Response（stub，避免悬挂，零回归）。
   if (!globalThis.fetch) {
-    globalThis.fetch = function(url) {
+    globalThis.fetch = function(input, init) {
+      init = init || {};
+      var isObj = input && typeof input === 'object';
+      var url = isObj ? String(input.url || '') : String(input);
+      var method = String(init.method || (isObj ? input.method : '') || 'GET').toUpperCase();
+      var headersWire = _headersToWire(init.headers) || (isObj ? _headersToWire(input.headers) : '');
+      var body = '';
+      if (init.body != null) body = String(init.body);
+      else if (isObj && input.body != null) body = String(input.body);
       if (typeof __zw_fetch !== 'function') {
         return Promise.resolve(_makeResponse('__zw_fetch_error:no-handler'));
       }
       return new Promise(function(resolve) {
         globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
         var id = '__zwfid:' + globalThis.__zw_fetch_counter;
-        globalThis.__zw_pending[id] = function(body) { resolve(_makeResponse(body)); };
+        globalThis.__zw_pending[id] = function(raw) { resolve(_makeResponseFromWire(raw)); };
         try {
-          __zw_fetch(id, url);
+          __zw_fetch(id, method, url, headersWire, body);
         } catch (_e) {
           resolve(_makeResponse('__zw_fetch_error:throw'));
         }

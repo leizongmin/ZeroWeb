@@ -8,15 +8,15 @@ use std::time::Duration;
 
 use zero_browser_shell::TabId;
 use zero_engine::{
-    AsyncResolver, DomMutation, FetchBridge, FetchHandler, HandleSelectorMap, LayoutRectSnapshot, RectBridge,
-    TimerBridge, generate_js_dom_shim, make_dom_html_rect_handler, new_handle_selector_map, new_layout_rect_snapshot,
-    register_dom_callbacks,
+    AsyncResolver, DomMutation, FetchBridge, FetchHandler, FetchRequest, FetchResponse, HandleSelectorMap,
+    LayoutRectSnapshot, RectBridge, TimerBridge, generate_js_dom_shim, make_dom_html_rect_handler,
+    new_handle_selector_map, new_layout_rect_snapshot, register_dom_callbacks,
 };
+use zero_net::{HttpClient, HttpMethod, HttpRequest};
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
     extract_module_import_specifiers,
 };
-use zero_webview::fetch_text_async;
 
 /// 页面 `<script>` 执行超时（毫秒）— 短于事件派发，避免死循环拖死 tab worker。
 pub const PAGE_SCRIPT_TIMEOUT_MS: u64 = 2_500;
@@ -341,19 +341,68 @@ fn js_worker_main(
     }
 }
 
-/// P1b S3 incr-b/d：生产 fetch handler——经 `zero_webview::fetch_text_async`（net pool
-/// 自动 OnceLock 初始化）发起 HTTP GET，`recv()` 等 response body。
+/// R2923 fetch 完整化：生产 fetch handler——经 `zero_net::HttpClient::send` 发起真实 HTTP 请求，
+/// 支持全方法（GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS）、请求头、请求体，返 [`FetchResponse`]（status/
+/// status_text/headers/body）。GET 行为零回归（method 默认 GET、body=None）。
 ///
-/// incr-d 起 `register_fetch_callback` 在**子线程**调本 handler（`recv()` 阻塞子线程，
-/// 非 JS worker），故 JS worker 不在 fetch 期间冻结。response 仍为 body 字符串（Response
-/// 对象 spec-compliance 由 shim `_makeResponse` 在 JS 侧包装，incr-c）。
+/// `register_fetch_callback` 在**子线程**调本 handler（`send()` 阻塞子线程，非 JS worker），故 JS worker
+/// 不在 fetch 期间冻结。Response 对象 spec-compliance（ok/status/statusText/headers/text/json）由 shim
+/// `_makeResponseFromWire` 在 JS 侧包装。
 pub fn default_fetch_handler() -> FetchHandler {
-    Arc::new(|url: &str| {
-        fetch_text_async(url)
-            .recv()
-            .map_err(|e| format!("fetch recv: {e}"))
-            .and_then(|r| r)
+    Arc::new(|req: &FetchRequest| {
+        let method = match req.method.to_ascii_uppercase().as_str() {
+            "POST" => HttpMethod::Post,
+            "PUT" => HttpMethod::Put,
+            "DELETE" => HttpMethod::Delete,
+            "PATCH" => HttpMethod::Patch,
+            "HEAD" => HttpMethod::Head,
+            "OPTIONS" => HttpMethod::Options,
+            _ => HttpMethod::Get,
+        };
+        let http_req = HttpRequest {
+            method,
+            url: req.url.clone(),
+            headers: req.headers.clone(),
+            body: req.body.as_ref().map(|b| b.as_bytes().to_vec()),
+        };
+        // per-request client：reqwest client 构造（含 TLS）有成本但可接受；net pool 连接复用属后续优化。
+        let resp = HttpClient::new()
+            .send(http_req)
+            .map_err(|e| format!("fetch send: {e}"))?;
+        Ok(FetchResponse {
+            status: resp.status_code,
+            status_text: status_reason(resp.status_code).to_string(),
+            headers: resp.headers,
+            body: String::from_utf8_lossy(&resp.body).to_string(),
+        })
     })
+}
+
+/// 常见 HTTP 状态码 → 标准原因短语（供 `response.statusText`）；未知 → "OK"。
+fn status_reason(code: u16) -> &'static str {
+    match code {
+        200 => "OK",
+        201 => "Created",
+        202 => "Accepted",
+        204 => "No Content",
+        301 => "Moved Permanently",
+        302 => "Found",
+        303 => "See Other",
+        304 => "Not Modified",
+        307 => "Temporary Redirect",
+        308 => "Permanent Redirect",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        409 => "Conflict",
+        429 => "Too Many Requests",
+        500 => "Internal Server Error",
+        502 => "Bad Gateway",
+        503 => "Service Unavailable",
+        _ => "OK",
+    }
 }
 
 fn execute_module_in_sandbox(
@@ -570,7 +619,9 @@ mod tests {
         // 取 body）；incr-d 起非阻塞（子线程抓取 → 异步 resolve → 测试 polling）。
         let mut worker = TabJsWorkerHandle::spawn(TabId(4));
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
-        worker.set_fetch_handler(Arc::new(|url: &str| Ok(format!("body:{url}"))));
+        worker.set_fetch_handler(Arc::new(|req: &FetchRequest| {
+            Ok(FetchResponse::ok(format!("body:{}", req.url)))
+        }));
         worker
             .execute_script_direct(
                 "fetch('/hello').then(function(r){ return r.text(); })
@@ -602,7 +653,9 @@ mod tests {
         // 合成 handler 返 JSON body → r.ok/status 正确，r.json() 解析出对象。
         let mut worker = TabJsWorkerHandle::spawn(TabId(7));
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
-        worker.set_fetch_handler(Arc::new(|_url: &str| Ok("{\"key\":\"value\",\"n\":42}".to_string())));
+        worker.set_fetch_handler(Arc::new(|_req: &FetchRequest| {
+            Ok(FetchResponse::ok("{\"key\":\"value\",\"n\":42}".to_string()))
+        }));
         worker
             .execute_script_direct(
                 "fetch('/j').then(function(r){
@@ -655,6 +708,54 @@ mod tests {
         assert_eq!(r, "hello-from-server");
         worker.shutdown();
         let _ = server.join();
+    }
+
+    #[test]
+    fn tab_js_worker_fetch_post_method_headers_body_r2923() {
+        // R2923 fetch 完整化：fetch(input, init) 透传 method/headers/body → handler 收 FetchRequest，
+        // 返 FetchResponse(status/statusText/headers/body) → shim 解析为 Response。合成 handler 把请求
+        // 契约 echo 进响应 body（避免 handler 子线程 assert 丢失），JS 侧断言完整往返契约。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(9));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker.set_fetch_handler(Arc::new(|req: &FetchRequest| {
+            let has_ct = req
+                .headers
+                .iter()
+                .any(|(k, v)| k.eq_ignore_ascii_case("content-type") && v == "application/json");
+            Ok(FetchResponse {
+                status: 201,
+                status_text: "Created".to_string(),
+                headers: vec![("X-Test".to_string(), "r2923".to_string())],
+                body: format!(
+                    "{}|{}|{}|{}",
+                    req.method,
+                    req.url,
+                    req.body.as_deref().unwrap_or(""),
+                    has_ct
+                ),
+            })
+        }));
+        worker
+            .execute_script_direct(
+                "fetch('/api/echo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{\"x\":1}' })\
+                 .then(function(r){\
+                   globalThis.__status = r.status + ':' + r.statusText + ':' + (r.ok ? 'ok' : 'no');\
+                   globalThis.__hdr = r.headers['X-Test'];\
+                   return r.text();\
+                 })\
+                 .then(function(t){ globalThis.__result = t; });",
+            )
+            .unwrap();
+        let status = wait_for_global(&worker, "__status", 3000);
+        assert_eq!(status, "201:Created:ok", "Response.status/statusText/ok 从 wire 解析");
+        let hdr = wait_for_global(&worker, "__hdr", 2000);
+        assert_eq!(hdr, "r2923", "Response.headers 从 wire 解析（X-Test 头）");
+        let r = wait_for_global(&worker, "__result", 2000);
+        assert_eq!(
+            r, "POST|/api/echo|{\"x\":1}|true",
+            "请求 method/url/body/headers 全透传 + Response.text() 返响应 body"
+        );
+        worker.shutdown();
     }
 
     #[test]
