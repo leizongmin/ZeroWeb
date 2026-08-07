@@ -406,8 +406,13 @@ impl RenderPipeline {
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
-        let (primitives, stats) = primitives.cull_invisible(viewport);
+        let (primitives, mut stats) = primitives.cull_invisible(viewport);
         let primitives = primitives.batch_fills();
+        // S3 dirty region 契约：当前为全量渲染，脏区域 = 整个视口。
+        // 增量重绘（RFC S3 后续切片）接入 DirtyTracker 后只输出变化区域。
+        stats
+            .dirty_rects
+            .push((0.0, 0.0, viewport.size.width, viewport.size.height));
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
@@ -530,7 +535,11 @@ impl RenderPipeline {
         let primitives = painter.into_primitives();
         // 视口剔除 — 移除视口外的图元（高度取文档布局范围，供浏览器滚动消费）
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
-        let (primitives, stats) = primitives.cull_invisible(viewport);
+        let (primitives, mut stats) = primitives.cull_invisible(viewport);
+        // S3 dirty region 契约：全量渲染 → 脏区域 = 整个视口
+        stats
+            .dirty_rects
+            .push((0.0, 0.0, viewport.size.width, viewport.size.height));
         // 对填充图元进行批处理优化
         let mut primitives = primitives.batch_fills();
         // R2001 P1.5：Print 分页页边界分隔线（render-path 从 layout extent 重算）。
@@ -1248,6 +1257,23 @@ mod pseudo_tests {
             }
             other => panic!("应为 Inline，得到 {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod dirty_region_tests {
+    use super::*;
+
+    #[test]
+    fn render_outputs_full_viewport_dirty_rect() {
+        // S3 dirty region 契约：全量渲染 → 脏区域覆盖整个视口
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html("<html><body><p>hi</p></body></html>", "");
+        assert!(!result.stats.dirty_rects.is_empty(), "应有脏区域输出");
+        let (x, y, w, h) = result.stats.dirty_rects[0];
+        assert_eq!((x, y), (0.0, 0.0));
+        assert_eq!(w, 800.0);
+        assert_eq!(h, 600.0);
     }
 }
 

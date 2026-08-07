@@ -244,6 +244,7 @@ impl RenderPrimitives {
             clip_count: self.clips.len(),
             estimated_draw_calls,
             culled_count: 0,
+            dirty_rects: Vec::new(), // S3：由渲染管线（RenderPipeline）填充
         }
     }
 

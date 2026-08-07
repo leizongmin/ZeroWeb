@@ -432,6 +432,9 @@ pub struct RenderStats {
     pub estimated_draw_calls: usize,
     /// 被视口剔除的图元数量
     pub culled_count: usize,
+    /// 本帧需要重绘的脏区域（S3 增量重绘契约：`(x, y, w, h)`，视口坐标）。
+    /// 当前全量渲染 = 全视口脏；增量光栅化（RFC S3）消费本字段只重绘变化区域。
+    pub dirty_rects: Vec<(f32, f32, f32, f32)>,
 }
 
 impl RenderStats {
