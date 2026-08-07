@@ -11218,6 +11218,129 @@ fn test_fontface_set_events_r2947() {
 }
 
 #[test]
+fn test_datatransfer_itemlist_r2948() {
+    // R2948 DataTransferItemList + DataTransferItem：dataTransfer.items 为 live 视图（替代 R2937 空数组占位）。
+    // setData → string items；length/indexed/iterator；getAsString；add(data,type)/add(file)；remove/clear；getAsFile。
+    // DataTransfer 为纯 JS 构造器（无 host 回调），无需 register_dom_callbacks。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // setData → items 反映 string items（length / indexed / kind / type / iterator）。
+    sandbox
+        .execute(
+            "globalThis.__dt = new DataTransfer();\
+             __dt.setData('text/plain', 'hello');\
+             __dt.setData('text/html', '<b>hi</b>');\
+             globalThis.__len = __dt.items.length;\
+             globalThis.__k0 = __dt.items[0].kind;\
+             globalThis.__t0 = __dt.items[0].type;\
+             globalThis.__kinds = [];\
+             for (var it of __dt.items) { globalThis.__kinds.push(it.kind); }\
+             globalThis.__kinds_csv = globalThis.__kinds.join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len)").unwrap().value,
+        "2",
+        "items.length"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__k0)").unwrap().value,
+        "string",
+        "items[0].kind"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t0)").unwrap().value,
+        "text/plain",
+        "items[0].type"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__kinds_csv)").unwrap().value,
+        "string,string",
+        "for-of 迭代 items 得 2 个 string item"
+    );
+
+    // getAsString 回调字符串内容。
+    sandbox
+        .execute("__dt.items[0].getAsString(function(s){ globalThis.__str = s; });")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__str)").unwrap().value,
+        "hello",
+        "DataTransferItem.getAsString 回调传字符串内容"
+    );
+
+    // items.add(data, type) → 回写到 dataTransfer（getData 反映）+ 返 string item。
+    sandbox
+        .execute(
+            "globalThis.__added = __dt.items.add('world', 'text/uri-list');\
+             globalThis.__getData = __dt.getData('text/uri-list');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__getData)").unwrap().value,
+        "world",
+        "items.add(data, type) 经 setData 回写（getData 反映）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__added.kind)").unwrap().value,
+        "string",
+        "items.add 返 string DataTransferItem"
+    );
+
+    // items.add(file) → file item（File-like）+ getAsFile 返该对象；string item getAsFile 返 null。
+    sandbox
+        .execute(
+            "globalThis.__file = { size: 10, type: 'image/png', name: 'a.png' };\
+             globalThis.__fItem = __dt.items.add(globalThis.__file);\
+             globalThis.__fKind = globalThis.__fItem.kind;\
+             globalThis.__fBack = globalThis.__fItem.getAsFile() === globalThis.__file;\
+             globalThis.__strFile = __dt.items[0].getAsFile();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fKind)").unwrap().value,
+        "file",
+        "items.add(File-like) 返 file item"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fBack)").unwrap().value,
+        "true",
+        "file item.getAsFile() 返原 File-like 对象"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__strFile)").unwrap().value,
+        "null",
+        "string item.getAsFile() 返 null"
+    );
+
+    // items.clear() → 清空（length=0；getData 返空）。
+    sandbox
+        .execute(
+            "globalThis.__cleared = 0;\
+             var snap = __dt.items; snap.clear();\
+             globalThis.__afterClear = __dt.items.length;\
+             globalThis.__afterClearData = __dt.getData('text/plain');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__afterClear)").unwrap().value,
+        "0",
+        "items.clear() 清空（length=0）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__afterClearData)").unwrap().value,
+        "",
+        "clear 后 getData 返空"
+    );
+}
+
+#[test]
 fn test_xmlserializer_importnode_r2818() {
     // R2818：XMLSerializer.serializeToString + document.adoptNode/importNode。serializeToString 委托节点
     // outerHTML（元素）/ nodeValue（text·comment）/ documentElement（document）；adoptNode 单文档 identity；

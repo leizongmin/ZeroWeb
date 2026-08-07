@@ -5658,10 +5658,98 @@
   Object.defineProperty(DataTransfer.prototype, 'files', {
     get: function () { return this._dt_files; },
   });
+  // R2948 DataTransferItemList——dataTransfer.items 的真实视图（替代 R2937 的空数组占位）。
+  // 每次 access 按当前 _dt_data（string items）+ _dt_files（file items）重建（live 语义）；item/add/remove/clear
+  // 经 owner DataTransfer 的 setData/clearData/文件 push 操作回写，与 types/files/getData 保持一致。indexed getter
+  //（items[0]）+ length + Symbol.iterator 覆盖索引访问 / 扩展 / for-of；item.add(data,type)=string item，
+  // item.add(file)=file item（File-like，按 .size 探测）。modern D&D 库（react-dnd / SortableJS items API）经此读写。
   Object.defineProperty(DataTransfer.prototype, 'items', {
-    get: function () { return []; },
+    get: function () {
+      return new DataTransferItemList(this);
+    },
   });
+  // R2948 DataTransferItem——拖放项（kind='string'|'file'，type=MIME）。getAsString(cb) 异步回调字符串内容
+  //（spec：微任务，headless 简化同步调 cb）；getAsFile() string→null，file→其 File-like 对象。
+  function DataTransferItem(kind, type, data, file) {
+    this.kind = kind;
+    this.type = type || '';
+    this._data = data;        // 字符串内容（kind='string'）
+    this._file = file || null; // File-like（kind='file'）
+  }
+  DataTransferItem.prototype.getAsString = function (callback) {
+    if (this.kind === 'string' && typeof callback === 'function') {
+      try { callback(this._data); } catch (_e) {}
+    }
+  };
+  DataTransferItem.prototype.getAsFile = function () {
+    return this.kind === 'file' ? this._file : null;
+  };
+  function DataTransferItemList(dt) {
+    this._dt = dt;
+    var list = [];
+    var data = dt._dt_data || {};
+    for (var k in data) {
+      if (Object.prototype.hasOwnProperty.call(data, k)) {
+        list.push(new DataTransferItem('string', k, data[k], null));
+      }
+    }
+    var files = dt._dt_files || [];
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      list.push(new DataTransferItem('file', (f && f.type) || '', null, f));
+    }
+    this._items = list;
+    // indexed getter：复制为编号属性（items[0]..items[n-1]）。
+    for (var j = 0; j < list.length; j++) this[j] = list[j];
+  }
+  Object.defineProperty(DataTransferItemList.prototype, 'length', {
+    get: function () { return this._items.length; },
+  });
+  DataTransferItemList.prototype.item = function (i) {
+    return this._items[i] || null;
+  };
+  DataTransferItemList.prototype.add = function (data, type) {
+    // add(file)（File-like，按 .size 探测）→ file item；add(data, type) → string item。
+    if (data && typeof data === 'object' && typeof data.size === 'number') {
+      this._dt._dt_files.push(data);
+      var fItem = new DataTransferItem('file', data.type || '', null, data);
+      return fItem;
+    }
+    var t = String(type || '');
+    var s = String(data);
+    this._dt.setData(t, s);
+    var sItem = new DataTransferItem('string', t, s, null);
+    this._items.push(sItem);
+    this[this._items.length - 1] = sItem;
+    return sItem;
+  };
+  DataTransferItemList.prototype.remove = function (i) {
+    var it = this._items[i];
+    if (!it) return;
+    if (it.kind === 'string') {
+      this._dt.clearData(it.type);
+    } else {
+      var idx = this._dt._dt_files.indexOf(it._file);
+      if (idx >= 0) this._dt._dt_files.splice(idx, 1);
+    }
+  };
+  DataTransferItemList.prototype.clear = function () {
+    this._dt.clearData();
+    this._dt._dt_files = [];
+  };
+  if (Symbol && Symbol.iterator) {
+    DataTransferItemList.prototype[Symbol.iterator] = function () {
+      var arr = this._items;
+      var i = 0;
+      return {
+        next: function () {
+          return i < arr.length ? { value: arr[i++], done: false } : { value: undefined, done: true };
+        },
+      };
+    };
+  }
   globalThis.DataTransfer = DataTransfer;
+  globalThis.DataTransferItem = DataTransferItem;
   // R2940 ErrorEvent——未捕获脚本错误 / 资源加载失败事件（window.onerror / window 'error'）。
   // 字段：message（错误消息）/ filename（源脚本 URL）/ lineno / colno / error（Error 对象，headless 无真
   // Error → null）。Sentry / 错误上报库经 `window.addEventListener('error', e => e.message)` 读字段。
