@@ -30,7 +30,9 @@ pub struct PageScriptRunner {
 }
 
 impl PageScriptRunner {
-    /// 从当前文档抽取脚本队列；无脚本或不应执行时返回 `None`。
+    /// 从当前文档抽取脚本队列；不应执行脚本时返回 `None`。无 `<script>` 但 JS 启用的页面仍返回
+    /// 一个立即 inactive 的 runner——使 `finish()` 成为统一的页面生命周期（DOMContentLoaded/load）派发点
+    ///（R2941），覆盖无脚本但含 `<body onload>` 内联 handler 的页面。
     pub fn start(wv: &WebView, javascript_enabled: bool) -> Option<Self> {
         if !javascript_enabled {
             return None;
@@ -40,9 +42,6 @@ impl PageScriptRunner {
             return None;
         }
         let scripts = extract_page_scripts(&html);
-        if scripts.is_empty() {
-            return None;
-        }
         let base = wv.url().unwrap_or("about:blank").to_string();
         let original_html = html.clone();
         Some(Self {
@@ -103,11 +102,27 @@ impl PageScriptRunner {
         PageScriptTickResult::Continue
     }
 
-    /// 全部脚本跑完后，若 DOM 有变更则一次性重载 HTML。
-    pub fn finish(&mut self, wv: &mut WebView) {
+    /// 全部脚本跑完后，若 DOM 有变更则一次性重载 HTML；随后派发页面生命周期事件（R2941）。
+    pub fn finish(&mut self, wv: &mut WebView, js_worker: Option<&TabJsWorkerHandle>) {
         if self.html != self.original_html {
             wv.reload_html_after_script(&self.html);
         }
+        // R2941：脚本阶段完成 → 派发 DOMContentLoaded + load（DOMContentLoaded 先于 load，spec）。
+        // analytics onload / jQuery ready / 框架 mount 高频 hook 经此触发。
+        dispatch_page_lifecycle(js_worker);
+    }
+}
+
+/// R2941：派发页面生命周期事件（DOMContentLoaded + load）进 shim。均派发到 'html' 选择器
+///（document/window listener 同存 `_elKey('html', null)` 键）→ `document.addEventListener('DOMContentLoaded')` /
+/// `window.addEventListener('load')` / `window.onload` / `document.onDOMContentLoaded` 触发。best-effort
+///（报告失败仅 `warn!`，不影响后续）。复用 `script_dispatch_dom_event` 生成 `__zw_dispatch_event` 调用串。
+fn dispatch_page_lifecycle(js_worker: Option<&TabJsWorkerHandle>) {
+    let Some(worker) = js_worker else { return };
+    let dcl = script_dispatch_dom_event("html", "DOMContentLoaded", None);
+    let load = script_dispatch_dom_event("html", "load", None);
+    if let Err(e) = worker.execute_script_direct(&format!("{dcl}; {load}")) {
+        warn!("dispatch page lifecycle: {e}");
     }
 }
 
@@ -131,7 +146,7 @@ pub fn run_page_scripts(wv: &mut WebView, javascript_enabled: bool, js_worker: O
     while runner.is_active() {
         runner.tick(wv, js_worker);
     }
-    runner.finish(wv);
+    runner.finish(wv, js_worker);
 }
 
 /// 向页面元素派发 DOM 事件（宿主输入 → JS 监听器 → DOM 变更 → 重渲染）。

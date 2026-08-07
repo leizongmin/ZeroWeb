@@ -295,7 +295,7 @@ fn tab_worker_main(
             runner.tick(&mut wv, _js_worker.as_ref());
             push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
             if !runner.is_active() {
-                runner.finish(&mut wv);
+                runner.finish(&mut wv, _js_worker.as_ref());
                 let title = page_title_from_webview(&wv);
                 let _ = msg_tx.send(TabWorkerMessage::Title(title));
                 push_snapshot(&wv, &msg_tx, _js_worker.as_ref());

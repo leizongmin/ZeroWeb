@@ -6522,7 +6522,7 @@
       },
     });
   }
-  ['fullscreenchange', 'fullscreenerror', 'pointerlockchange', 'pointerlockerror'].forEach(_defineDocOnHandler);
+  ['fullscreenchange', 'fullscreenerror', 'pointerlockchange', 'pointerlockerror', 'DOMContentLoaded'].forEach(_defineDocOnHandler);
 
   // Selection / Range（R2804，缺失 Web API 续）。headless 无真用户选择——Selection 单例默认空
   //（rangeCount=0/isCollapsed=true/toString=''/anchorNode=null/focusNode=null/type='None'），selection-state-

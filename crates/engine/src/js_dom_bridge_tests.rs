@@ -10796,6 +10796,97 @@ fn test_window_onerror_report_r2940() {
 }
 
 #[test]
+fn test_page_lifecycle_load_r2941() {
+    // R2941 页面生命周期事件派发：host（tab_scripts::finish）在页面脚本阶段完成后依次派发
+    // DOMContentLoaded + load（均经 __zw_dispatch_event('html', type, null) → document/window listener 同键）。
+    // 触发 document.addEventListener('DOMContentLoaded') / window.addEventListener('load') / window.onload
+    //（R2932 IDL）/ document.onDOMContentLoaded（R2941 IDL）。DOMContentLoaded 先于 load（spec）。
+    // https://html.spec.whatwg.org/#the-end
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // document.onDOMContentLoaded（R2941 新增 IDL handler）可读写（无值初 null）。
+    assert_eq!(
+        sandbox.execute("String(document.onDOMContentLoaded)").unwrap().value,
+        "null",
+        "document.onDOMContentLoaded 初值 null"
+    );
+
+    // 注册四类 hook：document.addEListener('DOMContentLoaded') / window.onload / window.addEventListener('load') /
+    // document.onDOMContentLoaded。记录触发顺序进 __order。
+    sandbox
+        .execute(
+            "globalThis.__order = [];\
+             document.addEventListener('DOMContentLoaded', function(){ globalThis.__order.push('dcl-ael'); });\
+             document.onDOMContentLoaded = function(){ globalThis.__order.push('dcl-idl'); };\
+             window.onload = function(){ globalThis.__order.push('load-idl'); };\
+             window.addEventListener('load', function(){ globalThis.__order.push('load-ael'); });",
+        )
+        .unwrap();
+
+    // host 模拟：finish() 依次派发 DOMContentLoaded + load（DOMContentLoaded 先于 load）。
+    sandbox
+        .execute(
+            "__zw_dispatch_event('html', 'DOMContentLoaded', null);\
+             __zw_dispatch_event('html', 'load', null);",
+        )
+        .unwrap();
+    // DOMContentLoaded 触发 document.addEventListener + document.onDOMContentLoaded（均 html 键）。
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__order.indexOf('dcl-ael') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "DOMContentLoaded 派发触发 document.addEventListener('DOMContentLoaded')"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__order.indexOf('dcl-idl') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "DOMContentLoaded 派发触发 document.onDOMContentLoaded（R2941 IDL）"
+    );
+    // load 触发 window.onload（R2932 IDL）+ window.addEventListener('load')。
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__order.indexOf('load-idl') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "load 派发触发 window.onload（R2932 IDL）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__order.indexOf('load-ael') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "load 派发触发 window.addEventListener('load')"
+    );
+    // DOMContentLoaded 整体先于 load（spec：DOMContentLoaded → load）：最后一条 dcl 记录在首条 load 记录前。
+    sandbox.execute(
+        "globalThis.__dclFirst = (function(){ var s = globalThis.__order.join(','); return s.lastIndexOf('dcl') < s.indexOf('load'); })();",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dclFirst)").unwrap().value,
+        "true",
+        "DOMContentLoaded 先于 load"
+    );
+}
+
+#[test]
 fn test_xmlserializer_importnode_r2818() {
     // R2818：XMLSerializer.serializeToString + document.adoptNode/importNode。serializeToString 委托节点
     // outerHTML（元素）/ nodeValue（text·comment）/ documentElement（document）；adoptNode 单文档 identity；
