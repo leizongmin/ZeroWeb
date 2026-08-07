@@ -2966,10 +2966,16 @@
   //（`font-size`）；camelCase 直存 style 属性会被 CSS parser 忽略 → 渲染静默失效。归一 camelCase→
   // kebab（复用 `_camelToKebab`，对已 kebab 幂等）；`cssFloat`→`float`（JS 保留字特例）；`--custom`
   // 自定义属性大小写敏感，原样不转。
+  // vendor 前缀特例（CSSOM §CSSStyleDeclaration）：IDL 属性 `webkitXxx` → CSS 属性 `-webkit-xxx`
+  //（`webkitLineClamp` → `-webkit-line-clamp`）——通用 `_camelToKebab` 产 `webkit-line-clamp`
+  //（丢前导 `-`）→ CSS parser 不认 → 渲染静默失效。仅 webkit 前缀用无连字符 camelCase 暴露
+  //（moz/ms/o 前缀 IDL 为 `MozXxx`/`msXxx`/`Oxxx`，罕见，保持通用路径）。
   function _stylePropName(name) {
     var s = String(name).trim();
     if (s === 'cssFloat') return 'float';
     if (s.charAt(0) === '-' && s.charAt(1) === '-') return s;
+    var m = /^webkit([A-Z])(.*)$/.exec(s);
+    if (m) return '-webkit-' + m[1].toLowerCase() + _camelToKebab(m[2]);
     return _camelToKebab(s);
   }
 
@@ -6361,6 +6367,7 @@
   // 触发首次注册 _defer 派发（同 R2931）。**已知限制**：onerror/onload 等的「真事件」需 host 集成（错误拦截/
   // load 派发——headless 无 host load 钩子），此处仅注册 listener + 属性可读写 + 合成 dispatchEvent / 既有派发
   // 路径（pageshow/popstate/hashchange）可触。element 级 on* handler（onclick 等）未含（element Proxy 另处理）。
+  //（本地并行实现的 onload-only accessor 已被本通用实现取代——rebase 069c9035 时采用 R2932 侧。）
   var _winOnHandlers = {};
   function _defineWinOnHandler(type) {
     Object.defineProperty(globalThis, 'on' + type, {

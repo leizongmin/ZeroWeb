@@ -13881,3 +13881,86 @@ fn test_node_is_connected_and_has_child_nodes_r2922() {
         "#d 移出 document 后 isConnected = false（__zw_contains 反映 detach）"
     );
 }
+
+/// R2922：`window.onload = fn` 事件处理器 IDL 语义——赋值等价注册 load 监听，
+/// `__zw_dispatch_event('html','load')` 派发时触发（driving:
+/// css-overflow/line-clamp/webkit-line-clamp-019 的 `window.onload` 动态改样式）。
+#[test]
+fn test_window_onload_assignment_registers_load_listener() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><div id='t'></div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // window.onload 赋值（须在派发前注册）。
+    sandbox
+        .execute("window.onload = function() { document.querySelector('#t').style.color = 'red'; };")
+        .unwrap();
+    // 派发 load 事件 → onload 回调应执行 → 入队 SetStyle mutation。
+    sandbox.execute("__zw_dispatch_event('html','load',null);").unwrap();
+
+    let ms = mutations.lock().unwrap();
+    let style_mutations: Vec<_> = ms
+        .iter()
+        .filter_map(|m| match m {
+            DomMutation::SetStyle {
+                selector,
+                property,
+                value,
+            } => Some((selector.as_str(), property.as_str(), value.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        style_mutations.contains(&("#t", "color", "red")),
+        "window.onload 回调须产生 SetStyle color=red，实际 {style_mutations:?}"
+    );
+}
+
+/// R2922：`el.style.webkitLineClamp = '6'` 按 CSSOM vendor 前缀规则归一为 CSS 属性
+/// `-webkit-line-clamp`（通用 camelCase→kebab 会产 `webkit-line-clamp`——丢前导 `-`，
+/// CSS parser 不认 → 渲染静默失效；driving: webkit-line-clamp-019）。
+#[test]
+fn test_style_webkit_prefix_property_normalized_with_leading_hyphen() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><div id='t'></div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute("document.querySelector('#t').style.webkitLineClamp = '6';")
+        .unwrap();
+
+    let ms = mutations.lock().unwrap();
+    let style_mutations: Vec<_> = ms
+        .iter()
+        .filter_map(|m| match m {
+            DomMutation::SetStyle {
+                selector,
+                property,
+                value,
+            } => Some((property.as_str(), value.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        style_mutations.contains(&("-webkit-line-clamp", "6")),
+        "webkitLineClamp 须归一为 -webkit-line-clamp（带前导连字符），实际 {style_mutations:?}"
+    );
+}

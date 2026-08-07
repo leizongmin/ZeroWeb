@@ -92,11 +92,21 @@ pub(super) fn apply_scripted_dom_mutations(html: &str, base_dir: Option<&Path>, 
     if std::env::var("REFTEST_DEBUG").is_ok() {
         eprintln!("  [reftest JS] recorded {} mutation(s): {:?}", recorded.len(), recorded);
     }
+    if std::env::var("REFTEST_DEBUG_HTML").is_ok() {
+        let sample = html.chars().take(800).collect::<String>();
+        eprintln!("  [reftest JS] original html (first 800): {sample}");
+    }
     if recorded.is_empty() {
         return html.to_string();
     }
     match apply_mutations_to_html(html, &recorded) {
-        Ok(new_html) => new_html,
+        Ok(new_html) => {
+            if std::env::var("REFTEST_DEBUG_HTML").is_ok() {
+                let sample = new_html.chars().take(2000).collect::<String>();
+                eprintln!("  [reftest JS] mutated html (first 2000): {sample}");
+            }
+            new_html
+        }
         Err(e) => {
             eprintln!("  [reftest JS] apply mutations warning: {e}");
             html.to_string()
