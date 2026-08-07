@@ -2204,6 +2204,105 @@ fn test_css_escape_supports_r2785() {
 }
 
 #[test]
+fn test_css_supports_and_or_r2951() {
+    // R2951：CSS.supports 单参 condition 经 css-parser parse_supports_condition 完整求值
+    //（and/or/not/嵌套/selector）。R2785 的 eval_supports_condition 未实现 and/or（恒 false）——本切片修。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.register_callback(
+        "__zw_css_supports",
+        Box::new(|args: &[String]| -> String {
+            let prop = args.first().map(String::as_str).unwrap_or("");
+            let value = args.get(1).map(String::as_str);
+            if css_supports(prop, value) {
+                "1".into()
+            } else {
+                "0".into()
+            }
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // and：两声明均支持 → true；一真一假 → false。
+    assert_eq!(
+        sandbox
+            .execute("CSS.supports('(display: grid) and (display: flex)')")
+            .unwrap()
+            .value,
+        "true",
+        "and：两支持声明 → true"
+    );
+    assert_eq!(
+        sandbox
+            .execute("CSS.supports('(display: grid) and (fakeprop: x)')")
+            .unwrap()
+            .value,
+        "false",
+        "and：一支持一不支持 → false"
+    );
+    // or：任一支持 → true；均不支持 → false。
+    assert_eq!(
+        sandbox
+            .execute("CSS.supports('(display: grid) or (fakeprop: x)')")
+            .unwrap()
+            .value,
+        "true",
+        "or：任一支持 → true"
+    );
+    assert_eq!(
+        sandbox
+            .execute("CSS.supports('(fake1: x) or (fake2: y)')")
+            .unwrap()
+            .value,
+        "false",
+        "or：均不支持 → false"
+    );
+    // not：支持声明取反 → false；不支持取反 → true。
+    assert_eq!(
+        sandbox.execute("CSS.supports('not (display: grid)')").unwrap().value,
+        "false",
+        "not：支持声明取反 → false"
+    );
+    assert_eq!(
+        sandbox.execute("CSS.supports('not (fakeprop: x)')").unwrap().value,
+        "true",
+        "not：不支持取反 → true"
+    );
+    // 嵌套（多括号层）+ 组合。
+    assert_eq!(
+        sandbox.execute("CSS.supports('((display: grid))')").unwrap().value,
+        "true",
+        "嵌套括号 → true"
+    );
+    assert_eq!(
+        sandbox
+            .execute("CSS.supports('(display: grid) and ((color: red) or (fakeprop: x))')")
+            .unwrap()
+            .value,
+        "true",
+        "and + 嵌套 or（or 内一真）→ true"
+    );
+    // selector()（permissive true）+ 混用 and/or 拒绝（spec：同层不可混 and/or）。
+    assert_eq!(
+        sandbox.execute("CSS.supports('selector(.a > .b)')").unwrap().value,
+        "true",
+        "selector() → permissive true"
+    );
+    assert_eq!(
+        sandbox
+            .execute("CSS.supports('(display: grid) and (color: red) or (fakeprop: x)')")
+            .unwrap()
+            .value,
+        "false",
+        "同层混用 and/or → spec 非法 → false"
+    );
+}
+
+#[test]
 fn test_document_cookie_r2786() {
     // R2786：document.cookie get/set（in-JS 存储，set-then-read 常见模式）。**已知限制**：不接真 cookie jar
     // / 无 origin 隔离 / 无 expiry（host-layer defer）。

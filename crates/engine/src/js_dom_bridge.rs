@@ -2600,21 +2600,43 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
         && zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false)
 }
 
-/// supports-condition 递归求值：`not <cond>` / `( <cond> )` / 声明 `prop: val`。`and`/`or` 未实现。
+/// supports-condition 递归求值。优先用 css-parser 的 [`parse_supports_condition`]（完整处理
+/// `and`/`or`/`not`/嵌套/`selector()`，返 [`SupportsCondition`] AST），按 AST 求值；parser 失败时
+/// 回退裸声明 `prop: val`（浏览器兼容：`CSS.supports('display:grid')` 无括号形式，parser 要求括号）。
+/// https://drafts.csswg.org/css-conditional-3/#supports-condition
 fn eval_supports_condition(text: &str, style: &mut zero_style_system::ComputedStyle) -> bool {
+    if let Some(cond) = zero_css_parser::parse_supports_condition(text) {
+        return eval_supports_cond_ast(&cond, style);
+    }
+    // 回退：裸声明 `prop: val`（无括号）。
     let t = text.trim();
-    if let Some(rest) = t.strip_prefix("not ") {
-        return !eval_supports_condition(rest, style);
-    }
-    if t.starts_with('(') && t.ends_with(')') && t.len() >= 2 {
-        return eval_supports_condition(&t[1..t.len() - 1], style);
-    }
     if let Some(idx) = t.find(':') {
         let prop = t[..idx].trim();
         let val = t[idx + 1..].trim();
         return decl_supported(style, prop, val);
     }
     false
+}
+
+/// 递归求值 [`SupportsCondition`] AST：
+/// - [`SupportsCondition::Property`] → [`decl_supported`]（已知属性 + 可 apply）。
+/// - [`SupportsCondition::And`] → 全部为真；[`SupportsCondition::Or`] → 任一为真；
+///   [`SupportsCondition::Not`] → 取反。
+/// - [`SupportsCondition::Selector`] → headless permissive true（ZW 支持选择器，含 :has() 等已实现）。
+/// - [`SupportsCondition::GeneralEnclosed`] → false（spec：general-enclosed 恒 false）。
+fn eval_supports_cond_ast(
+    cond: &zero_css_parser::SupportsCondition,
+    style: &mut zero_style_system::ComputedStyle,
+) -> bool {
+    use zero_css_parser::SupportsCondition;
+    match cond {
+        SupportsCondition::Property(prop, val) => decl_supported(style, prop, val),
+        SupportsCondition::Selector(_) => true,
+        SupportsCondition::And(conds) => conds.iter().all(|c| eval_supports_cond_ast(c, style)),
+        SupportsCondition::Or(conds) => conds.iter().any(|c| eval_supports_cond_ast(c, style)),
+        SupportsCondition::Not(c) => !eval_supports_cond_ast(c, style),
+        SupportsCondition::GeneralEnclosed(_) => false,
+    }
 }
 
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。

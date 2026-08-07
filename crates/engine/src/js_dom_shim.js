@@ -5970,8 +5970,8 @@
 
   // CSS——CSS 命名空间（escape 选择器转义 + supports 特性检测）。escape 纯 JS（CSSOM escape 算法，
   // 本地 Chromium 150 oracle 锚定）；supports 委托 host `__zw_css_supports`（known-property gate +
-  // apply，两参声明 / 单参条件 not/括号/声明）。**已知限制**：supports 的 and/or 深嵌套未实现
-  //（罕见，单声明/not/括号覆盖主流）；supports 语义近似「ZW 能 apply」（偏乐观）。
+  // apply，两参声明 / 单参条件 not/括号/声明/and/or/嵌套——R2951 经 css-parser parse_supports_condition
+  // 完整求值）。supports 语义近似「ZW 能 apply」（偏乐观）；selector() 恒 true（permissive）。
   globalThis.CSS = globalThis.CSS || {
     escape: function (str) {
       var s = String(str);
