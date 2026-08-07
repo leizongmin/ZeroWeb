@@ -269,6 +269,13 @@ fn canonical_property_name(property: &str) -> &str {
         "-webkit-backface-visibility" => "backface-visibility",
         "-webkit-perspective" => "perspective",
         "-webkit-perspective-origin" => "perspective-origin",
+        // R2921：`-webkit-line-clamp` → `line-clamp`（web-compat 遗留别名，值语法与标准
+        // 完全一致——apply_advanced 已按别名处理，但未 canonical 化前与 `line-clamp` 各占
+        // 独立槽位 → 同规则内两个声明双写 style.line_clamp，终值由 HashMap 迭代序（进程
+        // 随机种子）决定 → line-clamp-019 结果进程级硬币翻转（64px/128px）。canonical 化后
+        // 同槽位按 CascadeOrder（position）竞争，后声明胜，与真实浏览器一致。
+        // driving: css-overflow/line-clamp/line-clamp-019。
+        "-webkit-line-clamp" => "line-clamp",
         _ => property,
     }
 }
@@ -1244,6 +1251,28 @@ mod tests {
     fn test_cascade_empty() {
         let result = cascade(vec![], false);
         assert!(result.is_empty());
+    }
+
+    /// R2921：`-webkit-line-clamp` 与 `line-clamp` 是同一属性的别名（值语法一致）。
+    /// 未 canonical 化前二者各占独立槽位 → 同规则双声明都被应用、终值由 HashMap
+    /// 迭代序（进程随机种子）决定 → line-clamp-019 结果进程级硬币翻转。
+    /// canonical 化后同槽位按 CascadeOrder（position）竞争，**后声明者胜**。
+    #[test]
+    fn test_cascade_webkit_line_clamp_canonicalized_to_line_clamp() {
+        // 同规则同 specificity：`line-clamp: 2` 先声明、`-webkit-line-clamp: 4` 后声明。
+        let decls = vec![
+            ("line-clamp".to_string(), "2".to_string(), false),
+            ("-webkit-line-clamp".to_string(), "4".to_string(), false),
+        ];
+        let order = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false);
+        let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 1, 0), 0);
+        assert_eq!(cascaded.len(), 2);
+        assert_eq!(cascaded[0].order, order);
+        let result = cascade(cascaded, false);
+        // 归一化为单槽位（后声明胜），而非两个 key 并存。
+        assert_eq!(result.len(), 1, "别名须归一化为单一槽位：{result:?}");
+        assert_eq!(result.get("line-clamp").map(String::as_str), Some("4"));
+        assert!(result.get("-webkit-line-clamp").is_none());
     }
 
     #[test]

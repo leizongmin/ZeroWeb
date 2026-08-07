@@ -32,9 +32,19 @@
 
 正确性零回归：全量 upstream 失败集合与 HEAD（无缓存）逐案一致（3228 案，`comm -3` 空）；css-fonts 287 案 pass/fail 与 diff 率逐项一致；inline 686/686 通过；`cargo test --workspace` 全过。
 
-## 附带发现：预存在的 harness 竞态（与本优化无关）
+## 附带发现并已修复：line-clamp-019 进程级硬币翻转（style-system canonical 缺失）
 
-对比全量跑时发现 `line-clamp-019.html` 结果在 0.00%（pass）与 10.46%（fail）间**硬币式翻转**——同一 HEAD 二进制 3 连跑为 pass/fail/pass。根因指向 `runner_text_metrics::MEASURE_CTX`（thread_local 存 `*const FontLoader` 原始指针）与引擎内部线程化绘制的组合：SAFETY 注释「runner 单线程渲染」在 `--jobs ≥ 2`（rayon 工作线程渲染）时被违反，布局/paint 落在无 ctx 的线程上会回退 `estimate_char_width`（0.55×fs）→ 行宽不同 → line-clamp 截断差异。`--jobs 1`（主线程渲染）确定性失败暴露了它；修复方向：测量上下文改为可跨线程（如 rayon 池内 install）或引擎层传递。**未在本优化内修复（独立议题）。**
+对比全量跑时发现 `line-clamp-019.html` 结果在 0.00%（pass）与 10.46%（fail）间**进程级硬币翻转**——每进程一次随机采样（连跑 5 次 3 过 2 败），与 jobs 数无关（jobs=1「恒败」是小样本巧合）。
+
+**排查过程**（中间假设曾被推翻，最终定位）：
+1. 最初假设 `MEASURE_CTX` thread_local 竞态（`--jobs ≥ 2` 时渲染线程 vs 引擎内部线程）——**错误**：测量链路全同步；product-smoke 单渲染 4 个 PNG 哈希全同（渲染本身确定）
+2. 布局树对比发现 test 页自身在 64px（`line-clamp:2` 生效）与 128px（`-webkit-line-clamp:4` 生效）间翻转——**同进程第一个渲染即不同**，排除跨渲染残留
+3. **根因**：`cascade::canonical_property_name` 漏了 `-webkit-line-clamp` → 与 `line-clamp` 各占独立级联槽位 → 两声明双写 `style.line_clamp`，终值由 result HashMap 迭代序（RandomState 每进程随机种子）决定
+4. **修复**（R2921）：canonical_property_name 补 `"-webkit-line-clamp" => "line-clamp"`（与 R2919 的 `-webkit-user-select`/`-webkit-transform` 等别名同机制）——同槽位按 CascadeOrder（position）竞争，后声明胜。修复后 6/6 连跑稳定 0.00%；全量 upstream 失败集合与基线 `comm -3` 空（零回归）
+
+**经验**：排查"渲染结果随机翻转"时，先确认**单次渲染是否确定**（product-smoke 哈希对比），确定则问题在渲染输入；输入相同而结果不同 → 级联/应用层有 HashMap 迭代序依赖。凡是「两属性名语义相同但 canonical 不同」都会踩此坑（`line-clamp`/`-webkit-line-clamp`、`overflow-wrap`/`word-wrap` 已处理，新增别名须同步 canonical 表）。
+
+> 注：`webkit-line-clamp-019.html` 稳定 10.58% 是独立功能缺口（script 动态改 `webkitLineClamp` 不生效），非 flake。
 
 ## 经验
 
