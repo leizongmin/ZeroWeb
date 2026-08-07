@@ -6437,6 +6437,7 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
+ "zero-dom",
  "zero-webview",
 ]
 
