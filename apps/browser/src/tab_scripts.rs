@@ -31,6 +31,10 @@ pub struct PageScriptRunner {
     /// AsyncPageLoad.take_failed_resources drain 后经 `set_resource_errors` 注入）。finish() 在页面
     /// load 之后派发对应 window 'error' 事件（确保脚本注册的 onerror handler 已就位）。
     resource_errors: Vec<(String, String)>,
+    /// R2943：img 元素级 load/error 事件 `(绝对 URL, "load"/"error")`（由 tab_worker 从
+    /// AsyncPageLoad.take_img_element_events drain 后注入）。finish() 经 `__zw_dispatch_img_event` 派发到
+    /// 匹配 src 的 `<img>` 元素（img.onload/onerror）。
+    img_events: Vec<(String, &'static str)>,
 }
 
 impl PageScriptRunner {
@@ -55,12 +59,19 @@ impl PageScriptRunner {
             html,
             original_html,
             resource_errors: Vec::new(),
+            img_events: Vec::new(),
         })
     }
 
     /// R2942：注入子资源 fetch/decode 失败记录（stylesheet/image），finish() 在 load 之后派发 window 'error'。
     pub fn set_resource_errors(&mut self, errors: Vec<(String, String)>) {
         self.resource_errors = errors;
+    }
+
+    /// R2943：注入 img 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，finish() 经
+    /// `__zw_dispatch_img_event` 派发到匹配 src 的 `<img>` 元素。
+    pub fn set_img_events(&mut self, events: Vec<(String, &'static str)>) {
+        self.img_events = events;
     }
 
     /// 是否还有待执行脚本。
@@ -129,6 +140,11 @@ impl PageScriptRunner {
         for (kind, url) in &self.resource_errors {
             report_resource_error(js_worker, kind, url);
         }
+        // R2943：img 元素级 load/error——经 `__zw_dispatch_img_event` 派发到匹配 src 的 <img> 元素
+        //（img.onload/onerror）。延后到 load 之后（同 R2942 理由，确保 handler 已注册）。
+        for (url, ty) in &self.img_events {
+            dispatch_img_event(js_worker, url, ty);
+        }
     }
 }
 
@@ -154,6 +170,18 @@ fn report_resource_error(js_worker: Option<&TabJsWorkerHandle>, kind: &str, url:
     let report = script_report_error(&msg, url, 0, 0);
     if let Err(e) = worker.execute_script_direct(&report) {
         warn!("report resource error ({kind} {url}): {e}");
+    }
+}
+
+/// R2943：派发 img 元素级 load/error 事件进 shim。经 `script_dispatch_img_event` 生成
+/// `__zw_dispatch_img_event(url, type)` 调用串——shim 按 src 绝对 URL 匹配 `<img>` 元素 proxy，
+/// 用其自身 selector 派发（保证 listener key 匹配，img.onload/onerror + addEventListener('load'/'error') 触发）。
+/// `ty` = "load"（fetch+decode 成功）/ "error"（fetch 或 decode 失败）。best-effort。
+fn dispatch_img_event(js_worker: Option<&TabJsWorkerHandle>, url: &str, ty: &str) {
+    let Some(worker) = js_worker else { return };
+    let report = zero_engine::script_dispatch_img_event(url, ty);
+    if let Err(e) = worker.execute_script_direct(&report) {
+        warn!("dispatch img event ({ty} {url}): {e}");
     }
 }
 

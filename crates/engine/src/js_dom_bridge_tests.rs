@@ -10887,6 +10887,100 @@ fn test_page_lifecycle_load_r2941() {
 }
 
 #[test]
+fn test_img_element_events_r2943() {
+    // R2943 img 元素级 onload/onerror：`__zw_dispatch_img_event(absUrl, type)` 按 src 绝对 URL 匹配 `<img>`
+    // proxy，用其自身 selector 派发 load/error（保证 listener store key 与 page JS 经 querySelectorAll
+    // 获取 proxy 时一致 → img.onload/onerror + addEventListener('load'/'error') 触发）。模拟 host 在 img
+    // fetch 完成（'load'）/ 失败（'error'）时调用。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <img id='i1' src='https://example.com/a.png'>\
+         <img src='https://example.com/b.png'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // img#i1：addEventListener('load') + onload IDL + onerror；img b.png：onload。
+    sandbox
+        .execute(
+            "globalThis.__hit = [];\
+             var imgs = document.querySelectorAll('img');\
+             imgs[0].addEventListener('load', function(){ globalThis.__hit.push('i1-load-ael'); });\
+             imgs[0].onload = function(){ globalThis.__hit.push('i1-load-idl'); };\
+             imgs[0].onerror = function(){ globalThis.__hit.push('i1-error'); };\
+             imgs[1].onload = function(){ globalThis.__hit.push('b-load'); };",
+        )
+        .unwrap();
+
+    // host 派发：i1 load + i1 error + b load（绝对 URL；src 已绝对故不经 parse_url 解析）。
+    sandbox
+        .execute(
+            "__zw_dispatch_img_event('https://example.com/a.png', 'load');\
+             __zw_dispatch_img_event('https://example.com/a.png', 'error');\
+             __zw_dispatch_img_event('https://example.com/b.png', 'load');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hit.indexOf('i1-load-ael') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "img#i1 addEventListener('load') 触发（元素自身 selector 派发）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hit.indexOf('i1-load-idl') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "img#i1 onload IDL 触发"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hit.indexOf('i1-error') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "img#i1 onerror 触发（fetch/decode 失败派 error）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hit.indexOf('b-load') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "img b.png onload 触发（多 img 按 src 区分）"
+    );
+    // 未匹配 src 不派发（计数不变）。
+    sandbox
+        .execute(
+            "globalThis.__before = globalThis.__hit.length;\
+             __zw_dispatch_img_event('https://example.com/missing.png', 'load');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hit.length === globalThis.__before)")
+            .unwrap()
+            .value,
+        "true",
+        "未匹配 src 的派发不触发任何 img listener"
+    );
+}
+
+#[test]
 fn test_xmlserializer_importnode_r2818() {
     // R2818：XMLSerializer.serializeToString + document.adoptNode/importNode。serializeToString 委托节点
     // outerHTML（元素）/ nodeValue（text·comment）/ documentElement（document）；adoptNode 单文档 identity；

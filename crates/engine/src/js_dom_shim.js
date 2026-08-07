@@ -6800,6 +6800,40 @@
     } catch (_e) {}
   };
 
+  // R2943 `__zw_dispatch_img_event(absUrl, type)`——host 侧 img 元素级 load/error 派发入口。宿主在 img fetch
+  // 完成（成功 → 'load' / 失败 → 'error'）时调用。shim 按 src 绝对 URL 匹配 `<img>` 元素 proxy——遍历
+  // `__zw_query_all('img')` 返的唯一 selector，读各 img 的 src 属性，经 `__zw_parse_url` 解析为绝对 URL
+  // 与 absUrl 比较，命中则用**该元素自身 selector** 经 `__zw_dispatch_event` 派发（保证 listener store key
+  // 与 page JS 经 querySelectorAll/getElementsByTagName 获取 proxy 时一致 → img.onload/onerror +
+  // addEventListener('load'/'error') 触发）。绕开 selector 歧义（不同取元素方式可能产生不同 selector）。
+  // **已知限制**：仅覆盖 DOM 内的 `<img>`（async_load 仅 fetch 解析出的 img，不含动态 new Image()）。
+  globalThis.__zw_dispatch_img_event = function (absUrl, type) {
+    try {
+      if (typeof __zw_query_all !== 'function' || typeof __zw_dispatch_event !== 'function') return;
+      var sels = __zw_query_all('img');
+      if (!sels) return;
+      var list = sels.split('|').filter(Boolean);
+      var pageUrl = typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : '';
+      var target = String(absUrl == null ? '' : absUrl);
+      for (var i = 0; i < list.length; i++) {
+        var sel = list[i];
+        var rawSrc = typeof __zw_get_attr === 'function' ? __zw_get_attr(sel, 'src') : '';
+        if (!rawSrc) continue;
+        var resolved = rawSrc;
+        // 相对 src 解析为绝对（与 host 的 absUrl 同源同 base，url crate 规范化一致）。
+        if (pageUrl && rawSrc.indexOf('://') < 0 && typeof __zw_parse_url === 'function') {
+          try {
+            var parsed = JSON.parse(__zw_parse_url(rawSrc, pageUrl));
+            if (parsed && parsed.href) resolved = parsed.href;
+          } catch (_e) {}
+        }
+        if (resolved === target) {
+          __zw_dispatch_event(sel, type, null); // 元素自身 selector → listener key 匹配
+        }
+      }
+    } catch (_e) {}
+  };
+
   globalThis.__zw_dispatch_event = function(sel, type, detail) {
     var ev;
     if (detail && (detail.key || detail.code)) {

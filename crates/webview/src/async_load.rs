@@ -89,6 +89,10 @@ pub struct AsyncPageLoad {
     /// R2942：子资源 fetch/decode 失败记录，供宿主派发 window 'error' 事件（错误上报库 hook）。
     /// stylesheet fetch 失败 + image fetch/decode 失败收集于此；经 `take_failed_resources()` drain。
     failed_resources: Vec<FailedResource>,
+    /// R2943：img 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，供宿主经
+    /// `__zw_dispatch_img_event` 派发到匹配 src 的 `<img>` 元素（img.onload/onerror）。成功 → "load"，
+    /// fetch/decode 失败 → "error"；经 `take_img_element_events()` drain。
+    img_element_events: Vec<(String, &'static str)>,
 }
 
 /// R2942：子资源 fetch/decode 失败记录。`kind` = "stylesheet" / "image"；`url` = 资源绝对 URL。
@@ -121,6 +125,7 @@ impl AsyncPageLoad {
             budget_pending: false,
             last_error: None,
             failed_resources: Vec::new(),
+            img_element_events: Vec::new(),
         }
     }
 
@@ -132,6 +137,12 @@ impl AsyncPageLoad {
     /// R2942：取出并清除子资源 fetch/decode 失败记录（stylesheet/image），供宿主派发 window 'error'。
     pub fn take_failed_resources(&mut self) -> Vec<FailedResource> {
         std::mem::take(&mut self.failed_resources)
+    }
+
+    /// R2943：取出并清除 img 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，供宿主经
+    /// `__zw_dispatch_img_event` 派发到匹配 src 的 `<img>` 元素。
+    pub fn take_img_element_events(&mut self) -> Vec<(String, &'static str)> {
+        std::mem::take(&mut self.img_element_events)
     }
 
     /// 是否因错误结束。
@@ -158,6 +169,7 @@ impl AsyncPageLoad {
             budget_pending: true,
             last_error: None,
             failed_resources: Vec::new(),
+            img_element_events: Vec::new(),
         }
     }
 
@@ -666,6 +678,7 @@ impl AsyncPageLoad {
                                 }
                             }
                             webview.image_cache().insert_with_key(ImageKey::new(*key), img);
+                            self.img_element_events.push((url.clone(), "load"));
                         }
                         Err(e) => {
                             tracing::warn!("image {url} decode failed: {e}");
@@ -673,6 +686,7 @@ impl AsyncPageLoad {
                                 kind: "image",
                                 url: url.clone(),
                             });
+                            self.img_element_events.push((url.clone(), "error"));
                         }
                     },
                     Err(e) => {
@@ -681,6 +695,7 @@ impl AsyncPageLoad {
                             kind: "image",
                             url: url.clone(),
                         });
+                        self.img_element_events.push((url.clone(), "error"));
                     }
                 }
                 *changed = true;
@@ -909,6 +924,25 @@ mod tests {
         assert_eq!(failed.len(), 1, "一条 image fetch 失败");
         assert_eq!(failed[0].kind, "image");
         assert!(failed[0].url.ends_with("broken.png"));
+    }
+
+    /// R2943：img 元素级 load/error 事件收集——fetch 失败 → "error"（decode 成功的 "load" 路径为对称单行
+    /// push，经 code review 正确；此处用 ErrFetchHost 验证 error 收集 + drain 清空，无需有效图字节）。
+    #[test]
+    fn img_element_events_collect_fetch_error() {
+        let html = r#"<html><body><img src="a.png"><img src="b.png"></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = ErrFetchHost;
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        let events = load.take_img_element_events();
+        let errors: Vec<&String> = events.iter().filter(|(_, t)| *t == "error").map(|(u, _)| u).collect();
+        assert_eq!(errors.len(), 2, "两条 img fetch 失败均收集为 error: {events:?}");
+        assert!(errors.iter().any(|u| u.ends_with("a.png")));
+        assert!(errors.iter().any(|u| u.ends_with("b.png")));
+        assert!(load.take_img_element_events().is_empty(), "drain 后清空");
     }
 
     /// R2408+ slice 2 / FR-003：fetch 成功的 @font-face 字节经 drain 回传（不再丢弃），且 drain 后清空。

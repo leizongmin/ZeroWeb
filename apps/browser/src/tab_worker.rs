@@ -372,6 +372,14 @@ fn tab_worker_main(
                             r.set_resource_errors(failed);
                         }
                     }
+                    // R2943：drain img 元素级 load/error 事件——finish() 经 __zw_dispatch_img_event 派发到
+                    // 匹配 src 的 <img> 元素（img.onload/onerror）。
+                    let img_events = load.take_img_element_events();
+                    if !img_events.is_empty() {
+                        if let Some(r) = page_script_runner.as_mut() {
+                            r.set_img_events(img_events);
+                        }
+                    }
                     let title = page_title_from_webview(&wv);
                     let _ = msg_tx.send(TabWorkerMessage::Title(title));
                 }

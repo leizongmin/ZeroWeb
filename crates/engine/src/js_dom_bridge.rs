@@ -2280,6 +2280,16 @@ pub fn script_report_error(message: &str, source: &str, lineno: u32, colno: u32)
     format!("__zw_report_error('{esc_msg}', '{esc_src}', {lineno}, {colno})")
 }
 
+/// 构造「派发 img 元素级 load/error 事件」的 shim 脚本（R2943）。宿主在 img fetch 完成（成功 → "load"，
+/// 失败 → "error"）时执行：shim `__zw_dispatch_img_event(absUrl, type)` 按 src 绝对 URL 匹配 `<img>` 元素
+/// proxy，用其自身 selector 派发 load/error（保证 listener key 匹配，img.onload/onerror 触发）。`abs_url`
+/// = 资源绝对 URL（与 shim 经 `__zw_parse_url` 解析 img.src 的绝对形式比较）；`ty` = "load" / "error"。
+pub fn script_dispatch_img_event(abs_url: &str, ty: &str) -> String {
+    let esc_url = escape_js_string(abs_url);
+    let esc_ty = escape_js_string(ty);
+    format!("__zw_dispatch_img_event('{esc_url}', '{esc_ty}')")
+}
+
 /// 从当前 HTML 快照查询 textContent。
 pub fn query_text_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
