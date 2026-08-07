@@ -1,0 +1,3 @@
+# WPT 趋势基线（绝对数口径，见 docs/goal/rendering-compat.md「测试资产化」）
+# date,mode,wpt_data_ref,total,passed,rate_pct,extra,git_sha,note
+2026-08-07,upstream,v1.10,16269,13296,81.7,failed=2973;skipped=0,c18555a,
