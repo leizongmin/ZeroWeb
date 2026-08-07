@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle capture-oracle product-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report
+.PHONY: setup-rusty-v8 fetch-wpt-data update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle capture-oracle product-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -181,6 +181,26 @@ layout-golden-update: fetch-wpt-data target/test-guard
 # 用法: make monthly-report [MONTH=2026-07]（默认上月）
 monthly-report:
 	bash scripts/generate-monthly-report.sh $(MONTH)
+
+# 性能门禁体系（docs/specs/performance-and-resource-budget.md，2026-08-08 落地）：
+#   make bench            全量测量（criterion 微基准 + 页面级首屏 + 峰值 RSS）
+#   make bench-gate       测量 + 门禁比较（本地 rally 轮次门禁；退出码 0/1/2）
+#   make bench-capture    测量 + 记录基线（JUSTIFICATION=... 必填；收紧优先）
+#   make bench-trend      测量 + 记录趋势（NOTE=... 可加备注；weekly CI 用 --auto-tighten）
+# 全部经 test-guard 包裹（OOM/超时保护）。首次使用顺序：bench-gate（全 NEW/PASS）
+# → bench-capture JUSTIFICATION="初始基线" → bench-gate（真比较）。
+bench: target/test-guard
+	./target/test-guard -- bash scripts/bench-report.sh
+
+bench-gate: target/test-guard
+	./target/test-guard -- bash scripts/bench-report.sh && bash scripts/perf-gate.sh
+
+bench-capture: target/test-guard
+	@test -n "$(JUSTIFICATION)" || (echo "bench-capture: JUSTIFICATION=... 必填（基线变更须有理由）"; exit 2)
+	./target/test-guard -- bash scripts/bench-report.sh && bash scripts/record-bench-baseline.sh --justification "$(JUSTIFICATION)"
+
+bench-trend: target/test-guard
+	./target/test-guard -- bash scripts/bench-report.sh && bash scripts/record-bench-trend.sh $(if $(NOTE),--note "$(NOTE)")
 
 # Legacy Static Web smoke（DC-13，goal rendering-compat.md line 316）：跑 20 页
 # HTML 3.2/4 + CSS1/2 静态 fixture，每页 chromium oracle vs ZeroWeb CPU diff%。

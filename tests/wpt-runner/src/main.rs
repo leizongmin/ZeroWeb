@@ -38,6 +38,9 @@ Commands:
   struct-sweep [filter]   DC-13: sibling-overlap struct-check sweep over upstream test pages
   product-smoke <html>  Render a product static fixture to CPU PNG (DC-13)
                        (--base-dir, --oracle <png>, --out <png>, --max-diff <pct>)
+  perf                  Page-level perf benchmark (perf-gate page scenarios)
+                       (--scenario <id>:<path> [repeatable], --base-dir,
+                        --width <px>, --height <px>, --iterations <n>)
 
 Options:
   --json            Output results in JSON format
@@ -103,9 +106,13 @@ fn main() {
 
     let command = &args[1];
 
-    // product-smoke 有独立参数（--base-dir/--oracle/--out），提前分支避免污染通用选项解析。
+    // product-smoke / perf 有独立参数（--scenario/--base-dir/--oracle/--out），提前分支避免污染通用选项解析。
     if command == "product-smoke" {
         cmd_product_smoke(&args[2..]);
+        return;
+    }
+    if command == "perf" {
+        cmd_perf(&args[2..]);
         return;
     }
 
@@ -536,6 +543,197 @@ fn cmd_product_smoke(args: &[String]) {
             }
             std::process::exit(3);
         }
+    }
+}
+
+/// `perf` 子命令 — 页面级性能基准（性能门禁体系的页面场景测量）。
+///
+/// 对每个 fixture 页面做 `--iterations` 次首屏渲染（第 1 次为 warmup，付字体加载/
+/// 图片缓存等进程级一次性成本，不计入样本），输出各阶段耗时（parse/style/layout/
+/// paint/total，来自 `zero_engine::PipelineTimings`）与首屏墙钟耗时、进程峰值 RSS
+/// （Linux VmHWM / macOS getrusage / 其他平台 null）。输出 JSON 供
+/// `scripts/bench-report.sh` 合并进 bench 报告，`scripts/perf-gate.sh` 对比基线
+/// （见 docs/specs/performance-and-resource-budget.md）。
+///
+/// 用法：
+///   zero-wpt-runner perf --scenario <id>:<path> [--scenario ...] [--base-dir <dir>]
+///                        [--width N] [--height N] [--iterations N]
+fn cmd_perf(args: &[String]) {
+    let t_start = std::time::Instant::now();
+    let mut scenarios: Vec<(String, String)> = Vec::new();
+    let mut base_dir: Option<String> = None;
+    let mut width: u32 = 800;
+    let mut height: u32 = 600;
+    let mut iterations: usize = 15;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--scenario" => {
+                i += 1;
+                if i < args.len() {
+                    if let Some((id, path)) = args[i].split_once(':') {
+                        scenarios.push((id.to_string(), path.to_string()));
+                    } else {
+                        eprintln!("perf: --scenario 格式应为 <id>:<path>，忽略 {}", args[i]);
+                    }
+                }
+            }
+            "--base-dir" => {
+                i += 1;
+                if i < args.len() {
+                    base_dir = Some(args[i].clone());
+                }
+            }
+            "--width" => {
+                i += 1;
+                if i < args.len() {
+                    width = args[i].parse().unwrap_or(width);
+                }
+            }
+            "--height" => {
+                i += 1;
+                if i < args.len() {
+                    height = args[i].parse().unwrap_or(height);
+                }
+            }
+            "--iterations" => {
+                i += 1;
+                if i < args.len() {
+                    // 至少 1 次 warmup + 1 次计时的样本
+                    iterations = args[i].parse().unwrap_or(iterations).max(2);
+                }
+            }
+            other => eprintln!("perf: 未知参数 {other}，忽略"),
+        }
+        i += 1;
+    }
+
+    if scenarios.is_empty() {
+        eprintln!("perf: 至少需要一个 --scenario <id>:<path>");
+        std::process::exit(2);
+    }
+
+    let config = reftest::ReftestConfig {
+        viewport_width: width,
+        viewport_height: height,
+        ..Default::default()
+    };
+
+    let mut out_scenarios = Vec::new();
+    // startup_ms：进程入口（cmd_perf 起点）→ 首个场景 warmup 渲染完成，即「冷启动到首帧」。
+    let mut startup_ms: Option<f64> = None;
+    for (id, path) in &scenarios {
+        let html = match std::fs::read_to_string(path) {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!("perf: 无法读取 fixture {path}: {e}");
+                std::process::exit(2);
+            }
+        };
+        // base_dir 缺省取 fixture 所在目录（与 product-smoke 显式传 base-dir 等价，
+        // 自包含 fixture 传 None 路径行为一致）。
+        let base = base_dir
+            .as_deref()
+            .map(std::path::Path::new)
+            .or_else(|| std::path::Path::new(path).parent());
+        // warmup：付字体加载/图片缓存等进程级一次性成本，不计入样本
+        let (_fb, _timings) = reftest::render_to_framebuffer_with_timings(&html, "", &config, base);
+        if startup_ms.is_none() {
+            startup_ms = Some(t_start.elapsed().as_secs_f64() * 1000.0);
+        }
+        let mut samples = Vec::new();
+        for _ in 0..(iterations - 1) {
+            let t0 = std::time::Instant::now();
+            let (_fb, timings) = reftest::render_to_framebuffer_with_timings(&html, "", &config, base);
+            samples.push(serde_json::json!({
+                "parse_ms": timings.parse_ms,
+                "style_ms": timings.style_ms,
+                "layout_ms": timings.layout_ms,
+                "paint_ms": timings.paint_ms,
+                "total_ms": timings.total_ms,
+                "wall_ms": t0.elapsed().as_secs_f64() * 1000.0,
+            }));
+        }
+        out_scenarios.push(serde_json::json!({
+            "id": id,
+            "fixture": path,
+            "viewport": [width, height],
+            "iterations": iterations - 1,
+            "samples": samples,
+        }));
+    }
+
+    // VmHWM 为高水位标记，全程结束后读取即进程峰值
+    let (peak_rss_mb, rss_method) = perf_peak_rss_mb();
+    let report = serde_json::json!({
+        "schema_version": 1,
+        "kind": "perf-pages",
+        "os": std::env::consts::OS,
+        "cpu_model": perf_cpu_model_name(),
+        "cpu_cores": std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0),
+        "startup_ms": startup_ms,
+        "resource": { "peak_rss_mb": peak_rss_mb, "method": rss_method },
+        "scenarios": out_scenarios,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
+    );
+}
+
+/// 进程峰值 RSS（MB）。Linux：`/proc/self/status` VmHWM（高水位，单位 kB）；
+/// macOS：`getrusage` `ru_maxrss`（单位字节）；其他平台无测量 → `(None, "none")`。
+fn perf_peak_rss_mb() -> (Option<f64>, &'static str) {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+            for line in status.lines() {
+                if let Some(kb) = line
+                    .strip_prefix("VmHWM:")
+                    .and_then(|rest| rest.split_whitespace().next())
+                    .and_then(|v| v.parse::<f64>().ok())
+                {
+                    return (Some(kb / 1024.0), "vmhwm");
+                }
+            }
+        }
+        (None, "vmhwm")
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use libc::{RUSAGE_SELF, getrusage, rusage};
+        let mut usage: rusage = unsafe { std::mem::zeroed() };
+        if unsafe { getrusage(RUSAGE_SELF, &mut usage) } == 0 {
+            // macOS ru_maxrss 单位是字节（Linux 是 kB）
+            (Some(usage.ru_maxrss as f64 / (1024.0 * 1024.0)), "rusage")
+        } else {
+            (None, "rusage")
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        (None, "none")
+    }
+}
+
+/// CPU 型号名（报告元数据，用于基线硬件固定判定）。Linux：/proc/cpuinfo 首个
+/// `model name`；其他平台 `unknown`（os 已由 `std::env::consts::OS` 覆盖）。
+fn perf_cpu_model_name() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(cpuinfo) = std::fs::read_to_string("/proc/cpuinfo") {
+            for line in cpuinfo.lines() {
+                if let Some(name) = line.strip_prefix("model name").and_then(|rest| rest.split(':').nth(1)) {
+                    return name.trim().to_string();
+                }
+            }
+        }
+        "unknown".to_string()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        "unknown".to_string()
     }
 }
 

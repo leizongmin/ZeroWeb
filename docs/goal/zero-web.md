@@ -131,13 +131,13 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 
 ### 4. 性能基准体系
 
-- [ ] 每个 crate 的关键路径有 criterion 基准测试（HTML 解析、CSS 计算、布局、绘制、Canvas、JS→DOM 桥调用）
-- [ ] 所有基准测试可通过 `cargo bench` 一键运行，结果持久化到 `tests/benchmarks/results/`
-- [ ] 中等复杂度页面首屏渲染 < 2 秒（含各阶段耗时分解：解析 → 样式 → 布局 → 绘制 → 合成）
-- [ ] 增量渲染：DOM 局部变更的重新渲染耗时 < 全量渲染的 20%
-- [ ] GPU 加速合成正常工作
-- [ ] 回归门禁就位：基准结果 p95 不超过历史最佳基线的 120%
-- [ ] 基准报告可追踪趋势（每轮执行记录对比数据）
+- [x] 每个 crate 的关键路径有 criterion 基准测试（HTML 解析、CSS 计算、布局、绘制、Canvas、JS→DOM 桥调用）——79 个基准函数覆盖 16/16 crate（2026-08-08 现状）
+- [x] 所有基准测试可通过 `cargo bench` 一键运行，结果持久化到 `tests/benchmarks/results/`——`make bench`（2026-08-08：bench-report.sh 产出 JSON + 人读 txt）
+- [x] 中等复杂度页面首屏渲染 < 2 秒（含各阶段耗时分解：解析 → 样式 → 布局 → 绘制 → 合成）——perf-gate Hard Gate（`page/*/total_ms` p95 ≤ 2000ms 绝对）+ 既有集成测试双重断言
+- [x] 增量渲染：DOM 局部变更的重新渲染耗时 < 全量渲染的 20%——`tests/integration/src/e2e_rendering.rs` 常驻断言（`make test` 内）
+- [ ] GPU 加速合成正常工作——待 GPU/Display 环境验证（历史遗留）
+- [x] 回归门禁就位：基准结果 p95 不超过历史最佳基线的 120%——perf-gate 体系（Budget Gate：微基准 ×1.20、页面 ×1.15+40ms、RSS ×1.20+128MB；Hard Gate 绝对预算；公式与流程见 docs/specs/performance-and-resource-budget.md）
+- [x] 基准报告可追踪趋势（每轮执行记录对比数据）——`docs/perf/trends/benchmark-trend.csv` + 日快照 + weekly CI 回写与 auto-tighten
 
 ### 5. 单元测试与质量
 
@@ -677,7 +677,7 @@ tests/benchmarks/
 | 测试状态 | ✅ ~13,192 测试全绿（74 ignored 网络型真实网站用例） |
 | 覆盖率 | ✅ 95.46% line / 96.94% function / 94.88% region |
 | WPT 通过率 | ✅ 1341 用例（23 分类，100% 通过率，按分类追踪） |
-| 性能基线 | ✅ 78+ criterion 基准；首屏 < 2s 验证；增量渲染图元 < 全量 20% |
+| 性能基线 | ✅ 79 criterion 基准 + 页面级首屏基准 + 峰值 RSS；**perf-gate 门禁体系就位**（Hard Gate 绝对预算 + Budget Gate 基线相对 + 趋势追踪，2026-08-08，见 docs/specs/performance-and-resource-budget.md）；首屏 < 2s 验证；增量渲染图元 < 全量 20% |
 | CI | ✅ GitHub Actions 三平台（编译 + clippy + test + build + 发布打包） |
 | 文档 | ✅ 目标文档 + master.md 控制面板 + 归档 + 各 crate README |
 

@@ -10,6 +10,11 @@ on:
         description: 'Run reftest-trend job only (skip build matrix)'
         type: boolean
         default: false
+      # 性能门禁：dispatch 时可选只跑 benchmark-trend（真实测量 + 门禁 + 趋势回写）
+      run_benchmark_trend:
+        description: 'Run benchmark-trend job only (skip build matrix)'
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -370,4 +375,90 @@ jobs:
             git pull --rebase origin main
             git push origin HEAD:main
             echo "Trend data committed and pushed."
+          fi
+
+  # 性能门禁 + 趋势（docs/specs/performance-and-resource-budget.md）：
+  # 每周在 ubuntu-latest（与基线同一 runner 类）真实测量 + 门禁比较 + 趋势回写 + auto-tighten。
+  # 门禁失败 = 本 job 红（周报可见）；趋势仍继续记录（continue-on-error）。
+  benchmark-trend:
+    needs: changes
+    if: >
+      (github.event_name == 'workflow_dispatch' && inputs.run_benchmark_trend)
+      || (github.event_name == 'schedule' && needs.changes.outputs.should_build == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Determine rusty_v8 version
+        shell: bash
+        run: |
+          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
+
+      - name: Cache rusty_v8
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/zero-web/rusty_v8
+          key: rusty_v8-${{ env.RUSTY_V8_VERSION }}-x86_64-unknown-linux-gnu
+
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Download rusty_v8 archive
+        shell: bash
+        run: bash scripts/download-rusty-v8.sh
+
+      - name: Build zero-wpt-runner (release)
+        run: cargo build --release --bin zero-wpt-runner
+
+      - name: Run benchmarks and gate
+        run: |
+          bash scripts/bench-report.sh
+          bash scripts/perf-gate.sh
+
+      - name: Record benchmark trend (auto-tighten)
+        run: bash scripts/record-bench-trend.sh --auto-tighten
+        continue-on-error: true
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-trend
+          path: |
+            docs/perf/
+            tests/benchmarks/results/
+          retention-days: 14
+
+      # always() 而非 success()：门禁 FAIL 时（job 红）仍把趋势 + auto-tighten 结果
+      # 提交回 main——回归证据进 git 历史；无变更守卫保证早期步骤失败时不产生空提交。
+      - name: Commit benchmark trend back to main
+        if: always()
+        run: |
+          git config user.name "zero-web-bot"
+          git config user.email "zero-web-bot@users.noreply.github.com"
+          git add docs/perf/
+          if git diff --cached --quiet; then
+            echo "No benchmark trend changes to commit."
+          else
+            git commit -m "chore(perf): 更新性能基准趋势与基线（weekly cron）"
+            # 测量耗时 ~15 分钟，期间远端 main 可能有并发提交——rebase 后重推
+            git pull --rebase origin main
+            git push origin HEAD:main
+            echo "Benchmark trend data committed and pushed."
           fi

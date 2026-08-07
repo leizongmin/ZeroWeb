@@ -32,7 +32,7 @@ target
 Thumbs.db
 
 # Benchmark results (generated)
-tests/benchmarks/results/*.txt
+tests/benchmarks/results/
 
 # Coverage
 tarpaulin-report.html

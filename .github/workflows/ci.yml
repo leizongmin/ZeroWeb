@@ -441,7 +441,7 @@ jobs:
 
   benchmarks:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     needs: build-and-test
     if: github.event_name == 'workflow_dispatch'
     steps:
@@ -455,15 +455,29 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev libxcb-xfixes0-dev libxkbcommon-dev libfontconfig1-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev mesa-vulkan-drivers
 
-      - name: Run benchmarks
+      - name: Setup rusty_v8
         run: |
-          chmod +x scripts/run-benchmarks.sh
-          ZERO_WEB_BENCH_QUICK=1 ./scripts/run-benchmarks.sh
-        continue-on-error: true
+          bash scripts/download-rusty-v8.sh
+
+      # 性能门禁（docs/specs/performance-and-resource-budget.md）：真实测量 + 门禁比较。
+      # 基线 = docs/perf/baselines/github-ubuntu-latest.json（GITHUB_ACTIONS 环境自动选择）。
+      # 首次运行（无基线）→ PASS+WARN 附 capture 指引；此后每周 benchmark-trend（weekly.yml）
+      # 在同一 runner 类上执行真门禁并 auto-tighten。PR 不动（runner 硬件噪声，见 policy 文档）。
+      - name: Run benchmarks and gate
+        run: |
+          bash scripts/bench-report.sh
+          bash scripts/perf-gate.sh
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
           path: tests/benchmarks/results/
-          retention-days: 3
+          retention-days: 14
+
+      - name: Upload perf docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-docs
+          path: docs/perf/
+          retention-days: 14

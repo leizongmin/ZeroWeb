@@ -25,5 +25,7 @@ png = "0.17"
 rayon = "1"
 base64 = "0.22"
 percent-encoding = "2"
+# perf 子命令 macOS 峰值 RSS（getrusage）用；0.2.x 已在依赖树中
+libc = "0.2"
 
 [dev-dependencies]

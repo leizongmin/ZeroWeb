@@ -516,7 +516,7 @@ pub fn render_to_framebuffer_with_layout_with_base(
     config: &ReftestConfig,
     base_dir: Option<&Path>,
 ) -> (FrameBuffer, zero_layout_engine::types::LayoutBox, String) {
-    let (fb, root, _paint_skip, html) = render_with_layout_inner(html, css, config, base_dir);
+    let (fb, root, _paint_skip, html, _timings) = render_with_layout_inner(html, css, config, base_dir);
     (fb, root, html)
 }
 
@@ -534,7 +534,24 @@ pub fn render_to_framebuffer_with_layout_and_paint_skip_with_base(
     std::collections::HashSet<zero_dom::NodeId>,
     String,
 ) {
-    render_with_layout_inner(html, css, config, base_dir)
+    let (fb, root, paint_skip, html, _timings) = render_with_layout_inner(html, css, config, base_dir);
+    (fb, root, paint_skip, html)
+}
+
+/// 渲染 HTML 到 FrameBuffer 并返回管线阶段耗时（perf-gate 页面级基准测量用）。
+///
+/// 与 [`render_to_framebuffer_with_base`] 同一 engine-direct 路径（`render_with_layout_inner`），
+/// 额外返回 `RenderResult.timings`（parse/style/layout/paint/total_ms，均为 `render_html`
+/// 阶段耗时，见 `crates/engine/src/pipeline/mod.rs` `PipelineTimings`）。供 zero-wpt-runner
+/// `perf` 子命令做页面级首屏基准（性能门禁体系，见 docs/specs/performance-and-resource-budget.md）。
+pub fn render_to_framebuffer_with_timings(
+    html: &str,
+    css: &str,
+    config: &ReftestConfig,
+    base_dir: Option<&Path>,
+) -> (FrameBuffer, zero_engine::PipelineTimings) {
+    let (fb, _root, _paint_skip, _html, timings) = render_with_layout_inner(html, css, config, base_dir);
+    (fb, timings)
 }
 
 /// 进程级缓存的「默认字体」FontLoader（系统 + CJK + Ahem + 回退链）。
@@ -571,6 +588,7 @@ fn render_with_layout_inner(
     zero_layout_engine::types::LayoutBox,
     std::collections::HashSet<zero_dom::NodeId>,
     String,
+    zero_engine::PipelineTimings,
 ) {
     let _zw_t0 = std::time::Instant::now();
     // 执行页面 <script>（含 DOM 变更），把 JS 后的最终 HTML 用于后续渲染。
@@ -802,7 +820,13 @@ fn render_with_layout_inner(
     // 的原 html 不同）——DC-13 结构检查须用它建 labels，否则 layout 树 node_id 与 collect_dom_labels
     //（解析原 html）不匹配 → 真元素误标 "(anon)"（R1499：morning disqus loadDisqus() appendChild
     // 致 mutated_html 与原 html 不同，p/table 误标 anon）。
-    (fb, result.layout.root, result.layout.paint_skip_node_ids, styled_html)
+    (
+        fb,
+        result.layout.root,
+        result.layout.paint_skip_node_ids,
+        styled_html,
+        result.timings,
+    )
 }
 
 /// DC-13 line 321：通过 `zero-webview` 稳定嵌入边界渲染 HTML 到 FrameBuffer。

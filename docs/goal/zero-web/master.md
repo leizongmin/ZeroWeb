@@ -137,6 +137,31 @@
 
 **下一步**：资源元素级 onload/onerror 三类闭合（img R2943 + link/script R2944）。host-layer 事件 API 缺口主链闭合（Fullscreen/PointerLock/onerror/onload/资源 window+element-level 全就位）。续——① renderer 路径 onerror/lifecycle/资源事件接线（browser 主路径已全，renderer 镜像）；② font 元素级事件（@font-face font.onload，需 FontFaceSet API）；③ DataTransferItemList 精细 API；④ spec-compliant 事件循环（P1a 原始大目标，需独立设计）。
 
+### 性能与资源占用门禁体系（perf-gate，2026-08-08，Done Criteria §4 落地）
+
+建立 measure → record → compare → gate → trend 全链路（参考 ~/work/ZeroUI 三层门禁模型，政策见 docs/specs/performance-and-resource-budget.md）。此前 79 个 criterion 微基准只产出 gitignored 文本报告、`run-benchmarks.sh` 失败也总 exit 0、CI benchmarks job 仅 `--no-run` 编译检查——性能劣化无感知。本体系落地后：任一基准执行失败 → 非零退出；门禁公式拦截回归；趋势每轮记录、weekly CI 回写 + auto-tighten。
+
+| 模块 | 变更 |
+|------|------|
+| `tests/wpt-runner/src/reftest.rs` | `render_with_layout_inner` 返回元组追加 `result.timings`（PipelineTimings）；新增 pub `render_to_framebuffer_with_timings` wrapper（既有 3-tuple/4-tuple wrapper 签名不变）。 |
+| `tests/wpt-runner/src/main.rs` | 新增 `perf` 子命令：`--scenario <id>:<path>` 可重复、`--base-dir/--width/--height/--iterations`；每场景 warmup 1 次 + N-1 次计时（各阶段耗时 + 墙钟首屏）；峰值 RSS（Linux VmHWM / macOS getrusage / 其他平台 null）+ startup_ms；JSON 输出。 |
+| `tests/benchmarks/fixtures/` | 新增 `medium.html`（~4400 元素确定性合成页，flex grid + badge 结构；实测 total ~1.69s，落在「中等复杂度 < 2s」验收面，留 ~15% 门禁余量）。真实页 fixture 复用既有 `apps/browser/assets/morning-work/article.html`（DC-13 产品 fixture，无需新抓取）。 |
+| `scripts/bench-report.sh` | 测量管线：criterion `**/new/sample.json` 解析（逐迭代 ns = times[i]/iters[i]，自算 p50/p95/max——criterion 0.5.1 无 `--output-format json`）+ perf 子命令合并 + 平台检测（`linux-x86_64` / `github-ubuntu-latest`）+ config_hash（sha256 规范化串，不含 git_sha）+ JSON/.txt 双报告。修复旧脚本失败总 exit 0 的 bug。 |
+| `scripts/perf-gate.sh` | 纯比较门禁：Hard Gate（`page/*/total_ms` p95 ≤ 2000ms 绝对）+ Budget Gate（`mb/*` ×1.20、`page/*` ×1.15+40ms、`peak_rss` ×1.20+128MB）；NEW→PASS、schema/config_hash 不匹配→exit 2、无基线→PASS+WARN、测量失败→exit 1。退出码 0/1/2。 |
+| `scripts/record-bench-baseline.sh` | 基线记录（docs/perf/baselines/，硬件固定双基线）；`--justification` 必填；收紧优先（新 p95 ≥ 旧×1.005 且无 `--relax` → 拒绝）。 |
+| `scripts/record-bench-trend.sh` | 趋势记录（docs/perf/trends/benchmark-trend.csv + 日快照，镜像 record-wpt-trend.sh）；`--auto-tighten`（weekly CI 用，仅收紧）。 |
+| `Makefile` | 新增 `bench` / `bench-gate` / `bench-capture` / `bench-trend` 目标（全经 test-guard 包裹；bench-capture 无 `JUSTIFICATION=` 直接报错）；`run-benchmarks.sh` 改为薄 wrapper。 |
+| CI | `ci.yml` benchmarks job：真实测量 + perf-gate（去 continue-on-error，仍 dispatch-only）；`weekly.yml` 新增 `benchmark-trend` job（镜像 reftest-trend：ubuntu-latest 真门禁 + 趋势回写 main + auto-tighten；门禁失败仍提交回归证据）。 |
+| 文档 | `docs/specs/performance-and-resource-budget.md`（三层模型 + 公式 + 预算变更流程 + 禁用逃生舱）；`run-rules.md` 第 12 条（性能相关变更跑 `make bench-gate`）；`zero-web.md` Done Criteria §4 勾选 6/7 项（GPU 项仍待环境）。 |
+
+**为何零回归**：perf 子命令为新增独立命令分支（不触既有命令路径）；`render_with_layout_inner` 元组扩展仅内部 3 处调用点适配、公共 wrapper 签名不变（make reftest-smoke 验证）；脚本全部新增/替换为薄 wrapper；Makefile 仅追加目标。
+
+验证：`make bench-gate` 首跑（全 NEW/PASS）→ capture 初始基线 → 再跑真比较全 PASS；人为劣化指标验证 FAIL/exit 1 + capture 拒绝（收紧优先）；`make test` 全绿 + clippy 零警告 + reftest-smoke 通过。
+
+**已知限制（follow-up）**：① 页面级基准为 CPU 软件渲染路径（GPU 验证待环境）；② macOS/Windows 本地峰值 RSS 无 VmHWM（rusage 仅 macOS，Windows null → 该指标 SKIP）；③ criterion 微基准 p50 与 criterion 文本 median 首跑已 sanity-check 同量级；④ GitHub runner 硬件抖动 → 门禁仅 weekly/dispatch（非 PR）。
+
+**下一步**：随优化逐步收紧（auto-tighten + 手动 capture）；补充更多页面 fixture（真实站点离线副本）；GPU 路径基准待 GPU 环境。
+
 ### P1a img 元素级 onload/onerror（本轮 R2943，~14,115 测试）
 
 承接资源 fetch 失败 window error（R2942），补 img **元素级** load/error 事件。R2942 仅 window-level（错误上报库可见），但 `img.onload`/`img.onerror`/`img.addEventListener('load'/'error')` 元素 handler 不触发——图片画廊 lazy-load 回调、尺寸测量、占位图替换等依赖 img.onload 的高频模式不可用。本切片经 shim 端 src 匹配派发，绕开元素 selector 歧义。

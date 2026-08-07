@@ -6494,6 +6494,7 @@ name = "zero-wpt-runner"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "libc",
  "percent-encoding",
  "png 0.17.16",
  "rayon",
