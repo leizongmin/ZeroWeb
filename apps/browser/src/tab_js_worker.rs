@@ -1788,6 +1788,44 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_clipboard_events_r2936() {
+        // R2936 剪贴板事件（镜像 renderer）：ClipboardEvent + execCommand('copy') 派发 + listener/oncopy/冒泡。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(23));
+        let html = "<html><body><input id='inp'></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__cd = new ClipboardEvent('copy', { clipboardData: 'dt' }).clipboardData;\
+                 var inp = document.getElementById('inp');\
+                 inp.focus();\
+                 globalThis.__copy = 'no';\
+                 inp.addEventListener('copy', function (e) {\
+                   globalThis.__copy = e.type + ':' + (e.constructor === globalThis.ClipboardEvent);\
+                 });\
+                 globalThis.__oncopy = 'no';\
+                 inp.oncopy = function (e) { globalThis.__oncopy = e.type; };\
+                 document.execCommand('copy');",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__cd)").unwrap(),
+            "dt",
+            "ClipboardEvent clipboardData 字段"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__copy)").unwrap(),
+            "copy:true",
+            "execCommand('copy') → copy listener 触发（type + ClipboardEvent）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__oncopy)").unwrap(),
+            "copy",
+            "execCommand('copy') → oncopy handler 触发"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html

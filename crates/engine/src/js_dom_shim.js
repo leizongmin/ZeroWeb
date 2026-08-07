@@ -5534,6 +5534,11 @@
   _defineEventSubclass('PageTransitionEvent', 'Event', [
     ['persisted', 'persisted', false],
   ]);
+  // R2936 ClipboardEvent——copy/cut/paste 剪贴板事件（clipboardData 近似 DataTransfer，headless 无真
+  // 剪贴板 → 默认 null）。execCommand('copy'/'cut'/'paste') 派发；oncopy/oncut/onpaste 经 R2932/R2933 on* 路由。
+  _defineEventSubclass('ClipboardEvent', 'Event', [
+    ['clipboardData', 'clipboardData', null],
+  ]);
 
   // EventTarget——事件目标基类型（独立构造器，R2779）。库常用 `new EventTarget()` / `extends EventTarget`
   // 做事件发射器（pub-sub / 自定义事件总线）。元素 / document / window 经各自 addEventListener 路径；
@@ -6124,17 +6129,31 @@
         transitionevent: globalThis.TransitionEvent,
         animationevent: globalThis.AnimationEvent,
         pagetransitionevent: globalThis.PageTransitionEvent,
+        clipboardevent: globalThis.ClipboardEvent,
       };
       var Ctor = (map[t] && typeof map[t] === 'function') ? map[t] : globalThis.Event;
       // 构造器接收 (type, options)；createEvent 返**空 type** 事件（initEvent/initCustomEvent 设 type）。
       return new Ctor('');
     },
-    // execCommand / queryCommand*（R2826）——legacy 编辑/剪贴板命令表面（旧 copy 按钮
+    // execCommand / queryCommand*（R2826/R2936）——legacy 编辑/剪贴板命令表面（旧 copy 按钮
     // `el.select(); document.execCommand('copy')` / clipboard.js feature-detect `queryCommandSupported('copy')`
     // / contentEditable 编辑器 format 命令）。headless 无真剪贴板/格式化 → permissive stub：
-    // execCommand 返 true（copy/cut 不真写剪贴板——modern 路径走 navigator.clipboard；format 命令不真应用）；
-    // queryCommandSupported/Enabled 返 true（feature-detect 通过）；queryCommandValue 返 ''。
-    execCommand: function (_commandId, _showUI, _value) { return true; },
+    // R2936 copy/cut/paste 派发 ClipboardEvent 到 document.activeElement（焦点元素或 body，bubbles+cancelable），
+    // 使 copy/cut/paste listener + oncopy/oncut/onpaste handler（R2932/R2933 on* 路由）触发；不真写剪贴板
+    //（modern 路径走 navigator.clipboard）。format 命令不真应用。返 true（spec copy/cut 返 true=成功）。
+    execCommand: function (commandId /*, showUI, value*/) {
+      var cmd = String(commandId == null ? '' : commandId).toLowerCase();
+      if (cmd === 'copy' || cmd === 'cut' || cmd === 'paste') {
+        try {
+          var ev = new ClipboardEvent(cmd, { bubbles: true, cancelable: true });
+          var target = globalThis.document.activeElement || globalThis.document.body;
+          if (target && typeof target.dispatchEvent === 'function') {
+            target.dispatchEvent(ev);
+          }
+        } catch (_e) {}
+      }
+      return true;
+    },
     queryCommandSupported: function (_commandId) { return true; },
     queryCommandEnabled: function (_commandId) { return true; },
     queryCommandValue: function (_commandId) { return ''; },

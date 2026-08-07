@@ -1808,6 +1808,58 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_clipboard_events_r2936() {
+        // R2936 剪贴板事件：ClipboardEvent 构造器 + document.execCommand('copy') 派发 ClipboardEvent 到
+        // document.activeElement（焦点元素，bubbles+cancelable）→ copy listener + oncopy handler + 冒泡到 window。
+        let mut worker = RendererJsWorker::spawn(43);
+        let html = "<html><body><input id='inp'></body></html>";
+        worker.set_dom_snapshot(html, "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__cd = new ClipboardEvent('copy', { clipboardData: 'dt' }).clipboardData;\
+                 globalThis.__evc = (document.createEvent('ClipboardEvent').constructor === globalThis.ClipboardEvent);\
+                 var inp = document.getElementById('inp');\
+                 inp.focus();\
+                 globalThis.__copy = 'no';\
+                 inp.addEventListener('copy', function (e) {\
+                   globalThis.__copy = e.type + ':' + (e.constructor === globalThis.ClipboardEvent);\
+                 });\
+                 globalThis.__oncopy = 'no';\
+                 inp.oncopy = function (e) { globalThis.__oncopy = e.type; };\
+                 globalThis.__wcopy = 'no';\
+                 window.addEventListener('copy', function (e) { globalThis.__wcopy = e.type; });\
+                 document.execCommand('copy');",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__cd)").unwrap(),
+            "dt",
+            "ClipboardEvent clipboardData:'dt' → clipboardData 字段"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__evc)").unwrap(),
+            "true",
+            "createEvent('ClipboardEvent') 构造器匹配"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__copy)").unwrap(),
+            "copy:true",
+            "execCommand('copy') → 焦点元素 copy listener 触发（type + ClipboardEvent）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__oncopy)").unwrap(),
+            "copy",
+            "execCommand('copy') → oncopy handler 触发（R2933 on* 路由）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__wcopy)").unwrap(),
+            "copy",
+            "copy 事件冒泡到 window listener"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C：selector-identity 元素的 getBoundingClientRect 返真实 DOMRect。
         // shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html → find_by_selector
