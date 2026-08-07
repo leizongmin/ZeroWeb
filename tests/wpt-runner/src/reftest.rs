@@ -606,6 +606,18 @@ fn render_with_layout_inner(
 
     let result = runner_text_metrics::with_measure_ctx(font_loader, 0u32, || pipeline.render_html(html, &combined_css));
 
+    // PERF 诊断（env ZW_RENDER_STAGES=1）：打印各阶段耗时（parse/style/layout/paint/total）
+    if std::env::var("ZW_RENDER_STAGES").is_ok() {
+        eprintln!(
+            "[stages] parse={:.1}ms style={:.1}ms layout={:.1}ms paint={:.1}ms total={:.1}ms",
+            result.timings.parse_ms,
+            result.timings.style_ms,
+            result.timings.layout_ms,
+            result.timings.paint_ms,
+            result.timings.total_ms
+        );
+    }
+
     // DEBUG: dump layout box tree geometry (absolute y / margin-top / padding-top)
     // 用途：诊断产品 smoke 垂直偏移（如 welcome 36px 顶部偏移）。
     if std::env::var("LAYOUT_DUMP").is_ok() {

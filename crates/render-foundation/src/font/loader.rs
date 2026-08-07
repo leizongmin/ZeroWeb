@@ -26,6 +26,8 @@ mod freetype_raster {
         // 重新解析整字体是 CJK 栅格化重尾根因（探针实测 6.6ms/字 → 目标 <0.1ms）。
         // 容量上限 8（按字体字节 hash 键），超限清空重建（低频字体轮换场景）。
         static FT_FACE_CACHE: RefCell<HashMap<u64, freetype::Face<Vec<u8>>>> = RefCell::new(HashMap::new());
+        // 栅格化统计（env CJK_RASTER_STAT=1 时打印；诊断用）
+        static RASTER_STAT: RefCell<(u64, f64)> = const { RefCell::new((0, 0.0)) };
     }
 
     const FACE_CACHE_MAX: usize = 8;
@@ -66,6 +68,30 @@ mod freetype_raster {
         if size <= 0.0 {
             return Err(FontError::NotFound(format!("non-positive size {size}")));
         }
+        let _raster_t = std::time::Instant::now();
+        let result = rasterize_inner(font_bytes, code_point, size);
+        // OnceLock 缓存 env 状态（避免每字一次 std::env::var——热路径）
+        static RASTER_STAT_ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let raster_stat_enabled = *RASTER_STAT_ENABLED.get_or_init(|| std::env::var("CJK_RASTER_STAT").is_ok());
+        if raster_stat_enabled {
+            RASTER_STAT.with(|s| {
+                let mut s = s.borrow_mut();
+                s.0 += 1;
+                s.1 += _raster_t.elapsed().as_secs_f64() * 1000.0;
+                if s.0 % 50 == 0 {
+                    eprintln!(
+                        "[raster-stat] count={} total={:.0}ms avg={:.3}ms",
+                        s.0,
+                        s.1,
+                        s.1 / s.0 as f64
+                    );
+                }
+            });
+        }
+        result
+    }
+
+    fn rasterize_inner(font_bytes: &[u8], code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
         // thread_local with 不允许借用逃逸：cache borrow 与 face 使用都在闭包内
         FT_FACE_CACHE.with(|cache_cell| {
             let mut cache = cache_cell.borrow_mut();
