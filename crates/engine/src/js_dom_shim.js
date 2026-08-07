@@ -48,6 +48,13 @@
   // P1a DocumentFragment：已创建的 fragment handle 集合（nodeType=11 标识 + appendChild 时
   // flatten 检测）。fragment 为 create 句柄，无 selector，故用此 set 区别于普通元素句柄。
   var _fragmentHandles = {};
+  // R2926 Shadow DOM（attachShadow，Tier 2 Web Components 地基）：host 元素 elKey → 其 shadow root
+  //（{ handle, mode }）。shadow root 复用 DocumentFragment handle 容器（故 handle 亦入 _fragmentHandles），
+  // 另入 _shadowHandles 标 shadow-root 身份（nodeName '#shadow-root' + host/mode）。host 元素调
+  // attachShadow 建；shadowRoot getter 读（open 返 root / closed·未建 返 null，spec）。导航清空（页级）。
+  var _shadowRoots = {};
+  var _shadowHandles = {};
+  var _shadowHandleMeta = {};
   // P1a Comment（R2816）：已创建的 comment handle 集合（nodeType=8 / nodeName '#comment' 标识）。
   // comment 为 create 句柄无 selector，故用此 set 区别于普通元素句柄（同 _fragmentHandles 模式）。
   var _commentHandles = {};
@@ -684,7 +691,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
@@ -3446,6 +3453,16 @@
         if (prop === 'dataset') {
           return _datasetProxy(sel, handle);
         }
+        // R2926 Shadow DOM：`element.attachShadow(init)` / `element.shadowRoot`。host 元素专用（非
+        // fragment/comment/text/shadow）。attachShadow 建 shadow root（复用 DocumentFragment handle 容器）；
+        // shadowRoot 读——open 返 root、closed/未建 返 null（spec）。详见 `_attachShadow`。
+        if (prop === 'shadowRoot') {
+          var _sr = _shadowRoots[key];
+          return (_sr && _sr.mode === 'open') ? _wrapHandle(_sr.handle) : null;
+        }
+        if (prop === 'attachShadow') {
+          return function (init) { return _attachShadow(sel, handle, init); };
+        }
         if (prop === 'textContent') {
           return handle ? __zw_get_text_handle(handle) : __zw_get_text(sel);
         }
@@ -3617,19 +3634,30 @@
         // DocumentFragment handle（nodeType 11 / '#document-fragment'）/ Comment（nodeType 8 / '#comment'）/
         // Text（nodeType 3 / '#text'）——均为 create 句柄无 selector，经 handle set 区别于普通元素句柄。
         var isFrag = handle && _fragmentHandles[handle];
+        var isShadow = handle && _shadowHandles[handle];
         var isComment = handle && _commentHandles[handle];
         var isText = handle && _textHandles[handle];
         if (prop === 'tagName') {
-          return (isFrag || isComment || isText) ? undefined : _realTag(sel, handle);
+          return (isFrag || isShadow || isComment || isText) ? undefined : _realTag(sel, handle);
         }
         if (prop === 'nodeName') {
-          return isFrag ? '#document-fragment'
+          return isShadow ? '#shadow-root'
+            : isFrag ? '#document-fragment'
             : isComment ? '#comment'
             : isText ? '#text'
             : _realTag(sel, handle);
         }
         if (prop === 'nodeType') {
-          return isFrag ? 11 : (isComment ? 8 : (isText ? 3 : 1));
+          return (isShadow || isFrag) ? 11 : (isComment ? 8 : (isText ? 3 : 1));
+        }
+        // ShadowRoot 专用属性（R2926）：host = 宿主元素 proxy；mode = 'open'/'closed'。
+        if (isShadow && prop === 'host') {
+          var _sm = _shadowHandleMeta[handle];
+          return _sm ? _makeProxy(_sm.hostSel, _sm.hostHandle) : null;
+        }
+        if (isShadow && prop === 'mode') {
+          var _smm = _shadowHandleMeta[handle];
+          return _smm ? _smm.mode : 'open';
         }
         // Text/Comment 节点的 nodeValue/data = 文本（经 __zw_get_text_handle 读回，element 的 nodeValue 为 null）。
         if ((isText || isComment) && (prop === 'nodeValue' || prop === 'data')) {
@@ -4504,6 +4532,45 @@
 
   function _wrapHandle(handle) {
     return _makeProxy(null, handle);
+  }
+
+  // R2926 Shadow DOM：抛 DOMException（无 DOMException 环境回落 Error + name）。
+  function _throwDom(name, msg) {
+    if (typeof DOMException === 'function') throw new DOMException(msg, name);
+    var e = new Error(msg);
+    e.name = name;
+    throw e;
+  }
+
+  // R2926 Shadow DOM：`element.attachShadow(init)` → ShadowRoot。host 元素专用（get trap 仅对元素
+  // 暴露 attachShadow，fragment/comment/text/shadow 不暴露）。spec：init.mode 须 'open'/'closed'
+  //（否则 TypeError）；host 已挂 shadow → NotSupportedError。复用 DocumentFragment handle 容器
+  //（`__zw_create_document_fragment`）建 root——appendChild/innerHTML/childNodes 经 fragment 机制工作；
+  // shadow 内容**不渲染**（渲染管线走 flat dom_html，不遍历 shadow 树——fidelity defer，同 detached fragment）。
+  // 返 ShadowRoot proxy（nodeType 11 / nodeName '#shadow-root' / host / mode，经 _shadowHandles 标识）。
+  function _attachShadow(sel, handle, init) {
+    var key = _elKey(sel, handle);
+    if (_shadowRoots[key]) {
+      _throwDom('NotSupportedError',
+        "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which already hosts a shadow tree.");
+    }
+    if (init == null || typeof init !== 'object') {
+      throw new TypeError("Failed to execute 'attachShadow' on 'Element': parameter 1 is not of type 'object'.");
+    }
+    var mode = String(init.mode);
+    if (mode !== 'open' && mode !== 'closed') {
+      throw new TypeError("Failed to execute 'attachShadow' on 'Element': member mode is required and must be 'open' or 'closed'.");
+    }
+    if (typeof __zw_create_document_fragment !== 'function') return null;
+    var rootHandle = __zw_create_document_fragment();
+    if (!rootHandle) return null;
+    // shadow handle 入两 set：_fragmentHandles（继承 fragment appendChild/innerHTML/childNodes 行为）
+    // + _shadowHandles（shadow-root 身份：'#shadow-root' / host / mode）。
+    _fragmentHandles[rootHandle] = true;
+    _shadowHandles[rootHandle] = true;
+    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode };
+    _shadowRoots[key] = { handle: rootHandle, mode: mode };
+    return _wrapHandle(rootHandle);
   }
 
   // canvas 元素 + 2d 上下文 proxy（R2795，canvas slice 1）。host 持 CanvasContext 注册表，JS 经

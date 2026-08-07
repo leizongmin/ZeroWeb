@@ -1197,6 +1197,80 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_attach_shadow_r2926() {
+        // R2926 attachShadow / shadowRoot（Tier 2 Web Components 地基，镜像 renderer）：
+        // `element.attachShadow({mode})` 返 ShadowRoot（nodeType 11 / nodeName '#shadow-root' /
+        // mode / host）；shadowRoot getter（open 返 root / closed 返 null）；已挂载→抛 NotSupportedError；
+        // 非法 mode→抛 TypeError。shadow root 复用 DocumentFragment handle（不渲染，fidelity defer）。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(13));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var host = document.createElement('div');\
+                 var sr = host.attachShadow({ mode: 'open' });\
+                 globalThis.__nt = sr.nodeType;\
+                 globalThis.__nn = sr.nodeName;\
+                 globalThis.__mode = sr.mode;\
+                 globalThis.__host = (sr.host === host);\
+                 globalThis.__sr = (host.shadowRoot === sr);\
+                 var host2 = document.createElement('div');\
+                 host2.attachShadow({ mode: 'closed' });\
+                 globalThis.__closed = (host2.shadowRoot === null);\
+                 var host3 = document.createElement('div');\
+                 host3.attachShadow({ mode: 'open' });\
+                 var threw = false;\
+                 try { host3.attachShadow({ mode: 'open' }); } catch (e) { threw = true; }\
+                 globalThis.__threw = threw;\
+                 var host4 = document.createElement('div');\
+                 var threwMode = false;\
+                 try { host4.attachShadow({ mode: 'bad' }); } catch (e) { threwMode = true; }\
+                 globalThis.__threwMode = threwMode;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__nt)").unwrap(),
+            "11",
+            "ShadowRoot nodeType = 11"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__nn)").unwrap(),
+            "#shadow-root",
+            "ShadowRoot nodeName = '#shadow-root'"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__mode)").unwrap(),
+            "open",
+            "ShadowRoot.mode 反映 init.mode"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__host)").unwrap(),
+            "true",
+            "shadowRoot.host === 宿主元素（同一 proxy）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__sr)").unwrap(),
+            "true",
+            "element.shadowRoot（open）=== attachShadow 返回的 root"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__closed)").unwrap(),
+            "true",
+            "closed mode → element.shadowRoot === null（spec）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__threw)").unwrap(),
+            "true",
+            "已挂 shadow 的 host 再次 attachShadow → 抛异常（spec NotSupportedError）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__threwMode)").unwrap(),
+            "true",
+            "非法 mode → 抛异常（spec TypeError）"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C（镜像 renderer js_worker）：selector-identity 元素的 getBoundingClientRect
         // 返真实 DOMRect。shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html
