@@ -1268,6 +1268,114 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_handle_subtree_query_selector_r2928() {
+        // R2928 handle 子树 querySelector/querySelectorAll——JS 端 registry 树搜索 + 客户端选择器匹配。
+        // handle 元素（shadow root / createElement）无 sel，host `__zw_query_*_sub` 不可用 → registry DFS
+        // + compound（tag/id/class/attr）/ 后代组合器 / 逗号列表 匹配。覆盖 Lit `sr.querySelector('#x')`
+        // shadow 构建模式自测。querySelector 不穿透 shadow 边界（host.querySelector 查 light-DOM 子树）。
+        let mut worker = RendererJsWorker::spawn(35);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var host = document.createElement('div');\
+                 var sr = host.attachShadow({ mode: 'open' });\
+                 var wrap = document.createElement('div'); wrap.id = 'wrap'; wrap.className = 'outer';\
+                 var btn = document.createElement('button'); btn.id = 'go';\
+                 btn.className = 'btn primary'; btn.setAttribute('type', 'submit');\
+                 var span = document.createElement('span'); span.className = 'label';\
+                 wrap.appendChild(btn); wrap.appendChild(span); sr.appendChild(wrap);\
+                 globalThis.__byTag = (sr.querySelector('button') === btn);\
+                 globalThis.__byId = (sr.querySelector('#go') === btn);\
+                 globalThis.__byClass = (sr.querySelector('.btn') === btn);\
+                 globalThis.__compound = (sr.querySelector('button.btn') === btn);\
+                 globalThis.__compound2 = (sr.querySelector('button.primary#go') === btn);\
+                 globalThis.__desc = (sr.querySelector('div button') === btn);\
+                 globalThis.__desc2 = (sr.querySelector('div span') === span);\
+                 globalThis.__descClass = (sr.querySelector('div .primary') === btn);\
+                 globalThis.__attr = (sr.querySelector('[type=submit]') === btn);\
+                 globalThis.__comma = (sr.querySelector('button, span') === btn);\
+                 globalThis.__allBtnSpan = sr.querySelectorAll('button, span').length;\
+                 globalThis.__allClass = sr.querySelectorAll('.btn, .label').length;\
+                 globalThis.__wildcard = (sr.querySelector('*') === wrap);\
+                 globalThis.__nomatch = (sr.querySelector('input') === null);\
+                 globalThis.__nomatchAll = sr.querySelectorAll('input').length;\
+                 globalThis.__boundary = (host.querySelector('button') === null);\
+                 var sec = document.createElement('section');\
+                 var p = document.createElement('p'); p.id = 'p1';\
+                 sec.appendChild(p);\
+                 globalThis.__elQs = (sec.querySelector('#p1') === p);\
+                 globalThis.__elQsTag = (sec.querySelector('p') === p);",
+            )
+            .unwrap();
+        let cases = [
+            ("__byTag", "true", "shadow querySelector('button') === btn（tag）"),
+            ("__byId", "true", "shadow querySelector('#go') === btn（id）"),
+            ("__byClass", "true", "shadow querySelector('.btn') === btn（class）"),
+            ("__compound", "true", "shadow querySelector('button.btn')（复合）"),
+            (
+                "__compound2",
+                "true",
+                "shadow querySelector('button.primary#go')（多 class + id）",
+            ),
+            ("__desc", "true", "shadow querySelector('div button')（后代）"),
+            ("__desc2", "true", "shadow querySelector('div span')（后代，另支）"),
+            (
+                "__descClass",
+                "true",
+                "shadow querySelector('div .primary')（后代 + class）",
+            ),
+            ("__attr", "true", "shadow querySelector('[type=submit]')（属性 =）"),
+            (
+                "__comma",
+                "true",
+                "shadow querySelector('button, span')（逗号列表，文档序首匹配）",
+            ),
+            (
+                "__allBtnSpan",
+                "2",
+                "shadow querySelectorAll('button, span').length === 2",
+            ),
+            (
+                "__allClass",
+                "2",
+                "shadow querySelectorAll('.btn, .label').length === 2",
+            ),
+            (
+                "__wildcard",
+                "true",
+                "shadow querySelector('*') === wrap（通配，DFS 首元素）",
+            ),
+            ("__nomatch", "true", "shadow querySelector('input') === null（无匹配）"),
+            (
+                "__nomatchAll",
+                "0",
+                "shadow querySelectorAll('input').length === 0（无匹配）",
+            ),
+            (
+                "__boundary",
+                "true",
+                "host.querySelector('button') === null（不穿透 shadow 边界）",
+            ),
+            (
+                "__elQs",
+                "true",
+                "created element querySelector('#p1') === p（非容器 handle）",
+            ),
+            ("__elQsTag", "true", "created element querySelector('p') === p（tag）"),
+        ];
+        for (key, expect, msg) in cases {
+            assert_eq!(
+                worker
+                    .execute_script_direct(&format!("String(globalThis.{key})"))
+                    .unwrap(),
+                expect,
+                "{msg}"
+            );
+        }
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_get_bounding_client_rect_real_rect() {
         // P1a gBCR path C：selector-identity 元素的 getBoundingClientRect 返真实 DOMRect。
         // shim `__zw_getBoundingClientRect(sel)` → handler fresh-parse dom_html → find_by_selector

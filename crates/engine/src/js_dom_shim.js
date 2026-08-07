@@ -4006,11 +4006,14 @@
               } else {
                 __zw_append_child(sel, child.__zwHandle);
               }
-              // R2927：容器父（shadow/fragment handle）同步记录子节点到 registry（供 childNodes 等读）。
-              if (_isContainerHandle(handle)) {
+              // R2927/R2928：handle 父（任意 handle 元素，非仅容器）同步记录子节点到 registry。
+              // 容器（shadow/fragment）的 childNodes 读 registry；R2928 querySelector 亦遍历完整
+              // handle 子树（须递归普通 created 元素的 handle 子），故所有 handle 父都记录。
+              if (handle) {
                 _recordHandleChild(handle, child);
               } else if (_fragmentHandles[child.__zwHandle]) {
-                // fragment 被 flatten 进非容器父（sel-based 等）→ fragment 清空（spec：fragment append 后空）。
+                // sel-based 父接 fragment → fragment 清空（spec：fragment append 后空；handle 父已在
+                // _recordHandleChild 内 flatten 清空）。
                 _handleChildren[child.__zwHandle] = [];
               }
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [child], removedNodes: [] });
@@ -4022,8 +4025,8 @@
           return function(child) {
             if (child && child.__zwHandle) {
               __zw_remove_handle(child.__zwHandle);
-              // R2927：容器父同步从 registry 移除子节点。
-              if (_isContainerHandle(handle)) _unrecordHandleChild(handle, child);
+              // R2927/R2928：handle 父同步从 registry 移除子节点（保持 querySelector 子树一致）。
+              if (handle) _unrecordHandleChild(handle, child);
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
             }
             return child;
@@ -4209,25 +4212,32 @@
           };
         }
         if (prop === 'querySelector') {
-          // 元素**子树**作用域（spec：仅后代，不含元素自身）。经 host `__zw_query_match_sub(sel, q)`
-          // 在 elem 子树内查首个匹配。handle（未挂载 DOM，无 sel）→ null（脱离文档树无后代）。
+          // 元素**子树**作用域（spec：仅后代，不含元素自身）。
+          // ① sel-based（挂载 DOM）→ host `__zw_query_match_sub(sel, q)` 子树首匹配。
+          // ② handle-based（createElement / shadow root / fragment，无 sel）→ R2928 JS 端 registry 树搜索
+          //   （host 不持可查询 handle 子树；registry 记 handle 父→子，DFS + 客户端选择器匹配）。querySelector
+          //   不穿透 shadow 边界：host.querySelector 查 light-DOM 子树，host.shadowRoot.querySelector 查 shadow 树。
           return function(q) {
-            if (!sel || typeof __zw_query_match_sub !== 'function') return null;
-            try {
-              var hit = __zw_query_match_sub(sel, String(q));
-              return hit ? _wrapSelector(hit) : null;
-            } catch (_e) { return null; }
+            if (sel && typeof __zw_query_match_sub === 'function') {
+              try { var hit = __zw_query_match_sub(sel, String(q)); if (hit) return _wrapSelector(hit); } catch (_e) {}
+              return null;
+            }
+            if (handle) return _handleQueryFirst(handle, q);
+            return null;
           };
         }
         if (prop === 'querySelectorAll') {
-          // 元素**子树**作用域（spec：仅后代）。经 host `__zw_query_all_sub(sel, q)`。
+          // 元素**子树**作用域（spec：仅后代）。同 querySelector：sel-based → host；handle-based → R2928 registry。
           return function(q) {
-            if (!sel || typeof __zw_query_all_sub !== 'function') return [];
-            try {
-              var all = __zw_query_all_sub(sel, String(q));
-              if (!all) return [];
-              return all.split('|').filter(Boolean).map(_wrapSelector);
-            } catch (_e) { return []; }
+            if (sel && typeof __zw_query_all_sub === 'function') {
+              try {
+                var all = __zw_query_all_sub(sel, String(q));
+                if (all) return all.split('|').filter(Boolean).map(_wrapSelector);
+              } catch (_e) {}
+              return [];
+            }
+            if (handle) return _handleQueryAll(handle, q);
+            return [];
           };
         }
         // `form.elements`（HTMLFormControlsCollection，R2829）——表单控件集合（jQuery serialize /
@@ -4640,6 +4650,220 @@
     if (!arr) return;
     var ch = child.__zwHandle;
     _handleChildren[parentHandle] = arr.filter(function(k) { return !k || k.__zwHandle !== ch; });
+  }
+
+  // R2928 handle 子树 querySelector/querySelectorAll——JS 端 registry 树搜索 + 客户端选择器匹配。
+  // handle 元素（createElement / shadow root / fragment，无 sel）的子树查询无法走 host
+  // `__zw_query_match_sub(sel, q)`（须 sel）。R2927 registry 记录 handle 父→子 proxy 列表，此处 DFS
+  // 遍历 + 客户端 compound / 后代组合器 / 逗号列表 匹配。覆盖 shadow 构建模式自测（Lit `sr.querySelector('#x')`）。
+  // 支持范围：tag / `*` / `#id` / `.class`（可多个） / `[attr]` + 6 运算符（= ~= |= ^= $= *=） / 复合 /
+  // 后代组合器（空白） / 逗号列表。不支持（该组静默跳过，不抛）：伪类（`:host`/`:hover`/...）、
+  // 子代/相邻/兄弟组合器（>`+`~`）、伪元素——遇之标记 unsupported，逗号列表中其余组仍可匹配；全部
+  // unsupported → 无匹配（返 null/[]）。所有 proxy 属性读经 try/catch（host 未注册 / 异常 → 安全回落）。
+
+  // 从 proxy 安全读属性（host 未注册 / 异常 → dflt），不抛回用户脚本。
+  function _hSafe(fn, dflt) { try { var v = fn(); return v == null ? dflt : v; } catch (_e) { return dflt; } }
+  function _hTagOf(p) { return String(_hSafe(function () { return p.tagName; }, '')).toUpperCase(); }
+  function _hIdOf(p) { return String(_hSafe(function () { return p.id; }, '')); }
+  function _hClassesOf(p) {
+    var c = String(_hSafe(function () { return p.className; }, ''));
+    return c ? c.split(/\s+/).filter(Boolean) : [];
+  }
+  function _hAttrOf(p, name) { return _hSafe(function () { return p.getAttribute(name); }, null); }
+
+  // 解析单个属性选择器内部 `name` / `name op val`（val 去引号）。不匹配 → null。
+  function _parseAttrInner(inner) {
+    var m = inner.match(/^\s*([\w:-]+)\s*(?:([~|^$*]?=)\s*(.*?))?\s*$/);
+    if (!m) return null;
+    var val = m[3];
+    if (val != null) val = String(val).replace(/^['"]|['"]$/g, '');
+    return { name: m[1], op: m[2] || null, val: val == null ? '' : val };
+  }
+  function _matchAttrOf(p, a) {
+    var av = _hAttrOf(p, a.name);
+    if (a.op === null) return av != null;
+    if (av == null) return false;
+    var v = String(av);
+    switch (a.op) {
+      case '=': return v === a.val;
+      case '~=': return a.val !== '' && v.split(/\s+/).indexOf(a.val) >= 0;
+      case '|=': return v === a.val || v.indexOf(a.val + '-') === 0;
+      case '^=': return a.val !== '' && v.indexOf(a.val) === 0;
+      case '$=': return a.val !== '' && v.length >= a.val.length &&
+        v.lastIndexOf(a.val) === v.length - a.val.length;
+      case '*=': return a.val !== '' && v.indexOf(a.val) >= 0;
+    }
+    return false;
+  }
+  // 读 compound 内裸 token（tag/id/class 名），遇 `.`/`#`/`[`/`:`/空白停。
+  function _readCompoundToken(text, start) {
+    var i = start, n = text.length;
+    while (i < n) {
+      var ch = text[i];
+      if (ch === '.' || ch === '#' || ch === '[' || ch === ':' || /\s/.test(ch)) break;
+      i++;
+    }
+    return text.substring(start, i);
+  }
+  // 解析单个复合选择器（无空白组合器）。返 { tag, ids[], classes[], attrs[], unsupported }。
+  // tag 为 null（任意 / `*`）或大写 tag。遇 `:`（伪类/伪元素）/ 空裸 token / 第二个裸 token → unsupported。
+  function _parseCompoundOf(text) {
+    var c = { tag: null, ids: [], classes: [], attrs: [], unsupported: false };
+    var i = 0, n = text.length, seenTag = false;
+    while (i < n) {
+      var ch = text[i];
+      if (ch === ':') { c.unsupported = true; break; }
+      if (ch === '.') {
+        var cls = _readCompoundToken(text, i + 1);
+        if (!cls) { c.unsupported = true; break; }
+        c.classes.push(cls); i += 1 + cls.length;
+      } else if (ch === '#') {
+        var idt = _readCompoundToken(text, i + 1);
+        if (!idt) { c.unsupported = true; break; }
+        c.ids.push(idt); i += 1 + idt.length;
+      } else if (ch === '[') {
+        var end = text.indexOf(']', i);
+        if (end < 0) { c.unsupported = true; break; }
+        var am = _parseAttrInner(text.substring(i + 1, end));
+        if (!am) { c.unsupported = true; break; }
+        c.attrs.push(am); i = end + 1;
+      } else if (/\s/.test(ch)) {
+        i++;
+      } else {
+        var tg = _readCompoundToken(text, i);
+        if (!tg) { i++; continue; }
+        if (!seenTag) { c.tag = tg === '*' ? null : tg.toUpperCase(); seenTag = true; }
+        else { c.unsupported = true; break; }
+        i += tg.length;
+      }
+    }
+    return c;
+  }
+  function _matchCompoundOf(p, c) {
+    if (c.tag && _hTagOf(p) !== c.tag) return false;
+    if (c.ids.length) {
+      var pid = _hIdOf(p);
+      for (var k = 0; k < c.ids.length; k++) if (pid !== c.ids[k]) return false;
+    }
+    if (c.classes.length) {
+      var cls = _hClassesOf(p);
+      for (var k = 0; k < c.classes.length; k++) if (cls.indexOf(c.classes[k]) < 0) return false;
+    }
+    if (c.attrs.length) {
+      for (var k = 0; k < c.attrs.length; k++) if (!_matchAttrOf(p, c.attrs[k])) return false;
+    }
+    return true;
+  }
+  // 按后代组合器（空白）拆 complex，跳过 `[...]` / 引号内空白；遇 `>`/`+`/`~` → null（不支持）。
+  function _splitComplex(text) {
+    var parts = [], cur = '', depth = 0, quote = null;
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (quote) { cur += ch; if (ch === quote) quote = null; continue; }
+      if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
+      if (ch === '[') { depth++; cur += ch; continue; }
+      if (ch === ']') { depth--; cur += ch; continue; }
+      if (depth === 0 && (ch === '>' || ch === '+' || ch === '~')) return null;
+      if (depth === 0 && /\s/.test(ch)) { if (cur) { parts.push(cur); cur = ''; } continue; }
+      cur += ch;
+    }
+    if (cur) parts.push(cur);
+    return parts;
+  }
+  function _parseComplexOf(text) {
+    var parts = _splitComplex(text);
+    if (!parts) return null;
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var c = _parseCompoundOf(parts[i]);
+      if (c.unsupported) return null;
+      out.push(c);
+    }
+    return out.length ? out : null;
+  }
+  // 逗号列表拆分（跳过 `[...]` / 引号内逗号）。
+  function _splitSelectorListOf(sel) {
+    var out = [], cur = '', depth = 0, quote = null;
+    for (var i = 0; i < sel.length; i++) {
+      var ch = sel[i];
+      if (quote) { cur += ch; if (ch === quote) quote = null; continue; }
+      if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
+      if (ch === '[') depth++;
+      if (ch === ']') depth--;
+      if (ch === ',' && depth === 0) { out.push(cur); cur = ''; continue; }
+      cur += ch;
+    }
+    out.push(cur);
+    return out;
+  }
+  // 解析选择器列表 → complex 数组（unsupported 组静默跳过；可能为空）。
+  function _parseSelectorListOf(sel) {
+    var groups = _splitSelectorListOf(String(sel));
+    var out = [];
+    for (var i = 0; i < groups.length; i++) {
+      var c = _parseComplexOf(groups[i]);
+      if (c) out.push(c);
+    }
+    return out;
+  }
+  // 后代组合器匹配：rightmost compound 匹配 proxy；各前置 compound 匹配 ancestors（逆序，最近优先）。
+  // 纯后代组合器下「最近匹配祖先」贪心正确：远 B 的祖先必也是近 B 的祖先（传递性）。
+  function _matchComplexAgainst(p, compounds, ancestors) {
+    var last = compounds.length - 1;
+    if (!_matchCompoundOf(p, compounds[last])) return false;
+    var ai = ancestors.length - 1;
+    for (var ci = last - 1; ci >= 0; ci--) {
+      var matched = false;
+      while (ai >= 0) {
+        if (_matchCompoundOf(ancestors[ai], compounds[ci])) { matched = true; break; }
+        ai--;
+      }
+      if (!matched) return false;
+    }
+    return true;
+  }
+  function _matchAnyGroup(p, groups, ancestors) {
+    for (var i = 0; i < groups.length; i++) {
+      if (_matchComplexAgainst(p, groups[i], ancestors)) return true;
+    }
+    return false;
+  }
+  // DFS 收集 rootHandle 子树全部**元素** proxy（document order）+ 各自祖先链（不含 root 自身）。
+  function _handleSubtreeNodes(rootHandle) {
+    var result = [];
+    function visit(handle, ancestors) {
+      var kids = _handleChildren[handle];
+      if (!kids) return;
+      for (var i = 0; i < kids.length; i++) {
+        var p = kids[i];
+        if (!p) continue;
+        if (_hSafe(function () { return p.nodeType; }, 0) !== 1) continue; // 跳过 text/comment
+        result.push({ proxy: p, ancestors: ancestors });
+        var ph = _hSafe(function () { return p.__zwHandle; }, null);
+        if (ph) visit(ph, ancestors.concat([p]));
+      }
+    }
+    visit(rootHandle, []);
+    return result;
+  }
+  function _handleQueryFirst(rootHandle, q) {
+    var groups = _parseSelectorListOf(q);
+    if (!groups.length) return null;
+    var nodes = _handleSubtreeNodes(rootHandle);
+    for (var i = 0; i < nodes.length; i++) {
+      if (_matchAnyGroup(nodes[i].proxy, groups, nodes[i].ancestors)) return nodes[i].proxy;
+    }
+    return null;
+  }
+  function _handleQueryAll(rootHandle, q) {
+    var groups = _parseSelectorListOf(q);
+    if (!groups.length) return [];
+    var nodes = _handleSubtreeNodes(rootHandle);
+    var out = [];
+    for (var i = 0; i < nodes.length; i++) {
+      if (_matchAnyGroup(nodes[i].proxy, groups, nodes[i].ancestors)) out.push(nodes[i].proxy);
+    }
+    return out;
   }
 
   // canvas 元素 + 2d 上下文 proxy（R2795，canvas slice 1）。host 持 CanvasContext 注册表，JS 经
