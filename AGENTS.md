@@ -208,6 +208,8 @@ tests/
 
 **重要**：所有代码变更提交前必须执行 `cargo fmt`，并通过 `cargo test --workspace` 和 `cargo clippy --workspace --all-targets -- -D warnings`。
 
+- **测试资产化（调研 P1/P4 成文，2026-08-07）**：渲染兼容性修复（CSS/布局/绘制/Web API 语义）必须附带对应 WPT/reftest 用例——优先执行 `make import-wpt TEST=<上游用例> REF=<参照页> NOTE="Rxxxx 修复"` 导入 `tests/wpt-runner` 常驻断言集并记入 `imported-tests.txt` 账本；无法导入上游用例时，至少补一个等价的本地 reftest/单测。依据：Ladybird CodePolicy「每修复/新特性必带测试 + 通过的新 WPT 测试导入常驻 CI」是其 WPT 通过数单向增长的机制（调研报告 §4.1、§5.2 P1/P4）。导入须连同修复同一提交，杜绝回头路。
+
 ## 安全约束
 
 - 不要提交 .env、credentials.json 等敏感文件
