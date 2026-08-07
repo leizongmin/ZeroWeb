@@ -190,10 +190,33 @@ pub struct BrowserApp {
 }
 
 impl BrowserApp {
+    /// 测试路径的系统字体加载：进程级缓存 + `duplicate`（Arc 共享已解析字体）。
+    ///
+    /// 77 个 app 测试每个都 `BrowserApp::new`，生产路径每次全量解析（含 19MB CJK
+    /// fallback，~2s/测）；缓存后全进程只解析一次，每测 ~10ms。duplicate 保持
+    /// font_id 序号与字体顺序一致 → 各测试的 loader/font_id 内容与独立加载等价。
+    /// `&self` 只读 + fontdue 无内部可变性 → 并发（cargo test 多线程）安全。
+    #[cfg(test)]
+    fn cached_system_fonts() -> (FontLoader, Option<u32>) {
+        static CACHED: std::sync::OnceLock<(FontLoader, Option<u32>)> = std::sync::OnceLock::new();
+        let cached = CACHED.get_or_init(|| {
+            let mut loader = FontLoader::new();
+            let id = load_system_fonts(&mut loader);
+            (loader, id)
+        });
+        (cached.0.duplicate(), cached.1)
+    }
+
     /// 创建新的浏览器应用
     pub fn new(render_mode: RenderMode) -> Self {
-        let mut font_loader = FontLoader::new();
-        let font_id = load_system_fonts(&mut font_loader);
+        #[cfg(test)]
+        let (font_loader, font_id) = Self::cached_system_fonts();
+        #[cfg(not(test))]
+        let (font_loader, font_id) = {
+            let mut fl = FontLoader::new();
+            let fid = load_system_fonts(&mut fl);
+            (fl, fid)
+        };
 
         if font_id.is_some() {
             tracing::info!("System font loaded");
