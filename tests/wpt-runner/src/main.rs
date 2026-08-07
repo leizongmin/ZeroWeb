@@ -47,7 +47,9 @@ Options:
   --wpt-data <dir>  Path to wpt-data directory (for reftest-upstream)
   --width <px>      Viewport width (default: 800)
   --height <px>     Viewport height (default: 600)
-  --jobs <n>        Number of parallel test jobs (default: min(CPU-1, 8), GPU 1)
+  --jobs <n>        Number of parallel test jobs (default: min(CPU-1, 8))
+  --gpu             Route reftest through the GPU path (NOTE: currently a CPU-fallback stub —
+                    does NOT use GpuRenderer, gives no speedup; kept as a hook for future work)
   --media <type>    Rendering media type: print|screen (default: screen; applies @media print/screen cascade)
   --category <cat>  Reftest category filter (layout|text|all)
   --output <path>   Reftest report output path
@@ -1596,9 +1598,11 @@ where
 }
 
 fn effective_jobs(options: &CliOptions) -> usize {
-    options
-        .jobs
-        .unwrap_or_else(|| if options.use_gpu { 1 } else { default_parallel_jobs() })
+    // 不再对 --gpu 强制 jobs=1：reftest 的 GPU 路径目前是 CPU 回退 stub（见
+    // reftest.rs `render_to_framebuffer_gpu_with_base`），并不真正使用 GpuRenderer，
+    // 故走与 CPU 相同的默认并行度。待真正的 GPU reftest（接入 GpuRenderer + 全图元
+    // + 图片加载 + device 复用）落地后，再按 GPU_CREATE_MUTEX 的约束重新评估默认并行度。
+    options.jobs.unwrap_or_else(default_parallel_jobs)
 }
 
 /// reftest 默认并行度硬上限。实测（16 核机）并行扩展在 ~8 线程即饱和：

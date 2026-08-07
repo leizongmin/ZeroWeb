@@ -1002,13 +1002,22 @@ pub fn render_to_framebuffer_gpu(html: &str, css: &str, config: &ReftestConfig) 
 }
 
 /// 将 HTML 渲染到帧缓冲（GPU 无头模式，支持图片加载）。
+///
+/// ⚠️ **当前为 CPU 回退 stub**：直接转调 `render_to_framebuffer_with_base`，并**不**
+/// 使用 `GpuRenderer`。原因：GPU 路径尚不支持全量图元（13 种）+ 图片加载。
+/// 因此 `--gpu` 在 reftest 下**不产生任何加速**（与 CPU 同样的软件光栅），历史上
+/// 还曾被 `effective_jobs` 强制成 jobs=1（~6× 慢，已于杠杆3 移除）。
+///
+/// 真正接入 GPU 需补齐：用 `GpuRenderer::new_headless` 渲染全图元、接入 ImageCache、
+/// 处理 glyph atlas，并按 `GPU_CREATE_MUTEX`（gpu/renderer/mod.rs）约束设计 device 复用/
+/// 并行度。落地后 reftest 方可获得 GPU 光栅加速（lavapipe/真实 GPU）。
 pub fn render_to_framebuffer_gpu_with_base(
     html: &str,
     css: &str,
     config: &ReftestConfig,
     base_dir: Option<&Path>,
 ) -> FrameBuffer {
-    // GPU 渲染路径暂时回退到 CPU（GPU 路径不支持全量图元 + 图片加载）
+    // GPU 渲染路径暂时回退到 CPU（GPU 路径不支持全量图元 + 图片加载）——见上方 doc。
     render_to_framebuffer_with_base(html, css, config, base_dir)
 }
 
