@@ -1203,6 +1203,32 @@ fn test_background_size_values() {
 }
 
 #[test]
+fn test_background_size_two_value() {
+    // R2878：两值语法 `<w> <h>`（CSS Backgrounds §3.9）。
+    use crate::values::{BackgroundSizeValue, BgSizeComponent as B};
+    assert_eq!(
+        parse_background_size("auto 100px"),
+        Some(BackgroundSizeValue::TwoValue(B::Auto, B::Length(100.0)))
+    );
+    assert_eq!(
+        parse_background_size("200px auto"),
+        Some(BackgroundSizeValue::TwoValue(B::Length(200.0), B::Auto))
+    );
+    assert_eq!(
+        parse_background_size("50% 25%"),
+        Some(BackgroundSizeValue::TwoValue(B::Percent(50.0), B::Percent(25.0)))
+    );
+    assert_eq!(
+        parse_background_size("0 0"),
+        Some(BackgroundSizeValue::TwoValue(B::Length(0.0), B::Length(0.0)))
+    );
+    // cover/contain 不允许组合（两 token 含 cover → 失败）。
+    assert!(parse_background_size("cover auto").is_none());
+    // 单值仍走原路径（不进两值分支）。
+    assert_eq!(parse_background_size("100px"), Some(BackgroundSizeValue::Length(100.0)));
+}
+
+#[test]
 fn test_background_attachment_values() {
     use crate::values::BackgroundAttachmentValue;
     assert_eq!(

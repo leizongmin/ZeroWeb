@@ -1216,6 +1216,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                         zero_css_parser::values::BackgroundSizeValue::Percent(n) => {
                             BackgroundSizeComputedValue::Percent(n)
                         }
+                        zero_css_parser::values::BackgroundSizeValue::TwoValue(cw, ch) => {
+                            BackgroundSizeComputedValue::TwoValue(map_bg_size_comp(cw), map_bg_size_comp(ch))
+                        }
                     })
                     .collect();
                 return true;
@@ -1660,4 +1663,13 @@ fn apply_logical_inset(style: &mut ComputedStyle, axis_inline: bool, start: bool
         return true;
     }
     false
+}
+
+/// R2878：background-size 两值语法的单维分量 css-parser → 计算值映射。
+fn map_bg_size_comp(c: zero_css_parser::values::BgSizeComponent) -> BgSizeComponentComputed {
+    match c {
+        zero_css_parser::values::BgSizeComponent::Auto => BgSizeComponentComputed::Auto,
+        zero_css_parser::values::BgSizeComponent::Length(n) => BgSizeComponentComputed::Length(n),
+        zero_css_parser::values::BgSizeComponent::Percent(n) => BgSizeComponentComputed::Percent(n),
+    }
 }

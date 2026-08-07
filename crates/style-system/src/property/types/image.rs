@@ -93,6 +93,20 @@ pub enum BackgroundSizeComputedValue {
     Length(f32),
     /// 百分比值（0-100）。
     Percent(f32),
+    /// 两值语法 `<w> <h>`（CSS Backgrounds §3.9），每维 auto/length/percent。
+    /// driving：css-backgrounds background-size-013/025/041 等（`auto 100px`/`200px auto`）。
+    TwoValue(BgSizeComponentComputed, BgSizeComponentComputed),
+}
+
+/// background-size 两值语法的单维分量（计算值）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BgSizeComponentComputed {
+    /// auto。
+    Auto,
+    /// 长度（px）。
+    Length(f32),
+    /// 百分比（相对定位区该维）。
+    Percent(f32),
 }
 
 /// CSS background-attachment 属性值。

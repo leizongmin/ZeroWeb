@@ -17,10 +17,10 @@ use zero_render_foundation::primitive::{
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
     BackgroundImageComputedValue, BackgroundOriginComputedValue, BackgroundPositionComputedValue,
-    BackgroundRepeatComputedValue, BackgroundSizeComputedValue, CaretColorComputedValue, ComputedStyle,
-    FilterComputedValue, HyphensComputedValue, LineClampComputedValue, MixBlendModeComputedValue, QuotesComputedValue,
-    ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, TextDecorationStyleValue,
-    TextWrapComputedValue,
+    BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BgSizeComponentComputed, CaretColorComputedValue,
+    ComputedStyle, FilterComputedValue, HyphensComputedValue, LineClampComputedValue, MixBlendModeComputedValue,
+    QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
+    TextDecorationStyleValue, TextWrapComputedValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -1103,6 +1103,40 @@ fn resolve_background_size(
         BackgroundSizeComputedValue::Percent(pct) => {
             let w = container_w * pct / 100.0;
             let h = if img_w > 0.0 { w * img_h / img_w } else { container_h };
+            (w, h)
+        }
+        // R2878：两值语法 `<w> <h>`（CSS Backgrounds §3.9）。每维独立解析；auto 维由另一维 +
+        // 固有比推导，无固有比（渐变等）则取定位区该维尺寸；两维皆 auto 取固有尺寸。
+        BackgroundSizeComputedValue::TwoValue(cw, ch) => {
+            let has_ratio = img_w > 0.0 && img_h > 0.0;
+            let w_fixed = match cw {
+                BgSizeComponentComputed::Length(px) => Some(*px),
+                BgSizeComponentComputed::Percent(p) => Some(container_w * p / 100.0),
+                BgSizeComponentComputed::Auto => None,
+            };
+            let h_fixed = match ch {
+                BgSizeComponentComputed::Length(px) => Some(*px),
+                BgSizeComponentComputed::Percent(p) => Some(container_h * p / 100.0),
+                BgSizeComponentComputed::Auto => None,
+            };
+            let w = match w_fixed {
+                Some(w) => w,
+                None => match h_fixed {
+                    Some(h) if has_ratio => h * img_w / img_h,
+                    Some(_) => container_w,
+                    None if has_ratio => img_w,
+                    None => container_w,
+                },
+            };
+            let h = match h_fixed {
+                Some(h) => h,
+                None => match w_fixed {
+                    Some(w) if has_ratio => w * img_h / img_w,
+                    Some(_) => container_h,
+                    None if has_ratio => img_h,
+                    None => container_h,
+                },
+            };
             (w, h)
         }
     }

@@ -985,13 +985,35 @@ pub enum BackgroundSizeValue {
     Length(f32),
     /// 百分比值（如 50%）。
     Percent(f32),
+    /// 两值语法 `<w> <h>`（CSS Backgrounds §3.9），每维 auto/length/percent。
+    /// driving：css-backgrounds background-size-013/025/041 等（`auto 100px`/`200px auto`）。
+    TwoValue(BgSizeComponent, BgSizeComponent),
+}
+
+/// background-size 两值语法的单维分量。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BgSizeComponent {
+    /// auto — 该维由另一维 + 固有比推导（无比则为定位区尺寸）。
+    Auto,
+    /// 长度（px）。
+    Length(f32),
+    /// 百分比（相对定位区该维）。
+    Percent(f32),
 }
 
 /// 解析 CSS background-size 属性值。
 ///
-/// 支持关键字（auto、cover、contain）和带单位的长度/百分比值。
+/// 支持关键字（auto、cover、contain）、带单位的长度/百分比值，以及两值语法 `<w> <h>`。
 pub fn parse_background_size(value: &str) -> Option<BackgroundSizeValue> {
     let v = value.trim().to_ascii_lowercase();
+    // 两值语法（空格分隔恰好两 token，每 token = auto/length/percent）。
+    // cover/contain 不允许组合，两 token 时若含 cover/contain → parse_bg_size_component 返 None。
+    let tokens: Vec<&str> = v.split_whitespace().collect();
+    if tokens.len() == 2 {
+        let c1 = parse_bg_size_component(tokens[0])?;
+        let c2 = parse_bg_size_component(tokens[1])?;
+        return Some(BackgroundSizeValue::TwoValue(c1, c2));
+    }
     match v.as_str() {
         "auto" => Some(BackgroundSizeValue::Auto),
         "cover" => Some(BackgroundSizeValue::Cover),
@@ -1011,6 +1033,21 @@ pub fn parse_background_size(value: &str) -> Option<BackgroundSizeValue> {
                 None
             }
         }
+    }
+}
+
+/// 解析两值语法的单维分量：auto / <length> / <percentage>。
+fn parse_bg_size_component(token: &str) -> Option<BgSizeComponent> {
+    if token.eq_ignore_ascii_case("auto") {
+        return Some(BgSizeComponent::Auto);
+    }
+    if token.ends_with('%') {
+        let pct: f32 = token.trim_end_matches('%').parse().ok()?;
+        return Some(BgSizeComponent::Percent(pct));
+    }
+    match parse_length(token)? {
+        LengthValue::Px(n) | LengthValue::Em(n) | LengthValue::Rem(n) => Some(BgSizeComponent::Length(n as f32)),
+        _ => None,
     }
 }
 

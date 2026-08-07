@@ -19,7 +19,7 @@ use zero_style_system::{
     AccentColorComputedValue, AlignContentValue, AppearanceComputedValue, BackfaceVisibilityValue,
     BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundImageComputedValue,
     BackgroundOriginComputedValue, BackgroundPositionComputedValue, BackgroundRepeatComputedValue,
-    BackgroundSizeComputedValue, BorderCollapseValue, BorderImageOutsetComputedComponent,
+    BackgroundSizeComputedValue, BgSizeComponentComputed, BorderCollapseValue, BorderImageOutsetComputedComponent,
     BorderImageOutsetComputedValue, BorderImageRepeatComputedMode, BorderImageRepeatComputedValue,
     BorderImageSliceComputedComponent, BorderImageSliceComputedValue, BorderImageSourceComputedValue,
     BorderImageWidthComputedComponent, BorderImageWidthComputedValue, BorderSpacingComputedValue, BorderStyleValue,
@@ -2900,6 +2900,15 @@ fn bg_edge_to_str(e: &BackgroundEdge) -> &'static str {
 
 /// background-size：CSS Backgrounds `<bg-size>#` 多层序列化（逗号分隔）。
 /// Auto/Cover/Contain→关键字；Length→px；Percent→%。
+/// R2878：background-size 两值语法单维分量序列化（auto / <length>px / <percent>%）。
+fn bg_size_component_to_css(c: &BgSizeComponentComputed) -> String {
+    match c {
+        BgSizeComponentComputed::Auto => "auto".to_string(),
+        BgSizeComponentComputed::Length(f) => format_num(*f as f64, "px"),
+        BgSizeComponentComputed::Percent(f) => format_num(*f as f64, "%"),
+    }
+}
+
 fn background_size_to_css(layers: &[BackgroundSizeComputedValue]) -> String {
     if layers.is_empty() {
         return String::new();
@@ -2912,6 +2921,10 @@ fn background_size_to_css(layers: &[BackgroundSizeComputedValue]) -> String {
             BackgroundSizeComputedValue::Contain => "contain".to_string(),
             BackgroundSizeComputedValue::Length(f) => format_num(*f as f64, "px"),
             BackgroundSizeComputedValue::Percent(f) => format_num(*f as f64, "%"),
+            // R2878：两值语法序列化（`<w> <h>`，auto/length/percent 每维）。
+            BackgroundSizeComputedValue::TwoValue(cw, ch) => {
+                format!("{} {}", bg_size_component_to_css(cw), bg_size_component_to_css(ch))
+            }
         })
         .collect::<Vec<_>>()
         .join(", ")
