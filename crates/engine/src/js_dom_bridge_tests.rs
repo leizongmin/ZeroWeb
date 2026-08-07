@@ -11481,6 +11481,83 @@ fn test_fontface_load_r2949() {
 }
 
 #[test]
+fn test_fontface_reflect_atfontface_r2950() {
+    // R2950 host→JS：__zw_add_fontface 把已加载 @font-face 字体反映为 FontFace 加入 document.fonts
+    //（补全 FontFaceSet 语义——set 含文档 @font-face 字体）。按 family 去重；status='loaded'/'error'。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 初始 document.fonts 为空（size=0）。
+    assert_eq!(
+        sandbox.execute("String(document.fonts.size)").unwrap().value,
+        "0",
+        "初始 document.fonts 空"
+    );
+
+    // host 反映两个 @font-face 字体（一个 loaded，一个 error）→ set 含 2 个 FontFace。
+    sandbox
+        .execute(
+            "__zw_add_fontface('MyFont', 'loaded');\
+             __zw_add_fontface('BadFont', 'error');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(document.fonts.size)").unwrap().value,
+        "2",
+        "反映 2 个 @font-face 字体 → size=2"
+    );
+    // 收集 family + status（经 values 迭代）。
+    sandbox
+        .execute(
+            "globalThis.__families = []; globalThis.__statuses = {};\
+             document.fonts.forEach(function(f){ globalThis.__families.push(f.family); globalThis.__statuses[f.family] = f.status; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__families.sort().join(','))")
+            .unwrap()
+            .value,
+        "BadFont,MyFont",
+        "document.fonts 迭代得反映的 family"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__statuses['MyFont'])")
+            .unwrap()
+            .value,
+        "loaded",
+        "成功加载的 FontFace status='loaded'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__statuses['BadFont'])")
+            .unwrap()
+            .value,
+        "error",
+        "失败的 FontFace status='error'"
+    );
+
+    // 按 family 去重：重复 __zw_add_fontface 同 family 不重复加。
+    sandbox.execute("__zw_add_fontface('MyFont', 'loaded');").unwrap();
+    assert_eq!(
+        sandbox.execute("String(document.fonts.size)").unwrap().value,
+        "2",
+        "同 family 重复反映去重（size 不增）"
+    );
+}
+
+#[test]
 fn test_xmlserializer_importnode_r2818() {
     // R2818：XMLSerializer.serializeToString + document.adoptNode/importNode。serializeToString 委托节点
     // outerHTML（元素）/ nodeValue（text·comment）/ documentElement（document）；adoptNode 单文档 identity；

@@ -6798,6 +6798,27 @@
     get: function () { return this.load(); },
   });
   globalThis.FontFace = globalThis.FontFace || FontFace;
+  // R2950 宿主→JS：把已加载的 @font-face 字体反映为 FontFace 对象加入 document.fonts（补全 FontFaceSet
+  // 语义——set 应含文档 @font-face 字体，R2949 前仅程序化 add 的 FontFace 在内）。finish_page_load 经
+  // `__zw_add_fontface(family, status)` 对每个 font_event 调用：构造 FontFace(family, '', {}) + 设 status
+  //（'loaded'/'error'）+ add 进 set（按 family 去重）。descriptors 默认 normal/400（weight/style 反射 follow-up）。
+  globalThis.__zw_add_fontface = function (family, status) {
+    try {
+      var fs = globalThis.document && globalThis.document.fonts;
+      if (!fs || typeof FontFace !== 'function') return;
+      var fam = String(family != null ? family : '');
+      if (!fam) return;
+      // 去重：已存在同 family 的 FontFace 则不重复加（避免 settle 重投累积）。
+      var exists = false;
+      for (var i = 0; i < _fontFaceSetFaces.length; i++) {
+        if (_fontFaceSetFaces[i] && _fontFaceSetFaces[i].family === fam) { exists = true; break; }
+      }
+      if (exists) return;
+      var face = new FontFace(fam, '', {});
+      face.status = (status === 'error') ? 'error' : 'loaded';
+      fs.add(face);
+    } catch (_e) {}
+  };
 
   // Selection / Range（R2804，缺失 Web API 续）。headless 无真用户选择——Selection 单例默认空
   //（rangeCount=0/isCollapsed=true/toString=''/anchorNode=null/focusNode=null/type='None'），selection-state-

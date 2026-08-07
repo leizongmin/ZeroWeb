@@ -2362,6 +2362,18 @@ pub fn script_font_settle(had_loaded: bool, had_error: bool) -> String {
     )
 }
 
+/// 构造「反映 @font-face 字体为 FontFace」shim 调用串（R2950）。宿主在 `finish_page_load` 对每个
+/// font_event 调用：shim `__zw_add_fontface(family, status)` 构造 FontFace(family) + 设 status + add 进
+/// document.fonts（按 family 去重）。使 FontFaceSet 含文档 @font-face 字体（补全 set 语义）。`status` =
+/// "loaded" / "error"。`family` 经 [`escape_js_string`] 转义防注入。
+pub fn script_add_fontface(family: &str, status: &str) -> String {
+    format!(
+        "globalThis.__zw_add_fontface&&globalThis.__zw_add_fontface('{}','{}');",
+        escape_js_string(family),
+        escape_js_string(status)
+    )
+}
+
 /// 从当前 HTML 快照查询 textContent。
 pub fn query_text_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);

@@ -138,6 +138,10 @@ pub fn finish_page_load(
     }
     // R2947：@font-face 加载 settle——派 FontFaceSet 'loadingdone'/'loadingerror' + 解析 document.fonts.ready。
     // 无 @font-face 页面（font_events 空）仍 settle（仅 resolve ready，不派事件）。
+    // R2950：先把每个 @font-face 字体反映为 FontFace 对象加入 document.fonts（补全 set 语义），再 settle。
+    for (family, status) in &font_events {
+        dispatch_add_fontface(js_worker, family, status);
+    }
     let had_loaded = font_events.iter().any(|(_, t)| *t == "loaded");
     let had_error = font_events.iter().any(|(_, t)| *t == "error");
     dispatch_font_settle(js_worker, had_loaded, had_error);
@@ -210,6 +214,16 @@ fn dispatch_font_settle(js_worker: &RendererJsWorker, had_loaded: bool, had_erro
     let report = zero_engine::script_font_settle(had_loaded, had_error);
     if let Err(e) = js_worker.execute_script_direct(&report) {
         warn!("dispatch font settle: {e}");
+    }
+}
+
+/// R2950 mirror：把已加载 @font-face 字体反映为 FontFace 对象加入 document.fonts。经
+/// `script_add_fontface` 生成 `__zw_add_fontface(family, status)`——shim 构造 FontFace(family) + 设
+/// status + add（按 family 去重）。best-effort。补全 FontFaceSet 语义（set 含文档 @font-face 字体）。
+fn dispatch_add_fontface(js_worker: &RendererJsWorker, family: &str, status: &str) {
+    let report = zero_engine::script_add_fontface(family, status);
+    if let Err(e) = js_worker.execute_script_direct(&report) {
+        warn!("dispatch add fontface ({status} {family}): {e}");
     }
 }
 
@@ -782,6 +796,46 @@ mod tests {
             "fired",
             "FontFaceSet loadingerror 事件派发（@font-face 加载失败）"
         );
+        worker.shutdown();
+    }
+
+    /// R2950 mirror：finish_page_load 把 font_events 反映为 FontFace 对象加入 document.fonts（补全 set 语义）。
+    /// 经 finish_page_load 传 font_events，验证 document.fonts.size/values 反映 @font-face 字体。
+    #[test]
+    fn finish_page_load_reflects_fontface_r2950() {
+        let mut worker = RendererJsWorker::spawn(121);
+        let html = "<html><body><script>\
+                    globalThis.__probe = function(){ return document.fonts.size; };\
+                    </script></body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        // 初始 document.fonts 空（无程序化 add）。
+        assert_eq!(
+            worker.execute_script_direct("String(document.fonts.size)").unwrap(),
+            "0",
+            "初始 document.fonts 空"
+        );
+        // finish_page_load 传 2 个 @font-face 加载结果 → 反映为 FontFace 加入 set。
+        finish_page_load(
+            &worker,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![("MyFont".to_string(), "loaded"), ("BadFont".to_string(), "error")],
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(document.fonts.size)").unwrap(),
+            "2",
+            "finish_page_load 反映 2 个 @font-face 字体 → document.fonts.size=2"
+        );
+        // 收集 family 验证。
+        let families = worker
+            .execute_script_direct(
+                "globalThis.__f=[];document.fonts.forEach(function(f){globalThis.__f.push(f.family);});\
+                 String(globalThis.__f.sort().join(','))",
+            )
+            .unwrap();
+        assert_eq!(families, "BadFont,MyFont", "document.fonts 迭代得反映的 family");
         worker.shutdown();
     }
 }

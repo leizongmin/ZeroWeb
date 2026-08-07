@@ -184,9 +184,24 @@ impl PageScriptRunner {
         }
         // R2947：@font-face 加载 settle——经 `__zw_font_settle` 派 FontFaceSet 'loadingdone'/'loadingerror'
         // + 解析 document.fonts.ready。无 @font-face 页面仍 settle（仅 resolve ready，不派事件）。
+        // R2950：先把每个 @font-face 字体反映为 FontFace 对象加入 document.fonts（补全 set 语义），再 settle。
+        for (family, status) in &self.font_events {
+            dispatch_add_fontface(js_worker, family, status);
+        }
         let had_loaded = self.font_events.iter().any(|(_, t)| *t == "loaded");
         let had_error = self.font_events.iter().any(|(_, t)| *t == "error");
         dispatch_font_settle(js_worker, had_loaded, had_error);
+    }
+}
+
+/// R2950：把已加载 @font-face 字体反映为 FontFace 对象加入 document.fonts。经 `script_add_fontface` 生成
+/// `__zw_add_fontface(family, status)`——shim 构造 FontFace(family) + 设 status + add（按 family 去重）。
+/// best-effort（失败仅 `warn!`）。镜像 renderer `page_scripts::dispatch_add_fontface`。
+fn dispatch_add_fontface(js_worker: Option<&TabJsWorkerHandle>, family: &str, status: &str) {
+    let Some(worker) = js_worker else { return };
+    let report = zero_engine::script_add_fontface(family, status);
+    if let Err(e) = worker.execute_script_direct(&report) {
+        warn!("dispatch add fontface ({status} {family}): {e}");
     }
 }
 
