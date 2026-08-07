@@ -247,6 +247,18 @@ fn canonical_property_name(property: &str) -> &str {
         "min-block-size" => "min-height",
         "max-inline-size" => "max-width",
         "max-block-size" => "max-height",
+        // R2919：vendor 前缀 longhand 别名 canonical 化（legacy static web 兼容，DC-13 Tier 1）。
+        // 2010s 老式静态页面大量用 `-webkit-` 前缀属性；parser 容忍 vendor 前缀（不丢弃声明），
+        // 但未规范化前这些声明在 apply 阶段无匹配槽位 → 静默 no-op。此处把**值语法与标准
+        // 完全一致、且标准 longhand 已全实现（apply+registry+inherit）的 1:1 别名**规范化为
+        // 标准名，使其经 cascade 正常应用。仅显式列出经验证安全的别名——不通用 strip 前缀，
+        // 因部分 `-webkit-` 属性值语法/语义与标准不同（如 `-webkit-background-clip` 历史接受
+        // 无 `-box` 后缀的 `padding`/`border`，标准要求 `padding-box`），通用映射会致值解析
+        // 失败。每个别名与标准名同槽位竞争（同优先级后者胜），与真实浏览器行为一致。
+        "-webkit-user-select" => "user-select",
+        "-webkit-appearance" => "appearance",
+        "-webkit-box-shadow" => "box-shadow",
+        "-webkit-background-size" => "background-size",
         _ => property,
     }
 }
@@ -509,6 +521,70 @@ mod tests {
         // 物理名原样返回（已 canonical）。
         assert_eq!(canonical_property_name("width"), "width");
         assert_eq!(canonical_property_name("height"), "height");
+    }
+
+    /// R2919：vendor 前缀 longhand 别名 canonical 化（legacy static web 兼容，DC-13 Tier 1）。
+    /// `-webkit-` 前缀属性值语法与标准完全一致的 1:1 longhand 别名规范化为标准名，使其经
+    /// cascade 正常应用（否则 apply 无匹配槽位静默 no-op）。driving：2010s 老式静态页面用
+    /// `-webkit-user-select`/`-webkit-appearance`/`-webkit-box-shadow`/`-webkit-background-size`。
+    #[test]
+    fn test_canonical_webkit_vendor_aliases() {
+        // 4 个安全 1:1 longhand 别名 → 标准名。
+        assert_eq!(canonical_property_name("-webkit-user-select"), "user-select");
+        assert_eq!(canonical_property_name("-webkit-appearance"), "appearance");
+        assert_eq!(canonical_property_name("-webkit-box-shadow"), "box-shadow");
+        assert_eq!(canonical_property_name("-webkit-background-size"), "background-size");
+        // 标准名原样返回（已 canonical）。
+        assert_eq!(canonical_property_name("user-select"), "user-select");
+        assert_eq!(canonical_property_name("box-shadow"), "box-shadow");
+        // 非安全别名（值语法/语义与标准不同）不规范化——保持 no-op，避免值解析失败。
+        assert_eq!(
+            canonical_property_name("-webkit-background-clip"),
+            "-webkit-background-clip"
+        );
+        assert_eq!(
+            canonical_property_name("-webkit-text-fill-color"),
+            "-webkit-text-fill-color"
+        );
+        // 未列入的任意 vendor 前缀属性原样返回。
+        assert_eq!(canonical_property_name("-webkit-foo"), "-webkit-foo");
+    }
+
+    /// R2919：`-webkit-` 别名经 cascade 后须以标准名出现在结果中（而非作为独立键被继承逻辑
+    /// 当「未声明」覆盖——见 canonical_property_name 注释）。
+    #[test]
+    fn test_cascade_normalizes_webkit_alias_to_standard() {
+        let decls = vec![CascadedDeclaration {
+            property: "-webkit-user-select".to_string(),
+            value: "none".to_string(),
+            order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+        }];
+        let result = cascade(decls, false);
+        // 标准名存在，别名名不存在。
+        assert_eq!(result.get("user-select"), Some(&"none".to_string()));
+        assert!(!result.contains_key("-webkit-user-select"));
+    }
+
+    /// R2919：`-webkit-` 别名与标准名共享同一 canonical 槽位——同优先级下后声明者胜，
+    /// 而非两个独立键各取其值（与 word-wrap/overflow-wrap 同语义）。
+    #[test]
+    fn test_cascade_webkit_alias_shares_slot_with_standard() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "box-shadow".to_string(),
+                value: "none".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "-webkit-box-shadow".to_string(),
+                value: "1px 1px red".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        // 同一槽位：后声明的 -webkit-box-shadow 胜出。
+        assert_eq!(result.get("box-shadow"), Some(&"1px 1px red".to_string()));
+        assert!(!result.contains_key("-webkit-box-shadow"));
     }
 
     /// R2499：logical 与 physical 尺寸属性共享同一 canonical 槽位 → 按 specificity 竞争，
