@@ -6195,6 +6195,7 @@
     Object.setPrototypeOf(ev, MessageEvent.prototype);
     ev.data = options && options.data !== undefined ? options.data : null;
     ev.origin = (options && options.origin) || '';
+    ev.lastEventId = (options && options.lastEventId) || '';
     ev.source = (options && options.source) || null;
     ev.ports = [];
     return ev;
@@ -6324,6 +6325,101 @@
     },
   });
   globalThis.BroadcastChannel = globalThis.BroadcastChannel || BroadcastChannel;
+
+  // EventSource（Server-Sent Events，SSE）——服务器单向推送（通知 / 聊天 / 股票 / live updates 高频）。
+  // 经 fetch（R2923）拉 event-stream 全 body 后按 text/event-stream 解析（HTML spec §9.2）：字段
+  // data/event/id/retry，空行派发累积事件，`:` 行注释，BOM 去除，CRLF/LF/CR 分行。readyState + onopen/
+  // onmessage/onerror + addEventListener。**headless 有限流**：fetch 取整 body 后解析派发全部事件（真浏览器
+  // 持续流式逐块派发；本实现 finite-stream 一次派发——headless 加载期足够）。自动重连/Last-Event-ID 记录
+  // 但不重连（headless 无长连接）。https://html.spec.whatwg.org/multipage/server-sent-events.html
+  function EventSource(url, options) {
+    this.url = String(url);
+    this.readyState = EventSource.CONNECTING;
+    this.withCredentials = !!(options && options.withCredentials);
+    this.onopen = null; this.onmessage = null; this.onerror = null;
+    this._listeners = {};
+    this._lastEventId = '';
+    this._closed = false;
+    var self = this;
+    Promise.resolve().then(function () {
+      if (self._closed || typeof fetch !== 'function') throw new Error('no fetch');
+      return fetch(self.url, { headers: { 'Accept': 'text/event-stream' } });
+    }).then(function (resp) {
+      if (!resp || !resp.ok) throw new Error('EventSource fetch failed');
+      return resp.text();
+    }).then(function (text) {
+      if (self._closed) return;
+      self.readyState = EventSource.OPEN;
+      self._dispatch('open', null);
+      self._process(text);
+      // finite stream 结束：真浏览器 spec 在连接关闭后重连（retry）；headless 视为结束 → onerror + CLOSED。
+      if (!self._closed) {
+        self.readyState = EventSource.CLOSED;
+        self._dispatch('error', null);
+      }
+    }).catch(function () {
+      if (!self._closed) {
+        self.readyState = EventSource.CLOSED;
+        self._dispatch('error', null);
+      }
+    });
+  }
+  EventSource.CONNECTING = 0;
+  EventSource.OPEN = 1;
+  EventSource.CLOSED = 2;
+  EventSource.prototype = {
+    constructor: EventSource,
+    close: function () { this._closed = true; this.readyState = EventSource.CLOSED; },
+    addEventListener: function (type, cb) {
+      (this._listeners[type] || (this._listeners[type] = [])).push(cb);
+    },
+    removeEventListener: function (type, cb) {
+      var arr = this._listeners[type];
+      if (!arr) return;
+      var i = arr.indexOf(cb);
+      if (i >= 0) arr.splice(i, 1);
+    },
+    _dispatch: function (type, event) {
+      var ev = event || new Event(type);
+      ev.type = type;
+      ev.target = this;
+      var handler = this['on' + type];
+      if (typeof handler === 'function') { try { handler.call(this, ev); } catch (_e) {} }
+      var arr = this._listeners[type];
+      if (arr) for (var i = 0; i < arr.length; i++) { try { arr[i].call(this, ev); } catch (_e) {} }
+    },
+    // text/event-stream 解析（HTML spec §9.2.6）：去 BOM → CRLF/CR/LF 分行 → 空行派发 → 字段 data/event/id。
+    _process: function (text) {
+      var lines = String(text).replace(/^\uFEFF/, '').split(/\r\n|\r|\n/);
+      var data = [], eventType = '', id = '';
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line === '') {
+          if (data.length > 0 || eventType !== '') {
+            if (id !== '') this._lastEventId = id;
+            var evData = data.join('\n');
+            this._dispatch(eventType || 'message',
+              new MessageEvent(eventType || 'message', { data: evData, lastEventId: this._lastEventId, origin: this.url }));
+          }
+          data = []; eventType = '';
+          continue;
+        }
+        var colon = line.indexOf(':');
+        var field, value;
+        if (colon === 0) continue; // 注释行（: 开头）
+        if (colon > 0) {
+          field = line.slice(0, colon);
+          value = line.slice(colon + 1);
+          if (value.charAt(0) === ' ') value = value.slice(1); // 去一个前导空格（spec）
+        } else { field = line; value = ''; }
+        if (field === 'data') data.push(value);
+        else if (field === 'event') eventType = value;
+        else if (field === 'id') id = value;
+        // retry / 未知字段忽略
+      }
+    }
+  };
+  globalThis.EventSource = globalThis.EventSource || EventSource;
 
   // CSS——CSS 命名空间（escape 选择器转义 + supports 特性检测）。escape 纯 JS（CSSOM escape 算法，
   // 本地 Chromium 150 oracle 锚定）；supports 委托 host `__zw_css_supports`（known-property gate +

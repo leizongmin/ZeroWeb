@@ -8350,6 +8350,103 @@ fn test_crypto_csprng_r2960() {
 }
 
 #[test]
+fn test_eventsource_r2961() {
+    // R2961：EventSource（Server-Sent Events，SSE）——服务器单向推送。纯 JS 经 fetch（R2923）拉
+    // text/event-stream 全 body 后按 HTML spec §9.2 解析。本测试用 fetch mock（覆写 globalThis.fetch 返
+    // 合成 SSE body）验解析 + 派发 + readyState + close()。无需 host fetch handler / 真服务器。
+    // https://html.spec.whatwg.org/multipage/server-sent-events.html
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 覆写 fetch 为 mock（返合成 SSE body），建 EventSource 收事件。
+    sandbox
+        .execute(
+            "globalThis.__es = []; globalThis.__open = 'no'; globalThis.__err = 'no';\
+             globalThis.fetch = function(url, init) {\
+               return Promise.resolve({ ok: true, status: 200, text: function() { return Promise.resolve(globalThis.__BODY); } });\
+             };\
+             globalThis.__BODY = 'data: hello\\n\\ndata: world\\n\\nevent: custom\\ndata: payload\\n\\n: comment\\ndata: a\\ndata: b\\n\\n';\
+             var es = new EventSource('https://example.com/stream');\
+             es.onopen = function() { globalThis.__open = 'yes'; };\
+             es.onmessage = function(e) { globalThis.__es.push('msg:' + e.data); };\
+             es.addEventListener('custom', function(e) { globalThis.__es.push('custom:' + e.data); });\
+             es.onerror = function() { globalThis.__err = 'yes'; };",
+        )
+        .unwrap();
+    // fetch 链在 execute 末 microtask 排空 → onopen + 解析派发 + onerror（finite stream 结束）。
+    assert_eq!(sandbox.execute("String(globalThis.__open)").unwrap().value, "yes");
+    assert_eq!(
+        sandbox.execute("globalThis.__es.join('|')").unwrap().value,
+        "msg:hello|msg:world|custom:payload|msg:a\nb"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__err)").unwrap().value, "yes");
+    // readyState：finite stream 结束后 CLOSED（2）。
+    assert_eq!(
+        sandbox
+            .execute("String(typeof EventSource !== 'undefined' ? 1 : 0)")
+            .unwrap()
+            .value,
+        "1"
+    );
+
+    // data 后无空格（`data:nospace`）、id 字段 + 多事件流。
+    sandbox
+        .execute(
+            "globalThis.__es2 = [];\
+             globalThis.__BODY = 'id:42\\ndata:nospace\\n\\nid:43\\ndata: second\\n\\n';\
+             var es2 = new EventSource('https://example.com/s');\
+             es2.onmessage = function(e) { globalThis.__es2.push(e.lastEventId + ':' + e.data); };",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__es2.join('|')").unwrap().value,
+        "42:nospace|43:second"
+    );
+
+    // close() 在派发前调用 → 不派发（_closed 守卫）。
+    sandbox
+        .execute(
+            "globalThis.__es3 = [];\
+             globalThis.__BODY = 'data: x\\n\\n';\
+             var es3 = new EventSource('https://example.com/c');\
+             es3.close();\
+             es3.onmessage = function(e) { globalThis.__es3.push(e.data); };",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__es3.length === 0 ? 'closed' : 'fired')")
+            .unwrap()
+            .value,
+        "closed"
+    );
+
+    // 无 fetch（host 未注册且无覆写）→ onerror（不悬挂）。
+    let mut nf = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    nf.execute(generate_js_dom_shim()).unwrap();
+    // shim 自带 fetch（返 no-handler Response），EventSource 拿到 !ok → onerror。
+    nf.execute(
+        "globalThis.__nferr='no'; var es=new EventSource('https://example.com/n'); es.onerror=function(){globalThis.__nferr='yes';};",
+    )
+    .unwrap();
+    assert_eq!(nf.execute("String(globalThis.__nferr)").unwrap().value, "yes");
+}
+
+#[test]
 fn test_headers_r2794() {
     // R2794：Headers（HTTP 头集合，fetch/SW/header-map 高频）。镜像 FormData，header name 小写归一 +
     // 多值 append 用 ', ' 合并 + getSetCookie 特例。纯 JS，零 host 回调。
