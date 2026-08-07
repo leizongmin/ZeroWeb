@@ -285,11 +285,22 @@ pub fn run_reftest(case: &ReftestCase, config: &ReftestConfig) -> ReftestResult 
 
 /// 运行单个 reftest 用例（支持基于 base_dir 的图片加载）。
 pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_dir: Option<&Path>) -> ReftestResult {
+    let _case_t0 = std::time::Instant::now();
     // 渲染测试页面
     let test_fb = render_to_framebuffer_with_base(&case.test_html, &case.css, config, base_dir);
+    let _case_t1 = std::time::Instant::now();
     // 渲染参考页面（图片相对参考文件目录解析，缺失时回落到测试目录）
     let ref_base = case.ref_base_dir.as_deref().or(base_dir);
     let ref_fb = render_to_framebuffer_with_base(&case.ref_html, &case.css, config, ref_base);
+    let _case_t2 = std::time::Instant::now();
+    if std::env::var("ZW_CASE_STAGES").is_ok() {
+        eprintln!(
+            "[case-stages] {} test={:.1}ms ref={:.1}ms",
+            case.id,
+            _case_t1.duration_since(_case_t0).as_secs_f64() * 1000.0,
+            _case_t2.duration_since(_case_t1).as_secs_f64() * 1000.0
+        );
+    }
 
     // 尺寸必须一致
     if test_fb.width != ref_fb.width || test_fb.height != ref_fb.height {
@@ -535,6 +546,21 @@ pub fn render_to_framebuffer_with_layout_and_paint_skip_with_base(
 static BASE_FONT_LOADER: std::sync::OnceLock<zero_render_foundation::font::loader::FontLoader> =
     std::sync::OnceLock::new();
 
+/// @font-face 组合缓存（2026-08-07 优化）：声明需加载的 @font-face 的 case 此前每次
+/// create_font_loader 全量重载系统 + 19MB CJK 字体（~480ms/case × 2 render，Ahem 系多数
+/// 慢 case 的根因）。按「按 base_dir 解析后的 @font-face src 路径列表」缓存
+/// Arc<FontLoader>——键取 load_font_faces_into 的真实输入，相同组合只创建一次，
+/// 命中后 Arc clone（引用计数）近乎零成本。绝对 src（WPT 通用 `/fonts/*`）解析结果
+/// 与 base_dir 无关 → test 与 reference/ 子目录的 ref 渲染共享同一键；相对 src 解析为
+/// 各自目录路径 → 正确区分。全字符串键，无哈希碰撞风险。容量上限 32，超限清空重建。
+static FRESH_LOADER_CACHE: std::sync::OnceLock<
+    std::sync::Mutex<
+        std::collections::HashMap<String, std::sync::Arc<zero_render_foundation::font::loader::FontLoader>>,
+    >,
+> = std::sync::OnceLock::new();
+
+const FRESH_LOADER_CACHE_MAX: usize = 32;
+
 fn render_with_layout_inner(
     html: &str,
     css: &str,
@@ -546,8 +572,10 @@ fn render_with_layout_inner(
     std::collections::HashSet<zero_dom::NodeId>,
     String,
 ) {
+    let _zw_t0 = std::time::Instant::now();
     // 执行页面 <script>（含 DOM 变更），把 JS 后的最终 HTML 用于后续渲染。
     let mutated_html = apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref());
+    let _zw_t1 = std::time::Instant::now();
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
         config.viewport_width as f64,
         config.viewport_height as f64,
@@ -561,13 +589,17 @@ fn render_with_layout_inner(
     };
     let html: &str = &styled_html;
 
+    let _zw_t2 = std::time::Instant::now();
     // 先构建图像缓存，提取固有尺寸供 paint 阶段使用
     let mut image_cache = build_image_cache(html, base_dir);
     let (image_sizes, image_ratios, image_no_ratio) = extract_image_metrics(&mut image_cache, html);
 
     let combined_css = merge_page_css(html, css, base_dir, Some(&media_ctx));
+    let _zw_t3 = std::time::Instant::now();
 
+    let _zw_t4 = std::time::Instant::now();
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
+    let _zw_t4a = std::time::Instant::now();
     pipeline.set_skip_indicators(true);
     // R1991：@media print/screen 级联按渲染媒体类型过滤（DC-12）。默认 Screen = 零变更；
     // `--media print` 经 config.media_type 传入使 @media print 生效（量真实 WPT yield）。
@@ -578,8 +610,17 @@ fn render_with_layout_inner(
 
     // 字体查找表（在 render_html 之前，供 Painter 解析 CSS font-family）。
     // 扫描外链/传入 CSS + 内联 <style> 的 @font-face（常声明在内联 <style>）。
+    let _zw_t4b = std::time::Instant::now();
     let font_scan_css = format!("{combined_css}\n{}", extract_inline_style_css(html));
-    let has_font_face = !extract_font_faces(&font_scan_css).is_empty();
+    let faces = extract_font_faces(&font_scan_css);
+    let has_font_face = !faces.is_empty();
+    // 仅 Ahem 的 @font-face（harness 按 family 名合成方块，load_font_faces_into 跳过，
+    // 且 create_font_loader 已加载 Ahem.ttf）→ fresh loader 与 BASE 内容等价 →
+    // 直接复用 BASE_FONT_LOADER，免 ~480ms 创建成本。
+    let needs_custom_faces = faces
+        .iter()
+        .any(|(family, _, _, _)| !family.eq_ignore_ascii_case("Ahem"));
+    let _zw_t4c = std::time::Instant::now();
     // U1b-wiring per-font line-height（env-gated，默认关 = 零回归）。
     let perfont_lineheight = std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1");
 
@@ -587,24 +628,64 @@ fn render_with_layout_inner(
     // from_bytes 解析（尤以 ~16MB NotoSansCJK）占单案 ~85% 串行成本（实测每 render
     // ~0.4s，每 case 2 render ≈ 0.8s，而单案总成本仅 ~0.9s）。build_font_resolver /
     // build_line_metric_map 均取 &self，故无 @font-face 的多数 case 复用进程级缓存的
-    // base loader（BASE_FONT_LOADER），零 re-parse；仅声明 @font-face 的少数 case
-    //（字体测试）走 fresh owned loader（含 re-parse + 自定义字体），保持原行为。
-    let fresh_loader: Option<FontLoader> = if has_font_face {
-        let mut fl = create_font_loader();
-        load_font_faces_into(&mut fl, base_dir, &font_scan_css);
-        Some(fl)
-    } else {
-        None
-    };
-    let font_loader: &FontLoader = fresh_loader
-        .as_ref()
+    // base loader（BASE_FONT_LOADER），零 re-parse；仅声明需加载自定义字体的 case
+    //（字体测试）走 fresh owned loader（含 re-parse + 自定义字体）。
+    // 杠杆4 + @font-face 缓存：无 @font-face / 仅 Ahem 复用 BASE_FONT_LOADER（进程级）；
+    // 声明需加载 @font-face 的 case 按「src 解析后的路径列表」缓存 Arc<FontLoader>——
+    // 键取 load_font_faces_into 的真实输入，页面间仅内联样式不同的 case 共享同一键
+    //（WPT 通用 ahem.css 系、absolute-src 的 test/ref 对），只 create 一次。
+    let fresh_arc: Option<std::sync::Arc<zero_render_foundation::font::loader::FontLoader>> =
+        if has_font_face && needs_custom_faces {
+            let cache = FRESH_LOADER_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+            // 全字符串键：@font-face src 按 base_dir 解析后的路径列表（Debug 序列化）。
+            // 无哈希碰撞风险；不同页面即使其余 CSS 不同，只要 @font-face 声明解析结果
+            // 相同即共享同一 loader（绝对 src 跨目录共享——reference/ 子目录的 ref
+            // 渲染与 test 渲染同键；相对 src 解析为各自目录路径，正确区分）。
+            let key = format!(
+                "{:?}",
+                faces
+                    .iter()
+                    .map(|(family, sources, weight, is_italic)| (
+                        family,
+                        sources
+                            .iter()
+                            .map(|src| resolve_font_src(src, base_dir))
+                            .collect::<Vec<_>>(),
+                        weight,
+                        is_italic,
+                    ))
+                    .collect::<Vec<_>>()
+            );
+            let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(fl) = guard.get(&key) {
+                Some(fl.clone())
+            } else {
+                if guard.len() >= FRESH_LOADER_CACHE_MAX {
+                    guard.clear();
+                }
+                // 从 BASE 深拷贝而非 create_font_loader 全量重解析：19MB CJK fontdue
+                // 解析（~0.5s）只做一次，duplicate 复用已解析结果，每键成本降一个量级。
+                let mut fl = BASE_FONT_LOADER.get_or_init(create_font_loader).duplicate();
+                load_font_faces_into(&mut fl, base_dir, &font_scan_css);
+                let arc = std::sync::Arc::new(fl);
+                guard.insert(key, arc.clone());
+                Some(arc)
+            }
+        } else {
+            None
+        };
+    let font_loader: &FontLoader = fresh_arc
+        .as_deref()
         .unwrap_or_else(|| BASE_FONT_LOADER.get_or_init(create_font_loader));
+    let _zw_t4d = std::time::Instant::now();
     pipeline.set_font_resolver(font_loader.build_font_resolver());
     if perfont_lineheight {
         pipeline.set_font_metric_map(font_loader.build_line_metric_map());
     }
 
+    let _zw_t5 = std::time::Instant::now();
     let result = runner_text_metrics::with_measure_ctx(font_loader, 0u32, || pipeline.render_html(html, &combined_css));
+    let _zw_t6 = std::time::Instant::now();
 
     // PERF 诊断（env ZW_RENDER_STAGES=1）：打印各阶段耗时（parse/style/layout/paint/total）
     if std::env::var("ZW_RENDER_STAGES").is_ok() {
@@ -615,6 +696,18 @@ fn render_with_layout_inner(
             result.timings.layout_ms,
             result.timings.paint_ms,
             result.timings.total_ms
+        );
+        eprintln!(
+            "[stages] script={:.1}ms expand+image_cache={:.1}ms merge_css={:.1}ms pipeline_new={:.1}ms set_*={:.1}ms font_scan={:.1}ms font_loader={:.1}ms resolver={:.1}ms render={:.1}ms",
+            _zw_t1.duration_since(_zw_t0).as_secs_f64() * 1000.0,
+            _zw_t2.duration_since(_zw_t1).as_secs_f64() * 1000.0,
+            _zw_t4.duration_since(_zw_t3).as_secs_f64() * 1000.0,
+            _zw_t4a.duration_since(_zw_t4).as_secs_f64() * 1000.0,
+            _zw_t4b.duration_since(_zw_t4a).as_secs_f64() * 1000.0,
+            _zw_t4c.duration_since(_zw_t4b).as_secs_f64() * 1000.0,
+            _zw_t4d.duration_since(_zw_t4c).as_secs_f64() * 1000.0,
+            _zw_t5.duration_since(_zw_t4d).as_secs_f64() * 1000.0,
+            _zw_t6.duration_since(_zw_t5).as_secs_f64() * 1000.0
         );
     }
 

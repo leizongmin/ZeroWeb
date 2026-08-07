@@ -2,6 +2,7 @@
 
 use crate::font::{FontDesc, FontError, GlyphBitmap};
 use hashbrown::HashMap;
+use std::sync::Arc;
 
 /// FreeType 光栅化路径（`freetype-raster` feature，默认关）。
 ///
@@ -160,10 +161,10 @@ mod freetype_raster {
 
 /// 字体加载器 — 管理字体集合
 pub struct FontLoader {
-    /// 已加载的字体（fontdue 实例）
-    fonts: HashMap<u32, fontdue::Font>,
-    /// 字体原始字节数据（供 rustybuzz 使用）
-    font_data: HashMap<u32, Vec<u8>>,
+    /// 已加载的字体（fontdue 实例；Arc 共享使 `duplicate` 免深拷贝 19MB CJK 解析结果）
+    fonts: HashMap<u32, Arc<fontdue::Font>>,
+    /// 字体原始字节数据（供 rustybuzz / freetype-raster 使用；Arc 共享同上）
+    font_data: HashMap<u32, Arc<Vec<u8>>>,
     /// 下一个字体 ID
     next_id: u32,
     /// 字体族到 ID 的映射
@@ -187,6 +188,24 @@ impl FontLoader {
             fallback_chain: Vec::new(),
             bitmap_glyphs: HashMap::new(),
             ahem_font_id: None,
+        }
+    }
+
+    /// 深拷贝全部已加载字体（含已解析的 fontdue 轮廓数据）。
+    ///
+    /// 用途：复用已解析的 base 字体集（系统 + CJK + Ahem）构造 fresh loader 追加
+    /// `@font-face` 自定义字体——避免对 19MB CJK 字体重复 `from_bytes` 解析
+    ///（~0.5s/次，reftest harness 每 distinct 键一次）。字体数据 Arc 共享
+    ///（引用计数 + 元数据映射拷贝），比重新解析快两个量级。
+    pub fn duplicate(&self) -> Self {
+        Self {
+            fonts: self.fonts.clone(),
+            font_data: self.font_data.clone(),
+            next_id: self.next_id,
+            family_map: self.family_map.clone(),
+            fallback_chain: self.fallback_chain.clone(),
+            bitmap_glyphs: self.bitmap_glyphs.clone(),
+            ahem_font_id: self.ahem_font_id,
         }
     }
 
@@ -250,8 +269,8 @@ impl FontLoader {
             self.family_map.entry(name).or_default().push(id);
         }
 
-        self.fonts.insert(id, font);
-        self.font_data.insert(id, bytes.to_vec());
+        self.fonts.insert(id, Arc::new(font));
+        self.font_data.insert(id, Arc::new(bytes.to_vec()));
         Ok(id)
     }
 
@@ -266,12 +285,12 @@ impl FontLoader {
 
     /// 根据 ID 获取字体
     pub fn get(&self, id: u32) -> Option<&fontdue::Font> {
-        self.fonts.get(&id)
+        self.fonts.get(&id).map(|f| f.as_ref())
     }
 
     /// 获取字体原始字节数据（供 rustybuzz 等 shaping 引擎使用）。
     pub fn get_font_data(&self, id: u32) -> Option<&[u8]> {
-        self.font_data.get(&id).map(|v| v.as_slice())
+        self.font_data.get(&id).map(|v| v.as_ref().as_slice())
     }
 
     /// 根据字体描述查找最佳匹配字体 ID
@@ -381,6 +400,7 @@ impl FontLoader {
         let font = self
             .fonts
             .get(&font_id)
+            .map(|f| f.as_ref())
             .ok_or_else(|| FontError::NotFound(format!("font_id={font_id}")))?;
 
         let (metrics, bitmap) = font.rasterize(code_point, size);
@@ -403,6 +423,7 @@ impl FontLoader {
         let font = self
             .fonts
             .get(&font_id)
+            .map(|f| f.as_ref())
             .ok_or_else(|| FontError::NotFound(format!("font_id={font_id}")))?;
 
         // 使用字体的实际 ascent 来计算垂直偏移
@@ -462,9 +483,8 @@ impl FontLoader {
         }
 
         for font_id in chain {
-            let font = match self.fonts.get(&font_id) {
-                Some(font) => font,
-                None => continue,
+            let Some(font) = self.fonts.get(&font_id).map(|f| f.as_ref()) else {
+                continue;
             };
             // 主字体缺字时会 rasterize .notdef 方块；须先检查字体是否包含该字符
             if !code_point.is_whitespace() && !font.has_glyph(code_point) {
@@ -484,7 +504,7 @@ impl FontLoader {
 
     /// 获取水平排版行 metrics：`(ascent, descent)`，其中 `descent` 通常为负值。
     pub fn line_metrics(&self, font_id: u32, size: f32) -> Option<(f32, f32)> {
-        let font = self.fonts.get(&font_id)?;
+        let font = self.fonts.get(&font_id).map(|f| f.as_ref())?;
         let metrics = font.horizontal_line_metrics(size)?;
         Some((metrics.ascent, metrics.descent))
     }
@@ -506,7 +526,7 @@ impl FontLoader {
     /// R834 谱系）。本方法供上述 line-height:normal 真实度量路径消费此前被 [`line_metrics`]
     /// 丢弃的 `line_gap`。
     pub fn line_metrics_full(&self, font_id: u32, size: f32) -> Option<(f32, f32, f32)> {
-        let font = self.fonts.get(&font_id)?;
+        let font = self.fonts.get(&font_id).map(|f| f.as_ref())?;
         let metrics = font.horizontal_line_metrics(size)?;
         Some((metrics.ascent, metrics.descent, metrics.line_gap))
     }
