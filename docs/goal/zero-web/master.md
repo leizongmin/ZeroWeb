@@ -112,6 +112,24 @@
 
 ## 最近完成的改进
 
+### 大页面卡顿优化 M3-S7（paint 48x，2026-08-08）
+
+perf-gate 显示 paint 占首屏 83%（medium 4400 元素：paint 1399ms / total 1692ms）。
+两项修复：① **Painter 逐字符测量缓存**（RefCell HashMap，(char, font_size, is_ahem)
+每 paint 只测量一次——measure 回调含 HashMap probe + 可能的光栅化；替换 text.rs/
+controls.rs/text_list.rs 全部热循环调用）；② **batch_fills 调用侧跳过**（draw_order
+非空时是 `return self.clone()` 纯克隆 no-op，3 个调用点）。
+
+**实测（perf-gate，基线 auto-tighten 25 指标）**：medium paint_ms 1399→29.3ms
+（~48x）、total_ms 1692→369ms（~4.6x）、first_paint 1853→497ms；welcome 18.8→10.1ms、
+morning 99→23ms。
+
+**计划调整（数据驱动）**：瓶颈转移——style 225ms / layout 107ms 成为首屏大头；
+S7b（cull_invisible 原位化 + clip bbox 跳过）收益已有限（paint 仅剩 29ms）→ 记
+follow-up；**新增工作项：style/layout 优化**（当前首屏最大剩余瓶颈，待下一轮
+调查循环）；M3-S8（增量 IPC）/M3-S9（脏子树增量渲染）保留排序在 style/layout 之后
+（S8 收益场景与 S9 重叠，S9 落地后 delta 才有大意义）。
+
 ### P1a document.evaluate / XPath 实用子集（XPathResult + 求值器 + 属性轴结果，本轮 R2981，~14,162 测试）
 
 R2980（getElementsBy* 子树）后续补真缺口：`document.evaluate` / `XPathResult` **此前全缺**（两者零定义）→ 任何 XPath 查询（`document.evaluate('//div[@id]', document, null, XPathResult.ANY_TYPE, null).iterateNext()`）抛 ReferenceError 中断脚本。XPath 是标准 DOM 查询 API（测试工具/抓取/遗留代码用），缺失是显眼「不工作」。本切片补实用 XPath 1.0 子集求值器（纯 JS）。
