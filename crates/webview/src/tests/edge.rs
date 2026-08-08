@@ -1437,3 +1437,46 @@ fn test_sw_cache_put_and_match_via_webview() {
         "未缓存的请求应返回 PassThrough"
     );
 }
+
+/// 性能门禁优化 S5（2026-08-08）：`fetch_image_subresources` 命中 ImageCache 时
+/// **跳过网络**——DOM 变更后 `reload_html_after_script` 不再全页重抓图片
+/// （旧实现每图全新 TCP+TLS 且阻塞 UI 线程，是「日志资源请求不断」的最大来源）。
+///
+/// 用不可达 host（127.0.0.1:1）验证：命中缓存则不触发 fetch——图片固有尺寸
+/// （2×2）从缓存派生并产生 ImagePrimitive；若未命中缓存，fetch 必失败且无尺寸。
+#[test]
+fn test_reload_html_uses_cached_image_without_refetch() {
+    use zero_engine::image_resource_key;
+    use zero_render_foundation::image_cache::{ImageData, ImageKey};
+
+    let abs_url = "http://127.0.0.1:1/unreachable-img.png"; // 不可达端口——触发 fetch 必失败
+    let key_hash = image_resource_key(abs_url, None);
+    let key = ImageKey::new(key_hash);
+    let img = ImageData::from_rgba(
+        vec![
+            255, 0, 0, 255, 0, 255, 0, 255, //
+            0, 0, 255, 255, 255, 255, 255, 255,
+        ],
+        2,
+        2,
+    )
+    .unwrap();
+
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_url("https://example.com/");
+    wv.image_cache().insert_with_key(key, img);
+
+    let html = format!("<html><body><img src=\"{abs_url}\"></body></html>");
+    let _ = wv.reload_html_after_script(&html);
+
+    // 命中缓存 → 固有尺寸 2×2 派生并进入渲染管线（未触发网络）
+    let render = wv.last_render().expect("reload should produce a render");
+    let img_prim = render
+        .primitives
+        .images
+        .iter()
+        .find(|i| i.image_key == ImageKey::new(key_hash))
+        .unwrap_or_else(|| panic!("cached image should produce an ImagePrimitive (S5 cache hit)"));
+    assert_eq!(img_prim.rect.size.width, 2.0, "intrinsic width from cache");
+    assert_eq!(img_prim.rect.size.height, 2.0, "intrinsic height from cache");
+}

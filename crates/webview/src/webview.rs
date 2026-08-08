@@ -449,18 +449,27 @@ impl WebView {
                     Some(u) => u.to_string(),
                     None => src.to_string(),
                 };
-                let bytes = match self.http_client.get(&abs) {
-                    Ok(resp) => resp.body,
-                    Err(e) => {
-                        tracing::warn!("image {abs} fetch failed: {e}");
-                        continue;
-                    }
-                };
-                match decode_image(&bytes) {
-                    Ok(img) => (img, image_resource_key(&abs, None)),
-                    Err(e) => {
-                        tracing::warn!("image {abs} decode failed (PNG/JPEG/WebP): {e}");
-                        continue;
+                // 性能门禁优化 S5（2026-08-08）：ImageCache 命中即跳过网络——DOM 变更后
+                // reload_html_after_script 每次全页同步重抓图片（webview.rs:452 每图
+                // 全新 TCP+TLS，UI 线程阻塞）是「日志资源请求不断」的最大来源。
+                let key_hash = image_resource_key(&abs, None);
+                match self.image_cache.get(&ImageKey::new(key_hash)) {
+                    Some(cached) => (cached.clone(), key_hash),
+                    None => {
+                        let bytes = match self.http_client.get(&abs) {
+                            Ok(resp) => resp.body,
+                            Err(e) => {
+                                tracing::warn!("image {abs} fetch failed: {e}");
+                                continue;
+                            }
+                        };
+                        match decode_image(&bytes) {
+                            Ok(img) => (img, key_hash),
+                            Err(e) => {
+                                tracing::warn!("image {abs} decode failed (PNG/JPEG/WebP): {e}");
+                                continue;
+                            }
+                        }
                     }
                 }
             };
