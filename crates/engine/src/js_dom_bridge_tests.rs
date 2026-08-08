@@ -10,3 +10,4 @@ include!("js_dom_bridge_tests/part07.rs");
 include!("js_dom_bridge_tests/part08.rs");
 include!("js_dom_bridge_tests/part09.rs");
 include!("js_dom_bridge_tests/part10.rs");
+include!("js_dom_bridge_tests/part11.rs");

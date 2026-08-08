@@ -209,6 +209,290 @@
     };
   }
 
+  // ── XPath（document.evaluate，R2981）─────────────────────────────────────
+  // 实用 XPath 1.0 子集求值器。headless 测试/抓取/遗留代码经 `document.evaluate('//div[@id]',
+  // document, null, XPathResult.ANY_TYPE, null).iterateNext()` 查询——此前全缺（document.evaluate /
+  // XPathResult 零定义）→ ReferenceError 中断脚本。本子集覆盖真实页面最常见的查询模式：
+  //   路径：`//tag`（descendant）、`/abs/path`（绝对 child 链）、`rel/rel`（相对 child）、`//a//b`、`.//x`、`../x`
+  //   节点测试：tag、`*`、`text()`、`node()`、`comment()`
+  //   谓词：`[n]`、`[last()]`、`[last()-n]`、`[@a]`、`[@a='v']`、`[@a!="v"]`、`[text()='v']`、`[text()!='v']`、
+  //          `[contains(@a,'s')]`、`[contains(text(),'s')]`、`[contains(.,'s')]`、`[.='v']`、`[.!='v']`、
+  //          `[position() op n]`（op = == != < > <= >=）
+  //   属性轴结果：`//a/@href` → 伪 Attr 节点（nodeType 2，nodeValue/.value = 属性值）
+  // **已知限制 / 近似**：① child 轴谓词 position 严格 per-parent（spec 一致）；descendant 轴（`//`）谓词
+  //   position 取「整候选集文档序」位置（= `(//tag)[n]` 语义，多数人预期，非严格 XPath per-ancestor 分组）；
+  // ② namespace resolver 忽略；③ 不支持的构造（命名轴 `axis::`、sum/floor 等函数、变量引用）→ 抛 SyntaxError
+  //   （honest failure，spec INVALID_EXPRESSION_ERR 语义；优于静默错结果）；④ live 更新无（快照语义）。
+  function _xpathAllDesc(node, out) {
+    var kids = (node && node.childNodes) || [];
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      out.push(k);
+      if (k && k.nodeType === 1) _xpathAllDesc(k, out);
+    }
+  }
+  function _xpathParent(node) {
+    if (!node) return null;
+    try { return node.parentNode || node.parentElement || null; } catch (_e) { return null; }
+  }
+  // 节点稳定身份键（dedup）：元素用 __zwSelector；文本/注释用 parent 选择器 + 索引 + 值；属性用 owner + 名。
+  function _xpathKey(n) {
+    if (!n) return '';
+    var nt = n.nodeType;
+    if (nt === 1) return 'e:' + (n.__zwSelector || '');
+    if (nt === 2) return 'a:' + (n.ownerElement && n.ownerElement.__zwSelector || '') + ':' + (n.name || '');
+    if (nt === 3 || nt === 8) {
+      var p = _xpathParent(n), pi = -1;
+      if (p && p.childNodes) { for (var i = 0; i < p.childNodes.length; i++) { if (p.childNodes[i] === n) { pi = i; break; } } }
+      return 't:' + (p && p.__zwSelector || '?') + ':' + pi + ':' + String(n.nodeValue == null ? '' : n.nodeValue);
+    }
+    return 'x:' + nt;
+  }
+  function _xpathTest(node, test) {
+    if (!node) return false;
+    var nt = node.nodeType;
+    if (test === 'node') return true;
+    if (test === 'text') return nt === 3;
+    if (test === 'comment') return nt === 8;
+    if (test === 'attr') return nt === 2;
+    if (nt !== 1) return false;
+    if (test === '*' || test === 'element') return true;
+    try { return String(node.tagName).toUpperCase() === String(test).toUpperCase(); } catch (_e) { return false; }
+  }
+  function _xpathAxisCandidates(ctx, axis) {
+    var out = [];
+    if (axis === 'self') { out.push(ctx); }
+    else if (axis === 'parent') { var p = _xpathParent(ctx); if (p) out.push(p); }
+    else if (axis === 'child') { var kids = (ctx && ctx.childNodes) || []; for (var i = 0; i < kids.length; i++) out.push(kids[i]); }
+    else if (axis === 'descendant') { _xpathAllDesc(ctx, out); }
+    // attribute 轴在 _xpathApplyStep 内特判（产出伪 Attr 节点）。
+    return out;
+  }
+  // 节点 string-value：元素 textContent；文本/注释 nodeValue；属性 value。
+  function _xpathNodeStr(n) {
+    if (!n) return '';
+    if (n.nodeType === 2) return String(n.value == null ? '' : n.value);
+    if (n.nodeType === 3 || n.nodeType === 8) return String(n.nodeValue == null ? '' : n.nodeValue);
+    try { return String(n.textContent == null ? '' : n.textContent); } catch (_e) { return ''; }
+  }
+  function _xpathLit(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'")) return s.slice(1, -1);
+    return s;
+  }
+  function _xpathAttrVal(node, name) {
+    if (!node || node.nodeType !== 1) return null;
+    try { var h = node.hasAttribute(name); return h ? node.getAttribute(name) : null; } catch (_e) { return null; }
+  }
+  // 谓词求值（pos/last = 当前候选集 1-based 位置/大小）。
+  function _xpathPred(node, p, pos, last) {
+    p = String(p == null ? '' : p).trim();
+    if (!p) return true;
+    // last() / last()-N → 数值位置比较。
+    var mL = p.match(/^last\(\)\s*(?:([+-])\s*(\d+))?$/);
+    if (mL) { var target = last; if (mL[1]) target = last + (parseInt(mL[2], 10) * (mL[1] === '-' ? -1 : 1)); return pos === target; }
+    // 裸整数 → position == n。
+    if (/^\d+$/.test(p)) return pos === parseInt(p, 10);
+    // position() op N。
+    var mP = p.match(/^position\(\)\s*(==|!=|<=|>=|<|>)\s*(\d+)$/);
+    if (mP) return _xpathNumCmp(pos, mP[1], parseInt(mP[2], 10));
+    if (p === 'position()') return true;
+    // not(...)。
+    var mNot = p.match(/^not\(\s*(.*)\)\s*$/);
+    if (mNot) return !_xpathPred(node, mNot[1], pos, last);
+    // contains(A, B)。
+    var mC = p.match(/^contains\(\s*(.*?),\s*(.*)\)$/);
+    if (mC) {
+      var a = _xpathPredOperand(node, mC[1].trim());
+      var b = _xpathLit(mC[2]);
+      return String(a).indexOf(String(b)) >= 0;
+    }
+    // @name [op val]。
+    var mA = p.match(/^@([\w:.-]+)\s*(?:(!=|==|=)\s*(.*))?$/);
+    if (mA) {
+      var av = _xpathAttrVal(node, mA[1]);
+      if (!mA[2]) return av != null;
+      return _xpathStrCmp(av == null ? '' : av, mA[2], _xpathLit(mA[3]));
+    }
+    // text() [op val]。
+    var mT = p.match(/^text\(\)\s*(?:(!=|==|=)\s*(.*))?$/);
+    if (mT) {
+      var tv = node.nodeType === 3 ? String(node.nodeValue == null ? '' : node.nodeValue) : _xpathNodeStr(node);
+      if (!mT[1]) return node.nodeType === 3;
+      return _xpathStrCmp(tv, mT[1], _xpathLit(mT[2]));
+    }
+    // . op val（节点 string-value 比较）。
+    var mD = p.match(/^\.\s*(!=|==|=)\s*(.*)$/);
+    if (mD) return _xpathStrCmp(_xpathNodeStr(node), mD[1], _xpathLit(mD[2]));
+    return false; // 未知谓词 → 过滤掉（保守）。
+  }
+  function _xpathPredOperand(node, expr) {
+    expr = String(expr || '').trim();
+    if (expr === '.') return _xpathNodeStr(node);
+    if (expr === 'text()') return node.nodeType === 3 ? String(node.nodeValue == null ? '' : node.nodeValue) : _xpathNodeStr(node);
+    var mA = expr.match(/^@([\w:.-]+)$/);
+    if (mA) { var v = _xpathAttrVal(node, mA[1]); return v == null ? '' : v; }
+    return _xpathLit(expr);
+  }
+  function _xpathStrCmp(left, op, right) {
+    if (op === '=' || op === '==') return String(left) === String(right);
+    if (op === '!=') return String(left) !== String(right);
+    return false;
+  }
+  function _xpathNumCmp(left, op, right) {
+    if (op === '==' || op === '=') return left === right;
+    if (op === '!=') return left !== right;
+    if (op === '<') return left < right;
+    if (op === '>') return left > right;
+    if (op === '<=') return left <= right;
+    if (op === '>=') return left >= right;
+    return false;
+  }
+  // 单步：解析 head + 谓词组。
+  function _xpathParseStep(tok, axis) {
+    if (!tok) return null;
+    if (tok === '.') return { axis: 'self', test: 'node', preds: [] };
+    if (tok === '..') return { axis: 'parent', test: 'node', preds: [] };
+    if (tok.charCodeAt(0) === 64) { // '@' 开头 → 属性轴
+      var an = tok.slice(1);
+      return { axis: 'attribute', test: 'attr', arg: an, preds: [] };
+    }
+    var m = tok.match(/^([^\[]+)([\s\S]*)$/);
+    if (!m) return null;
+    var head = m[1].trim();
+    var rest = m[2];
+    var preds = [];
+    while (rest.length && rest[0] === '[') {
+      var d = 0, q = null, j;
+      for (j = 0; j < rest.length; j++) {
+        var ch = rest[j];
+        if (q) { if (ch === q) q = null; }
+        else if (ch === '"' || ch === "'") q = ch;
+        else if (ch === '[') d++;
+        else if (ch === ']') { d--; if (d === 0) break; }
+      }
+      if (d !== 0) return null; // 括号不闭合
+      preds.push(rest.slice(1, j));
+      rest = rest.slice(j + 1);
+    }
+    if (rest.trim()) return null;
+    var test;
+    var mh = head.match(/^(text|node|comment)\(\)$/);
+    if (mh) test = mh[1];
+    else if (head === '*') test = '*';
+    else if (/^[A-Za-z_][\w:.-]*$/.test(head)) test = head;
+    else return null;
+    return { axis: axis, test: test, preds: preds };
+  }
+  // 路径解析 → {absolute, list:[step]}。sep '/' → child 轴，'//' → descendant 轴。
+  function _xpathParsePath(expr) {
+    var s = String(expr == null ? '' : expr).trim();
+    if (!s) return null;
+    var absolute = false, i = 0, len = s.length, nextAxis = 'child';
+    if (s.charCodeAt(0) === 47) { absolute = true; i = 1; if (s.charCodeAt(1) === 47) { nextAxis = 'descendant'; i = 2; } }
+    var steps = [];
+    while (i < len) {
+      var startTok = i, depth = 0, q = null;
+      while (i < len) {
+        var ch = s[i];
+        if (q) { if (ch === q) q = null; }
+        else if (ch === '"' || ch === "'") q = ch;
+        else if (ch === '[') depth++;
+        else if (ch === ']') depth--;
+        else if (ch === '/' && depth === 0) break;
+        i++;
+      }
+      var tok = s.slice(startTok, i).trim();
+      var sep = '';
+      if (i < len && s[i] === '/') sep = (s[i + 1] === '/') ? '//' : '/';
+      var step = _xpathParseStep(tok, nextAxis);
+      if (!step) return null;
+      steps.push(step);
+      if (sep === '//') { i += 2; nextAxis = 'descendant'; }
+      else if (sep === '/') { i += 1; nextAxis = 'child'; }
+      else break;
+    }
+    if (!steps.length) return null;
+    return { absolute: absolute, list: steps };
+  }
+  function _xpathApplyStep(contextNodes, step) {
+    var survivors = [];
+    var seen = {};
+    for (var ci = 0; ci < contextNodes.length; ci++) {
+      var ctx = contextNodes[ci];
+      var matched = [];
+      if (step.axis === 'attribute') {
+        // 属性轴：对每个元素 ctx 产出伪 Attr 节点（nodeType 2）。
+        if (ctx && ctx.nodeType === 1) {
+          var names = [];
+          if (step.arg === '*') {
+            try { names = (typeof ctx.getAttributeNames === 'function') ? ctx.getAttributeNames() : []; } catch (_e) { names = []; }
+          } else names = [step.arg];
+          for (var ai = 0; ai < names.length; ai++) {
+            var v = _xpathAttrVal(ctx, names[ai]);
+            if (v != null) matched.push({ nodeType: 2, name: names[ai], nodeName: names[ai], value: v, nodeValue: v, ownerElement: ctx });
+          }
+        }
+      } else {
+        var cands = _xpathAxisCandidates(ctx, step.axis);
+        for (var k = 0; k < cands.length; k++) if (_xpathTest(cands[k], step.test)) matched.push(cands[k]);
+      }
+      var size = matched.length;
+      for (var pi = 0; pi < step.preds.length; pi++) {
+        var narrowed = [];
+        for (var n = 0; n < matched.length; n++) if (_xpathPred(matched[n], step.preds[pi], n + 1, size)) narrowed.push(matched[n]);
+        matched = narrowed;
+        size = matched.length;
+      }
+      for (var s = 0; s < matched.length; s++) {
+        var key = _xpathKey(matched[s]);
+        if (!Object.prototype.hasOwnProperty.call(seen, key)) { seen[key] = 1; survivors.push(matched[s]); }
+      }
+    }
+    return survivors;
+  }
+  // 文档序排序（多上下文 descendant 后保险；compareDocumentPosition 不可用时保持原序）。
+  function _xpathSortDocOrder(nodes) {
+    try {
+      nodes.sort(function (a, b) {
+        if (a === b) return 0;
+        if (a && b && typeof a.compareDocumentPosition === 'function') {
+          var rel = a.compareDocumentPosition(b);
+          if (rel & 0x04) return -1; // a 在 b 前
+          if (rel & 0x02) return 1;  // a 在 b 后
+          return 0;
+        }
+        return 0;
+      });
+    } catch (_e) {}
+    return nodes;
+  }
+  function _xpathRun(expr, contextNode) {
+    var parsed = _xpathParsePath(expr);
+    if (!parsed) throw new TypeError("Failed to execute 'evaluate' on 'Document': The string '" + expr + "' is not a valid XPath expression.");
+    var ctx = parsed.absolute ? [globalThis.document.documentElement] : [contextNode];
+    for (var i = 0; i < parsed.list.length; i++) ctx = _xpathApplyStep(ctx, parsed.list[i]);
+    _xpathSortDocOrder(ctx);
+    return ctx;
+  }
+  function _xpathMakeResult(nodes, type) {
+    var snap = nodes.slice();
+    var idx = 0;
+    var rt = type;
+    if (rt === 0) rt = 6; // ANY_TYPE → 按节点集（无序快照语义）报告。
+    return {
+      resultType: rt,
+      get snapshotLength() { return snap.length; },
+      snapshotItem: function (i) { i = i | 0; return (i >= 0 && i < snap.length) ? snap[i] : null; },
+      get singleNodeValue() { return snap.length ? snap[0] : null; },
+      iterateNext: function () { if (idx < snap.length) return snap[idx++]; return null; },
+      get numberValue() { var s = snap.length ? _xpathNodeStr(snap[0]) : ''; var n = parseFloat(s); return isNaN(n) ? NaN : n; },
+      get stringValue() { return snap.length ? _xpathNodeStr(snap[0]) : ''; },
+      get booleanValue() { return snap.length > 0; },
+      invalidIteratorState: false
+    };
+  }
+
   // CSSStyleSheet（R2808 读 / R2809 写 / R2810 per-rule style）——`<style>` 元素的样式表。cssRules 惰性经
   // host `__zw_style_rules`（解析 `<style>` 文本→StyleRule 序列化 \x1f/\x1e wire）→ CSSRule 数组（client cache）。
   // insertRule/deleteRule（R2809）：维护 client cache（同步读回真值）+ 从 cache 重建 `<style>` 文本经
@@ -393,6 +677,20 @@
     return ss;
   }
 
+  // XPathResult 常量（spec，R2981）——document.evaluate 的 resultType 取值。
+  globalThis.XPathResult = globalThis.XPathResult || {
+    ANY_TYPE: 0,
+    NUMBER_TYPE: 1,
+    STRING_TYPE: 2,
+    BOOLEAN_TYPE: 3,
+    UNORDERED_NODE_ITERATOR_TYPE: 4,
+    ORDERED_NODE_ITERATOR_TYPE: 5,
+    UNORDERED_NODE_SNAPSHOT_TYPE: 6,
+    ORDERED_NODE_SNAPSHOT_TYPE: 7,
+    ANY_UNORDERED_NODE_TYPE: 8,
+    FIRST_ORDERED_NODE_TYPE: 9
+  };
+
   globalThis.document = {
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);
@@ -436,6 +734,14 @@
     getElementsByName: function(name) {
       var v = String(name).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       return globalThis.document.querySelectorAll('[name="' + v + '"]');
+    },
+    // `document.evaluate(expr, ctx, resolver, type, result)`（R2981）——XPath 1.0 实用子集求值。
+    // 见 _xpathParsePath / _xpathRun 子集说明。返 XPathResult（snapshot/iterator/singleNode/scalar）。
+    // type=null/0 → ANY_TYPE（按节点集报告）；不支持的构造抛 TypeError（spec INVALID_EXPRESSION_ERR）。
+    evaluate: function(expr, contextNode, _resolver, type, _result) {
+      var ctx = contextNode || globalThis.document.documentElement;
+      var nodes = _xpathRun(expr, ctx);
+      return _xpathMakeResult(nodes, (type == null) ? 0 : (type | 0));
     },
     createElement: function(tag) {
       tag = String(tag);
