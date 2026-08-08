@@ -533,16 +533,17 @@
     } catch (_e) {}
     return null;
   }
-  // 把一条 mutation 记录投递给所有观测该 id 且 options 匹配的 observer。
+  // 把一条 mutation 记录投递给观测该 id 且 options 匹配的 observer。
+  // requireSubtree=true（祖先 id 路径）时仅投递 opts.subtree===true 的 observer（spec：subtree 才接收后代 mutation）。
   // 每个 observer 拿独立 record 副本（target 指向各自 observe() 时的 proxy）。
-  function _mo_notify(sel, handle, baseRecord) {
-    var id = _mo_id(handle, sel);
+  function _mo_deliverToId(id, baseRecord, requireSubtree) {
     if (id == null) return;
     var observers = globalThis.__zw_mo_observers;
     for (var i = 0; i < observers.length; i++) {
       var obs = observers[i];
       var opts = obs._targets[id];
       if (!opts) continue;
+      if (requireSubtree && !opts.subtree) continue; // R3026：祖先 id 须 subtree observer
       if (baseRecord.type === 'attributes') {
         if (!opts.attributes) continue;
         // R3025：attributeFilter——仅观测列表内属性（spec：attributeFilter 非 attributeOldValue 时为筛选条件）。
@@ -567,6 +568,30 @@
         : null;
       obs._records.push(rec);
       _mo_scheduleFlush();
+    }
+  }
+  // R3026：任意 observer 是否用了 subtree（决定 mutation 时是否走 ancestor 链——无 subtree observer 时零开销）。
+  function _mo_any_subtree() {
+    var observers = globalThis.__zw_mo_observers;
+    for (var i = 0; i < observers.length; i++) {
+      var targets = observers[i]._targets;
+      for (var k in targets) {
+        if (targets[k] && targets[k].subtree) return true;
+      }
+    }
+    return false;
+  }
+  // 把一条 mutation 记录投递：精确 id observer + subtree 祖先 observer（R3026）。
+  function _mo_notify(sel, handle, baseRecord) {
+    var id = _mo_id(handle, sel);
+    _mo_deliverToId(id, baseRecord, false); // 精确 id，不要求 subtree
+    // R3026：subtree——mutation 冒泡到 subtree:true 的祖先 observer（record.target=祖先 proxy）。
+    // 仅在有 subtree observer 且 sel-based（live DOM 有 __zw_parent 父链）时走祖先链；handle-only detached defer。
+    if (sel && typeof __zw_parent === 'function' && _mo_any_subtree()) {
+      var chain = _ancestorChain(sel); // [self, parent, ..., root]
+      for (var k = 1; k < chain.length; k++) { // 跳过 self（chain[0]，精确 id 已投）
+        _mo_deliverToId('s:' + chain[k], baseRecord, true);
+      }
     }
   }
   function _mo_scheduleFlush() {

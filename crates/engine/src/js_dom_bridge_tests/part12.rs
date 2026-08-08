@@ -1733,3 +1733,106 @@ fn test_mutation_observer_attr_filter_and_old_value_r3025() {
         "attributeFilter 命中报告 oldValue='v3'（spec：filter 命中 == 请求 old value）"
     );
 }
+
+#[test]
+fn test_mutation_observer_subtree_r3026() {
+    // R3026：MutationObserver subtree（ancestor 解析）。observe(container,{...,subtree:true}) 时后代 mutation
+    // 冒泡到 container observer（record.target=container）；非 subtree observer 不收后代 mutation。框架「观测整个子树」
+    // 第一高频用法。经 _ancestorChain（__zw_parent 父链）上行，_mo_any_subtree guard 无 subtree observer 时零开销。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='container'><div id='inner'><span id='leaf'></span></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① subtree childList：后代（leaf）appendChild → container observer 收记录（target=container）。
+    sandbox
+        .execute(
+            "var container = document.getElementById('container');\
+             var leaf = document.getElementById('leaf');\
+             var mo = new MutationObserver(function(){});\
+             mo.observe(container, { childList: true, subtree: true });\
+             leaf.appendChild(document.createElement('b'));\
+             globalThis.__recs = mo.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__recs.length)").unwrap().value,
+        "1",
+        "subtree childList：后代 leaf appendChild → container observer 收 1 记录"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__recs[0].type").unwrap().value,
+        "childList",
+        "subtree 记录 type=childList"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__recs[0].target.id").unwrap().value,
+        "container",
+        "subtree 记录 target=container（祖先 observer 的 target，非 leaf）"
+    );
+
+    // ② 非 subtree observer 不收后代 mutation（仅收 container 自身直接 childList）。
+    sandbox
+        .execute(
+            "mo.disconnect();\
+             var mo2 = new MutationObserver(function(){});\
+             mo2.observe(container, { childList: true });\
+             leaf.appendChild(document.createElement('i'));\
+             globalThis.__recs2 = mo2.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__recs2.length)").unwrap().value,
+        "0",
+        "非 subtree observer 不收后代 leaf 的 childList mutation（仅 container 直接子）"
+    );
+
+    // ③ subtree attributes：后代 leaf.setAttribute → container observer 收记录（target=container）。
+    sandbox
+        .execute(
+            "mo2.disconnect();\
+             var mo3 = new MutationObserver(function(){});\
+             mo3.observe(container, { attributes: true, subtree: true });\
+             leaf.setAttribute('data-x', '1');\
+             globalThis.__recs3 = mo3.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__recs3.length)").unwrap().value,
+        "1",
+        "subtree attributes：后代 leaf setAttribute → container observer 收 1 记录"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__recs3[0].attributeName").unwrap().value,
+        "data-x",
+        "subtree 属性记录 attributeName=data-x"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__recs3[0].target.id").unwrap().value,
+        "container",
+        "subtree 属性记录 target=container"
+    );
+
+    // ④ 子树内多层深度（leaf 在 inner 在 container）：仍冒泡到 container（ancestor 链长度无关）。
+    sandbox
+        .execute(
+            "mo3.disconnect();\
+             var mo4 = new MutationObserver(function(){});\
+             mo4.observe(container, { childList: true, subtree: true });\
+             leaf.appendChild(document.createElement('u'));\
+             globalThis.__recs4 = mo4.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__recs4.length)").unwrap().value,
+        "1",
+        "多层深度（leaf←inner←container）subtree 仍冒泡到 container"
+    );
+}
