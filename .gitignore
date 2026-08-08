@@ -76,3 +76,5 @@ docs/goal/rendering-compat/evidence/*
 
 # WPT reftest 数据（上游 web-platform-tests/wpt 子集，~19952 文件，按需 make fetch-wpt-data 拉取）
 tests/wpt-runner/wpt-data
+
+.trae
