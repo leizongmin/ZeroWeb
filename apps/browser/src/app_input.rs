@@ -204,7 +204,7 @@ impl BrowserApp {
             page_scroll::ScrollbarHit::VerticalTrack => {
                 let thumb_h = page_scroll::vertical_thumb_len(
                     &layout,
-                    page_scroll::vertical_track_len(&layout, ch),
+                    page_scroll::vertical_track_len(&layout, ch, self.scale_factor),
                     self.scale_factor,
                 );
                 let grab_offset = thumb_h * 0.5;
@@ -230,7 +230,7 @@ impl BrowserApp {
             page_scroll::ScrollbarHit::HorizontalTrack => {
                 let thumb_w = page_scroll::horizontal_thumb_len(
                     &layout,
-                    page_scroll::horizontal_track_len(&layout, cw),
+                    page_scroll::horizontal_track_len(&layout, cw, self.scale_factor),
                     self.scale_factor,
                 );
                 let grab_offset = thumb_w * 0.5;

@@ -22,9 +22,9 @@ pub struct PageScrollLayout {
     pub viewport_x: f32,
     /// WebView 可见区域原点 y。
     pub viewport_y: f32,
-    /// WebView 可见区域宽度（已扣除滚动条占位）。
+    /// WebView 可见区域宽度。
     pub viewport_w: f32,
-    /// WebView 可见区域高度（已扣除滚动条占位）。
+    /// WebView 可见区域高度。
     pub viewport_h: f32,
     /// 是否显示垂直滚动条。
     pub show_vertical: bool,
@@ -106,17 +106,17 @@ pub fn hit_test_scrollbar(px: f32, py: f32, geometry: &ScrollbarGeometry) -> Opt
     None
 }
 
-pub(crate) fn vertical_track_len(layout: &PageScrollLayout, content_h: f32) -> f32 {
+pub(crate) fn vertical_track_len(layout: &PageScrollLayout, content_h: f32, scale: f32) -> f32 {
     if layout.show_horizontal {
-        layout.viewport_h
+        (content_h - layout::SCROLLBAR_THICKNESS * scale).max(0.0)
     } else {
         content_h
     }
 }
 
-pub(crate) fn horizontal_track_len(layout: &PageScrollLayout, content_w: f32) -> f32 {
+pub(crate) fn horizontal_track_len(layout: &PageScrollLayout, content_w: f32, scale: f32) -> f32 {
     if layout.show_vertical {
-        layout.viewport_w
+        (content_w - layout::SCROLLBAR_THICKNESS * scale).max(0.0)
     } else {
         content_w
     }
@@ -146,7 +146,7 @@ pub fn scroll_y_from_pointer(
     if layout.max_scroll_y <= 0.0 {
         return 0.0;
     }
-    let track_len = vertical_track_len(layout, content_h);
+    let track_len = vertical_track_len(layout, content_h, scale);
     let thumb_h = vertical_thumb_len(layout, track_len, scale);
     let travel = (track_len - thumb_h).max(0.0);
     if travel <= 0.0 {
@@ -168,7 +168,7 @@ pub fn scroll_x_from_pointer(
     if layout.max_scroll_x <= 0.0 {
         return 0.0;
     }
-    let track_len = horizontal_track_len(layout, content_w);
+    let track_len = horizontal_track_len(layout, content_w, scale);
     let thumb_w = horizontal_thumb_len(layout, track_len, scale);
     let travel = (track_len - thumb_w).max(0.0);
     if travel <= 0.0 {
@@ -188,6 +188,7 @@ pub fn primitives_content_width(primitives: &RenderPrimitives) -> f32 {
     let glyph_max = primitives
         .glyphs
         .iter()
+        .filter(|g| g.glyph_id != 0 && g.font_size > 0.0)
         .map(|g| g.x + g.font_size * 0.6)
         .fold(0.0f32, f32::max);
     let image_max = primitives
@@ -226,38 +227,22 @@ pub fn compute_page_scroll_layout(
     content_h: f32,
     doc_w_physical: f32,
     doc_h_physical: f32,
-    scale: f32,
+    _scale: f32,
 ) -> PageScrollLayout {
     if content_w <= 0.0 || content_h <= 0.0 {
         return PageScrollLayout::from_content_rect(content_x, content_y, content_w, content_h);
     }
 
-    let sb = layout::SCROLLBAR_THICKNESS * scale;
-
-    let mut viewport_w = content_w;
-    let mut viewport_h = content_h;
-
-    let mut need_v = doc_h_physical > viewport_h + 0.5;
-    if need_v {
-        viewport_w = (content_w - sb).max(0.0);
-    }
-    let need_h = doc_w_physical > viewport_w + 0.5;
-    if need_h {
-        viewport_h = (content_h - sb).max(0.0);
-    }
-    need_v = doc_h_physical > viewport_h + 0.5;
-    if need_v && viewport_w > content_w - sb {
-        viewport_w = (content_w - sb).max(0.0);
-    }
-
-    let max_scroll_x = (doc_w_physical - viewport_w).max(0.0);
-    let max_scroll_y = (doc_h_physical - viewport_h).max(0.0);
+    let need_v = doc_h_physical > content_h + 0.5;
+    let need_h = doc_w_physical > content_w + 0.5;
+    let max_scroll_x = (doc_w_physical - content_w).max(0.0);
+    let max_scroll_y = (doc_h_physical - content_h).max(0.0);
 
     PageScrollLayout {
         viewport_x: content_x,
         viewport_y: content_y,
-        viewport_w,
-        viewport_h,
+        viewport_w: content_w,
+        viewport_h: content_h,
         show_vertical: need_v && max_scroll_y > 0.0,
         show_horizontal: need_h && max_scroll_x > 0.0,
         max_scroll_x,
@@ -286,7 +271,7 @@ pub fn scrollbar_geometry(
 
     if layout.show_vertical {
         let track_h = if layout.show_horizontal {
-            layout.viewport_h
+            (content_h - sb).max(0.0)
         } else {
             content_h
         };
@@ -306,7 +291,7 @@ pub fn scrollbar_geometry(
 
     if layout.show_horizontal {
         let track_w = if layout.show_vertical {
-            layout.viewport_w
+            (content_w - sb).max(0.0)
         } else {
             content_w
         };
@@ -421,5 +406,52 @@ pub fn clamp_scroll(scroll: TabScrollState, layout: &PageScrollLayout) -> TabScr
     TabScrollState {
         x: scroll.x.clamp(0.0, layout.max_scroll_x),
         y: scroll.y.clamp(0.0, layout.max_scroll_y),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_render_foundation::primitive::{FontId, GlyphPrimitive};
+
+    #[test]
+    fn clipped_glyphs_do_not_expand_document_width() {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_glyph(GlyphPrimitive {
+            x: 20.0,
+            y: 20.0,
+            font_size: 10.0,
+            color: Color::rgb(0, 0, 0),
+            glyph_id: 'A' as u32,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+            synthetic_italic: false,
+        });
+        primitives.add_glyph(GlyphPrimitive {
+            x: 1_600.0,
+            y: 20.0,
+            font_size: 0.0,
+            color: Color::rgb(0, 0, 0),
+            glyph_id: 0,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+            synthetic_italic: false,
+        });
+
+        assert_eq!(primitives_content_width(&primitives), 26.0);
+    }
+
+    #[test]
+    fn vertical_overlay_scrollbar_does_not_create_horizontal_overflow() {
+        let layout = compute_page_scroll_layout(0.0, 0.0, 100.0, 100.0, 100.0, 200.0, 1.0);
+
+        assert!(layout.show_vertical);
+        assert!(!layout.show_horizontal);
+        assert_eq!(layout.viewport_w, 100.0);
+        assert_eq!(layout.max_scroll_x, 0.0);
     }
 }

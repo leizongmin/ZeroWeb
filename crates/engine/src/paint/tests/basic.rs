@@ -190,6 +190,26 @@ fn test_canvas_propagation_body_skips_own_bg_color() {
     );
 }
 
+/// 长文档的根背景应覆盖完整画布，滚动后不能露出宿主默认背景。
+#[test]
+fn canvas_background_covers_document_height() {
+    let doc = zero_dom::parse_html("<html><body></body></html>");
+    let html_id = doc.get_elements_by_tag_name("html")[0];
+    let layout = make_box(Some(html_id), 0.0, 0.0, 100.0, 300.0);
+
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    let styles = HashMap::from([(html_id, style)]);
+
+    let mut painter = Painter::new();
+    painter.viewport_w = 100.0;
+    painter.viewport_h = 100.0;
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let canvas = &painter.primitives().fills[0];
+    assert_eq!(canvas.rect.size.height, 300.0);
+}
+
 /// R2369：CSS Containment 1 — `contain: layout/paint/strict/content` 在 body（或 html）上
 /// 抑制其背景到画布的特殊传播（CSS2 §14.2）。driving: contain-body-bg-001 / contain-html-bg-001。
 /// body{background:red; contain:layout} → body 红不传播到画布（canvas_propagated_node = None）。

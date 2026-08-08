@@ -106,6 +106,23 @@ fn has_paintable_bg_image(layers: &[zero_style_system::property::types::Backgrou
     })
 }
 
+fn layout_canvas_extent(box_node: &LayoutBox, offset_x: f32, offset_y: f32) -> (f32, f32) {
+    let abs_x = offset_x + box_node.x;
+    let abs_y = offset_y + box_node.y;
+    let mut max_x = abs_x + box_node.width;
+    let mut max_y = abs_y + box_node.height;
+    for child in &box_node.children {
+        let (child_max_x, child_max_y) = layout_canvas_extent(child, abs_x, abs_y);
+        if box_node.overflow_x == OverflowClip::Visible {
+            max_x = max_x.max(child_max_x);
+        }
+        if box_node.overflow_y == OverflowClip::Visible {
+            max_y = max_y.max(child_max_y);
+        }
+    }
+    (max_x, max_y)
+}
+
 fn child_paint_sort_key(box_node: &LayoutBox) -> (u8, i32) {
     if is_positioned_child(box_node) {
         if box_node.z_index < 0 {
@@ -410,11 +427,15 @@ impl Painter {
     /// 遍历 LayoutBox 树，为每个有样式的节点生成背景和边框填充图元。
     /// 传入 `doc` 以启用行内格式化上下文的文本换行布局。
     pub fn paint(&mut self, layout: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) {
+        let (layout_width, layout_height) = layout_canvas_extent(layout, 0.0, 0.0);
+        let canvas_width = self.viewport_w.max(layout_width);
+        let canvas_height = self.viewport_h.max(layout_height);
         // CSS §14.2 画布背景传播：根元素 html 的背景（color 或 image）覆盖整个画布；
         // 若 html 背景透明（color 透明 + image none）且 body 有背景，则 body 背景传播
         // 到画布。传播包含 color + image（R491 仅 color；R507 扩展 image 平铺整个画布）。
         // 传播元素的背景由画布统一绘制，paint_background_image 跳过该元素自身图像绘制
         //（避免 padding-box 起始图像与画布 (0,0) 起始图像相位错位 double-paint）。
+        // https://drafts.csswg.org/css-backgrounds-3/#special-backgrounds
         if self.viewport_w > 0.0
             && self.viewport_h > 0.0
             && let Some(doc) = doc
@@ -470,7 +491,7 @@ impl Painter {
             {
                 if ps.background_color != ColorValue::Transparent {
                     self.primitives.add_fill(
-                        Rect::new(0.0, 0.0, self.viewport_w, self.viewport_h),
+                        Rect::new(0.0, 0.0, canvas_width, canvas_height),
                         resolve_color_current(&ps.background_color, &ps.color),
                     );
                 }
@@ -481,12 +502,12 @@ impl Painter {
                 self.paint_bg_image_in_origin(
                     0.0,
                     0.0,
-                    self.viewport_w,
-                    self.viewport_h,
+                    canvas_width,
+                    canvas_height,
                     0.0,
                     0.0,
-                    self.viewport_w,
-                    self.viewport_h,
+                    canvas_width,
+                    canvas_height,
                     ps,
                     layout.x,
                     layout.y,
