@@ -184,4 +184,70 @@ fn test_location_part_setters_r3008() {
     assert_eq!(sandbox.execute("String(globalThis.__len2)").unwrap().value, "4", "设同 href no-op（不增 entry）");
 }
 
+#[test]
+fn test_location_assign_replace_reload_r3009() {
+    // R3009：location.assign/replace/reload 旧为静默 no-op stub → redirect / 基于 location 的导航模式失效。
+    // spec：assign(url) 功能等价 location.href = url（MDN）——resolve url + push history entry + location 反映
+    // + hash 变化派 hashchange；replace(url) replace 当前 entry（back 不回旧 url）+ hash 变化派 hashchange；
+    // reload() headless 无真文档重载 no-op（synthesized page 无原始 fetch 可重取）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/start".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 初始 location.href = page_url（_hist_current().url 为空 → 回落 __zw_get_page_url）。
+    sandbox.execute("globalThis.__h0 = location.href;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__h0").unwrap().value, "https://example.com/start", "初始 location.href=page_url");
+
+    // assign('/a')：相对 URL 解析为绝对 + push entry + location 反映。
+    sandbox
+        .execute("location.assign('/a'); globalThis.__h1 = location.href; globalThis.__p1 = location.pathname;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__h1").unwrap().value, "https://example.com/a", "assign('/a') 相对 URL resolve + location.href 反映");
+    assert_eq!(sandbox.execute("globalThis.__p1").unwrap().value, "/a", "assign('/a') pathname=/a");
+
+    // 装 hashchange listener，assign('#sec')：hash 变化 push entry + 派 hashchange。
+    sandbox
+        .execute("globalThis.__hc = null; addEventListener('hashchange', function(e){ globalThis.__hc = e.newURL; });")
+        .unwrap();
+    sandbox.execute("location.assign('#sec'); globalThis.__h2 = location.href;").unwrap();
+    // hashchange 经 _defer microtask 在 execute 末尾派发 → 下一次 execute 读到。
+    sandbox.execute("globalThis.__hc2 = globalThis.__hc;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__h2").unwrap().value, "https://example.com/a#sec", "assign('#sec') href 反映新 hash");
+    assert_eq!(sandbox.execute("globalThis.__hc2").unwrap().value, "https://example.com/a#sec", "assign hash 变化派 hashchange.newURL");
+
+    // history.length 反映 assign 累积（初始 1 + /a + #sec = 3）。
+    sandbox.execute("globalThis.__len = history.length;").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__len)").unwrap().value, "3", "assign 推 history entry：length=3");
+
+    // replace(绝对 URL)：replace 当前 entry（不增 length）+ location 反映。
+    sandbox
+        .execute("location.replace('https://example.com/final'); globalThis.__h3 = location.href; globalThis.__len3 = history.length;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__h3").unwrap().value, "https://example.com/final", "replace(url) location.href 反映");
+    assert_eq!(sandbox.execute("String(globalThis.__len3)").unwrap().value, "3", "replace 替换当前 entry 不增 length（替换 #sec）：length=3");
+
+    // replace 后 back 不回 #sec（被替换）→ 回 /a。
+    sandbox.execute("history.back(); globalThis.__hBack = location.href;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hBack").unwrap().value, "https://example.com/a", "replace 后 back 回 /a（#sec entry 被替换）");
+
+    // assign 同当前 url no-op（不增 entry）。
+    sandbox
+        .execute("history.forward(); globalThis.__len4 = history.length; location.assign('https://example.com/final'); globalThis.__len5 = history.length;")
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__len5)").unwrap().value, "3", "assign 同当前 url no-op（不增 entry）");
+
+    // reload()：headless no-op（不抛，location 不变）。
+    sandbox
+        .execute("globalThis.__err = 'none'; try { location.reload(); } catch(e){ globalThis.__err = String(e); } globalThis.__hRel = location.href;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__err").unwrap().value, "none", "reload() 不抛");
+    assert_eq!(sandbox.execute("globalThis.__hRel").unwrap().value, "https://example.com/final", "reload() headless no-op，location 不变");
+}
+
 

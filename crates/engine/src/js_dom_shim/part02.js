@@ -1628,6 +1628,39 @@
     _pushHistNav(newHref, oldHref);
   }
 
+  // R3009：replace 当前 history entry 共享导航应用——原地替换当前 entry url（mirror replaceState，不入新 entry，
+  // 故 back 不回旧 url）+ hash 段变化时异步派 hashchange（同-document 片段导航语义）。不派 popstate（replace 语义，
+  // 与 replaceState 对称——pushState/replaceState 不触发 popstate）。供 location.replace 复用（DRY，与 _pushHistNav 对称）。
+  function _replaceHistNav(newHref, oldHref) {
+    _hist_current().url = newHref;
+    if (String(oldHref).split('#')[1] !== String(newHref).split('#')[1]) {
+      var oldU = oldHref, newU = newHref;
+      _defer(function () {
+        var ev = new HashChangeEvent('hashchange', { oldURL: oldU, newURL: newU });
+        ev.target = globalThis;
+        _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
+      });
+    }
+  }
+
+  // R3009：`location.assign(url)` / `location.replace(url)`——spec 导航方法（旧为 stub no-op，redirect 模式失效）。
+  // assign(url) 功能等价 `location.href = url`（MDN）：resolve url + push history entry + location 反映 + hash 变化派
+  // hashchange。replace(url)：replace 当前 entry（back 不回旧 url）+ hash 变化派 hashchange。两者均经 _resolveHistUrl
+  // 解析为绝对（相对当前 location），headless 无真文档重载（与 pushState / location setter 同 in-memory 近似）。
+  // 解析失败 / 未变 → no-op（spec assign/replace 同 url 为 no-op 导航）。
+  function _locationAssign(url) {
+    var oldHref = globalThis.location.href;
+    var newHref = _resolveHistUrl(String(url));
+    if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
+    _pushHistNav(newHref, oldHref);
+  }
+  function _locationReplace(url) {
+    var oldHref = globalThis.location.href;
+    var newHref = _resolveHistUrl(String(url));
+    if (!newHref || newHref === oldHref) return;
+    _replaceHistNav(newHref, oldHref);
+  }
+
   globalThis.Worker = function() {
   };
 

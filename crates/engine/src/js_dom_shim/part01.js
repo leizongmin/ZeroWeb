@@ -993,9 +993,13 @@
       // 同 IIFE 提升，setter 运行时就绪）。SPA hash 路由核心。
       set hash(v) { if (typeof _setLocationHash === 'function') _setLocationHash(v); },
       get origin() { return _parseLocation(href()).origin; },
-      assign: function() {},
-      replace: function() {},
-      reload: function() {},
+      // R3009：assign/replace 导航方法（_locationAssign/_locationReplace 在 part02 定义，同 IIFE 提升，运行时就绪，
+      // typeof guard 防御）。assign(url) ≡ location.href = url（MDN）；replace(url) replace 当前 entry。
+      assign: function (url) { if (typeof _locationAssign === 'function') _locationAssign(url); },
+      replace: function (url) { if (typeof _locationReplace === 'function') _locationReplace(url); },
+      // headless 无真文档重载——synthesized page 无原始 fetch 可重取。no-op（不抛，spec reload 返 void）。
+      // host 真重载（重新 fetch + 解析 + 执行页面脚本）defer。
+      reload: function () {},
       toString: function() { return _parseLocation(href()).href; }
     };
   }
