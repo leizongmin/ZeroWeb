@@ -864,8 +864,8 @@
       return node && typeof node.cloneNode === 'function' ? node.cloneNode(!!deep) : node;
     },
     // `document.implementation`（DOMImplementation，R2815）——feature-detection（jQuery support 等查 hasFeature）
-    // + createDocument/createHTMLDocument（返最小 hollow detached Document）。**已知限制**：detached tree 无
-    // proxy infra，querySelector 返 null（jQuery/DOMPurify 真 detached 解析需后续 detached-tree slice）。
+    // + createDocument/createHTMLDocument（R3013：返 queryable detached Document——body.innerHTML setter +
+    // querySelector 族经 __zw_parse_html_query 查解析树，jQuery/DOMPurify feature-detect / 模板引擎可用）。
     implementation: {
       hasFeature: function() { return true; }, // spec：deprecated，恒返 true
       createDocument: function() { return _makeDetachedDocument(''); },

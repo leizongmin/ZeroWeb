@@ -780,23 +780,53 @@
     return chain;
   }
 
-  // 最小 detached Document（供 document.implementation.createDocument/createHTMLDocument，R2815）。
-  // **已知限制**：hollow——无 detached tree proxy infra，querySelector 返 null（jQuery/DOMPurify 真 detached
-  // 解析需后续 detached-tree slice）。满足 feature-detection + 基本 node 工厂。
+  // detached Document（供 document.implementation.createDocument/createHTMLDocument，R2815；R3013 queryable）。
+  // R3013：body 经 __zw_parse_html_query 支持可写可查——body.innerHTML setter 存解析源，querySelector 族
+  //（包 _zwParseEl 只读 element-proxy）查解析树。满足 jQuery `$.parseHTML` / DOMPurify feature-detect /
+  // 模板引擎「detached 解析后查询」模式（旧 hollow querySelector 恒 null）。host 未注册（reftest/纯 sandbox）
+  // → query 返 null/空（no-throw，零回归）。createElement/createTextNode 保留（node 工厂 + feature-detect）。
+  // **已知限制（记录）**：① querySelectorAll('*') 含 html/head/body（html5ever 包裹）——按具体 tag/id/class 查；
+  //   ② 只读——无真 detached tree proxy，mutation（setAttribute/appendChild）不入解析树（best-effort 存 raw）；
+  //   ③ DOMPurify 的 body.childNodes 递归遍历需 detached tree proxy infra（更重，独立 follow-up）。
   function _makeDetachedDocument(title) {
-    return {
+    var bodyHtml = '';
+    function queryBody(sel, all) {
+      if (typeof __zw_parse_html_query !== 'function') return [];
+      try {
+        return JSON.parse(__zw_parse_html_query('<body>' + bodyHtml + '</body>', String(sel), all ? '1' : '0'));
+      } catch (_e) { return []; }
+    }
+    function queryOne(sel) { var a = queryBody(sel, false); return a.length ? new _zwParseEl(a[0]) : null; }
+    function queryAll(sel) { var a = queryBody(sel, true); var out = []; for (var i = 0; i < a.length; i++) out.push(new _zwParseEl(a[i])); return out; }
+    var body = {
+      nodeType: 1,
+      tagName: 'BODY',
+      nodeName: 'BODY',
+      get innerHTML() { return bodyHtml; },
+      set innerHTML(v) { bodyHtml = v == null ? '' : String(v); },
+      querySelector: function (sel) { return queryOne(sel); },
+      querySelectorAll: function (sel) { return queryAll(sel); },
+      getElementById: function (id) { return queryOne('#' + String(id)); },
+      getElementsByTagName: function (tag) { return queryAll(String(tag)); },
+      getElementsByClassName: function (cls) { return queryAll('.' + String(cls)); }
+    };
+    var doc = {
       nodeType: 9,
       nodeName: '#document',
       documentElement: { nodeType: 1, tagName: 'HTML', nodeName: 'HTML', childNodes: [] },
       head: { nodeType: 1, tagName: 'HEAD', nodeName: 'HEAD', childNodes: [] },
-      body: { nodeType: 1, tagName: 'BODY', nodeName: 'BODY', childNodes: [] },
+      body: body,
       title: title != null ? String(title) : '',
-      querySelector: function() { return null; },
-      querySelectorAll: function() { return []; },
-      getElementById: function() { return null; },
-      createElement: function(t) { var n = String(t).toUpperCase(); return { nodeType: 1, tagName: n, nodeName: n }; },
-      createTextNode: function(t) { return { nodeType: 3, nodeName: '#text', nodeValue: String(t) }; },
+      querySelector: function (sel) { return queryOne(sel); },
+      querySelectorAll: function (sel) { return queryAll(sel); },
+      getElementById: function (id) { return queryOne('#' + String(id)); },
+      getElementsByTagName: function (tag) { return queryAll(String(tag)); },
+      getElementsByClassName: function (cls) { return queryAll('.' + String(cls)); },
+      createElement: function (t) { var n = String(t).toUpperCase(); return { nodeType: 1, tagName: n, nodeName: n, childNodes: [], setAttribute: function () {}, appendChild: function (c) { return c; } }; },
+      createTextNode: function (t) { return { nodeType: 3, nodeName: '#text', nodeValue: String(t) }; }
     };
+    body.ownerDocument = doc;
+    return doc;
   }
 
   // 节点结构签名（供 isEqualNode，R2819）：type 前缀 + 序列化（元素→outerHTML 含 tag/属性/子树；

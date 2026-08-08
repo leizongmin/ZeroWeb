@@ -477,4 +477,67 @@ fn test_text_decoder_streaming_r3012() {
     assert_eq!(sandbox.execute("JSON.stringify(globalThis.__tdsJoined)").unwrap().value, "\"中文\"", "TextDecoderStream 跨 chunk 重组 '中文'（旧各 chunk 独立解码损坏）");
 }
 
+#[test]
+fn test_detached_document_query_r3013() {
+    // R3013：document.implementation.createHTMLDocument 旧返 hollow doc（querySelector 恒 null、body 无 innerHTML
+    // setter）→ jQuery `$.parseHTML` / DOMPurify feature-detect / 模板引擎「detached 解析后查询」模式失效。
+    // 本切片：body 经 __zw_parse_html_query 支持可写可查（innerHTML setter + querySelector 族）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 既有行为保留：body.tagName=BODY + title 透传（R2815 断言不破）。
+    sandbox
+        .execute(
+            "var doc = document.implementation.createHTMLDocument('T');\
+             globalThis.__bodyTag = doc.body.tagName;\
+             globalThis.__title = doc.title;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__bodyTag)").unwrap().value, "BODY", "createHTMLDocument body.tagName=BODY（保留）");
+    assert_eq!(sandbox.execute("String(globalThis.__title)").unwrap().value, "T", "createHTMLDocument title 透传（保留）");
+
+    // body.innerHTML setter：存解析源；getter 返存值。
+    sandbox.execute("doc.body.innerHTML = '<div id=\"a\">A</div><div class=\"x\">X</div><span class=\"b\">B</span>';").unwrap();
+    assert_eq!(sandbox.execute("String(doc.body.innerHTML)").unwrap().value, "<div id=\"a\">A</div><div class=\"x\">X</div><span class=\"b\">B</span>", "body.innerHTML getter 返存值");
+
+    // body.querySelector：id / class 选择器查解析树。
+    sandbox
+        .execute(
+            "globalThis.__qa = doc.body.querySelector('#a');\
+             globalThis.__qx = doc.body.querySelector('.x');\
+             globalThis.__qb = doc.body.querySelector('.b');\
+             globalThis.__qnone = doc.body.querySelector('.nope');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__qa && globalThis.__qa.textContent)").unwrap().value, "A", "body.querySelector('#a').textContent='A'");
+    assert_eq!(sandbox.execute("String(globalThis.__qx && globalThis.__qx.tagName)").unwrap().value, "DIV", "body.querySelector('.x').tagName=DIV");
+    assert_eq!(sandbox.execute("String(globalThis.__qb && globalThis.__qb.tagName)").unwrap().value, "SPAN", "body.querySelector('.b').tagName=SPAN");
+    assert_eq!(sandbox.execute("String(globalThis.__qnone)").unwrap().value, "null", "body.querySelector 无匹配 → null");
+
+    // body.querySelectorAll：多元素集合（div×2 / span×1）。
+    assert_eq!(sandbox.execute("String(doc.body.querySelectorAll('div').length)").unwrap().value, "2", "body.querySelectorAll('div').length=2");
+    assert_eq!(sandbox.execute("String(doc.body.querySelectorAll('span').length)").unwrap().value, "1", "body.querySelectorAll('span').length=1");
+
+    // body.getElementById / getElementsByTagName / getElementsByClassName。
+    assert_eq!(sandbox.execute("String(doc.body.getElementById('a').tagName)").unwrap().value, "DIV", "body.getElementById('a').tagName=DIV");
+    assert_eq!(sandbox.execute("String(doc.body.getElementsByTagName('span').length)").unwrap().value, "1", "body.getElementsByTagName('span').length=1");
+    assert_eq!(sandbox.execute("String(doc.body.getElementsByClassName('x').length)").unwrap().value, "1", "body.getElementsByClassName('x').length=1");
+
+    // document 级 query 委托 body（同样解析树）。
+    assert_eq!(sandbox.execute("String(doc.querySelector('#a').textContent)").unwrap().value, "A", "doc.querySelector('#a') 委托 body 解析树");
+    assert_eq!(sandbox.execute("String(doc.querySelectorAll('div').length)").unwrap().value, "2", "doc.querySelectorAll('div').length=2");
+
+    // createElement + createTextNode 仍可（feature-detection 常用）。
+    sandbox.execute("globalThis.__el = doc.createElement('section'); globalThis.__tn = doc.createTextNode('hi');").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__el.tagName)").unwrap().value, "SECTION", "doc.createElement('section').tagName=SECTION");
+    assert_eq!(sandbox.execute("String(globalThis.__tn.nodeValue)").unwrap().value, "hi", "doc.createTextNode('hi').nodeValue='hi'");
+}
+
 
