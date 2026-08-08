@@ -112,6 +112,23 @@
 
 ## 最近完成的改进
 
+### 大页面卡顿优化 S7b + S1b（2026-08-08）
+
+**S7b — cull_invisible 原位化**：旧实现每帧克隆全部存活图元（~11k fills + 22k
+glyphs）+ 13 个 remap vec；改 `Vec::retain` 原位剔除（memmove 无克隆），
+glyphs/clips/blend_modes（本就不剔除）不再克隆。签名 `&mut self → RenderStats`，
+3 调用方 + 测试适配。
+
+**S1b — chrome-only 动画帧**：加载期动画（spinner/进度条）帧在页面内容未变时
+（滚动/快照 epoch/选区/浮层全不变）保留页面区像素，只重绘页面区外的 chrome
+条带（顶部+底部，`render_full_scene_region_into`）。动画帧从全量光栅 → chrome
+条带光栅。像素等价测试（条带重绘不污染页面区）。
+
+**style 匹配缓存（下轮 M 级工作项）**：medium 4000 同类元素重复执行全量选择器
+匹配——「上下文无关选择器匹配结果缓存」（键含祖先链以支持 `.section h2` 类
+组合器选择器）识别为 style 214ms 的可行优化方向，通用实现需独立会话设计
+（CSS 匹配语义微妙，缓存失效边界须仔细）。
+
 ### 工程治理——DOMMatrix 矩阵运算覆盖加固（multiply/inverse/rotate/multiplySelf/fromMatrix，本轮 R2989，~14,175 测试）
 
 R2988 后覆盖加固。R2985 shipped DOMMatrix（4×4 column-major + Gauss-Jordan inverse + multiply/transformPoint），但 driving test **仅覆盖 identity/from-array/translate/scale/transformPoint(translate)**——核心矩阵运算（multiply / inverse / rotate / multiplySelf / fromMatrix / scale-transformPoint）**未测**。矩阵运算为最易藏 subtle bug 的算法代码（column-major 索引 / Gauss-Jordan pivot / rotate 轴序），补 known-answer 覆盖锁定正确性（Done Criteria §5 测试质量「覆盖正常路径、边界条件」）。
