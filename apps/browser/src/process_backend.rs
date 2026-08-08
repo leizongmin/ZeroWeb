@@ -130,6 +130,20 @@ pub struct ProcessTabBackend {
 }
 
 impl ProcessTabBackend {
+    /// 暂存最新绘制帧，避免 UI 线程逐个转换 renderer 积压的完整页面快照。
+    fn defer_latest_paint(
+        latest_paint: &mut Option<Box<zero_protocol::PaintSnapshotParams>>,
+        kind: IpcMessageKind,
+    ) -> Option<IpcMessageKind> {
+        match kind {
+            IpcMessageKind::ViewPainted(params) => {
+                *latest_paint = Some(params);
+                None
+            }
+            kind => Some(kind),
+        }
+    }
+
     /// 创建多进程后端；若找不到 `zero-renderer` 则返回 `None`（由调用方回退单进程 worker）。
     pub fn try_new() -> Option<Self> {
         let renderer_bin = resolve_renderer_binary().unwrap_or_else(|| PathBuf::from(renderer_binary_filename()));
@@ -504,6 +518,7 @@ impl ProcessTabBackend {
             if Instant::now() >= poll_deadline {
                 break;
             }
+            let mut latest_paint = None;
             loop {
                 let msg = {
                     let Some(renderer) = self.manager.get_renderer(rid) else {
@@ -523,7 +538,13 @@ impl ProcessTabBackend {
                     }
                 };
                 changed = true;
-                match msg.kind {
+                let Some(kind) = Self::defer_latest_paint(&mut latest_paint, msg.kind) else {
+                    if Instant::now() >= poll_deadline {
+                        break;
+                    }
+                    continue;
+                };
+                match kind {
                     IpcMessageKind::FetchRequest(params) => {
                         self.handle_fetch_request(tab_id, params);
                     }
@@ -548,6 +569,17 @@ impl ProcessTabBackend {
                 if Instant::now() >= poll_deadline {
                     break;
                 }
+            }
+            if let Some(params) = latest_paint {
+                let snap = snapshots.entry(tab_id).or_default();
+                Self::apply_inbound_message(
+                    tab_id,
+                    snap,
+                    IpcMessageKind::ViewPainted(params),
+                    snapshot_seq,
+                    &mut self.pending_loaded,
+                    &mut self.pending_errors,
+                );
             }
         }
         for (tab_id, rid, reason) in disconnected {
@@ -823,5 +855,33 @@ mod navigation_contract_tests {
         apply_paint_snapshot(&mut snap, paint_with_red_fill(0));
         let fill = &snap.last_render.as_ref().unwrap().primitives.fills[0];
         assert_eq!(fill.color.r, 255);
+    }
+
+    #[test]
+    fn paint_backlog_keeps_only_latest_frame_and_preserves_control_messages() {
+        let mut latest = None;
+
+        assert!(
+            ProcessTabBackend::defer_latest_paint(
+                &mut latest,
+                IpcMessageKind::ViewPainted(Box::new(paint_with_red_fill(1))),
+            )
+            .is_none()
+        );
+        let control =
+            ProcessTabBackend::defer_latest_paint(&mut latest, IpcMessageKind::TitleChanged("latest title".into()));
+        assert!(matches!(
+            control,
+            Some(IpcMessageKind::TitleChanged(title)) if title == "latest title"
+        ));
+        assert!(
+            ProcessTabBackend::defer_latest_paint(
+                &mut latest,
+                IpcMessageKind::ViewPainted(Box::new(paint_with_red_fill(2))),
+            )
+            .is_none()
+        );
+
+        assert_eq!(latest.unwrap().navigation_epoch, 2);
     }
 }
