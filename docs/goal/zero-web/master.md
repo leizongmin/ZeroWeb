@@ -8475,6 +8475,7 @@ Total: 6219 → 6378 tests (+159)
 - [x] 字体栈重建 RFC v0.2.3 已就绪（`docs/goal/rendering-compat/fontdue-replacement-scoping.md`）
 - [ ] 用户审批 RFC，启动实施
 - **2026-08-04**：rendering-compat 侧已将该方向列入待用户决策清单（font-stack C-dep rebuild，R2025 user-blocked），**等用户点名**；点名后切回渲染侧实施
+- **2026-08-08**：已通过飞书 CLI 向用户征询（P1b RFC 审批 + 字体栈 RFC v0.2.3 审批 + 深结构点名三项合并一条消息，om_x100b6847a89f54a0c31f9749fe65ad9），等待回复；P1a 剩余切片（fetch byte-wire / customElements upgrade / rAF 帧驱动）不依赖此审批，可自主继续
 
 **后续步骤**（RFC 通过后）：
 1. 审查并通过字体栈重建 RFC
@@ -8505,7 +8506,7 @@ P1a 低风险、可快速见效（主要改 `dom_bridge.rs` + `script-sandbox` +
 
 **当前状态**：
 - [ ] P1a: 事件循环补全 + fetch/MutationObserver 真实化 — **2026-08-04 恢复为当前活跃主线**
-- [~] P1b: V8 原生绑定 RFC（**v0.1 草稿已落地** [`docs/specs/p1b-v8-native-bindings-rfc.md`](../../specs/p1b-v8-native-bindings-rfc.md)，方案 C 混合 DOM-Node，分阶段切片 S0–S7，待用户审批 + S0 PoC 验证 GC/TBD）+ 实施
+- [~] P1b: V8 原生绑定 RFC（**v0.1 草稿已落地** [`docs/specs/p1b-v8-native-bindings-rfc.md`](../../specs/p1b-v8-native-bindings-rfc.md)，方案 C 混合 DOM-Node，分阶段切片 S0–S7，待用户审批 + S0 PoC 验证 GC/TBD）+ 实施 — **2026-08-08**：已飞书征询审批（om_x100b6847a89f54a0c31f9749fe65ad9），等待回复
 
 **P1a 探查结论（2026-08-04 恢复推进前评估）**：文档「fetch/Observer 为 stub、DomCommand 30+ 变体」描述**已过时**——生产路径已迁移到 B 代桥接（`crates/engine/src/js_dom_bridge.rs` + `js_dom_shim.js` + `apps/browser/src/tab_js_worker.rs`），**fetch GET 已端到端真实**（`FetchBridge` + `AsyncResolver` + net crate，含真实 HTTP 测试）、**MutationObserver（JS 驱动）已真实触发**（shim Proxy trap 拦截）、setTimeout 已真实延迟（TimerBridge 子线程）。P1a 实际剩余 = 4 切片：
 

@@ -92,6 +92,8 @@
 
 ### 待用户决策清单
 
+> **2026-08-08 征询记录**：清单全部条目（深结构点名类）已通过飞书 CLI 一次性征询用户（P1b RFC 审批 + 字体栈 RFC v0.2.3 审批 + 深结构点名合并，消息 om_x100b6847a89f54a0c31f9749fe65ad9），建议点名一项作为下一专项；无点名则维持降频守成。等待回复，收到点名即切回实施。**无需重复征询**，后续轮次以本记录为准。
+
 - ~~**font-metric 生产激活+A/B**~~（**R2393 已完结 = net 负，保持 dormant**）：R2202 dormant 基础设施完整，2026-08-01 用户授权激活 + product-smoke A/B（本 session R2393 复核验证）= **welcome 17.03%→17.47%（+0.44pp 恶化）、morning 中文零变化、8/8 struct PASS** → **net 负，不 land，保持 env 默认关**。根因（R2202 两假设证伪）：① welcome `sans-serif` 已从 DejaVu 换 Liberation Sans（R1263，真值≠1.164）→ 激活后 normal 行高变；② morning 全显式 line-height（无 normal）→ 不经 font-metric provider → 零变化。证据 [`evidence/font-metric-activation-ab-2026-08-01.md`](evidence/font-metric-activation-ab-2026-08-01.md)。**后续 agent 勿再以 font-metric 激活为 lever**（已实测 net 负）；若推进须与 IFC strut/half-leading 真实化打包（深结构 R834 谱系）。
 - **vertical-mode native R1043**：深结构性方向，等用户授权
 - **taffy replaced-element border-box R2174**：深结构性方向，等用户授权  
