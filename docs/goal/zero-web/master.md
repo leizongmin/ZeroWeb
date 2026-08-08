@@ -112,6 +112,19 @@
 
 ## 最近完成的改进
 
+### 大页面卡顿优化 S12（extract 文本节点短路，2026-08-08）
+
+taffy→LayoutBox 提取中 9000+ 文本/匿名节点走完整元素级字段逻辑（~80% 无关）。
+短路为基础盒（几何 + node_id + is_anonymous_text_item，其余 Default）。安全性：
+painter 经 node_id + 父 ComputedStyle 渲染匿名文本（painter/mod.rs
+paint_anonymous_text_item）；text_node_* 度量由 inline_finalization 后填充
+（extract 恒为空）。layout 92→82ms，medium total 164→159ms（基线已收紧）。
+
+**性能基线收紧**：auto-tighten 90 指标（medium total 159.7 / style 30.4 /
+paint 24.6 / first_paint 287ms）。4 项 µs 级噪声 FAIL（clear_1080p +195% /
+glyph insert +55% 等——与 S7b/S12 改动路径零交集，隔离重跑确认频率漂移）按
+policy 不 relax，趋势照常记录。
+
 ### 大页面卡顿优化 S11（样式键缓存，2026-08-08）
 
 medium 4000 个同类 `.item` 元素重复执行全量级联+继承+计算值管线（~48µs/元素，
