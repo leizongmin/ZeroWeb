@@ -1188,6 +1188,68 @@ fn test_scroll_position_tracking_r3047() {
 }
 
 #[test]
+fn test_scroll_event_dispatch_r3051() {
+    // R3051：scroll 事件派发（R3047 follow-up）。scrollTo/scrollBy/scrollTop= 后派发 'scroll' Event——
+    // element 经 _dispatchWithBubble（element 'scroll' listener），window 经 globalThis.dispatchEvent（window listener）。
+    // headless 同步派发（real browser 异步 + coalesce，documented 近似）。scroll-listener 代码可触发。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'>x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① element scrollTo → 派发 'scroll' 到元素 listener（event.type + target）。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             globalThis.__elType = 'none'; globalThis.__elTarget = 'none';\
+             d.addEventListener('scroll', function(e){ globalThis.__elType = e.type; globalThis.__elTarget = (e.target === d) ? 'd' : 'other'; });\
+             d.scrollTo(0, 100);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__elType").unwrap().value, "scroll", "element scrollTo → 'scroll' 事件（type）");
+    assert_eq!(sandbox.execute("globalThis.__elTarget").unwrap().value, "d", "scroll 事件 target=元素自身");
+
+    // ② element scrollTop= / scrollBy → 亦派发 'scroll'（计数）。
+    sandbox
+        .execute(
+            "globalThis.__elCount = 0;\
+             d.addEventListener('scroll', function(){ globalThis.__elCount++; });\
+             d.scrollTop = 50;\
+             d.scrollBy(0, 10);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__elCount").unwrap().value, "2", "scrollTop= + scrollBy 各派发一次（count=2）");
+
+    // ③ window scrollTo/scrollBy → 派发 'scroll' 到 window listener。
+    sandbox
+        .execute(
+            "globalThis.__winCount = 0;\
+             window.addEventListener('scroll', function(){ globalThis.__winCount++; });\
+             window.scrollTo(0, 200);\
+             window.scrollBy(0, 25);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__winCount").unwrap().value, "2", "window scrollTo + scrollBy 各派发一次（window listener count=2）");
+
+    // ④ scroll 事件不冒泡（spec bubbles=false）——子元素 scroll 不触父 listener。
+    sandbox
+        .execute(
+            "globalThis.__parentCount = 0;\
+             document.body.addEventListener('scroll', function(){ globalThis.__parentCount++; });\
+             d.scrollTo(0, 5);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__parentCount").unwrap().value, "0", "scroll 不冒泡（父 body listener 不触，spec bubbles=false）");
+}
+
+#[test]
 fn test_form_reset_submit_methods_r3048() {
     // R3048：HTMLFormElement 方法 reset/requestSubmit/submit。旧缺（get trap 未拦 → form.reset() 抛 not-a-function）。
     // reset：dispatch cancelable 'reset' 事件 + 未取消则把控件恢复 defaultValue/defaultChecked/defaultSelected。

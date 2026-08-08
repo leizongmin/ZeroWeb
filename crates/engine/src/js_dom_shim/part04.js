@@ -511,7 +511,7 @@
         if (prop === 'scrollTo' || prop === 'scrollBy') {
           var _ss = _scrollOffsets[key] || (_scrollOffsets[key] = { top: 0, left: 0 });
           var _byM = prop === 'scrollBy';
-          return function (a, b) { _zwApplyScroll(_ss, a, b, _byM); };
+          return function (a, b) { _zwApplyScroll(_ss, a, b, _byM); _zwFireScroll(key, sel, handle); };
         }
         if (prop === 'scrollIntoView') {
           return function () {}; // no-op（headless 无 viewport，无法真实滚动元素入视口）

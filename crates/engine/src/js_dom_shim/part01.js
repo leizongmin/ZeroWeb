@@ -1344,13 +1344,23 @@
     if (store.left < 0) store.left = 0; // spec scroll 不可负
     if (store.top < 0) store.top = 0;
   }
+  // R3051：scroll 事件派发（R3047 follow-up）。scrollTo/scrollBy/scrollTop= 后派发 'scroll' 事件，使
+  // scroll-listener（infinite scroll / lazy load / sticky nav / parallax）在程序化滚动后触发。real browser 异步
+  // 派发 + 同帧 coalesce；headless 同步派发（每滚动操作一事件，documented 近似）。element 经 _dispatchWithBubble，
+  // window（sel/handle 均空）经 globalThis.dispatchEvent。'_makeEvent('scroll')' 默认 bubbles=false/cancelable=false（spec）。
+  function _zwFireScroll(key, sel, handle) {
+    try {
+      if (sel || handle) _dispatchWithBubble(key, sel, handle, _makeEvent('scroll'));
+      else if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(_makeEvent('scroll'));
+    } catch (_e) {}
+  }
   Object.defineProperty(globalThis, 'scrollX', { configurable: true, get: function () { return _winScroll.left; } });
   Object.defineProperty(globalThis, 'pageXOffset', { configurable: true, get: function () { return _winScroll.left; } });
   Object.defineProperty(globalThis, 'scrollY', { configurable: true, get: function () { return _winScroll.top; } });
   Object.defineProperty(globalThis, 'pageYOffset', { configurable: true, get: function () { return _winScroll.top; } });
-  globalThis.scrollTo = function (a, b) { _zwApplyScroll(_winScroll, a, b, false); };
+  globalThis.scrollTo = function (a, b) { _zwApplyScroll(_winScroll, a, b, false); _zwFireScroll(null, null, null); };
   globalThis.scroll = globalThis.scrollTo;
-  globalThis.scrollBy = function (a, b) { _zwApplyScroll(_winScroll, a, b, true); };
+  globalThis.scrollBy = function (a, b) { _zwApplyScroll(_winScroll, a, b, true); _zwFireScroll(null, null, null); };
   globalThis.scrollIntoView = function () {};
 
   // window 弹窗 / 对话框 API（R2979）——alert/confirm/prompt/open 此前全缺，`if (confirm('Delete?'))` /

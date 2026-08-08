@@ -99,6 +99,7 @@
           if (isNaN(_sv) || _sv < 0) _sv = 0;
           var _sss = _scrollOffsets[key] || (_scrollOffsets[key] = { top: 0, left: 0 });
           if (p === 'scrollTop') _sss.top = _sv; else _sss.left = _sv;
+          _zwFireScroll(key, sel, handle);
         } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
           // R3042：expando 属性（非原始值——function/object/array/null/undefined/symbol/bigint）。旧经 generic fallthrough
           // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')` / 'function(){}'）且 get 读不回（undefined）。
