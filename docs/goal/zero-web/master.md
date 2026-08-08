@@ -112,6 +112,27 @@
 
 ## 最近完成的改进
 
+### 工程治理——js_dom_bridge.rs 拆分 slice 3：selector_match 子模块（3271→3149，本轮 R2975，~14,155 测试）
+
+R2974（canvas 子模块拆分 slice 2）后续续 js_dom_bridge.rs 文件大小治理。本切片抽 **选择器匹配组**到子模块（继 crypto / canvas 后第 3 刀）。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_bridge/selector_match.rs`（新） | 125 行（+8 行 module doc + `use super::*`）。7 个选择器匹配 pub 函数原样迁入：`element_matches_test_selector`/`closest_matching_selector`/`query_match_in_subtree`/`query_all_in_subtree`/`element_children_selectors`/`element_sibling_selectors`/`parent_selector_for`（matches/closest/子树 querySelector(All)/children/sibling/parent）。 |
+| `crates/engine/src/js_dom_bridge.rs` | 删选择器匹配段（原 1221-1346 行）+ 增 `mod selector_match; pub use selector_match::*;`。**调用点零改动**：register_dom_callbacks 中 `element_matches_test_selector(...)` 等经 `pub use` 重导出解析。 |
+
+**为何 `use super::*` 解析祖先私有 helper（无需提权可见性）**：选择器组调父模块的 `find_by_selector`（pub）/ `unique_selector_for_node` / `element_parent` / `json_str`（私有）。Rust 可见性铁律——**子模块可访祖先模块的私有项**，故 `use super::*`（glob 父模块全部项，含私有 + `use` 绑定的 `parse_html`）使迁移后函数体内 bare 名调用零改动（不需逐 helper 提 `pub(super)`，不需 `super::` 前缀）。`json_str` 留父模块（被父 `parse_html_element_json` 等多处共用），子模块经 `use super::*` 取用。这是比 crypto/canvas 更依赖密集的组的最低风险迁移方式。
+
+**为何零回归**：迁移纯机械（7 函数 doc+body 原样移到 selector_match.rs，函数体内 bare 名经 `use super::*` 解析不变）；`pub use selector_match::*` 重导出使 register_dom_callbacks 调用点（`__zw_matches`/`__zw_closest`/`__zw_query_*_sub`/`__zw_children` 等回调）逐符号解析不变。`make test` 14155 全绿（含全部 matches/closest/querySelector 子树/children/sibling 集成测试）验证。
+
+**附带 flake 修复**：全量 `make test` 首跑 `zero-net fetch_scheduler::tests::submit_shared_auto_releases_origin_slot` 间歇 FAIL（隔离 3/3 PASS = 并发负载 flake）。根因：r1 完成后固定 `sleep(50ms)` 等 origin slot 释放 + r2 dequeue，并发 workspace 负载下调速线程可能 50ms 内未完成 dequeue → `queued_count` 仍 1 → assert 失败。改 poll `queued_count→0`（超时 5s）替代固定 sleep，robust 抗调度延迟。按 run-rules「flaky test 当作当前任务一部分修复」。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14155 passed / 71 skipped / 0 failed**（测试计数不变 = 纯重构 + flake 修复）+ clippy `-D warnings` 零警告（workspace）+ fmt clean。
+
+**剩余文件大小**：`js_dom_bridge.rs` 现 **3149 行**（~1.6× 超标，三刀累计 3959→3149 减 810 行：crypto 232 + canvas 458 + selector_match 125 - 重叠）。子模块汇总：computed_style（R2709 既有）+ crypto（R2973）+ canvas（R2974）+ selector_match（R2975）。后续高影响切片：register_dom_callbacks 巨函数（~1000+ 行回调注册，最大单体，可独立模块）+ apply_dom_mutations 大函数（~290 行 + helper）。
+
+**下一步**：续 js_dom_bridge.rs 拆分 slice 4（register_dom_callbacks 抽独立模块——最大单体，全调 pub 函数，可 `use super::*` + pub use 模式迁移）；或续 P1a 功能（Headers 实例化迁移 / ClipboardItem / task source 优先级 / customElements upgrade）。
+
 ### 工程治理——js_dom_bridge.rs 拆分 slice 2：canvas 子模块（3726→3271，本轮 R2974，~14,155 测试）
 
 R2973（crypto 子模块拆分 slice 1）后续续 js_dom_bridge.rs 文件大小治理。本切片抽 **canvas 组**到子模块（继 crypto 后第 2 刀）。
