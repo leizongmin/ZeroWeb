@@ -2172,3 +2172,76 @@ fn scroll_blit_matches_full_render() {
         );
     }
 }
+
+/// 性能门禁优化 S1b（2026-08-08）：chrome-only 动画帧——页面区保留，
+/// 只重绘页面区外的 chrome 条带（顶部/底部），页面区像素必须与全量渲染一致。
+#[test]
+fn chrome_strip_rerender_does_not_touch_page_region() {
+    let mut scene = RenderPrimitives::new();
+    // 页面内容（页面 rect 内）：不透明 + 半透明 fills
+    for i in 0..120u32 {
+        let x = (i % 15) as f32 * 40.0;
+        let y = (i / 15) as f32 * 40.0;
+        scene.add_fill(Rect::new(x, y, 38.0, 38.0), Color::rgb((i % 256) as u8, 100, 50));
+    }
+    // chrome（页面 rect 外顶部条带）：不透明背景
+    scene.add_fill(Rect::new(0.0, 0.0, 400.0, 40.0), Color::rgb(240, 240, 240));
+    // chrome（底部条带）
+    scene.add_fill(Rect::new(0.0, 300.0, 400.0, 40.0), Color::rgb(200, 200, 200));
+
+    let (w, h) = (400u32, 340u32);
+    let scale = 1.0f32;
+    // 页面 rect：y ∈ [40, 300)
+    let (cy, ch) = (40.0f32, 260.0f32);
+
+    let font_loader = FontLoader::new();
+    // 全量渲染
+    let fb_full = render_full_scene_region(
+        w,
+        h,
+        scale,
+        &scene,
+        &font_loader,
+        &mut GlyphCache::new(64),
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        None,
+    );
+    // reuse 帧：从全量 fb 出发，重绘顶部条带 [0, cy) 与底部条带 [cy+ch, h)
+    let mut fb_reuse = fb_full.clone();
+    let top_strip = Rect::new(0.0, 0.0, w as f32, cy);
+    render_full_scene_region_into(
+        &mut fb_reuse,
+        &scene,
+        &font_loader,
+        &mut GlyphCache::new(64),
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(top_strip),
+        scale,
+    );
+    let bottom_strip = Rect::new(0.0, cy + ch, w as f32, h as f32 - cy - ch);
+    render_full_scene_region_into(
+        &mut fb_reuse,
+        &scene,
+        &font_loader,
+        &mut GlyphCache::new(64),
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(bottom_strip),
+        scale,
+    );
+    assert_eq!(
+        fb_reuse.data, fb_full.data,
+        "chrome strip re-render must not change page-region pixels (S1b reuse frame)"
+    );
+}

@@ -253,6 +253,21 @@ impl BrowserApp {
         let blit_enabled = std::env::var("ZERO_SCROLL_BLIT").as_deref() != Ok("0");
         let dy = (scroll.y - self.fb_cache_scroll.1).round() as i32;
         let same_fraction = (scroll.y - scroll.y.floor()) == (self.fb_cache_scroll.1 - self.fb_cache_scroll.1.floor());
+        // 页面内容与上一帧完全一致（无新快照、滚动未变、无选区/浮层/拖拽）→ 保留
+        // 页面区像素，只重绘 chrome 条带（S1b，2026-08-08）：加载期间的动画帧
+        //（spinner/进度条转动）每帧全量光栅 → 仅重绘页面区外的 chrome，动画流畅。
+        let can_reuse = blit_enabled
+            && self.retained_fb.is_some()
+            && epoch == self.fb_cache_epoch
+            && page_has_content
+            && scroll.x == self.fb_cache_scroll.0
+            && scroll.y == self.fb_cache_scroll.1
+            && !selection_active
+            && !self.page_selection_drag
+            && self.scrollbar_drag.is_none()
+            && self.touch_scroll.is_none()
+            && !self.shell.find_state().is_active()
+            && !self.context_menu.visible;
         let can_blit = blit_enabled
             && self.retained_fb.is_some()
             && epoch == self.fb_cache_epoch
@@ -273,7 +288,7 @@ impl BrowserApp {
         // 活跃标签页 webview 的 ImageCache（绘制 <img> 图元消费）——所有 &self 读取
         // 完成后、渲染调用前获取（self.tabs 与 font_loader/glyph_cache/retained_fb
         // 为不相交字段借用，可共存）
-        let image_cache: Option<&mut ImageCache> = match tab_id {
+        let mut image_cache: Option<&mut ImageCache> = match tab_id {
             Some(id) => self.tabs.image_cache_mut(id),
             None => None,
         };
@@ -333,6 +348,54 @@ impl BrowserApp {
                 let row = y * row_bytes;
                 fb.data[row..row + row_bytes]
                     .copy_from_slice(&scratch.data[row..row + row_bytes]);
+            }
+            fb
+        } else if can_reuse {
+            // S1b：页面区保留，重绘页面区外的 chrome 条带（顶部 + 底部）
+            let (_cx, cy, _cw, ch) = page_rect.unwrap();
+            let mut fb = self.retained_fb.take().unwrap();
+            let top_strip = zero_render_foundation::geometry::Rect::new(
+                0.0,
+                0.0,
+                width as f32,
+                cy,
+            );
+            if top_strip.size.height > 0.0 {
+                zero_render_foundation::cpu::render_full_scene_region_into(
+                    &mut fb,
+                    scene_primitives,
+                    &self.font_loader,
+                    &mut self.glyph_cache,
+                    image_cache.as_deref_mut(),
+                    glyphs,
+                    overlay_fills,
+                    overlay_glyphs,
+                    overlay_rounded_rects,
+                    Some(top_strip),
+                    1.0,
+                );
+            }
+            let bottom_top = cy + ch;
+            let bottom_h = (height as f32 - bottom_top).max(0.0);
+            if bottom_h > 0.0 {
+                zero_render_foundation::cpu::render_full_scene_region_into(
+                    &mut fb,
+                    scene_primitives,
+                    &self.font_loader,
+                    &mut self.glyph_cache,
+                    image_cache.as_deref_mut(),
+                    glyphs,
+                    overlay_fills,
+                    overlay_glyphs,
+                    overlay_rounded_rects,
+                    Some(zero_render_foundation::geometry::Rect::new(
+                        0.0,
+                        bottom_top,
+                        width as f32,
+                        bottom_h,
+                    )),
+                    1.0,
+                );
             }
             fb
         } else {
