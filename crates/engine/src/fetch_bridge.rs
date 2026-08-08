@@ -51,8 +51,11 @@ pub struct FetchResponse {
     pub status_text: String,
     /// 响应头 (name, value) 列表。
     pub headers: Vec<(String, String)>,
-    /// 响应体（UTF-8 文本；非 UTF-8 经 lossy 转）。
+    /// 响应体（UTF-8 文本；非 UTF-8 经 lossy 转——R3021 body_bytes 携带原始字节，body 为 lossy 文本回退）。
     pub body: String,
+    /// 响应体原始字节（R3021 byte-wire——二进制 body 经 `__zw_bytes:` csv-decimal wire 传 JS，response.blob()/
+    /// arrayBuffer() 取保真字节）。None 或 valid-UTF-8 → wire 用 body 文本（高效 + 向后兼容）。
+    pub body_bytes: Option<Vec<u8>>,
 }
 
 impl FetchResponse {
@@ -63,6 +66,7 @@ impl FetchResponse {
             status_text: "OK".to_string(),
             headers: Vec::new(),
             body: body.into(),
+            body_bytes: None,
         }
     }
 }
@@ -143,13 +147,19 @@ fn decode_headers(wire: &str) -> Vec<(String, String)> {
 }
 
 /// 序列化 [`FetchResponse`] 为 host→JS wire（`__zwfr:` + status + `\x1f` + ... + body）。
+/// R3021：二进制 body（非 UTF-8）经 `__zw_bytes:` csv-decimal wire（与请求侧对称，response.blob()/
+/// arrayBuffer() 二进制保真）；UTF-8 body 原样文本（高效 + 向后兼容）。
 fn serialize_response(resp: &FetchResponse) -> String {
+    let body_field = match &resp.body_bytes {
+        Some(bb) if std::str::from_utf8(bb).is_err() => encode_body_bytes(bb),
+        _ => resp.body.clone(),
+    };
     format!(
         "{WIRE_PREFIX}{status}{FIELD_SEP}{status_text}{FIELD_SEP}{headers}{FIELD_SEP}{body}",
         status = resp.status,
         status_text = resp.status_text,
         headers = encode_headers(&resp.headers),
-        body = resp.body,
+        body = body_field,
     )
 }
 
@@ -263,6 +273,7 @@ mod tests {
             status_text: "Created".to_string(),
             headers: vec![("Location".to_string(), "/x/1".to_string())],
             body: "line1\x1fline2".to_string(),
+            body_bytes: None,
         };
         let wire = serialize_response(&resp);
         assert!(wire.starts_with("__zwfr:201\x1fCreated\x1fLocation\x1e/x/1\x1f"));
@@ -302,5 +313,48 @@ mod tests {
         assert_eq!(decode_body_bytes_raw(""), None);
         // malformed csv（超 u8 范围）→ None（保守回落文本，不丢数据）。
         assert_eq!(decode_body_bytes_raw("__zw_bytes:72,999"), None);
+    }
+
+    #[test]
+    fn response_wire_binary_body_byte_wire_r3021() {
+        // R3021：非 UTF-8 response body 经 __zw_bytes: csv-decimal wire（与请求侧对称）；UTF-8 body 原样文本。
+        let bin = FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers: Vec::new(),
+            body: String::from_utf8_lossy(&[0xFF, 0x00, 0x80, 72, 105]).to_string(),
+            body_bytes: Some(vec![0xFF, 0x00, 0x80, 72, 105]),
+        };
+        let wire = serialize_response(&bin);
+        assert!(
+            wire.ends_with("__zw_bytes:255,0,128,72,105"),
+            "非 UTF-8 body 经 byte-wire：{wire}"
+        );
+        // body_bytes=None → 原样文本（向后兼容）。
+        let txt = FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers: Vec::new(),
+            body: "hello".to_string(),
+            body_bytes: None,
+        };
+        let wire2 = serialize_response(&txt);
+        assert!(
+            wire2.ends_with("hello") && !wire2.contains("__zw_bytes:"),
+            "无 body_bytes → 文本：{wire2}"
+        );
+        // body_bytes 为 valid UTF-8 → 仍用文本（高效，避免无谓 byte-wire 开销）。
+        let valid = FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers: Vec::new(),
+            body: "hello".to_string(),
+            body_bytes: Some(b"hello".to_vec()),
+        };
+        let wire3 = serialize_response(&valid);
+        assert!(
+            wire3.ends_with("hello") && !wire3.contains("__zw_bytes:"),
+            "valid-UTF-8 body_bytes 仍用文本：{wire3}"
+        );
     }
 }

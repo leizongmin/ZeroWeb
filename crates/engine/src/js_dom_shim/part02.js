@@ -587,15 +587,21 @@
   // fetch 响应体字符串 → ReadableStream：单 UTF-8 Uint8Array chunk 后 close（headless finite-body 模型，
   // 整体 body 已就绪）。复用 _zw_utf8_encode；空 body → 直接 close（零 chunk）。定义在 part01 _makeResponse
   // 之前调用（runtime），ReadableStream（part02）+ _zw_utf8_encode（part02）在 IIFE 同作用域已就绪。
-  function _bodyToStream(text) {
-    var bodyText = text || '';
+  function _bodyToStream(src) {
+    // R3021：src 可为 Uint8Array（二进制 response body）→ 直接 enqueue 字节；字符串 → UTF-8 编码 Uint8Array chunk。
+    var isBytes = src instanceof Uint8Array;
     return new ReadableStream({
       start: function (controller) {
-        if (bodyText) {
-          var bytes = _zw_utf8_encode(bodyText);
-          var arr = new Uint8Array(bytes.length);
-          for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
-          controller.enqueue(arr);
+        if (isBytes) {
+          if (src.length > 0) controller.enqueue(src);
+        } else {
+          var bodyText = src || '';
+          if (bodyText) {
+            var bytes = _zw_utf8_encode(bodyText);
+            var arr = new Uint8Array(bytes.length);
+            for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
+            controller.enqueue(arr);
+          }
         }
         controller.close();
       }

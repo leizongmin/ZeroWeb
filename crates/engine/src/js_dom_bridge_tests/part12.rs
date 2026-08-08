@@ -1266,3 +1266,95 @@ fn test_fetch_binary_body_byte_wire_r3020() {
     let has_binary = decoded.windows(3).any(|w| w == [255, 0, 128]);
     assert!(has_binary, "FormData multipart 解码后含二进制字节序列 [255,0,128]（文件内容保真）：{csv}");
 }
+
+#[test]
+fn test_fetch_response_binary_body_r3021() {
+    // R3021：fetch 响应侧二进制 body byte-wire（与请求侧 R3020 对称）。host 对非 UTF-8 response body 经
+    // `__zw_bytes:` csv-decimal wire 传 JS（serialize_response），shim _makeResponseFromWire 解码为 Uint8Array
+    // 存 Response._bodyBytes，response.arrayBuffer()/blob() 取保真字节（旧 String::from_utf8_lossy 破坏 0xFF 等）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // mock __zw_fetch 捕获 id（args[0]）供 Rust 侧异步 resolve 二进制 body wire。
+    let captured_id: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let cap = Arc::clone(&captured_id);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *cap.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+
+    // ① 二进制 response body wire（__zw_bytes: csv-decimal）→ response.arrayBuffer() 取保真字节。
+    sandbox
+        .execute(
+            "fetch('http://t/bin').then(function(r){\
+               globalThis.__status = r.status;\
+               r.arrayBuffer().then(function(ab){ globalThis.__ab = ab; });\
+             });",
+        )
+        .unwrap();
+    let id = captured_id.lock().unwrap().clone();
+    assert!(!id.is_empty(), "__zw_fetch 被调用且 id 已捕获");
+    // wire：status=200 / statusText=OK / headersWire='' / body=__zw_bytes:255,0,128,72,105（非 UTF-8 字节）。
+    let wire = "__zwfr:200\u{001f}OK\u{001f}\u{001f}__zw_bytes:255,0,128,72,105";
+    sandbox.resolve_async_callback(&id, wire);
+    // 多级 .then 链须额外 microtask flush。
+    sandbox.execute("0;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__status").unwrap().value, "200", "二进制 body response status=200");
+    sandbox.execute(
+        "globalThis.__len = globalThis.__ab.length;\
+         globalThis.__bytes = Array.prototype.slice.call(globalThis.__ab).join(',');",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__len").unwrap().value, "5", "response.arrayBuffer() 字节长度=5");
+    assert_eq!(
+        sandbox.execute("globalThis.__bytes").unwrap().value,
+        "255,0,128,72,105",
+        "response.arrayBuffer() 返原始非 UTF-8 字节 [255,0,128,72,105]（二进制保真）"
+    );
+
+    // ② response.blob().arrayBuffer() 同样保真（Blob 包二进制 _bodyBytes 字节）。
+    sandbox
+        .execute(
+            "globalThis.__ab2 = null;\
+             fetch('http://t/bin2').then(function(r){ r.blob().then(function(b){ b.arrayBuffer().then(function(ab){ globalThis.__ab2 = ab; }); }); });",
+        )
+        .unwrap();
+    let id2 = captured_id.lock().unwrap().clone();
+    sandbox.resolve_async_callback(&id2, wire);
+    sandbox.execute("0;").unwrap();
+    sandbox.execute("0;").unwrap(); // 三级 .then 链须再多一次 flush
+    sandbox.execute("globalThis.__bytes2 = globalThis.__ab2 ? Array.prototype.slice.call(globalThis.__ab2).join(',') : '(unset)';").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__bytes2").unwrap().value,
+        "255,0,128,72,105",
+        "response.blob().arrayBuffer() 返保真二进制字节（Blob 包 _bodyBytes）"
+    );
+
+    // ③ response.text() 仍可读（TextDecoder 解码二进制字节，0xFF→U+FFFD 等——文本视图 best-effort），
+    //    status/headers 等非 body 字段不受 byte-wire 影响。
+    sandbox
+        .execute(
+            "globalThis.__t = null;\
+             fetch('http://t/bin3').then(function(r){ globalThis.__t = r.text(); });",
+        )
+        .unwrap();
+    let id3 = captured_id.lock().unwrap().clone();
+    sandbox.resolve_async_callback(&id3, wire);
+    sandbox.execute("globalThis.__tval = ''; globalThis.__t && globalThis.__t.then(function(v){ globalThis.__tval = v; });").unwrap();
+    // text() 解码二进制字节为字符串（非 UTF-8 → 替换字符），非空即说明 text() 路径走通（best-effort 文本视图）。
+    assert!(
+        sandbox.execute("String(globalThis.__tval.length > 0)").unwrap().value == "true",
+        "response.text() 对二进制 body 返非空文本（TextDecoder best-effort 解码）"
+    );
+}

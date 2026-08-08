@@ -407,6 +407,8 @@ pub fn default_fetch_handler() -> FetchHandler {
             status_text: status_reason(resp.status_code).to_string(),
             headers: resp.headers,
             body: String::from_utf8_lossy(&resp.body).to_string(),
+            // R3021：携原始字节——bridge 对非 UTF-8 body 经 byte-wire 传 JS（response.blob()/arrayBuffer() 保真）。
+            body_bytes: Some(resp.body),
         })
     })
 }

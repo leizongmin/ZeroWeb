@@ -197,9 +197,12 @@
     var headersWire = rest.slice(p2 + 1, p3);
     var body = rest.slice(p3 + 1); // 末字段，可含 \x1f
     var headers = _parseHeadersWire(headersWire);
+    // R3021：二进制 response body 经 `__zw_bytes:` csv-decimal wire → Uint8Array（response.blob()/arrayBuffer() 保真）；
+    // 文本 body 原样字符串。
+    var bodyArg = body.indexOf('__zw_bytes:') === 0 ? _zwDecodeBytesPrefix(body) : body;
     // R2968：经 new Response 构造（fetch 结果 instanceof Response）。字段 shape 与旧 plain object 一致
     //（headers 经 new Response 封装为 Headers 实例，R2977；body getter 同 R2967）。
-    return new Response(body, { status: status, statusText: statusText, headers: headers });
+    return new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
   }
   // 收集 headers 源（Object / [[k,v]] / Headers-like forEach）→ `name\x1evalue\x1e...` wire（空 → ''）。
   function _headersToWire(src) {
@@ -246,6 +249,16 @@
       s += (bytes[i] & 0xFF);
     }
     return s;
+  }
+  // R3021：解码 `__zw_bytes:` csv-decimal wire → Uint8Array（与 host encode_body_bytes 对称）。
+  // 供 _makeResponseFromWire 把二进制 response body 还原为字节，response.blob()/arrayBuffer() 取保真字节。
+  function _zwDecodeBytesPrefix(wire) {
+    var rest = wire.slice(11); // strip '__zw_bytes:'
+    if (!rest) return new Uint8Array(0);
+    var parts = rest.split(',');
+    var arr = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) arr[i] = parseInt(parts[i], 10) & 0xFF;
+    return arr;
   }
   if (!globalThis.fetch) {
     globalThis.fetch = function(input, init) {
@@ -322,20 +335,34 @@
     this.type = 'default';
     this.url = '';
     this.redirected = false;
-    this._bodyText = body == null ? '' : String(body);
+    // R3021：Uint8Array body（二进制 response）→ 存 _bodyBytes，_bodyText = TextDecoder 解码（供 text()）；
+    // 字符串/其他 body → _bodyText 原样，_bodyBytes=null（blob()/arrayBuffer() 回落 UTF-8 编码文本）。
+    if (body instanceof Uint8Array) {
+      this._bodyBytes = body;
+      this._bodyText = new TextDecoder().decode(body);
+    } else {
+      this._bodyBytes = null;
+      this._bodyText = body == null ? '' : String(body);
+    }
     var self = this;
-    // body 为 ReadableStream（lazy，单 UTF-8 chunk + close，复用 _bodyToStream）。与 _makeResponseFromWire
-    // 旧 plain object 的 body getter 行为一致（R2967）。
+    // body 为 ReadableStream（lazy，单 chunk + close，复用 _bodyToStream）。二进制 body 时 chunk 为 _bodyBytes
+    // 字节；文本 body 同 R2967（UTF-8 文本 chunk）。
     Object.defineProperty(this, 'body', {
-      get: function () { if (!self._bs) self._bs = _bodyToStream(self._bodyText); return self._bs; },
+      get: function () { if (!self._bs) self._bs = _bodyToStream(self._bodyBytes != null ? self._bodyBytes : self._bodyText); return self._bs; },
       configurable: true
     });
     this.text = function () { return Promise.resolve(self._bodyText); };
     this.json = function () { return Promise.resolve(JSON.parse(self._bodyText)); };
-    // R2978：补全 Response body-consumption 表面（spec：text/json/blob/arrayBuffer/formData）。
-    // blob()：body 包成 Blob；arrayBuffer()：UTF-8 Uint8Array；formData()：application/x-www-form-urlencoded 解析。
-    this.blob = function () { return Promise.resolve(new Blob([self._bodyText])); };
+    // R2978/R3021：补全 Response body-consumption 表面（spec：text/json/blob/arrayBuffer/formData）。
+    // blob()：body 包成 Blob（二进制 body 用 _bodyBytes 字节保真）；arrayBuffer()：二进制 body 返 _bodyBytes，
+    // 文本 body UTF-8 编码；formData()：application/x-www-form-urlencoded 解析。
+    this.blob = function () { return Promise.resolve(new Blob([self._bodyBytes != null ? self._bodyBytes : self._bodyText])); };
     this.arrayBuffer = function () {
+      if (self._bodyBytes != null) {
+        var cp = new Uint8Array(self._bodyBytes.length);
+        for (var j = 0; j < self._bodyBytes.length; j++) cp[j] = self._bodyBytes[j];
+        return Promise.resolve(cp);
+      }
       var bytes = _zw_utf8_encode(self._bodyText);
       var arr = new Uint8Array(bytes.length);
       for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
@@ -343,7 +370,9 @@
     };
     this.formData = function () { return Promise.resolve(_zwParseFormUrlencoded(self._bodyText)); };
     this.clone = function () {
-      return new Response(self._bodyText, { status: self.status, statusText: self.statusText, headers: self.headers });
+      // R3021：二进制 body（_bodyBytes）须克隆保真，否则 clone().arrayBuffer() 退化为文本 UTF-8 编码。
+      var bodyArg = self._bodyBytes != null ? self._bodyBytes : self._bodyText;
+      return new Response(bodyArg, { status: self.status, statusText: self.statusText, headers: self.headers });
     };
   };
   // R2968 Request：`new Request(url|request, init)`。fetch(input) 既接受 string 也接受 Request-like
