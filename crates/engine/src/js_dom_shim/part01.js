@@ -671,8 +671,15 @@
   // （与 IO 同），本切片消除之。
   // 限制（接受，follow-up）：① 仅 observe 时计算，非持续 host tick——resize/async-layout 变化触发的
   //   后续通知为 Slice 2b（与 IO 同，须 host render-loop tick 或 __zwResolveCallback 重算钩子）；
-  // ② contentRect 取 gBCR rect（≈border-box，真实浏览器报 content-box，padding/border 扣除为 follow-up）；
-  // ③ borderBoxSize/contentBoxSize 近似为单元素数组（inlineSize=width、blockSize=height）。
+  // ② R2972：contentRect/contentBoxSize/devicePixelContentBoxSize 经 getComputedStyle 真值扣除 padding +
+  //   border-width → content-box（borderBoxSize 仍 border-box = gBCR）。host 未注册/属性未覆盖 → 0 扣除
+  //   → content = border（fallback，同旧近似行为）。
+  // R2972：读计算样式 box-model 像素值（"10px" → 10，未注册/非 px → 0）供 RO content-box 扣除。
+  function _ro_px(cs, prop) {
+    if (!cs || typeof cs.getPropertyValue !== 'function') return 0;
+    var m = /^(-?\d+(?:\.\d+)?)px$/.exec(String(cs.getPropertyValue(prop) || '').trim());
+    return m ? parseFloat(m[1]) : 0;
+  }
   globalThis.ResizeObserver = function(callback) {
     this._callback = callback;
     this._targets = {};       // id (h:handle / s:sel) -> { proxy }
@@ -696,13 +703,23 @@
         // initial（prev==null）或宽高变化 → 派发并更新 last。
         if (prev == null || prev.w !== r.w || prev.h !== r.h) {
           self._lastSize[id] = { w: r.w, h: r.h };
+          // R2972：box-model 真值扣除。gBCR rect = border-box（含 padding+border）；content-box =
+          // border-box - padding - border-width（经 getComputedStyle 真值，host 未覆盖 → 0 = 不扣除）。
+          var cs = globalThis.getComputedStyle ? globalThis.getComputedStyle(t.proxy) : null;
+          var pT = _ro_px(cs, 'padding-top'), pR = _ro_px(cs, 'padding-right'),
+              pB = _ro_px(cs, 'padding-bottom'), pL = _ro_px(cs, 'padding-left');
+          var bT = _ro_px(cs, 'border-top-width'), bR = _ro_px(cs, 'border-right-width'),
+              bB = _ro_px(cs, 'border-bottom-width'), bL = _ro_px(cs, 'border-left-width');
+          var cW = Math.max(0, r.w - pL - pR - bL - bR);
+          var cH = Math.max(0, r.h - pT - pB - bT - bB);
           entries.push({
             target: t.proxy,
-            contentRect: _io_domRect(r.x, r.y, r.w, r.h),
-            // borderBoxSize / contentBoxSize：单元素数组，inlineSize=width、blockSize=height（近似）。
+            // contentRect = content-box rect（spec；origin = border-box origin + border + padding）。
+            contentRect: _io_domRect(r.x + bL + pL, r.y + bT + pT, cW, cH),
+            // borderBoxSize = border-box（gBCR）；contentBoxSize/devicePixelContentBoxSize = content-box。
             borderBoxSize: [{ inlineSize: r.w, blockSize: r.h }],
-            contentBoxSize: [{ inlineSize: r.w, blockSize: r.h }],
-            devicePixelContentBoxSize: [{ inlineSize: r.w, blockSize: r.h }],
+            contentBoxSize: [{ inlineSize: cW, blockSize: cH }],
+            devicePixelContentBoxSize: [{ inlineSize: cW, blockSize: cH }],
             toJSON: function() { return this; }
           });
         }

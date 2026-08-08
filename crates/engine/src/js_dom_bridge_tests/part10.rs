@@ -1203,3 +1203,143 @@ fn test_readable_stream_tee_r2971() {
     let e2 = sandbox.execute("String(globalThis.__teeErr2)").unwrap().value;
     assert!(e2.contains("srcfail"), "源 error → 分支2 read reject（错误同步两分支），got: {e2}");
 }
+
+#[test]
+fn test_resize_observer_content_border_box_r2972() {
+    // R2972：ResizeObserverEntry box-model 真值。borderBoxSize = border-box（gBCR）；contentBoxSize /
+    // contentRect / devicePixelContentBoxSize = content-box（border - padding - border-width，经 getComputedStyle
+    // 真值扣除）。mock gBCR 返 border-box 100x50，元素 padding:10px + border:5px solid → content 70x20。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // padding:10px + border:5px solid（border-width 5px，style 非 none→渲染宽度 5px）。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t' style='width:100px;height:50px;padding:10px;border:5px solid black'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // mock gBCR：#t 返 border-box 100x50（gBCR 恒 border-box）。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| {
+            let sel = args.first().cloned().unwrap_or_default();
+            if sel.contains("#t") || sel == "#t" {
+                "0,0,100,50".to_string()
+            } else {
+                "0,0,0,0".to_string()
+            }
+        }),
+    );
+
+    sandbox
+        .execute(
+            "globalThis.__entry = null;\
+             new ResizeObserver(function(e){ globalThis.__entry = e[0]; }).observe(document.querySelector('#t'));",
+        )
+        .unwrap();
+    // border-box 100x50；content = 100 - 10 - 10 - 5 - 5 = 70 wide；50 - 10 - 10 - 5 - 5 = 20 tall。
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__entry && globalThis.__entry.borderBoxSize[0].inlineSize)")
+            .unwrap()
+            .value,
+        "100",
+        "borderBoxSize.inlineSize = border-box 宽 100（gBCR）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__entry && globalThis.__entry.borderBoxSize[0].blockSize)")
+            .unwrap()
+            .value,
+        "50",
+        "borderBoxSize.blockSize = border-box 高 50"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__entry && globalThis.__entry.contentBoxSize[0].inlineSize)")
+            .unwrap()
+            .value,
+        "70",
+        "contentBoxSize.inlineSize = 70（100 - padding 10×2 - border 5×2）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__entry && globalThis.__entry.contentBoxSize[0].blockSize)")
+            .unwrap()
+            .value,
+        "20",
+        "contentBoxSize.blockSize = 20（50 - padding 10×2 - border 5×2）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__entry && globalThis.__entry.contentRect.width)")
+            .unwrap()
+            .value,
+        "70",
+        "contentRect.width = content-box 宽 70（spec：contentRect 为 content-box）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__entry && globalThis.__entry.contentRect.height)")
+            .unwrap()
+            .value,
+        "20",
+        "contentRect.height = content-box 高 20"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__entry && globalThis.__entry.devicePixelContentBoxSize[0].inlineSize)")
+            .unwrap()
+            .value,
+        "70",
+        "devicePixelContentBoxSize = content-box（headless 无 device pixel ratio，同 contentBoxSize）"
+    );
+
+    // 无 padding/border 元素：content = border（回归既有行为，contentRect 同 border-box）。
+    let dom_html2: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='p' style='width:80px;height:40px'></div></body></html>".to_string(),
+    ));
+    // 切换 dom_html（新 snapshot）需重建 sandbox（cs_cache 按 html_key 缓存）。新 sandbox 复测。
+    let mut sandbox2 = V8Sandbox::with_config(
+        zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() },
+    )
+    .unwrap();
+    sandbox2.execute(generate_js_dom_shim()).unwrap();
+    let mutations2: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let page_url2: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox2, &mutations2, &dom_html2, &page_url2);
+    sandbox2.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| {
+            let sel = args.first().cloned().unwrap_or_default();
+            if sel.contains("#p") || sel == "#p" {
+                "0,0,80,40".to_string()
+            } else {
+                "0,0,0,0".to_string()
+            }
+        }),
+    );
+    sandbox2
+        .execute(
+            "globalThis.__e2 = null;\
+             new ResizeObserver(function(e){ globalThis.__e2 = e[0]; }).observe(document.querySelector('#p'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox2.execute("String(globalThis.__e2 && globalThis.__e2.contentBoxSize[0].inlineSize)").unwrap().value,
+        "80",
+        "无 padding/border → contentBoxSize = border-box 80（content = border，回归）"
+    );
+    assert_eq!(
+        sandbox2.execute("String(globalThis.__e2 && globalThis.__e2.borderBoxSize[0].blockSize)").unwrap().value,
+        "40",
+        "无 padding/border → borderBoxSize.blockSize = 40"
+    );
+}

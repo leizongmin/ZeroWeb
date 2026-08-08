@@ -112,6 +112,27 @@
 
 ## 最近完成的改进
 
+### P1a ResizeObserver 真值 content-box/border-box 尺寸（box-model 扣除，本轮 R2972，~14,155 测试）
+
+R2971（ReadableStream.tee）后续补 ResizeObserver box-model 真值。RO Entry 的 `borderBoxSize`/`contentBoxSize`/`contentRect` 此前**三者全等**（均 = gBCR border-box rect，padding/border 不扣除——documented defer `③ borderBoxSize/contentBoxSize 近似`）。真实浏览器：`borderBoxSize`=border-box、`contentBoxSize`/`contentRect`/`devicePixelContentBoxSize`=content-box（border - padding - border-width）。响应式/布局库（react-use-measure / @react-aria / popper 读 contentRect）拿到的 content 尺寸此前含 padding/border，错误。本切片经 `getComputedStyle` 真值扣除。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part01.js` | 新 `_ro_px(cs, prop)`：读 `cs.getPropertyValue(prop)` 解析 "Npx"→N（host 未注册/非 px→0）。RO `_schedule` 构造 entry 时读 padding-top/right/bottom/left + border-{top,right,bottom,left}-width（经 `getComputedStyle(target)`，host `__zw_get_computed_style` 经 `compute_document_styles` 真 cascade）→ `contentW = max(0, borderW - padL - padR - borderL - borderR)`、`contentH` 同。`borderBoxSize`=[{inlineSize:borderW,blockSize:borderH}]（gBCR border-box，不变）；`contentBoxSize`/`devicePixelContentBoxSize`/`contentRect` 改 content-box（`contentRect` origin = border origin + border + padding，spec）。更新限制注释（② 已就绪）。 |
+| `crates/engine/src/js_dom_bridge_tests/part10.rs` | 新 `test_resize_observer_content_border_box_r2972`：mock gBCR 返 border-box 100×50 + 元素 padding:10px + border:5px solid → borderBoxSize 100×50 / contentBoxSize + contentRect + devicePixelContentBoxSize = 70×20（100 - padding 10×2 - border 5×2）。无 padding/border 元素 → content = border（回归既有行为）。 |
+
+**为何 host 未覆盖时退化为不扣除（content=border）**：renderer/browser register `__zw_get_computed_style`（compute_document_styles 真 cascade）；engine polyfill/reftest 路径未注册 → getComputedStyle 返 '' → `_ro_px` 返 0 → content = border - 0 = border（同旧近似行为，零回归）。`_ro_px` 的 0-fallback 是安全阀：无 box-model 数据时不扣（保持 border-box 近似），有数据时真扣。
+
+**为何 renderer 既有 RO 测试零回归**：js_worker.rs RO 测试元素无 padding/border（`width:100px;height:50px`）→ content = border = 100×50，扣除 0 → `contentRect.width`=100 不变（make test 14155 全绿，renderer RO 测试 `true:100x50:100` 仍绿）。webview `test_webview_resize_observer_entry` 测 A-gen 构造器（dom_bridge.rs，非本 B-gen shim），不受影响。
+
+**为何 box-sizing 不影响公式**：gBCR 恒返 border-box rect（元素渲染盒，含 padding+border）。content-box = border-box - padding - border-width，不论 element 的 `box-sizing`（content-box 时 specified width=content，border-box 时 specified width=border，但 gBCR 总是 border-box）。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14155 passed / 71 skipped / 0 failed**（engine +1 driving 测试，renderer RO 测试 + webview A-gen RO 测试全绿，无回归）+ clippy `-D warnings` 零警告（workspace）+ fmt clean + 全 shim `node --check` 通过。
+
+**已知限制（follow-up）**：① devicePixelContentBoxSize 同 contentBoxSize（headless 无 device pixel ratio，近似）；② writing-mode 非 horizontal-tb 时 inlineSize/blockSize 仍按 width/height（未做轴映射，headless 低频）；③ margin 不影响 content/border-box（spec 正确，margin 在 box 外）。
+
+**下一步**：续 P1a——① Headers 实例化迁移（Response.headers/Request.headers → Headers 实例 + integration test 同步 .get()）；② 其他 defer Web API（ClipboardItem 图片剪贴板）；③ task source 优先级（事件循环边缘）；④ customElements upgrade（需 P1b RFC 审批）；⑤ 拆 js_dom_bridge.rs（3947，按职责重组）。
+
 ### P1a ReadableStream.tee()（流分叉，Streams API 核心表面闭合，本轮 R2971，~14,154 测试）
 
 R2970（TextEncoderStream/TextDecoderStream）后续补 Streams API 最后核心方法。`ReadableStream.tee()` **此前缺**（R2969 标 defer）——分叉流为两独立分支共享同一源，用于一源两消费（如 response.body 同时 pipeTo 文本解码 + 原始字节缓存）不可用。本切片补 tee()，**Streams API 核心表面闭合**（Readable/Writable/Transform + TextEncoder/DecoderStream + pipeTo/pipeThrough + tee）。
