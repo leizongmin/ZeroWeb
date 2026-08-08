@@ -1971,3 +1971,204 @@ fn render_full_scene_region_matches_full_within_region() {
     let right_pixel = &region.data[150 * 4..150 * 4 + 4];
     assert_eq!(right_pixel, &[255, 255, 255, 255], "region 外图元应被跳过");
 }
+
+/// 性能门禁优化 S1（2026-08-08）：滚动 translate-blit 像素等价性——
+/// 「平移上一帧内容 + 只重绘新露条带」必须与「同滚动全量渲染」逐像素一致。
+/// 覆盖向上/向下滚动、不同条带高度、overlay 层（滚动条语义）与半透明混合。
+#[test]
+fn scroll_blit_matches_full_render() {
+    let mut scene = RenderPrimitives::new();
+    // 不透明 fills（网格，内容延伸到视口下方供条带重绘）
+    for i in 0..240u32 {
+        let x = (i % 20) as f32 * 40.0;
+        let y = (i / 20) as f32 * 40.0;
+        scene.add_fill(Rect::new(x, y, 38.0, 38.0), Color::rgb((i % 256) as u8, 100, 50));
+    }
+    // 半透明 fills（混合路径）
+    for i in 0..60u32 {
+        let x = (i % 12) as f32 * 90.0 + 10.0;
+        let y = (i / 12) as f32 * 90.0 + 10.0;
+        scene.add_fill(Rect::new(x, y, 60.0, 60.0), Color::rgba(20, 60, 200, 128));
+    }
+    scene.rounded_rects.push(RoundedRectPrimitive {
+        rect: Rect::new(20.0, 30.0, 80.0, 50.0),
+        color: Color::rgb(0, 200, 0),
+        top_left_radius: 8.0,
+        top_right_radius: 8.0,
+        bottom_right_radius: 8.0,
+        bottom_left_radius: 8.0,
+    });
+    scene.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
+        rect: Rect::new(100.0, 100.0, 100.0, 60.0),
+        kind: GradientKind::Linear {
+            x0: 100.0,
+            y0: 100.0,
+            x1: 200.0,
+            y1: 160.0,
+        },
+        stops: vec![
+            GradientStop {
+                color: Color::rgb(255, 0, 0),
+                offset: 0.0,
+            },
+            GradientStop {
+                color: Color::rgb(0, 0, 255),
+                offset: 1.0,
+            },
+        ],
+        repeating: false,
+    });
+    scene.strokes.push(StrokePrimitive {
+        x1: 0.0,
+        y1: 0.0,
+        x2: 300.0,
+        y2: 300.0,
+        width: 4.0,
+        color: Color::rgb(0, 0, 0),
+        style: LineStyle::Solid,
+        cap: LineCap::Butt,
+    });
+
+    let (w, h) = (400u32, 300u32);
+    let scale = 1.0f32;
+    // 页面内容矩形 = 整个帧缓冲（模拟视口）
+    let (ix0, ix1, iy0, iy1) = (0usize, w as usize, 0usize, h as usize);
+    let row_bytes = w as usize * 4;
+    let span = (ix1 - ix0) * 4;
+
+    // overlay（滚动条轨道语义：**全高**覆盖页面内容区——每帧重画正确位置，
+    // 平移后由 overlay pass 全覆盖自愈；部分高度 overlay（查找栏/上下文菜单）
+    // 会留下残影，由浏览器侧 blit guard 禁用，见 app_platform render_scene_cpu）
+    let overlay_fills = vec![FillPrimitive {
+        rect: Rect::new(w as f32 - 20.0, 0.0, 12.0, h as f32),
+        color: Color::rgb(0, 0, 200),
+    }];
+
+    let font_loader = FontLoader::new();
+    let dy_list: [i32; 6] = [10, -12, 25, -40, 1, 37];
+
+    for &dy in &dy_list {
+        // 场景 B = 场景 A 内容整体平移 dy（模拟滚动 dy 后的新 offset 渲染输入）
+        let mut scene_b = RenderPrimitives::new();
+        for fill in &scene.fills {
+            scene_b.add_fill(
+                Rect::new(
+                    fill.rect.origin.x,
+                    fill.rect.origin.y - dy as f32,
+                    fill.rect.size.width,
+                    fill.rect.size.height,
+                ),
+                fill.color,
+            );
+        }
+        for rr in &scene.rounded_rects {
+            let mut c = rr.clone();
+            c.rect.origin.y -= dy as f32;
+            scene_b.rounded_rects.push(c);
+        }
+        for g in &scene.gradients {
+            let mut c = g.clone();
+            c.rect.origin.y -= dy as f32;
+            c.kind = match &g.kind {
+                GradientKind::Linear { x0, y0, x1, y1 } => GradientKind::Linear {
+                    x0: *x0,
+                    y0: *y0 - dy as f32,
+                    x1: *x1,
+                    y1: *y1 - dy as f32,
+                },
+                other => other.clone(),
+            };
+            scene_b.gradients.push(c);
+        }
+        for st in &scene.strokes {
+            scene_b.strokes.push(StrokePrimitive {
+                x1: st.x1,
+                y1: st.y1 - dy as f32,
+                x2: st.x2,
+                y2: st.y2 - dy as f32,
+                width: st.width,
+                color: st.color,
+                style: st.style,
+                cap: st.cap,
+            });
+        }
+
+        let fb_a = render_full_scene_region(
+            w,
+            h,
+            scale,
+            &scene,
+            &font_loader,
+            &mut GlyphCache::new(64),
+            None,
+            &[],
+            &overlay_fills,
+            &[],
+            &[],
+            None,
+        );
+        // blit：平移 + 只重绘新露条带
+        let mut fb_blit = fb_a.clone();
+        let ady = dy.unsigned_abs() as usize;
+        if dy > 0 {
+            for y in iy0..iy1 - ady {
+                let src = (y + ady) * row_bytes + ix0 * 4;
+                let dst = y * row_bytes + ix0 * 4;
+                fb_blit.data.copy_within(src..src + span, dst);
+            }
+        } else {
+            for y in (iy0 + ady..iy1).rev() {
+                let src = (y - ady) * row_bytes + ix0 * 4;
+                let dst = y * row_bytes + ix0 * 4;
+                fb_blit.data.copy_within(src..src + span, dst);
+            }
+        }
+        let strip_top = if dy > 0 { iy1 - ady } else { iy0 };
+        let strip_bottom = strip_top + ady;
+        let strip = Rect::new(ix0 as f32, strip_top as f32, (ix1 - ix0) as f32, ady as f32);
+        // 条带渲染到 scratch（region 仅剔除不相交图元，越界绘制无害），
+        // 只把条带行拷回保留帧——与浏览器 render_scene_cpu 的 blit 一致
+        let mut scratch = FrameBuffer::new(w, h);
+        scratch.clear(255, 255, 255, 255);
+        render_full_scene_region_into(
+            &mut scratch,
+            &scene_b,
+            &font_loader,
+            &mut GlyphCache::new(64),
+            None,
+            &[],
+            &overlay_fills,
+            &[],
+            &[],
+            Some(strip),
+            scale,
+        );
+        for y in strip_top..strip_bottom {
+            let row = y * row_bytes;
+            fb_blit.data[row..row + row_bytes].copy_from_slice(&scratch.data[row..row + row_bytes]);
+        }
+
+        // 同滚动全量渲染
+        let fb_b = render_full_scene_region(
+            w,
+            h,
+            scale,
+            &scene_b,
+            &font_loader,
+            &mut GlyphCache::new(64),
+            None,
+            &[],
+            &overlay_fills,
+            &[],
+            &[],
+            None,
+        );
+
+        let diff_count = fb_blit.data.iter().zip(&fb_b.data).filter(|(a, b)| a != b).count();
+        assert_eq!(
+            diff_count, 0,
+            "scroll blit != full render for dy={dy}（{diff_count} 像素不一致）"
+        );
+    }
+}

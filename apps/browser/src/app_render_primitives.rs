@@ -198,6 +198,33 @@ pub fn transform_webview_primitives(
     s: f32,
     clip_viewport: Option<ViewportClip>,
 ) -> RenderPrimitives {
+    transform_webview_primitives_impl(primitives, x_offset, y_offset, s, clip_viewport, true)
+}
+
+/// 仅变换非 fills/glyphs 的图元类型（性能门禁优化 S2，2026-08-08）。
+///
+/// 浏览器每帧调用本函数生成「extra 图元」层——fills/glyphs 已由
+/// [`append_webview_primitives`] 以相同 offset 数学处理，旧实现先变换再在调用方
+/// 丢弃（`app_render.rs` 的 `.fills.clear()`/`.glyphs.clear()`），4400 元素页每帧
+/// 白白克隆 ~11k fills + ~22k glyphs。跳过两段后 extra 层只含其余 11 类图元。
+pub fn transform_webview_primitives_extra(
+    primitives: &RenderPrimitives,
+    x_offset: f32,
+    y_offset: f32,
+    s: f32,
+    clip_viewport: Option<ViewportClip>,
+) -> RenderPrimitives {
+    transform_webview_primitives_impl(primitives, x_offset, y_offset, s, clip_viewport, false)
+}
+
+fn transform_webview_primitives_impl(
+    primitives: &RenderPrimitives,
+    x_offset: f32,
+    y_offset: f32,
+    s: f32,
+    clip_viewport: Option<ViewportClip>,
+    include_fills_glyphs: bool,
+) -> RenderPrimitives {
     let mut out = RenderPrimitives::new();
 
     // 1. 阴影
@@ -219,28 +246,30 @@ pub fn transform_webview_primitives(
         out.shadows.push(s_clone);
     }
 
-    // 2. 填充矩形
-    for fill in &primitives.fills {
-        let x = fill.rect.origin.x * s + x_offset;
-        let y = fill.rect.origin.y * s + y_offset;
-        let w = fill.rect.size.width * s;
-        let h = fill.rect.size.height * s;
-        let Some((x, y, w, h)) = clip_viewport
-            .and_then(|clip| clip_axis_aligned_rect(x, y, w, h, clip))
-            .or_else(|| {
-                if clip_viewport.is_some() {
-                    None
-                } else {
-                    Some((x, y, w, h))
-                }
-            })
-        else {
-            continue;
-        };
-        out.fills.push(FillPrimitive {
-            rect: Rect::new(x, y, w, h),
-            color: fill.color,
-        });
+    // 2. 填充矩形（include_fills_glyphs=false 时跳过——调用方已由 append_webview_primitives 处理）
+    if include_fills_glyphs {
+        for fill in &primitives.fills {
+            let x = fill.rect.origin.x * s + x_offset;
+            let y = fill.rect.origin.y * s + y_offset;
+            let w = fill.rect.size.width * s;
+            let h = fill.rect.size.height * s;
+            let Some((x, y, w, h)) = clip_viewport
+                .and_then(|clip| clip_axis_aligned_rect(x, y, w, h, clip))
+                .or_else(|| {
+                    if clip_viewport.is_some() {
+                        None
+                    } else {
+                        Some((x, y, w, h))
+                    }
+                })
+            else {
+                continue;
+            };
+            out.fills.push(FillPrimitive {
+                rect: Rect::new(x, y, w, h),
+                color: fill.color,
+            });
+        }
     }
 
     // 3. 圆角矩形
@@ -408,31 +437,33 @@ pub fn transform_webview_primitives(
         out.path_strokes.push(p_clone);
     }
 
-    // 9. 文字
-    for glyph in &primitives.glyphs {
-        let x = glyph.x * s + x_offset;
-        let y = glyph.y * s + y_offset;
-        let font_size = glyph.font_size * s;
-        if let Some(clip) = clip_viewport {
-            let top = y - font_size;
-            let bottom = y + font_size * 0.25;
-            let width = font_size * 0.6;
-            if clip.excludes(x, top, width, bottom - top) {
-                continue;
+    // 9. 文字（include_fills_glyphs=false 时跳过——调用方已由 append_webview_primitives 处理）
+    if include_fills_glyphs {
+        for glyph in &primitives.glyphs {
+            let x = glyph.x * s + x_offset;
+            let y = glyph.y * s + y_offset;
+            let font_size = glyph.font_size * s;
+            if let Some(clip) = clip_viewport {
+                let top = y - font_size;
+                let bottom = y + font_size * 0.25;
+                let width = font_size * 0.6;
+                if clip.excludes(x, top, width, bottom - top) {
+                    continue;
+                }
             }
+            out.glyphs.push(GlyphPrimitive {
+                x,
+                y,
+                font_size,
+                color: glyph.color,
+                glyph_id: glyph.glyph_id,
+                font_id: glyph.font_id,
+                bitmap_width: glyph.bitmap_width,
+                bitmap_height: glyph.bitmap_height,
+                rotation: glyph.rotation,
+                synthetic_italic: false,
+            });
         }
-        out.glyphs.push(GlyphPrimitive {
-            x,
-            y,
-            font_size,
-            color: glyph.color,
-            glyph_id: glyph.glyph_id,
-            font_id: glyph.font_id,
-            bitmap_width: glyph.bitmap_width,
-            bitmap_height: glyph.bitmap_height,
-            rotation: glyph.rotation,
-            synthetic_italic: false,
-        });
     }
 
     // 10. 裁剪

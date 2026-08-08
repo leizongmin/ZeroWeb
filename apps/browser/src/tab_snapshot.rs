@@ -13,6 +13,12 @@ pub struct TabSnapshot {
     pub image_cache: ImageCache,
     /// 文档布局高度（CSS 逻辑像素）。
     pub document_height: Option<f32>,
+    /// 文档内容宽度估计（CSS 逻辑像素，图元下界）。
+    ///
+    /// 性能门禁优化 S3（2026-08-08）：在快照到达时计算一次并缓存，
+    /// 避免 `document_size_physical` 在每次 mousemove/wheel 上对全部图元
+    /// 做 O(P) 扫描（旧实现 `primitives_content_width` 每事件扫全量 fills+glyphs+images）。
+    pub document_width: Option<f32>,
     /// 是否仍在加载。
     pub loading: bool,
     /// 页面标题。
@@ -31,8 +37,12 @@ impl TabSnapshot {
     /// 从 WebView 状态构建快照（worker 线程内调用）。
     pub fn from_webview(wv: &zero_webview::WebView) -> Self {
         let html = wv.html_content();
+        let last_render = wv.last_render().cloned();
         Self {
-            last_render: wv.last_render().cloned(),
+            document_width: last_render
+                .as_ref()
+                .map(|r| crate::page_scroll::primitives_content_width(&r.primitives)),
+            last_render,
             image_cache: wv.snapshot_image_cache(),
             document_height: wv.document_height(),
             loading: wv.is_loading(),
@@ -56,6 +66,7 @@ impl TabSnapshot {
     pub fn clear_paint(&mut self) {
         self.last_render = None;
         self.document_height = None;
+        self.document_width = None;
         self.hit_test = None;
         self.html_source = None;
         self.image_cache.clear();

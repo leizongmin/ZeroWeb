@@ -274,11 +274,15 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
         }
     }
 
+    let document_width = crate::page_scroll::primitives_content_width(&primitives);
     snap.last_render = Some(WebViewRenderResult {
         primitives,
         timings: PipelineTimings::default(),
     });
     snap.document_height = Some(params.document_height);
+    // 性能门禁优化 S3（2026-08-08）：快照到达时缓存内容宽度（每快照一次 O(P) 扫描，
+    // 替代旧实现的每 mousemove/wheel 扫描）
+    snap.document_width = Some(document_width);
     snap.hit_test = params.hit_test.and_then(hit_test_cache_from_ipc);
 }
 

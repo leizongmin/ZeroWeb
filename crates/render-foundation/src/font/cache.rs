@@ -3,6 +3,7 @@
 use crate::font::{FontError, GlyphBitmap};
 use hashbrown::HashMap;
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 /// Glyph 缓存键
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -27,9 +28,13 @@ impl GlyphKey {
 }
 
 /// 缓存条目 — 包含 glyph 位图和 LRU 位置信息。
+///
+/// 位图以 `Arc` 存储（性能门禁优化 S4，2026-08-08）：CPU 光栅器每帧对每个
+/// 可见字符 `resolve_glyph_bitmap` 返回克隆（22k 字符页每帧 ~MB 级 memcpy），
+/// 改为 Arc 共享后命中路径只做引用计数 bump。
 struct CacheEntry {
-    /// Glyph 位图数据。
-    bitmap: GlyphBitmap,
+    /// Glyph 位图数据（Arc 共享，命中免拷贝）。
+    bitmap: Arc<GlyphBitmap>,
     /// 在 LRU 队列中的索引（用于 O(1) 提升和淘汰）。
     lru_index: usize,
 }
@@ -102,7 +107,7 @@ impl GlyphCache {
             // 提升到最近访问
             self.promote(&key, lru_index);
             // 返回引用（rebuild 后引用失效，需要重新获取）
-            return Ok(&self.cache.get(&key).unwrap().bitmap);
+            return Ok(self.cache.get(&key).unwrap().bitmap.as_ref());
         }
 
         // 缓存未命中，需要淘汰空间
@@ -114,14 +119,25 @@ impl GlyphCache {
         let bitmap = f()?;
         let lru_index = self.lru_queue.len();
         self.lru_queue.push_back(key.clone());
-        self.cache.insert(key, CacheEntry { bitmap, lru_index });
+        self.cache.insert(
+            key,
+            CacheEntry {
+                bitmap: Arc::new(bitmap),
+                lru_index,
+            },
+        );
 
-        Ok(&self.cache.get(self.lru_queue.back().unwrap()).unwrap().bitmap)
+        Ok(self.cache.get(self.lru_queue.back().unwrap()).unwrap().bitmap.as_ref())
     }
 
     /// 直接获取缓存的 glyph（不更新 LRU 顺序）。
     pub fn get(&self, key: &GlyphKey) -> Option<&GlyphBitmap> {
-        self.cache.get(key).map(|e| &e.bitmap)
+        self.cache.get(key).map(|e| e.bitmap.as_ref())
+    }
+
+    /// 获取缓存的 glyph 共享句柄（S4：命中路径免位图拷贝，仅 Arc 引用计数 bump）。
+    pub fn get_shared(&self, key: &GlyphKey) -> Option<Arc<GlyphBitmap>> {
+        self.cache.get(key).map(|e| e.bitmap.clone())
     }
 
     /// 插入 glyph 到缓存（插入到 LRU 尾部）。
@@ -134,7 +150,13 @@ impl GlyphCache {
 
         let lru_index = self.lru_queue.len();
         self.lru_queue.push_back(key.clone());
-        self.cache.insert(key, CacheEntry { bitmap, lru_index });
+        self.cache.insert(
+            key,
+            CacheEntry {
+                bitmap: Arc::new(bitmap),
+                lru_index,
+            },
+        );
     }
 
     /// 缓存条目数。

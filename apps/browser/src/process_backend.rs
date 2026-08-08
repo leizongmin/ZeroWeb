@@ -158,6 +158,7 @@ impl ProcessTabBackend {
         tab_id: TabId,
         snap: &mut TabSnapshot,
         kind: IpcMessageKind,
+        snapshot_seq: &mut HashMap<TabId, u64>,
         pending_loaded: &mut Vec<(TabId, String, String)>,
         pending_errors: &mut Vec<(TabId, String)>,
     ) {
@@ -188,6 +189,9 @@ impl ProcessTabBackend {
                     return;
                 }
                 crate::paint_ipc::apply_paint_snapshot(snap, *params);
+                // 性能门禁优化 S1（2026-08-08）：快照到达 = 页面内容变更 →
+                // 递增快照序号，滚动 blit 据此失效保留帧缓冲
+                *snapshot_seq.entry(tab_id).or_insert(0) += 1;
                 // 首帧绘制到达即可结束 loading（脚本预取/执行可能仍在进行）。
                 if snap.loading {
                     snap.loading = false;
@@ -218,7 +222,8 @@ impl ProcessTabBackend {
         self.navigate(tab_id, url, epoch);
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
-            self.poll(snapshots, Some(tab_id), true);
+            // 测试/同步辅助路径：快照序号用临时 map（不影响运行期 blit 失效判定）
+            self.poll(snapshots, &mut HashMap::new(), Some(tab_id), true);
             if self.pending_loaded.iter().any(|(t, _, _)| *t == tab_id)
                 || self.pending_errors.iter().any(|(t, _)| *t == tab_id)
             {
@@ -457,6 +462,7 @@ impl ProcessTabBackend {
     pub fn poll(
         &mut self,
         snapshots: &mut HashMap<TabId, TabSnapshot>,
+        snapshot_seq: &mut HashMap<TabId, u64>,
         _active_tab: Option<TabId>,
         _poll_background: bool,
     ) -> bool {
@@ -505,6 +511,7 @@ impl ProcessTabBackend {
                             tab_id,
                             snap,
                             kind,
+                            snapshot_seq,
                             &mut self.pending_loaded,
                             &mut self.pending_errors,
                         );
@@ -678,10 +685,12 @@ mod navigation_contract_tests {
         let mut pending_errors = Vec::new();
 
         let epoch = snap.navigation_epoch;
+        let mut snapshot_seq = std::collections::HashMap::new();
         ProcessTabBackend::apply_inbound_message(
             tab_id,
             &mut snap,
             IpcMessageKind::ViewPainted(Box::new(paint_with_red_fill(epoch))),
+            &mut snapshot_seq,
             &mut pending_loaded,
             &mut pending_errors,
         );
@@ -704,10 +713,12 @@ mod navigation_contract_tests {
         let mut pending_loaded = Vec::new();
         let mut pending_errors = Vec::new();
 
+        let mut snapshot_seq = std::collections::HashMap::new();
         ProcessTabBackend::apply_inbound_message(
             tab_id,
             &mut snap,
             IpcMessageKind::LoadComplete,
+            &mut snapshot_seq,
             &mut pending_loaded,
             &mut pending_errors,
         );
@@ -726,10 +737,12 @@ mod navigation_contract_tests {
         let mut pending_loaded = Vec::new();
         let mut pending_errors = Vec::new();
 
+        let mut snapshot_seq = std::collections::HashMap::new();
         ProcessTabBackend::apply_inbound_message(
             tab_id,
             &mut snap,
             IpcMessageKind::ViewPainted(Box::new(paint_with_red_fill(epoch.wrapping_sub(1)))),
+            &mut snapshot_seq,
             &mut pending_loaded,
             &mut pending_errors,
         );

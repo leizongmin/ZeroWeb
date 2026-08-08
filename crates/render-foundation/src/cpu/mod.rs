@@ -145,7 +145,43 @@ pub fn render_full_scene_region(
     let physical_height = scale_dimension(height, scale);
     let mut fb = FrameBuffer::new(physical_width, physical_height);
     fb.clear(255, 255, 255, 255);
+    render_full_scene_region_into(
+        &mut fb,
+        primitives,
+        font_loader,
+        glyph_cache,
+        image_cache,
+        ui_glyphs,
+        overlay_fills,
+        overlay_glyphs,
+        overlay_rounded_rects,
+        region,
+        scale,
+    );
+    fb
+}
 
+/// 渲染到既有帧缓冲（**不清全帧**）——滚动 translate-blit 只重绘新露出的条带
+/// （性能门禁优化 S1，2026-08-08；见 docs/specs/performance-and-resource-budget.md）。
+///
+/// 与 [`render_full_scene_region`] 的差异：① 不清全帧（保留已平移的内容像素）；
+/// ② `ui_glyphs` 按 region 过滤——条带渲染只重画条带内的文字，其余保持平移结果；
+/// ③ overlay 层**不**过滤（滚动条/查找栏为每帧重画正确位置的 chrome 静态层，
+/// 覆盖在已平移内容上即正确）。`scale` 为已归一化的物理缩放。
+#[allow(clippy::too_many_arguments)] // 光栅化全参数（文件内多处同款）
+pub fn render_full_scene_region_into(
+    fb: &mut FrameBuffer,
+    primitives: &RenderPrimitives,
+    font_loader: &FontLoader,
+    glyph_cache: &mut GlyphCache,
+    image_cache: Option<&mut ImageCache>,
+    ui_glyphs: &[GlyphDraw],
+    overlay_fills: &[FillPrimitive],
+    overlay_glyphs: &[GlyphDraw],
+    overlay_rounded_rects: &[RoundedRectPrimitive],
+    region: Option<Rect>,
+    scale: f32,
+) {
     // DC-10 CSS painting order：默认按图元真实插入顺序（draw_order）渲染，
     // 修复「父背景图画在子内容之上」的类型分桶缺陷（render_typed_buckets 把所有
     // images 画在所有 fills 之后，违反 CSS painting order）。
@@ -155,46 +191,39 @@ pub fn render_full_scene_region(
     let use_draw_order = std::env::var("ZERO_DRAW_ORDER").as_deref() != Ok("0") && !primitives.draw_order.is_empty();
 
     if use_draw_order {
-        render_draw_order(
-            &mut fb,
-            primitives,
-            scale,
-            font_loader,
-            glyph_cache,
-            image_cache,
-            region,
-        );
+        render_draw_order(fb, primitives, scale, font_loader, glyph_cache, image_cache, region);
     } else {
-        render_typed_buckets(
-            &mut fb,
-            primitives,
-            scale,
-            font_loader,
-            glyph_cache,
-            image_cache,
-            region,
-        );
+        render_typed_buckets(fb, primitives, scale, font_loader, glyph_cache, image_cache, region);
     }
 
-    // Chrome / WebView 文字（GlyphDraw，在 overlay 之前）
+    // Chrome / WebView 文字（GlyphDraw，在 overlay 之前）。
+    // S1：region 过滤——条带渲染只重画与条带相交的文字（近似矩形测试，宁多勿少）
     for glyph in ui_glyphs {
-        draw_glyph(&mut fb, glyph, scale, font_loader, glyph_cache);
+        if let Some(r) = region {
+            let gx = glyph.x * scale;
+            let gy = (glyph.baseline_y - glyph.font_size) * scale;
+            let gw = glyph.font_size * scale * 0.6;
+            let gh = glyph.font_size * scale * 1.25;
+            if !r.intersects(&Rect::new(gx, gy, gw, gh)) {
+                continue;
+            }
+        }
+        draw_glyph(fb, glyph, scale, font_loader, glyph_cache);
     }
 
-    // Overlay 层（始终在最后，独立于主体绘制顺序）
+    // Overlay 层（始终在最后，独立于主体绘制顺序；不 region 过滤——chrome 静态层
+    // 每帧重画正确位置，滚动条/查找栏在 blit 平移后由本层自动修正）
     for fill in overlay_fills {
-        fill_rect(&mut fb, fill, scale);
+        fill_rect(fb, fill, scale);
     }
 
     for rr in overlay_rounded_rects {
-        fill_rounded_rect(&mut fb, rr, scale);
+        fill_rounded_rect(fb, rr, scale);
     }
 
     for glyph in overlay_glyphs {
-        draw_glyph(&mut fb, glyph, scale, font_loader, glyph_cache);
+        draw_glyph(fb, glyph, scale, font_loader, glyph_cache);
     }
-
-    fb
 }
 
 /// 按类型分桶渲染（旧行为，`ZERO_DRAW_ORDER=0` 时回退）。
@@ -505,12 +534,28 @@ fn fill_rect(fb: &mut FrameBuffer, fill: &FillPrimitive, scale: f32) {
         return;
     }
 
-    for y in top..bottom {
-        for x in left..right {
-            let src_a = fill.color.a as f32 / 255.0;
-            if src_a >= 1.0 {
-                fb.set_pixel(x, y, [fill.color.r, fill.color.g, fill.color.b, 255]);
-            } else if src_a > 0.0 {
+    // 性能门禁优化 S4（2026-08-08）：alpha 计算提出内层循环；
+    // 不透明填充行切片直写（免 set_pixel 调用 + 免逐像素 alpha 分支）。
+    let src_a = fill.color.a as f32 / 255.0;
+    if src_a >= 1.0 {
+        let row_stride = fb.width as usize * 4;
+        let start = left as usize * 4;
+        let end = right as usize * 4;
+        let (r, g, b) = (fill.color.r, fill.color.g, fill.color.b);
+        for y in top..bottom {
+            let row = y as usize * row_stride;
+            let mut i = row + start;
+            while i < row + end {
+                fb.data[i] = r;
+                fb.data[i + 1] = g;
+                fb.data[i + 2] = b;
+                fb.data[i + 3] = 255;
+                i += 4;
+            }
+        }
+    } else if src_a > 0.0 {
+        for y in top..bottom {
+            for x in left..right {
                 blend_pixel(fb, x, y, fill.color, 255);
             }
         }
@@ -765,28 +810,40 @@ fn resolve_glyph_bitmap(
     scale: f32,
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
-) -> Option<crate::font::GlyphBitmap> {
+) -> Option<std::sync::Arc<crate::font::GlyphBitmap>> {
     let physical_font_size = glyph.font_size * scale;
     let primary_key = GlyphKey::new(glyph.font_id, glyph.ch as u32, physical_font_size);
-    if let Some(cached) = glyph_cache.get(&primary_key) {
-        return Some(cached.clone());
+    if let Some(cached) = glyph_cache.get_shared(&primary_key) {
+        return Some(cached);
     }
 
     let (resolved_id, bitmap) = font_loader
         .rasterize_glyph_with_fallback(glyph.font_id, glyph.ch, physical_font_size)
         .ok()?;
     let key = GlyphKey::new(resolved_id, glyph.ch as u32, physical_font_size);
-    glyph_cache.get_or_insert_with(key, || Ok(bitmap)).ok().cloned()
+    // S4：命中路径免位图拷贝（Arc 共享）；miss 插入后经 get_shared 取共享句柄
+    glyph_cache.get_or_insert_with(key.clone(), || Ok(bitmap)).ok()?;
+    glyph_cache.get_shared(&key)
 }
 
 fn blend_pixel(fb: &mut FrameBuffer, x: u32, y: u32, color: Color, alpha: u8) {
-    let dst = fb.get_pixel(x, y);
+    // S4：直接读写 data 切片（免 get_pixel/set_pixel 调用与重复索引计算）
+    let idx = ((y * fb.width + x) * 4) as usize;
     let src_a = alpha as f32 / 255.0 * (color.a as f32 / 255.0);
     let inv_a = 1.0 - src_a;
-    let r = color.r as f32 * src_a + dst[0] as f32 * inv_a;
-    let g = color.g as f32 * src_a + dst[1] as f32 * inv_a;
-    let b = color.b as f32 * src_a + dst[2] as f32 * inv_a;
-    fb.set_pixel(x, y, [r.round() as u8, g.round() as u8, b.round() as u8, 255]);
+    let (r, g, b) = {
+        let d = &fb.data[idx..idx + 4];
+        (
+            color.r as f32 * src_a + d[0] as f32 * inv_a,
+            color.g as f32 * src_a + d[1] as f32 * inv_a,
+            color.b as f32 * src_a + d[2] as f32 * inv_a,
+        )
+    };
+    let d = &mut fb.data[idx..idx + 4];
+    d[0] = r.round() as u8;
+    d[1] = g.round() as u8;
+    d[2] = b.round() as u8;
+    d[3] = 255;
 }
 
 /// 渲染图片图元 — 将 RGBA 像素数据合成到帧缓冲。
@@ -906,28 +963,23 @@ fn apply_clip(fb: &mut FrameBuffer, clip: &ClipPrimitive, scale: f32) {
     let clip_right = (clip.rect.right() * scale).ceil().min(fb.width as f32) as u32;
     let clip_bottom = (clip.rect.bottom() * scale).ceil().min(fb.height as f32) as u32;
 
+    // S4：行切片整体填充（清除色为全 255 白，fill(255) 即正确；免逐像素 set_pixel）
+    let row_stride = fb.width as usize * 4;
     // 清除裁剪区域上方的像素
     for y in 0..clip_top.min(fb.height) {
-        for x in 0..fb.width {
-            fb.set_pixel(x, y, [255, 255, 255, 255]);
-        }
+        fb.data[y as usize * row_stride..(y as usize + 1) * row_stride].fill(255);
     }
 
     // 清除裁剪区域下方的像素
     for y in clip_bottom..fb.height {
-        for x in 0..fb.width {
-            fb.set_pixel(x, y, [255, 255, 255, 255]);
-        }
+        fb.data[y as usize * row_stride..(y as usize + 1) * row_stride].fill(255);
     }
 
     // 清除裁剪区域左右两侧的像素
     for y in clip_top..clip_bottom {
-        for x in 0..clip_left {
-            fb.set_pixel(x, y, [255, 255, 255, 255]);
-        }
-        for x in clip_right..fb.width {
-            fb.set_pixel(x, y, [255, 255, 255, 255]);
-        }
+        let row = y as usize * row_stride;
+        fb.data[row..row + clip_left as usize * 4].fill(255);
+        fb.data[row + clip_right as usize * 4..row + row_stride].fill(255);
     }
 }
 

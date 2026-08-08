@@ -804,6 +804,33 @@ HTML spec：`<body>` 元素的 WindowEventHandlers 内容属性（onload/onerror
 
 **下一步**：body→window onload 反射闭合。续 P1a 剩余——① font 元素级事件（@font-face font.onload，需 FontFaceSet API）；② DataTransferItemList 精细 API；③ spec-compliant 事件循环（P1a 原始大目标，需独立设计）。
 
+### 大页面卡顿优化 M1（浏览器 UI 线程交互路径，2026-08-08，性能门禁体系首个里程碑）
+
+用户报告大页面滚动/交互卡顿（浏览器与 render 进程都慢、日志资源请求不断）。三路并行
+诊断定位：① UI 线程每帧全量重绘（整页图元深克隆 ×2 + 变换 3 遍 + 全帧光栅 + 全帧拷贝）；
+② 每次 DOM 变更全页图片同步重下载（无缓存）；③ renderer paint 占 83%（每字符测量+光栅化）。
+M1 完成浏览器侧交互路径四个切片（M2 资源风暴 / M3 renderer 管线待续）：
+
+| 切片 | 变更 |
+|------|------|
+| **S2** 消除每帧 O(P) 克隆 | `app_render.rs` 页面图元深克隆改借用；`transform_webview_primitives_extra`（跳过 fills/glyphs——旧实现变换后丢弃，4400 元素页每帧白克隆 ~11k fills + ~22k glyphs）；新增等价性测试（extra 输出 = 全量变换的非 fill/glyph 部分） |
+| **S3** 缓存内容宽高 | `TabSnapshot.document_width` 快照到达时计算一次（每快照 1 次 O(P) 扫描替代每 mousemove/wheel 扫描）；IPC/进程内两路径注入 |
+| **S4** CPU 光栅器微优化 | fill_rect alpha 提出内层循环 + 不透明行切片直写；blend_pixel 直读写 data 切片；GlyphCache 位图 **Arc 化**（命中路径免 ~MB/帧 memcpy）；apply_clip 行切片填充；新增 `full_scene/raster_1500_fills_1080p` 门禁基准（~13ms/帧基线） |
+| **S1** 滚动 translate-blit（收官） | 保留帧缓冲 + 纯滚动帧 `copy_within` 平移 + scratch 条带渲染（`render_full_scene_region_into` 不清全帧 + ui_glyphs region 过滤）+ 只拷条带行；失效条件：新快照（`TabManager.snapshot_seq`）/缩放/尺寸/选区/拖拽/水平/亚像素/查找栏/上下文菜单；kill-switch `ZERO_SCROLL_BLIT=0`；**像素等价测试**（平移+条带 vs 同滚动全量，6 种位移逐像素一致） |
+
+**过程中抓到两个真实 bug**（等价测试驱动）：① region 语义是「剔除不相交图元」而非
+「裁剪绘制」——穿过条带的高图元污染条带外保留像素（scratch 方案修复）；② 部分高度
+overlay（查找栏/上下文菜单）平移后留残影（blit guard 禁用）。经验沉淀
+`docs/learnings/performance/scroll-blit-region-culling.md`。
+
+验证：render-foundation 554 测试（+blit 等价 +full_scene 基准）、zero-browser 225、
+`make test` 14128 全绿、clippy `-D warnings` 零警告、fmt clean。共享机器 flake
+（zero-net 时序测试在对方 WPT 负载下失败、隔离重跑通过）与环境噪声处置遵循 policy
+§8.1。
+
+**下一步**：M2 资源风暴（S5 ImageCache 感知 → S6 HttpCache 统一 + 负缓存 + URL 合并）；
+M3 renderer 管线（S7 paint 80/20 → S8 增量 IPC → S9 脏子树增量渲染）。
+
 ### P1a renderer（默认多进程路径）事件 API parity + 持久 Isolate 中毒修复（本轮 R2945，~14,123 测试）
 
 默认 `--multi-process` 路径（`apps/renderer`）此前**不派发** R2940–R2944 的任何事件——DOMContentLoaded/load（R2941）、未捕获脚本错误 window.onerror（R2940）、资源 fetch 失败 window error（R2942）、img/link 元素级 load/error（R2943/R2944）仅在 `--single-process` browser 路径派发。本切片把它们镜像进 renderer，使生产默认路径具备事件 API parity（analytics onload / jQuery ready / 框架 mount / Sentry 错误上报 / 图片画廊 lazy-load 等高频模式在多进程下也可用）。

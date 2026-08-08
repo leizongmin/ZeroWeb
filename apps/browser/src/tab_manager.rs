@@ -34,6 +34,9 @@ struct PendingDispatch {
 pub struct TabManager {
     workers: HashMap<TabId, TabWorkerHandle>,
     snapshots: HashMap<TabId, TabSnapshot>,
+    /// 每标签页快照序号（性能门禁优化 S1，2026-08-08）：新快照到达时递增，
+    /// 浏览器滚动 blit 据此判断页面内容是否变更（变更则失效保留帧缓冲）。
+    snapshot_seq: HashMap<TabId, u64>,
     process_backend: Option<ProcessTabBackend>,
     viewport: (u32, u32),
     color_scheme: PrefersColorSchemeValue,
@@ -60,6 +63,7 @@ impl TabManager {
         let manager = Self {
             workers: HashMap::new(),
             snapshots: HashMap::new(),
+            snapshot_seq: HashMap::new(),
             process_backend: if use_multiprocess_backend() {
                 ProcessTabBackend::try_new()
             } else {
@@ -267,7 +271,7 @@ impl TabManager {
 
         let mut changed = false;
         if let Some(ref mut backend) = self.process_backend {
-            changed |= backend.poll(&mut self.snapshots, active_tab, poll_background);
+            changed |= backend.poll(&mut self.snapshots, &mut self.snapshot_seq, active_tab, poll_background);
             self.pending_loaded.extend(backend.take_page_loaded_events());
             self.pending_errors.extend(backend.take_page_error_events());
             for (dispatch_id, default_allowed) in backend.take_dispatch_results() {
@@ -289,6 +293,9 @@ impl TabManager {
                 match msg {
                     TabWorkerMessage::Snapshot(snap) => {
                         self.snapshots.insert(*tab_id, snap);
+                        // 性能门禁优化 S1（2026-08-08）：快照到达 = 页面内容变更 →
+                        // 递增快照序号，滚动 blit 据此失效保留帧缓冲
+                        *self.snapshot_seq.entry(*tab_id).or_insert(0) += 1;
                     }
                     TabWorkerMessage::Title(title) => {
                         if let Some(s) = self.snapshots.get_mut(tab_id) {
@@ -517,6 +524,17 @@ impl TabManager {
     /// 文档高度。
     pub fn document_height(&self, tab_id: TabId) -> Option<f32> {
         self.snapshots.get(&tab_id)?.document_height
+    }
+
+    /// 文档内容宽度估计（快照缓存，性能门禁优化 S3，2026-08-08）。
+    pub fn document_width(&self, tab_id: TabId) -> Option<f32> {
+        self.snapshots.get(&tab_id)?.document_width
+    }
+
+    /// 快照序号（性能门禁优化 S1，2026-08-08）：新快照到达时递增，
+    /// 滚动 blit 据此失效保留帧缓冲。
+    pub fn snapshot_seq(&self, tab_id: TabId) -> u64 {
+        self.snapshot_seq.get(&tab_id).copied().unwrap_or(0)
     }
 
     /// Tab 是否仍在加载。

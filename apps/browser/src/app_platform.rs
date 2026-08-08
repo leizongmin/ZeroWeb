@@ -203,28 +203,164 @@ impl BrowserApp {
         scene_primitives.fills = [fills, scene_primitives.fills].concat();
         scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
-        // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
-        // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
-        // self.shell / self.webviews / self.font_loader / self.glyph_cache 为不相交字段借用
-        let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
-            Some(id) => self.tabs.image_cache_mut(id),
-            None => None,
-        };
-
-        let fb = render_full_scene(
+        // ImageCache 在 render_scene_cpu 内部获取（避免 &mut self 调用前的借用冲突）
+        let fb = self.render_scene_cpu(
             width,
             height,
-            1.0,
             &scene_primitives,
-            &self.font_loader,
-            &mut self.glyph_cache,
-            image_cache,
             &glyphs,
             &overlay_fills,
             &overlay_glyphs,
             &overlay_rounded_rects,
         );
         present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data);
+    }
+
+    /// 光栅化场景（性能门禁优化 S1，2026-08-08）。
+    ///
+    /// 纯滚动帧走 **translate-blit**：平移保留帧缓冲的内容像素 + 只重绘新露出的
+    /// 条带（`render_full_scene_region_into`，不清全帧）；任何其他状态变更
+    /// （新快照 / 缩放 / 窗口尺寸 / 选区 / 滚动条拖拽 / 亚像素滚动 / 水平滚动）
+    /// 走全量渲染并刷新保留帧。kill-switch：`ZERO_SCROLL_BLIT=0` 回退全量。
+    #[allow(clippy::too_many_arguments)] // 光栅化全参数（渲染路径同款）
+    fn render_scene_cpu(
+        &mut self,
+        width: u32,
+        height: u32,
+        scene_primitives: &zero_render_foundation::primitive::RenderPrimitives,
+        glyphs: &[GlyphDraw],
+        overlay_fills: &[FillPrimitive],
+        overlay_glyphs: &[GlyphDraw],
+        overlay_rounded_rects: &[RoundedRectPrimitive],
+    ) -> zero_render_foundation::surface::FrameBuffer {
+        let tab_id = self.shell.active_tab_id();
+        let scroll = tab_id.map(|id| self.tab_scroll_state(id)).unwrap_or_default();
+        let epoch = (
+            tab_id.map(|id| self.tabs.snapshot_seq(id)).unwrap_or(0),
+            width,
+            height,
+            self.scale_factor,
+        );
+        // 先取全部 &self 读取（页面内容矩形 / 选区 / 拖拽状态），再进入 &mut 借用区
+        let page_rect = tab_id.map(|_| self.page_content_rect_for(width, height));
+        let selection_active = tab_id.is_some_and(|id| {
+            self.page_selection
+                .get(&id)
+                .is_some_and(|sel| !sel.is_collapsed())
+        });
+        let page_has_content = tab_id.is_some_and(|id| self.tabs.last_render(id).is_some());
+
+        let blit_enabled = std::env::var("ZERO_SCROLL_BLIT").as_deref() != Ok("0");
+        let dy = (scroll.y - self.fb_cache_scroll.1).round() as i32;
+        let same_fraction = (scroll.y - scroll.y.floor()) == (self.fb_cache_scroll.1 - self.fb_cache_scroll.1.floor());
+        let can_blit = blit_enabled
+            && self.retained_fb.is_some()
+            && epoch == self.fb_cache_epoch
+            && page_has_content
+            && scroll.x == self.fb_cache_scroll.0
+            && same_fraction
+            && dy != 0
+            && page_rect.is_some_and(|(_, _, _, ch)| (dy.abs() as f32) < ch)
+            && !selection_active
+            && !self.page_selection_drag
+            && self.scrollbar_drag.is_none()
+            && self.touch_scroll.is_none()
+            // 部分高度 overlay（查找栏 / 上下文菜单）在平移后会留下残影——
+            // 全高滚动条自愈（overlay 每帧重画全覆盖），部分区域 overlay 需禁 blit
+            && !self.shell.find_state().is_active()
+            && !self.context_menu.visible;
+
+        // 活跃标签页 webview 的 ImageCache（绘制 <img> 图元消费）——所有 &self 读取
+        // 完成后、渲染调用前获取（self.tabs 与 font_loader/glyph_cache/retained_fb
+        // 为不相交字段借用，可共存）
+        let image_cache: Option<&mut ImageCache> = match tab_id {
+            Some(id) => self.tabs.image_cache_mut(id),
+            None => None,
+        };
+
+        let fb = if can_blit {
+            let (cx, cy, cw, ch) = page_rect.unwrap();
+            let mut fb = self.retained_fb.take().unwrap();
+            let ix0 = cx.round() as usize;
+            let ix1 = (cx + cw).round() as usize;
+            let iy0 = cy.round() as usize;
+            let iy1 = (cy + ch).round() as usize;
+            let row_bytes = width as usize * 4;
+            let span = ix1.saturating_sub(ix0) * 4;
+            let ady = dy.unsigned_abs() as usize;
+            if dy > 0 {
+                // 内容上移（滚动向下）：行 y ← 行 y+ady
+                for y in iy0..iy1.saturating_sub(ady) {
+                    let src = (y + ady) * row_bytes + ix0 * 4;
+                    let dst = y * row_bytes + ix0 * 4;
+                    fb.data.copy_within(src..src + span, dst);
+                }
+            } else {
+                // 内容下移（滚动向上）：自下而上复制避免覆盖
+                for y in (iy0.saturating_add(ady)..iy1).rev() {
+                    let src = (y - ady) * row_bytes + ix0 * 4;
+                    let dst = y * row_bytes + ix0 * 4;
+                    fb.data.copy_within(src..src + span, dst);
+                }
+            }
+            // 只重绘新露出的条带。region 语义是「剔除不相交图元」而非裁剪——
+            // 穿过条带的高图元会完整绘制并污染条带外像素，故渲染到 scratch 帧缓冲
+            // 后仅把条带行拷回保留帧（scratch 内越界绘制无害）。
+            let strip_top = if dy > 0 { iy1.saturating_sub(ady) } else { iy0 };
+            let strip_bottom = strip_top + ady;
+            let strip = zero_render_foundation::geometry::Rect::new(
+                ix0 as f32,
+                strip_top as f32,
+                (ix1 - ix0) as f32,
+                ady as f32,
+            );
+            let mut scratch = zero_render_foundation::surface::FrameBuffer::new(width, height);
+            scratch.clear(255, 255, 255, 255);
+            zero_render_foundation::cpu::render_full_scene_region_into(
+                &mut scratch,
+                scene_primitives,
+                &self.font_loader,
+                &mut self.glyph_cache,
+                image_cache,
+                glyphs,
+                overlay_fills,
+                overlay_glyphs,
+                overlay_rounded_rects,
+                Some(strip),
+                1.0,
+            );
+            for y in strip_top..strip_bottom {
+                let row = y * row_bytes;
+                fb.data[row..row + row_bytes]
+                    .copy_from_slice(&scratch.data[row..row + row_bytes]);
+            }
+            fb
+        } else {
+            let fb = render_full_scene(
+                width,
+                height,
+                1.0,
+                scene_primitives,
+                &self.font_loader,
+                &mut self.glyph_cache,
+                image_cache,
+                glyphs,
+                overlay_fills,
+                overlay_glyphs,
+                overlay_rounded_rects,
+            );
+            self.retained_fb = Some(fb.clone());
+            self.fb_cache_scroll = (scroll.x, scroll.y);
+            self.fb_cache_epoch = epoch;
+            fb
+        };
+
+        if can_blit {
+            self.retained_fb = Some(fb.clone());
+            self.fb_cache_scroll = (scroll.x, scroll.y);
+            self.fb_cache_epoch = epoch;
+        }
+        fb
     }
 
     /// 测试用：与 `render_cpu` 相同的场景装配（chrome + WebView 图元 + 活跃标签页

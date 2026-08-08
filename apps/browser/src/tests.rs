@@ -1640,6 +1640,110 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
     assert_eq!((t.tx, t.ty), (6.0, 8.0));
 }
 
+/// 性能门禁优化 S2（2026-08-08）：`transform_webview_primitives_extra` 跳过
+/// fills/glyphs（浏览器每帧调用它生成 extra 层，fills/glyphs 已由
+/// append_webview_primitives 处理），其余 11 类图元输出必须与全量变换一致。
+#[test]
+fn transform_webview_primitives_extra_skips_fills_glyphs_keeps_others() {
+    use app::{transform_webview_primitives, transform_webview_primitives_extra};
+    use zero_render_foundation::color::Color;
+    use zero_render_foundation::geometry::Rect;
+    use zero_render_foundation::primitive::{
+        FontId, GlyphPrimitive, GradientKind, GradientPrimitive, LineCap, LineStyle, RenderPrimitives,
+        RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+    };
+
+    let mut p = RenderPrimitives::new();
+    p.add_fill(Rect::new(1.0, 2.0, 10.0, 20.0), Color::rgb(255, 0, 0));
+    p.rounded_rects.push(RoundedRectPrimitive {
+        rect: Rect::new(1.0, 2.0, 10.0, 20.0),
+        color: Color::rgb(0, 255, 0),
+        top_left_radius: 1.0,
+        top_right_radius: 2.0,
+        bottom_right_radius: 3.0,
+        bottom_left_radius: 4.0,
+    });
+    p.gradients.push(GradientPrimitive {
+        interpolation: Default::default(),
+        rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+        kind: GradientKind::Linear {
+            x0: 1.0,
+            y0: 2.0,
+            x1: 3.0,
+            y1: 4.0,
+        },
+        stops: Vec::new(),
+        repeating: false,
+    });
+    p.strokes.push(StrokePrimitive {
+        x1: 1.0,
+        y1: 2.0,
+        x2: 3.0,
+        y2: 4.0,
+        width: 5.0,
+        color: Color::rgb(0, 0, 0),
+        style: LineStyle::Solid,
+        cap: LineCap::Butt,
+    });
+    p.add_glyph(GlyphPrimitive {
+        x: 1.0,
+        y: 2.0,
+        font_size: 16.0,
+        color: Color::rgb(0, 0, 0),
+        glyph_id: 'A' as u32,
+        font_id: FontId(0),
+        bitmap_width: None,
+        bitmap_height: None,
+        rotation: 0.0,
+        synthetic_italic: false,
+    });
+    p.transforms.push(TransformPrimitive {
+        rect: Rect::new(1.0, 2.0, 10.0, 10.0),
+        origin_x: 1.0,
+        origin_y: 2.0,
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        tx: 3.0,
+        ty: 4.0,
+    });
+
+    let full = transform_webview_primitives(&p, 10.0, 20.0, 2.0, None);
+    let extra = transform_webview_primitives_extra(&p, 10.0, 20.0, 2.0, None);
+
+    // extra 层不产出 fills/glyphs（调用方语义：它们已由 append_webview_primitives 处理）
+    assert!(extra.fills.is_empty(), "extra must not produce fills");
+    assert!(extra.glyphs.is_empty(), "extra must not produce glyphs");
+    // 其余 11 类长度与全量变换一致（图元类型未实现 PartialEq，抽查代表字段）
+    assert_eq!(extra.rounded_rects.len(), full.rounded_rects.len());
+    assert_eq!(extra.gradients.len(), full.gradients.len());
+    assert_eq!(extra.shadows.len(), full.shadows.len());
+    assert_eq!(extra.strokes.len(), full.strokes.len());
+    assert_eq!(extra.path_fills.len(), full.path_fills.len());
+    assert_eq!(extra.path_strokes.len(), full.path_strokes.len());
+    assert_eq!(extra.images.len(), full.images.len());
+    assert_eq!(extra.transforms.len(), full.transforms.len());
+    assert_eq!(extra.clips.len(), full.clips.len());
+    assert_eq!(extra.filters.len(), full.filters.len());
+    assert_eq!(extra.blend_modes.len(), full.blend_modes.len());
+    let r = &extra.rounded_rects[0];
+    assert_eq!(
+        (r.rect.origin.x, r.rect.origin.y, r.rect.size.width),
+        (12.0, 24.0, 20.0)
+    );
+    match &extra.gradients[0].kind {
+        GradientKind::Linear { x0, y0, x1, y1 } => {
+            assert_eq!((*x0, *y0, *x1, *y1), (12.0, 24.0, 16.0, 28.0));
+        }
+        _ => panic!("expected Linear gradient"),
+    }
+    let st = &extra.strokes[0];
+    assert_eq!((st.x1, st.y1, st.x2, st.y2, st.width), (12.0, 24.0, 16.0, 28.0, 10.0));
+    let t = &extra.transforms[0];
+    assert_eq!((t.rect.origin.x, t.rect.origin.y, t.tx, t.ty), (12.0, 24.0, 6.0, 8.0));
+}
+
 /// DC-10：`transform_webview_primitives` 必须裁掉完全落在视口外的图元
 ///（rounded_rects / gradients / path_fills / glyphs），并保留视口内的图元。
 #[test]

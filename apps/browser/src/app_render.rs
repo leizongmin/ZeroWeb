@@ -327,11 +327,10 @@ impl BrowserApp {
         let y_offset = layout.viewport_y - scroll.y;
         let x_offset = layout.viewport_x - scroll.x;
 
-        let mut transformed = transform_webview_primitives(primitives, x_offset, y_offset, s, Some(clip_viewport));
-
-        // fills 和 glyphs 已通过 append_webview_primitives 混入 chrome 层，此处清空避免重复
-        transformed.fills.clear();
-        transformed.glyphs.clear();
+        // fills/glyphs 已由 append_webview_primitives 混入 chrome 层——
+        // extra 层只变换其余 11 类图元（性能门禁优化 S2，2026-08-08：
+        // 旧实现先变换再清空，4400 元素页每帧白白克隆 ~11k fills + ~22k glyphs）
+        let transformed = transform_webview_primitives_extra(primitives, x_offset, y_offset, s, Some(clip_viewport));
 
         let _ = (layout.viewport_w,);
         transformed
@@ -1171,7 +1170,9 @@ impl BrowserApp {
             None => return false,
         };
 
-        let page_primitives = primitives.clone();
+        // 性能门禁优化 S2（2026-08-08）：旧实现每帧全量深克隆页面图元只为只读的
+        // 选区高亮循环 + append_webview_primitives（均只需 &）——改为直接借用
+        let page_primitives = primitives;
 
         let clip_top = viewport_y;
         let clip_bottom = viewport_y + viewport_h;
@@ -1218,7 +1219,7 @@ impl BrowserApp {
         }
 
         append_webview_primitives(
-            &page_primitives,
+            page_primitives,
             fills,
             glyphs,
             content_x_draw,

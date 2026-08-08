@@ -121,6 +121,12 @@ pub struct BrowserApp {
     context_menu_suppress_left_up: bool,
     /// 页面滚动偏移（物理像素）
     scroll: HashMap<TabId, TabScrollState>,
+    /// 保留帧缓冲 + 滚动 blit 缓存（性能门禁优化 S1，2026-08-08）：
+    /// 纯滚动帧平移上一帧内容像素 + 只重绘新露条带，避免全量光栅。
+    /// `fb_cache_epoch` = (快照序号, 宽, 高, 缩放)——任一变化即失效走全量渲染。
+    retained_fb: Option<zero_render_foundation::surface::FrameBuffer>,
+    fb_cache_scroll: (f32, f32),
+    fb_cache_epoch: (u64, u32, u32, f32),
     /// 页面文本选区（glyph 索引）
     page_selection: HashMap<TabId, GlyphSelection>,
     /// 页面选区拖拽中
@@ -261,6 +267,9 @@ impl BrowserApp {
             context_menu: ContextMenuState::new(),
             context_menu_suppress_left_up: false,
             scroll: HashMap::new(),
+            retained_fb: None,
+            fb_cache_scroll: (0.0, 0.0),
+            fb_cache_epoch: (0, 0, 0, 0.0),
             page_selection: HashMap::new(),
             page_selection_drag: false,
             left_button_down: false,
@@ -957,10 +966,16 @@ impl BrowserApp {
                     .map(|r| page_scroll::primitives_content_height(&r.primitives))
             })
             .unwrap_or(0.0);
+        // 性能门禁优化 S3（2026-08-08）：宽度已随快照缓存（每快照一次 O(P) 扫描），
+        // 不再在每次 mousemove/wheel 上扫全部图元；缓存缺失（旧快照/异常路径）回退扫描
         let logical_w = self
             .tabs
-            .last_render(tab_id)
-            .map(|r| page_scroll::primitives_content_width(&r.primitives))
+            .document_width(tab_id)
+            .or_else(|| {
+                self.tabs
+                    .last_render(tab_id)
+                    .map(|r| page_scroll::primitives_content_width(&r.primitives))
+            })
             .unwrap_or(0.0);
         (logical_w * s, logical_h * s)
     }

@@ -1,6 +1,6 @@
 //! render-foundation 基准测试
 //!
-//! Glyph 渲染吞吐量、脏区域检测耗时
+//! Glyph 渲染吞吐量、脏区域检测耗时、全场景 CPU 光栅吞吐量
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use zero_render_foundation::color::Color;
@@ -84,6 +84,48 @@ fn bench_primitives_build(c: &mut Criterion) {
     });
 }
 
+/// 全场景 CPU 光栅吞吐量（性能门禁优化 S4 的可门禁指标，2026-08-08）。
+///
+/// 模拟浏览器每帧合成：1000 不透明 fills + 500 半透明 fills 全帧光栅化
+/// （1080p）。fills-only 场景无需字体加载（空 FontLoader 即可）。
+fn bench_full_scene_raster(c: &mut Criterion) {
+    use zero_render_foundation::cpu::render_full_scene;
+    use zero_render_foundation::font::loader::FontLoader;
+
+    let mut scene = RenderPrimitives::new();
+    for i in 0..1000u32 {
+        let x = (i % 40) as f32 * 48.0;
+        let y = (i / 40) as f32 * 48.0;
+        scene.add_fill(Rect::new(x, y, 46.0, 46.0), Color::rgb((i % 256) as u8, 128, 64));
+    }
+    for i in 0..500u32 {
+        let x = (i % 25) as f32 * 72.0 + 20.0;
+        let y = (i / 25) as f32 * 72.0 + 20.0;
+        scene.add_fill(Rect::new(x, y, 40.0, 40.0), Color::rgba(64, 96, 200, 128));
+    }
+
+    let font_loader = FontLoader::new();
+    c.bench_function("full_scene/raster_1500_fills_1080p", move |b| {
+        b.iter(|| {
+            let mut glyph_cache = GlyphCache::new(1024);
+            let fb = render_full_scene(
+                1920,
+                1080,
+                1.0,
+                &scene,
+                &font_loader,
+                &mut glyph_cache,
+                None,
+                &[],
+                &[],
+                &[],
+                &[],
+            );
+            black_box(fb);
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_damage_tracker_add,
@@ -91,5 +133,6 @@ criterion_group!(
     bench_glyph_cache_insert,
     bench_frame_buffer_clear,
     bench_primitives_build,
+    bench_full_scene_raster,
 );
 criterion_main!(benches);
