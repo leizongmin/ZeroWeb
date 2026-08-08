@@ -347,13 +347,39 @@
       if (typeof __zw_fetch !== 'function') {
         return Promise.resolve(_makeResponse('__zw_fetch_error:no-handler'));
       }
-      return new Promise(function(resolve) {
+      // R3044：AbortSignal——fetch 中止。AbortController/AbortSignal 对象已就绪（part02），但 fetch 旧不消费
+      // init.signal → controller.abort() 无法中止在途 fetch。本切片接通：signal 已 aborted → 立即 reject；
+      // 运行中 abort → reject(signal.reason) + 清 __zw_pending[id]（host 抓取结果到达时 __zwResolveCallback
+      // typeof-check no-op，结果被丢弃）。settled flag 防 resolve/abort 双 settle。fetch reject reason = signal.reason
+      //（spec；默认 AbortError DOMException，或 abort(reason) 传入值）。duck-type `instanceof AbortSignal`（非 AbortSignal
+      // 的 init.signal 忽略，lenient）。仅影响传 signal 的 fetch 调用——无 signal 路径不变（零回归）。
+      var signal = (typeof AbortSignal === 'function' && init.signal instanceof AbortSignal) ? init.signal : null;
+      return new Promise(function(resolve, reject) {
+        // signal 已 aborted → 同步 reject（spec：fetch 入口检查 signal.aborted）。
+        if (signal && signal._aborted) {
+          reject(signal.reason);
+          return;
+        }
         globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
         var id = '__zwfid:' + globalThis.__zw_fetch_counter;
-        globalThis.__zw_pending[id] = function(raw) { resolve(_makeResponseFromWire(raw)); };
+        var settled = false;
+        globalThis.__zw_pending[id] = function(raw) {
+          if (settled) return;
+          settled = true;
+          resolve(_makeResponseFromWire(raw));
+        };
+        if (signal) {
+          signal.addEventListener('abort', function() {
+            if (settled) return;
+            settled = true;
+            delete globalThis.__zw_pending[id]; // host 结果到达 → __zwResolveCallback no-op（typeof-check）
+            reject(signal.reason);
+          });
+        }
         try {
           __zw_fetch(id, method, url, headersWire, body);
         } catch (_e) {
+          if (!settled) { settled = true; delete globalThis.__zw_pending[id]; }
           resolve(_makeResponse('__zw_fetch_error:throw'));
         }
       });

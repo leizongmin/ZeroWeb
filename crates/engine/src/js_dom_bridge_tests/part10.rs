@@ -706,6 +706,154 @@ fn test_response_body_readable_stream_r2967() {
 }
 
 #[test]
+fn test_fetch_abort_signal_r3044() {
+    // R3044：fetch 接通 AbortSignal。AbortController/AbortSignal 对象已就绪（part02），但 fetch 旧不消费 init.signal
+    // → controller.abort() 无法中止在途 fetch。本切片接通：signal 已 aborted → 立即 reject；运行中 abort →
+    // reject(signal.reason) + 清 __zw_pending[id]（host 结果到达 typeof-check no-op）。settled flag 防双 settle。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① 运行中 abort：mock __zw_fetch 捕获 id 不 resolve；abort 后 fetch reject AbortError。
+    let cap: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let capc = Arc::clone(&cap);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *capc.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "globalThis.__ctrl = new AbortController();\
+             globalThis.__aborted = 'pending';\
+             fetch('http://test.local/a', { signal: globalThis.__ctrl.signal })\
+               .then(function(r){ globalThis.__aborted = 'resolved:' + r.status; })\
+               .catch(function(e){ globalThis.__aborted = 'rejected:' + (e && e.name ? e.name : String(e)); });\
+             globalThis.__ctrl.abort();",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap(); // drain microtask checkpoint
+    assert_eq!(
+        sandbox.execute("globalThis.__aborted").unwrap().value,
+        "rejected:AbortError",
+        "运行中 abort → fetch reject AbortError（旧：永不 reject）"
+    );
+    let id1 = cap.lock().unwrap().clone();
+    assert!(!id1.is_empty(), "__zw_fetch 被调用且 id 已捕获");
+    // abort 后 host 结果到达 → no-op（__zw_pending[id] 已清，__zwResolveCallback typeof-check）
+    sandbox.resolve_async_callback(&id1, "__zwfr:200\u{001f}OK\u{001f}\u{001f}late");
+    sandbox.execute("1;").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__aborted").unwrap().value,
+        "rejected:AbortError",
+        "abort 后 host 结果到达 no-op（不覆写 reject）"
+    );
+
+    // ② 已 aborted signal → fetch 同步 reject（不调 __zw_fetch）。
+    let cap2: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let cap2c = Arc::clone(&cap2);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *cap2c.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "globalThis.__pre = new AbortController();\
+             globalThis.__pre.abort();\
+             globalThis.__preResult = 'pending';\
+             fetch('http://test.local/b', { signal: globalThis.__pre.signal })\
+               .then(function(){ globalThis.__preResult = 'resolved'; })\
+               .catch(function(e){ globalThis.__preResult = 'rejected:' + (e && e.name ? e.name : String(e)); });",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__preResult").unwrap().value,
+        "rejected:AbortError",
+        "已 aborted signal → fetch reject（入口同步检查 signal.aborted）"
+    );
+    let id2 = cap2.lock().unwrap().clone();
+    assert!(id2.is_empty(), "pre-aborted signal 不调 __zw_fetch（fetch 入口同步 reject）");
+
+    // ③ abort(customReason) → fetch reject 传入的 reason（非 AbortError 包装，spec signal.reason 透传）。
+    let cap3: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let cap3c = Arc::clone(&cap3);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *cap3c.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "globalThis.__c3 = new AbortController();\
+             globalThis.__custom = 'pending';\
+             fetch('http://test.local/c', { signal: globalThis.__c3.signal })\
+               .catch(function(e){ globalThis.__custom = 'rejected:' + String(e); });\
+             globalThis.__c3.abort('user-cancelled');",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__custom").unwrap().value,
+        "rejected:user-cancelled",
+        "abort('user-cancelled') → fetch reject 传入 reason（signal.reason 透传，非 AbortError 包装）"
+    );
+
+    // ④ 回归守卫：signal present 但未 abort → fetch 正常 resolve（零回归）。
+    let cap4: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let cap4c = Arc::clone(&cap4);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *cap4c.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "globalThis.__c4 = new AbortController();\
+             globalThis.__ok = 'pending';\
+             fetch('http://test.local/d', { signal: globalThis.__c4.signal })\
+               .then(function(r){ globalThis.__ok = 'resolved:' + r.status; })\
+               .catch(function(e){ globalThis.__ok = 'rejected:' + (e && e.name ? e.name : String(e)); });",
+        )
+        .unwrap();
+    let id4 = cap4.lock().unwrap().clone();
+    assert!(!id4.is_empty(), "signal present 未 abort → __zw_fetch 被调用");
+    sandbox.resolve_async_callback(&id4, "__zwfr:200\u{001f}OK\u{001f}\u{001f}");
+    sandbox.execute("1;").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ok").unwrap().value,
+        "resolved:200",
+        "signal present 未 abort → fetch 正常 resolve（零回归）"
+    );
+}
+
+#[test]
 fn test_response_request_constructors_r2968() {
     // R2968：Response / Request 全局构造器（补全 fetch API 表面）。new Response/new Request 构造 +
     // fetch 结果 instanceof Response（_makeResponseFromWire 经 new Response 路由）+ fetch(new Request) 消费。
