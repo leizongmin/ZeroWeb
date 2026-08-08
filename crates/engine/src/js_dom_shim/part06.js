@@ -1005,6 +1005,30 @@
     if (!event.target) event.target = globalThis;
     return _dispatchToListeners(_elKey('html', null), event, 'all', globalThis);
   };
+  // R2983 `window.postMessage(message, targetOrigin [, transfer])`——canonical 跨窗口消息 API。
+  // 此前缺（MessagePort/MessageChannel/BroadcastChannel 既有，但 window.postMessage 本身零定义）→
+  // `window.postMessage({x:1}, '*')` + `addEventListener('message')` 同窗口异步消息模式（routing /
+  // polyfill / iframe-bridge mock / 测试）抛 TypeError。headless 单窗口：经 structuredClone 深拷贝 payload +
+  // queueMicrotask **异步**派发 MessageEvent 到自身（spec 异步语义），触发 window 'message' listener + onmessage。
+  // targetOrigin 安全校验（spec：不匹配 → 同步 throw SecurityError）：'*' / '/'（同源简写）/ 当前 origin 放行；
+  // 其余 origin 同步抛。缺省（undefined/null）按 '*' 放行（lenient，兼容 `postMessage(msg)` 简写）。
+  globalThis.postMessage = function (message, targetOrigin, _transfer) {
+    var self = globalThis;
+    var origin = (self.location && self.location.origin) || '';
+    var t = (targetOrigin == null) ? '*' : String(targetOrigin);
+    if (t !== '*' && t !== '/' && t !== origin) {
+      throw new DOMException(
+        "Failed to execute 'postMessage' on 'Window': The target origin provided ('" + t + "') does not match the recipient window's origin ('" + origin + "').",
+        'SecurityError'
+      );
+    }
+    var payload = (typeof structuredClone === 'function') ? structuredClone(message) : message;
+    queueMicrotask(function () {
+      try {
+        self.dispatchEvent(new MessageEvent('message', { data: payload, origin: origin, source: self }));
+      } catch (_e) {}
+    });
+  };
   globalThis.window.attachEvent = function(type, fn) {
     _attachEventForKey(_elKey('html', null), type, fn);
   };

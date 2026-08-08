@@ -446,3 +446,125 @@ fn test_request_body_readers_r2982() {
         "Response.formData() 经 _zwParseFormUrlencoded 提取后仍正确（无回归）"
     );
 }
+
+#[test]
+fn test_window_post_message_r2983() {
+    // R2983：window.postMessage(message, targetOrigin [, transfer])——canonical 跨窗口消息 API。
+    // 此前缺（MessagePort/MessageChannel/BroadcastChannel 既有，但 window.postMessage 零定义）→
+    // `window.postMessage({...}, '*')` + `addEventListener('message')` 同窗口异步消息模式抛 TypeError。
+    // 本切片补：structuredClone 深拷贝 payload + queueMicrotask 异步派发 MessageEvent 到自身（触发
+    // window 'message' listener + onmessage），targetOrigin 安全校验（不匹配同步 throw SecurityError）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    // http://test.local/ → location.origin = 'http://test.local'（targetOrigin 校验用）。
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    assert_eq!(
+        sandbox.execute("typeof window.postMessage").unwrap().value,
+        "function",
+        "window.postMessage 是 function"
+    );
+
+    // addEventListener('message') + postMessage({a:1,b:'two'}, '*')：异步收到 cloned data。
+    // microtask 在 execute 末 drain → handler 设 globalThis.__got。
+    sandbox
+        .execute(
+            "globalThis.__got = '(none)';\
+             window.addEventListener('message', function (e) {\
+               globalThis.__got = JSON.stringify(e.data) + '|' + e.origin + '|' + (e.source === window);\
+             });\
+             window.postMessage({ a: 1, b: 'two' }, '*');",
+        )
+        .unwrap();
+    let got = sandbox.execute("String(globalThis.__got)").unwrap().value;
+    assert!(
+        got.starts_with("{\"a\":1,\"b\":\"two\"}|"),
+        "addEventListener('message') 收到 cloned data（got={}）",
+        got
+    );
+    assert!(
+        got.ends_with("|true"),
+        "event.source === window（headless 单窗口，got={}）",
+        got
+    );
+
+    // onmessage IDL handler 亦触发（postMessage 派发经 dispatchEvent → onmessage listener）。
+    sandbox
+        .execute(
+            "globalThis.__onm = '(none)';\
+             window.onmessage = function (e) { globalThis.__onm = String(e.data); };\
+             window.postMessage('hello-onmessage', '*');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__onm)").unwrap().value,
+        "hello-onmessage",
+        "window.onmessage handler 收到 message 事件"
+    );
+
+    // structuredClone 隔离：收到的是深拷贝，原对象不被 mutate。
+    sandbox
+        .execute(
+            "globalThis.__orig = { nested: { v: 1 } }; globalThis.__iso = '(none)';\
+             window.onmessage = function (e) { e.data.nested.v = 999; globalThis.__iso = String(e.data.nested.v); };\
+             window.postMessage(globalThis.__orig, '*');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__iso)").unwrap().value,
+        "999",
+        "收到 payload 可 mutate（深拷贝，非只读）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__orig.nested.v)")
+            .unwrap()
+            .value,
+        "1",
+        "structuredClone 隔离：原对象未被 mutate（仍 v=1）"
+    );
+
+    // targetOrigin 安全校验：'*' / '/' / 当前 origin 放行。
+    sandbox
+        .execute(
+            "globalThis.__cnt = 0;\
+             window.onmessage = function () { globalThis.__cnt++; };\
+             window.postMessage('a', '*');\
+             window.postMessage('b', 'http://test.local');\
+             window.postMessage('c', '/');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cnt)").unwrap().value,
+        "3",
+        "targetOrigin '*' / 当前 origin / '/' 均放行（3 次派发）"
+    );
+
+    // targetOrigin 不匹配 → 同步 throw SecurityError。
+    sandbox
+        .execute(
+            "globalThis.__threw = 'no'; globalThis.__errName = '';\
+             try { window.postMessage('x', 'http://evil.example'); }\
+             catch (e) { globalThis.__threw = 'yes'; globalThis.__errName = (e && e.name) || ''; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__threw)").unwrap().value,
+        "yes",
+        "targetOrigin 不匹配 → throw"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__errName)").unwrap().value,
+        "SecurityError",
+        "targetOrigin 不匹配 → SecurityError"
+    );
+}
