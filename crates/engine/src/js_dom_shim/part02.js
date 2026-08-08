@@ -1163,14 +1163,19 @@
     mimeTypes: _emptyCollection(),
     javaEnabled: function() { return false; },
     taintEnabled: function() { return false; },
-    // clipboard（R2817）——异步剪贴板 API（复制按钮 ubiquitous）。headless 无真剪贴板 → resolving
-    // Promise stubs（readText→''，writeText/read/write→undefined），让 modern 脚本 feature-detect 后路径执行不抛。
-    clipboard: {
-      readText: function() { return Promise.resolve(''); },
-      writeText: function(_text) { return Promise.resolve(undefined); },
-      read: function() { return Promise.resolve([]); },
-      write: function(_data) { return Promise.resolve(undefined); },
-    },
+    // clipboard（R2817 + R2964）——异步剪贴板 API（复制按钮 ubiquitous）。headless 无 OS 剪贴板 →
+    // **进程内 store**（IIFE 闭包 `_store`）：writeText/readText 真实往返（同页/同进程 write→read 通，
+    // 覆盖复制按钮 + 粘贴检查高频模式）。read/write（ClipboardItem 富 MIME）仍 best-effort stub
+    //（headless 无真 MIME 剪贴板，不抛）。spec：writeText 返 Promise<void>，readText 返 Promise<string>。
+    clipboard: (function () {
+      var _store = '';
+      return {
+        writeText: function (text) { _store = String(text != null ? text : ''); return Promise.resolve(undefined); },
+        readText: function () { return Promise.resolve(_store); },
+        read: function () { return Promise.resolve([]); },
+        write: function (_data) { return Promise.resolve(undefined); },
+      };
+    })(),
     // sendBeacon（R2931）——页面卸载/后台分析 beacon（fire-and-forget POST，analytics/RUM 高频：GA 等
     // unload 时上报）。headless 无真网络发送（避免无人值守测试依赖外部网络）→ accept-and-return-true
     //（spec：返 true = 成功入队 best-effort；data 类型不限，忽略）。url 缺省（null/undefined）→ false。

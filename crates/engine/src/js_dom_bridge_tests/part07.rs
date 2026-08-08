@@ -794,7 +794,8 @@ fn test_modern_interaction_stubs_r2817() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
 
-    // navigator.clipboard：typeof object + writeText/readText 返 Promise（execute 末 microtask 派发）。
+    // navigator.clipboard（R2817 stubs + R2964 真实化）：typeof object + writeText/readText 返 Promise +
+    // writeText→readText 进程内 store 往返（writeText 同步写 store，readText 读之；execute 末 microtask 派发）。
     assert_eq!(
         sandbox.execute("typeof navigator.clipboard").unwrap().value,
         "object",
@@ -814,8 +815,8 @@ fn test_modern_interaction_stubs_r2817() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__rt)").unwrap().value,
-        "",
-        "clipboard.readText resolves ''（headless 空）"
+        "hi",
+        "clipboard.readText 返 writeText 写入值（R2964 进程内 store 往返）"
     );
 
     // navigator.permissions.query → Promise<PermissionStatus state 'prompt'>。
@@ -900,6 +901,63 @@ fn test_modern_interaction_stubs_r2817() {
         "0",
         "pageXOffset 恒 0"
     );
+}
+
+#[test]
+fn test_clipboard_write_read_round_trip_r2964() {
+    // R2964：navigator.clipboard.writeText/readText 真实化（进程内 store 往返）。覆盖写入→读、覆盖写、
+    // 非字符串归一、空默认。headless 无 OS 剪贴板——store 同页/同进程 write→read 通（复制按钮 + 粘贴检查）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 新 sandbox readText 默认空。
+    sandbox.execute("globalThis.__e='X'; navigator.clipboard.readText().then(function(t){globalThis.__e=t;});").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__e)").unwrap().value, "");
+    // writeText→readText 往返。
+    sandbox
+        .execute(
+            "globalThis.__r='X';\
+             navigator.clipboard.writeText('hello').then(function(){ return navigator.clipboard.readText(); })\
+               .then(function(t){ globalThis.__r = t; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__r)").unwrap().value, "hello");
+    // 覆盖写：writeText('second') → readText()='second'（非首值残留）。
+    sandbox
+        .execute(
+            "globalThis.__r2='X';\
+             navigator.clipboard.writeText('second').then(function(){ return navigator.clipboard.readText(); })\
+               .then(function(t){ globalThis.__r2 = t; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__r2)").unwrap().value, "second");
+    // 非字符串归一（数字 → '42'，null → 'null'... 实际 null→'' 因 String(null)=='null'... 验 number 归一）。
+    sandbox
+        .execute(
+            "globalThis.__r3='X';\
+             navigator.clipboard.writeText(42).then(function(){ return navigator.clipboard.readText(); })\
+               .then(function(t){ globalThis.__r3 = t; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__r3)").unwrap().value, "42");
+    // read/write（ClipboardItem 富 MIME）仍 best-effort stub（不抛，read 返 []）。
+    sandbox
+        .execute(
+            "globalThis.__rw='X';\
+             Promise.all([navigator.clipboard.read(), navigator.clipboard.write([])]).then(function(r){ globalThis.__rw = String(r[0].length); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__rw)").unwrap().value, "0");
 }
 
 #[test]
