@@ -112,6 +112,24 @@
 
 ## 最近完成的改进
 
+### js_dom_bridge.rs 文件大小治理——拆 script_gen + css_wire 子模块（本轮 R3001，~14,189 测试）
+
+承接 R3000「下一步 ①」。R3000 修复 `select.value=` 反射时向 `js_dom_bridge.rs`（pre-existing 2136 行）+77 行 → 2213 行，加剧超 2000 行问题。本切片把两个**自洽纯函数组**拆到独立子模块，主文件降到 2000 行内，零行为变更（纯代码移动 + `pub use` 重导出，调用点零改动）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`mod script_gen`** | `js_dom_bridge/script_gen.rs`（新建 173 行） | V8 shim 调用串 / 页面脚本包装生成：`DomEventDetail` + `escape_js_string` + `script_dispatch_dom_event`/`script_text_input`/`script_text_delete`/`script_report_error`/`script_dispatch_img/link/script_event` + `PAGE_SCRIPT_ERROR_GLOBAL` + `script_wrap_page_caught`/`page_script_error_check`/`script_reflect_body_handlers`/`script_font_settle`/`script_add_fontface`。**纯字符串构造，无 `Document`/`parse_html`/`DomMutation` 依赖**——零父模块 import。 |
+| **`mod css_wire`** | `js_dom_bridge/css_wire.rs`（新建 161 行） | CSS 选择器 / 样式规则 wire 序列化：`query_match_selector` + `attr_matcher_str`/`pseudo_class_str`/`css_selector_to_string`/`css_declarations_to_string`（私有，仅组内用）+ `style_rules_wire`。`use super::*` 复用父 `parse_html`/`find_by_selector`/`unique_selector_for_node`（子模块可访祖先私有项，同 selector_match 模式）。 |
+| **主文件瘦身** | `js_dom_bridge.rs`（2213 → **1902 行**） | 删上述两组 + `mod script_gen; pub use script_gen::*;` / `mod css_wire; pub use css_wire::*;` 声明。pub 函数经重导出，callbacks/engine/集成层调用点零改动。 |
+
+**为何零回归**：① 纯代码移动（函数体逐字搬移，零逻辑改动）；② `pub use foo::*` 保持公开 API 路径不变（调用方仍经 `js_dom_bridge::*` 访问）；③ 私有函数（`escape_js_string`/`attr_matcher_str` 等）仅组内使用，随组迁移无悬空引用；④ 全 engine 1651 测试零回归，workspace `make test` 14189 全绿。
+
+**为何选这两组**：script_gen（无 DOM 依赖，最自洽）+ css_wire（zero_css_parser AST→string，自洽）。其余大块（apply_dom_mutations ~590 行、JSON 查询 helper）与 `Document`/`DomMutation` 强耦合，拆分风险高，留独立 slice。主文件 1902 行仍在阈值附近，后续若再增代码可继续拆 apply 逻辑。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**14189 passed / 71 skipped / 0 failed**，零回归——纯重构，测试数不变）。
+
+**下一步**：续 P1a——① `getAttributeNames`/`dataset` stale（`__zw_attr_names` 仍读快照，R2995 限制 ③，低频，下一个属性反射 slice）；② 若 js_dom_bridge.rs 再增代码接近 2000，拆 `apply_dom_mutations` 逻辑独立模块；③ custom element upgrade / ctor（需 P1b RFC）；④ §5 测试质量（Streams pipeTo 背压 / history 状态机）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a select.value= 编程选中反映到 select.value/selectedIndex/option.selected（闭合 R2999 限制 ②，本轮 R3000，~14,189 测试）
 
 承接 R2999「下一步 ①」（audit）。R2999 让 `option.selected` getter latest-wins 后记录的 latent gap：`select.value = x` setter 记 `SelectOption` mutation（apply 时 mark option），但**读路径均不 consult SelectOption** → 全 stale。audit 实测确认 4 读路径 stale：`select.value` getter / `select.selectedIndex` getter / matched `option.selected` / unmatched `option.selected`。本切片闭合。
