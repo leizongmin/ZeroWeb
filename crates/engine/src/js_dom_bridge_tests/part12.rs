@@ -1358,3 +1358,119 @@ fn test_fetch_response_binary_body_r3021() {
         "response.text() 对二进制 body 返非空文本（TextDecoder best-effort 解码）"
     );
 }
+
+#[test]
+fn test_namednodemap_setnameditem_main_dom_r3022() {
+    // R3022：NamedNodeMap setNamedItem(attr)/removeNamedItem(name) 真 mutation（主 DOM 路径）。
+    // R3003 闭合 attributes 读路径（getNamedItem/Attr.value latest-wins），但 setNamedItem/removeNamedItem
+    // 仍为只读 no-op → lib 经 element.attributes.setNamedItem(attr) 改属性静默失效。本切片委托元素 setAttribute/
+    // removeAttribute host 路径，返旧/移除 Attr。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d' class='c'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // setNamedItem 新属性 → getAttribute / getNamedItem 反映；返旧 Attr=null（新属性）。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             var old1 = d.attributes.setNamedItem({ name: 'data-x', value: 'v1' });\
+             globalThis.__old1 = String(old1 === null);\
+             globalThis.__gv = d.getAttribute('data-x');\
+             globalThis.__nv = d.attributes.getNamedItem('data-x').value;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__old1").unwrap().value, "true", "setNamedItem 新属性返 null（无旧 Attr）");
+    assert_eq!(sandbox.execute("globalThis.__gv").unwrap().value, "v1", "setNamedItem 后 getAttribute='v1'（经 setAttribute host 路径）");
+    assert_eq!(sandbox.execute("globalThis.__nv").unwrap().value, "v1", "setNamedItem 后 attributes.getNamedItem('data-x').value='v1'（latest-wins）");
+
+    // setNamedItem 改既有属性 → 返旧 Attr {name,value}；新值反映。
+    sandbox
+        .execute(
+            "var old2 = d.attributes.setNamedItem({ name: 'class', value: 'newc' });\
+             globalThis.__old2Name = old2 ? old2.name : '(null)';\
+             globalThis.__old2Val = old2 ? old2.value : '(null)';\
+             globalThis.__newClass = d.getAttribute('class');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__old2Name").unwrap().value, "class", "setNamedItem 改既有属性返旧 Attr.name=class");
+    assert_eq!(sandbox.execute("globalThis.__old2Val").unwrap().value, "c", "setNamedItem 返旧 Attr.value='c'（原值）");
+    assert_eq!(sandbox.execute("globalThis.__newClass").unwrap().value, "newc", "setNamedItem 改 class 后 getAttribute='newc'");
+
+    // removeNamedItem 既存 → 返移除 Attr；hasAttribute=false。
+    sandbox
+        .execute(
+            "var rem = d.attributes.removeNamedItem('data-x');\
+             globalThis.__remName = rem ? rem.name : '(null)';\
+             globalThis.__hasX = String(d.hasAttribute('data-x'));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__remName").unwrap().value, "data-x", "removeNamedItem('data-x') 返移除 Attr.name=data-x");
+    assert_eq!(sandbox.execute("globalThis.__hasX").unwrap().value, "false", "removeNamedItem 后 hasAttribute('data-x')=false");
+
+    // removeNamedItem 缺失 → null（best-effort 不抛 NOT_FOUND_ERR）。
+    sandbox.execute("globalThis.__remMissing = String(d.attributes.removeNamedItem('nope') === null);").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__remMissing").unwrap().value,
+        "true",
+        "removeNamedItem 缺失属性返 null（best-effort，不抛）"
+    );
+}
+
+#[test]
+fn test_namednodemap_setnameditem_mutable_tree_r3022() {
+    // R3022：NamedNodeMap setNamedItem/removeNamedItem mutable tree 路径（detached document _zwMEl attrs +
+    // DOMParser lazy bridge 经 _ensureMutTree 复用 _zwMEl attrs）。R3018 闭合 setAttribute/removeAttribute
+    // 入树但 NamedNodeMap mutation 缺失。本切片补 _zwMEl attrs.setNamedItem/removeNamedItem，序列化反映。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // detached document _zwMEl attrs：setNamedItem 新/改 + removeNamedItem + 序列化反映。
+    sandbox
+        .execute(
+            "var doc = document.implementation.createHTMLDocument('');\
+             doc.body.innerHTML = '<div id=\"d\" class=\"c\"></div>';\
+             var div = doc.body.childNodes[0];\
+             var old1 = div.attributes.setNamedItem({ name: 'data-x', value: '1' });\
+             var old2 = div.attributes.setNamedItem({ name: 'id', value: 'd2' });\
+             var rem = div.attributes.removeNamedItem('class');\
+             globalThis.__old1 = String(old1 === null);\
+             globalThis.__old2Val = old2 ? old2.value : '(null)';\
+             globalThis.__remName = rem ? rem.name : '(null)';\
+             globalThis.__outer = div.outerHTML;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__old1").unwrap().value, "true", "mutable tree setNamedItem 新属性返 null");
+    assert_eq!(sandbox.execute("globalThis.__old2Val").unwrap().value, "d", "mutable tree setNamedItem 改 id 返旧 value='d'");
+    assert_eq!(sandbox.execute("globalThis.__remName").unwrap().value, "class", "mutable tree removeNamedItem('class') 返 Attr.name=class");
+    let outer = sandbox.execute("globalThis.__outer").unwrap().value;
+    assert!(outer.contains("data-x=\"1\""), "mutable tree 序列化含 data-x=\"1\"（setNamedItem 反映）：{outer}");
+    assert!(outer.contains("id=\"d2\""), "mutable tree 序列化含 id=\"d2\"（setNamedItem 改 id）：{outer}");
+    assert!(!outer.contains("class="), "mutable tree 序列化不含 class（removeNamedItem 反映）：{outer}");
+
+    // DOMParser lazy bridge（_zwParseEl → _ensureMutTree → _zwMEl attrs）同受益。
+    sandbox
+        .execute(
+            "var d2 = new DOMParser().parseFromString('<p title=\"t\"></p>', 'text/html');\
+             var p = d2.body.childNodes[0];\
+             p.attributes.setNamedItem({ name: 'data-y', value: '2' });\
+             globalThis.__pOuter = p.outerHTML;",
+        )
+        .unwrap();
+    let pouter = sandbox.execute("globalThis.__pOuter").unwrap().value;
+    assert!(pouter.contains("data-y=\"2\""), "DOMParser lazy bridge setNamedItem 序列化含 data-y=\"2\"：{pouter}");
+}

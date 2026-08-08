@@ -945,6 +945,22 @@
     _zwMDefineSiblings(node);
     attrs.item = function (i) { return attrs[i] || null; };
     attrs.getNamedItem = function (n) { var v = node.getAttribute(n); return v === null ? null : { name: String(n), value: v }; };
+    // R3022：NamedNodeMap 真 mutation——setNamedItem(attr) 等价 setAttribute(attr.name, attr.value)，
+    // 返旧 Attr（或 null）；removeNamedItem(name) 等价 removeAttribute，返移除 Attr（缺失返 null，best-effort 不抛）。
+    attrs.setNamedItem = function (attr) {
+      if (!attr || attr.name == null) return null;
+      var n = String(attr.name);
+      var old = node.getAttribute(n);
+      node.setAttribute(n, attr.value != null ? String(attr.value) : '');
+      return old !== null ? { name: n, value: old } : null;
+    };
+    attrs.removeNamedItem = function (n) {
+      n = String(n);
+      var old = node.getAttribute(n);
+      if (old === null) return null; // spec NOT_FOUND_ERR；best-effort 返 null（不抛，避中断库枚举）
+      node.removeAttribute(n);
+      return { name: n, value: old };
+    };
     return node;
   }
   // R3018：id/class 属性 ↔ IDL 字段（node.id/node.className）同步，setAttribute/removeAttribute 后保持一致。
@@ -1132,10 +1148,10 @@
   // 枚举。旧实现仅 per-property get/set，缺方法（调用即 TypeError）与 cssText（get 返 ''、set 误当
   // 属性名）。底层走 `__zw_set_style`/`__zw_get_attr('style')`；removeProperty 经 `__zw_remove_style`
   // 真移除声明（SetStyle 空值仍 push，不移除）；cssText set 经 `__zw_set_attr` 整体替换。
-  // `el.attributes`（NamedNodeMap，只读快照）：length / item(i) / getNamedItem(name) / 数值索引 /
+  // `el.attributes`（NamedNodeMap）：length / item(i) / getNamedItem(name) / 数值索引 /
   // Symbol.iterator，每项 Attr-like {name,value,localName,...}。经 `__zw_attr_names`+`__zw_get_attr`。
-  // handle-only（无 attr_names 变体）→ 空集；setNamedItem/removeNamedItem 只读 no-op（deferred 模式下
-  // 改属性走 setAttribute/removeAttribute，NamedNodeMap 为只读快照视图）。
+  // handle-only（无 attr_names 变体）→ 空集；R3022：setNamedItem/removeNamedItem 真 mutation（委托元素
+  // setAttribute/removeAttribute host 路径，返旧/移除 Attr），不再只读 no-op。
   function _attributesProxy(sel, handle) {
     var readNames = function() {
       if (!sel || typeof __zw_attr_names !== 'function') return [];
@@ -1178,8 +1194,30 @@
             return names.indexOf(n) >= 0 ? attrObj(n) : null;
           };
         }
-        if (p === 'setNamedItem' || p === 'removeNamedItem') {
-          return function() { return null; }; // 只读快照
+        if (p === 'setNamedItem') {
+          // R3022：真 mutation——setNamedItem(attr) 等价 setAttribute(attr.name, attr.value)（经元素 host 路径），
+          // 返旧 Attr（或 null）。lib 经 element.attributes.setNamedItem(attr) 改属性（与 setAttribute 等价路径）。
+          // 返值用 setAttribute 前捕获的 old（attrObj 会 latest-wins 重读到新值）。
+          return function (attr) {
+            if (!attr || attr.name == null) return null;
+            var n = String(attr.name);
+            var el = _makeProxy(sel, handle);
+            var old = null;
+            try { old = el.getAttribute(n); } catch (_e) {}
+            try { el.setAttribute(n, attr.value != null ? String(attr.value) : ''); } catch (_e) {}
+            return old != null && old !== '' ? { name: n, value: old } : null;
+          };
+        }
+        if (p === 'removeNamedItem') {
+          // R3022：真 mutation——removeNamedItem(name) 等价 removeAttribute（经元素 host 路径），返移除 Attr（缺失返 null）。
+          return function (name) {
+            var n = String(name);
+            var el = _makeProxy(sel, handle);
+            var existed = null;
+            try { existed = el.getAttribute(n); } catch (_e) {}
+            try { el.removeAttribute(n); } catch (_e) {}
+            return existed != null && existed !== '' ? { name: n, value: existed } : null;
+          };
         }
         if (p === Symbol.iterator) {
           return function() {
