@@ -112,6 +112,28 @@
 
 ## 最近完成的改进
 
+### P1a Response/Request headers → Headers 实例（fetch API spec 合规，本轮 R2977，~14,155 测试）
+
+R2976（callbacks 子模块拆分）后续补 fetch API spec 合规。`Response.headers`/`Request.headers` 自 R2968 起为 **plain dict**（为 bracket-access 兼容 integration test `r.headers['X-Test']`）——非 spec `Headers` 实例，modern 代码 `response.headers.get('content-type')` / `.has()` / `.forEach()` 全不可用（modern 库普遍用 Headers API 而非 bracket）。本切片迁 Headers 实例。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part01.js` | Response/Request 构造器 `this.headers = _headersToPlain(...)` → `this.headers = new Headers(...)`（Headers 构造器接受 plain dict / Headers-like / [[k,v]] / undefined）。**删除 `_headersToPlain`** helper（R2968 引入，迁移后死代码）。更新 3 处注释（Response/Request/_makeResponseFromWire 不再 plain-dict）。clone 经 `new Response(headers)` 再封装 Headers 实例（Headers 构造器 forEach 分支接受 Headers 实例）。 |
+| `crates/engine/src/js_dom_bridge_tests/part10.rs` | R2968 测试 `test_response_request_constructors_r2968` 更新：`r.headers['X-Test']`→`r.headers.get('X-Test')` + `instanceof Headers` 断言（true）+ `.has('X-Test')` 断言（true）；Request `q.headers['Content-Type']`→`.get(...)`；移除 `__hasHdrGet=false` 断言（Headers 实例有 .get）。 |
+| `apps/browser/src/tab_js_worker.rs` | integration test `r.headers['X-Test']` → `r.headers.get('X-Test')`（line 764）。 |
+
+**为何 Headers 实例比 plain dict 更兼容**：modern fetch 消费代码（axios/ky/wretch/原生 fetch polyfill）普遍经 `response.headers.get('content-type')` 读头（Headers API），而非 bracket `headers['content-type']`（非标准，real browser Response.headers 为 Headers 实例，bracket 返 undefined）。迁 Headers 实例使 modern 代码可用 + `instanceof Headers` 成立（spec）。Headers 构造器（part02）已有完整 API：get/set/has/append/delete/forEach/entries/keys/values。
+
+**为何 clone 仍正确**：`Response.clone()` 经 `new Response(bodyText, {headers: self.headers})`，Headers 构造器 forEach 分支接受 Headers 实例（迭代其 entries 重建）→ clone 的 headers 是新 Headers 实例（独立副本，非引用共享）。Request.clone 同。
+
+**为何零回归**：Headers 实例经 `.get()` 提供等价读取（bracket 调用点全迁移 .get：tab_js_worker + R2968 测试，2 处 JS-shim 调用点；net/protocol crate 的 `req.headers[0]` 是 Rust Vec 索引非 JS shim，不受影响）；`_makeResponseFromWire` 经 `new Response(body, {headers: plainDict})` → 构造器封装 Headers 实例，`response.headers.get('X-Test')` 等价返值。`make test` 14155 全绿（含 tab_js_worker fetch header 测试 `201:Created:ok` + `r2923`）验证。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14155 passed / 71 skipped / 0 failed**（测试计数不变 = headers 读取语义等价迁移）+ clippy `-D warnings` 零警告（workspace）+ fmt clean + 全 shim `node --check` 通过。
+
+**已知限制（follow-up）**：① Headers 实例不支持 bracket 访问（`r.headers['x']` 返 undefined，须 `.get('x')`——spec 正确，bracket 本就非标准）；② `_headersToPlain` 删除后无 plain-dict 转换路径（不再需要）。
+
+**下一步**：续 P1a——① 其他 defer Web API（ClipboardItem 图片剪贴板）；② task source 优先级（事件循环边缘）；③ customElements upgrade（需 P1b RFC 审批）；④ js_dom_bridge.rs 进一步拆 apply_dom_mutations（2065→<2000，非紧急）。
+
 ### 工程治理——js_dom_bridge.rs 拆分 slice 4：callbacks 子模块（3149→2065，文件大小治理闭合，本轮 R2976，~14,155 测试）
 
 R2975（selector_match 拆分 slice 3）后续续 js_dom_bridge.rs 文件大小治理。本切片抽**最大单体函数** `register_dom_callbacks`（~1079 行单函数，全部 `__zw_*` 回调注册）到子模块——四刀累计 `js_dom_bridge.rs` **3959→2065 行**（1.03×，基本达标 2000 准则）。

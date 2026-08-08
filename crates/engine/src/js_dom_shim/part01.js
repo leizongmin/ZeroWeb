@@ -184,7 +184,7 @@
     var body = rest.slice(p3 + 1); // 末字段，可含 \x1f
     var headers = _parseHeadersWire(headersWire);
     // R2968：经 new Response 构造（fetch 结果 instanceof Response）。字段 shape 与旧 plain object 一致
-    //（headers 保持 plain dict，body getter 同 R2967），integration test 的 r.headers['X-Test'] 仍可用。
+    //（headers 经 new Response 封装为 Headers 实例，R2977；body getter 同 R2967）。
     return new Response(body, { status: status, statusText: statusText, headers: headers });
   }
   // 收集 headers 源（Object / [[k,v]] / Headers-like forEach）→ `name\x1evalue\x1e...` wire（空 → ''）。
@@ -242,20 +242,9 @@
   // new Request）。`new Response(body, init)` / `new Request(url, init)` 用于 service worker 构造响应、fetch
   // 包装库、测试 mock。`_makeResponseFromWire` 经 new Response 路由 → fetch 结果 instanceof Response（同时保持
   // 字段 shape 与旧 plain object 逐字段一致：ok/status/statusText/headers/body/text()/json()）。
-  // **headers 保持 plain dict**（非 Headers 实例）——integration test 经 `r.headers['X-Test']` bracket 访问，
-  // Headers 实例不支持 bracket（须 .get），改 plain dict 兼容。spec Response.headers 为 Headers 实例属 follow-up。
-  function _headersToPlain(src) {
-    var out = {};
-    if (!src) return out;
-    if (typeof src.forEach === 'function') {
-      src.forEach(function (v, k) { out[String(k)] = String(v); });
-    } else {
-      for (var k in src) {
-        if (Object.prototype.hasOwnProperty.call(src, k)) out[String(k)] = String(src[k]);
-      }
-    }
-    return out;
-  }
+  // R2977：headers 为 Headers 实例（spec Response.headers）。modern 代码经 `response.headers.get('content-type')`
+  // 消费（比 bracket `headers['x']` 更常见 + 标准）——Headers 实例提供 get/has/append/set/delete/forEach/entries。
+  // `new Headers(init)` 接受 plain dict / Headers-like / [[k,v]] / undefined。clone 经 new Response(headers) 再封装。
   globalThis.Response = function Response(body, init) {
     if (!(this instanceof Response)) return new Response(body, init);
     init = init || {};
@@ -263,7 +252,7 @@
     this.status = status;
     this.ok = status >= 200 && status < 300;
     this.statusText = init.statusText != null ? String(init.statusText) : '';
-    this.headers = _headersToPlain(init.headers); // plain dict（bracket-access 兼容）
+    this.headers = new Headers(init.headers); // Headers 实例（spec，R2977）
     this.type = 'default';
     this.url = '';
     this.redirected = false;
@@ -283,14 +272,14 @@
   };
   // R2968 Request：`new Request(url|request, init)`。fetch(input) 既接受 string 也接受 Request-like
   //（读 .url/.method/.headers/.body），故 Request 字段对齐 fetch 消费路径（body 为 string|null，非 stream；
-  // headers 为 plain dict）。clone() 复制自身。
+  // R2977 headers 为 Headers 实例，同 Response）。clone() 复制自身。
   globalThis.Request = function Request(input, init) {
     if (!(this instanceof Request)) return new Request(input, init);
     init = init || {};
     var isObj = input && typeof input === 'object';
     this.url = isObj ? String(input.url || '') : String(input);
     this.method = String(init.method || (isObj ? input.method : '') || 'GET').toUpperCase();
-    this.headers = _headersToPlain(init.headers || (isObj ? input.headers : null));
+    this.headers = new Headers(init.headers || (isObj ? input.headers : null));
     this.body = init.body != null ? String(init.body) : (isObj && input.body != null ? String(input.body) : null);
     this.cache = init.cache || 'default';
     this.mode = init.mode || 'cors';

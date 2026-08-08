@@ -761,7 +761,7 @@ mod tests {
                 "fetch('/api/echo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{\"x\":1}' })\
                  .then(function(r){\
                    globalThis.__status = r.status + ':' + r.statusText + ':' + (r.ok ? 'ok' : 'no');\
-                   globalThis.__hdr = r.headers['X-Test'];\
+                   globalThis.__hdr = r.headers.get('X-Test');\
                    return r.text();\
                  })\
                  .then(function(t){ globalThis.__result = t; });",

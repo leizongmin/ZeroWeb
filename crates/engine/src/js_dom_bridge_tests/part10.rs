@@ -709,7 +709,7 @@ fn test_response_body_readable_stream_r2967() {
 fn test_response_request_constructors_r2968() {
     // R2968：Response / Request 全局构造器（补全 fetch API 表面）。new Response/new Request 构造 +
     // fetch 结果 instanceof Response（_makeResponseFromWire 经 new Response 路由）+ fetch(new Request) 消费。
-    // headers 保持 plain dict（bracket-access 兼容 integration test r.headers['X-Test']）。
+    // R2977：headers 为 Headers 实例（.get/.has API，spec），非 plain dict。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -723,7 +723,7 @@ fn test_response_request_constructors_r2968() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
 
-    // Response 构造器：status/statusText/ok/headers(plain dict bracket)/text/json/clone/instanceof。
+    // Response 构造器：status/statusText/ok/headers(Headers 实例 .get)/text/json/clone/instanceof。
     sandbox
         .execute(
             "var r = new Response('{\"a\":1}', { status: 201, statusText: 'Created', headers: { 'X-Test': 'r2968' } });\
@@ -731,8 +731,9 @@ fn test_response_request_constructors_r2968() {
              globalThis.__ok = r.ok;\
              globalThis.__status = r.status;\
              globalThis.__statusText = r.statusText;\
-             globalThis.__hdr = r.headers['X-Test'];\
-             globalThis.__hasHdrGet = (typeof r.headers.get === 'function');\
+             globalThis.__hdrIsHeaders = (r.headers instanceof Headers);\
+             globalThis.__hdr = r.headers.get('X-Test');\
+             globalThis.__hdrHas = r.headers.has('X-Test');\
              globalThis.__bodyIsStream = (r.body instanceof ReadableStream);\
              r.text().then(function(t){ globalThis.__text = t; });\
              r.json().then(function(j){ globalThis.__json = j.a; });\
@@ -743,12 +744,13 @@ fn test_response_request_constructors_r2968() {
     assert_eq!(sandbox.execute("String(globalThis.__ok)").unwrap().value, "true", "status 201 → ok=true");
     assert_eq!(sandbox.execute("String(globalThis.__status)").unwrap().value, "201", "status 从 init");
     assert_eq!(sandbox.execute("String(globalThis.__statusText)").unwrap().value, "Created", "statusText 从 init");
-    assert_eq!(sandbox.execute("String(globalThis.__hdr)").unwrap().value, "r2968", "headers 为 plain dict（bracket 访问）");
     assert_eq!(
-        sandbox.execute("String(globalThis.__hasHdrGet)").unwrap().value,
-        "false",
-        "headers 为 plain dict（非 Headers 实例，无 .get）"
+        sandbox.execute("String(globalThis.__hdrIsHeaders)").unwrap().value,
+        "true",
+        "R2977：Response.headers instanceof Headers（spec）"
     );
+    assert_eq!(sandbox.execute("String(globalThis.__hdr)").unwrap().value, "r2968", "headers.get('X-Test') = 'r2968'（Headers API）");
+    assert_eq!(sandbox.execute("String(globalThis.__hdrHas)").unwrap().value, "true", "headers.has('X-Test') = true");
     assert_eq!(
         sandbox.execute("String(globalThis.__bodyIsStream)").unwrap().value,
         "true",
@@ -764,13 +766,13 @@ fn test_response_request_constructors_r2968() {
     assert_eq!(sandbox.execute("String(globalThis.__dOk)").unwrap().value, "true", "默认 ok=true");
     assert_eq!(sandbox.execute("String(globalThis.__dST)").unwrap().value, "", "默认 statusText=''");
 
-    // Request 构造器：url/method(upper)/headers(plain dict)/body + clone。
+    // Request 构造器：url/method(upper)/headers(Headers 实例)/body + clone。
     sandbox
         .execute(
             "var q = new Request('http://test.local/api', { method: 'post', headers: { 'Content-Type': 'text/plain' }, body: 'hello' });\
              globalThis.__qUrl = q.url;\
              globalThis.__qMethod = q.method;\
-             globalThis.__qHdr = q.headers['Content-Type'];\
+             globalThis.__qHdr = q.headers.get('Content-Type');\
              globalThis.__qBody = q.body;\
              globalThis.__qCloneUrl = q.clone().url;\
              globalThis.__qCloneMethod = q.clone().method;",
