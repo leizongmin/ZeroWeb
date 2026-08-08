@@ -245,18 +245,22 @@
       var method = String(init.method || (isObj ? input.method : '') || 'GET').toUpperCase();
       var headersWire = _headersToWire(init.headers) || (isObj ? _headersToWire(input.headers) : '');
       var body = '';
-      // R3014：FormData body → multipart 序列化 + Content-Type（fetch POST 表单提交 / 文件上传）。
+      // R3014/R3015：body 类型分发——FormData（multipart）/ URLSearchParams（urlencoded）/ Blob（字节）/
+      // string（原样）。各专用类型在用户未设 Content-Type 时设默认值（缺省 Content-Type 不覆写用户显式值）。
       // 文本内容经 UTF-8 wire 保真；二进制 Blob 字节 best-effort（host byte-wire 全保真为独立 follow-up）。
-      var fdBody = (init.body != null && init.body instanceof FormData) ? init.body
-        : (isObj && input.body != null && input.body instanceof FormData ? input.body : null);
-      if (fdBody) {
-        var mp = fdBody._zwMultipart();
+      var rawBody = init.body != null ? init.body : (isObj && input.body != null ? input.body : null);
+      if (rawBody instanceof FormData) {
+        var mp = rawBody._zwMultipart();
         body = new TextDecoder().decode(mp.body);
         if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', mp.contentType);
-      } else if (init.body != null) {
-        body = String(init.body);
-      } else if (isObj && input.body != null) {
-        body = String(input.body);
+      } else if (rawBody instanceof URLSearchParams) {
+        body = String(rawBody); // toString → urlencoded
+        if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', 'application/x-www-form-urlencoded;charset=UTF-8');
+      } else if (rawBody instanceof Blob) {
+        body = new TextDecoder().decode(_zw_blobBytes(rawBody)); // Blob 字节 text-decode（旧 String='[object Blob]'）
+        if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', rawBody.type || 'application/octet-stream');
+      } else if (rawBody != null) {
+        body = String(rawBody);
       }
       if (typeof __zw_fetch !== 'function') {
         return Promise.resolve(_makeResponse('__zw_fetch_error:no-handler'));

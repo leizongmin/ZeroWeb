@@ -660,4 +660,91 @@ fn test_form_data_multipart_r3014() {
     );
 }
 
+#[test]
+fn test_fetch_body_types_r3015() {
+    // R3015：fetch body 类型扩展——URLSearchParams（urlencoded + Content-Type）/ Blob（字节 + Content-Type）。
+    // 旧 fetch 经 String(body) 归一：URLSearchParams body 缺 Content-Type、Blob body 为 '[object Blob]'。
+    // 本切片：instanceof 链分发，缺省 Content-Type 时设（用户显式 Content-Type 保留不覆写）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // mock __zw_fetch：每次调用 clear + 捕获全部 args（id/method/url/headersWire/body）。
+    let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let cap = Arc::clone(&captured);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let mut g = cap.lock().unwrap();
+            g.clear();
+            for a in args.iter() {
+                g.push(a.clone());
+            }
+            "ok".to_string()
+        }),
+    );
+
+    // URLSearchParams body：body=urlencoded + Content-Type application/x-www-form-urlencoded。
+    sandbox
+        .execute("fetch('http://t/u', { method: 'POST', body: new URLSearchParams({ q: 'hello', n: '1' }) });")
+        .unwrap();
+    {
+        let g = captured.lock().unwrap();
+        assert_eq!(g[1], "POST", "URLSearchParams body → method=POST");
+        assert_eq!(g[4], "q=hello&n=1", "URLSearchParams body → urlencoded（toString）");
+        let hw = g[3].to_lowercase();
+        assert!(
+            hw.contains("application/x-www-form-urlencoded"),
+            "URLSearchParams → Content-Type application/x-www-form-urlencoded，got headers: {hw}"
+        );
+    }
+
+    // Blob body：body=text + Content-Type blob.type（旧 '[object Blob]'）。
+    sandbox
+        .execute("fetch('http://t/b', { method: 'POST', body: new Blob(['payload'], { type: 'text/plain' }) });")
+        .unwrap();
+    {
+        let g = captured.lock().unwrap();
+        assert_eq!(g[4], "payload", "Blob body → text（旧 String(blob)='[object Blob]'）");
+        let hw = g[3].to_lowercase();
+        assert!(hw.contains("text/plain"), "Blob → Content-Type blob.type=text/plain，got headers: {hw}");
+    }
+
+    // string body + 显式 Content-Type：body 原样，用户 Content-Type 保留（不被覆写）。
+    sandbox
+        .execute(
+            "fetch('http://t/s', { method: 'POST', body: '{\"a\":1}', headers: { 'Content-Type': 'application/json' } });",
+        )
+        .unwrap();
+    {
+        let g = captured.lock().unwrap();
+        assert_eq!(g[4], "{\"a\":1}", "string body 原样（String()）");
+        let hw = g[3].to_lowercase();
+        assert!(
+            hw.contains("application/json") && !hw.contains("application/x-www-form-urlencoded"),
+            "用户显式 Content-Type 保留不覆写，got headers: {hw}"
+        );
+    }
+
+    // FormData body 仍 multipart（R3014 非回归）。
+    sandbox
+        .execute("var fd = new FormData(); fd.append('k', 'v'); fetch('http://t/f', { method: 'POST', body: fd });")
+        .unwrap();
+    {
+        let g = captured.lock().unwrap();
+        let hw = g[3].to_lowercase();
+        assert!(hw.contains("multipart/form-data"), "FormData body 仍 multipart（R3014 非回归）");
+        assert!(
+            g[4].contains("Content-Disposition: form-data; name=\"k\""),
+            "FormData body multipart 标记（R3014 非回归）"
+        );
+    }
+}
+
 
