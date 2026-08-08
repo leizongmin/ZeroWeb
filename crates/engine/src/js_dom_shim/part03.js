@@ -78,6 +78,58 @@
   globalThis.Node.prototype = {};
   globalThis.Element.prototype = Object.create(globalThis.Node.prototype);
   globalThis.HTMLElement.prototype = Object.create(globalThis.Element.prototype);
+  // R3019：DOM 接口构造器占位——库（DOMPurify 等）常做 `x instanceof HTMLFormElement` /
+  // `el.attributes instanceof NamedNodeMap` / `node.content instanceof DocumentFragment` 校验。
+  // 这些构造器须以 function 存在（否则 `instanceof undefined` 抛 TypeError 中断 sanitize）。本桥接的
+  // 元素为 proxy 对象非真实例，instanceof 恒返 false（正确：DOMPurify 仅借此识别 form/template 特殊处理）。
+  // 原型链挂到对应基类（DocumentFragment→Node、HTML*→HTMLElement）仅为语义一致，instanceof 不依赖实例身份。
+  globalThis.HTMLFormElement = globalThis.HTMLFormElement || function HTMLFormElement() {};
+  globalThis.HTMLFormElement.prototype = Object.create(globalThis.HTMLElement.prototype);
+  globalThis.NamedNodeMap = globalThis.NamedNodeMap || function NamedNodeMap() {};
+  globalThis.DocumentFragment = globalThis.DocumentFragment || function DocumentFragment() {};
+  globalThis.DocumentFragment.prototype = Object.create(globalThis.Node.prototype);
+  // R3019：Element.prototype 成员补全——DOMPurify 等库加载时经 lookupGetter(ElementPrototype, 'parentNode'/
+  // 'remove'/'cloneNode'/'nextSibling'/'childNodes') 固化原型链成员（unapply 后以节点为 this 调用）。旧 shim
+  // 原型空壳 → lookup 全落 fallback（恒返 null）→ _forceRemove 的 getParentNode(node).removeChild(node) 抛
+  // TypeError → catch 走 remove(node)（fallback 空函数）静默失败：removed 数组记录了但节点从未真正移除
+  // （真实 DOMPurify sanitize 保留 iframe，探针实证）。补真实成员：getter 优先 own property（_zwMEl 节点
+  // own parentNode/childNodes 等），无 own → null（页面 proxy 同旧 fallback 语义，零回归）。
+  function _zwProtoOwnGetter(name) {
+    return function () { return Object.prototype.hasOwnProperty.call(this, name) ? this[name] : null; };
+  }
+  Object.defineProperty(globalThis.Element.prototype, 'parentNode', { get: _zwProtoOwnGetter('parentNode'), configurable: true });
+  Object.defineProperty(globalThis.Element.prototype, 'childNodes', { get: _zwProtoOwnGetter('childNodes'), configurable: true });
+  Object.defineProperty(globalThis.Element.prototype, 'nextSibling', { get: _zwProtoOwnGetter('nextSibling'), configurable: true });
+  // remove()（Node 方法）：DOMPurify _forceRemove catch 分支。_zwMEl 节点无 own remove → 走原型。
+  Object.defineProperty(globalThis.Element.prototype, 'remove', { value: function () {
+    var p = this.parentNode;
+    if (p && typeof p.removeChild === 'function') p.removeChild(this);
+  }, configurable: true });
+  // cloneNode(deep)（Node 方法）：DOMPurify keep-content 路径（clone 子节点插回 parentNode）。deep 克隆
+  // 复制 nodeType/attrs/子树（含文本/注释），parentNode=null 由 insertBefore relink。内联深克隆（不依赖子
+  // 节点有 cloneNode 方法——_zwMText/_zwMComment 为 plain object 无原型方法）。
+  globalThis.Element.prototype.cloneNode = function (deep) {
+    function deepClone(n) {
+      if (!n || typeof n !== 'object' || n.nodeType === undefined) return null;
+      var o;
+      if (n.nodeType === 3 || n.nodeType === 8) {
+        o = { nodeType: n.nodeType, nodeName: n.nodeName, nodeValue: n.nodeValue, data: n.nodeValue, textContent: n.nodeValue, childNodes: [], children: [] };
+      } else if (n.nodeType === 1) {
+        o = { nodeType: 1, nodeName: n.nodeName, tagName: n.tagName, localName: n.localName, attributes: [], childNodes: [], children: [] };
+        var as = n.attributes;
+        if (as) for (var i = 0; i < as.length; i++) o.attributes.push({ name: as[i].name, value: as[i].value });
+        var cs = n.childNodes;
+        if (cs) for (var j = 0; j < cs.length; j++) {
+          var cc = deepClone(cs[j]);
+          if (cc) { cc.parentNode = o; o.childNodes.push(cc); }
+        }
+      } else {
+        return null;
+      }
+      return o;
+    }
+    return deepClone(this);
+  };
   // Node.DOCUMENT_POSITION_* 静态常量（compareDocumentPosition bitmask，R2815）——库常读 Node.DOCUMENT_POSITION_FOLLOWING 等。
   globalThis.Node.DOCUMENT_POSITION_DISCONNECTED = 1;
   globalThis.Node.DOCUMENT_POSITION_PRECEDING = 2;
@@ -851,6 +903,8 @@
     };
     node.getAttribute = function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return attrs[i].value; return null; };
     node.hasAttribute = function (n) { return node.getAttribute(n) !== null; };
+    // R3019：hasChildNodes（DOMPurify _sanitizeElements mXSS 检查调 currentNode.hasChildNodes()）。
+    node.hasChildNodes = function () { return node.childNodes.length > 0; };
     // R3018：属性 mutation 入树（setAttribute/removeAttribute 改 attrs 数组，序列化反映）。
     // setAttribute 已存在则更新值（latest-wins），否则追加；id/class 同步 IDL 反射字段。
     node.setAttribute = function (n, v) {
@@ -898,8 +952,8 @@
     if (attrName === 'id') node.id = node.getAttribute('id') || '';
     else if (attrName === 'class') node.className = node.getAttribute('class') || '';
   }
-  function _zwMText(v, parent) { var t = String(v); var n = { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, childNodes: [], children: [], parentNode: parent || null }; _zwMDefineSiblings(n); return n; }
-  function _zwMComment(v, parent) { var t = String(v); var n = { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, childNodes: [], children: [], parentNode: parent || null }; _zwMDefineSiblings(n); return n; }
+  function _zwMText(v, parent) { var t = String(v); var n = { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, parentNode: parent || null }; _zwMDefineSiblings(n); return n; }
+  function _zwMComment(v, parent) { var t = String(v); var n = { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, parentNode: parent || null }; _zwMDefineSiblings(n); return n; }
   // 递归建子树：entry = {k:'E',s:sel}/{k:'T',v}/{k:'C',v}（__zw_parse_html_child_nodes）。元素取快照 + 递归子。
   function _zwMBuildNode(html, entry, parent) {
     if (entry.k === 'T') return _zwMText(entry.v, parent);

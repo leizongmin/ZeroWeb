@@ -1461,6 +1461,44 @@
     for (var i = 0; i < arr.length; i++) out.push(new _zwParseEl(arr[i]));
     return out;
   };
+  // R3019：lazy 可变子树桥——DOMPurify / sanitizer / 树遍历库经 DOMParser.parseFromString 拿到 body 后，
+  // 用 createNodeIterator 递归 childNodes + removeChild/setAttribute/removeAttribute 清洗 + 读 body.innerHTML。
+  // 旧 _zwParseEl 为只读快照（无 childNodes/mutation），walk 恒只见 root。本桥首次 childNodes/mutation 访问时
+  // 从 outerHTML 建可变 _zwMEl 子树（复用 part03 的 _zwMEl/_zwMBuildNode，IIFE 内函数声明提升可跨 part 引用）
+  // 并把 innerHTML/outerHTML/getAttribute/hasAttribute/textContent rewire 为 live 树视图——读语义对纯读调用方
+  // 零变化（未触树建），mutation 后序列化反映变更。后代为真实 _zwMEl/_zwMText 节点（全 mutation 语义）。
+  _zwParseEl.prototype._ensureMutTree = function () {
+    if (this._mtree) return this._mtree;
+    var tag = this.localName || 'div';
+    var snap = { tag: tag, id: this.id, cls: this.className, attrs: this._attrs };
+    var node = _zwMEl(snap, null);
+    if (typeof __zw_parse_html_child_nodes === 'function') {
+      try {
+        var arr = JSON.parse(__zw_parse_html_child_nodes(this.outerHTML, tag));
+        for (var i = 0; i < arr.length; i++) if (arr[i]) node.childNodes.push(_zwMBuildNode(this.outerHTML, arr[i], node));
+      } catch (_e) {}
+    }
+    this._mtree = node;
+    var self = this;
+    // rewire 读字段为 live 树视图（mutation 后 body.innerHTML 等反映变更）。
+    Object.defineProperty(this, 'innerHTML', { get: function () { return node.innerHTML; }, configurable: true });
+    Object.defineProperty(this, 'outerHTML', { get: function () { return node.outerHTML; }, configurable: true });
+    Object.defineProperty(this, 'textContent', { get: function () { return node.textContent; }, configurable: true });
+    Object.defineProperty(this, 'getAttribute', { value: function (n) { return node.getAttribute(n); }, configurable: true });
+    Object.defineProperty(this, 'hasAttribute', { value: function (n) { return node.hasAttribute(n); }, configurable: true });
+    Object.defineProperty(this, 'attributes', { get: function () { return node.attributes; }, configurable: true });
+    return node;
+  };
+  Object.defineProperty(_zwParseEl.prototype, 'childNodes', { get: function () { return this._ensureMutTree().childNodes; }, configurable: true });
+  Object.defineProperty(_zwParseEl.prototype, 'children', { get: function () { return this._ensureMutTree().children; }, configurable: true });
+  Object.defineProperty(_zwParseEl.prototype, 'firstChild', { get: function () { return this._ensureMutTree().firstChild; }, configurable: true });
+  Object.defineProperty(_zwParseEl.prototype, 'lastChild', { get: function () { return this._ensureMutTree().lastChild; }, configurable: true });
+  _zwParseEl.prototype.insertBefore = function (n, ref) { return this._ensureMutTree().insertBefore(n, ref); };
+  _zwParseEl.prototype.appendChild = function (n) { return this._ensureMutTree().appendChild(n); };
+  _zwParseEl.prototype.removeChild = function (n) { return this._ensureMutTree().removeChild(n); };
+  _zwParseEl.prototype.setAttribute = function (n, v) { this._ensureMutTree().setAttribute(n, v); };
+  _zwParseEl.prototype.removeAttribute = function (n) { this._ensureMutTree().removeAttribute(n); };
+  _zwParseEl.prototype.hasChildNodes = function () { return this._ensureMutTree().hasChildNodes(); };
   // DOMParser 解析出的 Document（只读）。querySelector/getElementById/body 经 host 回调重解析。
   function _zwParsedDoc(html) {
     this._html = html;

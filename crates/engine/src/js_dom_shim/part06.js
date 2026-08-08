@@ -734,9 +734,19 @@
       return all.split('|').filter(Boolean).map(_wrapSelector);
     },
     getElementsByClassName: function(cls) {
+      // R3019：honor `this` for cross-document use（DOMPurify 等库 getElementsByClassName.call(parsedDoc, cls)
+      // 须查 parsedDoc 而非页面 document）。this === 页面 document 时走页面 DOM；否则委托 this.querySelectorAll。
+      if (this && this !== globalThis.document && typeof this.querySelectorAll === 'function') {
+        return this.querySelectorAll('.' + cls);
+      }
       return globalThis.document.querySelectorAll('.' + cls);
     },
     getElementsByTagName: function(tag) {
+      // R3019：honor `this` for cross-document use（DOMPurify _initDocument 经 getElementsByTagName.call(doc,'body')[0]
+      // 取 parsed doc 的 body——旧实现恒查页面 document 致 DOMPurify 清洗空页面 body 返 ""）。
+      if (this && this !== globalThis.document && typeof this.querySelectorAll === 'function') {
+        return this.querySelectorAll(String(tag));
+      }
       return globalThis.document.querySelectorAll(tag);
     },
     // `document.getElementsByName(name)`（R2980）——按 name 属性查全文档（表单字段 / a[name] 锚点 /

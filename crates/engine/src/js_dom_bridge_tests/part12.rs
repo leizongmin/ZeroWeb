@@ -1118,3 +1118,76 @@ fn test_sanitize_dompurify_style_r3018() {
 }
 
 
+
+#[test]
+fn test_sanitize_dompurify_real_r3019() {
+    // R3019：真实 DOMPurify 库端到端实测（R3018 下一步①）。加载真实 DOMPurify 3.2.7（fixture 66KB，
+    // Apache-2.0/MPL-2.0 双许可，许可证头保留于 fixture）→ sanitize 各类 dirty 输入验证清洗生效。
+    // 承接 R3018 driving test（复刻核心算法形态）升级为真实库验证：库内 feature-detect 路径
+    // （lookupGetter Element.prototype 成员固化、instanceof HTMLFormElement/NamedNodeMap、cross-document
+    // getElementsByTagName.call(doc)、NodeIterator 遍历、hasChildNodes mXSS 检查、FORBID_CONTENTS 整节点
+    // 移除、keep-content clone 子节点插回）全链路真实执行。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 加载真实 DOMPurify（fixture 保留原始许可证头）。加载失败 = shim 基础面不满足库加载 → panic。
+    let dp = include_str!("../../tests/fixtures/dompurify.js");
+    sandbox.execute(dp).unwrap();
+    let loaded = sandbox.execute(
+        "typeof DOMPurify === 'function' && DOMPurify.version === '3.2.7' && DOMPurify.isSupported === true",
+    ).unwrap().value;
+    assert_eq!(loaded, "true", "DOMPurify 3.2.7 加载 + isSupported 须为 true（feature-detect 全链路）：{loaded}");
+
+    // ① 禁元素移除 + 危险属性剥离：script/iframe 整节点移除（FORBID_CONTENTS），on*/style 属性剥离，
+    //    安全属性（src/class/title/alt/href）保留，正文保留。
+    let cases1 = [
+        // (输入, 期望结果, 断言说明)
+        ("<img src=x onerror=alert(1)>", "<img src=\"x\">", "剥离 onerror 保留 src"),
+        ("<script>alert(1)</script><p>hi</p>", "<p>hi</p>", "移除 script（host parse 亦剥，双路径）"),
+        ("<div onclick=evil()>text</div>", "<div>text</div>", "剥离 onclick 保留正文"),
+        ("<b>hello</b>", "<b>hello</b>", "安全输入 idempotent"),
+        ("<div><iframe src=\"x\"></iframe>keep</div>", "<div>keep</div>", "iframe FORBID_CONTENTS 整节点移除（R3019b 回归：旧实现 removed 记录但未真移除）"),
+        ("<a href='/ok' onclick='bad()'>link</a>", "<a href=\"/ok\">link</a>", "剥离 onclick 保留 href"),
+        ("<p>plain <strong>bold</strong> text</p>", "<p>plain <strong>bold</strong> text</p>", "安全输入原样"),
+        ("<p onmouseover=x()>hover <b>bold</b></p>", "<p>hover <b>bold</b></p>", "剥离深层 onmouseover 保留子元素"),
+    ];
+    for (i, (input, expected, why)) in cases1.iter().enumerate() {
+        let js = format!("try {{ globalThis.__r = DOMPurify.sanitize({input:?}); }} catch(e) {{ globalThis.__r = 'THROW:' + e; }}");
+        sandbox.execute(&js).unwrap();
+        let r = sandbox.execute("globalThis.__r").unwrap().value;
+        assert_eq!(r, *expected, "case{i}（{why}）：input={input:?} expected={expected:?} got={r:?}");
+    }
+
+    // ② keep-content 路径：非 allowed 且非 FORBID_CONTENTS 标签 → 移除元素但 clone 子节点插回父节点
+    //    （DOMPurify 默认 KEEP_CONTENT=true；custom-tag 不在白名单）。克隆须复制子 span 且 relink parentNode。
+    sandbox
+        .execute("globalThis.__r = DOMPurify.sanitize('<div><custom-tag><span>t</span></custom-tag></div>');")
+        .unwrap();
+    let r = sandbox.execute("globalThis.__r").unwrap().value;
+    assert_eq!(r, "<div><span>t</span></div>", "keep-content 移除 custom-tag 保留子 span（clone 插回）：{r}");
+
+    // ③ FORBID_CONTENTS 整节点移除不留内容（noscript 在 DEFAULT_FORBID_CONTENTS）：
+    //    KEEP_CONTENT 不适用 → 整节点移除（含子内容），与真实 DOMPurify 语义一致。
+    sandbox
+        .execute("globalThis.__r = DOMPurify.sanitize('<div><noscript><p>ns</p></noscript></div>');")
+        .unwrap();
+    let r = sandbox.execute("globalThis.__r").unwrap().value;
+    assert_eq!(r, "<div></div>", "noscript FORBID_CONTENTS 整节点移除不留子内容：{r}");
+
+    // ④ removed 数组真实记录移除（R3019b 回归：旧实现 removed 有记录但节点未从树中移除——_forceRemove
+    //    的 getParentNode fallback 恒 null → removeChild 抛错 → catch 走空 remove() 静默失败）。
+    sandbox
+        .execute("DOMPurify.removed = []; globalThis.__r = DOMPurify.sanitize('<div><iframe src=\"x\"></iframe>keep</div>'); globalThis.__removed = DOMPurify.removed.map(function(x){ return x.element ? x.element.nodeName : '?'; }).join(',');")
+        .unwrap();
+    let r = sandbox.execute("globalThis.__r").unwrap().value;
+    let removed = sandbox.execute("globalThis.__removed").unwrap().value;
+    assert_eq!(r, "<div>keep</div>", "removed 记录 + 真移除一致：{r}");
+    assert_eq!(removed, "IFRAME", "removed 数组记录 IFRAME 且结果无 iframe（移除真生效）：{removed}");
+}
