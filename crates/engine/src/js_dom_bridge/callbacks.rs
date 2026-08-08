@@ -150,6 +150,27 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `new CompressionStream(format)`（R2986）——gzip/deflate/deflate-raw 压缩。
+    // arg[0]=format，arg[1]=输入字节 csv。返压缩字节 csv（unsupported → 空串，shim reject）。
+    sandbox.register_callback(
+        "__zw_compress",
+        Box::new(|args: &[String]| -> String {
+            let format = args.first().map(String::as_str).unwrap_or("");
+            let data = args.get(1).map(String::as_str).unwrap_or("");
+            compress_bytes(format, data)
+        }),
+    );
+    // `new DecompressionStream(format)`（R2986）——gzip/deflate/deflate-raw 解压。
+    // arg[0]=format，arg[1]=压缩字节 csv。返解压字节 csv（损坏/unsupported → 空串，shim error）。
+    sandbox.register_callback(
+        "__zw_decompress",
+        Box::new(|args: &[String]| -> String {
+            let format = args.first().map(String::as_str).unwrap_or("");
+            let data = args.get(1).map(String::as_str).unwrap_or("");
+            decompress_bytes(format, data)
+        }),
+    );
+
     // `crypto.subtle.sign/verify("HMAC", ...)`（R2955）——HMAC-SHA-1/256/384/512。
     // arg[0]=hash 名（"SHA-256"），arg[1]=key 字节 csv，arg[2]=data 字节 csv。返 MAC csv（unsupported → 空）。
     sandbox.register_callback(

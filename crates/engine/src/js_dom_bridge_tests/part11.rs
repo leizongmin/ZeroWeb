@@ -909,3 +909,145 @@ fn test_canvas_get_transform_dommatrix_r2985() {
         "DOMPoint.fromPoint 复制 z=3"
     );
 }
+
+#[test]
+fn test_compression_stream_r2986() {
+    // R2986：CompressionStream/DecompressionStream（gzip/deflate/deflate-raw）。Compression Streams API
+    // 此前全缺——`response.body.pipeThrough(new DecompressionStream('gzip'))` 解压服务端 gzip 流 / 压缩上传
+    // 载荷不可用。本切片经 flate2（既有 workspace crate）补 gzip/deflate/deflate-raw，buffer-then-process
+    //（transform 累积 chunk，flush 整体压缩/解压），完成 Streams API 转换流表面。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    assert_eq!(
+        sandbox.execute("typeof CompressionStream").unwrap().value,
+        "function",
+        "CompressionStream 是 function"
+    );
+    assert_eq!(
+        sandbox.execute("typeof DecompressionStream").unwrap().value,
+        "function",
+        "DecompressionStream 是 function"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(new CompressionStream('gzip') instanceof TransformStream)")
+            .unwrap()
+            .value,
+        "true",
+        "CompressionStream instanceof TransformStream"
+    );
+
+    // gzip 往返：源字节流 → CompressionStream('gzip') → DecompressionStream('gzip') → 还原文本。
+    // 经 pipeThrough 串联两个转换流；ReadableStream pipeTo Writable（transform 的 writable）异步 drain。
+    sandbox
+        .execute(
+            "globalThis.__out = '(none)';\
+             var src = new ReadableStream({\
+               start: function (c) {\
+                 c.enqueue(new TextEncoder().encode('hello gzip compression round trip payload repeat repeat'));\
+                 c.close();\
+               }\
+             });\
+             var comp = new CompressionStream('gzip');\
+             var decomp = new DecompressionStream('gzip');\
+             // src → comp.writable（压缩），comp.readable → decomp.writable（解压），decomp.readable 读取。
+             src.pipeTo(comp.writable);\
+             comp.readable.pipeTo(decomp.writable);\
+             var reader = decomp.readable.getReader();\
+             reader.read().then(function (c) {\
+               if (c.done) { globalThis.__out = '(empty)'; return; }\
+               globalThis.__out = new TextDecoder().decode(c.value);\
+               return reader.read();\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__out)").unwrap().value,
+        "hello gzip compression round trip payload repeat repeat",
+        "gzip 压缩→解压往返还原原文"
+    );
+
+    // deflate 往返（zlib 包装）。
+    sandbox
+        .execute(
+            "globalThis.__out2 = '(none)';\
+             var src2 = new ReadableStream({\
+               start: function (c) {\
+                 c.enqueue(new TextEncoder().encode('deflate zlib wrapped payload hello hello'));\
+                 c.close();\
+               }\
+             });\
+             var c2 = new CompressionStream('deflate');\
+             var d2 = new DecompressionStream('deflate');\
+             src2.pipeTo(c2.writable);\
+             c2.readable.pipeTo(d2.writable);\
+             var r2 = d2.readable.getReader();\
+             r2.read().then(function (c) {\
+               if (c.done) { globalThis.__out2 = '(empty)'; return; }\
+               globalThis.__out2 = new TextDecoder().decode(c.value);\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__out2)").unwrap().value,
+        "deflate zlib wrapped payload hello hello",
+        "deflate 压缩→解压往返还原原文"
+    );
+
+    // deflate-raw 往返（裸 deflate，无 zlib 头）。
+    sandbox
+        .execute(
+            "globalThis.__out3 = '(none)';\
+             var src3 = new ReadableStream({\
+               start: function (c) {\
+                 c.enqueue(new TextEncoder().encode('raw deflate payload no wrapper data'));\
+                 c.close();\
+               }\
+             });\
+             var c3 = new CompressionStream('deflate-raw');\
+             var d3 = new DecompressionStream('deflate-raw');\
+             src3.pipeTo(c3.writable);\
+             c3.readable.pipeTo(d3.writable);\
+             var r3 = d3.readable.getReader();\
+             r3.read().then(function (c) {\
+               if (c.done) { globalThis.__out3 = '(empty)'; return; }\
+               globalThis.__out3 = new TextDecoder().decode(c.value);\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__out3)").unwrap().value,
+        "raw deflate payload no wrapper data",
+        "deflate-raw 压缩→解压往返还原原文"
+    );
+
+    // 不支持 format → 构造抛 DOMException NotSupportedError。
+    sandbox
+        .execute(
+            "globalThis.__threw = 'no'; globalThis.__errName = '';\
+             try { new CompressionStream('brotli'); }\
+             catch (e) { globalThis.__threw = 'yes'; globalThis.__errName = (e && e.name) || ''; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__threw)").unwrap().value,
+        "yes",
+        "不支持 format（brotli）→ 构造抛"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__errName)").unwrap().value,
+        "NotSupportedError",
+        "不支持 format → NotSupportedError"
+    );
+}

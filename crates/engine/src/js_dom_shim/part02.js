@@ -708,6 +708,68 @@
   globalThis.TextDecoderStream.prototype = Object.create(globalThis.TransformStream.prototype);
   globalThis.TextDecoderStream.prototype.constructor = globalThis.TextDecoderStream;
 
+  // ── P1a CompressionStream / DecompressionStream（gzip/deflate/deflate-raw，R2986）──
+  // spec 通用压缩/解压转换流（Compression Streams API）。常用于 `response.body.pipeThrough(new
+  // DecompressionStream('gzip'))` 解压服务端 gzip 流，或压缩上传载荷。host 经 flate2（既有 workspace crate）
+  // 压缩/解压；字节经逗号分隔十进制串 wire（同 crypto byte wire）。**buffer-then-process**：transform 累积
+  // 全部 chunk（压缩须见全输入产合法 gzip/deflate 帧——逐 chunk 独立压缩会产多帧错误输出），flush 整体
+  // 压缩/解压 + enqueue 单输出 chunk。headless finite 流模型正确。
+  // 不支持 format → 构造抛 DOMException NotSupportedError（spec）；host 未注册（engine polyfill/reftest）→ no-op。
+  // **已知限制**：① 非增量（buffer 全输入再处理，大流内存峰值 = 输入大小，headless finite 可接受）；
+  // ② CSV byte wire 4× 开销（V8 字符串往返，大流慢）；③ 仅 gzip/deflate/deflate-raw（brotli defer，需 brotli crate）。
+  var _CS_FORMATS = { gzip: 1, deflate: 1, 'deflate-raw': 1 };
+  function _csEnqueueBytes(controller, csv) {
+    if (!csv) return;
+    var parts = String(csv).split(',');
+    var arr = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) arr[i] = parseInt(parts[i], 10) || 0;
+    if (arr.length) controller.enqueue(arr);
+  }
+  globalThis.CompressionStream = globalThis.CompressionStream || function CompressionStream(format) {
+    if (!(this instanceof CompressionStream)) return new CompressionStream(format);
+    var fmt = String(format == null ? '' : format).toLowerCase();
+    if (!_CS_FORMATS[fmt]) {
+      throw new DOMException("Failed to construct 'CompressionStream': Unsupported compression format, '" + format + "'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.", 'NotSupportedError');
+    }
+    var bufs = [];
+    TransformStream.call(this, {
+      transform: function (chunk, controller) {
+        var b = _zw_bufToBytes(chunk);
+        for (var i = 0; i < b.length; i++) bufs.push(b[i]);
+      },
+      flush: function (controller) {
+        if (typeof __zw_compress !== 'function') return;
+        try { _csEnqueueBytes(controller, __zw_compress(fmt, bufs.join(','))); } catch (_e) {}
+      }
+    });
+  };
+  globalThis.CompressionStream.prototype = Object.create(globalThis.TransformStream.prototype);
+  globalThis.CompressionStream.prototype.constructor = globalThis.CompressionStream;
+  globalThis.DecompressionStream = globalThis.DecompressionStream || function DecompressionStream(format) {
+    if (!(this instanceof DecompressionStream)) return new DecompressionStream(format);
+    var fmt = String(format == null ? '' : format).toLowerCase();
+    if (!_CS_FORMATS[fmt]) {
+      throw new DOMException("Failed to construct 'DecompressionStream': Unsupported compression format, '" + format + "'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.", 'NotSupportedError');
+    }
+    var bufs = [];
+    TransformStream.call(this, {
+      transform: function (chunk, controller) {
+        var b = _zw_bufToBytes(chunk);
+        for (var i = 0; i < b.length; i++) bufs.push(b[i]);
+      },
+      flush: function (controller) {
+        if (typeof __zw_decompress !== 'function') return;
+        try {
+          var out = __zw_decompress(fmt, bufs.join(','));
+          if (!out && bufs.length) { controller.error(new DOMException('Decompression failed: corrupt ' + fmt + ' stream', 'DataError')); return; }
+          _csEnqueueBytes(controller, out);
+        } catch (_e) { controller.error(_e); }
+      }
+    });
+  };
+  globalThis.DecompressionStream.prototype = Object.create(globalThis.TransformStream.prototype);
+  globalThis.DecompressionStream.prototype.constructor = globalThis.DecompressionStream;
+
   // URLSearchParams——query string 解析/序列化（location.search / fetch query 高频）。
   // 纯 JS（V8 原生 encodeURIComponent/decodeURIComponent + Symbol.iterator）。application/x-www-form-urlencoded
   // 语义：space→`+`；构造支持 string（`?` 前缀可省）/ 对象 / [k,v] 可迭代。

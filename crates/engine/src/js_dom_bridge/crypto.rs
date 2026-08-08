@@ -39,11 +39,17 @@ pub fn crypto_subtle_digest(algo: &str, bytes_csv: &str) -> String {
 }
 
 /// 逗号分隔十进制字节串（"72,73,..."）→ `Vec<u8>`。空段跳过，非数字静默丢弃（与 digest 一致）。
-fn bytes_from_csv(csv: &str) -> Vec<u8> {
+/// `pub(super)` 供 compress 模块（CompressionStream/DecompressionStream，R2986）共用 byte wire。
+pub(super) fn bytes_from_csv(csv: &str) -> Vec<u8> {
     csv.split(',')
         .filter(|s| !s.is_empty())
         .filter_map(|s| s.trim().parse::<u8>().ok())
         .collect()
+}
+
+/// `Vec<u8>` / `&[u8]` → 逗号分隔十进制字节串（"72,73,..."）。`pub(super)` 供 compress 模块共用。
+pub(super) fn bytes_to_csv(bytes: &[u8]) -> String {
+    bytes.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
 }
 
 /// 通用 HMAC（RFC 2104）：`MAC = H((K⊕opad) || H((K⊕ipad) || data))`。`block_size` 为 hash 块大小

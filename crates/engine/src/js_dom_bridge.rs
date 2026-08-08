@@ -21,6 +21,10 @@ pub use computed_style::*;
 mod crypto;
 pub use crypto::*;
 
+// CompressionStream/DecompressionStream host 实现（R2986，gzip/deflate 经 flate2）。复用 crypto byte wire。
+mod compress;
+pub use compress::*;
+
 // Canvas 2D host 操作派发（R2974 从本文件拆出，控制主文件行数）。纯 zero_canvas 类型，无 DOM/选择器依赖。
 mod canvas;
 pub use canvas::*;

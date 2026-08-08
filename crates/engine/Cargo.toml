@@ -29,6 +29,7 @@ sha2 = { workspace = true }
 aes-gcm = { workspace = true }
 getrandom = { workspace = true }
 png = { workspace = true }
+flate2 = "1"
 
 [dev-dependencies]
 criterion = { workspace = true }
