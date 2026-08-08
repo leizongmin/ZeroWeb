@@ -1877,3 +1877,79 @@ fn test_custom_elements_attr_changed_callback_r2992() {
         "createElement 元素 setAttribute 后 hasAttribute=true（handle 路径生效，latent gap 修复）"
     );
 }
+
+#[test]
+fn test_handle_remove_attribute_true_removal_r2993() {
+    // R2993：handle（createElement）元素 removeAttribute 真移除（RemoveAttrOnHandle 变体）。
+    // R2992 发现的 latent gap：handle 元素 removeAttribute 旧实现 set-empty（__zw_set_attr_handle ''），
+    // 致 remove 后 hasAttribute 仍 true、custom element post-remove setAttribute 的 old='' 而非 null。
+    // 本切片加 RemoveAttrOnHandle 变体 + latest-wins query，闭合三处：
+    //   ① hasAttribute-after-remove = false；② getAttribute-after-remove = absent（空串）；
+    //   ③ CE attributeChangedCallback set→remove→set 第二次 set old=null（R2992 限于既存 gap 未测此复合）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d' class='c'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // handle 元素 set→remove→set：CE old=null 闭合 + hasAttribute/getAttribute 反映真移除。
+    sandbox
+        .execute(
+            "globalThis.__calls = [];\
+             class C extends HTMLElement {\
+               static get observedAttributes() { return ['count']; }\
+               attributeChangedCallback(n, o, v) { globalThis.__calls.push(n + ':' + o + '->' + v); }\
+             }\
+             customElements.define('r2993-el', C);\
+             var e = document.createElement('r2993-el');\
+             document.body.appendChild(e);\
+             e.setAttribute('count', '5');\
+             e.removeAttribute('count');\
+             globalThis.__hasAfterRemove = String(e.hasAttribute('count'));\
+             globalThis.__getAfterRemove = String(e.getAttribute('count'));\
+             e.setAttribute('count', '10');\
+             globalThis.__hasAfterReset = String(e.hasAttribute('count'));\
+             globalThis.__getAfterReset = String(e.getAttribute('count'));",
+        )
+        .unwrap();
+    // CE 序列：count:null->5（首 set）| count:5->null（remove）| count:null->10（remove 后再 set，old=null 而非 ''）。
+    assert_eq!(
+        sandbox.execute("globalThis.__calls.join('|')").unwrap().value,
+        "count:null->5|count:5->null|count:null->10",
+        "handle 元素 set→remove→set：第二次 set old=null（RemoveAttrOnHandle 真移除闭合）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasAfterRemove").unwrap().value,
+        "false",
+        "handle 元素 removeAttribute 后 hasAttribute=false（真移除，非 set-empty 残留）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__getAfterRemove").unwrap().value,
+        "",
+        "handle 元素 removeAttribute 后 getAttribute=空串（absent）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasAfterReset").unwrap().value,
+        "true",
+        "handle 元素 remove 后再 setAttribute → hasAttribute=true"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__getAfterReset").unwrap().value,
+        "10",
+        "handle 元素 remove 后再 setAttribute('10') → getAttribute=10"
+    );
+
+    // 注：sel-based removeAttribute 路径未变（分支逻辑 `else if __zw_remove_attr(sel,n)` 与 R2657 一致），
+    // 不在此重复断言——sel-based hasAttribute 读 HTML 快照（非 mutation 列表），removeAttribute 后快照
+    // 仍 stale（render apply 后才反映），故 JS 层 hasAttribute-after-remove 对 sel 元素恒 true（既存限制，
+    // 与本切片 handle 真移除无关）。handle 元素经 mutation 列表 latest-wins 读，故无此 stale。
+}

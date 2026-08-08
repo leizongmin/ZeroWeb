@@ -166,6 +166,14 @@ pub enum DomMutation {
         /// 属性值。
         value: String,
     },
+    /// 对 create 句柄**真移除**属性（区别于 [`SetAttrOnHandle`] 空值——布尔/存在性属性须移除才 unset；
+    /// handle 元素 `removeAttribute` 用，R2993）。apply 时 `doc.remove_attribute`；query 函数 latest-wins 判定。
+    RemoveAttrOnHandle {
+        /// 节点句柄。
+        handle: String,
+        /// 属性名。
+        name: String,
+    },
     /// 对 create 句柄设置 textContent。
     SetTextOnHandle {
         /// 节点句柄。
@@ -543,6 +551,13 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     .copied()
                     .ok_or_else(|| format!("unknown handle {handle}"))?;
                 doc.set_attribute(node, name, value);
+            }
+            DomMutation::RemoveAttrOnHandle { handle, name } => {
+                let node = handles
+                    .get(handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                doc.remove_attribute(node, name);
             }
             DomMutation::SetTextOnHandle { handle, text } => {
                 let node = handles
@@ -1804,6 +1819,7 @@ pub fn query_text_from_html(html: &str, selector: &str) -> String {
 
 /// 从已记录变更中查询 create 句柄上的属性（脚本执行期间只读）。
 pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: &str) -> String {
+    // 逆序扫描，latest-wins：最近的 SetAttrOnHandle 决定值，最近的 RemoveAttrOnHandle 表 absent（R2993）。
     for m in mutations.iter().rev() {
         if let DomMutation::SetAttrOnHandle {
             handle: h,
@@ -1815,26 +1831,31 @@ pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: 
         {
             return v.clone();
         }
+        if let DomMutation::RemoveAttrOnHandle { handle: h, name: n } = m
+            && h == handle
+            && n == name
+        {
+            return String::new();
+        }
     }
     String::new()
 }
 
 /// 从已记录变更中判定 create 句柄元素是否设有某属性（脚本执行期间只读）。句柄元素不存在于
-/// HTML 快照（由 `createElement` 创建），`has_attribute` 快照查询对其恒 false；本函数扫
-/// [`DomMutation::SetAttrOnHandle`] 记录按名判定存在性（值无关，boolean 属性 `selected`/
-/// `disabled` 等存在即 true）。供 `__zw_has_attr_handle` 回调 → `new Option()` 创建的句柄
-/// option 的 `.selected`/`.defaultSelected` 读。
+/// HTML 快照（由 `createElement` 创建），`has_attribute` 快照查询对其恒 false；本函数逆序扫
+/// [`DomMutation::SetAttrOnHandle`] / [`DomMutation::RemoveAttrOnHandle`]，**latest-wins** 判定存在性
+///（R2993：remove 后返 false，区别于 set-empty 仍 present；boolean 属性 `selected`/`disabled` 等存在即 true）。
+/// 供 `__zw_has_attr_handle` 回调 → `new Option()` 创建的句柄 option 的 `.selected`/`.defaultSelected` 读
+/// + handle 元素 `hasAttribute`（R2992+）+ custom element attributeChangedCallback old-value 判定（R2992）。
 pub fn has_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: &str) -> bool {
-    mutations.iter().any(|m| {
-        matches!(
-            m,
-            DomMutation::SetAttrOnHandle {
-                handle: h,
-                name: n,
-                ..
-            } if h == handle && n == name
-        )
-    })
+    for m in mutations.iter().rev() {
+        match m {
+            DomMutation::SetAttrOnHandle { handle: h, name: n, .. } if h == handle && n == name => return true,
+            DomMutation::RemoveAttrOnHandle { handle: h, name: n } if h == handle && n == name => return false,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// 从已记录变更中查询 create 句柄上的 textContent。

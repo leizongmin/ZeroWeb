@@ -547,6 +547,25 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // create 句柄元素的属性**真移除**（`el.removeAttribute(name)` on handle 元素——区别于 `__zw_set_attr_handle`
+    // 空值残留；布尔/存在性属性须移除才 unset；R2993 闭合 hasAttribute-after-remove + CE post-remove old=null）。
+    // 记 [`DomMutation::RemoveAttrOnHandle`]；query/has 函数 latest-wins 据此判 absent。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_remove_attr_handle",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::RemoveAttrOnHandle {
+                        handle: args[0].clone(),
+                        name: args[1].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_get_text_handle",

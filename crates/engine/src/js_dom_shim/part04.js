@@ -382,13 +382,14 @@
             // R2992 custom element attributeChangedCallback：移除前读 old（newVal=null）。
             var ceEntry = _ceEntryFor(key, sel, handle);
             var ceOld = ceEntry ? _ce_attrValue(sel, handle, n) : null;
-            // sel-based：真移除（__zw_remove_attr / RemoveAttr，R2657）——区别于 set-empty 残留
-            // `attr=""`（boolean 属性 checked/disabled 设空值仍 present → hasAttribute 误 true）。
-            // handle-only（无 remove-handle 变体）/ 无回调 → fallback set-empty。
+            // 真移除（区别于 set-empty 残留 `attr=""`——boolean 属性 checked/disabled 设空值仍 present
+            // → hasAttribute 误 true）。handle 元素经 `__zw_remove_attr_handle`（RemoveAttrOnHandle，R2993）；
+            // sel-based 经 `__zw_remove_attr`（RemoveAttr，R2657）；无回调 → fallback set-empty。
             // 同步客户端缓存（class/value），使后续 classList/.value 反映移除。
             if (n === 'class') _classCache[key] = '';
             else if (n === 'value') _inputValues[key] = '';
-            if (handle) __zw_set_attr_handle(handle, n, '');
+            if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, n);
+            else if (handle) __zw_set_attr_handle(handle, n, '');
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
             else __zw_set_attr(sel, n, '');
             _mo_notify(sel, handle, { type: 'attributes', attributeName: n });
