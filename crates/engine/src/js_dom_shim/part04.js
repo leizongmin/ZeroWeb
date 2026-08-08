@@ -1143,9 +1143,14 @@
         }
         if (p === 'textContent' || p === 'innerHTML') {
           if (p === 'innerHTML') {
+            // R3029：innerHTML = 整体替换子树（childList 类）。emit childList 记录，闭合「innerHTML 不 emit
+            // childList」gap（R3028 已知限制④）。removedNodes = 替换前旧子（snapshot 读，_childNodeList 对
+            // handle-only 无 sel 返 []）；addedNodes 留空——新子经 host 解析 fragment 生成，snapshot apply 前
+            // 不可同步枚举（parse-based node-lists 增强为独立 future slice，同 outerHTML/insertAdjacentHTML）。
+            var _ihRemoved = _childNodeList(sel, handle);
             if (handle) __zw_set_inner_html_handle(handle, String(value));
             else __zw_set_inner_html(sel, String(value));
-            // innerHTML = 子树替换（childList 类），不 notify（childList emission 为独立 follow-up）。
+            _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: _ihRemoved });
           } else {
             // R3027：textContent 变更 → emit characterData 记录（target=元素，pragmatic——文本节点无 selector
             // 不能直接作 target；observe(el,{characterData,subtree}) + 后代 textContent 经 ancestor 冒泡亦覆盖）。
