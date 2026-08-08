@@ -1107,3 +1107,89 @@ fn test_reflected_uint_bool_reads_r3038() {
         "removeAttribute('required') → required=false（presence 消失）"
     );
 }
+
+#[test]
+fn test_boolean_reflected_set_false_r3039() {
+    // R3039：布尔 reflected set-false bug。required/readOnly/multiple `=false` 旧经 generic fallthrough 写
+    // attr="false"（present）→ 读返 true（应 false）。本切片 set trap 专用分支 falsy→removeAttribute，闭合往返。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='i' required>\
+         <textarea id='ta'></textarea>\
+         <select id='s'><option>a</option></select>\
+         <input id='i2' type='text'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① required=false 真移除（旧 set-false bug：写 attr="false" 仍 present → 读 true）。
+    sandbox
+        .execute(
+            "globalThis.__r0 = String(document.getElementById('i').required);\
+             document.getElementById('i').required = false;\
+             globalThis.__r1 = String(document.getElementById('i').required);\
+             globalThis.__r1Has = String(document.getElementById('i').hasAttribute('required'));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__r0").unwrap().value, "true", "初始 required=true");
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "false",
+        "required=false 后读 false（旧 set-false bug 读 true）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r1Has").unwrap().value,
+        "false",
+        "required=false 后 hasAttribute=false（真移除，非 attr='false' 残留）"
+    );
+
+    // ② required=true 设回（presence），apply_mutations 后属性反映。
+    sandbox
+        .execute("document.getElementById('i').required = true; globalThis.__r2 = String(document.getElementById('i').required);")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__r2").unwrap().value, "true", "required=true 后读 true");
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(
+        out.contains("required="),
+        "required=true apply 后属性 present\n{out}"
+    );
+
+    // ③ readOnly/multiple falsy→remove（apply_mutations 验证属性移除）。
+    sandbox
+        .execute(
+            "document.getElementById('ta').readOnly = true;\
+             document.getElementById('ta').readOnly = false;\
+             document.getElementById('s').multiple = true;\
+             document.getElementById('s').multiple = false;",
+        )
+        .unwrap();
+    let ms2 = mutations.lock().unwrap().clone();
+    let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
+    assert!(
+        !out2.contains("readonly") && !out2.contains("multiple"),
+        "readOnly/multiple false 后属性移除（apply_mutations 不含 readonly/multiple）\n{out2}"
+    );
+
+    // ④ 多次 toggle（true→false→true）往返正确（latest-wins remove/set 序列）。
+    sandbox
+        .execute(
+            "var i2 = document.getElementById('i2');\
+             i2.required = true; i2.required = false; i2.required = true;\
+             globalThis.__toggle = String(i2.required);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__toggle").unwrap().value,
+        "true",
+        "required true→false→true 末态 true（latest-wins 往返）"
+    );
+}

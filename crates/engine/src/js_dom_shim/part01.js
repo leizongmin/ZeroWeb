@@ -86,6 +86,13 @@
     minLength: { a: 'minlength', d: -1 },
   };
   var _REFLECTED_BOOL = { required: 'required', readOnly: 'readonly', multiple: 'multiple' };
+  // R3039：查 _REFLECTED_BOOL 返内容属性名（readOnly→readonly 等），非 string/未命中 → null。供 set trap
+  // 布尔 falsy→removeAttribute 分支与 get trap presence 读共用。
+  function _reflectedBoolAttr(prop) {
+    if (typeof prop !== 'string') return null;
+    if (Object.prototype.hasOwnProperty.call(_REFLECTED_BOOL, prop)) return _REFLECTED_BOOL[prop];
+    return null;
+  }
   // P1a DocumentFragment：已创建的 fragment handle 集合（nodeType=11 标识 + appendChild 时
   // flatten 检测）。fragment 为 create 句柄，无 selector，故用此 set 区别于普通元素句柄。
   var _fragmentHandles = {};
