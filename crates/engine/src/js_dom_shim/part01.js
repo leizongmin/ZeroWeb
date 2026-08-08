@@ -966,7 +966,15 @@
 
   function _makeLocation() {
     function href() {
-      return typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : 'about:blank';
+      var base = typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : 'about:blank';
+      // R3005：反映 history pushState/replaceState 设的当前 entry url（_resolveHistUrl 已解析为绝对，见 part02）。
+      // _hist_current 在 part02 定义（同 IIFE 函数声明提升），getter 运行时（shim 全安装后）已就绪；typeof guard 防御。
+      // 使 SPA router 的 location.pathname/href 反映路由变更（旧仅读 host 页面 URL，pushState 后 stale）。
+      if (typeof _hist_current === 'function') {
+        var hu = _hist_current().url;
+        if (hu) return hu;
+      }
+      return base;
     }
     return {
       get href() { return _parseLocation(href()).href; },

@@ -1534,22 +1534,33 @@
       _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
     });
   }
+  // R3005：解析 pushState/replaceState 的 url 为绝对 URL（相对当前 location.href）——使 location 反映 SPA
+  // 路由变更（router 读 location.pathname）。优先 new URL(rel, base)（spec-correct percent-encoding/路径解析），
+  // 未注册/解析失败回退原值。spec 跨源 url 应抛 SecurityError，headless permissive 允许（best-effort，无真安全边界）。
+  function _resolveHistUrl(u) {
+    if (typeof URL === 'function' && typeof __zw_parse_url === 'function') {
+      try { return new URL(u, globalThis.location.href).href; } catch (_e) {}
+    }
+    return u;
+  }
   globalThis.history = {
     get length() { return _hist_entries.length; },
     get state() { return _hist_current().state; },
     get scrollRestoration() { return 'auto'; },
     set scrollRestoration(_v) { /* headless 无真滚动恢复，no-op */ },
     // pushState(state, unused, url?)：截断 forward entries + push 新 entry + 推进 cursor（不触发 popstate）。
+    // R3005：url 经 _resolveHistUrl 解析为绝对存入 entry（供 location getter 反映）。
     pushState: function (state, _unused, url) {
       _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
-      _hist_entries.push({ state: state, url: url != null ? String(url) : _hist_current().url });
+      _hist_entries.push({ state: state, url: url != null ? _resolveHistUrl(String(url)) : _hist_current().url });
       _hist_cursor = _hist_entries.length - 1;
     },
     // replaceState(state, unused, url?)：原地替换当前 entry 的 state/url（不触发 popstate）。
+    // R3005：url 经 _resolveHistUrl 解析为绝对。
     replaceState: function (state, _unused, url) {
       var cur = _hist_current();
       cur.state = state;
-      if (url != null) cur.url = String(url);
+      if (url != null) cur.url = _resolveHistUrl(String(url));
     },
     back: function () { if (_hist_cursor > 0) { _hist_cursor--; _hist_dispatchPopState(); } },
     forward: function () { if (_hist_cursor < _hist_entries.length - 1) { _hist_cursor++; _hist_dispatchPopState(); } },

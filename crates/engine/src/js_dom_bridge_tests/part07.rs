@@ -1950,3 +1950,41 @@ fn test_fontface_set_events_r2947() {
         "loadingerror 事件派发（@font-face 加载失败）"
     );
 }
+
+#[test]
+fn test_location_reflects_pushstate_replacestate_r3005() {
+    // R3005：pushState/replaceState 须更新 location（SPA router 读 location.pathname 路由高频）。旧实现 location
+    // 读 __zw_get_page_url（host 页面 URL），history 仅 in-memory → location 永不反映 pushState。修复：pushState/
+    // replaceState 的 url 经 new URL(rel, base) 解析为绝对（相对当前 location.href）存入 entry；location.href getter
+    // 返 _hist_current().url（非空绝对）否则 host 页面 URL。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/start".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "globalThis.__p0 = location.pathname;\
+             history.pushState({ p: 1 }, '', '/a'); globalThis.__p1 = location.pathname;\
+             history.pushState({ p: 2 }, '', '/b'); globalThis.__p2 = location.pathname;\
+             history.back(); globalThis.__pBack = location.pathname;\
+             history.replaceState({ p: 3 }, '', '/c'); globalThis.__pRep = location.pathname; globalThis.__sRep = history.state.p;\
+             history.pushState({ p: 9 }); globalThis.__pNoUrl = location.pathname;\
+             globalThis.__href1 = location.href;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__p0").unwrap().value, "/start", "初始 location.pathname=/start（host 页面 URL）");
+    assert_eq!(sandbox.execute("globalThis.__p1").unwrap().value, "/a", "pushState('/a') 后 location.pathname=/a（旧 stale /start）");
+    assert_eq!(sandbox.execute("globalThis.__p2").unwrap().value, "/b", "pushState('/b') 后 location.pathname=/b");
+    assert_eq!(sandbox.execute("globalThis.__pBack").unwrap().value, "/a", "back() 后 location.pathname=/a");
+    assert_eq!(sandbox.execute("globalThis.__pRep").unwrap().value, "/c", "replaceState('/c') 后 location.pathname=/c（替换当前 entry URL）");
+    assert_eq!(sandbox.execute("globalThis.__sRep").unwrap().value, "3", "replaceState state.p=3");
+    assert_eq!(sandbox.execute("globalThis.__pNoUrl").unwrap().value, "/c", "pushState 无 url 不改 location（保持 /c）");
+    assert_eq!(sandbox.execute("globalThis.__href1").unwrap().value, "https://example.com/c", "location.href 绝对 URL");
+}
+
