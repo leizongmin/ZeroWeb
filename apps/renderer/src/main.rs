@@ -149,6 +149,8 @@ struct RendererRuntime {
     event_target: String,
     /// 与浏览器 TabSnapshot 对齐的导航世代。
     navigation_epoch: u64,
+    /// 已发送图片 key（S8）：browser 端 ImageCache 已存则不再重传像素；navigation 重置。
+    sent_image_keys: std::collections::HashSet<u64>,
     /// 异步分阶段加载（与 tab_worker 相同 tick 模型）。
     pending_load: Option<PendingLoad>,
     /// 页面 HTML/CSS/图片加载完成后的非阻塞脚本预取。
@@ -234,6 +236,9 @@ impl RendererRuntime {
             javascript_enabled: true,
             event_target: "body".to_string(),
             navigation_epoch: 0,
+            // 性能门禁优化 S8（2026-08-08）：已发送图片 key——browser 端 ImageCache
+            // 已存则不再重传像素（DOM 变更 publish 的 ViewPainted 体积大头）。navigation 重置。
+            sent_image_keys: std::collections::HashSet::new(),
             pending_load: None,
             pending_script_prefetch: None,
             inflight_fetches: InflightIpcFetches::new(),
@@ -355,12 +360,39 @@ impl RendererRuntime {
             // 仅引用计数）→ js_worker 的 `__zw_elementFromPoint` 读它求 `(x,y)` 命中元素。
             *self.js_worker.element_from_point_cache().lock().unwrap() = Some(std::sync::Arc::new(cache.clone()));
         }
+        // S8：已发送图片 key（browser 端 ImageCache 已存）不重传像素。
+        // fetch 闭包按字段捕获（2021 edition 最小捕获）——sent_image_keys 独立借用
         let payloads = if allow_network_fetch {
-            let mut fetch = |u: &str| self.fetch_get(u).ok();
-            paint_export::fetch_image_payloads_with_cache(&html, &url, &mut image_cache, &mut fetch)
+            let mut fetch = |u: &str| {
+                if self.stub_network {
+                    None
+                } else {
+                    ipc_fetch_get(
+                        &mut self.outbound,
+                        &self.inbound_rx,
+                        &mut self.next_fetch_id,
+                        &mut self.deferred_inbound,
+                        u,
+                    )
+                    .ok()
+                }
+            };
+            paint_export::fetch_image_payloads_with_cache(
+                &html,
+                &url,
+                &mut image_cache,
+                &mut fetch,
+                &mut self.sent_image_keys,
+            )
         } else {
             let mut no_fetch = |_u: &str| None;
-            paint_export::fetch_image_payloads_with_cache(&html, &url, &mut image_cache, &mut no_fetch)
+            paint_export::fetch_image_payloads_with_cache(
+                &html,
+                &url,
+                &mut image_cache,
+                &mut no_fetch,
+                &mut self.sent_image_keys,
+            )
         };
         let frame = zero_page_runtime::FrameModel {
             viewport: (vw, vh),
@@ -997,6 +1029,8 @@ impl RendererRuntime {
         self.current_url = Some(params.url.clone());
         self.cached_html.clear();
         self.cached_css.clear();
+        // S8：新页面图片 key 空间不同——清空已发送记录，确保新页图片像素被传输
+        self.sent_image_keys.clear();
         // P1a change-on-blur：导航清焦点状态（新页面无焦点）。
         self.focus_target = None;
         self.focus_value = None;

@@ -138,11 +138,17 @@ fn draw_op_to_ipc(op: DrawOp) -> IpcDrawOp {
 }
 
 /// 优先从已解码 `ImageCache` 取图，缺失时再经 fetch 回调抓取。
+///
+/// `sent_keys`（性能门禁优化 S8，2026-08-08）：已发送过且 browser 端 ImageCache
+/// 已存的 key 不再重传像素——DOM 变更后每次 publish 全量 clone 图片像素是
+/// ViewPainted IPC 体积的大头。仅「成功取到数据」的 key 标记 sent（fetch 失败
+/// 的不标，下次仍重试——负缓存由 fetch 层处理）。
 pub fn fetch_image_payloads_with_cache<F>(
     html: &str,
     page_url: &str,
     cache: &mut zero_render_foundation::image_cache::ImageCache,
     fetch: &mut F,
+    sent_keys: &mut std::collections::HashSet<u64>,
 ) -> Vec<IpcImagePayload>
 where
     F: FnMut(&str) -> Option<Vec<u8>>,
@@ -174,6 +180,11 @@ where
         } else {
             continue;
         };
+        if sent_keys.contains(&key) {
+            // S8：browser 端 ImageCache 已有该 key 像素，不重传
+            continue;
+        }
+        sent_keys.insert(key);
         out.push(IpcImagePayload {
             image_key: key,
             width: data.width,
