@@ -237,6 +237,16 @@
   // input = URL 字符串或 Request-like（.url/.method/.headers/.body）；init = { method, headers, body }。
   // method 默认 GET；GET/HEAD 无 body。`__zw_fetch` 未注册（engine/reftest/polyfill 无 host fetch handler）
   // 时 resolve ok:false Response（stub，避免悬挂，零回归）。
+  // R3020：Blob/FormData 二进制 body 经 `_zwEncodeBytesPrefix`（`__zw_bytes:` + csv-decimal）传 host，
+  // host 解码为 Vec<u8> 闭合二进制保真（旧 TextDecoder.decode 对非 UTF-8 字节 lossy，破坏 0xFF/0x00）。
+  function _zwEncodeBytesPrefix(bytes) {
+    var s = '__zw_bytes:';
+    for (var i = 0; i < bytes.length; i++) {
+      if (i > 0) s += ',';
+      s += (bytes[i] & 0xFF);
+    }
+    return s;
+  }
   if (!globalThis.fetch) {
     globalThis.fetch = function(input, init) {
       init = init || {};
@@ -245,19 +255,19 @@
       var method = String(init.method || (isObj ? input.method : '') || 'GET').toUpperCase();
       var headersWire = _headersToWire(init.headers) || (isObj ? _headersToWire(input.headers) : '');
       var body = '';
-      // R3014/R3015：body 类型分发——FormData（multipart）/ URLSearchParams（urlencoded）/ Blob（字节）/
+      // R3014/R3015/R3020：body 类型分发——FormData（multipart）/ URLSearchParams（urlencoded）/ Blob（字节）/
       // string（原样）。各专用类型在用户未设 Content-Type 时设默认值（缺省 Content-Type 不覆写用户显式值）。
-      // 文本内容经 UTF-8 wire 保真；二进制 Blob 字节 best-effort（host byte-wire 全保真为独立 follow-up）。
+      // 文本（URLSearchParams/string）经 UTF-8 wire 保真；二进制（FormData multipart / Blob）经 byte-wire 全保真。
       var rawBody = init.body != null ? init.body : (isObj && input.body != null ? input.body : null);
       if (rawBody instanceof FormData) {
         var mp = rawBody._zwMultipart();
-        body = new TextDecoder().decode(mp.body);
+        body = _zwEncodeBytesPrefix(mp.body); // R3020：multipart 字节 byte-wire（含二进制文件内容保真）
         if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', mp.contentType);
       } else if (rawBody instanceof URLSearchParams) {
         body = String(rawBody); // toString → urlencoded
         if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', 'application/x-www-form-urlencoded;charset=UTF-8');
       } else if (rawBody instanceof Blob) {
-        body = new TextDecoder().decode(_zw_blobBytes(rawBody)); // Blob 字节 text-decode（旧 String='[object Blob]'）
+        body = _zwEncodeBytesPrefix(_zw_blobBytes(rawBody)); // R3020：Blob 字节 byte-wire（二进制保真）
         if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', rawBody.type || 'application/octet-stream');
       } else if (rawBody != null) {
         body = String(rawBody);

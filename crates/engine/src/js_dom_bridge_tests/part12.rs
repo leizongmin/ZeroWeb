@@ -653,10 +653,11 @@ fn test_form_data_multipart_r3014() {
         "fetch FormData → headers 含 Content-Type: multipart/form-data，got headers: {headers_wire}"
     );
     let body = &cap_guard[4];
+    // R3020：multipart body 经 byte-wire（__zw_bytes: csv-decimal）——解码为字节再 UTF-8 文本断言 multipart 标记 + 值。
+    let body_text = String::from_utf8_lossy(&crate::decode_body_bytes_raw(body).unwrap_or_default()).to_string();
     assert!(
-        body.contains("Content-Disposition: form-data; name=\"q\"") && body.contains("search"),
-        "fetch FormData → body 含 multipart 标记 + 值，got body prefix: {}",
-        &body[..body.len().min(120)]
+        body_text.contains("Content-Disposition: form-data; name=\"q\"") && body_text.contains("search"),
+        "fetch FormData → body 含 multipart 标记 + 值，got body: {body_text}"
     );
 }
 
@@ -705,13 +706,19 @@ fn test_fetch_body_types_r3015() {
         );
     }
 
-    // Blob body：body=text + Content-Type blob.type（旧 '[object Blob]'）。
+    // Blob body：body=byte-wire（R3020）+ Content-Type blob.type（旧 '[object Blob]'）。
     sandbox
         .execute("fetch('http://t/b', { method: 'POST', body: new Blob(['payload'], { type: 'text/plain' }) });")
         .unwrap();
     {
         let g = captured.lock().unwrap();
-        assert_eq!(g[4], "payload", "Blob body → text（旧 String(blob)='[object Blob]'）");
+        // R3020：Blob 字节经 __zw_bytes: csv-decimal wire（二进制保真）——解码为字节再 UTF-8 文本断言。
+        let blob_bytes = crate::decode_body_bytes_raw(&g[4]).expect("Blob body 须为 __zw_bytes: byte-wire");
+        assert_eq!(
+            String::from_utf8_lossy(&blob_bytes),
+            "payload",
+            "Blob body → 字节 byte-wire，解码为 'payload'（旧 String(blob)='[object Blob]'）"
+        );
         let hw = g[3].to_lowercase();
         assert!(hw.contains("text/plain"), "Blob → Content-Type blob.type=text/plain，got headers: {hw}");
     }
@@ -740,9 +747,11 @@ fn test_fetch_body_types_r3015() {
         let g = captured.lock().unwrap();
         let hw = g[3].to_lowercase();
         assert!(hw.contains("multipart/form-data"), "FormData body 仍 multipart（R3014 非回归）");
+        // R3020：multipart body 经 byte-wire（__zw_bytes: csv-decimal）——解码为字节再 UTF-8 文本断言 multipart 标记。
+        let fd_text = String::from_utf8_lossy(&crate::decode_body_bytes_raw(&g[4]).unwrap_or_default()).to_string();
         assert!(
-            g[4].contains("Content-Disposition: form-data; name=\"k\""),
-            "FormData body multipart 标记（R3014 非回归）"
+            fd_text.contains("Content-Disposition: form-data; name=\"k\""),
+            "FormData body multipart 标记（R3014 非回归），got: {fd_text}"
         );
     }
 }
@@ -1190,4 +1199,70 @@ fn test_sanitize_dompurify_real_r3019() {
     let removed = sandbox.execute("globalThis.__removed").unwrap().value;
     assert_eq!(r, "<div>keep</div>", "removed 记录 + 真移除一致：{r}");
     assert_eq!(removed, "IFRAME", "removed 数组记录 IFRAME 且结果无 iframe（移除真生效）：{removed}");
+}
+
+#[test]
+fn test_fetch_binary_body_byte_wire_r3020() {
+    // R3020：fetch 二进制 body byte-wire（csv-decimal）。旧路径 Blob/FormData body 经 TextDecoder.decode
+    // 对非 UTF-8 字节 lossy（0xFF→U+FFFD 等），破坏二进制上传（文件 / Canvas.toBlob / multipart 二进制内容）。
+    // 本切片 shim 把 Blob/FormData 字节编码为 `__zw_bytes:` + csv-decimal 传 host，host（fetch_bridge）解码为
+    // Vec<u8>（body_bytes），app default_fetch_handler 优先用 body_bytes 联网——全链路二进制保真。
+    // 本 driving test 验证 shim 编码侧（host 解码侧见 fetch_bridge::tests::body_bytes_wire_*）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // mock __zw_fetch 捕获 method（args[1]）+ body wire（args[4]）。
+    let captured: Arc<Mutex<(String, String)>> = Arc::new(Mutex::new((String::new(), String::new())));
+    let cap = Arc::clone(&captured);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let m = args.get(1).cloned().unwrap_or_default();
+            let b = args.get(4).cloned().unwrap_or_default();
+            if let Ok(mut c) = cap.lock() {
+                *c = (m, b);
+            }
+            "ok".to_string()
+        }),
+    );
+
+    // ① 二进制 Blob body（含非 UTF-8 字节 0xFF/0x00/0x80）→ __zw_bytes: csv-decimal。
+    sandbox
+        .execute(
+            "var blob = new Blob([new Uint8Array([255,0,128,72,105])], {type:'application/octet-stream'});\
+             fetch('http://test.local/up', {method:'POST', body: blob});",
+        )
+        .unwrap();
+    let (m, b) = captured.lock().unwrap().clone();
+    assert_eq!(m, "POST", "Blob body fetch 用 POST 方法");
+    assert_eq!(b, "__zw_bytes:255,0,128,72,105", "二进制 Blob body 编码为 __zw_bytes: csv-decimal（0xFF/0x00 保真）：{b}");
+
+    // ② 文本 body（string）→ 原样，不带 __zw_bytes: 前缀（无歧义，按 body 类型决定，非内容匹配）。
+    sandbox
+        .execute("fetch('http://test.local/up', {method:'POST', body: 'plain text'});")
+        .unwrap();
+    let (_, b2) = captured.lock().unwrap().clone();
+    assert_eq!(b2, "plain text", "文本 body 原样传递（无 __zw_bytes: 前缀）：{b2}");
+
+    // ③ FormData 含二进制 Blob file → multipart body 经 __zw_bytes: 编码（含二进制文件内容字节）。
+    sandbox
+        .execute(
+            "var fd = new FormData(); fd.append('f', new Blob([new Uint8Array([255,0,128])]));\
+             fetch('http://test.local/up', {method:'POST', body: fd});",
+        )
+        .unwrap();
+    let (_, b3) = captured.lock().unwrap().clone();
+    assert!(b3.starts_with("__zw_bytes:"), "FormData multipart body 经 byte-wire 编码：{b3}");
+    // 解码后须含二进制字节序列 [255,0,128]（append 的二进制 Blob 文件内容保真，嵌 multipart 体内）。
+    let csv = &b3["__zw_bytes:".len()..];
+    let decoded: Vec<u8> = csv.split(',').filter_map(|s| s.parse::<u8>().ok()).collect();
+    let has_binary = decoded.windows(3).any(|w| w == [255, 0, 128]);
+    assert!(has_binary, "FormData multipart 解码后含二进制字节序列 [255,0,128]（文件内容保真）：{csv}");
 }

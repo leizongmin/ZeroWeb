@@ -37,6 +37,9 @@ pub struct FetchRequest {
     pub headers: Vec<(String, String)>,
     /// 请求体（UTF-8 文本；GET/HEAD 通常 None）。
     pub body: Option<String>,
+    /// 请求体（原始字节；R3020 byte-wire——Blob/FormData multipart 二进制保真，csv-decimal 经 wire 传递）。
+    /// 二进制 body 时 `body=None, body_bytes=Some(bytes)`；文本 body 时 `body=Some(text), body_bytes=None`。
+    pub body_bytes: Option<Vec<u8>>,
 }
 
 /// JS `fetch` 响应——status/status_text/headers/body。
@@ -73,6 +76,42 @@ const FIELD_SEP: char = '\x1f';
 const HEADER_SEP: char = '\x1e';
 const WIRE_PREFIX: &str = "__zwfr:";
 const ERR_PREFIX: &str = "__zw_fetch_error:";
+/// 二进制 body wire 前缀（R3020）——shim 把 Blob/FormData 字节编码为 `__zw_bytes:` + csv-decimal
+/// （`72,101,108`）传 host，host 解码为 `Vec<u8>`，闭合二进制保真（旧路径 `TextDecoder.decode` lossy）。
+/// 文本 body 永不带此前缀（按 body 类型决定，非内容匹配），故无歧义。
+const BYTES_PREFIX: &str = "__zw_bytes:";
+
+/// 编码字节为 `__zw_bytes:` + csv-decimal wire（供测试对称 + 文档）。空字节 → 仅前缀。
+pub fn encode_body_bytes(bytes: &[u8]) -> String {
+    let mut s = String::from(BYTES_PREFIX);
+    for (i, b) in bytes.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        s.push_str(&b.to_string());
+    }
+    s
+}
+
+/// 解码 body wire：`__zw_bytes:` 前缀 → csv-decimal → `Vec<u8>`；无前缀或 malformed → None（文本 body，
+/// 调用方按原样 String 处理）。空字节体（`__zw_bytes:` 后空）→ `Some([])`。
+pub fn decode_body_bytes_raw(wire: &str) -> Option<Vec<u8>> {
+    if !wire.starts_with(BYTES_PREFIX) {
+        return None;
+    }
+    let rest = &wire[BYTES_PREFIX.len()..];
+    if rest.is_empty() {
+        return Some(Vec::new());
+    }
+    let mut out = Vec::new();
+    for part in rest.split(',') {
+        match part.parse::<u8>() {
+            Ok(b) => out.push(b),
+            Err(_) => return None, // malformed csv → 回落文本（保守，不丢数据）
+        }
+    }
+    Some(out)
+}
 
 /// 把响应头列表编码为 `name\x1evalue\x1e...` wire（空列表 → 空串）。
 fn encode_headers(headers: &[(String, String)]) -> String {
@@ -158,12 +197,21 @@ impl FetchBridge {
                 let url = args.get(2).cloned().unwrap_or_default();
                 let headers = decode_headers(&args.get(3).cloned().unwrap_or_default());
                 let body_raw = args.get(4).cloned().unwrap_or_default();
-                let body = if body_raw.is_empty() { None } else { Some(body_raw) };
+                // R3020：二进制 body 经 `__zw_bytes:` csv-decimal wire 解码为 body_bytes（Blob/FormData 二进制保真）；
+                // 文本 body 原样入 body。body_bytes 与 body 互斥（二进制时 body=None）。
+                let (body, body_bytes) = if body_raw.is_empty() {
+                    (None, None)
+                } else if let Some(bytes) = decode_body_bytes_raw(&body_raw) {
+                    (None, Some(bytes))
+                } else {
+                    (Some(body_raw), None)
+                };
                 let req = FetchRequest {
                     url,
                     method,
                     headers,
                     body,
+                    body_bytes,
                 };
                 let handler_opt: Option<FetchHandler> = handler_cell.lock().ok().and_then(|c| c.as_ref().cloned());
                 let resolver = resolver.clone();
@@ -231,5 +279,28 @@ mod tests {
         assert_eq!(r.status_text, "OK");
         assert!(r.headers.is_empty());
         assert_eq!(r.body, "hello");
+    }
+
+    #[test]
+    fn body_bytes_wire_round_trip() {
+        // R3020：csv-decimal byte-wire 往返——含非 UTF-8 字节（0xFF/0x00/0x80），二进制保真。
+        let bytes = vec![0x48u8, 0x69, 0x00, 0x80, 0xFF, 0x0A, 0x2C]; // 含 ',' 字节本身（0x2C）须正确编解码
+        let wire = encode_body_bytes(&bytes);
+        assert_eq!(wire, "__zw_bytes:72,105,0,128,255,10,44");
+        let back = decode_body_bytes_raw(&wire).expect("prefix wire 解码须成功");
+        assert_eq!(back, bytes);
+    }
+
+    #[test]
+    fn body_bytes_wire_empty_and_text_fallback() {
+        // 空 byte 体 → 仅前缀 → Some([])。
+        let empty = encode_body_bytes(&[]);
+        assert_eq!(empty, "__zw_bytes:");
+        assert_eq!(decode_body_bytes_raw(&empty), Some(Vec::new()));
+        // 文本 body（无前缀）→ None（调用方按文本处理）。
+        assert_eq!(decode_body_bytes_raw("plain text body"), None);
+        assert_eq!(decode_body_bytes_raw(""), None);
+        // malformed csv（超 u8 范围）→ None（保守回落文本，不丢数据）。
+        assert_eq!(decode_body_bytes_raw("__zw_bytes:72,999"), None);
     }
 }

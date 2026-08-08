@@ -384,7 +384,11 @@ pub fn default_fetch_handler() -> FetchHandler {
             method,
             url: req.url.clone(),
             headers: req.headers.clone(),
-            body: req.body.as_ref().map(|b| b.as_bytes().to_vec()),
+            // R3020：二进制 body 优先（Blob/FormData multipart 字节保真）；否则文本 body → 字节。
+            body: req
+                .body_bytes
+                .clone()
+                .or_else(|| req.body.as_ref().map(|b| b.as_bytes().to_vec())),
         };
         // per-request client：reqwest client 构造（含 TLS）有成本但可接受；net pool 连接复用属后续优化。
         let resp = HttpClient::new()
