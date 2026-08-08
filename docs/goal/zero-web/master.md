@@ -112,6 +112,25 @@
 
 ## 最近完成的改进
 
+### 工程治理——js_dom_bridge.rs 拆分 slice 4：callbacks 子模块（3149→2065，文件大小治理闭合，本轮 R2976，~14,155 测试）
+
+R2975（selector_match 拆分 slice 3）后续续 js_dom_bridge.rs 文件大小治理。本切片抽**最大单体函数** `register_dom_callbacks`（~1079 行单函数，全部 `__zw_*` 回调注册）到子模块——四刀累计 `js_dom_bridge.rs` **3959→2065 行**（1.03×，基本达标 2000 准则）。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_bridge/callbacks.rs`（新） | 1087 行（+9 行 module doc + `use super::*`）。`register_dom_callbacks` 单函数（+ doc 注释）原样迁入——连接 `generate_js_dom_shim` 产生的 JS shim 与宿主侧 DomMutation 收集器，注册全部 `__zw_*` 扁平回调（DOM 操作 / 查询 / Observer / fetch / crypto / canvas / 选择器 / 表单 / 事件等）。 |
+| `crates/engine/src/js_dom_bridge.rs` | 删 `register_dom_callbacks` 段（原 2046-3133 行）+ 增 `mod callbacks; pub use callbacks::*;`。**调用点零改动**：browser/renderer/reftest 三处 `register_dom_callbacks(&mut sandbox, ...)` 经 `pub use` 重导出解析。 |
+
+**为何 `use super::*` 解析全部依赖（最大单体函数零可见性提权）**：`register_dom_callbacks` 调父模块的全部 helper——`find_by_selector`（pub）/ `compute_document_styles`（私有）/ `apply_dom_mutations` / `apply_mutations_to_html[_with_handles]` / `query_match_selector` / `serialize_computed_property`（computed_style 重导出）/ `crypto_*`（crypto 重导出）/ `canvas_context_op`（canvas 重导出）/ `element_matches_test_selector` 等（selector_match 重导出）+ 类型（Sandbox/Arc/Mutex/HashMap/DomMutation/Document/NodeId 等，父 `use`）。`use super::*` glob 父模块全部项（含祖先私有项 + 各子模块 `pub use` 重导出 + 父 `use` 绑定）→ 函数体内 bare 名调用逐字零改动。Rust「子模块可访祖先私有项」铁律使 1079 行单函数迁移无需任何 `pub(super)` 提权。
+
+**为何零回归**：迁移纯机械（单函数 doc+body 原样移到 callbacks.rs，`use super::*` 解析所有 bare 名）；`pub use callbacks::*` 重导出使 browser（tab_js_worker）/ renderer（js_worker）/ reftest（wpt-runner）三处 `register_dom_callbacks(...)` 调用点逐符号解析不变。`make test` 14155 全绿（含全部 DOM bridge 集成测试、tab_js_worker fetch/MutationObserver/timer 五连测、wpt-runner reftest）验证。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14155 passed / 71 skipped / 0 failed**（测试计数不变 = 纯重构）+ clippy `-D warnings` 零警告（workspace）+ fmt clean。
+
+**js_dom_bridge.rs 文件大小治理闭合里程碑**（R2973-R2976，4 轮）：主文件 **3959→2065 行**（1.03×，达标）。子模块：`computed_style`（R2709 既有）+ `crypto`（R2973）+ `canvas`（R2974）+ `selector_match`（R2975）+ `callbacks`（R2976）。`js_dom_shim.js`（R2963 拆 6 片）+ `js_dom_bridge_tests.rs`（R2962 拆 10 片）+ `js_dom_bridge.rs`（R2973-R2976 拆 4 子模块）三大超标文件全部闭合。主文件 2065 行剩余可后续微调（如 apply_dom_mutations ~290 行独立模块化可降至 <2000，非紧急）。
+
+**下一步**：js_dom_bridge.rs 文件大小治理主体闭合。续 P1a 功能——① Headers 实例化迁移（Response.headers/Request.headers → Headers 实例 + integration test 同步 .get()）；② 其他 defer Web API（ClipboardItem 图片剪贴板）；③ task source 优先级（事件循环边缘）；④ customElements upgrade（需 P1b RFC 审批）。
+
 ### 工程治理——js_dom_bridge.rs 拆分 slice 3：selector_match 子模块（3271→3149，本轮 R2975，~14,155 测试）
 
 R2974（canvas 子模块拆分 slice 2）后续续 js_dom_bridge.rs 文件大小治理。本切片抽 **选择器匹配组**到子模块（继 crypto / canvas 后第 3 刀）。
