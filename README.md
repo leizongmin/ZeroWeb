@@ -115,9 +115,11 @@ cargo run --bin zero-browser -- --headless --remote-debugging-port=9222
 
 ```bash
 ./scripts/package-linux.sh                                              # Linux：.AppImage / .deb（--appimage|--deb|--all）
-./scripts/package-macos.sh                                              # macOS：ZeroBrowser.app（需在 macOS 上运行）
+./scripts/package-macos.sh                                              # macOS：ZeroBrowser.app + .zip（需在 macOS 上运行）
 powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1    # Windows：.zip（-Installer 生成 NSIS 安装器）
 ```
+
+macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Developer ID 签名并完成公证。release/weekly workflow 支持仓库 Secrets：`MACOS_CERTIFICATE`（base64 编码的 `.p12`）、`MACOS_CERTIFICATE_PASSWORD`、`MACOS_KEYCHAIN_PASSWORD`、`APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_PASSWORD`。未配置时仍会生成 ad-hoc 签名的 `.app` zip，但首次运行仍可能被 macOS 拦截。
 
 推送 `v*` tag 时，`.github/workflows/release.yml` 会在 Linux、macOS、Windows 上自动构建并附带产物。项目仍在实验阶段，这些产物仅供本地测试与体验，不代表正式发布。
 

@@ -1,155 +1,232 @@
 #!/usr/bin/env bash
-# ZeroBrowser macOS .app 包打包脚本
-#
-# 用法：
-#   ./scripts/package-macos.sh
-#
-# 生成 ZeroBrowser.app 到 target/packages/ 目录。
-# 必须在 macOS 上运行。
+# Build a distributable ZeroBrowser.app and zip archive on macOS.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PACKAGE_DIR="$PROJECT_ROOT/target/packages"
+
 APP_NAME="ZeroBrowser"
-APP_VERSION="$(cd "$PROJECT_ROOT" && cargo metadata --format-version 1 --no-deps 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["packages"][0]["version"])' 2>/dev/null || echo "0.1.0")"
+BUNDLE_ID="com.zeroweb.browser"
+OUTPUT_DIR="$PROJECT_ROOT/target/packages"
+BROWSER_BINARY=""
+RENDERER_BINARY=""
+APP_VERSION=""
+ARCHIVE_PATH=""
+SIGN_IDENTITY="${MACOS_SIGN_IDENTITY:-}"
+NOTARIZE=false
 
-GREEN='\033[0;32m'
-NC='\033[0m'
-info() { echo -e "${GREEN}[INFO]${NC} $*"; }
+usage() {
+    cat <<'EOF'
+Usage:
+  scripts/package-macos.sh [options]
 
-# 检查平台
-if [[ "$(uname)" != "Darwin" ]]; then
-    echo "错误：此脚本只能在 macOS 上运行"
+Options:
+  --browser PATH         Use an existing zero-browser binary.
+  --renderer PATH        Use an existing zero-renderer binary.
+  --output-dir PATH      Output directory (default: target/packages).
+  --version VERSION      Bundle version (default: Cargo workspace version).
+  --archive PATH         Zip path (default: <output-dir>/zero-browser-macos.zip).
+  --sign-identity NAME   Developer ID Application identity. Defaults to
+                         MACOS_SIGN_IDENTITY. Without it, the app is ad-hoc signed.
+  --notarize             Submit with notarytool and staple the accepted ticket.
+                         Requires APPLE_ID, APPLE_TEAM_ID, and APPLE_APP_PASSWORD.
+  -h, --help             Show this help.
+
+When --browser and --renderer are omitted, the script builds both release binaries.
+The zip contains ZeroBrowser.app at its root.
+EOF
+}
+
+fail() {
+    echo "[ERROR] $*" >&2
     exit 1
+}
+
+info() {
+    echo "[INFO] $*"
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --browser)
+            [[ $# -ge 2 ]] || fail "--browser requires a path"
+            BROWSER_BINARY="$2"
+            shift 2
+            ;;
+        --renderer)
+            [[ $# -ge 2 ]] || fail "--renderer requires a path"
+            RENDERER_BINARY="$2"
+            shift 2
+            ;;
+        --output-dir)
+            [[ $# -ge 2 ]] || fail "--output-dir requires a path"
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        --version)
+            [[ $# -ge 2 ]] || fail "--version requires a value"
+            APP_VERSION="$2"
+            shift 2
+            ;;
+        --archive)
+            [[ $# -ge 2 ]] || fail "--archive requires a path"
+            ARCHIVE_PATH="$2"
+            shift 2
+            ;;
+        --sign-identity)
+            [[ $# -ge 2 ]] || fail "--sign-identity requires a value"
+            SIGN_IDENTITY="$2"
+            shift 2
+            ;;
+        --notarize)
+            NOTARIZE=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            fail "unknown argument: $1"
+            ;;
+    esac
+done
+
+[[ "$(uname -s)" == "Darwin" ]] || fail "this script must run on macOS"
+command -v codesign >/dev/null || fail "codesign is required"
+command -v ditto >/dev/null || fail "ditto is required"
+command -v iconutil >/dev/null || fail "iconutil is required"
+command -v sips >/dev/null || fail "sips is required"
+
+if [[ -n "$BROWSER_BINARY" || -n "$RENDERER_BINARY" ]]; then
+    [[ -n "$BROWSER_BINARY" && -n "$RENDERER_BINARY" ]] \
+        || fail "--browser and --renderer must be provided together"
+else
+    info "Building release binaries"
+    (
+        cd "$PROJECT_ROOT"
+        cargo build --release -p zero-browser -p zero-renderer
+    )
+    BROWSER_BINARY="$PROJECT_ROOT/target/release/zero-browser"
+    RENDERER_BINARY="$PROJECT_ROOT/target/release/zero-renderer"
 fi
 
-mkdir -p "$PACKAGE_DIR"
+[[ "$BROWSER_BINARY" = /* ]] || BROWSER_BINARY="$PROJECT_ROOT/$BROWSER_BINARY"
+[[ "$RENDERER_BINARY" = /* ]] || RENDERER_BINARY="$PROJECT_ROOT/$RENDERER_BINARY"
+[[ "$OUTPUT_DIR" = /* ]] || OUTPUT_DIR="$PROJECT_ROOT/$OUTPUT_DIR"
 
-# 编译（browser 与 renderer 须在同一输出目录，供多进程 spawn）
-info "编译 release 二进制..."
-cd "$PROJECT_ROOT"
-cargo build --release -p zero-browser -p zero-renderer
+[[ -f "$BROWSER_BINARY" ]] || fail "browser binary not found: $BROWSER_BINARY"
+[[ -f "$RENDERER_BINARY" ]] || fail "renderer binary not found: $RENDERER_BINARY"
 
-BINARY="$PROJECT_ROOT/target/release/zero-browser"
-RENDERER="$PROJECT_ROOT/target/release/zero-renderer"
-if [[ ! -f "$BINARY" ]]; then
-    echo "错误：编译失败 zero-browser"
-    exit 1
+if [[ -z "$APP_VERSION" ]]; then
+    APP_VERSION="$(
+        sed -n '/^\[workspace\.package\]$/,/^\[/{s/^version = "\([^"]*\)"/\1/p;}' \
+            "$PROJECT_ROOT/Cargo.toml" | head -1
+    )"
 fi
-if [[ ! -f "$RENDERER" ]]; then
-    echo "错误：编译失败 zero-renderer"
-    exit 1
-fi
-strip "$BINARY" 2>/dev/null || true
-strip "$RENDERER" 2>/dev/null || true
+[[ "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}([+-][A-Za-z0-9.-]+)?$ ]] \
+    || fail "version must be a semantic version: $APP_VERSION"
+BUNDLE_VERSION="${APP_VERSION%%[-+]*}"
 
-# 创建 .app 结构
-APP_BUNDLE="$PACKAGE_DIR/${APP_NAME}.app"
+mkdir -p "$OUTPUT_DIR"
+if [[ -z "$ARCHIVE_PATH" ]]; then
+    ARCHIVE_PATH="$OUTPUT_DIR/zero-browser-macos.zip"
+elif [[ "$ARCHIVE_PATH" != /* ]]; then
+    ARCHIVE_PATH="$PROJECT_ROOT/$ARCHIVE_PATH"
+fi
+mkdir -p "$(dirname "$ARCHIVE_PATH")"
+
+APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
+ENTITLEMENTS_PATH="$OUTPUT_DIR/.ZeroBrowser.entitlements.plist"
+ICONSET_SOURCE="$PROJECT_ROOT/apps/browser/assets/icons-gen/iconset"
+ICONSET_DIR="$OUTPUT_DIR/.ZeroBrowser.iconset"
+trap 'rm -f "$ENTITLEMENTS_PATH"; rm -rf "$ICONSET_DIR"' EXIT
 rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_BUNDLE/Contents/MacOS"
-mkdir -p "$APP_BUNDLE/Contents/Resources"
-mkdir -p "$APP_BUNDLE/Contents/Frameworks"
+mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
-# 复制二进制（多进程：renderer 与 browser 同目录）
-cp "$BINARY" "$APP_BUNDLE/Contents/MacOS/ZeroBrowser"
-cp "$RENDERER" "$APP_BUNDLE/Contents/MacOS/zero-renderer"
+install -m 755 "$BROWSER_BINARY" "$APP_BUNDLE/Contents/MacOS/ZeroBrowser"
+install -m 755 "$RENDERER_BINARY" "$APP_BUNDLE/Contents/MacOS/zero-renderer"
 
-# Info.plist
-cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
+cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleExecutable</key>
-    <string>ZeroBrowser</string>
-    <key>CFBundleIconFile</key>
-    <string>ZeroBrowser</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.zeroweb.browser</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>ZeroBrowser</string>
-    <key>CFBundleDisplayName</key>
-    <string>ZeroBrowser</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>${APP_VERSION}</string>
-    <key>CFBundleVersion</key>
-    <string>${APP_VERSION}</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>12.0</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSSupportsAutomaticGraphicsSwitching</key>
-    <true/>
-    <key>CFBundleDocumentTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>HTML Document</string>
-            <key>CFBundleTypeRole</key>
-            <string>Viewer</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>public.html</string>
-            </array>
-        </dict>
-    </array>
-    <key>CFBundleURLTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleURLName</key>
-            <string>Web URL</string>
-            <key>CFBundleURLSchemes</key>
-            <array>
-                <string>http</string>
-                <string>https</string>
-            </array>
-        </dict>
-    </array>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleDisplayName</key><string>${APP_NAME}</string>
+    <key>CFBundleExecutable</key><string>${APP_NAME}</string>
+    <key>CFBundleIconFile</key><string>${APP_NAME}</string>
+    <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleName</key><string>${APP_NAME}</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>${BUNDLE_VERSION}</string>
+    <key>CFBundleVersion</key><string>${BUNDLE_VERSION}</string>
+    <key>LSMinimumSystemVersion</key><string>12.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+</dict>
+</plist>
+EOF
+printf 'APPL????' > "$APP_BUNDLE/Contents/PkgInfo"
+plutil -lint "$APP_BUNDLE/Contents/Info.plist"
+
+[[ -d "$ICONSET_SOURCE" ]] || fail "iconset not found: $ICONSET_SOURCE"
+rm -rf "$ICONSET_DIR"
+cp -R "$ICONSET_SOURCE" "$ICONSET_DIR"
+sips -s format png -z 1024 1024 "$PROJECT_ROOT/apps/browser/assets/app-icon.svg" \
+    --out "$ICONSET_DIR/icon_512x512@2x.png" >/dev/null
+iconutil -c icns "$ICONSET_DIR" -o "$APP_BUNDLE/Contents/Resources/ZeroBrowser.icns"
+
+cat > "$ENTITLEMENTS_PATH" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key><true/>
 </dict>
 </plist>
 EOF
 
-# PkgInfo
-echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
-
-# 应用图标：从源 SVG 生成 .icns 并放入 Resources（Info.plist 指定 ZeroBrowser.icns）
-ICON_SRC="$PROJECT_ROOT/apps/browser/assets/app-icon.svg"
-ICONSET_DIR="$PACKAGE_DIR/iconset.tmp"
-ICONSET_GEN="$PROJECT_ROOT/apps/browser/assets/icons-gen/iconset"
-if [[ -d "$ICONSET_GEN" ]]; then
-    # 优先用已生成的 iconset（开发机已运行 zero-icon-gen）
-    rm -rf "$ICONSET_DIR"
-    cp -R "$ICONSET_GEN" "$ICONSET_DIR"
-elif cargo run -p zero-icon-gen -- --out "$PACKAGE_DIR/icons-gen.tmp" >/dev/null 2>&1; then
-    ICONSET_DIR="$PACKAGE_DIR/icons-gen.tmp/iconset"
+if [[ -n "$SIGN_IDENTITY" ]]; then
+    info "Signing app with Developer ID identity: $SIGN_IDENTITY"
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
+        --entitlements "$ENTITLEMENTS_PATH" "$APP_BUNDLE/Contents/MacOS/zero-renderer"
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
+        --entitlements "$ENTITLEMENTS_PATH" "$APP_BUNDLE"
 else
-    ICONSET_DIR=""
+    info "No Developer ID identity provided; applying ad-hoc signature"
+    codesign --force --sign - "$APP_BUNDLE/Contents/MacOS/zero-renderer"
+    codesign --force --sign - "$APP_BUNDLE"
+fi
+codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+
+create_archive() {
+    rm -f "$ARCHIVE_PATH"
+    ditto -c -k --keepParent "$APP_BUNDLE" "$ARCHIVE_PATH"
+}
+
+create_archive
+
+if [[ "$NOTARIZE" == true ]]; then
+    [[ -n "$SIGN_IDENTITY" ]] || fail "--notarize requires --sign-identity"
+    [[ -n "${APPLE_ID:-}" ]] || fail "--notarize requires APPLE_ID"
+    [[ -n "${APPLE_TEAM_ID:-}" ]] || fail "--notarize requires APPLE_TEAM_ID"
+    [[ -n "${APPLE_APP_PASSWORD:-}" ]] || fail "--notarize requires APPLE_APP_PASSWORD"
+    command -v xcrun >/dev/null || fail "xcrun is required for notarization"
+
+    info "Submitting archive for Apple notarization"
+    xcrun notarytool submit "$ARCHIVE_PATH" \
+        --apple-id "$APPLE_ID" \
+        --team-id "$APPLE_TEAM_ID" \
+        --password "$APPLE_APP_PASSWORD" \
+        --wait
+    xcrun stapler staple "$APP_BUNDLE"
+    xcrun stapler validate "$APP_BUNDLE"
+    spctl --assess --type execute --verbose=4 "$APP_BUNDLE"
+    create_archive
 fi
 
-if [[ -n "$ICONSET_DIR" && -d "$ICONSET_DIR" ]] && command -v iconutil &>/dev/null; then
-    iconutil -c icns "$ICONSET_DIR" -o "$APP_BUNDLE/Contents/Resources/ZeroBrowser.icns" 2>/dev/null \
-        && info "✅ 已嵌入应用图标 ZeroBrowser.icns" \
-        || warn "iconutil 生成 .icns 失败，.app 将使用默认图标"
-else
-    warn "未找到 iconutil 或 iconset，.app 将使用默认图标（运行 cargo run -p zero-icon-gen 生成）"
-fi
-rm -rf "$ICONSET_DIR" "$PACKAGE_DIR/icons-gen.tmp"
-
-info "✅ .app 包已生成: $APP_BUNDLE"
-
-# 检查是否有 create-dmg 来生成 .dmg
-if command -v create-dmg &>/dev/null; then
-    create-dmg "$PACKAGE_DIR/ZeroBrowser-${APP_VERSION}.dmg" "$APP_BUNDLE" 2>/dev/null || true
-    info "✅ .dmg 已生成: $PACKAGE_DIR/ZeroBrowser-${APP_VERSION}.dmg"
-else
-    info "提示: 安装 create-dmg 可生成 .dmg：brew install create-dmg"
-    info "手动创建: hdiutil create -volname ZeroBrowser -srcfolder $APP_BUNDLE -ov -format UDZO ZeroBrowser.dmg"
-fi
+info "App bundle: $APP_BUNDLE"
+info "Archive: $ARCHIVE_PATH"

@@ -67,7 +67,7 @@ jobs:
       && !(github.event_name == 'workflow_dispatch' && inputs.run_reftest_trend)
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 75
     # windows-aarch64: freetype-sys NEON 汇编问题（已知上游 bug），不阻塞 weekly
     continue-on-error: ${{ matrix.target == 'aarch64-pc-windows-msvc' }}
     permissions:
@@ -212,12 +212,64 @@ jobs:
       - name: Build release binaries
         run: cargo build ${{ matrix.features }} --release --bin zero-browser --bin zero-renderer --target ${{ matrix.target }}
 
+      - name: Import Developer ID certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          if [[ -z "$MACOS_CERTIFICATE" ]]; then
+            echo "::warning::MACOS_CERTIFICATE is not configured; the app will use an ad-hoc signature."
+            exit 0
+          fi
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/zero-browser-signing.keychain-db"
+          printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          identity="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk '/Developer ID Application/ {print $2; exit}')"
+          test -n "$identity"
+          echo "MACOS_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
       - name: Create output directory
+        if: runner.os != 'macOS'
         shell: bash
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/zero-browser${{ matrix.ext }} dist/
           cp target/${{ matrix.target }}/release/zero-renderer${{ matrix.ext }} dist/
+
+      - name: Build macOS app archive
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          VERSION="$(sed -n '/^\[workspace\.package\]$/,/^\[/{s/^version = "\([^"]*\)"/\1/p;}' Cargo.toml | head -1)"
+          args=(
+            --browser "target/${{ matrix.target }}/release/zero-browser"
+            --renderer "target/${{ matrix.target }}/release/zero-renderer"
+            --output-dir package
+            --version "$VERSION"
+            --archive "dist/${{ matrix.artifact }}.zip"
+          )
+          if [[ -n "${MACOS_SIGN_IDENTITY:-}" ]]; then
+            args+=(--sign-identity "$MACOS_SIGN_IDENTITY")
+          fi
+          if [[ -n "${MACOS_SIGN_IDENTITY:-}" && -n "$APPLE_ID" && -n "$APPLE_TEAM_ID" && -n "$APPLE_APP_PASSWORD" ]]; then
+            args+=(--notarize)
+          else
+            echo "::warning::macOS archive is not notarized; configure Developer ID and Apple notary secrets to avoid Gatekeeper prompts."
+          fi
+          scripts/package-macos.sh "${args[@]}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -256,7 +308,12 @@ jobs:
             # so the asset name matches the body text (the release itself is
             # already named "Weekly Build ...").
             name=$(basename "$dir" | sed 's/^weekly-//')
-            (cd "$dir" && zip -r "../../release/${name}.zip" .)
+            packaged_zip="$dir/${name}.zip"
+            if [[ -f "$packaged_zip" ]]; then
+              cp "$packaged_zip" "release/${name}.zip"
+            else
+              (cd "$dir" && zip -r "../../release/${name}.zip" .)
+            fi
           done
           echo "--- release/ ---"
           ls -la release/
@@ -277,15 +334,15 @@ jobs:
           body: |
             Automated weekly build of `main` (${{ github.sha }}).
 
-            Each zip contains **both** `zero-browser` and `zero-renderer` —
-            keep them in the same directory after extracting (the browser
-            spawns the renderer as a subprocess).
+            macOS zips contain `ZeroBrowser.app`. Linux and Windows zips contain
+            both `zero-browser` and `zero-renderer`; keep those executables in
+            the same directory after extracting.
 
             Pick the zip matching your platform:
             - `zero-browser-linux-x86_64.zip` — Linux x86_64
             - `zero-browser-linux-aarch64.zip` — Linux ARM64
-            - `zero-browser-macos-x86_64.zip` — macOS Intel
-            - `zero-browser-macos-aarch64.zip` — macOS Apple Silicon
+            - `zero-browser-macos-x86_64.zip` — macOS Intel (`ZeroBrowser.app`)
+            - `zero-browser-macos-aarch64.zip` — macOS Apple Silicon (`ZeroBrowser.app`)
             - `zero-browser-windows-x86_64.zip` — Windows x86_64
             - `zero-browser-windows-aarch64.zip` — Windows ARM64 (QuickJS build; may fail due to upstream freetype-sys issue)
 

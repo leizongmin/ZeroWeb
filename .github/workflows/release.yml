@@ -330,7 +330,14 @@ jobs:
     name: Package macOS .app (${{ matrix.arch }})
     needs: build-release
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 30
+    env:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
     permissions:
       contents: read
     strategy:
@@ -353,48 +360,50 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist/
 
-      - name: Build .app bundle
+      - name: Import Developer ID certificate
+        if: env.MACOS_CERTIFICATE != ''
+        shell: bash
         run: |
-          chmod +x dist/zero-browser dist/zero-renderer
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/zero-browser-signing.keychain-db"
+          printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          identity="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk '/Developer ID Application/ {print $2; exit}')"
+          test -n "$identity"
+          echo "MACOS_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Build macOS app archive
+        shell: bash
+        run: |
           VERSION="${{ github.event.release.tag_name }}"
           VERSION="${VERSION#v}"
-          APP="dist/ZeroBrowser.app"
-          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          # 主进程可执行文件名按 Info.plist 约定是 ZeroBrowser；renderer 保持原名，
-          # 与主进程同目录（Contents/MacOS），便于 process_backend 的同目录查找逻辑命中。
-          cp dist/zero-browser "$APP/Contents/MacOS/ZeroBrowser"
-          cp dist/zero-renderer "$APP/Contents/MacOS/zero-renderer"
-
-          cat > "$APP/Contents/Info.plist" << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleExecutable</key><string>ZeroBrowser</string>
-            <key>CFBundleIconFile</key><string>ZeroBrowser</string>
-            <key>CFBundleIdentifier</key><string>com.zeroweb.browser</string>
-            <key>CFBundleName</key><string>ZeroBrowser</string>
-            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-            <key>CFBundleVersion</key><string>${VERSION}</string>
-            <key>CFBundlePackageType</key><string>APPL</string>
-            <key>LSMinimumSystemVersion</key><string>12.0</string>
-            <key>NSHighResolutionCapable</key><true/>
-          </dict>
-          </plist>
-          EOF
-
-          echo -n "APPL????" > "$APP/Contents/PkgInfo"
-
-          # 嵌入应用图标：用已生成的 iconset + iconutil 生成 .icns
-          if [[ -d "apps/browser/assets/icons-gen/iconset" ]]; then
-            iconutil -c icns apps/browser/assets/icons-gen/iconset -o "$APP/Contents/Resources/ZeroBrowser.icns" 2>/dev/null || true
+          args=(
+            --browser dist/zero-browser
+            --renderer dist/zero-renderer
+            --output-dir package
+            --version "$VERSION"
+            --archive "dist/${{ matrix.artifact }}.zip"
+          )
+          if [[ -n "${MACOS_SIGN_IDENTITY:-}" ]]; then
+            args+=(--sign-identity "$MACOS_SIGN_IDENTITY")
           fi
+          if [[ -n "${MACOS_SIGN_IDENTITY:-}" && -n "$APPLE_ID" && -n "$APPLE_TEAM_ID" && -n "$APPLE_APP_PASSWORD" ]]; then
+            args+=(--notarize)
+          else
+            echo "::warning::macOS archive is not notarized; configure Developer ID and Apple notary secrets to avoid Gatekeeper prompts."
+          fi
+          scripts/package-macos.sh "${args[@]}"
 
-      - name: Upload .app
+      - name: Upload macOS app archive
         uses: actions/upload-artifact@v4
         with:
           name: zero-browser-macos-${{ matrix.arch }}-app
-          path: dist/ZeroBrowser.app
+          path: dist/${{ matrix.artifact }}.zip
           retention-days: 7
 
   create-release:
@@ -416,7 +425,10 @@ jobs:
         shell: bash
         run: |
           cd artifacts
-          find . -type f -print0 | sort -z | xargs -0 sha256sum > ../checksums-sha256.txt
+          find . -type f \
+            ! -path './zero-browser-macos-x86_64/*' \
+            ! -path './zero-browser-macos-aarch64/*' \
+            -print0 | sort -z | xargs -0 sha256sum > ../checksums-sha256.txt
           cd ..
           cat checksums-sha256.txt
 
@@ -430,9 +442,7 @@ jobs:
             artifacts/zero-browser-linux-aarch64/*
             artifacts/zero-browser-linux-amd64-deb/*
             artifacts/zero-browser-linux-arm64-deb/*
-            artifacts/zero-browser-macos-x86_64/*
-            artifacts/zero-browser-macos-aarch64/*
-            artifacts/zero-browser-macos-x86_64-app/**
-            artifacts/zero-browser-macos-aarch64-app/**
+            artifacts/zero-browser-macos-x86_64-app/*.zip
+            artifacts/zero-browser-macos-aarch64-app/*.zip
             artifacts/zero-browser-windows-x86_64/*
             artifacts/zero-browser-windows-aarch64/*
