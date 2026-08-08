@@ -460,45 +460,118 @@
     return v;
   }
 
+  // R3032：`classList` 完整 DOMTokenList。旧实现仅 add/remove/toggle/contains，缺 `toggle(token,force)`
+  //（force 参被忽略——常见 `classList.toggle('x', cond)` 模式失效）、`replace`、`item`、`length`、indexed 访问、
+  // `forEach`、`toString`/`value`、variadic add/remove、`Symbol.iterator`。modern 框架/库高频用 length/indexed/
+  // forEach 迭代 + replace + toggle(cond) 条件切换。Proxy 暴露动态 length + indexed 访问（每次读 live 列表）。
   function _classListProxy(sel, handle) {
     var key = _elKey(sel, handle);
-    var write = function(v) {
+    // 当前列表（缓存优先，反映同脚本内累积操作，非 stale snapshot）。
+    var cur = function () { return _readClass(key, sel, handle).split(/\s+/).filter(Boolean); };
+    var write = function (arr) {
+      var v = arr.join(' ');
       _classCache[key] = v;
       if (handle) __zw_set_attr_handle(handle, 'class', v);
       else __zw_set_attr(sel, 'class', v);
       _mo_notify(sel, handle, { type: 'attributes', attributeName: 'class' });
     };
-    return {
-      add: function(c) {
-        var parts = _readClass(key, sel, handle).split(/\s+/).filter(Boolean);
-        if (parts.indexOf(c) < 0) parts.push(c);
-        write(parts.join(' '));
-      },
-      remove: function(c) {
-        var parts = _readClass(key, sel, handle)
-          .split(/\s+/)
-          .filter(Boolean)
-          .filter(function(x) { return x !== c; });
-        write(parts.join(' '));
-      },
-      toggle: function(c) {
-        var parts = _readClass(key, sel, handle).split(/\s+/).filter(Boolean);
-        var i = parts.indexOf(c);
-        var on;
-        if (i >= 0) {
-          parts.splice(i, 1);
-          on = false;
-        } else {
-          parts.push(c);
-          on = true;
-        }
-        write(parts.join(' '));
-        return on;
-      },
-      contains: function(c) {
-        return _readClass(key, sel, handle).split(/\s+/).indexOf(c) >= 0;
+    // DOMTokenList token 校验：空串或含 ASCII 空白 → 抛（spec：浏览器同步抛 SyntaxError DOMException）。
+    // headless 无 DOMException，抛 TypeError（最接近的可获取异常类型，libs try/catch 捕获兼容）。
+    var check = function (t) {
+      var s = String(t);
+      if (s === '' || /\s/.test(s)) {
+        throw new TypeError("An invalid or illegal string was specified (token must not be empty or contain whitespace).");
       }
     };
+    var target = {
+      add: function () {
+        var p = cur();
+        for (var i = 0; i < arguments.length; i++) {
+          var c = String(arguments[i]);
+          check(c);
+          if (p.indexOf(c) < 0) p.push(c);
+        }
+        write(p);
+      },
+      remove: function () {
+        var p = cur();
+        for (var j = 0; j < arguments.length; j++) {
+          var r = String(arguments[j]);
+          check(r);
+          p = p.filter(function (x) { return x !== r; });
+        }
+        write(p);
+      },
+      contains: function (c) {
+        c = String(c);
+        check(c);
+        return cur().indexOf(c) >= 0;
+      },
+      toggle: function (c, force) {
+        c = String(c);
+        check(c);
+        var p = cur();
+        var i = p.indexOf(c);
+        var on;
+        // force≠undefined：force true→加、false→移除（不切换）；force undefined→切换。
+        if (force !== undefined) {
+          on = !!force;
+          if (on && i < 0) p.push(c);
+          else if (!on && i >= 0) p.splice(i, 1);
+        } else if (i >= 0) {
+          p.splice(i, 1);
+          on = false;
+        } else {
+          p.push(c);
+          on = true;
+        }
+        write(p);
+        return on;
+      },
+      replace: function (oldT, newT) {
+        oldT = String(oldT);
+        newT = String(newT);
+        check(oldT);
+        check(newT);
+        if (oldT === newT) return cur().indexOf(oldT) >= 0;
+        var p = cur();
+        var i = p.indexOf(oldT);
+        if (i < 0) return false;
+        p.splice(i, 1); // 先移除 old；若 newT 已存在则不重复插入（dedupe，spec 结果）。
+        if (p.indexOf(newT) < 0) p.splice(i, 0, newT);
+        write(p);
+        return true;
+      },
+      item: function (i) {
+        var p = cur();
+        i = i | 0;
+        return i < 0 || i >= p.length ? null : p[i];
+      },
+      forEach: function (cb, thisArg) {
+        var p = cur();
+        for (var k = 0; k < p.length; k++) cb.call(thisArg, p[k], k, proxy);
+      },
+      toString: function () { return _readClass(key, sel, handle); },
+      entries: function () { var p = cur(); var n = 0; return { next: function () { return n < p.length ? { value: [n, p[n++]], done: false } : { value: undefined, done: true }; } }; },
+      keys: function () { var p = cur(); var n = 0; return { next: function () { return n < p.length ? { value: n++, done: false } : { value: undefined, done: true }; } }; },
+      values: function () { var p = cur(); var n = 0; return { next: function () { return n < p.length ? { value: p[n++], done: false } : { value: undefined, done: true }; } }; },
+    };
+    // Proxy：length + indexed 访问动态读 live 列表；value/nodeValue 返当前 class 串；Symbol iterable。
+    var proxy = new Proxy(target, {
+      get: function (_t, prop) {
+        if (prop === 'length') return cur().length;
+        if (prop === 'value' || prop === 'nodeValue') return _readClass(key, sel, handle);
+        if (typeof prop !== 'string') return target[prop];
+        if (/^\d+$/.test(prop)) {
+          var p = cur();
+          var idx = +prop;
+          return idx < p.length ? p[idx] : undefined;
+        }
+        return target[prop];
+      },
+    });
+    target[Symbol.iterator] = target.values;
+    return proxy;
   }
 
   // 派发某元素 key 上的事件 listener。`phase`：`'all'`（target 阶段，capture+非 capture，默认）、

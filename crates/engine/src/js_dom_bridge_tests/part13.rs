@@ -469,3 +469,105 @@ fn test_mo_parse_based_added_nodes_r3031() {
         "纯文本 innerHTML：addedNodes 回填 1 文本节点"
     );
 }
+
+#[test]
+fn test_classlist_domtokenlist_full_r3032() {
+    // R3032：classList 完整 DOMTokenList。旧实现仅 add/remove/toggle/contains，缺 toggle(force)/replace/
+    // item/length/indexed/forEach/toString(value)/variadic/Symbol.iterator。本切片补全。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d' class='a b'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① length + indexed 访问 + item。
+    sandbox
+        .execute(
+            "var cl = document.getElementById('d').classList;\
+             globalThis.__len = cl.length;\
+             globalThis.__i0 = cl[0]; globalThis.__i1 = cl[1];\
+             globalThis.__item0 = cl.item(0); globalThis.__item5 = cl.item(5);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__len)").unwrap().value, "2", "classList.length=2");
+    assert_eq!(sandbox.execute("globalThis.__i0").unwrap().value, "a", "classList[0]=a（indexed 访问）");
+    assert_eq!(sandbox.execute("globalThis.__i1").unwrap().value, "b", "classList[1]=b");
+    assert_eq!(sandbox.execute("globalThis.__item0").unwrap().value, "a", "classList.item(0)=a");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__item5)").unwrap().value,
+        "null",
+        "classList.item(越界)=null"
+    );
+
+    // ② forEach + for...of（Symbol.iterator）迭代。
+    sandbox
+        .execute(
+            "globalThis.__fe = []; cl.forEach(function(t){ globalThis.__fe.push(t); });\
+             globalThis.__fo = []; for (var x of cl) globalThis.__fo.push(x);\
+             globalThis.__feJ = String(globalThis.__fe); globalThis.__foJ = String(globalThis.__fo);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__feJ").unwrap().value, "a,b", "forEach 迭代 a,b");
+    assert_eq!(sandbox.execute("globalThis.__foJ").unwrap().value, "a,b", "for...of 迭代 a,b");
+
+    // ③ toggle(token, force)：force=false 移除（返 false）、force=true 加回（返 true）。
+    sandbox
+        .execute(
+            "globalThis.__tf = cl.toggle('a', false);\
+             globalThis.__tt = cl.toggle('a', true);\
+             globalThis.__ca = cl.contains('a');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__tf").unwrap().value, "false", "toggle('a',false) 移除返 false");
+    assert_eq!(sandbox.execute("globalThis.__tt").unwrap().value, "true", "toggle('a',true) 加回返 true");
+    assert_eq!(sandbox.execute("globalThis.__ca").unwrap().value, "true", "contains('a') 反映 force=true 后存在");
+
+    // ④ replace：③ 后 class 为 'b a'（toggle false 移 a、true 末加 a）；replace('a','c')=true → 'b c'，
+    //    replace('z','x')=false（不存在）。
+    sandbox
+        .execute(
+            "globalThis.__ra = cl.replace('a', 'c');\
+             globalThis.__val1 = cl.value;\
+             globalThis.__rz = cl.replace('z', 'x');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__ra").unwrap().value, "true", "replace('a','c')=true");
+    assert_eq!(sandbox.execute("globalThis.__val1").unwrap().value, "b c", "replace('a','c') 后 value='b c'（a 在 ③ 末位）");
+    assert_eq!(sandbox.execute("globalThis.__rz").unwrap().value, "false", "replace 不存在 token=false");
+
+    // ⑤ variadic add/remove。
+    sandbox
+        .execute(
+            "cl.add('x', 'y', 'z');\
+             globalThis.__vlen = cl.length;\
+             cl.remove('x', 'y');\
+             globalThis.__vlen2 = cl.length;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__vlen)").unwrap().value, "5", "variadic add 3 → length 5 (b c x y z)");
+    assert_eq!(sandbox.execute("String(globalThis.__vlen2)").unwrap().value, "3", "variadic remove 2 → length 3");
+
+    // ⑥ toString/value 反映当前 class 串。
+    sandbox
+        .execute("globalThis.__ts = String(cl); globalThis.__val2 = cl.value;", )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__ts").unwrap().value, "b c z", "toString()='b c z'");
+    assert_eq!(sandbox.execute("globalThis.__val2").unwrap().value, "b c z", "value='b c z'");
+
+    // ⑦ spec token 校验：空串/含空白 token → 抛（不静默）。
+    sandbox
+        .execute(
+            "globalThis.__e1 = false; globalThis.__e2 = false;\
+             try { cl.add(''); } catch (_e) { globalThis.__e1 = true; }\
+             try { cl.add('has space'); } catch (_e) { globalThis.__e2 = true; }",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__e1)").unwrap().value, "true", "add('') 抛（spec 空串 token）");
+    assert_eq!(sandbox.execute("String(globalThis.__e2)").unwrap().value, "true", "add('has space') 抛（spec 含空白 token）");
+}
