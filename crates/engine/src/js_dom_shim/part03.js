@@ -1188,6 +1188,14 @@
     if (_proxyCache[key]) return _proxyCache[key];
     var proxy = new Proxy({}, {
       get: function(_t, prop) {
+        // QuickJS Proxy ToPrimitive 差异（2026-08-08）：V8 对 get(Symbol.toPrimitive)
+        // 返回 undefined 时回退默认 valueOf/toString；QuickJS 直接抛 TypeError: toPrimitive
+        //（createElement handle proxy 被隐式字符串化——appendChild/observer id 等——
+        // 在 QuickJS 下中断脚本）。显式返回字符串化函数（有 sel 用 sel，否则 handle），
+        // 保证 v8/quickjs 接口行为一致。
+        if (prop === Symbol.toPrimitive) {
+          return function() { return sel ? sel : String(handle); };
+        }
         if (prop === '__zwHandle') return handle;
         if (prop === '__zwSelector') return sel;
         if (prop === 'value') {

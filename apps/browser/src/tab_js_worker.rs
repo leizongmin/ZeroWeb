@@ -785,6 +785,7 @@ mod tests {
         // resolve → __zwResolveCallback 调用回调。注册前（delay 未到）未触发；之后触发。
         let mut worker = TabJsWorkerHandle::spawn(TabId(8));
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+
         worker
             .execute_script_direct("setTimeout(function(){ globalThis.__fired = 'yes'; }, 50);")
             .unwrap();

@@ -62,6 +62,10 @@ target/test-guard: scripts/test-guard.rs
 
 # 全量测试（被 test-guard 包裹）。无人值守 / rally / CI 请用此 target，
 # 不要裸跑 cargo test。可调阈值：./target/test-guard --per-proc-mem 8 --total-mem 20 -- cargo test --workspace
+# 2026-08-08：纳入 QuickJS 矩阵（v8/quickjs 接口一致性保证——此前 quickjs 只在 CI，
+# 本地提交门禁覆盖不到，编译/运行破坏 CI 才暴露；QuickJS_CRATES 为 CI quickjs 测试包列表）。
+QUICKJS_CLIPPY_CRATES = zero-dom zero-css-parser zero-style-system zero-layout-engine zero-engine zero-canvas zero-host-runtime zero-net zero-security zero-storage zero-protocol zero-wasm-sandbox zero-page-runtime zero-render-foundation
+QUICKJS_TEST_CRATES = zero-script-sandbox zero-webview zero-browser zero-renderer zero-webview-demo zero-integration-tests zero-wpt-runner
 test: target/test-guard
 	# cargo-nextest 执行器（2026-08-07 评估后采用，需 `cargo install cargo-nextest`）：
 	# - 全量含 zero-render-foundation 14084 测试 1m29s（比 cargo test 8 线程 1m58s 快 ~30%）
@@ -70,6 +74,10 @@ test: target/test-guard
 	#   测试覆盖与 CI（真 Vulkan 后端，cargo test --workspace）对齐
 	# - 二进制间并行、单测输出仅失败详情；#[ignore] 测试跳过（71 个，与 cargo test 一致）
 	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo nextest run --workspace
+	# QuickJS 编译检查（--no-default-features --features quickjs；抓编译层破坏）
+	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings
+	# QuickJS 运行测试（v8/quickjs 接口一致性保证——1695 测试 ~75s）
+	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo nextest run --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES))
 
 # WPT reftest（release 构建，约 4× 快于 debug；同样被 test-guard 包裹）。
 reftest: fetch-wpt-data target/test-guard
