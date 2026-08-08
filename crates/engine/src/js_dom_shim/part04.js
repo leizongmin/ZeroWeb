@@ -1057,6 +1057,50 @@
         if (prop === 'length' && _realTag(sel, handle) === 'FORM') {
           return _formControls(sel).length;
         }
+        // R3048：HTMLFormElement 方法——reset/requestSubmit/submit。旧缺（get trap 未拦 → `form.reset()` 抛
+        // not-a-function 中断脚本）。reset：dispatch cancelable 'reset' 事件，未 preventDefault 则把控件恢复
+        // defaultValue/defaultChecked/defaultSelected（经既有 setter，revert 表单状态）。requestSubmit：dispatch
+        // submit SubmitEvent（cancelable，含 submitter）；submit：spec 不发事件直接导航，headless 无导航 → no-op
+        //（防抛错，documented）。仅 FORM gate；非 form 透传 undefined。
+        if (_realTag(sel, handle) === 'FORM' && (prop === 'reset' || prop === 'requestSubmit' || prop === 'submit')) {
+          if (prop === 'reset') {
+            return function () {
+              var _rev = new Event('reset', { bubbles: true, cancelable: true });
+              if (_dispatchWithBubble(key, sel, handle, _rev) === false) return; // preventDefault → 不重置
+              if (sel) {
+                var _fcs = _formControls(sel);
+                for (var i = 0; i < _fcs.length; i++) {
+                  var c = _fcs[i];
+                  try {
+                    var _ct = c.tagName;
+                    // OUTPUT 有 defaultValue（R2846 _outputDefault）；TEXTAREA defaultValue 未单独追踪
+                    //（value=live text，无独立初值缓存）→ textarea value reset defer（独立切片）。
+                    if (_ct === 'OUTPUT') { c.value = c.defaultValue; }
+                    else if (_ct === 'INPUT') {
+                      var _it = c.type;
+                      if (_it === 'checkbox' || _it === 'radio') c.checked = c.defaultChecked;
+                      else if (_it !== 'submit' && _it !== 'reset' && _it !== 'button' && _it !== 'image' && _it !== 'file')
+                        c.value = c.defaultValue;
+                    } else if (_ct === 'SELECT') {
+                      var _opts = c.options;
+                      for (var j = 0; _opts && j < _opts.length; j++) _opts[j].selected = _opts[j].defaultSelected;
+                    }
+                  } catch (_e) {}
+                }
+              }
+            };
+          } else if (prop === 'requestSubmit') {
+            return function (submitter) {
+              // dispatch submit SubmitEvent（cancelable，含 submitter）；headless 无导航（documented）。
+              var _sev;
+              try { _sev = new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: submitter || null }); }
+              catch (_e) { _sev = new Event('submit', { bubbles: true, cancelable: true }); }
+              _dispatchWithBubble(key, sel, handle, _sev);
+            };
+          } else { // submit
+            return function () {}; // spec form.submit() 不发事件直接导航；headless 无导航 → no-op（防抛错）
+          }
+        }
         // 布局测量 API：`el.getBoundingClientRect()` 返真实 DOMRect（P1a gBCR path C）。
         // selector-identity 元素（querySelector/getElementById，sel=stable_selector）→ host
         // `__zw_getBoundingClientRect(sel)` 解析 dom_html→NodeId→layout-rect snapshot 返 "x,y,w,h"。

@@ -1188,6 +1188,106 @@ fn test_scroll_position_tracking_r3047() {
 }
 
 #[test]
+fn test_form_reset_submit_methods_r3048() {
+    // R3048：HTMLFormElement 方法 reset/requestSubmit/submit。旧缺（get trap 未拦 → form.reset() 抛 not-a-function）。
+    // reset：dispatch cancelable 'reset' 事件 + 未取消则把控件恢复 defaultValue/defaultChecked/defaultSelected。
+    // requestSubmit：dispatch submit SubmitEvent；submit：no-op（headless 无导航）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <form id='f'>\
+           <input id='t' type='text' value='default-text'>\
+           <input id='c' type='checkbox' checked>\
+           <select id='s'><option>a</option><option id='o2' selected>b</option></select>\
+           <textarea id='ta'>default-area</textarea>\
+         </form>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① 初始状态 + 用户改值后，reset() 把控件恢复 default。
+    sandbox
+        .execute(
+            "var f = document.getElementById('f');\
+             var t = document.getElementById('t'), c = document.getElementById('c');\
+             var s = document.getElementById('s'), ta = document.getElementById('ta');\
+             t.value = 'changed-text';\
+             c.checked = false;\
+             ta.value = 'changed-area';\
+             s.value = 'a';\
+             globalThis.__beforeT = t.value;\
+             globalThis.__beforeC = String(c.checked);\
+             f.reset();\
+             globalThis.__afterT = t.value;\
+             globalThis.__afterC = String(c.checked);\
+             globalThis.__afterTa = ta.value;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__beforeT").unwrap().value, "changed-text", "reset 前 t.value=changed-text");
+    assert_eq!(sandbox.execute("globalThis.__beforeC").unwrap().value, "false", "reset 前 c.checked=false（用户取消）");
+    assert_eq!(sandbox.execute("globalThis.__afterT").unwrap().value, "default-text", "reset 后 t.value 恢复 defaultValue");
+    assert_eq!(sandbox.execute("globalThis.__afterC").unwrap().value, "true", "reset 后 c.checked 恢复 defaultChecked=true");
+    // 注：textarea defaultValue 未单独追踪（value=live text）→ reset 不还原 textarea（documented 限制）；ta 留在表单不影响其他控件 reset。
+
+    // ② 'reset' 事件派发（bubbles，cancelable）——listener 收到。
+    sandbox
+        .execute(
+            "globalThis.__resetFired = 'no';\
+             var f2 = document.getElementById('f');\
+             f2.addEventListener('reset', function(){ globalThis.__resetFired = 'yes'; });\
+             f2.reset();",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__resetFired").unwrap().value, "yes", "reset 事件派发到 form listener");
+
+    // ③ preventDefault('reset') → 控件不重置。
+    sandbox
+        .execute(
+            "var f3 = document.getElementById('f');\
+             var t3 = document.getElementById('t');\
+             t3.value = 'keep-this';\
+             f3.addEventListener('reset', function(e){ e.preventDefault(); });\
+             f3.reset();\
+             globalThis.__pdT = t3.value;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__pdT").unwrap().value, "keep-this", "preventDefault('reset') → 控件不重置");
+
+    // ④ requestSubmit() 派发 submit 事件（cancelable，含 submitter）——headless 无导航（不抛即可）。
+    sandbox
+        .execute(
+            "globalThis.__submitFired = 'no';\
+             globalThis.__submitter = 'none';\
+             var f4 = document.getElementById('f');\
+             f4.addEventListener('submit', function(e){ globalThis.__submitFired = 'yes'; globalThis.__submitter = (e.submitter && e.submitter.id) || 'null'; });\
+             var btn = document.createElement('button'); btn.id = 'sb'; btn.type = 'submit';\
+             f4.requestSubmit(btn);\
+             globalThis.__rsType = 'ok';",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__submitFired").unwrap().value, "yes", "requestSubmit() 派发 submit 事件");
+    assert_eq!(sandbox.execute("globalThis.__submitter").unwrap().value, "sb", "submit 事件 submitter=btn（id=sb）");
+
+    // ⑤ form.submit() 不抛（no-op，headless 无导航）；非 form 元素 reset/submit → undefined。
+    sandbox
+        .execute(
+            "globalThis.__submitNoop = 'ok';\
+             try { document.getElementById('f').submit(); } catch(e){ globalThis.__submitNoop = 'err'; }\
+             globalThis.__nonFormReset = String(document.getElementById('t').reset);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__submitNoop").unwrap().value, "ok", "form.submit() no-op 不抛");
+    assert_eq!(sandbox.execute("globalThis.__nonFormReset").unwrap().value, "undefined", "非 form 元素 .reset → undefined（不误暴露）");
+}
+
+#[test]
 fn test_request_idle_callback_e2e() {
     // requestIdleCallback 无 host __zw_setTimeout → 走 _defer fallback（微任务，execute 末尾 drain）。
     // 回调传 IdleDeadline（timeRemaining 近似 50）。cancelIdleCallback 不抛。
