@@ -831,3 +831,93 @@ fn test_document_title_setter_writeback_r3035() {
         "无 <title> 时 setter 仍更新缓存（getter 读回）"
     );
 }
+
+#[test]
+fn test_element_sheet_cssstylesheet_r3036() {
+    // R3036：element.sheet CSSStyleSheet 入口。<style>/<link rel=stylesheet> 的 .sheet 应返 CSSStyleSheet
+    //（CSS-in-JS 库 + 样式表操作经 .sheet.cssRules/insertRule 读改规则）。当前 get trap 对 'sheet' 返 undefined。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head>\
+         <style id='s'>body { color: red; }</style>\
+         <link id='ls' rel='stylesheet' href='x.css'>\
+         <link id='li' rel='icon' href='i.png'>\
+         </head><body><div id='d'></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① <style>.sheet → CSSStyleSheet：cssRules 读规则（selectorText='body'）。
+    sandbox
+        .execute(
+            "var sheet = document.getElementById('s').sheet;\
+             globalThis.__hasSheet = (sheet != null);\
+             globalThis.__rules = sheet ? sheet.cssRules.length : -1;\
+             globalThis.__sel = sheet && sheet.cssRules[0] ? sheet.cssRules[0].selectorText : '';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hasSheet)").unwrap().value,
+        "true",
+        "<style>.sheet 返 CSSStyleSheet（非 null/undefined）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rules)").unwrap().value,
+        "1",
+        "<style>.sheet.cssRules.length=1（反映 style 内容）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__sel").unwrap().value,
+        "body",
+        "<style>.sheet.cssRules[0].selectorText='body'"
+    );
+
+    // ② <link rel=stylesheet>.sheet → CSSStyleSheet（非 null）。
+    sandbox
+        .execute("globalThis.__ls = (document.getElementById('ls').sheet != null);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ls)").unwrap().value,
+        "true",
+        "<link rel=stylesheet>.sheet 返 CSSStyleSheet"
+    );
+
+    // ③ <link rel=icon>.sheet → null（非 stylesheet）。
+    sandbox
+        .execute("globalThis.__li = String(document.getElementById('li').sheet);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__li").unwrap().value,
+        "null",
+        "<link rel=icon>.sheet=null（非 stylesheet）"
+    );
+
+    // ④ 非 style/link 元素 .sheet → undefined（generic Element 无 .sheet）。
+    sandbox
+        .execute("globalThis.__ds = String(document.getElementById('d').sheet);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ds").unwrap().value,
+        "undefined",
+        "<div>.sheet=undefined（非 style/link，fall through）"
+    );
+
+    // ⑤ .sheet.insertRule 写回 + cssRules 反映。
+    sandbox
+        .execute(
+            "sheet.insertRule('p { margin: 0; }', 1);\
+             globalThis.__rules2 = sheet.cssRules.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rules2)").unwrap().value,
+        "2",
+        ".sheet.insertRule 后 cssRules.length=2"
+    );
+}

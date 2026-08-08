@@ -1120,6 +1120,23 @@
           var rp = _layoutRect(sel, handle);
           return rp ? _wrapSelector('body') : null;
         }
+        // R3036：`element.sheet`——`<style>`/`<link rel=stylesheet>` 元素的 CSSStyleSheet（CSSOM 入口）。
+        // CSS-in-JS 库（styled-components/emotion）+ 样式表操作代码经 `.sheet.cssRules`/`insertRule` 读改规则。
+        // 复用既有 `_makeStyleSheet(owner)`（part06.js，ownerNode=元素 proxy，cssRules 惰性重解析 owner textContent）。
+        // STYLE → sheet；LINK 且 rel~stylesheet → sheet（非 stylesheet → null）；其他元素 → fall through undefined
+        //（spec：.sheet 仅 HTMLStyleElement/HTMLLinkElement 有）。仅 sel-based（live DOM 有 selector）；handle-only
+        //（createElement detached）无 sel → null（ownerNode 不可定位，detached <style> 操作罕见）。
+        if (prop === 'sheet') {
+          var _shTag = _realTag(sel, handle);
+          if (_shTag === 'STYLE' || _shTag === 'LINK') {
+            if (_shTag === 'LINK') {
+              var _lrel = (handle ? __zw_get_attr_handle(handle, 'rel') : (sel ? __zw_get_attr(sel, 'rel') : '')) || '';
+              if (!/\bstylesheet\b/i.test(_lrel)) return null; // link 非 stylesheet → null
+            }
+            return sel ? _makeStyleSheet(_wrapSelector(sel)) : null;
+          }
+          // 非 style/link：fall through undefined（generic Element 无 .sheet）
+        }
         return undefined;
       },
       set: function(_t, prop, value) {
