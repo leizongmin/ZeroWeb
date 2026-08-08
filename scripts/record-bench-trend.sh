@@ -83,7 +83,10 @@ echo "record-bench-trend: 已记录 $(echo "$ROWS" | jq 'length') 个指标 → 
 if [ "$AUTO_TIGHTEN" = "1" ]; then
     BASELINE="$BASELINE_DIR/$PLATFORM_CLASS.json"
     if [ ! -f "$BASELINE" ]; then
-        echo "record-bench-trend: WARN — 无基线，跳过 auto-tighten（先 record-bench-baseline.sh）"
+        # 性能门禁优化（2026-08-08）：auto-tighten 首次运行（无基线）自动建立基线——
+        # weekly CI 首跑即完成 github-ubuntu-latest 基线闭环（此前只 WARN，CI 侧无人手动 capture）
+        echo "record-bench-trend: 无基线，自动建立首次基线（$PLATFORM_CLASS）"
+        bash "$SCRIPT_DIR/record-bench-baseline.sh" --report "$REPORT" --justification "auto-tighten 首次基线（weekly CI）"
     else
         jq --slurpfile trend <(echo "$ROWS") '
             .metrics = ([ .metrics[] | . as $m |
