@@ -2127,6 +2127,10 @@ pub fn generate_js_dom_shim() -> &'static str {
     })
 }
 
+// 修复（2026-08-08）：测试模块整个是 V8 DOM 桥接专属（part01-11 全部无条件
+// 引用 zero_script_sandbox::V8Sandbox，quickjs 模式无此类型）——quickjs 矩阵
+// clippy 175 个 unresolved import 失败。模块级 cfg(feature = "v8") 跳过。
 #[cfg(test)]
+#[cfg(feature = "v8")]
 #[path = "js_dom_bridge_tests.rs"]
 mod tests;
