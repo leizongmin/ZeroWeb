@@ -245,6 +245,22 @@
   // R2977：headers 为 Headers 实例（spec Response.headers）。modern 代码经 `response.headers.get('content-type')`
   // 消费（比 bracket `headers['x']` 更常见 + 标准）——Headers 实例提供 get/has/append/set/delete/forEach/entries。
   // `new Headers(init)` 接受 plain dict / Headers-like / [[k,v]] / undefined。clone 经 new Response(headers) 再封装。
+  // urlencoded 表单体 → FormData（R2982 抽出，Response.formData / Request.formData 共用）。
+  // `+`→space + % 解码，spec application/x-www-form-urlencoded 语义（multipart/form-data 解析 defer）。
+  function _zwParseFormUrlencoded(bodyText) {
+    var fd = new FormData();
+    var body = String(bodyText == null ? '' : bodyText).trim();
+    if (body) {
+      body.split('&').forEach(function (pair) {
+        if (!pair) return;
+        var eq = pair.indexOf('=');
+        var k = eq >= 0 ? pair.slice(0, eq) : pair;
+        var v = eq >= 0 ? pair.slice(eq + 1) : '';
+        fd.append(decodeURIComponent(k.replace(/\+/g, ' ')), decodeURIComponent(v.replace(/\+/g, ' ')));
+      });
+    }
+    return fd;
+  }
   globalThis.Response = function Response(body, init) {
     if (!(this instanceof Response)) return new Response(body, init);
     init = init || {};
@@ -275,27 +291,15 @@
       for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
       return Promise.resolve(arr);
     };
-    this.formData = function () {
-      var fd = new FormData();
-      var body = self._bodyText.trim();
-      if (body) {
-        body.split('&').forEach(function (pair) {
-          if (!pair) return;
-          var eq = pair.indexOf('=');
-          var k = eq >= 0 ? pair.slice(0, eq) : pair;
-          var v = eq >= 0 ? pair.slice(eq + 1) : '';
-          fd.append(decodeURIComponent(k.replace(/\+/g, ' ')), decodeURIComponent(v.replace(/\+/g, ' ')));
-        });
-      }
-      return Promise.resolve(fd);
-    };
+    this.formData = function () { return Promise.resolve(_zwParseFormUrlencoded(self._bodyText)); };
     this.clone = function () {
       return new Response(self._bodyText, { status: self.status, statusText: self.statusText, headers: self.headers });
     };
   };
   // R2968 Request：`new Request(url|request, init)`。fetch(input) 既接受 string 也接受 Request-like
   //（读 .url/.method/.headers/.body），故 Request 字段对齐 fetch 消费路径（body 为 string|null，非 stream；
-  // R2977 headers 为 Headers 实例，同 Response）。clone() 复制自身。
+  // R2977 headers 为 Headers 实例，同 Response）。clone() 复制自身。R2982 补 body 消费表面
+  //（text/json/blob/arrayBuffer/formData，对称 Response R2978）。
   globalThis.Request = function Request(input, init) {
     if (!(this instanceof Request)) return new Request(input, init);
     init = init || {};
@@ -308,6 +312,20 @@
     this.mode = init.mode || 'cors';
     this.redirect = init.redirect || 'follow';
     this.credentials = init.credentials || 'same-origin';
+    // R2982：body 消费表面（对称 Response R2978，spec text/json/blob/arrayBuffer/formData）。fetch 包装库 /
+    // service worker fetch handler / 请求拦截器 / 测试 mock 读请求体高频。body 为 string|null：null（GET 无体）
+    // → text() 返 ''、arrayBuffer() 长度 0；json() 解析空串抛 SyntaxError（spec，非合法 JSON）。
+    var self = this;
+    this.text = function () { return Promise.resolve(self.body == null ? '' : String(self.body)); };
+    this.json = function () { return Promise.resolve(JSON.parse(self.body == null ? '' : String(self.body))); };
+    this.blob = function () { return Promise.resolve(new Blob([self.body == null ? '' : String(self.body)])); };
+    this.arrayBuffer = function () {
+      var bytes = _zw_utf8_encode(self.body == null ? '' : String(self.body));
+      var arr = new Uint8Array(bytes.length);
+      for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
+      return Promise.resolve(arr);
+    };
+    this.formData = function () { return Promise.resolve(_zwParseFormUrlencoded(self.body)); };
   };
   globalThis.Request.prototype.clone = function () {
     return new Request(this.url, { method: this.method, headers: this.headers, body: this.body });

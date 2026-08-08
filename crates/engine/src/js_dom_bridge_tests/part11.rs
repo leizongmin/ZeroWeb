@@ -274,3 +274,175 @@ fn test_document_evaluate_xpath_r2981() {
         "空 XPath 表达式抛 Error（honest failure）"
     );
 }
+
+#[test]
+fn test_request_body_readers_r2982() {
+    // R2982：Request body 消费表面（对称 Response R2978，spec text/json/blob/arrayBuffer/formData）。
+    // 此前 Request 仅有 body 字段（string|null）+ clone()，无 readers——fetch 包装库 / service worker
+    // fetch handler / 请求拦截器 / 测试 mock 读 `request.text()/json()/formData()` 抛 TypeError。本切片补全，
+    // 并抽出 _zwParseFormUrlencoded（Response.formData + Request.formData 共用，去重）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 表面存在性：5 reader 均为 function。
+    sandbox
+        .execute(
+            "globalThis.__req = new Request('/api', { method: 'POST', body: 'hello world' });\
+             globalThis.__types = ['text','json','blob','arrayBuffer','formData']\
+               .map(function(m){ return typeof __req[m]; }).join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__types)").unwrap().value,
+        "function,function,function,function,function",
+        "Request text/json/blob/arrayBuffer/formData 均为 function"
+    );
+
+    // text()：POST body 还原。
+    sandbox
+        .execute("globalThis.__rt = '(pending)'; __req.text().then(function(t){ globalThis.__rt = t; });")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rt)").unwrap().value,
+        "hello world",
+        "Request.text() 还原 POST body"
+    );
+
+    // json()：合法 JSON body 解析。
+    sandbox
+        .execute(
+            "globalThis.__rj = null;\
+             new Request('/api', { method:'POST', body: '{\"a\":1,\"b\":\"two\"}' })\
+               .json().then(function(o){ globalThis.__rj = o; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rj && globalThis.__rj.b)").unwrap().value,
+        "two",
+        "Request.json() 解析 body 对象"
+    );
+
+    // blob()：instanceof Blob + text() 还原。
+    sandbox
+        .execute(
+            "globalThis.__rbIsBlob = false; globalThis.__rbText = '';\
+             new Request('/api', { method:'POST', body: 'X' })\
+               .blob().then(function(b){ globalThis.__rbIsBlob = (b instanceof Blob); return b.text(); })\
+               .then(function(t){ globalThis.__rbText = t; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rbIsBlob)").unwrap().value,
+        "true",
+        "Request.blob() → instanceof Blob"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rbText)").unwrap().value,
+        "X",
+        "Request.blob().text() 还原 body"
+    );
+
+    // arrayBuffer()：Uint8Array + byteLength + 索引（'AB' → [65,66]）。
+    sandbox
+        .execute(
+            "globalThis.__abIsU8 = false; globalThis.__abLen = -1; globalThis.__ab0 = -1;\
+             new Request('/api', { method:'POST', body:'AB' })\
+               .arrayBuffer().then(function(buf){\
+                 globalThis.__abIsU8 = (buf instanceof Uint8Array);\
+                 globalThis.__abLen = buf.length;\
+                 globalThis.__ab0 = buf[0];\
+               });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__abIsU8)").unwrap().value,
+        "true",
+        "Request.arrayBuffer() → Uint8Array"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__abLen)").unwrap().value,
+        "2",
+        "Request.arrayBuffer('AB') length=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ab0)").unwrap().value,
+        "65",
+        "Request.arrayBuffer('AB')[0]=65 ('A')"
+    );
+
+    // formData()：urlencoded 解析（+ → space，% 解码）。
+    sandbox
+        .execute(
+            "globalThis.__fdA = null; globalThis.__fdC = null;\
+             new Request('/api', { method:'POST', body:'a=1&c=hello+world' })\
+               .formData().then(function(fd){ globalThis.__fdA = fd.get('a'); globalThis.__fdC = fd.get('c'); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fdA)").unwrap().value,
+        "1",
+        "Request.formData() 解析 a=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fdC)").unwrap().value,
+        "hello world",
+        "Request.formData() c=hello+world → 'hello world'（+ → space）"
+    );
+
+    // 无体 GET 请求：text() 返 ''，arrayBuffer() 长度 0。
+    sandbox
+        .execute(
+            "globalThis.__et = '(pending)'; globalThis.__eab = -1;\
+             var get = new Request('/api');\
+             get.text().then(function(t){ globalThis.__et = t; });\
+             get.arrayBuffer().then(function(b){ globalThis.__eab = b.length; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__et)").unwrap().value,
+        "",
+        "GET（无 body）Request.text() 返 ''"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eab)").unwrap().value,
+        "0",
+        "GET（无 body）Request.arrayBuffer() length=0"
+    );
+
+    // clone() 保留 body，clone 的 reader 独立读。
+    sandbox
+        .execute(
+            "globalThis.__ct = '(pending)';\
+             var orig = new Request('/api', { method:'POST', body:'cloned' });\
+             orig.clone().text().then(function(t){ globalThis.__ct = t; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ct)").unwrap().value,
+        "cloned",
+        "Request.clone() 保留 body（reader 读到克隆体）"
+    );
+
+    // 对称性：Response.formData 经抽出 helper 仍正确（回归守卫——_zwParseFormUrlencoded 提取后 Response 不退化）。
+    sandbox
+        .execute(
+            "globalThis.__rfd = null;\
+             new Response('x=42').formData().then(function(fd){ globalThis.__rfd = fd.get('x'); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rfd)").unwrap().value,
+        "42",
+        "Response.formData() 经 _zwParseFormUrlencoded 提取后仍正确（无回归）"
+    );
+}
