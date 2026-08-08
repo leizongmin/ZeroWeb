@@ -1724,13 +1724,15 @@
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
         if (prop === 'text' && _realTag(sel, handle) === 'OPTION') {
-          // text = 显示文本（= textContent）。
-          return handle ? __zw_get_text_handle(handle) : __zw_get_text(sel);
+          // text = 显示文本（= textContent）。R3028：sel-based latest-wins，闭合 textContent= 后 stale。
+          if (handle) return __zw_get_text_handle(handle);
+          return typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel);
         }
         if (prop === 'label' && _realTag(sel, handle) === 'OPTION') {
-          // label 属性；缺省回落 text。
+          // label 属性；缺省回落 text。R3028：sel-based latest-wins 回落（同 text）。
           var lab = handle ? __zw_get_attr_handle(handle, 'label') : __zw_get_attr(sel, 'label');
-          return lab || (handle ? __zw_get_text_handle(handle) : __zw_get_text(sel)) || '';
+          var _lt = handle ? __zw_get_text_handle(handle) : (typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel));
+          return lab || _lt || '';
         }
         if (prop === 'defaultSelected' && _realTag(sel, handle) === 'OPTION') {
           // defaultSelected = 'selected' 属性存在性（boolean reflected，初始选中态）。R2998：spec `.selected=`

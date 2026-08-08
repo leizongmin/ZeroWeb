@@ -1919,3 +1919,116 @@ fn test_mutation_observer_character_data_r3027() {
         "未观测 characterData → textContent 变更不产记录（仅 attributes 观测）"
     );
 }
+
+#[test]
+fn test_character_data_old_value_and_text_lw_r3028() {
+    // R3028：characterDataOldValue（MO observe options 最后一档）+ sel-based 文本读 latest-wins。
+    // ① characterDataOldValue:true → rec.oldValue = mutate 前旧文本（连续变更各取前值）；
+    // ② 未请求 → oldValue 恒 null（spec）；③ textContent getter latest-wins 闭合 `textContent=` 后 stale 快照；
+    // ④ option.text/option.label sel-based 同步 latest-wins（= textContent）。闭合 sel_text_override latent gap。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='a'>init</div><select id='s'><option id='o'>opt-init</option></select></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① characterDataOldValue：首次变更 oldValue=初值 'init'；二次变更 oldValue=前值 'first'。
+    sandbox
+        .execute(
+            "var a = document.getElementById('a');\
+             var mo = new MutationObserver(function(){});\
+             mo.observe(a, { characterData: true, subtree: true, characterDataOldValue: true });\
+             a.textContent = 'first';\
+             globalThis.__r1 = mo.takeRecords();\
+             a.textContent = 'second';\
+             globalThis.__r2 = mo.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1[0].type").unwrap().value,
+        "characterData",
+        "characterDataOldValue：记录 type=characterData"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r1[0].oldValue").unwrap().value,
+        "init",
+        "characterDataOldValue：首次变更 oldValue=初值 'init'"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r2[0].oldValue").unwrap().value,
+        "first",
+        "characterDataOldValue：二次变更 oldValue=前值 'first'（latest-wins 反映同批前序 set）"
+    );
+
+    // ② 未请求 characterDataOldValue → oldValue 恒 null（spec），即使旧值存在。
+    sandbox
+        .execute(
+            "mo.disconnect();\
+             var mo2 = new MutationObserver(function(){});\
+             mo2.observe(a, { characterData: true, subtree: true });\
+             a.textContent = 'third';\
+             globalThis.__r3 = mo2.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3[0].oldValue)").unwrap().value,
+        "null",
+        "未请求 characterDataOldValue → oldValue=null（即使有旧值）"
+    );
+
+    // ③ textContent getter latest-wins（R3028 stale 快照修复）：`textContent=` 后立即读反映新值。
+    // 旧实现 getter 走纯快照 `__zw_get_text`，render apply 前快照仍为初值 → 返 stale 旧值。
+    sandbox
+        .execute(
+            "a.textContent = 'after';\
+             globalThis.__tc = a.textContent;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__tc").unwrap().value,
+        "after",
+        "textContent getter latest-wins：textContent= 后读反映新值（闭合 stale 快照）"
+    );
+
+    // ④ option.text / option.label sel-based latest-wins（= textContent）。
+    sandbox
+        .execute(
+            "var o = document.getElementById('o');\
+             o.textContent = 'new-opt';\
+             globalThis.__ot = o.text;\
+             globalThis.__ol = o.label;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ot").unwrap().value,
+        "new-opt",
+        "option.text sel-based latest-wins（= textContent）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ol").unwrap().value,
+        "new-opt",
+        "option.label sel-based latest-wins 回落 text"
+    );
+
+    // ⑤ host 侧 sel_text_override 单元断言：同 selector 最近 SetText 胜出，无命中 None。
+    // 不假设 selector 字符串格式——从记录的 text='after' 反推其 selector（仅 #a 写过 'after'）。
+    let list = mutations.lock().unwrap();
+    let a_sel = list
+        .iter()
+        .rev()
+        .find_map(|m| match m {
+            DomMutation::SetText { selector, text } if text == "after" => Some(selector.clone()),
+            _ => None,
+        })
+        .expect("存在 text='after' 的 SetText 记录");
+    assert_eq!(sel_text_override(&list, &a_sel), Some("after".to_string()));
+    assert_eq!(sel_text_override(&list, "#nonexistent"), None);
+    drop(list);
+}

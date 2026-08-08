@@ -1680,6 +1680,30 @@ pub fn sel_attr_override(mutations: &[DomMutation], selector: &str, name: &str) 
     None
 }
 
+/// sel-based 元素 textContent 的 latest-wins 覆盖判定（R3028）。
+///
+/// 镜像 [`sel_attr_override`]：sel-based 元素的 textContent getter 旧实现仅读 HTML 快照
+/// （[`query_text_from_html`]），但快照在脚本执行期间不反映同批 [`DomMutation::SetText`] 变更
+/// （render apply 后才更新）→ `el.textContent = 'x'` 后再读 `el.textContent` 仍返旧值（stale 快照 latent
+/// bug）；MutationObserver `characterDataOldValue` 亦需 mutate 前 latest-wins 读旧文本。本函数逆序扫
+/// selector-keyed `SetText`，latest-wins 给出当前逻辑文本：
+/// - `Some(text)`：最近 `SetText` 命中 → 文本为 `text`；
+/// - `None`：无覆盖 → 调用方回落快照（textContent getter / MO old value）。
+///
+/// 与 handle 路径（[`query_text_from_mutations`]）对称：handle 元素不在快照故无回落；sel-based 元素
+/// 在快照，故无命中时回落。反射类读（output.defaultValue / textarea 初始 value）须稳定读快照，
+/// 故仍用纯快照 [`query_text_from_html`]，不走本函数。
+pub fn sel_text_override(mutations: &[DomMutation], selector: &str) -> Option<String> {
+    for m in mutations.iter().rev() {
+        if let DomMutation::SetText { selector: s, text } = m
+            && s == selector
+        {
+            return Some(text.clone());
+        }
+    }
+    None
+}
+
 /// 从已记录变更中查询 create 句柄上的 textContent。
 pub fn query_text_from_mutations(mutations: &[DomMutation], handle: &str) -> String {
     for m in mutations.iter().rev() {

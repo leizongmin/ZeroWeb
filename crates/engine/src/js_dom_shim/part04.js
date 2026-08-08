@@ -73,7 +73,10 @@
           return function (init) { return _attachShadow(sel, handle, init); };
         }
         if (prop === 'textContent') {
-          return handle ? __zw_get_text_handle(handle) : __zw_get_text(sel);
+          // R3028：sel-based 走 latest-wins（consult 变更列表，闭合 `textContent=` 后 getter stale 旧值）；
+          // 回调未注册（polyfill/其它环境）→ fallback 纯快照 `__zw_get_text`。
+          if (handle) return __zw_get_text_handle(handle);
+          return typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel);
         }
         if (prop === 'innerHTML') {
           return handle ? __zw_get_inner_html_handle(handle) : __zw_get_inner_html(sel);
@@ -1146,9 +1149,12 @@
           } else {
             // R3027：textContent 变更 → emit characterData 记录（target=元素，pragmatic——文本节点无 selector
             // 不能直接作 target；observe(el,{characterData,subtree}) + 后代 textContent 经 ancestor 冒泡亦覆盖）。
+            // R3028：characterDataOldValue——有 observer 请求时 mutate 前捕获 old 文本（latest-wins，反映同批前序 textContent=）。
+            var _charMoId = _mo_id(handle, sel);
+            var _charMoOld = _mo_any_wants_char_old(_charMoId) ? _mo_read_text(sel, handle) : null;
             if (handle) __zw_set_text_handle(handle, String(value));
             else __zw_set_text(sel, String(value));
-            _mo_notify(sel, handle, { type: 'characterData' });
+            _mo_notify(sel, handle, { type: 'characterData', oldValue: _charMoOld });
           }
         } else if (p === 'outerHTML') {
           // outerHTML setter：整体替换元素为解析后的片段。仅 sel-based（需父节点）；

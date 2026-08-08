@@ -627,6 +627,27 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R3028：sel-based `textContent` getter 专用 latest-wins 变体。区别于 `__zw_get_text`（纯快照，供
+    // output.defaultValue / textarea 初始 value 等反射 getter，须稳定读快照避免 `textContent=` 脏污
+    // 默认值），本回调先 consult 变更列表（同批 `textContent=` 在 render apply 前不入快照），命中
+    // SetText→新文本；无命中回落快照。闭合 `textContent=` 后 getter 仍返旧值的 stale gap + 供
+    // MutationObserver characterDataOldValue mutate 前 old-value 读（镜像 `__zw_get_attr_lw`）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_get_text_lw",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(t) = sel_text_override(&list, &sel) {
+                return t;
+            }
+            drop(list);
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            query_text_from_html(&snap, &sel)
+        }),
+    );
+
     let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_get_attr_handle",

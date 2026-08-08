@@ -533,6 +533,32 @@
     } catch (_e) {}
     return null;
   }
+  // R3028：observer options 是否请求 characterData oldValue（spec：characterDataOldValue=true）。
+  function _mo_obs_wants_char_old(opts) {
+    return opts.characterDataOldValue === true;
+  }
+  // 任意观测该 id 的 observer 是否需要 characterData old value——决定 textContent mutate 前是否捕获 old 文本
+  //（无 observer 需要时不读 host，避 textContent= 热路径无谓 get 开销，镜像 _mo_any_wants_attr_old）。
+  function _mo_any_wants_char_old(id) {
+    if (id == null) return false;
+    var observers = globalThis.__zw_mo_observers;
+    for (var i = 0; i < observers.length; i++) {
+      var obs = observers[i];
+      var opts = obs._targets[id];
+      if (opts && _mo_obs_wants_char_old(opts)) return true;
+    }
+    return false;
+  }
+  // 读元素当前文本（mutate 前的 old value）。handle 走 mutation replay（query_text_from_mutations），
+  // sel 走 latest-wins（__zw_get_text_lw，R3028 闭合 textContent= 后 stale 旧值）；回调缺失 → null（deliver 侧判）。
+  function _mo_read_text(sel, handle) {
+    try {
+      if (handle && typeof __zw_get_text_handle === 'function') return __zw_get_text_handle(handle);
+      if (sel && typeof __zw_get_text_lw === 'function') return __zw_get_text_lw(sel);
+      if (sel && typeof __zw_get_text === 'function') return __zw_get_text(sel);
+    } catch (_e) {}
+    return null;
+  }
   // 把一条 mutation 记录投递给观测该 id 且 options 匹配的 observer。
   // requireSubtree=true（祖先 id 路径）时仅投递 opts.subtree===true 的 observer（spec：subtree 才接收后代 mutation）。
   // 每个 observer 拿独立 record 副本（target 指向各自 observe() 时的 proxy）。
@@ -561,12 +587,12 @@
       rec.nextSibling = baseRecord.nextSibling || null;
       rec.attributeName = baseRecord.attributeName || null;
       rec.attributeNamespace = baseRecord.attributeNamespace || null;
-      // R3025：oldValue 仅当 observer 请求时填（attributes: attributeOldValue 或 attributeFilter 命中；
-      // childList/characterData 恒 null——characterDataOldValue 需 latest-wins 文本读，sel-based 文本读为快照
-      // stale，defer 到 __zw_get_text_lw 独立 slice）。
-      rec.oldValue = (baseRecord.type === 'attributes' && _mo_obs_wants_attr_old(opts, baseRecord.attributeName))
-        ? (baseRecord.oldValue != null ? baseRecord.oldValue : null)
-        : null;
+      // R3025/R3028：oldValue 仅当 observer 请求时填——attributes: attributeOldValue 或 attributeFilter 命中；
+      // characterData: characterDataOldValue；childList 恒 null。call site 已按 observer 需求捕获 baseRecord.oldValue。
+      var _wantsOld = baseRecord.type === 'attributes'
+        ? _mo_obs_wants_attr_old(opts, baseRecord.attributeName)
+        : (baseRecord.type === 'characterData' ? _mo_obs_wants_char_old(opts) : false);
+      rec.oldValue = _wantsOld ? (baseRecord.oldValue != null ? baseRecord.oldValue : null) : null;
       obs._records.push(rec);
       _mo_scheduleFlush();
     }
