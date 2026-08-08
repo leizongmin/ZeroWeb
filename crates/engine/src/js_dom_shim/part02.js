@@ -1575,6 +1575,27 @@
     },
   };
 
+  // R3006：`location.hash = v` setter——更新 hash + 新 history entry + 异步派发 hashchange（SPA hash 路由核心，
+  // 如 older react-router hash mode）。spec：v 无 '#' 前缀自动补；hash 未变 no-op（不派 hashchange）。
+  // newHref = 当前 href 去 hash 段 + 新 hash（hash 总在 URL 末尾）。经 history entry 存新 href（R3005 location 读之反映）。
+  function _setLocationHash(newHash) {
+    var raw = String(newHash);
+    var h = raw.charAt(0) === '#' ? raw : '#' + raw;
+    if (h === '#') h = ''; // 空值 → 无 hash
+    var oldHref = globalThis.location.href;
+    var newHref = oldHref.split('#')[0] + h;
+    if (newHref === oldHref) return; // hash 未变 → no-op（spec：不派 hashchange）
+    _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
+    _hist_entries.push({ state: null, url: newHref });
+    _hist_cursor = _hist_entries.length - 1;
+    var oldU = oldHref, newU = newHref;
+    _defer(function () {
+      var ev = new HashChangeEvent('hashchange', { oldURL: oldU, newURL: newU });
+      ev.target = globalThis;
+      _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
+    });
+  }
+
   globalThis.Worker = function() {
   };
 

@@ -984,6 +984,9 @@
       get pathname() { return _parseLocation(href()).pathname; },
       get search() { return _parseLocation(href()).search; },
       get hash() { return _parseLocation(href()).hash; },
+      // R3006：location.hash = v 更新 hash + history entry + 派发 hashchange（_setLocationHash 在 part02 定义，
+      // 同 IIFE 提升，setter 运行时就绪）。SPA hash 路由核心。
+      set hash(v) { if (typeof _setLocationHash === 'function') _setLocationHash(v); },
       get origin() { return _parseLocation(href()).origin; },
       assign: function() {},
       replace: function() {},
