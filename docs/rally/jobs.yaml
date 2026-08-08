@@ -59,6 +59,25 @@ jobs:
     query:
       session_reuse: false
 
+  # 每晚 21:00 与凌晨 3:00：手动触发 main CI，失败则修复并提交（claude-glm）
+  - id: "ci-watchdog"
+    enabled: true
+    schedule: "0 21,3 * * *"
+    command: "rally"
+    args:
+      - "query"
+      - "守护 main 分支 CI：① 用 gh workflow run ci.yml 手动触发 main 的 CI（gh 已登录；--ref main）；② 轮询 gh run view <run_id> 直到完成（build-and-test / benchmarks / smoke）；③ 若有失败 job，分析失败原因——修复能自主修复的（编译错误、测试失败、脚本问题），遵循 docs/rally/run-rules.md 提交规则（cargo fmt/clippy、make test、lei-pre-commit-guard）提交并推送到 main，然后重新触发 CI 确认；④ 已知预存失败（如 windows 的 tab_js_worker 测试超时——对方流 P1a 在 windows 的挂起，与本次变更无关时）记录到 master.md 不强行修复；⑤ 全部通过或确认无自主可修项后输出 DONE。"
+      - "-w"
+      - "."
+      - "--agent-command"
+      - "claude-glm"
+    cwd: "$DIR/../.."
+    concurrency: "skip"
+    start: "next"
+    timeout_seconds: 7200
+    query:
+      session_reuse: false
+
   # 每晚整理推进 goal 时的待决策卡点：自主处理能处理的，其余发飞书征询
   - id: "goal-blockers-nightly"
     enabled: true
