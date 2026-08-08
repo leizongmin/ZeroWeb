@@ -1130,3 +1130,131 @@ fn test_window_context_globals_r2987() {
         "reportError 是 function"
     );
 }
+
+#[test]
+fn test_navigator_env_info_r2988() {
+    // R2988：navigator.deviceMemory / connection（Network Information API）/ userAgentData
+    //（UA Client Hints）。RUM/analytics（GA）/ 自适应加载库 feature-detect 读这些决定上报/资源质量，
+    // 此前三者全缺 → feature-detect 走「不可用」分支。headless 取静态 '4g'/8GB/Chromium-120 近似
+    //（real 浏览器桌面默认亦 '4g'）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // deviceMemory：number（GB，spec 离散值之一）。
+    assert_eq!(
+        sandbox.execute("typeof navigator.deviceMemory").unwrap().value,
+        "number",
+        "navigator.deviceMemory 是 number"
+    );
+    assert!(
+        sandbox
+            .execute("String(navigator.deviceMemory > 0)")
+            .unwrap()
+            .value
+            == "true",
+        "navigator.deviceMemory > 0"
+    );
+
+    // connection（Network Information API）：effectiveType='4g' + downlink/rtt/saveData + EventTarget no-op。
+    assert_eq!(
+        sandbox
+            .execute("String(navigator.connection.effectiveType)")
+            .unwrap()
+            .value,
+        "4g",
+        "navigator.connection.effectiveType = '4g'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("typeof navigator.connection.downlink")
+            .unwrap()
+            .value,
+        "number",
+        "navigator.connection.downlink 是 number"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(navigator.connection.saveData)")
+            .unwrap()
+            .value,
+        "false",
+        "navigator.connection.saveData = false"
+    );
+    // addEventListener 注册有效（不抛）。
+    sandbox
+        .execute(
+            "globalThis.__ok = 'no';\
+             navigator.connection.addEventListener('change', function () {});\
+             globalThis.__ok = 'yes';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ok)").unwrap().value,
+        "yes",
+        "navigator.connection.addEventListener 注册不抛"
+    );
+
+    // userAgentData（UA Client Hints）：brands/mobile/platform + getHighEntropyValues Promise。
+    assert_eq!(
+        sandbox
+            .execute("String(navigator.userAgentData.mobile)")
+            .unwrap()
+            .value,
+        "false",
+        "navigator.userAgentData.mobile = false"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(navigator.userAgentData.platform)")
+            .unwrap()
+            .value,
+        "Windows",
+        "navigator.userAgentData.platform = 'Windows'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(navigator.userAgentData.brands.length > 0)")
+            .unwrap()
+            .value,
+        "true",
+        "navigator.userAgentData.brands 非空"
+    );
+
+    // getHighEntropyValues：返 Promise，resolve 含请求的高熵字段（platformVersion/architecture）。
+    sandbox
+        .execute(
+            "globalThis.__hev = '(none)';\
+             navigator.userAgentData\
+               .getHighEntropyValues(['platformVersion', 'architecture'])\
+               .then(function (v) { globalThis.__hev = v.platformVersion + '|' + v.architecture; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hev)").unwrap().value,
+        "15.0.0|x86",
+        "getHighEntropyValues resolve 含 platformVersion + architecture"
+    );
+
+    // toJSON：含 brands/mobile/platform。
+    sandbox
+        .execute("globalThis.__json = JSON.stringify(navigator.userAgentData.toJSON());")
+        .unwrap();
+    assert!(
+        sandbox
+            .execute("String(globalThis.__json.indexOf('brands') >= 0)")
+            .unwrap()
+            .value
+            == "true",
+        "userAgentData.toJSON() 含 brands"
+    );
+}

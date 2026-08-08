@@ -1599,6 +1599,47 @@
     doNotTrack: null,
     hardwareConcurrency: 4,
     maxTouchPoints: 0,
+    // R2988 navigator 环境信息——RUM/analytics（GA）/ 自适应加载库 feature-detect 读取。
+    // deviceMemory（GB，spec 离散值 0.25/0.5/1/2/4/8，取 8 常见值）。
+    deviceMemory: 8,
+    // Network Information API——自适应加载（按 effectiveType 选图片/脚本质量）+ RUM 上报高频。
+    // headless 无真网络探测 → 静态 '4g' 近似（real 浏览器桌面默认亦 '4g'）。change 事件注册有效但不触发
+    //（headless 无网络变化）。addEventListener/removeEventListener/onchange 经 EventTarget-like no-op。
+    connection: {
+      effectiveType: '4g',
+      type: 'wifi',
+      downlink: 10,
+      rtt: 50,
+      saveData: false,
+      addEventListener: function () {},
+      removeEventListener: function () {},
+      dispatchEvent: function () { return true; }
+    },
+    // UA Client Hints（navigator.userAgentData，R2988）——modern 替代 navigator.userAgent 字符串解析，
+    // analytics / fingerprinting-defense 库 feature-detect 读 brands/mobile/platform。getHighEntropyValues
+    // 返 Promise（spec 异步），headless 静态值（无真 UA 解析）。
+    userAgentData: {
+      brands: [
+        { brand: 'Chromium', version: '120' },
+        { brand: 'Not(A:Brand', version: '8' },
+        { brand: 'ZeroBrowser', version: '0.1' }
+      ],
+      mobile: false,
+      platform: 'Windows',
+      getHighEntropyValues: function (hints) {
+        var h = String(hints == null ? '' : hints);
+        var out = { brands: this.brands.slice(), mobile: this.mobile, platform: this.platform };
+        // 按 hints 请求补高熵字段（headless 静态值）。
+        if (h.indexOf('platformVersion') >= 0) out.platformVersion = '15.0.0';
+        if (h.indexOf('architecture') >= 0) out.architecture = 'x86';
+        if (h.indexOf('model') >= 0) out.model = '';
+        if (h.indexOf('uaFullVersion') >= 0) out.uaFullVersion = '120.0.0.0';
+        if (h.indexOf('bitness') >= 0) out.bitness = '64';
+        if (h.indexOf('fullVersionList') >= 0) out.fullVersionList = this.brands.slice();
+        return Promise.resolve(out);
+      },
+      toJSON: function () { return { brands: this.brands, mobile: this.mobile, platform: this.platform }; }
+    },
     webdriver: false,
     plugins: _emptyCollection(),
     mimeTypes: _emptyCollection(),
