@@ -1073,9 +1073,8 @@
                   var c = _fcs[i];
                   try {
                     var _ct = c.tagName;
-                    // OUTPUT 有 defaultValue（R2846 _outputDefault）；TEXTAREA defaultValue 未单独追踪
-                    //（value=live text，无独立初值缓存）→ textarea value reset defer（独立切片）。
-                    if (_ct === 'OUTPUT') { c.value = c.defaultValue; }
+                    // TEXTAREA/OUTPUT 有 defaultValue（OUTPUT R2846 _outputDefault / TEXTAREA R3049 _textareaDefault）。
+                    if (_ct === 'TEXTAREA' || _ct === 'OUTPUT') { c.value = c.defaultValue; }
                     else if (_ct === 'INPUT') {
                       var _it = c.type;
                       if (_it === 'checkbox' || _it === 'radio') c.checked = c.defaultChecked;
@@ -1393,7 +1392,9 @@
             _inputValues[key] = String(value);
             // textarea 的 value ↔ **文本内容**（非 value 属性，HTML spec）——写 content 而非属性。
             // input 走 value 属性 mutation（供 render）。R2996：INPUT 先捕获 defaultValue（spec .value= 不改默认值）。
+            // R3049：textarea 首次 value= 前捕获 defaultValue（初值 textContent），供 defaultValue getter + form.reset。
             if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
+              if (_textareaDefault[key] == null) _textareaDefault[key] = __zw_get_text(sel) || '';
               __zw_set_text(sel, String(value));
             } else {
               if (_realTag(sel, handle) === 'INPUT') _captureInputDefault(key, sel, handle);

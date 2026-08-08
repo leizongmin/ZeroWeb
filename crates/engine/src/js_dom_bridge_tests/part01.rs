@@ -1288,6 +1288,73 @@ fn test_form_reset_submit_methods_r3048() {
 }
 
 #[test]
+fn test_textarea_default_value_r3049() {
+    // R3049：textarea.defaultValue 追踪（闭合 R3048 限制①）。textarea.value ↔ live textContent，旧无独立初值缓存
+    // → defaultValue 返 undefined、form.reset 不还原 textarea。本切片 _textareaDefault 惰性捕获初值。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <form id='f'><textarea id='ta'>initial-text</textarea></form>\
+         <textarea id='ta2'>keep-me</textarea>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① textarea.defaultValue = 初值 textContent（旧返 undefined）。
+    sandbox
+        .execute("globalThis.__dv = document.getElementById('ta').defaultValue;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__dv").unwrap().value, "initial-text", "textarea.defaultValue=初值 textContent");
+
+    // ② value= 改后 defaultValue 仍保初值（捕获在首写前）。
+    sandbox
+        .execute(
+            "var ta = document.getElementById('ta');\
+             ta.value = 'changed';\
+             globalThis.__v = ta.value;\
+             globalThis.__dv2 = ta.defaultValue;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__v").unwrap().value, "changed", "ta.value='changed'（live text）");
+    assert_eq!(sandbox.execute("globalThis.__dv2").unwrap().value, "initial-text", "value= 后 defaultValue 仍保初值 'initial-text'");
+
+    // ③ 先读 defaultValue 再 value= ——defaultValue 捕获不被 value= 覆盖（顺序无关）。
+    sandbox
+        .execute(
+            "var ta2 = document.getElementById('ta2');\
+             globalThis.__dvBefore = ta2.defaultValue;\
+             ta2.value = 'overwritten';\
+             globalThis.__dvAfter = ta2.defaultValue;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__dvBefore").unwrap().value, "keep-me", "value= 前 defaultValue='keep-me'");
+    assert_eq!(sandbox.execute("globalThis.__dvAfter").unwrap().value, "keep-me", "value= 后 defaultValue 仍 'keep-me'（不被覆盖）");
+
+    // ④ form.reset() 还原 textarea value 到 defaultValue（闭合 R3048 限制①）。
+    sandbox
+        .execute(
+            "var f = document.getElementById('f');\
+             var taF = document.getElementById('ta');\
+             taF.value = 'temp';\
+             f.reset();\
+             globalThis.__afterReset = taF.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__afterReset").unwrap().value,
+        "initial-text",
+        "form.reset() 还原 textarea.value 到 defaultValue（闭合 R3048 限制①）"
+    );
+}
+
+#[test]
 fn test_request_idle_callback_e2e() {
     // requestIdleCallback 无 host __zw_setTimeout → 走 _defer fallback（微任务，execute 末尾 drain）。
     // 回调传 IdleDeadline（timeRemaining 近似 50）。cancelIdleCallback 不抛。

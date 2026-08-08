@@ -1844,6 +1844,14 @@
           }
           return _outputDefault[key];
         }
+        // R3049：textarea.defaultValue（闭合 R3048 限制①）——textarea 无 value 属性，default = 初值 textContent。
+        // 惰性捕获（首读时 = 当前 text，未被 value= 改过即初值；value setter 首写前亦捕获保初值不丢）。
+        if (prop === 'defaultValue' && _realTag(sel, handle) === 'TEXTAREA') {
+          if (_textareaDefault[key] == null) {
+            _textareaDefault[key] = handle ? (__zw_get_text_handle(handle) || '') : (__zw_get_text(sel) || '');
+          }
+          return _textareaDefault[key];
+        }
         if (prop === 'style') {
           return _styleProxy(sel, handle);
         }
