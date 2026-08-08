@@ -29,3 +29,7 @@ criterion = { workspace = true }
 [[bench]]
 name = "script_sandbox_bench"
 harness = false
+# 基准对象 V8Sandbox/WorkerRuntime 仅 v8 feature 下存在；quickjs 模式跳过本
+# target，否则 --all-targets 编译矩阵（如 make test quickjs 检查）会被 bench
+# 的 unresolved import 阻断。
+required-features = ["v8"]

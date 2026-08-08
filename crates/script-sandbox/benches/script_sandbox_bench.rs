@@ -7,6 +7,10 @@
 //! - 多次执行吞吐量
 //! - ES Module 执行开销
 //! - Worker 创建和通信开销
+//!
+//! 基准对象 `V8Sandbox`/`WorkerRuntime` 仅在 v8 feature 下导出；本 bench 在
+//! Cargo.toml 声明了 `required-features = ["v8"]`，quickjs 模式下被 cargo
+//! 整体跳过（`--all-targets` 编译矩阵不受 bench 阻断）。
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use zero_script_sandbox::{EsModuleSandbox, SandboxConfig, V8Sandbox, WorkerRuntime};
