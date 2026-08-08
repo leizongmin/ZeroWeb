@@ -33,6 +33,11 @@ use super::helpers::{PrimitiveCounts, apply_opacity_to_new_primitives, circle_to
 pub struct Painter {
     /// 生成的渲染图元列表。
     pub(crate) primitives: RenderPrimitives,
+    /// 性能门禁优化 S7（2026-08-08）：paint 内逐字符测量缓存——同一
+    /// (char, font_size, is_ahem) 只测量一次。measure 回调含 HashMap probe +
+    /// 可能的位图光栅化，逐字符调用是 paint 占 83%（4400 元素页 1399ms）的主因之一。
+    /// RefCell：热循环中常处于 `&mut self.primitives` 借用区，缓存须经 &self 访问。
+    pub(crate) measure_cache: std::cell::RefCell<std::collections::HashMap<(u32, u32, bool), f32>>,
     /// 已由父级行内格式化上下文绘制过文本的节点。
     pub(crate) painted_inline_nodes: HashSet<NodeId>,
     /// R2197 Phase A slice 3：paint 期须跳过递归绘制的 orphan inline 元素 NodeId 集合。
@@ -293,9 +298,26 @@ where
 
 impl Painter {
     /// 创建新的绘制命令生成器。
+    /// 性能门禁优化 S7（2026-08-08）：paint 内逐字符测量缓存。
+    ///
+    /// 键 = (char, font_size bits, is_ahem)；同一组合在 paint 阶段只测量一次
+    ///（measure 回调含 HashMap probe + 可能的光栅化，逐字符调用是 paint
+    /// 占 83% 的主因之一）。
+    pub(crate) fn measure_char_cached(&self, ch: char, font_size: f32, is_ahem: bool) -> f32 {
+        let key = (ch as u32, font_size.to_bits(), is_ahem);
+        if let Some(&w) = self.measure_cache.borrow().get(&key) {
+            return w;
+        }
+        let w = crate::measure_char_for_paint(ch, font_size, is_ahem);
+        self.measure_cache.borrow_mut().insert(key, w);
+        w
+    }
+
+    /// 创建新的 painter。
     pub fn new() -> Self {
         Self {
             primitives: RenderPrimitives::new(),
+            measure_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             painted_inline_nodes: HashSet::new(),
             paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),

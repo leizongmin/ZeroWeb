@@ -140,3 +140,30 @@
 2026-08-08,linux-x86_64,page/morning/first_paint_wall_ms,142.10541500000002,147.407634,153.14309500000002,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
 2026-08-08,linux-x86_64,resource/peak_rss_mb,,506.96875,,MB,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
 2026-08-08,linux-x86_64,startup_ms,,514.409146,,ms,ad94f073,css-parser byte_offset O(n²)→O(n) 修复
+2026-08-08,linux-x86_64,mb/zero-engine/compositing_layer_analysis_200,30334.159201557937,30635.004483122364,30658.07559774965,ns,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,mb/zero-engine/dirty_tracking/mark_100_nodes_and_merge,1993.0297568783635,2043.9725033504321,2044.8702828226812,ns,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,mb/zero-engine/end_to_end_pipeline,203532.42605633804,211240.24160346694,212542.73082942097,ns,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,mb/zero-engine/medium_complexity_page/first_paint,1461892.3636363635,1521943.575,1577447.3666666667,ns,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,mb/zero-engine/medium_complexity_page/incremental_vs_full,2829765.9916666667,2871878.282051282,2889018.6785714286,ns,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,mb/zero-engine/paint_complex_page_500_elements,373649.905,375934.6854166667,376732.6777777778,ns,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,mb/zero-engine/paint_simple_page_100_elements,71089.0092097445,74826.5095959596,76178.99621212122,ns,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/welcome/parse_ms,0.175603,0.206154,0.25726699999999997,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/welcome/style_ms,2.678808,3.1750760000000002,4.615293,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/welcome/layout_ms,1.763939,2.215617,2.950983,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/welcome/paint_ms,3.6909669999999997,4.352971,5.3984380000000005,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/welcome/total_ms,8.448537,10.082274,12.38462,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/medium/parse_ms,14.721587,16.128729,19.054660000000002,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/medium/style_ms,217.773097,225.436686,231.17839600000002,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/medium/layout_ms,94.848268,107.208901,108.56379700000001,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/medium/paint_ms,26.252179,29.267917,29.590746000000003,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/medium/total_ms,361.089625,368.76904,373.356495,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/morning/parse_ms,0.383181,0.43545,0.472645,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/morning/style_ms,6.718298,7.250516999999999,7.374459,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/morning/layout_ms,3.15449,3.371189,3.474075,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/morning/paint_ms,10.701829,11.32083,14.245524000000001,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/morning/total_ms,21.291905,22.937124,24.697499,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/welcome/first_paint_wall_ms,17.629577,21.675168000000003,22.383468999999998,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/medium/first_paint_wall_ms,485.26875,497.45666900000003,500.42309399999994,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,page/morning/first_paint_wall_ms,66.570807,75.76693,82.521289,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,resource/peak_rss_mb,,506.56640625,,MB,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,startup_ms,,513.9665,,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过

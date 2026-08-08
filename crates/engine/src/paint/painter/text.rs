@@ -7,7 +7,6 @@
 
 use std::collections::HashMap;
 
-use crate::measure_char_for_paint;
 use zero_css_parser::values::types::FontStyleValue;
 use zero_css_parser::values::{ColorValue, ContentListItem, FloatValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
@@ -222,7 +221,7 @@ impl super::Painter {
                 rotation: 0.0,
                 synthetic_italic,
             });
-            char_x += measure_char_for_paint(ch, font_size, false);
+            char_x += self.measure_char_cached(ch, font_size, false);
         }
     }
 
@@ -309,7 +308,7 @@ impl super::Painter {
         // 居中按钮标签：先测总宽再定起始 x。
         let total_w: f32 = label
             .chars()
-            .map(|ch| measure_char_for_paint(ch, font_size, false))
+            .map(|ch| self.measure_char_cached(ch, font_size, false))
             .sum();
         let mut char_x = if center {
             content_x + (box_node.content_width - total_w).max(0.0) / 2.0
@@ -329,7 +328,7 @@ impl super::Painter {
                 rotation: 0.0,
                 synthetic_italic: false,
             });
-            char_x += measure_char_for_paint(ch, font_size, false);
+            char_x += self.measure_char_cached(ch, font_size, false);
         }
     }
 
@@ -991,7 +990,7 @@ impl super::Painter {
                                         synthetic_italic: false,
                                     });
 
-                                    let advance = measure_char_for_paint(ch, fragment.font_size, frag_is_ahem)
+                                    let advance = self.measure_char_cached(ch, fragment.font_size, frag_is_ahem)
                                         + letter_spacing
                                         + if ch == ' ' { word_spacing } else { 0.0 };
                                     char_pos += advance;
@@ -1002,7 +1001,7 @@ impl super::Painter {
                                         && let Some(mark_ch) = emphasis_mark
                                     {
                                         let mark_fs = fragment.font_size * 0.5;
-                                        let mark_advance = measure_char_for_paint(mark_ch, mark_fs, frag_is_ahem);
+                                        let mark_advance = self.measure_char_cached(mark_ch, mark_fs, frag_is_ahem);
                                         // 居中于当前字符（char_pos 已前进 advance，故字符中心 = char_pos - advance/2）
                                         let mark_x = char_pos - advance / 2.0 - mark_advance / 2.0;
                                         let mark_y = if emphasis_over {
@@ -1031,7 +1030,7 @@ impl super::Painter {
                                 let text_width: f32 = transformed
                                     .chars()
                                     .map(|ch| {
-                                        let w = measure_char_for_paint(ch, fragment.font_size, frag_is_ahem)
+                                        let w = self.measure_char_cached(ch, fragment.font_size, frag_is_ahem)
                                             + letter_spacing;
                                         if ch == ' ' { w + word_spacing } else { w }
                                     })
@@ -1048,13 +1047,13 @@ impl super::Painter {
                                     for (base, annot) in segs {
                                         let seg_w: f32 = base
                                             .chars()
-                                            .map(|c| measure_char_for_paint(c, fragment.font_size, frag_is_ahem))
+                                            .map(|c| self.measure_char_cached(c, fragment.font_size, frag_is_ahem))
                                             .sum::<f32>()
                                             + letter_spacing * base.chars().count() as f32;
                                         if !annot.is_empty() {
                                             let annot_w: f32 = annot
                                                 .chars()
-                                                .map(|c| measure_char_for_paint(c, rt_fs, frag_is_ahem))
+                                                .map(|c| self.measure_char_cached(c, rt_fs, frag_is_ahem))
                                                 .sum();
                                             let mut ax = seg_x + (seg_w - annot_w) / 2.0;
                                             for rc in annot.chars() {
@@ -1070,7 +1069,7 @@ impl super::Painter {
                                                     rotation,
                                                     synthetic_italic: false,
                                                 });
-                                                ax += measure_char_for_paint(rc, rt_fs, frag_is_ahem);
+                                                ax += self.measure_char_cached(rc, rt_fs, frag_is_ahem);
                                             }
                                         }
                                         seg_x += seg_w;
@@ -1222,7 +1221,7 @@ impl super::Painter {
                             let text_width: f32 = transformed
                                 .chars()
                                 .map(|ch| {
-                                    let w = measure_char_for_paint(ch, $frag_fs, $is_ahem) + letter_spacing;
+                                    let w = self.measure_char_cached(ch, $frag_fs, $is_ahem) + letter_spacing;
                                     if ch == ' ' { w + word_spacing } else { w }
                                 })
                                 .sum();
@@ -1238,13 +1237,13 @@ impl super::Painter {
                                 for (base, annot) in segs {
                                     let seg_w: f32 = base
                                         .chars()
-                                        .map(|c| measure_char_for_paint(c, $frag_fs, $is_ahem))
+                                        .map(|c| self.measure_char_cached(c, $frag_fs, $is_ahem))
                                         .sum::<f32>()
                                         + letter_spacing * base.chars().count() as f32;
                                     if !annot.is_empty() {
                                         let annot_w: f32 = annot
                                             .chars()
-                                            .map(|c| measure_char_for_paint(c, rt_fs, $is_ahem))
+                                            .map(|c| self.measure_char_cached(c, rt_fs, $is_ahem))
                                             .sum();
                                         let mut ax = seg_x + (seg_w - annot_w) / 2.0;
                                         for rc in annot.chars() {
@@ -1260,7 +1259,7 @@ impl super::Painter {
                                                 rotation,
                     synthetic_italic: frag_synthetic_italic,
                                             });
-                                            ax += measure_char_for_paint(rc, rt_fs, $is_ahem);
+                                            ax += self.measure_char_cached(rc, rt_fs, $is_ahem);
                                         }
                                     }
                                     seg_x += seg_w;
@@ -1414,7 +1413,7 @@ impl super::Painter {
                                     );
                                 }
 
-                                let advance = measure_char_for_paint(ch, $frag_fs, $is_ahem)
+                                let advance = self.measure_char_cached(ch, $frag_fs, $is_ahem)
                                     + letter_spacing
                                     + if ch == ' ' { word_spacing } else { 0.0 };
                                 char_pos += advance;
@@ -1425,7 +1424,7 @@ impl super::Painter {
                                     && let Some(mark_ch) = emphasis_mark
                                 {
                                     let mark_fs = $frag_fs * 0.5;
-                                    let mark_advance = measure_char_for_paint(mark_ch, mark_fs, $is_ahem);
+                                    let mark_advance = self.measure_char_cached(mark_ch, mark_fs, $is_ahem);
                                     let mark_x = char_pos - advance / 2.0 - mark_advance / 2.0;
                                     // over：mark 基线在文本顶部之上（leading 区）；under：基线之下
                                     let mark_y = if emphasis_over {
@@ -1558,7 +1557,7 @@ impl super::Painter {
                     }
 
                     if has_overflow {
-                        let ellipsis_char_width = measure_char_for_paint('.', font_size, container_is_ahem);
+                        let ellipsis_char_width = crate::measure_char_for_paint('.', font_size, container_is_ahem);
                         let total_ellipsis_width = ellipsis_char_width * 3.0 + letter_spacing * 2.0;
                         let ellipsis_end_x = content_right;
                         let ellipsis_start_x = ellipsis_end_x - total_ellipsis_width;
@@ -1652,12 +1651,12 @@ impl super::Painter {
                             .max_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
                         let last_adv = last_glyph
                             .and_then(|g| char::from_u32(g.glyph_id))
-                            .map(|c| measure_char_for_paint(c, font_size, container_is_ahem))
+                            .map(|c| self.measure_char_cached(c, font_size, container_is_ahem))
                             .unwrap_or(0.0);
                         let last_text_end_x = last_glyph.map(|g| g.x + last_adv).unwrap_or(content_x + tx);
 
                         let ellipsis_char = '\u{2026}';
-                        let ellipsis_width = measure_char_for_paint(ellipsis_char, font_size, container_is_ahem);
+                        let ellipsis_width = self.measure_char_cached(ellipsis_char, font_size, container_is_ahem);
                         let content_right = content_x + container_width + tx;
                         let default_font_id = self
                             .resolve_font_id(&style.font_family, &style.font_weight, &style.font_style)
@@ -1735,7 +1734,7 @@ impl super::Painter {
             glyph_x,
             glyph_y + font_size,
             font_size,
-            measure_char_for_paint('A', font_size, false),
+            self.measure_char_cached('A', font_size, false),
             color,
             style,
         );
@@ -1798,7 +1797,7 @@ impl super::Painter {
                 rotation: 0.0,
                 synthetic_italic: false,
             });
-            char_x += measure_char_for_paint(ch, font_size, is_ahem);
+            char_x += self.measure_char_cached(ch, font_size, is_ahem);
         }
     }
 }

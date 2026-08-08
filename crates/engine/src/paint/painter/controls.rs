@@ -11,8 +11,6 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::GlyphPrimitive;
 use zero_style_system::ComputedStyle;
 
-use crate::measure_char_for_paint;
-
 impl super::Painter {
     /// 绘制 `<progress>`/`<meter>` 的 value 填充条（R1671 paint 半，≡ R1660 `paint_input_value`）。
     ///
@@ -172,7 +170,7 @@ impl super::Painter {
                 rotation: 0.0,
                 synthetic_italic: false,
             });
-            char_x += measure_char_for_paint(ch, font_size, false);
+            char_x += self.measure_char_cached(ch, font_size, false);
         }
 
         // R1680：下拉箭头（小灰色向下三角），填补 R1679 select 固有宽预留的 chrome 空间。

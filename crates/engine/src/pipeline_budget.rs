@@ -153,7 +153,12 @@ impl RenderPipeline {
                     let primitives = painter.into_primitives();
                     let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout.root);
                     let (primitives, stats) = primitives.cull_invisible(viewport);
-                    let primitives = primitives.batch_fills();
+                    // S7：draw_order 路径跳过 batch_fills（纯 clone no-op）
+                    let primitives = if primitives.draw_order.is_empty() {
+                        primitives.batch_fills()
+                    } else {
+                        primitives
+                    };
                     session.timings.paint_ms = start.elapsed().as_secs_f64() * 1000.0;
                     session.timings.total_ms = session.timings.parse_ms
                         + session.timings.style_ms

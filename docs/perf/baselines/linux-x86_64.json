@@ -160,38 +160,45 @@
     },
     {
       "id": "mb/zero-engine/compositing_layer_analysis_200",
-      "p95": 34616.76136363636,
-      "tier": "budget"
+      "p95": 30635.004483122364,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "mb/zero-engine/dirty_tracking/mark_100_nodes_and_merge",
-      "p95": 2093.5684801633606,
-      "tier": "budget"
+      "p95": 2043.9725033504321,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "mb/zero-engine/end_to_end_pipeline",
-      "p95": 211972.14285714287,
-      "tier": "budget"
+      "p95": 211240.24160346694,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "mb/zero-engine/medium_complexity_page/first_paint",
-      "p95": 1558539.3,
-      "tier": "budget"
+      "p95": 1521943.575,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "mb/zero-engine/medium_complexity_page/incremental_vs_full",
-      "p95": 3033514.8,
-      "tier": "budget"
+      "p95": 2871878.282051282,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "mb/zero-engine/paint_complex_page_500_elements",
-      "p95": 394036.6842105263,
-      "tier": "budget"
+      "p95": 375934.6854166667,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "mb/zero-engine/paint_simple_page_100_elements",
-      "p95": 76976.90894736841,
-      "tier": "budget"
+      "p95": 74826.5095959596,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "mb/zero-host-runtime/create_100_window_configs",
@@ -510,14 +517,16 @@
     },
     {
       "id": "page/welcome/paint_ms",
-      "p95": 13.590114,
-      "tier": "budget"
+      "p95": 4.352971,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "page/welcome/total_ms",
-      "p95": 18.818901,
+      "p95": 10.082274,
       "tier": "hard",
-      "absolute_budget_ms": 2000.0
+      "absolute_budget_ms": 2000.0,
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "page/medium/parse_ms",
@@ -537,19 +546,22 @@
     },
     {
       "id": "page/medium/paint_ms",
-      "p95": 1399.306047,
-      "tier": "budget"
+      "p95": 29.267917,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "page/medium/total_ms",
-      "p95": 1722.661425,
+      "p95": 368.76904,
       "tier": "hard",
-      "absolute_budget_ms": 2000.0
+      "absolute_budget_ms": 2000.0,
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "page/morning/parse_ms",
-      "p95": 0.486377,
-      "tier": "budget"
+      "p95": 0.43545,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "page/morning/style_ms",
@@ -563,31 +575,34 @@
     },
     {
       "id": "page/morning/paint_ms",
-      "p95": 84.578805,
-      "tier": "budget"
+      "p95": 11.32083,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "page/morning/total_ms",
-      "p95": 99.18419300000001,
+      "p95": 22.937124,
       "tier": "hard",
-      "absolute_budget_ms": 2000.0
+      "absolute_budget_ms": 2000.0,
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "page/welcome/first_paint_wall_ms",
-      "p95": 28.120231999999998,
+      "p95": 21.675168000000003,
       "tier": "budget",
-      "tightened_at": "2026-08-07T18:30:56Z"
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "page/medium/first_paint_wall_ms",
-      "p95": 1849.470767,
-      "tier": "budget"
+      "p95": 497.45666900000003,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "page/morning/first_paint_wall_ms",
-      "p95": 147.407634,
+      "p95": 75.76693,
       "tier": "budget",
-      "tightened_at": "2026-08-07T18:30:56Z"
+      "tightened_at": "2026-08-08T04:02:43Z"
     },
     {
       "id": "resource/peak_rss_mb",

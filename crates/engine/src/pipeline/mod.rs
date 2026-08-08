@@ -407,7 +407,13 @@ impl RenderPipeline {
         let primitives = painter.into_primitives();
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
         let (primitives, mut stats) = primitives.cull_invisible(viewport);
-        let primitives = primitives.batch_fills();
+        // 性能门禁优化 S7（2026-08-08）：draw_order 路径下 batch_fills 是纯 clone
+        // no-op（ops.rs:273-275），跳过免全量克隆（4400 元素页每帧 ~11k fills）
+        let primitives = if primitives.draw_order.is_empty() {
+            primitives.batch_fills()
+        } else {
+            primitives
+        };
         // S3 dirty region 契约：当前为全量渲染，脏区域 = 整个视口。
         // 增量重绘（RFC S3 后续切片）接入 DirtyTracker 后只输出变化区域。
         stats
@@ -540,8 +546,12 @@ impl RenderPipeline {
         stats
             .dirty_rects
             .push((0.0, 0.0, viewport.size.width, viewport.size.height));
-        // 对填充图元进行批处理优化
-        let mut primitives = primitives.batch_fills();
+        // 对填充图元进行批处理优化（S7：draw_order 路径跳过——纯 clone no-op）
+        let mut primitives = if primitives.draw_order.is_empty() {
+            primitives.batch_fills()
+        } else {
+            primitives
+        };
         // R2001 P1.5：Print 分页页边界分隔线（render-path 从 layout extent 重算）。
         inject_print_page_dividers(
             &mut primitives,

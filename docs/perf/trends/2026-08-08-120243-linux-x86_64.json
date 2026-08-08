@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "kind": "bench-report",
+  "generated_at": "20260808_120100",
+  "git_sha": "32b11adf",
+  "git_dirty": true,
+  "suspect": false,
+  "run_config": {
+    "config_hash": "a3bd66703cd27bd2752673846b8199c4465a732a1b98816b4284499baf79ff1f",
+    "profile": "release",
+    "bench_list": [
+      "zero-browser-shell:browser_shell_bench",
+      "zero-canvas:canvas_bench",
+      "zero-css-parser:css_bench",
+      "zero-dom:dom_bench",
+      "zero-engine:engine_bench",
+      "zero-host-runtime:host_runtime_bench",
+      "zero-layout-engine:layout_bench",
+      "zero-net:net_bench",
+      "zero-protocol:protocol_bench",
+      "zero-render-foundation:render_bench",
+      "zero-script-sandbox:script_sandbox_bench",
+      "zero-security:security_bench",
+      "zero-storage:storage_bench",
+      "zero-style-system:style_bench",
+      "zero-wasm-sandbox:wasm_bench",
+      "zero-webview:webview_bench"
+    ],
+    "page_scenarios": [
+      "medium",
+      "morning",
+      "welcome\n"
+    ],
+    "viewport": [
+      800,
+      600
+    ],
+    "iterations": 15
+  },
+  "platform": {
+    "platform_class": "linux-x86_64",
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13500H",
+    "cpu_cores": 16,
+    "os": "linux"
+  },
+  "microbenches": [
+    {
+      "id": "zero-engine/compositing_layer_analysis_200",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 30334.159201557937,
+      "p95": 30635.004483122364,
+      "max": 30658.07559774965,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/dirty_tracking/mark_100_nodes_and_merge",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 1993.0297568783635,
+      "p95": 2043.9725033504321,
+      "max": 2044.8702828226812,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/end_to_end_pipeline",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 203532.42605633804,
+      "p95": 211240.24160346694,
+      "max": 212542.73082942097,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/medium_complexity_page/first_paint",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 1461892.3636363635,
+      "p95": 1521943.575,
+      "max": 1577447.3666666667,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/medium_complexity_page/incremental_vs_full",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 2829765.9916666667,
+      "p95": 2871878.282051282,
+      "max": 2889018.6785714286,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/paint_complex_page_500_elements",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 373649.905,
+      "p95": 375934.6854166667,
+      "max": 376732.6777777778,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/paint_simple_page_100_elements",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 71089.0092097445,
+      "p95": 74826.5095959596,
+      "max": 76178.99621212122,
+      "samples": 20
+    }
+  ],
+  "pages": [
+    {
+      "scenario": "welcome",
+      "fixture": "apps/browser/assets/welcome.html",
+      "viewport": [
+        800,
+        600
+      ],
+      "samples": 14,
+      "stages": {
+        "parse_ms": {
+          "p50": 0.175603,
+          "p95": 0.206154,
+          "max": 0.25726699999999997
+        },
+        "style_ms": {
+          "p50": 2.678808,
+          "p95": 3.1750760000000002,
+          "max": 4.615293
+        },
+        "layout_ms": {
+          "p50": 1.763939,
+          "p95": 2.215617,
+          "max": 2.950983
+        },
+        "paint_ms": {
+          "p50": 3.6909669999999997,
+          "p95": 4.352971,
+          "max": 5.3984380000000005
+        },
+        "total_ms": {
+          "p50": 8.448537,
+          "p95": 10.082274,
+          "max": 12.38462
+        }
+      },
+      "first_paint_wall_ms": {
+        "p50": 17.629577,
+        "p95": 21.675168000000003,
+        "max": 22.383468999999998
+      }
+    },
+    {
+      "scenario": "medium",
+      "fixture": "tests/benchmarks/fixtures/medium.html",
+      "viewport": [
+        800,
+        600
+      ],
+      "samples": 14,
+      "stages": {
+        "parse_ms": {
+          "p50": 14.721587,
+          "p95": 16.128729,
+          "max": 19.054660000000002
+        },
+        "style_ms": {
+          "p50": 217.773097,
+          "p95": 225.436686,
+          "max": 231.17839600000002
+        },
+        "layout_ms": {
+          "p50": 94.848268,
+          "p95": 107.208901,
+          "max": 108.56379700000001
+        },
+        "paint_ms": {
+          "p50": 26.252179,
+          "p95": 29.267917,
+          "max": 29.590746000000003
+        },
+        "total_ms": {
+          "p50": 361.089625,
+          "p95": 368.76904,
+          "max": 373.356495
+        }
+      },
+      "first_paint_wall_ms": {
+        "p50": 485.26875,
+        "p95": 497.45666900000003,
+        "max": 500.42309399999994
+      }
+    },
+    {
+      "scenario": "morning",
+      "fixture": "apps/browser/assets/morning-work/article.html",
+      "viewport": [
+        800,
+        600
+      ],
+      "samples": 14,
+      "stages": {
+        "parse_ms": {
+          "p50": 0.383181,
+          "p95": 0.43545,
+          "max": 0.472645
+        },
+        "style_ms": {
+          "p50": 6.718298,
+          "p95": 7.250516999999999,
+          "max": 7.374459
+        },
+        "layout_ms": {
+          "p50": 3.15449,
+          "p95": 3.371189,
+          "max": 3.474075
+        },
+        "paint_ms": {
+          "p50": 10.701829,
+          "p95": 11.32083,
+          "max": 14.245524000000001
+        },
+        "total_ms": {
+          "p50": 21.291905,
+          "p95": 22.937124,
+          "max": 24.697499
+        }
+      },
+      "first_paint_wall_ms": {
+        "p50": 66.570807,
+        "p95": 75.76693,
+        "max": 82.521289
+      }
+    }
+  ],
+  "resource": {
+    "method": "vmhwm",
+    "peak_rss_mb": 506.56640625
+  },
+  "startup_ms": 513.9665
+}
