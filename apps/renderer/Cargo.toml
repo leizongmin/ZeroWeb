@@ -27,6 +27,11 @@ tracing-subscriber = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch = "0.2"
+objc2-app-kit = { version = "0.2.2", features = ["NSApplication", "NSImage"] }
+objc2-foundation = "0.2.2"
+
 [features]
 default = ["v8"]
 # 镜像 browser 的 feature 传播——下游 v8-gated 代码（webview.rs sandbox 创建、

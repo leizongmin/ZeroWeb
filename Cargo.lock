@@ -6479,6 +6479,9 @@ dependencies = [
 name = "zero-renderer"
 version = "0.1.0"
 dependencies = [
+ "dispatch",
+ "objc2-app-kit 0.2.2",
+ "objc2-foundation 0.2.2",
  "serde",
  "serde_json",
  "tracing",

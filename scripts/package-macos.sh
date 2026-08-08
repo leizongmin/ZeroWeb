@@ -8,6 +8,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 APP_NAME="ZeroBrowser"
 BUNDLE_ID="com.zeroweb.browser"
+HELPER_NAME="ZeroBrowser Helper (Renderer)"
 OUTPUT_DIR="$PROJECT_ROOT/target/packages"
 BROWSER_BINARY=""
 RENDERER_BINARY=""
@@ -138,15 +139,21 @@ fi
 mkdir -p "$(dirname "$ARCHIVE_PATH")"
 
 APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
+HELPER_BUNDLE="$APP_BUNDLE/Contents/Frameworks/$HELPER_NAME.app"
+HELPER_EXECUTABLE="$HELPER_BUNDLE/Contents/MacOS/$HELPER_NAME"
 ENTITLEMENTS_PATH="$OUTPUT_DIR/.ZeroBrowser.entitlements.plist"
 ICONSET_SOURCE="$PROJECT_ROOT/apps/browser/assets/icons-gen/iconset"
 ICONSET_DIR="$OUTPUT_DIR/.ZeroBrowser.iconset"
 trap 'rm -f "$ENTITLEMENTS_PATH"; rm -rf "$ICONSET_DIR"' EXIT
 rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
+mkdir -p \
+    "$APP_BUNDLE/Contents/MacOS" \
+    "$APP_BUNDLE/Contents/Resources" \
+    "$HELPER_BUNDLE/Contents/MacOS" \
+    "$HELPER_BUNDLE/Contents/Resources"
 
 install -m 755 "$BROWSER_BINARY" "$APP_BUNDLE/Contents/MacOS/ZeroBrowser"
-install -m 755 "$RENDERER_BINARY" "$APP_BUNDLE/Contents/MacOS/zero-renderer"
+install -m 755 "$RENDERER_BINARY" "$HELPER_EXECUTABLE"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -172,12 +179,36 @@ EOF
 printf 'APPL????' > "$APP_BUNDLE/Contents/PkgInfo"
 plutil -lint "$APP_BUNDLE/Contents/Info.plist"
 
+cat > "$HELPER_BUNDLE/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleDisplayName</key><string>${HELPER_NAME}</string>
+    <key>CFBundleExecutable</key><string>${HELPER_NAME}</string>
+    <key>CFBundleIconFile</key><string>${APP_NAME}</string>
+    <key>CFBundleIdentifier</key><string>${BUNDLE_ID}.helper.renderer</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleName</key><string>${HELPER_NAME}</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>${BUNDLE_VERSION}</string>
+    <key>CFBundleVersion</key><string>${BUNDLE_VERSION}</string>
+    <key>LSMinimumSystemVersion</key><string>12.0</string>
+    <key>LSUIElement</key><true/>
+</dict>
+</plist>
+EOF
+printf 'APPL????' > "$HELPER_BUNDLE/Contents/PkgInfo"
+plutil -lint "$HELPER_BUNDLE/Contents/Info.plist"
+
 [[ -d "$ICONSET_SOURCE" ]] || fail "iconset not found: $ICONSET_SOURCE"
 rm -rf "$ICONSET_DIR"
 cp -R "$ICONSET_SOURCE" "$ICONSET_DIR"
 sips -s format png -z 1024 1024 "$PROJECT_ROOT/apps/browser/assets/app-icon.svg" \
     --out "$ICONSET_DIR/icon_512x512@2x.png" >/dev/null
 iconutil -c icns "$ICONSET_DIR" -o "$APP_BUNDLE/Contents/Resources/ZeroBrowser.icns"
+cp "$APP_BUNDLE/Contents/Resources/ZeroBrowser.icns" "$HELPER_BUNDLE/Contents/Resources/ZeroBrowser.icns"
 
 cat > "$ENTITLEMENTS_PATH" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -192,12 +223,15 @@ EOF
 if [[ -n "$SIGN_IDENTITY" ]]; then
     info "Signing app with Developer ID identity: $SIGN_IDENTITY"
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
-        --entitlements "$ENTITLEMENTS_PATH" "$APP_BUNDLE/Contents/MacOS/zero-renderer"
+        --entitlements "$ENTITLEMENTS_PATH" "$HELPER_EXECUTABLE"
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
+        --entitlements "$ENTITLEMENTS_PATH" "$HELPER_BUNDLE"
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
         --entitlements "$ENTITLEMENTS_PATH" "$APP_BUNDLE"
 else
     info "No Developer ID identity provided; applying ad-hoc signature"
-    codesign --force --sign - "$APP_BUNDLE/Contents/MacOS/zero-renderer"
+    codesign --force --sign - "$HELPER_EXECUTABLE"
+    codesign --force --sign - "$HELPER_BUNDLE"
     codesign --force --sign - "$APP_BUNDLE"
 fi
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"

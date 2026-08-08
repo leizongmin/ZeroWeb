@@ -3,7 +3,7 @@
 //! 网络请求由本进程代理（Chromium 式 browser-hosted network）；渲染进程仅通过 `FetchRequest` IPC 访问网络。
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -49,11 +49,13 @@ fn renderer_binary_filename() -> &'static str {
 
 /// 解析 `zero-renderer` 可执行文件路径。
 ///
-/// 发布布局要求 **`zero-renderer` 与 `zero-browser` 同目录**（安装包 / 构建脚本负责保持这一布局）。
+/// macOS `.app` 发布布局使用标准嵌套 Helper app；其他平台及本地构建保持
+/// **`zero-renderer` 与 `zero-browser` 同目录**。
 /// 查找顺序：
 /// 1. `ZERO_RENDERER_PATH` 环境变量
-/// 2. `std::env::current_exe()` 所在目录
-/// 3. `PATH`（系统级安装等兜底）
+/// 2. macOS `ZeroBrowser Helper (Renderer).app`
+/// 3. `std::env::current_exe()` 所在目录
+/// 4. `PATH`（系统级安装等兜底）
 fn resolve_renderer_binary() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("ZERO_RENDERER_PATH") {
         let candidate = PathBuf::from(path);
@@ -63,18 +65,44 @@ fn resolve_renderer_binary() -> Option<PathBuf> {
         tracing::warn!("ZERO_RENDERER_PATH 指向的文件不存在: {}", candidate.display());
     }
 
-    if let Some(sibling) = renderer_binary_beside_current_exe() {
-        return Some(sibling);
+    if let Some(candidate) = renderer_binary_near_current_exe() {
+        return Some(candidate);
     }
 
     find_renderer_in_path()
 }
 
-/// 在 **当前进程可执行文件** 所在目录查找 `zero-renderer`。
-fn renderer_binary_beside_current_exe() -> Option<PathBuf> {
+fn renderer_candidates_near_executable(exe: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    #[cfg(target_os = "macos")]
+    if let Some(macos_dir) = exe.parent()
+        && macos_dir.file_name().and_then(|name| name.to_str()) == Some("MacOS")
+        && let Some(contents_dir) = macos_dir.parent()
+        && contents_dir.file_name().and_then(|name| name.to_str()) == Some("Contents")
+    {
+        candidates.push(
+            contents_dir
+                .join("Frameworks")
+                .join("ZeroBrowser Helper (Renderer).app")
+                .join("Contents")
+                .join("MacOS")
+                .join("ZeroBrowser Helper (Renderer)"),
+        );
+    }
+
+    if let Some(dir) = exe.parent() {
+        candidates.push(dir.join(renderer_binary_filename()));
+    }
+    candidates
+}
+
+/// 在当前应用的 macOS Helper bundle 或可执行文件同目录查找 renderer。
+fn renderer_binary_near_current_exe() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let sibling = exe.parent()?.join(renderer_binary_filename());
-    sibling.is_file().then_some(sibling)
+    renderer_candidates_near_executable(&exe)
+        .into_iter()
+        .find(|candidate| candidate.is_file())
 }
 
 fn find_renderer_in_path() -> Option<PathBuf> {
@@ -108,11 +136,11 @@ impl ProcessTabBackend {
         if !renderer_bin.is_file() {
             let expected = std::env::current_exe()
                 .ok()
-                .and_then(|exe| exe.parent().map(|dir| dir.join(renderer_binary_filename())))
+                .and_then(|exe| renderer_candidates_near_executable(&exe).into_iter().next())
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| renderer_binary_filename().to_string());
             tracing::warn!(
-                "未找到 zero-renderer（应与 zero-browser 同目录: {expected}）。\
+                "未找到 zero-renderer（预期路径: {expected}）。\
                  将使用进程内 tab worker。请一并安装/编译两个二进制，或设置 ZERO_RENDERER_PATH，或使用 --single-process。"
             );
             return None;
@@ -593,6 +621,40 @@ impl ProcessTabBackend {
 impl Drop for ProcessTabBackend {
     fn drop(&mut self) {
         self.manager.shutdown_all();
+    }
+}
+
+#[cfg(test)]
+mod renderer_path_tests {
+    use super::{renderer_binary_filename, renderer_candidates_near_executable};
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn local_build_uses_sibling_renderer() {
+        let executable = Path::new("/workspace/target/release/zero-browser");
+        let candidates = renderer_candidates_near_executable(executable);
+
+        assert_eq!(
+            candidates.last(),
+            Some(&PathBuf::from("/workspace/target/release").join(renderer_binary_filename()))
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_app_prefers_renderer_helper_bundle() {
+        let executable = Path::new("/Applications/ZeroBrowser.app/Contents/MacOS/ZeroBrowser");
+        let candidates = renderer_candidates_near_executable(executable);
+
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from(
+                    "/Applications/ZeroBrowser.app/Contents/Frameworks/ZeroBrowser Helper (Renderer).app/Contents/MacOS/ZeroBrowser Helper (Renderer)"
+                ),
+                PathBuf::from("/Applications/ZeroBrowser.app/Contents/MacOS/zero-renderer"),
+            ]
+        );
     }
 }
 

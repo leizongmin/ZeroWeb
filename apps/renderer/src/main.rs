@@ -7,6 +7,8 @@
 mod error_page;
 mod ipc_fetch;
 mod js_worker;
+#[cfg(target_os = "macos")]
+mod macos_app;
 mod page_scripts;
 mod paint_export;
 mod script_prefetch;
@@ -1639,9 +1641,16 @@ fn main() {
     }
     tracing::info!("ZeroWeb 渲染进程启动 (type=renderer, instance-id={renderer_id})");
 
-    let mut runtime = RendererRuntime::new(renderer_id);
+    #[cfg(target_os = "macos")]
+    let result = if macos_app::is_bundled_app_executable() {
+        macos_app::run_renderer(renderer_id)
+    } else {
+        RendererRuntime::new(renderer_id).run()
+    };
+    #[cfg(not(target_os = "macos"))]
+    let result = RendererRuntime::new(renderer_id).run();
 
-    if let Err(e) = runtime.run() {
+    if let Err(e) = result {
         tracing::error!("渲染进程错误退出: {e}");
         std::process::exit(1);
     }
