@@ -1439,3 +1439,235 @@ fn test_dommatrix_matrix_math_r2989() {
         "scale(2,3).transformPoint(3,4) → y=12"
     );
 }
+
+// TEMP PROBE removed — replaced by real assertions below (R2990).
+
+#[test]
+fn test_document_evaluate_xpath_edges_r2990() {
+    // R2990：XPath 实用子集边界覆盖 + 两个 spec bug 修复（R2981 shipped 但 driving test 仅覆盖主干路径）。
+    //
+    // Bug A（part06.js _xpathPred @attr 分支）：`@attr != 'val'` 对【缺失该属性】的节点，旧代码将 null 归一
+    //   为 '' 再比较 → `'' != 'val'` 为 true → 无该属性的节点被错误命中。XPath 1.0 §3.4 存在量词语义：
+    //   `@attr` 是节点集，当其为空（属性缺失）时，`=`/`!=` 比较皆为 false（不存在满足的节点）。修复：
+    //   av==null 且带比较运算符时直接 return false。
+    //
+    // Bug B（part06.js _xpathParseStep/@​ 轴 + _xpathApplyStep 属性分支）：`//@name`（descendant 属性轴）
+    //   旧代码返空——`_xpathParseStep` 对 '@' 开头 token 硬编码 axis='attribute'，丢弃了 `//` 传入的
+    //   'descendant' 轴；`_xpathApplyStep` 属性分支仅检查 ctx 自身。修复：保留 fromDesc 标志，属性分支
+    //   fromDesc 时扩展到 ctx + 全部后代元素（descendant-or-self 语义）。
+    //
+    // 另覆盖此前未测但已正确的路径：`..` parent 轴 + dedup、`.` self 轴、`not()` 谓词、`text()`/`node()`
+    //   直接步、`comment()` 节点测试、`@*` 通配属性、`position()<1` / `last()-0` 边界。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // ul#list > li(item/item+active/item/active)；1 注释节点；3 a（/a 无 class、/b class=x、/c class=ext）。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <ul id='list'>\
+         <li class='item'>A</li>\
+         <li class='item active'>B</li>\
+         <li class='item'>C</li>\
+         <li class='active'>D</li>\
+         </ul>\
+         <!-- a comment node -->\
+         <a href='/a'>link-a</a>\
+         <a href='/b' class='x'>link-b</a>\
+         <a href='/c' class='ext'>link-c</a>\
+         <div id='box'><p>hello</p><p>world</p></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    sandbox
+        .execute(
+            "globalThis.__xp = function(expr, ctx, type) {\
+             return document.evaluate(expr, ctx || document, null,\
+             (type == null ? XPathResult.ORDERED_NODE_SNAPSHOT_TYPE : type), null);\
+             };",
+        )
+        .unwrap();
+
+    // ── Bug A：`@class != 'ext'` 不得命中无 class 属性的节点 ─────────────────────────
+    // a 集：/a（无 class）、/b（class=x）、/c（class=ext）。仅 /b 有 class 且 != 'ext' → spec = 1。
+    // 旧 bug：/a 无 class → ''!='ext' → true → 错误命中 /a → 返 2。
+    assert_eq!(
+        sandbox
+            .execute("__xp(\"//a[@class!='ext']\").snapshotLength")
+            .unwrap()
+            .value,
+        "1",
+        "Bug A：//a[@class!='ext'] = 1（仅 /b；无 class 的 /a 不应命中）"
+    );
+    // 对照：`@class = 'x'` → /b = 1。
+    assert_eq!(
+        sandbox
+            .execute("__xp(\"//a[@class='x']\").snapshotLength")
+            .unwrap()
+            .value,
+        "1",
+        "//a[@class='x'] = 1（/b）"
+    );
+    // 对照：`[@class]` 存在性 → 有 class 的 a = /b、/c = 2。
+    assert_eq!(
+        sandbox.execute("__xp('//a[@class]').snapshotLength").unwrap().value,
+        "2",
+        "//a[@class] = 2（/b、/c 存在 class 属性）"
+    );
+    // `@href != '/a'` 应排除 /a 自身但也不应额外命中——此处所有 a 都有 href，正常 = 2（/b、/c）。
+    assert_eq!(
+        sandbox
+            .execute("__xp(\"//a[@href!='/a']\").snapshotLength")
+            .unwrap()
+            .value,
+        "2",
+        "//a[@href!='/a'] = 2（/b、/c；所有 a 均有 href）"
+    );
+
+    // ── Bug B：`//@href` descendant 属性轴应收集所有后代元素的 href ─────────────────
+    // 旧 bug：_xpathParseStep 丢弃 descendant 轴 → 仅检查 documentElement → 返 0。
+    assert_eq!(
+        sandbox
+            .execute("__xp('//@href').snapshotLength")
+            .unwrap()
+            .value,
+        "3",
+        "Bug B：//@href = 3（descendant 属性轴收集全部 a 的 href）"
+    );
+    // 文档序首项 value = '/a'。
+    assert_eq!(
+        sandbox
+            .execute("__xp('//@href').snapshotItem(0).value")
+            .unwrap()
+            .value,
+        "/a",
+        "//@href 文档序首项 value = '/a'"
+    );
+    // 对照：`//*[@href]`（descendant 元素 + 谓词，非属性轴）亦 = 3，确认两条路径一致。
+    assert_eq!(
+        sandbox
+            .execute("__xp('//*[@href]').snapshotLength")
+            .unwrap()
+            .value,
+        "3",
+        "//*[@href] = 3（descendant 元素谓词路径）"
+    );
+
+    // ── parent 轴 `..` + 多上下文 dedup ────────────────────────────────────────────
+    // //li 的 4 个 li 同属 ul#list → `..` 全指向同一 ul → dedup = 1。
+    assert_eq!(
+        sandbox.execute("__xp('//li/..').snapshotLength").unwrap().value,
+        "1",
+        "//li/.. = 1（4 个 li 的 parent 同为 ul → dedup）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("__xp('//li/..').snapshotItem(0).id")
+            .unwrap()
+            .value,
+        "list",
+        "//li/.. 命中 ul#list"
+    );
+
+    // ── self 轴 `.` ───────────────────────────────────────────────────────────────
+    assert_eq!(
+        sandbox.execute("__xp('//li/.').snapshotLength").unwrap().value,
+        "4",
+        "//li/. = 4（self 轴保留全部 li）"
+    );
+
+    // ── not() 谓词 ────────────────────────────────────────────────────────────────
+    // not(@class='item')：A/C（class=item）→ false；B（'item active'!='item'→谓词 false→not true）；D 同理 → B、D = 2。
+    assert_eq!(
+        sandbox
+            .execute("__xp(\"//li[not(@class='item')]\").snapshotLength")
+            .unwrap()
+            .value,
+        "2",
+        "//li[not(@class='item')] = 2（B、D）"
+    );
+
+    // ── text() / node() 直接步 ─────────────────────────────────────────────────────
+    assert_eq!(
+        sandbox
+            .execute("__xp('//ul/li/text()').snapshotLength")
+            .unwrap()
+            .value,
+        "4",
+        "//ul/li/text() = 4（每个 li 一个文本子节点）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("__xp('//ul/li/text()').snapshotItem(0).nodeValue")
+            .unwrap()
+            .value,
+        "A",
+        "//ul/li/text()[0].nodeValue = 'A'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("__xp('//ul/li/node()').snapshotLength")
+            .unwrap()
+            .value,
+        "4",
+        "//ul/li/node() = 4（文本节点亦匹配 node()）"
+    );
+
+    // ── comment() 节点测试 ─────────────────────────────────────────────────────────
+    assert_eq!(
+        sandbox
+            .execute("__xp('//comment()').snapshotLength")
+            .unwrap()
+            .value,
+        "1",
+        "//comment() = 1（注释节点经 html5ever 解析入 DOM）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__xp('//comment()').snapshotItem(0).nodeType)")
+            .unwrap()
+            .value,
+        "8",
+        "//comment() 命中节点 nodeType = 8"
+    );
+
+    // ── @* 通配属性轴 ──────────────────────────────────────────────────────────────
+    assert_eq!(
+        sandbox.execute("__xp('//ul/@*').snapshotLength").unwrap().value,
+        "1",
+        "//ul/@* = 1（ul 仅有 id 属性）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("__xp('//ul/@*').snapshotItem(0).name")
+            .unwrap()
+            .value,
+        "id",
+        "//ul/@*[0].name = 'id'"
+    );
+
+    // ── 谓词边界：position()<1（永不命中）/ last()-0 ───────────────────────────────
+    assert_eq!(
+        sandbox
+            .execute("__xp('//li[position()<1]').snapshotLength")
+            .unwrap()
+            .value,
+        "0",
+        "//li[position()<1] = 0（position 1-based，<1 永不命中）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("__xp('//li[last()-0]').snapshotItem(0).textContent")
+            .unwrap()
+            .value,
+        "D",
+        "//li[last()-0] = D（last()-0 等价 last()）"
+    );
+}

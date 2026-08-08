@@ -311,8 +311,12 @@
     var mA = p.match(/^@([\w:.-]+)\s*(?:(!=|==|=)\s*(.*))?$/);
     if (mA) {
       var av = _xpathAttrVal(node, mA[1]);
-      if (!mA[2]) return av != null;
-      return _xpathStrCmp(av == null ? '' : av, mA[2], _xpathLit(mA[3]));
+      if (!mA[2]) return av != null; // [attr] → 存在性
+      // https://www.w3.org/TR/xpath-10/#section-BooleanExpressions：@name 是节点集，属性缺失时节点集为空，
+      // `=`/`!=` 的存在量词对空集恒为 false（不存在满足的节点）。旧实现把缺失值归一为 '' 再比较，
+      // 致 `@a!='v'` 错误命中无该属性的节点（R2990 修复）。
+      if (av == null) return false;
+      return _xpathStrCmp(av, mA[2], _xpathLit(mA[3]));
     }
     // text() [op val]。
     var mT = p.match(/^text\(\)\s*(?:(!=|==|=)\s*(.*))?$/);
@@ -355,7 +359,9 @@
     if (tok === '..') return { axis: 'parent', test: 'node', preds: [] };
     if (tok.charCodeAt(0) === 64) { // '@' 开头 → 属性轴
       var an = tok.slice(1);
-      return { axis: 'attribute', test: 'attr', arg: an, preds: [] };
+      // 记录是否经 `//`（descendant）前置到达——属性轴默认仅查 ctx 自身属性，`//@name` 需展开到
+      // ctx + 全部后代元素（R2990 修复：旧实现丢弃 'descendant' 轴致 `//@name` 恒返空）。
+      return { axis: 'attribute', test: 'attr', arg: an, preds: [], fromDesc: axis === 'descendant' };
     }
     var m = tok.match(/^([^\[]+)([\s\S]*)$/);
     if (!m) return null;
@@ -423,14 +429,20 @@
       var matched = [];
       if (step.axis === 'attribute') {
         // 属性轴：对每个元素 ctx 产出伪 Attr 节点（nodeType 2）。
-        if (ctx && ctx.nodeType === 1) {
-          var names = [];
-          if (step.arg === '*') {
-            try { names = (typeof ctx.getAttributeNames === 'function') ? ctx.getAttributeNames() : []; } catch (_e) { names = []; }
-          } else names = [step.arg];
-          for (var ai = 0; ai < names.length; ai++) {
-            var v = _xpathAttrVal(ctx, names[ai]);
-            if (v != null) matched.push({ nodeType: 2, name: names[ai], nodeName: names[ai], value: v, nodeValue: v, ownerElement: ctx });
+        // fromDesc（`//@name` 经 `//` 前置）：扩展到 ctx + 全部后代元素（descendant-or-self 语义，R2990）。
+        var owners = [ctx];
+        if (step.fromDesc) _xpathAllDesc(ctx, owners);
+        for (var oi = 0; oi < owners.length; oi++) {
+          var owner = owners[oi];
+          if (owner && owner.nodeType === 1) {
+            var names = [];
+            if (step.arg === '*') {
+              try { names = (typeof owner.getAttributeNames === 'function') ? owner.getAttributeNames() : []; } catch (_e) { names = []; }
+            } else names = [step.arg];
+            for (var ai = 0; ai < names.length; ai++) {
+              var v = _xpathAttrVal(owner, names[ai]);
+              if (v != null) matched.push({ nodeType: 2, name: names[ai], nodeName: names[ai], value: v, nodeValue: v, ownerElement: owner });
+            }
           }
         }
       } else {
