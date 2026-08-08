@@ -1737,3 +1737,101 @@ fn test_option_index_r2849() {
         "detached option（createElement，不在 select）→ index=0"
     );
 }
+
+#[test]
+fn test_intersection_observer_root_margin_r2966() {
+    // R2966：IntersectionObserver rootMargin（此前按 0 处理）。mock __zw_getBoundingClientRect 返受控
+    // target rect，验证：① 无 rootMargin 时视口外 target 不相交；② px rootMargin 展开视口后相交（ratio=1）；
+    // ③ % rootMargin 按视口维度展开（100px × 20% = 20px，等价 20px）；④ rootBounds 反映展开后视口。
+    // 同时为 B-gen shim IO 首个行为测试（此前仅 presence-check 覆盖）。register_dom_callbacks 不注册
+    // gBCR（仅 renderer/browser rect_bridge 路径有）→ 本 mock 为唯一注册，受控几何可复现。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='out'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // mock gBCR：id="out" 元素返视口左外侧 rect（x=-15..-5，w/h=10，不与视口重叠）。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| {
+            let sel = args.first().cloned().unwrap_or_default();
+            if sel.contains("out") {
+                "-15,0,10,10".to_string()
+            } else {
+                "0,0,0,0".to_string()
+            }
+        }),
+    );
+
+    // 视口设 100x100（覆盖默认 1280x800，clean math）；3 observer 同 observe #out，rootMargin 不同。
+    sandbox
+        .execute(
+            "globalThis.innerWidth = 100; globalThis.innerHeight = 100;\
+             globalThis.__resA = null; globalThis.__resB = null; globalThis.__resC = null;\
+             new IntersectionObserver(function(e){ globalThis.__resA = e[0]; }, {})\
+               .observe(document.querySelector('#out'));\
+             new IntersectionObserver(function(e){ globalThis.__resB = e[0]; }, { rootMargin: '0px 0px 0px 20px' })\
+               .observe(document.querySelector('#out'));\
+             new IntersectionObserver(function(e){ globalThis.__resC = e[0]; }, { rootMargin: '20%' })\
+               .observe(document.querySelector('#out'));",
+        )
+        .unwrap();
+
+    // ① 无 rootMargin：target x[-15..-5]，视口 x[0..100] → 不相交。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__resA && globalThis.__resA.isIntersecting)").unwrap().value,
+        "false",
+        "无 rootMargin：视口外 target 不相交"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__resA && globalThis.__resA.intersectionRatio)").unwrap().value,
+        "0",
+        "无 rootMargin：intersectionRatio=0"
+    );
+
+    // ② px rootMargin（左 +20px）：视口 x[-20..100]，target x[-15..-5] 完全包含 → 相交 ratio=1。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__resB && globalThis.__resB.isIntersecting)").unwrap().value,
+        "true",
+        "px rootMargin 展开视口后相交"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__resB && globalThis.__resB.intersectionRatio)").unwrap().value,
+        "1",
+        "px rootMargin：intersectionRatio=1（target 完全包含于展开后视口）"
+    );
+
+    // ③ % rootMargin（20% × 100px = 20px）：等价 20px → 相交 ratio=1。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__resC && globalThis.__resC.isIntersecting)").unwrap().value,
+        "true",
+        "% rootMargin 按视口维度展开（20% of 100px = 20px）相交"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__resC && globalThis.__resC.intersectionRatio)").unwrap().value,
+        "1",
+        "% rootMargin：intersectionRatio=1"
+    );
+
+    // ④ rootBounds 反映展开后视口（左 -20，宽 120）—— 校验 root rect 真被 margin 改写。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__resB && globalThis.__resB.rootBounds && globalThis.__resB.rootBounds.left)").unwrap().value,
+        "-20",
+        "rootBounds.left = -20（rootMargin 左展开 20px）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__resB && globalThis.__resB.rootBounds && globalThis.__resB.rootBounds.width)").unwrap().value,
+        "120",
+        "rootBounds.width = 120（100 + 20 左 margin）"
+    );
+}

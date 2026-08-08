@@ -414,7 +414,7 @@
   // 限制（接受，follow-up）：① 仅 observe 时计算，非持续 host tick——scroll/resize/async-layout
   //   变化触发的后续通知为 Slice 2b（须 host render-loop tick 或 __zwResolveCallback 重算钩子）；
   // ② handle-identity（createElement）元素 sel 为空 → 零 rect（同 gBCR 限制，path A follow-up）；
-  // ③ rootMargin 暂按 0 处理（defer 像素/% 展开）；④ root 为元素时取其 selector rect。
+  // ③ rootMargin px/% 已支持（R2966，CSS margin 简写展开/收缩 root rect，% 按 root 维度）；④ root 为元素时取其 selector rect。
   function _io_domRect(x, y, w, h) {
     return { x: x, y: y, top: y, left: x, right: x + w, bottom: y + h, width: w, height: h, toJSON: function() { return this; } };
   }
@@ -463,12 +463,41 @@
     if (sel) return 's:' + sel;
     return null;
   }
+  // 解析 rootMargin 串（CSS margin shorthand）→ 4 个 {val, pct} 部分（top/right/bottom/left）。
+  // R2966：rootMargin 此前按 0 处理（defer）。px 直取并标记 pct=false；% 标记 pct=true（compute 时按
+  // root 维度展开：top/bottom→root 高，left/right→root 宽，spec §2.1）。其它单位/非法值 → 0（spec：
+  // rootMargin 仅支持 <length>/<percentage>，fail-to-parse 视为 0）。1-4 值按 CSS margin 简写展开。
+  function _io_parseRootMargin(str) {
+    var raw = (typeof str === 'string' ? str : '').trim().split(/\s+/).filter(function (s) { return s.length > 0; });
+    if (raw.length === 0) raw = ['0px', '0px', '0px', '0px'];
+    else if (raw.length === 1) raw = [raw[0], raw[0], raw[0], raw[0]];
+    else if (raw.length === 2) raw = [raw[0], raw[1], raw[0], raw[1]];
+    else if (raw.length === 3) raw = [raw[0], raw[1], raw[2], raw[1]];
+    var norm = function (s) {
+      var m = /^(-?\d+(?:\.\d+)?)(px|%)?$/.exec(String(s).trim());
+      if (!m) return { val: 0, pct: false };
+      return { val: parseFloat(m[1]) || 0, pct: m[2] === '%' };
+    };
+    return [norm(raw[0]), norm(raw[1]), norm(raw[2]), norm(raw[3])];
+  }
+  // 按 rootMargin 4 部分展开/收缩 root rect（负 margin 收缩）。% 按 root 自身维度展开（compute 时 rootRect
+  // 已知）。返回新 rect（不改原）。零 margin（默认）→ 原样返回（零回归既有 IO 行为）。
+  function _io_applyRootMargin(rootRect, margins) {
+    var resolve = function (part, dim) { return part.pct ? (part.val / 100) * dim : part.val; };
+    var top = resolve(margins[0], rootRect.h);
+    var right = resolve(margins[1], rootRect.w);
+    var bottom = resolve(margins[2], rootRect.h);
+    var left = resolve(margins[3], rootRect.w);
+    return { x: rootRect.x - left, y: rootRect.y - top, w: rootRect.w + left + right, h: rootRect.h + top + bottom };
+  }
   globalThis.IntersectionObserver = function(callback, options) {
     this._callback = callback;
     var opts = options || {};
     this._thresholds = _io_normThresholds(opts.threshold);
     // root：null（默认 viewport）或元素（取其 __zwSelector 的 rect）。
     this._rootSel = (opts.root && opts.root.__zwSelector) ? opts.root.__zwSelector : null;
+    // R2966：rootMargin（CSS margin shorthand，px/%），compute 时展开/收缩 root rect。
+    this._rootMargins = _io_parseRootMargin(opts.rootMargin);
     this._targets = {};        // id (h:handle / s:sel) -> { proxy }
     this._lastRatio = {};      // id -> 上次派发的 ratio（undefined = 未派发过 → initial）
     this._scheduled = false;
@@ -482,6 +511,8 @@
     var rootRect = this._rootSel
       ? _io_rectFromSel(this._rootSel)
       : { x: 0, y: 0, w: globalThis.innerWidth | 0, h: globalThis.innerHeight | 0 };
+    // R2966：rootMargin 展开/收缩 root rect（% 按 root 自身维度）。零 margin（默认）原样。
+    rootRect = _io_applyRootMargin(rootRect, this._rootMargins);
     // path A：sel 空（createElement 元素）时用 handle，host 查 handle→selector map 解析。
     var targetRect = _io_rectFromSel(sel || t.proxy.__zwHandle);
     var inter = _io_intersect(targetRect, rootRect);

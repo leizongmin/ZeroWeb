@@ -112,6 +112,27 @@
 
 ## 最近完成的改进
 
+### P1a IntersectionObserver rootMargin 懒加载边距（CSS margin 简写 px/% 展开 root rect，本轮 R2966，~14,147 测试）
+
+R2965（el.animate 真关键帧）后续续 P1a defer Web API。`IntersectionObserver` 的 `rootMargin`（P1a Slice 2a R2817 起 IO 真实触发回调）此前**按 0 处理**（documented defer：`③ rootMargin 暂按 0 处理（defer 像素/% 展开）`）——懒加载/无限滚动库（lozad.js / lazyload / react-intersection-observer）的 pre-fetch 边距（`rootMargin: '200px'` 提前触发）失效，target 必须真进视口才回调。本切片补 **rootMargin px/% 展开 root rect**。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part01.js` | 新 `_io_parseRootMargin(str)`：CSS margin 简写（1→all / 2→top,bottom+left,right / 3→top + left,right + bottom / 4→top right bottom left）解析为 4 `{val, pct}` 部分；px 直取、% 标记、非法/其它单位→0（spec：rootMargin 仅 `<length>/<percentage>`）。新 `_io_applyRootMargin(rootRect, margins)`：按 4 部分展开/收缩 root rect（% 按 root 自身维度：top/bottom→h、left/right→w），返新 rect。构造器存 `this._rootMargins`；`_compute` 在算完 rootRect 后应用 margin（intersect 前），rootBounds 反映展开后 rect。更新限制注释（③ rootMargin 已支持）。 |
+| `crates/engine/src/js_dom_bridge_tests/part09.rs` | 新 `test_intersection_observer_root_margin_r2966`：mock `__zw_getBoundingClientRect` 返受控 target rect（视口左外侧 -15..-5），视口设 100×100，3 observer 同 observe、rootMargin 不同 → ① 无 rootMargin 不相交（ratio=0）；② px `'0px 0px 0px 20px'` 展开左视口后相交（ratio=1）；③ % `'20%'`（100×20%=20px）等价相交；④ rootBounds.left=-20 / width=120 反映展开。同时为 B-gen shim IO **首个行为测试**（此前仅 presence-check）。 |
+
+**为何 headless mock gBCR 测几何**：register_dom_callbacks（单测 harness）不注册 `__zw_getBoundingClientRect`（仅 renderer/browser rect_bridge 渲染后路径有）→ IO 在单测默认得零 rect（无布局）。本测试 register_callback 注册 mock gBCR 为唯一注册（受控返 "x,y,w,h" 串），使 IO 几何可复现断言（不依赖真布局引擎）。3 observer 共享同 target rect，仅 rootMargin 差异 → 干净对照。
+
+**为何 % 按 root 自身维度（非视口）**：spec §2.1 root intersection rectangle 的 rootMargin 百分比相对 **root 的尺寸**（null root = 视口；元素 root = 元素 rect）。compute 时 rootRect 已知（视口 innerWidth/Height 或元素 gBCR），按其 w/h 展开 % —— 对 null root 等价按视口，对元素 root 按元素，spec 正确。
+
+**为何零回归**：默认无 rootMargin → `_io_parseRootMargin(undefined)` 返 4 个 `{val:0, pct:false}` → `_io_applyRootMargin` 零偏移返原 rect（x-0, y-0, w+0+0, h+0+0）→ 既有 IO 行为逐字节不变。既有 IO presence-check 测试（dom_bridge_tests.rs）不受影响（仍含 globalThis.IntersectionObserver 串）。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14147 passed / 71 skipped / 0 failed**（engine +1 driving 测试 test_intersection_observer_root_margin_r2966，无回归）+ clippy `-D warnings` 零警告（workspace）+ fmt clean。
+
+**已知限制（follow-up）**：① rootMargin 未 clip 到视口（spec：null root 的 root intersection rectangle 不 clip；元素 root 应 clip 到 containing block，本实现 best-effort 不 clip，headless 低频）；② negative rootMargin 收缩 root（已支持，spec 合法，未单测）；③ 单测 mock gBCR 不覆盖持续 tick（scroll/resize 触发的后续通知仍 Slice 2b render-loop tick，rootMargin 仅影响每次 compute 的几何，tick 复用同路径）。
+
+**下一步**：续 P1a——① 其他 defer Web API（ReadableStream 响应流 / ClipboardItem 图片剪贴板）；② task source 优先级（事件循环边缘）；③ customElements upgrade（需 P1b RFC 审批）；④ 拆 js_dom_bridge.rs（3947，按职责重组）。
+
 ### P1a Web Animations API 真关键帧应用（el.animate 末态写入 inline style + commitStyles，本轮 R2965，~14,146 测试）
 
 R2964（Clipboard）后续续 P1a defer Web API。`element.animate()`（Web Animations API）此前 R2827 为 **permissive stub**：动画「瞬间完成」（playState running→finished + finished Promise + onfinish 触发），但**关键帧不真应用**——`el.animate([{opacity:0},{opacity:1}], {fill:'forwards'})` 后元素 inline style 仍空，动画终态不可见。modern 动画库（Framer Motion / GSAP / anime.js / Lottie）feature-detect + 链式通过，但视觉终态丢失（headless 截图不反映动画结果）。本切片补**末态关键帧写入 inline style**。
