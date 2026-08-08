@@ -76,6 +76,12 @@ pub struct ScriptResult {
 pub struct SandboxConfig {
     /// 堆内存上限（字节），0表示无限制。
     pub heap_limit: usize,
+    /// 初始堆大小（字节），0表示 V8 默认（按系统内存推导）。
+    ///
+    /// V8 isolate 创建时会按初始堆大小预提交内存；嵌入式场景（WebView 页面
+    /// 轻 JS）设小可显著降低常驻内存（RSS）。堆按需增长，上限仍由 `heap_limit`
+    /// 控制，JS 语义不变。仅 V8 后端使用，QuickJS 忽略。
+    pub initial_heap_size: usize,
     /// 脚本执行超时（毫秒），0表示无超时。
     pub timeout_ms: u64,
     /// 复用 V8 Context 以减少启动开销（默认 false）。
@@ -86,6 +92,25 @@ pub struct SandboxConfig {
     ///
     /// 注意：启用后多次 execute 之间的 JS 状态不再隔离（变量会保留）。
     pub persistent_context: bool,
+}
+
+/// 根据 [`SandboxConfig`] 计算 V8 堆限制参数 `(initial, max)`，`None` 表示
+/// 使用 V8 全部默认值（不调用 `heap_limits`）。
+///
+/// V8 要求 `initial <= max`（`SetHeapLimits` CHECK，违反即致命崩溃）。当
+/// `heap_limit = 0`（无上限）但设置了 `initial_heap_size` 时，max 取 4GB
+/// 显式上限——V8 默认堆上限量级，实际不会触发，仅满足 CHECK。
+#[cfg(feature = "v8")]
+pub(crate) fn v8_heap_limits(config: &SandboxConfig) -> Option<(usize, usize)> {
+    if config.initial_heap_size == 0 && config.heap_limit == 0 {
+        return None;
+    }
+    let max = if config.heap_limit > 0 {
+        config.heap_limit
+    } else {
+        4 * 1024 * 1024 * 1024
+    };
+    Some((config.initial_heap_size, max))
 }
 
 /// 脚本沙箱抽象 trait — `V8Sandbox` 和 `QuickJSSandbox` 都实现。

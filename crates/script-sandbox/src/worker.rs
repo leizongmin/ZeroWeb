@@ -256,8 +256,9 @@ fn worker_thread_fn(
 
     // 创建 Isolate + 持久化 Context
     let mut create_params = v8::Isolate::create_params();
-    if config.heap_limit > 0 {
-        create_params = create_params.heap_limits(0, config.heap_limit);
+    // 初始堆大小可配置（默认 0 = V8 按系统内存推导）。合法组合见 v8_heap_limits。
+    if let Some((initial, max)) = crate::v8_heap_limits(&config) {
+        create_params = create_params.heap_limits(initial, max);
     }
     let mut isolate = v8::Isolate::new(create_params);
 
@@ -489,6 +490,7 @@ mod tests {
             heap_limit: 16 * 1024 * 1024,
             timeout_ms: 5000,
             persistent_context: false,
+            ..Default::default()
         };
         let mut worker = WorkerRuntime::new("postMessage('ok');", config).unwrap();
 

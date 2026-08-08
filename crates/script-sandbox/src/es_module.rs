@@ -825,6 +825,7 @@ mod tests {
             heap_limit: 16 * 1024 * 1024,
             timeout_ms: 5000,
             persistent_context: false,
+            ..Default::default()
         };
         assert!(EsModuleSandbox::with_config(config).is_ok());
     }

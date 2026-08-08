@@ -180,25 +180,10 @@ impl WebView {
         pipeline.set_skip_indicators(true);
         let http_client = HttpClient::new();
         let external_script = config.external_script.clone();
-        let js_sandbox = if external_script.is_some() {
-            None
-        } else {
-            let js_config = zero_script_sandbox::SandboxConfig {
-                persistent_context: true,
-                ..Default::default()
-            };
-            #[cfg(feature = "v8")]
-            let sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
-                zero_script_sandbox::V8Sandbox::with_config(js_config)
-                    .expect("V8 sandbox initialization should succeed"),
-            );
-            #[cfg(feature = "quickjs")]
-            let sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
-                zero_script_sandbox::QuickJSSandbox::with_config(js_config)
-                    .expect("QuickJS sandbox initialization should succeed"),
-            );
-            Some(sandbox)
-        };
+        // 懒创建：js_sandbox 延后到首次实际执行脚本时初始化（见 ensure_sandbox）。
+        // 无脚本页面（多数 WebView 页面）不创建 V8 isolate，显著降低常驻内存
+        // （RSS ~0.2G/实例）；首次执行脚本时才有初始化成本，行为等价。
+        let js_sandbox = None;
         Self {
             config,
             pipeline,
@@ -1024,6 +1009,7 @@ impl WebView {
             return ext(script).map_err(WebViewError::Script);
         }
 
+        self.ensure_sandbox()?;
         match self.js_sandbox.as_mut().expect("js sandbox").execute(script) {
             Ok(result) => {
                 tracing::debug!("execute_script completed in {:.2}ms", result.execution_time_ms);
@@ -1031,6 +1017,42 @@ impl WebView {
             }
             Err(e) => Err(WebViewError::Script(format!("{e}"))),
         }
+    }
+
+    /// 惰性初始化进程内 JS 沙箱（V8/QuickJS isolate）。
+    ///
+    /// WebView 创建时不再无条件初始化沙箱（无脚本页面无需 V8 isolate）；
+    /// 首次实际执行脚本时（execute_script / run_page_scripts / dispatch_event）
+    /// 才创建。`external_script` 模式保持 None（与旧行为一致：无进程内沙箱）。
+    ///
+    /// https://html.spec.whatwg.org/#scripting — 页面无脚本时跳过脚本执行环境
+    /// 初始化是合规优化（脚本执行语义不变，仅延后环境创建时机）。
+    fn ensure_sandbox(&mut self) -> Result<(), WebViewError> {
+        if self.external_script.is_some() {
+            return Err(WebViewError::Script("no js sandbox".to_string()));
+        }
+        if self.js_sandbox.is_some() {
+            return Ok(());
+        }
+        let js_config = zero_script_sandbox::SandboxConfig {
+            persistent_context: true,
+            // 嵌入式页面多为轻 JS：初始堆限小（128MB），避免 V8 按系统内存
+            // 预提交大堆；堆按需增长，上限仍由 heap_limit（默认无限制）控制。
+            initial_heap_size: 128 * 1024 * 1024,
+            ..Default::default()
+        };
+        #[cfg(feature = "v8")]
+        let sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
+            zero_script_sandbox::V8Sandbox::with_config(js_config)
+                .map_err(|e| WebViewError::Script(format!("V8 sandbox init: {e}")))?,
+        );
+        #[cfg(feature = "quickjs")]
+        let sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
+            zero_script_sandbox::QuickJSSandbox::with_config(js_config)
+                .map_err(|e| WebViewError::Script(format!("QuickJS sandbox init: {e}")))?,
+        );
+        self.js_sandbox = Some(sandbox);
+        Ok(())
     }
 
     /// 执行带有 DOM API 环境的 JavaScript。
@@ -1068,6 +1090,7 @@ impl WebView {
         if scripts.is_empty() {
             return Ok(html);
         }
+        self.ensure_sandbox()?;
         let sandbox = self
             .js_sandbox
             .as_mut()
@@ -1120,6 +1143,7 @@ impl WebView {
     pub fn dispatch_event(&mut self, selector: &str, event_type: &str) -> Result<(), WebViewError> {
         self.run_page_scripts()?; // 确保监听器已注册
         let script = script_dispatch_dom_event(selector, event_type, None);
+        self.ensure_sandbox()?;
         let sandbox = self
             .js_sandbox
             .as_mut()
@@ -1643,6 +1667,7 @@ impl WebView {
             heap_limit: 0,
             timeout_ms: 0,
             persistent_context: false,
+            ..Default::default()
         };
         let worker = WorkerRuntime::new(script, config)
             .map_err(|e| WebViewError::Script(format!("Failed to create worker: {e}")))?;

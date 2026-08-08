@@ -69,6 +69,7 @@ fn bench_sandbox_with_config(c: &mut Criterion) {
                 heap_limit: 8 * 1024 * 1024,
                 timeout_ms: 5000,
                 persistent_context: false,
+                ..Default::default()
             };
             let mut sandbox = V8Sandbox::with_config(config).unwrap();
             sandbox.execute("42").unwrap()

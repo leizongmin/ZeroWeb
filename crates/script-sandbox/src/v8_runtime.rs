@@ -157,8 +157,10 @@ impl V8Sandbox {
         ensure_v8_initialized();
 
         let mut create_params = v8::Isolate::create_params();
-        if config.heap_limit > 0 {
-            create_params = create_params.heap_limits(0, config.heap_limit);
+        // 初始堆大小可配置（默认 0 = V8 按系统内存推导）；堆按需增长。上限与
+        // 初始堆的合法组合见 v8_heap_limits（V8 要求 initial <= max）。
+        if let Some((initial, max)) = crate::v8_heap_limits(&config) {
+            create_params = create_params.heap_limits(initial, max);
         }
 
         let isolate = v8::Isolate::new(create_params);
@@ -582,6 +584,7 @@ mod tests {
             heap_limit: 32 * 1024 * 1024, // 32MB
             timeout_ms: 5000,
             persistent_context: false,
+            ..Default::default()
         };
         let sandbox = V8Sandbox::with_config(config);
         assert!(sandbox.is_ok());
@@ -1105,6 +1108,7 @@ mod tests {
             heap_limit: 1024,
             timeout_ms: 100,
             persistent_context: false,
+            ..Default::default()
         };
         let cloned = config.clone();
         assert_eq!(cloned.heap_limit, 1024);
@@ -1117,6 +1121,7 @@ mod tests {
             heap_limit: 2048,
             timeout_ms: 200,
             persistent_context: false,
+            ..Default::default()
         };
         let debug = format!("{config:?}");
         assert!(debug.contains("2048"));
@@ -1386,6 +1391,7 @@ mod tests {
             heap_limit: 64 * 1024 * 1024, // 64MB
             timeout_ms: 10000,
             persistent_context: false,
+            ..Default::default()
         };
         let sandbox = V8Sandbox::with_config(custom_config);
         assert!(sandbox.is_ok(), "Custom config should create sandbox successfully");

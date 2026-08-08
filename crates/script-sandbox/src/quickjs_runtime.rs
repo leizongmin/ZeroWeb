@@ -360,6 +360,7 @@ mod tests {
             heap_limit: 1024 * 1024,
             timeout_ms: 5000,
             persistent_context: false,
+            ..Default::default()
         };
         let sandbox = QuickJSSandbox::with_config(config).unwrap();
         assert_eq!(sandbox.config().heap_limit, 1024 * 1024);
