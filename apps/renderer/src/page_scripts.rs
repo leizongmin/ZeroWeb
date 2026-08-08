@@ -4,11 +4,12 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    DomEventDetail, DomMutation, PageScript, apply_mutations_to_html, apply_mutations_to_html_with_handles,
-    enclosing_form_selector, extract_page_scripts, has_attribute, is_checkbox, is_radio, is_reset_button,
-    is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url, script_call_form_reset,
-    script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
-    script_report_error, script_text_delete, script_text_input, script_wrap_page_caught, toggle_radio_html,
+    DomEventDetail, DomMutation, PageScript, anchor_hash_target, apply_mutations_to_html,
+    apply_mutations_to_html_with_handles, enclosing_form_selector, extract_page_scripts, has_attribute, is_checkbox,
+    is_radio, is_reset_button, is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url,
+    script_call_form_reset, script_call_set_location_hash, script_dispatch_dom_event, script_dispatch_img_event,
+    script_dispatch_link_event, script_dispatch_script_event, script_report_error, script_text_delete,
+    script_text_input, script_wrap_page_caught, toggle_radio_html,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -364,6 +365,30 @@ pub fn apply_reset_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) -> 
         .clear();
     // 调 shim form.reset()（R3048）：reset 事件派发 + 控件恢复 default 经 proxy setter 记 mutation。
     let _ = ctx.js_worker.execute_script_direct(&script_call_form_reset(&form_sel));
+    let html_snap = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snap).is_some()
+}
+
+/// P1a 导航（R3053，闭合 R3052 限制③）：click 命中 hash 链接（`<a href="#sec">`）→ 调 shim
+/// `location.hash = hash`（R3006：更新 hash + 新 history entry + 异步派发 hashchange + 触 onhashchange）。
+/// SPA hash 路由核心交互——hash 链接点击驱动前端路由。返回 hashchange listener 是否改 DOM
+/// （hash 本身不改 DOM，但 SPA router listener 可能据 hash 切换视图）。无 hash 目标 → false。
+/// headless 无 viewport → 不滚动到锚（real browser 会滚到 `id=sec` 元素），仅 hash/hashchange。
+pub fn apply_set_hash_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    // gate：`<a href="#...">` 才设 hash（mirror apply_reset_on_click 防御性再校验 is_reset_button）。
+    let Some(hash) = anchor_hash_target(ctx.html, selector) else {
+        return false;
+    };
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    // 调 location.hash = hash（R3006 全语义：hash 更新 + history entry + hashchange 派发经 _defer microtask）。
+    let _ = ctx
+        .js_worker
+        .execute_script_direct(&script_call_set_location_hash(&hash));
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
 }
@@ -993,6 +1018,63 @@ mod tests {
             wait_for_global(&worker, "__rf", 500),
             "no",
             "非 reset 按钮 → 不派发 reset 事件（__rf 保持 'no'）"
+        );
+        worker.shutdown();
+    }
+
+    /// R3053：click 命中 hash 链接（`<a href="#sec">`）→ apply_set_hash_on_click 设 location.hash，
+    /// 派发 hashchange 到 window listener（SPA hash 路由核心交互）。非 hash 锚 → false 不派 hashchange。
+    #[test]
+    fn apply_set_hash_on_click_fires_hashchange_r3053() {
+        let mut worker = RendererJsWorker::spawn(141);
+        let html = "<html><body><a id='a' href='#sec'>l</a></body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        worker
+            .execute_script_direct("addEventListener('hashchange', function(e){ globalThis.__hc = e.newURL; });")
+            .unwrap();
+        let mut buf = html.to_string();
+        let _changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut buf,
+                url: "https://example.com/page",
+                js_worker: &worker,
+            };
+            apply_set_hash_on_click(&mut ctx, "#a")
+        };
+        // hash 链接 click → location.hash='#sec' → hashchange.newURL = 当前 url + '#sec'。
+        assert_eq!(
+            wait_for_global(&worker, "__hc", 1000),
+            "https://example.com/page#sec",
+            "hash 链接 click → location.hash 设值 + 派发 hashchange（newURL 含 #sec）"
+        );
+        // location.hash 反映新值。
+        assert_eq!(
+            worker.execute_script_direct("location.hash").unwrap_or_default(),
+            "#sec",
+            "location.hash 反映 '#sec'"
+        );
+
+        // 非 hash 锚（绝对 href）→ apply_set_hash_on_click 返回 false，不设 hash 不派 hashchange。
+        worker.set_dom_snapshot(
+            "<html><body><a id='u' href='https://x.com/'>l</a></body></html>",
+            "https://example.com/page",
+        );
+        worker.execute_script_direct("globalThis.__hc='none';").unwrap();
+        let mut buf2 = String::from("<html><body><a id='u' href='https://x.com/'>l</a></body></html>");
+        let changed2 = {
+            let mut ctx = PageScriptContext {
+                html: &mut buf2,
+                url: "https://example.com/page",
+                js_worker: &worker,
+            };
+            apply_set_hash_on_click(&mut ctx, "#u")
+        };
+        assert!(!changed2, "非 hash 锚（绝对 href）→ apply_set_hash_on_click 返回 false");
+        // __hc 保持 'none'（poll 超时返当前值 'none'，未派 hashchange）。
+        assert_eq!(
+            wait_for_global(&worker, "__hc", 300),
+            "none",
+            "非 hash 锚 → 不派发 hashchange（__hc 保持 'none'）"
         );
         worker.shutdown();
     }

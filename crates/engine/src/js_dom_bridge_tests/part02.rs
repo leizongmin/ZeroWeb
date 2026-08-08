@@ -1223,6 +1223,76 @@ fn test_script_call_form_reset_r3050() {
 }
 
 #[test]
+fn test_anchor_hash_target_r3053() {
+    // R3053：anchor_hash_target 解析 <a href="#..."> click 的 hash 目标（供 renderer click 路由
+    // 判定是否设 location.hash，闭合 R3052 限制③）。返回 Some(hash)（含前导 '#'）当 <a> 且 href 以 '#' 开头。
+    // ① 普通锚 #sec / # → Some（原样含 '#')。
+    assert_eq!(
+        anchor_hash_target("<html><body><a id='a' href='#sec'>l</a></body></html>", "#a"),
+        Some("#sec".to_string()),
+        "href='#sec' → Some('#sec')"
+    );
+    assert_eq!(
+        anchor_hash_target("<html><body><a id='e' href='#'>l</a></body></html>", "#e"),
+        Some("#".to_string()),
+        "href='#'（空锚）→ Some('#')"
+    );
+    // ② href 带空白：trim 后仍判 '#' 开头，返回 trim 后值（mirror anchor_click_target trim；
+    // shim _setLocationHash 会归一化，故去空白无副作用）。
+    assert_eq!(
+        anchor_hash_target("<html><body><a id='w' href='  #top  '>l</a></body></html>", "#w"),
+        Some("#top".to_string()),
+        "href 含空白 → trim 后 Some('#top')"
+    );
+
+    // ③ 非 hash href → None（绝对 / 相对 / 非导航 scheme）。
+    assert_eq!(
+        anchor_hash_target("<html><body><a id='u' href='https://x.com/'>l</a></body></html>", "#u"),
+        None,
+        "绝对 URL href → None"
+    );
+    assert_eq!(
+        anchor_hash_target("<html><body><a id='r' href='/p2'>l</a></body></html>", "#r"),
+        None,
+        "相对 /p2 href → None"
+    );
+    assert_eq!(
+        anchor_hash_target("<html><body><a id='j' href='javascript:void(0)'>l</a></body></html>", "#j"),
+        None,
+        "javascript: href → None"
+    );
+
+    // ④ 非 <a> / 无 href → None。
+    assert_eq!(
+        anchor_hash_target("<html><body><div id='d' href='#sec'>l</div></body></html>", "#d"),
+        None,
+        "非 <a> 元素 → None（即使 href='#sec'）"
+    );
+    assert_eq!(
+        anchor_hash_target("<html><body><a id='n'>l</a></body></html>", "#n"),
+        None,
+        "<a> 无 href → None"
+    );
+    assert_eq!(
+        anchor_hash_target("<html><body><a id='x' href=''>l</a></body></html>", "#x"),
+        None,
+        "<a> 空 href → None（不以 '#' 开头）"
+    );
+}
+
+#[test]
+fn test_script_call_set_location_hash_r3053() {
+    // R3053：script_call_set_location_hash 生成设 location.hash 的脚本。
+    // 调 shim location.hash = hash（R3006：更新 hash + history entry + 派 hashchange）。
+    let s = script_call_set_location_hash("#sec");
+    assert!(s.contains("location.hash='#sec'"), "脚本设 location.hash='#sec'\n{s}");
+    // hash 经 escape_js_string 安全嵌入（引号 / 反斜杠转义，不破坏 JS 串）。
+    let s2 = script_call_set_location_hash("#a'b\\c");
+    assert!(!s2.contains("'#a'b\\c'"), "hash 引号/反斜杠转义（不裸含原值）\n{s2}");
+    assert!(s2.contains("location.hash="), "转义后仍是 location.hash 赋值\n{s2}");
+}
+
+#[test]
 fn test_remove_attr_and_has_attribute() {
     // P1a checkbox：RemoveAttr 真正移除属性；has_attribute 判存在性。
     let html = "<html><body><input id='c' type='checkbox' checked></body></html>";

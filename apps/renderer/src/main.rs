@@ -543,6 +543,28 @@ impl RendererRuntime {
         Ok(())
     }
 
+    /// P1a 导航（R3053，闭合 R3052 限制③）：click 命中 hash 链接（`<a href="#sec">`）→
+    /// `location.hash = hash`（R3006：更新 hash + history entry + 派 hashchange）。SPA hash 路由核心交互。
+    /// 改 DOM（SPA router listener 切视图）则 rerender。headless 无 viewport → 不滚锚。
+    fn set_hash_on_click_at(&mut self, selector: &str) -> Result<(), String> {
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+            };
+            page_scripts::apply_set_hash_on_click(&mut ctx, selector)
+        };
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
     /// P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 'change' 事件；改 DOM 则 rerender。
     fn toggle_checkbox_at(&mut self, selector: &str) -> Result<(), String> {
         if !self.javascript_enabled {
@@ -1293,6 +1315,13 @@ impl RendererRuntime {
                         referrer: self.current_url.clone(),
                         navigation_epoch: self.navigation_epoch.wrapping_add(1),
                     });
+                }
+            } else if zero_engine::anchor_hash_target(&self.cached_html, &target).is_some() {
+                // R3053：anchor `<a href="#sec">` click → location.hash 更新 + hashchange（SPA hash 路由）。
+                // anchor_click_target 对 #hash 返 None（同文档锚不导航），故 hash 链接落到此分支。
+                // 仅 click 未 preventDefault 时设 hash（spec：preventDefault 阻止 hash 变更）。
+                if click_default_allowed {
+                    let _ = self.set_hash_on_click_at(&target);
                 }
             }
         }

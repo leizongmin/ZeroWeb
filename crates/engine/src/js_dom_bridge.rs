@@ -1320,6 +1320,23 @@ pub fn anchor_click_target(html: &str, selector: &str, base_url: &str) -> Option
     Some(crate::resolve_document_url(base_url, href))
 }
 
+/// P1a 导航：解析 anchor `<a href="#...">` click 的 hash 目标（R3053，闭合 R3052 限制③）。供 renderer click 路由
+/// 判定「点击 hash 链接是否更新 location.hash」。返回 `Some(hash)`（含前导 `#`，如 `#sec` / `#`）当元素为 `<a>` 且
+/// href 以 `#` 开头；否则 `None`。renderer 经 `script_call_set_location_hash` 调 shim `location.hash = hash`
+///（R3006：更新 hash + history entry + 派 hashchange）。headless 无 viewport → 不滚动到锚，仅 hash/hashchange。
+pub fn anchor_hash_target(html: &str, selector: &str) -> Option<String> {
+    if !query_tag_from_html(html, selector).eq_ignore_ascii_case("a") {
+        return None;
+    }
+    let href = query_attr_from_html(html, selector, "href");
+    let href = href.trim();
+    if href.starts_with('#') {
+        Some(href.to_string())
+    } else {
+        None
+    }
+}
+
 /// P1a form control：判定元素是否有某属性（boolean 属性如 `checked`/`disabled` 靠存在性，
 /// `getAttribute` 返空串无法区分存在与空值，故供 `__zw_has_attr` / checkbox toggle）。
 pub fn has_attribute(html: &str, selector: &str, name: &str) -> bool {

@@ -58,6 +58,14 @@ pub fn script_call_form_reset(form_selector: &str) -> String {
     format!("(function(){{var f=document.querySelector('{esc}');if(f&&typeof f.reset==='function')f.reset();}})()")
 }
 
+/// 构造「设置 location.hash」的 shim 脚本（P1a 导航，R3053）。宿主在 `<a href="#...">` 被 click 时执行：
+/// 调 shim `location.hash = hash`（R3006：更新 hash + history entry + 派 hashchange 事件 + 触 onhashchange）。
+/// headless 无 viewport → 不滚动到锚。hash 经 `escape_js_string` 安全嵌入。
+pub fn script_call_set_location_hash(hash: &str) -> String {
+    let esc = escape_js_string(hash);
+    format!("location.hash='{esc}';")
+}
+
 /// 构造「向焦点 input/textarea 注入一个文本字符」的 shim 脚本（P1a form input）。
 /// 宿主在 keydown 可打印字符时执行：shim `__zw_text_input(sel, ch)` 把字符 append 到 value
 /// （`.value` set 更新缓存 + 记 value 属性 mutation）并派发 'input' 事件。非 input/textarea → no-op。
