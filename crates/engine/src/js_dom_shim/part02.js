@@ -1586,9 +1586,25 @@
     },
   };
 
+  // R3006/R3008：location setter 共享导航应用——push 新 history entry（navigation 语义，R3005 location 读之反映）
+  // + hash 段变化时异步派 hashchange。供 _setLocationHash / _setLocationPart 复用（DRY）。
+  function _pushHistNav(newHref, oldHref) {
+    _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
+    _hist_entries.push({ state: null, url: newHref });
+    _hist_cursor = _hist_entries.length - 1;
+    if (String(oldHref).split('#')[1] !== String(newHref).split('#')[1]) {
+      var oldU = oldHref, newU = newHref;
+      _defer(function () {
+        var ev = new HashChangeEvent('hashchange', { oldURL: oldU, newURL: newU });
+        ev.target = globalThis;
+        _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
+      });
+    }
+  }
+
   // R3006：`location.hash = v` setter——更新 hash + 新 history entry + 异步派发 hashchange（SPA hash 路由核心，
   // 如 older react-router hash mode）。spec：v 无 '#' 前缀自动补；hash 未变 no-op（不派 hashchange）。
-  // newHref = 当前 href 去 hash 段 + 新 hash（hash 总在 URL 末尾）。经 history entry 存新 href（R3005 location 读之反映）。
+  // newHref = 当前 href 去 hash 段 + 新 hash（hash 总在 URL 末尾）。
   function _setLocationHash(newHash) {
     var raw = String(newHash);
     var h = raw.charAt(0) === '#' ? raw : '#' + raw;
@@ -1596,15 +1612,20 @@
     var oldHref = globalThis.location.href;
     var newHref = oldHref.split('#')[0] + h;
     if (newHref === oldHref) return; // hash 未变 → no-op（spec：不派 hashchange）
-    _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
-    _hist_entries.push({ state: null, url: newHref });
-    _hist_cursor = _hist_entries.length - 1;
-    var oldU = oldHref, newU = newHref;
-    _defer(function () {
-      var ev = new HashChangeEvent('hashchange', { oldURL: oldU, newURL: newU });
-      ev.target = globalThis;
-      _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
-    });
+    _pushHistNav(newHref, oldHref);
+  }
+
+  // R3008：`location.href/pathname/search = v` setter——经 URL part setter 计算新 href（spec-correct 组件替换，
+  // 保留其它组件），push history entry（navigation）+ hash 变化派 hashchange。headless 无真文档重载（与 pushState
+  // 同 in-memory 近似）；解析失败 / 未变 → no-op。protocol/host 等其它 setter defer（少用 + 涉 origin 变更导航）。
+  function _setLocationPart(part, value) {
+    var oldHref = globalThis.location.href;
+    var newHref = null;
+    if (typeof URL === 'function' && typeof __zw_set_url_part === 'function') {
+      try { var u = new URL(oldHref); u[part] = String(value); newHref = u.href; } catch (_e) {}
+    }
+    if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
+    _pushHistNav(newHref, oldHref);
   }
 
   globalThis.Worker = function() {

@@ -124,3 +124,64 @@ fn test_back_forward_hashchange_r3007() {
     assert_eq!(sandbox.execute("String(globalThis.__hcNoHash)").unwrap().value, "null", "跨非 hash 变更的 back 不派 hashchange（两 entry 均无 hash）");
 }
 
+#[test]
+fn test_location_part_setters_r3008() {
+    // R3008：location.pathname/search/href 旧无 setter（静默 no-op，仅 hash 有 setter per R3006）→ URL 变更路由
+    // / 测试场景失效。补 setter：经 URL part setter 计算新 href，push history entry（navigation 语义，R3005 location 读之反映），
+    // hash 变化时派 hashchange（与 hash setter / back-forward 对称）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/old?q=1".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // location.pathname = '/new'：pathname 替换，search/hash 保留。
+    sandbox
+        .execute(
+            "globalThis.__p0 = location.pathname;\
+             location.pathname = '/new';\
+             globalThis.__p1 = location.pathname; globalThis.__href1 = location.href; globalThis.__s1 = location.search;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__p0").unwrap().value, "/old", "初始 pathname=/old");
+    assert_eq!(sandbox.execute("globalThis.__p1").unwrap().value, "/new", "location.pathname='/new' 后 pathname=/new");
+    assert_eq!(sandbox.execute("globalThis.__s1").unwrap().value, "?q=1", "pathname 替换保留 search=?q=1");
+    assert_eq!(sandbox.execute("globalThis.__href1").unwrap().value, "https://example.com/new?q=1", "href 反映新 pathname");
+
+    // location.search = '?q=2'：search 替换。
+    sandbox.execute("location.search = '?q=2'; globalThis.__s2 = location.search; globalThis.__href2 = location.href;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__s2").unwrap().value, "?q=2", "location.search='?q=2' 后 search=?q=2");
+    assert_eq!(sandbox.execute("globalThis.__href2").unwrap().value, "https://example.com/new?q=2", "href 反映新 search");
+
+    // location.href = 绝对 URL（含 hash）：整体替换 + hash 变化派 hashchange。
+    sandbox
+        .execute(
+            "globalThis.__hc = null;\
+             addEventListener('hashchange', function(e){ globalThis.__hc = e.newURL; });\
+             location.href = 'https://example.com/full#h';",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "globalThis.__href3 = location.href; globalThis.__hash3 = location.hash;\
+             globalThis.__hc3 = globalThis.__hc;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__href3").unwrap().value, "https://example.com/full#h", "location.href 绝对 URL 整体替换");
+    assert_eq!(sandbox.execute("globalThis.__hash3").unwrap().value, "#h", "hash='#h'");
+    assert_eq!(sandbox.execute("globalThis.__hc3").unwrap().value, "https://example.com/full#h", "href 引入 hash 变化派 hashchange.newURL");
+
+    // history.length 反映导航 entry 累积（初始 1 + pathname + search + href = 4）。
+    sandbox.execute("globalThis.__len = history.length;").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__len)").unwrap().value, "4", "location setter 推 history entry：length=4");
+
+    // 设同值 no-op（不增 entry）。
+    sandbox.execute("location.href = 'https://example.com/full#h'; globalThis.__len2 = history.length;").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__len2)").unwrap().value, "4", "设同 href no-op（不增 entry）");
+}
+
+

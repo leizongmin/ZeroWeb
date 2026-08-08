@@ -978,11 +978,16 @@
     }
     return {
       get href() { return _parseLocation(href()).href; },
+      // R3008：location.href = v 经 _setLocationPart 整体替换 URL（navigation，_setLocationPart 在 part02 定义，
+      // 同 IIFE 提升，setter 运行时就绪，typeof guard 防御）。
+      set href(v) { if (typeof _setLocationPart === 'function') _setLocationPart('href', v); },
       get protocol() { return _parseLocation(href()).protocol; },
       get host() { return _parseLocation(href()).host; },
       get hostname() { return _parseLocation(href()).hostname; },
       get pathname() { return _parseLocation(href()).pathname; },
+      set pathname(v) { if (typeof _setLocationPart === 'function') _setLocationPart('pathname', v); },
       get search() { return _parseLocation(href()).search; },
+      set search(v) { if (typeof _setLocationPart === 'function') _setLocationPart('search', v); },
       get hash() { return _parseLocation(href()).hash; },
       // R3006：location.hash = v 更新 hash + history entry + 派发 hashchange（_setLocationHash 在 part02 定义，
       // 同 IIFE 提升，setter 运行时就绪）。SPA hash 路由核心。
