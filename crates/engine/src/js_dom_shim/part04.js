@@ -1125,6 +1125,23 @@
       set: function(_t, prop, value) {
         var p = String(prop);
         var moAttr = null;
+        // R3034：text/comment 节点 `.data`/`.nodeValue` IDL setter（CharacterData）。须先于末尾 generic fallthrough
+        //（part05.js：'data' 落入 else 被误当内容属性 → `__zw_set_attr_handle(handle,'data')` + attributes MO 记录，
+        // 类型错且文本内容未持久化——读回经 `__zw_get_text_handle` 返旧值，setter 失效）。handle-based 文本/注释
+        // 节点 data/nodeValue= 经 `__zw_set_text_handle` 持久化 + emit characterData（闭合 R3027/R3028 已知限制：
+        // handle-based 文本节点 characterData emission 未接）。target=文本节点 handle；ancestor subtree 冒泡需 sel
+        // 父链，handle-based 无 sel → 不冒泡（同 R3026 detached 限制，documented）。
+        var _isText = handle && _textHandles[handle];
+        var _isComment = handle && _commentHandles[handle];
+        if ((_isText || _isComment) && (p === 'data' || p === 'nodeValue')) {
+          if (handle) {
+            var _tdMoId = _mo_id(handle, sel);
+            var _tdMoOld = _mo_any_wants_char_old(_tdMoId) ? _mo_read_text(sel, handle) : null;
+            __zw_set_text_handle(handle, String(value == null ? '' : value));
+            _mo_notify(sel, handle, { type: 'characterData', oldValue: _tdMoOld });
+          }
+          return true;
+        }
         // R2933 element 级 IDL on-event handler（onclick/oninput/onkeydown/onchange/...）。须先于末尾 fallthrough
         //（否则 fn 被当字符串属性写入 onclick="function..."）。`on`+小写字母 = handler（generic，覆盖 onclick/
         // oninput/onload/onsubmit/onpointer* 等所有当前/未来事件，无白名单）。setter 路由到 per-element listener

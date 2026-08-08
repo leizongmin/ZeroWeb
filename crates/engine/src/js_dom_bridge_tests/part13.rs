@@ -675,3 +675,100 @@ fn test_htmlcollection_nodelist_item_nameditem_r3033() {
     assert_eq!(sandbox.execute("String(globalThis.__clen)").unwrap().value, "2", "元素子树 getElementsByTagName length=2");
     assert_eq!(sandbox.execute("globalThis.__citem").unwrap().value, "p1", "元素子树 item(0).id=p1");
 }
+
+#[test]
+fn test_text_node_data_setter_persist_char_r3034() {
+    // R3034：text/comment 节点 .data/.nodeValue IDL setter。旧实现落入 set trap 末尾 generic fallthrough
+    // → 误设 'data' 内容属性 + attributes MO 记录（类型错），且文本内容未持久化（读回返旧值）。本切片修。
+    // ① persistence：t.data='bye' → 读回 'bye'（旧 bug 读回 'hi'）；② nodeValue setter 同样持久化；
+    // ③ characterData emission：observe(t,{characterData}) + t.data= → 1 characterData 记录（旧发 attributes）；
+    // ④ comment 节点 data setter 持久化。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='c'>old</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① ② data/nodeValue setter 持久化（旧 bug：读回返旧值）。
+    sandbox
+        .execute(
+            "var c = document.getElementById('c');\
+             var t = document.createTextNode('hi');\
+             c.appendChild(t);\
+             t.data = 'bye';\
+             globalThis.__d1 = t.data;\
+             globalThis.__nv = t.nodeValue;\
+             t.nodeValue = 'again';\
+             globalThis.__d2 = t.data;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__d1").unwrap().value, "bye", "t.data='bye' 持久化（旧 bug 读回 'hi'）");
+    assert_eq!(sandbox.execute("globalThis.__nv").unwrap().value, "bye", "nodeValue 反映 data 设置");
+    assert_eq!(sandbox.execute("globalThis.__d2").unwrap().value, "again", "t.nodeValue='again' 持久化（与 data 等价）");
+
+    // ③ characterData emission：observe(t,{characterData}) + t.data= → 1 characterData 记录（旧发 attributes）。
+    sandbox
+        .execute(
+            "var mo = new MutationObserver(function(){});\
+             mo.observe(t, { characterData: true });\
+             t.data = 'final';\
+             globalThis.__r = mo.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r.length)").unwrap().value,
+        "1",
+        "observe(t,{{characterData}}) + t.data= → 1 记录"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r[0].type").unwrap().value,
+        "characterData",
+        "记录 type=characterData（旧 bug 发 attributes）"
+    );
+
+    // ④ comment 节点 data setter 持久化（同 text 节点路径）。
+    sandbox
+        .execute(
+            "var cm = document.createComment('c');\
+             c.appendChild(cm);\
+             cm.data = 'changed';\
+             globalThis.__cm = cm.data;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cm").unwrap().value,
+        "changed",
+        "comment.data='changed' 持久化（同 text 节点路径）"
+    );
+
+    // ⑤ data setter 不再误发 attributes 记录（旧 generic fallthrough 发 attributes）。
+    sandbox
+        .execute(
+            "var mo2 = new MutationObserver(function(){});\
+             mo2.observe(t, { attributes: true, characterData: true });\
+             t.data = 'noattr';\
+             globalThis.__r2 = mo2.takeRecords();",
+        )
+        .unwrap();
+    // 只应有 characterData 记录，无 attributes 记录（旧 bug：'data' 被当属性发 attributes）。
+    let r2_types = sandbox
+        .execute(
+            "var ts = []; for (var i = 0; i < globalThis.__r2.length; i++) ts.push(globalThis.__r2[i].type); String(ts);",
+        )
+        .unwrap()
+        .value;
+    assert!(
+        !r2_types.contains("attributes"),
+        "data setter 不发 attributes 记录（旧 bug 发 attributes，got {r2_types:?}）"
+    );
+    assert!(
+        r2_types.contains("characterData"),
+        "data setter 发 characterData 记录（got {r2_types:?}）"
+    );
+}
