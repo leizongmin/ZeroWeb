@@ -730,32 +730,35 @@
     },
     querySelectorAll: function(sel) {
       var all = __zw_query_all(sel);
-      if (!all) return [];
-      return all.split('|').filter(Boolean).map(_wrapSelector);
+      if (!all) return _zwMakeCollection([], false);
+      return _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), false);
     },
     getElementsByClassName: function(cls) {
       // R3019：honor `this` for cross-document use（DOMPurify 等库 getElementsByClassName.call(parsedDoc, cls)
       // 须查 parsedDoc 而非页面 document）。this === 页面 document 时走页面 DOM；否则委托 this.querySelectorAll。
+      // R3033：返 HTMLCollection（item + namedItem），包 _zwMakeCollection(arr, true)。
       if (this && this !== globalThis.document && typeof this.querySelectorAll === 'function') {
-        return this.querySelectorAll('.' + cls);
+        return _zwMakeCollection(this.querySelectorAll('.' + cls), true);
       }
-      return globalThis.document.querySelectorAll('.' + cls);
+      return _zwMakeCollection(globalThis.document.querySelectorAll('.' + cls), true);
     },
     getElementsByTagName: function(tag) {
       // R3019：honor `this` for cross-document use（DOMPurify _initDocument 经 getElementsByTagName.call(doc,'body')[0]
       // 取 parsed doc 的 body——旧实现恒查页面 document 致 DOMPurify 清洗空页面 body 返 ""）。
+      // R3033：返 HTMLCollection（item + namedItem），包 _zwMakeCollection(arr, true)。
       if (this && this !== globalThis.document && typeof this.querySelectorAll === 'function') {
-        return this.querySelectorAll(String(tag));
+        return _zwMakeCollection(this.querySelectorAll(String(tag)), true);
       }
-      return globalThis.document.querySelectorAll(tag);
+      return _zwMakeCollection(globalThis.document.querySelectorAll(tag), true);
     },
     // `document.getElementsByName(name)`（R2980）——按 name 属性查全文档（表单字段 / a[name] 锚点 /
     // meta[name] 高频，如 `document.getElementsByName('csrf-token')`）。此前全缺 → ReferenceError
     // 中断含此调用的脚本。spec 返 live NodeList；headless 近似为静态数组（同 getElementsByTagName）。
     // 委托 querySelectorAll 经 `[name="…"]` 属性选择器——name 值含 `"` / `\` 时转义保证选择器合法。
+    // R3033：返 NodeList（item），包 _zwMakeCollection(arr, false)。
     getElementsByName: function(name) {
       var v = String(name).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-      return globalThis.document.querySelectorAll('[name="' + v + '"]');
+      return _zwMakeCollection(globalThis.document.querySelectorAll('[name="' + v + '"]'), false);
     },
     // `document.evaluate(expr, ctx, resolver, type, result)`（R2981）——XPath 1.0 实用子集求值。
     // 见 _xpathParsePath / _xpathRun 子集说明。返 XPathResult（snapshot/iterator/singleNode/scalar）。

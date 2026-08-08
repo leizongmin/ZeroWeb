@@ -571,3 +571,107 @@ fn test_classlist_domtokenlist_full_r3032() {
     assert_eq!(sandbox.execute("String(globalThis.__e1)").unwrap().value, "true", "add('') 抛（spec 空串 token）");
     assert_eq!(sandbox.execute("String(globalThis.__e2)").unwrap().value, "true", "add('has space') 抛（spec 含空白 token）");
 }
+
+#[test]
+fn test_htmlcollection_nodelist_item_nameditem_r3033() {
+    // R3033：HTMLCollection/NodeList 集合 API。getElementsBy*/querySelectorAll/getElementsByName 旧返纯数组，
+    // 缺 spec 的 .item(i)（全部缺）+ HTMLCollection 的 .namedItem(name)（getElementsBy* 缺）。本切片补全。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='c'><p id='p1' name='para'>a</p><p id='p2'>b</p><span class='x'>s</span></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① getElementsByTagName('p') → HTMLCollection：length + item + indexed + namedItem(id) + namedItem(name)。
+    sandbox
+        .execute(
+            "var ps = document.getElementsByTagName('p');\
+             globalThis.__len = ps.length;\
+             globalThis.__item0 = ps.item(0).id;\
+             globalThis.__item1 = ps.item(1).id;\
+             globalThis.__item5 = String(ps.item(5));\
+             globalThis.__idx0 = ps[0].id;\
+             globalThis.__ni_id = ps.namedItem('p1').id;\
+             globalThis.__ni_name = ps.namedItem('para').id;\
+             globalThis.__ni_none = String(ps.namedItem('nope'));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__len)").unwrap().value, "2", "getElementsByTagName length=2");
+    assert_eq!(sandbox.execute("globalThis.__item0").unwrap().value, "p1", "item(0).id=p1");
+    assert_eq!(sandbox.execute("globalThis.__item1").unwrap().value, "p2", "item(1).id=p2");
+    assert_eq!(sandbox.execute("globalThis.__item5").unwrap().value, "null", "item(越界)=null");
+    assert_eq!(sandbox.execute("globalThis.__idx0").unwrap().value, "p1", "indexed [0].id=p1（数组访问仍工作）");
+    assert_eq!(sandbox.execute("globalThis.__ni_id").unwrap().value, "p1", "namedItem('p1') 按 id 匹配");
+    assert_eq!(sandbox.execute("globalThis.__ni_name").unwrap().value, "p1", "namedItem('para') 按 name 匹配");
+    assert_eq!(sandbox.execute("globalThis.__ni_none").unwrap().value, "null", "namedItem(不匹配)=null");
+
+    // ② forEach 仍工作（数组原生，未被 item/namedItem 破坏）+ for...in 不泄漏 item/namedItem（非 enumerable）。
+    sandbox
+        .execute(
+            "globalThis.__fe = []; ps.forEach(function(el){ globalThis.__fe.push(el.id); });\
+             globalThis.__feJ = String(globalThis.__fe);\
+             var keys = []; for (var k in ps) keys.push(k); globalThis.__inKeys = String(keys);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__feJ").unwrap().value, "p1,p2", "forEach 迭代仍工作（p1,p2）");
+    assert_eq!(
+        sandbox.execute("globalThis.__inKeys").unwrap().value,
+        "0,1",
+        "for...in 仅 0,1（item/namedItem 非 enumerable 不泄漏）"
+    );
+
+    // ③ getElementsByClassName('x') → HTMLCollection：item + namedItem。
+    sandbox
+        .execute(
+            "var xs = document.getElementsByClassName('x');\
+             globalThis.__xlen = xs.length;\
+             globalThis.__xtag = xs.item(0).tagName;\
+             globalThis.__xhas = (typeof xs.namedItem === 'function');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__xlen)").unwrap().value, "1", "getElementsByClassName length=1");
+    assert_eq!(sandbox.execute("globalThis.__xtag").unwrap().value, "SPAN", "getElementsByClassName item(0).tagName=SPAN");
+    assert_eq!(sandbox.execute("String(globalThis.__xhas)").unwrap().value, "true", "HTMLCollection 有 namedItem 方法");
+
+    // ④ querySelectorAll('p') → NodeList：有 item，无 namedItem（spec NodeList 无 namedItem）。
+    sandbox
+        .execute(
+            "var qs = document.querySelectorAll('p');\
+             globalThis.__qitem = qs.item(0).id;\
+             globalThis.__qhasItem = (typeof qs.item === 'function');\
+             globalThis.__qhasNamed = (typeof qs.namedItem === 'function');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__qitem").unwrap().value, "p1", "querySelectorAll item(0).id=p1");
+    assert_eq!(sandbox.execute("String(globalThis.__qhasItem)").unwrap().value, "true", "NodeList 有 item 方法");
+    assert_eq!(sandbox.execute("String(globalThis.__qhasNamed)").unwrap().value, "false", "NodeList 无 namedItem（spec）");
+
+    // ⑤ getElementsByName('para') → NodeList：item。
+    sandbox
+        .execute(
+            "var ns = document.getElementsByName('para');\
+             globalThis.__nlen = ns.length;\
+             globalThis.__nitem = ns.item(0).id;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__nlen)").unwrap().value, "1", "getElementsByName length=1");
+    assert_eq!(sandbox.execute("globalThis.__nitem").unwrap().value, "p1", "getElementsByName item(0).id=p1");
+
+    // ⑥ 元素子树作用域：getElementById('c').getElementsByTagName('p') → HTMLCollection length=2 + item。
+    sandbox
+        .execute(
+            "var cps = document.getElementById('c').getElementsByTagName('p');\
+             globalThis.__clen = cps.length;\
+             globalThis.__citem = cps.item(0).id;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__clen)").unwrap().value, "2", "元素子树 getElementsByTagName length=2");
+    assert_eq!(sandbox.execute("globalThis.__citem").unwrap().value, "p1", "元素子树 item(0).id=p1");
+}

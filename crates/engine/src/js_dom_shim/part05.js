@@ -747,6 +747,39 @@
     } catch (_e) { return []; }
   }
 
+  // R3033：把元素数组包成 spec 集合——补 `.item(i)`（HTMLCollection/NodeList 共有），`htmlCollection=true`
+  // 时再补 `.namedItem(name)`（id 或 name 首匹配，HTMLCollection 专有）。既有数组 length/indexed/forEach/
+  // entries-keys-values/Symbol.iterator 天然具备（不破坏）；item/namedItem 用 defineProperty 设为非 enumerable，
+  // 不污染 `for...in`（real browser 这些方法在原型链上，for...in 不可见）。`getElementsByTagName`/
+  // `getElementsByClassName` 返 HTMLCollection（item + namedItem）；`querySelectorAll`/`getElementsByName`
+  // 返 NodeList（仅 item）。live 语义保持静态快照近似（documented，headless 模型一致）。
+  function _zwMakeCollection(arr, htmlCollection) {
+    var a = arr || [];
+    Object.defineProperty(a, 'item', {
+      value: function (i) { i = i | 0; return i >= 0 && i < a.length ? a[i] : null; },
+      enumerable: false, configurable: true, writable: true,
+    });
+    if (htmlCollection) {
+      Object.defineProperty(a, 'namedItem', {
+        value: function (name) {
+          var n = String(name);
+          for (var k = 0; k < a.length; k++) {
+            var el = a[k];
+            if (!el) continue;
+            // id/name 反射：优先 getAttribute（可靠），回落 .id/.name 反射字段。
+            var id = (typeof el.getAttribute === 'function') ? (el.getAttribute('id') || '') : (el.id || '');
+            if (id === n) return el;
+            var nm = (typeof el.getAttribute === 'function') ? (el.getAttribute('name') || '') : (el.name || '');
+            if (nm === n) return el;
+          }
+          return null;
+        },
+        enumerable: false, configurable: true, writable: true,
+      });
+    }
+    return a;
+  }
+
   // `prepend`/`before`/`after` 共用：variadic 节点/字符串按 position 经 insertAdjacent*
   // 回调插入。仅 sel-based（已挂载）目标；handle-only（detached）无操作（同 insertAdjacent 家族）。
   // `reverseOrder`：afterbegin（prepend）/afterend（after）需反序插入以保持「参数序 == DOM 序」

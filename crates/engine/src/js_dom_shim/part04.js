@@ -977,16 +977,17 @@
         }
         if (prop === 'querySelectorAll') {
           // 元素**子树**作用域（spec：仅后代）。同 querySelector：sel-based → host；handle-based → R2928 registry。
+          // R3033：返 NodeList（item），包 _zwMakeCollection(arr, false)。
           return function(q) {
             if (sel && typeof __zw_query_all_sub === 'function') {
               try {
                 var all = __zw_query_all_sub(sel, String(q));
-                if (all) return all.split('|').filter(Boolean).map(_wrapSelector);
+                if (all) return _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), false);
               } catch (_e) {}
-              return [];
+              return _zwMakeCollection([], false);
             }
-            if (handle) return _handleQueryAll(handle, q);
-            return [];
+            if (handle) return _zwMakeCollection(_handleQueryAll(handle, q), false);
+            return _zwMakeCollection([], false);
           };
         }
         // `el.getElementsByTagName(tag)` / `el.getElementsByClassName(cls)`（R2980）——元素**子树**作用域
@@ -996,34 +997,35 @@
         // `'*'`→全后代；className 空格分隔多类→`.a.b` 全交集（spec 须同时含所有类）。sel-based → host
         // `__zw_query_all_sub`；`'*'` host 不支持 → 客户端 `_descendantElements` 递归下降；handle-based
         //（createElement/shadow/fragment，无 sel）→ R2928 JS 端 registry 子树搜索（原生支持 `*`）。
+        // R3033：返 HTMLCollection（item + namedItem），包 _zwMakeCollection(arr, true)。
         if (prop === 'getElementsByTagName' || prop === 'getElementsByClassName') {
           return function(arg) {
             var q;
             if (prop === 'getElementsByTagName') {
               q = String(arg);
               // spec：空 tagName → 空集合。
-              if (q === '') return [];
+              if (q === '') return _zwMakeCollection([], true);
               // host `__zw_query_all_sub` 不支持通用选择器 `*` → 客户端递归下降收全后代。
               if (q === '*') {
-                if (sel) return _descendantElements(sel);
-                if (handle) return _handleQueryAll(handle, '*');
-                return [];
+                if (sel) return _zwMakeCollection(_descendantElements(sel), true);
+                if (handle) return _zwMakeCollection(_handleQueryAll(handle, '*'), true);
+                return _zwMakeCollection([], true);
               }
             } else {
               // getElementsByClassName：空白分隔多类名 → 须同时含全部 → '.a.b'。
               var parts = String(arg).trim().split(/\s+/).filter(Boolean);
-              if (parts.length === 0) return [];
+              if (parts.length === 0) return _zwMakeCollection([], true);
               q = '.' + parts.join('.');
             }
             if (sel && typeof __zw_query_all_sub === 'function') {
               try {
                 var all = __zw_query_all_sub(sel, q);
-                if (all) return all.split('|').filter(Boolean).map(_wrapSelector);
+                if (all) return _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), true);
               } catch (_e) {}
-              return [];
+              return _zwMakeCollection([], true);
             }
-            if (handle) return _handleQueryAll(handle, q);
-            return [];
+            if (handle) return _zwMakeCollection(_handleQueryAll(handle, q), true);
+            return _zwMakeCollection([], true);
           };
         }
         // `form.elements`（HTMLFormControlsCollection，R2829）——表单控件集合（jQuery serialize /
