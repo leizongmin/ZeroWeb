@@ -236,7 +236,8 @@ fi
 # 测量后负载校验（2026-08-08：共享机器上另一条流的 WPT 全量可能中途叠加——
 # 报告标记 suspect=true 供 perf-gate.sh 提示「结果不可信」，不参与收紧）
 SUSPECT=false
-if [ "$QUICK_MODE" != "1" ]; then
+# CI runner 无另一条流干扰——suspect 校验同样跳过（与负载守卫一致，2026-08-08）
+if [ "$QUICK_MODE" != "1" ] && [ "${GITHUB_ACTIONS:-}" != "true" ]; then
     LOAD1_AFTER=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null | cut -d. -f1 || echo 0)
     if [ -n "$LOAD1_AFTER" ] && [ "$LOAD1_AFTER" -gt "$BUSY_THRESHOLD" ]; then
         SUSPECT=true
