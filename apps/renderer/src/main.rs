@@ -1252,9 +1252,13 @@ impl RendererRuntime {
             MouseEventType::Click => "click",
             MouseEventType::DblClick => "dblclick",
         };
-        if event_type != "mousemove" {
-            self.dispatch_dom_at(None, params.x, params.y, event_type, None);
-        }
+        // R3052：capture click 的 default_allowed（preventDefault 未调用）供 anchor 导航判定。
+        let click_default_allowed = if event_type != "mousemove" {
+            self.dispatch_dom_at(None, params.x, params.y, event_type, None)
+                .default_allowed
+        } else {
+            true
+        };
         // P1a form submit：click 命中 submit button → 提交 enclosing form（submit 事件）。
         // P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 change。
         // dispatch_dom_at 已据命中点解析 event_target。
@@ -1275,6 +1279,21 @@ impl RendererRuntime {
                 let _ = self.toggle_radio_at(&target);
             } else if zero_engine::is_reset_button(&self.cached_html, &target) {
                 let _ = self.reset_form_on_click_at(&target);
+            } else if let Some(url) = zero_engine::anchor_click_target(
+                &self.cached_html,
+                &target,
+                self.current_url.as_deref().unwrap_or("about:blank"),
+            ) {
+                // R3052：anchor `<a href>` click → 导航（仅 click 未 preventDefault）。target 非 submit/
+                // checkbox/radio/reset 且 anchor_click_target 解析出可导航 URL → handle_navigate。
+                // referrer = 当前页；navigation_epoch 递增。javascript:/#/mailto:/target=_blank 等已在 helper 过滤。
+                if click_default_allowed {
+                    let _ = self.handle_navigate(zero_protocol::message::NavigateParams {
+                        url,
+                        referrer: self.current_url.clone(),
+                        navigation_epoch: self.navigation_epoch.wrapping_add(1),
+                    });
+                }
             }
         }
         Ok(())

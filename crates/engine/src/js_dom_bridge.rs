@@ -1285,6 +1285,41 @@ pub fn is_reset_button(html: &str, elem_sel: &str) -> bool {
     (tag.eq_ignore_ascii_case("input") || tag.eq_ignore_ascii_case("button")) && ty == "reset"
 }
 
+/// P1a 导航：解析 anchor `<a href>` click 的导航目标 URL（R3052）。供 renderer click 路由判定「点击链接是否导航」。
+///
+/// 返回 `Some(绝对 URL)` 当：元素为 `<a>` 且有非空 href，且 href 非 `javascript:` / `mailto:` / `tel:` / `sms:` /
+/// `data:` / `#fragment`，且非 `target=_blank/_top/_parent`（新窗口/顶层，headless no-op）。相对 href 经
+/// [`resolve_document_url`] 按 base 解析为绝对。否则 `None`（不导航）。`javascript:` URL 不 eval（headless 简化）；
+/// `#hash` 不滚动到锚（headless 无 viewport）。
+pub fn anchor_click_target(html: &str, selector: &str, base_url: &str) -> Option<String> {
+    if !query_tag_from_html(html, selector).eq_ignore_ascii_case("a") {
+        return None;
+    }
+    let href = query_attr_from_html(html, selector, "href");
+    let href = href.trim();
+    if href.is_empty() {
+        return None; // 无 href / 空 → 不导航
+    }
+    let lower = href.to_ascii_lowercase();
+    // 非导航 scheme / fragment（real browser：javascript: eval / mailto: 外部 / #hash 同文档滚动 → headless no-op）。
+    if lower.starts_with("javascript:")
+        || lower.starts_with("mailto:")
+        || lower.starts_with("tel:")
+        || lower.starts_with("sms:")
+        || lower.starts_with("data:")
+        || lower.starts_with('#')
+    {
+        return None;
+    }
+    // target=_blank/_top/_parent → 新窗口/顶层（headless 无多窗口，no-op）。
+    let target = query_attr_from_html(html, selector, "target");
+    let tl = target.trim().to_ascii_lowercase();
+    if tl == "_blank" || tl == "_top" || tl == "_parent" {
+        return None;
+    }
+    Some(crate::resolve_document_url(base_url, href))
+}
+
 /// P1a form control：判定元素是否有某属性（boolean 属性如 `checked`/`disabled` 靠存在性，
 /// `getAttribute` 返空串无法区分存在与空值，故供 `__zw_has_attr` / checkbox toggle）。
 pub fn has_attribute(html: &str, selector: &str, name: &str) -> bool {

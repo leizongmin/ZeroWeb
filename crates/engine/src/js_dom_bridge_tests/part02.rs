@@ -1096,6 +1096,120 @@ fn test_is_reset_button_r3050() {
 }
 
 #[test]
+fn test_anchor_click_target_r3052() {
+    // R3052：anchor_click_target 解析 <a href> click 导航目标。
+    let base = "https://example.com/dir/page";
+
+    // ① 绝对 URL（http/https）→ Some（原样）。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='a' href='https://other.com/x'>l</a></body></html>",
+            "#a",
+            base
+        ),
+        Some("https://other.com/x".to_string()),
+        "绝对 https href → Some(原样)"
+    );
+    // ② 相对 href（/page, page.html, ../up）→ resolve_document_url 按 base 解析为绝对。
+    assert_eq!(
+        anchor_click_target("<html><body><a id='r' href='/p2'>l</a></body></html>", "#r", base),
+        Some("https://example.com/p2".to_string()),
+        "相对 /p2 → 绝对 https://example.com/p2"
+    );
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='rel' href='next.html'>l</a></body></html>",
+            "#rel",
+            base
+        ),
+        Some("https://example.com/dir/next.html".to_string()),
+        "相对 next.html → 按 base 目录解析"
+    );
+    // ③ 协议相对 //host → 用 base scheme。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='pr' href='//cdn.example.com/asset'>l</a></body></html>",
+            "#pr",
+            base
+        )
+        .as_deref(),
+        Some("https://cdn.example.com/asset"),
+        "协议相对 //host → 继承 base scheme"
+    );
+
+    // ④ 非导航 scheme / fragment → None。
+    assert_eq!(
+        anchor_click_target("<html><body><a id='h' href='#sec'>l</a></body></html>", "#h", base),
+        None,
+        "#hash → None（同文档锚，headless no-op）"
+    );
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='j' href='javascript:void(0)'>l</a></body></html>",
+            "#j",
+            base
+        ),
+        None,
+        "javascript: → None（不 eval）"
+    );
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='m' href='mailto:a@b.com'>l</a></body></html>",
+            "#m",
+            base
+        ),
+        None,
+        "mailto: → None（外部 handler）"
+    );
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='d' href='data:text/html,hi'>l</a></body></html>",
+            "#d",
+            base
+        ),
+        None,
+        "data: → None"
+    );
+
+    // ⑤ target=_blank/_top/_parent → None（新窗口/顶层，headless no-op）；target=_self/默认 → Some。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='b' href='https://x.com/' target='_blank'>l</a></body></html>",
+            "#b",
+            base
+        ),
+        None,
+        "target=_blank → None（新窗口 no-op）"
+    );
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='s' href='https://x.com/' target='_self'>l</a></body></html>",
+            "#s",
+            base
+        ),
+        Some("https://x.com/".to_string()),
+        "target=_self → Some（同标签页导航）"
+    );
+
+    // ⑥ 非 <a> / 无 href → None。
+    assert_eq!(
+        anchor_click_target("<html><body><div id='d' href='https://x.com/'>l</div></body></html>", "#d", base),
+        None,
+        "非 <a> 元素 → None（即使有 href）"
+    );
+    assert_eq!(
+        anchor_click_target("<html><body><a id='n'>l</a></body></html>", "#n", base),
+        None,
+        "<a> 无 href → None"
+    );
+    assert_eq!(
+        anchor_click_target("<html><body><a id='e' href=''>l</a></body></html>", "#e", base),
+        None,
+        "<a> 空 href → None"
+    );
+}
+
+#[test]
 fn test_script_call_form_reset_r3050() {
     // R3050：script_call_form_reset 生成调 form.reset() 的 shim 脚本。
     // 选择器安全嵌入（引号转义）；form 不存在/reset 非函数 → no-op guard。
