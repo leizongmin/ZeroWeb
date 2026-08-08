@@ -2238,3 +2238,134 @@ fn test_sel_based_attr_latest_wins_r2995() {
         "setAttribute('value') 后 getAttribute('value') 反映新值（latest-wins 方法路径）"
     );
 }
+
+#[test]
+fn test_input_value_defaultvalue_independence_r2996() {
+    // R2996：INPUT `.value=` 与 `.defaultValue` 独立（spec：`.value=` 改 dirty 当前态，**不**改 defaultValue=
+    // 初始 value 属性）。R2995 暴露的既存 imperfection：shim `.value=` 写 value 属性供 render（paint_input_value
+    // 读属性），致 defaultValue（亦读 value 属性）被污染。本切片单独追踪「真默认值」：首次 `.value=` 前捕获
+    // value 属性，setAttribute('value')/defaultValue=/removeAttribute('value') 重同步。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id='i' type='text' value='initial'></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // `.value=` 改当前态，defaultValue 不变（旧实现 defaultValue 被 .value= 污染为 'changed'）。
+    sandbox
+        .execute(
+            "var i = document.getElementById('i');\
+             globalThis.__dv0 = i.defaultValue;\
+             globalThis.__val0 = i.value;\
+             i.value = 'changed';\
+             globalThis.__dv1 = i.defaultValue;\
+             globalThis.__val1 = i.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dv0").unwrap().value,
+        "initial",
+        ".value= 前 defaultValue=初始 value 属性"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__val0").unwrap().value,
+        "initial",
+        ".value= 前 .value=defaultValue"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dv1").unwrap().value,
+        "initial",
+        ".value='changed' 后 defaultValue 仍='initial'（不被 dirty 当前态污染）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__val1").unwrap().value,
+        "changed",
+        ".value='changed' 后 .value='changed'（dirty 当前态）"
+    );
+
+    // 多次 .value= defaultValue 恒为初值（捕获仅一次，不重捕被污染的属性）。
+    sandbox
+        .execute(
+            "i.value = 'second';\
+             globalThis.__dv2 = i.defaultValue;\
+             globalThis.__val2 = i.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dv2").unwrap().value,
+        "initial",
+        "二次 .value= 后 defaultValue 仍='initial'（捕获仅首次）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__val2").unwrap().value,
+        "second",
+        "二次 .value= 后 .value='second'"
+    );
+
+    // setAttribute('value') 重同步 defaultValue（spec：setAttribute 改默认值）+ .value 跟随。
+    sandbox
+        .execute(
+            "i.setAttribute('value', 'reset');\
+             globalThis.__dv3 = i.defaultValue;\
+             globalThis.__val3 = i.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dv3").unwrap().value,
+        "reset",
+        "setAttribute('value','reset') 后 defaultValue='reset'（重同步默认值）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__val3").unwrap().value,
+        "reset",
+        "setAttribute('value') 后 .value 跟随='reset'"
+    );
+
+    // setAttribute 后再 .value=：defaultValue 锚定新默认值 'reset'（捕获 setAttribute 后的属性）。
+    sandbox
+        .execute(
+            "i.value = 'dirty again';\
+             globalThis.__dv4 = i.defaultValue;\
+             globalThis.__val4 = i.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dv4").unwrap().value,
+        "reset",
+        "setAttribute 后 .value= 不改 defaultValue（锚定 setAttribute 后的 'reset'）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__val4").unwrap().value,
+        "dirty again",
+        "setAttribute 后 .value='dirty again'"
+    );
+
+    // .value= 后 getAttribute('value') 仍反映 dirty 写入的属性（render 车辆不变）。
+    assert_eq!(
+        sandbox.execute("i.getAttribute('value')").unwrap().value,
+        "dirty again",
+        ".value= 后 getAttribute('value')=dirty 写入值（属性仍供 render，latest-wins）"
+    );
+
+    // defaultValue= 显式设默认值（重同步），不联动已被 dirty 的 .value。
+    sandbox
+        .execute(
+            "i.defaultValue = 'brandnew';\
+             globalThis.__dv5 = i.defaultValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dv5").unwrap().value,
+        "brandnew",
+        "defaultValue='brandnew' 后 defaultValue='brandnew'（显式设默认值）"
+    );
+}

@@ -691,6 +691,27 @@
     }
     return String(v);
   }
+  // R2996 input.defaultValue 独立追踪 helper。spec：`.value=` 改 dirty 当前态、不改 defaultValue（=初始 value
+  // 属性）。shim 的 `.value=` 仍写 value 属性供 render，故属性被污染——首次 `.value=`（或 valueAsNumber=）前
+  // 捕获当前 value 属性（=真默认值，latest-wins 反映已 setAttribute 的值），之后 defaultValue 读捕获值；
+  // setAttribute('value')/defaultValue=/removeAttribute('value') 重同步（清 dirty → getter 回落属性）。
+  // 读源同 defaultValue getter 非_dirty 分支：sel-based 用 `__zw_get_attr_lw`（latest-wins），handle 用
+  // `__zw_get_attr_handle`，无回调回落 `__zw_get_attr` 快照。仅 INPUT（textarea 的 defaultValue=text 内容，另案）。
+  function _captureInputDefault(key, sel, handle) {
+    if (_inputDefaultDirty[key]) return;
+    var d = '';
+    if (handle && typeof __zw_get_attr_handle === 'function') {
+      try { d = __zw_get_attr_handle(handle, 'value') || ''; } catch (_e) {}
+    } else if (sel && typeof __zw_get_attr_lw === 'function') {
+      try { d = __zw_get_attr_lw(sel, 'value') || ''; } catch (_e) {}
+    } else if (sel && typeof __zw_get_attr === 'function') {
+      try { d = __zw_get_attr(sel, 'value') || ''; } catch (_e) {}
+    }
+    _inputDefault[key] = d;
+    _inputDefaultDirty[key] = true;
+  }
+  function _clearInputDefault(key) { _inputDefaultDirty[key] = false; }
+
   // 选区偏移 clamp：把任意输入归一为 [0, len] 内整数（Chromium 对超界/负值/非数 clamp 到边界，非抛）。
   function _clampSelOffset(v, len) {
     var n = (typeof v === 'number') ? Math.floor(v) : parseInt(v, 10);
@@ -1204,10 +1225,15 @@
         if (prop === 'htmlFor' && _realTag(sel, handle) === 'LABEL') {
           return (handle ? __zw_get_attr_handle(handle, 'for') : __zw_get_attr(sel, 'for')) || '';
         }
-        // `input.defaultValue`（HTMLInputElement，R2840）——反射**初始** `value` 属性（区别 `.value` 当前态；
-        // form reset 逻辑 / 校验库读 defaultValue 判「值是否改过」）。
+        // `input.defaultValue`（HTMLInputElement，R2840）——反射 `value` 属性（初始值；区别 `.value` 当前态；
+        // form reset 逻辑 / 校验库读 defaultValue 判「值是否改过」）。R2996：spec `.value=` 不改 defaultValue，
+        // 但 shim `.value=` 仍写 value 属性供 render → 属性被污染；故 dirty 时（`.value=`/valueAsNumber= 后）返
+        // 捕获的 `_inputDefault[key]`，非 dirty 时回落属性（latest-wins 反映 setAttribute('value')/defaultValue=）。
         if (prop === 'defaultValue' && _realTag(sel, handle) === 'INPUT') {
-          return (handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value')) || '';
+          if (_inputDefaultDirty[key]) return _inputDefault[key] || '';
+          if (handle) return (__zw_get_attr_handle(handle, 'value') || '');
+          if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, 'value') || '';
+          return (__zw_get_attr(sel, 'value') || '');
         }
         // `input.defaultChecked`（HTMLInputElement，R2840）——反射 `checked` 属性存在性（初始选中态，区别
         // `.checked` 当前态；复选框 reset 逻辑读）。sel 经 `__zw_has_attr`，handle 经 `__zw_has_attr_handle`。

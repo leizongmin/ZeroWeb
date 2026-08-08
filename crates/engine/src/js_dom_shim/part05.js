@@ -2,7 +2,9 @@
         } else if (p === 'defaultValue') {
           // `input.defaultValue = x`（R2840）——反射 `value` 属性（初始值；attr 名映射 defaultValue→value）。
           // 仅设 value 属性，不联动 .value 当前态（spec 仅当当前值等于旧 defaultValue 时联动——罕见 defer）。
+          // R2996：显式设 defaultValue 重同步（清 dirty，getter 回落新属性值）。
           if (_realTag(sel, handle) === 'INPUT') {
+            _clearInputDefault(key);
             if (handle) __zw_set_attr_handle(handle, 'value', String(value));
             else { __zw_set_attr(sel, 'value', String(value)); moAttr = 'value'; }
           } else if (_realTag(sel, handle) === 'OUTPUT') {

@@ -12,6 +12,13 @@
   // `.value` set 更新缓存 + 记 value 属性 mutation（供 render）。跨 execute 存活（typing 多键），
   // 导航（URL 变化）经 `__zw_reset_form_state` 清空防跨页 stale value。
   var _inputValues = {};
+  // R2996 input.defaultValue 独立追踪（spec：`.value=` 改 dirty 当前态，**不**改 defaultValue=初始 value 属性）。
+  // shim 的 `.value=` 仍写 value 属性供 render（paint_input_value 读属性），故属性被「污染」；为使 defaultValue
+  // 不被污染，单独追踪「真默认值」：首次 `.value=` 前捕获当前 value 属性（=真默认），setAttribute('value')/
+  // defaultValue=/removeAttribute('value') 重同步（清 dirty，getter 回落属性）。_inputDefault[key]=捕获的默认值；
+  // _inputDefaultDirty[key]=true 表属性已dirty、defaultValue 须读捕获值。同 _inputValues 经 reset 清空。
+  var _inputDefault = {};
+  var _inputDefaultDirty = {};
   // P1a classList：per-element-key class 缓存（`className` / `classList`）。同 _inputValues 动机——
   // classList.add/remove/toggle 旧实现每次读 stale snapshot 算新 class 再 SetAttr 整体替换，
   // 同脚本内连续 add 末次覆盖前次（`add('a');add('b')` 丢 'a'）。缓存累积全量，末次 SetAttr 携带
@@ -843,7 +850,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

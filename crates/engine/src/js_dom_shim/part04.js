@@ -373,7 +373,7 @@
             // 同步客户端缓存：class→_classCache、value→_inputValues，使 setAttribute 与
             // classList/className、.value getter 协作一致（否则后续 classList.add 读 stale 缓存丢值）。
             if (n === 'class') _classCache[key] = v;
-            else if (n === 'value') _inputValues[key] = v;
+            else if (n === 'value') { _inputValues[key] = v; _clearInputDefault(key); } // R2996：setAttribute('value') 重同步 defaultValue
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
             _mo_notify(sel, handle, { type: 'attributes', attributeName: n });
@@ -391,7 +391,7 @@
             // sel-based 经 `__zw_remove_attr`（RemoveAttr，R2657）；无回调 → fallback set-empty。
             // 同步客户端缓存（class/value），使后续 classList/.value 反映移除。
             if (n === 'class') _classCache[key] = '';
-            else if (n === 'value') _inputValues[key] = '';
+            else if (n === 'value') { _inputValues[key] = ''; _clearInputDefault(key); } // R2996：removeAttribute('value') 重同步 defaultValue
             if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, n);
             else if (handle) __zw_set_attr_handle(handle, n, '');
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
@@ -1202,14 +1202,17 @@
           } else {
             _inputValues[key] = String(value);
             // textarea 的 value ↔ **文本内容**（非 value 属性，HTML spec）——写 content 而非属性。
-            // input 走 value 属性 mutation。
+            // input 走 value 属性 mutation（供 render）。R2996：INPUT 先捕获 defaultValue（spec .value= 不改默认值）。
             if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
               __zw_set_text(sel, String(value));
-            } else if (handle) {
-              __zw_set_attr_handle(handle, 'value', String(value));
             } else {
-              __zw_set_attr(sel, 'value', String(value));
-              moAttr = 'value';
+              if (_realTag(sel, handle) === 'INPUT') _captureInputDefault(key, sel, handle);
+              if (handle) {
+                __zw_set_attr_handle(handle, 'value', String(value));
+              } else {
+                __zw_set_attr(sel, 'value', String(value));
+                moAttr = 'value';
+              }
             }
           }
         } else if (p === 'valueAsNumber') {
@@ -1221,6 +1224,7 @@
             if (vsT.toLowerCase() === 'number' || vsT.toLowerCase() === 'range') {
               var vsS = (typeof value === 'number' && isNaN(value)) ? '' : String(value);
               _inputValues[key] = vsS;
+              _captureInputDefault(key, sel, handle); // R2996：valueAsNumber= 等同 .value=，捕获 defaultValue
               if (handle) __zw_set_attr_handle(handle, 'value', vsS);
               else { __zw_set_attr(sel, 'value', vsS); moAttr = 'value'; }
             }
