@@ -53,6 +53,36 @@ if [[ -f "$TREND_CSV" ]]; then
   fi
 fi
 
+# ── 1b. 性能趋势（当月 docs/perf/trends/benchmark-trend.csv 记录）──
+# perf-gate 体系（2026-08-08 落地）：页面级指标 + resource + startup 的首/末 p95
+#（微基准 mb/* 90+ 指标过多，不列入月报；bench-report 报告可查全量）。
+PERF_CSV="${REPO_ROOT}/docs/perf/trends/benchmark-trend.csv"
+perf_block="（当月无 perf 趋势记录——先运行 make bench-trend）"
+if [[ -f "$PERF_CSV" ]]; then
+  perf_records=$(grep "^${MONTH}-" "$PERF_CSV" | grep -v "^#" || true)
+  if [[ -n "$perf_records" ]]; then
+    perf_block="| 指标 | 首测 p95 | 末测 p95 | 变化 | 单位 |"
+    perf_block+=$'\n|---|---|---|---|---|'
+    while IFS= read -r mid; do
+      [[ -z "$mid" ]] && continue
+      rows=$(echo "$perf_records" | grep ",${mid}," || true)
+      [[ -z "$rows" ]] && continue
+      first=$(echo "$rows" | head -1)
+      last=$(echo "$rows" | tail -1)
+      f_p95=$(echo "$first" | cut -d, -f5)
+      l_p95=$(echo "$last" | cut -d, -f5)
+      unit=$(echo "$first" | cut -d, -f7)
+      # 数值变化（保留 2 位小数；非数值（空）显示 -）
+      if [[ "$f_p95" =~ ^[0-9.]+$ ]] && [[ "$l_p95" =~ ^[0-9.]+$ ]]; then
+        change=$(echo "$l_p95 $f_p95" | awk '{d=$1-$2; printf "%+.2f", d}')
+      else
+        change="-"
+      fi
+      perf_block+=$'\n'"| ${mid} | ${f_p95} | ${l_p95} | ${change} | ${unit} |"
+    done <<< "$(echo "$perf_records" | cut -d, -f3 | grep -E '^(page/|resource/|startup_ms)' | sort -u)"
+  fi
+fi
+
 # ── 2. 当月提交统计 ──
 month_start="${MONTH}-01"
 month_end=$(date -d "${month_start} +1 month" +%Y-%m-01 2>/dev/null || echo "${MONTH}-31")
@@ -75,6 +105,10 @@ cat > "$OUT_FILE" <<EOF
 ## 1. WPT 趋势（绝对数口径）
 
 ${trend_block}
+
+## 1b. 性能趋势（页面级指标 p95，perf-gate）
+
+${perf_block}
 
 ## 2. 提交统计
 

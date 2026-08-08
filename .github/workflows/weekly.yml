@@ -462,3 +462,32 @@ jobs:
             git push origin HEAD:main
             echo "Benchmark trend data committed and pushed."
           fi
+
+  # 月度工程报告（scripts/generate-monthly-report.sh）：每月 1 日自动生成上月报告
+  #（WPT 趋势 + 性能趋势 + 提交统计）并提交回 main。纯脚本无构建依赖。
+  monthly-report:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Generate monthly report (previous month)
+        run: bash scripts/generate-monthly-report.sh
+
+      - name: Commit monthly report back to main
+        run: |
+          git config user.name "zero-web-bot"
+          git config user.email "zero-web-bot@users.noreply.github.com"
+          git add docs/monthly/
+          if git diff --cached --quiet; then
+            echo "No monthly report changes."
+          else
+            git commit -m "chore(monthly): 更新月度工程报告（WPT + 性能趋势）"
+            git pull --rebase origin main
+            git push origin HEAD:main
+            echo "Monthly report committed and pushed."
+          fi
