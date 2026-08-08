@@ -1037,6 +1037,25 @@
     // arrayBuffer()：Promise<Uint8Array>——text() UTF-8 编码（字节视图）。
     arrayBuffer: function () {
       return this.text().then(function (s) { return _zw_utf8_encode(s); });
+    },
+    // stream()：ReadableStream——blob 字节流（R2978，复用 ReadableStream + text + _zw_utf8_encode）。
+    // 单 UTF-8 Uint8Array chunk 后 close（headless finite-blob 模型）。常与 pipeThrough(TextDecoderStream) 配对。
+    stream: function () {
+      var self = this;
+      var done = false;
+      return new ReadableStream({
+        pull: function (controller) {
+          if (done) { controller.close(); return; }
+          done = true;
+          self.text().then(function (s) {
+            var bytes = _zw_utf8_encode(s);
+            var arr = new Uint8Array(bytes.length);
+            for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
+            controller.enqueue(arr);
+            controller.close();
+          }, function (e) { controller.error(e); });
+        }
+      });
     }
   };
 

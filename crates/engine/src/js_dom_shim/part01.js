@@ -266,6 +266,29 @@
     });
     this.text = function () { return Promise.resolve(self._bodyText); };
     this.json = function () { return Promise.resolve(JSON.parse(self._bodyText)); };
+    // R2978：补全 Response body-consumption 表面（spec：text/json/blob/arrayBuffer/formData）。
+    // blob()：body 包成 Blob；arrayBuffer()：UTF-8 Uint8Array；formData()：application/x-www-form-urlencoded 解析。
+    this.blob = function () { return Promise.resolve(new Blob([self._bodyText])); };
+    this.arrayBuffer = function () {
+      var bytes = _zw_utf8_encode(self._bodyText);
+      var arr = new Uint8Array(bytes.length);
+      for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
+      return Promise.resolve(arr);
+    };
+    this.formData = function () {
+      var fd = new FormData();
+      var body = self._bodyText.trim();
+      if (body) {
+        body.split('&').forEach(function (pair) {
+          if (!pair) return;
+          var eq = pair.indexOf('=');
+          var k = eq >= 0 ? pair.slice(0, eq) : pair;
+          var v = eq >= 0 ? pair.slice(eq + 1) : '';
+          fd.append(decodeURIComponent(k.replace(/\+/g, ' ')), decodeURIComponent(v.replace(/\+/g, ' ')));
+        });
+      }
+      return Promise.resolve(fd);
+    };
     this.clone = function () {
       return new Response(self._bodyText, { status: self.status, statusText: self.statusText, headers: self.headers });
     };

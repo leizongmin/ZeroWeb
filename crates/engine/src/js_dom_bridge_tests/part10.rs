@@ -1345,3 +1345,133 @@ fn test_resize_observer_content_border_box_r2972() {
         "无 padding/border → borderBoxSize.blockSize = 40"
     );
 }
+
+#[test]
+fn test_blob_stream_response_body_readers_r2978() {
+    // R2978：Blob.stream()（字节→ReadableStream，配对 R2967）+ Response.blob()/arrayBuffer()/formData()
+    //（补全 body-consumption 表面，spec text/json/blob/arrayBuffer/formData）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // Blob.stream()：instanceof ReadableStream + 单 UTF-8 chunk → TextDecoder 还原原文 + done。
+    sandbox
+        .execute(
+            "var blob = new Blob(['Hello']);\
+             var st = blob.stream();\
+             globalThis.__streamIsRS = (st instanceof ReadableStream);\
+             var r = st.getReader();\
+             r.read().then(function(c){ globalThis.__chunk = c; return r.read(); })\
+                    .then(function(c){ globalThis.__done = c; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__streamIsRS)").unwrap().value,
+        "true",
+        "Blob.stream() instanceof ReadableStream"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__chunk && globalThis.__chunk.done)").unwrap().value,
+        "false",
+        "Blob.stream 首 chunk: done=false"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(new TextDecoder().decode(globalThis.__chunk.value))")
+            .unwrap()
+            .value,
+        "Hello",
+        "Blob.stream chunk 经 TextDecoder 解码 = 'Hello'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__done && globalThis.__done.done)").unwrap().value,
+        "true",
+        "Blob.stream 次 read done=true（单 chunk 后 close）"
+    );
+
+    // Response.blob()：body 包成 Blob（instanceof Blob + text() 还原）。
+    sandbox
+        .execute(
+            "new Response('hi').blob()\
+               .then(function(b){ globalThis.__rbIsBlob = (b instanceof Blob); return b.text(); })\
+               .then(function(t){ globalThis.__rbText = t; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rbIsBlob)").unwrap().value,
+        "true",
+        "Response.blob() → instanceof Blob"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rbText)").unwrap().value,
+        "hi",
+        "Response.blob().text() 还原 body = 'hi'"
+    );
+
+    // Response.arrayBuffer()：UTF-8 Uint8Array（byteLength + 索引）。
+    sandbox
+        .execute(
+            "new Response('ABC').arrayBuffer().then(function(buf){\
+               globalThis.__abIsU8 = (buf instanceof Uint8Array);\
+               globalThis.__abLen = buf.length;\
+               globalThis.__abByteLen = buf.byteLength;\
+               globalThis.__ab0 = buf[0];\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__abIsU8)").unwrap().value,
+        "true",
+        "Response.arrayBuffer() → Uint8Array"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__abLen)").unwrap().value,
+        "3",
+        "Response.arrayBuffer('ABC') length=3"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__abByteLen)").unwrap().value,
+        "3",
+        "Response.arrayBuffer byteLength=3"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ab0)").unwrap().value,
+        "65",
+        "Response.arrayBuffer('ABC')[0]=65 ('A')"
+    );
+
+    // Response.formData()：application/x-www-form-urlencoded 解析（+ → space，% 解码）。
+    sandbox
+        .execute(
+            "new Response('a=1&b=two&c=hello+world').formData().then(function(fd){\
+               globalThis.__fdA = fd.get('a');\
+               globalThis.__fdB = fd.get('b');\
+               globalThis.__fdC = fd.get('c');\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fdA)").unwrap().value,
+        "1",
+        "Response.formData() 解析 a=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fdB)").unwrap().value,
+        "two",
+        "Response.formData() 解析 b=two"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fdC)").unwrap().value,
+        "hello world",
+        "Response.formData() + → space（urlencoded 语义）"
+    );
+}

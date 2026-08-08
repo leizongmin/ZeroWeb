@@ -112,6 +112,30 @@
 
 ## 最近完成的改进
 
+### P1a Blob.stream() + Response.blob/arrayBuffer/formData（body 消费表面补全，本轮 R2978，~14,156 测试）
+
+R2977（Headers 实例化）后续补 Blob/Response body 消费表面。经全 shim 调研确认 Web API 表面已极完整（EventTarget/URL+canParse/structuredClone/Headers/Response/Request/完整 Streams/animation/observers/Image/Option/document.cookie/referrer/FormData/Blob/File/FileReader/createObjectURL/crypto.subtle 全在）。本切片补两处真缺口：**Blob.stream()**（缺——Blob 有 text/arrayBuffer/slice 但无 stream，不能与 R2967 ReadableStream / TextDecoderStream 配对）+ **Response.blob()/arrayBuffer()/formData()**（缺——Response 仅有 text/json/clone/body）。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part02.js` | Blob.prototype 增 `stream()`：返 ReadableStream（pull 源——首 pull 取 text()→`_zw_utf8_encode`→Uint8Array enqueue + close；done 守卫防重入）。配对 R2967 ReadableStream + R2970 TextDecoderStream（`blob.stream().pipeThrough(new TextDecoderStream())` 字节→文本流）。 |
+| `crates/engine/src/js_dom_shim/part01.js` | Response 构造器增 `blob()`（body 包 new Blob）/ `arrayBuffer()`（`_zw_utf8_encode` → Uint8Array，含 byteLength）/ `formData()`（application/x-www-form-urlencoded 解析：split `&` + `=` + `+`→space + decodeURIComponent）。补全 spec body-consumption 表面（text/json/blob/arrayBuffer/formData）。 |
+| `crates/engine/src/js_dom_bridge_tests/part10.rs` | 新 `test_blob_stream_response_body_readers_r2978`：Blob.stream（instanceof ReadableStream + 单 chunk TextDecoder 还原 + done）+ Response.blob（instanceof Blob + text 还原）+ Response.arrayBuffer（Uint8Array + length/byteLength/索引）+ Response.formData（a=1&b=two&c=hello+world 解析 + `+`→space）。 |
+
+**为何 Blob.stream 用 pull 源（非 start）**：Blob.text() 返 Promise（异步拼 parts），start 同步无法 await。pull 源在首 read() 时触发——pull 取 text().then(enqueue+close)，done 守卫防二次 pull 重发。headless finite-blob 单 chunk 后 close。
+
+**为何 Response.arrayBuffer 返 Uint8Array（非 plain array）**：既有 Blob.arrayBuffer 注释标 Uint8Array 但实返 `_zw_utf8_encode` plain array（历史不一致，不改避回归）。Response.arrayBuffer 新增——返真 Uint8Array（`byteLength`/索引/`new DataView(buf)` 全可用，更 spec 合规）。test 验 `instanceof Uint8Array` + `byteLength` + 索引。
+
+**为何 Response.formData 仅 urlencoded（非 multipart）**：spec formData() 按 content-type 解 multipart/form-data 或 urlencoded。headless `response.formData()` 最常见于 urlencoded 表单响应（API 返表单编码）。multipart boundary 解析复杂，defer。`+`→space + decodeURIComponent 覆盖标准 urlencoded 语义。
+
+**为何零回归**：Blob.stream/Response.blob/arrayBuffer/formData 全为新增方法（既有 Blob/Response 不调这些名）；FormData.get 已存在（R2771 簇）。make test 14156 全绿验证。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14156 passed / 71 skipped / 0 failed**（engine +1 driving 测试，无回归）+ clippy `-D warnings` 零警告（workspace）+ fmt clean + 全 shim `node --check` 通过。
+
+**已知限制（follow-up）**：① Response.formData 仅 urlencoded（multipart/form-data boundary 解析 defer）；② Blob.arrayBuffer 仍返 plain array（历史不一致，不改避回归；Response.arrayBuffer 返 Uint8Array）；③ Request 无 blob/arrayBuffer/formData/text/json body readers（Request.body 为 string，发送侧非读取侧，低频，defer）；④ Blob.stream 单 chunk（非分块流，headless finite-blob 模型）。
+
+**下一步**：续 P1a——① Request body readers（text/json/blob/arrayBuffer/formData，对称 Response）；② 其他 defer Web API；③ task source 优先级（事件循环边缘）；④ customElements upgrade（需 P1b RFC 审批）。
+
 ### P1a Response/Request headers → Headers 实例（fetch API spec 合规，本轮 R2977，~14,155 测试）
 
 R2976（callbacks 子模块拆分）后续补 fetch API spec 合规。`Response.headers`/`Request.headers` 自 R2968 起为 **plain dict**（为 bracket-access 兼容 integration test `r.headers['X-Test']`）——非 spec `Headers` 实例，modern 代码 `response.headers.get('content-type')` / `.has()` / `.forEach()` 全不可用（modern 库普遍用 Headers API 而非 bracket）。本切片迁 Headers 实例。
