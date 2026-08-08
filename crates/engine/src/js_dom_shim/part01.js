@@ -19,6 +19,13 @@
   // _inputDefaultDirty[key]=true 表属性已dirty、defaultValue 须读捕获值。同 _inputValues 经 reset 清空。
   var _inputDefault = {};
   var _inputDefaultDirty = {};
+  // R2998 布尔默认态独立追踪（checked→defaultChecked, selected→defaultSelected）。spec：`.checked=`/`.selected=`
+  // 改 dirty 当前态、**不**改 default*=初始属性存在性。shim 的 `.checked=`/`.selected=` 仍写属性供 render/form
+  // 序列化（R2997 .checked getter latest-wins 读属性），故属性被「污染」；为使 default* 不被污染，单独追踪「真
+  // 默认存在性」：首次 `.checked=`/`.selected=` 前捕获当前属性存在性，setAttribute/removeAttribute/default*=
+  // 重同步（清 dirty，getter 回落属性 latest-wins）。键 `key+':'+attr` 避 checked/selected 冲突。经 reset 清空。
+  var _boolDefault = {};
+  var _boolDefaultDirty = {};
   // P1a classList：per-element-key class 缓存（`className` / `classList`）。同 _inputValues 动机——
   // classList.add/remove/toggle 旧实现每次读 stale snapshot 算新 class 再 SetAttr 整体替换，
   // 同脚本内连续 add 末次覆盖前次（`add('a');add('b')` 丢 'a'）。缓存累积全量，末次 SetAttr 携带
@@ -850,7 +857,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

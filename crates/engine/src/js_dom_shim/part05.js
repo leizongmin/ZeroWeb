@@ -14,7 +14,9 @@
           }
         } else if (p === 'defaultChecked') {
           // `input.defaultChecked = x`（R2840）——boolean 反射 `checked` 属性（truthy→设存在，falsy→移除）。
+          // R2998：显式设 defaultChecked 重同步（清 dirty，getter 回落新属性值 latest-wins）。
           if (_realTag(sel, handle) === 'INPUT') {
+            _clearBoolDefault(key, 'checked');
             if (value) {
               if (handle) __zw_set_attr_handle(handle, 'checked', '');
               else { __zw_set_attr(sel, 'checked', ''); moAttr = 'checked'; }
@@ -25,6 +27,10 @@
         } else if (p === 'hidden' || p === 'checked' || p === 'disabled' || p === 'selected') {
           // boolean reflected property：truthy → 设存在（空值，has_attr=true）；falsy → 真移除
           // （has_attr=false）。修正旧 fallthrough 写空串致 falsy 仍 present 的 bug。
+          // R2998：`.checked=`(INPUT)/`.selected=`(OPTION) 写属性前捕获 defaultChecked/defaultSelected 真默认态
+          // （spec .checked=/.selected= 不改 default*；shim 写属性供 render 故污染，缓存保护 default* getter）。
+          if (p === 'checked' && _realTag(sel, handle) === 'INPUT') _captureBoolDefault(key, 'checked', sel, handle);
+          else if (p === 'selected' && _realTag(sel, handle) === 'OPTION') _captureBoolDefault(key, 'selected', sel, handle);
           if (value) {
             if (handle) __zw_set_attr_handle(handle, p, '');
             else __zw_set_attr(sel, p, '');

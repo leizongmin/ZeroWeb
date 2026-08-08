@@ -711,6 +711,26 @@
     _inputDefaultDirty[key] = true;
   }
   function _clearInputDefault(key) { _inputDefaultDirty[key] = false; }
+  // R2998 布尔默认态独立追踪 helper（checked→defaultChecked, selected→defaultSelected）。capture：dirty 未设时
+  // 读当前属性存在性（=真默认，latest-wins 反映已 setAttribute 的值）存 `_boolDefault[ck]`（boolean）并置
+  // dirty=true——**仅首次**（不重捕被 .checked=/.selected= 污染的属性）。读源同 default* getter 非_dirty 分支：
+  // handle→`__zw_has_attr_handle`，sel→`__zw_has_attr_lw`（latest-wins），无 `_lw` 回落 `__zw_has_attr` 快照。
+  // clear：dirty=false（setAttribute/removeAttribute/default*= 重同步，getter 回落属性 latest-wins）。
+  function _captureBoolDefault(key, attr, sel, handle) {
+    var ck = key + ':' + attr;
+    if (_boolDefaultDirty[ck]) return;
+    var present = false;
+    if (handle && typeof __zw_has_attr_handle === 'function') {
+      try { present = __zw_has_attr_handle(handle, attr) === '1'; } catch (_e) {}
+    } else if (sel && typeof __zw_has_attr_lw === 'function') {
+      try { present = __zw_has_attr_lw(sel, attr) === '1'; } catch (_e) {}
+    } else if (sel && typeof __zw_has_attr === 'function') {
+      try { present = __zw_has_attr(sel, attr) === '1'; } catch (_e) {}
+    }
+    _boolDefault[ck] = present;
+    _boolDefaultDirty[ck] = true;
+  }
+  function _clearBoolDefault(key, attr) { _boolDefaultDirty[key + ':' + attr] = false; }
 
   // 选区偏移 clamp：把任意输入归一为 [0, len] 内整数（Chromium 对超界/负值/非数 clamp 到边界，非抛）。
   function _clampSelOffset(v, len) {
@@ -1245,10 +1265,17 @@
           return (__zw_get_attr(sel, 'value') || '');
         }
         // `input.defaultChecked`（HTMLInputElement，R2840）——反射 `checked` 属性存在性（初始选中态，区别
-        // `.checked` 当前态；复选框 reset 逻辑读）。sel 经 `__zw_has_attr`，handle 经 `__zw_has_attr_handle`。
+        // `.checked` 当前态；复选框 reset 逻辑读）。R2998：spec `.checked=` 不改 defaultChecked，但 shim
+        // `.checked=` 仍写属性供 render → 属性被污染；故 dirty 时（`.checked=` 后）返捕获的 `_boolDefault`，
+        // 非 dirty 时回落属性 latest-wins（反映 setAttribute('checked')/defaultChecked=/removeAttribute('checked')）。
         if (prop === 'defaultChecked' && _realTag(sel, handle) === 'INPUT') {
+          var _dcKey = key + ':checked';
+          if (_boolDefaultDirty[_dcKey]) return _boolDefault[_dcKey] === true;
           if (handle && typeof __zw_has_attr_handle === 'function') {
             try { return __zw_has_attr_handle(handle, 'checked') === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_has_attr_lw === 'function') {
+            try { return __zw_has_attr_lw(sel, 'checked') === '1'; } catch (_e) {}
           }
           if (!handle && sel && typeof __zw_has_attr === 'function') {
             try { return __zw_has_attr(sel, 'checked') === '1'; } catch (_e) {}
@@ -1387,10 +1414,17 @@
           return lab || (handle ? __zw_get_text_handle(handle) : __zw_get_text(sel)) || '';
         }
         if (prop === 'defaultSelected' && _realTag(sel, handle) === 'OPTION') {
-          // defaultSelected = 'selected' 属性存在性（boolean reflected）。sel-based 经 `__zw_has_attr`；
+          // defaultSelected = 'selected' 属性存在性（boolean reflected，初始选中态）。R2998：spec `.selected=`
+          // 不改 defaultSelected，但 shim `.selected=` 仍写属性 → 属性被污染；dirty 时（`.selected=` 后）返捕获的
+          // `_boolDefault`，非 dirty 回落属性 latest-wins（反映 setAttribute/removeAttribute('selected')）。
           // handle-based（`new Option()` 创建）经 `__zw_has_attr_handle`（句柄不在快照）。
+          var _dsKey = key + ':selected';
+          if (_boolDefaultDirty[_dsKey]) return _boolDefault[_dsKey] === true;
           if (handle && typeof __zw_has_attr_handle === 'function') {
             try { return __zw_has_attr_handle(handle, 'selected') === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_has_attr_lw === 'function') {
+            try { return __zw_has_attr_lw(sel, 'selected') === '1'; } catch (_e) {}
           }
           if (!handle && sel && typeof __zw_has_attr === 'function') {
             try { return __zw_has_attr(sel, 'selected') === '1'; } catch (_e) {}

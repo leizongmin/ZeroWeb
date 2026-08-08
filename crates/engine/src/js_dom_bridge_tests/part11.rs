@@ -2476,3 +2476,173 @@ fn test_boolean_reflected_getter_latest_wins_r2997() {
         ".hidden=true 后 el.hidden=true（latest-wins getter 反映 SetAttr）"
     );
 }
+
+#[test]
+fn test_default_checked_selected_independence_r2998() {
+    // R2998：defaultChecked（INPUT）/ defaultSelected（OPTION）独立于 .checked= / .selected= dirty 态
+    // （spec：.checked=/.selected= 改 dirty 当前态、不改 default*=初始属性）。承接 R2997 记录的限制 ①。
+    // R2997 已让 .checked getter latest-wins（.checked=false 移除属性→.checked=false 正确）；但 defaultChecked
+    // 旧读纯快照 → setAttribute/removeAttribute 后 stale-wrong；且若朴素改 latest-wins 又会被 .checked= 污染
+    // （.checked=false 移除属性→latest-wins defaultChecked=false，错，应保持初始 true）。故须 R2996 类 dirty 缓存：
+    // 首次 .checked=/.selected= 前捕获初始属性存在性，setAttribute/removeAttribute/default*=重同步。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='on' type='checkbox' checked>\
+         <input id='off' type='checkbox'>\
+         <input id='off2' type='checkbox'>\
+         <select id='s'>\
+         <option id='o1' selected>A</option>\
+         <option id='o2'>B</option>\
+         </select>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ── A：removeAttribute('checked') 后 defaultChecked 应 false（旧 stale 读快照仍 true）。──
+    sandbox
+        .execute(
+            "var on = document.getElementById('on');\
+             globalThis.__dcRmBefore = String(on.defaultChecked);\
+             on.removeAttribute('checked');\
+             globalThis.__dcRmAfter = String(on.defaultChecked);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dcRmBefore").unwrap().value,
+        "true",
+        "checked 初始 defaultChecked=true"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dcRmAfter").unwrap().value,
+        "false",
+        "removeAttribute('checked') 后 defaultChecked=false（重同步，修正 stale true）"
+    );
+
+    // ── B：setAttribute('checked') 在无预置上后 defaultChecked 应 true（旧 stale 读快照仍 false）。──
+    sandbox
+        .execute(
+            "var off = document.getElementById('off');\
+             globalThis.__dcSetBefore = String(off.defaultChecked);\
+             off.setAttribute('checked', '');\
+             globalThis.__dcSetAfter = String(off.defaultChecked);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dcSetBefore").unwrap().value,
+        "false",
+        "无预置 checked defaultChecked=false"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dcSetAfter").unwrap().value,
+        "true",
+        "setAttribute('checked') 后 defaultChecked=true（重同步，修正 stale false）"
+    );
+
+    // ── C：.checked= dirty 不污染 defaultChecked（朴素 latest-wins 会在此返 false，错）。──
+    //     on 当前已 removeAttribute（见 A），先 setAttribute 复原 checked，再 .checked=false 验捕获。
+    sandbox
+        .execute(
+            "on.setAttribute('checked', '');\
+             globalThis.__dcDirtyBefore = String(on.defaultChecked);\
+             on.checked = false;\
+             globalThis.__dcDirtyAfter = String(on.defaultChecked);\
+             globalThis.__ckDirtyAfter = String(on.checked);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dcDirtyBefore").unwrap().value,
+        "true",
+        ".checked= 前 defaultChecked=true（setAttribute 复原）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dcDirtyAfter").unwrap().value,
+        "true",
+        ".checked=false 后 defaultChecked 仍 true（dirty 缓存保护，不被属性移除污染）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ckDirtyAfter").unwrap().value,
+        "false",
+        ".checked=false 后 .checked=false（dirty 当前态，R2997 latest-wins）"
+    );
+
+    // ── D：.checked=true 在无预置上 dirty，defaultChecked 保持初始 false（捕获），不跟随属性添加。──
+    //     用干净的 off2（未被前序 setAttribute 污染）验「真无预置」捕获。
+    sandbox
+        .execute(
+            "var off2 = document.getElementById('off2');\
+             off2.checked = true;\
+             globalThis.__dcDirtyOff = String(off2.defaultChecked);\
+             globalThis.__ckDirtyOff = String(off2.checked);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dcDirtyOff").unwrap().value,
+        "false",
+        "无预置 .checked=true 后 defaultChecked 仍 false（捕获初始，不跟随 dirty 添加）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ckDirtyOff").unwrap().value,
+        "true",
+        "无预置 .checked=true 后 .checked=true（dirty 当前态）"
+    );
+
+    // ── E：.defaultChecked= 显式设默认值（重同步），生效。──
+    sandbox
+        .execute(
+            "off2.defaultChecked = false;\
+             globalThis.__dcExplicit = String(off2.defaultChecked);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dcExplicit").unwrap().value,
+        "false",
+        ".defaultChecked=false 显式设后 defaultChecked=false（重同步生效，清 dirty 回落属性）"
+    );
+
+    // ── F：defaultSelected（OPTION）同 pattern——removeAttribute('selected') 后 defaultSelected=false。──
+    sandbox
+        .execute(
+            "var o1 = document.getElementById('o1');\
+             globalThis.__dsRmBefore = String(o1.defaultSelected);\
+             o1.removeAttribute('selected');\
+             globalThis.__dsRmAfter = String(o1.defaultSelected);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dsRmBefore").unwrap().value,
+        "true",
+        "selected 初始 defaultSelected=true"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dsRmAfter").unwrap().value,
+        "false",
+        "removeAttribute('selected') 后 defaultSelected=false（重同步，修正 stale true）"
+    );
+
+    // ── G：.selected= dirty 不污染 defaultSelected（朴素 latest-wins 会返 false，错）。──
+    //     o2 无预置 selected，先 .selected=true（dirty 捕获 false），defaultSelected 应保持 false。
+    //     （.selected getter 本身 stale 为 R2997 限制 ② 独立 slice，此处只验 defaultSelected 缓存。）
+    sandbox
+        .execute(
+            "var o2 = document.getElementById('o2');\
+             o2.selected = true;\
+             globalThis.__dsDirtyOff = String(o2.defaultSelected);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dsDirtyOff").unwrap().value,
+        "false",
+        "无预置 .selected=true 后 defaultSelected 仍 false（dirty 缓存保护）"
+    );
+}
