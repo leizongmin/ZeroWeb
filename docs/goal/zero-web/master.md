@@ -112,6 +112,25 @@
 
 ## 最近完成的改进
 
+### 工程治理——js_dom_bridge.rs 拆分 slice 2：canvas 子模块（3726→3271，本轮 R2974，~14,155 测试）
+
+R2973（crypto 子模块拆分 slice 1）后续续 js_dom_bridge.rs 文件大小治理。本切片抽 **canvas 组**到子模块（继 crypto 后第 2 刀）。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_bridge/canvas.rs`（新） | 460 行（+5 行 module doc + `use std::collections::HashMap`）。6 个 canvas 函数原样迁入：`parse_canvas_color`/`parse_line_join`/`parse_line_cap`/`parse_composite_operation`/`parse_image_data_wire`（私有 helper，仅 canvas_context_op 用）+ `canvas_context_op`（pub，~360 行，派发全部 Canvas 2D 操作）。 |
+| `crates/engine/src/js_dom_bridge.rs` | 删 canvas 段（原 1217-1675 行）+ 增 `mod canvas; pub use canvas::*;`。**调用点零改动**：register_dom_callbacks 中 `canvas_context_op(...)`（line 3706）经 `pub use` 重导出解析。补 `canvas.rs` 的 `use std::collections::HashMap`（canvas_context_op 签名用 `HashMap<u64, CanvasContext>`，原依赖父模块 `use`）。 |
+
+**为何 canvas 组自包含**：脚本验证 canvas 段不调 find_by_selector/css_selector_to_string 等 DOM/选择器 helper（仅 zero_canvas/zero_render_foundation 类型 + 自有 parse helper）。私有 parse helper 仅被 canvas_context_op 调用（无外部 caller）。唯一外部 caller = register_dom_callbacks 的 `canvas_context_op(&mut reg, handle, op, rest)`，经 `pub use` 解析。首版漏 `HashMap` import（canvas_context_op 签名 `&mut (u64, HashMap<u64, CanvasContext>)` 依赖父 `use std::collections::HashMap`）→ clippy E0425 → 补 import 修复。
+
+**为何零回归**：迁移纯机械（6 函数 doc+body 原样移到 canvas.rs）；`pub use canvas::*` 重导出使 register_dom_callbacks 调用点逐符号解析不变；私有 parse helper 随迁入 canvas.rs 内私有（仅 canvas_context_op 用）。`make test` 14155 全绿（含全部 Canvas 2D 集成测试：路径/矩形/文本/图像/变换/合成/像素/状态）验证。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14155 passed / 71 skipped / 0 failed**（测试计数不变 = 纯重构）+ clippy `-D warnings` 零警告（workspace）+ fmt clean。
+
+**剩余文件大小**：`js_dom_bridge.rs` 现 **3271 行**（~1.6× 超标，自 R2973 3959→3726→3271 两刀减 688 行）。后续切片续抽：① selector 匹配组（element_matches_test_selector/closest/subtree/children/sibling/parent + json_str，~130 行）；② apply_dom_mutations 大函数（~290 行）拆分或独立模块；③ register_dom_callbacks 巨函数（~1000+ 行回调注册）按功能域分组。每刀 kill-switch = `make test` 全绿。
+
+**下一步**：续 js_dom_bridge.rs 拆分 slice 3（selector 匹配组抽取，最自包含的下一组）；或续 P1a 功能（Headers 实例化迁移 / ClipboardItem / task source 优先级 / customElements upgrade）。
+
 ### 工程治理——js_dom_bridge.rs 拆分 slice 1：crypto 子模块（3959→3726，本轮 R2973，~14,155 测试）
 
 R2972 后处理逾期待办：`js_dom_bridge.rs` **3959 行**（2000 行准则 ~2×，自 R2962 tests 拆分 + R2963 shim 拆分后唯一剩 ~2× 超标文件）。本切片为多会话拆分的**第 1 刀**——按既有 `mod computed_style`（R2709）模式，抽取最自包含的 **crypto 组**到子模块。
