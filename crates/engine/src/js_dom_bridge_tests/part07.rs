@@ -517,7 +517,124 @@ fn test_history_pushstate_r2814() {
     assert_eq!(
         sandbox.execute("String(globalThis.__oob)").unwrap().value,
         "ok",
-        "go(越界) clamp 不抛"
+        "go(越界) 不抛（no-op）"
+    );
+}
+
+#[test]
+fn test_history_go_out_of_range_noop_r3004() {
+    // R3004：history.go(delta) 越界须为 **no-op**（不动 cursor、不派发 popstate）——spec/MDN：「out-of-range
+    // delta does nothing」。旧实现 clamp target 到 [0,len-1] 后移动 + 派发 popstate（SPA router 计算的 delta
+    // 过冲时误导航到边界）。经 history.state 同步可观测：越界 go 后 state 不变；in-range go 正常移动。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 建 3 entry（init null + a + b），back 到中间（cursor 在 a，state.page=1）。
+    sandbox
+        .execute(
+            "history.pushState({ page: 1 }, '', '/a');\
+             history.pushState({ page: 2 }, '', '/b');\
+             history.back();\
+             globalThis.__midState = history.state.page;\
+             globalThis.__midLen = history.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__midState)").unwrap().value,
+        "1",
+        "back 后 cursor 在中间 entry state.page=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__midLen)").unwrap().value,
+        "3",
+        "length=3"
+    );
+
+    // go(-100) 越界（仅能回退 1）→ no-op：state 不变（仍 page=1），length 不变。
+    sandbox
+        .execute(
+            "history.go(-100);\
+             globalThis.__afterBack = history.state.page;\
+             globalThis.__afterBackLen = history.length;\
+             globalThis.__oobBack = (function(){ try { return 'ok'; } catch(e){ return 'threw'; } })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__oobBack)").unwrap().value,
+        "ok",
+        "go(-100) 越界不抛"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__afterBack)").unwrap().value,
+        "1",
+        "go(-100) 越界 no-op：state 不变 page=1（旧 clamp 会移到 idx0 state=null）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__afterBackLen)").unwrap().value,
+        "3",
+        "go(-100) 越界 length 不变=3"
+    );
+
+    // go(100) 越界（仅能前进 1）→ no-op：state 不变。
+    sandbox
+        .execute(
+            "history.go(100);\
+             globalThis.__afterFwd = history.state.page;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__afterFwd)").unwrap().value,
+        "1",
+        "go(100) 越界 no-op：state 不变 page=1（旧 clamp 会移到 idx2 state.page=2）"
+    );
+
+    // in-range go(-1) 正常移动（state→null，回 init entry）。
+    sandbox
+        .execute(
+            "history.go(-1);\
+             globalThis.__inRangeBack = (history.state === null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__inRangeBack)").unwrap().value,
+        "true",
+        "in-range go(-1) 正常回退到 init entry state=null"
+    );
+
+    // in-range go(2) 正常前进（state→page=2，b entry）。
+    sandbox
+        .execute(
+            "history.go(2);\
+             globalThis.__inRangeFwd = history.state.page;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__inRangeFwd)").unwrap().value,
+        "2",
+        "in-range go(2) 正常前进到 b entry state.page=2"
+    );
+
+    // go(0) 不移动（headless 无真 reload，近似 no-op：state 不变）。
+    sandbox
+        .execute(
+            "history.go(0);\
+             globalThis.__goZero = history.state.page;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__goZero)").unwrap().value,
+        "2",
+        "go(0) 不移动：state 仍 page=2（headless 近似 reload no-op）"
     );
 }
 

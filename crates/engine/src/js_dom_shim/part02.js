@@ -1554,10 +1554,12 @@
     back: function () { if (_hist_cursor > 0) { _hist_cursor--; _hist_dispatchPopState(); } },
     forward: function () { if (_hist_cursor < _hist_entries.length - 1) { _hist_cursor++; _hist_dispatchPopState(); } },
     go: function (delta) {
+      // R3004：spec/MDN——out-of-range delta 为 **no-op**（不动 cursor、不派发 popstate）。旧实现 clamp target
+      // 到 [0,len-1] 后移动+派发 popstate（SPA router 计算的 delta 过冲时误导航到边界）。delta==null → -1
+      //（spec go() 无参为 reload，headless 近似 back，保留旧默认）；delta==0 → 不移动（spec reload，headless no-op）。
       var d = (delta == null) ? -1 : (delta | 0);
       var target = _hist_cursor + d;
-      if (target < 0) target = 0;
-      if (target > _hist_entries.length - 1) target = _hist_entries.length - 1;
+      if (target < 0 || target > _hist_entries.length - 1) return; // 越界 no-op
       if (target !== _hist_cursor) { _hist_cursor = target; _hist_dispatchPopState(); }
     },
   };
