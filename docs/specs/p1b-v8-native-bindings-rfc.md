@@ -3,7 +3,7 @@
 **版本**：v0.1（草稿）
 **日期**：2026-08-08
 **作者**：ZeroWeb rally（自主推进）
-**状态**：草稿 / 待用户评审（rally 无人值守，本稿为控制面交付物，不暂停等待确认）
+**状态**：v0.1 已批准 S0 PoC（2026-08-09 用户决策）；S1–S7 按 §4 逐片 land，TBD 结论待 S0 验证后回写
 
 > **与字体栈 RFC 同级**：本 RFC 是 `docs/goal/zero-web/master.md` 反复标注「P1b（V8 原生绑定）需独立 RFC，与字体栈 RFC 同级对待」的落地。字体栈 RFC（`docs/goal/rendering-compat/fontdue-replacement-scoping.md`）解决「看起来对不对」（渲染一致性），本 RFC 解决「能不能用」（JS 性能与 Web Components 正确性）。
 

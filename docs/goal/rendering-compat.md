@@ -17,6 +17,8 @@
 >
 > **▶ 主线切换裁决（2026-08-04 用户决策）**：用户裁决——「工作切回父目标 zero-web（恢复 P1 DOM/JS Bridge 原生化），渲染兼容性先缓一缓」。据此：(1) **本 goal 降频守成**，不再作为自主主线推进：保留低频 plateau-guard（`make test` triple-guard 周期拉长——父目标侧有 .rs 变更或每 ~10 轮跑一次，守护 13192 全绿基线）。(2) **待用户决策清单原样保留**：vertical-mode R1043 / taffy R2174 / Phase A IFC / font-stack C-dep / srcset 等深结构继续等点名；用户点名任一深结构 → 立即切回本 goal。(3) 文档纠偏停止主动排程（design-doc 引用核验已近收官），仅在有 .rs 变更引发 drift 时顺手修。(4) 本裁决不推翻 2026-07-29「永不停」指令——守成 + 待命即执行形态，恢复时零成本；父目标主线（P1a 事件循环/fetch/Observer 真实化）与渲染侧无冲突。
 >
+> **▶ 字体栈实施裁决（2026-08-09 用户决策）**：用户批准 font-stack coherence rebuild（`fontdue-replacement-scoping.md` v0.2.3 / `unified-font-stack-design.md`）——**接受 HarfBuzz C 依赖**（FreeType 已 default-on），本 goal 由降频守成**恢复主动实施**。执行形态：拆分为独立可验证切片（度量统一 → 光栅统一 → 塑形 HarfBuzz → 字体回退逻辑），每片 kill-switch + 结构签名 gate + 全量 oracle A/B，net≥0 才落地；第一刀选最小可度量收益切片。与父目标 P1a（engine DOM 桥）工作面不重叠，可并行。深结构清单其余项（vertical-mode R1043 / taffy R2174 / Phase A IFC / srcset）仍等用户点名。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
@@ -24,7 +26,7 @@
 >   - [ ] vertical-mode native R1043 — 四层协调深改，R1043 谱系停止条件曾触发 — 等点名
 >   - [ ] taffy replaced-element border-box sizing R2174 — 深 multi-session — 等点名
 >   - [ ] Phase A slice-3 IFC 深构造（IFC 单一权威化）— 深 architectural，设计已就绪 — 等点名
->   - [ ] font-stack coherence rebuild + Phase A IFC line-box-metric 统一（R2025 user-blocked；RFC-ready [`unified-font-stack-design.md`](rendering-compat/unified-font-stack-design.md) v0.2.3）— 等授权 — **⚠️ R2869 勘误 R2867**：Skia/raster C-dep **非** font-wall unlock（R1560 real-skia-safe A/B net-24 已证伪；光栅层 R1068/R1159 FreeType default-on 已对齐 chromium）；font-wall 残余在 **layout/metric coherence（Phase A IFC）**，须 **full font-stack rebuild（layout/paint/wrap metric coherence）整体做**（isolated slice 全 net-negative：line-height ×3 + advance ×4 + raster ×1，不可切片），二者皆 deep multi-week user-gated；DC-2~5/2026 65% oracle absent 此授权 = unreachable
+>   - [x] ~~font-stack coherence rebuild + Phase A IFC line-box-metric 统一（R2025 user-blocked；RFC-ready [`unified-font-stack-design.md`](rendering-compat/unified-font-stack-design.md) v0.2.3）~~ ✅ **已批准（2026-08-09 用户决策）**：接受 HarfBuzz C 依赖，恢复主动实施，分片执行中 — **⚠️ R2869 勘误 R2867（历史依据，不改变批准）**：Skia/raster C-dep **非** font-wall unlock（R1560 real-skia-safe A/B net-24 已证伪；光栅层 R1068/R1159 FreeType default-on 已对齐 chromium）；font-wall 残余在 **layout/metric coherence（Phase A IFC）**，须 **full font-stack rebuild（layout/paint/wrap metric coherence）整体做**（isolated slice 全 net-negative：line-height ×3 + advance ×4 + raster ×1，不可切片），二者皆 deep multi-week user-gated；DC-2~5/2026 65% oracle absent 此授权 = unreachable
 >   - [ ] 响应式图片 srcset / `<picture>` / CSS `image-set()`（R2412 发现）— `extract_img_resources` 仅取 `<img src>`，不解析 srcset/source；srcset-only 图缺抓、其余仅次优分辨率。正确选源须 DPR+`sizes`+布局（layout-dependent）+ painter effective-src plumbing — 深，须 RFC+布局集成 — 等点名
 > - 真正需用户拍板的 4 类（不兼容/闭源许可证、破坏性 git/文件操作、改 Mission/Done/范围、超大磁盘网络下载工具审批无法覆盖）同上格式追加。当前该 4 类无悬而未决项。
 >   - [x] ~~**Mission 95% 的时间账本校准（A1）** — 改 Mission/Done/范围 — Ladybird 7 年/8 人全职/428 贡献者才到同源 93.33%（2026-08-05 实测，官方算法复算），ZeroWeb 当前 oracle ~57% + G0 单维护者；95% 作为短期冲刺目标与幂律现实不匹配是 plateau 反复的根源之一~~ ✅ **已拍板（2026-08-07）**：采纳分阶段里程碑（2026 65% → 2027 80% → 长期 95%），Mission 已更新
