@@ -486,7 +486,9 @@ jobs:
             echo "No perf baseline changes."
           else
             git commit -m "chore(perf): 更新 CI 性能基线/趋势（benchmarks dispatch）"
-            git pull --rebase origin main
+            # 冲突容忍：基线/趋势为追加式数据，冲突时取远端（权威版本）；
+            # 本地本次测量经下一轮 auto-tighten 继续收敛
+            git pull --rebase -X theirs origin main
             git push origin HEAD:main
             echo "Perf baseline committed and pushed."
           fi

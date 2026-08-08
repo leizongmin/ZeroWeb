@@ -372,7 +372,9 @@ jobs:
             git commit -m "chore(wpt): 更新 WPT 趋势基线（绝对数，weekly cron）"
             # 全量 reftest 耗时 ~11 分钟，期间远端 main 可能有并发提交
             # （第三次验证暴露：push 被拒 fetch first）——rebase 后重推
-            git pull --rebase origin main
+            # 冲突容忍：基线/趋势为追加式数据，冲突时取远端（权威版本）；
+            # 本地本次测量经下一轮 auto-tighten 继续收敛
+            git pull --rebase -X theirs origin main
             git push origin HEAD:main
             echo "Trend data committed and pushed."
           fi
@@ -458,7 +460,9 @@ jobs:
           else
             git commit -m "chore(perf): 更新性能基准趋势与基线（weekly cron）"
             # 测量耗时 ~15 分钟，期间远端 main 可能有并发提交——rebase 后重推
-            git pull --rebase origin main
+            # 冲突容忍：基线/趋势为追加式数据，冲突时取远端（权威版本）；
+            # 本地本次测量经下一轮 auto-tighten 继续收敛
+            git pull --rebase -X theirs origin main
             git push origin HEAD:main
             echo "Benchmark trend data committed and pushed."
           fi
@@ -487,7 +491,9 @@ jobs:
             echo "No monthly report changes."
           else
             git commit -m "chore(monthly): 更新月度工程报告（WPT + 性能趋势）"
-            git pull --rebase origin main
+            # 冲突容忍：基线/趋势为追加式数据，冲突时取远端（权威版本）；
+            # 本地本次测量经下一轮 auto-tighten 继续收敛
+            git pull --rebase -X theirs origin main
             git push origin HEAD:main
             echo "Monthly report committed and pushed."
           fi
