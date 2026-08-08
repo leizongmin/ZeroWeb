@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+zero-product-version = { workspace = true }
 hyper = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "gzip", "brotli", "deflate"] }
 url = { workspace = true }

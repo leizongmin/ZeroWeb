@@ -736,6 +736,7 @@ fn autocomplete_keyboard_selection_uses_selected_bg() {
 fn about_page_loads_as_internal_document() {
     let mut app = BrowserApp::new(RenderMode::Cpu);
     let html = pages::generate_about_browser_html();
+    assert!(html.contains(&format!("ZeroBrowser v{}", zero_product_version::VERSION)));
     app.open_internal_document_tab(html, "zero://about", "About ZeroBrowser");
     assert_eq!(app.address_bar_text(), "zero://about");
 }
@@ -887,6 +888,7 @@ fn settings_page_generates_html() {
     assert!(html.contains("Google"), "settings page should show search engine");
     assert!(html.contains("example.com"), "settings page should show home URL");
     assert!(html.contains("ZeroBrowser"), "settings page should show browser name");
+    assert!(html.contains(&format!("ZeroBrowser v{}", zero_product_version::VERSION)));
     assert!(
         html.contains("zero://settings/toggle/show_bookmarks_bar"),
         "settings page should expose bookmarks bar toggle"

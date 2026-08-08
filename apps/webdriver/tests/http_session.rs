@@ -194,6 +194,10 @@ fn webdriver_session_lifecycle() {
     let session_id = v["value"]["sessionId"].as_str().expect("sessionId").to_string();
     assert!(!session_id.is_empty());
     assert_eq!(v["value"]["capabilities"]["browserName"], "zero-browser");
+    assert_eq!(
+        v["value"]["capabilities"]["browserVersion"],
+        zero_product_version::VERSION
+    );
 
     // 2. Navigate To（本地测试页服务器）
     let (_page_server, page_port) = spawn_test_page_server();

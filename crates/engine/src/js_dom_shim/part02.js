@@ -1891,7 +1891,8 @@
   }
 
   globalThis.navigator = {
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ZeroBrowser/0.1 Chrome/120.0.0.0',
+    // https://html.spec.whatwg.org/multipage/system-state.html#dom-navigator-useragent
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ZeroBrowser/__ZERO_BUILD_VERSION__ Chrome/120.0.0.0',
     appName: 'Netscape',
     appVersion: '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     appCodeName: 'Mozilla',
@@ -1930,7 +1931,7 @@
       brands: [
         { brand: 'Chromium', version: '120' },
         { brand: 'Not(A:Brand', version: '8' },
-        { brand: 'ZeroBrowser', version: '0.1' }
+        { brand: 'ZeroBrowser', version: '__ZERO_BUILD_VERSION__' }
       ],
       mobile: false,
       platform: 'Windows',

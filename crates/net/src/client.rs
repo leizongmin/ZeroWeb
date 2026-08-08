@@ -49,34 +49,20 @@ impl HttpClient {
         Self::with_config(30, max)
     }
 
-    /// HTTP 客户端默认 User-Agent。
+    /// HTTP 客户端默认 User-Agent 平台前缀。
     #[cfg(target_os = "macos")]
-    const DEFAULT_USER_AGENT: &str = concat!(
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ",
-        "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 ZeroWeb/",
-        env!("CARGO_PKG_VERSION")
-    );
-    /// HTTP 客户端默认 User-Agent。
+    const DEFAULT_USER_AGENT_PREFIX: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
+    /// HTTP 客户端默认 User-Agent 平台前缀。
     #[cfg(target_os = "windows")]
-    const DEFAULT_USER_AGENT: &str = concat!(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ",
-        "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 ZeroWeb/",
-        env!("CARGO_PKG_VERSION")
-    );
-    /// HTTP 客户端默认 User-Agent。
+    const DEFAULT_USER_AGENT_PREFIX: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
+    /// HTTP 客户端默认 User-Agent 平台前缀。
     #[cfg(target_os = "linux")]
-    const DEFAULT_USER_AGENT: &str = concat!(
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ",
-        "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 ZeroWeb/",
-        env!("CARGO_PKG_VERSION")
-    );
-    /// HTTP 客户端默认 User-Agent。
+    const DEFAULT_USER_AGENT_PREFIX: &str =
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
+    /// HTTP 客户端默认 User-Agent 平台前缀。
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    const DEFAULT_USER_AGENT: &str = concat!(
-        "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) ",
-        "Chrome/151.0.0.0 Safari/537.36 ZeroWeb/",
-        env!("CARGO_PKG_VERSION")
-    );
+    const DEFAULT_USER_AGENT_PREFIX: &str =
+        "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 
     /// 跨域重定向时应剥离的敏感请求头。
     const SENSITIVE_HEADERS: &[&str] = &[
@@ -89,13 +75,23 @@ impl HttpClient {
 
     /// 使用完整配置创建 HTTP 客户端。
     fn with_config(timeout_secs: u64, max_redirects: usize) -> Self {
-        let client = build_blocking_client(Self::DEFAULT_USER_AGENT, timeout_secs);
+        let user_agent = Self::default_user_agent();
+        let client = build_blocking_client(&user_agent, timeout_secs);
 
         Self {
             client,
             max_redirects,
             timeout_secs,
         }
+    }
+
+    /// 构造包含产品构建日期版本的默认 User-Agent。
+    pub fn default_user_agent() -> String {
+        format!(
+            "{} ZeroWeb/{}",
+            Self::DEFAULT_USER_AGENT_PREFIX,
+            zero_product_version::VERSION
+        )
     }
 
     /// 发送 HTTP 请求，自动处理重定向。
@@ -380,10 +376,11 @@ mod integration_tests {
     /// 默认请求应发送网站兼容的 Chromium User-Agent。
     #[test]
     fn test_send_uses_chromium_compatible_user_agent() {
-        assert!(HttpClient::DEFAULT_USER_AGENT.contains("Chrome/151.0.0.0"));
+        let user_agent = HttpClient::default_user_agent();
+        assert!(user_agent.contains("Chrome/151.0.0.0"));
         assert!(
-            HttpClient::DEFAULT_USER_AGENT.ends_with(concat!("ZeroWeb/", env!("CARGO_PKG_VERSION"))),
-            "User-Agent should expose the Cargo package version"
+            user_agent.ends_with(&format!("ZeroWeb/{}", zero_product_version::VERSION)),
+            "User-Agent should expose the product build version"
         );
 
         let (listener, url) = bind_server();
@@ -393,7 +390,7 @@ mod integration_tests {
             let mut buf = [0u8; 8192];
             let n = stream.read(&mut buf).unwrap();
             let request = String::from_utf8_lossy(&buf[..n]);
-            let expected = format!("user-agent: {}", HttpClient::DEFAULT_USER_AGENT);
+            let expected = format!("user-agent: {}", HttpClient::default_user_agent());
             assert!(
                 request.contains(&expected),
                 "request should contain Chromium-compatible User-Agent, got: {request}"

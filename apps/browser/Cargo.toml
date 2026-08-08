@@ -16,6 +16,7 @@ v8 = ["zero-engine/v8", "zero-webview/v8", "zero-script-sandbox/v8", "zero-page-
 quickjs = ["zero-engine/quickjs", "zero-webview/quickjs", "zero-script-sandbox/quickjs", "zero-page-runtime/quickjs", "zero-browser-shell/quickjs"]
 
 [dependencies]
+zero-product-version = { workspace = true }
 zero-browser-shell = { workspace = true }
 zero-webview = { workspace = true }
 zero-page-runtime = { workspace = true }

@@ -1,0 +1,9 @@
+[package]
+name = "zero-product-version"
+description = "ZeroWeb 产品构建日期版本"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"

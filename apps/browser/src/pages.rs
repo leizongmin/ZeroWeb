@@ -333,7 +333,7 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
     </div>
 
     <p style="text-align: center; color: #999; font-size: 12px; margin-top: 32px;">
-      ZeroBrowser v0.1.0
+      ZeroBrowser v{version}
     </p>
   </div>
 </body>
@@ -388,6 +388,7 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         home_actions = home_actions,
         zoom_actions = zoom_actions,
         download_dir_row = download_dir_row,
+        version = zero_product_version::VERSION,
     )
 }
 
@@ -494,7 +495,8 @@ pub fn generate_bookmarks_html(bookmarks: &zero_browser_shell::Bookmarks) -> Str
 
 /// 生成「关于 ZeroBrowser」页面 HTML。
 pub fn generate_about_browser_html() -> String {
-    r#"<!DOCTYPE html>
+    format!(
+        r#"<!DOCTYPE html>
 <html>
 <head><title>About ZeroBrowser</title></head>
 <body style="font-family: Segoe UI, sans-serif; margin: 0; padding: 40px; background: #f8f9fa; color: #202124;">
@@ -528,13 +530,14 @@ pub fn generate_about_browser_html() -> String {
       </ul>
 
       <p style="margin: 0; color: #80868b; font-size: 13px;">
-        Version: ZeroBrowser v0.1.0-alpha
+        Version: ZeroBrowser v{version}
       </p>
     </div>
   </div>
 </body>
-</html>"#
-        .to_string()
+</html>"#,
+        version = zero_product_version::VERSION,
+    )
 }
 
 #[cfg(test)]

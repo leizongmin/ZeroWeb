@@ -11,6 +11,7 @@ v8 = ["zero-script-sandbox/v8"]
 quickjs = ["zero-script-sandbox/quickjs"]
 
 [dependencies]
+zero-product-version = { workspace = true }
 zero-dom = { workspace = true }
 zero-css-parser = { workspace = true }
 zero-style-system = { workspace = true }

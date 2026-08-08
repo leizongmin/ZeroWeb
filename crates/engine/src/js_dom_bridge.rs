@@ -1939,7 +1939,7 @@ pub fn generate_js_dom_shim() -> &'static str {
         s.push_str(include_str!("js_dom_shim/part04.js"));
         s.push_str(include_str!("js_dom_shim/part05.js"));
         s.push_str(include_str!("js_dom_shim/part06.js"));
-        s
+        s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }
 

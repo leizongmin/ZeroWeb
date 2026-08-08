@@ -26,7 +26,7 @@ Options:
   --browser PATH         Use an existing zero-browser binary.
   --renderer PATH        Use an existing zero-renderer binary.
   --output-dir PATH      Output directory (default: target/packages).
-  --version VERSION      Bundle version (default: Cargo workspace version).
+  --version VERSION      Bundle version (default: current local date as YY.M.D).
   --archive PATH         Zip path (default: <output-dir>/zero-browser-macos.zip).
   --sign-identity NAME   Developer ID Application identity. Defaults to
                          MACOS_SIGN_IDENTITY. Without it, the app is ad-hoc signed.
@@ -100,6 +100,25 @@ command -v ditto >/dev/null || fail "ditto is required"
 command -v iconutil >/dev/null || fail "iconutil is required"
 command -v sips >/dev/null || fail "sips is required"
 
+if [[ -z "$APP_VERSION" ]]; then
+    if [[ -n "${SOURCE_DATE_EPOCH:-}" ]]; then
+        read -r version_year version_month version_day < <(
+            date -u -r "$SOURCE_DATE_EPOCH" "+%y %m %d"
+        ) || fail "invalid SOURCE_DATE_EPOCH: $SOURCE_DATE_EPOCH"
+    else
+        read -r version_year version_month version_day < <(date "+%y %m %d")
+    fi
+    APP_VERSION="$((10#$version_year)).$((10#$version_month)).$((10#$version_day))"
+fi
+[[ "$APP_VERSION" =~ ^[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}$ ]] \
+    || fail "version must use YY.M.D: $APP_VERSION"
+IFS=. read -r version_year version_month version_day <<< "$APP_VERSION"
+(( 10#$version_year <= 99 && 10#$version_month >= 1 && 10#$version_month <= 12 \
+    && 10#$version_day >= 1 && 10#$version_day <= 31 )) \
+    || fail "version contains an invalid date: $APP_VERSION"
+BUNDLE_VERSION="$APP_VERSION"
+export ZERO_BUILD_VERSION="$APP_VERSION"
+
 if [[ -n "$BROWSER_BINARY" || -n "$RENDERER_BINARY" ]]; then
     [[ -n "$BROWSER_BINARY" && -n "$RENDERER_BINARY" ]] \
         || fail "--browser and --renderer must be provided together"
@@ -119,16 +138,6 @@ fi
 
 [[ -f "$BROWSER_BINARY" ]] || fail "browser binary not found: $BROWSER_BINARY"
 [[ -f "$RENDERER_BINARY" ]] || fail "renderer binary not found: $RENDERER_BINARY"
-
-if [[ -z "$APP_VERSION" ]]; then
-    APP_VERSION="$(
-        sed -n '/^\[workspace\.package\]$/,/^\[/{s/^version = "\([^"]*\)"/\1/p;}' \
-            "$PROJECT_ROOT/Cargo.toml" | head -1
-    )"
-fi
-[[ "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}([+-][A-Za-z0-9.-]+)?$ ]] \
-    || fail "version must be a semantic version: $APP_VERSION"
-BUNDLE_VERSION="${APP_VERSION%%[-+]*}"
 
 mkdir -p "$OUTPUT_DIR"
 if [[ -z "$ARCHIVE_PATH" ]]; then

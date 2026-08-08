@@ -1291,6 +1291,18 @@ fn test_navigator_env_info_r2988() {
         "navigator.connection.addEventListener 注册不抛"
     );
 
+    let user_agent = sandbox
+        .execute("String(navigator.userAgent)")
+        .unwrap()
+        .value;
+    assert!(
+        user_agent.contains(&format!(
+            "ZeroBrowser/{}",
+            zero_product_version::VERSION
+        )),
+        "navigator.userAgent 包含产品构建日期版本"
+    );
+
     // userAgentData（UA Client Hints）：brands/mobile/platform + getHighEntropyValues Promise。
     assert_eq!(
         sandbox
@@ -1315,6 +1327,18 @@ fn test_navigator_env_info_r2988() {
             .value,
         "true",
         "navigator.userAgentData.brands 非空"
+    );
+    assert_eq!(
+        sandbox
+            .execute(
+                "String(navigator.userAgentData.brands.find(function (item) {\
+                   return item.brand === 'ZeroBrowser';\
+                 }).version)",
+            )
+            .unwrap()
+            .value,
+        zero_product_version::VERSION,
+        "ZeroBrowser client hint 包含产品构建日期版本"
     );
 
     // getHighEntropyValues：返 Promise，resolve 含请求的高熵字段（platformVersion/architecture）。

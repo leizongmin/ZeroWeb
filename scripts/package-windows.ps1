@@ -38,13 +38,36 @@ function Write-Utf8NoBom {
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $PackageDir = Join-Path $ProjectRoot "target\packages"
 
-# 获取版本号
-$CargoToml = Get-Content (Join-Path $ProjectRoot "Cargo.toml") -Raw
-if ($CargoToml -match 'version\s*=\s*"([^"]+)"') {
-    $Version = $Matches[1]
+# 获取产品构建日期版本。
+if ($env:ZERO_BUILD_VERSION) {
+    $Version = $env:ZERO_BUILD_VERSION
+} elseif ($env:SOURCE_DATE_EPOCH) {
+    try {
+        $BuildDate = [DateTimeOffset]::FromUnixTimeSeconds(
+            [Int64]::Parse($env:SOURCE_DATE_EPOCH)
+        ).UtcDateTime
+    } catch {
+        throw "Invalid SOURCE_DATE_EPOCH: $env:SOURCE_DATE_EPOCH"
+    }
+    $Version = "{0}.{1}.{2}" -f ($BuildDate.Year % 100), $BuildDate.Month, $BuildDate.Day
 } else {
-    $Version = "0.1.0"
+    $BuildDate = [DateTime]::Now
+    $Version = "{0}.{1}.{2}" -f ($BuildDate.Year % 100), $BuildDate.Month, $BuildDate.Day
 }
+if ($Version -notmatch '^\d{1,2}\.\d{1,2}\.\d{1,2}$') {
+    throw "Version must use YY.M.D: $Version"
+}
+try {
+    $VersionParts = $Version.Split('.') | ForEach-Object { [Int32]::Parse($_) }
+    $null = [DateTime]::new(
+        2000 + $VersionParts[0],
+        $VersionParts[1],
+        $VersionParts[2]
+    )
+} catch {
+    throw "Version contains an invalid date: $Version"
+}
+$env:ZERO_BUILD_VERSION = $Version
 
 Write-Host "[INFO] ZeroBrowser v$Version Windows 打包" -ForegroundColor Green
 

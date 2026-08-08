@@ -208,7 +208,7 @@ fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream
                         "sessionId": id,
                         "capabilities": {
                             "browserName": "zero-browser",
-                            "browserVersion": env!("CARGO_PKG_VERSION"),
+                            "browserVersion": zero_product_version::VERSION,
                         }
                     }
                 }),

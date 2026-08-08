@@ -614,7 +614,7 @@ impl HeadlessServer {
             "sessionId": session_id,
             "capabilities": {
                 "browserName": "ZeroWeb",
-                "browserVersion": env!("CARGO_PKG_VERSION"),
+                "browserVersion": zero_product_version::VERSION,
                 "platformName": std::env::consts::OS,
             }
         }))
@@ -850,9 +850,9 @@ impl HeadlessServer {
     #[allow(dead_code)]
     pub fn http_version_json(addr: SocketAddr) -> String {
         serde_json::json!({
-            "Browser": "ZeroWeb/0.1",
+            "Browser": format!("ZeroWeb/{}", zero_product_version::VERSION),
             "Protocol-Version": "1.3",
-            "User-Agent": format!("ZeroWeb/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS),
+            "User-Agent": zero_net::HttpClient::default_user_agent(),
             "V8-Version": "12.0",
             "WebKit-Version": "0.1",
             "webSocketDebuggerUrl": format!("ws://{addr}"),
@@ -1175,7 +1175,8 @@ mod tests {
         let addr: SocketAddr = "127.0.0.1:9222".parse().unwrap();
         let json = HeadlessServer::http_version_json(addr);
         let parsed: Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["Browser"], "ZeroWeb/0.1");
+        assert_eq!(parsed["Browser"], format!("ZeroWeb/{}", zero_product_version::VERSION));
+        assert_eq!(parsed["User-Agent"], zero_net::HttpClient::default_user_agent());
         assert!(parsed["webSocketDebuggerUrl"].as_str().unwrap().contains("ws://"));
     }
 
@@ -1606,7 +1607,7 @@ mod tests {
         let addr: std::net::SocketAddr = "127.0.0.1:9222".parse().unwrap();
         let version_json = HeadlessServer::http_version_json(addr);
         let version: serde_json::Value = serde_json::from_str(&version_json).unwrap();
-        assert_eq!(version["Browser"], "ZeroWeb/0.1");
+        assert_eq!(version["Browser"], format!("ZeroWeb/{}", zero_product_version::VERSION));
         assert!(version["webSocketDebuggerUrl"].as_str().unwrap().starts_with("ws://"));
 
         // 2. Target.getTargets

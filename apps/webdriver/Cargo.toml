@@ -10,6 +10,7 @@ name = "zero-webdriver"
 path = "src/main.rs"
 
 [dependencies]
+zero-product-version = { workspace = true }
 zero-webview = { workspace = true }
 zero-dom = { workspace = true }
 serde_json = { workspace = true }

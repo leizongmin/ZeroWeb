@@ -20,6 +20,6 @@ HTTP 状态码为 200 不代表拿到了真实页面。排查站点兼容问题�
 
 ## 解决方案
 
-+ 默认 HTTP 客户端使用带平台信息的 Chrome 兼容 `User-Agent`，避免被常见站点识别为不支持 HTTPS 的非浏览器客户端；末尾保留 `ZeroWeb/<version>` 产品标识，其中版本通过 `env!("CARGO_PKG_VERSION")` 读取 `Cargo.toml`。
++ 默认 HTTP 客户端使用带平台信息的 Chrome 兼容 `User-Agent`，避免被常见站点识别为不支持 HTTPS 的非浏览器客户端；末尾保留 `ZeroWeb/<version>` 产品标识，版本统一读取 `zero-product-version` 生成的构建日期版本。
 + 使用本地 TCP 服务端回归测试实际请求头，防止后续退回产品自定义短 UA。
 + 后续仍需把 `location.assign()`、`location.replace()` 和 URL setter 接到宿主真实导航；兼容 UA 只能解决服务端错误分流，不能替代完整导航语义。

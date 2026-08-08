@@ -16,7 +16,24 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PACKAGE_DIR="$PROJECT_ROOT/target/packages"
 APP_NAME="zero-browser"
 APP_DISPLAY="ZeroBrowser"
-APP_VERSION="$(cd "$PROJECT_ROOT" && cargo metadata --format-version 1 --no-deps 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["packages"][0]["version"])' 2>/dev/null || echo "0.1.0")"
+if [[ -n "${ZERO_BUILD_VERSION:-}" ]]; then
+    APP_VERSION="$ZERO_BUILD_VERSION"
+elif [[ -n "${SOURCE_DATE_EPOCH:-}" ]]; then
+    read -r version_year version_month version_day < <(
+        date -u -d "@$SOURCE_DATE_EPOCH" "+%y %m %d"
+    )
+    APP_VERSION="$((10#$version_year)).$((10#$version_month)).$((10#$version_day))"
+else
+    read -r version_year version_month version_day < <(date "+%y %m %d")
+    APP_VERSION="$((10#$version_year)).$((10#$version_month)).$((10#$version_day))"
+fi
+[[ "$APP_VERSION" =~ ^[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}$ ]] \
+    || { echo "[ERROR] version must use YY.M.D: $APP_VERSION" >&2; exit 1; }
+IFS=. read -r version_year version_month version_day <<< "$APP_VERSION"
+(( 10#$version_year <= 99 && 10#$version_month >= 1 && 10#$version_month <= 12 \
+    && 10#$version_day >= 1 && 10#$version_day <= 31 )) \
+    || { echo "[ERROR] version contains an invalid date: $APP_VERSION" >&2; exit 1; }
+export ZERO_BUILD_VERSION="$APP_VERSION"
 
 # 颜色输出
 RED='\033[0;31m'
