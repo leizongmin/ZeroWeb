@@ -1758,3 +1758,122 @@ fn test_document_evaluate_xpath_edges_r2990() {
         "//li[last()-0] = D（last()-0 等价 last()）"
     );
 }
+
+#[test]
+fn test_custom_elements_attr_changed_callback_r2992() {
+    // R2992：custom element lifecycle slice——attributeChangedCallback + observedAttributes（R2813 仅 shipped
+    // registry bookkeeping，lifecycle 回调全 defer）。element 为 generic Proxy 非 ctor 实例（upgrade/ctor
+    // 调用仍 defer），本 slice 落地 CE 最常用的可观察行为：setAttribute/removeAttribute 命中 observedAttributes
+    // 时，分派 ctor.prototype.attributeChangedCallback.call(element, name, old, new)。old 经变更前 getAttribute
+    // 读（首次 set old=null，remove new=null）；值真变才入队（set/remove 同值无 change）。
+    // connectedCallback/disconnectedCallback/upgrade/adoptedCallback 仍 defer（独立 slice）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 定义带 observedAttributes + attributeChangedCallback 的 custom element，记录每次调用。
+    sandbox
+        .execute(
+            "globalThis.__calls = [];\
+             class MyCounter extends HTMLElement {\
+               static get observedAttributes() { return ['count', 'label']; }\
+               attributeChangedCallback(name, oldVal, newVal) {\
+                 globalThis.__calls.push(name + ':' + oldVal + '->' + newVal);\
+               }\
+             }\
+             customElements.define('my-counter', MyCounter);\
+             var el = document.createElement('my-counter');\
+             document.body.appendChild(el);\
+             el.setAttribute('count', '5');\
+             el.setAttribute('count', '10');\
+             el.setAttribute('label', 'hi');\
+             el.setAttribute('data-x', '1');\
+             el.removeAttribute('count');\
+             el.setAttribute('label', 'hi');",
+        )
+        .unwrap();
+    // 期望序列：count:null->5（首次 set old=null）| count:5->10 | label:null->hi |（data-x 未观察，跳过）
+    // | count:10->null（remove → new=null）|（label 同值 'hi'，无 change，跳过）。
+    // 注：remove 后再 setAttribute 的 old 值受 handle 元素 removeAttribute「set-empty 而非真移除」既有限制
+    // 影响（hasAttribute 仍 true、old=''），故本切片不测该复合边角——handle true-removal（RemoveAttrOnHandle
+    // 变体）为独立 follow-up（涉 DomMutation apply 管线，engine 共享面）。
+    assert_eq!(
+        sandbox.execute("globalThis.__calls.join('|')").unwrap().value,
+        "count:null->5|count:5->10|label:null->hi|count:10->null",
+        "attributeChangedCallback 按 observedAttributes 过滤分派，old(null on first set)/new(null on remove) 值正确，未观察/同值跳过"
+    );
+
+    // 非自定义元素（<div>）setAttribute 不触发任何 CE 回调（registry 无 'div'）。
+    sandbox
+        .execute(
+            "globalThis.__before = globalThis.__calls.length;\
+             var d = document.createElement('div');\
+             document.body.appendChild(d);\
+             d.setAttribute('count', '1');\
+             d.setAttribute('label', '2');\
+             globalThis.__after = globalThis.__calls.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__before === globalThis.__after)").unwrap().value,
+        "true",
+        "非自定义元素 setAttribute 不分派 attributeChangedCallback"
+    );
+
+    // 多观察属性 + 连续变更：count 与 label 交替。
+    sandbox
+        .execute(
+            "globalThis.__calls2 = [];\
+             class MyTag extends HTMLElement {\
+               static get observedAttributes() { return ['a', 'b', 'c']; }\
+               attributeChangedCallback(name, oldVal, newVal) {\
+                 globalThis.__calls2.push(name + '=' + newVal);\
+               }\
+             }\
+             customElements.define('my-tag', MyTag);\
+             var t = document.createElement('my-tag');\
+             document.body.appendChild(t);\
+             t.setAttribute('b', '1');\
+             t.setAttribute('a', '2');\
+             t.setAttribute('c', '3');\
+             t.setAttribute('b', '4');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__calls2.join(',')").unwrap().value,
+        "b=1,a=2,c=3,b=4",
+        "多观察属性交替变更均分派（顺序 = setAttribute 调用序）"
+    );
+
+    // hasAttribute 对 handle（createElement）元素生效（latent gap 修复——此前 handle-only 恒 false）。
+    // 注：removeAttribute 对 handle 元素为「set-empty 而非真移除」（既有限制，同上），故 remove 后
+    // hasAttribute 仍 true；该 true-removal 为独立 follow-up，此处只测 set 前/后 存在性。
+    sandbox
+        .execute(
+            "var hg = document.createElement('my-tag');\
+             document.body.appendChild(hg);\
+             globalThis.__hgBefore = String(hg.hasAttribute('a'));\
+             hg.setAttribute('a', 'x');\
+             globalThis.__hgAfter = String(hg.hasAttribute('a'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hgBefore").unwrap().value,
+        "false",
+        "createElement 元素 setAttribute 前 hasAttribute=false"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hgAfter").unwrap().value,
+        "true",
+        "createElement 元素 setAttribute 后 hasAttribute=true（handle 路径生效，latent gap 修复）"
+    );
+}

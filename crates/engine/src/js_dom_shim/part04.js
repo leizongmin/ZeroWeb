@@ -363,6 +363,9 @@
           return function(name, value) {
             var n = String(name);
             var v = String(value);
+            // R2992 custom element attributeChangedCallback：变更前读 old（absent → null，spec 一致）。
+            var ceEntry = _ceEntryFor(key, sel, handle);
+            var ceOld = ceEntry ? _ce_attrValue(sel, handle, n) : null;
             // 同步客户端缓存：class→_classCache、value→_inputValues，使 setAttribute 与
             // classList/className、.value getter 协作一致（否则后续 classList.add 读 stale 缓存丢值）。
             if (n === 'class') _classCache[key] = v;
@@ -370,11 +373,15 @@
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
             _mo_notify(sel, handle, { type: 'attributes', attributeName: n });
+            if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, v);
           };
         }
         if (prop === 'removeAttribute') {
           return function(name) {
             var n = String(name);
+            // R2992 custom element attributeChangedCallback：移除前读 old（newVal=null）。
+            var ceEntry = _ceEntryFor(key, sel, handle);
+            var ceOld = ceEntry ? _ce_attrValue(sel, handle, n) : null;
             // sel-based：真移除（__zw_remove_attr / RemoveAttr，R2657）——区别于 set-empty 残留
             // `attr=""`（boolean 属性 checked/disabled 设空值仍 present → hasAttribute 误 true）。
             // handle-only（无 remove-handle 变体）/ 无回调 → fallback set-empty。
@@ -385,14 +392,22 @@
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
             else __zw_set_attr(sel, n, '');
             _mo_notify(sel, handle, { type: 'attributes', attributeName: n });
+            if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, null);
           };
         }
         // `el.hasAttribute(name)`——属性存在性（boolean 属性 checked/disabled/hidden、data-* 检查常用）。
-        // sel-based 经 host `__zw_has_attr`（"1"/"0"）；handle-only（无 has-attr-handle 变体）→ false。
+        // handle 句柄元素（createElement 创建）经 host `__zw_has_attr_handle`（R2832 引入，存于 mutation 列表）；
+        // sel-based 元素经 host `__zw_has_attr`（HTML 快照）。此前 handle-only 元素恒 false（latent bug，R2992 修）。
         if (prop === 'hasAttribute') {
           return function(name) {
-            if (!sel || typeof __zw_has_attr !== 'function') return false;
-            try { return __zw_has_attr(sel, String(name)) === '1'; } catch (_e) { return false; }
+            var n = String(name);
+            if (handle && typeof __zw_has_attr_handle === 'function') {
+              try { return __zw_has_attr_handle(handle, n) === '1'; } catch (_e) { return false; }
+            }
+            if (sel && typeof __zw_has_attr === 'function') {
+              try { return __zw_has_attr(sel, n) === '1'; } catch (_e) { return false; }
+            }
+            return false;
           };
         }
         // `el.focus()` / `el.blur()`——焦点状态追踪（document.activeElement 对）。纯 in-JS 状态：

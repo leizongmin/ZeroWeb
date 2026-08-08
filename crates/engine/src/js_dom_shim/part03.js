@@ -157,6 +157,62 @@
     upgrade: function (_root) {},
   };
 
+  // ── custom element lifecycle slice（R2992）：attributeChangedCallback 分派 ──────────
+  // element 实例为 generic Proxy 非 ctor 实例（upgrade/ctor 调用 defer），故本 slice 仅落地「属性变更」回调——
+  // 这是 CE 最常用的可观察行为（lit/@property / 各 CE 库 react-to-attr 模式）。setAttribute/removeAttribute
+  // 命中 observedAttributes 时，取 ctor.prototype.attributeChangedCallback 以 element proxy 为 this 调用，
+  // old/new 值经 getAttribute 前读（首次 set old=null，remove new=null）。
+  // https://html.spec.whatwg.org/multipage/custom-elements.html#attr-associated (observedAttributes 过滤 +
+  // 值真变才入队)。**仍 defer**：connectedCallback/disconnectedCallback（需元素连接追踪）、adoptedCallback、
+  // upgrade / ctor 实例化、IDL 反射 setter（className=/id= 等，不走 setAttribute 函数）——独立 slice。
+  // tag 不可变 → 每 element 首次属性变更时算一次 registry 查询并缓存（避 setAttribute 热路径每次 host 调用）。
+  var _ceEntryByKey = {}; // element key → registry entry | false（false 哨兵 = 非 custom，避重查）
+  function _ceEntryFor(key, sel, handle) {
+    if (Object.prototype.hasOwnProperty.call(_ceEntryByKey, key)) {
+      var cached = _ceEntryByKey[key];
+      return cached || null;
+    }
+    var entry = _ce_registry[_realTag(sel, handle).toLowerCase()] || null;
+    _ceEntryByKey[key] = entry || false;
+    return entry;
+  }
+  // 分派 attributeChangedCallback：仅当 attr ∈ ctor.observedAttributes 且值真变时（spec set/remove 同值无 change）。
+  function _ce_dispatchAttrChange(entry, proxy, name, oldVal, newVal) {
+    var ctor = entry.ctor;
+    var obs;
+    try { obs = ctor && ctor.observedAttributes; } catch (_e) { return; }
+    if (!obs) return;
+    var nl = String(name).toLowerCase();
+    var matched = false;
+    for (var i = 0; i < obs.length; i++) {
+      if (String(obs[i]).toLowerCase() === nl) { matched = true; break; }
+    }
+    if (!matched) return;
+    // 值真变判定（absent/null 归一为 '' 比较仅用于 gate；回调收 raw oldVal/newVal）。
+    var o = oldVal == null ? '' : String(oldVal);
+    var nv = newVal == null ? '' : String(newVal);
+    if (o === nv) return;
+    var cb = ctor.prototype && ctor.prototype.attributeChangedCallback;
+    if (typeof cb === 'function') {
+      try { cb.call(proxy, String(name), oldVal, newVal); } catch (_e) {}
+    }
+  }
+  // 读元素属性值用于 CE old-value：absent → null（spec attributeChangedCallback old/new 为 null 表 absent），
+  // present → 值串。经 has-attr 判存在（handle 元素用 __zw_has_attr_handle，sel 用 __zw_has_attr），
+  // 区别于 get-attr 对 absent 返 ''（无法区分 absent 与空串值）。
+  function _ce_attrValue(sel, handle, name) {
+    var present = false;
+    if (handle && typeof __zw_has_attr_handle === 'function') {
+      try { present = __zw_has_attr_handle(handle, name) === '1'; } catch (_e) { present = false; }
+    } else if (sel && typeof __zw_has_attr === 'function') {
+      try { present = __zw_has_attr(sel, name) === '1'; } catch (_e) { present = false; }
+    }
+    if (!present) return null;
+    try {
+      return handle ? __zw_get_attr_handle(handle, name) : __zw_get_attr(sel, name);
+    } catch (_e) { return null; }
+  }
+
   function _elKey(sel, handle) {
     return handle ? ('@' + handle) : sel;
   }
