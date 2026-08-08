@@ -1836,3 +1836,86 @@ fn test_mutation_observer_subtree_r3026() {
         "多层深度（leaf←inner←container）subtree 仍冒泡到 container"
     );
 }
+
+#[test]
+fn test_mutation_observer_character_data_r3027() {
+    // R3027：MutationObserver characterData emission + characterDataOldValue。textContent 变更发射 characterData
+    // 记录（target=元素，pragmatic——文本节点无 selector 不能直接作 target）；observe(el,{characterData,subtree})
+    // + 后代 textContent 经 ancestor 冒泡覆盖。characterDataOldValue 请求时 rec.oldValue=旧文本。闭合 MO 最后类型。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='a'></div><div id='container'><span id='leaf'></span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① 直接观测：observe(a,{characterData,subtree}) + a.textContent → characterData 记录（target=a）。
+    sandbox
+        .execute(
+            "var a = document.getElementById('a');\
+             var mo = new MutationObserver(function(){});\
+             mo.observe(a, { characterData: true, subtree: true });\
+             a.textContent = 'hello';\
+             globalThis.__recs = mo.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__recs.length)").unwrap().value,
+        "1",
+        "characterData：a.textContent 变更 → 1 记录"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__recs[0].type").unwrap().value,
+        "characterData",
+        "记录 type=characterData"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__recs[0].target.id").unwrap().value,
+        "a",
+        "characterData 记录 target=a（元素，pragmatic）"
+    );
+
+    // ② subtree 后代：observe(container,{characterData,subtree}) + leaf.textContent → 冒泡到 container。
+    sandbox
+        .execute(
+            "mo.disconnect();\
+             var container = document.getElementById('container');\
+             var leaf = document.getElementById('leaf');\
+             var mo2 = new MutationObserver(function(){});\
+             mo2.observe(container, { characterData: true, subtree: true });\
+             leaf.textContent = 'deep';\
+             globalThis.__recs2 = mo2.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__recs2.length)").unwrap().value,
+        "1",
+        "subtree characterData：后代 leaf.textContent → container observer 收 1 记录"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__recs2[0].target.id").unwrap().value,
+        "container",
+        "subtree characterData 记录 target=container（经 ancestor 冒泡）"
+    );
+
+    // ③ 未观测 characterData → textContent 变更不产 characterData 记录。
+    sandbox
+        .execute(
+            "mo2.disconnect();\
+             var mo3 = new MutationObserver(function(){});\
+             mo3.observe(leaf, { attributes: true });\
+             leaf.textContent = 'third';\
+             globalThis.__recs3 = mo3.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__recs3.length)").unwrap().value,
+        "0",
+        "未观测 characterData → textContent 变更不产记录（仅 attributes 观测）"
+    );
+}

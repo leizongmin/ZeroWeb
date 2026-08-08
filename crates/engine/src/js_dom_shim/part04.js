@@ -1142,12 +1142,14 @@
           if (p === 'innerHTML') {
             if (handle) __zw_set_inner_html_handle(handle, String(value));
             else __zw_set_inner_html(sel, String(value));
-          } else if (handle) {
-            __zw_set_text_handle(handle, String(value));
+            // innerHTML = 子树替换（childList 类），不 notify（childList emission 为独立 follow-up）。
           } else {
-            __zw_set_text(sel, String(value));
+            // R3027：textContent 变更 → emit characterData 记录（target=元素，pragmatic——文本节点无 selector
+            // 不能直接作 target；observe(el,{characterData,subtree}) + 后代 textContent 经 ancestor 冒泡亦覆盖）。
+            if (handle) __zw_set_text_handle(handle, String(value));
+            else __zw_set_text(sel, String(value));
+            _mo_notify(sel, handle, { type: 'characterData' });
           }
-          // textContent/innerHTML = characterData 类，incr 仅支持 attributes + childList，不 notify。
         } else if (p === 'outerHTML') {
           // outerHTML setter：整体替换元素为解析后的片段。仅 sel-based（需父节点）；
           // handle-only（detached）无父 → 无操作（spec 对无父元素赋 outerHTML 抛错，静默更安全）。

@@ -562,7 +562,8 @@
       rec.attributeName = baseRecord.attributeName || null;
       rec.attributeNamespace = baseRecord.attributeNamespace || null;
       // R3025：oldValue 仅当 observer 请求时填（attributes: attributeOldValue 或 attributeFilter 命中；
-      // childList/characterData 恒 null——childList oldValue 未支持，characterData 见 characterDataOldValue defer）。
+      // childList/characterData 恒 null——characterDataOldValue 需 latest-wins 文本读，sel-based 文本读为快照
+      // stale，defer 到 __zw_get_text_lw 独立 slice）。
       rec.oldValue = (baseRecord.type === 'attributes' && _mo_obs_wants_attr_old(opts, baseRecord.attributeName))
         ? (baseRecord.oldValue != null ? baseRecord.oldValue : null)
         : null;
