@@ -675,3 +675,237 @@ fn test_submit_event_submitter_r2984() {
         "submit listener preventDefault → __zw_dispatch_event 返 'prevented'"
     );
 }
+
+#[test]
+fn test_canvas_get_transform_dommatrix_r2985() {
+    // R2985：Canvas getTransform/resetTransform + DOMMatrix/DOMPoint。此前 shim Canvas 仅有 setTransform/
+    // transform，**无 getTransform（返 undefined）/ resetTransform**——读当前矩阵（hit-testing / transform-aware
+    // 绘制 / save-restore 矩阵快照）失效；DOMMatrix/DOMPoint 几何类型亦全缺。本切片补全（Canvas 2D 为 Tier 1）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 表面存在性：DOMMatrix / DOMPoint 构造器 + ctx.getTransform/resetTransform。
+    assert_eq!(
+        sandbox.execute("typeof DOMMatrix").unwrap().value,
+        "function",
+        "DOMMatrix 是 function"
+    );
+    assert_eq!(
+        sandbox.execute("typeof DOMPoint").unwrap().value,
+        "function",
+        "DOMPoint 是 function"
+    );
+    sandbox
+        .execute(
+            "globalThis.__cx = document.createElement('canvas').getContext('2d');\
+             globalThis.__gt = typeof __cx.getTransform;\
+             globalThis.__rt = typeof __cx.resetTransform;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__gt)").unwrap().value,
+        "function",
+        "ctx.getTransform 是 function"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rt)").unwrap().value,
+        "function",
+        "ctx.resetTransform 是 function"
+    );
+
+    // getTransform：setTransform(2,0,0,3,10,20) 后读回 DOMMatrix，a/b/c/d/e/f 精确。
+    sandbox
+        .execute(
+            "__cx.setTransform(2, 0, 0, 3, 10, 20);\
+             globalThis.__m = __cx.getTransform();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__m instanceof DOMMatrix)")
+            .unwrap()
+            .value,
+        "true",
+        "getTransform 返 instanceof DOMMatrix"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__m.a)").unwrap().value, "2", "m.a=2");
+    assert_eq!(sandbox.execute("String(globalThis.__m.b)").unwrap().value, "0", "m.b=0");
+    assert_eq!(sandbox.execute("String(globalThis.__m.c)").unwrap().value, "0", "m.c=0");
+    assert_eq!(sandbox.execute("String(globalThis.__m.d)").unwrap().value, "3", "m.d=3");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m.e)").unwrap().value,
+        "10",
+        "m.e=10"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m.f)").unwrap().value,
+        "20",
+        "m.f=20"
+    );
+    // m11/m22/m41/m42 别名（4×4 行主序）：m11=a=2, m22=d=3, m41=e=10, m42=f=20。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m.m11)").unwrap().value,
+        "2",
+        "m.m11=a=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m.m41)").unwrap().value,
+        "10",
+        "m.m41=e=10"
+    );
+
+    // resetTransform → identity（a=1, d=1, e=0, f=0）。
+    sandbox
+        .execute(
+            "__cx.resetTransform();\
+             globalThis.__m2 = __cx.getTransform();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m2.a)").unwrap().value,
+        "1",
+        "resetTransform 后 m.a=1（identity）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m2.d)").unwrap().value,
+        "1",
+        "resetTransform 后 m.d=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m2.e)").unwrap().value,
+        "0",
+        "resetTransform 后 m.e=0"
+    );
+
+    // DOMMatrix 构造：无参 = identity。
+    sandbox.execute("globalThis.__id = new DOMMatrix();").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__id.a)").unwrap().value,
+        "1",
+        "new DOMMatrix() identity a=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__id.e)").unwrap().value,
+        "0",
+        "new DOMMatrix() identity e=0"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__id.toFloat32Array().length)")
+            .unwrap()
+            .value,
+        "16",
+        "DOMMatrix.toFloat32Array().length = 16"
+    );
+
+    // DOMMatrix from [6] 2D 数组。
+    sandbox
+        .execute("globalThis.__m6 = new DOMMatrix([1, 2, 3, 4, 5, 6]);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m6.a)").unwrap().value,
+        "1",
+        "DOMMatrix([1,2,3,4,5,6]) a=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m6.b)").unwrap().value,
+        "2",
+        "DOMMatrix([1,2,3,4,5,6]) b=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m6.e)").unwrap().value,
+        "5",
+        "DOMMatrix([1,2,3,4,5,6]) e=5"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m6.f)").unwrap().value,
+        "6",
+        "DOMMatrix([1,2,3,4,5,6]) f=6"
+    );
+
+    // translate：identity.translate(5,10) → e=5, f=10。
+    sandbox
+        .execute("globalThis.__t = new DOMMatrix().translate(5, 10);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t.e)").unwrap().value,
+        "5",
+        "translate(5,10) e=5"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t.f)").unwrap().value,
+        "10",
+        "translate(5,10) f=10"
+    );
+
+    // scale：identity.scale(2,3) → a=2, d=3。
+    sandbox
+        .execute("globalThis.__s = new DOMMatrix().scale(2, 3);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s.a)").unwrap().value,
+        "2",
+        "scale(2,3) a=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s.d)").unwrap().value,
+        "3",
+        "scale(2,3) d=3"
+    );
+
+    // transformPoint：translate(5,10) 变换 (2,3) → (7,13)，返 DOMPoint。
+    sandbox
+        .execute(
+            "globalThis.__pt = new DOMMatrix([1,0,0,1,5,10]).transformPoint({ x: 2, y: 3 });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__pt instanceof DOMPoint)")
+            .unwrap()
+            .value,
+        "true",
+        "transformPoint 返 instanceof DOMPoint"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pt.x)").unwrap().value,
+        "7",
+        "transformPoint(2,3) with translate(5,10) → x=7"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pt.y)").unwrap().value,
+        "13",
+        "transformPoint(2,3) with translate(5,10) → y=13"
+    );
+
+    // DOMPoint 构造 + fromPoint。
+    sandbox.execute("globalThis.__p = new DOMPoint(1, 2, 3, 1);").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__p.x)").unwrap().value,
+        "1",
+        "new DOMPoint(1,2,3,1) x=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__p.y)").unwrap().value,
+        "2",
+        "new DOMPoint(1,2,3,1) y=2"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(DOMPoint.fromPoint(globalThis.__p).z)")
+            .unwrap()
+            .value,
+        "3",
+        "DOMPoint.fromPoint 复制 z=3"
+    );
+}

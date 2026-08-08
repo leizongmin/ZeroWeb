@@ -302,6 +302,22 @@ pub fn canvas_context_op(
             }
             "ok".into()
         }
+        // R2985 getTransform：返当前 2D 变换矩阵 "a,b,c,d,e,f"（shim 包 DOMMatrix）。只读（get_transform
+        // 取 &self），无 ctx → identity "1,0,0,1,0,0"。Canvas 2D spec getTransform() → DOMMatrix。
+        "getTransform" => {
+            if let Some(ctx) = reg.1.get(&hid()) {
+                let t = ctx.get_transform();
+                return format!("{},{},{},{},{},{}", t.a, t.b, t.c, t.d, t.e, t.f);
+            }
+            "1,0,0,1,0,0".into()
+        }
+        // R2985 resetTransform：重置为单位矩阵（spec setTransform(identity)）。
+        "resetTransform" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.reset_transform();
+            }
+            "ok".into()
+        }
         "setGlobalAlpha" => {
             if let Some(ctx) = reg.1.get_mut(&hid()) {
                 ctx.set_global_alpha(f(0));

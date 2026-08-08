@@ -385,6 +385,105 @@
     return out;
   }
 
+  // DOMMatrix（R2985）——4×4 变换矩阵（Canvas getTransform / 几何库 / CSSMatrix）。2D 为 6 元素 a,b,c,d,e,f
+  //（= m11,m12,m21,m22,m41,m42）。构造：无参=单位；[6]=2D；[16]=4×4。属性 a-f + m11-m44（双向别名）。
+  // 方法：multiply / multiplySelf / inverse / translate / scale / rotate / rotateSelf / transformPoint /
+  // toFloat32Array / toFloat64Array / toJSON。静态 fromMatrix / fromFloat32Array / fromFloat64Array。
+  // **已知限制**：3D 方法（rotateAxisAngle/skewX/skewY/rotateFromVector）按 2D 近似或 identity；3D 矩阵运算
+  // 按 4×4 通用 multiply 正确，但 rotate/scale/translate 的 z 轴 2D 近似（headless Canvas 2D 为主）。
+  function DOMMatrix(init) {
+    var m = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]; // 4×4 column-major：m[0]=m11,m[1]=m12,...,m[3]=m14,...
+    if (init) {
+      var a = Array.prototype.slice.call(init);
+      if (a.length === 6) {
+        // 2D [a,b,c,d,e,f] → 4×4。
+        m = [a[0],a[1],0,0, a[2],a[3],0,0, 0,0,1,0, a[4],a[5],0,1];
+      } else if (a.length === 16) {
+        m = a.slice();
+      }
+    }
+    this._m = m;
+  }
+  Object.defineProperty(DOMMatrix.prototype, 'a', { get: function () { return this._m[0]; }, set: function (v) { this._m[0] = +v; } });
+  Object.defineProperty(DOMMatrix.prototype, 'b', { get: function () { return this._m[1]; }, set: function (v) { this._m[1] = +v; } });
+  Object.defineProperty(DOMMatrix.prototype, 'c', { get: function () { return this._m[4]; }, set: function (v) { this._m[4] = +v; } });
+  Object.defineProperty(DOMMatrix.prototype, 'd', { get: function () { return this._m[5]; }, set: function (v) { this._m[5] = +v; } });
+  Object.defineProperty(DOMMatrix.prototype, 'e', { get: function () { return this._m[12]; }, set: function (v) { this._m[12] = +v; } });
+  Object.defineProperty(DOMMatrix.prototype, 'f', { get: function () { return this._m[13]; }, set: function (v) { this._m[13] = +v; } });
+  // m11..m44（4×4 行主序读：m11=m[0],m12=m[1],m13=m[2],m14=m[3],m21=m[4]...）。
+  ['m11','m12','m13','m14','m21','m22','m23','m24','m31','m32','m33','m34','m41','m42','m43','m44'].forEach(function (name, i) {
+    Object.defineProperty(DOMMatrix.prototype, name, { get: function () { return this._m[i]; }, set: function (v) { this._m[i] = +v; }, configurable: true });
+  });
+  DOMMatrix.prototype.multiply = function (other) { return _domMatrixMultiply(this, other); };
+  DOMMatrix.prototype.multiplySelf = function (other) { this._m = _domMatrixMultiply(this, other)._m; return this; };
+  DOMMatrix.prototype.inverse = function () { return _domMatrixInverse(this); };
+  DOMMatrix.prototype.translate = function (tx, ty, tz) {
+    return _domMatrixMultiply(this, _domMatrixFromTranslate(+tx || 0, +ty || 0, +tz || 0));
+  };
+  DOMMatrix.prototype.scale = function (sx, sy, sz) {
+    var x = (sx == null) ? 1 : +sx; var y = (sy == null) ? x : +sy; var z = (sz == null) ? 1 : +sz;
+    return _domMatrixMultiply(this, _domMatrixFromScale(x, y, z));
+  };
+  DOMMatrix.prototype.rotate = function (rx, _ry, _rz) {
+    // DOMMatrix.rotate 自洽 2D：单参 = 绕 Z 轴度数（spec DOMMatrix rotate 旋转轴语义复杂，2D 取 Z）。
+    return _domMatrixMultiply(this, _domMatrixFromRotateZ((+rx || 0) * Math.PI / 180));
+  };
+  DOMMatrix.prototype.rotateSelf = function (rx, ry, rz) { this._m = this.rotate(rx, ry, rz)._m; return this; };
+  DOMMatrix.prototype.transformPoint = function (pt) {
+    var x = (pt && pt.x != null) ? +pt.x : 0, y = (pt && pt.y != null) ? +pt.y : 0, z = (pt && pt.z != null) ? +pt.z : 0, w = (pt && pt.w != null) ? +pt.w : 1;
+    var m = this._m;
+    return new DOMPoint(m[0]*x + m[4]*y + m[8]*z + m[12]*w, m[1]*x + m[5]*y + m[9]*z + m[13]*w, m[2]*x + m[6]*y + m[10]*z + m[14]*w, m[3]*x + m[7]*y + m[11]*z + m[15]*w);
+  };
+  DOMMatrix.prototype.toFloat32Array = function () { return new Float32Array(this._m); };
+  DOMMatrix.prototype.toFloat64Array = function () { return new Float64Array(this._m); };
+  DOMMatrix.prototype.toJSON = function () { return this._m.slice(); };
+  DOMMatrix.fromMatrix = function (other) { return new DOMMatrix(other && other._m ? other._m.slice() : []); };
+  DOMMatrix.fromFloat32Array = function (a) { return new DOMMatrix(Array.prototype.slice.call(a)); };
+  DOMMatrix.fromFloat64Array = function (a) { return new DOMMatrix(Array.prototype.slice.call(a)); };
+  // 4×4 矩阵乘法（column-major _m）：C = self × other。
+  function _domMatrixMultiply(self, other) {
+    var a = self._m, b = other._m, r = new Array(16);
+    for (var col = 0; col < 4; col++) {
+      for (var row = 0; row < 4; row++) {
+        r[col*4+row] = a[0+row]*b[col*4+0] + a[4+row]*b[col*4+1] + a[8+row]*b[col*4+2] + a[12+row]*b[col*4+3];
+      }
+    }
+    var res = new DOMMatrix(); res._m = r; return res;
+  }
+  function _domMatrixFromTranslate(tx, ty, tz) {
+    var m = new DOMMatrix(); m._m[12] = tx; m._m[13] = ty; m._m[14] = tz; return m;
+  }
+  function _domMatrixFromScale(sx, sy, sz) {
+    var m = new DOMMatrix(); m._m[0] = sx; m._m[5] = sy; m._m[10] = sz; return m;
+  }
+  function _domMatrixFromRotateZ(rad) {
+    var c = Math.cos(rad), s = Math.sin(rad), m = new DOMMatrix();
+    m._m[0] = c; m._m[1] = s; m._m[4] = -s; m._m[5] = c; return m;
+  }
+  // 4×4 矩阵求逆（Gauss-Jordan，adjugate 通用法）。奇异 → identity（spec throw 在 DOMMatrixReadOnly，
+  // mutable DOMMatrix.inverse 实测各浏览器返逆或 throw，此处近似 identity 不抛避脚本中断）。
+  function _domMatrixInverse(mm) {
+    var a = mm._m.slice(), inv = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+    for (var i = 0; i < 4; i++) {
+      var piv = i;
+      for (var r = i+1; r < 4; r++) { if (Math.abs(a[r*4+i]) > Math.abs(a[piv*4+i])) piv = r; }
+      if (Math.abs(a[piv*4+i]) < 1e-12) return new DOMMatrix(); // 奇异 → identity
+      if (piv !== i) { for (var c = 0; c < 4; c++) { var t1=a[i*4+c]; a[i*4+c]=a[piv*4+c]; a[piv*4+c]=t1; var t2=inv[i*4+c]; inv[i*4+c]=inv[piv*4+c]; inv[piv*4+c]=t2; } }
+      var d = a[i*4+i];
+      for (var c2 = 0; c2 < 4; c2++) { a[i*4+c2] /= d; inv[i*4+c2] /= d; }
+      for (var r2 = 0; r2 < 4; r2++) {
+        if (r2 !== i) { var f2 = a[r2*4+i]; for (var c3 = 0; c3 < 4; c3++) { a[r2*4+c3] -= f2*a[i*4+c3]; inv[r2*4+c3] -= f2*inv[i*4+c3]; } }
+      }
+    }
+    var res = new DOMMatrix(); res._m = inv; return res;
+  }
+  globalThis.DOMMatrix = globalThis.DOMMatrix || DOMMatrix;
+  // DOMPoint（R2985）——几何点（x/y/z/w），DOMMatrix.transformPoint 输入/输出。构造 + toJSON。
+  function DOMPoint(x, y, z, w) { this.x = +x || 0; this.y = +y || 0; this.z = +z || 0; this.w = (w == null) ? 1 : +w; }
+  DOMPoint.prototype.toJSON = function () { return { x: this.x, y: this.y, z: this.z, w: this.w }; };
+  DOMPoint.fromPoint = function (p) { return new DOMPoint(p && p.x, p && p.y, p && p.z, p && p.w); };
+  globalThis.DOMPoint = globalThis.DOMPoint || DOMPoint;
+
   // canvas 元素 + 2d 上下文 proxy（R2795，canvas slice 1）。host 持 CanvasContext 注册表，JS 经
   // `__zw_canvas_op(handle, op, ...args)` 串参派发。`getContext('2d')` 首次调时创建 host 上下文（返 id），
   // 后续返回同一 proxy。host 未注册 → getContext 返 null（no-throw 回落）。width/height 默认 300×150（spec）。
@@ -488,6 +587,16 @@
     ctx.transform = function (a, b, c, d, e, ff) {
       __zw_canvas_op(h, 'transform', String(a), String(b), String(c), String(d), String(e), String(ff));
     };
+    // R2985 getTransform：返当前变换矩阵为 DOMMatrix（host 'getTransform' 返 "a,b,c,d,e,f"）。
+    // 读 hit-testing / transform-aware 绘制 / save-restore 矩阵快照高频。host 未注册 / 无 ctx → identity。
+    ctx.getTransform = function () {
+      var raw = (typeof __zw_canvas_op === 'function') ? String(__zw_canvas_op(h, 'getTransform')) : '';
+      var p = raw.split(',');
+      var n = function (i, d) { var v = parseFloat(p[i]); return isNaN(v) ? d : v; };
+      return new DOMMatrix([n(0, 1), n(1, 0), n(2, 0), n(3, 1), n(4, 0), n(5, 0)]);
+    };
+    // R2985 resetTransform：重置为单位矩阵（spec setTransform(identity)）。
+    ctx.resetTransform = function () { __zw_canvas_op(h, 'resetTransform'); };
     // globalAlpha / lineDash / lineJoin / lineCap：getter+setter（client-side 存值 + push host）。
     ctx._ga = 1.0;
     Object.defineProperty(ctx, 'globalAlpha', {
