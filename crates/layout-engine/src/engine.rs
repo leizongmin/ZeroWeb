@@ -1046,6 +1046,49 @@ impl LayoutEngine {
         let is_anonymous_text_item =
             dom_id.is_some_and(|id| doc.get(id).is_some_and(|n| matches!(&n.kind, NodeKind::Text(_))));
 
+        // 性能门禁优化 S12（2026-08-08）：文本/匿名项短路——只构建基础盒。
+        // 文本节点不消费 position/float/clear/overflow/margin 等元素级字段
+        //（painter 经 node_id 查 DOM + 父元素 ComputedStyle 渲染，见 painter/mod.rs
+        // paint_anonymous_text_item；text_node_* 度量由 inline_finalization 后填充）。
+        // medium 9000+ 文本节点占 extract 节点大头，跳过 ~80% 字段逻辑。
+        if is_anonymous_text_item {
+            return LayoutBox {
+                node_id: dom_id,
+                x: layout.location.x,
+                y: layout.location.y,
+                width: layout.size.width,
+                height: layout.size.height,
+                border_top: layout.border.top,
+                border_right: layout.border.right,
+                border_bottom: layout.border.bottom,
+                border_left: layout.border.left,
+                padding_top: layout.padding.top,
+                padding_right: layout.padding.right,
+                padding_bottom: layout.padding.bottom,
+                padding_left: layout.padding.left,
+                margin_top: layout.margin.top,
+                margin_right: layout.margin.right,
+                margin_bottom: layout.margin.bottom,
+                margin_left: layout.margin.left,
+                content_x: layout.border.left + layout.padding.left,
+                content_y: layout.border.top + layout.padding.top,
+                content_width: (layout.size.width
+                    - layout.border.left
+                    - layout.border.right
+                    - layout.padding.left
+                    - layout.padding.right)
+                    .max(0.0),
+                content_height: (layout.size.height
+                    - layout.border.top
+                    - layout.border.bottom
+                    - layout.padding.top
+                    - layout.padding.bottom)
+                    .max(0.0),
+                is_anonymous_text_item: true,
+                ..Default::default()
+            };
+        }
+
         // 获取 ComputedStyle 用于提取定位和溢出信息
         // 对于匿名文本项，使用父元素的样式（文本节点继承父元素样式）
         let computed = if is_anonymous_text_item {
