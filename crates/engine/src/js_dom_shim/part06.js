@@ -959,8 +959,9 @@
       _fireDocEvent('pointerlockchange');
     },
     // document.title——getter 返首 <title> 文本（空白折叠，spec 一致）；首访惰性读 querySelector('title')
-    // 并缓存；setter 更新缓存。**已知限制**：① setter 仅更新 in-JS 缓存，不写回 host DOM <title>（快照 proxy
-    // 只读，无 head/title 建链）；② 不创建 <head><title>（spec 无 head 时应建——本沙箱无渲染 title 需求）。
+    // 并缓存；setter 更新缓存。R3035：setter 经 `__zw_set_text('title', v)` 写回 host `<title>` 元素（SetText
+    // mutation），使 render 反映新 title + fresh snapshot 读回保持（闭合 R2815 限制①）。**已知限制**：
+    // 不创建 `<head><title>`（spec 无 title 时应建——本沙箱无渲染 title 需求，仅已有 `<title>` 时写回，无则 no-op）。
     get title() {
       if (_doc_title !== null) return _doc_title;
       var t = null;
@@ -970,6 +971,10 @@
     },
     set title(v) {
       _doc_title = v == null ? '' : String(v);
+      // R3035：写回 host <title>（已有则 SetText，无则 find_by_selector 不命中 → no-op）。
+      if (typeof __zw_set_text === 'function') {
+        try { __zw_set_text('title', _doc_title); } catch (_e) {}
+      }
     },
     // document.URL / documentURI = 页面 URL（= location.href）；referrer = ''（无 referrer 追踪，
     // net-layer defer；standalone 渲染/reftest 无来源页，spec 空串可接受）。

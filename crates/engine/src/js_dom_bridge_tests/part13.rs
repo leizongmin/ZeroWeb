@@ -772,3 +772,62 @@ fn test_text_node_data_setter_persist_char_r3034() {
         "data setter 发 characterData 记录（got {r2_types:?}）"
     );
 }
+
+#[test]
+fn test_document_title_setter_writeback_r3035() {
+    // R3035：document.title setter 写回 host <title>。旧 setter 仅更新 in-JS 缓存，不写回（R2815 限制①）
+    // → render 不反映新 title、apply_mutations 后 <title> 文本不变。本切片经 __zw_set_text('title', v) 写回。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><title>Old Title</title></head><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① getter 读 <title> 文本（空白折叠）。
+    sandbox.execute("globalThis.__t0 = document.title;").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__t0").unwrap().value,
+        "Old Title",
+        "document.title getter 读 <title> 文本"
+    );
+
+    // ② setter 写缓存 + 写回 host；apply_mutations 后 <title> 文本更新。
+    sandbox
+        .execute("document.title = 'New Title'; globalThis.__t1 = document.title;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__t1").unwrap().value,
+        "New Title",
+        "setter 后 getter 读回新值（缓存）"
+    );
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(
+        out.contains("<title>New Title</title>"),
+        "setter 写回 host <title>（apply_mutations 后含 <title>New Title</title>）\n{out}"
+    );
+
+    // ③ 无 <title> 时 setter no-op（不 panic、不创 <title>）。
+    let mut sandbox2 = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox2.execute(generate_js_dom_shim()).unwrap();
+    let m2: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let h2: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><p>no title</p></body></html>".to_string()));
+    let pu2: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox2, &m2, &h2, &pu2);
+    sandbox2.execute("document.title = 'X'; globalThis.__nt = document.title;").unwrap();
+    assert_eq!(
+        sandbox2.execute("globalThis.__nt").unwrap().value,
+        "X",
+        "无 <title> 时 setter 仍更新缓存（getter 读回）"
+    );
+}
