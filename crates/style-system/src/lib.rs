@@ -332,9 +332,24 @@ impl StyleSystem {
         // 读取文档 quirks mode
         let quirks_mode = doc.quirks_mode();
 
+        // 性能门禁优化 S10（2026-08-08）：文档级预扫描——样式表是否含任何
+        // ::before/::after/::marker 伪元素规则。无则完全跳过每元素的伪元素计算
+        //（旧实现每元素仍执行 2 次 collect_pseudo_declarations 全规则扫描——
+        // medium 4400 元素 × 2 次 × 全规则扫描是 style 阶段的大头）。
+        let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
+
         // 从文档根开始 DFS
         let root = doc.root();
-        self.compute_styles_recursive(doc, root, stylesheets, None, &HashMap::new(), &mut styles, quirks_mode);
+        self.compute_styles_recursive(
+            doc,
+            root,
+            stylesheets,
+            None,
+            &HashMap::new(),
+            &mut styles,
+            quirks_mode,
+            has_pseudo_rules,
+        );
 
         styles
     }
@@ -350,6 +365,7 @@ impl StyleSystem {
         parent_custom: &HashMap<String, String>,
         styles: &mut HashMap<NodeId, ComputedStyle>,
         quirks_mode: QuirksMode,
+        has_pseudo_rules: bool,
     ) {
         let node_data = match doc.get(node) {
             Some(n) => n,
@@ -374,56 +390,15 @@ impl StyleSystem {
             // custom_properties 以防伪元素规则定义的 var 污染后续子元素继承。
             // compute_element_style_internal 在无匹配规则时早返默认（content:Normal），
             // 故无伪元素规则的元素仅多 2 次（廉价的）声明收集。
-            let saved_custom = self.custom_properties.clone();
-            let elem_style = computed.clone();
-            let before = self.compute_element_style_internal(
-                doc,
-                node,
-                stylesheets,
-                Some(&elem_style),
-                &saved_custom,
-                quirks_mode,
-                Some("before"),
-            );
-            let after = self.compute_element_style_internal(
-                doc,
-                node,
-                stylesheets,
-                Some(&elem_style),
-                &saved_custom,
-                quirks_mode,
-                Some("after"),
-            );
-            // ::marker 伪元素（CSS Lists 3）：仅 `<li>` 计算（paint_list_marker 同 gate；
-            // ZW 以 tag 名 `li` 判定 list-item，非 display:list-item）。继承自本元素 → 默认
-            // color 等同本元素；仅当 ::marker 实际改变 content 或 color 时存储（省内存 +
-            // paint 仅在 Some 时走覆盖路径，默认 marker 零行为变更）。
-            let is_li = matches!(
+            //
+            // 性能门禁优化 S10（2026-08-08）：样式表无任何伪元素规则时，伪元素
+            // 计算恒为默认值——直接跳过整块（每元素省 2 次全规则扫描）。`<q>` 元素
+            // 的自动引号注入依赖 before/after 默认对象（content:Normal 时注入），
+            // 故 q 元素保留原路径。
+            let is_q = matches!(
                 &node_data.kind,
-                NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("li")
+                NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("q")
             );
-            if is_li {
-                let marker = self.compute_element_style_internal(
-                    doc,
-                    node,
-                    stylesheets,
-                    Some(&elem_style),
-                    &saved_custom,
-                    quirks_mode,
-                    Some("marker"),
-                );
-                if !matches!(marker.content, property::types::ContentComputedValue::Normal)
-                    || marker.color != elem_style.color
-                {
-                    computed.marker_pseudo = Some(Box::new(marker));
-                }
-            }
-            self.custom_properties = saved_custom;
-            // R2246：HTML rendering §quotes — `<q>` 自动引号。depth = `<q>` 祖先数（CSS
-            // open-quote 深度）；解析引号对（`quotes` 属性优先，Auto/无声明→英语默认，None→无）。
-            // 仅在**无显式 ::before/::after content**（content:Normal）时注入开/闭引号，经既有
-            // before_pseudo/after_pseudo + pipeline 文本节点注入渲染。driving: WPT css-content quotes-*。
-            let is_q = matches!(&node_data.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("q"));
             let q_quotes = if is_q {
                 // R2856：`<q>` 自动引号按**父元素**的内容语言解析（CSS spec quotes-030：quotes
                 // based on the parent language, not the element's own lang——`<q lang="ja">` 在
@@ -434,36 +409,84 @@ impl StyleSystem {
             } else {
                 None
             };
-            if matches!(
-                before.content,
-                property::types::ContentComputedValue::String(_)
-                    | property::types::ContentComputedValue::Attr(_)
-                    | property::types::ContentComputedValue::List(_)
-            ) {
-                computed.before_pseudo = Some(Box::new(before));
-            } else if is_q
-                && matches!(before.content, property::types::ContentComputedValue::Normal)
-                && let Some((open, _)) = &q_quotes
-            {
-                let mut b = before.clone();
-                b.content = property::types::ContentComputedValue::String(open.clone());
-                computed.before_pseudo = Some(Box::new(b));
-            }
-            if matches!(
-                after.content,
-                property::types::ContentComputedValue::String(_)
-                    | property::types::ContentComputedValue::Attr(_)
-                    | property::types::ContentComputedValue::List(_)
-            ) {
-                computed.after_pseudo = Some(Box::new(after));
-            } else if is_q
-                && matches!(after.content, property::types::ContentComputedValue::Normal)
-                && let Some((_, close)) = &q_quotes
-            {
-                let mut a = after.clone();
-                a.content = property::types::ContentComputedValue::String(close.clone());
-                computed.after_pseudo = Some(Box::new(a));
-            }
+            if has_pseudo_rules || is_q {
+                let saved_custom = self.custom_properties.clone();
+                let elem_style = computed.clone();
+                let before = self.compute_element_style_internal(
+                    doc,
+                    node,
+                    stylesheets,
+                    Some(&elem_style),
+                    &saved_custom,
+                    quirks_mode,
+                    Some("before"),
+                );
+                let after = self.compute_element_style_internal(
+                    doc,
+                    node,
+                    stylesheets,
+                    Some(&elem_style),
+                    &saved_custom,
+                    quirks_mode,
+                    Some("after"),
+                );
+                // ::marker 伪元素（CSS Lists 3）：仅 `<li>` 计算（paint_list_marker 同 gate；
+                // ZW 以 tag 名 `li` 判定 list-item，非 display:list-item）。继承自本元素 → 默认
+                // color 等同本元素；仅当 ::marker 实际改变 content 或 color 时存储（省内存 +
+                // paint 仅在 Some 时走覆盖路径，默认 marker 零行为变更）。
+                let is_li = matches!(
+                    &node_data.kind,
+                    NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("li")
+                );
+                if is_li {
+                    let marker = self.compute_element_style_internal(
+                        doc,
+                        node,
+                        stylesheets,
+                        Some(&elem_style),
+                        &saved_custom,
+                        quirks_mode,
+                        Some("marker"),
+                    );
+                    if !matches!(marker.content, property::types::ContentComputedValue::Normal)
+                        || marker.color != elem_style.color
+                    {
+                        computed.marker_pseudo = Some(Box::new(marker));
+                    }
+                }
+                self.custom_properties = saved_custom;
+
+                if matches!(
+                    before.content,
+                    property::types::ContentComputedValue::String(_)
+                        | property::types::ContentComputedValue::Attr(_)
+                        | property::types::ContentComputedValue::List(_)
+                ) {
+                    computed.before_pseudo = Some(Box::new(before));
+                } else if is_q
+                    && matches!(before.content, property::types::ContentComputedValue::Normal)
+                    && let Some((open, _)) = &q_quotes
+                {
+                    let mut b = before.clone();
+                    b.content = property::types::ContentComputedValue::String(open.clone());
+                    computed.before_pseudo = Some(Box::new(b));
+                }
+                if matches!(
+                    after.content,
+                    property::types::ContentComputedValue::String(_)
+                        | property::types::ContentComputedValue::Attr(_)
+                        | property::types::ContentComputedValue::List(_)
+                ) {
+                    computed.after_pseudo = Some(Box::new(after));
+                } else if is_q
+                    && matches!(after.content, property::types::ContentComputedValue::Normal)
+                    && let Some((_, close)) = &q_quotes
+                {
+                    let mut a = after.clone();
+                    a.content = property::types::ContentComputedValue::String(close.clone());
+                    computed.after_pseudo = Some(Box::new(a));
+                }
+            } // if has_pseudo_rules || is_q（S10）
             styles.insert(node, computed);
         }
 
@@ -498,6 +521,7 @@ impl StyleSystem {
                 &current_custom,
                 styles,
                 quirks_mode,
+                has_pseudo_rules,
             );
         }
     }
@@ -1716,6 +1740,32 @@ fn apply_quirks_mode_adjustments(
     // 这里不做额外处理——inline 元素的 width/height 自然保留。
     // 当 inline layout 正确实现后，需要在 standards mode 下将 inline 元素的 width/height 重置为 auto。
     let _ = DisplayValue::Inline; // suppress unused import warning
+}
+
+/// 性能门禁优化 S10（2026-08-08）：规则树是否含任何伪元素选择器
+/// （::before / ::after / ::marker）。无则跳过每元素的伪元素计算。
+fn stylesheet_has_pseudo_rules(rules: &[zero_css_parser::ast::Rule]) -> bool {
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                for selector in &style_rule.selectors {
+                    if matcher::selector_pseudo_element(selector).is_some() {
+                        return true;
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::At(at) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(nested) = &at.body
+                    && stylesheet_has_pseudo_rules(nested)
+                {
+                    return true;
+                }
+            }
+            // 其余 @规则（@keyframes/@layer/@import/@font-face...）不含伪元素选择器
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]

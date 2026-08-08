@@ -210,6 +210,19 @@ R2981（XPath）后续补 fetch API body 消费表面对称性。R2978 补全 Re
 **fetch API body-consumption 表面对称闭合里程碑**：Response（R2978：text/json/blob/arrayBuffer/formData）+ Request（R2982：同五 reader）+ 既有 fetch()/Headers/Response.body stream（R2967）/Blob.stream（R2978）/完整 Streams API（R2967-2971）。请求/响应两侧 body 读取表面 spec 合规对称。
 
 **下一步**：续 P1a——① 其他 defer Web API（继续 survey 真缺口：Element.scrollIntoView 真滚动几何 / document.createTreeWalker 已有但 scroll 系列几何 / DOMParser detached 完整化）；② task source 优先级（事件循环边缘，复杂）；③ customElements upgrade（需 P1b RFC 审批）。
+### 大页面卡顿优化 M3-S10（style 伪元素跳过，2026-08-08）
+
+首屏瓶颈转移至 style（214ms）/layout（101ms）后，style 深挖发现：**无伪元素规则的
+文档每元素仍执行 2 次 collect_pseudo_declarations 全规则扫描**（早返在扫描之后）。
+文档级预扫描 `stylesheet_has_pseudo_rules`（递归规则树，一次）——无 ::before/::after/
+::marker 规则时完全跳过每元素的伪元素计算块（`<q>` 元素保留原路径，自动引号注入
+依赖 before/after 默认对象）。medium style_ms 225→214ms（~5%）。
+
+**其余 style/layout 调查结论**（已记录，需 perf profiling 而非代码审查）：cascade
+管线（级联/自定义属性/var 解析/继承计算）为多步 HashMap 线性成本；layout 107ms 为
+taffy flex-wrap 固有成本（IFC 文本测量 estimate_char_width 是纯分支计算 ~20ns/字符，
+非瓶颈）。剩余优化需 perf record 定位，记 follow-up。
+>>>>>>> 6a2857c9 (perf(style): S10 — skip per-element pseudo-element computation when no pseudo rules)
 
 ### 大页面卡顿优化 M3-S7（paint 48x，2026-08-08）
 
