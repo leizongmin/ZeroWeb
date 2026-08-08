@@ -106,6 +106,27 @@
         }
         if (moAttr) _mo_notify(sel, handle, { type: 'attributes', attributeName: moAttr });
         return true;
+      },
+      // R3046：expando 枚举表面（R3042 follow-up，闭合 R3042 已知限制④）。无此三 trap → `Object.keys(el)` /
+      // `for...in` / `'foo' in el` / `Object.assign({}, el)` / 解构展开 不含 expando（proxy target {} 空，
+      // default ownKeys 返 []、has 走 target 原型链、getOwnPropertyDescriptor 返 undefined）。补三 trap 暴露
+      // expando 为 enumerable own 属性，real browser expando 语义。仅 expando（_expando[key] hasOwn 命中）暴露；
+      // 非 expando 落 default（`prop in _t` / target 自身键 [] / undefined）——real reflected/special 属性经 get trap
+      // 读但非 target own，`'id' in el` 仍 false（pre-existing，documented）。has/ownKeys 不变量：target {} 无 own → 无约束。
+      has: function(_t, prop) {
+        var _exH = _expando[key];
+        return !!(_exH && Object.prototype.hasOwnProperty.call(_exH, prop)) || (prop in _t);
+      },
+      ownKeys: function() {
+        var _exO = _expando[key];
+        return _exO ? Object.keys(_exO) : [];
+      },
+      getOwnPropertyDescriptor: function(_t, prop) {
+        var _exD = _expando[key];
+        if (_exD && Object.prototype.hasOwnProperty.call(_exD, prop)) {
+          return { value: _exD[prop], writable: true, enumerable: true, configurable: true };
+        }
+        return undefined;
       }
     });
     _proxyCache[key] = proxy;

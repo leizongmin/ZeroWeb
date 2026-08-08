@@ -1518,6 +1518,115 @@ fn test_expando_non_primitive_properties_r3042() {
 }
 
 #[test]
+fn test_expando_enumeration_r3046() {
+    // R3046：expando 枚举表面（R3042 follow-up，闭合已知限制④）。主元素 proxy 加 has/ownKeys/
+    // getOwnPropertyDescriptor 三 trap 暴露 expando 为 enumerable own 属性——`Object.keys(el)` / `for...in` /
+    // `'foo' in el` / `Object.assign` 含 expando（real browser 语义）。旧 default（target {} 空）→ 全不含。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'>x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① 设 expando 前：Object.keys(el) 不含 expando（无 expando → []）。
+    sandbox
+        .execute("globalThis.__keysBefore = JSON.stringify(Object.keys(document.getElementById('d')));")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__keysBefore").unwrap().value,
+        "[]",
+        "设 expando 前 Object.keys(el)=[]"
+    );
+
+    // ② 设非原始 expando（object/function/array）后：Object.keys(el) 含 expando 键。
+    //    注：R3042 仅非原始值入 expando map（string/number/boolean 走 attr fallthrough）——故 numProp=42（number）
+    //    不入 expando、不可枚举（R3042 已知限制，本切片 R3046 仅枚举 _expando map 中的非原始 expando）。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             d._data = { a: 1 };\
+             d.handler = function(){};\
+             d.tags = ['x','y'];\
+             d.numProp = 42;\
+             globalThis.__keysAfter = JSON.stringify(Object.keys(d).sort());",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__keysAfter").unwrap().value,
+        "[\"_data\",\"handler\",\"tags\"]",
+        "Object.keys(el) 含非原始 expando 键（_data/handler/tags；numProp=42 为 number 走 attr 不入 expando，R3042 限制）"
+    );
+
+    // ③ `'foo' in el` 对非原始 expando 返 true；number expando（numProp）+ 未设 返 false。
+    sandbox
+        .execute(
+            "globalThis.__inData = String('_data' in d);\
+             globalThis.__inNum = String('numProp' in d);\
+             globalThis.__inNope = String('notSet' in d);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__inData").unwrap().value, "true", "'_data' in el = true（非原始 expando）");
+    assert_eq!(sandbox.execute("globalThis.__inNum").unwrap().value, "false", "'numProp' in el = false（number expando 走 attr，R3042 限制）");
+    assert_eq!(sandbox.execute("globalThis.__inNope").unwrap().value, "false", "'notSet' in el = false（未设）");
+
+    // ④ getOwnPropertyDescriptor 返 enumerable own 描述符（非原始 expando）。
+    sandbox
+        .execute(
+            "var desc = Object.getOwnPropertyDescriptor(d, '_data');\
+             globalThis.__descDataA = String(desc.value.a);\
+             globalThis.__descEnum = String(desc.enumerable);\
+             globalThis.__descConf = String(desc.configurable);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__descDataA").unwrap().value, "1", "descriptor.value.a=1（_data 对象保真）");
+    assert_eq!(sandbox.execute("globalThis.__descEnum").unwrap().value, "true", "descriptor.enumerable=true");
+    assert_eq!(sandbox.execute("globalThis.__descConf").unwrap().value, "true", "descriptor.configurable=true");
+
+    // ⑤ for...in 迭代含非原始 expando 键。
+    sandbox
+        .execute(
+            "var collected = [];\
+             for (var k in d) collected.push(k);\
+             globalThis.__forIn = JSON.stringify(collected.sort());",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__forIn").unwrap().value,
+        "[\"_data\",\"handler\",\"tags\"]",
+        "for...in 含非原始 expando 键"
+    );
+
+    // ⑥ Object.assign({}, el) 复制非原始 expando（值保持类型）。
+    sandbox
+        .execute(
+            "var copy = Object.assign({}, d);\
+             globalThis.__copyDataA = String(copy._data.a);\
+             globalThis.__copyHandler = typeof copy.handler;\
+             globalThis.__copyTagsLen = String(copy.tags.length);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__copyDataA").unwrap().value, "1", "Object.assign 复制 _data.a=1");
+    assert_eq!(sandbox.execute("globalThis.__copyHandler").unwrap().value, "function", "Object.assign 复制 handler=function");
+    assert_eq!(sandbox.execute("globalThis.__copyTagsLen").unwrap().value, "2", "Object.assign 复制 tags.length=2（array 保真）");
+
+    // ⑦ 回归守卫：reflected 属性（id）经 get trap 读但非 own → Object.keys 不含、'id' in el 仍 false（pre-existing）。
+    sandbox
+        .execute(
+            "globalThis.__idGet = document.getElementById('d').id;\
+             globalThis.__idIn = String('id' in document.getElementById('d'));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__idGet").unwrap().value, "d", "el.id 经 get trap 读='d'（reflected 仍工作）");
+    assert_eq!(sandbox.execute("globalThis.__idIn").unwrap().value, "false", "'id' in el=false（reflected 非 own，pre-existing 不变）");
+}
+
+#[test]
 fn test_reflected_size_element_aware_r3043() {
     // R3043：`.size` element-aware reflected 数值读。input.size default 20 / select.size default 0（spec 两元素 default 不同，
     // `_REFLECTED_UINT` 表无 element-awareness 故专用 tag-gate 分支）。旧读恒 undefined。set 走 generic fallthrough 写 size 属性。
