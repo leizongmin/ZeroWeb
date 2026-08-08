@@ -74,7 +74,7 @@ jobs:
     cwd: "$DIR/../.."
     concurrency: "skip"
     start: "next"
-    timeout_seconds: 7200
+    timeout_seconds: 18000
     query:
       session_reuse: false
 
