@@ -222,7 +222,6 @@ R2981（XPath）后续补 fetch API body 消费表面对称性。R2978 补全 Re
 管线（级联/自定义属性/var 解析/继承计算）为多步 HashMap 线性成本；layout 107ms 为
 taffy flex-wrap 固有成本（IFC 文本测量 estimate_char_width 是纯分支计算 ~20ns/字符，
 非瓶颈）。剩余优化需 perf record 定位，记 follow-up。
->>>>>>> 6a2857c9 (perf(style): S10 — skip per-element pseudo-element computation when no pseudo rules)
 
 ### 大页面卡顿优化 M3-S7（paint 48x，2026-08-08）
 
