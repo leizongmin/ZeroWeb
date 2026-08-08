@@ -1598,7 +1598,10 @@ mod tests {
 }
 
 // ── CJK 栅格化性能探针（临时诊断，2026-08-07）──
+// 修复（2026-08-08）：模块内无条件引用 freetype_raster——quickjs 矩阵
+//（--no-default-features，render CPU 测试步骤）编译失败。gate 整个探针模块。
 #[cfg(test)]
+#[cfg(feature = "freetype-raster")]
 mod cjk_raster_probe {
     use super::*;
     use std::time::Instant;
