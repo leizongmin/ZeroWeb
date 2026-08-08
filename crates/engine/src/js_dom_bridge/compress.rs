@@ -111,4 +111,66 @@ mod tests {
         assert_eq!(compress_bytes("brotli", &csv), "", "不支持 format 压缩 → 空串");
         assert_eq!(decompress_bytes("brotli", &csv), "", "不支持 format 解压 → 空串");
     }
+
+    // 损坏 / 错配 / 空输入——验证 flate2 对非法输入返 Err（→ 空串），绝不 panic（R2991）。
+    // DecompressionStream 消费任意不可信字节（服务端响应 / 上传载荷），corrupt 输入是常态而非边界，
+    // 必须干净返空串（shim 透传 controller.error(DataError)）而非 abort 进程。
+    #[test]
+    fn test_decompress_corrupt_returns_empty() {
+        // 合法 gzip 流（含足够 trailer 长度供截断测试）。
+        let original = b"payload for corruption tests repeat repeat repeat repeat";
+        let valid_csv = compress_bytes("gzip", &bytes_to_csv(original));
+        let valid = bytes_from_csv(&valid_csv);
+        assert!(valid.len() > 20, "gzip 流非平凡（含 header+body+trailer）");
+
+        // (a) 纯垃圾字节（无合法 gzip magic 1f 8b / zlib 头 78 / 合法 raw deflate block）
+        //     → 三种解码器即刻拒绝 → 空串。
+        let garbage = [0x00u8, 0x01, 0x02, 0x03, 0x04, 0xfe, 0xfd, 0xfc];
+        let gcsv = bytes_to_csv(&garbage);
+        for fmt in &["gzip", "deflate", "deflate-raw"] {
+            assert_eq!(
+                decompress_bytes(fmt, &gcsv),
+                "",
+                "垃圾字节 → {} 解码器拒绝 → 空串（不 panic）",
+                fmt
+            );
+        }
+
+        // (b) 格式错配：合法 gzip 流（magic 1f 8b）喂给 deflate（zlib，期望 78 头）解码器 → 头校验失败 → 空。
+        assert_eq!(
+            decompress_bytes("deflate", &valid_csv),
+            "",
+            "gzip 流 → deflate(zlib) 解码器 → 头不匹配 → 空串"
+        );
+        // 反向：deflate(zlib) 流喂给 gzip 解码器 → magic 不匹配 → 空。
+        let zlib_csv = compress_bytes("deflate", &bytes_to_csv(b"cross format mismatch probe"));
+        assert_eq!(
+            decompress_bytes("gzip", &zlib_csv),
+            "",
+            "deflate 流 → gzip 解码器 → magic 不匹配 → 空串"
+        );
+
+        // (c) 篡改合法 gzip 中部一字节 → CRC32 / deflate 数据错误 → 空串。
+        let mut corrupted = valid.clone();
+        // 跳过 10 字节 gzip header，翻转 deflate body 区一字节。
+        let flip_idx = valid.len().min(15);
+        corrupted[flip_idx] ^= 0xff;
+        assert_eq!(
+            decompress_bytes("gzip", &bytes_to_csv(&corrupted)),
+            "",
+            "篡改 gzip body 字节 → 空串（不 panic）"
+        );
+
+        // (d) 截断：仅保留 header + 1 字节 deflate（流必不完整）→ 空串。
+        let truncated = &valid[..valid.len().min(11)];
+        assert_eq!(
+            decompress_bytes("gzip", &bytes_to_csv(truncated)),
+            "",
+            "截断 gzip（header+1B）→ 不完整 → 空串"
+        );
+
+        // (e) 空输入 → 空串（不 panic；shim 侧 bufs.length===0 短路不报错）。
+        assert_eq!(decompress_bytes("gzip", ""), "", "空输入 → 空串");
+        assert_eq!(decompress_bytes("deflate", ""), "", "空输入(deflate) → 空串");
+    }
 }

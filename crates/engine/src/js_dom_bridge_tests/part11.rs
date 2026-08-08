@@ -1053,6 +1053,93 @@ fn test_compression_stream_r2986() {
 }
 
 #[test]
+fn test_decompression_stream_error_r2991() {
+    // R2991：DecompressionStream 损坏输入端到端错误契约（R2986 driving test 仅覆盖 happy-path 往返，
+    // corrupt 路径未测）。DecompressionStream 消费任意不可信字节（服务端响应 / 上传载荷），corrupt 输入是
+    // 常态：host decompress_bytes 对非法字节返空串（flate2 Err，已由 compress::tests 锁定不 panic），
+    // shim flush 见「输入非空但输出空」→ controller.error(DataError) → readable 出错 → reader.read() reject。
+    // 本测试验证整条链路：reader.read() 以 DataError reject（不静默吞 / 不挂起），且错误经 reader 可观察。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 垃圾字节（无合法 gzip magic）→ DecompressionStream('gzip') → reader.read() reject DataError。
+    sandbox
+        .execute(
+            "globalThis.__res = '(none)'; globalThis.__errName = '';\
+             var garbage = new Uint8Array([0, 1, 2, 3, 4, 0xfe, 0xfd, 0xfc]);\
+             var src = new ReadableStream({\
+               start: function (c) { c.enqueue(garbage); c.close(); }\
+             });\
+             var ds = new DecompressionStream('gzip');\
+             src.pipeTo(ds.writable);\
+             var reader = ds.readable.getReader();\
+             reader.read().then(\
+               function (c) { globalThis.__res = c.done ? 'done' : 'data'; },\
+               function (e) { globalThis.__res = 'err'; globalThis.__errName = (e && e.name) || ''; }\
+             );",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__res)").unwrap().value,
+        "err",
+        "垃圾字节 → reader.read() reject（不静默吞 / 不挂起）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__errName)").unwrap().value,
+        "DataError",
+        "损坏 gzip 流 → DataError"
+    );
+
+    // 格式错配：gzip 压缩字节喂给 DecompressionStream('deflate')（zlib 期望 0x78 头）→ reject DataError。
+    // 先用 CompressionStream('gzip') 产出合法 gzip 字节，再喂错 deflate 解码器。
+    sandbox
+        .execute(
+            "globalThis.__res2 = '(none)'; globalThis.__errName2 = '';\
+             var payload = new TextEncoder().encode('cross-format mismatch probe');\
+             var csrc = new ReadableStream({\
+               start: function (c) { c.enqueue(payload); c.close(); }\
+             });\
+             var comp = new CompressionStream('gzip');\
+             csrc.pipeTo(comp.writable);\
+             var cr = comp.readable.getReader();\
+             cr.read().then(function (chunk) {\
+               if (chunk.done) { globalThis.__res2 = 'src-done'; return; }\
+               var dsrc = new ReadableStream({\
+                 start: function (c) { c.enqueue(chunk.value); c.close(); }\
+               });\
+               var ds = new DecompressionStream('deflate');\
+               dsrc.pipeTo(ds.writable);\
+               var reader = ds.readable.getReader();\
+               reader.read().then(\
+                 function (cc) { globalThis.__res2 = cc.done ? 'done' : 'data'; },\
+                 function (e) { globalThis.__res2 = 'err'; globalThis.__errName2 = (e && e.name) || ''; }\
+               );\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__res2)").unwrap().value,
+        "err",
+        "gzip 字节 → DecompressionStream('deflate') → reject（格式错配）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__errName2)").unwrap().value,
+        "DataError",
+        "格式错配 → DataError"
+    );
+}
+
+#[test]
 fn test_window_context_globals_r2987() {
     // R2987：window.isSecureContext / crossOriginIsolated / reportError。库 feature-detect 后再使用
     // secure-only API（crypto.subtle / SharedArrayBuffer / Service Worker）或经 reportError 转错误事件。
