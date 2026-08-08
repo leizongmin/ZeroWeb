@@ -1953,3 +1953,161 @@ fn test_handle_remove_attribute_true_removal_r2993() {
     // 仍 stale（render apply 后才反映），故 JS 层 hasAttribute-after-remove 对 sel 元素恒 true（既存限制，
     // 与本切片 handle 真移除无关）。handle 元素经 mutation 列表 latest-wins 读，故无此 stale。
 }
+
+#[test]
+fn test_custom_elements_connected_callback_r2994() {
+    // R2994：custom element lifecycle slice——connectedCallback / disconnectedCallback。
+    // R2992 落地 attributeChangedCallback；本切片落地连入/断开回调（spec HTML §4.13）。element 为 generic
+    // Proxy 非 ctor 实例（upgrade/ctor 仍 defer），以 element proxy 为 this 分派 ctor.prototype 上的回调。
+    // 连入态由 JS 端 _ceConn 追踪（host 快照不实时反映 handle 元素挂载），appendChild/insertBefore/
+    // removeChild/remove/replaceChild/append/replaceChildren/prepend/before/after 单点 hook：插入到已连入父
+    // → 子树连入（connectedCallback），移除 → 断开（disconnectedCallback）；状态真转才调（再连再调、同态跳过）。
+    // 已知限制（既存）：parsed HTML 源中的 <my-el> 不经 JS appendChild → 初始 connectedCallback 不触发。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 基础连入/断开/再连：connectedCallback 与 disconnectedCallback 双向均可重复触发。
+    sandbox
+        .execute(
+            "globalThis.__log = [];\
+             class CE extends HTMLElement {\
+               connectedCallback() { globalThis.__log.push('+'); }\
+               disconnectedCallback() { globalThis.__log.push('-'); }\
+             }\
+             customElements.define('r2994-a', CE);\
+             var el = document.createElement('r2994-a');\
+             document.body.appendChild(el);\
+             document.body.removeChild(el);\
+             document.body.appendChild(el);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__log.join('|')").unwrap().value,
+        "+|-|+",
+        "connectedCallback/disconnectedCallback 双向触发，再连再调（appendChild→+ / removeChild→- / appendChild→+）"
+    );
+
+    // el.remove()（self 级）断开 → disconnectedCallback（独立 class/log，避免与 CE 共享 __log）。
+    sandbox
+        .execute(
+            "globalThis.__log2 = [];\
+             class CE2 extends HTMLElement {\
+               connectedCallback() { globalThis.__log2.push('+'); }\
+               disconnectedCallback() { globalThis.__log2.push('-'); }\
+             }\
+             customElements.define('r2994-b', CE2);\
+             var e2 = document.createElement('r2994-b');\
+             document.body.appendChild(e2);\
+             e2.remove();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__log2.join('|')").unwrap().value,
+        "+|-",
+        "el.remove() 触发 disconnectedCallback（self 级断连）"
+    );
+
+    // detached 容器内 append 不触发；容器连入时子树（含 custom element 后代）一并连入。
+    sandbox
+        .execute(
+            "globalThis.__log3 = [];\
+             class Sub extends HTMLElement {\
+               connectedCallback() { globalThis.__log3.push('c'); }\
+               disconnectedCallback() { globalThis.__log3.push('d'); }\
+             }\
+             customElements.define('r2994-sub', Sub);\
+             var box = document.createElement('div');\
+             var sub = document.createElement('r2994-sub');\
+             box.appendChild(sub);\
+             globalThis.__afterDetach = globalThis.__log3.slice();\
+             document.body.appendChild(box);\
+             globalThis.__afterAttach = globalThis.__log3.slice();\
+             document.body.removeChild(box);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__afterDetach.join('|')").unwrap().value,
+        "",
+        "detached 容器内 appendChild 不触发 connectedCallback（父未连入）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__afterAttach.join('|')").unwrap().value,
+        "c",
+        "容器连入时其 custom element 后代随之连入（子树传播）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__log3.join('|')").unwrap().value,
+        "c|d",
+        "容器移除时其 custom element 后代随之断开（removeChild 子树断连）"
+    );
+
+    // insertBefore 连入 + 同树内移动不重复触发（状态未变）。
+    sandbox
+        .execute(
+            "globalThis.__log4 = [];\
+             class CE4 extends HTMLElement {\
+               connectedCallback() { globalThis.__log4.push('+'); }\
+               disconnectedCallback() { globalThis.__log4.push('-'); }\
+             }\
+             customElements.define('r2994-c', CE4);\
+             var a = document.createElement('r2994-c');\
+             var b = document.createElement('r2994-c');\
+             document.body.appendChild(a);\
+             document.body.appendChild(b);\
+             globalThis.__beforeMove = globalThis.__log4.length;\
+             document.body.insertBefore(a, b);\
+             globalThis.__moveDelta = globalThis.__log4.length - globalThis.__beforeMove;",
+        )
+        .unwrap();
+    // a、b 各连入一次（++）；insertBefore 把已连入的 a 移到 b 前——状态未变（仍连入）→ 无新回调。
+    assert_eq!(
+        sandbox.execute("globalThis.__log4.join('|')").unwrap().value,
+        "+|+",
+        "insertBefore 连入新节点（a、b 各一次 +）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__moveDelta)").unwrap().value,
+        "0",
+        "同树内移动已连入元素不重复触发 connectedCallback（状态未变）"
+    );
+
+    // 非自定义元素 append 不触发任何回调；仅定义 connectedCallback（无 disconnectedCallback）移除不抛。
+    sandbox
+        .execute(
+            "globalThis.__log5 = [];\
+             globalThis.__before = globalThis.__log5.length;\
+             var d = document.createElement('div');\
+             document.body.appendChild(d);\
+             document.body.removeChild(d);\
+             globalThis.__after = globalThis.__log5.length;\
+             class OnlyConn extends HTMLElement {\
+               connectedCallback() { globalThis.__log5.push('+'); }\
+             }\
+             customElements.define('r2994-only', OnlyConn);\
+             var oc = document.createElement('r2994-only');\
+             document.body.appendChild(oc);\
+             oc.remove();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__before === globalThis.__after)").unwrap().value,
+        "true",
+        "非自定义元素 append/remove 不触发 custom element 回调"
+    );
+    // 仅 connectedCallback：append 触发 +，remove 无 disconnectedCallback 定义 → 不抛、不记（graceful）。
+    assert_eq!(
+        sandbox.execute("globalThis.__log5.join('|')").unwrap().value,
+        "+",
+        "仅定义 connectedCallback 时移除 graceful（无 disconnectedCallback 不抛、不记）"
+    );
+}

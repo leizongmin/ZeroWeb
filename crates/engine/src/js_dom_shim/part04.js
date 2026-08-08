@@ -664,13 +664,18 @@
         if (prop === 'appendChild') {
           return function(child) {
             if (child && child.__zwHandle) {
+              // R2994：捕获实际入树的顶层节点（fragment flatten 前取其子），供连接态传播。
+              var ceAdded;
               // DocumentFragment：flatten 子节点到 this（fragment 自身不入树），区别于 append 节点自身。
               if (_fragmentHandles[child.__zwHandle] && typeof __zw_append_fragment_children === 'function') {
+                ceAdded = (_handleChildren[child.__zwHandle] || []).slice();
                 if (handle) __zw_append_fragment_children_handle(handle, child.__zwHandle);
                 else __zw_append_fragment_children(sel, child.__zwHandle);
               } else if (handle) {
+                ceAdded = [child];
                 __zw_append_child_handle(handle, child.__zwHandle);
               } else {
+                ceAdded = [child];
                 __zw_append_child(sel, child.__zwHandle);
               }
               // R2927/R2928：handle 父（任意 handle 元素，非仅容器）同步记录子节点到 registry。
@@ -684,6 +689,9 @@
                 _handleChildren[child.__zwHandle] = [];
               }
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [child], removedNodes: [] });
+              // R2994 connectedCallback：子树按父连接态传播（父连入 → 子树连入；未观察/非 custom 仅传播）。
+              var cePconn = _ceParentConnected(sel, handle);
+              for (var ci = 0; ci < ceAdded.length; ci++) _ceApplyConn(ceAdded[ci], cePconn);
             }
             return child;
           };
@@ -691,10 +699,13 @@
         if (prop === 'removeChild') {
           return function(child) {
             if (child && child.__zwHandle) {
+              // R2994：移除前快照连接态（移除后 host 快照变化，但 _ceConn 为 JS 端追踪，移除调用不影响）。
               __zw_remove_handle(child.__zwHandle);
               // R2927/R2928：handle 父同步从 registry 移除子节点（保持 querySelector 子树一致）。
               if (handle) _unrecordHandleChild(handle, child);
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
+              // R2994 disconnectedCallback：移除子树断连（仅此前已连入的 custom element 分派）。
+              _ceApplyConn(child, false);
             }
             return child;
           };
@@ -702,8 +713,11 @@
         if (prop === 'insertBefore') {
           return function(newNode, refNode) {
             if (newNode && newNode.__zwHandle) {
+              // R2994：捕获实际入树的顶层节点（fragment flatten 前取其子）。
+              var ceAdded;
               // DocumentFragment：flatten 子节点（refNode 非 null 时插到 ref 前，null 时 append）。
               if (_fragmentHandles[newNode.__zwHandle]) {
+                ceAdded = (_handleChildren[newNode.__zwHandle] || []).slice();
                 if (refNode == null) {
                   if (handle && typeof __zw_append_fragment_children_handle === 'function')
                     __zw_append_fragment_children_handle(handle, newNode.__zwHandle);
@@ -717,14 +731,21 @@
                 }
               } else if (refNode == null) {
                 // `insertBefore(node, null)` 等价于 appendChild。
+                ceAdded = [newNode];
                 if (handle) __zw_append_child_handle(handle, newNode.__zwHandle);
                 else __zw_append_child(sel, newNode.__zwHandle);
               } else if (refNode.__zwSelector) {
+                ceAdded = [newNode];
                 if (handle) __zw_insert_before_handle(handle, newNode.__zwHandle, refNode.__zwSelector);
                 else __zw_insert_before(sel, newNode.__zwHandle, refNode.__zwSelector);
               }
               // refNode 为 create 句柄（无 selector）时不支持（罕见）。
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [] });
+              // R2994 connectedCallback：子树按父连接态传播。
+              if (ceAdded) {
+                var cePconn = _ceParentConnected(sel, handle);
+                for (var ci = 0; ci < ceAdded.length; ci++) _ceApplyConn(ceAdded[ci], cePconn);
+              }
             }
             return newNode;
           };
@@ -735,6 +756,10 @@
         if (prop === 'replaceChild') {
           return function(newChild, oldChild) {
             if (newChild && newChild.__zwHandle && oldChild && oldChild.__zwSelector) {
+              // R2994：capture added/removed for connection 传播。
+              var ceAdded = _fragmentHandles[newChild.__zwHandle]
+                ? (_handleChildren[newChild.__zwHandle] || []).slice()
+                : [newChild];
               // DocumentFragment：flatten 子到 old 前（非插 fragment 节点本身），再移除 old。
               if (_fragmentHandles[newChild.__zwHandle]) {
                 if (handle && typeof __zw_insert_fragment_before_handle === 'function')
@@ -752,14 +777,21 @@
                 addedNodes: [newChild],
                 removedNodes: [oldChild],
               });
+              // R2994：newChild 子树按父连接态连入；oldChild 断连。
+              var cePconn = _ceParentConnected(sel, handle);
+              for (var ci = 0; ci < ceAdded.length; ci++) _ceApplyConn(ceAdded[ci], cePconn);
+              _ceApplyConn(oldChild, false);
             }
             return oldChild;
           };
         }
         if (prop === 'remove') {
           return function() {
+            // R2994：移除自身（含 handle 子树）→ 断连（仅此前已连入的 custom element 分派 disconnectedCallback）。
+            var ceSelf = _makeProxy(sel, handle);
             if (handle) __zw_remove_handle(handle);
             else __zw_remove(sel);
+            _ceApplyConn(ceSelf, false);
           };
         }
         // `element.replaceWith(...nodesOrStrings)`：用新节点序列替换自身（self 级，区别于
@@ -783,6 +815,9 @@
             var added = _appendVariadic(sel, handle, arguments);
             if (added.length > 0) {
               _mo_notify(sel, handle, { type: 'childList', addedNodes: added, removedNodes: [] });
+              // R2994 connectedCallback：新增子按父连接态传播（text 节点非元素，_ceApplyConn 内安全跳过）。
+              var cePconn = _ceParentConnected(sel, handle);
+              for (var ci = 0; ci < added.length; ci++) _ceApplyConn(added[ci], cePconn);
             }
             return undefined;
           };
@@ -799,6 +834,10 @@
             if (removed.length > 0 || added.length > 0) {
               _mo_notify(sel, handle, { type: 'childList', addedNodes: added, removedNodes: removed });
             }
+            // R2994：旧子断连、新子按父连接态连入（旧子多为 sel-based parsed → 未追踪 → no-op；handle 子 best-effort）。
+            for (var ri = 0; ri < removed.length; ri++) _ceApplyConn(removed[ri], false);
+            var rcPconn = _ceParentConnected(sel, handle);
+            for (var ai = 0; ai < added.length; ai++) _ceApplyConn(added[ai], rcPconn);
             return undefined;
           };
         }

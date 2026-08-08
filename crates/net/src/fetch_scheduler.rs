@@ -363,23 +363,50 @@ mod tests {
 
 #[test]
 fn submit_shared_coalesces_duplicate_url() {
-    use std::time::Duration;
+    // 合并态（in_flight 计数 + pending 订阅者数）是**瞬态**：fetch 完成后即被 on_complete 清空。
+    // 旧实现对 127.0.0.1:1（连接立即拒绝）发 fetch，在并发 workspace 测试负载下 worker 可能在测试
+    // 断言前就完成并清空 in_flight → 间歇 flake（同文件 submit_shared_queues_when_busy 已踩同坑并硬化）。
+    // 本测试改用「挂起本地服务端」：接受连接但不写响应 → fetch worker 阻塞在读 HTTP 响应（30s timeout
+    // 内不完成）→ in_flight/pending 稳定，断言确定。状态观察后即返回（worker 线程随 test 进程退出清理）。
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind hanging server");
+    let port = listener.local_addr().expect("local addr").port();
+    std::thread::spawn(move || {
+        // 接受连接并持有（不写响应）→ 客户端阻塞等待 HTTP 响应。
+        let mut held: Vec<std::net::TcpStream> = Vec::new();
+        while let Ok((stream, _)) = listener.accept() {
+            held.push(stream);
+        }
+        drop(held);
+    });
     let sched = PerOriginFetchScheduler::new_shared();
-    // 同一 URL 两次提交：合并为一次网络请求，两个接收端都拿到结果
-    let r1 = PerOriginFetchScheduler::submit_shared(&sched, "http://127.0.0.1:1/coalesce-me");
-    let r2 = PerOriginFetchScheduler::submit_shared(&sched, "http://127.0.0.1:1/coalesce-me");
+    let origin = format!("http://127.0.0.1:{port}");
+    let url = format!("{origin}/coalesce-me");
+    // 同一 URL 两次提交：合并为一次网络请求，pending 累积 2 个订阅者。
+    let _r1 = PerOriginFetchScheduler::submit_shared(&sched, &url);
+    let _r2 = PerOriginFetchScheduler::submit_shared(&sched, &url);
     {
         let s = sched.lock().unwrap();
-        // 只有一个 in-flight（合并），pending 有 2 个订阅者
-        assert_eq!(s.in_flight.get("http://127.0.0.1:1").copied(), Some(1));
-        let subs = s.pending.get("http://127.0.0.1:1/coalesce-me").expect("pending entry");
+        // 只有一个 in-flight（合并），pending 有 2 个订阅者（瞬态在挂起服务端下稳定）。
+        assert_eq!(s.in_flight.get(&origin).copied(), Some(1));
+        let subs = s.pending.get(&url).expect("pending entry");
         assert_eq!(subs.len(), 2, "two subscribers for one in-flight request");
     }
+    // 不读结果（worker 阻塞在挂起服务端）；状态断言已证明合并。结果广播见下方独立测试。
+}
+
+#[test]
+fn submit_shared_broadcasts_result_to_subscribers() {
+    use std::time::Duration;
+    // 结果广播路径：fetch 完成后 on_complete 广播同一结果给全部订阅者并清空 pending。
+    // 用 127.0.0.1:1（连接立即拒绝，fast Err）使 fetch 快速完成；recv_timeout 等待完成（非竞态）。
+    let sched = PerOriginFetchScheduler::new_shared();
+    let r1 = PerOriginFetchScheduler::submit_shared(&sched, "http://127.0.0.1:1/broadcast-me");
+    let r2 = PerOriginFetchScheduler::submit_shared(&sched, "http://127.0.0.1:1/broadcast-me");
     let r1v = r1.recv_timeout(Duration::from_secs(5));
     let r2v = r2.recv_timeout(Duration::from_secs(5));
-    // 两次都收到同一结果（连接拒绝的 Err 字符串一致）
+    // 两次都收到同一结果（连接拒绝的 Err 字符串一致）。
     assert_eq!(r1v.as_ref().err(), r2v.as_ref().err(), "coalesced results must match");
-    // 完成后 pending 清空
+    // 完成后 pending 清空（poll 至 drain，robust 抗调度延迟）。
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
         let p = sched.lock().unwrap().pending.len();

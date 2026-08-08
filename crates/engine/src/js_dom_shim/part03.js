@@ -217,6 +217,68 @@
     return handle ? ('@' + handle) : sel;
   }
 
+  // ── custom element lifecycle slice（R2994）：connectedCallback / disconnectedCallback ──────────
+  // spec HTML §4.13：custom element 连入 document 树时调 connectedCallback，断开时调 disconnectedCallback
+  //（双向，可重复触发——再连再调）。element 为 generic Proxy 非 ctor 实例（upgrade/ctor 调用仍 defer），
+  // 故以 element proxy 为 this 分派 ctor.prototype 上的回调。连入态由 JS 端追踪（host 快照不实时反映
+  // handle 元素挂载），appendChild/insertBefore/removeChild/remove 等插入/移除点单点 hook。
+  // https://html.spec.whatwg.org/multipage/custom-elements.html#custom-element-reactions (connected/disconnected)
+  // **已知限制（既存，非本切片引入）**：① parsed 元素（HTML 源中的 <my-el>）不经 JS appendChild → 初始
+  // connectedCallback 不触发（ createElement 路径才触发，框架主流用法）；② insertAdjacentHTML 解析生成
+  // 的节点无 handle proxy → 不触发；③ upgrade/ctor 实例化仍 defer。
+  var _ceConn = {}; // element key → true（custom element 当前已连入 document 树；非 custom handle 元素亦入，作 detached container 传播连接态供其后代判定）
+
+  // 判定「插入操作的父」是否已连入 document：sel-based 父 → host `__zw_contains('html', sel)`（documentElement
+  // 子树判定，权威，含 html/body/head 自身）；handle-based 父（detached createElement 容器 / shadow root /
+  // fragment）→ _ceConn 追踪（其先前挂载时由 _ceApplyConn 传播标记）。
+  function _ceParentConnected(parentSel, parentHandle) {
+    if (parentSel) {
+      if (typeof __zw_contains === 'function') {
+        try { return __zw_contains('html', parentSel) === '1'; } catch (_e) { return true; }
+      }
+      return true; // 无 host 回调（polyfill/WebView 路径）→ sel-based 视为已连入（parsed 即在树内）
+    }
+    if (parentHandle) return !!_ceConn[_elKey(null, parentHandle)];
+    return false;
+  }
+
+  // 对子树（rootProxy 及其 handle-registry 后代，pre-order tree order）应用连接态变更。
+  // connected=true：未连→连（custom element 分派 connectedCallback）；connected=false：已连→断（disconnectedCallback）。
+  // 非 custom handle 元素仅传播连接态（供其作父/容器时后代判定）；sel-based 非 custom 元素连接态由 host 权威，不追踪。
+  // 仅 custom 元素在状态真转时调回调（再连再调、同态跳过）。回调异常 try/catch 吞（不中断脚本）。
+  function _ceApplyConn(rootProxy, connected) {
+    var stack = [rootProxy];
+    while (stack.length) {
+      var node = stack.shift();
+      if (!node) continue;
+      var ns = node.__zwSelector || null;
+      var nh = node.__zwHandle || null;
+      if (!ns && !nh) continue;
+      var key = _elKey(ns, nh);
+      var entry = _ceEntryFor(key, ns, nh);
+      if (entry) {
+        var was = !!_ceConn[key];
+        if (connected && !was) {
+          _ceConn[key] = true;
+          var ccb = entry.ctor && entry.ctor.prototype && entry.ctor.prototype.connectedCallback;
+          if (typeof ccb === 'function') { try { ccb.call(node); } catch (_e) {} }
+        } else if (!connected && was) {
+          delete _ceConn[key];
+          var dcb = entry.ctor && entry.ctor.prototype && entry.ctor.prototype.disconnectedCallback;
+          if (typeof dcb === 'function') { try { dcb.call(node); } catch (_e) {} }
+        }
+      } else if (nh && !ns) {
+        // 非 custom 纯 handle 元素：追踪连接态作传播（detached container 场景）。
+        if (connected) _ceConn[key] = true; else delete _ceConn[key];
+      }
+      // 递归 handle registry 后代（R2927/R2928 维护的容器子树，pre-order：先 shift 自身再压子）。
+      if (nh) {
+        var kids = _handleChildren[nh];
+        if (kids) for (var i = 0; i < kids.length; i++) stack.push(kids[i]);
+      }
+    }
+  }
+
   // Constraint Validation ValidityState（R2825）。customError 由 setCustomValidity 跟踪（非空消息→invalid）；
   // 原生约束（valueMissing/typeMismatch/patternMismatch/tooLong/tooShort/rangeUnderflow/rangeOverflow/
   // stepMismatch/badInput）headless 不强制，恒 false（permissive valid——表单校验库 checkValidity 走 valid 路径）。

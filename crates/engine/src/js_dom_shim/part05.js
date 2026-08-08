@@ -752,16 +752,21 @@
       items.push(a);
     }
     if (reverseOrder) items.reverse();
+    // R2994：目标 sel 已挂载（本函数要求 sel-based）→ 其自身及父均连入 document，故新插入的元素子/兄弟
+    // 随之连入。收集插入的元素项，事后按 connected 传播（text 字符串项跳过——非 custom element）。
+    var ceInserted = [];
     for (var k = 0; k < items.length; k++) {
       var item = items[k];
       try {
         if (typeof item === 'object' && item.__zwHandle) {
           __zw_insert_adjacent_element(sel, position, item.__zwHandle);
+          ceInserted.push(item);
         } else {
           __zw_insert_adjacent_text(sel, position, String(item));
         }
       } catch (_e) {}
     }
+    for (var ci = 0; ci < ceInserted.length; ci++) _ceApplyConn(ceInserted[ci], true);
   }
 
   // append/replaceChildren 共用：variadic 节点/字符串追加到 this 末尾（DocumentFragment flatten）。

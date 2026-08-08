@@ -112,6 +112,26 @@
 
 ## 最近完成的改进
 
+### P1a custom element lifecycle slice——connectedCallback / disconnectedCallback（本轮 R2994，~14,183 测试）
+
+承接 R2992（attributeChangedCallback）/ R2993（handle removeAttribute 真移除）。custom element lifecycle 仍 defer connectedCallback/disconnectedCallback（Tier 2 Done Criteria 项，M12 Web Components）。本切片落地连入/断开回调——CE 次常用可观察行为（lit connected钩子 / 各 CE 库 mount/unmount 清理 / 框架 diff 后回调高频）。element 为 generic Proxy 非 ctor 实例（upgrade/ctor 仍 defer），以 element proxy 为 `this` 分派 ctor.prototype 上的回调。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **连接态追踪 + 子树传播 helper** | `js_dom_shim/part03.js`（+`_ceConn` map + `_ceParentConnected` + `_ceApplyConn`） | `_ceConn`（element key→true）JS 端追踪连入态（host 快照不实时反映 handle 元素挂载）。`_ceParentConnected(sel,handle)`：sel-based 父 → host `__zw_contains('html', sel)`（documentElement 子树判定，权威）；handle-based 父（detached createElement 容器/shadow/fragment）→ `_ceConn` 追踪。`_ceApplyConn(proxy, connected)`：pre-order 遍历子树（root + `_handleChildren` registry DFS），custom 元素状态真转才调回调（再连再调、同态跳过），非 custom 纯 handle 元素仅传播连接态（作 detached container 供后代判定）。 |
+| **插入/移除点 hook** | `js_dom_shim/part04.js`（appendChild/insertBefore/removeChild/replaceChild/remove/append/replaceChildren）+ `part05.js`（`_insertAdjacentVariadic` = prepend/before/after/replaceWith） | 各插入点事后按父连接态 `_ceApplyConn(added, pconn)`（fragment flatten 前捕获顶层 added 子）；各移除点 `_ceApplyConn(removed, false)`。`remove()` 用 `_makeProxy(sel,handle)` 重建 self proxy 再断连。同树内移动已连入元素 → 状态未变 → 无新回调（spec 一致）。 |
+| **driving test** | `js_dom_bridge_tests/part11.rs`（+`test_custom_elements_connected_callback_r2994`） | 6 场景：① appendChild→+ / removeChild→- / appendChild→+（双向再触发）；② `el.remove()` self 级断连；③ detached 容器内 append 不触发 + 容器连入时子树（含 CE 后代）传播连入 + 容器移除子树断连；④ insertBefore 连入新节点 + 同树内移动不重复触发；⑤ 非自定义元素 append/remove 不触发；⑥ 仅定义 connectedCallback（无 disconnectedCallback）移除 graceful 不抛。 |
+
+**为何零回归且净正向**：① 全 additive（新增 helper + hook 调用，hook 仅在 custom 元素状态真转时分派用户回调，非 custom 元素 / 无回调定义 = no-op）；② 复用既有 `_ceEntryFor`（tag→registry 查询，R2992 已缓存）+ `_handleChildren` registry（R2927/R2928）+ `__zw_contains`（既有）；③ `_ceConn`/`_ceApplyConn` 为 shim IIFE 内部，零新 host 回调、零渲染副作用。
+
+**已知限制（记录）**：① parsed HTML 源中的 `<my-el>` 不经 JS appendChild → 初始 connectedCallback 不触发（createElement 路径才触发，框架主流用法）；② insertAdjacentHTML 解析生成的节点无 handle proxy → 不触发（同 parsed 限制）；③ upgrade / ctor 实例化仍 defer（element proxy→ctor instance 深项，需 P1b 原生绑定 RFC）；④ `replaceChildren` 旧子多为 sel-based parsed → 未追踪 → 断连 no-op（handle 子 best-effort）；⑤ Range deleteContents/extractContents 经 `child.remove()`/`removeChild`（R2929）会触发断连（复用既有 hook）。
+
+**附带修复（flaky test，zero-net 共享面，同文件已硬化同类）**：`fetch_scheduler::submit_shared_coalesces_duplicate_url` 在并发 workspace 测试负载下间歇 flake——旧实现对 `127.0.0.1:1`（连接立即拒绝）发 fetch，worker 可能在断言瞬态 `in_flight==1`/`pending subs==2` 前完成并清空状态。拆为两确定性测试：① `submit_shared_coalesces_duplicate_url`（挂起本地服务端：accept 不响应 → worker 阻塞读响应 → 瞬态稳定，断言 in_flight==1 + subs==2）；② `submit_shared_broadcasts_result_to_subscribers`（127.0.0.1:1 fast-fail → recv_timeout 等完成，断言两订阅者结果一致 + pending drained，本就非竞态）。15× stress 全绿。
+
+验证：`cargo fmt --check` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**14183 passed / 71 skipped / 0 failed**，engine +1 driving 测试 + net 拆分 +1，零回归；含 R2992/R2993 既有 CE 测试 + 全 appendChild/removeChild/insertBefore/remove/append/replaceChildren/insertAdjacent 相关测试）。
+
+**下一步**：续 custom element lifecycle（高价值 Tier 2）：① **upgrade / ctor 实例化**（element proxy→ctor instance 深项，需 P1b 原生绑定 RFC S5 审批）；② sel-based getAttribute/hasAttribute 快照 stale 闭合（consult mutation 列表）；③ adoptedCallback（跨 document adopt，罕见）；或回 §5 测试质量（Streams pipeTo 背压 / history 状态机边界 / customElements upgrade 路径覆盖）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a handle 元素 removeAttribute 真移除（RemoveAttrOnHandle 变体 + latest-wins query，闭合 R2992 latent gap，本轮 R2993，~14,181 测试）
 
 R2992 落地 custom element attributeChangedCallback 时撞见并记录为 follow-up 的 latent gap：handle（createElement）元素 `removeAttribute` 旧实现 set-empty（`__zw_set_attr_handle(handle, n, '')`）而非真移除——致 remove 后 `hasAttribute` 仍 true、custom element post-remove `setAttribute` 的 old='' 而非 null。本切片加 `DomMutation::RemoveAttrOnHandle` 变体闭合三处：
