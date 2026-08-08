@@ -370,6 +370,9 @@
             // R2992 custom element attributeChangedCallback：变更前读 old（absent → null，spec 一致）。
             var ceEntry = _ceEntryFor(key, sel, handle);
             var ceOld = ceEntry ? _ce_attrValue(sel, handle, n) : null;
+            // R3025：MutationObserver attributeOldValue——有 observer 请求时捕获 mutate 前 old value。
+            var moId = _mo_id(handle, sel);
+            var moOld = _mo_any_wants_attr_old(moId, n) ? _mo_read_attr(sel, handle, n) : null;
             // 同步客户端缓存：class→_classCache、value→_inputValues，使 setAttribute 与
             // classList/className、.value getter 协作一致（否则后续 classList.add 读 stale 缓存丢值）。
             if (n === 'class') _classCache[key] = v;
@@ -377,7 +380,7 @@
             else if (n === 'checked' || n === 'selected') _clearBoolDefault(key, n); // R2998：setAttribute('checked'/'selected') 重同步 defaultChecked/defaultSelected
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
-            _mo_notify(sel, handle, { type: 'attributes', attributeName: n });
+            _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, v);
           };
         }
@@ -387,6 +390,9 @@
             // R2992 custom element attributeChangedCallback：移除前读 old（newVal=null）。
             var ceEntry = _ceEntryFor(key, sel, handle);
             var ceOld = ceEntry ? _ce_attrValue(sel, handle, n) : null;
+            // R3025：MutationObserver attributeOldValue——移除前捕获 old value（有 observer 请求时）。
+            var moId = _mo_id(handle, sel);
+            var moOld = _mo_any_wants_attr_old(moId, n) ? _mo_read_attr(sel, handle, n) : null;
             // 真移除（区别于 set-empty 残留 `attr=""`——boolean 属性 checked/disabled 设空值仍 present
             // → hasAttribute 误 true）。handle 元素经 `__zw_remove_attr_handle`（RemoveAttrOnHandle，R2993）；
             // sel-based 经 `__zw_remove_attr`（RemoveAttr，R2657）；无回调 → fallback set-empty。
@@ -398,7 +404,7 @@
             else if (handle) __zw_set_attr_handle(handle, n, '');
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
             else __zw_set_attr(sel, n, '');
-            _mo_notify(sel, handle, { type: 'attributes', attributeName: n });
+            _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, null);
           };
         }
@@ -527,10 +533,12 @@
             var snapHas = (sel && typeof __zw_has_attr === 'function')
               ? (__zw_has_attr(sel, n) === '1')
               : false;
+            // R3025：MutationObserver attributeOldValue——toggle 前捕获 old value（有 observer 请求时）。
+            var moOld = _mo_any_wants_attr_old(_mo_id(handle, sel), n) ? _mo_read_attr(sel, handle, n) : null;
             if (sel && typeof __zw_toggle_attribute === 'function') {
               var fArg = hasForce ? (force ? '1' : '0') : '';
               __zw_toggle_attribute(sel, n, fArg);
-              _mo_notify(sel, handle, { type: 'attributes', attributeName: n });
+              _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             } else if (handle) {
               // handle-only（无 toggle/has-attr handle 变体）：best-effort client-side。
               var want = hasForce ? !!force : !snapHas;

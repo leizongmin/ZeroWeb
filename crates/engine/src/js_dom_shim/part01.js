@@ -500,6 +500,39 @@
     return null;
   }
 
+  // R3025：observer options 是否请求属性 oldValue（spec：attributeOldValue=true 或 attributeFilter 命中该属性）。
+  function _mo_obs_wants_attr_old(opts, name) {
+    if (opts.attributeOldValue === true) return true;
+    if (Array.isArray(opts.attributeFilter) && opts.attributeFilter.indexOf(name) >= 0) return true;
+    return false;
+  }
+  // 任意观测该 id 的 observer 是否需要 name 的 oldValue——决定 attribute call site 是否在 mutate 前捕获 old value
+  //（无 observer 需要时不读 host，避 setAttribute 热路径无谓 get 开销）。
+  function _mo_any_wants_attr_old(id, name) {
+    if (id == null) return false;
+    var observers = globalThis.__zw_mo_observers;
+    for (var i = 0; i < observers.length; i++) {
+      var obs = observers[i];
+      var opts = obs._targets[id];
+      if (opts && _mo_obs_wants_attr_old(opts, name)) return true;
+    }
+    return false;
+  }
+  // 读属性当前值（mutate 前的 old value）。复用 getAttribute/hasAttribute 同款 host 回调（handle/sel latest-wins）。
+  // 先 hasAttribute 判存在——host get_attr 对 absent 可能返 ''（非 null），须显式判 present 返 null（spec：absent oldValue=null）。
+  function _mo_read_attr(sel, handle, name) {
+    try {
+      var present = false;
+      if (handle && typeof __zw_has_attr_handle === 'function') present = __zw_has_attr_handle(handle, name) === '1';
+      else if (sel && typeof __zw_has_attr_lw === 'function') present = __zw_has_attr_lw(sel, name) === '1';
+      else if (sel && typeof __zw_has_attr === 'function') present = __zw_has_attr(sel, name) === '1';
+      if (!present) return null;
+      if (handle && typeof __zw_get_attr_handle === 'function') return __zw_get_attr_handle(handle, name);
+      if (sel && typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, name);
+      if (sel && typeof __zw_get_attr === 'function') return __zw_get_attr(sel, name);
+    } catch (_e) {}
+    return null;
+  }
   // 把一条 mutation 记录投递给所有观测该 id 且 options 匹配的 observer。
   // 每个 observer 拿独立 record 副本（target 指向各自 observe() 时的 proxy）。
   function _mo_notify(sel, handle, baseRecord) {
@@ -510,8 +543,13 @@
       var obs = observers[i];
       var opts = obs._targets[id];
       if (!opts) continue;
-      if (baseRecord.type === 'attributes' && !opts.attributes) continue;
+      if (baseRecord.type === 'attributes') {
+        if (!opts.attributes) continue;
+        // R3025：attributeFilter——仅观测列表内属性（spec：attributeFilter 非 attributeOldValue 时为筛选条件）。
+        if (Array.isArray(opts.attributeFilter) && opts.attributeFilter.indexOf(baseRecord.attributeName) < 0) continue;
+      }
       if (baseRecord.type === 'childList' && !opts.childList) continue;
+      if (baseRecord.type === 'characterData' && !opts.characterData) continue;
       var rec = Object.create(globalThis.MutationRecord.prototype);
       rec.type = baseRecord.type;
       rec.target = obs._targetProxies[id];
@@ -522,7 +560,11 @@
       rec.nextSibling = baseRecord.nextSibling || null;
       rec.attributeName = baseRecord.attributeName || null;
       rec.attributeNamespace = baseRecord.attributeNamespace || null;
-      rec.oldValue = baseRecord.oldValue || null;
+      // R3025：oldValue 仅当 observer 请求时填（attributes: attributeOldValue 或 attributeFilter 命中；
+      // childList/characterData 恒 null——childList oldValue 未支持，characterData 见 characterDataOldValue defer）。
+      rec.oldValue = (baseRecord.type === 'attributes' && _mo_obs_wants_attr_old(opts, baseRecord.attributeName))
+        ? (baseRecord.oldValue != null ? baseRecord.oldValue : null)
+        : null;
       obs._records.push(rec);
       _mo_scheduleFlush();
     }

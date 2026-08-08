@@ -1638,3 +1638,98 @@ fn test_attr_instanceof_and_namespace_attrs_r3024() {
     assert_eq!(sandbox.execute("globalThis.__naLocal").unwrap().value, "href", "解析 qualifiedName localName=href");
     assert_eq!(sandbox.execute("globalThis.__naName").unwrap().value, "xlink:href", "Attr.name=完整 qualifiedName");
 }
+
+#[test]
+fn test_mutation_observer_attr_filter_and_old_value_r3025() {
+    // R3025：MutationObserver attributeFilter + attributeOldValue（observe options spec 合规）。
+    // 旧 _mo_notify 仅按 opts.attributes/childList 过滤——attributeFilter（仅观测列表内属性）+ attributeOldValue
+    // （rec.oldValue 报告旧值）未支持，框架库按 spec 用这两个 option 时记录错误/冗余。本切片闭合。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① attributeFilter：仅观测列表内属性（data-x fire，class 被滤掉）。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             var mo = new MutationObserver(function(){});\
+             mo.observe(d, { attributes: true, attributeFilter: ['data-x'] });\
+             d.setAttribute('data-x', '1');\
+             d.setAttribute('class', 'c');\
+             globalThis.__fRecs = mo.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fRecs.length)").unwrap().value,
+        "1",
+        "attributeFilter=['data-x']：仅 data-x 变更记录（class 被滤掉）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__fRecs[0].attributeName").unwrap().value,
+        "data-x",
+        "attributeFilter 命中记录的 attributeName=data-x"
+    );
+
+    // ② attributeOldValue：新属性 oldValue=null；后续变更 oldValue=前值。
+    sandbox
+        .execute(
+            "mo.disconnect();\
+             var mo2 = new MutationObserver(function(){});\
+             mo2.observe(d, { attributes: true, attributeOldValue: true });\
+             d.setAttribute('data-z', 'v1');\
+             globalThis.__r1 = mo2.takeRecords();\
+             d.setAttribute('data-z', 'v2');\
+             globalThis.__r2 = mo2.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1[0].oldValue)").unwrap().value,
+        "null",
+        "attributeOldValue：新属性 oldValue=null（absent）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r2[0].oldValue").unwrap().value,
+        "v1",
+        "attributeOldValue：变更 oldValue=前值 'v1'"
+    );
+
+    // ③ 未请求 attributeOldValue → oldValue 恒 null（spec）。
+    sandbox
+        .execute(
+            "mo2.disconnect();\
+             var mo3 = new MutationObserver(function(){});\
+             mo3.observe(d, { attributes: true });\
+             d.setAttribute('data-z', 'v3');\
+             globalThis.__r3 = mo3.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3[0].oldValue)").unwrap().value,
+        "null",
+        "未请求 attributeOldValue → oldValue=null（即使有旧值）"
+    );
+
+    // ④ attributeFilter 命中亦报告 oldValue（spec：filter 命中 == 请求 old value），无须 attributeOldValue。
+    sandbox
+        .execute(
+            "mo3.disconnect();\
+             var mo4 = new MutationObserver(function(){});\
+             mo4.observe(d, { attributes: true, attributeFilter: ['data-z'] });\
+             d.setAttribute('data-z', 'v4');\
+             globalThis.__r4 = mo4.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r4[0].oldValue").unwrap().value,
+        "v3",
+        "attributeFilter 命中报告 oldValue='v3'（spec：filter 命中 == 请求 old value）"
+    );
+}
