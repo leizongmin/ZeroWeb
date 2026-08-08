@@ -112,6 +112,29 @@
 
 ## 最近完成的改进
 
+### P1a Response/Request 全局构造器（补全 fetch API 表面，本轮 R2968，~14,150 测试）
+
+R2967（ReadableStream）后续补 fetch API 表面。`globalThis.Response`/`globalThis.Request` 构造器**此前全缺**——仅 `fetch()`/`Headers` 存在（master.md Tier 1 「Fetch API 基础实现（fetch()、Request、Response、Headers）」中 Request/Response 两项缺位）。`new Response()`/`new Request()` 不可用 → service worker 构造响应、fetch 包装库（axios/ky/wretch）、测试 mock（`new Response(body, {status})`）全不可用。本切片补两构造器。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part01.js` | 新 `globalThis.Response(body, init)`：status/ok/statusText/headers/text()/json()/clone()/type/url/redirected + body getter（lazy ReadableStream，R2967 _bodyToStream）。**headers 保持 plain dict**（_headersToPlain，非 Headers 实例）。新 `globalThis.Request(input, init)`：url/method(upper)/headers(plain dict)/body(string\|null)/cache/mode/redirect/credentials + clone()。新 `_headersToPlain(src)` 辅助（forEach/对象 → plain dict）。`_makeResponseFromWire` 成功路径改经 `new Response(body, {status, statusText, headers})` 构造（fetch 结果 instanceof Response），移除冗余 `var ok`。 |
+| `crates/engine/src/js_dom_bridge_tests/part10.rs` | 新 `test_response_request_constructors_r2968`：Response 构造（instanceof/ok/status/statusText/headers bracket/text/json/clone/body Stream）+ 默认值（200/''/）+ Request 构造（url/method 大写/headers/body/clone）+ fetch(Request) 投递 Request.method/url/body（mock __zw_fetch 捕获）+ fetch 结果 instanceof Response（resolve_async_callback wire）。 |
+
+**为何 headers 保持 plain dict（非 Headers 实例）**：integration test（tab_js_worker.rs:764）经 `r.headers['X-Test']` **bracket 访问**断言（line 773）。`Headers` 实例不支持 bracket（须 `.get(name)`）。改 plain dict 兼容既有测试（R2968 验证 integration fetch 测试全绿）。spec Response.headers 为 Headers 实例属 follow-up（需同时迁移 integration test 到 `.get()`）。
+
+**为何 _makeResponseFromWire 经 new Response 路由**：使 `resp instanceof Response` 成立（service worker / 类型检查库 feature-detect）。字段 shape 与旧 plain object 逐字段一致（ok/status/statusText/headers plain dict/body getter/text/json）→ integration test `r.ok`/`r.status`/`r.statusText`/`r.headers['X-Test']`/`r.json()` 全保留（make test 14150 全绿验证）。
+
+**为何 Request.body 为 string\|null（非 ReadableStream）**：fetch 消费 Request 时读 `input.body` 作 string（`String(input.body)`，R2923）。Request.body 为 string 对齐 fetch 消费路径（`fetch(new Request(...))` 投递 body 不需特殊处理）。spec Request.body 为 ReadableStream 属 follow-up（需 body 双重表示 + 已用信号）。
+
+**为何零回归**：Response/Request 为新增构造器（既有无代码 new Response/Request）；_makeResponseFromWire 经 new Response 路由但字段 shape 逐字段不变（integration + R2967 fetch body 测试全绿验证）；_makeResponse（error/legacy 路径）保持 plain object（network error body=null，R2967 错误测试 __respErr.body===null 仍绿）。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14150 passed / 71 skipped / 0 failed**（engine +1 driving 测试，含 integration fetch 测试 r.headers['X-Test']/r.ok 全绿，无回归）+ clippy `-D warnings` 零警告（workspace，修 `g.get(0)`→`g.first()` get_first lint）+ fmt clean + 全 shim `node --check` 通过。
+
+**已知限制（follow-up）**：① Response.headers/Request.headers 为 plain dict（非 Headers 实例，bracket-access 兼容；spec Headers 实例迁移 follow-up 需同步改 integration test）；② Request.body 为 string\|null（非 ReadableStream）；③ 无 Response.error()/redirect()/arrayBuffer()/blob()/formData() 静态/方法（follow-up）；④ 无 AbortSignal 在 Request/Response 集成（R2923 AbortSignal 最小支持在 fetch 层）。
+
+**下一步**：续 P1a——① WritableStream/TransformStream（Streams write 侧，补全 ReadableStream 配对 + pipeTo/pipeThrough）；② Response.headers/Request.headers 迁移 Headers 实例（+ integration test 同步 .get()）；③ 其他 defer Web API（ClipboardItem 图片剪贴板）；④ task source 优先级（事件循环边缘）；⑤ customElements upgrade（需 P1b RFC 审批）；⑥ 拆 js_dom_bridge.rs（3947，按职责重组）。
+
 ### P1a ReadableStream（Streams API）+ fetch response.body 流式（本轮 R2967，~14,149 测试）
 
 R2966（IO rootMargin）后续续 P1a defer Web API。`ReadableStream` / Streams API **此前全缺**（grep 零命中）——fetch `response.body` 不存在（仅有 `text()`/`json()` 整体读），现代流式消费库（@json/streaming / readable-stream / service worker 逐块处理 / 自定义测试流 mock）全不可用。本切片补 **ReadableStream + response.body 流式**。

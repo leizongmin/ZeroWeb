@@ -704,3 +704,132 @@ fn test_response_body_readable_stream_r2967() {
         "网络错误响应 body=null（spec network error）"
     );
 }
+
+#[test]
+fn test_response_request_constructors_r2968() {
+    // R2968：Response / Request 全局构造器（补全 fetch API 表面）。new Response/new Request 构造 +
+    // fetch 结果 instanceof Response（_makeResponseFromWire 经 new Response 路由）+ fetch(new Request) 消费。
+    // headers 保持 plain dict（bracket-access 兼容 integration test r.headers['X-Test']）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // Response 构造器：status/statusText/ok/headers(plain dict bracket)/text/json/clone/instanceof。
+    sandbox
+        .execute(
+            "var r = new Response('{\"a\":1}', { status: 201, statusText: 'Created', headers: { 'X-Test': 'r2968' } });\
+             globalThis.__isResp = (r instanceof Response);\
+             globalThis.__ok = r.ok;\
+             globalThis.__status = r.status;\
+             globalThis.__statusText = r.statusText;\
+             globalThis.__hdr = r.headers['X-Test'];\
+             globalThis.__hasHdrGet = (typeof r.headers.get === 'function');\
+             globalThis.__bodyIsStream = (r.body instanceof ReadableStream);\
+             r.text().then(function(t){ globalThis.__text = t; });\
+             r.json().then(function(j){ globalThis.__json = j.a; });\
+             globalThis.__cloneOk = (r.clone() instanceof Response) && r.clone().status === 201;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__isResp)").unwrap().value, "true", "new Response → instanceof Response");
+    assert_eq!(sandbox.execute("String(globalThis.__ok)").unwrap().value, "true", "status 201 → ok=true");
+    assert_eq!(sandbox.execute("String(globalThis.__status)").unwrap().value, "201", "status 从 init");
+    assert_eq!(sandbox.execute("String(globalThis.__statusText)").unwrap().value, "Created", "statusText 从 init");
+    assert_eq!(sandbox.execute("String(globalThis.__hdr)").unwrap().value, "r2968", "headers 为 plain dict（bracket 访问）");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hasHdrGet)").unwrap().value,
+        "false",
+        "headers 为 plain dict（非 Headers 实例，无 .get）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__bodyIsStream)").unwrap().value,
+        "true",
+        "Response.body 为 ReadableStream"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__text)").unwrap().value, "{\"a\":1}", "text() 返 body");
+    assert_eq!(sandbox.execute("String(globalThis.__json)").unwrap().value, "1", "json() 解析 body");
+    assert_eq!(sandbox.execute("String(globalThis.__cloneOk)").unwrap().value, "true", "clone() 返 Response + 保留 status");
+
+    // 默认 new Response() → status 200 ok=true，statusText=''。
+    sandbox.execute("var d = new Response('x'); globalThis.__dStatus = d.status; globalThis.__dOk = d.ok; globalThis.__dST = d.statusText;").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__dStatus)").unwrap().value, "200", "默认 status=200");
+    assert_eq!(sandbox.execute("String(globalThis.__dOk)").unwrap().value, "true", "默认 ok=true");
+    assert_eq!(sandbox.execute("String(globalThis.__dST)").unwrap().value, "", "默认 statusText=''");
+
+    // Request 构造器：url/method(upper)/headers(plain dict)/body + clone。
+    sandbox
+        .execute(
+            "var q = new Request('http://test.local/api', { method: 'post', headers: { 'Content-Type': 'text/plain' }, body: 'hello' });\
+             globalThis.__qUrl = q.url;\
+             globalThis.__qMethod = q.method;\
+             globalThis.__qHdr = q.headers['Content-Type'];\
+             globalThis.__qBody = q.body;\
+             globalThis.__qCloneUrl = q.clone().url;\
+             globalThis.__qCloneMethod = q.clone().method;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__qUrl)").unwrap().value, "http://test.local/api", "Request.url");
+    assert_eq!(sandbox.execute("String(globalThis.__qMethod)").unwrap().value, "POST", "Request.method 大写归一");
+    assert_eq!(sandbox.execute("String(globalThis.__qHdr)").unwrap().value, "text/plain", "Request.headers plain dict");
+    assert_eq!(sandbox.execute("String(globalThis.__qBody)").unwrap().value, "hello", "Request.body");
+    assert_eq!(sandbox.execute("String(globalThis.__qCloneUrl)").unwrap().value, "http://test.local/api", "Request.clone().url");
+    assert_eq!(sandbox.execute("String(globalThis.__qCloneMethod)").unwrap().value, "POST", "Request.clone().method");
+
+    // fetch 结果 instanceof Response + fetch(new Request(...)) 消费：mock __zw_fetch 捕获 method/url。
+    let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let cap = Arc::clone(&captured);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            // args: [id, method, url, headersWire, body]
+            let mut g = cap.lock().unwrap();
+            g.push(args.get(1).cloned().unwrap_or_default()); // method
+            g.push(args.get(2).cloned().unwrap_or_default()); // url
+            g.push(args.get(4).cloned().unwrap_or_default()); // body
+            "ok".to_string()
+        }),
+    );
+    // fetch(new Request(...)) → 取 Request.method/url/body 投递 host。
+    sandbox
+        .execute(
+            "fetch(new Request('http://test.local/r', { method: 'PUT', body: 'payload' }))\
+               .then(function(resp){ globalThis.__fetchIsResp = (resp instanceof Response); });",
+        )
+        .unwrap();
+    // 无 resolve（host 不回调）→ Promise pending；但 __zw_fetch 已同步调用，参数已捕获。
+    let g = captured.lock().unwrap().clone();
+    assert_eq!(g.first().map(|s| s.as_str()), Some("PUT"), "fetch(Request) 投递 Request.method=PUT");
+    assert_eq!(g.get(1).map(|s| s.as_str()), Some("http://test.local/r"), "fetch(Request) 投递 Request.url");
+    assert_eq!(g.get(2).map(|s| s.as_str()), Some("payload"), "fetch(Request) 投递 Request.body=payload");
+    // instanceof 在 resolve 前无法验证（Promise pending）→ 改经 wire resolve 后再验。
+    let captured2: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let cap2 = Arc::clone(&captured2);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *cap2.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+    sandbox
+        .execute("fetch('http://test.local/w').then(function(r){ globalThis.__wResp = (r instanceof Response); globalThis.__wOk = r.ok; });")
+        .unwrap();
+    let id2 = captured2.lock().unwrap().clone();
+    sandbox.resolve_async_callback(&id2, "__zwfr:200\u{001f}OK\u{001f}\u{001f}done");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__wResp)").unwrap().value,
+        "true",
+        "fetch 结果 instanceof Response（_makeResponseFromWire 经 new Response 路由）"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__wOk)").unwrap().value, "true", "fetch 结果 status 200 → ok=true");
+}
