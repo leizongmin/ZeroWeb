@@ -383,6 +383,28 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R2995：sel-based `getAttribute` 专用 latest-wins 变体。区别于 `__zw_get_attr`（纯快照，供 defaultValue /
+    // role / aria / value 懒初始化等反射 getter，须稳定读快照避免 .value= 脏污 defaultValue），本回调先 consult
+    // 变更列表（同批 setAttribute/removeAttribute 在 render apply 前不入快照），命中 SetAttr→新值 /
+    // RemoveAttr→空串（absent）；无命中回落快照。闭合 removeAttribute 后 getAttribute 仍返旧值的 stale gap（R2993）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_get_attr_lw",
+        Box::new(move |args| {
+            if args.len() < 2 {
+                return String::new();
+            }
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(ov) = sel_attr_override(&list, &args[0], &args[1]) {
+                return ov.unwrap_or_default();
+            }
+            drop(list);
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            query_attr_from_html(&snap, &args[0], &args[1])
+        }),
+    );
+
     // P1a form input：真实 tag 名查询（shim `_tagFromSel` 对 id-only 选择器等仅启发式猜测，
     // `__zw_text_input` 需真实 tag 判 INPUT/TEXTAREA）。
     let html = Arc::clone(dom_html);
@@ -438,7 +460,8 @@ pub fn register_dom_callbacks(
     );
 
     // P1a checkbox：属性存在性查询（boolean 属性 checked/disabled 靠存在性；getAttribute 返空串
-    // 无法区分存在与空值，故 `el.checked` getter / toggle 判定用本回调）。返 "1"/"0"。
+    // 无法区分存在与空值，故 `el.checked` getter / toggle 判定用本回调）。返 "1"/"0"。纯快照读——
+    // 反射 getter（checked/defaultChecked）须稳定，故 latest-wins 见 `__zw_has_attr_lw`（hasAttribute 专用）。
     let html = Arc::clone(dom_html);
     sandbox.register_callback(
         "__zw_has_attr",
@@ -446,6 +469,31 @@ pub fn register_dom_callbacks(
             if args.len() < 2 {
                 return "0".to_string();
             }
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            if has_attribute(&snap, &args[0], &args[1]) {
+                "1".into()
+            } else {
+                "0".into()
+            }
+        }),
+    );
+
+    // R2995：sel-based `hasAttribute` 专用 latest-wins 变体（区别于纯快照 `__zw_has_attr`，理由同
+    // `__zw_get_attr_lw`）。先 consult 变更列表：命中 SetAttr→"1" / RemoveAttr→"0"；无命中回落快照。
+    // 闭合 removeAttribute 后 hasAttribute 恒 true 的 stale gap（R2993 latent）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_has_attr_lw",
+        Box::new(move |args| {
+            if args.len() < 2 {
+                return "0".to_string();
+            }
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(ov) = sel_attr_override(&list, &args[0], &args[1]) {
+                return if ov.is_some() { "1" } else { "0" }.to_string();
+            }
+            drop(list);
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             if has_attribute(&snap, &args[0], &args[1]) {
                 "1".into()

@@ -356,7 +356,11 @@
         }
         if (prop === 'getAttribute') {
           return function(name) {
-            return handle ? __zw_get_attr_handle(handle, name) : __zw_get_attr(sel, name);
+            if (handle) return __zw_get_attr_handle(handle, name);
+            // R2995：sel-based 走 latest-wins 变体（consult 变更列表，闭合 removeAttribute 后 stale 旧值）；
+            // 回调未注册（polyfill/其它环境）→ fallback 纯快照 `__zw_get_attr`。
+            if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, name);
+            return __zw_get_attr(sel, name);
           };
         }
         if (prop === 'setAttribute') {
@@ -398,15 +402,21 @@
         }
         // `el.hasAttribute(name)`——属性存在性（boolean 属性 checked/disabled/hidden、data-* 检查常用）。
         // handle 句柄元素（createElement 创建）经 host `__zw_has_attr_handle`（R2832 引入，存于 mutation 列表）；
-        // sel-based 元素经 host `__zw_has_attr`（HTML 快照）。此前 handle-only 元素恒 false（latent bug，R2992 修）。
+        // sel-based 元素经 host `__zw_has_attr_lw`（R2995 latest-wins，闭合 removeAttribute 后 stale true），
+        // 回调未注册 → fallback 纯快照 `__zw_has_attr`。此前 handle-only 元素恒 false（latent bug，R2992 修）。
         if (prop === 'hasAttribute') {
           return function(name) {
             var n = String(name);
             if (handle && typeof __zw_has_attr_handle === 'function') {
               try { return __zw_has_attr_handle(handle, n) === '1'; } catch (_e) { return false; }
             }
-            if (sel && typeof __zw_has_attr === 'function') {
-              try { return __zw_has_attr(sel, n) === '1'; } catch (_e) { return false; }
+            if (sel) {
+              if (typeof __zw_has_attr_lw === 'function') {
+                try { return __zw_has_attr_lw(sel, n) === '1'; } catch (_e) { return false; }
+              }
+              if (typeof __zw_has_attr === 'function') {
+                try { return __zw_has_attr(sel, n) === '1'; } catch (_e) { return false; }
+              }
             }
             return false;
           };

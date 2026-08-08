@@ -1858,6 +1858,36 @@ pub fn has_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: &s
     false
 }
 
+/// sel-based 元素属性的 latest-wins 覆盖判定（R2995）。
+///
+/// sel-based 元素的 `getAttribute`/`hasAttribute` 旧实现仅读 HTML 快照（[`query_attr_from_html`] /
+/// [`has_attribute`]），但快照在脚本执行期间不反映同批 `SetAttr`/`RemoveAttr` 变更（render apply 后才更新）→
+/// `removeAttribute` 后 `hasAttribute` 恒 true、`getAttribute` 仍返旧值（R2993 latent gap）。本函数逆序扫
+/// selector-keyed [`DomMutation::SetAttr`] / [`DomMutation::RemoveAttr`]，latest-wins 给出覆盖信号：
+/// - `Some(Some(value))`：最近 `SetAttr` 命中 → 属性值为 `value`（存在）；
+/// - `Some(None)`：最近 `RemoveAttr` 命中 → 属性 absent；
+/// - `None`：无覆盖 → 调用方回落快照（`getAttribute` 走 [`query_attr_from_html`]，`hasAttribute` 走 [`has_attribute`]）。
+///
+/// 与 handle 路径（[`query_attr_from_mutations`] / [`has_attr_from_mutations`]）对称：handle 元素不在快照，
+/// 故无回落；sel-based 元素在快照，故无命中时回落。selector 为元素身份选择器（querySelector/getElementById/
+/// html·body·head），同元素 setAttribute/getAttribute 传同一 selector 串，字符串相等匹配。
+pub fn sel_attr_override(mutations: &[DomMutation], selector: &str, name: &str) -> Option<Option<String>> {
+    for m in mutations.iter().rev() {
+        match m {
+            DomMutation::SetAttr {
+                selector: s,
+                name: n,
+                value: v,
+            } if s == selector && n == name => return Some(Some(v.clone())),
+            DomMutation::RemoveAttr { selector: s, name: n } if s == selector && n == name => {
+                return Some(None);
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// 从已记录变更中查询 create 句柄上的 textContent。
 pub fn query_text_from_mutations(mutations: &[DomMutation], handle: &str) -> String {
     for m in mutations.iter().rev() {

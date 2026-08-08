@@ -2111,3 +2111,130 @@ fn test_custom_elements_connected_callback_r2994() {
         "仅定义 connectedCallback 时移除 graceful（无 disconnectedCallback 不抛、不记）"
     );
 }
+
+#[test]
+fn test_sel_based_attr_latest_wins_r2995() {
+    // R2995：sel-based（parsed / getElementById）元素 getAttribute/hasAttribute snapshot-stale 闭合。
+    // R2993 latent gap：sel 元素旧读 HTML 快照（render apply 前不反映同批 SetAttr/RemoveAttr）→ removeAttribute
+    // 后 hasAttribute 恒 true、getAttribute 仍返旧值。本切片让 __zw_get_attr/__zw_has_attr 先 consult 变更列表
+    //（selector-keyed SetAttr/RemoveAttr latest-wins），无命中再回落快照——与 handle 路径（R2993）对称。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // div#d 带 data-x/class；input#cb checkbox checked（boolean 反射读 __zw_has_attr）。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id='d' data-x='orig' class='c'></div>\
+         <input id='cb' type='checkbox' checked>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // setAttribute → getAttribute 反映新值（旧实现读 stale 快照返 'orig'）。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             globalThis.__origGet = d.getAttribute('data-x');\
+             d.setAttribute('data-x', 'changed');\
+             globalThis.__afterSetGet = d.getAttribute('data-x');\
+             globalThis.__afterSetHas = String(d.hasAttribute('data-x'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__origGet").unwrap().value,
+        "orig",
+        "初始 getAttribute 读快照原值（无变更覆盖）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__afterSetGet").unwrap().value,
+        "changed",
+        "setAttribute 后 getAttribute 反映新值（latest-wins 覆盖 stale 快照）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__afterSetHas").unwrap().value,
+        "true",
+        "setAttribute 后 hasAttribute=true"
+    );
+
+    // removeAttribute → hasAttribute false / getAttribute ''（旧实现 stale：true / 'changed'）。
+    sandbox
+        .execute(
+            "d.removeAttribute('data-x');\
+             globalThis.__afterRemHas = String(d.hasAttribute('data-x'));\
+             globalThis.__afterRemGet = d.getAttribute('data-x');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__afterRemHas").unwrap().value,
+        "false",
+        "removeAttribute 后 hasAttribute=false（latest-wins RemoveAttr 覆盖 stale 快照 true）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__afterRemGet").unwrap().value,
+        "",
+        "removeAttribute 后 getAttribute=空串（absent）"
+    );
+
+    // remove 后再 set → 恢复（latest-wins：最近 SetAttr 命中）。
+    sandbox
+        .execute(
+            "d.setAttribute('data-x', 'back');\
+             globalThis.__resetGet = d.getAttribute('data-x');\
+             globalThis.__resetHas = String(d.hasAttribute('data-x'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__resetGet").unwrap().value,
+        "back",
+        "remove 后再 setAttribute → getAttribute=新值（最近 SetAttr 命中）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__resetHas").unwrap().value,
+        "true",
+        "remove 后再 setAttribute → hasAttribute=true"
+    );
+
+    // hasAttribute（latest-wins 方法）对 boolean 属性 removeAttribute 后正确返 false（区别于 el.checked
+    // 反射 getter 仍读纯快照 __zw_has_attr——其 stale 为独立 follow-up，本切片仅闭合 getAttribute/hasAttribute）。
+    sandbox
+        .execute(
+            "var cb = document.getElementById('cb');\
+             globalThis.__cbBefore = String(cb.hasAttribute('checked'));\
+             cb.removeAttribute('checked');\
+             globalThis.__cbAfter = String(cb.hasAttribute('checked'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cbBefore").unwrap().value,
+        "true",
+        "checkbox 初始 hasAttribute('checked')=true（快照）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__cbAfter").unwrap().value,
+        "false",
+        "removeAttribute('checked') 后 hasAttribute=false（latest-wins 方法，修正 stale true）"
+    );
+
+    // 关键不变量：.value= 不应污染 defaultValue（defaultValue 读纯快照 __zw_get_attr，不被 value setter 的
+    // SetAttr{value} 覆盖——R2840 语义）。即 latest-wins 仅作用于 getAttribute/hasAttribute 方法，不波及反射 getter。
+    sandbox
+        .execute(
+            "var vi = document.getElementById('d');\
+             vi.setAttribute('value', 'attrval');\
+             globalThis.__dvViaAttr = vi.getAttribute('value');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dvViaAttr").unwrap().value,
+        "attrval",
+        "setAttribute('value') 后 getAttribute('value') 反映新值（latest-wins 方法路径）"
+    );
+}

@@ -112,6 +112,27 @@
 
 ## 最近完成的改进
 
+### P1a sel-based getAttribute/hasAttribute snapshot-stale 闭合（latest-wins 方法专用变体，本轮 R2995，~14,184 测试）
+
+承接 R2993（handle 元素 removeAttribute 真移除 + latest-wins query）。R2993 记录的 latent gap：**sel-based**（parsed / getElementById / querySelector）元素的 `getAttribute`/`hasAttribute` 旧读 HTML 快照（render apply 前不反映同批 `SetAttr`/`RemoveAttr`）→ `removeAttribute` 后 `hasAttribute` 恒 true、`getAttribute` 仍返旧值。handle 元素经 mutation 列表 latest-wins 读无 stale，但 sel 元素漏了。本切片闭合。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`sel_attr_override` helper** | `js_dom_bridge.rs`（+`pub fn sel_attr_override(mutations, selector, name) -> Option<Option<String>>`） | 逆序扫 selector-keyed `SetAttr`/`RemoveAttr`，latest-wins 给覆盖信号：`Some(Some(v))`=最近 SetAttr 命中（值 v）、`Some(None)`=最近 RemoveAttr 命中（absent）、`None`=无覆盖（回落快照）。与 handle 路径（`query_attr_from_mutations`/`has_attr_from_mutations`）对称。 |
+| **`__zw_get_attr_lw` / `__zw_has_attr_lw` 新回调** | `js_dom_bridge/callbacks.rs` | sel-based `getAttribute`/`hasAttribute` **专用** latest-wins 变体：先 consult `sel_attr_override`，无命中回落 `query_attr_from_html`/`has_attribute` 快照。**保留**原 `__zw_get_attr`/`__zw_has_attr` 纯快照不变（供 defaultValue/defaultChecked/role/aria/value 懒初始化/`el.checked` 等反射 getter，须稳定读快照）。 |
+| **getAttribute/hasAttribute 改用 `_lw`** | `js_dom_shim/part04.js`（getAttribute sel 分支 → `__zw_get_attr_lw`，hasAttribute sel 分支 → `__zw_has_attr_lw`） | `typeof` guard fallback 纯快照（polyfill/其它环境无 `_lw` 回调时）。handle 分支不变（已 latest-wins）。 |
+| **driving test** | `js_dom_bridge_tests/part11.rs`（+`test_sel_based_attr_latest_wins_r2995`） | setAttribute→getAttribute 反映新值（旧 stale 返原值）；removeAttribute→hasAttribute=false / getAttribute=''（旧 stale true/旧值）；remove→set→恢复；boolean hasAttribute('checked')；setAttribute('value')→getAttribute('value') 不污染 defaultValue（latest-wins 仅方法路径）。 |
+
+**为何不直接改共享 `__zw_get_attr`/`__zw_has_attr`（初版尝试 + 回退）**：初版让共享回调 latest-wins → 触发 `test_reflected_idl_htmlfor_defaultvalue_r2840` 回归：`input.defaultValue` 读 `value` 属性经 `__zw_get_attr`，而 `.value=` setter 对 INPUT 推 `SetAttr{value}`（spec 不正确——`.value` 应为 dirty 态独立于属性，此为既存 imperfection，此前被快照 stale 掩盖）。latest-wins 使 defaultValue 拿到 `.value=` 的脏值。**深修 value setter 不写属性**风险大（渲染/序列化依赖广，超 R2995 scope）。故改为方法专用 `_lw` 变体：精确闭合 R2993 记录的 getAttribute/hasAttribute stale gap，不波及反射 getter 语义。
+
+**为何零回归且净正向**：① 全 additive（+1 helper + 2 新回调 + 2 方法改 `_lw`，原回调/反射 getter 行为不变）；② `sel_attr_override` 复用既有 `query_attr_from_html`/`has_attribute` 快照回落；③ typeof guard 使无 `_lw` 环境安全 fallback。
+
+**已知限制（记录，独立 follow-up）**：① `el.checked`/`el.disabled`/`el.hidden` 布尔反射 getter 仍读纯快照 `__zw_has_attr`（非 `_lw`）→ removeAttribute 后 stale（同 defaultValue 类语义顾虑：`.checked=`/`.disabled=` setter 是否写属性需先 audit，避免 defaultChecked 同 value/defaultValue 类污染）；② `.value=` setter 对 INPUT 推 `SetAttr{value}`（spec 不正确，应仅 dirty 态）——既存 imperfection，独立 slice 深修（涉渲染/序列化面）；③ `getAttributeNames`/`dataset`（`__zw_attr_names`）仍读快照（属性名枚举 stale，低频，defer）。
+
+验证：`cargo fmt --check` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告 + `make test` 全绿（**14184 passed / 71 skipped / 0 failed**，engine +1 driving 测试，零回归；含 R2840 defaultValue / R2992-R2994 CE / 全 getAttribute/hasAttribute/setAttribute/removeAttribute 相关测试）。
+
+**下一步**：续 P1a——① **`.value=` setter spec 修正**（INPUT `.value=` 不写 value 属性，仅 dirty 态；闭合 R2995 暴露的既存 imperfection，使 defaultValue 不被污染——但须先 audit 渲染/序列化对 value 属性的依赖，可能需独立 dirty-value mutation）；② `el.checked`/`disabled`/`hidden` 布尔反射 getter latest-wins（audit 各 setter 是否写属性后决定）；③ custom element upgrade / ctor 实例化（需 P1b 原生绑定 RFC 审批）；④ `getAttributeNames`/`dataset` stale（低频）。或回 §5 测试质量（Streams pipeTo 背压 / history 状态机边界）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a custom element lifecycle slice——connectedCallback / disconnectedCallback（本轮 R2994，~14,183 测试）
 
 承接 R2992（attributeChangedCallback）/ R2993（handle removeAttribute 真移除）。custom element lifecycle 仍 defer connectedCallback/disconnectedCallback（Tier 2 Done Criteria 项，M12 Web Components）。本切片落地连入/断开回调——CE 次常用可观察行为（lit connected钩子 / 各 CE 库 mount/unmount 清理 / 框架 diff 后回调高频）。element 为 generic Proxy 非 ctor 实例（upgrade/ctor 仍 defer），以 element proxy 为 `this` 分派 ctor.prototype 上的回调。
