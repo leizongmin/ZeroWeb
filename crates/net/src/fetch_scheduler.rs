@@ -303,8 +303,20 @@ mod tests {
         let r2 = PerOriginFetchScheduler::submit_shared(&sched, "http://127.0.0.1:1/b");
         assert_eq!(sched.lock().unwrap().queued_count_for_test(), 1);
         let _ = r1.recv_timeout(Duration::from_secs(5));
-        std::thread::sleep(Duration::from_millis(50));
-        assert_eq!(sched.lock().unwrap().queued_count_for_test(), 0);
+        // r1 完成后释放 origin slot，调度线程 dequeue r2 启动 → queued_count 1→0。固定 sleep(50ms) 在
+        // 并发 workspace 测试负载下可能不足以让调度线程完成 dequeue（线程被反调度）→ 间歇 flake。
+        // 改 poll queued_count→0（超时 5s），robust 抗调度延迟。
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let q = sched.lock().unwrap().queued_count_for_test();
+            if q == 0 {
+                break;
+            }
+            if std::time::Instant::now() > deadline {
+                panic!("origin slot not released / r2 not dequeued within 5s: queued_count = {q}");
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
         let _ = r2.recv_timeout(Duration::from_secs(5));
     }
 
