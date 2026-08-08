@@ -905,7 +905,12 @@
       } catch (_e) { return []; }
     };
     var attrObj = function(name) {
-      var v = handle ? __zw_get_attr_handle(handle, name) : __zw_get_attr(sel, name);
+      // R3003：sel 用 latest-wins（`__zw_get_attr_lw`）反映同批 setAttribute（旧 `__zw_get_attr` 纯快照 → Attr.value
+      // stale）；handle 用 `__zw_get_attr_handle`（latest-wins from mutations）。
+      var v;
+      if (handle) v = __zw_get_attr_handle(handle, name);
+      else if (typeof __zw_get_attr_lw === 'function') v = __zw_get_attr_lw(sel, name);
+      else v = __zw_get_attr(sel, name);
       return {
         name: name,
         value: v || '',

@@ -2938,3 +2938,94 @@ fn test_get_attribute_names_dataset_latest_wins_r3002() {
         "hasAttributes()=true（div 有属性）"
     );
 }
+
+#[test]
+fn test_attributes_namednodemap_value_latest_wins_r3003() {
+    // R3003：`el.attributes` NamedNodeMap 的 Attr 值旧经 `__zw_get_attr`（纯快照）→ 同批 setAttribute 后 stale
+    //（R3002 已修 name 枚举经 `__zw_attr_names` latest-wins，但 attrObj 的 value 读仍纯快照）。本切片闭合枚举面最后一读路径。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d' class='c'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // setAttribute('data-x','v') 后 attributes 含 data-x 且其 value='v'（旧 stale：getNamedItem 找不到 /
+    // 找到但 value 空串）。遍历 attributes 找 data-x 的 Attr.value。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             d.setAttribute('data-x', 'v');\
+             var attr = d.attributes.getNamedItem('data-x');\
+             globalThis.__hasAttr = String(!!attr);\
+             globalThis.__attrVal = attr ? attr.value : '(null)';\
+             globalThis.__len = String(d.attributes.length);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hasAttr").unwrap().value,
+        "true",
+        "setAttribute('data-x') 后 attributes.getNamedItem('data-x') 非空（name 枚举 latest-wins，R3002）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__attrVal").unwrap().value,
+        "v",
+        "setAttribute('data-x','v') 后 Attr.value='v'（旧 stale 空串——value 读纯快照）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__len").unwrap().value,
+        "3",
+        "attributes.length=3（id+class+data-x）"
+    );
+
+    // setAttribute 改既有属性值后 attributes 的 Attr.value 反映新值。
+    sandbox
+        .execute(
+            "d.setAttribute('class', 'newc');\
+             globalThis.__classVal = d.attributes.getNamedItem('class').value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__classVal").unwrap().value,
+        "newc",
+        "setAttribute('class','newc') 后 Attr.value='newc'（旧 stale 'c'）"
+    );
+
+    // removeAttribute 后 getNamedItem 返 null（name 枚举 latest-wins 已 R3002，验完整路径）。
+    sandbox
+        .execute(
+            "d.removeAttribute('data-x');\
+             globalThis.__afterRm = String(d.attributes.getNamedItem('data-x'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__afterRm").unwrap().value,
+        "null",
+        "removeAttribute('data-x') 后 getNamedItem('data-x')=null"
+    );
+
+    // 数值索引 + Symbol.iterator：attributes[0] / 遍历项 value 反映。
+    sandbox
+        .execute(
+            "d.setAttribute('data-y', 'yy');\
+             var found = null;\
+             for (var i = 0; i < d.attributes.length; i++) {\
+               if (d.attributes[i].name === 'data-y') found = d.attributes[i].value;\
+             }\
+             globalThis.__iterVal = found || '(not found)';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__iterVal").unwrap().value,
+        "yy",
+        "attributes[i] 数值索引遍历 data-y 项 value='yy'（旧 stale 空/缺）"
+    );
+}
