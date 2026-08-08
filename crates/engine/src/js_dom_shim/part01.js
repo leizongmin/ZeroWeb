@@ -85,7 +85,24 @@
     maxLength: { a: 'maxlength', d: -1 },
     minLength: { a: 'minlength', d: -1 },
   };
-  var _REFLECTED_BOOL = { required: 'required', readOnly: 'readonly', multiple: 'multiple' };
+  // 布尔 reflected 属性表（IDL 名 → 内容属性名）。get trap presence 读返 boolean（R3038）；set trap
+  // truthy→设 presence / falsy→removeAttribute（R3039，闭合 set-false bug）。仅收录**纯布尔 presence-based** 属性；
+  // 枚举型（draggable/spellcheck="true"/"false" 等）与含 dirty/default 态的（defaultChecked/defaultMuted）
+  // 不入此表（前者走 R2848 分支，后者需独立 default 缓存模式）。
+  //   - 表单（HTMLFormElement）：required/readOnly(textarea)/multiple(select)（R3038/R3039）+ noValidate（R3040）
+  //   - 脚本（HTMLScriptElement）：async/defer/nomodule（R3040）
+  //   - 媒体（HTMLMediaElement/HTMLVideoElement）：autoplay/controls/loop/muted/playsInline（R3040）
+  //   - 列表（HTMLOListElement）：reversed（R3040）
+  //   - 图像（HTMLImageElement）：isMap（R3040）
+  //   - 全局微数据（HTMLElement）：itemScope（R3040）
+  // 注：hidden/checked/disabled/selected 走更早的显式分支（含 default 态保护，part05.js）；autofocus/inert 走
+  // R2848/R2850 分支（含 _reflectedAttrs 缓存）——均不入此表以免改变既有 set 语义（最小 blast radius）。
+  var _REFLECTED_BOOL = {
+    required: 'required', readOnly: 'readonly', multiple: 'multiple', noValidate: 'novalidate',
+    async: 'async', defer: 'defer', nomodule: 'nomodule',
+    autoplay: 'autoplay', controls: 'controls', loop: 'loop', muted: 'muted', playsInline: 'playsinline',
+    reversed: 'reversed', isMap: 'ismap', itemScope: 'itemscope',
+  };
   // R3039：查 _REFLECTED_BOOL 返内容属性名（readOnly→readonly 等），非 string/未命中 → null。供 set trap
   // 布尔 falsy→removeAttribute 分支与 get trap presence 读共用。
   function _reflectedBoolAttr(prop) {

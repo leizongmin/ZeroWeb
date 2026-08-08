@@ -41,10 +41,11 @@
           }
           // handle falsy：无 remove-handle 变体 → 不设（detach 元素 append 时默认无该布尔属性）。
         } else if (_reflectedBoolAttr(p) !== null) {
-          // R3039：布尔 reflected setter（required/readOnly/multiple，_REFLECTED_BOOL）。旧经 generic fallthrough
-          // 写 `attr="false"`（present）→ 读返 true（set-false bug）。修正：truthy → set 空（presence）；
+          // R3039/R3040：布尔 reflected setter（_REFLECTED_BOOL 全表）。旧经 generic fallthrough 写
+          // `attr="false"`（present）→ 读返 true（set-false bug）。修正：truthy → set 空（presence）；
           // falsy → removeAttribute（sel 走 `__zw_remove_attr`，handle 走 `__zw_remove_attr_handle`，detached 亦真移除）。
-          // 闭合布尔 set→get 全往返（R3038 读 + 本切片 set）。attr 名经 `_reflectedBoolAttr` 映射（readOnly→readonly）。
+          // 闭合布尔 set→get 全往返（R3038 读 + R3039/R3040 set）。attr 名经 `_reflectedBoolAttr` 映射（readOnly→readonly /
+          // noValidate→novalidate / playsInline→playsinline / isMap→ismap / itemScope→itemscope 等）。
           var _bAttrName = _reflectedBoolAttr(p);
           if (value) {
             if (handle) __zw_set_attr_handle(handle, _bAttrName, '');

@@ -1,6 +1,13 @@
 // js_dom_bridge 测试模块拆分 part 13（R3028+，控制单文件 <2000 行，include! 入 js_dom_bridge_tests.rs）。
 // 承接 part12 溢出：MutationObserver characterDataOldValue（R3028）+ innerHTML childList emission（R3029）。
 
+/// 判断 `apply_mutations_to_html` 输出中某属性是否 present。序列化器（dom::serializer）对每个属性恒输出
+/// ` name="value"`（空值 → `name=""`），故属性 present ⟺ 串含 ` name="`。比裸 `.contains("muted")` 更健壮
+/// （避免 "muted"/"loop" 等在元素/文本他处的子串误判）。供 R3040 布尔 reflected 属性 apply 验证用。
+fn bool_attr_present(html: &str, attr: &str) -> bool {
+    html.contains(&format!(" {}=\"", attr))
+}
+
 #[test]
 fn test_character_data_old_value_and_text_lw_r3028() {
     // R3028：characterDataOldValue（MO observe options 最后一档）+ sel-based 文本读 latest-wins。
@@ -1192,4 +1199,140 @@ fn test_boolean_reflected_set_false_r3039() {
         "true",
         "required true→false→true 末态 true（latest-wins 往返）"
     );
+}
+
+#[test]
+fn test_reflected_bool_attrs_expanded_r3040() {
+    // R3040：扩 _REFLECTED_BOOL 覆盖更多纯布尔 reflected 属性（R3038 读 + R3039 set-false 修复机制的统一延伸）。
+    // 覆盖 noValidate/async/defer/nomodule/autoplay/controls/loop/muted/playsInline/reversed/isMap/itemScope——
+    // 旧读恒 undefined（get trap 未拦）、set `=false` 经 generic fallthrough 写 attr="false"（set-false bug）。
+    // 本切片补 presence 读（boolean）+ falsy→removeAttribute（set），闭合 set→get 全往返。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <form id='f' novalidate><input></form>\
+         <script id='sc' async defer></script>\
+         <video id='v' autoplay controls muted loop playsinline></video>\
+         <ol id='ol' reversed><li>a</li></ol>\
+         <img id='img' ismap>\
+         <div id='d' itemscope></div>\
+         <script id='sc2'></script>\
+         <video id='v2'></video>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① presence 读（boolean true，旧恒 undefined）——camelCase 映射（noValidate/playsInline/isMap/itemScope）。
+    sandbox
+        .execute(
+            "globalThis.__nv = String(document.getElementById('f').noValidate);\
+             globalThis.__as = String(document.getElementById('sc').async);\
+             globalThis.__df = String(document.getElementById('sc').defer);\
+             globalThis.__ap = String(document.getElementById('v').autoplay);\
+             globalThis.__ct = String(document.getElementById('v').controls);\
+             globalThis.__lo = String(document.getElementById('v').loop);\
+             globalThis.__mu = String(document.getElementById('v').muted);\
+             globalThis.__pi = String(document.getElementById('v').playsInline);\
+             globalThis.__rv = String(document.getElementById('ol').reversed);\
+             globalThis.__im = String(document.getElementById('img').isMap);\
+             globalThis.__is = String(document.getElementById('d').itemScope);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__nv").unwrap().value, "true", "form.noValidate=true（presence）");
+    assert_eq!(sandbox.execute("globalThis.__as").unwrap().value, "true", "script.async=true");
+    assert_eq!(sandbox.execute("globalThis.__df").unwrap().value, "true", "script.defer=true");
+    assert_eq!(sandbox.execute("globalThis.__ap").unwrap().value, "true", "video.autoplay=true");
+    assert_eq!(sandbox.execute("globalThis.__ct").unwrap().value, "true", "video.controls=true");
+    assert_eq!(sandbox.execute("globalThis.__lo").unwrap().value, "true", "video.loop=true");
+    assert_eq!(sandbox.execute("globalThis.__mu").unwrap().value, "true", "video.muted=true");
+    assert_eq!(sandbox.execute("globalThis.__pi").unwrap().value, "true", "video.playsInline=true（playsinline 映射）");
+    assert_eq!(sandbox.execute("globalThis.__rv").unwrap().value, "true", "ol.reversed=true");
+    assert_eq!(sandbox.execute("globalThis.__im").unwrap().value, "true", "img.isMap=true（ismap 映射）");
+    assert_eq!(sandbox.execute("globalThis.__is").unwrap().value, "true", "div.itemScope=true（itemscope 映射）");
+
+    // ② 缺省读（boolean false，旧恒 undefined）。
+    sandbox
+        .execute(
+            "globalThis.__nv2 = String(document.getElementById('f').noValidate);\
+             globalThis.__as2 = String(document.getElementById('sc2').async);\
+             globalThis.__as2d = String(document.getElementById('sc2').defer);\
+             globalThis.__nm2 = String(document.getElementById('sc2').nomodule);\
+             globalThis.__ap2 = String(document.getElementById('v2').autoplay);\
+             globalThis.__mu2 = String(document.getElementById('v2').muted);\
+             globalThis.__im2 = String(document.getElementById('img').itemScope);",
+        )
+        .unwrap();
+    // 注：form#f 已有 novalidate（① 读 true），此断言验同一 form 缺省分支用 sc2/v2 等无属性元素。
+    assert_eq!(sandbox.execute("globalThis.__nv2").unwrap().value, "true", "form.noValidate 仍 true（已设属性）");
+    assert_eq!(sandbox.execute("globalThis.__as2").unwrap().value, "false", "script.async 缺省=false");
+    assert_eq!(sandbox.execute("globalThis.__as2d").unwrap().value, "false", "script.defer 缺省=false");
+    assert_eq!(sandbox.execute("globalThis.__nm2").unwrap().value, "false", "script.nomodule 缺省=false");
+    assert_eq!(sandbox.execute("globalThis.__ap2").unwrap().value, "false", "video.autoplay 缺省=false");
+    assert_eq!(sandbox.execute("globalThis.__mu2").unwrap().value, "false", "video.muted 缺省=false");
+    assert_eq!(sandbox.execute("globalThis.__im2").unwrap().value, "false", "img.itemScope 缺省=false（非微数据元素）");
+
+    // ③ set-false bug 修复：`el.async=false` 真移除（旧 generic fallthrough 写 async="false" 仍 present → 读 true）。
+    sandbox
+        .execute(
+            "var sc = document.getElementById('sc');\
+             sc.async = false;\
+             globalThis.__asF = String(sc.async);\
+             globalThis.__asFHas = String(sc.hasAttribute('async'));\
+             sc.defer = false; sc.nomodule = true;\
+             globalThis.__dfF = String(sc.defer);\
+             globalThis.__nmT = String(sc.nomodule);\
+             globalThis.__nmTHas = String(sc.hasAttribute('nomodule'));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__asF").unwrap().value, "false", "script.async=false 后读 false（旧 set-false bug 读 true）");
+    assert_eq!(sandbox.execute("globalThis.__asFHas").unwrap().value, "false", "async=false 后 hasAttribute=false（真移除）");
+    assert_eq!(sandbox.execute("globalThis.__dfF").unwrap().value, "false", "script.defer=false 后读 false");
+    assert_eq!(sandbox.execute("globalThis.__nmT").unwrap().value, "true", "script.nomodule=true 后读 true（presence）");
+    assert_eq!(sandbox.execute("globalThis.__nmTHas").unwrap().value, "true", "nomodule=true 后 hasAttribute=true");
+
+    // ④ apply_mutations 验证 set-false 真移除 + set-true 写 presence（media + form + list + img + microdata）。
+    sandbox
+        .execute(
+            "document.getElementById('v').muted = false;\
+             document.getElementById('v').controls = false;\
+             document.getElementById('ol').reversed = false;\
+             document.getElementById('img').isMap = false;\
+             document.getElementById('d').itemScope = false;\
+             document.getElementById('f').noValidate = false;\
+             document.getElementById('v2').loop = true;",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    // v（原 autoplay controls muted loop playsinline）：muted/controls=false 移除，autoplay/loop/playsinline 保留。
+    assert!(!bool_attr_present(&out, "muted"), "video.muted=false 后属性移除\n{out}");
+    assert!(!bool_attr_present(&out, "controls"), "video.controls=false 后属性移除\n{out}");
+    assert!(bool_attr_present(&out, "autoplay"), "video.autoplay 仍 present（未设 false）\n{out}");
+    assert!(bool_attr_present(&out, "loop"), "video.loop 仍 present（未设 false）\n{out}");
+    // ol.reversed / img.ismap / div.itemscope / form.novalidate 移除；v2.loop 新增 present。
+    assert!(!bool_attr_present(&out, "reversed"), "ol.reversed=false 后属性移除\n{out}");
+    assert!(!bool_attr_present(&out, "ismap"), "img.isMap=false 后属性移除\n{out}");
+    assert!(!bool_attr_present(&out, "itemscope"), "div.itemScope=false 后属性移除\n{out}");
+    assert!(!bool_attr_present(&out, "novalidate"), "form.noValidate=false 后属性移除\n{out}");
+
+    // ⑤ true→false→true toggle 末态 true（latest-wins set 序列，全属性统一）。
+    sandbox
+        .execute(
+            "var v2 = document.getElementById('v2');\
+             v2.muted = true; v2.muted = false; v2.muted = true;\
+             globalThis.__tgMu = String(v2.muted);\
+             var img2 = document.getElementById('img');\
+             img2.isMap = false; img2.isMap = true;\
+             globalThis.__tgIm = String(img2.isMap);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__tgMu").unwrap().value, "true", "muted true→false→true 末态 true");
+    assert_eq!(sandbox.execute("globalThis.__tgIm").unwrap().value, "true", "isMap false→true 末态 true");
 }

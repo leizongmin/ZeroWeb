@@ -1160,7 +1160,8 @@
           if (_ruEntry.min != null && _ruN < _ruEntry.min) return _ruEntry.min;
           return _ruN;
         }
-        // R3038：reflected boolean 属性读（required/readOnly/multiple）——presence-based。
+        // R3038/R3040：reflected boolean 属性读（_REFLECTED_BOOL 全表：required/readOnly/multiple/noValidate/
+        // async/defer/nomodule/autoplay/controls/loop/muted/playsInline/reversed/isMap/itemScope）——presence-based。
         var _rbAttr = Object.prototype.hasOwnProperty.call(_REFLECTED_BOOL, prop) ? _REFLECTED_BOOL[prop] : null;
         if (_rbAttr) {
           var _rbHit = handle
