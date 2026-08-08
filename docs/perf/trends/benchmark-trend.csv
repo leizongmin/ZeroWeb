@@ -167,3 +167,30 @@
 2026-08-08,linux-x86_64,page/morning/first_paint_wall_ms,66.570807,75.76693,82.521289,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
 2026-08-08,linux-x86_64,resource/peak_rss_mb,,506.56640625,,MB,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
 2026-08-08,linux-x86_64,startup_ms,,513.9665,,ms,32b11adf,M3-S7 paint 优化：测量缓存 + batch_fills 跳过
+2026-08-08,linux-x86_64,mb/zero-engine/compositing_layer_analysis_200,29672.87037037037,30512.326068376067,31090.35802469136,ns,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,mb/zero-engine/dirty_tracking/mark_100_nodes_and_merge,2015.9370355815947,2169.442769362675,2265.433491201568,ns,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,mb/zero-engine/end_to_end_pipeline,201898.9513444302,204673.14301191765,205445.60563380283,ns,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,mb/zero-engine/medium_complexity_page/first_paint,1083033.7884615385,1139845.9909502263,1142584.4898785425,ns,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,mb/zero-engine/medium_complexity_page/incremental_vs_full,2253084.868131868,2341374.261904762,2362768.875,ns,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,mb/zero-engine/paint_complex_page_500_elements,385746.1012145749,393405.9688995215,401399.4755639098,ns,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,mb/zero-engine/paint_simple_page_100_elements,72735.47294938918,74244.11204188481,79054.14273904657,ns,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/welcome/parse_ms,0.15700999999999998,0.17018,0.170684,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/welcome/style_ms,1.365923,1.4475639999999999,1.535632,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/welcome/layout_ms,1.6402649999999999,1.706892,1.710849,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/welcome/paint_ms,3.434932,3.488822,3.489544,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/welcome/total_ms,6.730287,6.875173,6.908643,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/medium/parse_ms,13.274602999999999,15.778417,17.659867,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/medium/style_ms,29.390564,30.395471999999998,38.911072,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/medium/layout_ms,86.745779,92.27851,92.322479,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/medium/paint_ms,24.097641,24.586382,28.999436,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/medium/total_ms,156.47169499999998,164.376184,167.222532,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/morning/parse_ms,0.353377,0.535243,0.651113,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/morning/style_ms,6.574402,11.360471,12.309833,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/morning/layout_ms,2.9995260000000004,4.835772,5.178476000000001,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/morning/paint_ms,10.209344,10.644029,11.209096,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/morning/total_ms,20.708365999999998,27.810515000000002,29.837442,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/welcome/first_paint_wall_ms,14.929271,15.250458,15.29795,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/medium/first_paint_wall_ms,276.496683,287.14056999999997,288.09763100000004,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,page/morning/first_paint_wall_ms,63.557574,71.408318,74.460669,ms,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,resource/peak_rss_mb,,515.55078125,,MB,de898dae,S11 样式键缓存
+2026-08-08,linux-x86_64,startup_ms,,485.662818,,ms,de898dae,S11 样式键缓存

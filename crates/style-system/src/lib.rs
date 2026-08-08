@@ -337,6 +337,10 @@ impl StyleSystem {
         //（旧实现每元素仍执行 2 次 collect_pseudo_declarations 全规则扫描——
         // medium 4400 元素 × 2 次 × 全规则扫描是 style 阶段的大头）。
         let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
+        // S11：样式键缓存可用性（无属性选择器/伪类/var——计算样式仅依赖键）
+        let cache_safe = stylesheet_cache_safe(stylesheets);
+        let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
+            std::collections::HashMap::new();
 
         // 从文档根开始 DFS
         let root = doc.root();
@@ -349,6 +353,9 @@ impl StyleSystem {
             &mut styles,
             quirks_mode,
             has_pseudo_rules,
+            cache_safe,
+            &mut style_cache,
+            None,
         );
 
         styles
@@ -366,6 +373,9 @@ impl StyleSystem {
         styles: &mut HashMap<NodeId, ComputedStyle>,
         quirks_mode: QuirksMode,
         has_pseudo_rules: bool,
+        cache_safe: bool,
+        style_cache: &mut std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle>,
+        parent_key: Option<std::rc::Rc<StyleKey>>,
     ) {
         let node_data = match doc.get(node) {
             Some(n) => n,
@@ -375,17 +385,46 @@ impl StyleSystem {
         // 判断是否为元素节点
         let is_element = matches!(&node_data.kind, NodeKind::Element(_));
 
+        // S11：样式键缓存——属性仅含 class/id 的元素可安全用键（style 属性与
+        // presentational hints 属性都是键外依赖）；父无键（不安全/属性超集）时
+        // 子元素禁用缓存（继承链不完整）。声明在 is_element 块外供子节点循环使用。
+        let mut cache_key: Option<std::rc::Rc<StyleKey>> = None;
+
         // 只为元素节点计算样式
         if is_element {
-            let mut computed = self.compute_element_style_internal(
-                doc,
-                node,
-                stylesheets,
-                parent_style,
-                parent_custom,
-                quirks_mode,
-                None,
-            );
+            cache_key = if cache_safe {
+                match &node_data.kind {
+                    NodeKind::Element(e)
+                        if e.attributes.iter().all(|a| {
+                            let n = a.name.local.as_ref();
+                            n == "class" || n == "id"
+                        }) =>
+                    {
+                        Some(std::rc::Rc::new(StyleKey::from_element(e, parent_key.clone())))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let mut computed = match cache_key.as_ref().and_then(|k| style_cache.get(k).cloned()) {
+                Some(c) => c,
+                None => {
+                    let c = self.compute_element_style_internal(
+                        doc,
+                        node,
+                        stylesheets,
+                        parent_style,
+                        parent_custom,
+                        quirks_mode,
+                        None,
+                    );
+                    if let Some(k) = &cache_key {
+                        style_cache.insert(k.clone(), c.clone());
+                    }
+                    c
+                }
+            };
             // 计算伪元素（::before/::after）：继承自本元素的计算样式。save/restore
             // custom_properties 以防伪元素规则定义的 var 污染后续子元素继承。
             // compute_element_style_internal 在无匹配规则时早返默认（content:Normal），
@@ -522,6 +561,9 @@ impl StyleSystem {
                 styles,
                 quirks_mode,
                 has_pseudo_rules,
+                cache_safe,
+                style_cache,
+                cache_key.clone(),
             );
         }
     }
@@ -1740,6 +1782,74 @@ fn apply_quirks_mode_adjustments(
     // 这里不做额外处理——inline 元素的 width/height 自然保留。
     // 当 inline layout 正确实现后，需要在 standards mode 下将 inline 元素的 width/height 重置为 auto。
     let _ = DisplayValue::Inline; // suppress unused import warning
+}
+
+/// 性能门禁优化 S11（2026-08-08）：计算样式键缓存。
+///
+/// 计算样式仅依赖 (tag, classes, id, 父链样式)——样式表无属性选择器/伪类/
+/// var()/自定义属性时，相同键的元素（如 4000 个 `.item`）计算样式完全相同，
+/// 命中直接 clone（~1µs）替代全量级联+继承+计算值（~48µs/元素）。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct StyleKey {
+    tag: String,
+    classes: Vec<String>,
+    id: Option<String>,
+    parent: Option<std::rc::Rc<StyleKey>>,
+}
+
+impl StyleKey {
+    fn from_element(e: &zero_dom::ElementData, parent: Option<std::rc::Rc<StyleKey>>) -> Self {
+        let mut classes = e.class_list.clone();
+        classes.sort();
+        Self {
+            tag: e.name.local.to_string().to_ascii_lowercase(),
+            classes,
+            id: e.id.clone(),
+            parent,
+        }
+    }
+}
+
+/// 样式表是否可安全使用样式键缓存：选择器无属性选择器/伪类/伪元素/嵌套
+///（仅类型/类/id/通用），声明无 var() 与自定义属性（--*）——这些都会引入
+/// 键外依赖（元素属性/文档状态/继承链），缓存会错误命中。
+fn stylesheet_cache_safe(stylesheets: &[Stylesheet]) -> bool {
+    stylesheets.iter().all(|s| rules_cache_safe(&s.rules))
+}
+
+fn rules_cache_safe(rules: &[zero_css_parser::ast::Rule]) -> bool {
+    use zero_css_parser::ast::{AtRuleBody, Rule, SubclassSelector};
+    for rule in rules {
+        match rule {
+            Rule::Style(st) => {
+                for sel in &st.selectors {
+                    for (compound, _) in &sel.complex.parts {
+                        for sub in &compound.subclass_selectors {
+                            match sub {
+                                SubclassSelector::Id(_) | SubclassSelector::Class(_) => {}
+                                // Attribute / PseudoClass / PseudoElement / Nesting → 键外依赖
+                                _ => return false,
+                            }
+                        }
+                    }
+                }
+                for decl in &st.declarations {
+                    if decl.property.starts_with("--") || decl.value.contains("var(") {
+                        return false;
+                    }
+                }
+            }
+            Rule::At(at) => {
+                if let AtRuleBody::Block(nested) = &at.body
+                    && !rules_cache_safe(nested)
+                {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    true
 }
 
 /// 性能门禁优化 S10（2026-08-08）：规则树是否含任何伪元素选择器

@@ -160,9 +160,9 @@
     },
     {
       "id": "mb/zero-engine/compositing_layer_analysis_200",
-      "p95": 30635.004483122364,
+      "p95": 30512.326068376067,
       "tier": "budget",
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "mb/zero-engine/dirty_tracking/mark_100_nodes_and_merge",
@@ -172,21 +172,21 @@
     },
     {
       "id": "mb/zero-engine/end_to_end_pipeline",
-      "p95": 211240.24160346694,
+      "p95": 204673.14301191765,
       "tier": "budget",
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "mb/zero-engine/medium_complexity_page/first_paint",
-      "p95": 1521943.575,
+      "p95": 1139845.9909502263,
       "tier": "budget",
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "mb/zero-engine/medium_complexity_page/incremental_vs_full",
-      "p95": 2871878.282051282,
+      "p95": 2341374.261904762,
       "tier": "budget",
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "mb/zero-engine/paint_complex_page_500_elements",
@@ -196,9 +196,9 @@
     },
     {
       "id": "mb/zero-engine/paint_simple_page_100_elements",
-      "p95": 74826.5095959596,
+      "p95": 74244.11204188481,
       "tier": "budget",
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "mb/zero-host-runtime/create_100_window_configs",
@@ -507,8 +507,9 @@
     },
     {
       "id": "page/welcome/style_ms",
-      "p95": 2.5229,
-      "tier": "budget"
+      "p95": 1.4475639999999999,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "page/welcome/layout_ms",
@@ -517,16 +518,16 @@
     },
     {
       "id": "page/welcome/paint_ms",
-      "p95": 4.352971,
+      "p95": 3.488822,
       "tier": "budget",
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "page/welcome/total_ms",
-      "p95": 10.082274,
+      "p95": 6.875173,
       "tier": "hard",
       "absolute_budget_ms": 2000.0,
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "page/medium/parse_ms",
@@ -535,27 +536,28 @@
     },
     {
       "id": "page/medium/style_ms",
-      "p95": 216.771008,
-      "tier": "budget"
+      "p95": 30.395471999999998,
+      "tier": "budget",
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "page/medium/layout_ms",
-      "p95": 95.968324,
+      "p95": 92.27851,
       "tier": "budget",
-      "tightened_at": "2026-08-07T18:30:56Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "page/medium/paint_ms",
-      "p95": 29.267917,
+      "p95": 24.586382,
       "tier": "budget",
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "page/medium/total_ms",
-      "p95": 368.76904,
+      "p95": 164.376184,
       "tier": "hard",
       "absolute_budget_ms": 2000.0,
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "page/morning/parse_ms",
@@ -575,9 +577,9 @@
     },
     {
       "id": "page/morning/paint_ms",
-      "p95": 11.32083,
+      "p95": 10.644029,
       "tier": "budget",
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "page/morning/total_ms",
@@ -588,21 +590,21 @@
     },
     {
       "id": "page/welcome/first_paint_wall_ms",
-      "p95": 21.675168000000003,
+      "p95": 15.250458,
       "tier": "budget",
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "page/medium/first_paint_wall_ms",
-      "p95": 497.45666900000003,
+      "p95": 287.14056999999997,
       "tier": "budget",
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "page/morning/first_paint_wall_ms",
-      "p95": 75.76693,
+      "p95": 71.408318,
       "tier": "budget",
-      "tightened_at": "2026-08-08T04:02:43Z"
+      "tightened_at": "2026-08-08T07:22:44Z"
     },
     {
       "id": "resource/peak_rss_mb",
