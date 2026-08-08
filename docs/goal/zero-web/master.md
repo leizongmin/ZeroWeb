@@ -112,6 +112,27 @@
 
 ## 最近完成的改进
 
+### P1a TextEncoderStream/TextDecoderStream（编码转换流，本轮 R2970，~14,153 测试）
+
+R2969（WritableStream/TransformStream + pipeTo/pipeThrough）后续补 Streams API 编码转换流。`TextEncoderStream`/`TextDecoderStream`（spec Generic Transform Stream）**此前全缺**——fetch `response.body` 为 UTF-8 字节流（ReadableStream\<Uint8Array\>），无 TextDecoderStream 则字节→文本流解码（`response.body.pipeThrough(new TextDecoderStream())`）不可用，fetch streaming 文本消费 / NDJSON / SSE 手解析全阻塞。本切片补两转换流。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part02.js` | 新 `TextEncoderStream()`：TransformStream 子类（`TransformStream.call(this, {transform})`），string chunk → `new TextEncoder().encode(String(chunk))` UTF-8 Uint8Array；`encoding='utf-8'`。新 `TextDecoderStream(label)`：Uint8Array chunk → `new TextDecoder(label).decode(chunk)` string + flush `decode()` 剩余；`encoding/fatal/ignoreBOM` 属性。两者 prototype = `Object.create(TransformStream.prototype)`（instanceof TransformStream），constructor 修正。空 string 跳过（避免空 chunk）。 |
+| `crates/engine/src/js_dom_bridge_tests/part10.rs` | 新 `test_text_encoder_decoder_stream_r2970`：TextEncoderStream（instanceof TransformStream + encoding + readable/writable + 'Hi'→2 字节 + TextDecoder 还原）+ TextDecoderStream（'Hello' 字节→'Hello' + encoding/fatal）+ pipeThrough TextDecoderStream（src 字节流→'World' string）+ pipeThrough TextEncoderStream（'Ping' string→字节→解码='Ping'）。 |
+
+**为何薄封装于既有 TextEncoder/TextDecoder + TransformStream**：R2969 TransformStream 基座已就绪（transform/flush controller + readable/writable 配对），TextEncoder/TextDecoder（part02 R2771）已就绪。TextEncoderStream/TextDecoderStream 仅 transform/flush 委托 encode/decode → 零新基础设施，spec 通用编码转换流标准用法。继承 TransformStream（prototype 链）使 `instanceof TransformStream` 成立 + pipeThrough 接受为 `{writable, readable}` 源。
+
+**为何底层 TextDecoder 无流式状态（已知限制）**：既有 TextDecoder.decode（part02 R2771 `_zw_utf8_decode`）每调用独立解码完整字节序列，**不跨 chunk 维护未完成字节状态**。headless finite-body 模型下 fetch body 为单 chunk（整体字节就绪），decode 正确；chunk 边界切多字节 char 的真流式场景近似（首字节 chunk 末切 UTF-8 多字节前导 → decode 该 chunk 产替换/截断）。真流式解码需 TextDecoder 维护 byte buffer 状态（follow-up，底层 TextDecoder 改造）。
+
+**为何零回归**：TextEncoderStream/TextDecoderStream 为新增（既有无代码调）；TransformStream 子类化不影响 TransformStream 基类（call 注入 transformer，prototype 链 additive）。R2969 TransformStream + pipe 测试全绿（make test 14153 全绿验证）。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14153 passed / 71 skipped / 0 failed**（engine +1 driving 测试，R2969 Streams 测试全绿，无回归）+ clippy `-D warnings` 零警告（workspace）+ fmt clean + 全 shim `node --check` 通过。
+
+**已知限制（follow-up）**：① TextDecoder 无流式状态（chunk 边界切多字节 char 近似，需底层 TextDecoder 维护 byte buffer）；② 无 `CompressionStream`/`DecompressionStream`（gzip/deflate，spec 通用转换流，需 zlib 依赖 follow-up）；③ TextDecoderStream label 非 utf-8 仍按 utf-8（既有 TextDecoder 限制继承）。
+
+**下一步**：续 P1a——① ReadableStream `tee()`（分叉成两独立流，Streams 最后核心方法）；② Headers 实例化迁移（Response.headers/Request.headers → Headers 实例 + integration test 同步 .get()）；③ 其他 defer Web API（ClipboardItem 图片剪贴板）；④ task source 优先级（事件循环边缘）；⑤ customElements upgrade（需 P1b RFC 审批）；⑥ 拆 js_dom_bridge.rs（3947，按职责重组）。
+
 ### P1a WritableStream/TransformStream + pipeTo/pipeThrough（Streams API write 侧，本轮 R2969，~14,152 测试）
 
 R2968（Response/Request 构造器）后续补 Streams API write 侧。`WritableStream`/`TransformStream`/`pipeTo`/`pipeThrough` **此前全缺**（R2967 ReadableStream 实现时标 defer）——ReadableStream 无写入配对，`response.body.pipeTo(writable)` / `src.pipeThrough(new TransformStream())` 不可用，service worker 流处理 + 流管道库（数据 ETL / 编码转换）全不可用。本切片补 write 侧 + 管道组合。

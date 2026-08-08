@@ -631,6 +631,44 @@
     });
   };
 
+  // ── P1a TextEncoderStream / TextDecoderStream（编码转换流，R2970）──
+  // spec 通用编码转换流（Generic Transform Stream），常与 `response.body.pipeThrough(new TextDecoderStream())`
+  // 配对——fetch body 为 UTF-8 字节流（ReadableStream<Uint8Array>），TextDecoderStream 转 string 流供逐块
+  // 文本消费（fetch streaming 文本 / NDJSON / SSE 手解析）。薄封装于既有 TextEncoder/TextDecoder（part02）+
+  // TransformStream（R2969）：string→Uint8Array（encode）/ Uint8Array→string（decode）。继承 TransformStream
+  //（TransformStream.call(this, transformer) 设 readable/writable），补 encoding/fatal/ignoreBOM IDL 属性。
+  // **已知限制**：底层 TextDecoder.decode 无流式状态（每 chunk 独立解码，非跨 chunk 维护未完成字节序列），
+  // 单 chunk（headless finite-body 模型）正确；chunk 边界切多字节 char 的流式场景近似（follow-up 需流式解码状态）。
+  globalThis.TextEncoderStream = globalThis.TextEncoderStream || function TextEncoderStream() {
+    if (!(this instanceof TextEncoderStream)) return new TextEncoderStream();
+    var enc = new TextEncoder();
+    TransformStream.call(this, {
+      transform: function (chunk, controller) { controller.enqueue(enc.encode(String(chunk))); }
+    });
+    this.encoding = 'utf-8';
+  };
+  globalThis.TextEncoderStream.prototype = Object.create(globalThis.TransformStream.prototype);
+  globalThis.TextEncoderStream.prototype.constructor = globalThis.TextEncoderStream;
+  globalThis.TextDecoderStream = globalThis.TextDecoderStream || function TextDecoderStream(label) {
+    if (!(this instanceof TextDecoderStream)) return new TextDecoderStream(label);
+    var dec = new TextDecoder(label);
+    TransformStream.call(this, {
+      transform: function (chunk, controller) {
+        var s = dec.decode(chunk);
+        if (s) controller.enqueue(s); // 空 string（如 chunk 末切多字节前导字节）跳过，避免空 chunk
+      },
+      flush: function (controller) {
+        var s = dec.decode(); // 空参 = flush 剩余（headless 单 chunk 模型下通常 ''）
+        if (s) controller.enqueue(s);
+      }
+    });
+    this.encoding = dec.encoding || 'utf-8';
+    this.fatal = !!dec.fatal;
+    this.ignoreBOM = !!dec.ignoreBOM;
+  };
+  globalThis.TextDecoderStream.prototype = Object.create(globalThis.TransformStream.prototype);
+  globalThis.TextDecoderStream.prototype.constructor = globalThis.TextDecoderStream;
+
   // URLSearchParams——query string 解析/序列化（location.search / fetch query 高频）。
   // 纯 JS（V8 原生 encodeURIComponent/decodeURIComponent + Symbol.iterator）。application/x-www-form-urlencoded
   // 语义：space→`+`；构造支持 string（`?` 前缀可省）/ 对象 / [k,v] 可迭代。

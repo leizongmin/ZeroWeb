@@ -1005,3 +1005,119 @@ fn test_transform_stream_pipe_r2969() {
     assert_eq!(sandbox.execute("String(globalThis.__pt2 && globalThis.__pt2.value)").unwrap().value, "B", "pipeThrough + transform：'b'→'B'");
     assert_eq!(sandbox.execute("String(globalThis.__pt3 && globalThis.__pt3.done)").unwrap().value, "true", "pipeThrough 管道末 read done");
 }
+
+#[test]
+fn test_text_encoder_decoder_stream_r2970() {
+    // R2970：TextEncoderStream（string→UTF-8 Uint8Array）/ TextDecoderStream（Uint8Array→string）。
+    // TransformStream 子类（instanceof TransformStream），encoding/fatal/ignoreBOM 属性；常与
+    // response.body.pipeThrough(new TextDecoderStream()) 配对做字节→文本流解码。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // TextEncoderStream：instanceof TransformStream + encoding='utf-8'；写 'Hi' → 读 Uint8Array [72,105]。
+    sandbox
+        .execute(
+            "var tes = new TextEncoderStream();\
+             globalThis.__tesEnc = tes.encoding;\
+             globalThis.__tesIsTS = (tes instanceof TransformStream);\
+             globalThis.__tesHasRW = (tes.readable instanceof ReadableStream) && (tes.writable instanceof WritableStream);\
+             var we = tes.writable.getWriter(); we.write('Hi'); we.close();\
+             var re = tes.readable.getReader();\
+             re.read().then(function(c){ globalThis.__encChunk = c; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__tesEnc)").unwrap().value, "utf-8", "TextEncoderStream.encoding='utf-8'");
+    assert_eq!(sandbox.execute("String(globalThis.__tesIsTS)").unwrap().value, "true", "TextEncoderStream instanceof TransformStream");
+    assert_eq!(sandbox.execute("String(globalThis.__tesHasRW)").unwrap().value, "true", "TextEncoderStream 有 readable + writable");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__encChunk && globalThis.__encChunk.done)").unwrap().value,
+        "false",
+        "encode chunk: done=false"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(new TextDecoder().decode(globalThis.__encChunk.value))")
+            .unwrap()
+            .value,
+        "Hi",
+        "TextEncoderStream 编码 'Hi' → 经 TextDecoder 还原 = 'Hi'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__encChunk.value && globalThis.__encChunk.value.length)")
+            .unwrap()
+            .value,
+        "2",
+        "TextEncoderStream 编码 'Hi' = 2 字节"
+    );
+
+    // TextDecoderStream：写 TextEncoder 编码的 'Hello' 字节 → 读 string 'Hello'。
+    sandbox
+        .execute(
+            "var bytes = new TextEncoder().encode('Hello');\
+             var tds = new TextDecoderStream();\
+             globalThis.__tdsEnc = tds.encoding;\
+             globalThis.__tdsFatal = tds.fatal;\
+             var wd = tds.writable.getWriter(); wd.write(bytes); wd.close();\
+             var rd = tds.readable.getReader();\
+             rd.read().then(function(c){ globalThis.__decChunk = c; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__tdsEnc)").unwrap().value, "utf-8", "TextDecoderStream.encoding='utf-8'");
+    assert_eq!(sandbox.execute("String(globalThis.__tdsFatal)").unwrap().value, "false", "TextDecoderStream.fatal=false（缺省）");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__decChunk && globalThis.__decChunk.done)").unwrap().value,
+        "false",
+        "decode chunk: done=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__decChunk && globalThis.__decChunk.value)").unwrap().value,
+        "Hello",
+        "TextDecoderStream 解码 'Hello' 字节 → 'Hello'"
+    );
+
+    // pipeThrough TextDecoderStream：src 字节流 → string 流（典型 response.body 解码模式）。
+    sandbox
+        .execute(
+            "var src = new ReadableStream({ start: function(c){ c.enqueue(new TextEncoder().encode('World')); c.close(); } });\
+             var out = src.pipeThrough(new TextDecoderStream());\
+             globalThis.__outReadable = (out instanceof ReadableStream);\
+             var ro = out.getReader();\
+             ro.read().then(function(c){ globalThis.__pipeDec = c; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__outReadable)").unwrap().value, "true", "pipeThrough(TextDecoderStream) 返 ReadableStream");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pipeDec && globalThis.__pipeDec.value)").unwrap().value,
+        "World",
+        "src 字节流 pipeThrough TextDecoderStream → 'World'"
+    );
+
+    // pipeThrough TextEncoderStream：src string 流 → 字节流。
+    sandbox
+        .execute(
+            "var src2 = new ReadableStream({ start: function(c){ c.enqueue('Ping'); c.close(); } });\
+             var out2 = src2.pipeThrough(new TextEncoderStream());\
+             var ro2 = out2.getReader();\
+             ro2.read().then(function(c){ globalThis.__pipeEnc = c; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(new TextDecoder().decode(globalThis.__pipeEnc.value))")
+            .unwrap()
+            .value,
+        "Ping",
+        "src string 流 pipeThrough TextEncoderStream → 字节，解码 = 'Ping'"
+    );
+}
