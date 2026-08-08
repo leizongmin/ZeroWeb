@@ -829,4 +829,103 @@ fn test_detached_document_traversal_r3016() {
     assert_eq!(sandbox.execute("String(doc.querySelector('.a').tagName)").unwrap().value, "DIV", "querySelector 仍工作（R3013 非回归）");
 }
 
+#[test]
+fn test_detached_mutable_tree_r3017() {
+    // R3017：detached document 可变树（DOMPurify.sanitize 真跑通核心）。R3016 让 body.childNodes 可递归遍历（只读），
+    // 但 DOMPurify 核心是 `node.parentNode.removeChild(node)` 清洗 + 读 `body.innerHTML`——须 parentNode + removeChild
+    // mutation + 序列化反映。本切片：lazy-snapshot → cached mutable JS tree（节点 relink，无 selector 重算）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 建树：div > (span + p) + 文本。访问 body.childNodes 触发建 mutable tree。
+    sandbox
+        .execute(
+            "var doc = document.implementation.createHTMLDocument('');\
+             doc.body.innerHTML = '<div><span>x</span><p>y</p></div>tail';\
+             globalThis.__cn = doc.body.childNodes;",
+        )
+        .unwrap();
+
+    // parentNode：span 的父是 div（DOMPurify 经 node.parentNode.removeChild 取 parent）。
+    sandbox
+        .execute(
+            "globalThis.__div = globalThis.__cn[0];\
+             globalThis.__span = globalThis.__div.childNodes[0];\
+             globalThis.__spanParentTag = globalThis.__span.parentNode.tagName;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__spanParentTag)").unwrap().value, "DIV", "span.parentNode.tagName=DIV");
+    // body 的 parentNode 为 null（detached root）。
+    assert_eq!(sandbox.execute("String(doc.body.parentNode)").unwrap().value, "null", "body.parentNode=null（detached root）");
+
+    // removeChild：从 div 移除 span → div.childNodes 不含 span + body.innerHTML 序列化反映移除。
+    sandbox
+        .execute(
+            "globalThis.__div.removeChild(globalThis.__span);\
+             globalThis.__divChildLen = globalThis.__div.childNodes.length;\
+             globalThis.__html1 = doc.body.innerHTML;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__divChildLen)").unwrap().value, "1", "removeChild(span) 后 div.childNodes.length=1（仅 p）");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__html1.indexOf('<span') >= 0)").unwrap().value,
+        "false",
+        "removeChild 后 body.innerHTML 不含 <span>（序列化反映移除）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__html1.indexOf('<p>y</p>') >= 0)").unwrap().value,
+        "true",
+        "removeChild 后 body.innerHTML 仍含 <p>（兄弟保留）"
+    );
+
+    // DOMPurify 核心模式：node.parentNode.removeChild(node) 移除整 div（body 直接子）。
+    sandbox
+        .execute(
+            "globalThis.__div.parentNode.removeChild(globalThis.__div);\
+             globalThis.__bodyLen = doc.body.childNodes.length;\
+             globalThis.__html2 = doc.body.innerHTML;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__bodyLen)").unwrap().value, "1", "removeChild(div) 后 body.childNodes.length=1（仅 text 'tail'）");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__html2.indexOf('<div') >= 0)").unwrap().value,
+        "false",
+        "removeChild(div) 后 body.innerHTML 不含 <div>"
+    );
+
+    // appendChild reparent：建新树，把 p 从 div 移到 body。
+    sandbox
+        .execute(
+            "var d2 = document.implementation.createHTMLDocument('');\
+             d2.body.innerHTML = '<div><p>z</p></div>';\
+             var p = d2.body.childNodes[0].childNodes[0];\
+             d2.body.appendChild(p);\
+             globalThis.__d2bodyLen = d2.body.childNodes.length;\
+             globalThis.__d2pParent = p.parentNode.tagName;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__d2bodyLen)").unwrap().value, "2", "appendChild(p) 后 body.childNodes.length=2（div + p）");
+    assert_eq!(sandbox.execute("String(globalThis.__d2pParent)").unwrap().value, "BODY", "appendChild reparent：p.parentNode=BODY");
+
+    // R3016 只读遍历非回归：嵌套 walk 仍正确。
+    sandbox
+        .execute(
+            "var d3 = document.implementation.createHTMLDocument('');\
+             d3.body.innerHTML = '<a><b>deep</b>tail</a>after<!--c-->';\
+             globalThis.__n0 = d3.body.childNodes[0];",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__n0.tagName)").unwrap().value, "A", "R3016 非回归：body.childNodes[0]=A");
+    assert_eq!(sandbox.execute("String(globalThis.__n0.childNodes[0].tagName)").unwrap().value, "B", "R3016 非回归：递归子 B");
+    assert_eq!(sandbox.execute("String(globalThis.__n0.childNodes[0].textContent)").unwrap().value, "deep", "R3016 非回归：b.textContent='deep'");
+    assert_eq!(sandbox.execute("String(d3.body.childNodes[2].nodeType)").unwrap().value, "8", "R3016 非回归：comment nodeType=8");
+}
+
 

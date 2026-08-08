@@ -789,74 +789,96 @@
   // R3016：body.childNodes 递归遍历——__zw_parse_html_child_nodes + _zwDetachedEl/Text/Comment 递归 node-proxy，
   // 解锁 DOMPurify.sanitize 设 dom.body.innerHTML 后递归 walk 清洗（旧 body.childNodes 恒空）。
   // **已知限制（记录）**：① querySelectorAll('*') 含 html/head/body（html5ever 包裹）——按具体 tag/id/class 查；
-  //   ② 只读——mutation（setAttribute/appendChild）不入解析树（best-effort 存 raw）；③ 每次访问重解析（惰性）。
-  // R3016：detached tree 递归 node-proxy。html = detached 文档串（含 <body> 包裹）；sel = 元素唯一 selector。
-  // 元素属性经 __zw_parse_html_query 惰性快照、子树经 __zw_parse_html_child_nodes（每次重解析同 html，selector 稳定）。
-  function _zwDetachedEl(html, sel) {
-    var snap = null;
-    function getSnap() {
-      if (snap === null) {
-        snap = {};
-        if (typeof __zw_parse_html_query === 'function') {
-          try { var a = JSON.parse(__zw_parse_html_query(html, sel, '0')); if (a.length) snap = a[0]; } catch (_e) {}
-        }
-      }
-      return snap;
-    }
-    function getAttr(name) {
-      var s = getSnap();
-      return (s.attrs && Object.prototype.hasOwnProperty.call(s.attrs, name)) ? s.attrs[name] : null;
-    }
-    var el = {
+  //   ② 建树后 mutation（removeChild/appendChild）改树，innerHTML 序列化反映（setAttribute/属性 mutation defer）；
+  //   ③ innerHTML setter 后树重建（_tree 失效）。parentNode/previousSibling/nextSibling 等只读字段按 R3017 接入。
+  // R3017：detached mutable tree（cached JS 树）——DOMPurify.sanitize `node.parentNode.removeChild(node)` + 读
+  // body.innerHTML 核心须 mutation + 序列化。lazy-snapshot（R3016 只读）→ cached mutable tree（建一次、mutate relink、
+  // 无 selector 重算/失效）。元素属性经 __zw_parse_html_query 快照、子经 __zw_parse_html_child_nodes 递归建。
+  var _ZW_VOID_TAGS = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
+  function _zwMEscapeText(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function _zwMEscapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+  // 节点 → HTML 串（元素含属性 + 子树；文本转义；注释包裹）。供 innerHTML/outerHTML 序列化（反映 mutation）。
+  function _zwMSerialize(node) {
+    if (!node) return '';
+    if (node.nodeType === 3) return _zwMEscapeText(node.nodeValue);
+    if (node.nodeType === 8) return '<!--' + node.nodeValue + '-->';
+    if (node.nodeType !== 1) return '';
+    var tag = node.localName || (node.tagName || '').toLowerCase();
+    var attrStr = '';
+    for (var i = 0; i < node.attributes.length; i++) attrStr += ' ' + node.attributes[i].name + '="' + _zwMEscapeAttr(node.attributes[i].value) + '"';
+    if (_ZW_VOID_TAGS[tag]) return '<' + tag + attrStr + '>';
+    var inner = '';
+    for (var j = 0; j < node.childNodes.length; j++) inner += _zwMSerialize(node.childNodes[j]);
+    return '<' + tag + attrStr + '>' + inner + '</' + tag + '>';
+  }
+  // 可变元素节点：parentNode/childNodes/removeChild/appendChild（relink，无 selector 重算）+ 惰性 textContent/innerHTML/outerHTML 序列化。
+  function _zwMEl(snap, parent) {
+    snap = snap || {};
+    var tag = snap.tag || '';
+    var attrs = [];
+    var sa = snap.attrs || {};
+    for (var k in sa) { if (Object.prototype.hasOwnProperty.call(sa, k)) attrs.push({ name: k, value: sa[k] }); }
+    var node = {
       nodeType: 1,
-      get tagName() { return (getSnap().tag || '').toUpperCase(); },
-      get nodeName() { return (getSnap().tag || '').toUpperCase(); },
-      get localName() { return getSnap().tag || ''; },
-      get id() { return getSnap().id || ''; },
-      get className() { return getSnap().cls || ''; },
-      get textContent() { return getSnap().text || ''; },
-      get innerHTML() { return _zwInnerFromOuter(getSnap().outer || '', getSnap().tag || ''); },
-      get outerHTML() { return getSnap().outer || ''; },
-      getAttribute: function (name) { return getAttr(String(name)); },
-      hasAttribute: function (name) { return getAttr(String(name)) !== null; },
-      get attributes() {
-        var s = getSnap(); var attrs = s.attrs || {}; var out = [];
-        for (var k in attrs) { if (Object.prototype.hasOwnProperty.call(attrs, k)) out.push({ name: k, value: attrs[k] }); }
-        out.item = function (i) { return out[i] || null; };
-        out.getNamedItem = function (n) { var v = getAttr(String(n)); return v === null ? null : { name: String(n), value: v }; };
-        return out;
-      }
+      tagName: tag.toUpperCase(),
+      nodeName: tag.toUpperCase(),
+      localName: tag,
+      id: snap.id || '',
+      className: snap.cls || '',
+      attributes: attrs,
+      childNodes: [],
+      parentNode: parent || null
     };
-    Object.defineProperty(el, 'childNodes', { get: function () { return _zwDetachedChildren(html, sel); }, configurable: true });
-    Object.defineProperty(el, 'children', { get: function () { return _zwDetachedChildren(html, sel).filter(function (c) { return c.nodeType === 1; }); }, configurable: true });
-    Object.defineProperty(el, 'firstChild', { get: function () { var c = _zwDetachedChildren(html, sel); return c.length ? c[0] : null; }, configurable: true });
-    return el;
+    node.getAttribute = function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return attrs[i].value; return null; };
+    node.hasAttribute = function (n) { return node.getAttribute(n) !== null; };
+    node.removeChild = function (c) { var i = node.childNodes.indexOf(c); if (i >= 0) { node.childNodes.splice(i, 1); c.parentNode = null; } return c; };
+    node.appendChild = function (c) { if (c && c.parentNode) c.parentNode.removeChild(c); node.childNodes.push(c); c.parentNode = node; return c; };
+    Object.defineProperty(node, 'textContent', { get: function () { var t = ''; for (var i = 0; i < node.childNodes.length; i++) { var c = node.childNodes[i]; if (c.nodeType === 3) t += c.nodeValue; else if (c.nodeType === 1) t += c.textContent; } return t; }, configurable: true });
+    Object.defineProperty(node, 'innerHTML', { get: function () { var s = ''; for (var i = 0; i < node.childNodes.length; i++) s += _zwMSerialize(node.childNodes[i]); return s; }, configurable: true });
+    Object.defineProperty(node, 'outerHTML', { get: function () { return _zwMSerialize(node); }, configurable: true });
+    Object.defineProperty(node, 'children', { get: function () { return node.childNodes.filter(function (c) { return c.nodeType === 1; }); }, configurable: true });
+    Object.defineProperty(node, 'firstChild', { get: function () { return node.childNodes.length ? node.childNodes[0] : null; }, configurable: true });
+    attrs.item = function (i) { return attrs[i] || null; };
+    attrs.getNamedItem = function (n) { var v = node.getAttribute(n); return v === null ? null : { name: String(n), value: v }; };
+    return node;
   }
-  function _zwDetachedText(v) {
-    var t = String(v);
-    return { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, childNodes: [], children: [] };
-  }
-  function _zwDetachedComment(v) {
-    var t = String(v);
-    return { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, childNodes: [], children: [] };
-  }
-  function _zwDetachedChildren(html, sel) {
-    if (typeof __zw_parse_html_child_nodes !== 'function') return [];
-    var arr;
-    try { arr = JSON.parse(__zw_parse_html_child_nodes(html, sel)); } catch (_e) { return []; }
-    var out = [];
-    for (var i = 0; i < arr.length; i++) {
-      var e = arr[i];
-      if (!e) continue;
-      if (e.k === 'E') out.push(_zwDetachedEl(html, e.s));
-      else if (e.k === 'T') out.push(_zwDetachedText(e.v));
-      else if (e.k === 'C') out.push(_zwDetachedComment(e.v));
+  function _zwMText(v, parent) { var t = String(v); return { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, childNodes: [], children: [], parentNode: parent || null }; }
+  function _zwMComment(v, parent) { var t = String(v); return { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, childNodes: [], children: [], parentNode: parent || null }; }
+  // 递归建子树：entry = {k:'E',s:sel}/{k:'T',v}/{k:'C',v}（__zw_parse_html_child_nodes）。元素取快照 + 递归子。
+  function _zwMBuildNode(html, entry, parent) {
+    if (entry.k === 'T') return _zwMText(entry.v, parent);
+    if (entry.k === 'C') return _zwMComment(entry.v, parent);
+    var snap = {};
+    if (typeof __zw_parse_html_query === 'function') {
+      try { var a = JSON.parse(__zw_parse_html_query(html, entry.s, '0')); if (a.length) snap = a[0]; } catch (_e) {}
     }
-    return out;
+    var node = _zwMEl(snap, parent);
+    if (typeof __zw_parse_html_child_nodes === 'function') {
+      try {
+        var arr = JSON.parse(__zw_parse_html_child_nodes(html, entry.s));
+        for (var i = 0; i < arr.length; i++) if (arr[i]) node.childNodes.push(_zwMBuildNode(html, arr[i], node));
+      } catch (_e) {}
+    }
+    return node;
+  }
+  // 建 body 元素节点树（root，parentNode=null）：从 <body>innerHtml</body> 取 body 子 entries 递归建。
+  function _zwMBuildBodyTree(innerHtml) {
+    var html = '<body>' + innerHtml + '</body>';
+    var body = _zwMEl({ tag: 'body' }, null);
+    if (typeof __zw_parse_html_child_nodes === 'function') {
+      try {
+        var arr = JSON.parse(__zw_parse_html_child_nodes(html, 'body'));
+        for (var i = 0; i < arr.length; i++) if (arr[i]) body.childNodes.push(_zwMBuildNode(html, arr[i], body));
+      } catch (_e) {}
+    }
+    return body;
   }
   function _makeDetachedDocument(title) {
     var bodyHtml = '';
-    function detHtml() { return '<body>' + bodyHtml + '</body>'; }
+    var _tree = null; // R3017：cached mutable body 树（首次 childNodes 访问建，innerHTML setter 失效）
+    function ensureTree() { if (!_tree) _tree = _zwMBuildBodyTree(bodyHtml); }
+    // detHtml 反映 live 树（_tree 已建则序列化，否则原始 bodyHtml）→ querySelector 与 mutation 一致。
+    function detHtml() { return '<body>' + (_tree ? _tree.innerHTML : bodyHtml) + '</body>'; }
     function queryBody(sel, all) {
       if (typeof __zw_parse_html_query !== 'function') return [];
       try {
@@ -869,17 +891,21 @@
       nodeType: 1,
       tagName: 'BODY',
       nodeName: 'BODY',
-      get innerHTML() { return bodyHtml; },
-      set innerHTML(v) { bodyHtml = v == null ? '' : String(v); },
+      localName: 'body',
+      parentNode: null, // R3017：detached root，parentNode=null（DOMPurify 经 node.parentNode 取父）
+      get innerHTML() { return _tree ? _tree.innerHTML : bodyHtml; },
+      set innerHTML(v) { bodyHtml = v == null ? '' : String(v); _tree = null; },
       querySelector: function (sel) { return queryOne(sel); },
       querySelectorAll: function (sel) { return queryAll(sel); },
       getElementById: function (id) { return queryOne('#' + String(id)); },
       getElementsByTagName: function (tag) { return queryAll(String(tag)); },
       getElementsByClassName: function (cls) { return queryAll('.' + String(cls)); },
-      // R3016：body.childNodes 递归遍历（selector 'body' 查 detHtml）。DOMPurify.sanitize walk 入口。
-      get childNodes() { return _zwDetachedChildren(detHtml(), 'body'); },
-      get children() { return _zwDetachedChildren(detHtml(), 'body').filter(function (c) { return c.nodeType === 1; }); },
-      get firstChild() { var c = _zwDetachedChildren(detHtml(), 'body'); return c.length ? c[0] : null; }
+      // R3016/R3017：body.childNodes 递归遍历（cached mutable tree）。DOMPurify.sanitize walk 入口。
+      get childNodes() { ensureTree(); return _tree.childNodes; },
+      get children() { ensureTree(); return _tree.childNodes.filter(function (c) { return c.nodeType === 1; }); },
+      get firstChild() { ensureTree(); return _tree.childNodes.length ? _tree.childNodes[0] : null; },
+      removeChild: function (c) { ensureTree(); return _tree.removeChild(c); },
+      appendChild: function (c) { ensureTree(); return _tree.appendChild(c); }
     };
     var doc = {
       nodeType: 9,
