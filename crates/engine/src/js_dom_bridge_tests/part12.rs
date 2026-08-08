@@ -540,4 +540,124 @@ fn test_detached_document_query_r3013() {
     assert_eq!(sandbox.execute("String(globalThis.__tn.nodeValue)").unwrap().value, "hi", "doc.createTextNode('hi').nodeValue='hi'");
 }
 
+#[test]
+fn test_form_data_multipart_r3014() {
+    // R3014：FormData multipart 序列化 + Blob/File 值保真 + fetch FormData body 接线。旧 append/set 经
+    // String(value) 归一（Blob/File 被字符串化），且无 multipart 序列化 + fetch POST FormData body 为
+    // '[object FormData]' → 表单提交 / 文件上传链断。本切片闭合（Blob/File→FormData→multipart→fetch POST）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 值保真：append(File) 后 get 返 File 实例（旧返 String(file)）。字符串值不变（R2788 保留）。
+    sandbox
+        .execute(
+            "var fd = new FormData();\
+             fd.append('name', 'Alice');\
+             fd.append('file', new File(['hello'], 'g.txt', { type: 'text/plain' }));\
+             globalThis.__nameVal = fd.get('name');\
+             globalThis.__fileIsFile = (fd.get('file') instanceof File);\
+             globalThis.__fileName = fd.get('file').name;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__nameVal)").unwrap().value, "Alice", "字符串值 get 不变（R2788 保留）");
+    assert_eq!(sandbox.execute("String(globalThis.__fileIsFile)").unwrap().value, "true", "append(File) 后 get 返 File 实例（旧返字符串）");
+    assert_eq!(sandbox.execute("String(globalThis.__fileName)").unwrap().value, "g.txt", "保真的 File 保留 name");
+
+    // _zwMultipart() 序列化：boundary 在 contentType；body 含 Content-Disposition（name + filename）+
+    // Content-Type（file）+ 值；以 boundary 起/收。
+    sandbox
+        .execute(
+            "var mp = fd._zwMultipart();\
+             globalThis.__ct = mp.contentType;\
+             globalThis.__boundary = mp.contentType.split('boundary=')[1];\
+             globalThis.__text = new TextDecoder().decode(mp.body);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ct.indexOf('multipart/form-data; boundary=') === 0)").unwrap().value,
+        "true",
+        "contentType = multipart/form-data; boundary=..."
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__text.indexOf('--' + globalThis.__boundary + '\\r\\n') === 0)").unwrap().value,
+        "true",
+        "multipart body 以 --boundary\\r\\n 起"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__text.indexOf(globalThis.__boundary + '--') > 0)").unwrap().value,
+        "true",
+        "multipart body 以 boundary-- 收"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__text.indexOf('Content-Disposition: form-data; name=\"name\"') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "body 含字符串字段的 Content-Disposition"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__text.indexOf('Content-Disposition: form-data; name=\"file\"; filename=\"g.txt\"') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "body 含文件字段的 Content-Disposition + filename"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__text.indexOf('Content-Type: text/plain') >= 0)").unwrap().value,
+        "true",
+        "body 含文件字段 Content-Type（Blob.type）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__text.indexOf('Alice') > 0 && globalThis.__text.indexOf('hello') > 0)").unwrap().value,
+        "true",
+        "body 含字段值（Alice + hello）"
+    );
+
+    // fetch FormData body 接线：mock __zw_fetch 捕获 method/headersWire/body，验 Content-Type multipart + body multipart 标记。
+    let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let cap = Arc::clone(&captured);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let mut g = cap.lock().unwrap();
+            g.clear();
+            for a in args.iter() {
+                g.push(a.clone());
+            }
+            "ok".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "var fd2 = new FormData();\
+             fd2.append('q', 'search');\
+             fetch('http://test.local/upload', { method: 'POST', body: fd2 });",
+        )
+        .unwrap();
+    let cap_guard = captured.lock().unwrap();
+    // args = [id, method, url, headersWire, body]
+    assert!(cap_guard.len() >= 5, "__zw_fetch 须收到 5 args（id/method/url/headers/body）");
+    assert_eq!(cap_guard[1], "POST", "fetch FormData body → method=POST");
+    let headers_wire = cap_guard[3].to_lowercase();
+    assert!(
+        headers_wire.contains("content-type") && headers_wire.contains("multipart/form-data"),
+        "fetch FormData → headers 含 Content-Type: multipart/form-data，got headers: {headers_wire}"
+    );
+    let body = &cap_guard[4];
+    assert!(
+        body.contains("Content-Disposition: form-data; name=\"q\"") && body.contains("search"),
+        "fetch FormData → body 含 multipart 标记 + 值，got body prefix: {}",
+        &body[..body.len().min(120)]
+    );
+}
+
 

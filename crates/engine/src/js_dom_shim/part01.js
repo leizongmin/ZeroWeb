@@ -221,6 +221,17 @@
     for (var j = 0; j < pairs.length; j++) out += (j > 0 ? '\x1e' : '') + pairs[j][0] + '\x1e' + pairs[j][1];
     return out;
   }
+  // R3014：headersWire（\x1e 分隔 name/value 对）header 查询/追加——fetch FormData body 接 Content-Type。
+  function _zwHasHeader(wire, name) {
+    if (!wire) return false;
+    var parts = wire.split('\x1e');
+    var ln = String(name).toLowerCase();
+    for (var i = 0; i < parts.length; i += 2) if (String(parts[i]).toLowerCase() === ln) return true;
+    return false;
+  }
+  function _zwAddHeader(wire, name, value) {
+    return (wire ? wire + '\x1e' : '') + String(name) + '\x1e' + String(value);
+  }
 
   // R2923 fetch 完整化：`fetch(input, init)` 透传 method/headers/body → host 返 status/headers/body。
   // input = URL 字符串或 Request-like（.url/.method/.headers/.body）；init = { method, headers, body }。
@@ -234,8 +245,19 @@
       var method = String(init.method || (isObj ? input.method : '') || 'GET').toUpperCase();
       var headersWire = _headersToWire(init.headers) || (isObj ? _headersToWire(input.headers) : '');
       var body = '';
-      if (init.body != null) body = String(init.body);
-      else if (isObj && input.body != null) body = String(input.body);
+      // R3014：FormData body → multipart 序列化 + Content-Type（fetch POST 表单提交 / 文件上传）。
+      // 文本内容经 UTF-8 wire 保真；二进制 Blob 字节 best-effort（host byte-wire 全保真为独立 follow-up）。
+      var fdBody = (init.body != null && init.body instanceof FormData) ? init.body
+        : (isObj && input.body != null && input.body instanceof FormData ? input.body : null);
+      if (fdBody) {
+        var mp = fdBody._zwMultipart();
+        body = new TextDecoder().decode(mp.body);
+        if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', mp.contentType);
+      } else if (init.body != null) {
+        body = String(init.body);
+      } else if (isObj && input.body != null) {
+        body = String(input.body);
+      }
       if (typeof __zw_fetch !== 'function') {
         return Promise.resolve(_makeResponse('__zw_fetch_error:no-handler'));
       }

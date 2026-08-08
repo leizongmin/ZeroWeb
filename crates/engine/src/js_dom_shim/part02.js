@@ -968,15 +968,23 @@
   }
 
   // FormData——表单字段集合（表单序列化 / fetch multipart body 高频）。镜像 URLSearchParams 的
-  // pair-store 模式（`_p` = [[name,value]] 保序、允许重名）；纯 JS 自包含，零 host 回调。与 USP 不同：
-  // ① value 经 `String(value)` 归一（spec 非 Blob 值转 USVString；Blob/File 未实现故恒字符串）；
-  // ② append/set 接受可选 `filename`（仅对 Blob 值有意义，字符串值忽略——spec 一致）；
-  // ③ 无 toString 序列化（FormData 不直接字符串化，由 fetch 消费为 multipart——fetch POST defer 故
-  //    当前 end-to-end 仅构造/迭代，仍消除 `new FormData` ReferenceError 中断脚本）。
+  // pair-store 模式（`_p` = [[name,value,filename?]] 保序、允许重名）；纯 JS 自包含，零 host 回调。
+  // R3014：Blob/File 值保真（spec：非 Blob 转 USVString；Blob 保留对象，get 返 Blob）+ `_zwMultipart()`
+  // 序列化 multipart/form-data body（fetch POST FormData 接线）。entry 第 3 元 filename 仅对 Blob 值有意义。
   // **已知限制（记录）**：constructor `form` 参数为 best-effort——若传入 `<form>` 元素，尝试枚举其
   // input/select/textarea 命名字段（checkbox/radio 仅 checked 入列），任一步失败静默跳过（不抛）；
   // 不覆盖 select-multiple / file input / disabled / form-attribute 等完整表单语义（renderer 路径
   // 真实字段枚举为 follow-up；多数库 `new FormData()` 空构造再 append，本路径完整支持）。
+  var _zwFdCounter = 0;
+  // R3014：FormData entry 构造——Blob/File 保留对象 + filename（spec get 返 Blob）；非 Blob 转 USVString。
+  function _zwFdEntry(name, value, filename) {
+    var n = String(name);
+    if (value != null && value instanceof Blob) {
+      var fn = filename != null ? String(filename) : (value.name != null ? String(value.name) : 'blob');
+      return [n, value, fn];
+    }
+    return [n, String(value), undefined];
+  }
   globalThis.FormData = globalThis.FormData || function FormData(form) {
     if (!(this instanceof FormData)) return new FormData(form);
     this._p = [];
@@ -990,18 +998,18 @@
           if (!name) continue;
           var type = ((f.getAttribute ? f.getAttribute('type') : f.type) || '').toLowerCase();
           if (type === 'checkbox' || type === 'radio') {
-            if (f.checked) this._p.push([String(name), f.value != null ? String(f.value) : 'on']);
+            if (f.checked) this._p.push([String(name), f.value != null ? String(f.value) : 'on', undefined]);
           } else if (type !== 'file' && type !== 'submit' && type !== 'button' && type !== 'reset' && type !== 'image') {
-            this._p.push([String(name), f.value != null ? String(f.value) : '']);
+            this._p.push([String(name), f.value != null ? String(f.value) : '', undefined]);
           }
         }
       } catch (_e) { /* best-effort：枚举失败则按空 FormData */ }
     }
   };
   globalThis.FormData.prototype = {
-    append: function (name, value /*, filename */) {
-      // filename 仅对 Blob 值有意义（未实现 Blob），字符串值忽略——spec 一致。
-      this._p.push([String(name), String(value)]);
+    append: function (name, value, filename) {
+      // R3014：Blob/File 值保真（_zwFdEntry）；filename 仅对 Blob 有意义（spec）。
+      this._p.push(_zwFdEntry(name, value, filename));
     },
     delete: function (name) {
       name = String(name);
@@ -1023,14 +1031,15 @@
       for (var i = 0; i < this._p.length; i++) if (this._p[i][0] === name) return true;
       return false;
     },
-    set: function (name, value /*, filename */) {
-      name = String(name); value = String(value);
+    set: function (name, value, filename) {
+      // R3014：Blob/File 值保真；替换所有同名 entry（首个替换为新值，余删除），无则追加。
+      var entry = _zwFdEntry(name, value, filename);
       var found = false; var out = [];
       for (var i = 0; i < this._p.length; i++) {
-        if (this._p[i][0] === name) { if (!found) { out.push([name, value]); found = true; } }
+        if (this._p[i][0] === entry[0]) { if (!found) { out.push(entry); found = true; } }
         else out.push(this._p[i]);
       }
-      if (!found) out.push([name, value]);
+      if (!found) out.push(entry);
       this._p = out;
     },
     forEach: function (cb, thisArg) {
@@ -1038,7 +1047,37 @@
     },
     entries: function () { return _zw_iter(this._p.map(function (e) { return [e[0], e[1]]; })); },
     keys: function () { return _zw_iter(this._p.map(function (e) { return e[0]; })); },
-    values: function () { return _zw_iter(this._p.map(function (e) { return e[1]; })); }
+    values: function () { return _zw_iter(this._p.map(function (e) { return e[1]; })); },
+    // R3014：multipart/form-data 序列化——返 { body: Uint8Array, contentType }。boundary 唯一；
+    // 字符串值→text part；Blob/File→file part（filename + Content-Type + _zw_blobBytes 字节）。
+    // 供 fetch FormData body 接线（part01）+ 手动构建 multipart body。文本内容经 UTF-8 wire 保真。
+    _zwMultipart: function () {
+      var boundary = '----ZeroWebForm' + (_zwFdCounter++) + (typeof Math.random === 'function' ? Math.floor(Math.random() * 1e9).toString(36) : '');
+      var parts = [];
+      function pushStr(s) { var b = _zw_utf8_encode(s); for (var i = 0; i < b.length; i++) parts.push(b[i]); }
+      for (var i = 0; i < this._p.length; i++) {
+        var e = this._p[i];
+        var name = e[0], value = e[1], filename = e[2];
+        pushStr('--' + boundary + '\r\n');
+        if (value != null && value instanceof Blob) {
+          var fn = filename != null ? filename : (value.name != null ? String(value.name) : 'blob');
+          var ct = value.type || 'application/octet-stream';
+          pushStr('Content-Disposition: form-data; name="' + name + '"; filename="' + fn + '"\r\n');
+          pushStr('Content-Type: ' + ct + '\r\n\r\n');
+          var vb = _zw_blobBytes(value);
+          for (var k = 0; k < vb.length; k++) parts.push(vb[k]);
+          pushStr('\r\n');
+        } else {
+          pushStr('Content-Disposition: form-data; name="' + name + '"\r\n\r\n');
+          pushStr(String(value));
+          pushStr('\r\n');
+        }
+      }
+      pushStr('--' + boundary + '--\r\n');
+      var body = new Uint8Array(parts.length);
+      for (var j = 0; j < parts.length; j++) body[j] = parts[j];
+      return { body: body, contentType: 'multipart/form-data; boundary=' + boundary };
+    }
   };
   // 自身可迭代（for (const [k,v] of formData)）：[Symbol.iterator] → entries。
   if (typeof Symbol !== 'undefined') {
