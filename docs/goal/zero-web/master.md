@@ -112,6 +112,21 @@
 
 ## 最近完成的改进
 
+### 大页面卡顿优化 S11（样式键缓存，2026-08-08）
+
+medium 4000 个同类 `.item` 元素重复执行全量级联+继承+计算值管线（~48µs/元素，
+profile 证实：8414 次元素计算）。**样式键缓存**：样式表无属性选择器/伪类/var()/
+自定义属性时（`stylesheet_cache_safe` 预扫描），属性 ⊆ {class,id} 且父链可缓存的
+元素按 (tag, sorted classes, id, parent key) 缓存计算样式——命中直接 clone
+（~1µs）。style 属性/presentational hints 属性/不可缓存父链 → 回退全量。
+
+**实测（perf-gate，auto-tighten 27 指标）**：medium style_ms 214→30ms（~7x）、
+total_ms 369→**164ms**；元素计算 8414→13 个唯一键；welcome 10→6.9ms。
+
+**layout 92ms 定位（插桩 profile）**：build_tree 17.6ms + taffy_compute 13.8ms +
+**extract_layout ~60ms**（taffy→LayoutBox 转换，13.6µs/节点）——extract 为下轮
+优化目标（LayoutBox 构建/递归结构的每节点成本）。
+
 ### P1a sel-based getAttribute/hasAttribute snapshot-stale 闭合（latest-wins 方法专用变体，本轮 R2995，~14,184 测试）
 
 承接 R2993（handle 元素 removeAttribute 真移除 + latest-wins query）。R2993 记录的 latent gap：**sel-based**（parsed / getElementById / querySelector）元素的 `getAttribute`/`hasAttribute` 旧读 HTML 快照（render apply 前不反映同批 `SetAttr`/`RemoveAttr`）→ `removeAttribute` 后 `hasAttribute` 恒 true、`getAttribute` 仍返旧值。handle 元素经 mutation 列表 latest-wins 读无 stale，但 sel 元素漏了。本切片闭合。
