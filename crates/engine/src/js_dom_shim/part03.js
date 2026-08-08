@@ -789,11 +789,14 @@
   // R3016：body.childNodes 递归遍历——__zw_parse_html_child_nodes + _zwDetachedEl/Text/Comment 递归 node-proxy，
   // 解锁 DOMPurify.sanitize 设 dom.body.innerHTML 后递归 walk 清洗（旧 body.childNodes 恒空）。
   // **已知限制（记录）**：① querySelectorAll('*') 含 html/head/body（html5ever 包裹）——按具体 tag/id/class 查；
-  //   ② 建树后 mutation（removeChild/appendChild）改树，innerHTML 序列化反映（setAttribute/属性 mutation defer）；
-  //   ③ innerHTML setter 后树重建（_tree 失效）。parentNode/previousSibling/nextSibling 等只读字段按 R3017 接入。
+  //   ② innerHTML setter 后树重建（_tree 失效）；③ 树上节点 setAttribute/removeAttribute 仅改树内 attrs（R3018），
+  //      不回注 host DOM（detached 容器无需持久化，DOMPurify 等库清洗后读 body.innerHTML 取结果）。
   // R3017：detached mutable tree（cached JS 树）——DOMPurify.sanitize `node.parentNode.removeChild(node)` + 读
   // body.innerHTML 核心须 mutation + 序列化。lazy-snapshot（R3016 只读）→ cached mutable tree（建一次、mutate relink、
   // 无 selector 重算/失效）。元素属性经 __zw_parse_html_query 快照、子经 __zw_parse_html_child_nodes 递归建。
+  // R3018：attribute mutation（setAttribute/removeAttribute 入 attrs 数组，序列化反映 + id/class IDL 反射同步）+
+  // sibling 导航（previousSibling/nextSibling 经 parentNode 动态求值）+ insertBefore/replaceChild/lastChild 收尾
+  // DOMPurify 清洗所需 mutation 面（移禁元素 + 去 on*/style 属性 + 重定位）。
   var _ZW_VOID_TAGS = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
   function _zwMEscapeText(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function _zwMEscapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
@@ -810,6 +813,23 @@
     var inner = '';
     for (var j = 0; j < node.childNodes.length; j++) inner += _zwMSerialize(node.childNodes[j]);
     return '<' + tag + attrStr + '>' + inner + '</' + tag + '>';
+  }
+  // R3018：兄弟导航 getter（previousSibling/nextSibling）经 parentNode.childNodes indexOf 自身动态求值。
+  // removeChild/appendChild/insertBefore/replaceChild relink 已维护 parentNode，故兄弟关系始终一致。
+  // 元素/文本/注释节点共用（DOMPurify 等库 walk 时对任意节点类型取兄弟）。
+  function _zwMDefineSiblings(node) {
+    Object.defineProperty(node, 'previousSibling', { get: function () {
+      var p = node.parentNode;
+      if (!p) return null;
+      var i = p.childNodes.indexOf(node);
+      return i > 0 ? p.childNodes[i - 1] : null;
+    }, configurable: true });
+    Object.defineProperty(node, 'nextSibling', { get: function () {
+      var p = node.parentNode;
+      if (!p) return null;
+      var i = p.childNodes.indexOf(node);
+      return i >= 0 && i < p.childNodes.length - 1 ? p.childNodes[i + 1] : null;
+    }, configurable: true });
   }
   // 可变元素节点：parentNode/childNodes/removeChild/appendChild（relink，无 selector 重算）+ 惰性 textContent/innerHTML/outerHTML 序列化。
   function _zwMEl(snap, parent) {
@@ -831,19 +851,55 @@
     };
     node.getAttribute = function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return attrs[i].value; return null; };
     node.hasAttribute = function (n) { return node.getAttribute(n) !== null; };
+    // R3018：属性 mutation 入树（setAttribute/removeAttribute 改 attrs 数组，序列化反映）。
+    // setAttribute 已存在则更新值（latest-wins），否则追加；id/class 同步 IDL 反射字段。
+    node.setAttribute = function (n, v) {
+      n = String(n); var sv = v == null ? '' : String(v);
+      for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _zwMReflectIdl(node, n); return; } }
+      attrs.push({ name: n, value: sv });
+      _zwMReflectIdl(node, n);
+    };
+    // removeAttribute 移除全部同名属性（去重保险），同步清 IDL 反射字段。
+    node.removeAttribute = function (n) {
+      n = String(n);
+      for (var i = attrs.length - 1; i >= 0; i--) { if (attrs[i].name === n) attrs.splice(i, 1); }
+      _zwMReflectIdl(node, n);
+    };
     node.removeChild = function (c) { var i = node.childNodes.indexOf(c); if (i >= 0) { node.childNodes.splice(i, 1); c.parentNode = null; } return c; };
     node.appendChild = function (c) { if (c && c.parentNode) c.parentNode.removeChild(c); node.childNodes.push(c); c.parentNode = node; return c; };
+    // R3018：insertBefore/replaceChild（DOMPurify 重定位节点、替换用）。ref=null 等价 append。
+    node.insertBefore = function (c, ref) {
+      if (c && c.parentNode) c.parentNode.removeChild(c);
+      if (ref == null) { node.childNodes.push(c); }
+      else { var i = node.childNodes.indexOf(ref); if (i < 0) node.childNodes.push(c); else node.childNodes.splice(i, 0, c); }
+      c.parentNode = node; return c;
+    };
+    node.replaceChild = function (n, o) {
+      // spec 顺序：先 adopt（从原父移除 newChild），再定位 oldChild 当前 index（移除可能前移 oldChild）。
+      if (n && n.parentNode) n.parentNode.removeChild(n);
+      var i = node.childNodes.indexOf(o);
+      if (i < 0) return o;
+      node.childNodes[i] = n; n.parentNode = node; o.parentNode = null;
+      return o;
+    };
     Object.defineProperty(node, 'textContent', { get: function () { var t = ''; for (var i = 0; i < node.childNodes.length; i++) { var c = node.childNodes[i]; if (c.nodeType === 3) t += c.nodeValue; else if (c.nodeType === 1) t += c.textContent; } return t; }, configurable: true });
     Object.defineProperty(node, 'innerHTML', { get: function () { var s = ''; for (var i = 0; i < node.childNodes.length; i++) s += _zwMSerialize(node.childNodes[i]); return s; }, configurable: true });
     Object.defineProperty(node, 'outerHTML', { get: function () { return _zwMSerialize(node); }, configurable: true });
     Object.defineProperty(node, 'children', { get: function () { return node.childNodes.filter(function (c) { return c.nodeType === 1; }); }, configurable: true });
     Object.defineProperty(node, 'firstChild', { get: function () { return node.childNodes.length ? node.childNodes[0] : null; }, configurable: true });
+    Object.defineProperty(node, 'lastChild', { get: function () { return node.childNodes.length ? node.childNodes[node.childNodes.length - 1] : null; }, configurable: true });
+    _zwMDefineSiblings(node);
     attrs.item = function (i) { return attrs[i] || null; };
     attrs.getNamedItem = function (n) { var v = node.getAttribute(n); return v === null ? null : { name: String(n), value: v }; };
     return node;
   }
-  function _zwMText(v, parent) { var t = String(v); return { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, childNodes: [], children: [], parentNode: parent || null }; }
-  function _zwMComment(v, parent) { var t = String(v); return { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, childNodes: [], children: [], parentNode: parent || null }; }
+  // R3018：id/class 属性 ↔ IDL 字段（node.id/node.className）同步，setAttribute/removeAttribute 后保持一致。
+  function _zwMReflectIdl(node, attrName) {
+    if (attrName === 'id') node.id = node.getAttribute('id') || '';
+    else if (attrName === 'class') node.className = node.getAttribute('class') || '';
+  }
+  function _zwMText(v, parent) { var t = String(v); var n = { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, childNodes: [], children: [], parentNode: parent || null }; _zwMDefineSiblings(n); return n; }
+  function _zwMComment(v, parent) { var t = String(v); var n = { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, childNodes: [], children: [], parentNode: parent || null }; _zwMDefineSiblings(n); return n; }
   // 递归建子树：entry = {k:'E',s:sel}/{k:'T',v}/{k:'C',v}（__zw_parse_html_child_nodes）。元素取快照 + 递归子。
   function _zwMBuildNode(html, entry, parent) {
     if (entry.k === 'T') return _zwMText(entry.v, parent);
@@ -919,8 +975,11 @@
       getElementById: function (id) { return queryOne('#' + String(id)); },
       getElementsByTagName: function (tag) { return queryAll(String(tag)); },
       getElementsByClassName: function (cls) { return queryAll('.' + String(cls)); },
-      createElement: function (t) { var n = String(t).toUpperCase(); return { nodeType: 1, tagName: n, nodeName: n, childNodes: [], setAttribute: function () {}, appendChild: function (c) { return c; } }; },
-      createTextNode: function (t) { return { nodeType: 3, nodeName: '#text', nodeValue: String(t) }; }
+      // R3018：createElement/createTextNode 返完整可变节点（_zwMEl/_zwMText），非 hollow stub。
+      // DOMPurify / 模板引擎经 createElement 建替换节点后 insertBefore/appendChild 入树，须支持 parentNode/
+      // sibling/childNodes/setAttribute/序列化全套语义。HTML 文档 tagName 大写、localName 小写。
+      createElement: function (t) { return _zwMEl({ tag: String(t).toLowerCase() }, null); },
+      createTextNode: function (t) { return _zwMText(String(t), null); }
     };
     body.ownerDocument = doc;
     return doc;

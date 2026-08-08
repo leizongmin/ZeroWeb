@@ -928,4 +928,193 @@ fn test_detached_mutable_tree_r3017() {
     assert_eq!(sandbox.execute("String(d3.body.childNodes[2].nodeType)").unwrap().value, "8", "R3016 非回归：comment nodeType=8");
 }
 
+#[test]
+fn test_detached_attribute_mutation_r3018() {
+    // R3018：detached mutable tree 属性 mutation + 兄弟导航。R3017 闭合 removeChild/appendChild/parentNode
+    // （DOMPurify 移元素核心），但 setAttribute/removeAttribute/previousSibling/nextSibling/insertBefore/replaceChild
+    // 缺失（R3017 known limitation ① 属性 mutation defer、② previousSibling/nextSibling 未接）→ DOMPurify 去
+    // on*/style 属性 + 节点重定位/替换全失效。本切片补齐 attribute mutation（入 attrs 数组，序列化反映 + id/class
+    // IDL 反射同步）+ 兄弟/末子导航（经 parentNode 动态求值）+ insertBefore/replaceChild。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // setAttribute（新增 + 更新）+ removeAttribute + id/class IDL 反射同步 + 序列化反映。
+    sandbox
+        .execute(
+            "var doc = document.implementation.createHTMLDocument('');\
+             doc.body.innerHTML = '<div id=\"d\" class=\"c\"><span>a</span><b>x</b><i>y</i></div>';\
+             var div = doc.body.childNodes[0];\
+             div.setAttribute('data-n', '42');\
+             div.setAttribute('id', 'd2');\
+             div.removeAttribute('class');\
+             globalThis.__hasNew = div.hasAttribute('data-n');\
+             globalThis.__getNew = div.getAttribute('data-n');\
+             globalThis.__idReflect = div.id;\
+             globalThis.__idAttr = div.getAttribute('id');\
+             globalThis.__clsReflect = div.className;\
+             globalThis.__hasCls = div.hasAttribute('class');\
+             globalThis.__outer = div.outerHTML;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__hasNew)").unwrap().value, "true", "setAttribute('data-n') 后 hasAttribute=true");
+    assert_eq!(sandbox.execute("globalThis.__getNew").unwrap().value, "42", "getAttribute('data-n')='42'（新增属性）");
+    assert_eq!(sandbox.execute("globalThis.__idReflect").unwrap().value, "d2", "setAttribute('id','d2') 后 div.id='d2'（IDL 反射同步）");
+    assert_eq!(sandbox.execute("globalThis.__idAttr").unwrap().value, "d2", "getAttribute('id')='d2'（latest-wins 更新）");
+    assert_eq!(sandbox.execute("globalThis.__clsReflect").unwrap().value, "", "removeAttribute('class') 后 div.className=''（IDL 反射清空）");
+    assert_eq!(sandbox.execute("String(globalThis.__hasCls)").unwrap().value, "false", "removeAttribute('class') 后 hasAttribute=false");
+    let outer = sandbox.execute("globalThis.__outer").unwrap().value;
+    assert!(outer.contains("data-n=\"42\""), "serialize 含 data-n=\"42\"：{outer}");
+    assert!(outer.contains("id=\"d2\""), "serialize 含 id=\"d2\"（setAttribute 更新）：{outer}");
+    assert!(!outer.contains("class="), "serialize 不含 class（removeAttribute 反映）：{outer}");
+
+    // 兄弟导航（previousSibling/nextSibling）+ lastChild。
+    sandbox
+        .execute(
+            "var span = div.childNodes[0];\
+             var b = div.childNodes[1];\
+             var i = div.childNodes[2];\
+             globalThis.__spanPrev = span.previousSibling;\
+             globalThis.__spanNextTag = span.nextSibling.tagName;\
+             globalThis.__bPrevTag = b.previousSibling.tagName;\
+             globalThis.__iNext = i.nextSibling;\
+             globalThis.__lastTag = div.lastChild.tagName;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__spanPrev)").unwrap().value, "null", "首子 span.previousSibling=null");
+    assert_eq!(sandbox.execute("globalThis.__spanNextTag").unwrap().value, "B", "span.nextSibling.tagName=B");
+    assert_eq!(sandbox.execute("globalThis.__bPrevTag").unwrap().value, "SPAN", "b.previousSibling.tagName=SPAN");
+    assert_eq!(sandbox.execute("String(globalThis.__iNext)").unwrap().value, "null", "末子 i.nextSibling=null");
+    assert_eq!(sandbox.execute("globalThis.__lastTag").unwrap().value, "I", "div.lastChild.tagName=I（末子）");
+
+    // insertBefore：在 b 前插文本节点 → [span, t, b, i]，序列化反映插入位置。
+    sandbox
+        .execute(
+            "var t = doc.createTextNode('INS');\
+             div.insertBefore(t, b);\
+             globalThis.__len = div.childNodes.length;\
+             globalThis.__idx1 = div.childNodes[1].nodeValue;\
+             globalThis.__tPrevTag = t.previousSibling.tagName;\
+             globalThis.__tNextTag = t.nextSibling.tagName;\
+             globalThis.__insHtml = div.outerHTML;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__len)").unwrap().value, "4", "insertBefore 后 childNodes.length=4");
+    assert_eq!(sandbox.execute("globalThis.__idx1").unwrap().value, "INS", "insertBefore(t,b) 后 childNodes[1]=t（落 b 前）");
+    assert_eq!(sandbox.execute("globalThis.__tPrevTag").unwrap().value, "SPAN", "t.previousSibling=SPAN（兄弟反映插入位）");
+    assert_eq!(sandbox.execute("globalThis.__tNextTag").unwrap().value, "B", "t.nextSibling=B（兄弟反映插入位）");
+    assert!(sandbox.execute("globalThis.__insHtml").unwrap().value.contains("INS"), "serialize 含 INS（序列化反映插入）");
+
+    // replaceChild：用末子 i 替换首子 span（i 在 span 之后，验证 adopt-then-index 顺序）→ [i, t, b]。
+    sandbox
+        .execute(
+            "div.replaceChild(i, span);\
+             globalThis.__len2 = div.childNodes.length;\
+             globalThis.__firstTag = div.childNodes[0].tagName;\
+             globalThis.__spanParent = span.parentNode;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__len2)").unwrap().value, "3", "replaceChild 后 childNodes.length=3（i 移位非新增）");
+    assert_eq!(sandbox.execute("globalThis.__firstTag").unwrap().value, "I", "replaceChild(i,span) 后 childNodes[0]=I（i adopt 到首位）");
+    assert_eq!(sandbox.execute("String(globalThis.__spanParent)").unwrap().value, "null", "被替换的 span.parentNode=null（脱链）");
+}
+
+#[test]
+fn test_sanitize_dompurify_style_r3018() {
+    // R3018：DOMPurify 式 sanitize 端到端 driving test。R3013（query）+ R3016（traverse）+ R3017（mutable remove）
+    // + R3018（attribute mutation + sibling）闭合后，detached document 成可清洗解析容器。本测试复刻 DOMPurify
+    // 核心算法形态——设 body.innerHTML → 递归 walk childNodes（取 copy 防 mutate-during-iterate）→ 移禁元素
+    // （script/iframe/object，node.parentNode.removeChild）→ 去 on*/style 属性（遍历 attributes copy + removeAttribute）
+    // → 读 body.innerHTML 取清洗结果。证明 R3013-R3018 链路对真实清洗库的支撑能力。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 注入 DOMPurify 式 sanitize（复刻核心算法：移禁元素 + 去 on*/style 属性 + 递归子）。
+    sandbox
+        .execute(
+            "function zwSanitize(html) {\
+               var doc = document.implementation.createHTMLDocument('');\
+               doc.body.innerHTML = html;\
+               zwWalk(doc.body);\
+               return doc.body.innerHTML;\
+             }\
+             function zwWalk(node) {\
+               var kids = Array.prototype.slice.call(node.childNodes);\
+               for (var i = 0; i < kids.length; i++) {\
+                 var c = kids[i];\
+                 if (c.nodeType !== 1) continue;\
+                 var tag = c.tagName.toLowerCase();\
+                 if (tag === 'script' || tag === 'iframe' || tag === 'object') {\
+                   c.parentNode.removeChild(c);\
+                   continue;\
+                 }\
+                 var ac = Array.prototype.slice.call(c.attributes);\
+                 for (var j = 0; j < ac.length; j++) {\
+                   var an = ac[j].name;\
+                   if (/^on/i.test(an) || an === 'style') c.removeAttribute(an);\
+                 }\
+                 zwWalk(c);\
+               }\
+             }",
+        )
+        .unwrap();
+
+    // 输入：含 script/iframe 禁元素 + onclick/onerror/style 危险属性，夹保留属性 class/title 与正文。
+    sandbox
+        .execute(
+            "globalThis.__out = zwSanitize('<div onclick=\"evil()\" class=\"keep\"><script>alert(1)</script>\
+             <p style=\"color:red\" title=\"t\">hi</p><iframe src=\"x\"></iframe>\
+             <img onerror=\"steal()\" src=\"a.png\" alt=\"ok\"></div>');",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__out").unwrap().value;
+    assert!(!out.contains("<script"), "sanitize 移除 <script>：{out}");
+    assert!(!out.contains("<iframe"), "sanitize 移除 <iframe>：{out}");
+    assert!(!out.contains("onclick"), "sanitize 剥离 onclick 属性：{out}");
+    assert!(!out.contains("onerror"), "sanitize 剥离 onerror 属性：{out}");
+    assert!(!out.contains("style="), "sanitize 剥离 style 属性：{out}");
+    assert!(out.contains("class=\"keep\""), "sanitize 保留安全属性 class：{out}");
+    assert!(out.contains("title=\"t\""), "sanitize 保留安全属性 title：{out}");
+    assert!(out.contains("alt=\"ok\""), "sanitize 保留 img 安全属性 alt：{out}");
+    assert!(out.contains("<p title=\"t\">hi</p>"), "sanitize 保留正文 p：{out}");
+    assert!(out.contains("src=\"a.png\""), "sanitize 保留 img src：{out}");
+
+    // 第二例：嵌套禁元素（script 套在合法 section 内）+ 深层 on* 属性，验证递归 walk 到深处。
+    sandbox
+        .execute(
+            "globalThis.__out2 = zwSanitize('<section><article onmouseover=\"bad()\"><h2>title</h2>\
+             <object data=\"x\"></object><p>body <a href=\"/ok\" onclick=\"x()\">link</a></p></article></section>');",
+        )
+        .unwrap();
+    let out2 = sandbox.execute("globalThis.__out2").unwrap().value;
+    assert!(!out2.contains("<object"), "递归移除嵌套 <object>：{out2}");
+    assert!(!out2.contains("onmouseover"), "递归剥离深层 onmouseover：{out2}");
+    assert!(!out2.contains("onclick"), "递归剥离深层 <a> onclick：{out2}");
+    assert!(out2.contains("<h2>title</h2>"), "递归保留嵌套正文 h2：{out2}");
+    assert!(out2.contains("href=\"/ok\""), "递归保留 <a> 安全属性 href：{out2}");
+    assert!(out2.contains(">link</a>"), "递归保留 <a> 正文：{out2}");
+
+    // 第三例：纯文本 + 无危险内容 → 原样返回（idempotent，无误伤）。
+    sandbox
+        .execute(
+            "globalThis.__out3 = zwSanitize('<p>plain <b>bold</b> text</p>');",
+        )
+        .unwrap();
+    let out3 = sandbox.execute("globalThis.__out3").unwrap().value;
+    assert_eq!(out3, "<p>plain <b>bold</b> text</p>", "无危险内容原样返回（idempotent）：{out3}");
+}
+
 
