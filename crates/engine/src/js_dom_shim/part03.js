@@ -1116,8 +1116,17 @@
           return _indeterminate[key] === true;
         }
         if (prop === 'checked' || prop === 'hidden' || prop === 'disabled') {
-          // boolean reflected property（checked/hidden/disabled）——属性存在性（经 host `__zw_has_attr`）。
-          if (typeof __zw_has_attr === 'function') {
+          // boolean reflected property（checked/hidden/disabled）——属性存在性。R2997：sel-based 改 latest-wins
+          // （`__zw_has_attr_lw`）反映同批 SetAttr/RemoveAttr / `.checked=` setter 推的 mutation（旧读纯快照
+          // `__zw_has_attr` → removeAttribute / .checked=false / .hidden=true 后 stale）。typeof guard 回落纯快照。
+          // handle 经 `__zw_has_attr_handle`（latest-wins from mutations，R2993/R2995 已无 stale）。
+          if (handle && typeof __zw_has_attr_handle === 'function') {
+            try { return __zw_has_attr_handle(handle, String(prop)) === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_has_attr_lw === 'function') {
+            try { return __zw_has_attr_lw(sel, String(prop)) === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_has_attr === 'function') {
             try { return __zw_has_attr(sel, String(prop)) === '1'; } catch (_e) {}
           }
           return false;

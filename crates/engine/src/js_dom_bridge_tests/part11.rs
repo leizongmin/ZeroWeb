@@ -2369,3 +2369,110 @@ fn test_input_value_defaultvalue_independence_r2996() {
         "defaultValue='brandnew' 后 defaultValue='brandnew'（显式设默认值）"
     );
 }
+
+#[test]
+fn test_boolean_reflected_getter_latest_wins_r2997() {
+    // R2997：sel-based boolean 反射 getter（checked/hidden/disabled）旧读纯快照 __zw_has_attr（非 _lw）→
+    // removeAttribute / .checked=false / .hidden=true / .disabled=false 后 stale（同 R2995 getAttribute/hasAttribute
+    // 方法路径闭合前的 stale gap，但本 getter 路径漏了）。本切片闭合：sel getter 改 latest-wins。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='cb' type='checkbox' checked>\
+         <input id='dis' type='text' disabled>\
+         <input id='plain' type='text'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // removeAttribute('checked') 后 el.checked 应 false（旧 stale 返 true——getter 读快照未反映同批 RemoveAttr）。
+    sandbox
+        .execute(
+            "var cb = document.getElementById('cb');\
+             globalThis.__cbBefore = String(cb.checked);\
+             cb.removeAttribute('checked');\
+             globalThis.__cbAfter = String(cb.checked);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cbBefore").unwrap().value,
+        "true",
+        "checkbox 初始 checked=true（快照）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__cbAfter").unwrap().value,
+        "false",
+        "removeAttribute('checked') 后 el.checked=false（latest-wins getter，修正 stale true）"
+    );
+
+    // .checked = false 后 el.checked 应 false（旧 stale：setter 推 RemoveAttr{checked}，getter 读快照仍 true）。
+    sandbox
+        .execute(
+            "var cb2 = document.getElementById('cb');\
+             cb2.setAttribute('checked', '');\
+             globalThis.__cbReSet = String(cb2.checked);\
+             cb2.checked = false;\
+             globalThis.__cbUnset = String(cb2.checked);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cbReSet").unwrap().value,
+        "true",
+        "setAttribute('checked') 后 el.checked=true（latest-wins getter 反映同批 SetAttr）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__cbUnset").unwrap().value,
+        "false",
+        ".checked=false 后 el.checked=false（latest-wins getter 反映 setter 推的 RemoveAttr）"
+    );
+
+    // .disabled = false（预置 disabled）后 el.disabled 应 false（旧 stale 返 true）。
+    sandbox
+        .execute(
+            "var dis = document.getElementById('dis');\
+             globalThis.__disBefore = String(dis.disabled);\
+             dis.disabled = false;\
+             globalThis.__disAfter = String(dis.disabled);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__disBefore").unwrap().value,
+        "true",
+        "disabled 初始=true（快照）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__disAfter").unwrap().value,
+        "false",
+        ".disabled=false 后 el.disabled=false（latest-wins getter 反映 RemoveAttr）"
+    );
+
+    // .hidden = true（无预置 hidden）后 el.hidden 应 true（旧 stale 返 false——getter 读快照未反映同批 SetAttr）。
+    sandbox
+        .execute(
+            "var plain = document.getElementById('plain');\
+             globalThis.__hidBefore = String(plain.hidden);\
+             plain.hidden = true;\
+             globalThis.__hidAfter = String(plain.hidden);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hidBefore").unwrap().value,
+        "false",
+        "hidden 初始=false（无预置）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hidAfter").unwrap().value,
+        "true",
+        ".hidden=true 后 el.hidden=true（latest-wins getter 反映 SetAttr）"
+    );
+}
