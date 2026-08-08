@@ -1516,3 +1516,65 @@ fn test_expando_non_primitive_properties_r3042() {
     assert_eq!(sandbox.execute("globalThis.__bOwn").unwrap().value, "B", "b._own.id='B'（per-element 隔离）");
     assert_eq!(sandbox.execute("globalThis.__dOwn").unwrap().value, "D", "d._own.id='D'（per-element 隔离，不串）");
 }
+
+#[test]
+fn test_reflected_size_element_aware_r3043() {
+    // R3043：`.size` element-aware reflected 数值读。input.size default 20 / select.size default 0（spec 两元素 default 不同，
+    // `_REFLECTED_UINT` 表无 element-awareness 故专用 tag-gate 分支）。旧读恒 undefined。set 走 generic fallthrough 写 size 属性。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='i1' size='10'>\
+         <input id='i2'>\
+         <select id='s1' size='3'><option>a</option><option>b</option></select>\
+         <select id='s2'><option>x</option></select>\
+         <div id='d'>x</div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① size 读（number，旧恒 undefined）——input=10 / select=3。
+    sandbox
+        .execute(
+            "globalThis.__i1 = document.getElementById('i1').size;\
+             globalThis.__s1 = document.getElementById('s1').size;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__i1").unwrap().value, "10", "input.size=10（number）");
+    assert_eq!(sandbox.execute("globalThis.__s1").unwrap().value, "3", "select.size=3（number）");
+
+    // ② 缺省 default（element-aware）：input=20 / select=0。
+    sandbox
+        .execute(
+            "globalThis.__i2 = document.getElementById('i2').size;\
+             globalThis.__s2 = String(document.getElementById('s2').size);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__i2").unwrap().value, "20", "input.size 缺省=20（spec default）");
+    assert_eq!(sandbox.execute("globalThis.__s2").unwrap().value, "0", "select.size 缺省=0（spec default，区别 input 20）");
+
+    // ③ set→get round-trip（generic fallthrough 写 size 属性 → 读 parseInt 反映）。
+    sandbox
+        .execute(
+            "document.getElementById('i2').size = 8;\
+             document.getElementById('s2').size = 5;\
+             globalThis.__i3 = document.getElementById('i2').size;\
+             globalThis.__s3 = document.getElementById('s2').size;\
+             globalThis.__i3Attr = document.getElementById('i2').getAttribute('size');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__i3").unwrap().value, "8", "input.size=8 后读 8（round-trip）");
+    assert_eq!(sandbox.execute("globalThis.__s3").unwrap().value, "5", "select.size=5 后读 5（round-trip）");
+    assert_eq!(sandbox.execute("globalThis.__i3Attr").unwrap().value, "8", "input.size=8 写入 size 内容属性");
+
+    // ④ 非 INPUT/SELECT 元素 .size → undefined（real browser 无 .size；不误返 number default）。
+    sandbox.execute("globalThis.__dSize = String(document.getElementById('d').size);").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__dSize").unwrap().value, "undefined", "div.size=undefined（非 input/select fall through）");
+}

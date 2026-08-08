@@ -1148,6 +1148,22 @@
           if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, _rsAttr) || '';
           return __zw_get_attr(sel, _rsAttr) || '';
         }
+        // R3043：`.size` element-aware reflected 数值读（HTMLInputElement default 20 / HTMLSelectElement default 0）。
+        // `_REFLECTED_UINT` 表按 IDL 名 keyed 无 element-awareness，`size` 两元素 default 不同（input 20 / select 0）
+        // 故专用分支 tag-gate。input：parseInt 内容属性，缺省/不可解析/<1 → 20（spec default，浏览器实测 clamp）；
+        // select：缺省/不可解析/<0 → 0（spec default；size=0 表「UA 默认显示行数」）。非 INPUT/SELECT fall through undefined
+        //（real browser 无 .size）。set 走 generic fallthrough 写 size 属性（同 cols/rows）。
+        if (prop === 'size') {
+          var _szTag = _realTag(sel, handle);
+          if (_szTag === 'INPUT' || _szTag === 'SELECT') {
+            var _szRaw = handle
+              ? __zw_get_attr_handle(handle, 'size')
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'size') : __zw_get_attr(sel, 'size'));
+            var _szN = parseInt(String(_szRaw == null ? '' : _szRaw), 10);
+            if (_szTag === 'INPUT') return (isNaN(_szN) || _szN < 1) ? 20 : _szN;
+            return (isNaN(_szN) || _szN < 0) ? 0 : _szN;
+          }
+        }
         // R3038/R3041：reflected unsigned-long（numeric）属性读（colSpan/rowSpan/maxLength/minLength/cols/rows/start）。
         // parseInt 内容属性 → number；缺省/不可解析 → entry.d（spec default）；colSpan/rowSpan <1 → 1（min）。
         // 注：TABLE/THEAD/TBODY/TFOOT 的 `.rows` 在更早分支（part03）返行集合——此处仅对 textarea 命中（table 已 return）。
