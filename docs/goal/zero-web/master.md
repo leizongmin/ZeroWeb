@@ -112,6 +112,25 @@
 
 ## 最近完成的改进
 
+### 工程治理——js_dom_bridge.rs 拆分 slice 1：crypto 子模块（3959→3726，本轮 R2973，~14,155 测试）
+
+R2972 后处理逾期待办：`js_dom_bridge.rs` **3959 行**（2000 行准则 ~2×，自 R2962 tests 拆分 + R2963 shim 拆分后唯一剩 ~2× 超标文件）。本切片为多会话拆分的**第 1 刀**——按既有 `mod computed_style`（R2709）模式，抽取最自包含的 **crypto 组**到子模块。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_bridge/crypto.rs`（新） | 232 行（+5 行 module doc）。9 个 crypto 函数原样迁入：`crypto_random_bytes`/`crypto_subtle_digest`/`bytes_from_csv`/`compute_hmac`/`crypto_subtle_hmac`/`crypto_subtle_pbkdf2`/`aes_gcm_run`/`crypto_subtle_aes_gcm`/`crypto_subtle_hkdf`（含 R2793-R2960 全部 WebCrypto 实现 + doc 注释 + RFC 链接）。 |
+| `crates/engine/src/js_dom_bridge.rs` | 删 crypto 段（1213-1445 行）+ 增 `mod crypto; pub use crypto::*;`（紧邻 `mod computed_style`）。**调用点零改动**：register_dom_callbacks 中 `crypto_subtle_*(...)` 经 `pub use` 重导出解析。 |
+
+**为何先抽 crypto（第 1 刀选 crypto）**：crypto 组是**最自包含**的子集——纯字节级（getrandom/sha1/sha2/aes_gcm 外部 crate + 自有 `bytes_from_csv`/`compute_hmac`/`aes_gcm_run` helper），**零 DOM/CSS/style 依赖**（脚本验证：crypto 段不调 find_by_selector/apply_style_property/css_selector_to_string 等）。迁移零跨模块引用风险。canvas 组（1446-1906，含 parse_canvas_color/canvas_context_op）与 selector 组（1907-2031）有更多内部交叉，留后续切片按职责重组。
+
+**为何零回归**：迁移纯机械（9 函数 doc+body 原样移到 crypto.rs，doc/RFC 链接保留）；`pub use crypto::*` 重导出使 register_dom_callbacks 调用点（`__zw_crypto_*` 回调）逐符号解析不变；私有 helper（bytes_from_csv/compute_hmac/aes_gcm_run）随迁入 crypto.rs 内私有（仅被同模块 crypto_* 调用）。`make test` 14155 全绿（含全部 WebCrypto 向量锚定测试 HMAC/PBKDF2/AES-GCM/HKDF/digest）验证。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14155 passed / 71 skipped / 0 failed**（测试计数不变 = 纯重构）+ clippy `-D warnings` 零警告（workspace）+ fmt clean。
+
+**剩余文件大小**：`js_dom_bridge.rs` 现 **3726 行**（仍 ~1.9× 超标）——后续切片续抽：① canvas 组（~460 行，parse_canvas_color/canvas_context_op + parse helpers）；② selector 匹配组（~125 行，element_matches/closest/subtree/children/sibling/parent）；③ apply_dom_mutations 大函数拆分。每刀 kill-switch = `make test` 全绿。
+
+**下一步**：续 P1a——① js_dom_bridge.rs 拆分 slice 2（canvas 组抽取）；② Headers 实例化迁移；③ 其他 defer Web API（ClipboardItem 图片剪贴板）；④ task source 优先级（事件循环边缘）；⑤ customElements upgrade（需 P1b RFC 审批）。
+
 ### P1a ResizeObserver 真值 content-box/border-box 尺寸（box-model 扣除，本轮 R2972，~14,155 测试）
 
 R2971（ReadableStream.tee）后续补 ResizeObserver box-model 真值。RO Entry 的 `borderBoxSize`/`contentBoxSize`/`contentRect` 此前**三者全等**（均 = gBCR border-box rect，padding/border 不扣除——documented defer `③ borderBoxSize/contentBoxSize 近似`）。真实浏览器：`borderBoxSize`=border-box、`contentBoxSize`/`contentRect`/`devicePixelContentBoxSize`=content-box（border - padding - border-width）。响应式/布局库（react-use-measure / @react-aria / popper 读 contentRect）拿到的 content 尺寸此前含 padding/border，错误。本切片经 `getComputedStyle` 真值扣除。
