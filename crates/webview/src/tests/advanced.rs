@@ -380,6 +380,24 @@ fn test_webview_load_html_css_preserved_after_resize() {
     );
 }
 
+/// 验证脚本修改 DOM 后重绘仍保留异步加载的外链 CSS。
+#[test]
+fn test_webview_reload_after_script_preserves_cached_css() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let html = "<html><body><div class=\"box\">Before</div></body></html>";
+    let css = ".box { background-color: red; width: 200px; height: 100px; }";
+    let initial = wv.load_html(html, Some(css));
+
+    let mutated = "<html><body><div class=\"box\">After</div><span>Added</span></body></html>";
+    let after_script = wv.reload_html_after_script(mutated);
+
+    assert_eq!(
+        after_script.primitives.fills.len(),
+        initial.primitives.fills.len(),
+        "script rerender must preserve cached external CSS"
+    );
+}
+
 #[test]
 fn test_webview_inject_css_accumulates() {
     let mut wv = WebView::new(WebViewConfig::default());

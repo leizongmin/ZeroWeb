@@ -191,10 +191,15 @@ pub fn primitives_content_width(primitives: &RenderPrimitives) -> f32 {
         .filter(|g| g.glyph_id != 0 && g.font_size > 0.0)
         .map(|g| g.x + g.font_size * 0.6)
         .fold(0.0f32, f32::max);
+    // 图片为保持 crop 语义会保留原始 rect，文档宽度只能使用实际可见的 clip 交集。
+    // https://drafts.csswg.org/css-overflow-3/#scrollable
     let image_max = primitives
         .images
         .iter()
-        .map(|i| i.rect.origin.x + i.rect.size.width)
+        .filter_map(|i| match i.clip {
+            Some(clip) => i.rect.intersection(&clip).map(|visible| visible.right()),
+            None => Some(i.rect.right()),
+        })
         .fold(0.0f32, f32::max);
     fill_max.max(glyph_max).max(image_max)
 }
@@ -412,7 +417,8 @@ pub fn clamp_scroll(scroll: TabScrollState, layout: &PageScrollLayout) -> TabScr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zero_render_foundation::primitive::{FontId, GlyphPrimitive};
+    use zero_render_foundation::image_cache::ImageKey;
+    use zero_render_foundation::primitive::{FontId, GlyphPrimitive, ImagePrimitive};
 
     #[test]
     fn clipped_glyphs_do_not_expand_document_width() {
@@ -443,6 +449,18 @@ mod tests {
         });
 
         assert_eq!(primitives_content_width(&primitives), 26.0);
+    }
+
+    #[test]
+    fn clipped_images_do_not_expand_document_width() {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_image(ImagePrimitive {
+            rect: Rect::new(0.0, 0.0, 1_600.0, 100.0),
+            image_key: ImageKey::new(1),
+            clip: Some(Rect::new(0.0, 0.0, 100.0, 100.0)),
+        });
+
+        assert_eq!(primitives_content_width(&primitives), 100.0);
     }
 
     #[test]

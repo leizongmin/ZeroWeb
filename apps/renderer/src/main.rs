@@ -895,12 +895,13 @@ impl RendererRuntime {
     /// 用当前 cached_html/css 经 WebView 重绘并发布（脚本改 DOM 后的重渲染路径）。
     fn rerender_publish_webview(&mut self) -> Result<(), String> {
         let html = self.cached_html.clone();
-        let css = self.cached_css.clone();
         let font_loader = &self.font_loader;
         let font_id = self.font_id;
         let wv = self.webview.as_mut().expect("webview");
         text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
-            wv.load_html(&html, if css.is_empty() { None } else { Some(&css) });
+            // DOM 变更不能丢弃异步页面加载器已经加载的外链样式表。
+            // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+            wv.reload_html_after_script(&html);
         });
         self.publish_webview(None, true)
     }
