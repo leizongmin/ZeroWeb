@@ -430,13 +430,15 @@ pub fn register_dom_callbacks(
     );
 
     // `getComputedStyle(el).getPropertyValue(prop)`——计算样式（display/position/visibility/
-    // opacity + 颜色族）。**per-snapshot 缓存**：html_key → (selector → ComputedStyle)。Document 非
-    // Send（含 observer/listener 闭包 + html5ever tendril `Cell`），不能入 `Send + Sync` 闭包；故只
-    // 缓存 `ComputedStyle`（纯值类型，Send）。同 html 同 selector 命中 → 仅 serialize（O(1)）；新
-    // selector → parse+cascade 一次并存入——同一元素的多属性查询（`cs.display;cs.color;cs.visibility`）
-    // 由 3 次全 cascade 摊销为 1 次。html 变（新 snapshot）→ 清空 per-selector 缓存。
+    // opacity + 颜色族）。**per-snapshot + per-style-version 缓存**：(html_key, style_version) →
+    // (selector → ComputedStyle)。Document 非 Send（含 observer/listener 闘包 + html5ever tendril
+    // `Cell`），不能入 `Send + Sync` 闭包；故只缓存 `ComputedStyle`（纯值类型，Send）。同 html 同
+    // selector 命中 → 仅 serialize（O(1)）；新 selector → parse+cascade 一次并存入——同一元素的多属
+    // 性查询（`cs.display;cs.color;cs.visibility`）由 3 次全 cascade 摊销为 1 次。html 变（新 snapshot）
+    // 或 inline style mutation 变 → 清空 per-selector 缓存。
     let html = Arc::clone(dom_html);
-    let cs_cache: Arc<Mutex<Option<(String, HashMap<String, ComputedStyle>)>>> = Arc::new(Mutex::new(None));
+    let m = Arc::clone(mutations);
+    let cs_cache: Arc<Mutex<Option<(String, usize, HashMap<String, ComputedStyle>)>>> = Arc::new(Mutex::new(None));
     sandbox.register_callback(
         "__zw_get_computed_style",
         Box::new(move |args| {
@@ -446,19 +448,27 @@ pub fn register_dom_callbacks(
             let sel = &args[0];
             let prop = &args[1];
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            // R3030：style_version = mutations.len()（脚本内单调递增，单调反映 inline style 变更）。
+            // 与快照一同作 cache key：任一变化 → 重算时把 inline style mutation 子集顺序 apply 到
+            // parsed doc 后再 cascade（latest-wins，语义同 render），闭合 `el.style.X=` 后 gCS 读 stale。
+            let style_version = m.lock().unwrap_or_else(|e| e.into_inner()).len();
             let mut cache = cs_cache.lock().unwrap_or_else(|e| e.into_inner());
-            // html 变 → 清空 per-selector 缓存，重置 key。
-            let need_reset = cache.as_ref().is_none_or(|(h, _)| h != &*snap);
+            // html 变或 style_version 变 → 清空 per-selector 缓存，重置 key。
+            let need_reset = cache
+                .as_ref()
+                .is_none_or(|(h, v, _)| h != &*snap || *v != style_version);
             if need_reset {
-                *cache = Some(((*snap).clone(), HashMap::new()));
+                *cache = Some(((*snap).clone(), style_version, HashMap::new()));
             }
-            let (_, map) = cache.as_mut().expect("cs cache populated");
+            let (_, _, map) = cache.as_mut().expect("cs cache populated");
             // 同 selector 命中 → 直接 serialize（O(1)）。
             if let Some(style) = map.get(sel) {
                 return serialize_computed_property(style, prop);
             }
-            // 未命中：parse + cascade，提取该 selector 的 ComputedStyle 并缓存，再 serialize。
-            let (doc, styles) = compute_document_styles(&snap);
+            // 未命中：parse + apply inline-style overrides + cascade，提取该 selector 的 ComputedStyle
+            // 并缓存，再 serialize。clone 变更列表后即释放锁，parse+cascade 不持 mutation 锁。
+            let mlist = m.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let (doc, styles) = compute_document_styles_with_inline_overrides(&snap, &mlist);
             let Some(node) = find_by_selector(&doc, sel) else {
                 return String::new();
             };

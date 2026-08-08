@@ -228,3 +228,122 @@ fn test_inner_html_child_list_emission_r3029() {
         "subtree：后代 c.innerHTML 冒泡到 body observer → 1 记录"
     );
 }
+
+#[test]
+fn test_get_computed_style_dynamic_inline_r3030() {
+    // R3030：getComputedStyle 动态样式正确性。旧实现读 stale HTML 快照——`el.style.X=...` push
+    // SetStyle 后、render apply 前，快照仍是旧 style → gCS 返旧值。本切片把 inline style mutation
+    // 子集顺序 apply 到 parsed doc 后再 cascade，latest-wins 语义同 render。
+    // ① stale-fix：`style.color='red'` 后 gCS().color=red 计算值（旧返快照旧值 ''）；
+    // ② keyword：`style.display='none'` 后 gCS().display='none'（旧返 UA 默认 block）；
+    // ③ latest-wins：连续 color='red'→'blue' 取末值 blue；
+    // ④ cssText 整体替换（SetAttr style）：`cssText='color:green'` 后 color=green；
+    // ⑤ removeProperty（RemoveStyle）：移除后回落非 inline 值（不再反映已移除声明）；
+    // ⑥ getPropertyValue(kebab) 与 camelCase 读一致；⑦ 多 selector 各自独立。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // #b 带 inline color:blue（既有 inline，验证 override 与既有 style 合并而非覆盖）。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='a'>x</div><div id='b' style='color: blue'>y</div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① stale-fix + ② keyword：set color + display 后 gCS 反映新计算值。
+    sandbox
+        .execute(
+            "var a = document.getElementById('a');\
+             a.style.color = 'red';\
+             a.style.display = 'none';\
+             globalThis.__c = getComputedStyle(a).color;\
+             globalThis.__d = getComputedStyle(a).display;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c)").unwrap().value,
+        "rgb(255, 0, 0)",
+        "stale-fix：el.style.color='red' 后 gCS().color=red 计算值（旧返 stale 旧值）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d)").unwrap().value,
+        "none",
+        "keyword：el.style.display='none' 后 gCS().display='none'（旧返 UA 默认 block）"
+    );
+
+    // ③ latest-wins：连续 color red→blue 取末值。
+    sandbox
+        .execute(
+            "a.style.color = 'blue';\
+             globalThis.__lw = getComputedStyle(a).color;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__lw)").unwrap().value,
+        "rgb(0, 0, 255)",
+        "latest-wins：连续 color red→blue 取末值 blue"
+    );
+
+    // ④ cssText 整体替换（SetAttr style 路径）：color 变 green。
+    sandbox
+        .execute(
+            "a.style.cssText = 'color: green';\
+             globalThis.__ct = getComputedStyle(a).color;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ct)").unwrap().value,
+        "rgb(0, 128, 0)",
+        "cssText 整体替换（SetAttr style）：color=green"
+    );
+
+    // ⑤ removeProperty（RemoveStyle）：移除 color 后回落非 inline 值（非 green）。
+    sandbox
+        .execute(
+            "a.style.removeProperty('color');\
+             globalThis.__rm = getComputedStyle(a).color;",
+        )
+        .unwrap();
+    assert_ne!(
+        sandbox.execute("String(globalThis.__rm)").unwrap().value,
+        "rgb(0, 128, 0)",
+        "removeProperty 后 color 不再反映已移除的 green 声明"
+    );
+
+    // ⑥ getPropertyValue(kebab) 与 camelCase 读一致（同 selector 命中缓存，仍 latest-wins）。
+    sandbox
+        .execute(
+            "a.style.color = 'red';\
+             globalThis.__pv = getComputedStyle(a).getPropertyValue('color');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pv)").unwrap().value,
+        "rgb(255, 0, 0)",
+        "getPropertyValue(kebab) 与 camelCase 读一致"
+    );
+
+    // ⑦ 多 selector 各自独立：#b 既有 inline color:blue，set display:none 不影响 #b 的 color。
+    sandbox
+        .execute(
+            "var b = document.getElementById('b');\
+             b.style.display = 'none';\
+             globalThis.__bc = getComputedStyle(b).color;\
+             globalThis.__bd = getComputedStyle(b).display;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__bc)").unwrap().value,
+        "rgb(0, 0, 255)",
+        "多 selector 独立：#b 既有 inline color:blue 保持（override 与既有 style 合并）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__bd)").unwrap().value,
+        "none",
+        "多 selector 独立：#b set display:none 反映"
+    );
+}

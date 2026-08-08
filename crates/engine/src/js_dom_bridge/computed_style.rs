@@ -39,7 +39,7 @@ use zero_style_system::{
     WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
 };
 
-use super::find_by_selector;
+use super::{DomMutation, apply_remove_style, apply_style_property, find_by_selector};
 
 /// `getComputedStyle(el).getPropertyValue(prop)` 的 host 实现：解析 html → 收集 `<style>`（+
 /// color-scheme meta）→ 计算样式（UA 默认 builtin via `ua_default_display`，故 `<div>` 等的
@@ -62,15 +62,80 @@ pub fn computed_style_property(html: &str, selector: &str, prop: &str) -> String
 /// （O(文档) + O(规则×节点)）。viewport 固定 1280×800（同 getComputedStyle 既有默认）。
 pub fn compute_document_styles(html: &str) -> (Document, HashMap<NodeId, ComputedStyle>) {
     let doc = parse_html(html);
-    let sheets = crate::pipeline::collect_stylesheets(&doc, "");
+    let styles = compute_styles_for_doc(&doc);
+    (doc, styles)
+}
+
+/// [`compute_document_styles`] 的共享尾部：收集 `<style>` 表 → 计算样式（viewport 1280×800）→
+/// `bolder`/`lighter` font-weight 后处理。供纯快照路径与 inline-style override 路径复用，确保
+/// getComputedStyle 在两种来源下的计算语义完全一致。
+fn compute_styles_for_doc(doc: &Document) -> HashMap<NodeId, ComputedStyle> {
+    let sheets = crate::pipeline::collect_stylesheets(doc, "");
     let mut sys = StyleSystem::new();
     // 设默认 viewport（length 属性 % 解析需要；首批属性 viewport 无关，但为后续 length 扩展设）。
     sys.set_viewport(1280.0, 800.0);
-    let mut styles = sys.compute_styles(&doc, &sheets);
+    let mut styles = sys.compute_styles(doc, &sheets);
     // R2723：getComputedStyle 对齐 Chromium——`bolder`/`lighter` 按父链 resolved 绝对值解析
     //（CSS Fonts 3 §5.2 计算值语义）。style-system computed 值保关键字供 paint 二值 want_bold
     // 消费；本 getComputedStyle 专用后处理仅改 gCS 路径的副本，paint/render 零影响。
-    resolve_font_weight_bolder_lighter(&doc, &mut styles);
+    resolve_font_weight_bolder_lighter(doc, &mut styles);
+    styles
+}
+
+/// R3030：把 `mutations` 中影响元素 inline `style` 的子集顺序应用到 parsed `doc` 的匹配节点，
+/// 使 getComputedStyle 在 render apply 前（snapshot 仍 stale）即反映脚本内的 inline style 变更。
+///
+/// 覆盖四类 mutation（与 render 路径 `apply_dom_mutations` 语义一致）：`SetStyle`/`RemoveStyle`
+///（per-property 增删）+ `SetAttr`/`RemoveAttr` 且 name 归一为 `style`（`el.style.cssText=` 整体替换）。
+/// **latest-wins 由顺序 apply 自然实现**——后 apply 覆盖先 apply（merge_style_property 按 prop_key
+/// 去重、SetAttr style 整体覆盖），与 render 路径同序列应用结果逐位一致。handle-based 变体
+///（`SetStyleOnHandle` 等）跳过：其 handle 元素未 append 前不在 snapshot 内，`find_by_selector`
+/// 不命中 → 无效果，与 gCS 仅对 live-DOM 元素（有 selector）查询的契约一致。
+fn apply_inline_style_overrides(doc: &mut Document, mutations: &[DomMutation]) {
+    for m in mutations {
+        match m {
+            DomMutation::SetStyle {
+                selector,
+                property,
+                value,
+            } => {
+                if let Some(node) = find_by_selector(doc, selector) {
+                    apply_style_property(doc, node, property, value);
+                }
+            }
+            DomMutation::RemoveStyle { selector, property } => {
+                if let Some(node) = find_by_selector(doc, selector) {
+                    apply_remove_style(doc, node, property);
+                }
+            }
+            DomMutation::SetAttr { selector, name, value } if name.eq_ignore_ascii_case("style") => {
+                if let Some(node) = find_by_selector(doc, selector) {
+                    doc.set_attribute(node, "style", value);
+                }
+            }
+            DomMutation::RemoveAttr { selector, name } if name.eq_ignore_ascii_case("style") => {
+                if let Some(node) = find_by_selector(doc, selector) {
+                    doc.remove_attribute(node, "style");
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// R3030：`compute_document_styles` 的动态 inline-style override 变体——parse snapshot 后先把
+/// pending inline style mutation 顺序 apply 到 parsed doc，再 cascade。闭合 getComputedStyle
+/// 读 stale snapshot 的「动态样式正确性」缺口：`el.style.color='red'; getComputedStyle(el).color`
+/// 旧返快照旧值（render apply 前），现返经完整 cascade 的计算值（`rgb(255, 0, 0)`），与真实浏览器
+/// getComputedStyle 返 computed-value 语义一致（length/em/rem/vw 经 style-system 解析为 px，
+/// %/auto 保留为计算值——同 [`serialize_computed_property`] 既有 documented 限制）。
+pub fn compute_document_styles_with_inline_overrides(
+    html: &str,
+    mutations: &[DomMutation],
+) -> (Document, HashMap<NodeId, ComputedStyle>) {
+    let mut doc = parse_html(html);
+    apply_inline_style_overrides(&mut doc, mutations);
+    let styles = compute_styles_for_doc(&doc);
     (doc, styles)
 }
 
