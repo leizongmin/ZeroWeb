@@ -67,7 +67,9 @@ fi
 # µs 级微基准集体超标、报告不可信。loadavg 1min 超阈值（默认 = 逻辑核数 × 0.75）时
 # 快速失败并提示重试，避免产出垃圾报告。ZW_BENCH_ALLOW_BUSY=1 强制跳过守卫）。
 BUSY_THRESHOLD=${ZERO_WEB_BENCH_BUSY_THRESHOLD:-$(($(nproc 2>/dev/null || echo 16) * 3 / 4))}
-if [ "$QUICK_MODE" != "1" ] && [ "${ZW_BENCH_ALLOW_BUSY:-}" != "1" ]; then
+# CI（GITHUB_ACTIONS）为专用 runner，无另一条流的 WPT/测试干扰——负载守卫只在
+# 本地共享机器有价值（2026-08-08：CI 4 核 runner loadavg 波动易超阈值 3 误伤）
+if [ "$QUICK_MODE" != "1" ] && [ "${ZW_BENCH_ALLOW_BUSY:-}" != "1" ] && [ "${GITHUB_ACTIONS:-}" != "true" ]; then
     LOAD1=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null | cut -d. -f1 || echo 0)
     if [ -n "$LOAD1" ] && [ "$LOAD1" -gt "$BUSY_THRESHOLD" ]; then
         echo "bench-report: ABORT — 系统繁忙（loadavg 1min=$LOAD1 > 阈值 $BUSY_THRESHOLD，可能另一条流正在跑 WPT/测试），"
