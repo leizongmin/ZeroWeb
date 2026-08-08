@@ -1159,10 +1159,15 @@
           return -1;
         }
         if (prop === 'selected') {
-          // P1a select option：selected 属性存在性（boolean）。sel-based 经 host `__zw_has_attr`；
-          // handle-based（`new Option()` 创建）经 `__zw_has_attr_handle`（句柄不在快照）。
+          // P1a select option：selected 当前态属性存在性（boolean）。R2999：sel-based 改 latest-wins
+          // （`__zw_has_attr_lw`）反映同批 SetAttr/RemoveAttr / `.selected=` setter 推的 mutation（旧读纯快照
+          // `__zw_has_attr` → removeAttribute / .selected= / setAttribute 后 stale，R2997 限制 ②）。typeof guard
+          // 回落纯快照。handle 经 `__zw_has_attr_handle`（latest-wins from mutations）。
           if (handle && typeof __zw_has_attr_handle === 'function') {
             try { return __zw_has_attr_handle(handle, 'selected') === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_has_attr_lw === 'function') {
+            try { return __zw_has_attr_lw(sel, 'selected') === '1'; } catch (_e) {}
           }
           if (!handle && sel && typeof __zw_has_attr === 'function') {
             try { return __zw_has_attr(sel, 'selected') === '1'; } catch (_e) {}

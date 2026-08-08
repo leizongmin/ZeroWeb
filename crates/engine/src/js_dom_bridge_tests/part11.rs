@@ -2646,3 +2646,96 @@ fn test_default_checked_selected_independence_r2998() {
         "无预置 .selected=true 后 defaultSelected 仍 false（dirty 缓存保护）"
     );
 }
+
+#[test]
+fn test_option_selected_getter_latest_wins_r2999() {
+    // R2999：option.selected 当前态 getter sel 路径仍读纯快照 __zw_has_attr（R2997 限制 ②）→
+    // removeAttribute('selected') / .selected= / setAttribute('selected') 后 stale。本切片闭合（同 R2997 .checked 模式）。
+    // .selected 与属性耦合（.selected= set/remove attr，无独立 dirty 态），故 getter latest-wins 与 setter 一致。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <select id='s'>\
+         <option id='o1' selected>A</option>\
+         <option id='o2'>B</option>\
+         </select>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // removeAttribute('selected') 后 .selected 应 false（旧 stale 返 true——getter 读快照未反映同批 RemoveAttr）。
+    sandbox
+        .execute(
+            "var o1 = document.getElementById('o1');\
+             globalThis.__selRmBefore = String(o1.selected);\
+             o1.removeAttribute('selected');\
+             globalThis.__selRmAfter = String(o1.selected);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__selRmBefore").unwrap().value,
+        "true",
+        "option 初始 selected=true（快照）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__selRmAfter").unwrap().value,
+        "false",
+        "removeAttribute('selected') 后 .selected=false（latest-wins getter，修正 stale true）"
+    );
+
+    // setAttribute('selected') 复原后 .selected 应 true（latest-wins 反映同批 SetAttr）。
+    sandbox
+        .execute(
+            "o1.setAttribute('selected', '');\
+             globalThis.__selReSet = String(o1.selected);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__selReSet").unwrap().value,
+        "true",
+        "setAttribute('selected') 后 .selected=true（latest-wins getter 反映同批 SetAttr）"
+    );
+
+    // .selected = false 后 .selected 应 false（setter 推 RemoveAttr{selected}，getter latest-wins 反映）。
+    sandbox
+        .execute(
+            "o1.selected = false;\
+             globalThis.__selUnset = String(o1.selected);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__selUnset").unwrap().value,
+        "false",
+        ".selected=false 后 .selected=false（latest-wins getter 反映 RemoveAttr）"
+    );
+
+    // 无预置 option：.selected = true 后 .selected 应 true（旧 stale 返 false——快照无 selected）。
+    sandbox
+        .execute(
+            "var o2 = document.getElementById('o2');\
+             globalThis.__selOffBefore = String(o2.selected);\
+             o2.selected = true;\
+             globalThis.__selOffAfter = String(o2.selected);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__selOffBefore").unwrap().value,
+        "false",
+        "无预置 option 初始 selected=false"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__selOffAfter").unwrap().value,
+        "true",
+        ".selected=true 后 .selected=true（latest-wins getter 反映 SetAttr，修正 stale false）"
+    );
+}
