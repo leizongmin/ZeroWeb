@@ -2816,3 +2816,125 @@ fn test_select_value_programmatic_reflection_r3000() {
         "select.value='B' 后 optionC.selected=false（未匹配）"
     );
 }
+
+#[test]
+fn test_get_attribute_names_dataset_latest_wins_r3002() {
+    // R3002：getAttributeNames / hasAttributes / dataset 旧经 `__zw_attr_names`（纯快照）+ dataset 值/存在性
+    // 经 `__zw_get_attr`/`__zw_has_attr`（纯快照）→ 同批 setAttribute/removeAttribute / dataset 设/删 后 stale
+    // （R2995 限制 ③，属性反射矩阵最后一项 stale）。data-* 为纯反射属性（无 dirty 态），latest-wins 正确。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d' data-existing='e' class='c'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // setAttribute('data-new','x') 后 getAttributeNames 应含 'data-new'（旧 stale 缺）；dataset.new === 'x'。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             d.setAttribute('data-new', 'x');\
+             globalThis.__names1 = d.getAttributeNames().join(',');\
+             globalThis.__dv1 = d.dataset.new;\
+             globalThis.__hasNew1 = String('new' in d.dataset);",
+        )
+        .unwrap();
+    assert!(
+        sandbox.execute("globalThis.__names1").unwrap().value.contains("data-new"),
+        "setAttribute('data-new') 后 getAttributeNames 含 data-new（旧 stale 缺）got: {}",
+        sandbox.execute("globalThis.__names1").unwrap().value
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dv1").unwrap().value,
+        "x",
+        "setAttribute('data-new','x') 后 dataset.new='x'（旧 stale undefined）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasNew1").unwrap().value,
+        "true",
+        "setAttribute('data-new') 后 'new' in dataset=true（旧 stale false）"
+    );
+
+    // removeAttribute('data-existing') 后 getAttributeNames 不含 'data-existing'；dataset.existing===undefined。
+    sandbox
+        .execute(
+            "globalThis.__names0 = d.getAttributeNames().join(',');\
+             globalThis.__dv0 = String(d.dataset.existing);\
+             d.removeAttribute('data-existing');\
+             globalThis.__names2 = d.getAttributeNames().join(',');\
+             globalThis.__dv2 = String(d.dataset.existing);\
+             globalThis.__hasExisting2 = String('existing' in d.dataset);",
+        )
+        .unwrap();
+    assert!(
+        sandbox.execute("globalThis.__names0").unwrap().value.contains("data-existing"),
+        "removeAttribute 前 getAttributeNames 含 data-existing"
+    );
+    assert!(
+        !sandbox.execute("globalThis.__names2").unwrap().value.contains("data-existing"),
+        "removeAttribute('data-existing') 后 getAttributeNames 不含 data-existing（旧 stale 仍含）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dv2").unwrap().value,
+        "undefined",
+        "removeAttribute('data-existing') 后 dataset.existing=undefined（旧 stale 'e'）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasExisting2").unwrap().value,
+        "false",
+        "removeAttribute('data-existing') 后 'existing' in dataset=false（旧 stale true）"
+    );
+
+    // dataset.assigned = 'y'（setter 推 SetAttr{data-assigned}）后 getAttributeNames 含 'data-assigned'；
+    // dataset.assigned === 'y'。
+    sandbox
+        .execute(
+            "d.dataset.assigned = 'y';\
+             globalThis.__names3 = d.getAttributeNames().join(',');\
+             globalThis.__dv3 = d.dataset.assigned;",
+        )
+        .unwrap();
+    assert!(
+        sandbox.execute("globalThis.__names3").unwrap().value.contains("data-assigned"),
+        "dataset.assigned='y' 后 getAttributeNames 含 data-assigned（旧 stale 缺）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dv3").unwrap().value,
+        "y",
+        "dataset.assigned='y' 后 dataset.assigned='y'（旧 stale undefined）"
+    );
+
+    // delete dataset.assigned（推 RemoveAttr{data-assigned}）后 getAttributeNames 不含；dataset.assigned===undefined。
+    sandbox
+        .execute(
+            "delete d.dataset.assigned;\
+             globalThis.__names4 = d.getAttributeNames().join(',');\
+             globalThis.__dv4 = String(d.dataset.assigned);",
+        )
+        .unwrap();
+    assert!(
+        !sandbox.execute("globalThis.__names4").unwrap().value.contains("data-assigned"),
+        "delete dataset.assigned 后 getAttributeNames 不含 data-assigned（旧 stale 仍含）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dv4").unwrap().value,
+        "undefined",
+        "delete dataset.assigned 后 dataset.assigned=undefined（旧 stale 'y'）"
+    );
+
+    // hasAttributes() 始终 true（div 有 class/data-existing 残留或新增）；验非空元素返 true。
+    sandbox.execute("globalThis.__hasAttrs = String(d.hasAttributes());").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hasAttrs").unwrap().value,
+        "true",
+        "hasAttributes()=true（div 有属性）"
+    );
+}

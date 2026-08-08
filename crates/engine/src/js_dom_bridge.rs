@@ -1300,6 +1300,32 @@ pub fn element_attribute_names(html: &str, selector: &str) -> String {
         .unwrap_or_default()
 }
 
+/// 元素的全部属性本地名（`|` 分隔，文档序），**latest-wins**——在快照基底上正序应用 pending
+/// `SetAttr`/`RemoveAttr` mutation（同 `selector`）：SetAttr 加名（去重保序）、RemoveAttr 删名。
+/// 供 `__zw_attr_names` 回调 → shim `getAttributeNames`/`hasAttributes`/`dataset` 枚举反映同批
+/// setAttribute/removeAttribute / dataset 设删（R3002，闭合 R2995 限制 ③ stale）。
+pub fn element_attribute_names_lw(html: &str, mutations: &[DomMutation], selector: &str) -> String {
+    let mut names: Vec<String> = element_attribute_names(html, selector)
+        .split('|')
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect();
+    for m in mutations {
+        match m {
+            DomMutation::SetAttr { selector: s, name, .. } if s == selector => {
+                if !names.iter().any(|n| n == name) {
+                    names.push(name.clone());
+                }
+            }
+            DomMutation::RemoveAttr { selector: s, name } if s == selector => {
+                names.retain(|n| n != name);
+            }
+            _ => {}
+        }
+    }
+    names.join("|")
+}
+
 /// P1a checkbox：判定元素是否为 `<input type=checkbox>`。
 pub fn is_checkbox(html: &str, selector: &str) -> bool {
     query_tag_from_html(html, selector).eq_ignore_ascii_case("input")

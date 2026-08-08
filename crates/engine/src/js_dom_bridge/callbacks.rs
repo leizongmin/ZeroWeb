@@ -503,14 +503,18 @@ pub fn register_dom_callbacks(
         }),
     );
 
-    // 元素全部属性名（`|` 分隔）→ shim `el.dataset` 枚举（ownKeys：data-* 属性 → camelCase 键）。
+    // 元素全部属性名（`|` 分隔）→ shim `getAttributeNames`/`hasAttributes`/`dataset` 枚举。R3002：latest-wins
+    // ——在快照基底上应用 pending SetAttr/RemoveAttr（同 sel），反映同批 setAttribute/removeAttribute/dataset 设删
+    // （旧纯快照 → stale，R2995 限制 ③）。
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_attr_names",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            element_attribute_names(&snap, &sel)
+            let mlock = m.lock().unwrap_or_else(|e| e.into_inner());
+            element_attribute_names_lw(&snap, &mlock, &sel)
         }),
     );
 

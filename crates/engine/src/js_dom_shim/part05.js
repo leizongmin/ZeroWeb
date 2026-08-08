@@ -909,10 +909,19 @@
   function _datasetProxy(sel, handle) {
     var attrOf = function(key) { return 'data-' + _camelToKebab(String(key)); };
     var readAttr = function(name) {
-      return handle ? __zw_get_attr_handle(handle, name) : __zw_get_attr(sel, name);
+      // R3002：sel 用 latest-wins（`__zw_get_attr_lw`）反映同批 setAttribute/dataset 设删；handle 用
+      // `__zw_get_attr_handle`（latest-wins from mutations）。data-* 为纯反射属性（无 dirty 态），无污染顾虑。
+      if (handle) return __zw_get_attr_handle(handle, name);
+      if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, name);
+      return __zw_get_attr(sel, name);
     };
     var hasAttrFn = function(name) {
-      try { return (handle ? false : __zw_has_attr(sel, name)) === '1'; } catch (_e) { return false; }
+      try {
+        if (handle) return false;
+        // R3002：sel 用 latest-wins 反映同批 SetAttr/RemoveAttr（旧 `__zw_has_attr` 纯快照 stale）。
+        if (typeof __zw_has_attr_lw === 'function') return __zw_has_attr_lw(sel, name) === '1';
+        return __zw_has_attr(sel, name) === '1';
+      } catch (_e) { return false; }
     };
     var dataKeys = function() {
       // 仅 sel-based 支持枚举（无 attr-names-handle）；data-* → camelCase 键。
