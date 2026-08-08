@@ -49,8 +49,34 @@ impl HttpClient {
         Self::with_config(30, max)
     }
 
-    /// HTTP 客户端默认 User-Agent
-    const DEFAULT_USER_AGENT: &str = "ZeroWeb/1.0";
+    /// HTTP 客户端默认 User-Agent。
+    #[cfg(target_os = "macos")]
+    const DEFAULT_USER_AGENT: &str = concat!(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ",
+        "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 ZeroWeb/",
+        env!("CARGO_PKG_VERSION")
+    );
+    /// HTTP 客户端默认 User-Agent。
+    #[cfg(target_os = "windows")]
+    const DEFAULT_USER_AGENT: &str = concat!(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ",
+        "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 ZeroWeb/",
+        env!("CARGO_PKG_VERSION")
+    );
+    /// HTTP 客户端默认 User-Agent。
+    #[cfg(target_os = "linux")]
+    const DEFAULT_USER_AGENT: &str = concat!(
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ",
+        "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 ZeroWeb/",
+        env!("CARGO_PKG_VERSION")
+    );
+    /// HTTP 客户端默认 User-Agent。
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    const DEFAULT_USER_AGENT: &str = concat!(
+        "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) ",
+        "Chrome/151.0.0.0 Safari/537.36 ZeroWeb/",
+        env!("CARGO_PKG_VERSION")
+    );
 
     /// 跨域重定向时应剥离的敏感请求头。
     const SENSITIVE_HEADERS: &[&str] = &[
@@ -349,6 +375,38 @@ mod integration_tests {
         assert_eq!(resp.text().unwrap(), "hello world");
         assert!(resp.content_type().is_some());
         assert_eq!(resp.redirect_count, 0);
+    }
+
+    /// 默认请求应发送网站兼容的 Chromium User-Agent。
+    #[test]
+    fn test_send_uses_chromium_compatible_user_agent() {
+        assert!(HttpClient::DEFAULT_USER_AGENT.contains("Chrome/151.0.0.0"));
+        assert!(
+            HttpClient::DEFAULT_USER_AGENT.ends_with(concat!("ZeroWeb/", env!("CARGO_PKG_VERSION"))),
+            "User-Agent should expose the Cargo package version"
+        );
+
+        let (listener, url) = bind_server();
+
+        let server = std::thread::spawn(move || {
+            let mut stream = listener.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 8192];
+            let n = stream.read(&mut buf).unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]);
+            let expected = format!("user-agent: {}", HttpClient::DEFAULT_USER_AGENT);
+            assert!(
+                request.contains(&expected),
+                "request should contain Chromium-compatible User-Agent, got: {request}"
+            );
+
+            let response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.flush();
+        });
+
+        let response = HttpClient::new().get(&url).unwrap();
+        assert_eq!(response.status_code, 200);
+        server.join().unwrap();
     }
 
     /// POST 请求发送 body 并验证响应。
