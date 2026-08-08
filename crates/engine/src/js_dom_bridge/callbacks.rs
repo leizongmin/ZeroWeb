@@ -130,6 +130,18 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `document.implementation.createHTMLDocument().body.childNodes`（R3016）——DOMPurify.sanitize 递归 walk
+    // 的核心阻塞。与 `__zw_parse_html_query` 对称：html 从 arg[0]（detached 串，非 dom_html 快照），
+    // elem_sel 从 arg[1]。返 child_nodes_json（element→{k:E,s:selector} / text→{k:T,v} / comment→{k:C,v}）。
+    sandbox.register_callback(
+        "__zw_parse_html_child_nodes",
+        Box::new(|args: &[String]| -> String {
+            let html = args.first().map(String::as_str).unwrap_or("");
+            let sel = args.get(1).map(String::as_str).unwrap_or("");
+            child_nodes_json(html, sel)
+        }),
+    );
+
     // `crypto.subtle.digest(algo, data)`（R2793）——SHA-1/256/384/512 哈希。algo 从 arg[0]（串），
     // 字节从 arg[1]（逗号分隔十进制串）。返逗号分隔十进制 hash 串（unsupported → 空，shim reject）。
     sandbox.register_callback(

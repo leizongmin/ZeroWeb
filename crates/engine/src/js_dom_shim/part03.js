@@ -780,20 +780,87 @@
     return chain;
   }
 
-  // detached Document（供 document.implementation.createDocument/createHTMLDocument，R2815；R3013 queryable）。
+  // detached Document（供 document.implementation.createDocument/createHTMLDocument，R2815；R3013 queryable；
+  // R3016 traversable）。
   // R3013：body 经 __zw_parse_html_query 支持可写可查——body.innerHTML setter 存解析源，querySelector 族
   //（包 _zwParseEl 只读 element-proxy）查解析树。满足 jQuery `$.parseHTML` / DOMPurify feature-detect /
   // 模板引擎「detached 解析后查询」模式（旧 hollow querySelector 恒 null）。host 未注册（reftest/纯 sandbox）
   // → query 返 null/空（no-throw，零回归）。createElement/createTextNode 保留（node 工厂 + feature-detect）。
+  // R3016：body.childNodes 递归遍历——__zw_parse_html_child_nodes + _zwDetachedEl/Text/Comment 递归 node-proxy，
+  // 解锁 DOMPurify.sanitize 设 dom.body.innerHTML 后递归 walk 清洗（旧 body.childNodes 恒空）。
   // **已知限制（记录）**：① querySelectorAll('*') 含 html/head/body（html5ever 包裹）——按具体 tag/id/class 查；
-  //   ② 只读——无真 detached tree proxy，mutation（setAttribute/appendChild）不入解析树（best-effort 存 raw）；
-  //   ③ DOMPurify 的 body.childNodes 递归遍历需 detached tree proxy infra（更重，独立 follow-up）。
+  //   ② 只读——mutation（setAttribute/appendChild）不入解析树（best-effort 存 raw）；③ 每次访问重解析（惰性）。
+  // R3016：detached tree 递归 node-proxy。html = detached 文档串（含 <body> 包裹）；sel = 元素唯一 selector。
+  // 元素属性经 __zw_parse_html_query 惰性快照、子树经 __zw_parse_html_child_nodes（每次重解析同 html，selector 稳定）。
+  function _zwDetachedEl(html, sel) {
+    var snap = null;
+    function getSnap() {
+      if (snap === null) {
+        snap = {};
+        if (typeof __zw_parse_html_query === 'function') {
+          try { var a = JSON.parse(__zw_parse_html_query(html, sel, '0')); if (a.length) snap = a[0]; } catch (_e) {}
+        }
+      }
+      return snap;
+    }
+    function getAttr(name) {
+      var s = getSnap();
+      return (s.attrs && Object.prototype.hasOwnProperty.call(s.attrs, name)) ? s.attrs[name] : null;
+    }
+    var el = {
+      nodeType: 1,
+      get tagName() { return (getSnap().tag || '').toUpperCase(); },
+      get nodeName() { return (getSnap().tag || '').toUpperCase(); },
+      get localName() { return getSnap().tag || ''; },
+      get id() { return getSnap().id || ''; },
+      get className() { return getSnap().cls || ''; },
+      get textContent() { return getSnap().text || ''; },
+      get innerHTML() { return _zwInnerFromOuter(getSnap().outer || '', getSnap().tag || ''); },
+      get outerHTML() { return getSnap().outer || ''; },
+      getAttribute: function (name) { return getAttr(String(name)); },
+      hasAttribute: function (name) { return getAttr(String(name)) !== null; },
+      get attributes() {
+        var s = getSnap(); var attrs = s.attrs || {}; var out = [];
+        for (var k in attrs) { if (Object.prototype.hasOwnProperty.call(attrs, k)) out.push({ name: k, value: attrs[k] }); }
+        out.item = function (i) { return out[i] || null; };
+        out.getNamedItem = function (n) { var v = getAttr(String(n)); return v === null ? null : { name: String(n), value: v }; };
+        return out;
+      }
+    };
+    Object.defineProperty(el, 'childNodes', { get: function () { return _zwDetachedChildren(html, sel); }, configurable: true });
+    Object.defineProperty(el, 'children', { get: function () { return _zwDetachedChildren(html, sel).filter(function (c) { return c.nodeType === 1; }); }, configurable: true });
+    Object.defineProperty(el, 'firstChild', { get: function () { var c = _zwDetachedChildren(html, sel); return c.length ? c[0] : null; }, configurable: true });
+    return el;
+  }
+  function _zwDetachedText(v) {
+    var t = String(v);
+    return { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, childNodes: [], children: [] };
+  }
+  function _zwDetachedComment(v) {
+    var t = String(v);
+    return { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, childNodes: [], children: [] };
+  }
+  function _zwDetachedChildren(html, sel) {
+    if (typeof __zw_parse_html_child_nodes !== 'function') return [];
+    var arr;
+    try { arr = JSON.parse(__zw_parse_html_child_nodes(html, sel)); } catch (_e) { return []; }
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var e = arr[i];
+      if (!e) continue;
+      if (e.k === 'E') out.push(_zwDetachedEl(html, e.s));
+      else if (e.k === 'T') out.push(_zwDetachedText(e.v));
+      else if (e.k === 'C') out.push(_zwDetachedComment(e.v));
+    }
+    return out;
+  }
   function _makeDetachedDocument(title) {
     var bodyHtml = '';
+    function detHtml() { return '<body>' + bodyHtml + '</body>'; }
     function queryBody(sel, all) {
       if (typeof __zw_parse_html_query !== 'function') return [];
       try {
-        return JSON.parse(__zw_parse_html_query('<body>' + bodyHtml + '</body>', String(sel), all ? '1' : '0'));
+        return JSON.parse(__zw_parse_html_query(detHtml(), String(sel), all ? '1' : '0'));
       } catch (_e) { return []; }
     }
     function queryOne(sel) { var a = queryBody(sel, false); return a.length ? new _zwParseEl(a[0]) : null; }
@@ -808,7 +875,11 @@
       querySelectorAll: function (sel) { return queryAll(sel); },
       getElementById: function (id) { return queryOne('#' + String(id)); },
       getElementsByTagName: function (tag) { return queryAll(String(tag)); },
-      getElementsByClassName: function (cls) { return queryAll('.' + String(cls)); }
+      getElementsByClassName: function (cls) { return queryAll('.' + String(cls)); },
+      // R3016：body.childNodes 递归遍历（selector 'body' 查 detHtml）。DOMPurify.sanitize walk 入口。
+      get childNodes() { return _zwDetachedChildren(detHtml(), 'body'); },
+      get children() { return _zwDetachedChildren(detHtml(), 'body').filter(function (c) { return c.nodeType === 1; }); },
+      get firstChild() { var c = _zwDetachedChildren(detHtml(), 'body'); return c.length ? c[0] : null; }
     };
     var doc = {
       nodeType: 9,

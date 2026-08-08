@@ -747,4 +747,86 @@ fn test_fetch_body_types_r3015() {
     }
 }
 
+#[test]
+fn test_detached_document_traversal_r3016() {
+    // R3016：detached document body.childNodes 递归遍历（DOMPurify.sanitize 核心阻塞）。R3013 让 detached doc
+    // 可 querySelector，但 body.childNodes 恒空（hollow）→ DOMPurify 设 dom.body.innerHTML 后无法递归 walk 清洗。
+    // 本切片：__zw_parse_html_child_nodes + _zwDetachedEl 递归 element/text/comment proxy。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 嵌套 HTML：div.a > (b>text + tail text) + 文本 + 注释。
+    sandbox
+        .execute(
+            "var doc = document.implementation.createHTMLDocument('');\
+             doc.body.innerHTML = '<div class=\"a\"><b>bold</b>tail</div>mid<!--cmt-->';",
+        )
+        .unwrap();
+
+    // body.childNodes：[div.a, text 'mid', comment 'cmt']（3 节点）。
+    sandbox.execute("globalThis.__cn = doc.body.childNodes; globalThis.__len = doc.body.childNodes.length;").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__len)").unwrap().value, "3", "body.childNodes.length=3（div + text + comment）");
+
+    // [0] div.a：element，tag/attr/递归 childNodes。
+    sandbox
+        .execute(
+            "globalThis.__n0 = globalThis.__cn[0];\
+             globalThis.__n0Type = globalThis.__n0.nodeType;\
+             globalThis.__n0Tag = globalThis.__n0.tagName;\
+             globalThis.__n0Cls = globalThis.__n0.getAttribute('class');\
+             globalThis.__n0ChildLen = globalThis.__n0.childNodes.length;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__n0Type)").unwrap().value, "1", "body.childNodes[0] nodeType=1（element）");
+    assert_eq!(sandbox.execute("String(globalThis.__n0Tag)").unwrap().value, "DIV", "body.childNodes[0] tagName=DIV");
+    assert_eq!(sandbox.execute("String(globalThis.__n0Cls)").unwrap().value, "a", "body.childNodes[0] getAttribute('class')='a'");
+    assert_eq!(sandbox.execute("String(globalThis.__n0ChildLen)").unwrap().value, "2", "div.a.childNodes.length=2（b + text 'tail'）");
+
+    // div.a > [0] b：递归子元素，textContent='bold'。
+    sandbox
+        .execute(
+            "globalThis.__b = globalThis.__n0.childNodes[0];\
+             globalThis.__bTag = globalThis.__b.tagName;\
+             globalThis.__bText = globalThis.__b.textContent;\
+             globalThis.__bChildLen = globalThis.__b.childNodes.length;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__bTag)").unwrap().value, "B", "div.a.childNodes[0] tagName=B（递归子）");
+    assert_eq!(sandbox.execute("String(globalThis.__bText)").unwrap().value, "bold", "b.textContent='bold'");
+    assert_eq!(sandbox.execute("String(globalThis.__bChildLen)").unwrap().value, "1", "b.childNodes.length=1（text 'bold'）");
+
+    // b > [0] text 'bold'：叶文本节点。
+    sandbox
+        .execute("globalThis.__bt = globalThis.__b.childNodes[0]; globalThis.__btType = globalThis.__bt.nodeType; globalThis.__btVal = globalThis.__bt.nodeValue;")
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__btType)").unwrap().value, "3", "b.childNodes[0] nodeType=3（text）");
+    assert_eq!(sandbox.execute("String(globalThis.__btVal)").unwrap().value, "bold", "text nodeValue='bold'");
+
+    // [1] text 'mid' + [2] comment 'cmt'：body 直接子。
+    sandbox
+        .execute("globalThis.__n1 = globalThis.__cn[1]; globalThis.__n2 = globalThis.__cn[2];")
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__n1.nodeType)").unwrap().value, "3", "body.childNodes[1] nodeType=3（text）");
+    assert_eq!(sandbox.execute("String(globalThis.__n1.nodeValue)").unwrap().value, "mid", "text nodeValue='mid'");
+    assert_eq!(sandbox.execute("String(globalThis.__n2.nodeType)").unwrap().value, "8", "body.childNodes[2] nodeType=8（comment）");
+    assert_eq!(sandbox.execute("String(globalThis.__n2.nodeValue)").unwrap().value, "cmt", "comment nodeValue='cmt'");
+
+    // body.children：仅元素子（div），不含 text/comment。
+    assert_eq!(sandbox.execute("String(doc.body.children.length)").unwrap().value, "1", "body.children.length=1（仅元素，不含 text/comment）");
+    assert_eq!(sandbox.execute("String(doc.body.children[0].tagName)").unwrap().value, "DIV", "body.children[0]=div");
+
+    // body.firstChild = div（首子）。
+    assert_eq!(sandbox.execute("String(doc.body.firstChild.tagName)").unwrap().value, "DIV", "body.firstChild=div");
+
+    // R3013 query 非回归：querySelector 仍工作。
+    assert_eq!(sandbox.execute("String(doc.querySelector('.a').tagName)").unwrap().value, "DIV", "querySelector 仍工作（R3013 非回归）");
+}
+
 
