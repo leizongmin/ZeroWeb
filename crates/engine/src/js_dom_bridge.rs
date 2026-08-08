@@ -1504,6 +1504,83 @@ fn option_value(doc: &Document, opt: NodeId) -> String {
     doc.text_content(opt).map(|t| t.trim().to_string()).unwrap_or_default()
 }
 
+/// `descendant` 是否为 `ancestor` 的后代（含自身）——经 parent_node 链上行。供 SelectOption 关联
+/// option↔其所属 select（R3000）。区别于 `element_contains`（取 html+selector 重解析），本函数在已解析
+/// Document 上操作，避免循环内重复 parse。
+fn is_descendant_node(doc: &Document, descendant: NodeId, ancestor: NodeId) -> bool {
+    let mut cur = descendant;
+    loop {
+        if cur == ancestor {
+            return true;
+        }
+        match doc.parent_node(cur) {
+            Some(p) if p != cur => cur = p,
+            _ => return false,
+        }
+    }
+}
+
+/// R3000：读 select 的最新编程选中值（`select.value=` 推的 `SelectOption` mutation）。
+/// 逆序扫 mutations，返最新 `SelectOption{selector==select_sel}` 的 value。无 → None（回落快照）。
+pub fn latest_select_option_value<'a>(mutations: &'a [DomMutation], select_sel: &str) -> Option<&'a str> {
+    for m in mutations.iter().rev() {
+        if let DomMutation::SelectOption { selector, value } = m
+            && selector == select_sel
+        {
+            return Some(value.as_str());
+        }
+    }
+    None
+}
+
+/// R3000：select 内首个 value==`value` 的 option 索引（0-based）；无匹配 → -1。供 `select.selectedIndex`
+/// getter consult `SelectOption`（编程选中后反映正确索引，旧读快照 stale）。复用 `option_value` 匹配规则。
+pub fn option_index_for_value(html: &str, select_sel: &str, value: &str) -> i32 {
+    let doc = parse_html(html);
+    let Some(sel) = find_by_selector(&doc, select_sel) else {
+        return -1;
+    };
+    for (idx, opt) in doc.query_selector_all(sel, "option").iter().enumerate() {
+        if option_value(&doc, *opt) == value {
+            return idx as i32;
+        }
+    }
+    -1
+}
+
+/// R3000：解析 option 的 selected 态——单次逆序扫 mutations，**最新适用 mutation 胜出**（正确处理
+/// SetAttr/RemoveAttr 与 SelectOption 交错）：
+/// - `SetAttr{selected}` on option_sel → Some(true)；`RemoveAttr{selected}` on option_sel → Some(false)。
+/// - `SelectOption` on option 所属 select → Some(option_value == select_option_value)（matched=true/其它=false）。
+///
+/// 仅当遇到 SelectOption mutation 时才解析 HTML（懒解析——多数 option.selected 读无 SelectOption 待 apply）。
+/// 返回 None → 回落快照（option 的 selected 属性存在性）。供 `__zw_option_selected` 回调。
+pub fn option_selected_resolved(html: &str, mutations: &[DomMutation], option_sel: &str) -> Option<bool> {
+    let needs_html = mutations.iter().any(|m| matches!(m, DomMutation::SelectOption { .. }));
+    let doc = if needs_html { Some(parse_html(html)) } else { None };
+    for m in mutations.iter().rev() {
+        match m {
+            DomMutation::SetAttr { selector, name, .. } if selector == option_sel && name == "selected" => {
+                return Some(true);
+            }
+            DomMutation::RemoveAttr { selector, name } if selector == option_sel && name == "selected" => {
+                return Some(false);
+            }
+            DomMutation::SelectOption { selector, value } => {
+                if let Some(doc) = &doc
+                    && let (Some(opt), Some(seln)) =
+                        (find_by_selector(doc, option_sel), find_by_selector(doc, selector))
+                    && is_descendant_node(doc, opt, seln)
+                {
+                    return Some(option_value(doc, opt) == value.as_str());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// P1a select：编程设 `select.value = value`——mark 匹配 value 的 option 为 `selected`，
 /// deselect 同 select 内其他 option（HTML spec：单选 select 仅一 option 可选中）。
 /// 匹配规则：option 的 [`option_value`] == `value`（value 属性优先，无则 text content）。

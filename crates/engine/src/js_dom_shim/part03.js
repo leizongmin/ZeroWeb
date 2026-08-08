@@ -1161,10 +1161,15 @@
         if (prop === 'selected') {
           // P1a select option：selected 当前态属性存在性（boolean）。R2999：sel-based 改 latest-wins
           // （`__zw_has_attr_lw`）反映同批 SetAttr/RemoveAttr / `.selected=` setter 推的 mutation（旧读纯快照
-          // `__zw_has_attr` → removeAttribute / .selected= / setAttribute 后 stale，R2997 限制 ②）。typeof guard
-          // 回落纯快照。handle 经 `__zw_has_attr_handle`（latest-wins from mutations）。
+          // `__zw_has_attr` → removeAttribute / .selected= / setAttribute 后 stale，R2997 限制 ②）。R3000：优先
+          // `__zw_option_selected`（额外感知 SelectOption——`select.value=` 编程选中后 option.selected 反映），
+          // 它内部已 consult SetAttr/RemoveAttr latest-wins + SelectOption + 快照；无该回调回落 `_lw`/快照链。
+          // handle 经 `__zw_has_attr_handle`（latest-wins from mutations；`new Option()` 不在 select DOM，无 SelectOption）。
           if (handle && typeof __zw_has_attr_handle === 'function') {
             try { return __zw_has_attr_handle(handle, 'selected') === '1'; } catch (_e) {}
+          }
+          if (!handle && sel && typeof __zw_option_selected === 'function') {
+            try { return __zw_option_selected(sel) === '1'; } catch (_e) {}
           }
           if (!handle && sel && typeof __zw_has_attr_lw === 'function') {
             try { return __zw_has_attr_lw(sel, 'selected') === '1'; } catch (_e) {}

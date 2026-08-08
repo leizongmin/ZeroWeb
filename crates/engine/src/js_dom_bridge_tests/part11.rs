@@ -2739,3 +2739,80 @@ fn test_option_selected_getter_latest_wins_r2999() {
         ".selected=true 后 .selected=true（latest-wins getter 反映 SetAttr，修正 stale false）"
     );
 }
+
+#[test]
+fn test_select_value_programmatic_reflection_r3000() {
+    // R3000：`select.value = x` 编程选中须反映到 select.value/selectedIndex getter + option.selected（matched/
+    // unmatched）。audit（R2999 限制 ②）：select.value setter 记 SelectOption mutation，但 __zw_select_value/
+    // __zw_select_index/option.selected 读路径均不 consult SelectOption → 全 stale。本切片闭合：三读路径 consult
+    // latest SelectOption mutation。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <select id='s'>\
+         <option id='a' value='A'>A</option>\
+         <option id='b' value='B'>B</option>\
+         <option id='c' value='C'>C</option>\
+         </select>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 初始：默认选首个 option（无 selected 属性）→ value='A', index=0, a.selected=true（snapshot selected_option
+    // 返首个）。先验初始态。
+    sandbox
+        .execute(
+            "globalThis.__v0 = document.getElementById('s').value;\
+             globalThis.__i0 = String(document.getElementById('s').selectedIndex);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__v0").unwrap().value, "A", "初始 select.value='A'（首个 option）");
+
+    // select.value = 'B' 后四读路径须反映编程选中。
+    sandbox
+        .execute(
+            "var s = document.getElementById('s');\
+             s.value = 'B';\
+             globalThis.__v1 = s.value;\
+             globalThis.__i1 = String(s.selectedIndex);\
+             globalThis.__selA = String(document.getElementById('a').selected);\
+             globalThis.__selB = String(document.getElementById('b').selected);\
+             globalThis.__selC = String(document.getElementById('c').selected);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__v1").unwrap().value,
+        "B",
+        "select.value='B' 后 select.value='B'（consult SelectOption，旧 stale 'A'）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__i1").unwrap().value,
+        "1",
+        "select.value='B' 后 selectedIndex=1（consult SelectOption，旧 stale 0）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__selB").unwrap().value,
+        "true",
+        "select.value='B' 后 optionB.selected=true（consult SelectOption，旧 stale false）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__selA").unwrap().value,
+        "false",
+        "select.value='B' 后 optionA.selected=false（被 deselect，旧 stale true）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__selC").unwrap().value,
+        "false",
+        "select.value='B' 后 optionC.selected=false（未匹配）"
+    );
+}

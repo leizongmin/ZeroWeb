@@ -515,25 +515,71 @@ pub fn register_dom_callbacks(
     );
 
     // P1a select：读 `<select>` 当前选中 option 的 value（HTML spec 语义：首个 selected option，
-    // 无则首 option）。shim `select.value` getter 对 tag=SELECT 调此（非 value 属性）。
+    // 无则首 option）。shim `select.value` getter 对 tag=SELECT 调此（非 value 属性）。R3000：先 consult
+    // 最新 `SelectOption` mutation（`select.value=` 编程选中），无则回落快照（旧不 consult → stale）。
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_select_value",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
+            let mlock = m.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(v) = latest_select_option_value(&mlock, &sel) {
+                return v.to_string();
+            }
+            drop(mlock);
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             select_value_from_html(&snap, &sel)
         }),
     );
 
-    // P1a select：读选中 option 的索引（shim `select.selectedIndex` getter）。
+    // P1a select：读选中 option 的索引（shim `select.selectedIndex` getter）。R3000：先 consult 最新
+    // `SelectOption` mutation → 匹配 option 的索引；无 SelectOption / 无匹配 → 回落快照。
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_select_index",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
+            // 先取最新编程选中值（owned，drop mutation 锁后再锁 html，避免持双锁）。
+            let opt_val: Option<String> = {
+                let mlock = m.lock().unwrap_or_else(|e| e.into_inner());
+                latest_select_option_value(&mlock, &sel).map(str::to_owned)
+            };
+            if let Some(v) = opt_val {
+                let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+                let idx = option_index_for_value(&snap, &sel, &v);
+                if idx >= 0 {
+                    return idx.to_string();
+                }
+            }
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             select_index_from_html(&snap, &sel).to_string()
+        }),
+    );
+
+    // R3000：读 option 的 selected 态（shim `option.selected` getter sel 路径调此）。consult pending mutations
+    // （SetAttr/RemoveAttr{selected} latest-wins + SelectOption 关联 option↔所属 select，最新适用胜出），无 → 回落
+    // 快照（selected 属性存在性）。区别于通用 `__zw_has_attr_lw`：本回调感知 SelectOption（编程选中）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_option_selected",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let mlock = m.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(b) = option_selected_resolved(&snap, &mlock, &sel) {
+                return if b { "1".into() } else { "0".into() };
+            }
+            drop(mlock);
+            // 快照回落：selected 属性**存在性**（非值——boolean 属性 selected 无值，query_attr_from_html
+            // 返空串，须用 has_attribute 区分 absent vs present-empty）。
+            if has_attribute(&snap, &sel, "selected") {
+                "1".into()
+            } else {
+                "0".into()
+            }
         }),
     );
 
