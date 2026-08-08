@@ -1204,8 +1204,8 @@ fn test_cull_invisible_removes_offscreen_fills() {
     let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
     p.add_fill(Rect::new(10.0, 10.0, 50.0, 50.0), Color::RED);
     p.add_fill(Rect::new(900.0, 10.0, 50.0, 50.0), Color::RED);
-    let (culled, stats) = p.cull_invisible(viewport);
-    assert_eq!(culled.fills.len(), 1);
+    let stats = p.cull_invisible(viewport);
+    assert_eq!(p.fills.len(), 1);
     assert_eq!(stats.culled_count, 1);
 }
 
@@ -1226,9 +1226,9 @@ fn test_cull_invisible_keeps_clips_and_glyphs() {
         rotation: 0.0,
         synthetic_italic: false,
     });
-    let (culled, _) = p.cull_invisible(viewport);
-    assert_eq!(culled.clips.len(), 1);
-    assert_eq!(culled.glyphs.len(), 1);
+    let _ = p.cull_invisible(viewport);
+    assert_eq!(p.clips.len(), 1);
+    assert_eq!(p.glyphs.len(), 1);
 }
 
 #[test]
@@ -1237,8 +1237,8 @@ fn test_cull_invisible_nothing_removed_when_all_visible() {
     let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
     p.add_fill(Rect::new(10.0, 10.0, 50.0, 50.0), Color::RED);
     p.add_fill(Rect::new(100.0, 100.0, 50.0, 50.0), Color::BLUE);
-    let (culled, stats) = p.cull_invisible(viewport);
-    assert_eq!(culled.fills.len(), 2);
+    let stats = p.cull_invisible(viewport);
+    assert_eq!(p.fills.len(), 2);
     assert_eq!(stats.culled_count, 0);
 }
 
@@ -1247,7 +1247,7 @@ fn test_cull_invisible_partial_overlap_kept() {
     let mut p = RenderPrimitives::new();
     let viewport = Rect::new(0.0, 0.0, 800.0, 600.0);
     p.add_fill(Rect::new(750.0, 10.0, 100.0, 50.0), Color::RED);
-    let (culled, stats) = p.cull_invisible(viewport);
-    assert_eq!(culled.fills.len(), 1);
+    let stats = p.cull_invisible(viewport);
+    assert_eq!(p.fills.len(), 1);
     assert_eq!(stats.culled_count, 0);
 }

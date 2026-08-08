@@ -150,9 +150,10 @@ impl RenderPipeline {
                     painter.viewport_h = self.viewport_height;
                     painter.paint_skip_nodes = layout.paint_skip_node_ids.clone();
                     painter.paint(&layout.root, &session.styles, Some(doc));
-                    let primitives = painter.into_primitives();
+                    let mut primitives = painter.into_primitives();
                     let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout.root);
-                    let (primitives, stats) = primitives.cull_invisible(viewport);
+                    // S7b：cull_invisible 原位剔除
+                    let stats = primitives.cull_invisible(viewport);
                     // S7：draw_order 路径跳过 batch_fills（纯 clone no-op）
                     let primitives = if primitives.draw_order.is_empty() {
                         primitives.batch_fills()

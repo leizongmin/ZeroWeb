@@ -404,9 +404,10 @@ impl RenderPipeline {
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         painter.paint(&layout_result.root, &styles, Some(&doc));
-        let primitives = painter.into_primitives();
+        let mut primitives = painter.into_primitives();
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
-        let (primitives, mut stats) = primitives.cull_invisible(viewport);
+        // S7b：cull_invisible 原位剔除（primitives 变量即结果，不再返回新对象）
+        let mut stats = primitives.cull_invisible(viewport);
         // 性能门禁优化 S7（2026-08-08）：draw_order 路径下 batch_fills 是纯 clone
         // no-op（ops.rs:273-275），跳过免全量克隆（4400 元素页每帧 ~11k fills）
         let primitives = if primitives.draw_order.is_empty() {
@@ -538,10 +539,11 @@ impl RenderPipeline {
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         painter.paint(&layout_result.root, &styles, Some(&doc));
-        let primitives = painter.into_primitives();
+        let mut primitives = painter.into_primitives();
         // 视口剔除 — 移除视口外的图元（高度取文档布局范围，供浏览器滚动消费）
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
-        let (primitives, mut stats) = primitives.cull_invisible(viewport);
+        // S7b：cull_invisible 原位剔除（primitives 变量即结果，不再返回新对象）
+        let mut stats = primitives.cull_invisible(viewport);
         // S3 dirty region 契约：全量渲染 → 脏区域 = 整个视口
         stats
             .dirty_rects
