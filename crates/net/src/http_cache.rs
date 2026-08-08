@@ -591,6 +591,17 @@ fn conditional_from_validators(etag: &Option<String>, last_modified: &Option<Str
     headers
 }
 
+/// 全局共享 HTTP 缓存（性能门禁优化 S6，2026-08-08）。
+///
+/// webview（主文档缓存）、fetch_proxy（renderer IPC 路径）、net_pool（进程内
+/// async 路径）共用同一份缓存——此前三处各自独立/缺失，同一 URL 在不同路径
+/// 反复走网络。持久化对齐原 webview/fetch_proxy 的 `open_persistent` 行为。
+pub fn shared_http_cache() -> std::sync::Arc<std::sync::Mutex<HttpCache>> {
+    static CACHE: std::sync::OnceLock<std::sync::Arc<std::sync::Mutex<HttpCache>>> = std::sync::OnceLock::new();
+    CACHE
+        .get_or_init(|| std::sync::Arc::new(std::sync::Mutex::new(HttpCache::open_persistent())))
+        .clone()
+}
 #[cfg(test)]
 mod tests {
     use super::*;

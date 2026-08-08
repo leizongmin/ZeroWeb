@@ -557,6 +557,15 @@ impl AsyncPageLoad {
         };
         let imgs = extract_img_resources(html);
         let base = url::Url::parse(&self.url).ok();
+        // 性能门禁优化 S6（2026-08-08）：`<img src>` 与 CSS `url()` 共用同一去重集合——
+        // 旧实现仅 CSS 循环去重（且 O(n²) 线性扫描），N 个相同 `<img src>` 会重复
+        // push + 重复 decode；HashSet 使两循环均 O(1) 查重。
+        let mut seen: std::collections::HashSet<String> = self
+            .img_pending
+            .iter()
+            .map(|(a, _, _)| a.clone())
+            .chain(self.lazy_urls.iter().cloned())
+            .collect();
         for img in imgs {
             if img.src.starts_with("data:") {
                 // R1987：data: URI（PNG/JPEG/WebP/SVG）无 HTTP fetch，直接解码并入缓存
@@ -572,7 +581,13 @@ impl AsyncPageLoad {
                 None => img.src,
             };
             if img.lazy {
-                self.lazy_urls.push(abs);
+                if seen.insert(abs.clone()) {
+                    self.lazy_urls.push(abs);
+                }
+                continue;
+            }
+            if !seen.insert(abs.clone()) {
+                // 重复引用（重复 <img src> 或已由 CSS url()/lazy 提交）→ 跳过
                 continue;
             }
             let key = image_resource_key(&abs, None);
@@ -600,8 +615,8 @@ impl AsyncPageLoad {
                 Some(u) => u.to_string(),
                 None => src,
             };
-            // <img src> 与 CSS url() 可能指向同一资源：去重，避免重复抓取。
-            if self.img_pending.iter().any(|(a, _, _)| *a == abs) || self.lazy_urls.contains(&abs) {
+            // <img src> 与 CSS url() 可能指向同一资源：去重（S6：与 img 循环共用 seen 集合）
+            if !seen.insert(abs.clone()) {
                 continue;
             }
             let key = image_resource_key(&abs, None);

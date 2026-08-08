@@ -32,7 +32,9 @@ struct PendingFetch {
 /// 多进程 browser 进程的 fetch 调度状态。
 pub struct TabFetchProxy {
     scheduler: Arc<Mutex<PerOriginFetchScheduler>>,
-    http_cache: Arc<Mutex<HttpCache>>,
+    // 普通缓存统一走 zero_net::shared_http_cache()（性能门禁优化 S6，2026-08-08——
+    // webview / fetch_proxy / net_pool 共享一份，同一 URL 不再跨路径反复走网络）；
+    // 无痕模式保留独立内存缓存（不写磁盘语义）。
     private_cache: Arc<Mutex<HttpCache>>,
     private_tabs: HashSet<TabId>,
     pending: Vec<PendingFetch>,
@@ -45,7 +47,6 @@ impl TabFetchProxy {
     pub fn new() -> Self {
         Self {
             scheduler: PerOriginFetchScheduler::new_shared(),
-            http_cache: Arc::new(Mutex::new(HttpCache::open_persistent())),
             private_cache: Arc::new(Mutex::new(HttpCache::new())),
             private_tabs: HashSet::new(),
             pending: Vec::new(),
@@ -74,7 +75,7 @@ impl TabFetchProxy {
         if self.private_tabs.contains(&tab_id) {
             Arc::clone(&self.private_cache)
         } else {
-            Arc::clone(&self.http_cache)
+            zero_net::shared_http_cache()
         }
     }
 
@@ -144,6 +145,31 @@ impl TabFetchProxy {
                     return;
                 }
             }
+        }
+
+        // 性能门禁优化 S6（2026-08-08）：失败 URL 负缓存——renderer 每次 publish 会
+        // 重请求「未缓存/解码失败」的图片（paint_export fetch_image_payloads_with_cache），
+        // 冷却期内直接拒绝，不再每 publish 重试网络。
+        if zero_net::shared_negative_cache()
+            .lock()
+            .unwrap()
+            .is_recently_failed(&url)
+        {
+            tracing::debug!(
+                "fetch negative-cache reject tab {} req_id={} {url}",
+                tab_id.0,
+                params.request_id
+            );
+            let (tx, rx) = channel();
+            let _ = tx.send(Err("negative cache (recent failure)".to_string()));
+            self.pending.push(PendingFetch {
+                tab_id,
+                request_id: params.request_id,
+                url,
+                request_headers,
+                rx,
+            });
+            return;
         }
 
         tracing::info!(

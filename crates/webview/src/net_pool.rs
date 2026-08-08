@@ -3,7 +3,7 @@
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use zero_net::{FetchJobResult, FetchPriority, PerOriginFetchScheduler};
+use zero_net::{CacheLookup, FetchJobResult, FetchPriority, HttpResponse, PerOriginFetchScheduler};
 use zero_page_runtime::ResourceFetchMeta;
 
 /// HTTP GET 任务结果（文本）。
@@ -48,6 +48,88 @@ where
     out
 }
 
+/// 统一缓存感知提交（性能门禁优化 S6，2026-08-08）：
+/// 负缓存（失败 URL 冷却期内直接返回失败）→ HTTP 缓存（Hit 立即返回 /
+/// Revalidate 带条件头 / Miss 提交）→ 完成时写回缓存 + 更新负缓存。
+fn submit_cached(url: String, priority: FetchPriority) -> Receiver<FetchJobResult> {
+    // 负缓存：失败冷却期内跳过网络（renderer 每 publish 重请求失败图 → 此处收敛）
+    if zero_net::shared_negative_cache()
+        .lock()
+        .unwrap()
+        .is_recently_failed(&url)
+    {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Err(format!("negative cache (recent failure): {url}")));
+        return rx;
+    }
+
+    match zero_net::shared_http_cache().lock().unwrap().lookup(&url, &[]) {
+        CacheLookup::Hit(cached) => {
+            // 新鲜命中：不经网络直接返回缓存体
+            let (tx, rx) = mpsc::channel();
+            let _ = tx.send(Ok(HttpResponse {
+                status_code: cached.status_code,
+                headers: cached.headers,
+                body: cached.body,
+                url: cached.url,
+                redirect_count: 0,
+            }));
+            rx
+        }
+        CacheLookup::Revalidate {
+            conditional_headers, ..
+        } => {
+            let rx = PerOriginFetchScheduler::submit_shared_with_priority_and_headers(
+                &scheduler(),
+                url.clone(),
+                priority,
+                conditional_headers,
+            );
+            let url2 = url.clone();
+            bridge_rx(rx, move |result| match result {
+                Ok(resp) if resp.status_code == 304 => {
+                    // 304：用缓存体（not_modified 更新缓存元数据）
+                    match zero_net::shared_http_cache()
+                        .lock()
+                        .unwrap()
+                        .not_modified(&url, &[], &resp)
+                    {
+                        Some(c) => Ok(HttpResponse {
+                            status_code: c.status_code,
+                            headers: c.headers,
+                            body: c.body,
+                            url: c.url,
+                            redirect_count: 0,
+                        }),
+                        None => Err("304 without cached entry".to_string()),
+                    }
+                }
+                other => finalize_result(other, &url2),
+            })
+        }
+        CacheLookup::Miss => {
+            let rx = PerOriginFetchScheduler::submit_shared_with_priority(&scheduler(), url.clone(), priority);
+            let url2 = url.clone();
+            bridge_rx(rx, move |result| finalize_result(result, &url2))
+        }
+    }
+}
+
+/// 完成路径统一处理：2xx 写回共享缓存 + 清除失败标记；错误标记负缓存。
+fn finalize_result(result: FetchJobResult, url: &str) -> FetchJobResult {
+    match &result {
+        Ok(resp) if (200..300).contains(&resp.status_code) => {
+            let _ = zero_net::shared_http_cache().lock().unwrap().put(url, resp);
+            zero_net::shared_negative_cache().lock().unwrap().mark_ok(url);
+        }
+        Ok(_) => {}
+        Err(_) => {
+            zero_net::shared_negative_cache().lock().unwrap().mark_failed(url);
+        }
+    }
+    result
+}
+
 /// 在后台调度器中发起 HTTP GET，返回文本结果接收端。
 pub fn fetch_text_async(url: impl Into<String>) -> Receiver<HttpTextResult> {
     fetch_text_async_meta(url, ResourceFetchMeta::DOCUMENT)
@@ -55,11 +137,7 @@ pub fn fetch_text_async(url: impl Into<String>) -> Receiver<HttpTextResult> {
 
 /// 带优先级的文本 GET。
 pub fn fetch_text_async_meta(url: impl Into<String>, meta: ResourceFetchMeta) -> Receiver<HttpTextResult> {
-    let rx = PerOriginFetchScheduler::submit_shared_with_priority(
-        &scheduler(),
-        url.into(),
-        FetchPriority::from_u8(meta.priority),
-    );
+    let rx = submit_cached(url.into(), FetchPriority::from_u8(meta.priority));
     bridge_rx(rx, map_fetch_text)
 }
 
@@ -70,11 +148,7 @@ pub fn fetch_bytes_async(url: impl Into<String>) -> Receiver<Result<Vec<u8>, Str
 
 /// 带优先级的字节 GET。
 pub fn fetch_bytes_async_meta(url: impl Into<String>, meta: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
-    let rx = PerOriginFetchScheduler::submit_shared_with_priority(
-        &scheduler(),
-        url.into(),
-        FetchPriority::from_u8(meta.priority),
-    );
+    let rx = submit_cached(url.into(), FetchPriority::from_u8(meta.priority));
     bridge_rx(rx, map_fetch_result)
 }
 

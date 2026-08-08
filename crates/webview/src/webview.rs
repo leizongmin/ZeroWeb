@@ -10,7 +10,7 @@ use zero_engine::{
     extract_img_srcs, extract_page_scripts, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key,
     register_dom_callbacks, resolve_document_url, script_dispatch_dom_event,
 };
-use zero_net::{CacheLookup, HttpCache, HttpClient, NetError, is_file_url};
+use zero_net::{CacheLookup, HttpClient, NetError, is_file_url};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
 
 use crate::image_decoder::decode_image;
@@ -137,8 +137,9 @@ pub struct WebView {
     next_worker_id: u64,
     /// WASM 实例缓存 — JS 端 WebAssembly.instantiate() 自动桥接到 wasm-sandbox。
     wasm_instances: HashMap<u64, WasmInstance>,
-    /// HTTP 响应缓存。
-    http_cache: HttpCache,
+    // HTTP 响应缓存（性能门禁优化 S6，2026-08-08）：统一走
+    // zero_net::shared_http_cache()——webview / fetch_proxy / net_pool 共享一份，
+    // 避免同一 URL 在不同路径反复走网络。
     /// 已解码图片子资源缓存（`<img src>` 等）。
     ///
     /// 由 `fetch_url` 在导航时抓取 + 解码填充（见 `fetch_image_subresources`），
@@ -216,7 +217,6 @@ impl WebView {
             workers: HashMap::new(),
             next_worker_id: 1,
             wasm_instances: HashMap::new(),
-            http_cache: HttpCache::open_persistent(),
             image_cache: ImageCache::default(),
             cached_image_sizes: HashMap::new(),
             cached_image_ratios: HashMap::new(),
@@ -587,7 +587,11 @@ impl WebView {
 
         // 检查 HTTP 缓存（本地 file: 页面不缓存，避免磁盘变更后读到旧内容）
         if !is_file_url(&effective_url) {
-            match self.http_cache.lookup(&effective_url, &[]) {
+            match zero_net::shared_http_cache()
+                .lock()
+                .unwrap()
+                .lookup(&effective_url, &[])
+            {
                 CacheLookup::Hit(cached) => {
                     tracing::info!("HTTP cache hit for {effective_url}");
                     let html = String::from_utf8(cached.body).map_err(|e| {
@@ -608,7 +612,12 @@ impl WebView {
                     conditional_headers, ..
                 } => match self.http_client.get_with_headers(&effective_url, &conditional_headers) {
                     Ok(response) if response.status_code == 304 => {
-                        if let Some(cached) = self.http_cache.not_modified(&effective_url, &[], &response) {
+                        if let Some(cached) =
+                            zero_net::shared_http_cache()
+                                .lock()
+                                .unwrap()
+                                .not_modified(&effective_url, &[], &response)
+                        {
                             let html = String::from_utf8(cached.body)
                                 .map_err(|e| WebViewError::Navigation(format!("Cached body invalid UTF-8: {e}")))?;
                             tracing::info!("HTTP 304 revalidated for {effective_url}");
@@ -620,7 +629,10 @@ impl WebView {
                         }
                     }
                     Ok(response) if (200..300).contains(&response.status_code) => {
-                        let _ = self.http_cache.put(&effective_url, &response);
+                        let _ = zero_net::shared_http_cache()
+                            .lock()
+                            .unwrap()
+                            .put(&effective_url, &response);
                         let html = response.text().map_err(|e| WebViewError::Navigation(e.to_string()))?;
                         tracing::info!("Fetched {} bytes from {effective_url} (revalidate)", html.len());
                         let external_css = self.prepare_page_subresources(&html, &effective_url);
@@ -639,8 +651,11 @@ impl WebView {
         match self.http_client.get(&effective_url) {
             Ok(response) => {
                 if !is_file_url(&effective_url) {
-                    // 尝试将响应存入 HTTP 缓存
-                    let _ = self.http_cache.put(&effective_url, &response);
+                    // 尝试将响应存入共享 HTTP 缓存（S6）
+                    let _ = zero_net::shared_http_cache()
+                        .lock()
+                        .unwrap()
+                        .put(&effective_url, &response);
                 }
 
                 let html = response.text().map_err(|e| {
@@ -1721,19 +1736,19 @@ impl WebView {
         }
     }
 
-    /// 清空 HTTP 响应缓存。
+    /// 清空 HTTP 响应缓存（共享缓存，S6）。
     pub fn clear_http_cache(&mut self) {
-        self.http_cache.clear();
+        zero_net::shared_http_cache().lock().unwrap().clear();
     }
 
-    /// 返回 HTTP 缓存条目数。
+    /// 返回 HTTP 缓存条目数（共享缓存，S6）。
     pub fn http_cache_len(&self) -> usize {
-        self.http_cache.len()
+        zero_net::shared_http_cache().lock().unwrap().len()
     }
 
     /// 返回 HTTP 缓存总字节数。
     pub fn http_cache_bytes(&self) -> usize {
-        self.http_cache.total_bytes()
+        zero_net::shared_http_cache().lock().unwrap().total_bytes()
     }
 
     /// 获取安全上下文（只读）。

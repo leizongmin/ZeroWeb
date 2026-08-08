@@ -18,6 +18,8 @@ struct QueuedJob {
     priority: FetchPriority,
     extra_headers: Vec<(String, String)>,
     reply_tx: Sender<FetchJobResult>,
+    /// 合并路径（submit_shared_*）：完成时经 pending 广播给全部订阅者。
+    shared: bool,
 }
 
 /// 按 origin 限制并发数的 fetch 调度器；复用单个 [`HttpClient`]（keep-alive）。
@@ -26,6 +28,9 @@ pub struct PerOriginFetchScheduler {
     client: HttpClient,
     in_flight: HashMap<String, usize>,
     queue: Vec<QueuedJob>,
+    /// 在途/排队 URL 的订阅者（性能门禁优化 S6，2026-08-08）：同一 URL 的
+    /// 重复 `submit_shared_*` 请求合并为一次网络请求，完成时广播结果。
+    pending: HashMap<String, Vec<Sender<FetchJobResult>>>,
     /// `submit_shared` 安装后，排队 job 启动时也能自动 `on_complete`。
     self_hook: Option<Arc<Mutex<Self>>>,
 }
@@ -38,6 +43,7 @@ impl PerOriginFetchScheduler {
             client: HttpClient::new(),
             in_flight: HashMap::new(),
             queue: Vec::new(),
+            pending: HashMap::new(),
             self_hook: None,
         }
     }
@@ -78,6 +84,7 @@ impl PerOriginFetchScheduler {
             priority,
             extra_headers,
             reply_tx,
+            shared: false,
         };
         self.try_start(job);
         reply_rx
@@ -106,14 +113,22 @@ impl PerOriginFetchScheduler {
     ) -> Receiver<FetchJobResult> {
         let url = url.into();
         let (reply_tx, reply_rx) = channel();
+        let mut s = sched.lock().expect("fetch scheduler lock");
+        // 性能门禁优化 S6（2026-08-08）：同一 URL 在途/排队时合并——订阅现有请求，
+        // 不重复发起网络请求（图片/字体/样式表的重复引用与 preload 双抓在此收敛）。
+        if let Some(subscribers) = s.pending.get_mut(&url) {
+            subscribers.push(reply_tx);
+            return reply_rx;
+        }
+        s.pending.insert(url.clone(), vec![reply_tx.clone()]);
         let job = QueuedJob {
             origin: origin_from_url(&url),
             url,
             priority,
             extra_headers,
             reply_tx,
+            shared: true,
         };
-        let mut s = sched.lock().expect("fetch scheduler lock");
         s.try_start(job);
         reply_rx
     }
@@ -158,6 +173,7 @@ impl PerOriginFetchScheduler {
         let reply_tx = job.reply_tx;
         let hook = self.self_hook.clone();
         let extra_headers = job.extra_headers;
+        let shared = job.shared;
         thread::spawn(move || {
             let mut req = crate::HttpRequest::get(&url);
             for (name, value) in extra_headers {
@@ -173,8 +189,20 @@ impl PerOriginFetchScheduler {
                 ),
                 Err(e) => tracing::warn!(url = %url, error = %e, "HTTP fetch failed"),
             }
-            let _ = reply_tx.send(result);
-            if let Some(sched) = hook
+            if shared {
+                // S6 合并路径：广播给全部订阅者后移除 pending 条目
+                if let Some(sched) = hook.as_ref()
+                    && let Ok(mut s) = sched.lock()
+                    && let Some(subscribers) = s.pending.remove(&url)
+                {
+                    for tx in subscribers {
+                        let _ = tx.send(result.clone());
+                    }
+                }
+            } else {
+                let _ = reply_tx.send(result);
+            }
+            if let Some(sched) = hook.as_ref()
                 && let Ok(mut s) = sched.lock()
             {
                 s.on_complete(&origin);
@@ -237,6 +265,7 @@ mod tests {
             client: HttpClient::new(),
             in_flight: HashMap::new(),
             queue: Vec::new(),
+            pending: HashMap::new(),
             self_hook: None,
         };
         let _r1 = sched.submit("http://127.0.0.1:1/a");
@@ -256,6 +285,7 @@ mod tests {
             client: HttpClient::new(),
             in_flight: HashMap::new(),
             queue: Vec::new(),
+            pending: HashMap::new(),
             self_hook: None,
         };
         let _r1 = sched.submit_with_priority("http://127.0.0.1:1/low", FetchPriority::LOW);
@@ -273,6 +303,7 @@ mod tests {
             client: HttpClient::new(),
             in_flight: HashMap::new(),
             queue: Vec::new(),
+            pending: HashMap::new(),
             self_hook: None,
         };
         let _r1 = sched.submit("http://127.0.0.1:1/a");
@@ -327,5 +358,37 @@ mod tests {
         let _r1 = sched.submit("not-a-valid-url");
         let _r2 = sched.submit("not-a-valid-url");
         assert_eq!(sched.queued_count_for_test(), 1);
+    }
+}
+
+#[test]
+fn submit_shared_coalesces_duplicate_url() {
+    use std::time::Duration;
+    let sched = PerOriginFetchScheduler::new_shared();
+    // 同一 URL 两次提交：合并为一次网络请求，两个接收端都拿到结果
+    let r1 = PerOriginFetchScheduler::submit_shared(&sched, "http://127.0.0.1:1/coalesce-me");
+    let r2 = PerOriginFetchScheduler::submit_shared(&sched, "http://127.0.0.1:1/coalesce-me");
+    {
+        let s = sched.lock().unwrap();
+        // 只有一个 in-flight（合并），pending 有 2 个订阅者
+        assert_eq!(s.in_flight.get("http://127.0.0.1:1").copied(), Some(1));
+        let subs = s.pending.get("http://127.0.0.1:1/coalesce-me").expect("pending entry");
+        assert_eq!(subs.len(), 2, "two subscribers for one in-flight request");
+    }
+    let r1v = r1.recv_timeout(Duration::from_secs(5));
+    let r2v = r2.recv_timeout(Duration::from_secs(5));
+    // 两次都收到同一结果（连接拒绝的 Err 字符串一致）
+    assert_eq!(r1v.as_ref().err(), r2v.as_ref().err(), "coalesced results must match");
+    // 完成后 pending 清空
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let p = sched.lock().unwrap().pending.len();
+        if p == 0 {
+            break;
+        }
+        if std::time::Instant::now() > deadline {
+            panic!("pending entry not drained after completion");
+        }
+        std::thread::sleep(Duration::from_millis(5));
     }
 }
