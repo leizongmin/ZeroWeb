@@ -112,6 +112,25 @@
 
 ## 最近完成的改进
 
+### P1a window.alert/confirm/prompt/open（headless-spec dismiss 语义，本轮 R2979，~14,157 测试）
+
+R2978 后续补 window 弹窗/对话框 API。`window.alert`/`confirm`/`prompt`/`open` **此前全缺**（grep 零命中）——modern 站点的 `if (confirm('Delete?'))` 删除守卫 / `alert(err)` 错误提示 / `prompt('Name')` 输入 / `window.open(url)` OAuth 弹窗全抛 ReferenceError 中断后续脚本。本切片补四者，headless 无 UI 用户交互 → spec 合规 dismiss 语义。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part01.js` | 新增 `globalThis.alert = function(_message){}`（返 undefined，no-op 不阻塞，real 浏览器阻塞 headless 无）、`confirm = function(_message){ return false; }`（无用户点 OK = dismiss）、`prompt = function(_message, _defaultValue){ return null; }`（无用户输入 = dismiss，spec）、`open = function(_url, _target, _features){ return null; }`（headless 弹窗被阻 = popup-blocked 语义，`if (win)` 守卫自然跳过）。均 `globalThis.x \|\| ...` 守卫（V8 原生或既有定义优先）。置于 scroll no-op 簇之后。 |
+| `crates/engine/src/js_dom_bridge_tests/part10.rs` | 新 `test_window_dialog_methods_r2979`：四者 typeof=function + confirm()→false + prompt()→null + window.open()→null + alert() 不抛 + 典型 `if (confirm(...))` 守卫（confirm=false 不进删除分支，headless 不误删）。 |
+
+**为何 headless 用 dismiss 语义（非默认接受）**：spec confirm/prompt 的「无用户交互」语义是 dismiss（confirm→false / prompt→null）。headless 无 UI 用户点击 → dismiss 最 spec 合规 + 安全（`if (confirm('Delete?'))` 删除守卫默认 false = 不误删数据，符合「谨慎」原则）。alert 不阻塞（real 阻塞 headless 无意义，no-op）。open 返 null（popup-blocked 语义，`if (win)` 守卫跳过，不假返 Window 致后续 win.document 崩）。
+
+**为何零回归**：四者全为新增（既有无代码调 alert/confirm/prompt/open 作函数）；`globalThis.x \|\| ...` 守卫不覆盖 V8 原生或既有定义。make test 14157 全绿验证。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14157 passed / 71 skipped / 0 failed**（engine +1 driving 测试，无回归）+ clippy `-D warnings` 零警告（workspace）+ fmt clean + 全 shim `node --check` 通过。
+
+**已知限制（follow-up）**：① alert 不阻塞（real 浏览器模态阻塞，headless no-op）；② confirm/prompt 恒 dismiss（无 host 钩子接受——若有 embedding 宿主想注入「确认」语义，需 follow-up host 回调）；③ open 恒 null（无真弹窗 Window 返回；OAuth 弹窗流需真多窗口支持，follow-up）。
+
+**下一步**：续 P1a——① 其他 defer Web API（继续 survey 真缺口：document.evaluate XPath / Selection 真几何 / scrollIntoView 真滚动）；② Request body readers（对称 Response，低频）；③ task source 优先级（事件循环边缘，复杂）；④ customElements upgrade（需 P1b RFC 审批）。
+
 ### P1a Blob.stream() + Response.blob/arrayBuffer/formData（body 消费表面补全，本轮 R2978，~14,156 测试）
 
 R2977（Headers 实例化）后续补 Blob/Response body 消费表面。经全 shim 调研确认 Web API 表面已极完整（EventTarget/URL+canParse/structuredClone/Headers/Response/Request/完整 Streams/animation/observers/Image/Option/document.cookie/referrer/FormData/Blob/File/FileReader/createObjectURL/crypto.subtle 全在）。本切片补两处真缺口：**Blob.stream()**（缺——Blob 有 text/arrayBuffer/slice 但无 stream，不能与 R2967 ReadableStream / TextDecoderStream 配对）+ **Response.blob()/arrayBuffer()/formData()**（缺——Response 仅有 text/json/clone/body）。

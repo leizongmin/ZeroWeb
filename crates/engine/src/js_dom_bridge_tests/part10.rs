@@ -1475,3 +1475,73 @@ fn test_blob_stream_response_body_readers_r2978() {
         "Response.formData() + → space（urlencoded 语义）"
     );
 }
+
+#[test]
+fn test_window_dialog_methods_r2979() {
+    // R2979：window.alert/confirm/prompt/open——此前全缺，`if (confirm(...))` / `alert(...)` / `prompt(...)`
+    // 抛 ReferenceError 中断脚本。headless 无 UI 用户交互 → spec dismiss 语义：alert 返 undefined（不阻塞）、
+    // confirm 返 false、prompt 返 null、open 返 null（popup-blocked）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "globalThis.__alertType = typeof alert;\
+             globalThis.__confirmType = typeof confirm;\
+             globalThis.__promptType = typeof prompt;\
+             globalThis.__openType = typeof open;\
+             globalThis.__confirmR = String(confirm('Delete?'));\
+             globalThis.__promptR = (prompt('Name', 'x') === null ? 'null' : 'other');\
+             globalThis.__openR = (window.open('http://test.local/popup') === null ? 'null' : 'other');\
+             try { alert('hi'); globalThis.__alertNoThrow = 'ok'; } catch (e) { globalThis.__alertNoThrow = 'err'; }",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__alertType)").unwrap().value, "function", "alert 是 function");
+    assert_eq!(sandbox.execute("String(globalThis.__confirmType)").unwrap().value, "function", "confirm 是 function");
+    assert_eq!(sandbox.execute("String(globalThis.__promptType)").unwrap().value, "function", "prompt 是 function");
+    assert_eq!(sandbox.execute("String(globalThis.__openType)").unwrap().value, "function", "open 是 function");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__confirmR)").unwrap().value,
+        "false",
+        "confirm() → false（headless 无用户点 OK = dismiss）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__promptR)").unwrap().value,
+        "null",
+        "prompt() → null（headless 无用户输入 = dismiss）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__openR)").unwrap().value,
+        "null",
+        "window.open() → null（headless 弹窗被阻 = popup-blocked 语义）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__alertNoThrow)").unwrap().value,
+        "ok",
+        "alert() 不抛（no-op，spec 返 undefined 不阻塞）"
+    );
+
+    // 典型用法：if (confirm(...)) 守卫——confirm=false 时走 else 分支不进删除逻辑。
+    sandbox
+        .execute(
+            "var deleted = false;\
+             if (confirm('Delete item?')) { deleted = true; }\
+             globalThis.__guardedDeleted = String(deleted);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__guardedDeleted)").unwrap().value,
+        "false",
+        "if (confirm(...)) 守卫：confirm=false 不进删除分支（headless 不误删）"
+    );
+}

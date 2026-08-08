@@ -984,6 +984,16 @@
   globalThis.scrollBy = function() {};
   globalThis.scrollIntoView = function() {};
 
+  // window 弹窗 / 对话框 API（R2979）——alert/confirm/prompt/open 此前全缺，`if (confirm('Delete?'))` /
+  // `alert(err)` / `prompt('Name')` / `window.open(url)` 抛 ReferenceError 中断后续脚本。headless 无 UI 用户
+  // 交互 → spec 合规的 dismiss 语义：alert 返 undefined（不阻塞，real 浏览器阻塞 headless 无）；confirm 返 false
+  //（无用户点 OK = dismiss）；prompt 返 null（无用户输入 = dismiss，spec）；open 返 null（headless 弹窗被阻 =
+  // popup-blocked 语义，`if (win)` 守卫自然跳过）。modern 站点的离开页守卫 / 表单确认 / OAuth 弹窗高频。
+  globalThis.alert = globalThis.alert || function alert(_message) {};
+  globalThis.confirm = globalThis.confirm || function confirm(_message) { return false; };
+  globalThis.prompt = globalThis.prompt || function prompt(_message, _defaultValue) { return null; };
+  globalThis.open = globalThis.open || function open(_url, _target, _features) { return null; };
+
   // Performance API（R2768 now + R2821 mark/measure/entry buffer + PerformanceObserver）——
   // DOMHighResTimeStamp（ms，自 time origin 起单调）。host `__zw_performance_now` 返 elapsed ms（子毫秒）；
   // 未注册（polyfill/reftest 路径）走 Date.now() 兜底。mark/measure 产 PerformanceEntry 存 entry buffer，
