@@ -1509,13 +1509,24 @@
   var _hist_entries = [{ state: null, url: '' }]; // cursor 0 = 初始 entry
   var _hist_cursor = 0;
   function _hist_current() { return _hist_entries[_hist_cursor]; }
-  function _hist_dispatchPopState() {
+  function _hist_dispatchPopState(oldHrefBefore) {
     // spec：back/forward/go 触发 popstate（pushState/replaceState 不触发），异步派发。
-    var st = _hist_current().state;
+    // R3007：跨 hash 变更的导航同时派 hashchange（spec：hash 变更导航派 popstate + hashchange）。
+    // oldHrefBefore = cursor 移动**前**的 entry url（back/forward/go 捕获传入）；hash 变化时派 hashchange。
+    var cur = _hist_current();
+    var st = cur.state;
+    var newHref = cur.url;
+    var hashChanged = oldHrefBefore !== undefined
+      && String(oldHrefBefore).split('#')[1] !== String(newHref).split('#')[1];
     _defer(function () {
       var ev = new PopStateEvent('popstate', { state: st });
       ev.target = globalThis;
       _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
+      if (hashChanged) {
+        var hev = new HashChangeEvent('hashchange', { oldURL: oldHrefBefore, newURL: newHref });
+        hev.target = globalThis;
+        _dispatchToListeners(_elKey('html', null), hev, 'all', globalThis);
+      }
     });
   }
 
@@ -1562,8 +1573,8 @@
       cur.state = state;
       if (url != null) cur.url = _resolveHistUrl(String(url));
     },
-    back: function () { if (_hist_cursor > 0) { _hist_cursor--; _hist_dispatchPopState(); } },
-    forward: function () { if (_hist_cursor < _hist_entries.length - 1) { _hist_cursor++; _hist_dispatchPopState(); } },
+    back: function () { if (_hist_cursor > 0) { var oldHref = _hist_current().url; _hist_cursor--; _hist_dispatchPopState(oldHref); } },
+    forward: function () { if (_hist_cursor < _hist_entries.length - 1) { var oldHref = _hist_current().url; _hist_cursor++; _hist_dispatchPopState(oldHref); } },
     go: function (delta) {
       // R3004：spec/MDN——out-of-range delta 为 **no-op**（不动 cursor、不派发 popstate）。旧实现 clamp target
       // 到 [0,len-1] 后移动+派发 popstate（SPA router 计算的 delta 过冲时误导航到边界）。delta==null → -1
@@ -1571,7 +1582,7 @@
       var d = (delta == null) ? -1 : (delta | 0);
       var target = _hist_cursor + d;
       if (target < 0 || target > _hist_entries.length - 1) return; // 越界 no-op
-      if (target !== _hist_cursor) { _hist_cursor = target; _hist_dispatchPopState(); }
+      if (target !== _hist_cursor) { var oldHref = _hist_current().url; _hist_cursor = target; _hist_dispatchPopState(oldHref); }
     },
   };
 

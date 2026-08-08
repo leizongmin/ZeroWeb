@@ -68,3 +68,59 @@ fn test_location_hash_setter_hashchange_r3006() {
     sandbox.execute("history.back(); globalThis.__hBack = location.hash;").unwrap();
     assert_eq!(sandbox.execute("globalThis.__hBack").unwrap().value, "#foo", "back() 后 location.hash='#foo'（history entry 反映）");
 }
+
+#[test]
+fn test_back_forward_hashchange_r3007() {
+    // R3007：back/forward/go 跨 hash entry 须同时派 hashchange（spec：hash 变更的导航派 popstate + hashchange）。
+    // 旧 _hist_dispatchPopState 仅派 popstate → hash router 的 back 按钮处理失效。本切片闭合。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/path".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 建 hash 序列：#foo → #bar（cursor 在 #bar）。装 hashchange + popstate listener。
+    sandbox
+        .execute(
+            "location.hash = '#foo';\
+             location.hash = '#bar';\
+             globalThis.__hc = null; globalThis.__popFired = false;\
+             addEventListener('hashchange', function(e){ globalThis.__hc = { newURL: e.newURL, oldURL: e.oldURL }; });\
+             addEventListener('popstate', function(){ globalThis.__popFired = true; });",
+        )
+        .unwrap();
+
+    // back()：cursor 回 #foo，须派 hashchange（newURL 含 #foo）+ popstate。
+    sandbox.execute("history.back();").unwrap();
+    sandbox
+        .execute(
+            "globalThis.__hcNew = globalThis.__hc ? globalThis.__hc.newURL : '(none)';\
+             globalThis.__hcOld = globalThis.__hc ? globalThis.__hc.oldURL : '(none)';",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hcNew").unwrap().value, "https://example.com/path#foo", "back() 跨 hash 派 hashchange.newURL='#foo'");
+    assert_eq!(sandbox.execute("globalThis.__hcOld").unwrap().value, "https://example.com/path#bar", "hashchange.oldURL='#bar'（back 前 entry）");
+    assert_eq!(sandbox.execute("String(globalThis.__popFired)").unwrap().value, "true", "back() 同时派 popstate");
+
+    // forward()：cursor 前进回 #bar，须派 hashchange（newURL #bar）。
+    sandbox.execute("globalThis.__hc = null; history.forward();").unwrap();
+    sandbox.execute("globalThis.__hcFwd = globalThis.__hc ? globalThis.__hc.newURL : '(none)';").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hcFwd").unwrap().value, "https://example.com/path#bar", "forward() 跨 hash 派 hashchange.newURL='#bar'");
+
+    // 跨非 hash 变更的 back（两 entry 均无 hash）不应派 hashchange。
+    sandbox
+        .execute(
+            "history.pushState({}, '', '/p1');\
+             history.pushState({}, '', '/p2');\
+             globalThis.__hc = null;\
+             history.back();",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__hcNoHash = globalThis.__hc;").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__hcNoHash)").unwrap().value, "null", "跨非 hash 变更的 back 不派 hashchange（两 entry 均无 hash）");
+}
+
