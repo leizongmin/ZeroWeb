@@ -407,4 +407,74 @@ fn test_blob_real_bytes_r3011() {
     assert_eq!(sandbox.execute("String(globalThis.__fsl)").unwrap().value, "ero", "File 继承 slice 真字节 'ero'");
 }
 
+#[test]
+fn test_text_decoder_streaming_r3012() {
+    // R3012：TextDecoder 流式跨 chunk 多字节状态。旧 decode 每 chunk 独立解码（无 carry）→ 多字节 char 跨 chunk
+    // 边界切断时损坏（残余字节被独立解码为 U+FFFD/垃圾）。且 _zw_utf8_decode 读越界（truncated 序列读 undefined）。
+    // 本切片：_zw_utf8_decode_stream 返回 {s, tail}（不完整尾部缓存），decode({stream:true}) 跨调用 carry + flush。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 单次 decode（valid）行为不变：'ZeroWeb 中文' round-trip 保真。
+    assert_eq!(
+        sandbox
+            .execute("var d0 = new TextDecoder(); d0.decode(new TextEncoder().encode('ZeroWeb 中文'))")
+            .unwrap()
+            .value,
+        "ZeroWeb 中文",
+        "单次 decode round-trip 保真（valid 输入行为不变）"
+    );
+
+    // stream:true 跨 chunk 重组：'中' = [0xe4,0xb8,0xad] 拆 [0xe4,0xb8] + [0xad]。
+    sandbox
+        .execute(
+            "var d = new TextDecoder();\
+             globalThis.__part1 = d.decode(new Uint8Array([0xe4,0xb8]), { stream: true });\
+             globalThis.__part2 = d.decode(new Uint8Array([0xad]), { stream: true });\
+             globalThis.__flush = d.decode();",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("JSON.stringify(globalThis.__part1)").unwrap().value, "\"\"", "首 chunk 不完整 → 空串（缓存尾部）");
+    assert_eq!(sandbox.execute("JSON.stringify(globalThis.__part2)").unwrap().value, "\"中\"", "次 chunk 补全 → '中'（跨 chunk 重组）");
+    assert_eq!(sandbox.execute("JSON.stringify(globalThis.__flush)").unwrap().value, "\"\"", "flush 无残余 → 空串");
+
+    // astral（4 字节）跨 chunk：'🌍' = U+1F30D → [0xf0,0x9f,0x8c,0x8d]，拆 1+3。
+    sandbox
+        .execute(
+            "var d2 = new TextDecoder();\
+             globalThis.__a1 = d2.decode(new Uint8Array([0xf0,0x9f]), { stream: true });\
+             globalThis.__a2 = d2.decode(new Uint8Array([0x8c,0x8d]), { stream: true });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("JSON.stringify(globalThis.__a1)").unwrap().value, "\"\"", "astral 首 chunk 不完整 → 空");
+    assert_eq!(sandbox.execute("JSON.stringify(globalThis.__a2)").unwrap().value, "\"🌍\"", "astral 次 chunk 补全 → '🌍'（4 字节跨 chunk 重组）");
+
+    // stream:false（缺省）flush：truncated 尾部 → U+FFFD（旧读越界产垃圾）。
+    sandbox.execute("globalThis.__trunc = new TextDecoder().decode(new Uint8Array([0xe4,0xb8])); globalThis.__truncLen = globalThis.__trunc.length; globalThis.__truncCode = globalThis.__trunc.charCodeAt(0);").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__truncLen)").unwrap().value, "1", "truncated 单次 decode → 1 char");
+    assert_eq!(sandbox.execute("String(globalThis.__truncCode)").unwrap().value, "65533", "truncated 单次 decode → U+FFFD（0xFFFD=65533，flush 容错）");
+
+    // TextDecoderStream 跨 chunk 重组：分两 write chunk 写入拆分的 '中文' 字节。
+    sandbox
+        .execute(
+            "var all = new TextEncoder().encode('中文');\
+             var first = all.slice(0, 4), second = all.slice(4);\
+             var tds = new TextDecoderStream();\
+             var wd = tds.writable.getWriter(); wd.write(first); wd.write(second); wd.close();\
+             var rd = tds.readable.getReader();\
+             globalThis.__chunks = [];\
+             (function pump(){ rd.read().then(function(c){ if(c.done){ return; } globalThis.__chunks.push(c.value); pump(); }); })();",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__tdsJoined = globalThis.__chunks.join('');").unwrap();
+    assert_eq!(sandbox.execute("JSON.stringify(globalThis.__tdsJoined)").unwrap().value, "\"中文\"", "TextDecoderStream 跨 chunk 重组 '中文'（旧各 chunk 独立解码损坏）");
+}
+
 

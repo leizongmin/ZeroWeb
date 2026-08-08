@@ -290,24 +290,42 @@
     }
     return bytes;
   }
-  function _zw_utf8_decode(bytes) {
+  // R3012：UTF-8 流式解码——返回 { s: 已解码串, tail: 末尾不完整序列字节（待下块前缀拼接）}。
+  // carry = 上一块的不完整尾部（前缀）。多字节序列跨 chunk 边界时，末尾不完整字节入 tail，下块 carry 拼接后
+  // 补全解码——不再读越界（旧 _zw_utf8_decode 对 truncated 序列读 undefined 字节产垃圾）。
+  // valid 完整输入的解码逻辑与旧版逐字节一致（同 U+FFFD 容错 0x80-0xc1 非法前导/连续字节）。
+  function _zw_utf8_decode_stream(bytes, carry) {
+    var src = [];
+    if (carry && carry.length) { for (var c = 0; c < carry.length; c++) src.push(carry[c]); }
+    if (bytes) { for (var b = 0; b < bytes.length; b++) src.push(bytes[b]); }
     var s = '';
     var i = 0;
-    var n = bytes.length;
+    var n = src.length;
     while (i < n) {
-      var b = bytes[i];
+      var b = src[i];
       if (b < 0x80) { s += String.fromCharCode(b); i += 1; }
-      else if (b < 0xc2) { s += '�'; i += 1; } // 非法前导字节 / 连续字节
-      else if (b < 0xe0) { s += String.fromCharCode(((b & 0x1f) << 6) | (bytes[i + 1] & 0x3f)); i += 2; }
-      else if (b < 0xf0) { s += String.fromCharCode(((b & 0x0f) << 12) | ((bytes[i + 1] & 0x3f) << 6) | (bytes[i + 2] & 0x3f)); i += 3; }
-      else {
-        var cp = ((b & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f);
+      else if (b < 0xc2) { s += '�'; i += 1; } // 非法前导字节 / 连续字节 → U+FFFD
+      else if (b < 0xe0) { // 2 字节
+        if (i + 1 >= n) break; // 不完整 → 缓存尾部
+        s += String.fromCharCode(((b & 0x1f) << 6) | (src[i + 1] & 0x3f)); i += 2;
+      } else if (b < 0xf0) { // 3 字节
+        if (i + 2 >= n) break;
+        s += String.fromCharCode(((b & 0x0f) << 12) | ((src[i + 1] & 0x3f) << 6) | (src[i + 2] & 0x3f)); i += 3;
+      } else { // 4 字节
+        if (i + 3 >= n) break;
+        var cp = ((b & 0x07) << 18) | ((src[i + 1] & 0x3f) << 12) | ((src[i + 2] & 0x3f) << 6) | (src[i + 3] & 0x3f);
         cp -= 0x10000;
-        s += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3f)); // astral → 代理对
+        // R3012 bug fix：低代理须 10 位（& 0x3ff），旧 & 0x3f（6 位）致 astral char（如 emoji）解码错。
+        s += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff)); // astral → 代理对
         i += 4;
       }
     }
-    return s;
+    return { s: s, tail: i < n ? src.slice(i) : [] };
+  }
+  // 单次（flush）解码：valid 完整输入行为同旧；truncated 尾部 → 1 U+FFFD（旧读越界产垃圾，现 spec 容错）。
+  function _zw_utf8_decode(bytes) {
+    var r = _zw_utf8_decode_stream(bytes, null);
+    return r.tail.length ? r.s + '�' : r.s;
   }
   globalThis.TextEncoder = globalThis.TextEncoder || function TextEncoder() {
     if (!(this instanceof TextEncoder)) return new TextEncoder();
@@ -332,19 +350,25 @@
     this.encoding = 'utf-8';
     this.fatal = false;
     this.ignoreBOM = false;
+    this._carry = []; // R3012：stream:true 跨 chunk 不完整尾部（下块前缀拼接补全多字节序列）
   };
   globalThis.TextDecoder.prototype = {
     encoding: 'utf-8',
     fatal: false,
     ignoreBOM: false,
-    decode: function (buf) {
+    // R3012：decode(buf, {stream})。stream:true → 不完整尾部入 _carry 待下块（不 flush）；stream:false（缺省）
+    // → flush：残余不完整 → 1 U+FFFD，重置 _carry。valid 完整输入行为同旧。
+    decode: function (buf, options) {
       var bytes;
       if (buf == null) bytes = new Uint8Array(0);
       else if (buf instanceof ArrayBuffer) bytes = new Uint8Array(buf);
       else if (buf && typeof buf.length === 'number') bytes = buf; // TypedArray / array-like
       else if (buf && buf.buffer) bytes = new Uint8Array(buf.buffer);
       else bytes = new Uint8Array(0);
-      return _zw_utf8_decode(bytes);
+      var r = _zw_utf8_decode_stream(bytes, this._carry);
+      if (options && options.stream === true) { this._carry = r.tail; return r.s; }
+      this._carry = []; // flush 重置
+      return r.tail.length ? r.s + '�' : r.s;
     }
   };
 
@@ -746,8 +770,8 @@
   // 文本消费（fetch streaming 文本 / NDJSON / SSE 手解析）。薄封装于既有 TextEncoder/TextDecoder（part02）+
   // TransformStream（R2969）：string→Uint8Array（encode）/ Uint8Array→string（decode）。继承 TransformStream
   //（TransformStream.call(this, transformer) 设 readable/writable），补 encoding/fatal/ignoreBOM IDL 属性。
-  // **已知限制**：底层 TextDecoder.decode 无流式状态（每 chunk 独立解码，非跨 chunk 维护未完成字节序列），
-  // 单 chunk（headless finite-body 模型）正确；chunk 边界切多字节 char 的流式场景近似（follow-up 需流式解码状态）。
+  // R3012：流式状态闭合——TextDecoder.decode({stream:true}) 跨 chunk 维护未完成字节序列（_carry），
+  // 故 chunk 边界切多字节 char 正确重组（不再各 chunk 独立解码损坏）。transform 用 stream:true，flush 残余。
   globalThis.TextEncoderStream = globalThis.TextEncoderStream || function TextEncoderStream() {
     if (!(this instanceof TextEncoderStream)) return new TextEncoderStream();
     var enc = new TextEncoder();
@@ -763,11 +787,11 @@
     var dec = new TextDecoder(label);
     TransformStream.call(this, {
       transform: function (chunk, controller) {
-        var s = dec.decode(chunk);
-        if (s) controller.enqueue(s); // 空 string（如 chunk 末切多字节前导字节）跳过，避免空 chunk
+        var s = dec.decode(chunk, { stream: true }); // R3012：stream:true 跨 chunk 状态
+        if (s) controller.enqueue(s); // 空 string（chunk 末切多字节前导字节，缓存在 _carry）跳过，避免空 chunk
       },
       flush: function (controller) {
-        var s = dec.decode(); // 空参 = flush 剩余（headless 单 chunk 模型下通常 ''）
+        var s = dec.decode(); // flush 残余（stream:false，不完整 → U+FFFD；完整输入通常 ''）
         if (s) controller.enqueue(s);
       }
     });
