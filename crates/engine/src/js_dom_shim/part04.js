@@ -423,6 +423,23 @@
             return false;
           };
         }
+        // R3024：命名空间属性族（SVG/MathML/xlink 高频，如 setAttributeNS('http://www.w3.org/1999/xlink','href',v)）。
+        // HTML 元素 ns 忽略——委托非 NS 版（setAttribute/getAttribute/hasAttribute/removeAttribute），限定名
+        // （qualifiedName，含 prefix:local）原样按 name 字符串存（host 按 name 存无 ns 解析，HTML 渲染不依赖 ns）。
+        // **已知限制**：getAttributeNS(localName) 与 setAttributeNS(qualifiedName='prefix:local') 名不一致场景
+        // 不匹配（real 浏览器按 ns+localName 解析；本实现按 name 字符串，null ns + 简单名常用场景正确）。
+        if (prop === 'setAttributeNS') {
+          return function(_ns, qualifiedName, value) { proxy.setAttribute(String(qualifiedName), value); };
+        }
+        if (prop === 'getAttributeNS') {
+          return function(_ns, localName) { return proxy.getAttribute(String(localName)); };
+        }
+        if (prop === 'hasAttributeNS') {
+          return function(_ns, localName) { return proxy.hasAttribute(String(localName)); };
+        }
+        if (prop === 'removeAttributeNS') {
+          return function(_ns, localName) { return proxy.removeAttribute(String(localName)); };
+        }
         // `el.focus()` / `el.blur()`——焦点状态追踪（document.activeElement 对）。纯 in-JS 状态：
         // focus 记当前 key，blur 清当前 key。**已知限制**：① 无真键盘焦点（纯状态，无输入焦点点亮）；
         // ② 不派发 focus/blur 事件；③ 不校验可聚焦性（非聚焦元素仍记焦点）；④ 无 tabindex 焦点序。

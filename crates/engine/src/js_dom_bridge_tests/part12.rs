@@ -1564,3 +1564,77 @@ fn test_create_attribute_and_attr_instance_r3023() {
     assert_eq!(sandbox.execute("globalThis.__mraNt").unwrap().value, "2", "mutable tree removeNamedItem 返移除 Attr nodeType=2");
     assert_eq!(sandbox.execute("globalThis.__msaOldVal").unwrap().value, "vv", "mutable tree setNamedItem 返旧 Attr.value='vv'");
 }
+
+#[test]
+fn test_attr_instanceof_and_namespace_attrs_r3024() {
+    // R3024：Attr 构造器占位（instanceof Attr）+ 命名空间属性族（setAttributeNS/getAttributeNS/
+    // hasAttributeNS/removeAttributeNS）+ createAttributeNS。闭合 R3023 限制①（Attr instanceof）②（namespace 属性）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // createAttribute + getNamedItem 返值 instanceof Attr（R3023 限制①）。
+    sandbox
+        .execute(
+            "var a = document.createAttribute('data-x');\
+             var d = document.getElementById('d');\
+             d.setAttribute('class','c');\
+             var ga = d.attributes.getNamedItem('class');\
+             globalThis.__aInst = String(a instanceof Attr);\
+             globalThis.__gaInst = String(ga instanceof Attr);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__aInst").unwrap().value, "true", "createAttribute 返值 instanceof Attr（Object.create(Attr.prototype)）");
+    assert_eq!(sandbox.execute("globalThis.__gaInst").unwrap().value, "true", "getNamedItem 返值 instanceof Attr（真 Attr 实例，非 plain）");
+
+    // setAttributeNS / getAttributeNS / hasAttributeNS / removeAttributeNS round-trip（null ns + 简单名）。
+    sandbox
+        .execute(
+            "d.setAttributeNS(null, 'data-ns', 'v1');\
+             globalThis.__nsGet = d.getAttributeNS(null, 'data-ns');\
+             globalThis.__nsHas = String(d.hasAttributeNS(null, 'data-ns'));\
+             globalThis.__plainGet = d.getAttribute('data-ns');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__nsGet").unwrap().value, "v1", "setAttributeNS(null,'data-ns','v1') 后 getAttributeNS='v1'");
+    assert_eq!(sandbox.execute("globalThis.__nsHas").unwrap().value, "true", "hasAttributeNS(null,'data-ns')=true");
+    assert_eq!(sandbox.execute("globalThis.__plainGet").unwrap().value, "v1", "setAttributeNS 经 setAttribute 落地（getAttribute 同值）");
+
+    // removeAttributeNS → hasAttribute false。
+    sandbox
+        .execute(
+            "d.removeAttributeNS(null, 'data-ns');\
+             globalThis.__nsHasAfter = String(d.hasAttributeNS(null, 'data-ns'));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__nsHasAfter").unwrap().value, "false", "removeAttributeNS 后 hasAttributeNS=false");
+
+    // createAttributeNS：解析 prefix:local + namespaceURI（SVG xlink:href 用法）。
+    sandbox
+        .execute(
+            "var na = document.createAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href');\
+             globalThis.__naInst = String(na instanceof Attr);\
+             globalThis.__naNs = na.namespaceURI;\
+             globalThis.__naPrefix = na.prefix;\
+             globalThis.__naLocal = na.localName;\
+             globalThis.__naName = na.name;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__naInst").unwrap().value, "true", "createAttributeNS 返值 instanceof Attr");
+    assert_eq!(
+        sandbox.execute("globalThis.__naNs").unwrap().value,
+        "http://www.w3.org/1999/xlink",
+        "createAttributeNS 设 namespaceURI=xlink ns"
+    );
+    assert_eq!(sandbox.execute("globalThis.__naPrefix").unwrap().value, "xlink", "解析 qualifiedName prefix=xlink");
+    assert_eq!(sandbox.execute("globalThis.__naLocal").unwrap().value, "href", "解析 qualifiedName localName=href");
+    assert_eq!(sandbox.execute("globalThis.__naName").unwrap().value, "xlink:href", "Attr.name=完整 qualifiedName");
+}

@@ -86,6 +86,9 @@
   globalThis.HTMLFormElement = globalThis.HTMLFormElement || function HTMLFormElement() {};
   globalThis.HTMLFormElement.prototype = Object.create(globalThis.HTMLElement.prototype);
   globalThis.NamedNodeMap = globalThis.NamedNodeMap || function NamedNodeMap() {};
+  // R3024：Attr 构造器占位——_zwMakeAttr 经 Object.create(Attr.prototype) 建真实例，使 `attr instanceof Attr`
+  // 为 true（闭合 R3023 限制①；消费者按 nodeType===2 / instanceof Attr 校验属性节点）。
+  globalThis.Attr = globalThis.Attr || function Attr() {};
   globalThis.DocumentFragment = globalThis.DocumentFragment || function DocumentFragment() {};
   globalThis.DocumentFragment.prototype = Object.create(globalThis.Node.prototype);
   // R3019：Element.prototype 成员补全——DOMPurify 等库加载时经 lookupGetter(ElementPrototype, 'parentNode'/
@@ -1155,18 +1158,19 @@
   function _zwMakeAttr(name, value, ownerEl) {
     var n = String(name);
     var v = value != null ? String(value) : '';
-    return {
-      nodeType: 2,
-      name: n,
-      nodeName: n,
-      value: v,
-      nodeValue: v,
-      localName: n,
-      prefix: null,
-      namespaceURI: null,
-      specified: true,
-      ownerElement: ownerEl || null
-    };
+    // R3024：经 Object.create(Attr.prototype) 建真实例（`instanceof Attr` true），非 plain object。
+    var a = Object.create(globalThis.Attr.prototype);
+    a.nodeType = 2;
+    a.name = n;
+    a.nodeName = n;
+    a.value = v;
+    a.nodeValue = v;
+    a.localName = n;
+    a.prefix = null;
+    a.namespaceURI = null;
+    a.specified = true;
+    a.ownerElement = ownerEl || null;
+    return a;
   }
   // `el.attributes`（NamedNodeMap）：length / item(i) / getNamedItem(name) / 数值索引 /
   // Symbol.iterator，每项 Attr-like {name,value,localName,...}。经 `__zw_attr_names`+`__zw_get_attr`。

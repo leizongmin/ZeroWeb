@@ -784,6 +784,23 @@
     createAttribute: function(name) {
       return _zwMakeAttr(name, '', null);
     },
+    // R3024：`document.createAttributeNS(ns, qualifiedName)`——建命名空间 Attr（SVG/MathML/xlink）。
+    // 解析 qualifiedName 的 `prefix:local`，设 namespaceURI/prefix/localName（区别 createAttribute 的 null ns）。
+    // 值 ''，ownerElement=null（游离）。返 Attr instanceof Attr（经 _zwMakeAttr 的 Object.create(Attr.prototype)）。
+    createAttributeNS: function(ns, qualifiedName) {
+      var q = String(qualifiedName);
+      var a = _zwMakeAttr(q, '', null);
+      a.namespaceURI = ns != null ? String(ns) : null;
+      var colon = q.indexOf(':');
+      if (colon > 0) {
+        a.prefix = q.slice(0, colon);
+        a.localName = q.slice(colon + 1);
+      } else {
+        a.prefix = null;
+        a.localName = q;
+      }
+      return a;
+    },
     createTextNode: function(text) {
       var handle = __zw_create_text(String(text));
       if (handle) _textHandles[handle] = true;
