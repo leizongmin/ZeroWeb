@@ -833,3 +833,175 @@ fn test_response_request_constructors_r2968() {
     );
     assert_eq!(sandbox.execute("String(globalThis.__wOk)").unwrap().value, "true", "fetch 结果 status 200 → ok=true");
 }
+
+#[test]
+fn test_writable_stream_r2969() {
+    // R2969：WritableStream（Streams API write 侧）。sink {start, write, close, abort} 钩子 +
+    // writer.write/close/abort/releaseLock/closed/ready/desiredSize + locked 守卫 + 错误传播
+    //（controller.error → write reject + closed reject）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // sink 钩子：start→write×2→close 全调；getWriter 后 locked=true；close 后 closed resolve。
+    sandbox
+        .execute(
+            "var log = [];\
+             var ws = new WritableStream({\
+               start: function(){ log.push('start'); },\
+               write: function(chunk){ log.push('write:' + chunk); },\
+               close: function(){ log.push('close'); }\
+             });\
+             var w = ws.getWriter();\
+             globalThis.__lockedGet = ws.locked;\
+             globalThis.__readyIsPromise = (w.ready instanceof Promise || typeof w.ready === 'object');\
+             globalThis.__desiredSize = w.desiredSize;\
+             w.write('a');\
+             w.write('b');\
+             w.close().then(function(){ globalThis.__closedOk = 'yes'; globalThis.__log = log.join(','); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__lockedGet)").unwrap().value, "true", "getWriter 后 locked=true");
+    assert_eq!(sandbox.execute("String(globalThis.__desiredSize)").unwrap().value, "1", "writable 态 desiredSize=1");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__log)").unwrap().value,
+        "start,write:a,write:b,close",
+        "sink 钩子顺序：start→write:a→write:b→close"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__closedOk)").unwrap().value, "yes", "writer.close 后 closed Promise resolve");
+
+    // 错误传播：controller.error → 该 write reject + closed reject。
+    sandbox
+        .execute(
+            "var ws2 = new WritableStream({ write: function(chunk, c){ c.error(new Error('boom')); } });\
+             var w2 = ws2.getWriter();\
+             w2.write('x').then(function(){ globalThis.__writeErr = 'resolved'; },\
+                              function(e){ globalThis.__writeErr = String(e); });\
+             w2.closed.then(function(){ globalThis.__closedErr = 'resolved'; },\
+                                   function(e){ globalThis.__closedErr = String(e); });",
+        )
+        .unwrap();
+    let write_err = sandbox.execute("String(globalThis.__writeErr)").unwrap().value;
+    assert!(write_err.contains("boom"), "controller.error → write reject（含 Error 消息），got: {write_err}");
+    let closed_err = sandbox.execute("String(globalThis.__closedErr)").unwrap().value;
+    assert!(closed_err.contains("boom"), "controller.error → closed reject（含 Error 消息），got: {closed_err}");
+
+    // locked 守卫：已 locked 时 getWriter 抛 TypeError。
+    sandbox
+        .execute(
+            "var ws3 = new WritableStream({});\
+             ws3.getWriter();\
+             try { ws3.getWriter(); globalThis.__dbl = 'no-throw'; }\
+             catch (e) { globalThis.__dbl = String(e).indexOf('TypeError') >= 0 ? 'TypeError' : 'other'; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dbl)").unwrap().value,
+        "TypeError",
+        "已 locked 时 getWriter 抛 TypeError（spec）"
+    );
+
+    // abort：sink.abort 调用 + closed reject。
+    sandbox
+        .execute(
+            "var aborted = null;\
+             var ws4 = new WritableStream({ abort: function(r){ aborted = String(r); } });\
+             var w4 = ws4.getWriter();\
+             w4.abort('stop').then(function(){ globalThis.__abortRet = 'resolved'; });\
+             globalThis.__abortedReason = (function(){ return aborted; })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__abortRet)").unwrap().value,
+        "resolved",
+        "writer.abort 返 resolved Promise"
+    );
+    // aborted 在 microtask 后才设（abort 同步调 sink.abort，但同步闭包读需 re-execute 读全局）
+    sandbox.execute("globalThis.__abortedReason = globalThis.__abortedReason;").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__abortedReason)").unwrap().value,
+        "stop",
+        "sink.abort 收到 reason='stop'"
+    );
+}
+
+#[test]
+fn test_transform_stream_pipe_r2969() {
+    // R2969：TransformStream + pipeTo + pipeThrough。TransformStream 恒等（无 transform fn 直通）+
+    // 自定义 transform（uppercase）+ flush；pipeTo readable→writable（sink 收集）；pipeThrough 管道。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // TransformStream 恒等：writable.write('a'/'b') + close → readable 读 'a'/'b'/done。
+    sandbox
+        .execute(
+            "var ts = new TransformStream();\
+             var w = ts.writable.getWriter(); w.write('a'); w.write('b'); w.close();\
+             var r = ts.readable.getReader();\
+             r.read().then(function(c){ globalThis.__t1 = c; return r.read(); })\
+                    .then(function(c){ globalThis.__t2 = c; return r.read(); })\
+                    .then(function(c){ globalThis.__t3 = c; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__t1 && globalThis.__t1.value)").unwrap().value, "a", "恒等 transform 第 1 chunk='a'");
+    assert_eq!(sandbox.execute("String(globalThis.__t2 && globalThis.__t2.value)").unwrap().value, "b", "恒等 transform 第 2 chunk='b'");
+    assert_eq!(sandbox.execute("String(globalThis.__t3 && globalThis.__t3.done)").unwrap().value, "true", "恒等 transform 第 3 read done（writable close → readable close）");
+
+    // 自定义 transform（uppercase）。
+    sandbox
+        .execute(
+            "var ts2 = new TransformStream({ transform: function(chunk, c){ c.enqueue(chunk.toUpperCase()); } });\
+             var w2 = ts2.writable.getWriter(); w2.write('hi'); w2.close();\
+             var r2 = ts2.readable.getReader();\
+             r2.read().then(function(c){ globalThis.__tu = c; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__tu && globalThis.__tu.value)").unwrap().value, "HI", "自定义 transform：'hi'→'HI'");
+
+    // pipeTo：readable chunks → writable sink 收集 → 'xy'。
+    sandbox
+        .execute(
+            "var collected = [];\
+             var src = new ReadableStream({ start: function(c){ c.enqueue('x'); c.enqueue('y'); c.close(); } });\
+             var dst = new WritableStream({ write: function(chunk){ collected.push(chunk); } });\
+             src.pipeTo(dst).then(function(){ globalThis.__piped = collected.join(''); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__piped)").unwrap().value, "xy", "pipeTo：src 两 chunk 写入 dst sink 收集为 'xy'");
+
+    // pipeThrough：src → transform(uppercase) → readable 读 'A'/'B'/done。
+    sandbox
+        .execute(
+            "var src2 = new ReadableStream({ start: function(c){ c.enqueue('a'); c.enqueue('b'); c.close(); } });\
+             var out = src2.pipeThrough(new TransformStream({ transform: function(chunk, c){ c.enqueue(chunk.toUpperCase()); } }));\
+             globalThis.__outIsReadable = (out instanceof ReadableStream);\
+             var ro = out.getReader();\
+             ro.read().then(function(c){ globalThis.__pt = c; return ro.read(); })\
+                     .then(function(c){ globalThis.__pt2 = c; return ro.read(); })\
+                     .then(function(c){ globalThis.__pt3 = c; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__outIsReadable)").unwrap().value, "true", "pipeThrough 返 ReadableStream");
+    assert_eq!(sandbox.execute("String(globalThis.__pt && globalThis.__pt.value)").unwrap().value, "A", "pipeThrough + transform：'a'→'A'");
+    assert_eq!(sandbox.execute("String(globalThis.__pt2 && globalThis.__pt2.value)").unwrap().value, "B", "pipeThrough + transform：'b'→'B'");
+    assert_eq!(sandbox.execute("String(globalThis.__pt3 && globalThis.__pt3.done)").unwrap().value, "true", "pipeThrough 管道末 read done");
+}

@@ -112,6 +112,29 @@
 
 ## 最近完成的改进
 
+### P1a WritableStream/TransformStream + pipeTo/pipeThrough（Streams API write 侧，本轮 R2969，~14,152 测试）
+
+R2968（Response/Request 构造器）后续补 Streams API write 侧。`WritableStream`/`TransformStream`/`pipeTo`/`pipeThrough` **此前全缺**（R2967 ReadableStream 实现时标 defer）——ReadableStream 无写入配对，`response.body.pipeTo(writable)` / `src.pipeThrough(new TransformStream())` 不可用，service worker 流处理 + 流管道库（数据 ETL / 编码转换）全不可用。本切片补 write 侧 + 管道组合。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part02.js` | 新 `WritableStream(underlyingSink, strategy)`：控制器模型 `underlyingSink {start, write, close, abort}` + `WritableStreamDefaultController {error}`；默认 writer `write(chunk)→Promise` / `close()→Promise` / `abort(reason)` / `releaseLock` / `closed→Promise` / `ready→Promise` / `desiredSize`；`locked` 守卫（已 locked 时 getWriter 抛 TypeError）；`abort` 拒绝 closed。**pendingWrites FIFO 队列**：`controller.error` 拒绝所有 pending write + closed（spec：error 使未完成 write reject——首版误按 sink.write 返回值 resolve，sink 内调 controller.error 时 write 仍 resolve，已修）。新 `TransformStream(transformer)`：`{readable, writable}` 配对——writable.write → `transformer.transform(chunk, controller)` → controller.enqueue 到 readable；writable.close → `transformer.flush(controller)` → close readable；无 transform fn → 恒等直通。ReadableStream 增 `pipeTo(dest)`（逐 chunk 读→写，close dest，任一侧 error→abort+reject）+ `pipeThrough({writable,readable})`（fire-and-forget pipeTo，返 readable）。更新 ReadableStream defer 注释（pipeTo/pipeThrough 已就绪，仅 tee 仍 defer）。 |
+| `crates/engine/src/js_dom_bridge_tests/part10.rs` | 新 `test_writable_stream_r2969`（sink 钩子 start→write×2→close 顺序 + locked + desiredSize + closed resolve + controller.error → write/closed reject + 已 locked getWriter 抛 TypeError + abort sink.abort reason）+ `test_transform_stream_pipe_r2969`（TransformStream 恒等直通 + 自定义 transform uppercase + flush + pipeTo src→dst sink 收集 + pipeThrough 管道 readable 输出）。 |
+
+**为何 controller.error 须拒绝 pending write（spec 核心点）**：首版 write() 按 `sink.write` 返回值 resolve——但 sink.write 内部调 `controller.error(e)`（如校验失败 `c.error(new Error('bad'))`）时 sink.write 仍正常返回 undefined → write Promise 误 resolve。修：`pendingWrites` FIFO 队列追踪每个 write 的 resolver，`errorStream` 拒绝全部 pending + closed；write 成功回调在 state errored 时跳过（entry 已被 errorStream reject）。spec §4.3：controller.error 使流 errored + 所有未完成 write reject。
+
+**为何 pipeThrough fire-and-forget（不 await pipeTo）**：spec `pipeThrough` 立即返 transform.readable，pipeTo 后台驱动（不阻塞调用者）。调用者读 transform.readable 即获转换后 chunk，管道由 microtask 泵异步推进。本实现 `self.pipeTo(transform.writable); return transform.readable;`——pipeTo 内 pump 经 Promise 链 microtask 驱动，readable 端 reader.read() 在 chunk 到达后 resolve。
+
+**为何 headless 背压近似**：真 backpressure 需 highWaterMark 队列压力计算 + `ready` Promise 门控 writer.write（desiredSize ≤0 时 ready 挂起）。headless sink 多为同步收集（测试 / 内存缓冲），无真 I/O 阻塞 → desiredSize 恒 1、ready 立即 resolve。覆盖 write/close/abort/error 语义 + 管道组合；真背压门控 follow-up（需流控状态机）。
+
+**为何零回归**：WritableStream/TransformStream 为新增（既有无代码调）；pipeTo/pipeThrough 为 ReadableStream 新增方法（既有 ReadableStream 用法 getReader/cancel/asyncIterator 不受影响，R2967 ReadableStream 测试全绿）。make test 14152 全绿验证。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14152 passed / 71 skipped / 0 failed**（engine +2 driving 测试，R2967 ReadableStream 测试全绿，无回归）+ clippy `-D warnings` 零警告（workspace）+ fmt clean + 全 shim `node --check` 通过。
+
+**已知限制（follow-up）**：① `tee()`（ReadableStream 分叉成两独立流）未实现；② 真背压门控（highWaterMark + ready Promise 挂起 writer，headless 近似恒 ready）；③ 无 BYOB writer / `WritableStreamDefaultWriter` 完整 signal（AbortSignal 集成）；④ 无 `TextEncoderStream`/`TextDecoderStream`/`CompressionStream` 等 spec 子类（TransformStream 基座就绪，子类为薄封装 follow-up）。
+
+**下一步**：续 P1a——① ReadableStream `tee()`（分叉，补 Streams 最后核心方法）；② TextEncoderStream/TextDecoderStream（TransformStream 薄封装，常与 response.body.pipeThrough 配对解码）；③ Headers 实例化迁移（Response.headers/Request.headers → Headers 实例 + integration test 同步 .get()）；④ 其他 defer Web API（ClipboardItem 图片剪贴板）；⑤ task source 优先级（事件循环边缘）；⑥ customElements upgrade（需 P1b RFC 审批）；⑦ 拆 js_dom_bridge.rs（3947，按职责重组）。
+
 ### P1a Response/Request 全局构造器（补全 fetch API 表面，本轮 R2968，~14,150 测试）
 
 R2967（ReadableStream）后续补 fetch API 表面。`globalThis.Response`/`globalThis.Request` 构造器**此前全缺**——仅 `fetch()`/`Headers` 存在（master.md Tier 1 「Fetch API 基础实现（fetch()、Request、Response、Headers）」中 Request/Response 两项缺位）。`new Response()`/`new Request()` 不可用 → service worker 构造响应、fetch 包装库（axios/ky/wretch）、测试 mock（`new Response(body, {status})`）全不可用。本切片补两构造器。

@@ -355,7 +355,8 @@
   // ReadableStreamDefaultController {enqueue, close, error, desiredSize}。默认 reader：
   // read()→Promise<{done,value}> / cancel(reason) / releaseLock() / closed；locked 守卫；
   // Symbol.asyncIterator（for await of）。push（start-enqueue）+ pull（queue 空 read 时触发）双源。
-  // WritableStream / TransformStream / pipeTo / pipeThrough / tee defer（write 侧 + 流管道组合，follow-up）。
+  // pipeTo(WritableStream) / pipeThrough({writable,readable})（R2969）。WritableStream/TransformStream 见下。
+  // tee（分叉）仍 defer（follow-up）。
   var _RS_DONE = { done: true, value: undefined };
   function _rs_chunk(value) { return { done: false, value: value }; }
   globalThis.ReadableStream = globalThis.ReadableStream || function ReadableStream(underlyingSource, _strategy) {
@@ -441,6 +442,47 @@
         return: function () { try { reader.releaseLock(); } catch (_e) {} return Promise.resolve(_RS_DONE); }
       };
     };
+    // R2969 pipeTo(dest)：逐 chunk 从 self 读 → 写入 dest WritableStream，dest 完成（close）；任一侧 error
+    // → abort dest + reject。全程持 reader/writer 锁，完成后释放。preventCancel/preventClose/preventAbort
+    // options 近似忽略（headless 默认全 false，spec 默认行为）。
+    this.pipeTo = function (dest, _options) {
+      if (!dest || typeof dest.getWriter !== 'function') {
+        return Promise.reject(new TypeError('pipeTo: destination is not a WritableStream'));
+      }
+      var reader, writer;
+      try { reader = self.getReader(); writer = dest.getWriter(); }
+      catch (e) { return Promise.reject(e); }
+      return new Promise(function (resolve, reject) {
+        function finish(err) {
+          try { reader.releaseLock(); } catch (_e) {}
+          try { writer.releaseLock(); } catch (_e) {}
+          if (err) reject(err); else resolve(undefined);
+        }
+        function pump() {
+          reader.read().then(function (r) {
+            if (r.done) { writer.close().then(function () { finish(); }, function (e) { finish(e); }); return; }
+            writer.write(r.value).then(pump, function (e) {
+              try { reader.cancel(e); } catch (_e) {}
+              try { dest.abort(e); } catch (_e) {}
+              finish(e);
+            });
+          }, function (e) {
+            try { dest.abort(e); } catch (_e) {}
+            finish(e);
+          });
+        }
+        pump();
+      });
+    };
+    // R2969 pipeThrough({writable, readable})：fire-and-forget pipeTo(transform.writable)，返 transform.readable。
+    // 不 await pipeTo（spec：pipeThrough 立即返 readable，管道后台驱动）。
+    this.pipeThrough = function (transform, _options) {
+      if (!transform || !transform.writable || !transform.readable) {
+        throw new TypeError('pipeThrough: {writable, readable} required');
+      }
+      self.pipeTo(transform.writable, _options);
+      return transform.readable;
+    };
     // start：同步源初始化（enqueue/close/error 可能在此调用，flush 已等待读者前的 chunk 入 queue）。
     if (typeof source.start === 'function') {
       try { source.start(controller); } catch (_e) { errorStream(_e); }
@@ -463,6 +505,131 @@
       }
     });
   }
+
+  // ── P1a WritableStream（Streams API write 侧，R2969）──
+  // ReadableStream 的写入配对（pipeTo 目标 / TransformStream 写侧 / 自定义 sink）。控制器模型：
+  // underlyingSink {start, write(chunk,controller), close, abort} + WritableStreamDefaultController
+  // {error}。默认 writer：write(chunk)→Promise（sink.write 完成时 resolve）/ close()→Promise /
+  // abort(reason)→Promise / releaseLock / closed→Promise / ready→Promise / desiredSize；locked 守卫。
+  // headless 背压近似（desiredSize 恒 1，ready 立即 resolve——无真 highWaterMark 队列压力），write 串行化
+  //（每个 write 自带 Promise 链，sink.write 异步则 await）。WritableStream 自身错误 → 拒绝 pending write +
+  // reject closed。
+  globalThis.WritableStream = globalThis.WritableStream || function WritableStream(underlyingSink, _strategy) {
+    if (!(this instanceof WritableStream)) return new WritableStream(underlyingSink, _strategy);
+    var sink = underlyingSink || {};
+    var state = 'writable';     // writable | closed | errored
+    var errorVal = undefined;
+    var self = this;
+    this._locked = false;
+    var resolveClosed, rejectClosed;
+    var closedP = new Promise(function (res, rej) { resolveClosed = res; rejectClosed = rej; });
+    var pendingWrites = [];       // FIFO {resolve, reject}：待 sink.write 完成的 write
+    function errorStream(e) {
+      if (state === 'errored' || state === 'closed') return;
+      errorVal = e;
+      state = 'errored';
+      // controller.error → 拒绝所有 pending write + closed（spec：error 使所有未完成 write reject）。
+      while (pendingWrites.length > 0) pendingWrites.shift().reject(e);
+      rejectClosed(e);
+    }
+    var controller = { error: errorStream };
+    this._controller = controller;
+
+    this.getWriter = function () {
+      if (self._locked) throw new TypeError('Cannot get a Writer: WritableStream is locked');
+      self._locked = true;
+      return {
+        get closed() {
+          if (state === 'closed') return Promise.resolve();
+          if (state === 'errored') return Promise.reject(errorVal);
+          return closedP;
+        },
+        get ready() { return Promise.resolve(); },   // headless：无背压门控
+        get desiredSize() { return state === 'writable' ? 1 : 0; },
+        write: function (chunk) {
+          if (state === 'errored') return Promise.reject(errorVal);
+          if (state === 'closed') return Promise.reject(new TypeError('Cannot write to a closed WritableStream'));
+          return new Promise(function (resolve, reject) {
+            var entry = { resolve: resolve, reject: reject };
+            pendingWrites.push(entry);
+            try {
+              Promise.resolve(sink.write ? sink.write(chunk, controller) : undefined)
+                .then(function () {
+                  // sink.write 完成：若期间 controller.error 已拒绝本 entry（state errored），跳过；
+                  // 否则 FIFO 取本 entry resolve（多 write 串行完成，顺序匹配）。
+                  if (state === 'errored') return;
+                  if (pendingWrites.length > 0) pendingWrites.shift().resolve(undefined);
+                },
+                function (e) { errorStream(e); });
+            } catch (e) { errorStream(e); }
+          });
+        },
+        close: function () {
+          if (state === 'errored') return Promise.reject(errorVal);
+          if (state === 'closed') return Promise.resolve();
+          state = 'closed';
+          // 残余 pending write 视为完成（headless 串行 sink，正常此时已空，best-effort resolve）。
+          while (pendingWrites.length > 0) pendingWrites.shift().resolve(undefined);
+          try {
+            Promise.resolve(sink.close ? sink.close(controller) : undefined)
+              .then(function () { resolveClosed(undefined); },
+                    function (e) { errorStream(e); });
+          } catch (e) { errorStream(e); }
+          return closedP;
+        },
+        abort: function (reason) { return self.abort(reason); },
+        releaseLock: function () { self._locked = false; }
+      };
+    };
+    this.abort = function (reason) {
+      if (state === 'closed') return Promise.resolve();
+      errorVal = reason;
+      state = 'errored';
+      try { if (sink.abort) sink.abort(reason); } catch (_e) {}
+      rejectClosed(reason);
+      return Promise.resolve(undefined);
+    };
+    Object.defineProperty(this, 'locked', { get: function () { return self._locked; } });
+    if (typeof sink.start === 'function') {
+      try { sink.start(controller); } catch (_e) { errorStream(_e); }
+    }
+  };
+
+  // ── P1a TransformStream（Streams API transform，R2969）──
+  // {readable, writable} 配对：writable.write(chunk) → transformer.transform(chunk, controller) →
+  // controller.enqueue 到 readable；writable.close → transformer.flush(controller) → close readable。
+  // 无 transform fn → 恒等（chunk 直 enqueue）。controller.enqueue/close/error 转发到 readable 的 controller。
+  // 用于 pipeThrough 管道（如 response.body.pipeThrough(new TextDecoderStream()) 解码——TextDecoderStream
+  // 本身属 follow-up，本切片提供 TransformStream 基座）。
+  globalThis.TransformStream = globalThis.TransformStream || function TransformStream(transformer, _strategy) {
+    if (!(this instanceof TransformStream)) return new TransformStream(transformer, _strategy);
+    var tx = transformer || {};
+    var enqueueToR, closeR, errorR;
+    var transformController = {
+      enqueue: function (chunk) { if (enqueueToR) enqueueToR(chunk); },
+      close: function () { if (closeR) closeR(); },
+      error: function (e) { if (errorR) errorR(e); }
+    };
+    var self = this;
+    this.readable = new ReadableStream({
+      start: function (controller) {
+        enqueueToR = controller.enqueue;
+        closeR = controller.close;
+        errorR = controller.error;
+        if (typeof tx.start === 'function') tx.start(transformController);
+      }
+    });
+    this.writable = new WritableStream({
+      write: function (chunk) {
+        if (typeof tx.transform === 'function') tx.transform(chunk, transformController);
+        else transformController.enqueue(chunk); // 恒等
+      },
+      close: function () {
+        if (typeof tx.flush === 'function') tx.flush(transformController);
+        transformController.close();
+      }
+    });
+  };
 
   // URLSearchParams——query string 解析/序列化（location.search / fetch query 高频）。
   // 纯 JS（V8 原生 encodeURIComponent/decodeURIComponent + Symbol.iterator）。application/x-www-form-urlencoded
