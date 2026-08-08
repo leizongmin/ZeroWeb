@@ -73,6 +73,8 @@ pub struct TouchEvent {
 /// 应用生命周期事件
 #[derive(Debug)]
 pub enum AppEvent {
+    /// 宿主请求应用轮询后台状态，不触发窗口重绘。
+    Poll,
     /// 窗口需要重绘
     RedrawRequested,
     /// 窗口大小变更

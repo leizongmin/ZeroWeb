@@ -50,6 +50,8 @@ mod text_metrics;
 mod ui_icons;
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use zero_host_runtime::event::AppEvent;
 use zero_host_runtime::window::{HostRuntime, WindowConfig};
@@ -468,8 +470,9 @@ fn main() {
 
     // CPU surface 由 main 管理生命周期
     let mut cpu_surface: Option<softbuffer::Surface<Arc<winit::window::Window>, Arc<winit::window::Window>>> = None;
+    let poll_active = Arc::new(AtomicBool::new(true));
 
-    if let Err(e) = runtime.run_with_window(move |event, window| {
+    if let Err(e) = runtime.run_with_window_polling(Duration::from_millis(16), poll_active, move |event, window| {
         // Ctrl+C / 系统关机信号：走和窗口关闭按钮一样的清理路径，
         // 避免 process::exit 跳过 Drop 导致 zero-renderer 子进程成为孤儿。
         if shutdown_signal::is_set() {
@@ -559,12 +562,6 @@ fn main() {
                     app.needs_redraw = false;
                     app.poll_tab_fetch();
                     app.begin_tab_fetch_after_paint();
-                    if app.any_tab_loading() || app.tab_fetch_active() {
-                        app.needs_redraw = true;
-                        if let Some(ref win) = window {
-                            win.request_redraw();
-                        }
-                    }
                 }
             }
             AppEvent::Resized { width, height } if width > 0 && height > 0 => {

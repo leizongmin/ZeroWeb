@@ -707,6 +707,7 @@ impl AsyncPageLoad {
         if self.stage != PageLoadStage::FetchingImages {
             return;
         }
+        let mut image_changed = false;
         let mut sizes: HashMap<u64, (f32, f32)> = webview.cached_image_sizes().clone();
         let mut ratios: HashMap<u64, f32> = webview.cached_image_ratios().clone();
         let mut no_ratio: HashMap<u64, (Option<f32>, Option<f32>)> = webview.cached_image_no_ratio().clone();
@@ -746,12 +747,13 @@ impl AsyncPageLoad {
                         self.img_element_events.push((url.clone(), "error"));
                     }
                 }
-                *changed = true;
+                image_changed = true;
                 false
             } else {
                 true
             }
         });
+        *changed |= image_changed;
         if !sizes.is_empty() {
             webview.set_image_sizes(sizes);
         }
@@ -761,7 +763,7 @@ impl AsyncPageLoad {
         if !no_ratio.is_empty() {
             webview.set_image_no_ratio(no_ratio);
         }
-        if *changed && self.stage == PageLoadStage::FetchingImages {
+        if image_changed && self.stage == PageLoadStage::FetchingImages {
             let remaining = self.img_pending.len();
             tracing::info!(
                 url = %self.url,
@@ -865,6 +867,24 @@ mod tests {
         }
     }
 
+    /// 保持字节请求为 pending，用于验证等待资源期间不会重复重绘。
+    struct PendingBytesFetchHost {
+        senders: Vec<std::sync::mpsc::Sender<Result<Vec<u8>, String>>>,
+    }
+
+    impl AsyncFetchHost for PendingBytesFetchHost {
+        fn fetch_text_meta(&mut self, _: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
+            let (_tx, rx) = channel();
+            rx
+        }
+
+        fn fetch_bytes_meta(&mut self, _: &str, _: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
+            let (tx, rx) = channel();
+            self.senders.push(tx);
+            rx
+        }
+    }
+
     #[test]
     fn begin_stylesheet_fetch_issues_parallel_requests() {
         let html = r#"<html><head>
@@ -899,6 +919,27 @@ mod tests {
         assert_eq!(host.calls.len(), 2);
         assert!(host.calls.iter().any(|u| u.ends_with("i1.png")));
         assert!(host.calls.iter().any(|u| u.ends_with("i2.png")));
+    }
+
+    #[test]
+    fn pending_images_do_not_trigger_repeated_renders() {
+        let html = r#"<html><body><img src="pending.png"></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = PendingBytesFetchHost { senders: Vec::new() };
+
+        for _ in 0..10 {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+            if load.stage == PageLoadStage::FetchingImages && load.render_session.is_none() && !load.budget_pending {
+                break;
+            }
+        }
+
+        assert_eq!(load.stage, PageLoadStage::FetchingImages);
+        assert!(load.render_session.is_none());
+        assert!(!load.budget_pending);
+        assert!(!load.tick(&mut wv, &mut host, 500.0));
+        assert!(!load.budget_pending);
     }
 
     /// R1795：CSS `url()` 图片引用（background-image）在 async 路径亦被抓取。

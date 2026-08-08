@@ -10,6 +10,8 @@ use crate::event::{
 };
 use crate::{HostError, HostResult};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, Default)]
 struct PointerTracker {
@@ -226,6 +228,30 @@ impl HostRuntime {
 
         Ok(())
     }
+
+    /// 运行事件循环，并在 `poll_active` 为真时按指定间隔派发 [`AppEvent::Poll`]。
+    ///
+    /// Poll 事件仅用于消费后台 IPC/网络结果，不会自行触发窗口重绘。
+    pub fn run_with_window_polling<F>(
+        self,
+        poll_interval: Duration,
+        poll_active: Arc<AtomicBool>,
+        mut on_event: F,
+    ) -> HostResult<()>
+    where
+        F: FnMut(AppEvent, Option<Arc<winit::window::Window>>) + 'static,
+    {
+        let event_loop = build_event_loop()?;
+        let window_attrs = window_attributes_from_config(&self.config);
+        let mut app = GpuApp::new_with_window(window_attrs, &mut on_event);
+        app.polling = Some((poll_interval, poll_active));
+
+        event_loop
+            .run_app(&mut app)
+            .map_err(|e| HostError::EventLoopError(e.to_string()))?;
+
+        Ok(())
+    }
 }
 
 /// 基本模式事件处理器
@@ -371,6 +397,7 @@ pub(crate) struct GpuApp<'a, F> {
     window: Option<Arc<winit::window::Window>>,
     on_event: &'a mut F,
     pointer: PointerTracker,
+    polling: Option<(Duration, Arc<AtomicBool>)>,
 }
 
 impl<'a, F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'a, F> {
@@ -381,6 +408,7 @@ impl<'a, F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'a, F> {
             window: None,
             on_event,
             pointer: PointerTracker::default(),
+            polling: None,
         }
     }
 }
@@ -528,6 +556,23 @@ impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> winit::application:
                 event_loop.exit();
             }
             other => self.handle_window_event(other, win_ref),
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let Some((interval, active)) = self.polling.as_ref() else {
+            return;
+        };
+        if !active.load(Ordering::Acquire) {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            return;
+        }
+
+        (self.on_event)(AppEvent::Poll, self.window.clone());
+        if active.load(Ordering::Acquire) {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(Instant::now() + *interval));
+        } else {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         }
     }
 }

@@ -1519,39 +1519,46 @@ fn ipc_fetch_get(
     };
     outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
 
-    loop {
-        let msg = if let Some(m) = deferred.pop_front() {
-            m
-        } else {
-            inbound_rx.recv().map_err(|e| format!("IPC 接收失败: {e}"))?
-        };
-        match msg.kind {
-            IpcMessageKind::FetchResponse(FetchResponseParams {
-                request_id: rid,
-                status_code,
-                body,
-                ..
-            }) if rid == request_id => {
-                if !(200..300).contains(&status_code) {
-                    return Err(ipc_fetch_error(status_code, &body));
+    // 当前请求不消费的消息先移到局部队列。若直接放回 `deferred`，下一轮会立刻
+    // pop 出同一条消息并再次放回，永远无法等待目标 FetchResponse，导致单核自旋。
+    let mut skipped = VecDeque::new();
+    let result = (|| {
+        loop {
+            let msg = if let Some(m) = deferred.pop_front() {
+                m
+            } else {
+                inbound_rx.recv().map_err(|e| format!("IPC 接收失败: {e}"))?
+            };
+            match msg.kind {
+                IpcMessageKind::FetchResponse(FetchResponseParams {
+                    request_id: rid,
+                    status_code,
+                    body,
+                    ..
+                }) if rid == request_id => {
+                    if !(200..300).contains(&status_code) {
+                        return Err(ipc_fetch_error(status_code, &body));
+                    }
+                    return Ok(body);
                 }
-                return Ok(body);
-            }
-            IpcMessageKind::Heartbeat => {
-                let reply = IpcMessage {
-                    id: msg.id,
-                    kind: IpcMessageKind::Heartbeat,
-                };
-                outbound.send(reply).map_err(|e| format!("IPC 发送失败: {e}"))?;
-            }
-            other => {
-                deferred.push_back(IpcMessage {
-                    id: msg.id,
-                    kind: other,
-                });
+                IpcMessageKind::Heartbeat => {
+                    let reply = IpcMessage {
+                        id: msg.id,
+                        kind: IpcMessageKind::Heartbeat,
+                    };
+                    outbound.send(reply).map_err(|e| format!("IPC 发送失败: {e}"))?;
+                }
+                other => {
+                    skipped.push_back(IpcMessage {
+                        id: msg.id,
+                        kind: other,
+                    });
+                }
             }
         }
-    }
+    })();
+    deferred.append(&mut skipped);
+    result
 }
 
 fn ipc_scheme_to_engine(scheme: IpcColorScheme) -> PrefersColorSchemeValue {
@@ -1753,5 +1760,49 @@ mod runtime_smoke {
             })
             .expect("须产出 ViewPainted");
         assert!(!painted.fills.is_empty(), "ViewPainted 须含 fill 图元");
+    }
+
+    #[test]
+    fn ipc_fetch_get_skips_deferred_messages_without_spinning() {
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
+        let (tx, rx) = mpsc::channel();
+        let mut next_fetch_id = 7;
+        let mut deferred = VecDeque::from([IpcMessage {
+            id: 11,
+            kind: IpcMessageKind::SetViewport(SetViewportParams {
+                width: 1024,
+                height: 768,
+            }),
+        }]);
+        tx.send(IpcMessage {
+            id: 12,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 7,
+                status_code: 200,
+                headers: Vec::new(),
+                body: b"image".to_vec(),
+            }),
+        })
+        .unwrap();
+
+        let body = ipc_fetch_get(
+            &mut outbound,
+            &rx,
+            &mut next_fetch_id,
+            &mut deferred,
+            "https://example.test/image.png",
+        )
+        .expect("target fetch response");
+
+        assert_eq!(body, b"image");
+        assert_eq!(next_fetch_id, 8);
+        assert!(matches!(
+            deferred.pop_front().map(|m| m.kind),
+            Some(IpcMessageKind::SetViewport(SetViewportParams {
+                width: 1024,
+                height: 768
+            }))
+        ));
+        assert!(deferred.is_empty());
     }
 }
