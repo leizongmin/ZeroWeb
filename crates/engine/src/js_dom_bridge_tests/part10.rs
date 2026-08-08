@@ -470,3 +470,237 @@ fn test_style_webkit_prefix_property_normalized_with_leading_hyphen() {
         "webkitLineClamp 须归一为 -webkit-line-clamp（带前导连字符），实际 {style_mutations:?}"
     );
 }
+
+#[test]
+fn test_readable_stream_r2967() {
+    // R2967：ReadableStream（Streams API）。纯 JS 控制器模型：push 源（start-enqueue-close）+
+    // getReader().read() 序列（{done:false,value} × N → {done:true}）+ locked 守卫 + releaseLock +
+    // async iterator（for await of）+ pull 源（queue 空 read 时触发 source.pull）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // push 源：enqueue 'a'/'b' + close；getReader 后 locked=true；read 三次 + releaseLock 后 locked=false。
+    sandbox
+        .execute(
+            "var s = new ReadableStream({ start: function(c){ c.enqueue('a'); c.enqueue('b'); c.close(); } });\
+             var r = s.getReader();\
+             globalThis.__lockedA = s.locked;\
+             r.read().then(function(v){ globalThis.__c1 = v; return r.read(); })\
+                    .then(function(v){ globalThis.__c2 = v; return r.read(); })\
+                    .then(function(v){ globalThis.__c3 = v; r.releaseLock(); globalThis.__lockedB = s.locked; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__lockedA)").unwrap().value,
+        "true",
+        "getReader 后 stream.locked=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c1 && globalThis.__c1.done)").unwrap().value,
+        "false",
+        "第 1 chunk: done=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c1 && globalThis.__c1.value)").unwrap().value,
+        "a",
+        "第 1 chunk: value='a'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c2 && globalThis.__c2.value)").unwrap().value,
+        "b",
+        "第 2 chunk: value='b'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c3 && globalThis.__c3.done)").unwrap().value,
+        "true",
+        "第 3 read: done=true（流关闭）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__lockedB)").unwrap().value,
+        "false",
+        "releaseLock 后 stream.locked=false"
+    );
+
+    // async iterator（for await of）：累加 1+2 → 3。
+    sandbox
+        .execute(
+            "(async function(){\
+               var s2 = new ReadableStream({ start: function(c){ c.enqueue(1); c.enqueue(2); c.close(); } });\
+               var sum = 0;\
+               for await (var x of s2) sum += x;\
+               globalThis.__sum = sum;\
+             })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sum)").unwrap().value,
+        "3",
+        "for await of 迭代流：1+2=3"
+    );
+
+    // pull 源：queue 空 read 时触发 source.pull；pull 2 次后 close。
+    sandbox
+        .execute(
+            "var pulled = 0;\
+             var s3 = new ReadableStream({ pull: function(c){ pulled++; if (pulled <= 2) c.enqueue('p'+pulled); else c.close(); } });\
+             var r3 = s3.getReader();\
+             r3.read().then(function(v){ globalThis.__p1 = v; return r3.read(); })\
+                     .then(function(v){ globalThis.__p2 = v; return r3.read(); })\
+                     .then(function(v){ globalThis.__p3 = v; globalThis.__pulledCount = pulled; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__p1 && globalThis.__p1.value)").unwrap().value,
+        "p1",
+        "pull 源第 1 chunk='p1'（read 触发 pull）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__p2 && globalThis.__p2.value)").unwrap().value,
+        "p2",
+        "pull 源第 2 chunk='p2'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__p3 && globalThis.__p3.done)").unwrap().value,
+        "true",
+        "pull 源第 3 read done=true（pull 第 3 次 close）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pulledCount)").unwrap().value,
+        "3",
+        "pull 源共触发 3 次 pull"
+    );
+
+    // locked 守卫：已 locked 时 getReader 抛 TypeError。
+    sandbox
+        .execute(
+            "var s4 = new ReadableStream({ start: function(c){ c.close(); } });\
+             s4.getReader();\
+             try { s4.getReader(); globalThis.__dblLock = 'no-throw'; }\
+             catch(e){ globalThis.__dblLock = String(e).indexOf('TypeError') >= 0 ? 'TypeError' : 'other'; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dblLock)").unwrap().value,
+        "TypeError",
+        "已 locked 时 getReader 抛 TypeError（spec）"
+    );
+}
+
+#[test]
+fn test_response_body_readable_stream_r2967() {
+    // R2967：fetch response.body 为 ReadableStream。mock __zw_fetch 捕获 id，Rust 经
+    // resolve_async_callback 投递 wire（status/statusText/headers/body），shim 包装为 Response；
+    // response.body.getReader().read() 取 UTF-8 Uint8Array chunk → TextDecoder 解码 == body。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // mock __zw_fetch：捕获 id（args[0]）供 Rust 侧 resolve。
+    let captured_id: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let cap = Arc::clone(&captured_id);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *cap.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+
+    // fetch 投递（pending）；host 异步 resolve → __resp 设置。
+    sandbox
+        .execute("fetch('http://test.local/data').then(function(r){ globalThis.__resp = r; });")
+        .unwrap();
+    let id = captured_id.lock().unwrap().clone();
+    assert!(!id.is_empty(), "__zw_fetch 被调用且 id 已捕获");
+    // wire：status=200 / statusText=OK / headersWire='' / body='Hello Streams'（\x1f 分隔）。
+    let wire = "__zwfr:200\u{001f}OK\u{001f}\u{001f}Hello Streams";
+    sandbox.resolve_async_callback(&id, wire);
+
+    // 读 response.body 流：首 chunk 为 UTF-8 Uint8Array，TextDecoder 解码 == body；次 read done=true。
+    sandbox
+        .execute(
+            "var r = globalThis.__resp.body.getReader();\
+             globalThis.__hasBody = (globalThis.__resp.body !== null);\
+             r.read().then(function(c){ globalThis.__chunk1 = c; return r.read(); })\
+                    .then(function(c){ globalThis.__chunk2 = c; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hasBody)").unwrap().value,
+        "true",
+        "response.body 非 null（ReadableStream）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__chunk1 && globalThis.__chunk1.done)").unwrap().value,
+        "false",
+        "body 首 chunk: done=false"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(new TextDecoder().decode(globalThis.__chunk1.value))")
+            .unwrap()
+            .value,
+        "Hello Streams",
+        "body 首 chunk 经 TextDecoder 解码 == 'Hello Streams'"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__chunk1 && globalThis.__chunk1.value && globalThis.__chunk1.value.length)")
+            .unwrap()
+            .value,
+        "13",
+        "body 首 chunk 字节长度=13（'Hello Streams' UTF-8）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__chunk2 && globalThis.__chunk2.done)").unwrap().value,
+        "true",
+        "body 次 read done=true（单 chunk 后 close）"
+    );
+
+    // 网络错误响应（ok:false）body=null（spec：network error 无 body）。
+    let cap2: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let cap2c = Arc::clone(&cap2);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *cap2c.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+    sandbox
+        .execute("fetch('http://test.local/err').then(function(r){ globalThis.__respErr = r; });")
+        .unwrap();
+    let id2 = cap2.lock().unwrap().clone();
+    sandbox.resolve_async_callback(&id2, "__zw_fetch_error:network");
+    sandbox
+        .execute("globalThis.__errBody = (globalThis.__respErr.body === null ? 'null' : 'stream');")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__errBody)").unwrap().value,
+        "null",
+        "网络错误响应 body=null（spec network error）"
+    );
+}

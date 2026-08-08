@@ -157,6 +157,12 @@
       status: ok ? 200 : 0,
       statusText: ok ? 'OK' : 'Error',
       headers: {},
+      // R2967：body 为 ReadableStream（lazy，单 UTF-8 chunk + close）。网络错误（ok:false）→ null（spec）。
+      get body() {
+        if (!ok) return null;
+        if (!this._bs) this._bs = _bodyToStream(body);
+        return this._bs;
+      },
       text: function() { return Promise.resolve(ok ? body : ''); },
       json: function() { return Promise.resolve(JSON.parse(ok ? body : 'null')); }
     };
@@ -183,6 +189,11 @@
       status: status,
       statusText: statusText,
       headers: headers,
+      // R2967：body 为 ReadableStream（lazy，单 UTF-8 chunk + close）。空 body → 空 chunk 后 close。
+      get body() {
+        if (!this._bs) this._bs = _bodyToStream(body);
+        return this._bs;
+      },
       text: function() { return Promise.resolve(body); },
       json: function() { return Promise.resolve(JSON.parse(body)); }
     };

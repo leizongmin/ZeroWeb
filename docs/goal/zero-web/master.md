@@ -112,6 +112,30 @@
 
 ## 最近完成的改进
 
+### P1a ReadableStream（Streams API）+ fetch response.body 流式（本轮 R2967，~14,149 测试）
+
+R2966（IO rootMargin）后续续 P1a defer Web API。`ReadableStream` / Streams API **此前全缺**（grep 零命中）——fetch `response.body` 不存在（仅有 `text()`/`json()` 整体读），现代流式消费库（@json/streaming / readable-stream / service worker 逐块处理 / 自定义测试流 mock）全不可用。本切片补 **ReadableStream + response.body 流式**。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part02.js` | 新 `ReadableStream(underlyingSource, strategy)`：纯 JS 控制器模型——`underlyingSource {start, pull, cancel}` + `ReadableStreamDefaultController {enqueue, close, error, desiredSize}`；默认 reader `read()`→`Promise<{done,value}>` / `cancel` / `releaseLock` / `closed`；`locked` 守卫（已 locked 时 getReader 抛 TypeError）；`Symbol.asyncIterator`（for await of）。**push 源**（start-enqueue）+ **pull 源**（queue 空 read 时触发 source.pull，pulling 守卫防重入）双源支持。新 `_bodyToStream(text)`：fetch body 串 → ReadableStream（单 UTF-8 Uint8Array chunk 后 close，复用 `_zw_utf8_encode`）。WritableStream/TransformStream/pipeTo/pipeThrough/tee defer。 |
+| `crates/engine/src/js_dom_shim/part01.js` | `_makeResponse`/`_makeResponseFromWire` 增 `get body()` lazy getter（首访问建 `_bodyToStream` 缓存于 `_bs`，返同一 stream，spec）；网络错误响应（ok:false）body=null（spec network error）。 |
+| `crates/engine/src/js_dom_bridge_tests/part10.rs` | 新 `test_readable_stream_r2967`（push 源 read 序列 done/value + locked/releaseLock + for await of 累加 + pull 源 read 触发 pull + 已 locked getReader 抛 TypeError）+ `test_response_body_readable_stream_r2967`（mock `__zw_fetch` 捕获 id + Rust `resolve_async_callback` 投递 `__zwfr:` wire → response.body.getReader().read() 取 UTF-8 Uint8Array chunk → TextDecoder 解码 == body；网络错误 body=null）。 |
+
+**为何 headless 用「单 chunk + close」body 流**：headless finite-body 模型下 fetch 整体 body 已就绪（net crate 一次性取回），流式消费按 spec 仍经 ReadableStream（`response.body` / `getReader().read()`），但底层为单 chunk 即 close（非真分块传输）。这覆盖流式 API 表面 + 逐块消费库（按 chunk 处理）+ 测试 mock 模式；真 chunked transfer streaming（持续到达的分块）需 net crate 流式响应 follow-up。
+
+**为何先 drain queue 再判 close（核心 spec 点）**：read() 须**先派发已 enqueue 的余 chunk，再在 queue 空时返 done**（spec §3.5：close 后仍可读已缓冲 chunk）。首版误把 `state==='closed'` 检查置于 queue drain 前 → `_bodyToStream`（enqueue 后 close）read 直接返 done、丢 chunk。修复：read 顺序 errored→drain queue→closed→wait+pull。纯流测试同根因（push 源 enqueue 后 close 同样中招），一并修复。
+
+**为何 lazy body getter（缓存同一 stream）**：spec `response.body` 多次访问返**同一** stream（取 reader 后 locked，二次 getReader 抛）。lazy getter 首访问建 stream 缓存于 `_bs`，后续返同一 → 既符合 spec，又不为从不读 body 的响应建流（省开销）。`text()`/`json()` 直读闭包 body 串，不触碰 stream（无 locked 冲突）。
+
+**为何零回归**：ReadableStream 为新增（既有无代码调）；response.body 为新增 getter（既有仅调 text()/json()，不读 body）；`_bodyToStream`/getter additive。既有 fetch/text/json 测试全绿（make test 14149 全绿验证）。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14149 passed / 71 skipped / 0 failed**（engine +2 driving 测试，无回归）+ clippy `-D warnings` 零警告（workspace）+ fmt clean + 全 shim `node --check` 通过。
+
+**已知限制（follow-up）**：① WritableStream/TransformStream/pipeTo/pipeThrough/tee 未实现（write 侧 + 流管道组合，follow-up）；② body 单 chunk + close（非真 chunked transfer streaming，需 net crate 流式响应）；③ 无 BYOB reader（`getReader({mode:'byob'})`，二进制零拷贝，follow-up）；④ pull 源 desiredSize/backpressure 近似（恒 1，无 highWaterMark 队列压力，headless 低频）；⑤ 无 `Response`/`Request` 全局构造器（fetch 返 plain object；`new Response()` 构造 follow-up）。
+
+**下一步**：续 P1a——① WritableStream/TransformStream（Streams write 侧，补全 ReadableStream 配对）；② `Response`/`Request` 全局构造器；③ 其他 defer Web API（ClipboardItem 图片剪贴板）；④ task source 优先级（事件循环边缘）；⑤ customElements upgrade（需 P1b RFC 审批）；⑥ 拆 js_dom_bridge.rs（3947，按职责重组）。
+
 ### P1a IntersectionObserver rootMargin 懒加载边距（CSS margin 简写 px/% 展开 root rect，本轮 R2966，~14,147 测试）
 
 R2965（el.animate 真关键帧）后续续 P1a defer Web API。`IntersectionObserver` 的 `rootMargin`（P1a Slice 2a R2817 起 IO 真实触发回调）此前**按 0 处理**（documented defer：`③ rootMargin 暂按 0 处理（defer 像素/% 展开）`）——懒加载/无限滚动库（lozad.js / lazyload / react-intersection-observer）的 pre-fetch 边距（`rootMargin: '200px'` 提前触发）失效，target 必须真进视口才回调。本切片补 **rootMargin px/% 展开 root rect**。

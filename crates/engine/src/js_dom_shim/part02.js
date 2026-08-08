@@ -348,6 +348,122 @@
     }
   };
 
+  // ── P1a ReadableStream（Streams API，R2967）──
+  // 通用读取流抽象。核心动机：fetch `response.body`（此前全缺——仅有 text()/json() 整体读），
+  // 解锁流式消费（@json/streaming / readable-stream / service worker / 逐块解析库）+ 自定义流
+  //（测试 mock / 数据管道）。纯 JS 控制器模型：underlyingSource {start, pull, cancel} +
+  // ReadableStreamDefaultController {enqueue, close, error, desiredSize}。默认 reader：
+  // read()→Promise<{done,value}> / cancel(reason) / releaseLock() / closed；locked 守卫；
+  // Symbol.asyncIterator（for await of）。push（start-enqueue）+ pull（queue 空 read 时触发）双源。
+  // WritableStream / TransformStream / pipeTo / pipeThrough / tee defer（write 侧 + 流管道组合，follow-up）。
+  var _RS_DONE = { done: true, value: undefined };
+  function _rs_chunk(value) { return { done: false, value: value }; }
+  globalThis.ReadableStream = globalThis.ReadableStream || function ReadableStream(underlyingSource, _strategy) {
+    if (!(this instanceof ReadableStream)) return new ReadableStream(underlyingSource, _strategy);
+    var source = underlyingSource || {};
+    var queue = [];              // 已 enqueue 待消费 chunk
+    var state = 'readable';      // readable | closed | errored
+    var errorVal = undefined;
+    var waiting = [];            // 待 read() 的 {resolve, reject}
+    var pulling = false;
+    var self = this;
+    this._locked = false;
+
+    function enqueueChunk(chunk) {
+      if (state !== 'readable') return;
+      // 有等待中的 read → 直接 resolve（零拷贝绕 queue）；否则入队。
+      if (waiting.length > 0) waiting.shift().resolve(_rs_chunk(chunk));
+      else queue.push(chunk);
+    }
+    function closeStream() {
+      if (state !== 'readable') return;
+      state = 'closed';
+      while (waiting.length > 0) waiting.shift().resolve(_RS_DONE);
+    }
+    function errorStream(e) {
+      if (state !== 'readable') return;
+      errorVal = e;
+      state = 'errored';
+      while (waiting.length > 0) waiting.shift().reject(e);
+    }
+    function flushPull() {
+      // queue 空 + readable + 有 pull → 触发一次（pulling 守卫防重入）。pull 可 enqueue/close/error。
+      if (pulling || state !== 'readable' || typeof source.pull !== 'function') return;
+      pulling = true;
+      try { source.pull(controller); } catch (_e) { errorStream(_e); }
+      pulling = false;
+    }
+    var controller = {
+      desiredSize: 1,
+      enqueue: enqueueChunk,
+      close: closeStream,
+      error: errorStream
+    };
+    this._doCancel = function (reason) {
+      closeStream();
+      if (typeof source.cancel === 'function') { try { source.cancel(reason); } catch (_e) {} }
+      return Promise.resolve(undefined);
+    };
+    this.getReader = function () {
+      if (self._locked) throw new TypeError('Cannot get a Reader: ReadableStream is locked');
+      self._locked = true;
+      return {
+        read: function () {
+          return new Promise(function (resolve, reject) {
+            if (state === 'errored') { reject(errorVal); return; }
+            // 先 drain 已 enqueue chunk（即便流已 close，剩余 chunk 须先派发，spec §3.5 close 后仍可读余 chunk）。
+            if (queue.length > 0) { resolve(_rs_chunk(queue.shift())); return; }
+            if (state === 'closed') { resolve(_RS_DONE); return; }
+            waiting.push({ resolve: resolve, reject: reject });
+            flushPull();
+          });
+        },
+        cancel: function (reason) { return self.cancel(reason); },
+        releaseLock: function () { self._locked = false; },
+        get closed() {
+          if (state === 'closed') return Promise.resolve();
+          if (state === 'errored') return Promise.reject(errorVal);
+          return new Promise(function () {}); // 永挂（headless 无外部 close，read 侧驱动 close）
+        }
+      };
+    };
+    this.cancel = function (reason) {
+      if (self._locked) return Promise.reject(new TypeError('Cannot cancel: ReadableStream is locked'));
+      return self._doCancel(reason);
+    };
+    Object.defineProperty(this, 'locked', { get: function () { return self._locked; } });
+    // async iterator（for await of）：自动 getReader，逐 chunk 迭代，结束/提前 return 时 releaseLock。
+    // 流已 locked → getReader 抛 TypeError（caller 应先 releaseLock 或换流）。
+    this[Symbol.asyncIterator] = function () {
+      var reader = self.getReader();
+      return {
+        next: function () { return reader.read(); },
+        return: function () { try { reader.releaseLock(); } catch (_e) {} return Promise.resolve(_RS_DONE); }
+      };
+    };
+    // start：同步源初始化（enqueue/close/error 可能在此调用，flush 已等待读者前的 chunk 入 queue）。
+    if (typeof source.start === 'function') {
+      try { source.start(controller); } catch (_e) { errorStream(_e); }
+    }
+  };
+  // fetch 响应体字符串 → ReadableStream：单 UTF-8 Uint8Array chunk 后 close（headless finite-body 模型，
+  // 整体 body 已就绪）。复用 _zw_utf8_encode；空 body → 直接 close（零 chunk）。定义在 part01 _makeResponse
+  // 之前调用（runtime），ReadableStream（part02）+ _zw_utf8_encode（part02）在 IIFE 同作用域已就绪。
+  function _bodyToStream(text) {
+    var bodyText = text || '';
+    return new ReadableStream({
+      start: function (controller) {
+        if (bodyText) {
+          var bytes = _zw_utf8_encode(bodyText);
+          var arr = new Uint8Array(bytes.length);
+          for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
+          controller.enqueue(arr);
+        }
+        controller.close();
+      }
+    });
+  }
+
   // URLSearchParams——query string 解析/序列化（location.search / fetch query 高频）。
   // 纯 JS（V8 原生 encodeURIComponent/decodeURIComponent + Symbol.iterator）。application/x-www-form-urlencoded
   // 语义：space→`+`；构造支持 string（`?` 前缀可省）/ 对象 / [k,v] 可迭代。
