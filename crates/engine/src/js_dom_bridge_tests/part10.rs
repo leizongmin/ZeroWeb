@@ -1121,3 +1121,85 @@ fn test_text_encoder_decoder_stream_r2970() {
         "src string 流 pipeThrough TextEncoderStream → 字节，解码 = 'Ping'"
     );
 }
+
+#[test]
+fn test_readable_stream_tee_r2971() {
+    // R2971：ReadableStream.tee()——分叉成两独立分支共享同一源。两分支各自完整收到全部 chunk（顺序一致），
+    // 独立消费（不同速率）；源 close/error 同步到两分支；源 locked 时 tee 抛 TypeError。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 源 3 chunk + close；tee → [b1, b2]，两分支独立读全部 chunk。
+    sandbox
+        .execute(
+            "var src = new ReadableStream({ start: function(c){ c.enqueue('a'); c.enqueue('b'); c.enqueue('c'); c.close(); } });\
+             var br = src.tee();\
+             var b1 = br[0], b2 = br[1];\
+             globalThis.__bothReadable = (b1 instanceof ReadableStream) && (b2 instanceof ReadableStream);\
+             var r1 = b1.getReader();\
+             r1.read().then(function(c){ globalThis.__b1a = c; return r1.read(); })\
+                    .then(function(c){ globalThis.__b1b = c; return r1.read(); })\
+                    .then(function(c){ globalThis.__b1c = c; return r1.read(); })\
+                    .then(function(c){ globalThis.__b1d = c; });\
+             var r2 = b2.getReader();\
+             r2.read().then(function(c){ globalThis.__b2a = c; return r2.read(); })\
+                    .then(function(c){ globalThis.__b2b = c; return r2.read(); })\
+                    .then(function(c){ globalThis.__b2c = c; return r2.read(); })\
+                    .then(function(c){ globalThis.__b2d = c; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__bothReadable)").unwrap().value, "true", "tee 返两 ReadableStream");
+    // 分支 1 完整收到 a/b/c + done。
+    assert_eq!(sandbox.execute("String(globalThis.__b1a && globalThis.__b1a.value)").unwrap().value, "a", "分支1 chunk a");
+    assert_eq!(sandbox.execute("String(globalThis.__b1b && globalThis.__b1b.value)").unwrap().value, "b", "分支1 chunk b");
+    assert_eq!(sandbox.execute("String(globalThis.__b1c && globalThis.__b1c.value)").unwrap().value, "c", "分支1 chunk c");
+    assert_eq!(sandbox.execute("String(globalThis.__b1d && globalThis.__b1d.done)").unwrap().value, "true", "分支1 末 read done");
+    // 分支 2 独立收到同样的 a/b/c + done（独立消费，无丢失）。
+    assert_eq!(sandbox.execute("String(globalThis.__b2a && globalThis.__b2a.value)").unwrap().value, "a", "分支2 chunk a（独立消费）");
+    assert_eq!(sandbox.execute("String(globalThis.__b2b && globalThis.__b2b.value)").unwrap().value, "b", "分支2 chunk b");
+    assert_eq!(sandbox.execute("String(globalThis.__b2c && globalThis.__b2c.value)").unwrap().value, "c", "分支2 chunk c");
+    assert_eq!(sandbox.execute("String(globalThis.__b2d && globalThis.__b2d.done)").unwrap().value, "true", "分支2 末 read done");
+
+    // 源 locked 时 tee 抛 TypeError。
+    sandbox
+        .execute(
+            "var src2 = new ReadableStream({ start: function(c){ c.close(); } });\
+             src2.getReader();\
+             try { src2.tee(); globalThis.__teeLock = 'no-throw'; }\
+             catch (e) { globalThis.__teeLock = String(e).indexOf('TypeError') >= 0 ? 'TypeError' : 'other'; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__teeLock)").unwrap().value,
+        "TypeError",
+        "源 locked 时 tee 抛 TypeError（spec）"
+    );
+
+    // 源 error → 两分支 read reject（错误同步传播）。
+    sandbox
+        .execute(
+            "var src3 = new ReadableStream({ start: function(c){ c.error(new Error('srcfail')); } });\
+             var b3 = src3.tee();\
+             var r3a = b3[0].getReader();\
+             r3a.read().then(function(){ globalThis.__teeErr1 = 'resolved'; },\
+                             function(e){ globalThis.__teeErr1 = String(e); });\
+             var r3b = b3[1].getReader();\
+             r3b.read().then(function(){ globalThis.__teeErr2 = 'resolved'; },\
+                             function(e){ globalThis.__teeErr2 = String(e); });",
+        )
+        .unwrap();
+    let e1 = sandbox.execute("String(globalThis.__teeErr1)").unwrap().value;
+    assert!(e1.contains("srcfail"), "源 error → 分支1 read reject（含错误消息），got: {e1}");
+    let e2 = sandbox.execute("String(globalThis.__teeErr2)").unwrap().value;
+    assert!(e2.contains("srcfail"), "源 error → 分支2 read reject（错误同步两分支），got: {e2}");
+}

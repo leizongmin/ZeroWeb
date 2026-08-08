@@ -356,7 +356,7 @@
   // read()→Promise<{done,value}> / cancel(reason) / releaseLock() / closed；locked 守卫；
   // Symbol.asyncIterator（for await of）。push（start-enqueue）+ pull（queue 空 read 时触发）双源。
   // pipeTo(WritableStream) / pipeThrough({writable,readable})（R2969）。WritableStream/TransformStream 见下。
-  // tee（分叉）仍 defer（follow-up）。
+  // tee()（分叉两独立分支）R2971。
   var _RS_DONE = { done: true, value: undefined };
   function _rs_chunk(value) { return { done: false, value: value }; }
   globalThis.ReadableStream = globalThis.ReadableStream || function ReadableStream(underlyingSource, _strategy) {
@@ -482,6 +482,45 @@
       }
       self.pipeTo(transform.writable, _options);
       return transform.readable;
+    };
+    // R2971 tee()：分叉成两独立 ReadableStream（共享同一源）。buffer-based：共享 append-only buffer +
+    // 去重源读（readPromise 并发拉源仅一次）+ 每分支 pos（已消费偏移）。分支 pull：buffer 有 chunk → 发；
+    // 否则去重拉源 → 入 buffer 后发；源 close/error → 同步到两分支。源须未 locked（tee 持源 reader）。
+    // 内存：buffer 随两分支消费速率差增长（慢分支拖累快分支的已读 chunk 保留），headless finite 流可接受。
+    this.tee = function () {
+      if (self._locked) throw new TypeError('Cannot tee: ReadableStream is locked');
+      var reader = self.getReader();
+      var buffer = [];            // 共享已读 chunk（append-only，两分支按 pos 各自消费）
+      var sourceDone = false;
+      var sourceError = null;
+      var readPromise = null;     // 去重：并发 pull 共享同一源读 Promise
+      function pullOnce() {
+        if (sourceDone) return Promise.resolve({ done: true });
+        if (sourceError) return Promise.reject(sourceError);
+        if (!readPromise) {
+          readPromise = reader.read().then(function (r) {
+            readPromise = null;
+            if (r.done) sourceDone = true; else buffer.push(r.value);
+            return r;
+          }, function (e) { readPromise = null; sourceError = e; throw e; });
+        }
+        return readPromise;
+      }
+      function makeBranch() {
+        var pos = 0;
+        return new ReadableStream({
+          pull: function (controller) {
+            if (pos < buffer.length) { controller.enqueue(buffer[pos++]); return; }
+            if (sourceDone) { controller.close(); return; }
+            if (sourceError) { controller.error(sourceError); return; }
+            pullOnce().then(function (r) {
+              if (r.done) controller.close();
+              else if (pos < buffer.length) controller.enqueue(buffer[pos++]);
+            }, function (e) { controller.error(e); });
+          }
+        });
+      }
+      return [makeBranch(), makeBranch()];
     };
     // start：同步源初始化（enqueue/close/error 可能在此调用，flush 已等待读者前的 chunk 入 queue）。
     if (typeof source.start === 'function') {

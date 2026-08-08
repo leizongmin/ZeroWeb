@@ -112,6 +112,27 @@
 
 ## 最近完成的改进
 
+### P1a ReadableStream.tee()（流分叉，Streams API 核心表面闭合，本轮 R2971，~14,154 测试）
+
+R2970（TextEncoderStream/TextDecoderStream）后续补 Streams API 最后核心方法。`ReadableStream.tee()` **此前缺**（R2969 标 defer）——分叉流为两独立分支共享同一源，用于一源两消费（如 response.body 同时 pipeTo 文本解码 + 原始字节缓存）不可用。本切片补 tee()，**Streams API 核心表面闭合**（Readable/Writable/Transform + TextEncoder/DecoderStream + pipeTo/pipeThrough + tee）。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part02.js` | ReadableStream 增 `this.tee()`：源须未 locked（否则抛 TypeError），持源 reader。**buffer-based 算法**：共享 append-only `buffer[]`（源已读 chunk）+ 去重源读（`readPromise` 并发 pull 共享同一源读 Promise，避免双分支各拉一次致 chunk 丢失）+ 每分支 `pos`（已消费偏移）。分支 pull：`pos < buffer.length` → 发 `buffer[pos++]`；否则去重拉源 → 入 buffer 后发；源 `sourceDone`/`sourceError` 同步到两分支（close/error）。两分支独立消费速率（慢分支拖累快分支的已读 chunk 保留在 buffer，headless finite 流可接受）。更新 ReadableStream 注释（tee 已就绪）。 |
+| `crates/engine/src/js_dom_bridge_tests/part10.rs` | 新 `test_readable_stream_tee_r2971`：源 3 chunk + close → tee 两分支各自完整收到 a/b/c + done（独立消费无丢失）+ 源 locked 时 tee 抛 TypeError + 源 error 同步到两分支（read reject 含错误消息）。 |
+
+**为何 buffer-based + 去重源读（核心算法）**：tee 的不变量——**每个源 chunk 必须送到两分支各一次、有序**，不论消费速率差。若两分支各自独立拉源会丢 chunk（一个分支拉走 chunk 后另一分支见不到）。解：共享 `buffer`（已读 chunk 留存）+ `readPromise` 去重（并发 pull 共享同一次源读）+ 每分支 `pos` 独立偏移。快分支拉源入 buffer，慢分支后续从 buffer[pos] 读同一 chunk（不重复拉源）。源 close/error 同步两分支。spec §3.4 tee 算法的 headless 简化（无背压门控双分支协调，buffer 直接留存）。
+
+**为何 tee 持源 reader（locked 守卫）**：spec tee 锁源（持 reader）防外部干扰分叉读取。源已 locked（用户持 reader）时 tee 抛 TypeError——本实现前置 `self._locked` 检查（同 getReader/pipeTo 守卫）。
+
+**为何零回归**：tee 为 ReadableStream 新增方法（既有 getReader/cancel/asyncIterator/pipeTo/pipeThrough 不受影响）；buffer-based 纯增量。R2967-R2970 Streams 测试全绿（make test 14154 全绿验证）。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14154 passed / 71 skipped / 0 failed**（engine +1 driving 测试，R2967-R2970 Streams 测试全绿，无回归）+ clippy `-D warnings` 零警告（workspace）+ fmt clean + 全 shim `node --check` 通过。
+
+**Streams API 核心表面闭合里程碑**（R2967-R2971，5 轮）：ReadableStream（getReader/cancel/asyncIterator）+ WritableStream（getWriter write/close/abort + controller.error 拒 pending）+ TransformStream（transform/flush/identity）+ TextEncoderStream/TextDecoderStream + pipeTo/pipeThrough + tee + fetch response.body 流式。剩余 follow-up：真背压门控（highWaterMark/ready Promise 挂起）、BYOB reader、CompressionStream（需 zlib）、流式 TextDecoder byte-buffer 状态。
+
+**下一步**：续 P1a——① Headers 实例化迁移（Response.headers/Request.headers → Headers 实例 + integration test 同步 .get()）；② 其他 defer Web API（ClipboardItem 图片剪贴板 / ResizeObserver borderBoxSize / PerformanceObserver buffer）；③ task source 优先级（事件循环边缘）；④ customElements upgrade（需 P1b RFC 审批）；⑤ 拆 js_dom_bridge.rs（3947，按职责重组）。
+
 ### P1a TextEncoderStream/TextDecoderStream（编码转换流，本轮 R2970，~14,153 测试）
 
 R2969（WritableStream/TransformStream + pipeTo/pipeThrough）后续补 Streams API 编码转换流。`TextEncoderStream`/`TextDecoderStream`（spec Generic Transform Stream）**此前全缺**——fetch `response.body` 为 UTF-8 字节流（ReadableStream\<Uint8Array\>），无 TextDecoderStream 则字节→文本流解码（`response.body.pipeThrough(new TextDecoderStream())`）不可用，fetch streaming 文本消费 / NDJSON / SSE 手解析全阻塞。本切片补两转换流。
