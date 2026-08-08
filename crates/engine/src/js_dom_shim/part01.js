@@ -62,6 +62,20 @@
   // 动机——`__zw_set_attr` 仅入队 mutation（异步 apply），同步 set→get 往返须客户端缓存（get 优先读缓存）。
   // 值结构：{ title?: string, lang?: string, dir?: string, tabindex?: number }。
   var _reflectedAttrs = {};
+  // R3037：reflected string 内容属性 IDL 名 → 内容属性名。这些属性 get 旧返 undefined（get trap 未拦），
+  // 写正常（set trap generic fallthrough → __zw_set_attr）。表单校验库读 input.min/max/pattern/type、
+  // analytics 读 src/name 等全失效。get trap 经 [`_reflectedStringAttr`] 查表，命中则读内容属性（缺省 ''，
+  // spec reflected string 缺省空串）。1:1 小写名用 `_REFLECTED_STRING_FLAT`；camelCase→attr 映射用 `_REFLECTED_STRING_MAP`。
+  // 数值型（size/maxLength/colSpan/rowSpan）+ 布尔型（required/readonly/multiple）spec 返 number/boolean，
+  // 另列 follow-up（本切片仅 string）。
+  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap ';
+  var _REFLECTED_STRING_MAP = { crossOrigin: 'crossorigin', formAction: 'formaction', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for' };
+  function _reflectedStringAttr(prop) {
+    if (typeof prop !== 'string') return null;
+    if (Object.prototype.hasOwnProperty.call(_REFLECTED_STRING_MAP, prop)) return _REFLECTED_STRING_MAP[prop];
+    if (_REFLECTED_STRING_FLAT.indexOf(' ' + prop + ' ') >= 0) return prop;
+    return null;
+  }
   // P1a DocumentFragment：已创建的 fragment handle 集合（nodeType=11 标识 + appendChild 时
   // flatten 检测）。fragment 为 create 句柄，无 selector，故用此 set 区别于普通元素句柄。
   var _fragmentHandles = {};

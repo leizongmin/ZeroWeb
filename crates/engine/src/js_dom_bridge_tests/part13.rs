@@ -921,3 +921,109 @@ fn test_element_sheet_cssstylesheet_r3036() {
         ".sheet.insertRule 后 cssRules.length=2"
     );
 }
+
+#[test]
+fn test_reflected_string_attr_reads_r3037() {
+    // R3037：reflected string 内容属性读。type/name/placeholder/min/max/step/pattern/alt/src/rel/target 等
+    // 旧 get trap 未拦 → 读返 undefined（写正常）。表单校验库读 input.min/max/pattern/type、analytics 读
+    // src/name 等失效。本切片补 get trap reflected string 查表读。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='i' type='text' value='v0' placeholder='ph' min='3' max='10' step='1' pattern='[0-9]+' name='nm'>\
+         <a id='a' href='http://x/' rel='noopener' target='_blank'>l</a>\
+         <img id='im' alt='alttext' src='s.png' loading='lazy'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① input reflected string 读（旧恒 undefined）。
+    sandbox
+        .execute(
+            "var i = document.getElementById('i');\
+             globalThis.__type = i.type;\
+             globalThis.__ph = i.placeholder;\
+             globalThis.__min = i.min;\
+             globalThis.__max = i.max;\
+             globalThis.__step = i.step;\
+             globalThis.__pat = i.pattern;\
+             globalThis.__name = i.name;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__type").unwrap().value, "text", "input.type=text");
+    assert_eq!(sandbox.execute("globalThis.__ph").unwrap().value, "ph", "input.placeholder=ph");
+    assert_eq!(sandbox.execute("globalThis.__min").unwrap().value, "3", "input.min=3");
+    assert_eq!(sandbox.execute("globalThis.__max").unwrap().value, "10", "input.max=10");
+    assert_eq!(sandbox.execute("globalThis.__step").unwrap().value, "1", "input.step=1");
+    assert_eq!(sandbox.execute("globalThis.__pat").unwrap().value, "[0-9]+", "input.pattern=[0-9]+");
+    assert_eq!(sandbox.execute("globalThis.__name").unwrap().value, "nm", "input.name=nm");
+
+    // ② img reflected string 读（alt/src/loading）。
+    sandbox
+        .execute(
+            "var im = document.getElementById('im');\
+             globalThis.__alt = im.alt;\
+             globalThis.__src = im.src;\
+             globalThis.__load = im.loading;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__alt").unwrap().value, "alttext", "img.alt=alttext");
+    assert_eq!(sandbox.execute("globalThis.__src").unwrap().value, "s.png", "img.src=s.png（raw 属性值）");
+    assert_eq!(sandbox.execute("globalThis.__load").unwrap().value, "lazy", "img.loading=lazy");
+
+    // ③ a reflected string 读（rel/target）。
+    sandbox
+        .execute(
+            "var a = document.getElementById('a');\
+             globalThis.__rel = a.rel;\
+             globalThis.__tgt = a.target;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__rel").unwrap().value, "noopener", "a.rel=noopener");
+    assert_eq!(sandbox.execute("globalThis.__tgt").unwrap().value, "_blank", "a.target=_blank");
+
+    // ④ 缺省属性返 ''（spec reflected string 缺省空串，非 undefined）。
+    sandbox.execute("globalThis.__accept = document.getElementById('i').accept;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__accept").unwrap().value, "", "input.accept 缺省=''（spec 空串）");
+
+    // ⑤ set-then-get round-trip：IDL setter 写 → 读反映（set trap fallthrough 写属性 + get latest-wins 读）。
+    sandbox
+        .execute(
+            "i.placeholder = 'newph';\
+             globalThis.__rpg = i.placeholder;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__rpg").unwrap().value,
+        "newph",
+        "input.placeholder='newph' 后读回 'newph'（set→get round-trip）"
+    );
+
+    // ⑥ setAttribute→IDL get：setAttribute('min','5') → input.min='5'。
+    sandbox
+        .execute(
+            "i.setAttribute('min', '5');\
+             globalThis.__ming = i.min;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ming").unwrap().value,
+        "5",
+        "setAttribute('min','5') 后 input.min='5'（attr↔IDL 一致）"
+    );
+
+    // ⑦ camelCase 映射：input.formMethod / a.crossOrigin 反射 formmethod / crossorigin（缺省 ''）。
+    sandbox.execute("globalThis.__fm = document.getElementById('i').formMethod;").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__fm").unwrap().value,
+        "",
+        "input.formMethod 缺省=''（camelCase→attr 映射，无 formmethod 属性）"
+    );
+}

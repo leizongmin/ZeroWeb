@@ -1137,6 +1137,17 @@
           }
           // 非 style/link：fall through undefined（generic Element 无 .sheet）
         }
+        // R3037：reflected string 内容属性读（type/name/placeholder/min/max/step/pattern/alt/src/rel/...）。
+        // 旧 get trap 未拦 → 读返 undefined（写正常，set trap generic fallthrough → __zw_set_attr）。表单校验库
+        // 读 input.min/max/pattern/type、analytics 读 src/name 等失效。命中 [`_reflectedStringAttr`] → 读内容属性
+        //（sel 走 latest-wins `__zw_get_attr_lw` 反映 pending SetAttr；handle 走 `__zw_get_attr_handle`）；缺省返 ''
+        //（spec reflected string 缺省空串，非 null/undefined）。
+        var _rsAttr = _reflectedStringAttr(prop);
+        if (_rsAttr) {
+          if (handle) return __zw_get_attr_handle(handle, _rsAttr) || '';
+          if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, _rsAttr) || '';
+          return __zw_get_attr(sel, _rsAttr) || '';
+        }
         return undefined;
       },
       set: function(_t, prop, value) {
