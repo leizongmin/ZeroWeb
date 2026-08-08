@@ -112,6 +112,21 @@
 
 ## 最近完成的改进
 
+### 大页面卡顿优化 M3-S8（ViewPainted 图片 payload 增量，2026-08-08）
+
+DOM 变更后每次 publish 全量 clone 图片像素是 ViewPainted 体积大头。renderer 跟踪
+已发送图片 key（browser 端 ImageCache 已存则不重传；fetch 失败不标 sent，重试由
+S6 负缓存门控；navigation 重置）。fetch 闭包改字段级捕获（2021 最小捕获）避免
+whole-self 借用冲突。
+
+**M3-S9（脏子树增量渲染）启动方案（下会话主任务）**：mutation 站点（tab_scripts/
+js_worker）报告变更节点集 → `render_html` 增量变体（只重算脏子树 + 布局 ripple
+边界保守扩张）→ `RenderStats.dirty_rects` 经 PaintSnapshotParams 传入 browser →
+browser 用 S1 的 `render_full_scene_region_into` 只重光栅脏区。正确性锚点：现有
+e2e 增量测试（`test_incremental_render_performance_criterion` <20% 断言）+ WPT
+smoke。风险最高处：CSS 重算边界（祖先/兄弟样式依赖）+ 布局 ripple + hit-test
+一致性——须独立会话专注实现，禁止在上下文不足时动手。
+
 ### P1a CompressionStream/DecompressionStream（gzip/deflate/deflate-raw，Streams API 压缩转换流闭合，本轮 R2986，~14,172 测试）
 
 R2985（Canvas getTransform）后续补 Streams API 转换流最后缺口。Compression Streams API（`new CompressionStream('gzip')` / `new DecompressionStream('deflate')`）**此前全缺**——`response.body.pipeThrough(new DecompressionStream('gzip'))` 解压服务端 gzip 流 / 压缩上传载荷不可用。Streams API 有 Readable/Writable/Transform + TextEncoder/DecoderStream + pipeTo/pipeThrough + tee，但缺 Compression/Decompression（gzip/deflate）。本切片经 flate2（既有 workspace crate，render-foundation 用于 WOFF zlib 解码）补 gzip/deflate/deflate-raw，闭合转换流表面。
