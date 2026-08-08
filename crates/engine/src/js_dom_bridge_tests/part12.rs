@@ -250,4 +250,98 @@ fn test_location_assign_replace_reload_r3009() {
     assert_eq!(sandbox.execute("globalThis.__hRel").unwrap().value, "https://example.com/final", "reload() headless no-op，location 不变");
 }
 
+#[test]
+fn test_streams_backpressure_r3010() {
+    // R3010：Streams 背压 spec 化。旧 desiredSize 恒 1 / ready 立即 resolve（无 highWaterMark 追踪）→
+    // 流控库（按 desiredSize 节流 / await writer.ready）失效。spec：desiredSize = highWaterMark - queueTotalSize，
+    // controller/writer.desiredSize 反映队列压力；writer.ready 在 desiredSize<=0 挂起、>0 resolve（背压门控）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ReadableStream controller.desiredSize：默认 hwm=1，enqueue 一 chunk 后 0（旧恒 1）。
+    sandbox
+        .execute(
+            "globalThis.__rc = null;\
+             new ReadableStream({ start: function(c){ globalThis.__rc = c; } });\
+             globalThis.__ds0 = globalThis.__rc.desiredSize;\
+             globalThis.__rc.enqueue('x');\
+             globalThis.__ds1 = globalThis.__rc.desiredSize;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__ds0)").unwrap().value, "1", "ReadableStream 默认 hwm=1 初始 desiredSize=1");
+    assert_eq!(sandbox.execute("String(globalThis.__ds1)").unwrap().value, "0", "enqueue 1 chunk 后 desiredSize=hwm-queueTotalSize=0");
+
+    // 自定义 highWaterMark + size 函数（byte 计量）：hwm=10，enqueue 'hello'（size 5）→ desiredSize=5。
+    sandbox
+        .execute(
+            "globalThis.__rc2 = null;\
+             new ReadableStream({ start: function(c){ globalThis.__rc2 = c; } }, { highWaterMark: 10, size: function(c){ return c.length; } });\
+             globalThis.__dsc0 = globalThis.__rc2.desiredSize;\
+             globalThis.__rc2.enqueue('hello');\
+             globalThis.__dsc1 = globalThis.__rc2.desiredSize;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__dsc0)").unwrap().value, "10", "自定义 hwm=10 初始 desiredSize=10");
+    assert_eq!(sandbox.execute("String(globalThis.__dsc1)").unwrap().value, "5", "enqueue 'hello'(size 5) 后 desiredSize=10-5=5");
+
+    // ReadableStream close → desiredSize=0；read 后 desiredSize 回升（drain 释放余量）。
+    sandbox
+        .execute(
+            "globalThis.__rc3 = null;\
+             var rs3 = new ReadableStream({ start: function(c){ globalThis.__rc3 = c; c.enqueue('a'); } });\
+             globalThis.__dsBeforeRead = globalThis.__rc3.desiredSize;\
+             globalThis.__rc3.close(); globalThis.__dsClose = globalThis.__rc3.desiredSize;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__dsBeforeRead)").unwrap().value, "0", "enqueue 1 chunk 后 desiredSize=0（背压）");
+    assert_eq!(sandbox.execute("String(globalThis.__dsClose)").unwrap().value, "0", "close 后 desiredSize=0");
+
+    // WritableStream desiredSize = hwm - queueTotalSize：hwm=2，写前 2、写 'a' 后 1、写 'b' 后 0。
+    sandbox
+        .execute(
+            "globalThis.__log = [];\
+             globalThis.__ws = new WritableStream({ write: function(c){ globalThis.__log.push(c); } }, { highWaterMark: 2 });\
+             globalThis.__w = globalThis.__ws.getWriter();\
+             globalThis.__wds0 = globalThis.__w.desiredSize;\
+             globalThis.__w.write('a'); globalThis.__wds1 = globalThis.__w.desiredSize;\
+             globalThis.__w.write('b'); globalThis.__wds2 = globalThis.__w.desiredSize;\
+             globalThis.__w.ready.then(function(){ globalThis.__readyFired = 'drained'; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__wds0)").unwrap().value, "2", "WritableStream hwm=2 初始 desiredSize=2");
+    assert_eq!(sandbox.execute("String(globalThis.__wds1)").unwrap().value, "1", "写 'a' 后 desiredSize=2-1=1");
+    assert_eq!(sandbox.execute("String(globalThis.__wds2)").unwrap().value, "0", "写 'b' 后 desiredSize=2-2=0（背压）");
+    // 同步 sink：microtask checkpoint drain 后 queueTotalSize 归零、desiredSize 回 hwm、ready resolve。
+    sandbox.execute("globalThis.__wdsAfter = globalThis.__w.desiredSize;").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__wdsAfter)").unwrap().value, "2", "同步 sink drain 后 desiredSize 回 hwm=2");
+    assert_eq!(sandbox.execute("String(globalThis.__readyFired)").unwrap().value, "drained", "ready 在 desiredSize>0 后 resolve（背压释放）");
+
+    // 异步 sink + ready 背压门控：写超 hwm 后 desiredSize<=0（背压），手控 resolver 释放后 ready resolve。
+    sandbox
+        .execute(
+            "globalThis.__defer = null;\
+             globalThis.__ws2 = new WritableStream({\
+               write: function(c){ return new Promise(function(res){ globalThis.__defer = res; }); }\
+             }, { highWaterMark: 1 });\
+             globalThis.__w2 = globalThis.__ws2.getWriter();\
+             globalThis.__w2.write('x');\
+             globalThis.__bp = (globalThis.__w2.desiredSize <= 0) ? 'yes' : 'no';\
+             globalThis.__w2.ready.then(function(){ globalThis.__readyFired2 = 'resumed'; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__bp)").unwrap().value, "yes", "异步 sink 写超 hwm 后 desiredSize<=0（背压挂起）");
+    assert_eq!(sandbox.execute("String(globalThis.__readyFired2 === undefined)").unwrap().value, "true", "背压态 ready 挂起（未 resolve）");
+    // 释放 pending write → 背压解除 → ready resolve（_defer microtask 在 execute 末尾 drain）。
+    sandbox.execute("globalThis.__defer();").unwrap();
+    sandbox.execute("globalThis.__rf2 = globalThis.__readyFired2;").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__rf2)").unwrap().value, "resumed", "pending write 完成释放背压 → ready resolve");
+}
+
 

@@ -359,10 +359,28 @@
   // tee()（分叉两独立分支）R2971。
   var _RS_DONE = { done: true, value: undefined };
   function _rs_chunk(value) { return { done: false, value: value }; }
+  // R3010：strategy → { highWaterMark, size } 解析 + chunk size 计算（spec 背压计量）。无 strategy 时 hwm=1、
+  // size 恒 1（CountQueuingStrategy 默认）。size 抛错 / 非有限正数 → 回退 1（spec 应抛 RangeError，headless best-effort）。
+  function _zw_streamHwm(strategy) {
+    return (strategy && typeof strategy.highWaterMark === 'number' && isFinite(strategy.highWaterMark))
+      ? strategy.highWaterMark : 1;
+  }
+  function _zw_streamSize(sizeFn, chunk) {
+    var sz = 1;
+    if (typeof sizeFn === 'function') {
+      try { sz = sizeFn(chunk); } catch (_e) { sz = 1; }
+    }
+    if (typeof sz !== 'number' || !isFinite(sz) || sz < 0) sz = 1;
+    return sz;
+  }
   globalThis.ReadableStream = globalThis.ReadableStream || function ReadableStream(underlyingSource, _strategy) {
     if (!(this instanceof ReadableStream)) return new ReadableStream(underlyingSource, _strategy);
     var source = underlyingSource || {};
-    var queue = [];              // 已 enqueue 待消费 chunk
+    // R3010：背压计量——hwm + size 函数 + queueTotalSize（desiredSize = hwm - queueTotalSize）。
+    var hwm = _zw_streamHwm(_strategy);
+    var sizeFn = (_strategy && typeof _strategy.size === 'function') ? _strategy.size : null;
+    var queue = [];              // 已 enqueue 待消费 { chunk, size }
+    var queueTotalSize = 0;
     var state = 'readable';      // readable | closed | errored
     var errorVal = undefined;
     var waiting = [];            // 待 read() 的 {resolve, reject}
@@ -372,9 +390,10 @@
 
     function enqueueChunk(chunk) {
       if (state !== 'readable') return;
-      // 有等待中的 read → 直接 resolve（零拷贝绕 queue）；否则入队。
+      var sz = _zw_streamSize(sizeFn, chunk);
+      // 有等待中的 read → 直接 resolve（零拷贝绕 queue，不计 queueTotalSize）；否则入队 + 累计 size。
       if (waiting.length > 0) waiting.shift().resolve(_rs_chunk(chunk));
-      else queue.push(chunk);
+      else { queue.push({ chunk: chunk, size: sz }); queueTotalSize += sz; }
     }
     function closeStream() {
       if (state !== 'readable') return;
@@ -388,14 +407,21 @@
       while (waiting.length > 0) waiting.shift().reject(e);
     }
     function flushPull() {
-      // queue 空 + readable + 有 pull → 触发一次（pulling 守卫防重入）。pull 可 enqueue/close/error。
+      // R3010：readable + 有 pull + desiredSize > 0（queue 有余量）→ 触发一次（pulling 守卫防重入）。
+      // desiredSize <= 0（背压）时不 pull，待 read drain 释放余量后再触发。pull 可 enqueue/close/error。
       if (pulling || state !== 'readable' || typeof source.pull !== 'function') return;
+      if (hwm - queueTotalSize <= 0) return; // 背压：queue 已达/超 hwm，不 pull
       pulling = true;
       try { source.pull(controller); } catch (_e) { errorStream(_e); }
       pulling = false;
     }
     var controller = {
-      desiredSize: 1,
+      get desiredSize() {
+        // spec：readable → hwm - queueTotalSize；closed → 0；errored → null。
+        if (state === 'errored') return null;
+        if (state === 'closed') return 0;
+        return hwm - queueTotalSize;
+      },
       enqueue: enqueueChunk,
       close: closeStream,
       error: errorStream
@@ -413,7 +439,14 @@
           return new Promise(function (resolve, reject) {
             if (state === 'errored') { reject(errorVal); return; }
             // 先 drain 已 enqueue chunk（即便流已 close，剩余 chunk 须先派发，spec §3.5 close 后仍可读余 chunk）。
-            if (queue.length > 0) { resolve(_rs_chunk(queue.shift())); return; }
+            if (queue.length > 0) {
+              var entry = queue.shift();
+              queueTotalSize -= entry.size;
+              if (queueTotalSize < 0) queueTotalSize = 0;
+              resolve(_rs_chunk(entry.chunk));
+              flushPull(); // R3010：drain 释放余量 → 按 desiredSize 重 pull
+              return;
+            }
             if (state === 'closed') { resolve(_RS_DONE); return; }
             waiting.push({ resolve: resolve, reject: reject });
             flushPull();
@@ -553,6 +586,8 @@
   // headless 背压近似（desiredSize 恒 1，ready 立即 resolve——无真 highWaterMark 队列压力），write 串行化
   //（每个 write 自带 Promise 链，sink.write 异步则 await）。WritableStream 自身错误 → 拒绝 pending write +
   // reject closed。
+  // R3010：背压 spec 化——strategy {highWaterMark, size} 计量 queueTotalSize，desiredSize = hwm - queueTotalSize，
+  // writer.ready 在 desiredSize<=0 时挂起（背压门控）、>0 时 resolve（背压释放），生产者可 await ready 节流。
   globalThis.WritableStream = globalThis.WritableStream || function WritableStream(underlyingSink, _strategy) {
     if (!(this instanceof WritableStream)) return new WritableStream(underlyingSink, _strategy);
     var sink = underlyingSink || {};
@@ -562,7 +597,21 @@
     this._locked = false;
     var resolveClosed, rejectClosed;
     var closedP = new Promise(function (res, rej) { resolveClosed = res; rejectClosed = rej; });
-    var pendingWrites = [];       // FIFO {resolve, reject}：待 sink.write 完成的 write
+    var pendingWrites = [];       // FIFO {resolve, reject, size}：待 sink.write 完成的 write
+    // R3010：背压计量——hwm + size 函数 + queueTotalSize（desiredSize = hwm - queueTotalSize）+ ready Promise。
+    var hwm = _zw_streamHwm(_strategy);
+    var sizeFn = (_strategy && typeof _strategy.size === 'function') ? _strategy.size : null;
+    var queueTotalSize = 0;
+    var resolveReady = null;     // ready 阻塞态时的 resolver（desiredSize<=0）；null = ready 已 resolve 态
+    var readyPromise = Promise.resolve();
+    // ready 在 desiredSize>0 时 resolve（背压释放）；desiredSize<=0 时挂起（背压门控）。
+    function updateReady() {
+      if (hwm - queueTotalSize > 0) {
+        if (resolveReady) { var r = resolveReady; resolveReady = null; readyPromise = Promise.resolve(); r(); }
+      } else if (!resolveReady) {
+        readyPromise = new Promise(function (res) { resolveReady = res; });
+      }
+    }
     function errorStream(e) {
       if (state === 'errored' || state === 'closed') return;
       errorVal = e;
@@ -583,21 +632,41 @@
           if (state === 'errored') return Promise.reject(errorVal);
           return closedP;
         },
-        get ready() { return Promise.resolve(); },   // headless：无背压门控
-        get desiredSize() { return state === 'writable' ? 1 : 0; },
+        get ready() {
+          // R3010：spec 背压门控——errored→reject；closed→resolve；否则 readyPromise（desiredSize<=0 时挂起）。
+          if (state === 'errored') return Promise.reject(errorVal);
+          if (state === 'closed') return Promise.resolve();
+          return readyPromise;
+        },
+        get desiredSize() {
+          // spec：writable→hwm-queueTotalSize；errored→null；closed→0。
+          if (state === 'errored') return null;
+          if (state === 'closed') return 0;
+          return hwm - queueTotalSize;
+        },
         write: function (chunk) {
           if (state === 'errored') return Promise.reject(errorVal);
           if (state === 'closed') return Promise.reject(new TypeError('Cannot write to a closed WritableStream'));
+          // R3010：入队前累计 size（背压在 pending write 期间生效，desiredSize 降，ready 挂起）。
+          var sz = _zw_streamSize(sizeFn, chunk);
+          queueTotalSize += sz;
+          updateReady();
           return new Promise(function (resolve, reject) {
-            var entry = { resolve: resolve, reject: reject };
+            var entry = { resolve: resolve, reject: reject, size: sz };
             pendingWrites.push(entry);
             try {
               Promise.resolve(sink.write ? sink.write(chunk, controller) : undefined)
                 .then(function () {
                   // sink.write 完成：若期间 controller.error 已拒绝本 entry（state errored），跳过；
-                  // 否则 FIFO 取本 entry resolve（多 write 串行完成，顺序匹配）。
+                  // 否则 FIFO 取本 entry resolve（多 write 串行完成，顺序匹配）+ 释放对应 size（背压释放）。
                   if (state === 'errored') return;
-                  if (pendingWrites.length > 0) pendingWrites.shift().resolve(undefined);
+                  if (pendingWrites.length > 0) {
+                    var done = pendingWrites.shift();
+                    queueTotalSize -= done.size;
+                    if (queueTotalSize < 0) queueTotalSize = 0;
+                    updateReady();
+                    done.resolve(undefined);
+                  }
                 },
                 function (e) { errorStream(e); });
             } catch (e) { errorStream(e); }
@@ -607,6 +676,7 @@
           if (state === 'errored') return Promise.reject(errorVal);
           if (state === 'closed') return Promise.resolve();
           state = 'closed';
+          queueTotalSize = 0; // R3010：close 后 desiredSize=0（closed 态），清背压计量。
           // 残余 pending write 视为完成（headless 串行 sink，正常此时已空，best-effort resolve）。
           while (pendingWrites.length > 0) pendingWrites.shift().resolve(undefined);
           try {
