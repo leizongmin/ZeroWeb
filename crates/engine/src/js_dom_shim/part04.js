@@ -505,8 +505,16 @@
             });
           };
         }
-        if (prop === 'scrollIntoView' || prop === 'scrollTo' || prop === 'scrollBy') {
-          return function() {};
+        // R3047：scroll 方法（headless 无真视口滚动 → JS-side 状态追踪）。scrollTo/scrollBy 更新 `_scrollOffsets[key]`
+        //（与 scrollTop/scrollLeft getter 自洽）；scrollIntoView 无 viewport → no-op（documented）。
+        // 参数支持 `(x,y)` 与 `{left,top,behavior}` 两 spec 形式（_zwApplyScroll 统一解析）。
+        if (prop === 'scrollTo' || prop === 'scrollBy') {
+          var _ss = _scrollOffsets[key] || (_scrollOffsets[key] = { top: 0, left: 0 });
+          var _byM = prop === 'scrollBy';
+          return function (a, b) { _zwApplyScroll(_ss, a, b, _byM); };
+        }
+        if (prop === 'scrollIntoView') {
+          return function () {}; // no-op（headless 无 viewport，无法真实滚动元素入视口）
         }
         // `el.hasAttributes()`——是否有任意属性（经 `__zw_attr_names` 非空判定）。
         if (prop === 'hasAttributes') {
@@ -1107,9 +1115,10 @@
           var r = _layoutRect(sel, handle);
           return r ? r.h : 0;
         }
-        // scrollTop/scrollLeft：滚动偏移。当前无滚动状态跟踪 → 恒 0（无滚动行为，符合默认未滚动语义）。
+        // R3047：scrollTop/scrollLeft 读 `_scrollOffsets[key]`（程序化滚动 round-trip 自洽；默认未滚动 → 0）。
         if (prop === 'scrollTop' || prop === 'scrollLeft') {
-          return 0;
+          var _sg = _scrollOffsets[key];
+          return _sg ? (prop === 'scrollTop' ? _sg.top : _sg.left) : 0;
         }
         // offsetParent：最近 positioned 祖先（position != static）或 body，detached/hidden → null。
         // 布局 rect 无 style 信息，无法精确算 positioned 祖先；近似：有 rect（已渲染）→ body proxy，

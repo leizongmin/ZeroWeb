@@ -91,6 +91,14 @@
           wrc[p] = wv;
           if (handle) __zw_set_attr_handle(handle, p, String(wv));
           else { __zw_set_attr(sel, p, String(wv)); moAttr = p; }
+        } else if (p === 'scrollTop' || p === 'scrollLeft') {
+          // R3047：scrollTop/scrollLeft setter（headless 无真滚动 → JS-side 状态追踪）。Number 归一（NaN/负 → 0）→
+          // 存 `_scrollOffsets[key]`（与 scrollTo/scrollBy/getter 自洽）。无 moAttr（非内容属性）。不写 attr（旧 generic
+          // fallthrough 误写 scrolltop="50" 垃圾属性）。
+          var _sv = Number(value);
+          if (isNaN(_sv) || _sv < 0) _sv = 0;
+          var _sss = _scrollOffsets[key] || (_scrollOffsets[key] = { top: 0, left: 0 });
+          if (p === 'scrollTop') _sss.top = _sv; else _sss.left = _sv;
         } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
           // R3042：expando 属性（非原始值——function/object/array/null/undefined/symbol/bigint）。旧经 generic fallthrough
           // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')` / 'function(){}'）且 get 读不回（undefined）。

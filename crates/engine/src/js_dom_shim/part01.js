@@ -64,6 +64,14 @@
   // 仅非原始值（real attr setter 永不收 function/object → 零回归风险，string/number/boolean 保持 generic fallthrough）。
   // 限制：无 deleteProperty trap → `delete el.expando` 不清此 map（罕见，documented）。导航经 __zw_reset_form_state 清空。
   var _expando = {};
+  // R3047：scroll 位置追踪。headless 无真视口滚动 → 旧 scrollTop/scrollLeft 恒 0、scrollTo/scrollBy/scroll no-op、
+  // window.scrollX/Y 恒 0。real 浏览器这些为可读写状态（sticky-nav / scroll restoration / 无限滚动检测 / parallax 读）。
+  // 本切片改 JS-side 状态追踪：`scrollTo/scrollBy` + `scrollTop/scrollLeft` set 更新此 map，get 读回 → 程序化滚动
+  // round-trip 一致（`scrollTo(0,100); scrollY` → 100）。无真视口滚动（headless），仅 JS-observable 状态自洽。
+  // `_scrollOffsets`：per-element-key → { top, left }；`_winScroll`：window → { top, left }（scrollX=left / scrollY=top）。
+  // 负值 clamp 0（spec scroll 不可负）。导航经 __zw_reset_form_state 重置。
+  var _scrollOffsets = {};
+  var _winScroll = { top: 0, left: 0 };
   // reflected 字符串/数值属性（title/lang/dir/tabindex）per-element-key 缓存。同 _inputValues/_classCache
   // 动机——`__zw_set_attr` 仅入队 mutation（异步 apply），同步 set→get 往返须客户端缓存（get 优先读缓存）。
   // 值结构：{ title?: string, lang?: string, dir?: string, tabindex?: number }。
@@ -1116,7 +1124,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
@@ -1316,16 +1324,30 @@
       if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(ev);
     } catch (_e) {}
   };
-  // scroll（R2817）——window 滚动方法/属性。headless 无真滚动 → no-op 方法 + 恒 0 偏移（scrollX/scrollY/
-  // pageXOffset/pageYOffset）。feature-detect + scroll-to-section 脚本不抛。
-  globalThis.scrollX = 0;
-  globalThis.scrollY = 0;
-  globalThis.pageXOffset = 0;
-  globalThis.pageYOffset = 0;
-  globalThis.scrollTo = function() {};
+  // scroll（R2817/R3047）——window 滚动方法/属性。headless 无真视口滚动 → R3047 改 JS-side 状态追踪：
+  // scrollTo/scrollBy 更新 `_winScroll`，scrollX/scrollY/pageXOffset/pageYOffset 经 defineProperty getter 读回
+  //（程序化滚动 round-trip 自洽；无真视口滚动，仅 JS-observable 状态）。`scrollIntoView` 为 Element 方法（非 window），
+  // 此处 window 级 stub 保兼容（feature-detect 不抛）。参数支持 `(x,y)` 与 `{left,top,behavior}` 两种 spec 形式。
+  function _zwApplyScroll(store, arg1, arg2, isBy) {
+    var nx, ny;
+    if (arg1 && typeof arg1 === 'object') { // scrollTo({left, top, behavior})
+      nx = Number(arg1.left) || 0; ny = Number(arg1.top) || 0;
+    } else { // scrollTo(x, y)
+      nx = Number(arg1) || 0; ny = Number(arg2) || 0;
+    }
+    if (isBy) { store.left += nx; store.top += ny; }
+    else { store.left = nx; store.top = ny; }
+    if (store.left < 0) store.left = 0; // spec scroll 不可负
+    if (store.top < 0) store.top = 0;
+  }
+  Object.defineProperty(globalThis, 'scrollX', { configurable: true, get: function () { return _winScroll.left; } });
+  Object.defineProperty(globalThis, 'pageXOffset', { configurable: true, get: function () { return _winScroll.left; } });
+  Object.defineProperty(globalThis, 'scrollY', { configurable: true, get: function () { return _winScroll.top; } });
+  Object.defineProperty(globalThis, 'pageYOffset', { configurable: true, get: function () { return _winScroll.top; } });
+  globalThis.scrollTo = function (a, b) { _zwApplyScroll(_winScroll, a, b, false); };
   globalThis.scroll = globalThis.scrollTo;
-  globalThis.scrollBy = function() {};
-  globalThis.scrollIntoView = function() {};
+  globalThis.scrollBy = function (a, b) { _zwApplyScroll(_winScroll, a, b, true); };
+  globalThis.scrollIntoView = function () {};
 
   // window 弹窗 / 对话框 API（R2979）——alert/confirm/prompt/open 此前全缺，`if (confirm('Delete?'))` /
   // `alert(err)` / `prompt('Name')` / `window.open(url)` 抛 ReferenceError 中断后续脚本。headless 无 UI 用户

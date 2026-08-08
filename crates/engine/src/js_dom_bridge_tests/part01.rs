@@ -1093,6 +1093,101 @@ fn test_layout_geometry_e2e() {
 }
 
 #[test]
+fn test_scroll_position_tracking_r3047() {
+    // R3047：scroll 位置追踪。headless 无真视口滚动，旧 scrollTop/scrollLeft 恒 0、scrollTo/scrollBy/scroll no-op、
+    // window.scrollX/Y 恒 0。本切片改 JS-side 状态追踪：程序化滚动 round-trip 自洽（scroll-tracking 库可用）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'>x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① element scrollTop/scrollLeft set→get round-trip（旧 set 写垃圾 attr scrolltop=、get 恒 0）。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             d.scrollTop = 100;\
+             d.scrollLeft = 50;\
+             globalThis.__st = String(d.scrollTop);\
+             globalThis.__sl = String(d.scrollLeft);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__st").unwrap().value, "100", "el.scrollTop=100 后读 100（round-trip）");
+    assert_eq!(sandbox.execute("globalThis.__sl").unwrap().value, "50", "el.scrollLeft=50 后读 50（round-trip）");
+
+    // ② element scrollTo(x,y) / scrollTo({top,left}) / scrollBy 设 scrollTop/scrollLeft。
+    sandbox
+        .execute(
+            "d.scrollTo(0, 200);\
+             globalThis.__st2 = String(d.scrollTop);\
+             d.scrollTo({ left: 30, top: 80 });\
+             globalThis.__st3 = String(d.scrollTop);\
+             globalThis.__sl3 = String(d.scrollLeft);\
+             d.scrollBy(0, 20);\
+             globalThis.__st4 = String(d.scrollTop);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__st2").unwrap().value, "200", "scrollTo(0,200) → scrollTop=200");
+    assert_eq!(sandbox.execute("globalThis.__st3").unwrap().value, "80", "scrollTo({{top:80}}) → scrollTop=80（options 形式）");
+    assert_eq!(sandbox.execute("globalThis.__sl3").unwrap().value, "30", "scrollTo({{left:30}}) → scrollLeft=30");
+    assert_eq!(sandbox.execute("globalThis.__st4").unwrap().value, "100", "scrollBy(0,20) → scrollTop=80+20=100（增量）");
+
+    // ③ window scroll：scrollTo/scrollBy 更新 scrollX/scrollY/pageXOffset/pageYOffset（旧恒 0）。
+    sandbox
+        .execute(
+            "window.scrollTo(0, 500);\
+             globalThis.__sy = String(window.scrollY);\
+             globalThis.__py = String(window.pageYOffset);\
+             globalThis.__sx0 = String(window.scrollX);\
+             window.scrollTo(300, 0);\
+             globalThis.__sx = String(window.scrollX);\
+             globalThis.__px = String(window.pageXOffset);\
+             window.scrollBy(0, 25);\
+             globalThis.__sy2 = String(window.scrollY);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__sy").unwrap().value, "500", "window.scrollTo(0,500) → scrollY=500");
+    assert_eq!(sandbox.execute("globalThis.__py").unwrap().value, "500", "pageYOffset=scrollY=500（别名）");
+    assert_eq!(sandbox.execute("globalThis.__sx0").unwrap().value, "0", "scrollX=0（scrollTo(0,500) 未设 x）");
+    assert_eq!(sandbox.execute("globalThis.__sx").unwrap().value, "300", "window.scrollTo(300,0) → scrollX=300");
+    assert_eq!(sandbox.execute("globalThis.__px").unwrap().value, "300", "pageXOffset=scrollX=300（别名）");
+    assert_eq!(sandbox.execute("globalThis.__sy2").unwrap().value, "25", "scrollBy(0,25) → scrollY=0+25=25（增量，scrollTo(300,0) 重置 y）");
+
+    // ④ window.scroll（scrollTo 别名）+ 负值 clamp 0（spec scroll 不可负）。
+    sandbox
+        .execute(
+            "window.scroll(0, 0);\
+             window.scroll(0, -100);\
+             globalThis.__neg = String(window.scrollY);\
+             d.scrollTop = -50;\
+             globalThis.__negEl = String(d.scrollTop);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__neg").unwrap().value, "0", "scroll(0,-100) 负值 clamp → scrollY=0");
+    assert_eq!(sandbox.execute("globalThis.__negEl").unwrap().value, "0", "scrollTop=-50 负值 clamp → 0");
+
+    // ⑤ 回归守卫：scrollIntoView 为 no-op（不抛）；多元素 scroll 状态隔离。
+    sandbox
+        .execute(
+            "globalThis.__siv = 'ok';\
+             try { d.scrollIntoView(); d.scrollIntoView({ block: 'start' }); } catch(e){ globalThis.__siv = 'err'; }\
+             var b = document.createElement('div');\
+             b.scrollTop = 7;\
+             globalThis.__iso = String(b.scrollTop);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__siv").unwrap().value, "ok", "scrollIntoView() no-op 不抛");
+    assert_eq!(sandbox.execute("globalThis.__iso").unwrap().value, "7", "createElement 元素 scrollTop round-trip");
+    assert_eq!(sandbox.execute("globalThis.__negEl").unwrap().value, "0", "d.scrollTop 独立（④ 设 -50→0），不串 b");
+}
+
+#[test]
 fn test_request_idle_callback_e2e() {
     // requestIdleCallback 无 host __zw_setTimeout → 走 _defer fallback（微任务，execute 末尾 drain）。
     // 回调传 IdleDeadline（timeRemaining 近似 50）。cancelIdleCallback 不抛。
