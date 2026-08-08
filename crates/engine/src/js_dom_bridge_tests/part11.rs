@@ -1258,3 +1258,184 @@ fn test_navigator_env_info_r2988() {
         "userAgentData.toJSON() 含 brands"
     );
 }
+
+#[test]
+fn test_dommatrix_matrix_math_r2989() {
+    // R2989：DOMMatrix 矩阵运算覆盖加固。R2985 shipped DOMMatrix 但 driving test 仅覆盖 identity/
+    // from-array/translate/scale/transformPoint(translate)，**multiply/inverse/rotate/multiplySelf/
+    // fromMatrix 未测**——矩阵运算（column-major multiply / Gauss-Jordan inverse / rotate Z）为最易藏
+    // subtle bug 的算法代码，补 known-answer 覆盖锁定正确性（Done Criteria §5 测试质量）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // multiply：A.scale(2,2) × B.translate(5,0) = {a=2, d=2, e=10}（A(B(p)) = 2·(p+(5,0))）。
+    sandbox
+        .execute("globalThis.__m = new DOMMatrix().scale(2, 2).multiply(new DOMMatrix().translate(5, 0));")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m.a)").unwrap().value,
+        "2",
+        "scale(2,2)×translate(5,0) → a=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m.d)").unwrap().value,
+        "2",
+        "scale(2,2)×translate(5,0) → d=2"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m.e)").unwrap().value,
+        "10",
+        "scale(2,2)×translate(5,0) → e=10（2·5）"
+    );
+
+    // multiply 非交换验证：translate(5,0)×scale(2,2) ≠ 上（B(A(p)) = 2·p+(5,0)，e=5 非 10）。
+    sandbox
+        .execute("globalThis.__m2 = new DOMMatrix().translate(5, 0).multiply(new DOMMatrix().scale(2, 2));")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m2.e)").unwrap().value,
+        "5",
+        "translate(5,0)×scale(2,2) → e=5（非交换，序敏感）"
+    );
+
+    // inverse：translate(5,10).inverse() = translate(-5,-10)。
+    sandbox
+        .execute("globalThis.__inv = new DOMMatrix([1,0,0,1,5,10]).inverse();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__inv.e)").unwrap().value,
+        "-5",
+        "translate(5,10).inverse() → e=-5"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__inv.f)").unwrap().value,
+        "-10",
+        "translate(5,10).inverse() → f=-10"
+    );
+
+    // inverse scale：scale(2,4).inverse() = scale(0.5,0.25)。
+    sandbox
+        .execute("globalThis.__invs = new DOMMatrix().scale(2, 4).inverse();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__invs.a)").unwrap().value,
+        "0.5",
+        "scale(2,4).inverse() → a=0.5"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__invs.d)").unwrap().value,
+        "0.25",
+        "scale(2,4).inverse() → d=0.25"
+    );
+
+    // multiply × inverse 往返 = identity（数值容差 < 1e-6）。
+    sandbox
+        .execute(
+            "var orig = new DOMMatrix([2,0,0,3,5,7]);\
+             var rt = orig.multiply(orig.inverse());\
+             globalThis.__rtClose = String(Math.abs(rt.a - 1) < 1e-6 && Math.abs(rt.d - 1) < 1e-6 && Math.abs(rt.e) < 1e-6);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rtClose)").unwrap().value,
+        "true",
+        "M × M.inverse() ≈ identity（数值容差）"
+    );
+
+    // rotate(90°)：a=cos90≈0, b=sin90=1, c=-sin90=-1, d=cos90≈0。
+    sandbox
+        .execute(
+            "var r = new DOMMatrix().rotate(90);\
+             globalThis.__rA = String(Math.abs(r.a) < 1e-6);\
+             globalThis.__rB = String(Math.round(r.b));\
+             globalThis.__rC = String(Math.round(r.c));\
+             globalThis.__rD = String(Math.abs(r.d) < 1e-6);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rA)").unwrap().value,
+        "true",
+        "rotate(90) a=cos90≈0（容差）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rB)").unwrap().value,
+        "1",
+        "rotate(90) b=sin90=1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rC)").unwrap().value,
+        "-1",
+        "rotate(90) c=-sin90=-1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rD)").unwrap().value,
+        "true",
+        "rotate(90) d=cos90≈0（容差）"
+    );
+
+    // multiplySelf：identity.multiplySelf(translate(5,0)) → e=5，原对象 mutated。
+    sandbox
+        .execute(
+            "var ms = new DOMMatrix();\
+             var ret = ms.multiplySelf(new DOMMatrix().translate(5, 0));\
+             globalThis.__msRetIsSelf = String(ret === ms);\
+             globalThis.__msE = String(ms.e);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__msRetIsSelf)").unwrap().value,
+        "true",
+        "multiplySelf 返 this（mutate 原对象）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__msE)").unwrap().value,
+        "5",
+        "identity.multiplySelf(translate(5,0)) → e=5"
+    );
+
+    // fromMatrix：独立副本（改原不影响副本）。
+    sandbox
+        .execute(
+            "var src = new DOMMatrix([1,2,3,4,5,6]);\
+             var cp = DOMMatrix.fromMatrix(src);\
+             src.e = 999;\
+             globalThis.__cpE = String(cp.e);\
+             globalThis.__cpF = String(cp.f);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cpE)").unwrap().value,
+        "5",
+        "fromMatrix 独立副本（改原 src.e=999 不影响 cp.e=5）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cpF)").unwrap().value,
+        "6",
+        "fromMatrix 副本 f=6"
+    );
+
+    // transformPoint with scale：scale(2,3).transformPoint({x:3,y:4}) = (6,12)。
+    sandbox
+        .execute("globalThis.__tp = new DOMMatrix().scale(2, 3).transformPoint({ x: 3, y: 4 });")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tp.x)").unwrap().value,
+        "6",
+        "scale(2,3).transformPoint(3,4) → x=6"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tp.y)").unwrap().value,
+        "12",
+        "scale(2,3).transformPoint(3,4) → y=12"
+    );
+}
