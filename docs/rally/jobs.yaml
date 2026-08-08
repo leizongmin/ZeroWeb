@@ -1,0 +1,75 @@
+# Rally cron 定时任务配置（docs/rally/jobs.yaml）
+#
+# 所有定时任务统一使用 claude-dsflash（deepseek-v4-flash）agent-command——
+# 便宜时段（晚 8 点 ~ 早 6 点）运行，控制成本。
+# 启动调度器：rally cron run -w .
+# 校验配置：  rally cron run -w . --dry-run
+#
+# 任务清单：
+#   1. docs-maintenance     每天凌晨 4:17 维护 README 等文档到最新
+#   2. monthly-report-finalize 每月 2 日凌晨 3:17 补充月报「决策与亮点」
+#   3. goal-blockers-nightly 每晚 22:17 整理待决策卡点，处理一部分 + 飞书征询
+defaults:
+  cwd: "$DIR/../.."          # docs/rally/../.. = 仓库根
+  concurrency: "skip"        # 同 job 重叠时跳过
+  start: "next"
+  timeout_seconds: 3600
+  env:
+    RALLY_ENV: "cron"
+
+jobs:
+  # 每天早上维护 README 与 docs/ 关键文档到最新仓库事实
+  - id: "docs-maintenance"
+    enabled: true
+    schedule: "17 4 * * *"
+    command: "rally"
+    args:
+      - "query"
+      - "维护仓库文档到最新状态：核对 README.md 与 docs/ 下关键文档（docs/goal/*/master.md 控制面、docs/rally/run-rules.md、规格文档）与当前仓库事实的一致性——功能列表、测试数量、最近完成项、命令用法等；更新过时内容（不重写长期目标文档 docs/goal/zero-web.md / docs/goal/rendering-compat.md 的 Mission/Done Criteria）；遵循 docs/rally/run-rules.md 的提交规则（fmt/clippy/测试门禁、lei-pre-commit-guard）并推送到 main；无变更则直接输出 DONE。"
+      - "-w"
+      - "."
+      - "--agent-command"
+      - "claude-dsflash"
+    cwd: "$DIR/../.."
+    concurrency: "skip"
+    start: "next"
+    query:
+      session_reuse: true
+      max_session_uses: 7
+
+  # 月初在月报 CI 生成基础版后，补充「决策与亮点」章节
+  - id: "monthly-report-finalize"
+    enabled: true
+    schedule: "17 3 2 * *"
+    command: "rally"
+    args:
+      - "query"
+      - "补充更新上月月度工程报告：检查 docs/monthly/ 上月（上月 = 上个月份，如本月为 2026-08 则看 2026-07.md）报告——CI 已生成基础版（WPT 趋势/性能趋势/提交统计）；从 git 历史与 docs/goal/*/master.md 的最近完成项提取本月亮点与决策（用户拍板事项、架构决策、关键技术修复、里程碑达成），补充到「决策与亮点」章节（保留已有内容，追加新条目）；遵循 docs/rally/run-rules.md 提交规则推送到 main；无变更则直接输出 DONE。"
+      - "-w"
+      - "."
+      - "--agent-command"
+      - "claude-dsflash"
+    cwd: "$DIR/../.."
+    concurrency: "skip"
+    start: "next"
+    query:
+      session_reuse: false
+
+  # 每晚整理推进 goal 时的待决策卡点：自主处理能处理的，其余发飞书征询
+  - id: "goal-blockers-nightly"
+    enabled: true
+    schedule: "17 22 * * *"
+    command: "rally"
+    args:
+      - "query"
+      - "整理最近推进 goal 时遇到的待决策卡点：扫描 docs/goal/*/master.md 的「待用户决策」清单与最近推进记录（git log 最近 3 天）。两类处理：(1) 能自主处理的（文档纠偏、轻量修复、证据补全、配置修正）直接处理并按 docs/rally/run-rules.md 规则提交推送到 main；(2) 确实需要用户拍板的（深结构方向、改 Mission/Done 范围、许可证问题、破坏性操作、大额下载），汇总成清单（事项+为何需用户+建议），用飞书 CLI 发消息征询用户意见（命令见 docs/rally/run-rules.md 第 7 条：lark-cli im +messages-send，消息需说明具体事项与建议）；处理后更新 master.md 待决策清单状态。输出 DONE 或 CONTINUE。"
+      - "-w"
+      - "."
+      - "--agent-command"
+      - "claude-dsflash"
+    cwd: "$DIR/../.."
+    concurrency: "skip"
+    start: "next"
+    query:
+      session_reuse: true
+      max_session_uses: 7
