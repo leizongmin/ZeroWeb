@@ -5,10 +5,10 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, DomMutation, PageScript, apply_mutations_to_html, apply_mutations_to_html_with_handles,
-    enclosing_form_selector, extract_page_scripts, has_attribute, is_checkbox, is_radio, is_submit_button,
-    page_script_error_check, query_tag_from_html, resolve_document_url, script_dispatch_dom_event,
-    script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event, script_report_error,
-    script_text_delete, script_text_input, script_wrap_page_caught, toggle_radio_html,
+    enclosing_form_selector, extract_page_scripts, has_attribute, is_checkbox, is_radio, is_reset_button,
+    is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url, script_call_form_reset,
+    script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
+    script_report_error, script_text_delete, script_text_input, script_wrap_page_caught, toggle_radio_html,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -343,6 +343,29 @@ pub fn apply_submit_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) ->
     }
     // click submit button：submitter = 被点的按钮自身（spec：event.submitter = 激活提交的按钮）。
     submit_enclosing_form(ctx, selector, Some(selector))
+}
+
+/// P1a form reset（R3050，闭合 R3048 限制⑤）：click 命中 reset button（`<input type=reset>` / `<button type=reset>`）
+/// → 解析 enclosing `<form>` → 调 shim `form.reset()`（dispatch cancelable 'reset' 事件 + 未取消则 revert 控件，
+/// 复用 R3048 全部 reset 语义）。返回 reset 回调是否改 DOM。无 enclosing form → false。
+pub fn apply_reset_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    if !is_reset_button(ctx.html, selector) {
+        return false;
+    }
+    let snap = ctx.html.clone();
+    let Some(form_sel) = enclosing_form_selector(&snap, selector) else {
+        return false;
+    };
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    // 调 shim form.reset()（R3048）：reset 事件派发 + 控件恢复 default 经 proxy setter 记 mutation。
+    let _ = ctx.js_worker.execute_script_direct(&script_call_form_reset(&form_sel));
+    let html_snap = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snap).is_some()
 }
 
 /// 共享 submit 核心：解析 enclosing `<form>` → 派发 'submit'（复用 `script_dispatch_dom_event`）
@@ -921,6 +944,55 @@ mod tests {
         assert_eq!(
             log, "T1,M1,M2,T2,T1b",
             "混合异步顺序 spec 一致：T1 → 微任务链 M1,M2 整链排空（下一 macrotask 前）→ T2（注册早于 T1b）→ T1b"
+        );
+        worker.shutdown();
+    }
+
+    /// R3050：reset 按钮 click → apply_reset_on_click 解析 enclosing form → 调 shim form.reset()
+    /// → 派发 'reset' 事件（复用 R3048 reset 语义）。非 reset 按钮 → false 不触发。
+    /// revert 控件正确性由 R3048 shim 测试覆盖；本测试验证 click→reset 接线（事件派发）。
+    #[test]
+    fn apply_reset_on_click_fires_reset_event_r3050() {
+        let mut worker = RendererJsWorker::spawn(140);
+        let html = "<html><body><form id='f'><input type='reset' id='r'></form></body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        worker
+            .execute_script_direct(
+                "document.querySelector('#f').addEventListener('reset', function(){ globalThis.__rf='yes'; });",
+            )
+            .unwrap();
+        let mut buf = html.to_string();
+        let _changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut buf,
+                url: "https://example.com/page",
+                js_worker: &worker,
+            };
+            apply_reset_on_click(&mut ctx, "#r")
+        };
+        assert_eq!(
+            wait_for_global(&worker, "__rf", 1000),
+            "yes",
+            "reset 按钮 click → form.reset() 派发 reset 事件到 form listener"
+        );
+        // 非 reset 按钮（type=text）→ apply_reset_on_click false 返回，不调 form.reset（不派 reset 事件）。
+        let html2 = "<html><body><form id='f2'><input type='text' id='t'></form></body></html>";
+        worker.set_dom_snapshot(html2, "https://example.com/page");
+        worker.execute_script_direct("globalThis.__rf='no';").unwrap();
+        let mut buf2 = html2.to_string();
+        let changed2 = {
+            let mut ctx = PageScriptContext {
+                html: &mut buf2,
+                url: "https://example.com/page",
+                js_worker: &worker,
+            };
+            apply_reset_on_click(&mut ctx, "#t")
+        };
+        assert!(!changed2, "非 reset 按钮 → apply_reset_on_click 返回 false");
+        assert_eq!(
+            wait_for_global(&worker, "__rf", 500),
+            "no",
+            "非 reset 按钮 → 不派发 reset 事件（__rf 保持 'no'）"
         );
         worker.shutdown();
     }

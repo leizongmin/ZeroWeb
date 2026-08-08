@@ -1276,6 +1276,15 @@ pub fn is_submit_button(html: &str, elem_sel: &str) -> bool {
     false
 }
 
+/// P1a form reset：判定元素是否为 reset 按钮（`<input type=reset>` / `<button type=reset>`）。
+/// 供 renderer click 路由调 `apply_reset_on_click`（R3050，闭合 R3048 限制⑤——reset 按钮点击自动 form.reset()）。
+pub fn is_reset_button(html: &str, elem_sel: &str) -> bool {
+    let tag = query_tag_from_html(html, elem_sel);
+    let ty = query_attr_from_html(html, elem_sel, "type").to_ascii_lowercase();
+    // input/button 仅当显式 type=reset（区别 submit：button 默认 type=submit 非 reset）。
+    (tag.eq_ignore_ascii_case("input") || tag.eq_ignore_ascii_case("button")) && ty == "reset"
+}
+
 /// P1a form control：判定元素是否有某属性（boolean 属性如 `checked`/`disabled` 靠存在性，
 /// `getAttribute` 返空串无法区分存在与空值，故供 `__zw_has_attr` / checkbox toggle）。
 pub fn has_attribute(html: &str, selector: &str, name: &str) -> bool {

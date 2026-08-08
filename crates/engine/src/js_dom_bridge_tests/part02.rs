@@ -1065,6 +1065,50 @@ fn test_is_submit_button() {
 }
 
 #[test]
+fn test_is_reset_button_r3050() {
+    // R3050：reset-button 判定（供 renderer click 路由）。仅显式 type=reset。
+    assert!(is_reset_button(
+        "<html><body><form><input id='r' type='reset'></form></body></html>",
+        "#r",
+    ));
+    assert!(is_reset_button(
+        "<html><body><form><button id='br' type='reset'>Clear</button></form></body></html>",
+        "#br",
+    ));
+    // 非 reset：
+    assert!(!is_reset_button(
+        "<html><body><form><input id='s' type='submit'></form></body></html>",
+        "#s",
+    ));
+    // button 默认 type=submit（非 reset）。
+    assert!(!is_reset_button(
+        "<html><body><form><button id='btn'>Go</button></form></body></html>",
+        "#btn",
+    ));
+    assert!(!is_reset_button(
+        "<html><body><form><button id='nb' type='button'>Go</button></form></body></html>",
+        "#nb",
+    ));
+    assert!(!is_reset_button(
+        "<html><body><form><input id='t' type='text'></form></body></html>",
+        "#t",
+    ));
+}
+
+#[test]
+fn test_script_call_form_reset_r3050() {
+    // R3050：script_call_form_reset 生成调 form.reset() 的 shim 脚本。
+    // 选择器安全嵌入（引号转义）；form 不存在/reset 非函数 → no-op guard。
+    let s = script_call_form_reset("#myform");
+    assert!(s.contains("querySelector('#myform')"), "脚本含 querySelector('#myform')\n{s}");
+    assert!(s.contains("f.reset()"), "脚本调 f.reset()\n{s}");
+    assert!(s.contains("typeof f.reset==='function'"), "含 reset 函数 guard（防 throw）\n{s}");
+    // 选择器转义：嵌入引号经 escape_js_string 转义（不破坏 JS 串）。
+    let s2 = script_call_form_reset("#a'b");
+    assert!(s2.contains("\\'#a\\'b'") || !s2.contains("'#a'b'"), "选择器引号转义（不裸含 '#a'b'）\n{s2}");
+}
+
+#[test]
 fn test_remove_attr_and_has_attribute() {
     // P1a checkbox：RemoveAttr 真正移除属性；has_attribute 判存在性。
     let html = "<html><body><input id='c' type='checkbox' checked></body></html>";

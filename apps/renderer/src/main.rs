@@ -522,6 +522,27 @@ impl RendererRuntime {
         Ok(())
     }
 
+    /// P1a form reset（R3050）：click 命中 reset button → 解析 enclosing `<form>` 调 `form.reset()`
+    ///（dispatch 'reset' + revert 控件，复用 R3048）。改 DOM 则 rerender。
+    fn reset_form_on_click_at(&mut self, selector: &str) -> Result<(), String> {
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+            };
+            page_scripts::apply_reset_on_click(&mut ctx, selector)
+        };
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
     /// P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 'change' 事件；改 DOM 则 rerender。
     fn toggle_checkbox_at(&mut self, selector: &str) -> Result<(), String> {
         if !self.javascript_enabled {
@@ -1245,13 +1266,15 @@ impl RendererRuntime {
                 self.blur_focused()?;
                 self.focus_if_text_input(&target)?;
             }
-            // P1a form submit/checkbox/radio：click 命中对应控件。
+            // P1a form submit/checkbox/radio/reset：click 命中对应控件。
             if zero_engine::is_submit_button(&self.cached_html, &target) {
                 let _ = self.submit_form_on_click_at(&target);
             } else if zero_engine::is_checkbox(&self.cached_html, &target) {
                 let _ = self.toggle_checkbox_at(&target);
             } else if zero_engine::is_radio(&self.cached_html, &target) {
                 let _ = self.toggle_radio_at(&target);
+            } else if zero_engine::is_reset_button(&self.cached_html, &target) {
+                let _ = self.reset_form_on_click_at(&target);
             }
         }
         Ok(())

@@ -49,6 +49,15 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
     format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")
 }
 
+/// 构造「调用 form.reset()」的 shim 脚本（P1a form reset，R3050）。宿主在 reset 按钮被 click 时执行：
+/// 解析 form 选择器 → 调 shim `form.reset()`（R3048：dispatch cancelable 'reset' 事件 + 未 preventDefault 则
+/// 把控件恢复 defaultValue/defaultChecked/defaultSelected）。复用 R3048 全部 reset 语义（防重复实现）。
+/// 选择器经 `escape_js_string` 安全嵌入。form 不存在或 reset 非函数 → no-op（guard 防 throw）。
+pub fn script_call_form_reset(form_selector: &str) -> String {
+    let esc = escape_js_string(form_selector);
+    format!("(function(){{var f=document.querySelector('{esc}');if(f&&typeof f.reset==='function')f.reset();}})()")
+}
+
 /// 构造「向焦点 input/textarea 注入一个文本字符」的 shim 脚本（P1a form input）。
 /// 宿主在 keydown 可打印字符时执行：shim `__zw_text_input(sel, ch)` 把字符 append 到 value
 /// （`.value` set 更新缓存 + 记 value 属性 mutation）并派发 'input' 事件。非 input/textarea → no-op。
