@@ -914,8 +914,11 @@
           return function(position, text) {
             if (sel && typeof __zw_insert_adjacent_html === 'function') {
               try {
+                // R3031：addedNodes 经 [`_zwFragmentAdded`] 回填解析片段的顶层节点（target=元素 sel 为
+                // pragmatic 近似——beforebegin/afterend 实际影响父节点 childList，父 selector 此处不可得）。
+                var _iahAdded = _zwFragmentAdded(text);
                 __zw_insert_adjacent_html(sel, String(position), String(text));
-                _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [] });
+                _mo_notify(sel, handle, { type: 'childList', addedNodes: _iahAdded, removedNodes: [] });
               } catch (_e) {}
             }
             return undefined;
@@ -1145,12 +1148,14 @@
           if (p === 'innerHTML') {
             // R3029：innerHTML = 整体替换子树（childList 类）。emit childList 记录，闭合「innerHTML 不 emit
             // childList」gap（R3028 已知限制④）。removedNodes = 替换前旧子（snapshot 读，_childNodeList 对
-            // handle-only 无 sel 返 []）；addedNodes 留空——新子经 host 解析 fragment 生成，snapshot apply 前
-            // 不可同步枚举（parse-based node-lists 增强为独立 future slice，同 outerHTML/insertAdjacentHTML）。
+            // handle-only 无 sel 返 []）。R3031：addedNodes 经 [`_zwFragmentAdded`] 回填——host fragment 二次
+            // parse 建 _zwMEl 代理树，取 .childNodes（可读 nodeType/tagName/getAttribute/querySelector，满足
+            // 框架 observe 后递归观测新子树）；host 未注册 `__zw_parse_html_child_nodes` → []（旧行为）。
             var _ihRemoved = _childNodeList(sel, handle);
+            var _ihAdded = _zwFragmentAdded(value);
             if (handle) __zw_set_inner_html_handle(handle, String(value));
             else __zw_set_inner_html(sel, String(value));
-            _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: _ihRemoved });
+            _mo_notify(sel, handle, { type: 'childList', addedNodes: _ihAdded, removedNodes: _ihRemoved });
           } else {
             // R3027：textContent 变更 → emit characterData 记录（target=元素，pragmatic——文本节点无 selector
             // 不能直接作 target；observe(el,{characterData,subtree}) + 后代 textContent 经 ancestor 冒泡亦覆盖）。
@@ -1164,10 +1169,13 @@
         } else if (p === 'outerHTML') {
           // outerHTML setter：整体替换元素为解析后的片段。仅 sel-based（需父节点）；
           // handle-only（detached）无父 → 无操作（spec 对无父元素赋 outerHTML 抛错，静默更安全）。
+          // R3031：addedNodes 经 [`_zwFragmentAdded`] 回填解析片段的顶层节点（target=元素 sel 为 pragmatic
+          // 近似，spec target=父节点——父 selector 此处不可得，承自 R3029 既有近似）。
           if (sel && typeof __zw_set_outer_html === 'function') {
             try {
+              var _ohAdded = _zwFragmentAdded(value);
               __zw_set_outer_html(sel, String(value));
-              _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [] });
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: _ohAdded, removedNodes: [] });
             } catch (_e) {}
           }
           return true;

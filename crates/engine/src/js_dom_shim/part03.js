@@ -1003,6 +1003,16 @@
     }
     return body;
   }
+  // R3031：parse-based addedNodes——`innerHTML`/`outerHTML`/`insertAdjacentHTML` 整体替换/插入时，新子经
+  // host fragment 解析生成，shim 无同步枚举（snapshot apply 前不可见）→ 旧 MO childList 记录 addedNodes 恒 []。
+  // 复用 [`_zwMBuildBodyTree`]（host `__zw_parse_html_child_nodes` 二次 parse）建 `_zwMEl` 代理树，取
+  // `.childNodes` 作 addedNodes：节点支持 nodeType/tagName/nodeName/getAttribute/hasAttribute/querySelector(All)/
+  // childNodes 等 introspection，满足框架/库（React/Vue）observe 后递归观测新子树的典型消费。代理为解析快照
+  //（非 live 文档节点——addedNodes 代表「被加入的结构」，host 未注册 `__zw_parse_html_child_nodes` → 返 [] 旧行为）。
+  function _zwFragmentAdded(html) {
+    if (typeof _zwMBuildBodyTree !== 'function') return [];
+    try { return _zwMBuildBodyTree(String(html == null ? '' : html)).childNodes; } catch (_e) { return []; }
+  }
   function _makeDetachedDocument(title) {
     var bodyHtml = '';
     var _tree = null; // R3017：cached mutable body 树（首次 childNodes 访问建，innerHTML setter 失效）

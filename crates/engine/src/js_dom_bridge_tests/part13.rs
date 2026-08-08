@@ -171,8 +171,13 @@ fn test_inner_html_child_list_emission_r3029() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__r1[0].addedNodes.length)").unwrap().value,
-        "0",
-        "innerHTML addedNodes=空（parse-based 新子不可同步枚举，documented 限制）"
+        "2",
+        "innerHTML addedNodes=2（R3031 parse-based 回填：B + I 顶层节点）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r1[0].addedNodes[0].tagName").unwrap().value,
+        "B",
+        "innerHTML addedNodes[0]=新 B 元素（introspection 可读）"
     );
 
     // ② 未观测 childList → innerHTML 不产记录（仅 attributes 观测被 childList 过滤掉）。
@@ -345,5 +350,122 @@ fn test_get_computed_style_dynamic_inline_r3030() {
         sandbox.execute("String(globalThis.__bd)").unwrap().value,
         "none",
         "多 selector 独立：#b set display:none 反映"
+    );
+}
+
+#[test]
+fn test_mo_parse_based_added_nodes_r3031() {
+    // R3031：parse-based childList node-lists。innerHTML/outerHTML/insertAdjacentHTML 整体替换/插入时，
+    // 新子经 host fragment 解析生成，shim 旧无同步枚举 → childList 记录 addedNodes 恒 []。本切片复用
+    // _zwMBuildBodyTree（host __zw_parse_html_child_nodes 二次 parse）建 _zwMEl 代理树回填 addedNodes，
+    // 统一三处。代理支持 nodeType/tagName/getAttribute/hasAttribute 等 introspection。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='c'><span>old</span></div><div id='d'><p id='e'>e</p></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① innerHTML setter：addedNodes 回填解析片段顶层节点（2：SPAN.x + B），removedNodes=旧子（1 span）。
+    sandbox
+        .execute(
+            "var c = document.getElementById('c');\
+             var mo = new MutationObserver(function(){});\
+             mo.observe(c, { childList: true });\
+             c.innerHTML = '<span class=\"x\">a</span><b>b</b>';\
+             globalThis.__r = mo.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r[0].addedNodes.length)").unwrap().value,
+        "2",
+        "innerHTML setter：addedNodes 回填 2 顶层节点（旧恒 0）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r[0].addedNodes[0].tagName").unwrap().value,
+        "SPAN",
+        "innerHTML addedNodes[0].tagName=SPAN（introspection 可读）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r[0].addedNodes[0].getAttribute('class')").unwrap().value,
+        "x",
+        "innerHTML addedNodes[0].getAttribute('class')=x（属性可读）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r[0].addedNodes[1].tagName").unwrap().value,
+        "B",
+        "innerHTML addedNodes[1].tagName=B"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r[0].removedNodes.length)").unwrap().value,
+        "1",
+        "innerHTML removedNodes=1 旧子（R3029 既保持）"
+    );
+
+    // ② insertAdjacentHTML（beforeend）：addedNodes 回填 1 顶层节点（I）。
+    sandbox
+        .execute(
+            "mo.disconnect();\
+             var mo2 = new MutationObserver(function(){});\
+             mo2.observe(c, { childList: true });\
+             c.insertAdjacentHTML('beforeend', '<i>y</i>');\
+             globalThis.__r2 = mo2.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r2[0].addedNodes.length)").unwrap().value,
+        "1",
+        "insertAdjacentHTML：addedNodes 回填 1 节点（旧恒 0）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r2[0].addedNodes[0].tagName").unwrap().value,
+        "I",
+        "insertAdjacentHTML addedNodes[0].tagName=I"
+    );
+
+    // ③ outerHTML setter：addedNodes 回填解析片段顶层节点（target=元素 sel pragmatic 近似）。
+    sandbox
+        .execute(
+            "var e = document.getElementById('e');\
+             var mo3 = new MutationObserver(function(){});\
+             mo3.observe(e, { childList: true });\
+             e.outerHTML = '<section class=\"r\">new</section>';\
+             globalThis.__r3 = mo3.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3[0].addedNodes.length)").unwrap().value,
+        "1",
+        "outerHTML setter：addedNodes 回填 1 节点（旧恒 0）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r3[0].addedNodes[0].tagName").unwrap().value,
+        "SECTION",
+        "outerHTML addedNodes[0].tagName=SECTION"
+    );
+
+    // ④ 空片段 / 纯文本片段：不抛错，addedNodes 反映实际顶层节点数（纯文本→0 element，文本节点不计 element
+    //    但 childList spec addedNodes 含文本节点；此处验证不抛 + 数量一致）。
+    sandbox
+        .execute(
+            "mo3.disconnect();\
+             var d = document.getElementById('d');\
+             var mo4 = new MutationObserver(function(){});\
+             mo4.observe(d, { childList: true });\
+             d.innerHTML = 'plain text only';\
+             globalThis.__r4 = mo4.takeRecords();",
+        )
+        .unwrap();
+    // 纯文本片段：顶层 1 文本节点（addedNodes 含文本节点）。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r4[0].addedNodes.length)").unwrap().value,
+        "1",
+        "纯文本 innerHTML：addedNodes 回填 1 文本节点"
     );
 }
