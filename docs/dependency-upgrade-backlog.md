@@ -2,7 +2,7 @@
 
 待升级但存在 **API 破坏性变更** 的依赖项清单，需通过专项逐个处理。
 
-> 最后检查日期：2026-07-01
+> 最后检查日期：2026-08-09
 
 ## 概要
 
@@ -76,15 +76,15 @@
 
 ---
 
-## 5. rusty_v8
+## 5. v8（原 rusty_v8，已更名）
 
-- **当前**: `0.32`
+- **当前**: `150.2.0`（crate 已从 `rusty_v8` 更名为 `v8`，仓库不变，仍由 Deno 维护）
 - **目标**: 上游最新
 - **涉及 crate**: `script-sandbox`
-- **跳过原因**: rusty_v8 的发布周期受 Deno 上游 V8 版本制约，API 变化频率高且不可预测。跨版本升级可能涉及 V8 isolate 创建、inspector、snapshot 等底层 API 变更。
+- **跳过原因**: `v8` crate 的发布周期受 Deno 上游 V8 版本制约，API 变化频率高且不可预测。跨版本升级可能涉及 V8 isolate 创建、inspector、snapshot 等底层 API 变更。
 - **升级策略**:
-  1. 关注 [rusty_v8 releases](https://github.com/denoland/rusty_v8/releases)
-  2. 确保 CI 中相关平台（Linux x86_64/aarch64、macOS x86_64/aarch64、Windows x86_64）的 V8 archive 可用
+  1. 关注 [rusty_v8 releases](https://github.com/denoland/rusty_v8/releases)（crate 名已为 `v8`，仓库路径不变）
+  2. 确保 CI 中相关平台（Linux x86_64/aarch64、macOS x86_64/aarch64、Windows x86_64）的 V8 archive 可用（`make setup-rusty-v8`）
   3. `script-sandbox` 是唯一消费者，升级后需跑 V8-backed 测试套件
   4. 同步更新 CI 中 Windows ARM64 的 V8 archive 可用性检查
 

@@ -115,10 +115,10 @@ ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 1. 可复用的嵌入式 `ZeroWebView` 库（Rust lib）
 2. 桌面 `ZeroBrowser` 浏览器应用（macOS、Linux、Windows；Android 为后续适配目标）
 
-项目自建浏览器核心：DOM、CSSOM、样式系统、布局、渲染管线、导航、安全/运行时边界。外部 Rust crate 用于底层能力（html5ever、rusty_v8/rquickjs、wasmtime/wasmi、wgpu+winit、taffy）。
+项目自建浏览器核心：DOM、CSSOM、样式系统、布局、渲染管线、导航、安全/运行时边界。外部 Rust crate 用于底层能力（html5ever、v8/rquickjs、wasmtime/wasmi、wgpu+winit、taffy）。
 
 - 语言：Rust（edition 2024，MSRV 1.85）
-- 工作区：21 个 workspace member（16 个库 + 3 个应用 + 2 个测试工具）
+- 工作区：27 个 workspace member（18 个库 + 6 个应用 + 2 个测试工具 + 1 个开发工具）
 - 许可证：MIT
 
 ## Setup 命令
@@ -148,12 +148,15 @@ ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 
 ## 架构指南
 
-工作区布局（21 个 workspace member，分 5 类）：
+工作区布局（27 个 workspace member，分 5 类）：
 
 ```
 apps/
 ├── browser/          # zero-browser — 桌面浏览器入口
 ├── renderer/         # zero-renderer — 独立渲染进程入口
+├── image-decoder/    # zero-image-decoder — 图像解码独立进程（D1）
+├── compositor/       # zero-compositor — 合成器进程（C2）
+├── webdriver/        # zero-webdriver — WebDriver 服务（W3C 协议）
 └── webview-demo/     # zero-webview-demo — WebView 嵌入示例
 
 crates/
@@ -166,17 +169,22 @@ crates/
 ├── render-foundation/ # zero-render-foundation — GPU/CPU 渲染、字体栈、图像缓存
 ├── host-runtime/     # zero-host-runtime — 窗口、事件循环、surface、IME（winit）
 ├── net/              # zero-net — HTTP/HTTPS 网络栈
+├── product-version/  # zero-product-version — 产品版本号（从构建日期推导）
 ├── security/         # zero-security — CORS、CSP、同源策略、沙箱
 ├── storage/          # zero-storage — localStorage、IndexedDB、Cache API
 ├── protocol/         # zero-protocol — 多进程 IPC
 ├── script-sandbox/   # zero-script-sandbox — 扩展/用户脚本运行时（V8/QuickJS feature gate）
 ├── wasm-sandbox/     # zero-wasm-sandbox — WASM 运行时（Wasmtime/wasmi）
+├── page-runtime/     # zero-page-runtime — 页面运行时统一契约（WPT / TabWorker / renderer）
 ├── webview/          # zero-webview — 稳定的嵌入式 API
 └── browser-shell/    # zero-browser-shell — 浏览器 UI（标签页、书签、地址栏）
 
 tests/
 ├── integration/      # zero-integration-tests — 跨 crate 集成测试
 └── wpt-runner/       # zero-wpt-runner — WPT / reftest / 兼容性工具
+
+tools/
+└── icon-gen/         # zero-icon-gen — 图标资产生成（不随发布产物分发）
 ```
 
 关键职责与设计边界：

@@ -42,8 +42,8 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 |------|------|
 | `ZeroWebView` | 已有稳定嵌入 API、可运行 demo，以及跨 crate 和产品层 smoke 测试；Service Worker、WASM 桥接与 `SecurityContext` 安全检查等页面级能力已接入其中 |
 | 浏览器应用 | `zero-browser`、`browser-shell` 和 `zero-renderer` 已打通桌面入口、多进程链路、headless 调试与跨平台打包（Linux / macOS / Windows）+ CI 发布工作流；整体仍处于实验阶段 |
-| 页面 JavaScript（当前主线） | `script-sandbox` 已提供 V8/QuickJS feature gate（含 V8 持久化 Context 复用）、Web Worker、ES Modules、WebAssembly JS API 到 `wasm-sandbox` 的自动桥接。**DOM/JS Bridge 原生化（P1a）为当前活跃主线**：fetch（GET 端到端真实）、setTimeout 真实延迟、MutationObserver/IntersectionObserver/ResizeObserver 已真实触发回调；表单控件（input/textarea value + input 事件、checkbox/radio/select、focus/blur/change、Tab 焦点导航）、Selectors L4（`:has()`/`:is()`/`:where()`/`:not()`、nth-* 族、属性选择器运算符、`:checked`/`:disabled`）、DOM 遍历/变异 API（querySelector/matches/closest、dataset、cloneNode、insertAdjacentHTML、prepend/before/after/replaceWith、createDocumentFragment）、布局几何（offsetWidth/clientWidth/offsetTop、getBoundingClientRect、scroll 尺寸）、`getComputedStyle` 计算值序列化（对齐 Chromium）陆续落地。完整 Web API 与站点兼容性仍在推进 |
-| 渲染兼容性（降频守成） | 以 WPT/CSSWG reftest 对齐 Chromium 为验收标准，Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源 reftest 存在假通过，仅作自一致性参考）。自源 reftest 约 57%、Chromium Oracle 真一致约 47%、strict 像素级处低位 plateau。自主 clean-lever 轻量修复面已 definitively 穷尽（11 vein 审计全 exhaust）；主线已切回父目标 zero-web 的 DOM/JS Bridge 原生化，本方向降频为 plateau-guard 低频回归守卫与文档纠偏，深结构（字体栈重建 RFC v0.2.3 / Phase A IFC / R1043 vertical-mode / R2174 border-box）等用户点名即切回。残余缺口集中在 vertical writing modes（部分切片已落地，整体仍待推进）、multicol 碎片化、R109 inline-as-block 等结构性方向，根因是 layout↔paint IFC 度量不一致（Phase-A spread）。详见 [路线图](ROADMAP.md) 与 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md) |
+| 页面 JavaScript（当前主线） | `script-sandbox` 已提供 V8/QuickJS feature gate（含 V8 持久化 Context 复用）、Web Worker、ES Modules、WebAssembly JS API 到 `wasm-sandbox` 的自动桥接。**DOM/JS Bridge 原生化（P1a）为当前活跃主线**：fetch 真实化（GET 端到端 + 二进制响应 body 真实字节）、setTimeout 真实延迟、MutationObserver（characterData 变化 / childList addedNodes 回填 / attributeFilter / subtree）与 IntersectionObserver/ResizeObserver 已真实触发回调；表单控件（input/textarea value + input 事件、checkbox/radio/select、focus/blur/change、Tab 焦点导航）、Selectors L4（`:has()`/`:is()`/`:where()`/`:not()`、nth-* 族、属性选择器运算符、`:checked`/`:disabled`）、DOM 遍历/变异 API（querySelector/matches/closest、dataset、cloneNode、insertAdjacentHTML、prepend/before/after/replaceWith、createDocumentFragment、innerHTML/outerHTML childList emission）、布局几何（offsetWidth/clientWidth/offsetTop、getBoundingClientRect、scroll 尺寸）、`getComputedStyle` 动态 inline 覆盖 + 计算值序列化（对齐 Chromium）、classList 完整 DOMTokenList、HTMLCollection/NodeList item/namedItem 陆续落地。完整 Web API 与站点兼容性仍在推进 |
+| 渲染兼容性（降频守成） | 以 WPT/CSSWG reftest 对齐 Chromium 为验收标准，Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源 reftest 存在假通过，仅作自一致性参考）。自源 reftest 约 77%、Chromium Oracle 真一致约 47.5%、strict 像素级处低位 plateau。自主 clean-lever 轻量修复面已 definitively 穷尽（11 vein 审计全 exhaust）；主线已切回父目标 zero-web 的 DOM/JS Bridge 原生化，本方向降频为 plateau-guard 低频回归守卫与文档纠偏，深结构（字体栈重建 RFC v0.2.3 / Phase A IFC / R1043 vertical-mode / R2174 border-box）等用户点名即切回。残余缺口集中在 vertical writing modes（部分切片已落地，整体仍待推进）、multicol 碎片化、R109 inline-as-block 等结构性方向，根因是 layout↔paint IFC 度量不一致（Phase-A spread）。详见 [路线图](ROADMAP.md) 与 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md) |
 | 安全与可访问性 | CSP 完整实现、HSTS 预加载、混合内容阻止 / 升级、权限模型与站点隔离已落地并统一接入 `SecurityContext`；可访问性基础（`FocusManager` Tab 导航 + ARIA）已起步 |
 | 项目定位 | 适合学习、研究、工程探索，不适合直接当成生产浏览器 |
 
@@ -81,7 +81,7 @@ make reftest                               # = WPT reftest（release 构建，�
 make reftest-oracle                        # ZeroWeb 渲染 vs Chromium Oracle 像素一致率（诚实通过率度量）
 make browser                                 # 启动浏览器（默认 WPT 对齐：CPU + scale 1.0）
 make product-smoke                         # 产品静态页（welcome.html）vs Chromium Oracle 像素回归门禁
-make product-smoke-legacy                  # HTML 3.2/4 + CSS1/2 静态页（testpage-001..020）vs Chromium Oracle 门禁
+make product-smoke-legacy                  # HTML 3.2/4 + CSS1/2 静态页（42 个 fixture）vs Chromium Oracle 趋势门禁
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
@@ -92,7 +92,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 在 Linux 和 macOS 上，构建前需先下载 `rusty_v8` 预构建产物：`make setup-rusty-v8`（缓存到 `${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8`）。推荐用 `make build` 或 `make browser`，会自动执行该步骤。Windows 需在本地环境里设置 `RUSTY_V8_ARCHIVE` 为 release `.lib` 的 URL。
 
-`freetype-raster` feature（默认开启）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，是 broad 一致率提升到 ~57% 的关键。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`。
+`freetype-raster` feature（默认开启）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，是 broad 一致率显著提升的关键（R1094 实测全 corpus oracle +232 零回归）。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`。
 
 ### 3. 运行本地入口
 
@@ -125,7 +125,7 @@ macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Develop
 
 ## 仓库结构
 
-整个工作区共 23 个 workspace member：17 个库 crate、3 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
+整个工作区共 27 个 workspace member：18 个库 crate、6 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
 
 ### 应用与进程入口
 
@@ -133,6 +133,9 @@ macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Develop
 |------|------|
 | `apps/browser` | 桌面浏览器入口，支持窗口模式和 `--headless` / remote debugging |
 | `apps/renderer` | 独立渲染进程入口，负责多进程 IPC 下的页面渲染与脚本执行 |
+| `apps/image-decoder` | 图像解码独立进程（PNG/JPEG/WebP，隔离编解码器漏洞），未启用时回退进程内解码 |
+| `apps/compositor` | 合成器进程：protocol 消息族 + 真实光栅化（C2） |
+| `apps/webdriver` | WebDriver 服务（W3C 协议骨架，wdspec 第一步） |
 | `apps/webview-demo` | 最小渲染管线演示程序（wgpu/CPU 渲染静态文本，演示 render-foundation 与 host-runtime 集成） |
 
 ### 核心引擎
@@ -156,6 +159,7 @@ macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Develop
 | `crates/security` | 同源策略、CORS、CSP |
 | `crates/storage` | localStorage、sessionStorage、IndexedDB、Cache API |
 | `crates/protocol` | IPC 与多进程消息模型 |
+| `crates/product-version` | 产品版本号（从构建日期推导） |
 | `crates/wasm-sandbox` | WASM 执行与沙箱能力 |
 | `crates/script-sandbox` | 页面 JavaScript 与扩展 / 用户脚本运行时（V8 / QuickJS feature gate） |
 | `crates/page-runtime` | WPT / TabWorker / zero-renderer 三条页面路径共享的页面加载与运行时契约（运行时统一） |

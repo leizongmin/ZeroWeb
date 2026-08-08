@@ -2,7 +2,7 @@
 
 > **说明**：本文档是从 `rendering-compat.md` 主文档移出的详细能力/缺口大表。主文档中只保留简要引用，详情见此处。
 
-截至 2026-08-04（R2609 复核），项目渲染兼容性现状（活跃状态以本节和 `docs/goal/rendering-compat/master.md` 顶部裁决包为准）：
+截至 2026-08-09 复核，项目渲染兼容性现状（能力/缺口大表主体为 2026-08-04 R2609 复核；**最新通过率与测试数以 `docs/goal/rendering-compat/master.md` 顶部裁决包为准**）：
 
 ## 已有能力
 
@@ -54,7 +54,7 @@
 
 ## 测试基线
 
-- 总测试数：~13,191，全绿（`make test`：13191 passed / 0 failed / 74 ignored，截至 R2597；R2592 text-decoration shorthand thickness 接线 +1 新测试 13190→13191，R2597 零测试增删持平；R2554/R2563/R2583 周期复跑逐位确认）
+- 总测试数：~14,240，全绿（`make test`（v8 feature）：14238 passed / 0 failed，截至 R3031/R3033（2026-08-09，zero-web 侧全量记录）；rendering 侧 held baseline `make test` 13502/0/74（74 ignored = real_website_compat 网络用例）截至 R2921；quickjs 矩阵 1703 全绿）
 - Coverage：95.46% line, 96.94% function, 94.88% region
 - Inline reftest：685 个，100% 通过（⚠️ 手写简单场景，容差过宽松，**不计入本目标通过率统计**。本目标的通过率必须基于上游真实 WPT reftest）
 - **关键事实**：当前 WPT runner 是 smoke test，不证明渲染正确性。本目标的核心挑战是从"不崩溃"升级到"渲染正确"。（历史：M7 前渲染器仅支持 3/13 种图元；**M7 后 CPU/GPU 均已支持全 13 种图元**——见 Current Proven Baseline 表。当前 reftest 通过率受字体度量 / 布局结构性 plateau 限制，非图元覆盖限制。）

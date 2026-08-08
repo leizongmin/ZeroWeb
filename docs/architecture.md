@@ -21,7 +21,7 @@
 
 ## 工作区分层
 
-整个工作区共 23 个 workspace member：17 个库 crate、3 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
+整个工作区共 27 个 workspace member：18 个库 crate、6 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
 
 ### 应用与进程入口
 
@@ -30,6 +30,8 @@
 | `apps/browser` | 桌面浏览器应用入口，基于 `browser-shell` + `webview` + `host-runtime`，提供窗口模式与 `--headless` / remote debugging（WebSocket）入口 |
 | `apps/renderer` | 独立渲染进程入口（`zero-renderer`），负责多进程 IPC 下的页面渲染与脚本执行，通过 stdin/stdout 管道与浏览器主进程通信 |
 | `apps/image-decoder` | 图像解码进程（`zero-image-decoder`，D1）：PNG/JPEG/WebP 在独立进程解码（隔离编解码器漏洞），由渲染进程内 webview 经管道 spawn；env `ZW_IMAGE_DECODER_PROCESS=1` 启用，未启用/SVG/降级路径回退进程内解码 |
+| `apps/compositor` | 合成器进程（`zero-compositor`，C2）：protocol 消息族 + 真实光栅化 |
+| `apps/webdriver` | WebDriver 服务（`zero-webdriver`）：W3C 协议骨架（wdspec 第一步） |
 | `apps/webview-demo` | 最小演示程序，用于串起宿主窗口和渲染基础设施（wgpu/CPU 渲染静态文本） |
 
 ### 产品层和 API 层
@@ -54,14 +56,15 @@
 
 | Crate | 作用 |
 |-------|------|
-| `crates/render-foundation` | GPU/CPU 渲染、字体栈（fontdue + `freetype-raster` feature default-on：非 Ahem 路径用 FreeType 光栅化，提升与 Chromium 字体度量一致性；R1094 实测全 corpus oracle +232 零回归，落地后 broad 一致率 chr<1% 从 ~36% 提升到当前约 57%）、图片缓存 + GC、裁剪 / scissor、图元基础设施 |
+| `crates/render-foundation` | GPU/CPU 渲染、字体栈（fontdue + `freetype-raster` feature default-on：非 Ahem 路径用 FreeType 光栅化，提升与 Chromium 字体度量一致性；R1094 实测全 corpus oracle +232 零回归，是 broad 一致率显著提升的关键）、图片缓存 + GC、裁剪 / scissor、图元基础设施 |
 | `crates/host-runtime` | 平台窗口、事件循环、surface 生命周期、输入事件（鼠标 / 键盘 / 触摸 / IME） |
 | `crates/net` | HTTP/HTTPS、URL、导航历史、Cookie、WebSocket（tungstenite）、HTTP 响应缓存 |
 | `crates/security` | 同源策略、CORS、CSP（含 `script-src-attr` / `unsafe-eval` / `wasm-unsafe-eval` / `strict-dynamic` 等完整指令）、HSTS 预加载、混合内容阻止 / 升级、权限模型、站点隔离、COOP/COEP，统一收敛到 `SecurityContext` 门面 |
 | `crates/storage` | localStorage、sessionStorage、IndexedDB（KeyRange / Index / Cursor / Transaction）、Cache API、Service Worker 注册表 |
 | `crates/protocol` | IPC 消息、bincode 序列化、`PipeTransport` 帧协议、`SharedMemoryChannel`、`RendererHandle` / `ProcessManager`（多渲染进程管理与崩溃检测） |
+| `crates/product-version` | 产品版本号（从构建日期推导，随 `zero-product-version` 分发） |
 | `crates/wasm-sandbox` | 受控 WASM 执行环境（wasmi），host function 导入、fuel / 执行限制、错误传播 |
-| `crates/script-sandbox` | 页面脚本 / 扩展脚本运行时：V8（rusty_v8）/ QuickJS feature gate，含 Isolate / Context 管理、持久化 Context 复用、Dedicated Worker、ES Modules、错误处理与超时 |
+| `crates/script-sandbox` | 页面脚本 / 扩展脚本运行时：V8（`v8` crate，原 rusty_v8）/ QuickJS feature gate，含 Isolate / Context 管理、持久化 Context 复用、Dedicated Worker、ES Modules、错误处理与超时 |
 | `crates/page-runtime` | WPT / TabWorker / `zero-renderer` 三条页面路径共享的页面运行时契约（`PageLoadHost` / `AsyncFetchHost` / `BlockingFetchHost` 等），让 in-process（webview）和 IPC（renderer）两种宿主复用同一套分阶段页面加载逻辑 |
 
 > 另有 `crates/taffy-local`，它是 taffy 0.12 的本地 `[patch.crates-io]` 补丁（仓库已从 vendored 0.7.7 升级到 0.12.1，本地补丁仍补充 `cached_baselines()` 等访问器），不是普通业务 crate。
@@ -91,15 +94,15 @@
 9. `webview` 把这条链路包装成嵌入式 API，供 `apps/browser` 或第三方应用调用。
 10. 多进程形态下，`apps/renderer` 作为独立渲染进程承担步骤 2–7，通过 `protocol` IPC 与浏览器主进程交互；`page-runtime` 让这条加载链路在「进程内」和「IPC」两种宿主下走同一套契约。
 
-这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离，渲染兼容性（reftest 对齐 Chromium）是当前主线。
+这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。当前主线是页面 JavaScript / DOM Bridge 原生化（P1a），渲染兼容性（reftest 对齐 Chromium）已降频守成。
 
 ## 现在做到哪了
 
 粗略说，仓库现在分成三档：
 
-- **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、wasm-sandbox、script-sandbox、page-runtime、webview 都有可运行代码和对应测试。
-- **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）已打通，但产品形态、稳定性和真实站点兼容性仍在推进。
-- **当前主线**: 渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle），broad 一致率约 57%、strict 处低位 plateau。自主 clean-lever 轻量修复面已 9 vein 审计穷尽（含 6 vein exhaust 后第 7-9 vein 各出 1 lever），当前执行以 plateau-guard 低频回归守卫与文档纠偏为主；残余缺口为 vertical writing modes（R1108/R1122 部分切片已落地，整体仍 user-gated）、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread），推进结构性深方向需用户点名授权。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
+- **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、wasm-sandbox、script-sandbox、page-runtime、product-version、webview 都有可运行代码和对应测试。
+- **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务）已打通，但产品形态、稳定性和真实站点兼容性仍在推进。
+- **当前主线**: 页面 JavaScript / DOM Bridge 原生化（P1a，R30xx 系列：fetch 真实化、MutationObserver / IntersectionObserver / ResizeObserver 真实回调、classList / HTMLCollection / NodeList、getComputedStyle 动态覆盖等）；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）已降频守成——Chromium Oracle 真一致约 47.5%、self-source 约 77%、strict 处低位 plateau，自主 clean-lever 轻量修复面已 11 vein 审计穷尽，当前执行以 plateau-guard 低频回归守卫与文档纠偏为主；残余缺口为 vertical writing modes（部分切片已落地，整体仍 user-gated）、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread），推进结构性深方向需用户点名授权。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
 
 所以今天的 ZeroWeb 是一个内核已成形、产品层在打磨的浏览器工作区，但还不是一个做完的浏览器产品。
 

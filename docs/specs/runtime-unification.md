@@ -1,6 +1,6 @@
 # 运行时统一：WPT / TabWorker / zero-renderer 收敛到同一套页面处理逻辑
 
-> 状态：进行中（由 `/loop` 驱动，cron 每 10 分钟推进一次）。
+> 状态：已完成（2026-06-27 B3 cutover：renderer 经 `WebView` + `AsyncPageLoad` 渲染，`apps/renderer/src/async_load.rs` 删除；T4 `JsExecutor` 统一脚本执行契约同批落地，三路径共享 `zero-page-runtime` 契约）。下文轮次记录为历史进展。
 > 起始：2026-06-26。关联任务见会话 TaskList（T1–T7）。
 
 ## 1. 背景与现状（已核实）

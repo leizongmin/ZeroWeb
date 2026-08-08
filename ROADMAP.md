@@ -18,8 +18,9 @@
 
 ## 当前重点
 
-- **Render compact**: WPT/CSSWG reftest 对齐 Chromium Oracle（`make reftest-oracle`），broad 一致率 chr&lt;1% 约 57%、strict 处低位 plateau；自主 clean-lever 轻量修复面已 9 vein 审计穷尽，当前以 plateau-guard 低频回归守卫与文档纠偏为主。残余缺口在 vertical writing modes（部分切片已落地，整体仍待推进）、multicol 碎片化、R109 inline-as-block 等 layout↔paint IFC 度量不一致（Phase-A spread）结构性方向。详见 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md)
-- **Legacy HTML 与表单**: 补齐 `<select>`/`<input>`/`<textarea>` 等 UA 默认样式与表单控件，通过 `make product-smoke-legacy` 门禁验收
+- **页面 JavaScript / DOM Bridge 原生化（当前主线，P1a）**: fetch 真实化（GET 端到端 + 二进制响应 body 真实字节）、setTimeout 真实延迟、MutationObserver（characterData / childList addedNodes / attributeFilter / subtree）与 IntersectionObserver / ResizeObserver 真实回调、getComputedStyle 动态 inline 覆盖、classList 完整 DOMTokenList、HTMLCollection/NodeList item/namedItem、表单控件事件与 Selectors L4 等 R30xx 系列持续落地。详见 [docs/goal/zero-web/master.md](docs/goal/zero-web/master.md)
+- **Render compact（降频守成）**: WPT/CSSWG reftest 对齐 Chromium Oracle（`make reftest-oracle`），Chromium Oracle 真一致约 47.5%、self-source 约 77%、strict 处低位 plateau；自主 clean-lever 轻量修复面已 11 vein 审计穷尽，2026-08-04 起降频为 plateau-guard 低频回归守卫与文档纠偏，深结构（Phase A IFC / font-stack 重建 / R1043 vertical-mode / R2174 border-box）等用户点名即切回。残余缺口在 vertical writing modes（部分切片已落地，整体仍待推进）、multicol 碎片化、R109 inline-as-block 等 layout↔paint IFC 度量不一致（Phase-A spread）结构性方向。详见 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md)
+- **Legacy HTML 与表单**: UA 默认样式与表单控件已落地（R2156/R2162 两切片 default-on），`make product-smoke-legacy`（42 个 legacy fixture vs chrome-127 oracle）作为趋势回归门禁
 - **Browser shell 产品化**: 打通 `browser-shell` 与 WebView/渲染管线的真实验收
 
 ## 路线图
@@ -37,8 +38,8 @@
 | M9 | Canvas 与存储 | `✅ 已完成` | Canvas 2D、localStorage、sessionStorage、IndexedDB、Cache API、Service Worker registry 基础已在仓库中 |
 | M10 | WebView API 与自动化基础 | `✅ 已完成` | 已有可嵌入 API、导航加载、测试和 headless/自动化相关基础，但还会继续演进 |
 | M11 | 浏览器产品层 | `🚧 进行中` | `browser-shell`、标签页、地址栏、历史、书签、下载、设置等基础逐步落地；真实窗口/GPU/display 产品验收仍需补齐 |
-| M12 | Render compatibility / render-compact | `🚧 进行中` | 当前主线；WPT/CSSWG reftest 对齐 Chromium Oracle，详见「当前重点」 |
-| M13 | 完整 JS/DOM API 兼容性 | `⏳ 计划中` | render-compact 验收后推进；目标是从基础 DOM bridge 扩展到更完整的 Web API、事件循环、DOM/CSSOM 操作和真实页面脚本行为 |
+| M12 | Render compatibility / render-compact | `🚧 进行中` | 降频守成（2026-08-04 起活跃主线转 zero-web P1a）；WPT/CSSWG reftest 对齐 Chromium Oracle，详见「当前重点」 |
+| M13 | 完整 JS/DOM API 兼容性 | `🚧 进行中` | 当前主线（P1a DOM/JS Bridge 原生化）：fetch / MutationObserver / 事件循环 / DOM 遍历变异 / 表单事件等真实化已持续推进（R30xx 系列）；完整 Web API 兼容性仍在此阶段扩展 |
 | M14 | Canvas / WebGL / WebGPU | `⏳ 计划中` | Canvas 2D 继续补全后，逐步进入 Khronos WebGL CTS 和 GPUWeb WebGPU CTS；不作为 render-compact 的阻塞项 |
 | M15 | SVG 文档与内联 SVG DOM 渲染 | `⏳ 计划中` | render-compact 只要求 SVG 作为图片资源栅格化；完整 SVG 文档、内联 SVG DOM、样式和交互放到后续阶段 |
 | M16 | CSS 动画逐帧一致性 | `⏳ 计划中` | render-compact 关注静态截图和必要的 CSS 视觉状态；动画/transition 的帧级时间轴、插值和截图一致性后续单独验收 |
@@ -70,10 +71,11 @@
 
 ## 随后计划
 
-1. 完成 **render-compact** 验收，解除 Phase-A IFC metric coherence 结构性瓶颈
-2. **browser-shell** 最小可用产品形态
-3. 逐步接入 Test262、WPT testharness、WebDriver wdspec、WebGL/WebGPU CTS 等行业测试
-4. 逐步推进完整 JS/DOM API、图形 API、SVG 文档、CSS 动画和真实网站交互兼容性
+1. 推进 **P1a DOM/JS Bridge 原生化**（fetch / MutationObserver / 事件循环 / DOM/CSSOM 真实化）
+2. **render-compact** 深结构（Phase A IFC metric coherence / font-stack 重建）等用户点名授权后推进
+3. **browser-shell** 最小可用产品形态
+4. 逐步接入 Test262、WPT testharness、WebDriver wdspec、WebGL/WebGPU CTS 等行业测试
+5. 逐步推进完整 JS/DOM API、图形 API、SVG 文档、CSS 动画和真实网站交互兼容性
 
 底层能力和产品层会交替推进。
 
