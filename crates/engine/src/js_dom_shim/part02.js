@@ -1113,10 +1113,42 @@
   // Blob——不可变二进制数据容器（文件上传 / 下载 / object URL 高频）。纯 JS：parts 为
   // [string|ArrayBuffer|TypedArray|DataView|Blob]；size = 各 part 字节长之和；type = options.type（小写）。
   // text()/arrayBuffer() 返 Promise（V8 原生 Promise + execute 末 microtask checkpoint drain）。
-  // **已知限制（记录）**：① string part 字节长按 UTF-8（_zw_utf8_encode length），与 spec 一致；
-  //   ② slice 仅按 size 范围裁剪（不真正切字节——返浅拷原 parts 的 Blob，size 经 start/end clamp；
-  //   足够 size 检查 / type 重设，真正字节级 slice 为 follow-up）；③ 无 stream()（Streams API defer）；
-  //   ④ end-encoding 的 type 不解析 charset（原样小写）。File 未实现（File = Blob + name，follow-up）。
+  // R3011：真字节级物化——_zw_partBytes 同步把 part 转 Uint8Array（string→UTF-8 / 字节视图→拷贝 / Blob→递归），
+  // _zw_blobBytes 拼接全 part 字节。slice 返真字节范围（旧浅拷全内容）、arrayBuffer/stream 返真字节（二进制
+  // TypedArray part 不再经 text() UTF-8 往返损坏）。string 内容行为同旧（UTF-8 字节 == text→encode）。
+  // **已知限制（记录）**：① arrayBuffer() 返 Uint8Array（spec ArrayBuffer，既有接口保留，库多按索引访问）；
+  //   ② end-encoding 的 type 不解析 charset（原样小写）；③ slice 物化全字节 O(n)（典型用量可接受）。
+  function _zw_partBytes(p) {
+    if (p == null) return new Uint8Array(0);
+    if (typeof p === 'string') {
+      var enc = _zw_utf8_encode(p);
+      var a = new Uint8Array(enc.length);
+      for (var i = 0; i < enc.length; i++) a[i] = enc[i];
+      return a;
+    }
+    if (p instanceof ArrayBuffer) return new Uint8Array(p);
+    if (p.buffer instanceof ArrayBuffer) {
+      // TypedArray / DataView：取其字节范围（byteOffset/byteLength）拷贝（避免视图别名）。
+      var off = p.byteOffset || 0;
+      return new Uint8Array(p.buffer.slice(off, off + (p.byteLength || 0)));
+    }
+    if (p instanceof Blob) return _zw_blobBytes(p); // 递归物化 Blob part
+    return new Uint8Array(0);
+  }
+  function _zw_blobBytes(blob) {
+    var parts = blob._parts || [];
+    var chunks = [];
+    var total = 0;
+    for (var i = 0; i < parts.length; i++) {
+      var b = _zw_partBytes(parts[i]);
+      chunks.push(b);
+      total += b.length;
+    }
+    var out = new Uint8Array(total);
+    var off = 0;
+    for (var j = 0; j < chunks.length; j++) { out.set(chunks[j], off); off += chunks[j].length; }
+    return out;
+  }
   var _zwBlobStore = {}; // url → Blob（createObjectURL 注册表，revokeObjectURL 清理）
   globalThis.Blob = globalThis.Blob || function Blob(parts, options) {
     if (!(this instanceof Blob)) return new Blob(parts, options);
@@ -1146,17 +1178,19 @@
     return '';
   };
   globalThis.Blob.prototype = {
-    // slice：返新 Blob（best-effort——按 size clamp，type 可重设；不真正切字节，浅拷原 parts）。
+    // R3011：slice 返真字节范围（物化全字节 → 取 [start,end) → 包成单 Uint8Array part 的 Blob）。
+    // 旧浅拷 _parts（slice().text() 返全内容）；现跨 part 边界正确。start/end 负值相对末尾，clamp + type 重设。
     slice: function (start, end, contentType) {
       var s = start != null ? (start | 0) : 0;
       if (s < 0) s = Math.max(0, this.size + s);
       var e = end != null ? (end | 0) : this.size;
       if (e < 0) e = Math.max(0, this.size + e);
       e = Math.min(e, this.size);
-      var sz = s < e ? (e - s) : 0;
+      if (s > e) s = e; // spec：start > end → 空 Blob
+      var sliced = _zw_blobBytes(this).slice(s, e); // 真字节范围（Uint8Array.slice 拷贝）
       var b = new Blob([], { type: contentType != null ? String(contentType) : this.type });
-      b._parts = this._parts; // 浅拷（不真切字节；size 经 clamp 反映范围）
-      b.size = sz;
+      b._parts = [sliced];
+      b.size = sliced.length;
       return b;
     },
     // text()：Promise<string>——拼接各 part 文本（string/字节经 TextDecoder/Blob 递归）。
@@ -1166,12 +1200,12 @@
       for (var i = 0; i < parts.length; i++) pro.push(Blob._partText(parts[i]));
       return Promise.all(pro).then(function (strs) { return strs.join(''); });
     },
-    // arrayBuffer()：Promise<Uint8Array>——text() UTF-8 编码（字节视图）。
+    // R3011：arrayBuffer() 返真拼接字节（二进制 TypedArray part 不再经 text() UTF-8 往返损坏）。
+    // 返 Uint8Array（spec ArrayBuffer，既有接口保留——库多按 .length/索引访问）。
     arrayBuffer: function () {
-      return this.text().then(function (s) { return _zw_utf8_encode(s); });
+      return Promise.resolve(_zw_blobBytes(this));
     },
-    // stream()：ReadableStream——blob 字节流（R2978，复用 ReadableStream + text + _zw_utf8_encode）。
-    // 单 UTF-8 Uint8Array chunk 后 close（headless finite-blob 模型）。常与 pipeThrough(TextDecoderStream) 配对。
+    // R3011：stream() 单真字节 chunk 后 close（二进制保真；常配 pipeThrough(TextDecoderStream)）。
     stream: function () {
       var self = this;
       var done = false;
@@ -1179,13 +1213,11 @@
         pull: function (controller) {
           if (done) { controller.close(); return; }
           done = true;
-          self.text().then(function (s) {
-            var bytes = _zw_utf8_encode(s);
-            var arr = new Uint8Array(bytes.length);
-            for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
-            controller.enqueue(arr);
+          try {
+            var bytes = _zw_blobBytes(self);
+            if (bytes.length > 0) controller.enqueue(bytes);
             controller.close();
-          }, function (e) { controller.error(e); });
+          } catch (e) { controller.error(e); }
         }
       });
     }

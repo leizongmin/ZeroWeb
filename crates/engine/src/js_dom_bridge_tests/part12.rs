@@ -344,4 +344,67 @@ fn test_streams_backpressure_r3010() {
     assert_eq!(sandbox.execute("String(globalThis.__rf2)").unwrap().value, "resumed", "pending write 完成释放背压 → ready resolve");
 }
 
+#[test]
+fn test_blob_real_bytes_r3011() {
+    // R3011：Blob 真字节级物化。旧 slice() 浅拷 _parts + clamp size（slice().text() 返**全**内容非字节范围）；
+    // arrayBuffer()/stream() 经 text() UTF-8 往返——**二进制 TypedArray part 被 UTF-8 解码-再编码损坏**。
+    // 本切片：同步 _zw_partBytes 字节拼接，slice 返真字节范围、arrayBuffer/stream 返真字节（二进制不损）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // slice()：返真字节范围（旧返全内容）。new Blob(['ZeroWeb']).slice(1,4).text() === 'ero'。
+    sandbox
+        .execute("globalThis.__sl = '(pending)'; new Blob(['ZeroWeb']).slice(1,4).text().then(function(s){ globalThis.__sl = s; });")
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__sl)").unwrap().value, "ero", "slice(1,4) 返真字节范围 'ero'（旧返全 'ZeroWeb'）");
+    // slice().size 仍 clamp（既有断言不破）。
+    assert_eq!(sandbox.execute("new Blob(['ZeroWeb']).slice(1,4).size").unwrap().value, "3", "slice size clamp 保留");
+
+    // slice 跨 part 边界：['abc','def']（6 字节）slice(2,5) = 'cde'（跨 abc|def）。
+    sandbox
+        .execute("globalThis.__sl2 = '(pending)'; new Blob(['abc','def']).slice(2,5).text().then(function(s){ globalThis.__sl2 = s; });")
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__sl2)").unwrap().value, "cde", "slice 跨 part 边界返 'cde'");
+
+    // arrayBuffer() 二进制保真：TypedArray 含非 UTF-8 字节（0xff 0xfe 0x00）→ 原样返回（旧经 UTF-8 往返损坏）。
+    sandbox
+        .execute(
+            "globalThis.__bin = '(pending)';\
+             new Blob([new Uint8Array([0xff,0xfe,0x00,0x41])]).arrayBuffer()\
+               .then(function(a){ globalThis.__bin = a[0] + ',' + a[1] + ',' + a[2] + ',' + a[3]; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__bin)").unwrap().value, "255,254,0,65", "arrayBuffer 二进制保真（0xff 0xfe 0x00 0x41，旧 UTF-8 往返损坏）");
+
+    // string arrayBuffer 不变（'AB' → [65,66]，既有行为）。
+    sandbox
+        .execute("globalThis.__ab2 = '(pending)'; new Blob(['AB']).arrayBuffer().then(function(a){ globalThis.__ab2 = a.length + ':' + a[0] + ',' + a[1]; });")
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__ab2)").unwrap().value, "2:65,66", "string arrayBuffer 不变（'AB'→[65,66]）");
+
+    // stream() 二进制保真：字节经 reader 读出原样（不 UTF-8 往返）。
+    sandbox
+        .execute(
+            "globalThis.__stbin = '(pending)';\
+             var st = new Blob([new Uint8Array([0x01,0x02,0xff])]).stream();\
+             var rd = st.getReader();\
+             rd.read().then(function(c){ globalThis.__stbin = c.value[0] + ',' + c.value[1] + ',' + c.value[2]; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__stbin)").unwrap().value, "1,2,255", "stream 二进制保真（0x01 0x02 0xff 原样）");
+
+    // File 继承 slice 真字节：File(['ZeroWeb']).slice(1,4).text() === 'ero'。
+    sandbox
+        .execute("globalThis.__fsl = '(pending)'; new File(['ZeroWeb'],'f').slice(1,4).text().then(function(s){ globalThis.__fsl = s; });")
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__fsl)").unwrap().value, "ero", "File 继承 slice 真字节 'ero'");
+}
+
 
