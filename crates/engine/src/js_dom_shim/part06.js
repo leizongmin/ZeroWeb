@@ -429,6 +429,14 @@
     getElementsByTagName: function(tag) {
       return globalThis.document.querySelectorAll(tag);
     },
+    // `document.getElementsByName(name)`（R2980）——按 name 属性查全文档（表单字段 / a[name] 锚点 /
+    // meta[name] 高频，如 `document.getElementsByName('csrf-token')`）。此前全缺 → ReferenceError
+    // 中断含此调用的脚本。spec 返 live NodeList；headless 近似为静态数组（同 getElementsByTagName）。
+    // 委托 querySelectorAll 经 `[name="…"]` 属性选择器——name 值含 `"` / `\` 时转义保证选择器合法。
+    getElementsByName: function(name) {
+      var v = String(name).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      return globalThis.document.querySelectorAll('[name="' + v + '"]');
+    },
     createElement: function(tag) {
       tag = String(tag);
       if (tag.toLowerCase() === 'canvas') return _zwMakeCanvas();

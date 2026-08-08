@@ -741,6 +741,27 @@
     return controls;
   }
 
+  // `el.getElementsByTagName('*')`（R2980）——host `__zw_query_all_sub` 不支持通用选择器 `*`
+  //（见 _formControls 注），故 `*` 经客户端 childNodes 递归下降收全部元素后代（tree order）。
+  // 单 tag / 类名仍走 host 路径（更快，单次 DOM 解析）。仅供 sel-based 元素用；handle-based
+  //（createElement）`*` 由 `_handleQueryAll`（R2928，原生支持 `*`）覆盖。
+  function _descendantElements(sel) {
+    var out = [];
+    if (!sel) return out;
+    function walk(parentProxy) {
+      var kids = (parentProxy && parentProxy.childNodes) || [];
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (k && k.nodeType === 1) {
+          out.push(k);
+          walk(k);
+        }
+      }
+    }
+    try { walk(_wrapSelector(sel)); } catch (_e) {}
+    return out;
+  }
+
   // dataset 键转换：camelCase ↔ data-kebab-case（fooBar ↔ data-foo-bar）。
   function _camelToKebab(s) {
     return s.replace(/[A-Z]/g, function(m) { return '-' + m.toLowerCase(); });

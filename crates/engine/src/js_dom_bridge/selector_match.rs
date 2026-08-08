@@ -53,6 +53,8 @@ pub fn query_match_in_subtree(html: &str, elem_sel: &str, selector: &str) -> Str
         return String::new();
     };
     doc.query_selector(root, selector.trim())
+        // 子树作用域：排除元素自身（dom crate query_selector 含 root，spec descendants-only）。
+        .filter(|n| *n != root)
         .and_then(|n| unique_selector_for_node(&doc, n))
         .unwrap_or_default()
 }
@@ -67,6 +69,8 @@ pub fn query_all_in_subtree(html: &str, elem_sel: &str, selector: &str) -> Strin
     };
     doc.query_selector_all(root, selector.trim())
         .into_iter()
+        // 子树作用域：排除元素自身（dom crate collect_matching 含 root，spec descendants-only）。
+        .filter(|id| *id != root)
         .filter_map(|id| unique_selector_for_node(&doc, id))
         .collect::<Vec<_>>()
         .join("|")

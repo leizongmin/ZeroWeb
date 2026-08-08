@@ -891,6 +891,43 @@
             return [];
           };
         }
+        // `el.getElementsByTagName(tag)` / `el.getElementsByClassName(cls)`（R2980）——元素**子树**作用域
+        // 的标签/类名集合查询（spec 返 live HTMLCollection，headless 近似为静态 array-like，同 querySelectorAll
+        // 模型）。现代代码 `table.getElementsByTagName('td')` / `form.getElementsByTagName('input')` /
+        // `wrap.getElementsByClassName('item active')` 高频。委托子树 querySelectorAll：tag→直接选择器；
+        // `'*'`→全后代；className 空格分隔多类→`.a.b` 全交集（spec 须同时含所有类）。sel-based → host
+        // `__zw_query_all_sub`；`'*'` host 不支持 → 客户端 `_descendantElements` 递归下降；handle-based
+        //（createElement/shadow/fragment，无 sel）→ R2928 JS 端 registry 子树搜索（原生支持 `*`）。
+        if (prop === 'getElementsByTagName' || prop === 'getElementsByClassName') {
+          return function(arg) {
+            var q;
+            if (prop === 'getElementsByTagName') {
+              q = String(arg);
+              // spec：空 tagName → 空集合。
+              if (q === '') return [];
+              // host `__zw_query_all_sub` 不支持通用选择器 `*` → 客户端递归下降收全后代。
+              if (q === '*') {
+                if (sel) return _descendantElements(sel);
+                if (handle) return _handleQueryAll(handle, '*');
+                return [];
+              }
+            } else {
+              // getElementsByClassName：空白分隔多类名 → 须同时含全部 → '.a.b'。
+              var parts = String(arg).trim().split(/\s+/).filter(Boolean);
+              if (parts.length === 0) return [];
+              q = '.' + parts.join('.');
+            }
+            if (sel && typeof __zw_query_all_sub === 'function') {
+              try {
+                var all = __zw_query_all_sub(sel, q);
+                if (all) return all.split('|').filter(Boolean).map(_wrapSelector);
+              } catch (_e) {}
+              return [];
+            }
+            if (handle) return _handleQueryAll(handle, q);
+            return [];
+          };
+        }
         // `form.elements`（HTMLFormControlsCollection，R2829）——表单控件集合（jQuery serialize /
         // FormData / 校验库迭代高频）。仅 HTMLFormElement（_realTag==='FORM' gate）；非 form → undefined。
         // `_formControls(sel)` 查 '*' 全后代客户端按 tag 过滤（tree order）+ namedItem。

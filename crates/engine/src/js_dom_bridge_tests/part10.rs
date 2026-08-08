@@ -1545,3 +1545,223 @@ fn test_window_dialog_methods_r2979() {
         "if (confirm(...)) 守卫：confirm=false 不进删除分支（headless 不误删）"
     );
 }
+
+#[test]
+fn test_element_get_elements_by_r2980() {
+    // R2980：Element 子树作用域 getElementsByTagName/getElementsByClassName + document.getElementsByName。
+    // 此前 element 实例上两者全缺（`table.getElementsByTagName('td')` / `wrap.getElementsByClassName('item')`
+    // 返 undefined / 抛），document.getElementsByName 亦全缺。现代/遗留代码高频（表单控件枚举、按类批量操作、
+    // 按 name 取字段）。spec 返 live HTMLCollection，headless 近似为静态 array-like（同 querySelectorAll 模型）。
+    // 关键覆盖：子树作用域（不含元素自身、不含子树外）+ `'*'` 通配（host 不支持→客户端递归）+
+    // 多类交集（'.row.hot'）+ getElementsByName 经 [name="…"] 属性选择器。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // #wrap 内：span.row(a) / span.row.hot(b) / p.hot(c) / section>span.row(d)；wrap 外：span.row(out1) +
+    // input[name=csrf-token] / a[name=csrf-token] / input[name=user]。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id='wrap'>\
+         <span class='row'>a</span>\
+         <span class='row hot'>b</span>\
+         <p class='hot'>c</p>\
+         <section><span class='row'>d</span></section>\
+         </div>\
+         <span class='row'>out1</span>\
+         <input name='csrf-token'>\
+         <a name='csrf-token'>anchor</a>\
+         <input name='user'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 方法存在性（element + document）。
+    assert_eq!(
+        sandbox
+            .execute("typeof document.querySelector('#wrap').getElementsByTagName")
+            .unwrap()
+            .value,
+        "function",
+        "el.getElementsByTagName 是 function"
+    );
+    assert_eq!(
+        sandbox
+            .execute("typeof document.querySelector('#wrap').getElementsByClassName")
+            .unwrap()
+            .value,
+        "function",
+        "el.getElementsByClassName 是 function"
+    );
+    assert_eq!(
+        sandbox
+            .execute("typeof document.getElementsByName")
+            .unwrap()
+            .value,
+        "function",
+        "document.getElementsByName 是 function"
+    );
+
+    // 元素子树 getElementsByTagName('span')：仅 wrap 后代（a/b/d），不含 out1，不含 wrap 自身。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#wrap').getElementsByTagName('span').length")
+            .unwrap()
+            .value,
+        "3",
+        "wrap.getElementsByTagName('span') = 3（a/b/d，子树作用域）"
+    );
+    // tree order：首元素 = a（SPAN）。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#wrap').getElementsByTagName('span')[0].tagName")
+            .unwrap()
+            .value,
+        "SPAN",
+        "首匹配为 a（SPAN）"
+    );
+    assert_eq!(
+        sandbox
+            .execute(
+                "document.querySelector('#wrap').getElementsByTagName('span')[1].className"
+            )
+            .unwrap()
+            .value,
+        "row hot",
+        "第二匹配 b 的 className=row hot"
+    );
+    // 子树作用域不含元素自身：wrap 无 div 后代 → 0。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#wrap').getElementsByTagName('div').length")
+            .unwrap()
+            .value,
+        "0",
+        "wrap.getElementsByTagName('div') = 0（不含自身，仅后代）"
+    );
+
+    // 元素子树 getElementsByClassName：单类 / 多类交集。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#wrap').getElementsByClassName('row').length")
+            .unwrap()
+            .value,
+        "3",
+        "wrap.getElementsByClassName('row') = 3（a/b/d）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#wrap').getElementsByClassName('hot').length")
+            .unwrap()
+            .value,
+        "2",
+        "wrap.getElementsByClassName('hot') = 2（b/c）"
+    );
+    // 多类交集：'row hot' → 须同时含两类 → 仅 b。
+    assert_eq!(
+        sandbox
+            .execute(
+                "document.querySelector('#wrap').getElementsByClassName('row hot').length"
+            )
+            .unwrap()
+            .value,
+        "1",
+        "wrap.getElementsByClassName('row hot') = 1（多类交集，仅 b）"
+    );
+    assert_eq!(
+        sandbox
+            .execute(
+                "document.querySelector('#wrap').getElementsByClassName('row hot')[0].tagName"
+            )
+            .unwrap()
+            .value,
+        "SPAN",
+        "多类交集首匹配 b 为 SPAN"
+    );
+
+    // 通配 '*'：host 不支持 → 客户端递归下降收全部元素后代（a/b/c/section/d = 5）。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#wrap').getElementsByTagName('*').length")
+            .unwrap()
+            .value,
+        "5",
+        "wrap.getElementsByTagName('*') = 5（全后代：a/b/c/section/d）"
+    );
+    // 空 tagName / 空 className → 空集合（spec）。
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#wrap').getElementsByTagName('').length")
+            .unwrap()
+            .value,
+        "0",
+        "wrap.getElementsByTagName('') = 0（空 tagName → 空集合）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.querySelector('#wrap').getElementsByClassName('').length")
+            .unwrap()
+            .value,
+        "0",
+        "wrap.getElementsByClassName('') = 0（空 className → 空集合）"
+    );
+
+    // document 作用域 getElementsByTagName（含子树外 out1）。
+    assert_eq!(
+        sandbox
+            .execute("document.getElementsByTagName('span').length")
+            .unwrap()
+            .value,
+        "4",
+        "document.getElementsByTagName('span') = 4（含子树外 out1）"
+    );
+
+    // document.getElementsByName：按 name 属性匹配全文档。
+    assert_eq!(
+        sandbox
+            .execute("document.getElementsByName('csrf-token').length")
+            .unwrap()
+            .value,
+        "2",
+        "document.getElementsByName('csrf-token') = 2（input + a）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.getElementsByName('csrf-token')[0].tagName")
+            .unwrap()
+            .value,
+        "INPUT",
+        "首 name=csrf-token 为 INPUT（tree order）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.getElementsByName('csrf-token')[1].tagName")
+            .unwrap()
+            .value,
+        "A",
+        "次 name=csrf-token 为 A"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.getElementsByName('user').length")
+            .unwrap()
+            .value,
+        "1",
+        "document.getElementsByName('user') = 1"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.getElementsByName('nope').length")
+            .unwrap()
+            .value,
+        "0",
+        "document.getElementsByName('nope') = 0（无匹配）"
+    );
+}
