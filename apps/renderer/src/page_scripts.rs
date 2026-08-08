@@ -331,7 +331,8 @@ pub fn apply_submit_on_enter(ctx: &mut PageScriptContext<'_>, selector: &str) ->
     if !query_tag_from_html(ctx.html, selector).eq_ignore_ascii_case("input") {
         return false;
     }
-    submit_enclosing_form(ctx, selector)
+    // Enter 隐式提交：submitter = None（spec：表单默认提交按钮或 null）。
+    submit_enclosing_form(ctx, selector, None)
 }
 
 /// P1a form submit：click 命中 submit button（`<input type=submit/image>` / `<button>` type≠button）
@@ -340,12 +341,13 @@ pub fn apply_submit_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) ->
     if !is_submit_button(ctx.html, selector) {
         return false;
     }
-    submit_enclosing_form(ctx, selector)
+    // click submit button：submitter = 被点的按钮自身（spec：event.submitter = 激活提交的按钮）。
+    submit_enclosing_form(ctx, selector, Some(selector))
 }
 
 /// 共享 submit 核心：解析 enclosing `<form>` → 派发 'submit'（复用 `script_dispatch_dom_event`）
 /// → apply。无触发 gate（调用方先判 Enter-in-input / submit-button）。无 enclosing form → false。
-fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str, submitter: Option<&str>) -> bool {
     let snap = ctx.html.clone();
     let Some(form_sel) = enclosing_form_selector(&snap, selector) else {
         return false;
@@ -356,9 +358,14 @@ fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str) -> boo
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
+    // R2984：SubmitEvent.submitter——click submit button → 该按钮选择器；Enter 隐式提交 → None。
+    let detail = DomEventDetail {
+        submitter: submitter.map(String::from),
+        ..Default::default()
+    };
     let _ = ctx
         .js_worker
-        .execute_script_direct(&script_dispatch_dom_event(&form_sel, "submit", None));
+        .execute_script_direct(&script_dispatch_dom_event(&form_sel, "submit", Some(&detail)));
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
 }

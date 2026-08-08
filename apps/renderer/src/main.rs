@@ -1171,6 +1171,7 @@ impl RendererRuntime {
             Some(DomEventDetail {
                 key: params.key,
                 code: params.code,
+                ..Default::default()
             })
         } else {
             None
@@ -1229,6 +1230,7 @@ impl RendererRuntime {
         let detail = DomEventDetail {
             key: Some(params.key.clone()),
             code: Some(params.code.clone()),
+            ..Default::default()
         };
         let target = self.event_target.clone();
         self.dispatch_dom_at(Some(target.clone()), 0.0, 0.0, event_type, Some(detail));

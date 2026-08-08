@@ -483,6 +483,7 @@ impl TabManager {
         let detail = DomEventDetail {
             key: Some(key.to_string()),
             code: Some(code.to_string()),
+            ..Default::default()
         };
         self.dispatch_dom_event_async(tab_id, &selector, event_type, Some(detail), None);
     }

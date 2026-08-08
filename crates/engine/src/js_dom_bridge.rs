@@ -1630,6 +1630,9 @@ pub struct DomEventDetail {
     pub key: Option<String>,
     /// `KeyboardEvent.code`
     pub code: Option<String>,
+    /// `SubmitEvent.submitter`——触发 submit 的按钮唯一选择器（R2984）。click submit button → 该按钮；
+    /// Enter 隐式提交 → None（spec：表单默认提交按钮或 null）。
+    pub submitter: Option<String>,
 }
 
 fn escape_js_string(s: &str) -> String {
@@ -1653,7 +1656,12 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
                 .as_deref()
                 .map(|c| format!("'{}'", escape_js_string(c)))
                 .unwrap_or_else(|| "null".to_string());
-            format!("{{key:{key},code:{code}}}")
+            let submitter = d
+                .submitter
+                .as_deref()
+                .map(|s| format!("'{}'", escape_js_string(s)))
+                .unwrap_or_else(|| "null".to_string());
+            format!("{{key:{key},code:{code},submitter:{submitter}}}")
         }
     };
     format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")

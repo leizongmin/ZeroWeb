@@ -1219,6 +1219,19 @@
   MessageEvent.prototype.constructor = MessageEvent;
   globalThis.MessageEvent = globalThis.MessageEvent || MessageEvent;
 
+  // SubmitEvent——submit 事件（form 提交，R2984）。extends Event，加 `submitter`（触发提交的按钮 proxy / null）。
+  // host submit 派发经 __zw_dispatch_event(form_sel, 'submit', {submitter: btn_sel})；submitter 缺省 null
+  //（Enter 隐式提交）。表单多 submit 按钮场景（"保存"/"删除"同 form）读 event.submitter 判激活按钮高频。
+  function SubmitEvent(type, options) {
+    var ev = _makeEvent(type, options);
+    Object.setPrototypeOf(ev, SubmitEvent.prototype);
+    ev.submitter = (options && options.submitter) || null;
+    return ev;
+  }
+  SubmitEvent.prototype = Object.create(Event.prototype);
+  SubmitEvent.prototype.constructor = SubmitEvent;
+  globalThis.SubmitEvent = globalThis.SubmitEvent || SubmitEvent;
+
   // MessagePort——消息端口（MessageChannel 双端口之一，部分库经此做结构化通信）。extends EventTarget
   //（R2779）。postMessage 经 structuredClone（R2773）深拷贝消息 + queueMicrotask（R2774）**异步**派发
   // 'message' 事件到配对端口（spec 为 task；sandbox 经 execute 末 microtask checkpoint 派发，下 execute

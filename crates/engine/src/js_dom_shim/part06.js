@@ -1581,7 +1581,11 @@
 
   globalThis.__zw_dispatch_event = function(sel, type, detail) {
     var ev;
-    if (detail && (detail.key || detail.code)) {
+    if (type === 'submit') {
+      // R2984 SubmitEvent：submitter = 按钮 proxy（detail.submitter 经 _wrapSelector）；缺省 null（Enter 隐式提交）。
+      var sub = (detail && detail.submitter) ? _wrapSelector(detail.submitter) : null;
+      ev = new SubmitEvent(type, { bubbles: true, cancelable: true, submitter: sub });
+    } else if (detail && (detail.key || detail.code)) {
       ev = new KeyboardEvent(type, {
         bubbles: true,
         cancelable: true,

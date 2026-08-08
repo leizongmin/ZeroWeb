@@ -568,3 +568,110 @@ fn test_window_post_message_r2983() {
         "targetOrigin 不匹配 → SecurityError"
     );
 }
+
+#[test]
+fn test_submit_event_submitter_r2984() {
+    // R2984：SubmitEvent + event.submitter。此前 submit 事件经 __zw_dispatch_event(form,'submit',null)
+    // 派发为 generic Event（无 submitter）——表单多 submit 按钮场景（"保存"/"删除"同 form）读
+    // event.submitter 判激活按钮获 undefined。本切片：DomEventDetail 增 submitter 字段 + shim 新 SubmitEvent
+    //（extends Event + .submitter）+ __zw_dispatch_event 在 type==='submit' 时造 SubmitEvent；
+    // renderer submit_enclosing_form click 路径传被点按钮 selector，Enter 隐式提交传 None。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // form#f 含 txt input + 两个 submit 按钮（save/del）——典型多 submit 按钮 form。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='f'>\
+         <input id='txt' type='text'>\
+         <button id='save' type='submit'>Save</button>\
+         <button id='del' type='submit'>Del</button>\
+         </form></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    assert_eq!(
+        sandbox.execute("typeof SubmitEvent").unwrap().value,
+        "function",
+        "SubmitEvent 是 function（构造器就位）"
+    );
+
+    // 注册 submit listener（捕获 event 类型 / instanceof / submitter.id）。
+    sandbox
+        .execute(
+            "globalThis.__evType = '(none)'; globalThis.__isSubmit = '(none)'; globalThis.__subId = '(none)';\
+             document.querySelector('#f').addEventListener('submit', function (e) {\
+               globalThis.__evType = e.type;\
+               globalThis.__isSubmit = String(e instanceof SubmitEvent);\
+               globalThis.__subId = (e.submitter && e.submitter.id) || 'null';\
+             });",
+        )
+        .unwrap();
+
+    // click #save submit button → submit 事件 + event.submitter = #save（__zw_dispatch_event 同步派发）。
+    sandbox
+        .execute("__zw_dispatch_event('#f', 'submit', { submitter: '#save' });")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__evType)").unwrap().value,
+        "submit",
+        "submit 事件类型 = submit"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__isSubmit)").unwrap().value,
+        "true",
+        "事件 instanceof SubmitEvent"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__subId)").unwrap().value,
+        "save",
+        "click #save → event.submitter.id = 'save'"
+    );
+
+    // click #del submit button → submitter = #del（多 submit 按钮区分激活按钮）。
+    sandbox
+        .execute("__zw_dispatch_event('#f', 'submit', { submitter: '#del' });")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__subId)").unwrap().value,
+        "del",
+        "click #del → event.submitter.id = 'del'（多 submit 按钮区分）"
+    );
+
+    // Enter 隐式提交（无 submitter）→ submitter = null（仍 instanceof SubmitEvent）。
+    sandbox
+        .execute("globalThis.__isSubmit2 = '(none)';\
+             __zw_dispatch_event('#f', 'submit', null);")
+        .unwrap();
+    // 末次 listener 触发：handler 末行设 __subId，但 isSubmit2 需在 handler 内取。改用单 handler 已设 __isSubmit。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__subId)").unwrap().value,
+        "null",
+        "Enter 隐式提交（无 submitter）→ event.submitter = null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__isSubmit)").unwrap().value,
+        "true",
+        "无 submitter 的 submit 仍 instanceof SubmitEvent"
+    );
+
+    // preventDefault：cancelable submit listener 返 false → __zw_dispatch_event 返 'prevented'。
+    sandbox
+        .execute(
+            "document.querySelector('#f').addEventListener('submit', function (e) { e.preventDefault(); });\
+             globalThis.__r = __zw_dispatch_event('#f', 'submit', { submitter: '#save' });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r)").unwrap().value,
+        "prevented",
+        "submit listener preventDefault → __zw_dispatch_event 返 'prevented'"
+    );
+}
