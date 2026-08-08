@@ -854,6 +854,131 @@ fn test_fetch_abort_signal_r3044() {
 }
 
 #[test]
+fn test_request_signal_passthrough_r3045() {
+    // R3045：Request.signal 透传。Request 构造器旧不存 signal → `fetch(new Request(url, {signal}))` 无法中止
+    //（R3044 fetch 只读 init.signal，不读 Request 的 signal）。本切片 Request 存 signal + fetch 回落读 input.signal。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① Request.signal 恒为 AbortSignal（spec 非空）——无 signal 构造 → 新建非 aborted signal。
+    sandbox
+        .execute(
+            "globalThis.__r0 = new Request('http://test.local/x');\
+             globalThis.__r0SigType = (globalThis.__r0.signal instanceof AbortSignal) ? 'AbortSignal' : 'other';\
+             globalThis.__r0Aborted = String(globalThis.__r0.signal.aborted);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r0SigType").unwrap().value,
+        "AbortSignal",
+        "new Request(url).signal instanceof AbortSignal（spec 恒非空）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r0Aborted").unwrap().value,
+        "false",
+        "新 Request.signal.aborted=false"
+    );
+
+    // ② fetch(new Request(url, {signal})) + abort → reject AbortError（Request.signal 透传给 fetch）。
+    let cap: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let capc = Arc::clone(&cap);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *capc.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "globalThis.__ctrl = new AbortController();\
+             globalThis.__aborted = 'pending';\
+             var req = new Request('http://test.local/a', { signal: globalThis.__ctrl.signal });\
+             globalThis.__reqSigSame = (req.signal === globalThis.__ctrl.signal);\
+             fetch(req)\
+               .then(function(r){ globalThis.__aborted = 'resolved:' + r.status; })\
+               .catch(function(e){ globalThis.__aborted = 'rejected:' + (e && e.name ? e.name : String(e)); });\
+             globalThis.__ctrl.abort();",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap(); // drain microtask
+    assert_eq!(
+        sandbox.execute("globalThis.__reqSigSame").unwrap().value,
+        "true",
+        "new Request(url,{{signal}}).signal === 传入 controller.signal（透传同一对象）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__aborted").unwrap().value,
+        "rejected:AbortError",
+        "fetch(new Request(url,{{signal}})) + abort → reject AbortError（Request.signal 透传）"
+    );
+
+    // ③ new Request(otherRequest) 继承 signal（input.signal 回落到新 Request）。
+    sandbox
+        .execute(
+            "globalThis.__ctrl2 = new AbortController();\
+             var orig = new Request('http://test.local/b', { signal: globalThis.__ctrl2.signal });\
+             var cloned = new Request(orig);\
+             globalThis.__clonedSame = (cloned.signal === orig.signal);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__clonedSame").unwrap().value,
+        "true",
+        "new Request(otherReq) 继承 otherReq.signal（input.signal 回落）"
+    );
+
+    // ④ fetch(request, {signal: override}) —— init.signal 优先于 request.signal（spec）。
+    let cap2: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let cap2c = Arc::clone(&cap2);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *cap2c.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "globalThis.__reqOnly = new AbortController();\
+             globalThis.__initOnly = new AbortController();\
+             var req2 = new Request('http://test.local/c', { signal: globalThis.__reqOnly.signal });\
+             globalThis.__override = 'pending';\
+             fetch(req2, { signal: globalThis.__initOnly.signal })\
+               .catch(function(e){ globalThis.__override = 'rejected:' + (e && e.name ? e.name : String(e)); });\
+             globalThis.__reqOnly.abort();\
+             globalThis.__afterReqAbort = globalThis.__override;\
+             globalThis.__initOnly.abort();",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__afterReqAbort").unwrap().value,
+        "pending",
+        "abort request.signal 不触发（init.signal override 优先，未用 request.signal）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__override").unwrap().value,
+        "rejected:AbortError",
+        "abort init.signal 触发 reject（init.signal 优先于 request.signal）"
+    );
+}
+
+#[test]
 fn test_response_request_constructors_r2968() {
     // R2968：Response / Request 全局构造器（补全 fetch API 表面）。new Response/new Request 构造 +
     // fetch 结果 instanceof Response（_makeResponseFromWire 经 new Response 路由）+ fetch(new Request) 消费。

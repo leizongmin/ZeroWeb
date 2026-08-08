@@ -347,13 +347,18 @@
       if (typeof __zw_fetch !== 'function') {
         return Promise.resolve(_makeResponse('__zw_fetch_error:no-handler'));
       }
-      // R3044：AbortSignal——fetch 中止。AbortController/AbortSignal 对象已就绪（part02），但 fetch 旧不消费
+      // R3044/R3045：AbortSignal——fetch 中止。AbortController/AbortSignal 对象已就绪（part02），但 fetch 旧不消费
       // init.signal → controller.abort() 无法中止在途 fetch。本切片接通：signal 已 aborted → 立即 reject；
       // 运行中 abort → reject(signal.reason) + 清 __zw_pending[id]（host 抓取结果到达时 __zwResolveCallback
       // typeof-check no-op，结果被丢弃）。settled flag 防 resolve/abort 双 settle。fetch reject reason = signal.reason
-      //（spec；默认 AbortError DOMException，或 abort(reason) 传入值）。duck-type `instanceof AbortSignal`（非 AbortSignal
-      // 的 init.signal 忽略，lenient）。仅影响传 signal 的 fetch 调用——无 signal 路径不变（零回归）。
-      var signal = (typeof AbortSignal === 'function' && init.signal instanceof AbortSignal) ? init.signal : null;
+      //（spec；默认 AbortError DOMException，或 abort(reason) 传入值）。signal 来源（R3045）：init.signal 优先，
+      // 否则 input 为 Request 时回落 input.signal（Request 构造器 R3045 存）。duck-type `instanceof AbortSignal`（非
+      // AbortSignal 忽略，lenient）。仅影响有 signal 的 fetch 调用——无 signal 路径不变（零回归）。
+      var signal = null;
+      if (typeof AbortSignal === 'function') {
+        if (init.signal instanceof AbortSignal) signal = init.signal;
+        else if (isObj && input.signal instanceof AbortSignal) signal = input.signal;
+      }
       return new Promise(function(resolve, reject) {
         // signal 已 aborted → 同步 reject（spec：fetch 入口检查 signal.aborted）。
         if (signal && signal._aborted) {
@@ -476,6 +481,16 @@
     this.mode = init.mode || 'cors';
     this.redirect = init.redirect || 'follow';
     this.credentials = init.credentials || 'same-origin';
+    // R3045：Request.signal（spec 恒为 AbortSignal，非 null）。init.signal 优先；否则继承 input（Request）的 signal；
+    // 否则新建非 aborted AbortSignal。fetch(new Request(url,{signal})) 经此透传 signal 给 R3044 abort 路径。
+    // 注：复用同一 signal 对象（非 spec clone 独立）——同 request 多次 fetch 共享 signal，pragmatic（documented）。
+    if (typeof AbortSignal === 'function') {
+      this.signal = (init.signal instanceof AbortSignal)
+        ? init.signal
+        : ((isObj && input.signal instanceof AbortSignal) ? input.signal : new AbortSignal());
+    } else {
+      this.signal = null;
+    }
     // R2982：body 消费表面（对称 Response R2978，spec text/json/blob/arrayBuffer/formData）。fetch 包装库 /
     // service worker fetch handler / 请求拦截器 / 测试 mock 读请求体高频。body 为 string|null：null（GET 无体）
     // → text() 返 ''、arrayBuffer() 长度 0；json() 解析空串抛 SyntaxError（spec，非合法 JSON）。
