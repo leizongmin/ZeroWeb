@@ -1051,3 +1051,82 @@ fn test_compression_stream_r2986() {
         "不支持 format → NotSupportedError"
     );
 }
+
+#[test]
+fn test_window_context_globals_r2987() {
+    // R2987：window.isSecureContext / crossOriginIsolated / reportError。库 feature-detect 后再使用
+    // secure-only API（crypto.subtle / SharedArrayBuffer / Service Worker）或经 reportError 转错误事件。
+    // 此前三者全缺 → feature-detect 走「不可用」分支、reportError 抛 ReferenceError。isSecureContext 取协议
+    //（http/ws 不安全，余皆安全）；crossOriginIsolated=false（headless 无 COOP/COEP）；reportError 派发
+    // ErrorEvent 到 window 'error' listener。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+
+    // http: 协议 → isSecureContext = false。
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    assert_eq!(
+        sandbox.execute("String(globalThis.isSecureContext)").unwrap().value,
+        "false",
+        "http: 协议 → isSecureContext = false"
+    );
+
+    // about:blank（继承安全上下文）→ isSecureContext = true。
+    let mut sandbox2 = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox2.execute(generate_js_dom_shim()).unwrap();
+    let mutations2: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html2: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url2: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox2, &mutations2, &dom_html2, &page_url2);
+    assert_eq!(
+        sandbox2
+            .execute("String(globalThis.isSecureContext)")
+            .unwrap()
+            .value,
+        "true",
+        "about:blank → isSecureContext = true（secure context）"
+    );
+
+    // crossOriginIsolated = false（headless 无 COOP/COEP）。
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.crossOriginIsolated)")
+            .unwrap()
+            .value,
+        "false",
+        "crossOriginIsolated = false（无 COOP/COEP）"
+    );
+
+    // reportError：派发 ErrorEvent 到 window 'error' listener（message 字段）+ onerror IDL handler。
+    sandbox
+        .execute(
+            "globalThis.__errMsg = '(none)'; globalThis.__onerr = '(none)';\
+             window.addEventListener('error', function (e) { globalThis.__errMsg = e.message; });\
+             window.onerror = function (msg) { globalThis.__onerr = String(msg); };\
+             reportError(new Error('boom-failure'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__errMsg)").unwrap().value,
+        "boom-failure",
+        "reportError → window 'error' listener 收 ErrorEvent.message"
+    );
+    // typeof reportError === 'function'（防 ReferenceError）。
+    assert_eq!(
+        sandbox.execute("typeof reportError").unwrap().value,
+        "function",
+        "reportError 是 function"
+    );
+}

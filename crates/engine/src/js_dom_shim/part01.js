@@ -991,6 +991,38 @@
   globalThis.outerWidth = 1280;
   globalThis.outerHeight = 800;
   globalThis.devicePixelRatio = 1;
+  // R2987 window context / security 全局——库 feature-detect 后再使用 secure-only API（crypto.subtle /
+  // SharedArrayBuffer / Service Worker）或错误上报。
+  // `isSecureContext`（getter，随 location.protocol）：secure 除非 http:/ws:（about:blank/https/wss/file → secure）。
+  // spec secure context 判定含 localhost / 非安全白名单，headless 取协议近似（http/ws 不安全，余皆安全）。
+  Object.defineProperty(globalThis, 'isSecureContext', {
+    configurable: true,
+    get: function () {
+      try {
+        var p = globalThis.location && globalThis.location.protocol;
+        return p !== 'http:' && p !== 'ws:';
+      } catch (_e) { return true; }
+    }
+  });
+  // `crossOriginIsolated`：需 COOP+COEP 响应头隔离。headless 无 → false（SharedArrayBuffer / 跨 origin
+  // 资源不受隔离，feature-detect 库正确回落）。
+  Object.defineProperty(globalThis, 'crossOriginIsolated', { configurable: true, value: false });
+  // `reportError(reason)`：向 window 派发 ErrorEvent（error 上报库 / Promise catch 转错误事件 / 兜底未捕获错误
+  // 报告高频）。经 globalThis.dispatchEvent（R2932）触 window 'error' listener + onerror IDL handler（R2932 注册）。
+  // spec reportError 把 reason 转 ErrorEvent 派发到 window error handler；headless 复用 dispatchEvent 路径。
+  globalThis.reportError = function (reason) {
+    try {
+      var msg = (reason && (reason.message || reason.name)) ? String(reason.message || reason.name) : String(reason);
+      var ev = new ErrorEvent('error', {
+        message: msg,
+        filename: '',
+        lineno: 0,
+        colno: 0,
+        error: (reason instanceof Error) ? reason : null
+      });
+      if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(ev);
+    } catch (_e) {}
+  };
   // scroll（R2817）——window 滚动方法/属性。headless 无真滚动 → no-op 方法 + 恒 0 偏移（scrollX/scrollY/
   // pageXOffset/pageYOffset）。feature-detect + scroll-to-section 脚本不抛。
   globalThis.scrollX = 0;
