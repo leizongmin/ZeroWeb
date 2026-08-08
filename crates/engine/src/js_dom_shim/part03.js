@@ -943,23 +943,24 @@
     Object.defineProperty(node, 'firstChild', { get: function () { return node.childNodes.length ? node.childNodes[0] : null; }, configurable: true });
     Object.defineProperty(node, 'lastChild', { get: function () { return node.childNodes.length ? node.childNodes[node.childNodes.length - 1] : null; }, configurable: true });
     _zwMDefineSiblings(node);
-    attrs.item = function (i) { return attrs[i] || null; };
-    attrs.getNamedItem = function (n) { var v = node.getAttribute(n); return v === null ? null : { name: String(n), value: v }; };
+    attrs.item = function (i) { return attrs[i] ? _zwMakeAttr(attrs[i].name, attrs[i].value, node) : null; };
+    attrs.getNamedItem = function (n) { var v = node.getAttribute(n); return v === null ? null : _zwMakeAttr(n, v, node); };
     // R3022：NamedNodeMap 真 mutation——setNamedItem(attr) 等价 setAttribute(attr.name, attr.value)，
     // 返旧 Attr（或 null）；removeNamedItem(name) 等价 removeAttribute，返移除 Attr（缺失返 null，best-effort 不抛）。
+    // R3023：返值用 _zwMakeAttr（真 Attr 实例，nodeType 2 + 全字段），非 plain {name,value}。
     attrs.setNamedItem = function (attr) {
       if (!attr || attr.name == null) return null;
       var n = String(attr.name);
       var old = node.getAttribute(n);
       node.setAttribute(n, attr.value != null ? String(attr.value) : '');
-      return old !== null ? { name: n, value: old } : null;
+      return old !== null ? _zwMakeAttr(n, old, node) : null;
     };
     attrs.removeNamedItem = function (n) {
       n = String(n);
       var old = node.getAttribute(n);
       if (old === null) return null; // spec NOT_FOUND_ERR；best-effort 返 null（不抛，避中断库枚举）
       node.removeAttribute(n);
-      return { name: n, value: old };
+      return _zwMakeAttr(n, old, node);
     };
     return node;
   }
@@ -1148,6 +1149,25 @@
   // 枚举。旧实现仅 per-property get/set，缺方法（调用即 TypeError）与 cssText（get 返 ''、set 误当
   // 属性名）。底层走 `__zw_set_style`/`__zw_get_attr('style')`；removeProperty 经 `__zw_remove_style`
   // 真移除声明（SetStyle 空值仍 push，不移除）；cssText set 经 `__zw_set_attr` 整体替换。
+  // R3023：构造真 Attr 节点（nodeType 2，全字段：name/nodeName/value/nodeValue/localName/namespaceURI=
+  // null/prefix=null/specified/ownerElement）。供 NamedNodeMap 各方法返值 + document.createAttribute 用，
+  // 闭合 R3022 限制①（返 plain {name,value}）。ownerEl 为 null 时为游离 Attr（createAttribute / detached）。
+  function _zwMakeAttr(name, value, ownerEl) {
+    var n = String(name);
+    var v = value != null ? String(value) : '';
+    return {
+      nodeType: 2,
+      name: n,
+      nodeName: n,
+      value: v,
+      nodeValue: v,
+      localName: n,
+      prefix: null,
+      namespaceURI: null,
+      specified: true,
+      ownerElement: ownerEl || null
+    };
+  }
   // `el.attributes`（NamedNodeMap）：length / item(i) / getNamedItem(name) / 数值索引 /
   // Symbol.iterator，每项 Attr-like {name,value,localName,...}。经 `__zw_attr_names`+`__zw_get_attr`。
   // handle-only（无 attr_names 变体）→ 空集；R3022：setNamedItem/removeNamedItem 真 mutation（委托元素
@@ -1163,19 +1183,12 @@
     var attrObj = function(name) {
       // R3003：sel 用 latest-wins（`__zw_get_attr_lw`）反映同批 setAttribute（旧 `__zw_get_attr` 纯快照 → Attr.value
       // stale）；handle 用 `__zw_get_attr_handle`（latest-wins from mutations）。
+      // R3023：经 _zwMakeAttr 返真 Attr 实例（nodeType 2 + nodeName/nodeValue 全字段），非 plain object。
       var v;
       if (handle) v = __zw_get_attr_handle(handle, name);
       else if (typeof __zw_get_attr_lw === 'function') v = __zw_get_attr_lw(sel, name);
       else v = __zw_get_attr(sel, name);
-      return {
-        name: name,
-        value: v || '',
-        namespaceURI: null,
-        prefix: null,
-        localName: name,
-        specified: true,
-        ownerElement: _makeProxy(sel, handle)
-      };
+      return _zwMakeAttr(name, v || '', _makeProxy(sel, handle));
     };
     return new Proxy({}, {
       get: function(_t, p) {
@@ -1205,7 +1218,8 @@
             var old = null;
             try { old = el.getAttribute(n); } catch (_e) {}
             try { el.setAttribute(n, attr.value != null ? String(attr.value) : ''); } catch (_e) {}
-            return old != null && old !== '' ? { name: n, value: old } : null;
+            // R3023：返真 Attr 实例（_zwMakeAttr，ownerElement=元素 proxy），非 plain {name,value}。
+            return old != null && old !== '' ? _zwMakeAttr(n, old, el) : null;
           };
         }
         if (p === 'removeNamedItem') {
@@ -1216,7 +1230,7 @@
             var existed = null;
             try { existed = el.getAttribute(n); } catch (_e) {}
             try { el.removeAttribute(n); } catch (_e) {}
-            return existed != null && existed !== '' ? { name: n, value: existed } : null;
+            return existed != null && existed !== '' ? _zwMakeAttr(n, existed, el) : null;
           };
         }
         if (p === Symbol.iterator) {

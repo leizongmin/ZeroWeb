@@ -1474,3 +1474,93 @@ fn test_namednodemap_setnameditem_mutable_tree_r3022() {
     let pouter = sandbox.execute("globalThis.__pOuter").unwrap().value;
     assert!(pouter.contains("data-y=\"2\""), "DOMParser lazy bridge setNamedItem 序列化含 data-y=\"2\"：{pouter}");
 }
+
+#[test]
+fn test_create_attribute_and_attr_instance_r3023() {
+    // R3023：document.createAttribute + 真 Attr 实例（闭合 R3022 限制①「返 Attr 为 plain {name,value}」）。
+    // createAttribute(name) 建 Attr 节点（nodeType 2 + 全字段）；NamedNodeMap 各方法返值（getNamedItem/item/
+    // setNamedItem/removeNamedItem）经 _zwMakeAttr 返真 Attr（nodeType 2 + localName/namespaceURI/prefix/
+    // specified/ownerElement），非 plain object。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d' class='c'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // document.createAttribute：nodeType=2 + 全字段（name/nodeName/value/nodeValue/localName/namespaceURI=
+    // null/prefix=null/specified/ownerElement=null）。
+    sandbox
+        .execute(
+            "var a = document.createAttribute('data-x');\
+             globalThis.__nt = String(a.nodeType);\
+             globalThis.__name = a.name;\
+             globalThis.__nodeName = a.nodeName;\
+             globalThis.__val = a.value;\
+             globalThis.__localName = a.localName;\
+             globalThis.__ns = String(a.namespaceURI);\
+             globalThis.__prefix = String(a.prefix);\
+             globalThis.__specified = String(a.specified);\
+             globalThis.__owner = String(a.ownerElement);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__nt").unwrap().value, "2", "createAttribute 返 Attr nodeType=2");
+    assert_eq!(sandbox.execute("globalThis.__name").unwrap().value, "data-x", "Attr.name=data-x");
+    assert_eq!(sandbox.execute("globalThis.__nodeName").unwrap().value, "data-x", "Attr.nodeName=data-x（同 name）");
+    assert_eq!(sandbox.execute("globalThis.__val").unwrap().value, "", "createAttribute Attr.value=''（初始空）");
+    assert_eq!(sandbox.execute("globalThis.__localName").unwrap().value, "data-x", "Attr.localName=data-x");
+    assert_eq!(sandbox.execute("globalThis.__ns").unwrap().value, "null", "Attr.namespaceURI=null");
+    assert_eq!(sandbox.execute("globalThis.__prefix").unwrap().value, "null", "Attr.prefix=null");
+    assert_eq!(sandbox.execute("globalThis.__specified").unwrap().value, "true", "Attr.specified=true");
+    assert_eq!(sandbox.execute("globalThis.__owner").unwrap().value, "null", "createAttribute Attr.ownerElement=null（游离）");
+
+    // createAttribute + setNamedItem 流：a.value='v' 后 setNamedItem → 属性生效。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             a.value = 'v';\
+             d.attributes.setNamedItem(a);\
+             globalThis.__gv = d.getAttribute('data-x');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__gv").unwrap().value, "v", "createAttribute + setNamedItem 后 getAttribute='v'");
+
+    // 主 DOM getNamedItem 返真 Attr（nodeType=2 + localName + ownerElement 非空）。
+    sandbox
+        .execute(
+            "var ga = d.attributes.getNamedItem('class');\
+             globalThis.__gnt = String(ga.nodeType);\
+             globalThis.__glocal = ga.localName;\
+             globalThis.__gownerTag = ga.ownerElement ? ga.ownerElement.tagName : '(null)';",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__gnt").unwrap().value, "2", "主 DOM getNamedItem 返 Attr nodeType=2（真实例）");
+    assert_eq!(sandbox.execute("globalThis.__glocal").unwrap().value, "class", "主 DOM Attr.localName=class");
+    assert_eq!(sandbox.execute("globalThis.__gownerTag").unwrap().value, "DIV", "主 DOM Attr.ownerElement=元素（tagName=DIV）");
+
+    // mutable tree getNamedItem / setNamedItem / removeNamedItem 返真 Attr（nodeType=2）。
+    sandbox
+        .execute(
+            "var doc = document.implementation.createHTMLDocument('');\
+             doc.body.innerHTML = '<div id=\"m\"></div>';\
+             var div = doc.body.childNodes[0];\
+             div.setAttribute('k','vv');\
+             var mga = div.attributes.getNamedItem('k');\
+             var msa = div.attributes.setNamedItem({name:'k',value:'vv2'});\
+             var mra = div.attributes.removeNamedItem('k');\
+             globalThis.__mgaNt = String(mga.nodeType);\
+             globalThis.__msaNt = String(msa.nodeType);\
+             globalThis.__mraNt = String(mra.nodeType);\
+             globalThis.__msaOldVal = msa.value;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__mgaNt").unwrap().value, "2", "mutable tree getNamedItem 返 Attr nodeType=2（真实例，非 plain）");
+    assert_eq!(sandbox.execute("globalThis.__msaNt").unwrap().value, "2", "mutable tree setNamedItem 返旧 Attr nodeType=2");
+    assert_eq!(sandbox.execute("globalThis.__mraNt").unwrap().value, "2", "mutable tree removeNamedItem 返移除 Attr nodeType=2");
+    assert_eq!(sandbox.execute("globalThis.__msaOldVal").unwrap().value, "vv", "mutable tree setNamedItem 返旧 Attr.value='vv'");
+}

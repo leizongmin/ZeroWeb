@@ -778,6 +778,12 @@
       var handle = __zw_create_element(String(tag));
       return _wrapHandle(handle);
     },
+    // R3023：`document.createAttribute(name)`——建 Attr 节点（nodeType 2，value=''）。供 setAttributeNode /
+    // element.attributes.setNamedItem(attr) 用法（属性库 / 序列化库高频）。真 Attr 实例（经 _zwMakeAttr，
+    // 含 localName/namespaceURI=null/prefix=null/specified/ownerElement=null 全字段，非 plain {name,value}）。
+    createAttribute: function(name) {
+      return _zwMakeAttr(name, '', null);
+    },
     createTextNode: function(text) {
       var handle = __zw_create_text(String(text));
       if (handle) _textHandles[handle] = true;
