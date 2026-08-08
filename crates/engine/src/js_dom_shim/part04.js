@@ -1148,6 +1148,26 @@
           if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, _rsAttr) || '';
           return __zw_get_attr(sel, _rsAttr) || '';
         }
+        // R3038：reflected unsigned-long（numeric）属性读（colSpan/rowSpan/maxLength/minLength）。
+        // parseInt 内容属性 → number；缺省/不可解析 → entry.d（spec default）；colSpan/rowSpan <1 → 1（min）。
+        var _ruEntry = _REFLECTED_UINT[prop];
+        if (_ruEntry) {
+          var _ruRaw = handle
+            ? __zw_get_attr_handle(handle, _ruEntry.a)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _ruEntry.a) : __zw_get_attr(sel, _ruEntry.a));
+          var _ruN = parseInt(String(_ruRaw == null ? '' : _ruRaw), 10);
+          if (isNaN(_ruN)) return _ruEntry.d;
+          if (_ruEntry.min != null && _ruN < _ruEntry.min) return _ruEntry.min;
+          return _ruN;
+        }
+        // R3038：reflected boolean 属性读（required/readOnly/multiple）——presence-based。
+        var _rbAttr = Object.prototype.hasOwnProperty.call(_REFLECTED_BOOL, prop) ? _REFLECTED_BOOL[prop] : null;
+        if (_rbAttr) {
+          var _rbHit = handle
+            ? __zw_has_attr_handle(handle, _rbAttr)
+            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, _rbAttr) : __zw_has_attr(sel, _rbAttr));
+          return _rbHit === '1';
+        }
         return undefined;
       },
       set: function(_t, prop, value) {

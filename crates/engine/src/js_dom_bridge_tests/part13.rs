@@ -1027,3 +1027,83 @@ fn test_reflected_string_attr_reads_r3037() {
         "input.formMethod 缺省=''（camelCase→attr 映射，无 formmethod 属性）"
     );
 }
+
+#[test]
+fn test_reflected_uint_bool_reads_r3038() {
+    // R3038：reflected 数值型 + 布尔型属性读（R3037 follow-up）。colSpan/rowSpan/maxLength/minLength（number）、
+    // required/readOnly/multiple（boolean）旧读返 undefined。本切片补 number/boolean 语义读。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='i' maxlength='5' minlength='2' required>\
+         <table><tr><td id='t' colspan='3' rowspan='4'>c</td><td id='t2'>nc</td></tr></table>\
+         <textarea id='ta' readonly></textarea>\
+         <select id='s' multiple><option>a</option></select>\
+         <input id='i2' type='text'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① 数值型 reflected 读（number 语义，旧恒 undefined）。
+    sandbox
+        .execute(
+            "globalThis.__ml = document.getElementById('i').maxLength;\
+             globalThis.__mlt = document.getElementById('i').minLength;\
+             globalThis.__cs = document.getElementById('t').colSpan;\
+             globalThis.__rs = document.getElementById('t').rowSpan;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__ml").unwrap().value, "5", "input.maxLength=5（number）");
+    assert_eq!(sandbox.execute("globalThis.__mlt").unwrap().value, "2", "input.minLength=2（number）");
+    assert_eq!(sandbox.execute("globalThis.__cs").unwrap().value, "3", "td.colSpan=3（number）");
+    assert_eq!(sandbox.execute("globalThis.__rs").unwrap().value, "4", "td.rowSpan=4（number）");
+
+    // ② 数值型缺省 default：maxLength/minLength 缺省 -1，colSpan/rowSpan 缺省 1。
+    sandbox
+        .execute(
+            "globalThis.__ml2 = document.getElementById('i2').maxLength;\
+             globalThis.__mlt2 = document.getElementById('i2').minLength;\
+             globalThis.__cs2 = String(document.getElementById('t2').colSpan);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__ml2").unwrap().value, "-1", "maxLength 缺省=-1（spec 不限制）");
+    assert_eq!(sandbox.execute("globalThis.__mlt2").unwrap().value, "-1", "minLength 缺省=-1");
+    assert_eq!(sandbox.execute("globalThis.__cs2").unwrap().value, "1", "td.colSpan 缺省=1（spec default）");
+
+    // ③ 布尔型 reflected 读（presence-based boolean，旧恒 undefined）。
+    sandbox
+        .execute(
+            "globalThis.__req = String(document.getElementById('i').required);\
+             globalThis.__ro = String(document.getElementById('ta').readOnly);\
+             globalThis.__mu = String(document.getElementById('s').multiple);\
+             globalThis.__req2 = String(document.getElementById('i2').required);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__req").unwrap().value, "true", "input.required=true（presence）");
+    assert_eq!(sandbox.execute("globalThis.__ro").unwrap().value, "true", "textarea.readOnly=true（presence）");
+    assert_eq!(sandbox.execute("globalThis.__mu").unwrap().value, "true", "select.multiple=true（presence）");
+    assert_eq!(sandbox.execute("globalThis.__req2").unwrap().value, "false", "input.required 缺省=false");
+
+    // ④ setAttribute → 数值型 get 一致 + setAttribute 移除 → 布尔 false。
+    sandbox
+        .execute(
+            "document.getElementById('i2').setAttribute('maxlength', '8');\
+             globalThis.__ml3 = document.getElementById('i2').maxLength;\
+             document.getElementById('i').removeAttribute('required');\
+             globalThis.__req3 = String(document.getElementById('i').required);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__ml3").unwrap().value, "8", "setAttribute('maxlength','8') → maxLength=8");
+    assert_eq!(
+        sandbox.execute("globalThis.__req3").unwrap().value,
+        "false",
+        "removeAttribute('required') → required=false（presence 消失）"
+    );
+}

@@ -76,6 +76,16 @@
     if (_REFLECTED_STRING_FLAT.indexOf(' ' + prop + ' ') >= 0) return prop;
     return null;
   }
+  // R3038：reflected unsigned-long（numeric）+ boolean 属性读（R3037 follow-up——string 已在 R3037 覆盖）。
+  // 数值型 spec 返 number（缺省 default，colSpan/rowSpan spec default 1 且 min 1；maxLength/minLength default -1
+  // = 不限制）。布尔型 spec 返 boolean（presence-based：属性存在 true / 缺省 false）。读旧恒 undefined。
+  var _REFLECTED_UINT = {
+    colSpan: { a: 'colspan', d: 1, min: 1 },
+    rowSpan: { a: 'rowspan', d: 1, min: 1 },
+    maxLength: { a: 'maxlength', d: -1 },
+    minLength: { a: 'minlength', d: -1 },
+  };
+  var _REFLECTED_BOOL = { required: 'required', readOnly: 'readonly', multiple: 'multiple' };
   // P1a DocumentFragment：已创建的 fragment handle 集合（nodeType=11 标识 + appendChild 时
   // flatten 检测）。fragment 为 create 句柄，无 selector，故用此 set 区别于普通元素句柄。
   var _fragmentHandles = {};
