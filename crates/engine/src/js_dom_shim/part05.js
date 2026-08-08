@@ -91,6 +91,14 @@
           wrc[p] = wv;
           if (handle) __zw_set_attr_handle(handle, p, String(wv));
           else { __zw_set_attr(sel, p, String(wv)); moAttr = p; }
+        } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+          // R3042：expando 属性（非原始值——function/object/array/null/undefined/symbol/bigint）。旧经 generic fallthrough
+          // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')` / 'function(){}'）且 get 读不回（undefined）。
+          // real browser：expando 存于 JS 对象非内容属性。改存 per-element expando map（get trap 读回）。
+          // 仅非原始值——real reflected/special attr setter 永不收非原始值（string/number/boolean 走 generic fallthrough 不变），
+          // 故零回归风险（不会拦截 role/aria/class/value 等任何真属性 setter）。无 moAttr（expando 非内容属性，不发 attributes MO）。
+          var _ex = _expando[key] || (_expando[key] = {});
+          _ex[p] = value;
         } else {
           if (handle) __zw_set_attr_handle(handle, p, String(value));
           else __zw_set_attr(sel, p, String(value));

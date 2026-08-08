@@ -58,6 +58,12 @@
   // _outputValue = dirty 后的当前值（key 存在即 dirty）。同 _inputValues 经 `__zw_reset_form_state` 清空。
   var _outputDefault = {};
   var _outputValue = {};
+  // R3042：expando 属性 per-element-key 存储。set trap generic fallthrough 对**非原始值**（function/object/null/
+  // undefined 等——永不可能为合法内容属性值）旧写垃圾属性（`__zw_set_attr(sel,'fn','[object Object]')`）且 get 读不回
+  //（undefined）。real browser：expando 属性存于 JS 对象非内容属性。本 map 存非原始值 expando，get trap 读回。
+  // 仅非原始值（real attr setter 永不收 function/object → 零回归风险，string/number/boolean 保持 generic fallthrough）。
+  // 限制：无 deleteProperty trap → `delete el.expando` 不清此 map（罕见，documented）。导航经 __zw_reset_form_state 清空。
+  var _expando = {};
   // reflected 字符串/数值属性（title/lang/dir/tabindex）per-element-key 缓存。同 _inputValues/_classCache
   // 动机——`__zw_set_attr` 仅入队 mutation（异步 apply），同步 set→get 往返须客户端缓存（get 优先读缓存）。
   // 值结构：{ title?: string, lang?: string, dir?: string, tabindex?: number }。
@@ -1069,7 +1075,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

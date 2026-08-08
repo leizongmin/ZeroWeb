@@ -1410,3 +1410,109 @@ fn test_reflected_uint_cols_rows_start_r3041() {
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__tblRows").unwrap().value, "2", "TABLE.rows 仍为行集合（length=2，非 numeric default 2）");
 }
+
+#[test]
+fn test_expando_non_primitive_properties_r3042() {
+    // R3042：expando 非原始属性 set/get 修复。set trap generic fallthrough 旧对**非原始值**（function/object/null）
+    // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')`）且 get 读不回（undefined）。real browser：expando
+    // 存于 JS 对象非内容属性。本切片改存 per-element expando map（get 读回）。仅非原始值——string/number/boolean
+    // 保持 generic fallthrough 写属性行为（零回归：真 reflected attr setter 永不收非原始值）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'>x</div><button id='b'>btn</button></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① function expando：`el.handler = fn` 存 expando，读回为同一 function 可调用（旧读 undefined）。
+    sandbox
+        .execute(
+            "var b = document.getElementById('b');\
+             b.handler = function(x) { return x * 2; };\
+             globalThis.__hType = typeof b.handler;\
+             globalThis.__hCall = b.handler(21);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hType").unwrap().value, "function", "b.handler typeof=function（旧 undefined）");
+    assert_eq!(sandbox.execute("globalThis.__hCall").unwrap().value, "42", "b.handler(21)=42（可调用）");
+
+    // ② object expando：`el._data = {a:1,b:2}` 存 expando，读回可访问字段（jQuery/analytics 高频用法）。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             d._data = { a: 1, b: 'two', nested: { v: 99 } };\
+             globalThis.__dType = typeof d._data;\
+             globalThis.__da = d._data.a;\
+             globalThis.__db = d._data.b;\
+             globalThis.__dn = d._data.nested.v;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__dType").unwrap().value, "object", "d._data typeof=object（旧 undefined）");
+    assert_eq!(sandbox.execute("globalThis.__da").unwrap().value, "1", "d._data.a=1");
+    assert_eq!(sandbox.execute("globalThis.__db").unwrap().value, "two", "d._data.b='two'");
+    assert_eq!(sandbox.execute("globalThis.__dn").unwrap().value, "99", "d._data.nested.v=99（深访问）");
+
+    // ③ array + null expando：array 存 expando 读回 length；null 存 expando 读回 null。
+    sandbox
+        .execute(
+            "d.items = [10, 20, 30];\
+             d.flag = null;\
+             globalThis.__arrLen = d.items.length;\
+             globalThis.__arr1 = d.items[1];\
+             globalThis.__flag = String(d.flag);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__arrLen").unwrap().value, "3", "d.items.length=3（array expando）");
+    assert_eq!(sandbox.execute("globalThis.__arr1").unwrap().value, "20", "d.items[1]=20");
+    assert_eq!(sandbox.execute("globalThis.__flag").unwrap().value, "null", "d.flag=null（null expando，旧写 attr flag='null'）");
+
+    // ④ expando 非内容属性——不发 attributes MO 记录，且 apply_mutations 不写垃圾属性。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute(
+            "var mo = new MutationObserver(function(){});\
+             mo.observe(d, { attributes: true });\
+             d._data = { refreshed: true };\
+             d.handler2 = function(){};\
+             globalThis.__moCount = mo.takeRecords().length;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__moCount").unwrap().value, "0", "expando set 不发 attributes MO（非内容属性）");
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(!out.contains("_data"), "apply 不写 _data 垃圾属性\n{out}");
+    assert!(!out.contains("handler"), "apply 不写 handler 垃圾属性\n{out}");
+
+    // ⑤ 回归守卫：string/number/boolean 值仍走 generic fallthrough 写内容属性（reflected attr setter 不受影响）。
+    //   `el.role='button'`（role 读有显式 get 分支，set 走 fallthrough）→ 仍写 role 属性（非原始值修复不触碰）。
+    sandbox
+        .execute(
+            "var d2 = document.getElementById('d');\
+             d2.role = 'button';\
+             d2.customStr = 'hello';\
+             d2.customNum = 7;\
+             globalThis.__roleAttr = d2.getAttribute('role');\
+             globalThis.__customAttr = d2.getAttribute('customStr');\
+             globalThis.__numAttr = d2.getAttribute('customNum');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__roleAttr").unwrap().value, "button", "role='button' 仍写属性（string 走 fallthrough）");
+    assert_eq!(sandbox.execute("globalThis.__customAttr").unwrap().value, "hello", "customStr='hello' 仍写属性");
+    assert_eq!(sandbox.execute("globalThis.__numAttr").unwrap().value, "7", "customNum=7 仍写属性（number 走 fallthrough）");
+
+    // ⑥ 多元素独立 expando（per-element 隔离）+ reflected 布尔 setter 不受影响。
+    sandbox
+        .execute(
+            "b._own = { id: 'B' }; d._own = { id: 'D' };\
+             globalThis.__bOwn = b._own.id;\
+             globalThis.__dOwn = d._own.id;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__bOwn").unwrap().value, "B", "b._own.id='B'（per-element 隔离）");
+    assert_eq!(sandbox.execute("globalThis.__dOwn").unwrap().value, "D", "d._own.id='D'（per-element 隔离，不串）");
+}
