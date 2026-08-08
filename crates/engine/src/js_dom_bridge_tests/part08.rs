@@ -1356,6 +1356,106 @@ fn test_element_animate_r2827() {
 }
 
 #[test]
+fn test_element_animate_real_playback_r2965() {
+    // R2965：el.animate() 真关键帧应用（R2827 permissive stub 升级）。headless 瞬间完成模型下，finish 时按
+    // fill 把末关键帧 CSS 属性写入元素 inline style（经样式→布局→渲染管线可见）；commitStyles() 显式提交当前态。
+    // 验证：① fill:'forwards' → 末态应用（含多属性 + camelCase→kebab）；② commitStyles 不依赖 fill；
+    // ③ fill:'none'（默认）不持久化（无 SetStyle）；④ 空关键帧 commitStyles no-op。既有语义不变（R2827 测覆盖）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='a'></div><div id='b'></div><div id='c'></div><div id='e'></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① fill:'forwards' + 多属性 + camelCase（backgroundColor→background-color）→ finish 后末态应用。
+    sandbox
+        .execute(
+            "document.querySelector('#a').animate(\
+               [{opacity:0, backgroundColor:'red'}, \
+                {opacity:1, backgroundColor:'blue', transform:'scale(2)'}], \
+               {duration:200, fill:'forwards'});",
+        )
+        .unwrap();
+    // _defer microtask 在 execute 末 checkpoint 已 fire → SetStyle 已 push。apply_mutations_to_html 验真。
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(out.contains("opacity: 1"), "fill:forwards 末态 opacity 应用\n{out}");
+    assert!(
+        out.contains("background-color: blue"),
+        "camelCase backgroundColor→kebab 末态应用\n{out}"
+    );
+    assert!(
+        out.contains("transform: scale(2)"),
+        "末态 transform 应用\n{out}"
+    );
+
+    // ② commitStyles() 不依赖 fill：fill 默认 none（不自动持久化），但 commitStyles 显式提交末态。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute(
+            "var a2 = document.querySelector('#b').animate([{color:'red'},{color:'blue'}], 100);\
+             a2.commitStyles();",
+        )
+        .unwrap();
+    let ms2 = mutations.lock().unwrap().clone();
+    let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
+    assert!(
+        out2.contains("color: blue"),
+        "commitStyles 提交末态 color（不依赖 fill）\n{out2}"
+    );
+
+    // ③ fill:'none'（默认）→ finish 后不持久化（无末态 SetStyle）。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute(
+            "document.querySelector('#c').animate([{opacity:0},{opacity:1}], {duration:50, fill:'none'});",
+        )
+        .unwrap();
+    let set_style_none = mutations
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|m| matches!(m, DomMutation::SetStyle { .. }))
+        .count();
+    assert_eq!(
+        set_style_none, 0,
+        "fill:none 不持久化末态（无 SetStyle 变更）"
+    );
+
+    // ④ 空关键帧 → 无末态可应用（commitStyles no-op 不抛，无 SetStyle）。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute(
+            "var a4 = document.querySelector('#e').animate([], 30);\
+             a4.commitStyles();\
+             globalThis.__ok4 = 'ok';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ok4)").unwrap().value,
+        "ok",
+        "空关键帧 commitStyles 不抛"
+    );
+    let set_style_empty = mutations
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|m| matches!(m, DomMutation::SetStyle { .. }))
+        .count();
+    assert_eq!(set_style_empty, 0, "空关键帧无 SetStyle");
+}
+
+#[test]
 fn test_element_get_client_rects_r2828() {
     // R2828：Element.getClientRects——旧返空 []（破 popper.js/tether 读 getClientRects()[0]）。
     // 现返单元素 bounding rect 数组（与 getBoundingClientRect 同源 _domRectFromId）。inline 多行收缩为

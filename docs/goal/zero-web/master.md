@@ -112,6 +112,28 @@
 
 ## 最近完成的改进
 
+### P1a Web Animations API 真关键帧应用（el.animate 末态写入 inline style + commitStyles，本轮 R2965，~14,146 测试）
+
+R2964（Clipboard）后续续 P1a defer Web API。`element.animate()`（Web Animations API）此前 R2827 为 **permissive stub**：动画「瞬间完成」（playState running→finished + finished Promise + onfinish 触发），但**关键帧不真应用**——`el.animate([{opacity:0},{opacity:1}], {fill:'forwards'})` 后元素 inline style 仍空，动画终态不可见。modern 动画库（Framer Motion / GSAP / anime.js / Lottie）feature-detect + 链式通过，但视觉终态丢失（headless 截图不反映动画结果）。本切片补**末态关键帧写入 inline style**。
+
+| 模块 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part03.js` | `_makeAnimation(keyframes, options, sel, handle)` 升级：① 新 `_endStateFromKeyframes(kf)` 取末关键帧（offset===1 项，无则数组末项；空/非数组→null）；② 新 `_applyKeyframeProps(props, sel, handle)` 跳过 meta 键（offset/easing/composite）、camelCase→kebab（复用 `_stylePropName`）、经 `__zw_set_style[_handle]` 写 inline style；③ finish 时若 fill ∈ {forwards, both} 自动应用末态（spec fill-mode 语义）；④ `commitStyles()` 显式提交末态（不依赖 fill，防动画移除后回退）；⑤ `_committed` 守卫防 finish+commitStyles 双写。 |
+| `crates/engine/src/js_dom_shim/part04.js` | `animate` get-trap 分支：`function(keyframes, options)` 透传 keyframes + 闭包捕获的 `sel/handle` 给 `_makeAnimation`（旧丢 `_keyframes`/无元素身份）。 |
+| `crates/engine/src/js_dom_bridge_tests/part08.rs` | 新 `test_element_animate_real_playback_r2965`：① fill:forwards 末态应用（opacity/background-color camelCase→kebab/transform 多属性）；② commitStyles 不依赖 fill（默认 none + commitStyles 仍提交 color）；③ fill:none 不持久化（SetStyle 计数=0）；④ 空关键帧 commitStyles no-op（不抛，SetStyle=0）。既有 `test_element_animate_r2827`（playState/finished/onfinish 语义）保持绿。 |
+
+**为何 headless 用「末态写入 inline style」而非帧驱动插值**：CSS `@keyframes` 动画的帧插值（AnimationClock）在 Rust 侧 style/computed-style 管线内（animation.rs），而 `el.animate()` JS API 在 polyfill shim 侧——跨 JS/Rust 边界把 JS 创建的关键帧注册进 AnimationClock 是大改。headless 「瞬间完成」模型（既定）下，动画语义等价于「跳到终态」：把末关键帧 CSS 属性写入 inline style → 经既有 style→layout→render 管线可见（截图反映动画终态）。这是对 headless 最小且正确的真播放近似（真帧驱动 defer 到 P1b V8 原生绑定后跨边界集成）。
+
+**为何尊重 fill-mode（forwards/both 才持久化）**：spec `fill: none`（默认）/`auto` finish 后动画 effect 不保留——元素回归 underlying 值。若一律应用末态会破坏 `fill:none` 语义（如 fade-out 动画 finish 后应回 underlying opacity）。`fill: forwards/both` 才持久化。`commitStyles()` 是 spec 显式「固化当前态」入口——不依赖 fill，调用即提交（动画移除前固化终态的标准用法）。
+
+**为何零回归**：`_makeAnimation` 签名扩展（+3 参数），既有 R2827 测试传 `animate([{opacity:0},{opacity:1}], 200)`（options=number 无 fill）→ fill 默认 auto→none → 不应用末态 → 元素 style 不变（R2827 不查 style，仍绿）；空关键帧 `animate([], {...})` → 无末态 → cancel → 不应用（仍绿）。`finished` Promise/onfinish/playState 语义完全保留（仅 finish 分支末新增「按 fill 应用末态」additive 步骤）。
+
+验证：`make test`（cargo-nextest 全 workspace）全绿 **14146 passed / 71 skipped / 0 failed**（engine +1 driving 测试 test_element_animate_real_playback_r2965，无回归）+ clippy `-D warnings` 零警告（workspace）+ fmt clean。
+
+**已知限制（follow-up）**：① headless 瞬间完成（无真帧驱动插值，duration 仅影响 finish 后 currentTime；真帧驱动需 P1b 跨 JS/Rust 边界集成 AnimationClock）；② 仅应用末态（非中间关键帧插值，headless 瞬间完成模型下等价）；③ `composite`/`easing` 关键帧 meta 忽略（headless 无合成/缓动）；④ `cancel()` 后 commitStyles 无效（spec：cancelled animation 无 effect）——当前 commitStyles 不查 cancelled 态（best-effort，低频组合，follow-up）。
+
+**下一步**：续 P1a——① 其他 defer Web API（ReadableStream 响应流 / IntersectionObserver rootMargin 懒加载边距 / ClipboardItem 图片剪贴板）；② task source 优先级（事件循环边缘）；③ customElements upgrade（需 P1b RFC 审批）；④ 拆 js_dom_bridge.rs（3947，按职责重组）。
+
 ### P1a Clipboard API 真实化（writeText/readText 进程内 store 往返，本轮 R2964，~14,145 测试）
 
 R2963（shim 拆分）后回功能推进。`navigator.clipboard` 原 R2817 为 resolving Promise stubs（readText 恒 ''，writeText 恒 undefined）——让 modern 脚本 feature-detect 不抛，但**复制按钮 + 粘贴检查**高频模式（writeText→readText 往返）不可用。本切片补**进程内 store**（IIFE 闭包 `_store`），writeText/readText 真实往返。

@@ -174,11 +174,43 @@
     };
   }
 
-  // Web Animations Animation 对象（el.animate permissive stub，R2827）。headless 无真时间轴 / 关键帧应用
+  // Web Animations Animation 对象（el.animate，R2827 stub → R2965 真关键帧应用）。headless 无真时间轴
   // → 动画「瞬间完成」：创建即 playState='running'，execute 末 _defer microtask 后 playState='finished' +
-  // finished Promise resolve + onfinish 触发（除非 cancel）。让 modern 动画库（Framer Motion / GSAP / Lottie）
-  // feature-detect `el.animate` + 链式（await anim.finished / anim.onfinish）通过——动画不真播放，但回调链走通。
-  function _makeAnimation(options) {
+  // finished Promise resolve + onfinish 触发（除非 cancel）。R2965：finish 时若 fill ∈ {forwards, both}，
+  // 把末关键帧（offset 1 或数组末项）的 CSS 属性写入元素 inline style（经 `__zw_set_style[_handle]`），
+  // 使动画末态经样式→布局→渲染管线可见（headless 截图反映动画终态）。`commitStyles()` 显式提交当前态
+  //（headless 瞬间完成 = 末态）到 inline style，不依赖 fill。modern 动画库（Framer Motion / GSAP / Lottie）
+  // feature-detect + 链式 + 终态可见全通。fill: none（默认）/ auto 不自动持久化（spec：finish 后无 effect）。
+  // keyframe 解析：数组每项为属性 dict + 可选 meta 键 offset/easing/composite；末态取 offset===1 项，无则末项。
+  function _applyKeyframeProps(props, sel, handle) {
+    // 把单关键帧 dict 的 CSS 属性写入元素 inline style。跳过 meta 键；camelCase→kebab（复用 _stylePropName）。
+    if (!props || typeof props !== 'object') return;
+    for (var propName in props) {
+      if (!Object.prototype.hasOwnProperty.call(props, propName)) continue;
+      if (propName === 'offset' || propName === 'easing' || propName === 'composite') continue;
+      var cssProp = _stylePropName(propName);
+      var val = String(props[propName]);
+      if (handle && typeof __zw_set_style_handle === 'function') {
+        try { __zw_set_style_handle(handle, cssProp, val); } catch (_e) {}
+      } else if (sel && typeof __zw_set_style === 'function') {
+        try { __zw_set_style(sel, cssProp, val); } catch (_e) {}
+      }
+    }
+    _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
+  }
+
+  function _endStateFromKeyframes(keyframes) {
+    // 末态关键帧：优先 offset===1 项；无显式 offset 则取数组末项。空数组 / 非数组 → null（无末态可应用）。
+    if (!Array.isArray(keyframes) || keyframes.length === 0) return null;
+    for (var i = 0; i < keyframes.length; i++) {
+      var kf = keyframes[i];
+      if (kf && typeof kf === 'object' && kf.offset === 1) return kf;
+    }
+    var last = keyframes[keyframes.length - 1];
+    return (last && typeof last === 'object') ? last : null;
+  }
+
+  function _makeAnimation(keyframes, options, sel, handle) {
     var anim = {
       playState: 'running',
       currentTime: 0,
@@ -190,34 +222,53 @@
       oncancel: null,
       onremove: null,
       _cancelled: false,
+      _committed: false,
       play: function () { anim.playState = 'running'; },
       pause: function () { anim.playState = 'paused'; },
       cancel: function () { anim._cancelled = true; anim.playState = 'idle'; },
       finish: function () { anim.playState = 'finished'; },
       reverse: function () { anim.playbackRate = -anim.playbackRate; return anim; },
       updatePlaybackRate: function (rate) { anim.playbackRate = rate; },
-      commitStyles: function () {},
+      // commitStyles()：显式把当前态（headless 瞬间完成 = 末态）写入 inline style。spec 不依赖 fill——
+      // 调用即提交，用于动画移除前固化终态。多关键帧属性经 _applyKeyframeProps camelCase→kebab。
+      commitStyles: function () {
+        if (!anim._committed && anim._endState) {
+          _applyKeyframeProps(anim._endState, sel, handle);
+          anim._committed = true;
+        }
+      },
       persist: function () {},
       addEventListener: function () {},
       removeEventListener: function () {},
       dispatchEvent: function () { return true; },
     };
-    // options：number=duration(ms) / object={duration,id,...}。提取 duration（finish 后 currentTime 用）+ id。
+    // options：number=duration(ms) / object={duration,id,fill,...}。提取 duration（finish 后 currentTime 用）+ id + fill。
+    var fill = 'auto';
     if (options != null) {
       if (typeof options === 'number') anim.duration = options;
       else {
         if (typeof options.duration === 'number') anim.duration = options.duration;
         if (options.id != null) anim.id = String(options.id);
+        if (options.fill != null) fill = String(options.fill);
       }
     }
+    // 末态关键帧（finish/commitStyles 时应用）。fill ∈ {forwards, both} 时 finish 自动持久化（spec）；
+    // none / auto（auto 解析为 none，无父 group）不自动持久化——元素回归 underlying 值。
+    anim._endState = _endStateFromKeyframes(keyframes);
+    anim._persist = (fill === 'forwards' || fill === 'both');
     var resolveFinish;
     anim._finishedP = new Promise(function (r) { resolveFinish = r; });
     Object.defineProperty(anim, 'finished', { get: function () { return anim._finishedP; } });
     // headless 瞬间完成（无真时间轴）—— microtask 后 finished + onfinish（cancel 则 idle 不完成）。
+    // persist 时把末态写入 inline style（经样式管线可见）。已 commitStyles 则跳过重复写。
     _defer(function () {
       if (!anim._cancelled) {
         anim.playState = 'finished';
         anim.currentTime = anim.duration;
+        if (anim._persist && !anim._committed && anim._endState) {
+          _applyKeyframeProps(anim._endState, sel, handle);
+          anim._committed = true;
+        }
         resolveFinish(anim);
         if (typeof anim.onfinish === 'function') {
           try { anim.onfinish({ type: 'finish', target: anim, currentTime: anim.currentTime }); } catch (_e) {}

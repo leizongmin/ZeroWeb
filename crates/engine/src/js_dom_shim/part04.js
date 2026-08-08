@@ -599,11 +599,12 @@
             return undefined;
           };
         }
-        // `el.animate(keyframes, options)`（Web Animations API，R2827）——modern 动画库（Framer Motion /
-        // GSAP / Lottie）feature-detect + 链式。headless 无真时间轴 → `_makeAnimation` permissive stub
-        //（瞬间完成：playState 'running'→'finished' + finished Promise + onfinish）。关键帧不真应用（documented）。
+        // `el.animate(keyframes, options)`（Web Animations API，R2827 stub → R2965 真关键帧应用）。modern 动画库
+        //（Framer Motion / GSAP / Lottie）feature-detect + 链式。headless 无真时间轴 → `_makeAnimation` 瞬间完成
+        //（playState 'running'→'finished' + finished Promise + onfinish）；R2965 起 finish 时按 fill 把末关键帧
+        // 写入 inline style（终态经样式管线可见）。`sel/handle` 为闭包捕获的本元素身份，透传给 _makeAnimation。
         if (prop === 'animate') {
-          return function (_keyframes, options) { return _makeAnimation(options); };
+          return function (keyframes, options) { return _makeAnimation(keyframes, options, sel, handle); };
         }
         // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：
         // create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。sel-based 源完整；
