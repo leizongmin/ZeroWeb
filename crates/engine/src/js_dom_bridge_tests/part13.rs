@@ -1336,3 +1336,77 @@ fn test_reflected_bool_attrs_expanded_r3040() {
     assert_eq!(sandbox.execute("globalThis.__tgMu").unwrap().value, "true", "muted true→false→true 末态 true");
     assert_eq!(sandbox.execute("globalThis.__tgIm").unwrap().value, "true", "isMap false→true 末态 true");
 }
+
+#[test]
+fn test_reflected_uint_cols_rows_start_r3041() {
+    // R3041：数值型 reflected cols/rows/start（R3038 follow-up——colSpan/rowSpan/maxLength/minLength 已在 R3038）。
+    // textarea.cols（default 20）/textarea.rows（default 2）/ol.start（default 1）旧读恒 undefined。本切片补 number 语义读
+    //（扩 _REFLECTED_UINT 表，set 走既有 generic fallthrough 写属性串，读 parseInt 往返——同 maxLength 模式）。
+    // 另验 TABLE.rows 行集合（R2843）不受影响（更早分支返集合，textarea.rows 才命中 _REFLECTED_UINT）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <textarea id='ta' cols='40' rows='8'>txt</textarea>\
+         <textarea id='ta2'></textarea>\
+         <ol id='ol' start='5'><li>a</li><li>b</li></ol>\
+         <ol id='ol2'><li>x</li></ol>\
+         <table id='tbl'><tbody><tr><td>c</td></tr><tr><td>d</td></tr></tbody></table>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① 数值型 reflected 读（number，旧恒 undefined）。
+    sandbox
+        .execute(
+            "globalThis.__cols = document.getElementById('ta').cols;\
+             globalThis.__rows = document.getElementById('ta').rows;\
+             globalThis.__start = document.getElementById('ol').start;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__cols").unwrap().value, "40", "textarea.cols=40（number）");
+    assert_eq!(sandbox.execute("globalThis.__rows").unwrap().value, "8", "textarea.rows=8（number）");
+    assert_eq!(sandbox.execute("globalThis.__start").unwrap().value, "5", "ol.start=5（number）");
+
+    // ② 缺省 default：cols=20 / rows=2 / start=1（spec default）。
+    sandbox
+        .execute(
+            "globalThis.__cols2 = document.getElementById('ta2').cols;\
+             globalThis.__rows2 = document.getElementById('ta2').rows;\
+             globalThis.__start2 = document.getElementById('ol2').start;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__cols2").unwrap().value, "20", "textarea.cols 缺省=20（spec default）");
+    assert_eq!(sandbox.execute("globalThis.__rows2").unwrap().value, "2", "textarea.rows 缺省=2（spec default）");
+    assert_eq!(sandbox.execute("globalThis.__start2").unwrap().value, "1", "ol.start 缺省=1（spec default）");
+
+    // ③ set→get round-trip（IDL setter 经 generic fallthrough 写属性 → 读 parseInt 反映）。
+    sandbox
+        .execute(
+            "var ta = document.getElementById('ta');\
+             ta.cols = 60; ta.rows = 4;\
+             var ol = document.getElementById('ol');\
+             ol.start = 10;\
+             globalThis.__cols3 = ta.cols;\
+             globalThis.__rows3 = ta.rows;\
+             globalThis.__start3 = ol.start;\
+             globalThis.__cols3Has = ta.getAttribute('cols');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__cols3").unwrap().value, "60", "ta.cols=60 后读 60（round-trip）");
+    assert_eq!(sandbox.execute("globalThis.__rows3").unwrap().value, "4", "ta.rows=4 后读 4（round-trip）");
+    assert_eq!(sandbox.execute("globalThis.__start3").unwrap().value, "10", "ol.start=10 后读 10（round-trip）");
+    assert_eq!(sandbox.execute("globalThis.__cols3Has").unwrap().value, "60", "ta.cols=60 写入 cols 内容属性");
+
+    // ④ TABLE.rows 仍返行集合（R2843，不受 _REFLECTED_UINT 扩展影响）——2 行（tr），非 number。
+    sandbox
+        .execute("globalThis.__tblRows = document.getElementById('tbl').rows.length;")
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__tblRows").unwrap().value, "2", "TABLE.rows 仍为行集合（length=2，非 numeric default 2）");
+}

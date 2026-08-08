@@ -76,14 +76,19 @@
     if (_REFLECTED_STRING_FLAT.indexOf(' ' + prop + ' ') >= 0) return prop;
     return null;
   }
-  // R3038：reflected unsigned-long（numeric）+ boolean 属性读（R3037 follow-up——string 已在 R3037 覆盖）。
+  // R3038/R3041：reflected unsigned-long（numeric）+ boolean 属性读（R3037 follow-up——string 已在 R3037 覆盖）。
   // 数值型 spec 返 number（缺省 default，colSpan/rowSpan spec default 1 且 min 1；maxLength/minLength default -1
-  // = 不限制）。布尔型 spec 返 boolean（presence-based：属性存在 true / 缺省 false）。读旧恒 undefined。
+  // = 不限制；cols/rows/start R3041——textarea cols default 20 / rows default 2，ol start default 1，无 min 故
+  // 边界 <1 值原样返，pragmatic 近似）。布尔型 spec 返 boolean（presence-based：属性存在 true / 缺省 false）。
+  // 读旧恒 undefined。set 走既有 generic fallthrough（__zw_set_attr 写属性串），读 parseInt 往返（同 maxLength）。
   var _REFLECTED_UINT = {
     colSpan: { a: 'colspan', d: 1, min: 1 },
     rowSpan: { a: 'rowspan', d: 1, min: 1 },
     maxLength: { a: 'maxlength', d: -1 },
     minLength: { a: 'minlength', d: -1 },
+    cols: { a: 'cols', d: 20 },
+    rows: { a: 'rows', d: 2 },
+    start: { a: 'start', d: 1 },
   };
   // 布尔 reflected 属性表（IDL 名 → 内容属性名）。get trap presence 读返 boolean（R3038）；set trap
   // truthy→设 presence / falsy→removeAttribute（R3039，闭合 set-false bug）。仅收录**纯布尔 presence-based** 属性；

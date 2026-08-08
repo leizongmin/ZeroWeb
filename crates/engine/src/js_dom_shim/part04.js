@@ -1148,8 +1148,9 @@
           if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, _rsAttr) || '';
           return __zw_get_attr(sel, _rsAttr) || '';
         }
-        // R3038：reflected unsigned-long（numeric）属性读（colSpan/rowSpan/maxLength/minLength）。
+        // R3038/R3041：reflected unsigned-long（numeric）属性读（colSpan/rowSpan/maxLength/minLength/cols/rows/start）。
         // parseInt 内容属性 → number；缺省/不可解析 → entry.d（spec default）；colSpan/rowSpan <1 → 1（min）。
+        // 注：TABLE/THEAD/TBODY/TFOOT 的 `.rows` 在更早分支（part03）返行集合——此处仅对 textarea 命中（table 已 return）。
         var _ruEntry = _REFLECTED_UINT[prop];
         if (_ruEntry) {
           var _ruRaw = handle
