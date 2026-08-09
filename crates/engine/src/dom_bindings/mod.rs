@@ -128,6 +128,25 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
         return;
     };
     let _ = global.set(scope, key.into(), f.into());
+
+    // 4. 全局工厂 __zw_native_query_selector(sel) / __zw_native_query_selector_all(sel)
+    //    —— spec `dom-parentnode-queryselector(-all)`：文档根下按**全量选择器引擎**
+    //    （[`zero_dom::Document::query_selector`] / `query_selector_all`，消费 tag/`*`/
+    //    `#id`/`.class`/`[attr]`+6 运算符/伪类/后代·子组合器/逗号列表）匹配 → native 对象
+    //    （单）/ V8 Array（复，文档序）。R3098 工厂仅 `get_element_by_id`，本切片把
+    //    querySelector 族从 polyfill 字符串桥搬到 native（返 NodeId→对象，无 String 往返）。
+    let qs = v8::FunctionTemplate::builder(native_query_selector_invoke).build(scope);
+    let qs_fn = qs.get_function(scope);
+    let qs_key = v8::String::new(scope, "__zw_native_query_selector");
+    if let (Some(f), Some(key)) = (qs_fn, qs_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+    let qsa = v8::FunctionTemplate::builder(native_query_selector_all_invoke).build(scope);
+    let qsa_fn = qsa.get_function(scope);
+    let qsa_key = v8::String::new(scope, "__zw_native_query_selector_all");
+    if let (Some(f), Some(key)) = (qsa_fn, qsa_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
 }
 
 // ── accessor getter（ZST fn；状态经 gc.rs 线程局部）─────────────────
@@ -335,6 +354,45 @@ fn native_element_factory_invoke(
         rv.set(obj.into());
     }
     // 无 Element 模板（未安装）→ undefined（防御，正常路径模板已 set）。
+}
+
+/// `__zw_native_query_selector(sel)`：spec `dom-parentnode-queryselector`——
+/// 文档根下按**全量选择器引擎**（[`zero_dom::Document::query_selector`]，消费 tag/`*`/
+/// `#id`/`.class`/`[attr]`+运算符/伪类/组合器）找首个匹配元素 → native 对象。
+///
+/// 无匹配 / 空 / 非法选择器 → `null`（`parse_selector_chain` 失败返 `None`，无 panic）。
+fn native_query_selector_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let sel = string_arg(scope, &args, 0);
+    let Some(id) = with_dom(|d| d.query_selector(d.root(), sel.trim())).flatten() else {
+        rv.set(v8::null(scope).into());
+        return;
+    };
+    if let Some(obj) = get_or_create_native_element(scope, id) {
+        rv.set(obj.into());
+    }
+}
+
+/// `__zw_native_query_selector_all(sel)`：spec `dom-parentnode-queryselectorall`——
+/// 文档根下按全量选择器引擎（[`zero_dom::Document::query_selector_all`]）收集全部匹配
+/// 元素 → V8 `Array` of native 对象（文档序）。空 / 非法选择器 → 空 `Array`。
+fn native_query_selector_all_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let sel = string_arg(scope, &args, 0);
+    let ids: Vec<NodeId> = with_dom(|d| d.query_selector_all(d.root(), sel.trim())).unwrap_or_default();
+    let arr = v8::Array::new(scope, ids.len() as i32);
+    for (i, id) in ids.into_iter().enumerate() {
+        if let Some(obj) = get_or_create_native_element(scope, id) {
+            let _ = arr.set_index(scope, i as u32, obj.into());
+        }
+    }
+    rv.set(arr.into());
 }
 
 // ── NodeId ↔ internal slot 读写 + 对象身份映射 ────────────────────

@@ -154,6 +154,67 @@ fn native_id_and_class_name_reflected() {
     );
 }
 
+// ── S3 selector→NodeId native（querySelector / querySelectorAll，全量选择器引擎）──
+
+/// `querySelector`：全量选择器引擎（tag / `.class` / `[attr=val]` / 后代组合器）→ native 对象，
+/// 经 R3098 native getter/getAttribute 读真实属性（无 String 往返）。无匹配 / 非法 → `null`。
+#[test]
+fn native_query_selector() {
+    let html = r#"<div id="root"><span class="row" data-x="1">a</span><span class="row big" data-x="2">b</span></div>"#;
+    // tag 选择器 → 首个 span（文档序）。
+    assert_eq!(
+        run_script(html, "(__zw_native_query_selector('span').getAttribute('data-x'))"),
+        "1"
+    );
+    // `.class` 选择器 → 首个匹配 span。
+    assert_eq!(run_script(html, "(__zw_native_query_selector('.row').tagName)"), "SPAN");
+    // `[attr=val]` 精确匹配 → data-x="2" 那个。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_query_selector('[data-x=\"2\"]').getAttribute('data-x'))"
+        ),
+        "2"
+    );
+    // 后代组合器 div span → 首个 span。
+    assert_eq!(
+        run_script(html, "(__zw_native_query_selector('div span').nodeType)"),
+        "1"
+    );
+    // 无匹配 → null。
+    assert_eq!(run_script(html, "(__zw_native_query_selector('.nope'))"), "null");
+    // 非法选择器 → null（parse 失败，无 panic）。
+    assert_eq!(run_script(html, "(__zw_native_query_selector('!!!'))"), "null");
+}
+
+/// `querySelectorAll`：全部匹配 → V8 Array of native 对象（文档序，含跨 tag `.class` + 组合器）。
+#[test]
+fn native_query_selector_all() {
+    let html = r#"<div id="root"><span class="row" data-x="1">a</span><span class="row big" data-x="2">b</span><p class="row">c</p></div>"#;
+    // 全部 span（文档序）。
+    assert_eq!(run_script(html, "(__zw_native_query_selector_all('span').length)"), "2");
+    // 各元素经 native getter 读属性（文档序 data-x 序）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_query_selector_all('span')[0].getAttribute('data-x') + '/' + __zw_native_query_selector_all('span')[1].getAttribute('data-x'))"
+        ),
+        "1/2"
+    );
+    // `.class` 跨 tag（span + span + p = 3 个 .row）。
+    assert_eq!(run_script(html, "(__zw_native_query_selector_all('.row').length)"), "3");
+    // 后代组合器 div span → 2 个。
+    assert_eq!(
+        run_script(html, "(__zw_native_query_selector_all('div span').length)"),
+        "2"
+    );
+    // 无匹配 → 空 Array（length 0）。
+    assert_eq!(
+        run_script(html, "(__zw_native_query_selector_all('.nope').length)"),
+        "0"
+    );
+}
+
 // ── gc.rs 单元测试 ────────────────────────────────────────────────
 
 /// NodeId↔u64(ffi) 编解码 round-trip（internal slot 值传递基础）。

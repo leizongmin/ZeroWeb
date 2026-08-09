@@ -21,8 +21,9 @@ use zero_dom::{NodeKind, parse_html};
 use zero_engine::dom_bindings::install_dom_bindings;
 use zero_engine::find_by_selector;
 
-/// bench 用 HTML（多元素，确保 lookup 非平凡）。元素 `a` 带 class，供 getAttribute 非空路径。
-const HTML: &str = r#"<div id="a" class="row"><span id="b">x</span><p id="c"></p><section id="d"></section></div>"#;
+/// bench 用 HTML（多元素，确保 lookup 非平凡）。元素 `a` 带 class，供 getAttribute 非空路径；
+/// 含 4 个 span，供 querySelectorAll 多元素路径。
+const HTML: &str = r#"<div id="a" class="row"><span id="b" class="s">x</span><span id="c" class="s">y</span><span id="d" class="s">z</span><span id="e" class="s">w</span></div>"#;
 
 // polyfill HTML 快照串（线程局部；polyfill 回调每次重解析）。
 thread_local! {
@@ -162,6 +163,7 @@ fn bench_dom_bindings(c: &mut Criterion) {
         "native_get_attribute",
         "(__zw_native_element_for_id('a').getAttribute('class'))",
     );
+    bench.compile("native_qsa", "(__zw_native_query_selector_all('span').length)");
     bench.compile("poly_tag", "(__zw_poly_tag('#a'))");
 
     // 正确性自检（非计时）：两路 tagName 应一致（"DIV"）。
@@ -169,6 +171,7 @@ fn bench_dom_bindings(c: &mut Criterion) {
     assert_eq!(bench.run("poly_tag"), "DIV", "polyfill tagName");
     assert_eq!(bench.run("native_node_type"), "1", "native nodeType");
     assert_eq!(bench.run("native_get_attribute"), "row", "native getAttribute");
+    assert_eq!(bench.run("native_qsa"), "4", "native querySelectorAll span count");
 
     c.bench_function("native_tag_name", |b| b.iter(|| black_box(bench.run("native_tag"))));
     c.bench_function("polyfill_tag_name", |b| b.iter(|| black_box(bench.run("poly_tag"))));
@@ -179,6 +182,10 @@ fn bench_dom_bindings(c: &mut Criterion) {
     // 对照既有 accessor getter（ZST fn，无 String 参）量化方法调用相对开销。
     c.bench_function("native_get_attribute", |b| {
         b.iter(|| black_box(bench.run("native_get_attribute")))
+    });
+    // 首测 native querySelectorAll 路径（选择器解析 + 文档遍历 + N 个对象实例化 + V8 Array）。
+    c.bench_function("native_query_selector_all", |b| {
+        b.iter(|| black_box(bench.run("native_qsa")))
     });
 }
 
