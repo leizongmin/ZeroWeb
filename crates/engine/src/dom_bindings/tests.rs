@@ -1296,6 +1296,88 @@ fn native_get_elements_by_tag_name_identity_r3137() {
     );
 }
 
+// ── R3138 document.getElementsByClassName(name) 工厂 ──
+
+/// `__zw_native_get_elements_by_class_name(name)`：按类名收集文档序 V8 Array。
+/// 多元素同 class + 无匹配空数组 + 空/空白串空数组。
+#[test]
+fn native_get_elements_by_class_name_r3138() {
+    let html = r#"<div id="root"><span class="row">1</span><span class="row big">2</span><p class="row">3</p></div>"#;
+    // 单 class "row" → 3 个（两 span + p）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_elements_by_class_name('row').length)"),
+        "3",
+        "getElementsByClassName('row').length===3（两 span + p）"
+    );
+    // 文档序读 tagName（span/span/p）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const a=__zw_native_get_elements_by_class_name('row');\
+            return a[0].tagName+'/'+a[1].tagName+'/'+a[2].tagName;})()"
+        ),
+        "SPAN/SPAN/P",
+        "文档序 row 元素 tagName：span/span/p"
+    );
+    // 单 class "big" → 1 个（仅第二 span）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_elements_by_class_name('big').length)"),
+        "1",
+        "getElementsByClassName('big').length===1（仅 class='row big'）"
+    );
+    // 无匹配 → 空 Array。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_elements_by_class_name('nope').length)"),
+        "0",
+        "无匹配 → 空 Array"
+    );
+    // 空/空白串 → 空 Array（spec：空 names 不匹配）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_elements_by_class_name('   ').length)"),
+        "0",
+        "空白串 → 空 Array"
+    );
+}
+
+/// **多类 spec 合规**：`'row big'`（空格分隔）→ 含【全部】两类的元素（仅 class='row big' 那个）。
+/// 闭合 dom `get_elements_by_class_name` 单 token 限制——本工厂 split + 过滤实现 spec 语义。
+#[test]
+fn native_get_elements_by_class_name_multi_class_r3138() {
+    let html = r#"<div><span class="row big">a</span><span class="row">b</span><span class="big">c</span></div>"#;
+    // 'row big' → 仅含两类的 1 个（第一个 span）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_elements_by_class_name('row big').length)"),
+        "1",
+        "多类 'row big' → 含全部两类的 1 个（spec 合规）"
+    );
+    // 文档序 + 顺序无关（'big row' 同结果）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_elements_by_class_name('big row').length)"),
+        "1",
+        "多类顺序无关（'big row' 同 'row big'）"
+    );
+    // 该元素 tagName = SPAN。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_elements_by_class_name('row big')[0].tagName)"),
+        "SPAN",
+        "多类匹配元素 tagName=SPAN"
+    );
+}
+
+/// 身份：getElementsByClassName 返对象与 getElementById 共享 NodeId↔对象映射（同对象）。
+#[test]
+fn native_get_elements_by_class_name_identity_r3138() {
+    let html = r#"<div id="a" class="row"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_elements_by_class_name('row')[0] === __zw_native_element_for_id('a'))"
+        ),
+        "true",
+        "getElementsByClassName('row')[0] === getElementById('a')（身份缓存共享）"
+    );
+}
+
 // ── R3132 appendChild/insertBefore(fragment) flatten ──
 
 /// host.appendChild(frag)：fragment 子节点展开进 host + fragment 清空（spec flatten）。

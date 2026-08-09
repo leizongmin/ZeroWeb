@@ -1,7 +1,7 @@
 //! 全局工厂回调——拆自 mod.rs（RFC §3.2 子模块化 stage 3，本轮 R3118；createText/Comment/Fragment R3131；
-//! documentElement/body/head R3136；getElementsByTagName R3137）。
+//! documentElement/body/head R3136；getElementsByTagName R3137；getElementsByClassName R3138）。
 //!
-//! 11 个**全局**工厂（注册于 `ctx.global`，非 Element 模板成员）：
+//! 12 个**全局**工厂（注册于 `ctx.global`，非 Element 模板成员）：
 //! - `__zw_native_element_for_id(idStr)`：`get_element_by_id` → native 元素；
 //! - `__zw_native_query_selector(sel)` / `__zw_native_query_selector_all(sel)`：文档根下
 //!   全量选择器引擎匹配 → native 元素 / V8 Array（spec `dom-parentnode-queryselector(-all)`）；
@@ -12,12 +12,14 @@
 //! - `__zw_native_get_document_element()` / `__zw_native_get_body()` / `__zw_native_get_head()`
 //!   （R3136）：文档级只读属性 → native 元素或 `null`（spec `dom-document-(documentelement|body|head)`）；
 //! - `__zw_native_get_elements_by_tag_name(name)`（R3137）：文档根下按标签名（`*` 通配）收集 →
-//!   V8 Array of native 对象（spec `dom-document-getelementsbytagname`）。
+//!   V8 Array of native 对象（spec `dom-document-getelementsbytagname`）；
+//! - `__zw_native_get_elements_by_class_name(name)`（R3138）：空格分隔类名列表（含全部类）收集 →
+//!   V8 Array of native 对象（spec `dom-document-getelementsbyclassname`，多类 spec 合规）。
 //!
 //! 区别于 mod.rs `native_element_query_selector(-all)_invoke`（**元素子树作用域**，注册于 Element
 //! 模板，root = `args.this()` 元素 + 排除自身）——本模块的是**文档级**（root = 文档根）。
 //!
-//! 可见性：11 个 invoke 为 `pub(super)`（mod.rs `install_dom_bindings` 注册经 `factories::` 调）。
+//! 可见性：12 个 invoke 为 `pub(super)`（mod.rs `install_dom_bindings` 注册经 `factories::` 调）。
 //! 读 `super::string_arg` / `super::get_or_create_native_element`（mod.rs 私有——Rust 规则：私有项
 //! 对后代模块可见）+ `super::gc::{with_dom, with_dom_mut}`。
 
@@ -231,6 +233,48 @@ pub(super) fn native_get_elements_by_tag_name_invoke(
 ) {
     let name = string_arg(scope, &args, 0);
     let ids: Vec<NodeId> = with_dom(|d| d.get_elements_by_tag_name_ns(None, name.trim())).unwrap_or_default();
+    let arr = v8::Array::new(scope, ids.len() as i32);
+    for (i, id) in ids.into_iter().enumerate() {
+        if let Some(obj) = get_or_create_native_element(scope, id) {
+            let _ = arr.set_index(scope, i as u32, obj.into());
+        }
+    }
+    rv.set(arr.into());
+}
+
+/// `__zw_native_get_elements_by_class_name(name)`：spec `dom-document-getelementsbyclassname`——
+/// `name` 为**空格分隔类名列表**，返文档根下含【全部】指定类的元素 → V8 `Array` of native 对象（文档序）。
+/// 空串 / 全空白 → 空 `Array`。
+///
+/// **多类 spec 合规**：dom `get_elements_by_class_name` 仅做单 token 精确匹配（whole-string 当单类名），
+/// 不支持 spec「空格分隔多类 = 含全部」。本工厂 split_ascii_whitespace 取 tokens：候选 = 含首 token 的
+/// 元素（复用 `get_elements_by_class_name`，root-scoped 文档序），多 token 时按剩余 token 过滤（读
+/// `class` 属性 split 比对）。单 token（常见）无过滤开销。
+pub(super) fn native_get_elements_by_class_name_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let name = string_arg(scope, &args, 0);
+    let tokens: Vec<&str> = name.split_ascii_whitespace().collect();
+    let ids: Vec<NodeId> = with_dom(|d| {
+        if tokens.is_empty() {
+            return Vec::new();
+        }
+        // 候选 = 含首 token 的元素（get_elements_by_class_name 精确 token 匹配，root-scoped 文档序）。
+        let mut candidates = d.get_elements_by_class_name(tokens[0]);
+        // 多 token：保留含【全部】剩余 token 的候选（读 class 属性 split 比对）。
+        if tokens.len() > 1 {
+            let rest = &tokens[1..];
+            candidates.retain(|&id| {
+                let classes = d.get_attribute(id, "class").unwrap_or_default();
+                let set: Vec<&str> = classes.split_ascii_whitespace().collect();
+                rest.iter().all(|t| set.contains(t))
+            });
+        }
+        candidates
+    })
+    .unwrap_or_default();
     let arr = v8::Array::new(scope, ids.len() as i32);
     for (i, id) in ids.into_iter().enumerate() {
         if let Some(obj) = get_or_create_native_element(scope, id) {
