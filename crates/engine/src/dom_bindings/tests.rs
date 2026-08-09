@@ -923,3 +923,45 @@ fn native_inner_html_reflects_text_write() {
         r#"<span id="s">new</span>"#
     );
 }
+
+// ── R3114 cloneNode(deep) ──
+//
+// HTML: <div id="a" class="x"><span id="s">hi</span></div>
+
+/// `cloneNode(false)` 浅克隆：同 tag + 属性，无子节点；新对象（≠源）。
+#[test]
+fn native_clone_node_shallow() {
+    let html = r#"<div id="a" class="x"><span id="s">hi</span></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); const c=el.cloneNode(false);\
+             return c.tagName+'/'+c.getAttribute('class')+'/'+c.children.length+'/'+(c!==el); })()"
+        ),
+        "DIV/x/0/true"
+    );
+}
+
+/// `cloneNode(true)` 深克隆：含子树（span + 文本），子节点经 native 读见。
+#[test]
+fn native_clone_node_deep() {
+    let html = r#"<div id="a" class="x"><span id="s">hi</span></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const c=__zw_native_element_for_id('a').cloneNode(true);\
+             return c.children.length+'/'+c.children[0].tagName+'/'+c.children[0].textContent; })()"
+        ),
+        "1/SPAN/hi"
+    );
+}
+
+/// `cloneNode()` 缺省 deep → false（spec：浅克隆）。
+#[test]
+fn native_clone_node_default_shallow() {
+    let html = r#"<div id="a" class="x"><span id="s">hi</span></div>"#;
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').cloneNode().children.length)"),
+        "0"
+    );
+}

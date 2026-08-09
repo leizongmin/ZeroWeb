@@ -227,6 +227,12 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "outerHTML") {
         tmpl.set_accessor(k.into(), native_outer_html_getter);
     }
+    // R3114 `cloneNode(deep)`（spec `dom-node-clonenode`）：复用 `Document::clone_node`（克隆元素+属性，
+    // deep 递归子树）；返新 native 元素（未挂载）。
+    let clone_tmpl = v8::FunctionTemplate::builder(native_clone_node_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "cloneNode") {
+        tmpl.set(k.into(), clone_tmpl.into());
+    }
     set_element_template(scope, tmpl);
 
     // R3112 NamedNodeMap ObjectTemplate（element.attributes 集合）：length getter + item/
@@ -1237,6 +1243,28 @@ fn native_outer_html_getter(
     let html = with_dom(|d| d.outer_html(id)).unwrap_or_default();
     if let Some(s) = v8::String::new(scope, &html) {
         rv.set(s.into());
+    }
+}
+
+/// `cloneNode(deep)`（spec `dom-node-clonenode`）：复用 `Document::clone_node`——克隆元素 + 属性，
+/// deep=true 递归克隆子树；返新 native 元素（**未挂载**，需 appendChild；克隆节点 id 不注册 id_map，
+/// 与源共享 id 值，调用方挂载后应改设唯一 id）。
+fn native_clone_node_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    // deep 缺省 → false（spec：cloneNode() 浅克隆）。
+    let deep = args.get(0).boolean_value(scope);
+    let Some(new_id) = with_dom_mut(|d| d.clone_node(id, deep)) else {
+        return;
+    };
+    if let Some(obj) = get_or_create_native_element(scope, new_id) {
+        rv.set(obj.into());
     }
 }
 

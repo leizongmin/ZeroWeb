@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1b cloneNode(deep) native——标准树克隆（本轮 R3114）
+
+承接 R3113（innerHTML/outerHTML getter）。本轮补 native Element 的 `cloneNode(deep)`（spec `dom-node-clonenode`，DOM Level 2+ 核心）。复用既有 `Document::clone_node(node, deep)`（克隆元素+属性，deep 递归子树，返未挂载克隆 NodeId）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **cloneNode 方法** | `crates/engine/src/dom_bindings/mod.rs` | `native_clone_node_invoke`（this=NodeId，`deep = args.get(0).boolean_value(scope)`，缺省 false→浅克隆；`with_dom_mut` 调 `Document::clone_node`；返新 native 元素对象）。模板注册 FunctionTemplate（outerHTML 之后）。 |
+| **engine 隔离测试 + webview 集成测试** | `crates/engine/src/dom_bindings/tests.rs` + `crates/webview/src/tests/coverage.rs` | engine 3 测（浅克隆：tag+属性+无子+新对象 / 深克隆：含子树 span+文本 / 缺省 deep=false）；webview `test_native_clone_node_r3114`（execute_script 安装路径含 R3114）。 |
+
+**为何净正向**：① 补 native Element 树操作面（cloneNode 是模板复用 + SPA 框架高频路径，DOM Level 2+ 核心）；② 极低风险——单方法 + 复用既有 `Document::clone_node`（无新 GC/无新模板/无 webview 接线）；③ kill-switch 默认关 → 零回归（polyfill cloneNode 不变）；④ 深克隆递归 + 属性复制由 Document::clone_node 内部处理（含 id_map 不注册的 spec 正确性——克隆与源共享 id 值，挂载后调用方改设唯一 id）。
+
+**已知限制（记录，后续）**：① **克隆节点 id 不注册 id_map**——与源共享 id 值，`get_element_by_id` 不查到克隆（spec：克隆应改 id；本切片返克隆对象本身不依赖 id 查找）；② **escape-hatch 可达**——标准 document.getElementById（polyfill）仍返 polyfill 元素；native cloneNode 经 `__zw_native_element_for_id` 可达；标准全局桥接 = S6/L2（高风险，后续）；③ 仅 V8（QuickJS no-op，继承）；④ product-smoke 不适用（native_dom 默认关分支）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；engine lib 1790（+3 cloneNode）；webview v8 560（+1 R3114 集成）+ quickjs 527；全 workspace 16182 passed 0 failed 零回归**）。pre-commit guard PASS。
+
+**下一步**：native Element 树操作面补全（cloneNode）。候选：① **`contains(node)`**（标准——节点是否为本元素后代，walk parent 链；spec `dom-node-contains`，简单只读）；② **完整 Attr 节点**（nodeType=2/ownerElement/name/value，闭合 R3112 plain-object 限制）；③ **host→page native 事件派发**（`webview.dispatch_event` 扫 native LISTENERS，闭合 S4 host 驱动半边）；④ **innerHTML/outerHTML setter**（html5ever parse + 替换子节点/自身，闭合 R3113 getter-only——大切片）；⑤ **L2 polyfill-live**（polyfill 桥迁 Document-直读，native↔polyfill 合一，高风险大改）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b innerHTML/outerHTML getter native——序列化子树/自身（本轮 R3113）
 
 承接 R3112（attributes NamedNodeMap）。本轮补 native Element 的 `innerHTML` / `outerHTML` getter（spec `dom-element-innerhtml` / `-outerhtml`，DOM Level 2+ 高频序列化 API）。复用既有 `Document::outer_html`（serializer.rs，任意 NodeId → markup 字符串）；innerHTML = 逐 child `outer_html` 拼接，outerHTML = 本元素 `outer_html`。

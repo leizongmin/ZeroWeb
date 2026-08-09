@@ -683,6 +683,37 @@ fn test_native_inner_outer_html_r3113() {
     );
 }
 
+// ── P1b cloneNode(deep) native（本轮 R3114）──
+
+// native_dom=true → cloneNode 经 execute_script 安装路径可用（浅/深克隆）。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_clone_node_r3114() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body><div id=\"a\" class=\"x\"><span>hi</span></div></body></html>",
+        None,
+    );
+    wv.run_page_scripts_strict().unwrap();
+    // 浅克隆：同 tag+属性，无子；新对象。
+    assert_eq!(
+        wv.execute_script(
+            "(()=>{ const c=__zw_native_element_for_id('a').cloneNode(false);\
+             return c.tagName+'/'+c.getAttribute('class')+'/'+c.children.length; })()"
+        )
+        .unwrap(),
+        "DIV/x/0",
+        "cloneNode(false) 浅克隆"
+    );
+    // 深克隆：含子树。
+    assert_eq!(
+        wv.execute_script("(__zw_native_element_for_id('a').cloneNode(true).children.length)")
+            .unwrap(),
+        "1",
+        "cloneNode(true) 深克隆含子树"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]
