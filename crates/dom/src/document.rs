@@ -1650,7 +1650,17 @@ impl Document {
             .nodes
             .get(node)
             .and_then(|n| match &n.kind {
-                NodeKind::Element(elem) => Some(selector.matches_full(elem, self.compute_element_position(node))),
+                NodeKind::Element(elem) => {
+                    // 无伪类选择器不需要 sibling 位置上下文（matches_full 的伪类
+                    // 评估才读 pos）——宽页面（多兄弟）querySelector 从 O(候选×兄弟)
+                    // 降为 O(候选)，否则每候选元素一次兄弟遍历。
+                    let pos = if selector.pseudos.is_empty() {
+                        crate::query::ElementPosition::default()
+                    } else {
+                        self.compute_element_position(node)
+                    };
+                    Some(selector.matches_full(elem, pos))
+                }
                 _ => None,
             })
             .unwrap_or(false);
