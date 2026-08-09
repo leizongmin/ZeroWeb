@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1b node-types native——childNodes（含文本/注释）+ nodeValue（解锁 Text/Comment 节点可见，本轮 R3104）
+
+承接 R3103（textContent，其限制②：文本节点经 children 不可见、childNodes 缺）→ 本切片补 `childNodes` + `nodeValue`，闭合文本/注释节点可观察性。**关键洞察**：既有 Element ObjectTemplate 的 getter 全 node-type-aware（nodeType→3/8、nodeName→#text/#comment、textContent→data、tagName→undefined、getAttribute→null、children→空），故文本/注释节点包**同模板**经 `get_or_create_native_element` 即正确（无需独立 Text/Comment 模板）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`childNodes` getter + `nodeValue` getter + `node_value` helper** | `crates/engine/src/dom_bindings/mod.rs` | `native_child_nodes_getter`（`Document::child_nodes(id)` 全部子节点 → Array of native 对象，区别于 R3102 `children` 仅元素）+ `native_node_value_getter`（`node_value` helper：Text/Comment/PI=data，Element/Document/…=null，区别于 textContent Element 返子树文本）。 |
+| **+2 单元测试** | `crates/engine/src/dom_bindings/tests.rs` | `native_child_nodes`（`hello<span>x</span>world`→3 子 [text,span,text]；首子文本 nodeType3/nodeName#text/nodeValue"hello"；次子元素 nodeType1/nodeValue null；末子文本"world"）、`native_child_nodes_after_text_content_setter`（textContent 写的文本节点经 childNodes 可见——闭合 R3103 限制②）。 |
+
+**为何净正向**：① 闭合 R3103 限制②——文本/注释节点经 childNodes 可见（children 仅元素，childNodes 全节点）；② **无需独立 Text/Comment ObjectTemplate**——同模板 getter node-type-aware 已覆盖（zero 新模板/零新回调类型，最小成本）；③ nodeValue 补 CharacterData 读表面（Text.data/nodeValue，区别于 textContent 子树文本）；④ 纯追加——既有 baselined 路径未动，零回归；⑤ 默认 kill-switch 关 → 零行为变更。
+
+**已知限制（记录，后续切片）**：① **read-only 快照继承**（R3097 起）；② **nodeValue/data setter defer**（文本节点内容 mutation，需 Document set-text-data API，后续）；③ **`data` getter 别名 defer**（== nodeValue for CharacterData，trivial follow-up）；④ 文本节点包同模板故带 Element-only 方法（setAttribute/querySelector 等）——非元素节点上 best-effort no-op（set_attribute 仅 Element 生效；querySelector 文本子树空），无 panic 但语义近似；⑤ 全量 `make bench-gate` 未本轮内联跑（>10min）；⑥ QuickJS no-op（继承）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-script-sandbox --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**exit 0；engine dom_bindings 24 测试（+2 node-types），零回归；v8+quickjs 双路径**）+ pre-commit guard PASS。变更 engine（dom_bindings mod.rs + tests），无渲染/布局/CSS 变更（JS 桥 native binding，默认关 kill-switch，快照），product-smoke/reftest 不适用。
+
+**下一步**：node-types 可观察性闭合（childNodes + nodeValue）。候选：① **live-Document 重构设计片**（更新 P1b RFC 加 live-Document 设计：`RenderPipeline.cached_doc` → `Arc<Mutex<Document>>` 共享 + webview escape-hatch 接线 + polyfill 桥迁 Document-读——闭合 R3097 起读写快照限制根因，战略项，先设计后多片）；② **S4 EventTarget native**（addEventListener/removeEventListener/dispatchEvent + 事件 target 用原生 node）；③ **nodeValue/data setter**（文本节点内容 mutation）；④ **replaceChild + 抛 DOMException**（S2 树 mutation 收尾）；⑤ **`attributes` NamedNodeMap native getter**（补 S1 只读族）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b textContent native——子树文本读 + 清子写文本节点（高频 API，本轮 R3103）
 
 承接 R3102（S2 树 mutation 闭合，R3102「下一步」战略项 live-Document 经本轮探查判定**高复杂度单切片不可行**——见下「live-Document 探查」）。本切片落高频 DOM API `textContent` 原生（每框架必用），续 native Element 表面扩展。
