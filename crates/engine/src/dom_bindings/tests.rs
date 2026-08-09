@@ -9,7 +9,9 @@ use std::rc::Rc;
 use slotmap::Key;
 use zero_dom::{NodeId, parse_html};
 
-use super::gc::test_helpers::{inject_dom_for_test, listener_keys_for, reset_for_test};
+use super::gc::test_helpers::{
+    attr_cache_alive, inject_dom_for_test, listener_keys_for, nnm_cache_alive, reset_for_test,
+};
 use super::{decode_node_id, encode_node_id, install_dom_bindings, node_exists};
 
 /// 在自带 Isolate+Context 上安装绑定并执行脚本，返回结果字符串。
@@ -1664,4 +1666,70 @@ fn native_finalizer_keeps_listeners_while_referenced_r3133() {
     }
     assert_eq!(kept, 1, "包装器仍被 JS 强引用时不应被 GC，监听器须保留（防终结器误伤）");
     reset_for_test();
+}
+
+// ── R3134 NNM/ATTR 身份缓存 weak 化（闭合同 pattern 泄漏，R3133 已知限制①）──
+
+/// NNM/Attr weak 回收：脚本建 NNM + Attr 后丢引用（仅 weak 缓存持）→ 强制 GC → weak 句柄死
+/// （对象可回收）。闭合 R3133 已知限制①——旧实现 strong Global 永驻，JS 丢引用亦不回收。
+/// 元素（globalThis 持强引用）不被 GC，仅 NNM/Attr 回收，证明泄漏闭合且不影响活跃元素。
+#[test]
+fn native_nnm_attr_cache_reclaimable_on_gc_r3134() {
+    zero_script_sandbox::ensure_v8_initialized();
+    let dom = Rc::new(RefCell::new(parse_html(r#"<div id="a" class="row"></div>"#)));
+    let ffi = encode_node_id(dom.borrow().get_element_by_id("a").expect("id a"));
+    let (nnm_alive, attr_alive);
+    {
+        let isolate = &mut v8::Isolate::new(Default::default());
+        v8::scope!(let scope, isolate);
+        let context = v8::Context::new(scope, Default::default());
+        let scope = &mut v8::ContextScope::new(scope, context);
+        install_dom_bindings(scope, context, Rc::clone(&dom));
+        // globalThis.__el 持元素强引用（元素不被 GC）；NNM/Attr 仅局部持，IIFE 结束即断。
+        let script = "(()=>{ globalThis.__el=__zw_native_element_for_id('a');\
+             void globalThis.__el.attributes;\
+             void globalThis.__el.attributes.getNamedItem('class');\
+             return 'ok'; })()";
+        let code = v8::String::new(scope, script).expect("v8 string");
+        let compiled = v8::Script::compile(scope, code, None).expect("compile");
+        let _ = compiled.run(scope).expect("run");
+        for _ in 0..5 {
+            scope.low_memory_notification();
+        }
+        nnm_alive = nnm_cache_alive(ffi);
+        attr_alive = attr_cache_alive(ffi, "class");
+    }
+    assert!(
+        !nnm_alive,
+        "NNM 丢 JS 引用后应可 GC（weak 死），闭合 R3133 限制① strong-Global 泄漏"
+    );
+    assert!(
+        !attr_alive,
+        "Attr 丢 JS 引用后应可 GC（weak 死），闭合 R3133 限制① strong-Global 泄漏"
+    );
+    reset_for_test();
+}
+
+/// NNM/Attr 身份保持：JS 持引用期间 weak 活 → 同对象（spec identity `el.attributes === el.attributes`、
+/// `getNamedItem('x') === getNamedItem('x')`）。防回归：weak 化不破坏身份。
+#[test]
+fn native_nnm_attr_identity_while_referenced_r3134() {
+    let html = r#"<div id="a" class="row"></div>"#;
+    // NNM 身份：同元素 .attributes 两次取，JS 持比较 → 同对象。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('a').attributes === __zw_native_element_for_id('a').attributes)"
+        ),
+        "true"
+    );
+    // Attr 身份：同 (owner, name) getNamedItem 两次，JS 持比较 → 同对象。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a').attributes;\
+             return (a.getNamedItem('class')===a.getNamedItem('class')); })()"
+        ),
+        "true"
+    );
 }

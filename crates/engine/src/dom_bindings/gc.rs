@@ -42,20 +42,24 @@ thread_local! {
     /// detached 节点仍 arena 可达），仅 JS 也丢包装器 → GC → 终结器回收。reset 仍兜底清空。
     static LISTENERS: RefCell<HashMap<(u64, String, bool), Vec<v8::Global<v8::Value>>>> =
         RefCell::new(HashMap::new());
-    /// R3112 NamedNodeMap（element.attributes）：owner element NodeId(ffi) → Global<Object>，
-    /// 保 spec 身份（`el.attributes === el.attributes` 同对象）。
-    static NAMEDNODEMAP_OBJECTS: RefCell<HashMap<u64, v8::Global<v8::Object>>> =
+    /// R3112 NamedNodeMap（element.attributes）：owner element NodeId(ffi) → **Weak**<Object>，
+    /// 保 spec 身份（`el.attributes === el.attributes` 同对象）。R3134：weak 化（同 R3133 NODE_OBJECTS）——
+    /// JS 丢 NNM 引用即可 GC（NNM 无辅助状态，无需终结器；rebuild 时 insert-overwrite 清死 Weak）。
+    static NAMEDNODEMAP_OBJECTS: RefCell<HashMap<u64, v8::Weak<v8::Object>>> =
         RefCell::new(HashMap::new());
     /// R3112 NamedNodeMap ObjectTemplate（length getter + item/getNamedItem/... + internal slot[0]
     /// = owner element NodeId）。`install_dom_bindings` 建 + 缓存，`attributes` getter 实例化。
     static NAMEDNODEMAP_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> =
         const { RefCell::new(None) };
     /// R3122 Attr 节点属性名 arena（idx → name）。Attr 对象 internal slot[1] 存 idx，getter 经此复原名。
-    /// 无 dedup——身份缓存 [`ATTR_OBJECTS`] 按 (owner ffi, name) 去重；arena 仅供对象读回名（泄漏限制，
-    /// 同 LISTENERS：仅 reset 清，节点移除不自动回收）。
+    /// 无 dedup——身份缓存 [`ATTR_OBJECTS`] 按 (owner ffi, name) 去重（R3134 已 weak 化，JS 丢 Attr 即 GC）；
+    /// arena 仅供对象读回名，**仍 append-only（仅 reset 清）——残余小泄漏**（attr 名字符串，按 distinct attr
+    /// 数 bounded；与 OBJECTS 缓存分离，后续可接 free-list / generation 回收）。
     static ATTR_NAMES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-    /// R3122 Attr 节点身份缓存：(owner ffi, attr name) → `Global<Object>`（同 attr 返同对象，spec identity）。
-    static ATTR_OBJECTS: RefCell<HashMap<(u64, String), v8::Global<v8::Object>>> =
+    /// R3122 Attr 节点身份缓存：(owner ffi, attr name) → **Weak**<Object>（同 attr 返同对象，spec identity）。
+    /// R3134：weak 化（同 R3133 NODE_OBJECTS / R3112 NNM）——JS 丢 Attr 引用即可 GC（Attr 无辅助状态，
+    /// 无需终结器；rebuild 时 insert-overwrite 清死 Weak）。
+    static ATTR_OBJECTS: RefCell<HashMap<(u64, String), v8::Weak<v8::Object>>> =
         RefCell::new(HashMap::new());
     /// R3122 Attr ObjectTemplate（nodeType=2 / name / nodeName / value(+setter) / nodeValue / textContent /
     /// ownerElement + internal slot[0]=owner ffi、slot[1]=attr 名 arena idx）。`install_dom_bindings` 建 + 缓存。
@@ -105,15 +109,17 @@ pub(crate) fn namednodemap_template_local<'s>(
     NAMEDNODEMAP_TEMPLATE.with(|c| c.borrow().as_ref().map(|g| v8::Local::new(scope, g)))
 }
 
-/// 取已缓存的 NamedNodeMap 对象（同 owner element 返同对象，spec identity）。
+/// 取已缓存的 NamedNodeMap 对象（同 owner element 返同对象，spec identity）；weak 死（NNM 被 GC）→ `None`
+/// （调用方 rebuild）。R3134：weak 缓存，JS 丢引用即可 GC（闭合属性集合同 pattern 泄漏）。
 pub(crate) fn cached_namednodemap<'s>(scope: &mut v8::PinScope<'s, '_>, ffi: u64) -> Option<v8::Local<'s, v8::Object>> {
-    NAMEDNODEMAP_OBJECTS.with(|c| c.borrow().get(&ffi).map(|g| v8::Local::new(scope, g)))
+    NAMEDNODEMAP_OBJECTS.with(|c| c.borrow().get(&ffi).and_then(|w| w.to_local(scope)))
 }
 
-/// 缓存 NamedNodeMap 对象（owner element ffi → Global）。
+/// 缓存 NamedNodeMap 对象（owner element ffi → **Weak**）。R3134：weak 句柄不阻止 GC——JS 丢引用后
+/// NNM 可回收，rebuild 时 insert-overwrite 清死 Weak 条目（NNM 无辅助状态，无需终结器）。
 pub(crate) fn cache_namednodemap(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v8::Object>) {
     NAMEDNODEMAP_OBJECTS.with(|c| {
-        c.borrow_mut().insert(ffi, v8::Global::new(scope, obj));
+        c.borrow_mut().insert(ffi, v8::Weak::new(scope, obj));
     });
 }
 
@@ -144,7 +150,8 @@ pub(crate) fn attr_template_local<'s>(scope: &mut v8::PinScope<'s, '_>) -> Optio
     ATTR_TEMPLATE.with(|c| c.borrow().as_ref().map(|g| v8::Local::new(scope, g)))
 }
 
-/// 取已缓存的 Attr 对象（同 (owner, name) 返同对象，spec identity）。
+/// 取已缓存的 Attr 对象（同 (owner, name) 返同对象，spec identity）；weak 死（Attr 被 GC）→ `None`
+/// （调用方 rebuild）。R3134：weak 缓存（同 NNM / NODE_OBJECTS）。
 pub(crate) fn cached_attr<'s>(
     scope: &mut v8::PinScope<'s, '_>,
     owner_ffi: u64,
@@ -153,15 +160,16 @@ pub(crate) fn cached_attr<'s>(
     ATTR_OBJECTS.with(|c| {
         c.borrow()
             .get(&(owner_ffi, name.to_string()))
-            .map(|g| v8::Local::new(scope, g))
+            .and_then(|w| w.to_local(scope))
     })
 }
 
-/// 缓存 Attr 对象（(owner ffi, name) → Global）。
+/// 缓存 Attr 对象（(owner ffi, name) → **Weak**）。R3134：weak 句柄不阻止 GC——JS 丢引用后 Attr 可回收，
+/// rebuild 时 insert-overwrite 清死 Weak 条目（Attr 无辅助状态，无需终结器）。
 pub(crate) fn cache_attr(scope: &mut v8::PinScope, owner_ffi: u64, name: &str, obj: v8::Local<v8::Object>) {
     ATTR_OBJECTS.with(|c| {
         c.borrow_mut()
-            .insert((owner_ffi, name.to_string()), v8::Global::new(scope, obj));
+            .insert((owner_ffi, name.to_string()), v8::Weak::new(scope, obj));
     });
 }
 
@@ -321,5 +329,19 @@ pub(crate) mod test_helpers {
     /// R3133：LISTENERS 全部条目数（终结器测试用）。
     pub fn listener_total_entries() -> usize {
         LISTENERS.with(|c| c.borrow().len())
+    }
+
+    /// R3134：本 owner 元素的 NNM weak 句柄是否仍活（NNM 未被 GC）。weak-reclaim 测试用。
+    pub fn nnm_cache_alive(ffi: u64) -> bool {
+        NAMEDNODEMAP_OBJECTS.with(|c| c.borrow().get(&ffi).is_some_and(|w| !w.is_empty()))
+    }
+
+    /// R3134：本 (owner, name) 的 Attr weak 句柄是否仍活（Attr 未被 GC）。weak-reclaim 测试用。
+    pub fn attr_cache_alive(owner_ffi: u64, name: &str) -> bool {
+        ATTR_OBJECTS.with(|c| {
+            c.borrow()
+                .get(&(owner_ffi, name.to_string()))
+                .is_some_and(|w| !w.is_empty())
+        })
     }
 }
