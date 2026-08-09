@@ -119,6 +119,26 @@
 
 ## 最近完成的改进
 
+### P1b host→page native 事件派发——闭合 S4 host 驱动半边（本轮 R3121）
+
+承接 R3120（§3.2 子模块化闭合）。本轮回到 P1b **feature 切片**：实现 **host→page native 事件派发**。`native_dom` 开时，页面经 native `addEventListener` 注册的监听器存于 `engine dom_bindings::gc::LISTENERS`，polyfill `__zw_dispatch_event` shim **不达**（双轨限制）；`webview.dispatch_event` 此前仅派发 polyfill 监听器。本轮让 host 派发**额外**达 native 监听器，闭合 S4 host 驱动半边（page→page `dispatchEvent` 已有 R3109）。
+
+**设计：复用既有原语，零新 engine binding 代码**。host 派发经 JS 组合 `__zw_native_query_selector(sel)`（factories，返 native 元素对象，internal slot 存 NodeId）→ 原生 `dispatchEvent({type})`（event_target 绑定，扫 LISTENERS[(NodeId ffi, type)] 复活调用）。同 NodeId → 同 ffi → 监听器命中。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`script_dispatch_native_event` 脚本生成** | `crates/engine/src/js_dom_bridge/script_gen.rs` | 新 `pub fn`：生成 IIFE `(function(){var t=__zw_native_query_selector('sel');if(t)t.dispatchEvent({type:'ty'});})()`。selector/type 经 `escape_js_string` 转义（同 `script_dispatch_dom_event`）；无匹配节点（querySelector 返 null）→ IIFE 守卫 no-op。经 `pub use script_gen::*` → `zero_engine::script_dispatch_native_event`。 |
+| **webview `dispatch_event` native 分支** | `crates/webview/src/webview.rs` | polyfill `sandbox.execute(&script)` 之后，`#[cfg(feature="v8")] if self.config.native_dom` 时额外 `sandbox.execute(&script_dispatch_native_event(selector, event_type))`。native 回调直改 live doc → 既有 `recorded.is_empty()` 分支的 `sync_render_after_native_dom` 拾取重渲染。doc 注释补 host→page native 段。`native_dom` 关（默认）→ 跳过，零回归。 |
+| **webview 集成测试** | `crates/webview/src/tests/coverage.rs` | `test_native_host_dispatch_event_r3121`：native_dom=true，经 `__zw_native_element_for_id('b')` 注册 native click 监听器（设 globalThis 标记）→ host `dispatch_event('#b','click')` → 断言监听器触发（globalThis.__clicked==='yes'）。验证 host 派发经 native 路径达 native LISTENERS。 |
+
+**为何净正向**：① 闭合 S4 host 驱动半边——embedder（webview 宿主）现可驱动页面 native 监听器（此前仅 page→page dispatchEvent 工作）；② **复用既有原语**（factories querySelector + event_target dispatchEvent），零新 engine binding / 零新 escape-hatch——simple至上；③ kill-switch `self.config.native_dom` 默认关 → 零回归（polyfill dispatch_event 行为不变）；④ R3109 LISTENERS（Global<Value> 持久化 + listeners_local 复活模式）当初「为 host→page 事件派发铺路」的承诺兑现；⑤ 无性能影响（native_dom 关时零开销，开时单次额外 sandbox.execute）。
+
+**已知限制（记录，后续）**：① **event 对象最小**——host 派发的 event 仅 `{type}`，无 target/currentTarget/bubbles/DOM-level（spec Event 子类如 MouseEvent/KeyboardEvent 后续）；② **不冒泡**（继承 R3109 native dispatchEvent 限制）；③ **native↔polyfill 双轨**——polyfill `addEventListener`（polyfill 元素经 document.getElementById）的监听器仍仅 polyfill dispatch_event 达；native 监听器（经 `__zw_native_*` 元素）现 host 可达（L2 polyfill-live 合一为高风险大改，需用户点名）；④ 仅 V8（QuickJS no-op，继承）；⑤ product-smoke 不适用（native_dom 默认关分支）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；dom_bindings 52 测 + 新增 webview 1 测（test_native_host_dispatch_event_r3121）；全 workspace 16186 passed 0 failed（+1 vs R3120 基线 16185，零回归）**）。pre-commit guard PASS。已提交 f86378b9 并推送（0a66fdba..f86378b9，pull --rebase up-to-date 无冲突）。
+
+**下一步**：S4 host 驱动半边闭合。候选：① **完整 Attr 节点**（nodeType=2/ownerElement/name/value + 真正 Attr 节点对象，闭合 R3112 NamedNodeMap plain-object `{name,value}` 限制——getNamedItem 返真 Attr 节点而非 plain object）；② **innerHTML/outerHTML setter**（html5ever parse + 替换子节点/自身，闭合 R3113 getter-only——大切片）；③ **host→page event 对象丰富化**（target/currentToken/bubbles + MouseEvent/KeyboardEvent 子类，补 R3121 限制①）；④ **native event finalizer**（weak callback 闭合 R3109 LISTENERS 节点 detach 泄漏限制）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b RFC §3.2 dom_bindings 子模块拆分（stage 4b：element.rs）——行为保持重构 + §3.2 闭合（本轮 R3120）
 
 承接 R3119（stage 4a node.rs）。本轮 §3.2 stage 4b（**最后一块**）：抽 **element.rs**（Element 特有 14 getter/invoke + 反射助手），mod.rs 690→379（-311）。**行为保持**。**§3.2 子模块化闭合**——mod.rs 仅剩 install 入口 + 注册编排 + 共享 slot 助手。
