@@ -78,6 +78,59 @@
   // __zw_reset_form_state 清空（per-page）。permissive：不校验 pointerId 是否 active（headless 无 active 追踪，spec
   // NotFoundError defer；releasePointerCapture 未捕获不抛 InvalidStateError，lenient 防破库）。
   var _pointerCapture = {};
+  // R3071：Popover API top-layer 成员集（elKey → true）。showPopover 加入、hidePopover 移除；成员即「showing」态。
+  // headless 无真 top-layer paint / 渲染层级 / :popover-open 伪类（rendering 流域 defer），本集仅追踪 JS-observable
+  // 状态（showPopover→态 open / 派发 beforetoggle+toggle / hidePopover→态 closed）。UI 库（tooltip/menu/modal）feature-detect
+  // + 调 showPopover/hidePopover/togglePopover + 监听 toggle 事件不中断。导航经 __zw_reset_form_state 清空（per-page）。
+  // https://html.spec.whatwg.org/multipage/popover.html
+  var _zwTopLayer = {};
+  // R3071：Popover 事件派发中用。构造 ToggleEvent 数据对象（type + newState/oldState + bubbles/cancelable/composed）。
+  // spec ToggleEvent extends Event，直接属性 newState/oldState（非 CustomEvent.detail）。headless 同步派发（spec 队列
+  // task，近似——documented 限制）；beforetoggle cancelable（可 preventDefault 阻止显隐）+ 非 bubble；toggle 非 cancelable。
+  function _makeToggleEvent(type, oldState, newState, cancelable) {
+    var ev = _makeEvent(type, { bubbles: false, cancelable: !!cancelable });
+    ev.oldState = oldState;
+    ev.newState = newState;
+    return ev;
+  }
+  // R3071：读 popover 内容属性的枚举值。spec enumerated attribute：missing value default = no popover（无属性 → null）；
+  // invalid value default = manual（属性存在但空串/无效/"manual" → "manual"）；"auto"(ci) → "auto"。__zw_get_attr 对 absent
+  // 与空串属性均返 ''（不可区分），故用 presence-based `__zw_has_attr`（'1'=存在）判有无属性。**用 latest-wins 变体（`_lw`）**
+  // 反映同 execute 内 pending set/remove（sync set→get round-trip——popover setter 经 __zw_set_attr/__zw_remove_attr 异步入队，
+  // 纯快照读 stale）。handle 路径无 `_lw` 变体，回落纯快照（handle 元素 popover setter 罕见）。供 popover getter + showPopover 校验共用。
+  function _zwReadPopover(sel, handle) {
+    var present, raw;
+    if (handle) {
+      present = typeof __zw_has_attr_handle === 'function' && __zw_has_attr_handle(handle, 'popover') === '1';
+      raw = __zw_get_attr_handle(handle, 'popover');
+    } else {
+      present = typeof __zw_has_attr_lw === 'function'
+        ? (__zw_has_attr_lw(sel, 'popover') === '1')
+        : (typeof __zw_has_attr === 'function' && __zw_has_attr(sel, 'popover') === '1');
+      raw = typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'popover') : __zw_get_attr(sel, 'popover');
+    }
+    if (!present) return null; // 无属性 → no popover state
+    return String(raw).toLowerCase() === 'auto' ? 'auto' : 'manual';
+  }
+  // R3071：showPopover 状态机。非 popover（无 popover 属性）→ InvalidStateError；已 showing → InvalidStateError；
+  // 派发 beforetoggle(cancelable, closed→open)，preventDefault → 中止不显；加 top-layer；派发 toggle(closed→open)。
+  // headless 无真渲染层级 / paint（rendering 流域 defer）——仅 JS-observable 状态 + 事件。light-dismiss / auto
+  // 关闭其他 popover / popovertarget 按钮 / 连接校验 defer（best-effort：connected 校验 headless 无稳健判据，lenient）。
+  function _zwShowPopover(key, sel, handle) {
+    if (_zwReadPopover(sel, handle) === null) throw new DOMException('showPopover: not a popover element', 'InvalidStateError');
+    if (_zwTopLayer[key]) throw new DOMException('showPopover: already showing', 'InvalidStateError');
+    if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true))) return;
+    _zwTopLayer[key] = true;
+    _dispatchWithBubble(key, sel, handle, _makeToggleEvent('toggle', 'closed', 'open', false));
+  }
+  // R3071：hidePopover 状态机。未 showing → InvalidStateError；派发 beforetoggle(cancelable, open→closed)，
+  // preventDefault → 中止不隐；移 top-layer；派发 toggle(open→closed)。
+  function _zwHidePopover(key, sel, handle) {
+    if (!_zwTopLayer[key]) throw new DOMException('hidePopover: not showing', 'InvalidStateError');
+    if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'open', 'closed', true))) return;
+    delete _zwTopLayer[key];
+    _dispatchWithBubble(key, sel, handle, _makeToggleEvent('toggle', 'open', 'closed', false));
+  }
   // R3047：scroll 位置追踪。headless 无真视口滚动 → 旧 scrollTop/scrollLeft 恒 0、scrollTo/scrollBy/scroll no-op、
   // window.scrollX/Y 恒 0。real 浏览器这些为可读写状态（sticky-nav / scroll restoration / 无限滚动检测 / parallax 读）。
   // 本切片改 JS-side 状态追踪：`scrollTo/scrollBy` + `scrollTop/scrollLeft` set 更新此 map，get 读回 → 程序化滚动
@@ -1138,7 +1191,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

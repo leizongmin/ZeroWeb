@@ -623,6 +623,156 @@ fn test_anchor_url_component_setters_r3070() {
 }
 
 #[test]
+fn test_popover_api_r3071() {
+    // R3071：Popover API 核心 DOM 面（showPopover/hidePopover/togglePopover + popover enumerated 属性 +
+    // beforetoggle/toggle 事件 + top-layer 状态机）。headless 无真 top-layer paint / :popover-open（rendering defer），
+    // 本切片验证 JS-observable 状态 + 事件。每子测用独立元素避免 addEventListener 累积。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id='auto' popover='auto'>auto</div>\
+         <div id='manual' popover='manual'>manual</div>\
+         <div id='empty' popover=''>empty</div>\
+         <div id='bad' popover='nonsense'>bad</div>\
+         <div id='none'>not a popover</div>\
+         <div id='m1' popover='manual'>m1</div>\
+         <div id='m2' popover='manual'>m2</div>\
+         <div id='pv' popover='manual'>pv</div>\
+         <div id='tg' popover='manual'>tg</div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① popover enumerated getter：auto→auto / manual→manual / ""→manual / invalid→manual / 无→null。
+    sandbox
+        .execute(
+            "globalThis.__pa = document.getElementById('auto').popover;\
+             globalThis.__pm = document.getElementById('manual').popover;\
+             globalThis.__pe = document.getElementById('empty').popover;\
+             globalThis.__pb = document.getElementById('bad').popover;\
+             globalThis.__pn = String(document.getElementById('none').popover);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__pa").unwrap().value, "auto", "popover='auto' getter → 'auto'");
+    assert_eq!(sandbox.execute("globalThis.__pm").unwrap().value, "manual", "popover='manual' getter → 'manual'");
+    assert_eq!(sandbox.execute("globalThis.__pe").unwrap().value, "manual", "popover='' getter → 'manual'（空串 enumerated 映射）");
+    assert_eq!(sandbox.execute("globalThis.__pb").unwrap().value, "manual", "popover='nonsense' getter → 'manual'（invalid 映射）");
+    assert_eq!(sandbox.execute("globalThis.__pn").unwrap().value, "null", "无 popover 属性 getter → null（real browser 一致）");
+
+    // ② popover setter：set null → removeAttribute（getter→null，hasAttribute→false）；set 'manual' → 写属性（getter→manual）。
+    sandbox
+        .execute(
+            "var a = document.getElementById('auto');\
+             a.popover = null;\
+             globalThis.__setNull = String(a.popover);\
+             globalThis.__setNullAttr = String(a.hasAttribute('popover'));\
+             a.popover = 'manual';\
+             globalThis.__setManual = a.popover;\
+             globalThis.__setManualAttr = a.getAttribute('popover');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__setNull").unwrap().value, "null", "popover=null → getter null");
+    assert_eq!(sandbox.execute("globalThis.__setNullAttr").unwrap().value, "false", "popover=null → removeAttribute（hasAttribute 返 false）");
+    assert_eq!(sandbox.execute("globalThis.__setManual").unwrap().value, "manual", "popover='manual' → getter manual");
+    assert_eq!(sandbox.execute("globalThis.__setManualAttr").unwrap().value, "manual", "popover='manual' → 写属性");
+
+    // ③ showPopover 状态机：非 popover → InvalidStateError；已 showing → InvalidStateError；
+    //    派发 beforetoggle(closed→open, cancelable) + toggle(closed→open)。
+    sandbox
+        .execute(
+            "var m1 = document.getElementById('m1');\
+             var log = [];\
+             m1.addEventListener('beforetoggle', function(e){ log.push('bt:'+e.oldState+'->'+e.newState); });\
+             m1.addEventListener('toggle', function(e){ log.push('tg:'+e.oldState+'->'+e.newState); });\
+             globalThis.__errNone = '';\
+             try { document.getElementById('none').showPopover(); } catch(e){ globalThis.__errNone = e.name; }\
+             m1.showPopover();\
+             globalThis.__afterShow = JSON.stringify(log);\
+             globalThis.__errShown = '';\
+             try { m1.showPopover(); } catch(e){ globalThis.__errShown = e.name; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__errNone").unwrap().value,
+        "InvalidStateError",
+        "非 popover 元素 showPopover → InvalidStateError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__afterShow").unwrap().value,
+        r#"["bt:closed->open","tg:closed->open"]"#,
+        "showPopover 派发 beforetoggle+toggle（closed→open）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__errShown").unwrap().value,
+        "InvalidStateError",
+        "已 showing 再 showPopover → InvalidStateError"
+    );
+
+    // ④ hidePopover：未 showing → InvalidStateError；派发 beforetoggle(open→closed)+toggle(open→closed)。
+    sandbox
+        .execute(
+            "globalThis.__errHidden = '';\
+             try { document.getElementById('m2').hidePopover(); } catch(e){ globalThis.__errHidden = e.name; }\
+             var m2 = document.getElementById('m2');\
+             m2.showPopover();\
+             var log2 = [];\
+             m2.addEventListener('beforetoggle', function(e){ log2.push('bt:'+e.oldState+'->'+e.newState); });\
+             m2.addEventListener('toggle', function(e){ log2.push('tg:'+e.oldState+'->'+e.newState); });\
+             m2.hidePopover();\
+             globalThis.__afterHide = JSON.stringify(log2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__errHidden").unwrap().value,
+        "InvalidStateError",
+        "未 showing hidePopover → InvalidStateError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__afterHide").unwrap().value,
+        r#"["bt:open->closed","tg:open->closed"]"#,
+        "hidePopover 派发 beforetoggle+toggle（open→closed）"
+    );
+
+    // ⑤ togglePopover 翻转 + beforetoggle preventDefault 阻止 show（独立元素避免 listener 互相干扰）。
+    sandbox
+        .execute(
+            "var pv = document.getElementById('pv');\
+             var pvlog = [];\
+             pv.addEventListener('toggle', function(e){ pvlog.push(e.newState); });\
+             pv.addEventListener('beforetoggle', function(e){ if(e.newState === 'open') e.preventDefault(); });\
+             pv.showPopover();\
+             globalThis.__pvToggle = JSON.stringify(pvlog);\
+             var tg = document.getElementById('tg');\
+             var tglog = [];\
+             tg.addEventListener('toggle', function(e){ tglog.push(e.newState); });\
+             tg.togglePopover(); tglog.push('m');\
+             tg.togglePopover();\
+             globalThis.__tgToggle = JSON.stringify(tglog);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__pvToggle").unwrap().value,
+        "[]",
+        "beforetoggle preventDefault 阻止 show（无 toggle 事件，元素未显）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__tgToggle").unwrap().value,
+        r#"["open","m","closed"]"#,
+        "togglePopover 翻转：show(open) → hide(closed)"
+    );
+}
+
+#[test]
 fn test_form_reflected_idl_attrs_r2839() {
     // R2839：HTMLFormElement 反射 IDL 属性（action/method/enctype/target）——form 序列化 / AJAX 提交库
     // 读 form.action/form.method 构提交请求。action/target 纯串反射；method/enctype 小写归一 + spec 默认。

@@ -119,6 +119,26 @@
 
 ## 最近完成的改进
 
+### P1a Popover API 核心 DOM 面（showPopover/hidePopover/togglePopover + popover 属性 + 事件，本轮 R3071，~14,324 测试）
+
+Web API 表面扫描发现 Popover API（HTML 2023）核心三方法 + `popover` 属性全缺——UI 库（tooltip / dropdown menu / modal / tour 库）feature-detect `el.popover` / 调 `el.showPopover()` / `el.hidePopover()` / `el.togglePopover()` / 监听 `toggle`/`beforetoggle` 事件。缺则含此调用的脚本 TypeError 中断。headless 无真 top-layer paint / 渲染层级 / `:popover-open` 伪类（rendering 流域 defer），本切片实现 **JS-observable 状态机 + 事件**（API 表面 + 状态查询 + 事件回调可用），使 UI 库不中断；渲染层显隐 defer。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`_zwTopLayer` 成员集 + 导航重置** | `crates/engine/src/js_dom_shim/part01.js`（`_pointerCapture` 后） | elKey → true（成员即「showing」态）。导航经 `__zw_reset_form_state` 清空（per-page，spec——popover 态不跨页）。 |
+| **`_makeToggleEvent` + `_zwReadPopover` + `_zwShowPopover`/`_zwHidePopover`** | 同上（`_makeToggleEvent` 后） | `_makeToggleEvent`：ToggleEvent 数据对象（type + newState/oldState 直接属性，spec ToggleEvent 非 CustomEvent.detail）。`_zwReadPopover`：enumerated 读（无属性→null / "auto"(ci)→auto / 余含空串/invalid→manual），用 `__zw_has_attr_lw`（presence + latest-wins，反映同 execute 内 pending set/remove）判有无。`_zwShowPopover`：非 popover 或已 showing → InvalidStateError；派发 beforetoggle(cancelable, closed→open)，preventDefault 中止；加 top-layer；派发 toggle(closed→open)。`_zwHidePopover`：未 showing → InvalidStateError；beforetoggle(open→closed) → 移 top-layer → toggle(open→closed)。spec 链接 https://html.spec.whatwg.org/multipage/popover.html 。 |
+| **三方法 get 分支** | `crates/engine/src/js_dom_shim/part04.js`（hasPointerCapture 后） | `showPopover()`/`hidePopover()`/`togglePopover()` 返闭包调对应 helper（透传 key/sel/handle）。togglePopover 按 `_zwTopLayer[key]` 翻转。 |
+| **`popover` getter + setter** | 同上（getter accessKey 后；setter accessKey 后） | getter 返 `_zwReadPopover`（null/auto/manual，real browser 一致——非空串默认）。setter：null → `__zw_remove_attr[_handle]`（清 popover 元素身份）；余 → `__zw_set_attr[_handle]`（getter 映射 invalid→manual）。 |
+| **R3071 测试** | engine `js_dom_bridge_tests/part09.rs`（+`test_popover_api_r3071`） | 5 维：① enumerated getter（auto/manual/空→manual/invalid→manual/无→null）；② setter（null→removeAttribute+hasAttribute false；'manual'→写属性）；③ showPopover 状态机（非 popover→InvalidStateError / 已 showing→InvalidStateError / 派发 beforetoggle+toggle closed→open）；④ hidePopover（未 showing→InvalidStateError / 派发 beforetoggle+toggle open→closed）；⑤ togglePopover 翻转 + beforetoggle preventDefault 阻止 show。 |
+
+**为何零回归且净正向**：① popover 为纯新增 API 表面（旧完全缺，含此调用的脚本中断）；② 仅新增 get 分支 + set 分支 + 注册表 + helper（不动既有属性路径）；③ `popover` 属性 R3069 后入 expando（非 reflected），本切片显式列入 set trap reflected 分支前，写属性 round-trip 正确；④ `_zwReadPopover` 用 latest-wins（`_lw`）变体闭合 async set→get stale gap（同其他 reflected attr sync 语义）；⑤ 全量 14324 v8 / 1740 quickjs 全绿（含 65 event/dispatch 测试 + R3069 expando 全回归）。
+
+**已知限制（记录，defer）**：① **无真 top-layer paint / 渲染层级 / `:popover-open` 伪类**（rendering 流域——popover 元素显示不在 top layer，仅 JS-observable 状态 + 事件可用，documented）；② **light-dismiss defer**（"auto" popover 点击外部 / Esc 关闭 + 关闭其他 auto popover——headless 无真输入路由 + 焦点管理，defer）；③ **`popovertarget`/`popovertargetaction` 按钮 defer**（声明式触发——按钮 click 联动 popover show/hide/toggle，需 click 事件接线，中复杂度）；④ **连接校验 lenient**（showPopover spec 要求元素 connected；headless 无稳健 connected 判据，detached 亦允许 show，documented）；⑤ **toggle 事件同步派发**（spec 队列 task，headless 无 task 队列→近似同步，documented）；⑥ **handle 元素 popover 读用纯快照**（无 `_lw` handle 变体，handle 元素 popover setter 罕见）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ `--no-default-features --features quickjs`（quickjs）零警告 + `make test` 全绿（**14324 passed / 71 skipped + 1740 passed / 60 skipped / 0 failed**，engine +1 driving 测试，零回归）+ pre-commit guard PASS。变更纯 JS shim + 测试（无 render/paint/style/layout .rs），product-smoke 不受影响。
+
+**下一步**：Popover DOM 面闭合（API 表面 + 状态 + 事件可用；渲染层显隐 defer）。pivot：① `popovertarget`/`popovertargetaction` 声明式触发（按钮 click 联动 show/hide/toggle，闭合 popover 声明式用例，中复杂度）；② light-dismiss（"auto" popover 外部点击 / Esc 关闭 + 关闭其他 auto，需输入路由，中-高复杂度）；③ Web API 表面继续补缺（popover 渲染层属 rendering 流域；可寻 `Element.checkVisibility` / `scrollIntoViewIfNeeded` / niche gap）；④ P1a 事件循环 macro-task 队列补全（P1a 剩余主线，中-高复杂度）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a `<a>` URL 分解组件 setter（闭合 R2838 限制，本轮 R3070，~14,323 测试）
 
 承接 anchor URL 赛道（R2778 parse_url + R2838 分解 getter + R3069 href setter reflected 修复）。R2838 实现 URL 分解 **getter**（`a.pathname`/`a.search`/`a.hash`/`a.protocol`/`a.hostname`/`a.host`/`a.port`/`a.username`/`a.password` 经 `__zw_parse_url` 解析 href 属性取组件），但**组件 setter 旧 deferred**——R2838 注释「组件 setter 经 set-trap catch-all 误设 spurious 属性（罕见，defer）」。host 侧 `set_url_part`（js_dom_bridge.rs:2175，spec-correct via `url` crate setters：percent-encoding / IDNA / 默认端口归一）+ 回调 `__zw_set_url_part`（callbacks.rs:61）早已就绪供 `new URL()` 类用（part02.js:1597），但 `<a>` 元素 set trap 未接通。R3069 expando 改造后组件 setter（pathname 等）落入非 reflected 分支入 `_expando`，`set→get round-trip` 断（`a.pathname='/x'; a.pathname` 不变）。本切片接通，闭合 R2838 限制。

@@ -1,4 +1,7 @@
         }
+        // `el.popover`（R3071）——enumerated 反射：无属性 → null；"auto" → "auto"；余（""/"manual"/无效）→ "manual"。
+        // 委托 `_zwReadPopover`（showPopover 校验同源）。getter 返 null（real browser 一致——非 DOMString 默认空串）。
+        if (prop === 'popover') return _zwReadPopover(sel, handle);
         // `el.role`——反射 role 属性（无 → ''）；同步 set→get 优先读缓存。
         if (prop === 'role') {
           var rlc = _reflectedAttrs[key];
@@ -528,6 +531,22 @@
           return function (pid) {
             var set = _pointerCapture[key];
             return !!(set && set[String(pid)]);
+          };
+        }
+        // R3071：Popover API 三方法（showPopover/hidePopover/togglePopover）。headless 无真 top-layer paint /
+        // 渲染层级 / :popover-open（rendering defer），本切片实现 JS-observable 状态机 + beforetoggle/toggle 事件。
+        // top-layer 成员集 `_zwTopLayer`（key→true 即 showing）。togglePopover 翻转。详见 `_zwShowPopover/_zwHidePopover`。
+        // https://html.spec.whatwg.org/multipage/popover.html#dom-showpopover
+        if (prop === 'showPopover') {
+          return function () { _zwShowPopover(key, sel, handle); };
+        }
+        if (prop === 'hidePopover') {
+          return function () { _zwHidePopover(key, sel, handle); };
+        }
+        if (prop === 'togglePopover') {
+          return function () {
+            if (_zwTopLayer[key]) _zwHidePopover(key, sel, handle);
+            else _zwShowPopover(key, sel, handle);
           };
         }
         if (prop === 'scrollTo' || prop === 'scrollBy') {
@@ -1417,6 +1436,17 @@
           if (handle) __zw_set_attr_handle(handle, 'accesskey', String(value));
           else __zw_set_attr(sel, 'accesskey', String(value));
           moAttr = 'accesskey';
+        } else if (p === 'popover') {
+          // R3071：popover enumerated setter。spec：null → removeAttribute（清 popover 元素身份）；余 → setAttribute
+          //（getter 经 `_zwReadPopover` 映射 invalid→manual，real browser 一致）。不写 _reflectedAttrs 缓存
+          //（getter 直读属性，无 sync set→get stale gap 风险——popover 读经属性而非缓存，与 title/lang/dir 不同）。
+          if (value === null) {
+            if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, 'popover');
+            else if (!handle && typeof __zw_remove_attr === 'function') { __zw_remove_attr(sel, 'popover'); moAttr = 'popover'; }
+          } else {
+            if (handle) __zw_set_attr_handle(handle, 'popover', String(value));
+            else { __zw_set_attr(sel, 'popover', String(value)); moAttr = 'popover'; }
+          }
         } else if (p === 'role') {
           // role set——反射 role 属性（串）。同步缓存。
           var rlc2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
