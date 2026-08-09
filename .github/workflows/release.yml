@@ -441,8 +441,10 @@ jobs:
       - name: Build macOS app archive
         shell: bash
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          VERSION="${VERSION#v}"
+          # package-macos.sh 要求 YY.M.D 格式（CFBundleVersion 日期语义，
+          # 与 scripts/package-macos.sh 默认及产品版本推导一致）；tag 名（如
+          # v0.1.0-test）不满足该格式，这里用构建日期
+          VERSION="$(date +%y.%-m.%-d)"
           args=(
             --browser dist/zero-browser
             --renderer dist/zero-renderer

@@ -292,7 +292,10 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          VERSION="$(sed -n '/^\[workspace\.package\]$/,/^\[/{s/^version = "\([^"]*\)"/\1/p;}' Cargo.toml | head -1)"
+          # package-macos.sh 要求 YY.M.D 格式（CFBundleVersion 日期语义，
+          # 与 scripts/package-macos.sh 默认及产品版本推导一致）；
+          # Cargo.toml workspace 版本（0.1.0）不满足该格式
+          VERSION="$(date +%y.%-m.%-d)"
           args=(
             --browser "target/${{ matrix.target }}/release/zero-browser"
             --renderer "target/${{ matrix.target }}/release/zero-renderer"
