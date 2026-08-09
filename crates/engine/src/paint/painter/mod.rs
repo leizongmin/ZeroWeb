@@ -444,8 +444,16 @@ impl Painter {
             && let Some(doc) = doc
         {
             use zero_style_system::property::types::ColorValue;
-            let html_id = doc.get_elements_by_tag_name("html").into_iter().next();
-            let body_id = doc.get_elements_by_tag_name("body").into_iter().next();
+            // 单次 DFS 收集 html+body（旧实现 2 次全树遍历，取首个）
+            let (html_ids, body_ids): (Vec<_>, Vec<_>) = doc
+                .get_elements_by_tag_names(&["html", "body"])
+                .into_iter()
+                .partition(|id| {
+                    doc.get(*id)
+                        .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("html")))
+                });
+            let html_id = html_ids.first().copied();
+            let body_id = body_ids.first().copied();
             let html_style = html_id.and_then(|id| styles.get(&id));
             let body_style = body_id.and_then(|id| styles.get(&id));
             // CSS §9.2.4/§14.2：根元素 display:none 不生成盒、整个文档树不参与渲染，
