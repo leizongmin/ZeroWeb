@@ -70,6 +70,7 @@ pub fn child_process_args(role: ProcessRole, instance_id: u64) -> Vec<String> {
         ProcessRole::Renderer => "renderer",
         ProcessRole::Network => "network",
         ProcessRole::ImageDecoder => "image-decoder",
+        ProcessRole::Compositor => "compositor",
     };
     vec![format!("--type={type_name}"), format!("--instance-id={instance_id}")]
 }
@@ -514,6 +515,16 @@ mod tests {
     fn test_child_process_args_renderer() {
         let args = child_process_args(ProcessRole::Renderer, 7);
         assert_eq!(args, vec!["--type=renderer".to_string(), "--instance-id=7".to_string()]);
+    }
+
+    /// 测试 compositor 使用正式的 Chromium 风格进程角色参数。
+    #[test]
+    fn test_child_process_args_compositor() {
+        let args = child_process_args(ProcessRole::Compositor, u64::MAX);
+        assert_eq!(
+            args,
+            vec!["--type=compositor".to_string(), format!("--instance-id={}", u64::MAX),]
+        );
     }
 
     /// 测试心跳超时常量。

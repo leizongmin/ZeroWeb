@@ -28,6 +28,7 @@ mod colors;
 mod compositor_client;
 mod favicon_fetch;
 mod fetch_proxy;
+mod gui_smoke;
 mod headless;
 mod input_keys;
 mod layout;
@@ -37,6 +38,7 @@ mod pages;
 mod paint_ipc;
 mod process_backend;
 mod shutdown_signal;
+mod smoke_capture;
 mod tab_chrome;
 mod tab_favicon;
 mod tab_js_worker;
@@ -49,6 +51,7 @@ mod text_input;
 mod text_metrics;
 mod ui_icons;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
@@ -73,10 +76,26 @@ struct CliArgs {
     single_process: bool,
     /// 与 WPT reftest 对齐：CPU 光栅化 + 1.0 缩放（便于肉眼对比 product-smoke）。
     wpt_parity: bool,
+    /// 显式启用真实窗口最终帧产品 smoke，并在成功呈现后写入 PNG。
+    smoke_capture: Option<PathBuf>,
+    /// 显式启用真实网站 compositor GUI 操作 smoke。
+    gui_smoke: Option<gui_smoke::GuiSmokeConfig>,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
-    let mut args = std::env::args().skip(1);
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        print_usage();
+        std::process::exit(0);
+    }
+    parse_args_from(args, RenderMode::from_env()?)
+}
+
+fn parse_args_from(
+    args: impl IntoIterator<Item = String>,
+    env_render_mode: Option<RenderMode>,
+) -> Result<CliArgs, String> {
+    let mut args = args.into_iter();
     let mut render_mode = None;
     let mut scale_override = None;
     let mut headless = false;
@@ -85,13 +104,11 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut viewport_height = 600.0f32;
     let mut single_process = false;
     let mut wpt_parity = false;
+    let mut smoke_capture = None;
+    let mut gui_smoke_url = None;
+    let mut gui_smoke_dir = None;
 
     while let Some(arg) = args.next() {
-        if arg == "--help" || arg == "-h" {
-            print_usage();
-            std::process::exit(0);
-        }
-
         if let Some(value) = arg.strip_prefix("--renderer=") {
             render_mode = Some(value.parse()?);
             continue;
@@ -146,11 +163,50 @@ fn parse_args() -> Result<CliArgs, String> {
         if let Some(value) = arg.strip_prefix("--viewport-height=") {
             viewport_height = value.parse::<f32>().map_err(|_| format!("invalid height: {value}"))?;
         }
+
+        if let Some(value) = arg.strip_prefix("--smoke-capture=") {
+            if value.is_empty() {
+                return Err("--smoke-capture requires a PNG path".to_string());
+            }
+            smoke_capture = Some(PathBuf::from(value));
+        }
+
+        if arg == "--smoke-capture" {
+            let value = args
+                .next()
+                .ok_or_else(|| "--smoke-capture requires a PNG path".to_string())?;
+            if value.is_empty() {
+                return Err("--smoke-capture requires a PNG path".to_string());
+            }
+            smoke_capture = Some(PathBuf::from(value));
+        }
+
+        if let Some(value) = arg.strip_prefix("--gui-smoke-url=") {
+            gui_smoke_url = Some(value.to_string());
+        }
+
+        if arg == "--gui-smoke-url" {
+            gui_smoke_url = Some(
+                args.next()
+                    .ok_or_else(|| "--gui-smoke-url requires an HTTP(S) URL".to_string())?,
+            );
+        }
+
+        if let Some(value) = arg.strip_prefix("--gui-smoke-dir=") {
+            gui_smoke_dir = Some(PathBuf::from(value));
+        }
+
+        if arg == "--gui-smoke-dir" {
+            gui_smoke_dir =
+                Some(PathBuf::from(args.next().ok_or_else(|| {
+                    "--gui-smoke-dir requires a directory path".to_string()
+                })?));
+        }
     }
 
     let cli_render_mode = render_mode;
     let cli_scale = scale_override;
-    let mut render_mode = cli_render_mode.or(RenderMode::from_env()?).unwrap_or_default();
+    let mut render_mode = cli_render_mode.or(env_render_mode).unwrap_or_default();
     let mut scale_override = cli_scale;
     // make browser / browser.ps1 默认 --renderer=gpu；make browser-cpu / browser-cpu.ps1 传 --wpt-parity。
     if wpt_parity {
@@ -159,6 +215,27 @@ fn parse_args() -> Result<CliArgs, String> {
         }
         if cli_scale.is_none() {
             scale_override = Some(1.0);
+        }
+    }
+    let gui_smoke = match (gui_smoke_url, gui_smoke_dir) {
+        (Some(url), Some(output_dir)) => Some(gui_smoke::GuiSmokeConfig::new(url, output_dir)?),
+        (None, None) => None,
+        _ => {
+            return Err("--gui-smoke-url and --gui-smoke-dir must be provided together".to_string());
+        }
+    };
+    if smoke_capture.is_some() && gui_smoke.is_some() {
+        return Err("--smoke-capture cannot be combined with --gui-smoke-url".to_string());
+    }
+    if smoke_capture.is_some() || gui_smoke.is_some() {
+        if headless {
+            return Err("GUI smoke requires a real window".to_string());
+        }
+        if single_process {
+            return Err("GUI smoke requires the multi-process renderer".to_string());
+        }
+        if render_mode != RenderMode::Cpu || scale_override != Some(1.0) {
+            return Err("GUI smoke requires --renderer=cpu --scale=1".to_string());
         }
     }
     Ok(CliArgs {
@@ -170,6 +247,8 @@ fn parse_args() -> Result<CliArgs, String> {
         viewport_height,
         single_process,
         wpt_parity,
+        smoke_capture,
+        gui_smoke,
     })
 }
 
@@ -187,6 +266,9 @@ Options:
   --single-process               Run tabs in browser process threads (disable renderer isolation)
   --multi-process                Use zero-renderer child processes per tab (default)
   --wpt-parity                   Match WPT/product-smoke: CPU renderer and 1.0 scale (make browser-cpu default)
+  --smoke-capture=<png>          Capture the real CPU-presented window frame, emit region stats, then exit
+  --gui-smoke-url=<url>          Run compositor GUI actions against a real HTTP(S) website
+  --gui-smoke-dir=<dir>          Write GUI smoke step screenshots into this directory
   --help, -h                     Show this help
 
 Environment: {}={}",
@@ -447,6 +529,22 @@ fn main() {
         tracing::info!("WPT parity mode: CPU renderer, scale 1.0 (aligned with product-smoke / reftest)");
     }
     tracing::info!("Renderer mode: {}", cli.render_mode);
+    if cli.gui_smoke.is_some() && !compositor_client::enabled() {
+        eprintln!("real-site GUI smoke requires ZW_COMPOSITOR_PROCESS=1");
+        std::process::exit(2);
+    }
+    if cli.smoke_capture.is_some() || cli.gui_smoke.is_some() {
+        // SAFETY: 设置发生在任何 renderer/compositor 子进程和工作线程启动之前。
+        unsafe {
+            std::env::set_var("ZERO_BROWSER_PRODUCT_SMOKE", "1");
+        }
+        let fixture = cli
+            .gui_smoke
+            .as_ref()
+            .map(|config| config.url.as_str())
+            .unwrap_or("zero://newtab");
+        tracing::info!("SMOKE_EVENT component=browser event=enabled fixture={fixture}");
+    }
 
     if cli.headless {
         run_headless(cli);
@@ -465,6 +563,8 @@ fn main() {
 
     let runtime = HostRuntime::new(config);
     let mut app = BrowserApp::new(cli.render_mode);
+    let smoke_capture_path = cli.smoke_capture;
+    let mut gui_smoke = cli.gui_smoke.map(gui_smoke::GuiSmoke::new);
 
     tracing::info!("Entering event loop...");
 
@@ -481,12 +581,19 @@ fn main() {
             app.shutdown_child_processes();
             std::process::exit(0);
         }
+        if let Some(smoke) = gui_smoke.as_ref()
+            && let Err(error) = smoke.check_timeout()
+        {
+            tracing::error!("GUI_SMOKE_FAILURE error={error}");
+            app.shutdown_child_processes();
+            std::process::exit(3);
+        }
 
         app.poll_tab_fetch();
 
         match event {
             AppEvent::RedrawRequested => {
-                if !app.window_focused {
+                if !app.window_focused && smoke_capture_path.is_none() && gui_smoke.is_none() {
                     app.needs_redraw = false;
                 } else {
                     if !app.surface_configured {
@@ -512,6 +619,9 @@ fn main() {
                                 app.ensure_startup_tab();
                                 sync_window_chrome_icon(&mut app, win);
                                 app.sync_webview_viewport();
+                                if let Some(smoke) = gui_smoke.as_mut() {
+                                    smoke.start(&mut app);
+                                }
                                 tracing::debug!(
                                     "Surface init — physical: {}x{}, logical: {}x{}, scale: {:.2}",
                                     physical_size.width,
@@ -554,14 +664,81 @@ fn main() {
 
                     app.resume_gpu_present();
 
-                    if app.gpu_renderer_is_some() {
+                    // 必须在场景装配前锁定来源；render 后的 poll 可能采用新快照，
+                    // 不能把新状态误配到刚呈现的上一张 framebuffer。
+                    let presented_source = app.product_smoke_frame_source();
+                    let presented_frame = if app.gpu_renderer_is_some() {
                         app.render_frame(app.physical_size.0, app.physical_size.1, true);
+                        None
                     } else {
-                        app.render_cpu(app.physical_size.0, app.physical_size.1, &mut cpu_surface, true);
-                    }
+                        app.render_cpu(app.physical_size.0, app.physical_size.1, &mut cpu_surface, true)
+                    };
                     app.needs_redraw = false;
                     app.poll_tab_fetch();
                     app.begin_tab_fetch_after_paint();
+                    if let (Some(path), Some(frame), Some(source)) = (
+                        smoke_capture_path.as_deref(),
+                        presented_frame.as_ref(),
+                        presented_source,
+                    ) {
+                        let mode = if compositor_client::enabled() {
+                            "compositor"
+                        } else {
+                            "legacy"
+                        };
+                        let chrome_height = app.page_content_rect_for(frame.width, frame.height).1.ceil() as u32;
+                        let (page_x, page_y, page_width, page_height) =
+                            app.page_content_rect_for(frame.width, frame.height);
+                        let result = smoke_capture::capture_presented_frame(
+                            path,
+                            frame,
+                            smoke_capture::PixelRegion {
+                                x: 0,
+                                y: 0,
+                                width: frame.width,
+                                height: chrome_height,
+                            },
+                            smoke_capture::PixelRegion {
+                                x: page_x.floor().max(0.0) as u32,
+                                y: page_y.floor().max(0.0) as u32,
+                                width: page_width.ceil().max(0.0) as u32,
+                                height: page_height.ceil().max(0.0) as u32,
+                            },
+                            mode,
+                            "zero://newtab",
+                            source,
+                        );
+                        match result {
+                            Ok(()) => {
+                                tracing::info!(
+                                    "SMOKE_EVENT component=browser event=frame_captured source={source} fallback=false"
+                                );
+                                app.shutdown_child_processes();
+                                std::process::exit(0);
+                            }
+                            Err(error) => {
+                                tracing::error!("SMOKE_FAILURE error={error}");
+                                app.shutdown_child_processes();
+                                std::process::exit(3);
+                            }
+                        }
+                    }
+                    if let (Some(smoke), Some(frame), Some(source)) =
+                        (gui_smoke.as_mut(), presented_frame.as_ref(), presented_source)
+                    {
+                        match smoke.on_presented_frame(&mut app, frame, source) {
+                            Ok(true) => {
+                                app.shutdown_child_processes();
+                                std::process::exit(0);
+                            }
+                            Ok(false) => {}
+                            Err(error) => {
+                                tracing::error!("GUI_SMOKE_FAILURE error={error}");
+                                app.shutdown_child_processes();
+                                std::process::exit(3);
+                            }
+                        }
+                    }
                 }
             }
             AppEvent::Resized { width, height } if width > 0 && height > 0 => {
@@ -663,7 +840,7 @@ fn main() {
         }
 
         if app.needs_redraw
-            && app.window_focused
+            && (app.window_focused || smoke_capture_path.is_some() || gui_smoke.is_some())
             && let Some(ref win) = window
         {
             win.request_redraw();

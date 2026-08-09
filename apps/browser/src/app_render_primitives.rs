@@ -9,6 +9,23 @@ pub fn primitives_content_height(primitives: &RenderPrimitives) -> f32 {
     crate::page_scroll::primitives_content_height(primitives)
 }
 
+/// 将 compositor 页面位图转换为现有页面 image primitive，并应用视口变换与裁剪。
+pub(crate) fn compositor_frame_primitives(
+    frame: &crate::tab_snapshot::CompositorFrame,
+    x_offset: f32,
+    y_offset: f32,
+    scale: f32,
+    clip_viewport: ViewportClip,
+) -> RenderPrimitives {
+    let mut source = RenderPrimitives::new();
+    source.images.push(ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, frame.width as f32, frame.height as f32),
+        image_key: frame.image_key.clone(),
+        clip: None,
+    });
+    transform_webview_primitives_extra(&source, x_offset, y_offset, scale, Some(clip_viewport))
+}
+
 /// 将 WebView 输出的基础图元追加到浏览器场景。
 ///
 /// `clip_y` 为物理像素坐标 `(top, bottom)`，fill 与该区间求交后绘制，glyph 完全落在区间外则跳过。
@@ -531,4 +548,38 @@ fn transform_webview_primitives_impl(
     }
 
     out
+}
+
+#[cfg(test)]
+mod compositor_frame_tests {
+    use super::*;
+    use crate::tab_snapshot::CompositorFrame;
+    use zero_render_foundation::image_cache::ImageKey;
+
+    #[test]
+    fn compositor_image_applies_scroll_scale_and_viewport_clip() {
+        let frame = CompositorFrame {
+            surface_id: 7,
+            navigation_epoch: 2,
+            frame_id: 9,
+            width: 100,
+            height: 80,
+            image_key: ImageKey::new(3),
+        };
+        let viewport = ViewportClip::new(25.0, 30.0, 100.0, 90.0);
+
+        let primitives = compositor_frame_primitives(
+            &frame,
+            20.0,  // viewport x - horizontal scroll
+            -10.0, // viewport y - vertical scroll
+            2.0,
+            viewport,
+        );
+
+        assert_eq!(primitives.images.len(), 1);
+        let image = &primitives.images[0];
+        assert_eq!(image.rect, Rect::new(20.0, -10.0, 200.0, 160.0));
+        assert_eq!(image.clip, Some(Rect::new(25.0, 30.0, 100.0, 90.0)));
+        assert_eq!(image.image_key, ImageKey::new(3));
+    }
 }

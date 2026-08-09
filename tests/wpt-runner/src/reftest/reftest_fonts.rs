@@ -37,18 +37,26 @@ fn build_base_font_loader() -> FontLoader {
     // 4.85% diff 全在此 <p> 文本，非布局 bug）。R1257 试 NotoSansCJK（sans，错方向）net -1pp；
     // Liberation Serif（serif，CHR 真实默认）是正确匹配。Ahem 测试元素显式 font-family:Ahem
     // 不受影响；sans-serif/serif 显式声明经 build_font_resolver 仍各自映射，不受影响。
-    let primary_serif_path = "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf";
-    if let Ok(data) = std::fs::read(primary_serif_path) {
-        let _ = loader.load_font(&data);
+    let primary_serif_paths = [
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+        "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+    ];
+    for path in &primary_serif_paths {
+        if let Ok(data) = std::fs::read(path) {
+            let _ = loader.load_font(&data);
+            break;
+        }
     }
 
-    // 系统字体路径（Linux 常见路径）作回退
+    // 系统字体路径（Linux / macOS）作回退
     let system_font_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
     ];
 
     for path in &system_font_paths {
@@ -67,6 +75,7 @@ fn build_base_font_loader() -> FontLoader {
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
     ];
     for path in &cjk_font_paths {
         if let Ok(data) = std::fs::read(path) {
@@ -88,6 +97,21 @@ fn build_base_font_loader() -> FontLoader {
     }
 
     loader
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_tests {
+    use super::*;
+
+    #[test]
+    fn default_loader_includes_macos_system_fonts() {
+        let loader = create_font_loader();
+        let resolver = loader.build_font_resolver();
+
+        assert!(loader.len() >= 4);
+        assert!(resolver.contains_key("Arial"));
+        assert!(resolver.contains_key("sans-serif"));
+    }
 }
 
 /// 从 CSS 文本中提取所有 `@font-face` 规则的 `(family, sources, weight, is_italic)` 列表。

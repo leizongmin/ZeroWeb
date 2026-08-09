@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle capture-oracle product-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend
+.PHONY: setup-rusty-v8 fetch-wpt-data update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -50,6 +50,18 @@ browser-debug-wayland-log: setup-rusty-v8
 
 browser-debug-x11: setup-rusty-v8
 	RUST_BACKTRACE=1 WAYLAND_DISPLAY= WAYLAND_SOCKET= WINIT_UNIX_BACKEND=x11 $(BROWSER_RUN)
+
+# 真实产品窗口 smoke：CPU/scale=1 下串行运行 legacy 与 compositor 两种模式，
+# 由最终 softbuffer framebuffer 写 PNG，不依赖系统截图或无障碍权限。
+# 构建、两个进程链和全部断言都受 test-guard 内存门禁与 900 秒墙钟保护。
+browser-compositor-smoke: target/test-guard
+	./target/test-guard --time-limit 900 -- sh scripts/browser-compositor-smoke.sh
+
+# 可选真实网站 GUI 验收：打开 HTTPS 页面并依次滚动、缩放、刷新，保存四张最终
+# framebuffer 截图并断言 compositor 全程健康。默认 URL 可用 GUI_SMOKE_URL 覆盖。
+# 此 target 故意不接入 make test，避免网络和真实窗口成为常规单测前置条件。
+browser-compositor-real-site-smoke: target/test-guard
+	./target/test-guard --time-limit 900 -- sh scripts/browser-compositor-real-site-smoke.sh
 
 # ── 测试防护 (test-guard) ──────────────────────────────────────────────
 # test-guard 跨平台 (macOS/Linux) 包裹测试命令：单进程 RSS>6GB 或全树>16GB
@@ -121,7 +133,13 @@ capture-oracle: fetch-wpt-data
 # 用法：make product-smoke        调整阈值：make product-smoke MAX_DIFF=22
 WELCOME_HTML := apps/browser/assets/welcome.html
 WELCOME_ORACLE := docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png
+PRODUCT_ORACLE_SCRIPT := tests/wpt-runner/scripts/product-oracle-shot.mjs
+product-smoke-oracle: target/test-guard
+	@test -d tests/wpt-runner/scripts/node_modules/puppeteer-core || (echo "Error: puppeteer-core is missing; run 'npm ci --prefix tests/wpt-runner/scripts' first."; exit 2)
+	./target/test-guard -- node $(PRODUCT_ORACLE_SCRIPT) --root apps/browser/assets --html welcome.html --out $(WELCOME_ORACLE) --width 800 --height 600
+
 product-smoke: target/test-guard
+	@test -f $(WELCOME_ORACLE) || (echo "Error: missing $(WELCOME_ORACLE); run 'make product-smoke-oracle' and commit the generated oracle."; exit 2)
 	# DC-13 desktop（800px）：欢迎页 vs chromium Oracle diff≤20% + 结构门。--struct-check 含
 	# sibling-overlap + collapsed-container + **text-concatenation**（R109 inline-ownership 守，
 	# DC-13 line 325「sibling card/link/shortcut 文本不串联」）。计数断言覆盖 line 324 桌面须验证的
@@ -223,4 +241,3 @@ bench-trend: target/test-guard
 LEGACY_DIR := docs/goal/rendering-compat/evidence/product-static/legacy-html
 product-smoke-legacy: target/test-guard
 	bash $(LEGACY_DIR)/run-all.sh
-

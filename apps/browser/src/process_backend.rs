@@ -11,14 +11,15 @@ use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
-    DispatchDomEventParams, FetchParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, LoadHtmlParams,
-    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
+    DispatchDomEventParams, FetchParams, FramePublishMode, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind,
+    LoadHtmlParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation,
+    StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
 
 use crate::fetch_proxy::TabFetchProxy;
-use crate::tab_snapshot::TabSnapshot;
+use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
 
 /// 是否启用多进程后端（环境变量 `ZERO_BROWSER_MULTIPROCESS`；默认启用）。
 pub fn use_multiprocess_backend() -> bool {
@@ -127,20 +128,21 @@ pub struct ProcessTabBackend {
     fetch_proxy: TabFetchProxy,
     /// 异步 DOM 事件派发的回执（按 dispatch id 收集，由 TabManager 消费）。
     pending_dispatch_results: Vec<(u64, bool)>,
+    /// 上一次轮询观察到的 compositor client 状态，用于只处理一次断线边沿。
+    compositor_status: crate::compositor_client::CompositorStatus,
 }
 
 impl ProcessTabBackend {
     /// 暂存最新绘制帧，避免 UI 线程逐个转换 renderer 积压的完整页面快照。
-    fn defer_latest_paint(
-        latest_paint: &mut Option<Box<zero_protocol::PaintSnapshotParams>>,
-        kind: IpcMessageKind,
-    ) -> Option<IpcMessageKind> {
-        match kind {
-            IpcMessageKind::ViewPainted(params) => {
-                *latest_paint = Some(params);
-                None
-            }
-            kind => Some(kind),
+    fn defer_latest_paint(latest_paint: &mut Option<IpcMessageKind>, kind: IpcMessageKind) -> Option<IpcMessageKind> {
+        if matches!(
+            &kind,
+            IpcMessageKind::ViewPainted(_) | IpcMessageKind::CompositorFrame { .. }
+        ) {
+            *latest_paint = Some(kind);
+            None
+        } else {
+            Some(kind)
         }
     }
 
@@ -174,7 +176,43 @@ impl ProcessTabBackend {
             pending_errors: Vec::new(),
             fetch_proxy: TabFetchProxy::new(),
             pending_dispatch_results: Vec::new(),
+            compositor_status: crate::compositor_client::status(),
         }
+    }
+
+    fn enters_compositor_fallback(
+        previous: crate::compositor_client::CompositorStatus,
+        current: crate::compositor_client::CompositorStatus,
+    ) -> bool {
+        matches!(
+            previous,
+            crate::compositor_client::CompositorStatus::Starting | crate::compositor_client::CompositorStatus::Healthy
+        ) && current == crate::compositor_client::CompositorStatus::Disconnected
+    }
+
+    fn observe_compositor_status(
+        &mut self,
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+        snapshot_seq: &mut HashMap<TabId, u64>,
+    ) -> bool {
+        let current = crate::compositor_client::status();
+        let fallback = Self::enters_compositor_fallback(self.compositor_status, current);
+        self.compositor_status = current;
+        if !fallback {
+            return false;
+        }
+
+        for (tab_id, snapshot) in snapshots {
+            snapshot.clear_compositor_state();
+            *snapshot_seq.entry(*tab_id).or_insert(0) += 1;
+        }
+        let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
+        for tab_id in tabs {
+            self.send_to_renderer(tab_id, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
+            self.send_to_renderer(tab_id, IpcMessageKind::RequestFrame);
+        }
+        tracing::warn!("Compositor disconnected; switched all renderers to legacy frame publishing");
+        true
     }
 
     fn send_fetch_response_now(&mut self, tab_id: TabId, request_id: u64, status: u16, body: Vec<u8>) {
@@ -216,11 +254,6 @@ impl ProcessTabBackend {
             }
             IpcMessageKind::UrlChanged(url) => snap.url = Some(url),
             IpcMessageKind::ViewPainted(params) => {
-                // C2 接线：env ZW_COMPOSITOR_PROCESS=1 时同步转发帧到合成器进程
-                // （默认关 = 零行为变更；失败静默不阻断主通路）
-                if crate::compositor_client::enabled() {
-                    crate::compositor_client::forward_frame((*params).clone());
-                }
                 if params.navigation_epoch != snap.navigation_epoch {
                     tracing::debug!(
                         "忽略 stale ViewPainted tab {} epoch {} != {}",
@@ -229,6 +262,13 @@ impl ProcessTabBackend {
                         snap.navigation_epoch
                     );
                     return;
+                }
+                if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
+                    tracing::info!(
+                        "SMOKE_EVENT component=browser event=legacy_view_painted tab={} epoch={}",
+                        tab_id.0,
+                        params.navigation_epoch
+                    );
                 }
                 crate::paint_ipc::apply_paint_snapshot(snap, *params);
                 // 性能门禁优化 S1（2026-08-08）：快照到达 = 页面内容变更 →
@@ -242,8 +282,99 @@ impl ProcessTabBackend {
                     pending_loaded.push((tab_id, title, url));
                 }
             }
+            IpcMessageKind::CompositorFrame {
+                surface_id,
+                navigation_epoch,
+                frame_id,
+                mut paint,
+            } => {
+                if crate::compositor_client::status() == crate::compositor_client::CompositorStatus::Disconnected {
+                    return;
+                }
+                if paint.navigation_epoch != navigation_epoch {
+                    tracing::warn!(
+                        "忽略 compositor frame tab {}: envelope epoch {} != paint epoch {}",
+                        tab_id.0,
+                        navigation_epoch,
+                        paint.navigation_epoch
+                    );
+                    return;
+                }
+                let submission = CompositorSubmission {
+                    surface_id,
+                    navigation_epoch,
+                    frame_id,
+                };
+                if !snap.record_compositor_submission(submission) {
+                    tracing::debug!(
+                        "忽略 stale compositor frame tab {} surface {} epoch {} frame {}",
+                        tab_id.0,
+                        surface_id,
+                        navigation_epoch,
+                        frame_id
+                    );
+                    return;
+                }
+                crate::paint_ipc::apply_compositor_paint_metadata(snap, &mut paint);
+                crate::compositor_client::forward_frame(surface_id, navigation_epoch, frame_id, *paint);
+            }
             _ => {}
         }
+    }
+
+    fn poll_compositor_frames(
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+        snapshot_seq: &mut HashMap<TabId, u64>,
+        pending_loaded: &mut Vec<(TabId, String, String)>,
+    ) -> bool {
+        let mut changed = false;
+        for (tab_id, snap) in snapshots {
+            let Some(submission) = snap.compositor_submission else {
+                continue;
+            };
+            let Some((surface_id, navigation_epoch, frame_id, width, height, rgba)) =
+                crate::compositor_client::get_frame(
+                    submission.surface_id,
+                    submission.navigation_epoch,
+                    submission.frame_id,
+                )
+            else {
+                continue;
+            };
+            let completed = CompositorSubmission {
+                surface_id,
+                navigation_epoch,
+                frame_id,
+            };
+            if !snap.commit_compositor_frame(completed, width, height, rgba) {
+                tracing::debug!(
+                    "忽略 stale compositor result tab {} surface {} epoch {} frame {}",
+                    tab_id.0,
+                    surface_id,
+                    navigation_epoch,
+                    frame_id
+                );
+                continue;
+            }
+            *snapshot_seq.entry(*tab_id).or_insert(0) += 1;
+            if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
+                tracing::info!(
+                    "SMOKE_EVENT component=browser event=compositor_bitmap_adopted tab={} surface={} epoch={} frame={}",
+                    tab_id.0,
+                    surface_id,
+                    navigation_epoch,
+                    frame_id
+                );
+            }
+            changed = true;
+            if snap.loading {
+                snap.loading = false;
+                let title = snap.title.clone().unwrap_or_else(|| "页面".to_string());
+                let url = snap.url.clone().unwrap_or_default();
+                pending_loaded.push((*tab_id, title, url));
+            }
+        }
+        changed
     }
 
     fn handle_fetch_request(&mut self, tab_id: TabId, params: FetchParams) {
@@ -372,6 +503,9 @@ impl ProcessTabBackend {
             Ok(rid) => {
                 self.tab_to_renderer.insert(tab_id, rid);
                 tracing::info!("Spawned renderer {rid} for tab {}", tab_id.0);
+                if self.compositor_status == crate::compositor_client::CompositorStatus::Disconnected {
+                    self.send_to_renderer(tab_id, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
+                }
                 self.send_to_renderer(
                     tab_id,
                     IpcMessageKind::SetViewport(SetViewportParams {
@@ -391,6 +525,7 @@ impl ProcessTabBackend {
     pub fn remove_renderer(&mut self, tab_id: TabId) {
         self.fetch_proxy.remove_tab(tab_id);
         if let Some(rid) = self.tab_to_renderer.remove(&tab_id) {
+            crate::compositor_client::release_surface(rid);
             let _ = self.manager.shutdown_renderer(rid);
         }
     }
@@ -509,7 +644,7 @@ impl ProcessTabBackend {
         _poll_background: bool,
     ) -> bool {
         self.drain_pending_fetches();
-        let mut changed = false;
+        let mut changed = self.observe_compositor_status(snapshots, snapshot_seq);
         self.handle_crashes(snapshots);
         let mapping: Vec<(TabId, u64)> = self.tab_to_renderer.iter().map(|(k, v)| (*k, *v)).collect();
         let mut disconnected = Vec::new();
@@ -570,12 +705,12 @@ impl ProcessTabBackend {
                     break;
                 }
             }
-            if let Some(params) = latest_paint {
+            if let Some(kind) = latest_paint {
                 let snap = snapshots.entry(tab_id).or_default();
                 Self::apply_inbound_message(
                     tab_id,
                     snap,
-                    IpcMessageKind::ViewPainted(params),
+                    kind,
                     snapshot_seq,
                     &mut self.pending_loaded,
                     &mut self.pending_errors,
@@ -585,6 +720,10 @@ impl ProcessTabBackend {
         for (tab_id, rid, reason) in disconnected {
             self.handle_renderer_ipc_lost(tab_id, rid, snapshots, &reason);
             changed = true;
+        }
+        changed |= self.observe_compositor_status(snapshots, snapshot_seq);
+        if self.compositor_status == crate::compositor_client::CompositorStatus::Healthy {
+            changed |= Self::poll_compositor_frames(snapshots, snapshot_seq, &mut self.pending_loaded);
         }
         changed
     }
@@ -647,12 +786,13 @@ impl ProcessTabBackend {
     /// 导致下次 `cargo build` 时无法覆盖二进制（Windows `os error 5`）。
     pub fn shutdown_all(&mut self) {
         self.manager.shutdown_all();
+        crate::compositor_client::shutdown();
     }
 }
 
 impl Drop for ProcessTabBackend {
     fn drop(&mut self) {
-        self.manager.shutdown_all();
+        self.shutdown_all();
     }
 }
 
@@ -694,10 +834,12 @@ mod renderer_path_tests {
 mod navigation_contract_tests {
     use super::ProcessTabBackend;
     use crate::paint_ipc::apply_paint_snapshot;
-    use crate::tab_snapshot::TabSnapshot;
+    use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
     use zero_browser_shell::TabId;
     use zero_protocol::message::IpcMessageKind;
-    use zero_protocol::{IpcColor, IpcFill, IpcRect, PaintSnapshotParams};
+    use zero_protocol::{
+        IpcColor, IpcFill, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcRect, PaintSnapshotParams,
+    };
     use zero_render_foundation::color::Color;
     use zero_render_foundation::geometry::Rect;
     use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
@@ -882,6 +1024,160 @@ mod navigation_contract_tests {
             .is_none()
         );
 
-        assert_eq!(latest.unwrap().navigation_epoch, 2);
+        assert!(matches!(
+            latest,
+            Some(IpcMessageKind::ViewPainted(params)) if params.navigation_epoch == 2
+        ));
+    }
+
+    #[test]
+    fn compositor_frame_extracts_metadata_without_saving_legacy_primitives() {
+        let tab_id = TabId(4);
+        let mut snap = TabSnapshot {
+            navigation_epoch: 5,
+            loading: true,
+            ..Default::default()
+        };
+        let mut pending_loaded = Vec::new();
+        let mut pending_errors = Vec::new();
+        let mut snapshot_seq = std::collections::HashMap::new();
+        let mut paint = paint_with_red_fill(5);
+        paint.document_height = 1200.0;
+        paint.hit_test = Some(IpcHitTestCache {
+            doc_root: 1,
+            layout_root: IpcHitTestLayoutNode {
+                node_id: Some(1),
+                x: 0.0,
+                y: 0.0,
+                width: 100.0,
+                height: 100.0,
+                children: Vec::new(),
+            },
+            nodes: std::iter::once((
+                1,
+                IpcHitTestNodeMeta {
+                    tag_name: "a".to_string(),
+                    id: None,
+                    class_name: None,
+                    href: Some("https://example.com".to_string()),
+                    src: None,
+                },
+            ))
+            .collect(),
+            parents: Default::default(),
+        });
+
+        ProcessTabBackend::apply_inbound_message(
+            tab_id,
+            &mut snap,
+            IpcMessageKind::CompositorFrame {
+                surface_id: 44,
+                navigation_epoch: 5,
+                frame_id: 9,
+                paint: Box::new(paint),
+            },
+            &mut snapshot_seq,
+            &mut pending_loaded,
+            &mut pending_errors,
+        );
+
+        assert_eq!(
+            snap.compositor_submission,
+            Some(CompositorSubmission {
+                surface_id: 44,
+                navigation_epoch: 5,
+                frame_id: 9,
+            })
+        );
+        assert_eq!(snap.document_height, Some(1200.0));
+        assert_eq!(snap.document_width, Some(100.0));
+        assert!(snap.hit_test.is_some());
+        assert!(snap.last_render.is_none());
+        assert!(snap.loading, "loading ends only after a completed compositor bitmap");
+        assert!(pending_loaded.is_empty());
+    }
+
+    #[test]
+    fn paint_backlog_keeps_latest_compositor_frame_per_renderer() {
+        let mut latest = None;
+        for frame_id in [10, 11] {
+            assert!(
+                ProcessTabBackend::defer_latest_paint(
+                    &mut latest,
+                    IpcMessageKind::CompositorFrame {
+                        surface_id: 55,
+                        navigation_epoch: 2,
+                        frame_id,
+                        paint: Box::new(paint_with_red_fill(2)),
+                    },
+                )
+                .is_none()
+            );
+        }
+
+        assert!(matches!(
+            latest,
+            Some(IpcMessageKind::CompositorFrame {
+                surface_id: 55,
+                navigation_epoch: 2,
+                frame_id: 11,
+                ..
+            })
+        ));
+    }
+}
+
+#[cfg(test)]
+mod compositor_fallback_tests {
+    use super::ProcessTabBackend;
+    use crate::compositor_client::CompositorStatus;
+    use std::path::PathBuf;
+    use zero_browser_shell::TabId;
+
+    #[test]
+    fn startup_failure_enters_fallback_once() {
+        let mut previous = CompositorStatus::Starting;
+        let current = CompositorStatus::Disconnected;
+
+        assert!(ProcessTabBackend::enters_compositor_fallback(previous, current));
+        previous = current;
+        assert!(!ProcessTabBackend::enters_compositor_fallback(previous, current));
+    }
+
+    #[test]
+    fn runtime_disconnect_enters_fallback_once() {
+        let mut previous = CompositorStatus::Healthy;
+        let current = CompositorStatus::Disconnected;
+
+        assert!(ProcessTabBackend::enters_compositor_fallback(previous, current));
+        previous = current;
+        assert!(!ProcessTabBackend::enters_compositor_fallback(previous, current));
+    }
+
+    #[test]
+    fn disabled_and_healthy_states_do_not_enter_fallback() {
+        assert!(!ProcessTabBackend::enters_compositor_fallback(
+            CompositorStatus::Disabled,
+            CompositorStatus::Disabled,
+        ));
+        assert!(!ProcessTabBackend::enters_compositor_fallback(
+            CompositorStatus::Starting,
+            CompositorStatus::Healthy,
+        ));
+        assert!(!ProcessTabBackend::enters_compositor_fallback(
+            CompositorStatus::Healthy,
+            CompositorStatus::Healthy,
+        ));
+    }
+
+    #[test]
+    fn tab_remove_drops_renderer_surface_mapping() {
+        let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
+        let tab_id = TabId(17);
+        backend.tab_to_renderer.insert(tab_id, 44);
+
+        backend.remove_renderer(tab_id);
+
+        assert!(!backend.tab_to_renderer.contains_key(&tab_id));
     }
 }

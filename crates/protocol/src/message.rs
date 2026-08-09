@@ -33,6 +33,10 @@ pub enum IpcMessageKind {
     SetColorScheme(SetColorSchemeParams),
     /// 更新渲染媒体类型（浏览器→渲染，DC-12 @media print；R1993）。
     SetMediaType(SetMediaTypeParams),
+    /// 更新页面绘制帧的 Browser IPC 发布模式。
+    SetFramePublishMode(FramePublishMode),
+    /// 请求 renderer 立即从当前页面状态重新发布一帧。
+    RequestFrame,
 
     // ── 页面事件（渲染→浏览器）──
     /// 页面标题变更。
@@ -79,18 +83,47 @@ pub enum IpcMessageKind {
 
     // ── 合成（渲染→compositor 进程，C2）──
     /// 帧提交（图元快照 → 合成器进程，BackingStore 双缓冲管理）。
-    CompositorFrame(Box<crate::paint_snapshot::PaintSnapshotParams>),
+    CompositorFrame {
+        /// 页面 surface 的稳定标识。
+        surface_id: u64,
+        /// 提交帧所属的导航世代。
+        navigation_epoch: u64,
+        /// renderer 为该 surface 生成的单调帧序号。
+        frame_id: u64,
+        /// 页面绘制快照。
+        paint: Box<crate::paint_snapshot::PaintSnapshotParams>,
+    },
     /// 帧已合成确认（合成器 → 渲染）。
     CompositorFrameResult {
-        /// 合成器内递增的帧序号。
+        /// 页面 surface 的稳定标识。
+        surface_id: u64,
+        /// 已合成帧所属的导航世代。
+        navigation_epoch: u64,
+        /// 已合成的 renderer 帧序号。
         frame_id: u64,
     },
     /// 拉取最新已合成帧（显示消费方 → 合成器）。
-    GetCompositorFrame,
+    GetCompositorFrame {
+        /// 待读取页面 surface 的稳定标识。
+        surface_id: u64,
+        /// 显示消费方当前接受的导航世代。
+        navigation_epoch: u64,
+        /// 显示消费方当前已知的帧序号。
+        frame_id: u64,
+    },
+    /// 释放指定页面 surface 的 backing store。
+    ReleaseCompositorSurface {
+        /// 待释放页面 surface 的稳定标识。
+        surface_id: u64,
+    },
     /// 已合成帧数据（合成器 → 显示消费方）：front 缓冲像素。
     /// 大体积优化（SharedMemoryChannel）留后续；当前消息内直接传输。
     CompositorFrameData {
-        /// 帧序号（无帧时为 0）。
+        /// 页面 surface 的稳定标识。
+        surface_id: u64,
+        /// front 缓冲所属的导航世代。
+        navigation_epoch: u64,
+        /// front 缓冲的 renderer 帧序号（无帧时为 0）。
         frame_id: u64,
         /// 宽度（像素）。
         width: u32,
@@ -190,6 +223,15 @@ pub enum IpcMediaType {
 pub struct SetMediaTypeParams {
     /// 渲染媒体类型。
     pub media_type: IpcMediaType,
+}
+
+/// 页面绘制帧的 Browser IPC 发布模式。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FramePublishMode {
+    /// 兼容路径：renderer 直接发布 `ViewPainted`。
+    Legacy,
+    /// 合成器主链路：renderer 发布 `CompositorFrame`。
+    Compositor,
 }
 
 /// 网络请求参数。

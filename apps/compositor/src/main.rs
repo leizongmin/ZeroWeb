@@ -21,7 +21,136 @@ use zero_render_foundation::font::{FontLoader, GlyphCache};
 
 mod convert;
 
+use std::collections::HashMap;
 use std::io;
+
+struct SurfaceState {
+    navigation_epoch: u64,
+    frame_id: u64,
+    backing: BackingStoreManager,
+}
+
+impl SurfaceState {
+    fn accepts(&self, navigation_epoch: u64, frame_id: u64) -> bool {
+        navigation_epoch > self.navigation_epoch
+            || (navigation_epoch == self.navigation_epoch && frame_id > self.frame_id)
+    }
+}
+
+fn primary_font_paths() -> &'static [&'static str] {
+    #[cfg(target_os = "macos")]
+    {
+        &[
+            "/System/Library/Fonts/SFNS.ttf",
+            "/System/Library/Fonts/SFCompact.ttf",
+            "/System/Library/Fonts/HelveticaNeue.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        &["C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\arial.ttf"]
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        &[
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/opentype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/opentype/cantarell/Cantarell-VF.otf",
+            "/usr/share/fonts/truetype/cantarell/Cantarell-Regular.otf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        ]
+    }
+}
+
+fn bold_font_paths() -> &'static [&'static str] {
+    #[cfg(target_os = "macos")]
+    {
+        &[
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        &["C:\\Windows\\Fonts\\arialbd.ttf", "C:\\Windows\\Fonts\\segoeuib.ttf"]
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        ]
+    }
+}
+
+fn fallback_font_paths() -> &'static [&'static str] {
+    #[cfg(target_os = "macos")]
+    {
+        &[
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+            "/System/Library/Fonts/Apple Symbols.ttf",
+        ]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        &["C:\\Windows\\Fonts\\msyh.ttc", "C:\\Windows\\Fonts\\seguiemj.ttf"]
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        &[
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansSC-Regular.otf",
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+            "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
+        ]
+    }
+}
+
+/// 按 Browser 字体 ID 顺序加载 compositor 光栅化所需的系统字体。
+fn load_compositor_fonts() -> FontLoader {
+    let mut loader = FontLoader::new();
+    let primary = primary_font_paths().iter().find_map(|path| {
+        let data = std::fs::read(path).ok()?;
+        let id = loader.load_font(&data).ok()?;
+        tracing::info!("compositor: loaded primary font {path} (id={id})");
+        Some(id)
+    });
+    let Some(primary) = primary else {
+        tracing::warn!("compositor: no system font available; page text may be missing");
+        return loader;
+    };
+
+    if let Some((id, path)) = bold_font_paths().iter().find_map(|path| {
+        let data = std::fs::read(path).ok()?;
+        let id = loader.load_font(&data).ok()?;
+        Some((id, *path))
+    }) {
+        tracing::info!("compositor: loaded bold font {path} (id={id})");
+    }
+
+    let fallbacks = fallback_font_paths()
+        .iter()
+        .filter_map(|path| {
+            let data = std::fs::read(path).ok()?;
+            let id = loader.load_font(&data).ok()?;
+            (id != primary).then_some(id)
+        })
+        .collect::<Vec<_>>();
+    loader.set_fallback_chain(fallbacks);
+    tracing::info!(
+        "compositor: font fallback chain contains {} fonts",
+        loader.fallback_chain().len()
+    );
+    loader
+}
 
 fn main() {
     tracing_subscriber::fmt()
@@ -31,11 +160,10 @@ fn main() {
 
     let mut transport = stdio_transport().unwrap_or_else(|e| panic!("compositor: stdio transport: {e}"));
 
-    // 双缓冲：尺寸随首帧初始化；光栅化所需的字体/字形缓存（进程级单例）
-    let mut backing: Option<BackingStoreManager> = None;
-    let font_loader = FontLoader::new();
+    // 每个页面 surface 独立维护帧序列和双缓冲；字体/字形缓存由进程共享。
+    let mut surfaces: HashMap<u64, SurfaceState> = HashMap::new();
+    let font_loader = load_compositor_fonts();
     let mut glyph_cache = GlyphCache::new(1024);
-    let mut frame_count: u64 = 0;
 
     // C3 GPU 光栅化（env ZW_COMPOSITOR_GPU=1）：headless wgpu 上下文在合成器
     // 进程内（对照 Ladybird GPU 隔离）；初始化失败/GPU 不可用 → 回退 CPU。
@@ -62,15 +190,42 @@ fn main() {
         };
 
         match msg.kind {
-            IpcMessageKind::CompositorFrame(frame) => {
-                frame_count += 1;
-                let w = frame.viewport_width.max(1);
-                let h = frame.viewport_height.max(1);
-                let store = backing.get_or_insert_with(|| BackingStoreManager::new(w, h));
-                store.resize(w, h);
+            IpcMessageKind::CompositorFrame {
+                surface_id,
+                navigation_epoch,
+                frame_id,
+                paint,
+            } => {
+                if let Some(surface) = surfaces.get(&surface_id)
+                    && !surface.accepts(navigation_epoch, frame_id)
+                {
+                    tracing::warn!(
+                        "compositor: 拒绝 surface {surface_id} 的旧帧 \
+                         epoch={navigation_epoch}, frame={frame_id}；当前 \
+                         epoch={}, frame={}",
+                        surface.navigation_epoch,
+                        surface.frame_id
+                    );
+                    let resp = IpcMessage {
+                        id: msg.id,
+                        kind: IpcMessageKind::CompositorFrameResult {
+                            surface_id,
+                            navigation_epoch: surface.navigation_epoch,
+                            frame_id: surface.frame_id,
+                        },
+                    };
+                    if let Err(e) = transport.send(resp) {
+                        tracing::warn!("compositor: 拒绝帧响应失败: {e}");
+                        break;
+                    }
+                    continue;
+                }
+
+                let w = paint.viewport_width.max(1);
+                let h = paint.viewport_height.max(1);
 
                 // IPC 图元 → 渲染图元 → 光栅化到 back buffer → swap
-                let primitives = convert::to_render_primitives(&frame);
+                let primitives = convert::to_render_primitives(&paint);
                 let fb = if gpu_enabled {
                     // C3：GPU 光栅化（headless wgpu 上下文在本进程内；
                     // 初始化失败回退 CPU，fail-open）
@@ -79,6 +234,7 @@ fn main() {
                     }
                     match gpu_renderer.as_mut() {
                         Some(gpu) => {
+                            gpu.configure_surface(w, h);
                             gpu.render_scene_ext(&primitives.fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
                             match gpu.read_pixels() {
                                 Some(pixels) => {
@@ -131,16 +287,35 @@ fn main() {
                         &[],
                     )
                 };
-                *store.back_mut() = fb;
-                store.swap();
+
+                let surface = surfaces.entry(surface_id).or_insert_with(|| SurfaceState {
+                    navigation_epoch,
+                    frame_id,
+                    backing: BackingStoreManager::new(w, h),
+                });
+                surface.backing.resize(w, h);
+                *surface.backing.back_mut() = fb;
+                surface.backing.swap();
+                surface.navigation_epoch = navigation_epoch;
+                surface.frame_id = frame_id;
                 tracing::info!(
-                    "compositor: 帧 #{frame_count} 已光栅化并合成（{w}x{h}，fills={}）",
+                    "compositor: surface {surface_id} 帧 #{frame_id} 已光栅化并合成\
+                     （epoch={navigation_epoch}，{w}x{h}，fills={}）",
                     primitives.fills.len()
                 );
+                if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
+                    tracing::info!(
+                        "SMOKE_EVENT component=zero-compositor event=frame_committed surface={surface_id} epoch={navigation_epoch} frame={frame_id} width={w} height={h}"
+                    );
+                }
 
                 let resp = IpcMessage {
                     id: msg.id,
-                    kind: IpcMessageKind::CompositorFrameResult { frame_id: frame_count },
+                    kind: IpcMessageKind::CompositorFrameResult {
+                        surface_id,
+                        navigation_epoch,
+                        frame_id,
+                    },
                 };
                 if let Err(e) = transport.send(resp) {
                     tracing::warn!("compositor: 响应失败: {e}");
@@ -148,18 +323,26 @@ fn main() {
                 }
             }
             // 显示消费方拉取最新已合成帧（front 缓冲像素）
-            IpcMessageKind::GetCompositorFrame => {
-                let (width, height, rgba) = match backing.as_ref() {
-                    Some(store) => {
-                        let front = store.front();
-                        (front.width, front.height, front.data.clone())
+            IpcMessageKind::GetCompositorFrame { surface_id, .. } => {
+                let (response_epoch, response_frame, width, height, rgba) = match surfaces.get(&surface_id) {
+                    Some(surface) => {
+                        let front = surface.backing.front();
+                        (
+                            surface.navigation_epoch,
+                            surface.frame_id,
+                            front.width,
+                            front.height,
+                            front.data.clone(),
+                        )
                     }
-                    None => (0, 0, Vec::new()),
+                    None => (0, 0, 0, 0, Vec::new()),
                 };
                 let resp = IpcMessage {
                     id: msg.id,
                     kind: IpcMessageKind::CompositorFrameData {
-                        frame_id: frame_count,
+                        surface_id,
+                        navigation_epoch: response_epoch,
+                        frame_id: response_frame,
                         width,
                         height,
                         rgba,
@@ -170,9 +353,39 @@ fn main() {
                     break;
                 }
             }
+            IpcMessageKind::ReleaseCompositorSurface { surface_id } => {
+                if surfaces.remove(&surface_id).is_some() {
+                    tracing::info!("compositor: surface {surface_id} 已释放");
+                }
+                let resp = IpcMessage {
+                    id: msg.id,
+                    kind: IpcMessageKind::Ok,
+                };
+                if let Err(e) = transport.send(resp) {
+                    tracing::warn!("compositor: surface 释放响应失败: {e}");
+                    break;
+                }
+            }
             _ => {
                 tracing::warn!("compositor: 忽略未知消息");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compositor_font_loader_rasterizes_page_text() {
+        let loader = load_compositor_fonts();
+        let bitmap = loader
+            .rasterize_glyph_with_fallback(0, 'A', 18.0)
+            .expect("compositor must load a primary system font")
+            .1;
+        assert!(bitmap.width > 0);
+        assert!(bitmap.height > 0);
+        assert!(bitmap.data.iter().any(|alpha| *alpha != 0));
     }
 }

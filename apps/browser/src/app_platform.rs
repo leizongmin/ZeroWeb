@@ -186,9 +186,9 @@ impl BrowserApp {
             softbuffer::Surface<std::sync::Arc<winit::window::Window>, std::sync::Arc<winit::window::Window>>,
         >,
         present: bool,
-    ) {
+    ) -> Option<zero_render_foundation::surface::FrameBuffer> {
         if !present {
-            return;
+            return None;
         }
 
         let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
@@ -213,7 +213,11 @@ impl BrowserApp {
             &overlay_glyphs,
             &overlay_rounded_rects,
         );
-        present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data);
+        if present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data) {
+            Some(fb)
+        } else {
+            None
+        }
     }
 
     /// 光栅化场景（性能门禁优化 S1，2026-08-08）。
@@ -248,7 +252,15 @@ impl BrowserApp {
                 .get(&id)
                 .is_some_and(|sel| !sel.is_collapsed())
         });
-        let page_has_content = tab_id.is_some_and(|id| self.tabs.last_render(id).is_some());
+        let compositor_status = crate::compositor_client::status();
+        let page_has_content = tab_id.is_some_and(|id| {
+            if compositor_controls_page(compositor_status) {
+                compositor_status == crate::compositor_client::CompositorStatus::Healthy
+                    && self.tabs.compositor_frame(id).is_some()
+            } else {
+                self.tabs.last_render(id).is_some()
+            }
+        });
 
         let blit_enabled = std::env::var("ZERO_SCROLL_BLIT").as_deref() != Ok("0");
         let dy = (scroll.y - self.fb_cache_scroll.1).round() as i32;
@@ -502,32 +514,32 @@ pub(crate) fn present_rgba_to_softbuffer(
     width: u32,
     height: u32,
     rgba: &[u8],
-) {
+) -> bool {
     use std::num::NonZeroU32;
 
     let Some(surface) = cpu_surface.as_mut() else {
-        return;
+        return false;
     };
 
     let sw = match NonZeroU32::new(width.max(1)) {
         Some(w) => w,
-        None => return,
+        None => return false,
     };
     let sh = match NonZeroU32::new(height.max(1)) {
         Some(h) => h,
-        None => return,
+        None => return false,
     };
 
     if let Err(err) = surface.resize(sw, sh) {
         tracing::error!("CPU surface resize failed: {err}");
-        return;
+        return false;
     }
 
     let mut buffer = match surface.buffer_mut() {
         Ok(b) => b,
         Err(err) => {
             tracing::error!("CPU surface buffer failed: {err}");
-            return;
+            return false;
         }
     };
 
@@ -537,7 +549,9 @@ pub(crate) fn present_rgba_to_softbuffer(
 
     if let Err(err) = buffer.present() {
         tracing::error!("CPU surface present failed: {err}");
+        return false;
     }
+    true
 }
 
 /// 将以 `/` 开头的根相对路径解析到当前标签页 URL（无可用 base 时原样返回）。

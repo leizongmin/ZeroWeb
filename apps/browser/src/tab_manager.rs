@@ -8,7 +8,7 @@ use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
 use crate::process_backend::{ProcessTabBackend, use_multiprocess_backend};
-use crate::tab_snapshot::TabSnapshot;
+use crate::tab_snapshot::{CompositorFrame, TabSnapshot};
 use crate::tab_worker::{TabWorkerCommand, TabWorkerHandle, TabWorkerMessage};
 
 /// 异步派发 DOM 事件后，由 `TabManager` 在收到渲染进程回执时入队的后续动作。
@@ -101,6 +101,8 @@ impl TabManager {
     pub fn shutdown_child_processes(&mut self) {
         if let Some(ref mut backend) = self.process_backend {
             backend.shutdown_all();
+        } else {
+            crate::compositor_client::shutdown();
         }
     }
 
@@ -384,6 +386,11 @@ impl TabManager {
     /// 活跃 Tab 最近一次渲染。
     pub fn last_render(&self, tab_id: TabId) -> Option<&WebViewRenderResult> {
         self.snapshots.get(&tab_id)?.last_render.as_ref()
+    }
+
+    /// 活跃 Tab 最新可显示的 compositor 页面位图。
+    pub fn compositor_frame(&self, tab_id: TabId) -> Option<&CompositorFrame> {
+        self.snapshots.get(&tab_id)?.compositor_frame.as_ref()
     }
 
     /// 活跃 Tab 图片缓存（绘制时可变借用）。

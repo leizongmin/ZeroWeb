@@ -1,8 +1,39 @@
 //! 标签页渲染快照 — UI 线程只读合成，不触碰 WebView 内部状态。
 
 use zero_engine::HitTestCache;
-use zero_render_foundation::image_cache::ImageCache;
+use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
 use zero_webview::WebViewRenderResult;
+
+/// Browser 已接收并提交给 compositor 的最新页面帧标识。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompositorSubmission {
+    /// Renderer surface 标识。
+    pub surface_id: u64,
+    /// 导航世代。
+    pub navigation_epoch: u64,
+    /// Renderer 帧序号。
+    pub frame_id: u64,
+}
+
+/// Browser 可显示的最新 compositor RGBA 位图。
+///
+/// RGBA 字节由同一 [`TabSnapshot`] 的 `image_cache` 持有，`image_key` 指向该缓存，
+/// 从 compositor 接收后只发生一次所有权移动。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompositorFrame {
+    /// Renderer surface 标识。
+    pub surface_id: u64,
+    /// 导航世代。
+    pub navigation_epoch: u64,
+    /// Renderer 帧序号。
+    pub frame_id: u64,
+    /// 位图宽度（像素）。
+    pub width: u32,
+    /// 位图高度（像素）。
+    pub height: u32,
+    /// RGBA 位图在当前 Tab 图片缓存中的键。
+    pub image_key: ImageKey,
+}
 
 /// 标签页在 UI 线程上的只读快照。
 #[derive(Default)]
@@ -31,6 +62,10 @@ pub struct TabSnapshot {
     pub hit_test: Option<HitTestCache>,
     /// 导航世代：每次 `begin_navigation` 递增，用于丢弃 stale ViewPainted。
     pub navigation_epoch: u64,
+    /// 已提交给 compositor 的最新页面帧。
+    pub compositor_submission: Option<CompositorSubmission>,
+    /// compositor 已完成且可显示的最新页面位图。
+    pub compositor_frame: Option<CompositorFrame>,
 }
 
 impl TabSnapshot {
@@ -51,6 +86,8 @@ impl TabSnapshot {
             html_source: if html.is_empty() { None } else { Some(html.to_string()) },
             hit_test: wv.build_hit_test_cache(),
             navigation_epoch: 0,
+            compositor_submission: None,
+            compositor_frame: None,
         }
     }
 
@@ -65,6 +102,8 @@ impl TabSnapshot {
     /// 清除 paint 与命中数据（保留 url/title/loading 由调用方设置）。
     pub fn clear_paint(&mut self) {
         self.last_render = None;
+        self.compositor_submission = None;
+        self.compositor_frame = None;
         self.document_height = None;
         self.document_width = None;
         self.hit_test = None;
@@ -72,9 +111,65 @@ impl TabSnapshot {
         self.image_cache.clear();
     }
 
+    /// 清除 compositor 提交、完成位图及其图片缓存，保留 legacy 页面快照。
+    pub fn clear_compositor_state(&mut self) {
+        self.compositor_submission = None;
+        self.compositor_frame = None;
+        self.image_cache.clear();
+    }
+
     /// 是否将 `last_render` 合成到屏幕（loading 期间即使有帧也不绘制 stale 内容）。
     pub fn should_composite_paint(&self) -> bool {
         self.last_render.is_some() && !self.loading
+    }
+
+    /// 记录准备提交给 compositor 的 renderer 帧；拒绝错误世代和倒序帧。
+    pub fn record_compositor_submission(&mut self, submission: CompositorSubmission) -> bool {
+        if submission.navigation_epoch != self.navigation_epoch {
+            return false;
+        }
+        if let Some(current) = self.compositor_submission
+            && current.surface_id == submission.surface_id
+            && current.navigation_epoch == submission.navigation_epoch
+            && current.frame_id >= submission.frame_id
+        {
+            return false;
+        }
+        self.compositor_submission = Some(submission);
+        true
+    }
+
+    /// 接收 compositor 完成位图；只接受与最新提交完全匹配且不旧于当前显示帧的结果。
+    pub fn commit_compositor_frame(
+        &mut self,
+        submission: CompositorSubmission,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) -> bool {
+        if self.compositor_submission != Some(submission)
+            || self.compositor_frame.as_ref().is_some_and(|current| {
+                current.surface_id == submission.surface_id
+                    && (current.navigation_epoch, current.frame_id)
+                        >= (submission.navigation_epoch, submission.frame_id)
+            })
+        {
+            return false;
+        }
+        let Ok(image) = ImageData::from_rgba(rgba, width, height) else {
+            return false;
+        };
+        self.image_cache.clear();
+        let image_key = self.image_cache.insert(image);
+        self.compositor_frame = Some(CompositorFrame {
+            surface_id: submission.surface_id,
+            navigation_epoch: submission.navigation_epoch,
+            frame_id: submission.frame_id,
+            width,
+            height,
+            image_key,
+        });
+        true
     }
 }
 
@@ -137,5 +232,82 @@ mod tests {
         snap.clear_paint();
         assert!(snap.last_render.is_none());
         assert_eq!(snap.url.as_deref(), Some("https://example.com"));
+    }
+
+    #[test]
+    fn compositor_frame_accepts_only_latest_submission_and_moves_pixels_to_cache() {
+        let mut snap = TabSnapshot {
+            navigation_epoch: 3,
+            ..Default::default()
+        };
+        let first = CompositorSubmission {
+            surface_id: 41,
+            navigation_epoch: 3,
+            frame_id: 7,
+        };
+        let latest = CompositorSubmission { frame_id: 8, ..first };
+        assert!(snap.record_compositor_submission(first));
+        assert!(snap.record_compositor_submission(latest));
+        assert!(!snap.commit_compositor_frame(first, 1, 1, vec![255, 0, 0, 255]));
+        assert!(snap.commit_compositor_frame(latest, 1, 1, vec![0, 0, 255, 255]));
+
+        let frame = snap.compositor_frame.as_ref().unwrap();
+        assert_eq!((frame.surface_id, frame.navigation_epoch, frame.frame_id), (41, 3, 8));
+        assert_eq!(snap.image_cache.get(&frame.image_key).unwrap().pixels, [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn compositor_frames_are_isolated_per_tab_snapshot() {
+        let mut first = TabSnapshot {
+            navigation_epoch: 1,
+            ..Default::default()
+        };
+        let mut second = TabSnapshot {
+            navigation_epoch: 1,
+            ..Default::default()
+        };
+        let first_key = CompositorSubmission {
+            surface_id: 10,
+            navigation_epoch: 1,
+            frame_id: 1,
+        };
+        let second_key = CompositorSubmission {
+            surface_id: 20,
+            navigation_epoch: 1,
+            frame_id: 1,
+        };
+        assert!(first.record_compositor_submission(first_key));
+        assert!(second.record_compositor_submission(second_key));
+        assert!(first.commit_compositor_frame(first_key, 1, 1, vec![255, 0, 0, 255]));
+        assert!(second.commit_compositor_frame(second_key, 1, 1, vec![0, 255, 0, 255]));
+
+        assert_eq!(first.compositor_frame.as_ref().unwrap().surface_id, 10);
+        assert_eq!(second.compositor_frame.as_ref().unwrap().surface_id, 20);
+        let first_frame = first.compositor_frame.as_ref().unwrap();
+        let second_frame = second.compositor_frame.as_ref().unwrap();
+        assert_eq!(first.image_cache.get(&first_frame.image_key).unwrap().pixels[0], 255);
+        assert_eq!(second.image_cache.get(&second_frame.image_key).unwrap().pixels[1], 255);
+    }
+
+    #[test]
+    fn compositor_state_clear_preserves_legacy_render() {
+        let mut snap = TabSnapshot {
+            navigation_epoch: 1,
+            last_render: Some(blue_render()),
+            ..Default::default()
+        };
+        let submission = CompositorSubmission {
+            surface_id: 8,
+            navigation_epoch: 1,
+            frame_id: 2,
+        };
+        assert!(snap.record_compositor_submission(submission));
+        assert!(snap.commit_compositor_frame(submission, 1, 1, vec![1, 2, 3, 4]));
+
+        snap.clear_compositor_state();
+
+        assert!(snap.compositor_submission.is_none());
+        assert!(snap.compositor_frame.is_none());
+        assert!(snap.last_render.is_some());
     }
 }

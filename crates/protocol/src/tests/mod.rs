@@ -60,6 +60,7 @@ impl crate::IpcChannel for MockChannel {
 }
 
 mod channel_and_advanced;
+mod compositor_protocol;
 mod comprehensive_coverage;
 mod edge_cases;
 mod edge_cases_extra;

@@ -10,6 +10,150 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{FillPrimitive, FontId, GlyphPrimitive, RenderPrimitives};
 
 #[test]
+fn smoke_capture_cli_requires_real_cpu_multiprocess_window() {
+    let parsed = parse_args_from(
+        ["--renderer=cpu", "--scale=1", "--smoke-capture=target/smoke.png"]
+            .into_iter()
+            .map(str::to_string),
+        None,
+    )
+    .unwrap();
+    assert_eq!(parsed.render_mode, RenderMode::Cpu);
+    assert_eq!(parsed.scale_override, Some(1.0));
+    assert_eq!(parsed.smoke_capture, Some(std::path::PathBuf::from("target/smoke.png")));
+    assert!(parsed.gui_smoke.is_none());
+
+    for invalid in [
+        vec![
+            "--renderer=cpu",
+            "--scale=1",
+            "--single-process",
+            "--smoke-capture=x.png",
+        ],
+        vec!["--renderer=gpu", "--scale=1", "--smoke-capture=x.png"],
+        vec!["--renderer=cpu", "--scale=2", "--smoke-capture=x.png"],
+        vec!["--renderer=cpu", "--scale=1", "--headless", "--smoke-capture=x.png"],
+    ] {
+        assert!(
+            parse_args_from(invalid.into_iter().map(str::to_string), None).is_err(),
+            "invalid smoke CLI must be rejected"
+        );
+    }
+}
+
+#[test]
+fn real_site_gui_smoke_cli_requires_complete_compositor_configuration() {
+    let parsed = parse_args_from(
+        [
+            "--renderer=cpu",
+            "--scale=1",
+            "--gui-smoke-url=https://www.iana.org/domains/reserved",
+            "--gui-smoke-dir=target/gui-smoke",
+        ]
+        .into_iter()
+        .map(str::to_string),
+        None,
+    )
+    .unwrap();
+    let config = parsed.gui_smoke.unwrap();
+    assert_eq!(config.url, "https://www.iana.org/domains/reserved");
+    assert_eq!(config.output_dir, std::path::PathBuf::from("target/gui-smoke"));
+
+    for invalid in [
+        vec![
+            "--renderer=cpu",
+            "--scale=1",
+            "--gui-smoke-url=zero://newtab",
+            "--gui-smoke-dir=target/gui-smoke",
+        ],
+        vec!["--renderer=cpu", "--scale=1", "--gui-smoke-url=https://example.com"],
+        vec!["--renderer=cpu", "--scale=1", "--gui-smoke-dir=target/gui-smoke"],
+        vec![
+            "--renderer=cpu",
+            "--scale=1",
+            "--headless",
+            "--gui-smoke-url=https://example.com",
+            "--gui-smoke-dir=target/gui-smoke",
+        ],
+        vec![
+            "--renderer=cpu",
+            "--scale=1",
+            "--smoke-capture=x.png",
+            "--gui-smoke-url=https://example.com",
+            "--gui-smoke-dir=target/gui-smoke",
+        ],
+    ] {
+        assert!(
+            parse_args_from(invalid.into_iter().map(str::to_string), None).is_err(),
+            "invalid real-site GUI smoke CLI must be rejected"
+        );
+    }
+}
+
+#[test]
+fn compositor_states_exclude_legacy_page_primitives_until_fallback() {
+    use crate::compositor_client::CompositorStatus;
+
+    assert!(!app::compositor_controls_page(CompositorStatus::Disabled));
+    assert!(app::compositor_controls_page(CompositorStatus::Starting));
+    assert!(app::compositor_controls_page(CompositorStatus::Healthy));
+    assert!(!app::compositor_controls_page(CompositorStatus::Disconnected));
+}
+
+#[test]
+fn compositor_active_tab_uses_its_own_surface_image() {
+    use crate::compositor_client::CompositorStatus;
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    let first = app.shell.active_tab_id().unwrap();
+    app.inject_compositor_frame_for_test(first, 101, 1, 4, (64, 48), [255, 0, 0, 255].repeat(64 * 48));
+
+    let second = app.shell.new_tab(None);
+    app.inject_compositor_frame_for_test(second, 202, 1, 9, (32, 24), [0, 255, 0, 255].repeat(32 * 24));
+
+    assert_eq!(app.compositor_surface_for_test(second), Some(202));
+    let second_scene = app.compositor_primitives_for_test(CompositorStatus::Healthy);
+    assert_eq!(second_scene.images.len(), 1);
+    assert_eq!(second_scene.images[0].rect.size.width, 32.0);
+
+    app.shell.switch_tab(first);
+    assert_eq!(app.compositor_surface_for_test(first), Some(101));
+    let first_scene = app.compositor_primitives_for_test(CompositorStatus::Healthy);
+    assert_eq!(first_scene.images.len(), 1);
+    assert_eq!(first_scene.images[0].rect.size.width, 64.0);
+}
+
+#[test]
+fn healthy_compositor_scene_never_contains_same_page_legacy_primitives() {
+    use crate::compositor_client::CompositorStatus;
+    use zero_webview::WebViewRenderResult;
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let tab_id = app.shell.active_tab_id().unwrap();
+    let mut legacy = RenderPrimitives::new();
+    legacy.add_fill(Rect::new(0.0, 0.0, 300.0, 200.0), Color::rgb(255, 0, 0));
+    app.inject_tab_render_for_test(
+        tab_id,
+        WebViewRenderResult {
+            primitives: legacy,
+            timings: Default::default(),
+        },
+        200.0,
+    );
+    app.inject_compositor_frame_for_test(tab_id, 303, 0, 1, (20, 10), [0, 0, 255, 255].repeat(20 * 10));
+
+    let scene = app.compositor_primitives_for_test(CompositorStatus::Healthy);
+    assert!(scene.fills.is_empty());
+    assert!(scene.glyphs.is_empty());
+    assert_eq!(scene.images.len(), 1);
+    assert!(
+        app.compositor_primitives_for_test(CompositorStatus::Starting)
+            .is_empty()
+    );
+}
+
+#[test]
 fn append_webview_primitives_translates_fills_and_glyphs() {
     let mut primitives = RenderPrimitives::new();
     primitives.add_fill(Rect::new(1.0, 2.0, 10.0, 20.0), Color::rgb(255, 0, 0));

@@ -31,10 +31,10 @@ use std::io;
 use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit, set_char_measure_fn};
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
-    DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, HitTestElementResultParams,
-    HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind,
-    KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams, ScrollEventParams, SetColorSchemeParams,
-    SetMediaTypeParams, SetViewportParams, StorageOpParams,
+    DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, FramePublishMode,
+    HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMediaType, IpcMessage,
+    IpcMessageKind, KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams, ScrollEventParams,
+    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{ProcessRole, is_disconnected_channel_message};
@@ -99,6 +99,41 @@ const PAGE_LOAD_DEADLINE: Duration = Duration::from_secs(120);
 /// 无 IPC 消息时推进 pending load 的轮询间隔。
 const LOAD_TICK_INTERVAL: Duration = Duration::from_millis(16);
 
+/// 单个 renderer surface 的帧发布状态。
+struct FramePublishState {
+    /// 页面绘制帧的 Browser IPC 发布模式。
+    mode: FramePublishMode,
+    /// 由 renderer id 提供的稳定 surface 标识。
+    surface_id: u64,
+    /// 下一次实际页面绘制使用的单调帧序号。
+    next_frame_id: u64,
+}
+
+impl FramePublishState {
+    /// 为指定 renderer 创建帧发布状态。
+    fn new(renderer_id: u64, mode: FramePublishMode) -> Self {
+        Self {
+            mode,
+            surface_id: renderer_id,
+            next_frame_id: 1,
+        }
+    }
+
+    /// 更新后续页面帧的发布模式。
+    fn set_mode(&mut self, mode: FramePublishMode) {
+        self.mode = mode;
+    }
+}
+
+/// 从环境变量的已解析值选择发布模式，仅精确值 `1` 启用 compositor。
+fn frame_publish_mode_from_env(value: Option<&str>) -> FramePublishMode {
+    if value == Some("1") {
+        FramePublishMode::Compositor
+    } else {
+        FramePublishMode::Legacy
+    }
+}
+
 /// 进行中的分阶段页面加载（异步 tick，不阻塞 IPC 消息循环）。
 struct PendingLoad {
     load: AsyncPageLoad,
@@ -133,6 +168,8 @@ struct RendererRuntime {
     next_fetch_id: u64,
     /// 渲染进程 ID。
     renderer_id: u64,
+    /// 当前 renderer surface 的页面帧发布状态。
+    frame_publish: FramePublishState,
     /// 导航历史栈。
     history: Vec<String>,
     /// 当前历史索引。
@@ -188,14 +225,20 @@ impl RendererRuntime {
     /// 创建新的渲染进程运行时。
     fn new(renderer_id: u64) -> Self {
         let (inbound_rx, inbound_thread) = spawn_browser_ipc_inbound();
-        let mut rt = Self::with_io(renderer_id, Box::new(io::stdout()), inbound_rx);
+        let frame_publish_mode = frame_publish_mode_from_env(std::env::var("ZW_COMPOSITOR_PROCESS").ok().as_deref());
+        let mut rt = Self::with_io(renderer_id, frame_publish_mode, Box::new(io::stdout()), inbound_rx);
         rt.inbound_thread = Some(inbound_thread);
         rt
     }
 
     /// 用指定出站 writer + 入站通道构造（`new()` 走 stdin/stdout；本方法供 in-process 测试，
     /// 是 B3 cutover 回归门的基础——renderer 是 bin，否则 wiring 无法单测）。
-    fn with_io(renderer_id: u64, outbound: Box<dyn io::Write + Send>, inbound_rx: Receiver<IpcMessage>) -> Self {
+    fn with_io(
+        renderer_id: u64,
+        frame_publish_mode: FramePublishMode,
+        outbound: Box<dyn io::Write + Send>,
+        inbound_rx: Receiver<IpcMessage>,
+    ) -> Self {
         let outbound = PipeTransport::new(io::empty(), outbound);
         let (font_loader, font_id, font_resolver) = load_system_fonts();
         set_char_measure_fn(text_metrics::measure_char);
@@ -229,6 +272,7 @@ impl RendererRuntime {
             next_msg_id: 1,
             next_fetch_id: 1,
             renderer_id,
+            frame_publish: FramePublishState::new(renderer_id, frame_publish_mode),
             history: Vec::new(),
             history_index: 0,
             deferred_inbound: VecDeque::new(),
@@ -405,6 +449,7 @@ impl RendererRuntime {
         publish_render_with_layout(
             &mut self.outbound,
             &mut self.next_msg_id,
+            &mut self.frame_publish,
             &frame,
             title,
             payloads,
@@ -1523,6 +1568,21 @@ impl RendererRuntime {
             IpcMessageKind::SetViewport(params) => self.handle_set_viewport(params),
             IpcMessageKind::SetColorScheme(params) => self.handle_set_color_scheme(params),
             IpcMessageKind::SetMediaType(params) => self.handle_set_media_type(params),
+            IpcMessageKind::SetFramePublishMode(mode) => {
+                self.frame_publish.set_mode(mode);
+                Ok(())
+            }
+            IpcMessageKind::RequestFrame => {
+                if self
+                    .webview
+                    .as_ref()
+                    .is_some_and(|webview| webview.last_render().is_some())
+                {
+                    self.sent_image_keys.clear();
+                    self.publish_webview(None, true)?;
+                }
+                Ok(())
+            }
             IpcMessageKind::GoBack => self.handle_go_back(),
             IpcMessageKind::GoForward => self.handle_go_forward(),
             IpcMessageKind::StopLoading => {
@@ -1555,9 +1615,10 @@ impl RendererRuntime {
             | IpcMessageKind::FetchResponse(_)
             | IpcMessageKind::ImageDecodeRequest(_)
             | IpcMessageKind::ImageDecodeResult(_)
-            | IpcMessageKind::CompositorFrame(_)
+            | IpcMessageKind::CompositorFrame { .. }
             | IpcMessageKind::CompositorFrameResult { .. }
-            | IpcMessageKind::GetCompositorFrame
+            | IpcMessageKind::GetCompositorFrame { .. }
+            | IpcMessageKind::ReleaseCompositorSurface { .. }
             | IpcMessageKind::CompositorFrameData { .. }
             | IpcMessageKind::TitleChanged(_)
             | IpcMessageKind::UrlChanged(_)
@@ -1658,6 +1719,7 @@ impl RendererRuntime {
 fn publish_render_with_layout(
     outbound: &mut IpcOutbound,
     next_msg_id: &mut u64,
+    publish_state: &mut FramePublishState,
     frame: &zero_page_runtime::FrameModel,
     title: Option<String>,
     image_payloads: Vec<zero_protocol::IpcImagePayload>,
@@ -1672,13 +1734,34 @@ fn publish_render_with_layout(
         frame.hit_test.clone(),
         navigation_epoch,
     );
+    let frame_id = publish_state.next_frame_id;
+    publish_state.next_frame_id += 1;
+    if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
+        let (mode, event) = match publish_state.mode {
+            FramePublishMode::Legacy => ("legacy", "ViewPainted"),
+            FramePublishMode::Compositor => ("compositor", "CompositorFrame"),
+        };
+        tracing::info!(
+            "SMOKE_EVENT component=zero-renderer event=frame_published mode={mode} kind={event} surface={} epoch={} frame={frame_id}",
+            publish_state.surface_id,
+            paint.navigation_epoch
+        );
+    }
     let msg = IpcMessage {
         id: {
             let id = *next_msg_id;
             *next_msg_id += 1;
             id
         },
-        kind: IpcMessageKind::ViewPainted(Box::new(paint)),
+        kind: match publish_state.mode {
+            FramePublishMode::Legacy => IpcMessageKind::ViewPainted(Box::new(paint)),
+            FramePublishMode::Compositor => IpcMessageKind::CompositorFrame {
+                surface_id: publish_state.surface_id,
+                navigation_epoch: paint.navigation_epoch,
+                frame_id,
+                paint: Box::new(paint),
+            },
+        },
     };
     outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
     if let Some(title) = title {
@@ -1892,33 +1975,12 @@ fn main() {
 }
 
 #[cfg(test)]
+mod compositor_publish_tests;
+
+#[cfg(test)]
 mod runtime_smoke {
     use super::*;
     use std::io::Write;
-    use std::sync::{Arc, Mutex};
-
-    /// 共享字节缓冲（Send），捕获出站 IPC 字节用于断言。
-    #[derive(Clone)]
-    struct SharedBuf(Arc<Mutex<Vec<u8>>>);
-    impl Write for SharedBuf {
-        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(b);
-            Ok(b.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    /// 把字节缓冲反帧化成 IpcMessage 列表。
-    fn drain_messages(buf: &[u8]) -> Vec<IpcMessage> {
-        let mut t = PipeTransport::new(std::io::Cursor::new(buf), std::io::empty());
-        let mut msgs = Vec::new();
-        while let Ok(m) = t.recv() {
-            msgs.push(m);
-        }
-        msgs
-    }
 
     #[test]
     fn read_input_value_for_change_textarea_uses_content() {
@@ -1944,50 +2006,6 @@ mod runtime_smoke {
             "real",
             "textarea 忽略 value 属性取内容"
         );
-    }
-
-    /// IPC publish 回归门：FrameModel → ViewPainted 帧化（不启动 V8/WebView，避免 in-process 测试卡死）。
-    #[test]
-    fn publish_frame_emits_viewpainted_with_primitives() {
-        use zero_render_foundation::color::Color;
-        use zero_render_foundation::geometry::Rect;
-        use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
-
-        let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
-        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
-        let mut next_msg_id = 1_u64;
-        let frame = zero_page_runtime::FrameModel {
-            viewport: (800, 600),
-            document_height: 400.0,
-            primitives: RenderPrimitives {
-                fills: vec![FillPrimitive {
-                    rect: Rect::new(0.0, 0.0, 100.0, 100.0),
-                    color: Color::rgb(255, 0, 0),
-                }],
-                ..RenderPrimitives::new()
-            },
-            hit_test: None,
-        };
-        publish_render_with_layout(
-            &mut outbound,
-            &mut next_msg_id,
-            &frame,
-            Some("smoke".into()),
-            Vec::new(),
-            0,
-        )
-        .expect("publish");
-
-        let captured = buf.0.lock().unwrap().clone();
-        let msgs = drain_messages(&captured);
-        let painted = msgs
-            .iter()
-            .find_map(|m| match &m.kind {
-                IpcMessageKind::ViewPainted(p) => Some(p.as_ref()),
-                _ => None,
-            })
-            .expect("须产出 ViewPainted");
-        assert!(!painted.fills.is_empty(), "ViewPainted 须含 fill 图元");
     }
 
     #[test]

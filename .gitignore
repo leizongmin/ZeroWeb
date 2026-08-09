@@ -71,6 +71,10 @@ product-smoke-cpu.png
 
 # 渲染兼容性评审证据（截图/交叉验证报告，可由 reftest / chromium-oracle-shot.mjs 重新生成）
 docs/goal/rendering-compat/evidence/*
+# 例外：product-smoke 的 welcome Chromium oracle 是离线质量门禁输入，必须随仓库分发。
+!docs/goal/rendering-compat/evidence/product-static/
+docs/goal/rendering-compat/evidence/product-static/*
+!docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png
 # 例外：WPT 趋势基线（绝对数，weekly CI 自动记录并提交回 main——趋势数据应入库）
 !docs/goal/rendering-compat/evidence/wpt-trends/
 

@@ -4,6 +4,15 @@
 
 // --- BrowserApp 渲染 impl ---
 
+/// compositor client 状态是否禁止 Browser 使用 legacy 页面图元。
+pub(crate) fn compositor_controls_page(status: crate::compositor_client::CompositorStatus) -> bool {
+    matches!(
+        status,
+        crate::compositor_client::CompositorStatus::Starting
+            | crate::compositor_client::CompositorStatus::Healthy
+    )
+}
+
 impl BrowserApp {
     /// 鼠标指针是否落在矩形区域内（物理像素坐标）
     fn pointer_in_rect(&self, x: f32, y: f32, w: f32, h: f32) -> bool {
@@ -308,6 +317,13 @@ impl BrowserApp {
     /// 注意：fills 和 glyphs 不在此返回中（它们已通过 `append_webview_primitives` 混入 chrome 层）。
     /// 仅返回 render_full_scene() 需要的其他 11 种图元类型。
     fn get_webview_extra_primitives(&self) -> RenderPrimitives {
+        self.get_webview_extra_primitives_for_status(crate::compositor_client::status())
+    }
+
+    fn get_webview_extra_primitives_for_status(
+        &self,
+        compositor_status: crate::compositor_client::CompositorStatus,
+    ) -> RenderPrimitives {
         let tab_id = match self.shell.active_tab_id() {
             Some(id) => id,
             None => return RenderPrimitives::new(),
@@ -315,17 +331,27 @@ impl BrowserApp {
 
         let layout = self.page_scroll_layout_for(tab_id, self.physical_size.0, self.physical_size.1);
         let scroll = self.tab_scroll_state(tab_id);
+        let s = self.scale_factor;
+        let clip_viewport = ViewportClip::new(layout.viewport_x, layout.viewport_y, layout.viewport_w, layout.viewport_h);
+        let y_offset = layout.viewport_y - scroll.y;
+        let x_offset = layout.viewport_x - scroll.x;
+
+        if compositor_controls_page(compositor_status) {
+            if compositor_status != crate::compositor_client::CompositorStatus::Healthy {
+                return RenderPrimitives::new();
+            }
+            return self
+                .tabs
+                .compositor_frame(tab_id)
+                .map_or_else(RenderPrimitives::new, |frame| {
+                    compositor_frame_primitives(frame, x_offset, y_offset, s, clip_viewport)
+                });
+        }
 
         let primitives = match self.tabs.last_render(tab_id).map(|render| &render.primitives) {
             Some(p) => p,
             None => return RenderPrimitives::new(),
         };
-
-        let s = self.scale_factor;
-        let clip_viewport = ViewportClip::new(layout.viewport_x, layout.viewport_y, layout.viewport_w, layout.viewport_h);
-
-        let y_offset = layout.viewport_y - scroll.y;
-        let x_offset = layout.viewport_x - scroll.x;
 
         // fills/glyphs 已由 append_webview_primitives 混入 chrome 层——
         // extra 层只变换其余 11 类图元（性能门禁优化 S2，2026-08-08：
@@ -334,6 +360,15 @@ impl BrowserApp {
 
         let _ = (layout.viewport_w,);
         transformed
+    }
+
+    /// 测试用：按指定 compositor 状态构建页面额外图元。
+    #[cfg(test)]
+    pub fn compositor_primitives_for_test(
+        &self,
+        status: crate::compositor_client::CompositorStatus,
+    ) -> RenderPrimitives {
+        self.get_webview_extra_primitives_for_status(status)
     }
 
     /// 绘制页面滚动条（内容溢出时）。
@@ -1084,8 +1119,18 @@ impl BrowserApp {
         let scroll = self.tab_scroll_state(tab_id);
         let layout = self.page_scroll_layout(tab_id);
         let has_composite_paint = self.tabs.snapshot(tab_id).is_some_and(|s| s.should_composite_paint());
+        let compositor_status = crate::compositor_client::status();
 
-        if has_composite_paint
+        if compositor_controls_page(compositor_status) {
+            if compositor_status == crate::compositor_client::CompositorStatus::Healthy
+                && self
+                    .tabs
+                    .compositor_frame(tab_id)
+                    .is_some()
+            {
+                return;
+            }
+        } else if has_composite_paint
             && self.render_active_webview(
                 fills,
                 glyphs,
@@ -1913,4 +1958,3 @@ impl BrowserApp {
         }
     }
 }
-

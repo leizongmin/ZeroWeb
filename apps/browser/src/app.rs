@@ -20,7 +20,8 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::gpu::renderer::{GlyphDraw, GpuRenderer};
 use zero_render_foundation::image_cache::ImageCache;
 use zero_render_foundation::primitive::{
-    FillPrimitive, GlyphPrimitive, GradientKind, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive,
+    FillPrimitive, GlyphPrimitive, GradientKind, ImagePrimitive, RenderPrimitives, RoundedRectPrimitive,
+    ShadowPrimitive,
 };
 
 use crate::colors;
@@ -842,6 +843,43 @@ impl BrowserApp {
         }
     }
 
+    /// 测试用：向指定标签注入已完成的 compositor RGBA 位图。
+    #[cfg(test)]
+    pub fn inject_compositor_frame_for_test(
+        &mut self,
+        tab_id: TabId,
+        surface_id: u64,
+        navigation_epoch: u64,
+        frame_id: u64,
+        size: (u32, u32),
+        rgba: Vec<u8>,
+    ) {
+        self.tabs.ensure_snapshot_for_test(tab_id);
+        if let Some(snap) = self.tabs.snapshot_mut(tab_id) {
+            snap.navigation_epoch = navigation_epoch;
+            let submission = crate::tab_snapshot::CompositorSubmission {
+                surface_id,
+                navigation_epoch,
+                frame_id,
+            };
+            assert!(snap.record_compositor_submission(submission));
+            assert!(snap.commit_compositor_frame(submission, size.0, size.1, rgba));
+            snap.document_width = Some(size.0 as f32);
+            snap.document_height = Some(size.1 as f32);
+            snap.loading = false;
+        }
+    }
+
+    /// 测试用：读取指定标签当前 compositor surface。
+    #[cfg(test)]
+    pub fn compositor_surface_for_test(&self, tab_id: TabId) -> Option<u64> {
+        self.tabs
+            .snapshot(tab_id)?
+            .compositor_frame
+            .as_ref()
+            .map(|frame| frame.surface_id)
+    }
+
     /// 测试用：当前 Chrome 配色
     #[cfg(test)]
     pub fn chrome_palette(&self) -> colors::ChromePalette {
@@ -1341,6 +1379,30 @@ impl BrowserApp {
 
     pub fn any_tab_loading(&self) -> bool {
         self.shell.tabs().any(|tab| tab.is_loading()) || self.tabs.any_loading()
+    }
+
+    /// 返回真实窗口产品 smoke 当前可验收的页面像素来源。
+    ///
+    /// 只有 renderer 页面帧已经进入 Browser 最终场景后才返回，避免捕获启动空白帧。
+    pub fn product_smoke_frame_source(&self) -> Option<&'static str> {
+        let tab_id = self.shell.active_tab_id()?;
+        let snapshot = self.tabs.snapshot(tab_id)?;
+        if snapshot.navigation_epoch == 0 {
+            return None;
+        }
+        if crate::compositor_client::enabled() {
+            if crate::compositor_client::status() == crate::compositor_client::CompositorStatus::Healthy
+                && snapshot.compositor_frame.is_some()
+            {
+                Some("compositor_bitmap")
+            } else {
+                None
+            }
+        } else if snapshot.last_render.is_some() {
+            Some("legacy_view_painted")
+        } else {
+            None
+        }
     }
 
     fn tab_html_hint(page_url: Option<&str>) -> Option<&'static str> {

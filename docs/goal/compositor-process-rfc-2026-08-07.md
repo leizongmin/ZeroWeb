@@ -1,88 +1,127 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v1.1 ｜ 日期：2026-08-07 ｜ 状态：**实施中（C1 ✅ / C2 骨架 ✅ / C3 待 GPU 环境）**
+版本：v1.2 ｜ 日期：2026-08-09 ｜ 状态：**实施中（C1 ✅ / C2 surface 级主显示链路 ✅ / C3 未完成）**
 
-> 实施状态（2026-08-07 更新）：
-> - **C1（合成执行层显式化）✅**：`backing_store::BackingStoreManager` 双缓冲
->   已落地（render-foundation），swap/resize 单测通过
-> - **C2（合成器独立进程）✅ 骨架**：`zero-compositor` 进程 + protocol
->   Compositor 消息族（CompositorFrame / CompositorFrameResult）已落地，
->   帧提交 → 双缓冲 → 回执的集成测试通过。**剩余**：renderer 帧传输接线
->   （当前 renderer 仍直发 browser，切到 compositor 属显示路径改造）
-> - **C3（GPU 隔离）⏳ 待 GPU 环境**：wgpu 上下文迁移需真实验证
->   （本地 wgpu 测试阻塞，CI 真 Vulkan 后端可验证）
+> 实施状态（2026-08-09 更新）：
+> - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
+> - **C2（合成器独立进程）✅**：surface 级页面主显示链路已接通。`zero-compositor` 已负责页面图元光栅和 per-surface backing。
+> - **C3（GPU 隔离）⏳**：可选 wgpu 光栅入口已在 compositor 进程内，但跨进程 GPU 资源传输、最终 surface 所有权和沙箱尚未完成。
 
-> 依据：Ladybird 2026-05 合成器独立进程 + 2026-06 WebContent 不再直接访问
-> GPU（canvas/WebGL 命令在沙箱化合成器进程回放，共享内存传输）（调研报告
-> §3.3/§3.6）。动机：GPU 驱动漏洞是浏览器攻击面，隔离到最小权限进程。
-> 前置：D1（ImageDecoder 独立进程）已完成——本 RFC 是多进程演进的后半。
+> 本状态不代表完整 Chromium/Chrome compositor 对齐。当前完成的是页面位图主链路。Browser 仍拥有窗口最终场景和呈现。
 
-## 一、现状审计（2026-08-07）
+## 一、当前架构
 
-| 项 | 当前实现 |
-|---|---|
-| 合成 | 内嵌于 engine pipeline（无独立 compositor 模块） |
-| GPU 访问 | `crates/render-foundation/src/gpu/`（wgpu：atlas/mesh/pipeline/renderer）——**渲染进程内直接访问 GPU**，无进程隔离 |
-| 帧输出 | 渲染进程帧缓冲 → IPC → 浏览器（apps/renderer 的 paint_export） |
-| 已隔离 | 网络（fetch 走 browser）、图像解码（D1 image-decoder 进程） |
+### 1.1 页面主显示链路
 
-## 二、目标架构（三片，对照 Ladybird 演进顺序）
-
-```
-切片 C1：Compositor 模块显式化（纯重构，零行为变更）
-  现状：合成逻辑散在 pipeline
-  目标：engine 内 Compositor 模块（帧缓冲管理 + 图元提交接口）
-  验证：reftest/oracle 全量无 diff
-
-切片 C2：合成器独立进程（合成层出进程）
-  apps/compositor（zero-compositor）：帧缓冲合成 + backing store 管理
-  renderer → Compositor 经 protocol IPC 提交图元/命令
-  验证：多进程渲染与进程内逐像素一致（A/B）
-
-切片 C3：GPU 访问移入合成器（GPU 隔离）
-  wgpu 上下文从 renderer 移入 compositor 进程；renderer 不再直接访问 GPU
-  canvas/WebGL 命令经共享内存（SharedMemoryChannel）回放到 compositor
-  验证：GPU 路径（browser --renderer=gpu）与基线一致 + 合成器沙箱生效
+```text
+renderer
+  └─ CompositorFrame(surface_id, navigation_epoch, frame_id, PaintSnapshot)
+       ↓ renderer → Browser 管道
+Browser process_backend（broker）
+  ├─ 校验帧标识
+  ├─ 提取滚动、文档尺寸和命中测试元数据
+  └─ 非阻塞提交到 compositor-client worker
+       ↓ Browser → zero-compositor 管道
+zero-compositor
+  ├─ surface_id → SurfaceState
+  ├─ 拒绝旧 navigation epoch 和倒序 frame
+  ├─ 光栅页面图元
+  └─ per-surface back buffer → front buffer
+       ↓ 完成回执 + RGBA front bitmap
+Browser compositor-client worker
+  └─ 每个 surface 只缓存最新完整位图
+       ↓ 非阻塞轮询
+Browser TabSnapshot
+  └─ page bitmap → ImagePrimitive → 页面视口 + Chrome UI → 窗口
 ```
 
-## 三、收益与成本
+Browser 是 renderer 与 compositor 之间的 broker。renderer 不直接连接 `zero-compositor`。
 
-| 收益 | 成本/风险 |
+worker 独占阻塞式管道 IPC。Browser UI 线程只提交命令和轮询缓存。待提交帧按 surface 执行 latest-wins。命令队列和完成缓存都有界。
+
+`zero-compositor` 为每个 surface 保存独立导航世代、帧序号和双缓冲。Tab 关闭时释放对应 surface。Browser 退出时终止 compositor 子进程。
+
+### 1.2 页面与 Chrome UI 的职责
+
+compositor 健康时，Browser 不再光栅页面 `RenderPrimitives`。Browser 只接收 compositor 完成的页面 RGBA 位图。
+
+Browser 仍把页面位图转换为 `ImagePrimitive`。Browser 仍应用页面滚动、缩放和视口裁剪。Browser 仍绘制标签栏、地址栏、菜单和窗口控件。Browser 最终合成页面位图与 Chrome UI，并提交窗口场景。
+
+因此，当前是“页面位图主链路接通”。当前不是“最终显示 surface 由 compositor 拥有”。
+
+### 1.3 传输边界
+
+当前跨进程传输使用 `PipeTransport`。`PaintSnapshot` 和 RGBA 位图都在协议消息中传输。该路径存在序列化和像素复制。
+
+`SharedMemoryChannel` 不是 OS 跨进程共享内存。它基于 `Arc<Mutex<VecDeque<IpcMessage>>>`。它只用于测试和同进程多线程模拟。C2/C3 不得把它描述为共享内存 transport。
+
+## 二、故障回退
+
+`ZW_COMPOSITOR_PROCESS` 未设置或不等于 `1` 时，renderer 继续发布 `ViewPainted`。Browser 使用 legacy 页面图元路径。
+
+compositor 启动失败或 IPC 断开时：
+
+1. worker 将状态切换为 `Disconnected`。
+2. worker 清空完成位图缓存并关闭命令队列。
+3. Browser 清空每个 Tab 的 compositor 提交和位图状态。
+4. Browser 向 renderer 发送 `SetFramePublishMode(Legacy)`。
+5. Browser 发送 `RequestFrame`。
+6. renderer 从当前页面状态重新发布 `ViewPainted`。
+
+回退不重启 renderer。Browser Chrome UI 保持响应。页面恢复后由 legacy 路径显示。
+
+## 三、已完成范围
+
+| 范围 | 当前状态 |
 |---|---|
-| GPU 驱动漏洞隔离（最大攻击面之一） | 多进程 IPC 复杂度（图元/命令传输） |
-| 合成器崩溃不拖垮渲染（Ladybird 同路径） | wgpu 上下文迁移（surface/资源所有权） |
-| 为 GPU 隔离 + 沙箱化铺路（Linux seccomp） | reftest headless 路径保留进程内合成 |
+| surface 协议 | 提交、完成和读取都携带 `surface_id`、`navigation_epoch`、`frame_id` |
+| compositor 角色 | 使用 `ProcessRole::Compositor` 和 `--type=compositor` |
+| backing store | per-surface 双缓冲；支持 resize、释放和帧新旧判定 |
+| Browser client | 专用异步 worker；有界队列；per-surface latest-wins |
+| renderer 发布 | compositor 模式发布 `CompositorFrame`；legacy 模式发布 `ViewPainted` |
+| Browser 显示 | compositor 位图是页面像素来源；Chrome UI 仍由 Browser 绘制 |
+| 生命周期 | 启动失败和断线回退；Tab 关闭释放 surface；退出终止子进程 |
 
-## 四、实施要点
+## 四、下一阶段
 
-- **协议扩展**：`zero-protocol` 新增 Compositor 消息族（帧提交/命令流/backing store 管理），
-  参照 D1 的 ImageDecode 消息模式（request_id 匹配）
-- **共享内存**：canvas/WebGL 大体积命令走 `SharedMemoryChannel`（transport.rs 已有实现）
-- **沙箱**：compositor 进程 Linux seccomp 最小权限（LibSandbox 模式——Ladybird 2026-07 每进程独立沙箱规则）
-- **回退**：`ZW_COMPOSITOR_PROCESS=0` 切回进程内合成（D1 同款 fail-open 模式）
-- **headless/测试**：wpt-runner/reftest 保留进程内合成（测试确定性优先，同渲染线程 RFC）
+### 4.1 Renderer compositor thread
 
-## 五、验收标准（C2 合入）
+在 renderer 内增加专用 compositor thread。主线程提交 display list、属性树和资源更新。compositor thread 管理帧调度、提交节流和可见区域。它不能阻塞 DOM、JS 和布局。
 
-1. `make test` / reftest / oracle 与基线无差异
-2. 多进程渲染逐像素 = 进程内渲染（A/B）
-3. product-smoke diff ≤ 阈值
-4. 回退开关可用；compositor 崩溃 → renderer 不崩（进程隔离验证）
+### 4.2 异步滚动
 
-## 六、与其他 RFC 的关系
+把滚动偏移、滚动树和输入驱动的变换迁到 compositor thread。滚动不得等待 renderer 主线程重绘。Browser 当前对整张页面位图做变换，只是过渡实现。
 
-- 前置/并行：`render-threading-rfc-2026-08-07.md`（C2 可在 S2 后实施——渲染线程
-  产出的 DisplayList 就是合成器进程的输入边界；S2 的 `render_full_scene_threaded`
-  与 BackingStoreManager 已落地，见该 RFC 状态）
-- 依赖 D1 的 protocol 消息模式先例（ImageDecode 请求/响应 → Compositor 消息族已按同款落地）
-- GPU 隔离（C3）与渲染线程 RFC 的「GPU 光栅化线程」合并规划（同一 wgpu 上下文迁移）
+### 4.3 真正的跨进程共享资源
 
-## 七、C3 实施路径（待 GPU 环境，明确步骤）
+新增 OS shared memory transport。实现必须使用可跨进程映射的句柄或文件描述符。协议必须定义大小校验、只读/读写权限、句柄转移、生命周期和崩溃清理。
 
-1. renderer 帧传输接线（C2 剩余）：renderer 的 ViewPainted 发送改为 CompositorFrame
-   → compositor 双缓冲 → browser 从 compositor 读取 front（显示路径改造）
-2. wgpu 上下文迁移：`render-foundation/gpu` 的实例/设备/队列创建移入 compositor 进程
-   （CompositorFrame 增加 GPU 命令回放段，SharedMemoryChannel 传输）
-3. renderer 移除 GPU 直接访问（访问全部经 compositor 命令回放）
-4. compositor seccomp 沙箱（Linux）：最小权限进程（LibSandbox 模式）
-5. 验证（CI 真 Vulkan 后端）：GPU 路径 A/B 与基线一致 + 崩溃隔离测试
+随后引入 GPU shared image。需要 mailbox 或等价资源标识、同步 fence、格式和色彩空间元数据，以及设备丢失恢复。不得用 `SharedMemoryChannel` 代替这些能力。
+
+### 4.4 Viz 式最终 surface 所有权
+
+最终由 compositor/display 侧拥有窗口呈现 surface。renderer 提交页面 surface。Browser 提交 Chrome UI surface。compositor 聚合 surface、执行最终合成并 present。
+
+达到该状态后，Browser 才不再拥有最终页面与 Chrome UI 场景。当前 C2 尚未达到该边界。
+
+### 4.5 GPU 隔离与沙箱
+
+完成 wgpu 设备、队列和 GPU 资源所有权迁移。移除 renderer 的直接 GPU 访问。为 compositor 配置最小权限 OS sandbox。用真实 GPU 后端验证设备丢失、进程崩溃和恢复路径。
+
+## 五、Non-Goals
+
+- 当前不实现 OOPIF、Site Isolation 或一 frame 一 renderer。
+- 当前不拆 Network Service。
+- 当前不实现 renderer OS sandbox。
+- 当前不实现 renderer compositor thread 或异步滚动。
+- 当前不实现 OS shared memory、GPU shared image、mailbox、fence 或零拷贝纹理传输。
+- 当前不把 Browser Chrome UI 移入 compositor。
+- 当前不把最终窗口 surface 所有权移入 compositor。
+- 当前不声称完整 Chromium/Chrome compositor 或 Viz 架构对齐。
+
+## 六、验证与关系
+
+- C2 定向测试覆盖协议往返、双 surface、stale frame、resize、释放、worker 非阻塞、缓存有界、发布模式、Browser 位图显示和故障回退。
+- 全量质量、reftest 和产品 smoke 由后续验收任务执行。
+- 渲染线程前置见 `render-threading-rfc-2026-08-07.md`。
+- ImageDecoder 的请求/响应协议是 compositor 消息路由的先例。

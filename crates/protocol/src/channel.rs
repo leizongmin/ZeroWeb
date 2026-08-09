@@ -26,4 +26,6 @@ pub enum ProcessRole {
     Network,
     /// 图像解码进程（D1：PNG/JPEG/WebP 解码隔离，由渲染进程 spawn）。
     ImageDecoder,
+    /// 合成器进程（页面帧光栅化与 backing store 管理）。
+    Compositor,
 }

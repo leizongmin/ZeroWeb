@@ -27,7 +27,10 @@ import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CHROMIUM = '/usr/bin/chromium';
+const CHROMIUM = process.env.PUPPETEER_EXECUTABLE_PATH
+  || (process.platform === 'darwin'
+    ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+    : '/usr/bin/chromium');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
@@ -106,6 +109,7 @@ async function main() {
     shouldCloseBrowser = true;
   }
   try {
+    console.log(`chromium source: ${cdpUrl || CHROMIUM} (${await browser.version()})`);
     const page = await browser.newPage();
     await page.setViewport({ width: opts.width, height: opts.height, deviceScaleFactor: 1 });
     const url = `${server.url}/${opts.html.replace(/^\//, '')}`;
