@@ -855,6 +855,7 @@ impl LayoutEngine {
         doc: &Document,
         styles: &HashMap<NodeId, ComputedStyle>,
         dirty_tracker: &mut LayoutDirtyTracker,
+        img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     ) -> (LayoutResult, IncrementalLayoutStats) {
         let use_start = std::time::Instant::now();
         // 如果需要全量重算或无缓存，退化为全量计算
@@ -907,7 +908,7 @@ impl LayoutEngine {
                     dom_id,
                     known_dimensions,
                     available_space,
-                    &HashMap::new(),
+                    img_intrinsic_sizes,
                     self.font_metric_provider.as_ref(),
                 )
             },

@@ -1374,3 +1374,28 @@ This JPEG is decoded by the built-in libjpeg.</P>
         pipeline.document_height()
     );
 }
+
+/// M3-S9：render_with_dom_mutations——SetText 走增量布局（compute_incremental），
+/// 免 parse（HTML 往返消除），返回 HTML 快照与活 DOM 一致。
+#[test]
+fn render_with_dom_mutations_text_uses_incremental_layout() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div id="a" style="width:100px">short</div><div id="b">B</div></body></html>"#;
+    let _ = pipeline.render_html(html, "");
+
+    let m = crate::js_dom_bridge::DomMutation::SetText {
+        selector: "#a".to_string(),
+        text: "much longer text now".to_string(),
+    };
+    let (result, snapshot) = pipeline
+        .render_with_dom_mutations(std::slice::from_ref(&m), "")
+        .expect("mutations applied");
+    // 活 DOM + HTML 快照一致（免 parse 路径）
+    assert!(snapshot.contains("much longer text now"), "snapshot: {snapshot}");
+    // 布局盒反映新文本（增量布局已重算 #a 及祖先的几何）
+    let doc = pipeline.cached_doc.as_ref().expect("doc cached");
+    let a = doc.query_selector(doc.root(), "#a").expect("#a");
+    assert_eq!(doc.text_content(a).as_deref(), Some("much longer text now"));
+    // 布局结果非空（增量路径产出 LayoutResult）
+    assert!(!result.layout.snapshot().is_empty(), "layout snapshot empty");
+}

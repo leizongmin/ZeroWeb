@@ -87,7 +87,8 @@ fn test_incremental_basic_flow() {
     let mut tracker = LayoutDirtyTracker::new();
     tracker.mark_dirty(children[1]);
 
-    let (inc_result, stats) = engine.compute_incremental(&doc, &styles, &mut tracker);
+    let (inc_result, stats) =
+        engine.compute_incremental(&doc, &styles, &mut tracker, &std::collections::HashMap::new());
     assert!(!stats.was_full_recalc, "有缓存时应为增量计算");
     assert_eq!(stats.dirty_node_count, 1, "应标记 1 个脏节点");
     assert!(stats.layout_ms >= 0.0, "布局耗时应为非负");
@@ -126,7 +127,7 @@ fn test_incremental_style_change_full_recalc() {
     let mut tracker = LayoutDirtyTracker::new();
     tracker.mark_full_recalc();
 
-    let (result, stats) = engine.compute_incremental(&doc, &styles, &mut tracker);
+    let (result, stats) = engine.compute_incremental(&doc, &styles, &mut tracker, &std::collections::HashMap::new());
     assert!(stats.was_full_recalc, "样式变更应触发全量重算");
 
     // 验证修改的节点高度变了
@@ -156,7 +157,7 @@ fn test_incremental_full_recalc_fallback() {
     let mut tracker = LayoutDirtyTracker::new();
     tracker.mark_full_recalc();
 
-    let (_, stats) = engine.compute_incremental(&doc, &styles, &mut tracker);
+    let (_, stats) = engine.compute_incremental(&doc, &styles, &mut tracker, &std::collections::HashMap::new());
     assert!(stats.was_full_recalc, "标记全量重算时应退化为全量计算");
 }
 
@@ -181,7 +182,7 @@ fn test_incremental_no_cache_fallback() {
     let mut tracker = LayoutDirtyTracker::new();
     tracker.mark_dirty(children[0]);
 
-    let (result, stats) = engine.compute_incremental(&doc, &styles, &mut tracker);
+    let (result, stats) = engine.compute_incremental(&doc, &styles, &mut tracker, &std::collections::HashMap::new());
     assert!(stats.was_full_recalc, "无缓存时应退化为全量计算");
     assert!(engine.has_cached_state(), "退化后应有缓存");
 
@@ -218,7 +219,7 @@ fn test_incremental_cache_invalidation() {
     let mut tracker = LayoutDirtyTracker::new();
     tracker.mark_dirty(children[0]);
 
-    let (_, stats) = engine.compute_incremental(&doc, &styles, &mut tracker);
+    let (_, stats) = engine.compute_incremental(&doc, &styles, &mut tracker, &std::collections::HashMap::new());
     assert!(stats.was_full_recalc, "缓存失效后应退化为全量");
 }
 
@@ -273,21 +274,21 @@ fn test_incremental_multiple_rounds() {
     // 第 1 轮：标记脏节点增量计算
     let mut tracker = LayoutDirtyTracker::new();
     tracker.mark_dirty(children[0]);
-    let (_, s1) = engine.compute_incremental(&doc, &styles, &mut tracker);
+    let (_, s1) = engine.compute_incremental(&doc, &styles, &mut tracker, &std::collections::HashMap::new());
     assert!(!s1.was_full_recalc);
     assert!(engine.has_cached_state());
 
     // 第 2 轮：标记另一个脏节点
     let mut tracker2 = LayoutDirtyTracker::new();
     tracker2.mark_dirty(children[2]);
-    let (_, s2) = engine.compute_incremental(&doc, &styles, &mut tracker2);
+    let (_, s2) = engine.compute_incremental(&doc, &styles, &mut tracker2, &std::collections::HashMap::new());
     assert!(!s2.was_full_recalc);
     assert!(engine.has_cached_state());
 
     // 第 3 轮：全量重算
     let mut tracker3 = LayoutDirtyTracker::new();
     tracker3.mark_full_recalc();
-    let (_, s3) = engine.compute_incremental(&doc, &styles, &mut tracker3);
+    let (_, s3) = engine.compute_incremental(&doc, &styles, &mut tracker3, &std::collections::HashMap::new());
     assert!(s3.was_full_recalc);
     assert!(engine.has_cached_state());
 }
@@ -316,7 +317,7 @@ fn test_incremental_multiple_dirty_nodes() {
         tracker.mark_dirty(child_id);
     }
 
-    let (result, stats) = engine.compute_incremental(&doc, &styles, &mut tracker);
+    let (result, stats) = engine.compute_incremental(&doc, &styles, &mut tracker, &std::collections::HashMap::new());
     assert!(!stats.was_full_recalc);
     assert_eq!(stats.dirty_node_count, 3, "应标记 3 个脏节点");
 
@@ -350,7 +351,7 @@ fn test_incremental_vs_full_consistency() {
     // 增量计算（不修改样式，仅标记脏）
     let mut tracker = LayoutDirtyTracker::new();
     tracker.mark_dirty(children[1]);
-    let (inc_result, _) = engine.compute_incremental(&doc, &styles, &mut tracker);
+    let (inc_result, _) = engine.compute_incremental(&doc, &styles, &mut tracker, &std::collections::HashMap::new());
 
     // 全量计算（新引擎）
     let mut engine2 = LayoutEngine::new(800.0, 600.0);
@@ -400,7 +401,7 @@ fn test_incremental_positioned_element() {
 
     let mut tracker = LayoutDirtyTracker::new();
     tracker.mark_dirty(abs_child);
-    let (result, stats) = engine.compute_incremental(&doc, &styles, &mut tracker);
+    let (result, stats) = engine.compute_incremental(&doc, &styles, &mut tracker, &std::collections::HashMap::new());
     assert!(!stats.was_full_recalc);
 
     let abs_box = find_box_by_node_id(&result.root, abs_child).unwrap();
@@ -430,7 +431,7 @@ fn test_incremental_tracker_cleared_after_use() {
     tracker.mark_dirty(children[1]);
     assert!(tracker.has_dirty());
 
-    let _ = engine.compute_incremental(&doc, &styles, &mut tracker);
+    let _ = engine.compute_incremental(&doc, &styles, &mut tracker, &std::collections::HashMap::new());
     // tracker 已被 drain_dirty 清空
     assert!(!tracker.has_dirty(), "tracker 应在增量计算后被清空");
 }

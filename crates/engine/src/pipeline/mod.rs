@@ -749,13 +749,75 @@ impl RenderPipeline {
         let mut doc = self.cached_doc.take().ok_or("no cached document")?;
         crate::js_dom_bridge::apply_dom_mutations(&mut doc, mutations)?;
         let html_snapshot = doc.outer_html(doc.root());
-        self.cached_doc = Some(doc);
         // DOM 已变（<style>/meta 内容可能变）：CSS 解析缓存失效。
         self.cached_css_text = None;
-        let result = self
-            .repaint_cached_viewport(css)
-            .ok_or("repaint failed after mutations")?;
+        // 仅文本变更（SetText，CSS selector 定位）→ 增量布局（compute_incremental 已验证
+        // 与全量一致）；样式属性变更（taffy style 缓存不更新，单节点更新为后续专项）与
+        // 结构变更（taffy 树重建）→ 全量布局（仍免 parse）。
+        let is_text_only = mutations.iter().all(Self::is_text_only_mutation);
+        let result = if is_text_only {
+            let r = self.incremental_paint_after_text_mutations(&doc, mutations, css);
+            self.cached_doc = Some(doc);
+            r
+        } else {
+            self.cached_doc = Some(doc);
+            self.repaint_cached_viewport(css)
+        }
+        .ok_or("repaint failed after mutations")?;
         Ok((result, html_snapshot))
+    }
+
+    /// mutation 是否为纯文本变更（SetText 的 CSS-selector 变体——handle 变体无法
+    /// 在 pipeline 侧定位节点，走全量）。
+    fn is_text_only_mutation(m: &crate::js_dom_bridge::DomMutation) -> bool {
+        matches!(m, crate::js_dom_bridge::DomMutation::SetText { .. })
+    }
+
+    /// 文本变更增量渲染：全量 style + 脏标记文本节点 → `compute_incremental` +
+    /// 全量 paint（仅布局增量——样式/绘制增量是 M3-S9 后续切片）。
+    fn incremental_paint_after_text_mutations(
+        &mut self,
+        doc: &Document,
+        mutations: &[crate::js_dom_bridge::DomMutation],
+        css: &str,
+    ) -> Option<RenderResult> {
+        let stylesheets = collect_stylesheets(doc, css);
+        self.style_system
+            .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
+        let styles = self.style_system.compute_styles(doc, &stylesheets);
+        let (img_sizes, _img_ratios, _img_no_ratio) = self.build_img_intrinsic_all(doc);
+        let mut tracker = zero_layout_engine::LayoutDirtyTracker::new();
+        for m in mutations {
+            if let crate::js_dom_bridge::DomMutation::SetText { selector, .. } = m
+                && let Some(id) = doc.query_selector(doc.root(), selector.trim())
+            {
+                tracker.mark_dirty(id);
+            }
+        }
+        let (layout, _stats) = self
+            .layout_engine
+            .compute_incremental(doc, &styles, &mut tracker, &img_sizes);
+        let mut painter = Painter::new();
+        painter.skip_indicators = self.skip_indicators;
+        painter.image_sizes.clone_from(&self.image_sizes);
+        painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_document_url(self.document_url.as_deref());
+        painter.viewport_w = self.viewport_width;
+        painter.viewport_h = self.viewport_height;
+        painter.paint(&layout.root, &styles, Some(doc));
+        let primitives = painter.into_primitives();
+        self.cached_layout = Some(LayoutResult {
+            root: layout.root.clone(),
+            viewport_width: layout.viewport_width,
+            viewport_height: layout.viewport_height,
+            paint_skip_node_ids: layout.paint_skip_node_ids.clone(),
+        });
+        Some(RenderResult {
+            primitives,
+            layout,
+            timings: PipelineTimings::default(),
+            stats: RenderStats::default(),
+        })
     }
 
     /// 获取当前布局结果。
