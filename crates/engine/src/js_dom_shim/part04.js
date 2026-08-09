@@ -2,6 +2,21 @@
         // `el.popover`（R3071）——enumerated 反射：无属性 → null；"auto" → "auto"；余（""/"manual"/无效）→ "manual"。
         // 委托 `_zwReadPopover`（showPopover 校验同源）。getter 返 null（real browser 一致——非 DOMString 默认空串）。
         if (prop === 'popover') return _zwReadPopover(sel, handle);
+        // `el.popoverTargetElement`（R3073）——编程式目标元素。优先返 `_popoverTargetEl[key]`（setter 设）；
+        // 无则回落 popovertarget 内容属性 id → getElementById（spec 一致）。无目标 → null。
+        if (prop === 'popoverTargetElement') {
+          if (_popoverTargetEl[key]) return _popoverTargetEl[key];
+          var _pteId = typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'popovertarget') : __zw_get_attr(sel, 'popovertarget');
+          if (_pteId) { var _pteEl = document.getElementById(_pteId); if (_pteEl) return _pteEl; }
+          return null;
+        }
+        // `el.popoverTargetAction`（R3073）——enumerated 反射 popovertargetaction 属性：toggle/show/hide（默认 toggle，
+        // invalid → toggle）。用 latest-wins 反映同 execute 内 pending set。
+        if (prop === 'popoverTargetAction') {
+          var _ptaRaw = typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'popovertargetaction') : __zw_get_attr(sel, 'popovertargetaction');
+          var _pta = String(_ptaRaw || 'toggle').toLowerCase();
+          return (_pta === 'show' || _pta === 'hide' || _pta === 'toggle') ? _pta : 'toggle';
+        }
         // `el.role`——反射 role 属性（无 → ''）；同步 set→get 优先读缓存。
         if (prop === 'role') {
           var rlc = _reflectedAttrs[key];
@@ -693,7 +708,7 @@
             var notPrevented = _dispatchWithBubble(key, sel, handle, ev);
             // R3072：popovertarget 声明式触发——click default action（未 preventDefault 时）。找最近含 popovertarget
             // 祖先 → 按 popovertargetaction 触发目标 popover show/hide/toggle。无 popovertarget 时 no-op（零回归）。
-            if (notPrevented) _zwPopoverTargetActivate(sel, handle);
+            if (notPrevented) _zwPopoverTargetActivate(key, sel, handle);
             return notPrevented;
           };
         }
@@ -1451,6 +1466,17 @@
             if (handle) __zw_set_attr_handle(handle, 'popover', String(value));
             else { __zw_set_attr(sel, 'popover', String(value)); moAttr = 'popover'; }
           }
+        } else if (p === 'popoverTargetElement') {
+          // R3073：编程式目标元素。spec setter：Element → 存（优先于内容属性）；null → 清除（回落内容属性）。
+          // 非 Element 应抛 TypeError（spec），lenient 接受任意值（headless 简化，activation 调其方法）。不改内容属性。
+          if (value === null) delete _popoverTargetEl[key];
+          else _popoverTargetEl[key] = value;
+        } else if (p === 'popoverTargetAction') {
+          // R3073：reflected setter。spec：写 popovertargetaction 内容属性（raw 值，getter 映射 invalid→toggle）。
+          // lenient：null/缺省 → 'toggle'。
+          var _ptaV = (value == null) ? 'toggle' : String(value);
+          if (handle) __zw_set_attr_handle(handle, 'popovertargetaction', _ptaV);
+          else { __zw_set_attr(sel, 'popovertargetaction', _ptaV); moAttr = 'popovertargetaction'; }
         } else if (p === 'role') {
           // role set——反射 role 属性（串）。同步缓存。
           var rlc2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});

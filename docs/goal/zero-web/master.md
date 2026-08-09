@@ -119,6 +119,27 @@
 
 ## 最近完成的改进
 
+### P1a popoverTargetElement/popoverTargetAction IDL（编程式 popoverTarget 表面，闭合 R3072 限制⑤，本轮 R3073）
+
+承接 popover 赛道（R3071 核心 DOM 面 + R3072 声明式触发）。R3072 实现声明式 `popovertarget`/`popovertargetaction` **内容属性**驱动 click，但 IDL 编程式表面——`element.popoverTargetElement`（直接设目标元素，优先于内容属性）+ `element.popoverTargetAction`（enumerated 反射）——缺（R3072 限制⑤ defer）。编程式用法：组件库 `btn.popoverTargetElement = popoverEl` 关联（无 id 依赖，ref-based，React/Vue 常见）+ `btn.popoverTargetAction = 'show'`。本切片接通，闭合 popoverTarget 全表面。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`_popoverTargetEl` 编程式目标注册表 + 导航重置** | `crates/engine/src/js_dom_shim/part01.js`（`_zwTopLayer` 后） | elKey → 目标元素 proxy。优先于 popovertarget 内容属性（spec）。null → 清除（回落内容属性）。导航经 `__zw_reset_form_state` 清空（per-page）。 |
+| **`_zwPopoverTargetActivate` 升级** | 同上（signature `key, sel, handle`） | 祖先遍历现找含 popovertarget 内容属性**或**编程式 `_popoverTargetEl` 的祖先（含自身）；目标解析：编程式 `_popoverTargetEl[triggerKey]` 优先，无则 popovertarget 内容属性 → getElementById。复用 R3072 action 解析 + show/hide/toggle 调度。 |
+| **`click()` 传 key** | `crates/engine/src/js_dom_shim/part04.js`（click 分支） | `_zwPopoverTargetActivate(key, sel, handle)`（升级 signature，透传 key 供编程式目标 elKey 查）。 |
+| **`popoverTargetElement` getter/setter** | 同上（getter popover 后；setter popover 后） | getter：`_popoverTargetEl[key]` 优先，无则 popovertarget 内容属性 → getElementById，无 → null。setter：Element → 存；null → 删（lenient 接受任意值，spec 非 Element 抛 TypeError defer）。 |
+| **`popoverTargetAction` getter/setter** | 同上 | getter：reflected enumerated 读 popovertargetaction（toggle/show/hide，默认 toggle，invalid→toggle），latest-wins。setter：写内容属性（raw，getter 映射 invalid→toggle）。 |
+| **R3073 测试** | engine `js_dom_bridge_tests/part09.rs`（+`test_popover_target_idl_r3073`） | 5 维：① getter 回落内容属性 / 无 → null；② setter 设编程式目标 + click 联动该目标；③ setter=null 清除 → 回落 null + click no-op；④ popoverTargetAction enumerated getter（show/toggle）；⑤ setter 写内容属性 + hide click no-op（未显示）+ show click 显示 + invalid→toggle 映射。 |
+
+**为何零回归且净正向**：① IDL 属性为纯新增编程式表面（旧仅内容属性驱动）；② `_popoverTargetEl` 优先级正确（编程式 > 内容属性，spec），无编程式目标时 activation 行为同 R3072（零回归）；③ getter 用 latest-wins 反映同 execute 内 pending set（sync set→get）；④ setter lenient（非 Element 接受，防破脚本）；⑤ 全量 make test 全绿（cargo test 执行器，0 failed across all binaries；engine +1 driving 测试，R3071/R3072 popover 全回归）。
+
+**已知限制（记录，defer）**：① **spec 非 Element setter 抛 TypeError defer**（本实现 lenient 接受任意值，headless 简化）；② **light-dismiss defer**（"auto" popover 外部点击/Esc + 关闭其他 auto——R3071 同限，需输入路由）；③ **host 真实输入 click 未接 activation**（R3072 同限——仅 HTMLElement.click() 跑 activation）；④ **渲染层显隐 defer**（top-layer paint / :popover-open，rendering 流域）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**cargo test 执行器（R3072 后从 nextest 切换，字体共享后评估反转）；0 failed across all binaries，全量 16069 passed（v8 + quickjs + doc-tests 合计），engine +1 driving 测试，零回归**）+ pre-commit guard PASS。变更纯 JS shim + 测试（无 render/paint/style/layout .rs），product-smoke 不受影响。
+
+**下一步**：popover 赛道全表面闭合（R3071 编程式 + R3072 声明式 + R3073 IDL；剩余 defer 项均需输入路由或渲染流域）。pivot 出 popover 赛道：① `Element.checkVisibility`（IntersectionObserver-派生可见性查询，ad viewability / lazy-load 库用，自包含，低风险）；② Web API 表面继续扫描补缺；③ P1a 事件循环 macro-task 队列补全（P1a 剩余主线，中-高复杂度）；④ storage 事件（`window.addEventListener('storage', ...)` 跨 tab 同步——BroadcastChannel 已有同侧，可复用，中复杂度）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a Popover 声明式触发（popovertarget/popovertargetaction，闭合 R3071 声明式用例，本轮 R3072，~14,325 测试）
 
 承接 popover 赛道（R3071 核心 DOM 面：showPopover/hidePopover/togglePopover + popover 属性 + 事件 + 状态机）。R3071 仅支持**编程式**触发（`el.showPopover()`）；声明式用例——`<button popovertarget="id" popovertargetaction="toggle|show|hide">` click 自动联动目标 popover——缺。声明式是 popover 最常见用法（tooltip/menu/modal 库的 HTML 原生写法）。本切片接通 click default action，闭合声明式用例。

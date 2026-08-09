@@ -935,6 +935,164 @@ fn test_popover_target_activation_r3072() {
 }
 
 #[test]
+fn test_popover_target_idl_r3073() {
+    // R3073：popoverTargetElement / popoverTargetAction IDL 属性（编程式 popoverTarget 表面）。
+    // popoverTargetElement：编程式目标元素（优先于 popovertarget 内容属性）；popoverTargetAction：enumerated 反射。
+    // 复用 R3071 popover 状态机 + R3072 activation（编程式目标驱动 click 联动）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id='p1' popover='manual'>p1</div>\
+         <div id='p2' popover='manual'>p2</div>\
+         <button id='bDecl' popovertarget='p1' popovertargetaction='show'>decl</button>\
+         <button id='bProg'>prog</button>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① popoverTargetElement getter：无编程式目标 → 回落 popovertarget 内容属性（getElementById）。
+    sandbox
+        .execute(
+            "globalThis.__declTarget = String(document.getElementById('bDecl').popoverTargetElement === document.getElementById('p1'));\
+             globalThis.__progTarget = String(document.getElementById('bProg').popoverTargetElement);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__declTarget").unwrap().value,
+        "true",
+        "popoverTargetElement 无编程式目标 → 回落 popovertarget 内容属性（=== 目标元素）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__progTarget").unwrap().value,
+        "null",
+        "popoverTargetElement 无 popovertarget 属性 → null"
+    );
+
+    // ② popoverTargetElement setter：设编程式目标 → getter 返该元素；click 联动该目标（优先于内容属性）。
+    sandbox
+        .execute(
+            "var bProg = document.getElementById('bProg');\
+             var p2 = document.getElementById('p2');\
+             bProg.popoverTargetElement = p2;\
+             globalThis.__setProg = String(bProg.popoverTargetElement === p2);\
+             var p2log = [];\
+             p2.addEventListener('toggle', function(e){ p2log.push(e.newState); });\
+             bProg.click();\
+             globalThis.__progClick = JSON.stringify(p2log);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__setProg").unwrap().value,
+        "true",
+        "popoverTargetElement = el → getter 返该元素"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__progClick").unwrap().value,
+        r#"["open"]"#,
+        "编程式 popoverTargetElement 驱动 click → 目标 popover 显示（默认 toggle action）"
+    );
+
+    // ③ popoverTargetElement = null → 清除编程式目标，回落内容属性（bProg 无 popovertarget → null，click no-op）。
+    sandbox
+        .execute(
+            "var bProg = document.getElementById('bProg');\
+             bProg.popoverTargetElement = null;\
+             globalThis.__cleared = String(bProg.popoverTargetElement);\
+             var p2log2 = [];\
+             document.getElementById('p2').addEventListener('toggle', function(e){ p2log2.push(e.newState); });\
+             bProg.click();\
+             globalThis.__clearedClick = JSON.stringify(p2log2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cleared").unwrap().value,
+        "null",
+        "popoverTargetElement = null → 清除编程式目标（回落 null，bProg 无 popovertarget）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__clearedClick").unwrap().value,
+        "[]",
+        "清除编程式目标后 click → 无目标 no-op（无 toggle 事件）"
+    );
+
+    // ④ popoverTargetAction getter：enumerated（show/show/hide，默认 toggle，invalid→toggle）。
+    sandbox
+        .execute(
+            "globalThis.__actDecl = document.getElementById('bDecl').popoverTargetAction;\
+             globalThis.__actProg = document.getElementById('bProg').popoverTargetAction;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__actDecl").unwrap().value,
+        "show",
+        "popoverTargetAction getter 读 popovertargetaction='show'"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__actProg").unwrap().value,
+        "toggle",
+        "popoverTargetAction 无属性 → 默认 toggle"
+    );
+
+    // ⑤ popoverTargetAction setter：写内容属性（getter 映射 invalid→toggle）+ 驱动 activation。
+    sandbox
+        .execute(
+            "var bProg = document.getElementById('bProg');\
+             bProg.popoverTargetElement = document.getElementById('p1');\
+             bProg.popoverTargetAction = 'hide';\
+             globalThis.__setHide = bProg.popoverTargetAction;\
+             globalThis.__setHideAttr = bProg.getAttribute('popovertargetaction');\
+             // p1 未显示 → hide click no-op（无 toggle）
+             var p1log = [];\
+             document.getElementById('p1').addEventListener('toggle', function(e){ p1log.push(e.newState); });\
+             bProg.click();\
+             globalThis.__hideNoop = JSON.stringify(p1log);\
+             // 设 show → click → 显示
+             bProg.popoverTargetAction = 'show';\
+             bProg.click();\
+             globalThis.__showClick = JSON.stringify(p1log);\
+             // invalid → toggle（getter 映射）
+             bProg.popoverTargetAction = 'bogus';\
+             globalThis.__invalid = bProg.popoverTargetAction;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__setHide").unwrap().value,
+        "hide",
+        "popoverTargetAction = 'hide' → getter hide"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__setHideAttr").unwrap().value,
+        "hide",
+        "popoverTargetAction setter 写内容属性 popovertargetaction='hide'"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hideNoop").unwrap().value,
+        "[]",
+        "popoverTargetAction=hide：p1 未显示 → click no-op（无 toggle）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__showClick").unwrap().value,
+        r#"["open"]"#,
+        "popoverTargetAction=show：click → p1 显示（编程式目标 + action 驱动）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__invalid").unwrap().value,
+        "toggle",
+        "popoverTargetAction='bogus'（invalid）→ getter 映射 toggle"
+    );
+}
+
+#[test]
 fn test_form_reflected_idl_attrs_r2839() {
     // R2839：HTMLFormElement 反射 IDL 属性（action/method/enctype/target）——form 序列化 / AJAX 提交库
     // 读 form.action/form.method 构提交请求。action/target 纯串反射；method/enctype 小写归一 + spec 默认。

@@ -84,6 +84,10 @@
   // + 调 showPopover/hidePopover/togglePopover + 监听 toggle 事件不中断。导航经 __zw_reset_form_state 清空（per-page）。
   // https://html.spec.whatwg.org/multipage/popover.html
   var _zwTopLayer = {};
+  // R3073：popoverTargetElement 编程式目标（per-element-key → 目标元素 proxy）。优先于 popovertarget 内容属性
+  //（spec：popoverTargetElement setter 设的元素即触发目标，不改内容属性）。null → 清除（回落内容属性）。导航经
+  // __zw_reset_form_state 清空（per-page）。
+  var _popoverTargetEl = {};
   // R3071：Popover 事件派发中用。构造 ToggleEvent 数据对象（type + newState/oldState + bubbles/cancelable/composed）。
   // spec ToggleEvent extends Event，直接属性 newState/oldState（非 CustomEvent.detail）。headless 同步派发（spec 队列
   // task，近似——documented 限制）；beforetoggle cancelable（可 preventDefault 阻止显隐）+ 非 bubble；toggle 非 cancelable。
@@ -138,26 +142,33 @@
   // spec 限 button/input 触发元素，本实现 permissive（任意元素含 popovertarget 即触发，headless 简化）。
   // light-dismiss / auto 关闭其他 popover defer（R3071 同限）。handle-only（detached）无祖先链 → 跳过。
   // https://html.spec.whatwg.org/multipage/popover.html#popover-target-activation
-  function _zwPopoverTargetActivate(sel, handle) {
+  function _zwPopoverTargetActivate(key, sel, handle) {
     if (!sel) return; // handle-only detached 无 sel 祖先链（popovertarget 声明式需 DOM 树内 button）
-    var target = '';
+    // 找最近含 popovertarget 内容属性**或**编程式 popoverTargetElement（R3073）的祖先（含自身）。
+    var trigger = '';
     var cur = sel;
     while (cur) {
+      var curKey = _elKey(cur, null);
       var has = typeof __zw_has_attr_lw === 'function'
         ? __zw_has_attr_lw(cur, 'popovertarget')
         : (typeof __zw_has_attr === 'function' ? __zw_has_attr(cur, 'popovertarget') : '0');
-      if (has === '1') { target = cur; break; }
+      if (has === '1' || _popoverTargetEl[curKey]) { trigger = cur; break; }
       try { cur = __zw_parent(cur); } catch (_e) { cur = ''; }
       if (!cur) break;
     }
-    if (!target) return;
-    var id = typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(target, 'popovertarget') : __zw_get_attr(target, 'popovertarget');
-    if (!id) return;
-    var actionRaw = typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(target, 'popovertargetaction') : __zw_get_attr(target, 'popovertargetaction');
+    if (!trigger) return;
+    var triggerKey = _elKey(trigger, null);
+    // 目标：编程式 popoverTargetElement 优先于 popovertarget 内容属性（spec）。
+    var popoverEl = _popoverTargetEl[triggerKey];
+    if (!popoverEl) {
+      var id = typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(trigger, 'popovertarget') : __zw_get_attr(trigger, 'popovertarget');
+      if (!id) return;
+      popoverEl = document.getElementById(id);
+    }
+    if (!popoverEl) return;
+    var actionRaw = typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(trigger, 'popovertargetaction') : __zw_get_attr(trigger, 'popovertargetaction');
     var action = String(actionRaw || 'toggle').toLowerCase();
     if (action !== 'show' && action !== 'hide' && action !== 'toggle') action = 'toggle';
-    var popoverEl = document.getElementById(id);
-    if (!popoverEl) return;
     try {
       if (action === 'show') popoverEl.showPopover();
       else if (action === 'hide') popoverEl.hidePopover();
@@ -1224,7 +1235,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
