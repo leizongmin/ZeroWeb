@@ -659,6 +659,30 @@ fn test_native_attributes_namednodemap_r3112() {
     );
 }
 
+// ── P1b innerHTML/outerHTML getter native（本轮 R3113）──
+
+// native_dom=true → innerHTML/outerHTML 经 execute_script 安装路径可用（序列化子树/自身）。
+// 验证 webview 沙箱安装含 R3113 getter + live 序列化反映 native 写。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_inner_outer_html_r3113() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html("<html><body><div id=\"a\"><b>hi</b>!</div></body></html>", None);
+    wv.run_page_scripts_strict().unwrap();
+    assert_eq!(
+        wv.execute_script("(__zw_native_element_for_id('a').innerHTML)")
+            .unwrap(),
+        "<b>hi</b>!",
+        "innerHTML 序列化子节点"
+    );
+    assert_eq!(
+        wv.execute_script("(__zw_native_element_for_id('a').outerHTML)")
+            .unwrap(),
+        r#"<div id="a"><b>hi</b>!</div>"#,
+        "outerHTML 含自身 tag"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]

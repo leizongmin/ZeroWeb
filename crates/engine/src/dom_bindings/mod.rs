@@ -219,6 +219,14 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "attributes") {
         tmpl.set_accessor(k.into(), native_attributes_getter);
     }
+    // R3113 `innerHTML` / `outerHTML` getter（spec `dom-element-innerhtml` / `-outerhtml`）：
+    // innerHTML = 子节点 outer_html 拼接；outerHTML = 本元素 outer_html。只读（setter 需 HTML 解析，后续）。
+    if let Some(k) = v8::String::new(scope, "innerHTML") {
+        tmpl.set_accessor(k.into(), native_inner_html_getter);
+    }
+    if let Some(k) = v8::String::new(scope, "outerHTML") {
+        tmpl.set_accessor(k.into(), native_outer_html_getter);
+    }
     set_element_template(scope, tmpl);
 
     // R3112 NamedNodeMap ObjectTemplate（element.attributes 集合）：length getter + item/
@@ -1187,6 +1195,49 @@ fn native_nnm_remove_named_item_invoke(
     let name = string_arg(scope, &args, 0);
     with_dom_mut(|d| d.remove_attribute(id, &name));
     rv.set(v8::null(scope).into());
+}
+
+// ── R3113 innerHTML / outerHTML 序列化 getter ──
+
+/// `innerHTML` getter（spec `dom-element-innerhtml`）：子节点 `outer_html` 拼接（markup 序列化）。
+fn native_inner_html_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let html = with_dom(|d| {
+        let mut s = String::new();
+        for child in d.child_nodes(id) {
+            s.push_str(&d.outer_html(child));
+        }
+        s
+    })
+    .unwrap_or_default();
+    if let Some(s) = v8::String::new(scope, &html) {
+        rv.set(s.into());
+    }
+}
+
+/// `outerHTML` getter（spec `dom-element-outerhtml`）：本元素 `outer_html`（含自身 tag）。
+fn native_outer_html_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let html = with_dom(|d| d.outer_html(id)).unwrap_or_default();
+    if let Some(s) = v8::String::new(scope, &html) {
+        rv.set(s.into());
+    }
 }
 
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──

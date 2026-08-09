@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1b innerHTML/outerHTML getter native——序列化子树/自身（本轮 R3113）
+
+承接 R3112（attributes NamedNodeMap）。本轮补 native Element 的 `innerHTML` / `outerHTML` getter（spec `dom-element-innerhtml` / `-outerhtml`，DOM Level 2+ 高频序列化 API）。复用既有 `Document::outer_html`（serializer.rs，任意 NodeId → markup 字符串）；innerHTML = 逐 child `outer_html` 拼接，outerHTML = 本元素 `outer_html`。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **innerHTML/outerHTML getter** | `crates/engine/src/dom_bindings/mod.rs` | `native_inner_html_getter`（读 holder NodeId → `with_dom` 遍历 `child_nodes` 逐 `outer_html` 拼接）；`native_outer_html_getter`（`with_dom` → `outer_html(id)`）。模板注册 2 set_accessor（attributes getter 之后）。**只读**（setter 需 html5ever parse + 替换子节点，后续大切片）。 |
+| **engine 隔离测试 + webview 集成测试** | `crates/engine/src/dom_bindings/tests.rs` + `crates/webview/src/tests/coverage.rs` | engine 3 测（innerHTML 子节点拼接 + outerHTML 含自身 tag / outerHTML 反映 setAttribute live / innerHTML 反映 nodeValue 文本写）；webview `test_native_inner_outer_html_r3113`（execute_script 安装路径含 R3113 getter）。 |
+
+**为何净正向**：① 补 native Element 序列化面（innerHTML/outerHTML 高频 API，SPA 框架重读路径）；② 低风险只读 getter（纯 `with_dom` 读 + 复用既有 outer_html 序列化，无 mutation/无 GC/无新模板）；③ kill-switch 默认关 → 零回归（polyfill innerHTML/outerHTML 不变）；④ live 序列化——反映 native 写（setAttribute/nodeValue 经 R3107-R3108 live doc + 重渲染后，序列化见最新态）。
+
+**已知限制（记录，后续）**：① **getter-only**——innerHTML/outerHTML setter（解析 HTML + 替换子节点）需 html5ever parse + Document 子树替换，后续大切片；② **escape-hatch 可达**——标准 document.getElementById（polyfill）仍返 polyfill 元素；native 序列化经 `__zw_native_element_for_id` 可达；标准全局桥接 = S6/L2（高风险，后续）；③ 仅 V8（QuickJS no-op，继承）；④ product-smoke 不适用（native_dom 默认关分支）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；engine lib 1787（+3 innerHTML/outerHTML）；webview v8 559（+1 R3113 集成）+ quickjs 527；全 workspace 16178 passed 0 failed 零回归**）。pre-commit guard PASS。
+
+**下一步**：native Element 序列化面（读）落地。候选：① **innerHTML/outerHTML setter**（html5ever parse HTML → 替换子节点 / 替换自身，触发 R3108 重渲染；闭合 R3113 getter-only 限制，补全写路径——大切片）；② **完整 Attr 节点**（nodeType=2/ownerElement/name/value，闭合 R3112 plain-object 限制）；③ **host→page native 事件派发**（`webview.dispatch_event` 扫 native LISTENERS，闭合 S4 host 驱动半边）；④ **`cloneNode(deep)`**（标准树克隆 API）；⑤ **L2 polyfill-live**（polyfill 桥迁 Document-直读，native↔polyfill 合一，高风险大改）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b attributes NamedNodeMap native——element.attributes 属性集合（本轮 R3112）
 
 承接 R3111（replaceChild + nodeValue setter）。本轮补 native Element 的 `attributes` 集合 API（DOM Level 2+ 核心，spec `dom-element-attributes` / `dom-namednodemap-*`）——此前 native 有 getAttribute/setAttribute/hasAttribute/removeAttribute 但无集合视图。新 NamedNodeMap ObjectTemplate（internal slot[0] = owner element NodeId，per-element 缓存保 spec 身份），方法：`length`/`item(i)`/`getNamedItem(name)`/`setNamedItem(attr)`/`removeNamedItem(name)`。

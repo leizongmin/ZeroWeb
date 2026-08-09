@@ -879,3 +879,47 @@ fn native_attributes_set_and_remove_named_item() {
         "7/false"
     );
 }
+
+// ── R3113 innerHTML / outerHTML 序列化 getter ──
+
+/// `innerHTML`（子节点序列化拼接）+ `outerHTML`（含自身 tag）。
+#[test]
+fn native_inner_outer_html() {
+    let html = r#"<div id="a"><b>hi</b>!</div>"#;
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').innerHTML)"),
+        r#"<b>hi</b>!"#
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').outerHTML)"),
+        r#"<div id="a"><b>hi</b>!</div>"#
+    );
+}
+
+/// `outerHTML` 反映 native 属性写（live 序列化）。
+#[test]
+fn native_outer_html_reflects_attribute() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.setAttribute('data-x','9');\
+             return e.outerHTML; })()"
+        ),
+        r#"<div id="a" data-x="9"></div>"#
+    );
+}
+
+/// `innerHTML` 反映 native 文本写（nodeValue）——R3108 重渲染后 live 序列化见新文本。
+#[test]
+fn native_inner_html_reflects_text_write() {
+    let html = r#"<div id="a"><span id="s">old</span></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_element_for_id('s').firstChild.nodeValue='new';\
+             return __zw_native_element_for_id('a').innerHTML; })()"
+        ),
+        r#"<span id="s">new</span>"#
+    );
+}
