@@ -354,6 +354,29 @@ mod integration_tests {
         (listener, format!("http://127.0.0.1:{port}"))
     }
 
+    /// 本地 mock 服务端测试用：在 `NetError::Network`（连接级瞬态错误）上重试整个请求，
+    /// 吸收 nextest/cargo-test 高并发下 `bind_server()` TcpListener accept 竞态导致的偶发 connect 失败
+    ///（本地隔离跑 5/5 全绿；并发负载下偶发 `Network("error sending request for url ...")`，非真回归）。
+    /// 仅重试 Network（连接级）——Timeout/Proxy/TooManyRedirects/Http 等立即返回，不掩盖断言失败或真实超时。
+    /// 调用方需保证 mock 服务端**路径幂等**（按请求路径而非连接序号响应），使整请求重试语义安全。
+    fn send_with_local_retry<F>(mut send: F) -> Result<HttpResponse, NetError>
+    where
+        F: FnMut() -> Result<HttpResponse, NetError>,
+    {
+        const MAX_ATTEMPTS: u32 = 5;
+        let mut last = None;
+        for attempt in 0..MAX_ATTEMPTS {
+            match send() {
+                Err(e @ NetError::Network(_)) => {
+                    last = Some(e);
+                    std::thread::sleep(std::time::Duration::from_millis(20 * (attempt as u64 + 1)));
+                }
+                other => return other,
+            }
+        }
+        Err(last.expect("retry loop executes the body at least once"))
+    }
+
     /// GET 请求成功返回 200，验证状态码和响应体。
     #[test]
     fn test_send_get_200() {
@@ -970,29 +993,31 @@ mod integration_tests {
     fn test_send_redirect_relative_url() {
         let (listener, url) = bind_server();
 
+        // 路径幂等服务：/original → 302 /other，/other → 200 "relative"。终端响应（/other）后线程退出，
+        // 使 send_with_local_retry 在瞬态 connect 失败上重试整个请求时安全（每次从 /original 重新开始，
+        // 服务端按路径响应，不依赖连接序号）。吸收并发负载下 bind_server accept 竞态。
         let h = std::thread::spawn(move || {
-            // 第一次请求：重定向到相对路径
-            {
-                let mut stream = listener.incoming().next().unwrap().unwrap();
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
                 let mut buf = [0u8; 4096];
-                let _ = stream.read(&mut buf);
-                let resp = "HTTP/1.1 302 Found\r\nLocation: /other\r\nContent-Length: 0\r\n\r\n";
-                let _ = stream.write_all(resp.as_bytes());
-                let _ = stream.flush();
-            }
-            // 第二次请求：返回最终内容
-            {
-                let mut stream = listener.incoming().next().unwrap().unwrap();
-                let mut buf = [0u8; 4096];
-                let _ = stream.read(&mut buf);
-                let resp = "HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nrelative";
-                let _ = stream.write_all(resp.as_bytes());
-                let _ = stream.flush();
+                if stream.read(&mut buf).is_err() {
+                    continue;
+                }
+                let req = String::from_utf8_lossy(&buf);
+                if req.contains("/other") {
+                    let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nrelative");
+                    let _ = stream.flush();
+                    return; // 终端响应后退出 → h.join() 不挂
+                } else {
+                    let _ = stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: /other\r\nContent-Length: 0\r\n\r\n");
+                    let _ = stream.flush();
+                }
             }
         });
 
         let client = HttpClient::new();
-        let resp = client.send(HttpRequest::get(&format!("{url}/original"))).unwrap();
+        let base = url.clone();
+        let resp = send_with_local_retry(|| client.send(HttpRequest::get(&format!("{base}/original")))).unwrap();
         assert_eq!(resp.status_code, 200);
         assert!(resp.url.contains("/other"));
         assert_eq!(resp.text().unwrap(), "relative");
@@ -1256,13 +1281,18 @@ mod integration_tests {
         let (listener, url) = bind_server();
         let self_url = format!("{url}/loop");
 
+        // 路径幂等服务：始终 302 → /loop（自引用）。send_with_local_retry 在瞬态 connect 失败上重试整个
+        // 请求（每次 3 跳后 TooManyRedirects）；TooManyRedirects 非 Network 立即返回不重试。服务端 generous
+        // 上限（take(24)）覆盖重试最坏请求量；detach（不 join）——成功路径客户端仅发 3 请求，服务端阻塞在
+        // 后续 accept，由测试进程退出回收（吸收并发负载下 bind_server accept 竞态；原 join+0..3 与重试不兼容）。
         let su = self_url.clone();
-        let h = std::thread::spawn(move || {
-            // 每次请求都重定向到自身
-            for _ in 0..3 {
-                let mut stream = listener.incoming().next().unwrap().unwrap();
+        let _server = std::thread::spawn(move || {
+            for stream in listener.incoming().take(24) {
+                let Ok(mut stream) = stream else { break };
                 let mut buf = [0u8; 4096];
-                let _ = stream.read(&mut buf);
+                if stream.read(&mut buf).is_err() {
+                    continue;
+                }
                 let resp = format!("HTTP/1.1 302 Found\r\nLocation: {su}\r\nContent-Length: 0\r\n\r\n");
                 let _ = stream.write_all(resp.as_bytes());
                 let _ = stream.flush();
@@ -1270,14 +1300,12 @@ mod integration_tests {
         });
 
         let client = HttpClient::with_max_redirects(2);
-        let result = client.send(HttpRequest::get(&self_url));
+        let result = send_with_local_retry(|| client.send(HttpRequest::get(&self_url)));
         assert!(result.is_err());
         match result.unwrap_err() {
             NetError::TooManyRedirects => {}
             other => panic!("expected TooManyRedirects for self-loop, got: {other:?}"),
         }
-
-        let _ = h.join();
     }
 
     /// 验证 307 保持 GET 方法不变。

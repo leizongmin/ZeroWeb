@@ -9,7 +9,7 @@
 
 > **▶ CI 守护日志（2026-08-09，ci-watchdog，CI run 31273333501 @ f1f8e54）**：手动触发 main CI（`gh workflow run ci.yml --ref main`）。绿：smoke / linux-aarch64 / macos-aarch64 / macos-x86_64 / linux-x86_64-quickjs / windows-aarch64。红 2 类，均**预存且与本次 R3029/R3030 engine 变更无关**，不强行修复：
 > - **benchmarks job**：「Commit perf baseline/trend back to main」步骤 `git push` 报 `403 Permission to leizongmin/ZeroWeb.git denied to github-actions[bot]`。根因：ci.yml 顶层 `permissions: contents: read` 拒绝 bot 推 perf 基线/趋势回 main。**前 3 轮 CI（31256311228 / 31252719499 / 31251615958）benchmarks 同样红**——预存 CI 授权问题。修复须改该 job 为 `contents: write`（安全相关，**待用户/infra 拍板**，ci-watchdog 不自主改 CI 权限）。
-> - **build-and-test net `client::integration_tests`**：linux-x86_64 `test_send_redirect_relative_url`（client.rs:995）、windows-x86_64 `test_send_self_referencing_redirect_loop`（client.rs:1277）报 `Network("error sending request for url http://127.0.0.1:PORT/…")`——**连接级错误非断言错误**。不同矩阵 entry 各轮随机红（windows-x86_64 / linux-x86_64-quickjs / windows-aarch64 / linux-x86_64 交替）；两测 2026-05-31 引入；本地 test-guard 隔离跑两测 **5/5 全绿** → 确认 **nextest 全量并发负载下 `bind_server()` TcpListener 本地服务端竞态 flake**，非真回归。net 属 P1a 流域（run-rules §9 工作面），**deflake（test 端加就绪等待/重试，或 HttpClient 加长 connect 超时）交 P1a 流处理**，ci-watchdog 不跨域硬解。
+> - **build-and-test net `client::integration_tests`**：linux-x86_64 `test_send_redirect_relative_url`（client.rs:995）、windows-x86_64 `test_send_self_referencing_redirect_loop`（client.rs:1277）报 `Network("error sending request for url http://127.0.0.1:PORT/…")`——**连接级错误非断言错误**。不同矩阵 entry 各轮随机红（windows-x86_64 / linux-x86_64-quickjs / windows-aarch64 / linux-x86_64 交替）；两测 2026-05-31 引入；本地 test-guard 隔离跑两测 **5/5 全绿** → 确认 **nextest 全量并发负载下 `bind_server()` TcpListener 本地服务端竞态 flake**，非真回归。net 属 P1a 流域（run-rules §9 工作面），**deflake（test 端加就绪等待/重试，或 HttpClient 加长 connect 超时）交 P1a 流处理**，ci-watchdog 不跨域硬解。**2026-08-09 R3086 已 deflake**（`send_with_local_retry` 整请求重试 + 路径幂等 mock 服务端，详见「最近完成的改进」）。
 > - **结论**：无自主可修项（均预存 / 跨域 / 需授权）。本次守护仅触发 + 诊断 + 记录，未改 .rs / CI 配置。
 
 > **说明**
@@ -118,6 +118,24 @@
 ---
 
 ## 最近完成的改进
+
+### P1a net 重定向测试 deflake（send_with_local_retry + 路径幂等 mock 服务端，闭合 client::integration_tests flake，本轮 R3086）
+
+承接 master.md「当前活跃主线」记的 build-and-test net flake：`test_send_redirect_relative_url`（client.rs:995）/ `test_send_self_referencing_redirect_loop`（client.rs:1277）在 nextest/cargo-test 全量并发负载下偶发 `Network("error sending request for url http://127.0.0.1:PORT/…")`（连接级错误非断言错误）；本地 test-guard 隔离跑两测 5/5 全绿 → 确认 `bind_server()` TcpListener accept 竞态 flake。本切片按 master.md 既定方案 deflake（test 端重试 + 路径幂等服务端）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`send_with_local_retry` 测试 helper** | `crates/net/src/client.rs`（bind_server 后） | 在 `NetError::Network`（连接级瞬态错误）上重试整个 `client.send()`，5 次 × 递增退避（20/40/60/80/100ms）。仅重试 Network——Timeout/Proxy/TooManyRedirects/Http 立即返回，不掩盖断言失败或真实超时。调用方需保证 mock 服务端路径幂等（按路径而非连接序号响应）。 |
+| **`test_send_redirect_relative_url` 服务端改路径幂等** | 同上 | mock 服务端按请求路径响应（/original→302 /other，/other→200 "relative"），终端响应后线程退出；send 经 send_with_local_retry 包裹。使整请求重试语义安全。 |
+| **`test_send_self_referencing_redirect_loop` 服务端改路径幂等 + detach** | 同上 | 始终 302→/loop，`take(24)` generous 上限覆盖重试最坏请求量；detach（不 join）——成功路径客户端仅发 3 请求，服务端阻塞在后续 accept 由测试进程退出回收（原 join + 0..3 与整请求重试不兼容）。 |
+
+**为何净正向**：① 纯测试侧改动（零生产代码变更，HttpClient/reqwest 行为不变）；② 路径幂等服务端使重试安全（每次从初始路径重新开始，按路径响应）；③ 仅重试 Network（连接级），不掩盖断言失败/真实超时/真实重定向循环（TooManyRedirects 立即返回）；④ 本地 3 连跑 net lib 全绿（377 passed ×3，0 failed，0.85-1.32s）；⑤ 全量 make test 全绿（0 failed across all binaries）。
+
+**已知限制（记录）**：① **loop 测试 detach 1 阻塞线程**（cargo-test 进程内留 1 个阻塞 accept 的 mock 服务线程直至进程退出；nextest 进程隔离即时回收）；② **deflake 本地难复现**（竞态需并发负载；fix 为防御性重试，happy-path 测试验证服务端路径幂等 + 重试 wrapper 正确传递成功/错误）；③ **未改 HttpClient connect 超时/重试**（master.md 备选方案 b 不采用——连接级 reset/refused 非慢连接，加 connect_timeout 不解决；test 端重试为最小侵入）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-net --all-targets -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；net lib 377 passed，零回归**）+ pre-commit guard PASS。变更纯 net crate 测试代码（无生产/渲染/布局变更），product-smoke 不受影响。
+
+**下一步**：net 重定向 flake deflake 完成（CI 稳定性提升）。pivot 回 P1a 产品能力主线：① **IndexedDB 持久化**（storage crate 真 IDB + host bridge，闭合 Done Criteria §3 Storage「跨页重载不丢」，中-高复杂度）；② 外链 ES module fetch + 异步 module graph（真模块加载，中-高复杂度）；③ P1a 事件循环 macro-task 队列补全 / popover 渲染层；④ DedicatedWorker 真实化（host 独立沙箱 + 结构化克隆，中-高复杂度）。每切片 make test 零回归 + clippy/fmt 守门。
 
 ### P1a Canvas Pattern 平铺光栅化（createPattern + fill/stroke 逐像素平铺，闭合 R3084 Pattern defer 项，本轮 R3085）
 
