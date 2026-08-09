@@ -6,9 +6,9 @@ use std::rc::Rc;
 
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
-    RenderPipeline, RenderResult, apply_mutations_to_html, extract_css_image_urls, extract_html_style_text,
-    extract_img_srcs, extract_page_scripts, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key,
-    register_dom_callbacks, resolve_document_url, script_dispatch_dom_event,
+    RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text, extract_img_srcs,
+    extract_page_scripts, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key, register_dom_callbacks,
+    resolve_document_url, script_dispatch_dom_event,
 };
 use zero_net::{CacheLookup, HttpClient, NetError, is_file_url};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
@@ -1300,10 +1300,19 @@ impl WebView {
         if recorded.is_empty() {
             return Ok(html);
         }
-        let mutated = apply_mutations_to_html(&html, &recorded)
+        // M3-S9：DOM 变更直接应用到活 DOM（pipeline.cached_doc），不再回写 HTML 重 parse
+        //（旧路径 apply_mutations_to_html → load_html 全量重建，大页面 parse 占 ~30%）。
+        // repaint 后返回新 HTML 快照同步 cached_html（DOM 查询消费的快照须与活 DOM 一致）。
+        let (result, mutated) = self
+            .pipeline
+            .render_with_dom_mutations(&recorded, &self.cached_css)
             .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
         if mutated != html {
-            let _ = self.load_html(&mutated, None);
+            self.cached_html = mutated.clone();
+            self.last_render = Some(WebViewRenderResult {
+                primitives: result.primitives,
+                timings: result.timings,
+            });
         }
         Ok(mutated)
     }
@@ -1344,10 +1353,17 @@ impl WebView {
         if recorded.is_empty() {
             return Ok(());
         }
-        let mutated = apply_mutations_to_html(&self.cached_html, &recorded)
+        // M3-S9：DOM 变更直接应用到活 DOM（见 run_page_scripts_impl 同款注释）。
+        let (result, mutated) = self
+            .pipeline
+            .render_with_dom_mutations(&recorded, &self.cached_css)
             .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
         if mutated != self.cached_html {
-            let _ = self.load_html(&mutated, None);
+            self.cached_html = mutated;
+            self.last_render = Some(WebViewRenderResult {
+                primitives: result.primitives,
+                timings: result.timings,
+            });
         }
         Ok(())
     }

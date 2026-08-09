@@ -731,6 +731,33 @@ impl RenderPipeline {
         })
     }
 
+    /// DOM 变更增量渲染（M3-S9 第一刀：消除 HTML 往返）。
+    ///
+    /// 把 JS 侧记录的 [`DomMutation`] 直接应用到缓存的活 DOM（`cached_doc`），
+    /// 再走 `repaint_cached_viewport`（不重新 parse HTML——旧路径 `apply_mutations_to_html`
+    /// 序列化回 HTML 后 `parse_html` 全量重建，大页面 parse 占整页渲染 ~30%）。
+    ///
+    /// # 返回
+    ///
+    /// `(RenderResult, 新 HTML 快照)`——快照供调用方同步 `cached_html`（DOM 查询
+    /// 消费的 HTML 快照必须与活 DOM 一致）。
+    pub fn render_with_dom_mutations(
+        &mut self,
+        mutations: &[crate::js_dom_bridge::DomMutation],
+        css: &str,
+    ) -> Result<(RenderResult, String), String> {
+        let mut doc = self.cached_doc.take().ok_or("no cached document")?;
+        crate::js_dom_bridge::apply_dom_mutations(&mut doc, mutations)?;
+        let html_snapshot = doc.outer_html(doc.root());
+        self.cached_doc = Some(doc);
+        // DOM 已变（<style>/meta 内容可能变）：CSS 解析缓存失效。
+        self.cached_css_text = None;
+        let result = self
+            .repaint_cached_viewport(css)
+            .ok_or("repaint failed after mutations")?;
+        Ok((result, html_snapshot))
+    }
+
     /// 获取当前布局结果。
     pub fn layout(&self) -> Option<&LayoutResult> {
         self.cached_layout.as_ref()
