@@ -49,6 +49,21 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
     format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")
 }
 
+/// 构造「经原生绑定派发 DOM 事件」的脚本（P1b host→page native 派发，R3121）。宿主在
+/// `native_dom` 开启时于 polyfill 派发（[`script_dispatch_dom_event`]）**之外额外**执行：
+/// 经 `__zw_native_query_selector(sel)` 解析目标节点（返 native 元素对象，internal slot 存 NodeId）
+/// → 调原生 `dispatchEvent({type})`，触发该节点经 native `addEventListener` 注册的监听器（存于
+/// engine `dom_bindings::gc::LISTENERS`，polyfill `__zw_dispatch_event` 不达，闭合 S4 host 驱动半边）。
+/// 无匹配节点（querySelector 返 null）→ IIFE 守卫 no-op。选择器 / 事件类型经
+/// [`escape_js_string`] 安全嵌入。复用既有 native 工厂 + dispatchEvent 绑定，零新 engine 代码。
+pub fn script_dispatch_native_event(selector: &str, event_type: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    let esc_ty = escape_js_string(event_type);
+    format!(
+        "(function(){{var t=__zw_native_query_selector('{esc_sel}');if(t)t.dispatchEvent({{type:'{esc_ty}'}});}})()"
+    )
+}
+
 /// 构造「调用 form.reset()」的 shim 脚本（P1a form reset，R3050）。宿主在 reset 按钮被 click 时执行：
 /// 解析 form 选择器 → 调 shim `form.reset()`（R3048：dispatch cancelable 'reset' 事件 + 未 preventDefault 则
 /// 把控件恢复 defaultValue/defaultChecked/defaultSelected）。复用 R3048 全部 reset 语义（防重复实现）。

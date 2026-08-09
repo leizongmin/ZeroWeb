@@ -578,6 +578,32 @@ fn test_native_event_target_r3109() {
     );
 }
 
+// ── P1b host→page native 事件派发（本轮 R3121）──
+
+// native_dom=true → 页面经 native addEventListener 注册的监听器（gc.rs LISTENERS）经
+// webview.dispatch_event（host 驱动）可达——polyfill __zw_dispatch_event 不达，闭合 S4 host 驱动半边。
+// 复用既有 __zw_native_query_selector + 原生 dispatchEvent（零新 engine 代码）。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_host_dispatch_event_r3121() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html("<html><body><div id=\"b\"></div></body></html>", None);
+    // 经 native 元素（__zw_native_element_for_id）注册 click 监听器，设全局标记。
+    wv.execute_script(
+        "(()=>{ const el=__zw_native_element_for_id('b');\
+         el.addEventListener('click', ()=>{ globalThis.__clicked='yes'; });\
+         return 'registered'; })()",
+    )
+    .unwrap();
+    // host dispatch_event → 经 __zw_native_query_selector('#b') + 原生 dispatchEvent 触发 native 监听器。
+    wv.dispatch_event("#b", "click").unwrap();
+    assert_eq!(
+        wv.execute_script("String(globalThis.__clicked || 'no')").unwrap(),
+        "yes",
+        "host dispatch_event 经 native 路径触发 native 监听器"
+    );
+}
+
 // ── P1b 节点导航 native：parentNode/firstChild/lastChild/nextSibling/previousSibling/hasChildNodes（本轮 R3110）──
 
 // native_dom=true → native 元素（execute_script 安装路径）具节点导航 getter。验证 webview 沙箱安装

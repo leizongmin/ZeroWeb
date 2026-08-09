@@ -8,7 +8,7 @@ use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
     RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text, extract_img_srcs,
     extract_page_scripts, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key, register_dom_callbacks,
-    resolve_document_url, script_dispatch_dom_event,
+    resolve_document_url, script_dispatch_dom_event, script_dispatch_native_event,
 };
 use zero_net::{CacheLookup, HttpClient, NetError, is_file_url};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
@@ -1426,6 +1426,12 @@ impl WebView {
     /// 监听器（addEventListener / onclick 属性经 shim 桥接）。基于
     /// `__zw_dispatch_event` shim（reftest 已验证的机制），mutation 应用
     /// 后重新渲染。
+    ///
+    /// **P1b host→page native 派发（R3121）**：`native_dom` 开启时，页面经 native
+    /// `addEventListener` 注册的监听器存于 engine `dom_bindings::gc::LISTENERS`，
+    /// polyfill `__zw_dispatch_event` 不达——额外经 `__zw_native_query_selector` +
+    /// 原生 `dispatchEvent` 派发（[`script_dispatch_native_event`]）。闭合 S4 host 驱动
+    /// 半边；`native_dom` 关（默认）→ 仅 polyfill 路径，零回归。
     pub fn dispatch_event(&mut self, selector: &str, event_type: &str) -> Result<(), WebViewError> {
         self.run_page_scripts()?; // 确保监听器已注册
         let script = script_dispatch_dom_event(selector, event_type, None);
@@ -1454,6 +1460,13 @@ impl WebView {
         sandbox
             .execute(&script)
             .map_err(|e| WebViewError::Script(format!("dispatch {event_type}: {e}")))?;
+        // P1b host→page native 派发（R3121）：native_dom 开 → 经原生绑定派发到 native LISTENERS
+        //（polyfill __zw_dispatch_event 不达）。native 回调直改 live doc，下方 recorded.is_empty
+        // 分支的 sync_render_after_native_dom 拾取重渲染。native_dom 关（默认）→ 跳过，零回归。
+        #[cfg(feature = "v8")]
+        if self.config.native_dom {
+            let _ = sandbox.execute(&script_dispatch_native_event(selector, event_type));
+        }
         let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
         if recorded.is_empty() {
             // P1b L1b（R3108）：事件处理器经 native 绑定可能已直改 live doc → 检测并重渲染。
