@@ -184,6 +184,28 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "dispatchEvent") {
         tmpl.set(k.into(), disp_evt_tmpl.into());
     }
+    // R3110 节点导航 getter（spec `dom-node-parent-node` 等 / `dom-node-has-child-nodes`）：
+    // parentNode / firstChild / lastChild / nextSibling / previousSibling → native 节点或 null；
+    // hasChildNodes() → bool。读 Document 树关系（`with_dom`），结果包 native 节点对象。
+    if let Some(k) = v8::String::new(scope, "parentNode") {
+        tmpl.set_accessor(k.into(), native_parent_node_getter);
+    }
+    if let Some(k) = v8::String::new(scope, "firstChild") {
+        tmpl.set_accessor(k.into(), native_first_child_getter);
+    }
+    if let Some(k) = v8::String::new(scope, "lastChild") {
+        tmpl.set_accessor(k.into(), native_last_child_getter);
+    }
+    if let Some(k) = v8::String::new(scope, "nextSibling") {
+        tmpl.set_accessor(k.into(), native_next_sibling_getter);
+    }
+    if let Some(k) = v8::String::new(scope, "previousSibling") {
+        tmpl.set_accessor(k.into(), native_previous_sibling_getter);
+    }
+    let hcn_tmpl = v8::FunctionTemplate::builder(native_has_child_nodes_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "hasChildNodes") {
+        tmpl.set(k.into(), hcn_tmpl.into());
+    }
     set_element_template(scope, tmpl);
 
     // 3. 全局工厂 __zw_native_element_for_id(idStr) → native element 对象。
@@ -930,6 +952,90 @@ fn native_dispatch_event_invoke(
         }
     }
     rv.set(v8::Boolean::new(scope, true).into());
+}
+
+// ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
+
+/// 节点导航 getter 共用尾：读 holder NodeId → 经 `rel` 取相关 NodeId → 包 native 节点对象（或 null）。
+/// 5 个 getter（parentNode/firstChild/lastChild/nextSibling/previousSibling）均为 ZST fn 项（v8 accessor
+/// 须 fn 项不能 cast fn 指针），故逐成员薄壳调本共用尾（镜像 install_dom_bindings 既有 getter 模式）。
+fn node_relation_getter(
+    scope: &mut v8::PinScope,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+    rel: impl Fn(&zero_dom::Document, NodeId) -> Option<NodeId>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    match with_dom(|d| rel(d, id)).flatten() {
+        Some(rid) => {
+            if let Some(obj) = get_or_create_native_element(scope, rid) {
+                rv.set(obj.into());
+            }
+        }
+        None => rv.set(v8::null(scope).into()),
+    }
+}
+
+fn native_parent_node_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    rv: v8::ReturnValue<v8::Value>,
+) {
+    node_relation_getter(scope, args, rv, |d, id| d.parent_node(id));
+}
+
+fn native_first_child_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    rv: v8::ReturnValue<v8::Value>,
+) {
+    node_relation_getter(scope, args, rv, |d, id| d.first_child(id));
+}
+
+fn native_last_child_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    rv: v8::ReturnValue<v8::Value>,
+) {
+    node_relation_getter(scope, args, rv, |d, id| d.last_child(id));
+}
+
+fn native_next_sibling_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    rv: v8::ReturnValue<v8::Value>,
+) {
+    node_relation_getter(scope, args, rv, |d, id| d.next_sibling(id));
+}
+
+fn native_previous_sibling_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    rv: v8::ReturnValue<v8::Value>,
+) {
+    node_relation_getter(scope, args, rv, |d, id| d.previous_sibling(id));
+}
+
+/// `hasChildNodes()`（spec `dom-node-has-child-nodes`）：this 有子节点 → true。
+fn native_has_child_nodes_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let has = match read_node_id(scope, &this) {
+        Some(id) => with_dom(|d| d.has_child_nodes(id)).unwrap_or(false),
+        None => false,
+    };
+    rv.set(v8::Boolean::new(scope, has).into());
 }
 
 /// 从任意 `Value` 取其 internal slot NodeId（若为 native element 对象）；否则 `None`

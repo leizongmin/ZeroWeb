@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1b 节点导航 getter native——parentNode/firstChild/lastChild/nextSibling/previousSibling/hasChildNodes（本轮 R3110）
+
+承接 R3109（S4 EventTarget native）。本轮补 native Element 模板的**节点导航 getter 族**——DOM Level 2+ 核心 API（Done Criteria §3），此前 native 缺失（仅有 childNodes/children，无父/兄弟/首尾子导航）。读 `Document` 树关系（`with_dom` + `parent_node`/`first_child`/`last_child`/`next_sibling`/`previous_sibling`/`has_child_nodes`），结果包 native 节点对象或 null。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **导航 getter 族 + 模板注册** | `crates/engine/src/dom_bindings/mod.rs` | 共用尾 `node_relation_getter(scope, args, rv, rel)`：读 holder NodeId → `rel(d, id)` 取相关 NodeId → `get_or_create_native_element` 包对象 / null。5 个 ZST fn 项薄壳（v8 accessor 须 fn 项）：`native_parent_node_getter`/`native_first_child_getter`/`native_last_child_getter`/`native_next_sibling_getter`/`native_previous_sibling_getter`。`native_has_child_nodes_invoke`（方法 → bool）。模板注册 5 set_accessor + 1 FunctionTemplate（EventTarget 之后）。导航返回非 Element 子节点（Text/Comment）包同一模板，R3104 node-type-aware getter 正确返 nodeType=3/8。 |
+| **engine 隔离测试 + webview 集成测试** | `crates/engine/src/dom_bindings/tests.rs` + `crates/webview/src/tests/coverage.rs` | engine 5 测（parent+sibling / first+last / hasChildNodes / 文本 firstChild nodeType=3 / 越界 null）；webview `test_native_node_navigation_r3110`（execute_script 安装路径含 R3110 getter）。 |
+
+**为何净正向**：① 补 native Element 节点导航缺口（DOM Level 2+ 核心 API 完整性——父/兄弟/首尾子，此前仅 childNodes/children）；② 低风险只读 getter（无 mutation、无 GC、无 webview 接线——复用 R3108 `install_native_dom_bindings` 安装路径）；③ kill-switch `native_dom` 默认关 → 零回归（polyfill 导航不变）；④ 共用尾去重（5 getter 共一个 `node_relation_getter`，避免 5 份雷同）；⑤ firstChild 返 Text/Comment 经 R3104 node-type-aware getter 正确（不返 Element-only 误值）。
+
+**已知限制（记录，后续）**：① **escape-hatch 可达**——标准 `document.getElementById`（polyfill）仍返 polyfill 元素；native 导航经 `__zw_native_element_for_id` 可达；标准全局桥接 = S6/L2（高风险，后续）；② **parentNode 跨 Document 边界**——根元素 parent 为 Document（nodeType=9），返回 native 对象包 Document NodeId（nodeType getter 经 R3104 返 9），可读但 Document 专属 API（createElement 等）未挂（后续 Document native）；③ 仅 V8（QuickJS no-op，继承）；④ product-smoke 不适用（native_dom 默认关分支）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；engine lib 1776（+5 导航测）；webview v8 556（+1 R3110 集成）+ quickjs 527；全 workspace 16164 passed 0 failed 零回归**）。pre-commit guard PASS。
+
+**下一步**：节点导航补齐（native Element 父/兄弟/首尾子完整）。候选：① **contained 表面片**——`replaceChild`+throw（补全树 mutation 集 appendChild/insertBefore/removeChild/replaceChild）、`attributes` NamedNodeMap（`element.attributes` 标准属性集合 API）、`nodeValue`-data setter（Text/Comment.data 写）；② **host→page native 事件派发**（`webview.dispatch_event` 扫 native LISTENERS，闭合 S4 host 驱动半边）；③ **事件冒泡**（dispatchEvent 向上传播 parent 链，spec DOM event flow）；④ **L2 polyfill-live**（polyfill 桥迁 Document-直读，native↔polyfill 合一，高风险大改）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b S4 EventTarget native——addEventListener/removeEventListener/dispatchEvent 原生（本轮 R3109）
 
 承接 R3108（L1b caveat ① native 写触发重渲染）。本轮落 **RFC §4 S4**：native Element 模板新增 EventTarget 三方法——监听器经线程局部 `LISTENERS`（`(NodeId ffi, 事件类型) → Vec<Global<Value>>`）持久化，dispatchEvent 在当前 scope 复活 Local 调用。native 元素成完整 EventTarget（escape-hatch 经 `__zw_native_element_for_id('x').addEventListener(...)` 可达）。

@@ -691,3 +691,69 @@ fn native_event_target_dispatch_returns_true() {
         "true"
     );
 }
+
+// ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
+//
+// HTML: <div id="root"><span id="s1">hello</span><span id="s2"></span></div>
+// root 子节点 = [span#s1, span#s2]（标签间无空白文本）；s1 子 = 文本 "hello"。
+
+/// parentNode + nextSibling + previousSibling（spec `dom-node-parent-node` / `-next-sibling` / `-previous-sibling`）。
+#[test]
+fn native_node_navigation_parent_and_siblings() {
+    let html = r#"<div id="root"><span id="s1">hello</span><span id="s2"></span></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const s1=__zw_native_element_for_id('s1');\
+             return s1.parentNode.id+'/'+s1.nextSibling.id+'/'+__zw_native_element_for_id('s2').previousSibling.id; })()"
+        ),
+        "root/s2/s1"
+    );
+}
+
+/// firstChild + lastChild（spec `dom-node-first-child` / `-last-child`）。
+#[test]
+fn native_node_navigation_first_last_child() {
+    let html = r#"<div id="root"><span id="s1">hello</span><span id="s2"></span></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const r=__zw_native_element_for_id('root');\
+             return r.firstChild.id+'/'+r.lastChild.id; })()"
+        ),
+        "s1/s2"
+    );
+}
+
+/// hasChildNodes（spec `dom-node-has-child-nodes`）：有子 → true；空 span → false。
+#[test]
+fn native_node_navigation_has_child_nodes() {
+    let html = r#"<div id="root"><span id="s1">hello</span><span id="s2"></span></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ return __zw_native_element_for_id('root').hasChildNodes()+'/'+__zw_native_element_for_id('s2').hasChildNodes(); })()"
+        ),
+        "true/false"
+    );
+}
+
+/// firstChild 返文本节点（nodeType=3）——导航返回非 Element 子节点，包同一模板（R3104 node-type-aware）。
+#[test]
+fn native_node_navigation_text_first_child() {
+    let html = r#"<div id="root"><span id="s1">hello</span><span id="s2"></span></div>"#;
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('s1').firstChild.nodeType)"),
+        "3"
+    );
+}
+
+/// nextSibling 越界 → null（spec detached/无兄弟返 null，非 undefined）。
+#[test]
+fn native_node_navigation_null_relation() {
+    let html = r#"<div id="root"><span id="s1">hello</span><span id="s2"></span></div>"#;
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('s2').nextSibling === null)"),
+        "true"
+    );
+}

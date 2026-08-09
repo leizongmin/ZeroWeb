@@ -578,6 +578,42 @@ fn test_native_event_target_r3109() {
     );
 }
 
+// ── P1b 节点导航 native：parentNode/firstChild/lastChild/nextSibling/previousSibling/hasChildNodes（本轮 R3110）──
+
+// native_dom=true → native 元素（execute_script 安装路径）具节点导航 getter。验证 webview 沙箱安装
+// 含 R3110 模板方法（非仅 engine 隔离测试）：s1.parentNode.id==='root'、root.firstChild.id==='s1'、
+// s1.nextSibling.id==='s2'、s2.previousSibling.id==='s1'、s2.nextSibling===null、root.hasChildNodes()。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_node_navigation_r3110() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body><div id=\"root\"><span id=\"s1\">hi</span><span id=\"s2\"></span></div></body></html>",
+        None,
+    );
+    wv.run_page_scripts_strict().unwrap();
+    // parentNode + siblings。
+    assert_eq!(
+        wv.execute_script(
+            "(()=>{ const s1=__zw_native_element_for_id('s1');\
+             return s1.parentNode.id+'/'+s1.nextSibling.id+'/'+__zw_native_element_for_id('s2').previousSibling.id; })()"
+        ).unwrap(),
+        "root/s2/s1",
+        "parentNode/nextSibling/previousSibling"
+    );
+    // firstChild + lastChild + hasChildNodes + null 关系。
+    assert_eq!(
+        wv.execute_script(
+            "(()=>{ const r=__zw_native_element_for_id('root');\
+             return r.firstChild.id+'/'+r.lastChild.id+'/'+r.hasChildNodes()+'/'+\
+             (__zw_native_element_for_id('s2').nextSibling === null); })()"
+        )
+        .unwrap(),
+        "s1/s2/true/true",
+        "firstChild/lastChild/hasChildNodes/null 关系"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]
