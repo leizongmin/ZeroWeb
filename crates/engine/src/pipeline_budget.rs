@@ -123,9 +123,7 @@ impl RenderPipeline {
                 BudgetStep::Layout => {
                     let doc = session.doc.as_ref().expect("parse must run before layout");
                     let start = Instant::now();
-                    let img_sizes = self.build_img_intrinsic_sizes(doc);
-                    let img_ratios = self.build_img_intrinsic_ratios(doc);
-                    let img_no_ratio = self.build_img_intrinsic_no_ratio(doc);
+                    let (img_sizes, img_ratios, img_no_ratio) = self.build_img_intrinsic_all(doc);
                     session.layout_result = Some(self.layout_engine.compute_with_img_intrinsic(
                         doc,
                         &session.styles,
@@ -213,8 +211,7 @@ impl RenderPipeline {
         inject_pseudo_text_nodes(&mut doc, &mut styles);
 
         let layout_start = Instant::now();
-        let img_sizes = self.build_img_intrinsic_sizes(&doc);
-        let img_no_ratio = self.build_img_intrinsic_no_ratio(&doc);
+        let (img_sizes, _img_ratios, img_no_ratio) = self.build_img_intrinsic_all(&doc);
         let layout_result = self.layout_engine.compute_with_img_intrinsic(
             &doc,
             &styles,

@@ -169,54 +169,33 @@ impl RenderPipeline {
         self.image_no_ratio = no_ratio;
     }
 
-    /// 从 `self.image_sizes`（按 URL hash 索引）解析出 `<img>` 元素的解码固有尺寸，
-    /// 按 DOM NodeId 索引返回，供布局引擎对无 width/height 属性的 `<img>` 注入固有尺寸。
-    ///
-    /// hash 解析在 engine 层完成（simple_hash 定义于本 crate），避免把 hash 函数
-    /// 泄漏到 layout-engine（layout-engine 依赖 render-foundation 但不依赖 engine）。
-    pub(crate) fn build_img_intrinsic_sizes(&self, doc: &Document) -> HashMap<NodeId, (f32, f32)> {
-        let mut map = HashMap::new();
+    /// 一次 DOM 遍历同时构建三个 img 固有尺寸信号（旧实现 3 次全树遍历）。
+    pub(crate) fn build_img_intrinsic_all(
+        &self,
+        doc: &Document,
+    ) -> (
+        HashMap<NodeId, (f32, f32)>,
+        HashMap<NodeId, f32>,
+        HashMap<NodeId, (Option<f32>, Option<f32>)>,
+    ) {
+        let mut sizes = HashMap::new();
+        let mut ratios = HashMap::new();
+        let mut no_ratio = HashMap::new();
         for img_id in doc.get_elements_by_tag_name("img") {
             if let Some(src) = doc.get_attribute(img_id, "src") {
                 let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
                 if let Some(&size) = self.image_sizes.get(&key) {
-                    map.insert(img_id, size);
+                    sizes.insert(img_id, size);
                 }
-            }
-        }
-        map
-    }
-
-    /// 从 `self.image_ratios`（按 URL hash 索引）解析出 `<img>` 元素的 ratio-only 信号，
-    /// 按 DOM NodeId 索引返回，供布局引擎对无 width/height 属性且无确定固有尺寸的
-    /// `<img>`（%-dim / viewBox-only SVG）仅设 aspect_ratio（CSS §10.3.2）。
-    pub(crate) fn build_img_intrinsic_ratios(&self, doc: &Document) -> HashMap<NodeId, f32> {
-        let mut map = HashMap::new();
-        for img_id in doc.get_elements_by_tag_name("img") {
-            if let Some(src) = doc.get_attribute(img_id, "src") {
-                let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
                 if let Some(&ratio) = self.image_ratios.get(&key) {
-                    map.insert(img_id, ratio);
+                    ratios.insert(img_id, ratio);
                 }
-            }
-        }
-        map
-    }
-
-    /// 从 `self.image_no_ratio`（按 URL hash 索引）解析出 `<img>` 元素的 no-ratio 信号，
-    /// 按 DOM NodeId 索引返回，供布局引擎对无 width/height 属性、无确定固有尺寸且无
-    /// 固有宽高比的 `<img>`（no-ratio SVG）按 CSS §10.3.2 default object size sizing。
-    pub(crate) fn build_img_intrinsic_no_ratio(&self, doc: &Document) -> HashMap<NodeId, (Option<f32>, Option<f32>)> {
-        let mut map = HashMap::new();
-        for img_id in doc.get_elements_by_tag_name("img") {
-            if let Some(src) = doc.get_attribute(img_id, "src") {
-                let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
                 if let Some(&dims) = self.image_no_ratio.get(&key) {
-                    map.insert(img_id, dims);
+                    no_ratio.insert(img_id, dims);
                 }
             }
         }
-        map
+        (sizes, ratios, no_ratio)
     }
 
     /// R2439：`content:url()` 普通元素 element-becomes-replaced 的 sizing pass。
@@ -384,9 +363,7 @@ impl RenderPipeline {
 
         // 6. 计算布局
         let layout_start = Instant::now();
-        let img_sizes = self.build_img_intrinsic_sizes(&doc);
-        let img_ratios = self.build_img_intrinsic_ratios(&doc);
-        let img_no_ratio = self.build_img_intrinsic_no_ratio(&doc);
+        let (img_sizes, img_ratios, img_no_ratio) = self.build_img_intrinsic_all(&doc);
         let layout_result =
             self.layout_engine
                 .compute_with_img_intrinsic(&doc, &styles, img_sizes, img_ratios, img_no_ratio);
@@ -519,9 +496,7 @@ impl RenderPipeline {
 
         // 4. 计算布局
         let layout_start = Instant::now();
-        let img_sizes = self.build_img_intrinsic_sizes(&doc);
-        let img_ratios = self.build_img_intrinsic_ratios(&doc);
-        let img_no_ratio = self.build_img_intrinsic_no_ratio(&doc);
+        let (img_sizes, img_ratios, img_no_ratio) = self.build_img_intrinsic_all(&doc);
         let layout_result =
             self.layout_engine
                 .compute_with_img_intrinsic(&doc, &styles, img_sizes, img_ratios, img_no_ratio);
@@ -606,9 +581,7 @@ impl RenderPipeline {
         let styles = self.style_system.compute_styles(doc, stylesheets);
 
         // 计算布局
-        let img_sizes = self.build_img_intrinsic_sizes(doc);
-        let img_ratios = self.build_img_intrinsic_ratios(doc);
-        let img_no_ratio = self.build_img_intrinsic_no_ratio(doc);
+        let (img_sizes, img_ratios, img_no_ratio) = self.build_img_intrinsic_all(doc);
         let layout_result =
             self.layout_engine
                 .compute_with_img_intrinsic(doc, &styles, img_sizes, img_ratios, img_no_ratio);
@@ -688,9 +661,7 @@ impl RenderPipeline {
         let styles = self.style_system.compute_styles(doc, stylesheets);
 
         // 计算布局
-        let img_sizes = self.build_img_intrinsic_sizes(doc);
-        let img_ratios = self.build_img_intrinsic_ratios(doc);
-        let img_no_ratio = self.build_img_intrinsic_no_ratio(doc);
+        let (img_sizes, img_ratios, img_no_ratio) = self.build_img_intrinsic_all(doc);
         let layout_result =
             self.layout_engine
                 .compute_with_img_intrinsic(doc, &styles, img_sizes, img_ratios, img_no_ratio);
@@ -945,26 +916,28 @@ pub(crate) fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> 
     // content="...">` 等价于在根元素声明 color-scheme。注入为最低优先级 stylesheet
     //（vector 首位），author CSS（`css` 参数 + `<style>`）可覆盖。content 原样作
     // color-scheme 值（"dark"/"light dark" 等，由 R2285/R2286 属性解析 + used-scheme 合成消费）。
-    for meta_id in doc.get_elements_by_tag_name("meta") {
-        let is_color_scheme = doc
-            .get_attribute(meta_id, "name")
-            .is_some_and(|n| n.eq_ignore_ascii_case("color-scheme"));
-        if !is_color_scheme {
-            continue;
+    // meta/style 合并为单次 DOM 遍历（旧实现 2 次全树遍历）。
+    let (meta_ids, style_ids): (Vec<_>, Vec<_>) = doc
+        .get_elements_by_tag_names(&["meta", "style"])
+        .into_iter()
+        .partition(|id| {
+            doc.get_attribute(*id, "name")
+                .is_some_and(|n| n.eq_ignore_ascii_case("color-scheme"))
+        });
+    // partition 保持树序，首个即树序第一个 color-scheme meta（HTML spec 仅首个生效）
+    if let Some(meta_id) = meta_ids.first().copied()
+        && let Some(content) = doc.get_attribute(meta_id, "content")
+    {
+        let content = content.trim();
+        if !content.is_empty() {
+            let synthetic = format!("html {{ color-scheme: {content}; }}");
+            stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&synthetic));
         }
-        if let Some(content) = doc.get_attribute(meta_id, "content") {
-            let content = content.trim();
-            if !content.is_empty() {
-                let synthetic = format!("html {{ color-scheme: {content}; }}");
-                stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&synthetic));
-            }
-        }
-        break; // 仅首个树序 `<meta name="color-scheme">` 生效（HTML spec）
     }
     if !css.is_empty() {
         stylesheets.push(zero_css_parser::Parser::parse_stylesheet(css));
     }
-    for style_id in doc.get_elements_by_tag_name("style") {
+    for style_id in style_ids {
         let Some(css_text) = doc.text_content(style_id) else {
             continue;
         };

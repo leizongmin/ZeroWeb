@@ -824,6 +824,14 @@ impl Document {
         result
     }
 
+    /// 单次 DFS 收集多个 tag 的元素（合并多次 `get_elements_by_tag_name` 的全树
+    /// 遍历——pipeline 每帧对 meta/style/img 等多次遍历，合并后遍历次数减半）。
+    pub fn get_elements_by_tag_names(&self, tags: &[&str]) -> Vec<NodeId> {
+        let mut result = Vec::new();
+        self.collect_by_tag_names(self.root, tags, &mut result);
+        result
+    }
+
     /// 根据命名空间和标签名查找所有匹配的元素节点。
     ///
     /// - `namespace` 为 `Some(ns)` 时匹配指定命名空间，为 `None` 时匹配任意命名空间（通配）。
@@ -1476,6 +1484,21 @@ impl Document {
     }
 
     /// 递归收集指定标签名的元素。
+    fn collect_by_tag_names(&self, id: NodeId, tags: &[&str], result: &mut Vec<NodeId>) {
+        let node_data = match self.nodes.get(id) {
+            Some(n) => n,
+            None => return,
+        };
+        if let NodeKind::Element(elem) = &node_data.kind
+            && tags.iter().any(|t| elem.local_name().eq_ignore_ascii_case(t))
+        {
+            result.push(id);
+        }
+        for &child in &node_data.children {
+            self.collect_by_tag_names(child, tags, result);
+        }
+    }
+
     fn collect_by_tag_name(&self, id: NodeId, tag: &str, result: &mut Vec<NodeId>) {
         let node_data = match self.nodes.get(id) {
             Some(n) => n,
