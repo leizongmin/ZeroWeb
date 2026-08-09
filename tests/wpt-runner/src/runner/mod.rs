@@ -230,6 +230,31 @@ mod runtime_path_tests {
             );
         }
     }
+
+    /// R3079：所有 canvas 用例经 `js_executes_ok` 真实执行内联脚本无异常。闭合 R3077（getContext DOM 集成）、
+    /// R3078（fillText/measureText/createImageData）、R3079（createLinearGradient/createRadialGradient/
+    /// createConicGradient、addColorStop、fillStyle=gradient、fill/fillRect 逐像素光栅化）后，canvas 赛道
+    /// 全部用例脚本可执行。canvas 用例原仅声明 render_completes（渲染完成即过——脚本抛 TypeError 不可见，
+    /// 即「空洞通过」）；本回归门经 check_js_executes_ok strict 执行验证 API 全链路可用，落地 R3078 defer 的
+    /// 「gradient 闭合后 39/39 统一应用 js_executes_ok」。
+    #[test]
+    fn canvas_cases_execute_scripts_r3079() {
+        let ctx = TestContext::default();
+        let cases = filter_tests_by_category(&builtin_tests(), "canvas");
+        assert!(!cases.is_empty(), "canvas 用例集非空");
+        let mut failed: Vec<String> = Vec::new();
+        for case in &cases {
+            if let Err(e) = check_js_executes_ok(&case.html, &ctx) {
+                failed.push(format!("{}: {}", case.id, e));
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "canvas 用例应全部 js_executes_ok 通过（{} 例失败）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
 }
 
 /// 运行单个测试用例，返回结果。

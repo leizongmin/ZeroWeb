@@ -681,6 +681,34 @@ impl CanvasContext {
         }
     }
 
+    /// 矩形渐变填充：每像素按设备坐标采样样式颜色，应用 global_alpha + 当前合成操作。
+    /// 与 `blit_rect_to_pixels` 对偶，供渐变样式（linear/radial/conic）的 `fill_rect` 路径使用。
+    pub(crate) fn blit_rect_gradient(&mut self, rect: &Rect, style: &CanvasStyle) {
+        let canvas_w = self.width as usize;
+        let canvas_h = self.height as usize;
+        let x_start = rect.left().max(0.0) as usize;
+        let y_start = rect.top().max(0.0) as usize;
+        let x_end = (rect.right().min(self.width as f32) as usize).min(canvas_w);
+        let y_end = (rect.bottom().min(self.height as f32) as usize).min(canvas_h);
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                let color = self.apply_alpha(style.sample_at(x as f32, y as f32));
+                let idx = (y * canvas_w + x) * 4;
+                let (r, g, b, a) = self.composite_pixel(
+                    color,
+                    self.pixel_buffer[idx],
+                    self.pixel_buffer[idx + 1],
+                    self.pixel_buffer[idx + 2],
+                    self.pixel_buffer[idx + 3],
+                );
+                self.pixel_buffer[idx] = r;
+                self.pixel_buffer[idx + 1] = g;
+                self.pixel_buffer[idx + 2] = b;
+                self.pixel_buffer[idx + 3] = a;
+            }
+        }
+    }
+
     /// 将路径填充写入像素缓冲区（扫描线光栅化）。
     pub(crate) fn blit_path_to_pixels(&mut self, vertices: &[f32], color: Color) {
         if vertices.len() < 4 {
@@ -725,6 +753,58 @@ impl CanvasContext {
                 for scan_x in ix_start..ix_end {
                     let idx = ((scan_y * canvas_w + scan_x) * 4) as usize;
                     if idx + 3 < self.pixel_buffer.len() {
+                        self.pixel_buffer[idx] = color.r;
+                        self.pixel_buffer[idx + 1] = color.g;
+                        self.pixel_buffer[idx + 2] = color.b;
+                        self.pixel_buffer[idx + 3] = color.a;
+                    }
+                }
+            }
+        }
+    }
+
+    /// 路径渐变填充：扫描线光栅化，覆盖写入每像素按设备坐标采样的样式颜色（与 `blit_path_to_pixels`
+    /// 同语义——覆盖写、不消费合成操作——仅替换固定色为逐像素渐变采样）。供渐变样式的 `fill` 路径使用。
+    pub(crate) fn blit_path_gradient(&mut self, vertices: &[f32], style: &CanvasStyle) {
+        if vertices.len() < 4 {
+            return;
+        }
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        let mut points: Vec<(f32, f32)> = Vec::new();
+        for chunk in vertices.chunks_exact(2) {
+            let (px, py) = (chunk[0], chunk[1]);
+            min_x = min_x.min(px);
+            min_y = min_y.min(py);
+            max_x = max_x.max(px);
+            max_y = max_y.max(py);
+            points.push((px, py));
+        }
+        let canvas_w = self.width;
+        let canvas_h = self.height;
+        let y_start = min_y.max(0.0).ceil() as u32;
+        let y_end = max_y.min(canvas_h as f32).ceil() as u32;
+        for scan_y in y_start..y_end {
+            let mut intersections: Vec<f32> = Vec::new();
+            let sy = scan_y as f32 + 0.5;
+            for i in 0..points.len() {
+                let (x1, y1) = points[i];
+                let (x2, y2) = points[(i + 1) % points.len()];
+                if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
+                    let t = (sy - y1) / (y2 - y1);
+                    intersections.push(x1 + t * (x2 - x1));
+                }
+            }
+            intersections.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            for pair in intersections.chunks_exact(2) {
+                let ix_start = pair[0].max(0.0) as u32;
+                let ix_end = pair[1].min(canvas_w as f32) as u32;
+                for scan_x in ix_start..ix_end {
+                    let idx = ((scan_y * canvas_w + scan_x) * 4) as usize;
+                    if idx + 3 < self.pixel_buffer.len() {
+                        let color = self.apply_alpha(style.sample_at(scan_x as f32, sy));
                         self.pixel_buffer[idx] = color.r;
                         self.pixel_buffer[idx + 1] = color.g;
                         self.pixel_buffer[idx + 2] = color.b;

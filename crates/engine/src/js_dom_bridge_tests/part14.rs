@@ -308,3 +308,60 @@ fn test_canvas_ctx2d_text_imagedata_r3078() {
     assert_eq!(sandbox.execute("globalThis.__izero").unwrap().value, "true", "createImageData blank → data 全 0（透明）");
     assert_eq!(sandbox.execute("globalThis.__icopy").unwrap().value, "true", "createImageData(imgData) 复制尺寸");
 }
+
+#[test]
+fn test_canvas_ctx2d_gradient_r3079() {
+    // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
+    // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas
+    // 用例（canvas/script-gradient + canvas/gradient-pattern）。host 持渐变注册表（独立 id 命名空间），
+    // fillStyle setter 检测渐变对象 → setFillStyleGradient 查表克隆到 context 样式；canvas crate 经 sample_at
+    // 逐像素光栅化（像素级正确性见 canvas crate test_fill_rect_linear_gradient_rasterizes）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='200' height='100'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① createLinearGradient 返渐变对象（带 addColorStop 方法）。
+    // ② addColorStop 不抛（经 host addColorStop 变更停止点）。
+    // ③ fillStyle = 渐变对象后，getter 返回该渐变对象（spec round-trip）。
+    // ④ fillRect 用渐变 fillStyle 不抛（canvas crate 逐像素光栅化）。
+    // ⑤ createRadialGradient / createConicGradient 返渐变对象 + addColorStop 不抛。
+    sandbox
+        .execute(
+            "var cv = document.getElementById('cv');\
+             var ctx = cv.getContext('2d');\
+             var grad = ctx.createLinearGradient(0, 0, 200, 0);\
+             globalThis.__hasAddColorStop = String(typeof grad.addColorStop === 'function');\
+             grad.addColorStop(0, 'red');\
+             grad.addColorStop(0.5, 'yellow');\
+             grad.addColorStop(1, 'green');\
+             ctx.fillStyle = grad;\
+             globalThis.__styleRoundTrip = String(ctx.fillStyle === grad);\
+             ctx.fillRect(0, 0, 200, 100);\
+             globalThis.__fillOk = 'ok';\
+             var rg = ctx.createRadialGradient(100, 50, 10, 100, 50, 80);\
+             rg.addColorStop(0, 'white');\
+             rg.addColorStop(1, 'blue');\
+             globalThis.__rgOk = String(typeof rg.addColorStop === 'function');\
+             var cg = ctx.createConicGradient(0, 100, 50);\
+             cg.addColorStop(0, 'red');\
+             cg.addColorStop(1, 'blue');\
+             globalThis.__cgOk = String(typeof cg.addColorStop === 'function');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hasAddColorStop").unwrap().value, "true", "createLinearGradient 返对象带 addColorStop 方法");
+    assert_eq!(sandbox.execute("globalThis.__styleRoundTrip").unwrap().value, "true", "fillStyle = grad 后 getter 返回该渐变对象（spec round-trip）");
+    assert_eq!(sandbox.execute("globalThis.__fillOk").unwrap().value, "ok", "fillRect 用渐变 fillStyle 不抛（逐像素光栅化）");
+    assert_eq!(sandbox.execute("globalThis.__rgOk").unwrap().value, "true", "createRadialGradient 返渐变对象");
+    assert_eq!(sandbox.execute("globalThis.__cgOk").unwrap().value, "true", "createConicGradient 返渐变对象");
+}

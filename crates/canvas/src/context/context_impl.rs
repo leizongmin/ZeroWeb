@@ -76,9 +76,17 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_rect(&rect);
         }
-        let color = self.apply_alpha(self.fill_style.resolve_color());
-        self.primitives.add_fill(rect, color);
-        self.blit_rect_to_pixels(&rect, color);
+        if self.fill_style.is_gradient() {
+            // 渐变：每像素采样光栅化（真实 gradient 渲染）。primitives 合成层用 midpoint 近似单色记录
+            //（GPU 合成路径的 gradient 为独立大工程，headless 像素回读路径已逐像素正确）。
+            let approx = self.apply_alpha(self.fill_style.resolve_color());
+            self.primitives.add_fill(rect, approx);
+            self.blit_rect_gradient(&rect, &self.fill_style.clone());
+        } else {
+            let color = self.apply_alpha(self.fill_style.resolve_color());
+            self.primitives.add_fill(rect, color);
+            self.blit_rect_to_pixels(&rect, color);
+        }
     }
 
     /// 描边矩形。
@@ -260,9 +268,15 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_path(&vertices);
         }
-        let color = self.apply_alpha(self.fill_style.resolve_color());
-        self.primitives.add_path_fill(vertices.clone(), color);
-        self.blit_path_to_pixels(&vertices, color);
+        if self.fill_style.is_gradient() {
+            let approx = self.apply_alpha(self.fill_style.resolve_color());
+            self.primitives.add_path_fill(vertices.clone(), approx);
+            self.blit_path_gradient(&vertices, &self.fill_style.clone());
+        } else {
+            let color = self.apply_alpha(self.fill_style.resolve_color());
+            self.primitives.add_path_fill(vertices.clone(), color);
+            self.blit_path_to_pixels(&vertices, color);
+        }
     }
 
     /// 描边路径。将路径命令扁平化为顶点列表，生成路径描边图元。
@@ -295,9 +309,15 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_path(&vertices);
         }
-        let color = self.apply_alpha(self.fill_style.resolve_color());
-        self.primitives.add_path_fill(vertices.clone(), color);
-        self.blit_path_to_pixels(&vertices, color);
+        if self.fill_style.is_gradient() {
+            let approx = self.apply_alpha(self.fill_style.resolve_color());
+            self.primitives.add_path_fill(vertices.clone(), approx);
+            self.blit_path_gradient(&vertices, &self.fill_style.clone());
+        } else {
+            let color = self.apply_alpha(self.fill_style.resolve_color());
+            self.primitives.add_path_fill(vertices.clone(), color);
+            self.blit_path_to_pixels(&vertices, color);
+        }
     }
 
     /// 使用指定 Path2D 描边路径。

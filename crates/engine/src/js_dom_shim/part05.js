@@ -646,14 +646,43 @@
     var n = parseInt(String(raw == null ? '' : raw), 10);
     return (isNaN(n) || n < 0) ? def : n;
   }
+  // R3079：CanvasGradient proxy。_zwGrad 为渐变 host id 标记（fillStyle/strokeStyle setter 检测）。
+  // addColorStop(offset, color) 经 host 变更停止点（offset canvas crate clamp [0,1]）。
+  function _zwMakeGradient(h, gid) {
+    return {
+      _zwGrad: gid,
+      addColorStop: function (offset, color) {
+        __zw_canvas_op(h, 'addColorStop', gid, String(offset), String(color));
+      },
+    };
+  }
   function _zwMakeCtx2d(h) {
     var ctx = { _handle: h, canvas: null, _fs: '#000000', _ss: '#000000', _lw: 1.0 };
+    // R3079：fillStyle/strokeStyle 接受颜色串或 CanvasGradient 对象。spec — 设渐变后 getter 返回该渐变对象。
+    // 渐变对象带 _zwGrad 标记（_zwMakeGradient）；命中走 setFillStyleGradient/setStrokeStyleGradient（host 查渐变
+    // 注册表克隆到 context 样式），否则按颜色串解析。
     Object.defineProperty(ctx, 'fillStyle', {
-      set: function (v) { this._fs = String(v); __zw_canvas_op(h, 'setFillStyle', String(v)); },
+      set: function (v) {
+        if (v && typeof v === 'object' && v._zwGrad) {
+          this._fs = v;
+          __zw_canvas_op(h, 'setFillStyleGradient', String(v._zwGrad));
+        } else {
+          this._fs = String(v);
+          __zw_canvas_op(h, 'setFillStyle', String(v));
+        }
+      },
       get: function () { return this._fs; }
     });
     Object.defineProperty(ctx, 'strokeStyle', {
-      set: function (v) { this._ss = String(v); __zw_canvas_op(h, 'setStrokeStyle', String(v)); },
+      set: function (v) {
+        if (v && typeof v === 'object' && v._zwGrad) {
+          this._ss = v;
+          __zw_canvas_op(h, 'setStrokeStyleGradient', String(v._zwGrad));
+        } else {
+          this._ss = String(v);
+          __zw_canvas_op(h, 'setStrokeStyle', String(v));
+        }
+      },
       get: function () { return this._ss; }
     });
     Object.defineProperty(ctx, 'lineWidth', {
@@ -707,6 +736,21 @@
         h = Math.abs(+b || 0) | 0;
       }
       return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4), colorSpace: 'srgb' };
+    };
+    // R3079：CanvasGradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop）。
+    // host 持渐变注册表（独立 id 命名空间）；create* 返 host id，JS 包一层 proxy。addColorStop 经 host
+    // 变更停止点。fillStyle/strokeStyle 设渐变对象走 setFillStyleGradient（host 查表克隆）。spec CanvasGradient。
+    ctx.createLinearGradient = function (x0, y0, x1, y1) {
+      var gid = String(__zw_canvas_op(h, 'createLinearGradient', String(+x0 || 0), String(+y0 || 0), String(+x1 || 0), String(+y1 || 0)));
+      return _zwMakeGradient(h, gid);
+    };
+    ctx.createRadialGradient = function (x0, y0, r0, x1, y1, r1) {
+      var gid = String(__zw_canvas_op(h, 'createRadialGradient', String(+x0 || 0), String(+y0 || 0), String(+r0 || 0), String(+x1 || 0), String(+y1 || 0), String(+r1 || 0)));
+      return _zwMakeGradient(h, gid);
+    };
+    ctx.createConicGradient = function (startAngle, cx, cy) {
+      var gid = String(__zw_canvas_op(h, 'createConicGradient', String(+startAngle || 0), String(+cx || 0), String(+cy || 0)));
+      return _zwMakeGradient(h, gid);
     };
     // ── slice 2：path 曲线 / 状态栈 / transforms / line 样式 / globalAlpha（R2796）──
     ctx.quadraticCurveTo = function (cpx, cpy, x, y) {

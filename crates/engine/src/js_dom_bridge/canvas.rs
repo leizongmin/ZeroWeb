@@ -6,6 +6,41 @@
 
 use std::collections::HashMap;
 
+/// Canvas host 注册表：上下文表 + 渐变表。
+///
+/// 上下文由 `getContext('2d')` 创建（`getContext2d` op），按 id 索引。
+/// 渐变由 `createLinearGradient`/`createRadialGradient`/`createConicGradient` 创建，独立 id 命名空间
+///（spec：CanvasGradient 为独立对象，可被任意 context 的 fillStyle/strokeStyle 引用）。`addColorStop`
+/// 经渐变 id 变更停止点；`setFillStyleGradient`/`setStrokeStyleGradient` 经渐变 id 查表克隆到 context 样式。
+pub struct CanvasRegistry {
+    /// 下一个 context id（从 1 起）。
+    pub next_ctx_id: u64,
+    /// context id → CanvasContext。
+    pub contexts: HashMap<u64, zero_canvas::CanvasContext>,
+    /// 下一个 gradient id（从 1 起，与 context id 独立命名空间）。
+    pub next_grad_id: u64,
+    /// gradient id → CanvasStyle（仅渐变变体）。
+    pub gradients: HashMap<u64, zero_canvas::CanvasStyle>,
+}
+
+impl CanvasRegistry {
+    /// 创建空注册表。
+    pub fn new() -> Self {
+        Self {
+            next_ctx_id: 1,
+            contexts: HashMap::new(),
+            next_grad_id: 1,
+            gradients: HashMap::new(),
+        }
+    }
+}
+
+impl Default for CanvasRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// canvas 颜色串 → render Color（复用 CSS 颜色解析：named/hex/rgb/hsl 等）。解析失败回落黑色。
 fn parse_canvas_color(s: &str) -> zero_render_foundation::color::Color {
     use zero_render_foundation::color::Color;
@@ -99,88 +134,83 @@ fn parse_image_data_wire(s: &str) -> zero_canvas::ImageData {
     }
 }
 
-/// `HTMLCanvasElement.getContext('2d')` 派发（R2795，canvas slice 1）。host 持 `CanvasContext` 注册表
-///（`Arc<Mutex<(next_id, HashMap<id, CanvasContext>)>>`），JS 经 `__zw_canvas_op(handle, op, ...args)`
+/// `HTMLCanvasElement.getContext('2d')` 派发（R2795，canvas slice 1）。host 持 `CanvasRegistry`
+///（`Arc<Mutex<CanvasRegistry>>`，上下文表 + 渐变表），JS 经 `__zw_canvas_op(handle, op, ...args)`
 /// 串参派发（避免 JSON/serde 依赖）。**关键**：zero-canvas `fill_rect`/`stroke_rect` 便捷法**不写
 /// pixel_buffer**（仅记 primitives），但 `fill()`/`stroke()`（path-based）经 `blit_path/stroke_to_pixels`
 /// **写 pixel_buffer**——故 `fillRect` shim 经 beginPath+moveTo+lines+fill 实现（rasterize，getImageData
-/// 可回读）。`getContext2d` 创建上下文返 id；`getImageData` 返 `"{w},{h};{r},{g},{b},{a},..."`。
+/// 可回读）。渐变样式经 `blit_rect_gradient`/`blit_path_gradient` 逐像素采样光栅化（R3079）。
+/// `getContext2d` 创建上下文返 id；`getImageData` 返 `"{w},{h};{r},{g},{b},{a},..."`。
 /// 供 `__zw_canvas_op` 回调 → shim canvas element + CanvasRenderingContext2D proxy。
-pub fn canvas_context_op(
-    reg: &mut (u64, HashMap<u64, zero_canvas::CanvasContext>),
-    handle: &str,
-    op: &str,
-    args: &[String],
-) -> String {
+pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args: &[String]) -> String {
     let arg = |i: usize| args.get(i).map(String::as_str).unwrap_or("0");
     let f = |i: usize| arg(i).trim().parse::<f32>().unwrap_or(0.0);
     let hid = || handle.trim().parse::<u64>().unwrap_or(0);
     match op {
         "getContext2d" => {
-            let (next, ctxs) = reg;
-            let id = *next;
-            *next += 1;
+            let id = reg.next_ctx_id;
+            reg.next_ctx_id += 1;
             let w = arg(0).trim().parse::<u32>().unwrap_or(300);
             let h = arg(1).trim().parse::<u32>().unwrap_or(150);
-            ctxs.insert(id, zero_canvas::CanvasContext::new(w, h));
+            reg.contexts.insert(id, zero_canvas::CanvasContext::new(w, h));
             id.to_string()
         }
         "setFillStyle" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_fill_color(parse_canvas_color(arg(0)));
             }
             "ok".into()
         }
         "setStrokeStyle" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_stroke_color(parse_canvas_color(arg(0)));
             }
             "ok".into()
         }
         "setLineWidth" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_line_width(f(0));
             }
             "ok".into()
         }
         "beginPath" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.begin_path();
             }
             "ok".into()
         }
         "closePath" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.close_path();
             }
             "ok".into()
         }
         "moveTo" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.move_to(f(0), f(1));
             }
             "ok".into()
         }
         "lineTo" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.line_to(f(0), f(1));
             }
             "ok".into()
         }
         "arc" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.arc(f(0), f(1), f(2), f(3), f(4));
             }
             "ok".into()
         }
         "fill" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.fill();
             }
             "ok".into()
         }
         "stroke" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.stroke();
             }
             "ok".into()
@@ -188,19 +218,19 @@ pub fn canvas_context_op(
         // R3078：Canvas 2D 文本 API。fill_text 绘制（canvas crate fill_text 写 pixel_buffer）；measure_text 返
         // TextMetrics（width + bounding box，csv 串参返 JS 构 {width,...}）。spec CanvasRenderingContext2D。
         "fillText" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.fill_text(arg(0), f(1), f(2));
             }
             "ok".into()
         }
         "strokeText" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.fill_text(arg(0), f(1), f(2)); // canvas crate 无独立 stroke_text；近似 fill_text（headless 简化）
             }
             "ok".into()
         }
         "measureText" => {
-            if let Some(ctx) = reg.1.get(&hid()) {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
                 let m = ctx.measure_text(arg(0));
                 // width,ascent,descent csv（JS 构 TextMetrics {width, actualBoundingBoxAscent/Descent}）。
                 format!(
@@ -213,7 +243,7 @@ pub fn canvas_context_op(
         }
         // fillRect：经 path（rasterize 到 pixel_buffer，绕过 fill_rect 便捷法不写 pixel_buffer 之限制）。
         "fillRect" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 let (x, y, w, h) = (f(0), f(1), f(2), f(3));
                 ctx.begin_path();
                 ctx.move_to(x, y);
@@ -226,7 +256,7 @@ pub fn canvas_context_op(
             "ok".into()
         }
         "strokeRect" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 let (x, y, w, h) = (f(0), f(1), f(2), f(3));
                 ctx.begin_path();
                 ctx.move_to(x, y);
@@ -239,39 +269,39 @@ pub fn canvas_context_op(
             "ok".into()
         }
         "clearRect" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.clear_rect(f(0), f(1), f(2), f(3));
             }
             "ok".into()
         }
         // ── slice 2：path 曲线 / 状态栈 / transforms / line 样式 / globalAlpha（R2796）──
         "quadraticCurveTo" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.quadratic_curve_to(f(0), f(1), f(2), f(3));
             }
             "ok".into()
         }
         "bezierCurveTo" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.bezier_curve_to(f(0), f(1), f(2), f(3), f(4), f(5));
             }
             "ok".into()
         }
         "ellipse" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.ellipse(f(0), f(1), f(2), f(3), f(4), f(5), f(6));
             }
             "ok".into()
         }
         "arcTo" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.arc_to(f(0), f(1), f(2), f(3), f(4));
             }
             "ok".into()
         }
         // rect 路径命令：CanvasContext 无 rect() 方法，用 MoveTo+3 LineTo（匹配 Path2D::rect，不 auto-close）。
         "rect" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 let (x, y, w, h) = (f(0), f(1), f(2), f(3));
                 ctx.move_to(x, y);
                 ctx.line_to(x + w, y);
@@ -281,49 +311,49 @@ pub fn canvas_context_op(
             "ok".into()
         }
         "clip" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.clip();
             }
             "ok".into()
         }
         "save" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.save();
             }
             "ok".into()
         }
         "restore" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.restore();
             }
             "ok".into()
         }
         "translate" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.translate(f(0), f(1));
             }
             "ok".into()
         }
         "rotate" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.rotate(f(0));
             }
             "ok".into()
         }
         "scale" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.scale(f(0), f(1));
             }
             "ok".into()
         }
         "setTransform" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_transform(f(0), f(1), f(2), f(3), f(4), f(5));
             }
             "ok".into()
         }
         "transform" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.transform(f(0), f(1), f(2), f(3), f(4), f(5));
             }
             "ok".into()
@@ -331,7 +361,7 @@ pub fn canvas_context_op(
         // R2985 getTransform：返当前 2D 变换矩阵 "a,b,c,d,e,f"（shim 包 DOMMatrix）。只读（get_transform
         // 取 &self），无 ctx → identity "1,0,0,1,0,0"。Canvas 2D spec getTransform() → DOMMatrix。
         "getTransform" => {
-            if let Some(ctx) = reg.1.get(&hid()) {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
                 let t = ctx.get_transform();
                 return format!("{},{},{},{},{},{}", t.a, t.b, t.c, t.d, t.e, t.f);
             }
@@ -339,19 +369,19 @@ pub fn canvas_context_op(
         }
         // R2985 resetTransform：重置为单位矩阵（spec setTransform(identity)）。
         "resetTransform" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.reset_transform();
             }
             "ok".into()
         }
         "setGlobalAlpha" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_global_alpha(f(0));
             }
             "ok".into()
         }
         "setLineDash" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 let segs: Vec<f32> = arg(0)
                     .split(',')
                     .filter(|s| !s.trim().is_empty())
@@ -362,13 +392,13 @@ pub fn canvas_context_op(
             "ok".into()
         }
         "setLineJoin" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_line_join(parse_line_join(arg(0)));
             }
             "ok".into()
         }
         "setLineCap" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_line_cap(parse_line_cap(arg(0)));
             }
             "ok".into()
@@ -377,31 +407,31 @@ pub fn canvas_context_op(
         // composite 状态真实（host 持 state，save/restore 含）；effect 仅经 composite_pixel 在 rect-blit/stroke
         // 生效，path-based fill 不消费（见 parse_composite_operation 注释）。
         "setCompositeOperation" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_composite_operation(parse_composite_operation(arg(0)));
             }
             "ok".into()
         }
         "setShadowColor" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_shadow_color(parse_canvas_color(arg(0)));
             }
             "ok".into()
         }
         "setShadowBlur" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_shadow_blur(f(0));
             }
             "ok".into()
         }
         "setShadowOffsetX" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_shadow_offset_x(f(0));
             }
             "ok".into()
         }
         "setShadowOffsetY" => {
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_shadow_offset_y(f(0));
             }
             "ok".into()
@@ -418,7 +448,7 @@ pub fn canvas_context_op(
                 .filter(|s| !s.trim().is_empty())
                 .filter_map(|s| s.trim().parse::<u8>().ok())
                 .collect();
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 let img = zero_canvas::ImageData {
                     width: w,
                     height: h,
@@ -435,7 +465,7 @@ pub fn canvas_context_op(
         "drawImage" => {
             let img = parse_image_data_wire(arg(0));
             let (dx, dy) = (f(1), f(2));
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.draw_image(&img, dx, dy);
             }
             "ok".into()
@@ -443,7 +473,7 @@ pub fn canvas_context_op(
         "drawImageScaled" => {
             let img = parse_image_data_wire(arg(0));
             let (dx, dy, dw, dh) = (f(1), f(2), f(3), f(4));
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.draw_image_with_size(&img, dx, dy, dw, dh);
             }
             "ok".into()
@@ -451,7 +481,7 @@ pub fn canvas_context_op(
         "drawImageSliced" => {
             let img = parse_image_data_wire(arg(0));
             let (sx, sy, sw, sh, dx, dy, dw, dh) = (f(1), f(2), f(3), f(4), f(5), f(6), f(7), f(8));
-            if let Some(ctx) = reg.1.get_mut(&hid()) {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.draw_image_sliced(&img, sx, sy, sw, sh, dx, dy, dw, dh);
             }
             "ok".into()
@@ -460,7 +490,7 @@ pub fn canvas_context_op(
         // 返**逗号分隔十进制串**（shim 转 Latin-1 → btoa → `data:image/png;base64,...`）。复用 png crate
         //（miniz_oxide 已 transitive）；编码失败返空串（shim 回落 `data:,`）。仅 'image/png'（jpeg/webp defer）。
         "toDataURL" => {
-            if let Some(ctx) = reg.1.get(&hid()) {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
                 let w = ctx.width().max(1);
                 let h = ctx.height().max(1);
                 let img = ctx.get_image_data(0, 0, w, h);
@@ -488,7 +518,7 @@ pub fn canvas_context_op(
                 arg(2).trim().parse::<u32>().unwrap_or(0),
                 arg(3).trim().parse::<u32>().unwrap_or(0),
             );
-            if let Some(ctx) = reg.1.get(&hid()) {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
                 let img = ctx.get_image_data(x, y, w, h);
                 let mut out = format!("{}:{};", img.width, img.height);
                 let mut first = true;
@@ -502,6 +532,53 @@ pub fn canvas_context_op(
                 return out;
             }
             "0:0;".into()
+        }
+        // ── 渐变（R3079）：CanvasGradient 独立对象，独立 id 命名空间。createLinear/Radial/Conic 返渐变 id；
+        // addColorStop 经 id 变更停止点；setFill/StrokeStyleGradient 经 id 查表克隆到 context 样式（fill_rect/
+        // fill/fill_with_path 在 canvas crate 经 sample_at 逐像素光栅化）。spec CanvasRenderingContext2D。
+        "createLinearGradient" => {
+            let id = reg.next_grad_id;
+            reg.next_grad_id += 1;
+            let grad = zero_canvas::LinearGradient::new(f(0), f(1), f(2), f(3));
+            reg.gradients.insert(id, zero_canvas::CanvasStyle::LinearGradient(grad));
+            id.to_string()
+        }
+        "createRadialGradient" => {
+            let id = reg.next_grad_id;
+            reg.next_grad_id += 1;
+            let grad = zero_canvas::RadialGradient::new(f(0), f(1), f(2), f(3), f(4), f(5));
+            reg.gradients.insert(id, zero_canvas::CanvasStyle::RadialGradient(grad));
+            id.to_string()
+        }
+        "createConicGradient" => {
+            let id = reg.next_grad_id;
+            reg.next_grad_id += 1;
+            let grad = zero_canvas::ConicGradient::new(f(0), f(1), f(2));
+            reg.gradients.insert(id, zero_canvas::CanvasStyle::ConicGradient(grad));
+            id.to_string()
+        }
+        // addColorStop(gradId, offset, color)：变更渐变停止点。offset 经 canvas crate clamp 到 [0,1]（spec）。
+        "addColorStop" => {
+            let gid = arg(0).trim().parse::<u64>().unwrap_or(0);
+            let offset = f(1).clamp(0.0, 1.0);
+            if let Some(style) = reg.gradients.get_mut(&gid) {
+                style.add_color_stop(offset, parse_canvas_color(arg(2)));
+            }
+            "ok".into()
+        }
+        "setFillStyleGradient" => {
+            let gid = arg(0).trim().parse::<u64>().unwrap_or(0);
+            if let (Some(ctx), Some(style)) = (reg.contexts.get_mut(&hid()), reg.gradients.get(&gid)) {
+                ctx.set_fill_style(style.clone());
+            }
+            "ok".into()
+        }
+        "setStrokeStyleGradient" => {
+            let gid = arg(0).trim().parse::<u64>().unwrap_or(0);
+            if let (Some(ctx), Some(style)) = (reg.contexts.get_mut(&hid()), reg.gradients.get(&gid)) {
+                ctx.set_stroke_style(style.clone());
+            }
+            "ok".into()
         }
         _ => "ok".into(),
     }

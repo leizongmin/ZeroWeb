@@ -1307,3 +1307,89 @@ fn test_blit_stroke_variable_width_path() {
     // Should handle path with many segments
     assert!(outline.len() > 100);
 }
+
+// ── 渐变光栅化（R3079）：sample_at + blit_rect_gradient/blit_path_gradient 经 fill_rect/fill 路径 ──
+
+#[test]
+fn test_canvas_style_sample_at_linear() {
+    // 线性渐变 red(0)→blue(1) 沿 x 轴 0..20
+    let mut grad = LinearGradient::new(0.0, 0.0, 20.0, 0.0);
+    grad.add_color_stop(0.0, Color::rgba(255, 0, 0, 255));
+    grad.add_color_stop(1.0, Color::rgba(0, 0, 255, 255));
+    let style = CanvasStyle::LinearGradient(grad);
+    assert!(style.is_gradient());
+    // 端点：t=0 红，t=1 蓝
+    assert_eq!(style.sample_at(0.0, 5.0), Color::rgba(255, 0, 0, 255));
+    assert_eq!(style.sample_at(20.0, 5.0), Color::rgba(0, 0, 255, 255));
+    // 中点：红蓝各半（lerp_u8(255,0,0.5)=128，lerp_u8(0,255,0.5)=128）
+    assert_eq!(style.sample_at(10.0, 5.0), Color::rgba(128, 0, 128, 255));
+    // 超出渐变线延伸：钳制到端点色（spec）
+    assert_eq!(style.sample_at(-5.0, 5.0), Color::rgba(255, 0, 0, 255));
+    assert_eq!(style.sample_at(50.0, 5.0), Color::rgba(0, 0, 255, 255));
+}
+
+#[test]
+fn test_canvas_style_sample_at_radial() {
+    // 径向渐变 white(0)→blue(1)，内心 (0,0,r0=0)，外心 (0,0,r1=10)
+    let mut grad = RadialGradient::new(0.0, 0.0, 0.0, 0.0, 0.0, 10.0);
+    grad.add_color_stop(0.0, Color::rgba(255, 255, 255, 255));
+    grad.add_color_stop(1.0, Color::rgba(0, 0, 255, 255));
+    let style = CanvasStyle::RadialGradient(grad);
+    assert!(style.is_gradient());
+    assert_eq!(style.sample_at(0.0, 0.0), Color::rgba(255, 255, 255, 255));
+    assert_eq!(style.sample_at(10.0, 0.0), Color::rgba(0, 0, 255, 255));
+}
+
+#[test]
+fn test_canvas_style_add_color_stop_and_is_gradient() {
+    // Color/Pattern 非 is_gradient；add_color_stop 为 no-op
+    let mut color_style = CanvasStyle::Color(Color::BLACK);
+    assert!(!color_style.is_gradient());
+    color_style.add_color_stop(0.5, Color::WHITE); // no-op，不应 panic
+    assert!(matches!(color_style, CanvasStyle::Color(_)));
+}
+
+#[test]
+fn test_fill_rect_linear_gradient_rasterizes() {
+    // 20×10 画布，红色→蓝色线性渐变沿 x，fill_rect 整画布。
+    let mut ctx = CanvasContext::new(20, 10);
+    let mut grad = ctx.create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+    grad.add_color_stop(0.0, Color::rgba(255, 0, 0, 255));
+    grad.add_color_stop(1.0, Color::rgba(0, 0, 255, 255));
+    ctx.set_fill_style(CanvasStyle::LinearGradient(grad));
+    ctx.fill_rect(0.0, 0.0, 20.0, 10.0);
+
+    // 第 3 行像素逐像素采样：左端（x=0, t=0）红；中点（x=10, t=0.5）紫 (128,0,128)；
+    // 右端（x=19, t=0.95）偏蓝 (13,0,242)——注意 t=1.0 在 x=20（fill 区间外），故右沿非纯蓝。
+    let row = 3usize;
+    let left = (row * 20) * 4;
+    assert_eq!(&ctx.pixel_buffer[left..left + 4], &[255, 0, 0, 255]);
+    let mid = (row * 20 + 10) * 4;
+    assert_eq!(&ctx.pixel_buffer[mid..mid + 4], &[128, 0, 128, 255]);
+    let right = (row * 20 + 19) * 4;
+    assert_eq!(&ctx.pixel_buffer[right..right + 4], &[13, 0, 242, 255]);
+}
+
+#[test]
+fn test_fill_path_linear_gradient_rasterizes() {
+    // 路径填充（fill）渐变：rect 路径 + 渐变 fillStyle。
+    let mut ctx = CanvasContext::new(20, 10);
+    let mut grad = ctx.create_linear_gradient(0.0, 0.0, 20.0, 0.0);
+    grad.add_color_stop(0.0, Color::rgba(255, 0, 0, 255));
+    grad.add_color_stop(1.0, Color::rgba(0, 0, 255, 255));
+    ctx.set_fill_style(CanvasStyle::LinearGradient(grad));
+    ctx.begin_path();
+    ctx.move_to(0.0, 0.0);
+    ctx.line_to(20.0, 0.0);
+    ctx.line_to(20.0, 10.0);
+    ctx.line_to(0.0, 10.0);
+    ctx.close_path();
+    ctx.fill();
+
+    let row = 5usize;
+    let left = (row * 20) * 4;
+    assert_eq!(&ctx.pixel_buffer[left..left + 4], &[255, 0, 0, 255]);
+    // 右沿 x=19 → t=0.95 → (13,0,242)（偏蓝，t=1.0 在区间外故非纯蓝）
+    let right = (row * 20 + 19) * 4;
+    assert_eq!(&ctx.pixel_buffer[right..right + 4], &[13, 0, 242, 255]);
+}

@@ -327,7 +327,7 @@ fn test_gradient_sample_empty_stops() {
     assert_eq!(grad.sample_color(0.5), Color::BLACK);
 }
 
-/// 测试使用渐变 fill_style 绘制 fill_rect。
+/// 测试使用渐变 fill_style 绘制 fill_rect（逐像素光栅化，R3079）。
 #[test]
 fn test_fill_rect_with_gradient_style() {
     let mut ctx = CanvasContext::new(100, 100);
@@ -336,12 +336,23 @@ fn test_fill_rect_with_gradient_style() {
     grad.add_color_stop(1.0, Color::BLUE);
     ctx.set_fill_style(CanvasStyle::LinearGradient(grad));
     ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
-    // 像素应使用 offset=0.5 处的采样色 (128, 0, 128)
-    let pixel = ctx.get_image_data(10, 10, 1, 1);
-    assert_eq!(pixel.data[0], 128);
-    assert_eq!(pixel.data[1], 0);
-    assert_eq!(pixel.data[2], 128);
-    assert_eq!(pixel.data[3], 255);
+    // R3079：fill_rect 现逐像素采样渐变（旧 resolve_color flat-midpoint 近似已废弃）。
+    // red→blue 沿 x=0..100，rect 0..50：左端 t≈0 偏红，右沿（x≈48, t≈0.48）偏紫——r 递减、b 递增。
+    let left = ctx.get_image_data(2, 25, 1, 1);
+    let right = ctx.get_image_data(48, 25, 1, 1);
+    assert!(
+        left.data[0] > right.data[0],
+        "渐变左→右：r 递减（{} → {}）",
+        left.data[0],
+        right.data[0]
+    );
+    assert!(
+        left.data[2] < right.data[2],
+        "渐变左→右：b 递增（{} → {}）",
+        left.data[2],
+        right.data[2]
+    );
+    assert_eq!(left.data[3], 255, "alpha 应为 255");
 }
 
 /// 测试使用渐变 stroke_style 绘制 stroke_rect。
@@ -555,7 +566,7 @@ fn test_canvas_resize_larger_clears_pixels() {
     assert_eq!(after.data[0..4], [0, 0, 0, 0], "resize 后像素应被清零");
 }
 
-/// 测试 set_fill_style 使用径向渐变后 fill_rect 像素使用采样颜色。
+/// 测试 set_fill_style 使用径向渐变后 fill_rect 逐像素光栅化（R3079）。
 #[test]
 fn test_fill_rect_with_radial_gradient_style() {
     let mut ctx = CanvasContext::new(100, 100);
@@ -564,15 +575,13 @@ fn test_fill_rect_with_radial_gradient_style() {
     grad.add_color_stop(1.0, Color::BLACK);
     ctx.set_fill_style(CanvasStyle::RadialGradient(grad));
     ctx.fill_rect(0.0, 0.0, 100.0, 100.0);
-    // fill_rect 使用 resolve_color()，对 RadialGradient 在 offset=0.5 处采样
-    let pixel = ctx.get_image_data(10, 10, 1, 1);
-    // 中间灰度值
-    assert!(
-        (pixel.data[0] as i32 - 128).abs() <= 2,
-        "radial gradient sample at 0.5 应为 ~128, got {}",
-        pixel.data[0]
-    );
-    assert_eq!(pixel.data[3], 255, "alpha 应为 255");
+    // R3079：径向渐变逐像素采样（旧 resolve_color flat-midpoint 近似已废弃）。
+    // 圆心 (50,50) t=0 白；角点 (0,0) dist≈70 > r1=50 → t=1 黑（spec 钳制到末停止点）。
+    let center = ctx.get_image_data(50, 50, 1, 1);
+    let corner = ctx.get_image_data(0, 0, 1, 1);
+    assert_eq!(center.data[0], 255, "圆心 t=0 白");
+    assert_eq!(center.data[3], 255, "alpha 应为 255");
+    assert_eq!(corner.data[0], 0, "角点 dist>r1 → t=1 黑");
 }
 
 /// 测试 set_stroke_style 使用锥形渐变后 stroke_rect 像素使用采样颜色。

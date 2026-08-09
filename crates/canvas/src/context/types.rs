@@ -444,6 +444,76 @@ impl CanvasStyle {
             CanvasStyle::Pattern(_) => Color::BLACK,
         }
     }
+
+    /// 为渐变变体添加颜色停止点（spec `CanvasGradient.addColorStop`）。
+    /// Color/Pattern 变体为 no-op（非渐变样式无停止点概念）。
+    pub fn add_color_stop(&mut self, offset: f32, color: Color) {
+        match self {
+            CanvasStyle::LinearGradient(g) => g.add_color_stop(offset, color),
+            CanvasStyle::RadialGradient(g) => g.add_color_stop(offset, color),
+            CanvasStyle::ConicGradient(g) => g.add_color_stop(offset, color),
+            _ => {}
+        }
+    }
+
+    /// 判断是否为渐变样式（光栅化路径分流用）。
+    pub fn is_gradient(&self) -> bool {
+        matches!(
+            self,
+            CanvasStyle::LinearGradient(_) | CanvasStyle::RadialGradient(_) | CanvasStyle::ConicGradient(_)
+        )
+    }
+
+    /// 在设备空间某点 (x, y) 采样样式颜色（spec canvas 渐变光栅化的核心）。
+    ///
+    /// - Color：直接返回。
+    /// - LinearGradient：将点投影到渐变线 (x0,y0)→(x1,y1) 得参数 t∈[0,1]，再线性插值停止点。
+    ///   https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-createlineargradient
+    /// - RadialGradient：以内心 (x0,y0,r0) 为基准，按距离归一化到外圆 (x1,y1,r1) 得 t。
+    /// - ConicGradient：以中心 (cx,cy) 计相对 start_angle 的角度，归一化到 [0,1]。
+    /// - Pattern：回落黑色（图案平铺光栅化 defer）。
+    ///
+    /// 偏移量超出 [0,1] 由 `sample_gradient_stops` 钳制到首/末停止点颜色（spec：渐变在停止点之外延伸为端点色）。
+    pub fn sample_at(&self, x: f32, y: f32) -> Color {
+        match self {
+            CanvasStyle::Color(c) => *c,
+            CanvasStyle::LinearGradient(g) => {
+                let dx = g.x1 - g.x0;
+                let dy = g.y1 - g.y0;
+                let len2 = dx * dx + dy * dy;
+                let t = if len2 < f32::EPSILON {
+                    0.0
+                } else {
+                    ((x - g.x0) * dx + (y - g.y0) * dy) / len2
+                };
+                sample_gradient_stops(&g.stops, t)
+            }
+            CanvasStyle::RadialGradient(g) => {
+                let ddx = x - g.x0;
+                let ddy = y - g.y0;
+                let dist = (ddx * ddx + ddy * ddy).sqrt();
+                let span = g.r1 - g.r0;
+                let t = if span.abs() < f32::EPSILON {
+                    0.0
+                } else {
+                    (dist - g.r0) / span
+                };
+                sample_gradient_stops(&g.stops, t)
+            }
+            CanvasStyle::ConicGradient(g) => {
+                let mut ang = (y - g.cy).atan2(x - g.cx) - g.start_angle;
+                // 归一化到 [0, 2π)
+                while ang < 0.0 {
+                    ang += std::f32::consts::TAU;
+                }
+                while ang >= std::f32::consts::TAU {
+                    ang -= std::f32::consts::TAU;
+                }
+                sample_gradient_stops(&g.stops, ang / std::f32::consts::TAU)
+            }
+            CanvasStyle::Pattern(_) => Color::BLACK,
+        }
+    }
 }
 
 /// 渐变停止点颜色采样辅助函数。
