@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1b S3 selector→NodeId native——querySelector/querySelectorAll 全量选择器引擎搬 native（NodeId 直返对象，无 String 往返，本轮 R3099）
+
+承接 R3098（S1 只读属性族，但 R3096/S2「下一步」选项一：native 工厂仅 `get_element_by_id`，querySelector 族仍走 polyfill 字符串桥）→ 本切片把 querySelector 族搬到 native。新增 2 全局工厂，消费 zero_dom **全量选择器引擎**（`Document::query_selector`/`query_selector_all`，返 `NodeId` 直——非 polyfill 的 stable selector String）：
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`__zw_native_query_selector(sel)` / `__zw_native_query_selector_all(sel)` 工厂** | `crates/engine/src/dom_bindings/mod.rs` | `native_query_selector_invoke`（首匹配 → `get_or_create_native_element`，无匹配/非法→`null`）+ `native_query_selector_all_invoke`（全匹配 → V8 `Array` of native 对象，文档序）。注册经 tuple-destructure `if let (Some(f), Some(key))`（避 clippy `collapsible_if`，且 MSRV 1.85 不支持 let-chains——let-chains 1.88 才稳定）。 |
+| **+2 单元测试** | `crates/engine/src/dom_bindings/tests.rs` | `native_query_selector`（tag/`.class`/`[attr=val]`/后代组合器 + 无匹配→null + 非法选择器→null 无 panic）、`native_query_selector_all`（`.length` + 各元素 native getter 读 + 跨 tag `.class` + 后代组合器 + 无匹配→空 Array）。 |
+| **首测 native querySelectorAll 路径 bench** | `crates/engine/benches/dom_bindings_bench.rs` | 新 `native_query_selector_all` metric（~765 ns/call，scoped 实测）——首测选择器解析 + 文档遍历 + N 对象实例化 + V8 Array 路径；HTML const 加 4 个 span（既有 'a'/'#a' 路径不受影响）。 |
+
+**为何净正向**：① 闭合 R3098「下一步」S3——native 工厂从 `get_element_by_id` 单选择器扩至全量选择器引擎（querySelector 族此前仅 polyfill String 桥，每次操作重解析 HTML 快照）；② 返 NodeId→对象直，无 String 往返（R3098 getter 表面可在 query 结果上直接 native 读）；③ 覆盖 dom query 全能力（tag/`*`/`#id`/`.class`/`[attr]`+6 运算符/伪类/后代·子组合器/逗号列表）；④ 纯追加——既有 baselined 路径未动，零回归；⑤ 默认 kill-switch 关 → 零行为变更。
+
+**已知限制（记录，后续切片）**：① **read-only 快照**（继承 R3097/R3098）——native 读 re-parse `cached_html` 独立 `Document`，不随页面 mutation 同步；querySelector 返对象经 R3098 只读 getter 读无碍；② **文档级查询**（`doc.root()` 为根）——element-scoped `element.querySelector`（根 = 元素 NodeId 子树）defer（需 element 方法回调取 `args.this()` NodeId 作 root，中复杂度）；③ **写入路径 native**（setAttribute/id setter，闭合 read-only 限制）仍 defer；④ 全量 `make bench-gate` 未本轮内联跑（>10min，跨 16 crate）——新 metric 已 scoped 实测（~765 ns，self-check 通过），新 metric 按 gate 设计 NEW→PASS、既有路径未动；⑤ QuickJS no-op（继承）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-script-sandbox --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**exit 0；engine dom_bindings 12 测试（+2 S3），零回归；v8+quickjs 双路径**）+ pre-commit guard PASS。变更 engine（dom_bindings mod.rs + tests + bench），无渲染/布局/CSS 变更，product-smoke 不受影响。
+
+**下一步**：S3 selector→NodeId native 完成（querySelector 族搬 native，全量选择器引擎）。候选：① **element-scoped `element.querySelector`/`querySelectorAll` native**（根 = 元素 NodeId 子树，补 S3 真实 DOM 语义，element 方法回调取 `args.this()` NodeId）；② **写入路径 native**（setAttribute/id setter/className setter 经 escape-hatch，闭合 read-only 快照限制，中-高复杂度）；③ **`attributes` NamedNodeMap native getter**（补 S1 属性族）；④ 续 P1a 深项（diamond module / browser storage 持久化）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b S1 只读属性族——nodeName/getAttribute/hasAttribute/id/className native getter+方法（首测 FunctionTemplate 方法调用路径，本轮 R3098）
 
 承接 R3096（S1 dom_bindings 生产化，仅 nodeType/tagName accessor getter）→ 扩 S1 只读属性族（R3097「下一步」选项二）。新增 3 accessor getter + 2 方法回调 + 共用 helper，全部经 gc.rs 线程局部源读 live `Document`（不经 shim 字符串桥）：`nodeName`（spec `dom-node-nodename`，Element=tagName 大写，Text/Comment/Document/DocumentFragment/PI/DocumentType 固定串——exhaustive match）、`id`/`className`（reflected attr，`get_attribute('id'|'class')` 缺省 `""`）、`getAttribute(name)`（spec `dom-element-getattribute`，缺省→`null`）、`hasAttribute(name)`（spec `dom-element-hasattribute`→`Boolean`）。
