@@ -1768,6 +1768,128 @@ return host.children[0].tagName+'/'+host.children[1].tagName+'/'+host.children.l
 
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
 //
+
+// ── R3144 prepend/append/before/after/replaceWith(fragment) flatten ──
+
+/// 现代插入族接 DocumentFragment → 展开其子节点（非插 fragment 节点本身）+ fragment 清空。
+/// 与 R3132 appendChild/insertBefore fragment flatten 语义一致；DOM 序 = fragment 内子序。
+#[test]
+fn native_element_insert_fragment_flatten_r3144() {
+    // append(frag) → fragment 子展开进 host 末尾 + fragment 清空。
+    let html = r#"<div id="host"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const host=__zw_native_element_for_id('host');\
+            const frag=__zw_native_create_document_fragment();\
+            frag.appendChild(__zw_native_create_element('span'));\
+            frag.appendChild(__zw_native_create_element('b'));\
+            host.append(frag);\
+            return host.children.length+'/'+host.children[0].tagName+'/'+host.children[1].tagName+'/'+\
+            frag.childNodes.length; })()"
+        ),
+        "2/SPAN/B/0",
+        "append(frag) flatten：子展开进 host + fragment 清空"
+    );
+
+    // prepend(frag) → fragment 子插到原首子前（DOM 序 = fragment 子序）。
+    let html = r#"<div id="host"><i id="e">e</i></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const host=__zw_native_element_for_id('host');\
+            const frag=__zw_native_create_document_fragment();\
+            frag.appendChild(__zw_native_create_element('span'));\
+            frag.appendChild(__zw_native_create_element('b'));\
+            host.prepend(frag);\
+            return host.children[0].tagName+'/'+host.children[1].tagName+'/'+host.children[2].id; })()"
+        ),
+        "SPAN/B/e",
+        "prepend(frag) flatten：子插原首子前，子内序保留"
+    );
+
+    // before(frag) → fragment 子插到 self 前在父中。
+    let html = r#"<div id="host"><i id="t">t</i></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+            const frag=__zw_native_create_document_fragment();\
+            frag.appendChild(__zw_native_create_element('span'));\
+            t.before(frag);\
+            const host=__zw_native_element_for_id('host');\
+            return host.children[0].tagName+'/'+host.children[1].id; })()"
+        ),
+        "SPAN/t",
+        "before(frag) flatten：子插 self 前"
+    );
+
+    // after(frag) → fragment 子插到 self 后在父中（ref = next sibling = None → 末尾追加，子内序保留）。
+    let html = r#"<div id="host"><i id="t">t</i></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+            const frag=__zw_native_create_document_fragment();\
+            frag.appendChild(__zw_native_create_element('span'));\
+            frag.appendChild(__zw_native_create_element('b'));\
+            t.after(frag);\
+            const host=__zw_native_element_for_id('host');\
+            return host.children[0].id+'/'+host.children[1].tagName+'/'+host.children[2].tagName; })()"
+        ),
+        "t/SPAN/B",
+        "after(frag) flatten：子插 self 后，子内序保留"
+    );
+
+    // replaceWith(frag) → self 移除，fragment 子替其位。
+    let html = r#"<div id="host"><i id="t">t</i></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+            const frag=__zw_native_create_document_fragment();\
+            frag.appendChild(__zw_native_create_element('x'));\
+            frag.appendChild(__zw_native_create_element('y'));\
+            t.replaceWith(frag);\
+            const host=__zw_native_element_for_id('host');\
+            return host.children.length+'/'+host.children[0].tagName+'/'+host.children[1].tagName; })()"
+        ),
+        "2/X/Y",
+        "replaceWith(frag) flatten：self 移除，子替其位"
+    );
+
+    // 混合 append(node, frag, 'text') → 顺序保留，fragment 原位展开为 f1,f2。
+    let html = r#"<div id="host"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const host=__zw_native_element_for_id('host');\
+            const frag=__zw_native_create_document_fragment();\
+            frag.appendChild(__zw_native_create_element('f1'));\
+            frag.appendChild(__zw_native_create_element('f2'));\
+            host.append(__zw_native_create_element('a'), frag, 'tail');\
+            return host.childNodes.length+'/'+host.childNodes[0].tagName+'/'+\
+            host.childNodes[1].tagName+'/'+host.childNodes[2].tagName+'/'+\
+            host.childNodes[3].nodeType; })()"
+        ),
+        "4/A/F1/F2/3",
+        "append(elem,frag,str) 混合：frag 原位展开为 f1,f2，序 = arg 序"
+    );
+
+    // 空 fragment append → 不插入任何节点。
+    let html = r#"<div id="host"><i id="e">e</i></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const host=__zw_native_element_for_id('host');\
+            host.append(__zw_native_create_document_fragment());\
+            return host.children.length; })()"
+        ),
+        "1",
+        "append(空 fragment) → 无节点插入"
+    );
+}
+
 // HTML: <div id="root"><span id="s1">hello</span><span id="s2"></span></div>
 // root 子节点 = [span#s1, span#s2]（标签间无空白文本）；s1 子 = 文本 "hello"。
 

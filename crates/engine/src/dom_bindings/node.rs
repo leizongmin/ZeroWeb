@@ -188,7 +188,8 @@ fn node_value(doc: &Document, id: NodeId) -> Option<String> {
 /// 若 `node` 为 DocumentFragment，把其子节点逐个移到 `parent`（`ref_node` None→append、Some→insert-before），
 /// fragment 清空（spec：insert fragment 等价插其子并清空）；否则直接 append/insert `node`。复用 polyfill
 /// `move_fragment_children` 思路（快照子列表，逐个 append/insert——Document 移动操作自动从 fragment detach）。
-/// 供 [`native_append_child_invoke`] / [`native_insert_before_invoke`] 共用（R3132 闭合 R3131 限制①）。
+/// 供 [`native_append_child_invoke`] / [`native_insert_before_invoke`]（R3132）+ [`insert_variadic`] 现代插入族
+/// prepend/append/before/after/replaceWith（R3144）共用。
 fn insert_with_fragment_flatten(
     doc: &mut Document,
     parent: NodeId,
@@ -361,6 +362,10 @@ enum InsertItem {
 /// items（Node/Text，避 scope 跨 DOM borrow）；② `with_dom_mut` 按 position 算 (parent, ref_node, remove_self)
 /// 逐 item 插入 ref_node 前（ref 固定 = 原首子/原 next sibling/self，故 arg 序 = DOM 序）。before/after/
 /// replaceWith 无 parent（detached）→ no-op。
+///
+/// R3144：DocumentFragment 参 → flatten（子节点展开进 parent、fragment 清空，spec），与 R3132
+/// appendChild/insertBefore 同语义——经 [`insert_with_fragment_flatten`] 统一处理（非 fragment 直接 insert/append，
+/// fragment 快照子逐个插；ref 固定保证子内序 = fragment 内序）。
 fn insert_variadic(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments, self_id: NodeId, pos: InsertPos) {
     // Pass 1：收集 items（Node 或 Text）——经 scope 读 NodeId / ToString，不持 DOM borrow。
     let n = args.length();
@@ -391,14 +396,9 @@ fn insert_variadic(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments
                 InsertItem::Node(id) => *id,
                 InsertItem::Text(s) => d.create_text_node(s),
             };
-            match ref_node {
-                Some(r) => {
-                    let _ = d.insert_before(parent, node_id, r);
-                }
-                None => {
-                    let _ = d.append_child(parent, node_id);
-                }
-            }
+            // R3144：DocumentFragment 参 → flatten（子节点移到 parent、fragment 清空，spec）；
+            // 非 fragment 直接 insert_before/append_child（与 flatten 内非 fragment 分支等价）。
+            let _ = insert_with_fragment_flatten(d, parent, node_id, ref_node);
         }
         if remove_self {
             let _ = d.remove_child(parent, self_id);
