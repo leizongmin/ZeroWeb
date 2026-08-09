@@ -195,7 +195,7 @@ pub fn es_module_and_worker_tests() -> Vec<TestCase> {
             id: "es-module/dynamic-import-exists".to_string(),
             description: "import() 动态导入函数可用".to_string(),
             category: "es-modules".to_string(),
-            html: r#"<html><body><script>typeof import === 'function'</script></body></html>"#.to_string(),
+            html: r#"<html><body><script>var __p = import('data:text/javascript,export default 1'); globalThis.__dynImportIsPromise = !!(__p && typeof __p.then === 'function');</script></body></html>"#.to_string(),
             css: String::new(),
             assertions: vec![
                 "dom_has_body".to_string(),

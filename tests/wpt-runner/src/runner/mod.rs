@@ -345,6 +345,30 @@ mod runtime_path_tests {
             failed.join("\n")
         );
     }
+
+    /// R3087：所有 es-modules 用例经 `js_executes_ok` 真实执行内联脚本无异常。闭合该类别
+    /// `js_executes_ok` 覆盖缺口（此前 canvas/web-workers/storage/runtime/interactive 已覆盖，es-modules 未）。
+    /// 修复 test-data bug `es-module/dynamic-import-exists`（旧 `<script>typeof import === 'function'</script>`
+    /// → 经典脚本 `typeof import` 为 SyntaxError——`import` 是关键字，typeof 不可作用于之；改用有效 `import()`
+    /// 动态导入表达式，返回 Promise 不抛，验证 dynamic import 可用）。闭合后 30 用例 js_executes_ok 全通过。
+    #[test]
+    fn es_modules_cases_execute_scripts_r3087() {
+        let ctx = TestContext::default();
+        let cases = filter_tests_by_category(&builtin_tests(), "es-modules");
+        assert!(!cases.is_empty(), "es-modules 用例集非空");
+        let mut failed: Vec<String> = Vec::new();
+        for case in &cases {
+            if let Err(e) = check_js_executes_ok(&case.html, &ctx) {
+                failed.push(format!("{}: {}", case.id, e));
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "es-modules 用例应全部 js_executes_ok 通过（{} 例失败）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
 }
 /// 根据预期元数据管理已知行为：
 #[allow(dead_code)]

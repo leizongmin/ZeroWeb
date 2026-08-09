@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1a WPT js_executes_ok 覆盖扩至 es-modules + dynamic-import test-data 修正（闭合 es-modules 覆盖缺口，本轮 R3087）
+
+R3076-R3083 已为 canvas/web-workers/storage/runtime/interactive 加 js_executes_ok 驱动测试，**es-modules（30 用例）仍无**。全 scripted 类别 js_executes_ok 探针（es-modules/js-dom/dom/navigation/security/accessibility/a11y-i18n/platform-input/multiprocess）实测：除 1 test-data bug 外全绿 → **P1a scripted WPT 表面确认稳固，无真引擎 gap**。本切片闭合 es-modules 覆盖缺口 + 修正唯一 test-data bug。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`es-module/dynamic-import-exists` test-data 修正** | `tests/wpt-runner/.../test_cases_es_modules.rs` | 旧 `<script>typeof import === 'function'</script>` → 经典脚本 `typeof import` 为 SyntaxError（`import` 是关键字，typeof 不可作用；R3082 记为低优先 test-data bug）。改 `var __p = import('data:text/javascript,export default 1'); __dynImportIsPromise = !!(__p && typeof __p.then === 'function')`——有效 `import()` 动态导入表达式，返 Promise 不抛，验证 dynamic import 可用（harness 经实测支持 classic 脚本 `import()`）。 |
+| **`es_modules_cases_execute_scripts_r3087` 驱动测试** | `tests/wpt-runner/.../runner/mod.rs` | 全 30 es-modules 用例经 js_executes_ok strict 执行无异常（镜像 R3080-R3083 模式）。闭合该类别覆盖缺口。 |
+
+**探针情报（记入控制面）**：全 scripted WPT 类别 js_executes_ok 探针实测——es-modules 30（修 test-data 后 0 fail）/ js-dom 10 / dom 63 / navigation 27 / security 68 / accessibility 19 / a11y-i18n 45 / platform-input 18 / multiprocess 24 全 0 failed。**结论**：P1a Tier-1/Tier-2 scripted 表面（fetch/事件循环/Observer/IO/RO/customElements/attachShadow/navigator 全套/元素 append/remove/replaceChildren/BroadcastChannel/MessageChannel/PerformanceObserver/visibilityState/sendBeacon）已稳固，无真引擎 gap。后续 value 在深结构/架构层（P1b V8 原生绑定 S0 PoC、字体栈重建切片、storage host-backing 持久化），非单轮 API surface 补缺。
+
+**为何净正向**：① test-data 修正闭合 1 已知红（R3082 低优先 defer 项）+ 实测验证 import() 可用；② es-modules 驱动测试扩 js_executes_ok 安全网至 30 新用例（catch 回归）；③ 探针确证无其他 gap，避免后续轮次重复 hunt；④ 全量 make test 全绿（0 failed across all binaries）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-wpt-runner --all-targets -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；wpt-runner +1 驱动测试，零回归**）+ pre-commit guard PASS。变更纯 wpt-runner 测试（无生产/渲染/布局变更），product-smoke 不受影响。
+
+**下一步**：P1a scripted 表面稳固（探针确认）。pivot 到更深结构：① **IndexedDB/localStorage host-backing 持久化**（接 StorageManager 到 JS API，闭合「跨页重载不丢」；localStorage 同为 JS 侧 in-memory，需一并 host-back；中-高复杂度，headless 测试价值有限但产品正确性）；② P1b V8 原生绑定 S0 PoC（已批准，验证 TBD-1/TBD-2）；③ 字体栈重建第一刀（已批准，FreeType 度量替 fontdue）；④ DedicatedWorker 真实化。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a net 重定向测试 deflake（send_with_local_retry + 路径幂等 mock 服务端，闭合 client::integration_tests flake，本轮 R3086）
 
 承接 master.md「当前活跃主线」记的 build-and-test net flake：`test_send_redirect_relative_url`（client.rs:995）/ `test_send_self_referencing_redirect_loop`（client.rs:1277）在 nextest/cargo-test 全量并发负载下偶发 `Network("error sending request for url http://127.0.0.1:PORT/…")`（连接级错误非断言错误）；本地 test-guard 隔离跑两测 5/5 全绿 → 确认 `bind_server()` TcpListener accept 竞态 flake。本切片按 master.md 既定方案 deflake（test 端重试 + 路径幂等服务端）。
