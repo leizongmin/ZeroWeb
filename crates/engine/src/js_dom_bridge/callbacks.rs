@@ -102,7 +102,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            query_match_selector(&snap, &sel)
+            with_query_doc(&snap, |doc| query_match_selector_doc(doc, &sel))
         }),
     );
 
@@ -112,7 +112,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            query_all_selector_list(&snap, &sel)
+            with_query_doc(&snap, |doc| query_all_selector_list_doc(doc, &sel))
         }),
     );
 
@@ -379,7 +379,7 @@ pub fn register_dom_callbacks(
         "__zw_collect_ids",
         Box::new(move |_args| {
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            collect_element_ids(&snap)
+            with_query_doc(&snap, collect_element_ids_doc)
         }),
     );
 
@@ -391,7 +391,7 @@ pub fn register_dom_callbacks(
                 return String::new();
             }
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            query_attr_from_html(&snap, &args[0], &args[1])
+            with_query_doc(&snap, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
         }),
     );
 
@@ -413,7 +413,7 @@ pub fn register_dom_callbacks(
             }
             drop(list);
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            query_attr_from_html(&snap, &args[0], &args[1])
+            with_query_doc(&snap, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
         }),
     );
 
@@ -425,7 +425,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            query_tag_from_html(&snap, &sel)
+            with_query_doc(&snap, |doc| query_tag_from_html_doc(doc, &sel))
         }),
     );
 
@@ -633,7 +633,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            query_text_from_html(&snap, &sel)
+            with_query_doc(&snap, |doc| query_text_from_html_doc(doc, &sel))
         }),
     );
 
@@ -654,7 +654,7 @@ pub fn register_dom_callbacks(
             }
             drop(list);
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            query_text_from_html(&snap, &sel)
+            with_query_doc(&snap, |doc| query_text_from_html_doc(doc, &sel))
         }),
     );
 
@@ -1123,7 +1123,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            query_inner_html_from_html(&snap, &sel)
+            with_query_doc(&snap, |doc| query_inner_html_from_html_doc(doc, &sel))
         }),
     );
 
@@ -1149,7 +1149,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            query_outer_html_from_html(&snap, &sel)
+            with_query_doc(&snap, |doc| query_outer_html_from_html_doc(doc, &sel))
         }),
     );
 
@@ -1274,4 +1274,33 @@ pub fn register_dom_callbacks(
             canvas_context_op(&mut reg, handle, op, rest)
         }),
     );
+}
+
+thread_local! {
+    /// JS 查询回调的 (html, Document) 解析缓存。
+    ///
+    /// JS 交互时每次 DOM 查询（__zw_query_match/__zw_get_attr 等）都 parse_html(dom_html
+    /// 快照) 全文档重解析（medium 页面 ~1ms/次，动画/交互页面每帧多次）。缓存键 = html
+    /// 文本——mutation 应用 / load_html 后快照文本变化 → 自动失效，无需外部失效点。
+    /// Document 含 Cell（非 Send，见错误 `std::cell::Cell<usize> cannot be shared`——
+    /// 事件监听器/observer 存储）→ 只能 thread_local（JS 执行线程内复用，跨线程各自
+    /// 缓存；回调闭包 'static 可直接访问静态）。
+    static QUERY_DOC_CACHE: std::cell::RefCell<Option<(String, zero_dom::Document)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// 在查询 doc（html → Document 缓存解析结果）上执行闭包。
+///
+/// 缓存键 = html 文本（mutation 应用 / load_html 后快照变化 → 自动失效）；快照相同
+/// 复用解析结果（省每次查询全文档 parse_html）。RefMut 无法逃逸 thread_local::with，
+/// 故查询逻辑经闭包在 with 内执行。
+fn with_query_doc<R>(html: &str, f: impl FnOnce(&zero_dom::Document) -> R) -> R {
+    QUERY_DOC_CACHE.with(|cache| {
+        let mut guard = cache.borrow_mut();
+        if guard.as_ref().map(|(h, _)| h.as_str()) != Some(html) {
+            *guard = Some((html.to_string(), parse_html(html)));
+        }
+        let doc = &guard.as_ref().expect("cache populated").1;
+        f(doc)
+    })
 }

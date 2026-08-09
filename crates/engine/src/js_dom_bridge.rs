@@ -1047,10 +1047,15 @@ pub fn apply_mutations_to_html_with_handles(
 /// `query_match_selector` 单查询对称）。
 pub fn query_all_selector_list(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
+    query_all_selector_list_doc(&doc, selector)
+}
+
+/// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
+pub fn query_all_selector_list_doc(doc: &Document, selector: &str) -> String {
     let root = doc.root();
     doc.query_selector_all(root, selector.trim())
         .into_iter()
-        .filter_map(|id| unique_selector_for_node(&doc, id))
+        .filter_map(|id| unique_selector_for_node(doc, id))
         .collect::<Vec<_>>()
         .join("|")
 }
@@ -1212,6 +1217,11 @@ pub fn element_contains(html: &str, container_sel: &str, other_sel: &str) -> boo
 /// HTML 规范「Window 上的命名属性访问」（`<div id="x">` → 全局 `x`）。
 pub fn collect_element_ids(html: &str) -> String {
     let doc = parse_html(html);
+    collect_element_ids_doc(&doc)
+}
+
+/// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
+pub fn collect_element_ids_doc(doc: &Document) -> String {
     let root = doc.root();
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
@@ -1229,7 +1239,12 @@ pub fn collect_element_ids(html: &str) -> String {
 /// 从当前 HTML 快照查询属性（供 `__zw_get_attr` 回调只读使用）。
 pub fn query_attr_from_html(html: &str, selector: &str, name: &str) -> String {
     let doc = parse_html(html);
-    find_by_selector(&doc, selector)
+    query_attr_from_html_doc(&doc, selector, name)
+}
+
+/// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
+pub fn query_attr_from_html_doc(doc: &Document, selector: &str, name: &str) -> String {
+    find_by_selector(doc, selector)
         .and_then(|n| doc.get_attribute(n, name))
         .unwrap_or_default()
 }
@@ -1238,7 +1253,12 @@ pub fn query_attr_from_html(html: &str, selector: &str, name: &str) -> String {
 /// 选择器等只能启发式猜测，P1a form input 需真实 tag 判 INPUT/TEXTAREA）。
 pub fn query_tag_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
-    find_by_selector(&doc, selector)
+    query_tag_from_html_doc(&doc, selector)
+}
+
+/// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
+pub fn query_tag_from_html_doc(doc: &Document, selector: &str) -> String {
+    find_by_selector(doc, selector)
         .and_then(|n| {
             doc.get(n).and_then(|node| match &node.kind {
                 NodeKind::Element(e) => Some(e.local_name().to_string()),
@@ -1941,7 +1961,12 @@ pub fn next_focus_selector(html: &str, current_sel: Option<&str>, forward: bool)
 /// 从当前 HTML 快照查询 innerHTML。
 pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
-    find_by_selector(&doc, selector)
+    query_inner_html_from_html_doc(&doc, selector)
+}
+
+/// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
+pub fn query_inner_html_from_html_doc(doc: &Document, selector: &str) -> String {
+    find_by_selector(doc, selector)
         .map(|n| doc.inner_html(n))
         .unwrap_or_default()
 }
@@ -1950,7 +1975,12 @@ pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
 /// 回调 → shim `el.outerHTML`（getter）。
 pub fn query_outer_html_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
-    find_by_selector(&doc, selector)
+    query_outer_html_from_html_doc(&doc, selector)
+}
+
+/// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
+pub fn query_outer_html_from_html_doc(doc: &Document, selector: &str) -> String {
+    find_by_selector(doc, selector)
         .map(|n| doc.outer_html(n))
         .unwrap_or_default()
 }
@@ -1985,7 +2015,12 @@ pub fn query_inner_html_from_mutations(mutations: &[DomMutation], handle: &str) 
 /// 从当前 HTML 快照查询 textContent。
 pub fn query_text_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
-    find_by_selector(&doc, selector)
+    query_text_from_html_doc(&doc, selector)
+}
+
+/// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
+pub fn query_text_from_html_doc(doc: &Document, selector: &str) -> String {
+    find_by_selector(doc, selector)
         .map(|n| doc.inner_html(n))
         .unwrap_or_default()
 }

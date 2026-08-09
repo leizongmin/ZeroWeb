@@ -16,8 +16,13 @@ use super::*;
 /// 导致后续 `el.selected`/`el.value` 读错元素；唯一选择器修复之。同一 dom_html 上与旧实现解析到同一元素。
 pub fn query_match_selector(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
-    find_by_selector(&doc, selector)
-        .and_then(|n| unique_selector_for_node(&doc, n))
+    query_match_selector_doc(&doc, selector)
+}
+
+/// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
+pub fn query_match_selector_doc(doc: &zero_dom::Document, selector: &str) -> String {
+    find_by_selector(doc, selector)
+        .and_then(|n| unique_selector_for_node(doc, n))
         .unwrap_or_default()
 }
 
