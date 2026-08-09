@@ -485,16 +485,20 @@ jobs:
         run: find artifacts/ -type f | head -20
 
       # Linux/Windows 构建产物平铺上传会导致多平台同名文件（zero-browser、
-      # README.txt 等）互相覆盖，平台区分丢失——与 weekly 一致，按平台打成 zip
+      # README.txt 等）互相覆盖，平台区分丢失——与 weekly 一致，按平台打成 zip。
+      # 精确列出平台目录：glob 会误匹配 -deb 目录（如 zero-browser-linux-amd64-v8-deb/）
       - name: Repackage Linux/Windows zips
         shell: bash
         run: |
           set -e
           cd artifacts
-          for d in zero-browser-linux-*/ zero-browser-windows-*/; do
-            name="${d%/}"
-            (cd "$d" && zip -r "../${name}.zip" .)
-            rm -rf "$d"
+          for name in \
+            zero-browser-linux-x86_64-v8 zero-browser-linux-x86_64-quickjs \
+            zero-browser-linux-aarch64-v8 zero-browser-linux-aarch64-quickjs \
+            zero-browser-windows-x86_64-v8 zero-browser-windows-x86_64-quickjs \
+            zero-browser-windows-aarch64-quickjs; do
+            (cd "$name" && zip -r "../${name}.zip" .)
+            rm -rf "$name"
           done
 
       - name: Generate SHA256 checksums
