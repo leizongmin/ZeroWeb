@@ -1049,6 +1049,63 @@ return el.dispatchEvent(new Event('e'));})()"; // cancelable 缺省 false
     );
 }
 
+// ── R3131 createTextNode / createComment / createDocumentFragment 工厂 ──
+
+/// createTextNode：nodeType=3 + textContent 读 + nodeName=#text。
+#[test]
+fn native_create_text_node_r3131() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{\
+const t=__zw_native_create_text_node('hello');\
+return t.nodeType+'/'+t.nodeName+'/'+t.textContent;})()";
+    assert_eq!(run_script(html, script), "3/#text/hello", "createTextNode nodeType=3");
+}
+
+/// createComment：nodeType=8 + nodeName=#comment + textContent。
+#[test]
+fn native_create_comment_r3131() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{\
+const c=__zw_native_create_comment('note');\
+return c.nodeType+'/'+c.nodeName+'/'+c.textContent;})()";
+    assert_eq!(run_script(html, script), "8/#comment/note", "createComment nodeType=8");
+}
+
+/// createDocumentFragment：nodeType=11 + nodeName=#document-fragment + 作为容器接收 appendChild
+///（fragment 持有其子节点）。注：`host.appendChild(frag)` 的 flatten 语义（子节点展开进 host、fragment 清空）
+/// 是 native appendChild 的独立限制（polyfill 路径经 move_fragment_children 处理），后续切片。
+#[test]
+fn native_create_document_fragment_r3131() {
+    let html = r#"<div id="host"></div>"#;
+    // fragment 接两子 → fragment.childNodes.length===2（fragment 作容器）。
+    let script = "(()=>{\
+const frag=__zw_native_create_document_fragment();\
+frag.appendChild(__zw_native_create_element('span'));\
+frag.appendChild(__zw_native_create_element('b'));\
+return frag.nodeType+'/'+frag.nodeName+'/'+frag.childNodes.length;})()";
+    assert_eq!(
+        run_script(html, script),
+        "11/#document-fragment/2",
+        "createDocumentFragment nodeType=11 + 作容器持子节点"
+    );
+}
+
+/// 完整 native 树构建：div > (b > "text")，全 native 无 polyfill。
+#[test]
+fn native_build_tree_native_r3131() {
+    let html = r#"<div id="host"></div>"#;
+    let script = "(()=>{\
+const host=__zw_native_element_for_id('host');\
+const div=__zw_native_create_element('div');\
+const b=__zw_native_create_element('b');\
+b.appendChild(__zw_native_create_text_node('hi'));\
+div.appendChild(b);\
+host.appendChild(div);\
+return host.children[0].tagName+'/'+host.children[0].children[0].tagName+'/'+\
+host.children[0].children[0].textContent;})()";
+    assert_eq!(run_script(html, script), "DIV/B/hi", "全 native 树构建：div > b > 'hi'");
+}
+
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
 //
 // HTML: <div id="root"><span id="s1">hello</span><span id="s2"></span></div>

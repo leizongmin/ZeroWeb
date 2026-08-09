@@ -1,15 +1,18 @@
-//! 全局工厂回调——拆自 mod.rs（RFC §3.2 子模块化 stage 3，本轮 R3118）。
+//! 全局工厂回调——拆自 mod.rs（RFC §3.2 子模块化 stage 3，本轮 R3118；createText/Comment/Fragment R3131）。
 //!
-//! 4 个**全局**工厂（注册于 `ctx.global`，非 Element 模板成员）：
+//! 7 个**全局**工厂（注册于 `ctx.global`，非 Element 模板成员）：
 //! - `__zw_native_element_for_id(idStr)`：`get_element_by_id` → native 元素；
 //! - `__zw_native_query_selector(sel)` / `__zw_native_query_selector_all(sel)`：文档根下
 //!   全量选择器引擎匹配 → native 元素 / V8 Array（spec `dom-parentnode-queryselector(-all)`）；
-//! - `__zw_native_create_element(tag)`：`Document::create_element` → native 元素（未挂载）。
+//! - `__zw_native_create_element(tag)`：`Document::create_element` → native 元素（未挂载）；
+//! - `__zw_native_create_text_node(text)` / `__zw_native_create_comment(text)` /
+//!   `__zw_native_create_document_fragment()`（R3131）：造 Text(3)/Comment(8)/Fragment(11) 节点 →
+//!   native 对象（未挂载），闭合 native 树构建集（createElement + createText/Comment/Fragment + appendChild）。
 //!
 //! 区别于 mod.rs `native_element_query_selector(-all)_invoke`（**元素子树作用域**，注册于 Element
 //! 模板，root = `args.this()` 元素 + 排除自身）——本模块的是**文档级**（root = 文档根）。
 //!
-//! 可见性：4 个 invoke 为 `pub(super)`（mod.rs `install_dom_bindings` 注册经 `factories::` 调）。
+//! 可见性：7 个 invoke 为 `pub(super)`（mod.rs `install_dom_bindings` 注册经 `factories::` 调）。
 //! 读 `super::string_arg` / `super::get_or_create_native_element`（mod.rs 私有——Rust 规则：私有项
 //! 对后代模块可见）+ `super::gc::{with_dom, with_dom_mut}`。
 
@@ -97,6 +100,55 @@ pub(super) fn native_create_element_invoke(
     }
     // create（borrow_mut 释放后）→ 包 native 对象（get_or_create_native_element 内含 stale 校验）。
     let Some(id) = with_dom_mut(|d| d.create_element(tag.trim())) else {
+        return;
+    };
+    if let Some(obj) = get_or_create_native_element(scope, id) {
+        rv.set(obj.into());
+    }
+}
+
+/// `__zw_native_create_text_node(text)`：spec `dom-document-createtextnode`——
+/// `Document::create_text_node` 造 Text NodeId → native 对象（nodeType=3，**未挂载**）。Text/Comment/
+/// Fragment 共用 Element 包装模板（nodeType getter 经 NodeKind 读 DOM → 3/8/11，非 Element 亦正确）。
+pub(super) fn native_create_text_node_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let text = string_arg(scope, &args, 0);
+    let Some(id) = with_dom_mut(|d| d.create_text_node(&text)) else {
+        return;
+    };
+    if let Some(obj) = get_or_create_native_element(scope, id) {
+        rv.set(obj.into());
+    }
+}
+
+/// `__zw_native_create_comment(text)`：spec `dom-document-createcomment`——
+/// `Document::create_comment` 造 Comment NodeId → native 对象（nodeType=8，**未挂载**）。
+pub(super) fn native_create_comment_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let text = string_arg(scope, &args, 0);
+    let Some(id) = with_dom_mut(|d| d.create_comment(&text)) else {
+        return;
+    };
+    if let Some(obj) = get_or_create_native_element(scope, id) {
+        rv.set(obj.into());
+    }
+}
+
+/// `__zw_native_create_document_fragment()`：spec `dom-document-createdocumentfragment`——
+/// `Document::create_document_fragment` 造 DocumentFragment NodeId → native 对象（nodeType=11，**未挂载**）。
+/// appendChild/insertBefore fragment 经 Document 自动 flatten 子节点（spec：insert fragment 等价插其子）。
+pub(super) fn native_create_document_fragment_invoke(
+    scope: &mut v8::PinScope,
+    _args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let Some(id) = with_dom_mut(|d| d.create_document_fragment()) else {
         return;
     };
     if let Some(obj) = get_or_create_native_element(scope, id) {

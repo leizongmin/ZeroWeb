@@ -309,7 +309,31 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
         let _ = global.set(scope, key.into(), f.into());
     }
 
-    // 6. R3127 全局 Event / CustomEvent 构造器——`new Event(type, opts)` 产标准 event 对象
+    // 6. R3131 全局 createTextNode / createComment / createDocumentFragment 工厂——闭合 native 树
+    //    构建集（createElement + createText/Comment/Fragment + appendChild 全 native，无 polyfill 桥）。
+    //    Text/Comment/Fragment 节点共用 Element 包装模板（nodeType getter 经 NodeKind 读 DOM → 3/8/11）。
+    //    注意：FunctionTemplate::builder 须传 ZST fn **项**（不能 `as fn(...)` 转函数指针——size=8 触发
+    //    v8 UnitValue size_must_be_0），故逐工厂显式注册（镜像 create_element），非循环。
+    let ctn = v8::FunctionTemplate::builder(factories::native_create_text_node_invoke).build(scope);
+    let ctn_fn = ctn.get_function(scope);
+    let ctn_key = v8::String::new(scope, "__zw_native_create_text_node");
+    if let (Some(f), Some(key)) = (ctn_fn, ctn_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+    let cc = v8::FunctionTemplate::builder(factories::native_create_comment_invoke).build(scope);
+    let cc_fn = cc.get_function(scope);
+    let cc_key = v8::String::new(scope, "__zw_native_create_comment");
+    if let (Some(f), Some(key)) = (cc_fn, cc_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+    let cdf = v8::FunctionTemplate::builder(factories::native_create_document_fragment_invoke).build(scope);
+    let cdf_fn = cdf.get_function(scope);
+    let cdf_key = v8::String::new(scope, "__zw_native_create_document_fragment");
+    if let (Some(f), Some(key)) = (cdf_fn, cdf_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+
+    // 7. R3127 全局 Event / CustomEvent 构造器——`new Event(type, opts)` 产标准 event 对象
     //    （instanceof Event 成立），stop/preventDefault 上原型（共享，非每次派发注入）。
     //    闭合 R3124 限制③ + R3126 限制③。详见 `event` 子模块。
     event::build_and_register(scope, global);
