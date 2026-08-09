@@ -116,6 +116,16 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "hasAttribute") {
         tmpl.set(k.into(), has_attr_tmpl.into());
     }
+    // element 子树作用域查询（spec `dom-parentnode-queryselector(-all)`）：`args.this()` 取
+    // 元素 NodeId 作 root，**仅后代**（排除元素自身，见 [`native_element_query_selector_invoke`]）。
+    let eqs_tmpl = v8::FunctionTemplate::builder(native_element_query_selector_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "querySelector") {
+        tmpl.set(k.into(), eqs_tmpl.into());
+    }
+    let eqsa_tmpl = v8::FunctionTemplate::builder(native_element_query_selector_all_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "querySelectorAll") {
+        tmpl.set(k.into(), eqsa_tmpl.into());
+    }
     set_element_template(scope, tmpl);
 
     // 3. 全局工厂 __zw_native_element_for_id(idStr) → native element 对象。
@@ -386,6 +396,67 @@ fn native_query_selector_all_invoke(
 ) {
     let sel = string_arg(scope, &args, 0);
     let ids: Vec<NodeId> = with_dom(|d| d.query_selector_all(d.root(), sel.trim())).unwrap_or_default();
+    let arr = v8::Array::new(scope, ids.len() as i32);
+    for (i, id) in ids.into_iter().enumerate() {
+        if let Some(obj) = get_or_create_native_element(scope, id) {
+            let _ = arr.set_index(scope, i as u32, obj.into());
+        }
+    }
+    rv.set(arr.into());
+}
+
+/// `element.querySelector(sel)`：spec `dom-parentnode-queryselector`（**元素子树作用域**）——
+/// 元素**后代**中首个匹配 → native 对象。区别于文档级 [`native_query_selector_invoke`]：
+/// root = `args.this()` 元素 NodeId，且**排除元素自身**（dom `query_selector_all` 含 root 候选，
+/// spec descendants-only，镜像 polyfill `query_match_in_subtree` 的 `.filter(|n| *n != root)`）。
+///
+/// 经 `query_selector_all` + filter + first 取首个后代（比 polyfill `query_selector` + filter 更
+/// 正确：后者若元素自身匹配则返 None，本实现继续找首个后代）。
+/// OPTIMIZATION: 当前 collect-all-then-first；超大子树可短路（find_first_matching 跳 root）。
+/// 无匹配 / 空 / 非法 → `null`；非 native element `this` → `undefined`（getter 一致）。
+fn native_element_query_selector_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(root) = read_node_id(scope, &this) else {
+        return;
+    };
+    let sel = string_arg(scope, &args, 0);
+    let id: Option<NodeId> = with_dom(|d| d.query_selector_all(root, sel.trim()))
+        .unwrap_or_default()
+        .into_iter()
+        .find(|id| *id != root);
+    match id {
+        Some(id) => {
+            if let Some(obj) = get_or_create_native_element(scope, id) {
+                rv.set(obj.into());
+            }
+        }
+        None => rv.set(v8::null(scope).into()),
+    }
+}
+
+/// `element.querySelectorAll(sel)`：spec `dom-parentnode-queryselectorall`（**元素子树作用域**）——
+/// 元素**后代**全部匹配 → V8 `Array` of native 对象（文档序，排除元素自身）。非 native element
+/// `this` → 空 `Array`（避免 `.length` 访问报错）。
+fn native_element_query_selector_all_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(root) = read_node_id(scope, &this) else {
+        rv.set(v8::Array::new(scope, 0).into());
+        return;
+    };
+    let sel = string_arg(scope, &args, 0);
+    let ids: Vec<NodeId> = with_dom(|d| d.query_selector_all(root, sel.trim()))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|id| *id != root)
+        .collect();
     let arr = v8::Array::new(scope, ids.len() as i32);
     for (i, id) in ids.into_iter().enumerate() {
         if let Some(obj) = get_or_create_native_element(scope, id) {

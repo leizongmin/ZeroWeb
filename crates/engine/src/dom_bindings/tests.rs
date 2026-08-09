@@ -215,6 +215,79 @@ fn native_query_selector_all() {
     );
 }
 
+// ── S3b element 子树作用域 querySelector / querySelectorAll（仅后代，排除元素自身）──
+
+/// `element.querySelector(sel)`：元素**子树**作用域 + 仅后代（排除元素自身）。
+/// `mid` 自身是 `.x` 但 `.querySelector('.x')` 应返其首个后代 `.x`（span.deep），非自身。
+#[test]
+fn native_element_query_selector() {
+    let html = r#"<div id="root"><div id="mid" class="x" data-i="mid"><span class="x" data-i="deep">a</span></div><span class="x" data-i="sib">b</span></div>"#;
+    let mid = "__zw_native_element_for_id('mid')";
+    // `.x`：mid 自身 .x 排除 → 首个后代 .x = span.deep。
+    assert_eq!(
+        run_script(html, &format!("({mid}.querySelector('.x').getAttribute('data-i'))")),
+        "deep"
+    );
+    // 子树作用域：mid 内仅 1 个 span（deep）；兄弟 span.sib 在 mid 外不匹配。
+    assert_eq!(
+        run_script(html, &format!("({mid}.querySelectorAll('span').length)")),
+        "1"
+    );
+    // tag 后代选择器。
+    assert_eq!(
+        run_script(html, &format!("({mid}.querySelector('span').getAttribute('data-i'))")),
+        "deep"
+    );
+    // 链式：root.querySelector('#mid') 返 native 对象，其上再 querySelector（R3099 结果→R3098/3b 方法）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('root').querySelector('#mid').querySelector('span').getAttribute('data-i'))"
+        ),
+        "deep"
+    );
+    // 无匹配 → null。
+    assert_eq!(run_script(html, &format!("({mid}.querySelector('.nope'))")), "null");
+}
+
+/// `element.querySelectorAll(sel)`：全部**后代**匹配（文档序，排除元素自身 + 子树外节点）。
+#[test]
+fn native_element_query_selector_all() {
+    let html = r#"<div id="root"><div id="mid" class="x" data-i="mid"><span class="x" data-i="deep">a</span></div><span class="x" data-i="sib">b</span></div>"#;
+    // root 子树全部 .x：mid + span.deep + span.sib = 3（root 自身无 class）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('root').querySelectorAll('.x').length)"
+        ),
+        "3"
+    );
+    // mid 子树 .x：仅 span.deep（mid 自身 .x 排除，sib 在子树外）= 1。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('mid').querySelectorAll('.x').length)"
+        ),
+        "1"
+    );
+    // 文档序 + 各元素 native getter 读：root 下两 span [deep, sib]。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('root').querySelectorAll('span')[0].getAttribute('data-i') + '/' + __zw_native_element_for_id('root').querySelectorAll('span')[1].getAttribute('data-i'))"
+        ),
+        "deep/sib"
+    );
+    // 无匹配 → 空 Array。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('mid').querySelectorAll('.nope').length)"
+        ),
+        "0"
+    );
+}
+
 // ── gc.rs 单元测试 ────────────────────────────────────────────────
 
 /// NodeId↔u64(ffi) 编解码 round-trip（internal slot 值传递基础）。
