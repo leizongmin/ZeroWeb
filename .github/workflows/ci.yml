@@ -442,6 +442,10 @@ jobs:
   benchmarks:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # job-level contents: write —— 提交 perf 基线/趋势回 main（与 weekly.yml benchmark-trend
+    # 一致；本 job 仅 workflow_dispatch 触发，不暴露 PR 路径；2026-08-10 用户批准）
+    permissions:
+      contents: write
     # 2026-08-08：解除对 build-and-test 的依赖——quickjs 矩阵的 tab_js_worker 失败
     #（对方流 P1a 在 QuickJS 运行时的兼容问题，136/225 测试）不应阻塞 v8 基线的建立；
     # 本 job 自己完整构建 v8（bench-report 编译 bench + zero-wpt-runner）。
