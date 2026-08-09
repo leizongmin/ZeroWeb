@@ -953,6 +953,60 @@ return log.join(',');})()";
     );
 }
 
+// ── R3129 MouseEvent / KeyboardEvent 构造器（extends Event）──
+
+/// `new MouseEvent(type, {clientX,clientY,altKey,bubbles})`：instanceof MouseEvent + Event 成立 +
+/// 坐标/修饰键读 init dict（缺省 0/false）+ Event 基属性（type/bubbles）。
+#[test]
+fn native_mouse_event_constructor_r3129() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{\
+const e=new MouseEvent('click',{clientX:10,clientY:20,altKey:true,bubbles:true});\
+return (e instanceof MouseEvent)+'/'+(e instanceof Event)+'/'+e.type+'/'+\
+e.clientX+'/'+e.clientY+'/'+e.altKey+'/'+e.shiftKey+'/'+e.bubbles+'/'+\
+(e.button===0)+'/'+(e.relatedTarget===null);})()";
+    assert_eq!(
+        run_script(html, script),
+        "true/true/click/10/20/true/false/true/true/true",
+        "new MouseEvent：instanceof MouseEvent/Event + 坐标/修饰键 + 缺省"
+    );
+}
+
+/// `new KeyboardEvent(type, {key,code,ctrlKey})`：instanceof KeyboardEvent + Event 成立 +
+/// key/code/修饰键读 init dict（缺省 ""/false）。
+#[test]
+fn native_keyboard_event_constructor_r3129() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{\
+const e=new KeyboardEvent('keydown',{key:'Enter',code:'Enter',ctrlKey:true});\
+return (e instanceof KeyboardEvent)+'/'+(e instanceof Event)+'/'+e.type+'/'+\
+e.key+'/'+e.code+'/'+e.ctrlKey+'/'+e.shiftKey+'/'+e.repeat+'/'+(e.keyCode===0);})()";
+    assert_eq!(
+        run_script(html, script),
+        "true/true/keydown/Enter/Enter/true/false/false/true",
+        "new KeyboardEvent：instanceof KeyboardEvent/Event + key/code/修饰键 + 缺省"
+    );
+}
+
+/// MouseEvent 实例经继承原型具 stopPropagation——派发时止上溯（原型链可达，非每实例注入）。
+#[test]
+fn native_mouse_event_inherited_stop_r3129() {
+    let html = r#"<div id="parent"><div id="child"></div></div>"#;
+    let script = "(()=>{\
+const child=__zw_native_element_for_id('child');\
+const parent=__zw_native_element_for_id('parent');\
+const log=[];\
+child.addEventListener('mousedown',e=>{log.push('child');e.stopPropagation();});\
+parent.addEventListener('mousedown',e=>{log.push('parent');});\
+child.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));\
+return log.join(',');})()";
+    assert_eq!(
+        run_script(html, script),
+        "child",
+        "MouseEvent 继承 Event 原型 stopPropagation 止上溯"
+    );
+}
+
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
 //
 // HTML: <div id="root"><span id="s1">hello</span><span id="s2"></span></div>

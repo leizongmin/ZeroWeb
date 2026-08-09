@@ -1,15 +1,19 @@
-//! 原生 `Event` / `CustomEvent` 构造器（R3127）——注册为全局，使 `new Event(type, opts)` 产出标准
-//! event 对象（`instanceof Event` 成立），stop / preventDefault 方法上**原型**（共享，非每次派发注入）。
+//! 原生 `Event` / `CustomEvent` / `MouseEvent` / `KeyboardEvent` 构造器（R3127 + R3129）——注册为全局，
+//! 使 `new Event(type, opts)` 等产出标准 event 对象（`instanceof` 成立），stop / preventDefault 方法上
+//! **Event 原型**（子类经 FunctionTemplate::inherit 继承，共享，非每次派发注入）。
 //!
 //! spec DOM `Event`：构造器读 `(type, eventInitDict?)`；init dict `bubbles`/`cancelable`/`composed`
 //!（缺省 false）。派发态属性 `target`/`currentTarget`（null）、`eventPhase`（NONE=0）、
 //! `defaultPrevented`/`isTrusted`（false）、`timeStamp`（0，沙箱无 perf timer，后续）。
 //! [`event_target::native_dispatch_event_invoke`] 派发时覆写 `target`/`currentTarget`/`eventPhase`。
+//! `MouseEvent`（R3129）加 坐标族/clientX/clientY/button/buttons/修饰键/relatedTarget；`KeyboardEvent`（R3129）
+//! 加 key/code/修饰键/repeat/isComposing/keyCode/charCode/location。两子类经 inherit → `instanceof Event`
+//! 亦成立 + stop/preventDefault 经原型链可达。
 //!
-//! **与 R3125/R3126 集成**：Event 实例经原型具 `stopPropagation`/`stopImmediatePropagation`/`preventDefault`
-//! → [`event_target`] 派发的「缺失时注入」检查（`get(...).is_function()`）命中既有 → 不重复注入（原型方法
-//! 经 `get` 透明解析）。闭合 R3124 限制③（plain object 非 `instanceof Event`）+ R3126 限制③（stop 方法
-//! 注入非原型）。
+//! **与 R3125/R3126/R3128 集成**：Event（及子类）实例经原型具 `stopPropagation`/`stopImmediatePropagation`/
+//! `preventDefault` → [`event_target`] 派发的「缺失时注入」检查（`get(...).is_function()`）命中既有 → 不重复注入
+//!（原型方法经 `get` 透明解析）。闭合 R3124 限制③（plain object 非 `instanceof Event`）+ R3126 限制③（stop 方法
+//! 注入非原型）+ R3127 限制④（无 MouseEvent/KeyboardEvent 子类）。
 //!
 //! 可见性：`build_and_register` 为 `pub(super)`（mod.rs `install_dom_bindings` 全局注册调）；构造器/方法
 //! 回调为私有。复用 `super::event_target::{native_stop_propagation_invoke, native_stop_immediate_invoke}`
@@ -20,25 +24,32 @@ use v8;
 use super::event_target::{native_stop_immediate_invoke, native_stop_propagation_invoke};
 use super::string_arg;
 
-/// 构建并注册 `Event` + `CustomEvent` 全局构造器（mod.rs `install_dom_bindings` 末调）。
+/// 构建并注册 `Event` + 子类（`CustomEvent`/`MouseEvent`/`KeyboardEvent`）全局构造器（mod.rs
+/// `install_dom_bindings` 末调）。
 ///
-/// 两构造器经 FunctionTemplate 建（`new Event(...)` → V8 造实例设原型 → 调构造器回调设 init 属性）；
-/// 原型模板挂 `stopPropagation`/`stopImmediatePropagation`/`preventDefault`（共享方法，非实例属性）。
-/// `new Event('x') instanceof Event` 因原型链成立。
+/// `Event` 基类模板挂原型方法（stop/preventDefault 上原型一次）；子类经 FunctionTemplate::inherit
+/// 继承 Event 模板 → 原型链 MouseEvent.prototype → Event.prototype，`new MouseEvent('x') instanceof
+/// MouseEvent && instanceof Event` 均成立，且 stop/preventDefault 经继承可达（无需子类重复挂）。
 pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8::Object>) {
+    // Event 基类：原型方法一次挂。
     let event_tmpl = v8::FunctionTemplate::builder(native_event_constructor_invoke).build(scope);
-    register_ctor_with_proto(scope, global, "Event", event_tmpl);
+    attach_event_proto_methods(scope, event_tmpl);
+    register_ctor(scope, global, "Event", event_tmpl);
+    // CustomEvent / MouseEvent / KeyboardEvent extends Event（inherit → 原型链 + instanceof Event）。
     let ce_tmpl = v8::FunctionTemplate::builder(native_custom_event_constructor_invoke).build(scope);
-    register_ctor_with_proto(scope, global, "CustomEvent", ce_tmpl);
+    ce_tmpl.inherit(event_tmpl);
+    register_ctor(scope, global, "CustomEvent", ce_tmpl);
+    let mouse_tmpl = v8::FunctionTemplate::builder(native_mouse_event_constructor_invoke).build(scope);
+    mouse_tmpl.inherit(event_tmpl);
+    register_ctor(scope, global, "MouseEvent", mouse_tmpl);
+    let kb_tmpl = v8::FunctionTemplate::builder(native_keyboard_event_constructor_invoke).build(scope);
+    kb_tmpl.inherit(event_tmpl);
+    register_ctor(scope, global, "KeyboardEvent", kb_tmpl);
 }
 
-/// 挂原型方法（stopPropagation/stopImmediatePropagation/preventDefault）到构造器模板 + 注册为全局 `name`。
-fn register_ctor_with_proto(
-    scope: &mut v8::PinScope,
-    global: v8::Local<v8::Object>,
-    name: &str,
-    tmpl: v8::Local<v8::FunctionTemplate>,
-) {
+/// 挂 Event 原型方法（stopPropagation/stopImmediatePropagation/preventDefault）到构造器模板原型。
+/// 仅 Event 基类调一次；子类经 inherit 自动可达。
+fn attach_event_proto_methods(scope: &mut v8::PinScope, tmpl: v8::Local<v8::FunctionTemplate>) {
     let proto = tmpl.prototype_template(scope);
     let stop = v8::FunctionTemplate::builder(native_stop_propagation_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "stopPropagation") {
@@ -52,6 +63,15 @@ fn register_ctor_with_proto(
     if let Some(k) = v8::String::new(scope, "preventDefault") {
         proto.set(k.into(), pd.into());
     }
+}
+
+/// 取构造器 FunctionTemplate 的 function + 注册为全局 `name`。
+fn register_ctor(
+    scope: &mut v8::PinScope,
+    global: v8::Local<v8::Object>,
+    name: &str,
+    tmpl: v8::Local<v8::FunctionTemplate>,
+) {
     let Some(f) = tmpl.get_function(scope) else {
         return;
     };
@@ -69,6 +89,52 @@ fn init_bool(scope: &mut v8::PinScope, args: &v8::FunctionCallbackArguments, idx
     v8::String::new(scope, name)
         .and_then(|k| opts.get(scope, k.into()))
         .is_some_and(|v| v.is_true())
+}
+
+/// 读 eventInitDict 第 `idx` 参的整数属性（经 V8 ToInt32 强转，处理 SMI/Number；缺省 `default`）。
+fn init_int(scope: &mut v8::PinScope, args: &v8::FunctionCallbackArguments, idx: i32, name: &str, default: i32) -> i32 {
+    let Ok(opts) = v8::Local::<v8::Object>::try_from(args.get(idx)) else {
+        return default;
+    };
+    v8::String::new(scope, name)
+        .and_then(|k| opts.get(scope, k.into()))
+        .and_then(|v| v.int32_value(scope))
+        .unwrap_or(default)
+}
+
+/// 读 eventInitDict 第 `idx` 参的字符串属性（缺省 `default`）。
+fn init_string(
+    scope: &mut v8::PinScope,
+    args: &v8::FunctionCallbackArguments,
+    idx: i32,
+    name: &str,
+    default: &str,
+) -> String {
+    let Ok(opts) = v8::Local::<v8::Object>::try_from(args.get(idx)) else {
+        return default.to_string();
+    };
+    v8::String::new(scope, name)
+        .and_then(|k| opts.get(scope, k.into()))
+        .and_then(|v| v.to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
+        .unwrap_or_else(|| default.to_string())
+}
+
+/// 设 4 个修饰键属性（shiftKey/altKey/ctrlKey/metaKey， MouseEvent/KeyboardEvent 共用）。
+/// 从 init dict 读，缺省 false。
+fn set_modifier_keys(scope: &mut v8::PinScope, obj: v8::Local<v8::Object>, args: &v8::FunctionCallbackArguments) {
+    for key in ["shiftKey", "altKey", "ctrlKey", "metaKey"] {
+        let val = init_bool(scope, args, 1, key);
+        if let Some(k) = v8::String::new(scope, key) {
+            let _ = obj.set(scope, k.into(), v8::Boolean::new(scope, val).into());
+        }
+    }
+}
+
+/// 设整数属性（name → i32）。
+fn set_int(scope: &mut v8::PinScope, obj: v8::Local<v8::Object>, name: &str, val: i32) {
+    if let Some(k) = v8::String::new(scope, name) {
+        let _ = obj.set(scope, k.into(), v8::Integer::new(scope, val).into());
+    }
 }
 
 /// 设 event 实例的 init 属性（type/bubbles/cancelable/composed + 派发态默认）。
@@ -137,15 +203,105 @@ fn native_custom_event_constructor_invoke(
     let bubbles = init_bool(scope, &args, 1, "bubbles");
     let cancelable = init_bool(scope, &args, 1, "cancelable");
     set_event_init(scope, this, &event_type, bubbles, cancelable);
-    // detail：从 init dict 读原值（任意类型），缺省 null。
+    // detail：从 init dict 读原值（任意类型），缺省 / undefined → null。Object::get 对缺失属性返
+    // Some(undefined)（非 None），故显式判 undefined 回落 null（spec：detail 缺省 null）。
     let detail = match v8::Local::<v8::Object>::try_from(args.get(1)) {
-        Ok(opts) => v8::String::new(scope, "detail")
-            .and_then(|k| opts.get(scope, k.into()))
-            .unwrap_or_else(|| v8::null(scope).into()),
+        Ok(opts) => {
+            let v = v8::String::new(scope, "detail").and_then(|k| opts.get(scope, k.into()));
+            match v {
+                Some(v) if !v.is_null() && !v.is_undefined() => v,
+                _ => v8::null(scope).into(),
+            }
+        }
         Err(_) => v8::null(scope).into(),
     };
     if let Some(k) = v8::String::new(scope, "detail") {
         let _ = this.set(scope, k.into(), detail);
+    }
+}
+
+/// `new MouseEvent(type, eventInitDict?)` 构造器（spec UIEvent/MouseEvent）：Event init 属性 +
+/// 鼠标字段（坐标/按钮/修饰键，init dict 读，缺省 0/false）。inherits Event 模板（instanceof MouseEvent/Event）。
+fn native_mouse_event_constructor_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let event_type = string_arg(scope, &args, 0);
+    let bubbles = init_bool(scope, &args, 1, "bubbles");
+    let cancelable = init_bool(scope, &args, 1, "cancelable");
+    set_event_init(scope, this, &event_type, bubbles, cancelable);
+    // UIEvent.detail + 坐标族 + button/buttons（缺省 0）。先取值再设（避 scope 双重 mutable borrow）。
+    for name in [
+        "detail",
+        "screenX",
+        "screenY",
+        "clientX",
+        "clientY",
+        "pageX",
+        "pageY",
+        "movementX",
+        "movementY",
+        "button",
+        "buttons",
+    ] {
+        let v = init_int(scope, &args, 1, name, 0);
+        set_int(scope, this, name, v);
+    }
+    // 修饰键（shiftKey/altKey/ctrlKey/metaKey）。
+    set_modifier_keys(scope, this, &args);
+    // relatedTarget（缺省 / undefined → null）。
+    let related = match v8::Local::<v8::Object>::try_from(args.get(1)) {
+        Ok(opts) => {
+            let v = v8::String::new(scope, "relatedTarget").and_then(|k| opts.get(scope, k.into()));
+            match v {
+                Some(v) if !v.is_null() && !v.is_undefined() => v,
+                _ => v8::null(scope).into(),
+            }
+        }
+        Err(_) => v8::null(scope).into(),
+    };
+    if let Some(k) = v8::String::new(scope, "relatedTarget") {
+        let _ = this.set(scope, k.into(), related);
+    }
+}
+
+/// `new KeyboardEvent(type, eventInitDict?)` 构造器（spec KeyboardEvent）：Event init 属性 +
+/// 键盘字段（key/code/修饰键/repeat/isComposing/keyCode/charCode/location，init dict 读，缺省）。
+/// inherits Event 模板（instanceof KeyboardEvent/Event）。
+fn native_keyboard_event_constructor_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let event_type = string_arg(scope, &args, 0);
+    let bubbles = init_bool(scope, &args, 1, "bubbles");
+    let cancelable = init_bool(scope, &args, 1, "cancelable");
+    set_event_init(scope, this, &event_type, bubbles, cancelable);
+    // key/code（缺省 ""）。先取值再设（避 scope 双重 mutable borrow）。
+    let key = init_string(scope, &args, 1, "key", "");
+    let code = init_string(scope, &args, 1, "code", "");
+    if let (Some(k), Some(v)) = (v8::String::new(scope, "key"), v8::String::new(scope, &key)) {
+        let _ = this.set(scope, k.into(), v.into());
+    }
+    if let (Some(k), Some(v)) = (v8::String::new(scope, "code"), v8::String::new(scope, &code)) {
+        let _ = this.set(scope, k.into(), v.into());
+    }
+    // 修饰键。
+    set_modifier_keys(scope, this, &args);
+    // repeat / isComposing（缺省 false）。
+    for name in ["repeat", "isComposing"] {
+        let val = init_bool(scope, &args, 1, name);
+        if let Some(k) = v8::String::new(scope, name) {
+            let _ = this.set(scope, k.into(), v8::Boolean::new(scope, val).into());
+        }
+    }
+    // keyCode/charCode/location（缺省 0）。
+    for name in ["keyCode", "charCode", "location"] {
+        let v = init_int(scope, &args, 1, name, 0);
+        set_int(scope, this, name, v);
     }
 }
 
