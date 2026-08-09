@@ -102,7 +102,7 @@ impl Drop for IsolateEnterGuard {
 }
 
 /// 确保V8平台已初始化。
-fn ensure_v8_initialized() {
+pub(crate) fn ensure_v8_initialized() {
     V8_INIT.call_once(|| {
         let platform = v8::new_default_platform(0, false).make_shared();
         // SAFETY: V8平台初始化在进程生命周期内只调用一次，

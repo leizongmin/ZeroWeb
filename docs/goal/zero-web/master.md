@@ -119,6 +119,26 @@
 
 ## 最近完成的改进
 
+### P1b S0 PoC 完成——TBD-1/TBD-2 阻塞性验证通过（rusty_v8 internal-field + weak-handle GC，零行为变更，本轮 R3095）
+
+承接 R3094（外链加载全链完成）→ pivot 到 P1b 最高杠杆架构项（V8 原生绑定，解锁 10-100x DOM 性能）。P1b RFC v0.1 已批准 S0 PoC（2026-08-09 用户决策）。本切片执行 S0：验证阻塞性 TBD-1（internal-slot）+ TBD-2（weak-handle GC），结果回写 RFC §6。S0 PoC 置 script-sandbox（engine 现无直接 v8 访问，经 Sandbox trait；S0 纯验证零行为变更，默认不接管线）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`dom_bindings` S0 PoC 模块** | `crates/script-sandbox/src/dom_bindings.rs`（新，v8-gated） | `poc_internal_field_round_trip`（TBD-1：ObjectTemplate internal_field_count + External(NodeId) 存 internal slot[0] + get_internal_field + cast 读回，round-trip 12345/0/u32::MAX）；`poc_weak_handle_becomes_empty_on_gc`（TBD-2：Object+Global+Weak::new → 强引用释放 + low_memory_notification → weak.is_empty）。两个 #[cfg(test)] 测试通过。 |
+| **`ensure_v8_initialized` pub(crate)** | `crates/script-sandbox/src/v8_runtime.rs` | dom_bindings 复用 v8 init（pub(crate)）。 |
+| **RFC §6 S0 结论回写** | `docs/specs/p1b-v8-native-bindings-rfc.md` | TBD-1/TBD-2 标 ✅ 已验证 + API 细节 + S1 架构决策（engine v8 dep vs script-sandbox 托管）。 |
+
+**S0 验证结论（记入 RFC）**：TBD-1（internal-slot 值传递）✅——NodeId 经 External 存 internal slot + 原生读回 round-trip 通过；TBD-2（weak-handle GC）✅——Rust 持 weak 不阻止回收 + GC 后 weak empty。P1b 可进入 S1（dom_bindings 生产化）。**关键 API**（rusty_v8 150.2.0）：v8::scope! + ContextScope + ObjectTemplate + External + Local::cast + Global + Weak + low_memory_notification（request_garbage_collection_for_testing 需 --expose-gc，生产避免）。
+
+**为何净正向**：① 闭合 P1b S0 阻塞性 TBD（RFC gate）——验证两 API 可用，P1b 解锁；② 零行为变更（PoC 不接管线，pub(crate) init + allow(dead_code) PoC）；③ 全量 make test 全绿；④ RFC 回写为 S1 提供确切 API + 架构决策候选。
+
+**已知限制（记录，S1 决策）**：① **engine 无直接 v8 访问**（经 Sandbox trait）—— S1 dom_bindings 生产化需 engine 加 v8 dep 或 script-sandbox 托管绑定（PoC 置 script-sandbox 验证 API，S1 选型随首切片定）；② **PoC 为 External 存 NodeId 值编码**（真绑定 S1+ 用 NodeId 表索引或 Integer）；③ **FunctionTemplate 继承链（S5 class）仍需 S5 专项验证**（TBD-1 基础 API 已验证，class 继承 defer）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-script-sandbox --all-targets -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；script-sandbox +2 PoC 测试，零回归**）+ pre-commit guard PASS。变更 script-sandbox（PoC + pub(crate) init）+ RFC 文档（无渲染/布局/CSS 变更），product-smoke 不受影响。
+
+**下一步**：P1b S0 验证完成（TBD-1/TBD-2 通过），可进入 **S1**（dom_bindings 生产化：engine v8 dep 选型 + PoC 原生 `Element.nodeType`/`tagName` getter 接管线 + NodeId↔selector 映射 + bench 对照 + kill-switch），engine+script-sandbox 域，中-高复杂度。或续 P1a 其他深项（diamond module / 浏览器 storage 持久化）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a transitive module 递归 fetch（collect_module_deps_recursive，闭合 module graph，本轮 R3094）
 
 承接 R3093（动态 import() 外链 module，fetched module 的静态 imports 仍空存根返空 namespace）。本切片闭合 module graph：进程内 `__zw_compile_module` 改递归 fetch transitive deps（`collect_module_deps_recursive`，registry 按原 spec 注册源、循环防护按解析后 URL），compile_dependency_iife 编译完整 graph。tree + cycle 用例工作；diamond（同 module 经不同 raw spec 引用）defer。browser 多进程模式 collect_module_deps 早已递归（apps/browser），本切片进程内路径对齐。

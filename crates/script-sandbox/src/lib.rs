@@ -13,6 +13,9 @@
 mod v8_runtime;
 
 #[cfg(feature = "v8")]
+mod dom_bindings;
+
+#[cfg(feature = "v8")]
 mod worker;
 
 #[cfg(feature = "quickjs")]

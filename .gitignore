@@ -82,3 +82,7 @@ docs/goal/rendering-compat/evidence/product-static/*
 tests/wpt-runner/wpt-data
 
 .trae
+
+# 测试崩溃 core dump（SIGTRAP/OOM 等）——绝不入库（曾因 SIGTRAP 产生 135MB core.NNNN）
+core
+core.*

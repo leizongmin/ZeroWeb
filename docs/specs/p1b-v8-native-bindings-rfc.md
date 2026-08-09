@@ -3,7 +3,7 @@
 **版本**：v0.1（草稿）
 **日期**：2026-08-08
 **作者**：ZeroWeb rally（自主推进）
-**状态**：v0.1 已批准 S0 PoC（2026-08-09 用户决策）；S1–S7 按 §4 逐片 land，TBD 结论待 S0 验证后回写
+**状态**：v0.1 已批准 S0 PoC（2026-08-09 用户决策）；**S0 PoC 验证完成（R3095, 2026-08-09）—— TBD-1/TBD-2 阻塞性验证通过，S1 可启动**；S1–S7 按 §4 逐片 land（详见 §6 S0 结论）
 
 > **与字体栈 RFC 同级**：本 RFC 是 `docs/goal/zero-web/master.md` 反复标注「P1b（V8 原生绑定）需独立 RFC，与字体栈 RFC 同级对待」的落地。字体栈 RFC（`docs/goal/rendering-compat/fontdue-replacement-scoping.md`）解决「看起来对不对」（渲染一致性），本 RFC 解决「能不能用」（JS 性能与 Web Components 正确性）。
 
@@ -208,13 +208,24 @@ Fetch/Observer/FontFaceSet/事件循环 等高层 API 保留 shim（js_dom_shim.
 
 | ID | 项目 | 优先级 | 缺失信息 | 下一步 |
 |----|------|--------|----------|--------|
-| TBD-1 | rusty_v8 150.x 的 ObjectTemplate internal-slot + inherited-prototype 具体 API（FunctionTemplate 继承链） | 阻塞 S5（class） | 需查 rusty_v8 文档/示例验证可行性 | S0 PoC 验证基础 API；S5 前专项验证 class 继承 |
-| TBD-2 | GC weak-persistent 在持久 Context 的具体行为（V8 GC 触发时机、weak callback） | 阻塞 S0（GC 设计） | 需 rusty_v8 weak handle API 验证 | S0 专项压力测试 |
-| TBD-3 | NodeId ↔ selector 双向映射的性能（迁移期每次 node↔proxy 转换开销） | 重要 | 需 bench | S0 bench 含映射开销 |
+| TBD-1 | rusty_v8 150.x 的 ObjectTemplate internal-slot + inherited-prototype 具体 API（FunctionTemplate 继承链） | ✅ 基础 API 已验证（S0）；阻塞 S5（class） | **已验证**（S0 PoC）：`ObjectTemplate::set_internal_field_count` + `Object::set/get_internal_field` + `v8::External::new/value` + `.into()`(Local→Local\<Data\>) + `data.cast::<External>()` 均可用；PoC round-trip NodeId 经 External 存/取通过。FunctionTemplate 继承链（S5 class）仍需 S5 专项验证。 | S5 前专项验证 class 继承（inherited prototype） |
+| TBD-2 | GC weak-persistent 在持久 Context 的具体行为（V8 GC 触发时机、weak callback） | ✅ 已验证（S0 GC 设计可推进） | **已验证**（S0 PoC）：`v8::Weak::new(scope, &global)` + `weak.is_empty()`；强引用释放 + `Isolate::low_memory_notification()`（host GC，无需 `--expose-gc`）后 weak 变 empty。`Weak::with_finalizer`/`with_guaranteed_finalizer` 签名已验证（best-effort / guaranteed 语义）；`request_garbage_collection_for_testing` 需 `--expose-gc`（生产避免，PoC 用 low_memory_notification）。 | S1 gc.rs 用 weak + getter 时 stale 校验 |
+| TBD-3 | NodeId ↔ selector 双向映射的性能（迁移期每次 node↔proxy 转换开销） | 重要 | 需 bench | S0/S1 bench 含映射开销 |
 | TBD-4 | customElements upgrade 的 lifecycle 触发点（原生 appendChild hook 是否影响渲染管线增量更新） | 重要（S5） | 需与渲染管线增量更新协调 | S5 设计子文档 |
 | TBD-5 | 是否保留 QuickJS 路径的原生绑定（或仅 V8） | 可选 | QuickJS 是扩展沙箱非页面引擎，本 RFC 默认仅 V8 | 用户确认 |
 
-**注**：本 RFC 标 **草稿**——TBD-1/TBD-2 为阻塞性（需 S0 验证），但 rally 无人值守下不暂停；S0 PoC 的职责即验证这两个 TBD，结果回写本 RFC。
+### S0 PoC 验证结论（2026-08-09，R3095）
+
+**S0 阻塞性 TBD 全部验证通过**，P1b 可进入 S1（dom_bindings 生产化）。PoC 位于 `crates/script-sandbox/src/dom_bindings.rs`（engine 现无直接 v8 访问，经 Sandbox trait；S0 PoC 置 script-sandbox 有 v8，零行为变更、默认不接管线）：
+
+- **TBD-1（internal-slot 值传递）**：`poc_internal_field_round_trip(node_id)` — ObjectTemplate + internal_field_count(1) + External(NodeId) 存 internal slot[0] + `get_internal_field` + `cast::<External>` 读回。Round-trip 12345/0/u32::MAX 通过。证明 NodeId 经 internal slot 传递管线可用（不经 shim 字符串桥）。
+- **TBD-2（weak-handle GC 安全）**：`poc_weak_handle_becomes_empty_on_gc()` — Object + Global + `Weak::new` → 强引用释放 + `low_memory_notification` → `weak.is_empty() == true`。证明 Rust 持 weak handle 不阻止回收 + 对象 GC 后 weak 反映 empty（stale 检测基础）。
+
+**关键 API（rusty_v8 150.2.0）**：`v8::scope!` 宏 + `ContextScope` + `ObjectTemplate::new/set_internal_field_count/new_instance` + `Object::set/get_internal_field` + `External::new/value` + `Local::cast/try_cast`（`.into()` upcast）+ `Global::new` + `Weak::new/with_finalizer/with_guaranteed_finalizer/is_empty` + `Isolate::low_memory_notification`。
+
+**S1 架构决策（待）**：engine 现无直接 v8 访问。S1 dom_bindings 生产化需 ① engine 加 v8 dep（feature-gated）直接操纵，或 ② 绑定托管 script-sandbox 经扩展 Sandbox trait 暴露。S0 PoC 在 script-sandbox 验证 API 可行；S1 选型随首切片（PoC 原生 `Element.nodeType`/`tagName` getter 接管线）定。
+
+**注**：本 RFC 标 **草稿**——TBD-1/TBD-2 阻塞性已 S0 验证（上）；TBD-3/4/5 非阻塞，随 S1+ 推进。rally 无人值守下不暂停。
 
 ---
 
