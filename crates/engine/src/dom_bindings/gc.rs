@@ -44,6 +44,16 @@ thread_local! {
     /// = owner element NodeId）。`install_dom_bindings` 建 + 缓存，`attributes` getter 实例化。
     static NAMEDNODEMAP_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> =
         const { RefCell::new(None) };
+    /// R3122 Attr 节点属性名 arena（idx → name）。Attr 对象 internal slot[1] 存 idx，getter 经此复原名。
+    /// 无 dedup——身份缓存 [`ATTR_OBJECTS`] 按 (owner ffi, name) 去重；arena 仅供对象读回名（泄漏限制，
+    /// 同 LISTENERS：仅 reset 清，节点移除不自动回收）。
+    static ATTR_NAMES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// R3122 Attr 节点身份缓存：(owner ffi, attr name) → `Global<Object>`（同 attr 返同对象，spec identity）。
+    static ATTR_OBJECTS: RefCell<HashMap<(u64, String), v8::Global<v8::Object>>> =
+        RefCell::new(HashMap::new());
+    /// R3122 Attr ObjectTemplate（nodeType=2 / name / nodeName / value(+setter) / nodeValue / textContent /
+    /// ownerElement + internal slot[0]=owner ffi、slot[1]=attr 名 arena idx）。`install_dom_bindings` 建 + 缓存。
+    static ATTR_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> = const { RefCell::new(None) };
 }
 
 /// 注入 DOM 源 + Element 模板（`install_dom_bindings` 调用）。
@@ -72,6 +82,9 @@ pub(crate) fn reset() {
     LISTENERS.with(|c| c.borrow_mut().clear());
     NAMEDNODEMAP_OBJECTS.with(|c| c.borrow_mut().clear());
     NAMEDNODEMAP_TEMPLATE.with(|c| *c.borrow_mut() = None);
+    ATTR_NAMES.with(|c| c.borrow_mut().clear());
+    ATTR_OBJECTS.with(|c| c.borrow_mut().clear());
+    ATTR_TEMPLATE.with(|c| *c.borrow_mut() = None);
 }
 
 /// 缓存 NamedNodeMap ObjectTemplate（`install_dom_bindings` 建 `attributes` 集合模板）。
@@ -95,6 +108,54 @@ pub(crate) fn cached_namednodemap<'s>(scope: &mut v8::PinScope<'s, '_>, ffi: u64
 pub(crate) fn cache_namednodemap(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v8::Object>) {
     NAMEDNODEMAP_OBJECTS.with(|c| {
         c.borrow_mut().insert(ffi, v8::Global::new(scope, obj));
+    });
+}
+
+// ── R3122 Attr 节点状态 ───────────────────────────────────────────
+
+/// 追加属性名到 arena，返 idx（Attr 对象 internal slot[1] 存 `idx+1`，getter 经此复原名）。
+pub(crate) fn add_attr_name(name: String) -> u32 {
+    ATTR_NAMES.with(|c| {
+        let mut v = c.borrow_mut();
+        let idx = v.len() as u32;
+        v.push(name);
+        idx
+    })
+}
+
+/// 取 arena idx 处的属性名（Attr getter 经 slot[1] idx 复原名）。越界 / 空 → `None`。
+pub(crate) fn attr_name(idx: u32) -> Option<String> {
+    ATTR_NAMES.with(|c| c.borrow().get(idx as usize).cloned())
+}
+
+/// 缓存 Attr ObjectTemplate（`install_dom_bindings` 建）。
+pub(crate) fn set_attr_template(scope: &mut v8::PinScope, tmpl: v8::Local<v8::ObjectTemplate>) {
+    ATTR_TEMPLATE.with(|c| *c.borrow_mut() = Some(v8::Global::new(scope, tmpl)));
+}
+
+/// 取 Attr ObjectTemplate 的 Local（getNamedItem/item 实例化用）。
+pub(crate) fn attr_template_local<'s>(scope: &mut v8::PinScope<'s, '_>) -> Option<v8::Local<'s, v8::ObjectTemplate>> {
+    ATTR_TEMPLATE.with(|c| c.borrow().as_ref().map(|g| v8::Local::new(scope, g)))
+}
+
+/// 取已缓存的 Attr 对象（同 (owner, name) 返同对象，spec identity）。
+pub(crate) fn cached_attr<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    owner_ffi: u64,
+    name: &str,
+) -> Option<v8::Local<'s, v8::Object>> {
+    ATTR_OBJECTS.with(|c| {
+        c.borrow()
+            .get(&(owner_ffi, name.to_string()))
+            .map(|g| v8::Local::new(scope, g))
+    })
+}
+
+/// 缓存 Attr 对象（(owner ffi, name) → Global）。
+pub(crate) fn cache_attr(scope: &mut v8::PinScope, owner_ffi: u64, name: &str, obj: v8::Local<v8::Object>) {
+    ATTR_OBJECTS.with(|c| {
+        c.borrow_mut()
+            .insert((owner_ffi, name.to_string()), v8::Global::new(scope, obj));
     });
 }
 

@@ -604,6 +604,38 @@ fn test_native_host_dispatch_event_r3121() {
     );
 }
 
+// ── P1b 完整 Attr 节点（本轮 R3122）──
+
+// native_dom=true → getNamedItem 返 Attr 节点（nodeType=2/name/value/ownerElement），非 plain 对象。
+// value setter 经 set_attribute 写回。验证 webview 沙箱安装含 R3122 Attr 模板（非仅 engine 隔离测试）。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_attr_node_r3122() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html("<html><body><div id=\"a\" class=\"row\"></div></body></html>", None);
+    // Attr 节点面：nodeType=2、name=nodeName、value live、ownerElement===owner 元素。
+    assert_eq!(
+        wv.execute_script(
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             const at=el.attributes.getNamedItem('class');\
+             return at.nodeType+'/'+at.name+'/'+at.nodeName+'/'+at.value+'/'+(at.ownerElement===el); })()"
+        )
+        .unwrap(),
+        "2/class/class/row/true",
+        "native Attr 节点 nodeType=2/name/nodeName/value/ownerElement"
+    );
+    // value setter 写回 owner 元素（getAttribute live 见）。
+    assert_eq!(
+        wv.execute_script(
+            "(()=>{ __zw_native_element_for_id('a').attributes.getNamedItem('class').value='new';\
+             return __zw_native_element_for_id('a').getAttribute('class'); })()"
+        )
+        .unwrap(),
+        "new",
+        "Attr.value setter 经 set_attribute 写回"
+    );
+}
+
 // ── P1b 节点导航 native：parentNode/firstChild/lastChild/nextSibling/previousSibling/hasChildNodes（本轮 R3110）──
 
 // native_dom=true → native 元素（execute_script 安装路径）具节点导航 getter。验证 webview 沙箱安装

@@ -880,6 +880,63 @@ fn native_attributes_set_and_remove_named_item() {
     );
 }
 
+// ── R3122 Attr 节点（完整 Attr：nodeType=2/name/value/ownerElement）──
+//
+// getNamedItem / item 返 Attr 节点对象（非 plain {name,value}）。闭合 R3112 plain-object 限制。
+
+/// Attr 节点面：nodeType=2、name=nodeName、value live、ownerElement===owner 元素、身份（同 attr 同对象）。
+#[test]
+fn native_attr_node_surface() {
+    let html = r#"<div id="a" class="row"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             const at=el.attributes.getNamedItem('class');\
+             return at.nodeType+'/'+at.name+'/'+at.nodeName+'/'+at.value+'/'+(at.ownerElement===el); })()"
+        ),
+        "2/class/class/row/true"
+    );
+    // value setter 经 set_attribute 写回 owner 元素（live）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             el.attributes.getNamedItem('class').value='new';\
+             return el.getAttribute('class'); })()"
+        ),
+        "new"
+    );
+    // nodeValue / textContent === value（Node 接口面）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const at=__zw_native_element_for_id('a').attributes.getNamedItem('class');\
+             return at.nodeValue+'/'+at.textContent; })()"
+        ),
+        "row/row"
+    );
+    // 身份：同 (owner, name) 返同对象（spec identity）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a').attributes;\
+             return (a.getNamedItem('class')===a.getNamedItem('class'))+'/'+\
+             (a.getNamedItem('class')===a.item(1)); })()"
+        ),
+        "true/true"
+    );
+    // item(0) 返 Attr 节点（nodeType=2 + name=id）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const at=__zw_native_element_for_id('a').attributes.item(0);\
+             return at.nodeType+'/'+at.name; })()"
+        ),
+        "2/id"
+    );
+}
+
 // ── R3113 innerHTML / outerHTML 序列化 getter ──
 
 /// `innerHTML`（子节点序列化拼接）+ `outerHTML`（含自身 tag）。
