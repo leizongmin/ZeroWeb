@@ -119,6 +119,25 @@
 
 ## 最近完成的改进
 
+### P1b RFC §3.2 dom_bindings 子模块拆分（stage 4a：node.rs）——行为保持重构（本轮 R3119）
+
+承接 R3118（stage 3 factories.rs）。本轮启 §3.2 stage 4（Element bulk 拆分），拆为 **stage 4a node.rs**（DOM Node 基类）+ 后续 stage 4b element.rs（Element 特有）。本轮抽 **node.rs**（Node 基类 17 个 getter/invoke），mod.rs 1109→690（-419）。**行为保持**——同 namednodemap/event_target/factories 模式（move + 可见性）。
+
+按 RFC §3.2 模块清单的 spec DOM 划分：Node 基类（nodeType/nodeName/nodeValue/textContent/childNodes/导航/hasChildNodes/树 mutation/cloneNode/contains）归 node.rs；Element 特有（tagName/id/className/getAttribute*/children/querySelector(-All)/innerHTML/outerHTML）暂留 mod.rs（stage 4b）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **新 node.rs 子模块** | `crates/engine/src/dom_bindings/node.rs`（451 行） | 搬入 17 个 `pub(super) fn`（注册于 Element 模板的 Node 接口）：nodeType / nodeName(+私有 node_name) / nodeValue getter+setter(+私有 node_value) / textContent getter+setter / childNodes / parentNode·firstChild·lastChild·nextSibling·previousSibling(+私有 node_relation_getter) / hasChildNodes / appendChild·insertBefore·removeChild·replaceChild(+私有 set_native_element) / cloneNode / contains。依赖 `super::{read_node_id, node_id_from_value, get_or_create_native_element, local_value_to_string}`（mod.rs 私有共享——Rust 规则：私有项对后代模块可见）+ `super::gc::{with_dom, with_dom_mut}` + `zero_dom::{Document, NodeId, NodeKind}`。 |
+| **mod.rs 接线更新** | `crates/engine/src/dom_bindings/mod.rs`（1109→690） | 加 `mod node;`（字母序 namednodemap/node）；`install_dom_bindings` 内 19 处 Node 注册调点改 `node::`（经 replace_all 逐名前缀，删定义后各名唯一残留注册点）；删 5 个连续 Node fn 块（accessor getter 的 nodeType/nodeName、textContent、childNodes+nodeValue getter、树 mutation+nodeValue setter、cloneNode+contains+导航）；`// accessor getter` 段头改写描述留存的 Element 特有 accessor（tagName/id/className + 反射属性助手）。**共享助手（read_node_id/node_id_from_value/get_or_create_native_element/string_arg/local_value_to_string）留 mod.rs 作共享核心**；childNodes intra-doc 链改 `super::native_children_getter`。 |
+
+**为何净正向**：① RFC §3.2 stage 4a——mod.rs 减 419 行（1109→690），累计 R3116+R3117+R3118+R3119 减 756 行（原 1446）；② **行为保持**（纯 move + 可见性 + 注册 prefix + 段头/链修，调用契约不变；make test 全 workspace 16185 passed 0 failed 计数不变——零回归；dom_bindings 52 测全绿）；③ §3.2 模式第四例（node.rs），spec DOM Node/Element 划分落地，element.rs（stage 4b）为最后一块；④ 共享助手留 mod.rs 经 `super::` 引用（无需先抽 helpers.rs，Rust 私有项对后代可见）；⑤ 无性能影响（编译期 move）。
+
+**已知限制（记录，后续）**：① **staged 拆分未完**——mod.rs 仍 690 行（Element 特有 accessor/method + 共享助手 + install 入口 + 注册编排）；**stage 4b element.rs** 抽 Element 特有（tagName/id/className+反射助手/getAttribute 族/children/element-scoped querySelector(-All)/innerHTML/outerHTML）即 §3.2 Element bulk 闭合；② escape-hatch 可达性不变；③ 仅 V8（QuickJS no-op，继承）；④ product-smoke 不适用（native_dom 默认关 + 行为保持）。
+
+验证：`cargo fmt --all -- --check` clean（长注册行经 `cargo fmt` 自动多行折行）+ `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；dom_bindings 52 测；webview v8 561 + quickjs 527（计数不变——行为保持）；全 workspace 16185 passed 0 failed 零回归**）。pre-commit guard PASS。已提交 e4ebbfc5 并推送（1d16ba89..e4ebbfc5，pull --rebase up-to-date 无冲突）。
+
+**下一步**：RFC §3.2 stage 4a 完成（node.rs）。候选：① **§3.2 stage 4b：element.rs**（Element 特有——tagName/id/className+read_reflected_attr/write_reflected_attr/local_value_to_string/getAttribute·hasAttribute·setAttribute·removeAttribute+string_arg/children/element-scoped querySelector(-All)/innerHTML/outerHTML；注意 string_arg/local_value_to_string 为共享——若 element.rs 独占则随迁，否则留 mod.rs；moveElement 后 mod.rs 仅剩 install 入口 + 注册编排 + 共享 slot 助手，~400 行）；② **回到 feature 切片**（full Attr 节点 / host→page native 事件派发 / innerHTML setter）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b RFC §3.2 dom_bindings 子模块拆分（stage 3：factories.rs）——行为保持重构（本轮 R3118）
 
 承接 R3117（stage 2 event_target.rs）。本轮续 §3.2 stage 3：抽 **factories.rs**（4 个**全局**工厂回调），mod.rs 1191→1109（-82）。**行为保持**——同 namednodemap/event_target 模式。
