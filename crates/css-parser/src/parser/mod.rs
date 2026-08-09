@@ -4,6 +4,7 @@
 
 use crate::ast::*;
 use crate::tokenizer::{Token, Tokenizer};
+use std::fmt::Write as _; // write! 直接写目标 String，免 format! 中间分配
 
 mod at_rules;
 mod helpers;
@@ -581,12 +582,12 @@ impl<'a> Parser<'a> {
                 }
                 Token::Function(_) | Token::LParen | Token::LBracket => {
                     group_depth += 1;
-                    prelude.push_str(&format!("{}", self.peek()));
+                    let _ = write!(prelude, "{}", self.peek());
                     self.advance();
                 }
                 Token::RParen | Token::RBracket => {
                     group_depth = (group_depth - 1).max(0);
-                    prelude.push_str(&format!("{}", self.peek()));
+                    let _ = write!(prelude, "{}", self.peek());
                     self.advance();
                 }
                 Token::Whitespace => {
@@ -594,7 +595,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
                 _ => {
-                    prelude.push_str(&format!("{}", self.peek()));
+                    let _ = write!(prelude, "{}", self.peek());
                     self.advance();
                 }
             }
@@ -1898,15 +1899,13 @@ impl<'a> Parser<'a> {
                 Token::Function(_) | Token::LParen | Token::LBracket => {
                     group_depth += 1;
                     flush_ws!();
-                    let display = format!("{}", self.peek());
-                    value_parts.push_str(&display);
+                    let _ = write!(value_parts, "{}", self.peek());
                     self.advance();
                 }
                 Token::RParen | Token::RBracket => {
                     group_depth = (group_depth - 1).max(0);
                     flush_ws!();
-                    let display = format!("{}", self.peek());
-                    value_parts.push_str(&display);
+                    let _ = write!(value_parts, "{}", self.peek());
                     self.advance();
                 }
                 Token::Whitespace => {
@@ -1941,8 +1940,7 @@ impl<'a> Parser<'a> {
                 }
                 _ => {
                     flush_ws!();
-                    let display = format!("{}", self.peek());
-                    value_parts.push_str(&display);
+                    let _ = write!(value_parts, "{}", self.peek());
                     self.advance();
                 }
             }

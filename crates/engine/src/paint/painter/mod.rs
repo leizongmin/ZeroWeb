@@ -66,6 +66,9 @@ pub struct Painter {
     /// 由调用方从 FontLoader.build_font_resolver() 构建并传入。
     /// 用于将 CSS font-family 列表解析为具体的 FontId。
     font_resolver: HashMap<String, u32>,
+    /// 小写 key 索引（set_font_resolver 时构建一次）：resolve_font_id 的大小写
+    /// 不敏感回退免整表线性扫描（旧实现每 miss 一次 O(resolver 大小)）。
+    font_resolver_lower: HashMap<String, u32>,
     /// 视口宽度（像素）。用于 CSS §14.2 画布背景传播——根元素（html）的背景
     /// 覆盖整个画布；若根背景透明且 body 有背景，则 body 背景传播到画布。
     /// 由调用方（pipeline）在 paint 前设置；测试默认 0.0（不绘制画布背景）。
@@ -341,6 +344,7 @@ impl Painter {
             skip_indicators: false,
             image_sizes: HashMap::new(),
             font_resolver: HashMap::new(),
+            font_resolver_lower: HashMap::new(),
             viewport_w: 0.0,
             viewport_h: 0.0,
             canvas_propagated_node: None,
@@ -364,6 +368,7 @@ impl Painter {
     ///
     /// 由调用方从 `FontLoader::build_font_resolver()` 构建并传入。
     pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
+        self.font_resolver_lower = resolver.iter().map(|(k, &v)| (k.to_ascii_lowercase(), v)).collect();
         self.font_resolver = resolver;
     }
 
@@ -406,10 +411,8 @@ impl Painter {
                 if let Some(&id) = self.font_resolver.get(&key) {
                     return (FontId(id), resolved_italic);
                 }
-                for (rk, &id) in &self.font_resolver {
-                    if rk.eq_ignore_ascii_case(&key) {
-                        return (FontId(id), resolved_italic);
-                    }
+                if let Some(&id) = self.font_resolver_lower.get(&key.to_ascii_lowercase()) {
+                    return (FontId(id), resolved_italic);
                 }
             }
         }
