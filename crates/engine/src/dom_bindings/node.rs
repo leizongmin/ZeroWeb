@@ -313,6 +313,26 @@ pub(super) fn native_replace_child_invoke(
     }
 }
 
+/// `element.remove()`：spec `dom-childnode-remove`——**自移除**（从父节点摘除自身）。无父（detached）
+/// → no-op（spec）。区别于 `removeChild`（parent.removeChild(child)）：remove 在子节点上调用，找自身
+/// parent 后 remove_child(self)。ChildNode mixin（Element/Text/Comment 均可，注册于 Element 模板）。
+pub(super) fn native_element_remove_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    with_dom_mut(|d| {
+        // 找自身 parent，有则 remove_child(parent, self)；无 parent（detached）no-op（spec）。
+        if let Some(parent) = d.parent_node(id) {
+            let _ = d.remove_child(parent, id);
+        }
+    });
+}
+
 /// `nodeValue` setter（spec `dom-node-nodevalue`）：值 ToString 后，Text/Comment/PI 改 content/data
 ///（`Document::set_node_value`），其余 no-op（spec）。写入经 R3108 `sync_render_after_native_dom` 重渲染。
 pub(super) fn native_node_value_setter(

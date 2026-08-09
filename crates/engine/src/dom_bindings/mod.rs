@@ -203,6 +203,11 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "replaceChild") {
         tmpl.set(k.into(), replace_child_tmpl.into());
     }
+    // R3142 `element.remove()`（spec `dom-childnode-remove`，自移除——ChildNode mixin，高频现代 DOM API）。
+    let remove_tmpl = v8::FunctionTemplate::builder(node::native_element_remove_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "remove") {
+        tmpl.set(k.into(), remove_tmpl.into());
+    }
     // S4 EventTarget（spec `dom-eventtarget-add-event-listener` 等）：addEventListener /
     // removeEventListener / dispatchEvent 原生——监听器存线程局部（gc.rs LISTENERS，键=(NodeId
     // ffi, 事件类型)），dispatchEvent 在当前 scope 复活 Local 调用（不冒泡，最小切片）。

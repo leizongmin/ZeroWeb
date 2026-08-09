@@ -1593,6 +1593,46 @@ fn native_init_event_overwrites_r3141() {
     );
 }
 
+// ── R3142 element.remove()（自移除，ChildNode mixin）──
+
+/// `element.remove()`：从父节点摘除自身。remove 后父节点 children.length 减 / 不在该父子列表；
+/// detached 节点 remove no-op（不抛）。
+#[test]
+fn native_element_remove_r3142() {
+    let html = r#"<div id="host"><span id="a">x</span><span id="b">y</span></div>"#;
+    // remove #a 后 host 剩 [b]。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_element_for_id('a').remove();\
+            const host=__zw_native_element_for_id('host');\
+            return host.children.length+'/'+host.children[0].id; })()"
+        ),
+        "1/b",
+        "element.remove() 自移除——host 剩 [b]"
+    );
+    // removed 节点无 parent（detached）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a'); a.remove();\
+            return (a.parentNode===null); })()"
+        ),
+        "true",
+        "removed 节点 parentNode===null（detached）"
+    );
+    // detached 节点再 remove → no-op（不抛）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a'); a.remove(); a.remove();\
+            return 'ok'; })()"
+        ),
+        "ok",
+        "detached 节点再 remove → no-op（不抛）"
+    );
+}
+
 // ── R3132 appendChild/insertBefore(fragment) flatten ──
 
 /// host.appendChild(frag)：fragment 子节点展开进 host + fragment 清空（spec flatten）。
