@@ -79,19 +79,9 @@ impl GlyphCache {
         self.resolved.get(raw_key).copied()
     }
 
-    /// 将条目提升到 LRU 队列尾部（最近访问）。
-    fn promote(&mut self, key: &GlyphKey, lru_index: usize) {
-        // 从旧位置移除
-        self.lru_queue.remove(lru_index);
-        // 追加到尾部
-        self.lru_queue.push_back(key.clone());
-        // 更新所有受影响条目的 lru_index
-        self.rebuild_lru_indices();
-    }
-
     /// 重建所有缓存条目的 lru_index。
     ///
-    /// 在 promote/remove 后调用，确保 HashMap 中的索引与 VecDeque 位置一致。
+    /// 在 remove/evict 后调用，确保 HashMap 中的索引与 VecDeque 位置一致。
     fn rebuild_lru_indices(&mut self) {
         for (i, key) in self.lru_queue.iter().enumerate() {
             if let Some(entry) = self.cache.get_mut(key) {
@@ -113,17 +103,18 @@ impl GlyphCache {
         self.rebuild_lru_indices();
     }
 
-    /// 获取或插入 glyph（带 LRU 提升）。
+    /// 获取或插入 glyph。
+    ///
+    /// 命中与插入均不提升 LRU（命中提升需全表 `rebuild_lru_indices` O(n)，CJK 页
+    /// 首帧 miss 密集时每次插入 O(n) 重建 = 千万级 hash 操作；本方法调用方均为
+    /// miss 插入路径，绘制热路径用 `get`/`get_shared` 自行管理，LRU 近似 FIFO
+    /// 淘汰对命中率分布影响可忽略）。
     pub fn get_or_insert_with<F>(&mut self, key: GlyphKey, f: F) -> Result<&GlyphBitmap, FontError>
     where
         F: FnOnce() -> Result<GlyphBitmap, FontError>,
     {
-        // 检查缓存命中
-        if let Some(entry) = self.cache.get(&key) {
-            let lru_index = entry.lru_index;
-            // 提升到最近访问
-            self.promote(&key, lru_index);
-            // 返回引用（rebuild 后引用失效，需要重新获取）
+        // 检查缓存命中（不提升，见方法注释）
+        if self.cache.contains_key(&key) {
             return Ok(self.cache.get(&key).unwrap().bitmap.as_ref());
         }
 
@@ -132,7 +123,7 @@ impl GlyphCache {
             self.evict();
         }
 
-        // 生成位图并插入
+        // 生成位图并插入（新条目在 LRU 尾部，无需提升）
         let bitmap = f()?;
         let lru_index = self.lru_queue.len();
         self.lru_queue.push_back(key.clone());
@@ -306,25 +297,28 @@ mod tests {
         }
         assert_eq!(cache.len(), 4);
 
-        // Access glyph 0 (promote to recent)
-        let _ = cache.get_or_insert_with(GlyphKey::new(0, 0, 16.0), || panic!());
+        // Access glyph 0（get_or_insert_with 不提升 LRU——S4 后绘制热路径
+        // get/get_shared 本就不 promote，命中提升需全表 rebuild O(n)，对
+        // 命中率分布无可测收益，见 get_or_insert_with 注释）
 
-        // Insert new key — should evict glyph 1 (oldest unaccessed)
+        // Insert new key — evict glyph 0 (FIFO: oldest inserted first)
         let new_key = GlyphKey::new(0, 99, 16.0);
         cache
             .get_or_insert_with(new_key, || Ok(make_bitmap(&[0; 4], 2, 2)))
             .unwrap();
 
-        // glyph 0 should still exist (was recently accessed)
+        // glyph 0 should be evicted (FIFO 淘汰最早插入的)
         assert!(
-            cache.get(&GlyphKey::new(0, 0, 16.0)).is_some(),
-            "recently accessed glyph 0 should survive"
+            cache.get(&GlyphKey::new(0, 0, 16.0)).is_none(),
+            "FIFO: glyph 0 (oldest inserted) should be evicted"
         );
-        // glyph 1 should be evicted (oldest)
-        assert!(
-            cache.get(&GlyphKey::new(0, 1, 16.0)).is_none(),
-            "oldest glyph 1 should be evicted"
-        );
+        // glyph 1..3 should survive（FIFO 只淘汰最早插入的）
+        for i in 1..4u32 {
+            assert!(
+                cache.get(&GlyphKey::new(0, i, 16.0)).is_some(),
+                "glyph {i} should survive FIFO eviction"
+            );
+        }
     }
 
     #[test]
@@ -490,20 +484,18 @@ mod tests {
             cache.insert(GlyphKey::new(0, i, 16.0), make_bitmap(&[i as u8; 4], 2, 2));
         }
 
-        // 访问 0 和 1（提升到最近）
-        let _ = cache.get_or_insert_with(GlyphKey::new(0, 0, 16.0), || panic!());
-        let _ = cache.get_or_insert_with(GlyphKey::new(0, 1, 16.0), || panic!());
+        // 访问 0 和 1（get_or_insert_with 不提升，见 get_or_insert_with 注释）
 
-        // 插入新条目触发淘汰 → 应淘汰 2（最旧）
+        // 插入新条目触发淘汰 → 应淘汰 0（最早插入，FIFO）
         cache
             .get_or_insert_with(GlyphKey::new(0, 50, 16.0), || Ok(make_bitmap(&[0; 4], 2, 2)))
             .unwrap();
 
-        // 0 和 1 应该存活
-        assert!(cache.get(&GlyphKey::new(0, 0, 16.0)).is_some());
+        // 1 和 2 应该存活
         assert!(cache.get(&GlyphKey::new(0, 1, 16.0)).is_some());
-        // 2 应该被淘汰
-        assert!(cache.get(&GlyphKey::new(0, 2, 16.0)).is_none());
+        assert!(cache.get(&GlyphKey::new(0, 2, 16.0)).is_some());
+        // 0 应该被淘汰（FIFO 最早插入）
+        assert!(cache.get(&GlyphKey::new(0, 0, 16.0)).is_none());
     }
 
     /// 测试 insert 覆盖旧条目时 LRU 队列正确更新。

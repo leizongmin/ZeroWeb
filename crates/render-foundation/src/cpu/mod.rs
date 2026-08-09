@@ -143,8 +143,8 @@ pub fn render_full_scene_region(
     let scale = normalize_scale_factor(scale_factor);
     let physical_width = scale_dimension(width, scale);
     let physical_height = scale_dimension(height, scale);
-    let mut fb = FrameBuffer::new(physical_width, physical_height);
-    fb.clear(255, 255, 255, 255);
+    // new_filled：一次 memset 构造白底（免 new + clear 两遍全缓冲写，1080p 省 ~4.6MB 写）
+    let mut fb = FrameBuffer::new_filled(physical_width, physical_height, 255, 255, 255, 255);
     render_full_scene_region_into(
         &mut fb,
         primitives,
@@ -492,8 +492,8 @@ pub fn render_scene_to_framebuffer(
     let scale = normalize_scale_factor(scale_factor);
     let physical_width = scale_dimension(width, scale);
     let physical_height = scale_dimension(height, scale);
-    let mut fb = FrameBuffer::new(physical_width, physical_height);
-    fb.clear(255, 255, 255, 255);
+    // new_filled：一次 memset 构造白底（免 new + clear 两遍全缓冲写，1080p 省 ~4.6MB 写）
+    let mut fb = FrameBuffer::new_filled(physical_width, physical_height, 255, 255, 255, 255);
 
     for fill in fills {
         fill_rect(&mut fb, fill, scale);

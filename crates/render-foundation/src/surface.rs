@@ -53,6 +53,12 @@ impl FrameBuffer {
         Self { data, width, height }
     }
 
+    /// 创建指定颜色填充的帧缓冲（一次 memset，免 new + clear 两遍全缓冲写）。
+    pub fn new_filled(width: u32, height: u32, r: u8, g: u8, b: u8, a: u8) -> Self {
+        let data = [r, g, b, a].repeat((width * height) as usize);
+        Self { data, width, height }
+    }
+
     /// 从 RGBA 数据创建帧缓冲
     pub fn from_rgba(data: Vec<u8>, width: u32, height: u32) -> Result<Self, String> {
         let expected = (width * height * 4) as usize;
