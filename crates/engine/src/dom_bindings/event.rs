@@ -45,6 +45,14 @@ pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8:
     let kb_tmpl = v8::FunctionTemplate::builder(native_keyboard_event_constructor_invoke).build(scope);
     kb_tmpl.inherit(event_tmpl);
     register_ctor(scope, global, "KeyboardEvent", kb_tmpl);
+    // R3141 createEvent 工厂（legacy 事件创建：document.createEvent(type) → new Ctor() + initEvent）。
+    let ce = v8::FunctionTemplate::builder(native_create_event_invoke).build(scope);
+    if let (Some(f), Some(key)) = (
+        ce.get_function(scope),
+        v8::String::new(scope, "__zw_native_create_event"),
+    ) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
 }
 
 /// 挂 Event 原型方法（stopPropagation/stopImmediatePropagation/preventDefault）到构造器模板原型。
@@ -62,6 +70,11 @@ fn attach_event_proto_methods(scope: &mut v8::PinScope, tmpl: v8::Local<v8::Func
     let pd = v8::FunctionTemplate::builder(native_prevent_default_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "preventDefault") {
         proto.set(k.into(), pd.into());
+    }
+    // R3141 initEvent（legacy event 创建配套：createEvent 后 initEvent 设 type/bubbles/cancelable）。
+    let init_evt = v8::FunctionTemplate::builder(native_init_event_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "initEvent") {
+        proto.set(k.into(), init_evt.into());
     }
 }
 
@@ -318,5 +331,64 @@ fn native_prevent_default_invoke(
         .is_some_and(|v| v.is_true());
     if cancelable && let Some(k) = v8::String::new(scope, "defaultPrevented") {
         let _ = obj.set(scope, k.into(), v8::Boolean::new(scope, true).into());
+    }
+}
+
+/// `event.initEvent(type, bubbles, cancelable)` 原型方法（spec `dom-event-initevent`，legacy）：
+/// 重置 event 为「已初始化未派发」态——复用 [`set_event_init`] 设 type/bubbles/cancelable + 派发态默认
+///（target/currentTarget=null、eventPhase=0、defaultPrevented=false）。dispatchEvent 派发前复位 stop flag，
+/// 故 initEvent 不必显式清。子类（MouseEvent 等）经原型链继承可达（spec 各有 initXxxEvent，本切片基类通用）。
+fn native_init_event_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let event_type = string_arg(scope, &args, 0);
+    let bubbles = args.get(1).is_true();
+    let cancelable = args.get(2).is_true();
+    set_event_init(scope, this, &event_type, bubbles, cancelable);
+}
+
+/// `__zw_native_create_event(type)`：spec `dom-document-createevent`（legacy 事件创建——`document.createEvent`）。
+/// 映射 legacy DOM type 字符串 → 构造器名，`new Ctor()`（无参，构造器设默认 init）产 instanceof Event 对象
+///（派发态默认 + 原型 stop/preventDefault/initEvent 经原型链可达）；后续 `initEvent` 覆写。
+///
+/// 映射：`Event`/`Events`/`HTMLEvents`/未知 → `Event`；`CustomEvent` → `CustomEvent`；
+/// `MouseEvent`/`MouseEvents` → `MouseEvent`；`KeyboardEvent`/`KeyboardEvents` → `KeyboardEvent`
+///（spec 各 type 应抛 NotSupportedError，本切片未知 → Event best-effort）。
+pub(super) fn native_create_event_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let type_str = string_arg(scope, &args, 0);
+    let ctor_name = match type_str.as_str() {
+        "CustomEvent" => "CustomEvent",
+        "MouseEvent" | "MouseEvents" => "MouseEvent",
+        "KeyboardEvent" | "KeyboardEvents" => "KeyboardEvent",
+        // "Event"/"Events"/"HTMLEvents"/未知 → Event（spec 未知应抛，best-effort Event）。
+        _ => "Event",
+    };
+    // 查全局构造器（Event/CustomEvent/MouseEvent/KeyboardEvent 经 build_and_register 注册）。
+    let context = scope.get_current_context();
+    let global = context.global(scope);
+    let Some(ctor_key) = v8::String::new(scope, ctor_name) else {
+        return;
+    };
+    let Some(ctor_val) = global.get(scope, ctor_key.into()) else {
+        return;
+    };
+    let Ok(ctor) = v8::Local::<v8::Function>::try_from(ctor_val) else {
+        return;
+    };
+    // new Ctor("") — 传空串 type（构造器设默认 init：type="" / bubbles=false / cancelable=false），
+    // 返 instanceof Ctor 对象。spec createEvent 返「未初始化」event（type="" 待 initEvent 覆写）。
+    let new_args: Vec<v8::Local<v8::Value>> = match v8::String::new(scope, "") {
+        Some(s) => vec![s.into()],
+        None => vec![],
+    };
+    if let Some(instance) = ctor.new_instance(scope, &new_args) {
+        rv.set(instance.into());
     }
 }

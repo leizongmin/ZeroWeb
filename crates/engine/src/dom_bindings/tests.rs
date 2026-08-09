@@ -1507,6 +1507,92 @@ fn native_element_closest_r3140() {
     );
 }
 
+// ── R3141 document.createEvent + Event.initEvent（legacy 事件创建）──
+
+/// `__zw_native_create_event(type)`：legacy DOM type → 对应构造器实例（instanceof Event）。
+/// "Event"/"HTMLEvents" → Event；"MouseEvent" → MouseEvent；"KeyboardEvent" → KeyboardEvent；"CustomEvent" → CustomEvent。
+#[test]
+fn native_create_event_type_mapping_r3141() {
+    let html = r#"<div id="a"></div>"#;
+    // Event / HTMLEvents / 未知 → instanceof Event。
+    assert_eq!(
+        run_script(html, "(__zw_native_create_event('Event') instanceof Event)"),
+        "true",
+        "createEvent('Event') instanceof Event"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_create_event('HTMLEvents') instanceof Event)"),
+        "true",
+        "createEvent('HTMLEvents') → instanceof Event"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_create_event('Weird') instanceof Event)"),
+        "true",
+        "未知 type → Event best-effort（instanceof Event）"
+    );
+    // MouseEvent → instanceof MouseEvent + Event。
+    assert_eq!(
+        run_script(html, "(__zw_native_create_event('MouseEvent') instanceof MouseEvent)"),
+        "true",
+        "createEvent('MouseEvent') instanceof MouseEvent"
+    );
+    // KeyboardEvent → instanceof KeyboardEvent。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_create_event('KeyboardEvent') instanceof KeyboardEvent)"
+        ),
+        "true",
+        "createEvent('KeyboardEvent') instanceof KeyboardEvent"
+    );
+}
+
+/// createEvent + initEvent 派发链：createEvent('Event') → initEvent(type,bubbles,cancelable) → dispatchEvent 触发监听器。
+/// 闭合 legacy 事件创建路径（测试库惯用 `document.createEvent('Event') + initEvent + dispatchEvent`）。
+#[test]
+fn native_create_event_init_dispatch_r3141() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+            let got='no';\
+            el.addEventListener('myevt', e=>{ got=e.type+'/'+e.bubbles; });\
+            const ev=__zw_native_create_event('Event');\
+            ev.initEvent('myevt', true, false);\
+            el.dispatchEvent(ev);\
+            return got; })()"
+        ),
+        "myevt/true",
+        "createEvent + initEvent + dispatchEvent 派发链触发监听器，type/bubbles 正确"
+    );
+}
+
+/// initEvent 重置：initEvent 覆写 type/bubbles/cancelable（构造器默认 type='' 被覆写）。
+#[test]
+fn native_init_event_overwrites_r3141() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const ev=__zw_native_create_event('Event');\
+            return ev.type+'/'+ev.bubbles+'/'+ev.cancelable; })()"
+        ),
+        "/false/false",
+        "createEvent('Event') 默认 type=''/bubbles=false/cancelable=false（未 initEvent）"
+    );
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const ev=__zw_native_create_event('Event');\
+            ev.initEvent('hello', true, true);\
+            return ev.type+'/'+ev.bubbles+'/'+ev.cancelable; })()"
+        ),
+        "hello/true/true",
+        "initEvent 覆写 type/bubbles/cancelable"
+    );
+}
+
 // ── R3132 appendChild/insertBefore(fragment) flatten ──
 
 /// host.appendChild(frag)：fragment 子节点展开进 host + fragment 清空（spec flatten）。
