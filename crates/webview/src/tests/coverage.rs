@@ -236,6 +236,48 @@ fn test_module_script_executes_r3083() {
     assert_eq!(flag.unwrap(), "true", "module body 经转换后执行（__modBodyRan 设置）");
 }
 
+// ── Storage 跨 load_html 持久化（R3088）──
+// WebView 沙箱复用（ensure_sandbox：js_sandbox.is_some() 早返）+ shim 幂等注入（js_shim_initialized
+// guard），故 globalThis.localStorage/sessionStorage（shim 的 _createStorage 对象）在同 WebView 多次
+// load_html + run_page_scripts 间持久。闭合 R3087「下一步」调查：嵌入式/headless 路径已具备持久化
+//（浏览器 tab 导航重建 worker 为另一路径，非 make test 可达）。本测试锁定该正确性（防回退）。
+#[test]
+fn test_storage_persists_across_load_html_r3088() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    // page1：写 localStorage / sessionStorage。
+    wv.load_html(
+        "<html><body><script>\
+         localStorage.setItem('k','value1');\
+         sessionStorage.setItem('s','sess1');\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "page1 脚本执行无异常, got: {:?}", r.err());
+
+    // page2（同 WebView，新 load_html）：读 page1 写入的 storage。
+    wv.load_html(
+        "<html><body><script>\
+         globalThis.__ls = localStorage.getItem('k');\
+         globalThis.__ss = sessionStorage.getItem('s');\
+         </script></body></html>",
+        None,
+    );
+    let r2 = wv.run_page_scripts_strict();
+    assert!(r2.is_ok(), "page2 脚本执行无异常, got: {:?}", r2.err());
+
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ls)").unwrap(),
+        "value1",
+        "localStorage 跨 load_html 持久（同 WebView 沙箱复用 + shim 幂等）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ss)").unwrap(),
+        "sess1",
+        "sessionStorage 跨 load_html 持久"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]

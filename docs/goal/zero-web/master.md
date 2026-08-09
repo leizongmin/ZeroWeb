@@ -119,6 +119,22 @@
 
 ## 最近完成的改进
 
+### P1a Storage 跨 load_html 持久化验证 + 锁定（闭合 R3087「下一步」调查，本轮 R3088）
+
+R3087「下一步」记 IndexedDB/localStorage host-backing 持久化为候选切片。本轮深入调查：① WebView `ensure_sandbox` **沙箱复用**（`js_sandbox.is_some()` 早返，不重建 JS 上下文）；② shim 经 `js_shim_initialized` guard **幂等注入**（仅首次 run_page_scripts 跑 generate_js_dom_shim，后续不重跑 → `globalThis.localStorage`/`sessionStorage`/`_idb_databases` 不重建）。**结论：嵌入式/headless 路径已具备 storage 持久化**——同 WebView 多次 load_html + run_page_scripts 间 localStorage/sessionStorage/IDB 持久。唯一真持久化缺口 = **浏览器 tab 导航重建 js_worker**（新进程/沙箱，需 Rust-side per-tab store 接 StorageManager，非 make test 可达，browser 域独立项）。本切片锁定嵌入式持久化（防回退），修正 R3087「下一步」理解。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **storage 跨 load_html 持久化测试** | `crates/webview/src/tests/coverage.rs`（+`test_storage_persists_across_load_html_r3088`） | page1 `localStorage.setItem`/`sessionStorage.setItem` → page2（同 WebView 新 load_html）`getItem` 回读 = 写入值。验证沙箱复用 + shim 幂等 → storage 持久。 |
+
+**为何净正向**：① 锁定真实正确性（storage 跨页持久，防回退）；② 修正控制面理解（避免后续轮次在已具备持久化的嵌入式路径上浪费 host-backing 工作量）；③ 全量 make test 全绿。
+
+**已知限制（记录）**：① **浏览器 tab 导航重建 worker 的持久化仍 open**（非 make test 可达，browser 域独立项——接 process_backend StorageManager 到 tab_js_worker，中-高复杂度）；② 本测试覆盖 localStorage/sessionStorage（sync），IDB 持久同机制（globalThis._idb_databases），未单独测（async 微任务时序，避免 flake）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-webview --all-targets -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；webview +1 测试，零回归**）+ pre-commit guard PASS。变更纯 webview 测试（无生产/渲染/布局变更），product-smoke 不受影响。
+
+**下一步**：P1a scripted + storage 表面稳固（探针 + 持久化验证确认）。剩余高价值工作均深结构/架构层：① **浏览器 tab 导航 storage 持久化**（接 StorageManager 到 tab_js_worker，browser 域，非 make test 可达）；② P1b V8 原生绑定 S0 PoC（已批准，验证 TBD-1/TBD-2，engine 域）；③ 字体栈重建第一刀（已批准，rendering 域，并行流）；④ DedicatedWorker 真实化（host 独立沙箱 + 结构化克隆，engine/script-sandbox 域，中-高复杂度，可 make test 验证）。**P1a 纯 API surface 补缺已饱和**（4 轮探针确认 Tier-1/Tier-2 完整）。
+
 ### P1a WPT js_executes_ok 覆盖扩至 es-modules + dynamic-import test-data 修正（闭合 es-modules 覆盖缺口，本轮 R3087）
 
 R3076-R3083 已为 canvas/web-workers/storage/runtime/interactive 加 js_executes_ok 驱动测试，**es-modules（30 用例）仍无**。全 scripted 类别 js_executes_ok 探针（es-modules/js-dom/dom/navigation/security/accessibility/a11y-i18n/platform-input/multiprocess）实测：除 1 test-data bug 外全绿 → **P1a scripted WPT 表面确认稳固，无真引擎 gap**。本切片闭合 es-modules 覆盖缺口 + 修正唯一 test-data bug。
