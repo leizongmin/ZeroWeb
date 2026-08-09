@@ -13,6 +13,7 @@
 //! spec：`nodeType` https://dom.spec.whatwg.org/#dom-node-nodetype（Element=1）；
 //! `tagName` https://dom.spec.whatwg.org/#dom-element-tagname（HTML 大写）。
 
+mod element;
 mod event_target;
 mod factories;
 mod gc;
@@ -22,14 +23,16 @@ mod node;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use zero_dom::{Document, NodeId, NodeKind};
+use zero_dom::{Document, NodeId};
 
 // gc 的线程局部访问器（crate-private）。
 // R3116/R3117：NNM + EventTarget 相关 gc 助手（cache/cached/namednodemap_template_local/
 // set_namednodemap_template + add_listener/listeners_local/remove_listener）迁对应子模块，不再于此导入。
+// R3119/R3120：Node/Element 全部 getter/invoke 迁子模块，with_dom/with_dom_mut 用者随之移出，
+// 仅 slot 映射助手（cache/cached/encode/decode/node_exists/element_template_local + 模板/DOM 源 setter）留此。
 use gc::{
     cache_native_element, cached_native_element, decode_node_id, drop_cached_native_element, element_template_local,
-    encode_node_id, node_exists, set_dom_source, set_element_template, with_dom, with_dom_mut,
+    encode_node_id, node_exists, set_dom_source, set_element_template,
 };
 
 /// P1b 原生 DOM 绑定 kill-switch 环境变量名（默认关）。
@@ -100,21 +103,25 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
         tmpl.set_accessor(k.into(), node::native_node_type_getter);
     }
     if let Some(k) = v8::String::new(scope, "tagName") {
-        tmpl.set_accessor(k.into(), native_tag_name_getter);
+        tmpl.set_accessor(k.into(), element::native_tag_name_getter);
     }
     if let Some(k) = v8::String::new(scope, "nodeName") {
         tmpl.set_accessor(k.into(), node::native_node_name_getter);
     }
     if let Some(k) = v8::String::new(scope, "id") {
-        tmpl.set_accessor_with_setter(k.into(), native_id_getter, native_id_setter);
+        tmpl.set_accessor_with_setter(k.into(), element::native_id_getter, element::native_id_setter);
     }
     if let Some(k) = v8::String::new(scope, "className") {
-        tmpl.set_accessor_with_setter(k.into(), native_class_name_getter, native_class_name_setter);
+        tmpl.set_accessor_with_setter(
+            k.into(),
+            element::native_class_name_getter,
+            element::native_class_name_setter,
+        );
     }
     // `children` getter（spec `dom-parentnode-children`）：元素**子元素**（跳过文本/注释）
     // → V8 Array of native 对象（文档序）。
     if let Some(k) = v8::String::new(scope, "children") {
-        tmpl.set_accessor(k.into(), native_children_getter);
+        tmpl.set_accessor(k.into(), element::native_children_getter);
     }
     // `textContent` getter/setter（spec `dom-node-textcontent`）：读=子树文本拼接；写=清子 + 文本节点。
     if let Some(k) = v8::String::new(scope, "textContent") {
@@ -139,29 +146,29 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     // spec 方法（FunctionTemplate，args.this 读 NodeId）：getAttribute / hasAttribute /
     // setAttribute / removeAttribute。ObjectTemplate::set 须传 **Template**（非 Function 实例）——
     // FunctionTemplate 是 Template，实例化时各对象共享，args.this() 取回实例。
-    let get_attr_tmpl = v8::FunctionTemplate::builder(native_get_attribute_invoke).build(scope);
+    let get_attr_tmpl = v8::FunctionTemplate::builder(element::native_get_attribute_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "getAttribute") {
         tmpl.set(k.into(), get_attr_tmpl.into());
     }
-    let has_attr_tmpl = v8::FunctionTemplate::builder(native_has_attribute_invoke).build(scope);
+    let has_attr_tmpl = v8::FunctionTemplate::builder(element::native_has_attribute_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "hasAttribute") {
         tmpl.set(k.into(), has_attr_tmpl.into());
     }
-    let set_attr_tmpl = v8::FunctionTemplate::builder(native_set_attribute_invoke).build(scope);
+    let set_attr_tmpl = v8::FunctionTemplate::builder(element::native_set_attribute_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "setAttribute") {
         tmpl.set(k.into(), set_attr_tmpl.into());
     }
-    let rm_attr_tmpl = v8::FunctionTemplate::builder(native_remove_attribute_invoke).build(scope);
+    let rm_attr_tmpl = v8::FunctionTemplate::builder(element::native_remove_attribute_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "removeAttribute") {
         tmpl.set(k.into(), rm_attr_tmpl.into());
     }
     // element 子树作用域查询（spec `dom-parentnode-queryselector(-all)`）：`args.this()` 取
-    // 元素 NodeId 作 root，**仅后代**（排除元素自身，见 [`native_element_query_selector_invoke`]）。
-    let eqs_tmpl = v8::FunctionTemplate::builder(native_element_query_selector_invoke).build(scope);
+    // 元素 NodeId 作 root，**仅后代**（排除元素自身，见 [`element::native_element_query_selector_invoke`]）。
+    let eqs_tmpl = v8::FunctionTemplate::builder(element::native_element_query_selector_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "querySelector") {
         tmpl.set(k.into(), eqs_tmpl.into());
     }
-    let eqsa_tmpl = v8::FunctionTemplate::builder(native_element_query_selector_all_invoke).build(scope);
+    let eqsa_tmpl = v8::FunctionTemplate::builder(element::native_element_query_selector_all_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "querySelectorAll") {
         tmpl.set(k.into(), eqsa_tmpl.into());
     }
@@ -230,10 +237,10 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     // R3113 `innerHTML` / `outerHTML` getter（spec `dom-element-innerhtml` / `-outerhtml`）：
     // innerHTML = 子节点 outer_html 拼接；outerHTML = 本元素 outer_html。只读（setter 需 HTML 解析，后续）。
     if let Some(k) = v8::String::new(scope, "innerHTML") {
-        tmpl.set_accessor(k.into(), native_inner_html_getter);
+        tmpl.set_accessor(k.into(), element::native_inner_html_getter);
     }
     if let Some(k) = v8::String::new(scope, "outerHTML") {
-        tmpl.set_accessor(k.into(), native_outer_html_getter);
+        tmpl.set_accessor(k.into(), element::native_outer_html_getter);
     }
     // R3114 `cloneNode(deep)`（spec `dom-node-clonenode`）：复用 `Document::clone_node`（克隆元素+属性，
     // deep 递归子树）；返新 native 元素（未挂载）。
@@ -293,119 +300,10 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     }
 }
 
-// ── accessor getter（ZST fn；状态经 gc.rs 线程局部）─────────────────
-// nodeType / nodeName / nodeValue / textContent / childNodes / 导航 getter / 树 mutation /
-// cloneNode / contains 拆到 node 子模块（本轮 R3119）。本节留 Element 特有 accessor：
-// tagName / id / className（+ 反射属性助手）。
-
-/// `tagName` getter：读 internal slot[0] NodeId → Element `local_name` → 大写 → `v8::String`。
-///
-/// 仅 Element 有 tagName（HTML 大写，spec `dom-element-tagname`）；非 Element / stale →
-/// undefined。
-fn native_tag_name_getter(
-    scope: &mut v8::PinScope,
-    _name: v8::Local<v8::Name>,
-    args: v8::PropertyCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let holder = args.holder();
-    let Some(id) = read_node_id(scope, &holder) else {
-        return;
-    };
-    let tag: Option<String> = with_dom(|d| {
-        d.get(id).and_then(|n| match &n.kind {
-            NodeKind::Element(e) => Some(e.local_name().to_ascii_uppercase()),
-            _ => None,
-        })
-    })
-    .flatten();
-    let Some(tag) = tag else {
-        return;
-    };
-    if let Some(s) = v8::String::new(scope, &tag) {
-        rv.set(s.into());
-    }
-    // 非 Element / stale → undefined（留 ReturnValue 默认）。
-}
-
-/// `id` getter（reflected attribute，spec `dom-id`）：`get_attribute('id')`，缺省 `""`。
-fn native_id_getter(
-    scope: &mut v8::PinScope,
-    _name: v8::Local<v8::Name>,
-    args: v8::PropertyCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    read_reflected_attr(scope, &args, "id", "", &mut rv);
-}
-
-/// `className` getter（reflected attribute，spec `dom-classname`）：`get_attribute('class')`，缺省 `""`。
-fn native_class_name_getter(
-    scope: &mut v8::PinScope,
-    _name: v8::Local<v8::Name>,
-    args: v8::PropertyCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    read_reflected_attr(scope, &args, "class", "", &mut rv);
-}
-
-/// 反射属性 getter 共用：读 internal slot NodeId → `Document::get_attribute(name)`，
-/// 缺省 `default`（reflected 属性缺省 `""`）。
-fn read_reflected_attr(
-    scope: &mut v8::PinScope,
-    args: &v8::PropertyCallbackArguments,
-    attr: &str,
-    default: &str,
-    rv: &mut v8::ReturnValue<v8::Value>,
-) {
-    let holder = args.holder();
-    let Some(id) = read_node_id(scope, &holder) else {
-        return;
-    };
-    let val = with_dom(|d| d.get_attribute(id, attr))
-        .flatten()
-        .unwrap_or_else(|| default.to_string());
-    if let Some(s) = v8::String::new(scope, &val) {
-        rv.set(s.into());
-    }
-}
-
-/// `id` setter（reflected，spec `dom-id`）：值 ToString 后 `set_attribute('id', val)`。
-/// 经 [`with_dom_mut`] 写真实 DOM（更新 id_map）。
-fn native_id_setter(
-    scope: &mut v8::PinScope,
-    _name: v8::Local<v8::Name>,
-    value: v8::Local<v8::Value>,
-    args: v8::PropertyCallbackArguments,
-    _rv: v8::ReturnValue<()>,
-) {
-    write_reflected_attr(scope, &args, "id", value);
-}
-
-/// `className` setter（reflected，spec `dom-classname`）：值 ToString 后 `set_attribute('class', val)`。
-fn native_class_name_setter(
-    scope: &mut v8::PinScope,
-    _name: v8::Local<v8::Name>,
-    value: v8::Local<v8::Value>,
-    args: v8::PropertyCallbackArguments,
-    _rv: v8::ReturnValue<()>,
-) {
-    write_reflected_attr(scope, &args, "class", value);
-}
-
-/// 反射属性 setter 共用：读 internal slot NodeId → 值 ToString → `Document::set_attribute(name, val)`。
-fn write_reflected_attr(
-    scope: &mut v8::PinScope,
-    args: &v8::PropertyCallbackArguments,
-    attr: &str,
-    value: v8::Local<v8::Value>,
-) {
-    let holder = args.holder();
-    let Some(id) = read_node_id(scope, &holder) else {
-        return;
-    };
-    let val = local_value_to_string(scope, value);
-    with_dom_mut(|d| d.set_attribute(id, attr, &val));
-}
+// ── 共享助手（slot 读写 / 字符串参 / 值转换）─────────────────────
+// 供各子模块（element / node / factories / namednodemap / event_target）经 `super::` 引用。
+// Element 特有 accessor / 方法 / 子树查询 / innerHTML·outerHTML 拆到 element 子模块（本轮 R3120）；
+// Node 基类拆到 node 子模块（R3119）。
 
 /// 取任意 `Local<Value>` 经 JS ToString → Rust String（缺省空串）。
 /// spec reflected attribute setter 把值强转字符串后存。
@@ -416,221 +314,12 @@ fn local_value_to_string(scope: &mut v8::PinScope, value: v8::Local<v8::Value>) 
         .unwrap_or_default()
 }
 
-// ── 方法回调（Element 上：getAttribute / hasAttribute / setAttribute / removeAttribute）──
-
-/// `getAttribute(name)`：读 internal slot NodeId → `Document::get_attribute`。
-/// spec `dom-element-getattribute`：缺省/非 Element → `null`。
-fn native_get_attribute_invoke(
-    scope: &mut v8::PinScope,
-    args: v8::FunctionCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let this = args.this();
-    let Some(id) = read_node_id(scope, &this) else {
-        return;
-    };
-    let name = string_arg(scope, &args, 0);
-    let val = with_dom(|d| d.get_attribute(id, &name)).flatten();
-    match val {
-        Some(v) => {
-            if let Some(s) = v8::String::new(scope, &v) {
-                rv.set(s.into());
-            }
-        }
-        None => rv.set(v8::null(scope).into()),
-    }
-}
-
-/// `hasAttribute(name)`：读 internal slot NodeId → `Document::has_attribute` → `v8::Boolean`。
-/// spec `dom-element-hasattribute`。
-fn native_has_attribute_invoke(
-    scope: &mut v8::PinScope,
-    args: v8::FunctionCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let this = args.this();
-    let Some(id) = read_node_id(scope, &this) else {
-        return;
-    };
-    let name = string_arg(scope, &args, 0);
-    let has = with_dom(|d| d.has_attribute(id, &name)).unwrap_or(false);
-    rv.set(v8::Boolean::new(scope, has).into());
-}
-
-/// `setAttribute(name, value)`：读 internal slot NodeId → 两参 ToString →
-/// `Document::set_attribute`（更新 id_map 当 name=='id'）。spec `dom-element-setattribute`
-/// 返 `undefined`（留 ReturnValue 默认）。非 native element `this` → no-op。
-fn native_set_attribute_invoke(
-    scope: &mut v8::PinScope,
-    args: v8::FunctionCallbackArguments,
-    _rv: v8::ReturnValue<v8::Value>,
-) {
-    let this = args.this();
-    let Some(id) = read_node_id(scope, &this) else {
-        return;
-    };
-    let name = string_arg(scope, &args, 0);
-    let value = string_arg(scope, &args, 1);
-    with_dom_mut(|d| d.set_attribute(id, &name, &value));
-}
-
-/// `removeAttribute(name)`：读 internal slot NodeId → `Document::remove_attribute`（name=='id'
-/// 时清 id_map）。spec `dom-element-removeattribute` 返 `undefined`。
-fn native_remove_attribute_invoke(
-    scope: &mut v8::PinScope,
-    args: v8::FunctionCallbackArguments,
-    _rv: v8::ReturnValue<v8::Value>,
-) {
-    let this = args.this();
-    let Some(id) = read_node_id(scope, &this) else {
-        return;
-    };
-    let name = string_arg(scope, &args, 0);
-    with_dom_mut(|d| d.remove_attribute(id, &name));
-}
-
 /// 取 FunctionCallbackArguments 第 `idx` 参为 Rust String（缺省空串）。
 fn string_arg(scope: &mut v8::PinScope, args: &v8::FunctionCallbackArguments, idx: i32) -> String {
     args.get(idx)
         .to_string(scope)
         .map(|s| s.to_rust_string_lossy(scope))
         .unwrap_or_default()
-}
-
-// ── 元素子树作用域查询（element.querySelector(-all)，注册于 Element 模板）──
-// 区别于 global `__zw_native_query_selector(-all)`（拆到 factories 子模块，本轮 R3118）。
-
-/// `element.querySelector(sel)`：spec `dom-parentnode-queryselector`（**元素子树作用域**）——
-/// 元素**后代**中首个匹配 → native 对象。区别于文档级 [`factories::native_query_selector_invoke`]：
-/// root = `args.this()` 元素 NodeId，且**排除元素自身**（dom `query_selector_all` 含 root 候选，
-/// spec descendants-only，镜像 polyfill `query_match_in_subtree` 的 `.filter(|n| *n != root)`）。
-///
-/// 经 `query_selector_all` + filter + first 取首个后代（比 polyfill `query_selector` + filter 更
-/// 正确：后者若元素自身匹配则返 None，本实现继续找首个后代）。
-/// OPTIMIZATION: 当前 collect-all-then-first；超大子树可短路（find_first_matching 跳 root）。
-/// 无匹配 / 空 / 非法 → `null`；非 native element `this` → `undefined`（getter 一致）。
-fn native_element_query_selector_invoke(
-    scope: &mut v8::PinScope,
-    args: v8::FunctionCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let this = args.this();
-    let Some(root) = read_node_id(scope, &this) else {
-        return;
-    };
-    let sel = string_arg(scope, &args, 0);
-    let id: Option<NodeId> = with_dom(|d| d.query_selector_all(root, sel.trim()))
-        .unwrap_or_default()
-        .into_iter()
-        .find(|id| *id != root);
-    match id {
-        Some(id) => {
-            if let Some(obj) = get_or_create_native_element(scope, id) {
-                rv.set(obj.into());
-            }
-        }
-        None => rv.set(v8::null(scope).into()),
-    }
-}
-
-/// `element.querySelectorAll(sel)`：spec `dom-parentnode-queryselectorall`（**元素子树作用域**）——
-/// 元素**后代**全部匹配 → V8 `Array` of native 对象（文档序，排除元素自身）。非 native element
-/// `this` → 空 `Array`（避免 `.length` 访问报错）。
-fn native_element_query_selector_all_invoke(
-    scope: &mut v8::PinScope,
-    args: v8::FunctionCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let this = args.this();
-    let Some(root) = read_node_id(scope, &this) else {
-        rv.set(v8::Array::new(scope, 0).into());
-        return;
-    };
-    let sel = string_arg(scope, &args, 0);
-    let ids: Vec<NodeId> = with_dom(|d| d.query_selector_all(root, sel.trim()))
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|id| *id != root)
-        .collect();
-    let arr = v8::Array::new(scope, ids.len() as i32);
-    for (i, id) in ids.into_iter().enumerate() {
-        if let Some(obj) = get_or_create_native_element(scope, id) {
-            let _ = arr.set_index(scope, i as u32, obj.into());
-        }
-    }
-    rv.set(arr.into());
-}
-
-/// `children` getter（spec `dom-parentnode-children`）：元素**子元素**（跳过文本/注释）
-/// → V8 Array of native 对象（文档序）。非 Element 子节点不返（native 仅 Element 对象；
-/// `childNodes` 含文本/注释需 native 非 Element 节点，后续切片）。
-fn native_children_getter(
-    scope: &mut v8::PinScope,
-    _name: v8::Local<v8::Name>,
-    args: v8::PropertyCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let holder = args.holder();
-    let Some(id) = read_node_id(scope, &holder) else {
-        return;
-    };
-    let child_ids: Vec<NodeId> = with_dom(|d| {
-        d.child_nodes(id)
-            .into_iter()
-            .filter(|c| d.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
-            .collect()
-    })
-    .unwrap_or_default();
-    let arr = v8::Array::new(scope, child_ids.len() as i32);
-    for (i, cid) in child_ids.into_iter().enumerate() {
-        if let Some(obj) = get_or_create_native_element(scope, cid) {
-            let _ = arr.set_index(scope, i as u32, obj.into());
-        }
-    }
-    rv.set(arr.into());
-}
-
-// ── R3113 innerHTML / outerHTML 序列化 getter ──
-
-/// `innerHTML` getter（spec `dom-element-innerhtml`）：子节点 `outer_html` 拼接（markup 序列化）。
-fn native_inner_html_getter(
-    scope: &mut v8::PinScope,
-    _name: v8::Local<v8::Name>,
-    args: v8::PropertyCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let holder = args.holder();
-    let Some(id) = read_node_id(scope, &holder) else {
-        return;
-    };
-    let html = with_dom(|d| {
-        let mut s = String::new();
-        for child in d.child_nodes(id) {
-            s.push_str(&d.outer_html(child));
-        }
-        s
-    })
-    .unwrap_or_default();
-    if let Some(s) = v8::String::new(scope, &html) {
-        rv.set(s.into());
-    }
-}
-
-/// `outerHTML` getter（spec `dom-element-outerhtml`）：本元素 `outer_html`（含自身 tag）。
-fn native_outer_html_getter(
-    scope: &mut v8::PinScope,
-    _name: v8::Local<v8::Name>,
-    args: v8::PropertyCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let holder = args.holder();
-    let Some(id) = read_node_id(scope, &holder) else {
-        return;
-    };
-    let html = with_dom(|d| d.outer_html(id)).unwrap_or_default();
-    if let Some(s) = v8::String::new(scope, &html) {
-        rv.set(s.into());
-    }
 }
 
 /// 从任意 `Value` 取其 internal slot NodeId（若为 native element 对象）；否则 `None`
