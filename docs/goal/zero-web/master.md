@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1b RFC §3.2 dom_bindings 子模块拆分（stage 1：namednodemap.rs）——行为保持重构（本轮 R3116）
+
+承接 R3115（contains）+ mod.rs 增长告警（~1446 行趋近 2000 上限）。本轮启 RFC §3.2 子模块化（staged）：抽 **namednodemap.rs**（element.attributes 集合面，最自包含模块），mod.rs 1446→1277（-169）。**行为保持**——函数 move 到子模块，调用契约不变。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **新 namednodemap.rs 子模块** | `crates/engine/src/dom_bindings/namednodemap.rs`（193 行） | 搬入：`make_attr_object`/`read_str_prop`（NNM 私有助手）+ `native_attributes_getter`（pub(super)，Element 模板注册用）+ 5 个 `native_nnm_*`（length/item/getNamedItem/setNamedItem/removeNamedItem，私有）+ `build_and_cache_template`（pub(super)，建 NamedNodeMap 模板 + set_namednodemap_template）。可见性：mod.rs 私有项（read_node_id/string_arg）对后代 namednodemap 可见（Rust 规则：私有项对后代模块可见，经 `super::`）；gc 助手 pub(crate)；native_attributes_getter/build_and_cache_template 必须 pub(super) 供 mod.rs 调（父不能访问子私有）。 |
+| **mod.rs 接线更新** | `crates/engine/src/dom_bindings/mod.rs`（1446→1277） | 加 `mod namednodemap;`；`attributes` accessor 调点 `native_attributes_getter`→`namednodemap::native_attributes_getter`；内联 NNM 模板建（25 行）→ `namednodemap::build_and_cache_template(scope)` 一行；删 8 个搬走的 fn（147 行）；gc 导入删 NNM 专用 4 项（cache/cached/namednodemap_template_local/set_namednodemap_template，避 unused 警告）。 |
+
+**为何净正向**：① RFC §3.2 子模块化推进——mod.rs 减 169 行（1446→1277），为后续 native API 扩展清空体积空间，避免超 2000 上限；② **行为保持**（纯 move + 可见性调整，调用契约不变；make test 1792 engine + 561 webview 计数不变全绿，零回归）；③ namednodemap 是最自包含模块（独立模板 + 私有助手 + 仅依赖 super::read_node_id/string_arg + gc），证明 §3.2 拆分模式可行（event_target.rs/element.rs/factories.rs 后续切片同模式）；④ 无性能影响（编译期 move，运行时调用路径不变）。
+
+**已知限制（记录，后续）**：① **staged 拆分未完**——mod.rs 仍 1277 行（Element getters/方法 + EventTarget + factories + 共享助手）；event_target.rs（~85 行）+ element.rs（bulk）+ factories.rs 后续切片同模式抽；② **escape-hatch 可达性不变**（拆分不改 API 表面）；③ 仅 V8（QuickJS no-op，继承）；④ product-smoke 不适用（native_dom 默认关分支 + 行为保持重构）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告（含 unused import 修正）+ `make test` 全绿（**零 FAILED；engine lib 1792（计数不变——行为保持）；webview v8 561 + quickjs 527；全 workspace 16185 passed 0 failed 零回归**；NNM 4 测 + 全 native 47 测 pass）。pre-commit guard PASS。
+
+**下一步**：RFC §3.2 stage 1 完成（namednodemap.rs）。候选：① **§3.2 stage 2：event_target.rs**（抽 EventTarget 3 fn ~85 行——addEventListener/removeEventListener/dispatchEvent，同 namednodemap 模式，最自包含）；② **§3.2 stage 3：factories.rs**（全局工厂 __zw_native_element_for_id/create_element/query_selector(-all)）；③ **§3.2 stage 4：element.rs**（bulk——Element getters/方法，最大块，需共享助手归位）；④ **回到 feature 切片**（full Attr 节点 / host→page native 事件派发 / innerHTML setter 等，mod.rs 已减负可续）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b contains(node) native——后代关系查询（本轮 R3115）
 
 承接 R3114（cloneNode）。本轮补 native Element 的 `contains(node)`（spec `dom-node-contains`，DOM Level 4）。node 是否为本元素自身或后代（walk parent 链）。
