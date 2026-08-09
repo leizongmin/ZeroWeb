@@ -1346,6 +1346,186 @@ pub fn has_attribute(html: &str, selector: &str, name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// P1a 导航（R3054）：解析 `<form>` **GET** 提交的目标绝对 URL（闭合 click 默认动作族：reset/anchor/hash →
+/// form-submit 导航）。供 renderer submit 路由（click submit 按钮 / Enter-in-input）在 submit 事件未
+/// preventDefault 时计算导航目标。返回 `Some(绝对 GET URL)` 当 form 的 method 为 GET（默认）且 action
+/// 可解析；**POST → None**（headless POST 导航 defer——需 fetch body 路径）；method=dialog → None（关 dialog，
+/// headless no-op）；无 form / 解析失败 → None。
+///
+/// **成功控件收集**（HTML spec「构造表单数据集」实用子集）：遍历 form 子树 input/select/textarea/button，
+/// 跳过无 `name` / `disabled` 者；input：checkbox/radio 仅 `checked` 入（值=`value` 属性或 "on"），
+/// type=submit/image/reset/button/file 跳过（submitter 单独处理）；select：首个 `selected` option（无则首 option，
+/// spec 默认选中 quirk）值=`value` 属性或文本；textarea：文本内容。submitter（type=submit 且有 name）的
+/// name=value 入数据集（spec：激活的提交按钮参与提交）。
+///
+/// **已知限制（defer）**：① POST 导航（headless fetch_get 仅 GET）；② `<input type=file>`（无真文件）；
+/// ③ `<select multiple>`（按单选处理，取首个 selected）；④ `<input type=image>` 的 name.x/name.y 坐标；
+/// ⑤ `<input type=image>` / button 无 value 时 submitter 值 spec 默认值近似。GET 表单（搜索/过滤表单，web 最
+/// 高频表单导航形态）全覆盖。
+///
+/// https://html.spec.whatwg.org/#constructing-the-form-data-set
+/// https://url.spec.whatwg.org/#concept-urlencoded-serializer
+pub fn form_get_submission_url(
+    html: &str,
+    form_sel: &str,
+    submitter_sel: Option<&str>,
+    base_url: &str,
+) -> Option<String> {
+    let doc = parse_html(html);
+    let form = find_by_selector(&doc, form_sel)?;
+    // 仅 <form> 元素。
+    let is_form = doc.get(form).and_then(|n| match &n.kind {
+        NodeKind::Element(e) => Some(e.local_name().eq_ignore_ascii_case("form")),
+        _ => None,
+    })?;
+    if !is_form {
+        return None;
+    }
+    // method：POST/dialog → headless 不导航（GET-only 切片）。
+    let method = doc
+        .get_attribute(form, "method")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    if method == "post" || method == "dialog" {
+        return None;
+    }
+    // action：缺省/空 → 当前文档 URL（base_url）；否则按 base 解析为绝对。
+    let action = doc.get_attribute(form, "action").unwrap_or_default();
+    let action_abs = if action.trim().is_empty() {
+        base_url.to_string()
+    } else {
+        crate::resolve_document_url(base_url, action.trim())
+    };
+    let mut url = url::Url::parse(&action_abs).ok()?;
+
+    // submitter 解析为节点身份（NodeId 比较，避免跨选择器生成路径的字符串不一致）。
+    let submitter_node = submitter_sel.and_then(|s| find_by_selector(&doc, s));
+
+    // 收集成功控件（文档序，spec「constructing the form data set」实用子集）。
+    let mut controls: Vec<NodeId> = Vec::new();
+    collect_form_controls(&doc, form, &mut controls);
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for ctrl in controls {
+        // 跳过无 name / disabled（spec：disabled 不参与提交）。
+        let name = doc.get_attribute(ctrl, "name").unwrap_or_default();
+        if name.is_empty() {
+            continue;
+        }
+        if doc.get_attribute(ctrl, "disabled").is_some() {
+            continue;
+        }
+        let tag = element_local_name(&doc, ctrl).to_ascii_lowercase();
+        let ty = doc.get_attribute(ctrl, "type").unwrap_or_default().to_ascii_lowercase();
+        match tag.as_str() {
+            "input" => match ty.as_str() {
+                // submit/image：仅激活的 submitter 参与（spec）；非 submitter 跳过。image 坐标 defer。
+                "submit" | "image" => {
+                    if ty == "submit" && Some(ctrl) == submitter_node {
+                        pairs.push((name, doc.get_attribute(ctrl, "value").unwrap_or_default()));
+                    }
+                }
+                // reset/button/file：从不提交（file 无真文件，headless defer）。
+                "reset" | "button" | "file" => {}
+                "checkbox" | "radio" => {
+                    // 仅 checked 入；值 = value 属性（缺省时 "on"，spec default）。
+                    if doc.get_attribute(ctrl, "checked").is_some() {
+                        let val = doc.get_attribute(ctrl, "value").unwrap_or_else(|| "on".to_string());
+                        pairs.push((name, val));
+                    }
+                }
+                // text/password/hidden/search/email/url/number/date/color/range/... → value 属性。
+                _ => pairs.push((name, doc.get_attribute(ctrl, "value").unwrap_or_default())),
+            },
+            "select" => {
+                // 单选近似（multiple 按单选：首个 selected，无则首 option，spec 默认选中 quirk）。
+                let mut opts: Vec<NodeId> = Vec::new();
+                collect_form_controls_tag(&doc, ctrl, "option", &mut opts);
+                let chosen = opts
+                    .iter()
+                    .copied()
+                    .find(|o| doc.get_attribute(*o, "selected").is_some())
+                    .or_else(|| opts.first().copied());
+                if let Some(opt) = chosen {
+                    let val = doc.get_attribute(opt, "value").unwrap_or_else(|| doc.inner_html(opt));
+                    pairs.push((name, val));
+                }
+            }
+            "textarea" => {
+                // textarea 值 = 子树文本内容（R2996 模型：value ↔ textContent，inner_html 近似纯文本节点）。
+                pairs.push((name, doc.inner_html(ctrl)));
+            }
+            "button" => {
+                // <button>：默认 type=submit；仅 submitter 参与，type=button/reset 跳过。
+                let bty = if ty.is_empty() {
+                    "submit".to_string()
+                } else {
+                    ty.clone()
+                };
+                if bty == "submit" && Some(ctrl) == submitter_node {
+                    pairs.push((name, doc.get_attribute(ctrl, "value").unwrap_or_default()));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // GET：form 数据集替换 action URL 的 query 段（spec），fragment 保留。
+    if pairs.is_empty() {
+        // 空数据集 → 清 query（含 action 旧 query），无尾 `?`。
+        url.set_query(None);
+    } else {
+        let mut q = url.query_pairs_mut();
+        q.clear();
+        for (n, v) in &pairs {
+            q.append_pair(n, v);
+        }
+    }
+    Some(url.to_string())
+}
+
+/// 递归收集 `root` 子树（含嵌套 fieldset/div 等）内全部 input/select/textarea/button 元素，文档序。
+/// 供 [`form_get_submission_url`] 遍历表单成功控件（html5ever 不构造嵌套 form，无重复计风险）。
+fn collect_form_controls(doc: &Document, root: NodeId, out: &mut Vec<NodeId>) {
+    for child in doc.child_nodes(root) {
+        let is_elem = doc.get(child).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)));
+        if !is_elem {
+            continue;
+        }
+        if matches!(
+            element_local_name(doc, child),
+            "input" | "select" | "textarea" | "button"
+        ) {
+            out.push(child);
+        }
+        collect_form_controls(doc, child, out);
+    }
+}
+
+/// 递归收集 `root` 子树内全部指定 tag 元素，文档序。供 select 的 `<option>` 收集。
+fn collect_form_controls_tag(doc: &Document, root: NodeId, tag: &str, out: &mut Vec<NodeId>) {
+    for child in doc.child_nodes(root) {
+        let is_elem = doc.get(child).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)));
+        if !is_elem {
+            continue;
+        }
+        if element_local_name(doc, child) == tag {
+            out.push(child);
+        }
+        collect_form_controls_tag(doc, child, tag, out);
+    }
+}
+
+/// 元素的 local_name（小写归一前），非元素返空串。
+fn element_local_name(doc: &Document, node: NodeId) -> &str {
+    doc.get(node)
+        .and_then(|n| match &n.kind {
+            NodeKind::Element(e) => Some(e.local_name()),
+            _ => None,
+        })
+        .unwrap_or("")
+}
+
 /// 元素的全部属性本地名（`|` 分隔，文档顺序）；无属性或元素不解析返空串。供 `__zw_attr_names`
 /// 回调 → shim `el.dataset` 枚举（ownKeys）等需要遍历属性名的场景。
 pub fn element_attribute_names(html: &str, selector: &str) -> String {

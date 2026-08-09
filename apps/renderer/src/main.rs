@@ -483,12 +483,13 @@ impl RendererRuntime {
     }
 
     /// P1a form submit：Enter 在单行 input → 解析 enclosing `<form>` 派发 'submit' 事件。
+    /// R3054：未 preventDefault 且 method=GET → 导航到 action?query（闭合 click 默认动作族）。
     fn submit_form_on_enter_at(&mut self, selector: &str) -> Result<(), String> {
         if !self.javascript_enabled {
             return Ok(());
         }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let changed = {
+        let outcome = {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
                 url: &url,
@@ -496,19 +497,24 @@ impl RendererRuntime {
             };
             page_scripts::apply_submit_on_enter(&mut ctx, selector)
         };
-        if changed {
+        if outcome.html_changed {
             self.rerender_publish_webview()?;
+        }
+        // R3054：implicit submit（submitter=None）未取消 → GET 导航。
+        if outcome.default_allowed {
+            self.navigate_form_get(selector, None)?;
         }
         Ok(())
     }
 
     /// P1a form submit：click 命中 submit button → 解析 enclosing `<form>` 派发 'submit' 事件。
+    /// R3054：未 preventDefault 且 method=GET → 导航到 action?query（submitter name=value 入 query）。
     fn submit_form_on_click_at(&mut self, selector: &str) -> Result<(), String> {
         if !self.javascript_enabled {
             return Ok(());
         }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let changed = {
+        let outcome = {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
                 url: &url,
@@ -516,8 +522,31 @@ impl RendererRuntime {
             };
             page_scripts::apply_submit_on_click(&mut ctx, selector)
         };
-        if changed {
+        if outcome.html_changed {
             self.rerender_publish_webview()?;
+        }
+        // R3054：click submit（submitter=该按钮）未取消 → GET 导航。
+        if outcome.default_allowed {
+            self.navigate_form_get(selector, Some(selector))?;
+        }
+        Ok(())
+    }
+
+    /// P1a 导航（R3054）：form GET 提交导航——解析 enclosing form → [`form_get_submission_url`]
+    /// 算 GET 目标 URL（method=GET 且 action 可解析）→ handle_navigate。POST/form 不匹配 → no-op。
+    /// 在 submit 事件派发 + apply 之后读 `cached_html`（含 listener 变更，如 JS 注入隐藏字段）。
+    fn navigate_form_get(&mut self, selector: &str, submitter: Option<&str>) -> Result<(), String> {
+        let base = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let html = self.cached_html.clone();
+        let Some(form_sel) = zero_engine::enclosing_form_selector(&html, selector) else {
+            return Ok(());
+        };
+        if let Some(nav_url) = zero_engine::form_get_submission_url(&html, &form_sel, submitter, &base) {
+            self.handle_navigate(zero_protocol::message::NavigateParams {
+                url: nav_url,
+                referrer: self.current_url.clone(),
+                navigation_epoch: self.navigation_epoch.wrapping_add(1),
+            })?;
         }
         Ok(())
     }

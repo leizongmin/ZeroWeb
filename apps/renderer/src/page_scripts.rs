@@ -23,6 +23,16 @@ pub struct DomDispatchResult {
     pub html_changed: bool,
 }
 
+/// P1a form submit 结果（R3054）：submit 事件派发后的两项判定。
+/// `html_changed` → 调用方 rerender；`default_allowed` → 未 preventDefault → 调用方据 method=GET 导航。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SubmitOutcome {
+    /// submit listener 改了 DOM（调用方单次 rerender）。
+    pub html_changed: bool,
+    /// submit 事件未被 `preventDefault()`（→ GET 表单应导航）。无 enclosing form / 派发失败 → false。
+    pub default_allowed: bool,
+}
+
 /// 页面脚本执行上下文。
 pub struct PageScriptContext<'a> {
     /// 当前 HTML 文档（脚本执行后同步更新）。
@@ -326,21 +336,21 @@ pub fn apply_text_delete(ctx: &mut PageScriptContext<'_>, selector: &str) -> boo
 
 /// P1a form submit：Enter 在单行 `<input>`（非 textarea）→ 解析 enclosing `<form>` → 派发
 /// 'submit' 事件。textarea 的 Enter 为换行不提交；input 无 enclosing form 不提交。
-/// 返回 submit 回调是否改 DOM（调用方据此单次 rerender）。
-pub fn apply_submit_on_enter(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+/// 返回 submit 结果（html_changed + default_allowed，R3054：default_allowed 驱动 GET 导航）。
+pub fn apply_submit_on_enter(ctx: &mut PageScriptContext<'_>, selector: &str) -> SubmitOutcome {
     // 仅单行 input 的 Enter 触发 submit（textarea 的 Enter 为换行）。
     if !query_tag_from_html(ctx.html, selector).eq_ignore_ascii_case("input") {
-        return false;
+        return SubmitOutcome::default();
     }
     // Enter 隐式提交：submitter = None（spec：表单默认提交按钮或 null）。
     submit_enclosing_form(ctx, selector, None)
 }
 
 /// P1a form submit：click 命中 submit button（`<input type=submit/image>` / `<button>` type≠button）
-/// → 解析 enclosing `<form>` → 派发 'submit' 事件。返回 submit 回调是否改 DOM。
-pub fn apply_submit_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+/// → 解析 enclosing `<form>` → 派发 'submit' 事件。返回 submit 结果（含 default_allowed 供 GET 导航）。
+pub fn apply_submit_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) -> SubmitOutcome {
     if !is_submit_button(ctx.html, selector) {
-        return false;
+        return SubmitOutcome::default();
     }
     // click submit button：submitter = 被点的按钮自身（spec：event.submitter = 激活提交的按钮）。
     submit_enclosing_form(ctx, selector, Some(selector))
@@ -394,11 +404,12 @@ pub fn apply_set_hash_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) 
 }
 
 /// 共享 submit 核心：解析 enclosing `<form>` → 派发 'submit'（复用 `script_dispatch_dom_event`）
-/// → apply。无触发 gate（调用方先判 Enter-in-input / submit-button）。无 enclosing form → false。
-fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str, submitter: Option<&str>) -> bool {
+/// → apply。无触发 gate（调用方先判 Enter-in-input / submit-button）。无 enclosing form → 默认 outcome。
+/// 返回 submit 结果（R3054：default_allowed = 未 preventDefault，驱动 GET 导航）。
+fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str, submitter: Option<&str>) -> SubmitOutcome {
     let snap = ctx.html.clone();
     let Some(form_sel) = enclosing_form_selector(&snap, selector) else {
-        return false;
+        return SubmitOutcome::default();
     };
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
@@ -411,11 +422,18 @@ fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str, submit
         submitter: submitter.map(String::from),
         ..Default::default()
     };
-    let _ = ctx
+    // R3054：submit 事件可 cancelable——dispatch 返串 "prevented" 表示 preventDefault 调用（同 dispatch_dom_event）。
+    let result_str = ctx
         .js_worker
-        .execute_script_direct(&script_dispatch_dom_event(&form_sel, "submit", Some(&detail)));
+        .execute_script_direct(&script_dispatch_dom_event(&form_sel, "submit", Some(&detail)))
+        .unwrap_or_default();
+    let default_allowed = result_str.trim() != "prevented";
     let html_snap = ctx.html.clone();
-    apply_recorded_mutations(ctx, &html_snap).is_some()
+    let html_changed = apply_recorded_mutations(ctx, &html_snap).is_some();
+    SubmitOutcome {
+        html_changed,
+        default_allowed,
+    }
 }
 
 /// P1a checkbox：click `<input type=checkbox>` → 翻转 `checked` 属性（boolean：存在→`RemoveAttr`，
@@ -1075,6 +1093,77 @@ mod tests {
             wait_for_global(&worker, "__hc", 300),
             "none",
             "非 hash 锚 → 不派发 hashchange（__hc 保持 'none'）"
+        );
+        worker.shutdown();
+    }
+
+    /// R3054：apply_submit_on_click 返回 SubmitOutcome——default_allowed 反映 submit 是否被 preventDefault。
+    /// 未 preventDefault → default_allowed=true（→ GET 导航）；preventDefault → false（不导航）。
+    #[test]
+    fn apply_submit_outcome_tracks_preventdefault_r3054() {
+        let mut worker = RendererJsWorker::spawn(142);
+        let html = "<html><body><form id='f' action='/s'>\
+            <input name='q' value='x'>\
+            <button id='b' type='submit'>Go</button>\
+            </form></body></html>";
+
+        // ① 无 preventDefault listener → default_allowed=true（应导航）。
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        let mut buf = html.to_string();
+        let outcome = {
+            let mut ctx = PageScriptContext {
+                html: &mut buf,
+                url: "https://example.com/page",
+                js_worker: &worker,
+            };
+            apply_submit_on_click(&mut ctx, "#b")
+        };
+        assert!(
+            outcome.default_allowed,
+            "submit 未 preventDefault → default_allowed=true"
+        );
+
+        // ② preventDefault listener → default_allowed=false（不应导航）。
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        worker
+            .execute_script_direct(
+                "document.getElementById('f').addEventListener('submit', function(e){ e.preventDefault(); globalThis.__pv='yes'; });",
+            )
+            .unwrap();
+        let mut buf2 = html.to_string();
+        let outcome2 = {
+            let mut ctx = PageScriptContext {
+                html: &mut buf2,
+                url: "https://example.com/page",
+                js_worker: &worker,
+            };
+            apply_submit_on_click(&mut ctx, "#b")
+        };
+        assert!(
+            !outcome2.default_allowed,
+            "submit preventDefault → default_allowed=false（不导航）"
+        );
+        assert_eq!(
+            wait_for_global(&worker, "__pv", 1000),
+            "yes",
+            "preventDefault listener 触发（submit 事件已派发）"
+        );
+
+        // ③ 非 submit 按钮（type=button）→ apply_submit_on_click 返回默认 outcome（不提交）。
+        let html3 = "<html><body><form id='f3'><button id='nb' type='button'>No</button></form></body></html>";
+        worker.set_dom_snapshot(html3, "https://example.com/page");
+        let mut buf3 = html3.to_string();
+        let outcome3 = {
+            let mut ctx = PageScriptContext {
+                html: &mut buf3,
+                url: "https://example.com/page",
+                js_worker: &worker,
+            };
+            apply_submit_on_click(&mut ctx, "#nb")
+        };
+        assert!(
+            !outcome3.default_allowed && !outcome3.html_changed,
+            "type=button 非 submit → 默认 outcome（不提交/不导航）"
         );
         worker.shutdown();
     }

@@ -1687,3 +1687,141 @@ fn test_reflected_size_element_aware_r3043() {
     sandbox.execute("globalThis.__dSize = String(document.getElementById('d').size);").unwrap();
     assert_eq!(sandbox.execute("globalThis.__dSize").unwrap().value, "undefined", "div.size=undefined（非 input/select fall through）");
 }
+
+#[test]
+fn test_form_get_submission_url_r3054() {
+    // R3054：form_get_submission_url 解析 <form> GET 提交目标 URL（闭合 click 默认动作族：reset/anchor/hash →
+    // form-submit 导航）。成功控件收集 + urlencoded query 替换 action URL query 段 + 按 base 解析 action。
+    let base = "https://example.com/search";
+
+    // ① 基础 GET：text + hidden → action?name=value（action 绝对 URL）。
+    let html = "<html><body>\
+        <form id='f' action='https://example.com/search'>\
+          <input name='q' value='rust'>\
+          <input type='hidden' name='lang' value='en'>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html, "#f", None, base),
+        Some("https://example.com/search?q=rust&lang=en".to_string()),
+        "基础 GET：q=rust & lang=en"
+    );
+
+    // ② action 缺省 → 提交到当前文档 URL（base_url）。
+    let html2 = "<html><body><form id='f'><input name='p' value='1'></form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html2, "#f", None, base),
+        Some("https://example.com/search?p=1".to_string()),
+        "action 缺省 → 提交到 base_url"
+    );
+
+    // ③ action 相对 → 按 base 解析为绝对。
+    let html3 = "<html><body><form id='f' action='/results'><input name='q' value='hi'></form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html3, "#f", None, base),
+        Some("https://example.com/results?q=hi".to_string()),
+        "相对 action /results → 绝对 https://example.com/results?q=hi"
+    );
+
+    // ④ checkbox/radio：仅 checked 入；值=value 属性或 "on"。
+    let html4 = "<html><body><form id='f' action='/s'>\
+        <input type='checkbox' name='c1' value='yes' checked>\
+        <input type='checkbox' name='c2' value='no'>\
+        <input type='radio' name='r' checked>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html4, "#f", None, base),
+        Some("https://example.com/s?c1=yes&r=on".to_string()),
+        "checkbox checked 入 c1=yes；unchecked c2 跳过；radio 无 value → on"
+    );
+
+    // ⑤ select：selected option 值（value 属性优先）；无 selected → 首 option（spec 默认选中 quirk）。
+    let html5 = "<html><body><form id='f' action='/s'>\
+        <select name='size'>\
+          <option value='sm'>Small</option>\
+          <option value='lg' selected>Large</option>\
+        </select>\
+        <select name='def'>\
+          <option>One</option>\
+          <option>Two</option>\
+        </select>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html5, "#f", None, base),
+        Some("https://example.com/s?size=lg&def=One".to_string()),
+        "select：size=lg（selected）；def=One（无 selected → 首项，无 value 属性 → 文本）"
+    );
+
+    // ⑥ textarea：值 = 子树文本内容；跳过无 name / disabled。
+    let html6 = "<html><body><form id='f' action='/s'>\
+        <textarea name='msg'>hello world</textarea>\
+        <input name='skip' disabled value='x'>\
+        <input value='noname'>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html6, "#f", None, base),
+        Some("https://example.com/s?msg=hello+world".to_string()),
+        "textarea=文本（form-urlencoded 空格→+）；disabled skip 跳过；无 name noname 跳过"
+    );
+
+    // ⑦ submitter：click submit 按钮其 name=value 入（type=submit）；非激活 submit/reset/button 跳过。
+    // submitter_sel 须为 query_all_in_subtree 同款选择器——id'd 元素两端均产 `#id`（stable_selector_for_node
+    // / selector_from_element_hit 一致），故 id'd submit 按钮可靠匹配。
+    let html7 = "<html><body><form id='f' action='/s'>\
+        <input name='q' value='x'>\
+        <button id='go' type='submit' name='go' value='search'>Go</button>\
+        <input type='submit' name='other' value='o'>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html7, "#f", Some("#go"), base),
+        Some("https://example.com/s?q=x&go=search".to_string()),
+        "submitter #go name=go=search 入；非激活 submit other 跳过"
+    );
+    // 无 submitter → 无提交按钮值（仅普通控件）。
+    assert_eq!(
+        form_get_submission_url(html7, "#f", None, base),
+        Some("https://example.com/s?q=x".to_string()),
+        "无 submitter → 仅 q=x（submit 按钮均不参与）"
+    );
+
+    // ⑧ method=POST → None（headless POST 导航 defer）；method=GET（显式）→ Some。
+    let html8p = "<html><body><form id='f' method='post' action='/s'><input name='q' value='x'></form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html8p, "#f", None, base),
+        None,
+        "method=POST → None（headless POST defer）"
+    );
+    let html8g = "<html><body><form id='f' method='GET' action='/s'><input name='q' value='x'></form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html8g, "#f", None, base),
+        Some("https://example.com/s?q=x".to_string()),
+        "method=GET（显式大写）→ Some"
+    );
+
+    // ⑨ 现有 query 段被替换（spec：form 数据集替换 action URL query）。
+    let html9 = "<html><body><form id='f' action='/s?old=1#frag'><input name='q' value='new'></form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html9, "#f", None, base),
+        Some("https://example.com/s?q=new#frag".to_string()),
+        "action 旧 query old=1 被替换为 q=new；fragment 保留"
+    );
+
+    // ⑩ 特殊字符 urlencoded（spec application/x-www-form-urlencoded）。
+    let html10 = "<html><body><form id='f' action='/s'><input name='q' value='a b&c=d'></form></body></html>";
+    let url10 = form_get_submission_url(html10, "#f", None, base).unwrap();
+    assert!(
+        url10.contains("q=a+b%26c%3Dd") || url10.contains("q=a%20b%26c%3Dd"),
+        "特殊字符 urlencoded（空格 + / %20，& → %26，= → %3D）：{url10}"
+    );
+
+    // ⑪ 非 form 元素 / 无控件 → None / action 无 query。
+    assert_eq!(
+        form_get_submission_url("<html><body><div id='f'><input name='q' value='x'></div></body></html>", "#f", None, base),
+        None,
+        "非 <form> 元素 → None"
+    );
+    assert_eq!(
+        form_get_submission_url("<html><body><form id='f' action='/s'></form></body></html>", "#f", None, base),
+        Some("https://example.com/s".to_string()),
+        "无控件 GET → action 无 query（仅路径）"
+    );
+}
