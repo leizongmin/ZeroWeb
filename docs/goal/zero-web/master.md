@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1a Popover 声明式触发（popovertarget/popovertargetaction，闭合 R3071 声明式用例，本轮 R3072，~14,325 测试）
+
+承接 popover 赛道（R3071 核心 DOM 面：showPopover/hidePopover/togglePopover + popover 属性 + 事件 + 状态机）。R3071 仅支持**编程式**触发（`el.showPopover()`）；声明式用例——`<button popovertarget="id" popovertargetaction="toggle|show|hide">` click 自动联动目标 popover——缺。声明式是 popover 最常见用法（tooltip/menu/modal 库的 HTML 原生写法）。本切片接通 click default action，闭合声明式用例。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`_zwPopoverTargetActivate(sel, handle)`** | `crates/engine/src/js_dom_shim/part01.js`（`_zwHidePopover` 后） | click default action：找最近含 `popovertarget` 内容属性的祖先（含自身，`__zw_has_attr_lw` + `__zw_parent` 上行）→ 读 `popovertarget`(id) + `popovertargetaction`(toggle/show/hide，默认 toggle，invalid→toggle) → `document.getElementById(id)` 找目标 popover → 按 action 调 `showPopover`/`hidePopover`/`togglePopover`（复用 R3071 状态机）。InvalidStateError（已 showing show / 未 showing hide / target 非 popover / id 不存在）经 try/catch 吞——spec no-op。spec 限 button/input 触发元素，本实现 permissive（任意元素含 popovertarget）。spec 链接 https://html.spec.whatwg.org/multipage/popover.html#popover-target-activation 。 |
+| **`click()` 方法接通 default action** | `crates/engine/src/js_dom_shim/part04.js`（`click` get 分支） | click 派发后 `_dispatchWithBubble` 返 `!defaultPrevented`；未 preventDefault → 调 `_zwPopoverTargetActivate(sel, handle)`。无 popovertarget 时早返 no-op（零回归）。`HTMLElement.click()` 跑 activation（spec 一致——synthetic click 触发 default action）。 |
+| **R3072 测试** | engine `js_dom_bridge_tests/part09.rs`（+`test_popover_target_activation_r3072`） | 6 维：① toggle 默认（click → open，再 click → closed）；② show（click → open，已 showing 再 show no-op）；③ hide（已 hide 再 hide no-op）；④ 目标 id 不存在 + 目标非 popover 元素 → no-op 不抛；⑤ 祖先链（click 子节点 span → 找到含 popovertarget 的 button 祖先触发，nearest-ancestor 语义）；⑥ click preventDefault → activation 取消 + 无 popovertarget 普通按钮 click no-op。 |
+
+**为何零回归且净正向**：① popovertarget 声明式触发为纯新增 default action（旧 click 无 popover 联动）；② `_zwPopoverTargetActivate` 仅在 click 未 preventDefault 且祖先含 popovertarget 时生效——无 popovertarget 的既有 click（form submit / a href / 普通 UI）早返 no-op，零影响；③ 复用 R3071 `showPopover`/`hidePopover`/`togglePopover` 状态机（事件 + top-layer 态一致）；④ permissive + try/catch 吞错防破脚本（id 不存在 / 非 popover target / 状态不符 no-op）；⑤ 全量 14325 v8 / 1740 quickjs 全绿（含 R3071 popover + 65 event/click 测试全回归）。
+
+**已知限制（记录，defer）**：① **host 真实输入 click 未接 activation**——本切片仅接 `HTMLElement.click()`（synthetic，spec 跑 activation）；host 驱动的真实指针 click（输入路由）的 default action 接线 defer（headless 输入路由有限）；② **light-dismiss defer**（"auto" popover 外部点击 / Esc 关闭 + 关闭其他 auto popover——R3071 同限，需输入路由 + 焦点管理）；③ **permissive 触发元素**（spec 限 button/input，本实现任意元素含 popovertarget 触发，headless 简化，documented）；④ **toggle 近似**（"auto" popover toggle 应先 light-dismiss 其他 auto 再 toggle，本实现直接 togglePopover，light-dismiss defer）；⑤ **IDL 属性 `popoverTargetElement`/`popoverTargetAction` defer**（编程式设目标元素 + action，非内容属性驱动，低频 follow-up）；⑥ **handle-only detached 元素无祖先链**（popovertarget 声明式需 DOM 树内 button，handle-only 跳过）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ `--no-default-features --features quickjs`（quickjs）零警告 + `make test` 全绿（**14325 passed / 71 skipped + 1740 passed / 60 skipped / 0 failed**，engine +1 driving 测试，零回归）+ pre-commit guard PASS。变更纯 JS shim + 测试（无 render/paint/style/layout .rs），product-smoke 不受影响。
+
+**下一步**：popover 赛道声明式闭合（R3071 编程式 + R3072 声明式，API 全表面可用；渲染层显隐 + light-dismiss + host 输入 click defer）。pivot：① IDL 属性 `popoverTargetElement`/`popoverTargetAction`（编程式目标元素，闭合 popoverTargetElement 编程式用法，低风险）；② `Element.checkVisibility`（IntersectionObserver-派生可见性查询，ad viewability / lazy-load 库用，自包含）；③ light-dismiss（auto popover 外部点击/Esc 关闭，需输入路由，中-高复杂度）；④ Web API 表面继续扫描补缺；⑤ P1a 事件循环 macro-task 队列补全（P1a 剩余主线，中-高复杂度）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a Popover API 核心 DOM 面（showPopover/hidePopover/togglePopover + popover 属性 + 事件，本轮 R3071，~14,324 测试）
 
 Web API 表面扫描发现 Popover API（HTML 2023）核心三方法 + `popover` 属性全缺——UI 库（tooltip / dropdown menu / modal / tour 库）feature-detect `el.popover` / 调 `el.showPopover()` / `el.hidePopover()` / `el.togglePopover()` / 监听 `toggle`/`beforetoggle` 事件。缺则含此调用的脚本 TypeError 中断。headless 无真 top-layer paint / 渲染层级 / `:popover-open` 伪类（rendering 流域 defer），本切片实现 **JS-observable 状态机 + 事件**（API 表面 + 状态查询 + 事件回调可用），使 UI 库不中断；渲染层显隐 defer。

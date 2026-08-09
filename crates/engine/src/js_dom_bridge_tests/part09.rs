@@ -773,6 +773,168 @@ fn test_popover_api_r3071() {
 }
 
 #[test]
+fn test_popover_target_activation_r3072() {
+    // R3072：popovertarget/popovertargetaction 声明式触发——click default action。按钮 click 后未 preventDefault →
+    // 找最近含 popovertarget 祖先 → 按 action（toggle/show/hide）触发目标 popover。headless 经 el.click() 触发
+    //（HTMLElement.click() 跑 activation，spec 一致）。复用 R3071 popover 状态机 + 事件。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id='p1' popover='auto'>p1</div>\
+         <div id='p2' popover='manual'>p2</div>\
+         <button id='bToggle' popovertarget='p1'>toggle p1</button>\
+         <button id='bShow' popovertarget='p2' popovertargetaction='show'>show p2</button>\
+         <button id='bHide' popovertarget='p2' popovertargetaction='hide'>hide p2</button>\
+         <button id='bBad' popovertarget='nope'>bad target</button>\
+         <button id='bNotPop' popovertarget='notpop'>target not popover</button>\
+         <div id='notpop'>not a popover</div>\
+         <div id='wrapper'><button id='bInner' popovertarget='p1'><span id='spanInner'>icon</span></button></div>\
+         <button id='bPlain'>plain button</button>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① popovertargetaction=toggle（默认）：click 按钮 → 目标 popover toggle（closed→open）。toggle 事件派发。
+    sandbox
+        .execute(
+            "var p1log = [];\
+             document.getElementById('p1').addEventListener('toggle', function(e){ p1log.push(e.newState); });\
+             document.getElementById('bToggle').click();\
+             globalThis.__toggleOpen = JSON.stringify(p1log);\
+             document.getElementById('bToggle').click();\
+             globalThis.__toggleClose = JSON.stringify(p1log);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__toggleOpen").unwrap().value,
+        r#"["open"]"#,
+        "popovertarget click（toggle）→ 目标 popover 显示（toggle 事件 open）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__toggleClose").unwrap().value,
+        r#"["open","closed"]"#,
+        "再次 click（toggle）→ 目标 popover 隐藏（toggle 事件 closed）"
+    );
+
+    // ② popovertargetaction=show：click → show。已 showing 再 show → no-op（InvalidStateError 吞）。
+    sandbox
+        .execute(
+            "var p2log = [];\
+             var p2 = document.getElementById('p2');\
+             p2.addEventListener('toggle', function(e){ p2log.push(e.newState); });\
+             document.getElementById('bShow').click();\
+             globalThis.__showOnce = JSON.stringify(p2log);\
+             document.getElementById('bShow').click();\
+             globalThis.__showAgain = JSON.stringify(p2log);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__showOnce").unwrap().value,
+        r#"["open"]"#,
+        "popovertargetaction=show click → 目标 popover 显示"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__showAgain").unwrap().value,
+        r#"["open"]"#,
+        "已 showing 再 show → no-op（InvalidStateError 吞，无额外 toggle 事件）"
+    );
+
+    // ③ popovertargetaction=hide：click → hide。
+    sandbox
+        .execute(
+            "document.getElementById('bHide').click();\
+             globalThis.__hideState = String(document.getElementById('p2').matches('[popover]'));",
+        )
+        .unwrap();
+    // p2 经 hide → toggle closed 派发。验证 p2 不再 showing：再 hide（未 showing）应 no-op。
+    // 用 toggle 事件间接验证：attach 后再 hide 应无事件（已 closed）。
+    sandbox
+        .execute(
+            "var p2log2 = [];\
+             document.getElementById('p2').addEventListener('toggle', function(e){ p2log2.push(e.newState); });\
+             document.getElementById('bHide').click();\
+             globalThis.__hideNoop = JSON.stringify(p2log2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hideNoop").unwrap().value,
+        "[]",
+        "popovertargetaction=hide：p2 已 hide → 再 hide click no-op（无 toggle 事件）"
+    );
+
+    // ④ 目标 id 不存在 + 目标非 popover 元素 → no-op（不抛、无 toggle）。
+    sandbox
+        .execute(
+            "var err = '';\
+             try { document.getElementById('bBad').click(); } catch(e){ err = e.name; }\
+             globalThis.__badErr = err;\
+             try { document.getElementById('bNotPop').click(); } catch(e){ err = e.name; }\
+             globalThis.__notPopErr = err;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__badErr").unwrap().value,
+        "",
+        "popovertarget 指向不存在 id → click no-op（不抛）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__notPopErr").unwrap().value,
+        "",
+        "popovertarget 指向非 popover 元素 → click no-op（不抛，InvalidStateError 吞）"
+    );
+
+    // ⑤ 祖先链：click 按钮内部子节点（span）→ 找最近含 popovertarget 的祖先（button）触发（nearest-ancestor 语义）。
+    sandbox
+        .execute(
+            "var p1log2 = [];\
+             document.getElementById('p1').addEventListener('toggle', function(e){ p1log2.push(e.newState); });\
+             document.getElementById('spanInner').click();\
+             globalThis.__inner = JSON.stringify(p1log2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__inner").unwrap().value,
+        r#"["open"]"#,
+        "click 子节点 span → 祖先链找到含 popovertarget 的 button → 触发目标 popover（nearest-ancestor）"
+    );
+
+    // ⑥ click preventDefault → 不触发 popovertarget activation（default action 取消）。
+    sandbox
+        .execute(
+            "var bToggle = document.getElementById('bToggle');\
+             bToggle.addEventListener('click', function(e){ e.preventDefault(); }, { capture: true });\
+             var p1log3 = [];\
+             document.getElementById('p1').addEventListener('toggle', function(e){ p1log3.push(e.newState); });\
+             bToggle.click();\
+             globalThis.__prevented = JSON.stringify(p1log3);\
+             // 无 popovertarget 的普通按钮 click → no-op（不影响）
+             globalThis.__plainClick = '';\
+             try { document.getElementById('bPlain').click(); globalThis.__plainClick = 'ok'; } catch(e){}",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__prevented").unwrap().value,
+        "[]",
+        "click preventDefault → popovertarget activation 取消（无 toggle 事件）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__plainClick").unwrap().value,
+        "ok",
+        "无 popovertarget 普通按钮 click 不抛（_zwPopoverTargetActivate 无 popovertarget 早返 no-op）"
+    );
+}
+
+#[test]
 fn test_form_reflected_idl_attrs_r2839() {
     // R2839：HTMLFormElement 反射 IDL 属性（action/method/enctype/target）——form 序列化 / AJAX 提交库
     // 读 form.action/form.method 构提交请求。action/target 纯串反射；method/enctype 小写归一 + spec 默认。

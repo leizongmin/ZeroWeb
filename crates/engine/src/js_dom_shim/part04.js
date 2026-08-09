@@ -690,7 +690,11 @@
         if (prop === 'click') {
           return function() {
             var ev = _makeEvent('click', { bubbles: true, cancelable: true });
-            return _dispatchWithBubble(key, sel, handle, ev);
+            var notPrevented = _dispatchWithBubble(key, sel, handle, ev);
+            // R3072：popovertarget 声明式触发——click default action（未 preventDefault 时）。找最近含 popovertarget
+            // 祖先 → 按 popovertargetaction 触发目标 popover show/hide/toggle。无 popovertarget 时 no-op（零回归）。
+            if (notPrevented) _zwPopoverTargetActivate(sel, handle);
+            return notPrevented;
           };
         }
         // Constraint Validation API（R2825）——表单校验库（checkValidity gate submit / setCustomValidity

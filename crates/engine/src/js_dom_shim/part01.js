@@ -131,6 +131,39 @@
     delete _zwTopLayer[key];
     _dispatchWithBubble(key, sel, handle, _makeToggleEvent('toggle', 'open', 'closed', false));
   }
+  // R3072：popovertarget 声明式触发——click 的 default action。click 派发后未 preventDefault → 找最近含
+  // popovertarget 内容属性的祖先（含自身）→ 读 popovertarget(id) + popovertargetaction(toggle/show/hide) →
+  // document.getElementById 找目标 popover 元素 → 按 action 调 showPopover/hidePopover/togglePopover。复用 R3071
+  // 状态机（InvalidStateError 经 try/catch 吞——spec「show on showing」/「hide on hidden」/「target 非 popover」no-op）。
+  // spec 限 button/input 触发元素，本实现 permissive（任意元素含 popovertarget 即触发，headless 简化）。
+  // light-dismiss / auto 关闭其他 popover defer（R3071 同限）。handle-only（detached）无祖先链 → 跳过。
+  // https://html.spec.whatwg.org/multipage/popover.html#popover-target-activation
+  function _zwPopoverTargetActivate(sel, handle) {
+    if (!sel) return; // handle-only detached 无 sel 祖先链（popovertarget 声明式需 DOM 树内 button）
+    var target = '';
+    var cur = sel;
+    while (cur) {
+      var has = typeof __zw_has_attr_lw === 'function'
+        ? __zw_has_attr_lw(cur, 'popovertarget')
+        : (typeof __zw_has_attr === 'function' ? __zw_has_attr(cur, 'popovertarget') : '0');
+      if (has === '1') { target = cur; break; }
+      try { cur = __zw_parent(cur); } catch (_e) { cur = ''; }
+      if (!cur) break;
+    }
+    if (!target) return;
+    var id = typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(target, 'popovertarget') : __zw_get_attr(target, 'popovertarget');
+    if (!id) return;
+    var actionRaw = typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(target, 'popovertargetaction') : __zw_get_attr(target, 'popovertargetaction');
+    var action = String(actionRaw || 'toggle').toLowerCase();
+    if (action !== 'show' && action !== 'hide' && action !== 'toggle') action = 'toggle';
+    var popoverEl = document.getElementById(id);
+    if (!popoverEl) return;
+    try {
+      if (action === 'show') popoverEl.showPopover();
+      else if (action === 'hide') popoverEl.hidePopover();
+      else popoverEl.togglePopover();
+    } catch (_e) {} // InvalidStateError（已 showing show / 未 showing hide / target 非 popover）spec no-op
+  }
   // R3047：scroll 位置追踪。headless 无真视口滚动 → 旧 scrollTop/scrollLeft 恒 0、scrollTo/scrollBy/scroll no-op、
   // window.scrollX/Y 恒 0。real 浏览器这些为可读写状态（sticky-nav / scroll restoration / 无限滚动检测 / parallax 读）。
   // 本切片改 JS-side 状态追踪：`scrollTo/scrollBy` + `scrollTop/scrollLeft` set 更新此 map，get 读回 → 程序化滚动
