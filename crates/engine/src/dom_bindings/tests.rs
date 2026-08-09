@@ -811,6 +811,85 @@ return log.join(',');})()";
     );
 }
 
+// ── R3127 Event / CustomEvent 构造器 ──
+
+/// `new Event(type, {bubbles,cancelable})`：instanceof Event 成立 + type/bubbles/cancelable 读 init dict +
+/// 默认派发态（target=null、eventPhase=0、defaultPrevented=false、isTrusted=false）。
+#[test]
+fn native_event_constructor_basic_r3127() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{\
+const e=new Event('click',{bubbles:true,cancelable:true});\
+return (e instanceof Event)+'/'+e.type+'/'+e.bubbles+'/'+e.cancelable+'/'+\
+(e.target===null)+'/'+e.eventPhase+'/'+e.defaultPrevented+'/'+e.isTrusted;})()";
+    assert_eq!(
+        run_script(html, script),
+        "true/click/true/true/true/0/false/false",
+        "new Event：instanceof + type/bubbles/cancelable + 派发态默认"
+    );
+}
+
+/// 缺省 init dict：bubbles/cancelable 默认 false（spec）。
+#[test]
+fn native_event_constructor_defaults_r3127() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{const e=new Event('x'); return e.bubbles+'/'+e.cancelable;})()";
+    assert_eq!(
+        run_script(html, script),
+        "false/false",
+        "new Event 缺省 init dict → bubbles/cancelable false"
+    );
+}
+
+/// `new CustomEvent(type, {detail})`：instanceof CustomEvent + detail 读 init dict（任意类型，缺省 null）。
+#[test]
+fn native_custom_event_constructor_r3127() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{\
+const e=new CustomEvent('build',{detail:{name:'zero'}});\
+return (e instanceof CustomEvent)+'/'+e.type+'/'+e.detail.name+'/'+\
+(new CustomEvent('p').detail===null);})()";
+    assert_eq!(
+        run_script(html, script),
+        "true/build/zero/true",
+        "new CustomEvent：instanceof + detail + 缺省 null"
+    );
+}
+
+/// preventDefault：cancelable 时设 defaultPrevented=true，非 cancelable 时 no-op（spec）。
+#[test]
+fn native_event_prevent_default_r3127() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{\
+const c=new Event('x',{cancelable:true}); c.preventDefault();\
+const nc=new Event('x'); nc.preventDefault();\
+return c.defaultPrevented+'/'+nc.defaultPrevented;})()";
+    assert_eq!(
+        run_script(html, script),
+        "true/false",
+        "preventDefault：cancelable 设 defaultPrevented，非 cancelable no-op"
+    );
+}
+
+/// Event 实例经原型 stopPropagation 集成 R3125 冒泡：派发时原型方法止上溯（不需派发注入）。
+#[test]
+fn native_event_dispatch_bubble_stop_r3127() {
+    let html = r#"<div id="parent"><div id="child"></div></div>"#;
+    let script = "(()=>{\
+const child=__zw_native_element_for_id('child');\
+const parent=__zw_native_element_for_id('parent');\
+const log=[];\
+child.addEventListener('click',e=>{log.push('child:'+e.eventPhase);e.stopPropagation();});\
+parent.addEventListener('click',e=>{log.push('parent');});\
+child.dispatchEvent(new Event('click',{bubbles:true}));\
+return log.join(',');})()";
+    assert_eq!(
+        run_script(html, script),
+        "child:2",
+        "new Event 派发：原型 stopPropagation 止上溯（AT_TARGET=2）"
+    );
+}
+
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
 //
 // HTML: <div id="root"><span id="s1">hello</span><span id="s2"></span></div>

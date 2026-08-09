@@ -65,7 +65,7 @@ pub(super) fn native_remove_event_listener_invoke(
 // 注入仅当 event 无既有同名方法（不覆盖 page 构造的 Event 实例原生方法，待 native Event 构造器）。
 
 /// `event.stopPropagation()` 注入实现：设 `this.__zw_stop = true`（止上溯祖先；当前节点剩余监听器仍触发）。
-fn native_stop_propagation_invoke(
+pub(super) fn native_stop_propagation_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
     _rv: v8::ReturnValue<v8::Value>,
@@ -78,7 +78,7 @@ fn native_stop_propagation_invoke(
 
 /// `event.stopImmediatePropagation()` 注入实现：设 `this.__zw_stop_immediate = true`（止当前节点剩余
 /// 监听器 + 上溯——立即终止整个派发）。spec `dom-event-stop-immediate-propagation`。
-fn native_stop_immediate_invoke(
+pub(super) fn native_stop_immediate_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
     _rv: v8::ReturnValue<v8::Value>,
