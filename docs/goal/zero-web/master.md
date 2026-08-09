@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1a Canvas stroke 渐变逐像素光栅化（stroke/stroke_rect 渐变描边，对称 fill 渐变 R3079，本轮 R3084）
+
+承接 R3083。R3079 闭合 fill/fill_rect 渐变，但 stroke/stroke_rect 仍用 `resolve_color()` flat midpoint（描边渐变非逐像素）。本切片补 stroke 侧，canvas 渐变赛道完整（fill + stroke 均逐像素）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`blit_stroke_to_pixels_gradient` + `blit_line_cap_gradient`** | `crates/canvas/src/context/raster.rs`（line_segment_rect 前） | 镜像 `blit_stroke_to_pixels`/`blit_line_cap` 几何（段主体 + 连接点 + 端点 cap），但每矩形经 `blit_rect_gradient`（R3079 既有）逐像素采样。新增变体不动既有 flat 函数签名（11 处测试调用零改动）。 |
+| **stroke/stroke_with_path/stroke_rect gradient 分流** | `crates/canvas/src/context/context_impl.rs` | `is_gradient()` 真 → 逐像素光栅化（primitives midpoint 近似）；否则原 flat 路径。stroke_rect 四边（上/下/左/右）各经 blit_rect_gradient。 |
+| **R3084 测试** | canvas `tests/raster.rs`（+`test_stroke_linear_gradient_rasterizes`）+ `tests/edge.rs`（更新 `test_stroke_rect_with_gradient_style` / `test_stroke_rect_with_conic_gradient_style`） | 新：水平线 stroke 红→蓝渐变，左端偏红 / 右端偏蓝 / b 递增；更新 2 edge 测试（flat midpoint → 逐像素方向性断言）。 |
+
+**为何净正向**：① 复用 R3079 既有 `blit_rect_gradient`（零光栅化逻辑重写）；② 新增变体不动 flat 签名（11 测试调用零改动，零回归风险）；③ stroke_rect 重构四边循环（原 4 段重复 → 循环，代码量减）；④ 全量 make test 全绿（0 failed across all binaries，16099 passed）；⑤ canvas 渐变赛道完整（fill R3079 + stroke R3084 逐像素）。
+
+**已知限制（记录，defer）**：① **primitives 合成层 stroke 渐变 midpoint 近似**（GPU 合成路径渐变独立工程，headless 像素回读逐像素正确）；② **Pattern 样式仍回落黑**（`CanvasStyle::Pattern` 光栅化 defer）；③ stroke 渐变连接点/cap 近似为正方形（与 flat stroke 同简化，line_join/cap 真几何 defer）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**cargo test 执行器；0 failed across all binaries，全量 16099 passed，canvas +1 新测试 + 2 更新，零回归**）+ pre-commit guard PASS。变更含 canvas crate 光栅化 .rs（stroke 路径），无 CSS/layout 变更——product-smoke 不受影响（welcome.html 无 canvas）。
+
+**下一步**：canvas 渐变赛道完整（fill + stroke 逐像素；Pattern defer）。pivot：① **IndexedDB 持久化**（storage crate 真 IDB + host bridge，闭合 Done Criteria §3 Storage「跨页重载不丢」，中-高复杂度）；② Pattern 样式光栅化（平铺 repeat，中复杂度）；③ 外链 ES module fetch + 异步 module graph（真模块加载，中-高复杂度）；④ P1a 事件循环 macro-task 队列补全 / popover 渲染层。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a `<script type=module>` 执行路径（compile_module_script 转换 import/export，闭合 interactive/script-variants，本轮 R3083）
 
 承接 R3082（scripted js_executes_ok 赛道收敛，剩 2 非引擎缺陷）。本切片闭合其中真缺陷：`<script type=module">` 内容经**经典脚本路径**执行（webview `run_page_scripts_impl` 把 `InlineModule` 与 `Inline` 同走 `sandbox.execute`）→ `import` 抛 `Cannot use import statement outside a module`。script-sandbox 早有 `compile_module_script`（import/export→经典 IIFE 转换）+ `EsModuleSandbox`，但 webview 进程内脚本路径未接线。

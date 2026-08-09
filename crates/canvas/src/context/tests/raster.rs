@@ -1393,3 +1393,31 @@ fn test_fill_path_linear_gradient_rasterizes() {
     let right = (row * 20 + 19) * 4;
     assert_eq!(&ctx.pixel_buffer[right..right + 4], &[13, 0, 242, 255]);
 }
+
+// ── 描边渐变光栅化（R3084，对称 fill 渐变 R3079）──
+
+#[test]
+fn test_stroke_linear_gradient_rasterizes() {
+    // 30×10 画布，红→蓝线性渐变 stroke_style 沿 x，stroke 一条水平线（line_width 4，y 中心 5）。
+    let mut ctx = CanvasContext::new(30, 10);
+    ctx.line_width = 4.0;
+    let mut grad = ctx.create_linear_gradient(0.0, 0.0, 30.0, 0.0);
+    grad.add_color_stop(0.0, Color::rgba(255, 0, 0, 255));
+    grad.add_color_stop(1.0, Color::rgba(0, 0, 255, 255));
+    ctx.set_stroke_style(CanvasStyle::LinearGradient(grad));
+    ctx.begin_path();
+    ctx.move_to(2.0, 5.0);
+    ctx.line_to(28.0, 5.0);
+    ctx.stroke();
+
+    // 描边覆盖 y∈[3,7)（line_width 4，中心 5）。逐像素渐变：左端（x=2, t≈0.067）偏红，右端（x=27, t=0.9）偏蓝。
+    let left_idx = (5 * 30 + 2) * 4;
+    let right_idx = (5 * 30 + 27) * 4;
+    let lr = ctx.pixel_buffer[left_idx];
+    let lb = ctx.pixel_buffer[left_idx + 2];
+    let rr = ctx.pixel_buffer[right_idx];
+    let rb = ctx.pixel_buffer[right_idx + 2];
+    assert!(lr > lb, "描边左端偏红（r={} > b={}）", lr, lb);
+    assert!(rb > rr, "描边右端偏蓝（b={} > r={}）", rb, rr);
+    assert!(lb < rb, "渐变左→右：b 递增（{} → {}）", lb, rb);
+}

@@ -91,9 +91,8 @@ impl CanvasContext {
 
     /// 描边矩形。
     pub fn stroke_rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
-        // 简化实现：用描边颜色填充一个薄矩形表示描边
+        // 简化实现：用描边样式填充四个薄矩形表示描边（上/下/左/右）
         let lw = self.line_width;
-        let color = self.apply_alpha(self.stroke_style.resolve_color());
 
         // 绘制阴影（在形状之前）
         if self.has_shadow() {
@@ -101,22 +100,26 @@ impl CanvasContext {
             self.draw_shadow_rect(&rect);
         }
 
-        // 上边
-        let top = self.transform_rect(x, y, width, lw);
-        self.primitives.add_fill(top, color);
-        self.blit_rect_to_pixels(&top, color);
-        // 下边
-        let bottom = self.transform_rect(x, y + height - lw, width, lw);
-        self.primitives.add_fill(bottom, color);
-        self.blit_rect_to_pixels(&bottom, color);
-        // 左边
-        let left = self.transform_rect(x, y, lw, height);
-        self.primitives.add_fill(left, color);
-        self.blit_rect_to_pixels(&left, color);
-        // 右边
-        let right = self.transform_rect(x + width - lw, y, lw, height);
-        self.primitives.add_fill(right, color);
-        self.blit_rect_to_pixels(&right, color);
+        // R3084：渐变描边逐像素光栅化（对称 fill_rect 渐变 R3079）。四边各经 blit_rect_gradient；
+        // 纯色走 flat 快路径。primitives 合成层用 midpoint 近似（与 fill_rect 一致）。
+        let gradient = self.stroke_style.is_gradient();
+        let approx_or_color = self.apply_alpha(self.stroke_style.resolve_color());
+        let style = self.stroke_style.clone();
+        // 上 / 下 / 左 / 右 四边
+        let sides = [
+            self.transform_rect(x, y, width, lw),
+            self.transform_rect(x, y + height - lw, width, lw),
+            self.transform_rect(x, y, lw, height),
+            self.transform_rect(x + width - lw, y, lw, height),
+        ];
+        for rect in sides {
+            self.primitives.add_fill(rect, approx_or_color);
+            if gradient {
+                self.blit_rect_gradient(&rect, &style);
+            } else {
+                self.blit_rect_to_pixels(&rect, approx_or_color);
+            }
+        }
     }
 
     // ── Text ──
@@ -289,15 +292,23 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_path(&vertices);
         }
-        let color = self.apply_alpha(self.stroke_style.resolve_color());
         let closed = self
             .current_path
             .commands()
             .iter()
             .any(|c| matches!(c, PathCommand::ClosePath));
-        self.primitives
-            .add_path_stroke(vertices.clone(), color, self.line_width, closed);
-        self.blit_stroke_to_pixels(&vertices, color, self.line_width);
+        if self.stroke_style.is_gradient() {
+            // 渐变描边：逐像素光栅化（R3084，对称 fill 渐变 R3079）。primitives 用 midpoint 近似。
+            let approx = self.apply_alpha(self.stroke_style.resolve_color());
+            self.primitives
+                .add_path_stroke(vertices.clone(), approx, self.line_width, closed);
+            self.blit_stroke_to_pixels_gradient(&vertices, &self.stroke_style.clone(), self.line_width);
+        } else {
+            let color = self.apply_alpha(self.stroke_style.resolve_color());
+            self.primitives
+                .add_path_stroke(vertices.clone(), color, self.line_width, closed);
+            self.blit_stroke_to_pixels(&vertices, color, self.line_width);
+        }
     }
 
     /// 使用指定 Path2D 填充路径。
@@ -329,11 +340,18 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_path(&vertices);
         }
-        let color = self.apply_alpha(self.stroke_style.resolve_color());
         let closed = path.commands().iter().any(|c| matches!(c, PathCommand::ClosePath));
-        self.primitives
-            .add_path_stroke(vertices.clone(), color, self.line_width, closed);
-        self.blit_stroke_to_pixels(&vertices, color, self.line_width);
+        if self.stroke_style.is_gradient() {
+            let approx = self.apply_alpha(self.stroke_style.resolve_color());
+            self.primitives
+                .add_path_stroke(vertices.clone(), approx, self.line_width, closed);
+            self.blit_stroke_to_pixels_gradient(&vertices, &self.stroke_style.clone(), self.line_width);
+        } else {
+            let color = self.apply_alpha(self.stroke_style.resolve_color());
+            self.primitives
+                .add_path_stroke(vertices.clone(), color, self.line_width, closed);
+            self.blit_stroke_to_pixels(&vertices, color, self.line_width);
+        }
     }
 
     /// 使用指定 Path2D 设置裁剪区域。

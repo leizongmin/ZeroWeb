@@ -355,7 +355,7 @@ fn test_fill_rect_with_gradient_style() {
     assert_eq!(left.data[3], 255, "alpha 应为 255");
 }
 
-/// 测试使用渐变 stroke_style 绘制 stroke_rect。
+/// 测试使用渐变 stroke_style 绘制 stroke_rect（逐像素光栅化，R3084）。
 #[test]
 fn test_stroke_rect_with_gradient_style() {
     let mut ctx = CanvasContext::new(100, 100);
@@ -364,12 +364,17 @@ fn test_stroke_rect_with_gradient_style() {
     grad.add_color_stop(1.0, Color::WHITE);
     ctx.set_stroke_style(CanvasStyle::LinearGradient(grad));
     ctx.stroke_rect(5.0, 5.0, 20.0, 20.0);
-    // 描边像素应使用 offset=0.5 处的采样色 (128, 128, 128)
-    let pixel = ctx.get_image_data(5, 5, 1, 1);
-    assert_eq!(pixel.data[0], 128);
-    assert_eq!(pixel.data[1], 128);
-    assert_eq!(pixel.data[2], 128);
-    assert_eq!(pixel.data[3], 255);
+    // R3084：stroke_rect 现逐像素采样渐变（旧 resolve_color flat-midpoint 近似已废弃）。
+    // black→white 沿 x=0..100：上边像素 (5,5) t=0.05→13（暗），(24,5) t=0.24→61（亮）——左暗右亮。
+    let left = ctx.get_image_data(5, 5, 1, 1);
+    let right = ctx.get_image_data(24, 5, 1, 1);
+    assert!(
+        left.data[0] < right.data[0],
+        "渐变描边左→右：亮度递增（{} → {}）",
+        left.data[0],
+        right.data[0]
+    );
+    assert_eq!(left.data[3], 255, "alpha 应为 255");
 }
 
 // ── 边界条件测试：渐变填充、描边连接、嵌套裁剪、ImageData 往返、globalAlpha、Path2D ──
@@ -584,7 +589,7 @@ fn test_fill_rect_with_radial_gradient_style() {
     assert_eq!(corner.data[0], 0, "角点 dist>r1 → t=1 黑");
 }
 
-/// 测试 set_stroke_style 使用锥形渐变后 stroke_rect 像素使用采样颜色。
+/// 测试 set_stroke_style 使用锥形渐变后 stroke_rect 逐像素光栅化（R3084）。
 #[test]
 fn test_stroke_rect_with_conic_gradient_style() {
     let mut ctx = CanvasContext::new(100, 100);
@@ -593,13 +598,15 @@ fn test_stroke_rect_with_conic_gradient_style() {
     grad.add_color_stop(1.0, Color::WHITE);
     ctx.set_stroke_style(CanvasStyle::ConicGradient(grad));
     ctx.stroke_rect(5.0, 5.0, 20.0, 20.0);
-    // stroke_rect 使用 resolve_color()，ConicGradient 在 offset=0.0 处采样
-    // offset=0.0 对应第一个 stop 的颜色：黑色
+    // R3084：stroke_rect 现逐像素采样锥形渐变（旧 flat offset=0.0 黑色近似已废弃）。
+    // 像素 (5,5) 相对中心 (50,50) 角度 → t≈0.625 → 亮度 ~159（非 flat 黑色 0）。
     let pixel = ctx.get_image_data(5, 5, 1, 1);
-    assert_eq!(pixel.data[0], 0, "conic gradient sample at 0.0 应为黑色");
-    assert_eq!(pixel.data[1], 0);
-    assert_eq!(pixel.data[2], 0);
-    assert_eq!(pixel.data[3], 255);
+    assert!(
+        pixel.data[0] > 64 && pixel.data[0] < 200,
+        "conic 渐变逐像素采样（5,5）应在中段灰度（~159），got {}",
+        pixel.data[0]
+    );
+    assert_eq!(pixel.data[3], 255, "alpha 应为 255");
 }
 
 /// 测试 scale(0, 0) 后 fill_rect 不 panic 且变换结果退化。

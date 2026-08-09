@@ -916,6 +916,73 @@ impl CanvasContext {
         }
     }
 
+    /// 路径描边**渐变**光栅化（R3084）：与 `blit_stroke_to_pixels` 同几何（段主体 + 连接点 + 端点 cap），
+    /// 但每矩形经 `blit_rect_gradient` 逐像素采样样式颜色（与 fill 渐变 R3079 对称）。供渐变 stroke_style 用。
+    pub(crate) fn blit_stroke_to_pixels_gradient(&mut self, vertices: &[f32], style: &CanvasStyle, line_width: f32) {
+        if vertices.len() < 4 {
+            return;
+        }
+        let half_lw = line_width / 2.0;
+        let segments: Vec<[f32; 4]> = vertices.chunks_exact(4).map(|c| [c[0], c[1], c[2], c[3]]).collect();
+        if segments.is_empty() {
+            return;
+        }
+        // 段主体
+        for seg in &segments {
+            let rect = self.line_segment_rect(seg[0], seg[1], seg[2], seg[3], line_width);
+            self.blit_rect_gradient(&rect, style);
+        }
+        // 连接点（Miter/Round/Bevel 均近似为覆盖 half_lw 的正方形）
+        for seg in segments.iter().take(segments.len().saturating_sub(1)) {
+            let jx = seg[2];
+            let jy = seg[3];
+            let rect = Rect::new(jx - half_lw, jy - half_lw, line_width, line_width);
+            self.blit_rect_gradient(&rect, style);
+        }
+        // 端点 cap
+        let first_seg = segments[0];
+        let last_seg = segments[segments.len() - 1];
+        self.blit_line_cap_gradient(first_seg[0], first_seg[1], first_seg[2], first_seg[3], half_lw, style);
+        self.blit_line_cap_gradient(last_seg[2], last_seg[3], last_seg[0], last_seg[1], half_lw, style);
+    }
+
+    /// 线段端点 cap **渐变**光栅化（R3084）：与 `blit_line_cap` 同几何，每矩形经 `blit_rect_gradient`。
+    pub(crate) fn blit_line_cap_gradient(
+        &mut self,
+        endpoint_x: f32,
+        endpoint_y: f32,
+        other_x: f32,
+        other_y: f32,
+        half_lw: f32,
+        style: &CanvasStyle,
+    ) {
+        match self.line_cap {
+            LineCap::Butt => {}
+            LineCap::Round => {
+                let rect = Rect::new(endpoint_x - half_lw, endpoint_y - half_lw, half_lw * 2.0, half_lw * 2.0);
+                self.blit_rect_gradient(&rect, style);
+            }
+            LineCap::Square => {
+                let dx = endpoint_x - other_x;
+                let dy = endpoint_y - other_y;
+                let len = (dx * dx + dy * dy).sqrt();
+                if len < f32::EPSILON {
+                    return;
+                }
+                let ux = dx / len;
+                let uy = dy / len;
+                let ext_x = endpoint_x + ux * half_lw;
+                let ext_y = endpoint_y + uy * half_lw;
+                let min_x = endpoint_x.min(ext_x) - half_lw;
+                let min_y = endpoint_y.min(ext_y) - half_lw;
+                let max_x = endpoint_x.max(ext_x) + half_lw;
+                let max_y = endpoint_y.max(ext_y) + half_lw;
+                let rect = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+                self.blit_rect_gradient(&rect, style);
+            }
+        }
+    }
+
     /// 计算线段的描边矩形（沿线段方向扩展 line_width / 2）。
     pub(crate) fn line_segment_rect(&self, x1: f32, y1: f32, x2: f32, y2: f32, line_width: f32) -> Rect {
         let half_lw = line_width / 2.0;
