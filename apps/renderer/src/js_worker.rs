@@ -833,13 +833,30 @@ mod tests {
         }
         assert!(n1 >= 2, "setInterval should repeat at least twice, got {n1}");
         worker.execute_script_direct("clearInterval(globalThis.__iv);").unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(120));
-        let n2 = worker
-            .execute_script_direct("String(globalThis.__n)")
-            .unwrap()
-            .parse::<u32>()
-            .unwrap_or(n1);
-        assert_eq!(n2, n1, "clearInterval should stop the interval (n stayed {n1})");
+        // R3092：clearInterval 生效验证（robust-to-starvation）。原固定 120ms sleep + assert_eq!(n2,n1)
+        // 在 make test 并行负载下撞上 clearInterval 前已调度的尾 tick（re-arm 模型：尾 setTimeout 回调
+        // 已入队）→ n2=n1+1 false-fail。改轮询确认 n 收敛（3 次连续不变 = clearInterval 生效，容忍尾 tick）。
+        let mut last = n1;
+        let mut stable = 0u32;
+        let conv = std::time::Instant::now();
+        while conv.elapsed().as_millis() < 500 && stable < 3 {
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            let n_now = worker
+                .execute_script_direct("String(globalThis.__n)")
+                .unwrap()
+                .parse::<u32>()
+                .unwrap_or(last);
+            if n_now == last {
+                stable += 1;
+            } else {
+                last = n_now;
+                stable = 0;
+            }
+        }
+        assert!(
+            stable >= 3,
+            "clearInterval 后 n 应收敛稳定（n1={n1}, last={last}, stable={stable}）"
+        );
         worker.shutdown();
     }
 

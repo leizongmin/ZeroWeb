@@ -119,6 +119,20 @@
 
 ## 最近完成的改进
 
+### P1a setInterval-clear 计时测试 deflake（renderer + browser mirror，轮询收敛替换固定 sleep，本轮 R3092）
+
+R3091 make test 全量负载下 `renderer_js_worker_setinterval_repeats_then_clear` 偶发 false-fail（隔离 3/3 绿）；browser mirror `tab_js_worker_setinterval_repeats_then_clear` 同模式。根因：原固定 120ms sleep + `assert_eq!(n2, n1)` 撞上 **clearInterval 前已调度的尾 tick**（re-arm 模型：setInterval 经 __zw_setTimeout re-arm，clearInterval 删 pending 但已入队的尾 setTimeout 回调仍 fire）→ n2 = n1+1 false-fail（并行负载下 worker 线程饿死放大窗口）。本切片改 **轮询收敛断言**：clearInterval 后轮询确认 n 收敛（3 次连续不变 = clearInterval 生效），容忍尾 tick，robust-to-starvation（对称 R3086 net deflake）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **setInterval-clear 轮询收敛断言** | `apps/renderer/src/js_worker.rs` + `apps/browser/src/tab_js_worker.rs`（同名测试 setinterval_repeats_then_clear） | clearInterval 后轮询（30ms × 最多 500ms 或 3 次连续 n 不变）→ 断言 stable≥3（n 收敛）。替换固定 120ms sleep + assert_eq!(n2,n1)。两处同模式同修。 |
+
+**为何净正向**：① 闭合 R2149 既有 robust-to-starvation 注释的未尽之处（首段 n1 轮询已 robust，尾段 clearInterval 验证仍固定 sleep → 本切片补齐）；② renderer + browser mirror 同根因同修；③ 隔离 3/3 绿 + 全量 make test 全绿；④ 容忍尾 tick 符合 spec（clearInterval 取消 future ticks，已入队回调可完成）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-renderer -p zero-browser --all-targets -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；renderer/browser setInterval 测试各 3/3 隔离绿，零回归**）+ pre-commit guard PASS。变更纯测试代码（无生产/渲染/布局变更），product-smoke 不受影响。
+
+**下一步**：（合并 R3091 下一步）外链 worker 加载已闭合；动态 import() 外链 module 编译 defer；P1a 产品能力深项剩余同 R3091。
+
 ### P1a 外链 Worker fetch（__zw_fetch_script backed by ScriptSourceFetcher，闭合 R3089 外链 worker defer 项，本轮 R3091）
 
 承接 R3089（inline/data: URL worker）+ R3090（top-level 外链脚本 fetcher）。R3089 Worker 仅支持 data: URL，外链 './worker.js' 不执行（headless 无 fetch）。本切片：① webview run_page_scripts_impl 当 ScriptSourceFetcher 配置时注册 `__zw_fetch_script(page, src)` host 回调（backed by fetcher）；② shim Worker 构造器对非 data: URL 回落 `__zw_fetch_script` 取 worker 源，同 R3089 IIFE 影子执行 + 消息往返。fetcher 未配 → 回调不注册（shim typeof-check no-op，R3080 兼容）。闭合外链 worker 加载（R3090 top-level 脚本 + R3091 worker）。动态 import() 外链（__zw_compile_module 接线）defer。
