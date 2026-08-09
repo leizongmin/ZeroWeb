@@ -890,6 +890,69 @@ return log.join(',');})()";
     );
 }
 
+// ── R3128 capture 阶段 + useCapture（三阶段派发）──
+//
+// HTML: <div id="parent"><div id="child"></div></div>
+
+/// 三阶段顺序：parent capture（phase=1）→ child target（phase=2）→ parent bubble（phase=3）。
+#[test]
+fn native_dispatch_event_capture_phase_order_r3128() {
+    let html = r#"<div id="parent"><div id="child"></div></div>"#;
+    let script = "(()=>{\
+const child=__zw_native_element_for_id('child');\
+const parent=__zw_native_element_for_id('parent');\
+const log=[];\
+parent.addEventListener('click',e=>{log.push('parent-capture:'+e.eventPhase);},true);\
+child.addEventListener('click',e=>{log.push('child:'+e.eventPhase);});\
+parent.addEventListener('click',e=>{log.push('parent-bubble:'+e.eventPhase);});\
+child.dispatchEvent(new Event('click',{bubbles:true}));\
+return log.join(',');})()";
+    assert_eq!(
+        run_script(html, script),
+        "parent-capture:1,child:2,parent-bubble:3",
+        "三阶段顺序：capture(1) → target(2) → bubble(3)"
+    );
+}
+
+/// capture 阶段 stopPropagation：止 target + bubble（capture 跨阶段生效）。
+#[test]
+fn native_dispatch_event_capture_stop_r3128() {
+    let html = r#"<div id="parent"><div id="child"></div></div>"#;
+    let script = "(()=>{\
+const child=__zw_native_element_for_id('child');\
+const parent=__zw_native_element_for_id('parent');\
+const log=[];\
+parent.addEventListener('click',e=>{log.push('cap');e.stopPropagation();},true);\
+child.addEventListener('click',e=>{log.push('target');});\
+child.dispatchEvent(new Event('click',{bubbles:true}));\
+return log.join(',');})()";
+    assert_eq!(
+        run_script(html, script),
+        "cap",
+        "capture 阶段 stopPropagation 止 target+bubble"
+    );
+}
+
+/// useCapture 两种形式：bool `true` + `{capture:true}` options 对象——均注册 capture 监听器。
+#[test]
+fn native_dispatch_event_capture_usecapture_forms_r3128() {
+    let html = r#"<div id="parent"><div id="child"></div></div>"#;
+    let script = "(()=>{\
+const child=__zw_native_element_for_id('child');\
+const parent=__zw_native_element_for_id('parent');\
+const log=[];\
+parent.addEventListener('click',e=>{log.push('cap-bool');},true);\
+parent.addEventListener('click',e=>{log.push('cap-obj');},{capture:true});\
+child.addEventListener('click',e=>{log.push('target');});\
+child.dispatchEvent(new Event('click',{bubbles:true}));\
+return log.join(',');})()";
+    assert_eq!(
+        run_script(html, script),
+        "cap-bool,cap-obj,target",
+        "useCapture bool + options 形式均注册 capture 监听器（capture 阶段先于 target）"
+    );
+}
+
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
 //
 // HTML: <div id="root"><span id="s1">hello</span><span id="s2"></span></div>
