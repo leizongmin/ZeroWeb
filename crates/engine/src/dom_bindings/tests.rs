@@ -288,6 +288,91 @@ fn native_element_query_selector_all() {
     );
 }
 
+// ── S2 写入路径 native（setAttribute / removeAttribute / id setter / className setter）──
+
+/// `setAttribute` / `removeAttribute`：写 Element 属性经 `with_dom_mut` → `Document::set_attribute`，
+/// 经 R3098 `getAttribute`/`hasAttribute` 原生回读验证（native 读写 round-trip）。
+#[test]
+fn native_set_and_remove_attribute() {
+    let html = r#"<div id="a" class="old"></div>"#;
+    // setAttribute 新增 → getAttribute 读回。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.setAttribute('data-x','42'); return el.getAttribute('data-x');})()"
+        ),
+        "42"
+    );
+    // setAttribute 覆盖既有属性。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.setAttribute('class','new'); return el.className;})()"
+        ),
+        "new"
+    );
+    // removeAttribute → hasAttribute=false + getAttribute=null。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.removeAttribute('class'); return el.hasAttribute('class')+'';})()"
+        ),
+        "false"
+    );
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.removeAttribute('class'); return el.getAttribute('class');})()"
+        ),
+        "null"
+    );
+    // setAttribute('id',...) 更新 id_map：新 id 可查，旧 id 失效（同对象身份）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.setAttribute('id','b'); return (__zw_native_element_for_id('b')===el)+'';})()"
+        ),
+        "true"
+    );
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.setAttribute('id','b'); return (__zw_native_element_for_id('a')===null)+'';})()"
+        ),
+        "true"
+    );
+}
+
+/// 反射属性 `id` / `className` setter（值 ToString 后 set_attribute），与 R3098 getter round-trip。
+#[test]
+fn native_id_and_class_name_setters() {
+    let html = r#"<div id="a"></div>"#;
+    // id setter → id getter + getAttribute('id')。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.id='newid'; return el.id+'/'+el.getAttribute('id');})()"
+        ),
+        "newid/newid"
+    );
+    // className setter → className getter + getAttribute('class')。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.className='c1 c2'; return el.className+'/'+el.getAttribute('class');})()"
+        ),
+        "c1 c2/c1 c2"
+    );
+    // 值 ToString 强转（数字 → 字符串）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.className=42; return el.className;})()"
+        ),
+        "42"
+    );
+}
+
 // ── gc.rs 单元测试 ────────────────────────────────────────────────
 
 /// NodeId↔u64(ffi) 编解码 round-trip（internal slot 值传递基础）。

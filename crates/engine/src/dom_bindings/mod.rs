@@ -23,7 +23,7 @@ use zero_dom::{Document, NodeId, NodeKind};
 // gc 的线程局部访问器（crate-private）。
 use gc::{
     cache_native_element, cached_native_element, decode_node_id, drop_cached_native_element, element_template_local,
-    encode_node_id, node_exists, set_dom_source, set_element_template, with_dom,
+    encode_node_id, node_exists, set_dom_source, set_element_template, with_dom, with_dom_mut,
 };
 
 /// P1b 原生 DOM 绑定 kill-switch 环境变量名（默认关）。
@@ -100,14 +100,14 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
         tmpl.set_accessor(k.into(), native_node_name_getter);
     }
     if let Some(k) = v8::String::new(scope, "id") {
-        tmpl.set_accessor(k.into(), native_id_getter);
+        tmpl.set_accessor_with_setter(k.into(), native_id_getter, native_id_setter);
     }
     if let Some(k) = v8::String::new(scope, "className") {
-        tmpl.set_accessor(k.into(), native_class_name_getter);
+        tmpl.set_accessor_with_setter(k.into(), native_class_name_getter, native_class_name_setter);
     }
-    // spec 方法（FunctionTemplate，args.this 读 NodeId）：getAttribute / hasAttribute。
-    // ObjectTemplate::set 须传 **Template**（非 Function 实例）——FunctionTemplate 是 Template，
-    // 实例化时各对象共享，args.this() 取回实例。
+    // spec 方法（FunctionTemplate，args.this 读 NodeId）：getAttribute / hasAttribute /
+    // setAttribute / removeAttribute。ObjectTemplate::set 须传 **Template**（非 Function 实例）——
+    // FunctionTemplate 是 Template，实例化时各对象共享，args.this() 取回实例。
     let get_attr_tmpl = v8::FunctionTemplate::builder(native_get_attribute_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "getAttribute") {
         tmpl.set(k.into(), get_attr_tmpl.into());
@@ -115,6 +115,14 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     let has_attr_tmpl = v8::FunctionTemplate::builder(native_has_attribute_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "hasAttribute") {
         tmpl.set(k.into(), has_attr_tmpl.into());
+    }
+    let set_attr_tmpl = v8::FunctionTemplate::builder(native_set_attribute_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "setAttribute") {
+        tmpl.set(k.into(), set_attr_tmpl.into());
+    }
+    let rm_attr_tmpl = v8::FunctionTemplate::builder(native_remove_attribute_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "removeAttribute") {
+        tmpl.set(k.into(), rm_attr_tmpl.into());
     }
     // element 子树作用域查询（spec `dom-parentnode-queryselector(-all)`）：`args.this()` 取
     // 元素 NodeId 作 root，**仅后代**（排除元素自身，见 [`native_element_query_selector_invoke`]）。
@@ -291,7 +299,54 @@ fn read_reflected_attr(
     }
 }
 
-// ── 方法回调（Element 上：getAttribute / hasAttribute）─────────────
+/// `id` setter（reflected，spec `dom-id`）：值 ToString 后 `set_attribute('id', val)`。
+/// 经 [`with_dom_mut`] 写真实 DOM（更新 id_map）。
+fn native_id_setter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    write_reflected_attr(scope, &args, "id", value);
+}
+
+/// `className` setter（reflected，spec `dom-classname`）：值 ToString 后 `set_attribute('class', val)`。
+fn native_class_name_setter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    write_reflected_attr(scope, &args, "class", value);
+}
+
+/// 反射属性 setter 共用：读 internal slot NodeId → 值 ToString → `Document::set_attribute(name, val)`。
+fn write_reflected_attr(
+    scope: &mut v8::PinScope,
+    args: &v8::PropertyCallbackArguments,
+    attr: &str,
+    value: v8::Local<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let val = local_value_to_string(scope, value);
+    with_dom_mut(|d| d.set_attribute(id, attr, &val));
+}
+
+/// 取任意 `Local<Value>` 经 JS ToString → Rust String（缺省空串）。
+/// spec reflected attribute setter 把值强转字符串后存。
+fn local_value_to_string(scope: &mut v8::PinScope, value: v8::Local<v8::Value>) -> String {
+    value
+        .to_string(scope)
+        .map(|s| s.to_rust_string_lossy(scope))
+        .unwrap_or_default()
+}
+
+// ── 方法回调（Element 上：getAttribute / hasAttribute / setAttribute / removeAttribute）──
 
 /// `getAttribute(name)`：读 internal slot NodeId → `Document::get_attribute`。
 /// spec `dom-element-getattribute`：缺省/非 Element → `null`。
@@ -330,6 +385,38 @@ fn native_has_attribute_invoke(
     let name = string_arg(scope, &args, 0);
     let has = with_dom(|d| d.has_attribute(id, &name)).unwrap_or(false);
     rv.set(v8::Boolean::new(scope, has).into());
+}
+
+/// `setAttribute(name, value)`：读 internal slot NodeId → 两参 ToString →
+/// `Document::set_attribute`（更新 id_map 当 name=='id'）。spec `dom-element-setattribute`
+/// 返 `undefined`（留 ReturnValue 默认）。非 native element `this` → no-op。
+fn native_set_attribute_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    let name = string_arg(scope, &args, 0);
+    let value = string_arg(scope, &args, 1);
+    with_dom_mut(|d| d.set_attribute(id, &name, &value));
+}
+
+/// `removeAttribute(name)`：读 internal slot NodeId → `Document::remove_attribute`（name=='id'
+/// 时清 id_map）。spec `dom-element-removeattribute` 返 `undefined`。
+fn native_remove_attribute_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    let name = string_arg(scope, &args, 0);
+    with_dom_mut(|d| d.remove_attribute(id, &name));
 }
 
 /// 取 FunctionCallbackArguments 第 `idx` 参为 Rust String（缺省空串）。

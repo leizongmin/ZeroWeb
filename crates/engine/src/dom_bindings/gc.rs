@@ -67,6 +67,17 @@ pub(crate) fn with_dom<R>(f: impl FnOnce(&Document) -> R) -> Option<R> {
     Some(f(&doc))
 }
 
+/// 在当前 DOM 源上执行**可变**操作（setAttribute / removeAttribute 等）；无 DOM 源时返 `None`。
+///
+/// 镜像 [`with_dom`] 但 `borrow_mut`。安全前提：闭包内 `&mut Document` 操作（set_attribute 等）
+/// 不触发 JS 回调再入（纯 Rust mutation + record_mutation 推 pending_mutations，无 observer 回调），
+/// 故无嵌套 `borrow_mut`；V8 回调顶层单次持 borrow。
+pub(crate) fn with_dom_mut<R>(f: impl FnOnce(&mut Document) -> R) -> Option<R> {
+    let rc = DOM_SOURCE.with(|c| c.borrow().clone())?;
+    let mut doc = rc.borrow_mut();
+    Some(f(&mut doc))
+}
+
 // ── NodeId ↔ u64(ffi) 编解码 ──────────────────────────────────────
 
 /// `NodeId` → u64（slotmap `KeyData::as_ffi`）。internal slot 经 `v8::External`

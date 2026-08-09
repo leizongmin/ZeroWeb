@@ -164,6 +164,10 @@ fn bench_dom_bindings(c: &mut Criterion) {
         "(__zw_native_element_for_id('a').getAttribute('class'))",
     );
     bench.compile("native_qsa", "(__zw_native_query_selector_all('span').length)");
+    bench.compile(
+        "native_set_attribute",
+        "(()=>{__zw_native_element_for_id('a').setAttribute('data-x','42'); return 0;})()",
+    );
     bench.compile("poly_tag", "(__zw_poly_tag('#a'))");
 
     // 正确性自检（非计时）：两路 tagName 应一致（"DIV"）。
@@ -172,6 +176,7 @@ fn bench_dom_bindings(c: &mut Criterion) {
     assert_eq!(bench.run("native_node_type"), "1", "native nodeType");
     assert_eq!(bench.run("native_get_attribute"), "row", "native getAttribute");
     assert_eq!(bench.run("native_qsa"), "4", "native querySelectorAll span count");
+    assert_eq!(bench.run("native_set_attribute"), "0", "native setAttribute");
 
     c.bench_function("native_tag_name", |b| b.iter(|| black_box(bench.run("native_tag"))));
     c.bench_function("polyfill_tag_name", |b| b.iter(|| black_box(bench.run("poly_tag"))));
@@ -186,6 +191,11 @@ fn bench_dom_bindings(c: &mut Criterion) {
     // 首测 native querySelectorAll 路径（选择器解析 + 文档遍历 + N 个对象实例化 + V8 Array）。
     c.bench_function("native_query_selector_all", |b| {
         b.iter(|| black_box(bench.run("native_qsa")))
+    });
+    // 首测 native 写入路径（setAttribute：2 String 参 + borrow_mut + Document::set_attribute，
+    // 含 id_map 维护 + record_mutation）。对照 native_get_attribute 量化写相对读的开销。
+    c.bench_function("native_set_attribute", |b| {
+        b.iter(|| black_box(bench.run("native_set_attribute")))
     });
 }
 
