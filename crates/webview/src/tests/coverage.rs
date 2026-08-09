@@ -477,6 +477,29 @@ fn test_native_dom_disabled_by_default_r3097() {
     );
 }
 
+// ── P1b L1b：native 读/写 live Document（去 R3097 read-only 快照 inert，本轮 R3107）──
+
+// native_dom=true + load_html（render_html 填 cached_doc）→ native 经 `cached_doc_shared` 绑
+// **live** Document。native setAttribute 直接改 live cached_doc（不更 cached_html、不发
+// DomMutation）→ 后续 native getAttribute 见 live 写入（"9"）；re-parse 快照路径会读
+// cached_html → "1"。断言 "9" 验证 live 路径（de-inert）。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_dom_live_document_de_inert_r3107() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html("<html><body><div id=\"a\" data-x=\"1\"></div></body></html>", None);
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "native_dom live 接线无异常, got: {:?}", r.err());
+    // native 写：直接改 live cached_doc（cached_html 仍 data-x="1"）。
+    wv.execute_script("__zw_native_element_for_id('a').setAttribute('data-x','9')")
+        .unwrap();
+    // native 读：见 live 写入 "9"（re-parse 快照会读 cached_html → "1"）。
+    let v = wv
+        .execute_script("String(__zw_native_element_for_id('a').getAttribute('data-x'))")
+        .unwrap();
+    assert_eq!(v, "9", "native 读 live Document（de-inert）：见 native 写");
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]

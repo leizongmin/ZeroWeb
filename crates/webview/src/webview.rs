@@ -1183,17 +1183,24 @@ impl WebView {
             std::sync::Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url);
 
-        // P1b S2：原生 DOM 绑定（kill-switch `native_dom` 默认关 → 零回归）。开启时在 polyfill
-        // 桥之上额外安装原生 nodeType/tagName 等 getter（`engine::dom_bindings`），经
-        // `Sandbox::install_native_bindings` escape-hatch 进沙箱持久 Context。read-only 快照
-        // （re-parse cached_html 为独立 Document；不随 mutation 同步——写入切片后续）。
+        // P1b L1b（R3107）：原生 DOM 绑定（kill-switch `native_dom` 默认关 → 零回归）。开启时在
+        // polyfill 桥之上安装原生 getter/方法（`engine::dom_bindings`），经 `Sandbox::install
+        // _native_bindings` escape-hatch 进沙箱持久 Context。**优先用 pipeline live Document**
+        // （`cached_doc_shared`）→ native 读/写同一 live DOM（去 R3097 read-only 快照 inert；
+        // 详见 RFC §3.7）；未渲染（None）回落 re-parse `cached_html` 快照（R3097 行为）。
         #[cfg(feature = "v8")]
         if self.config.native_dom {
+            let live = self.pipeline.cached_doc_shared();
             let html_for_install = html.clone();
+            let live_some = live.is_some();
             let _installed = sandbox.install_native_bindings(Box::new(move |scope, ctx| {
-                zero_engine::dom_bindings::install_dom_bindings_from_html(scope, ctx, &html_for_install);
+                if let Some(doc) = live {
+                    zero_engine::dom_bindings::install_dom_bindings(scope, ctx, doc);
+                } else {
+                    zero_engine::dom_bindings::install_dom_bindings_from_html(scope, ctx, &html_for_install);
+                }
             }));
-            tracing::debug!("native DOM bindings installed (native_dom=true)");
+            tracing::debug!(live = live_some, "native DOM bindings installed (native_dom=true)");
         }
 
         // R3091：__zw_fetch_script（进程内路径，backed by ScriptSourceFetcher）—— 供 shim Worker 构造器
