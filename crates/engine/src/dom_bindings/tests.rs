@@ -692,6 +692,58 @@ fn native_event_target_dispatch_returns_true() {
     );
 }
 
+// ── R3125 dispatchEvent target+bubble 两阶段冒泡 ──
+//
+// HTML: <div id="parent"><div id="child"></div></div>
+
+/// 冒泡：child.dispatchEvent({type:'click',bubbles:true}) 先触发 child（AT_TARGET=2），
+/// 再上溯触发 parent（BUBBLING_PHASE=3）。event.target 全程=child；currentTarget 随层变。
+#[test]
+fn native_dispatch_event_bubbles_to_ancestor_r3125() {
+    let html = r#"<div id="parent"><div id="child"></div></div>"#;
+    let script = "(()=>{\
+const child=__zw_native_element_for_id('child');\
+const parent=__zw_native_element_for_id('parent');\
+const log=[];\
+parent.addEventListener('click',e=>{log.push('parent:'+(e.target===child)+'/'+(e.currentTarget===parent)+'/'+e.eventPhase);});\
+child.addEventListener('click',e=>{log.push('child:'+(e.target===child)+'/'+(e.currentTarget===child)+'/'+e.eventPhase);});\
+child.dispatchEvent({type:'click',bubbles:true});\
+return log.join(',');})()";
+    assert_eq!(
+        run_script(html, script),
+        "child:true/true/2,parent:true/true/3",
+        "冒泡：child AT_TARGET 先、parent BUBBLING_PHASE 后；target 固定 / currentTarget 随层"
+    );
+}
+
+/// 非 bubbles 事件不上溯：dispatchEvent({type:'click'})（bubbles 缺省 false）只触发 target。
+#[test]
+fn native_dispatch_event_non_bubble_stops_at_target_r3125() {
+    let html = r#"<div id="parent"><div id="child"></div></div>"#;
+    let script = "(()=>{\
+const child=__zw_native_element_for_id('child');\
+const parent=__zw_native_element_for_id('parent');\
+let parent_fired='no';\
+parent.addEventListener('click',()=>{parent_fired='yes';});\
+child.dispatchEvent({type:'click'});\
+return parent_fired;})()";
+    assert_eq!(run_script(html, script), "no", "非 bubbles 事件不冒泡到 parent");
+}
+
+/// 派发后 event.currentTarget=null、eventPhase=0（spec：派发结束清理）。
+#[test]
+fn native_dispatch_event_post_dispatch_state_r3125() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{const e={type:'click',bubbles:true};\
+__zw_native_element_for_id('a').dispatchEvent(e);\
+return e.eventPhase+'/'+(e.currentTarget===null);})()";
+    assert_eq!(
+        run_script(html, script),
+        "0/true",
+        "派发后 eventPhase=0 / currentTarget=null"
+    );
+}
+
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
 //
 // HTML: <div id="root"><span id="s1">hello</span><span id="s2"></span></div>

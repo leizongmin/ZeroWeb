@@ -3,16 +3,20 @@
 //!
 //! 监听器存线程局部 `gc::LISTENERS`（`(NodeId ffi, 事件类型) → Vec<Global<Value>>`，存 Value 句柄，
 //! 调用时降 Function；避 Local<Function>→Local<Value> upcast）。dispatchEvent 在当前 scope 复活 Local
-//! 调用（**不冒泡**，最小切片）。**无 finalizer**——移除仅靠 removeEventListener 或 reset（节点 detach
-//! 不自动清理，泄漏限制，后续 weak callback）。
+//! 调用，**target + bubble 两阶段冒泡**（R3125）：沿 target→祖先链逐层派发，`event.currentTarget`/
+//! `eventPhase` 随传播更新（AT_TARGET=2 / BUBBLING_PHASE=3），`event.bubbles` 控制是否上溯祖先。
+//! **无 capture 阶段**（需 useCapture 跟踪，后续）、**无 stopPropagation**（后续）。**无 finalizer**——
+//! 移除仅靠 removeEventListener 或 reset（节点 detach 不自动清理，泄漏限制，后续 weak callback）。
 //!
 //! 可见性：3 个 invoke 为 `pub(super)`（mod.rs Element 模板注册经 `event_target::` 调）。读
 //! `super::read_node_id` / `super::string_arg`（mod.rs 私有——Rust 规则：私有项对后代模块可见）。
 
 use v8;
 
-use super::gc::{add_listener, encode_node_id, listeners_local, remove_listener};
-use super::{read_node_id, string_arg};
+use zero_dom::NodeId;
+
+use super::gc::{add_listener, encode_node_id, listeners_local, remove_listener, with_dom};
+use super::{get_or_create_native_element, read_node_id, string_arg};
 
 /// `addEventListener(type, listener)`（spec `dom-eventtarget-add-event-listener`）：
 /// listener 存为 `Global<Value>`（线程局部 LISTENERS，键 = `(NodeId ffi, 事件类型)`）。
@@ -55,16 +59,23 @@ pub(super) fn native_remove_event_listener_invoke(
 }
 
 /// `dispatchEvent(event)`（spec `dom-eventtarget-dispatch-event`）：event 为对象读 `.type`，
-/// 或直接 type 字符串；按 type 取监听器快照（复活 Local，释放 borrow 避回调再入）逐个调用
-///（this = 元素，参 = event）。**不冒泡**（最小切片，后续）。返 true（spec：未 preventDefault）。
+/// 或直接 type 字符串（包成 `{type:str}` 对象）。**target + bubble 两阶段冒泡**（R3125，闭合 R3109
+/// 不冒泡限制）：沿 target→祖先链逐层派发，每层取监听器快照（复活 Local，释放 borrow 避回调再入）调用
+///（this = 当前层元素，参 = event）。`event.target` = 派发目标（固定）；`event.currentTarget` = 当前层
+/// 元素（随传播变）；`event.eventPhase` = AT_TARGET(2) / BUBBLING_PHASE(3)；`event.bubbles` 控制是否
+/// 上溯祖先（默认 false）。派发后 `currentTarget=null`、`eventPhase=0`（spec）。
+///
+/// **限制**（后续切片）：① 无 capture 阶段（需 addEventListener useCapture 跟踪 + 倒序祖先派发）；
+/// ② 无 stopPropagation / stopImmediatePropagation（需 event 方法注入 + 循环早退）；③ 无 preventDefault
+/// 返值语义（恒返 true）。返 true（spec：未 preventDefault）。
 pub(super) fn native_dispatch_event_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
     mut rv: v8::ReturnValue<v8::Value>,
 ) {
     let this = args.this();
-    let ffi = match read_node_id(scope, &this) {
-        Some(id) => encode_node_id(id),
+    let target_id = match read_node_id(scope, &this) {
+        Some(id) => id,
         None => {
             rv.set(v8::Boolean::new(scope, true).into());
             return;
@@ -85,13 +96,74 @@ pub(super) fn native_dispatch_event_invoke(
     } else {
         String::new()
     };
-    // 复活监听器 Local 列表（gc.rs 不持 borrow 跨 JS 回调，防再入 panic）。
-    let listeners = listeners_local(scope, ffi, &event_type);
-    let call_args = [event];
-    for listener in listeners {
-        if let Ok(func) = v8::Local::<v8::Function>::try_from(listener) {
-            let _ = func.call(scope, this.into(), &call_args);
+    // event 对象：对象原样用；字符串/其他包成 {type:str}（dispatchEvent 入参标准化）。
+    let event_obj = match v8::Local::<v8::Object>::try_from(event) {
+        Ok(obj) => obj,
+        Err(_) => {
+            let obj = v8::Object::new(scope);
+            if let Some(k) = v8::String::new(scope, "type") {
+                let _ = obj.set(scope, k.into(), event);
+            }
+            obj
         }
+    };
+    // spec：event.target = 派发目标（固定不变）。
+    if let Some(k) = v8::String::new(scope, "target") {
+        let _ = event_obj.set(scope, k.into(), this.into());
+    }
+    // event.bubbles（缺省 false）控制是否上溯祖先。
+    let bubbles = v8::String::new(scope, "bubbles")
+        .and_then(|k| event_obj.get(scope, k.into()))
+        .is_some_and(|v| v.is_true());
+    // 沿 parent 链收集 [target, parent, ..., root]（bubble 序；target 在首）。with_dom 闭包内纯读
+    // 收集 NodeId，释放 borrow 后再逐层派发（派发可能再入 addEventListener/removeEventListener）。
+    let chain: Vec<NodeId> = with_dom(|d| {
+        let mut chain = vec![target_id];
+        let mut cur = d.get(target_id).and_then(|n| n.parent);
+        while let Some(p) = cur {
+            chain.push(p);
+            cur = d.get(p).and_then(|n| n.parent);
+        }
+        chain
+    })
+    .unwrap_or_default();
+    let key_ct = v8::String::new(scope, "currentTarget");
+    let key_phase = v8::String::new(scope, "eventPhase");
+    let call_args = [event_obj.into()];
+    for (i, &node_id) in chain.iter().enumerate() {
+        // 首层 = target（AT_TARGET）；其后 = bubble（仅当 bubbles=true）。非 bubbles 事件只派发 target。
+        if i > 0 && !bubbles {
+            break;
+        }
+        // 当前层 native 元素（currentTarget + listener this）。get_or_create 对任意 NodeId 返包装
+        //（Document 等非 Element 亦得包装，但其上无可达 native 监听器，currentTarget 不被观测）。
+        let curr = get_or_create_native_element(scope, node_id);
+        if let Some(c) = &curr
+            && let Some(k) = &key_ct
+        {
+            let _ = event_obj.set(scope, (*k).into(), (*c).into());
+        }
+        if let Some(k) = &key_phase {
+            let phase = if i == 0 { 2 } else { 3 }; // AT_TARGET / BUBBLING_PHASE
+            let _ = event_obj.set(scope, (*k).into(), v8::Integer::new(scope, phase).into());
+        }
+        // 复活监听器 Local 列表（gc.rs 不持 borrow 跨 JS 回调，防再入 panic）。
+        let ffi = encode_node_id(node_id);
+        let listeners = listeners_local(scope, ffi, &event_type);
+        // listener this = 当前层元素（spec：监听器 this = currentTarget）；无包装回落 target this。
+        let recv = curr.map(|c| c.into()).unwrap_or_else(|| this.into());
+        for listener in listeners {
+            if let Ok(func) = v8::Local::<v8::Function>::try_from(listener) {
+                let _ = func.call(scope, recv, &call_args);
+            }
+        }
+    }
+    // 派发结束：currentTarget=null、eventPhase=NONE(0)（spec：派发后 currentTarget 为 null）。
+    if let Some(k) = &key_ct {
+        let _ = event_obj.set(scope, (*k).into(), v8::null(scope).into());
+    }
+    if let Some(k) = &key_phase {
+        let _ = event_obj.set(scope, (*k).into(), v8::Integer::new(scope, 0).into());
     }
     rv.set(v8::Boolean::new(scope, true).into());
 }

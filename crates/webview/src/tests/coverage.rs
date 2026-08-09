@@ -629,6 +629,34 @@ fn test_native_dispatch_event_enriched_r3124() {
     );
 }
 
+// ── P1b host→page native dispatchEvent 冒泡（本轮 R3125）──
+
+// native_dom=true → host dispatch_event('#child','click') 经原生 dispatchEvent 冒泡到 parent
+// native 监听器（target+bubble 两阶段）。闭合 R3109 不冒泡限制——parent 级事件委托可达。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_dispatch_event_bubbles_r3125() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body><div id=\"parent\"><div id=\"child\"></div></div></body></html>",
+        None,
+    );
+    // parent 注册 native click 监听器（事件委托模式）。
+    wv.execute_script(
+        "(()=>{ __zw_native_element_for_id('parent')\
+         .addEventListener('click', ()=>{ globalThis.__bubbled='yes'; });\
+         return 'registered'; })()",
+    )
+    .unwrap();
+    // host dispatch_event('#child') → bubbles:true → 冒泡到 parent 触发其监听器。
+    wv.dispatch_event("#child", "click").unwrap();
+    assert_eq!(
+        wv.execute_script("String(globalThis.__bubbled || 'no')").unwrap(),
+        "yes",
+        "host dispatch_event 冒泡到 parent native 监听器"
+    );
+}
+
 // ── P1b 完整 Attr 节点（本轮 R3122）──
 
 // native_dom=true → getNamedItem 返 Attr 节点（nodeType=2/name/value/ownerElement），非 plain 对象。
