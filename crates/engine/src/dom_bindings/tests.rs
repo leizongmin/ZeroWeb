@@ -1106,6 +1106,45 @@ host.children[0].children[0].textContent;})()";
     assert_eq!(run_script(html, script), "DIV/B/hi", "全 native 树构建：div > b > 'hi'");
 }
 
+// ── R3132 appendChild/insertBefore(fragment) flatten ──
+
+/// host.appendChild(frag)：fragment 子节点展开进 host + fragment 清空（spec flatten）。
+#[test]
+fn native_append_child_fragment_flatten_r3132() {
+    let html = r#"<div id="host"></div>"#;
+    let script = "(()=>{\
+const host=__zw_native_element_for_id('host');\
+const frag=__zw_native_create_document_fragment();\
+frag.appendChild(__zw_native_create_element('span'));\
+frag.appendChild(__zw_native_create_element('b'));\
+host.appendChild(frag);\
+return host.children.length+'/'+host.children[0].tagName+'/'+host.children[1].tagName+'/'+\
+frag.childNodes.length;})()";
+    assert_eq!(
+        run_script(html, script),
+        "2/SPAN/B/0",
+        "appendChild(frag) flatten：子进 host + fragment 清空"
+    );
+}
+
+/// host.insertBefore(frag, ref)：fragment 子节点插到 ref 前 + fragment 清空。
+#[test]
+fn native_insert_before_fragment_flatten_r3132() {
+    let html = r#"<div id="host"><i id="ref">r</i></div>"#;
+    let script = "(()=>{\
+const host=__zw_native_element_for_id('host');\
+const ref=__zw_native_element_for_id('ref');\
+const frag=__zw_native_create_document_fragment();\
+frag.appendChild(__zw_native_create_element('span'));\
+host.insertBefore(frag, ref);\
+return host.children[0].tagName+'/'+host.children[1].tagName+'/'+host.children.length;})()";
+    assert_eq!(
+        run_script(html, script),
+        "SPAN/I/2",
+        "insertBefore(frag, ref) flatten：子插 ref 前"
+    );
+}
+
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
 //
 // HTML: <div id="root"><span id="s1">hello</span><span id="s2"></span></div>

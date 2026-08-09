@@ -14,7 +14,7 @@
 
 use v8;
 
-use zero_dom::{Document, NodeId, NodeKind};
+use zero_dom::{Document, DomError, NodeId, NodeKind};
 
 use super::gc::{with_dom, with_dom_mut};
 use super::{get_or_create_native_element, local_value_to_string, node_id_from_value, read_node_id};
@@ -185,8 +185,40 @@ fn node_value(doc: &Document, id: NodeId) -> Option<String> {
 // ── 树 mutation 方法（Node 上：appendChild / insertBefore / removeChild / replaceChild）──
 
 /// `appendChild(child)`：spec `dom-node-appendchild`——`args.this()`=parent，参=child native
+/// 若 `node` 为 DocumentFragment，把其子节点逐个移到 `parent`（`ref_node` None→append、Some→insert-before），
+/// fragment 清空（spec：insert fragment 等价插其子并清空）；否则直接 append/insert `node`。复用 polyfill
+/// `move_fragment_children` 思路（快照子列表，逐个 append/insert——Document 移动操作自动从 fragment detach）。
+/// 供 [`native_append_child_invoke`] / [`native_insert_before_invoke`] 共用（R3132 闭合 R3131 限制①）。
+fn insert_with_fragment_flatten(
+    doc: &mut Document,
+    parent: NodeId,
+    node: NodeId,
+    ref_node: Option<NodeId>,
+) -> Result<(), DomError> {
+    let is_fragment = doc
+        .get(node)
+        .is_some_and(|n| matches!(n.kind, NodeKind::DocumentFragment));
+    if is_fragment {
+        // 快照 fragment 子列表（移动过程中子从 fragment 移除，故先收集）。
+        let kids: Vec<NodeId> = doc.get(node).map(|n| n.children.clone()).unwrap_or_default();
+        for child in kids {
+            match ref_node {
+                Some(r) => doc.insert_before(parent, child, r)?,
+                None => doc.append_child(parent, child)?,
+            }
+        }
+        Ok(())
+    } else {
+        match ref_node {
+            Some(r) => doc.insert_before(parent, node, r),
+            None => doc.append_child(parent, node),
+        }
+    }
+}
+
 /// 对象；`Document::append_child` 移动（含 re-parent、cycle 检测）。成功返 child 对象（spec），
 /// Err（cycle/not-found）→ best-effort 留 undefined（不抛，限制记录）。
+/// R3132：DocumentFragment 参 → flatten（子节点移到 parent、fragment 清空，spec）。
 pub(super) fn native_append_child_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -199,7 +231,7 @@ pub(super) fn native_append_child_invoke(
     let Some(child) = node_id_from_value(scope, args.get(0)) else {
         return;
     };
-    let ok = with_dom_mut(|d| d.append_child(parent, child))
+    let ok = with_dom_mut(|d| insert_with_fragment_flatten(d, parent, child, None))
         .map(|r| r.is_ok())
         .unwrap_or(false);
     if ok {
@@ -210,6 +242,7 @@ pub(super) fn native_append_child_invoke(
 /// `insertBefore(newChild, refChild)`：spec `dom-node-insertbefore`——parent=this，参 0=newChild、
 /// 参 1=refChild native 对象；`Document::insert_before`。`refChild` 缺省/null → 末尾追加（spec）。
 /// 成功返 newChild 对象；Err → best-effort 留 undefined。
+/// R3132：DocumentFragment 参 → flatten（子节点插到 refNode 前、fragment 清空，spec）。
 pub(super) fn native_insert_before_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -224,12 +257,9 @@ pub(super) fn native_insert_before_invoke(
     };
     // refChild null/缺省 → 末尾追加（spec：ref 为 null 时同 appendChild）。
     let ref_child = node_id_from_value(scope, args.get(1));
-    let ok = with_dom_mut(|d| match ref_child {
-        Some(ref_id) => d.insert_before(parent, new_child, ref_id),
-        None => d.append_child(parent, new_child),
-    })
-    .map(|r| r.is_ok())
-    .unwrap_or(false);
+    let ok = with_dom_mut(|d| insert_with_fragment_flatten(d, parent, new_child, ref_child))
+        .map(|r| r.is_ok())
+        .unwrap_or(false);
     if ok {
         set_native_element(scope, new_child, &mut rv);
     }
