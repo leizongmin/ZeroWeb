@@ -1141,6 +1141,8 @@ impl StyleSystem {
         }
 
         let mut ua_declarations: Vec<CascadedDeclaration> = Vec::new();
+        // UA 展开列表提升到函数作用域：ua_declarations 借用其元素（借用链见 cascaded 构造）。
+        let expanded_ua: Vec<(String, String, bool, (u32, u32, u32))>;
         if !ua_decl_inputs.is_empty() {
             let shorthand_inputs: Vec<(String, String, bool, (u32, u32, u32))> = ua_decl_inputs
                 .iter()
@@ -1148,23 +1150,24 @@ impl StyleSystem {
                     (property.clone(), value.clone(), *important, *specificity)
                 })
                 .collect();
-            let expanded = shorthand::expand_shorthands(&shorthand_inputs);
-            for (position, (property, value, important, specificity)) in expanded.into_iter().enumerate() {
+            expanded_ua = shorthand::expand_shorthands(&shorthand_inputs);
+            // 借用展开列表（CascadedDeclaration 借用声明，省 2 次 String 克隆/声明）。
+            for (position, (property, value, important, specificity)) in expanded_ua.iter().enumerate() {
                 ua_declarations.push(CascadedDeclaration {
-                    property,
-                    value,
-                    order: CascadeOrder::new(Origin::UserAgent, None, specificity, position, important),
+                    property: property.as_str(),
+                    value: value.as_str(),
+                    order: CascadeOrder::new(Origin::UserAgent, None, *specificity, position, *important),
                 });
             }
         }
 
-        // 2. 构建 CascadedDeclaration 列表
+        // 2. 构建 CascadedDeclaration 列表（借用 expanded_with_layer，不克隆）
         let mut declarations = ua_declarations;
         for (position, (property, value, important, specificity, layer_index)) in expanded_with_layer.iter().enumerate()
         {
             declarations.push(CascadedDeclaration {
-                property: property.clone(),
-                value: value.clone(),
+                property: property.as_str(),
+                value: value.as_str(),
                 order: CascadeOrder::new(Origin::Author, *layer_index, *specificity, position, *important),
             });
         }

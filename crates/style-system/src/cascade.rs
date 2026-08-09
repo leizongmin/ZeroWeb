@@ -112,12 +112,15 @@ impl std::cmp::Ord for CascadeOrder {
 }
 
 /// 样式声明（带级联信息）。
+///
+/// property/value 借用输入声明（计算样式热路径：每元素每属性省 2 次 String 分配，
+/// 见 `cascade` 注释）。生命周期与来源声明（stylesheet AST / 展开列表）绑定。
 #[derive(Debug, Clone)]
-pub struct CascadedDeclaration {
+pub struct CascadedDeclaration<'a> {
     /// 属性名。
-    pub property: String,
+    pub property: &'a str,
     /// 属性值（原始字符串）。
-    pub value: String,
+    pub value: &'a str,
     /// 级联顺序。
     pub order: CascadeOrder,
 }
@@ -288,9 +291,11 @@ fn canonical_property_name(property: &str) -> &str {
 ///
 /// 返回一个 HashMap，键为属性名，值为胜出的声明值。
 // https://drafts.csswg.org/css-cascade-4/#cascading
-pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<String, String> {
-    // 按属性名分组（遗留别名先规范化为标准名——见 canonical_property_name）
-    let mut by_property: HashMap<String, Vec<CascadedDeclaration>> = HashMap::new();
+pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> HashMap<String, String> {
+    // 按属性名分组（遗留别名先规范化为标准名——见 canonical_property_name）。
+    // by_property 键借用声明自身的 property（&'a str，不克隆）——热路径每属性省 1 次
+    // String 分配；分组内声明也是借用（构造侧已省克隆，见 collect_declarations）。
+    let mut by_property: HashMap<&'a str, Vec<CascadedDeclaration<'a>>> = HashMap::new();
     for decl in declarations {
         // `all` 简写（CSS Cascading 4 §3.1 / CSS All 1）：值必须是 CSS-wide 关键字
         // （initial/inherit/unset/revert/revert-layer）。展开为对所有已知 longhand 属性的
@@ -301,27 +306,23 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
         // 未实现前 `all` 在此处被 apply 无识别当非法丢，从未生效。driving: css-cascade all-prop-*。
         // kill-switch `ZW_ALL_SHORTHAND=0`（default-on）关闭则退化为「`all` 不展开 = 旧无效果」。
         if decl.property.eq_ignore_ascii_case("all")
-            && is_css_wide_keyword(&decl.value)
+            && is_css_wide_keyword(decl.value)
             && std::env::var("ZW_ALL_SHORTHAND").as_deref() != Ok("0")
         {
-            let value = decl.value.clone();
             let order = decl.order.clone();
             for prop in PropertyRegistry::known_properties() {
                 if matches!(*prop, "direction" | "unicode-bidi") {
                     continue;
                 }
-                by_property
-                    .entry((*prop).to_string())
-                    .or_default()
-                    .push(CascadedDeclaration {
-                        property: (*prop).to_string(),
-                        value: value.clone(),
-                        order: order.clone(),
-                    });
+                by_property.entry(*prop).or_default().push(CascadedDeclaration {
+                    property: prop,
+                    value: decl.value,
+                    order: order.clone(),
+                });
             }
             continue;
         }
-        let canonical = canonical_property_name(&decl.property).to_string();
+        let canonical = canonical_property_name(decl.property);
         by_property.entry(canonical).or_default().push(decl);
     }
 
@@ -358,14 +359,14 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
             // CSS-wide 关键字（inherit/initial/unset/revert/revert-layer）对任何属性都合法，
             // 由 inheritance/compute pass 解析——须短路，否则会被 is_invalid_enum_value
             // 误判为非法（如 `display: initial` parse_display 返 None → 被丢，display 不重置）。
-            let valid = is_css_wide_keyword(&d.value)
-                || (!is_invalid_negative_length(&property, &d.value)
-                    && !is_invalid_enum_value(&property, &d.value)
-                    && is_cascade_value_valid(&property, &d.value, quirks, &mut dummy));
+            let valid = is_css_wide_keyword(d.value)
+                || (!is_invalid_negative_length(property, d.value)
+                    && !is_invalid_enum_value(property, d.value)
+                    && is_cascade_value_valid(property, d.value, quirks, &mut dummy));
             if !valid {
                 continue;
             }
-            if revert_layer_active && is_revert_layer_value(&d.value) {
+            if revert_layer_active && is_revert_layer_value(d.value) {
                 saw_revert_layer = true;
                 continue;
             }
@@ -375,7 +376,7 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
         }
         if !saw_revert_layer {
             if let Some(b) = best {
-                result.insert(property, b.value.clone());
+                result.insert(property.to_string(), b.value.to_string());
             }
             continue;
         }
@@ -388,10 +389,10 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
         let mut i = 0;
         while i < sorted.len() {
             let d = sorted[i];
-            let valid = is_css_wide_keyword(&d.value)
-                || (!is_invalid_negative_length(&property, &d.value)
-                    && !is_invalid_enum_value(&property, &d.value)
-                    && is_cascade_value_valid(&property, &d.value, quirks, &mut dummy));
+            let valid = is_css_wide_keyword(d.value)
+                || (!is_invalid_negative_length(property, d.value)
+                    && !is_invalid_enum_value(property, d.value)
+                    && is_cascade_value_valid(property, d.value, quirks, &mut dummy));
             if !valid {
                 i += 1;
                 continue;
@@ -399,7 +400,7 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
             if first_valid.is_none() {
                 first_valid = Some(d);
             }
-            if revert_layer_active && is_revert_layer_value(&d.value) {
+            if revert_layer_active && is_revert_layer_value(d.value) {
                 // 跳过整个 tier（同 tier 的较低优先级声明亦属「本层」须一并移除，不再探测）。
                 let tier = cascade_tier_key(&d.order);
                 while i < sorted.len() && cascade_tier_key(&sorted[i].order) == tier {
@@ -411,7 +412,7 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
             break;
         }
         if let Some(w) = winner.or(first_valid) {
-            result.insert(property, w.value.clone());
+            result.insert(property.to_string(), w.value.to_string());
         }
     }
 
@@ -465,19 +466,19 @@ fn is_css_wide_keyword(value: &str) -> bool {
 /// 从样式表中收集所有匹配的声明。
 ///
 /// 返回一组带有级联信息的声明。
-pub fn collect_declarations(
-    declarations: &[(String, String, bool)], // (property, value, important)
+pub fn collect_declarations<'a>(
+    declarations: &[(&'a str, &'a str, bool)], // (property, value, important)
     origin: Origin,
     layer_index: Option<usize>,
     specificity: (u32, u32, u32),
     base_position: usize,
-) -> Vec<CascadedDeclaration> {
+) -> Vec<CascadedDeclaration<'a>> {
     declarations
         .iter()
         .enumerate()
         .map(|(i, (property, value, important))| CascadedDeclaration {
-            property: property.clone(),
-            value: value.clone(),
+            property,
+            value,
             order: CascadeOrder::new(origin, layer_index, specificity, base_position + i, *important),
         })
         .collect()
@@ -514,8 +515,8 @@ mod tests {
         // word-wrap 声明经 cascade() 后须以标准名 overflow-wrap 出现在结果中，
         // 而非作为独立键 word-wrap（否则会被继承逻辑当「未声明」用父值覆盖——见 canonical_property_name 注释）。
         let decls = vec![CascadedDeclaration {
-            property: "word-wrap".to_string(),
-            value: "break-word".to_string(),
+            property: "word-wrap",
+            value: "break-word",
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
         let result = cascade(decls, false);
@@ -529,13 +530,13 @@ mod tests {
         // word-wrap 与 overflow-wrap 是同一属性：同优先级下后声明者胜，而非两个独立键各取其值。
         let decls = vec![
             CascadedDeclaration {
-                property: "overflow-wrap".to_string(),
-                value: "normal".to_string(),
+                property: "overflow-wrap",
+                value: "normal",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "word-wrap".to_string(),
-                value: "break-word".to_string(),
+                property: "word-wrap",
+                value: "break-word",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -607,8 +608,8 @@ mod tests {
     #[test]
     fn test_cascade_normalizes_webkit_alias_to_standard() {
         let decls = vec![CascadedDeclaration {
-            property: "-webkit-user-select".to_string(),
-            value: "none".to_string(),
+            property: "-webkit-user-select",
+            value: "none",
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
         let result = cascade(decls, false);
@@ -623,13 +624,13 @@ mod tests {
     fn test_cascade_webkit_alias_shares_slot_with_standard() {
         let decls = vec![
             CascadedDeclaration {
-                property: "box-shadow".to_string(),
-                value: "none".to_string(),
+                property: "box-shadow",
+                value: "none",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "-webkit-box-shadow".to_string(),
-                value: "1px 1px red".to_string(),
+                property: "-webkit-box-shadow",
+                value: "1px 1px red",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -647,13 +648,13 @@ mod tests {
         // class（specificity 0,1,0）inline-size:100px vs ID（1,0,0）width:10px → ID 胜。
         let decls = vec![
             CascadedDeclaration {
-                property: "inline-size".to_string(),
-                value: "100px".to_string(),
+                property: "inline-size",
+                value: "100px",
                 order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "width".to_string(),
-                value: "10px".to_string(),
+                property: "width",
+                value: "10px",
                 order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
             },
         ];
@@ -669,13 +670,13 @@ mod tests {
         // 反向：class width:10px vs ID inline-size:100px → ID inline-size 胜（canonical width=100px）。
         let decls_rev = vec![
             CascadedDeclaration {
-                property: "width".to_string(),
-                value: "10px".to_string(),
+                property: "width",
+                value: "10px",
                 order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "inline-size".to_string(),
-                value: "100px".to_string(),
+                property: "inline-size",
+                value: "100px",
                 order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
             },
         ];
@@ -692,8 +693,8 @@ mod tests {
     #[test]
     fn test_all_shorthand_initial_resets_color() {
         let decls = vec![CascadedDeclaration {
-            property: "all".to_string(),
-            value: "initial".to_string(),
+            property: "all",
+            value: "initial",
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
         let result = cascade(decls, false);
@@ -706,8 +707,8 @@ mod tests {
     fn test_all_shorthand_accepts_all_wide_keywords() {
         for kw in ["inherit", "unset", "revert", "revert-layer", "INITIAL"] {
             let decls = vec![CascadedDeclaration {
-                property: "all".to_string(),
-                value: kw.to_string(),
+                property: "all",
+                value: kw,
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             }];
             let result = cascade(decls, false);
@@ -723,8 +724,8 @@ mod tests {
     #[test]
     fn test_all_shorthand_excludes_direction_and_unicode_bidi() {
         let decls = vec![CascadedDeclaration {
-            property: "all".to_string(),
-            value: "initial".to_string(),
+            property: "all",
+            value: "initial",
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
         let result = cascade(decls, false);
@@ -744,13 +745,13 @@ mod tests {
         // `all: initial; color: red;` — color(i=1) order > all(i=0) order → color:red 胜。
         let decls = vec![
             CascadedDeclaration {
-                property: "all".to_string(),
-                value: "initial".to_string(),
+                property: "all",
+                value: "initial",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "red".to_string(),
+                property: "color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -766,13 +767,13 @@ mod tests {
         // `color: red; all: initial;` — all(i=1) order > color(i=0) order → color:initial 胜。
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "red".to_string(),
+                property: "color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "all".to_string(),
-                value: "initial".to_string(),
+                property: "all",
+                value: "initial",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -788,8 +789,8 @@ mod tests {
     #[test]
     fn test_all_shorthand_non_keyword_value_ignored() {
         let decls = vec![CascadedDeclaration {
-            property: "all".to_string(),
-            value: "red".to_string(),
+            property: "all",
+            value: "red",
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
         let result = cascade(decls, false);
@@ -821,8 +822,8 @@ mod tests {
     #[test]
     fn test_revert_layer_longhand_not_dropped_at_cascade() {
         let decls = vec![CascadedDeclaration {
-            property: "color".to_string(),
-            value: "revert-layer".to_string(),
+            property: "color",
+            value: "revert-layer",
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
         let result = cascade(decls, false);
@@ -840,13 +841,13 @@ mod tests {
         // layer 0（低优先级）：green；layer 1（高优先级）：revert-layer → 应取 layer 0 的 green。
         let decls = vec![
             CascadedDeclaration {
-                property: "background-color".to_string(),
-                value: "green".to_string(),
+                property: "background-color",
+                value: "green",
                 order: CascadeOrder::new(Origin::Author, Some(0), (1, 0, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "background-color".to_string(),
-                value: "revert-layer".to_string(),
+                property: "background-color",
+                value: "revert-layer",
                 order: CascadeOrder::new(Origin::Author, Some(1), (1, 0, 0), 1, false),
             },
         ];
@@ -863,13 +864,13 @@ mod tests {
     fn test_revert_layer_not_triggered_when_higher_layer_concrete() {
         let decls = vec![
             CascadedDeclaration {
-                property: "background-color".to_string(),
-                value: "green".to_string(),
+                property: "background-color",
+                value: "green",
                 order: CascadeOrder::new(Origin::Author, Some(0), (1, 0, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "background-color".to_string(),
-                value: "red".to_string(),
+                property: "background-color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, Some(1), (1, 0, 0), 1, false),
             },
         ];
@@ -882,13 +883,13 @@ mod tests {
     fn test_revert_layer_unlayered_falls_to_layered() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "blue".to_string(),
+                property: "color",
+                value: "blue",
                 order: CascadeOrder::new(Origin::Author, Some(0), (1, 0, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "revert-layer".to_string(),
+                property: "color",
+                value: "revert-layer",
                 order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
             },
         ];
@@ -905,8 +906,8 @@ mod tests {
     #[test]
     fn test_revert_layer_no_lower_layer_kept_for_inheritance() {
         let decls = vec![CascadedDeclaration {
-            property: "background-color".to_string(),
-            value: "revert-layer".to_string(),
+            property: "background-color",
+            value: "revert-layer",
             order: CascadeOrder::new(Origin::Author, Some(0), (1, 0, 0), 0, false),
         }];
         let result = cascade(decls, false);
@@ -922,18 +923,18 @@ mod tests {
     fn test_revert_layer_chained() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "green".to_string(),
+                property: "color",
+                value: "green",
                 order: CascadeOrder::new(Origin::Author, Some(0), (1, 0, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "revert-layer".to_string(),
+                property: "color",
+                value: "revert-layer",
                 order: CascadeOrder::new(Origin::Author, Some(1), (1, 0, 0), 1, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "revert-layer".to_string(),
+                property: "color",
+                value: "revert-layer",
                 order: CascadeOrder::new(Origin::Author, Some(2), (1, 0, 0), 2, false),
             },
         ];
@@ -952,13 +953,13 @@ mod tests {
         // 早先合法的 green 胜出（同特异性，后声明无效不影响早合法）。
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "green".to_string(),
+                property: "color",
+                value: "green",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "\"red\"".to_string(),
+                property: "color",
+                value: "\"red\"",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -971,8 +972,8 @@ mod tests {
     fn test_cascade_keeps_css_wide_keywords() {
         for kw in ["inherit", "initial", "unset", "revert", "INHERIT"] {
             let decls = vec![CascadedDeclaration {
-                property: "max-width".to_string(),
-                value: kw.to_string(),
+                property: "max-width",
+                value: kw,
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             }];
             let result = cascade(decls, false);
@@ -985,13 +986,13 @@ mod tests {
     fn test_cascade_keeps_var_and_custom_property() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "var(--c)".to_string(),
+                property: "color",
+                value: "var(--c)",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "--c".to_string(),
-                value: "red".to_string(),
+                property: "--c",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -1056,13 +1057,13 @@ mod tests {
     fn test_cascade_basic() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "red".to_string(),
+                property: "color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "blue".to_string(),
+                property: "color",
+                value: "blue",
                 order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 1, false),
             },
         ];
@@ -1077,13 +1078,13 @@ mod tests {
         // 应回退到合法的 1in（numbers-units-006 场景）。
         let decls = vec![
             CascadedDeclaration {
-                property: "height".to_string(),
-                value: "1in".to_string(),
+                property: "height",
+                value: "1in",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
             CascadedDeclaration {
-                property: "height".to_string(),
-                value: "-1px".to_string(),
+                property: "height",
+                value: "-1px",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 2, false),
             },
         ];
@@ -1096,8 +1097,8 @@ mod tests {
     fn test_cascade_sole_negative_rejected_to_initial() {
         // 仅有负值声明时全为非法 → 属性不进入级联结果（回退到初始值 width→auto）。
         let decls = vec![CascadedDeclaration {
-            property: "width".to_string(),
-            value: "-5px".to_string(),
+            property: "width",
+            value: "-5px",
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
 
@@ -1110,13 +1111,13 @@ mod tests {
         // em/%/ch 负长度同样非法（height-089 / max-width-089 / max-height-067 等）。
         let decls = vec![
             CascadedDeclaration {
-                property: "max-width".to_string(),
-                value: "-10%".to_string(),
+                property: "max-width",
+                value: "-10%",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "padding-top".to_string(),
-                value: "-2em".to_string(),
+                property: "padding-top",
+                value: "-2em",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -1130,8 +1131,8 @@ mod tests {
     fn test_cascade_negative_check_only_box_model() {
         // 非盒模型尺寸属性（如 margin-top 允许负值）不受影响。
         let decls = vec![CascadedDeclaration {
-            property: "margin-top".to_string(),
-            value: "-5px".to_string(),
+            property: "margin-top",
+            value: "-5px",
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
 
@@ -1147,13 +1148,13 @@ mod tests {
         // `display: flex inline-flex` (0,0,1) 的非法声明（旧实现重置为初值 inline）。
         let decls = vec![
             CascadedDeclaration {
-                property: "display".to_string(),
-                value: "block".to_string(),
+                property: "display",
+                value: "block",
                 order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "display".to_string(),
-                value: "flex inline-flex".to_string(),
+                property: "display",
+                value: "flex inline-flex",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -1165,8 +1166,8 @@ mod tests {
     fn test_cascade_sole_invalid_enum_rejected_to_initial() {
         // 仅有非法 enum 声明 → 属性不进入级联结果（display 回退初值 inline）。
         let decls = vec![CascadedDeclaration {
-            property: "display".to_string(),
-            value: "bogus".to_string(),
+            property: "display",
+            value: "bogus",
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
         let result = cascade(decls, false);
@@ -1178,13 +1179,13 @@ mod tests {
         // 有效值+尾部垃圾（`flex extra junk`）整条声明丢弃 → 回退 UA block。
         let decls = vec![
             CascadedDeclaration {
-                property: "display".to_string(),
-                value: "block".to_string(),
+                property: "display",
+                value: "block",
                 order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "display".to_string(),
-                value: "flex extra junk".to_string(),
+                property: "display",
+                value: "flex extra junk",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -1193,13 +1194,13 @@ mod tests {
         // 其它 enum 属性同理：position 无效值回退 UA static。
         let decls = vec![
             CascadedDeclaration {
-                property: "position".to_string(),
-                value: "static".to_string(),
+                property: "position",
+                value: "static",
                 order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "position".to_string(),
-                value: "definitely-not-a-position".to_string(),
+                property: "position",
+                value: "definitely-not-a-position",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -1208,18 +1209,18 @@ mod tests {
         // 有效 enum 值不被误拒（display:flex、float:left、overflow:hidden 均保留）。
         let decls = vec![
             CascadedDeclaration {
-                property: "display".to_string(),
-                value: "flex".to_string(),
+                property: "display",
+                value: "flex",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "float".to_string(),
-                value: "left".to_string(),
+                property: "float",
+                value: "left",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
             CascadedDeclaration {
-                property: "overflow-x".to_string(),
-                value: "hidden".to_string(),
+                property: "overflow-x",
+                value: "hidden",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 2, false),
             },
         ];
@@ -1233,13 +1234,13 @@ mod tests {
     fn test_cascade_multiple_properties() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "red".to_string(),
+                property: "color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "display".to_string(),
-                value: "flex".to_string(),
+                property: "display",
+                value: "flex",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -1253,13 +1254,13 @@ mod tests {
     fn test_cascade_important_wins_over_specificity() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "red".to_string(),
+                property: "color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 0, true),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "blue".to_string(),
+                property: "color",
+                value: "blue",
                 order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 1, false),
             },
         ];
@@ -1281,10 +1282,7 @@ mod tests {
     #[test]
     fn test_cascade_webkit_line_clamp_canonicalized_to_line_clamp() {
         // 同规则同 specificity：`line-clamp: 2` 先声明、`-webkit-line-clamp: 4` 后声明。
-        let decls = vec![
-            ("line-clamp".to_string(), "2".to_string(), false),
-            ("-webkit-line-clamp".to_string(), "4".to_string(), false),
-        ];
+        let decls = vec![("line-clamp", "2", false), ("-webkit-line-clamp", "4", false)];
         let order = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false);
         let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 1, 0), 0);
         assert_eq!(cascaded.len(), 2);
@@ -1298,10 +1296,7 @@ mod tests {
 
     #[test]
     fn test_collect_declarations() {
-        let decls = vec![
-            ("color".to_string(), "red".to_string(), false),
-            ("display".to_string(), "block".to_string(), true),
-        ];
+        let decls = vec![("color", "red", false), ("display", "block", true)];
 
         let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 1, 0), 0);
         assert_eq!(cascaded.len(), 2);
@@ -1380,13 +1375,13 @@ mod tests {
     fn test_cascade_function_id_vs_class() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "blue".to_string(),
+                property: "color",
+                value: "blue",
                 order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "red".to_string(),
+                property: "color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
             },
         ];
@@ -1399,13 +1394,13 @@ mod tests {
     fn test_cascade_same_specificity_later_wins() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "red".to_string(),
+                property: "color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "green".to_string(),
+                property: "color",
+                value: "green",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -1416,7 +1411,7 @@ mod tests {
     #[test]
     /// collect_declarations 带 layer_index
     fn test_collect_declarations_with_layer() {
-        let decls = vec![("color".to_string(), "red".to_string(), false)];
+        let decls = vec![("color", "red", false)];
         let cascaded = collect_declarations(&decls, Origin::Author, Some(2), (0, 1, 0), 10);
         assert_eq!(cascaded.len(), 1);
         assert_eq!(cascaded[0].order.layer_index, Some(2));
@@ -1432,13 +1427,13 @@ mod tests {
     fn test_same_specificity_later_decl_wins() {
         let decls = vec![
             CascadedDeclaration {
-                property: "margin-top".to_string(),
-                value: "10px".to_string(),
+                property: "margin-top",
+                value: "10px",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "margin-top".to_string(),
-                value: "20px".to_string(),
+                property: "margin-top",
+                value: "20px",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -1451,13 +1446,13 @@ mod tests {
     fn test_important_overrides_normal_declaration() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "blue".to_string(),
+                property: "color",
+                value: "blue",
                 order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "red".to_string(),
+                property: "color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, true),
             },
         ];
@@ -1515,18 +1510,18 @@ mod tests {
     fn test_cascade_three_distinct_properties() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "red".to_string(),
+                property: "color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "display".to_string(),
-                value: "flex".to_string(),
+                property: "display",
+                value: "flex",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
             CascadedDeclaration {
-                property: "opacity".to_string(),
-                value: "0.5".to_string(),
+                property: "opacity",
+                value: "0.5",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 2, false),
             },
         ];
@@ -1542,18 +1537,18 @@ mod tests {
     fn test_cascade_single_winner_per_property() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "red".to_string(),
+                property: "color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "green".to_string(),
+                property: "color",
+                value: "green",
                 order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 1, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "blue".to_string(),
+                property: "color",
+                value: "blue",
                 order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 2, false),
             },
         ];
@@ -1575,11 +1570,7 @@ mod tests {
     #[test]
     /// collect_declarations 递增位置
     fn test_collect_declarations_position_increment() {
-        let decls = vec![
-            ("a".to_string(), "1".to_string(), false),
-            ("b".to_string(), "2".to_string(), true),
-            ("c".to_string(), "3".to_string(), false),
-        ];
+        let decls = vec![("a", "1", false), ("b", "2", true), ("c", "3", false)];
         let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 0, 1), 100);
         assert_eq!(cascaded[0].order.position, 100);
         assert_eq!(cascaded[1].order.position, 101);
@@ -1615,8 +1606,8 @@ mod tests {
     /// cascade 函数单一声明返回正确值
     fn test_cascade_single_declaration() {
         let decls = vec![CascadedDeclaration {
-            property: "color".to_string(),
-            value: "red".to_string(),
+            property: "color",
+            value: "red",
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
         let result = cascade(decls, false);
@@ -1630,13 +1621,13 @@ mod tests {
         // column-count: 4; column-count: -1;  → 4 胜出（-1 非法被过滤）
         let decls = vec![
             CascadedDeclaration {
-                property: "column-count".to_string(),
-                value: "4".to_string(),
+                property: "column-count",
+                value: "4",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "column-count".to_string(),
-                value: "-1".to_string(),
+                property: "column-count",
+                value: "-1",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -1650,13 +1641,13 @@ mod tests {
         // column-count: 4; column-count: 2.1;  → 4 胜出（2.1 非整数非法）
         let decls = vec![
             CascadedDeclaration {
-                property: "column-count".to_string(),
-                value: "4".to_string(),
+                property: "column-count",
+                value: "4",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "column-count".to_string(),
-                value: "2.1".to_string(),
+                property: "column-count",
+                value: "2.1",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
             },
         ];
@@ -1669,8 +1660,8 @@ mod tests {
 
         // 全非法 → 属性不进级联结果（回退初值）
         let decls = vec![CascadedDeclaration {
-            property: "column-count".to_string(),
-            value: "-5".to_string(),
+            property: "column-count",
+            value: "-5",
             order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
         }];
         let result = cascade(decls, false);
@@ -1685,18 +1676,18 @@ mod tests {
     fn test_cascade_multiple_properties_comprehensive() {
         let decls = vec![
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "red".to_string(),
+                property: "color",
+                value: "red",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
             CascadedDeclaration {
-                property: "color".to_string(),
-                value: "blue".to_string(),
+                property: "color",
+                value: "blue",
                 order: CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false),
             },
             CascadedDeclaration {
-                property: "display".to_string(),
-                value: "block".to_string(),
+                property: "display",
+                value: "block",
                 order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
             },
         ];

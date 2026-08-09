@@ -64,23 +64,34 @@ fn bench_cascade(c: &mut Criterion) {
 
     for count in [10, 50, 100, 500] {
         group.bench_with_input(BenchmarkId::new("declarations", count), &count, |b, &count| {
-            let decls: Vec<_> = (0..count)
-                .map(|i| cascade::CascadedDeclaration {
+            // 值字符串先收集为 owned，再借用构造 CascadedDeclaration（字段借用声明）。
+            let owned: Vec<_> = (0..count)
+                .map(|i| {
+                    (
+                        format!("#{:06x}", i * 11111 % 0xFFFFFF),
+                        cascade::CascadeOrder {
+                            origin: cascade::Origin::Author,
+                            layer_index: None,
+                            specificity: (i as u32 % 2, i as u32 % 3, i as u32),
+                            position: i,
+                            important: i % 10 == 0,
+                        },
+                    )
+                })
+                .collect();
+            let decls: Vec<_> = owned
+                .iter()
+                .enumerate()
+                .map(|(i, (value, order))| cascade::CascadedDeclaration {
                     property: if i % 3 == 0 {
-                        "color".to_string()
+                        "color"
                     } else if i % 3 == 1 {
-                        "font-size".to_string()
+                        "font-size"
                     } else {
-                        "margin".to_string()
+                        "margin"
                     },
-                    value: format!("#{:06x}", i * 11111 % 0xFFFFFF),
-                    order: cascade::CascadeOrder {
-                        origin: cascade::Origin::Author,
-                        layer_index: None,
-                        specificity: (i as u32 % 2, i as u32 % 3, i as u32),
-                        position: i,
-                        important: i % 10 == 0,
-                    },
+                    value,
+                    order: order.clone(),
                 })
                 .collect();
 

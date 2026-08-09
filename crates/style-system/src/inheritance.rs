@@ -46,7 +46,7 @@ pub fn compute_inherited_style_with_quirks(
     // 主循环仍会按既有路径处理 color-scheme（idempotent）；未显式声明则继承父元素。
     if let Some(cs) = cascaded.get("color-scheme") {
         style.color_scheme_dark = match resolve_keyword(cs, "color-scheme", parent_style) {
-            KeywordResolution::Concrete(v) => crate::property::apply::parse_color_scheme_dark(&v, prefers_dark),
+            KeywordResolution::Concrete(v) => crate::property::apply::parse_color_scheme_dark(v, prefers_dark),
             KeywordResolution::Inherit | KeywordResolution::Unset | KeywordResolution::Revert => {
                 parent_style.map(|p| p.color_scheme_dark).unwrap_or(false)
             }
@@ -113,7 +113,7 @@ pub fn compute_inherited_style_with_quirks(
                 apply_property_value_with_quirks(
                     &mut style,
                     property,
-                    &v,
+                    v,
                     quirks_mode == QuirksMode::Quirks,
                     prefers_dark,
                 );
@@ -172,8 +172,8 @@ fn resolve_match_parent(
 }
 
 /// CSS 全局关键字解析结果。
-#[derive(Debug, Clone, PartialEq)]
-enum KeywordResolution {
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum KeywordResolution<'a> {
     /// inherit 关键字。
     Inherit,
     /// initial 关键字。
@@ -189,14 +189,15 @@ enum KeywordResolution {
     ///
     /// 简化实现：等同于 unset（跳过当前层声明后按 unset 规则处理）。
     RevertLayer,
-    /// 具体属性值。
-    Concrete(String),
+    /// 具体属性值（借用级联值，不克隆——热路径每属性每元素省一次 String 分配）。
+    Concrete(&'a str),
 }
 
 /// 解析 CSS 全局关键字。
 ///
-/// 返回关键字类型或具体值。
-fn resolve_keyword(value: &str, _property: &str, _parent: Option<&ComputedStyle>) -> KeywordResolution {
+/// 返回关键字类型或具体值（具体值借用输入，调用方不得在 `cascaded` 生命周期
+/// 之外使用——本函数仅在同一函数内消费）。
+fn resolve_keyword<'a>(value: &'a str, _property: &str, _parent: Option<&ComputedStyle>) -> KeywordResolution<'a> {
     let trimmed = value.trim();
     match trimmed {
         "inherit" => KeywordResolution::Inherit,
@@ -208,7 +209,7 @@ fn resolve_keyword(value: &str, _property: &str, _parent: Option<&ComputedStyle>
         // revert-layer 回退到上一个 @layer，
         // 简化实现：等同于 unset（跳过当前层声明后按 unset 规则处理）
         "revert-layer" => KeywordResolution::RevertLayer,
-        _ => KeywordResolution::Concrete(trimmed.to_string()),
+        _ => KeywordResolution::Concrete(trimmed),
     }
 }
 
