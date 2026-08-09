@@ -1841,3 +1841,82 @@ fn test_io_cross_threshold_host_tick_r3062() {
     sandbox.execute("__zw_observers_tick();").unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__count)").unwrap().value, "2", "rect 未变 -> tick 不派");
 }
+
+#[test]
+fn test_ro_size_change_host_tick_r3063() {
+    // R3063：ResizeObserver size-change host-tick 验证（镜像 R3062 IO cross-threshold）。元素尺寸变化 →
+    // host tick（`__zw_observers_tick`，renderer render 后调）复算 rect → `_schedule` 内 size-diff 检测
+    //（`prev.w !== r.w || prev.h !== r.h`）→ 派发后续通知。响应式设计 / 元素查询 / 动态内容测量高频 hook。
+    // 经共享可变 mock rect 模拟元素尺寸变化。test-only：锁定 cross-tick 行为，未来回归（size-diff / tick /
+    // gBCR 复算任一环坏）会被此测试捕获。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><div id='t'></div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    // 可控 rect：target #t 经共享状态控制（模拟尺寸变化）。初始 100x50（无 padding/border → content=border）。
+    let rect: Arc<Mutex<String>> = Arc::new(Mutex::new("0,0,100,50".to_string()));
+    {
+        let r = Arc::clone(&rect);
+        sandbox.register_callback(
+            "__zw_getBoundingClientRect",
+            Box::new(move |args| {
+                let sel = args.first().cloned().unwrap_or_default();
+                if sel.contains("#t") {
+                    r.lock().map(|s| s.clone()).unwrap_or_default()
+                } else {
+                    "0,0,0,0".to_string()
+                }
+            }),
+        );
+    }
+    sandbox.execute(
+        "globalThis.__count=0; globalThis.__entry=null;\
+         new ResizeObserver(function(e){ globalThis.__count++; globalThis.__entry=e[0]; })\
+           .observe(document.querySelector('#t'));",
+    )
+    .unwrap();
+    // observe → initial fire（首次 prev==null → 必派；border-box 100x50）。
+    assert_eq!(sandbox.execute("String(globalThis.__count)").unwrap().value, "1", "observe -> initial fire");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__entry.borderBoxSize[0].inlineSize)").unwrap().value,
+        "100",
+        "initial borderBoxSize.inlineSize = 100"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__entry.borderBoxSize[0].blockSize)").unwrap().value,
+        "50",
+        "initial borderBoxSize.blockSize = 50"
+    );
+
+    // tick（rect 不变 100x50）→ 不派（size-diff=false，prev.w=100/h=50 当前同）。
+    sandbox.execute("__zw_observers_tick();").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__count)").unwrap().value, "1", "rect 未变 -> tick 不派 (size-diff=false)");
+
+    // 元素尺寸变化（rect 改为 200x80）→ tick → size-change fire（border-box 200x80）。
+    *rect.lock().unwrap() = "0,0,200,80".to_string();
+    sandbox.execute("__zw_observers_tick();").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__count)").unwrap().value,
+        "2",
+        "rect 尺寸变化 -> tick size-change fire"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__entry.borderBoxSize[0].inlineSize)").unwrap().value,
+        "200",
+        "size-change 后 borderBoxSize.inlineSize = 200"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__entry.borderBoxSize[0].blockSize)").unwrap().value,
+        "80",
+        "size-change 后 borderBoxSize.blockSize = 80"
+    );
+
+    // tick（rect 不变 200x80）→ 不派（size-diff=false，prev.w=200/h=80 当前同）。
+    sandbox.execute("__zw_observers_tick();").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__count)").unwrap().value, "2", "rect 未变 -> tick 不派");
+}
