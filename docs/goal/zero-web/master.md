@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1a transitive module 递归 fetch（collect_module_deps_recursive，闭合 module graph，本轮 R3094）
+
+承接 R3093（动态 import() 外链 module，fetched module 的静态 imports 仍空存根返空 namespace）。本切片闭合 module graph：进程内 `__zw_compile_module` 改递归 fetch transitive deps（`collect_module_deps_recursive`，registry 按原 spec 注册源、循环防护按解析后 URL），compile_dependency_iife 编译完整 graph。tree + cycle 用例工作；diamond（同 module 经不同 raw spec 引用）defer。browser 多进程模式 collect_module_deps 早已递归（apps/browser），本切片进程内路径对齐。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`collect_module_deps_recursive`** | `crates/webview/src/webview.rs`（impl 后 free fn） | 递归 fetch：resolve_document_url(parent, spec) → fetcher fetch 源 → registry.register(原 spec, 源) → extract_static_module_import_specifiers 递归。循环防护按解析后 URL（visited HashSet）。registry 按原 spec 注册（匹配 transform_import 按原 spec 查）。 |
+| **`__zw_compile_module` 用递归 fetch** | `crates/webview/src/webview.rs`（__zw_compile_module 回调） | 替换单层空存根为 collect_module_deps_recursive + compile_dependency_iife。fetch 失败 → 返空（__zw_load_module 抛 Module not found）。 |
+| **R3094 测试** | `crates/webview/src/tests/coverage.rs`（+`test_transitive_module_graph_r3094`） | fetcher 提供 './mod.js'（import {val} from './dep.js'; export default val*2）+ './dep.js'（export const val=21）；import('./mod.js').then(m => m.default) → 42（val 经传递依赖解析）。 |
+
+**为何净正向**：① 闭合 module graph（多级 import 真解析，非空存根）；② 进程内路径对齐 browser 多进程 collect_module_deps 递归语义；③ 循环防护按解析后 URL（防死循环）；④ 全量 make test 全绿（R3093 dynamic import 无回归）。
+
+**已知限制（记录，defer）**：① **diamond 依赖 defer**（同 module 经不同 raw spec 引用，registry 仅注册首个 raw spec，第二引用 lookup 落空 → compile 失败；罕见，多数 module graph 为树；正确处理需 two-pass 全引用注册或 resolve-aware lookup）；② **named import 经 destructure_bindings**（headless 简化；transform_export/import 既有）；③ **external_script 多进程模式 module graph 由各自 collect_module_deps 处理**（本切片进程内路径）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-webview --all-targets -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；webview +1 测试，零回归**）+ pre-commit guard PASS。变更 webview（无渲染/布局/CSS 变更），product-smoke 不受影响。
+
+**下一步**：module graph 闭合（单链 + 树 + 循环；diamond defer）。外链加载全链完成（R3090 top-level 脚本 + R3091 worker + R3093 dynamic import + R3094 transitive graph）。P1a 产品能力深项剩余：① **diamond module 依赖 / dynamic import() transitive**（two-pass 注册或 resolve-aware lookup，中-高复杂度）；② P1b V8 原生绑定 S0 PoC（已批准）；③ 浏览器 tab 导航 storage 持久化（browser 域）；④ customElements upgrade（需 P1b S5）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a 动态 import() 外链 module（进程内 __zw_compile_module + 静态 import 预存根分流，闭合外链加载全链，本轮 R3093）
 
 承接 R3090（top-level 外链脚本）+ R3091（外链 worker）—— 动态 `import('./mod.js')` 仍 defer。module prelude 的 `__zw_load_module` 对未缓存 spec 调 `__zw_compile_module`（browser/renderer 多进程模式各自注册 http fetch + collect_module_deps 递归；进程内路径未注册 → 外链动态 import 抛 ReferenceError）。本切片：① 进程内 run_page_scripts_impl 当 fetcher 配置时注册 `__zw_compile_module`（fetcher fetch 源 + 公开 compile_dependency_iife compile 为 IIFE → eval 为 namespace）；② 修预存根短路：InlineModule/ExternalModule 预注册空存根当 fetcher 配置时只用**静态** import（新 `extract_static_module_import_specifiers`），动态 import() 不预存根 → 落 `__zw_compile_module` fetch（旧全量预存根致动态 import 返空 namespace 短路运行时 fetch）；③ `__zw_compile_module` 内 fetched module 的 imports 亦静态 only。无 fetcher 路径不变（全量预存根，零回归）。闭合外链加载全链：R3090 top-level 脚本 + R3091 worker + R3093 dynamic import() module。

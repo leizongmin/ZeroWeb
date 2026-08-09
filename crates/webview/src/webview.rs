@@ -1162,19 +1162,18 @@ impl WebView {
                     if spec.is_empty() {
                         return String::new();
                     }
-                    let source = match fetcher_compile(parent, spec) {
-                        Ok(s) if !s.is_empty() => s,
-                        _ => return String::new(), // fetch 失败 → __zw_load_module 抛 "Module not found"
-                    };
+                    // R3094：递归 fetch transitive deps（闭合 module graph）。registry 按原 spec 注册源，
+                    // 循环防护按解析后 URL；fetch 失败 → 返空（__zw_load_module 抛 Module not found）。
                     let mut reg = zero_script_sandbox::ModuleRegistry::new();
-                    for imp in zero_script_sandbox::extract_static_module_import_specifiers(&source) {
-                        reg.register(&imp, ""); // 静态 imports 空存根（transitive fetch defer）；动态 import() 运行时再 fetch
-                    }
-                    reg.register(spec, &source);
-                    match zero_script_sandbox::compile_dependency_iife(spec, &reg) {
-                        Ok(iife) => iife,
-                        Err(e) => {
-                            tracing::warn!("compile module {spec}: {e}");
+                    let mut visited = std::collections::HashSet::new();
+                    let compiled =
+                        collect_module_deps_recursive(&fetcher_compile, parent, spec, &mut reg, &mut visited)
+                            .ok()
+                            .and_then(|_| zero_script_sandbox::compile_dependency_iife(spec, &reg).ok());
+                    match compiled {
+                        Some(iife) => iife,
+                        None => {
+                            tracing::warn!("compile module {spec} (transitive fetch)");
                             String::new()
                         }
                     }
@@ -1945,6 +1944,34 @@ impl WebView {
     pub fn check_subresource_url(&mut self, url: &str, resource_type: &str) -> ResourceCheckResult {
         self.security_context.check_resource_url(url, resource_type)
     }
+}
+
+/// 递归抓取 module graph（transitive deps），供进程内 `__zw_compile_module`（R3094）闭合 module graph。
+/// registry 按**原始 spec**（importer 引用时写的，匹配 transform_import 按原 spec 查 registry）注册源；
+/// 循环防护按**解析后 URL**（同一 module 经不同 raw spec 引用视为同一，避免死循环）。
+/// fetcher 解析 spec 相对 parent_url。**已知限制**：钻石依赖（同 module 经不同 raw spec 引用）defer
+///（仅注册首个 raw spec，第二引用 lookup 落空 → compile 失败；罕见，多数 module graph 为树）。
+fn collect_module_deps_recursive(
+    fetcher: &ScriptSourceFetcher,
+    parent_url: &str,
+    spec: &str,
+    registry: &mut zero_script_sandbox::ModuleRegistry,
+    visited: &mut std::collections::HashSet<String>,
+) -> Result<(), String> {
+    let url = resolve_document_url(parent_url, spec);
+    if visited.contains(&url) {
+        return Ok(()); // 循环防护（解析后 URL）
+    }
+    visited.insert(url.clone());
+    let source = fetcher(parent_url, spec)?;
+    if source.is_empty() {
+        return Err(format!("empty source for {spec}"));
+    }
+    registry.register(spec, &source); // key = raw spec（transform_import 按原 spec 查）
+    for imp in zero_script_sandbox::extract_static_module_import_specifiers(&source) {
+        collect_module_deps_recursive(fetcher, &url, &imp, registry, visited)?;
+    }
+    Ok(())
 }
 
 /// 将字节编码为 base64 字符串。

@@ -383,6 +383,34 @@ fn test_dynamic_import_external_module_r3093() {
     );
 }
 
+// ── transitive module 递归 fetch（R3094）──
+// dynamic import('./mod.js')，'./mod.js' 静态 import './dep.js'（transitive）。collect_module_deps_recursive
+// 递归 fetch 两层 → registry 按原 spec 注册 → compile_dependency_iife 编译完整 graph。验证 val 经传递依赖解析。
+#[test]
+fn test_transitive_module_graph_r3094() {
+    use std::sync::Arc;
+    let mut wv = crate::WebViewBuilder::new()
+        .script_source_fetcher(Arc::new(|_page, src| match src {
+            "./mod.js" => Ok("import { val } from './dep.js'; export default val * 2;".to_string()),
+            "./dep.js" => Ok("export const val = 21;".to_string()),
+            _ => Err("not found".to_string()),
+        }))
+        .build();
+    wv.load_html(
+        "<html><body><script type=\"module\">\n\
+         import('./mod.js').then(function (m) { globalThis.__modVal = m.default; });\n\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "transitive module graph 无异常, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__modVal)").unwrap(),
+        "42",
+        "transitive module graph：import('./mod.js')→import './dep.js' 递归 fetch → val=21 → default=42"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]
