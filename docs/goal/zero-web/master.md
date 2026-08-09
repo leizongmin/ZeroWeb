@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1b S3b element 子树作用域 querySelector/querySelectorAll native——补齐 S3 真实 DOM 语义（仅后代 + 链式 R3099→R3098 全 native，本轮 R3100）
+
+承接 R3099（S3 selector→NodeId native，但仅**文档级**全局 `__zw_native_query_selector`；真实 DOM `element.querySelector` 子树作用域仍走 polyfill）→ 本切片把 querySelector 族补齐为 native **Element 方法**（`args.this()` 取元素 NodeId 作 root）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`element.querySelector(sel)` / `element.querySelectorAll(sel)` Element 方法** | `crates/engine/src/dom_bindings/mod.rs` | 两 FunctionTemplate 注册进 Element ObjectTemplate（`tmpl.set`，单 `if let Some(k)` 无嵌套）；`native_element_query_selector_invoke` / `_all_invoke`：读 `args.this()` NodeId 作 root → `query_selector_all(root, sel).filter(\|id\| *id != root)`（**排除元素自身**，spec descendants-only，镜像 polyfill `query_match_in_subtree`）。querySelector 经 all+filter+first（比 polyfill query_selector+filter 更正确：后者元素自身匹配则返 None，本实现继续找首个后代）。 |
+| **+2 单元测试** | `crates/engine/src/dom_bindings/tests.rs` | `native_element_query_selector`（`.x` 排除自身返首个后代 .x + 子树作用域不匹配外兄弟 + 链式 root→#mid→span + 无匹配→null）、`native_element_query_selector_all`（root 子树 3 个 .x / mid 子树 1 个排除自身 / 文档序两 span / 无匹配→空 Array）。 |
+
+**为何净正向**：① 闭合 R3099「下一步」S3b——querySelector 族补齐真实 DOM 语义（element 子树作用域，R3099 仅文档级）；② **端到端全 native 链**闭合：`__zw_native_query_selector`（R3099 文档级）→ native 对象 → `el.querySelector`（本切片子树级）→ native 对象 → `getAttribute`/`nodeType`（R3098）——无 polyfill String 桥介入；③ 正确性提升：querySelector 经 all+filter+first 取首个后代，比 polyfill query_selector+filter（元素自身匹配返 None）更 spec 合规；④ 纯追加——既有 baselined 路径未动，零回归；⑤ 默认 kill-switch 关 → 零行为变更。
+
+**已知限制（记录，后续切片）**：① **read-only 快照**（继承 R3097–R3099）——native 读 re-parse `cached_html` 独立 `Document`，不随页面 mutation 同步；querySelector 系列返对象经 R3098 只读 getter 读无碍；② **OPTIMIZATION**：element.querySelector 经 collect-all-then-first（`query_selector_all` + filter + first）；超大子树可短路（专用 find_first_matching 跳 root），但 native 已 ~15x 快于 polyfill，非瓶颈；③ **无新 bench metric**——element 子树查询复用 R3099 `native_query_selector_all` 已表征的 `query_selector_all` 引擎路径，仅 root NodeId + 可忽略 filter 不同，无新 perf-critical 原语；④ **写入路径 native**（setAttribute/id/className setter 经 escape-hatch，闭合 read-only 快照限制）仍 defer，是 P1b 下一战略切片；⑤ QuickJS no-op（继承）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-script-sandbox --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**exit 0；engine dom_bindings 14 测试（+2 S3b），零回归；v8+quickjs 双路径**）+ pre-commit guard PASS。变更 engine（dom_bindings mod.rs + tests），无渲染/布局/CSS 变更，product-smoke 不受影响。
+
+**下一步**：querySelector 族 native 全闭合（文档级 R3099 + 元素子树级本切片 + 端到端链式）。候选：① **写入路径 native**（setAttribute/id setter/className setter 经 escape-hatch + Document 写 API，闭合 read-only 快照限制——R3097 起的核心限制，中-高复杂度，P1b 下一战略切片）；② **`attributes` NamedNodeMap native getter**（补 S1 只读属性族最后成员）；③ **read-only 快照→live Document**（webview 持 `Arc<Mutex<Document>>` 共享，闭合 read-only 限制根因，高复杂度）；④ 续 P1a 深项（diamond module / browser storage 持久化）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b S3 selector→NodeId native——querySelector/querySelectorAll 全量选择器引擎搬 native（NodeId 直返对象，无 String 往返，本轮 R3099）
 
 承接 R3098（S1 只读属性族，但 R3096/S2「下一步」选项一：native 工厂仅 `get_element_by_id`，querySelector 族仍走 polyfill 字符串桥）→ 本切片把 querySelector 族搬到 native。新增 2 全局工厂，消费 zero_dom **全量选择器引擎**（`Document::query_selector`/`query_selector_all`，返 `NodeId` 直——非 polyfill 的 stable selector String）：
