@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1b S2 写入路径 native——setAttribute/removeAttribute + id/className setter（首 native 写 + with_dom_mut borrow_mut + set_accessor_with_setter，本轮 R3101）
+
+承接 R3100（S3b 查询族闭合，R3097 起 read-only 快照限制的「写入路径 native」是 R3100「下一步」战略项）→ 本切片落 RFC §4 **S2 attribute-write 子片**：首 native **写入**路径，对称 R3098 attribute 读。4 Element 写入面，全部经 `with_dom_mut`（`borrow_mut`）写真实（快照）Document：
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`with_dom_mut` 可变访问器** | `crates/engine/src/dom_bindings/gc.rs` | 镜像 `with_dom` 但 `borrow_mut`；闭包内 `&mut Document` 操作（set_attribute 等）不触发 JS 回调再入（纯 Rust mutation + record_mutation 推 pending_mutations），无嵌套 borrow。 |
+| **setAttribute/removeAttribute 方法 + id/className setter** | `crates/engine/src/dom_bindings/mod.rs` | `native_set_attribute_invoke`（2 String 参 → `Document::set_attribute`，name=='id' 更新 id_map + record_mutation，返 undefined）+ `native_remove_attribute_invoke`；id/className 经 `set_accessor_with_setter`（rusty_v8 150.x，验证 setter 回调签名 `fn(scope, Name, Value, args, ReturnValue<()>)`）+ `write_reflected_attr`/`local_value_to_string` helper。 |
+| **+2 单元测试 + 首测 native 写 bench** | `tests.rs`（+2）+ `benches/dom_bindings_bench.rs`（+1 metric） | `native_set_and_remove_attribute`（setAttribute 增/覆盖 + removeAttribute + setAttribute('id') 更新 id_map：新 id 可查===同对象、旧 id→null）、`native_id_and_class_name_setters`（id/className setter round-trip + 值 ToString 强转）。新 `native_set_attribute` bench metric（~403 ns/call，写重于读 ~258 ns——borrow_mut + id_map + record_mutation）。 |
+
+**为何净正向**：① 闭合 R3100「下一步」写入路径 native（RFC §4 S2 attribute-write 子片）——首 native **写**路径，补 native Element attribute 全族（R3098 读 + R3101 写）；② native **读写 round-trip** 闭合：setAttribute→getAttribute、id/className setter→getter 全 native，同 Document；③ setAttribute('id',x) 经 Document::set_attribute 更新 id_map → 新 id 可经 `__zw_native_element_for_id` 重解析（同对象身份 ===）；④ 验证 `with_dom_mut`（borrow_mut）+ `set_accessor_with_setter` 两新基础设施（后续树 mutation 切片复用）；⑤ 纯追加——既有 baselined 读路径未动，零回归；⑥ 默认 kill-switch 关 → 零行为变更。
+
+**已知限制（记录，后续切片）**：① **read-only 快照继承**（R3097 起）——生产 `native_dom=true` 路径写**快照 Document**（re-parse cached_html），**不渲染、不同步 polyfill 读**；测试/自包含环境（单一共享 Document）写 round-trip 正确。闭合需 live-Document 重构（webview 持 `Arc<Mutex<Document>>` 共享，高复杂度）；② **树 mutation native defer**（appendChild/removeChild/insertBefore——RFC S2 余下子片，reftest 守）；③ **setAttribute 经 record_mutation 推 pending_mutations**（快照无 observer 回调，无害）；④ 全量 `make bench-gate` 未本轮内联跑（>10min）——新 metric 已 scoped 实测（~403 ns，self-check 通过），NEW→PASS、既有路径未动；⑤ QuickJS no-op（继承）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-script-sandbox --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**exit 0；engine dom_bindings 16 测试（+2 S2 写），零回归；v8+quickjs 双路径**）+ pre-commit guard PASS。变更 engine（dom_bindings gc.rs + mod.rs + tests + bench），无渲染/布局/CSS 变更，product-smoke 不受影响。
+
+**下一步**：S2 attribute-write 子片完成（首 native 写路径 + borrow_mut/set_accessor_with_setter 基础设施）。候选：① **S2 树 mutation 子片**（appendChild/removeChild/insertBefore/replaceChild + childNodes/children native，reftest 守，RFC S2 余下主体）；② **read-only 快照→live Document**（webview 持 `Arc<Mutex<Document>>` 共享 renderer Document，闭合 R3097 起读写快照限制根因——解锁生产 native 写真值，高复杂度，战略项）；③ **S4 EventTarget native**（addEventListener/removeEventListener/dispatchEvent + 事件 target 用原生 node）；④ **`attributes` NamedNodeMap native getter**（补 S1 只读属性族）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门（树 mutation 额外 make reftest）。
+
 ### P1b S3b element 子树作用域 querySelector/querySelectorAll native——补齐 S3 真实 DOM 语义（仅后代 + 链式 R3099→R3098 全 native，本轮 R3100）
 
 承接 R3099（S3 selector→NodeId native，但仅**文档级**全局 `__zw_native_query_selector`；真实 DOM `element.querySelector` 子树作用域仍走 polyfill）→ 本切片把 querySelector 族补齐为 native **Element 方法**（`args.this()` 取元素 NodeId 作 root）。
