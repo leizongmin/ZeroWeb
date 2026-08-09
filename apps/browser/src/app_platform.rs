@@ -873,7 +873,6 @@ mod tests {
     #[test]
     #[serial]
     fn render_path_consumes_webview_image_cache() {
-        let _guard = crate::test_sync::tab_runtime_test_guard();
         use zero_engine::RenderPipeline;
         use zero_render_foundation::image_cache::ImageData;
 
@@ -917,7 +916,6 @@ mod tests {
         assert_eq!(count0, 0, "baseline: image color must be absent when cache empty");
 
         let count1 = {
-            let _guard = crate::test_sync::tab_runtime_test_guard();
             app.tabs
                 .image_cache_mut(tab_id)
                 .expect("tab snapshot")
@@ -935,7 +933,6 @@ mod tests {
     #[ignore = "macOS CI flaky (context menu rendering timing)"]
     #[test]
     fn context_menu_covers_page_glyphs_in_full_scene() {
-        let _guard = crate::test_sync::tab_runtime_test_guard();
         use zero_engine::RenderPipeline;
 
         let mut app = BrowserApp::new(RenderMode::Cpu);

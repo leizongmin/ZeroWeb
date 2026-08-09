@@ -914,7 +914,6 @@ impl BrowserApp {
     /// 测试用：轮询 worker 直至页面布局与首帧就绪。
     #[cfg(test)]
     pub fn wait_for_tab_content_ready(&mut self, tab_id: TabId) {
-        let _guard = crate::test_sync::tab_runtime_test_guard();
         // R2414：上限 30s（3000×10ms）。in-process tab_worker 是独立 OS 线程，在高并行测试
         // 负载下（多 tab_worker + 测试线程争 CPU）首帧可能 >5s；旧上限 5s 致 wait 超时后
         // 测试用空/未就绪快照继续 → hover hit-test 返回 None → floating_link flake。

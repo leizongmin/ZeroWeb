@@ -79,21 +79,24 @@ target/test-guard: scripts/test-guard.rs
 QUICKJS_CLIPPY_CRATES = zero-dom zero-css-parser zero-style-system zero-layout-engine zero-engine zero-canvas zero-host-runtime zero-net zero-security zero-storage zero-protocol zero-wasm-sandbox zero-page-runtime zero-render-foundation
 QUICKJS_TEST_CRATES = zero-script-sandbox zero-webview zero-browser zero-renderer zero-webview-demo zero-integration-tests zero-wpt-runner
 test: target/test-guard
-	# cargo-nextest 执行器（2026-08-07 评估后采用，需 `cargo install cargo-nextest`）：
-	# - 全量含 zero-render-foundation 14084 测试 1m29s（比 cargo test 8 线程 1m58s 快 ~30%）
-	# - 本地无 GPU 后端时 wgpu headless 测试间歇性挂起（>30min）由 nextest slow-timeout
-	#   （.config/nextest.toml，60s + 2 周期后杀进程树）防御——本地不再 --exclude 该 crate，
-	#   测试覆盖与 CI（真 Vulkan 后端，cargo test --workspace）对齐
-	# - 二进制间并行、单测输出仅失败详情；#[ignore] 测试跳过（71 个，与 cargo test 一致）
-	# - 并行化（2026-08-09）：QuickJS clippy（编译型）与 v8 nextest 测试并行跑——
-	#   clippy 编译的是 quickjs feature 组合产物（与 v8 产物不冲突），cargo 各自持锁；
-	#   v8 测试（~90s）时长覆盖 clippy 编译，总时长省一个编译段。
-	#   test-guard 两个实例独立监控各自进程树（阈值各自生效，不叠加）。
-	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo nextest run --workspace & \
+	# cargo test 执行器（2026-08-09 从 nextest 换回——字体共享后评估反转）：
+	# - nextest 每测试独立进程 → 每测试进程重复解析 19MB CJK 字体（~3s/进程），
+	#   实测 zero-wpt-runner 45s / zero-browser 30s；cargo test 每二进制 1 进程
+	#   （进程内并行），字体每二进制只付 1 次 → 同两包 3.4s / 3.4s，全量
+	#   v8 阶段 47.3s（nextest 68s，-30%），且与 CI（cargo test --workspace）
+	#   覆盖口径一致。历史评估（2026-08-07 nextest 1m29s vs cargo test 1m58s）
+	#   未计入字体缓存与「每测试进程」的相互作用，已被推翻。
+	# - wgpu headless 挂起（本地无 GPU 后端）由 test-guard --time-limit 900 兜底
+	#   （正常全量 ~50s；挂起 15min 杀进程树，替代 nextest slow-timeout）。
+	# - 并行化：QuickJS clippy（编译型）与 v8 测试并行跑——clippy 编译的是
+	#   quickjs feature 组合产物（与 v8 产物不冲突），cargo 各自持锁；v8 测试
+	#   （~50s）时长覆盖 clippy 编译，总时长省一个编译段。test-guard 两个实例
+	#   独立监控各自进程树（阈值各自生效，不叠加）。
+	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace & \
 	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & \
 	wait
-	# QuickJS 运行测试（v8/quickjs 接口一致性保证——1695 测试 ~75s）
-	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo nextest run --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES))
+	# QuickJS 运行测试（v8/quickjs 接口一致性保证）
+	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES))
 
 # WPT reftest（release 构建，约 4× 快于 debug；同样被 test-guard 包裹）。
 reftest: fetch-wpt-data target/test-guard

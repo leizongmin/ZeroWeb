@@ -265,8 +265,6 @@ impl TabManager {
 
     /// 轮询 Tab 更新快照；`active_tab` 为当前前台标签（后台 Tab 降低轮询频率）。
     pub fn poll(&mut self, active_tab: Option<TabId>) -> bool {
-        #[cfg(test)]
-        let _poll_guard = crate::test_sync::tab_runtime_test_guard();
         let tick = self.poll_tick;
         self.poll_tick = self.poll_tick.wrapping_add(1);
         let poll_background = tick.is_multiple_of(5);

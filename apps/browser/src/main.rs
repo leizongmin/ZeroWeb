@@ -46,7 +46,6 @@ mod tab_manager;
 mod tab_scripts;
 mod tab_snapshot;
 mod tab_worker;
-mod test_sync;
 mod text_input;
 mod text_metrics;
 mod ui_icons;
