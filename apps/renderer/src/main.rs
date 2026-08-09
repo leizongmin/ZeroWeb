@@ -502,7 +502,7 @@ impl RendererRuntime {
         }
         // R3054：implicit submit（submitter=None）未取消 → GET 导航。
         if outcome.default_allowed {
-            self.navigate_form_get(selector, None)?;
+            self.navigate_form(selector, None)?;
         }
         Ok(())
     }
@@ -527,20 +527,34 @@ impl RendererRuntime {
         }
         // R3054：click submit（submitter=该按钮）未取消 → GET 导航。
         if outcome.default_allowed {
-            self.navigate_form_get(selector, Some(selector))?;
+            self.navigate_form(selector, Some(selector))?;
         }
         Ok(())
     }
 
     /// P1a 导航（R3054）：form GET 提交导航——解析 enclosing form → [`form_get_submission_url`]
-    /// 算 GET 目标 URL（method=GET 且 action 可解析）→ handle_navigate。POST/form 不匹配 → no-op。
+    /// 算提交目标：**POST** → [`form_post_submission`]（url + urlencoded body）→ `navigate_with(POST, body)`；
+    /// 否则 **GET** → [`form_get_submission_url`] → `handle_navigate`（R3054）。method=dialog / 无 form / 解析失败 → no-op。
     /// 在 submit 事件派发 + apply 之后读 `cached_html`（含 listener 变更，如 JS 注入隐藏字段）。
-    fn navigate_form_get(&mut self, selector: &str, submitter: Option<&str>) -> Result<(), String> {
+    fn navigate_form(&mut self, selector: &str, submitter: Option<&str>) -> Result<(), String> {
         let base = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let html = self.cached_html.clone();
         let Some(form_sel) = zero_engine::enclosing_form_selector(&html, selector) else {
             return Ok(());
         };
+        // R3055：POST 表单 → POST 导航（url + body）。
+        if let Some((nav_url, body)) = zero_engine::form_post_submission(&html, &form_sel, submitter, &base) {
+            return self.navigate_with(
+                zero_protocol::message::NavigateParams {
+                    url: nav_url,
+                    referrer: self.current_url.clone(),
+                    navigation_epoch: self.navigation_epoch.wrapping_add(1),
+                },
+                "POST",
+                Some(&body),
+            );
+        }
+        // R3054：GET 表单 → GET 导航。
         if let Some(nav_url) = zero_engine::form_get_submission_url(&html, &form_sel, submitter, &base) {
             self.handle_navigate(zero_protocol::message::NavigateParams {
                 url: nav_url,
@@ -1028,6 +1042,25 @@ impl RendererRuntime {
         )
     }
 
+    /// 经浏览器 IPC 代理 POST 请求（R3055 form POST 导航）。body = urlencoded form data，
+    /// Content-Type=application/x-www-form-urlencoded（FetchParams 经浏览器侧 default_fetch_handler
+    /// → HttpClient::send POST，与页面 fetch() API R2923 同通路）。
+    fn fetch_post(&mut self, url: &str, body: &str) -> Result<Vec<u8>, String> {
+        if self.stub_network {
+            return Err(format!("stub network (no browser process): {url}"));
+        }
+        ipc_fetch(
+            &mut self.outbound,
+            &self.inbound_rx,
+            &mut self.next_fetch_id,
+            &mut self.deferred_inbound,
+            url,
+            "POST",
+            &[("Content-Type", "application/x-www-form-urlencoded")],
+            if body.is_empty() { None } else { Some(body) },
+        )
+    }
+
     fn push_history(&mut self, url: &str) {
         if self.history_index + 1 < self.history.len() {
             self.history.truncate(self.history_index + 1);
@@ -1095,7 +1128,16 @@ impl RendererRuntime {
     }
 
     fn handle_navigate(&mut self, params: NavigateParams) -> Result<(), String> {
-        tracing::info!("导航到: {}", params.url);
+        self.navigate_with(params, "GET", None)
+    }
+
+    /// 导航内部核心（R3055 参数化 method+body）。共享导航态设置（history/URL/清缓存/焦点/epoch/document state），
+    /// 然后按 method 取主文档：**GET** → [`AsyncPageLoad::start`]（异步主文档，既有路径）；
+    /// **POST** → 同步 [`Self::fetch_post`] body → [`AsyncPageLoad::from_html`]（绕过异步主文档 GET 路径——
+    /// 主文档 fetch host 不支持 method；POST 响应即文档 HTML，外链子资源仍经 host 异步抓取）。POST fetch 失败 →
+    /// 回落 GET `start`（保 load 状态机一致，复用既有 load-failure 处理；documented）。
+    fn navigate_with(&mut self, params: NavigateParams, method: &str, body: Option<&str>) -> Result<(), String> {
+        tracing::info!("导航到: {} ({})", params.url, method);
         self.pending_load = None;
         self.pending_script_prefetch = None;
         self.inflight_fetches.clear();
@@ -1116,6 +1158,21 @@ impl RendererRuntime {
             .as_mut()
             .expect("webview")
             .prepare_document_state(&page_url);
+
+        // R3055：POST 导航——同步 fetch POST body → from_html。POST fetch 失败（stub_network / 网络/HTTP
+        // 错误）→ 不命中此分支，回落下方 GET `start`（保 load 状态机一致，复用既有 load-failure 处理）。
+        if method.eq_ignore_ascii_case("POST")
+            && let Ok(bytes) = self.fetch_post(&page_url, body.unwrap_or_default())
+        {
+            let html = String::from_utf8_lossy(&bytes).into_owned();
+            return self.start_pending_load(PendingLoad {
+                load: AsyncPageLoad::from_html(page_url.clone(), html),
+                page_url,
+                deadline: Instant::now() + PAGE_LOAD_DEADLINE,
+                run_scripts_after: true,
+                emit_load_complete: true,
+            });
+        }
         self.start_pending_load(PendingLoad {
             load: AsyncPageLoad::start(page_url.clone()),
             page_url,
@@ -1599,12 +1656,19 @@ fn ipc_fetch_error(status_code: u16, body: &[u8]) -> String {
     }
 }
 
-fn ipc_fetch_get(
+/// 经浏览器 IPC 代理 HTTP 请求（R3055：从 `ipc_fetch_get` 泛化，支持 method/headers/body——供 POST form 导航）。
+/// 收发逻辑同 GET：发 `FetchRequest`，等待匹配 `request_id` 的 `FetchResponse`，非目标消息暂存局部队列后回填
+///（防单核自旋）。状态码非 2xx → Err。`ipc_fetch_get` 为 GET 便捷封装。
+#[allow(clippy::too_many_arguments)] // 8 参 = 4 IPC 通道 + url/method/headers/body，签名清晰优于打包结构体
+fn ipc_fetch(
     outbound: &mut IpcOutbound,
     inbound_rx: &Receiver<IpcMessage>,
     next_fetch_id: &mut u64,
     deferred: &mut VecDeque<IpcMessage>,
     url: &str,
+    method: &str,
+    headers: &[(&str, &str)],
+    body: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     let request_id = *next_fetch_id;
     *next_fetch_id += 1;
@@ -1613,9 +1677,9 @@ fn ipc_fetch_get(
         kind: IpcMessageKind::FetchRequest(FetchParams {
             request_id,
             url: url.to_string(),
-            method: "GET".into(),
-            headers: Vec::new(),
-            body: None,
+            method: method.to_string(),
+            headers: headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            body: body.map(|b| b.as_bytes().to_vec()),
         }),
     };
     outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
@@ -1660,6 +1724,17 @@ fn ipc_fetch_get(
     })();
     deferred.append(&mut skipped);
     result
+}
+
+/// GET 便捷封装（R3055：转发到泛化 [`ipc_fetch`]，无 headers/body）。既有调用点（字体/图片/预取）不变。
+fn ipc_fetch_get(
+    outbound: &mut IpcOutbound,
+    inbound_rx: &Receiver<IpcMessage>,
+    next_fetch_id: &mut u64,
+    deferred: &mut VecDeque<IpcMessage>,
+    url: &str,
+) -> Result<Vec<u8>, String> {
+    ipc_fetch(outbound, inbound_rx, next_fetch_id, deferred, url, "GET", &[], None)
 }
 
 fn ipc_scheme_to_engine(scheme: IpcColorScheme) -> PrefersColorSchemeValue {

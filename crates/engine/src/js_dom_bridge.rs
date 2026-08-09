@@ -1358,10 +1358,10 @@ pub fn has_attribute(html: &str, selector: &str, name: &str) -> bool {
 /// spec 默认选中 quirk）值=`value` 属性或文本；textarea：文本内容。submitter（type=submit 且有 name）的
 /// name=value 入数据集（spec：激活的提交按钮参与提交）。
 ///
-/// **已知限制（defer）**：① POST 导航（headless fetch_get 仅 GET）；② `<input type=file>`（无真文件）；
-/// ③ `<select multiple>`（按单选处理，取首个 selected）；④ `<input type=image>` 的 name.x/name.y 坐标；
-/// ⑤ `<input type=image>` / button 无 value 时 submitter 值 spec 默认值近似。GET 表单（搜索/过滤表单，web 最
-/// 高频表单导航形态）全覆盖。
+/// **已知限制（defer）**：① `<input type=file>`（无真文件）；② `<select multiple>`（按单选处理，取首个
+/// selected）；③ `<input type=image>` 的 name.x/name.y 坐标；④ `<input type=image>` / button 无 value 时
+/// submitter 值 spec 默认值近似；⑤ `<fieldset disabled>` 联动禁用子控件（仅判控件自身 disabled）。
+/// GET 表单（搜索/过滤表单，web 最高频表单导航形态）全覆盖；POST 见 [`form_post_submission`]。
 ///
 /// https://html.spec.whatwg.org/#constructing-the-form-data-set
 /// https://url.spec.whatwg.org/#concept-urlencoded-serializer
@@ -1371,6 +1371,65 @@ pub fn form_get_submission_url(
     submitter_sel: Option<&str>,
     base_url: &str,
 ) -> Option<String> {
+    let (action_abs, method, pairs) = collect_form_data(html, form_sel, submitter_sel, base_url)?;
+    // GET：method 非 post/dialog（缺省/GET/无效值均按 GET，spec）。POST 由 form_post_submission 处理。
+    if method == "post" || method == "dialog" {
+        return None;
+    }
+    let mut url = url::Url::parse(&action_abs).ok()?;
+    // GET：form 数据集替换 action URL 的 query 段（spec），fragment 保留。
+    if pairs.is_empty() {
+        // 空数据集 → 清 query（含 action 旧 query），无尾 `?`。
+        url.set_query(None);
+    } else {
+        let mut q = url.query_pairs_mut();
+        q.clear();
+        for (n, v) in &pairs {
+            q.append_pair(n, v);
+        }
+    }
+    Some(url.to_string())
+}
+
+/// P1a 导航（R3055）：解析 `<form>` **POST** 提交的目标 URL + `application/x-www-form-urlencoded` body
+///（闭合 form 导航 POST 侧，对称 R3054 GET——登录/数据提交表单常用 POST）。返回 `Some((action_url, body))`
+/// 当 method=POST 且 action 可解析；GET/dialog → None。body = 成功控件 urlencoded（name=value & ...，
+/// 复用 [`collect_form_data`]，控件收集规则与 GET 完全一致）。action_url 不含 query（POST 数据在 body）。
+///
+/// **已知限制（defer）**：① `enctype=multipart/form-data`（headless 近似 urlencoded，独立切片）；
+/// ② 同 R3054（file/multiple/image 坐标/fieldset disabled）。POST 登录/提交表单（urlencoded enctype，默认）全覆盖。
+pub fn form_post_submission(
+    html: &str,
+    form_sel: &str,
+    submitter_sel: Option<&str>,
+    base_url: &str,
+) -> Option<(String, String)> {
+    let (action_abs, method, pairs) = collect_form_data(html, form_sel, submitter_sel, base_url)?;
+    if method != "post" {
+        return None;
+    }
+    // POST body = urlencoded form data（spec application/x-www-form-urlencoded，multipart defer）。
+    // 经 throwaway Url 的 query_pairs_mut 复用 url crate 的 form_urlencoded 序列化（无新依赖）。
+    let mut body_url = url::Url::parse("https://form.post.invalid/").ok()?;
+    {
+        let mut q = body_url.query_pairs_mut();
+        for (n, v) in &pairs {
+            q.append_pair(n, v);
+        }
+    }
+    let body = body_url.query().unwrap_or("").to_string();
+    Some((action_abs, body))
+}
+
+/// P1a form 导航共享核心：解析 `<form>` → 校验 form 元素 → 读 method（lowercased）+ action（按 base 解析为
+/// 绝对，缺省→base_url）→ 收集成功控件 (name, value) 对（文档序）。供 [`form_get_submission_url`]（GET）和
+/// [`form_post_submission`]（POST）复用（DRY）。非 form / action 不可解析 → None。
+fn collect_form_data(
+    html: &str,
+    form_sel: &str,
+    submitter_sel: Option<&str>,
+    base_url: &str,
+) -> Option<(String, String, Vec<(String, String)>)> {
     let doc = parse_html(html);
     let form = find_by_selector(&doc, form_sel)?;
     // 仅 <form> 元素。
@@ -1381,23 +1440,20 @@ pub fn form_get_submission_url(
     if !is_form {
         return None;
     }
-    // method：POST/dialog → headless 不导航（GET-only 切片）。
+    // method（lowercased，供调用方判 GET/POST/dialog）；action 按 base 解析为绝对。
     let method = doc
         .get_attribute(form, "method")
         .unwrap_or_default()
         .trim()
         .to_ascii_lowercase();
-    if method == "post" || method == "dialog" {
-        return None;
-    }
-    // action：缺省/空 → 当前文档 URL（base_url）；否则按 base 解析为绝对。
     let action = doc.get_attribute(form, "action").unwrap_or_default();
     let action_abs = if action.trim().is_empty() {
         base_url.to_string()
     } else {
         crate::resolve_document_url(base_url, action.trim())
     };
-    let mut url = url::Url::parse(&action_abs).ok()?;
+    // action 须可解析为绝对 URL（调用方据此建 Url / body）。
+    url::Url::parse(&action_abs).ok()?;
 
     // submitter 解析为节点身份（NodeId 比较，避免跨选择器生成路径的字符串不一致）。
     let submitter_node = submitter_sel.and_then(|s| find_by_selector(&doc, s));
@@ -1469,19 +1525,7 @@ pub fn form_get_submission_url(
             _ => {}
         }
     }
-
-    // GET：form 数据集替换 action URL 的 query 段（spec），fragment 保留。
-    if pairs.is_empty() {
-        // 空数据集 → 清 query（含 action 旧 query），无尾 `?`。
-        url.set_query(None);
-    } else {
-        let mut q = url.query_pairs_mut();
-        q.clear();
-        for (n, v) in &pairs {
-            q.append_pair(n, v);
-        }
-    }
-    Some(url.to_string())
+    Some((action_abs, method, pairs))
 }
 
 /// 递归收集 `root` 子树（含嵌套 fieldset/div 等）内全部 input/select/textarea/button 元素，文档序。
