@@ -1859,3 +1859,64 @@ fn test_hash_scroll_to_anchor_r3061() {
         "无匹配元素 -> hashchange 仍派发"
     );
 }
+
+#[test]
+fn test_history_back_forward_cross_hash_scroll_r3065() {
+    // R3065：history back/forward/go 到 hash entry 滚到锚元素（闭合 R3061 限制②）。R3061 仅 _setLocationHash
+    //（location.hash= setter）滚锚，back/forward（_hist_dispatchPopState）到 hash entry 不滚——提取
+    // _scrollToAnchorForHash 共享 helper，back/forward hashChanged 时调用。real browser 跨 hash 导航滚锚
+    //（back 到 #sec entry 滚到 id/name="sec"）。同步滚（mirror _setLocationHash），popstate/hashchange 仍 defer。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='sec'>S</div><div id='other'>O</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    // mock rect：#sec → y=500，#other → y=900（scrollIntoView block:start → scrollY=y）；handle/detached → 空。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| match args.first() {
+            Some(s) if s.starts_with("__") => String::new(),
+            Some(s) if s.contains("#other") => "0,900,100,50".to_string(),
+            Some(s) if s.contains("#sec") => "0,500,100,50".to_string(),
+            _ => "0,0,0,0".to_string(),
+        }),
+    );
+
+    assert_eq!(sandbox.execute("window.scrollY").unwrap().value, "0", "初始 scrollY=0");
+
+    // 建 history：page → page#sec → page#other（每步 location.hash= 滚到锚，R3061）。
+    sandbox.execute("location.hash = '#sec';").unwrap();
+    assert_eq!(sandbox.execute("window.scrollY").unwrap().value, "500", "location.hash='#sec' -> scrollY=500");
+    sandbox.execute("location.hash = '#other';").unwrap();
+    assert_eq!(sandbox.execute("window.scrollY").unwrap().value, "900", "location.hash='#other' -> scrollY=900");
+
+    // history.back() → 回 page#sec entry，hashChanged(other->sec) → 滚到 #sec（scrollY 900->500）。
+    sandbox.execute("history.back();").unwrap();
+    assert_eq!(
+        sandbox.execute("window.scrollY").unwrap().value,
+        "500",
+        "history.back() 到 #sec entry -> 滚到 #sec（scrollY=500）"
+    );
+
+    // history.forward() → 进 page#other entry，hashChanged(sec->other) → 滚到 #other（scrollY 500->900）。
+    sandbox.execute("history.forward();").unwrap();
+    assert_eq!(
+        sandbox.execute("window.scrollY").unwrap().value,
+        "900",
+        "history.forward() 到 #other entry -> 滚到 #other（scrollY=900）"
+    );
+
+    // history.go(-1) → 回 page#sec entry → 滚到 #sec（go 共享 _hist_dispatchPopState 路径）。
+    sandbox.execute("history.go(-1);").unwrap();
+    assert_eq!(
+        sandbox.execute("window.scrollY").unwrap().value,
+        "500",
+        "history.go(-1) 到 #sec entry -> 滚到 #sec（scrollY=500）"
+    );
+}

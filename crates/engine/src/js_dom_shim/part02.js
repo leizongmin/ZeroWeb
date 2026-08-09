@@ -1727,6 +1727,11 @@
     var newHref = cur.url;
     var hashChanged = oldHrefBefore !== undefined
       && String(oldHrefBefore).split('#')[1] !== String(newHref).split('#')[1];
+    // R3065：back/forward/go 到 hash entry → 滚到锚元素（闭合 R3061 限制②）。real browser 跨 hash 导航滚锚
+    //（back 到 #sec entry 滚到 id/name="sec"）。同步滚（mirror _setLocationHash），popstate/hashchange 仍 defer。
+    if (hashChanged) {
+      _scrollToAnchorForHash(String(newHref).split('#')[1] || '');
+    }
     _defer(function () {
       var ev = new PopStateEvent('popstate', { state: st });
       ev.target = globalThis;
@@ -1822,6 +1827,23 @@
     }
   }
 
+  // R3065：滚到锚元素（id 或 name = frag）共享 helper。R3061 _setLocationHash 内联滚锚提取——
+  // 供 _setLocationHash（location.hash= setter）+ _hist_dispatchPopState（back/forward/go 到 hash entry，
+  // 闭合 R3061 限制②）复用。real browser 同文档片段导航滚锚（<a href="#sec"> / location.hash= / history.back()
+  // 到 #sec entry 均滚到 id="sec" 或 name="sec" 元素）。headless 无真 viewport → scrollIntoView 更新 scrollTop
+  //（R3060）+ 派 scroll 事件（documented 近似）。无匹配元素 → 不滚。函数声明提升：_hist_dispatchPopState（前定义）可调。
+  function _scrollToAnchorForHash(frag) {
+    if (!frag || !globalThis.document) return;
+    var anchor = null;
+    try { anchor = globalThis.document.getElementById(frag); } catch (_e) {}
+    if (!anchor) {
+      try { anchor = globalThis.document.querySelector('[name="' + frag + '"]'); } catch (_e) {}
+    }
+    if (anchor && typeof anchor.scrollIntoView === 'function') {
+      try { anchor.scrollIntoView(); } catch (_e) {}
+    }
+  }
+
   // R3006：`location.hash = v` setter——更新 hash + 新 history entry + 异步派发 hashchange（SPA hash 路由核心，
   // 如 older react-router hash mode）。spec：v 无 '#' 前缀自动补；hash 未变 no-op（不派 hashchange）。
   // newHref = 当前 href 去 hash 段 + 新 hash（hash 总在 URL 末尾）。
@@ -1833,20 +1855,8 @@
     var newHref = oldHref.split('#')[0] + h;
     if (newHref === oldHref) return; // hash 未变 → no-op（spec：不派 hashchange）
     _pushHistNav(newHref, oldHref);
-    // R3061：滚到锚元素（id 或 name = hash 去 '#'）——闭合 R3053 限制①。real browser 同文档片段导航滚锚
-    //（<a href="#sec"> 点击 / location.hash= 编程设值均滚到 id="sec" 或 name="sec" 元素）。headless 无真
-    // viewport → scrollIntoView 更新 scrollTop（R3060）+ 派 scroll 事件（documented 近似）。无匹配元素 → 不滚。
-    var frag = h.charAt(0) === '#' ? h.slice(1) : '';
-    if (frag && globalThis.document) {
-      var anchor = null;
-      try { anchor = globalThis.document.getElementById(frag); } catch (_e) {}
-      if (!anchor) {
-        try { anchor = globalThis.document.querySelector('[name="' + frag + '"]'); } catch (_e) {}
-      }
-      if (anchor && typeof anchor.scrollIntoView === 'function') {
-        try { anchor.scrollIntoView(); } catch (_e) {}
-      }
-    }
+    // R3061：滚到锚元素（frag = hash 去 '#'）——闭合 R3053 限制①。real browser 同文档片段导航滚锚。
+    _scrollToAnchorForHash(h.charAt(0) === '#' ? h.slice(1) : '');
   }
 
   // R3008：`location.href/pathname/search = v` setter——经 URL part setter 计算新 href（spec-correct 组件替换，
