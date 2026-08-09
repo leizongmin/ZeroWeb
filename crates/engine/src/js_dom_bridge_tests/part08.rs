@@ -1855,3 +1855,78 @@ fn test_option_constructor_and_select_add_r2832() {
         "new Option(...,selected=true) → .selected=true（handle has-attr 变体）"
     );
 }
+
+#[test]
+fn test_element_get_animations_r3067() {
+    // R3067：Element.getAnimations() / Document.getAnimations()（Web Animations API）——闭合 Element.animate()
+    //（R2965）查询缺口。动画库（GSAP/Framer Motion/Lottie）调用 getAnimations() 查询/提交动画。headless 瞬间完成
+    //（_defer microtask 后 playState='finished'）→ finished 动画仍含（可查询/commitStyles）；cancelled（idle）排除。
+    // 验证：① el.getAnimations() per-element 计数 + 返回对象身份；② cancelled 排除；③ document.getAnimations() flat；
+    // ④ 无动画元素返空数组。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='a'></div><div id='b'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 建 3 动画：#a 两个（a2 cancel→idle），#b 一个。execute 末 microtask checkpoint 后 a1/b1=finished，a2=idle。
+    sandbox
+        .execute(
+            "globalThis.__a1 = document.querySelector('#a').animate([{opacity:0},{opacity:1}], 100);\
+             globalThis.__a2 = document.querySelector('#a').animate([{color:'red'},{color:'blue'}], 50);\
+             globalThis.__a2.cancel();\
+             globalThis.__b1 = document.querySelector('#b').animate([{transform:'none'},{transform:'scale(2)'}], 200);",
+        )
+        .unwrap();
+
+    // ① #a.getAnimations()：返 1（a2 cancelled/idle 排除，a1 finished 含）+ 对象身份 === a1。
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#a').getAnimations().length)")
+            .unwrap()
+            .value,
+        "1",
+        "#a.getAnimations() 返 1（a2 cancelled 排除）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#a').getAnimations()[0] === globalThis.__a1)")
+            .unwrap()
+            .value,
+        "true",
+        "#a.getAnimations()[0] === a1（对象身份）"
+    );
+
+    // ② #b.getAnimations()：返 1（b1）。
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#b').getAnimations().length)")
+            .unwrap()
+            .value,
+        "1",
+        "#b.getAnimations() 返 1（b1，per-element 隔离）"
+    );
+
+    // ③ document.getAnimations()：返全文档 flat（a1 + b1 = 2，a2 cancelled 排除）。
+    assert_eq!(
+        sandbox.execute("String(document.getAnimations().length)").unwrap().value,
+        "2",
+        "document.getAnimations() 返 2（a1 + b1 flat，a2 cancelled 排除）"
+    );
+
+    // ④ 无动画元素 getAnimations() 返空数组。
+    assert_eq!(
+        sandbox
+            .execute("String(document.createElement('div').getAnimations().length)")
+            .unwrap()
+            .value,
+        "0",
+        "无动画元素 getAnimations() 返空数组"
+    );
+}

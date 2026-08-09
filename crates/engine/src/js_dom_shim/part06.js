@@ -711,6 +711,20 @@
     getElementById: function(id) {
       return globalThis.document.querySelector('#' + id);
     },
+    // R3067：`document.getAnimations()`（Web Animations API）——返文档内全部动画（所有元素，cancelled/idle 排除；
+    // finished 含）。_elementAnimations per-element 注册表 flat + filter。headless 瞬间完成 → finished 动画可查询/commitStyles。
+    getAnimations: function() {
+      var out = [];
+      for (var k in _elementAnimations) {
+        var arr = _elementAnimations[k];
+        if (!arr) continue;
+        for (var i = 0; i < arr.length; i++) {
+          var a = arr[i];
+          if (a && a.playState !== 'idle') out.push(a);
+        }
+      }
+      return out;
+    },
     // R2924 elementFromPoint：`document.elementFromPoint(x, y)` → 视口 CSS 像素 (x,y) 命中的最深元素。
     // 经 host `__zw_elementFromPoint(x, y)`（renderer/browser render 后 swap 进 HitTestCache）求命中选择器
     // → _wrapSelector。未注册（engine/reftest/polyfill 无渲染）/ 无命中 → null（spec）。

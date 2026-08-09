@@ -448,6 +448,9 @@
         }
       }
     });
+    // R3067：入 per-element 动画注册表（elKey 复用 _elKey(sel,handle)），供 Element/Document.getAnimations() 查询。
+    var _akey = _elKey(sel, handle);
+    (_elementAnimations[_akey] || (_elementAnimations[_akey] = [])).push(anim);
     return anim;
   }
 

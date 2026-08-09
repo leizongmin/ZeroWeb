@@ -696,6 +696,14 @@
         if (prop === 'animate') {
           return function (keyframes, options) { return _makeAnimation(keyframes, options, sel, handle); };
         }
+        // R3067：`el.getAnimations()`（Web Animations API）——返本元素动画（cancelled/idle 排除；finished 含）。
+        // 读注册表在调用时（非 get-trap 时）以反映 reset 后空态 + 后续新增动画。返副本数组（防调用方 mutate 注册表）。
+        if (prop === 'getAnimations') {
+          return function () {
+            var _anims = _elementAnimations[key] || [];
+            return _anims.filter(function (a) { return a && a.playState !== 'idle'; }).slice();
+          };
+        }
         // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：
         // create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。sel-based 源完整；
         // handle 源 tag/attrs 受限（无 get_tag/attr_names handle 变体，best-effort）。
