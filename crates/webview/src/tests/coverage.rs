@@ -411,6 +411,72 @@ fn test_transitive_module_graph_r3094() {
     );
 }
 
+// ── P1b S2：原生 DOM 绑定生产接线（native_dom kill-switch，本轮 R3097）──
+// native_dom=true 时，run_page_scripts 在 polyfill 桥之上额外安装原生 nodeType/tagName
+// getter（经 Sandbox::install_native_bindings escape-hatch 进持久 Context）。页面脚本读
+// __zw_native_element_for_id('a').nodeType/.tagName → 原生直读 re-parsed Document（不经 shim
+// 字符串桥）。默认关 → 零回归（下方 disabled 测试）。
+
+// 原生 DOM 绑定仅 V8（quickjs 无 install_native_bindings escape-hatch）；ON 路径仅 v8 测。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_dom_bindings_wiring_r3097() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body>\
+         <div id=\"a\"><span id=\"b\">x</span></div>\
+         <script>\
+           globalThis.__nt = __zw_native_element_for_id('a').nodeType;\
+           globalThis.__tn = __zw_native_element_for_id('a').tagName;\
+           globalThis.__tnB = __zw_native_element_for_id('b').tagName;\
+           globalThis.__same = (__zw_native_element_for_id('a') === __zw_native_element_for_id('a'));\
+         </script>\
+         </body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "native_dom 接线无异常, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__nt)").unwrap(),
+        "1",
+        "native nodeType"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__tn)").unwrap(),
+        "DIV",
+        "native tagName（HTML 大写）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__tnB)").unwrap(),
+        "SPAN",
+        "native tagName 多元素不串扰"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__same)").unwrap(),
+        "true",
+        "NodeId↔对象身份映射（同 id 返同对象）"
+    );
+}
+
+#[test]
+fn test_native_dom_disabled_by_default_r3097() {
+    // 默认关：__zw_native_element_for_id 未安装 → typeof 'undefined'（polyfill 桥不受影响）。
+    let mut wv = crate::WebViewBuilder::new().build();
+    wv.load_html(
+        "<html><body><div id=\"a\"></div>\
+         <script>globalThis.__has = (typeof __zw_native_element_for_id);</script>\
+         </body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "默认（native_dom 关）无异常");
+    assert_eq!(
+        wv.execute_script("String(globalThis.__has)").unwrap(),
+        "undefined",
+        "默认 native_dom 关 → 工厂未安装（零回归）"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]

@@ -146,6 +146,21 @@ pub trait Sandbox {
     fn reset_context(&mut self);
     /// 返回沙箱配置的引用。
     fn config(&self) -> &SandboxConfig;
+    /// P1b S2 原生绑定安装 escape-hatch（RFC `p1b-v8-native-bindings-rfc.md` §6 S2）。
+    ///
+    /// 进入沙箱持久 V8 Context（与 `execute` 同 scope setup），在 raw scope + context 内
+    /// 调用 `installer`（宿主侧经此安装 `ObjectTemplate`/`FunctionTemplate`/accessor 等原生
+    /// 绑定，不经 String 桥）。仅 V8 后端实现（返 `true`）；QuickJS 降级 no-op（返 `false`）。
+    ///
+    /// **默认 no-op**：非 V8 后端或未实现时返 `false`（零回归）。
+    #[cfg(feature = "v8")]
+    #[allow(clippy::type_complexity)] // escape-hatch 闭包类型（镜像 register_callback 模式）
+    fn install_native_bindings(
+        &mut self,
+        _installer: Box<dyn FnOnce(&mut v8::PinScope, v8::Local<v8::Context>)>,
+    ) -> bool {
+        false
+    }
 }
 
 #[cfg(not(any(feature = "v8", feature = "quickjs")))]

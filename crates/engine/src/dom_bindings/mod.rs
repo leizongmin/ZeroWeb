@@ -58,6 +58,16 @@ pub fn install_dom_bindings_if_enabled(
     true
 }
 
+/// 从 HTML 文本解析 `Document` + 安装原生绑定（webview 接线封装 parse）。
+///
+/// 供 webview `run_page_scripts` 经 `Sandbox::install_native_bindings` escape-hatch 调用，
+/// 避免 webview 直接依赖 `zero_dom`——Document 创建封装于 engine。read-only 快照
+/// （re-parse 入参 html；不随页面 mutation 同步，写入切片后续）。
+pub fn install_dom_bindings_from_html(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context>, html: &str) {
+    let dom = Rc::new(RefCell::new(zero_dom::parse_html(html)));
+    install_dom_bindings(scope, ctx, dom);
+}
+
 /// 安装原生 DOM 绑定到指定 V8 上下文。
 ///
 /// - 注入 DOM 源（线程局部，供 getter 读）。

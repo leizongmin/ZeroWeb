@@ -119,6 +119,25 @@
 
 ## 最近完成的改进
 
+### P1b S2 生产接线——原生绑定接通 webview 真实页面沙箱（Sandbox::install_native_bindings escape-hatch + WebViewConfig.native_dom，默认关 → 零回归，本轮 R3097）
+
+承接 R3096（S1 dom_bindings 生产化，但「未接 run_page_scripts 生产管线」）→ S2 闭合该限制。原生绑定现可经 `WebViewConfig.native_dom=true` 在 `run_page_scripts` 时安装到页面持久 V8 Context，与 polyfill 桥共存——页面脚本可直接 `__zw_native_element_for_id('a').nodeType/.tagName` 原生直读（不经 shim 字符串桥）。解决 S1 发现的分层 gap（script 路径无 live Document）：re-parse `cached_html` 为独立 `Document`（read-only 快照）+ escape-hatch 进沙箱持久 Context。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`Sandbox::install_native_bindings` escape-hatch** | `crates/script-sandbox/src/lib.rs` + `v8_runtime.rs` | trait 方法（cfg v8，默认 `false`）+ `V8Sandbox::with_context`（进持久 Context，镜像 `execute` scope setup，调闭包）。QuickJS 降级 no-op。 |
+| **`install_dom_bindings_from_html`** | `crates/engine/src/dom_bindings/mod.rs` | 封装 `parse_html`，避免 webview 直接依赖 `zero_dom`；read-only 快照。 |
+| **`WebViewConfig.native_dom` + builder + 接线** | `crates/webview/src/webview.rs` + `webview_builder.rs` | kill-switch（默认 `false` → 零回归）+ `WebViewBuilder::native_dom(bool)`；`run_page_scripts_impl` 在 `register_dom_callbacks` 后经 escape-hatch 安装。 |
+| **webview 集成测试** | `crates/webview/src/tests/coverage.rs`（+2 测试） | `test_native_dom_bindings_wiring_r3097`（v8：native_dom=true → nodeType=1/tagName=DIV·SPAN/身份===；cfg v8）+ `test_native_dom_disabled_by_default_r3097`（默认关 → typeof 'undefined'，v8+quickjs 双通过）。 |
+
+**为何净正向**：① 闭合 S1 生产接线限制（原生绑定现可达真实页面沙箱，非仅 self-contained 实验）；② escape-hatch 为通用机制（后续 S3+ 更多 getter/写入经同路径安装）；③ 默认关 → 零回归（全量 make test 全绿 16128，v8+quickjs）；④ read-only 快照 + cfg v8 gate 限制爆炸半径。
+
+**已知限制（记录，后续切片）**：① **read-only 快照**——re-parse `cached_html` 为独立 `Document`，**不随页面 mutation 同步**（JS 经 polyfill 改 DOM 后 native 读仍初值）；nodeType/tagName 等稳定属性无碍，写入路径（S3+ mutation 经 native）后续；② **仅接线 `run_page_scripts_impl`**（`dispatch_event` 事件派发路径不接，事件不读 native getter）；③ **QuickJS no-op**（`install_native_bindings` 默认 `false`，quickjs 无 v8 escape-hatch）；④ 线程局部 `gc.rs` 状态在单沙箱生命周期内有效（`reset_context` 接入导航重置后续）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-script-sandbox -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；webview +2 测试（v8 ON 路径 cfg-gated），零回归；v8+quickjs 双路径**）+ pre-commit guard PASS。变更 script-sandbox（escape-hatch）+ engine（`install_dom_bindings_from_html`）+ webview（config + builder + 接线 + 测试）+ RFC 文档（无渲染/布局/CSS 变更），product-smoke 不受影响。
+
+**下一步**：S2 生产接线完成（原生绑定可达页面沙箱，默认关）。**S3 = selector→NodeId native**（`querySelector` 接 `find_by_selector` full selector 引擎，消费 zero_dom 选择器；或 `getElementById` 之外的选择器）；或 **S1 只读属性族扩展**（`nodeName`/`attributes`/`getAttribute` native getter，建 S1 对照门工作流）。也可续 P1a 深项（diamond module / browser storage 持久化）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b S1 dom_bindings 生产化——首组原生 getter（nodeType/tagName）+ NodeId↔对象映射 + bench（native ~15.6x 快于 polyfill）+ kill-switch（架构决策 Option A 落地，本轮 R3096）
 
 承接 R3095（S0 PoC 验证 TBD-1/TBD-2 通过）→ S1 dom_bindings 生产化。S0 仅验证 API 可用；S1 落地生产模块 + 首组原生 getter 接管线 + NodeId↔对象身份映射 + bench 对照 + kill-switch。**架构决策（Option A）**：engine 加 feature-gated `v8` dep + script-sandbox `ensure_v8_initialized` 提 `pub`，绑定置 engine（拥有 DOM：`Document`/`NodeId`）；不选 script-sandbox 托管（通用 JS 沙箱，耦合 DOM 反转所有权）。getter 经线程局部 DOM 源（`gc.rs`）读真实 Document，**不经 shim 字符串桥**。

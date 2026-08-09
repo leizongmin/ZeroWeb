@@ -433,6 +433,33 @@ impl V8Sandbox {
         self.cached_context = None;
     }
 
+    /// P1b S2 escape-hatch：进入持久 V8 Context，在 raw scope + context 内执行 `f`。
+    ///
+    /// 供 [`Sandbox::install_native_bindings`] 安装原生 DOM 绑定（`ObjectTemplate`/
+    /// `FunctionTemplate`/accessor）——与 `execute` 共享同一持久 Context + scope setup
+    /// （isolate.enter + `scope!` + `resolve_context` + `ContextScope`），故 `f` 安装的
+    /// 全局对象/模板对后续 `execute` 可见。无 isolate / 未初始化时返 `None`。
+    ///
+    /// 镜像 [`V8Sandbox::execute`] 的 scope 进入（含 `IsolateEnterGuard` 的 enter/exit 配对）。
+    fn with_context<R>(&mut self, f: impl FnOnce(&mut v8::PinScope, v8::Local<v8::Context>) -> R) -> Option<R> {
+        let persistent = self.config.persistent_context;
+        // SAFETY: 同 execute()——cached_context 与 isolate 为不同字段；raw ptr 借用
+        // cached_context 不与 HandleScope 的 isolate 借用重叠。
+        let cached_ptr: *mut _ = &mut self.cached_context;
+        let isolate = self.isolate.as_mut()?;
+        // SAFETY: enter/exit 配对（IsolateEnterGuard drop 时 exit），维持 V8 栈式纪律。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+        v8::scope!(let hs, isolate);
+        // SAFETY: cached_ptr 指向 self.cached_context，与 isolate 不重叠。
+        let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
+        let mut ctx_scope = v8::ContextScope::new(hs, context);
+        v8::tc_scope!(let scope, &mut ctx_scope);
+        Some(f(scope, context))
+    }
+
     /// 获取V8引擎版本号。
     pub fn v8_version() -> &'static str {
         ensure_v8_initialized();
@@ -538,6 +565,13 @@ impl crate::Sandbox for V8Sandbox {
     }
     fn config(&self) -> &SandboxConfig {
         &self.config
+    }
+    #[allow(clippy::type_complexity)] // escape-hatch 闭包类型（镜像 register_callback 模式）
+    fn install_native_bindings(
+        &mut self,
+        installer: Box<dyn FnOnce(&mut v8::PinScope, v8::Local<v8::Context>)>,
+    ) -> bool {
+        self.with_context(|scope, ctx| installer(scope, ctx)).is_some()
     }
 }
 

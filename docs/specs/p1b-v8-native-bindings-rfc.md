@@ -3,7 +3,7 @@
 **版本**：v0.1（草稿）
 **日期**：2026-08-08
 **作者**：ZeroWeb rally（自主推进）
-**状态**：v0.1 已批准 S0 PoC（2026-08-09 用户决策）；**S0 PoC 验证完成（R3095, 2026-08-09）—— TBD-1/TBD-2 阻塞性验证通过**；**S1 dom_bindings 生产化完成（R3096, 2026-08-09）—— 首组原生 getter（nodeType/tagName）接管线 + NodeId↔对象映射 + bench（native ~15.6x 快于 polyfill）+ kill-switch，架构决策 Option A（engine 加 feature-gated v8 dep）落地**；S1–S7 按 §4 逐片 land（详见 §6 S0/S1 结论）
+**状态**：v0.1 已批准 S0 PoC（2026-08-09 用户决策）；**S0 PoC 验证完成（R3095, 2026-08-09）—— TBD-1/TBD-2 阻塞性验证通过**；**S1 dom_bindings 生产化完成（R3096, 2026-08-09）—— 首组原生 getter（nodeType/tagName）+ NodeId↔对象映射 + bench（native ~15.6x）+ kill-switch**；**S2 生产接线完成（R3097, 2026-08-09）—— 原生绑定接通 webview 真实页面沙箱（`Sandbox::install_native_bindings` escape-hatch + `WebViewConfig.native_dom`，默认关 → 零回归，webview 集成测试通过）**；S3+ 按 §4 逐片 land（详见 §6 S0/S1/S2 结论）
 
 > **与字体栈 RFC 同级**：本 RFC 是 `docs/goal/zero-web/master.md` 反复标注「P1b（V8 原生绑定）需独立 RFC，与字体栈 RFC 同级对待」的落地。字体栈 RFC（`docs/goal/rendering-compat/fontdue-replacement-scoping.md`）解决「看起来对不对」（渲染一致性），本 RFC 解决「能不能用」（JS 性能与 Web Components 正确性）。
 
@@ -246,6 +246,22 @@ Fetch/Observer/FontFaceSet/事件循环 等高层 API 保留 shim（js_dom_shim.
 **下一切片（S2 接线）**：S1 已证明 native 管线（值传递 + GC + 真实 DOM 读）可用并量化收益，但**未接 run_page_scripts 生产管线**——发现架构分层 gap：当前 script 执行路径（webview `run_page_scripts_impl`）仅持有序列化 `dom_html` 串，无 live `Document`（`Document` 在 `RenderPipeline.cached_doc`，单独一层）。生产接线需 ① webview 持 live `Document`（`Arc<Mutex<Document>>` 共享或 parse 复刻）+ ② V8Sandbox escape-hatch（`with_context` 暴露持久 Context 的 raw scope 供 install）+ ③ `Box<dyn Sandbox>` 路径取 concrete `V8Sandbox`（或 trait 加 escape-hatch 方法）。中-高复杂度，独立切片。其后 S1 只读属性族（nodeName/attributes）→ S2 写入/子树（reftest 守）。
 
 **关键 API（rusty_v8 150.2.0，S1 新用）**：`ObjectTemplate::set_accessor(key, getter)`（无 scope 参）+ `AccessorNameGetterCallback`（ZST `fn(&mut PinScope, Local<Name>, PropertyCallbackArguments, ReturnValue<Value>)`，状态经线程局部）+ `PropertyCallbackArguments::holder()`（实例对象，读 internal slot）+ `ObjectTemplate::new_instance` + `FunctionTemplate::builder(fn).build().get_function`。
+
+### S2 生产接线结论（2026-08-09，R3097）
+
+**S1 dom_bindings 模块接通 webview 真实页面沙箱**（闭合 S1 「未接 run_page_scripts 生产管线」限制）。原生绑定现可经 `WebViewConfig.native_dom=true` 在 `run_page_scripts` 时安装到页面持久 V8 Context，与 polyfill 桥共存（页面脚本可直接读 `__zw_native_element_for_id('a').nodeType/.tagName`）。
+
+**接线机制（escape-hatch）**：
+- **`Sandbox::install_native_bindings(Box<dyn FnOnce(&mut PinScope, Local<Context>)>) -> bool`**（cfg v8，trait 方法，默认 `false`）：通用 escape-hatch，QuickJS 降级 no-op。
+- **`V8Sandbox::with_context`**（私有）：进入持久 Context（镜像 `execute` 的 isolate.enter + scope! + resolve_context + ContextScope），调闭包——故安装的模板/全局对后续 `execute` 可见。
+- **`install_dom_bindings_from_html`**（engine）：封装 `parse_html`，避免 webview 直接依赖 `zero_dom`。
+- **`WebViewConfig.native_dom` + `WebViewBuilder::native_dom`**：kill-switch（默认 `false` → 零回归）。`run_page_scripts_impl` 在 `register_dom_callbacks` 后、脚本执行前，经 escape-hatch 安装。
+
+**验证**：webview 集成测试（v8）`test_native_dom_bindings_wiring_r3097`——`native_dom=true` 页面脚本读 `nodeType=1`/`tagName=DIV`/`SPAN` + 对象身份 `=== true`；`test_native_dom_disabled_by_default_r3097`——默认关 → 工厂 `typeof === 'undefined'`（v8+quickjs 双通过）。全量 `make test` 16128 全绿。
+
+**已知限制（记录，后续切片）**：① **read-only 快照**——`run_page_scripts_impl` re-parse `cached_html` 为独立 `Document`，**不随页面 mutation 同步**（JS 经 polyfill 改 DOM 后，native 读仍是初值）；nodeType/tagName 等稳定属性无碍，写入路径（S3+ mutation 经 native）后续。② **仅接线 `run_page_scripts_impl`**（`dispatch_event` 一次性事件派发路径不接，事件不读 native getter）。③ **QuickJS 后端 no-op**（`install_native_bindings` 默认 `false`；quickjs 无 v8 escape-hatch）。④ 线程局部 `gc.rs` 状态在 webview 单沙箱生命周期内有效（`reset_context` 接入导航重置为后续）。
+
+**下一步**：S3 = selector→NodeId 解析接 full selector 引擎（`querySelector` native，消费 `zero_dom` 选择器，复用 `find_by_selector`）；或 S1 只读属性族扩展（`nodeName`/`attributes`/`getAttribute` native getter）。每切片 kill-switch + make test 零回归。
 
 ---
 

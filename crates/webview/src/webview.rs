@@ -55,6 +55,13 @@ pub struct WebViewConfig {
     pub external_script: Option<ExternalScriptExecutor>,
     /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源；None → 外链脚本跳过，离线语义）。
     pub script_source_fetcher: Option<ScriptSourceFetcher>,
+    /// P1b S2：启用原生 DOM 绑定（RFC `p1b-v8-native-bindings-rfc.md`）。
+    ///
+    /// 开启时，`run_page_scripts` 在 polyfill 桥之上额外安装原生 `nodeType`/`tagName` 等
+    /// getter（`engine::dom_bindings`，经 `Sandbox::install_native_bindings` escape-hatch），
+    /// 从 re-parsed `Document` 直读（不经 shim 字符串桥）。默认关 → 零回归。生产接线为
+    /// read-only 快照（re-parse cached_html；mutation 同步为后续写入切片）。
+    pub native_dom: bool,
 }
 
 impl Default for WebViewConfig {
@@ -69,6 +76,7 @@ impl Default for WebViewConfig {
             http_timeout_secs: None,
             external_script: None,
             script_source_fetcher: None,
+            native_dom: false,
         }
     }
 }
@@ -85,6 +93,7 @@ impl std::fmt::Debug for WebViewConfig {
             .field("http_timeout_secs", &self.http_timeout_secs)
             .field("external_script", &self.external_script.is_some())
             .field("script_source_fetcher", &self.script_source_fetcher.is_some())
+            .field("native_dom", &self.native_dom)
             .finish()
     }
 }
@@ -1137,6 +1146,19 @@ impl WebView {
         let page_url: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url);
+
+        // P1b S2：原生 DOM 绑定（kill-switch `native_dom` 默认关 → 零回归）。开启时在 polyfill
+        // 桥之上额外安装原生 nodeType/tagName 等 getter（`engine::dom_bindings`），经
+        // `Sandbox::install_native_bindings` escape-hatch 进沙箱持久 Context。read-only 快照
+        // （re-parse cached_html 为独立 Document；不随 mutation 同步——写入切片后续）。
+        #[cfg(feature = "v8")]
+        if self.config.native_dom {
+            let html_for_install = html.clone();
+            let _installed = sandbox.install_native_bindings(Box::new(move |scope, ctx| {
+                zero_engine::dom_bindings::install_dom_bindings_from_html(scope, ctx, &html_for_install);
+            }));
+            tracing::debug!("native DOM bindings installed (native_dom=true)");
+        }
 
         // R3091：__zw_fetch_script（进程内路径，backed by ScriptSourceFetcher）—— 供 shim Worker 构造器
         //（外链 URL）/ 动态 import() fetch 外链脚本源。fetcher 未配 → 不注册（shim typeof-check no-op）。

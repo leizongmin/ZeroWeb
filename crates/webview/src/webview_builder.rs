@@ -71,6 +71,16 @@ impl WebViewBuilder {
         self
     }
 
+    /// P1b S2：启用原生 DOM 绑定（`engine::dom_bindings`，read-only 快照）。
+    ///
+    /// 开启时 `run_page_scripts` 在 polyfill 桥之上额外安装原生 `nodeType`/`tagName` 等
+    /// getter，从 re-parsed `Document` 直读（不经 shim 字符串桥）。默认关 → 零回归。
+    /// 详见 [`WebViewConfig::native_dom`]。
+    pub fn native_dom(mut self, enabled: bool) -> Self {
+        self.config.native_dom = enabled;
+        self
+    }
+
     /// 构建 WebView 实例。
     ///
     /// 如果 `config.url` 已设置，会自动调用 `load_url` 将 WebView
