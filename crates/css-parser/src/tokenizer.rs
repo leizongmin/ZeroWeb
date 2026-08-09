@@ -169,24 +169,28 @@ pub fn line_column_from_offset(source: &str, offset: usize) -> (usize, usize) {
 /// let tokenizer = Tokenizer::new("div { color: red; }");
 /// let tokens: Vec<_> = tokenizer.collect_tokens();
 /// ```
-pub struct Tokenizer {
-    /// 输入字符。
-    chars: Vec<char>,
-    /// 当前位置（字符索引）。
-    pos: usize,
-    /// 当前字符位置的字节偏移（随 consume 增量维护，O(1) 读取）。
+pub struct Tokenizer<'a> {
+    /// 输入 CSS 文本（借用，零拷贝——不做全量 UTF-32 解码）。
     ///
-    /// 2026-08-08 性能修复：旧实现 `byte_offset()` 每 token 从字符串头
+    /// 2026-08-09 性能重构：旧实现 `chars: Vec<char>`（每字符 4 字节，全量解码拷贝，
+    /// 100KB CSS = 400KB 临时内存）。改为直接借用 `&str`，按字节索引消费，ASCII
+    /// 字符（CSS 语法字符绝大多数）O(1) 直读不解码。
+    input: &'a str,
+    /// 当前字节索引（= 消费进度；同时是 token 起始的字节偏移，见 `byte_offset`）。
+    ///
+    /// 2026-08-08 性能修复背景：旧实现 `byte_offset()` 每 token 从字符串头
     /// `char_indices().nth(pos)` 重扫前缀，O(n) 每次 → 整段分词 O(n²)
     /// （5000 规则 CSS 解析 14.7s；见 docs/learnings/performance/
-    /// css-parser-quadratic-scaling.md）。所有消费均经 `consume()`，仅
-    /// 两处回退（pos -= 1）需同步减回退字符的 UTF-8 长度。
-    byte_pos: usize,
+    /// css-parser-quadratic-scaling.md）。合并字节索引后 `byte_offset()` 即 `pos`，
+    /// O(1) 读取自然成立。
+    pos: usize,
+    /// 最近一次 `consume` 的字符 UTF-8 长度（回退用；回退点均紧跟 consume）。
+    last_char_len: usize,
 }
 
-impl Tokenizer {
+impl<'a> Tokenizer<'a> {
     /// 创建新的 tokenizer。
-    pub fn new(input: &str) -> Self {
+    pub fn new(input: &'a str) -> Self {
         // CSS Syntax §3.3 输入预处理：若输入以 U+FEFF (BOM) 开头，须忽略（consume 掉）。
         // external CSS 经 `net::charset::decode_with` 已剥 UTF-8/UTF-16 BOM，但 inline
         // `<style>` 文本（html5ever 不剥离文档中段的 FEFF）与直接 `parse_stylesheet`/
@@ -194,37 +198,24 @@ impl Tokenizer {
         // 当成标识符首字符，污染紧跟其后的首个选择器（driving: bom-at-stylesheet-start）。
         // 仅剥首个；中段 BOM 作 ZERO WIDTH NO-BREAK SPACE 是合法 ident 字符，保留。
         let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
-        if !input.contains('\0') {
-            // 常见路径：无 NULL，保持原有零额外开销（仅 BOM 剥离判断）。
-            return Self {
-                chars: input.chars().collect(),
-                pos: 0,
-                byte_pos: 0,
-            };
-        }
-        // CSS Syntax §3.3 输入预处理：所有 U+0000 (NULL) 须替换为 U+FFFD REPLACEMENT
-        // CHARACTER。修复前原始 NULL 落默认 `_ => Token::Error` 分支，顶层 Error 触发
-        // `skip_malformed_qualified_rule` 吞掉相邻规则（与 pre-R2204 CDO bug 同源）；FFFD
-        // 是合法 ident 字符，并入相邻标识符（与 chromium 一致）。转义 NULL（`\0`）已在
-        // consume_escape 处理，此处覆盖原始 NULL。仅当含 NULL 时走此归一化分支。
-        let chars: Vec<char> = input.chars().map(|c| if c == '\0' { '\u{FFFD}' } else { c }).collect();
         Self {
-            chars,
+            input,
             pos: 0,
-            byte_pos: 0,
+            last_char_len: 0,
         }
     }
 
-    /// 获取当前位置。
+    /// 获取当前位置（字节索引）。
     pub fn position(&self) -> usize {
         self.pos
     }
 
     /// 获取当前字符位置对应的字节偏移量。
     ///
-    /// O(1)：由 `consume()` 增量维护（2026-08-08 修复 O(n²) 分词热路径）。
+    /// O(1)：`pos` 即字节索引（2026-08-08 修复 O(n²) 分词热路径后
+    /// `byte_offset()` 每 token 重扫前缀的问题彻底消失——见 struct 注释）。
     fn byte_offset(&self) -> usize {
-        self.byte_pos
+        self.pos
     }
 
     /// 收集所有 token（不带位置信息）。
@@ -237,32 +228,43 @@ impl Tokenizer {
 
     /// 是否已到达末尾。
     pub fn is_eof(&self) -> bool {
-        self.pos >= self.chars.len()
+        self.pos >= self.input.len()
     }
 
     // ── 字符访问 ─────────────────────────────────────────────────
 
     /// 查看当前字符（不消耗）。
     fn peek(&self) -> Option<char> {
-        self.chars.get(self.pos).copied()
+        match self.input.as_bytes().get(self.pos) {
+            // ASCII 快速路径：CSS 语法字符绝大多数为 ASCII，直读不解码
+            Some(&0) => Some('\u{FFFD}'), // CSS Syntax §3.3：U+0000 → U+FFFD（懒替换，见 new）
+            Some(&b) if b < 0x80 => Some(b as char),
+            _ => self.input[self.pos..].chars().next(),
+        }
     }
 
     /// 查看后续第 n 个字符。
+    ///
+    /// 偏移均为小常数（1/2/3）；`Chars::nth` 对 ASCII 段有跳过优化。
     fn peek_at(&self, offset: usize) -> Option<char> {
-        self.chars.get(self.pos + offset).copied()
+        if offset == 0 {
+            return self.peek();
+        }
+        self.input[self.pos..].chars().nth(offset)
     }
 
     /// 消耗并返回当前字符。
     fn consume(&mut self) -> Option<char> {
-        if self.pos < self.chars.len() {
-            let c = self.chars[self.pos];
-            self.pos += 1;
-            // 增量维护字节偏移（O(1)）；与 `pos -= 1` 回退处的减操作成对
-            self.byte_pos += c.len_utf8();
-            Some(c)
+        let c = self.peek()?;
+        // 推进按原始字符长度：NULL 已被替换为 FFFD（3 字节），但输入中只占 1 字节
+        let len = if self.input.as_bytes()[self.pos] == 0 {
+            1
         } else {
-            None
-        }
+            c.len_utf8()
+        };
+        self.pos += len;
+        self.last_char_len = len;
+        Some(c)
     }
 
     /// 消耗当前字符（如果匹配）。
@@ -739,7 +741,7 @@ impl Tokenizer {
 
 // ── Iterator ─────────────────────────────────────────────────────────
 
-impl Iterator for Tokenizer {
+impl<'a> Iterator for Tokenizer<'a> {
     type Item = Spanned;
 
     fn next(&mut self) -> Option<Spanned> {
@@ -936,8 +938,7 @@ impl Iterator for Tokenizer {
                 }
 
                 if is_number {
-                    self.pos -= 1; // 回退，让 consume_number 处理符号
-                    self.byte_pos -= self.chars[self.pos].len_utf8(); // 与 consume 增量成对
+                    self.pos -= self.last_char_len; // 回退，让 consume_number 处理符号
                     let number = self.consume_number();
 
                     if self.consume_if('%') {
@@ -954,8 +955,7 @@ impl Iterator for Tokenizer {
                     && let Some(next) = self.peek()
                     && (Self::is_ident_start(next) || next == '\\' || next == '-')
                 {
-                    self.pos -= 1; // 回退
-                    self.byte_pos -= self.chars[self.pos].len_utf8(); // 与 consume 增量成对
+                    self.pos -= self.last_char_len; // 回退
                     self.consume_ident_like()
                 } else if sign == '|' && self.peek() == Some('|') {
                     self.consume();
@@ -1081,7 +1081,7 @@ impl Iterator for Tokenizer {
     }
 }
 
-impl Tokenizer {
+impl<'a> Tokenizer<'a> {
     /// 消耗数字并检查后缀（百分比、单位）。
     fn consume_number_and_suffix(&mut self) -> Token {
         let number = self.consume_number();
