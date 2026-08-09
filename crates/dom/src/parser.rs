@@ -5,7 +5,6 @@ use crate::node::{
     CommentData, DocumentData, DocumentTypeData, NodeData, NodeId, NodeKind, ProcessingInstructionData, QuirksMode,
     TextData,
 };
-use hashbrown::HashMap;
 use html5ever::interface::{ElemName, ElementFlags, NodeOrText, TreeSink};
 use markup5ever::{Attribute, QualName};
 use std::borrow::Cow;
@@ -76,61 +75,10 @@ impl DomBuilder {
     /// 消费构建器，返回 Document。
     pub fn into_document(self) -> Document {
         let inner = self.inner.into_inner();
-        let mut doc = Document::new();
-
-        // 收集旧节点到新节点的映射
-        let mut mapping: HashMap<NodeId, NodeId> = HashMap::with_capacity(inner.nodes.len());
-
-        for (old_id, node_data) in &inner.nodes {
-            let new_id = match &node_data.kind {
-                NodeKind::Document(_) => doc.root(),
-                NodeKind::Element(elem) => doc.create_element_with_qname(elem.name.clone(), elem.attributes.clone()),
-                NodeKind::Text(data) => doc.create_text_node(&data.content),
-                NodeKind::Comment(data) => doc.create_comment(&data.content),
-                NodeKind::DocumentType(dt) => {
-                    doc.create_document_type(&dt.name, dt.public_id.clone(), dt.system_id.clone())
-                }
-                NodeKind::DocumentFragment => doc.create_document_fragment(),
-                NodeKind::ProcessingInstruction(pi) => doc.create_processing_instruction(&pi.target, &pi.data),
-                NodeKind::ShadowRoot(data) => {
-                    // DOM-07: 使用 attach_shadow 创建真正的 ShadowRoot 节点，
-                    // 保留 mode 等元数据。host 信息在树结构重建时通过父节点关联。
-                    let shadow_id = doc.create_document_fragment();
-                    // 将 DocumentFragment 转换为 ShadowRoot 类型
-                    if let Some(node_data) = doc.get_mut(shadow_id) {
-                        node_data.kind = NodeKind::ShadowRoot(data.clone());
-                    }
-                    shadow_id
-                }
-            };
-            mapping.insert(old_id, new_id);
-        }
-
-        // 重建树结构（父子关系）
-        for (old_id, node_data) in &inner.nodes {
-            let new_id = mapping[&old_id];
-
-            // 设置父引用
-            if let Some(old_parent) = node_data.parent
-                && let Some(&new_parent) = mapping.get(&old_parent)
-                && let Some(child_data) = doc.get_mut(new_id)
-            {
-                child_data.parent = Some(new_parent);
-            }
-
-            // 设置子节点列表
-            let new_children: Vec<NodeId> = node_data
-                .children
-                .iter()
-                .filter_map(|c| mapping.get(c).copied())
-                .collect();
-
-            if !new_children.is_empty()
-                && let Some(node_data) = doc.get_mut(new_id)
-            {
-                node_data.children = new_children;
-            }
-        }
+        // 直接搬移节点表与树结构（NodeId 一致，parent/children 保持有效）——
+        // 旧实现逐节点 clone 重建双树（10k 节点 ≈ 峰值内存翻倍 + 每节点
+        // QualName/attrs/文本 2 次深拷贝），是 parse_html 30-40% 的开销。
+        let mut doc = Document::from_builder_parts(inner.nodes, inner.root);
 
         doc.set_quirks_mode(inner.quirks_mode);
         // 检测 XHTML 文档（DOCTYPE public_id 含 "XHTML"），置位 content_is_xml 供

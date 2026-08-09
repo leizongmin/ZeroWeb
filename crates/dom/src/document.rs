@@ -92,6 +92,34 @@ impl Document {
         }
     }
 
+    /// 从 HTML 解析器（`DomBuilder`）直接搬移节点表构造——NodeId 与树结构
+    /// （parent/children）保持有效，零克隆（旧实现逐节点 clone 重建双树，是
+    /// `parse_html` 30-40% 的开销）。仅 parser 内部使用。
+    pub(crate) fn from_builder_parts(nodes: SlotMap<NodeId, NodeData>, root: NodeId) -> Self {
+        let mut doc = Self {
+            nodes,
+            root,
+            id_map: HashMap::new(),
+            observers: Vec::new(),
+            pending_mutations: Vec::new(),
+            event_listeners: HashMap::new(),
+            shadow_roots: HashMap::new(),
+            slot_assignments: HashMap::new(),
+        };
+        // 重建 id 索引（builder 的 TreeSink 不维护 id_map；成本与旧实现
+        // create_element_with_qname 注册相同——O(E) 遍历 + 哈希插入）
+        let mut id_map: HashMap<String, NodeId> = HashMap::with_capacity(doc.nodes.len() / 4);
+        for (id, node) in doc.nodes.iter() {
+            if let NodeKind::Element(elem) = &node.kind
+                && let Some(id_attr) = &elem.id
+            {
+                id_map.insert(id_attr.clone(), id);
+            }
+        }
+        doc.id_map = id_map;
+        doc
+    }
+
     /// 获取文档根节点 ID。
     #[inline]
     pub fn root(&self) -> NodeId {
