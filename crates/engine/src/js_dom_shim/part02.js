@@ -1923,9 +1923,6 @@
     }
   }
 
-  globalThis.Worker = function() {
-  };
-
   // geolocation（R2820）——navigator.geolocation watch id 计数 + fake 零坐标位置工厂。
   var _geoWatchId = 0;
   function _makeGeoPosition() {

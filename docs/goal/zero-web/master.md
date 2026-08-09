@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1a Web Worker API 表面（postMessage/terminate/onmessage/onerror，EventTarget-based 构造器，闭合 6 web-worker 用例，本轮 R3080）
+
+R3080 探针（js_executes_ok 全 scripted 类别）发现 3 个失败簇：web-workers（6：`postMessage`/`terminate is not a function`）/ storage（5：`indexedDB is not defined`）/ es-modules（1：`import` 语句非 module）。本切片闭合最大簇 web-workers。旧 `globalThis.Worker = function(){}` 为空 stub → `new Worker()` 返空对象，`w.postMessage`/`w.terminate` 抛 TypeError。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **移除 part02 stub** | `crates/engine/src/js_dom_shim/part02.js`（`_locationReplace` 后） | 删 `globalThis.Worker = function(){};`（stub 无 API 表面）。 |
+| **EventTarget-based Worker 构造器** | `crates/engine/src/js_dom_shim/part05.js`（EventTarget 后） | `function Worker(url)`：`_terminated`/`_onmessage`/`_onerror`/`_scriptUrl`，extends EventTarget（与 MessagePort/BroadcastChannel 同款）。`postMessage(msg,transfer)` headless no-op（无 worker 上下文接收）、`terminate()` 标记 no-op、`onmessage`/`onerror` setter（经 addEventListener，spec EventHandler IDL）。spec https://html.spec.whatwg.org/multipage/workers.html#dom-worker。 |
+| **R3080 测试** | engine `part14.rs`（+`test_worker_api_surface_r3080`）+ wpt-runner `mod.rs`（+`web_worker_cases_execute_scripts_r3080`） | engine：8 维（typeof Worker==='function' / new 返对象 / postMessage 不抛 / terminate 不抛 / onmessage+onerror set→get round-trip / addEventListener 可用 / terminate 后 postMessage no-op）；wpt-runner：全 web-workers 用例经 js_executes_ok strict 执行通过。 |
+
+**为何净正向**：① Worker 为纯 API 表面新增（旧 stub 无功能，本切片补 postMessage/terminate/onmessage/onerror + EventTarget 继承）；② headless 无真 worker 线程——postMessage/terminate 为 no-op，onmessage/onerror 回调永不触发（真实 worker 沙箱 defer），但 API 表面完整使依赖 Worker 的脚本不抛 TypeError；③ 复用既有 EventTarget（addEventListener/removeEventListener/dispatchEvent 免费获得）；④ R3080 探针实测 web-workers 全用例 js_executes_ok 通过（0.42s）；⑤ 全量 make test 全绿（0 failed across all binaries，16088 passed）。
+
+**已知限制（记录，defer）**：① **无真 worker 执行**（postMessage 消息无接收方、onmessage/onerror 永不触发——需 host 独立沙箱执行 worker 脚本 + 跨上下文结构化克隆消息，中-高复杂度，DedicatedWorker 真实化 follow-up）；② **terminate 为标记 no-op**（无 worker 线程可终止）；③ 探针其他 2 簇未闭合：**indexedDB 全局**（5 用例，`indexedDB is not defined`——storage crate 既有 IndexedDB 实现未接全局，下一个切片候选）/ **es-module import 语句**（1 用例，`typeof import` 在非 module 脚本为 SyntaxError——test-case 限制，非引擎缺陷）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**cargo test 执行器；0 failed across all binaries，全量 16088 passed，engine +1 + wpt-runner +1（v8+quickjs 双跑）= +3，零回归**）+ pre-commit guard PASS。变更纯 JS shim + 测试（无 render/paint/layout .rs），product-smoke 不受影响。
+
+**下一步**：Worker API 表面闭合（6 web-worker 用例 js_executes_ok 通过；真实 worker 执行 defer）。pivot（探针剩余 2 簇）：① **indexedDB 全局**（5 用例，storage crate IndexedDB 接 `globalThis.indexedDB`，下一最大簇，中复杂度）；② es-module import（1 用例，test-case 限制非引擎缺陷，低优先）；③ 重跑探针确认无新簇；④ P1a 事件循环 macro-task 队列补全 / popover 渲染层。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a Canvas Gradient（createLinearGradient/Radial/Conic + addColorStop + fillStyle 接 gradient + fill/fillRect 逐像素光栅化，闭合最后 2 canvas 用例，本轮 R3079）
 
 承接 R3078（ctx2d 文本+ImageData，闭合 6/8；剩 2 gradient 用例 defer）。canvas crate 早有 `LinearGradient`/`RadialGradient`/`ConicGradient` 类型 + `CanvasStyle` 枚举 + `create_*_gradient` 方法，但 ① `resolve_color()` 对渐变在固定 offset 采样为**单色**（fill 不逐像素光栅化）；② bridge 无 `createLinearGradient`/`addColorStop`/`setFillStyleGradient` dispatch；③ JS shim 无 gradient 表面 + fillStyle 不接渐变对象。本切片接通三侧 + canvas crate 真 per-pixel 光栅化，闭合 canvas 赛道（39/39 用例 js_executes_ok 通过）。

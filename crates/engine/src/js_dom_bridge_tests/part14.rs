@@ -365,3 +365,52 @@ fn test_canvas_ctx2d_gradient_r3079() {
     assert_eq!(sandbox.execute("globalThis.__rgOk").unwrap().value, "true", "createRadialGradient 返渐变对象");
     assert_eq!(sandbox.execute("globalThis.__cgOk").unwrap().value, "true", "createConicGradient 返渐变对象");
 }
+
+#[test]
+fn test_worker_api_surface_r3080() {
+    // R3080：DedicatedWorker API 表面。旧 Worker 构造器为 stub `function(){}` → `w.postMessage`/`w.terminate`
+    // 抛 TypeError（6 web-worker WPT 用例 js_executes_ok 失败）。本切片接 EventTarget-based Worker：
+    // postMessage（headless no-op）/ terminate（标记 no-op）/ onmessage / onerror / addEventListener。
+    // headless 无真 worker 线程执行 url——消息无接收方、回调永不触发（defer 真实 worker 沙箱）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① new Worker(url) 返对象；② postMessage 不抛；③ terminate 不抛且标记终止；
+    // ④ onmessage/onerror 可 set→get；⑤ addEventListener('message') 可用（EventTarget）；⑥ terminate 后 postMessage no-op。
+    sandbox
+        .execute(
+            "globalThis.__isFn = String(typeof Worker === 'function');\
+             var w = new Worker('worker.js');\
+             globalThis.__isObj = String(w !== null && typeof w === 'object');\
+             w.postMessage({ type: 'ping' });\
+             globalThis.__postOk = 'ok';\
+             w.terminate();\
+             globalThis.__termOk = 'ok';\
+             w.onmessage = function (e) {};\
+             globalThis.__onmsgRoundTrip = String(typeof w.onmessage === 'function');\
+             w.onerror = function (e) {};\
+             globalThis.__onerrRoundTrip = String(typeof w.onerror === 'function');\
+             globalThis.__hasAddEvt = String(typeof w.addEventListener === 'function');\
+             w.postMessage('after-term');\
+             globalThis.__afterTermOk = 'ok';",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__isFn").unwrap().value, "true", "typeof Worker === 'function'");
+    assert_eq!(sandbox.execute("globalThis.__isObj").unwrap().value, "true", "new Worker(url) 返对象");
+    assert_eq!(sandbox.execute("globalThis.__postOk").unwrap().value, "ok", "w.postMessage(...) 不抛");
+    assert_eq!(sandbox.execute("globalThis.__termOk").unwrap().value, "ok", "w.terminate() 不抛");
+    assert_eq!(sandbox.execute("globalThis.__onmsgRoundTrip").unwrap().value, "true", "onmessage set→get round-trip");
+    assert_eq!(sandbox.execute("globalThis.__onerrRoundTrip").unwrap().value, "true", "onerror set→get round-trip");
+    assert_eq!(sandbox.execute("globalThis.__hasAddEvt").unwrap().value, "true", "Worker extends EventTarget（addEventListener 可用）");
+    assert_eq!(sandbox.execute("globalThis.__afterTermOk").unwrap().value, "ok", "terminate 后 postMessage no-op（不抛）");
+}

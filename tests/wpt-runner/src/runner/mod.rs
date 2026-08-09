@@ -255,6 +255,29 @@ mod runtime_path_tests {
             failed.join("\n")
         );
     }
+
+    /// R3080：所有 web-workers 用例经 `js_executes_ok` 真实执行内联脚本无异常。闭合 Worker API 表面
+    ///（postMessage/terminate/onmessage/onerror，EventTarget-based 构造器）后，`new Worker()` + postMessage +
+    /// terminate 生命周期不再抛 TypeError。web-workers 用例原仅声明 render_completes（脚本抛 TypeError 不可见）；
+    /// 本回归门经 strict 执行验证 Worker API 表面可用。
+    #[test]
+    fn web_worker_cases_execute_scripts_r3080() {
+        let ctx = TestContext::default();
+        let cases = filter_tests_by_category(&builtin_tests(), "web-workers");
+        assert!(!cases.is_empty(), "web-workers 用例集非空");
+        let mut failed: Vec<String> = Vec::new();
+        for case in &cases {
+            if let Err(e) = check_js_executes_ok(&case.html, &ctx) {
+                failed.push(format!("{}: {}", case.id, e));
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "web-workers 用例应全部 js_executes_ok 通过（{} 例失败）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
 }
 
 /// 运行单个测试用例，返回结果。

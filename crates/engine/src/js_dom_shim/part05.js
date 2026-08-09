@@ -1525,6 +1525,63 @@
   };
   globalThis.EventTarget = globalThis.EventTarget || EventTarget;
 
+  // R3080：DedicatedWorker——`new Worker(url)`。headless 无真 worker 线程执行 url（worker.js / blob: URL），
+  // spec DedicatedWorkerGlobalScope 创建 + 跨上下文结构化克隆消息需 host 接线（独立沙箱执行 worker 脚本），
+  // defer。本构造提供完整 API 表面（postMessage/terminate/onmessage/onerror/addEventListener），
+  // 使依赖 Worker 的脚本（postMessage→terminate 生命周期 / onmessage 回调注册）不抛 TypeError。
+  // extends EventTarget（与 MessagePort/BroadcastChannel 同款）——addEventListener('message'/'error') 可用。
+  // **已知限制**：① 无真 worker 执行 → postMessage 消息无接收方，onmessage/onerror 回调永不触发
+  // （需 host 真实 worker 沙箱，defer）；② terminate 为标记 no-op（无 worker 线程可终止）。
+  function Worker(url) {
+    if (!(this instanceof Worker)) return new Worker(url);
+    this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
+    this._terminated = false;
+    this._onmessage = null;
+    this._onerror = null;
+    // url（worker 脚本地址）headless 不 fetch/执行，仅记录（spec 校验类型，非空串）。
+    this._scriptUrl = String(url);
+  }
+  Worker.prototype = Object.create(EventTarget.prototype);
+  Worker.prototype.constructor = Worker;
+  // postMessage(message[, transfer])——向 worker 发消息（headless no-op：无 worker 上下文接收）。
+  Worker.prototype.postMessage = function (_message, _transfer) {
+    if (this._terminated) return;
+    // defer：真实 worker 执行 + 结构化克隆跨上下文消息。
+  };
+  // terminate()——终止 worker（headless 标记 no-op：无 worker 线程可终止）。
+  Worker.prototype.terminate = function () {
+    this._terminated = true;
+  };
+  Object.defineProperty(Worker.prototype, 'onmessage', {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._onmessage || null; },
+    set: function (cb) {
+      if (this._onmessage) this.removeEventListener('message', this._onmessage);
+      if (typeof cb === 'function') {
+        this._onmessage = cb;
+        this.addEventListener('message', cb);
+      } else {
+        this._onmessage = null;
+      }
+    },
+  });
+  Object.defineProperty(Worker.prototype, 'onerror', {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._onerror || null; },
+    set: function (cb) {
+      if (this._onerror) this.removeEventListener('error', this._onerror);
+      if (typeof cb === 'function') {
+        this._onerror = cb;
+        this.addEventListener('error', cb);
+      } else {
+        this._onerror = null;
+      }
+    },
+  });
+  globalThis.Worker = globalThis.Worker || Worker;
+
   // matchMedia——window.matchMedia(query) 响应式设计 / viewport 查询（modern 站点高频，shim 曾缺失）。
   // 委托 host `__zw_match_media(query, w, h)`（spec-correct via zero_css_parser::media_query）。返
   // MediaQueryList（extends EventTarget R2779）：media/matches + addEventListener('change') + legacy
