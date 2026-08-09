@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1b live-Document 设计落地——RFC §3.7 + TBD-6（去 read-only 快照限制的战略设计片，本轮 R3105）
+
+承接 R3103/R3104 两轮「下一步」战略项 live-Document 重构。本轮探查确认**可行性**并落设计：`WebView` **owns** `pipeline: RenderPipeline`（webview.rs:133）→ webview 可达 `pipeline.cached_doc`（renderer 真 live Document）——无需跨层握手。设计写入 P1b RFC（`docs/specs/p1b-v8-native-bindings-rfc.md` §3.7 + TBD-6 + 修订史 v0.2）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **§3.7 Live Document 共享设计** | `docs/specs/p1b-v8-native-bindings-rfc.md` | 问题（三方 Document 分裂：native 快照 A / polyfill String B / renderer live C，native 全 inert）；使能（webview owns pipeline → cached_doc 可达）；核心变更（`cached_doc: Option<Document>` → `Option<Rc<RefCell<Document>>>` 共享，与 gc.rs DOM_SOURCE 同型）；borrow 不变量（单线程顺序执行，no-borrow-across-callback）；分 **L1 native-live-read/write** / **L2 polyfill-live** / **L3 清理** 三阶段；L1 切片定义 5 步可直接执行；已知交互（render_html 替换 cached_doc，install 每次取当前）。 |
+| **TBD-6 + 修订史 v0.2** | 同上 | TBD-6 标「已设计」指 §3.7；修订史加 v0.2 条目。 |
+
+**为何净正向**：① 闭合 R3103/R3104「下一步」战略项——live-Document 重构**先设计后执行**（高风险「先思考再编码」）；② 探查确认可行性（webview owns pipeline，无跨层握手阻塞）；③ 设计给出可直接执行的 L1 切片定义（后续 rally 轮落地）；④ 量化风险（L1 中 = cached_doc 所有权改 + render 热路径 reader 改 borrow；L2 高 = polyfill 桥大改 + 14137 测试依赖）；⑤ doc-only 零回归。
+
+**已知限制（设计标记，L1 执行时处理）**：① **cached_doc 所有权改** `Option<Document>` → `Option<Rc<RefCell<Document>>>` 触 pipeline 内部 reader（pipeline/mod.rs:443–464 等）改 `.borrow()`——render 热路径，须 `make product-smoke` 守；② **cached_doc=None（未渲染）回落** re-parse 快照（兼容 run_page_scripts 早于 render 的场景）；③ **render_html 替换 cached_doc**——install 每 run_page_scripts 取当前 cached_doc；④ **L2 polyfill-live** 是真正三方合一的高风险大改，L1 后独立多片。
+
+验证：doc-only，`git diff --check` clean + pre-commit guard PASS（无 .rs 变更，豁免 fmt/clippy/test/reftest）。
+
+**下一步**：live-Document 设计落地（RFC §3.7）。**L1 切片可直接执行**（RFC §3.7 末「L1 切片定义」5 步）：`cached_doc` → `Rc<RefCell<Document>>>` 共享 + pipeline reader 改 borrow + `cached_doc_shared()` accessor + webview install 取 live 句柄（None 回落 re-parse）+ `make test` + `make product-smoke`（welcome 无回归）。L1 完成后 native 生产读/写 live DOM（去 inert）。或续 contained 表面片（S4 EventTarget / replaceChild+throw / attributes NamedNodeMap）。
+
 ### P1b node-types native——childNodes（含文本/注释）+ nodeValue（解锁 Text/Comment 节点可见，本轮 R3104）
 
 承接 R3103（textContent，其限制②：文本节点经 children 不可见、childNodes 缺）→ 本切片补 `childNodes` + `nodeValue`，闭合文本/注释节点可观察性。**关键洞察**：既有 Element ObjectTemplate 的 getter 全 node-type-aware（nodeType→3/8、nodeName→#text/#comment、textContent→data、tagName→undefined、getAttribute→null、children→空），故文本/注释节点包**同模板**经 `get_or_create_native_element` 即正确（无需独立 Text/Comment 模板）。
