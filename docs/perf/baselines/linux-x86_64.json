@@ -105,9 +105,9 @@
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/500",
-      "p95": 1208052.125,
+      "p95": 1201715.2615384615,
       "tier": "budget",
-      "tightened_at": "2026-08-07T18:30:56Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/5000",
@@ -141,39 +141,39 @@
     },
     {
       "id": "mb/zero-dom/dom/parse_html_nested_50",
-      "p95": 35661.98568019093,
+      "p95": 32928.530303030304,
       "tier": "budget",
-      "tightened_at": "2026-08-08T08:01:43Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-dom/dom/parse_html_wide_5000",
-      "p95": 6885404.549019608,
+      "p95": 5475001,
       "tier": "budget",
-      "tightened_at": "2026-08-08T08:01:43Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_class",
-      "p95": 3985.762258953168,
+      "p95": 246.03716915414515,
       "tier": "budget",
-      "tightened_at": "2026-08-08T08:01:43Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_id",
-      "p95": 2337314.5918367347,
+      "p95": 10130.316770186335,
       "tier": "budget",
-      "tightened_at": "2026-08-08T08:01:43Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_tag",
-      "p95": 4264.2495662949195,
+      "p95": 228.34862071020018,
       "tier": "budget",
-      "tightened_at": "2026-08-09T07:49:21Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-dom/dom/tree_construction_10k_nodes",
-      "p95": 13641225.4,
+      "p95": 12839987.166666666,
       "tier": "budget",
-      "tightened_at": "2026-08-08T08:01:43Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-engine/compositing_layer_analysis_200",
@@ -277,9 +277,9 @@
     },
     {
       "id": "mb/zero-net/cookie_parse",
-      "p95": 220.57759671807653,
+      "p95": 213.0274641830962,
       "tier": "budget",
-      "tightened_at": "2026-08-09T07:49:21Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-net/navigation_navigate",
@@ -365,9 +365,9 @@
     },
     {
       "id": "mb/zero-script-sandbox/es_module_with_import",
-      "p95": 194550.1689497717,
+      "p95": 193683.02222222224,
       "tier": "budget",
-      "tightened_at": "2026-08-08T08:01:43Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-script-sandbox/execute_json_object",
@@ -383,8 +383,9 @@
     },
     {
       "id": "mb/zero-script-sandbox/execute_simple_expression",
-      "p95": 188625.97514619882,
-      "tier": "budget"
+      "p95": 180825.87828947368,
+      "tier": "budget",
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-script-sandbox/execute_string_ops",
@@ -410,9 +411,9 @@
     },
     {
       "id": "mb/zero-security/cors_check_1000",
-      "p95": 57337.96935797665,
+      "p95": 56404.03367734927,
       "tier": "budget",
-      "tightened_at": "2026-08-09T07:49:21Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-security/csp_parse_1000",
@@ -422,9 +423,9 @@
     },
     {
       "id": "mb/zero-security/csp_resource_check_1000",
-      "p95": 143983.16747572814,
+      "p95": 142453.195,
       "tier": "budget",
-      "tightened_at": "2026-08-08T08:01:43Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-security/origin_parse_1000",
@@ -434,15 +435,15 @@
     },
     {
       "id": "mb/zero-security/same_origin_check_1000",
-      "p95": 5970.134925,
+      "p95": 5964.596744590417,
       "tier": "budget",
-      "tightened_at": "2026-08-08T08:01:43Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-storage/indexeddb_write_100",
-      "p95": 30279.367214130772,
+      "p95": 29184.895098625224,
       "tier": "budget",
-      "tightened_at": "2026-08-08T08:01:43Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-storage/local_storage_read_1000",
@@ -458,9 +459,9 @@
     },
     {
       "id": "mb/zero-style-system/cascade/declarations/10",
-      "p95": 1497.888378554265,
+      "p95": 1453.001347004423,
       "tier": "budget",
-      "tightened_at": "2026-08-08T08:01:43Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "mb/zero-style-system/cascade/declarations/100",
@@ -569,8 +570,9 @@
     },
     {
       "id": "page/welcome/parse_ms",
-      "p95": 0.16311799999999999,
-      "tier": "budget"
+      "p95": 0.152902,
+      "tier": "budget",
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "page/welcome/style_ms",
@@ -599,8 +601,9 @@
     },
     {
       "id": "page/medium/parse_ms",
-      "p95": 15.226439,
-      "tier": "budget"
+      "p95": 8.857495,
+      "tier": "budget",
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "page/medium/style_ms",
@@ -629,9 +632,9 @@
     },
     {
       "id": "page/morning/parse_ms",
-      "p95": 0.41896300000000003,
+      "p95": 0.357966,
       "tier": "budget",
-      "tightened_at": "2026-08-09T07:49:21Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "page/morning/style_ms",
@@ -664,20 +667,21 @@
     },
     {
       "id": "page/medium/first_paint_wall_ms",
-      "p95": 286.475741,
+      "p95": 262.588791,
       "tier": "budget",
-      "tightened_at": "2026-08-09T07:49:21Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "page/morning/first_paint_wall_ms",
-      "p95": 61.714587,
+      "p95": 60.54536,
       "tier": "budget",
-      "tightened_at": "2026-08-09T07:49:21Z"
+      "tightened_at": "2026-08-09T11:00:10Z"
     },
     {
       "id": "resource/peak_rss_mb",
-      "p95": 506.52734375,
-      "tier": "budget"
+      "p95": 504.3359375,
+      "tier": "budget",
+      "tightened_at": "2026-08-09T11:00:10Z"
     }
   ]
 }
