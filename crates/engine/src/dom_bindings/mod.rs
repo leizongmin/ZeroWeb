@@ -834,7 +834,14 @@ fn set_native_element(scope: &mut v8::PinScope, id: NodeId, rv: &mut v8::ReturnV
 
 /// 从任意 `Value` 取其 internal slot NodeId（若为 native element 对象）；否则 `None`
 /// （非 native 对象误作参 → best-effort 忽略）。`args.get(idx)` 取参后经此读 NodeId。
+///
+/// null/undefined 先短路返 `None`：`to_object` 对 undefined/null 会**抛 JS 异常**
+/// （"Cannot convert undefined or null to object"），即便 `?` 给 Rust 返 `None`，挂起异常
+/// 仍令脚本失败。insertBefore 缺省 refChild（null → 末尾追加）等合法用法依赖此处静默返 `None`。
 fn node_id_from_value(scope: &mut v8::PinScope, value: v8::Local<v8::Value>) -> Option<NodeId> {
+    if value.is_null() || value.is_undefined() {
+        return None;
+    }
     let obj = value.to_object(scope)?;
     read_node_id(scope, &obj)
 }

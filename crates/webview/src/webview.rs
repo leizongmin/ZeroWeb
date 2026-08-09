@@ -1078,9 +1078,17 @@ impl WebView {
         }
 
         self.ensure_sandbox()?;
+        // P1b L1b（R3108）：执行前安装/刷新原生 DOM 绑定（native_dom=true 时），确保脚本
+        // 可用 `__zw_native_element_for_id` 且 DOM 源为当前 live Document。
+        #[cfg(feature = "v8")]
+        self.install_native_dom_bindings();
         match self.js_sandbox.as_mut().expect("js sandbox").execute(script) {
             Ok(result) => {
                 tracing::debug!("execute_script completed in {:.2}ms", result.execution_time_ms);
+                // P1b L1b（R3108）：native 写经此路径直改 live cached_doc（不经 polyfill
+                // DomMutation 队列）→ 检测并重渲染，使 native 写入可见于渲染。
+                #[cfg(feature = "v8")]
+                self.sync_render_after_native_dom();
                 Ok(result.value)
             }
             Err(e) => Err(WebViewError::Script(format!("{e}"))),
@@ -1121,6 +1129,69 @@ impl WebView {
         );
         self.js_sandbox = Some(sandbox);
         Ok(())
+    }
+
+    /// P1b L1b（R3108）：在持久 V8 Context 安装/刷新原生 DOM 绑定（kill-switch `native_dom`
+    /// 默认关 → 零回归）。
+    ///
+    /// 每次脚本执行前调用：经 `cached_doc_shared` 取**当前** live Document（`render_html`
+    /// 会替换 `cached_doc` 的 `Rc`，须每次刷新 DOM 源，避免 native 绑定指向旧 Document），
+    /// 未渲染时回落 re-parse `cached_html` 快照（R3097 行为）。闭合 R3107：此前 native 绑定
+    /// 仅 `run_page_scripts_impl` 非空脚本路径安装，`execute_script` 直接调用路径未安装
+    /// （`__zw_native_element_for_id` 未定义 → R3107 de-inert 测试 red）。详见 RFC §3.7。
+    #[cfg(feature = "v8")]
+    fn install_native_dom_bindings(&mut self) {
+        if !self.config.native_dom {
+            return;
+        }
+        let Some(sandbox) = self.js_sandbox.as_mut() else {
+            return;
+        };
+        let live = self.pipeline.cached_doc_shared();
+        let html = self.cached_html.clone();
+        let live_some = live.is_some();
+        let _ = sandbox.install_native_bindings(Box::new(move |scope, ctx| {
+            if let Some(doc) = live {
+                zero_engine::dom_bindings::install_dom_bindings(scope, ctx, doc);
+            } else {
+                zero_engine::dom_bindings::install_dom_bindings_from_html(scope, ctx, &html);
+            }
+        }));
+        tracing::debug!(live = live_some, "native DOM bindings installed (native_dom=true)");
+    }
+
+    /// P1b L1b（R3108）：native 写触发重渲染，闭合 R3107 caveat ①（native 写「live 且渲染」）。
+    ///
+    /// native 绑定直接改 live `cached_doc`（不经 `DomMutation` 队列），polyfill 增量路径
+    /// （`render_with_dom_mutations`）不会感知。本方法序列化 live Document 一次，比对
+    /// `cached_html`：不一致 → 全量重渲染（`repaint_cached_viewport` 重算 style+layout+paint，
+    /// native mutation 可任意——属性/树/文本，无法像 polyfill 那样分类增量）+ 同步
+    /// `cached_html`/`last_render`，使 native 写入可见于渲染。polyfill 路径已同步（一致）
+    /// 或 native 未改 → no-op（零额外开销）。详见 `docs/specs/p1b-v8-native-bindings-rfc.md` §3.7。
+    #[cfg(feature = "v8")]
+    fn sync_render_after_native_dom(&mut self) {
+        if !self.config.native_dom {
+            return;
+        }
+        let live_html = match self.pipeline.cached_doc_shared() {
+            Some(doc_rc) => {
+                let doc = doc_rc.borrow();
+                let root = doc.root();
+                doc.outer_html(root)
+            }
+            None => return,
+        };
+        if live_html == self.cached_html {
+            return;
+        }
+        if let Some(result) = self.pipeline.repaint_cached_viewport(&self.cached_css) {
+            // repaint 只读不改 Document，live_html（repaint 前序列化）仍等于当前 DOM。
+            self.cached_html = live_html;
+            self.last_render = Some(WebViewRenderResult {
+                primitives: result.primitives,
+                timings: result.timings,
+            });
+        }
     }
 
     /// 执行带有 DOM API 环境的 JavaScript。
@@ -1170,6 +1241,11 @@ impl WebView {
             return Ok(html);
         }
         self.ensure_sandbox()?;
+        // P1b L1b（R3108）：原生 DOM 绑定安装抽到 `install_native_dom_bindings`（与
+        // `execute_script` 路径共用；每次刷新 live Document 源）。须在下方 `sandbox` 长
+        // 借用前调用（helper 内部短暂借 js_sandbox 后释放）。kill-switch 默认关 → 零回归。
+        #[cfg(feature = "v8")]
+        self.install_native_dom_bindings();
         let sandbox = self
             .js_sandbox
             .as_mut()
@@ -1183,25 +1259,7 @@ impl WebView {
             std::sync::Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url);
 
-        // P1b L1b（R3107）：原生 DOM 绑定（kill-switch `native_dom` 默认关 → 零回归）。开启时在
-        // polyfill 桥之上安装原生 getter/方法（`engine::dom_bindings`），经 `Sandbox::install
-        // _native_bindings` escape-hatch 进沙箱持久 Context。**优先用 pipeline live Document**
-        // （`cached_doc_shared`）→ native 读/写同一 live DOM（去 R3097 read-only 快照 inert；
-        // 详见 RFC §3.7）；未渲染（None）回落 re-parse `cached_html` 快照（R3097 行为）。
-        #[cfg(feature = "v8")]
-        if self.config.native_dom {
-            let live = self.pipeline.cached_doc_shared();
-            let html_for_install = html.clone();
-            let live_some = live.is_some();
-            let _installed = sandbox.install_native_bindings(Box::new(move |scope, ctx| {
-                if let Some(doc) = live {
-                    zero_engine::dom_bindings::install_dom_bindings(scope, ctx, doc);
-                } else {
-                    zero_engine::dom_bindings::install_dom_bindings_from_html(scope, ctx, &html_for_install);
-                }
-            }));
-            tracing::debug!(live = live_some, "native DOM bindings installed (native_dom=true)");
-        }
+        // 原生 DOM 绑定已在 ensure_sandbox 后经 `install_native_dom_bindings` 安装（见上）。
 
         // R3091：__zw_fetch_script（进程内路径，backed by ScriptSourceFetcher）—— 供 shim Worker 构造器
         //（外链 URL）/ 动态 import() fetch 外链脚本源。fetcher 未配 → 不注册（shim typeof-check no-op）。
@@ -1341,7 +1399,11 @@ impl WebView {
         }
         let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
         if recorded.is_empty() {
-            return Ok(html);
+            // P1b L1b（R3108）：polyfill 无变更，但 native 绑定可能已直改 live doc → 检测并重渲染
+            //（helper 内部比对 live-doc vs cached_html；一致则 no-op）。返回最新 cached_html 快照。
+            #[cfg(feature = "v8")]
+            self.sync_render_after_native_dom();
+            return Ok(self.cached_html.clone());
         }
         // M3-S9：DOM 变更直接应用到活 DOM（pipeline.cached_doc），不再回写 HTML 重 parse
         //（旧路径 apply_mutations_to_html → load_html 全量重建，大页面 parse 占 ~30%）。
@@ -1394,6 +1456,9 @@ impl WebView {
             .map_err(|e| WebViewError::Script(format!("dispatch {event_type}: {e}")))?;
         let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
         if recorded.is_empty() {
+            // P1b L1b（R3108）：事件处理器经 native 绑定可能已直改 live doc → 检测并重渲染。
+            #[cfg(feature = "v8")]
+            self.sync_render_after_native_dom();
             return Ok(());
         }
         // M3-S9：DOM 变更直接应用到活 DOM（见 run_page_scripts_impl 同款注释）。

@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1b L1b caveat ①——native 写触发重渲染 + 修 R3107 de-inert red + 修 engine native_insert_before red（本轮 R3108）
+
+承接 R3107（L1b native_dom 接 live Document）。本轮落 **L1b caveat ① 闭合**：native 写（setAttribute/textContent/appendChild 等经 `execute_script` 直改 live `cached_doc`，不经 polyfill `DomMutation` 队列）现在**触发重渲染** → native 写入可见于渲染（"live 且渲染"，去 R3107 限制①）。顺带修两个 red test：① R3107 de-inert 测试此前 red（native 绑定仅 `run_page_scripts_impl` 非空脚本路径安装，`execute_script` 直调路径未装 → `__zw_native_element_for_id` 未定义）；② engine `native_insert_before` 此前 red（`node_id_from_value` 对 undefined/null 参 `to_object` 抛 "Cannot convert undefined or null to object"，挂起异常令脚本失败——insertBefore 缺省 refChild 合法用法被误杀）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **native 绑定每次脚本执行前安装/刷新（execute_script 路径可用）** | `crates/webview/src/webview.rs` | 抽 `install_native_dom_bindings(&mut self)`：native_dom=true 时经 `cached_doc_shared()` 取**当前** live Document（render_html 会替换 cached_doc 的 Rc，须每次刷新 DOM 源），未渲染回落 re-parse。`execute_script` 与 `run_page_scripts_impl` 共用此 helper（每次执行前调）。闭合 R3107：execute_script 直调路径此前无 native 绑定。kill-switch 默认关 → 零回归（helper 早起 `!native_dom` return）。 |
+| **native 写触发重渲染（caveat ① 闭合）** | `crates/webview/src/webview.rs` | 新 `sync_render_after_native_dom(&mut self)`：序列化 live Document 一次，比对 `cached_html`；不一致 → `repaint_cached_viewport`（全量 style+layout+paint，native mutation 可任意——属性/树/文本，无法像 polyfill 分类增量）+ 同步 `cached_html`/`last_render`。polyfill 路径已同步（一致）或 native 未改 → no-op（零额外开销）。`execute_script` 成功后 + `run_page_scripts_impl`/`dispatch_event` 空 recorded 早返分支调。 |
+| **node_id_from_value 修 undefined/null 抛异常** | `crates/engine/src/dom_bindings/mod.rs` | `value.is_null()/is_undefined()` 先短路返 `None`，再 `to_object`。修 `native_insert_before` red（缺省 refChild → append 末尾的合法用法）。 |
+
+**为何净正向**：① 闭合 R3107 限制①——native 写"live 且渲染"（写入可见于图元）；② 修两个 red test（de-inert red + engine native_insert_before red），消除 v8-gated 测试盲区遗留（这些测试不经 `cargo test --workspace` 默认路径覆盖——workspace 依赖 `default-features=false` 不启 v8，red 藏匿数轮）；③ 默认 kill-switch 关 → 零回归（helper 早起 return；polyfill 渲染热路径不变——空 recorded 分支仅多一个 cfg-gated no-op + 返 `cached_html.clone()`（== 原 `html`，native_dom=false 时等价））；④ 复用既有 `repaint_cached_viewport`，无新 engine API；⑤ 增量分类优化保留（polyfill `render_with_dom_mutations` 三分支不变）。
+
+**已知限制（记录，后续）**：① **native 写→全量重渲染**（无 DomMutation 分类，不能走 polyfill text-only/paint-only 增量）——native_dom 默认关可接受；增量优化后续；② **native↔polyfill 仍双轨**——polyfill mutation 经 DomMutation 队列，native 直改 live doc；本片让二者最终态一致（cached_html/live doc/last_render 三同步），但 polyfill 桥仍字符串往返（L2 统一后续）；③ **navigation 后 DOM 源刷新依赖每次 install**——render_html 替换 cached_doc Rc，native 绑定靠 `install_native_dom_bindings` 每执行前刷新 DOM 源（已实现）；跨执行持有旧 native 对象 + 导航场景为 L2；④ 仅 V8（QuickJS no-op，继承）；⑤ product-smoke 不适用（native_dom 默认关分支）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；engine lib 1767（+1：native_insert_before 转 pass）；webview v8 554（含新 R3108 rerender 测试 + R3107 de-inert 转 pass）+ quickjs 527；wpt-runner 1340；全 workspace 零回归**）。新测 `test_native_dom_write_triggers_rerender_r3108`：native textContent 写空 div → glyphs 增长（重渲染确实发生，非仅 live-doc 内存变更）+ cached_html 同步。pre-commit guard PASS。
+
+**下一步**：L1b caveat ① 已闭合（native 写"live 且渲染"）。候选：① **L2 polyfill-live**（polyfill 桥迁 Document-直读，native↔polyfill 合一，消除字符串往返，高风险大改，RFC §3.7）；② **S4 EventTarget native**（addEventListener/removeEventListener/dispatchEvent + 事件 target 用原生 node）；③ **contained 表面片**（replaceChild+throw / attributes NamedNodeMap / nodeValue-data setter）；④ **native 写→增量重渲染**（native mutation 分类，复用 polyfill text-only/paint-only 增量路径，降 native 写渲染开销）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b L1b——native_dom 接 live Document（去 R3097 read-only 快照 inert，P1b 战略闭合第一步，本轮 R3107）
 
 承接 R3106（L1a cached_doc 共享基础设施）。本轮落 **L1b**：webview `native_dom` 分支改优先用 `pipeline.cached_doc_shared()`（live Document）→ native 读/写**同一 live Document**（renderer 用的那个），不再 re-parse 快照。**L1 战略项闭合**（R3105 设计 → R3106 L1a 重构 → R3107 L1b 接线）。

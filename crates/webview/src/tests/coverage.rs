@@ -500,6 +500,46 @@ fn test_native_dom_live_document_de_inert_r3107() {
     assert_eq!(v, "9", "native 读 live Document（de-inert）：见 native 写");
 }
 
+// ── P1b L1b caveat ①：native 写触发重渲染（本轮 R3108）──
+
+// native_dom=true + load_html → native 绑定经 execute_script 安装（R3108 修复 R3107 red：
+// 此前仅 run_page_scripts_impl 非空脚本路径安装，execute_script 直调路径未装 →
+// __zw_native_element_for_id 未定义）。native textContent 写直改 live cached_doc（不经
+// polyfill DomMutation 队列）→ sync_render_after_native_dom 检测 live-doc≠cached_html
+// → 全量重渲染 → 文本 glyph 图元出现 + cached_html 同步。空 div 起点 0 glyph，写入后
+// glyph 增长证明重渲染确实发生（非仅 live-doc 内存变更）。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_dom_write_triggers_rerender_r3108() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html("<html><body><div id=\"a\"></div></body></html>", None);
+    wv.run_page_scripts_strict().unwrap();
+    let glyphs_before = wv.last_render().expect("initial render").primitives.glyphs.len();
+
+    // native 写：textContent 注入文本（直改 live cached_doc）。
+    wv.execute_script("__zw_native_element_for_id('a').textContent = 'ZeroWeb R3108'")
+        .unwrap();
+
+    // R3108：native 写触发重渲染 → 文本 glyph 图元出现（glyphs 增长）。
+    let glyphs_after = wv
+        .last_render()
+        .expect("render after native write")
+        .primitives
+        .glyphs
+        .len();
+    assert!(
+        glyphs_after > glyphs_before,
+        "native 写应触发重渲染（glyphs {} → {}）",
+        glyphs_before,
+        glyphs_after
+    );
+    // cached_html 同步 native 写（live-doc 变更传播至序列化快照）。
+    assert!(
+        wv.html_content().contains("ZeroWeb R3108"),
+        "cached_html 同步 native 写"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]
