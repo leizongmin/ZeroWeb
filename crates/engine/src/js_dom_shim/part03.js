@@ -1618,8 +1618,8 @@
         // （base = 页面 location.href）取组件。`a.href` getter 返**绝对** URL（区别 getAttribute('href') 返
         // 原始串——jQuery .prop('href') vs .attr('href')）；其余组件返解析值；无 href / 未注册回调 / 解析失败
         // → 空值（href getter 回落原始串）。SPA 路由（读 a.pathname/a.search）/链接分析/analytics 高频。
-        // **已知限制**：仅 getter；组件 setter（a.pathname='/x'）经 set-trap catch-all 误设 spurious 属性
-        // （罕见，defer——a.href setter 经 catch-all 正确设 href 属性）。
+        // 组件 setter（a.pathname='/x'）经 R3070 set-trap 分支接通 `__zw_set_url_part` 重算 href 写回属性
+        //（闭合 R2838 旧限制「组件 setter 误设 spurious 属性」）。origin 为只读（无 setter）。
         if ((_realTag(sel, handle) === 'A' || _realTag(sel, handle) === 'AREA') &&
             (prop === 'href' || prop === 'pathname' || prop === 'search' || prop === 'hash' ||
              prop === 'host' || prop === 'hostname' || prop === 'port' || prop === 'protocol' ||

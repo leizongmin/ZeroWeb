@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1a `<a>` URL 分解组件 setter（闭合 R2838 限制，本轮 R3070，~14,323 测试）
+
+承接 anchor URL 赛道（R2778 parse_url + R2838 分解 getter + R3069 href setter reflected 修复）。R2838 实现 URL 分解 **getter**（`a.pathname`/`a.search`/`a.hash`/`a.protocol`/`a.hostname`/`a.host`/`a.port`/`a.username`/`a.password` 经 `__zw_parse_url` 解析 href 属性取组件），但**组件 setter 旧 deferred**——R2838 注释「组件 setter 经 set-trap catch-all 误设 spurious 属性（罕见，defer）」。host 侧 `set_url_part`（js_dom_bridge.rs:2175，spec-correct via `url` crate setters：percent-encoding / IDNA / 默认端口归一）+ 回调 `__zw_set_url_part`（callbacks.rs:61）早已就绪供 `new URL()` 类用（part02.js:1597），但 `<a>` 元素 set trap 未接通。R3069 expando 改造后组件 setter（pathname 等）落入非 reflected 分支入 `_expando`，`set→get round-trip` 断（`a.pathname='/x'; a.pathname` 不变）。本切片接通，闭合 R2838 限制。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`<a>`/`<area>` URL 组件 setter 分支** | `crates/engine/src/js_dom_shim/part05.js`（scrollTop/scrollLeft 分支后，R3042 非原始值分支前） | 新增 `else if ((A\|AREA) && (protocol\|hostname\|host\|port\|pathname\|search\|hash\|username\|password))` 分支：读当前 href 内容属性 → 调 host `__zw_set_url_part(curHref, part, value)` 重算 → JSON 取新 href → 写回 href 内容属性（moAttr='href'）。spec 链接 https://html.spec.whatwg.org/multipage/links.html#htmlhyperlinkelementutils 。lenient：无当前 href / host 回调缺 / set 失败 → 静默不写（防破脚本，同 getter 空值回落）。**不含 'href'**（href setter 走 R3069 reflected 分支写 raw 值，getter 经 base 解析返绝对——getAttribute 返 raw，real browser 一致）。 |
+| **getter 注释更新** | `crates/engine/src/js_dom_shim/part03.js`（R2838 分解 getter 注释） | 移除「组件 setter 误设 spurious 属性，defer」标记，标注 R3070 已接通 `__zw_set_url_part` 重算 href；origin 为只读（无 setter）。 |
+| **R3070 测试** | engine `js_dom_bridge_tests/part09.rs`（+`test_anchor_url_component_setters_r3070`） | 4 维：① 7 组件 set（pathname/search/hash/protocol/hostname/port/host）经 apply 后 HTML 含 url crate 重算的正确新 href；② 不创建 spurious 组件内容属性（仅写 href）；③ 无当前 href 元素组件 setter lenient no-op（无 mutation 无 crash）；④ round-trip——重算后 href（`#rt` 初始即 `#p` 重算产物）经 R2838 getter 分解回 '/new'（组合 ① 证明 set→get 产出值正确，async 架构下非同步）。 |
+
+**为何零回归且净正向**：① 组件 setter 为纯新增分支（旧 deferred 写 spurious 属性 / R3069 后入 expando，set→get 断）；② 复用既有 host `__zw_set_url_part`（`new URL()` 类已验证 spec-correct）+ R2838 getter（重算 href 重新分解）；③ 仅对 A/AREA + 9 组件名命中（条件 tag-gate + 白名单），不动其他属性路径；④ lenient 无 href 不写（防破脚本）；⑤ origin 只读（无 setter 分支，spec）；⑥ 全量 14323 v8 / 1740 quickjs 全绿（含 R2838 anchor 分解 7 组件 + R3069 href setter 全回归）。
+
+**已知限制（记录，defer）**：① **async set→get 非同步**——组件 setter 写 SetAttr（异步入队），同 execute 内 getter 读 snapshot（原始 href），非重算值（同 R2838 `a.href=` setter 既有 async gap，所有 reflected attr setter 共性，apply 后正确）；② **host 回调缺时静默**——`__zw_set_url_part` 未注册环境（罕见）组件 setter no-op 不抛（lenient，防破脚本，同 getter 空值回落）；③ **跨 element identity**（handle vs selector）href 读各自 snapshot（同 R2838 既有 per-identity 限制）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ `--no-default-features --features quickjs`（quickjs）零警告 + `make test` 全绿（**14323 passed / 71 skipped + 1740 passed / 60 skipped / 0 failed**，engine +1 driving 测试，零回归）+ pre-commit guard PASS。变更纯 JS shim + 测试（无 render/paint/style/layout .rs），product-smoke 不受影响。
+
+**下一步**：anchor URL 赛道闭合（parse_url R2778 + 分解 getter R2838 + href setter R3069 + 组件 setter R3070 spec-合规完整）。pivot：① scrollIntoView scroll-container 精确化（overflow 容器内滚容器非 document，需 layout，中复杂度）；② Web API 表面扫描补缺（常见 API 已全——customElements/WebSocket 为架构级，defer；可寻 niche 如 `Document.hasFocus` 边缘 / `element.scrollIntoViewIfNeeded` WebKit-only / `popover` API）；③ expando 赛道已闭合（R3042+R3046+R3069），URL 赛道已闭合；④ P1a 事件循环 macro-task 队列补全（shim JS 侧为主 + 1 条 host FrameTick 命令，中-高复杂度，P1a 剩余主线）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a expando 原始值 set/get 修复（闭合 R3042 限制①，本轮 R3069，~14,322 测试）
 
 承接 expando 赛道（R3042 非原始值 + R3046 枚举）。R3042 仅把**非原始值**（function/object/array/null）入 per-element `_expando` map，**原始值**（string/number/boolean）仍走 set trap 末尾 generic fallthrough → `__zw_set_attr(sel, p, String(value))` 写内容属性。但 get trap 对未知属性无分支读（仅显式分支 + `_expando` + `return undefined`）→ `el.flag='x'; el.flag` **读返 undefined**（correctness bug：自定义原始属性写入了内容属性，但 property 读不回）。real browser：自定义原始属性存于 JS 对象（非内容属性），IDL 读回真值。本切片闭合 R3042 限制①。

@@ -100,6 +100,32 @@
           var _sss = _scrollOffsets[key] || (_scrollOffsets[key] = { top: 0, left: 0 });
           if (p === 'scrollTop') _sss.top = _sv; else _sss.left = _sv;
           _zwFireScroll(key, sel, handle);
+        } else if ((_realTag(sel, handle) === 'A' || _realTag(sel, handle) === 'AREA') &&
+                   (p === 'protocol' || p === 'hostname' || p === 'host' || p === 'port' ||
+                    p === 'pathname' || p === 'search' || p === 'hash' ||
+                    p === 'username' || p === 'password')) {
+          // R3070：HTMLAnchorElement/HTMLAreaElement URL 分解组件 setter（闭合 R2838 限制）。
+          // https://html.spec.whatwg.org/multipage/links.html#htmlhyperlinkelementutils
+          // real browser：读当前 href → 经组件 setter（set_scheme/set_host/set_path/set_query/...）替换该组件 →
+          // 写回**新 href** 内容属性（getter part03.js:1627 重新分解该 href 取组件）。spec-correct via host
+          // `__zw_set_url_part`（url crate setters：percent-encoding / IDNA / 默认端口归一）。组件无独立内容属性——
+          // 仅写 href（moAttr='href'）。旧 R2838 限制：组件 setter 经 catch-all 写 spurious 属性（R3069 后入 expando），
+          // getter 读 href 不受影响 → set→get round-trip 断（`a.pathname='/x'; a.pathname` 不变）。本切片接通。
+          // lenient：无当前 href / host 回调缺 / set 失败（空 base 等）→ 静默不写（防破脚本，同 getter 空值回落）。
+          // 注：`a.href=` setter 仍走 R3069 reflected 分支写 raw 值（getter 经 base 解析返绝对 URL——getAttribute 返 raw），
+          // 故 href 不入此组件分支（条件不含 'href'）。
+          var _uhCur = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
+          if (_uhCur && typeof __zw_set_url_part === 'function') {
+            try {
+              var _uhJson = __zw_set_url_part(_uhCur, p, String(value));
+              if (_uhJson) {
+                var _uhNewHref = JSON.parse(_uhJson).href;
+                if (handle) __zw_set_attr_handle(handle, 'href', _uhNewHref);
+                else __zw_set_attr(sel, 'href', _uhNewHref);
+                moAttr = 'href';
+              }
+            } catch (_e) {}
+          }
         } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
           // R3042：expando 属性（非原始值——function/object/array/null/undefined/symbol/bigint）。旧经 generic fallthrough
           // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')` / 'function(){}'）且 get 读不回（undefined）。

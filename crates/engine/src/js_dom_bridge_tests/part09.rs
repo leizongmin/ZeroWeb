@@ -521,6 +521,108 @@ fn test_anchor_url_decomposition_r2838() {
 }
 
 #[test]
+fn test_anchor_url_component_setters_r3070() {
+    // R3070：HTMLAnchorElement URL 分解组件 setter（闭合 R2838 限制「组件 setter 经 catch-all 误设 spurious 属性」）。
+    // 组件 setter（pathname/search/hash/protocol/hostname/host/port）经 host `__zw_set_url_part`（url crate setters，
+    // spec-correct：percent-encoding / IDNA / 默认端口归一）重算 href，写回 href 内容属性（getter R2838 重新分解）。
+    // 验证经 apply 后 HTML（async-mutation 架构下 set→get 同 execute 读 stale snapshot——同 R2838 href setter 测试惯例）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <a id='p' href='https://example.com:8080/path?q=1#h'>p</a>\
+         <a id='s' href='https://example.com:8080/path?q=1#h'>s</a>\
+         <a id='h' href='https://example.com:8080/path?q=1#h'>h</a>\
+         <a id='pr' href='https://example.com:8080/path?q=1#h'>pr</a>\
+         <a id='hn' href='https://example.com:8080/path?q=1#h'>hn</a>\
+         <a id='po' href='https://example.com:8080/path?q=1#h'>po</a>\
+         <a id='ho' href='https://example.com:8080/path?q=1#h'>ho</a>\
+         <a id='none'>nohref</a>\
+         <a id='rt' href='https://example.com:8080/new?q=1#h'>rt</a>\
+         </body></html>"
+            .to_string(),
+    ));
+    // 页面 base URL 用于相对 href 解析（本切片组件 setter 读绝对 href，base 不参与重算，但保持一致）。
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/base/".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 各组件 set（每元素独立，从同一 base href 重算）+ 无 href 元素 lenient 路径。
+    sandbox
+        .execute(
+            "document.querySelector('#p').pathname='/new';\
+             document.querySelector('#s').search='?x=2';\
+             document.querySelector('#h').hash='#frag';\
+             document.querySelector('#pr').protocol='http';\
+             document.querySelector('#hn').hostname='other.com';\
+             document.querySelector('#po').port='9090';\
+             document.querySelector('#ho').host='changed.org:7000';\
+             document.querySelector('#none').pathname='/x';",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap().clone(), &ms).unwrap();
+
+    // ① 各组件重算后的 href（url crate spec-correct）。
+    assert!(
+        out.contains("<a id=\"p\" href=\"https://example.com:8080/new?q=1#h\">"),
+        "pathname='/new' 重算 href（set_path 替换路径）\n{out}"
+    );
+    assert!(
+        out.contains("<a id=\"s\" href=\"https://example.com:8080/path?x=2#h\">"),
+        "search='?x=2' 重算 href（set_query）\n{out}"
+    );
+    assert!(
+        out.contains("<a id=\"h\" href=\"https://example.com:8080/path?q=1#frag\">"),
+        "hash='#frag' 重算 href（set_fragment）\n{out}"
+    );
+    assert!(
+        out.contains("<a id=\"pr\" href=\"http://example.com:8080/path?q=1#h\">"),
+        "protocol='http' 重算 href（set_scheme，显式 port 8080 保留）\n{out}"
+    );
+    assert!(
+        out.contains("<a id=\"hn\" href=\"https://other.com:8080/path?q=1#h\">"),
+        "hostname='other.com' 重算 href（set_host）\n{out}"
+    );
+    assert!(
+        out.contains("<a id=\"po\" href=\"https://example.com:9090/path?q=1#h\">"),
+        "port='9090' 重算 href（set_port）\n{out}"
+    );
+    assert!(
+        out.contains("<a id=\"ho\" href=\"https://changed.org:7000/path?q=1#h\">"),
+        "host='changed.org:7000' 重算 href（set_host + set_port）\n{out}"
+    );
+
+    // ② 不创建 spurious 组件内容属性（仅写 href）。
+    assert!(!out.contains("pathname=\"/new\""), "组件 setter 不创建 pathname 内容属性\n{out}");
+    assert!(!out.contains("hostname=\"other.com\""), "组件 setter 不创建 hostname 内容属性\n{out}");
+
+    // ③ 无当前 href → lenient no-op（#none 不变，无 crash）。
+    assert!(
+        out.contains("<a id=\"none\">nohref</a>"),
+        "无 href 元素组件 setter lenient no-op（无 mutation，无 crash）\n{out}"
+    );
+
+    // ④ round-trip：getter（R2838）对「重算后的 href」分解回正确组件值。#rt 初始 href 即 #p 重算产物
+    //    （https://example.com:8080/new?q=1#h），其 pathname 分解为 '/new'——组合 ①（setter 产出该 href）
+    //    证明 set→get round-trip 成立（async 架构下非同步，但产出值正确）。
+    sandbox
+        .execute("globalThis.__rtPath = document.querySelector('#rt').pathname;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__rtPath").unwrap().value,
+        "/new",
+        "重算后 href 经 getter 分解回 '/new'（set→get round-trip 产出值正确）"
+    );
+}
+
+#[test]
 fn test_form_reflected_idl_attrs_r2839() {
     // R2839：HTMLFormElement 反射 IDL 属性（action/method/enctype/target）——form 序列化 / AJAX 提交库
     // 读 form.action/form.method 构提交请求。action/target 纯串反射；method/enctype 小写归一 + spec 默认。
