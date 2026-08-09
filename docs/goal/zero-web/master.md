@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1b S2 树 mutation native——createElement + appendChild/insertBefore/removeChild + children（RFC S2 树写入主体，本轮 R3102）
+
+承接 R3101（S2 attribute 写子片，R3101「下一步」战略项）→ 本切片落 RFC §4 **S2 树 mutation 主体**：原生元素子树构建/搬运/观察，续 R3101 with_dom_mut 写路径。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`__zw_native_create_element` 工厂 + appendChild/insertBefore/removeChild 方法 + children getter** | `crates/engine/src/dom_bindings/mod.rs` | `native_create_element_invoke`（`create_element` 造新 NodeId → native 对象，空 tag→div best-effort）+ 3 树 mutation 方法（`node_id_from_value` 从参对象读 internal slot NodeId；Document 写经 with_dom_mut；`set_native_element` 抽离成功尾避 `if-ok{if-let}` 嵌套——MSRV 1.85 无 let-chains）+ `native_children_getter`（`child_nodes` filter Element kind，跳文本/注释）。Err（cycle/not-found）best-effort 留 undefined（不抛 DOMException，throw 后续）。 |
+| **+4 单元测试** | `crates/engine/src/dom_bindings/tests.rs` | `native_create_append_children`（createElement→appendChild→children 观察 + appendChild 返 child === + 跨 tag）、`native_append_child_reparents`（移动既有节点 detach 旧父挂新父）、`native_insert_before`（位置插 + refChild 缺省末尾追加）、`native_remove_child_and_children_element_only`（removeChild 剩余 + children 跳文本节点仅元素）。 |
+
+**为何净正向**：① 闭合 R3101「下一步」S2 树 mutation——RFC §4 S2 写入族闭合（R3101 attribute 写 + R3102 树写）；② **原生树构建全链**：`__zw_native_create_element` + `appendChild` + `children` 观察全 native，无 polyfill String 桥；③ appendChild re-parent（detach 旧父）+ insertBefore 位置插 + removeChild 覆盖 spec `dom-node-appendchild/insertbefore/removechild` 主体；④ children **仅元素**（跳文本/注释），spec `dom-parentnode-children` 合规；⑤ 纯追加——既有 baselined 路径未动，零回归；⑥ 默认 kill-switch 关 → 零行为变更。
+
+**已知限制（记录，后续切片）**：① **read-only 快照继承**（R3097 起）——生产 native 树 mutation 写**快照 Document**，不渲染/不同步 polyfill；测试/自包含环境（单一共享 Document）round-trip 正确；② **Err 不抛 DOMException**（cycle/not-found best-effort 留 undefined，throw_exception 后续）；③ **`childNodes` defer**（含文本/注释节点，需 native 非 Element 节点对象——node-types 切片）；④ **`replaceChild` defer**（同 insertBefore 模式，trivial follow-up）；⑤ **无新 bench**——appendChild bench 需 per-iter 树重置（否则 Document 增长→测量漂移），树 mutation 非每帧热路径，with_dom_mut 写路径已由 `native_set_attribute`（R3101 ~403 ns）表征；⑥ QuickJS no-op（继承）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-script-sandbox --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**exit 0；engine dom_bindings 20 测试（+4 S2 树 mutation），零回归；v8+quickjs 双路径**）+ pre-commit guard PASS。变更 engine（dom_bindings mod.rs + tests），无渲染/布局/CSS 变更（JS 桥 native binding，默认关 kill-switch，快照），product-smoke/reftest 不适用。
+
+**下一步**：RFC §4 S2 写入族闭合（attribute R3101 + 树 R3102）。候选：① **read-only 快照→live Document**（webview 持 `Arc<Mutex<Document>>` 共享 renderer Document，闭合 R3097 起读写快照限制根因——解锁生产 native 写真值，高复杂度，**P1b 关键战略项**）；② **S4 EventTarget native**（addEventListener/removeEventListener/dispatchEvent + 事件 target 用原生 node，RFC §4 S4）；③ **node-types 切片**（native Text/Comment 节点对象 → 解锁 childNodes + textContent setter）；④ **replaceChild + 抛 DOMException**（补 S2 树 mutation 收尾）；⑤ **`attributes` NamedNodeMap native getter**（补 S1 只读族）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b S2 写入路径 native——setAttribute/removeAttribute + id/className setter（首 native 写 + with_dom_mut borrow_mut + set_accessor_with_setter，本轮 R3101）
 
 承接 R3100（S3b 查询族闭合，R3097 起 read-only 快照限制的「写入路径 native」是 R3100「下一步」战略项）→ 本切片落 RFC §4 **S2 attribute-write 子片**：首 native **写入**路径，对称 R3098 attribute 读。4 Element 写入面，全部经 `with_dom_mut`（`borrow_mut`）写真实（快照）Document：
