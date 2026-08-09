@@ -119,6 +119,25 @@
 
 ## 最近完成的改进
 
+### P1b RFC §3.2 dom_bindings 子模块拆分（stage 4b：element.rs）——行为保持重构 + §3.2 闭合（本轮 R3120）
+
+承接 R3119（stage 4a node.rs）。本轮 §3.2 stage 4b（**最后一块**）：抽 **element.rs**（Element 特有 14 getter/invoke + 反射助手），mod.rs 690→379（-311）。**行为保持**。**§3.2 子模块化闭合**——mod.rs 仅剩 install 入口 + 注册编排 + 共享 slot 助手。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **新 element.rs 子模块** | `crates/engine/src/dom_bindings/element.rs`（340 行） | 搬入 14 个 `pub(super) fn`（Element 接口特有）：tagName / id·className getter+setter / getAttribute·hasAttribute·setAttribute·removeAttribute / element 子树作用域 querySelector·querySelectorAll / children / innerHTML·outerHTML。+2 私有反射助手 `read_reflected_attr`/`write_reflected_attr`。依赖 `super::{read_node_id, string_arg, get_or_create_native_element, local_value_to_string}`（mod.rs 私有共享）+ `super::gc::{with_dom, with_dom_mut}` + `zero_dom::{NodeId, NodeKind}`。 |
+| **mod.rs 接线更新** | `crates/engine/src/dom_bindings/mod.rs`（690→379） | 加 `mod element;`（字母序首位）；`install_dom_bindings` 内 14 处 Element 注册调点改 `element::`（qs_invoke 经 targeted edit 避与其 intra-doc 链双前缀，余 13 经 replace_all）；删 3 个连续 Element fn 块（accessor getter+反射助手 / getAttribute 族 / 子树查询+children+innerHTML·outerHTML）；`// accessor getter` 段头改写为「共享助手」段头描述留存的 slot/字符串/值转换助手；**导入清理**——删 `NodeKind`（children getter 用者迁 element）+ gc `with_dom`/`with_dom_mut`（Node/Element getter/invoke 全迁子模块后 mod.rs 无用者），gc 导入仅留 slot 映射助手。install_dom_bindings 注释 intra-doc 链改 `element::native_element_query_selector_invoke`。 |
+
+**为何净正向**：① RFC §3.2 stage 4b——mod.rs 减 311 行（690→379），**§3.2 子模块化闭合**（累计 R3116+R3117+R3118+R3119+R3120 mod.rs 1446→379，减 1067 行）；② **行为保持**（纯 move + 可见性 + 注册 prefix + 导入清理 + 段头/链修，调用契约不变；make test 全 workspace 16185 passed 0 failed 计数不变——零回归；dom_bindings 52 测全绿）；③ §3.2 模式第五例（element.rs），spec DOM Node/Element/collections/factories 划分全落地；④ **共享助手（read_node_id/node_id_from_value/get_or_create_native_element/string_arg/local_value_to_string）留 mod.rs** 作共享核心，各子模块经 `super::` 引用（Rust 私有项对后代可见）；⑤ 无性能影响（编译期 move）。
+
+**§3.2 最终模块布局**：mod.rs（379，install 入口+注册编排+共享助手）/ element.rs（340）/ node.rs（451）/ namednodemap.rs（193）/ factories.rs（105）/ event_target.rs（97）/ gc.rs（228）。RFC §3.2 的 document.rs / text.rs 暂不需（Document/Text 绑定经 node/element 已覆盖，后续按需）。
+
+**已知限制（记录，后续）**：① **§3.2 子模块化完成**——dom_bindings 再无 >2000 行风险（最大 node.rs 451 行）；② escape-hatch 可达性不变；③ 仅 V8（QuickJS no-op，继承）；④ product-smoke 不适用（native_dom 默认关 + 行为保持）。
+
+验证：`cargo fmt --all -- --check` clean（长注册行经 fmt 折行）+ `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告（导入清理消 NodeKind/with_dom/with_dom_mut unused）+ `make test` 全绿（**零 FAILED；dom_bindings 52 测；webview v8 561 + quickjs 527（计数不变）；全 workspace 16185 passed 0 failed 零回归**）。pre-commit guard PASS。已提交 7616fadb 并推送（6f861b90..7616fadb，pull --rebase up-to-date 无冲突）。
+
+**下一步**：RFC §3.2 子模块化全部完成（namednodemap/event_target/factories/node/element 五子模块，mod.rs 379 行）。候选：① **回到 P1b feature 切片**（mod.rs 已充分减负）——**完整 Attr 节点**（nodeType=2/ownerElement/name/value，闭合 R3112 plain-object 限制）/ **host→page native 事件派发**（`webview.dispatch_event` 扫 native LISTENERS，闭合 S4 host 驱动半边）/ **innerHTML/outerHTML setter**（html5ever parse + 替换子节点/自身，闭合 R3113 getter-only——大切片）；② **escape-hatch 收敛**（L2 polyfill-live：polyfill 桥迁 Document-直读，native↔polyfill 合一——高风险大改，需用户点名）；③ **WPT/reftest 兼容性**（rendering-compat 主线，独立 goal）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b RFC §3.2 dom_bindings 子模块拆分（stage 4a：node.rs）——行为保持重构（本轮 R3119）
 
 承接 R3118（stage 3 factories.rs）。本轮启 §3.2 stage 4（Element bulk 拆分），拆为 **stage 4a node.rs**（DOM Node 基类）+ 后续 stage 4b element.rs（Element 特有）。本轮抽 **node.rs**（Node 基类 17 个 getter/invoke），mod.rs 1109→690（-419）。**行为保持**——同 namednodemap/event_target/factories 模式（move + 可见性）。
