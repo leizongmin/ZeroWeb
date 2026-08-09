@@ -110,6 +110,10 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "children") {
         tmpl.set_accessor(k.into(), native_children_getter);
     }
+    // `textContent` getter/setter（spec `dom-node-textcontent`）：读=子树文本拼接；写=清子 + 文本节点。
+    if let Some(k) = v8::String::new(scope, "textContent") {
+        tmpl.set_accessor_with_setter(k.into(), native_text_content_getter, native_text_content_setter);
+    }
     // spec 方法（FunctionTemplate，args.this 读 NodeId）：getAttribute / hasAttribute /
     // setAttribute / removeAttribute。ObjectTemplate::set 须传 **Template**（非 Function 实例）——
     // FunctionTemplate 是 Template，实例化时各对象共享，args.this() 取回实例。
@@ -630,6 +634,52 @@ fn native_children_getter(
         }
     }
     rv.set(arr.into());
+}
+
+/// `textContent` getter（spec `dom-node-textcontent`）：子树文本拼接（`Document::text_content`，
+/// 递归收集后代 Text 节点 data）。空子树 → `""`。
+fn native_text_content_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let text = with_dom(|d| d.text_content(id)).flatten().unwrap_or_default();
+    if let Some(s) = v8::String::new(scope, &text) {
+        rv.set(s.into());
+    }
+}
+
+/// `textContent` setter（spec `dom-node-textcontent`）：值 ToString 后**清空全部子节点**，
+/// 非空则追加单 Text 节点（`create_text_node` + `append_child`）。空串 → 仅清空（不添空 Text 节点）。
+fn native_text_content_setter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let val = local_value_to_string(scope, value);
+    with_dom_mut(|d| {
+        // 移除全部子节点（先收集 NodeId 避免边遍历边改）。
+        let children = d.child_nodes(id);
+        for c in children {
+            let _ = d.remove_child(id, c);
+        }
+        // 非空 → 追加文本节点。
+        if !val.is_empty() {
+            let text_id = d.create_text_node(&val);
+            let _ = d.append_child(id, text_id);
+        }
+    });
 }
 
 // ── 树 mutation 方法（Element 上：appendChild / insertBefore / removeChild）──

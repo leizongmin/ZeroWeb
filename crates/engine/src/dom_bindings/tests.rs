@@ -464,6 +464,66 @@ fn native_remove_child_and_children_element_only() {
     );
 }
 
+// ── textContent native（子树文本读 + 清子写文本节点）──
+
+/// `textContent` getter：子树文本拼接（含后代 Text 节点）；空子树 → 空串。
+#[test]
+fn native_text_content_getter() {
+    let html = r#"<div id="a">hello <span>world</span></div>"#;
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').textContent)"),
+        "hello world"
+    );
+    // 深层嵌套文本拼接。
+    let html2 = r#"<div id="a">a<b>b<i>c</i>d</b>e</div>"#;
+    assert_eq!(
+        run_script(html2, "(__zw_native_element_for_id('a').textContent)"),
+        "abcde"
+    );
+    // 空子树 → 空串。
+    let html3 = r#"<div id="a"></div>"#;
+    assert_eq!(run_script(html3, "(__zw_native_element_for_id('a').textContent)"), "");
+}
+
+/// `textContent` setter：清空既有子节点 + 追加文本节点；空串 → 仅清空。
+#[test]
+fn native_text_content_setter() {
+    // 空元素 set textContent → 读回。
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.textContent='hi'; return el.textContent;})()"
+        ),
+        "hi"
+    );
+    // set textContent 替换既有子元素（children 清空，文本节点非元素）。
+    let html2 = r#"<div id="a"><span>x</span><span>y</span></div>"#;
+    assert_eq!(
+        run_script(
+            html2,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.textContent='replaced'; return el.textContent+'/'+el.children.length;})()"
+        ),
+        "replaced/0"
+    );
+    // set textContent='' → 清空（无文本节点，读回空串）。
+    assert_eq!(
+        run_script(
+            html2,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.textContent=''; return el.textContent+'/'+el.children.length;})()"
+        ),
+        "/0"
+    );
+    // 值 ToString 强转（数字 → 字符串）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.textContent=42; return el.textContent;})()"
+        ),
+        "42"
+    );
+}
+
 // ── gc.rs 单元测试 ────────────────────────────────────────────────
 
 /// NodeId↔u64(ffi) 编解码 round-trip（internal slot 值传递基础）。
