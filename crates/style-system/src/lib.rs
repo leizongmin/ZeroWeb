@@ -342,12 +342,16 @@ impl StyleSystem {
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
             std::collections::HashMap::new();
 
+        // 选择器 tag 分桶索引（每帧一次，元素共享——见 matcher::build_stylesheet_index）
+        let rule_index = matcher::build_stylesheet_index(stylesheets);
+
         // 从文档根开始 DFS
         let root = doc.root();
         self.compute_styles_recursive(
             doc,
             root,
             stylesheets,
+            &rule_index,
             None,
             &HashMap::new(),
             &mut styles,
@@ -368,6 +372,7 @@ impl StyleSystem {
         doc: &Document,
         node: NodeId,
         stylesheets: &[Stylesheet],
+        rule_index: &matcher::StylesheetIndex,
         parent_style: Option<&ComputedStyle>,
         parent_custom: &HashMap<String, String>,
         styles: &mut HashMap<NodeId, ComputedStyle>,
@@ -414,6 +419,7 @@ impl StyleSystem {
                         doc,
                         node,
                         stylesheets,
+                        rule_index,
                         parent_style,
                         parent_custom,
                         quirks_mode,
@@ -455,6 +461,7 @@ impl StyleSystem {
                     doc,
                     node,
                     stylesheets,
+                    rule_index,
                     Some(&elem_style),
                     &saved_custom,
                     quirks_mode,
@@ -464,6 +471,7 @@ impl StyleSystem {
                     doc,
                     node,
                     stylesheets,
+                    rule_index,
                     Some(&elem_style),
                     &saved_custom,
                     quirks_mode,
@@ -482,6 +490,7 @@ impl StyleSystem {
                         doc,
                         node,
                         stylesheets,
+                        rule_index,
                         Some(&elem_style),
                         &saved_custom,
                         quirks_mode,
@@ -556,6 +565,7 @@ impl StyleSystem {
                 doc,
                 child,
                 stylesheets,
+                rule_index,
                 parent_ref,
                 &current_custom,
                 styles,
@@ -578,10 +588,12 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         parent_style: Option<&ComputedStyle>,
     ) -> ComputedStyle {
+        let rule_index = matcher::build_stylesheet_index(stylesheets);
         self.compute_element_style_internal(
             doc,
             element,
             stylesheets,
+            &rule_index,
             parent_style,
             &HashMap::new(),
             doc.quirks_mode(),
@@ -600,6 +612,7 @@ impl StyleSystem {
         doc: &Document,
         element: NodeId,
         stylesheets: &[Stylesheet],
+        rule_index: &matcher::StylesheetIndex,
         parent_style: Option<&ComputedStyle>,
         parent_custom: &HashMap<String, String>,
         quirks_mode: QuirksMode,
@@ -629,6 +642,7 @@ impl StyleSystem {
                 doc,
                 element,
                 stylesheets,
+                rule_index,
                 media_ctx.as_ref(),
                 container_ctx.as_ref(),
             ),
@@ -636,6 +650,7 @@ impl StyleSystem {
                 doc,
                 element,
                 stylesheets,
+                rule_index,
                 media_ctx.as_ref(),
                 container_ctx.as_ref(),
                 name,

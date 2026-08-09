@@ -409,7 +409,14 @@ fn test_media_rule_comma_queries() {
         pointer_type: PointerValue::Fine,
         resolution_dpi: 96.0,
     };
-    let decls = collect_matching_declarations_with_media(&doc, child1, &stylesheets, Some(&media_ctx), None);
+    let decls = collect_matching_declarations_with_media(
+        &doc,
+        child1,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        Some(&media_ctx),
+        None,
+    );
     assert!(decls.is_empty());
 }
 

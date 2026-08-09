@@ -683,7 +683,14 @@ fn test_collect_with_container_rule() {
     }];
 
     let ctx = ContainerContext::with_size(500.0, 600.0);
-    let decls = collect_matching_declarations_with_media(&doc, child1, &stylesheets, None, Some(&ctx));
+    let decls = collect_matching_declarations_with_media(
+        &doc,
+        child1,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        None,
+        Some(&ctx),
+    );
     assert_eq!(
         decls.len(),
         1,
@@ -713,7 +720,14 @@ fn test_collect_container_no_context() {
         rules: vec![Rule::Container(container_rule)],
     }];
 
-    let decls = collect_matching_declarations_with_media(&doc, child1, &stylesheets, None, None);
+    let decls = collect_matching_declarations_with_media(
+        &doc,
+        child1,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        None,
+        None,
+    );
     assert!(decls.is_empty(), "no container context → @container not applied");
 }
 
@@ -749,7 +763,14 @@ fn test_collect_with_media_rule_matching() {
         pointer_type: PointerValue::Fine,
         resolution_dpi: 96.0,
     };
-    let decls = collect_matching_declarations_with_media(&doc, child1, &stylesheets, Some(&media_ctx), None);
+    let decls = collect_matching_declarations_with_media(
+        &doc,
+        child1,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        Some(&media_ctx),
+        None,
+    );
     assert_eq!(decls.len(), 1, "media query should match when viewport=800px");
 }
 
@@ -783,7 +804,14 @@ fn test_collect_with_media_rule_not_matching() {
         pointer_type: PointerValue::Fine,
         resolution_dpi: 96.0,
     };
-    let decls = collect_matching_declarations_with_media(&doc, child1, &stylesheets, Some(&media_ctx), None);
+    let decls = collect_matching_declarations_with_media(
+        &doc,
+        child1,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        Some(&media_ctx),
+        None,
+    );
     assert!(
         decls.is_empty(),
         "media query should NOT match when viewport=800px < 1200px"

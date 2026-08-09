@@ -537,7 +537,15 @@ fn test_pseudo_element_declaration_routing() {
     let stylesheets = [stylesheet];
 
     // 2. 伪元素声明收集：div 的 before 应收到 content + color
-    let pseudo_decls = collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "before");
+    let pseudo_decls = collect_pseudo_declarations_with_media(
+        &_doc,
+        div,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        None,
+        None,
+        "before",
+    );
     let mut got_content = false;
     let mut got_color = false;
     for (prop, val, _, _, _) in &pseudo_decls {
@@ -553,13 +561,28 @@ fn test_pseudo_element_declaration_routing() {
     assert!(got_color, "before 伪元素应收到 color 声明");
 
     // 3. 元素自身不应收到这些声明（伪元素规则不作用于元素本体）
-    let own_decls = collect_matching_declarations_with_media(&_doc, div, &stylesheets, None, None);
+    let own_decls = collect_matching_declarations_with_media(
+        &_doc,
+        div,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        None,
+        None,
+    );
     for (prop, _, _, _, _) in &own_decls {
         assert!(prop != "content", "元素本体不应收到伪元素的 content 声明");
     }
 
     // 4. after 槽不应收到 before 的声明
-    let after_decls = collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "after");
+    let after_decls = collect_pseudo_declarations_with_media(
+        &_doc,
+        div,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        None,
+        None,
+        "after",
+    );
     assert!(after_decls.is_empty(), "after 槽应为空（规则只匹配 before）");
 }
 
@@ -576,7 +599,15 @@ fn test_double_colon_pseudo_element_routing() {
     };
     assert_eq!(selector_pseudo_element(&style_rule.selectors[0]), Some("after"));
     let stylesheets = [stylesheet];
-    let after_decls = collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "after");
+    let after_decls = collect_pseudo_declarations_with_media(
+        &_doc,
+        div,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        None,
+        None,
+        "after",
+    );
     assert_eq!(after_decls.len(), 1);
     assert_eq!(after_decls[0].0, "content");
 }

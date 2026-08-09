@@ -541,7 +541,14 @@ fn test_collect_with_media_no_context() {
     let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
 
     // 无媒体上下文 → 只有非 @media 规则匹配
-    let decls = crate::matcher::collect_matching_declarations_with_media(&doc, p, &[stylesheet], None, None);
+    let decls = crate::matcher::collect_matching_declarations_with_media(
+        &doc,
+        p,
+        std::slice::from_ref(&stylesheet),
+        &crate::matcher::build_stylesheet_index(std::slice::from_ref(&stylesheet)),
+        None,
+        None,
+    );
     assert!(!decls.is_empty());
     // 应该只有 color: red，不应该有 font-weight: bold
     let has_bold = decls.iter().any(|d| d.0 == "font-weight");

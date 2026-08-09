@@ -352,14 +352,28 @@ fn test_container_rule_collects_declarations() {
 
     // 容器宽度 >= 400px 时，规则应用
     let ctx = ContainerContext::with_size(500.0, 600.0);
-    let results = collect_matching_declarations_with_media(&doc, p, &stylesheets, None, Some(&ctx));
+    let results = collect_matching_declarations_with_media(
+        &doc,
+        p,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        None,
+        Some(&ctx),
+    );
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].0, "color");
     assert_eq!(results[0].1, "red");
 
     // 容器宽度 < 400px 时，规则不应用
     let ctx_small = ContainerContext::with_size(300.0, 600.0);
-    let results = collect_matching_declarations_with_media(&doc, p, &stylesheets, None, Some(&ctx_small));
+    let results = collect_matching_declarations_with_media(
+        &doc,
+        p,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        None,
+        Some(&ctx_small),
+    );
     assert_eq!(results.len(), 0, "@container min-width:400px should not apply at 300px");
 }
 

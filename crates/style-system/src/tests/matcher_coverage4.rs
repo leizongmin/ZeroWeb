@@ -334,7 +334,14 @@ fn test_collect_matching_decls_with_layer() {
         })],
     };
 
-    let result = crate::matcher::collect_matching_declarations_with_media(&doc, div, &[stylesheet], None, None);
+    let result = crate::matcher::collect_matching_declarations_with_media(
+        &doc,
+        div,
+        std::slice::from_ref(&stylesheet),
+        &crate::matcher::build_stylesheet_index(std::slice::from_ref(&stylesheet)),
+        None,
+        None,
+    );
     assert_eq!(result.len(), 1);
 }
 
@@ -349,7 +356,14 @@ fn test_collect_matching_decls_with_keyframes() {
         })],
     };
 
-    let result = crate::matcher::collect_matching_declarations_with_media(&doc, div, &[stylesheet], None, None);
+    let result = crate::matcher::collect_matching_declarations_with_media(
+        &doc,
+        div,
+        std::slice::from_ref(&stylesheet),
+        &crate::matcher::build_stylesheet_index(std::slice::from_ref(&stylesheet)),
+        None,
+        None,
+    );
     assert!(result.is_empty());
 }
 
@@ -364,7 +378,14 @@ fn test_collect_matching_decls_with_import() {
         })],
     };
 
-    let result = crate::matcher::collect_matching_declarations_with_media(&doc, div, &[stylesheet], None, None);
+    let result = crate::matcher::collect_matching_declarations_with_media(
+        &doc,
+        div,
+        std::slice::from_ref(&stylesheet),
+        &crate::matcher::build_stylesheet_index(std::slice::from_ref(&stylesheet)),
+        None,
+        None,
+    );
     assert!(result.is_empty());
 }
 
@@ -394,7 +415,14 @@ fn test_collect_matching_decls_with_container_no_context() {
     };
 
     // 无容器上下文 → 条件为 false → 不收集
-    let result = crate::matcher::collect_matching_declarations_with_media(&doc, div, &[stylesheet], None, None);
+    let result = crate::matcher::collect_matching_declarations_with_media(
+        &doc,
+        div,
+        std::slice::from_ref(&stylesheet),
+        &crate::matcher::build_stylesheet_index(std::slice::from_ref(&stylesheet)),
+        None,
+        None,
+    );
     assert!(result.is_empty());
 }
 
@@ -425,8 +453,14 @@ fn test_collect_matching_decls_with_container_with_context() {
 
     let container_ctx = ContainerContext::with_size(500.0, 400.0);
 
-    let result =
-        crate::matcher::collect_matching_declarations_with_media(&doc, div, &[stylesheet], None, Some(&container_ctx));
+    let result = crate::matcher::collect_matching_declarations_with_media(
+        &doc,
+        div,
+        std::slice::from_ref(&stylesheet),
+        &crate::matcher::build_stylesheet_index(std::slice::from_ref(&stylesheet)),
+        None,
+        Some(&container_ctx),
+    );
     // 容器宽度 500 >= 400px，条件应为真
     assert_eq!(result.len(), 1);
 }

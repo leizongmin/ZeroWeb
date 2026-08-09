@@ -818,7 +818,14 @@ fn test_collect_from_container_rule_matching() {
     };
 
     let ctx = ContainerContext::with_size(500.0, 600.0);
-    let results = collect_matching_declarations_with_media(&doc, el, &[stylesheet], None, Some(&ctx));
+    let results = collect_matching_declarations_with_media(
+        &doc,
+        el,
+        std::slice::from_ref(&stylesheet),
+        &build_stylesheet_index(std::slice::from_ref(&stylesheet)),
+        None,
+        Some(&ctx),
+    );
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].1, "blue");
 }
@@ -864,7 +871,14 @@ fn test_collect_from_container_rule_not_matching() {
     };
 
     let ctx = ContainerContext::with_size(500.0, 600.0);
-    let results = collect_matching_declarations_with_media(&doc, el, &[stylesheet], None, Some(&ctx));
+    let results = collect_matching_declarations_with_media(
+        &doc,
+        el,
+        std::slice::from_ref(&stylesheet),
+        &build_stylesheet_index(std::slice::from_ref(&stylesheet)),
+        None,
+        Some(&ctx),
+    );
     assert!(
         results.is_empty(),
         "Container condition not met, should not produce declarations"

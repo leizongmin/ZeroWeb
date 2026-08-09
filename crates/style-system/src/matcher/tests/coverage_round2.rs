@@ -437,7 +437,14 @@ fn test_container_rule_matching() {
 
     // 有容器上下文且匹配
     let ctx = ContainerContext::with_size(500.0, 600.0);
-    let decls = collect_matching_declarations_with_media(&doc, span, &stylesheets, None, Some(&ctx));
+    let decls = collect_matching_declarations_with_media(
+        &doc,
+        span,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        None,
+        Some(&ctx),
+    );
     assert_eq!(decls.len(), 1);
     assert_eq!(decls[0].0, "color");
 
@@ -447,7 +454,14 @@ fn test_container_rule_matching() {
 
     // 容器上下文尺寸不足 → 不匹配
     let ctx_small = ContainerContext::with_size(200.0, 600.0);
-    let decls_small = collect_matching_declarations_with_media(&doc, span, &stylesheets, None, Some(&ctx_small));
+    let decls_small = collect_matching_declarations_with_media(
+        &doc,
+        span,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        None,
+        Some(&ctx_small),
+    );
     assert!(decls_small.is_empty());
 }
 
@@ -726,7 +740,14 @@ fn test_media_rule_matching_context() {
         pointer_type: PointerValue::Fine,
         resolution_dpi: 96.0,
     };
-    let decls = collect_matching_declarations_with_media(&doc, el, &stylesheets, Some(&media_ctx), None);
+    let decls = collect_matching_declarations_with_media(
+        &doc,
+        el,
+        &stylesheets,
+        &build_stylesheet_index(&stylesheets),
+        Some(&media_ctx),
+        None,
+    );
     assert_eq!(decls.len(), 1);
 }
 

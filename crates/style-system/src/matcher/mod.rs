@@ -1533,7 +1533,8 @@ pub fn collect_matching_declarations(
     element: NodeId,
     stylesheets: &[zero_css_parser::Stylesheet],
 ) -> Vec<MatchingDecl> {
-    collect_matching_declarations_with_media(doc, element, stylesheets, None, None)
+    let index = build_stylesheet_index(stylesheets);
+    collect_matching_declarations_with_media(doc, element, stylesheets, &index, None, None)
 }
 
 /// 从样式表中收集匹配指定元素的声明（带媒体查询评估）。
@@ -1546,17 +1547,19 @@ pub fn collect_matching_declarations_with_media(
     doc: &Document,
     element: NodeId,
     stylesheets: &[zero_css_parser::Stylesheet],
+    index: &StylesheetIndex,
     media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
     container_ctx: Option<&ContainerContext>,
 ) -> Vec<MatchingDecl> {
     let mut results = Vec::new();
     let mut layer_counter: usize = 0;
 
-    for stylesheet in stylesheets {
+    for (si, stylesheet) in stylesheets.iter().enumerate() {
         collect_from_rules(
             doc,
             element,
             &stylesheet.rules,
+            Some(&index.sheets[si]),
             &mut results,
             media_ctx,
             container_ctx,
@@ -1578,6 +1581,7 @@ pub fn collect_pseudo_declarations_with_media(
     doc: &Document,
     element: NodeId,
     stylesheets: &[zero_css_parser::Stylesheet],
+    index: &StylesheetIndex,
     media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
     container_ctx: Option<&ContainerContext>,
     pseudo_name: &str,
@@ -1585,11 +1589,12 @@ pub fn collect_pseudo_declarations_with_media(
     let mut results = Vec::new();
     let mut layer_counter: usize = 0;
 
-    for stylesheet in stylesheets {
+    for (si, stylesheet) in stylesheets.iter().enumerate() {
         collect_from_rules(
             doc,
             element,
             &stylesheet.rules,
+            Some(&index.sheets[si]),
             &mut results,
             media_ctx,
             container_ctx,
@@ -1630,6 +1635,118 @@ fn matches_selector_for_pseudo(doc: &Document, element: NodeId, selector: &Selec
     matches_selector(doc, element, &stripped)
 }
 
+/// 单样式表的选择器索引桶：tag（小写）→ 该样式表内 Style 规则的 (规则下标, 选择器下标)。
+///
+/// 正确性依据：选择器最右复合选择器含 `TypeSelector::Tag(t)` 时，匹配元素 E 的
+/// 必要条件即 E 的 tag == t（大小写不敏感）——按 tag 分桶只减少候选、不改变
+/// 匹配结果（零语义损失）。无 type selector（`.class`/`#id`/`*` 等）的选择器
+/// 可匹配任意 tag，进 `universal` 桶。
+struct SheetBuckets {
+    /// tag（小写）→ 候选 (规则下标, 选择器下标)，按 (规则, 选择器) 有序。
+    tagged: std::collections::HashMap<String, Vec<(usize, usize)>>,
+    /// 无 type selector / Universal → 任意 tag 候选。
+    universal: Vec<(usize, usize)>,
+}
+
+/// 全样式表的选择器索引（compute_styles 每帧构建一次，元素共享）。
+pub struct StylesheetIndex {
+    sheets: Vec<SheetBuckets>,
+}
+
+/// 从选择器最右复合选择器提取 type selector tag（小写）；无/Universal → None。
+fn selector_leading_tag(selector: &zero_css_parser::ast::Selector) -> Option<String> {
+    use zero_css_parser::ast::{Selector, TypeSelector};
+    let Selector { complex } = selector;
+    let (compound, _) = complex.parts.last()?;
+    match &compound.type_selector {
+        Some(TypeSelector::Tag(tag)) => Some(tag.to_ascii_lowercase()),
+        Some(TypeSelector::Universal) | None => None,
+    }
+}
+
+/// 构建全样式表的 tag 分桶索引（O(规则 × 选择器)，每帧一次）。
+pub fn build_stylesheet_index(stylesheets: &[zero_css_parser::Stylesheet]) -> StylesheetIndex {
+    let mut sheets = Vec::with_capacity(stylesheets.len());
+    for stylesheet in stylesheets {
+        let mut tagged: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
+        let mut universal: Vec<(usize, usize)> = Vec::new();
+        for (ri, rule) in stylesheet.rules.iter().enumerate() {
+            let zero_css_parser::ast::Rule::Style(style_rule) = rule else {
+                continue; // At 规则不进索引（collect_from_rules 原样遍历）
+            };
+            for (si, selector) in style_rule.selectors.iter().enumerate() {
+                match selector_leading_tag(selector) {
+                    Some(tag) => tagged.entry(tag).or_default().push((ri, si)),
+                    None => universal.push((ri, si)),
+                }
+            }
+        }
+        for bucket in tagged.values_mut() {
+            bucket.sort_unstable();
+        }
+        universal.sort_unstable();
+        sheets.push(SheetBuckets { tagged, universal });
+    }
+    StylesheetIndex { sheets }
+}
+
+/// 匹配单个选择器并收集其声明；返回是否匹配。
+///
+/// 被索引路径（候选选择器）与全量路径（@media 内层）共用，保持收集逻辑单一。
+#[allow(clippy::too_many_arguments)]
+fn collect_style_rule_decls(
+    doc: &Document,
+    element: NodeId,
+    style_rule: &zero_css_parser::ast::StyleRule,
+    selector: &Selector,
+    results: &mut Vec<MatchingDecl>,
+    current_layer: Option<usize>,
+    pseudo: Option<&str>,
+) -> bool {
+    // pseudo=None: 常规元素匹配；
+    // pseudo=Some(name): 仅收集尾部伪元素 == name 的选择器（伪元素声明）。
+    let matched = match pseudo {
+        None => matches_selector(doc, element, selector),
+        Some(name) => matches_selector_for_pseudo(doc, element, selector, name),
+    };
+    if !matched {
+        return false;
+    }
+    let spec = zero_css_parser::selector::specificity(selector);
+    for decl in &style_rule.declarations {
+        // CSS Text 3 §7.1：`text-align: justify-all` = justify +
+        // text-align-last: justify（末行也两端对齐）。在 declaration 收集层
+        // 展开为两个 author declaration，使 cascade 把两者都当 author declaration。
+        // apply 层单点特判会被 cascade「text-align-last 无 author declaration →
+        // 继承 parent Auto」覆盖（R956 根因）；R955 已让存储路径消费 text-align-last。
+        if decl.property.eq_ignore_ascii_case("text-align") && decl.value.trim().eq_ignore_ascii_case("justify-all") {
+            results.push((
+                "text-align".to_string(),
+                "justify".to_string(),
+                decl.important,
+                spec,
+                current_layer,
+            ));
+            results.push((
+                "text-align-last".to_string(),
+                "justify".to_string(),
+                decl.important,
+                spec,
+                current_layer,
+            ));
+        } else {
+            results.push((
+                decl.property.clone(),
+                decl.value.clone(),
+                decl.important,
+                spec,
+                current_layer,
+            ));
+        }
+    }
+    true
+}
+
 /// 递归从规则中收集匹配的声明。
 ///
 /// `current_layer` 为 `None` 表示未分层的声明，`Some(idx)` 表示当前级联层索引。
@@ -1639,6 +1756,7 @@ fn collect_from_rules(
     doc: &Document,
     element: NodeId,
     rules: &[zero_css_parser::ast::Rule],
+    index: Option<&SheetBuckets>,
     results: &mut Vec<MatchingDecl>,
     media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
     container_ctx: Option<&ContainerContext>,
@@ -1646,56 +1764,46 @@ fn collect_from_rules(
     layer_counter: &mut usize,
     pseudo: Option<&str>,
 ) {
-    for rule in rules {
-        match rule {
-            zero_css_parser::ast::Rule::Style(style_rule) => {
-                // 检查选择器列表中是否有匹配的选择器
-                for selector in &style_rule.selectors {
-                    // pseudo=None: 常规元素匹配；
-                    // pseudo=Some(name): 仅收集尾部伪元素 == name 的选择器（伪元素声明）。
-                    let matched = match pseudo {
-                        None => matches_selector(doc, element, selector),
-                        Some(name) => matches_selector_for_pseudo(doc, element, selector, name),
-                    };
-                    if matched {
-                        let spec = zero_css_parser::selector::specificity(selector);
-                        for decl in &style_rule.declarations {
-                            // CSS Text 3 §7.1：`text-align: justify-all` = justify +
-                            // text-align-last: justify（末行也两端对齐）。在 declaration 收集层
-                            // 展开为两个 author declaration，使 cascade 把两者都当 author declaration。
-                            // apply 层单点特判会被 cascade「text-align-last 无 author declaration →
-                            // 继承 parent Auto」覆盖（R956 根因）；R955 已让存储路径消费 text-align-last。
-                            if decl.property.eq_ignore_ascii_case("text-align")
-                                && decl.value.trim().eq_ignore_ascii_case("justify-all")
-                            {
-                                results.push((
-                                    "text-align".to_string(),
-                                    "justify".to_string(),
-                                    decl.important,
-                                    spec,
-                                    current_layer,
-                                ));
-                                results.push((
-                                    "text-align-last".to_string(),
-                                    "justify".to_string(),
-                                    decl.important,
-                                    spec,
-                                    current_layer,
-                                ));
-                            } else {
-                                results.push((
-                                    decl.property.clone(),
-                                    decl.value.clone(),
-                                    decl.important,
-                                    spec,
-                                    current_layer,
-                                ));
-                            }
+    // 索引候选：元素 tag 的精确桶 + 通用桶（无 type selector 的选择器）。
+    // 同规则多选择器匹配时只收集一次（原语义 break）：候选按 (规则, 选择器)
+    // 有序，`last_matched_rule` 跳过已匹配规则的其余选择器。
+    match index {
+        Some(idx) => {
+            let elem_tag = element_tag_name(doc, element).unwrap_or_default();
+            let tagged = idx.tagged.get(&elem_tag).map(Vec::as_slice).unwrap_or(&[]);
+            let universal = idx.universal.as_slice();
+            let mut last_matched_rule = usize::MAX;
+            for (ri, si) in tagged.iter().chain(universal.iter()) {
+                if *ri == last_matched_rule {
+                    continue;
+                }
+                let zero_css_parser::ast::Rule::Style(style_rule) = &rules[*ri] else {
+                    continue; // 索引只含 Style 规则
+                };
+                let selector = &style_rule.selectors[*si];
+                if collect_style_rule_decls(doc, element, style_rule, selector, results, current_layer, pseudo) {
+                    last_matched_rule = *ri;
+                }
+            }
+        }
+        None => {
+            // 无索引（@media 内层规则）：全量遍历（旧行为）
+            for rule in rules {
+                if let zero_css_parser::ast::Rule::Style(style_rule) = rule {
+                    for selector in &style_rule.selectors {
+                        if collect_style_rule_decls(doc, element, style_rule, selector, results, current_layer, pseudo)
+                        {
+                            break; // 一个选择器匹配就够了
                         }
-                        break; // 一个选择器匹配就够了
                     }
                 }
             }
+        }
+    }
+    // At 规则（@media 等）：不进索引，原样遍历（数量远少于 Style 规则）
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(_) => {}
             zero_css_parser::ast::Rule::At(at_rule) => {
                 if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body {
                     if at_rule.name.eq_ignore_ascii_case("media") {
@@ -1711,6 +1819,7 @@ fn collect_from_rules(
                                 doc,
                                 element,
                                 inner_rules,
+                                None, // @media 内层规则未进索引，全量匹配
                                 results,
                                 media_ctx,
                                 container_ctx,
@@ -1741,6 +1850,7 @@ fn collect_from_rules(
                     doc,
                     element,
                     &layer_rule.rules,
+                    None, // @layer 内层规则未进索引，全量匹配
                     results,
                     media_ctx,
                     container_ctx,
@@ -1759,6 +1869,7 @@ fn collect_from_rules(
                         doc,
                         element,
                         &supports_rule.rules,
+                        None, // @supports 内层规则未进索引，全量匹配
                         results,
                         media_ctx,
                         container_ctx,
@@ -1775,6 +1886,7 @@ fn collect_from_rules(
                         doc,
                         element,
                         &container_rule.rules,
+                        None, // @container 内层规则未进索引，全量匹配
                         results,
                         media_ctx,
                         container_ctx,
