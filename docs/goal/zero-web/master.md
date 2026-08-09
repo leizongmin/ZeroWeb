@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1b L1a——cached_doc → 共享 `Rc<RefCell<Document>>` 行为保持重构（live-Document 基础设施，本轮 R3106）
+
+承接 R3105（live-Document 设计 §3.7）。本轮落 **L1a**：cached_doc 所有权改共享，**行为保持**（RefCell 透明——同一 Document 同一操作，仅加顺序 borrow 追踪）。**无 webview/native 接线**（L1b 下一步）——本片是渲染热路径迁移的基础设施，隔离验证。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **cached_doc 共享 + accessor + 全站点迁移** | `crates/engine/src/pipeline/mod.rs` + `pipeline_budget.rs` + `tests/pipeline.rs` | 字段 `Option<Document>` → `Option<Rc<RefCell<Document>>>`；新 `pub fn cached_doc_shared() -> Option<Rc<RefCell<Document>>>`（L1b native 接线用）；set 站点 `Rc::new(RefCell::new(doc))`；4 hit_test reader `borrow()+&doc`（auto-deref）；`repaint_cached_viewport` take-Rc/borrow/drop/put-back（保 take/put-back 避字段借用冲突）；`render_with_dom_mutations` take-Rc + borrow_mut（mutation+snapshot 单 RefMut）+ 3-branch 增量路径 inner-scope borrow + put-back（保 all_text_only/all_paint_only/full 三层优化）；budget `session.doc.take().map(wrap)`；test reader `.borrow()`。 |
+
+**为何净正向**：① 落 R3105 设计的 L1a——cached_doc 共享**基础设施**（行为保持，RefCell 透明）；② 隔离渲染热路径迁移为独立可验证单元（不混 L1b 接线风险）；③ 加 `cached_doc_shared()` public accessor 为 L1b 铺路；④ 保 3-branch 增量优化（all_text_only/all_paint_only/full）——polyfill mutation 热路径性能不退化；⑤ 默认无行为变更（无 webview 接线，native 仍快照）。
+
+**Borrow 不变量**（设计 §3.7，本片守住）：单线程 webview——脚本执行与渲染**顺序**（非并发）；polyfill/native 回调为顺序 V8 回调；`with_dom`/`with_dom_mut`（gc.rs）borrow 限定单操作闭包；pipeline 内 take-Rc 释放字段避 `&mut self` 冲突。无并发 borrow_mut、无跨回调嵌套 borrow → RefCell 不 panic。
+
+**验证（行为保持的关键）**：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-script-sandbox --all-targets --features v8 -D warnings` 零警告 + **`make test` 全绿（exit 0，零回归）** + **`make product-smoke` exit 0（welcome.html struct-check PASS card:4 + morning-work/article struct-check PASS article:1）**——渲染路径未变（RefCell 透明）+ pre-commit guard PASS。涉渲染热路径，product-smoke 必守（run-rules DC-13）。
+
+**已知限制（L1b 处理）**：① **无 webview/native 接线**——native 仍读 re-parse 快照（R3097 行为），cached_doc_shared 未被消费；② **L1b**（webview `run_page_scripts` 经 escape-hatch 取 `cached_doc_shared` 传 install_dom_bindings，None 回落 re-parse）是下一切片——低风险（~5 行，behind native_dom kill-switch），落成后 native 生产读/写 live DOM（去 inert）。
+
+**下一步**：L1a 完成（行为保持基础设施，product-smoke 守）。**L1b 直接可执行**（RFC §3.7 末 + 本片 accessor）：webview `run_page_scripts_impl` 的 native_dom 分支改 `if let Some(doc) = self.pipeline.cached_doc_shared() { install_dom_bindings(scope, ctx, doc) } else { install_dom_bindings_from_html(...) }`（None 回落）+ make test + make product-smoke。L1b 完成后 native 生产读/写 live Document（去 inert，P1b 战略闭合第一步）。或续 contained 表面片（S4 EventTarget / replaceChild+throw / attributes NamedNodeMap）。
+
 ### P1b live-Document 设计落地——RFC §3.7 + TBD-6（去 read-only 快照限制的战略设计片，本轮 R3105）
 
 承接 R3103/R3104 两轮「下一步」战略项 live-Document 重构。本轮探查确认**可行性**并落设计：`WebView` **owns** `pipeline: RenderPipeline`（webview.rs:133）→ webview 可达 `pipeline.cached_doc`（renderer 真 live Document）——无需跨层握手。设计写入 P1b RFC（`docs/specs/p1b-v8-native-bindings-rfc.md` §3.7 + TBD-6 + 修订史 v0.2）。
