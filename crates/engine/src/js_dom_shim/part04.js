@@ -514,7 +514,33 @@
           return function (a, b) { _zwApplyScroll(_ss, a, b, _byM); _zwFireScroll(key, sel, handle); };
         }
         if (prop === 'scrollIntoView') {
-          return function () {}; // no-op（headless 无 viewport，无法真实滚动元素入视口）
+          // R3060：scrollIntoView 真实化（闭合 R3047 no-op）。headless 无真视口滚动，但程序化 round-trip
+          //（"回到顶部"按钮判 scrollY / 滚动后读位置 / anchor 滚动）可观察：把文档 scrollTop 设为元素 gBCR.y
+          //（元素滚到视口顶），复用 globalThis.scrollTo（更新 _winScroll + 派发 scroll 事件，R3047/R3051）。
+          // arg（boolean / {block,behavior,inline}）解析 block 对齐：headless 无 viewportH，center/end 近似为 top
+          //（documented；viewportH>0 时按 spec 算）。gBCR 未注册（reftest/polyfill/WebView 无 rect bridge）→ rect 零 → no-op。
+          return function (arg) {
+            var identity = sel || handle;
+            if (!identity || typeof __zw_getBoundingClientRect !== 'function') return;
+            var rs;
+            try { rs = __zw_getBoundingClientRect(identity); } catch (_e) { rs = ''; }
+            if (!rs || rs.indexOf(',') < 0) return; // 无 rect（detached / bridge 未注册）→ no-op
+            var p = rs.split(',');
+            var top = +p[1] || 0; // y
+            var h = +p[3] || 0;
+            // block 对齐：start（默认/true）→ top；end（false）→ top+h-vh；center → top-vh/2+h/2。
+            var vh = (typeof globalThis.innerHeight === 'number' && globalThis.innerHeight > 0) ? globalThis.innerHeight : 0;
+            var block = 'start';
+            if (arg === false) block = 'end';
+            else if (arg && typeof arg === 'object' && arg.block) block = String(arg.block).toLowerCase();
+            var newTop = top;
+            if (vh > 0) {
+              if (block === 'end') newTop = top + h - vh;
+              else if (block === 'center') newTop = top - vh / 2 + h / 2;
+            }
+            if (newTop < 0) newTop = 0;
+            globalThis.scrollTo(0, newTop); // behavior: instant（smooth 无动画，headless documented）
+          };
         }
         // `el.hasAttributes()`——是否有任意属性（经 `__zw_attr_names` 非空判定）。
         if (prop === 'hasAttributes') {

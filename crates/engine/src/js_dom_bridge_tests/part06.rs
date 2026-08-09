@@ -1760,3 +1760,49 @@ fn test_event_subclasses_r2811() {
         "createEvent('MouseEvent') instanceof MouseEvent"
     );
 }
+
+#[test]
+fn test_scroll_into_view_r3060() {
+    // R3060：scrollIntoView 真实化（闭合 R3047 no-op）。把文档 scrollTop 设为元素 gBCR.y 按 block 对齐，
+    // 复用 globalThis.scrollTo（更新 _winScroll + 派发 scroll 事件，R3047/R3051）。元素置于视口下方
+    //（y=1000，innerHeight=800）使 block 各对齐产生可区分值：start→1000 / end→250 / center→625。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><div id='d'>x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    // mock rect：#d → "0,1000,100,50"（y=1000, h=50；视口下方）。register_dom_callbacks 设 innerHeight=800。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| match args.first() {
+            Some(s) if s.starts_with("__") => String::new(),
+            _ => "0,1000,100,50".to_string(),
+        }),
+    );
+    assert_eq!(sandbox.execute("String(globalThis.innerHeight)").unwrap().value, "800", "innerHeight=800（视口高）");
+
+    // 初始 scrollY=0；注册 scroll listener 计数。
+    assert_eq!(sandbox.execute("window.scrollY").unwrap().value, "0", "初始 scrollY=0");
+    sandbox.execute("globalThis.__sc=0; addEventListener('scroll', function(){ globalThis.__sc++; });").unwrap();
+
+    // ① scrollIntoView()（block start）→ newTop=y=1000 + scroll 事件。
+    sandbox.execute("document.querySelector('#d').scrollIntoView();").unwrap();
+    assert_eq!(sandbox.execute("window.scrollY").unwrap().value, "1000", "scrollIntoView()（start）→ scrollY=1000（元素 y）");
+    assert_eq!(sandbox.execute("String(globalThis.__sc)").unwrap().value, "1", "scrollIntoView → 派发 scroll 事件");
+
+    // ② scrollIntoView({block:'end'}) → newTop = y + h - vh = 1000+50-800 = 250。
+    sandbox.execute("globalThis.__sc=0; document.querySelector('#d').scrollIntoView({block:'end'});").unwrap();
+    assert_eq!(sandbox.execute("window.scrollY").unwrap().value, "250", "scrollIntoView(block:end) -> scrollY=250 (y+h-vh)");
+
+    // ③ scrollIntoView({block:'center'}) → newTop = y - vh/2 + h/2 = 1000-400+25 = 625。
+    sandbox.execute("globalThis.__sc=0; document.querySelector('#d').scrollIntoView({block:'center'});").unwrap();
+    assert_eq!(sandbox.execute("window.scrollY").unwrap().value, "625", "scrollIntoView(block:center) -> scrollY=625 (y-vh/2+h/2)");
+
+    // ④ 无 rect（detached createElement 元素）→ no-op（scrollY 不变，不派 scroll）。
+    sandbox.execute("globalThis.__sc=0; var e=document.createElement('div'); e.scrollIntoView();").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__sc)").unwrap().value, "0", "detached 元素无 rect → scrollIntoView no-op（不派 scroll）");
+}
