@@ -1438,6 +1438,75 @@ fn native_document_title_setter_create_missing_r3139() {
     );
 }
 
+// ── R3140 element.matches / element.closest ──
+
+/// `element.matches(selector)`：本元素匹配复合选择器 → bool。class/tag/attr/伪类 + 不匹配 + 非法 false。
+#[test]
+fn native_element_matches_r3140() {
+    let html = r#"<div id="a" class="row big"><span id="b">x</span></div>"#;
+    // class 匹配。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').matches('.row'))"),
+        "true",
+        "matches('.row')===true"
+    );
+    // tag + class 复合匹配。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').matches('div.row'))"),
+        "true",
+        "matches('div.row')===true（tag+class 复合）"
+    );
+    // 不匹配 → false。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').matches('.nope'))"),
+        "false",
+        "matches('.nope')===false"
+    );
+    // 子元素 span 不匹配 div 选择器。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('b').matches('div'))"),
+        "false",
+        "span.matches('div')===false"
+    );
+    // 非法选择器 → false（不抛）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').matches('!!!'))"),
+        "false",
+        "非法选择器 → false（不 panic）"
+    );
+}
+
+/// `element.closest(selector)`：本元素 + 祖先链首个匹配 → native 元素或 null。
+/// 含自身匹配 + 祖先匹配 + 无匹配 null。
+#[test]
+fn native_element_closest_r3140() {
+    let html = r#"<div id="a" class="row"><div id="b"><span id="c">x</span></div></div>"#;
+    // 自身匹配（c 是 span）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('c').closest('span').id)"),
+        "c",
+        "closest('span') 命中自身 c"
+    );
+    // 祖先匹配（c 上溯到 .row 的 div#a）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('c').closest('.row').id)"),
+        "a",
+        "closest('.row') 上溯命中祖先 a"
+    );
+    // 无匹配 → null。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('c').closest('.nope')===null)"),
+        "true",
+        "closest('.nope')===null（无匹配）"
+    );
+    // closest 命中祖先后该元素 matches 验证一致性（closest('#a') 命中后其 id===a）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('c').closest('#a').matches('#a'))"),
+        "true",
+        "closest('#a') 结果 matches('#a')===true（matches/closest 一致）"
+    );
+}
+
 // ── R3132 appendChild/insertBefore(fragment) flatten ──
 
 /// host.appendChild(frag)：fragment 子节点展开进 host + fragment 清空（spec flatten）。

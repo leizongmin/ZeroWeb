@@ -173,6 +173,16 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "querySelectorAll") {
         tmpl.set(k.into(), eqsa_tmpl.into());
     }
+    // R3140 element.matches(selector) / element.closest(selector)（spec `dom-element-matches` /
+    // `-closest`）：本元素/祖先链复合选择器匹配 → bool / native 元素或 null。事件代理/框架高频。
+    let matches_tmpl = v8::FunctionTemplate::builder(element::native_element_matches_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "matches") {
+        tmpl.set(k.into(), matches_tmpl.into());
+    }
+    let closest_tmpl = v8::FunctionTemplate::builder(element::native_element_closest_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "closest") {
+        tmpl.set(k.into(), closest_tmpl.into());
+    }
     // spec 树 mutation 方法（`args.this()` = parent NodeId，参为 native element 对象读 internal slot）：
     // appendChild / insertBefore / removeChild。Document 写经 with_dom_mut。
     let append_tmpl = v8::FunctionTemplate::builder(node::native_append_child_invoke).build(scope);

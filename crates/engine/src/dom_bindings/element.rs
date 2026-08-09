@@ -267,6 +267,48 @@ pub(super) fn native_element_query_selector_all_invoke(
     rv.set(arr.into());
 }
 
+/// `element.matches(selector)`（spec `dom-element-matches`）：本元素是否匹配选择器 → bool。
+/// 复合选择器（tag/`*`/`#id`/`.class`/`[attr]`+运算符/伪类）；组合器不支持（best-effort，
+/// 见 `Document::matches`）。非 native element `this` → false（spec matches 仅 Element）。
+pub(super) fn native_element_matches_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        rv.set(v8::Boolean::new(scope, false).into());
+        return;
+    };
+    let sel = string_arg(scope, &args, 0);
+    let m = with_dom(|d| d.matches(id, sel.trim())).unwrap_or(false);
+    rv.set(v8::Boolean::new(scope, m).into());
+}
+
+/// `element.closest(selector)`（spec `dom-element-closest`）：本元素 + 祖先链首个匹配选择器的节点
+/// → native 元素或 `null`。复合选择器（同 [`native_element_matches_invoke`]）；无匹配 / 非法 → `null`。
+pub(super) fn native_element_closest_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        rv.set(v8::null(scope).into());
+        return;
+    };
+    let sel = string_arg(scope, &args, 0);
+    let found = with_dom(|d| d.closest(id, sel.trim())).flatten();
+    match found {
+        Some(fid) => {
+            if let Some(obj) = get_or_create_native_element(scope, fid) {
+                rv.set(obj.into());
+            }
+        }
+        None => rv.set(v8::null(scope).into()),
+    }
+}
+
 /// `children` getter（spec `dom-parentnode-children`）：元素**子元素**（跳过文本/注释）
 /// → V8 Array of native 对象（文档序）。非 Element 子节点不返（native 仅 Element 对象；
 /// `childNodes` 含文本/注释需 native 非 Element 节点，后续切片）。

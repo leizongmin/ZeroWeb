@@ -895,6 +895,36 @@ impl Document {
             .collect()
     }
 
+    /// 元素是否匹配选择器（spec `dom-element-matches` / `Element.prototype.matches`）。
+    ///
+    /// 支持**复合选择器**（tag/`*`/`#id`/`.class`/`[attr]`+运算符/复合/伪类——经 `parse_simple_selector`
+    /// 解析单 compound + `element_matches_selector` 含伪类位置评估）。**不支持组合器**（`>`/` `/
+    /// `+`/`~`）——spec matches 须以元素为 scope 评估组合器链，本实现 best-effort 仅 compound
+    ///（常见用法，如 `el.matches('.btn')`/`'div.active'`）；非法/组合器选择器 → `false`（不 panic）。
+    /// 非 Element 节点 → `false`。
+    pub fn matches(&self, node: NodeId, selector: &str) -> bool {
+        let Some(simple) = crate::query::parse_simple_selector(selector.trim()) else {
+            return false;
+        };
+        self.element_matches_selector(node, &simple)
+    }
+
+    /// 最近匹配选择器的祖先（含自身）（spec `dom-element-closest` / `Element.prototype.closest`）。
+    ///
+    /// 从 `node` 沿 parent 链上溯（含自身），返首个匹配**复合选择器**的节点 NodeId；无匹配 → `None`。
+    /// 同 [`Self::matches`]：仅 compound（无组合器）；非法选择器 → `None`。
+    pub fn closest(&self, node: NodeId, selector: &str) -> Option<NodeId> {
+        let simple = crate::query::parse_simple_selector(selector.trim())?;
+        let mut cur = Some(node);
+        while let Some(c) = cur {
+            if self.element_matches_selector(c, &simple) {
+                return Some(c);
+            }
+            cur = self.parent_node(c);
+        }
+        None
+    }
+
     // ── Shadow DOM ──────────────────────────────────────────────
 
     /// 为宿主元素附加 ShadowRoot。
