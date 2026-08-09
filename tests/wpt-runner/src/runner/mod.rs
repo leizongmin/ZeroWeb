@@ -278,6 +278,29 @@ mod runtime_path_tests {
             failed.join("\n")
         );
     }
+
+    /// R3081：所有 storage 用例经 `js_executes_ok` 真实执行内联脚本无异常。闭合 IndexedDB 内存表面
+    ///（open/onupgradeneeded/onsuccess/transaction/store CRUD/createIndex）后，`indexedDB.open()` 全链不再抛
+    /// `indexedDB is not defined`。storage 用例原仅声明 render_completes/dom_has_body（脚本抛不可见）；
+    /// 本回归门经 strict 执行验证 IndexedDB API 表面可用。
+    #[test]
+    fn storage_cases_execute_scripts_r3081() {
+        let ctx = TestContext::default();
+        let cases = filter_tests_by_category(&builtin_tests(), "storage");
+        assert!(!cases.is_empty(), "storage 用例集非空");
+        let mut failed: Vec<String> = Vec::new();
+        for case in &cases {
+            if let Err(e) = check_js_executes_ok(&case.html, &ctx) {
+                failed.push(format!("{}: {}", case.id, e));
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "storage 用例应全部 js_executes_ok 通过（{} 例失败）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
 }
 
 /// 运行单个测试用例，返回结果。

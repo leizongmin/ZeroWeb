@@ -414,3 +414,62 @@ fn test_worker_api_surface_r3080() {
     assert_eq!(sandbox.execute("globalThis.__hasAddEvt").unwrap().value, "true", "Worker extends EventTarget（addEventListener 可用）");
     assert_eq!(sandbox.execute("globalThis.__afterTermOk").unwrap().value, "ok", "terminate 后 postMessage no-op（不抛）");
 }
+
+#[test]
+fn test_indexeddb_in_memory_surface_r3081() {
+    // R3081：IndexedDB 内存表面。旧 `globalThis.indexedDB` 未定义 → 5 storage 用例 `indexedDB is not defined`。
+    // 本切片接 in-memory IDB：open（异步 onupgradeneeded→onsuccess）/ db.createObjectStore/objectStoreNames/
+    // transaction/close / store.add/put/get/delete/clear/count/createIndex / tx.objectStore/oncomplete。
+    // 本测试验证**功能 round-trip**（非仅 no-throw）：open→upgrade 建 store→add→success→tx.put/delete/get→
+    // get.onsuccess 回读 put 的值（内存 CRUD 真生效）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "globalThis.__hasIDB = String(typeof indexedDB === 'object' && typeof indexedDB.open === 'function');\
+             var req = indexedDB.open('r3081db', 1);\
+             req.onupgradeneeded = function (e) {\
+                 globalThis.__upgradeFired = 'yes';\
+                 var db = e.target.result;\
+                 globalThis.__storeBefore = String(!db.objectStoreNames.contains('items'));\
+                 var store = db.createObjectStore('items', {keyPath: 'id'});\
+                 globalThis.__storeAfter = String(db.objectStoreNames.contains('items'));\
+                 store.add({id: 1, name: 'first'});\
+             };\
+             req.onsuccess = function (e) {\
+                 globalThis.__successFired = 'yes';\
+                 var db = e.target.result;\
+                 var tx = db.transaction('items', 'readwrite');\
+                 var store = tx.objectStore('items');\
+                 store.put({id: 2, name: 'second'});\
+                 store.delete(1);\
+                 var getReq = store.get(2);\
+                 getReq.onsuccess = function (ge) {\
+                     globalThis.__gotName = (ge.target.result && ge.target.result.name) || 'none';\
+                 };\
+                 store.count().onsuccess = function (ce) { globalThis.__count = String(ce.target.result); };\
+             };",
+        )
+        .unwrap();
+    // microtask checkpoint 在 execute 末尾派发 onupgradeneeded→onsuccess→store ops→get/count callbacks。
+    // 兜底：再 execute 一次确保所有嵌套 microtask 排空。
+    sandbox.execute("1;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hasIDB").unwrap().value, "true", "typeof indexedDB === object（open 可用）");
+    assert_eq!(sandbox.execute("globalThis.__upgradeFired").unwrap().value, "yes", "open → onupgradeneeded 触发");
+    assert_eq!(sandbox.execute("globalThis.__storeBefore").unwrap().value, "true", "createObjectStore 前 objectStoreNames.contains=false");
+    assert_eq!(sandbox.execute("globalThis.__storeAfter").unwrap().value, "true", "createObjectStore 后 objectStoreNames.contains=true");
+    assert_eq!(sandbox.execute("globalThis.__successFired").unwrap().value, "yes", "onupgradeneeded → onsuccess 触发");
+    assert_eq!(sandbox.execute("globalThis.__gotName").unwrap().value, "second", "CRUD round-trip: put id=2 -> get(2).result.name = 'second'");
+    assert_eq!(sandbox.execute("globalThis.__count").unwrap().value, "1", "count: 1 record after delete + put");
+}

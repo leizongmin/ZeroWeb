@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1a IndexedDB 内存表面（open/upgradeneeded/onsuccess/transaction/store CRUD/createIndex，闭合 5 storage 用例，本轮 R3081）
+
+承接 R3080（Worker 表面）。R3080 探针 3 失败簇剩 storage（5：`indexedDB is not defined`）+ es-modules（1：test-case 限制）。本切片闭合 storage 簇。storage crate 有真 IDB 实现但**未接 JS bridge**（`globalThis.indexedDB` 未定义）。本切片提供完整 in-memory IDB 表面（JS-only，无 host bridge）——功能可用（CRUD round-trip 真生效），非仅 no-throw。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **in-memory IndexedDB** | `crates/engine/src/js_dom_shim/part02.js`（sessionStorage 后） | `_idb_databases` 内存表 + `_zwIDBEvent`/`_zwIDBRequest`/`_zwIDBStore`/`_zwIDBTransaction`/`_zwIDBDatabase`/`_zwIDBIndex`。`indexedDB.open(name,ver)` 异步派发 onupgradeneeded（建 store 窗口）→ onsuccess（经 queueMicrotask，handler 先注册后触发）；db.createObjectStore/objectStoreNames.contains/transaction/close；store.add/put/get/delete/clear/count/createIndex/index；tx.objectStore/oncomplete/abort；index.get/openCursor。数据存内存 Map（同 db 名跨 open 实例持久）。IDB 构造器 + IDBKeyRange.only 占位（feature-detection）。spec https://w3c.github.io/IndexedDB/ |
+| **R3081 测试** | engine `part14.rs`（+`test_indexeddb_in_memory_surface_r3081`）+ wpt-runner `mod.rs`（+`storage_cases_execute_scripts_r3081`） | engine：功能 round-trip（open→upgrade 建 store→objectStoreNames round-trip→add→success→tx.put/delete/get→get.onsuccess 回读 put 值 + count）；wpt-runner：全 storage 用例 js_executes_ok strict 通过。 |
+
+**为何净正向**：① 纯新增（`globalThis.indexedDB` 旧未定义，本切片补完整 in-memory 表面，零既有路径改动）；② 功能可用（CRUD round-trip 真生效，engine 测试验证 add/put/delete/get/count 闭环）；③ 复用既有 queueMicrotask（异步派发与 MessagePort/BroadcastChannel 同款）；④ R3080 探针实测 storage 全用例 js_executes_ok 通过（0.94s）；⑤ 全量 make test 全绿（0 failed across all binaries，16091 passed）。
+
+**已知限制（记录，defer）**：① **无持久化**（内存 Map，跨页面重载丢失——接 storage crate 真 IDB + host bridge 为持久化 follow-up，中-高复杂度）；② **值引用存储非结构化克隆**（spec structuredClone，headless 简化——同一对象 mutate 可见）；③ **cursor 简化**（openCursor 返 null result，非真迭代——indexeddb-cursor 用例实测未用 cursor，put×3 在 upgrade）；④ **约束错误 lenient**（unique 冲突/key 缺失不抛，仅记内存）；⑤ es-module import 语句（1 用例，test-case 限制非引擎缺陷，低优先）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**cargo test 执行器；0 failed across all binaries，全量 16091 passed，engine +1 + wpt-runner +1（v8+quickjs 双跑）= +3，零回归**）+ pre-commit guard PASS。变更纯 JS shim + 测试（无 render/paint/layout .rs），product-smoke 不受影响。
+
+**下一步**：IndexedDB 内存表面闭合（5 storage 用例 js_executes_ok 通过；持久化 + 真 cursor defer）。pivot：① **IndexedDB 持久化**（接 storage crate 真 IDB + host bridge，跨页重载不丢，中-高复杂度）；② 重跑 R3080 探针确认无新失败簇（js_dom/web_api 类别可能藏 gap）；③ es-module import 语句（test-case 限制）；④ P1a 事件循环 macro-task 队列补全 / popover 渲染层。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a Web Worker API 表面（postMessage/terminate/onmessage/onerror，EventTarget-based 构造器，闭合 6 web-worker 用例，本轮 R3080）
 
 R3080 探针（js_executes_ok 全 scripted 类别）发现 3 个失败簇：web-workers（6：`postMessage`/`terminate is not a function`）/ storage（5：`indexedDB is not defined`）/ es-modules（1：`import` 语句非 module）。本切片闭合最大簇 web-workers。旧 `globalThis.Worker = function(){}` 为空 stub → `new Worker()` 返空对象，`w.postMessage`/`w.terminate` 抛 TypeError。

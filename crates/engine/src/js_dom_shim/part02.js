@@ -2126,6 +2126,208 @@
   globalThis.localStorage = _createStorage();
   globalThis.sessionStorage = _createStorage();
 
+  // R3081：IndexedDB 内存表面（headless in-memory）。storage crate 有真 IDB 实现但未接 JS bridge
+  //（globalThis.indexedDB 未定义 → 5 storage 用例 `indexedDB is not defined`）。本切片提供完整 in-memory
+  // IDB 表面：factory.open（异步 onupgradeneeded→onsuccess 经 queueMicrotask 派发——handler 先注册后触发）、
+  // db.createObjectStore/objectStoreNames/transaction/close、store.add/put/get/delete/clear/count/createIndex、
+  // tx.objectStore/oncomplete/abort、index.get/openCursor。数据存内存 Map（同 db 名跨 open 实例持久；
+  // 跨页面重载不持久——defer 接 storage crate 真 IDB + host bridge）。
+  // spec https://w3c.github.io/IndexedDB/ 。**已知限制**：① 无持久化（内存 Map，跨页重载丢）；
+  // ② 值引用存储非结构化克隆（headless 简化）；③ cursor 简化（openCursor 返 null result，非真迭代）；
+  // ④ 约束错误（unique 冲突 / key 缺失）不抛（lenient，仅记内存）。
+  var _idb_databases = {}; // name → stores map（name → {keyPath, autoIncrement, records: Map, indexes: {}}）
+
+  function _zwIDBEvent(type, target) {
+    this.type = type;
+    this.target = target;
+    this.currentTarget = target;
+    this.bubbles = false;
+    this.cancelable = false;
+    this.timestamp = 0;
+  }
+
+  function _zwIDBRequest(source) {
+    this.readyState = 'pending';
+    this.result = undefined;
+    this.error = null;
+    this.source = source || null;
+    this.transaction = null;
+    this.onsuccess = null;
+    this.onerror = null;
+    this.onupgradeneeded = null;
+    this.onblocked = null;
+  }
+
+  // 异步派发（经 microtask，使调用方先注册 handler 再触发——spec task 语义）。type ∈ success/error/upgradeneeded。
+  function _zwIDBDispatch(req, type, result) {
+    var fire = function () {
+      req.readyState = 'done';
+      if (result !== undefined) req.result = result;
+      var handler = type === 'upgradeneeded' ? req.onupgradeneeded
+        : type === 'error' ? req.onerror : req.onsuccess;
+      var ev = new _zwIDBEvent(type === 'error' ? 'error' : (type === 'upgradeneeded' ? 'upgradeneeded' : 'success'), req);
+      if (typeof handler === 'function') { try { handler.call(req, ev); } catch (_) {} }
+    };
+    if (typeof queueMicrotask === 'function') queueMicrotask(fire);
+    else fire();
+  }
+
+  function _zwIDBStore(db, name, keyPath, autoIncrement, records, indexes) {
+    this._db = db;
+    this.name = name;
+    this.keyPath = keyPath || null;
+    this.autoIncrement = !!autoIncrement;
+    this._records = records; // Map<key, value>
+    this._indexes = indexes; // {indexName: {keyPath, unique}}
+    var idxNames = indexes;
+    this.indexNames = {
+      contains: function (n) { return Object.prototype.hasOwnProperty.call(idxNames, n); },
+      get length() { return Object.keys(idxNames).length; },
+    };
+  }
+  _zwIDBStore.prototype._keyOf = function (value) {
+    if (!this.keyPath) return null;
+    var k = value;
+    String(this.keyPath).split('.').forEach(function (p) { k = k == null ? undefined : k[p]; });
+    return k;
+  };
+  _zwIDBStore.prototype._mutate = function (op, value, key) {
+    var k = key !== undefined ? key : this._keyOf(value);
+    var req = new _zwIDBRequest(this);
+    this._records.set(k, value); // 同步内存变更（后续 get 可见）
+    _zwIDBDispatch(req, 'success', k); // 异步 success（result = key）
+    return req;
+  };
+  _zwIDBStore.prototype.add = function (value, key) { return this._mutate('add', value, key); };
+  _zwIDBStore.prototype.put = function (value, key) { return this._mutate('put', value, key); };
+  _zwIDBStore.prototype.get = function (key) {
+    var req = new _zwIDBRequest(this);
+    _zwIDBDispatch(req, 'success', this._records.get(key));
+    return req;
+  };
+  _zwIDBStore.prototype.delete = function (key) {
+    var req = new _zwIDBRequest(this);
+    this._records.delete(key);
+    _zwIDBDispatch(req, 'success', undefined);
+    return req;
+  };
+  _zwIDBStore.prototype.clear = function () {
+    var req = new _zwIDBRequest(this);
+    this._records.clear();
+    _zwIDBDispatch(req, 'success', undefined);
+    return req;
+  };
+  _zwIDBStore.prototype.count = function () {
+    var req = new _zwIDBRequest(this);
+    _zwIDBDispatch(req, 'success', this._records.size);
+    return req;
+  };
+  _zwIDBStore.prototype.createIndex = function (name, keyPath, opts) {
+    this._indexes[name] = { keyPath: keyPath, unique: !!((opts || {}).unique) };
+    return new _zwIDBIndex(this, name, keyPath);
+  };
+  _zwIDBStore.prototype.index = function (name) {
+    var idx = this._indexes[name];
+    return idx ? new _zwIDBIndex(this, name, idx.keyPath) : null;
+  };
+
+  function _zwIDBIndex(store, name, keyPath) {
+    this.objectStore = store;
+    this.name = name;
+    this.keyPath = keyPath;
+    this.unique = false;
+  }
+  _zwIDBIndex.prototype.get = function (key) { return this.objectStore.get(key); };
+  _zwIDBIndex.prototype.count = function () { return this.objectStore.count(); };
+  _zwIDBIndex.prototype.openCursor = function () {
+    var req = new _zwIDBRequest(this);
+    _zwIDBDispatch(req, 'success', null); // headless 简化：不返真 cursor
+    return req;
+  };
+
+  function _zwIDBTransaction(db, names, mode) {
+    this._db = db;
+    this.db = db;
+    this.mode = mode || 'readonly';
+    this.oncomplete = null;
+    this.onerror = null;
+    this.onabort = null;
+    var self = this;
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(function () {
+        if (typeof self.oncomplete === 'function') {
+          try { self.oncomplete.call(self, new _zwIDBEvent('complete', self)); } catch (_) {}
+        }
+      });
+    }
+  }
+  _zwIDBTransaction.prototype.objectStore = function (name) {
+    var s = this._db._stores[name];
+    if (!s) return null; // headless lenient（spec 抛 NotFoundError）
+    return new _zwIDBStore(this._db, name, s.keyPath, s.autoIncrement, s.records, s.indexes);
+  };
+  _zwIDBTransaction.prototype.abort = function () {};
+
+  function _zwIDBDatabase(name, stores) {
+    this.name = name;
+    this.version = 1;
+    this._stores = stores; // name → {keyPath, autoIncrement, records: Map, indexes: {}}
+    var storesRef = stores;
+    this.objectStoreNames = {
+      contains: function (n) { return Object.prototype.hasOwnProperty.call(storesRef, n); },
+      get length() { return Object.keys(storesRef).length; },
+      item: function (i) { return Object.keys(storesRef)[i] || null; },
+    };
+  }
+  _zwIDBDatabase.prototype.createObjectStore = function (name, opts) {
+    opts = opts || {};
+    if (!this._stores[name]) {
+      this._stores[name] = { keyPath: opts.keyPath || null, autoIncrement: !!opts.autoIncrement, records: new Map(), indexes: {} };
+    }
+    var s = this._stores[name];
+    return new _zwIDBStore(this, name, s.keyPath, s.autoIncrement, s.records, s.indexes);
+  };
+  _zwIDBDatabase.prototype.deleteObjectStore = function (name) { delete this._stores[name]; };
+  _zwIDBDatabase.prototype.transaction = function (_names, mode) { return new _zwIDBTransaction(this, _names, mode); };
+  _zwIDBDatabase.prototype.close = function () {};
+
+  globalThis.indexedDB = {
+    // open(name, version)：建/取 db，异步派发 onupgradeneeded（version change，建 store 窗口）→ onsuccess。
+    open: function (name, version) {
+      var stores = _idb_databases[name] || (_idb_databases[name] = {});
+      var db = new _zwIDBDatabase(name, stores);
+      db.version = version || 1;
+      var req = new _zwIDBRequest(null);
+      _zwIDBDispatch(req, 'upgradeneeded', db);
+      // onsuccess 链在 onupgradeneeded 后（microtask FIFO）
+      if (typeof queueMicrotask === 'function') {
+        queueMicrotask(function () {
+          var ev = new _zwIDBEvent('success', req);
+          req.result = db;
+          if (typeof req.onsuccess === 'function') { try { req.onsuccess.call(req, ev); } catch (_) {} }
+        });
+      }
+      return req;
+    },
+    deleteDatabase: function (name) {
+      delete _idb_databases[name];
+      var req = new _zwIDBRequest(null);
+      _zwIDBDispatch(req, 'success', undefined);
+      return req;
+    },
+    databases: function () {
+      return Object.keys(_idb_databases).map(function (n) { return { name: n, version: 1 }; });
+    },
+    cmp: function (a, b) { return a < b ? -1 : (a > b ? 1 : 0); },
+  };
+  // IDB 构造器占位（feature-detection / instanceof 用，rare）。
+  ['IDBFactory', 'IDBDatabase', 'IDBObjectStore', 'IDBTransaction', 'IDBRequest',
+   'IDBOpenDBRequest', 'IDBIndex', 'IDBCursor', 'IDBKeyRange'].forEach(function (n) {
+    if (typeof globalThis[n] === 'undefined') globalThis[n] = function () {};
+  });
+  if (typeof globalThis.IDBKeyRange !== 'function') globalThis.IDBKeyRange = function () {};
+  if (!globalThis.IDBKeyRange.only) globalThis.IDBKeyRange.only = function (v) { return { lower: v, upper: v }; };
+
   globalThis.XMLHttpRequest = function() {
     var self = this;
     self.readyState = 0;
