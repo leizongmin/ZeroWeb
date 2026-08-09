@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1b attributes NamedNodeMap native——element.attributes 属性集合（本轮 R3112）
+
+承接 R3111（replaceChild + nodeValue setter）。本轮补 native Element 的 `attributes` 集合 API（DOM Level 2+ 核心，spec `dom-element-attributes` / `dom-namednodemap-*`）——此前 native 有 getAttribute/setAttribute/hasAttribute/removeAttribute 但无集合视图。新 NamedNodeMap ObjectTemplate（internal slot[0] = owner element NodeId，per-element 缓存保 spec 身份），方法：`length`/`item(i)`/`getNamedItem(name)`/`setNamedItem(attr)`/`removeNamedItem(name)`。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **NamedNodeMap 缓存 + 模板（gc.rs）** | `crates/engine/src/dom_bindings/gc.rs` | 新 `NAMEDNODEMAP_OBJECTS`（owner ffi → Global<Object>，保 `el.attributes === el.attributes` 身份）+ `NAMEDNODEMAP_TEMPLATE`（Global<ObjectTemplate>）+ set/get/cached/cache 助手。`reset()` 清二者（导航/重载 + 测试隔离）。镜像 NODE_OBJECTS/ELEMENT_TEMPLATE 模式。 |
+| **attributes getter + NamedNodeMap 方法（mod.rs）** | `crates/engine/src/dom_bindings/mod.rs` | `native_attributes_getter`（读 element NodeId → 缓存命中返同对象 / 否则实例化 NamedNodeMap 模板 + internal slot[0]=owner NodeId + 缓存）。NamedNodeMap 模板建 + set_namednodemap_template（length getter + 4 FunctionTemplate）。方法：`native_nnm_length_getter`（attribute_names().len()）/`native_nnm_item_invoke`（index 处 {name,value} 或 null）/`native_nnm_get_named_item_invoke`/`native_nnm_set_named_item_invoke`（读 attr.name/value → set_attribute）/`native_nnm_remove_named_item_invoke`。`make_attr_object`（plain {name,value}，documented）+ `read_str_prop` 助手。 |
+| **engine 隔离测试 + webview 集成测试** | `crates/engine/src/dom_bindings/tests.rs` + `crates/webview/src/tests/coverage.rs` | engine 4 测（length+身份 / item 源序+越界 / getNamedItem 有无 / set+removeNamedItem 写回）；webview `test_native_attributes_namednodemap_r3112`（execute_script 安装路径含 R3112 模板）。 |
+
+**为何净正向**：① 补 native Element 属性集合 API（DOM Level 2+ 核心完整性——element.attributes 标准视图，此前仅单项 getAttribute/setAttribute）；② spec 身份稳定（per-element 缓存，`el.attributes === el.attributes`）；③ 低风险（只读 length/item/getNamedItem + 写 set/removeNamedItem 复用 with_dom_mut + 既有 set/remove_attribute；新模板独立，不扰 Element 模板）；④ kill-switch 默认关 → 零回归（polyfill 不变）；⑤ 复用 gc.rs 缓存模式（NODE_OBJECTS/ELEMENT_TEMPLATE 镜像）。
+
+**已知限制（记录，后续）**：① **Attr 返 plain {name,value}**——非完整 Attr 节点（nodeType=2/ownerElement 等），框架查 `attr.nodeType===2` 不满足；完整 Attr 节点后续切片；② **无数值索引 `[i]`**——仅 `item(i)`（spec 推荐迭代），`attributes[i]` 便利访问后续（v8 IndexedPropertyHandler）；③ **escape-hatch 可达**——标准 document.getElementById（polyfill）仍返 polyfill 元素；native attributes 经 `__zw_native_element_for_id` 可达；标准全局桥接 = S6/L2（高风险，后续）；④ NamedNodeMap 无 finalizer（owner 元素移除不自动清缓存，泄漏限制）；⑤ 仅 V8（QuickJS no-op，继承）；⑥ product-smoke 不适用（native_dom 默认关分支）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；engine lib 1784（+4 NamedNodeMap）；webview v8 558（+1 R3112 集成）+ quickjs 527；全 workspace 16174 passed 0 failed 零回归**）。pre-commit guard PASS。
+
+**下一步**：native Element 属性面完整（单项 getAttribute/setAttribute + 集合 NamedNodeMap）。候选：① **`innerHTML` getter native**（序列化子树→HTML，复用 Document::outer_html；高频 API，getter 低风险；setter 需 HTML 解析为后续）；② **host→page native 事件派发**（`webview.dispatch_event` 扫 native LISTENERS，闭合 S4 host 驱动半边）；③ **事件冒泡**（dispatchEvent 向上传播 parent 链）；④ **完整 Attr 节点**（nodeType=2/ownerElement/name/value，闭合 R3112 plain-object 限制）；⑤ **L2 polyfill-live**（polyfill 桥迁 Document-直读，native↔polyfill 合一，高风险大改）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b replaceChild native + nodeValue/data setter——补全树 mutation 集 + 文本节点写路径（本轮 R3111）
 
 承接 R3110（节点导航 getter）。本轮落 **contained 表面片**：① `replaceChild(newChild, oldChild)` native（补全树 mutation 集 appendChild/insertBefore/removeChild/replaceChild）；② `nodeValue` setter（R3104 仅 getter，补写——Text/Comment/ProcessingInstruction 改 content/data，其余 no-op，spec `dom-node-nodevalue` setter）。

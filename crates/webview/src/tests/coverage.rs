@@ -634,6 +634,31 @@ fn test_native_node_value_write_rerenders_r3111() {
     assert!(!html.contains(">old<"), "旧文本被 native 写替换");
 }
 
+// ── P1b attributes NamedNodeMap native（本轮 R3112）──
+
+// native_dom=true → element.attributes 经 execute_script 安装路径可用（NamedNodeMap：length +
+// item + getNamedItem + set/removeNamedItem + 身份稳定）。验证 webview 沙箱安装含 R3112 模板。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_attributes_namednodemap_r3112() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body><div id=\"a\" class=\"row\" data-x=\"42\"></div></body></html>",
+        None,
+    );
+    wv.run_page_scripts_strict().unwrap();
+    // length + 身份稳定 + item/getNamedItem 读。
+    assert_eq!(
+        wv.execute_script(
+            "(()=>{ const el=__zw_native_element_for_id('a'); const a=el.attributes;\
+             return a.length+'/'+(a===el.attributes)+'/'+a.getNamedItem('class').value+'/'+a.item(2).name; })()"
+        )
+        .unwrap(),
+        "3/true/row/data-x",
+        "attributes length/identity/getNamedItem/item"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]

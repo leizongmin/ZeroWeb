@@ -36,6 +36,14 @@ thread_local! {
     /// 移除不自动清理（泄漏限制，后续切片接 weak callback / finalizer）。
     static LISTENERS: RefCell<HashMap<(u64, String), Vec<v8::Global<v8::Value>>>> =
         RefCell::new(HashMap::new());
+    /// R3112 NamedNodeMap（element.attributes）：owner element NodeId(ffi) → Global<Object>，
+    /// 保 spec 身份（`el.attributes === el.attributes` 同对象）。
+    static NAMEDNODEMAP_OBJECTS: RefCell<HashMap<u64, v8::Global<v8::Object>>> =
+        RefCell::new(HashMap::new());
+    /// R3112 NamedNodeMap ObjectTemplate（length getter + item/getNamedItem/... + internal slot[0]
+    /// = owner element NodeId）。`install_dom_bindings` 建 + 缓存，`attributes` getter 实例化。
+    static NAMEDNODEMAP_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> =
+        const { RefCell::new(None) };
 }
 
 /// 注入 DOM 源 + Element 模板（`install_dom_bindings` 调用）。
@@ -62,6 +70,32 @@ pub(crate) fn reset() {
     NODE_OBJECTS.with(|c| c.borrow_mut().clear());
     ELEMENT_TEMPLATE.with(|c| *c.borrow_mut() = None);
     LISTENERS.with(|c| c.borrow_mut().clear());
+    NAMEDNODEMAP_OBJECTS.with(|c| c.borrow_mut().clear());
+    NAMEDNODEMAP_TEMPLATE.with(|c| *c.borrow_mut() = None);
+}
+
+/// 缓存 NamedNodeMap ObjectTemplate（`install_dom_bindings` 建 `attributes` 集合模板）。
+pub(crate) fn set_namednodemap_template(scope: &mut v8::PinScope, tmpl: v8::Local<v8::ObjectTemplate>) {
+    NAMEDNODEMAP_TEMPLATE.with(|c| *c.borrow_mut() = Some(v8::Global::new(scope, tmpl)));
+}
+
+/// 取 NamedNodeMap ObjectTemplate 的 Local（`attributes` getter 实例化用）。
+pub(crate) fn namednodemap_template_local<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+) -> Option<v8::Local<'s, v8::ObjectTemplate>> {
+    NAMEDNODEMAP_TEMPLATE.with(|c| c.borrow().as_ref().map(|g| v8::Local::new(scope, g)))
+}
+
+/// 取已缓存的 NamedNodeMap 对象（同 owner element 返同对象，spec identity）。
+pub(crate) fn cached_namednodemap<'s>(scope: &mut v8::PinScope<'s, '_>, ffi: u64) -> Option<v8::Local<'s, v8::Object>> {
+    NAMEDNODEMAP_OBJECTS.with(|c| c.borrow().get(&ffi).map(|g| v8::Local::new(scope, g)))
+}
+
+/// 缓存 NamedNodeMap 对象（owner element ffi → Global）。
+pub(crate) fn cache_namednodemap(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v8::Object>) {
+    NAMEDNODEMAP_OBJECTS.with(|c| {
+        c.borrow_mut().insert(ffi, v8::Global::new(scope, obj));
+    });
 }
 
 /// 在当前 DOM 源上执行只读操作；无 DOM 源时返 `None`。

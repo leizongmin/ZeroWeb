@@ -817,3 +817,65 @@ fn native_node_value_setter_element_noop() {
         "null"
     );
 }
+
+// ── R3112 NamedNodeMap（element.attributes 集合）──
+//
+// HTML: <div id="a" class="row" data-x="42"></div>（属性源序 id/class/data-x）。
+
+/// `attributes.length` + 身份（`el.attributes === el.attributes`，spec live 同对象）。
+#[test]
+fn native_attributes_length_and_identity() {
+    let html = r#"<div id="a" class="row" data-x="42"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             return el.attributes.length+'/'+(el.attributes === el.attributes); })()"
+        ),
+        "3/true"
+    );
+}
+
+/// `item(index)`：源序属性 → Attr-like {name, value}；越界 → null。
+#[test]
+fn native_attributes_item() {
+    let html = r#"<div id="a" class="row" data-x="42"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a').attributes;\
+             return a.item(0).name+'/'+a.item(2).name+'/'+a.item(2).value+'/'+(a.item(9)===null); })()"
+        ),
+        "id/data-x/42/true"
+    );
+}
+
+/// `getNamedItem(name)`：有 → {name,value}；无 → null。
+#[test]
+fn native_attributes_get_named_item() {
+    let html = r#"<div id="a" class="row" data-x="42"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a').attributes;\
+             return a.getNamedItem('class').value+'/'+(a.getNamedItem('nope')===null); })()"
+        ),
+        "row/true"
+    );
+}
+
+/// `setNamedItem({name,value})` + `removeNamedItem(name)`：写回 owner 元素属性（getAttribute/hasAttribute 见）。
+#[test]
+fn native_attributes_set_and_remove_named_item() {
+    let html = r#"<div id="a" class="row" data-x="42"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); const a=el.attributes;\
+             a.setNamedItem({name:'data-y', value:'7'});\
+             a.removeNamedItem('class');\
+             return el.getAttribute('data-y')+'/'+el.hasAttribute('class'); })()"
+        ),
+        "7/false"
+    );
+}
