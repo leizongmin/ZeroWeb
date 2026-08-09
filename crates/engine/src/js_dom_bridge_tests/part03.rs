@@ -1785,3 +1785,59 @@ fn test_get_computed_style_grid_container() {
     assert_eq!(computed_style_property(html, "#ts-px", "tab-size"), "24px");
     assert_eq!(computed_style_property(html, "#ts-num", "tab-size"), "4");
 }
+
+#[test]
+fn test_io_cross_threshold_host_tick_r3062() {
+    // R3062：IntersectionObserver cross-threshold host-tick 验证。元素从视口外移入 → host tick
+    //（`__zw_observers_tick`，renderer render 后调）复算 rect → `_crossed`（threshold 越界）→ 派发后续通知。
+    // lazy-load / infinite-scroll 高频 hook。经共享可变 mock rect 模拟元素移动。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><div id='t'></div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    // 可控 rect：target #t 经共享状态控制（模拟视口外→内移动）。初始视口外（y=200 > vh=100）。
+    let rect: Arc<Mutex<String>> = Arc::new(Mutex::new("0,200,100,50".to_string()));
+    {
+        let r = Arc::clone(&rect);
+        sandbox.register_callback(
+            "__zw_getBoundingClientRect",
+            Box::new(move |args| {
+                let sel = args.first().cloned().unwrap_or_default();
+                if sel.contains('t') {
+                    r.lock().map(|s| s.clone()).unwrap_or_default()
+                } else {
+                    "0,0,0,0".to_string()
+                }
+            }),
+        );
+    }
+    sandbox.execute(
+        "globalThis.innerWidth=100; globalThis.innerHeight=100;\
+         globalThis.__count=0; globalThis.__fired=null;\
+         new IntersectionObserver(function(e){ globalThis.__count++; globalThis.__fired=e[0].isIntersecting; }, {threshold:[0.5]})\
+           .observe(document.querySelector('#t'));",
+    )
+    .unwrap();
+    // observe → initial fire（视口外，ratio=0，isIntersecting=false）。
+    assert_eq!(sandbox.execute("String(globalThis.__count)").unwrap().value, "1", "observe -> initial fire");
+    assert_eq!(sandbox.execute("String(globalThis.__fired)").unwrap().value, "false", "initial isIntersecting=false (out of view)");
+
+    // tick（rect 仍视口外）→ 不派（_crossed=false，prev ratio=0 当前 ratio=0）。
+    sandbox.execute("__zw_observers_tick();").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__count)").unwrap().value, "1", "rect 未变 -> tick 不派 (crossed=false)");
+
+    // 元素移入视口（rect 改为 y=0，ratio=1）→ tick → cross-threshold fire（isIntersecting=true）。
+    *rect.lock().unwrap() = "0,0,100,50".to_string();
+    sandbox.execute("__zw_observers_tick();").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__count)").unwrap().value, "2", "rect 变入视口 -> tick cross-threshold fire");
+    assert_eq!(sandbox.execute("String(globalThis.__fired)").unwrap().value, "true", "cross-threshold 后 isIntersecting=true");
+
+    // tick（rect 不变）→ 不派（_crossed=false，prev=1 当前=1）。
+    sandbox.execute("__zw_observers_tick();").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__count)").unwrap().value, "2", "rect 未变 -> tick 不派");
+}
