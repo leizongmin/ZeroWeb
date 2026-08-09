@@ -36,7 +36,6 @@ echo "browser-compositor-real-site-smoke: opening $URL"
 env \
     RUST_LOG=info \
     ZERO_BROWSER_PRODUCT_SMOKE=1 \
-    ZW_COMPOSITOR_PROCESS=1 \
     ZW_COMPOSITOR_BIN="$COMPOSITOR_BIN" \
     "$BIN" \
     --renderer=cpu \

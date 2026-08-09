@@ -252,7 +252,7 @@ impl BrowserApp {
                 .get(&id)
                 .is_some_and(|sel| !sel.is_collapsed())
         });
-        let compositor_status = crate::compositor_client::status();
+        let compositor_status = self.compositor_status();
         let page_has_content = tab_id.is_some_and(|id| {
             if compositor_controls_page(compositor_status) {
                 compositor_status == crate::compositor_client::CompositorStatus::Healthy

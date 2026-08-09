@@ -580,9 +580,14 @@ fn validate_frame_data(width: u32, height: u32, rgba: &[u8]) -> Result<(), Proto
 
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
-/// 返回是否通过 `ZW_COMPOSITOR_PROCESS=1` 启用 compositor 模式。
+/// 根据环境变量值判断是否启用 compositor；默认启用，仅精确值 `0` 禁用。
+fn enabled_from_env(value: Option<&str>) -> bool {
+    value != Some("0")
+}
+
+/// 返回是否启用 compositor 模式。
 pub fn enabled() -> bool {
-    std::env::var("ZW_COMPOSITOR_PROCESS").is_ok_and(|value| value == "1")
+    enabled_from_env(std::env::var("ZW_COMPOSITOR_PROCESS").ok().as_deref())
 }
 
 /// 返回当前 compositor client 状态，不执行阻塞式 IPC。
@@ -943,5 +948,13 @@ mod tests {
     fn invalid_frame_data_is_rejected() {
         assert!(validate_frame_data(1, 1, &[0; 3]).is_err());
         assert!(validate_frame_data(u32::MAX, u32::MAX, &[]).is_err());
+    }
+
+    #[test]
+    fn compositor_is_enabled_by_default_and_only_exact_zero_disables_it() {
+        for value in [None, Some(""), Some("1"), Some("true"), Some("01")] {
+            assert!(enabled_from_env(value));
+        }
+        assert!(!enabled_from_env(Some("0")));
     }
 }

@@ -57,7 +57,9 @@ Browser 仍把页面位图转换为 `ImagePrimitive`。Browser 仍应用页面�
 
 ## 二、故障回退
 
-`ZW_COMPOSITOR_PROCESS` 未设置或不等于 `1` 时，renderer 继续发布 `ViewPainted`。Browser 使用 legacy 页面图元路径。
+Browser 默认启用 compositor，renderer 默认发布 `CompositorFrame`，正常启动不需要设置
+`ZW_COMPOSITOR_PROCESS`。仅当该变量精确设置为 `0` 时，Browser 和 renderer 使用 legacy
+`ViewPainted` 页面图元路径，供故障诊断和双模式回归测试使用。
 
 compositor 启动失败或 IPC 断开时：
 

@@ -30,16 +30,19 @@ fi
 
 run_mode() {
     mode=$1
-    compositor=$2
     png="$OUT_DIR/$mode.png"
     log="$OUT_DIR/$mode.log"
     rm -f "$png" "$log"
 
     echo "browser-compositor-smoke: running $mode"
+    if test "$mode" = "legacy"; then
+        export ZW_COMPOSITOR_PROCESS=0
+    else
+        unset ZW_COMPOSITOR_PROCESS
+    fi
     env \
         RUST_LOG=info \
         ZERO_BROWSER_PRODUCT_SMOKE=1 \
-        ZW_COMPOSITOR_PROCESS="$compositor" \
         ZW_COMPOSITOR_BIN="$COMPOSITOR_BIN" \
         "$BIN" --renderer=cpu --scale=1 --smoke-capture="$png" >"$log" 2>&1
 
@@ -60,12 +63,12 @@ run_mode() {
     fi
 }
 
-run_mode legacy 0
+run_mode legacy
 grep -q 'SMOKE_EVENT component=zero-renderer event=frame_published mode=legacy kind=ViewPainted' "$OUT_DIR/legacy.log"
 grep -q 'SMOKE_EVENT component=browser event=legacy_view_painted' "$OUT_DIR/legacy.log"
 grep -q 'SMOKE_EVENT component=browser event=frame_captured source=legacy_view_painted fallback=false' "$OUT_DIR/legacy.log"
 
-run_mode compositor 1
+run_mode compositor
 grep -q 'SMOKE_EVENT component=compositor_client status=Healthy' "$OUT_DIR/compositor.log"
 grep -q 'SMOKE_EVENT component=zero-renderer event=frame_published mode=compositor kind=CompositorFrame' "$OUT_DIR/compositor.log"
 grep -q 'SMOKE_EVENT component=compositor_client event=frame_submitted' "$OUT_DIR/compositor.log"

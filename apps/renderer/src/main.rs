@@ -125,12 +125,12 @@ impl FramePublishState {
     }
 }
 
-/// 从环境变量的已解析值选择发布模式，仅精确值 `1` 启用 compositor。
+/// 从环境变量的已解析值选择发布模式；默认使用 compositor，仅精确值 `0` 使用 legacy。
 fn frame_publish_mode_from_env(value: Option<&str>) -> FramePublishMode {
-    if value == Some("1") {
-        FramePublishMode::Compositor
-    } else {
+    if value == Some("0") {
         FramePublishMode::Legacy
+    } else {
+        FramePublishMode::Compositor
     }
 }
 

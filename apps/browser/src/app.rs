@@ -1377,6 +1377,15 @@ impl BrowserApp {
         self.shell.tabs().any(|tab| tab.is_loading()) || self.tabs.any_loading()
     }
 
+    /// 返回当前 Tab 后端实际可用的 compositor 状态。
+    pub(crate) fn compositor_status(&self) -> crate::compositor_client::CompositorStatus {
+        if self.tabs.is_multiprocess() {
+            crate::compositor_client::status()
+        } else {
+            crate::compositor_client::CompositorStatus::Disabled
+        }
+    }
+
     /// 返回真实窗口产品 smoke 当前可验收的页面像素来源。
     ///
     /// 只有 renderer 页面帧已经进入 Browser 最终场景后才返回，避免捕获启动空白帧。
@@ -1386,18 +1395,17 @@ impl BrowserApp {
         if snapshot.navigation_epoch == 0 {
             return None;
         }
-        if crate::compositor_client::enabled() {
-            if crate::compositor_client::status() == crate::compositor_client::CompositorStatus::Healthy
-                && snapshot.compositor_frame.is_some()
-            {
+        match self.compositor_status() {
+            crate::compositor_client::CompositorStatus::Healthy if snapshot.compositor_frame.is_some() => {
                 Some("compositor_bitmap")
-            } else {
-                None
             }
-        } else if snapshot.last_render.is_some() {
-            Some("legacy_view_painted")
-        } else {
-            None
+            crate::compositor_client::CompositorStatus::Disabled
+            | crate::compositor_client::CompositorStatus::Disconnected
+                if snapshot.last_render.is_some() =>
+            {
+                Some("legacy_view_painted")
+            }
+            _ => None,
         }
     }
 

@@ -317,7 +317,7 @@ impl BrowserApp {
     /// 注意：fills 和 glyphs 不在此返回中（它们已通过 `append_webview_primitives` 混入 chrome 层）。
     /// 仅返回 render_full_scene() 需要的其他 11 种图元类型。
     fn get_webview_extra_primitives(&self) -> RenderPrimitives {
-        self.get_webview_extra_primitives_for_status(crate::compositor_client::status())
+        self.get_webview_extra_primitives_for_status(self.compositor_status())
     }
 
     fn get_webview_extra_primitives_for_status(
@@ -1119,7 +1119,7 @@ impl BrowserApp {
         let scroll = self.tab_scroll_state(tab_id);
         let layout = self.page_scroll_layout(tab_id);
         let has_composite_paint = self.tabs.snapshot(tab_id).is_some_and(|s| s.should_composite_paint());
-        let compositor_status = crate::compositor_client::status();
+        let compositor_status = self.compositor_status();
 
         if compositor_controls_page(compositor_status) {
             if compositor_status == crate::compositor_client::CompositorStatus::Healthy

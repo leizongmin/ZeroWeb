@@ -69,11 +69,11 @@ fn sample_frame() -> zero_page_runtime::FrameModel {
 }
 
 #[test]
-fn frame_publish_mode_requires_exact_opt_in() {
-    assert_eq!(frame_publish_mode_from_env(Some("1")), FramePublishMode::Compositor);
-    for value in [None, Some(""), Some("0"), Some("true"), Some("01")] {
-        assert_eq!(frame_publish_mode_from_env(value), FramePublishMode::Legacy);
+fn frame_publish_mode_defaults_to_compositor_and_only_exact_zero_disables_it() {
+    for value in [None, Some(""), Some("1"), Some("true"), Some("01")] {
+        assert_eq!(frame_publish_mode_from_env(value), FramePublishMode::Compositor);
     }
+    assert_eq!(frame_publish_mode_from_env(Some("0")), FramePublishMode::Legacy);
 }
 
 #[test]

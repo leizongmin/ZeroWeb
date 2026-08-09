@@ -529,10 +529,6 @@ fn main() {
         tracing::info!("WPT parity mode: CPU renderer, scale 1.0 (aligned with product-smoke / reftest)");
     }
     tracing::info!("Renderer mode: {}", cli.render_mode);
-    if cli.gui_smoke.is_some() && !compositor_client::enabled() {
-        eprintln!("real-site GUI smoke requires ZW_COMPOSITOR_PROCESS=1");
-        std::process::exit(2);
-    }
     if cli.smoke_capture.is_some() || cli.gui_smoke.is_some() {
         // SAFETY: 设置发生在任何 renderer/compositor 子进程和工作线程启动之前。
         unsafe {
