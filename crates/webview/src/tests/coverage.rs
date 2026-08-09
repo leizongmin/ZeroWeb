@@ -614,6 +614,26 @@ fn test_native_node_navigation_r3110() {
     );
 }
 
+// ── P1b replaceChild + nodeValue setter native（本轮 R3111）──
+
+// native_dom=true → native nodeValue 写经 execute_script 改 live cached_doc（文本子节点内容），
+// R3108 sync_render_after_native_dom 检测 live-doc≠cached_html → 重渲染 + 同步 cached_html。
+// 验证 R3108 + R3111 联动：native 文本写 → 渲染可见。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_node_value_write_rerenders_r3111() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html("<html><body><div id=\"a\">old</div></body></html>", None);
+    wv.run_page_scripts_strict().unwrap();
+    // native nodeValue 写：改 div 文本子节点。
+    wv.execute_script("__zw_native_element_for_id('a').firstChild.nodeValue = 'new'")
+        .unwrap();
+    // R3108 sync：cached_html 同步为 "new"（旧 "old" 被替换）。
+    let html = wv.html_content();
+    assert!(html.contains("new"), "native nodeValue 写传播至 cached_html");
+    assert!(!html.contains(">old<"), "旧文本被 native 写替换");
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]

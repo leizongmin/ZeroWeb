@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1b replaceChild native + nodeValue/data setter——补全树 mutation 集 + 文本节点写路径（本轮 R3111）
+
+承接 R3110（节点导航 getter）。本轮落 **contained 表面片**：① `replaceChild(newChild, oldChild)` native（补全树 mutation 集 appendChild/insertBefore/removeChild/replaceChild）；② `nodeValue` setter（R3104 仅 getter，补写——Text/Comment/ProcessingInstruction 改 content/data，其余 no-op，spec `dom-node-nodevalue` setter）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **Document::set_node_value** | `crates/dom/src/document.rs` | 新方法：Text/Comment/ProcessingInstruction 改 content/data（`self.nodes.get_mut` + match kind）；Element/Document/DocumentFragment/ShadowRoot/DocumentType no-op（spec：设这些节点 nodeValue 无效，与 getter 返 null 对称）。镜像 set_text_content 的 mutation 模式。 |
+| **replaceChild + nodeValue setter 绑定** | `crates/engine/src/dom_bindings/mod.rs` | `native_replace_child_invoke`（parent=this，读 new_child/old_child NodeId；`with_dom_mut` 调 `Document::replace_child`；成功返 oldChild spec）。`native_node_value_setter`（值 ToString 后 `with_dom_mut` 调 set_node_value）。模板：nodeValue `set_accessor` → `set_accessor_with_setter`；replaceChild 注册 FunctionTemplate（removeChild 之后）。 |
+| **engine 隔离测试 + webview 集成测试** | `crates/engine/src/dom_bindings/tests.rs` + `crates/webview/src/tests/coverage.rs` | engine 4 测（replaceChild 顺序+返值 / nodeValue 写 Text / 写 Comment / Element no-op）；webview `test_native_node_value_write_rerenders_r3111`（native nodeValue 写 → R3108 sync 重渲染 + cached_html 同步——验证 R3108+R3111 联动）。 |
+
+**为何净正向**：① 补全 native 树 mutation 集（replaceChild 是最后一块，DOM Level 2+ 核心 API 完整）；② nodeValue 写补 R3104 读的对称缺口（Text/Comment/PI 可改内容，经 R3108 重渲染可见）；③ 低风险（写路径复用 with_dom_mut + 既有 Document mutation；replaceChild 镜像 insert_before/remove_child）；④ kill-switch 默认关 → 零回归（polyfill 不变）；⑤ Document::set_node_value 为复用方法（dom crate，后续 polyfill/其他绑定可用）。
+
+**已知限制（记录，后续）**：① **escape-hatch 可达**——标准 document.getElementById（polyfill）仍返 polyfill 元素；native replaceChild/nodeValue 经 `__zw_native_element_for_id` 可达；标准全局桥接 = S6/L2（高风险，后续）；② **nodeValue setter 不抛 NotFound/_hierarchy 错**——spec replaceChild/appendChild 对非法参应抛 DOMException，本切片 best-effort 静默（Err → undefined，后续 spec throw 切片）；③ replaceChild 未维护 new_child 原 parent 解绑的特殊情形（Document::replace_child 内部处理，本层不重复）；④ 仅 V8（QuickJS no-op，继承）；⑤ product-smoke 不适用（native_dom 默认关分支）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview -p zero-dom --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；engine lib 1780（+4：replaceChild + 3 nodeValue setter）；webview v8 557（+1 R3111 集成）+ quickjs 527；全 workspace 16169 passed 0 failed 零回归**）。pre-commit guard PASS。
+
+**下一步**：树 mutation 集补全（replaceChild）+ 文本节点写（nodeValue setter）落地。候选：① **`attributes` NamedNodeMap**（`element.attributes` 标准属性集合 API——length + 索引 + getNamedItem/setNamedItem；当前 native 有 getAttribute/setAttribute 但无集合视图）；② **host→page native 事件派发**（`webview.dispatch_event` 扫 native LISTENERS，闭合 S4 host 驱动半边）；③ **事件冒泡**（dispatchEvent 向上传播 parent 链）；④ **L2 polyfill-live**（polyfill 桥迁 Document-直读，native↔polyfill 合一，高风险大改）；⑤ **spec throw 切片**（appendChild/insertBefore/replaceChild 非法参抛 DOMException，闭合 best-effort 静默限制）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b 节点导航 getter native——parentNode/firstChild/lastChild/nextSibling/previousSibling/hasChildNodes（本轮 R3110）
 
 承接 R3109（S4 EventTarget native）。本轮补 native Element 模板的**节点导航 getter 族**——DOM Level 2+ 核心 API（Done Criteria §3），此前 native 缺失（仅有 childNodes/children，无父/兄弟/首尾子导航）。读 `Document` 树关系（`with_dom` + `parent_node`/`first_child`/`last_child`/`next_sibling`/`previous_sibling`/`has_child_nodes`），结果包 native 节点对象或 null。

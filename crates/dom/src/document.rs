@@ -670,6 +670,22 @@ impl Document {
         }
     }
 
+    /// 设置节点的 `nodeValue`（spec `dom-node-nodevalue` setter）。
+    ///
+    /// Text/Comment/ProcessingInstruction 改 content/data；其余（Element/Document/
+    /// DocumentFragment/ShadowRoot/DocumentType）no-op——spec：设这些节点 nodeValue 无效
+    ///（`nodeValue` getter 对它们返 null，setter 对应 no-op）。
+    pub fn set_node_value(&mut self, id: NodeId, value: &str) {
+        if let Some(node_data) = self.nodes.get_mut(id) {
+            match &mut node_data.kind {
+                NodeKind::Text(t) => t.content = value.to_string(),
+                NodeKind::Comment(c) => c.content = value.to_string(),
+                NodeKind::ProcessingInstruction(p) => p.data = value.to_string(),
+                _ => {} // Element/Document/...：spec no-op
+            }
+        }
+    }
+
     /// 设置节点的文本内容。
     ///
     /// 对于元素节点，会清除所有子节点并创建一个文本节点。

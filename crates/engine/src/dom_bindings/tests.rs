@@ -757,3 +757,63 @@ fn native_node_navigation_null_relation() {
         "true"
     );
 }
+
+// ── R3111 replaceChild native + nodeValue/data setter ──
+
+/// `replaceChild(newChild, oldChild)`（spec `dom-node-replace-child`）：newChild 替换 oldChild 位置，
+/// 返 oldChild。补全树 mutation 集（appendChild/insertBefore/removeChild/replaceChild）。
+#[test]
+fn native_replace_child() {
+    let html = r#"<div id="root"><span id="s1">1</span><span id="s2">2</span></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const r=__zw_native_element_for_id('root');\
+             const nw=__zw_native_create_element('span'); nw.id='nw';\
+             const old=r.replaceChild(nw, __zw_native_element_for_id('s1'));\
+             return r.children[0].id+'/'+r.children[1].id+'/'+old.id; })()"
+        ),
+        "nw/s2/s1"
+    );
+}
+
+/// `nodeValue` setter on Text（spec `dom-node-nodevalue` setter）：改文本节点内容，读回见新值。
+#[test]
+fn native_node_value_setter_text() {
+    let html = r#"<div id="root">hello</div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('root').firstChild;\
+             t.nodeValue='world'; return t.nodeValue+'/'+t.nodeType; })()"
+        ),
+        "world/3"
+    );
+}
+
+/// `nodeValue` setter on Comment（spec）：改注释内容，读回见新值。
+#[test]
+fn native_node_value_setter_comment() {
+    let html = r#"<div id="root"><!--c--></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const c=__zw_native_element_for_id('root').firstChild;\
+             c.nodeValue='d'; return c.nodeValue+'/'+c.nodeType; })()"
+        ),
+        "d/8"
+    );
+}
+
+/// `nodeValue` setter on Element → no-op（spec：Element/Document 设 nodeValue 无效；getter 返 null）。
+#[test]
+fn native_node_value_setter_element_noop() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.nodeValue='x'; return String(e.nodeValue); })()"
+        ),
+        "null"
+    );
+}

@@ -122,9 +122,10 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "childNodes") {
         tmpl.set_accessor(k.into(), native_child_nodes_getter);
     }
-    // `nodeValue` getter（spec `dom-node-nodevalue`）：Text/Comment/PI=data；Element/Document/…=null。
+    // `nodeValue` getter/setter（spec `dom-node-nodevalue`）：读=Text/Comment/PI=data，其余=null；
+    // 写=Text/Comment/PI 改 content/data（`Document::set_node_value`），其余 no-op（spec）。
     if let Some(k) = v8::String::new(scope, "nodeValue") {
-        tmpl.set_accessor(k.into(), native_node_value_getter);
+        tmpl.set_accessor_with_setter(k.into(), native_node_value_getter, native_node_value_setter);
     }
     // spec 方法（FunctionTemplate，args.this 读 NodeId）：getAttribute / hasAttribute /
     // setAttribute / removeAttribute。ObjectTemplate::set 须传 **Template**（非 Function 实例）——
@@ -168,6 +169,12 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     let remove_child_tmpl = v8::FunctionTemplate::builder(native_remove_child_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "removeChild") {
         tmpl.set(k.into(), remove_child_tmpl.into());
+    }
+    // `replaceChild(newChild, oldChild)`（spec `dom-node-replace-child`）——补全树 mutation 集
+    //（appendChild/insertBefore/removeChild/replaceChild）。成功返 oldChild（spec）。
+    let replace_child_tmpl = v8::FunctionTemplate::builder(native_replace_child_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "replaceChild") {
+        tmpl.set(k.into(), replace_child_tmpl.into());
     }
     // S4 EventTarget（spec `dom-eventtarget-add-event-listener` 等）：addEventListener /
     // removeEventListener / dispatchEvent 原生——监听器存线程局部（gc.rs LISTENERS，键=(NodeId
@@ -860,6 +867,52 @@ fn native_remove_child_invoke(
     if ok {
         set_native_element(scope, child, &mut rv);
     }
+}
+
+/// `replaceChild(newChild, oldChild)`：spec `dom-node-replace-child`——parent=this，参为两个 native
+/// 元素对象（读 internal slot NodeId）；`Document::replace_child`。成功返 oldChild（spec）。
+fn native_replace_child_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(parent) = read_node_id(scope, &this) else {
+        return;
+    };
+    let Some(new_child) = node_id_from_value(scope, args.get(0)) else {
+        return;
+    };
+    let Some(old_child) = node_id_from_value(scope, args.get(1)) else {
+        return;
+    };
+    let ok = with_dom_mut(|d| d.replace_child(parent, new_child, old_child))
+        .map(|r| r.is_ok())
+        .unwrap_or(false);
+    if ok {
+        // spec：返被替换的 oldChild。
+        set_native_element(scope, old_child, &mut rv);
+    }
+}
+
+/// `nodeValue` setter（spec `dom-node-nodevalue`）：值 ToString 后，Text/Comment/PI 改 content/data
+///（`Document::set_node_value`），其余 no-op（spec）。写入经 R3108 `sync_render_after_native_dom` 重渲染。
+fn native_node_value_setter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    let this = args.holder();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    let s = value
+        .to_string(scope)
+        .map(|v| v.to_rust_string_lossy(scope))
+        .unwrap_or_default();
+    with_dom_mut(|d| d.set_node_value(id, &s));
 }
 
 /// mutation 方法成功尾共用：把 NodeId 包成 native 对象 set 到 `rv`（appendChild/insertBefore/
