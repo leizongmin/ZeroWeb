@@ -1488,8 +1488,9 @@ fn test_expando_non_primitive_properties_r3042() {
     assert!(!out.contains("_data"), "apply 不写 _data 垃圾属性\n{out}");
     assert!(!out.contains("handler"), "apply 不写 handler 垃圾属性\n{out}");
 
-    // ⑤ 回归守卫：string/number/boolean 值仍走 generic fallthrough 写内容属性（reflected attr setter 不受影响）。
-    //   `el.role='button'`（role 读有显式 get 分支，set 走 fallthrough）→ 仍写 role 属性（非原始值修复不触碰）。
+    // ⑤ R3069 行为更新：reflected attr setter 仍写属性（role 有显式 get 分支 → set 写 role 属性，回归守卫）；
+    //   非 reflected 原始值（customStr/customNum）现在入 expando 不写内容属性（real browser 语义，闭合 R3042 限制①），
+    //   且 property 读回真值（get trap 读 _expando round-trip）。
     sandbox
         .execute(
             "var d2 = document.getElementById('d');\
@@ -1497,13 +1498,17 @@ fn test_expando_non_primitive_properties_r3042() {
              d2.customStr = 'hello';\
              d2.customNum = 7;\
              globalThis.__roleAttr = d2.getAttribute('role');\
-             globalThis.__customAttr = d2.getAttribute('customStr');\
-             globalThis.__numAttr = d2.getAttribute('customNum');",
+             globalThis.__customAttr = String(d2.getAttribute('customStr') === null || d2.getAttribute('customStr') === '');\
+             globalThis.__numAttr = String(d2.getAttribute('customNum') === null || d2.getAttribute('customNum') === '');\
+             globalThis.__customRead = d2.customStr;\
+             globalThis.__numRead = d2.customNum;",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__roleAttr").unwrap().value, "button", "role='button' 仍写属性（string 走 fallthrough）");
-    assert_eq!(sandbox.execute("globalThis.__customAttr").unwrap().value, "hello", "customStr='hello' 仍写属性");
-    assert_eq!(sandbox.execute("globalThis.__numAttr").unwrap().value, "7", "customNum=7 仍写属性（number 走 fallthrough）");
+    assert_eq!(sandbox.execute("globalThis.__roleAttr").unwrap().value, "button", "role='button' 仍写属性（reflected setter 不受 R3069 影响）");
+    assert_eq!(sandbox.execute("globalThis.__customAttr").unwrap().value, "true", "customStr='hello' 入 expando 不写内容属性（R3069，旧写 'hello' 属性）");
+    assert_eq!(sandbox.execute("globalThis.__numAttr").unwrap().value, "true", "customNum=7 入 expando 不写内容属性（R3069，旧写 '7' 属性）");
+    assert_eq!(sandbox.execute("globalThis.__customRead").unwrap().value, "hello", "customStr property 读回 'hello'（expando round-trip）");
+    assert_eq!(sandbox.execute("globalThis.__numRead").unwrap().value, "7", "customNum property 读回 7（expando round-trip 保类型）");
 
     // ⑥ 多元素独立 expando（per-element 隔离）+ reflected 布尔 setter 不受影响。
     sandbox
@@ -1515,6 +1520,66 @@ fn test_expando_non_primitive_properties_r3042() {
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__bOwn").unwrap().value, "B", "b._own.id='B'（per-element 隔离）");
     assert_eq!(sandbox.execute("globalThis.__dOwn").unwrap().value, "D", "d._own.id='D'（per-element 隔离，不串）");
+}
+
+#[test]
+fn test_expando_primitive_properties_r3069() {
+    // R3069：expando 原始值 set/get 修复（闭合 R3042 限制①）。string/number/boolean 非 reflected 属性旧经 set
+    // generic fallthrough 写内容属性，但 get trap 无分支读 → 读返 undefined（`el.flag='x'; el.flag` → undefined，
+    // correctness bug）。real browser：自定义原始属性存 JS 对象非内容属性。本切片改：非 reflected 原始值存 _expando
+    //（get trap 已读 _expando），保类型；reflected 原始属性（type/name/colSpan/size 等）仍写属性（get 读属性 round-trip）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d' title='orig'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① string 原始 expando：`el.customFlag = 'on'` → 读回 'on'（旧读 undefined）。不写内容属性。
+    sandbox
+        .execute(
+            "var d = document.getElementById('d');\
+             d.customFlag = 'on';\
+             globalThis.__strRead = d.customFlag;\
+             globalThis.__strNotWritten = String(d.getAttribute('customFlag') !== 'on');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__strRead").unwrap().value, "on", "string expando 读回 'on'（旧 undefined）");
+    assert_eq!(sandbox.execute("globalThis.__strNotWritten").unwrap().value, "true", "string expando 不写内容属性（getAttribute != 'on'）");
+
+    // ② number 原始 expando：`el.count = 42` → 读回 42（number，保类型，非 '42'）。
+    sandbox.execute("d.count = 42; globalThis.__numRead = d.count; globalThis.__numType = typeof d.count;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__numRead").unwrap().value, "42", "number expando 读回 42");
+    assert_eq!(sandbox.execute("globalThis.__numType").unwrap().value, "number", "number expando 保类型 number（非 string）");
+
+    // ③ boolean 原始 expando：`el.enabled = true` → 读回 true（boolean，保类型）。
+    sandbox.execute("d.enabled = true; globalThis.__boolRead = d.enabled; globalThis.__boolType = typeof d.enabled;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__boolRead").unwrap().value, "true", "boolean expando 读回 true");
+    assert_eq!(sandbox.execute("globalThis.__boolType").unwrap().value, "boolean", "boolean expando 保类型 boolean");
+
+    // ④ reflected string 属性仍写属性（regression 守卫）：`el.title='new'` → 读 'new'（经 reflected getter 读属性）。
+    sandbox.execute("d.title = 'new'; globalThis.__refRead = d.title;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__refRead").unwrap().value, "new", "reflected title 仍写属性 + 读回（regression 守卫）");
+
+    // ⑤ reflected 原始属性不污染 expando：title 写属性（非 expando），customFlag 仍在 expando（互不影响）。
+    sandbox.execute("globalThis.__mixed = d.title + '/' + d.customFlag;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__mixed").unwrap().value, "new/on", "reflected(title)+expando(customFlag) 共存互不影响");
+
+    // ⑥ reflected numeric（colSpan 经 td）仍写属性 round-trip。
+    let mut s2 = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() }).unwrap();
+    s2.execute(generate_js_dom_shim()).unwrap();
+    let m2: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let h2: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><table><tr><td id='td'></td></tr></table></body></html>".to_string()));
+    let u2: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut s2, &m2, &h2, &u2);
+    s2.execute("var td = document.getElementById('td'); td.colSpan = 3; td.myProp = 'exp'; globalThis.__cs = td.colSpan; globalThis.__mp = td.myProp;").unwrap();
+    assert_eq!(s2.execute("globalThis.__cs").unwrap().value, "3", "reflected numeric colSpan=3 仍写属性 + 读回（regression 守卫）");
+    assert_eq!(s2.execute("globalThis.__mp").unwrap().value, "exp", "同元素 colSpan(reflected) + myProp(expando) 共存");
 }
 
 #[test]
@@ -1544,9 +1609,9 @@ fn test_expando_enumeration_r3046() {
         "设 expando 前 Object.keys(el)=[]"
     );
 
-    // ② 设非原始 expando（object/function/array）后：Object.keys(el) 含 expando 键。
-    //    注：R3042 仅非原始值入 expando map（string/number/boolean 走 attr fallthrough）——故 numProp=42（number）
-    //    不入 expando、不可枚举（R3042 已知限制，本切片 R3046 仅枚举 _expando map 中的非原始 expando）。
+    // ② 设 expando（object/function/array + number）后：Object.keys(el) 含 expando 键。
+    //    R3069：原始值（number/string/boolean）亦入 _expando map（闭合 R3042 限制①），故 numProp=42 现可枚举
+    //    （旧 R3042 限制① 下 number 走 attr fallthrough 不入 expando、不可枚举——R3069 后与 real browser 一致）。
     sandbox
         .execute(
             "var d = document.getElementById('d');\
@@ -1559,11 +1624,11 @@ fn test_expando_enumeration_r3046() {
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__keysAfter").unwrap().value,
-        "[\"_data\",\"handler\",\"tags\"]",
-        "Object.keys(el) 含非原始 expando 键（_data/handler/tags；numProp=42 为 number 走 attr 不入 expando，R3042 限制）"
+        "[\"_data\",\"handler\",\"numProp\",\"tags\"]",
+        "Object.keys(el) 含全部 expando 键（含 numProp=42，R3069 原始值亦入 expando）"
     );
 
-    // ③ `'foo' in el` 对非原始 expando 返 true；number expando（numProp）+ 未设 返 false。
+    // ③ `'foo' in el` 对 expando（含原始值 numProp）返 true；未设 返 false。
     sandbox
         .execute(
             "globalThis.__inData = String('_data' in d);\
@@ -1572,7 +1637,7 @@ fn test_expando_enumeration_r3046() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__inData").unwrap().value, "true", "'_data' in el = true（非原始 expando）");
-    assert_eq!(sandbox.execute("globalThis.__inNum").unwrap().value, "false", "'numProp' in el = false（number expando 走 attr，R3042 限制）");
+    assert_eq!(sandbox.execute("globalThis.__inNum").unwrap().value, "true", "'numProp' in el = true（number 亦入 expando，R3069）");
     assert_eq!(sandbox.execute("globalThis.__inNope").unwrap().value, "false", "'notSet' in el = false（未设）");
 
     // ④ getOwnPropertyDescriptor 返 enumerable own 描述符（非原始 expando）。
@@ -1588,7 +1653,7 @@ fn test_expando_enumeration_r3046() {
     assert_eq!(sandbox.execute("globalThis.__descEnum").unwrap().value, "true", "descriptor.enumerable=true");
     assert_eq!(sandbox.execute("globalThis.__descConf").unwrap().value, "true", "descriptor.configurable=true");
 
-    // ⑤ for...in 迭代含非原始 expando 键。
+    // ⑤ for...in 迭代含 expando 键（含原始值 numProp，R3069）。
     sandbox
         .execute(
             "var collected = [];\
@@ -1598,8 +1663,8 @@ fn test_expando_enumeration_r3046() {
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__forIn").unwrap().value,
-        "[\"_data\",\"handler\",\"tags\"]",
-        "for...in 含非原始 expando 键"
+        "[\"_data\",\"handler\",\"numProp\",\"tags\"]",
+        "for...in 含全部 expando 键（含 numProp）"
     );
 
     // ⑥ Object.assign({}, el) 复制非原始 expando（值保持类型）。

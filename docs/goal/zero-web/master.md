@@ -119,6 +119,27 @@
 
 ## 最近完成的改进
 
+### P1a expando 原始值 set/get 修复（闭合 R3042 限制①，本轮 R3069，~14,322 测试）
+
+承接 expando 赛道（R3042 非原始值 + R3046 枚举）。R3042 仅把**非原始值**（function/object/array/null）入 per-element `_expando` map，**原始值**（string/number/boolean）仍走 set trap 末尾 generic fallthrough → `__zw_set_attr(sel, p, String(value))` 写内容属性。但 get trap 对未知属性无分支读（仅显式分支 + `_expando` + `return undefined`）→ `el.flag='x'; el.flag` **读返 undefined**（correctness bug：自定义原始属性写入了内容属性，但 property 读不回）。real browser：自定义原始属性存于 JS 对象（非内容属性），IDL 读回真值。本切片闭合 R3042 限制①。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **set trap 末尾重构：reflected 原始值分支** | `crates/engine/src/js_dom_shim/part05.js`（R3042 非原始值分支后） | 新增 `else if (_reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label')` 分支：reflected 原始属性写**reflected 属性名**（小写：`_REFLECTED_UINT[p].a` / `_reflectedStringAttr(p)` 返值 / 同名），复用 get trap 同源检测函数自动一致。顺带修 colSpan/rowSpan/cols/rows 等 property-set round-trip（旧 generic fallthrough 写 IDL 名 `'colSpan'` 大写，get 读小写 `'colspan'` 不匹配）。 |
+| **set trap 末尾重构：非 reflected 原始值 → expando** | 同上（新末尾 else 分支） | 剩余非 reflected 原始值入 `_expando[key][p] = value`（存 raw value 保类型，number/boolean 非 string）。get trap part04.js 已读 `_expando` → property round-trip 正确。不发 attributes MO（expando 非内容属性）；不写属性（real browser 亦不写）。 |
+| **href/label 反射补丁** | 同上（reflected 分支条件） | **关键修复**：`href`（A/AREA/LINK/BASE，get trap URL 分解 part03.js:1627 读 href 属性）+ `label`（OPTION，get part03.js:1819 读 label 属性）**无专用 set 分支**，旧靠 generic fallthrough 写属性；R3069 expando 改造后若不显式列入 reflected 分支 → href setter 不写属性 → `a.href` get 读空（回归 `test_anchor_url_decomposition_r2838`）。补丁验证全量无其他 reflected-without-set-branch 缺口（get trap content-attr 读穷举核对：role/aria/title/lang/dir/tabIndex/contentEditable/accessKey/htmlFor 等均有显式 set 分支，FORM action/method/enctype/target 在 `_reflectedStringAttr` FLAT，仅 href/label 缺）。 |
+| **R3069 新测试** | engine `js_dom_bridge_tests/part13.rs`（+`test_expando_primitive_properties_r3069`） | 6 case：① string expando `el.customFlag='on'` 读回 'on'（旧 undefined）+ 不写内容属性；② number `el.count=42` 读回 42 保类型；③ boolean `el.enabled=true` 读回 true 保类型；④ reflected `el.title='new'` 仍写属性 + 读回（regression 守卫）；⑤ reflected(title)+expando(customFlag) 共存互不影响；⑥ reflected numeric `td.colSpan=3` + `td.myProp='exp'` 共存。 |
+| **R3042 测试 case ⑤ 更新** | engine `js_dom_bridge_tests/part13.rs`（`test_expando_non_primitive_properties_r3042`） | 旧 assertion「customStr/customNum 仍写内容属性」编码 R3042 限制①行为（number/string 走 attr fallthrough）——R3069 改造后这些非 reflected 原始值入 expando 不写属性。更新为：`getAttribute('customStr'/'customNum')` 返空（入 expando）+ property 读回真值（round-trip）；`role='button'` 仍写属性（reflected 回归守卫保留）。 |
+| **R3046 测试 case ②③⑤ 更新** | engine `js_dom_bridge_tests/part13.rs`（`test_expando_enumeration_r3046`） | 旧 assertion「numProp=42 为 number 走 attr 不入 expando、不可枚举」编码 R3042 限制①。R3069 后 number 亦入 `_expando` → `Object.keys(el)`/`for...in`/`'numProp' in el` 现含 numProp（与 real browser 一致，自定义原始属性可枚举）。 |
+
+**为何零回归且净正向**：① R3042 已建非原始值 expando 机制（get trap 读 `_expando`、枚举表面 R3046），R3069 仅把原始值纳入同一 map（行为一致化，闭合限制①）；② reflected 原始属性仍写内容属性（新增 reflected 分支复用 get 同源检测，round-trip 不变）；③ href/label 补丁是 R3069 改造的必要配套（修复二者无专用 set 分支的潜在缺口，由 anchor URL 测试捕获）；④ R3042/R3046 旧 assertion 编码的是「限制」非「正确行为」，更新为新正确行为；⑤ 全量 14322 v8 / 1740 quickjs 全绿（含 89 个 form/reflected 测试 + 76 个 expando/enumeration 测试全回归）。
+
+**已知限制（记录，defer）**：① URL 分解组件 setter（`a.pathname='/x'` 等）仍不 round-trip（get 读 href 属性分解，set 入 expando 不合成 href——同 R2838 既有 defer，罕见）；② 非 reflected 原始值入 expando 后 `getAttribute(name)` 返空（real browser 语义，自定义 property 非内容属性——非 bug）；③ 跨 element identity（handle vs selector）expando 分开（同 R3042 既有 per-identity 限制）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ `--no-default-features --features quickjs`（quickjs）零警告 + `make test` 全绿（**14322 passed / 71 skipped + 1740 passed / 60 skipped / 0 failed**，engine +1 driving 测试，零回归）+ pre-commit guard PASS。变更纯 JS shim + 测试（无 render/paint/style/layout .rs），product-smoke 不受影响。
+
+**下一步**：expando 赛道闭合（R3042 非原始值 + R3046 枚举 + R3069 原始值，自定义 property 全类型 set/get/枚举 spec 合规）。pivot：① scrollIntoView scroll-container 精确化（overflow 容器内滚容器非 document，需 layout，中复杂度）；② Web API 表面扫描补缺（DocumentFragment 进阶 / CSS OM parity / `queueMicrotask` 高频 / Selection API / `Document.hasFocus` 琐碎）；③ URL 分解组件 setter round-trip（合成 href，闭合 R2838 限制，中复杂度）；④ `:disabled` 伪类 fieldset-disabled 传播一致性（CSS 渲染流域 defer；DOM query 需 thread document context 架构改动 defer）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a Pointer Capture API（setPointerCapture/releasePointerCapture/hasPointerCapture，本轮 R3068，~14,281 测试）
 
 Web API 表面扫描发现 Pointer Capture API 三方法全缺——指针/拖拽库（interact.js / sortablejs pointer mode / 自定义 slider-drag / canvas 绘图捕获）feature-detect + 调用 `element.setPointerCapture(pid)` / `hasPointerCapture(pid)` / `releasePointerCapture(pid)`。headless 无真指针路由（事件不重定向到捕获元素，无 OS pointer），但 API 表面 + hasPointerCapture 状态查询必需（缺则含此调用的脚本 ReferenceError 中断）。本切片闭合。

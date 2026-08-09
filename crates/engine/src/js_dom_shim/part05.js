@@ -108,10 +108,30 @@
           // 故零回归风险（不会拦截 role/aria/class/value 等任何真属性 setter）。无 moAttr（expando 非内容属性，不发 attributes MO）。
           var _ex = _expando[key] || (_expando[key] = {});
           _ex[p] = value;
+        } else if (_reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label') {
+          // R3069：reflected 原始属性——get trap 经 `_reflectedStringAttr`（type/name/placeholder/...）/ `_REFLECTED_UINT`
+          //（colSpan/rowSpan/maxLength/cols/rows/start）/ `size` 专用分支读内容属性，故 set 须继续写属性（非 expando），
+          // 否则 set 写 expando / get 读空属性 round-trip 断。复用 get trap 同源检测函数，自动一致（无静态名表维护）。
+          // 写**reflected 属性名**（小写：_REFLECTED_UINT[p].a / _reflectedStringAttr(p) 返值）非 IDL 名 p——旧 generic
+          // fallthrough 写 p（如 'colSpan' 大写）与 get 读小写 'colspan' 不匹配，property set→read round-trip 本就断；
+          // 本分支写正确属性名，顺带修 colSpan/rowSpan/cols/rows 等 property-set round-trip。bool reflected（required/...）
+          // 有显式 set 分支（part05.js 上方），不经此 fallthrough。
+          // R3069-fix：`href`（A/AREA/LINK/BASE，get trap URL 分解读 href 属性，part03.js:1627）+ `label`（OPTION，get 读
+          // label 属性 part03.js:1819）无专用 set 分支，旧靠 generic fallthrough 写属性；R3069 expando 改造后须显式列入
+          // 此分支保 round-trip（否则 href setter 不写属性 → a.href get 读空，回归 test_anchor_url_decomposition_r2838）。
+          // 写同名内容属性（href→'href' / label→'label'，1:1 小写），匹配旧 generic fallthrough 对所有元素的行为（无 tag
+          // gate——非 A/AREA 设 href 亦写属性，与旧行为一致，无害）。
+          var _refAttr = _REFLECTED_UINT[p] ? _REFLECTED_UINT[p].a : (_reflectedStringAttr(p) || p);
+          if (handle) __zw_set_attr_handle(handle, _refAttr, String(value));
+          else __zw_set_attr(sel, _refAttr, String(value));
+          moAttr = _refAttr;
         } else {
-          if (handle) __zw_set_attr_handle(handle, p, String(value));
-          else __zw_set_attr(sel, p, String(value));
-          moAttr = p;
+          // R3069：非 reflected 原始值 → expando（闭合 R3042 限制①）。real browser：自定义原始属性存 JS 对象非内容属性，
+          // IDL 读回真值。旧 generic fallthrough 写内容属性但 get trap 无分支读 → 读返 undefined（correctness bug：
+          // `el.flag='x'; el.flag` → undefined）。改存 _expando（get trap part04.js:1277 已读 _expando）。存 raw value
+          // 保类型（number/boolean 非 string）。不发 attributes MO（expando 非内容属性）；不写属性（real browser 亦不写）。
+          var _ex2 = _expando[key] || (_expando[key] = {});
+          _ex2[p] = value;
         }
         if (moAttr) _mo_notify(sel, handle, { type: 'attributes', attributeName: moAttr });
         return true;
