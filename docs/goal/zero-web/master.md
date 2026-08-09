@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1a `<script type=module>` 执行路径（compile_module_script 转换 import/export，闭合 interactive/script-variants，本轮 R3083）
+
+承接 R3082（scripted js_executes_ok 赛道收敛，剩 2 非引擎缺陷）。本切片闭合其中真缺陷：`<script type=module">` 内容经**经典脚本路径**执行（webview `run_page_scripts_impl` 把 `InlineModule` 与 `Inline` 同走 `sandbox.execute`）→ `import` 抛 `Cannot use import statement outside a module`。script-sandbox 早有 `compile_module_script`（import/export→经典 IIFE 转换）+ `EsModuleSandbox`，但 webview 进程内脚本路径未接线。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **webview InlineModule 执行** | `crates/webview/src/webview.rs`（`run_page_scripts_impl` 循环） | `InlineModule(c)` 走 module 路径：建 `ModuleRegistry`，把 `extract_module_import_specifiers(code)` 全部 import 标识符**预注册为空存根**（headless 进程内不 fetch 外链模块→副作用导入 no-op、命名导入得 empty namespace）→ `compile_module_script(code,url,&registry)` 转 import/export → 拼 `build_module_runtime_prelude`（动态 import() 支持）→ `sandbox.execute`。编译失败 non-strict warn+continue / strict 返 module compile 错。spec ES Modules Tier 1。 |
+| **R3083 测试** | webview `tests/coverage.rs`（+`test_module_script_executes_r3083`）+ wpt-runner `mod.rs`（+`interactive_cases_execute_scripts_r3083`） | webview：① strict 执行 `<script type=module>import './missing.js'; ...</script>` 不抛（import 空 stub no-op）；② 模块 body 副作用生效（`__modBodyRan` 设置）；wpt-runner：全 interactive 用例 js_executes_ok strict 通过（v8+quickjs）。 |
+
+**为何净正向**：① 零 churn script-sandbox（复用既有 `ModuleRegistry`/`compile_module_script`/`extract_module_import_specifiers`/`build_module_runtime_prelude` 公共 API）；② 预注册空存根避免改严格 `build_dep_iife`（其 `Module not found` 错误有既有测试 es_module.rs:731 断言，不动严格路径）；③ headless 外链模块不可 fetch，空存根是合理近似（模块自身 body 可执行，import side-effect 丢弃）；④ v8+quickjs 双跑通过（compile_module_script 引擎级 Rust，非 v8 专属）；⑤ 全量 make test 全绿（0 failed across all binaries，16098 passed）。
+
+**已知限制（记录，defer）**：① **外链模块不 fetch**（进程内模式，import 的外链模块源预注册为空——副作用丢失，命名导入为 undefined；真模块图加载需 host fetch + 异步 module graph，中-高复杂度）；② **es-module/dynamic-import-exists 仍失败**（`<script>typeof import === 'function'</script>`——`typeof import` 在经典脚本为 SyntaxError，import 是保留关键字，test-data bug 非引擎缺陷；正确测法需 `import('x')` 异步，低优先修 test-data）；③ 模块严格模式（`'use strict'` 自动注入，spec 一致）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**cargo test 执行器；0 failed across all binaries，全量 16098 passed，webview +1（v8+quickjs）+ wpt-runner +1（v8+quickjs）= +4，零回归**）+ pre-commit guard PASS。变更含 webview .rs（脚本执行路径）+ 测试（无 render/paint/layout/CSS 变更），product-smoke 不受影响。
+
+**下一步**：`<script type=module>` 执行路径闭合（interactive/script-variants + module body 可执行；外链模块 fetch defer）。**scripted js_executes_ok 赛道彻底收敛**（238 用例仅剩 1 test-data bug）。pivot 出 scripted 赛道：① **IndexedDB 持久化**（storage crate 真 IDB + host bridge，跨页重载不丢，中-高复杂度）；② **stroke gradient 逐像素光栅化**（对称 R3079 fill，canvas crate，中复杂度）；③ 外链 ES module fetch + 异步 module graph（真模块加载，中-高复杂度）；④ P1a 事件循环 macro-task 队列补全 / popover 渲染层。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a document.dispatchEvent + QuickJS console 补全（runtime 类全 scripted 通过，本轮 R3082）
 
 R3082 探针（js_executes_ok 全 238 scripted 用例）发现仅 3 例失败：runtime/events/custom-event（`document.dispatchEvent is not a function`，真引擎缺陷）/ es-module dynamic-import（`typeof import` 非 module SyntaxError，test-case 限制）/ interactive script-variants（`<script type=module>` import，module 执行路径 defer）。本切片闭合 runtime 缺陷。**附带**：runtime gate 在 quickjs 阶段暴露 shim console 缺 time/timeEnd/assert（v8 用原生 console 故不暴露，quickjs 用 shim console 暴露）→ 补全。

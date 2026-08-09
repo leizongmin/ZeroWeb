@@ -216,6 +216,26 @@ fn test_execute_script_syntax_error() {
     assert!(result.is_err(), "syntax error should fail");
 }
 
+/// R3083：`<script type="module">` 经 compile_module_script 转换后执行（旧与 Inline 同走经典路径→
+/// `import` 抛 SyntaxError）。headless 进程内模式不 fetch 外链模块——预注册空存根使 `import './x.js'`
+/// no-op，模块 body 可执行。验证：① strict 执行不抛；② 模块 body 副作用生效。
+#[test]
+fn test_module_script_executes_r3083() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html(
+        "<html><body><script type=\"module\">import './missing.js'; globalThis.__modBodyRan = 'yes';</script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(
+        r.is_ok(),
+        "module script 应无异常执行（import 空 stub no-op），got: {:?}",
+        r.err()
+    );
+    let flag = wv.execute_script("String(globalThis.__modBodyRan === 'yes')");
+    assert_eq!(flag.unwrap(), "true", "module body 经转换后执行（__modBodyRan 设置）");
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]

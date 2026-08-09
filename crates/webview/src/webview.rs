@@ -1133,14 +1133,41 @@ impl WebView {
             self.js_shim_initialized = true;
         }
         for script in scripts {
-            let code = match script {
-                zero_engine::pipeline::PageScript::Inline(c) | zero_engine::pipeline::PageScript::InlineModule(c) => c,
+            let (code, is_module) = match script {
+                zero_engine::pipeline::PageScript::Inline(c) => (c, false),
+                // R3083：`<script type="module">` 经 compile_module_script 转 import/export 为经典可执行
+                // 代码后执行（旧 InlineModule 与 Inline 同走经典路径→`import` 抛 SyntaxError）。headless 进程内
+                // 模式不 fetch 外链模块，故把模块源中引用的 import 标识符预注册为**空存根**（副作用导入 no-op，
+                // 命名导入得 undefined/empty namespace）——使模块自身 body 可执行。spec ES Modules Tier 1。
+                zero_engine::pipeline::PageScript::InlineModule(c) => (c, true),
                 zero_engine::pipeline::PageScript::External(_)
                 | zero_engine::pipeline::PageScript::ExternalModule(_) => {
                     continue; // 外链脚本：进程内模式不加载（与 reftest 离线语义一致）
                 }
             };
-            let full = format!("__zw_begin_script && __zw_begin_script();\n{code}");
+            let full = if is_module {
+                // 预注册空存根 + 编译（import→空 namespace、export→_exports；动态 import() 经 prelude）。
+                let mut registry = zero_script_sandbox::ModuleRegistry::new();
+                for spec in zero_script_sandbox::extract_module_import_specifiers(&code) {
+                    registry.register(&spec, "");
+                }
+                let url = self.current_url.as_deref().unwrap_or("about:blank");
+                match zero_script_sandbox::compile_module_script(&code, url, &registry) {
+                    Ok(transformed) => {
+                        let prelude = zero_script_sandbox::build_module_runtime_prelude(&registry).unwrap_or_default();
+                        format!("__zw_begin_script && __zw_begin_script();\n{prelude}\n{transformed}")
+                    }
+                    Err(e) => {
+                        if strict {
+                            return Err(WebViewError::Script(format!("module compile: {e}")));
+                        }
+                        tracing::warn!("模块脚本编译警告: {e}");
+                        continue;
+                    }
+                }
+            } else {
+                format!("__zw_begin_script && __zw_begin_script();\n{code}")
+            };
             if let Err(e) = sandbox.execute(&full) {
                 if strict {
                     return Err(WebViewError::Script(format!("page script: {e}")));

@@ -323,6 +323,28 @@ mod runtime_path_tests {
             failed.join("\n")
         );
     }
+
+    /// R3083：所有 interactive 用例经 `js_executes_ok` 真实执行内联脚本无异常。闭合 `<script type=module>`
+    /// 执行路径（compile_module_script 转换 import/export）后，含 module 脚本的页面（interactive/
+    /// script-variants）不再抛 `Cannot use import statement outside a module`。
+    #[test]
+    fn interactive_cases_execute_scripts_r3083() {
+        let ctx = TestContext::default();
+        let cases = filter_tests_by_category(&builtin_tests(), "interactive");
+        assert!(!cases.is_empty(), "interactive 用例集非空");
+        let mut failed: Vec<String> = Vec::new();
+        for case in &cases {
+            if let Err(e) = check_js_executes_ok(&case.html, &ctx) {
+                failed.push(format!("{}: {}", case.id, e));
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "interactive 用例应全部 js_executes_ok 通过（{} 例失败）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
 }
 /// 根据预期元数据管理已知行为：
 #[allow(dead_code)]
