@@ -703,6 +703,26 @@ pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
     Some(primary)
 }
 
+/// 进程级共享的系统字体 base 集（测试模式）。
+///
+/// `BrowserApp::new` 与每个 TabWorker 线程各自 `load_system_fonts`（含 19MB CJK
+/// fallback 解析 ~2.9s）；测试里每进程首个调用解析一次，其余 `duplicate()` 复用
+/// （Arc 共享字体数据，见 FontLoader::duplicate）。`duplicate` 保持 font_id 序号与
+/// 字体顺序一致 → 各调用方内容与独立加载等价。`&self` 只读 + fontdue 无内部可变性
+/// → 并发（cargo test 多线程 + worker 线程）安全。
+///
+/// 产品路径（非 test）不共享：真实浏览器进程生命周期内仅启动时加载一次，无需缓存。
+#[cfg(test)]
+pub(crate) fn shared_system_fonts() -> (FontLoader, Option<u32>) {
+    static CACHED: std::sync::OnceLock<(FontLoader, Option<u32>)> = std::sync::OnceLock::new();
+    let cached = CACHED.get_or_init(|| {
+        let mut loader = FontLoader::new();
+        let id = load_system_fonts(&mut loader);
+        (loader, id)
+    });
+    (cached.0.duplicate(), cached.1)
+}
+
 /// 环境变量 `ZERO_BROWSER_COLOR_SCHEME` 覆盖（`dark` / `light`）。
 pub fn color_scheme_from_env() -> Option<PrefersColorSchemeValue> {
     let val = std::env::var("ZERO_BROWSER_COLOR_SCHEME").ok()?;

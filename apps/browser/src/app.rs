@@ -205,13 +205,9 @@ impl BrowserApp {
     /// `&self` 只读 + fontdue 无内部可变性 → 并发（cargo test 多线程）安全。
     #[cfg(test)]
     fn cached_system_fonts() -> (FontLoader, Option<u32>) {
-        static CACHED: std::sync::OnceLock<(FontLoader, Option<u32>)> = std::sync::OnceLock::new();
-        let cached = CACHED.get_or_init(|| {
-            let mut loader = FontLoader::new();
-            let id = load_system_fonts(&mut loader);
-            (loader, id)
-        });
-        (cached.0.duplicate(), cached.1)
+        // 进程级共享：BrowserApp 与 TabWorker 线程共用一次解析（见
+        // shared_system_fonts——worker 不再重复解析 19MB CJK 字体）
+        shared_system_fonts()
     }
 
     /// 创建新的浏览器应用

@@ -420,7 +420,18 @@ where
 }
 
 fn load_system_fonts_worker(loader: &mut FontLoader) -> Option<u32> {
-    crate::app::load_system_fonts(loader)
+    #[cfg(test)]
+    {
+        // 测试模式：共享进程级系统字体集（主线程/其他 worker 已解析；19MB CJK
+        // 每 worker 独立解析 ~2.9s，共享后每进程仅一次）
+        let (shared, id) = crate::app::shared_system_fonts();
+        *loader = shared.duplicate();
+        id
+    }
+    #[cfg(not(test))]
+    {
+        crate::app::load_system_fonts(loader)
+    }
 }
 
 fn page_title_from_webview(wv: &WebView) -> String {
