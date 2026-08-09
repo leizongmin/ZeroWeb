@@ -147,6 +147,45 @@ Fetch/Observer/FontFaceSet/事件循环 等高层 API 保留 shim（js_dom_shim.
 - 事件 target / mutation target 用原生 node 对象（非 selector String）。
 - shim 体量随核心 DOM 迁移逐步萎缩。
 
+### 3.7 Live Document 共享（闭合 read-only 快照限制）
+
+> **新增 2026-08-09（R3105 设计片）**：闭合 R3097 起「read-only 快照」限制——S1–S3+ 全部 native op 在生产路径读/写 re-parse 快照 `Document`，不反映 renderer 真实 DOM，故生产 inert。本节给出去快照化的架构设计与分阶段切片计划。
+
+**当前三方 `Document` 分裂**（问题根因）：
+
+| Document | 持有者 | 来源 | 随 mutation 同步？ |
+|----------|--------|------|-------------------|
+| **A. native 快照** | native bindings（gc.rs 线程局部） | `run_page_scripts_impl` re-parse `cached_html`（R3097 `install_dom_bindings_from_html`） | 否（独立快照） |
+| **B. polyfill 瞬态** | polyfill 桥（`__zw_*` 回调内） | 每操作 re-parse `dom_html` String | 否（每次重新解析） |
+| **C. renderer live** | `RenderPipeline.cached_doc: Option<Document>` | `render_html` 解析 | 是（渲染用此） |
+
+native（A）读写既不反映 polyfill（B）也不反映 renderer（C）——生产路径 native 全 inert。
+
+**关键使能（R3105 探查）**：`WebView` **owns** `pipeline: RenderPipeline`（webview.rs:133），故 webview 可达 `pipeline.cached_doc`（真 live Document C）。无需跨进程/跨层握手——同一结构体字段。
+
+**核心变更**：`cached_doc` 由 owned `Option<Document>` 改 **共享** `Option<Rc<RefCell<Document>>>`（与 gc.rs `DOM_SOURCE` 同型，单线程 V8 + 单线程渲染顺序执行 → `Rc<RefCell>` 足够；跨线程场景备选 `Arc<Mutex>`）。native bindings 的 DOM 源 = `pipeline.cached_doc` 共享句柄（替代 re-parse 快照 A）。
+
+**Borrow 不变量**（安全前提）：单进程 webview 中脚本执行（`run_page_scripts`）与渲染（`render`）**顺序**进行（同线程，非并发）；polyfill 回调与 native 回调同为 V8 回调，顺序派发。`with_dom`/`with_dom_mut`（gc.rs）已把 borrow 限定在单操作闭包内，无跨回调 borrow。故 `RefCell` 不会嵌套 panic——**前提是任何 V8 回调不得持 borrow 跨另一回调**（既有设计已保证，迁移期须守住）。
+
+**分阶段切片**（每片 kill-switch `ZW_NATIVE_DOM` + make test 零回归；涉渲染热路径片额外 `make product-smoke`）：
+
+| 阶段 | 范围 | 风险 | 验证 | 收益 |
+|------|------|------|------|------|
+| **L1 native-live-read/write** | `cached_doc: Option<Document>` → `Option<Rc<RefCell<Document>>>`（pipeline 内部 reader 改 `.borrow()`）；加 `cached_doc_shared()` accessor；webview `run_page_scripts_impl` 经 escape-hatch 把 `pipeline.cached_doc` 句柄传 `install_dom_bindings`（**替代** `install_dom_bindings_from_html` re-parse）。`cached_doc=None`（未渲染）时回落 re-parse 快照（兼容）。 | 🟡 中（pipeline 内部 reader 改 borrow，render 热路径） | engine+webview 单测 + `make product-smoke`（welcome 无回归） | native 读/写反映 renderer live DOM（native 不再 inert） |
+| **L2 polyfill-live** | polyfill 桥 `__zw_*` 回调从 re-parse `dom_html` String 改读共享 Document C（js_dom_bridge 大改） | 🔴 高（polyfill 热路径 + 14137 测试依赖） | 全量 WPT + 既有 dom_bridge 测试 + reftest | native(A)=polyfill(B)=renderer(C) **三方合一** |
+| **L3 清理** | 移除 `cached_html` String 路径 + re-parse 死代码 + A/B 快照分支 | 🟢 低 | 全量回归 | 维护体量降 |
+
+**已知交互（L1 须处理）**：`render_html` 每次重新解析并**替换** `cached_doc`（pipeline/mod.rs:415 `self.cached_doc = Some(doc)`）。若 native 持旧句柄，re-render 后读 stale。缓解：`install_dom_bindings` 每 `run_page_scripts` 取**当前** `cached_doc`（已每调用安装）；native 经 polyfill 改 `cached_html` 后下次 render 重解析 → native 句柄更新。L1 文档化此「install 取当前 cached_doc」不变量。
+
+**L1 切片定义（首个可执行步，后续 rally 轮直接落地）**：
+1. `RenderPipeline.cached_doc: Option<Document>` → `Option<Rc<RefCell<Document>>>`；`render_html` 末尾 `self.cached_doc = Some(Rc::new(RefCell::new(doc)))`。
+2. pipeline 内部 reader（pipeline/mod.rs:443–464 等 `cached_doc.as_ref()?`）改 `cached_doc.as_ref()?.borrow()`。
+3. 加 `pub fn cached_doc_shared(&self) -> Option<Rc<RefCell<Document>>>`（clone `Rc`）。
+4. webview `run_page_scripts_impl`：`native_dom` 分支改 `if let Some(doc) = self.pipeline.cached_doc_shared() { install_dom_bindings(scope, ctx, doc) } else { install_dom_bindings_from_html(...) }`（None 回落）。
+5. `make test` + `make product-smoke`（welcome 无回归）+ clippy/fmt 守门。
+
+> L1 完成后 native 生产路径读/写 live Document（去 inert），但 polyfill 仍走 String（A≠B 分裂持续至 L2）。L1 是战略第一步，中风险，reftest/product-smoke 必守。
+
 
 ---
 
@@ -213,6 +252,7 @@ Fetch/Observer/FontFaceSet/事件循环 等高层 API 保留 shim（js_dom_shim.
 | TBD-3 | NodeId ↔ selector 双向映射的性能（迁移期每次 node↔proxy 转换开销） | 重要 | 需 bench | S0/S1 bench 含映射开销 |
 | TBD-4 | customElements upgrade 的 lifecycle 触发点（原生 appendChild hook 是否影响渲染管线增量更新） | 重要（S5） | 需与渲染管线增量更新协调 | S5 设计子文档 |
 | TBD-5 | 是否保留 QuickJS 路径的原生绑定（或仅 V8） | 可选 | QuickJS 是扩展沙箱非页面引擎，本 RFC 默认仅 V8 | 用户确认 |
+| TBD-6 | **Live Document 共享**——`cached_doc` 改 `Rc<RefCell<Document>>` 共享的 borrow/性能/替换交互（去 R3097 read-only 快照限制） | 🔴 高（战略） | **已设计**（§3.7，R3105）：webview owns pipeline → 可达 cached_doc；`Rc<RefCell>` 单线程顺序 borrow 安全；分 L1/L2/L3 阶段 | L1 切片（§3.7 末「L1 切片定义」）直接可执行 |
 
 ### S0 PoC 验证结论（2026-08-09，R3095）
 
@@ -279,3 +319,4 @@ Fetch/Observer/FontFaceSet/事件循环 等高层 API 保留 shim（js_dom_shim.
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | v0.1 | 2026-08-08 | 初稿（rally 自主产出，待用户评审） |
+| v0.2 | 2026-08-09 | 加 §3.7 Live Document 共享设计 + TBD-6（R3105 设计片）——闭合 R3097 read-only 快照限制；webview owns pipeline 使 cached_doc 共享可行；分 L1/L2/L3 阶段，L1 切片可直接执行 |
