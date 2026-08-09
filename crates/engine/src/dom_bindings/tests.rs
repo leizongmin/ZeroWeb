@@ -981,6 +981,80 @@ fn native_inner_html_reflects_text_write() {
     );
 }
 
+// ── R3123 innerHTML / outerHTML setter（解析 HTML 片段清子/替换自身）──
+
+/// `innerHTML` setter：设含 markup 片段 → 替换现有子节点（旧子清空，新片段深拷贝追加）。
+/// getter live 序列化回读验证（旧 `<span>old</span>` 应被替换为 `<b>new</b><i>x</i>`）。
+#[test]
+fn native_inner_html_setter_replaces_children() {
+    let html = r#"<div id="a"><span>old</span></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.innerHTML='<b>new</b><i>x</i>';\
+             return e.innerHTML; })()"
+        ),
+        r#"<b>new</b><i>x</i>"#
+    );
+}
+
+/// `innerHTML` setter 无 markup（纯文本）→ 单文本节点（不走片段解析路径）。
+#[test]
+fn native_inner_html_setter_plain_text() {
+    let html = r#"<div id="a"><b>x</b></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.innerHTML='hello';\
+             return e.innerHTML+'/'+e.firstChild.nodeType+'/'+e.childNodes.length; })()"
+        ),
+        "hello/3/1"
+    );
+}
+
+/// `innerHTML` setter 空串 → 清空所有子节点。
+#[test]
+fn native_inner_html_setter_empty_clears() {
+    let html = r#"<div id="a"><b>x</b>!</div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_element_for_id('a').innerHTML='';\
+             return __zw_native_element_for_id('a').childNodes.length+'/'+__zw_native_element_for_id('a').hasChildNodes(); })()"
+        ),
+        "0/false"
+    );
+}
+
+/// `outerHTML` setter：元素整体替换为片段顶层节点。原元素从 DOM 移除（id 失效），
+/// 父节点 innerHTML 反映新内容。验证经父节点回读（原 id 'a' 已 detach）。
+#[test]
+fn native_outer_html_setter_replaces_self() {
+    let html = r#"<div id="p"><span id="a">old</span></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_element_for_id('a').outerHTML='<b id=\"c\">new</b>';\
+             return __zw_native_element_for_id('p').innerHTML; })()"
+        ),
+        r#"<b id="c">new</b>"#
+    );
+}
+
+/// `outerHTML` setter 空串 → 仅移除目标（spec：`el.outerHTML=''` 移除元素）。
+#[test]
+fn native_outer_html_setter_empty_removes() {
+    let html = r#"<div id="p"><span id="a">x</span><i>y</i></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_element_for_id('a').outerHTML='';\
+             return __zw_native_element_for_id('p').innerHTML; })()"
+        ),
+        r#"<i>y</i>"#
+    );
+}
+
 // ── R3114 cloneNode(deep) ──
 //
 // HTML: <div id="a" class="x"><span id="s">hi</span></div>

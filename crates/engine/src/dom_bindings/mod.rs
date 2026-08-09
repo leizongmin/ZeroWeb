@@ -234,13 +234,22 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "attributes") {
         tmpl.set_accessor(k.into(), namednodemap::native_attributes_getter);
     }
-    // R3113 `innerHTML` / `outerHTML` getter（spec `dom-element-innerhtml` / `-outerhtml`）：
-    // innerHTML = 子节点 outer_html 拼接；outerHTML = 本元素 outer_html。只读（setter 需 HTML 解析，后续）。
+    // R3113 `innerHTML` / `outerHTML` getter + R3123 setter（spec `dom-element-innerhtml` / `-outerhtml`）：
+    // 读=子节点 outer_html 拼接 / 本元素 outer_html；写=解析 HTML 片段清子替换（innerHTML）或整体
+    // 替换自身（outerHTML）。setter 复用 `js_dom_bridge` fragment parse，经 with_dom_mut 写 live DOM。
     if let Some(k) = v8::String::new(scope, "innerHTML") {
-        tmpl.set_accessor(k.into(), element::native_inner_html_getter);
+        tmpl.set_accessor_with_setter(
+            k.into(),
+            element::native_inner_html_getter,
+            element::native_inner_html_setter,
+        );
     }
     if let Some(k) = v8::String::new(scope, "outerHTML") {
-        tmpl.set_accessor(k.into(), element::native_outer_html_getter);
+        tmpl.set_accessor_with_setter(
+            k.into(),
+            element::native_outer_html_getter,
+            element::native_outer_html_setter,
+        );
     }
     // R3114 `cloneNode(deep)`（spec `dom-node-clonenode`）：复用 `Document::clone_node`（克隆元素+属性，
     // deep 递归子树）；返新 native 元素（未挂载）。

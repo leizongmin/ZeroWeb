@@ -741,6 +741,49 @@ fn test_native_inner_outer_html_r3113() {
     );
 }
 
+// ── P1b innerHTML/outerHTML setter native（本轮 R3123）──
+
+// native_dom=true → innerHTML/outerHTML setter 经 execute_script 解析 HTML 片段写 live cached_doc，
+// R3108 sync_render_after_native_dom 检测 live-doc≠cached_html → 重渲染 + 同步 cached_html。
+// 验证 R3108 + R3123 联动：native HTML 写 → 渲染可见（闭合 R3113 getter-only 限制）。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_inner_html_setter_rerenders_r3123() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html("<html><body><div id=\"a\"><span>old</span></div></body></html>", None);
+    wv.run_page_scripts_strict().unwrap();
+    // native innerHTML 写：解析 `<b>new</b>` 替换 span。
+    wv.execute_script("__zw_native_element_for_id('a').innerHTML='<b>new</b>'")
+        .unwrap();
+    let html = wv.html_content();
+    assert!(
+        html.contains("<b>new</b>"),
+        "native innerHTML setter 传播至 cached_html"
+    );
+    assert!(!html.contains("old"), "旧子节点被 innerHTML setter 清空");
+}
+
+// outerHTML setter：整体替换元素 + 重渲染。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_outer_html_setter_rerenders_r3123() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body><div id=\"p\"><span id=\"a\">old</span></div></body></html>",
+        None,
+    );
+    wv.run_page_scripts_strict().unwrap();
+    // native outerHTML 写：span 整体替换为 `<b>new</b>`。
+    wv.execute_script("__zw_native_element_for_id('a').outerHTML='<b>new</b>'")
+        .unwrap();
+    let html = wv.html_content();
+    assert!(
+        html.contains("<b>new</b>"),
+        "native outerHTML setter 替换传播至 cached_html"
+    );
+    assert!(!html.contains("old"), "原 span 被 outerHTML setter 移除");
+}
+
 // ── P1b cloneNode(deep) native（本轮 R3114）──
 
 // native_dom=true → cloneNode 经 execute_script 安装路径可用（浅/深克隆）。

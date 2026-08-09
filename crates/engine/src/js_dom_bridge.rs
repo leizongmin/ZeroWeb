@@ -775,7 +775,11 @@ fn apply_remove_style(doc: &mut Document, node: NodeId, property: &str) {
     doc.set_attribute(node, "style", &removed);
 }
 
-fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str) -> Result<(), String> {
+/// `element.innerHTML = html`（setter）——清空 parent 现有子节点，解析 HTML 片段，深拷贝其
+/// 顶层节点追加。NodeId 版（selector 查找由调用方负责）——polyfill 路径（[`Self`]
+/// 内 `__zw_set_inner_html` 等）与 native 原生路径（P1b `dom_bindings::element`
+/// innerHTML setter，R3123）共用。spec `dom-element-innerhtml`。
+pub(crate) fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str) -> Result<(), String> {
     let children: Vec<NodeId> = doc.get(parent).map(|n| n.children.clone()).unwrap_or_default();
     for child in children {
         doc.remove_child(parent, child).map_err(|e| e.to_string())?;
@@ -961,10 +965,21 @@ fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: 
 /// 仅移除目标（spec：`el.outerHTML = ''` 移除元素）。
 fn replace_outer_html(doc: &mut Document, selector: &str, html: &str) -> Result<(), String> {
     let node = find_by_selector(doc, selector).ok_or_else(|| format!("set_outer_html: no match for {selector}"))?;
+    replace_outer_html_node(doc, node, html)
+}
+
+/// `element.outerHTML = html`（setter）的 NodeId 版（native 原生路径用——已有 NodeId，免
+/// selector 查找；polyfill `replace_outer_html` 经 selector 解析后调本函数）。把目标元素**整体
+/// 替换**为片段顶层节点：在目标父节点中、目标位置之前逐个插入片段节点，再移除目标自身。供
+/// [`DomMutation::SetOuterHtml`] + P1b native `outerHTML` setter（R3123）共用。
+///
+/// 目标需有父节点（文档根无父 → 返错，匹配 spec 对根元素 outerHTML 赋值抛错）。空片段 →
+/// 仅移除目标（spec：`el.outerHTML = ''` 移除元素）。
+pub(crate) fn replace_outer_html_node(doc: &mut Document, node: NodeId, html: &str) -> Result<(), String> {
     let parent = doc
         .get(node)
         .and_then(|n| n.parent)
-        .ok_or_else(|| format!("set_outer_html: element {selector} has no parent"))?;
+        .ok_or_else(|| "set_outer_html: element has no parent".to_string())?;
     // 解析顶层 fragment 节点（与 replace_inner_html 同源），逐个插到目标之前。
     let trimmed = html.trim();
     if !trimmed.is_empty() {
