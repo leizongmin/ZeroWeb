@@ -1795,6 +1795,17 @@
     },
   };
 
+  // R3059：导航后重置 history——真跨文档导航（anchor/form/JS redirect）加载新文档时，host 经
+  // `set_dom_snapshot(new_url)`（url 变化）调本函数清旧页 _hist_entries（pushState/hash-setter 残留）。
+  // 重置为初始单 entry（url:''）→ location.href 读 page_url fallback（= 新文档 url，host 已设），
+  // history.length=1，history.state=null（新文档初始状态）。闭合 SPA-then-redirect stale latent bug
+  //（旧页 pushState 后导航，新页 location.href/history 误读旧 SPA entry）。pushState/replaceState/hash 变更
+  //（同文档）**不**触发 host set_dom_snapshot(url 变化)，故不误重置 SPA 路由态。
+  globalThis.__zw_reset_history = function () {
+    _hist_entries = [{ state: null, url: '' }];
+    _hist_cursor = 0;
+  };
+
   // R3006/R3008：location setter 共享导航应用——push 新 history entry（navigation 语义，R3005 location 读之反映）
   // + hash 段变化时异步派 hashchange。供 _setLocationHash / _setLocationPart 复用（DRY）。
   function _pushHistNav(newHref, oldHref) {

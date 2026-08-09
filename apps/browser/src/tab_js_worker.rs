@@ -346,6 +346,9 @@ fn js_worker_main(
                     if let Ok(mut map) = handle_selector_map.lock() {
                         map.clear();
                     }
+                    // R3059：导航 → 清旧页 _hist_entries（pushState/hash-setter 残留），新页 location.href
+                    // 读 page_url fallback（= 新文档 url）。与 renderer 路径一致（闭合 SPA-then-redirect stale）。
+                    let _ = sandbox.execute("__zw_reset_history && __zw_reset_history();");
                 }
             }
             JsWorkerCommand::ResolveAsyncCallback { id, result } => {

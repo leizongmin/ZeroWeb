@@ -1849,3 +1849,46 @@ fn test_js_cross_document_navigation_r3058() {
     sandbox.execute("location.assign('#bar');").unwrap();
     assert!(drain().is_empty(), "location.assign hash-only 同文档 → 不投递");
 }
+
+#[test]
+fn test_history_reset_on_navigation_r3059() {
+    // R3059：__zw_reset_history 导航后重置 _hist_entries（闭合 SPA-then-redirect stale）。
+    // 旧页 pushState/hash-setter 残留 entry → 新页 location.href/history 误读。host set_dom_snapshot(url 变化)
+    // 调 __zw_reset_history 清回初始单 entry（url:''）→ location.href 读 page_url fallback（= 新文档 url）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 初始：location.href = page_url，history.length = 1。
+    assert_eq!(sandbox.execute("location.href").unwrap().value, "https://example.com/page", "初始 location.href = page_url");
+    assert_eq!(sandbox.execute("history.length").unwrap().value, "1", "初始 history.length = 1");
+
+    // SPA 路由：pushState → location.href 反映新路径，history.length = 2，state=null。
+    sandbox.execute("history.pushState({x:1}, '', '/spa-route');").unwrap();
+    assert_eq!(sandbox.execute("location.href").unwrap().value, "https://example.com/spa-route", "pushState 后 location.href = /spa-route");
+    assert_eq!(sandbox.execute("history.length").unwrap().value, "2", "pushState 后 history.length = 2");
+
+    // 模拟导航：host set_dom_snapshot(new_url) 触发 __zw_reset_history（新文档加载）。
+    // page_url 已被 host 设为新文档 url（测试模拟：更新 page_url 到新文档 url）。
+    *page_url.lock().unwrap() = "https://example.com/newpage".to_string();
+    sandbox.execute("__zw_reset_history && __zw_reset_history();").unwrap();
+
+    // 重置后：location.href 读 page_url fallback（= 新文档 url），history.length = 1，state = null。
+    assert_eq!(
+        sandbox.execute("location.href").unwrap().value,
+        "https://example.com/newpage",
+        "导航重置后 location.href = 新文档 url（page_url fallback，旧 SPA entry 清除）"
+    );
+    assert_eq!(sandbox.execute("history.length").unwrap().value, "1", "重置后 history.length = 1");
+    assert_eq!(sandbox.execute("String(history.state)").unwrap().value, "null", "重置后 history.state = null");
+
+    // 重置后 back() 不回退（仅 1 entry，cursor 0 已是首）——旧 SPA entry 不残留。
+    sandbox.execute("history.back();").unwrap();
+    assert_eq!(sandbox.execute("location.href").unwrap().value, "https://example.com/newpage", "back() 后仍新页（无旧 SPA entry 可回）");
+}
