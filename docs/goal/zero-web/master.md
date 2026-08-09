@@ -119,6 +119,22 @@
 
 ## 最近完成的改进
 
+### P1b L1b——native_dom 接 live Document（去 R3097 read-only 快照 inert，P1b 战略闭合第一步，本轮 R3107）
+
+承接 R3106（L1a cached_doc 共享基础设施）。本轮落 **L1b**：webview `native_dom` 分支改优先用 `pipeline.cached_doc_shared()`（live Document）→ native 读/写**同一 live Document**（renderer 用的那个），不再 re-parse 快照。**L1 战略项闭合**（R3105 设计 → R3106 L1a 重构 → R3107 L1b 接线）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **native_dom 接 live Document + de-inert 测试** | `crates/webview/src/webview.rs` + `tests/coverage.rs` | `run_page_scripts_impl` 的 `native_dom` 分支：`if let Some(doc) = self.pipeline.cached_doc_shared() { install_dom_bindings(scope, ctx, doc) } else { install_dom_bindings_from_html(...) }`（None 回落 re-parse，兼容未渲染）。FnOnce installer 闭包消费 Option。`test_native_dom_live_document_de_inert_r3107`：native setAttribute 经 execute_script 直改 live cached_doc（不更 cached_html、不发 DomMutation）→ 后续 native getAttribute 读 "9"（live）；re-parse 快照会读 cached_html → "1"。断言 "9" 验证 live 路径。 |
+
+**为何净正向**：① 闭合 R3105–R3106 L1 战略项——native 生产读/写 live Document（去 R3097 inert）；② `load_html` 已 `render_html` 填 cached_doc → 正常流程走 live 路径（非 re-parse）；③ de-inert 测试可证（native 写 live、native 读见——re-parse 路径会读 stale cached_html）；④ 默认 kill-switch 关 → 零回归（默认 polyfill 路径不变）；⑤ None 回落保 R3097 兼容（未渲染场景）。
+
+**已知限制（记录，后续）**：① **native 写不触发重渲染**——native setAttribute 等直改 live cached_doc 但不发 DomMutation、不更 cached_html，故不触发 `render_with_dom_mutations` 重绘；native 写入的下一次 `render_html`（全量 re-parse cached_html）会丢失（cached_html stale）。native 写"live 但不渲染"——写-渲染触发是后续（native 写经 DomMutation 队列或 invalidate 标记）；② **native 读全 live**——反映上次渲染态（含 polyfill 经 `render_with_dom_mutations` 应用的 mutation）；③ **L2 polyfill-live** 是 native↔polyfill 完全合一的高风险大改（polyfill 桥迁 Document-直读，RFC §3.7），后续多片；④ 仅 V8（QuickJS no-op，继承）；⑤ product-smoke 不适用（native_dom 默认关分支；L1a pipeline 已 R3106 product-smoke 验证）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-script-sandbox -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**exit 0；de-inert 测试 pass（native 读 live "9" 非 re-parse "1"）；R3097 测试 live 路径全绿；v8+quickjs 双路径，零回归**）+ pre-commit guard PASS。
+
+**下一步**：L1 战略项闭合（native 读/写 live Document）。候选：① **native 写触发重渲染**（native mutation 经 DomMutation 队列或 cached_doc invalidate → 驱动 `render_with_dom_mutations`，闭合 L1b 限制①——native 写"live 且渲染"）；② **L2 polyfill-live**（polyfill 桥迁 Document-直读，native↔polyfill 合一，高风险大改，RFC §3.7）；③ **S4 EventTarget native**（addEventListener/removeEventListener/dispatchEvent + 事件 target 用原生 node）；④ **contained 表面片**（replaceChild+throw / attributes NamedNodeMap / nodeValue-data setter）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b L1a——cached_doc → 共享 `Rc<RefCell<Document>>` 行为保持重构（live-Document 基础设施，本轮 R3106）
 
 承接 R3105（live-Document 设计 §3.7）。本轮落 **L1a**：cached_doc 所有权改共享，**行为保持**（RefCell 透明——同一 Document 同一操作，仅加顺序 borrow 追踪）。**无 webview/native 接线**（L1b 下一步）——本片是渲染热路径迁移的基础设施，隔离验证。
