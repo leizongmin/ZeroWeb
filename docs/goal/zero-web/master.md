@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1a Element.scrollIntoViewIfNeeded（WebKit 滚动 API 表面补齐，本轮 R3075）
+
+Web API 表面扫描发现 `Element.prototype.scrollIntoViewIfNeeded(centerIfNeeded?)` 缺——WebKit/Safari 专属滚动方法（旧 Chrome 亦有），Safari-compat 库 + 部分 UI 框架 feature-detect 后调用。缺则含此调用的脚本（WebKit-targeted code）TypeError。本切片补齐，闭合 scroll API 族（R3060 scrollIntoView + R3047 scrollTop/scrollTo 状态 + 本切片 scrollIntoViewIfNeeded）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`scrollIntoViewIfNeeded` 方法分支** | `crates/engine/src/js_dom_shim/part04.js`（`scrollIntoView` 后） | WebKit spec：仅元素不可见时滚动；`centerIfNeeded=true` → 居中。headless 无真 viewport 可见性判定（无 intersection 几何）→ 近似**始终滚**（"if needed" 判定 defer，documented）。委托 `scrollIntoView`（R3060）：`centerIfNeeded ? {block:'center'} : {block:'nearest'}`（nearest headless 近似 start）。经 `_makeProxy(sel, handle).scrollIntoView(...)` 复用 R3060 gBCR + scrollTo 逻辑（DRY，零重写）。返 undefined（WebKit spec void）。detached 元素（无 rect）→ 委托的 scrollIntoView 早返 no-op。 |
+| **R3075 测试** | engine `js_dom_bridge_tests/part14.rs`（+`test_scroll_into_view_if_needed_r3075`） | 4 case（mirror R3060 mock：gBCR `"0,1000,100,50"` + innerHeight=800）：① `scrollIntoViewIfNeeded()`（nearest ≈ start）→ scrollY=1000；② `scrollIntoViewIfNeeded(true)`（center）→ scrollY=625（y-vh/2+h/2）；③ detached 元素 → no-op（scrollY 不变）；④ 返 undefined（void）。 |
+
+**为何零回归且净正向**：① scrollIntoViewIfNeeded 为纯新增 API 表面（旧完全缺，WebKit-targeted 脚本中断）；② 委托既有 scrollIntoView（R3060，已测）——零逻辑重写，行为一致；③ 仅新增 get 分支（不动 scrollIntoView 既有路径）；④ headless 近似（始终滚 vs spec「仅不可见时滚」）documented——无 viewport 可见性判定属 headless 共性限制（同 R3047/R3060）；⑤ 全量 make test 全绿（0 failed across all binaries，16071 passed；engine +1 driving 测试，R3060 scrollIntoView 全回归）。
+
+**已知限制（记录，defer）**：① **"if needed" 可见性判定 defer**（headless 无真 viewport intersection 几何 → 近似始终滚；real browser 仅元素不可见时滚——documented headless 限制，同 R3060）；② **WebKit-only**（标准方法为 scrollIntoView；本方法 Safari/旧 Chrome 兼容，跨浏览器库 feature-detect 后调用）；③ **block:'nearest' headless 近似 start**（scrollIntoView 既有——headless 无 viewport 边界判 "nearest edge"，nearest 落到 start 行为）；④ **inline 水平对齐 defer**（scrollIntoView 现仅垂直 block 对齐，headless 无真水平 viewport，inline 选项未处理——niche）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**cargo test 执行器；0 failed across all binaries，全量 16071 passed，engine +1 driving 测试，零回归**）+ pre-commit guard PASS。变更纯 JS shim + 测试（无 render/paint/layout .rs），product-smoke 不受影响。
+
+**下一步**：scroll API 族闭合（R3047 scrollTop + R3060 scrollIntoView + R3075 scrollIntoViewIfNeeded；inline 水平对齐 + nearest viewport-edge defer 属 headless 限制）。pivot：① Web API 表面继续扫描补缺（剩余 gap 均 modern/WebKit-niche：`getHTML`/`setHTMLUnsafe`/`moveBefore`/storage 事件）；② popover 渲染层显隐 + light-dismiss（rendering/输入路由流域，中-高复杂度）；③ P1a 事件循环 macro-task 队列补全（P1a 剩余主线，中-高复杂度）；④ 考虑评估是否 pivot 到更高杠杆项（WPT 用例补真实 JS 执行路径 / 产品层打磨）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a Element.checkVisibility（可见性查询，pivot 出 popover 赛道，本轮 R3074）
 
 Web API 表面扫描发现 `Element.prototype.checkVisibility(options)` 缺——ad viewability（广告可见度计量）/ lazy-load 库（判元素是否真渲染再加载）/ 视图追踪库用。缺则含此调用的脚本 TypeError 中断。spec（CSSOM View）：返元素是否「being rendered」+ 可选 opacity/visibility 检查。本切片接通，pivot 出已闭合的 popover 赛道（R3071-R3073）。

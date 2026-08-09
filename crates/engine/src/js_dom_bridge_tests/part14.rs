@@ -127,3 +127,73 @@ fn test_element_check_visibility_r3074() {
         "detached 元素（不在文档）checkVisibility() → false"
     );
 }
+
+#[test]
+fn test_scroll_into_view_if_needed_r3075() {
+    // R3075：Element.scrollIntoViewIfNeeded(centerIfNeeded)——WebKit-only。headless 无 viewport 可见性判定 →
+    // 近似始终滚（"if needed" defer）。centerIfNeeded=true → center 对齐，否则 nearest（≈ start，headless）。
+    // 委托 scrollIntoView（R3060），复用 gBCR mock + innerHeight=800（mirror R3060 测试）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'>x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    // mock rect：#d → "0,1000,100,50"（y=1000, h=50；视口下方）。register_dom_callbacks 设 innerHeight=800。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| match args.first() {
+            Some(s) if s.starts_with("__") => String::new(),
+            _ => "0,1000,100,50".to_string(),
+        }),
+    );
+
+    // ① scrollIntoViewIfNeeded()（centerIfNeeded falsy）→ nearest ≈ start → scrollY=1000（元素 y）。
+    sandbox
+        .execute("document.querySelector('#d').scrollIntoViewIfNeeded();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("window.scrollY").unwrap().value,
+        "1000",
+        "scrollIntoViewIfNeeded()（nearest ≈ start）→ scrollY=1000（headless 无可见性判定，近似始终滚）"
+    );
+
+    // ② scrollIntoViewIfNeeded(true) → center → scrollY = y - vh/2 + h/2 = 1000-400+25 = 625。
+    sandbox
+        .execute("document.querySelector('#d').scrollIntoViewIfNeeded(true);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("window.scrollY").unwrap().value,
+        "625",
+        "scrollIntoViewIfNeeded(true) → center 对齐 → scrollY=625（y-vh/2+h/2）"
+    );
+
+    // ③ detached 元素（无 rect）→ no-op（scrollY 不变）。
+    sandbox.execute("window.scrollTo(0,0);").unwrap();
+    sandbox
+        .execute("var e=document.createElement('div'); e.scrollIntoViewIfNeeded();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("window.scrollY").unwrap().value,
+        "0",
+        "detached 元素 scrollIntoViewIfNeeded → no-op（无 rect）"
+    );
+
+    // ④ 返 undefined（WebKit spec——void，非 boolean）。
+    sandbox
+        .execute("globalThis.__ret = String(document.querySelector('#d').scrollIntoViewIfNeeded());")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ret").unwrap().value,
+        "undefined",
+        "scrollIntoViewIfNeeded 返 undefined（WebKit spec void）"
+    );
+}

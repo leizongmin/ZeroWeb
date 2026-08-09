@@ -598,6 +598,15 @@
             globalThis.scrollTo(0, newTop); // behavior: instant（smooth 无动画，headless documented）
           };
         }
+        // `el.scrollIntoViewIfNeeded(centerIfNeeded?)`（R3075）——WebKit-only（Safari/旧 Chrome）。仅不可见时滚；
+        // centerIfNeeded=true → 居中。headless 无 viewport 可见性判定 → 近似始终滚（"if needed" defer，
+        // documented），委托 scrollIntoView（R3060）复用 gBCR + scrollTo：centerIfNeeded→center，否则 nearest（最小滚动近似）。
+        // API 表面价值：Safari-compat 库（WebKit feature-detect + 调用）不 TypeError。real browser 仅不可见时滚。
+        if (prop === 'scrollIntoViewIfNeeded') {
+          return function (centerIfNeeded) {
+            _makeProxy(sel, handle).scrollIntoView({ block: centerIfNeeded ? 'center' : 'nearest' });
+          };
+        }
         // `el.hasAttributes()`——是否有任意属性（经 `__zw_attr_names` 非空判定）。
         if (prop === 'hasAttributes') {
           return function() {
