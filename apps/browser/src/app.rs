@@ -203,7 +203,6 @@ impl BrowserApp {
     /// fallback，~2s/测）；缓存后全进程只解析一次，每测 ~10ms。duplicate 保持
     /// font_id 序号与字体顺序一致 → 各测试的 loader/font_id 内容与独立加载等价。
     /// `&self` 只读 + fontdue 无内部可变性 → 并发（cargo test 多线程）安全。
-    #[cfg(test)]
     fn cached_system_fonts() -> (FontLoader, Option<u32>) {
         // 进程级共享：BrowserApp 与 TabWorker 线程共用一次解析（见
         // shared_system_fonts——worker 不再重复解析 19MB CJK 字体）
@@ -212,14 +211,11 @@ impl BrowserApp {
 
     /// 创建新的浏览器应用
     pub fn new(render_mode: RenderMode) -> Self {
-        #[cfg(test)]
+        // 进程级共享系统字体（生产与测试同路径）：BrowserApp 与各 TabWorker 共用
+        // 一次解析（19MB CJK fallback ~0.5s + ~40-60MB/份），避免 N 标签页 N 份
+        // 重复解析（startup 475ms 的主要嫌疑之一）。duplicate 保持 font_id 序号
+        // 一致，内容与独立加载等价；进程生命周期内系统字体文件视为稳定。
         let (font_loader, font_id) = Self::cached_system_fonts();
-        #[cfg(not(test))]
-        let (font_loader, font_id) = {
-            let mut fl = FontLoader::new();
-            let fid = load_system_fonts(&mut fl);
-            (fl, fid)
-        };
 
         if font_id.is_some() {
             tracing::info!("System font loaded");
