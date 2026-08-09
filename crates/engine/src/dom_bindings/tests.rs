@@ -1378,6 +1378,66 @@ fn native_get_elements_by_class_name_identity_r3138() {
     );
 }
 
+// ── R3139 document.title getter/setter 工厂 ──
+
+/// `__zw_native_get_document_title()`：读首个 `<title>` textContent；无 title → 空串。
+#[test]
+fn native_document_title_getter_r3139() {
+    let html = r#"<html><head><title>Hello</title></head><body></body></html>"#;
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document_title())"),
+        "Hello",
+        "document.title 读首个 <title> textContent"
+    );
+    // 无 <title> → 空串。
+    let html_notitle = r#"<html><head></head><body></body></html>"#;
+    assert_eq!(
+        run_script(html_notitle, "(__zw_native_get_document_title())"),
+        "",
+        "无 <title> → 空串"
+    );
+}
+
+/// `__zw_native_set_document_title(str)`：存在 <title> → 改其 textContent；getter 回读新值。
+#[test]
+fn native_document_title_setter_existing_r3139() {
+    let html = r#"<html><head><title>Old</title></head><body></body></html>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_set_document_title('New');\
+            return __zw_native_get_document_title(); })()"
+        ),
+        "New",
+        "setter 改既有 <title> textContent → getter 回读新值"
+    );
+}
+
+/// setter 在无 `<title>` 时于 `<head>` 建 `<title>` 设文本——getter 回读 + head 含新建 title 元素。
+#[test]
+fn native_document_title_setter_create_missing_r3139() {
+    let html = r#"<html><head></head><body></body></html>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_set_document_title('Created');\
+            return __zw_native_get_document_title(); })()"
+        ),
+        "Created",
+        "无 <title> 时 setter 在 <head> 建 <title> → getter 回读"
+    );
+    // 新建 title 在 head 内（getElementsByTagName('title') 命中）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_set_document_title('X');\
+            return __zw_native_get_elements_by_tag_name('title').length; })()"
+        ),
+        "1",
+        "setter 建 <title> 后 getElementsByTagName('title').length===1"
+    );
+}
+
 // ── R3132 appendChild/insertBefore(fragment) flatten ──
 
 /// host.appendChild(frag)：fragment 子节点展开进 host + fragment 清空（spec flatten）。

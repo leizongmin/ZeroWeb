@@ -1,7 +1,8 @@
 //! 全局工厂回调——拆自 mod.rs（RFC §3.2 子模块化 stage 3，本轮 R3118；createText/Comment/Fragment R3131；
-//! documentElement/body/head R3136；getElementsByTagName R3137；getElementsByClassName R3138）。
+//! documentElement/body/head R3136；getElementsByTagName R3137；getElementsByClassName R3138；
+//! document.title getter/setter R3139）。
 //!
-//! 12 个**全局**工厂（注册于 `ctx.global`，非 Element 模板成员）：
+//! 14 个**全局**工厂（注册于 `ctx.global`，非 Element 模板成员）：
 //! - `__zw_native_element_for_id(idStr)`：`get_element_by_id` → native 元素；
 //! - `__zw_native_query_selector(sel)` / `__zw_native_query_selector_all(sel)`：文档根下
 //!   全量选择器引擎匹配 → native 元素 / V8 Array（spec `dom-parentnode-queryselector(-all)`）；
@@ -14,12 +15,14 @@
 //! - `__zw_native_get_elements_by_tag_name(name)`（R3137）：文档根下按标签名（`*` 通配）收集 →
 //!   V8 Array of native 对象（spec `dom-document-getelementsbytagname`）；
 //! - `__zw_native_get_elements_by_class_name(name)`（R3138）：空格分隔类名列表（含全部类）收集 →
-//!   V8 Array of native 对象（spec `dom-document-getelementsbyclassname`，多类 spec 合规）。
+//!   V8 Array of native 对象（spec `dom-document-getelementsbyclassname`，多类 spec 合规）；
+//! - `__zw_native_get_document_title()` / `__zw_native_set_document_title(str)`（R3139）：读/写
+//!   首个 `<title>` 元素 textContent（不存在时 setter 在 `<head>` 建 `<title>`；spec `dom-document-title`）。
 //!
 //! 区别于 mod.rs `native_element_query_selector(-all)_invoke`（**元素子树作用域**，注册于 Element
 //! 模板，root = `args.this()` 元素 + 排除自身）——本模块的是**文档级**（root = 文档根）。
 //!
-//! 可见性：12 个 invoke 为 `pub(super)`（mod.rs `install_dom_bindings` 注册经 `factories::` 调）。
+//! 可见性：14 个 invoke 为 `pub(super)`（mod.rs `install_dom_bindings` 注册经 `factories::` 调）。
 //! 读 `super::string_arg` / `super::get_or_create_native_element`（mod.rs 私有——Rust 规则：私有项
 //! 对后代模块可见）+ `super::gc::{with_dom, with_dom_mut}`。
 
@@ -282,4 +285,62 @@ pub(super) fn native_get_elements_by_class_name_invoke(
         }
     }
     rv.set(arr.into());
+}
+
+// ── R3139 document.title getter/setter ──
+
+/// `__zw_native_get_document_title()`：spec `dom-document-title` getter——读首个 `<title>` 元素
+/// 的 textContent；无 `<title>` → 空串。
+pub(super) fn native_get_document_title_invoke(
+    scope: &mut v8::PinScope,
+    _args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let title = with_dom(|d| {
+        d.get_elements_by_tag_name("title")
+            .into_iter()
+            .next()
+            .and_then(|id| d.text_content(id))
+    })
+    .flatten()
+    .unwrap_or_default();
+    if let Some(s) = v8::String::new(scope, &title) {
+        rv.set(s.into());
+    }
+}
+
+/// `__zw_native_set_document_title(str)`：spec `dom-document-title` setter——
+/// ① 存在 `<title>` → 改其 textContent（清子 + 加文本节点，镜像 Node textContent setter）；
+/// ② 不存在 → 在 `<head>` 建 `<title>` 设文本（无 `<head>` 不创建，best-effort——html5ever 总归一化有 head）。
+pub(super) fn native_set_document_title_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let val = string_arg(scope, &args, 0);
+    with_dom_mut(|d| {
+        let title_id = d.get_elements_by_tag_name("title").into_iter().next();
+        if let Some(tid) = title_id {
+            // 存在 → 改 textContent（清子 + 加文本节点）。
+            let children = d.child_nodes(tid);
+            for c in children {
+                let _ = d.remove_child(tid, c);
+            }
+            if !val.is_empty() {
+                let text_id = d.create_text_node(&val);
+                let _ = d.append_child(tid, text_id);
+            }
+        } else {
+            // 不存在 → 在 <head> 建 <title>（无 head 不创建）。
+            let head_id = d.get_elements_by_tag_name("head").into_iter().next();
+            if let Some(hid) = head_id {
+                let title = d.create_element("title");
+                if !val.is_empty() {
+                    let text_id = d.create_text_node(&val);
+                    let _ = d.append_child(title, text_id);
+                }
+                let _ = d.append_child(hid, title);
+            }
+        }
+    });
 }

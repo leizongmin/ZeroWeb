@@ -368,6 +368,19 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let (Some(f), Some(key)) = (gebcn_fn, gebcn_key) {
         let _ = global.set(scope, key.into(), f.into());
     }
+    // R3139 全局 document.title getter/setter——读/写首个 <title> textContent。
+    let gtitle = v8::FunctionTemplate::builder(factories::native_get_document_title_invoke).build(scope);
+    let gtitle_fn = gtitle.get_function(scope);
+    let gtitle_key = v8::String::new(scope, "__zw_native_get_document_title");
+    if let (Some(f), Some(key)) = (gtitle_fn, gtitle_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+    let stitle = v8::FunctionTemplate::builder(factories::native_set_document_title_invoke).build(scope);
+    let stitle_fn = stitle.get_function(scope);
+    let stitle_key = v8::String::new(scope, "__zw_native_set_document_title");
+    if let (Some(f), Some(key)) = (stitle_fn, stitle_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
 
     // 8. R3127 全局 Event / CustomEvent 构造器——`new Event(type, opts)` 产标准 event 对象
     //    （instanceof Event 成立），stop/preventDefault 上原型（共享，非每次派发注入）。
