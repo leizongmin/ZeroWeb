@@ -1726,3 +1726,103 @@ fn test_canvas_slice2_r2796() {
     assert_eq!(sandbox.execute("__cx.lineCap").unwrap().value, "square");
     assert_eq!(sandbox.execute("String(__cx.lineWidth)").unwrap().value, "3");
 }
+
+#[test]
+fn test_form_select_multiple_and_fieldset_disabled_r3056() {
+    // R3056：collect_form_data 精化——<select multiple> 全选 selected option + <fieldset disabled> 联动禁用后代控件。
+    let base = "https://example.com/page";
+
+    // ① select multiple：全部 selected option 各入一项（name=val&name=val2，文档序）。
+    let html = "<html><body><form id='f' action='/s'>\
+        <select name='top' multiple>\
+          <option value='a'>A</option>\
+          <option value='b' selected>B</option>\
+          <option value='c' selected>C</option>\
+          <option value='d'>D</option>\
+        </select>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html, "#f", None, base),
+        Some("https://example.com/s?top=b&top=c".to_string()),
+        "select multiple：全部 selected option 各入（b & c）"
+    );
+
+    // ② select multiple 无 selected → 不提交（区别于单选「默认首项」quirk）。
+    let html2 = "<html><body><form id='f' action='/s'><select name='top' multiple><option>a</option><option>b</option></select></form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html2, "#f", None, base),
+        Some("https://example.com/s".to_string()),
+        "select multiple 无 selected → 不提交（无 name=top）"
+    );
+
+    // ③ select multiple 中 selected 但 disabled 的 option → 跳过。
+    let html3 = "<html><body><form id='f' action='/s'>\
+        <select name='top' multiple>\
+          <option value='a' selected disabled>A</option>\
+          <option value='b' selected>B</option>\
+        </select>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html3, "#f", None, base),
+        Some("https://example.com/s?top=b".to_string()),
+        "select multiple：disabled selected option 跳过（仅 b）"
+    );
+
+    // ④ 单选 select：selected option disabled → 回落首个未 disabled option（spec 默认选中 quirk）。
+    let html4 = "<html><body><form id='f' action='/s'>\
+        <select name='top'>\
+          <option value='a' selected disabled>A</option>\
+          <option value='b'>B</option>\
+        </select>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html4, "#f", None, base),
+        Some("https://example.com/s?top=b".to_string()),
+        "单选：selected option disabled → 回落首个未 disabled option（b）"
+    );
+
+    // ⑤ fieldset disabled：后代控件全部跳过（即使控件自身无 disabled）。
+    let html5 = "<html><body><form id='f' action='/s'>\
+        <input name='a' value='1'>\
+        <fieldset disabled>\
+          <input name='b' value='2'>\
+          <input name='c' value='3'>\
+        </fieldset>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html5, "#f", None, base),
+        Some("https://example.com/s?a=1".to_string()),
+        "fieldset disabled：内部控件 b/c 跳过（仅 a=1）"
+    );
+
+    // ⑥ fieldset 未 disabled：后代控件正常提交。
+    let html6 = "<html><body><form id='f' action='/s'>\
+        <fieldset><input name='a' value='1'></fieldset>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html6, "#f", None, base),
+        Some("https://example.com/s?a=1".to_string()),
+        "fieldset 未 disabled：内部控件正常提交"
+    );
+
+    // ⑦ POST 表单同样遵循 fieldset disabled + select multiple（form_post_submission 复用 collect_form_data）。
+    let html7 = "<html><body><form id='f' method='post' action='/s'>\
+        <select name='t' multiple><option value='x' selected>X</option><option value='y' selected>Y</option></select>\
+        <fieldset disabled><input name='skip' value='z'></fieldset>\
+        </form></body></html>";
+    assert_eq!(
+        form_post_submission(html7, "#f", None, base),
+        Some(("https://example.com/s".to_string(), "t=x&t=y".to_string())),
+        "POST 表单：select multiple + fieldset disabled 一致（body=t=x&t=y，skip 跳过）"
+    );
+
+    // ⑧ 嵌套 fieldset：外层 disabled 联动内层控件（祖先链上行命中）。
+    let html8 = "<html><body><form id='f' action='/s'>\
+        <fieldset disabled><fieldset><input name='deep' value='1'></fieldset></fieldset>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html8, "#f", None, base),
+        Some("https://example.com/s".to_string()),
+        "嵌套 fieldset disabled：内层控件 deep 跳过（祖先链）"
+    );
+}

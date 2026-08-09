@@ -1358,10 +1358,10 @@ pub fn has_attribute(html: &str, selector: &str, name: &str) -> bool {
 /// spec 默认选中 quirk）值=`value` 属性或文本；textarea：文本内容。submitter（type=submit 且有 name）的
 /// name=value 入数据集（spec：激活的提交按钮参与提交）。
 ///
-/// **已知限制（defer）**：① `<input type=file>`（无真文件）；② `<select multiple>`（按单选处理，取首个
-/// selected）；③ `<input type=image>` 的 name.x/name.y 坐标；④ `<input type=image>` / button 无 value 时
-/// submitter 值 spec 默认值近似；⑤ `<fieldset disabled>` 联动禁用子控件（仅判控件自身 disabled）。
-/// GET 表单（搜索/过滤表单，web 最高频表单导航形态）全覆盖；POST 见 [`form_post_submission`]。
+/// **已知限制（defer）**：① `<input type=file>`（无真文件）；② `<input type=image>` 的 name.x/name.y 坐标；
+/// ③ `<input type=image>` / button 无 value 时 submitter 值 spec 默认值近似；④ disabled fieldset 的首个
+/// `<legend>` 子内控件豁免（spec，罕见）。GET 表单全覆盖；POST 见 [`form_post_submission`]。
+/// select multiple（R3056）+ fieldset disabled 联动（R3056）+ option disabled 已实现。
 ///
 /// https://html.spec.whatwg.org/#constructing-the-form-data-set
 /// https://url.spec.whatwg.org/#concept-urlencoded-serializer
@@ -1397,7 +1397,8 @@ pub fn form_get_submission_url(
 /// 复用 [`collect_form_data`]，控件收集规则与 GET 完全一致）。action_url 不含 query（POST 数据在 body）。
 ///
 /// **已知限制（defer）**：① `enctype=multipart/form-data`（headless 近似 urlencoded，独立切片）；
-/// ② 同 R3054（file/multiple/image 坐标/fieldset disabled）。POST 登录/提交表单（urlencoded enctype，默认）全覆盖。
+/// ② 同 GET（file/image 坐标/disabled-legend 豁免）。POST 登录/提交表单（urlencoded enctype，默认）全覆盖。
+/// select multiple + fieldset disabled 联动 + option disabled 已实现（R3056）。
 pub fn form_post_submission(
     html: &str,
     form_sel: &str,
@@ -1463,12 +1464,12 @@ fn collect_form_data(
     collect_form_controls(&doc, form, &mut controls);
     let mut pairs: Vec<(String, String)> = Vec::new();
     for ctrl in controls {
-        // 跳过无 name / disabled（spec：disabled 不参与提交）。
+        // 跳过无 name / disabled（spec：disabled 不参与提交；R3056 含 fieldset disabled 联动）。
         let name = doc.get_attribute(ctrl, "name").unwrap_or_default();
         if name.is_empty() {
             continue;
         }
-        if doc.get_attribute(ctrl, "disabled").is_some() {
+        if is_control_disabled(&doc, ctrl) {
             continue;
         }
         let tag = element_local_name(&doc, ctrl).to_ascii_lowercase();
@@ -1494,17 +1495,36 @@ fn collect_form_data(
                 _ => pairs.push((name, doc.get_attribute(ctrl, "value").unwrap_or_default())),
             },
             "select" => {
-                // 单选近似（multiple 按单选：首个 selected，无则首 option，spec 默认选中 quirk）。
+                // R3056：multiple → 全部 selected 且未 disabled 的 option 各入一项（spec）；无 selected 则不提交
+                //（与单选「默认首项」quirk 不同）。单选 → 首个 selected 且未 disabled option（无则首个未 disabled option）。
                 let mut opts: Vec<NodeId> = Vec::new();
                 collect_form_controls_tag(&doc, ctrl, "option", &mut opts);
-                let chosen = opts
-                    .iter()
-                    .copied()
-                    .find(|o| doc.get_attribute(*o, "selected").is_some())
-                    .or_else(|| opts.first().copied());
-                if let Some(opt) = chosen {
-                    let val = doc.get_attribute(opt, "value").unwrap_or_else(|| doc.inner_html(opt));
-                    pairs.push((name, val));
+                let is_multiple = doc.get_attribute(ctrl, "multiple").is_some();
+                if is_multiple {
+                    for opt in opts {
+                        let enabled = doc.get_attribute(opt, "disabled").is_none();
+                        let selected = doc.get_attribute(opt, "selected").is_some();
+                        if enabled && selected {
+                            let val = doc.get_attribute(opt, "value").unwrap_or_else(|| doc.inner_html(opt));
+                            pairs.push((name.clone(), val));
+                        }
+                    }
+                } else {
+                    let chosen = opts
+                        .iter()
+                        .copied()
+                        .find(|o| {
+                            doc.get_attribute(*o, "disabled").is_none() && doc.get_attribute(*o, "selected").is_some()
+                        })
+                        .or_else(|| {
+                            opts.iter()
+                                .copied()
+                                .find(|o| doc.get_attribute(*o, "disabled").is_none())
+                        });
+                    if let Some(opt) = chosen {
+                        let val = doc.get_attribute(opt, "value").unwrap_or_else(|| doc.inner_html(opt));
+                        pairs.push((name, val));
+                    }
                 }
             }
             "textarea" => {
@@ -1568,6 +1588,23 @@ fn element_local_name(doc: &Document, node: NodeId) -> &str {
             _ => None,
         })
         .unwrap_or("")
+}
+
+/// 控件是否禁用（spec「disable 属性」barred-the-second-constraint）：自身 `disabled` 属性 OR 任一祖先
+/// `<fieldset>` 有 `disabled` 属性（fieldset disabled 联动禁用全部后代控件，R3056）。供 [`collect_form_data`]
+/// 跳过禁用控件。legend 豁免 defer（spec：disabled fieldset 首个 `<legend>` 子内控件不禁用，罕见场景）。
+fn is_control_disabled(doc: &Document, ctrl: NodeId) -> bool {
+    if doc.get_attribute(ctrl, "disabled").is_some() {
+        return true;
+    }
+    let mut cur = doc.parent_node(ctrl);
+    while let Some(p) = cur {
+        if element_local_name(doc, p).eq_ignore_ascii_case("fieldset") && doc.get_attribute(p, "disabled").is_some() {
+            return true;
+        }
+        cur = doc.parent_node(p);
+    }
+    false
 }
 
 /// 元素的全部属性本地名（`|` 分隔，文档顺序）；无属性或元素不解析返空串。供 `__zw_attr_names`
