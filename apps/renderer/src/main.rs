@@ -327,6 +327,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &current_url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             let fetch_from_cache = |url: &str| {
                 fetch_cache
@@ -477,6 +478,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::tick_observers(&mut ctx)
         };
@@ -498,6 +500,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::apply_text_input(&mut ctx, selector, key)
         };
@@ -518,6 +521,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::apply_text_delete(&mut ctx, selector)
         };
@@ -539,6 +543,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::apply_submit_on_enter(&mut ctx, selector)
         };
@@ -564,6 +569,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::apply_submit_on_click(&mut ctx, selector)
         };
@@ -622,6 +628,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::apply_reset_on_click(&mut ctx, selector)
         };
@@ -644,6 +651,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::apply_set_hash_on_click(&mut ctx, selector)
         };
@@ -665,6 +673,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::apply_javascript_href(&mut ctx, selector)
         };
@@ -685,6 +694,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::apply_toggle_checkbox(&mut ctx, selector)
         };
@@ -705,6 +715,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::apply_toggle_radio(&mut ctx, selector)
         };
@@ -734,6 +745,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             changed |=
                 page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "blur", None).html_changed;
@@ -762,6 +774,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focus", None).html_changed
         };
@@ -784,6 +797,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focus", None).html_changed
         };
@@ -1101,6 +1115,7 @@ impl RendererRuntime {
                 html: &mut self.cached_html,
                 url: &current_url,
                 js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
             };
             let result = dispatch_dom_event(&mut ctx, js_enabled, &sel, event_type, detail.as_ref());
             if result.html_changed {

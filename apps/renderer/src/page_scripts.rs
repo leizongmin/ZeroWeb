@@ -41,6 +41,9 @@ pub struct PageScriptContext<'a> {
     pub url: &'a str,
     /// JS worker。
     pub js_worker: &'a RendererJsWorker,
+    /// WebView（M3-S9 活 DOM 路径）：Some 时 DOM 变更直接应用活 DOM（免 HTML 往返），
+    /// None 时回退 HTML 回写（测试/无 webview 场景）。
+    pub webview: Option<&'a mut zero_webview::WebView>,
 }
 
 /// 按文档顺序执行页面脚本。
@@ -570,6 +573,26 @@ fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Opti
     if recorded.is_empty() {
         return None;
     }
+    // M3-S9：webview 在场时 DOM 变更直接应用活 DOM（pipeline.cached_doc，免 HTML
+    // 往返重 parse——与 browser tab_scripts 同机制）；无 webview（测试）回退 HTML 回写。
+    if let Some(wv) = ctx.webview.as_deref_mut() {
+        return match wv.apply_dom_mutations_and_render(&recorded) {
+            Ok((_render, new_html, handle_selectors)) => {
+                // P1a gBCR path A：merge handle→唯一选择器映射进 worker 持久 map。
+                if !handle_selectors.is_empty()
+                    && let Ok(mut map) = ctx.js_worker.handle_selector_map().lock()
+                {
+                    map.extend(handle_selectors);
+                }
+                *ctx.html = new_html.clone();
+                Some(new_html)
+            }
+            Err(e) => {
+                warn!("apply DOM mutations: {e}");
+                None
+            }
+        };
+    }
     match apply_mutations_to_html_with_handles(html, &recorded) {
         Ok((new_html, handle_selectors)) => {
             // P1a gBCR path A：merge handle→唯一选择器映射进 worker 持久 map，供 RectBridge
@@ -630,6 +653,7 @@ mod tests {
             html: &mut buf,
             url: "https://example.com/page",
             js_worker: worker,
+            webview: None,
         };
         let _ = run_page_scripts(&mut ctx, true, |_u| Err::<String, String>("no external fetch".into()));
     }
@@ -1033,6 +1057,7 @@ mod tests {
                 html: &mut buf,
                 url: "https://example.com/page",
                 js_worker: &worker,
+                webview: None,
             };
             apply_reset_on_click(&mut ctx, "#r")
         };
@@ -1051,6 +1076,7 @@ mod tests {
                 html: &mut buf2,
                 url: "https://example.com/page",
                 js_worker: &worker,
+                webview: None,
             };
             apply_reset_on_click(&mut ctx, "#t")
         };
@@ -1079,6 +1105,7 @@ mod tests {
                 html: &mut buf,
                 url: "https://example.com/page",
                 js_worker: &worker,
+                webview: None,
             };
             apply_set_hash_on_click(&mut ctx, "#a")
         };
@@ -1107,6 +1134,7 @@ mod tests {
                 html: &mut buf2,
                 url: "https://example.com/page",
                 js_worker: &worker,
+                webview: None,
             };
             apply_set_hash_on_click(&mut ctx, "#u")
         };
@@ -1138,6 +1166,7 @@ mod tests {
                 html: &mut buf,
                 url: "https://example.com/page",
                 js_worker: &worker,
+                webview: None,
             };
             apply_submit_on_click(&mut ctx, "#b")
         };
@@ -1159,6 +1188,7 @@ mod tests {
                 html: &mut buf2,
                 url: "https://example.com/page",
                 js_worker: &worker,
+                webview: None,
             };
             apply_submit_on_click(&mut ctx, "#b")
         };
@@ -1181,6 +1211,7 @@ mod tests {
                 html: &mut buf3,
                 url: "https://example.com/page",
                 js_worker: &worker,
+                webview: None,
             };
             apply_submit_on_click(&mut ctx, "#nb")
         };
@@ -1206,6 +1237,7 @@ mod tests {
                 html: &mut buf,
                 url: "https://example.com/page",
                 js_worker: &worker,
+                webview: None,
             };
             apply_javascript_href(&mut ctx, "#a")
         };
@@ -1224,6 +1256,7 @@ mod tests {
                 html: &mut buf2,
                 url: "https://example.com/page",
                 js_worker: &worker,
+                webview: None,
             };
             apply_javascript_href(&mut ctx, "#e")
         };
@@ -1238,6 +1271,7 @@ mod tests {
                 html: &mut buf3,
                 url: "https://example.com/page",
                 js_worker: &worker,
+                webview: None,
             };
             apply_javascript_href(&mut ctx, "#u")
         };
