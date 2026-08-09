@@ -1806,3 +1806,56 @@ fn test_scroll_into_view_r3060() {
     sandbox.execute("globalThis.__sc=0; var e=document.createElement('div'); e.scrollIntoView();").unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__sc)").unwrap().value, "0", "detached 元素无 rect → scrollIntoView no-op（不派 scroll）");
 }
+
+#[test]
+fn test_hash_scroll_to_anchor_r3061() {
+    // R3061：location.hash= 设值（含 <a href="#sec"> click 经 R3053 路径）滚到锚元素（id/name=hash），
+    // 闭合 R3053 限制①。复用 R3060 scrollIntoView（更新 scrollTop + 派 scroll 事件）。无匹配元素 → 不滚。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id='sec'>x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    // mock rect：非 handle 选择器 → "0,500,100,50"（y=500）；handle（detached）→ 空。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| match args.first() {
+            Some(s) if s.starts_with("__") => String::new(),
+            _ => "0,500,100,50".to_string(),
+        }),
+    );
+
+    assert_eq!(sandbox.execute("window.scrollY").unwrap().value, "0", "初始 scrollY=0");
+    sandbox.execute("globalThis.__hc=0; addEventListener('hashchange', function(){ globalThis.__hc++; });").unwrap();
+
+    // ① location.hash='#sec' → 滚到 #sec 元素（y=500）+ hashchange（R3006 不受影响）。
+    sandbox.execute("location.hash = '#sec';").unwrap();
+    assert_eq!(
+        sandbox.execute("window.scrollY").unwrap().value,
+        "500",
+        "location.hash='#sec' -> 滚到 #sec 元素（scrollY=500）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hc)").unwrap().value,
+        "1",
+        "hashchange 仍派发（R3006 不受 R3061 滚锚影响）"
+    );
+
+    // ② 无匹配元素的 hash（#nope）→ 不滚（scrollY 不变）但 hashchange 派发。
+    sandbox.execute("globalThis.__hc=0; location.hash = '#nope';").unwrap();
+    assert_eq!(
+        sandbox.execute("window.scrollY").unwrap().value,
+        "500",
+        "无匹配元素 -> 不滚（scrollY 保持 500）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hc)").unwrap().value,
+        "1",
+        "无匹配元素 -> hashchange 仍派发"
+    );
+}

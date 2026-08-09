@@ -1833,6 +1833,20 @@
     var newHref = oldHref.split('#')[0] + h;
     if (newHref === oldHref) return; // hash 未变 → no-op（spec：不派 hashchange）
     _pushHistNav(newHref, oldHref);
+    // R3061：滚到锚元素（id 或 name = hash 去 '#'）——闭合 R3053 限制①。real browser 同文档片段导航滚锚
+    //（<a href="#sec"> 点击 / location.hash= 编程设值均滚到 id="sec" 或 name="sec" 元素）。headless 无真
+    // viewport → scrollIntoView 更新 scrollTop（R3060）+ 派 scroll 事件（documented 近似）。无匹配元素 → 不滚。
+    var frag = h.charAt(0) === '#' ? h.slice(1) : '';
+    if (frag && globalThis.document) {
+      var anchor = null;
+      try { anchor = globalThis.document.getElementById(frag); } catch (_e) {}
+      if (!anchor) {
+        try { anchor = globalThis.document.querySelector('[name="' + frag + '"]'); } catch (_e) {}
+      }
+      if (anchor && typeof anchor.scrollIntoView === 'function') {
+        try { anchor.scrollIntoView(); } catch (_e) {}
+      }
+    }
   }
 
   // R3008：`location.href/pathname/search = v` setter——经 URL part setter 计算新 href（spec-correct 组件替换，
