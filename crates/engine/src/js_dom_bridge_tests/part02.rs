@@ -1223,6 +1223,37 @@ fn test_script_call_form_reset_r3050() {
 }
 
 #[test]
+fn test_script_dispatch_native_event_r3124() {
+    // R3124：script_dispatch_native_event 生成经原生绑定派发的 IIFE。
+    // ① typeof 守卫（__zw_native_query_selector 未定义时 no-op，防 ReferenceError）。
+    // ② event 对象丰富化：{type, target:t, currentTarget:t, bubbles:true}（闭合 R3121 限制① bare {type}）。
+    // ③ 选择器 / 事件类型经 escape_js_string 安全嵌入（引号转义）。
+    let s = script_dispatch_native_event("#btn", "click");
+    assert!(
+        s.contains("typeof __zw_native_query_selector!=='function'"),
+        "含 typeof 守卫（未安装绑定时 no-op）\n{s}"
+    );
+    assert!(
+        s.contains("dispatchEvent({type:'click',target:t,currentTarget:t,bubbles:true})"),
+        "dispatchEvent 调丰富 event 对象（type/target/currentTarget/bubbles）\n{s}"
+    );
+    assert!(
+        s.contains("__zw_native_query_selector('#btn')"),
+        "选择器安全嵌入\n{s}"
+    );
+    // 选择器转义：嵌入引号经 escape_js_string 转义（不破坏 JS 串）。
+    let s2 = script_dispatch_native_event("#a'b", "input");
+    assert!(
+        s2.contains("\\'#a\\'b'") || !s2.contains("'#a'b'"),
+        "选择器引号转义（不裸含 '#a'b'）\n{s2}"
+    );
+    assert!(
+        s2.contains("type:'input'"),
+        "事件类型嵌入\n{s2}"
+    );
+}
+
+#[test]
 fn test_anchor_hash_target_r3053() {
     // R3053：anchor_hash_target 解析 <a href="#..."> click 的 hash 目标（供 renderer click 路由
     // 判定是否设 location.hash，闭合 R3052 限制③）。返回 Some(hash)（含前导 '#'）当 <a> 且 href 以 '#' 开头。

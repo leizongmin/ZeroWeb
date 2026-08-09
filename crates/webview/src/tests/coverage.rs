@@ -604,6 +604,31 @@ fn test_native_host_dispatch_event_r3121() {
     );
 }
 
+// ── P1b host→page native event 对象丰富化（本轮 R3124）──
+
+// native_dom=true → host dispatch_event 派发的 native event 不再是 bare {type}，而带
+// target/currentTarget（= 目标元素，解锁 e.target 高频读）+ bubbles:true。闭合 R3121 限制①。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_dispatch_event_enriched_r3124() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html("<html><body><div id=\"b\"></div></body></html>", None);
+    // native 监听器捕获 event，记录 type/target===el/currentTarget===el/bubbles。
+    wv.execute_script(
+        "(()=>{ const el=__zw_native_element_for_id('b');\
+         el.addEventListener('click', (e)=>{\
+         globalThis.__ev = e.type + '/' + (e.target===el) + '/' + (e.currentTarget===el) + '/' + e.bubbles;\
+         }); return 'registered'; })()",
+    )
+    .unwrap();
+    wv.dispatch_event("#b", "click").unwrap();
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ev || 'none')").unwrap(),
+        "click/true/true/true",
+        "native event 带 type/target/currentTarget/bubbles"
+    );
+}
+
 // ── P1b 完整 Attr 节点（本轮 R3122）──
 
 // native_dom=true → getNamedItem 返 Attr 节点（nodeType=2/name/value/ownerElement），非 plain 对象。

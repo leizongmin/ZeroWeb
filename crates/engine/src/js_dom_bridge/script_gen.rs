@@ -49,18 +49,29 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
     format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")
 }
 
-/// 构造「经原生绑定派发 DOM 事件」的脚本（P1b host→page native 派发，R3121）。宿主在
-/// `native_dom` 开启时于 polyfill 派发（[`script_dispatch_dom_event`]）**之外额外**执行：
+/// 构造「经原生绑定派发 DOM 事件」的脚本（P1b host→page native 派发，R3121；event 对象丰富化 R3124）。
+/// 宿主在 `native_dom` 开启时于 polyfill 派发（[`script_dispatch_dom_event`]）**之外额外**执行：
 /// 经 `__zw_native_query_selector(sel)` 解析目标节点（返 native 元素对象，internal slot 存 NodeId）
-/// → 调原生 `dispatchEvent({type})`，触发该节点经 native `addEventListener` 注册的监听器（存于
+/// → 调原生 `dispatchEvent(event)`，触发该节点经 native `addEventListener` 注册的监听器（存于
 /// engine `dom_bindings::gc::LISTENERS`，polyfill `__zw_dispatch_event` 不达，闭合 S4 host 驱动半边）。
-/// 无匹配节点（querySelector 返 null）→ IIFE 守卫 no-op。选择器 / 事件类型经
-/// [`escape_js_string`] 安全嵌入。复用既有 native 工厂 + dispatchEvent 绑定，零新 engine 代码。
+///
+/// **event 对象（R3124）**：不再是 bare `{type}`，而带 `target`/`currentTarget`（= 目标节点 `t`，解锁
+/// `e.target`/`e.currentTarget` 高频读——事件委托 / 区域检测 / 框架钩子）+ `bubbles:true`（UI 事件
+/// click/input/change/submit/keydown 默认冒泡；native `dispatchEvent` 本身**不冒泡**——R3109 限制，
+/// bubbles 字段仅为监听器可读的语义标记，真实冒泡待后续）。闭合 R3121 限制①。
+///
+/// **typeof 守卫**：`__zw_native_query_selector` 仅 native 绑定安装时定义（WebView 进程内沙箱）；
+/// 未安装（生产 worker 沙箱，L2 前）→ 守卫 early-return no-op，**避免 ReferenceError 中断派发**
+///（信任边界输入校验：生成的串可安全注入任意沙箱）。无匹配节点（querySelector 返 null）→ 第二层
+/// 守卫 no-op。选择器 / 事件类型经 [`escape_js_string`] 安全嵌入。复用既有 native 工厂 + dispatchEvent
+/// 绑定，零新 engine 代码。
 pub fn script_dispatch_native_event(selector: &str, event_type: &str) -> String {
     let esc_sel = escape_js_string(selector);
     let esc_ty = escape_js_string(event_type);
     format!(
-        "(function(){{var t=__zw_native_query_selector('{esc_sel}');if(t)t.dispatchEvent({{type:'{esc_ty}'}});}})()"
+        "(function(){{if(typeof __zw_native_query_selector!=='function')return;\
+var t=__zw_native_query_selector('{esc_sel}');\
+if(t)t.dispatchEvent({{type:'{esc_ty}',target:t,currentTarget:t,bubbles:true}});}})()"
     )
 }
 
