@@ -1007,6 +1007,48 @@ return log.join(',');})()";
     );
 }
 
+// ── R3130 preventDefault → dispatchEvent 返值语义 ──
+
+/// cancelable 事件 + 监听器 preventDefault → dispatchEvent 返 false（spec：cancelable 被阻止）。
+#[test]
+fn native_dispatch_event_prevent_default_returns_false_r3130() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{\
+const el=__zw_native_element_for_id('a');\
+el.addEventListener('e',e=>{e.preventDefault();});\
+return el.dispatchEvent(new Event('e',{cancelable:true}));})()";
+    assert_eq!(
+        run_script(html, script),
+        "false",
+        "cancelable 事件被 preventDefault → dispatchEvent 返 false"
+    );
+}
+
+/// cancelable 事件无 preventDefault → 返 true；非 cancelable 事件 + preventDefault → 返 true
+///（preventDefault 对非 cancelable no-op，不影响返值）。
+#[test]
+fn native_dispatch_event_return_value_matrix_r3130() {
+    let html = r#"<div id="a"></div>"#;
+    // cancelable 无 preventDefault → true。
+    let no_prevent = "(()=>{const el=__zw_native_element_for_id('a');\
+el.dispatchEvent(new Event('e',{cancelable:true}));\
+return el.dispatchEvent(new Event('e2',{cancelable:true}));})()";
+    assert_eq!(
+        run_script(html, no_prevent),
+        "true",
+        "cancelable 无 preventDefault → true"
+    );
+    // 非 cancelable + preventDefault → true（preventDefault no-op）。
+    let non_cancel = "(()=>{const el=__zw_native_element_for_id('a');\
+el.addEventListener('e',e=>{e.preventDefault();});\
+return el.dispatchEvent(new Event('e'));})()"; // cancelable 缺省 false
+    assert_eq!(
+        run_script(html, non_cancel),
+        "true",
+        "非 cancelable + preventDefault → true"
+    );
+}
+
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
 //
 // HTML: <div id="root"><span id="s1">hello</span><span id="s2"></span></div>

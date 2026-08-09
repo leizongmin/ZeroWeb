@@ -119,8 +119,10 @@ pub(super) fn native_stop_immediate_invoke(
 ///（支持同 event 对象重派发）。监听器调 stopPropagation → 当前节点监听器全尽后止后续节点；
 /// stopImmediatePropagation → 立即终止（当前桶剩余 + 后续）。两 flag 跨阶段生效（capture 阶段止则 target/bubble 不派发）。
 ///
-/// **限制**（后续切片）：① 无 preventDefault 返值语义（恒返 true）；② target 阶段 capture/bubble 桶
-/// 顺序固定（capture 先、bubble 后），非 spec 注册序（min-or-correct）。返 true（spec：未 preventDefault）。
+/// **返值语义**（R3130）：返 `!(cancelable && defaultPrevented)`（spec：cancelable 事件被 preventDefault
+/// 则返 false，否则 true）。preventDefault 由 Event 原型方法（R3127/R3129）设 `defaultPrevented=true`（仅 cancelable）。
+///
+/// **限制**（后续切片）：① target 阶段 capture/bubble 桶顺序固定（capture 先、bubble 后），非 spec 注册序（min-or-correct）。
 pub(super) fn native_dispatch_event_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -288,5 +290,13 @@ pub(super) fn native_dispatch_event_invoke(
     if let Some(k) = &key_phase {
         let _ = event_obj.set(scope, (*k).into(), v8::Integer::new(scope, 0).into());
     }
-    rv.set(v8::Boolean::new(scope, true).into());
+    // R3130 返值语义：dispatchEvent 返 `!(cancelable && defaultPrevented)`（spec `dom-eventtarget-dispatch-event`
+    // 返 false 当 cancelable 事件被 preventDefault；preventDefault 由 R3127/R3129 原型方法设 defaultPrevented）。
+    let cancelable = v8::String::new(scope, "cancelable")
+        .and_then(|k| event_obj.get(scope, k.into()))
+        .is_some_and(|v| v.is_true());
+    let default_prevented = v8::String::new(scope, "defaultPrevented")
+        .and_then(|k| event_obj.get(scope, k.into()))
+        .is_some_and(|v| v.is_true());
+    rv.set(v8::Boolean::new(scope, !(cancelable && default_prevented)).into());
 }
