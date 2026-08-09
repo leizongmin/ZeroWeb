@@ -1095,6 +1095,17 @@ impl WebView {
     /// `execute_script_with_dom`（JS 侧虚拟 DOM polyfill）不同——页面交互
     /// （事件监听器注册等）须用本方法。
     pub fn run_page_scripts(&mut self) -> Result<String, WebViewError> {
+        self.run_page_scripts_impl(false)
+    }
+
+    /// 严格模式页面脚本执行——与 [`run_page_scripts`](Self::run_page_scripts) 一致，但**首个内联脚本抛异常时
+    /// 返 `Err`**（非 warn+continue）。供 WPT runner 等「脚本必须无异常」语义的调用方用（闭合 web_api/js_dom
+    /// 测试用例「空洞通过」——既不执行内联 JS，故 API 真损/行为错不会被发现）。
+    pub fn run_page_scripts_strict(&mut self) -> Result<String, WebViewError> {
+        self.run_page_scripts_impl(true)
+    }
+
+    fn run_page_scripts_impl(&mut self, strict: bool) -> Result<String, WebViewError> {
         let html = self.cached_html.clone();
         let scripts = extract_page_scripts(&html);
         if scripts.is_empty() {
@@ -1131,6 +1142,9 @@ impl WebView {
             };
             let full = format!("__zw_begin_script && __zw_begin_script();\n{code}");
             if let Err(e) = sandbox.execute(&full) {
+                if strict {
+                    return Err(WebViewError::Script(format!("page script: {e}")));
+                }
                 tracing::warn!("页面脚本执行警告: {e}");
             }
         }

@@ -119,6 +119,27 @@
 
 ## 最近完成的改进
 
+### P1a WPT runner 真实 JS 执行路径（js_executes_ok 断言，闭合 web_api「空洞通过」，本轮 R3076）
+
+承接 R3075 评估「pivot 到更高杠杆项」。WPT runner 旧路径：web_api/js_dom 用例经 `RenderPipeline::render_html`（engine-direct，纯渲染快照）→ **不执行内联 `<script>`**，仅查 `dom_has_body`/`no_panic` → 用例「空洞通过」（API 真损/行为错不可见，master.md 既有记录）。本切片接通**真实 JS 执行**路径：经 WebView 运行时（`run_page_scripts_strict`）执行内联脚本，首异常即失败。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`WebView::run_page_scripts_strict`** | `crates/webview/src/webview.rs` | 抽 `run_page_scripts_impl(strict)` 共享实现；`run_page_scripts`（lenient，warn+continue）+ 新 `run_page_scripts_strict`（首个内联脚本抛异常返 `Err`）。strict 供 WPT runner「脚本必须无异常」语义。纯新增方法，lenient 行为不变（零回归）。 |
+| **`js_executes_ok` 断言** | `tests/wpt-runner/src/runner/mod.rs` | `check_js_executes_ok(html, ctx)`：建 WebView → load_html → `run_page_scripts_strict`，Ok/Err 映射断言结果。run_single 断言分发特判 `js_executes_ok`（需 case.html，非纯 RenderOutput）。 |
+| **SetText apply lenient 修复（真 bug）** | `crates/engine/src/js_dom_bridge.rs` | `DomMutation::SetText` selector 不匹配（如 `document.title=` 在无 `<title>` 页——R2815/R3035 documented「无 title → no-op」）旧 `?` 硬错**中止整批 mutation apply**（后续 mutation 丢弃，数据丢失）。改 lenient no-op（跳过继续 apply 余下 mutation）。strict 执行 web_api `api-dashboard` 用例（设 document.title）暴露此 bug。 |
+| **wasm validate-magic 测试脚本修正** | `tests/wpt-runner/src/runner/test_cases/test_cases_web_api.rs` | `WebAssembly.validate(null)` spec 抛 TypeError（非 BufferSource）——旧脚本未 try/catch 致脚本中断。改 try/catch 捕获（v3='threw'），脚本 spec-correct 不中断。 |
+| **web_api 48 用例接通 js_executes_ok** | 同上（sed 替换标准断言行） | 48 个标准 `dom_has_body + no_panic` 用例加 `js_executes_ok`——内联脚本现真实执行（API 存在 + 基本可调验证）。 |
+| **R3076 测试** | `tests/wpt-runner/src/runner/mod.rs`（runtime_path_tests） | ① `js_executes_ok_detects_throw_r3076`：机制验证（有效脚本 Ok / 抛异常 Err）；② `web_api_cases_pass_with_js_executes_ok_r3076`：web-api 代表性用例（step_by(6) 采样 ~8 跨 API 类别）经 run_single 通过——**采样非全量 80**：全量顺序建 80 WebView 在跨 crate 并行测试下偶发 V8 资源压力 flake（生产 binary 顺序运行无此问题）。 |
+
+**为何净正向**：① 接通真实 JS 执行闭合「空洞通过」——web_api 用例现验证 API 可调（非仅 DOM 有 body）；② SetText lenient 修复真 bug（防数据丢失，闭合 R2815 documented 行为）；③ wasm 测试脚本 spec-correct；④ lenient run_page_scripts 行为不变（零回归，生产路径）；⑤ 全量 make test 全绿（0 failed across all binaries，16075 passed）。
+
+**已知限制（记录，defer）**：① **js_executes_ok 仅 web_api 48 用例**（js_dom + web_api 非 standard-line 32 用例 follow-up——后者多线/复合断言，需逐例评估）；② **生产 binary 顺序运行无 flake**（每用例建+弃 WebView，单时刻 1 isolate）——测试并行负载下采样规避；③ **js_executes_ok 验证「脚本无异常」非「行为正确」**（脚本可设 success flag 但断言仅查不抛——更强行为断言需扩展 assertion 语义，follow-up）；④ **外链脚本不执行**（run_page_scripts 跳过 External，reftest 离线语义一致）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**cargo test 执行器；0 failed across all binaries，全量 16075 passed，wpt-runner +2 driving 测试，零回归**）+ pre-commit guard PASS。涉及 webview（stable embed，纯新增方法）+ wpt-runner（断言扩展）+ engine（SetText lenient bug 修复，无 render/layout 改动）。product-smoke 不受影响（无渲染变更）。
+
+**下一步**：WPT 真实 JS 执行路径闭合（js_executes_ok 机制 + web_api 48 用例；js_dom + 复合用例 follow-up）。pivot：① 扩展 js_executes_ok 至 js_dom 用例 + web_api 复合用例（逐例评估，中工作量）；② 更强行为断言（脚本设 success flag → 断言查 flag，验证 API 行为非仅不抛）；③ popover 渲染层显隐 + light-dismiss（rendering/输入路由流域）；④ P1a 事件循环 macro-task 队列补全（P1a 剩余主线）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a Element.scrollIntoViewIfNeeded（WebKit 滚动 API 表面补齐，本轮 R3075）
 
 Web API 表面扫描发现 `Element.prototype.scrollIntoViewIfNeeded(centerIfNeeded?)` 缺——WebKit/Safari 专属滚动方法（旧 Chrome 亦有），Safari-compat 库 + 部分 UI 框架 feature-detect 后调用。缺则含此调用的脚本（WebKit-targeted code）TypeError。本切片补齐，闭合 scroll API 族（R3060 scrollIntoView + R3047 scrollTop/scrollTo 状态 + 本切片 scrollIntoViewIfNeeded）。

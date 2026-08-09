@@ -25,7 +25,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/fetch/request-response".into(),
@@ -41,7 +41,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // WebSocket
@@ -58,7 +58,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // Performance API
@@ -75,7 +75,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/performance/mark-measure".into(),
@@ -99,7 +99,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // Console API
@@ -117,7 +117,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // Timers
@@ -137,7 +137,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // DOM Observers
@@ -154,7 +154,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/observers/intersection-observer".into(),
@@ -168,7 +168,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/observers/resize-observer".into(),
@@ -182,7 +182,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // WebAssembly
@@ -202,7 +202,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // Storage API
@@ -226,7 +226,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/storage/sessionStorage".into(),
@@ -247,7 +247,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // Event Target / CustomEvent
@@ -264,7 +264,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/events/add-remove-listener".into(),
@@ -280,7 +280,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // Navigator API
@@ -298,7 +298,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // URL / Location
@@ -324,7 +324,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // JSON
@@ -343,7 +343,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // Promise / async
@@ -367,7 +367,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // Navigation API
@@ -384,7 +384,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/navigation/location-api".into(),
@@ -398,7 +398,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // Web Storage API 检测
@@ -420,7 +420,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/storage/sessionStorage-set-get".into(),
@@ -439,7 +439,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // DOM API 扩展
@@ -460,7 +460,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/dom/dataset".into(),
@@ -477,7 +477,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/dom/matches-closest".into(),
@@ -496,7 +496,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // Web Workers 存在检测
@@ -513,7 +513,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // WebAssembly 存在检测
@@ -533,7 +533,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // 综合页面
@@ -604,7 +604,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/dom/create-text-node".into(),
@@ -618,7 +618,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/dom/set-attribute".into(),
@@ -634,7 +634,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/dom/inner-html".into(),
@@ -649,7 +649,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/dom/query-selector-all".into(),
@@ -665,7 +665,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/dom/remove-child".into(),
@@ -682,7 +682,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
 
         // ═══════════════════════════════════════════════════════════════
@@ -710,7 +710,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/fetch/response-constructor".into(),
@@ -733,7 +733,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/fetch/headers-ops".into(),
@@ -752,7 +752,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
 
         // ═══════════════════════════════════════════════════════════════
@@ -775,7 +775,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/js/object-methods".into(),
@@ -794,7 +794,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/js/map-set".into(),
@@ -813,7 +813,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/js/error-types".into(),
@@ -833,7 +833,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/js/symbol-iterator".into(),
@@ -851,7 +851,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/js/proxy-reflect".into(),
@@ -867,7 +867,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
 
         // ═══════════════════════════════════════════════════════════════
@@ -887,7 +887,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         TestCase {
             id: "web-api/timers/requestAnimationFrame".into(),
@@ -903,7 +903,7 @@ pub fn web_api_tests() -> Vec<TestCase> {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
 
         // ═══════════════════════════════════════════════════════════════
@@ -1689,7 +1689,7 @@ if (typeof structuredClone === 'function') {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // WebAssembly.validate() 魔术字节检测
         TestCase {
@@ -1703,12 +1703,14 @@ if (typeof structuredClone === 'function') {
                 var invalidWasm = new Uint8Array([0x01, 0x02, 0x03, 0x04]);
                 var v1 = WebAssembly.validate(validWasm);
                 var v2 = WebAssembly.validate(invalidWasm);
-                var v3 = WebAssembly.validate(null);
-                document.getElementById('r').textContent = (v1 && !v2 && !v3) ? 'validate ok' : 'validate fail:' + v1 + ':' + v2 + ':' + v3;
+                // R3076：spec 规定 validate() 对非 BufferSource 抛 TypeError（非返 false）。try/catch 捕获。
+                var v3 = null;
+                try { v3 = WebAssembly.validate(null); } catch (e) { v3 = 'threw'; }
+                document.getElementById('r').textContent = (v1 && !v2 && v3 === 'threw') ? 'validate ok' : 'validate fail:' + v1 + ':' + v2 + ':' + v3;
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // WebAssembly 调用队列基础设施
         TestCase {
@@ -1725,7 +1727,7 @@ if (typeof structuredClone === 'function') {
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
         },
         // WebAssembly 完整桥接页面
         TestCase {

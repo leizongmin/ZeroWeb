@@ -155,6 +155,22 @@ pub fn render_test_html_via_runtime(
     wv.last_render().map(|r| r.primitives.clone()).unwrap_or_default()
 }
 
+/// R3076：`js_executes_ok` 断言——经 WebView 运行时路径**真实执行**内联 `<script>`（strict：首个脚本抛异常即失败）。
+/// 闭合 web_api/js_dom 测试用例「空洞通过」（既不执行内联 JS → API 真损/行为错不可见）。与纯渲染断言
+/// （dom_has_body/no_panic，仅查渲染快照）互补——本断言验证脚本运行时无异常（API 存在 + 基本可调）。
+fn check_js_executes_ok(html: &str, ctx: &TestContext) -> Result<(), String> {
+    let mut wv = zero_webview::WebView::new(zero_webview::WebViewConfig {
+        width: ctx.viewport_width as u32,
+        height: ctx.viewport_height as u32,
+        ..Default::default()
+    });
+    wv.load_html(html, None);
+    match wv.run_page_scripts_strict() {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("inline script threw: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod runtime_path_tests {
     use super::*;
@@ -168,6 +184,47 @@ mod runtime_path_tests {
         let runtime = render_test_html_via_runtime(html, "", &ctx);
         assert_eq!(engine.primitives.fills.len(), runtime.fills.len());
         assert_eq!(engine.primitives.rounded_rects.len(), runtime.rounded_rects.len());
+    }
+
+    /// R3076：`check_js_executes_ok` 机制验证——有效脚本 Ok，抛异常脚本 Err。
+    #[test]
+    fn js_executes_ok_detects_throw_r3076() {
+        let ctx = TestContext::default();
+        let ok = check_js_executes_ok(
+            r#"<html><body><script>var x = 1 + 2; document.body.dataset.x = x;</script></body></html>"#,
+            &ctx,
+        );
+        assert!(ok.is_ok(), "valid script → Ok, got: {ok:?}");
+        let threw = check_js_executes_ok(
+            r#"<html><body><script>undefinedFunctionR3076();</script></body></html>"#,
+            &ctx,
+        );
+        assert!(threw.is_err(), "throwing script → Err, got: {threw:?}");
+    }
+
+    /// R3076：web-api 代表性用例经 run_single（含 js_executes_ok 断言）通过——闭合「空洞通过」回归门。
+    /// 采样 8 个跨 API 类别（fetch/websocket/performance/console/timer/observer/wasm）用例，避免全量 80 用例
+    /// 各建 WebView 在跨 crate 并行测试下触发 V8 资源压力 flake（顺序建 80 isolate + 并行 load 偶发 init 失败）。
+    #[test]
+    fn web_api_cases_pass_with_js_executes_ok_r3076() {
+        let ctx = TestContext::default();
+        let cases = filter_tests_by_category(&builtin_tests(), "web-api");
+        let sampled: Vec<&TestCase> = cases
+            .iter()
+            .filter(|c| c.assertions.iter().any(|a| a == "js_executes_ok"))
+            // 每 6 个取 1 个，跨 API 类别采样 ~8 个代表（fetch→wasm 全谱）。
+            .step_by(6)
+            .collect();
+        assert!(sampled.len() >= 6, "采样 web-api js_executes_ok 用例 ≥6，got {}", sampled.len());
+        for case in &sampled {
+            let result = run_single(case, &ctx);
+            assert!(
+                result.passed(),
+                "web-api {} 应通过（含 js_executes_ok 真实执行内联脚本）: {}",
+                case.id,
+                result.message
+            );
+        }
     }
 }
 
@@ -213,7 +270,15 @@ pub fn run_single_with_expectations(case: &TestCase, ctx: &TestContext, expectat
             let assertion_results: Vec<(String, Result<(), String>)> = case
                 .assertions
                 .iter()
-                .map(|name| (name.clone(), check_assertion(name, &output)))
+                .map(|name| {
+                    // R3076：js_executes_ok 经 WebView 运行时路径真实执行内联脚本（非纯渲染快照），需 case.html。
+                    let r = if name == "js_executes_ok" {
+                        check_js_executes_ok(&case.html, ctx)
+                    } else {
+                        check_assertion(name, &output)
+                    };
+                    (name.clone(), r)
+                })
                 .collect();
 
             let failed: Vec<&str> = assertion_results

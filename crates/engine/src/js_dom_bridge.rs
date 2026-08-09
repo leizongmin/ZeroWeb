@@ -453,9 +453,12 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 }
             }
             DomMutation::SetText { selector, text } => {
-                let node =
-                    find_by_selector(doc, selector).ok_or_else(|| format!("set_text: no match for {selector}"))?;
-                doc.set_text_content(node, text);
+                // R3076：lenient no-op when selector 不匹配（如 `document.title=` 在无 `<title>` 页——R2815/R3035
+                // documented「无 title → no-op」）。旧 `?` 硬错会**中止整批 mutation apply**（后续 mutation 丢弃，
+                // 数据丢失）。SetText 对不存在元素无操作（real browser 语义）→ 跳过继续 apply 余下 mutation。
+                if let Some(node) = find_by_selector(doc, selector) {
+                    doc.set_text_content(node, text);
+                }
             }
             DomMutation::SetInnerHtml { selector, html } => {
                 let node = find_by_selector(doc, selector)
