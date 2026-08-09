@@ -94,7 +94,7 @@
 9. `webview` 把这条链路包装成嵌入式 API，供 `apps/browser` 或第三方应用调用。
 10. 多进程形态下，`apps/renderer` 作为独立渲染进程承担步骤 2–7，通过 `protocol` IPC 与浏览器主进程交互；`page-runtime` 让这条加载链路在「进程内」和「IPC」两种宿主下走同一套契约。
 
-这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。当前主线是页面 JavaScript / DOM Bridge 原生化（P1a），渲染兼容性（reftest 对齐 Chromium）已降频守成。
+这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。当前主线是 P1b V8 原生 DOM 绑定（P1a DOM/JS Bridge 原生化已主体落地），渲染兼容性（reftest 对齐 Chromium）自 2026-08-09 字体栈重建获批后恢复主动实施。
 
 ## 现在做到哪了
 
@@ -102,7 +102,7 @@
 
 - **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、wasm-sandbox、script-sandbox、page-runtime、product-version、webview 都有可运行代码和对应测试。
 - **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务）已打通，但产品形态、稳定性和真实站点兼容性仍在推进。
-- **当前主线**: 页面 JavaScript / DOM Bridge 原生化（P1a，R30xx 系列：fetch 真实化、MutationObserver / IntersectionObserver / ResizeObserver 真实回调、classList / HTMLCollection / NodeList、getComputedStyle 动态覆盖等）；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）已降频守成——Chromium Oracle 真一致约 47.5%、self-source 约 77%、strict 处低位 plateau，自主 clean-lever 轻量修复面已 11 vein 审计穷尽，当前执行以 plateau-guard 低频回归守卫与文档纠偏为主；残余缺口为 vertical writing modes（部分切片已落地，整体仍 user-gated）、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread），推进结构性深方向需用户点名授权。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
+- **当前主线**: P1b V8 原生 DOM 绑定（2026-08-09 RFC 获批，R3095–R3126 系列：S0 PoC 验证 native ~15.6×、S1 原生只读属性族 + NodeId 映射、S2 生产接线 + 树写/属性写原生、live Document 共享、S3 查询原生、S4 EventTarget 与事件派发/冒泡/stopPropagation 原生化；P1a DOM/JS Bridge 原生化已主体落地）；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）2026-08-04 起降频守成、2026-08-09 字体栈重建 RFC v0.2.3 获批后恢复主动实施——Chromium Oracle 真一致约 47.5%、self-source 约 77%、strict 处低位 plateau，自主 clean-lever 轻量修复面已 11 vein 审计穷尽；残余缺口为 vertical writing modes（部分切片已落地，整体仍 user-gated）、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread），Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
 
 所以今天的 ZeroWeb 是一个内核已成形、产品层在打磨的浏览器工作区，但还不是一个做完的浏览器产品。
 

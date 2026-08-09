@@ -10,7 +10,7 @@ Rally 本来就是跨轮次、跨 session 的长期执行循环。遇到需要�
 
 8. **并行开发（双独立 clone + 同一 main）**：两条 rally 流各跑一个独立 clone（勿同仓多 worktree）；push 前必 `git pull --rebase`（non-fast-forward 常态，自主 rebase、禁强推），commit 小而频繁。
 
-9. 并行时**工作面不重叠**：各流只改自己的 crate/文档域（P1a：engine/dom/script-sandbox/net + zero-web/*；渲染：css-parser/style-system/layout-engine/render-foundation + rendering-compat/*）；共享面（engine、Cargo.lock、imported-tests.txt、wpt-data）冲突 = 碰头信号，暂停一边记入 master.md，不硬解。
+9. 并行时**工作面不重叠**：各流只改自己的 crate/文档域（zero-web 流 P1a/P1b：engine/dom/script-sandbox/net/webview + zero-web/*；渲染：css-parser/style-system/layout-engine/render-foundation + rendering-compat/*）；共享面（engine、Cargo.lock、imported-tests.txt、wpt-data）冲突 = 碰头信号，暂停一边记入 master.md，不硬解。
 
 10. 并行时**归因纪律**：main 是两流组合态，单树全绿 ≠ main 全绿；红灯先 `git log`/bisect 归因到流再修；跨流计数（如渲染文档的测试总数）异步漂移，更新前先 pull 核对；各流只写自己的 goal 控制面。
 
