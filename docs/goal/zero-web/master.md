@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1b RFC §3.2 dom_bindings 子模块拆分（stage 2：event_target.rs）——行为保持重构（本轮 R3117）
+
+承接 R3116（stage 1 namednodemap.rs）。本轮续 §3.2 stage 2：抽 **event_target.rs**（addEventListener/removeEventListener/dispatchEvent），mod.rs 1277→1191（-86）。**行为保持**——同 namednodemap 模式。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **新 event_target.rs 子模块** | `crates/engine/src/dom_bindings/event_target.rs`（97 行） | 搬入 3 个 `pub(super) fn`：`native_add_event_listener_invoke`/`native_remove_event_listener_invoke`/`native_dispatch_event_invoke`。依赖 `super::read_node_id`/`super::string_arg` + `super::gc::{add_listener, remove_listener, listeners_local, encode_node_id}`。pub(super) 供 mod.rs Element 模板注册经 `event_target::` 调。 |
+| **mod.rs 接线更新** | `crates/engine/src/dom_bindings/mod.rs`（1277→1191） | 加 `mod event_target;`；3 处 EventTarget 注册（addEventListener/removeEventListener/dispatchEvent）调点改 `event_target::`；删 3 个搬走的 fn（83 行）+ 清 R3116 遗留的孤儿 `// ── R3112 NamedNodeMap ──` 段头（自身重构清理）；gc 导入删 EventTarget 专用 3 项（add_listener/listeners_local/remove_listener，避 unused 警告）。 |
+
+**为何净正向**：① RFC §3.2 stage 2——mod.rs 减 86 行（1277→1191），累计 R3116+R3117 减 255 行（原 1446）；② **行为保持**（纯 move + 可见性，调用契约不变；make test 1792 engine + 561 webview 计数不变全绿，零回归；EventTarget 4 测 + 全 native 47 测 pass）；③ 同 namednodemap 模式验证可复用（event_target.rs 依赖仅 super::read_node_id/string_arg + gc 助手，自包含）；④ 无性能影响（编译期 move）。
+
+**已知限制（记录，后续）**：① **staged 拆分未完**——mod.rs 仍 1191 行（Element getters/方法 bulk + factories + 共享助手）；factories.rs（全局工厂）+ element.rs（bulk，最大块，需共享助手归位）后续切片；② escape-hatch 可达性不变；③ 仅 V8；④ product-smoke 不适用（native_dom 默认关 + 行为保持）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；engine lib 1792 + webview v8 561 + quickjs 527（计数不变——行为保持）；全 workspace 16185 passed 0 failed 零回归**）。pre-commit guard PASS。
+
+**下一步**：RFC §3.2 stage 2 完成（event_target.rs）。候选：① **§3.2 stage 3：factories.rs**（全局工厂 __zw_native_element_for_id/create_element/query_selector(-all) ~150 行，自包含）；② **§3.2 stage 4：element.rs**（bulk——Element getters/方法，最大块，需共享助手 read_node_id/string_arg/get_or_create_native_element 等归位）；③ **回到 feature 切片**（full Attr 节点 / host→page native 事件派发 / innerHTML setter 等——mod.rs 已减负可续）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b RFC §3.2 dom_bindings 子模块拆分（stage 1：namednodemap.rs）——行为保持重构（本轮 R3116）
 
 承接 R3115（contains）+ mod.rs 增长告警（~1446 行趋近 2000 上限）。本轮启 RFC §3.2 子模块化（staged）：抽 **namednodemap.rs**（element.attributes 集合面，最自包含模块），mod.rs 1446→1277（-169）。**行为保持**——函数 move 到子模块，调用契约不变。
