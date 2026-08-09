@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1b S4 EventTarget native——addEventListener/removeEventListener/dispatchEvent 原生（本轮 R3109）
+
+承接 R3108（L1b caveat ① native 写触发重渲染）。本轮落 **RFC §4 S4**：native Element 模板新增 EventTarget 三方法——监听器经线程局部 `LISTENERS`（`(NodeId ffi, 事件类型) → Vec<Global<Value>>`）持久化，dispatchEvent 在当前 scope 复活 Local 调用。native 元素成完整 EventTarget（escape-hatch 经 `__zw_native_element_for_id('x').addEventListener(...)` 可达）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **LISTENERS 线程局部存储 + 增删查** | `crates/engine/src/dom_bindings/gc.rs` | `thread_local LISTENERS: HashMap<(u64,String), Vec<Global<Value>>>`（存 Value 句柄，调用时降 Function，避 Local<Function>→Local<Value> upcast）。`add_listener` 存 `Global::new(scope, args.get(1))`（强引用跨 scope 持久）；`listeners_local<'s>` 在当前 scope 复活 `Vec<Local<Value>>`（刻意不持 borrow 跨 JS 回调——派发期间 add/remove 再入不 panic；新增监听器不在快照内符合 spec）；`remove_listener` 用 `strict_equals` 身份匹配 retain；`reset()` 清 LISTENERS（导航/重载 + 测试隔离）。**无 finalizer**——节点从 DOM 移除不自动清理监听器（泄漏限制，后续 weak callback）。 |
+| **EventTarget 三方法 + 模板注册** | `crates/engine/src/dom_bindings/mod.rs` | `native_add_event_listener_invoke`（非 function 参 / 空 type 忽略）、`native_remove_event_listener_invoke`（strict_equals 移除）、`native_dispatch_event_invoke`（event 为对象读 `.type` 或字符串；按 type 取监听器快照逐个 `func.call(scope, this, [event])`；**不冒泡**最小切片；返 true）。模板注册 3 个 FunctionTemplate（appendChild/insertBefore/removeChild 之后）。 |
+| **engine 隔离测试 + webview 集成测试** | `crates/engine/src/dom_bindings/tests.rs` + `crates/webview/src/tests/coverage.rs` | engine 4 测（dispatch 触发 / remove 不触发 / type 过滤 / dispatch 返 true）；webview `test_native_event_target_r3109`（execute_script 安装路径含 S4 方法 + removeEventListener）。 |
+
+**为何净正向**：① RFC §4 S4 落地——native Element 成完整 EventTarget（去 polyfill 字符串桥的 addEventListener）；② 监听器 Global<Value> 持久化 + 复活调用模式为后续 host→page 事件派发（`webview.dispatch_event` 触发 native 监听器）铺路；③ kill-switch `native_dom` 默认关 → 零回归（polyfill 事件系统不变；LISTENERS 仅 native_dom 路径写）；④ 复用既有 `install_native_dom_bindings`（R3108）安装路径，webview 无新增接线；⑤ 不冒泡 / 无 finalizer 为已知限制（最小切片，后续）。
+
+**已知限制（记录，后续）**：① **不冒泡**——dispatchEvent 仅触发本元素监听器，不向上传播（spec DOM event flow 后续）；② **无 finalizer**——节点移除不清理监听器（Global 强引用泄漏；后续接 weak callback / Element detach 钩子）；③ **escape-hatch 可达**——标准 `document.getElementById`（polyfill）仍返 polyfill 元素，非 native；native EventTarget 经 `__zw_native_element_for_id` 可达；标准全局桥接 = S6/L2（高风险，后续）；④ **host→page 未接**——`webview.dispatch_event`（经 `__zw_dispatch_event` shim）触发 polyfill 监听器，未触发 native 监听器（后续切片接 host dispatch 扫 native LISTENERS）；⑤ 仅 V8（QuickJS no-op，继承）；⑥ product-smoke 不适用（native_dom 默认关分支）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；engine lib 1771（+4：S4 EventTarget 四测）；webview v8 555（+1：R3109 集成）+ quickjs 527；全 workspace 16158 passed 0 failed 零回归**）。pre-commit guard PASS。
+
+**下一步**：S4 EventTarget native 已落地（escape-hatch 可达）。候选：① **host→page 事件派发接 native 监听器**（`webview.dispatch_event` 经 `__zw_dispatch_event` 时扫描目标 native 元素的 LISTENERS 触发——闭合 native EventTarget 的 host 驱动半边，使 `webview.dispatch_event('click', '#x')` 触发 native addEventListener 注册的回调）；② **事件冒泡**（dispatchEvent 向上传播 parent 链，spec DOM event flow）；③ **L2 polyfill-live**（polyfill 桥迁 Document-直读，native↔polyfill 合一，高风险大改）；④ **contained 表面片**（replaceChild+throw / attributes NamedNodeMap / nodeValue-data setter）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b L1b caveat ①——native 写触发重渲染 + 修 R3107 de-inert red + 修 engine native_insert_before red（本轮 R3108）
 
 承接 R3107（L1b native_dom 接 live Document）。本轮落 **L1b caveat ① 闭合**：native 写（setAttribute/textContent/appendChild 等经 `execute_script` 直改 live `cached_doc`，不经 polyfill `DomMutation` 队列）现在**触发重渲染** → native 写入可见于渲染（"live 且渲染"，去 R3107 限制①）。顺带修两个 red test：① R3107 de-inert 测试此前 red（native 绑定仅 `run_page_scripts_impl` 非空脚本路径安装，`execute_script` 直调路径未装 → `__zw_native_element_for_id` 未定义）；② engine `native_insert_before` 此前 red（`node_id_from_value` 对 undefined/null 参 `to_object` 抛 "Cannot convert undefined or null to object"，挂起异常令脚本失败——insertBefore 缺省 refChild 合法用法被误杀）。

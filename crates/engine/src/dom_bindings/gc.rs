@@ -29,6 +29,13 @@ thread_local! {
     static NODE_OBJECTS: RefCell<HashMap<u64, v8::Global<v8::Object>>> = RefCell::new(HashMap::new());
     /// Element ObjectTemplate（含 nodeType/tagName accessor + internal slot[0]）。
     static ELEMENT_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> = const { RefCell::new(None) };
+    /// S4 EventTarget 原生（RFC §4 S4）：事件监听器——`(NodeId ffi, 事件类型) → Global<Value>` 列表
+    ///（存 Value 句柄，调用时 try_from 降 Function；存 Value 避 Local<Function>→Local<Value> upcast）。
+    /// addEventListener 把 JS 回调存为 Global 强引用（跨 scope 持久）；dispatchEvent 在当前 scope
+    /// 经 Local::new 复活后调用。**无 finalizer**——移除仅靠 removeEventListener 或 reset；节点从 DOM
+    /// 移除不自动清理（泄漏限制，后续切片接 weak callback / finalizer）。
+    static LISTENERS: RefCell<HashMap<(u64, String), Vec<v8::Global<v8::Value>>>> =
+        RefCell::new(HashMap::new());
 }
 
 /// 注入 DOM 源 + Element 模板（`install_dom_bindings` 调用）。
@@ -54,6 +61,7 @@ pub(crate) fn reset() {
     DOM_SOURCE.with(|c| *c.borrow_mut() = None);
     NODE_OBJECTS.with(|c| c.borrow_mut().clear());
     ELEMENT_TEMPLATE.with(|c| *c.borrow_mut() = None);
+    LISTENERS.with(|c| c.borrow_mut().clear());
 }
 
 /// 在当前 DOM 源上执行只读操作；无 DOM 源时返 `None`。
@@ -119,6 +127,53 @@ pub(crate) fn drop_cached_native_element(ffi: u64) {
 /// stale 校验：节点是否仍在 DOM 中（getter / 工厂重建前调）。
 pub(crate) fn node_exists(id: NodeId) -> bool {
     with_dom(|d| d.get(id).is_some()).unwrap_or(false)
+}
+
+// ── S4 EventTarget 监听器存储 ─────────────────────────────────────
+
+/// 追加监听器（`(NodeId ffi, 事件类型)` → `Global<Value>`）。
+pub(crate) fn add_listener(ffi: u64, event_type: String, f: v8::Global<v8::Value>) {
+    LISTENERS.with(|c| c.borrow_mut().entry((ffi, event_type)).or_default().push(f));
+}
+
+/// 取监听器在**当前 scope** 复活的 `Local<Value>` 列表（dispatchEvent 用）。
+///
+/// 刻意不持 LISTENERS borrow 跨 JS 回调——复活为 Local 后释放 borrow，回调内 addEventListener /
+/// removeEventListener 再入不会 panic（新增的监听器不在本快照内，符合 spec「派发期间新增不触发」）。
+pub(crate) fn listeners_local<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    ffi: u64,
+    event_type: &str,
+) -> Vec<v8::Local<'s, v8::Value>> {
+    LISTENERS.with(|c| {
+        c.borrow()
+            .get(&(ffi, event_type.to_string()))
+            .map(|vec| vec.iter().map(|g| v8::Local::new(scope, g)).collect())
+            .unwrap_or_default()
+    })
+}
+
+/// 移除与 `target`（Local）同身份的监听器；返移除数（removeEventListener 用）。
+///
+/// 持 LISTENERS borrow_mut 期间仅做 `Local::new` + `strict_equals`（非 JS 回调，无再入），安全。
+pub(crate) fn remove_listener(
+    scope: &mut v8::PinScope,
+    ffi: u64,
+    event_type: &str,
+    target: v8::Local<v8::Value>,
+) -> usize {
+    LISTENERS.with(|c| {
+        let mut map = c.borrow_mut();
+        let Some(vec) = map.get_mut(&(ffi, event_type.to_string())) else {
+            return 0;
+        };
+        let before = vec.len();
+        vec.retain(|g| {
+            let local = v8::Local::new(scope, g);
+            !local.strict_equals(target)
+        });
+        before - vec.len()
+    })
 }
 
 #[cfg(test)]

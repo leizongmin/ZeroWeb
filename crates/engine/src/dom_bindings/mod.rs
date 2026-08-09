@@ -22,8 +22,9 @@ use zero_dom::{Document, NodeId, NodeKind};
 
 // gc 的线程局部访问器（crate-private）。
 use gc::{
-    cache_native_element, cached_native_element, decode_node_id, drop_cached_native_element, element_template_local,
-    encode_node_id, node_exists, set_dom_source, set_element_template, with_dom, with_dom_mut,
+    add_listener, cache_native_element, cached_native_element, decode_node_id, drop_cached_native_element,
+    element_template_local, encode_node_id, listeners_local, node_exists, remove_listener, set_dom_source,
+    set_element_template, with_dom, with_dom_mut,
 };
 
 /// P1b 原生 DOM 绑定 kill-switch 环境变量名（默认关）。
@@ -167,6 +168,21 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     let remove_child_tmpl = v8::FunctionTemplate::builder(native_remove_child_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "removeChild") {
         tmpl.set(k.into(), remove_child_tmpl.into());
+    }
+    // S4 EventTarget（spec `dom-eventtarget-add-event-listener` 等）：addEventListener /
+    // removeEventListener / dispatchEvent 原生——监听器存线程局部（gc.rs LISTENERS，键=(NodeId
+    // ffi, 事件类型)），dispatchEvent 在当前 scope 复活 Local 调用（不冒泡，最小切片）。
+    let add_evt_tmpl = v8::FunctionTemplate::builder(native_add_event_listener_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "addEventListener") {
+        tmpl.set(k.into(), add_evt_tmpl.into());
+    }
+    let rm_evt_tmpl = v8::FunctionTemplate::builder(native_remove_event_listener_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "removeEventListener") {
+        tmpl.set(k.into(), rm_evt_tmpl.into());
+    }
+    let disp_evt_tmpl = v8::FunctionTemplate::builder(native_dispatch_event_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "dispatchEvent") {
+        tmpl.set(k.into(), disp_evt_tmpl.into());
     }
     set_element_template(scope, tmpl);
 
@@ -830,6 +846,90 @@ fn set_native_element(scope: &mut v8::PinScope, id: NodeId, rv: &mut v8::ReturnV
     if let Some(obj) = get_or_create_native_element(scope, id) {
         rv.set(obj.into());
     }
+}
+
+// ── S4 EventTarget（addEventListener / removeEventListener / dispatchEvent）──
+
+/// `addEventListener(type, listener)`（spec `dom-eventtarget-add-event-listener`）：
+/// listener 存为 `Global<Value>`（线程局部 LISTENERS，键 = `(NodeId ffi, 事件类型)`）。
+/// 非 function 参 → 忽略（spec 应抛 TypeError，本切片 best-effort）。
+fn native_add_event_listener_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    let event_type = string_arg(scope, &args, 0);
+    if event_type.is_empty() {
+        return;
+    }
+    // 仅 function 参持久化（存 Value 句柄，调用时降 Function）。
+    if !args.get(1).is_function() {
+        return;
+    }
+    let ffi = encode_node_id(id);
+    add_listener(ffi, event_type, v8::Global::new(scope, args.get(1)));
+}
+
+/// `removeEventListener(type, listener)`（spec `dom-eventtarget-remove-event-listener`）：
+/// 移除与 listener 同身份（strict_equals）的监听器。
+fn native_remove_event_listener_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    let event_type = string_arg(scope, &args, 0);
+    let ffi = encode_node_id(id);
+    remove_listener(scope, ffi, &event_type, args.get(1));
+}
+
+/// `dispatchEvent(event)`（spec `dom-eventtarget-dispatch-event`）：event 为对象读 `.type`，
+/// 或直接 type 字符串；按 type 取监听器快照（复活 Local，释放 borrow 避回调再入）逐个调用
+///（this = 元素，参 = event）。**不冒泡**（最小切片，后续）。返 true（spec：未 preventDefault）。
+fn native_dispatch_event_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let ffi = match read_node_id(scope, &this) {
+        Some(id) => encode_node_id(id),
+        None => {
+            rv.set(v8::Boolean::new(scope, true).into());
+            return;
+        }
+    };
+    let event = args.get(0);
+    // event.type：字符串直接用；对象读 `.type` 属性。
+    let event_type = if event.is_string() {
+        event
+            .to_string(scope)
+            .map(|s| s.to_rust_string_lossy(scope))
+            .unwrap_or_default()
+    } else if let Ok(obj) = v8::Local::<v8::Object>::try_from(event) {
+        v8::String::new(scope, "type")
+            .and_then(|k| obj.get(scope, k.into()))
+            .and_then(|v| v.to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    // 复活监听器 Local 列表（gc.rs 不持 borrow 跨 JS 回调，防再入 panic）。
+    let listeners = listeners_local(scope, ffi, &event_type);
+    let call_args = [event];
+    for listener in listeners {
+        if let Ok(func) = v8::Local::<v8::Function>::try_from(listener) {
+            let _ = func.call(scope, this.into(), &call_args);
+        }
+    }
+    rv.set(v8::Boolean::new(scope, true).into());
 }
 
 /// 从任意 `Value` 取其 internal slot NodeId（若为 native element 对象）；否则 `None`

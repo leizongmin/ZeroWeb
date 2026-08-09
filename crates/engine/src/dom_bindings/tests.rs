@@ -628,3 +628,66 @@ fn dom_source_cleared_after_reset() {
     // reset 后无 DOM 源 → node_exists 返 false（with_dom None）。
     assert!(!node_exists(node));
 }
+
+// ── S4 EventTarget：addEventListener / removeEventListener / dispatchEvent（本轮 R3109）──
+
+/// `addEventListener(type, fn)` + `dispatchEvent({type})` 派发触发监听器（spec `dom-eventtarget`）。
+#[test]
+fn native_event_target_dispatch_fires_listener() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             el.addEventListener('click', ()=>{ globalThis.__clicked='yes'; });\
+             el.dispatchEvent({type:'click'});\
+             return globalThis.__clicked || 'no'; })()"
+        ),
+        "yes"
+    );
+}
+
+/// `removeEventListener(type, fn)` 后 dispatch 不再触发（spec 身份匹配 strict_equals）。
+#[test]
+fn native_event_target_remove_listener() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             const fn=()=>{ globalThis.__clicked='yes'; };\
+             el.addEventListener('click', fn);\
+             el.removeEventListener('click', fn);\
+             el.dispatchEvent({type:'click'});\
+             return globalThis.__clicked || 'no'; })()"
+        ),
+        "no"
+    );
+}
+
+/// 事件类型过滤：dispatchEvent({type:'click'}) 仅触发 click 监听器，不触发 keyup。
+#[test]
+fn native_event_target_type_filter() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             el.addEventListener('click',  ()=>{ globalThis.__c='yes'; });\
+             el.addEventListener('keyup', ()=>{ globalThis.__k='yes'; });\
+             el.dispatchEvent({type:'click'});\
+             return (globalThis.__c||'no')+'/'+(globalThis.__k||'no'); })()"
+        ),
+        "yes/no"
+    );
+}
+
+/// dispatchEvent 返 true（spec：未 preventDefault）；无监听器也不抛。
+#[test]
+fn native_event_target_dispatch_returns_true() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').dispatchEvent({type:'x'}))"),
+        "true"
+    );
+}

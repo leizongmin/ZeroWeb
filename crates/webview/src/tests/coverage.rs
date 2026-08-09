@@ -540,6 +540,44 @@ fn test_native_dom_write_triggers_rerender_r3108() {
     );
 }
 
+// ── P1b S4 EventTarget native：addEventListener/removeEventListener/dispatchEvent（本轮 R3109）──
+
+// native_dom=true → native 元素（经 execute_script 安装路径，R3108）具 EventTarget 方法。
+// addEventListener 持久化 listener（Global<Value>），dispatchEvent 复活 Local 调用——验证 webview
+// 沙箱安装路径含 S4 模板方法（非仅 engine 隔离测试）。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_event_target_r3109() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html("<html><body><div id=\"a\"></div></body></html>", None);
+    wv.run_page_scripts_strict().unwrap();
+    // 注册 click 监听器 + 派发 → listener 设全局。
+    wv.execute_script(
+        "(()=>{ const el=__zw_native_element_for_id('a');\
+         el.addEventListener('click', ()=>{ globalThis.__clicked='yes'; });\
+         el.dispatchEvent({type:'click'}); return globalThis.__clicked || 'no'; })()",
+    )
+    .unwrap();
+    assert_eq!(
+        wv.execute_script("String(globalThis.__clicked || 'no')").unwrap(),
+        "yes",
+        "native dispatchEvent 触发监听器"
+    );
+    // removeEventListener 后不再触发。
+    wv.execute_script(
+        "(()=>{ const el=__zw_native_element_for_id('a');\
+         const fn=()=>{ globalThis.__clicked2='yes'; };\
+         el.addEventListener('keyup', fn); el.removeEventListener('keyup', fn);\
+         el.dispatchEvent({type:'keyup'}); return globalThis.__clicked2 || 'no'; })()",
+    )
+    .unwrap();
+    assert_eq!(
+        wv.execute_script("String(globalThis.__clicked2 || 'no')").unwrap(),
+        "no",
+        "removeEventListener 后 dispatch 不触发"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]
