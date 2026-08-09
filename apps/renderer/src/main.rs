@@ -608,6 +608,27 @@ impl RendererRuntime {
         Ok(())
     }
 
+    /// P1a 导航（R3057，闭合 R3052 限制②）：click 命中 `<a href="javascript:...">` → 页面全局执行 JS 体
+    ///（real browser 语义；与 onclick handler 同一 JS 执行通路，CSP 统辖）。改 DOM 则 rerender。
+    fn eval_javascript_on_click_at(&mut self, selector: &str) -> Result<(), String> {
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+            };
+            page_scripts::apply_javascript_href(&mut ctx, selector)
+        };
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
     /// P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 'change' 事件；改 DOM 则 rerender。
     fn toggle_checkbox_at(&mut self, selector: &str) -> Result<(), String> {
         if !self.javascript_enabled {
@@ -1408,6 +1429,12 @@ impl RendererRuntime {
                 // 仅 click 未 preventDefault 时设 hash（spec：preventDefault 阻止 hash 变更）。
                 if click_default_allowed {
                     let _ = self.set_hash_on_click_at(&target);
+                }
+            } else if zero_engine::anchor_javascript_target(&self.cached_html, &target).is_some() {
+                // R3057：anchor `<a href="javascript:...">` click → 页面全局执行 JS 体（real browser 语义）。
+                // 与 onclick handler 同一 JS 执行通路（CSP `script-src` 统辖内联/eval）。仅 click 未 preventDefault 时执行。
+                if click_default_allowed {
+                    let _ = self.eval_javascript_on_click_at(&target);
                 }
             }
         }

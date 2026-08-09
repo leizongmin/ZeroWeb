@@ -1740,3 +1740,69 @@ fn test_blob_and_object_url_r2789() {
     sandbox.execute("URL.revokeObjectURL('blob:null/1-abc')").unwrap();
     assert_eq!(sandbox.execute("typeof URL.revokeObjectURL").unwrap().value, "function");
 }
+
+#[test]
+fn test_anchor_javascript_target_r3057() {
+    // R3057：anchor_javascript_target 解析 <a href="javascript:..."> click 的 JS 体（闭合 R3052 限制②）。
+    // scheme 大小写不敏感；体 = scheme 后原始字符串（前导空白 trim），执行需原样 JS 源。
+
+    // ① 常见 javascript: 体。
+    assert_eq!(
+        anchor_javascript_target("<html><body><a id='a' href='javascript:void(0)'>l</a></body></html>", "#a"),
+        Some("void(0)".to_string()),
+        "javascript:void(0) → Some(\"void(0)\")"
+    );
+    assert_eq!(
+        anchor_javascript_target("<html><body><a id='f' href='javascript:doSomething()'>l</a></body></html>", "#f"),
+        Some("doSomething()".to_string()),
+        "javascript:doSomething() → Some(\"doSomething()\")"
+    );
+    assert_eq!(
+        anchor_javascript_target("<html><body><a id='al' href=\"javascript:alert('hi')\">l</a></body></html>", "#al"),
+        Some("alert('hi')".to_string()),
+        "javascript:alert('hi') → Some(\"alert('hi')\")"
+    );
+
+    // ② scheme 大小写不敏感 + 前导空白。
+    assert_eq!(
+        anchor_javascript_target("<html><body><a id='u' href='JaVaScRiPt:  x()'>l</a></body></html>", "#u"),
+        Some("x()".to_string()),
+        "scheme 大小写不敏感 + 体前导空白 trim → Some(\"x()\")"
+    );
+
+    // ③ 空 javascript:（无体）→ Some(\"\")（执行空脚本 no-op）。
+    assert_eq!(
+        anchor_javascript_target("<html><body><a id='e' href='javascript:'>l</a></body></html>", "#e"),
+        Some("".to_string()),
+        "javascript:（空体）→ Some(\"\")"
+    );
+
+    // ④ 非 javascript: href（绝对 / 相对 / #hash / mailto:）→ None。
+    assert_eq!(
+        anchor_javascript_target("<html><body><a id='u' href='https://x.com/'>l</a></body></html>", "#u"),
+        None,
+        "绝对 URL href → None"
+    );
+    assert_eq!(
+        anchor_javascript_target("<html><body><a id='h' href='#sec'>l</a></body></html>", "#h"),
+        None,
+        "#hash href → None"
+    );
+    assert_eq!(
+        anchor_javascript_target("<html><body><a id='m' href='mailto:a@b.com'>l</a></body></html>", "#m"),
+        None,
+        "mailto: href → None"
+    );
+
+    // ⑤ 非 <a> / 无 href → None。
+    assert_eq!(
+        anchor_javascript_target("<html><body><div id='d' href='javascript:x()'>l</div></body></html>", "#d"),
+        None,
+        "非 <a> 元素 → None（即使 href=javascript:）"
+    );
+    assert_eq!(
+        anchor_javascript_target("<html><body><a id='n'>l</a></body></html>", "#n"),
+        None,
+        "<a> 无 href → None"
+    );
+}

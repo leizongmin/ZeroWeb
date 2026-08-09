@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    DomEventDetail, DomMutation, PageScript, anchor_hash_target, apply_mutations_to_html,
+    DomEventDetail, DomMutation, PageScript, anchor_hash_target, anchor_javascript_target, apply_mutations_to_html,
     apply_mutations_to_html_with_handles, enclosing_form_selector, extract_page_scripts, has_attribute, is_checkbox,
     is_radio, is_reset_button, is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url,
     script_call_form_reset, script_call_set_location_hash, script_dispatch_dom_event, script_dispatch_img_event,
@@ -399,6 +399,29 @@ pub fn apply_set_hash_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) 
     let _ = ctx
         .js_worker
         .execute_script_direct(&script_call_set_location_hash(&hash));
+    let html_snap = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snap).is_some()
+}
+
+/// P1a 导航（R3057，闭合 R3052 限制②）：click 命中 `<a href="javascript:...">` → 在页面全局执行其 JS 体
+///（real browser 语义：javascript: URL click 执行其体，返回值丢弃——非导航）。与 onclick handler 同一
+/// JS 执行通路（`execute_script_direct`，**非新增 eval 表面**，CSP `script-src` 统辖内联/eval 拦截）。
+/// 返回 JS 体执行是否改 DOM（调用方据此单次 rerender）。无 javascript: 目标 → false。
+pub fn apply_javascript_href(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    // gate：`<a href="javascript:...">` 才执行（mirror apply_set_hash_on_click 防御性再校验 anchor_hash_target）。
+    let Some(js) = anchor_javascript_target(ctx.html, selector) else {
+        return false;
+    };
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    // 执行 JS 体（空体 no-op）。js 为 href 解析后的原始 JS 源（HTML 已解码实体），不经转义——直接执行。
+    if !js.is_empty() {
+        let _ = ctx.js_worker.execute_script_direct(&js);
+    }
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
 }
@@ -1165,6 +1188,60 @@ mod tests {
             !outcome3.default_allowed && !outcome3.html_changed,
             "type=button 非 submit → 默认 outcome（不提交/不导航）"
         );
+        worker.shutdown();
+    }
+
+    /// R3057：apply_javascript_href 在 click `<a href="javascript:...">` 时执行 JS 体（页面全局）。
+    /// JS 体改 DOM（如 innerHTML）则 apply 返 true；空体 / 非 javascript: href → 不执行。
+    #[test]
+    fn apply_javascript_href_executes_body_r3057() {
+        let mut worker = RendererJsWorker::spawn(143);
+        let html = "<html><body><a id='a' href=\"javascript:document.body.setAttribute('data-x','hit')\">run</a></body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+
+        // ① javascript: 体执行 → 改 body 的 data-x 属性 → apply 返 true（DOM 变更）。
+        let mut buf = html.to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut buf,
+                url: "https://example.com/page",
+                js_worker: &worker,
+            };
+            apply_javascript_href(&mut ctx, "#a")
+        };
+        assert!(changed, "javascript: 体执行改 body data-x → apply 返 true");
+        assert!(
+            buf.contains("data-x=\"hit\"") || buf.contains("data-x='hit'"),
+            "body data-x=hit 写入 HTML：{buf}"
+        );
+
+        // ② 空 javascript: 体 → 执行空脚本 no-op，apply 返 false（无 mutation）。
+        let html2 = "<html><body><a id='e' href='javascript:'>x</a></body></html>";
+        worker.set_dom_snapshot(html2, "https://example.com/page");
+        let mut buf2 = html2.to_string();
+        let changed2 = {
+            let mut ctx = PageScriptContext {
+                html: &mut buf2,
+                url: "https://example.com/page",
+                js_worker: &worker,
+            };
+            apply_javascript_href(&mut ctx, "#e")
+        };
+        assert!(!changed2, "空 javascript: 体 → no-op，apply 返 false");
+
+        // ③ 非 javascript: href（绝对 URL）→ apply 返 false（gate 不命中，不执行）。
+        let html3 = "<html><body><a id='u' href='https://x.com/'>l</a></body></html>";
+        worker.set_dom_snapshot(html3, "https://example.com/page");
+        let mut buf3 = html3.to_string();
+        let changed3 = {
+            let mut ctx = PageScriptContext {
+                html: &mut buf3,
+                url: "https://example.com/page",
+                js_worker: &worker,
+            };
+            apply_javascript_href(&mut ctx, "#u")
+        };
+        assert!(!changed3, "非 javascript: href → gate 不命中，apply 返 false");
         worker.shutdown();
     }
 }

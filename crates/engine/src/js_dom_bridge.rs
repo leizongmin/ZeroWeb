@@ -1337,6 +1337,26 @@ pub fn anchor_hash_target(html: &str, selector: &str) -> Option<String> {
     }
 }
 
+/// P1a 导航：解析 anchor `<a href="javascript:...">` click 的 JS 体（R3057，闭合 R3052 限制②）。供 renderer
+/// click 路由判定「点击 javascript: 链接是否 eval JS」。返回 `Some(js 体)` 当元素为 `<a>` 且 href（trim 后）
+/// 以 `javascript:` 开头（大小写不敏感）；否则 `None`。js 体 = scheme 后的原始字符串（前导空白 trim），如
+/// `void(0)` / `doSomething()` / `alert('hi')`。renderer 经 `execute_script_direct` 在页面全局执行（与 onclick
+/// handler 同一 JS 执行通路——非新增 eval 表面，CSP `script-src` 统辖内联/eval 拦截）。空体（`javascript:`）
+/// 返 `Some("")` → 执行空脚本 no-op。real browser：`javascript:` URL click 执行其体，返回值丢弃（非导航）。
+pub fn anchor_javascript_target(html: &str, selector: &str) -> Option<String> {
+    if !query_tag_from_html(html, selector).eq_ignore_ascii_case("a") {
+        return None;
+    }
+    let href = query_attr_from_html(html, selector, "href");
+    let href = href.trim();
+    // `javascript:` 为 ASCII，前 11 字节即 scheme；lowercase 判定后取原始体（执行需原样 JS 源，不归一）。
+    if href.to_ascii_lowercase().starts_with("javascript:") {
+        Some(href[11..].trim_start().to_string())
+    } else {
+        None
+    }
+}
+
 /// P1a form control：判定元素是否有某属性（boolean 属性如 `checked`/`disabled` 靠存在性，
 /// `getAttribute` 返空串无法区分存在与空值，故供 `__zw_has_attr` / checkbox toggle）。
 pub fn has_attribute(html: &str, selector: &str, name: &str) -> bool {
