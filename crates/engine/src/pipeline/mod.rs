@@ -1,6 +1,8 @@
 //! 渲染管线 — 编排 HTML→CSS→Layout→Paint 全流程。
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::time::Instant;
 
 use slotmap::Key;
@@ -67,8 +69,12 @@ pub struct RenderPipeline {
     pub(crate) document_url: Option<String>,
     /// 缓存的布局结果。
     pub(crate) cached_layout: Option<LayoutResult>,
-    /// 缓存的 DOM（用于命中测试）。
-    pub(crate) cached_doc: Option<Document>,
+    /// 缓存的 DOM（用于命中测试）。`Rc<RefCell<Document>>` 共享（P1b L1a，R3106）——
+    /// 原生 DOM 绑定（engine::dom_bindings）经 [`Self::cached_doc_shared`] 取同一句柄，
+    /// 读/写同一 live Document（闭合 R3097 read-only 快照限制；详见
+    /// `docs/specs/p1b-v8-native-bindings-rfc.md` §3.7）。`RefCell` 单线程顺序 borrow
+    /// （脚本执行与渲染顺序，无并发 borrow_mut）。
+    pub(crate) cached_doc: Option<Rc<RefCell<Document>>>,
     /// CSS 解析缓存（repaint_cached_viewport 路径）：外部 css 文本与对应 stylesheets。
     ///
     /// `render_incremental`（resize/color-scheme/media 帧）每帧调用
@@ -412,7 +418,7 @@ impl RenderPipeline {
 
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
 
-        self.cached_doc = Some(doc);
+        self.cached_doc = Some(Rc::new(RefCell::new(doc)));
         // DOM 已替换：CSS 解析缓存失效（新文档的 <style>/meta 内容可能不同）。
         self.cached_css_text = None;
 
@@ -440,30 +446,39 @@ impl RenderPipeline {
 
     /// 命中测试链接，返回点击位置处 `<a href>` 的目标 URL。
     pub fn hit_test_link(&self, x: f32, y: f32) -> Option<String> {
-        let doc = self.cached_doc.as_ref()?;
+        let doc = self.cached_doc.as_ref()?.borrow();
         let layout = self.cached_layout.as_ref()?;
-        hit_test::hit_test_link(doc, &layout.root, x, y)
+        hit_test::hit_test_link(&doc, &layout.root, x, y)
     }
 
     /// 命中测试图片，返回 `src`（文档原始值）。
     pub fn hit_test_image(&self, x: f32, y: f32) -> Option<String> {
-        let doc = self.cached_doc.as_ref()?;
+        let doc = self.cached_doc.as_ref()?.borrow();
         let layout = self.cached_layout.as_ref()?;
-        hit_test::hit_test_image(doc, &layout.root, x, y)
+        hit_test::hit_test_image(&doc, &layout.root, x, y)
     }
 
     /// 命中测试元素，返回点击位置处最深元素及其布局盒。
     pub fn hit_test_element(&self, x: f32, y: f32) -> Option<hit_test::ElementHit> {
-        let doc = self.cached_doc.as_ref()?;
+        let doc = self.cached_doc.as_ref()?.borrow();
         let layout = self.cached_layout.as_ref()?;
-        hit_test::hit_test_element(doc, &layout.root, x, y)
+        hit_test::hit_test_element(&doc, &layout.root, x, y)
     }
 
     /// 构建主线程只读命中测试快照（与当前缓存 DOM/布局一致）。
     pub fn build_hit_test_cache(&self) -> Option<hit_test::HitTestCache> {
-        let doc = self.cached_doc.as_ref()?;
+        let doc = self.cached_doc.as_ref()?.borrow();
         let layout = self.cached_layout.as_ref()?;
-        Some(hit_test::HitTestCache::from_document(doc, &layout.root))
+        Some(hit_test::HitTestCache::from_document(&doc, &layout.root))
+    }
+
+    /// 取缓存 live Document 的共享句柄（`Rc<RefCell<Document>>` 克隆）。
+    ///
+    /// P1b L1a（R3106）：原生 DOM 绑定（engine::dom_bindings）经此取**同一** live Document，
+    /// 读/写直接反映渲染状态（闭合 R3097 read-only 快照限制）。无缓存（未渲染）→ `None`，
+    /// 调用方回落 re-parse 快照。详见 `docs/specs/p1b-v8-native-bindings-rfc.md` §3.7。
+    pub fn cached_doc_shared(&self) -> Option<Rc<RefCell<Document>>> {
+        self.cached_doc.clone()
     }
 
     /// 渲染 HTML 文档（全流程）。
@@ -554,7 +569,7 @@ impl RenderPipeline {
 
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
 
-        self.cached_doc = Some(doc);
+        self.cached_doc = Some(Rc::new(RefCell::new(doc)));
         // DOM 已替换：CSS 解析缓存失效（新文档的 <style>/meta 内容可能不同）。
         self.cached_css_text = None;
 
@@ -704,20 +719,24 @@ impl RenderPipeline {
 
     /// 在已有 DOM 缓存上重绘整个视口（resize 等场景，走 `incremental_paint`）。
     pub fn repaint_cached_viewport(&mut self, css: &str) -> Option<RenderResult> {
-        let doc = self.cached_doc.take()?;
+        let doc_rc = self.cached_doc.take()?;
         let dirty = zero_render_foundation::geometry::Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
         // CSS 解析缓存：外部 css 文本相同（cached_doc 未变——render_html 族替换时已置
-        // None 失效）直接复用解析结果，免每帧重新 tokenize+parse 全部 CSS。take 后放回
-        //（incremental_paint 是 &mut self，无法与字段借用共存）。
+        // None 失效）直接复用解析结果，免每帧重新 tokenize+parse 全部 CSS。take 出 Rc 后放回
+        //（incremental_paint 是 &mut self，无法与字段借用共存——take Rc 释放字段，borrow RefCell 不借字段）。
         let stylesheets = if self.cached_css_text.as_deref() == Some(css) {
             std::mem::take(&mut self.cached_stylesheets)
         } else {
             self.cached_css_text = Some(css.to_string());
+            let doc = doc_rc.borrow();
             collect_stylesheets(&doc, css)
         };
-        let primitives = self.incremental_paint(&doc, &stylesheets, dirty)?;
+        let primitives = {
+            let doc = doc_rc.borrow();
+            self.incremental_paint(&doc, &stylesheets, dirty)?
+        };
         self.cached_stylesheets = stylesheets;
-        self.cached_doc = Some(doc);
+        self.cached_doc = Some(doc_rc);
         let layout_ref = self.cached_layout.as_ref()?;
         let layout = LayoutResult {
             root: layout_ref.root.clone(),
@@ -748,9 +767,13 @@ impl RenderPipeline {
         mutations: &[crate::js_dom_bridge::DomMutation],
         css: &str,
     ) -> Result<(RenderResult, String, HashMap<String, String>), String> {
-        let mut doc = self.cached_doc.take().ok_or("no cached document")?;
-        let handle_selectors = crate::js_dom_bridge::apply_dom_mutations(&mut doc, mutations)?;
-        let html_snapshot = doc.outer_html(doc.root());
+        let doc_rc = self.cached_doc.take().ok_or("no cached document")?;
+        // mutation + 快照阶段：borrow_mut 应用变更 + 序列化快照（同一 RefMut 既可 mut 又可读）。
+        let (handle_selectors, html_snapshot) = {
+            let mut doc = doc_rc.borrow_mut();
+            let hs = crate::js_dom_bridge::apply_dom_mutations(&mut doc, mutations)?;
+            (hs, doc.outer_html(doc.root()))
+        };
         // DOM 已变（<style>/meta 内容可能变）：CSS 解析缓存失效。
         self.cached_css_text = None;
         // 增量分层（mutation 全部同类时走轻量路径，否则全量兜底）：
@@ -760,16 +783,24 @@ impl RenderPipeline {
         // 3. 其他（布局属性/结构变更）→ 全量布局（taffy style 单节点更新为后续专项）
         let all_text_only = mutations.iter().all(Self::is_text_only_mutation);
         let all_paint_only = !all_text_only && mutations.iter().all(Self::is_paint_only_mutation);
+        // 增量分支：borrow RefCell（&mut self 方法与 Ref borrow 不冲突——后者借堆 RefCell 非字段），
+        // 工作后 drop borrow 再把 doc_rc 放回；repaint 分支：先放回 doc_rc 再 repaint（它 take 自字段）。
         let result = if all_text_only {
-            let r = self.incremental_paint_after_text_mutations(&doc, mutations, css);
-            self.cached_doc = Some(doc);
+            let r = {
+                let doc = doc_rc.borrow();
+                self.incremental_paint_after_text_mutations(&doc, mutations, css)
+            };
+            self.cached_doc = Some(doc_rc);
             r
         } else if all_paint_only {
-            let r = self.paint_only_incremental(&doc, mutations, css);
-            self.cached_doc = Some(doc);
+            let r = {
+                let doc = doc_rc.borrow();
+                self.paint_only_incremental(&doc, mutations, css)
+            };
+            self.cached_doc = Some(doc_rc);
             r
         } else {
-            self.cached_doc = Some(doc);
+            self.cached_doc = Some(doc_rc);
             self.repaint_cached_viewport(css)
         }
         .ok_or("repaint failed after mutations")?;

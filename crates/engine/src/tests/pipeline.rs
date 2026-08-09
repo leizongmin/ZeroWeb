@@ -1393,7 +1393,7 @@ fn render_with_dom_mutations_text_uses_incremental_layout() {
     // 活 DOM + HTML 快照一致（免 parse 路径）
     assert!(snapshot.contains("much longer text now"), "snapshot: {snapshot}");
     // 布局盒反映新文本（增量布局已重算 #a 及祖先的几何）
-    let doc = pipeline.cached_doc.as_ref().expect("doc cached");
+    let doc = pipeline.cached_doc.as_ref().expect("doc cached").borrow();
     let a = doc.query_selector(doc.root(), "#a").expect("#a");
     assert_eq!(doc.text_content(a).as_deref(), Some("much longer text now"));
     // 布局结果非空（增量路径产出 LayoutResult）

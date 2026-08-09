@@ -1,6 +1,8 @@
 //! 分步预算渲染 — 将 parse/style/layout/paint 拆成可中断步骤，避免单帧长时间阻塞。
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::time::Instant;
 
 use zero_css_parser::Stylesheet;
@@ -165,7 +167,7 @@ impl RenderPipeline {
                         + session.timings.paint_ms;
                     session.step = BudgetStep::Done;
 
-                    self.cached_doc = session.doc.take();
+                    self.cached_doc = session.doc.take().map(|d| Rc::new(RefCell::new(d)));
                     // DOM 已替换：CSS 解析缓存失效（见 RenderPipeline.cached_css_text 注释）。
                     self.cached_css_text = None;
                     let layout_out = LayoutResult {
@@ -237,7 +239,7 @@ impl RenderPipeline {
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
 
-        self.cached_doc = Some(doc);
+        self.cached_doc = Some(Rc::new(RefCell::new(doc)));
         // DOM 已替换：CSS 解析缓存失效（见 RenderPipeline.cached_css_text 注释）。
         self.cached_css_text = None;
         let layout = LayoutResult {
