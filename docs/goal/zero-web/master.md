@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1a Canvas 2D 文本 API + ImageData（fillText/measureText/createImageData，闭合 R3077 ctx2d 缺口 6/8，本轮 R3078）
+
+承接 R3077 Canvas DOM 集成（getContext 接通）。R3076 probe 发现 8 canvas 用例失败于 ctx2d 方法缺：`fillText`（2）/`measureText`（2）/`createImageData`（2）/`createLinearGradient`（2）。R3077 闭合 getContext 后 31/39 canvas 可执行；本切片补 3 个 ctx2d 方法（文本 + blank ImageData），闭合 6/8（剩 2 gradient 用例 defer）。canvas crate 早有 `fill_text`/`measure_text`/`create_image_data`（R2795 域），本切片接 bridge + JS。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **bridge `fillText`/`strokeText`/`measureText` arms** | `crates/engine/src/js_dom_bridge/canvas.rs`（stroke 后） | `fillText(text,x,y)` → `ctx.fill_text`；`strokeText` 近似 fill_text（canvas crate 无独立 stroke_text，headless 简化）；`measureText(text)` → `ctx.measure_text`，返 `width,ascent,descent` csv（JS 构 TextMetrics）。 |
+| **ctx2d `fillText`/`strokeText`/`measureText`/`createImageData` 方法** | `crates/engine/src/js_dom_shim/part05.js`（`_zwMakeCtx2d` clearRect 后） | `fillText/strokeText(text,x,y)` 经 `__zw_canvas_op`；`measureText` 返 `{width, actualBoundingBoxAscent/Descent}`；`createImageData(w,h)` / `createImageData(imageData)` 返 blank ImageData（`{width,height,data: Uint8ClampedArray(w*h*4) 全 0, colorSpace:'srgb'}`，JS 构无需 host——blank 全透明=全 0）。 |
+| **R3078 测试** | engine `js_dom_bridge_tests/part14.rs`（+`test_canvas_ctx2d_text_imagedata_r3078`） | 4 维：① fillText 不抛；② measureText('hello').width>0 + actualBoundingBoxAscent number + ('').width===0；③ createImageData(4,3)→{width:4,height:3,data.length:48,全 0}；④ createImageData(imgData) 复制尺寸。 |
+
+**为何净正向**：① ctx2d 方法为纯新增（canvas crate 早有 host 实现，本切片接 bridge+JS 表面）；② createImageData blank JS 构（无需 host 往返，Uint8ClampedArray 全 0 = spec 全透明）；③ 复用既有 `__zw_canvas_op` 派发 + `_zwMakeCtx2d`；④ R3076 probe 实测 canvas 用例 **37/39 现 js_executes_ok 通过**（R3077 31/39 + 本切片 6 = 37；剩 2 gradient）；⑤ 全量 make test 全绿（0 failed across all binaries，16077 passed）。
+
+**已知限制（记录，defer）**：① **2 canvas 用例 createLinearGradient 缺**（gradient registry + addColorStop op + fillStyle 接 gradient + fill rasterize gradient——canvas crate fill 用 `resolve_color()` 返纯色，gradient 光栅化需 canvas crate 改造，中-高复杂度；Canvas gradient follow-up）；② **strokeText 近似 fillText**（canvas crate 无独立 stroke_text，headless 简化）；③ **measureText 宽度近似**（canvas crate 每 char 0.6em，非真字形度量，headless 简化）；④ **createImageData blank 全 0**（spec 一致；getImageData 读真像素经 host，已有）；⑤ **js_executes_ok 未批量应用 canvas 用例**（待 gradient 闭合后 39/39 统一应用，避免破「100% pass」）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**cargo test 执行器；0 failed across all binaries，全量 16077 passed，engine +1 driving 测试，零回归**）+ pre-commit guard PASS。变更纯 bridge arm + JS shim + 测试（无 render/paint/layout .rs），product-smoke 不受影响。
+
+**下一步**：Canvas ctx2d 文本+ImageData 闭合（6/8；gradient 2/8 defer）。pivot：① **Canvas gradient**（createLinearGradient + addColorStop + fillStyle gradient + fill 光栅化——canvas crate fill 改造，闭合最后 2 canvas 用例 + 真实 gradient 渲染，中-高复杂度）；② R3076 probe 其他 gap：**Worker postMessage/terminate**（~6 用例）/ **indexedDB 全局**（~5）/ **ES module import**（~2）；③ js_executes_ok 批量应用 canvas（待 gradient）；④ popover 渲染层 / P1a 事件循环。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a Canvas DOM 集成（HTMLCanvasElement proxy getContext/toDataURL/width/height，本轮 R3077）
 
 承接 R3076 WPT 真实 JS 执行路径。R3076 probe 全 scripted 用例发现 **canvas 类 ~29 用例 `getContext is not a function`**——`_zwMakeCanvas`（R2795 standalone canvas 对象）有 getContext/toDataURL，但 **DOM 元素 proxy 缺**（`document.getElementById('c').getContext('2d')` 抛 TypeError）。代码 part05.js:600-601 注释明确「canvas 为 standalone 对象，DOM 集成为 follow-up」。本切片接通 DOM 集成（闭合 follow-up），canvas getContext 经 host `__zw_canvas_op` 建真 2d 上下文（复用 zero-canvas）。

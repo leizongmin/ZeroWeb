@@ -185,6 +185,32 @@ pub fn canvas_context_op(
             }
             "ok".into()
         }
+        // R3078：Canvas 2D 文本 API。fill_text 绘制（canvas crate fill_text 写 pixel_buffer）；measure_text 返
+        // TextMetrics（width + bounding box，csv 串参返 JS 构 {width,...}）。spec CanvasRenderingContext2D。
+        "fillText" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.fill_text(arg(0), f(1), f(2));
+            }
+            "ok".into()
+        }
+        "strokeText" => {
+            if let Some(ctx) = reg.1.get_mut(&hid()) {
+                ctx.fill_text(arg(0), f(1), f(2)); // canvas crate 无独立 stroke_text；近似 fill_text（headless 简化）
+            }
+            "ok".into()
+        }
+        "measureText" => {
+            if let Some(ctx) = reg.1.get(&hid()) {
+                let m = ctx.measure_text(arg(0));
+                // width,ascent,descent csv（JS 构 TextMetrics {width, actualBoundingBoxAscent/Descent}）。
+                format!(
+                    "{},{},{}",
+                    m.width, m.actual_bounding_box_ascent, m.actual_bounding_box_descent
+                )
+            } else {
+                "0,0,0".into()
+            }
+        }
         // fillRect：经 path（rasterize 到 pixel_buffer，绕过 fill_rect 便捷法不写 pixel_buffer 之限制）。
         "fillRect" => {
             if let Some(ctx) = reg.1.get_mut(&hid()) {

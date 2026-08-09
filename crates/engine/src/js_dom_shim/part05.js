@@ -678,6 +678,36 @@
     ctx.clearRect = function (x, y, w, hh) {
       __zw_canvas_op(h, 'clearRect', String(x), String(y), String(w), String(hh));
     };
+    // R3078：Canvas 2D 文本 API（fillText/strokeText/measureText）+ createImageData（blank）。
+    // fillText 经 host fill_text（canvas crate 写 pixel_buffer）；measureText 返 TextMetrics（width+bounding）；
+    // createImageData 返 blank ImageData（全透明 = 全 0，Uint8ClampedArray(w*h*4)，JS 构无需 host）。createImageData
+    // 双形式：createImageData(w,h) / createImageData(imageData)（复制尺寸）。spec CanvasRenderingContext2D。
+    ctx.fillText = function (text, x, y /*, maxWidth */) {
+      __zw_canvas_op(h, 'fillText', String(text), String(+x || 0), String(+y || 0));
+    };
+    ctx.strokeText = function (text, x, y) {
+      __zw_canvas_op(h, 'strokeText', String(text), String(+x || 0), String(+y || 0));
+    };
+    ctx.measureText = function (text) {
+      var raw = String(__zw_canvas_op(h, 'measureText', String(text)));
+      var p = raw.split(',');
+      return {
+        width: parseFloat(p[0]) || 0,
+        actualBoundingBoxAscent: parseFloat(p[1]) || 0,
+        actualBoundingBoxDescent: parseFloat(p[2]) || 0,
+      };
+    };
+    ctx.createImageData = function (a, b) {
+      var w, h;
+      if (typeof a === 'object' && a !== null) { // createImageData(imageData) → 复制尺寸
+        w = Math.abs(+a.width || 0) | 0;
+        h = Math.abs(+a.height || 0) | 0;
+      } else { // createImageData(width, height)
+        w = Math.abs(+a || 0) | 0;
+        h = Math.abs(+b || 0) | 0;
+      }
+      return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4), colorSpace: 'srgb' };
+    };
     // ── slice 2：path 曲线 / 状态栈 / transforms / line 样式 / globalAlpha（R2796）──
     ctx.quadraticCurveTo = function (cpx, cpy, x, y) {
       __zw_canvas_op(h, 'quadraticCurveTo', String(cpx), String(cpy), String(x), String(y));

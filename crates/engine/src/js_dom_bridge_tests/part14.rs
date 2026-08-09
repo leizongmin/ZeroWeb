@@ -253,3 +253,58 @@ fn test_canvas_dom_get_context_r3077() {
     sandbox.execute("cv.width = 250; globalThis.__setW = cv.width;").unwrap();
     assert_eq!(sandbox.execute("globalThis.__setW").unwrap().value, "250", "canvas.width = 250 → 读回 250（sync set→get）");
 }
+
+#[test]
+fn test_canvas_ctx2d_text_imagedata_r3078() {
+    // R3078：Canvas 2D ctx2d 文本 API（fillText/measureText）+ createImageData（blank）。R3077 接通 getContext；
+    // 本切片补 ctx2d 方法（host fill_text/measure_text + JS createImageData blank）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='100' height='50'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① fillText 不抛（canvas crate fill_text 写 pixel_buffer）。
+    // ② measureText 返 TextMetrics {width > 0}（非空文本）+ 0 文本 width 0。
+    // ③ createImageData(w,h) → {width, height, data: Uint8ClampedArray(w*h*4)}（blank，全 0）。
+    // ④ createImageData(imageData) 复制尺寸。
+    sandbox
+        .execute(
+            "var cv = document.getElementById('cv');\
+             var ctx = cv.getContext('2d');\
+             ctx.font = '20px sans-serif';\
+             ctx.fillText('hello', 10, 20);\
+             globalThis.__fillOk = 'ok';\
+             var m = ctx.measureText('hello');\
+             globalThis.__mw = String(m.width > 0);\
+             globalThis.__mFields = String(typeof m.actualBoundingBoxAscent === 'number');\
+             var m0 = ctx.measureText('');\
+             globalThis.__mw0 = String(m0.width === 0);\
+             var img = ctx.createImageData(4, 3);\
+             globalThis.__iw = img.width;\
+             globalThis.__ih = img.height;\
+             globalThis.__ilen = img.data.length;\
+             globalThis.__izero = String(img.data[0] === 0);\
+             var img2 = ctx.createImageData(img);\
+             globalThis.__icopy = String(img2.width === 4 && img2.height === 3);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__fillOk").unwrap().value, "ok", "ctx.fillText 不抛");
+    assert_eq!(sandbox.execute("globalThis.__mw").unwrap().value, "true", "measureText('hello').width > 0");
+    assert_eq!(sandbox.execute("globalThis.__mFields").unwrap().value, "true", "measureText 返 TextMetrics 含 actualBoundingBoxAscent number");
+    assert_eq!(sandbox.execute("globalThis.__mw0").unwrap().value, "true", "measureText('').width === 0");
+    assert_eq!(sandbox.execute("globalThis.__iw").unwrap().value, "4", "createImageData(4,3).width = 4");
+    assert_eq!(sandbox.execute("globalThis.__ih").unwrap().value, "3", "createImageData(4,3).height = 3");
+    assert_eq!(sandbox.execute("globalThis.__ilen").unwrap().value, "48", "createImageData(4,3).data.length = 4*3*4 = 48");
+    assert_eq!(sandbox.execute("globalThis.__izero").unwrap().value, "true", "createImageData blank → data 全 0（透明）");
+    assert_eq!(sandbox.execute("globalThis.__icopy").unwrap().value, "true", "createImageData(imgData) 复制尺寸");
+}
