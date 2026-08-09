@@ -1055,6 +1055,15 @@
     removeEventListener: function(type, fn, opts) {
       _makeProxy('html', null).removeEventListener(type, fn, opts);
     },
+    // R3082 `document.dispatchEvent`——document 为 EventTarget（spec 有 dispatchEvent）。与 addEventListener/
+    // removeEventListener 同转发 html key（_elKey('html', null)），故 document.dispatchEvent 触达 document/
+    // window addEventListener 注册的 listener（headless document/window 共享 html key，对称 window.dispatchEvent）。
+    // 返 `!defaultPrevented`（spec）。
+    dispatchEvent: function (event) {
+      if (!event || typeof event.type !== 'string') return true;
+      if (!event.target) event.target = globalThis.document;
+      return _dispatchToListeners(_elKey('html', null), event, 'all', globalThis.document);
+    },
     attachEvent: function(type, fn) {
       _attachEventForKey(_elKey('html', null), type, fn);
     },

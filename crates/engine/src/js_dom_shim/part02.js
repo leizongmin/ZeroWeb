@@ -2064,11 +2064,18 @@
     debug: function() {},
     trace: function() {},
     dir: function() {},
+    dirxml: function() {},
     clear: function() {},
     count: function() {},
+    countReset: function() {},
     group: function() {},
+    groupCollapsed: function() {},
     groupEnd: function() {},
-    table: function() {}
+    table: function() {},
+    time: function() {},
+    timeLog: function() {},
+    timeEnd: function() {},
+    assert: function() {}
   };
 
   // `new Image(width, height)`（HTMLImageElement 构造器，R2834）——图片预加载（`new Image().src = url` 预取 /

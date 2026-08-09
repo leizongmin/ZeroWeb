@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1a document.dispatchEvent + QuickJS console 补全（runtime 类全 scripted 通过，本轮 R3082）
+
+R3082 探针（js_executes_ok 全 238 scripted 用例）发现仅 3 例失败：runtime/events/custom-event（`document.dispatchEvent is not a function`，真引擎缺陷）/ es-module dynamic-import（`typeof import` 非 module SyntaxError，test-case 限制）/ interactive script-variants（`<script type=module>` import，module 执行路径 defer）。本切片闭合 runtime 缺陷。**附带**：runtime gate 在 quickjs 阶段暴露 shim console 缺 time/timeEnd/assert（v8 用原生 console 故不暴露，quickjs 用 shim console 暴露）→ 补全。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`document.dispatchEvent`** | `crates/engine/src/js_dom_shim/part06.js`（document 对象 removeEventListener 后） | document 旧有 addEventListener/removeEventListener（转发 `_elKey('html',null)`）但缺 dispatchEvent。补 dispatchEvent 转发同 key（与 addEventListener 对称，对称 `window.dispatchEvent`），返 `!defaultPrevented`。document/window 共享 html key（既有设计），故 document.dispatchEvent 触达 document/window 注册的 listener。spec Document extends EventTarget。 |
+| **QuickJS console 补全** | `crates/engine/src/js_dom_shim/part02.js`（console 对象） | 补 `time`/`timeLog`/`timeEnd`/`assert`/`dirxml`/`groupCollapsed`/`countReset`（v8 用原生 console 故不暴露缺口，quickjs 用 shim console 暴露——runtime/console/all-methods 用例在 quickjs 阶段抛 `not a function`）。 |
+| **R3082 测试** | engine `part14.rs`（+`test_document_dispatch_event_r3082`）+ wpt-runner `mod.rs`（+`runtime_cases_execute_scripts_r3082`） | engine：功能 round-trip（document.addEventListener 注册 → document.dispatchEvent 触发 listener → 回读 e.detail + target/currentTarget = document + 返 !defaultPrevented）；wpt-runner：全 runtime 用例 js_executes_ok strict 通过（v8+quickjs 双跑）。 |
+
+**为何净正向**：① document.dispatchEvent 为纯新增（旧缺，补后与 addEventListener/removeEventListener 三件套完整）；② 复用既有 `_dispatchToListeners` + html key（与 window.dispatchEvent 同路径，零逻辑重写）；③ console 补全为纯新增方法（no-op，补 spec 标准方法表面）；④ R3082 探针实测全 238 scripted 用例仅剩 2 test-case/module 限制（非引擎缺陷）；⑤ 全量 make test 全绿（0 failed across all binaries，16094 passed）。
+
+**已知限制（记录，defer）**：① **2 scripted 用例非引擎缺陷**：es-module/dynamic-import-exists（`typeof import` 非 module 脚本 SyntaxError——test-case 应改用 `typeof import === 'function'`→实际 `typeof import` 本身非法，或测 `import()`；test-data 修正低优先）/ interactive/script-variants（`<script type=module">import ...` 经典脚本路径执行→module 脚本执行路径 defer，中复杂度）；② **document/window 共享 html key**（headless 单 listener 注册表设计，跨 target 隔离 defer）；③ **QuickJS console 为 no-op**（headless 无控制台输出，v8 用原生）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**cargo test 执行器；0 failed across all binaries，全量 16094 passed，engine +1 + wpt-runner +1（v8+quickjs 双跑）= +3，零回归**）+ pre-commit guard PASS。变更纯 JS shim + 测试（无 render/paint/layout .rs），product-smoke 不受影响。
+
+**下一步**：runtime 类 scripted 全通过（document.dispatchEvent 闭合；2 test-case/module 限制 defer）。全 scripted 探针仅剩 2 非引擎缺陷 → **scripted js_executes_ok 赛道收敛**。pivot 出 js_executes_ok 赛道：① **`<script type=module>` 执行路径**（module 脚本当前经经典脚本路径执行→import 抛 SyntaxError；闭合 interactive/script-variants + 真 ES module 支持，中复杂度）；② IndexedDB 持久化（storage crate host bridge，中-高复杂度）；③ stroke gradient 逐像素光栅化（中复杂度）；④ P1a 事件循环 macro-task 队列补全 / popover 渲染层。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a IndexedDB 内存表面（open/upgradeneeded/onsuccess/transaction/store CRUD/createIndex，闭合 5 storage 用例，本轮 R3081）
 
 承接 R3080（Worker 表面）。R3080 探针 3 失败簇剩 storage（5：`indexedDB is not defined`）+ es-modules（1：test-case 限制）。本切片闭合 storage 簇。storage crate 有真 IDB 实现但**未接 JS bridge**（`globalThis.indexedDB` 未定义）。本切片提供完整 in-memory IDB 表面（JS-only，无 host bridge）——功能可用（CRUD round-trip 真生效），非仅 no-throw。

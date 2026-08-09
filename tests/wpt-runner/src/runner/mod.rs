@@ -301,10 +301,29 @@ mod runtime_path_tests {
             failed.join("\n")
         );
     }
-}
 
-/// 运行单个测试用例，返回结果。
-///
+    /// R3082：所有 runtime 用例经 `js_executes_ok` 真实执行内联脚本无异常。闭合 document.dispatchEvent
+    ///（转发 _elKey('html',null)，对称 addEventListener）后，`document.dispatchEvent(new CustomEvent(...))`
+    /// 不再抛 TypeError。runtime 用例原仅声明 render_completes/dom_has_body；本回归门经 strict 执行验证。
+    #[test]
+    fn runtime_cases_execute_scripts_r3082() {
+        let ctx = TestContext::default();
+        let cases = filter_tests_by_category(&builtin_tests(), "runtime");
+        assert!(!cases.is_empty(), "runtime 用例集非空");
+        let mut failed: Vec<String> = Vec::new();
+        for case in &cases {
+            if let Err(e) = check_js_executes_ok(&case.html, &ctx) {
+                failed.push(format!("{}: {}", case.id, e));
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "runtime 用例应全部 js_executes_ok 通过（{} 例失败）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
+}
 /// 根据预期元数据管理已知行为：
 #[allow(dead_code)]
 /// - `Pass`：正常执行，失败则报告为 FAILED

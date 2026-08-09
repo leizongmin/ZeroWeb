@@ -473,3 +473,41 @@ fn test_indexeddb_in_memory_surface_r3081() {
     assert_eq!(sandbox.execute("globalThis.__gotName").unwrap().value, "second", "CRUD round-trip: put id=2 -> get(2).result.name = 'second'");
     assert_eq!(sandbox.execute("globalThis.__count").unwrap().value, "1", "count: 1 record after delete + put");
 }
+
+#[test]
+fn test_document_dispatch_event_r3082() {
+    // R3082：document.dispatchEvent。旧 document 对象有 addEventListener/removeEventListener（转发 html key）
+    // 但缺 dispatchEvent → `document.dispatchEvent(event)` 抛 TypeError（runtime/events/custom-event 用例失败）。
+    // 本切片补 dispatchEvent（转发 _elKey('html',null)，与 addEventListener 同 key，对称 window.dispatchEvent）。
+    // 本测试验证**功能 round-trip**：document.addEventListener 注册 → document.dispatchEvent 触发 listener，
+    // 回读 e.detail（同步派发，非仅 no-throw）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "globalThis.__isFn = String(typeof document.dispatchEvent === 'function');\
+             document.addEventListener('my-event', function (e) {\
+                 globalThis.__heard = String(e.detail || 'none');\
+                 globalThis.__targetIsDoc = String(e.target === document || e.currentTarget === document);\
+             });\
+             var ev = new CustomEvent('my-event', { detail: 'hello-r3082' });\
+             globalThis.__ret = String(document.dispatchEvent(ev));\
+             globalThis.__afterDispatch = 'ok';",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__isFn").unwrap().value, "true", "typeof document.dispatchEvent === 'function'");
+    assert_eq!(sandbox.execute("globalThis.__heard").unwrap().value, "hello-r3082", "document.dispatchEvent 触发 document.addEventListener 注册的 listener（detail 回读）");
+    assert_eq!(sandbox.execute("globalThis.__ret").unwrap().value, "true", "dispatchEvent 返 !defaultPrevented = true");
+    assert_eq!(sandbox.execute("globalThis.__afterDispatch").unwrap().value, "ok", "dispatchEvent 后续执行不中断");
+}
