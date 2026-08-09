@@ -965,3 +965,31 @@ fn native_clone_node_default_shallow() {
         "0"
     );
 }
+
+// ── R3115 contains(node) ──
+//
+// HTML: <div id="a"><div id="b"><span id="c">x</span></div></div>
+
+/// `contains`：后代 / 自身 / 非后代（walk parent 链）。
+#[test]
+fn native_contains_relations() {
+    let html = r#"<div id="a"><div id="b"><span id="c">x</span></div></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a'), c=__zw_native_element_for_id('c');\
+             return a.contains(c)+'/'+a.contains(a)+'/'+c.contains(a); })()"
+        ),
+        "true/true/false"
+    );
+}
+
+/// `contains(null)` → false（spec：contains(null)===false；非 node 参亦 false）。
+#[test]
+fn native_contains_null() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').contains(null))"),
+        "false"
+    );
+}

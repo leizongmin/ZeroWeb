@@ -233,6 +233,12 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "cloneNode") {
         tmpl.set(k.into(), clone_tmpl.into());
     }
+    // R3115 `contains(node)`（spec `dom-node-contains`）：node 是否为本元素或其后代
+    //（含自身：`el.contains(el)===true`）；walk parent 链。
+    let contains_tmpl = v8::FunctionTemplate::builder(native_contains_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "contains") {
+        tmpl.set(k.into(), contains_tmpl.into());
+    }
     set_element_template(scope, tmpl);
 
     // R3112 NamedNodeMap ObjectTemplate（element.attributes 集合）：length getter + item/
@@ -1266,6 +1272,37 @@ fn native_clone_node_invoke(
     if let Some(obj) = get_or_create_native_element(scope, new_id) {
         rv.set(obj.into());
     }
+}
+
+/// `contains(node)`（spec `dom-node-contains`）：node 是否为本元素自身或后代（walk parent 链）。
+/// null/undefined/非 native 参 → false（spec：contains(null)===false）。
+fn native_contains_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(self_id) = read_node_id(scope, &this) else {
+        rv.set(v8::Boolean::new(scope, false).into());
+        return;
+    };
+    let Some(target_id) = node_id_from_value(scope, args.get(0)) else {
+        rv.set(v8::Boolean::new(scope, false).into());
+        return;
+    };
+    // 从 target 沿 parent 链上溯，命中 self_id 则 true（含自身）。
+    let contains = with_dom(|d| {
+        let mut cur = Some(target_id);
+        while let Some(c) = cur {
+            if c == self_id {
+                return true;
+            }
+            cur = d.parent_node(c);
+        }
+        false
+    })
+    .unwrap_or(false);
+    rv.set(v8::Boolean::new(scope, contains).into());
 }
 
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──

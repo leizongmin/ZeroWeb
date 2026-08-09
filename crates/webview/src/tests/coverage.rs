@@ -714,6 +714,29 @@ fn test_native_clone_node_r3114() {
     );
 }
 
+// ── P1b contains(node) native（本轮 R3115）──
+
+// native_dom=true → contains 经 execute_script 安装路径可用（后代关系 walk parent 链）。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_contains_r3115() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body><div id=\"a\"><div id=\"b\"><span id=\"c\">x</span></div></div></body></html>",
+        None,
+    );
+    wv.run_page_scripts_strict().unwrap();
+    assert_eq!(
+        wv.execute_script(
+            "(()=>{ const a=__zw_native_element_for_id('a'), c=__zw_native_element_for_id('c');\
+             return a.contains(c)+'/'+a.contains(a)+'/'+c.contains(a); })()"
+        )
+        .unwrap(),
+        "true/true/false",
+        "contains 后代/自身/非后代"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]

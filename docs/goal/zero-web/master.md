@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1b contains(node) native——后代关系查询（本轮 R3115）
+
+承接 R3114（cloneNode）。本轮补 native Element 的 `contains(node)`（spec `dom-node-contains`，DOM Level 4）。node 是否为本元素自身或后代（walk parent 链）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **contains 方法** | `crates/engine/src/dom_bindings/mod.rs` | `native_contains_invoke`（this=self_id，参 target_id 经 `node_id_from_value`——null/undefined/非 native → false；`with_dom` 从 target 沿 `parent_node` 链上溯，命中 self_id 则 true，含自身）。模板注册 FunctionTemplate（cloneNode 之后）。 |
+| **engine 隔离测试 + webview 集成测试** | `crates/engine/src/dom_bindings/tests.rs` + `crates/webview/src/tests/coverage.rs` | engine 2 测（后代/自身/非后代 walk parent 链 / contains(null)===false）；webview `test_native_contains_r3115`（execute_script 安装路径含 R3115）。 |
+
+**为何净正向**：① 补 native Element 树查询面（contains 是事件委托 / 区域检测 / 框架高频 API，DOM Level 4）；② 极低风险——单方法 + walk parent_node 链（无新 GC/无新模板/无 webview 接线）；③ kill-switch 默认关 → 零回归（polyfill 不变）；④ 复用 R3108 `node_id_from_value` null 短路（contains(null) 静默 false，spec）。
+
+**已知限制（记录，后续）**：① **escape-hatch 可达**——标准 document.getElementById（polyfill）仍返 polyfill 元素；native contains 经 `__zw_native_element_for_id` 可达；标准全局桥接 = S6/L2（高风险，后续）；② **mod.rs 增长**——本文件随 R3108–R3115 八轮 escape-hatch 切片累积，现 ~1457 行（<2000 上限但趋近）；RFC §3.2 计划拆 element.rs / document.rs / event_target.rs 子模块，超 2000 前应主动拆（后续维护切片）；③ 仅 V8（QuickJS no-op，继承）；④ product-smoke 不适用（native_dom 默认关分支）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；engine lib 1792（+2 contains）；webview v8 561（+1 R3115 集成）+ quickjs 527；全 workspace 16185 passed 0 failed 零回归**）。pre-commit guard PASS。
+
+**下一步**：native Element 树查询面补全（contains）。候选：① **RFC §3.2 mod.rs 子模块拆分**（element.rs / document.rs / event_target.rs / namednodemap.rs——mod.rs ~1457 行趋近 2000 上限，维护切片；行为保持重构，零回归）；② **完整 Attr 节点**（nodeType=2/ownerElement/name/value，闭合 R3112 plain-object 限制）；③ **host→page native 事件派发**（`webview.dispatch_event` 扫 native LISTENERS，闭合 S4 host 驱动半边）；④ **innerHTML/outerHTML setter**（html5ever parse + 替换子节点/自身，闭合 R3113 getter-only——大切片）；⑤ **L2 polyfill-live**（polyfill 桥迁 Document-直读，native↔polyfill 合一，高风险大改）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b cloneNode(deep) native——标准树克隆（本轮 R3114）
 
 承接 R3113（innerHTML/outerHTML getter）。本轮补 native Element 的 `cloneNode(deep)`（spec `dom-node-clonenode`，DOM Level 2+ 核心）。复用既有 `Document::clone_node(node, deep)`（克隆元素+属性，deep 递归子树，返未挂载克隆 NodeId）。
