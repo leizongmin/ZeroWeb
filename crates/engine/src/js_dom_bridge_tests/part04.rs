@@ -1806,3 +1806,46 @@ fn test_anchor_javascript_target_r3057() {
         "<a> 无 href → None"
     );
 }
+
+#[test]
+fn test_js_cross_document_navigation_r3058() {
+    // R3058：JS 跨文档导航（location.href=/assign/replace）经 NavigationBridge __zw_request_navigate 投递；
+    // 同文档（hash-only）/ SPA pushState 不投递。drain 队列断言。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let nav_bridge = crate::NavigationBridge::new();
+    let nav_queue = nav_bridge.queue();
+    nav_bridge.register(&mut sandbox);
+    let drain = || nav_queue.lock().map(|mut q| std::mem::take(&mut *q)).unwrap_or_default();
+
+    // ① location.href = 跨文档 URL → 投递导航。
+    sandbox.execute("location.href = 'https://other.com/x';").unwrap();
+    assert_eq!(drain(), vec!["https://other.com/x".to_string()], "location.href= 跨文档 → 投递");
+
+    // ② location.assign(跨文档) → 投递。
+    sandbox.execute("location.assign('https://other.com/y');").unwrap();
+    assert_eq!(drain(), vec!["https://other.com/y".to_string()], "location.assign 跨文档 → 投递");
+
+    // ③ location.replace(跨文档) → 投递。
+    sandbox.execute("location.replace('https://other.com/z');").unwrap();
+    assert_eq!(drain(), vec!["https://other.com/z".to_string()], "location.replace 跨文档 → 投递");
+
+    // ④ location.hash = '#foo'（同文档片段）→ 不投递。
+    sandbox.execute("location.hash = '#foo';").unwrap();
+    assert!(drain().is_empty(), "location.hash= 同文档 → 不投递导航");
+
+    // ⑤ history.pushState（SPA 路由）→ 不投递（pushState 不经 location 导航函数）。
+    sandbox.execute("history.pushState(null, '', '/spa-route');").unwrap();
+    assert!(drain().is_empty(), "history.pushState SPA → 不投递导航");
+
+    // ⑥ location.assign('#hash-only')（同文档，仅 hash 变）→ 不投递。
+    sandbox.execute("location.assign('#bar');").unwrap();
+    assert!(drain().is_empty(), "location.assign hash-only 同文档 → 不投递");
+}

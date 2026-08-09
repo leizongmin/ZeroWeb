@@ -857,6 +857,27 @@ impl RendererRuntime {
         }
     }
 
+    /// R3058 JS 跨文档导航 drain——`location.href=/assign/replace` 跨文档变更经 `__zw_request_navigate`
+    /// 投递的目标 URL。drain 队列取最后一条（多次导航后者覆盖前者，real browser 同）→ `handle_navigate`
+    ///（GET，fetch 新文档 + 重载）。hash-only / 同 URL 不投递（shim 端已过滤）。
+    fn tick_pending_navigation(&mut self) -> Result<(), String> {
+        let pending: Vec<String> = self
+            .js_worker
+            .pending_navigations()
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default();
+        if let Some(url) = pending.into_iter().last() {
+            // JS 发起的导航走 GET（fetch 新文档）。referrer = 当前页；epoch 递增（同 anchor 导航）。
+            self.handle_navigate(zero_protocol::message::NavigateParams {
+                url,
+                referrer: self.current_url.clone(),
+                navigation_epoch: self.navigation_epoch.wrapping_add(1),
+            })?;
+        }
+        Ok(())
+    }
+
     /// 加载字体字节并按 (weight, style) 注册 alias（R2417/R2493 键规则）。返 true=注册成功（需刷新 resolver）。
     /// 抽自 drain_loaded_fonts 字体加载块，供 @font-face（async_load）与 FontFace.load()（JS 投递）共用。
     fn register_loaded_font(&mut self, family: &str, weight: Option<u16>, is_italic: bool, bytes: &[u8]) -> bool {
@@ -1598,6 +1619,10 @@ impl RendererRuntime {
             // R2949 FontFace.load()：drain JS 投递的字体加载请求（任意时刻可来，故每轮检查）。
             // fetch_get 字节 + load_font/register/set_resolver + async_resolver.resolve 解析 Promise。
             self.tick_font_face_loads();
+
+            // R3058 JS 跨文档导航：drain location.href=/assign/replace 投递的导航 URL，handle_navigate（fetch 新文档）。
+            // 多次导航取最后一条（real browser 亦取最后发起；前者被后者覆盖）。任意时刻可来，故每轮检查。
+            self.tick_pending_navigation()?;
 
             match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
                 Ok(Some(msg)) => {

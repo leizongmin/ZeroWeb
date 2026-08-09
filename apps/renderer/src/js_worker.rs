@@ -86,6 +86,9 @@ pub struct RendererJsWorker {
     /// R2949 FontFace.load() 请求队列——`__zw_load_font` 回调（worker 线程）push，renderer 主循环
     /// drain 后 fetch_get 字节 + load_font/register/set_resolver + async_resolver.resolve 解析 Promise。
     font_loads: Arc<std::sync::Mutex<Vec<zero_engine::FontLoadRequest>>>,
+    /// R3058 JS 发起跨文档导航请求队列——`__zw_request_navigate` 回调（worker 线程）push，renderer
+    /// 主循环 drain 后 handle_navigate（fetch 新文档 + 重载）。location.href=/assign/replace 跨文档触发。
+    navigations: Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 impl RendererJsWorker {
@@ -98,6 +101,9 @@ impl RendererJsWorker {
         // R2949 FontFace.load() 桥——queue 与 runtime 共享，bridge 移入 worker 线程注册 __zw_load_font。
         let font_bridge = zero_engine::FontLoadBridge::new();
         let font_loads = font_bridge.queue();
+        // R3058 JS 跨文档导航桥——queue 与 runtime 共享，bridge 移入 worker 线程注册 __zw_request_navigate。
+        let nav_bridge = zero_engine::NavigationBridge::new();
+        let navigations = nav_bridge.queue();
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
@@ -118,6 +124,7 @@ impl RendererJsWorker {
                     handle_selector_map_for_worker,
                     element_from_point_cache_for_worker,
                     font_bridge,
+                    nav_bridge,
                 )
             })
             .expect("spawn renderer js worker");
@@ -160,6 +167,7 @@ impl RendererJsWorker {
             handle_selector_map,
             element_from_point_cache,
             font_loads,
+            navigations,
         }
     }
 
@@ -196,6 +204,12 @@ impl RendererJsWorker {
     /// drain 后处理（fetch_get 字节 + load_font/register/set_resolver + async_resolver.resolve）。
     pub fn pending_font_loads(&self) -> Arc<std::sync::Mutex<Vec<zero_engine::FontLoadRequest>>> {
         Arc::clone(&self.font_loads)
+    }
+
+    /// R3058 JS 跨文档导航请求队列句柄——`__zw_request_navigate` 回调（worker 线程）push，renderer
+    /// 主循环 drain 后 handle_navigate（fetch 新文档 + 重载）。
+    pub fn pending_navigations(&self) -> Arc<std::sync::Mutex<Vec<String>>> {
+        Arc::clone(&self.navigations)
     }
 
     /// P1a gBCR：共享 layout-rect snapshot 句柄——renderer 主循环 render 后经
@@ -252,6 +266,7 @@ impl Drop for RendererJsWorker {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // 8 参 = 通道/snapshot/map/cache + font/nav bridge，签名清晰优于打包结构体
 fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
     cmd_tx: Sender<JsWorkerCommand>,
@@ -260,6 +275,7 @@ fn js_worker_main(
     handle_selector_map: HandleSelectorMap,
     element_from_point_cache: ElementFromPointCache,
     font_bridge: zero_engine::FontLoadBridge,
+    nav_bridge: zero_engine::NavigationBridge,
 ) {
     let js_config = SandboxConfig {
         persistent_context: true,
@@ -309,6 +325,8 @@ fn js_worker_main(
     fetch_bridge.register(&mut *sandbox);
     // R2949 FontFace.load() 桥——__zw_load_font 回调 push 请求到共享队列（runtime drain 后 fetch+register+resolve）。
     font_bridge.register(&mut *sandbox);
+    // R3058 JS 跨文档导航桥——__zw_request_navigate 回调 push URL 到共享队列（runtime drain 后 handle_navigate）。
+    nav_bridge.register(&mut *sandbox);
     // P1b S5：TimerBridge 注 __zw_setTimeout——shim setTimeout/setInterval 真实延迟
     // （子线程 sleep + resolver.resolve → __zwResolveCallback 调用 JS 回调）。
     let timer_bridge = TimerBridge::new(resolver);

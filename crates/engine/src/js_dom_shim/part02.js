@@ -1835,6 +1835,9 @@
     }
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
     _pushHistNav(newHref, oldHref);
+    // R3058：href/pathname/search setter 改的是非 hash 段 → 跨文档导航 → host 真重载。
+    //（hash 段经 _setLocationPath 不走此函数；故此处变更恒跨文档。）
+    if (typeof __zw_request_navigate === 'function') __zw_request_navigate(newHref);
   }
 
   // R3009：replace 当前 history entry 共享导航应用——原地替换当前 entry url（mirror replaceState，不入新 entry，
@@ -1852,6 +1855,13 @@
     }
   }
 
+  // R3058：跨文档导航判定——old/new URL 去掉 hash 段后不同 → 跨文档（需 fetch 新文档）；
+  // 仅 hash 变化 → 同文档片段导航（_setLocationHash 已处理，不触发真导航）。供 location
+  // assign/replace/href-setter 区分：跨文档 → __zw_request_navigate 投递 host 真导航。
+  function _isCrossDocumentNav(oldHref, newHref) {
+    return String(oldHref).split('#')[0] !== String(newHref).split('#')[0];
+  }
+
   // R3009：`location.assign(url)` / `location.replace(url)`——spec 导航方法（旧为 stub no-op，redirect 模式失效）。
   // assign(url) 功能等价 `location.href = url`（MDN）：resolve url + push history entry + location 反映 + hash 变化派
   // hashchange。replace(url)：replace 当前 entry（back 不回旧 url）+ hash 变化派 hashchange。两者均经 _resolveHistUrl
@@ -1862,12 +1872,20 @@
     var newHref = _resolveHistUrl(String(url));
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
     _pushHistNav(newHref, oldHref);
+    // R3058：跨文档 assign（非 hash-only）→ host 真导航（fetch 新文档）。hash-only assign = 同文档，不导航。
+    if (_isCrossDocumentNav(oldHref, newHref) && typeof __zw_request_navigate === 'function') {
+      __zw_request_navigate(newHref);
+    }
   }
   function _locationReplace(url) {
     var oldHref = globalThis.location.href;
     var newHref = _resolveHistUrl(String(url));
     if (!newHref || newHref === oldHref) return;
     _replaceHistNav(newHref, oldHref);
+    // R3058：跨文档 replace（非 hash-only）→ host 真导航（replace 语义：back 不回旧 url，但跨文档仍重载）。
+    if (_isCrossDocumentNav(oldHref, newHref) && typeof __zw_request_navigate === 'function') {
+      __zw_request_navigate(newHref);
+    }
   }
 
   globalThis.Worker = function() {
