@@ -166,6 +166,8 @@ impl RenderPipeline {
                     session.step = BudgetStep::Done;
 
                     self.cached_doc = session.doc.take();
+                    // DOM 已替换：CSS 解析缓存失效（见 RenderPipeline.cached_css_text 注释）。
+                    self.cached_css_text = None;
                     let layout_out = LayoutResult {
                         root: layout.root.clone(),
                         viewport_width: layout.viewport_width,
@@ -236,6 +238,8 @@ impl RenderPipeline {
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
 
         self.cached_doc = Some(doc);
+        // DOM 已替换：CSS 解析缓存失效（见 RenderPipeline.cached_css_text 注释）。
+        self.cached_css_text = None;
         let layout = LayoutResult {
             root: layout_result.root.clone(),
             viewport_width: layout_result.viewport_width,

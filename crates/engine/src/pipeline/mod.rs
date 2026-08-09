@@ -69,6 +69,15 @@ pub struct RenderPipeline {
     pub(crate) cached_layout: Option<LayoutResult>,
     /// 缓存的 DOM（用于命中测试）。
     pub(crate) cached_doc: Option<Document>,
+    /// CSS 解析缓存（repaint_cached_viewport 路径）：外部 css 文本与对应 stylesheets。
+    ///
+    /// `render_incremental`（resize/color-scheme/media 帧）每帧调用
+    /// `repaint_cached_viewport` 重新 `collect_stylesheets`——tokenize+parse 相同 CSS
+    /// 文本是纯浪费（动画/交互帧每帧重复）。文本相同（DOM 未变——见失效点）直接复用
+    /// 解析结果。`render_html` 族替换 cached_doc 时置 None 失效。
+    pub(crate) cached_css_text: Option<String>,
+    /// 与 `cached_css_text` 配对的解析结果。
+    pub(crate) cached_stylesheets: Vec<Stylesheet>,
 }
 
 /// 管线阶段耗时。
@@ -117,6 +126,8 @@ impl RenderPipeline {
             cached_styles: HashMap::new(),
             cached_layout: None,
             cached_doc: None,
+            cached_css_text: None,
+            cached_stylesheets: Vec::new(),
             skip_indicators: false,
             image_sizes: HashMap::new(),
             image_ratios: HashMap::new(),
@@ -402,6 +413,8 @@ impl RenderPipeline {
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
 
         self.cached_doc = Some(doc);
+        // DOM 已替换：CSS 解析缓存失效（新文档的 <style>/meta 内容可能不同）。
+        self.cached_css_text = None;
 
         let layout = LayoutResult {
             root: layout_result.root.clone(),
@@ -542,6 +555,8 @@ impl RenderPipeline {
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
 
         self.cached_doc = Some(doc);
+        // DOM 已替换：CSS 解析缓存失效（新文档的 <style>/meta 内容可能不同）。
+        self.cached_css_text = None;
 
         // 缓存布局结果
         let layout = LayoutResult {
@@ -689,8 +704,17 @@ impl RenderPipeline {
     pub fn repaint_cached_viewport(&mut self, css: &str) -> Option<RenderResult> {
         let doc = self.cached_doc.take()?;
         let dirty = zero_render_foundation::geometry::Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
-        let stylesheets = collect_stylesheets(&doc, css);
+        // CSS 解析缓存：外部 css 文本相同（cached_doc 未变——render_html 族替换时已置
+        // None 失效）直接复用解析结果，免每帧重新 tokenize+parse 全部 CSS。take 后放回
+        //（incremental_paint 是 &mut self，无法与字段借用共存）。
+        let stylesheets = if self.cached_css_text.as_deref() == Some(css) {
+            std::mem::take(&mut self.cached_stylesheets)
+        } else {
+            self.cached_css_text = Some(css.to_string());
+            collect_stylesheets(&doc, css)
+        };
         let primitives = self.incremental_paint(&doc, &stylesheets, dirty)?;
+        self.cached_stylesheets = stylesheets;
         self.cached_doc = Some(doc);
         let layout_ref = self.cached_layout.as_ref()?;
         let layout = LayoutResult {
