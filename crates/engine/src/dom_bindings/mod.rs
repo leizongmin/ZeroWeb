@@ -14,6 +14,7 @@
 //! `tagName` https://dom.spec.whatwg.org/#dom-element-tagname（HTML 大写）。
 
 mod event_target;
+mod factories;
 mod gc;
 mod namednodemap;
 
@@ -248,7 +249,7 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
 
     // 3. 全局工厂 __zw_native_element_for_id(idStr) → native element 对象。
     let global = ctx.global(scope);
-    let factory = v8::FunctionTemplate::builder(native_element_factory_invoke).build(scope);
+    let factory = v8::FunctionTemplate::builder(factories::native_element_factory_invoke).build(scope);
     let Some(f) = factory.get_function(scope) else {
         return;
     };
@@ -263,13 +264,13 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     //    `#id`/`.class`/`[attr]`+6 运算符/伪类/后代·子组合器/逗号列表）匹配 → native 对象
     //    （单）/ V8 Array（复，文档序）。R3098 工厂仅 `get_element_by_id`，本切片把
     //    querySelector 族从 polyfill 字符串桥搬到 native（返 NodeId→对象，无 String 往返）。
-    let qs = v8::FunctionTemplate::builder(native_query_selector_invoke).build(scope);
+    let qs = v8::FunctionTemplate::builder(factories::native_query_selector_invoke).build(scope);
     let qs_fn = qs.get_function(scope);
     let qs_key = v8::String::new(scope, "__zw_native_query_selector");
     if let (Some(f), Some(key)) = (qs_fn, qs_key) {
         let _ = global.set(scope, key.into(), f.into());
     }
-    let qsa = v8::FunctionTemplate::builder(native_query_selector_all_invoke).build(scope);
+    let qsa = v8::FunctionTemplate::builder(factories::native_query_selector_all_invoke).build(scope);
     let qsa_fn = qsa.get_function(scope);
     let qsa_key = v8::String::new(scope, "__zw_native_query_selector_all");
     if let (Some(f), Some(key)) = (qsa_fn, qsa_key) {
@@ -279,7 +280,7 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     // 5. 全局工厂 __zw_native_create_element(tag) —— spec `dom-document-createelement`：
     //    `Document::create_element` 造新 Element NodeId → native 对象（未挂载，appendChild 落位）。
     //    解锁原生树构建（createElement + appendChild 全 native，无 polyfill String 桥）。
-    let ce = v8::FunctionTemplate::builder(native_create_element_invoke).build(scope);
+    let ce = v8::FunctionTemplate::builder(factories::native_create_element_invoke).build(scope);
     let ce_fn = ce.get_function(scope);
     let ce_key = v8::String::new(scope, "__zw_native_create_element");
     if let (Some(f), Some(key)) = (ce_fn, ce_key) {
@@ -547,73 +548,11 @@ fn string_arg(scope: &mut v8::PinScope, args: &v8::FunctionCallbackArguments, id
         .unwrap_or_default()
 }
 
-// ── 工厂回调（global __zw_native_element_for_id）───────────────────
-
-/// 工厂回调：`__zw_native_element_for_id(idStr)` → 解析 `get_element_by_id` →
-/// NodeId → 创建/查找 native element 对象（NodeId↔对象身份映射 + stale 重建）。
-///
-/// 未找到 id → `null`。NodeId 编码进 internal slot[0]（`v8::External` ptr 值）。
-fn native_element_factory_invoke(
-    scope: &mut v8::PinScope,
-    args: v8::FunctionCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let id_str = args
-        .get(0)
-        .to_string(scope)
-        .map(|s| s.to_rust_string_lossy(scope))
-        .unwrap_or_default();
-    let Some(node_id) = with_dom(|d| d.get_element_by_id(&id_str)).flatten() else {
-        rv.set(v8::null(scope).into());
-        return;
-    };
-    if let Some(obj) = get_or_create_native_element(scope, node_id) {
-        rv.set(obj.into());
-    }
-    // 无 Element 模板（未安装）→ undefined（防御，正常路径模板已 set）。
-}
-
-/// `__zw_native_query_selector(sel)`：spec `dom-parentnode-queryselector`——
-/// 文档根下按**全量选择器引擎**（[`zero_dom::Document::query_selector`]，消费 tag/`*`/
-/// `#id`/`.class`/`[attr]`+运算符/伪类/组合器）找首个匹配元素 → native 对象。
-///
-/// 无匹配 / 空 / 非法选择器 → `null`（`parse_selector_chain` 失败返 `None`，无 panic）。
-fn native_query_selector_invoke(
-    scope: &mut v8::PinScope,
-    args: v8::FunctionCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let sel = string_arg(scope, &args, 0);
-    let Some(id) = with_dom(|d| d.query_selector(d.root(), sel.trim())).flatten() else {
-        rv.set(v8::null(scope).into());
-        return;
-    };
-    if let Some(obj) = get_or_create_native_element(scope, id) {
-        rv.set(obj.into());
-    }
-}
-
-/// `__zw_native_query_selector_all(sel)`：spec `dom-parentnode-queryselectorall`——
-/// 文档根下按全量选择器引擎（[`zero_dom::Document::query_selector_all`]）收集全部匹配
-/// 元素 → V8 `Array` of native 对象（文档序）。空 / 非法选择器 → 空 `Array`。
-fn native_query_selector_all_invoke(
-    scope: &mut v8::PinScope,
-    args: v8::FunctionCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let sel = string_arg(scope, &args, 0);
-    let ids: Vec<NodeId> = with_dom(|d| d.query_selector_all(d.root(), sel.trim())).unwrap_or_default();
-    let arr = v8::Array::new(scope, ids.len() as i32);
-    for (i, id) in ids.into_iter().enumerate() {
-        if let Some(obj) = get_or_create_native_element(scope, id) {
-            let _ = arr.set_index(scope, i as u32, obj.into());
-        }
-    }
-    rv.set(arr.into());
-}
+// ── 元素子树作用域查询（element.querySelector(-all)，注册于 Element 模板）──
+// 区别于 global `__zw_native_query_selector(-all)`（拆到 factories 子模块，本轮 R3118）。
 
 /// `element.querySelector(sel)`：spec `dom-parentnode-queryselector`（**元素子树作用域**）——
-/// 元素**后代**中首个匹配 → native 对象。区别于文档级 [`native_query_selector_invoke`]：
+/// 元素**后代**中首个匹配 → native 对象。区别于文档级 [`factories::native_query_selector_invoke`]：
 /// root = `args.this()` 元素 NodeId，且**排除元素自身**（dom `query_selector_all` 含 root 候选，
 /// spec descendants-only，镜像 polyfill `query_match_in_subtree` 的 `.filter(|n| *n != root)`）。
 ///
@@ -671,27 +610,6 @@ fn native_element_query_selector_all_invoke(
         }
     }
     rv.set(arr.into());
-}
-
-/// `__zw_native_create_element(tag)`：spec `dom-document-createelement`——
-/// `Document::create_element(tag)` 造新 Element NodeId → native 对象（**未挂载**，需 appendChild）。
-/// 空/缺省 tag → `div`（与 polyfill create_element 一致，spec 实际应抛，本切片 best-effort）。
-fn native_create_element_invoke(
-    scope: &mut v8::PinScope,
-    args: v8::FunctionCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let mut tag = string_arg(scope, &args, 0);
-    if tag.trim().is_empty() {
-        tag = "div".to_string();
-    }
-    // create（borrow_mut 释放后）→ 包 native 对象（get_or_create_native_element 内含 stale 校验）。
-    let Some(id) = with_dom_mut(|d| d.create_element(tag.trim())) else {
-        return;
-    };
-    if let Some(obj) = get_or_create_native_element(scope, id) {
-        rv.set(obj.into());
-    }
 }
 
 /// `children` getter（spec `dom-parentnode-children`）：元素**子元素**（跳过文本/注释）
