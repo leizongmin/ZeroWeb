@@ -1633,6 +1633,100 @@ fn native_element_remove_r3142() {
     );
 }
 
+// ── R3143 element.prepend/append/before/after/replaceWith（现代插入族）──
+
+/// `append(...items)` / `prepend(...items)`：variadic 节点+字符串，DOM 序 = arg 序。
+/// append 末尾追加；prepend 首子前插（保 arg 序）；字符串参 → 文本节点。
+#[test]
+fn native_element_append_prepend_r3143() {
+    let html = r#"<div id="host"><span id="existing">x</span></div>"#;
+    // append(elem_a, "mid", elem_c) → [existing, a, text("mid"), c]；childNodes 含文本。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const host=__zw_native_element_for_id('host');\
+            host.append(__zw_native_create_element('a'), 'mid', __zw_native_create_element('c'));\
+            return host.childNodes.length+'/'+host.childNodes[1].tagName+'/'+\
+            host.childNodes[2].nodeType+'/'+host.childNodes[3].tagName; })()"
+        ),
+        "4/A/3/C",
+        "append(elem,str,elem) 末尾追加——childNodes 含文本节点（nodeType=3），DOM 序 = arg 序"
+    );
+    // prepend(elem_b) → [b, existing]（b 首子）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const host=__zw_native_element_for_id('host');\
+            host.prepend(__zw_native_create_element('b'));\
+            return host.children[0].tagName+'/'+host.children[1].id; })()"
+        ),
+        "B/existing",
+        "prepend(elem) 插首子前——b 成 first child，existing 其后"
+    );
+}
+
+/// `before(...items)` / `after(...items)` / `replaceWith(...items)`：相对兄弟位置 + 替换。
+/// before 插 self 前；after 插 self 后；replaceWith 在 self 位置插 items 后移除 self。
+#[test]
+fn native_element_before_after_replace_with_r3143() {
+    let html = r#"<div id="host"><span id="target"></span></div>"#;
+    // before(x) on target → [x, target]。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const target=__zw_native_element_for_id('target');\
+            target.before(__zw_native_create_element('x'));\
+            const host=__zw_native_element_for_id('host');\
+            return host.children[0].tagName+'/'+host.children[1].id; })()"
+        ),
+        "X/target",
+        "before(x) 插 target 前——x 成首子"
+    );
+    // after(x) on target → [target, x]。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const target=__zw_native_element_for_id('target');\
+            target.after(__zw_native_create_element('x'));\
+            const host=__zw_native_element_for_id('host');\
+            return host.children[0].id+'/'+host.children[1].tagName; })()"
+        ),
+        "target/X",
+        "after(x) 插 target 后——x 成末子"
+    );
+    // replaceWith(x, y) on target → target 移除，[x, y] 替其位。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const target=__zw_native_element_for_id('target');\
+            target.replaceWith(__zw_native_create_element('x'), __zw_native_create_element('y'));\
+            const host=__zw_native_element_for_id('host');\
+            return host.children.length+'/'+host.children[0].tagName+'/'+host.children[1].tagName; })()"
+        ),
+        "2/X/Y",
+        "replaceWith(x,y) 替换——target 移除，[x,y] 替其位（DOM 序 = arg 序）"
+    );
+}
+
+/// detached 节点 before/after/replaceWith → no-op（无 parent，不抛）。
+#[test]
+fn native_element_insert_detached_noop_r3143() {
+    let html = r#"<div id="host"></div>"#;
+    // detached 节点（create 未挂载）before/after/replaceWith → no-op，host children 不变。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const detached=__zw_native_create_element('div');\
+            detached.before(__zw_native_create_element('x'));\
+            detached.after(__zw_native_create_element('y'));\
+            detached.replaceWith(__zw_native_create_element('z'));\
+            return __zw_native_element_for_id('host').children.length; })()"
+        ),
+        "0",
+        "detached 节点 before/after/replaceWith → no-op（无 parent）"
+    );
+}
+
 // ── R3132 appendChild/insertBefore(fragment) flatten ──
 
 /// host.appendChild(frag)：fragment 子节点展开进 host + fragment 清空（spec flatten）。

@@ -333,6 +333,145 @@ pub(super) fn native_element_remove_invoke(
     });
 }
 
+// ── R3143 现代 ChildNode/ParentNode 插入族（prepend/append/before/after/replaceWith）──
+
+/// 插入位置（spec prepend/append/before/after/replaceWith）。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InsertPos {
+    Prepend,
+    Append,
+    Before,
+    After,
+    ReplaceWith,
+}
+
+/// variadic 插入项：既有节点（NodeId）或文本（字符串 → 后续 create_text_node）。
+enum InsertItem {
+    Node(NodeId),
+    Text(String),
+}
+
+/// 共享 variadic 插入助手（prepend/append/before/after/replaceWith 用）。spec：
+/// - `append(...items)`：插到 `self`（作 parent）末尾；
+/// - `prepend(...items)`：插到 `self`（作 parent）首子前；
+/// - `before(...items)` / `after(...items)`：插到 `self` 的父中 self 前/后；
+/// - `replaceWith(...items)`：在 self 位置插 items 后移除 self。
+///
+/// items 含节点（native 元素读 NodeId）与字符串（→ 文本节点）；非节点参 ToString。**两遍**：① 经 scope 收集
+/// items（Node/Text，避 scope 跨 DOM borrow）；② `with_dom_mut` 按 position 算 (parent, ref_node, remove_self)
+/// 逐 item 插入 ref_node 前（ref 固定 = 原首子/原 next sibling/self，故 arg 序 = DOM 序）。before/after/
+/// replaceWith 无 parent（detached）→ no-op。
+fn insert_variadic(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments, self_id: NodeId, pos: InsertPos) {
+    // Pass 1：收集 items（Node 或 Text）——经 scope 读 NodeId / ToString，不持 DOM borrow。
+    let n = args.length();
+    let mut items: Vec<InsertItem> = Vec::with_capacity(n.max(0) as usize);
+    for i in 0..n {
+        let arg = args.get(i);
+        match node_id_from_value(scope, arg) {
+            Some(id) => items.push(InsertItem::Node(id)),
+            None => items.push(InsertItem::Text(local_value_to_string(scope, arg))),
+        }
+    }
+    // Pass 2：DOM mutation——算 (parent, ref_node, remove_self) 后逐 item 插入。
+    with_dom_mut(|d| {
+        let (parent, ref_node, remove_self) = match pos {
+            InsertPos::Append => (self_id, None, false),
+            InsertPos::Prepend => (self_id, d.first_child(self_id), false),
+            InsertPos::Before | InsertPos::ReplaceWith => {
+                let parent = d.parent_node(self_id)?; // 无 parent → no-op
+                (parent, Some(self_id), pos == InsertPos::ReplaceWith)
+            }
+            InsertPos::After => {
+                let parent = d.parent_node(self_id)?;
+                (parent, d.next_sibling(self_id), false)
+            }
+        };
+        for item in &items {
+            let node_id = match item {
+                InsertItem::Node(id) => *id,
+                InsertItem::Text(s) => d.create_text_node(s),
+            };
+            match ref_node {
+                Some(r) => {
+                    let _ = d.insert_before(parent, node_id, r);
+                }
+                None => {
+                    let _ = d.append_child(parent, node_id);
+                }
+            }
+        }
+        if remove_self {
+            let _ = d.remove_child(parent, self_id);
+        }
+        Some(())
+    });
+}
+
+/// `element.prepend(...items)`：spec `dom-parentnode-prepend`——items 插到 self（作 parent）首子前。
+pub(super) fn native_element_prepend_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    insert_variadic(scope, args, id, InsertPos::Prepend);
+}
+
+/// `element.append(...items)`：spec `dom-parentnode-append`——items 插到 self（作 parent）末尾。
+pub(super) fn native_element_append_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    insert_variadic(scope, args, id, InsertPos::Append);
+}
+
+/// `element.before(...items)`：spec `dom-childnode-before`——items 插到 self 父中 self 前。detached → no-op。
+pub(super) fn native_element_before_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    insert_variadic(scope, args, id, InsertPos::Before);
+}
+
+/// `element.after(...items)`：spec `dom-childnode-after`——items 插到 self 父中 self 后。detached → no-op。
+pub(super) fn native_element_after_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    insert_variadic(scope, args, id, InsertPos::After);
+}
+
+/// `element.replaceWith(...items)`：spec `dom-childnode-replacewith`——在 self 位置插 items 后移除 self。detached → no-op。
+pub(super) fn native_element_replace_with_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    insert_variadic(scope, args, id, InsertPos::ReplaceWith);
+}
+
 /// `nodeValue` setter（spec `dom-node-nodevalue`）：值 ToString 后，Text/Comment/PI 改 content/data
 ///（`Document::set_node_value`），其余 no-op（spec）。写入经 R3108 `sync_render_after_native_dom` 重渲染。
 pub(super) fn native_node_value_setter(

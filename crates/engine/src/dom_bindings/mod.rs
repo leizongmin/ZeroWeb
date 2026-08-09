@@ -208,6 +208,28 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "remove") {
         tmpl.set(k.into(), remove_tmpl.into());
     }
+    // R3143 `element.prepend/append/before/after/replaceWith`（spec ParentNode.prepend/append +
+    //    ChildNode.before/after/replaceWith，现代插入/替换族，variadic 节点+字符串）。
+    let prepend_tmpl = v8::FunctionTemplate::builder(node::native_element_prepend_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "prepend") {
+        tmpl.set(k.into(), prepend_tmpl.into());
+    }
+    let append_tmpl = v8::FunctionTemplate::builder(node::native_element_append_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "append") {
+        tmpl.set(k.into(), append_tmpl.into());
+    }
+    let before_tmpl = v8::FunctionTemplate::builder(node::native_element_before_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "before") {
+        tmpl.set(k.into(), before_tmpl.into());
+    }
+    let after_tmpl = v8::FunctionTemplate::builder(node::native_element_after_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "after") {
+        tmpl.set(k.into(), after_tmpl.into());
+    }
+    let replace_with_tmpl = v8::FunctionTemplate::builder(node::native_element_replace_with_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "replaceWith") {
+        tmpl.set(k.into(), replace_with_tmpl.into());
+    }
     // S4 EventTarget（spec `dom-eventtarget-add-event-listener` 等）：addEventListener /
     // removeEventListener / dispatchEvent 原生——监听器存线程局部（gc.rs LISTENERS，键=(NodeId
     // ffi, 事件类型)），dispatchEvent 在当前 scope 复活 Local 调用（不冒泡，最小切片）。
