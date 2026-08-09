@@ -90,6 +90,70 @@ fn native_multiple_elements_distinct() {
     );
 }
 
+// ── S1 只读属性族（nodeName / getAttribute / hasAttribute / id / className）──
+
+/// `nodeName`：Element == tagName（HTML 大写）。
+#[test]
+fn native_node_name() {
+    let html = r#"<div id="a"><span id="b">x</span></div>"#;
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').nodeName)"), "DIV");
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('b').nodeName)"), "SPAN");
+    // nodeName == tagName（Element 上）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('a').nodeName === __zw_native_element_for_id('a').tagName)"
+        ),
+        "true"
+    );
+}
+
+/// `getAttribute` / `hasAttribute`：读 Element 属性（spec：缺省 → null / false）。
+#[test]
+fn native_get_attribute_and_has_attribute() {
+    let html = r#"<div id="a" class="row big" data-x="42"></div>"#;
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').getAttribute('class'))"),
+        "row big"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').getAttribute('data-x'))"),
+        "42"
+    );
+    // 缺省属性 → null（spec `dom-element-getattribute`）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').getAttribute('nope'))"),
+        "null"
+    );
+    // hasAttribute：true / false。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').hasAttribute('class'))"),
+        "true"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').hasAttribute('nope'))"),
+        "false"
+    );
+}
+
+/// 反射属性 `id` / `className`（缺省 → 空串，spec reflected attr default）。
+#[test]
+fn native_id_and_class_name_reflected() {
+    let html = r#"<div id="a" class="c1 c2"></div><div id="b"></div>"#;
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').id)"), "a");
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').className)"), "c1 c2");
+    // 缺省 → 空串（reflected attr default ""）。
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('b').className)"), "");
+    // className == getAttribute('class')。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('a').className === __zw_native_element_for_id('a').getAttribute('class'))"
+        ),
+        "true"
+    );
+}
+
 // ── gc.rs 单元测试 ────────────────────────────────────────────────
 
 /// NodeId↔u64(ffi) 编解码 round-trip（internal slot 值传递基础）。
