@@ -18,3 +18,5 @@ Rally 本来就是跨轮次、跨 session 的长期执行循环。遇到需要�
 
 12. **性能门禁（perf-gate 体系，2026-08-08 落地）**：涉及性能关键路径（解析/样式/布局/绘制/Canvas/JS 桥/网络）的变更或代码量明显积累时，跑 `make bench-gate`（测量 + 门禁比较，退出码 0/1/2，全经 test-guard 包裹）。首次使用：`make bench-gate`（全 NEW/PASS）→ `make bench-capture JUSTIFICATION="初始基线"` → 再 `make bench-gate`（真比较）。新指标/新场景用 `record-bench-baseline.sh` 纳入基线；**禁止为通过门禁临时改测量配置或跳门禁**（config_hash 会暴露，政策见 docs/specs/performance-and-resource-budget.md）。
 
+13. **开工前先同步（2026-08-09 新增）**：每轮任务（含 cron job / query / 手动）开始执行前，先 `git pull --rebase` 拉取远端 main 最新代码（有未提交变更先 commit 或 stash），确认基线为最新后再开始分析与修改——避免基于旧代码跑一大轮后得出过时结论（并行双流场景下尤甚，配合第 8/10 条）。
+

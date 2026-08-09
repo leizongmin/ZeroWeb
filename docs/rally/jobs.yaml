@@ -5,6 +5,9 @@
 # 启动调度器：rally cron run -w .
 # 校验配置：  rally cron run -w . --dry-run
 #
+# 执行前先同步：每个任务开始执行前，必须先 git pull --rebase 拉取远端 main 最新代码，
+# 确认基线为最新后再开始执行——避免基于旧代码跑一大轮后得出过时的结论。
+#
 # 任务清单：
 #   1. docs-maintenance     每天凌晨 4:17 维护 README 等文档到最新
 #   2. monthly-report-finalize 每月 2 日凌晨 3:17 补充月报「决策与亮点」
