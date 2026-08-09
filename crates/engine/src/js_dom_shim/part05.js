@@ -666,6 +666,9 @@
         if (v && typeof v === 'object' && v._zwGrad) {
           this._fs = v;
           __zw_canvas_op(h, 'setFillStyleGradient', String(v._zwGrad));
+        } else if (v && typeof v === 'object' && v._zwPattern) {
+          this._fs = v;
+          __zw_canvas_op(h, 'setFillStylePattern', String(v._zwPattern));
         } else {
           this._fs = String(v);
           __zw_canvas_op(h, 'setFillStyle', String(v));
@@ -678,6 +681,9 @@
         if (v && typeof v === 'object' && v._zwGrad) {
           this._ss = v;
           __zw_canvas_op(h, 'setStrokeStyleGradient', String(v._zwGrad));
+        } else if (v && typeof v === 'object' && v._zwPattern) {
+          this._ss = v;
+          __zw_canvas_op(h, 'setStrokeStylePattern', String(v._zwPattern));
         } else {
           this._ss = String(v);
           __zw_canvas_op(h, 'setStrokeStyle', String(v));
@@ -751,6 +757,37 @@
     ctx.createConicGradient = function (startAngle, cx, cy) {
       var gid = String(__zw_canvas_op(h, 'createConicGradient', String(+startAngle || 0), String(+cx || 0), String(+cy || 0)));
       return _zwMakeGradient(h, gid);
+    };
+    // R3085：CanvasPattern（createPattern + fillStyle/strokeStyle 接图案平铺）。
+    // host 持渐变/图案共享注册表（同 id 命名空间，spec：CanvasPattern 可跨 context 引用）；createPattern 返
+    // host pid，JS 包 {_zwPattern:pid}（fillStyle/strokeStyle setter 检测标记 → setFillStylePattern/
+    // setStrokeStylePattern host 查表克隆）。源限 canvas 元素（经源 canvas getImageData 取全 RGBA wire）或
+    // ImageData-like（含 data/width/height，手构 wire "w:h;r,g,b,a,..."，与 getImageData 对偶格式一致）。
+    // repetition：spec repeat/repeat-x/repeat-y/no-repeat；空串/undefined → repeat（默认）；非法源 → null（spec）。
+    ctx.createPattern = function (image, repetition) {
+      if (typeof __zw_canvas_op !== 'function') return null;
+      var wire = '';
+      if (image && typeof image.getContext === 'function') {
+        // 源 canvas 元素：getContext('2d') 返（缓存）ctx2d proxy（DOM 元素缓存于 _zwCanvasCtx[key]，
+        // standalone 缓存于 el._ctx，两者均返带 _handle 的 ctx）。取其 _handle + 元素 width/height。
+        var sctx = image.getContext('2d');
+        if (sctx && sctx._handle) {
+          var srcH = sctx._handle;
+          var sw = image.width | 0;
+          var sh = image.height | 0;
+          if (sw > 0 && sh > 0) {
+            wire = String(__zw_canvas_op(srcH, 'getImageData', '0', '0', String(sw), String(sh)));
+          }
+        }
+      } else if (image && image.data && image.width != null && image.height != null) {
+        // ImageData-like：手构 wire（dims;csv）。
+        var d = image.data, n = d.length, nums = [];
+        for (var i = 0; i < n; i++) nums.push(d[i]);
+        wire = (image.width | 0) + ':' + (image.height | 0) + ';' + nums.join(',');
+      }
+      if (!wire) return null;
+      var pid = String(__zw_canvas_op(h, 'createPattern', wire, String(repetition || '')));
+      return { _zwPattern: pid };
     };
     // ── slice 2：path 曲线 / 状态栈 / transforms / line 样式 / globalAlpha（R2796）──
     ctx.quadraticCurveTo = function (cpx, cpy, x, y) {

@@ -58,6 +58,17 @@ fn parse_line_join(s: &str) -> zero_canvas::LineJoin {
     }
 }
 
+/// canvas `pattern repetition` 串 → PatternRepetition（spec: repeat/repeat-x/repeat-y/no-repeat；空串/未知回落 Repeat = 默认）。
+fn parse_pattern_repetition(s: &str) -> zero_canvas::PatternRepetition {
+    use zero_canvas::PatternRepetition as P;
+    match s.trim().to_ascii_lowercase().as_str() {
+        "repeat-x" => P::RepeatX,
+        "repeat-y" => P::RepeatY,
+        "no-repeat" => P::NoRepeat,
+        _ => P::Repeat, // "" / "repeat" / 未知 → Repeat（spec：空串 = repeat）
+    }
+}
+
 /// canvas `lineCap` 串 → LineCap（spec: butt/round/square；未知回落 Butt = 默认）。
 fn parse_line_cap(s: &str) -> zero_canvas::LineCap {
     match s.trim().to_ascii_lowercase().as_str() {
@@ -576,6 +587,34 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         "setStrokeStyleGradient" => {
             let gid = arg(0).trim().parse::<u64>().unwrap_or(0);
             if let (Some(ctx), Some(style)) = (reg.contexts.get_mut(&hid()), reg.gradients.get(&gid)) {
+                ctx.set_stroke_style(style.clone());
+            }
+            "ok".into()
+        }
+        // ── 图案（R3085）：createPattern 经 ImageData wire（shim 从源 canvas getImageData 取）建 CanvasStyle::Pattern
+        // 存渐变注册表（同 id 命名空间）。fill/stroke 经 is_per_pixel_style 路由逐像素平铺（canvas crate
+        // sample_pattern_pixel）。setFillStylePattern/setStrokeStylePattern 与 gradient 版同（注册表查表克隆）。
+        "createPattern" => {
+            let img = parse_image_data_wire(arg(0));
+            let rep = parse_pattern_repetition(arg(1));
+            let id = reg.next_grad_id;
+            reg.next_grad_id += 1;
+            reg.gradients.insert(
+                id,
+                zero_canvas::CanvasStyle::Pattern(zero_canvas::CanvasPattern::new(img, rep)),
+            );
+            id.to_string()
+        }
+        "setFillStylePattern" => {
+            let pid = arg(0).trim().parse::<u64>().unwrap_or(0);
+            if let (Some(ctx), Some(style)) = (reg.contexts.get_mut(&hid()), reg.gradients.get(&pid)) {
+                ctx.set_fill_style(style.clone());
+            }
+            "ok".into()
+        }
+        "setStrokeStylePattern" => {
+            let pid = arg(0).trim().parse::<u64>().unwrap_or(0);
+            if let (Some(ctx), Some(style)) = (reg.contexts.get_mut(&hid()), reg.gradients.get(&pid)) {
                 ctx.set_stroke_style(style.clone());
             }
             "ok".into()

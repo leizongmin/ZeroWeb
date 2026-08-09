@@ -76,7 +76,7 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_rect(&rect);
         }
-        if self.fill_style.is_gradient() {
+        if self.fill_style.is_per_pixel_style() {
             // 渐变：每像素采样光栅化（真实 gradient 渲染）。primitives 合成层用 midpoint 近似单色记录
             //（GPU 合成路径的 gradient 为独立大工程，headless 像素回读路径已逐像素正确）。
             let approx = self.apply_alpha(self.fill_style.resolve_color());
@@ -102,7 +102,7 @@ impl CanvasContext {
 
         // R3084：渐变描边逐像素光栅化（对称 fill_rect 渐变 R3079）。四边各经 blit_rect_gradient；
         // 纯色走 flat 快路径。primitives 合成层用 midpoint 近似（与 fill_rect 一致）。
-        let gradient = self.stroke_style.is_gradient();
+        let gradient = self.stroke_style.is_per_pixel_style();
         let approx_or_color = self.apply_alpha(self.stroke_style.resolve_color());
         let style = self.stroke_style.clone();
         // 上 / 下 / 左 / 右 四边
@@ -271,7 +271,7 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_path(&vertices);
         }
-        if self.fill_style.is_gradient() {
+        if self.fill_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_path_fill(vertices.clone(), approx);
             self.blit_path_gradient(&vertices, &self.fill_style.clone());
@@ -297,7 +297,7 @@ impl CanvasContext {
             .commands()
             .iter()
             .any(|c| matches!(c, PathCommand::ClosePath));
-        if self.stroke_style.is_gradient() {
+        if self.stroke_style.is_per_pixel_style() {
             // 渐变描边：逐像素光栅化（R3084，对称 fill 渐变 R3079）。primitives 用 midpoint 近似。
             let approx = self.apply_alpha(self.stroke_style.resolve_color());
             self.primitives
@@ -320,7 +320,7 @@ impl CanvasContext {
         if self.has_shadow() {
             self.draw_shadow_path(&vertices);
         }
-        if self.fill_style.is_gradient() {
+        if self.fill_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_path_fill(vertices.clone(), approx);
             self.blit_path_gradient(&vertices, &self.fill_style.clone());
@@ -341,7 +341,7 @@ impl CanvasContext {
             self.draw_shadow_path(&vertices);
         }
         let closed = path.commands().iter().any(|c| matches!(c, PathCommand::ClosePath));
-        if self.stroke_style.is_gradient() {
+        if self.stroke_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.stroke_style.resolve_color());
             self.primitives
                 .add_path_stroke(vertices.clone(), approx, self.line_width, closed);

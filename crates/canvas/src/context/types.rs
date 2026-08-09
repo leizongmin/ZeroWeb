@@ -464,6 +464,11 @@ impl CanvasStyle {
         )
     }
 
+    /// 判断是否需要逐像素光栅化（渐变 + 图案；纯色走 flat 快路径）。fill/stroke 分流用（R3085 扩 Pattern）。
+    pub fn is_per_pixel_style(&self) -> bool {
+        !matches!(self, CanvasStyle::Color(_))
+    }
+
     /// 在设备空间某点 (x, y) 采样样式颜色（spec canvas 渐变光栅化的核心）。
     ///
     /// - Color：直接返回。
@@ -471,7 +476,7 @@ impl CanvasStyle {
     ///   https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-createlineargradient
     /// - RadialGradient：以内心 (x0,y0,r0) 为基准，按距离归一化到外圆 (x1,y1,r1) 得 t。
     /// - ConicGradient：以中心 (cx,cy) 计相对 start_angle 的角度，归一化到 [0,1]。
-    /// - Pattern：回落黑色（图案平铺光栅化 defer）。
+    /// - Pattern：按重复模式平铺采样源 ImageData 像素（R3085，`sample_pattern_pixel`）；超出区域透明。
     ///
     /// 偏移量超出 [0,1] 由 `sample_gradient_stops` 钳制到首/末停止点颜色（spec：渐变在停止点之外延伸为端点色）。
     pub fn sample_at(&self, x: f32, y: f32) -> Color {
@@ -511,8 +516,57 @@ impl CanvasStyle {
                 }
                 sample_gradient_stops(&g.stops, ang / std::f32::consts::TAU)
             }
-            CanvasStyle::Pattern(_) => Color::BLACK,
+            CanvasStyle::Pattern(p) => sample_pattern_pixel(p, x, y),
         }
+    }
+}
+
+/// 图案平铺采样：按重复模式在 (x, y) 处取源 ImageData 像素。
+///
+/// - Repeat：x/y 均取模回绕。
+/// - RepeatX：x 回绕，y 超出图高 → 透明。
+/// - RepeatY：y 回绕，x 超出图宽 → 透明。
+/// - NoRepeat：x/y 任一超出 → 透明。
+///
+/// 0×0 图案 → 透明。
+fn sample_pattern_pixel(pattern: &CanvasPattern, x: f32, y: f32) -> Color {
+    let w = pattern.image_data.width;
+    let h = pattern.image_data.height;
+    if w == 0 || h == 0 {
+        return Color::TRANSPARENT;
+    }
+    let iw = w as i32;
+    let ih = h as i32;
+    let ix = x.floor() as i32;
+    let iy = y.floor() as i32;
+    // 按重复模式计算有效 tile 坐标；超出区域返回透明。
+    let (tx, ty) = match pattern.repetition {
+        PatternRepetition::Repeat => (ix.rem_euclid(iw), iy.rem_euclid(ih)),
+        PatternRepetition::RepeatX => {
+            if iy < 0 || iy >= ih {
+                return Color::TRANSPARENT;
+            }
+            (ix.rem_euclid(iw), iy)
+        }
+        PatternRepetition::RepeatY => {
+            if ix < 0 || ix >= iw {
+                return Color::TRANSPARENT;
+            }
+            (ix, iy.rem_euclid(ih))
+        }
+        PatternRepetition::NoRepeat => {
+            if ix < 0 || ix >= iw || iy < 0 || iy >= ih {
+                return Color::TRANSPARENT;
+            }
+            (ix, iy)
+        }
+    };
+    let idx = ((ty as u32 * w + tx as u32) * 4) as usize;
+    let d = &pattern.image_data.data;
+    if idx + 3 < d.len() {
+        Color::rgba(d[idx], d[idx + 1], d[idx + 2], d[idx + 3])
+    } else {
+        Color::TRANSPARENT
     }
 }
 
@@ -985,6 +1039,50 @@ mod tests {
         };
         let pattern = CanvasPattern::new(img, PatternRepetition::NoRepeat);
         assert_eq!(pattern.repetition, PatternRepetition::NoRepeat);
+    }
+
+    // R3085：图案平铺采样（sample_pattern_pixel）。2×2 源四角四色，验证四种重复模式 + 越界透明 + 0×0 透明。
+    #[test]
+    fn test_sample_pattern_pixel_tiling_r3085() {
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            data: vec![
+                255, 0, 0, 255, // (0,0) red
+                0, 255, 0, 255, // (1,0) green
+                0, 0, 255, 255, // (0,1) blue
+                255, 255, 255, 255, // (1,1) white
+            ],
+        };
+        // Repeat：x/y 均回绕。device (2,0)→tile(0,0) red；(3,1)→tile(1,1) white；(-1,0)→tile(1,0) green。
+        let rep = CanvasPattern::new(img.clone(), PatternRepetition::Repeat);
+        assert_eq!(sample_pattern_pixel(&rep, 2.0, 0.0), Color::rgba(255, 0, 0, 255));
+        assert_eq!(sample_pattern_pixel(&rep, 3.0, 1.0), Color::rgba(255, 255, 255, 255));
+        assert_eq!(sample_pattern_pixel(&rep, -1.0, 0.0), Color::rgba(0, 255, 0, 255));
+        // RepeatX：x 回绕，y 超出图高 → 透明。device (0,2)→透明；(2,0)→x 回绕 red。
+        let rpx = CanvasPattern::new(img.clone(), PatternRepetition::RepeatX);
+        assert_eq!(sample_pattern_pixel(&rpx, 0.0, 2.0), Color::TRANSPARENT);
+        assert_eq!(sample_pattern_pixel(&rpx, 2.0, 0.0), Color::rgba(255, 0, 0, 255));
+        // RepeatY：y 回绕，x 超出图宽 → 透明。device (2,0)→透明（x OOB）；(0,2)→y 回绕行 0 red；(0,3)→y 回绕行 1 blue。
+        let rpy = CanvasPattern::new(img.clone(), PatternRepetition::RepeatY);
+        assert_eq!(sample_pattern_pixel(&rpy, 2.0, 0.0), Color::TRANSPARENT);
+        assert_eq!(sample_pattern_pixel(&rpy, 0.0, 2.0), Color::rgba(255, 0, 0, 255));
+        assert_eq!(sample_pattern_pixel(&rpy, 0.0, 3.0), Color::rgba(0, 0, 255, 255));
+        // NoRepeat：x/y 任一超出 → 透明；tile 内取像素。device (0,0) red；(2,0) 透明；(0,2) 透明。
+        let nrp = CanvasPattern::new(img.clone(), PatternRepetition::NoRepeat);
+        assert_eq!(sample_pattern_pixel(&nrp, 0.0, 0.0), Color::rgba(255, 0, 0, 255));
+        assert_eq!(sample_pattern_pixel(&nrp, 2.0, 0.0), Color::TRANSPARENT);
+        assert_eq!(sample_pattern_pixel(&nrp, 0.0, 2.0), Color::TRANSPARENT);
+        // 0×0 图案 → 透明。
+        let empty = CanvasPattern::new(
+            ImageData {
+                width: 0,
+                height: 0,
+                data: vec![],
+            },
+            PatternRepetition::Repeat,
+        );
+        assert_eq!(sample_pattern_pixel(&empty, 0.0, 0.0), Color::TRANSPARENT);
     }
 
     // ── CanvasStyle 测试 ──────────────────────────────────

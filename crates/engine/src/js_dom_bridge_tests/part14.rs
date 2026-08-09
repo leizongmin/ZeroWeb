@@ -367,6 +367,93 @@ fn test_canvas_ctx2d_gradient_r3079() {
 }
 
 #[test]
+fn test_canvas_ctx2d_pattern_r3085() {
+    // R3085：Canvas Pattern（createPattern + fillStyle/strokeStyle 接图案 + fill/fillRect 平铺光栅化）。
+    // R3079 闭合渐变；R3084 闭合 stroke 渐变；本切片闭合 Pattern 样式（R3084 defer 项「Pattern 回落黑」）。
+    // host 持渐变/图案共享注册表（同 id 命名空间），createPattern 返 pid，JS 包 {_zwPattern:pid}；
+    // fillStyle/strokeStyle setter 检测 _zwPattern 标记 → setFillStylePattern/setStrokeStylePattern host 查表克隆；
+    // canvas crate 经 sample_at → sample_pattern_pixel 逐像素平铺（像素级正确性见 canvas crate test）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <canvas id='dst' width='20' height='10'></canvas>\
+         <canvas id='src' width='4' height='4'></canvas>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① ImageData-like 源 → createPattern 返图案对象（host 建注册表项）。
+    // ② fillStyle = 图案对象后 getter 返回该对象（spec round-trip，_zwPattern 标记）。
+    // ③ fillRect 用图案 fillStyle 不抛（host setFillStylePattern + canvas crate 逐像素平铺）。
+    // ④ no-repeat 重复模式建图案不抛 + 返对象。
+    // ⑤ canvas 元素源路径（经源 canvas getImageData 取 wire）返图案对象。
+    // ⑥ strokeStyle = 图案 + strokeRect 不抛（setStrokeStylePattern）。
+    sandbox
+        .execute(
+            "var dst = document.getElementById('dst');\
+             var ctx = dst.getContext('2d');\
+             var imgd = ctx.createImageData(2, 2);\
+             imgd.data[0] = 255; imgd.data[3] = 255;\
+             var pat = ctx.createPattern(imgd, 'repeat');\
+             globalThis.__patIsObj = String(pat !== null && typeof pat === 'object');\
+             ctx.fillStyle = pat;\
+             globalThis.__roundTrip = String(ctx.fillStyle === pat);\
+             ctx.fillRect(0, 0, 20, 10);\
+             globalThis.__fillOk = 'ok';\
+             var pat2 = ctx.createPattern(imgd, 'no-repeat');\
+             globalThis.__pat2IsObj = String(pat2 !== null && typeof pat2 === 'object');\
+             var src = document.getElementById('src');\
+             src.getContext('2d');\
+             var pat3 = ctx.createPattern(src, 'repeat');\
+             globalThis.__pat3IsObj = String(pat3 !== null && typeof pat3 === 'object');\
+             ctx.strokeStyle = pat;\
+             ctx.strokeRect(0, 0, 20, 10);\
+             globalThis.__strokeOk = 'ok';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__patIsObj").unwrap().value,
+        "true",
+        "createPattern(ImageData) 返图案对象"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__roundTrip").unwrap().value,
+        "true",
+        "fillStyle = pat 后 getter 返回该图案对象（spec round-trip）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__fillOk").unwrap().value,
+        "ok",
+        "fillRect 用图案 fillStyle 不抛（逐像素平铺）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__pat2IsObj").unwrap().value,
+        "true",
+        "no-repeat 重复模式建图案返对象"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__pat3IsObj").unwrap().value,
+        "true",
+        "createPattern(canvas 元素源) 返图案对象"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__strokeOk").unwrap().value,
+        "ok",
+        "strokeStyle = pat + strokeRect 不抛"
+    );
+}
+
+#[test]
 fn test_worker_api_surface_r3080() {
     // R3080：DedicatedWorker API 表面。旧 Worker 构造器为 stub `function(){}` → `w.postMessage`/`w.terminate`
     // 抛 TypeError（6 web-worker WPT 用例 js_executes_ok 失败）。本切片接 EventTarget-based Worker：

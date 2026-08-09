@@ -603,6 +603,41 @@ ctx.fillText('Hello', 150, 50);
             css: String::new(),
             assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
         },
+        // ── Canvas 图案（R3085：createPattern + fillStyle/strokeStyle 接图案 + 平铺光栅化）──
+        TestCase {
+            id: "canvas/pattern-fill".to_string(),
+            description: "Canvas 图案平铺（createPattern repeat/no-repeat + fill/stroke）".to_string(),
+            category: "canvas".to_string(),
+            html: r#"<html><body>
+            <canvas id="c" width="200" height="100"></canvas>
+            <script>
+            var c = document.getElementById('c');
+            var ctx = c.getContext('2d');
+            // 图案源：8×8 红蓝棋盘 ImageData
+            var imgd = ctx.createImageData(8, 8);
+            for (var y = 0; y < 8; y++) {
+              for (var x = 0; x < 8; x++) {
+                var i = (y * 8 + x) * 4;
+                var red = ((x + y) % 2 === 0);
+                imgd.data[i] = red ? 255 : 0;
+                imgd.data[i + 2] = red ? 0 : 255;
+                imgd.data[i + 3] = 255;
+              }
+            }
+            // repeat 平铺填充整画布
+            var pat = ctx.createPattern(imgd, 'repeat');
+            ctx.fillStyle = pat;
+            ctx.fillRect(0, 0, 200, 100);
+            // no-repeat 单次铺贴描边
+            var pat2 = ctx.createPattern(imgd, 'no-repeat');
+            ctx.strokeStyle = pat2;
+            ctx.strokeRect(10, 10, 50, 50);
+            </script>
+            </body></html>"#
+                .to_string(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".to_string(), "render_completes".to_string()],
+        },
         // ── Canvas 路径绘制 ──
         TestCase {
             id: "canvas/path-drawing".to_string(),

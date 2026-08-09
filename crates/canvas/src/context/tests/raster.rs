@@ -1421,3 +1421,64 @@ fn test_stroke_linear_gradient_rasterizes() {
     assert!(rb > rr, "描边右端偏蓝（b={} > r={}）", rb, rr);
     assert!(lb < rb, "渐变左→右：b 递增（{} → {}）", lb, rb);
 }
+
+// ── 图案平铺光栅化（R3085，对称 fill 渐变 R3079）──
+
+#[test]
+fn test_fill_rect_pattern_rasterizes_r3085() {
+    // 6×4 画布，2×2 源四角四色（red/green/blue/white），repeat 平铺，fill_rect 整画布。
+    // fill_rect 经 is_per_pixel_style 分流到 blit_rect_gradient → sample_at → sample_pattern_pixel 逐像素平铺。
+    let mut ctx = CanvasContext::new(6, 4);
+    let img = ImageData {
+        width: 2,
+        height: 2,
+        data: vec![
+            255, 0, 0, 255, // (0,0) red
+            0, 255, 0, 255, // (1,0) green
+            0, 0, 255, 255, // (0,1) blue
+            255, 255, 255, 255, // (1,1) white
+        ],
+    };
+    ctx.set_fill_style(CanvasStyle::Pattern(CanvasPattern::new(img, PatternRepetition::Repeat)));
+    ctx.fill_rect(0.0, 0.0, 6.0, 4.0);
+
+    let px = |x: usize, y: usize| {
+        let i = (y * 6 + x) * 4;
+        &ctx.pixel_buffer[i..i + 4]
+    };
+    // 平铺（tile 2×2，画布 6×4）：x/y 整除回绕。
+    assert_eq!(px(0, 0), &[255, 0, 0, 255], "tile(0,0)=red");
+    assert_eq!(px(1, 0), &[0, 255, 0, 255], "tile(1,0)=green");
+    assert_eq!(px(2, 0), &[255, 0, 0, 255], "x=2 回绕 tile(0,0)=red");
+    assert_eq!(px(3, 0), &[0, 255, 0, 255], "x=3 回绕 tile(1,0)=green");
+    assert_eq!(px(0, 1), &[0, 0, 255, 255], "y=1 tile(0,1)=blue");
+    assert_eq!(px(1, 1), &[255, 255, 255, 255], "tile(1,1)=white");
+    // y=2 行也回绕到 tile y=0：px(0,2)=red, px(1,2)=green。
+    assert_eq!(px(0, 2), &[255, 0, 0, 255], "y=2 回绕 tile(0,0)=red");
+}
+
+#[test]
+fn test_fill_rect_pattern_no_repeat_rasterizes_r3085() {
+    // 6×4 画布，2×2 源四角四色，no-repeat：仅 tile(0..2,0..2) 着色，其余透明（pixel_buffer 初始 0）。
+    let mut ctx = CanvasContext::new(6, 4);
+    let img = ImageData {
+        width: 2,
+        height: 2,
+        data: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255],
+    };
+    ctx.set_fill_style(CanvasStyle::Pattern(CanvasPattern::new(
+        img,
+        PatternRepetition::NoRepeat,
+    )));
+    ctx.fill_rect(0.0, 0.0, 6.0, 4.0);
+
+    let px = |x: usize, y: usize| {
+        let i = (y * 6 + x) * 4;
+        &ctx.pixel_buffer[i..i + 4]
+    };
+    assert_eq!(px(0, 0), &[255, 0, 0, 255], "tile(0,0)=red");
+    assert_eq!(px(1, 1), &[255, 255, 255, 255], "tile(1,1)=white");
+    assert_eq!(px(2, 0), &[0, 0, 0, 0], "x=2 越界 no-repeat → 透明");
+    assert_eq!(px(0, 2), &[0, 0, 0, 0], "y=2 越界 no-repeat → 透明");
+    assert_eq!(px(5, 3), &[0, 0, 0, 0], "远端越界 → 透明");
+}

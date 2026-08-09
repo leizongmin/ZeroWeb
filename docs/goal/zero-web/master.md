@@ -119,6 +119,26 @@
 
 ## 最近完成的改进
 
+### P1a Canvas Pattern 平铺光栅化（createPattern + fill/stroke 逐像素平铺，闭合 R3084 Pattern defer 项，本轮 R3085）
+
+承接 R3084（stroke 渐变逐像素，记「Pattern 样式仍回落黑，光栅化 defer」）。本切片闭合该 defer：`CanvasStyle::Pattern` 不再回落黑色，经逐像素平铺采样源 ImageData（spec createPattern repeat/repeat-x/repeat-y/no-repeat）。canvas 渐变/图案赛道完整（fill + stroke 渐变 R3079/R3084 + Pattern R3085 均逐像素）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`sample_pattern_pixel` + `is_per_pixel_style`** | `crates/canvas/src/context/types.rs` | `sample_at` Pattern 臂从回落黑改为 `sample_pattern_pixel`（按重复模式取模回绕/越界透明取源 ImageData 像素）。新 `is_per_pixel_style()`（非 Color 即逐像素：渐变 + 图案），替代 `is_gradient()` 作 fill/stroke 分流。 |
+| **fill/stroke 分流改 is_per_pixel_style** | `crates/canvas/src/context/context_impl.rs` | 6 处 `is_gradient()` → `is_per_pixel_style()`（fill_rect/fill/fill_with_path + stroke/stroke_rect/stroke_with_path），Pattern 现走逐像素 blit_rect_gradient/blit_path_gradient（复用 R3079 既有路径，零光栅化逻辑重写）。 |
+| **bridge createPattern + setFillStylePattern/setStrokeStylePattern** | `crates/engine/src/js_dom_bridge/canvas.rs` | 新 op：`createPattern(imgWire, rep)` 经 parse_image_data_wire 建 CanvasStyle::Pattern 存共享渐变注册表返 pid；`setFillStylePattern`/`setStrokeStylePattern` 查表克隆到 context。`parse_pattern_repetition`（repeat-x/y/no-repeat/空串=repeat）。 |
+| **JS createPattern + fillStyle/strokeStyle 检测图案** | `crates/engine/src/js_dom_shim/part05.js` | `_zwMakeCtx2d` 加 `createPattern(image, rep)`：canvas 元素源（getContext('2d') 取缓存 ctx._handle + getImageData wire）或 ImageData-like（手构 wire）→ host pid → `{_zwPattern:pid}`。fillStyle/strokeStyle setter 加 `_zwPattern` 检测分支 → setFillStylePattern/setStrokeStylePattern。 |
+| **R3085 测试** | canvas `types.rs`（+`test_sample_pattern_pixel_tiling_r3085`）+ `tests/raster.rs`（+repeat/no-repeat 光栅化 2 例）+ edge.rs（更新 `test_canvas_fill_rect_with_pattern_style` 黑色→逐像素平铺）+ engine `part14.rs`（+`test_canvas_ctx2d_pattern_r3085`）+ wpt-runner `test_cases_canvas.rs`（+`canvas/pattern-fill` 用例） | canvas：平铺采样四种重复模式 + 越界透明 + 0×0；fill_rect repeat/no-repeat 逐像素光栅化；engine：createPattern round-trip + fill/stroke 不抛 + canvas 元素源 + ImageData 源；wpt-runner：canvas 赛道 js_executes_ok 自动覆盖新用例。 |
+
+**为何净正向**：① 复用 R3079 既有 `blit_rect_gradient`/`blit_path_gradient`（Pattern 经 is_per_pixel_style 分流，零光栅化逻辑重写）；② `sample_pattern_pixel` 为纯新增（Pattern 旧回落黑，现平铺采样）；③ bridge 复用既有共享渐变注册表 + `parse_image_data_wire`（与 drawImage 源路径同款）；④ JS createPattern canvas 元素源复用 getContext 缓存 ctx（与 drawImage 源路径对称）；⑤ 全量 make test 全绿（0 failed across all binaries，零回归）。
+
+**已知限制（记录，defer）**：① **primitives 合成层 Pattern midpoint 近似**（GPU 合成路径独立工程，headless 像素回读逐像素正确，与渐变同）；② **createPattern 仅 canvas 元素/ImageData 源**（HTMLImageElement/`<img>` decode defer，与 drawImage 同）；③ **Pattern 变换感知 defer**（图案不随 ctx transform 平铺偏移——sample_pattern_pixel 用设备坐标，与渐变同简化）；④ **pattern 变换矩阵 setTransform 影响 defer**。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**0 failed across all binaries；canvas 600 passed + engine 1739 passed，wpt-runner canvas/pattern-fill 经 canvas_cases_execute_scripts_r3079 自动覆盖，零回归**）+ pre-commit guard PASS。变更含 canvas crate 光栅化 .rs（fill/stroke 路径）+ engine bridge/shim + 测试，无 CSS/layout 变更——product-smoke 不受影响（welcome.html 无 canvas）。
+
+**下一步**：canvas 渐变/图案赛道完整（fill + stroke 渐变 + Pattern 均逐像素）。pivot：① **IndexedDB 持久化**（storage crate 真 IDB + host bridge，闭合 Done Criteria §3 Storage「跨页重载不丢」，中-高复杂度）；② 外链 ES module fetch + 异步 module graph（真模块加载，中-高复杂度）；③ P1a 事件循环 macro-task 队列补全 / popover 渲染层；④ DedicatedWorker 真实化（host 独立沙箱 + 结构化克隆，中-高复杂度）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a Canvas stroke 渐变逐像素光栅化（stroke/stroke_rect 渐变描边，对称 fill 渐变 R3079，本轮 R3084）
 
 承接 R3083。R3079 闭合 fill/fill_rect 渐变，但 stroke/stroke_rect 仍用 `resolve_color()` flat midpoint（描边渐变非逐像素）。本切片补 stroke 侧，canvas 渐变赛道完整（fill + stroke 均逐像素）。

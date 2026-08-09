@@ -667,8 +667,9 @@ fn test_canvas_clear_rect_negative_dimensions() {
     assert_eq!(pixel.data[0..4], [255, 0, 0, 255], "负尺寸 clear_rect 不应破坏已有像素");
 }
 
-/// 测试 CanvasStyle::Pattern 作为 fill_style 绘制 fill_rect 时使用黑色回退色。
-/// Pattern 的 resolve_color() 返回黑色，因此 fill_rect 应使用黑色绘制。
+/// 测试 CanvasStyle::Pattern 作为 fill_style 绘制 fill_rect 时逐像素平铺光栅化（R3085）。
+/// Pattern 不再回落黑色——经 is_per_pixel_style 分流到 blit_rect_gradient → sample_at →
+/// sample_pattern_pixel，按重复模式取源 ImageData 像素。tile 2×2：device(20,20)→tile(0,0)=red。
 #[test]
 fn test_canvas_fill_rect_with_pattern_style() {
     let mut ctx = CanvasContext::new(100, 100);
@@ -680,11 +681,14 @@ fn test_canvas_fill_rect_with_pattern_style() {
     let pattern = ctx.create_pattern(img, PatternRepetition::Repeat);
     ctx.set_fill_style(CanvasStyle::Pattern(pattern));
     ctx.fill_rect(10.0, 10.0, 30.0, 30.0);
-    // Pattern resolve_color 回退为黑色
+    // 平铺（tile 2×2）：device (20,20) → tile(0,0) = red。
     let pixel = ctx.get_image_data(20, 20, 1, 1);
-    assert_eq!(pixel.data[0], 0, "pattern fill 应使用黑色回退色 r");
-    assert_eq!(pixel.data[1], 0, "pattern fill 应使用黑色回退色 g");
-    assert_eq!(pixel.data[2], 0, "pattern fill 应使用黑色回退色 b");
+    assert_eq!(
+        pixel.data[0], 255,
+        "pattern fill 逐像素平铺：device(20,20)→tile(0,0)=red r"
+    );
+    assert_eq!(pixel.data[1], 0, "pattern fill tile(0,0)=red g");
+    assert_eq!(pixel.data[2], 0, "pattern fill tile(0,0)=red b");
     assert_eq!(pixel.data[3], 255, "pattern fill alpha 应为 255");
 }
 
