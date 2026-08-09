@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1b RFC §3.2 dom_bindings 子模块拆分（stage 3：factories.rs）——行为保持重构（本轮 R3118）
+
+承接 R3117（stage 2 event_target.rs）。本轮续 §3.2 stage 3：抽 **factories.rs**（4 个**全局**工厂回调），mod.rs 1191→1109（-82）。**行为保持**——同 namednodemap/event_target 模式。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **新 factories.rs 子模块** | `crates/engine/src/dom_bindings/factories.rs`（105 行） | 搬入 4 个 `pub(super) fn`（**全局**工厂，注册于 `ctx.global`）：`native_element_factory_invoke`（`__zw_native_element_for_id`）/`native_query_selector_invoke`（`__zw_native_query_selector`）/`native_query_selector_all_invoke`（`__zw_native_query_selector_all`）/`native_create_element_invoke`（`__zw_native_create_element`）。依赖 `super::string_arg`/`super::get_or_create_native_element` + `super::gc::{with_dom, with_dom_mut}` + `zero_dom::NodeId`。pub(super) 供 mod.rs `install_dom_bindings` 全局注册经 `factories::` 调。 |
+| **mod.rs 接线更新** | `crates/engine/src/dom_bindings/mod.rs`（1191→1109） | 加 `mod factories;`（字母序 event_target/factories/gc/namednodemap）；`install_dom_bindings` 内 4 处全局工厂注册调点改 `factories::`；删 4 个搬走的 fn（90 行）+ 将孤儿 `// ── 工厂回调（global __zw_native_element_for_id）──` 段头改写为 `// ── 元素子树作用域查询 ──`（描述留在 mod.rs 的 2 个 element-scoped querySelector(-All)，它们注册于 Element 模板非全局）；修 element_qs 的 intra-doc 链 `[`native_query_selector_invoke`]`→`[`factories::native_query_selector_invoke`]`（符号迁子模块）。无 gc 导入清理（with_dom/with_dom_mut 仍被 mod.rs 多处用）。 |
+
+**为何净正向**：① RFC §3.2 stage 3——mod.rs 减 82 行（1191→1109），累计 R3116+R3117+R3118 减 337 行（原 1446）；② **行为保持**（纯 move + 可见性 + 段头/链修，调用契约不变；make test 全 workspace 16185 passed 0 failed 计数不变——零回归；dom_bindings 52 测全绿，含 factories 4 工厂既有覆盖）；③ 同 namednodemap/event_target 模式第三例验证可复用（factories.rs 仅依赖 super::string_arg/get_or_create_native_element + gc::with_dom(-mut)，自包含）；④ 2 个 element-scoped querySelector(-All) **留在 mod.rs**（注册于 Element 模板、root=args.this()，归未来 element.rs bulk）；⑤ 无性能影响（编译期 move）。
+
+**已知限制（记录，后续）**：① **staged 拆分未完**——mod.rs 仍 1109 行（Element getters/方法 bulk + 共享助手 + 2 element-scoped qs）；element.rs（bulk，最大块，需共享助手 read_node_id/string_arg/get_or_create_native_element/local_value_to_string/node_id_from_value 等归位）是 stage 4 大切片；② escape-hatch 可达性不变；③ 仅 V8（QuickJS no-op，继承）；④ product-smoke 不适用（native_dom 默认关 + 行为保持）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-webview --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**零 FAILED；dom_bindings 52 测；webview v8 561 + quickjs 527（计数不变——行为保持）；全 workspace 16185 passed 0 failed 零回归**）。pre-commit guard PASS。已提交 b300607a 并推送（71afefa6..b300607a，pull --rebase up-to-date 无冲突）。
+
+**下一步**：RFC §3.2 stage 3 完成（factories.rs）。候选：① **§3.2 stage 4：element.rs**（bulk——Element getters/方法/2 element-scoped qs，最大块 ~700+ 行，需把共享助手 read_node_id/string_arg/get_or_create_native_element/local_value_to_string/node_id_from_value/set_native_element 归位——可先抽共享助手到 helpers.rs 再搬 element bulk，或直接带 super:: 引用）；② **回到 feature 切片**（full Attr 节点 / host→page native 事件派发 / innerHTML setter 等——mod.rs 已减负可续）；③ 把 2 element-scoped qs 与 element bulk 一起归 element.rs。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b RFC §3.2 dom_bindings 子模块拆分（stage 2：event_target.rs）——行为保持重构（本轮 R3117）
 
 承接 R3116（stage 1 namednodemap.rs）。本轮续 §3.2 stage 2：抽 **event_target.rs**（addEventListener/removeEventListener/dispatchEvent），mod.rs 1277→1191（-86）。**行为保持**——同 namednodemap 模式。
