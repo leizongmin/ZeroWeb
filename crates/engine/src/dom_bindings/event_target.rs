@@ -58,6 +58,37 @@ pub(super) fn native_remove_event_listener_invoke(
     remove_listener(scope, ffi, &event_type, args.get(1));
 }
 
+// ── R3126 stopPropagation / stopImmediatePropagation 注入方法 ──
+//
+// 监听器内调 `event.stopPropagation()` / `stopImmediatePropagation()` → 设 event 对象内部 flag
+//（`__zw_stop` / `__zw_stop_immediate`），[`native_dispatch_event_invoke`] 冒泡循环读 flag 早退。
+// 注入仅当 event 无既有同名方法（不覆盖 page 构造的 Event 实例原生方法，待 native Event 构造器）。
+
+/// `event.stopPropagation()` 注入实现：设 `this.__zw_stop = true`（止上溯祖先；当前节点剩余监听器仍触发）。
+fn native_stop_propagation_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let obj = args.this();
+    if let Some(k) = v8::String::new(scope, "__zw_stop") {
+        let _ = obj.set(scope, k.into(), v8::Boolean::new(scope, true).into());
+    }
+}
+
+/// `event.stopImmediatePropagation()` 注入实现：设 `this.__zw_stop_immediate = true`（止当前节点剩余
+/// 监听器 + 上溯——立即终止整个派发）。spec `dom-event-stop-immediate-propagation`。
+fn native_stop_immediate_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let obj = args.this();
+    if let Some(k) = v8::String::new(scope, "__zw_stop_immediate") {
+        let _ = obj.set(scope, k.into(), v8::Boolean::new(scope, true).into());
+    }
+}
+
 /// `dispatchEvent(event)`（spec `dom-eventtarget-dispatch-event`）：event 为对象读 `.type`，
 /// 或直接 type 字符串（包成 `{type:str}` 对象）。**target + bubble 两阶段冒泡**（R3125，闭合 R3109
 /// 不冒泡限制）：沿 target→祖先链逐层派发，每层取监听器快照（复活 Local，释放 borrow 避回调再入）调用
@@ -65,9 +96,12 @@ pub(super) fn native_remove_event_listener_invoke(
 /// 元素（随传播变）；`event.eventPhase` = AT_TARGET(2) / BUBBLING_PHASE(3)；`event.bubbles` 控制是否
 /// 上溯祖先（默认 false）。派发后 `currentTarget=null`、`eventPhase=0`（spec）。
 ///
+/// **stopPropagation / stopImmediatePropagation**（R3126）：注入两方法（缺失时）+ 派发前复位内部 flag
+///（支持同 event 对象重派发）。监听器调 stopPropagation → 止上溯（当前节点剩余监听器仍触发）；
+/// stopImmediatePropagation → 立即终止（当前节点剩余监听器 + 上溯均止）。
+///
 /// **限制**（后续切片）：① 无 capture 阶段（需 addEventListener useCapture 跟踪 + 倒序祖先派发）；
-/// ② 无 stopPropagation / stopImmediatePropagation（需 event 方法注入 + 循环早退）；③ 无 preventDefault
-/// 返值语义（恒返 true）。返 true（spec：未 preventDefault）。
+/// ② 无 preventDefault 返值语义（恒返 true）。返 true（spec：未 preventDefault）。
 pub(super) fn native_dispatch_event_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -115,6 +149,36 @@ pub(super) fn native_dispatch_event_invoke(
     let bubbles = v8::String::new(scope, "bubbles")
         .and_then(|k| event_obj.get(scope, k.into()))
         .is_some_and(|v| v.is_true());
+    // R3126 stopPropagation / stopImmediatePropagation：注入 stop 方法（缺失时）+ 复位内部 flag
+    //（每次派发 fresh，支持同 event 对象重派发）。监听器调 stopPropagation 设 __zw_stop=true（止上溯）；
+    // stopImmediatePropagation 设 __zw_stop_immediate=true（止当前节点剩余监听器 + 上溯）。
+    let key_stop = v8::String::new(scope, "__zw_stop");
+    let key_stop_imm = v8::String::new(scope, "__zw_stop_immediate");
+    if let Some(k) = &key_stop {
+        let _ = event_obj.set(scope, (*k).into(), v8::Boolean::new(scope, false).into());
+    }
+    if let Some(k) = &key_stop_imm {
+        let _ = event_obj.set(scope, (*k).into(), v8::Boolean::new(scope, false).into());
+    }
+    // 注入 stopPropagation / stopImmediatePropagation（仅当 event 无既有同名方法，不覆盖原生 Event）。
+    if let Some(k) = v8::String::new(scope, "stopPropagation") {
+        let has = event_obj.get(scope, k.into()).is_some_and(|v| v.is_function());
+        if !has {
+            let tmpl = v8::FunctionTemplate::builder(native_stop_propagation_invoke).build(scope);
+            if let Some(f) = tmpl.get_function(scope) {
+                let _ = event_obj.set(scope, k.into(), f.into());
+            }
+        }
+    }
+    if let Some(k) = v8::String::new(scope, "stopImmediatePropagation") {
+        let has = event_obj.get(scope, k.into()).is_some_and(|v| v.is_function());
+        if !has {
+            let tmpl = v8::FunctionTemplate::builder(native_stop_immediate_invoke).build(scope);
+            if let Some(f) = tmpl.get_function(scope) {
+                let _ = event_obj.set(scope, k.into(), f.into());
+            }
+        }
+    }
     // 沿 parent 链收集 [target, parent, ..., root]（bubble 序；target 在首）。with_dom 闭包内纯读
     // 收集 NodeId，释放 borrow 后再逐层派发（派发可能再入 addEventListener/removeEventListener）。
     let chain: Vec<NodeId> = with_dom(|d| {
@@ -130,7 +194,7 @@ pub(super) fn native_dispatch_event_invoke(
     let key_ct = v8::String::new(scope, "currentTarget");
     let key_phase = v8::String::new(scope, "eventPhase");
     let call_args = [event_obj.into()];
-    for (i, &node_id) in chain.iter().enumerate() {
+    'chain: for (i, &node_id) in chain.iter().enumerate() {
         // 首层 = target（AT_TARGET）；其后 = bubble（仅当 bubbles=true）。非 bubbles 事件只派发 target。
         if i > 0 && !bubbles {
             break;
@@ -156,6 +220,20 @@ pub(super) fn native_dispatch_event_invoke(
             if let Ok(func) = v8::Local::<v8::Function>::try_from(listener) {
                 let _ = func.call(scope, recv, &call_args);
             }
+            // stopImmediatePropagation：止当前节点剩余监听器 + 上溯 → 立即终止整个派发。
+            if key_stop_imm
+                .and_then(|k| event_obj.get(scope, k.into()))
+                .is_some_and(|v| v.is_true())
+            {
+                break 'chain;
+            }
+        }
+        // stopPropagation：当前节点监听器已尽，止上溯祖先（i==0 时也防再入祖先）。
+        if key_stop
+            .and_then(|k| event_obj.get(scope, k.into()))
+            .is_some_and(|v| v.is_true())
+        {
+            break 'chain;
         }
     }
     // 派发结束：currentTarget=null、eventPhase=NONE(0)（spec：派发后 currentTarget 为 null）。

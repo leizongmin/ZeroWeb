@@ -744,6 +744,73 @@ return e.eventPhase+'/'+(e.currentTarget===null);})()";
     );
 }
 
+// ── R3126 stopPropagation / stopImmediatePropagation ──
+//
+// HTML: <div id="parent"><div id="child"></div></div>
+
+/// stopPropagation：止上溯祖先，但当前节点（target）剩余监听器仍触发（spec：只阻后续节点）。
+#[test]
+fn native_dispatch_event_stop_propagation_r3126() {
+    let html = r#"<div id="parent"><div id="child"></div></div>"#;
+    let script = "(()=>{\
+const child=__zw_native_element_for_id('child');\
+const parent=__zw_native_element_for_id('parent');\
+const log=[];\
+child.addEventListener('click',e=>{log.push('child1');e.stopPropagation();});\
+child.addEventListener('click',e=>{log.push('child2');});\
+parent.addEventListener('click',e=>{log.push('parent');});\
+child.dispatchEvent({type:'click',bubbles:true});\
+return log.join(',');})()";
+    assert_eq!(
+        run_script(html, script),
+        "child1,child2",
+        "stopPropagation：target 剩余监听器仍触发，但止上溯 parent"
+    );
+}
+
+/// stopImmediatePropagation：立即终止——当前节点剩余监听器 + 上溯均不触发。
+#[test]
+fn native_dispatch_event_stop_immediate_r3126() {
+    let html = r#"<div id="parent"><div id="child"></div></div>"#;
+    let script = "(()=>{\
+const child=__zw_native_element_for_id('child');\
+const parent=__zw_native_element_for_id('parent');\
+const log=[];\
+child.addEventListener('click',e=>{log.push('child1');e.stopImmediatePropagation();});\
+child.addEventListener('click',e=>{log.push('child2');});\
+parent.addEventListener('click',e=>{log.push('parent');});\
+child.dispatchEvent({type:'click',bubbles:true});\
+return log.join(',');})()";
+    assert_eq!(
+        run_script(html, script),
+        "child1",
+        "stopImmediatePropagation：剩余监听器 + 上溯均止"
+    );
+}
+
+/// 派发前复位 stop flag：同一 event 对象二次派发，第二次不调 stop 则正常上溯（防 stale flag 误止）。
+#[test]
+fn native_dispatch_event_stop_flag_reset_r3126() {
+    let html = r#"<div id="parent"><div id="child"></div></div>"#;
+    let script = "(()=>{\
+const child=__zw_native_element_for_id('child');\
+const parent=__zw_native_element_for_id('parent');\
+const log=[];\
+let mode='stop';\
+child.addEventListener('click',e=>{if(mode==='stop')e.stopImmediatePropagation();});\
+parent.addEventListener('click',e=>{log.push('parent');});\
+const ev={type:'click',bubbles:true};\
+child.dispatchEvent(ev);\
+mode='nostop';\
+child.dispatchEvent(ev);\
+return log.join(',');})()";
+    assert_eq!(
+        run_script(html, script),
+        "parent",
+        "flag 复位：二次派发无 stop 时正常上溯（非 stale flag 误止）"
+    );
+}
+
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
 //
 // HTML: <div id="root"><span id="s1">hello</span><span id="s2"></span></div>
