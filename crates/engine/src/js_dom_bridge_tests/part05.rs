@@ -1826,3 +1826,68 @@ fn test_form_select_multiple_and_fieldset_disabled_r3056() {
         "嵌套 fieldset disabled：内层控件 deep 跳过（祖先链）"
     );
 }
+
+#[test]
+fn test_form_disabled_legend_exemption_r3066() {
+    // R3066：disabled fieldset 首个 <legend> 子内控件豁免（闭合 R3056 限制①）。spec HTML §4.10.18「not a
+    // descendant of that fieldset's first legend element child」——legend 内控件即使 fieldset disabled 也启用提交。
+    let base = "https://example.com/page";
+
+    // ① disabled fieldset 首个 legend 内控件启用（提交），legend 外控件禁用（跳过）。
+    let html = "<html><body><form id='f' action='/s'>\
+        <fieldset disabled>\
+          <legend><input name='leg' value='1'></legend>\
+          <input name='body' value='2'>\
+        </fieldset>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html, "#f", None, base),
+        Some("https://example.com/s?leg=1".to_string()),
+        "disabled fieldset：首个 legend 内控件启用（leg=1），legend 外控件禁用（body 跳过）"
+    );
+
+    // ② legend 内嵌套控件仍豁免（descendant）。
+    let html2 = "<html><body><form id='f' action='/s'>\
+        <fieldset disabled>\
+          <legend><label>x<input name='leg' value='1'></label></legend>\
+        </fieldset>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html2, "#f", None, base),
+        Some("https://example.com/s?leg=1".to_string()),
+        "legend 内嵌套控件豁免（descendant，leg=1）"
+    );
+
+    // ③ 仅首个 legend 豁免：第二个 legend 内控件**不**豁免（禁用，跳过）。
+    let html3 = "<html><body><form id='f' action='/s'>\
+        <fieldset disabled>\
+          <legend>first</legend>\
+          <legend><input name='leg2' value='1'></legend>\
+        </fieldset>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html3, "#f", None, base),
+        Some("https://example.com/s".to_string()),
+        "仅首个 legend 豁免：第二个 legend 内控件禁用（leg2 跳过）"
+    );
+
+    // ④ 无 legend 的 disabled fieldset：内部控件全部禁用（既有行为，回归守卫）。
+    let html4 = "<html><body><form id='f' action='/s'>\
+        <fieldset disabled><input name='x' value='1'></fieldset>\
+        </form></body></html>";
+    assert_eq!(
+        form_get_submission_url(html4, "#f", None, base),
+        Some("https://example.com/s".to_string()),
+        "无 legend 的 disabled fieldset：内部控件禁用（x 跳过，回归守卫）"
+    );
+
+    // ⑤ POST 表单同样遵循 legend 豁免（form_post_submission 复用 collect_form_data）。
+    let html5 = "<html><body><form id='f' method='post' action='/s'>\
+        <fieldset disabled><legend><input name='leg' value='1'></legend><input name='skip' value='2'></fieldset>\
+        </form></body></html>";
+    assert_eq!(
+        form_post_submission(html5, "#f", None, base),
+        Some(("https://example.com/s".to_string(), "leg=1".to_string())),
+        "POST：legend 内控件启用（leg=1），legend 外禁用（skip 跳过）"
+    );
+}

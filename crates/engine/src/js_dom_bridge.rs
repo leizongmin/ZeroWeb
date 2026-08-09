@@ -1379,9 +1379,9 @@ pub fn has_attribute(html: &str, selector: &str, name: &str) -> bool {
 /// name=value 入数据集（spec：激活的提交按钮参与提交）。
 ///
 /// **已知限制（defer）**：① `<input type=file>`（无真文件）；② `<input type=image>` 的 name.x/name.y 坐标；
-/// ③ `<input type=image>` / button 无 value 时 submitter 值 spec 默认值近似；④ disabled fieldset 的首个
-/// `<legend>` 子内控件豁免（spec，罕见）。GET 表单全覆盖；POST 见 [`form_post_submission`]。
-/// select multiple（R3056）+ fieldset disabled 联动（R3056）+ option disabled 已实现。
+/// ③ `<input type=image>` / button 无 value 时 submitter 值 spec 默认值近似。GET 表单全覆盖；POST 见
+/// [`form_post_submission`]。select multiple（R3056）+ fieldset disabled 联动（R3056）+ option disabled（R3056）
+/// + disabled fieldset 首个 legend 子内控件豁免（R3066）已实现。
 ///
 /// https://html.spec.whatwg.org/#constructing-the-form-data-set
 /// https://url.spec.whatwg.org/#concept-urlencoded-serializer
@@ -1417,8 +1417,9 @@ pub fn form_get_submission_url(
 /// 复用 [`collect_form_data`]，控件收集规则与 GET 完全一致）。action_url 不含 query（POST 数据在 body）。
 ///
 /// **已知限制（defer）**：① `enctype=multipart/form-data`（headless 近似 urlencoded，独立切片）；
-/// ② 同 GET（file/image 坐标/disabled-legend 豁免）。POST 登录/提交表单（urlencoded enctype，默认）全覆盖。
-/// select multiple + fieldset disabled 联动 + option disabled 已实现（R3056）。
+/// ② 同 GET（file/image 坐标）。POST 登录/提交表单（urlencoded enctype，默认）全覆盖。
+/// select multiple + fieldset disabled 联动 + option disabled（R3056）+ disabled fieldset 首个 legend 子内控件
+/// 豁免（R3066）已实现。
 pub fn form_post_submission(
     html: &str,
     form_sel: &str,
@@ -1612,7 +1613,7 @@ fn element_local_name(doc: &Document, node: NodeId) -> &str {
 
 /// 控件是否禁用（spec「disable 属性」barred-the-second-constraint）：自身 `disabled` 属性 OR 任一祖先
 /// `<fieldset>` 有 `disabled` 属性（fieldset disabled 联动禁用全部后代控件，R3056）。供 [`collect_form_data`]
-/// 跳过禁用控件。legend 豁免 defer（spec：disabled fieldset 首个 `<legend>` 子内控件不禁用，罕见场景）。
+/// 跳过禁用控件。R3066 legend 豁免：disabled fieldset 首个 `<legend>` 子内控件不禁用（闭合 R3056 限制①）。
 fn is_control_disabled(doc: &Document, ctrl: NodeId) -> bool {
     if doc.get_attribute(ctrl, "disabled").is_some() {
         return true;
@@ -1620,9 +1621,44 @@ fn is_control_disabled(doc: &Document, ctrl: NodeId) -> bool {
     let mut cur = doc.parent_node(ctrl);
     while let Some(p) = cur {
         if element_local_name(doc, p).eq_ignore_ascii_case("fieldset") && doc.get_attribute(p, "disabled").is_some() {
-            return true;
+            // R3066：legend 豁免——控件若为该 disabled fieldset 首个 <legend> 子的后代，则此 fieldset 不禁用它
+            //（继续上行查其他 disabled fieldset 祖先，逐个判定）；否则禁用。
+            if !is_in_first_legend_of_fieldset(doc, ctrl, p) {
+                return true;
+            }
         }
         cur = doc.parent_node(p);
+    }
+    false
+}
+
+/// `ctrl` 是否为 `fieldset` 首个 `<legend>` 子元素的后代（含自身）。spec HTML §4.10.18「not a descendant of
+/// that fieldset's first legend element child」——disabled fieldset 的首个 legend 子内控件不禁用。供
+/// [`is_control_disabled`] 判定 legend 豁免。找 fieldset 首个 legend 元素子（文档序），再查 ctrl 祖先链
+/// （fieldset 边界内段）是否含该 legend。
+fn is_in_first_legend_of_fieldset(doc: &Document, ctrl: NodeId, fieldset: NodeId) -> bool {
+    // 找 fieldset 首个 <legend> 元素子节点（文档序）；无 → 无豁免。
+    let first_legend = doc
+        .child_nodes(fieldset)
+        .iter()
+        .find(|&c| {
+            doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+                && element_local_name(doc, *c).eq_ignore_ascii_case("legend")
+        })
+        .copied();
+    let Some(legend) = first_legend else {
+        return false;
+    };
+    // ctrl 祖先链（fieldset 边界内段）含 legend → 是其后代。
+    let mut cur = doc.parent_node(ctrl);
+    while let Some(a) = cur {
+        if a == legend {
+            return true;
+        }
+        if a == fieldset {
+            break; // 越过 fieldset 边界，停止
+        }
+        cur = doc.parent_node(a);
     }
     false
 }
