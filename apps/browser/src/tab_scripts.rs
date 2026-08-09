@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    DomEventDetail, PageScript, apply_mutations_to_html_with_handles, extract_page_scripts, page_script_error_check,
-    resolve_document_url, script_dispatch_dom_event, script_report_error, script_wrap_page_caught,
+    DomEventDetail, PageScript, extract_page_scripts, page_script_error_check, resolve_document_url,
+    script_dispatch_dom_event, script_report_error, script_wrap_page_caught,
 };
 use zero_webview::WebView;
 
@@ -160,7 +160,10 @@ impl PageScriptRunner {
 
     /// 全部脚本跑完后，若 DOM 有变更则一次性重载 HTML；随后派发页面生命周期事件（R2941）。
     pub fn finish(&mut self, wv: &mut WebView, js_worker: Option<&TabJsWorkerHandle>) {
-        if self.html != self.original_html {
+        // M3-S9：DOM 变更已由 apply_recorded_mutations → apply_dom_mutations_and_render
+        // 直接渲染并同步 cached_html（免 HTML 往返）——cached_html 已与 self.html 一致时
+        // 不再重复全量重建。仅当 cached_html 落后（mutation 应用失败等）时兜底 reload。
+        if self.html != self.original_html && wv.html_content() != self.html {
             wv.reload_html_after_script(&self.html);
         }
         // R2941：脚本阶段完成 → 派发 DOMContentLoaded + load（DOMContentLoaded 先于 load，spec）。
@@ -410,17 +413,18 @@ fn report_uncaught_script_error(js_worker: Option<&TabJsWorkerHandle>, source: &
     }
 }
 
-fn apply_recorded_mutations(wv: &mut WebView, js_worker: Option<&TabJsWorkerHandle>, html: &str) -> Option<String> {
+fn apply_recorded_mutations(wv: &mut WebView, js_worker: Option<&TabJsWorkerHandle>, _html: &str) -> Option<String> {
     let recorded = js_worker
         .map(|w| w.mutations().lock().unwrap_or_else(|e| e.into_inner()).clone())
         .unwrap_or_default();
     if recorded.is_empty() {
         return None;
     }
-    match apply_mutations_to_html_with_handles(html, &recorded) {
-        Ok((new_html, handle_selectors)) => {
-            // P1a gBCR path A：merge handle→唯一选择器映射进 worker 持久 map，供 RectBridge
-            // handler 解析 handle-identity（createElement 元素）。upsert；导航时 worker 清空。
+    // M3-S9：DOM 变更直接应用到活 DOM（webview 内 pipeline.cached_doc），免 HTML
+    // 往返重 parse（旧路径 apply_mutations_to_html_with_handles → reload_html_after_script
+    // 全量重建）。webview 返回 handle→唯一选择器映射（P1a gBCR path A）供 worker merge。
+    match wv.apply_dom_mutations_and_render(&recorded) {
+        Ok((_render, new_html, handle_selectors)) => {
             if !handle_selectors.is_empty() {
                 if let Some(w) = js_worker {
                     if let Ok(mut map) = w.handle_selector_map().lock() {
@@ -428,7 +432,6 @@ fn apply_recorded_mutations(wv: &mut WebView, js_worker: Option<&TabJsWorkerHand
                     }
                 }
             }
-            wv.reload_html_after_script(&new_html);
             Some(new_html)
         }
         Err(e) => {

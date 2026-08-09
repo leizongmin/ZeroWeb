@@ -745,9 +745,9 @@ impl RenderPipeline {
         &mut self,
         mutations: &[crate::js_dom_bridge::DomMutation],
         css: &str,
-    ) -> Result<(RenderResult, String), String> {
+    ) -> Result<(RenderResult, String, HashMap<String, String>), String> {
         let mut doc = self.cached_doc.take().ok_or("no cached document")?;
-        crate::js_dom_bridge::apply_dom_mutations(&mut doc, mutations)?;
+        let handle_selectors = crate::js_dom_bridge::apply_dom_mutations(&mut doc, mutations)?;
         let html_snapshot = doc.outer_html(doc.root());
         // DOM 已变（<style>/meta 内容可能变）：CSS 解析缓存失效。
         self.cached_css_text = None;
@@ -764,7 +764,7 @@ impl RenderPipeline {
             self.repaint_cached_viewport(css)
         }
         .ok_or("repaint failed after mutations")?;
-        Ok((result, html_snapshot))
+        Ok((result, html_snapshot, handle_selectors))
     }
 
     /// mutation 是否为纯文本变更（SetText 的 CSS-selector 变体——handle 变体无法

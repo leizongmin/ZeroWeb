@@ -1387,7 +1387,7 @@ fn render_with_dom_mutations_text_uses_incremental_layout() {
         selector: "#a".to_string(),
         text: "much longer text now".to_string(),
     };
-    let (result, snapshot) = pipeline
+    let (result, snapshot, _handles) = pipeline
         .render_with_dom_mutations(std::slice::from_ref(&m), "")
         .expect("mutations applied");
     // 活 DOM + HTML 快照一致（免 parse 路径）

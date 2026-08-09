@@ -364,6 +364,42 @@ impl WebView {
         render_result
     }
 
+    /// 应用 JS 侧 DOM 变更并渲染（M3-S9 生产路径入口，供浏览器 Tab JS worker）。
+    ///
+    /// 与 `run_page_scripts` 的进程内 mutation 应用同机制（直接改活 DOM，免 HTML
+    /// 往返），但额外：① 同步 `cached_html`；② 刷新图片子资源（对齐
+    /// `reload_html_after_script` 语义——新插入 `<img>`/CSS url() 需要固有尺寸）；
+    /// ③ 返回 handle→唯一选择器映射（P1a gBCR path A，worker 持久 map）。
+    pub fn apply_dom_mutations_and_render(
+        &mut self,
+        mutations: &[DomMutation],
+    ) -> Result<(WebViewRenderResult, String, HashMap<String, String>), String> {
+        let (result, mutated, handle_selectors) =
+            self.pipeline.render_with_dom_mutations(mutations, &self.cached_css)?;
+        // R1794：脚本改 DOM 后刷新图片子资源（对齐 reload_html_after_script）。
+        if let Some(page_url) = self.current_url.clone() {
+            let mut combined_css = self.cached_css.clone();
+            combined_css.push('\n');
+            combined_css.push_str(&extract_html_style_text(&mutated));
+            let css_image_urls = extract_css_image_urls(&combined_css);
+            let (image_sizes, image_ratios, image_no_ratio) =
+                self.fetch_image_subresources(&mutated, &page_url, &css_image_urls);
+            self.cached_image_sizes = image_sizes.clone();
+            self.cached_image_ratios = image_ratios.clone();
+            self.cached_image_no_ratio = image_no_ratio.clone();
+            self.pipeline.set_image_sizes(image_sizes);
+            self.pipeline.set_image_ratios(image_ratios);
+            self.pipeline.set_image_no_ratio(image_no_ratio);
+        }
+        self.cached_html = mutated.clone();
+        let render_result = WebViewRenderResult {
+            primitives: result.primitives,
+            timings: result.timings,
+        };
+        self.last_render = Some(render_result.clone());
+        Ok((render_result, mutated, handle_selectors))
+    }
+
     /// 从 URL 中提取 origin（scheme + host + port）。
     ///
     /// `"https://example.com:8443/path?q=1"` → `"https://example.com:8443"`
@@ -1303,7 +1339,7 @@ impl WebView {
         // M3-S9：DOM 变更直接应用到活 DOM（pipeline.cached_doc），不再回写 HTML 重 parse
         //（旧路径 apply_mutations_to_html → load_html 全量重建，大页面 parse 占 ~30%）。
         // repaint 后返回新 HTML 快照同步 cached_html（DOM 查询消费的快照须与活 DOM 一致）。
-        let (result, mutated) = self
+        let (result, mutated, _handle_selectors) = self
             .pipeline
             .render_with_dom_mutations(&recorded, &self.cached_css)
             .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
@@ -1354,7 +1390,7 @@ impl WebView {
             return Ok(());
         }
         // M3-S9：DOM 变更直接应用到活 DOM（见 run_page_scripts_impl 同款注释）。
-        let (result, mutated) = self
+        let (result, mutated, _handle_selectors) = self
             .pipeline
             .render_with_dom_mutations(&recorded, &self.cached_css)
             .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
