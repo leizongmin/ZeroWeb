@@ -1139,14 +1139,45 @@ impl WebView {
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url);
 
         // R3091：__zw_fetch_script（进程内路径，backed by ScriptSourceFetcher）—— 供 shim Worker 构造器
-        //（外链 URL）/ 未来动态 import() fetch 外链脚本源。fetcher 未配 → 不注册（shim typeof-check no-op）。
+        //（外链 URL）/ 动态 import() fetch 外链脚本源。fetcher 未配 → 不注册（shim typeof-check no-op）。
         if let Some(fetcher) = self.script_source_fetcher.clone() {
+            let fetcher_compile = fetcher.clone();
             sandbox.register_callback(
                 "__zw_fetch_script",
                 Box::new(move |args| {
                     let page = args.first().map(String::as_str).unwrap_or("");
                     let src = args.get(1).map(String::as_str).unwrap_or("");
                     fetcher(page, src).unwrap_or_default()
+                }),
+            );
+            // R3093：__zw_compile_module（动态 import() 外链 module）—— module prelude 的 __zw_load_module
+            // 对未缓存 spec 调此回调。fetch 源经 fetcher + compile_dependency_iife（imports 空存根，transitive
+            // fetch defer）→ 返 IIFE（__zw_load_module eval 为 namespace）。browser/renderer 多进程模式各自注册
+            //（http fetch + collect_module_deps 递归）；本进程内路径用 fetcher + 单层 imports 空存根。
+            sandbox.register_callback(
+                "__zw_compile_module",
+                Box::new(move |args| {
+                    let spec = args.first().map(String::as_str).unwrap_or("");
+                    let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
+                    if spec.is_empty() {
+                        return String::new();
+                    }
+                    let source = match fetcher_compile(parent, spec) {
+                        Ok(s) if !s.is_empty() => s,
+                        _ => return String::new(), // fetch 失败 → __zw_load_module 抛 "Module not found"
+                    };
+                    let mut reg = zero_script_sandbox::ModuleRegistry::new();
+                    for imp in zero_script_sandbox::extract_static_module_import_specifiers(&source) {
+                        reg.register(&imp, ""); // 静态 imports 空存根（transitive fetch defer）；动态 import() 运行时再 fetch
+                    }
+                    reg.register(spec, &source);
+                    match zero_script_sandbox::compile_dependency_iife(spec, &reg) {
+                        Ok(iife) => iife,
+                        Err(e) => {
+                            tracing::warn!("compile module {spec}: {e}");
+                            String::new()
+                        }
+                    }
                 }),
             );
         }
@@ -1209,8 +1240,15 @@ impl WebView {
             };
             let full = if is_module {
                 // 预注册空存根 + 编译（import→空 namespace、export→_exports；动态 import() 经 prelude）。
+                // R3093：fetcher 配置时只用**静态** import 预存根（动态 import() 留给运行时 __zw_compile_module
+                // fetch，避免预存根 empty namespace 短路）；无 fetcher 仍用全量（动态 import 预存根返空 namespace）。
                 let mut registry = zero_script_sandbox::ModuleRegistry::new();
-                for spec in zero_script_sandbox::extract_module_import_specifiers(&code) {
+                let specs = if self.script_source_fetcher.is_some() {
+                    zero_script_sandbox::extract_static_module_import_specifiers(&code)
+                } else {
+                    zero_script_sandbox::extract_module_import_specifiers(&code)
+                };
+                for spec in specs {
                     registry.register(&spec, "");
                 }
                 let url = self.current_url.as_deref().unwrap_or("about:blank");

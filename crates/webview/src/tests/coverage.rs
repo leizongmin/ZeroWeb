@@ -351,6 +351,38 @@ fn test_external_worker_fetch_r3091() {
     );
 }
 
+// ── 动态 import() 外链 module（R3093）──
+// module 脚本 `import('./mod.js')` 经 prelude 改写 __zw_dynamic_import → __zw_load_module → __zw_compile_module
+//（host 回调 fetch './mod.js' 源 + compile_dependency_iife compile 为 IIFE → eval 为 namespace）。
+// .then 微任务在 run_page_scripts 末排空。fetcher 配置时 InlineModule 预存根只用静态 import
+//（动态 import() 不预存根 → 落 __zw_compile_module fetch），闭合外链加载全链（R3090 脚本 + R3091 worker + 本切片 module）。
+#[test]
+fn test_dynamic_import_external_module_r3093() {
+    use std::sync::Arc;
+    let mut wv = crate::WebViewBuilder::new()
+        .script_source_fetcher(Arc::new(|_page, src| {
+            if src == "./mod.js" {
+                Ok("export default 42;".to_string())
+            } else {
+                Err("not found".to_string())
+            }
+        }))
+        .build();
+    wv.load_html(
+        "<html><body><script type=\"module\">\n\
+         import('./mod.js').then(function (m) { globalThis.__modVal = m.default; });\n\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "动态 import 外链 module 无异常, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__modVal)").unwrap(),
+        "42",
+        "动态 import('./mod.js') 外链 module → fetch + compile → namespace.default = 42"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]

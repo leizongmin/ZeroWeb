@@ -119,6 +119,25 @@
 
 ## 最近完成的改进
 
+### P1a 动态 import() 外链 module（进程内 __zw_compile_module + 静态 import 预存根分流，闭合外链加载全链，本轮 R3093）
+
+承接 R3090（top-level 外链脚本）+ R3091（外链 worker）—— 动态 `import('./mod.js')` 仍 defer。module prelude 的 `__zw_load_module` 对未缓存 spec 调 `__zw_compile_module`（browser/renderer 多进程模式各自注册 http fetch + collect_module_deps 递归；进程内路径未注册 → 外链动态 import 抛 ReferenceError）。本切片：① 进程内 run_page_scripts_impl 当 fetcher 配置时注册 `__zw_compile_module`（fetcher fetch 源 + 公开 compile_dependency_iife compile 为 IIFE → eval 为 namespace）；② 修预存根短路：InlineModule/ExternalModule 预注册空存根当 fetcher 配置时只用**静态** import（新 `extract_static_module_import_specifiers`），动态 import() 不预存根 → 落 `__zw_compile_module` fetch（旧全量预存根致动态 import 返空 namespace 短路运行时 fetch）；③ `__zw_compile_module` 内 fetched module 的 imports 亦静态 only。无 fetcher 路径不变（全量预存根，零回归）。闭合外链加载全链：R3090 top-level 脚本 + R3091 worker + R3093 dynamic import() module。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **进程内 `__zw_compile_module` 注册** | `crates/webview/src/webview.rs`（run_page_scripts_impl，__zw_fetch_script 后） | fetcher 配置时注册：spec+parent → fetcher fetch 源 → ModuleRegistry（静态 imports 空存根 + entry 源）→ compile_dependency_iife → IIFE。fetch 失败返空（__zw_load_module 抛 Module not found）。 |
+| **`extract_static_module_import_specifiers`** | `crates/script-sandbox/src/es_module.rs` | 新公开函数：仅静态 import（不含 import() 动态）。供动态 import() 运行时 fetch 分流——静态 import 预存根，动态 import() 留运行时 fetch。 |
+| **InlineModule/ExternalModule 预存根分流** | `crates/webview/src/webview.rs`（is_module registry 构建） | fetcher 配置时用 extract_static_module_import_specifiers（动态 import() 不预存根 → 落 __zw_compile_module）；无 fetcher 用全量 extract_module_import_specifiers（动态 import 预存根返空 namespace，零回归）。 |
+| **R3093 测试** | `crates/webview/src/tests/coverage.rs`（+`test_dynamic_import_external_module_r3093`） | fetcher 提供 './mod.js'（`export default 42;`）；module 脚本 `import('./mod.js').then(m => __modVal = m.default)` → 42（microtask drain）。 |
+
+**为何净正向**：① 闭合外链加载全链（top-level 脚本 + worker + dynamic import module 三路径）；② 复用公开 compile_dependency_iife + R3090 fetcher（零新基础设施）；③ 静态 import 预存根分流修复预存根短路（动态 import() 现真 fetch，非返空 namespace）；④ 无 fetcher 路径不变（全量预存根，零回归）；⑤ 全量 make test 全绿。
+
+**已知限制（记录，defer）**：① **transitive 静态 import 仍空存根**（fetched module 的静态 import './dep.js' 预存根返空 namespace，非递归 fetch；browser 多进程 collect_module_deps 递归，进程内 defer）；② **动态 import() 的 named import 仅 default 命名空间**（compile_dependency_iife 返 _exports，named import 经 destructure_bindings；headless 简化）；③ **external_script 多进程模式动态 import 由各自 __zw_compile_module 处理**（本切片不覆盖，独立路径）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-webview -p zero-script-sandbox --all-targets -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；webview +1 测试，零回归**）+ pre-commit guard PASS。变更 script-sandbox + webview（无渲染/布局/CSS 变更），product-smoke 不受影响。**perf-gate 未触发**：default 路径仅多一次 Option::is_some 分支（fetcher 配置时才走静态提取 + 回调），热路径无回归可量。
+
+**下一步**：外链加载全链闭合（top-level 脚本 R3090 + worker R3091 + dynamic import module R3093）。P1a 产品能力深项剩余：① **transitive module 递归 fetch**（进程内 collect_module_deps 复刻，闭合 module graph，中复杂度）；② P1b V8 原生绑定 S0 PoC（已批准）；③ 浏览器 tab 导航 storage 持久化（browser 域）；④ customElements upgrade（需 P1b S5）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a setInterval-clear 计时测试 deflake（renderer + browser mirror，轮询收敛替换固定 sleep，本轮 R3092）
 
 R3091 make test 全量负载下 `renderer_js_worker_setinterval_repeats_then_clear` 偶发 false-fail（隔离 3/3 绿）；browser mirror `tab_js_worker_setinterval_repeats_then_clear` 同模式。根因：原固定 120ms sleep + `assert_eq!(n2, n1)` 撞上 **clearInterval 前已调度的尾 tick**（re-arm 模型：setInterval 经 __zw_setTimeout re-arm，clearInterval 删 pending 但已入队的尾 setTimeout 回调仍 fire）→ n2 = n1+1 false-fail（并行负载下 worker 线程饿死放大窗口）。本切片改 **轮询收敛断言**：clearInterval 后轮询确认 n 收敛（3 次连续不变 = clearInterval 生效），容忍尾 tick，robust-to-starvation（对称 R3086 net deflake）。

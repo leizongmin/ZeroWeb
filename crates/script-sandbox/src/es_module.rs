@@ -209,7 +209,7 @@ fn rewrite_dynamic_imports(source: &str) -> String {
     out
 }
 
-/// 从模块源码中提取静态 `import` 依赖标识符。
+/// 从模块源码中提取全部 `import` 依赖标识符（静态 `import` + 动态 `import()`）。
 pub fn extract_module_import_specifiers(source: &str) -> Vec<String> {
     let mut specs = Vec::new();
     for stmt in split_statements(source) {
@@ -222,6 +222,24 @@ pub fn extract_module_import_specifiers(source: &str) -> Vec<String> {
         }
     }
     push_unique_specs(&mut specs, extract_dynamic_import_specifiers(source));
+    specs
+}
+
+/// 仅提取**静态** `import` 依赖标识符（不含 `import()` 动态导入）。
+/// 供动态 import() 运行时 fetch 路径（R3093）：预注册空存根只用静态 import（headless 单遍，transitive defer），
+/// 动态 import() 留给运行时 `__zw_load_module → __zw_compile_module` fetch——避免预存根（empty namespace）
+/// 短路运行时 fetch。无 fetcher 路径仍用 `extract_module_import_specifiers`（动态 import 预存根返空 namespace）。
+pub fn extract_static_module_import_specifiers(source: &str) -> Vec<String> {
+    let mut specs = Vec::new();
+    for stmt in split_statements(source) {
+        let trimmed = stmt.trim();
+        if !trimmed.starts_with("import ") {
+            continue;
+        }
+        if let Ok(spec) = extract_import_specifier(trimmed) {
+            push_unique_spec(&mut specs, spec);
+        }
+    }
     specs
 }
 
