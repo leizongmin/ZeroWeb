@@ -119,6 +119,25 @@
 
 ## 最近完成的改进
 
+### P1b textContent native——子树文本读 + 清子写文本节点（高频 API，本轮 R3103）
+
+承接 R3102（S2 树 mutation 闭合，R3102「下一步」战略项 live-Document 经本轮探查判定**高复杂度单切片不可行**——见下「live-Document 探查」）。本切片落高频 DOM API `textContent` 原生（每框架必用），续 native Element 表面扩展。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`textContent` getter + setter accessor** | `crates/engine/src/dom_bindings/mod.rs` | `native_text_content_getter`（`Document::text_content(id)` 递归收集后代 Text 节点 data 拼接，空子树→""）+ `native_text_content_setter`（值 ToString → 清全部子节点 `child_nodes`+逐 `remove_child`（先收集避边遍历边改）→ 非空 `create_text_node`+`append_child`，空串仅清空 spec 合规）；经 `set_accessor_with_setter`，复用 R3101 `local_value_to_string`。 |
+| **+2 单元测试** | `crates/engine/src/dom_bindings/tests.rs` | `native_text_content_getter`（`hello <span>world</span>`→"hello world" + 深嵌套 `a<b>b<i>c</i>d</b>e`→"abcde" + 空子树→""）、`native_text_content_setter`（空元素 set 读回 + 替换既有子元素 children=0 + 空串清空 + 值 ToString 数字）。 |
+
+**为何净正向**：① 高频 API `textContent` 原生化（读子树文本 + 写清子+文本节点，每框架必用）；② textContent setter 复用 R3101 with_dom_mut + R3102 create_text_node/append_child/remove_child——native 写路径三片（attribute R3101 + 树 R3102 + 文本 R3103）能力汇合；③ textContent round-trip（setter 写文本节点 → getter 经 collect_text 读回）native 闭合；④ 纯追加——既有 baselined 路径未动，零回归；⑤ 默认 kill-switch 关 → 零行为变更。
+
+**live-Document 探查（本轮）**：经查 `run_page_scripts_impl`（webview.rs:1166）仅持 `cached_html` 串，真 `Document` 在 `RenderPipeline.cached_doc`（独立层，`Option<Document>` 所有权非 Arc 共享）。原生绑定（R3097）re-parse HTML 串为快照，polyfill 桥每次操作 re-parse `dom_html`——**两者是两独立 DOM**。闭合需 webview 持 renderer 真实 Document（`RenderPipeline.cached_doc` 改 `Arc<Mutex<Document>>` + escape-hatch 接线）→ 触渲染热路径，**单 rally 切片过大/过险**，需设计（RFC 更新）+ 多片执行。本轮改做 contained textContent 切片，live-Document 保持为战略下一步。
+
+**已知限制（记录，后续切片）**：① **read-only 快照继承**（R3097 起）；② **textContent setter 创建的文本节点非 native 对象**（存于 Document，children 不可见因 element-only；childNodes 需 native Text/Comment 节点对象，node-types 切片）；③ 全量 `make bench-gate` 未本轮内联跑（>10min）；④ QuickJS no-op（继承）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-script-sandbox --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**exit 0；engine dom_bindings 22 测试（+2 textContent），零回归；v8+quickjs 双路径**）+ pre-commit guard PASS。变更 engine（dom_bindings mod.rs + tests），无渲染/布局/CSS 变更（JS 桥 native binding，默认关 kill-switch，快照），product-smoke/reftest 不适用。
+
+**下一步**：textContent 原生化完成（高频 API）。候选：① **live-Document 重构设计片**（更新 P1b RFC §5/§6 加 live-Document 设计：`RenderPipeline.cached_doc` → `Arc<Mutex<Document>>` 共享 + webview escape-hatch 接线 + polyfill 桥迁 Document-读——闭合 R3097 起读写快照限制根因，战略项，先设计后多片执行）；② **S4 EventTarget native**（addEventListener/removeEventListener/dispatchEvent + 事件 target 用原生 node）；③ **node-types 切片**（native Text/Comment 节点对象 → 解锁 childNodes + textContent 写的文本节点可见）；④ **replaceChild + 抛 DOMException**（S2 树 mutation 收尾）；⑤ **`attributes` NamedNodeMap native getter**（补 S1 只读族）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b S2 树 mutation native——createElement + appendChild/insertBefore/removeChild + children（RFC S2 树写入主体，本轮 R3102）
 
 承接 R3101（S2 attribute 写子片，R3101「下一步」战略项）→ 本切片落 RFC §4 **S2 树 mutation 主体**：原生元素子树构建/搬运/观察，续 R3101 with_dom_mut 写路径。
