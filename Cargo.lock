@@ -6328,6 +6328,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "url",
+ "v8",
  "zero-canvas",
  "zero-css-parser",
  "zero-dom",

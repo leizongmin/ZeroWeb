@@ -7,7 +7,7 @@ license.workspace = true
 
 [features]
 default = ["v8"]
-v8 = ["zero-script-sandbox/v8"]
+v8 = ["zero-script-sandbox/v8", "dep:v8"]
 quickjs = ["zero-script-sandbox/quickjs"]
 
 [dependencies]
@@ -32,6 +32,13 @@ getrandom = { workspace = true }
 png = { workspace = true }
 flate2 = "1"
 
+# P1b S1 原生 DOM 绑定（feature-gated v8）。与 script-sandbox 同版本同 feature 对齐，
+# Cargo 去重同一 v8 crate 实例。quickjs 模式下不启用（本 crate 原生绑定仅 V8）。
+[dependencies.v8]
+version = "150.2.0"
+default-features = false
+optional = true
+
 [dev-dependencies]
 criterion = { workspace = true }
 zero-css-parser = { workspace = true }
@@ -39,3 +46,10 @@ zero-css-parser = { workspace = true }
 [[bench]]
 name = "engine_bench"
 harness = false
+
+# P1b S1 原生 DOM 绑定 vs polyfill 字符串桥单次读取开销对照（RFC §4 S0 bench gate）。
+# 仅 v8 feature（quickjs 模式无原生绑定）。
+[[bench]]
+name = "dom_bindings_bench"
+harness = false
+required-features = ["v8"]

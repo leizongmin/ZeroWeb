@@ -1,0 +1,128 @@
+//! P1b 原生 DOM 绑定的 GC + 状态层。
+//!
+//! 职责（RFC `docs/specs/p1b-v8-native-bindings-rfc.md` §3.1/§3.2 gc.rs）：
+//! - **DOM 源**：线程局部持有 `Rc<RefCell<Document>>`（V8 Isolate 单线程，与执行线程
+//!   绑定；`Rc<RefCell>` 无 `Send` 要求，贴合单线程访问语义）。
+//! - **NodeId ↔ V8 对象映射**：`NodeId`(ffi u64) → `v8::Global<v8::Object>`，保证 JS
+//!   对象身份（同 `NodeId` 返回同一对象，spec identity）。
+//! - **Element 模板**：线程局部持 `Global<ObjectTemplate>`（含 `nodeType`/`tagName`
+//!   accessor + internal slot[0] = NodeId），供工厂实例化。
+//! - **stale 校验**：getter 读 NodeId 前校验节点仍在 DOM（移除节点 → JS 对象变 stale，
+//!   spec detached 行为：getter 返 undefined）。
+//!
+//! **线程局部为何安全**：V8 Isolate 非线程安全，与执行线程绑定（`v8_runtime.rs` 文档
+//! 注明）；所有 getter / 工厂回调经 V8 在同一线程派发，线程局部状态无跨线程访问。
+//! 镜像 `script-sandbox::v8_runtime::HOST_CALLBACKS` 模式（ZST 回调 + 线程局部状态）。
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use slotmap::{Key, KeyData};
+use zero_dom::{Document, NodeId};
+
+// 原生绑定使用的 DOM 源（`install_dom_bindings` 注入；getter 经 `with_dom` 读）。
+// （doc comment 不附着 thread_local! 宏，用普通注释。）
+thread_local! {
+    static DOM_SOURCE: RefCell<Option<Rc<RefCell<Document>>>> = const { RefCell::new(None) };
+    /// NodeId(ffi u64) → V8 对象 Global（JS 对象身份：同 NodeId 返同对象）。
+    static NODE_OBJECTS: RefCell<HashMap<u64, v8::Global<v8::Object>>> = RefCell::new(HashMap::new());
+    /// Element ObjectTemplate（含 nodeType/tagName accessor + internal slot[0]）。
+    static ELEMENT_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> = const { RefCell::new(None) };
+}
+
+/// 注入 DOM 源 + Element 模板（`install_dom_bindings` 调用）。
+pub(crate) fn set_dom_source(dom: Rc<RefCell<Document>>) {
+    DOM_SOURCE.with(|c| *c.borrow_mut() = Some(dom));
+}
+
+/// 缓存 Element ObjectTemplate（供工厂 [`create_native_element`] 实例化）。
+pub(crate) fn set_element_template(scope: &mut v8::PinScope, tmpl: v8::Local<v8::ObjectTemplate>) {
+    ELEMENT_TEMPLATE.with(|c| *c.borrow_mut() = Some(v8::Global::new(scope, tmpl)));
+}
+
+/// 取 Element ObjectTemplate 的 Local（工厂实例化用）。
+pub(crate) fn element_template_local<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+) -> Option<v8::Local<'s, v8::ObjectTemplate>> {
+    ELEMENT_TEMPLATE.with(|c| c.borrow().as_ref().map(|g| v8::Local::new(scope, g)))
+}
+
+/// 清空全部绑定状态（reset_context / 导航重建时调用；下一切片接线时接入）。
+#[allow(dead_code)] // 生产入口：本切片仅测试用；run_page_scripts 接线（下一切片）接入导航/重载重置
+pub(crate) fn reset() {
+    DOM_SOURCE.with(|c| *c.borrow_mut() = None);
+    NODE_OBJECTS.with(|c| c.borrow_mut().clear());
+    ELEMENT_TEMPLATE.with(|c| *c.borrow_mut() = None);
+}
+
+/// 在当前 DOM 源上执行只读操作；无 DOM 源时返 `None`。
+///
+/// 先克隆 `Rc` 出线程局部（释放 borrow）再 `RefCell::borrow`，避免 borrow 跨调用边界。
+pub(crate) fn with_dom<R>(f: impl FnOnce(&Document) -> R) -> Option<R> {
+    let rc = DOM_SOURCE.with(|c| c.borrow().clone())?;
+    let doc = rc.borrow();
+    // 仅 `&self` 读操作（node_type / get / get_element_by_id）；无嵌套 borrow_mut，
+    // 无 JS 回调再入，RefCell borrow 安全。
+    Some(f(&doc))
+}
+
+// ── NodeId ↔ u64(ffi) 编解码 ──────────────────────────────────────
+
+/// `NodeId` → u64（slotmap `KeyData::as_ffi`）。internal slot 经 `v8::External`
+/// 存 ptr 值（无堆分配，镜像 S0 PoC `poc_internal_field_round_trip`）。
+pub(crate) fn encode_node_id(id: NodeId) -> u64 {
+    id.data().as_ffi()
+}
+
+/// u64(ffi) → `NodeId`（slotmap `KeyData::from_ffi`，`new_key_type!` 生成 `From<KeyData>`）。
+pub(crate) fn decode_node_id(ffi: u64) -> NodeId {
+    NodeId::from(KeyData::from_ffi(ffi))
+}
+
+// ── NodeId ↔ V8 对象身份映射 ──────────────────────────────────────
+
+/// 取已缓存的 native element 对象（同 NodeId 返同对象）；**不含 stale 校验**
+/// （调用方决定是否重建 stale 对象）。
+pub(crate) fn cached_native_element<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    ffi: u64,
+) -> Option<v8::Local<'s, v8::Object>> {
+    NODE_OBJECTS.with(|c| c.borrow().get(&ffi).map(|g| v8::Local::new(scope, g)))
+}
+
+/// 缓存新创建的 native element 对象（NodeId ffi → Global）。
+pub(crate) fn cache_native_element(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v8::Object>) {
+    NODE_OBJECTS.with(|c| {
+        c.borrow_mut().insert(ffi, v8::Global::new(scope, obj));
+    });
+}
+
+/// 移除缓存的 stale 对象（节点从 DOM 移除后）。
+pub(crate) fn drop_cached_native_element(ffi: u64) {
+    NODE_OBJECTS.with(|c| {
+        c.borrow_mut().remove(&ffi);
+    });
+}
+
+/// stale 校验：节点是否仍在 DOM 中（getter / 工厂重建前调）。
+pub(crate) fn node_exists(id: NodeId) -> bool {
+    with_dom(|d| d.get(id).is_some()).unwrap_or(false)
+}
+
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    //! 测试辅助：注入 DOM 源后断言线程局部状态。仅 `#[cfg(test)]` 暴露。
+
+    use super::*;
+
+    /// 注入 DOM 源（测试用，绕过 kill-switch）。
+    pub fn inject_dom_for_test(dom: Rc<RefCell<Document>>) {
+        set_dom_source(dom);
+    }
+
+    /// 清空全部绑定状态（测试间隔离）。
+    pub fn reset_for_test() {
+        reset();
+    }
+}

@@ -31,6 +31,9 @@ pub mod async_resolver;
 pub mod composite;
 pub mod dirty;
 pub mod dom_bridge;
+// P1b S1 原生 DOM 绑定（feature-gated v8；替换 polyfill 字符串桥，RFC p1b-v8-native-bindings）。
+#[cfg(feature = "v8")]
+pub mod dom_bindings;
 pub mod element_from_point;
 pub mod fetch_bridge;
 pub mod font_load_bridge;

@@ -102,7 +102,11 @@ impl Drop for IsolateEnterGuard {
 }
 
 /// 确保V8平台已初始化。
-pub(crate) fn ensure_v8_initialized() {
+///
+/// P1b S1：engine 的原生 DOM 绑定（`zero_engine::dom_bindings`）现直接依赖 v8 crate，
+/// 需在自建 Isolate 前确保平台初始化。本函数经 `pub use v8_runtime::*` 公开（feature-gated v8），
+/// 进程级 `Once` 防重复初始化（V8 平台初始化须全局一次）。
+pub fn ensure_v8_initialized() {
     V8_INIT.call_once(|| {
         let platform = v8::new_default_platform(0, false).make_shared();
         // SAFETY: V8平台初始化在进程生命周期内只调用一次，

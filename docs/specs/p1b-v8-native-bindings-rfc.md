@@ -3,7 +3,7 @@
 **版本**：v0.1（草稿）
 **日期**：2026-08-08
 **作者**：ZeroWeb rally（自主推进）
-**状态**：v0.1 已批准 S0 PoC（2026-08-09 用户决策）；**S0 PoC 验证完成（R3095, 2026-08-09）—— TBD-1/TBD-2 阻塞性验证通过，S1 可启动**；S1–S7 按 §4 逐片 land（详见 §6 S0 结论）
+**状态**：v0.1 已批准 S0 PoC（2026-08-09 用户决策）；**S0 PoC 验证完成（R3095, 2026-08-09）—— TBD-1/TBD-2 阻塞性验证通过**；**S1 dom_bindings 生产化完成（R3096, 2026-08-09）—— 首组原生 getter（nodeType/tagName）接管线 + NodeId↔对象映射 + bench（native ~15.6x 快于 polyfill）+ kill-switch，架构决策 Option A（engine 加 feature-gated v8 dep）落地**；S1–S7 按 §4 逐片 land（详见 §6 S0/S1 结论）
 
 > **与字体栈 RFC 同级**：本 RFC 是 `docs/goal/zero-web/master.md` 反复标注「P1b（V8 原生绑定）需独立 RFC，与字体栈 RFC 同级对待」的落地。字体栈 RFC（`docs/goal/rendering-compat/fontdue-replacement-scoping.md`）解决「看起来对不对」（渲染一致性），本 RFC 解决「能不能用」（JS 性能与 Web Components 正确性）。
 
@@ -226,6 +226,26 @@ Fetch/Observer/FontFaceSet/事件循环 等高层 API 保留 shim（js_dom_shim.
 **S1 架构决策（待）**：engine 现无直接 v8 访问。S1 dom_bindings 生产化需 ① engine 加 v8 dep（feature-gated）直接操纵，或 ② 绑定托管 script-sandbox 经扩展 Sandbox trait 暴露。S0 PoC 在 script-sandbox 验证 API 可行；S1 选型随首切片（PoC 原生 `Element.nodeType`/`tagName` getter 接管线）定。
 
 **注**：本 RFC 标 **草稿**——TBD-1/TBD-2 阻塞性已 S0 验证（上）；TBD-3/4/5 非阻塞，随 S1+ 推进。rally 无人值守下不暂停。
+
+### S1 dom_bindings 生产化结论（2026-08-09，R3096）
+
+**架构决策（Option A 落地）**：engine 加 feature-gated `v8` dep（与 script-sandbox 同版本 150.2.0，Cargo 去重）+ `script-sandbox::ensure_v8_initialized` 提为 `pub`（engine 自建 Isolate 前确保平台初始化）。原生绑定置于 `crates/engine/src/dom_bindings/`（engine 拥有 DOM：`Document`/`NodeId`），getter 经线程局部 DOM 源（`gc.rs`）读真实 DOM。**不选 script-sandbox 托管**：script-sandbox 为通用 JS 沙箱（无 `zero-dom` 依赖），耦合 DOM 内部将反转自然所有权；engine 拥有 DOM，DOM 绑定归属 engine。
+
+**S1 交付**（`crates/engine/src/dom_bindings/{mod.rs, gc.rs}` + bench + tests）：
+- **首组原生 getter**：`nodeType`（Element=1，`v8::Integer`）/ `tagName`（HTML 大写，`v8::String`）经 `ObjectTemplate` accessor getter，从 internal slot[0] 读 NodeId → `Document` 直读（**不经 shim 字符串桥**）。
+- **NodeId ↔ V8 对象身份映射**（`gc.rs`）：`NodeId`(ffi u64) → `v8::Global<v8::Object>`，同 NodeId 返同对象（spec identity），stale 校验（节点移除 → getter 返 undefined，spec detached）。
+- **NodeId↔u64 编解码**：slotmap `KeyData::as_ffi`/`from_ffi`，internal slot 经 `v8::External` ptr 值（无堆分配）。
+- **全局工厂** `__zw_native_element_for_id(idStr)`：`get_element_by_id` → NodeId → 创建/查找 native element 对象。
+- **kill-switch**：`ZW_NATIVE_DOM` env（默认关 → 零回归）；`install_dom_bindings_if_enabled` 为生产入口，`install_dom_bindings` 为直装（bench/单测）。
+
+**bench 结果（§4 S0 gate 达成）**——native 直读 live Document vs polyfill 重解析 HTML 快照：
+- `native_node_type` ~193 ns / `native_tag_name` ~215 ns。
+- `polyfill_tag_name` ~3.36 µs（真实 `__zw_get_tag` 路径：每次 `parse_html(dom_html)` 重解析 + `find_by_selector`，P1 根因）。
+- **native ~15.6x 快于 polyfill**（215 ns vs 3.36 µs）——超越 RFC §1.3 目标 ≥10x，量化 P1 痛点。
+
+**下一切片（S2 接线）**：S1 已证明 native 管线（值传递 + GC + 真实 DOM 读）可用并量化收益，但**未接 run_page_scripts 生产管线**——发现架构分层 gap：当前 script 执行路径（webview `run_page_scripts_impl`）仅持有序列化 `dom_html` 串，无 live `Document`（`Document` 在 `RenderPipeline.cached_doc`，单独一层）。生产接线需 ① webview 持 live `Document`（`Arc<Mutex<Document>>` 共享或 parse 复刻）+ ② V8Sandbox escape-hatch（`with_context` 暴露持久 Context 的 raw scope 供 install）+ ③ `Box<dyn Sandbox>` 路径取 concrete `V8Sandbox`（或 trait 加 escape-hatch 方法）。中-高复杂度，独立切片。其后 S1 只读属性族（nodeName/attributes）→ S2 写入/子树（reftest 守）。
+
+**关键 API（rusty_v8 150.2.0，S1 新用）**：`ObjectTemplate::set_accessor(key, getter)`（无 scope 参）+ `AccessorNameGetterCallback`（ZST `fn(&mut PinScope, Local<Name>, PropertyCallbackArguments, ReturnValue<Value>)`，状态经线程局部）+ `PropertyCallbackArguments::holder()`（实例对象，读 internal slot）+ `ObjectTemplate::new_instance` + `FunctionTemplate::builder(fn).build().get_function`。
 
 ---
 

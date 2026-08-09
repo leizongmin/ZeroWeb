@@ -119,6 +119,27 @@
 
 ## 最近完成的改进
 
+### P1b S1 dom_bindings 生产化——首组原生 getter（nodeType/tagName）+ NodeId↔对象映射 + bench（native ~15.6x 快于 polyfill）+ kill-switch（架构决策 Option A 落地，本轮 R3096）
+
+承接 R3095（S0 PoC 验证 TBD-1/TBD-2 通过）→ S1 dom_bindings 生产化。S0 仅验证 API 可用；S1 落地生产模块 + 首组原生 getter 接管线 + NodeId↔对象身份映射 + bench 对照 + kill-switch。**架构决策（Option A）**：engine 加 feature-gated `v8` dep + script-sandbox `ensure_v8_initialized` 提 `pub`，绑定置 engine（拥有 DOM：`Document`/`NodeId`）；不选 script-sandbox 托管（通用 JS 沙箱，耦合 DOM 反转所有权）。getter 经线程局部 DOM 源（`gc.rs`）读真实 Document，**不经 shim 字符串桥**。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **engine v8 dep（feature-gated）** | `crates/engine/Cargo.toml` | `v8 = ["zero-script-sandbox/v8", "dep:v8"]` + optional dep v8 150.2.0（Cargo 去重 script-sandbox 同实例；quickjs 模式不启用）。 |
+| **`ensure_v8_initialized` 提 pub** | `crates/script-sandbox/src/v8_runtime.rs` | engine 自建 Isolate 前确保 V8 平台初始化（经 `pub use v8_runtime::*` 暴露，feature-gated v8）。 |
+| **dom_bindings 模块** | `crates/engine/src/dom_bindings/{mod.rs,gc.rs,tests.rs}`（新，feature-gated v8） | `install_dom_bindings` + `nodeType`/`tagName` accessor getter（`ObjectTemplate` + internal slot[0]=NodeId `External` ptr）+ NodeId↔`Global<Object>` 身份映射 + stale 校验 + 全局工厂 `__zw_native_element_for_id` + kill-switch（`ZW_NATIVE_DOM` 默认关）。 |
+| **bench 对照** | `crates/engine/benches/dom_bindings_bench.rs`（新，required-features v8） | native（live Document 直读，accessor）vs polyfill（HTML 快照重解析，镜像真实 `__zw_get_tag`：每次 `parse_html(dom_html)`）。 |
+
+**bench 结果（RFC §4 S0 gate 达成）**：`native_node_type` ~193 ns / `native_tag_name` ~215 ns / `polyfill_tag_name` ~3.36 µs → **native ~15.6x 快于 polyfill**（polyfill 每次重解析 HTML 快照，P1 根因），超 RFC §1.3 ≥10x 目标。两路同读 `tagName` 公平对照（正确性自检均 "DIV"）。
+
+**为何净正向**：① 闭合 S0 gate（dom_bindings 生产化 + 首组原生 getter 接管线 + bench）；② 架构决策落地（Option A，绑定归属 engine）；③ 默认 kill-switch 关 → 零行为变更、零回归（全量 make test 全绿 16125）；④ 量化 P1 痛点（15.6x）。
+
+**已知限制（记录，S2 接线）**：① **未接 run_page_scripts 生产管线**——发现架构分层 gap：当前 script 执行路径（webview `run_page_scripts_impl`）仅持序列化 `dom_html` 串，无 live `Document`（`Document` 在 `RenderPipeline.cached_doc`，单独一层）；生产接线需 webview 持 live Document（`Arc<Mutex<Document>>` 共享或 parse 复刻）+ V8Sandbox escape-hatch（`with_context` 暴露持久 Context 的 raw scope 供 install）+ `Box<dyn Sandbox>` 取 concrete `V8Sandbox`（中-高复杂度，独立切片）；② 仅 `nodeType`/`tagName`（首组 getter，S1 只读属性族后续）；③ selector→NodeId 仅经 `get_element_by_id`（full selector 引擎 S3 querySelector 接线）；④ accessor getter 经线程局部 DOM 源 + `RefCell` borrow（~215ns；S2+ 可优化去 RefCell）；⑤ NodeId 对象身份映射为线程局部（reset_context 接线后接入导航/重载重置）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-script-sandbox --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；engine +7 dom_bindings 测试 + 1 bench，零回归；v8+quickjs 双路径**）+ pre-commit guard PASS。变更 engine（v8 dep + dom_bindings + bench + 测试）+ script-sandbox（`ensure_v8 pub`）+ RFC 文档（无渲染/布局/CSS 变更），product-smoke 不受影响。**perf-gate**：新 bench 为 P1b native 路径基线测量（~193-215ns），后续切片走 `make bench-gate` 对照（S2 接线后 capture 正式基线）。
+
+**下一步**：S1 dom_bindings 生产化完成（管线可用 + 15.6x bench）。**S2 = run_page_scripts 生产接线**（live Document 共享 + V8Sandbox escape-hatch + `dyn Sandbox`→concrete `V8Sandbox`，engine+webview+script-sandbox 域，中-高复杂度）；或 S1 只读属性族（nodeName/attributes）。也可续 P1a 深项（diamond module / browser storage 持久化）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1b S0 PoC 完成——TBD-1/TBD-2 阻塞性验证通过（rusty_v8 internal-field + weak-handle GC，零行为变更，本轮 R3095）
 
 承接 R3094（外链加载全链完成）→ pivot 到 P1b 最高杠杆架构项（V8 原生绑定，解锁 10-100x DOM 性能）。P1b RFC v0.1 已批准 S0 PoC（2026-08-09 用户决策）。本切片执行 S0：验证阻塞性 TBD-1（internal-slot）+ TBD-2（weak-handle GC），结果回写 RFC §6。S0 PoC 置 script-sandbox（engine 现无直接 v8 访问，经 Sandbox trait；S0 纯验证零行为变更，默认不接管线）。
