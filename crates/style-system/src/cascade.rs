@@ -326,8 +326,8 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
     }
 
     let mut result = HashMap::new();
-    // 复用一个 dummy ComputedStyle 做 apply-on-dummy 合法性探测（仅取返回 bool，不读其状态）。
-    let mut dummy = ComputedStyle::default();
+    // kill-switch `ZW_REVERT_LAYER=0`（default-on）：进程运行中 env 不变，读一次。
+    let revert_layer_active = std::env::var("ZW_REVERT_LAYER").as_deref() != Ok("0");
 
     for (property, decls) in by_property {
         // CSS 规范：非法声明（盒模型尺寸属性的负长度，或有限关键字值属性的非法值）
@@ -335,71 +335,92 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>, quirks: bool) -> HashMap<
         // 声明；若该属性全部声明均非法（全为负值/全为无法解析的关键字值等），属性不
         // 进入级联结果，回退到初始值（width/height→auto、max-*→none、display→inline 等，
         // 由 default_impl 提供，均为 CSS 规范初始值）。
-        let valid: Vec<&CascadedDeclaration> = decls
-            .iter()
-            .filter(|d| {
-                // CSS-wide 关键字（inherit/initial/unset/revert/revert-layer）对任何属性都合法，
-                // 由 inheritance/compute pass 解析——须短路，否则会被 is_invalid_enum_value
-                // 误判为非法（如 `display: initial` parse_display 返 None → 被丢，display 不重置）。
-                is_css_wide_keyword(&d.value)
-                    || (!is_invalid_negative_length(&property, &d.value)
-                        && !is_invalid_enum_value(&property, &d.value)
-                        && is_cascade_value_valid(&property, &d.value, quirks, &mut dummy))
-            })
-            .collect();
-        // R2388：`revert-layer`（CSS Cascade 5 §6.1）须回退到「更低优先级层」的值——
-        // 当某属性最高优先级声明是 revert-layer 时，跳过该声明所属 tier，取下一更低
-        // 优先级 tier 的胜出声明（递归）。非 revert-layer CSS 行为不变（最高优先级合法
-        // 声明胜出 = 旧行为）。kill-switch `ZW_REVERT_LAYER=0`（default-on）。
-        if let Some(value) = effective_cascade_value(&valid) {
-            result.insert(property, value);
+        //
+        // 惰性探测（性能）：合法性探测结果（bool）只取决于值能否解析，与 dummy 状态无关
+        //（apply.rs 唯一读字段的 light-dark 取参不影响「能否解析」），故探测顺序不影响
+        // 结果。Fast path：一遍线性扫描 + 探测，取「最高 order 的合法声明」（max-by-order，
+        // 与旧「全量过滤 + 降序取首个」等价），**不排序、不分配**——常见页面每个属性仅
+        // 1 个候选，或胜出者即最高优先级（只探测到胜出者为止，N 次 apply-on-dummy 全量
+        // 解析 → 常见 1 次）。
+        //
+        // R2388：`revert-layer`（CSS Cascade 5 §6.1）须回退到「更低优先级层」的值——当
+        // 某属性最高优先级合法声明是 revert-layer 时，跳过该声明所属 tier（同
+        // origin+important+layer 的声明组），取下一更低优先级 tier 的胜出声明。revert-layer
+        // 罕见 → 仅在检测到合法 revert-layer 声明时走 slow path（排序 + tier 回退），
+        // 全部 tier 均 revert-layer → 保留最高声明值（即 revert-layer 关键字）交
+        // inheritance.rs 按 ≈unset 解析（不破坏 R2386「lone revert-layer 通过 cascade」）。
+        // kill-switch `ZW_REVERT_LAYER=0` 关闭时 revert-layer 是普通 CSS-wide 值，永不走
+        // slow path。
+        let mut dummy = ComputedStyle::default();
+        let mut best: Option<&CascadedDeclaration> = None;
+        let mut saw_revert_layer = false;
+        for d in &decls {
+            // CSS-wide 关键字（inherit/initial/unset/revert/revert-layer）对任何属性都合法，
+            // 由 inheritance/compute pass 解析——须短路，否则会被 is_invalid_enum_value
+            // 误判为非法（如 `display: initial` parse_display 返 None → 被丢，display 不重置）。
+            let valid = is_css_wide_keyword(&d.value)
+                || (!is_invalid_negative_length(&property, &d.value)
+                    && !is_invalid_enum_value(&property, &d.value)
+                    && is_cascade_value_valid(&property, &d.value, quirks, &mut dummy));
+            if !valid {
+                continue;
+            }
+            if revert_layer_active && is_revert_layer_value(&d.value) {
+                saw_revert_layer = true;
+                continue;
+            }
+            if best.is_none_or(|b| d.order > b.order) {
+                best = Some(d);
+            }
+        }
+        if !saw_revert_layer {
+            if let Some(b) = best {
+                result.insert(property, b.value.clone());
+            }
+            continue;
+        }
+
+        // Slow path（含合法 revert-layer）：降序探测 + tier 回退（语义见 effective_cascade_value 注释）。
+        let mut sorted: Vec<&CascadedDeclaration> = decls.iter().collect();
+        sorted.sort_by(|a, b| b.order.cmp(&a.order));
+        let mut first_valid: Option<&CascadedDeclaration> = None;
+        let mut winner: Option<&CascadedDeclaration> = None;
+        let mut i = 0;
+        while i < sorted.len() {
+            let d = sorted[i];
+            let valid = is_css_wide_keyword(&d.value)
+                || (!is_invalid_negative_length(&property, &d.value)
+                    && !is_invalid_enum_value(&property, &d.value)
+                    && is_cascade_value_valid(&property, &d.value, quirks, &mut dummy));
+            if !valid {
+                i += 1;
+                continue;
+            }
+            if first_valid.is_none() {
+                first_valid = Some(d);
+            }
+            if revert_layer_active && is_revert_layer_value(&d.value) {
+                // 跳过整个 tier（同 tier 的较低优先级声明亦属「本层」须一并移除，不再探测）。
+                let tier = cascade_tier_key(&d.order);
+                while i < sorted.len() && cascade_tier_key(&sorted[i].order) == tier {
+                    i += 1;
+                }
+                continue;
+            }
+            winner = Some(d);
+            break;
+        }
+        if let Some(w) = winner.or(first_valid) {
+            result.insert(property, w.value.clone());
         }
     }
 
     result
 }
 
-/// R2388：考虑 `revert-layer` 的级联胜出值解析。
-///
-/// 将合法声明按 cascade order 降序排列（最高优先级在前），自高向低遍历 **tier**
-///（同 origin+important+layer 的声明组）。每个 tier 的胜出声明 = 该 tier 内最高优先级者
-///（降序排列后即该 tier 的首个）。若为 `revert-layer`，跳过整个 tier，回退到下一更低
-/// 优先级 tier；否则该声明值即生效（concrete / inherit / initial / unset / revert 终结）。
-/// 全部 tier 均 revert-layer 或无声明 → `None`（属性不进级联结果，由 inheritance 取初值/继承）。
-///
-/// tier 边界判定：因 CascadeOrder 的 Ord 以 (important, origin, is_unlayered, layer_idx)
-/// 为高序位、specificity/position 为低序位，降序排列后同 tier 声明连续相邻，故比较
-/// (origin, important, layer_index) 即可识别 tier 切换。
-fn effective_cascade_value(decls: &[&CascadedDeclaration]) -> Option<String> {
-    if decls.is_empty() {
-        return None;
-    }
-    let revert_layer_active = std::env::var("ZW_REVERT_LAYER").as_deref() != Ok("0");
-    // 降序：最高优先级在前。
-    let mut sorted: Vec<&CascadedDeclaration> = decls.to_vec();
-    sorted.sort_by(|a, b| b.order.cmp(&a.order));
-
-    // highest = 最高优先级声明（降序首）。若 revert-layer 链一路回退到底（无更低层 concrete），
-    // 保留原最高声明值（即 revert-layer 关键字）交 inheritance.rs 按 ≈unset 解析——与
-    // 无更低层时 spec 行为（回退到上一 origin，ZW 几无 UA 样式 ≈ initial）等价，且不破坏
-    // R2386「lone revert-layer 通过 cascade」语义。
-    let highest = sorted[0];
-
-    let mut i = 0;
-    while i < sorted.len() {
-        let tier = cascade_tier_key(&sorted[i].order);
-        // 该 tier 的胜出声明 = sorted[i]（降序首 = tier 内最高优先级）。
-        let candidate = sorted[i];
-        if revert_layer_active && candidate.value.trim().eq_ignore_ascii_case("revert-layer") {
-            // 跳过整个 tier（同 tier 的较低优先级声明亦属「本层」须一并移除）。
-            while i < sorted.len() && cascade_tier_key(&sorted[i].order) == tier {
-                i += 1;
-            }
-            continue;
-        }
-        return Some(candidate.value.clone());
-    }
-    Some(highest.value.clone())
+/// 值是否为 `revert-layer` 关键字（R2388 tier 回退触发条件）。
+fn is_revert_layer_value(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("revert-layer")
 }
 
 /// 级联 tier 标识（origin + important + layer）——三者相同即同 tier。
