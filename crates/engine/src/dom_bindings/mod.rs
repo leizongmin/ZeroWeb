@@ -105,6 +105,11 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "className") {
         tmpl.set_accessor_with_setter(k.into(), native_class_name_getter, native_class_name_setter);
     }
+    // `children` getter（spec `dom-parentnode-children`）：元素**子元素**（跳过文本/注释）
+    // → V8 Array of native 对象（文档序）。
+    if let Some(k) = v8::String::new(scope, "children") {
+        tmpl.set_accessor(k.into(), native_children_getter);
+    }
     // spec 方法（FunctionTemplate，args.this 读 NodeId）：getAttribute / hasAttribute /
     // setAttribute / removeAttribute。ObjectTemplate::set 须传 **Template**（非 Function 实例）——
     // FunctionTemplate 是 Template，实例化时各对象共享，args.this() 取回实例。
@@ -133,6 +138,20 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     let eqsa_tmpl = v8::FunctionTemplate::builder(native_element_query_selector_all_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "querySelectorAll") {
         tmpl.set(k.into(), eqsa_tmpl.into());
+    }
+    // spec 树 mutation 方法（`args.this()` = parent NodeId，参为 native element 对象读 internal slot）：
+    // appendChild / insertBefore / removeChild。Document 写经 with_dom_mut。
+    let append_tmpl = v8::FunctionTemplate::builder(native_append_child_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "appendChild") {
+        tmpl.set(k.into(), append_tmpl.into());
+    }
+    let insert_before_tmpl = v8::FunctionTemplate::builder(native_insert_before_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "insertBefore") {
+        tmpl.set(k.into(), insert_before_tmpl.into());
+    }
+    let remove_child_tmpl = v8::FunctionTemplate::builder(native_remove_child_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "removeChild") {
+        tmpl.set(k.into(), remove_child_tmpl.into());
     }
     set_element_template(scope, tmpl);
 
@@ -163,6 +182,16 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     let qsa_fn = qsa.get_function(scope);
     let qsa_key = v8::String::new(scope, "__zw_native_query_selector_all");
     if let (Some(f), Some(key)) = (qsa_fn, qsa_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+
+    // 5. 全局工厂 __zw_native_create_element(tag) —— spec `dom-document-createelement`：
+    //    `Document::create_element` 造新 Element NodeId → native 对象（未挂载，appendChild 落位）。
+    //    解锁原生树构建（createElement + appendChild 全 native，无 polyfill String 桥）。
+    let ce = v8::FunctionTemplate::builder(native_create_element_invoke).build(scope);
+    let ce_fn = ce.get_function(scope);
+    let ce_key = v8::String::new(scope, "__zw_native_create_element");
+    if let (Some(f), Some(key)) = (ce_fn, ce_key) {
         let _ = global.set(scope, key.into(), f.into());
     }
 }
@@ -551,6 +580,146 @@ fn native_element_query_selector_all_invoke(
         }
     }
     rv.set(arr.into());
+}
+
+/// `__zw_native_create_element(tag)`：spec `dom-document-createelement`——
+/// `Document::create_element(tag)` 造新 Element NodeId → native 对象（**未挂载**，需 appendChild）。
+/// 空/缺省 tag → `div`（与 polyfill create_element 一致，spec 实际应抛，本切片 best-effort）。
+fn native_create_element_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let mut tag = string_arg(scope, &args, 0);
+    if tag.trim().is_empty() {
+        tag = "div".to_string();
+    }
+    // create（borrow_mut 释放后）→ 包 native 对象（get_or_create_native_element 内含 stale 校验）。
+    let Some(id) = with_dom_mut(|d| d.create_element(tag.trim())) else {
+        return;
+    };
+    if let Some(obj) = get_or_create_native_element(scope, id) {
+        rv.set(obj.into());
+    }
+}
+
+/// `children` getter（spec `dom-parentnode-children`）：元素**子元素**（跳过文本/注释）
+/// → V8 Array of native 对象（文档序）。非 Element 子节点不返（native 仅 Element 对象；
+/// `childNodes` 含文本/注释需 native 非 Element 节点，后续切片）。
+fn native_children_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let child_ids: Vec<NodeId> = with_dom(|d| {
+        d.child_nodes(id)
+            .into_iter()
+            .filter(|c| d.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
+            .collect()
+    })
+    .unwrap_or_default();
+    let arr = v8::Array::new(scope, child_ids.len() as i32);
+    for (i, cid) in child_ids.into_iter().enumerate() {
+        if let Some(obj) = get_or_create_native_element(scope, cid) {
+            let _ = arr.set_index(scope, i as u32, obj.into());
+        }
+    }
+    rv.set(arr.into());
+}
+
+// ── 树 mutation 方法（Element 上：appendChild / insertBefore / removeChild）──
+
+/// `appendChild(child)`：spec `dom-node-appendchild`——`args.this()`=parent，参=child native
+/// 对象；`Document::append_child` 移动（含 re-parent、cycle 检测）。成功返 child 对象（spec），
+/// Err（cycle/not-found）→ best-effort 留 undefined（不抛，限制记录）。
+fn native_append_child_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(parent) = read_node_id(scope, &this) else {
+        return;
+    };
+    let Some(child) = node_id_from_value(scope, args.get(0)) else {
+        return;
+    };
+    let ok = with_dom_mut(|d| d.append_child(parent, child))
+        .map(|r| r.is_ok())
+        .unwrap_or(false);
+    if ok {
+        set_native_element(scope, child, &mut rv);
+    }
+}
+
+/// `insertBefore(newChild, refChild)`：spec `dom-node-insertbefore`——parent=this，参 0=newChild、
+/// 参 1=refChild native 对象；`Document::insert_before`。`refChild` 缺省/null → 末尾追加（spec）。
+/// 成功返 newChild 对象；Err → best-effort 留 undefined。
+fn native_insert_before_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(parent) = read_node_id(scope, &this) else {
+        return;
+    };
+    let Some(new_child) = node_id_from_value(scope, args.get(0)) else {
+        return;
+    };
+    // refChild null/缺省 → 末尾追加（spec：ref 为 null 时同 appendChild）。
+    let ref_child = node_id_from_value(scope, args.get(1));
+    let ok = with_dom_mut(|d| match ref_child {
+        Some(ref_id) => d.insert_before(parent, new_child, ref_id),
+        None => d.append_child(parent, new_child),
+    })
+    .map(|r| r.is_ok())
+    .unwrap_or(false);
+    if ok {
+        set_native_element(scope, new_child, &mut rv);
+    }
+}
+
+/// `removeChild(child)`：spec `dom-node-removechild`——parent=this，参=child native 对象；
+/// `Document::remove_child`。成功返被移除的 child 对象（spec）；Err → best-effort 留 undefined。
+fn native_remove_child_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(parent) = read_node_id(scope, &this) else {
+        return;
+    };
+    let Some(child) = node_id_from_value(scope, args.get(0)) else {
+        return;
+    };
+    let ok = with_dom_mut(|d| d.remove_child(parent, child))
+        .map(|r| r.is_ok())
+        .unwrap_or(false);
+    if ok {
+        set_native_element(scope, child, &mut rv);
+    }
+}
+
+/// mutation 方法成功尾共用：把 NodeId 包成 native 对象 set 到 `rv`（appendChild/insertBefore/
+/// removeChild 成功返被操作节点对象）。抽离以避 `if ok { if let ... }` 嵌套（MSRV 1.85 无 let-chains）。
+fn set_native_element(scope: &mut v8::PinScope, id: NodeId, rv: &mut v8::ReturnValue<v8::Value>) {
+    if let Some(obj) = get_or_create_native_element(scope, id) {
+        rv.set(obj.into());
+    }
+}
+
+/// 从任意 `Value` 取其 internal slot NodeId（若为 native element 对象）；否则 `None`
+/// （非 native 对象误作参 → best-effort 忽略）。`args.get(idx)` 取参后经此读 NodeId。
+fn node_id_from_value(scope: &mut v8::PinScope, value: v8::Local<v8::Value>) -> Option<NodeId> {
+    let obj = value.to_object(scope)?;
+    read_node_id(scope, &obj)
 }
 
 // ── NodeId ↔ internal slot 读写 + 对象身份映射 ────────────────────

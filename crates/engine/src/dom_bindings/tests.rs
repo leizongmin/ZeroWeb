@@ -373,6 +373,97 @@ fn native_id_and_class_name_setters() {
     );
 }
 
+// ── S2 树 mutation native（createElement + appendChild/insertBefore/removeChild + children）──
+
+/// `createElement` + `appendChild` + `children`：原生树构建 + 元素子观察。
+#[test]
+fn native_create_append_children() {
+    let html = r#"<div id="root"></div>"#;
+    // createElement 造新对象 → appendChild 落位 → children 观察。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const r=__zw_native_element_for_id('root'); const c=__zw_native_create_element('div'); c.id='c1'; r.appendChild(c); return r.children.length+'/'+r.children[0].id+'/'+r.children[0].tagName;})()"
+        ),
+        "1/c1/DIV"
+    );
+    // appendChild 返回被追加的 child（spec）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const r=__zw_native_element_for_id('root'); const c=__zw_native_create_element('p'); return (r.appendChild(c)===c)+'';})()"
+        ),
+        "true"
+    );
+    // 跨 tag：create('span') 后 append。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const r=__zw_native_element_for_id('root'); const c=__zw_native_create_element('span'); r.appendChild(c); return r.children[0].tagName;})()"
+        ),
+        "SPAN"
+    );
+}
+
+/// `appendChild` re-parent：移动既有节点（detach 旧父 + 挂新父）。
+#[test]
+fn native_append_child_reparents() {
+    let html = r#"<div id="a"><span id="x">x</span></div><div id="b"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const a=__zw_native_element_for_id('a'); const b=__zw_native_element_for_id('b'); b.appendChild(__zw_native_element_for_id('x')); return a.children.length+'/'+b.children.length+'/'+b.children[0].id;})()"
+        ),
+        "0/1/x"
+    );
+}
+
+/// `insertBefore(newChild, refChild)` 位置插入（refChild null → 末尾追加）。
+#[test]
+fn native_insert_before() {
+    let html = r#"<div id="root"><span id="s1">1</span><span id="s2">2</span></div>"#;
+    // insertBefore(nw, s2) → 顺序 [s1, nw, s2]。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const r=__zw_native_element_for_id('root'); const nw=__zw_native_create_element('span'); nw.id='nw'; r.insertBefore(nw, __zw_native_element_for_id('s2')); return r.children[0].id+'/'+r.children[1].id+'/'+r.children[2].id;})()"
+        ),
+        "s1/nw/s2"
+    );
+    // refChild 缺省 → 末尾追加（同 appendChild）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const r=__zw_native_element_for_id('root'); const nw=__zw_native_create_element('span'); nw.id='last'; r.insertBefore(nw); return r.children[r.children.length-1].id;})()"
+        ),
+        "last"
+    );
+}
+
+/// `removeChild` 移除 + `children` **仅元素**（跳过文本节点）。
+#[test]
+fn native_remove_child_and_children_element_only() {
+    let html = r#"<div id="root"><span id="s1">1</span><span id="s2">2</span></div>"#;
+    // removeChild → 剩余 [s2]。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const r=__zw_native_element_for_id('root'); r.removeChild(__zw_native_element_for_id('s1')); return r.children.length+'/'+r.children[0].id;})()"
+        ),
+        "1/s2"
+    );
+    // children 仅元素：HTML 含文本节点 "hello"/"world"，children 跳过 → 仅 1 个 span。
+    let html2 = r#"<div id="root">hello<span id="s1">1</span>world</div>"#;
+    assert_eq!(
+        run_script(html2, "(__zw_native_element_for_id('root').children.length)"),
+        "1"
+    );
+    assert_eq!(
+        run_script(html2, "(__zw_native_element_for_id('root').children[0].id)"),
+        "s1"
+    );
+}
+
 // ── gc.rs 单元测试 ────────────────────────────────────────────────
 
 /// NodeId↔u64(ffi) 编解码 round-trip（internal slot 值传递基础）。
