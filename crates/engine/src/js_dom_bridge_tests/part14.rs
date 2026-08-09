@@ -503,6 +503,59 @@ fn test_worker_api_surface_r3080() {
 }
 
 #[test]
+fn test_dedicated_worker_round_trip_r3089() {
+    // R3089：真 DedicatedWorker 消息往返（闭合 R3080 defer 项「无真 worker 执行」）。data: URL inline worker
+    // 经同沙箱 IIFE 影子执行（new Function 包影子 self/postMessage/onmessage）；main↔worker 经
+    // structuredClone + queueMicrotask + MessageEvent 派发（对称 MessagePort）。execute 末 microtask
+    // checkpoint 排空 main→worker→main 两跳微任务，__reply 在同次 execute 后可读。
+    // ① worker onmessage 收 main 消息（e.data=21）→ postMessage(e.data*2) → main onmessage 收 42；
+    // ② terminate 后 postMessage no-op（_terminated 标记，handler 不触发）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // worker 脚本：onmessage = e => postMessage(e.data * 2)。data: URL（URL-encoded payload）。
+    sandbox
+        .execute(
+            "var w = new Worker('data:text/javascript,onmessage%3Dfunction(e)%7BpostMessage(e.data*2)%7D');\
+             globalThis.__reply = 'none';\
+             w.onmessage = function (ev) { globalThis.__reply = ev.data; };\
+             w.postMessage(21);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__reply)").unwrap().value,
+        "42",
+        "worker 消息往返：postMessage(21) → worker onmessage(e.data*2) → main onmessage(42)"
+    );
+
+    // terminate 后 postMessage 不触发 worker handler（_terminated 标记 → postMessage 早返，无微任务派发）。
+    sandbox
+        .execute(
+            "var w2 = new Worker('data:text/javascript,onmessage%3Dfunction(e)%7BpostMessage(e.data*2)%7D');\
+             globalThis.__reply2 = 'none';\
+             w2.onmessage = function (ev) { globalThis.__reply2 = ev.data; };\
+             w2.terminate();\
+             w2.postMessage(99);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__reply2)").unwrap().value,
+        "none",
+        "terminate 后 postMessage no-op（worker handler 不触发）"
+    );
+}
+
+#[test]
 fn test_indexeddb_in_memory_surface_r3081() {
     // R3081：IndexedDB 内存表面。旧 `globalThis.indexedDB` 未定义 → 5 storage 用例 `indexedDB is not defined`。
     // 本切片接 in-memory IDB：open（异步 onupgradeneeded→onsuccess）/ db.createObjectStore/objectStoreNames/

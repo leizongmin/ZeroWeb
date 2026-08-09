@@ -119,6 +119,23 @@
 
 ## 最近完成的改进
 
+### P1a 真 DedicatedWorker 消息往返（data: URL inline worker，同沙箱 IIFE 影子执行，闭合 R3080 defer 项，本轮 R3089）
+
+承接 R3080（Worker API 表面，postMessage/terminate no-op、onmessage/onerror 永不触发——「真 worker 执行 defer」）+ R3088 下一步（DedicatedWorker 真实化）。script-sandbox 为单上下文（无 sub-context API），真独立沙箱需多嵌入器 host 接线（browser/webview/reftest 各提供 __zw_create_worker，defer）。本切片用 **同沙箱 IIFE 影子执行**（对称 compile_module_script R3083）：data: URL inline worker 脚本经 `new Function` 包一层，影子 `var self/postMessage/onmessage/importScripts` → worker 脚本用 worker-scoped 全局（不污染主全局），bare `onmessage = fn` 设影子局部，执行后同步 handler。main↔worker 消息经 structuredClone + queueMicrotask + MessageEvent 派发（对称 MessagePort R2779）。terminate 标记终止，后续微任务跳过。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **真 inline Worker** | `crates/engine/src/js_dom_shim/part05.js`（Worker 构造器 + postMessage + terminate） | `_zwDecodeWorkerScript`（data: URL payload URL-decode/base64）→ `new Function('self', 影子声明 + 脚本 + onmessage 同步)` 执行。wctx（worker self）：postMessage 经 microtask 派发 MessageEvent 到 Worker 实例；onmessage setter 注入 handler。main `worker.postMessage(msg)` → structuredClone + microtask 调 handler；handler 内 worker `postMessage(reply)` → microtask 派发回 main。脚本抛 → microtask 派发 'error'。 |
+| **R3089 测试** | engine `js_dom_bridge_tests/part14.rs`（+`test_dedicated_worker_round_trip_r3089`） | 真往返：`new Worker(data:url onmessage=e=>postMessage(e.data*2))` + `w.postMessage(21)` → main onmessage 收 42（execute 末 microtask checkpoint 排空两跳）；terminate 后 postMessage 不触发 handler。 |
+
+**为何净正向**：① 闭合 R3080 defer 项（真 worker 消息往返，非仅 API 表面）；② 同沙箱执行零多嵌入器接线（对称 R3083 module 转换模式，无 host callback、无第二沙箱）；③ 复用既有 structuredClone + queueMicrotask + MessageEvent + EventTarget（对称 MessagePort R2779）；④ R3080 API 表面测试 + A-gen polyfill 测试 + web-workers WPT 全回归通过；⑤ 全量 make test 全绿。
+
+**已知限制（记录，defer）**：① **仅 data: URL inline worker**（非 data: 如 './w.js' headless 无 fetch → 不执行，API 表面仍可用，R3080 兼容）；② **同全局执行**（worker 顶层级隐式全局赋值泄漏到主全局——罕见；spec worker 独立全局，headless 简化）；③ **真独立沙箱 worker defer**（需多嵌入器 __zw_create_worker host 接线 + 跨上下文结构化克隆，中-高复杂度，browser/webview/reftest 各提供）；④ importScripts no-op（无 fetch）；⑤ worker 顶层级 postMessage（main 未注册 onmessage 前）被丢弃（spec 队列，headless 简化）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-wpt-runner --all-targets -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；engine +1 真往返测试，零回归**）+ pre-commit guard PASS。变更纯 engine shim + 测试（无生产 .rs / 渲染 / 布局变更），product-smoke 不受影响。
+
+**下一步**：真 inline worker 消息往返闭合（data: URL；真独立沙箱 worker defer）。P1a 产品能力深项剩余：① **外链 worker / 外链 ES module fetch**（host fetch 路径 + 异步 module graph，中-高复杂度）；② P1b V8 原生绑定 S0 PoC（已批准，验证 TBD-1/TBD-2，engine 域）；③ 浏览器 tab 导航 storage 持久化（browser 域，非 make test 可达）；④ customElements upgrade（需 P1b 原生绑定 S5）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a Storage 跨 load_html 持久化验证 + 锁定（闭合 R3087「下一步」调查，本轮 R3088）
 
 R3087「下一步」记 IndexedDB/localStorage host-backing 持久化为候选切片。本轮深入调查：① WebView `ensure_sandbox` **沙箱复用**（`js_sandbox.is_some()` 早返，不重建 JS 上下文）；② shim 经 `js_shim_initialized` guard **幂等注入**（仅首次 run_page_scripts 跑 generate_js_dom_shim，后续不重跑 → `globalThis.localStorage`/`sessionStorage`/`_idb_databases` 不重建）。**结论：嵌入式/headless 路径已具备 storage 持久化**——同 WebView 多次 load_html + run_page_scripts 间 localStorage/sessionStorage/IDB 持久。唯一真持久化缺口 = **浏览器 tab 导航重建 js_worker**（新进程/沙箱，需 Rust-side per-tab store 接 StorageManager，非 make test 可达，browser 域独立项）。本切片锁定嵌入式持久化（防回退），修正 R3087「下一步」理解。

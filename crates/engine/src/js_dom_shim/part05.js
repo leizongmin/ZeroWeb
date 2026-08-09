@@ -1562,30 +1562,101 @@
   };
   globalThis.EventTarget = globalThis.EventTarget || EventTarget;
 
-  // R3080：DedicatedWorker——`new Worker(url)`。headless 无真 worker 线程执行 url（worker.js / blob: URL），
-  // spec DedicatedWorkerGlobalScope 创建 + 跨上下文结构化克隆消息需 host 接线（独立沙箱执行 worker 脚本），
-  // defer。本构造提供完整 API 表面（postMessage/terminate/onmessage/onerror/addEventListener），
-  // 使依赖 Worker 的脚本（postMessage→terminate 生命周期 / onmessage 回调注册）不抛 TypeError。
+  // R3089：DedicatedWorker——`new Worker(url)`。真 worker 消息往返（闭合 R3080 defer 项「无真 worker 执行」）。
+  // script-sandbox 为单上下文（无 sub-context API），真独立沙箱需多嵌入器 host 接线（browser/webview/reftest
+  // 各提供 __zw_create_worker，defer）。本切片用 **同沙箱 IIFE 影子执行**（对称 compile_module_script R3083）：
+  // data: URL inline worker 脚本经 `new Function` 包一层，影子 `var self/postMessage/onmessage/importScripts`
+  // → worker 脚本用 worker-scoped 全局（不污染主全局），bare `onmessage = fn` 设影子局部，执行后同步 handler。
+  // main↔worker 消息经 structuredClone + queueMicrotask + MessageEvent 派发（对称 MessagePort R2779）。
   // extends EventTarget（与 MessagePort/BroadcastChannel 同款）——addEventListener('message'/'error') 可用。
-  // **已知限制**：① 无真 worker 执行 → postMessage 消息无接收方，onmessage/onerror 回调永不触发
-  // （需 host 真实 worker 沙箱，defer）；② terminate 为标记 no-op（无 worker 线程可终止）。
+  // spec https://html.spec.whatwg.org/multipage/workers.html#dom-worker。
+  // **已知限制**：① 仅 data: URL inline worker（非 data: 如 './w.js' headless 无 fetch → 不执行，API 表面仍可用）；
+  // ② 同全局执行（worker 顶层级隐式全局赋值泄漏到主全局——罕见；spec worker 独立全局，headless 简化）；
+  // ③ structuredClone 克隆（非可克隆类型 defer）；④ importScripts no-op（无 fetch）；
+  // ⑤ worker 顶层级 postMessage（main 未注册 onmessage 前派发）被丢弃（spec 队列，headless 简化）。
+  // 提取 data: URL 脚本 payload（text/javascript / application/javascript，URL-decode 或 base64）。
+  function _zwDecodeWorkerScript(url) {
+    var s = String(url);
+    if (s.indexOf('data:') !== 0) return null;
+    var comma = s.indexOf(',');
+    if (comma < 0) return null;
+    var meta = s.slice(5, comma);
+    var payload = s.slice(comma + 1);
+    if (meta.indexOf('base64') >= 0) {
+      try { return typeof atob === 'function' ? atob(payload) : null; } catch (_e) { return null; }
+    }
+    try { return decodeURIComponent(payload); } catch (_e) { return payload; }
+  }
   function Worker(url) {
     if (!(this instanceof Worker)) return new Worker(url);
     this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
     this._terminated = false;
     this._onmessage = null;
     this._onerror = null;
-    // url（worker 脚本地址）headless 不 fetch/执行，仅记录（spec 校验类型，非空串）。
     this._scriptUrl = String(url);
+    this._handler = null; // worker 的 onmessage（脚本执行时经 wctx.onmessage setter 注入）
+    var main = this; // Worker 实例（worker→main 派发 MessageEvent 到此）
+    // worker self 上下文（DedicatedWorkerGlobalScope 近似）。postMessage 经 microtask 派发到主 Worker 实例。
+    var wctx = {
+      // worker→main：structuredClone + queueMicrotask 派发 'message' 到 Worker 实例（对称 MessagePort R2779）。
+      postMessage: function (msg) {
+        var data = typeof structuredClone === 'function' ? structuredClone(msg) : msg;
+        if (typeof queueMicrotask === 'function') {
+          queueMicrotask(function () {
+            if (main._terminated) return;
+            main.dispatchEvent(new MessageEvent('message', { data: data, origin: '' }));
+          });
+        }
+      },
+      importScripts: function () {}, // no-op（headless 无 fetch）
+      close: function () { main._terminated = true; },
+    };
+    // onmessage setter：worker 脚本 `self.onmessage = fn` 或 bare `onmessage = fn`（经 IIFE 影子同步）注入 handler。
+    Object.defineProperty(wctx, 'onmessage', {
+      configurable: true,
+      set: function (fn) { if (typeof fn === 'function') main._handler = fn; },
+      get: function () { return main._handler; },
+    });
+    // 执行 worker 脚本（data: URL inline）。new Function 包影子声明，bare 赋值设局部，执行后同步 onmessage。
+    var scriptSrc = _zwDecodeWorkerScript(url);
+    if (scriptSrc) {
+      try {
+        var body = 'var postMessage=self.postMessage.bind(self);'
+          + 'var importScripts=function(){};'
+          + 'var onmessage;'
+          + scriptSrc
+          + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;';
+        new Function('self', body).call(null, wctx);
+      } catch (e) {
+        // worker 脚本抛（语法/运行时）→ microtask 派发 'error' 到 Worker 实例（spec onerror）。
+        if (typeof queueMicrotask === 'function') {
+          var em = (e && e.message) ? String(e.message) : String(e);
+          queueMicrotask(function () {
+            if (main._terminated) return;
+            main.dispatchEvent(new Event('error', { message: em }));
+          });
+        }
+      }
+    }
   }
   Worker.prototype = Object.create(EventTarget.prototype);
   Worker.prototype.constructor = Worker;
-  // postMessage(message[, transfer])——向 worker 发消息（headless no-op：无 worker 上下文接收）。
-  Worker.prototype.postMessage = function (_message, _transfer) {
+  // main→worker：structuredClone + queueMicrotask 调 worker 的 onmessage（handler 在脚本执行时注入）。
+  Worker.prototype.postMessage = function (message, _transfer) {
     if (this._terminated) return;
-    // defer：真实 worker 执行 + 结构化克隆跨上下文消息。
+    var handler = this._handler;
+    if (typeof handler !== 'function') return; // 无 handler（worker 未设 onmessage）→ 丢弃（spec 队列，headless 简化）
+    var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
+    var target = this;
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(function () {
+        if (target._terminated) return;
+        try { handler(new MessageEvent('message', { data: data, origin: '' })); }
+        catch (_e) { /* worker handler 抛 → 真浏览器触发 worker error；headless 静默 */ }
+      });
+    }
   };
-  // terminate()——终止 worker（headless 标记 no-op：无 worker 线程可终止）。
+  // terminate()——终止 worker：后续 microtask 派发跳过（_terminated 标记）。
   Worker.prototype.terminate = function () {
     this._terminated = true;
   };
