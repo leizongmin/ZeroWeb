@@ -670,10 +670,12 @@ impl RenderPipeline {
         stylesheets: &[Stylesheet],
         dirty_rect: Rect,
     ) -> Option<RenderPrimitives> {
-        // 计算样式
+        // 计算样式（全量——本路径无变更节点上下文；存 cached_styles 供 mutation
+        // 增量路径作 base）
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
         let styles = self.style_system.compute_styles(doc, stylesheets);
+        self.cached_styles = styles.clone();
 
         // 计算布局
         let (img_sizes, img_ratios, img_no_ratio) = self.build_img_intrinsic_all(doc);
@@ -763,7 +765,7 @@ impl RenderPipeline {
             self.cached_doc = Some(doc);
             r
         } else if all_paint_only {
-            let r = self.paint_only_incremental(&doc, css);
+            let r = self.paint_only_incremental(&doc, mutations, css);
             self.cached_doc = Some(doc);
             r
         } else {
@@ -822,11 +824,39 @@ impl RenderPipeline {
 
     /// 布局无关样式变更增量渲染：全量 style（paint 消费新样式）+ 复用 cached_layout
     ///（布局不变——paint-only 白名单保证）+ 全量 paint。
-    fn paint_only_incremental(&mut self, doc: &Document, css: &str) -> Option<RenderResult> {
+    fn paint_only_incremental(
+        &mut self,
+        doc: &Document,
+        mutations: &[crate::js_dom_bridge::DomMutation],
+        css: &str,
+    ) -> Option<RenderResult> {
         let stylesheets = collect_stylesheets(doc, css);
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let styles = self.style_system.compute_styles(doc, &stylesheets);
+        // 增量样式：只重算变更节点子树（base = cached_styles，全量路径已存）。
+        // 变更节点 = SetStyle/RemoveStyle 的 selector 目标；selector 未定位到 → 无
+        // 变更可重算，返回 None（调用方全量兜底）。
+        let changed: Vec<NodeId> = mutations
+            .iter()
+            .filter_map(|m| match m {
+                crate::js_dom_bridge::DomMutation::SetStyle { selector, .. }
+                | crate::js_dom_bridge::DomMutation::RemoveStyle { selector, .. } => {
+                    doc.query_selector(doc.root(), selector.trim())
+                }
+                _ => None,
+            })
+            .collect();
+        if changed.is_empty() {
+            return None;
+        }
+        if self.cached_styles.is_empty() {
+            // 首帧（render_html 路径不维护 cached_styles）：全量计算并作为 base。
+            let s = self.style_system.compute_styles(doc, &stylesheets);
+            self.cached_styles = s;
+        } else {
+            self.style_system
+                .compute_styles_incremental(doc, &stylesheets, &changed, &mut self.cached_styles);
+        }
         let layout = self.cached_layout.as_ref()?;
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
@@ -835,7 +865,7 @@ impl RenderPipeline {
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
-        painter.paint(&layout.root, &styles, Some(doc));
+        painter.paint(&layout.root, &self.cached_styles, Some(doc));
         let primitives = painter.into_primitives();
         Some(RenderResult {
             primitives,
@@ -861,7 +891,23 @@ impl RenderPipeline {
         let stylesheets = collect_stylesheets(doc, css);
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let styles = self.style_system.compute_styles(doc, &stylesheets);
+        // 增量样式：只重算 SetText 目标节点子树（base = cached_styles）。
+        let changed: Vec<NodeId> = mutations
+            .iter()
+            .filter_map(|m| match m {
+                crate::js_dom_bridge::DomMutation::SetText { selector, .. } => {
+                    doc.query_selector(doc.root(), selector.trim())
+                }
+                _ => None,
+            })
+            .collect();
+        if self.cached_styles.is_empty() {
+            let s = self.style_system.compute_styles(doc, &stylesheets);
+            self.cached_styles = s;
+        } else {
+            self.style_system
+                .compute_styles_incremental(doc, &stylesheets, &changed, &mut self.cached_styles);
+        }
         let (img_sizes, _img_ratios, _img_no_ratio) = self.build_img_intrinsic_all(doc);
         let mut tracker = zero_layout_engine::LayoutDirtyTracker::new();
         for m in mutations {
@@ -871,9 +917,9 @@ impl RenderPipeline {
                 tracker.mark_dirty(id);
             }
         }
-        let (layout, _stats) = self
-            .layout_engine
-            .compute_incremental(doc, &styles, &mut tracker, &img_sizes);
+        let (layout, _stats) =
+            self.layout_engine
+                .compute_incremental(doc, &self.cached_styles, &mut tracker, &img_sizes);
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
@@ -881,7 +927,7 @@ impl RenderPipeline {
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
-        painter.paint(&layout.root, &styles, Some(doc));
+        painter.paint(&layout.root, &self.cached_styles, Some(doc));
         let primitives = painter.into_primitives();
         self.cached_layout = Some(LayoutResult {
             root: layout.root.clone(),

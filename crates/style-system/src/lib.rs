@@ -365,6 +365,83 @@ impl StyleSystem {
         styles
     }
 
+    /// 增量样式计算：只重算变更节点及其子树（+ 祖先链恢复 custom 继承），其余复用。
+    ///
+    /// M3-S9：mutation 路径每帧全量 `compute_styles`——JS 改 1 个元素也重算全文档
+    ///（medium 页面 ~1.3ms/帧）。本 API 把重算范围收敛到变更节点 + 后代：
+    /// - 祖先链单节点重算（自根向下）恢复父样式与 `--custom` 继承链（父未变则
+    ///   输入相同输出相同，写回无害；changed 重复时幂等）
+    /// - 从变更节点调 `compute_styles_recursive`（含伪元素 ::before/::after 与
+    ///   `<q>` 引号注入等既有完整逻辑）
+    /// - 样式表含 `:has()` 时退化全量（后代变化影响祖先匹配，增量不安全）
+    ///
+    /// # 参数
+    ///
+    /// - `styles` — 既有样式表（in-out：变更节点及子树覆盖更新，其余保留）。
+    pub fn compute_styles_incremental(
+        &mut self,
+        doc: &Document,
+        stylesheets: &[Stylesheet],
+        changed: &[NodeId],
+        styles: &mut HashMap<NodeId, ComputedStyle>,
+    ) {
+        if stylesheets.iter().any(|s| stylesheet_has_has_selector(&s.rules)) {
+            *styles = self.compute_styles(doc, stylesheets);
+            return;
+        }
+        self.registered_properties = collect_registered_properties(stylesheets);
+        let quirks_mode = doc.quirks_mode();
+        let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
+        let cache_safe = stylesheet_cache_safe(stylesheets);
+        let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
+            std::collections::HashMap::new();
+        let rule_index = matcher::build_stylesheet_index(stylesheets);
+        for &nid in changed {
+            // 祖先链（父级及以上）单节点重算 → 恢复父 style + custom 继承链。
+            let mut chain: Vec<NodeId> = Vec::new();
+            let mut cur = doc.parent_node(nid);
+            while let Some(id) = cur {
+                chain.push(id);
+                cur = doc.parent_node(id);
+            }
+            chain.reverse();
+            let mut parent_style: Option<ComputedStyle> = None;
+            let mut parent_custom: HashMap<String, String> = HashMap::new();
+            for &cid in &chain {
+                if matches!(doc.get(cid).map(|n| &n.kind), Some(NodeKind::Element(_))) {
+                    let s = self.compute_element_style_internal(
+                        doc,
+                        cid,
+                        stylesheets,
+                        &rule_index,
+                        parent_style.as_ref(),
+                        &parent_custom,
+                        quirks_mode,
+                        None,
+                    );
+                    parent_custom = self.custom_properties.clone();
+                    parent_style = Some(s.clone());
+                    styles.insert(cid, s);
+                }
+            }
+            // 变更节点 + 子树重算（含伪元素与既有递归完整逻辑）。
+            self.compute_styles_recursive(
+                doc,
+                nid,
+                stylesheets,
+                &rule_index,
+                parent_style.as_ref(),
+                &parent_custom,
+                styles,
+                quirks_mode,
+                has_pseudo_rules,
+                cache_safe,
+                &mut style_cache,
+                None,
+            );
+        }
+    }
+
     /// 递归计算样式。
     #[allow(clippy::too_many_arguments)]
     fn compute_styles_recursive(
@@ -1890,6 +1967,49 @@ fn stylesheet_has_pseudo_rules(rules: &[zero_css_parser::ast::Rule]) -> bool {
                 }
             }
             // 其余 @规则（@keyframes/@layer/@import/@font-face...）不含伪元素选择器
+            _ => {}
+        }
+    }
+    false
+}
+
+/// 样式表是否含 `:has()` 关系伪类选择器（Selectors L4，R2669）。
+///
+/// 增量样式不安全信号：`:has()` 使**后代变化影响祖先匹配**——只重算变更节点及
+/// 后代会漏掉祖先的匹配更新。AST 遍历（含 `:is()`/`:not()`/`:where()` 嵌套）。
+fn stylesheet_has_has_selector(rules: &[zero_css_parser::ast::Rule]) -> bool {
+    use zero_css_parser::ast::{CompoundSelector, PseudoClassSelector, SubclassSelector};
+
+    fn selector_has(sel: &zero_css_parser::ast::Selector) -> bool {
+        fn compound_has(c: &CompoundSelector) -> bool {
+            c.subclass_selectors.iter().any(|s| match s {
+                SubclassSelector::PseudoClass(pc) => match pc {
+                    PseudoClassSelector::Has(_) => true,
+                    PseudoClassSelector::Is(list)
+                    | PseudoClassSelector::Not(list)
+                    | PseudoClassSelector::Where(list) => list.iter().any(selector_has),
+                    _ => false,
+                },
+                _ => false,
+            })
+        }
+        sel.complex.parts.iter().any(|(c, _)| compound_has(c))
+    }
+
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                if style_rule.selectors.iter().any(selector_has) {
+                    return true;
+                }
+            }
+            zero_css_parser::ast::Rule::At(at) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(nested) = &at.body
+                    && stylesheet_has_has_selector(nested)
+                {
+                    return true;
+                }
+            }
             _ => {}
         }
     }

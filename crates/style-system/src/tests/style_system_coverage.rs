@@ -898,3 +898,57 @@ fn test_style_system_clear_both() {
         zero_css_parser::values::ClearValue::Both
     ));
 }
+
+/// M3-S9：增量样式（compute_styles_incremental）与全量 compute_styles 一致性。
+/// 变更节点 + 子树重算后，完整 styles map 与全量重算完全一致（含继承链/custom/伪元素）。
+#[test]
+fn test_incremental_styles_match_full_after_change() {
+    use zero_css_parser::Parser as CssParser;
+
+    let html = r#"<html><body>
+        <div id="a" style="color:red"><span class="c">s1</span><span>s2</span></div>
+        <div id="b"><p style="color:blue">p</p></div>
+        <section id="s"><div class="c">x</div></section>
+    </body></html>"#;
+    let css = r#"
+        .c { font-size: 14px; }
+        #b p { margin: 5px; }
+        div { display: block; }
+        div::before { content: "pre"; }
+    "#;
+    let mut doc = zero_dom::parse_html(html);
+    let stylesheets = vec![CssParser::parse_stylesheet(css)];
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let full = sys.compute_styles(&doc, &stylesheets);
+
+    // 变更 #a 的 style 属性（color + 新增自定义属性）
+    let a = doc.query_selector(doc.root(), "#a").expect("#a");
+    doc.set_attribute(a, "style", "color:green; --x: 10px");
+    let a2 = doc.query_selector(doc.root(), "#a").expect("#a");
+    assert_eq!(a, a2);
+
+    // 增量重算 #a
+    let mut incr = full.clone();
+    let mut sys2 = StyleSystem::new();
+    sys2.set_viewport(800.0, 600.0);
+    sys2.compute_styles_incremental(&doc, &stylesheets, &[a], &mut incr);
+
+    // 全量参考
+    let full2 = sys.compute_styles(&doc, &stylesheets);
+
+    // 一致性：全部元素样式相同
+    assert_eq!(full2.len(), incr.len(), "map size: {} vs {}", full2.len(), incr.len());
+    for (nid, style) in &full2 {
+        let incr_style = incr.get(nid).expect("incremental has node");
+        assert_eq!(style.color, incr_style.color, "node {nid:?} color");
+        assert_eq!(style.font_size, incr_style.font_size, "node {nid:?} font-size");
+    }
+    // 变更元素 color 生效
+    let a_style = incr.get(&a).expect("#a style");
+    assert_eq!(
+        a_style.color,
+        zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255),
+        "green"
+    );
+}
