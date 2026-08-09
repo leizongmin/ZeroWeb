@@ -1835,3 +1835,88 @@ fn test_intersection_observer_root_margin_r2966() {
         "rootBounds.width = 120（100 + 20 左 margin）"
     );
 }
+
+#[test]
+fn test_pointer_capture_api_r3068() {
+    // R3068：Pointer Capture API（setPointerCapture/releasePointerCapture/hasPointerCapture）。headless 无真
+    // 指针路由（事件不重定向到捕获元素），但 API 表面 + hasPointerCapture 状态查询对指针/拖拽库必需。
+    // 验证：① hasPointerCapture 默认 false；② set→true；③ release→false；④ per-element 隔离；⑤ 多 pointerId 独立。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='a'></div><div id='b'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① hasPointerCapture 默认 false。
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#a').hasPointerCapture(1))")
+            .unwrap()
+            .value,
+        "false",
+        "hasPointerCapture 默认 false"
+    );
+
+    // ② setPointerCapture(1) → hasPointerCapture(1) true。
+    sandbox
+        .execute("document.querySelector('#a').setPointerCapture(1);")
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#a').hasPointerCapture(1))")
+            .unwrap()
+            .value,
+        "true",
+        "setPointerCapture(1) → hasPointerCapture(1) true"
+    );
+
+    // ③ releasePointerCapture(1) → false。
+    sandbox
+        .execute("document.querySelector('#a').releasePointerCapture(1);")
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#a').hasPointerCapture(1))")
+            .unwrap()
+            .value,
+        "false",
+        "releasePointerCapture(1) → hasPointerCapture(1) false"
+    );
+
+    // ④ per-element 隔离：#a 捕获 pointer 1，#b.hasPointerCapture(1) 仍 false。
+    sandbox
+        .execute("document.querySelector('#a').setPointerCapture(1);")
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(document.querySelector('#b').hasPointerCapture(1))")
+            .unwrap()
+            .value,
+        "false",
+        "per-element 隔离：#b.hasPointerCapture(1) false（#a 捕获不影响 #b）"
+    );
+
+    // ⑤ 多 pointerId 独立：#a 已捕获 1（④），再捕获 2 + release 1 → (1)=false, (2)=true。
+    sandbox
+        .execute(
+            "document.querySelector('#a').setPointerCapture(2);\
+             document.querySelector('#a').releasePointerCapture(1);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute(
+                "String(document.querySelector('#a').hasPointerCapture(1) + ',' + document.querySelector('#a').hasPointerCapture(2))"
+            )
+            .unwrap()
+            .value,
+        "false,true",
+        "多 pointerId 独立：release 1 后 hasPointerCapture(1)=false, (2)=true"
+    );
+}

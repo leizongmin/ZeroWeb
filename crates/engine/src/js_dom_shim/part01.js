@@ -72,6 +72,12 @@
   // Element.getAnimations() / Document.getAnimations() 读。spec：返「current/in effect」动画——cancelled（playState='idle'）
   // 排除；finished 仍返（headless 瞬间完成，finished 动画仍可查询/commitStyles）。导航经 __zw_reset_form_state 清空（per-page）。
   var _elementAnimations = {};
+  // R3068：Pointer Capture API per-element 捕获集。elKey → { pointerId: true }（set 形态）。setPointerCapture 加、
+  // releasePointerCapture 删、hasPointerCapture 查。headless 无真指针路由（事件不重定向到捕获元素），但 API 表面 +
+  // hasPointerCapture 状态查询对指针/拖拽库（interact.js / sortablejs pointer mode）feature-detect 必需。导航经
+  // __zw_reset_form_state 清空（per-page）。permissive：不校验 pointerId 是否 active（headless 无 active 追踪，spec
+  // NotFoundError defer；releasePointerCapture 未捕获不抛 InvalidStateError，lenient 防破库）。
+  var _pointerCapture = {};
   // R3047：scroll 位置追踪。headless 无真视口滚动 → 旧 scrollTop/scrollLeft 恒 0、scrollTo/scrollBy/scroll no-op、
   // window.scrollX/Y 恒 0。real 浏览器这些为可读写状态（sticky-nav / scroll restoration / 无限滚动检测 / parallax 读）。
   // 本切片改 JS-side 状态追踪：`scrollTo/scrollBy` + `scrollTop/scrollLeft` set 更新此 map，get 读回 → 程序化滚动
@@ -1132,7 +1138,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

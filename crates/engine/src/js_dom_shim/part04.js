@@ -508,6 +508,28 @@
         // R3047：scroll 方法（headless 无真视口滚动 → JS-side 状态追踪）。scrollTo/scrollBy 更新 `_scrollOffsets[key]`
         //（与 scrollTop/scrollLeft getter 自洽）；scrollIntoView 无 viewport → no-op（documented）。
         // 参数支持 `(x,y)` 与 `{left,top,behavior}` 两 spec 形式（_zwApplyScroll 统一解析）。
+        // R3068：Pointer Capture API（setPointerCapture/releasePointerCapture/hasPointerCapture）。headless 无真
+        // 指针路由（事件不重定向到捕获元素），但 API 表面 + hasPointerCapture 状态查询对指针/拖拽库必需。
+        // per-element `_pointerCapture[key]` set 形态追踪。permissive：不校验 pointerId active（spec NotFoundError defer）。
+        if (prop === 'setPointerCapture') {
+          return function (pid) {
+            var id = String(pid);
+            var set = _pointerCapture[key] || (_pointerCapture[key] = {});
+            set[id] = true;
+          };
+        }
+        if (prop === 'releasePointerCapture') {
+          return function (pid) {
+            var set = _pointerCapture[key];
+            if (set) delete set[String(pid)];
+          };
+        }
+        if (prop === 'hasPointerCapture') {
+          return function (pid) {
+            var set = _pointerCapture[key];
+            return !!(set && set[String(pid)]);
+          };
+        }
         if (prop === 'scrollTo' || prop === 'scrollBy') {
           var _ss = _scrollOffsets[key] || (_scrollOffsets[key] = { top: 0, left: 0 });
           var _byM = prop === 'scrollBy';
