@@ -175,6 +175,39 @@
       else popoverEl.togglePopover();
     } catch (_e) {} // InvalidStateError（已 showing show / 未 showing hide / target 非 popover）spec no-op
   }
+  // R3074：Element.checkVisibility(options)——元素是否「being rendered」+ 可选 opacity/visibility 检查。
+  // https://drafts.csswg.org/cssom-view-1/#dom-element-checkvisibility
+  // 算法：① display:none 在元素或任一祖先 → not rendered → false（默认，无需 option）；② options.opacityProperty
+  // 且元素或任一祖先 computed opacity=0 → false（opacity 不继承，须遍历祖先）；③ options.visibilityProperty 且元素
+  // computed visibility 非 visible（hidden/collapse）→ false（visibility 继承，查元素自身计算值即反映祖先）。
+  // 经 host `__zw_get_computed_style(sel, prop)`（engine/production 已注册；未注册 lenient 返 true 防破脚本）。
+  // handle-only detached（无 sel）→ 不在文档 → not rendered → false。contentVisibilityAuto（content-visibility:auto）
+  // defer（harness 未计算 content-visibility，niche）。
+  function _zwCheckVisibility(sel, handle, options) {
+    if (!sel) return false; // handle-only detached → not in document → not rendered
+    options = options || {};
+    var hasCS = typeof __zw_get_computed_style === 'function';
+    // visibility（继承——查元素自身计算值）。
+    if (options.visibilityProperty && hasCS) {
+      var vis = __zw_get_computed_style(sel, 'visibility');
+      if (vis === 'hidden' || vis === 'collapse') return false;
+    }
+    // display（不继承——元素或任一祖先 none）+ opacity（不继承——任一祖先 0）。遍历祖先链。
+    var cur = sel;
+    while (cur) {
+      if (hasCS) {
+        var disp = __zw_get_computed_style(cur, 'display');
+        if (disp === 'none') return false;
+        if (options.opacityProperty) {
+          var op = __zw_get_computed_style(cur, 'opacity');
+          if (parseFloat(op) === 0) return false;
+        }
+      }
+      try { cur = __zw_parent(cur); } catch (_e) { cur = ''; }
+      if (!cur) break;
+    }
+    return true;
+  }
   // R3047：scroll 位置追踪。headless 无真视口滚动 → 旧 scrollTop/scrollLeft 恒 0、scrollTo/scrollBy/scroll no-op、
   // window.scrollX/Y 恒 0。real 浏览器这些为可读写状态（sticky-nav / scroll restoration / 无限滚动检测 / parallax 读）。
   // 本切片改 JS-side 状态追踪：`scrollTo/scrollBy` + `scrollTop/scrollLeft` set 更新此 map，get 读回 → 程序化滚动

@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1a Element.checkVisibility（可见性查询，pivot 出 popover 赛道，本轮 R3074）
+
+Web API 表面扫描发现 `Element.prototype.checkVisibility(options)` 缺——ad viewability（广告可见度计量）/ lazy-load 库（判元素是否真渲染再加载）/ 视图追踪库用。缺则含此调用的脚本 TypeError 中断。spec（CSSOM View）：返元素是否「being rendered」+ 可选 opacity/visibility 检查。本切片接通，pivot 出已闭合的 popover 赛道（R3071-R3073）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`_zwCheckVisibility(sel, handle, options)` helper** | `crates/engine/src/js_dom_shim/part01.js`（`_zwPopoverTargetActivate` 后） | spec 算法：① `display:none` 在元素或任一祖先 → not rendered → false（默认，无需 option，遍历 `__zw_parent` 祖先链）；② `options.opacityProperty` 且元素或任一祖先 computed `opacity:0` → false（opacity 不继承，遍历祖先）；③ `options.visibilityProperty` 且元素 computed `visibility` 非 visible（hidden/collapse）→ false（visibility 继承，查元素自身计算值即反映祖先——避免「祖先 hidden + 子 visible 覆盖」误判）。经 host `__zw_get_computed_style(sel, prop)`（engine/production 已注册，harness 计算真值 display/opacity/visibility）；未注册 → lenient 返 true（防破脚本）。handle-only detached（无 sel）→ 不在文档 → false。spec 链接 https://drafts.csswg.org/cssom-view-1/#dom-element-checkvisibility 。 |
+| **`checkVisibility` 方法分支** | `crates/engine/src/js_dom_shim/part04.js`（`closest` 后） | 返 `function(options) { return _zwCheckVisibility(sel, handle, options); }`。 |
+| **R3074 测试 + 新 part14.rs** | engine `js_dom_bridge_tests/part14.rs`（新建，+`include!` 入 js_dom_bridge_tests.rs） | 8 case：① 默认 rendered → true；② display:none → false；③ 祖先 display:none → 子 false（祖先链）；④ opacity:0 默认 true / opacityProperty:true → false；⑤ opacity:0.5 → true（非 0）；⑥ visibility:hidden 默认 true / visibilityProperty:true → false；⑦ 祖先 hidden + 子 visible 覆盖 → 子 true（继承正确）；⑧ detached → false。新建 part14.rs 因 part09（2494 行）/ part05（1893 行）已近/超 2000 行单文件限——按编辑性切片拆分惯例续 part14（与 part01-13 经 `include!` 并入同模块）。 |
+
+**为何零回归且净正向**：① checkVisibility 为纯新增查询方法（旧完全缺，含此调用的脚本中断）；② 仅新增 get 分支 + helper（不动既有方法路径）；③ 复用既有 `__zw_get_computed_style` host 回调（engine/harness 已计算 display/opacity/visibility 真值，R3030 已验证）+ `__zw_parent` 祖先链（_dispatchWithBubble 已用）；④ visibility 继承语义正确（查元素计算值，非遍历祖先——避免覆盖误判）；⑤ lenient 回落（host 未注册返 true）防破脚本；⑥ 全量 make test 全绿（0 failed across all binaries，16070 passed；engine +1 driving 测试，零回归）。
+
+**已知限制（记录，defer）**：① **contentVisibilityAuto defer**（`content-visibility:auto` + skipping contents 判定——harness 未计算 content-visibility 属性，niche，spec option `contentVisibilityAuto`）；② **host 未注册环境 lenient 返 true**（reftest/polyfill 无 host getComputedStyle 时 checkVisibility 恒 true，防破脚本，documented）；③ **handle-only detached 元素恒 false**（无 sel → 不在文档 → not rendered，spec 一致）；④ **视口外/裁剪不算不可见**（checkVisibility 只判渲染树存在 + opacity/visibility，不判 viewport 相交——那是 IntersectionObserver 域，R3062 已覆盖）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**cargo test 执行器；0 failed across all binaries，全量 16070 passed，engine +1 driving 测试，零回归**）+ pre-commit guard PASS。变更纯 JS shim + 测试（无 render/paint/layout .rs 改动——consumed 既有 computed style 基础设施），product-smoke 不受影响。
+
+**下一步**：checkVisibility 查询面闭合（display/opacity/visibility，contentVisibilityAuto defer）。pivot：① Web API 表面继续扫描补缺（`scrollIntoViewIfNeeded` WebKit-only / `Element.scrollIntoView` option 精化 / niche gap）；② storage 事件（跨 tab 同步——BroadcastChannel 同侧可复用，中复杂度）；③ P1a 事件循环 macro-task 队列补全（P1a 剩余主线，中-高复杂度）；④ popover 渲染层显隐 + light-dismiss（rendering/输入路由流域）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a popoverTargetElement/popoverTargetAction IDL（编程式 popoverTarget 表面，闭合 R3072 限制⑤，本轮 R3073）
 
 承接 popover 赛道（R3071 核心 DOM 面 + R3072 声明式触发）。R3072 实现声明式 `popovertarget`/`popovertargetaction` **内容属性**驱动 click，但 IDL 编程式表面——`element.popoverTargetElement`（直接设目标元素，优先于内容属性）+ `element.popoverTargetAction`（enumerated 反射）——缺（R3072 限制⑤ defer）。编程式用法：组件库 `btn.popoverTargetElement = popoverEl` 关联（无 id 依赖，ref-based，React/Vue 常见）+ `btn.popoverTargetAction = 'show'`。本切片接通，闭合 popoverTarget 全表面。

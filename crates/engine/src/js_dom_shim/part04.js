@@ -663,6 +663,12 @@
             } catch (_e) { return null; }
           };
         }
+        // `el.checkVisibility(options)`（R3074）——元素是否「being rendered」+ 可选 opacity/visibility 检查。
+        // ad viewability / lazy-load / 视图追踪库用。委托 `_zwCheckVisibility`（getComputedStyle + 祖先链）。
+        // https://drafts.csswg.org/cssom-view-1/#dom-element-checkvisibility
+        if (prop === 'checkVisibility') {
+          return function(options) { return _zwCheckVisibility(sel, handle, options); };
+        }
         // R2933 element 级 IDL on-event handler getter（onclick/oninput/... → 存储的 fn 或 null）。
         // `on`+小写字母 = handler（generic，无白名单）。与 set trap 的 on* 路由对偶。
         // R2934：无 JS 设值时回落编译 inline on* 属性（<button onclick="...">）。

@@ -13,3 +13,4 @@ include!("js_dom_bridge_tests/part10.rs");
 include!("js_dom_bridge_tests/part11.rs");
 include!("js_dom_bridge_tests/part12.rs");
 include!("js_dom_bridge_tests/part13.rs");
+include!("js_dom_bridge_tests/part14.rs");
