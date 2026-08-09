@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1b S1 只读属性族——nodeName/getAttribute/hasAttribute/id/className native getter+方法（首测 FunctionTemplate 方法调用路径，本轮 R3098）
+
+承接 R3096（S1 dom_bindings 生产化，仅 nodeType/tagName accessor getter）→ 扩 S1 只读属性族（R3097「下一步」选项二）。新增 3 accessor getter + 2 方法回调 + 共用 helper，全部经 gc.rs 线程局部源读 live `Document`（不经 shim 字符串桥）：`nodeName`（spec `dom-node-nodename`，Element=tagName 大写，Text/Comment/Document/DocumentFragment/PI/DocumentType 固定串——exhaustive match）、`id`/`className`（reflected attr，`get_attribute('id'|'class')` 缺省 `""`）、`getAttribute(name)`（spec `dom-element-getattribute`，缺省→`null`）、`hasAttribute(name)`（spec `dom-element-hasattribute`→`Boolean`）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **nodeName/id/className getter + getAttribute/hasAttribute 方法 + helper** | `crates/engine/src/dom_bindings/mod.rs` | `native_node_name_getter`（含 Rust 侧 `node_name` 全 NodeKind exhaustive match）+ `native_id_getter`/`native_class_name_getter`（共用 `read_reflected_attr`）+ `native_get_attribute_invoke`/`native_has_attribute_invoke`（FunctionTemplate，`args.this()` 读 NodeId，共用 `string_arg`）+ Element ObjectTemplate 逐成员注册（accessor + FunctionTemplate::set）。 |
+| **+3 单元测试** | `crates/engine/src/dom_bindings/tests.rs` | `native_node_name`（Element nodeName==tagName 大写）、`native_get_attribute_and_has_attribute`（class/data-x 读 + 缺省→null/false）、`native_id_and_class_name_reflected`（id/className + 缺省空串 + className===getAttribute('class')）。 |
+| **首测 native 方法调用路径 bench** | `crates/engine/benches/dom_bindings_bench.rs` | 新 `native_get_attribute` metric（~258 ns/call，scoped 实测）——首测 FunctionTemplate invoke + String 参编解码 + 属性向量扫描路径，对照既有 ZST accessor getter（~193-215 ns）；HTML const 加 `class="row"` 供 getAttribute 非空自检。 |
+
+**为何净正向**：① 闭合 R3096/S2「下一步」S1 只读属性族扩展——native 表面从 2 getter 扩至 3 getter + 2 方法，建 S1 对照门工作流；② 首测 native 方法调用路径（FunctionTemplate，对照既有 accessor getter）量化「String 参 + 属性扫描」相对开销（~258 vs ~193-215 ns，+~20-30%，可接受——方法调用天然比 ZST accessor getter 重）；③ 纯追加——既有 baselined 路径（native_tag_name/native_node_type/polyfill_tag_name）代码未动，零回归风险；④ 默认 kill-switch 关 → 零行为变更。
+
+**已知限制（记录，后续切片）**：① **read-only 快照**（继承 R3097 限制）——native 读 re-parse `cached_html` 独立 `Document`，不随页面 mutation 同步；本切片全部为只读 getter/方法，无碍；② **写入路径（S3+）**——`setAttribute`/`id` setter 等 native 写经 escape-hatch 同模式后续；③ **`attributes` NamedNodeMap getter** defer（master.md R3097「下一步」提及，本切片取 nodeName/getAttribute/hasAttribute/id/className 子集）；④ 全量 `make bench-gate` 未本轮内联跑（>10min，跨 16 crate 全量测量超时）——但新 metric 已 scoped 实测（~258 ns，self-check 通过），且新 metric 按 gate 设计为 NEW→PASS、既有 baselined 路径未动；⑤ QuickJS no-op（继承）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine -p zero-script-sandbox --all-targets --features v8 -D warnings` 零警告 + `make test` 全绿（**exit 0；engine +3 dom_bindings 测试（10/10），零回归；v8+quickjs 双路径**）+ pre-commit guard PASS。变更 engine（dom_bindings mod.rs + tests + bench），无渲染/布局/CSS 变更，product-smoke 不受影响。
+
+**下一步**：S1 只读属性族完成（native 表面扩至 3 getter + 2 方法）。候选：① **S3 = selector→NodeId native**（`querySelector` 接 `find_by_selector` full selector 引擎，消费 zero_dom 选择器；当前 native 工厂仅 `get_element_by_id`，querySelectorAll 等选择器族仍走 polyfill）；② **`attributes` NamedNodeMap native getter**（补 S1 属性族最后成员）；③ **写入路径 native**（setAttribute/id setter 经 escape-hatch，闭合 read-only 快照限制，中-高复杂度）；④ 续 P1a 深项（diamond module / browser storage 持久化）。每切片 kill-switch + make test 零回归 + clippy/fmt 守门。
+
 ### P1b S2 生产接线——原生绑定接通 webview 真实页面沙箱（Sandbox::install_native_bindings escape-hatch + WebViewConfig.native_dom，默认关 → 零回归，本轮 R3097）
 
 承接 R3096（S1 dom_bindings 生产化，但「未接 run_page_scripts 生产管线」）→ S2 闭合该限制。原生绑定现可经 `WebViewConfig.native_dom=true` 在 `run_page_scripts` 时安装到页面持久 V8 Context，与 polyfill 桥共存——页面脚本可直接 `__zw_native_element_for_id('a').nodeType/.tagName` 原生直读（不经 shim 字符串桥）。解决 S1 发现的分层 gap（script 路径无 live Document）：re-parse `cached_html` 为独立 `Document`（read-only 快照）+ escape-hatch 进沙箱持久 Context。
