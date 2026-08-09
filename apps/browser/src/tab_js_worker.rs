@@ -343,12 +343,17 @@ fn js_worker_main(
                     *u = url;
                 }
                 if url_changed {
-                    if let Ok(mut map) = handle_selector_map.lock() {
-                        map.clear();
-                    }
+                    // P1a form input：URL 变化（导航）→ 清 shim value 缓存，防跨页同选择器 stale value。
+                    // 与 renderer 路径（js_worker.rs）一致——闭合 R3058/R3059 双路径 form-reset 不一致。
+                    let _ = sandbox.execute("__zw_reset_form_state && __zw_reset_form_state();");
                     // R3059：导航 → 清旧页 _hist_entries（pushState/hash-setter 残留），新页 location.href
                     // 读 page_url fallback（= 新文档 url）。与 renderer 路径一致（闭合 SPA-then-redirect stale）。
                     let _ = sandbox.execute("__zw_reset_history && __zw_reset_history();");
+                    // P1a gBCR path A：导航 → 旧页 handle 在新页无效，清 handle→selector map
+                    // （apply 路径会在新页 createElement 时重新 merge）。
+                    if let Ok(mut map) = handle_selector_map.lock() {
+                        map.clear();
+                    }
                 }
             }
             JsWorkerCommand::ResolveAsyncCallback { id, result } => {
@@ -1922,6 +1927,45 @@ mod tests {
             .execute_script_direct("globalThis.__w = document.querySelector('#t').getBoundingClientRect().width;")
             .unwrap();
         assert_eq!(worker.execute_script_direct("String(globalThis.__w)").unwrap(), "0");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn tab_js_worker_resets_form_state_on_navigation_r3064() {
+        // R3064：browser 单进程路径 url_changed 分支补 __zw_reset_form_state（闭合 R3058/R3059 双路径
+        // 不一致——renderer 路径 js_worker.rs 已有，browser 单进程路径此前仅 reset_history）。
+        // 经 sentinel 覆盖 __zw_reset_form_state → 导航（url 变化）触发 worker 调用 → sentinel 设全局标志。
+        // 直接验证接线：导航清 form value 缓存，防跨页同选择器 stale value（与 renderer 路径一致）。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(25));
+        worker.set_dom_snapshot("<html><body><input id='foo'></body></html>", "http://page1/");
+        // 导航前置 sentinel：覆盖真实 __zw_reset_form_state，调用时设 __resetCalled=true。
+        worker
+            .execute_script_direct(
+                "globalThis.__resetCalled = false;\
+                 globalThis.__zw_reset_form_state = function(){ globalThis.__resetCalled = true; };",
+            )
+            .unwrap();
+        // 导航到不同 url（url_changed=true）→ worker url_changed 分支调 __zw_reset_form_state（sentinel）。
+        worker.set_dom_snapshot("<html><body><input id='foo'></body></html>", "http://page2/");
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis.__resetCalled)")
+                .unwrap(),
+            "true",
+            "browser single-process url_changed must call __zw_reset_form_state"
+        );
+        // 同 url 快照不触发重置（url_changed=false）。
+        worker
+            .execute_script_direct("globalThis.__resetCalled = false;")
+            .unwrap();
+        worker.set_dom_snapshot("<html><body><input id='foo'></body></html>", "http://page2/");
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis.__resetCalled)")
+                .unwrap(),
+            "false",
+            "same-url snapshot must not reset form state"
+        );
         worker.shutdown();
     }
 }
