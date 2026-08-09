@@ -1399,3 +1399,58 @@ fn render_with_dom_mutations_text_uses_incremental_layout() {
     // 布局结果非空（增量路径产出 LayoutResult）
     assert!(!result.layout.snapshot().is_empty(), "layout snapshot empty");
 }
+
+/// M3-S9：render_with_dom_mutations 的 paint-only 分层——布局无关样式变更
+///（background-color）复用 cached_layout（不重布局），样式变更后绘制正确。
+#[test]
+fn render_with_dom_mutations_paint_only_keeps_layout() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div id="a" style="width:100px;height:50px;background:red">A</div></body></html>"#;
+    let _ = pipeline.render_html(html, "");
+    let layout_before = pipeline.cached_layout.as_ref().expect("layout").snapshot();
+
+    let m = crate::js_dom_bridge::DomMutation::SetStyle {
+        selector: "#a".to_string(),
+        property: "background-color".to_string(),
+        value: "blue".to_string(),
+    };
+    let (result, snapshot, _) = pipeline
+        .render_with_dom_mutations(std::slice::from_ref(&m), "")
+        .expect("mutations applied");
+    assert!(
+        snapshot.contains("background-color: blue")
+            || snapshot.contains("background:blue")
+            || snapshot.contains("background-color:blue"),
+        "snapshot: {snapshot}"
+    );
+    // 布局复用：root 树不变（paint-only 属性不影响布局）
+    let layout_after = pipeline.cached_layout.as_ref().expect("layout").snapshot();
+    assert_eq!(
+        layout_before, layout_after,
+        "paint-only mutation must reuse cached layout"
+    );
+    let _ = result;
+}
+
+/// paint-only 白名单：布局属性（width）不在白名单 → 走全量布局（布局变化可见）。
+#[test]
+fn render_with_dom_mutations_layout_prop_recomputes_layout() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div id="a" style="width:100px;height:50px">A</div><div id="b">B</div></body></html>"#;
+    let _ = pipeline.render_html(html, "");
+    let layout_before = pipeline.cached_layout.as_ref().expect("layout").snapshot();
+
+    let m = crate::js_dom_bridge::DomMutation::SetStyle {
+        selector: "#a".to_string(),
+        property: "height".to_string(),
+        value: "120px".to_string(),
+    };
+    let _ = pipeline
+        .render_with_dom_mutations(std::slice::from_ref(&m), "")
+        .expect("mutations applied");
+    let layout_after = pipeline.cached_layout.as_ref().expect("layout").snapshot();
+    assert_ne!(
+        layout_before, layout_after,
+        "layout-affecting mutation must recompute layout"
+    );
+}

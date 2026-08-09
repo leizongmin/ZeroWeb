@@ -751,12 +751,19 @@ impl RenderPipeline {
         let html_snapshot = doc.outer_html(doc.root());
         // DOM 已变（<style>/meta 内容可能变）：CSS 解析缓存失效。
         self.cached_css_text = None;
-        // 仅文本变更（SetText，CSS selector 定位）→ 增量布局（compute_incremental 已验证
-        // 与全量一致）；样式属性变更（taffy style 缓存不更新，单节点更新为后续专项）与
-        // 结构变更（taffy 树重建）→ 全量布局（仍免 parse）。
-        let is_text_only = mutations.iter().all(Self::is_text_only_mutation);
-        let result = if is_text_only {
+        // 增量分层（mutation 全部同类时走轻量路径，否则全量兜底）：
+        // 1. SetText-only → compute_incremental 增量布局（已验证与全量一致）
+        // 2. SetStyle/RemoveStyle 布局无关属性（paint-only 白名单）→ 布局不变，
+        //    复用 cached_layout 只重 style + paint（省 100% 布局）
+        // 3. 其他（布局属性/结构变更）→ 全量布局（taffy style 单节点更新为后续专项）
+        let all_text_only = mutations.iter().all(Self::is_text_only_mutation);
+        let all_paint_only = !all_text_only && mutations.iter().all(Self::is_paint_only_mutation);
+        let result = if all_text_only {
             let r = self.incremental_paint_after_text_mutations(&doc, mutations, css);
+            self.cached_doc = Some(doc);
+            r
+        } else if all_paint_only {
+            let r = self.paint_only_incremental(&doc, css);
             self.cached_doc = Some(doc);
             r
         } else {
@@ -771,6 +778,76 @@ impl RenderPipeline {
     /// 在 pipeline 侧定位节点，走全量）。
     fn is_text_only_mutation(m: &crate::js_dom_bridge::DomMutation) -> bool {
         matches!(m, crate::js_dom_bridge::DomMutation::SetText { .. })
+    }
+
+    /// mutation 是否只改布局无关（paint-only）样式——布局不变，可复用 cached_layout。
+    fn is_paint_only_mutation(m: &crate::js_dom_bridge::DomMutation) -> bool {
+        match m {
+            crate::js_dom_bridge::DomMutation::SetStyle { property, .. }
+            | crate::js_dom_bridge::DomMutation::RemoveStyle { property, .. } => Self::is_paint_only_property(property),
+            _ => false,
+        }
+    }
+
+    /// 布局无关（paint-only）属性白名单：这些属性只影响绘制，不影响 taffy 布局
+    ///（尺寸/位置/流），故样式变更后可复用 cached_layout（省 100% 布局重算）。
+    /// 白名单保守——未列属性（含未知）一律按布局相关走全量。
+    fn is_paint_only_property(property: &str) -> bool {
+        let p = property.trim();
+        p == "color"
+            || p == "opacity"
+            || p == "visibility"
+            || p == "z-index"
+            || p == "box-shadow"
+            || p == "text-shadow"
+            || p == "filter"
+            || p == "backdrop-filter"
+            || p == "cursor"
+            || p == "user-select"
+            || p == "pointer-events"
+            || p == "mix-blend-mode"
+            || p == "isolation"
+            || p == "clip-path"
+            || p == "will-change"
+            || p == "scroll-behavior"
+            || p == "text-overflow"
+            || p == "transform"
+            || p == "transform-origin"
+            || p.starts_with("background") // background / background-*
+            || p.starts_with("border-radius") // border-radius / border-*-radius
+            || p.starts_with("border-color") // border-color / border-*-color（仅颜色，无布局影响）
+            || p.starts_with("text-decoration") // 绘制下划线等，无布局影响
+            || p.starts_with("outline") // outline 不占布局
+    }
+
+    /// 布局无关样式变更增量渲染：全量 style（paint 消费新样式）+ 复用 cached_layout
+    ///（布局不变——paint-only 白名单保证）+ 全量 paint。
+    fn paint_only_incremental(&mut self, doc: &Document, css: &str) -> Option<RenderResult> {
+        let stylesheets = collect_stylesheets(doc, css);
+        self.style_system
+            .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
+        let styles = self.style_system.compute_styles(doc, &stylesheets);
+        let layout = self.cached_layout.as_ref()?;
+        let mut painter = Painter::new();
+        painter.skip_indicators = self.skip_indicators;
+        painter.image_sizes.clone_from(&self.image_sizes);
+        painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_document_url(self.document_url.as_deref());
+        painter.viewport_w = self.viewport_width;
+        painter.viewport_h = self.viewport_height;
+        painter.paint(&layout.root, &styles, Some(doc));
+        let primitives = painter.into_primitives();
+        Some(RenderResult {
+            primitives,
+            layout: LayoutResult {
+                root: layout.root.clone(),
+                viewport_width: layout.viewport_width,
+                viewport_height: layout.viewport_height,
+                paint_skip_node_ids: layout.paint_skip_node_ids.clone(),
+            },
+            timings: PipelineTimings::default(),
+            stats: RenderStats::default(),
+        })
     }
 
     /// 文本变更增量渲染：全量 style + 脏标记文本节点 → `compute_incremental` +
