@@ -484,6 +484,19 @@ jobs:
       - name: List artifacts
         run: find artifacts/ -type f | head -20
 
+      # Linux/Windows 构建产物平铺上传会导致多平台同名文件（zero-browser、
+      # README.txt 等）互相覆盖，平台区分丢失——与 weekly 一致，按平台打成 zip
+      - name: Repackage Linux/Windows zips
+        shell: bash
+        run: |
+          set -e
+          cd artifacts
+          for d in zero-browser-linux-*/ zero-browser-windows-*/; do
+            name="${d%/}"
+            (cd "$d" && zip -r "../${name}.zip" .)
+            rm -rf "$d"
+          done
+
       - name: Generate SHA256 checksums
         shell: bash
         run: |
@@ -501,10 +514,8 @@ jobs:
           tag_name: ${{ github.event.release.tag_name }}
           files: |
             checksums-sha256.txt
-            artifacts/zero-browser-linux-x86_64-v8/*
-            artifacts/zero-browser-linux-x86_64-quickjs/*
-            artifacts/zero-browser-linux-aarch64-v8/*
-            artifacts/zero-browser-linux-aarch64-quickjs/*
+            artifacts/zero-browser-linux-*.zip
+            artifacts/zero-browser-windows-*.zip
             artifacts/zero-browser-linux-amd64-v8-deb/*
             artifacts/zero-browser-linux-amd64-quickjs-deb/*
             artifacts/zero-browser-linux-arm64-v8-deb/*
@@ -513,6 +524,3 @@ jobs:
             artifacts/zero-browser-macos-x86_64-quickjs-app/*.zip
             artifacts/zero-browser-macos-aarch64-v8-app/*.zip
             artifacts/zero-browser-macos-aarch64-quickjs-app/*.zip
-            artifacts/zero-browser-windows-x86_64-v8/*
-            artifacts/zero-browser-windows-x86_64-quickjs/*
-            artifacts/zero-browser-windows-aarch64-quickjs/*
