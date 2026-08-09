@@ -65,7 +65,7 @@ jobs:
     if: >
       needs.changes.outputs.should_build == 'true'
       && !(github.event_name == 'workflow_dispatch' && inputs.run_reftest_trend)
-    name: Build ${{ matrix.target }}
+    name: Build ${{ matrix.target }} (${{ matrix.engine }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     # windows-aarch64: freetype-sys NEON 汇编问题（已知上游 bug），不阻塞 weekly
@@ -76,34 +76,71 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # 每种平台出 v8 与 quickjs 两个引擎的产物；windows-aarch64 无 v8（rusty_v8 不发布该目标原生库），只有 quickjs
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: zero-browser-linux-x86_64
+            artifact: zero-browser-linux-x86_64-v8
+            engine: v8
+            ext: ''
+            features: ''
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: zero-browser-linux-x86_64-quickjs
+            engine: quickjs
+            ext: ''
+            features: '--no-default-features --features quickjs'
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: zero-browser-linux-aarch64-v8
+            engine: v8
             ext: ''
             features: ''
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact: zero-browser-linux-aarch64
+            artifact: zero-browser-linux-aarch64-quickjs
+            engine: quickjs
+            ext: ''
+            features: '--no-default-features --features quickjs'
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            artifact: zero-browser-macos-x86_64-v8
+            engine: v8
             ext: ''
             features: ''
           - os: macos-15-intel
             target: x86_64-apple-darwin
-            artifact: zero-browser-macos-x86_64
+            artifact: zero-browser-macos-x86_64-quickjs
+            engine: quickjs
+            ext: ''
+            features: '--no-default-features --features quickjs'
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: zero-browser-macos-aarch64-v8
+            engine: v8
             ext: ''
             features: ''
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: zero-browser-macos-aarch64
+            artifact: zero-browser-macos-aarch64-quickjs
+            engine: quickjs
             ext: ''
+            features: '--no-default-features --features quickjs'
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: zero-browser-windows-x86_64-v8
+            engine: v8
+            ext: '.exe'
             features: ''
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: zero-browser-windows-x86_64
+            artifact: zero-browser-windows-x86_64-quickjs
+            engine: quickjs
             ext: '.exe'
-            features: ''
+            features: '--no-default-features --features quickjs'
           - os: windows-11-arm
             target: aarch64-pc-windows-msvc
-            artifact: zero-browser-windows-aarch64
+            artifact: zero-browser-windows-aarch64-quickjs
+            engine: quickjs
             ext: '.exe'
             features: '--no-default-features --features quickjs'
     steps:
@@ -115,11 +152,13 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Determine rusty_v8 version
+        if: matrix.engine == 'v8'
         shell: bash
         run: |
           echo "RUSTY_V8_VERSION=$(sed -n '/name = \"v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
 
       - name: Cache rusty_v8
+        if: matrix.engine == 'v8'
         uses: actions/cache@v6
         with:
           path: |
@@ -135,18 +174,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.target }}-${{ matrix.engine }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.target }}-cargo-
+            ${{ runner.os }}-${{ matrix.target }}-${{ matrix.engine }}-cargo-
             ${{ runner.os }}-cargo-
 
       - name: Download rusty_v8 archive
-        if: runner.os != 'Windows' && matrix.features == ''
+        if: runner.os != 'Windows' && matrix.engine == 'v8'
         shell: bash
         run: RUSTY_V8_TARGET=${{ matrix.target }} bash scripts/download-rusty-v8.sh
 
       - name: Configure rusty_v8 archive on Windows
-        if: runner.os == 'Windows' && matrix.features == ''
+        if: runner.os == 'Windows' && matrix.engine == 'v8'
         shell: bash
         run: |
           echo "RUSTY_V8_ARCHIVE=https://github.com/denoland/rusty_v8/releases/download/v${RUSTY_V8_VERSION}/rusty_v8_release_${{ matrix.target }}.lib.gz" >> "$GITHUB_ENV"
@@ -338,13 +377,19 @@ jobs:
             both `zero-browser` and `zero-renderer`; keep those executables in
             the same directory after extracting.
 
-            Pick the zip matching your platform:
-            - `zero-browser-linux-x86_64.zip` — Linux x86_64
-            - `zero-browser-linux-aarch64.zip` — Linux ARM64
-            - `zero-browser-macos-x86_64.zip` — macOS Intel (`ZeroBrowser.app`)
-            - `zero-browser-macos-aarch64.zip` — macOS Apple Silicon (`ZeroBrowser.app`)
-            - `zero-browser-windows-x86_64.zip` — Windows x86_64
-            - `zero-browser-windows-aarch64.zip` — Windows ARM64 (QuickJS build; may fail due to upstream freetype-sys issue)
+            V8 builds carry a `-v8` suffix, QuickJS builds a `-quickjs` suffix.
+            Pick the zip matching your platform and engine:
+            - `zero-browser-linux-x86_64-v8.zip` — Linux x86_64 (V8)
+            - `zero-browser-linux-x86_64-quickjs.zip` — Linux x86_64 (QuickJS)
+            - `zero-browser-linux-aarch64-v8.zip` — Linux ARM64 (V8)
+            - `zero-browser-linux-aarch64-quickjs.zip` — Linux ARM64 (QuickJS)
+            - `zero-browser-macos-x86_64-v8.zip` — macOS Intel, V8 (`ZeroBrowser.app`)
+            - `zero-browser-macos-x86_64-quickjs.zip` — macOS Intel, QuickJS (`ZeroBrowser.app`)
+            - `zero-browser-macos-aarch64-v8.zip` — macOS Apple Silicon, V8 (`ZeroBrowser.app`)
+            - `zero-browser-macos-aarch64-quickjs.zip` — macOS Apple Silicon, QuickJS (`ZeroBrowser.app`)
+            - `zero-browser-windows-x86_64-v8.zip` — Windows x86_64 (V8)
+            - `zero-browser-windows-x86_64-quickjs.zip` — Windows x86_64 (QuickJS)
+            - `zero-browser-windows-aarch64-quickjs.zip` — Windows ARM64 (QuickJS; may fail due to upstream freetype-sys issue)
 
             See `SHA256SUMS.txt` for checksums.
           prerelease: true
