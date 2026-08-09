@@ -278,6 +278,46 @@ fn test_storage_persists_across_load_html_r3088() {
     );
 }
 
+// ── 外链脚本源获取（R3090）──
+// 进程内/headless 路径：script_source_fetcher 提供 './app.js'（经典）+ './mod.js'（模块）源 →
+// run_page_scripts fetch 后执行（External 走经典，ExternalModule 走 InlineModule 编译路径）。
+// external_script 多进程模式不走此路径；fetcher 为 None 时外链脚本跳过（离线语义，零回归）。
+#[test]
+fn test_external_script_fetch_r3090() {
+    use std::sync::Arc;
+    let mut wv = crate::WebViewBuilder::new()
+        .script_source_fetcher(Arc::new(|_page, src| {
+            if src == "./app.js" {
+                Ok("globalThis.__appExt = 'app-ok';".to_string())
+            } else if src == "./mod.js" {
+                // 模块体：副作用设全局 + export（compile_module_script 转 export，body 副作用执行）。
+                Ok("globalThis.__modExt = 'mod-ok'; export const x = 1;".to_string())
+            } else {
+                Err("not found".to_string())
+            }
+        }))
+        .build();
+    wv.load_html(
+        "<html><body>\
+         <script src=\"./app.js\"></script>\
+         <script type=\"module\" src=\"./mod.js\"></script>\
+         </body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "外链脚本 fetch+执行无异常, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__appExt)").unwrap(),
+        "app-ok",
+        "外链经典脚本 ./app.js 经 fetcher fetch 后执行"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__modExt)").unwrap(),
+        "mod-ok",
+        "外链模块脚本 ./mod.js 经 fetcher fetch + module 编译后执行"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]

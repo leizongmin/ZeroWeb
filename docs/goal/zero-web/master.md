@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1a 外链脚本源获取（script_source_fetcher，进程内/headless 路径 fetch 外链 `<script src>` / `<script type=module src>`，本轮 R3090）
+
+承接 R3083（inline module）+ R3089（inline worker）—— 均支持 data: URL，外链 './mod.js' / './app.js' 仍 defer（headless 无 fetch）。WebView 架构双模：① `external_script` 多进程执行委托（browser/renderer，无进程内 sandbox）；② 进程内 sandbox（headless/test/reftest，external_script=None）。run_page_scripts_impl 旧对 External/ExternalModule `continue`（跳过）。本切片为进程内路径加 `script_source_fetcher` 可选回调（`(page_url, script_src) → Result<source, err>`），fetch 外链源后于进程内 sandbox 执行：External 走经典路径，ExternalModule 走 InlineModule 编译路径（compile_module_script，外链模块的进一步 import 仍为空存根 defer）。external_script 多进程模式不走此路径（互斥独立）。None 默认 → 外链脚本跳过（离线语义，零回归）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`ScriptSourceFetcher` 类型 + config + builder** | `crates/webview/src/webview.rs` + `webview_builder.rs` | `Arc<dyn Fn(&str,&str)->Result<String,String>+Send+Sync>`（page_url, src → source）。WebViewConfig 字段（None 默认）+ WebViewBuilder.script_source_fetcher()。 |
+| **run_page_scripts_impl 外链脚本 fetch+执行** | `crates/webview/src/webview.rs`（External/ExternalModule 分支） | fetcher 配置时 fetch(page_url, src) → (code, is_module)；ExternalModule is_module=true 走 InlineModule 编译路径。fetch 失败：strict 报错 / lenient warn+skip。fetcher None → continue（离线语义，零回归）。 |
+| **R3090 测试** | `crates/webview/src/tests/coverage.rs`（+`test_external_script_fetch_r3090`） | fetcher 提供 './app.js'（经典）+ './mod.js'（模块）源；load 含外链经典 + 外链模块脚本的页面；验证两者经 fetch 后执行（__appExt/__modExt 设置）。 |
+
+**为何净正向**：① 闭合外链脚本加载 defer（embedded/headless 可加载外链脚本，真网站主流模式）；② 单 crate（webview）改动，external_script 多进程模式不受影响（互斥）；③ None 默认零回归（离线/reftest 语义不变，default 热路径字节一致）；④ 复用既有 InlineModule 编译路径（ExternalModule）；⑤ 全量 make test 全绿。
+
+**已知限制（记录，defer）**：① **动态 import()/Worker 外链 fetch defer**（shim 内 `import './mod.js'` / `new Worker('./w.js')` 需同步 host 回调 `__zw_fetch_script` 注册到 sandbox，本切片仅覆盖 top-level `<script src>` / `<script type=module src>`）；② **外链模块的递归 import 仍空存根**（ExternalModule 走 InlineModule 路径，transitive import 未递归 fetch，defer）；③ **fetcher 为同步**（headless 简化；spec 模块加载异步，headless execute 末 checkpoint 语义）；④ **external_script 多进程模式的外链加载由 JsWorker 自身处理**（本切片不覆盖，独立路径）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-webview --all-targets -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；webview +1 测试，零回归**）+ pre-commit guard PASS。变更 webview crate（config + builder + run_page_scripts + 测试，无渲染/布局/CSS 变更），product-smoke 不受影响。**perf-gate 未触发**：变更附加 + 可选回调门控，default 热路径（fetcher None → continue）字节一致，无回归可量。
+
+**下一步**：外链 top-level 脚本加载闭合（fetcher）；动态 import()/Worker 外链 fetch defer（shim `__zw_fetch_script` 同步回调）。P1a 产品能力深项剩余：① **动态 import()/Worker 外链 fetch**（shim 同步 host 回调 + sandbox 注册，闭合外链加载全链，中复杂度）；② P1b V8 原生绑定 S0 PoC（已批准，验证 TBD-1/TBD-2）；③ 浏览器 tab 导航 storage 持久化（browser 域，非 make test 可达）；④ customElements upgrade（需 P1b S5）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a 真 DedicatedWorker 消息往返（data: URL inline worker，同沙箱 IIFE 影子执行，闭合 R3080 defer 项，本轮 R3089）
 
 承接 R3080（Worker API 表面，postMessage/terminate no-op、onmessage/onerror 永不触发——「真 worker 执行 defer」）+ R3088 下一步（DedicatedWorker 真实化）。script-sandbox 为单上下文（无 sub-context API），真独立沙箱需多嵌入器 host 接线（browser/webview/reftest 各提供 __zw_create_worker，defer）。本切片用 **同沙箱 IIFE 影子执行**（对称 compile_module_script R3083）：data: URL inline worker 脚本经 `new Function` 包一层，影子 `var self/postMessage/onmessage/importScripts` → worker 脚本用 worker-scoped 全局（不污染主全局），bare `onmessage = fn` 设影子局部，执行后同步 handler。main↔worker 消息经 structuredClone + queueMicrotask + MessageEvent 派发（对称 MessagePort R2779）。terminate 标记终止，后续微任务跳过。

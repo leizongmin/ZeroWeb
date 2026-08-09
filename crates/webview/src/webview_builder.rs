@@ -63,6 +63,14 @@ impl WebViewBuilder {
         self
     }
 
+    /// 外链脚本源获取器（进程内/headless 路径）：fetch 外链 `<script src>` / `<script type=module src>`
+    /// 源后于进程内 sandbox 执行。入参 `(page_url, script_src)`，返回脚本源（或错误 → 该脚本跳过）。
+    /// 与 `external_script`（多进程执行委托）互斥独立。为 None 时外链脚本跳过（离线语义）。
+    pub fn script_source_fetcher(mut self, fetcher: crate::ScriptSourceFetcher) -> Self {
+        self.config.script_source_fetcher = Some(fetcher);
+        self
+    }
+
     /// 构建 WebView 实例。
     ///
     /// 如果 `config.url` 已设置，会自动调用 `load_url` 将 WebView

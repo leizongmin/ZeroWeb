@@ -25,6 +25,11 @@ use crate::WebViewError;
 /// 外部 JS 执行器类型（浏览器 Tab JS 线程注入；为 None 时使用进程内 V8）。
 pub type ExternalScriptExecutor = std::sync::Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 
+/// 外链脚本源获取器类型（进程内/headless 路径：fetch 外链 `<script src>` / `<script type=module src>` 源）。
+/// 入参 `(page_url, script_src)`，返回脚本源（或错误 → 该脚本跳过）。为 None 时外链脚本跳过（离线语义，
+/// 与 reftest 一致）。与 `external_script`（多进程执行委托，互斥）独立——本获取器仅进程内 sandbox 路径消费。
+pub type ScriptSourceFetcher = std::sync::Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
+
 /// WebView 配置。
 #[derive(Clone)]
 pub struct WebViewConfig {
@@ -48,6 +53,8 @@ pub struct WebViewConfig {
     /// 外部 JS 执行器（浏览器 Tab JS 线程注入；为 None 时使用进程内 V8）。
     #[doc(hidden)]
     pub external_script: Option<ExternalScriptExecutor>,
+    /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源；None → 外链脚本跳过，离线语义）。
+    pub script_source_fetcher: Option<ScriptSourceFetcher>,
 }
 
 impl Default for WebViewConfig {
@@ -61,6 +68,7 @@ impl Default for WebViewConfig {
             devtools: false,
             http_timeout_secs: None,
             external_script: None,
+            script_source_fetcher: None,
         }
     }
 }
@@ -76,6 +84,7 @@ impl std::fmt::Debug for WebViewConfig {
             .field("devtools", &self.devtools)
             .field("http_timeout_secs", &self.http_timeout_secs)
             .field("external_script", &self.external_script.is_some())
+            .field("script_source_fetcher", &self.script_source_fetcher.is_some())
             .finish()
     }
 }
@@ -122,6 +131,8 @@ pub struct WebView {
     js_shim_initialized: bool,
     /// 外部 JS 执行器（专用 JS 线程）。
     external_script: Option<ExternalScriptExecutor>,
+    /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源）。
+    script_source_fetcher: Option<ScriptSourceFetcher>,
     /// 当前 URL。
     current_url: Option<String>,
     /// 页面标题。
@@ -190,6 +201,7 @@ impl WebView {
             None => HttpClient::new(),
         };
         let external_script = config.external_script.clone();
+        let script_source_fetcher = config.script_source_fetcher.clone();
         // 懒创建：js_sandbox 延后到首次实际执行脚本时初始化（见 ensure_sandbox）。
         // 无脚本页面（多数 WebView 页面）不创建 V8 isolate，显著降低常驻内存
         // （RSS ~0.2G/实例）；首次执行脚本时才有初始化成本，行为等价。
@@ -201,6 +213,7 @@ impl WebView {
             js_sandbox,
             js_shim_initialized: false,
             external_script,
+            script_source_fetcher,
             current_url: None,
             title: None,
             loading: false,
@@ -1140,9 +1153,45 @@ impl WebView {
                 // 模式不 fetch 外链模块，故把模块源中引用的 import 标识符预注册为**空存根**（副作用导入 no-op，
                 // 命名导入得 undefined/empty namespace）——使模块自身 body 可执行。spec ES Modules Tier 1。
                 zero_engine::pipeline::PageScript::InlineModule(c) => (c, true),
-                zero_engine::pipeline::PageScript::External(_)
-                | zero_engine::pipeline::PageScript::ExternalModule(_) => {
-                    continue; // 外链脚本：进程内模式不加载（与 reftest 离线语义一致）
+                zero_engine::pipeline::PageScript::External(src) => {
+                    // R3090：外链经典脚本。若配 script_source_fetcher，fetch 源后按经典脚本执行；
+                    // 否则跳过（离线/headless 语义，与 reftest 一致）。external_script 多进程模式不走此路径。
+                    match &self.script_source_fetcher {
+                        Some(fetch) => {
+                            let page_url = self.current_url.as_deref().unwrap_or("about:blank");
+                            match fetch(page_url, &src) {
+                                Ok(code) => (code, false),
+                                Err(e) => {
+                                    if strict {
+                                        return Err(WebViewError::Script(format!("external script {src}: {e}")));
+                                    }
+                                    tracing::warn!("外链脚本 fetch 失败 {src}: {e}");
+                                    continue;
+                                }
+                            }
+                        }
+                        None => continue,
+                    }
+                }
+                zero_engine::pipeline::PageScript::ExternalModule(src) => {
+                    // R3090：外链模块脚本。fetch 源后 is_module=true → 走 InlineModule 编译路径
+                    //（预注册空存根 + compile_module_script，外链模块的进一步 import 仍为空存根，defer 递归 fetch）。
+                    match &self.script_source_fetcher {
+                        Some(fetch) => {
+                            let page_url = self.current_url.as_deref().unwrap_or("about:blank");
+                            match fetch(page_url, &src) {
+                                Ok(code) => (code, true),
+                                Err(e) => {
+                                    if strict {
+                                        return Err(WebViewError::Script(format!("external module {src}: {e}")));
+                                    }
+                                    tracing::warn!("外链模块 fetch 失败 {src}: {e}");
+                                    continue;
+                                }
+                            }
+                        }
+                        None => continue,
+                    }
                 }
             };
             let full = if is_module {
