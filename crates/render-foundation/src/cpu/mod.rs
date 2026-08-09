@@ -697,7 +697,7 @@ fn draw_glyph_primitive(
     let raw_font_id = glyph.font_id.0;
     let key = GlyphKey::new(raw_font_id, glyph.glyph_id, physical_font_size);
 
-    // 尝试从缓存获取
+    // 尝试从缓存获取（raw 键直查）
     if let Some(cached) = glyph_cache.get(&key) {
         if cached.width > 0 && cached.height > 0 {
             let color = glyph.color;
@@ -706,6 +706,20 @@ fn draw_glyph_primitive(
             blit_glyph_bitmap(fb, cached, x, y, color, glyph.rotation, glyph.synthetic_italic);
         }
         return;
+    }
+    // fallback 已解析映射 → resolved 键命中（避免每帧重光栅化：raw 键与插入键
+    // 不一致会永久 miss，见 GlyphCache::resolved 注释）
+    if let Some(resolved_id) = glyph_cache.resolved_font_id(&key) {
+        let rkey = GlyphKey::new(resolved_id, glyph.glyph_id, physical_font_size);
+        if let Some(cached) = glyph_cache.get(&rkey) {
+            if cached.width > 0 && cached.height > 0 {
+                let color = glyph.color;
+                let x = glyph.x * scale;
+                let y = glyph.y * scale;
+                blit_glyph_bitmap(fb, cached, x, y, color, glyph.rotation, glyph.synthetic_italic);
+            }
+            return;
+        }
     }
 
     // 通过 font_loader 渲染 glyph
@@ -718,6 +732,7 @@ fn draw_glyph_primitive(
         && bitmap.width > 0
         && bitmap.height > 0
     {
+        glyph_cache.record_resolution(&key, resolved_id);
         let cache_key = GlyphKey::new(resolved_id, glyph.glyph_id, physical_font_size);
         let _ = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap.clone()));
         let color = glyph.color;
@@ -816,10 +831,18 @@ fn resolve_glyph_bitmap(
     if let Some(cached) = glyph_cache.get_shared(&primary_key) {
         return Some(cached);
     }
+    // fallback 已解析映射 → resolved 键命中（同 draw_glyph_primitive）
+    if let Some(resolved_id) = glyph_cache.resolved_font_id(&primary_key) {
+        let rkey = GlyphKey::new(resolved_id, glyph.ch as u32, physical_font_size);
+        if let Some(cached) = glyph_cache.get_shared(&rkey) {
+            return Some(cached);
+        }
+    }
 
     let (resolved_id, bitmap) = font_loader
         .rasterize_glyph_with_fallback(glyph.font_id, glyph.ch, physical_font_size)
         .ok()?;
+    glyph_cache.record_resolution(&primary_key, resolved_id);
     let key = GlyphKey::new(resolved_id, glyph.ch as u32, physical_font_size);
     // S4：命中路径免位图拷贝（Arc 共享）；miss 插入后经 get_shared 取共享句柄
     glyph_cache.get_or_insert_with(key.clone(), || Ok(bitmap)).ok()?;

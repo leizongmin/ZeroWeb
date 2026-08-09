@@ -157,6 +157,43 @@ mod freetype_raster {
             })
         })
     }
+
+    /// 轻量测量 advance（不产位图）——与 [`rasterize`] 完全同源：同一 face
+    /// 缓存，`load_glyph`（FT_Load_Glyph 即计算 advance 字段，render 只产
+    /// 位图）后直接读 advance，返回 FreeType 26.6 定点量化值。
+    ///
+    /// 布局测量与绘制光栅化必须用同源值，否则宽度漂移（fontdue metrics 是
+    /// 浮点，与 FreeType 定点有约 0.5% 差异，会破坏 reftest 像素对比）。
+    pub(crate) fn measure_advance(font_bytes: &[u8], code_point: char, size: f32) -> Result<f32, FontError> {
+        if size <= 0.0 {
+            return Err(FontError::NotFound(format!("non-positive size {size}")));
+        }
+        FT_FACE_CACHE.with(|cache_cell| {
+            let mut cache = cache_cell.borrow_mut();
+            with_lib(|lib| {
+                let key = bytes_hash(font_bytes);
+                if !cache.contains_key(&key) {
+                    if cache.len() >= FACE_CACHE_MAX {
+                        cache.clear(); // 低频字体轮换：清空重建
+                    }
+                    let face = lib
+                        .new_memory_face2(font_bytes.to_vec(), 0)
+                        .map_err(|e| FontError::ParseFailed(format!("FreeType new_memory_face: {e:?}")))?;
+                    cache.insert(key, face);
+                }
+                // face 方法均为 &self：RefCell borrow 贯穿，免 clone
+                let face = cache.get(&key).expect("face 已插入");
+                face.set_char_size((size * 64.0) as isize, (size * 64.0) as isize, 0, 0)
+                    .map_err(|e| FontError::ParseFailed(format!("FreeType set_char_size: {e:?}")))?;
+                let idx = face
+                    .get_char_index(code_point as usize)
+                    .ok_or_else(|| FontError::NotFound(format!("no glyph index for {code_point:?}")))?;
+                face.load_glyph(idx, freetype::face::LoadFlag::DEFAULT)
+                    .map_err(|e| FontError::ParseFailed(format!("FreeType load_glyph: {e:?}")))?;
+                Ok((face.glyph().advance().x as f64 / 64.0) as f32)
+            })
+        })
+    }
 }
 
 /// 字体加载器 — 管理字体集合
@@ -463,6 +500,18 @@ impl FontLoader {
         })
     }
 
+    /// 构建字形查找链：primary + 去重后的回退链（primary 缺失字形时按序尝试）。
+    fn lookup_chain(&self, primary_id: u32) -> Vec<u32> {
+        let mut chain = Vec::with_capacity(1 + self.fallback_chain.len());
+        chain.push(primary_id);
+        for &id in &self.fallback_chain {
+            if id != primary_id && !chain.contains(&id) {
+                chain.push(id);
+            }
+        }
+        chain
+    }
+
     /// 在主字体及回退链中渲染 glyph，返回实际使用的字体 ID
     pub fn rasterize_glyph_with_fallback(
         &self,
@@ -474,13 +523,7 @@ impl FontLoader {
             return Ok((primary_id, bitmap.clone()));
         }
 
-        let mut chain = Vec::with_capacity(1 + self.fallback_chain.len());
-        chain.push(primary_id);
-        for &id in &self.fallback_chain {
-            if id != primary_id && !chain.contains(&id) {
-                chain.push(id);
-            }
-        }
+        let chain = self.lookup_chain(primary_id);
 
         for font_id in chain {
             let Some(font) = self.fonts.get(&font_id).map(|f| f.as_ref()) else {
@@ -558,6 +601,40 @@ impl FontLoader {
         if let Some(bitmap) = self.bitmap_glyphs.get(&(primary_id, code_point as u32, size.to_bits())) {
             return bitmap.advance;
         }
+        // 快路径：轻量测量（不产位图）——CJK 页每帧 paint 对每个 (字符, 字号)
+        // 测量一次，旧实现走 rasterize_glyph_with_fallback 连位图一起光栅化
+        // （每字形数十微秒）。advance 必须与光栅化路径同源，否则布局宽度漂移：
+        // - freetype-raster（默认 feature）：FreeType load_glyph 读 advance
+        //   （26.6 定点，与绘制光栅化完全一致）
+        // - 纯 fontdue：metrics（纯几何，不产位图）
+        // 仅当 advance > 0 时提前返回；零宽字形等边缘 case 回退旧路径，覆盖
+        // 语义（glyph_has_coverage 位图判定）与旧版完全一致。
+        let chain = self.lookup_chain(primary_id);
+        for font_id in chain {
+            let Some(font) = self.fonts.get(&font_id).map(|f| f.as_ref()) else {
+                continue;
+            };
+            // 与 rasterize_glyph_with_fallback 相同的缺字检查（空白字符跳过——
+            // 空白在任意字体都视为可用，由 advance 决定实际宽度）
+            if !code_point.is_whitespace() && !font.has_glyph(code_point) {
+                continue;
+            }
+            #[cfg(feature = "freetype-raster")]
+            if let Some(bytes) = self.font_data.get(&font_id)
+                && let Ok(advance) = freetype_raster::measure_advance(bytes, code_point, size)
+                && advance > 0.0
+            {
+                return advance;
+            }
+            #[cfg(not(feature = "freetype-raster"))]
+            {
+                let metrics = font.metrics(code_point, size);
+                if metrics.advance_width > 0.0 {
+                    return metrics.advance_width;
+                }
+            }
+        }
+        // 回退：零宽字形等边缘 case 走原光栅化路径（coverage 语义一致）
         self.rasterize_glyph_with_fallback(primary_id, code_point, size)
             .map(|(_, bitmap)| bitmap.advance)
             .unwrap_or(size * 0.5)

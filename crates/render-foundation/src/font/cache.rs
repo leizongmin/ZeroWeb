@@ -48,6 +48,12 @@ pub struct GlyphCache {
     cache: HashMap<GlyphKey, CacheEntry>,
     /// LRU 队列 — 最近访问的 key 在尾部，最久未访问的在头部。
     lru_queue: VecDeque<GlyphKey>,
+    /// raw font_id → resolved font_id 映射（fallback 命中后记录）。
+    ///
+    /// 绘制路径先用图元携带的 raw font_id 查缓存，miss 后经 fallback 光栅化出
+    /// resolved font_id（CJK 字形 ≠ raw）；若插入用 resolved 键而 lookup 用 raw 键
+    /// 会永久 miss、每帧重光栅化。此映射让第二帧起直接命中。
+    resolved: HashMap<GlyphKey, u32>,
     /// 最大缓存条目数。
     max_entries: usize,
 }
@@ -58,8 +64,19 @@ impl GlyphCache {
         Self {
             cache: HashMap::new(),
             lru_queue: VecDeque::new(),
+            resolved: HashMap::new(),
             max_entries: if max_entries == 0 { 1 } else { max_entries },
         }
+    }
+
+    /// 记录 raw 键的 fallback 解析结果（resolved font_id）。
+    pub fn record_resolution(&mut self, raw_key: &GlyphKey, resolved_font_id: u32) {
+        self.resolved.insert(raw_key.clone(), resolved_font_id);
+    }
+
+    /// 查询 raw 键是否已有 fallback 解析结果。
+    pub fn resolved_font_id(&self, raw_key: &GlyphKey) -> Option<u32> {
+        self.resolved.get(raw_key).copied()
     }
 
     /// 将条目提升到 LRU 队列尾部（最近访问）。
@@ -173,6 +190,7 @@ impl GlyphCache {
     pub fn clear(&mut self) {
         self.cache.clear();
         self.lru_queue.clear();
+        self.resolved.clear();
     }
 
     /// 当前内存使用量估算（字节）。
