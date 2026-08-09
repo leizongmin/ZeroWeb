@@ -25,16 +25,21 @@ use zero_dom::{Document, NodeId};
 // （doc comment 不附着 thread_local! 宏，用普通注释。）
 thread_local! {
     static DOM_SOURCE: RefCell<Option<Rc<RefCell<Document>>>> = const { RefCell::new(None) };
-    /// NodeId(ffi u64) → V8 对象 Global（JS 对象身份：同 NodeId 返同对象）。
-    static NODE_OBJECTS: RefCell<HashMap<u64, v8::Global<v8::Object>>> = RefCell::new(HashMap::new());
+    /// NodeId(ffi u64) → V8 对象 **Weak**（JS 对象身份：同 NodeId 返同对象）。
+    /// R3133：存 weak 句柄（非 strong Global）——JS 丢弃包装器后 V8 可回收，终结器随之清 LISTENERS
+    ///（闭合 R3109 节点 detach 泄漏）。weak 仍活时缓存命中（保身份）；weak 死则 [`get_or_create`]
+    /// 重建。**重新附加语义**：节点 removeChild 仍留 arena（detached 但 `get` 可达），不清 LISTENERS
+    /// ——监听器跨 detach/重附加保留（spec），仅在包装器真被 GC（JS 也丢）时由终结器回收。
+    static NODE_OBJECTS: RefCell<HashMap<u64, v8::Weak<v8::Object>>> = RefCell::new(HashMap::new());
     /// Element ObjectTemplate（含 nodeType/tagName accessor + internal slot[0]）。
     static ELEMENT_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> = const { RefCell::new(None) };
     /// S4 EventTarget 原生（RFC §4 S4）：事件监听器——`(NodeId ffi, 事件类型, capture) → Global<Value>` 列表
     ///（存 Value 句柄，调用时 try_from 降 Function；存 Value 避 Local<Function>→Local<Value> upcast）。
     /// `capture` 标志区分 capture（祖先倒序、CAPTURING_PHASE）vs bubble（祖先正序、BUBBLING_PHASE）监听器
     ///（R3128 useCapture）。addEventListener 把 JS 回调存为 Global 强引用（跨 scope 持久）；dispatchEvent
-    /// 在当前 scope 经 Local::new 复活后调用。**无 finalizer**——移除仅靠 removeEventListener 或 reset；
-    /// 节点从 DOM 移除不自动清理（泄漏限制，后续切片接 weak callback / finalizer）。
+    /// 在当前 scope 经 Local::new 复活后调用。R3133：节点包装器 weak 化后，包装器被 GC 时终结器调
+    /// [`remove_node_listeners`] 清本节点全部监听器（闭合 R3109 泄漏）；removeChild 不清（保重新附加语义，
+    /// detached 节点仍 arena 可达），仅 JS 也丢包装器 → GC → 终结器回收。reset 仍兜底清空。
     static LISTENERS: RefCell<HashMap<(u64, String, bool), Vec<v8::Global<v8::Value>>>> =
         RefCell::new(HashMap::new());
     /// R3112 NamedNodeMap（element.attributes）：owner element NodeId(ffi) → Global<Object>，
@@ -197,23 +202,30 @@ pub(crate) fn decode_node_id(ffi: u64) -> NodeId {
 
 // ── NodeId ↔ V8 对象身份映射 ──────────────────────────────────────
 
-/// 取已缓存的 native element 对象（同 NodeId 返同对象）；**不含 stale 校验**
-/// （调用方决定是否重建 stale 对象）。
+/// 取已缓存的 native element 对象（同 NodeId 返同对象）；weak 已死（包装器被 GC）→ `None`
+/// （调用方重建）。**不含 stale 校验**（节点是否仍在 arena 由调用方 [`node_exists`] 决定）。
 pub(crate) fn cached_native_element<'s>(
     scope: &mut v8::PinScope<'s, '_>,
     ffi: u64,
 ) -> Option<v8::Local<'s, v8::Object>> {
-    NODE_OBJECTS.with(|c| c.borrow().get(&ffi).map(|g| v8::Local::new(scope, g)))
+    NODE_OBJECTS.with(|c| c.borrow().get(&ffi).and_then(|w| w.to_local(scope)))
 }
 
-/// 缓存新创建的 native element 对象（NodeId ffi → Global）。
+/// 缓存新创建的 native element 对象（NodeId ffi → **Weak** + 终结器）。R3133：weak 句柄不阻止 GC，
+/// 终结器（guaranteed）在包装器被 GC 时清本节点 LISTENERS（闭合 R3109 泄漏）。Weak 须留存缓存
+/// （终结器生命周期绑 Weak；Weak 先死则终结器不触发）——empty Weak 由 [`drop_cached_native_element`]
+/// 在重建时惰性清理。
 pub(crate) fn cache_native_element(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v8::Object>) {
+    // guaranteed 终结器：GC 时或 isolate 销毁前必触发（FnOnce()，无需 Isolate 句柄）。
+    // 闭包捕获 ffi，清本节点全部监听器（线程局部 LISTENERS，终结器在 isolate 线程跑，可安全访问）。
+    let weak = v8::Weak::with_guaranteed_finalizer(scope, obj, Box::new(move || remove_node_listeners(ffi)));
     NODE_OBJECTS.with(|c| {
-        c.borrow_mut().insert(ffi, v8::Global::new(scope, obj));
+        c.borrow_mut().insert(ffi, weak);
     });
 }
 
-/// 移除缓存的 stale 对象（节点从 DOM 移除后）。
+/// 移除缓存的 weak 句柄（节点离场 arena / 重建前清残留 empty Weak）。Weak drop 时若对象仍活，
+/// 终结器取消（此时节点已不可达，监听器亦不可达，reset 兜底清；非回归——旧 strong 缓存同样残留）。
 pub(crate) fn drop_cached_native_element(ffi: u64) {
     NODE_OBJECTS.with(|c| {
         c.borrow_mut().remove(&ffi);
@@ -275,6 +287,15 @@ pub(crate) fn remove_listener(
     })
 }
 
+/// R3133 节点包装器终结器：清本节点（ffi）**全部**监听器（所有事件类型 × capture/bubble 桶）。
+/// 包装器被 GC 时由 [`cache_native_element`] 注册的 guaranteed 终结器调用（isolate 线程，线程局部
+/// LISTENERS 可安全访问）。removeChild 不调本函数（保重新附加语义：detached 节点监听器跨 detach 保留）。
+pub(crate) fn remove_node_listeners(ffi: u64) {
+    LISTENERS.with(|c| {
+        c.borrow_mut().retain(|(f, _, _), _| *f != ffi);
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod test_helpers {
     //! 测试辅助：注入 DOM 源后断言线程局部状态。仅 `#[cfg(test)]` 暴露。
@@ -289,5 +310,16 @@ pub(crate) mod test_helpers {
     /// 清空全部绑定状态（测试间隔离）。
     pub fn reset_for_test() {
         reset();
+    }
+
+    /// R3133：本节点（ffi）的 LISTENERS 条目数（事件类型 × capture/bubble 桶计数）。
+    /// 终结器测试用——包装器被 GC 后断言本节点监听器已清。
+    pub fn listener_keys_for(ffi: u64) -> usize {
+        LISTENERS.with(|c| c.borrow().keys().filter(|(f, _, _)| *f == ffi).count())
+    }
+
+    /// R3133：LISTENERS 全部条目数（终结器测试用）。
+    pub fn listener_total_entries() -> usize {
+        LISTENERS.with(|c| c.borrow().len())
     }
 }

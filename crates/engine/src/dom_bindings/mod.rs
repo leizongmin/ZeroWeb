@@ -388,22 +388,26 @@ fn read_node_id(scope: &mut v8::PinScope, obj: &v8::Local<v8::Object>) -> Option
 
 /// 创建或复用 native element 对象（NodeId↔对象身份映射 + stale 重建）。
 ///
-/// - 缓存命中且节点仍存在 → 返同一对象（spec identity）。
-/// - 缓存命中但 stale（节点移除）→ 移除缓存 + 重建。
-/// - 未命中 → 实例化 Element 模板 + 存 NodeId 进 internal slot[0] + 缓存。
+/// - 缓存命中（weak 仍活）且节点仍存在 → 返同一对象（spec identity）。
+/// - 缓存命中但 stale（节点离场 arena）→ 移除缓存 + 重建。
+/// - 未命中 / weak 死（包装器被 GC）→ 清残留 empty Weak + 重建。
+///
+/// R3133：缓存为 weak（[`cache_native_element`] 注终结器）。weak 死时此处惰性清 empty Weak 条目
+/// + 重建（新包装器 + 新终结器）；reattach 期间 JS 仍持引用 → weak 活 → 命中，身份保持。
 fn get_or_create_native_element<'s>(
     scope: &mut v8::PinScope<'s, '_>,
     node_id: NodeId,
 ) -> Option<v8::Local<'s, v8::Object>> {
     let ffi = encode_node_id(node_id);
-    // 缓存命中：stale 校验决定复用 / 重建。
-    if let Some(cached) = cached_native_element(scope, ffi) {
-        if node_exists(node_id) {
-            return Some(cached);
-        }
-        drop_cached_native_element(ffi);
+    // 缓存命中（weak 活）+ 节点仍在 arena → 复用（spec 身份）。
+    if let Some(cached) = cached_native_element(scope, ffi)
+        && node_exists(node_id)
+    {
+        return Some(cached);
     }
-    // 未命中 / stale 重建：实例化 Element 模板 + 存 NodeId。
+    // 未命中 / weak 死 / 节点离场：清残留（empty Weak 或 stale）+ 重建。
+    drop_cached_native_element(ffi);
+    // 实例化 Element 模板 + 存 NodeId。
     let tmpl = element_template_local(scope)?;
     let obj = tmpl.new_instance(scope)?;
     // NodeId 经 External ptr 值存 internal slot[0]（无堆分配，镜像 S0 PoC）。

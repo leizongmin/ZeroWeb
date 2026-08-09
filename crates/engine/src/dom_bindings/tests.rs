@@ -9,7 +9,7 @@ use std::rc::Rc;
 use slotmap::Key;
 use zero_dom::{NodeId, parse_html};
 
-use super::gc::test_helpers::{inject_dom_for_test, reset_for_test};
+use super::gc::test_helpers::{inject_dom_for_test, listener_keys_for, reset_for_test};
 use super::{decode_node_id, encode_node_id, install_dom_bindings, node_exists};
 
 /// 在自带 Isolate+Context 上安装绑定并执行脚本，返回结果字符串。
@@ -1576,4 +1576,92 @@ fn native_contains_null() {
         run_script(html, "(__zw_native_element_for_id('a').contains(null))"),
         "false"
     );
+}
+
+// ── R3133 节点包装器终结器（闭合 R3109 LISTENERS detach 泄漏）──
+
+/// 重新附加语义：removeChild 不清监听器——detach 后 re-append，监听器仍触发（spec：
+/// 节点从 DOM 移除不丢弃监听器，跨 detach/重附加保留）。此为终结器设计前提（仅包装器真被 GC
+/// 才清 LISTENERS，而非 removeChild 时清）。
+#[test]
+fn native_listener_survives_detach_reattach_r3133() {
+    let html = r#"<div id="host"><span id="a"></span></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const host=__zw_native_element_for_id('host');\
+             const el=__zw_native_element_for_id('a');\
+             el.addEventListener('click', ()=>{ globalThis.__fired='yes'; });\
+             host.removeChild(el);\
+             host.appendChild(el);\
+             el.dispatchEvent({type:'click'});\
+             return globalThis.__fired || 'no'; })()"
+        ),
+        "yes"
+    );
+}
+
+/// 终结器回收：脚本 add 2 监听器后丢包装器引用（仅 weak 缓存持）→ 强制 GC 收包装器 →
+/// guaranteed 终结器清本节点 LISTENERS → 条目归 0（闭合 R3109：旧实现 detached 节点监听器永驻）。
+#[test]
+fn native_finalizer_cleans_listeners_on_gc_r3133() {
+    zero_script_sandbox::ensure_v8_initialized();
+    let dom = Rc::new(RefCell::new(parse_html("<div id='a'></div>")));
+    let ffi = encode_node_id(dom.borrow().get_element_by_id("a").expect("id a"));
+    let cleaned;
+    {
+        let isolate = &mut v8::Isolate::new(Default::default());
+        v8::scope!(let scope, isolate);
+        let context = v8::Context::new(scope, Default::default());
+        let scope = &mut v8::ContextScope::new(scope, context);
+        install_dom_bindings(scope, context, Rc::clone(&dom));
+        // IIFE 结束 el 出作用域 → JS 强引用断（仅 weak 缓存持包装器）。
+        let script = "(()=>{ const el=__zw_native_element_for_id('a');\
+             el.addEventListener('click',()=>{});\
+             el.addEventListener('keyup',()=>{});\
+             return 'ok'; })()";
+        let code = v8::String::new(scope, script).expect("v8 string");
+        let compiled = v8::Script::compile(scope, code, None).expect("compile");
+        let _ = compiled.run(scope).expect("run");
+        // 多轮 GC 收 weak-held 包装器 → guaranteed 终结器（GC 第二遍）清本节点 LISTENERS。
+        for _ in 0..5 {
+            scope.low_memory_notification();
+        }
+        cleaned = listener_keys_for(ffi);
+    }
+    assert_eq!(
+        cleaned, 0,
+        "包装器 GC 后终结器应清本节点全部监听器（R3109 detach 泄漏闭合）"
+    );
+    reset_for_test();
+}
+
+/// 终结器不误伤活跃节点：包装器仍被 JS 强引用（globalThis 持）→ 不被 GC → 监听器保留。
+/// 防回归：终结器仅在包装器真无引用时触发，不会清仍在用节点的监听器。
+#[test]
+fn native_finalizer_keeps_listeners_while_referenced_r3133() {
+    zero_script_sandbox::ensure_v8_initialized();
+    let dom = Rc::new(RefCell::new(parse_html("<div id='a'></div>")));
+    let ffi = encode_node_id(dom.borrow().get_element_by_id("a").expect("id a"));
+    let kept;
+    {
+        let isolate = &mut v8::Isolate::new(Default::default());
+        v8::scope!(let scope, isolate);
+        let context = v8::Context::new(scope, Default::default());
+        let scope = &mut v8::ContextScope::new(scope, context);
+        install_dom_bindings(scope, context, Rc::clone(&dom));
+        // globalThis.__el 持强引用 → 包装器不被 GC → 监听器保留。
+        let script = "(()=>{ globalThis.__el=__zw_native_element_for_id('a');\
+             globalThis.__el.addEventListener('click',()=>{});\
+             return 'ok'; })()";
+        let code = v8::String::new(scope, script).expect("v8 string");
+        let compiled = v8::Script::compile(scope, code, None).expect("compile");
+        let _ = compiled.run(scope).expect("run");
+        for _ in 0..5 {
+            scope.low_memory_notification();
+        }
+        kept = listener_keys_for(ffi);
+    }
+    assert_eq!(kept, 1, "包装器仍被 JS 强引用时不应被 GC，监听器须保留（防终结器误伤）");
+    reset_for_test();
 }
