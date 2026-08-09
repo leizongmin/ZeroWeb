@@ -197,3 +197,59 @@ fn test_scroll_into_view_if_needed_r3075() {
         "scrollIntoViewIfNeeded 返 undefined（WebKit spec void）"
     );
 }
+
+#[test]
+fn test_canvas_dom_get_context_r3077() {
+    // R3077：HTMLCanvasElement proxy 的 canvas 2D API DOM 集成。旧仅 standalone _zwMakeCanvas 有
+    // getContext/toDataURL，DOM 元素 proxy 缺 → `document.getElementById('c').getContext('2d')` 抛 TypeError。
+    // 本切片接通：getContext 经 host __zw_canvas_op 建 2d 上下文（per-element 缓存）+ ctx2d 方法（fillRect 等）+
+    // toDataURL + width/height 反射（default 300/150）。headless 经 register_dom_callbacks（注册 __zw_canvas_op）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='100' height='50'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① getContext('2d') 返 ctx2d（非 null），webgl 返 null（仅 2d defer）。
+    // ② fillRect 不抛（ctx2d 方法可用）。
+    // ③ width/height 反射内容属性（100/50）。
+    // ④ toDataURL 返 'data:image/png;base64,...'（PNG 编码）。
+    // ⑤ 重复 getContext 返同一 ctx（缓存，spec 一致）。
+    sandbox
+        .execute(
+            "var cv = document.getElementById('cv');\
+             var ctx = cv.getContext('2d');\
+             globalThis.__hasCtx = String(ctx !== null && ctx !== undefined);\
+             globalThis.__webglNull = String(cv.getContext('webgl') === null);\
+             ctx.fillStyle = 'red';\
+             ctx.fillRect(0, 0, 10, 10);\
+             globalThis.__fillOk = 'ok';\
+             globalThis.__w = cv.width;\
+             globalThis.__h = cv.height;\
+             globalThis.__url = cv.toDataURL().slice(0, 22);\
+             globalThis.__sameCtx = String(cv.getContext('2d') === ctx);\
+             globalThis.__ctxCanvasOk = String(ctx.canvas === cv);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hasCtx").unwrap().value, "true", "getContext('2d') 返 ctx2d（非 null）");
+    assert_eq!(sandbox.execute("globalThis.__webglNull").unwrap().value, "true", "getContext('webgl') 返 null（仅 2d，webgl defer）");
+    assert_eq!(sandbox.execute("globalThis.__fillOk").unwrap().value, "ok", "ctx.fillRect 不抛（ctx2d 方法可用）");
+    assert_eq!(sandbox.execute("globalThis.__w").unwrap().value, "100", "canvas.width 反射内容属性 100");
+    assert_eq!(sandbox.execute("globalThis.__h").unwrap().value, "50", "canvas.height 反射内容属性 50");
+    assert_eq!(sandbox.execute("globalThis.__url").unwrap().value, "data:image/png;base64,", "toDataURL 返 PNG data URL 前缀");
+    assert_eq!(sandbox.execute("globalThis.__sameCtx").unwrap().value, "true", "重复 getContext 返同一 ctx（per-element 缓存）");
+    assert_eq!(sandbox.execute("globalThis.__ctxCanvasOk").unwrap().value, "true", "ctx.canvas === canvas 元素（spec back-ref）");
+
+    // ⑥ width/height set→get 一致（设数值，读回）。
+    sandbox.execute("cv.width = 250; globalThis.__setW = cv.width;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__setW").unwrap().value, "250", "canvas.width = 250 → 读回 250（sync set→get）");
+}

@@ -119,6 +119,26 @@
 
 ## 最近完成的改进
 
+### P1a Canvas DOM 集成（HTMLCanvasElement proxy getContext/toDataURL/width/height，本轮 R3077）
+
+承接 R3076 WPT 真实 JS 执行路径。R3076 probe 全 scripted 用例发现 **canvas 类 ~29 用例 `getContext is not a function`**——`_zwMakeCanvas`（R2795 standalone canvas 对象）有 getContext/toDataURL，但 **DOM 元素 proxy 缺**（`document.getElementById('c').getContext('2d')` 抛 TypeError）。代码 part05.js:600-601 注释明确「canvas 为 standalone 对象，DOM 集成为 follow-up」。本切片接通 DOM 集成（闭合 follow-up），canvas getContext 经 host `__zw_canvas_op` 建真 2d 上下文（复用 zero-canvas）。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`_zwCanvasCtx` per-element ctx 缓存 + 导航重置** | `crates/engine/src/js_dom_shim/part01.js`（`_popoverTargetEl` 后） | elKey → ctx2d proxy。getContext('2d') 首次建 + 缓存，后续返同一 ctx（spec）。导航经 `__zw_reset_form_state` 清空（per-page）。 |
+| **CANVAS get-trap 分支（getContext/toDataURL/width/height）** | `crates/engine/src/js_dom_shim/part04.js`（width/height 块后） | `_realTag === 'CANVAS'` 时：`getContext(type)` 仅 2d（webgl defer），经 `__zw_canvas_op('0','getContext2d',w,h)` 建 ctx2d（`_zwMakeCtx2d` 复用）+ `ctx.canvas = _makeProxy(...)`（spec back-ref）+ 缓存；host 未注册 → null。`toDataURL` 编码 ctx pixel_buffer → `data:image/png;base64,...`（复用 btoa）。`width`/`height` 优先读 `_reflectedAttrs` 缓存（sync set→get）→ 反射内容属性（default 300/150）。spec 链接 https://html.spec.whatwg.org/multipage/canvas.html#htmlcanvaselement 。 |
+| **CANVAS 加入 width/height setter** | `crates/engine/src/js_dom_shim/part05.js`（width/height setter 分支） | 旧仅 IMG/IFRAME，加 CANVAS（HTMLCanvasElement.width/height 反射，保 set→get 一致；bitmap resize 清空 defer）。 |
+| **`_zwCanvasDim` helper** | 同上（`_zwMakeCtx2d` 前） | canvas width/height 反射读（parseInt 内容属性，缺省/负 → default 300/150）。 |
+| **R3077 测试** | engine `js_dom_bridge_tests/part14.rs`（+`test_canvas_dom_get_context_r3077`） | 6 维：① getContext('2d') 返 ctx2d（非 null）+ webgl 返 null；② fillRect 不抛（ctx2d 方法可用）；③ width/height 反射（100/50）；④ toDataURL 返 PNG data URL 前缀；⑤ 重复 getContext 同一 ctx（缓存）+ ctx.canvas === 元素（back-ref）；⑥ width set→get 一致。 |
+
+**为何净正向**：① canvas DOM 集成为纯新增（旧 standalone 不变，DOM proxy 现获 getContext）；② 复用既有 host `__zw_canvas_op` + `_zwMakeCtx2d`（R2795 已验证）——零逻辑重写；③ 仅 CANVAS tag + 4 属性/方法名命中（不动其他元素路径）；④ R3076 probe 实测 canvas 用例 **31/39 现 js_executes_ok 通过**（getContext 修复后，~21 用例从抛 TypeError 转为可执行）；⑤ 全量 make test 全绿（0 failed across all binaries，16076 passed）。
+
+**已知限制（记录，defer）**：① **8 canvas 用例 ctx2d 方法缺**（fillText/measureText/createLinearGradient/createImageData——host bridge 未派发这 4 op，需 canvas.rs 加 dispatch arm + JS `_zwMakeCtx2d` 加方法 + gradient/ImageData 返回类型接线，中-高复杂度；Canvas 2D 完整化 follow-up）；② **js_executes_ok 未批量应用 canvas 用例**（断言行非 uniform 8 模式 + 8 用例因 ctx2d 方法缺失败，批量应用会破「100% pass」——待 ctx2d 完整化后统一应用）；③ **bitmap resize 清空 defer**（设 width/height spec 清空 bitmap，host 侧 follow-up）；④ **webgl/webgl2 defer**（getContext 仅 2d）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy --workspace --all-targets -D warnings`（v8）+ quickjs clippy 零警告 + `make test` 全绿（**cargo test 执行器；0 failed across all binaries，全量 16076 passed，engine +1 driving 测试，零回归**）+ pre-commit guard PASS。变更纯 JS shim + 测试（无 render/paint/layout .rs 改动——consumed 既有 __zw_canvas_op host 基础设施），product-smoke 不受影响。
+
+**下一步**：Canvas DOM 集成闭合（getContext/toDataURL/width/height；ctx2d 完整化 defer）。pivot：① **Canvas 2D ctx2d 方法补齐**（fillText/measureText/createLinearGradient/createImageData——bridge dispatch + JS + gradient/ImageData 返回类型，闭合 8 失败 canvas 用例，中-高复杂度）；② R3076 全 scripted probe 发现的其他 gap：**Worker postMessage/terminate**（~6 用例）+ **indexedDB 全局**（~5 用例）+ **ES module import**（~2 用例）；③ js_executes_ok 批量应用（待各 gap 闭合）；④ popover 渲染层 / P1a 事件循环。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a WPT runner 真实 JS 执行路径（js_executes_ok 断言，闭合 web_api「空洞通过」，本轮 R3076）
 
 承接 R3075 评估「pivot 到更高杠杆项」。WPT runner 旧路径：web_api/js_dom 用例经 `RenderPipeline::render_html`（engine-direct，纯渲染快照）→ **不执行内联 `<script>`**，仅查 `dom_has_body`/`no_panic` → 用例「空洞通过」（API 真损/行为错不可见，master.md 既有记录）。本切片接通**真实 JS 执行**路径：经 WebView 运行时（`run_page_scripts_strict`）执行内联脚本，首异常即失败。

@@ -215,7 +215,11 @@ mod runtime_path_tests {
             // 每 6 个取 1 个，跨 API 类别采样 ~8 个代表（fetch→wasm 全谱）。
             .step_by(6)
             .collect();
-        assert!(sampled.len() >= 6, "采样 web-api js_executes_ok 用例 ≥6，got {}", sampled.len());
+        assert!(
+            sampled.len() >= 6,
+            "采样 web-api js_executes_ok 用例 ≥6，got {}",
+            sampled.len()
+        );
         for case in &sampled {
             let result = run_single(case, &ctx);
             assert!(

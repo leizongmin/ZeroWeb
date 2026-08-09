@@ -75,6 +75,48 @@
             return (isNaN(dN) || dN < 0) ? 0 : dN;
           }
         }
+        // R3077：HTMLCanvasElement proxy 的 canvas 2D API（getContext/toDataURL/width/height）。旧仅 standalone
+        // `_zwMakeCanvas` 有这些（R2795），DOM 元素 proxy 缺 → `document.getElementById('c').getContext('2d')` 抛
+        // TypeError（~29 canvas WPT 用例不可执行）。本切片接通：getContext 经 host `__zw_canvas_op` 建 2d 上下文
+        //（per-element 缓存 `_zwCanvasCtx[key]`，后续返同一 ctx）；toDataURL 编码 ctx pixel_buffer → PNG data URL；
+        // width/height 反射内容属性（default 300/150，spec HTMLCanvasElement）。host 未注册 → lenient（getContext null /
+        // toDataURL 'data:,'）。https://html.spec.whatwg.org/multipage/canvas.html#htmlcanvaselement
+        if (_realTag(sel, handle) === 'CANVAS') {
+          if (prop === 'getContext') {
+            return function (type) {
+              if (String(type) !== '2d') return null; // 仅 2d；webgl/webgl2 defer
+              if (_zwCanvasCtx[key]) return _zwCanvasCtx[key];
+              if (typeof __zw_canvas_op !== 'function') return null;
+              var cw = _zwCanvasDim(sel, handle, 'width', 300);
+              var ch = _zwCanvasDim(sel, handle, 'height', 150);
+              var id = __zw_canvas_op('0', 'getContext2d', String(cw), String(ch));
+              if (!id || String(id).charAt(0) === '!') return null;
+              var ctx = _zwMakeCtx2d(String(id));
+              ctx.canvas = _makeProxy(sel, handle); // canvas back-ref → 元素 proxy（spec ctx.canvas）
+              _zwCanvasCtx[key] = ctx;
+              return ctx;
+            };
+          }
+          if (prop === 'toDataURL') {
+            return function (_type) {
+              if (typeof __zw_canvas_op !== 'function') return 'data:,';
+              var ctx = _zwCanvasCtx[key];
+              if (!ctx || !ctx._handle) return 'data:,'; // 未 getContext → 无 bitmap
+              var csv = String(__zw_canvas_op(ctx._handle, 'toDataURL'));
+              if (!csv) return 'data:,';
+              var nums = csv.split(',');
+              var s = '';
+              for (var i = 0; i < nums.length; i++) s += String.fromCharCode(+nums[i]);
+              return 'data:image/png;base64,' + btoa(s);
+            };
+          }
+          if (prop === 'width' || prop === 'height') {
+            // sync set→get 优先读缓存（setter R3077 写数值）；无缓存则反射内容属性（default 300/150）。
+            var cdc = _reflectedAttrs[key];
+            if (cdc && Object.prototype.hasOwnProperty.call(cdc, prop)) return cdc[prop];
+            return _zwCanvasDim(sel, handle, prop, prop === 'width' ? 300 : 150);
+          }
+        }
         // `el.dataset`——`data-*` 属性的 camelCase 键对象（get/set/has/delete/枚举）。
         // dataset.fooBar ↔ data-foo-bar 属性。handle 脱离 DOM 元素枚举受限（无 attr-names-handle）。
         if (prop === 'dataset') {

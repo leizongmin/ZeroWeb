@@ -82,9 +82,10 @@
             if (handle) __zw_set_attr_handle(handle, p, attrV);
             else { __zw_set_attr(sel, p, attrV); moAttr = p; }
           }
-        } else if ((p === 'width' || p === 'height') && (_realTag(sel, handle) === 'IMG' || _realTag(sel, handle) === 'IFRAME')) {
+        } else if ((p === 'width' || p === 'height') && (_realTag(sel, handle) === 'IMG' || _realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'CANVAS')) {
           // reflected unsigned-long 维度 setter（R2851）：parseInt 归一（NaN/负 → 0）→ 缓存数值 + 写 width/height
-          // 内容属性（getter 优先读缓存保 sync set→get）。
+          // 内容属性（getter 优先读缓存保 sync set→get）。R3077：CANVAS 加入（HTMLCanvasElement.width/height 反射，
+          // 保 set→get 一致；bitmap resize 清空 defer——spec 设 width/height 清空 bitmap，host 侧 follow-up）。
           var wv = parseInt(value, 10);
           if (isNaN(wv) || wv < 0) wv = 0;
           var wrc = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
@@ -635,6 +636,15 @@
       return 'data:image/png;base64,' + btoa(s);
     };
     return el;
+  }
+  // R3077：HTMLCanvasElement width/height 反射读（spec default 300/150）。供 CANVAS get-trap getContext
+  //（建 host 上下文尺寸）+ width/height 属性读共用。parseInt 内容属性，缺省/不可解析/负 → default。
+  function _zwCanvasDim(sel, handle, name, def) {
+    var raw = handle
+      ? __zw_get_attr_handle(handle, name)
+      : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, name) : __zw_get_attr(sel, name));
+    var n = parseInt(String(raw == null ? '' : raw), 10);
+    return (isNaN(n) || n < 0) ? def : n;
   }
   function _zwMakeCtx2d(h) {
     var ctx = { _handle: h, canvas: null, _fs: '#000000', _ss: '#000000', _lw: 1.0 };

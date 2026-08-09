@@ -88,6 +88,11 @@
   //（spec：popoverTargetElement setter 设的元素即触发目标，不改内容属性）。null → 清除（回落内容属性）。导航经
   // __zw_reset_form_state 清空（per-page）。
   var _popoverTargetEl = {};
+  // R3077：HTMLCanvasElement proxy 的 2d 上下文缓存（elKey → ctx2d proxy）。getContext('2d') 首次调创建 +
+  // 缓存（后续返同一 ctx，spec 一致）。闭合 canvas DOM 集成缺口（旧仅 standalone _zwMakeCanvas 有 getContext，
+  // DOM 元素 proxy 缺 → `document.getElementById('c').getContext` 抛 TypeError，~29 canvas WPT 用例不可执行）。
+  // 导航经 __zw_reset_form_state 清空（per-page）。
+  var _zwCanvasCtx = {};
   // R3071：Popover 事件派发中用。构造 ToggleEvent 数据对象（type + newState/oldState + bubbles/cancelable/composed）。
   // spec ToggleEvent extends Event，直接属性 newState/oldState（非 CustomEvent.detail）。headless 同步派发（spec 队列
   // task，近似——documented 限制）；beforetoggle cancelable（可 preventDefault 阻止显隐）+ 非 bubble；toggle 非 cancelable。
@@ -1268,7 +1273,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
