@@ -215,7 +215,7 @@ fn test_img_intrinsic_size_from_decoded() {
 
     // 在布局树中找到 img 盒，断言其尺寸 ≈ 解码固有尺寸
     let mut found = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(b) = stack.pop() {
         if b.node_id == Some(img_id) {
             found = Some((b.width, b.height));
@@ -245,7 +245,7 @@ fn test_img_width_set_height_auto_preserves_aspect() {
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
     let mut found = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(b) = stack.pop() {
         if b.node_id == Some(img_id) {
             found = Some((b.width, b.height));
@@ -275,7 +275,7 @@ fn test_img_height_set_width_auto_preserves_aspect() {
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
     let mut found = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(b) = stack.pop() {
         if b.node_id == Some(img_id) {
             found = Some((b.width, b.height));
@@ -307,7 +307,7 @@ fn test_img_both_width_height_set_no_aspect_enforcement() {
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
     let mut found = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(b) = stack.pop() {
         if b.node_id == Some(img_id) {
             found = Some((b.width, b.height));

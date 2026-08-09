@@ -7,6 +7,7 @@
 //! driving：css-contain/contain-size-013（`<img contain:size padding:50>` 固有 60×60 应
 //! padding-only=100×100，非 160×160）。承接 R2427（让 `/css/...` 图片加载暴露此 bug）+
 //! R2428（aspect_ratio sizing）。
+use std::sync::Arc;
 
 use crate::engine::LayoutEngine;
 use crate::types::LayoutBox;
@@ -29,7 +30,7 @@ fn layout_with_img_intrinsic(html: &str, intrinsic: (f32, f32)) -> (zero_dom::Do
         std::collections::HashMap::new(),
         std::collections::HashMap::new(),
     );
-    (doc, r.root)
+    (doc, Arc::try_unwrap(r.root).unwrap_or_else(|arc| (*arc).clone()))
 }
 
 fn find_img<'a>(r: &'a LayoutBox, d: &zero_dom::Document) -> Option<&'a LayoutBox> {

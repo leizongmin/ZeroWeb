@@ -736,7 +736,7 @@ fn r1369_definite_bfc_overflow_float_goes_below() {
     let mut engine = LayoutEngine::new(600.0, 600.0);
     let result = engine.compute_with_img_sizes(&doc, &styles, HashMap::new(), HashMap::new());
     let (fx, fy, fw) = {
-        let mut stack = vec![&result.root];
+        let mut stack: Vec<&LayoutBox> = vec![&result.root];
         let mut r = None;
         while let Some(b) = stack.pop() {
             if b.node_id == Some(flex_id) {

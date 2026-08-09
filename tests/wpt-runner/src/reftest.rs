@@ -10,6 +10,7 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use zero_engine::RenderPipeline;
 use zero_engine::paint::simple_hash;
@@ -822,7 +823,7 @@ fn render_with_layout_inner(
     // 致 mutated_html 与原 html 不同，p/table 误标 anon）。
     (
         fb,
-        result.layout.root,
+        Arc::try_unwrap(result.layout.root).unwrap_or_else(|arc| (*arc).clone()),
         result.layout.paint_skip_node_ids,
         styled_html,
         result.timings,

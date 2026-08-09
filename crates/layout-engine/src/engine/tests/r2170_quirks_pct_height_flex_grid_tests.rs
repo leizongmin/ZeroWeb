@@ -12,6 +12,7 @@
 
 use crate::engine::LayoutEngine;
 use crate::types::LayoutBox;
+use std::sync::Arc;
 use zero_dom::NodeKind;
 use zero_style_system::StyleSystem;
 
@@ -22,7 +23,7 @@ fn layout(html: &str) -> (zero_dom::Document, LayoutBox) {
     let styles = sys.compute_styles(&doc, &[]);
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
-    (doc, result.root)
+    (doc, Arc::try_unwrap(result.root).unwrap_or_else(|arc| (*arc).clone()))
 }
 
 /// 找最深的 `div` 元素盒，返回其 used height。

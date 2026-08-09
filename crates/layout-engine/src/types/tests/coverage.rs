@@ -1,4 +1,5 @@
 //! LayoutBox 方法补充覆盖测试。
+use std::sync::Arc;
 
 use crate::types::{LayoutBox, LayoutResult, OverflowClip};
 
@@ -265,7 +266,7 @@ fn test_children_with_nested() {
 #[test]
 fn test_layout_result_viewport() {
     let result = LayoutResult {
-        root: make_box_at(0.0, 0.0, 1024.0, 768.0),
+        root: Arc::new(make_box_at(0.0, 0.0, 1024.0, 768.0)),
         viewport_width: 1024.0,
         viewport_height: 768.0,
         paint_skip_node_ids: Default::default(),
@@ -280,7 +281,7 @@ fn test_layout_result_with_children() {
     let mut root = make_box_at(0.0, 0.0, 800.0, 600.0);
     root.children = vec![make_box_at(0.0, 0.0, 800.0, 50.0), make_box_at(0.0, 50.0, 600.0, 550.0)];
     let result = LayoutResult {
-        root,
+        root: Arc::new(root),
         viewport_width: 800.0,
         viewport_height: 600.0,
         paint_skip_node_ids: Default::default(),
@@ -395,7 +396,7 @@ fn test_border_padding_margin_combination() {
 #[test]
 fn test_layout_result_snapshot_basic() {
     let result = LayoutResult {
-        root: LayoutBox {
+        root: Arc::new(LayoutBox {
             node_id: None,
             x: 0.0,
             y: 0.0,
@@ -427,7 +428,7 @@ fn test_layout_result_snapshot_basic() {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             ..Default::default()
-        },
+        }),
         viewport_width: 800.0,
         viewport_height: 600.0,
         paint_skip_node_ids: Default::default(),
@@ -447,7 +448,7 @@ fn test_layout_result_snapshot_basic() {
 #[test]
 fn test_layout_result_snapshot_with_box_model() {
     let result = LayoutResult {
-        root: LayoutBox {
+        root: Arc::new(LayoutBox {
             node_id: None,
             x: 0.0,
             y: 0.0,
@@ -479,7 +480,7 @@ fn test_layout_result_snapshot_with_box_model() {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             ..Default::default()
-        },
+        }),
         viewport_width: 800.0,
         viewport_height: 600.0,
         paint_skip_node_ids: Default::default(),
@@ -494,7 +495,7 @@ fn test_layout_result_snapshot_with_box_model() {
 #[test]
 fn test_layout_result_snapshot_flags() {
     let result = LayoutResult {
-        root: LayoutBox {
+        root: Arc::new(LayoutBox {
             node_id: None,
             x: 0.0,
             y: 0.0,
@@ -558,7 +559,7 @@ fn test_layout_result_snapshot_flags() {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             ..Default::default()
-        },
+        }),
         viewport_width: 800.0,
         viewport_height: 600.0,
         paint_skip_node_ids: Default::default(),

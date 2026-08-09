@@ -4,6 +4,7 @@
 //! 描述元素在页面上的几何位置和大小。
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 pub use zero_css_parser::values::ClearValue;
 use zero_css_parser::values::{FloatValue, OverflowClipMarginBox};
 use zero_dom::NodeId;
@@ -549,7 +550,11 @@ pub struct InlineLayoutFragment {
 /// 布局结果 — 整个文档的布局树。
 pub struct LayoutResult {
     /// 根布局盒。
-    pub root: LayoutBox,
+    ///
+    /// `Arc` 共享：渲染管线每帧把同一布局树同时缓存（`cached_layout`）并返回给
+    /// 调用方（hit-test / snapshot / 绘制），owned 深拷贝整树 2 次（4400 元素页面
+    /// 数万节点分配）。`Arc` 化后 clone 为 O(1)；消费点经 deref coercion 免改。
+    pub root: Arc<LayoutBox>,
     /// 视口宽度。
     pub viewport_width: f32,
     /// 视口高度。

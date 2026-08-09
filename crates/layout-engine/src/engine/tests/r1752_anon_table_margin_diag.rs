@@ -37,7 +37,7 @@ fn r1752_anon_table_margin_collapsing_current_behavior() {
 
     // 找 table 盒。
     let mut table: Option<&LayoutBox> = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(b) = stack.pop() {
         if let Some(id) = b.node_id
             && let Some(s) = styles.get(&id)

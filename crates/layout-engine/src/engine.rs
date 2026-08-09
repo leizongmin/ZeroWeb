@@ -828,7 +828,7 @@ impl LayoutEngine {
         });
 
         LayoutResult {
-            root: root_box,
+            root: std::sync::Arc::new(root_box),
             viewport_width: self.viewport_width,
             viewport_height: self.viewport_height,
             paint_skip_node_ids: paint_skip_set,
@@ -946,7 +946,7 @@ impl LayoutEngine {
         let layout_ms = use_start.elapsed().as_secs_f64() * 1000.0;
 
         let result = LayoutResult {
-            root: root_box,
+            root: std::sync::Arc::new(root_box),
             viewport_width: self.viewport_width,
             viewport_height: self.viewport_height,
             // 增量路径不重跑 compute_final（无 Phase A orphan 回填），paint_skip 恒空。

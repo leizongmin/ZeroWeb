@@ -9,6 +9,7 @@
 //! driving：css/css-box/margin-trim/block-container-block-001（margin-trim:block 单子，
 //! 首末 margin 均裁剪）、block-start-001（仅首）、block-end-001（仅末）、inline-001
 //! （margin-trim:inline 不裁剪块级子 inline 边距）。
+use std::sync::Arc;
 
 use crate::engine::LayoutEngine;
 use crate::types::LayoutBox;
@@ -47,7 +48,7 @@ fn compute(html: &str) -> (zero_dom::Document, LayoutEngine, LayoutBox) {
     let styles = sys.compute_styles(&doc, &[]);
     let mut eng = LayoutEngine::new(800.0, 600.0);
     let r = eng.compute(&doc, &styles);
-    (doc, eng, r.root)
+    (doc, eng, Arc::try_unwrap(r.root).unwrap_or_else(|arc| (*arc).clone()))
 }
 
 /// margin-trim:block 单子 → 首子 block-start（margin-top）与末子 block-end（margin-bottom）

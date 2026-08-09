@@ -14,6 +14,7 @@
 use crate::engine::LayoutEngine;
 use crate::types::LayoutBox;
 use std::collections::HashMap;
+use std::sync::Arc;
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::StyleSystem;
 
@@ -23,7 +24,7 @@ fn compute(html: &str) -> (Document, LayoutBox, HashMap<NodeId, zero_style_syste
     sys.set_viewport(800.0, 600.0);
     let styles = sys.compute_styles(&doc, &[]);
     let mut engine = LayoutEngine::new(800.0, 600.0);
-    let root = engine.compute(&doc, &styles).root;
+    let root = Arc::try_unwrap(engine.compute(&doc, &styles).root).unwrap_or_else(|arc| (*arc).clone());
     (doc, root, styles)
 }
 

@@ -22,7 +22,7 @@ fn test_anonymous_flex_item_created() {
     // 找到 flex 容器
     let found_flex = false;
     let mut found_anonymous_text = false;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(box_node) = stack.pop() {
         // 检查是否为匿名文本项
         if box_node.is_anonymous_text_item {
@@ -64,7 +64,7 @@ fn test_mixed_text_and_element_flex_items() {
 
     // 找到 flex 容器（display:flex 的 div）
     let mut flex_container: Option<&crate::types::LayoutBox> = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(box_node) = stack.pop() {
         if let Some(nid) = box_node.node_id {
             if let Some(style) = styles.get(&nid) {
@@ -104,7 +104,7 @@ fn test_no_anonymous_items_in_block_container() {
     let result = engine.compute(&doc, &styles);
 
     // 确保整个布局树中没有匿名文本项
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(box_node) = stack.pop() {
         assert!(
             !box_node.is_anonymous_text_item,
@@ -487,7 +487,7 @@ fn test_r1750_anonymous_text_flex_item_min_content() {
 
     // 找匿名文本 flex item。
     let mut anon: Option<&LayoutBox> = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(b) = stack.pop() {
         if b.is_anonymous_text_item {
             anon = Some(b);
@@ -517,7 +517,7 @@ fn test_r1750_single_word_min_content_equals_max() {
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
     let mut anon: Option<&LayoutBox> = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(b) = stack.pop() {
         if b.is_anonymous_text_item {
             anon = Some(b);

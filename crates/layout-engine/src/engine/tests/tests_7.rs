@@ -551,7 +551,7 @@ fn test_real_empty_inline_003_layout_height() {
 
     let mut test_box = None;
     let mut empty_span_box = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(node) = stack.pop() {
         if let Some(node_id) = node.node_id
             && let Some(dom_node) = doc.get(node_id)
@@ -603,7 +603,7 @@ fn test_r207_stored_inline_layout_for_inline_child_container() {
 
     // 定位 #c 的 LayoutBox
     let mut c_box = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(node) = stack.pop() {
         if let Some(nid) = node.node_id
             && let Some(dn) = doc.get(nid)
@@ -658,7 +658,7 @@ fn test_r355_multiline_stored_layout_pure_ahem() {
 
     let mut nf_box = None;
     let mut fl_box = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(node) = stack.pop() {
         if let Some(nid) = node.node_id
             && let Some(dn) = doc.get(nid)
@@ -718,7 +718,7 @@ fn test_r362_float_intrusion_propagates_to_sibling_block_ifc() {
     let result = engine.compute(&doc, &styles);
 
     let mut inner_box = None;
-    let mut stack = vec![&result.root];
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
     while let Some(node) = stack.pop() {
         if let Some(nid) = node.node_id
             && let Some(dn) = doc.get(nid)
@@ -768,7 +768,7 @@ fn test_sticky_static_case_equals_relative() {
         let styles = ss.compute_styles(&doc, &[]);
         let mut eng = LayoutEngine::new(800.0, 600.0);
         let result = eng.compute(&doc, &styles);
-        let mut stack = vec![&result.root];
+        let mut stack: Vec<&LayoutBox> = vec![&result.root];
         while let Some(n) = stack.pop() {
             if let Some(nid) = n.node_id
                 && let Some(dn) = doc.get(nid)

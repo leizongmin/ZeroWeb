@@ -1,3 +1,4 @@
+use std::sync::Arc;
 // Auto-generated test file — split from layout-engine/types.rs
 use super::super::*;
 
@@ -8,7 +9,7 @@ use super::super::*;
 #[test]
 fn test_layout_result_zero_viewport() {
     let result = LayoutResult {
-        root: LayoutBox {
+        root: Arc::new(LayoutBox {
             node_id: None,
             x: 0.0,
             y: 0.0,
@@ -40,7 +41,7 @@ fn test_layout_result_zero_viewport() {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             ..Default::default()
-        },
+        }),
         viewport_width: 0.0,
         viewport_height: 0.0,
         paint_skip_node_ids: Default::default(),
@@ -555,7 +556,7 @@ fn test_layout_box_default_values() {
 #[test]
 fn test_layout_result_viewport_edge() {
     let result = LayoutResult {
-        root: LayoutBox {
+        root: Arc::new(LayoutBox {
             node_id: None,
             x: 0.0,
             y: 0.0,
@@ -587,7 +588,7 @@ fn test_layout_result_viewport_edge() {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             ..Default::default()
-        },
+        }),
         viewport_width: 375.0,
         viewport_height: 667.0,
         paint_skip_node_ids: Default::default(),

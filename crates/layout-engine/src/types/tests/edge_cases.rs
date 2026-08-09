@@ -1,3 +1,4 @@
+use std::sync::Arc;
 // 边界条件和极端值测试 — types 模块。
 use super::super::*;
 
@@ -404,7 +405,7 @@ fn test_overflow_clip_all_variants_distinct() {
 #[test]
 fn test_layout_result_large_viewport() {
     let result = LayoutResult {
-        root: LayoutBox {
+        root: Arc::new(LayoutBox {
             node_id: None,
             x: 0.0,
             y: 0.0,
@@ -436,7 +437,7 @@ fn test_layout_result_large_viewport() {
             z_index: 0,
             float: zero_css_parser::values::FloatValue::None,
             ..Default::default()
-        },
+        }),
         viewport_width: 7680.0,
         viewport_height: 4320.0,
         paint_skip_node_ids: Default::default(),

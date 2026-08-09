@@ -6,6 +6,7 @@
 //! `padding-right:40` 渲染成 border-box 100×100（应 100×60）。fix：条件改 XOR（恰好一侧 auto），
 //! 两侧均 auto（等同两侧显式）不设 aspect_ratio。driving：css/css-box/margin-trim/block-container-
 //! replaced-*（img 不渲染绿→假 fail；R2427 让 `/css/support/...` 图片加载后暴露此 sizing bug）。
+use std::sync::Arc;
 
 use crate::engine::LayoutEngine;
 use crate::types::LayoutBox;
@@ -28,7 +29,7 @@ fn layout_img(html: &str) -> (zero_dom::Document, LayoutBox) {
         std::collections::HashMap::new(),
         std::collections::HashMap::new(),
     );
-    (doc, r.root)
+    (doc, Arc::try_unwrap(r.root).unwrap_or_else(|arc| (*arc).clone()))
 }
 
 fn find_img<'a>(r: &'a LayoutBox, d: &zero_dom::Document) -> Option<&'a LayoutBox> {
