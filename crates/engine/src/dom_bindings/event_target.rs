@@ -1,12 +1,13 @@
 //! S4 EventTarget（addEventListener / removeEventListener / dispatchEvent）原生绑定——拆自 mod.rs
 //!（RFC §3.2 子模块化 stage 2，本轮 R3117）。
 //!
-//! 监听器存线程局部 `gc::LISTENERS`（`(NodeId ffi, 事件类型, capture) → Vec<Global<Value>>`，存 Value 句柄，
-//! 调用时降 Function；避 Local<Function>→Local<Value> upcast）。dispatchEvent 在当前 scope 复活 Local
-//! 调用，**三阶段派发**（R3128）：capture（祖先 root→parent 倒序、CAPTURING_PHASE=1）→ target
-//!（AT_TARGET=2，capture+bubble 两桶）→ bubble（祖先 parent→root 正序、BUBBLING_PHASE=3，仅 bubbles）。
+//! 监听器存线程局部 `gc::LISTENERS`（`(NodeId ffi, 事件类型) → Vec<(capture, Global<Value>)>`，存 Value 句柄，
+//! 调用时降 Function；避 Local<Function>→Local<Value> upcast）。单列表保**全局注册序**（capture/bubble 交错
+//! 按 addEventListener 序）。dispatchEvent 在当前 scope 复活 Local 调用，**三阶段派发**（R3128）：capture
+//!（祖先 root→parent 倒序、CAPTURING_PHASE=1，仅 capture 监听器）→ target（AT_TARGET=2，**全部监听器按注册序**，
+//! 闭合 R3128 限制① R3135）→ bubble（祖先 parent→root 正序、BUBBLING_PHASE=3，仅 bubble 监听器，仅 bubbles）。
 //! `event.currentTarget`/`eventPhase` 随传播更新。**无 stopPropagation 捕获态分离**（stopPropagation 跨阶段
-//! 生效）、**无 finalizer**（节点 detach 不自动清理监听器，泄漏限制，后续 weak callback）。
+//! 生效）；节点包装器 weak 化 + 终结器清监听器（R3133，闭合 detach 泄漏）。
 //!
 //! 可见性：3 个 invoke 为 `pub(super)`（mod.rs Element 模板注册经 `event_target::` 调）。读
 //! `super::read_node_id` / `super::string_arg`（mod.rs 私有——Rust 规则：私有项对后代模块可见）。
@@ -19,10 +20,10 @@ use super::gc::{add_listener, encode_node_id, listeners_local, remove_listener, 
 use super::{get_or_create_native_element, read_node_id, string_arg};
 
 /// `addEventListener(type, listener, useCapture?)`（spec `dom-eventtarget-add-event-listener`）：
-/// listener 存为 `Global<Value>`（线程局部 LISTENERS，键 = `(NodeId ffi, 事件类型, capture)`）。
-/// `useCapture`（第 3 参，R3128）支持 bool 或 `{capture: bool}` options 对象，缺省 false——区分
-/// capture（祖先倒序、CAPTURING_PHASE）vs bubble（祖先正序）监听器。非 function 参 → 忽略
-///（spec 应抛 TypeError，本切片 best-effort）。
+/// listener 存为 `(capture, Global<Value>)` 追加到线程局部 LISTENERS（键 = `(NodeId ffi, 事件类型)`，
+/// 单列表保全局注册序——R3135）。`useCapture`（第 3 参，R3128）支持 bool 或 `{capture: bool}` options
+/// 对象，缺省 false——区分 capture（祖先倒序、CAPTURING_PHASE）vs bubble（祖先正序）监听器。非 function 参
+/// → 忽略（spec 应抛 TypeError，本切片 best-effort）。
 pub(super) fn native_add_event_listener_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -109,20 +110,19 @@ pub(super) fn native_stop_immediate_invoke(
 
 /// `dispatchEvent(event)`（spec `dom-eventtarget-dispatch-event`）：event 为对象读 `.type`，
 /// 或直接 type 字符串（包成 `{type:str}` 对象）。**三阶段派发**（R3128）：① capture（祖先 root→parent
-/// 倒序，CAPTURING_PHASE=1，capture 监听器）→ ② target（AT_TARGET=2，capture+bubble 两桶均触发）
-/// → ③ bubble（祖先 parent→root 正序，BUBBLING_PHASE=3，bubble 监听器，仅当 `event.bubbles`）。
-/// 每节点取监听器快照（复活 Local，释放 borrow 避回调再入）调用（this = 当前层元素，参 = event）。
+/// 倒序，CAPTURING_PHASE=1，仅 capture 监听器）→ ② target（AT_TARGET=2，**全部监听器按注册序触发**，
+/// 不论 capture 标志——R3135 闭合 R3128 限制① spec 合规）→ ③ bubble（祖先 parent→root 正序，
+/// BUBBLING_PHASE=3，仅 bubble 监听器，仅当 `event.bubbles`）。每节点取监听器快照（复活 Local，释放
+/// borrow 避回调再入）按注册序遍历，按 phase 过滤（capture 阶段仅 capture、target 全部、bubble 仅 bubble）。
 /// `event.target` = 派发目标（固定）；`event.currentTarget` = 当前层元素（随传播变）；
 /// `event.eventPhase` 随阶段变。派发后 `currentTarget=null`、`eventPhase=0`（spec）。
 ///
 /// **stopPropagation / stopImmediatePropagation**（R3126）：注入两方法（缺失时）+ 派发前复位内部 flag
 ///（支持同 event 对象重派发）。监听器调 stopPropagation → 当前节点监听器全尽后止后续节点；
-/// stopImmediatePropagation → 立即终止（当前桶剩余 + 后续）。两 flag 跨阶段生效（capture 阶段止则 target/bubble 不派发）。
+/// stopImmediatePropagation → 立即终止（当前节点剩余 + 后续）。两 flag 跨阶段生效（capture 阶段止则 target/bubble 不派发）。
 ///
 /// **返值语义**（R3130）：返 `!(cancelable && defaultPrevented)`（spec：cancelable 事件被 preventDefault
 /// 则返 false，否则 true）。preventDefault 由 Event 原型方法（R3127/R3129）设 `defaultPrevented=true`（仅 cancelable）。
-///
-/// **限制**（后续切片）：① target 阶段 capture/bubble 桶顺序固定（capture 先、bubble 后），非 spec 注册序（min-or-correct）。
 pub(super) fn native_dispatch_event_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -216,9 +216,10 @@ pub(super) fn native_dispatch_event_invoke(
     let key_phase = v8::String::new(scope, "eventPhase");
     let call_args = [event_obj.into()];
     // R3128 三阶段派发：capture（祖先 root→parent 倒序）→ target（AT_TARGET）→ bubble（祖先
-    // parent→root 正序，仅 bubbles）。经 (node, phase) 访问列表单循环；每节点按 phase 选 capture/bubble
-    // 桶（phase 1=capture, 2=capture+bubble, 3=bubble）。stopPropagation 在当前节点两桶全尽后才止后续节点
-    //（spec：止后续节点非当前剩余）；stopImmediatePropagation 立即止。
+    // parent→root 正序，仅 bubbles）。经 (node, phase) 访问列表单循环。
+    // R3135：每节点取**全部**监听器（注册序，含 capture 标志），按 phase 过滤——target 阶段触发全部
+    //（闭合 R3128 限制①：注册序跨 capture/bubble，非旧 capture-桶先/bubble-桶后）；capture 阶段仅 capture，
+    // bubble 阶段仅 bubble。stopPropagation 当前节点监听器全尽后才止后续节点；stopImmediatePropagation 立即止。
     let mut visits: Vec<(NodeId, i32)> = Vec::with_capacity(chain.len() * 2);
     for &n in chain[1..].iter().rev() {
         visits.push((n, 1)); // CAPTURING_PHASE（祖先倒序）
@@ -249,33 +250,34 @@ pub(super) fn native_dispatch_event_invoke(
         }
         let ffi = encode_node_id(node_id);
         let recv = curr.map(|c| c.into()).unwrap_or_else(|| this.into());
-        // 桶选择：phase 1=[capture], 2=[capture,bubble], 3=[bubble]（Vec<bool> 避数组长度不一）。
-        let caps: Vec<bool> = match phase {
-            1 => vec![true],
-            2 => vec![true, false],
-            _ => vec![false],
-        };
-        'bucket: for capture in caps {
-            // 复活监听器 Local 列表（gc.rs 不持 borrow 跨 JS 回调，防再入 panic）。
-            let listeners = listeners_local(scope, ffi, &event_type, capture);
-            for listener in listeners {
-                if let Ok(func) = v8::Local::<v8::Function>::try_from(listener) {
-                    let _ = func.call(scope, recv, &call_args);
-                }
-                // stopImmediatePropagation：立即终止（当前桶剩余 + 后续桶/节点）。
-                if key_stop_imm
-                    .and_then(|k| event_obj.get(scope, k.into()))
-                    .is_some_and(|v| v.is_true())
-                {
-                    halted = true;
-                    break 'bucket;
-                }
+        // 复活监听器列表（注册序，含 capture 标志；gc.rs 不持 borrow 跨 JS 回调，防再入 panic）。
+        let listeners = listeners_local(scope, ffi, &event_type);
+        for (cap, listener) in listeners {
+            // phase 过滤（spec invoke）：capture 阶段仅 capture 监听器；target 阶段全部；bubble 阶段仅 bubble。
+            let invoke = match phase {
+                1 => cap,  // CAPTURING_PHASE
+                2 => true, // AT_TARGET（全部，注册序）
+                _ => !cap, // BUBBLING_PHASE
+            };
+            if !invoke {
+                continue;
+            }
+            if let Ok(func) = v8::Local::<v8::Function>::try_from(listener) {
+                let _ = func.call(scope, recv, &call_args);
+            }
+            // stopImmediatePropagation：立即终止（当前节点剩余 + 后续节点）。
+            if key_stop_imm
+                .and_then(|k| event_obj.get(scope, k.into()))
+                .is_some_and(|v| v.is_true())
+            {
+                halted = true;
+                break;
             }
         }
         if halted {
             break;
         }
-        // stopPropagation：当前节点监听器全尽（capture+bubble 桶），止后续节点。
+        // stopPropagation：当前节点监听器全尽，止后续节点（spec：止后续节点非当前剩余）。
         if key_stop
             .and_then(|k| event_obj.get(scope, k.into()))
             .is_some_and(|v| v.is_true())

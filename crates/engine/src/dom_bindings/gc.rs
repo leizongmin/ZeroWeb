@@ -40,7 +40,10 @@ thread_local! {
     /// 在当前 scope 经 Local::new 复活后调用。R3133：节点包装器 weak 化后，包装器被 GC 时终结器调
     /// [`remove_node_listeners`] 清本节点全部监听器（闭合 R3109 泄漏）；removeChild 不清（保重新附加语义，
     /// detached 节点仍 arena 可达），仅 JS 也丢包装器 → GC → 终结器回收。reset 仍兜底清空。
-    static LISTENERS: RefCell<HashMap<(u64, String, bool), Vec<v8::Global<v8::Value>>>> =
+    /// R3135：键由 `(ffi, type, capture)` 改 `(ffi, type)`，值 `Vec<(capture 标志, Global)>`——单列表保
+    /// **全局注册序**（capture/bubble 监听器交错按 addEventListener 序），闭合 R3128 限制①（target 阶段
+    /// 须按注册序触发全部监听器，不论 capture 标志；dispatch 按 phase 过滤）。
+    static LISTENERS: RefCell<HashMap<(u64, String), Vec<(bool, v8::Global<v8::Value>)>>> =
         RefCell::new(HashMap::new());
     /// R3112 NamedNodeMap（element.attributes）：owner element NodeId(ffi) → **Weak**<Object>，
     /// 保 spec 身份（`el.attributes === el.attributes` 同对象）。R3134：weak 化（同 R3133 NODE_OBJECTS）——
@@ -247,13 +250,15 @@ pub(crate) fn node_exists(id: NodeId) -> bool {
 
 // ── S4 EventTarget 监听器存储 ─────────────────────────────────────
 
-/// 追加监听器（`(NodeId ffi, 事件类型, capture)` → `Global<Value>`）。`capture` 区分 capture/bubble
-/// 监听器（R3128 useCapture）。
+/// 追加监听器（`(NodeId ffi, 事件类型)` → `(capture, Global<Value>)`）。R3135：单列表保**全局注册序**
+///（capture/bubble 监听器交错按 addEventListener 序），闭合 R3128 限制①（target 阶段按注册序触发全部）。
+/// `capture` 标志记录每条监听器的阶段归属（dispatch 按 phase 过滤）。
 pub(crate) fn add_listener(ffi: u64, event_type: String, capture: bool, f: v8::Global<v8::Value>) {
-    LISTENERS.with(|c| c.borrow_mut().entry((ffi, event_type, capture)).or_default().push(f));
+    LISTENERS.with(|c| c.borrow_mut().entry((ffi, event_type)).or_default().push((capture, f)));
 }
 
-/// 取监听器在**当前 scope** 复活的 `Local<Value>` 列表（dispatchEvent 用）。`capture` 选 capture/bubble 桶。
+/// 取监听器在**当前 scope** 复活的 `(capture, Local<Value>)` 列表（dispatchEvent 用）——**全部**条目按
+/// 注册序（dispatch 按 phase 过滤 capture/bubble）。R3135：不再分桶取，返完整列表含 capture 标志。
 ///
 /// 刻意不持 LISTENERS borrow 跨 JS 回调——复活为 Local 后释放 borrow，回调内 addEventListener /
 /// removeEventListener 再入不会 panic（新增的监听器不在本快照内，符合 spec「派发期间新增不触发」）。
@@ -261,19 +266,18 @@ pub(crate) fn listeners_local<'s>(
     scope: &mut v8::PinScope<'s, '_>,
     ffi: u64,
     event_type: &str,
-    capture: bool,
-) -> Vec<v8::Local<'s, v8::Value>> {
+) -> Vec<(bool, v8::Local<'s, v8::Value>)> {
     LISTENERS.with(|c| {
         c.borrow()
-            .get(&(ffi, event_type.to_string(), capture))
-            .map(|vec| vec.iter().map(|g| v8::Local::new(scope, g)).collect())
+            .get(&(ffi, event_type.to_string()))
+            .map(|vec| vec.iter().map(|(cap, g)| (*cap, v8::Local::new(scope, g))).collect())
             .unwrap_or_default()
     })
 }
 
-/// 移除与 `target`（Local）同身份的监听器；返移除数（removeEventListener 用）。`capture` 选桶。
-///
-/// 持 LISTENERS borrow_mut 期间仅做 `Local::new` + `strict_equals`（非 JS 回调，无再入），安全。
+/// 移除与 `target`（Local）同身份且 `capture` 匹配的监听器；返移除数（removeEventListener 用）。
+/// spec：capture/bubble 监听器独立（removeEventListener 须匹配 capture 标志），故仅删 `capture` 匹配
+/// 且身份相同的条目。持 LISTENERS borrow_mut 期间仅做 `Local::new` + `strict_equals`（非 JS 回调，无再入），安全。
 pub(crate) fn remove_listener(
     scope: &mut v8::PinScope,
     ffi: u64,
@@ -283,13 +287,15 @@ pub(crate) fn remove_listener(
 ) -> usize {
     LISTENERS.with(|c| {
         let mut map = c.borrow_mut();
-        let Some(vec) = map.get_mut(&(ffi, event_type.to_string(), capture)) else {
+        let Some(vec) = map.get_mut(&(ffi, event_type.to_string())) else {
             return 0;
         };
         let before = vec.len();
-        vec.retain(|g| {
-            let local = v8::Local::new(scope, g);
-            !local.strict_equals(target)
+        vec.retain(|(cap, g)| {
+            !(*cap == capture && {
+                let local = v8::Local::new(scope, g);
+                local.strict_equals(target)
+            })
         });
         before - vec.len()
     })
@@ -300,7 +306,7 @@ pub(crate) fn remove_listener(
 /// LISTENERS 可安全访问）。removeChild 不调本函数（保重新附加语义：detached 节点监听器跨 detach 保留）。
 pub(crate) fn remove_node_listeners(ffi: u64) {
     LISTENERS.with(|c| {
-        c.borrow_mut().retain(|(f, _, _), _| *f != ffi);
+        c.borrow_mut().retain(|(f, _), _| *f != ffi);
     });
 }
 
@@ -320,10 +326,10 @@ pub(crate) mod test_helpers {
         reset();
     }
 
-    /// R3133：本节点（ffi）的 LISTENERS 条目数（事件类型 × capture/bubble 桶计数）。
+    /// R3133：本节点（ffi）的 LISTENERS 条目数（事件类型计数；R3135 后 capture 合入单列表，每事件类型 1 条目）。
     /// 终结器测试用——包装器被 GC 后断言本节点监听器已清。
     pub fn listener_keys_for(ffi: u64) -> usize {
-        LISTENERS.with(|c| c.borrow().keys().filter(|(f, _, _)| *f == ffi).count())
+        LISTENERS.with(|c| c.borrow().keys().filter(|(f, _)| *f == ffi).count())
     }
 
     /// R3133：LISTENERS 全部条目数（终结器测试用）。

@@ -955,6 +955,49 @@ return log.join(',');})()";
     );
 }
 
+// ── R3135 target 阶段注册序派发（闭合 R3128 限制①）──
+
+/// target 阶段（AT_TARGET）监听器按**注册序**触发，不论 capture 标志（spec `dom-eventtarget-dispatch-event`
+/// invoke：AT_TARGET 触发全部，注册序）。闭合 R3128 限制①——旧实现 capture 桶先/bubble 桶后（B,A,C），
+/// 现 A,B,C（注册序：bubble-A, capture-B, bubble-C 交错）。
+#[test]
+fn native_dispatch_event_target_registration_order_r3135() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{\
+const el=__zw_native_element_for_id('a');\
+const log=[];\
+el.addEventListener('click',()=>log.push('A'));\
+el.addEventListener('click',()=>log.push('B'),true);\
+el.addEventListener('click',()=>log.push('C'));\
+el.dispatchEvent({type:'click'});\
+return log.join(',');})()";
+    assert_eq!(
+        run_script(html, script),
+        "A,B,C",
+        "target 阶段监听器按注册序触发（A,B,C），非旧 capture-桶先（B,A,C）——闭合 R3128 限制①"
+    );
+}
+
+/// target 阶段 stopImmediatePropagation 止当前节点剩余（注册序中后续）——验证注册序单循环下
+/// stop-immediate 仍立即终止当前节点剩余监听器（A 触发后 stop-immediate → B,C 不触发）。
+#[test]
+fn native_dispatch_event_target_stop_immediate_registration_order_r3135() {
+    let html = r#"<div id="a"></div>"#;
+    let script = "(()=>{\
+const el=__zw_native_element_for_id('a');\
+const log=[];\
+el.addEventListener('click',()=>log.push('A'));\
+el.addEventListener('click',(e)=>{log.push('B');e.stopImmediatePropagation();},true);\
+el.addEventListener('click',()=>log.push('C'));\
+el.dispatchEvent({type:'click'});\
+return log.join(',');})()";
+    assert_eq!(
+        run_script(html, script),
+        "A,B",
+        "target 注册序 A,B 触发后 stopImmediatePropagation 止 C（注册序单循环下立即终止）"
+    );
+}
+
 // ── R3129 MouseEvent / KeyboardEvent 构造器（extends Event）──
 
 /// `new MouseEvent(type, {clientX,clientY,altKey,bubbles})`：instanceof MouseEvent + Event 成立 +
