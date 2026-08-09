@@ -99,26 +99,34 @@ pub fn render_full_scene(
     primitives: &RenderPrimitives,
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
-    image_cache: Option<&mut ImageCache>,
+    mut image_cache: Option<&mut ImageCache>,
     ui_glyphs: &[GlyphDraw],
     overlay_fills: &[FillPrimitive],
     overlay_glyphs: &[GlyphDraw],
     overlay_rounded_rects: &[RoundedRectPrimitive],
 ) -> FrameBuffer {
-    render_full_scene_region(
+    let fb = render_full_scene_region(
         width,
         height,
         scale_factor,
         primitives,
         font_loader,
         glyph_cache,
-        image_cache,
+        image_cache.as_deref_mut(),
         ui_glyphs,
         overlay_fills,
         overlay_glyphs,
         overlay_rounded_rects,
         None,
-    )
+    );
+    // 每帧回收零引用图像（滚动离开视口/页面切换后释放解码位图；LRU 超限淘汰
+    // 也只在此触发——此前 gc 无生产调用方，图片页内存只增不减直到导航 clear）。
+    // ref_count 语义：渲染用 get 递增、render_image 后 release（见 cpu/mod.rs 各
+    // 调用点），当前帧在用的条目 ref>0 保留，下帧重绘同图 get 命中不重解码。
+    if let Some(cache) = image_cache {
+        cache.gc();
+    }
+    fb
 }
 
 /// 区域光栅化（S3 增量重绘）——只绘制与 `region`（CSS 逻辑像素）相交的图元。
