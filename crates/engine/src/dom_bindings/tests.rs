@@ -1223,6 +1223,79 @@ fn native_document_properties_absent_null_r3136() {
     );
 }
 
+// ── R3137 document.getElementsByTagName(name) 工厂 ──
+
+/// `__zw_native_get_elements_by_tag_name(name)`：按标签名（大小写不敏感）收集文档序 V8 Array。
+/// 多个 span 文档序 + 大小写不敏感（'SPAN' 匹配 span）+ 无匹配空数组。
+#[test]
+fn native_get_elements_by_tag_name_r3137() {
+    let html = r#"<div id="root"><span class="a">1</span><span class="b">2</span><p>x</p></div>"#;
+    // 多个 span（文档序）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_elements_by_tag_name('span').length)"),
+        "2",
+        "getElementsByTagName('span').length===2（文档序全部 span）"
+    );
+    // 文档序读属性（区分两 span）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_elements_by_tag_name('span')[0].className+'/'+\
+             __zw_native_get_elements_by_tag_name('span')[1].className)"
+        ),
+        "a/b",
+        "文档序 span[0]/[1] className 区分"
+    );
+    // 大小写不敏感（'SPAN' 匹配 span，HTML 元素）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_elements_by_tag_name('SPAN').length)"),
+        "2",
+        "getElementsByTagName 大小写不敏感（'SPAN' 匹配 span）"
+    );
+    // 无匹配 → 空 Array（length 0）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_elements_by_tag_name('nope').length)"),
+        "0",
+        "无匹配 → 空 Array"
+    );
+}
+
+/// `getElementsByTagName('*')` 匹配**全部元素**（spec 通配）——含 root、span、p 等所有 Element
+///（文档序）。验证 `*` 通配路径（经 get_elements_by_tag_name_ns 内置通配）。
+#[test]
+fn native_get_elements_by_tag_name_wildcard_r3137() {
+    let html = r#"<html><head></head><body><div id="root"><span>1</span><p>2</p></div></body></html>"#;
+    // `*` 返全部元素（html/head/body/div/span/p，文档序），至少 6 个。
+    let all = run_script(html, "(__zw_native_get_elements_by_tag_name('*').length)");
+    let n: i64 = all.parse().unwrap_or(0);
+    assert!(
+        n >= 6,
+        "getElementsByTagName('*') 须含 html/head/body/div/span/p（≥6），实得 {all}"
+    );
+    // 通配结果含具体 tag（span 在内）。
+    let script = "(()=>{const all=__zw_native_get_elements_by_tag_name('*');\
+    return all.some(e=>e.tagName==='SPAN')+'/'+all.some(e=>e.tagName==='P');})()";
+    assert_eq!(
+        run_script(html, script),
+        "true/true",
+        "getElementsByTagName('*') 含 span 与 p（通配全元素）"
+    );
+}
+
+/// 身份：getElementsByTagName 返的对象与 getElementById/querySelector 共享 NodeId↔对象映射（同对象）。
+#[test]
+fn native_get_elements_by_tag_name_identity_r3137() {
+    let html = r#"<div id="a"><span>x</span></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_elements_by_tag_name('div')[0] === __zw_native_element_for_id('a'))"
+        ),
+        "true",
+        "getElementsByTagName('div')[0] === getElementById('a')（身份缓存共享）"
+    );
+}
+
 // ── R3132 appendChild/insertBefore(fragment) flatten ──
 
 /// host.appendChild(frag)：fragment 子节点展开进 host + fragment 清空（spec flatten）。

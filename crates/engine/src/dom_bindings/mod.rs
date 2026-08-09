@@ -354,6 +354,13 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let (Some(f), Some(key)) = (ghead_fn, ghead_key) {
         let _ = global.set(scope, key.into(), f.into());
     }
+    // R3137 全局 getElementsByTagName——文档根下按标签名（`*` 通配）收集 → V8 Array of native 元素。
+    let gebtn = v8::FunctionTemplate::builder(factories::native_get_elements_by_tag_name_invoke).build(scope);
+    let gebtn_fn = gebtn.get_function(scope);
+    let gebtn_key = v8::String::new(scope, "__zw_native_get_elements_by_tag_name");
+    if let (Some(f), Some(key)) = (gebtn_fn, gebtn_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
 
     // 8. R3127 全局 Event / CustomEvent 构造器——`new Event(type, opts)` 产标准 event 对象
     //    （instanceof Event 成立），stop/preventDefault 上原型（共享，非每次派发注入）。
