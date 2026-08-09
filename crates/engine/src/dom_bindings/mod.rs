@@ -333,7 +333,29 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
         let _ = global.set(scope, key.into(), f.into());
     }
 
-    // 7. R3127 全局 Event / CustomEvent 构造器——`new Event(type, opts)` 产标准 event 对象
+    // 7. R3136 全局文档级只读属性工厂——documentElement / body / head（spec
+    //    `dom-document-(documentelement|body|head)`）：返 native 元素或 null。扩展 native API 面
+    //    （polyfill-only → native）。逐工厂显式注册（镜像 create_* 模式）。
+    let gde = v8::FunctionTemplate::builder(factories::native_get_document_element_invoke).build(scope);
+    let gde_fn = gde.get_function(scope);
+    let gde_key = v8::String::new(scope, "__zw_native_get_document_element");
+    if let (Some(f), Some(key)) = (gde_fn, gde_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+    let gbody = v8::FunctionTemplate::builder(factories::native_get_body_invoke).build(scope);
+    let gbody_fn = gbody.get_function(scope);
+    let gbody_key = v8::String::new(scope, "__zw_native_get_body");
+    if let (Some(f), Some(key)) = (gbody_fn, gbody_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+    let ghead = v8::FunctionTemplate::builder(factories::native_get_head_invoke).build(scope);
+    let ghead_fn = ghead.get_function(scope);
+    let ghead_key = v8::String::new(scope, "__zw_native_get_head");
+    if let (Some(f), Some(key)) = (ghead_fn, ghead_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+
+    // 8. R3127 全局 Event / CustomEvent 构造器——`new Event(type, opts)` 产标准 event 对象
     //    （instanceof Event 成立），stop/preventDefault 上原型（共享，非每次派发注入）。
     //    闭合 R3124 限制③ + R3126 限制③。详见 `event` 子模块。
     event::build_and_register(scope, global);

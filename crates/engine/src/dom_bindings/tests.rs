@@ -1151,6 +1151,78 @@ host.children[0].children[0].textContent;})()";
     assert_eq!(run_script(html, script), "DIV/B/hi", "全 native 树构建：div > b > 'hi'");
 }
 
+// ── R3136 文档级只读属性工厂（documentElement / body / head）──
+
+/// `__zw_native_get_document_element()`：返文档根元素 <html>（nodeType=1、tagName=HTML）。
+/// `__zw_native_get_body()` / `__zw_native_get_head()`：返 <body>/<head> native 元素。
+#[test]
+fn native_document_properties_r3136() {
+    let html = r#"<html><head><title>t</title></head><body><div id="a">x</div></body></html>"#;
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document_element().tagName)"),
+        "HTML",
+        "documentElement 为 <html> 根元素"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document_element().nodeType)"),
+        "1",
+        "documentElement nodeType=1（Element）"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_get_body().tagName)"),
+        "BODY",
+        "body 为 <body> 元素"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_get_head().tagName)"),
+        "HEAD",
+        "head 为 <head> 元素"
+    );
+}
+
+/// 文档属性与既有 querySelector / getElementById 一致：body 内 `#a` 经 body.querySelector 可达。
+/// 验证 documentElement/body/head 返的对象与 element 工厂共享同一 NodeId↔对象映射（身份）。
+#[test]
+fn native_document_properties_identity_and_navigation_r3136() {
+    let html = r#"<html><head></head><body><div id="a">x</div></body></html>"#;
+    // body.querySelector('#a') === getElementById('a')（同一 NodeId → 同对象）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_body().querySelector('#a') === __zw_native_element_for_id('a'))"
+        ),
+        "true",
+        "body.querySelector('#a') 与 getElementById 返同对象（NodeId↔对象映射共享）"
+    );
+    // documentElement 包含 body（documentElement.contains(body)）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document_element().contains(__zw_native_get_body()))"
+        ),
+        "true",
+        "documentElement.contains(body)===true（<html> 含 <body>）"
+    );
+}
+
+/// 运行时移除 body 后 get_body() 返 null（spec：无对应元素时 null）——html5ever 总把片段归一化
+/// 成完整 <html><head><body>，故 null 路径经 removeChild detach 触发（get_elements_by_tag_name DFS
+/// 从 root 不再可达 detached 节点）。验证工厂 None 分支（返 null）正确。
+#[test]
+fn native_document_properties_absent_null_r3136() {
+    let html = r#"<html><head></head><body><div id="a"></div></body></html>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const de=__zw_native_get_document_element();\
+             de.removeChild(__zw_native_get_body());\
+             return (__zw_native_get_body()===null); })()"
+        ),
+        "true",
+        "removeChild(body) 后 get_body()===null（DFS 不达 detached 节点）"
+    );
+}
+
 // ── R3132 appendChild/insertBefore(fragment) flatten ──
 
 /// host.appendChild(frag)：fragment 子节点展开进 host + fragment 清空（spec flatten）。

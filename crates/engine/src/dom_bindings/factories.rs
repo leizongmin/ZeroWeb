@@ -1,18 +1,21 @@
-//! 全局工厂回调——拆自 mod.rs（RFC §3.2 子模块化 stage 3，本轮 R3118；createText/Comment/Fragment R3131）。
+//! 全局工厂回调——拆自 mod.rs（RFC §3.2 子模块化 stage 3，本轮 R3118；createText/Comment/Fragment R3131；
+//! documentElement/body/head R3136）。
 //!
-//! 7 个**全局**工厂（注册于 `ctx.global`，非 Element 模板成员）：
+//! 10 个**全局**工厂（注册于 `ctx.global`，非 Element 模板成员）：
 //! - `__zw_native_element_for_id(idStr)`：`get_element_by_id` → native 元素；
 //! - `__zw_native_query_selector(sel)` / `__zw_native_query_selector_all(sel)`：文档根下
 //!   全量选择器引擎匹配 → native 元素 / V8 Array（spec `dom-parentnode-queryselector(-all)`）；
 //! - `__zw_native_create_element(tag)`：`Document::create_element` → native 元素（未挂载）；
 //! - `__zw_native_create_text_node(text)` / `__zw_native_create_comment(text)` /
 //!   `__zw_native_create_document_fragment()`（R3131）：造 Text(3)/Comment(8)/Fragment(11) 节点 →
-//!   native 对象（未挂载），闭合 native 树构建集（createElement + createText/Comment/Fragment + appendChild）。
+//!   native 对象（未挂载），闭合 native 树构建集（createElement + createText/Comment/Fragment + appendChild）；
+//! - `__zw_native_get_document_element()` / `__zw_native_get_body()` / `__zw_native_get_head()`
+//!   （R3136）：文档级只读属性 → native 元素或 `null`（spec `dom-document-(documentelement|body|head)`）。
 //!
 //! 区别于 mod.rs `native_element_query_selector(-all)_invoke`（**元素子树作用域**，注册于 Element
 //! 模板，root = `args.this()` 元素 + 排除自身）——本模块的是**文档级**（root = 文档根）。
 //!
-//! 可见性：7 个 invoke 为 `pub(super)`（mod.rs `install_dom_bindings` 注册经 `factories::` 调）。
+//! 可见性：10 个 invoke 为 `pub(super)`（mod.rs `install_dom_bindings` 注册经 `factories::` 调）。
 //! 读 `super::string_arg` / `super::get_or_create_native_element`（mod.rs 私有——Rust 规则：私有项
 //! 对后代模块可见）+ `super::gc::{with_dom, with_dom_mut}`。
 
@@ -153,5 +156,62 @@ pub(super) fn native_create_document_fragment_invoke(
     };
     if let Some(obj) = get_or_create_native_element(scope, id) {
         rv.set(obj.into());
+    }
+}
+
+// ── R3136 文档级只读属性工厂（documentElement / body / head）──
+
+/// `__zw_native_get_document_element()`：spec `dom-document-documentelement`——文档根元素
+///（Document 节点的首个 Element 子节点；HTML 文档为 <html>）。返 native 元素或 `null`（无根元素）。
+pub(super) fn native_get_document_element_invoke(
+    scope: &mut v8::PinScope,
+    _args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    // spec 定义：root element = Document 节点（`d.root()`）的首个 Element 子节点。
+    let id = with_dom(|d| d.child_nodes(d.root()).into_iter().find(|&c| d.node_type(c) == Some(1))).flatten();
+    match id {
+        Some(id) => {
+            if let Some(obj) = get_or_create_native_element(scope, id) {
+                rv.set(obj.into());
+            }
+        }
+        None => rv.set(v8::null(scope).into()),
+    }
+}
+
+/// `__zw_native_get_body()`：spec `dom-document-body`——文档的 `<body>` 元素（首个 body 元素）。
+/// 返 native 元素或 `null`（无 body）。
+pub(super) fn native_get_body_invoke(
+    scope: &mut v8::PinScope,
+    _args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let id = with_dom(|d| d.get_elements_by_tag_name("body").into_iter().next()).flatten();
+    match id {
+        Some(id) => {
+            if let Some(obj) = get_or_create_native_element(scope, id) {
+                rv.set(obj.into());
+            }
+        }
+        None => rv.set(v8::null(scope).into()),
+    }
+}
+
+/// `__zw_native_get_head()`：spec `dom-document-head`——文档的 `<head>` 元素（首个 head 元素）。
+/// 返 native 元素或 `null`（无 head）。
+pub(super) fn native_get_head_invoke(
+    scope: &mut v8::PinScope,
+    _args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let id = with_dom(|d| d.get_elements_by_tag_name("head").into_iter().next()).flatten();
+    match id {
+        Some(id) => {
+            if let Some(obj) = get_or_create_native_element(scope, id) {
+                rv.set(obj.into());
+            }
+        }
+        None => rv.set(v8::null(scope).into()),
     }
 }
