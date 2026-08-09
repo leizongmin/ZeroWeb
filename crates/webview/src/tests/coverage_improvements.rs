@@ -105,10 +105,12 @@ fn test_fetch_url_sw_cached_invalid_utf8() {
 
 #[test]
 fn test_fetch_url_timeout_error() {
-    let mut wv = WebView::new(WebViewConfig::default());
+    // 2s 超时：黑洞地址（RFC 5737）connect 挂起，默认 30s 会让测试实等 30s
+    let mut wv = WebView::new(WebViewConfig {
+        http_timeout_secs: Some(2),
+        ..Default::default()
+    });
 
-    // This test might timeout in CI, so we'll use a special timeout URL if available
-    // For now, just test that timeout error path works
     let result = wv.fetch_url("http://192.0.2.1:80/test"); // RFC 5737 test net - should timeout
 
     assert!(result.is_err());

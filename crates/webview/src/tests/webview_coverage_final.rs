@@ -451,7 +451,12 @@ fn test_multiple_event_callbacks_triggered() {
 /// 测试 fetch_url 网络路径 - 超时场景
 #[test]
 fn test_fetch_url_timeout_error() {
-    let mut wv = WebView::new(WebViewConfig::default());
+    // 5s 超时 + sleep=2000：本测试恒真断言（is_ok || is_err），仅验证不 panic；
+    // 外网不可达时 5s 内返回（默认 30s 会让 CI 无外网时实等 30s）。
+    let mut wv = WebView::new(WebViewConfig {
+        http_timeout_secs: Some(5),
+        ..Default::default()
+    });
 
     // 监听事件
     let events: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
@@ -465,7 +470,7 @@ fn test_fetch_url_timeout_error() {
 
     // 尝试设置一个会超时的 URL
     // 注意：这依赖于 HTTP 客户端的超时行为
-    let result = wv.fetch_url("http://httpstat.us/200?sleep=5000");
+    let result = wv.fetch_url("http://httpstat.us/200?sleep=2000");
     // 由于是同步调用，可能不会真正超时，但测试结构应正确
     assert!(result.is_ok() || result.is_err());
 }
@@ -570,6 +575,7 @@ fn test_webview_config_custom_values() {
         url: Some("https://example.com".to_string()),
         devtools: true,
         external_script: None,
+        ..Default::default()
     };
 
     let wv = WebView::new(config);

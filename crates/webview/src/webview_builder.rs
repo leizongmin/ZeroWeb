@@ -51,6 +51,12 @@ impl WebViewBuilder {
         self
     }
 
+    /// 设置 HTTP 请求超时（秒）；`None` 使用默认 30s。
+    pub fn http_timeout(mut self, secs: Option<u64>) -> Self {
+        self.config.http_timeout_secs = secs;
+        self
+    }
+
     /// 使用外部 JS 执行器（专用 JS 线程），不在 WebView 内初始化 V8。
     pub fn external_script(mut self, executor: crate::ExternalScriptExecutor) -> Self {
         self.config.external_script = Some(executor);

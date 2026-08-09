@@ -73,9 +73,13 @@ test: target/test-guard
 	#   （.config/nextest.toml，60s + 2 周期后杀进程树）防御——本地不再 --exclude 该 crate，
 	#   测试覆盖与 CI（真 Vulkan 后端，cargo test --workspace）对齐
 	# - 二进制间并行、单测输出仅失败详情；#[ignore] 测试跳过（71 个，与 cargo test 一致）
-	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo nextest run --workspace
-	# QuickJS 编译检查（--no-default-features --features quickjs；抓编译层破坏）
-	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings
+	# - 并行化（2026-08-09）：QuickJS clippy（编译型）与 v8 nextest 测试并行跑——
+	#   clippy 编译的是 quickjs feature 组合产物（与 v8 产物不冲突），cargo 各自持锁；
+	#   v8 测试（~90s）时长覆盖 clippy 编译，总时长省一个编译段。
+	#   test-guard 两个实例独立监控各自进程树（阈值各自生效，不叠加）。
+	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo nextest run --workspace & \
+	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & \
+	wait
 	# QuickJS 运行测试（v8/quickjs 接口一致性保证——1695 测试 ~75s）
 	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo nextest run --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES))
 

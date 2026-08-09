@@ -14,7 +14,17 @@ use zero_render_foundation::font::loader::FontLoader;
 /// 加载顺序：
 /// 1. 系统字体（DejaVu/Liberation 系列）
 /// 2. Ahem 测试字体（WPT 标准测试字体，每个字符渲染为实心方块）
+///
+/// base 字体集解析昂贵（19MB CJK ttc `from_bytes` ~0.5s/次）；reftest 单测
+/// 每测试调用一次，测试进程内用 OnceLock 只解析一次，之后 `duplicate()` 复用
+/// （字体数据 Arc 共享，见 FontLoader::duplicate 注释）。
 pub(super) fn create_font_loader() -> FontLoader {
+    static CACHED: std::sync::OnceLock<FontLoader> = std::sync::OnceLock::new();
+    CACHED.get_or_init(build_base_font_loader).duplicate()
+}
+
+/// 构建 base 字体集（系统 + CJK 回退 + Ahem）。
+fn build_base_font_loader() -> FontLoader {
     let mut loader = FontLoader::new();
     let mut fallback_ids: Vec<u32> = Vec::new();
 

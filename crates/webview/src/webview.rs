@@ -40,6 +40,11 @@ pub struct WebViewConfig {
     pub url: Option<String>,
     /// 是否启用开发者工具。
     pub devtools: bool,
+    /// HTTP 请求超时（秒），`None` 使用默认（30s）。
+    ///
+    /// 默认超时对真实网络合理，但依赖超时路径的测试（黑洞地址）会实等
+    /// 30s；嵌入者可设短超时加快失败反馈。
+    pub http_timeout_secs: Option<u64>,
     /// 外部 JS 执行器（浏览器 Tab JS 线程注入；为 None 时使用进程内 V8）。
     #[doc(hidden)]
     pub external_script: Option<ExternalScriptExecutor>,
@@ -54,6 +59,7 @@ impl Default for WebViewConfig {
             user_agent: None,
             url: None,
             devtools: false,
+            http_timeout_secs: None,
             external_script: None,
         }
     }
@@ -68,6 +74,7 @@ impl std::fmt::Debug for WebViewConfig {
             .field("user_agent", &self.user_agent)
             .field("url", &self.url)
             .field("devtools", &self.devtools)
+            .field("http_timeout_secs", &self.http_timeout_secs)
             .field("external_script", &self.external_script.is_some())
             .finish()
     }
@@ -178,7 +185,10 @@ impl WebView {
         // zero-browser 产品页含 table/direction 等属性的元素显示调试标记）。需要指示器的
         // 嵌入者（dev 工具）可调 `set_skip_indicators(false)` 重新开启。
         pipeline.set_skip_indicators(true);
-        let http_client = HttpClient::new();
+        let http_client = match config.http_timeout_secs {
+            Some(secs) => HttpClient::with_timeout(secs),
+            None => HttpClient::new(),
+        };
         let external_script = config.external_script.clone();
         // 懒创建：js_sandbox 延后到首次实际执行脚本时初始化（见 ensure_sandbox）。
         // 无脚本页面（多数 WebView 页面）不创建 V8 isolate，显著降低常驻内存

@@ -37,6 +37,7 @@ fn test_webview_new_custom_config() {
         url: None,
         devtools: true,
         external_script: None,
+        ..Default::default()
     };
     let wv = WebView::new(config);
     assert_eq!(wv.config().width, 1024);
