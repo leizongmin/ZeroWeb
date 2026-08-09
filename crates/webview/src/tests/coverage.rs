@@ -318,6 +318,39 @@ fn test_external_script_fetch_r3090() {
     );
 }
 
+// ── 外链 Worker fetch（R3091）──
+// `new Worker('./worker.js')`（外链 URL）经 __zw_fetch_script（backed by ScriptSourceFetcher）取 worker 源
+// → 同沙箱 IIFE 影子执行（R3089 机制）→ 消息往返。R3089 仅支持 data: URL；本切片闭合外链 worker 加载。
+#[test]
+fn test_external_worker_fetch_r3091() {
+    use std::sync::Arc;
+    let mut wv = crate::WebViewBuilder::new()
+        .script_source_fetcher(Arc::new(|_page, src| {
+            if src == "./worker.js" {
+                Ok("onmessage = function (e) { postMessage(e.data * 2); };".to_string())
+            } else {
+                Err("not found".to_string())
+            }
+        }))
+        .build();
+    wv.load_html(
+        "<html><body><script>\
+         var w = new Worker('./worker.js');\
+         globalThis.__reply = 'none';\
+         w.onmessage = function (ev) { globalThis.__reply = ev.data; };\
+         w.postMessage(21);\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "外链 worker fetch+执行无异常, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__reply)").unwrap(),
+        "42",
+        "外链 worker ./worker.js 经 fetcher fetch + IIFE 执行 → 消息往返（postMessage(21) → onmessage(42)）"
+    );
+}
+
 // ── WebViewConfig default 测试 ──
 
 #[test]

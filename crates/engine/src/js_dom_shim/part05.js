@@ -1617,8 +1617,17 @@
       set: function (fn) { if (typeof fn === 'function') main._handler = fn; },
       get: function () { return main._handler; },
     });
-    // 执行 worker 脚本（data: URL inline）。new Function 包影子声明，bare 赋值设局部，执行后同步 onmessage。
+    // 执行 worker 脚本（data: URL inline 或外链 fetch）。new Function 包影子声明，bare 赋值设局部，执行后同步 onmessage。
     var scriptSrc = _zwDecodeWorkerScript(url);
+    // R3091：外链 worker URL（非 data:）—— 若 host 注册了 __zw_fetch_script（backed by ScriptSourceFetcher），
+    // fetch worker 源后同 IIFE 影子执行；未注册 → scriptSrc 仍 null（API 表面可用，worker 不执行，R3080 兼容）。
+    if (scriptSrc === null && typeof __zw_fetch_script === 'function') {
+      try {
+        scriptSrc = __zw_fetch_script((typeof location !== 'undefined' && location.href) || '', url) || null;
+      } catch (_e) {
+        scriptSrc = null;
+      }
+    }
     if (scriptSrc) {
       try {
         var body = 'var postMessage=self.postMessage.bind(self);'

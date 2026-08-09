@@ -1138,6 +1138,19 @@ impl WebView {
             std::sync::Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url);
 
+        // R3091：__zw_fetch_script（进程内路径，backed by ScriptSourceFetcher）—— 供 shim Worker 构造器
+        //（外链 URL）/ 未来动态 import() fetch 外链脚本源。fetcher 未配 → 不注册（shim typeof-check no-op）。
+        if let Some(fetcher) = self.script_source_fetcher.clone() {
+            sandbox.register_callback(
+                "__zw_fetch_script",
+                Box::new(move |args| {
+                    let page = args.first().map(String::as_str).unwrap_or("");
+                    let src = args.get(1).map(String::as_str).unwrap_or("");
+                    fetcher(page, src).unwrap_or_default()
+                }),
+            );
+        }
+
         // DOM shim 只注入一次（重复执行会重置 _nodeMap 丢失监听器）
         if !self.js_shim_initialized {
             if let Err(e) = sandbox.execute(generate_js_dom_shim()) {

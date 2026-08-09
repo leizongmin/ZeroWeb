@@ -119,6 +119,24 @@
 
 ## 最近完成的改进
 
+### P1a 外链 Worker fetch（__zw_fetch_script backed by ScriptSourceFetcher，闭合 R3089 外链 worker defer 项，本轮 R3091）
+
+承接 R3089（inline/data: URL worker）+ R3090（top-level 外链脚本 fetcher）。R3089 Worker 仅支持 data: URL，外链 './worker.js' 不执行（headless 无 fetch）。本切片：① webview run_page_scripts_impl 当 ScriptSourceFetcher 配置时注册 `__zw_fetch_script(page, src)` host 回调（backed by fetcher）；② shim Worker 构造器对非 data: URL 回落 `__zw_fetch_script` 取 worker 源，同 R3089 IIFE 影子执行 + 消息往返。fetcher 未配 → 回调不注册（shim typeof-check no-op，R3080 兼容）。闭合外链 worker 加载（R3090 top-level 脚本 + R3091 worker）。动态 import() 外链（__zw_compile_module 接线）defer。
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| **`__zw_fetch_script` host 回调注册** | `crates/webview/src/webview.rs`（run_page_scripts_impl，register_dom_callbacks 后） | fetcher 配置时注册 `__zw_fetch_script(page, src)` → `fetcher(page, src).unwrap_or_default()`。供 shim Worker / 未来动态 import() 复用。 |
+| **shim Worker 外链 fetch 回落** | `crates/engine/src/js_dom_shim/part05.js`（Worker 构造器） | `_zwDecodeWorkerScript(url)` 返 null（非 data:）且 `__zw_fetch_script` 注册 → fetch worker 源（`__zw_fetch_script(location.href\|\|'', url)`），同 R3089 IIFE 影子执行。未注册 → null（API 表面可用，不执行）。 |
+| **R3091 测试** | `crates/webview/src/tests/coverage.rs`（+`test_external_worker_fetch_r3091`） | fetcher 提供 './worker.js'（onmessage=e=>postMessage(e.data*2)）；`new Worker('./worker.js')` + postMessage(21) → main onmessage(42)。 |
+
+**为何净正向**：① 闭合 R3089 外链 worker defer（真外链 worker 加载 + 消息往返）；② 复用 R3090 ScriptSourceFetcher + R3089 IIFE 机制（零新基础设施）；③ fetcher 未配零回归（default 热路径不注册回调）；④ 全量 make test 全绿。
+
+**已知限制（记录，defer）**：① **动态 import() 外链 fetch defer**（shim 内 `import './mod.js'` 需 `__zw_compile_module` 进程内注册 + compile_dependency_iife 接线，本切片仅闭合 Worker 外链；module 编译深项 defer）；② **worker importScripts defer**（no-op，无 fetch）；③ **跨进程独立 sandbox worker** defer（同 R3089）。
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-webview -p zero-engine --all-targets -D warnings` 零警告 + `make test` 全绿（**0 failed across all binaries；webview +1 测试，零回归**）+ pre-commit guard PASS。变更 webview + engine shim + 测试（无渲染/布局/CSS 变更），product-smoke 不受影响。
+
+**下一步**：外链 worker 加载闭合（fetcher + __zw_fetch_script）。动态 import() 外链 module 编译 defer。P1a 产品能力深项剩余：① **动态 import() 外链 module**（进程内 __zw_compile_module + compile_dependency_iife 接线，中复杂度）；② P1b V8 原生绑定 S0 PoC（已批准）；③ 浏览器 tab 导航 storage 持久化（browser 域）；④ customElements upgrade（需 P1b S5）。每切片 make test 零回归 + clippy/fmt 守门。
+
 ### P1a 外链脚本源获取（script_source_fetcher，进程内/headless 路径 fetch 外链 `<script src>` / `<script type=module src>`，本轮 R3090）
 
 承接 R3083（inline module）+ R3089（inline worker）—— 均支持 data: URL，外链 './mod.js' / './app.js' 仍 defer（headless 无 fetch）。WebView 架构双模：① `external_script` 多进程执行委托（browser/renderer，无进程内 sandbox）；② 进程内 sandbox（headless/test/reftest，external_script=None）。run_page_scripts_impl 旧对 External/ExternalModule `continue`（跳过）。本切片为进程内路径加 `script_source_fetcher` 可选回调（`(page_url, script_src) → Result<source, err>`），fetch 外链源后于进程内 sandbox 执行：External 走经典路径，ExternalModule 走 InlineModule 编译路径（compile_module_script，外链模块的进一步 import 仍为空存根 defer）。external_script 多进程模式不走此路径（互斥独立）。None 默认 → 外链脚本跳过（离线语义，零回归）。
