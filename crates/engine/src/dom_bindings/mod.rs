@@ -114,6 +114,17 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "textContent") {
         tmpl.set_accessor_with_setter(k.into(), native_text_content_getter, native_text_content_setter);
     }
+    // `childNodes` getter（spec `dom-node-childnodes`）：**全部子节点**（含文本/注释）→ V8 Array of
+    // native 对象。区别于 `children`（仅元素）——解锁 R3103 textContent 写的文本节点可见性。
+    // 文本/注释节点包同一模板：nodeType(3/8)/nodeName(#text/#comment)/textContent(=data) 经
+    // 既有 node-type-aware getter 正确返回。
+    if let Some(k) = v8::String::new(scope, "childNodes") {
+        tmpl.set_accessor(k.into(), native_child_nodes_getter);
+    }
+    // `nodeValue` getter（spec `dom-node-nodevalue`）：Text/Comment/PI=data；Element/Document/…=null。
+    if let Some(k) = v8::String::new(scope, "nodeValue") {
+        tmpl.set_accessor(k.into(), native_node_value_getter);
+    }
     // spec 方法（FunctionTemplate，args.this 读 NodeId）：getAttribute / hasAttribute /
     // setAttribute / removeAttribute。ObjectTemplate::set 须传 **Template**（非 Function 实例）——
     // FunctionTemplate 是 Template，实例化时各对象共享，args.this() 取回实例。
@@ -680,6 +691,62 @@ fn native_text_content_setter(
             let _ = d.append_child(id, text_id);
         }
     });
+}
+
+/// `childNodes` getter（spec `dom-node-childnodes`）：**全部子节点**（含文本/注释）→ V8 Array of
+/// native 对象（文档序）。区别于 [`native_children_getter`]（仅元素）——文本/注释节点经同一模板
+/// 包后 nodeType(3/8)/nodeName/textContent 正确（node-type-aware getter）。
+fn native_child_nodes_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let child_ids: Vec<NodeId> = with_dom(|d| d.child_nodes(id)).unwrap_or_default();
+    let arr = v8::Array::new(scope, child_ids.len() as i32);
+    for (i, cid) in child_ids.into_iter().enumerate() {
+        if let Some(obj) = get_or_create_native_element(scope, cid) {
+            let _ = arr.set_index(scope, i as u32, obj.into());
+        }
+    }
+    rv.set(arr.into());
+}
+
+/// `nodeValue` getter（spec `dom-node-nodevalue`）：Text/Comment/PI=data；其余（Element/Document/
+/// DocumentFragment/ShadowRoot/DocumentType）=null。区别于 `textContent`（Element 返子树文本）。
+fn native_node_value_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let Some(val) = with_dom(|d| node_value(d, id)).flatten() else {
+        rv.set(v8::null(scope).into());
+        return;
+    };
+    if let Some(s) = v8::String::new(scope, &val) {
+        rv.set(s.into());
+    }
+}
+
+/// Rust 侧 nodeValue 计算（spec `dom-node-nodevalue`）。Text/Comment/PI=data；其余 None（→null）。
+fn node_value(doc: &Document, id: NodeId) -> Option<String> {
+    let n = doc.get(id)?;
+    Some(match &n.kind {
+        NodeKind::Text(t) => t.content.clone(),
+        NodeKind::Comment(c) => c.content.clone(),
+        NodeKind::ProcessingInstruction(p) => p.data.clone(),
+        // Element/Document/DocumentFragment/ShadowRoot/DocumentType → null（spec）。
+        _ => return None,
+    })
 }
 
 // ── 树 mutation 方法（Element 上：appendChild / insertBefore / removeChild）──

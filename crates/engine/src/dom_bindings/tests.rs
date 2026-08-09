@@ -524,6 +524,60 @@ fn native_text_content_setter() {
     );
 }
 
+// ── node-types native（childNodes 含文本/注释 + nodeValue，解锁 Text/Comment 节点可见）──
+
+/// `childNodes`：全部子节点（含文本/注释）；文本节点经同模板包 → nodeType 3 / nodeName #text /
+/// nodeValue=data 正确。区别于 `children`（仅元素）。
+#[test]
+fn native_child_nodes() {
+    let html = r#"<div id="a">hello<span id="s">x</span>world</div>"#;
+    // childNodes = [text "hello", span, text "world"] = 3。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').childNodes.length)"),
+        "3"
+    );
+    // 首子文本节点：nodeType 3 / nodeName #text / nodeValue "hello"。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').childNodes[0].nodeType)"),
+        "3"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').childNodes[0].nodeName)"),
+        "#text"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').childNodes[0].nodeValue)"),
+        "hello"
+    );
+    // 次子元素：nodeType 1 / nodeValue null。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').childNodes[1].nodeType)"),
+        "1"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').childNodes[1].nodeValue)"),
+        "null"
+    );
+    // 末子文本 "world"。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').childNodes[2].nodeValue)"),
+        "world"
+    );
+}
+
+/// `childNodes` 见 textContent 写的文本节点（闭合 R3103 限制②：文本节点经 children 不可见、经 childNodes 可见）。
+#[test]
+fn native_child_nodes_after_text_content_setter() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const el=__zw_native_element_for_id('a'); el.textContent='hi'; return el.childNodes.length+'/'+el.childNodes[0].nodeType+'/'+el.childNodes[0].nodeValue;})()"
+        ),
+        "1/3/hi"
+    );
+}
+
 // ── gc.rs 单元测试 ────────────────────────────────────────────────
 
 /// NodeId↔u64(ffi) 编解码 round-trip（internal slot 值传递基础）。
