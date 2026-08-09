@@ -114,7 +114,12 @@ impl GlyphCache {
         // 生成位图并插入（新条目在 LRU 尾部，无需提升）
         let bitmap = f()?;
         self.lru_queue.push_back(key.clone());
-        self.cache.insert(key, CacheEntry { bitmap: Arc::new(bitmap) });
+        self.cache.insert(
+            key,
+            CacheEntry {
+                bitmap: Arc::new(bitmap),
+            },
+        );
 
         Ok(self.cache.get(self.lru_queue.back().unwrap()).unwrap().bitmap.as_ref())
     }
@@ -139,7 +144,12 @@ impl GlyphCache {
         }
 
         self.lru_queue.push_back(key.clone());
-        self.cache.insert(key, CacheEntry { bitmap: Arc::new(bitmap) });
+        self.cache.insert(
+            key,
+            CacheEntry {
+                bitmap: Arc::new(bitmap),
+            },
+        );
     }
 
     /// 缓存条目数。
