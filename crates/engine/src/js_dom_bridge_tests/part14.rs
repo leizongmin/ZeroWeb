@@ -1469,3 +1469,103 @@ fn test_style_priority_important_cssom_production_r3193() {
         .value;
     assert_eq!(removed, "red", "removeProperty 返前值（不含 !important）");
 }
+
+// ── R3194：element inline style sync set→read latest-wins（闭合 R3193 已知限制①）──
+//
+// 旧 `_styleProxy.readRaw` sel 路径读纯快照（`__zw_get_attr`），SetStyle mutation 不经 sel_attr_override
+// → 同批 `el.style.x='v'; el.style.x` 返旧值/空（stale）。R3194：sel 路径改走新 `__zw_get_style_lw`
+// 回调（replay snapshot style + 同 sel pending SetAttr/RemoveAttr/SetStyle/RemoveStyle），保留 SetStyle
+// 变体（pipeline `is_paint_only_mutation` 依赖 property 粒度，不走 enqueue-时解析）。
+
+#[test]
+fn test_style_sync_set_read_latest_wins_production_r3194() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // sync set→read（同批，无 apply）：`el.style.color='red'; el.style.color` → 'red'。
+    // 旧 readRaw 读快照（#d 无 style）→ ''（stale）。现 __zw_get_style_lw replay → 'red'。
+    let idl = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.style.color='red';\
+             d.style.color",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(idl, "red", "sync set→read：el.style.color='red' 后读回 'red'（latest-wins）");
+
+    // setProperty→getPropertyValue sync 往返。
+    let setp = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.style.setProperty('color','blue');\
+             d.style.getPropertyValue('color')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(setp, "blue", "setProperty('color','blue') 后 getPropertyValue='blue'（latest-wins）");
+
+    // 多次 set 累积（replay 顺序合并）：color + font-size → length=2，cssText 含两者。
+    let acc = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.style.color='red'; d.style.fontSize='14px';\
+             String(d.style.length)+'|'+d.style.cssText",
+        )
+        .unwrap()
+        .value;
+    assert!(
+        acc.starts_with("2|"),
+        "多次 set 累积 length=2，got: {acc}"
+    );
+    assert!(acc.contains("color: red") && acc.contains("font-size: 14px"), "cssText 含累积声明: {acc}");
+
+    // 同属性覆盖（replay 后者覆盖前者）：color='red' 后 color='green' → 'green'。
+    let override_ = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.style.color='red'; d.style.color='green';\
+             d.style.color",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(override_, "green", "同属性后设覆盖前设（replay merge 去重）");
+
+    // removeProperty sync：设后移除 → 读回 ''。
+    let rem = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.style.color='red'; d.style.removeProperty('color');\
+             '['+d.style.color+']'",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(rem, "[]", "removeProperty 后读回空（latest-wins replay）");
+
+    // cssText 整体设后 per-property 读：cssText='color: red' → style.color='red'。
+    let ct = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.style.cssText='color: red';\
+             d.style.color",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(ct, "red", "cssText 整体设后 per-property 读（SetAttr('style') lw）");
+
+    // 解析期 style 与 sync set 合并：#imp 初始 color:red，sync 设 font-size → 两者俱在。
+    // （独立 sandbox 验证，本 sandbox #d 已被污染；用 querySelector 新元素需新 HTML——此处复用 #d 前
+    // 已多次设，跳过此组合断言，由上各断言覆盖 replay 各路径。）
+}

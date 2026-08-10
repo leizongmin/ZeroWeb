@@ -1380,7 +1380,11 @@
 
   function _styleProxy(sel, handle) {
     var readRaw = function() {
-      return (handle ? __zw_get_attr_handle(handle, 'style') : __zw_get_attr(sel, 'style')) || '';
+      // R3194：sel 走 latest-wins（`__zw_get_style_lw` replay pending style mutation），闭合 sync set→read
+      // stale（R3193 已知限制①）。handle 路径无 lw 变体，仍纯快照（handle style sync set→read stale 记为限制）。
+      if (handle) return __zw_get_attr_handle(handle, 'style') || '';
+      if (typeof __zw_get_style_lw === 'function') return __zw_get_style_lw(sel) || '';
+      return __zw_get_attr(sel, 'style') || '';
     };
     // R3193：读取属性声明的**原始值串**（含 !important），按首个 ':' 切分（旧 `split(':')` 致 url() 等含
     // 冒号值截断）。命中返原始值串，未命中返 null。供 readProp（值）/ getPropertyPriority（优先级）复用。

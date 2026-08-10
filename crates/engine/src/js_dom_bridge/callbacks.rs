@@ -848,6 +848,61 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R3194：`__zw_get_style_lw(sel)`——element inline style **latest-wins** 读（闭合 R3193 已知限制①：
+    // sync set→read stale）。snapshot style 为基底，顺序 replay 同 sel 的 pending style-affecting mutation：
+    // SetAttr('style',v) 整体覆盖 / RemoveAttr('style') 清空 / SetStyle per-prop merge / RemoveStyle per-prop
+    // 移除。**保留 SetStyle/RemoveStyle 变体**（pipeline `is_paint_only_mutation` 依赖 property 粒度跳过
+    // relayout——若 enqueue-时解析为 SetAttr('style',merged) 会丢 property 信息致 paint-only 优化失效）。
+    let m = Arc::clone(mutations);
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_get_style_lw",
+        Box::new(move |args| {
+            if args.is_empty() {
+                return String::new();
+            }
+            let selector = &args[0];
+            // 完整顺序 replay：基底为 snapshot style，顺序应用同 sel 的全部 style-affecting mutation
+            //（SetAttr/RemoveAttr on 'style' 整体覆盖/清空，SetStyle/RemoveStyle per-prop merge/remove）。
+            // 后 apply 自然覆盖先 apply（含 cssText SetAttr 覆盖此前 per-prop SetStyle）——latest-wins。
+            // handle 变体（SetStyleOnHandle 等）key 不同，跳过。
+            let mut style = {
+                let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+                with_query_doc(&snap, |doc| query_attr_from_html_doc(doc, selector, "style"))
+            };
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            for mt in list.iter() {
+                match mt {
+                    DomMutation::SetAttr {
+                        selector: s,
+                        name,
+                        value,
+                    } if s == selector && name.eq_ignore_ascii_case("style") => {
+                        style = value.clone();
+                    }
+                    DomMutation::RemoveAttr { selector: s, name }
+                        if s == selector && name.eq_ignore_ascii_case("style") =>
+                    {
+                        style.clear();
+                    }
+                    DomMutation::SetStyle {
+                        selector: s,
+                        property,
+                        value,
+                    } if s == selector => {
+                        style = merge_style_property(&style, property, value);
+                    }
+                    DomMutation::RemoveStyle { selector: s, property } if s == selector => {
+                        style = remove_style_property(&style, property);
+                    }
+                    _ => {}
+                }
+            }
+            drop(list);
+            style
+        }),
+    );
+
     let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_set_text",
