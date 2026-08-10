@@ -69,6 +69,8 @@ pub struct Painter {
     /// 小写 key 索引（set_font_resolver 时构建一次）：resolve_font_id 的大小写
     /// 不敏感回退免整表线性扫描（旧实现每 miss 一次 O(resolver 大小)）。
     font_resolver_lower: HashMap<String, u32>,
+    /// generic family（含粗体/斜体变体）解析到的字体 ID 集。
+    generic_font_ids: HashSet<u32>,
     /// 视口宽度（像素）。用于 CSS §14.2 画布背景传播——根元素（html）的背景
     /// 覆盖整个画布；若根背景透明且 body 有背景，则 body 背景传播到画布。
     /// 由调用方（pipeline）在 paint 前设置；测试默认 0.0（不绘制画布背景）。
@@ -345,6 +347,7 @@ impl Painter {
             image_sizes: HashMap::new(),
             font_resolver: HashMap::new(),
             font_resolver_lower: HashMap::new(),
+            generic_font_ids: HashSet::new(),
             viewport_w: 0.0,
             viewport_h: 0.0,
             canvas_propagated_node: None,
@@ -368,6 +371,17 @@ impl Painter {
     ///
     /// 由调用方从 `FontLoader::build_font_resolver()` 构建并传入。
     pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
+        const GENERIC_FAMILIES: [&str; 6] = ["sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui"];
+        self.generic_font_ids = resolver
+            .iter()
+            .filter(|(name, _)| {
+                let family = name.split(':').next().unwrap_or(name);
+                GENERIC_FAMILIES
+                    .iter()
+                    .any(|generic| family.eq_ignore_ascii_case(generic))
+            })
+            .map(|(_, &id)| id)
+            .collect();
         self.font_resolver_lower = resolver.iter().map(|(k, &v)| (k.to_ascii_lowercase(), v)).collect();
         self.font_resolver = resolver;
     }
@@ -1879,6 +1893,20 @@ mod tests {
     use super::*;
     use zero_css_parser::values::DisplayValue;
     use zero_style_system::ContainComputedValue;
+
+    #[test]
+    fn font_resolver_tracks_generic_face_variants() {
+        let mut painter = Painter::new();
+        painter.set_font_resolver(HashMap::from([
+            ("sans-serif".to_string(), 1),
+            ("sans-serif:700".to_string(), 2),
+            ("Custom".to_string(), 3),
+        ]));
+
+        assert!(painter.generic_font_ids.contains(&1));
+        assert!(painter.generic_font_ids.contains(&2));
+        assert!(!painter.generic_font_ids.contains(&3));
+    }
 
     /// R2241：paint containment 裁剪判定——has_paint()（Paint/Strict/Content/Custom 含
     /// FLAG_PAINT）且 display 生成容器盒（非 inline 非-原子 / contents / none）。

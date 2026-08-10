@@ -1308,11 +1308,14 @@ impl super::Painter {
                                 })
                                 && rotation.abs() < f32::EPSILON
                                 && transformed.chars().all(|ch| !is_cc_control_char(ch));
+                            // https://drafts.csswg.org/css-fonts/#generic-font-families
+                            let generic_font = self.generic_font_ids.contains(&frag_font_id.0);
                             for glyph in fragment_glyphs(
                                 frag_font_id.0,
                                 &transformed,
                                 $frag_fs,
                                 shaped_text_eligible,
+                                !generic_font,
                             ) {
                                 let ch = glyph.code_point;
                                 let (glyph_x, glyph_y) = if char_advance_is_y {
