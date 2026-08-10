@@ -330,7 +330,9 @@ impl BrowserApp {
         };
 
         let layout = self.page_scroll_layout_for(tab_id, self.physical_size.0, self.physical_size.1);
-        let scroll = if crate::compositor_client::async_scroll_enabled() {
+        let scroll = if crate::compositor_client::scroll_transform_enabled() {
+            crate::page_scroll::TabScrollState::default()
+        } else if crate::compositor_client::async_scroll_enabled() {
             self.tabs
                 .snapshot(tab_id)
                 .and_then(|snap| snap.compositor_scroll)

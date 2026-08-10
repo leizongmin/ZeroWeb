@@ -707,6 +707,11 @@ pub fn async_scroll_enabled() -> bool {
     std::env::var("ZW_COMPOSITOR_ASYNC_SCROLL").is_ok_and(|v| v == "1")
 }
 
+/// 是否启用 compositor 侧 scroll 烘焙（回读 scroll 为 0，Browser 不再偏移位图）。
+pub fn scroll_transform_enabled() -> bool {
+    zero_protocol::compositor_scroll_transform_enabled()
+}
+
 /// RFC 4.4：向 compositor 注册 Chrome UI surface（元数据登记；present 为后续切片）。
 pub fn register_ui_surface(info: zero_protocol::CompositorUiSurfaceInfo) {
     if !enabled() {

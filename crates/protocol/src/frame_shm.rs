@@ -22,6 +22,11 @@ pub fn compositor_shm_enabled() -> bool {
     }
 }
 
+/// 是否启用 compositor 侧 scroll 烘焙（RFC 4.2-S2；`ZW_COMPOSITOR_SCROLL_TRANSFORM=1`）。
+pub fn compositor_scroll_transform_enabled() -> bool {
+    std::env::var("ZW_COMPOSITOR_SCROLL_TRANSFORM").is_ok_and(|v| v == "1")
+}
+
 /// 期望 RGBA 字节数；`width`/`height` 为 0 时允许 0。
 pub fn expected_rgba_len(width: u32, height: u32) -> usize {
     (width as usize).saturating_mul(height as usize).saturating_mul(4)

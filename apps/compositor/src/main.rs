@@ -24,6 +24,7 @@ mod convert;
 mod gpu_raster;
 mod rasterize;
 mod sandbox;
+mod scroll_transform;
 
 #[cfg(test)]
 mod rasterize_tests;
@@ -340,20 +341,37 @@ fn main() {
                     match surfaces.get(&surface_id) {
                         Some(surface) => {
                             let front = surface.backing.front();
+                            let mut scroll_x = surface.scroll_x;
+                            let mut scroll_y = surface.scroll_y;
+                            let pixel_data = if zero_protocol::compositor_scroll_transform_enabled()
+                                && (scroll_x != 0.0 || scroll_y != 0.0)
+                            {
+                                scroll_x = 0.0;
+                                scroll_y = 0.0;
+                                scroll_transform::bake_scroll_into_rgba(
+                                    &front.data,
+                                    front.width,
+                                    front.height,
+                                    surface.scroll_x,
+                                    surface.scroll_y,
+                                )
+                            } else {
+                                front.data.clone()
+                            };
                             let (rgba, shm_name) = if zero_protocol::compositor_shm_enabled() {
                                 let name =
-                                    zero_protocol::publish_compositor_frame(surface_id, surface.frame_id, &front.data)
+                                    zero_protocol::publish_compositor_frame(surface_id, surface.frame_id, &pixel_data)
                                         .unwrap_or_else(|e| {
                                             tracing::warn!("compositor: shm 发布失败，回退内联 rgba: {e}");
                                             String::new()
                                         });
                                 if name.is_empty() {
-                                    (front.data.clone(), None)
+                                    (pixel_data, None)
                                 } else {
                                     (Vec::new(), Some(name))
                                 }
                             } else {
-                                (front.data.clone(), None)
+                                (pixel_data, None)
                             };
                             (
                                 surface.navigation_epoch,
@@ -362,8 +380,8 @@ fn main() {
                                 front.height,
                                 rgba,
                                 shm_name,
-                                surface.scroll_x,
-                                surface.scroll_y,
+                                scroll_x,
+                                scroll_y,
                             )
                         }
                         None => (0, 0, 0, 0, Vec::new(), None, 0.0, 0.0),

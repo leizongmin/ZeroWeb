@@ -1,6 +1,6 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v1.5 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1 ✅ / C2 ✅ / C3 ✅ S1+S2 / 4.1–4.5 切片 ✅）**
+版本：v1.6 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1 ✅ / C2 ✅ / C3 ✅ S1+S2 / 4.1–4.5 + 4.2-S2 ✅）**
 
 > 实施状态（2026-08-11 更新）：
 > - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
@@ -11,8 +11,11 @@
 >   - 跨进程 GPU 纹理传输、Viz 式 surface 所有权仍为后续切片。
 > - **4.1（Renderer compositor 发布线程）✅ 切片**：`ZW_RENDERER_COMPOSITOR_THREAD=1` 时
 >   `CompositorPublishThread` 异步发送 `CompositorFrame`，队列满时回退同步 IPC。
-> - **4.2（异步滚动）✅ 切片**：`CompositorSetScroll` + `CompositorFrameData.scroll_x/y`；
->   `ZW_COMPOSITOR_ASYNC_SCROLL=1` 时 Browser 推送滚动并消费 compositor 回读偏移做位图变换。
+> - **4.2（异步滚动）✅ 切片 + S2**：
+>   - 元数据：`CompositorSetScroll` + `CompositorFrameData.scroll_x/y`；
+>     `ZW_COMPOSITOR_ASYNC_SCROLL=1` 时 Browser 推送滚动并消费 compositor 回读偏移。
+>   - S2：`ZW_COMPOSITOR_SCROLL_TRANSFORM=1` 时 compositor 在 `GetCompositorFrame`
+>     将 scroll 烘焙进 RGBA、回读 scroll 归零；Browser 不再对位图做 scroll 偏移。
 > - **4.3（OS 共享资源）✅ S1 / ⚠️ S2 协议预留**：
 >   - S1：Linux `ZW_COMPOSITOR_SHM=1` 时经 `/dev/shm/zeroweb-cmp-*` 传递 front 像素。
 >   - S2：`GpuSharedImageDescriptor` + `CompositorFrameData.gpu_image` 协议字段（当前始终 `None`）。
@@ -118,12 +121,13 @@ compositor 启动失败或 IPC 断开时：
 | `ZW_COMPOSITOR_SHM=1` | Linux POSIX shm 帧像素 |
 | `ZW_RENDERER_COMPOSITOR_THREAD=1` | renderer 异步 compositor IPC 发布 |
 | `ZW_COMPOSITOR_ASYNC_SCROLL=1` | compositor 滚动元数据 + Browser 消费 |
+| `ZW_COMPOSITOR_SCROLL_TRANSFORM=1` | compositor 侧 scroll 烘焙（回读 scroll=0） |
 | `ZW_COMPOSITOR_SANDBOX=1` | compositor 启动 env 剥离 |
 
 ## 五、下一阶段（完整对齐）
 
+- compositor 侧滚动变换（非仅元数据回读）→ **4.2-S2 ✅**（env-gated 像素烘焙）
 - GPU shared image / mailbox / fence 零拷贝纹理传输与 present
-- compositor 侧滚动变换（非仅元数据回读）
 - Viz 式最终 surface 所有权与 Chrome UI 像素提交
 - seccomp 最小权限 OS sandbox
 - 设备丢失、进程崩溃和恢复路径的全平台验证

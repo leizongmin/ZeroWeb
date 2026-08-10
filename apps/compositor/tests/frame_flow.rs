@@ -337,3 +337,65 @@ fn compositor_scroll_metadata_round_trips() {
     assert!((frame.scroll_x - 12.5).abs() < f32::EPSILON);
     assert!((frame.scroll_y - 48.0).abs() < f32::EPSILON);
 }
+
+/// RFC 4.2-S2：scroll 烘焙后回读 scroll 归零且像素发生位移。
+#[test]
+fn compositor_scroll_transform_bakes_pixels() {
+    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_SCROLL_TRANSFORM", "1")]);
+    let frame = PaintSnapshotParams {
+        viewport_width: 2,
+        viewport_height: 4,
+        document_height: 4.0,
+        fills: vec![
+            IpcFill {
+                rect: IpcRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 2.0,
+                    height: 1.0,
+                },
+                color: IpcColor {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 255,
+                },
+            },
+            IpcFill {
+                rect: IpcRect {
+                    x: 0.0,
+                    y: 1.0,
+                    width: 2.0,
+                    height: 3.0,
+                },
+                color: IpcColor {
+                    r: 0,
+                    g: 0,
+                    b: 255,
+                    a: 255,
+                },
+            },
+        ],
+        ..Default::default()
+    };
+    assert_eq!(submit_frame(&mut transport, 1, 3, 1, 1, frame), (3, 1, 1));
+
+    transport
+        .send(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::CompositorSetScroll {
+                surface_id: 3,
+                scroll_x: 0.0,
+                scroll_y: 1.0,
+            },
+        })
+        .expect("set scroll");
+    let _: IpcMessage = transport.recv().expect("scroll ack");
+
+    let transformed = get_frame(&mut transport, 3, 3, 1, 1);
+    assert!((transformed.scroll_x).abs() < f32::EPSILON);
+    assert!((transformed.scroll_y).abs() < f32::EPSILON);
+    // scroll_y=1：第 0 行采样原第 1 行（蓝），末行采样越界为透明
+    assert_eq!(&transformed.rgba[..4], &[0, 0, 255, 255]);
+    assert_eq!(&transformed.rgba[28..32], &[0, 0, 0, 0]);
+}
