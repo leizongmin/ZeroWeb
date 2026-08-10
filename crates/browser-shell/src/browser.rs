@@ -1,6 +1,7 @@
 //! 浏览器 Shell — 协调标签页、书签、历史、下载、设置的顶层控制器。
 
 use std::collections::VecDeque;
+use std::path::Path;
 
 use crate::autocomplete::Autocomplete;
 use crate::bookmarks::Bookmarks;
@@ -155,8 +156,13 @@ impl BrowserShell {
     ///
     /// 如果设置文件不存在，使用默认设置。
     pub fn new_with_persisted_settings() -> Self {
+        Self::new_with_persisted_settings_at(&BrowserSettings::default_config_path())
+    }
+
+    /// 创建浏览器 Shell 并从指定路径加载设置。
+    pub(crate) fn new_with_persisted_settings_at(path: &Path) -> Self {
         let mut shell = Self::new();
-        shell.settings = BrowserSettings::load_default();
+        shell.settings = BrowserSettings::load(path);
         shell.bookmarks = Bookmarks::load_default();
         shell.zoom = shell.settings.default_zoom;
         shell

@@ -714,17 +714,22 @@ fn test_browser_shell_navigation_clears_forward() {
 
 #[test]
 fn test_browser_shell_new_with_persisted_settings() {
-    let shell = BrowserShell::new_with_persisted_settings();
+    let dir = std::env::temp_dir().join(format!("zeroweb-test-persisted-shell-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("settings.json");
+    let expected = BrowserSettings {
+        search_engine: SearchEngine::Bing,
+        default_zoom: 1.25,
+        ..BrowserSettings::default()
+    };
+    expected.save(&path).expect("save isolated settings");
+
+    let shell = BrowserShell::new_with_persisted_settings_at(&path);
     assert!(!shell.is_empty());
     assert_eq!(shell.tab_count(), 1);
-    // 持久化接线验证：shell 加载的设置应等于真实配置文件内容（文件缺失/解析失败时
-    // 二者同为默认值）。注意不能硬编码断言 Google——~/.config/zeroweb/settings.json
-    // 是真实用户状态，并行测试（如 zero-browser bin 的 settings_cycle_*）会改写它，
-    // 2026-08-08 make test 曾因残留 Bing 红灯（测试隔离缺陷修复）。
-    assert_eq!(
-        shell.settings().search_engine,
-        BrowserSettings::load(&BrowserSettings::default_config_path()).search_engine
-    );
+    assert_eq!(shell.settings().search_engine, SearchEngine::Bing);
+    assert_eq!(shell.settings().default_zoom, 1.25);
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]

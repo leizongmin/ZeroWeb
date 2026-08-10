@@ -456,16 +456,32 @@ pub fn resolve_inline_block_dimension(value: &LengthValue, style: &ComputedStyle
     }
 }
 
-/// 对文本进行 BiDi 重排序，返回视觉顺序的字符串。
-///
-/// 使用 unicode-bidi 库分析文本的嵌入层级，对 RTL 段落进行重排序。
-/// 如果文本不需要重排序（纯 LTR），返回原始文本。
-pub(crate) fn bidi_reorder(text: &str) -> String {
+/// BiDi 重排结果及每个视觉字符对应的逻辑 UTF-8 byte range。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BidiReorderedText {
+    /// 视觉顺序文本。
+    pub visual_text: String,
+    /// 与 `visual_text.chars()` 一一对应的逻辑源码 byte range。
+    pub visual_to_logical: Vec<std::ops::Range<usize>>,
+}
+
+fn identity_bidi_mapping(text: &str) -> BidiReorderedText {
+    BidiReorderedText {
+        visual_text: text.to_string(),
+        visual_to_logical: text
+            .char_indices()
+            .map(|(start, ch)| start..start + ch.len_utf8())
+            .collect(),
+    }
+}
+
+/// 对文本进行 BiDi 重排序，并保留视觉字符到逻辑源码的映射。
+pub(crate) fn bidi_reorder_with_mapping(text: &str) -> BidiReorderedText {
     use unicode_bidi::BidiInfo;
 
     // 快速检查：如果文本为空或全是 ASCII，不需要 BiDi 处理
     if text.is_empty() || text.is_ascii() {
-        return text.to_string();
+        return identity_bidi_mapping(text);
     }
 
     // 检查是否需要 BiDi 处理：含 RTL 脚本字符 **或** bidi 控制码（R2019）。
@@ -488,7 +504,7 @@ pub(crate) fn bidi_reorder(text: &str) -> String {
     });
 
     if !needs_bidi {
-        return text.to_string();
+        return identity_bidi_mapping(text);
     }
 
     // 运行 BiDi 算法（unicode_bidi 按段落算正确 paragraph level + 字符级 level + 控制码语义）
@@ -496,18 +512,43 @@ pub(crate) fn bidi_reorder(text: &str) -> String {
     // 用实际段落信息（含正确 paragraph embedding level，由首强字符定）——R2019 修：
     // 原硬编码 `Level::ltr()` 对 RTL-首段（首强字符为 RTL）致基向错。
     let Some(para) = bidi_info.paragraphs.first() else {
-        return text.to_string();
+        return identity_bidi_mapping(text);
     };
 
-    // 对整个段落进行重排序（单段文本：para.range = 全文）
-    let reordered = bidi_info.reorder_line(para, para.range.clone());
-    reordered.into_owned()
+    let (levels, runs) = bidi_info.visual_runs(para, para.range.clone());
+    let mut visual_text = String::with_capacity(para.range.len());
+    let mut visual_to_logical = Vec::with_capacity(text[para.range.clone()].chars().count());
+    for run in runs {
+        let mut chars = text[run.clone()]
+            .char_indices()
+            .map(|(offset, ch)| {
+                let start = run.start + offset;
+                (ch, start..start + ch.len_utf8())
+            })
+            .collect::<Vec<_>>();
+        if levels[run.start].is_rtl() {
+            chars.reverse();
+        }
+        for (ch, logical_range) in chars {
+            visual_text.push(ch);
+            visual_to_logical.push(logical_range);
+        }
+    }
+    BidiReorderedText {
+        visual_text,
+        visual_to_logical,
+    }
+}
+
+/// 对文本进行 BiDi 重排序，返回视觉顺序的字符串。
+pub(crate) fn bidi_reorder(text: &str) -> String {
+    bidi_reorder_with_mapping(text).visual_text
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────
 #[cfg(test)]
 mod tests {
-    use super::bidi_reorder;
+    use super::{bidi_reorder, bidi_reorder_with_mapping};
 
     /// R2019：纯 ASCII（无 RTL 脚本字符、无 bidi 控制码）须原样返回（早返 fast-path）。
     #[test]
@@ -525,5 +566,26 @@ mod tests {
         let (pc, pd, pe) = (out.find('c').unwrap(), out.find('d').unwrap(), out.find('e').unwrap());
         assert!(pe < pd, "RLO must reverse cde (e before d): got {out:?}");
         assert!(pd < pc, "RLO must reverse cde (d before c): got {out:?}");
+    }
+
+    #[test]
+    fn bidi_reorder_preserves_visual_to_logical_utf8_ranges() {
+        let reordered = bidi_reorder_with_mapping("אבג");
+        assert_eq!(reordered.visual_text, "גבא");
+        assert_eq!(reordered.visual_to_logical, vec![4..6, 2..4, 0..2]);
+        let logical = reordered
+            .visual_to_logical
+            .iter()
+            .rev()
+            .map(|range| &"אבג"[range.clone()])
+            .collect::<String>();
+        assert_eq!(logical, "אבג");
+    }
+
+    #[test]
+    fn bidi_reorder_identity_mapping_tracks_multibyte_characters() {
+        let reordered = bidi_reorder_with_mapping("Aé");
+        assert_eq!(reordered.visual_text, "Aé");
+        assert_eq!(reordered.visual_to_logical, vec![0..1, 1..3]);
     }
 }
