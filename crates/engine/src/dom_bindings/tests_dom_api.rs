@@ -2180,3 +2180,47 @@ fn native_document_title_r3160() {
         "Old"
     );
 }
+
+/// R3161 `document.createEvent(type)`（spec `dom-document-createevent`，legacy 事件创建）：复用 event
+/// 子模块工厂（R3141，type→构造器映射 + `new Ctor("")`）。补全 document 创建 API 三件套。
+#[test]
+fn native_document_create_event_r3161() {
+    let html = r#"<html><head></head><body></body></html>"#;
+    // createEvent('Event') → 未初始化 event（type=""，待 initEvent 覆写）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().createEvent('Event').type)"),
+        ""
+    );
+    // initEvent 覆写 type/bubbles（经原型链）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_get_document().createEvent('Event'); e.initEvent('click', true, false); return e.type+'/'+e.bubbles; })()"
+        ),
+        "click/true"
+    );
+    // createEvent('CustomEvent') → CustomEvent 对象（type="" 未初始化）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().createEvent('CustomEvent').type)"),
+        ""
+    );
+    // createEvent 经 Event 构造器产 instanceof Event 对象。
+    assert_eq!(
+        run_script(
+            html,
+            "((__zw_native_get_document().createEvent('Event') instanceof Event))"
+        ),
+        "true"
+    );
+    // createEvent 产对象可 dispatchEvent（端到端：createEvent + initEvent + 监听器触发）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const d=__zw_native_get_document(); const b=d.body; var got='none';\
+             b.addEventListener('x', function(e){ got=e.type; });\
+             const ev=d.createEvent('Event'); ev.initEvent('x', false, false);\
+             b.dispatchEvent(ev); return got; })()"
+        ),
+        "x"
+    );
+}

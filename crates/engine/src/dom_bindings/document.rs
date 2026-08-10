@@ -181,6 +181,10 @@ pub(super) fn build_and_cache_template(scope: &mut v8::PinScope) {
         "createDocumentFragment",
         factories::native_create_document_fragment_invoke,
     );
+    // R3161 `createEvent(type)`（spec `dom-document-createevent`，legacy 事件创建）：复用 event 子模块
+    // [`event::native_create_event_invoke`]（R3141，type→Event/CustomEvent/MouseEvent/KeyboardEvent 构造器
+    // 查找 + `new Ctor("")` 返未初始化 event，待 initEvent 覆写）。补全 document 创建 API 三件套。
+    set_method(scope, &tmpl, "createEvent", super::event::native_create_event_invoke);
 
     set_document_template(scope, tmpl);
 }
