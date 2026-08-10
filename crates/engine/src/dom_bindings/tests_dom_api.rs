@@ -2613,6 +2613,77 @@ fn native_content_editable_empty_keyword_true_state_r3187() {
     );
 }
 
+/// R3188 `draggable` enumerated getter：case-insensitive keyword + auto-state default-draggable。
+///
+/// spec HTML `draggable`（https://html.spec.whatwg.org/multipage/dnd.html#the-draggable-attribute）：
+/// 枚举属性，关键字 true/false（ASCII case-insensitive），缺省/非法 → auto 状态。IDL getter（boolean）：
+/// true 状态 → true；auto 状态且元素 default-draggable（img/audio/video/a[href]）→ true；余 → false。
+/// 旧实现 case-sensitive（`draggable="TRUE"`→false）+ auto 状态统一 false（`<img>` 误判不可拖拽）。
+#[test]
+fn native_draggable_enumerated_auto_state_r3188() {
+    let html = r#"<html><head></head><body>
+      <div id="dtrue" draggable="true"></div>
+      <div id="dupper" draggable="TRUE"></div>
+      <div id="dfalse" draggable="false"></div>
+      <div id="dgarbage" draggable="foo"></div>
+      <div id="div"></div>
+      <img id="img"/>
+      <a id="ahref" href="x.html"></a>
+      <a id="anohref"></a>
+      <audio id="aud"></audio>
+    </body></html>"#;
+    // 显式 true（小写/大写 case-insensitive）→ true。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('dtrue').draggable)"),
+        "true"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('dupper').draggable)"),
+        "true"
+    );
+    // 显式 false → false。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('dfalse').draggable)"),
+        "false"
+    );
+    // auto 状态（invalid "foo" / 缺省）→ default-draggable：div → false。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('dgarbage').draggable)"),
+        "false"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('div').draggable)"),
+        "false"
+    );
+    // auto 状态 default-draggable：img / audio → true。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('img').draggable)"),
+        "true"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('aud').draggable)"),
+        "true"
+    );
+    // a 带 href → true；a 无 href → false。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('ahref').draggable)"),
+        "true"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('anohref').draggable)"),
+        "false"
+    );
+    // 显式 true 覆盖 default：img draggable=false → false（非 auto）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const i=__zw_native_element_for_id('img'); i.setAttribute('draggable','false');\
+             return i.draggable;})()"
+        ),
+        "false"
+    );
+}
+
 /// R3172 HTML 序列化 tag 小写：createElement('DIV').outerHTML → '<div></div>'（dom serializer 对 HTML
 /// 命名空间元素 ASCII 小写，SVG/MathML 保留）。修正编程创建大写 tag 的序列化 + void 元素识别。
 #[test]

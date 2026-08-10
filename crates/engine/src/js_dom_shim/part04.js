@@ -51,9 +51,18 @@
             var acRaw = handle ? __zw_get_attr_handle(handle, 'autocomplete') : __zw_get_attr(sel, 'autocomplete');
             return (acRaw == null || acRaw === '') ? 'on' : String(acRaw);
           }
+          // R3188 draggable：enumerated（true/false，case-insensitive），缺省/非法 → auto 状态 → default-draggable
+          //（spec/Chrome：img/audio/video/a[href] 默认可拖拽，余 false）。旧实现仅 `=== 'true'`（case-sensitive，
+          // 且 auto 状态统一 false——缺省 `<img>` 误判不可拖拽）。
+          if (prop === 'draggable') {
+            var dgRaw = handle ? __zw_get_attr_handle(handle, 'draggable') : __zw_get_attr(sel, 'draggable');
+            var dgLo = (dgRaw == null) ? '' : String(dgRaw).toLowerCase();
+            if (dgLo === 'true') return true;
+            if (dgLo === 'false') return false;
+            return _defaultDraggable(sel, handle); // auto 状态（缺省/invalid/其它）
+          }
           var rfRaw = handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop);
           rfRaw = (rfRaw == null) ? '' : String(rfRaw).toLowerCase();
-          if (prop === 'draggable') return rfRaw === 'true';   // "true"→true，余（"false"/""/缺省 auto）→false（简化）
           if (prop === 'spellcheck') return rfRaw !== 'false'; // "false"→false，余（含缺省）→true（spec 默认 true）
           return rfRaw !== 'no';                               // translate："no"→false，余→true（默认 true）
         }

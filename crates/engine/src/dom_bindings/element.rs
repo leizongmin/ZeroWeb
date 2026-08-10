@@ -576,16 +576,34 @@ pub(super) fn native_inert_setter(
 // 第四种反射子类型——`draggable` 为 enumerated content 属性（关键字 `"true"`/`"false"`），IDL 反射为
 // `boolean`。区别 pure-boolean（hidden/inert，content 属性为空串存在性）：enumerated content 属性取字面
 // `"true"`/`"false"` 值。
-// - **getter**：content 属性值 == `"true"` → true；余（`"false"` / 缺省 / 非法）→ false。
-//   headless 简化：spec 缺省默认对 `<img>`/`<a·href>` 为 true、余为 false，本实现统一 false（匹配通用
-//   `<div>` 等多数元素，同 tabIndex 焦点默认简化）。
+// - **getter**（R3188）：关键字 true/false ASCII case-insensitive（`draggable="TRUE"` → true 状态）；
+//   缺省/非法 → auto 状态 → [`default_draggable`]（spec/Chrome：`img`/`audio`/`video`/`a[href]` 默认可拖拽，余 false）。
 // - **setter**：值经 V8 ToBoolean 强转 → 写 content 属性为 `"true"`/`"false"` **字面串**（区别 pure-boolean
 //   写空串）——enumerated 属性值是关键字字符串而非存在性。
 //
 // `el.draggable = true/false` 是 DnD（drag-and-drop）高频；native 反射补 enumerated→boolean 反射类型。
 
-/// `draggable` getter（spec HTML `draggable`，enumerated content 反射 boolean）：content 属性值 == `"true"`
-/// → true；余（`"false"` / 缺省 / 非法）→ false。
+/// auto 状态 default-draggable 判定（spec HTML `draggable`：缺省/invalid → auto 状态）。
+///
+/// auto 状态下元素的拖拽性由 UA 默认行为决定——spec/Chrome：`img`/`audio`/`video` 默认可拖拽，
+/// `a`（带 `href`）默认可拖拽，余默认不可拖拽。headless 简化：覆盖这组明确 default-draggable 元素。
+fn default_draggable(doc: &zero_dom::Document, id: NodeId) -> bool {
+    let Some(node) = doc.get(id) else {
+        return false;
+    };
+    let NodeKind::Element(e) = &node.kind else {
+        return false;
+    };
+    match e.tag_name().as_bytes() {
+        b"IMG" | b"AUDIO" | b"VIDEO" => true,
+        // `a` 仅当带 href 时 default-draggable（spec：a with an href content attribute）。
+        b"A" => doc.get_attribute(id, "href").is_some(),
+        _ => false,
+    }
+}
+
+/// `draggable` getter（spec HTML `draggable`，enumerated content 反射 boolean）：关键字 true/false
+/// ASCII case-insensitive（`draggable="TRUE"` → true 状态）；缺省/非法 → auto 状态 → [`default_draggable`]。
 pub(super) fn native_draggable_getter(
     scope: &mut v8::PinScope,
     _name: v8::Local<v8::Name>,
@@ -596,9 +614,15 @@ pub(super) fn native_draggable_getter(
     let Some(id) = read_node_id(scope, &holder) else {
         return;
     };
-    let draggable = with_dom(|d| d.get_attribute(id, "draggable"))
-        .flatten()
-        .is_some_and(|v| v == "true");
+    let draggable = with_dom(|d| {
+        match d.get_attribute(id, "draggable").as_deref() {
+            Some(v) if v.eq_ignore_ascii_case("true") => true,
+            Some(v) if v.eq_ignore_ascii_case("false") => false,
+            // 缺省 / 非法 / 其它 → auto 状态：元素 default-draggable（img/a[href]/audio/video）。
+            _ => default_draggable(d, id),
+        }
+    })
+    .unwrap_or(false);
     rv.set(v8::Boolean::new(scope, draggable).into());
 }
 

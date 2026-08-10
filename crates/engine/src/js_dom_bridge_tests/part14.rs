@@ -975,3 +975,79 @@ fn test_content_editable_enumerated_production_r3187() {
         "isContentEditable：空串 keyword = true 状态 → true；invalid → false"
     );
 }
+
+// ── R3188：`draggable` enumerated getter 生产路径——case-insensitive + auto-state default-draggable ──
+//
+// spec HTML `draggable`（枚举属性，关键字 true/false case-insensitive，缺省/非法→auto 状态）。IDL getter：
+// true 状态→true；auto 状态→default-draggable（img/audio/video/a[href]→true，余→false）。旧生产 getter 仅
+// `=== 'true'`（case-sensitive，且 auto 统一 false）。
+
+#[test]
+fn test_draggable_enumerated_auto_state_production_r3188() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+           <div id='dtrue' draggable='true'></div>\
+           <div id='dupper' draggable='TRUE'></div>\
+           <div id='dfalse' draggable='false'></div>\
+           <div id='dgarb' draggable='foo'></div>\
+           <div id='div'></div>\
+           <img id='img'/>\
+           <a id='ahref' href='x.html'></a>\
+           <a id='anohref'></a>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 解析期属性：true(小写/大写 case-insensitive)→true；false→false；invalid "foo"→auto→div default→false。
+    let explicit = sandbox
+        .execute(
+            "document.querySelector('#dtrue').draggable + '/' +\
+             document.querySelector('#dupper').draggable + '/' +\
+             document.querySelector('#dfalse').draggable + '/' +\
+             document.querySelector('#dgarb').draggable",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        explicit, "true/true/false/false",
+        "draggable：case-insensitive true→true，false→false，invalid→auto(div)→false"
+    );
+
+    // auto 状态 default-draggable：div→false / img→true / a[href]→true / a(无 href)→false。
+    let auto = sandbox
+        .execute(
+            "document.querySelector('#div').draggable + '/' +\
+             document.querySelector('#img').draggable + '/' +\
+             document.querySelector('#ahref').draggable + '/' +\
+             document.querySelector('#anohref').draggable",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        auto, "false/true/true/false",
+        "auto 状态 default-draggable：div false，img true，a[href] true，a 无 href false"
+    );
+
+    // setter→getter 缓存往返：draggable=true→true（attr "true"）；draggable=false→false。
+    let setget = sandbox
+        .execute(
+            "var d=document.querySelector('#div');\
+             d.draggable = true; var a=d.draggable;\
+             d.draggable = false; var b=d.draggable;\
+             a+'/'+b",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(setget, "true/false", "draggable setter→getter 缓存往返");
+}

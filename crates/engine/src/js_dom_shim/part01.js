@@ -263,6 +263,19 @@
     var lo = String(raw).toLowerCase();
     return (raw === '' || lo === 'true') ? 'true' : (lo === 'false' ? 'false' : 'inherit');
   }
+  // R3188：`draggable` auto 状态 default-draggable 判定。spec HTML `draggable` 为枚举属性，缺省/非法 → auto
+  // 状态——元素的拖拽性由 UA 默认行为决定。spec/Chrome：`img`/`audio`/`video` 默认可拖拽，`a`（带 href）默认可
+  // 拖拽，余默认不可拖拽。供 `draggable` getter 在 auto 状态下求值（true/false 关键字未命中时）。
+  function _defaultDraggable(sel, handle) {
+    var tag = _realTag(sel, handle);
+    if (tag === 'IMG' || tag === 'AUDIO' || tag === 'VIDEO') return true;
+    if (tag === 'A') {
+      return (handle
+        ? __zw_has_attr_handle(handle, 'href')
+        : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'href') : __zw_has_attr(sel, 'href'))) === '1';
+    }
+    return false;
+  }
   // R3038/R3041：reflected unsigned-long（numeric）+ boolean 属性读（R3037 follow-up——string 已在 R3037 覆盖）。
   // 数值型 spec 返 number（缺省 default，colSpan/rowSpan spec default 1 且 min 1；maxLength/minLength default -1
   // = 不限制；cols/rows/start R3041——textarea cols default 20 / rows default 2，ol start default 1，无 min 故
