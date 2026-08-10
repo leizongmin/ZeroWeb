@@ -1814,6 +1814,93 @@ mod tests {
         }
     }
 
+    // ===== TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）=====
+    // 变体矩阵：spawn 线程 + 不同 V8 操作 + drop + 线程退出，打印每步。Windows 上
+    // 定位「V8 sandbox 使用后线程退出挂起」的最小复现。
+
+    fn diag_run<F: FnOnce() + Send + 'static>(name: &'static str, f: F) {
+        let handle = std::thread::Builder::new()
+            .name(format!("diag-{name}"))
+            .spawn(move || {
+                eprintln!("[DIAG-{name}] thread started");
+                f();
+                eprintln!("[DIAG-{name}] thread body done");
+            })
+            .unwrap();
+        let _ = handle.join();
+        eprintln!("[DIAG-{name}] thread joined");
+    }
+
+    fn diag_sandbox_config() -> SandboxConfig {
+        SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn diag_v1_thread_no_sandbox() {
+        // 对照：纯线程创建+退出（无 V8）。
+        diag_run("v1", || {});
+    }
+
+    #[test]
+    fn diag_v2_isolate_create_drop_no_execute() {
+        // 创建 sandbox（isolate）→ 不执行 → drop。
+        diag_run("v2", || {
+            eprintln!("[DIAG-v2] creating sandbox");
+            let s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
+            eprintln!("[DIAG-v2] sandbox created");
+            drop(s);
+            eprintln!("[DIAG-v2] sandbox dropped");
+        });
+    }
+
+    #[test]
+    fn diag_v3_isolate_execute_then_drop() {
+        // 创建 → 执行一次 → drop。
+        diag_run("v3", || {
+            eprintln!("[DIAG-v3] creating sandbox");
+            let mut s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
+            eprintln!("[DIAG-v3] sandbox created");
+            let r = s.execute("1 + 1");
+            eprintln!("[DIAG-v3] executed: {:?}", r.map(|x| x.value));
+            drop(s);
+            eprintln!("[DIAG-v3] sandbox dropped");
+        });
+    }
+
+    #[test]
+    fn diag_v4_isolate_execute_ctx_then_drop() {
+        // 创建（persistent_context）→ 两次执行 → drop（最贴近 tab_js_worker 形态）。
+        diag_run("v4", || {
+            eprintln!("[DIAG-v4] creating sandbox");
+            let mut s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
+            eprintln!("[DIAG-v4] sandbox created");
+            let r1 = s.execute("var a = 1; a");
+            eprintln!("[DIAG-v4] exec1: {:?}", r1.map(|x| x.value));
+            let r2 = s.execute("a + 1");
+            eprintln!("[DIAG-v4] exec2: {:?}", r2.map(|x| x.value));
+            drop(s);
+            eprintln!("[DIAG-v4] sandbox dropped");
+        });
+    }
+
+    #[test]
+    fn diag_v5_isolate_execute_forget() {
+        // 创建 → 执行 → mem::forget（不 drop sandbox）→ 线程退出。区分：
+        // 挂点在 sandbox drop 的副作用（若有）还是线程退出本身。
+        diag_run("v5", || {
+            eprintln!("[DIAG-v5] creating sandbox");
+            let mut s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
+            eprintln!("[DIAG-v5] sandbox created");
+            let r = s.execute("1 + 1");
+            eprintln!("[DIAG-v5] executed: {:?}", r.map(|x| x.value));
+            std::mem::forget(s);
+            eprintln!("[DIAG-v5] sandbox forgotten");
+        });
+    }
+
     #[test]
     /// SEC-13 超时看门狗（2026-08-10 持久化重构）：死循环脚本在 timeout_ms 后被
     /// terminate_execution 终止（Timeout 错误，非长期挂起）；且看门狗可恢复——

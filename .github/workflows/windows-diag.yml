@@ -60,10 +60,10 @@ jobs:
             "BINDGEN_EXTRA_CLANG_ARGS=$clangArgs" >> $env:GITHUB_ENV
           }
 
-      - name: Run single test serial with TEMP-DIAG prints
+      - name: Run diag variant matrix (v1-v5) serial
         shell: bash
         run: |
-          cargo nextest run -p zero-browser --bin zero-browser \
-            -E 'test(tab_js_worker_cleartimeout_cancels_callback)' \
+          cargo nextest run -p zero-script-sandbox --lib \
+            -E 'test(diag_v)' \
             --test-threads=1 \
             --target x86_64-pc-windows-msvc
