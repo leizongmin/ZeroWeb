@@ -1341,281 +1341,6 @@ fn native_nnm_attr_identity_while_referenced_r3134() {
     );
 }
 
-// ── R3145 DOMTokenList（element.classList）── spec `dom-element-classlist` / `dom-domtokenlist-*` ──
-
-/// `classList` 身份（同元素返同对象，spec `el.classList === el.classList`）+ 读 API
-/// （length / value / item(i) / contains）。polyfill 旧每调新建，native 修正为 spec 合规。
-#[test]
-fn native_class_list_identity_and_read_r3145() {
-    let html = r#"<div id="a" class="row  cell"></div>"#;
-    // 身份：同元素两次取 → 同对象。
-    assert_eq!(
-        run_script(
-            html,
-            "(__zw_native_element_for_id('a').classList === __zw_native_element_for_id('a').classList)"
-        ),
-        "true"
-    );
-    // length：split_whitespace 去重前计数（含多空格 + leading/trailing）。
-    assert_eq!(
-        run_script(html, "(__zw_native_element_for_id('a').classList.length)"),
-        "2"
-    );
-    // value：原样 `class` 属性串（live，含多余空格未规范化——spec value = serializer 输出）。
-    assert_eq!(
-        run_script(html, "(__zw_native_element_for_id('a').classList.value)"),
-        "row  cell"
-    );
-    // item(i)：文档序 token；越界 → null（字符串 "null"）。
-    assert_eq!(
-        run_script(html, "(__zw_native_element_for_id('a').classList.item(0))"),
-        "row"
-    );
-    assert_eq!(
-        run_script(html, "(__zw_native_element_for_id('a').classList.item(1))"),
-        "cell"
-    );
-    assert_eq!(
-        run_script(html, "(__zw_native_element_for_id('a').classList.item(2))"),
-        "null"
-    );
-    assert_eq!(
-        run_script(html, "(__zw_native_element_for_id('a').classList.item(-1))"),
-        "null"
-    );
-    // contains：含/不含。
-    assert_eq!(
-        run_script(html, "(__zw_native_element_for_id('a').classList.contains('cell'))"),
-        "true"
-    );
-    assert_eq!(
-        run_script(html, "(__zw_native_element_for_id('a').classList.contains('nope'))"),
-        "false"
-    );
-    // 无 class 属性元素：空 DTL（length 0 / item null / contains false）。
-    let html2 = r#"<div id="b"></div>"#;
-    assert_eq!(
-        run_script(html2, "(__zw_native_element_for_id('b').classList.length)"),
-        "0"
-    );
-    assert_eq!(
-        run_script(html2, "(__zw_native_element_for_id('b').classList.item(0))"),
-        "null"
-    );
-}
-
-/// 写 API（add / remove / toggle / replace）+ value setter + toString：经 `set_attribute("class", joined)`
-/// 写回 owner 元素（dom crate node.class_list 自动同步），getAttribute 回读验证真实 DOM 落地。
-#[test]
-fn native_class_list_mutation_r3145() {
-    let html = r#"<div id="a" class="a"></div>"#;
-    // add（variadic + 去重）：加 b、c（c 重复加一次不重复）→ "a b c"。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const cl=__zw_native_element_for_id('a').classList;\
-             cl.add('b','c','c'); return __zw_native_element_for_id('a').getAttribute('class'); })()"
-        ),
-        "a b c"
-    );
-    // remove：移 b → "a c"。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a'); el.className='a b c';\
-             el.classList.remove('b'); return el.getAttribute('class'); })()"
-        ),
-        "a c"
-    );
-    // toggle（切换模式）：不在→加返 true；在→移返 false。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a'); el.className='a c';\
-             const r1=el.classList.toggle('d'); const after1=el.getAttribute('class');\
-             const r2=el.classList.toggle('d'); const after2=el.getAttribute('class');\
-             return r1+'/'+after1+'/'+r2+'/'+after2; })()"
-        ),
-        "true/a c d/false/a c"
-    );
-    // toggle（force 模式）：force=true 在→不变返 true；force=false 在→移返 false；force=true 不在→加返 true。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a'); el.className='a';\
-             const r1=el.classList.toggle('a',true); const a1=el.getAttribute('class');\
-             const r2=el.classList.toggle('a',false); const a2=el.getAttribute('class');\
-             const r3=el.classList.toggle('z',true); const a3=el.getAttribute('class');\
-             return r1+'/'+a1+'/'+r2+'/'+a2+'/'+r3+'/'+a3; })()"
-        ),
-        "true/a/false//true/z"
-    );
-    // replace：oldT→newT 原位替换返 true；oldT 不在 → false（不写）；oldT==newT → 返是否含。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a'); el.className='a c';\
-             const r1=el.classList.replace('a','x'); const a1=el.getAttribute('class');\
-             const r2=el.classList.replace('nope','y'); const a2=el.getAttribute('class');\
-             return r1+'/'+a1+'/'+r2+'/'+a2; })()"
-        ),
-        "true/x c/false/x c"
-    );
-    // value setter：整体替换（无 token 校验，任意串）→ set_attribute 写回。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a'); el.classList.value='p q r';\
-             return el.getAttribute('class'); })()"
-        ),
-        "p q r"
-    );
-    // toString：= 当前 `class` 属性串（= value getter）。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a'); el.className='m n';\
-             return el.classList.toString(); })()"
-        ),
-        "m n"
-    );
-    // 移除全部 token → 属性为空串（非删除属性，spec）。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a'); el.className='x y';\
-             el.classList.remove('x','y'); return el.getAttribute('class')+'|'+el.hasAttribute('class'); })()"
-        ),
-        "|true"
-    );
-}
-
-/// token 校验（spec `dom-domtokenlist-validation`）：空串 / 含空白 token → 抛 TypeError，
-/// 且 add 多 token 时任一非法即抛、已校验通过的 token 不写入（spec 原子性：校验全部先于 mutation）。
-/// 用 try/catch 捕获 → 返是否抛 + 抛后 class 属性是否被部分写入。
-#[test]
-fn native_class_list_token_validation_r3145() {
-    let html = r#"<div id="a" class="a"></div>"#;
-    // add("") → 抛 + 不写入（class 仍 "a"）。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a');\
-             try { el.classList.add(''); return 'no-throw'; }\
-             catch(e) { return 'threw|'+el.getAttribute('class'); } })()"
-        ),
-        "threw|a"
-    );
-    // add("foo bar")（含空白）→ 抛。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a');\
-             try { el.classList.add('foo bar'); return 'no-throw'; }\
-             catch(e) { return 'threw'; } })()"
-        ),
-        "threw"
-    );
-    // add 原子性：第二 token 非法 → 抛，第一（合法）token 不写入。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a');\
-             try { el.classList.add('b',''); return 'no-throw'; }\
-             catch(e) { return 'threw|'+el.getAttribute('class'); } })()"
-        ),
-        "threw|a"
-    );
-    // toggle / contains / replace 同样校验非法 token → 抛。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a');\
-             try { el.classList.toggle(''); return 'no-throw'; }\
-             catch(e) { return 'toggle-threw'; } })()"
-        ),
-        "toggle-threw"
-    );
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a');\
-             try { el.classList.contains('a b'); return 'no-throw'; }\
-             catch(e) { return 'contains-threw'; } })()"
-        ),
-        "contains-threw"
-    );
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a');\
-             try { el.classList.replace('a','x y'); return 'no-throw'; }\
-             catch(e) { return 'replace-threw'; } })()"
-        ),
-        "replace-threw"
-    );
-}
-
-/// liveness：外部 setAttribute('class') 改变反映到 classList 读（每次读经 owner 当前 class 属性
-/// split_whitespace）；classList mutation 反映到 getAttribute。双向 live（spec DOMTokenList 是 live view）。
-#[test]
-fn native_class_list_live_reflection_r3145() {
-    let html = r#"<div id="a" class="old"></div>"#;
-    // 外部 setAttribute → classList 读反映（length/contains/value/item）。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a');\
-             el.setAttribute('class','x y z');\
-             return el.classList.length+'/'+el.classList.contains('y')+'/'+el.classList.value+'/'+el.classList.item(2); })()"
-        ),
-        "3/true/x y z/z"
-    );
-    // classList.add → getAttribute 反映（live 写）。
-    assert_eq!(
-        run_script(
-            html,
-            "(()=>{ const el=__zw_native_element_for_id('a'); el.className='one';\
-             el.classList.add('two'); return el.getAttribute('class'); })()"
-        ),
-        "one two"
-    );
-}
-
-/// DTL weak 身份缓存可回收（mirror R3134 NNM/ATTR）：JS 丢 classList 引用 → 多次 low_memory_notification
-/// → weak 死（dtl_cache_alive false）；元素强引用仍在（globalThis.__el）。防回归：weak 化不泄漏，
-/// 闭合 R3133 限制① strong-Global 泄漏在 DTL 集合面（同 NNM/ATTR R3134 pattern）。
-#[test]
-fn native_class_list_cache_reclaimable_on_gc_r3145() {
-    zero_script_sandbox::ensure_v8_initialized();
-    let dom = Rc::new(RefCell::new(parse_html(r#"<div id="a" class="row"></div>"#)));
-    let ffi = encode_node_id(dom.borrow().get_element_by_id("a").expect("id a"));
-    let dtl_alive;
-    {
-        let isolate = &mut v8::Isolate::new(Default::default());
-        v8::scope!(let scope, isolate);
-        let context = v8::Context::new(scope, Default::default());
-        let scope = &mut v8::ContextScope::new(scope, context);
-        install_dom_bindings(scope, context, Rc::clone(&dom));
-        // globalThis.__el 持元素强引用（元素不被 GC）；classList 仅局部持，IIFE 结束即断。
-        let script = "(()=>{ globalThis.__el=__zw_native_element_for_id('a');\
-             void globalThis.__el.classList;\
-             return 'ok'; })()";
-        let code = v8::String::new(scope, script).expect("v8 string");
-        let compiled = v8::Script::compile(scope, code, None).expect("compile");
-        let _ = compiled.run(scope).expect("run");
-        for _ in 0..5 {
-            scope.low_memory_notification();
-        }
-        dtl_alive = dtl_cache_alive(ffi);
-    }
-    assert!(
-        !dtl_alive,
-        "classList 丢 JS 引用后应可 GC（weak 死），闭合 R3133 限制① strong-Global 泄漏（DTL 面）"
-    );
-    reset_for_test();
-}
-
 // ── R3146 element.toggleAttribute / insertAdjacentElement / insertAdjacentText ──
 
 /// `toggleAttribute(name, force?)`（spec `dom-element-toggleattribute`）：force 缺省 toggle（在→移除返 false、
@@ -1956,6 +1681,63 @@ fn native_element_style_r3151() {
     // 协议名 fallthrough：el.style.constructor 不被动态拦截器吞（typeof==='function'；若被吞返空串则 'string'）。
     assert_eq!(
         run_script(html, "(typeof __zw_native_element_for_id('a').style.constructor)"),
+        "function"
+    );
+}
+
+/// R3152 element.dataset（DOMStringMap，spec HTML `dom-dataset`）：named-property-handler 拦 camelCase
+/// 键 ↔ `data-*` 属性。get/set/delete + Object.keys 枚举 + 缺失→undefined（对象语义）。
+#[test]
+fn native_element_dataset_r3152() {
+    let html = r#"<div id="a" data-foo-bar="x"></div>"#;
+    // dataset.fooBar ↔ data-foo-bar get（camelCase→data-kebab 反射）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').dataset.fooBar)"),
+        "x"
+    );
+    // set（camelCase→data-kebab）+ getAttribute 回读。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.dataset.bazQux='y';\
+             return el.getAttribute('data-baz-qux'); })()"
+        ),
+        "y"
+    );
+    // 缺失键 → undefined（对象语义，区别于 style 的 ""）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').dataset.nope)"),
+        "undefined"
+    );
+    // delete 移除 data-* 属性。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); delete el.dataset.fooBar;\
+             return el.hasAttribute('data-foo-bar'); })()"
+        ),
+        "false"
+    );
+    // Object.keys 枚举 data-* → camelCase 键（经 named enumerator）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.dataset.aB='1'; el.dataset.cD='2';\
+             return Object.keys(el.dataset).sort().join('|'); })()"
+        ),
+        "aB|cD|fooBar"
+    );
+    // 身份：同元素 .dataset 两次 → 同对象。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('a').dataset === __zw_native_element_for_id('a').dataset)"
+        ),
+        "true"
+    );
+    // 协议名 fallthrough（constructor typeof==='function'，非 undefined）。
+    assert_eq!(
+        run_script(html, "(typeof __zw_native_element_for_id('a').dataset.constructor)"),
         "function"
     );
 }

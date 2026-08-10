@@ -86,6 +86,13 @@ thread_local! {
     /// = owner element NodeId）。`install_dom_bindings` 建 + 缓存，`style` getter 实例化。
     static STYLE_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> =
         const { RefCell::new(None) };
+    /// R3152 DOMStringMap（`element.dataset`）：owner element NodeId(ffi) → **Weak**<Object>，
+    /// 保 spec 身份（`el.dataset === el.dataset` 同对象）。R3134/R3145/R3151 同模式 weak 化。
+    static DATASET_OBJECTS: RefCell<HashMap<u64, v8::Weak<v8::Object>>> = RefCell::new(HashMap::new());
+    /// R3152 DOMStringMap ObjectTemplate（named-property-handler 拦 camelCase 动态属性 ↔ `data-*` 属性
+    /// + internal slot[0] = owner element NodeId）。`install_dom_bindings` 建 + 缓存，`dataset` getter 实例化。
+    static DATASET_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> =
+        const { RefCell::new(None) };
     /// R3148 当前焦点元素（`document.activeElement` 对）：`element.focus()` 设、`element.blur()` 清。
     /// 线程局部 NodeId（无 ffi 包装——focus 仅 Rust 侧读写，不经 V8 句柄）。polyfill 旧 `_activeElKey`
     /// 纯 JS 状态（不派发 focus/blur 事件）；native 经此追踪 + 真实派发 focus/blur（闭合 polyfill 限制②）。
@@ -125,6 +132,8 @@ pub(crate) fn reset() {
     DOMTOKENLIST_TEMPLATE.with(|c| *c.borrow_mut() = None);
     STYLE_OBJECTS.with(|c| c.borrow_mut().clear());
     STYLE_TEMPLATE.with(|c| *c.borrow_mut() = None);
+    DATASET_OBJECTS.with(|c| c.borrow_mut().clear());
+    DATASET_TEMPLATE.with(|c| *c.borrow_mut() = None);
     ACTIVE_ELEMENT.with(|c| *c.borrow_mut() = None);
 }
 
@@ -202,6 +211,32 @@ pub(crate) fn cached_style<'s>(scope: &mut v8::PinScope<'s, '_>, ffi: u64) -> Op
 /// 缓存 CSSStyleDeclaration 对象（owner element ffi → **Weak**）。
 pub(crate) fn cache_style(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v8::Object>) {
     STYLE_OBJECTS.with(|c| {
+        c.borrow_mut().insert(ffi, v8::Weak::new(scope, obj));
+    });
+}
+
+// ── R3152 DOMStringMap（element.dataset）状态 ────────────────────────
+
+/// 缓存 DOMStringMap ObjectTemplate（`install_dom_bindings` 建 `dataset` 集合模板）。
+pub(crate) fn set_dataset_template(scope: &mut v8::PinScope, tmpl: v8::Local<v8::ObjectTemplate>) {
+    DATASET_TEMPLATE.with(|c| *c.borrow_mut() = Some(v8::Global::new(scope, tmpl)));
+}
+
+/// 取 DOMStringMap ObjectTemplate 的 Local（`dataset` getter 实例化用）。
+pub(crate) fn dataset_template_local<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+) -> Option<v8::Local<'s, v8::ObjectTemplate>> {
+    DATASET_TEMPLATE.with(|c| c.borrow().as_ref().map(|g| v8::Local::new(scope, g)))
+}
+
+/// 取已缓存的 DOMStringMap 对象（同 owner element 返同对象，spec identity）；weak 死 → `None`。
+pub(crate) fn cached_dataset<'s>(scope: &mut v8::PinScope<'s, '_>, ffi: u64) -> Option<v8::Local<'s, v8::Object>> {
+    DATASET_OBJECTS.with(|c| c.borrow().get(&ffi).and_then(|w| w.to_local(scope)))
+}
+
+/// 缓存 DOMStringMap 对象（owner element ffi → **Weak**）。
+pub(crate) fn cache_dataset(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v8::Object>) {
+    DATASET_OBJECTS.with(|c| {
         c.borrow_mut().insert(ffi, v8::Weak::new(scope, obj));
     });
 }

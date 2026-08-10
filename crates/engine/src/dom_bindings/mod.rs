@@ -14,6 +14,7 @@
 //! `tagName` https://dom.spec.whatwg.org/#dom-element-tagname（HTML 大写）。
 
 mod css_style_declaration;
+mod dataset;
 mod dom_token_list;
 mod element;
 mod event;
@@ -131,6 +132,11 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     // removeProperty + named-property-handler 拦 camelCase 动态属性）。
     if let Some(k) = v8::String::new(scope, "style") {
         tmpl.set_accessor(k.into(), css_style_declaration::native_style_getter);
+    }
+    // R3152 `dataset` getter（spec `dom-dataset`）：返 data-* 属性 camelCase 键 DOMStringMap
+    //（live，同元素返同对象——gc.rs DATASET_OBJECTS 缓存；named-property-handler 拦 camelCase ↔ data-* 属性）。
+    if let Some(k) = v8::String::new(scope, "dataset") {
+        tmpl.set_accessor(k.into(), dataset::native_dataset_getter);
     }
     // `children` getter（spec `dom-parentnode-children`）：元素**子元素**（跳过文本/注释）
     // → V8 Array of native 对象（文档序）。
@@ -369,6 +375,9 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     // R3151 CSSStyleDeclaration ObjectTemplate（element.style）——css_style_declaration 子模块。
     css_style_declaration::build_and_cache_template(scope);
 
+    // R3152 DOMStringMap ObjectTemplate（element.dataset）——dataset 子模块。
+    dataset::build_and_cache_template(scope);
+
     // 3. 全局工厂 __zw_native_element_for_id(idStr) → native element 对象。
     let global = ctx.global(scope);
     let factory = v8::FunctionTemplate::builder(factories::native_element_factory_invoke).build(scope);
@@ -579,6 +588,9 @@ mod tests;
 // 扩展 API 表面 + 生命周期测试（拆自 tests.rs，rule 5 <2000 行；R3136+）。共享 tests::run_script。
 #[cfg(test)]
 mod tests_dom_api;
+// named-property-handler 集合面测试（classList R3145；拆自 tests_dom_api.rs，rule 5 <2000 行）。共享 tests::run_script。
+#[cfg(test)]
+mod tests_collections;
 // 行为方法 + 事件族测试（拆自 tests_dom_api.rs，rule 5 <2000 行；R3147+）。共享 tests::run_script。
 #[cfg(test)]
 mod tests_events;
