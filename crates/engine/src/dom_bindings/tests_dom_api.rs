@@ -2224,3 +2224,52 @@ fn native_document_create_event_r3161() {
         "x"
     );
 }
+
+/// R3162 `document.importNode(node, deep)` / `adoptNode(node)`（spec `dom-document-importnode` /
+/// `-adoptnode`）：importNode 克隆节点（复用 clone_node，模板实例化高频）；adoptNode headless 单文档
+/// = identity（同对象）。
+#[test]
+fn native_document_import_adopt_node_r3162() {
+    let html = r#"<html><head></head><body><div id="src"><span>hi</span></div></body></html>"#;
+    // importNode 浅克隆 → 新 div（tagName DIV，≠ 源身份）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const d=__zw_native_get_document(); const s=d.getElementById('src');\
+             const c=d.importNode(s, false); return c.tagName+'/'+(c===s); })()"
+        ),
+        "DIV/false"
+    );
+    // importNode 深克隆 → 子 span 在（deep=true 递归）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const d=__zw_native_get_document(); const s=d.getElementById('src');\
+             const c=d.importNode(s, true); return c.children.length+'/'+c.children[0].tagName; })()"
+        ),
+        "1/SPAN"
+    );
+    // importNode 浅克隆 → 子 span 不在（deep=false）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const d=__zw_native_get_document(); const s=d.getElementById('src');\
+             const c=d.importNode(s, false); return c.children.length; })()"
+        ),
+        "0"
+    );
+    // adoptNode headless 单文档 → identity（同对象 ===）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const d=__zw_native_get_document(); const s=d.getElementById('src');\
+             return (d.adoptNode(s) === s); })()"
+        ),
+        "true"
+    );
+    // importNode 非节点参（null）→ null（best-effort）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().importNode(null, true) === null)"),
+        "true"
+    );
+}

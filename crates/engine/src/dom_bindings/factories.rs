@@ -166,6 +166,46 @@ pub(super) fn native_create_document_fragment_invoke(
     }
 }
 
+/// `document.importNode(node, deep)`（spec `dom-document-importnode`）：导入（克隆）外部节点。
+/// headless 单文档语义 ≈ [`clone_node`]——克隆节点（deep=true 递归克隆子树），返新 native 元素
+///（未挂载，需 appendChild）。**模板实例化高频**：`document.importNode(template.content.firstChild, true)`
+/// 是 `<template>` 内容实例化标准手段。复用 [`Document::clone_node`]（同 cloneNode 底层）。
+/// 非节点参（null/undefined/非 native）→ `null`（best-effort，spec 应抛 NotSupportedError）。
+pub(super) fn native_import_node_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let Some(id) = super::node_id_from_value(scope, args.get(0)) else {
+        rv.set(v8::null(scope).into());
+        return;
+    };
+    let deep = args.get(1).boolean_value(scope);
+    let Some(new_id) = with_dom_mut(|d| d.clone_node(id, deep)) else {
+        return;
+    };
+    if let Some(obj) = get_or_create_native_element(scope, new_id) {
+        rv.set(obj.into());
+    }
+}
+
+/// `document.adoptNode(node)`（spec `dom-document-adoptnode`）：headless 单文档语义 = identity——
+/// 节点已在本文档（headless 唯一 document），adopt 为 no-op 返原节点（同 NodeId → 同对象身份）。
+/// 跨文档 adopt（多 document）在 headless 单文档不显现。非节点参 → `null`。
+pub(super) fn native_adopt_node_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let Some(id) = super::node_id_from_value(scope, args.get(0)) else {
+        rv.set(v8::null(scope).into());
+        return;
+    };
+    if let Some(obj) = get_or_create_native_element(scope, id) {
+        rv.set(obj.into());
+    }
+}
+
 // ── R3136 文档级只读属性工厂（documentElement / body / head）──
 
 /// `__zw_native_get_document_element()`：spec `dom-document-documentelement`——文档根元素

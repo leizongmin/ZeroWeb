@@ -185,6 +185,10 @@ pub(super) fn build_and_cache_template(scope: &mut v8::PinScope) {
     // [`event::native_create_event_invoke`]（R3141，type→Event/CustomEvent/MouseEvent/KeyboardEvent 构造器
     // 查找 + `new Ctor("")` 返未初始化 event，待 initEvent 覆写）。补全 document 创建 API 三件套。
     set_method(scope, &tmpl, "createEvent", super::event::native_create_event_invoke);
+    // R3162 `importNode(node, deep)` / `adoptNode(node)`（spec `dom-document-importnode` / `-adoptnode`）：
+    // importNode 克隆节点（模板实例化高频，复用 clone_node）；adoptNode headless 单文档 = identity。
+    set_method(scope, &tmpl, "importNode", factories::native_import_node_invoke);
+    set_method(scope, &tmpl, "adoptNode", factories::native_adopt_node_invoke);
 
     set_document_template(scope, tmpl);
 }
