@@ -338,6 +338,54 @@ pub(super) fn native_inert_setter(
     });
 }
 
+// ── R3158 draggable 反射 enumerated-boolean 属性（spec HTML `draggable`）──
+//
+// 第四种反射子类型——`draggable` 为 enumerated content 属性（关键字 `"true"`/`"false"`），IDL 反射为
+// `boolean`。区别 pure-boolean（hidden/inert，content 属性为空串存在性）：enumerated content 属性取字面
+// `"true"`/`"false"` 值。
+// - **getter**：content 属性值 == `"true"` → true；余（`"false"` / 缺省 / 非法）→ false。
+//   headless 简化：spec 缺省默认对 `<img>`/`<a·href>` 为 true、余为 false，本实现统一 false（匹配通用
+//   `<div>` 等多数元素，同 tabIndex 焦点默认简化）。
+// - **setter**：值经 V8 ToBoolean 强转 → 写 content 属性为 `"true"`/`"false"` **字面串**（区别 pure-boolean
+//   写空串）——enumerated 属性值是关键字字符串而非存在性。
+//
+// `el.draggable = true/false` 是 DnD（drag-and-drop）高频；native 反射补 enumerated→boolean 反射类型。
+
+/// `draggable` getter（spec HTML `draggable`，enumerated content 反射 boolean）：content 属性值 == `"true"`
+/// → true；余（`"false"` / 缺省 / 非法）→ false。
+pub(super) fn native_draggable_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let draggable = with_dom(|d| d.get_attribute(id, "draggable"))
+        .flatten()
+        .is_some_and(|v| v == "true");
+    rv.set(v8::Boolean::new(scope, draggable).into());
+}
+
+/// `draggable` setter：值经 V8 ToBoolean 强转 → 写 content 属性为 `"true"`/`"false"` 字面串
+///（区别 pure-boolean 写空串——enumerated 属性值为关键字字符串）。
+pub(super) fn native_draggable_setter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let lit = if value.boolean_value(scope) { "true" } else { "false" };
+    with_dom_mut(|d| d.set_attribute(id, "draggable", lit));
+}
+
 // ── R3153 aria* / role 反射属性（spec WAI-ARIA IDL reflection）──
 //
 // aria* IDL 属性 ↔ content 属性反射：`el.ariaLabel` ↔ `aria-label`、`el.ariaLabelledBy` ↔

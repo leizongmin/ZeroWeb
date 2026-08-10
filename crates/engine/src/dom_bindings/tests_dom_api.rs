@@ -2006,3 +2006,68 @@ fn native_element_batch_reflected_r3157() {
         "false/false"
     );
 }
+
+/// R3158 element.draggable（spec HTML `draggable`，enumerated content 反射 boolean）：第 4 种反射子类型
+///——content 属性取 `"true"`/`"false"` 字面值。getter 值 == `"true"` → true 余 false；setter ToBoolean 写
+/// `"true"`/`"false"` 字面串（区别 pure-boolean 写空串）。
+#[test]
+fn native_element_draggable_r3158() {
+    // 缺省 → false（headless 简化：统一默认 false，匹配通用 div 等多数元素）。
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').draggable)"), "false");
+    // content 属性值 == "true" → true。
+    assert_eq!(
+        run_script(
+            r#"<div id="a" draggable="true"></div>"#,
+            "(__zw_native_element_for_id('a').draggable)"
+        ),
+        "true"
+    );
+    // content 属性值 == "false" → false。
+    assert_eq!(
+        run_script(
+            r#"<div id="a" draggable="false"></div>"#,
+            "(__zw_native_element_for_id('a').draggable)"
+        ),
+        "false"
+    );
+    // setter true → getAttribute('draggable') === 'true'（字面串，非空串）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.draggable=true; return el.getAttribute('draggable'); })()"
+        ),
+        "true"
+    );
+    // setter false → getAttribute('draggable') === 'false'（仍写字面串，非移除）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.draggable=false; return el.getAttribute('draggable')+'/'+el.hasAttribute('draggable'); })()"
+        ),
+        "false/true"
+    );
+    // ToBoolean 强转：1 → 'true'，0 → 'false'。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.draggable=1; return el.getAttribute('draggable'); })()"
+        ),
+        "true"
+    );
+    assert_eq!(
+        run_script(
+            r#"<div id="a" draggable="true"></div>"#,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.draggable=0; return el.getAttribute('draggable'); })()"
+        ),
+        "false"
+    );
+    // setAttribute 反向反射到 IDL（content→IDL live）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.setAttribute('draggable','true'); return el.draggable; })()"
+        ),
+        "true"
+    );
+}

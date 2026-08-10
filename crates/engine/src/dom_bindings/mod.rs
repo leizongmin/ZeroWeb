@@ -154,6 +154,16 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "inert") {
         tmpl.set_accessor_with_setter(k.into(), element::native_inert_getter, element::native_inert_setter);
     }
+    // R3158 `draggable` getter/setter（spec HTML `draggable`，enumerated content 反射 boolean）：DnD 高频——
+    // 第四种反射子类型（enumerated-boolean，content 取 `"true"`/`"false"` 字面值，区别 pure-boolean 空串
+    // 存在性）。getter 值 == `"true"` → true 余 false，setter 经 ToBoolean 写字面串。
+    if let Some(k) = v8::String::new(scope, "draggable") {
+        tmpl.set_accessor_with_setter(
+            k.into(),
+            element::native_draggable_getter,
+            element::native_draggable_setter,
+        );
+    }
     // R3153/R3154 aria* / role 反射属性（spec WAI-ARIA IDL reflection）：`el.ariaLabel`↔`aria-label`、
     // `el.role`↔`role` 等。共用 [`element::native_aria_reflected_getter`/`_setter`]（经 accessor name
     // 分派 + [`element::idl_to_attr`] 转 content 属性名）。注册标准 ARIA IDL 集（global + widget + value
