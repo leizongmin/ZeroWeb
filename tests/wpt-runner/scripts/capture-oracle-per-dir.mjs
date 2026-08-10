@@ -5,7 +5,7 @@
 // test 文件，供 DC-14 去子集化的全量 chromium-Oracle 测量。
 //
 // 用法：
-//   node capture-oracle-per-dir.mjs --category css/css-position [--category css/css-tables ...]
+//   node capture-oracle-per-dir.mjs --category css/css-position [--filter test-name]
 //
 // 依赖：puppeteer-core + 系统 chromium；经 ~/use-proxy 代理（chromium 抓上游无关，本地 HTTP）。
 import { join, dirname, extname, normalize, relative, resolve } from 'node:path';
@@ -29,11 +29,16 @@ const MIME = {
 
 const categories = [];
 let skipExisting = false;
+let filter = null;
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i] === '--category') categories.push(process.argv[++i]);
+  else if (process.argv[i] === '--filter') filter = process.argv[++i];
   else if (process.argv[i] === '--skip-existing') skipExisting = true;
 }
-if (categories.length === 0) { console.error('Usage: capture-oracle-per-dir.mjs --category <dir> [...] [--skip-existing]'); process.exit(1); }
+if (categories.length === 0) {
+  console.error('Usage: capture-oracle-per-dir.mjs --category <dir> [...] [--filter substring] [--skip-existing]');
+  process.exit(1);
+}
 
 // 等待页面所有 <img> 加载完成（complete && naturalWidth>0），防 SVG/图片解码 race
 // 致截图时 img 未就绪（R388/R692 oracle 损坏：blank broken-img placeholder）。
@@ -99,6 +104,7 @@ for (const cat of categories) {
   let tests;
   try { tests = collectTests(dir); }
   catch { console.error(`dir not found: ${cat}`); continue; }
+  if (filter) tests = tests.filter((test) => test.includes(filter));
   let ok = 0, fail = 0;
   for (const t of tests) {
     const safe = cat.replace(/[\\/]/g, '_') + '_' + t.replace(/[\\/.]/g, '_');
