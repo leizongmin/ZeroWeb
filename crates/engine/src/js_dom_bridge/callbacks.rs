@@ -762,31 +762,57 @@ pub fn register_dom_callbacks(
         }),
     );
 
-    // `element.toggleAttribute(name, force?)`——server-side 决策（apply 时读存在性），连续 toggle
-    // 正确复合。第三参 force：`"1"` 强加、`"0"` 强移、缺省切换。
+    // `element.toggleAttribute(name, force?)`——R3192：**enqueue-时解析**决策（旧 apply-时解析使连续
+    // toggle 返值 stale——shim 无法预测 apply 结果）。本回调计算 latest-wins presence（pending SetAttr/
+    // RemoveAttr 经 [`sel_attr_override`] + 快照 [`has_attribute`]），决定 want，入队**具体** SetAttr/
+    // RemoveAttr（非 ToggleAttribute），返 `"1"`/`"0"`（post-toggle presence）。enqueue-时解析使所有 lw
+    // 读（getAttribute/hasAttribute/后续 toggle）经既有 sel_attr_override 一致反映——闭合 R3191 连续 toggle
+    // 返值 stale 限制。force：`"1"` 强加、`"0"` 强移、缺省切换。注意锁序：先释放 m 锁再取 html 锁（避死锁）。
     let m = Arc::clone(mutations);
+    let html = Arc::clone(dom_html);
     sandbox.register_callback(
         "__zw_toggle_attribute",
         Box::new(move |args| {
-            if args.len() >= 2 {
-                let force = if args.len() >= 3 {
-                    match args[2].as_str() {
-                        "1" => Some(true),
-                        "0" => Some(false),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
-                m.lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .push(DomMutation::ToggleAttribute {
-                        selector: args[0].clone(),
-                        name: args[1].clone(),
-                        force,
-                    });
+            if args.len() < 2 {
+                return "0".into();
             }
-            "ok".into()
+            let force = if args.len() >= 3 {
+                match args[2].as_str() {
+                    "1" => Some(true),
+                    "0" => Some(false),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            // latest-wins presence：pending SetAttr/RemoveAttr 优先（逆序首命中），无命中回落快照。
+            let present = {
+                let list = m.lock().unwrap_or_else(|e| e.into_inner());
+                match sel_attr_override(&list, &args[0], &args[1]) {
+                    Some(ov) => ov.is_some(),
+                    None => {
+                        drop(list);
+                        let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+                        has_attribute(&snap, &args[0], &args[1])
+                    }
+                }
+            };
+            let want = force.unwrap_or(!present);
+            let mut list = m.lock().unwrap_or_else(|e| e.into_inner());
+            if want && !present {
+                list.push(DomMutation::SetAttr {
+                    selector: args[0].clone(),
+                    name: args[1].clone(),
+                    value: String::new(),
+                });
+            } else if !want && present {
+                list.push(DomMutation::RemoveAttr {
+                    selector: args[0].clone(),
+                    name: args[1].clone(),
+                });
+            }
+            drop(list);
+            if want { "1".into() } else { "0".into() }
         }),
     );
 

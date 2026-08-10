@@ -709,11 +709,11 @@ fn test_toggle_attribute() {
     );
     let ms = mutations.lock().unwrap().clone();
     let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
-    // toggle(hidden) 加 → ToggleAttribute(want=true)；toggle(hidden,false) → want=false。
+    // toggle(hidden) 加 → SetAttr(want=true)（R3192 enqueue-时解析）；toggle(hidden,false) → RemoveAttr。
     // apply 顺序：先加 hidden，再移除 → net 无 hidden。
     assert!(!out.contains("hidden"), "force=false 应移除（net 无 hidden）\n{out}");
 
-    // 连续双 toggle（无 force）：朴素实现都读 stale 都加 → 残留；server-side 决策正确复合 → net 移除。
+    // 连续双 toggle（无 force）：朴素实现都读 stale 都加 → 残留；enqueue-时解析正确复合 → net 移除。
     mutations.lock().unwrap().clear();
     sandbox
         .execute(

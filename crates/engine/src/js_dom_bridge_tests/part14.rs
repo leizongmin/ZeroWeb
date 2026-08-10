@@ -1294,3 +1294,77 @@ fn test_toggle_attribute_return_latest_wins_production_r3191() {
     assert_eq!(force_true, "true", "force=true → 返 true（不依赖 presence）");
     assert_eq!(force_false, "false", "force=false → 返 false（不依赖 presence）");
 }
+
+// ── R3192：连续 `toggleAttribute` 返值 enqueue-时解析（闭合 R3191 已知限制）──
+//
+// R3191 闭合 set/remove-then-toggle 返值，但连续 toggle（同批多次 toggle 同一属性）返值仍 stale——
+// `__zw_toggle_attribute` 旧 apply-时解析，shim 无法预测 apply 结果。R3192 改 enqueue-时解析：host 计算
+// latest-wins presence → 入队具体 SetAttr/RemoveAttr → 返 post-toggle presence。连续 toggle 第二次起返值
+// 准确，且后续 getAttribute/hasAttribute 经 sel_attr_override 一致反映。
+
+#[test]
+fn test_toggle_attribute_consecutive_return_production_r3192() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 连续双 toggle（无 force）：#d 无 x。第一次 absent→present 返 true；第二次 present→absent 返 false。
+    // R3191 已知限制：第二次返值 stale（返 true，错误）。R3192 enqueue-时解析 → 返 false（正确）。
+    let consecutive = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             var a=d.toggleAttribute('data-x');\
+             var b=d.toggleAttribute('data-x');\
+             String(a)+'/'+String(b)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        consecutive, "true/false",
+        "连续双 toggle：第一次 absent→present 返 true，第二次 present→absent 返 false（R3192 enqueue-时解析）"
+    );
+
+    // 连续三 toggle：absent→present(true)→absent(false)→present(true)。net present。
+    let triple = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.removeAttribute('data-x');\
+             var a=d.toggleAttribute('data-y');\
+             var b=d.toggleAttribute('data-y');\
+             var c=d.toggleAttribute('data-y');\
+             String(a)+'/'+String(b)+'/'+String(c)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        triple, "true/false/true",
+        "连续三 toggle：true/false/true（每次返值反映 enqueue-时解析的 post-toggle presence）"
+    );
+
+    // 后续 getAttribute 一致反映（enqueue 的 SetAttr/RemoveAttr 经 sel_attr_override）：双 toggle 后 net absent
+    // → getAttribute 返 null（R3190 null 语义）。
+    let after = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.removeAttribute('data-x'); d.removeAttribute('data-y');\
+             d.toggleAttribute('data-z'); d.toggleAttribute('data-z');\
+             String(d.getAttribute('data-z'))",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        after, "null",
+        "双 toggle 后 net absent → getAttribute 返 null（lw 一致反映 enqueue 的 SetAttr/RemoveAttr）"
+    );
+}

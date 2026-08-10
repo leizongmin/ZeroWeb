@@ -685,31 +685,29 @@
             } catch (_e) { return []; }
           };
         }
-        // `el.toggleAttribute(name, force?)`——切换属性存在性，返切换后是否存在。决策经 host
-        // `__zw_toggle_attribute`（DomMutation::ToggleAttribute，apply 时读当前存在性决定），故连续
-        // toggle 正确复合（朴素 shim 读 stale snapshot 决定会都 add）。
-        // R3191：返值用 **latest-wins** presence（`__zw_has_attr_lw`，反映同批 pending SetAttr/RemoveAttr）
-        // 计算——闭合 set/remove-then-toggle 返值 stale（旧读纯快照 `__zw_has_attr`，setAttribute 后 toggle 仍读
-        // 旧快照）。连续 toggle（pending ToggleAttribute）返值仍 stale（lw override 不处理 ToggleAttribute），
-        // apply 时 mutation 正确，仅返值 stale，可接受。
+        // `el.toggleAttribute(name, force?)`——切换属性存在性，返切换后是否存在。R3192：host
+        // `__zw_toggle_attribute` **enqueue-时解析**决策（计算 latest-wins presence → 入队具体 SetAttr/
+        // RemoveAttr），返 `"1"`/`"0"`（post-toggle presence）——连续 toggle / set-then-toggle 返值均准确
+        //（闭合 R3191 已知限制：连续 toggle 返值 stale）。handle-only / 无 host 回调回落 client-side 决策。
         if (prop === 'toggleAttribute') {
           return function(name, force) {
             var n = String(name);
             var hasForce = force !== undefined;
-            // latest-wins presence（优先 lw，反映同批 setAttribute/removeAttribute；无 lw 回落纯快照）。
+            // R3025：MutationObserver attributeOldValue——toggle 前捕获 old value（有 observer 请求时）。
+            var moOld = _mo_any_wants_attr_old(_mo_id(handle, sel), n) ? _mo_read_attr(sel, handle, n) : null;
+            if (sel && typeof __zw_toggle_attribute === 'function') {
+              var fArg = hasForce ? (force ? '1' : '0') : '';
+              var res = __zw_toggle_attribute(sel, n, fArg); // enqueue-时解析，返 post-toggle presence。
+              _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
+              return res === '1';
+            }
+            // handle-only / fallback（无 host toggle 回调）：client-side 决策（latest-wins presence）。
             var snapHas = sel
               ? ((typeof __zw_has_attr_lw === 'function'
                   ? __zw_has_attr_lw(sel, n)
                   : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, n) : '0')) === '1')
               : false;
-            // R3025：MutationObserver attributeOldValue——toggle 前捕获 old value（有 observer 请求时）。
-            var moOld = _mo_any_wants_attr_old(_mo_id(handle, sel), n) ? _mo_read_attr(sel, handle, n) : null;
-            if (sel && typeof __zw_toggle_attribute === 'function') {
-              var fArg = hasForce ? (force ? '1' : '0') : '';
-              __zw_toggle_attribute(sel, n, fArg);
-              _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
-            } else if (handle) {
-              // handle-only（无 toggle/has-attr handle 变体）：best-effort client-side。
+            if (handle) {
               var want = hasForce ? !!force : !snapHas;
               if (want) __zw_set_attr_handle(handle, n, '');
             }

@@ -65,16 +65,6 @@ pub enum DomMutation {
         /// 属性名。
         name: String,
     },
-    /// `element.toggleAttribute(name, force?)`——切换属性存在性。**决策在 apply 时**读当前存在性
-    ///（force 覆盖），区别于 shim 读 stale snapshot 决定（连续 toggle 会都 add）。P1a attribute API。
-    ToggleAttribute {
-        /// CSS 选择器句柄。
-        selector: String,
-        /// 属性名。
-        name: String,
-        /// `Some(true)` 强制加、`Some(false)` 强制移除、`None` 切换（存在→移除/不存在→加）。
-        force: Option<bool>,
-    },
     /// `element.textContent = ...`
     SetText {
         /// CSS 选择器句柄。
@@ -438,19 +428,6 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 let node =
                     find_by_selector(doc, selector).ok_or_else(|| format!("remove_attr: no match for {selector}"))?;
                 doc.remove_attribute(node, name);
-            }
-            DomMutation::ToggleAttribute { selector, name, force } => {
-                // 决策在 apply 时（读当前存在性）——连续 toggle 复合正确（每次读 evolving state），
-                // 不受脚本内 stale snapshot 影响（朴素 shim 实现连续 toggle 都 add 的 bug）。
-                let node = find_by_selector(doc, selector)
-                    .ok_or_else(|| format!("toggle_attribute: no match for {selector}"))?;
-                let has = doc.get_attribute(node, name).is_some();
-                let want = force.unwrap_or(!has);
-                if want && !has {
-                    doc.set_attribute(node, name, "");
-                } else if !want && has {
-                    doc.remove_attribute(node, name);
-                }
             }
             DomMutation::SetText { selector, text } => {
                 // R3076：lenient no-op when selector 不匹配（如 `document.title=` 在无 `<title>` 页——R2815/R3035
