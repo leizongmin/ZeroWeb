@@ -51,13 +51,23 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
             output.push('>');
         }
         NodeKind::Element(elem) => {
-            // HTML 序列化 spec §13.3：tag 名原样输出 local_name（不主动小写）。HTML 元素的小写由
-            // 创建路径负责——parser（html5ever tokenizer 小写）与 `Document::create_element`
-            //（DOM spec createElement step 2 小写）；SVG / MathML 等经 `create_element_ns` 大小写敏感
-            // 保留。故此处直接输出 `local_name()` 即合规。spec 注："For HTML elements created by the
-            // HTML parser or createElement(), tagname will be lowercase."
+            // HTML 序列化 spec §13.3：tag 名原样输出（不主动小写）。HTML 元素的小写由创建路径负责——
+            // parser（html5ever tokenizer 小写）与 `Document::create_element`（DOM spec createElement
+            // step 2 小写）；SVG / MathML 等经 `create_element_ns` 大小写敏感保留。
+            // R3210：保留 foreign 元素的 prefix——有 prefix（如 `create_element_ns(svg, "svg:rect")`）
+            // 输出限定名 `prefix:local`，无 prefix（绝大多数：HTML 元素 + 默认命名空间 SVG/MathML）输出
+            // `local`。与 R3206 属性前缀对称——copy_subtree_from（R3181）写侧已保元素 prefix，读侧旧用
+            // `local_name()` 丢前缀，致 `<svg:rect>` round-trip 变 `<rect>`（prefixed foreign 元素常见于
+            // 命名空间混用文档）。无 prefix 路径（hot path）零分配，仅罕见 prefixed 触发 format!()。
             output.push('<');
-            let tag = elem.local_name();
+            let tag_owned: String;
+            let tag: &str = match elem.name.prefix.as_deref() {
+                Some(p) => {
+                    tag_owned = format!("{p}:{}", elem.local_name());
+                    &tag_owned
+                }
+                None => elem.local_name(),
+            };
             output.push_str(tag);
 
             // 序列化属性
@@ -390,6 +400,32 @@ mod tests {
         doc.append_child(ta, text).unwrap();
         let html = doc.outer_html(ta);
         assert_eq!(html, "<textarea>x&nbsp;y</textarea>");
+    }
+
+    /// 测试 prefixed foreign 元素序列化保留 prefix（spec 限定名）。旧实现用 `local_name()`
+    /// 丢前缀，致 `create_element_ns(svg, "svg:rect")` 序列化为 `<rect>` 而非 `<svg:rect>`
+    ///（与 R3206 属性前缀对称、与 R3181 copy_subtree_from 写侧对称）。
+    #[test]
+    fn test_serialize_prefixed_foreign_element_r3210() {
+        let mut doc = Document::new();
+        // 带 prefix 的 foreign 元素 → 序列化为 `<prefix:local>`。
+        let rect = doc.create_element_ns("http://www.w3.org/2000/svg", "svg:rect");
+        let html = doc.outer_html(rect);
+        assert_eq!(html, "<svg:rect></svg:rect>");
+
+        // 无 prefix 的 foreign 元素（默认命名空间）→ 仅 local（常见情况，零回归）。
+        let rect2 = doc.create_element_ns("http://www.w3.org/2000/svg", "rect");
+        assert_eq!(doc.outer_html(rect2), "<rect></rect>");
+
+        // HTML 元素恒无 prefix → local（小写由 create_element 负责）。
+        let div = doc.create_element("div");
+        assert_eq!(doc.outer_html(div), "<div></div>");
+
+        // 嵌套 prefixed foreign 元素 round-trip（开/闭标签同 prefix + 子节点）。
+        let parent = doc.create_element_ns("http://www.w3.org/2000/svg", "svg:g");
+        let child = doc.create_element_ns("http://www.w3.org/2000/svg", "svg:rect");
+        doc.append_child(parent, child).unwrap();
+        assert_eq!(doc.outer_html(parent), "<svg:g><svg:rect></svg:rect></svg:g>");
     }
 
     // ── Additional tests ────────────────────────────────────────────────
