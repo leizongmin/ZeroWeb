@@ -1260,13 +1260,17 @@
   }
   // `el.attributes`（NamedNodeMap）：length / item(i) / getNamedItem(name) / 数值索引 /
   // Symbol.iterator，每项 Attr-like {name,value,localName,...}。经 `__zw_attr_names`+`__zw_get_attr`。
-  // handle-only（无 attr_names 变体）→ 空集；R3022：setNamedItem/removeNamedItem 真 mutation（委托元素
-  // setAttribute/removeAttribute host 路径，返旧/移除 Attr），不再只读 no-op。
+  // R3198：handle 经 `__zw_attr_names_handle`（属性名仅来自 mutations，无快照基底）——旧 handle 元素 NamedNodeMap
+  // 恒空（length 0 / item·getNamedItem 返 null / iterator 空）。setNamedItem/removeNamedItem 真 mutation（R3022，
+  // 委托元素 setAttribute/removeAttribute host 路径，返旧/移除 Attr），非只读 no-op。
   function _attributesProxy(sel, handle) {
     var readNames = function() {
-      if (!sel || typeof __zw_attr_names !== 'function') return [];
+      // R3198：handle 经 `__zw_attr_names_handle`，sel 经 `__zw_attr_names`（latest-wins）。各方法
+      //（length/item/getNamedItem/iterator）均经此，故 handle NamedNodeMap 旧全空。
       try {
-        var n = __zw_attr_names(sel);
+        var n = handle
+          ? (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '')
+          : (typeof __zw_attr_names === 'function' ? __zw_attr_names(sel) : '');
         return n ? n.split('|').filter(Boolean) : [];
       } catch (_e) { return []; }
     };

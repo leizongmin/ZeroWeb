@@ -855,8 +855,10 @@
           };
         }
         // `el.cloneNode(deep)`——克隆元素（返新 handle proxy，detached）。复用既有回调组合：
-        // create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。sel-based 源完整；
-        // handle 源 tag/attrs 受限（无 get_tag/attr_names handle 变体，best-effort）。
+        // create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。R3198：handle 源经
+        // `__zw_get_tag_handle`/`__zw_attr_names_handle`/`__zw_get_attr_handle`（旧 handle 源 tag 回落 'div' +
+        // 不复制属性，best-effort 因当时无 handle 枚举回调）；sel 源经 `__zw_get_tag`/`__zw_attr_names`/
+        // `__zw_get_attr`（latest-wins）。两端源均完整复制 tag + 属性 +（deep）后代。
         // `Node.normalize()`（R2853）——合并相邻 Text 子节点 + 移除空 Text。snapshot 模型下元素文本为
         // 单一串（无独立 Text 子节点暴露），故 normalize 为语义正确的 no-op（DOM 态已「normalized」）。
         // 提供 no-op 防 `el.normalize()` 防御性调用（rich-text 编辑器 / innerHTML 后清理）抛 TypeError。
@@ -865,22 +867,30 @@
         }
         if (prop === 'cloneNode') {
           return function(deep) {
+            // R3198：源 tag——handle 经 `__zw_get_tag_handle`，sel 经 `__zw_get_tag`（旧 handle 回落 'div'）。
             var srcTag = 'div';
-            if (sel && typeof __zw_get_tag === 'function') {
-              try { var t = __zw_get_tag(sel); if (t) srcTag = t; } catch (_e) {}
-            }
+            try {
+              var t = handle
+                ? (typeof __zw_get_tag_handle === 'function' ? __zw_get_tag_handle(handle) : '')
+                : (sel && typeof __zw_get_tag === 'function' ? __zw_get_tag(sel) : '');
+              if (t) srcTag = t;
+            } catch (_e) {}
             var nh = __zw_create_element(srcTag);
-            // 复制属性（仅 sel-based 有 attr_names 枚举）。
-            if (sel && typeof __zw_attr_names === 'function') {
-              try {
-                var names = __zw_attr_names(sel);
-                if (names) {
-                  names.split('|').filter(Boolean).forEach(function(n) {
-                    __zw_set_attr_handle(nh, n, __zw_get_attr(sel, n) || '');
-                  });
-                }
-              } catch (_e) {}
-            }
+            // 复制属性（名 + 值）。R3198：handle 源经 `__zw_attr_names_handle`+`__zw_get_attr_handle`，
+            // sel 源经 `__zw_attr_names`+`__zw_get_attr`（旧 handle 源不复制属性）。
+            try {
+              var names = handle
+                ? (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '')
+                : (sel && typeof __zw_attr_names === 'function' ? __zw_attr_names(sel) : '');
+              if (names) {
+                names.split('|').filter(Boolean).forEach(function(n) {
+                  var v = handle
+                    ? (typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(handle, n) : '')
+                    : __zw_get_attr(sel, n);
+                  __zw_set_attr_handle(nh, n, v || '');
+                });
+              }
+            } catch (_e) {}
             // deep：复制后代（innerHTML）。
             if (deep) {
               try {

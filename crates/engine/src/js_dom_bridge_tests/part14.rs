@@ -1805,3 +1805,83 @@ fn test_handle_attribute_enumeration_production_r3197() {
         "handle 全删后 hasAttributes→false，getAttributeNames→[]"
     );
 }
+
+// ── R3198：handle el.attributes NamedNodeMap + handle 源 cloneNode ──
+//
+// R3196/R3197 闭合 handle 属性名枚举（dataset / getAttributeNames·hasAttributes），但 `el.attributes`
+// NamedNodeMap（part03.js `_attributesProxy.readNames()`）对 handle 元素仍恒空（length 0 / item·getNamedItem 返
+// null / iterator 空），且 `cloneNode` 对 handle 源元素 tag 回落 'div' + 不复制属性（旧注释「无 get_tag/
+// attr_names handle 变体，best-effort」）。现三 handle 回调（`__zw_get_tag_handle`/`__zw_attr_names_handle`/
+// `__zw_get_attr_handle`）均已就绪，接线两端，闭合 handle 属性枚举最后一面。
+
+#[test]
+fn test_handle_attributes_and_clone_production_r3198() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // el.attributes NamedNodeMap：length / item(i) / getNamedItem(name) / 迭代（name+value）。旧恒空。
+    let attrs = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.setAttribute('id','main');\
+             e.setAttribute('data-x','1');\
+             var A=e.attributes;\
+             A.length+'|'+\
+             A.item(0).name+'='+A.item(0).value+'|'+\
+             A.getNamedItem('data-x').value+'|'+\
+             String(A.getNamedItem('absent')===null)+'|'+\
+             Array.from(A).map(function(a){return a.name+':'+a.value;}).join(',')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        attrs, "2|id=main|1|true|id:main,data-x:1",
+        "handle el.attributes NamedNodeMap：length/item/getNamedItem/迭代（旧恒空）"
+    );
+
+    // handle 源 cloneNode：源 tag 保留（旧回落 'DIV'）+ 属性复制（旧不复制）。
+    let clone = sandbox
+        .execute(
+            "var s=document.createElement('section');\
+             s.setAttribute('id','s1');\
+             s.setAttribute('class','card');\
+             var c=s.cloneNode(false);\
+             c.tagName+'|'+\
+             c.getAttribute('id')+'|'+\
+             c.getAttribute('class')+'|'+\
+             c.attributes.length+'|'+\
+             String(c.getAttributeNames().join(','))",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        clone, "SECTION|s1|card|2|id,class",
+        "handle 源 cloneNode：tag 保留 SECTION（旧 DIV）+ 属性复制（旧空）"
+    );
+
+    // handle 源 cloneNode deep：后代 innerHTML 复制（R2994 既有，验证未回归）。
+    let clone_deep = sandbox
+        .execute(
+            "var s=document.createElement('div');\
+             s.innerHTML='<span>hi</span>';\
+             s.cloneNode(true).innerHTML",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        clone_deep, "<span>hi</span>",
+        "handle 源 cloneNode deep：后代 innerHTML 复制（既有，未回归）"
+    );
+}
