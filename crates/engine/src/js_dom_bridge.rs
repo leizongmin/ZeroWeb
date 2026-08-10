@@ -1018,6 +1018,14 @@ pub(crate) fn replace_outer_html_node(doc: &mut Document, node: NodeId, html: &s
         .get(node)
         .and_then(|n| n.parent)
         .ok_or_else(|| "set_outer_html: element has no parent".to_string())?;
+    // R3208：spec outerHTML setter——目标父为 Document（即 `<html>` 根元素）应抛
+    // NoModificationAllowedError。旧实现只查 parent null（NotFoundError），不查 parent is Document，
+    // 故 `documentElement.outerHTML=...` 不报错，移除 html 后 Document 直接挂片段节点（畸形树，
+    // 实测 `<html>.outerHTML="<html><body>y</body></html>"` 序列化为孤立 "y"）。spec：
+    // https://dom.spec.whatwg.org/#dom-element-outerhtml（outerHTML setter step 3）。
+    if matches!(doc.get(parent).map(|n| &n.kind), Some(NodeKind::Document(_))) {
+        return Err("set_outer_html: cannot replace document root element (parent is Document)".to_string());
+    }
     // 解析顶层 fragment 节点（与 replace_inner_html 同源），逐个插到目标之前。
     // R3182：context element = 目标父（fragment 在父 context 下解析——如父是 table，
     // `<tr>` 正确解析为隐式 tbody；旧 body-wrap foster-parent 丢失）。

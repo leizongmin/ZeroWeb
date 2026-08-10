@@ -1544,6 +1544,36 @@ fn test_insert_adjacent_html_position_case_insensitive_r3207() {
     );
 }
 
+/// R3208：spec outerHTML setter——目标父为 Document（即 `<html>` 根元素）应抛 NoModificationAllowedError。
+/// 旧实现只查 parent null（NotFoundError），不查 parent is Document，故 `documentElement.outerHTML=...`
+/// 不报错，移除 html 后 Document 直接挂片段节点（畸形树，实测序列化为孤立 "y"）。
+/// spec：https://dom.spec.whatwg.org/#dom-element-outerhtml（outerHTML setter step 3）。
+#[test]
+fn test_set_outer_html_root_element_errors_r3208() {
+    let html = "<html><head></head><body><div id='t'>x</div></body></html>";
+    let res = apply_mutations_to_html(
+        html,
+        &[DomMutation::SetOuterHtml {
+            selector: "html".into(),
+            html: "<html><body>y</body></html>".into(),
+        }],
+    );
+    assert!(
+        res.is_err(),
+        "html 根元素 outerHTML 赋值应失败（parent is Document → NoModificationAllowedError）"
+    );
+    // 常规元素 outerHTML 不受影响（parent 为 element）——回归保护。
+    let ok = apply_mutations_to_html(
+        "<html><body><div id='t'><span>x</span></div></body></html>",
+        &[DomMutation::SetOuterHtml {
+            selector: "#t".into(),
+            html: "<p>y</p>".into(),
+        }],
+    )
+    .unwrap();
+    assert!(ok.contains("<p>y</p>"), "常规元素 outerHTML 仍正常替换: {ok}");
+}
+
 #[test]
 fn test_is_text_input() {
     // P1a change-on-blur：文本输入判定（textarea + input 文本类；排除 action 类型）。
