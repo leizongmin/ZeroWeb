@@ -1893,20 +1893,17 @@
           var tin = parseInt(tiraw, 10);
           return isNaN(tin) ? -1 : tin;
         }
-        // `el.contentEditable`——反射 contenteditable 属性（无 → 'inherit'，spec）；同步 set→get 优先读缓存。
+        // `el.contentEditable`——spec HTML 枚举属性反射，规范化状态：空串/case-insensitive "true"→"true"、
+        // "false"→"false"、缺省/非法→"inherit"。经 [`_contentEditableState`]（R3187，has_attr 区分缺省与空串
+        // keyword）。旧实现直读缓存/host 原值返 "foo"/"TRUE"/""（R3187 闭合）。
         if (prop === 'contentEditable') {
-          var cec = _reflectedAttrs[key];
-          if (cec && Object.prototype.hasOwnProperty.call(cec, 'contenteditable')) return cec['contenteditable'];
-          return (handle ? __zw_get_attr_handle(handle, 'contenteditable') : __zw_get_attr(sel, 'contenteditable')) || 'inherit';
+          return _contentEditableState(key, sel, handle);
         }
-        // `el.isContentEditable`——计算 bool（contentEditable === 'true'）。**简化**：不沿祖先链解析
-        // 'inherit'（spec：inherit 时看最近可编辑祖先）——本沙箱无渲染期可编辑态，元素自身 'true' 即 true。
+        // `el.isContentEditable`——计算 bool：contentEditable 处 true 状态（空串 / case-insensitive "true"）→
+        // true，余（含 false / inherit / 缺省）→ false。**简化**：不沿祖先链解析 'inherit'（spec：inherit 时看
+        // 最近可编辑祖先）——本沙箱无渲染期可编辑态，元素自身 true 状态即 true。经 [`_contentEditableState`]。
         if (prop === 'isContentEditable') {
-          var ced = _reflectedAttrs[key];
-          var cval = ced && Object.prototype.hasOwnProperty.call(ced, 'contenteditable')
-            ? ced['contenteditable']
-            : ((handle ? __zw_get_attr_handle(handle, 'contenteditable') : __zw_get_attr(sel, 'contenteditable')) || 'inherit');
-          return cval === 'true';
+          return _contentEditableState(key, sel, handle) === 'true';
         }
         // `el.accessKey`——反射 accesskey 属性（无 → ''）；同步 set→get 优先读缓存。
         if (prop === 'accessKey') {

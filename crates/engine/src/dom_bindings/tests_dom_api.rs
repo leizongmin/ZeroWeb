@@ -2566,6 +2566,53 @@ fn native_element_content_editable_r3167() {
     );
 }
 
+/// R3187 `contentEditable` / `isContentEditable` / `spellcheck` **空串 keyword** spec 合规。
+///
+/// spec HTML：`contenteditable`/`spellcheck` 为枚举属性，关键字为「空串、true、false」——**空串与 `true`
+/// 同映射 true 状态**。故 `contenteditable=""`（经典 `<div contenteditable>` 可编辑元素写法）须返
+/// `contentEditable="true"` + `isContentEditable=true`。旧实现把空串当 inherit（`contentEditable="inherit"`、
+/// `isContentEditable=false`）。spec `dom-contenteditable` / `dom-iscontenteditable` / `dom-spellcheck`。
+#[test]
+fn native_content_editable_empty_keyword_true_state_r3187() {
+    let html = r#"<html><head></head><body>
+      <div id="e"></div>
+      <div id="ce" contenteditable=""></div>
+      <div id="ctrue" contenteditable="TRUE"></div>
+      <input id="spe" spellcheck=""/>
+    </body></html>"#;
+    // 解析期 contenteditable=""（空串 keyword）→ true 状态 → contentEditable "true"。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('ce').contentEditable)"),
+        "true"
+    );
+    // 空串 → true 状态 → isContentEditable true（旧实现 false，把空串当 inherit）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('ce').isContentEditable)"),
+        "true"
+    );
+    // case-insensitive "TRUE" → true 状态 → contentEditable "true"（规范化小写）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('ctrue').contentEditable)"),
+        "true"
+    );
+    // setAttribute 空串（spec 空串 keyword = true 状态；空串仅 content-attribute keyword，非 IDL setter
+    // keyword——IDL setter `e.contentEditable=''` 会抛 SyntaxError，故用 setAttribute 路径）→ 回读 "true" +
+    // isContentEditable true + 属性 ""。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const e=__zw_native_element_for_id('e'); e.setAttribute('contenteditable','');\
+             return e.contentEditable+'/'+e.isContentEditable+'/'+e.getAttribute('contenteditable');})()"
+        ),
+        "true/true/"
+    );
+    // spellcheck="" （空串 keyword）→ true 状态 → getter true（旧实现 false，把空串当 inherit）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('spe').spellcheck)"),
+        "true"
+    );
+}
+
 /// R3172 HTML 序列化 tag 小写：createElement('DIV').outerHTML → '<div></div>'（dom serializer 对 HTML
 /// 命名空间元素 ASCII 小写，SVG/MathML 保留）。修正编程创建大写 tag 的序列化 + void 元素识别。
 #[test]

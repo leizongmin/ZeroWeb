@@ -239,6 +239,30 @@
     if (_REFLECTED_STRING_FLAT.indexOf(' ' + prop + ' ') >= 0) return prop;
     return null;
   }
+  // R3187：contentEditable 枚举状态求值——返 'true' / 'false' / 'inherit'。spec HTML `contenteditable`
+  // 为枚举属性，关键字「空串、true、false」——**空串与 true 同映射 true 状态**（故 `<div contenteditable>`
+  // 等价 `<div contenteditable="true">`）。缺省（属性不存在）/ 非法（incl "foo"/"inherit"）→ inherit 状态。
+  // **缺省 ≠ 空串 keyword**：`__zw_get_attr` 对缺省与空值均返 ""，须用 `__zw_has_attr*` 判存在性区分。
+  // setter 写过的缓存值（`_reflectedAttrs[key].contenteditable`）视为 present（同步 set→get）；余经 host
+  // has_attr 判存在 + get_attr 读值。供 `contentEditable` / `isContentEditable` 共用（避免重复）。
+  function _contentEditableState(key, sel, handle) {
+    var cec = _reflectedAttrs[key];
+    var present, raw;
+    if (cec && Object.prototype.hasOwnProperty.call(cec, 'contenteditable')) {
+      present = true;
+      raw = cec['contenteditable'];
+    } else {
+      present = (handle
+        ? __zw_has_attr_handle(handle, 'contenteditable')
+        : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'contenteditable') : __zw_has_attr(sel, 'contenteditable'))) === '1';
+      raw = present
+        ? (handle ? __zw_get_attr_handle(handle, 'contenteditable') : __zw_get_attr(sel, 'contenteditable'))
+        : '';
+    }
+    if (!present) return 'inherit';
+    var lo = String(raw).toLowerCase();
+    return (raw === '' || lo === 'true') ? 'true' : (lo === 'false' ? 'false' : 'inherit');
+  }
   // R3038/R3041：reflected unsigned-long（numeric）+ boolean 属性读（R3037 follow-up——string 已在 R3037 覆盖）。
   // 数值型 spec 返 number（缺省 default，colSpan/rowSpan spec default 1 且 min 1；maxLength/minLength default -1
   // = 不限制；cols/rows/start R3041——textarea cols default 20 / rows default 2，ol start default 1，无 min 故

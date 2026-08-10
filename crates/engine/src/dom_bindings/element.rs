@@ -322,18 +322,23 @@ pub(super) fn native_hidden_setter(
 ///
 /// 用于 `isContentEditable` / `spellcheck` 的**继承走查**：返最近的 ancestor（含 self）的 content
 /// 属性是否 ASCII 大小写不敏感匹配 "true"（→ `Some(true)`）或 "false"（→ `Some(false)`）。
-/// 其它值（incl 缺省 / 空串 / "inherit" / garbage）→ 视为 inherit 状态，继续向上。无显式 → `None`。
+/// 其它值（incl 缺省 / "inherit" / garbage）→ 视为 inherit 状态，继续向上。无显式 → `None`。
+///
+/// **R3187 空串 keyword**：spec HTML `contenteditable`/`spellcheck` 为枚举属性，关键字为「空串、true、
+/// false」——**空串与 `true` 同映射 true 状态**（故 `contenteditable=""` 是经典可编辑元素写法，等价
+/// `contenteditable="true"`）。故空串亦返 `Some(true)`（非 inherit）。`false` 状态仍需显式 "false"。
 fn nearest_enumerated_ancestor(doc: &zero_dom::Document, id: NodeId, attr: &str) -> Option<bool> {
     let mut cur = Some(id);
     while let Some(cid) = cur {
         if let Some(v) = doc.get_attribute(cid, attr) {
-            if v.eq_ignore_ascii_case("true") {
+            // 空串 keyword → true 状态（spec：空串与 "true" 同映射）。case-insensitive "true" 同。
+            if v.is_empty() || v.eq_ignore_ascii_case("true") {
                 return Some(true);
             }
             if v.eq_ignore_ascii_case("false") {
                 return Some(false);
             }
-            // 空串 / "inherit" / 非法 → inherit 状态，继续向上走查。
+            // "inherit" / 非法 → inherit 状态，继续向上走查。
         }
         cur = doc.parent_node(cid);
     }
@@ -355,9 +360,10 @@ pub(super) fn native_content_editable_getter(
     // 外层 None = 无 DOM 源 → 留 undefined）。
     let val: Option<&str> = with_dom(|d| {
         match d.get_attribute(id, "contenteditable").as_deref() {
-            Some(s) if s.eq_ignore_ascii_case("true") => "true",
+            // R3187：空串 keyword → true 状态（spec：空串与 "true" 同映射 true 状态）。
+            Some(s) if s.is_empty() || s.eq_ignore_ascii_case("true") => "true",
             Some(s) if s.eq_ignore_ascii_case("false") => "false",
-            // 空串 / "inherit" / 缺省 / 非法 → "inherit" 状态（spec 枚举属性默认 inherit）。
+            // "inherit" / 缺省 / 非法 → "inherit" 状态（spec 枚举属性默认 inherit）。
             _ => "inherit",
         }
     });

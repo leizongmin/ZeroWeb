@@ -900,3 +900,78 @@ fn test_dir_enumerated_getter_production_r3186() {
         "dir enumerated getter：合法关键字→规范小写，invalid/missing→空串"
     );
 }
+
+// ── R3187：`contentEditable`/`isContentEditable` 枚举反射生产路径（spec `dom-contenteditable`）──
+//
+// contenteditable 为枚举属性（关键字：空串、true、false）。spec：空串与 "true" 同映射 true 状态。
+// 生产 shim getter 旧实现直读缓存/host 原值（返 "foo"/"TRUE"/""），现规范化——空串/case-insensitive
+// "true"→"true"、"false"→"false"、余（incl invalid/inherit/missing）→"inherit"。isContentEditable 旧仅
+// `=== 'true'`，现空串/"true"（case-insensitive）→ true。
+
+#[test]
+fn test_content_editable_enumerated_production_r3187() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t'></div><div id='pe' contenteditable></div><div id='pt' contenteditable='TRUE'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 解析期属性路径（host has_attr + get_attr，非 setter 缓存）：`<div contenteditable>`（present-空串 keyword）
+    // → "true"；`<div contenteditable='TRUE'>`（case-insensitive）→ "true"；`#t`（无属性，missing）→ "inherit"。
+    // 旧实现把 present-空串（host 返 ""）与 missing（host 返 ""）混同均返 "inherit"（R3187 has_attr 修正）。
+    let parsed = sandbox
+        .execute(
+            "document.querySelector('#pe').contentEditable+'/'+\
+             document.querySelector('#pt').contentEditable+'/'+\
+             document.querySelector('#t').contentEditable",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        parsed, "true/true/inherit",
+        "解析期：present-空串 keyword→'true'，case-insensitive→'true'，missing→'inherit'"
+    );
+
+    // setter→getter 缓存往返：''→'true'（空串 keyword = true 状态）；'TRUE'→'true'（case 规范化）；
+    // 'foo'→'inherit'（invalid）；'false'→'false'；'inherit'→'inherit'。旧实现返 "true|TRUE|foo|false|inherit"。
+    let ce = sandbox
+        .execute(
+            "var e=document.querySelector('#t');\
+             e.contentEditable=''; var a=e.contentEditable;\
+             e.contentEditable='TRUE'; var b=e.contentEditable;\
+             e.contentEditable='foo'; var c=e.contentEditable;\
+             e.contentEditable='false'; var d=e.contentEditable;\
+             e.contentEditable='inherit'; var g=e.contentEditable;\
+             a+'|'+b+'|'+c+'|'+d+'|'+g",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        ce, "true|true|inherit|false|inherit",
+        "contentEditable 枚举 getter：空串/true→'true'，false→'false'，invalid/inherit→'inherit'"
+    );
+
+    // isContentEditable：空串 keyword → true（旧实现仅 'true'→true，空串→false）；invalid → false。
+    let ice = sandbox
+        .execute(
+            "var e=document.querySelector('#t');\
+             e.contentEditable=''; var a=e.isContentEditable;\
+             e.contentEditable='foo'; var b=e.isContentEditable;\
+             a+'/'+b",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        ice, "true/false",
+        "isContentEditable：空串 keyword = true 状态 → true；invalid → false"
+    );
+}
