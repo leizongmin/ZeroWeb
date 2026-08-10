@@ -1615,3 +1615,207 @@ fn native_class_list_cache_reclaimable_on_gc_r3145() {
     );
     reset_for_test();
 }
+
+// ── R3146 element.toggleAttribute / insertAdjacentElement / insertAdjacentText ──
+
+/// `toggleAttribute(name, force?)`（spec `dom-element-toggleattribute`）：force 缺省 toggle（在→移除返 false、
+/// 不在→设空串返 true）；force=true 确保在（不在设 ""）；force=false 确保移除。返切换后是否在；幂等。
+#[test]
+fn native_toggle_attribute_r3146() {
+    let html = r#"<div id="a"></div>"#;
+    // toggle 缺省：不在→设空串 "" 返 true，getAttribute('hidden')===""（spec 值为空串非 "true"）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             const r=el.toggleAttribute('hidden');\
+             return r+'/'+el.getAttribute('hidden')+'/'+el.hasAttribute('hidden'); })()"
+        ),
+        "true//true"
+    );
+    // toggle 缺省：在→移除返 false，hasAttribute=false。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.setAttribute('hidden','');\
+             const r=el.toggleAttribute('hidden');\
+             return r+'/'+el.hasAttribute('hidden'); })()"
+        ),
+        "false/false"
+    );
+    // force=true 在→不变返 true（值保持，spec force=true 不覆盖既有值）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.setAttribute('data-x','keep');\
+             const r=el.toggleAttribute('data-x',true);\
+             return r+'/'+el.getAttribute('data-x'); })()"
+        ),
+        "true/keep"
+    );
+    // force=true 不在→设空串返 true。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             const r=el.toggleAttribute('data-y',true);\
+             return r+'/'+el.getAttribute('data-y'); })()"
+        ),
+        "true/"
+    );
+    // force=false 在→移除返 false。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.setAttribute('data-z','v');\
+             const r=el.toggleAttribute('data-z',false);\
+             return r+'/'+el.hasAttribute('data-z'); })()"
+        ),
+        "false/false"
+    );
+    // force=false 不在→不变返 false（幂等，无写）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             const r=el.toggleAttribute('nope',false);\
+             return r+'/'+el.hasAttribute('nope'); })()"
+        ),
+        "false/false"
+    );
+}
+
+/// `insertAdjacentElement(position, element)`（spec `dom-element-insertadjacentelement`）：按 position
+/// 移动既有元素相对 this 插入；返插入的元素（=== 参）；4 位置 + 非法 position 抛 + detached beforebegin 抛。
+#[test]
+fn native_insert_adjacent_element_r3146() {
+    // t 含子 tc；x 初始为 p 兄弟（body 下）。各 position 移动 x 相对 t。
+    let html = r#"<div id="p"><span id="t"><i id="tc"></i></span></div><span id="x">X</span>"#;
+    // beforeend：x 进 t 末（tc 后）→ t.children.length=2、[1].id=x。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+             t.insertAdjacentElement('beforeend', __zw_native_element_for_id('x'));\
+             return t.children.length+'/'+t.children[1].id; })()"
+        ),
+        "2/x"
+    );
+    // afterbegin：x 进 t 首（tc 前）→ t.children[0].id=x。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+             t.insertAdjacentElement('afterbegin', __zw_native_element_for_id('x'));\
+             return t.children[0].id; })()"
+        ),
+        "x"
+    );
+    // beforebegin：x 进 p 中 t 前 → p.children[0].id=x。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+             t.insertAdjacentElement('beforebegin', __zw_native_element_for_id('x'));\
+             return __zw_native_element_for_id('p').children[0].id; })()"
+        ),
+        "x"
+    );
+    // afterend：x 进 p 中 t 后 → p.children[1].id=x。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+             t.insertAdjacentElement('afterend', __zw_native_element_for_id('x'));\
+             return __zw_native_element_for_id('p').children[1].id; })()"
+        ),
+        "x"
+    );
+    // 返插入的元素（=== 参，spec）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t'); const x=__zw_native_element_for_id('x');\
+             return (t.insertAdjacentElement('beforeend', x) === x); })()"
+        ),
+        "true"
+    );
+    // 非法 position → 抛 TypeError。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ try { __zw_native_element_for_id('t').insertAdjacentElement('nope',\
+             __zw_native_element_for_id('x')); return 'no-throw'; } catch(e){ return 'threw'; } })()"
+        ),
+        "threw"
+    );
+    // beforebegin 无父（detached）→ 抛（spec NotFoundError，headless 取 TypeError）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+             __zw_native_element_for_id('p').removeChild(t);\
+             try { t.insertAdjacentElement('beforebegin', __zw_native_element_for_id('x')); return 'no-throw'; }\
+             catch(e){ return 'threw'; } })()"
+        ),
+        "threw"
+    );
+}
+
+/// `insertAdjacentText(position, string)`（spec `dom-element-insertadjacenttext`）：字符串作**字面 Text 节点**
+///（不解析 HTML，区别于 insertAdjacentHTML）按 position 插入。4 位置 + 字面性 + 非法 position 抛。
+#[test]
+fn native_insert_adjacent_text_r3146() {
+    let html = r#"<div id="p"><span id="t"></span></div>"#;
+    // beforeend：文本作 Text 节点（nodeType 3）进 t；`<b>` **不解析**（nodeValue 字面含 `<b>`）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+             t.insertAdjacentText('beforeend', '<b>x</b>');\
+             return t.childNodes.length+'/'+t.childNodes[0].nodeType+'/'+t.childNodes[0].nodeValue; })()"
+        ),
+        "1/3/<b>x</b>"
+    );
+    // beforebegin：文本进 p 中 t 前 → p.childNodes[0]=text(3)、[1]=t 元素(1)。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+             t.insertAdjacentText('beforebegin', 'hi');\
+             const p=__zw_native_element_for_id('p');\
+             return p.childNodes[0].nodeType+'/'+p.childNodes[1].nodeType; })()"
+        ),
+        "3/1"
+    );
+    // afterend：文本进 p 中 t 后 → p.childNodes[0]=t(1)、[1]=text(3)。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+             t.insertAdjacentText('afterend', 'hi');\
+             const p=__zw_native_element_for_id('p');\
+             return p.childNodes[0].nodeType+'/'+p.childNodes[1].nodeType; })()"
+        ),
+        "1/3"
+    );
+    // afterbegin：文本进 t 首（t 空，等价首位）→ t.childNodes[0].nodeValue。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const t=__zw_native_element_for_id('t');\
+             t.insertAdjacentText('afterbegin', 'ok');\
+             return t.childNodes[0].nodeValue; })()"
+        ),
+        "ok"
+    );
+    // 非法 position → 抛 TypeError。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ try { __zw_native_element_for_id('t').insertAdjacentText('nope','x'); return 'no-throw'; }\
+             catch(e){ return 'threw'; } })()"
+        ),
+        "threw"
+    );
+}

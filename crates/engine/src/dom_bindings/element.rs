@@ -203,6 +203,43 @@ pub(super) fn native_remove_attribute_invoke(
     with_dom_mut(|d| d.remove_attribute(id, &name));
 }
 
+/// `toggleAttribute(name, force?)`：spec `dom-element-toggleattribute`——切换属性存在性，返切换后是否在。
+/// force 缺省：在→移除返 false、不在→设空串 `""` 返 true（toggle 语义）；force 给定：force=true →
+/// 确保在（不在则设 `""`）返 true、force=false → 确保移除（在则移除）返 false。
+/// 经 [`with_dom_mut`] `has_attribute` + `set_attribute("")` / `remove_attribute`；幂等（已目标态不冗余写）。
+/// 注：toggleAttribute 添加属性时值为 `""`（spec），非 `"true"` 或属性名（区别于旧 HTML boolean attr）。
+pub(super) fn native_toggle_attribute_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    let name = string_arg(scope, &args, 0);
+    let force_defined = !args.get(1).is_undefined();
+    let force = force_defined && args.get(1).boolean_value(scope);
+    let now_present = with_dom_mut(|d| {
+        let has = d.has_attribute(id, &name);
+        // force 缺省 → toggle（want = !has）；force 给定 → want = force（ensure present/absent）。
+        let want = if force_defined { force } else { !has };
+        if want {
+            if !has {
+                d.set_attribute(id, &name, ""); // 添加时值为空串（spec）
+            }
+            true
+        } else {
+            if has {
+                d.remove_attribute(id, &name);
+            }
+            false
+        }
+    })
+    .unwrap_or(false);
+    rv.set(v8::Boolean::new(scope, now_present).into());
+}
+
 // ── 元素子树作用域查询（element.querySelector(-all)，注册于 Element 模板）──
 // 区别于 global `__zw_native_query_selector(-all)`（factories 子模块，R3118）。
 

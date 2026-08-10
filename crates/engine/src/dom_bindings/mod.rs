@@ -169,6 +169,12 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "removeAttribute") {
         tmpl.set(k.into(), rm_attr_tmpl.into());
     }
+    // R3146 element.toggleAttribute(name, force?)（spec `dom-element-toggleattribute`）：切换属性存在性，
+    // 返切换后是否在。补全 attribute 族（getAttribute/hasAttribute/setAttribute/removeAttribute/toggleAttribute）。
+    let toggle_attr_tmpl = v8::FunctionTemplate::builder(element::native_toggle_attribute_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "toggleAttribute") {
+        tmpl.set(k.into(), toggle_attr_tmpl.into());
+    }
     // element 子树作用域查询（spec `dom-parentnode-queryselector(-all)`）：`args.this()` 取
     // 元素 NodeId 作 root，**仅后代**（排除元素自身，见 [`element::native_element_query_selector_invoke`]）。
     let eqs_tmpl = v8::FunctionTemplate::builder(element::native_element_query_selector_invoke).build(scope);
@@ -235,6 +241,17 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     let replace_with_tmpl = v8::FunctionTemplate::builder(node::native_element_replace_with_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "replaceWith") {
         tmpl.set(k.into(), replace_with_tmpl.into());
+    }
+    // R3146 element.insertAdjacentElement(position, element) / insertAdjacentText(position, string)
+    //（spec `dom-element-insertadjacent*`）：按 position（beforebegin/afterbegin/beforeend/afterend）
+    // 相对 this 插入既有节点 / 字面文本节点。补全 adjacent 族（insertAdjacentHTML R3123 + 本轮）。
+    let iae_tmpl = v8::FunctionTemplate::builder(node::native_element_insert_adjacent_element_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "insertAdjacentElement") {
+        tmpl.set(k.into(), iae_tmpl.into());
+    }
+    let iat_tmpl = v8::FunctionTemplate::builder(node::native_element_insert_adjacent_text_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "insertAdjacentText") {
+        tmpl.set(k.into(), iat_tmpl.into());
     }
     // S4 EventTarget（spec `dom-eventtarget-add-event-listener` 等）：addEventListener /
     // removeEventListener / dispatchEvent 原生——监听器存线程局部（gc.rs LISTENERS，键=(NodeId

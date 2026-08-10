@@ -17,7 +17,7 @@ use v8;
 use zero_dom::{Document, DomError, NodeId, NodeKind};
 
 use super::gc::{with_dom, with_dom_mut};
-use super::{get_or_create_native_element, local_value_to_string, node_id_from_value, read_node_id};
+use super::{get_or_create_native_element, local_value_to_string, node_id_from_value, read_node_id, string_arg};
 
 // ── accessor getter（ZST fn；状态经 gc.rs 线程局部）─────────────────
 
@@ -470,6 +470,117 @@ pub(super) fn native_element_replace_with_invoke(
         return;
     };
     insert_variadic(scope, args, id, InsertPos::ReplaceWith);
+}
+
+// ── R3146 element.insertAdjacentElement / insertAdjacentText（spec dom-element-insertadjacent*）──
+
+/// `insertAdjacent` 错误类型：非法 position / beforebegin·afterend 无父（spec 抛 NotFoundError，
+/// headless 无 DOMException，统一经 [`throw_adjacent_error`] 抛最接近的 TypeError）。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AdjacentError {
+    Invalid,
+    NoParent,
+}
+
+/// 解析 `insertAdjacent` position → (parent, ref_node)，镜像 polyfill `insert_nodes_at_position`
+///（js_dom_bridge.rs）同款 (parent, ref) 映射：
+/// - `beforeend` → (target, None)：末子追加；
+/// - `afterbegin` → (target, first_child)：首子前插；
+/// - `beforebegin` → (parent(target), Some(target))：父中 target 前插；
+/// - `afterend` → (parent(target), next_sibling(target))：父中 target 后插；
+/// - 非法 position / beforebegin·afterend 无父 → `Err`。
+fn parse_adjacent_position(
+    doc: &Document,
+    target: NodeId,
+    position: &str,
+) -> Result<(NodeId, Option<NodeId>), AdjacentError> {
+    match position.trim().to_ascii_lowercase().as_str() {
+        "beforeend" => Ok((target, None)),
+        "afterbegin" => Ok((target, doc.first_child(target))),
+        "beforebegin" => doc
+            .parent_node(target)
+            .map(|p| (p, Some(target)))
+            .ok_or(AdjacentError::NoParent),
+        "afterend" => doc
+            .parent_node(target)
+            .map(|p| (p, doc.next_sibling(target)))
+            .ok_or(AdjacentError::NoParent),
+        _ => Err(AdjacentError::Invalid),
+    }
+}
+
+/// 抛 insertAdjacent 错误（headless 无 DOMException，spec TypeError/NotFoundError 统一取最接近的 TypeError）。
+fn throw_adjacent_error(scope: &mut v8::PinScope, err: AdjacentError, position: &str) {
+    let msg = match err {
+        AdjacentError::Invalid => format!(
+            "The value provided ('{position}') is not one of 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'."
+        ),
+        AdjacentError::NoParent => {
+            format!("insertAdjacent('{position}'): element has no parent (spec NotFoundError).")
+        }
+    };
+    if let Some(m) = v8::String::new(scope, &msg) {
+        scope.throw_exception(v8::Exception::type_error(scope, m));
+    }
+}
+
+/// `element.insertAdjacentElement(position, element)`：spec `dom-element-insertadjacentelement`——
+/// 按 position 把参 element 移动插入到相对 `this` 的位置（移动语义，复用 `insert_before`/`append_child`
+/// reparent）。返插入的 element（spec）；非法 position / 无父 → 抛 TypeError；非节点参 → 宽容早退 undefined
+///（同 [`native_append_child_invoke`] lenient 风格，不抛中断脚本）。DocumentFragment 参经
+/// [`insert_with_fragment_flatten`] 自动 flatten（R3144 同语义）。
+pub(super) fn native_element_insert_adjacent_element_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(target) = read_node_id(scope, &this) else {
+        return;
+    };
+    let position = string_arg(scope, &args, 0);
+    let Some(node) = node_id_from_value(scope, args.get(1)) else {
+        return; // 非节点参 → 宽容早退（同 appendChild lenient 风格）
+    };
+    // 解析 position（读 &Document）+ 插入（&mut Document）合一：closure 返 Result<NodeId, AdjacentError>，
+    // with_dom_mut 包 Option（None = 无 DOM → 早退）。throw 须在 scope（closure 外）发生。
+    let outcome: Option<Result<NodeId, AdjacentError>> = with_dom_mut(|d| {
+        let (parent, ref_node) = parse_adjacent_position(d, target, &position)?;
+        let _ = insert_with_fragment_flatten(d, parent, node, ref_node);
+        Ok(node)
+    });
+    match outcome {
+        None => (), // 无 DOM
+        Some(Ok(id)) => set_native_element(scope, id, &mut rv),
+        Some(Err(e)) => throw_adjacent_error(scope, e, &position),
+    }
+}
+
+/// `element.insertAdjacentText(position, string)`：spec `dom-element-insertadjacenttext`——字符串作
+/// **字面 Text 节点**（不解析 HTML，区别于 insertAdjacentHTML）按 position 插入。返 `undefined`（spec）；
+/// 非法 position / 无父 → 抛 TypeError。复用 [`parse_adjacent_position`] + [`insert_with_fragment_flatten`]。
+pub(super) fn native_element_insert_adjacent_text_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(target) = read_node_id(scope, &this) else {
+        return;
+    };
+    let position = string_arg(scope, &args, 0);
+    let text = string_arg(scope, &args, 1);
+    let outcome: Option<Result<(), AdjacentError>> = with_dom_mut(|d| {
+        let (parent, ref_node) = parse_adjacent_position(d, target, &position)?;
+        let tn = d.create_text_node(&text);
+        let _ = insert_with_fragment_flatten(d, parent, tn, ref_node);
+        Ok(())
+    });
+    match outcome {
+        None => (),        // 无 DOM
+        Some(Ok(())) => {} // 返 undefined（留 ReturnValue 默认）
+        Some(Err(e)) => throw_adjacent_error(scope, e, &position),
+    }
 }
 
 /// `nodeValue` setter（spec `dom-node-nodevalue`）：值 ToString 后，Text/Comment/PI 改 content/data
