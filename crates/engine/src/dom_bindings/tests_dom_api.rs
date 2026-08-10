@@ -1749,6 +1749,18 @@ fn native_element_style_r3151() {
         ),
         "1/color: red"
     );
+    // R3213：duplicate prop 末值胜（spec「set a CSS declaration」in-place replace，保首次位置、末次值）。
+    // `color:red;margin:5px;color:blue` → cssText=`color: blue; margin: 5px`（color 保位 0 值蓝）、
+    // getPropertyValue('color')=blue、length=2。旧「去重保首」返 red（首值，错）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             el.setAttribute('style','color: red; margin: 5px; color: blue');\
+             return el.style.getPropertyValue('color')+'/'+el.style.length+'/'+el.style.cssText; })()"
+        ),
+        "blue/2/color: blue; margin: 5px"
+    );
 }
 
 /// R3152 element.dataset（DOMStringMap，spec HTML `dom-dataset`）：named-property-handler 拦 camelCase

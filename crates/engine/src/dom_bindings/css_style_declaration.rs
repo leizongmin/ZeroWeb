@@ -82,8 +82,9 @@ fn split_priority(v: &str) -> (String, bool) {
     (v.trim().to_string(), false)
 }
 
-/// 解析 `style` 属性串为有序 `StyleDecl` 列表（去重保首次出现位置）。格式 `prop: value; prop2: val2`。
-/// 空段 / 无冒号段 / **空值段跳过**；重复 prop 仅留首次（后续丢弃）。prop/value trim，`!important` 剥离入 `important`。
+/// 解析 `style` 属性串为有序 `StyleDecl` 列表（去重，**首次位置 + 末次值胜**）。格式 `prop: value; prop2: val2`。
+/// 空段 / 无冒号段 / **空值段跳过**；重复 prop **原位更新**值+important（保首次出现位置、末次值胜）。
+/// prop/value trim，`!important` 剥离入 `important`。
 fn parse_style(s: &str) -> Vec<StyleDecl> {
     let mut out: Vec<StyleDecl> = Vec::new();
     for seg in s.split(';') {
@@ -99,10 +100,16 @@ fn parse_style(s: &str) -> Vec<StyleDecl> {
         if value.is_empty() {
             continue;
         }
-        if out.iter().any(|d| d.prop == prop) {
-            continue; // 去重保首
+        // R3213：重复 prop **原位更新**（spec「set a CSS declaration」in-place replace——保首次出现位置、
+        // 末次值胜）。旧「去重保首」丢末次值，致 getPropertyValue/cssText 对 duplicate 返首值（spec 应末值）。
+        // 实测 `color:red;margin:5px;color:blue` 旧 cssText=`color: red; margin: 5px`（红），spec=`color: blue;
+        // margin: 5px`（蓝）。
+        if let Some(existing) = out.iter_mut().find(|d| d.prop == prop) {
+            existing.value = value;
+            existing.important = important;
+        } else {
+            out.push(StyleDecl { prop, value, important });
         }
-        out.push(StyleDecl { prop, value, important });
     }
     out
 }

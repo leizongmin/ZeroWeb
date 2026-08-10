@@ -468,6 +468,56 @@ fn test_style_set_empty_value_removes_r3211() {
 }
 
 #[test]
+fn test_style_duplicate_prop_last_wins_r3213() {
+    // R3213：duplicate inline prop 末值胜（spec getPropertyValue/getPropertyPriority 返 LAST 声明——
+    // CSSOM「get a CSS declaration」末值胜，与 native parse_style dedup 末值胜对称）。polyfill readDeclValue
+    // 取末次非空匹配。旧 first-match 返首值（错）。`display:-webkit-flex;display:flex` 等 fallback 模式命中。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // setAttribute 注入 duplicate prop（cssText 旁路，直接存原始串）；shim 读 getPropertyValue 取末次。
+    let out = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.setAttribute('style','color: red; color: blue');\
+             d.style.getPropertyValue('color')+'|'+d.style.getPropertyPriority('color');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out.trim(),
+        "blue|",
+        "duplicate prop 应末值胜（blue），priority 非空 important → ''；got: {out}"
+    );
+
+    // 末次为空值 → 回落前一个非空（与 R3212 parse 丢空值对称）：`color:red;color:` → red。
+    let out2 = sandbox
+        .execute(
+            "d.setAttribute('style','color: red; color: ');\
+             d.style.getPropertyValue('color');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out2.trim(),
+        "red",
+        "末次空值应回落前一个非空值（R3212 对称）；got: {out2}"
+    );
+}
+
+#[test]
 fn test_style_camel_to_kebab() {
     // R2696：per-property camelCase style 须归一为 kebab-case 存 style 属性（CSS parser 不认
     // camelCase → 渲染静默失效）。覆盖 backgroundColor / WebkitTransform（vendor 前缀）/ cssFloat

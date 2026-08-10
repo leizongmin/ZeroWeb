@@ -1404,18 +1404,25 @@
     };
     // R3193：读取属性声明的**原始值串**（含 !important），按首个 ':' 切分（旧 `split(':')` 致 url() 等含
     // 冒号值截断）。命中返原始值串，未命中返 null。供 readProp（值）/ getPropertyPriority（优先级）复用。
+    // R3213：取**末次非空**匹配（spec getPropertyValue/getPropertyPriority 返 LAST 声明——CSSOM「get a
+    // CSS declaration」末值胜，与 native parse_style dedup 末值胜对称）。跳过空值匹配（与 R3212 parse 丢空值
+    // 声明对称——`color:red;color:` 应返 "red" 非 ""）。非 duplicate 场景仅一匹配，首=末，行为不变。
     var readDeclValue = function(name) {
       var raw = readRaw();
       if (!raw) return null;
       var want = _stylePropName(name).toLowerCase();
       var parts = raw.split(';');
+      var found = null;
       for (var i = 0; i < parts.length; i++) {
         var decl = parts[i];
         var colon = decl.indexOf(':');
         if (colon < 0) continue;
-        if (decl.slice(0, colon).trim().toLowerCase() === want) return decl.slice(colon + 1).trim();
+        if (decl.slice(0, colon).trim().toLowerCase() === want) {
+          var val = decl.slice(colon + 1).trim();
+          if (val) found = val; // 末次非空匹配覆盖
+        }
       }
-      return null;
+      return found;
     };
     // getPropertyValue 返值**不含** !important（spec；旧返 "red !important"）。
     var readProp = function(name) {
