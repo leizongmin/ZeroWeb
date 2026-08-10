@@ -992,6 +992,23 @@ pub fn shutdown() {
     }
 }
 
+/// 测试：kill compositor 子进程以模拟 crash（不 shutdown worker）。
+#[cfg(test)]
+pub fn kill_compositor_child_for_test() -> bool {
+    let client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some(client) = client.as_ref() {
+        kill_child(&client.child);
+        return true;
+    }
+    false
+}
+
+/// 测试：重置全局 compositor client。
+#[cfg(test)]
+pub fn reset_client_for_test() {
+    shutdown();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

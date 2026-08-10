@@ -1,8 +1,8 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v2.0 ｜ 日期：2026-08-11 ｜ 状态：**§五切片完成（4.3-S4 / 4.4-S4 / 4.5-S3 / GPU 恢复 ✅）；真 GPU 纹理零拷贝与 compositor crash E2E 仍为后续**
+版本：v2.1 ｜ 日期：2026-08-11 ｜ 状态：**4.3-S5 dma-buf fd 通道 + compositor crash E2E ✅；Vulkan 真纹理导出仍为后续**
 
-> 实施状态（2026-08-11 v2.0 更新）：
+> 实施状态（2026-08-11 v2.1 更新）：
 > - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
 > - **C2（合成器独立进程）✅**：surface 级页面主显示链路已接通。
 > - **C3（GPU 隔离）✅ 切片 S1+S2**：
@@ -21,6 +21,7 @@
 >   - S2：`ZW_COMPOSITOR_GPU_IMAGE=1` 时 `gpu_image.mailbox_name` 经 shm 后端传递像素。
 >   - S3：`GpuSharedImageDescriptor.sync_token` 占位（fence 序号 = frame_id）。
 >   - S4：`gpu_mailbox.rs` 28 字节头 + `sync_token` fence 校验；`ZW_COMPOSITOR_GPU_ZERO_COPY=1` 时 mmap 读 payload（仍为 shm 后端，非 GPU 纹理）。
+>   - S5：`GpuImageTransport::DmaBuf` + Unix socket SCM_RIGHTS（`fd_socket_linux.rs`）；`ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=1` 时 compositor 导出 memfd 线性缓冲（Vulkan dma-buf 导出 FIXME）；Browser mmap 消费。
 > - **4.4（Viz UI surface）✅ 切片 + S2–S4**：
 >   - 元数据：`CompositorRegisterUiSurface` + Browser 启动登记 `CHROME_UI_SURFACE_ID`。
 >   - S2：`CompositorUiFrame` / `GetCompositorUiFrame`；`ZW_COMPOSITOR_UI_FRAMES=1` 时 Browser 提交 UI 位图握手。
@@ -35,9 +36,10 @@
 >   - S3：`ZW_COMPOSITOR_LANDLOCK=1` 时字体加载后 Landlock：`/dev/shm` RW + 字体目录 RO
 >     （与 `ZW_COMPOSITOR_GPU=1` 不兼容）。
 > - **§五 GPU 恢复（切片）✅**：`ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 模拟设备丢失，丢弃 GPU 上下文并回退 CPU；
->   compositor IPC 断线 → legacy 回退逻辑已在 `compositor_client` 实现（crash E2E 集成测仍为后续）。
+>   compositor IPC 断线 → legacy 回退逻辑已在 `compositor_client` 实现。
+> - **§五 compositor crash E2E ✅**：`process_backend::compositor_crash_triggers_legacy_fallback_messages` kill 真实子进程 → `Disconnected` → `SetFramePublishMode(Legacy)` + `RequestFrame` + snapshot 清理。
 
-> 本状态不代表完整 Chromium/Chrome compositor 对齐。§五规划切片已落地；真 GPU 纹理零拷贝与 compositor 进程 crash 端到端验证仍为后续。
+> 本状态不代表完整 Chromium/Chrome compositor 对齐。§五规划切片已落地；**Vulkan 真纹理 dma-buf 导出**（跳过 read_pixels）与 Browser 侧 wgpu import 直接合成仍为后续。
 > `ZW_COMPOSITOR_OWNED_PRESENT=1` 时 Browser 可跳过本地合成；默认仍由 Browser 拥有窗口最终场景。
 
 ## 一、当前架构
@@ -143,6 +145,7 @@ GPU 设备丢失（或 `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 诊断模拟）时 co
 | `ZW_COMPOSITOR_SHM=1` | Linux POSIX shm 帧像素 |
 | `ZW_COMPOSITOR_GPU_IMAGE=1` | gpu_image mailbox（shm 后端） |
 | `ZW_COMPOSITOR_GPU_ZERO_COPY=1` | gpu_image mailbox mmap 读 payload（Linux） |
+| `ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=1` | dma-buf fd 经 Unix socket 导出（Linux；memfd 回退） |
 | `ZW_RENDERER_COMPOSITOR_THREAD=1` | renderer 异步 compositor IPC 发布 |
 | `ZW_COMPOSITOR_ASYNC_SCROLL=1` | compositor 滚动元数据 + Browser 消费 |
 | `ZW_COMPOSITOR_SCROLL_TRANSFORM=1` | compositor 侧 scroll 烘焙（回读 scroll=0） |
@@ -157,10 +160,10 @@ GPU 设备丢失（或 `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 诊断模拟）时 co
 ## 五、下一阶段（完整对齐）
 
 - compositor 侧滚动变换（非仅元数据回读）→ **4.2-S2 ✅**
-- GPU **纹理**/wgpu fence **真零拷贝** present（mailbox 当前为 shm + mmap 后端）→ **4.3-S4 切片 ✅，真纹理为后续**
+- GPU **纹理**/wgpu fence **真零拷贝** present（mailbox 当前为 shm + mmap 后端）→ **4.3-S4 切片 ✅，S5 fd 通道 ✅，Vulkan 跳过 read_pixels 为后续**
 - Viz 式最终 surface 所有权（默认非 env-gated）→ **4.4-S4 切片 ✅，默认可关**
 - landlock 文件系统最小权限沙箱 → **4.5-S3 ✅**
-- GPU 设备丢失 CPU 回退 → **§五 切片 ✅**；compositor **进程 crash** 端到端集成测仍为后续
+- GPU 设备丢失 CPU 回退 → **§五 切片 ✅**；compositor **进程 crash** 端到端集成测 → **§五 E2E ✅**
 
 ## 六、Non-Goals（仍为后续）
 
@@ -171,8 +174,9 @@ GPU 设备丢失（或 `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 诊断模拟）时 co
 
 ## 七、验证与关系
 
-- C2/C3/4.x 定向测试：`frame_flow`（**14** 案，含 scroll/shm/gpu_image/ui/present/seccomp/landlock/gpu_loss/window_surface）、`compositor_protocol`、
+- C2/C3/4.x 定向测试：`frame_flow`（**15** 案，含 scroll/shm/gpu_image/ui/present/seccomp/landlock/gpu_loss/window_surface/gpu_texture_export）、`compositor_protocol`、
   `compositor_client`、`compositor_publish_thread`、GPU partial dirty 单测。
+- **2026-08-11 v2.1 增量**：`cargo test -p zero-compositor` **15/15** PASS（含 4.3-S5 dma-buf fd）；`cargo test -p zero-browser compositor_crash` E2E PASS。
 - **2026-08-11 v2.0 增量**：`cargo test -p zero-compositor` **14/14** PASS（含 4.5-S3 landlock、§五 GPU 模拟丢失）。
 - **2026-08-11 增量验收**：`make test` PASS；`make browser-compositor-smoke` PASS（legacy/compositor 双模式）。
 - 全量质量、reftest 和产品 smoke 由后续验收任务执行。
@@ -196,5 +200,6 @@ GPU 设备丢失（或 `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 诊断模拟）时 co
 | `make bench-gate`（vs 08-08 迁移前基线） | 关键路径 page/*（parse/style/layout/paint/total/首屏，welcome/medium/morning）**两轮全 PASS 且 ≤ 基线**；微基准两轮超限 21→11，失败集不相交、集中于重构未触及 crate（dom/wasm/webview/storage/script-sandbox 等），08-09 启用后报告同指标均处基线水平 → **归因共享机器测量噪声，非重构回归**；恢复计划：CI bench-trend（github-ubuntu-latest 基线）为权威趋势 |
 | 回退环境变量 | `ZW_COMPOSITOR_PROCESS=0` legacy 路径代码验证（browser compositor_client.rs / renderer main.rs）+ 双模式实测 ✓；`ZW_COMPOSITOR_SHM=1` / `ZW_COMPOSITOR_GPU=1` 开关在位 |
 | v2.0 切片（2026-08-11） | `cargo test -p zero-compositor` **14/14**；4.3-S4 fence/mmap、4.4-S4 owned present、4.5-S3 landlock、§五 GPU simulate lost 已提交 `main` |
+| v2.1 切片（2026-08-11） | 4.3-S5 dma-buf fd + `compositor_crash_triggers_legacy_fallback_messages` E2E；frame_flow **15/15** |
 
 覆盖范围与例外：本机（linux-x86_64，16 核）执行；oracle 与 CI 专用门禁未本地跑，由 CI/weekly 承担。对照差异全部归因（corpus 增量、layout-dump 格式缺陷、基准噪声），无未解释差异。

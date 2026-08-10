@@ -132,6 +132,20 @@ pub struct ProcessTabBackend {
     compositor_status: crate::compositor_client::CompositorStatus,
 }
 
+#[cfg(test)]
+thread_local! {
+    static TEST_RENDERER_OUTBOUND: std::cell::RefCell<Vec<IpcMessageKind>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+pub fn take_test_renderer_outbound() -> Vec<IpcMessageKind> {
+    TEST_RENDERER_OUTBOUND.with(|log| {
+        let mut buf = log.borrow_mut();
+        std::mem::take(&mut *buf)
+    })
+}
+
 impl ProcessTabBackend {
     /// 暂存最新绘制帧，避免 UI 线程逐个转换 renderer 积压的完整页面快照。
     fn defer_latest_paint(latest_paint: &mut Option<IpcMessageKind>, kind: IpcMessageKind) -> Option<IpcMessageKind> {
@@ -496,12 +510,24 @@ impl ProcessTabBackend {
     }
 
     fn send_to_renderer(&mut self, tab_id: TabId, kind: IpcMessageKind) {
+        #[cfg(test)]
+        TEST_RENDERER_OUTBOUND.with(|log| log.borrow_mut().push(kind.clone()));
         let Some(renderer) = self.renderer_mut(tab_id) else {
             return;
         };
         if let Err(e) = renderer.send(IpcMessage { id: 0, kind }) {
             tracing::warn!("IPC send failed for tab {}: {e}", tab_id.0);
         }
+    }
+
+    /// 测试：观察 compositor 状态并触发 legacy 回退。
+    #[cfg(test)]
+    pub fn observe_compositor_status_for_test(
+        &mut self,
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+        snapshot_seq: &mut HashMap<TabId, u64>,
+    ) -> bool {
+        self.observe_compositor_status(snapshots, snapshot_seq)
     }
 
     /// 取出待处理的加载完成事件。
@@ -1156,10 +1182,12 @@ mod navigation_contract_tests {
 
 #[cfg(test)]
 mod compositor_fallback_tests {
-    use super::ProcessTabBackend;
+    use super::{ProcessTabBackend, take_test_renderer_outbound};
     use crate::compositor_client::CompositorStatus;
+    use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
     use std::path::PathBuf;
     use zero_browser_shell::TabId;
+    use zero_protocol::message::{FramePublishMode, IpcMessageKind};
 
     #[test]
     fn startup_failure_enters_fallback_once() {
@@ -1206,5 +1234,89 @@ mod compositor_fallback_tests {
         backend.remove_renderer(tab_id);
 
         assert!(!backend.tab_to_renderer.contains_key(&tab_id));
+    }
+
+    fn compositor_test_bin() -> String {
+        if let Ok(bin) = std::env::var("CARGO_BIN_EXE_zero-compositor") {
+            return bin;
+        }
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/debug/zero-compositor")
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn compositor_crash_triggers_legacy_fallback_messages() {
+        crate::compositor_client::reset_client_for_test();
+        let _ = take_test_renderer_outbound();
+
+        let compositor_bin = compositor_test_bin();
+        unsafe {
+            std::env::set_var("ZW_COMPOSITOR_BIN", &compositor_bin);
+            std::env::set_var("ZW_COMPOSITOR_PROCESS", "1");
+        }
+
+        crate::compositor_client::forward_frame(
+            99,
+            1,
+            1,
+            zero_protocol::paint_snapshot::PaintSnapshotParams::default(),
+        );
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while crate::compositor_client::status() != CompositorStatus::Healthy {
+            assert!(std::time::Instant::now() < deadline, "compositor 未进入 Healthy");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
+        backend.compositor_status = CompositorStatus::Healthy;
+        let tab_id = TabId(1);
+        backend.tab_to_renderer.insert(tab_id, 99);
+
+        let mut snapshots = std::collections::HashMap::from([(tab_id, TabSnapshot::default())]);
+        let mut snapshot_seq = std::collections::HashMap::new();
+        let snap = snapshots.get_mut(&tab_id).unwrap();
+        snap.compositor_submission = Some(CompositorSubmission {
+            surface_id: 99,
+            navigation_epoch: 1,
+            frame_id: 1,
+        });
+
+        assert!(crate::compositor_client::kill_compositor_child_for_test());
+
+        let disconnect_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while crate::compositor_client::status() != CompositorStatus::Disconnected {
+            assert!(
+                std::time::Instant::now() < disconnect_deadline,
+                "compositor 未进入 Disconnected"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        assert!(backend.observe_compositor_status_for_test(&mut snapshots, &mut snapshot_seq));
+        let snap = snapshots.get(&tab_id).unwrap();
+        assert!(snap.compositor_submission.is_none());
+        assert!(snap.compositor_frame.is_none());
+
+        let outbound = take_test_renderer_outbound();
+        assert!(
+            outbound
+                .iter()
+                .any(|kind| matches!(kind, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy))),
+            "expected SetFramePublishMode(Legacy), got {outbound:?}"
+        );
+        assert!(
+            outbound.iter().any(|kind| matches!(kind, IpcMessageKind::RequestFrame)),
+            "expected RequestFrame, got {outbound:?}"
+        );
+
+        crate::compositor_client::reset_client_for_test();
+        unsafe {
+            std::env::remove_var("ZW_COMPOSITOR_BIN");
+            std::env::remove_var("ZW_COMPOSITOR_PROCESS");
+        }
     }
 }
