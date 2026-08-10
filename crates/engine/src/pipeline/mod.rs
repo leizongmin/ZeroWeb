@@ -336,6 +336,13 @@ impl RenderPipeline {
     /// 由调用方从 `FontLoader::build_font_resolver()` 构建并传入。
     /// 用于将 CSS font-family 列表解析为具体的 FontId。
     pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
+        self.layout_engine.set_font_resolver(resolver.clone());
+        if std::env::var("ZW_SHAPED_TEXT").as_deref() != Ok("0")
+            && std::env::var("ZW_SHAPED_LAYOUT").as_deref() == Ok("1")
+        {
+            self.layout_engine
+                .set_advance_source(std::rc::Rc::new(crate::text_metrics::ShapedAdvanceSource));
+        }
         self.font_resolver = resolver;
     }
 

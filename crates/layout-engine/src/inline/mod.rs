@@ -202,6 +202,11 @@ pub struct InlineFormattingContext {
     /// 启发式，字节等价，零回归）。`Some` = 注入 `FontLoader`-backed 真实 advance（R3），
     /// 度量点改读 hmtx 真实 advance，与 paint 同源（解 advance-wall / R1264 layout 残余）。
     pub advance_source: Option<AdvanceSourceHandle>,
+    /// CSS font-family 到字体 ID 的独立解析表。
+    ///
+    /// 与 `font_metric_provider` 分离，使 shaped-text 可在不启用 per-font line-height
+    /// 的情况下填充 `TextRun.font_id`。
+    pub font_resolver: Option<Rc<HashMap<String, u32>>>,
     /// 逐文本节点的真实 ascent ratio 覆盖（key = 文本片段 NodeId）。
     ///
     /// **Phase A §12.6 step-2 bypass 基础设施（dormant，零回归）**：R890 实证
@@ -268,6 +273,7 @@ impl InlineFormattingContext {
             fragment_node_ids: None,
             font_metric_provider: None,
             advance_source: None,
+            font_resolver: None,
             ascent_ratio_overrides: HashMap::new(),
             text_transform_overrides: HashMap::new(),
             column_fragmentation: None,
@@ -355,6 +361,12 @@ impl InlineFormattingContext {
         self
     }
 
+    /// 注入 CSS font-family 到字体 ID 的解析表。
+    pub fn with_font_resolver(mut self, resolver: Rc<HashMap<String, u32>>) -> Self {
+        self.font_resolver = Some(resolver);
+        self
+    }
+
     /// 测量单字符 advance 宽度（C3 advance plumbing，R2 dormant）。
     ///
     /// 注入源时经 `AdvanceSourceHandle`（真实 hmtx），否则回退 `estimate_char_width`
@@ -375,9 +387,44 @@ impl InlineFormattingContext {
     /// `font_metric_provider` 默认 `None` → 返回 `None` = 现行为零回归；provider
     /// 注入后（U1b-wiring 激活）经 `FontMetricProvider::font_id_of` 真实解析。
     fn font_id_for_style(&self, style: Option<&zero_style_system::ComputedStyle>) -> Option<u32> {
-        let provider = self.font_metric_provider.as_ref()?;
         let s = style?;
-        provider.font_id_of(&s.font_family)
+        s.font_family
+            .iter()
+            .find_map(|family| {
+                self.font_resolver.as_ref().and_then(|resolver| {
+                    resolver.get(family).copied().or_else(|| {
+                        resolver
+                            .iter()
+                            .find(|(name, _)| name.eq_ignore_ascii_case(family))
+                            .map(|(_, id)| *id)
+                    })
+                })
+            })
+            .or_else(|| {
+                self.font_metric_provider
+                    .as_ref()
+                    .and_then(|provider| provider.font_id_of(&s.font_family))
+            })
+    }
+
+    /// 返回允许受限 shaping 的 run 字体 ID；不满足边界时保留旧 estimate 路径。
+    fn shaping_font_id_for_style(
+        &self,
+        style: Option<&zero_style_system::ComputedStyle>,
+        is_ahem: bool,
+        letter_spacing: f32,
+        word_spacing: f32,
+        is_ruby: bool,
+    ) -> Option<u32> {
+        if is_ahem
+            || letter_spacing != 0.0
+            || word_spacing != 0.0
+            || is_ruby
+            || !style.is_some_and(|style| matches!(style.direction, zero_style_system::DirectionValue::Ltr))
+        {
+            return None;
+        }
+        self.font_id_for_style(style)
     }
 
     /// 测量整段文本的 advance 宽度（C3 advance plumbing，R2 dormant）。
@@ -388,10 +435,7 @@ impl InlineFormattingContext {
     /// 驱动换行点（advance-wall / R1264 layout 残余的 root）。
     fn advance_string_width(&self, text: &str, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
         match &self.advance_source {
-            Some(_) => text
-                .chars()
-                .map(|c| self.advance_of(c, font_id, font_size, is_ahem))
-                .sum(),
+            Some(src) => src.measure_text(text, font_id, font_size, is_ahem),
             None => estimate_string_width(text, font_size, is_ahem),
         }
     }

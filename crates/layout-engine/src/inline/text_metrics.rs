@@ -93,6 +93,16 @@ pub trait AdvanceSource {
     ///   实现应回退到 estimate。
     /// - `is_ahem`：Ahem 测试字体（advance = font_size）。
     fn measure(&self, ch: char, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32;
+
+    /// 测量整段文本的 advance 宽度。
+    ///
+    /// 默认逐字符调用 [`Self::measure`]，保持现有实现行为不变。需要 kerning/GPOS
+    /// 上下文的实现可覆写本方法，并在一次 shaping 中返回整段 advance。
+    fn measure_text(&self, text: &str, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+        text.chars()
+            .map(|ch| self.measure(ch, font_id, font_size, is_ahem))
+            .sum()
+    }
 }
 
 /// 默认 advance 源：委托 `estimate_char_width` 启发式（保持当前行为，零回归）。
@@ -129,6 +139,11 @@ impl AdvanceSourceHandle {
     /// `EstimateAdvance`（零回归）。
     pub fn measure(&self, ch: char, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
         self.0.measure(ch, font_id, font_size, is_ahem)
+    }
+
+    /// 经由内部源测量整段文本 advance。
+    pub fn measure_text(&self, text: &str, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+        self.0.measure_text(text, font_id, font_size, is_ahem)
     }
 }
 

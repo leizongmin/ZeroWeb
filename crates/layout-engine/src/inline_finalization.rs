@@ -14,6 +14,17 @@ use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, WordBrea
 use crate::types::LayoutBox;
 use zero_style_system::WritingModeValue;
 
+/// 行内布局使用的字体相关依赖。
+#[derive(Clone, Copy, Default)]
+pub(crate) struct InlineFontContext<'a> {
+    /// 可选行度量提供者。
+    pub metric_provider: Option<&'a crate::inline::FontMetricProviderHandle>,
+    /// 可选文本 advance 提供者。
+    pub advance_source: Option<&'a crate::inline::AdvanceSourceHandle>,
+    /// 可选 CSS family 到字体 ID 的解析表。
+    pub resolver: Option<&'a std::rc::Rc<HashMap<String, u32>>>,
+}
+
 /// R1099 Slice α-1 decoration-gate：vertical 容器子树是否含 text-decoration 或
 /// text-emphasis（非 None）。
 ///
@@ -611,8 +622,11 @@ pub(crate) fn compute_final_inline_layouts(
     ancestor_floats: &[crate::inline::FloatExclusion],
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     paint_skip: &mut std::collections::HashSet<NodeId>,
-    font_metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
+    inline_fonts: InlineFontContext<'_>,
 ) {
+    let font_metric_provider = inline_fonts.metric_provider;
+    let advance_source = inline_fonts.advance_source;
+    let font_resolver = inline_fonts.resolver;
     // R362：先收集本容器直接 float 子（既用于自身 IFC 排除，也向后代传播）。
     // 坐标系：c.y 是 float 子相对 root box 顶部的位置，与 IFC 行 y（0=root box 顶）一致。
     // 携带 node_id 以便递归时排除子节点自身（float 不应在自身 IFC 中排除自己）。
@@ -663,7 +677,7 @@ pub(crate) fn compute_final_inline_layouts(
             &child_ancestor,
             img_intrinsic_sizes,
             paint_skip,
-            font_metric_provider,
+            inline_fonts,
         );
     }
 
@@ -902,6 +916,14 @@ pub(crate) fn compute_final_inline_layouts(
     if let Some(provider) = font_metric_provider {
         inline_ctx = inline_ctx.with_font_metric_provider(provider.0.clone());
     }
+    if !inline_ctx.vertical
+        && let Some(source) = advance_source
+    {
+        inline_ctx = inline_ctx.with_advance_source(source.0.clone());
+    }
+    if let Some(resolver) = font_resolver {
+        inline_ctx = inline_ctx.with_font_resolver(resolver.clone());
+    }
 
     if !exclusions.is_empty() {
         inline_ctx = inline_ctx.with_float_exclusions(exclusions);
@@ -1122,8 +1144,11 @@ pub(crate) fn measure_text_content(
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
-    font_metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
+    inline_fonts: InlineFontContext<'_>,
 ) -> Size<f32> {
+    let font_metric_provider = inline_fonts.metric_provider;
+    let advance_source = inline_fonts.advance_source;
+    let font_resolver = inline_fonts.resolver;
     // R2251 content-visibility:hidden → size containment：元素内容（直属文本）不贡献
     // 尺寸，测量返回 0。（子元素已在 build_subtree 跳过，不入 taffy 树，故不经此回调。）
     // 文本节点（匿名 flex/grid item）的 dom_id 在 styles 中无条目 → 不受影响。
@@ -1152,6 +1177,27 @@ pub(crate) fn measure_text_content(
         let is_ahem = parent_style
             .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
             .unwrap_or(false);
+        let font_id = parent_style.and_then(|style| {
+            style
+                .font_family
+                .iter()
+                .find_map(|family| {
+                    font_resolver.and_then(|resolver| {
+                        resolver.get(family).copied().or_else(|| {
+                            resolver
+                                .iter()
+                                .find(|(name, _)| name.eq_ignore_ascii_case(family))
+                                .map(|(_, id)| *id)
+                        })
+                    })
+                })
+                .or_else(|| font_metric_provider.and_then(|provider| provider.font_id_of(&style.font_family)))
+        });
+        let shaped_measure_eligible = !is_ahem
+            && parent_style.is_none_or(|style| {
+                matches!(style.direction, zero_style_system::DirectionValue::Ltr)
+                    && matches!(style.writing_mode, WritingModeValue::HorizontalTb)
+            });
 
         // 包含 letter-spacing：CSS 规范中 letter-spacing 适用于每个字符
         let letter_spacing: f32 = parent_style
@@ -1169,11 +1215,23 @@ pub(crate) fn measure_text_content(
             text.split(char::is_whitespace)
                 .filter(|word| !word.is_empty())
                 .map(|word| {
-                    word.chars()
-                        .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem) + letter_spacing)
-                        .sum::<f32>()
+                    if shaped_measure_eligible
+                        && letter_spacing == 0.0
+                        && let Some(source) = advance_source
+                    {
+                        source.measure_text(word, font_id, font_size, is_ahem)
+                    } else {
+                        word.chars()
+                            .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem) + letter_spacing)
+                            .sum::<f32>()
+                    }
                 })
                 .fold(0.0f32, f32::max)
+        } else if shaped_measure_eligible
+            && letter_spacing == 0.0
+            && let Some(source) = advance_source
+        {
+            source.measure_text(&text, font_id, font_size, is_ahem)
         } else {
             text.chars()
                 .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem) + letter_spacing)
@@ -1325,6 +1383,14 @@ pub(crate) fn measure_text_content(
     if let Some(provider) = font_metric_provider {
         inline_ctx = inline_ctx.with_font_metric_provider(provider.0.clone());
     }
+    if !inline_ctx.vertical
+        && let Some(source) = advance_source
+    {
+        inline_ctx = inline_ctx.with_advance_source(source.0.clone());
+    }
+    if let Some(resolver) = font_resolver {
+        inline_ctx = inline_ctx.with_font_resolver(resolver.clone());
+    }
     inline_ctx.layout(doc, dom_id, styles);
 
     let measured_width = inline_ctx
@@ -1375,6 +1441,12 @@ pub(crate) fn measure_text_content(
                     .with_break_at_newline(break_at_newline);
                 if let Some(provider) = font_metric_provider {
                     col_ctx = col_ctx.with_font_metric_provider(provider.0.clone());
+                }
+                if let Some(source) = advance_source {
+                    col_ctx = col_ctx.with_advance_source(source.0.clone());
+                }
+                if let Some(resolver) = font_resolver {
+                    col_ctx = col_ctx.with_font_resolver(resolver.clone());
                 }
                 col_ctx.layout(doc, dom_id, styles);
                 let cn = col_ctx.lines.len();
@@ -1439,8 +1511,11 @@ pub(crate) fn remeasure_text_with_float_exclusions(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
-    font_metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
+    inline_fonts: InlineFontContext<'_>,
 ) {
+    let font_metric_provider = inline_fonts.metric_provider;
+    let advance_source = inline_fonts.advance_source;
+    let font_resolver = inline_fonts.resolver;
     // 收集此容器的 float 排除区域
     let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
 
@@ -1516,6 +1591,14 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             if let Some(provider) = font_metric_provider {
                 inline_ctx = inline_ctx.with_font_metric_provider(provider.0.clone());
             }
+            if !inline_ctx.vertical
+                && let Some(source) = advance_source
+            {
+                inline_ctx = inline_ctx.with_advance_source(source.0.clone());
+            }
+            if let Some(resolver) = font_resolver {
+                inline_ctx = inline_ctx.with_font_resolver(resolver.clone());
+            }
             inline_ctx.layout(doc, dom_id, styles);
 
             // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
@@ -1556,7 +1639,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
 
     // 递归处理子容器
     for child in &mut box_node.children {
-        remeasure_text_with_float_exclusions(child, doc, styles, img_intrinsic_sizes, font_metric_provider);
+        remeasure_text_with_float_exclusions(child, doc, styles, img_intrinsic_sizes, inline_fonts);
     }
 }
 

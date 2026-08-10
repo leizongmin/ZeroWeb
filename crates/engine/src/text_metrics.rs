@@ -5,7 +5,7 @@
 
 use std::sync::OnceLock;
 
-use zero_layout_engine::inline::estimate_char_width;
+use zero_layout_engine::inline::{AdvanceSource, estimate_char_width};
 use zero_render_foundation::font::ShapedGlyph;
 
 static CHAR_MEASURE: OnceLock<fn(char, f32, bool) -> f32> = OnceLock::new();
@@ -45,9 +45,45 @@ pub fn shape_text_for_paint(font_id: u32, text: &str, font_size: f32) -> Option<
     TEXT_SHAPE.get().and_then(|shape| shape(font_id, text, font_size))
 }
 
+/// 判断 shaping 输出是否与源 Unicode 标量一一对应。
+pub(crate) fn one_to_one_source_mapping(text: &str, glyphs: &[ShapedGlyph]) -> bool {
+    glyphs.len() == text.chars().count()
+        && text.chars().zip(glyphs).all(|(source, glyph)| {
+            source == glyph.code_point && glyph.glyph_id > 0 && u16::try_from(glyph.glyph_id).is_ok()
+        })
+}
+
+/// `ZW_SHAPED_TEXT` 使用的 layout advance source。
+pub(crate) struct ShapedAdvanceSource;
+
+impl AdvanceSource for ShapedAdvanceSource {
+    fn measure(&self, ch: char, _font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+        estimate_char_width(ch, font_size, is_ahem)
+    }
+
+    fn measure_text(&self, text: &str, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+        let estimated: f32 = text.chars().map(|ch| estimate_char_width(ch, font_size, is_ahem)).sum();
+        if is_ahem {
+            return estimated;
+        }
+        let Some(font_id) = font_id else {
+            return estimated;
+        };
+        let Some(shaped) =
+            shape_text_for_paint(font_id, text, font_size).filter(|glyphs| one_to_one_source_mapping(text, glyphs))
+        else {
+            return estimated;
+        };
+        let contextual: f32 = shaped.iter().map(|glyph| glyph.advance_x).sum();
+        let unshaped: f32 = shaped.iter().map(|glyph| glyph.unshaped_advance_x).sum();
+        estimated + contextual - unshaped
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zero_render_foundation::primitive::FontId;
 
     /// R2237：Ahem 字体的字符宽度 = font_size（1em 完美方块），非真实点宽。
     /// ellipsis 测宽须传 is_ahem=true（Ahem 容器），否则 '.' 宽度过小致 ellipsis 定位错。
@@ -68,5 +104,24 @@ mod tests {
             dot_width < 100.0,
             "非 Ahem '.' 须窄于 1em（font_size），实际 {dot_width}"
         );
+    }
+
+    fn glyph(code_point: char, glyph_id: u32) -> ShapedGlyph {
+        ShapedGlyph {
+            glyph_id,
+            font_id: FontId(1),
+            advance_x: 8.0,
+            unshaped_advance_x: 8.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+            code_point,
+        }
+    }
+
+    #[test]
+    fn one_to_one_mapping_rejects_ligature_or_wrong_cluster() {
+        assert!(one_to_one_source_mapping("AV", &[glyph('A', 3), glyph('V', 4)]));
+        assert!(!one_to_one_source_mapping("fi", &[glyph('f', 7)]));
+        assert!(!one_to_one_source_mapping("éA", &[glyph('é', 8), glyph('é', 9)]));
     }
 }

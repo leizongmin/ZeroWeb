@@ -1546,6 +1546,43 @@ fn ifc_advance_source_injected_is_consulted_in_wrapping() {
     );
 }
 
+/// 整串测量覆写必须驱动 fragment width，不能退回逐字符累加。
+#[test]
+fn ifc_advance_source_uses_contextual_text_measurement() {
+    struct ContextAdvance;
+    impl AdvanceSource for ContextAdvance {
+        fn measure(&self, _ch: char, _font_id: Option<u32>, _font_size: f32, _is_ahem: bool) -> f32 {
+            10.0
+        }
+
+        fn measure_text(&self, text: &str, _font_id: Option<u32>, _font_size: f32, _is_ahem: bool) -> f32 {
+            assert_eq!(text, "AV");
+            15.0
+        }
+    }
+
+    let mut ctx = InlineFormattingContext::new(100.0).with_advance_source(Rc::new(ContextAdvance));
+    ctx.break_into_lines(vec![TextRun {
+        text: "AV".to_string(),
+        node_id: NodeId::default(),
+        font_size: 10.0,
+        line_height: 10.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
+        font_id: Some(7),
+    }]);
+
+    assert_eq!(ctx.lines[0].runs[0].width, 15.0);
+}
+
 // ── R990：apply_vertical_alignment 的 ascent ratio 按 is_ahem 区分 ──
 
 /// 构造单文本运行 IFC（line-height:1，即 line_height == font_size，half-leading=0），

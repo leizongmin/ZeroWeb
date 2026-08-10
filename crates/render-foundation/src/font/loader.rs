@@ -212,6 +212,9 @@ mod freetype_raster {
     }
 }
 
+type ShapeCacheKey = (u64, u32, String);
+type ShapeCache = Arc<std::sync::Mutex<HashMap<ShapeCacheKey, Vec<crate::font::ShapedGlyph>>>>;
+
 /// 字体加载器 — 管理字体集合
 pub struct FontLoader {
     /// 已加载的字体（fontdue 实例；Arc 共享使 `duplicate` 免深拷贝 19MB CJK 解析结果）
@@ -220,6 +223,8 @@ pub struct FontLoader {
     font_data: HashMap<u32, Arc<Vec<u8>>>,
     /// 下一个字体 ID
     next_id: u32,
+    /// 字体 ID 对应的进程唯一实例 ID；duplicate 保留，后续新字体重新分配。
+    font_instance_ids: HashMap<u32, u64>,
     /// 字体族到 ID 的映射
     family_map: HashMap<String, Vec<u32>>,
     /// 回退字体链（CJK、Emoji 等），在主字体缺字时使用
@@ -228,6 +233,11 @@ pub struct FontLoader {
     bitmap_glyphs: HashMap<(u32, u32, u32), GlyphBitmap>,
     /// Ahem 测试字体 ID（WPT 标准测试字体，每个字符渲染为完美填充方块）
     ahem_font_id: Option<u32>,
+    /// 有界 shaping 缓存（font_instance_id, size_bits, text）。
+    ///
+    /// duplicate 共享 base 字体缓存；后续 `@font-face` 即使复用相同 font_id，也因
+    /// instance ID 不同而隔离。
+    shape_cache: ShapeCache,
 }
 
 impl FontLoader {
@@ -237,10 +247,12 @@ impl FontLoader {
             fonts: HashMap::new(),
             font_data: HashMap::new(),
             next_id: 0,
+            font_instance_ids: HashMap::new(),
             family_map: HashMap::new(),
             fallback_chain: Vec::new(),
             bitmap_glyphs: HashMap::new(),
             ahem_font_id: None,
+            shape_cache: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -255,11 +267,32 @@ impl FontLoader {
             fonts: self.fonts.clone(),
             font_data: self.font_data.clone(),
             next_id: self.next_id,
+            font_instance_ids: self.font_instance_ids.clone(),
             family_map: self.family_map.clone(),
             fallback_chain: self.fallback_chain.clone(),
             bitmap_glyphs: self.bitmap_glyphs.clone(),
             ahem_font_id: self.ahem_font_id,
+            shape_cache: self.shape_cache.clone(),
         }
+    }
+
+    /// 使用指定 face 整形文本，并缓存跨帧重复结果。
+    pub fn shape_text_cached(&self, font_id: u32, text: &str, font_size: f32) -> Option<Vec<crate::font::ShapedGlyph>> {
+        self.get(font_id)?;
+        let instance_id = *self.font_instance_ids.get(&font_id)?;
+        let key = (instance_id, font_size.to_bits(), text.to_string());
+        if let Some(glyphs) = self.shape_cache.lock().expect("shape cache poisoned").get(&key) {
+            return Some(glyphs.clone());
+        }
+
+        let glyphs = crate::font::TextShaper::new(self, Some(crate::primitive::FontId(font_id)))
+            .shape_single_line(text, font_size);
+        let mut cache = self.shape_cache.lock().expect("shape cache poisoned");
+        if cache.len() >= 4096 {
+            cache.clear();
+        }
+        cache.insert(key, glyphs.clone());
+        Some(glyphs)
     }
 
     /// 注册预光栅化的位图 glyph（如图标 atlas），按 `(font_id, glyph_id, size_px)` 查找。
@@ -311,6 +344,9 @@ impl FontLoader {
 
         let id = self.next_id;
         self.next_id += 1;
+        static NEXT_FONT_INSTANCE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let instance_id = NEXT_FONT_INSTANCE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.font_instance_ids.insert(id, instance_id);
 
         // 从字体字节中提取字体族名称（fontdue 不暴露 name 表）。
         // WOFF 解码后的 sfnt 含 name 表，解析路径与裸 sfnt 一致。
@@ -995,6 +1031,43 @@ mod tests {
         assert_eq!(by_index.x_offset, by_code_point.x_offset);
         assert_eq!(by_index.y_offset, by_code_point.y_offset);
         assert_eq!(by_index.advance, by_code_point.advance);
+    }
+
+    #[test]
+    fn shape_cache_reuses_base_font_results_across_duplicates() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        const AHEM_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+
+        let first = loader.shape_text_cached(font_id, "AV", 16.0).expect("first shape");
+        let second = loader.shape_text_cached(font_id, "AV", 16.0).expect("cached shape");
+        assert_eq!(first.len(), second.len());
+        assert_eq!(
+            first.iter().map(|glyph| glyph.glyph_id).collect::<Vec<_>>(),
+            second.iter().map(|glyph| glyph.glyph_id).collect::<Vec<_>>()
+        );
+        assert_eq!(loader.shape_cache.lock().expect("shape cache").len(), 1);
+
+        let mut duplicate = loader.duplicate();
+        assert_eq!(
+            duplicate.shape_cache.lock().expect("duplicate shape cache").len(),
+            1,
+            "duplicate loaders should reuse stable base-font shaping entries"
+        );
+        assert_eq!(
+            duplicate.font_instance_ids.get(&font_id),
+            loader.font_instance_ids.get(&font_id)
+        );
+
+        let left_id = loader.load_font(AHEM_TTF).expect("left appended font");
+        let right_id = duplicate.load_font(AHEM_TTF).expect("right appended font");
+        assert_eq!(left_id, right_id, "duplicates reuse the same numeric font ID");
+        assert_ne!(
+            loader.font_instance_ids.get(&left_id),
+            duplicate.font_instance_ids.get(&right_id),
+            "new fonts in separate duplicates require distinct cache identities"
+        );
     }
 
     #[test]

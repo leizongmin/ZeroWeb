@@ -6,7 +6,7 @@
 //! 默认（不调 `set_font_metric_provider`）= `None` = 逐字节等价旧路径 = 零回归（单测覆盖）。
 
 use super::*;
-use crate::inline::{FontMetricProvider, LineMetrics};
+use crate::inline::{AdvanceSource, FontMetricProvider, LineMetrics};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -99,4 +99,30 @@ fn r1637_unresolved_provider_falls_back_safely() {
     let _ = engine.compute(&doc, &styles);
     // 被咨询但返回 None → 回退常数，无 panic。
     assert!(count.get() > 0, "provider consulted even when unresolved");
+}
+
+/// resolver 与 advance source 必须沿真实 LayoutEngine 路径触达整串测量。
+#[test]
+fn contextual_advance_source_is_consulted_during_compute() {
+    struct CountingAdvance(Rc<Cell<u32>>);
+    impl AdvanceSource for CountingAdvance {
+        fn measure(&self, _ch: char, _font_id: Option<u32>, font_size: f32, _is_ahem: bool) -> f32 {
+            font_size * 0.5
+        }
+
+        fn measure_text(&self, text: &str, font_id: Option<u32>, font_size: f32, _is_ahem: bool) -> f32 {
+            assert_eq!(font_id, Some(7));
+            self.0.set(self.0.get() + 1);
+            text.chars().count() as f32 * font_size * 0.5
+        }
+    }
+
+    let (doc, styles, _div) = build_div_with_text();
+    let count = Rc::new(Cell::new(0));
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    engine.set_font_resolver(HashMap::from([("TestFont".to_string(), 7)]));
+    engine.set_advance_source(Rc::new(CountingAdvance(count.clone())));
+    let _ = engine.compute(&doc, &styles);
+
+    assert!(count.get() > 0, "layout must consult contextual text measurement");
 }

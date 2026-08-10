@@ -15,6 +15,8 @@ pub struct ShapedGlyph {
     pub font_id: FontId,
     /// 相对于行首的水平前进宽度（像素）
     pub advance_x: f32,
+    /// 同一源码字符未应用 kerning/GPOS 时的裸 glyph advance（像素）。
+    pub unshaped_advance_x: f32,
     /// 水平偏移量（像素，用于 mark positioning / kerning）
     pub x_offset: f32,
     /// 垂直偏移量（像素）
@@ -107,11 +109,15 @@ impl<'a> TextShaper<'a> {
             } else {
                 pos.x_advance as f32 * px_per_unit
             };
+            let unshaped_advance_x = self
+                .query_glyph_metrics(font_id.0, code_point, font_size)
+                .map_or(font_size * 0.6, |(_, advance)| advance);
 
             glyphs.push(ShapedGlyph {
                 glyph_id: info.glyph_id,
                 font_id,
                 advance_x,
+                unshaped_advance_x,
                 x_offset: pos.x_offset as f32 * px_per_unit,
                 y_offset: pos.y_offset as f32 * px_per_unit,
                 code_point,
@@ -139,6 +145,7 @@ impl<'a> TextShaper<'a> {
                 glyph_id,
                 font_id,
                 advance_x,
+                unshaped_advance_x: advance_x,
                 x_offset: 0.0,
                 y_offset: 0.0,
                 code_point: ch,
@@ -479,12 +486,20 @@ mod tests {
             .map(|position| position.x_advance as f32 * 16.0 / face.units_per_em() as f32)
             .sum::<f32>();
 
-        let actual = measure_text_width(&shaper, "AV", 16.0);
+        let glyphs = shaper.shape_single_line("AV", 16.0);
+        let actual: f32 = glyphs.iter().map(|glyph| glyph.advance_x).sum();
+        let unshaped: f32 = glyphs.iter().map(|glyph| glyph.unshaped_advance_x).sum();
+        let isolated = measure_text_width(&shaper, "A", 16.0) + measure_text_width(&shaper, "V", 16.0);
 
         assert!(
             (actual - expected).abs() < 0.001,
             "actual={actual}, expected={expected}"
         );
+        assert!(
+            (unshaped - isolated).abs() < 0.001,
+            "unshaped={unshaped}, isolated={isolated}"
+        );
+        assert!(actual < unshaped, "Lato AV kerning must reduce advance");
     }
 
     /// 测试使用真实字体的换行。

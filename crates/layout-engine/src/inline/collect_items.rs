@@ -118,7 +118,13 @@ impl InlineFormattingContext {
                                 border_top: 0.0,
                                 border_bottom: 0.0,
                                 is_ahem_font,
-                                font_id: self.font_id_for_style(style),
+                                font_id: self.shaping_font_id_for_style(
+                                    style,
+                                    is_ahem_font,
+                                    letter_spacing,
+                                    word_spacing,
+                                    false,
+                                ),
                             }));
                         }
                     }
@@ -449,7 +455,13 @@ impl InlineFormattingContext {
                                 border_top,
                                 border_bottom,
                                 is_ahem_font,
-                                font_id: self.font_id_for_style(style),
+                                font_id: self.shaping_font_id_for_style(
+                                    style,
+                                    is_ahem_font,
+                                    letter_spacing,
+                                    word_spacing,
+                                    elem_data.local_name() == "ruby",
+                                ),
                             }));
                         } else {
                             // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
@@ -469,7 +481,7 @@ impl InlineFormattingContext {
                                 border_top,
                                 border_bottom,
                                 is_ahem_font,
-                                font_id: self.font_id_for_style(style),
+                                font_id: None,
                             }));
                         }
                     }

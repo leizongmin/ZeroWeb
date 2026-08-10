@@ -171,6 +171,10 @@ pub struct LayoutEngine {
     /// `compute_final_inline_layouts` 注入到 stored IFC，使 line-height:normal 走
     /// per-font 真实度量。详见 `docs/goal/rendering-compat/unified-font-stack-design.md`。
     font_metric_provider: Option<crate::inline::FontMetricProviderHandle>,
+    /// 可选文本 advance 提供者；默认 `None` 保持启发式测量。
+    advance_source: Option<crate::inline::AdvanceSourceHandle>,
+    /// CSS font-family 到字体 ID 的独立解析表。
+    font_resolver: Option<std::rc::Rc<HashMap<String, u32>>>,
 }
 
 impl LayoutEngine {
@@ -193,6 +197,8 @@ impl LayoutEngine {
             print_margin_right: 0.0,
             cached_state: None,
             font_metric_provider: None,
+            advance_source: None,
+            font_resolver: None,
         }
     }
 
@@ -266,6 +272,26 @@ impl LayoutEngine {
     /// 须配合 measure 路径（`measure_text_content`）同源注入以保证双路径一致（切片 B）。
     pub fn set_font_metric_provider(&mut self, provider: std::rc::Rc<dyn crate::inline::FontMetricProvider>) {
         self.font_metric_provider = Some(crate::inline::FontMetricProviderHandle(provider));
+    }
+
+    /// 注入文本 advance 提供者。
+    ///
+    /// 提供者沿 measure 与 stored IFC 双路径下传；未调用时继续使用启发式宽度。
+    pub fn set_advance_source(&mut self, source: std::rc::Rc<dyn crate::inline::AdvanceSource>) {
+        self.advance_source = Some(crate::inline::AdvanceSourceHandle(source));
+    }
+
+    /// 注入 CSS font-family 到字体 ID 的解析表。
+    pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
+        self.font_resolver = Some(std::rc::Rc::new(resolver));
+    }
+
+    fn inline_font_context(&self) -> crate::inline_finalization::InlineFontContext<'_> {
+        crate::inline_finalization::InlineFontContext {
+            metric_provider: self.font_metric_provider.as_ref(),
+            advance_source: self.advance_source.as_ref(),
+            resolver: self.font_resolver.as_ref(),
+        }
     }
 
     /// 计算整个文档的布局（全量）。
@@ -348,7 +374,7 @@ impl LayoutEngine {
                     known_dimensions,
                     available_space,
                     &intrinsic_for_r695,
-                    self.font_metric_provider.as_ref(),
+                    self.inline_font_context(),
                 )
             },
         );
@@ -456,7 +482,7 @@ impl LayoutEngine {
                         known_dimensions,
                         available_space,
                         &intrinsic_for_r695,
-                        self.font_metric_provider.as_ref(),
+                        self.inline_font_context(),
                     )
                 },
             );
@@ -600,7 +626,7 @@ impl LayoutEngine {
             doc,
             styles,
             &intrinsic_for_r695,
-            self.font_metric_provider.as_ref(),
+            self.inline_font_context(),
         );
 
         // 6.5 后处理：为仅包含 inline 子元素的容器重新测量内容高度
@@ -724,7 +750,7 @@ impl LayoutEngine {
             &[],
             &intrinsic_for_r695,
             &mut paint_skip_set,
-            self.font_metric_provider.as_ref(),
+            self.inline_font_context(),
         );
 
         // 12.1 后处理（R109 §9.2.1.1 匿名块盒高度回填，env R109_BACKFILL 默认开）：
@@ -877,6 +903,15 @@ impl LayoutEngine {
 
         // R2013：先取根布局宽（借用 &self），再可变借用 cached_state（避免借用冲突）。
         let root_layout_width = self.effective_root_layout_width();
+        let viewport_height = self.viewport_height;
+        let metric_provider = self.font_metric_provider.clone();
+        let advance_source = self.advance_source.clone();
+        let font_resolver = self.font_resolver.clone();
+        let inline_fonts = crate::inline_finalization::InlineFontContext {
+            metric_provider: metric_provider.as_ref(),
+            advance_source: advance_source.as_ref(),
+            resolver: font_resolver.as_ref(),
+        };
         let cached = self.cached_state.as_mut().expect("cached_state checked above");
 
         // 标记脏节点的 taffy 节点为脏
@@ -892,7 +927,7 @@ impl LayoutEngine {
         // 重新计算布局（taffy 只重算脏节点）
         let available_space = taffy::geometry::Size {
             width: AvailableSpace::Definite(root_layout_width),
-            height: AvailableSpace::Definite(self.viewport_height),
+            height: AvailableSpace::Definite(viewport_height),
         };
         let _ = cached.taffy.compute_layout_with_measure(
             cached.root_id,
@@ -909,7 +944,7 @@ impl LayoutEngine {
                     known_dimensions,
                     available_space,
                     img_intrinsic_sizes,
-                    self.font_metric_provider.as_ref(),
+                    inline_fonts,
                 )
             },
         );

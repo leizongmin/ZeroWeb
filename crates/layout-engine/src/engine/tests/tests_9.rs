@@ -512,7 +512,7 @@ fn test_measure_text_content_no_text() {
             height: taffy::style::AvailableSpace::Definite(600.0),
         },
         &HashMap::new(),
-        None,
+        InlineFontContext::default(),
     );
     assert_eq!(size.width, 0.0, "无文本节点宽度应为 0");
     assert_eq!(size.height, 0.0, "无文本节点高度应为 0");
@@ -558,7 +558,7 @@ fn test_measure_text_content_min_content_is_widest_word() {
             height: taffy::style::AvailableSpace::Definite(600.0),
         },
         &HashMap::new(),
-        None,
+        InlineFontContext::default(),
     );
     // MinContent ≈ 最宽词 "YYYY"(40px)，远小于整行 max-content(~70px)。
     assert!(
@@ -576,7 +576,7 @@ fn test_measure_text_content_min_content_is_widest_word() {
             height: taffy::style::AvailableSpace::Definite(600.0),
         },
         &HashMap::new(),
-        None,
+        InlineFontContext::default(),
     );
     // MaxContent ≈ 整行 "XX YYYY"(~70px)。
     assert!(
@@ -636,12 +636,30 @@ fn test_r1578_measure_uses_img_intrinsic_for_auto_width_img() {
     unsafe {
         std::env::set_var("ZW_IFC_IMG_INTRINSIC", "1");
     }
-    let h_on = measure_text_content(&doc, &styles, a, none_size, avail, &intrinsic, None).height;
+    let h_on = measure_text_content(
+        &doc,
+        &styles,
+        a,
+        none_size,
+        avail,
+        &intrinsic,
+        InlineFontContext::default(),
+    )
+    .height;
     // OFF：不推导 → img 不收集（w=0）→ `<a>` 塌缩
     unsafe {
         std::env::set_var("ZW_IFC_IMG_INTRINSIC", "0");
     }
-    let h_off = measure_text_content(&doc, &styles, a, none_size, avail, &intrinsic, None).height;
+    let h_off = measure_text_content(
+        &doc,
+        &styles,
+        a,
+        none_size,
+        avail,
+        &intrinsic,
+        InlineFontContext::default(),
+    )
+    .height;
 
     assert!(
         h_on > 20.0,
@@ -679,7 +697,16 @@ fn test_leaf_measure_nonahem_lineheight_no_overshoot() {
     };
     // 非注释 instruction `<p>`（text + inline <strong>）leaf-measure：必须 = 16×1.164 = 18.624。
     let (doc, styles, p, _strong) = build_instruction_p(16.0);
-    let h = measure_text_content(&doc, &styles, p, none_size, avail, &HashMap::new(), None).height;
+    let h = measure_text_content(
+        &doc,
+        &styles,
+        p,
+        none_size,
+        avail,
+        &HashMap::new(),
+        InlineFontContext::default(),
+    )
+    .height;
     assert!(
         (h - 18.624).abs() < 0.001,
         "非-Ahem 16px leaf-measure 应为 18.624(=16×1.164, chromium 真值)，实际 {h}；若 >18.9 说明重新引入 R1311e 过冲"
@@ -687,7 +714,16 @@ fn test_leaf_measure_nonahem_lineheight_no_overshoot() {
     // 纯文本块扫描：ratio 必须恒为 1.164（线性，无 fs 相关过冲）。
     for fs in [10.0_f32, 12.0, 14.0, 16.0, 20.0, 24.0, 32.0] {
         let (d, s, n) = build_nonahem_text_block("Test passes", fs);
-        let m = measure_text_content(&d, &s, n, none_size, avail, &HashMap::new(), None).height;
+        let m = measure_text_content(
+            &d,
+            &s,
+            n,
+            none_size,
+            avail,
+            &HashMap::new(),
+            InlineFontContext::default(),
+        )
+        .height;
         let expected = fs * 1.164;
         assert!(
             (m - expected).abs() < 0.001,
