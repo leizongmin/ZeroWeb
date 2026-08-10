@@ -29,7 +29,10 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use std::io;
-use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit, set_char_measure_fn};
+use zero_engine::{
+    DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit, set_char_measure_fn,
+    set_text_shape_fn,
+};
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
     DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, FramePublishMode,
@@ -255,6 +258,7 @@ impl RendererRuntime {
         let outbound = PipeTransport::new(io::empty(), outbound_writer);
         let (font_loader, font_id, font_resolver) = load_system_fonts();
         set_char_measure_fn(text_metrics::measure_char);
+        set_text_shape_fn(text_metrics::shape_text);
         let js_worker = RendererJsWorker::spawn(renderer_id);
         // P1b S3 / R2923（镜像 browser tab_worker）：注入生产 fetch handler（经 zero_net::HttpClient::send
         // 真实 HTTP，支持全方法/头/体）。js_worker 早于 WebView 创建，但 HttpClient::new() 自建 reqwest
@@ -1750,6 +1754,7 @@ impl RendererRuntime {
 }
 
 /// 经 FrameModel（统一帧契约，T5）打包 IPC PaintSnapshot + 可选 Title。
+#[allow(clippy::too_many_arguments)]
 fn publish_render_with_layout(
     outbound: &mut IpcOutbound,
     compositor_publish: Option<&compositor_publish_thread::CompositorPublishThread>,

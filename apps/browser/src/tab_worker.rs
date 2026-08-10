@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
-use zero_engine::set_char_measure_fn;
+use zero_engine::{set_char_measure_fn, set_text_shape_fn};
 use zero_render_foundation::font::loader::FontLoader;
 use zero_webview::{AsyncPageLoad, InProcessFetchHost, PageLoadStage, WebView, WebViewBuilder, WebViewConfig};
 
@@ -128,6 +128,7 @@ fn tab_worker_main(
     msg_tx: Sender<TabWorkerMessage>,
 ) {
     set_char_measure_fn(text_metrics::measure_char);
+    set_text_shape_fn(text_metrics::shape_text);
     let mut font_loader = FontLoader::new();
     let font_id = load_system_fonts_worker(&mut font_loader);
 

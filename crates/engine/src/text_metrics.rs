@@ -6,12 +6,21 @@
 use std::sync::OnceLock;
 
 use zero_layout_engine::inline::estimate_char_width;
+use zero_render_foundation::font::ShapedGlyph;
 
 static CHAR_MEASURE: OnceLock<fn(char, f32, bool) -> f32> = OnceLock::new();
+/// 宿主提供的文本整形回调签名。
+pub type TextShapeFn = fn(u32, &str, f32) -> Option<Vec<ShapedGlyph>>;
+static TEXT_SHAPE: OnceLock<TextShapeFn> = OnceLock::new();
 
 /// 注册全局字符宽度测量函数（浏览器启动时调用一次）。
 pub fn set_char_measure_fn(f: fn(char, f32, bool) -> f32) {
     let _ = CHAR_MEASURE.set(f);
+}
+
+/// 注册全局文本整形函数（宿主启动时调用一次）。
+pub fn set_text_shape_fn(f: TextShapeFn) {
+    let _ = TEXT_SHAPE.set(f);
 }
 
 /// Paint 阶段测量单个字符 advance；Ahem 字体固定为 1em 方框宽。
@@ -29,6 +38,11 @@ pub fn measure_char_for_paint(ch: char, font_size: f32, is_ahem: bool) -> f32 {
 /// 与 layout IFC 一致的字符宽度估计（无真实字体回调时使用）。
 pub fn layout_estimate_char_width(ch: char, font_size: f32, is_ahem: bool) -> f32 {
     estimate_char_width(ch, font_size, is_ahem)
+}
+
+/// Paint 阶段按实际字体 ID 整形文本；宿主未注册或当前无字体上下文时返回 `None`。
+pub fn shape_text_for_paint(font_id: u32, text: &str, font_size: f32) -> Option<Vec<ShapedGlyph>> {
+    TEXT_SHAPE.get().and_then(|shape| shape(font_id, text, font_size))
 }
 
 #[cfg(test)]

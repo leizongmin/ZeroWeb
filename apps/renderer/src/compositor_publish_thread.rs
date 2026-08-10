@@ -88,7 +88,6 @@ impl Drop for CompositorPublishThread {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
 
     #[test]
     fn publish_thread_delivers_message_to_shared_writer() {

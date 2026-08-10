@@ -17,6 +17,9 @@ use zero_protocol::{IpcChannel, ProcessRole, ProtocolError, child_process_args};
 const MAX_PENDING_SURFACES: usize = 64;
 const MAX_COMPLETED_SURFACES: usize = 64;
 
+/// Compositor 完成帧：surface/epoch/frame、尺寸、RGBA 与滚动偏移。
+pub type CompositorFramePixels = (u64, u64, u64, u32, u32, Vec<u8>, f32, f32);
+
 /// Compositor client 当前连接状态。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CompositorStatus {
@@ -352,12 +355,7 @@ impl Client {
         }
     }
 
-    fn try_recv(
-        &self,
-        surface_id: u64,
-        navigation_epoch: u64,
-        frame_id: u64,
-    ) -> Option<(u64, u64, u64, u32, u32, Vec<u8>, f32, f32)> {
+    fn try_recv(&self, surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Option<CompositorFramePixels> {
         let frame = self.completed.try_recv(surface_id, navigation_epoch, frame_id)?;
         Some((
             frame.key.surface_id,
@@ -682,11 +680,7 @@ pub fn forward_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64, pain
 ///
 /// 仅返回相同 `navigation_epoch` 且帧序号不小于 `frame_id` 的缓存，结果格式为
 /// `(surface_id, navigation_epoch, frame_id, width, height, rgba, scroll_x, scroll_y)`。
-pub fn get_frame(
-    surface_id: u64,
-    navigation_epoch: u64,
-    frame_id: u64,
-) -> Option<(u64, u64, u64, u32, u32, Vec<u8>, f32, f32)> {
+pub fn get_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Option<CompositorFramePixels> {
     if !enabled() {
         return None;
     }
