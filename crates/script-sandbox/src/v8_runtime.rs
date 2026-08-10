@@ -1887,6 +1887,50 @@ mod tests {
     }
 
     #[test]
+    fn diag_v11_register_callbacks_then_exit() {
+        // 填充 HOST_CALLBACKS TLS（30 个回调，捕获 Arc<Mutex<String>> 等）→ 线程退出。
+        // 验证 HOST_CALLBACKS TLS 析构是否为挂点（tab_js_worker 路径的差异之一）。
+        diag_run("v11", || {
+            eprintln!("[DIAG-v11] creating sandbox");
+            let mut s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
+            eprintln!("[DIAG-v11] sandbox created");
+            let shared = Arc::new(std::sync::Mutex::new(String::from("x")));
+            for i in 0..30 {
+                let c = Arc::clone(&shared);
+                s.register_callback(
+                    &format!("__zw_diag_cb_{i}"),
+                    Box::new(move |_args: &[String]| c.lock().unwrap().clone()),
+                );
+            }
+            eprintln!("[DIAG-v11] 30 callbacks registered");
+            let r = s.execute("1 + 1");
+            eprintln!("[DIAG-v11] executed: {:?}", r.map(|x| x.value));
+            drop(s);
+            eprintln!("[DIAG-v11] sandbox dropped");
+        });
+    }
+
+    #[test]
+    fn diag_v12_execute_big_script_then_drop() {
+        // 执行 ~600KB 大脚本（近似 shim 规模堆）→ drop → 线程退出。
+        // 验证「大堆后线程退出」是否为挂点（shim 647KB 是 tab_js_worker 的另一差异）。
+        diag_run("v12", || {
+            eprintln!("[DIAG-v12] creating sandbox");
+            let mut s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
+            eprintln!("[DIAG-v12] sandbox created");
+            let mut big = String::from("var __diagAcc = 0;");
+            for i in 0..6000 {
+                big.push_str(&format!("function f{i}(x){{ return x * {i}; }} __diagAcc += f{i}({i});\n"));
+            }
+            eprintln!("[DIAG-v12] big script {} bytes, executing", big.len());
+            let r = s.execute(&big);
+            eprintln!("[DIAG-v12] executed: {:?}", r.map(|x| x.value.len()));
+            drop(s);
+            eprintln!("[DIAG-v12] sandbox dropped");
+        });
+    }
+
+    #[test]
     fn diag_v5_isolate_execute_forget() {
         // 创建 → 执行 → mem::forget（不 drop sandbox）→ 线程退出。区分：
         // 挂点在 sandbox drop 的副作用（若有）还是线程退出本身。
