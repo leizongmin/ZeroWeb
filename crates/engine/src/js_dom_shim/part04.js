@@ -687,14 +687,20 @@
         }
         // `el.toggleAttribute(name, force?)`——切换属性存在性，返切换后是否存在。决策经 host
         // `__zw_toggle_attribute`（DomMutation::ToggleAttribute，apply 时读当前存在性决定），故连续
-        // toggle 正确复合（朴素 shim 读 stale snapshot 决定会都 add）。返值用 snapshot presence 近似
-        //（单次正确；连续下 mutation 正确、返值 stale，可接受）。
+        // toggle 正确复合（朴素 shim 读 stale snapshot 决定会都 add）。
+        // R3191：返值用 **latest-wins** presence（`__zw_has_attr_lw`，反映同批 pending SetAttr/RemoveAttr）
+        // 计算——闭合 set/remove-then-toggle 返值 stale（旧读纯快照 `__zw_has_attr`，setAttribute 后 toggle 仍读
+        // 旧快照）。连续 toggle（pending ToggleAttribute）返值仍 stale（lw override 不处理 ToggleAttribute），
+        // apply 时 mutation 正确，仅返值 stale，可接受。
         if (prop === 'toggleAttribute') {
           return function(name, force) {
             var n = String(name);
             var hasForce = force !== undefined;
-            var snapHas = (sel && typeof __zw_has_attr === 'function')
-              ? (__zw_has_attr(sel, n) === '1')
+            // latest-wins presence（优先 lw，反映同批 setAttribute/removeAttribute；无 lw 回落纯快照）。
+            var snapHas = sel
+              ? ((typeof __zw_has_attr_lw === 'function'
+                  ? __zw_has_attr_lw(sel, n)
+                  : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, n) : '0')) === '1')
               : false;
             // R3025：MutationObserver attributeOldValue——toggle 前捕获 old value（有 observer 请求时）。
             var moOld = _mo_any_wants_attr_old(_mo_id(handle, sel), n) ? _mo_read_attr(sel, handle, n) : null;

@@ -1216,3 +1216,81 @@ fn test_get_attribute_null_semantics_production_r3190() {
         "[data-x] 存在性选择器：仅匹配有该属性的元素（#d），缺省元素 #plain 不匹配"
     );
 }
+
+// ── R3191：`toggleAttribute` 返回值 latest-wins（spec `dom-element-toggleattribute`：返切换后是否 present）──
+//
+// 旧 polyfill snapHas 读纯快照 `__zw_has_attr`——同批 setAttribute/removeAttribute 后 toggle 仍读旧快照，
+// 返值 stale（setAttribute('x') 后 toggle('x') 应 false 但旧返 true）。改读 `__zw_has_attr_lw`（反映 pending
+// SetAttr/RemoveAttr）。apply 时 mutation 一直正确（host apply-time 决策），仅返值修复。
+
+#[test]
+fn test_toggle_attribute_return_latest_wins_production_r3191() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+           <div id='d'></div>\
+           <div id='has' data-x='1'></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // setAttribute('x') 后 toggle('x')（无 force）——x 现 present → toggle 移除 → 返 false。
+    // 旧实现读纯快照（#d 无 x）→ snapHas=false → 返 true（stale，错误）。
+    let set_then_toggle = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.setAttribute('data-x','1');\
+             String(d.toggleAttribute('data-x'))",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        set_then_toggle, "false",
+        "setAttribute 后 toggle（无 force）：present→移除→返 false（latest-wins；旧 stale 返 true）"
+    );
+
+    // removeAttribute('x') 后 toggle('x')（无 force）——x 现 absent → toggle 添加 → 返 true。
+    // #has 初始有 data-x，removeAttribute 后 lw 判 absent → snapHas=false → 返 true。
+    let remove_then_toggle = sandbox
+        .execute(
+            "var h=document.querySelector('#has');\
+             h.removeAttribute('data-x');\
+             String(h.toggleAttribute('data-x'))",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        remove_then_toggle, "true",
+        "removeAttribute 后 toggle（无 force）：absent→添加→返 true（latest-wins）"
+    );
+
+    // 常见单次 toggle（无 pending）：#d 当前无 data-x（上面 net 移除）→ toggle 添加 → 返 true。
+    // 此场景 lw 与纯快照一致（无 pending），验证无回归。
+    let plain_toggle = sandbox
+        .execute("String(document.querySelector('#d').toggleAttribute('data-new'))")
+        .unwrap()
+        .value;
+    assert_eq!(plain_toggle, "true", "单次 toggle 无 pending：absent→添加→返 true（无回归）");
+
+    // force=true / force=false 返值不依赖 presence（force 决定）：返 !!force。
+    let force_true = sandbox
+        .execute("String(document.querySelector('#d').toggleAttribute('data-f', true))")
+        .unwrap()
+        .value;
+    let force_false = sandbox
+        .execute("String(document.querySelector('#d').toggleAttribute('data-f', false))")
+        .unwrap()
+        .value;
+    assert_eq!(force_true, "true", "force=true → 返 true（不依赖 presence）");
+    assert_eq!(force_false, "false", "force=false → 返 false（不依赖 presence）");
+}
