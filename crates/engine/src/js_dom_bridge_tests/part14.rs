@@ -1885,3 +1885,91 @@ fn test_handle_attributes_and_clone_production_r3198() {
         "handle 源 cloneNode deep：后代 innerHTML 复制（既有，未回归）"
     );
 }
+
+// ── R3199：handle inline style sync set→read latest-wins ──
+//
+// R3194 闭合 sel-based `el.style.x='v'; el.style.x` sync set→read stale（`__zw_get_style_lw` replay pending style
+// mutation），但 handle 路径 `readRaw` 仍纯快照 `__zw_get_attr_handle('style')`——SetStyleOnHandle mutation 不
+// 反映到所存 style 属性串，故 handle 元素 `el.style.color='red'; el.style.color` **恒返空**（R3194 已知限制①）。
+// 新增 host `style_from_mutations_lw`（正序 replay *OnHandle 变体，无快照基底）+ `__zw_get_style_lw_handle`
+// 回调，readRaw handle 路径走 lw，闭合限制。
+
+#[test]
+fn test_handle_style_sync_set_read_production_r3199() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // sync set→read round-trip：同批 setProperty→getPropertyValue（旧恒空）。同属性后设覆盖。
+    let round_trip = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.style.color='red';\
+             var a=e.style.color;\
+             e.style.color='blue';\
+             var b=e.style.color;\
+             e.style.getPropertyValue('color')+'|'+a+'|'+b",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        round_trip, "blue|red|blue",
+        "handle style sync set→read：setProperty→getPropertyValue 往返 + 后设覆盖（旧恒空）"
+    );
+
+    // 多属性累积：length=2 + cssText 含两者（camelCase 读 backgroundColor）。
+    let accum = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.style.color='red';\
+             e.style.backgroundColor='blue';\
+             String(e.style.length>=2)+'|'+e.style.backgroundColor+'|'+\
+             (e.style.cssText.indexOf('color')>=0 && e.style.cssText.indexOf('background')>=0)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        accum, "true|blue|true",
+        "handle style 多属性累积：length≥2 + camelCase 读 + cssText 含两者（旧恒空）"
+    );
+
+    // removeProperty sync→空。
+    let remove = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.style.color='red';\
+             var prev=e.style.removeProperty('color');\
+             String(prev)+'|'+String(e.style.color==='')+'|'+String(e.style.length===0)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        remove, "red|true|true",
+        "handle style removeProperty sync：返前值 + 读空 + length=0（旧 stale 仍含）"
+    );
+
+    // cssText 整体设后 per-property 读（cssText setter→SetAttrOnHandle{style}，per-prop 读须 parse）。
+    let csstext = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.style.cssText='color: green; font-size: 12px';\
+             e.style.color+'|'+e.style.getPropertyValue('font-size')+'|'+e.style.length",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        csstext, "green|12px|2",
+        "handle style cssText 设后 per-property 读：parse 正确 + length（旧纯快照 readRaw 读不到）"
+    );
+}

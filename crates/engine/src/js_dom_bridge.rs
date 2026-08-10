@@ -2223,6 +2223,46 @@ pub fn attribute_names_from_mutations(mutations: &[DomMutation], handle: &str) -
     names.join("|")
 }
 
+/// 从已记录变更中构造 create 句柄元素的 inline style 字符串（**latest-wins**，正序 replay）。
+///
+/// 句柄元素（`createElement` 创建，未挂载 DOM）不在 HTML 快照，故 style 基底为空（无快照基底）。正序应用
+/// 同 handle 的全部 style-affecting 变更：`SetAttrOnHandle{style}`（`el.style.cssText=` / `setAttribute('style')`）
+/// 整体覆盖 / `RemoveAttrOnHandle{style}`（`removeAttribute('style')`）清空 / `SetStyleOnHandle`
+///（`el.style.x=` / `setProperty`）per-prop merge / `RemoveStyleOnHandle`（`removeProperty`）per-prop 移除——
+/// 与 sel-based `__zw_get_style_lw`（R3194）同 replay 算法（复用 [`merge_style_property`] / [`remove_style_property`]），
+/// 区别是 handle 无快照基底 + 用 `*OnHandle` 变体。供 `__zw_get_style_lw_handle` 回调 → shim handle 元素
+/// `el.style` proxy `readRaw`（cssText/getPropertyValue/length 等读路径）反映同批 style 设删（R3199，闭合
+/// R3194 已知限制①：handle style sync set→read stale——`el.style.color='red'; el.style.color` 旧返空）。
+pub fn style_from_mutations_lw(mutations: &[DomMutation], handle: &str) -> String {
+    let mut style = String::new();
+    for m in mutations {
+        match m {
+            DomMutation::SetAttrOnHandle { handle: h, name, value }
+                if h == handle && name.eq_ignore_ascii_case("style") =>
+            {
+                style = value.clone();
+            }
+            DomMutation::RemoveAttrOnHandle { handle: h, name }
+                if h == handle && name.eq_ignore_ascii_case("style") =>
+            {
+                style.clear();
+            }
+            DomMutation::SetStyleOnHandle {
+                handle: h,
+                property,
+                value,
+            } if h == handle => {
+                style = merge_style_property(&style, property, value);
+            }
+            DomMutation::RemoveStyleOnHandle { handle: h, property } if h == handle => {
+                style = remove_style_property(&style, property);
+            }
+            _ => {}
+        }
+    }
+    style
+}
+
 /// WHATWG URL 解析为 JSON 串（供 JS shim `new URL(url, base)` 经 `__zw_parse_url` 回调消费）。
 ///
 /// 委托 `url` crate（spec-correct：base 解析 / percent-encoding / IDNA / 默认端口归一）。成功返

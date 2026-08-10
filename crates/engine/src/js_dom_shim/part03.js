@@ -1385,8 +1385,13 @@
   function _styleProxy(sel, handle) {
     var readRaw = function() {
       // R3194：sel 走 latest-wins（`__zw_get_style_lw` replay pending style mutation），闭合 sync set→read
-      // stale（R3193 已知限制①）。handle 路径无 lw 变体，仍纯快照（handle style sync set→read stale 记为限制）。
-      if (handle) return __zw_get_attr_handle(handle, 'style') || '';
+      // stale（R3193 已知限制①）。R3199：handle 走 `__zw_get_style_lw_handle`（正序 replay SetStyleOnHandle/
+      // RemoveStyleOnHandle/SetAttrOnHandle(style)/RemoveAttrOnHandle(style)，无快照基底），闭合 R3194 已知
+      // 限制①（handle style sync set→read stale）。无 lw 回调 → fallback 纯快照 `__zw_get_attr_handle`。
+      if (handle) {
+        if (typeof __zw_get_style_lw_handle === 'function') return __zw_get_style_lw_handle(handle) || '';
+        return __zw_get_attr_handle(handle, 'style') || '';
+      }
       if (typeof __zw_get_style_lw === 'function') return __zw_get_style_lw(sel) || '';
       return __zw_get_attr(sel, 'style') || '';
     };

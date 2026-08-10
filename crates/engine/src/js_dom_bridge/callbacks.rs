@@ -916,6 +916,22 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R3199：`__zw_get_style_lw_handle(handle)`——handle 元素 inline style **latest-wins** 读（闭合 R3194 已知
+    // 限制①：handle style sync set→read stale）。句柄元素无快照基底（不在 HTML），正序 replay 同 handle 的
+    // style-affecting 变更（SetAttrOnHandle/RemoveAttrOnHandle on 'style' 整体覆盖/清空，SetStyleOnHandle/
+    // RemoveStyleOnHandle per-prop merge/remove）——与 `__zw_get_style_lw` 同算法（R3194），区别是无快照基底
+    // + 用 *OnHandle 变体。保留 SetStyleOnHandle/RemoveStyleOnHandle 变体（pipeline `is_paint_only_mutation`
+    // 依赖 property 粒度跳过 relayout——同 R3194 理由）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_get_style_lw_handle",
+        Box::new(move |args| {
+            let handle = args.first().map(String::from).unwrap_or_default();
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            style_from_mutations_lw(&list, &handle)
+        }),
+    );
+
     let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_set_text",
