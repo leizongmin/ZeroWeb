@@ -21,6 +21,8 @@ pub struct ShapedGlyph {
     pub x_offset: f32,
     /// 垂直偏移量（像素）
     pub y_offset: f32,
+    /// rustybuzz 返回的原始 UTF-8 cluster 字节偏移。
+    pub cluster: u32,
     /// 该字符的 Unicode 码点（用于回退标识）
     pub code_point: char,
 }
@@ -94,13 +96,19 @@ impl<'a> TextShaper<'a> {
 
         // https://www.w3.org/TR/css-text-3/#text-shaping
         // rustybuzz 的 cluster 是原始 UTF-8 字节偏移，不是 Unicode 标量索引。
+        let source_chars: Vec<(usize, char)> = text.char_indices().collect();
+        let ordinal_source_mapping = glyph_infos.len() == source_chars.len()
+            && glyph_infos.windows(2).all(|pair| pair[0].cluster <= pair[1].cluster);
         let mut glyphs = Vec::with_capacity(glyph_infos.len());
         for (i, (info, pos)) in glyph_infos.iter().zip(glyph_positions.iter()).enumerate() {
-            let code_point = text
-                .get(info.cluster as usize..)
-                .and_then(|cluster| cluster.chars().next())
-                .or_else(|| text.chars().nth(i))
-                .unwrap_or('\u{FFFD}');
+            let code_point = if ordinal_source_mapping {
+                source_chars[i].1
+            } else {
+                text.get(info.cluster as usize..)
+                    .and_then(|cluster| cluster.chars().next())
+                    .or_else(|| source_chars.get(i).map(|(_, ch)| *ch))
+                    .unwrap_or('\u{FFFD}')
+            };
 
             // x_advance 已包含 kerning、GPOS 和连字调整；用 fontdue 的裸 glyph
             // advance 覆盖它会撤销 shaping 结果。glyph_id=0 时保留原估算回退。
@@ -120,6 +128,7 @@ impl<'a> TextShaper<'a> {
                 unshaped_advance_x,
                 x_offset: pos.x_offset as f32 * px_per_unit,
                 y_offset: pos.y_offset as f32 * px_per_unit,
+                cluster: info.cluster,
                 code_point,
             });
         }
@@ -131,7 +140,7 @@ impl<'a> TextShaper<'a> {
     fn shape_fallback(&self, text: &str, font_size: f32, font_id: FontId) -> Vec<ShapedGlyph> {
         let mut glyphs = Vec::with_capacity(text.len());
 
-        for ch in text.chars() {
+        for (cluster, ch) in text.char_indices() {
             let (glyph_id, advance_x) = if let Some(fid) = self.default_font_id {
                 match self.query_glyph_metrics(fid.0, ch, font_size) {
                     Some((gid, adv)) => (gid, adv),
@@ -148,6 +157,7 @@ impl<'a> TextShaper<'a> {
                 unshaped_advance_x: advance_x,
                 x_offset: 0.0,
                 y_offset: 0.0,
+                cluster: cluster as u32,
                 code_point: ch,
             });
         }
@@ -466,6 +476,21 @@ mod tests {
             .collect();
 
         assert_eq!(code_points, vec!['é', 'A', 'B']);
+    }
+
+    #[test]
+    fn test_ltr_shared_cluster_preserves_source_code_points() {
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+        let shaper = TextShaper::new(&loader, Some(FontId(font_id)));
+        let glyphs = shaper.shape_single_line("x\u{301}", 16.0);
+
+        assert_eq!(glyphs.len(), 2);
+        assert_eq!(
+            glyphs.iter().map(|glyph| glyph.code_point).collect::<Vec<_>>(),
+            vec!['x', '\u{301}']
+        );
+        assert_eq!(glyphs.iter().map(|glyph| glyph.cluster).collect::<Vec<_>>(), vec![0, 0]);
     }
 
     /// shaping advance 必须保留 rustybuzz 的 kerning/GPOS 结果。

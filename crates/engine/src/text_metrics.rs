@@ -53,6 +53,13 @@ pub(crate) fn one_to_one_source_mapping(text: &str, glyphs: &[ShapedGlyph]) -> b
         })
 }
 
+/// 一一映射中是否存在源码标量共享 shaping cluster。
+pub(crate) fn source_mapping_requires_offsets(text: &str, glyphs: &[ShapedGlyph]) -> bool {
+    text.char_indices()
+        .zip(glyphs)
+        .any(|((byte_offset, _), glyph)| glyph.cluster != byte_offset as u32)
+}
+
 /// `ZW_SHAPED_TEXT` 使用的 layout advance source。
 pub(crate) struct ShapedAdvanceSource;
 
@@ -69,8 +76,8 @@ impl AdvanceSource for ShapedAdvanceSource {
         let Some(font_id) = font_id else {
             return estimated;
         };
-        let Some(shaped) =
-            shape_text_for_paint(font_id, text, font_size).filter(|glyphs| one_to_one_source_mapping(text, glyphs))
+        let Some(shaped) = shape_text_for_paint(font_id, text, font_size)
+            .filter(|glyphs| one_to_one_source_mapping(text, glyphs) && !source_mapping_requires_offsets(text, glyphs))
         else {
             return estimated;
         };
@@ -114,6 +121,7 @@ mod tests {
             unshaped_advance_x: 8.0,
             x_offset: 0.0,
             y_offset: 0.0,
+            cluster: 0,
             code_point,
         }
     }
@@ -123,5 +131,19 @@ mod tests {
         assert!(one_to_one_source_mapping("AV", &[glyph('A', 3), glyph('V', 4)]));
         assert!(!one_to_one_source_mapping("fi", &[glyph('f', 7)]));
         assert!(!one_to_one_source_mapping("éA", &[glyph('é', 8), glyph('é', 9)]));
+    }
+
+    #[test]
+    fn shared_cluster_requires_offsets() {
+        let base = glyph('A', 8);
+        let mut mark = glyph('\u{301}', 9);
+        mark.cluster = 0;
+        assert!(one_to_one_source_mapping("A\u{301}", &[base.clone(), mark.clone()]));
+        assert!(source_mapping_requires_offsets("A\u{301}", &[base, mark]));
+
+        let base = glyph('A', 8);
+        let mut next = glyph('V', 9);
+        next.cluster = 1;
+        assert!(!source_mapping_requires_offsets("AV", &[base, next]));
     }
 }

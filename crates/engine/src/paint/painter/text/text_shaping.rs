@@ -24,7 +24,7 @@ fn shaped_advance_enabled() -> bool {
 
 fn shaped_offsets_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| shaped_positioning_enabled() || std::env::var("ZW_SHAPED_OFFSETS").as_deref() == Ok("1"))
+    *ENABLED.get_or_init(|| shaped_positioning_enabled() || std::env::var("ZW_SHAPED_OFFSETS").as_deref() != Ok("0"))
 }
 
 /// Paint 循环消费的单个字形。
@@ -93,11 +93,15 @@ pub(super) fn fragment_glyphs<'a>(
         && let Some(glyphs) = crate::shape_text_for_paint(font_id, text, font_size)
         && crate::text_metrics::one_to_one_source_mapping(text, &glyphs)
     {
+        let offsets_enabled = shaped_offsets_enabled();
+        if crate::text_metrics::source_mapping_requires_offsets(text, &glyphs) && !offsets_enabled {
+            return FragmentGlyphs::Legacy(text.chars());
+        }
         return FragmentGlyphs::Shaped {
             glyphs: glyphs.into_iter(),
             indexed: indexed_glyph_enabled(),
             advanced: shaped_advance_enabled() && (advance_eligible || shaped_positioning_enabled()),
-            offset: shaped_offsets_enabled(),
+            offset: offsets_enabled,
         };
     }
     FragmentGlyphs::Legacy(text.chars())
@@ -128,6 +132,7 @@ mod tests {
             unshaped_advance_x: 9.0,
             x_offset: 2.0,
             y_offset: 3.0,
+            cluster: 0,
             code_point: 'A',
         }
     }
