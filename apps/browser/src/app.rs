@@ -303,6 +303,11 @@ impl BrowserApp {
                 width: app.physical_size.0,
                 height: app.physical_size.1,
             });
+            crate::compositor_client::register_window_surface(zero_protocol::CompositorWindowSurfaceInfo {
+                surface_id: crate::compositor_client::CHROME_WINDOW_SURFACE_ID,
+                width: app.physical_size.0,
+                height: app.physical_size.1,
+            });
         }
         app
     }

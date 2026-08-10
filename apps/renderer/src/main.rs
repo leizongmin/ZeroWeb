@@ -1657,6 +1657,7 @@ impl RendererRuntime {
             | IpcMessageKind::ReleaseCompositorSurface { .. }
             | IpcMessageKind::CompositorSetScroll { .. }
             | IpcMessageKind::CompositorRegisterUiSurface(_)
+            | IpcMessageKind::CompositorRegisterWindowSurface(_)
             | IpcMessageKind::CompositorUiFrame { .. }
             | IpcMessageKind::GetCompositorUiFrame { .. }
             | IpcMessageKind::GetCompositorPresentFrame { .. }

@@ -85,6 +85,7 @@ enum WorkerCommand {
         scroll_y: f32,
     },
     RegisterUiSurface(zero_protocol::CompositorUiSurfaceInfo),
+    RegisterWindowSurface(zero_protocol::CompositorWindowSurfaceInfo),
     UiFrame {
         surface_id: u64,
         width: u32,
@@ -106,6 +107,7 @@ impl WorkerCommand {
             Self::ReleaseSurface(surface_id) => *surface_id,
             Self::SetScroll { surface_id, .. } => *surface_id,
             Self::RegisterUiSurface(info) => info.surface_id,
+            Self::RegisterWindowSurface(info) => info.surface_id,
             Self::UiFrame { surface_id, .. } => *surface_id,
             Self::FetchPresent { page_surface_id, .. } => *page_surface_id,
         }
@@ -171,6 +173,10 @@ impl CommandChannel {
 
     fn register_ui_surface(&self, info: zero_protocol::CompositorUiSurfaceInfo) -> bool {
         self.send(WorkerCommand::RegisterUiSurface(info))
+    }
+
+    fn register_window_surface(&self, info: zero_protocol::CompositorWindowSurfaceInfo) -> bool {
+        self.send(WorkerCommand::RegisterWindowSurface(info))
     }
 
     fn forward_ui_frame(&self, surface_id: u64, width: u32, height: u32, rgba: Vec<u8>) -> bool {
@@ -431,6 +437,12 @@ impl Client {
         }
     }
 
+    fn register_window_surface(&self, info: zero_protocol::CompositorWindowSurfaceInfo) {
+        if self.status.load() != CompositorStatus::Disconnected {
+            let _ = self.commands.register_window_surface(info);
+        }
+    }
+
     fn forward_ui_frame(&self, surface_id: u64, width: u32, height: u32, rgba: Vec<u8>) {
         if self.status.load() != CompositorStatus::Disconnected {
             let _ = self.commands.forward_ui_frame(surface_id, width, height, rgba);
@@ -625,6 +637,13 @@ fn process_batch(
                 })?;
                 outstanding.insert(message_id, ExpectedResponse::ReleaseSurface);
             }
+            WorkerCommand::RegisterWindowSurface(info) => {
+                transport.send(IpcMessage {
+                    id: message_id,
+                    kind: IpcMessageKind::CompositorRegisterWindowSurface(info),
+                })?;
+                outstanding.insert(message_id, ExpectedResponse::ReleaseSurface);
+            }
             WorkerCommand::UiFrame {
                 surface_id,
                 width,
@@ -710,6 +729,7 @@ fn process_batch(
                     scroll_x,
                     scroll_y,
                     gpu_image,
+                    ..
                 },
             ) if expected
                 == (FrameKey {
@@ -883,6 +903,20 @@ pub fn register_ui_surface(info: zero_protocol::CompositorUiSurfaceInfo) {
     }
 }
 
+/// RFC 4.4-S4：向 compositor 登记最终窗口 surface。
+pub fn register_window_surface(info: zero_protocol::CompositorWindowSurfaceInfo) {
+    if !enabled() {
+        return;
+    }
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    client.get_or_insert_with(Client::start).register_window_surface(info);
+}
+
+/// 是否启用 compositor 拥有最终窗口 present（`ZW_COMPOSITOR_OWNED_PRESENT=1`）。
+pub fn owned_present_enabled() -> bool {
+    zero_protocol::compositor_owned_present_enabled()
+}
+
 /// RFC 4.4-S2：向 compositor 提交 Chrome UI 位图。
 pub fn forward_ui_frame(surface_id: u64, width: u32, height: u32, rgba: Vec<u8>) {
     if !enabled() {
@@ -935,6 +969,8 @@ pub fn take_present_frame(page_surface_id: u64) -> Option<(u32, u32, Vec<u8>)> {
 
 /// Browser Chrome UI 层 surface 标识（与页面 surface 命名空间独立）。
 pub const CHROME_UI_SURFACE_ID: u64 = u64::MAX;
+/// Browser 窗口 surface（RFC 4.4-S4 compositor 拥有 present 输出）。
+pub const CHROME_WINDOW_SURFACE_ID: u64 = u64::MAX - 1;
 
 /// 非阻塞请求 compositor worker 释放指定页面 surface。
 pub fn release_surface(surface_id: u64) {
@@ -999,6 +1035,7 @@ mod tests {
                 scroll_x: 0.0,
                 scroll_y: 0.0,
                 gpu_image: None,
+                present_authoritative: false,
             },
         }
     }

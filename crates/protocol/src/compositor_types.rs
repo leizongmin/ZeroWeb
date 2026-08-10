@@ -19,7 +19,7 @@ pub struct GpuSharedImageDescriptor {
     pub zero_copy: bool,
 }
 
-/// UI 层 surface 注册元数据（4.4 Viz 切片；最终 present 仍为后续）。
+/// UI 层 surface 注册元数据（4.4 Viz 切片）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompositorUiSurfaceInfo {
     /// UI surface 标识（与页面 surface_id 命名空间独立）。
@@ -29,3 +29,6 @@ pub struct CompositorUiSurfaceInfo {
     /// 逻辑高度。
     pub height: u32,
 }
+
+/// 最终窗口 surface 登记（RFC 4.4-S4；compositor 拥有 present 输出）。
+pub type CompositorWindowSurfaceInfo = CompositorUiSurfaceInfo;

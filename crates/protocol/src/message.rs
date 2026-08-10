@@ -127,6 +127,8 @@ pub enum IpcMessageKind {
     },
     /// Browser → compositor：注册 Chrome UI 层 surface 元数据（RFC 4.4 切片）。
     CompositorRegisterUiSurface(crate::compositor_types::CompositorUiSurfaceInfo),
+    /// Browser → compositor：登记最终窗口 surface（RFC 4.4-S4 Viz 所有权）。
+    CompositorRegisterWindowSurface(crate::compositor_types::CompositorWindowSurfaceInfo),
     /// Browser → compositor：提交 Chrome UI 层位图（RFC 4.4-S2）。
     CompositorUiFrame {
         /// UI surface 的稳定标识。
@@ -183,9 +185,12 @@ pub enum IpcMessageKind {
         /// compositor 侧记录的垂直滚动偏移（RFC 4.2；Browser 可选消费）。
         #[serde(default)]
         scroll_y: f32,
-        /// GPU shared image 描述符（RFC 4.3-S2 预留；当前始终 None）。
+        /// GPU shared image 描述符（RFC 4.3-S2+）。
         #[serde(default)]
         gpu_image: Option<crate::compositor_types::GpuSharedImageDescriptor>,
+        /// present 帧是否为 compositor 权威输出（RFC 4.4-S4）。
+        #[serde(default)]
+        present_authoritative: bool,
     },
 
     // ── 存储请求（渲染→浏览器→存储）──

@@ -147,6 +147,7 @@ fn get_frame(
             scroll_x,
             scroll_y,
             gpu_image,
+            ..
         } => {
             let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, gpu_image)
                 .expect("resolve compositor frame rgba");
@@ -462,6 +463,7 @@ fn get_ui_frame(transport: &mut impl IpcChannel, request_id: u64, surface_id: u6
             scroll_x,
             scroll_y,
             gpu_image,
+            ..
         } => {
             assert_eq!(sid, surface_id);
             assert_eq!(navigation_epoch, 0);
@@ -556,6 +558,7 @@ fn get_present_frame(
             scroll_x,
             scroll_y,
             gpu_image,
+            ..
         } => {
             assert_eq!(surface_id, page_surface_id);
             assert_eq!(navigation_epoch, 0);
@@ -646,4 +649,95 @@ fn compositor_seccomp_allows_frame_ipc() {
     let got = get_frame(&mut transport, 2, 9, 1, 1);
     assert_eq!((got.width, got.height), (4, 4));
     assert_eq!(&got.rgba[..4], &[0, 128, 255, 255]);
+}
+
+/// RFC 4.4-S4：窗口 surface 登记与 present 权威标记。
+#[test]
+fn compositor_window_surface_registers_and_present_is_authoritative() {
+    let (mut transport, _comp) = spawn_compositor();
+    let window_surface = u64::MAX - 1;
+
+    transport
+        .send(IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::CompositorRegisterWindowSurface(zero_protocol::CompositorWindowSurfaceInfo {
+                surface_id: window_surface,
+                width: 2,
+                height: 2,
+            }),
+        })
+        .expect("register window");
+    let ack: IpcMessage = transport.recv().expect("register ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    let page_surface = 7u64;
+    let ui_surface = u64::MAX;
+    assert_eq!(
+        submit_frame(
+            &mut transport,
+            2,
+            page_surface,
+            1,
+            1,
+            make_frame(2, 2, [0, 0, 255, 255])
+        ),
+        (page_surface, 1, 1)
+    );
+    transport
+        .send(IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::CompositorRegisterUiSurface(zero_protocol::CompositorUiSurfaceInfo {
+                surface_id: ui_surface,
+                width: 2,
+                height: 2,
+            }),
+        })
+        .expect("register ui");
+    let ack: IpcMessage = transport.recv().expect("ui register ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+    transport
+        .send(IpcMessage {
+            id: 4,
+            kind: IpcMessageKind::CompositorUiFrame {
+                surface_id: ui_surface,
+                width: 2,
+                height: 2,
+                rgba: [255u8, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0].to_vec(),
+                shm_name: None,
+            },
+        })
+        .expect("ui frame");
+    let ack: IpcMessage = transport.recv().expect("ui frame ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    transport
+        .send(IpcMessage {
+            id: 5,
+            kind: IpcMessageKind::GetCompositorPresentFrame {
+                width: 2,
+                height: 2,
+                page_surface_id: page_surface,
+                ui_surface_id: ui_surface,
+            },
+        })
+        .expect("present");
+    let resp: IpcMessage = transport.recv().expect("present data");
+    match resp.kind {
+        IpcMessageKind::CompositorFrameData {
+            present_authoritative,
+            width,
+            height,
+            rgba,
+            shm_name,
+            gpu_image,
+            ..
+        } => {
+            assert!(present_authoritative);
+            assert_eq!((width, height), (2, 2));
+            let pixels = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, gpu_image)
+                .expect("resolve");
+            assert_eq!(pixels.len(), 16);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
 }

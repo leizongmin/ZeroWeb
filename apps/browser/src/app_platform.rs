@@ -197,6 +197,20 @@ impl BrowserApp {
             return Some(fb);
         }
 
+        if crate::compositor_client::owned_present_enabled()
+            && crate::compositor_client::present_enabled()
+            && self.compositor_status() == crate::compositor_client::CompositorStatus::Healthy
+        {
+            self.forward_compositor_chrome_ui(width, height);
+            self.maybe_request_compositor_present(width, height);
+            let mut fb = zero_render_foundation::surface::FrameBuffer::new(width, height);
+            fb.clear(255, 255, 255, 255);
+            if present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data) {
+                return Some(fb);
+            }
+            return None;
+        }
+
         let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
 
         // 获取 WebView 的额外图元类型（渐变、阴影、线段等）

@@ -183,6 +183,7 @@ fn main() {
     // 每个页面 surface 独立维护帧序列和双缓冲；字体/字形缓存由进程共享。
     let mut surfaces: HashMap<u64, SurfaceState> = HashMap::new();
     let mut ui_surfaces: HashMap<u64, UiSurfaceState> = HashMap::new();
+    let mut window_surface: Option<zero_protocol::CompositorWindowSurfaceInfo> = None;
     let font_loader = Arc::new(load_compositor_fonts());
     let mut glyph_cache = GlyphCache::new(1024);
     let render_thread = render_threading_enabled().then(|| RenderingThread::spawn(Arc::clone(&font_loader), 1024));
@@ -407,6 +408,7 @@ fn main() {
                         scroll_x,
                         scroll_y,
                         gpu_image,
+                        present_authoritative: false,
                     },
                 };
                 if let Err(e) = transport.send(resp) {
@@ -466,6 +468,23 @@ fn main() {
                 };
                 if let Err(e) = transport.send(resp) {
                     tracing::warn!("compositor: UI surface 注册响应失败: {e}");
+                    break;
+                }
+            }
+            IpcMessageKind::CompositorRegisterWindowSurface(info) => {
+                window_surface = Some(info.clone());
+                tracing::info!(
+                    "compositor: 窗口 surface {} 登记 {}x{}（4.4-S4 所有权）",
+                    info.surface_id,
+                    info.width,
+                    info.height
+                );
+                let resp = IpcMessage {
+                    id: msg.id,
+                    kind: IpcMessageKind::Ok,
+                };
+                if let Err(e) = transport.send(resp) {
+                    tracing::warn!("compositor: 窗口 surface 登记响应失败: {e}");
                     break;
                 }
             }
@@ -549,6 +568,7 @@ fn main() {
                         scroll_x: 0.0,
                         scroll_y: 0.0,
                         gpu_image,
+                        present_authoritative: false,
                     },
                 };
                 if let Err(e) = transport.send(resp) {
@@ -604,6 +624,7 @@ fn main() {
                         scroll_x: 0.0,
                         scroll_y: 0.0,
                         gpu_image,
+                        present_authoritative: window_surface.is_some(),
                     },
                 };
                 if let Err(e) = transport.send(resp) {
