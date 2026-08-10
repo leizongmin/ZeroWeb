@@ -3,6 +3,7 @@
 //! 页面 GPU 上下文仅允许在 `zero-compositor` 内创建；renderer 不持有 wgpu 设备。
 //! 初始化失败或 readback 失败时由调用方回退 CPU 路径。
 
+use crate::recovery;
 use zero_render_foundation::font::{FontLoader, GlyphCache};
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::gpu::renderer::GpuRenderer;
@@ -78,6 +79,9 @@ fn rasterize_gpu(
     back: &mut FrameBuffer,
     clip: Option<Rect>,
 ) -> bool {
+    if recovery::take_simulated_device_lost(gpu_renderer) {
+        return false;
+    }
     if gpu_renderer.is_none() {
         *gpu_renderer = GpuRenderer::new_headless(width, height).ok();
     }

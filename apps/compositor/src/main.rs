@@ -24,6 +24,7 @@ mod convert;
 mod gpu_raster;
 mod present;
 mod rasterize;
+mod recovery;
 mod sandbox;
 mod scroll_transform;
 

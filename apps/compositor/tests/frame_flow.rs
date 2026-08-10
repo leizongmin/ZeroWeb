@@ -663,6 +663,18 @@ fn compositor_landlock_allows_frame_ipc() {
     assert_eq!(&got.rgba[..4], &[255, 0, 255, 255]);
 }
 
+/// RFC §五：模拟 GPU 设备丢失后 CPU 路径仍可出帧。
+#[test]
+fn compositor_gpu_simulated_loss_falls_back_to_cpu() {
+    let (mut transport, _comp) =
+        spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU", "1"), ("ZW_COMPOSITOR_GPU_SIMULATE_LOST", "1")]);
+    let frame = make_frame(8, 8, [255, 128, 0, 255]);
+    assert_eq!(submit_frame(&mut transport, 1, 12, 1, 1, frame), (12, 1, 1));
+    let got = get_frame(&mut transport, 2, 12, 1, 1);
+    assert_eq!((got.width, got.height), (8, 8));
+    assert_eq!(&got.rgba[..4], &[255, 128, 0, 255]);
+}
+
 /// RFC 4.4-S4：窗口 surface 登记与 present 权威标记。
 #[test]
 fn compositor_window_surface_registers_and_present_is_authoritative() {
