@@ -13,6 +13,7 @@
 //! spec：`nodeType` https://dom.spec.whatwg.org/#dom-node-nodetype（Element=1）；
 //! `tagName` https://dom.spec.whatwg.org/#dom-element-tagname（HTML 大写）。
 
+mod dom_token_list;
 mod element;
 mod event;
 mod event_target;
@@ -118,6 +119,11 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
             element::native_class_name_getter,
             element::native_class_name_setter,
         );
+    }
+    // R3145 `classList` getter（spec `dom-element-classlist`）：返元素 class 集合 DOMTokenList
+    //（live，同元素返同对象——gc.rs DOMTOKENLIST_OBJECTS 缓存；internal slot[0] = owner element NodeId）。
+    if let Some(k) = v8::String::new(scope, "classList") {
+        tmpl.set_accessor(k.into(), dom_token_list::native_class_list_getter);
     }
     // `children` getter（spec `dom-parentnode-children`）：元素**子元素**（跳过文本/注释）
     // → V8 Array of native 对象（文档序）。
@@ -305,6 +311,9 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
 
     // R3112 NamedNodeMap ObjectTemplate（element.attributes 集合）——R3116 拆到 namednodemap 子模块。
     namednodemap::build_and_cache_template(scope);
+
+    // R3145 DOMTokenList ObjectTemplate（element.classList 集合）——dom_token_list 子模块。
+    dom_token_list::build_and_cache_template(scope);
 
     // 3. 全局工厂 __zw_native_element_for_id(idStr) → native element 对象。
     let global = ctx.global(scope);
@@ -506,3 +515,6 @@ fn get_or_create_native_element<'s>(
 
 #[cfg(test)]
 mod tests;
+// 扩展 API 表面 + 生命周期测试（拆自 tests.rs，rule 5 <2000 行；R3136+）。共享 tests::run_script。
+#[cfg(test)]
+mod tests_dom_api;

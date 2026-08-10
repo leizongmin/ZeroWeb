@@ -67,6 +67,17 @@ thread_local! {
     /// R3122 Attr ObjectTemplate（nodeType=2 / name / nodeName / value(+setter) / nodeValue / textContent /
     /// ownerElement + internal slot[0]=owner ffi、slot[1]=attr 名 arena idx）。`install_dom_bindings` 建 + 缓存。
     static ATTR_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> = const { RefCell::new(None) };
+    /// R3145 DOMTokenList（`element.classList`）：owner element NodeId(ffi) → **Weak**<Object>，
+    /// 保 spec 身份（`el.classList === el.classList` 同对象——polyfill 旧每调新建，native 修正为 spec 合规）。
+    /// R3134 同模式 weak 化（同 NNM/ATTR）——JS 丢 classList 引用即可 GC（无辅助状态，无需终结器；
+    /// rebuild 时 insert-overwrite 清死 Weak）。
+    static DOMTOKENLIST_OBJECTS: RefCell<HashMap<u64, v8::Weak<v8::Object>>> =
+        RefCell::new(HashMap::new());
+    /// R3145 DOMTokenList ObjectTemplate（length/value(+setter) + item/contains/add/remove/toggle/replace/
+    /// toString + internal slot[0] = owner element NodeId）。`install_dom_bindings` 建 + 缓存，`classList`
+    /// getter 实例化。
+    static DOMTOKENLIST_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> =
+        const { RefCell::new(None) };
 }
 
 /// 注入 DOM 源 + Element 模板（`install_dom_bindings` 调用）。
@@ -98,6 +109,8 @@ pub(crate) fn reset() {
     ATTR_NAMES.with(|c| c.borrow_mut().clear());
     ATTR_OBJECTS.with(|c| c.borrow_mut().clear());
     ATTR_TEMPLATE.with(|c| *c.borrow_mut() = None);
+    DOMTOKENLIST_OBJECTS.with(|c| c.borrow_mut().clear());
+    DOMTOKENLIST_TEMPLATE.with(|c| *c.borrow_mut() = None);
 }
 
 /// 缓存 NamedNodeMap ObjectTemplate（`install_dom_bindings` 建 `attributes` 集合模板）。
@@ -122,6 +135,34 @@ pub(crate) fn cached_namednodemap<'s>(scope: &mut v8::PinScope<'s, '_>, ffi: u64
 /// NNM 可回收，rebuild 时 insert-overwrite 清死 Weak 条目（NNM 无辅助状态，无需终结器）。
 pub(crate) fn cache_namednodemap(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v8::Object>) {
     NAMEDNODEMAP_OBJECTS.with(|c| {
+        c.borrow_mut().insert(ffi, v8::Weak::new(scope, obj));
+    });
+}
+
+// ── R3145 DOMTokenList（element.classList）状态 ────────────────────
+
+/// 缓存 DOMTokenList ObjectTemplate（`install_dom_bindings` 建 `classList` 集合模板）。
+pub(crate) fn set_domtokenlist_template(scope: &mut v8::PinScope, tmpl: v8::Local<v8::ObjectTemplate>) {
+    DOMTOKENLIST_TEMPLATE.with(|c| *c.borrow_mut() = Some(v8::Global::new(scope, tmpl)));
+}
+
+/// 取 DOMTokenList ObjectTemplate 的 Local（`classList` getter 实例化用）。
+pub(crate) fn domtokenlist_template_local<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+) -> Option<v8::Local<'s, v8::ObjectTemplate>> {
+    DOMTOKENLIST_TEMPLATE.with(|c| c.borrow().as_ref().map(|g| v8::Local::new(scope, g)))
+}
+
+/// 取已缓存的 DOMTokenList 对象（同 owner element 返同对象，spec identity）；weak 死（DTL 被 GC）→ `None`
+/// （调用方 rebuild）。R3145：weak 缓存（同 NNM / ATTR），JS 丢引用即可 GC。
+pub(crate) fn cached_domtokenlist<'s>(scope: &mut v8::PinScope<'s, '_>, ffi: u64) -> Option<v8::Local<'s, v8::Object>> {
+    DOMTOKENLIST_OBJECTS.with(|c| c.borrow().get(&ffi).and_then(|w| w.to_local(scope)))
+}
+
+/// 缓存 DOMTokenList 对象（owner element ffi → **Weak**）。R3145：weak 句柄不阻止 GC——rebuild 时
+/// insert-overwrite 清死 Weak（DTL 无辅助状态，无需终结器）。
+pub(crate) fn cache_domtokenlist(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v8::Object>) {
+    DOMTOKENLIST_OBJECTS.with(|c| {
         c.borrow_mut().insert(ffi, v8::Weak::new(scope, obj));
     });
 }
@@ -349,5 +390,10 @@ pub(crate) mod test_helpers {
                 .get(&(owner_ffi, name.to_string()))
                 .is_some_and(|w| !w.is_empty())
         })
+    }
+
+    /// R3145：本 owner 元素的 DOMTokenList weak 句柄是否仍活（classList 未被 GC）。weak-reclaim 测试用。
+    pub fn dtl_cache_alive(ffi: u64) -> bool {
+        DOMTOKENLIST_OBJECTS.with(|c| c.borrow().get(&ffi).is_some_and(|w| !w.is_empty()))
     }
 }
