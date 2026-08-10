@@ -1368,21 +1368,39 @@
     if (m) return '-webkit-' + m[1].toLowerCase() + _camelToKebab(m[2]);
     return _camelToKebab(s);
   }
+  // R3193：拆分 style 声明值为 {value, priority}——spec `dom-cssstyledeclaration-getpropertyvalue` 返值
+  // **不含** !important，`getPropertyPriority` 返 "important"/""。`!important` 在末尾（CSS 语法允许 `!` 与
+  // important 间空白）。供 readProp/getPropertyPriority 复用。
+  function _styleValueAndPriority(decl) {
+    var s = String(decl).trim();
+    var stripped = s.replace(/\s*!\s*important\s*$/i, '');
+    if (stripped !== s) return { value: stripped.trim(), priority: 'important' };
+    return { value: s, priority: '' };
+  }
 
   function _styleProxy(sel, handle) {
     var readRaw = function() {
       return (handle ? __zw_get_attr_handle(handle, 'style') : __zw_get_attr(sel, 'style')) || '';
     };
-    var readProp = function(name) {
+    // R3193：读取属性声明的**原始值串**（含 !important），按首个 ':' 切分（旧 `split(':')` 致 url() 等含
+    // 冒号值截断）。命中返原始值串，未命中返 null。供 readProp（值）/ getPropertyPriority（优先级）复用。
+    var readDeclValue = function(name) {
       var raw = readRaw();
-      if (!raw) return '';
+      if (!raw) return null;
       var want = _stylePropName(name).toLowerCase();
       var parts = raw.split(';');
       for (var i = 0; i < parts.length; i++) {
-        var kv = parts[i].split(':');
-        if (kv[0] && kv[0].trim().toLowerCase() === want) return (kv[1] || '').trim();
+        var decl = parts[i];
+        var colon = decl.indexOf(':');
+        if (colon < 0) continue;
+        if (decl.slice(0, colon).trim().toLowerCase() === want) return decl.slice(colon + 1).trim();
       }
-      return '';
+      return null;
+    };
+    // getPropertyValue 返值**不含** !important（spec；旧返 "red !important"）。
+    var readProp = function(name) {
+      var v = readDeclValue(name);
+      return v == null ? '' : _styleValueAndPriority(v).value;
     };
     var setProp = function(name, value) {
       var prop = _stylePropName(name);
@@ -1394,7 +1412,7 @@
       var raw = readRaw();
       return raw
         .split(';')
-        .map(function(s) { return s.split(':')[0].trim(); })
+        .map(function(s) { var c = s.indexOf(':'); return (c < 0 ? s : s.slice(0, c)).trim(); })
         .filter(Boolean);
     };
     return new Proxy({}, {
@@ -1403,8 +1421,24 @@
         if (ps === 'cssText') return readRaw();
         if (ps === 'length') return propNames().length;
         if (ps === 'getPropertyValue') return function(name) { return readProp(name); };
-        if (ps === 'getPropertyPriority') return function() { return ''; }; // !priority 未跟踪
-        if (ps === 'setProperty') return function(name, value) { setProp(name, value); return undefined; };
+        // R3193：getPropertyPriority 返 "important"（声明带 !important）/ ""（spec；旧 stub 恒 ""）。
+        if (ps === 'getPropertyPriority') {
+          return function(name) {
+            var v = readDeclValue(name);
+            return v == null ? '' : _styleValueAndPriority(v).priority;
+          };
+        }
+        // R3193：setProperty 第三参 priority——spec "important"（ci）→ 追加 !important；余 → 无优先级。
+        // 先剥离 value 末尾既存 !important（priority arg 显式控制优先级，非 value 字符串）。
+        if (ps === 'setProperty') {
+          return function(name, value, priority) {
+            var v = String(value).replace(/\s*!\s*important\s*$/i, '').trim();
+            var hasImp = priority !== undefined && String(priority).trim().toLowerCase() === 'important';
+            if (hasImp) v = v + ' !important';
+            setProp(name, v);
+            return undefined;
+          };
+        }
         if (ps === 'removeProperty') {
           return function(name) {
             var prev = readProp(name);

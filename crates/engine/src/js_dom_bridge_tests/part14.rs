@@ -1368,3 +1368,104 @@ fn test_toggle_attribute_consecutive_return_production_r3192() {
         "双 toggle 后 net absent → getAttribute 返 null（lw 一致反映 enqueue 的 SetAttr/RemoveAttr）"
     );
 }
+
+// ── R3193：`element.style`（CSSStyleDeclaration）priority/!important CSSOM 合规 ──
+//
+// spec `dom-cssstyledeclaration`：getPropertyValue 返值**不含** !important；getPropertyPriority 返
+// "important"/""；setProperty 第三参 priority 控制 !important。旧 polyfill：getPropertyPriority 恒返 ''（stub）、
+// setProperty 忽略 priority 参、getPropertyValue 返值含 !important、readProp split(':') 致 url() 含冒号值截断。
+//
+// 注：读侧经解析期 style 快照验证（sync set→read latest-wins 为 R3194 独立修复，见已知限制），写侧经
+// `apply_mutations_to_html` 验证（apply 后 style 属性含正确 !important）。
+
+#[test]
+fn test_style_priority_important_cssom_production_r3193() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+           <div id='d'></div>\
+           <div id='imp' style='color: red !important'></div>\
+           <div id='url' style='background: url(http://x.png)'></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 读侧（解析期 style 快照）：getPropertyValue='red'（剥离 !important），getPropertyPriority='important'。
+    // 旧 getPropertyValue 返 'red !important'（含 priority）、getPropertyPriority 恒 ''。
+    let parsed = sandbox
+        .execute(
+            "var e=document.querySelector('#imp');\
+             e.style.getPropertyValue('color')+'/'+e.style.getPropertyPriority('color')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        parsed, "red/important",
+        "解析期 !important：getPropertyValue='red'（剥离），getPropertyPriority='important'"
+    );
+
+    // 解析期无 !important 声明：getPropertyPriority=''。
+    let nopri = sandbox
+        .execute("document.querySelector('#url').style.getPropertyPriority('background')")
+        .unwrap()
+        .value;
+    assert_eq!(nopri, "", "解析期无 !important → getPropertyPriority=''");
+
+    // 含 ':' 的值（url()）完整读回——旧 split(':') 致 'url(http' 截断，现按首 ':' 切分。
+    let url = sandbox
+        .execute("document.querySelector('#url').style.getPropertyValue('background')")
+        .unwrap()
+        .value;
+    assert_eq!(
+        url, "url(http://x.png)",
+        "含 ':' 的值（url()）完整读回（旧 split(':') 截断）"
+    );
+
+    // 写侧（apply 后验证）：setProperty 第三参 priority='important' → style 属性含 'color: red !important'；
+    // 无 priority → 'font-size: 14px'（无 !important）；ci 'IMPORTANT' → 'margin: 5px !important'。旧 priority 被忽略。
+    sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.style.setProperty('color', 'red', 'important');\
+             d.style.setProperty('font-size', '14px');\
+             d.style.setProperty('margin', '5px', 'IMPORTANT');",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(out.contains("color: red !important"), "setProperty(p,v,'important') → !important\n{out}");
+    assert!(
+        out.contains("font-size: 14px") && !out.contains("font-size: 14px !important"),
+        "setProperty 无 priority → 无 !important\n{out}"
+    );
+    assert!(out.contains("margin: 5px !important"), "setProperty priority 'IMPORTANT'（ci）→ !important\n{out}");
+
+    // IDL setter 带 !important（Chrome：解析 value 的 !important）→ apply 后 style 含 'color: blue !important'。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute("document.querySelector('#d').style.color = 'blue !important';")
+        .unwrap();
+    let ms2 = mutations.lock().unwrap().clone();
+    let out2 = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms2).unwrap();
+    assert!(
+        out2.contains("color: blue !important"),
+        "IDL setter 'blue !important' → apply 后 !important\n{out2}"
+    );
+
+    // removeProperty 返前值（读解析期 #imp 的 color='red'，剥离 priority）。
+    let removed = sandbox
+        .execute("document.querySelector('#imp').style.removeProperty('color')")
+        .unwrap()
+        .value;
+    assert_eq!(removed, "red", "removeProperty 返前值（不含 !important）");
+}
