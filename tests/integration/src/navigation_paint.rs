@@ -41,6 +41,7 @@ impl BrowserPaintSnapshot {
         }
         self.last_render = Some(WebViewRenderResult {
             primitives,
+            dirty_rects: Vec::new(),
             timings: Default::default(),
         });
         if self.loading {
@@ -83,6 +84,7 @@ fn red_paint_snapshot(epoch: u64) -> PaintSnapshotParams {
         blend_modes: vec![],
         glyphs: vec![],
         draw_order: vec![],
+        dirty_rects: vec![],
         hit_test: None,
     }
 }
@@ -96,6 +98,7 @@ fn blue_render() -> WebViewRenderResult {
             }],
             ..RenderPrimitives::new()
         },
+        dirty_rects: Vec::new(),
         timings: Default::default(),
     }
 }

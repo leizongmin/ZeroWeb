@@ -113,6 +113,17 @@ pub struct WebViewRenderResult {
     pub timings: PipelineTimings,
 }
 
+impl WebViewRenderResult {
+    /// 本帧图元（`primitives` 字段的便捷访问）。
+    ///
+    /// 与 engine `RenderResult::primitives()` API 对称：调用方可对 engine 渲染结果与
+    /// WebView 渲染结果统一以 `result.primitives()` 取图元，无需区分类型（字段仍保留供
+    /// 需要按值取得 `RenderPrimitives` 的调用方使用）。
+    pub fn primitives(&self) -> &RenderPrimitives {
+        &self.primitives
+    }
+}
+
 fn render_result_to_webview(result: &RenderResult) -> WebViewRenderResult {
     WebViewRenderResult {
         primitives: result.display_list.primitives.clone(),

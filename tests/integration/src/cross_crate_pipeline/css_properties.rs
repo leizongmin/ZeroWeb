@@ -1297,7 +1297,7 @@ fn test_writing_mode_vertical_rl_pipeline() {
     // 应有 fill（背景）和 glyph（文本），且 glyph 旋转 90°
     assert!(!result.primitives().fills.is_empty(), "应有背景 fill");
     let has_rotated = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .any(|g| g.glyph_id != 0 && (g.rotation - std::f32::consts::FRAC_PI_2).abs() < 0.01);

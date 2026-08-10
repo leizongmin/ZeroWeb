@@ -446,7 +446,7 @@ fn test_text_shadow_with_color_pipeline() {
 
     // 查找 shadow glyph — 颜色应为 green (0, 128, 0)
     let has_shadow_glyph = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .any(|g| g.color.g > 100 && g.color.r == 0 && g.color.b == 0);
@@ -454,7 +454,7 @@ fn test_text_shadow_with_color_pipeline() {
 
     // 查找 main glyph — 颜色应为 blue (0, 0, 255)
     let has_main_glyph = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .any(|g| g.color.b == 255 && g.color.r == 0 && g.color.g == 0);

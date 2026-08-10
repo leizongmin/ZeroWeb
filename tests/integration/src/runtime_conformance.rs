@@ -35,7 +35,7 @@ fn assert_paths_match(label: &str, html: &str, css: &str, vw: u32, vh: u32) {
     // engine-direct（WPT 路径）
     let mut pipeline = RenderPipeline::new(vw as f32, vh as f32);
     let engine_result = pipeline.render_html(html, css);
-    let engine_count = primitive_count(&engine_result.primitives);
+    let engine_count = primitive_count(engine_result.primitives());
 
     // WebView（TabWorker 路径）
     let mut wv = WebView::new(WebViewConfig {
