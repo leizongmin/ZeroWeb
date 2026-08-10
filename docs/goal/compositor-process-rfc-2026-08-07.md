@@ -1,14 +1,14 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v1.9 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1–C3 / 4.1–4.5 / 4.2-S2 / 4.3-S2–S3 / 4.4-S2–S3 / 4.5-S2 ✅）**
+版本：v2.0 ｜ 日期：2026-08-11 ｜ 状态：**§五切片完成（4.3-S4 / 4.4-S4 / 4.5-S3 / GPU 恢复 ✅）；真 GPU 纹理零拷贝与 compositor crash E2E 仍为后续**
 
-> 实施状态（2026-08-11 更新）：
+> 实施状态（2026-08-11 v2.0 更新）：
 > - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
 > - **C2（合成器独立进程）✅**：surface 级页面主显示链路已接通。
 > - **C3（GPU 隔离）✅ 切片 S1+S2**：
 >   - S1：compositor 进程内 headless wgpu（`ZW_COMPOSITOR_GPU=1`）+ `gpu_raster.rs` + CPU 回退。
 >   - S2：GPU partial dirty 光栅（clip blit 到 back buffer）；与 CPU partial dirty 路径对齐。
->   - 跨进程 GPU 纹理传输、Viz 式 surface 所有权仍为后续切片。
+>   - 跨进程 **GPU 纹理** 零拷贝仍为后续；mailbox 当前为 shm + mmap 后端。
 > - **4.1（Renderer compositor 发布线程）✅ 切片**：`ZW_RENDERER_COMPOSITOR_THREAD=1` 时
 >   `CompositorPublishThread` 异步发送 `CompositorFrame`，队列满时回退同步 IPC。
 > - **4.2（异步滚动）✅ 切片 + S2**：
@@ -16,22 +16,29 @@
 >     `ZW_COMPOSITOR_ASYNC_SCROLL=1` 时 Browser 推送滚动并消费 compositor 回读偏移。
 >   - S2：`ZW_COMPOSITOR_SCROLL_TRANSFORM=1` 时 compositor 在 `GetCompositorFrame`
 >     将 scroll 烘焙进 RGBA、回读 scroll 归零；Browser 不再对位图做 scroll 偏移。
-> - **4.3（OS 共享资源）✅ S1 + S2**：
+> - **4.3（OS 共享资源）✅ S1–S4**：
 >   - S1：Linux `ZW_COMPOSITOR_SHM=1` 时经 `/dev/shm/zeroweb-cmp-*` 传递 front 像素。
->   - S2：`ZW_COMPOSITOR_GPU_IMAGE=1` 时 `gpu_image.mailbox_name` 经 shm 后端传递像素（非 GPU 纹理零拷贝）。
->   - S3：`GpuSharedImageDescriptor.sync_token` 占位（fence 序号 = frame_id）；真 GPU fence 为后续。
-> - **4.4（Viz UI surface）✅ 切片 + S2 + S3**：
+>   - S2：`ZW_COMPOSITOR_GPU_IMAGE=1` 时 `gpu_image.mailbox_name` 经 shm 后端传递像素。
+>   - S3：`GpuSharedImageDescriptor.sync_token` 占位（fence 序号 = frame_id）。
+>   - S4：`gpu_mailbox.rs` 28 字节头 + `sync_token` fence 校验；`ZW_COMPOSITOR_GPU_ZERO_COPY=1` 时 mmap 读 payload（仍为 shm 后端，非 GPU 纹理）。
+> - **4.4（Viz UI surface）✅ 切片 + S2–S4**：
 >   - 元数据：`CompositorRegisterUiSurface` + Browser 启动登记 `CHROME_UI_SURFACE_ID`。
 >   - S2：`CompositorUiFrame` / `GetCompositorUiFrame`；`ZW_COMPOSITOR_UI_FRAMES=1` 时 Browser 提交 UI 位图握手。
 >   - S3：`GetCompositorPresentFrame` + `ZW_COMPOSITOR_PRESENT=1` 时 compositor 合成 page+UI，
 >     Browser 直接 blit present 帧（跳过本地 chrome+page 合成）。
-> - **4.5（沙箱）✅ S1 + S2**：
+>   - S4：`CompositorRegisterWindowSurface` + `present_authoritative`；`ZW_COMPOSITOR_OWNED_PRESENT=1` 时
+>     Browser 跳过本地 chrome+page 合成，仅 blit compositor 权威 present 或白底占位。
+> - **4.5（沙箱）✅ S1–S3**：
 >   - S1：`ZW_COMPOSITOR_SANDBOX=1` 时 compositor 启动剥离 `LD_PRELOAD` 等危险 env。
 >   - S2：`ZW_COMPOSITOR_SECCOMP=1` 时 Linux seccomp-bpf 阻断网络 socket 与 exec/fork
->     （与 `ZW_COMPOSITOR_GPU=1` 不兼容；landlock 文件系统沙箱仍为后续）。
+>     （与 `ZW_COMPOSITOR_GPU=1` 不兼容）。
+>   - S3：`ZW_COMPOSITOR_LANDLOCK=1` 时字体加载后 Landlock：`/dev/shm` RW + 字体目录 RO
+>     （与 `ZW_COMPOSITOR_GPU=1` 不兼容）。
+> - **§五 GPU 恢复（切片）✅**：`ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 模拟设备丢失，丢弃 GPU 上下文并回退 CPU；
+>   compositor IPC 断线 → legacy 回退逻辑已在 `compositor_client` 实现（crash E2E 集成测仍为后续）。
 
-> 本状态不代表完整 Chromium/Chrome compositor 对齐。当前完成的是页面位图主链路 + 上述协议/线程切片。
-> Browser 仍拥有窗口最终场景和呈现。
+> 本状态不代表完整 Chromium/Chrome compositor 对齐。§五规划切片已落地；真 GPU 纹理零拷贝与 compositor 进程 crash 端到端验证仍为后续。
+> `ZW_COMPOSITOR_OWNED_PRESENT=1` 时 Browser 可跳过本地合成；默认仍由 Browser 拥有窗口最终场景。
 
 ## 一、当前架构
 
@@ -71,7 +78,9 @@ compositor 健康时，Browser 不再光栅页面 `RenderPrimitives`。Browser �
 
 Browser 仍把页面位图转换为 `ImagePrimitive`。Browser 仍应用页面滚动、缩放和视口裁剪（滚动可来自 compositor 元数据，见 4.2）。Browser 仍绘制标签栏、地址栏、菜单和窗口控件。Browser 最终合成页面位图与 Chrome UI，并提交窗口场景。
 
-Chrome UI surface 已在 compositor 侧登记（4.4），但像素仍由 Browser 绘制。因此，当前是“页面位图主链路接通 + 协议切片”。当前不是“最终显示 surface 由 compositor 拥有”。
+Chrome UI surface 已在 compositor 侧登记（4.4）。`ZW_COMPOSITOR_OWNED_PRESENT=1` 时 compositor present 为权威输出，Browser 跳过本地 chrome+page 合成；默认模式下像素仍由 Browser 绘制并最终合成到窗口。
+
+因此，当前是“页面位图主链路接通 + §五协议/沙箱/恢复切片”。完整 Viz 式 surface 所有权（非 env-gated）仍为后续。
 
 ### 1.3 传输边界
 
@@ -80,7 +89,10 @@ Chrome UI surface 已在 compositor 侧登记（4.4），但像素仍由 Browser
 **4.3 S1（Linux）**：`ZW_COMPOSITOR_SHM=1` 时 compositor 将 front 像素写入 `/dev/shm/zeroweb-cmp-{name}`，
 `CompositorFrameData` 仅传输 `shm_name`；Browser worker 读取后删除文件。
 
-**4.3 S2（协议预留）**：`GpuSharedImageDescriptor` 已定义；mailbox/fence 接线与零拷贝 present 为后续。
+**4.3 S2**：`ZW_COMPOSITOR_GPU_IMAGE=1` 时 `gpu_image.mailbox_name` 经 shm 传递像素。
+
+**4.3 S3+S4**：`gpu_mailbox.rs` 定义 mailbox 头（magic、尺寸、`sync_token` fence）；consumer 拒绝 stale fence。
+`ZW_COMPOSITOR_GPU_ZERO_COPY=1` 时 Browser worker mmap 读 payload（Linux shm 后端；非 wgpu 纹理共享）。
 
 ## 二、故障回退
 
@@ -99,6 +111,8 @@ compositor 启动失败或 IPC 断开时：
 
 回退不重启 renderer。Browser Chrome UI 保持响应。页面恢复后由 legacy 路径显示。
 
+GPU 设备丢失（或 `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 诊断模拟）时 compositor 丢弃 GPU 上下文并回退 CPU 光栅，IPC 帧链路保持可用（见 `recovery.rs`、`frame_flow` 测试）。
+
 ## 三、已完成范围
 
 | 范围 | 当前状态 |
@@ -113,8 +127,12 @@ compositor 启动失败或 IPC 断开时：
 | C3 GPU S1+S2 | `gpu_raster.rs` + partial dirty GPU 路径；`ZW_COMPOSITOR_GPU=1` |
 | 4.3 shm S1 | `frame_shm.rs` + `ZW_COMPOSITOR_SHM=1`（Linux） |
 | 4.3 gpu_image S2 | `ZW_COMPOSITOR_GPU_IMAGE=1` + mailbox/shm 接线 |
+| 4.3 mailbox S3+S4 | `gpu_mailbox.rs` fence + `ZW_COMPOSITOR_GPU_ZERO_COPY=1` mmap |
 | 4.4 UI frame S2 | `CompositorUiFrame` + `GetCompositorUiFrame` |
-| 4.5 沙箱 S1+S2 | `sandbox.rs` + env 剥离 + Linux seccomp（`ZW_COMPOSITOR_SECCOMP=1`） |
+| 4.4 present S3 | `GetCompositorPresentFrame` + `ZW_COMPOSITOR_PRESENT=1` |
+| 4.4 owned present S4 | `CompositorRegisterWindowSurface` + `ZW_COMPOSITOR_OWNED_PRESENT=1` |
+| 4.5 沙箱 S1–S3 | env 剥离 + seccomp + landlock（`landlock_linux.rs`） |
+| §五 GPU 恢复 | `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` → CPU 回退；IPC 断线 legacy 回退 |
 
 ## 四、环境变量
 
@@ -124,21 +142,25 @@ compositor 启动失败或 IPC 断开时：
 | `ZW_COMPOSITOR_GPU=1` | compositor headless GPU 光栅 |
 | `ZW_COMPOSITOR_SHM=1` | Linux POSIX shm 帧像素 |
 | `ZW_COMPOSITOR_GPU_IMAGE=1` | gpu_image mailbox（shm 后端） |
+| `ZW_COMPOSITOR_GPU_ZERO_COPY=1` | gpu_image mailbox mmap 读 payload（Linux） |
 | `ZW_RENDERER_COMPOSITOR_THREAD=1` | renderer 异步 compositor IPC 发布 |
 | `ZW_COMPOSITOR_ASYNC_SCROLL=1` | compositor 滚动元数据 + Browser 消费 |
 | `ZW_COMPOSITOR_SCROLL_TRANSFORM=1` | compositor 侧 scroll 烘焙（回读 scroll=0） |
 | `ZW_COMPOSITOR_UI_FRAMES=1` | Browser 向 compositor 提交 UI 位图 |
 | `ZW_COMPOSITOR_PRESENT=1` | compositor 合成 page+UI present 帧 |
+| `ZW_COMPOSITOR_OWNED_PRESENT=1` | compositor 权威 present；Browser 跳过本地合成 |
 | `ZW_COMPOSITOR_SANDBOX=1` | compositor 启动 env 剥离 |
 | `ZW_COMPOSITOR_SECCOMP=1` | Linux seccomp 阻断网络/exec（与 GPU 不兼容） |
+| `ZW_COMPOSITOR_LANDLOCK=1` | Linux landlock：`/dev/shm` RW + 字体 RO（与 GPU 不兼容） |
+| `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` | 模拟 GPU 设备丢失，强制 CPU 光栅（诊断/测试） |
 
 ## 五、下一阶段（完整对齐）
 
-- compositor 侧滚动变换（非仅元数据回读）→ **4.2-S2 ✅**（env-gated 像素烘焙）
-- GPU 纹理/fence **零拷贝** present（mailbox 当前为 shm 后端）
-- Viz 式最终 surface 所有权与窗口 present
-- landlock 文件系统最小权限沙箱
-- 设备丢失、进程崩溃和恢复路径的全平台验证
+- compositor 侧滚动变换（非仅元数据回读）→ **4.2-S2 ✅**
+- GPU **纹理**/wgpu fence **真零拷贝** present（mailbox 当前为 shm + mmap 后端）→ **4.3-S4 切片 ✅，真纹理为后续**
+- Viz 式最终 surface 所有权（默认非 env-gated）→ **4.4-S4 切片 ✅，默认可关**
+- landlock 文件系统最小权限沙箱 → **4.5-S3 ✅**
+- GPU 设备丢失 CPU 回退 → **§五 切片 ✅**；compositor **进程 crash** 端到端集成测仍为后续
 
 ## 六、Non-Goals（仍为后续）
 
@@ -149,8 +171,9 @@ compositor 启动失败或 IPC 断开时：
 
 ## 七、验证与关系
 
-- C2/C3/4.x 定向测试：`frame_flow`（**11** 案，含 scroll/shm/gpu_image/ui/present/seccomp）、`compositor_protocol`、
+- C2/C3/4.x 定向测试：`frame_flow`（**14** 案，含 scroll/shm/gpu_image/ui/present/seccomp/landlock/gpu_loss/window_surface）、`compositor_protocol`、
   `compositor_client`、`compositor_publish_thread`、GPU partial dirty 单测。
+- **2026-08-11 v2.0 增量**：`cargo test -p zero-compositor` **14/14** PASS（含 4.5-S3 landlock、§五 GPU 模拟丢失）。
 - **2026-08-11 增量验收**：`make test` PASS；`make browser-compositor-smoke` PASS（legacy/compositor 双模式）。
 - 全量质量、reftest 和产品 smoke 由后续验收任务执行。
 - 渲染线程前置见 [`archive/render-threading-rfc-2026-08-07.md`](archive/render-threading-rfc-2026-08-07.md)（已实施归档）。
@@ -172,5 +195,6 @@ compositor 启动失败或 IPC 断开时：
 | `make browser-compositor-smoke`（双模式 lockstep） | **PASS**：legacy↔compositor 页面签名 close_samples=64/64、mean_luma_delta=4.484、dark_ratio=0.902；compositor 模式无 ViewPainted 泄漏、无 fallback、无 panic |
 | `make bench-gate`（vs 08-08 迁移前基线） | 关键路径 page/*（parse/style/layout/paint/total/首屏，welcome/medium/morning）**两轮全 PASS 且 ≤ 基线**；微基准两轮超限 21→11，失败集不相交、集中于重构未触及 crate（dom/wasm/webview/storage/script-sandbox 等），08-09 启用后报告同指标均处基线水平 → **归因共享机器测量噪声，非重构回归**；恢复计划：CI bench-trend（github-ubuntu-latest 基线）为权威趋势 |
 | 回退环境变量 | `ZW_COMPOSITOR_PROCESS=0` legacy 路径代码验证（browser compositor_client.rs / renderer main.rs）+ 双模式实测 ✓；`ZW_COMPOSITOR_SHM=1` / `ZW_COMPOSITOR_GPU=1` 开关在位 |
+| v2.0 切片（2026-08-11） | `cargo test -p zero-compositor` **14/14**；4.3-S4 fence/mmap、4.4-S4 owned present、4.5-S3 landlock、§五 GPU simulate lost 已提交 `main` |
 
 覆盖范围与例外：本机（linux-x86_64，16 核）执行；oracle 与 CI 专用门禁未本地跑，由 CI/weekly 承担。对照差异全部归因（corpus 增量、layout-dump 格式缺陷、基准噪声），无未解释差异。
