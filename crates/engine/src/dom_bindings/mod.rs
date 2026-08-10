@@ -137,6 +137,23 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "hidden") {
         tmpl.set_accessor_with_setter(k.into(), element::native_hidden_getter, element::native_hidden_setter);
     }
+    // R3157 通用字符串反射属性（spec HTML title/lang/dir/accessKey）：IDL 名经 to_ascii_lowercase 映射
+    // content 属性名（accessKey→accesskey，余 identity）。共用 [`element::native_string_reflected_getter`/
+    // `_setter`]（经 accessor name 分派 + 复用 read/write_reflected_attr，零 per-attr 逻辑）。
+    for prop in ["title", "lang", "dir", "accessKey"] {
+        if let Some(k) = v8::String::new(scope, prop) {
+            tmpl.set_accessor_with_setter(
+                k.into(),
+                element::native_string_reflected_getter,
+                element::native_string_reflected_setter,
+            );
+        }
+    }
+    // R3157 `inert` getter/setter（spec HTML `inert`，content 反射 boolean）：modal 背景子树非交互高频——
+    // getter 属性在 → true（无 until-found，区别 hidden），setter 经 ToBoolean 强转 set `""` / remove。
+    if let Some(k) = v8::String::new(scope, "inert") {
+        tmpl.set_accessor_with_setter(k.into(), element::native_inert_getter, element::native_inert_setter);
+    }
     // R3153/R3154 aria* / role 反射属性（spec WAI-ARIA IDL reflection）：`el.ariaLabel`↔`aria-label`、
     // `el.role`↔`role` 等。共用 [`element::native_aria_reflected_getter`/`_setter`]（经 accessor name
     // 分派 + [`element::idl_to_attr`] 转 content 属性名）。注册标准 ARIA IDL 集（global + widget + value

@@ -253,6 +253,91 @@ pub(super) fn native_hidden_setter(
     });
 }
 
+// ── R3157 通用字符串反射属性（spec HTML title/lang/dir/accessKey 等，IDL 名 = content 名小写）──
+//
+// title/lang/dir/accessKey 等「IDL 名 = content 属性名（小写）」的字符串反射属性共用一对 getter/setter
+//（镜像 R3153 aria* name-dispatch 模式，但映射为 to_ascii_lowercase——accessKey→accesskey，余 identity）。
+// 复用既有 [`read_reflected_attr`] / [`write_reflected_attr`]（缺省 ""），零 per-attr 逻辑。
+
+/// `title`/`lang`/`dir`/`accessKey` 等字符串反射 getter：accessor name（IDL 名）经 to_ascii_lowercase →
+/// content 属性名 → [`read_reflected_attr`]（缺省 ""）。
+pub(super) fn native_string_reflected_getter(
+    scope: &mut v8::PinScope,
+    name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let attr = name_to_content_attr(scope, name);
+    read_reflected_attr(scope, &args, &attr, "", &mut rv);
+}
+
+/// 字符串反射 setter：accessor name → 小写 content 名 → [`write_reflected_attr`]（值 ToString）。
+pub(super) fn native_string_reflected_setter(
+    scope: &mut v8::PinScope,
+    name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    let attr = name_to_content_attr(scope, name);
+    write_reflected_attr(scope, &args, &attr, value);
+}
+
+/// accessor name（IDL 名）→ content 属性名（HTML content 属性小写约定，故 to_ascii_lowercase：
+/// accessKey→accesskey，title/lang/dir identity）。非 string 名 → 空串（不应发生）。
+fn name_to_content_attr(scope: &mut v8::PinScope, name: v8::Local<v8::Name>) -> String {
+    if let Ok(s) = v8::Local::<v8::String>::try_from(name) {
+        s.to_rust_string_lossy(scope).to_ascii_lowercase()
+    } else {
+        String::new()
+    }
+}
+
+// ── R3157 inert 反射 boolean 属性（spec HTML `inert` content ↔ `inert` IDL boolean）──
+//
+// `inert` 为纯 boolean content 属性（区别 hidden：无 until-found 状态）——getter 存在性判定（属性在 →
+// true）、setter ToBoolean 强转 set ""/remove。`el.inert = true` 使整个子树非交互（焦点/编辑/-selection
+// 禁用，UA 样式 `pointer-events: none` 等价），a11y/交互高频（modal 对话框背景 inert）。
+
+/// `inert` getter（spec HTML `inert`，content 反射 boolean）：`inert` content 属性在 → true；缺省 → false。
+/// 区别 [`native_hidden_getter`]：inert 无 until-found 状态，纯存在性判定。
+pub(super) fn native_inert_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let inert = with_dom(|d| d.get_attribute(id, "inert")).flatten().is_some();
+    rv.set(v8::Boolean::new(scope, inert).into());
+}
+
+/// `inert` setter：值经 V8 ToBoolean 强转（spec boolean setter）→ true 设 `inert` 属性为 `""`、
+/// false 移除属性。
+pub(super) fn native_inert_setter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let v = value.boolean_value(scope);
+    with_dom_mut(|d| {
+        if v {
+            d.set_attribute(id, "inert", "");
+        } else {
+            d.remove_attribute(id, "inert");
+        }
+    });
+}
+
 // ── R3153 aria* / role 反射属性（spec WAI-ARIA IDL reflection）──
 //
 // aria* IDL 属性 ↔ content 属性反射：`el.ariaLabel` ↔ `aria-label`、`el.ariaLabelledBy` ↔

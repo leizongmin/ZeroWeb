@@ -1945,3 +1945,64 @@ fn native_element_hidden_r3156() {
         "false"
     );
 }
+
+/// R3157 批量反射属性（spec HTML）：title/lang/dir/accessKey（字符串反射，IDL 名经 to_ascii_lowercase
+/// 映射 content 名）+ inert（boolean 反射）。共用 name-dispatched string 反射 + 专用 inert boolean。
+#[test]
+fn native_element_batch_reflected_r3157() {
+    // title 字符串反射：缺省 "" + get/set round-trip + content 属性同步。
+    let html = r#"<div id="a" title="hint"></div>"#;
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').title)"), "hint");
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.title='tip'; return el.getAttribute('title')+'/'+el.title; })()"
+        ),
+        "tip/tip"
+    );
+    // accessKey 字符串反射：camelCase IDL → 小写 content 名（accessKey↔accesskey）。
+    assert_eq!(
+        run_script(
+            r#"<div id="a" accesskey="h"></div>"#,
+            "(__zw_native_element_for_id('a').accessKey)"
+        ),
+        "h"
+    );
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.accessKey='k'; return el.getAttribute('accesskey'); })()"
+        ),
+        "k"
+    );
+    // lang / dir 字符串反射（i18n，dir 影响 layout 方向）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.lang='en'; el.dir='rtl'; return el.lang+'/'+el.dir+'/'+el.getAttribute('lang')+'/'+el.getAttribute('dir'); })()"
+        ),
+        "en/rtl/en/rtl"
+    );
+    // 缺省字符串属性 → ""。
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').lang)"), "");
+    // inert boolean 反射：缺省 false + content 属性在 true + setter ToBoolean set/remove。
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').inert)"), "false");
+    assert_eq!(
+        run_script(r#"<div id="a" inert></div>"#, "(__zw_native_element_for_id('a').inert)"),
+        "true"
+    );
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.inert=true; return el.hasAttribute('inert')+'/'+el.getAttribute('inert'); })()"
+        ),
+        "true/"
+    );
+    assert_eq!(
+        run_script(
+            r#"<div id="a" inert></div>"#,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.inert=0; return el.inert+'/'+el.hasAttribute('inert'); })()"
+        ),
+        "false/false"
+    );
+}
