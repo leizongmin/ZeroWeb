@@ -51,6 +51,45 @@ pub(super) fn native_tag_name_getter(
     // 非 Element / stale → undefined（留 ReturnValue 默认）。
 }
 
+/// `namespaceURI` getter（spec `dom-node-namespaceuri`）：元素命名空间 URI 字符串，
+/// 空 namespace → null；非 Element / stale → undefined（与 tagName getter 一致）。
+///
+/// 闭合 R3163 限制②（namespace 经 native 可读）。`createElement` 元素为 XHTML 命名空间
+///（`http://www.w3.org/1999/xhtml`），`createElementNS` 元素为指定命名空间（SVG/MathML 等），
+/// 使 namespace 检查（如 `el.namespaceURI === 'http://www.w3.org/2000/svg'`）经原生可达。
+pub(super) fn native_namespace_uri_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    // with_dom 返 Option<Option<String>>：外层 None = 无 DOM 源；内层 Some(uri) = 元素命名空间，
+    // 内层 None = 节点不存在 / 非 Element / 空 namespace（spec namespaceURI 无命名空间 → null）。
+    let ns: Option<Option<String>> = with_dom(|d| {
+        d.get(id).and_then(|n| match &n.kind {
+            NodeKind::Element(e) => {
+                let ns = e.namespace();
+                if ns.is_empty() { None } else { Some(ns.to_string()) }
+            }
+            _ => None,
+        })
+    });
+    match ns {
+        Some(Some(uri)) => {
+            if let Some(s) = v8::String::new(scope, &uri) {
+                rv.set(s.into());
+            }
+        }
+        // 空命名空间 → null（spec `Node.namespaceURI` 无命名空间返 null，非 undefined）。
+        Some(None) => rv.set(v8::null(scope).into()),
+        None => {} // 无 DOM 源 → undefined（留默认）。
+    }
+}
+
 /// `id` getter（reflected attribute，spec `dom-id`）：`get_attribute('id')`，缺省 `""`。
 pub(super) fn native_id_getter(
     scope: &mut v8::PinScope,

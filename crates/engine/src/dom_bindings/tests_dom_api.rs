@@ -2320,3 +2320,39 @@ fn native_document_create_element_ns_r3163() {
         "1"
     );
 }
+
+/// R3165 `element.namespaceURI` getter（spec `dom-node-namespaceuri`）：元素命名空间 URI 字符串，
+/// 空 namespace → null。闭合 R3163 限制②（namespace 经 native 可读）。
+#[test]
+fn native_element_namespace_uri_r3165() {
+    let html = r#"<html><head></head><body><svg id="s"></svg></body></html>"#;
+    // createElementNS(svg, ...) → SVG 命名空间 URI。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().createElementNS('http://www.w3.org/2000/svg','rect').namespaceURI)"
+        ),
+        "http://www.w3.org/2000/svg"
+    );
+    // createElementNS(mathml, ...) → MathML 命名空间 URI。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().createElementNS('http://www.w3.org/1998/Math/MathML','mi').namespaceURI)"
+        ),
+        "http://www.w3.org/1998/Math/MathML"
+    );
+    // createElementNS(xhtml, ...) → XHTML 命名空间 URI。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().createElementNS('http://www.w3.org/1999/xhtml','div').namespaceURI)"
+        ),
+        "http://www.w3.org/1999/xhtml"
+    );
+    // 解析得到的 SVG 元素（html5ever 赋 SVG 命名空间）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('s').namespaceURI)"),
+        "http://www.w3.org/2000/svg"
+    );
+}

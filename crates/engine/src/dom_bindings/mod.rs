@@ -110,6 +110,11 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "tagName") {
         tmpl.set_accessor(k.into(), element::native_tag_name_getter);
     }
+    // R3165 `namespaceURI` getter（spec `dom-node-namespaceuri`）：元素命名空间 URI 字符串
+    //（空 namespace → null）。闭合 R3163 限制②，使 namespace 检查经原生可达。
+    if let Some(k) = v8::String::new(scope, "namespaceURI") {
+        tmpl.set_accessor(k.into(), element::native_namespace_uri_getter);
+    }
     if let Some(k) = v8::String::new(scope, "nodeName") {
         tmpl.set_accessor(k.into(), node::native_node_name_getter);
     }
