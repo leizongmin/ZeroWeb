@@ -196,6 +196,7 @@ where
 }
 
 /// 从渲染图元构建 IPC 绘制快照。
+#[allow(clippy::too_many_arguments)] // 构造器：图元快照字段多，逐参数透传 PaintSnapshotParams
 pub fn paint_snapshot_from_primitives(
     viewport_width: u32,
     viewport_height: u32,

@@ -833,7 +833,7 @@ fn debug_clear_applies_to_009_layout_snapshot() {
             println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
         }
     }
-    for fill in &rendered.primitives.fills {
+    for fill in &rendered.primitives().fills {
         if fill.color.r < 32 && fill.color.g < 32 && fill.color.b > 200 && fill.color.a > 200 {
             println!(
                 "blue fill rect=({:.2},{:.2},{:.2},{:.2})",
@@ -841,7 +841,7 @@ fn debug_clear_applies_to_009_layout_snapshot() {
             );
         }
     }
-    for rr in &rendered.primitives.rounded_rects {
+    for rr in &rendered.primitives().rounded_rects {
         if rr.color.r < 32 && rr.color.g < 32 && rr.color.b > 200 && rr.color.a > 200 {
             println!(
                 "blue rr rect=({:.2},{:.2},{:.2},{:.2})",
@@ -1034,7 +1034,7 @@ fn debug_clear_clearance_calculation_005_layout_snapshot() {
             println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
         }
     }
-    for (i, fill) in rendered.primitives.fills.iter().enumerate().take(16) {
+    for (i, fill) in rendered.primitives().fills.iter().enumerate().take(16) {
         println!(
             "fill[{i}] rect=({:.2},{:.2},{:.2},{:.2}) color=({}, {}, {}, {})",
             fill.rect.origin.x,
@@ -1084,7 +1084,7 @@ fn debug_clear_003_layout_snapshot() {
             println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
         }
     }
-    for (i, fill) in rendered.primitives.fills.iter().enumerate().take(12) {
+    for (i, fill) in rendered.primitives().fills.iter().enumerate().take(12) {
         println!(
             "fill[{i}] rect=({:.2},{:.2},{:.2},{:.2}) color=({}, {}, {}, {})",
             fill.rect.origin.x,
@@ -1114,7 +1114,7 @@ fn debug_clear_003_layout_snapshot() {
             println!("ref box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
         }
     }
-    for (i, fill) in ref_rendered.primitives.fills.iter().enumerate().take(12) {
+    for (i, fill) in ref_rendered.primitives().fills.iter().enumerate().take(12) {
         println!(
             "ref fill[{i}] rect=({:.2},{:.2},{:.2},{:.2}) color=({}, {}, {}, {})",
             fill.rect.origin.x,
@@ -1147,7 +1147,7 @@ fn debug_clear_float_003_layout_snapshot() {
             println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
         }
     }
-    for (i, fill) in rendered.primitives.fills.iter().enumerate().take(12) {
+    for (i, fill) in rendered.primitives().fills.iter().enumerate().take(12) {
         println!(
             "fill[{i}] rect=({:.2},{:.2},{:.2},{:.2}) color=({}, {}, {}, {})",
             fill.rect.origin.x,
@@ -1177,7 +1177,7 @@ fn debug_clear_float_003_layout_snapshot() {
             println!("ref box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
         }
     }
-    for (i, fill) in ref_rendered.primitives.fills.iter().enumerate().take(12) {
+    for (i, fill) in ref_rendered.primitives().fills.iter().enumerate().take(12) {
         println!(
             "ref fill[{i}] rect=({:.2},{:.2},{:.2},{:.2}) color=({}, {}, {}, {})",
             fill.rect.origin.x,
