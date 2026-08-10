@@ -127,6 +127,19 @@ pub(super) fn native_ready_state_getter(
     set_string_rv(scope, "complete", &mut rv);
 }
 
+/// `document.URL` / `document.documentURI` getter（spec `dom-document-url` / `dom-document-documenturi`）：
+/// 经 live Document `url()` 读导航层注入的页面地址（分析/框架高频读取）。未注入（run_script 测试模型
+/// 或无导航上下文）→ 空串（headless 简化；真实浏览器路径经导航注入真实 URL）。
+pub(super) fn native_url_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    _args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let url = with_dom(|d| d.url().unwrap_or("").to_string()).unwrap_or_default();
+    set_string_rv(scope, &url, &mut rv);
+}
+
 /// 字符串返回值共用：设 `s` 为 ReturnValue（v8::String::new 失败 → 留默认 undefined）。
 fn set_string_rv(scope: &mut v8::PinScope, s: &str, rv: &mut v8::ReturnValue<v8::Value>) {
     if let Some(v) = v8::String::new(scope, s) {
@@ -220,6 +233,14 @@ pub(super) fn build_and_cache_template(scope: &mut v8::PinScope) {
     }
     if let Some(k) = v8::String::new(scope, "readyState") {
         tmpl.set_accessor(k.into(), native_ready_state_getter);
+    }
+    // R3169 `document.URL` / `document.documentURI`（spec `dom-document-url` / `dom-document-documenturi`）：
+    // 导航层注入的页面地址（分析高频）。两别名共用 getter。
+    if let Some(k) = v8::String::new(scope, "URL") {
+        tmpl.set_accessor(k.into(), native_url_getter);
+    }
+    if let Some(k) = v8::String::new(scope, "documentURI") {
+        tmpl.set_accessor(k.into(), native_url_getter);
     }
 
     // 方法（复用 factories `*invoke`——忽略 `this`，查全局 live Document，与全局工厂语义一致）。

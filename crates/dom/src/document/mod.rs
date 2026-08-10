@@ -61,6 +61,9 @@ pub struct Document {
     root: NodeId,
     /// ID → NodeId 索引（用于 getElementById 快速查找）。
     id_map: HashMap<String, NodeId>,
+    /// 文档 URL（页面地址，导航层注入；`document.URL`/`documentURI` 读）。
+    /// 解析时不设（HTML 字节无 URL 信息），由 engine 在页面加载后 `set_url` 注入。
+    url: Option<String>,
     /// 已注册的 MutationObserver 列表。
     observers: Vec<MutationObserver>,
     /// 待处理的 mutation 记录。
@@ -86,6 +89,7 @@ impl Document {
             nodes,
             root,
             id_map: HashMap::new(),
+            url: None,
             observers: Vec::new(),
             pending_mutations: Vec::new(),
             event_listeners: HashMap::new(),
@@ -102,6 +106,7 @@ impl Document {
             nodes,
             root,
             id_map: HashMap::new(),
+            url: None,
             observers: Vec::new(),
             pending_mutations: Vec::new(),
             event_listeners: HashMap::new(),
@@ -1059,6 +1064,18 @@ impl Document {
         if let Some(NodeKind::Document(data)) = self.nodes.get_mut(self.root).map(|n| &mut n.kind) {
             data.quirks_mode = mode;
         }
+    }
+
+    // ── document URL（页面地址，导航层注入）──────────────────────
+
+    /// 获取文档 URL（`document.URL`/`documentURI` 读）。未注入 → `None`。
+    pub fn url(&self) -> Option<&str> {
+        self.url.as_deref()
+    }
+
+    /// 注入文档 URL（engine 在页面加载后调，来自导航层）。
+    pub fn set_url(&mut self, url: Option<String>) {
+        self.url = url;
     }
 
     // ── content is XML / XHTML ──────────────────────────────────

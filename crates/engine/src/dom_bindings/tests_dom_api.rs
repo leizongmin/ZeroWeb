@@ -14,7 +14,7 @@ use std::rc::Rc;
 use zero_dom::parse_html;
 
 use super::gc::test_helpers::{attr_cache_alive, dtl_cache_alive, listener_keys_for, nnm_cache_alive, reset_for_test};
-use super::tests::run_script;
+use super::tests::{run_script, run_script_with_url};
 use super::{encode_node_id, install_dom_bindings};
 
 // ── R3136 文档级只读属性工厂（documentElement / body / head）──
@@ -2353,6 +2353,32 @@ fn native_element_tag_name_namespace_case_r3166() {
     // HTML 元素 nodeName == tagName == 大写。
     let html2 = r#"<div id="d"></div>"#;
     assert_eq!(run_script(html2, "(__zw_native_element_for_id('d').nodeName)"), "DIV");
+}
+
+/// R3169 `document.URL` / `document.documentURI`（spec `dom-document-url` / `dom-document-documenturi`）：
+/// 经 live Document `url()` 读导航层注入的页面地址（分析/框架高频）。两别名同值。
+#[test]
+fn native_document_url_r3169() {
+    let std_html = r#"<!DOCTYPE html><html><head></head><body></body></html>"#;
+    // 注入页面 URL → document.URL 读回 + documentURI 别名同值。
+    assert_eq!(
+        run_script_with_url(
+            std_html,
+            "https://example.com/page?q=1",
+            "(__zw_native_get_document().URL)"
+        ),
+        "https://example.com/page?q=1"
+    );
+    assert_eq!(
+        run_script_with_url(
+            std_html,
+            "https://example.com/page?q=1",
+            "(__zw_native_get_document().documentURI)"
+        ),
+        "https://example.com/page?q=1"
+    );
+    // run_script 模型不注入 URL → document.URL 空串（headless 简化，真实浏览器路径经导航注入）。
+    assert_eq!(run_script(std_html, "(__zw_native_get_document().URL)"), "");
 }
 
 /// R3168 `document.compatMode` / `characterSet` / `contentType` / `readyState`（spec

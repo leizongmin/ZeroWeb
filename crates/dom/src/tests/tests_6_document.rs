@@ -103,6 +103,20 @@ fn test_quirks_mode_set_get() {
     assert_eq!(doc.quirks_mode(), QuirksMode::LimitedQuirks);
 }
 
+/// 测试 document URL 注入/读取（R3169，导航层 → Document，`document.URL`/`documentURI` 读）。
+#[test]
+fn test_document_url_set_get() {
+    let mut doc = Document::new();
+    // 默认未注入 → None。
+    assert_eq!(doc.url(), None);
+    // 注入页面 URL → 读回。
+    doc.set_url(Some("https://example.com/page".to_string()));
+    assert_eq!(doc.url(), Some("https://example.com/page"));
+    // 清除。
+    doc.set_url(None);
+    assert_eq!(doc.url(), None);
+}
+
 /// 测试 remove_attribute 在非元素节点上不 panic。
 #[test]
 fn test_remove_attribute_on_text_node() {

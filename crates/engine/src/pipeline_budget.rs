@@ -105,7 +105,10 @@ impl RenderPipeline {
             match session.step {
                 BudgetStep::Pending | BudgetStep::Parse => {
                     let start = Instant::now();
-                    session.doc = Some(zero_dom::parse_html(&session.html));
+                    let mut doc = zero_dom::parse_html(&session.html);
+                    // R3169 注入页面 URL（导航层 → Document），供 native document.URL/documentURI 读。
+                    doc.set_url(self.document_url.clone());
+                    session.doc = Some(doc);
                     session.timings.parse_ms = start.elapsed().as_secs_f64() * 1000.0;
                     session.step = BudgetStep::Style;
                 }
@@ -203,6 +206,8 @@ impl RenderPipeline {
         let total_start = Instant::now();
         let parse_start = Instant::now();
         let mut doc = zero_dom::parse_html(html);
+        // R3169 注入页面 URL（导航层 → Document），供 native document.URL/documentURI 读。
+        doc.set_url(self.document_url.clone());
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
 
         let stylesheets = collect_stylesheets(&doc, css);
