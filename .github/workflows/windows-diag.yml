@@ -66,5 +66,4 @@ jobs:
           cargo nextest run -p zero-browser --bin zero-browser \
             -E 'test(tab_js_worker_cleartimeout_cancels_callback)' \
             --test-threads=1 \
-            --show-output \
             --target x86_64-pc-windows-msvc
