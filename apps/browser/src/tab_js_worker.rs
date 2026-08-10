@@ -115,7 +115,11 @@ impl TabJsWorkerHandle {
                     rect_snapshot_for_worker,
                     handle_selector_map_for_worker,
                     element_from_point_cache_for_worker,
-                )
+                );
+                // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）：
+                // 函数全量返回（含隐式 drop）后才到此处 → 区分函数内挂 vs 线程退出挂。
+                #[cfg(feature = "v8")]
+                eprintln!("[TEMP-DIAG] worker closure returned, thread exiting");
             })
             .expect("spawn tab js worker");
 
