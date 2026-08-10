@@ -380,9 +380,23 @@ impl CookieStore {
     /// 遵循 RFC 6265 §5.3；无显式 Path 属性时按 RFC 6265 §5.1.4 计算 default-path。
     /// 推荐使用此方法替代 [`add`](Self::add)。
     pub fn add_from_url(&mut self, mut cookie: Cookie, url: &ParsedUrl) {
+        let host = url.host.as_deref().unwrap_or("");
         if cookie.host_only {
-            // 无显式 Domain 属性：使用来源 host，保持 host_only 标记
+            // 无显式 Domain 属性：host-only cookie，域 = 来源 host（RFC 6265 §5.3 step 4-5）。
             cookie.domain = url.host.clone();
+        } else {
+            // R3225：显式 Domain 须通过 RFC 6265 §5.3 step 5/6 domain-match 校验——来源 host 必须
+            // domain-match cookie 的 Domain，否则拒绝（防 evil.com 跨域设 example.com cookie 注入）。
+            // IP 字面量 host 不参与子域匹配（§5.1.3）——Domain 须精确等于该 IP。
+            let domain_attr = cookie.domain.as_deref().unwrap_or("");
+            let domain_ok = if is_ip_literal(host) {
+                domain_attr.trim_start_matches('.').eq_ignore_ascii_case(host)
+            } else {
+                domain_matches(domain_attr, host)
+            };
+            if !domain_ok {
+                return;
+            }
         }
         // RFC 6265 §5.1.4 + §5.3 step 6：无显式 Path 属性 → 用 request-uri 的 default-path。
         if cookie.path.is_none() {
@@ -532,10 +546,18 @@ fn default_path(uri_path: &str) -> String {
     }
 }
 
+/// 判断 host 是否为 IP 字面量（IPv4/IPv6）。IP 不参与 cookie 子域匹配（RFC 6265 §5.1.3）。
+/// IPv6 URL host 经 `url` crate 返 `[::1]`（带括号），去括号后判。
+fn is_ip_literal(host: &str) -> bool {
+    let h = host.strip_prefix('[').and_then(|s| s.strip_suffix(']')).unwrap_or(host);
+    h.parse::<std::net::IpAddr>().is_ok()
+}
+
 /// 检查域名是否匹配（支持子域名匹配）。
 fn domain_matches(cookie_domain: &str, host: &str) -> bool {
+    // R3224：空 cookie 域无效——不匹配任何 host（旧 return true 致空域 cookie 匹配全域，安全 smell）。
     if cookie_domain.is_empty() {
-        return true;
+        return false;
     }
 
     let cookie_domain = cookie_domain.trim_start_matches('.');
@@ -683,6 +705,106 @@ mod tests {
             store.get_for_url(&other).is_empty(),
             "/other 不应匹配 default-path=/app"
         );
+    }
+
+    /// R3224：domain_matches 空 cookie 域不匹配任何 host（旧 return true 致空域 cookie 匹配全域）。
+    #[test]
+    fn test_domain_matches_empty_rejects() {
+        assert!(!domain_matches("", "example.com"), "空 cookie 域须不匹配任何 host");
+        assert!(!domain_matches("", ""), "空 host + 空 cookie 域须不匹配");
+        // 正常路径不受影响。
+        assert!(domain_matches("example.com", "example.com"));
+        assert!(domain_matches(".example.com", "sub.example.com"));
+        assert!(!domain_matches("example.com", "other.com"));
+    }
+
+    /// R3225：add_from_url 校验显式 Domain 必须 domain-match 来源 host（RFC 6265 §5.3 step 5/6），
+    /// 防跨域 cookie 注入；IP 字面量 host 要求 Domain 精确等于该 IP。
+    #[test]
+    fn test_add_from_url_domain_validation_r3225() {
+        // ① 来源 host 与 Domain 同域 → 接受。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("a=1; Domain=example.com").unwrap();
+        let url = parse_url("http://example.com/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 1, "Domain=example.com 来自 example.com 须接受");
+
+        // ② 来源 host 是 Domain 的子域 → 接受（sub.example.com domain-match example.com）。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("b=2; Domain=example.com").unwrap();
+        let url = parse_url("http://sub.example.com/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 1, "Domain=example.com 来自 sub.example.com 须接受（子域）");
+
+        // ③ 来源 host 与 Domain 不 domain-match → 拒绝（跨域注入防御）。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("c=3; Domain=evil.com").unwrap();
+        let url = parse_url("http://example.com/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 0, "Domain=evil.com 来自 example.com 须拒绝（跨域）");
+
+        // ④ 来源 host 是 Domain 的父域 → 拒绝（example.com 不能为 .com... 实测 example.com 不 domain-match le.com）。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("d=4; Domain=sub.example.com").unwrap();
+        let url = parse_url("http://example.com/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(
+            store.len(),
+            0,
+            "Domain=sub.example.com 来自 example.com 须拒绝（父域不能设子域 cookie）"
+        );
+
+        // ⑤ 空 Domain（Domain=）→ 拒绝（domain_matches 空域 false）。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("e=5; Domain=").unwrap();
+        let url = parse_url("http://example.com/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 0, "空 Domain= 须拒绝");
+
+        // ⑥ IP 字面量 host：Domain 精确等于 IP → 接受。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("f=6; Domain=192.168.1.1").unwrap();
+        let url = parse_url("http://192.168.1.1/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(
+            store.len(),
+            1,
+            "Domain=192.168.1.1 来自 192.168.1.1 须接受（IP 精确匹配）"
+        );
+
+        // ⑦ IP 字面量 host：Domain 不等于 IP → 拒绝（IP 不做子域后缀匹配）。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("g=7; Domain=168.1.1").unwrap();
+        let url = parse_url("http://192.168.1.1/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 0, "IP host 不做后缀匹配，Domain=168.1.1 须拒绝");
+
+        // ⑧ IP 字面量 host：跨域 Domain → 拒绝。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("h=8; Domain=evil.com").unwrap();
+        let url = parse_url("http://192.168.1.1/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 0, "IP host + 跨域 Domain 须拒绝");
+
+        // ⑨ host-only cookie（无 Domain）来自任意 host → 接受（domain = 来源 host）。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("i=9").unwrap();
+        let url = parse_url("http://example.com/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 1, "host-only cookie 须接受（domain=来源 host）");
+    }
+
+    /// R3225：is_ip_literal 助函数——IPv4/IPv6（含 URL 括号形式）识别。
+    #[test]
+    fn test_is_ip_literal() {
+        assert!(is_ip_literal("192.168.1.1"));
+        assert!(is_ip_literal("10.0.0.1"));
+        assert!(is_ip_literal("::1"), "IPv6 裸形式");
+        assert!(is_ip_literal("[::1]"), "IPv6 URL 括号形式（url crate 返此）");
+        assert!(is_ip_literal("[2001:db8::1]"));
+        assert!(!is_ip_literal("example.com"));
+        assert!(!is_ip_literal("sub.example.com"));
+        assert!(!is_ip_literal(""));
     }
 
     #[test]

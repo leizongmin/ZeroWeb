@@ -121,7 +121,30 @@
 
 ## 最近完成的改进
 
-### Headers guard 系统（request/response，闭合 R3222 已知限①③）（本轮 R3223，engine fetch-bridge hardening）
+### Cookie 域存储侧校验（domain_matches 空域 + Domain 来源 host 校验）（本轮 R3224/R3225，net crate spec 审计）
+
+承接 R3223（fetch-bridge hardening 三轮收敛），回到 net crate cookie 存储侧（R3218 审计记的两项「cookie 存储侧 / domain_matches 空域 + IP/public-suffix 校验」）。深审 `domain_matches` + `add_from_url` 对照 RFC 6265 §5.1.3/§5.2.3/§5.3 step 5-6——发现两项真偏差：
+
+- **R3224 `domain_matches` 空域返 true**（security smell）：旧 `if cookie_domain.is_empty() { return true; }`——空 cookie 域**匹配任意 host**。`Domain=`（空属性值）→ cookie.domain=Some("") → host_only=false → `cookie_matches_url` 经 `domain_matches("", host)` 返 true → **空域 cookie 匹配全域**（任意 host 发送）。虽非典型路径（正常 Domain 非空），但是安全 smell + 防御缺口。
+- **R3225 显式 Domain 未校验来源 host**（RFC 6265 §5.3 step 5/6，**跨域 cookie 注入**）：`add_from_url` 对显式 Domain 属性 cookie（host_only=false）**不做来源 host domain-match 校验**——`evil.com` 的响应带 `Set-Cookie: x=1; Domain=example.com` 经 `add_from_url(cookie, evil.com_url)` **被存储**（Domain=example.com）。后续对 example.com 请求，该 cookie 经 `domain_matches("example.com", "example.com")` 匹配 → **跨域 cookie 注入**（evil.com 可在 example.com 设 cookie）。另：IP 字面量 host（`192.168.1.1`）+ `Domain=168.1.1` 旧经 `domain_matches` 后缀匹配（`192.168.1.1`.ends_with(`.168.1.1`)）→ IP 误做子域后缀匹配（spec §5.1.3：IP 不参与 domain-match 子域）。
+
+**修复**：
+- R3224：`domain_matches` 空域 → `return false`（不匹配任何 host）。
+- R3225：`add_from_url` 显式 Domain 分支加来源 host domain-match 校验（RFC 6265 §5.3 step 5/6）：① 非 IP host——`domain_matches(domain_attr, host)` 须 true（来源 host 须 domain-match cookie 的 Domain），否则拒绝；② IP 字面量 host——Domain 须**精确等于**该 IP（trim leading '.' 后 `eq_ignore_ascii_case`），不做后缀匹配。`is_ip_literal(host)` 助函数（IPv4/IPv6，IPv6 URL 括号形式 `[::1]` 去括号判）。host-only cookie（无 Domain）路径不变（domain=来源 host）。
+
+**为何净正向**：① **闭合 RFC 6265 §5.3 step 5/6 跨域 cookie 注入防御**——evil.com 不能再设 example.com 的 cookie（安全增益，主收益）；② **IP host 后缀匹配修正**——`192.168.1.1` 不再误匹配 `Domain=168.1.1`（spec §5.1.3）；③ **空域 smell 闭合**——空 Domain 不再匹配全域；④ **零回归**——`add_from_url` 既有调用方均为 host-only cookie（lib.rs + cookie.rs `test_add_from_url_default_path`，无显式 Domain），校验仅显式 Domain 分支；`add()`（无 URL 上下文）路径不变；`domain_matches` 空域改动仅影响空 Domain 边缘（既有测无空 Domain）；既有 domain 测（dot-prefix / matching-variants / no-domain）全过；⑤ 低风险单点；⑥ net 属本流域。
+
+| 文件 | 变更 |
+|------|------|
+| `net/src/cookie.rs` | `domain_matches` 空域返 false（R3224）；`add_from_url` 显式 Domain 加来源 host domain-match 校验 + IP 精确匹配（R3225）；`is_ip_literal(host)` 助函数；+3 测（domain_matches 空域拒绝 + add_from_url 9 例 domain 校验矩阵[同域/子域/跨域/父域/空Domain/IP精确/IP后缀/IP跨域/host-only] + is_ip_literal）。 |
+
+验证：`cargo fmt -p zero-net -- --check` clean + `cargo clippy -p zero-net --all-targets -- -D warnings` 零警告 + **zero-net 383 passed**（+3 新测，零回归）。spec：https://www.rfc-editor.org/rfc/rfc6265#section-5.3 + §5.1.3。pre-commit guard 见提交。
+
+**已知限制（记）**：① **public-suffix（Domain=.com）未拒**——需 Public Suffix List（PSL），本仓未集成；`Domain=.com` 来自 `example.com` 经 domain-match（example.com matches .com）仍被存（公共后缀跨站 cookie 风险），后续集成 PSL 时闭合（如 `publicsuffix` crate）；② Domain 属性 leading-dot 未在存储时 strip（§5.2.3；domain_matches 已 trim，存储格式 cosmetic）；③ `add()`（无 URL）路径不做来源 host 校验（doc 明示用 `add_from_url`，`add` 为直接注入）。三项均 spec 边角 / 受限，渐进推进。
+
+**下一步**：net cookie 存储侧收敛（R3224/R3225 闭合空域 + 跨域注入防御；public-suffix 待 PSL 集成）。续候选：① **net request.rs 头注入校验**（RFC 7230 §3.2.6 token——header name/value 含 CRLF/控制字符的拒绝，防请求走私；reqwest 底层已校验但 JS API 层未 upfront 拒）；② **storage/IndexedDB spec 审**；③ **public-suffix 集成**（`publicsuffix` crate + Domain=.com 拒绝）；④ 字体栈/GPU 战略项 user/hardware gated。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。注：lark-cli 环境不可用（多轮尝试），通知走 master.md 控制面；⚠️ compositor 跨流红灯待渲染流。
+
+
 
 承接 R3221/R3222（fetch 出口过滤禁止请求头 + response Set-Cookie 读侧隐藏），本轮闭合 R3222 记的两项**已知限制**：① `new Request(url,{headers:{Host:x}}).headers.get('host')` 仍返值（Request.headers 对象本身未施 request-guard，禁止头仅在 fetch **出口**剥离）；③ response guard 仅 hide 读侧，append/set 仍可写 Set-Cookie。深审对照 Fetch §5.1（Headers）/§5.2（append/set/delete guard 步骤）/§6.2（Response ctor，fill 后设 response guard）/§6.3（Request ctor，**guard 先于 fill** step 31-32）——发现根因：Headers 无 guard 概念，R3222 的 `_forbiddenResponse` 为单 flag（仅 response 读侧），未覆盖 request 写侧 + response 写侧。
 
