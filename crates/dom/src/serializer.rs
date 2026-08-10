@@ -51,22 +51,36 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
             output.push('>');
         }
         NodeKind::Element(elem) => {
-            // HTML 序列化 spec §13.3：tag 名原样输出（不主动小写）。HTML 元素的小写由创建路径负责——
-            // parser（html5ever tokenizer 小写）与 `Document::create_element`（DOM spec createElement
-            // step 2 小写）；SVG / MathML 等经 `create_element_ns` 大小写敏感保留。
-            // R3210：保留 foreign 元素的 prefix——有 prefix（如 `create_element_ns(svg, "svg:rect")`）
-            // 输出限定名 `prefix:local`，无 prefix（绝大多数：HTML 元素 + 默认命名空间 SVG/MathML）输出
-            // `local`。与 R3206 属性前缀对称——copy_subtree_from（R3181）写侧已保元素 prefix，读侧旧用
-            // `local_name()` 丢前缀，致 `<svg:rect>` round-trip 变 `<rect>`（prefixed foreign 元素常见于
-            // 命名空间混用文档）。无 prefix 路径（hot path）零分配，仅罕见 prefixed 触发 format!()。
+            // HTML 序列化 spec §13.3「serialize an element」：tag 名原样输出（不主动小写）。HTML 元素
+            // 小写由创建路径负责——parser（html5ever tokenizer 小写）与 `Document::create_element`
+            //（DOM spec createElement step 2 小写）；SVG / MathML 等经 `create_element_ns` 大小写敏感保留。
+            //
+            // spec 规定 tagname 取值按**命名空间**分流：
+            // - HTML / MathML / SVG 命名空间 → **local name**（前缀丢弃）。spec 注："For HTML elements
+            //   created by the HTML parser or createElement(), tagname will be lowercase."
+            // - 其它命名空间（真 foreign）→ **qualified name**（`prefix:local` 若有 prefix，否则 local）。
+            //
+            // R3214：R3210 旧逻辑对所有带 prefix 元素输出 `prefix:local`（含 SVG/MathML），过度适用——
+            // spec 对 SVG/MathML 命名空间元素要求 local name（如 `create_element_ns(svg,"svg:rect")` 应
+            // 序列化为 `<rect>` 非 `<svg:rect>`）。本片改为命名空间感知：HTML/MathML/SVG ns → local，
+            // 其它 ns → qualified（保留 R3210 对真 foreign 命名空间 prefix 的保留）。无 prefix 路径
+            //（hot path，绝大多数）恒 local，零分配。
             output.push('<');
+            const HTML_NS: &str = "http://www.w3.org/1999/xhtml";
+            const MATHML_NS: &str = "http://www.w3.org/1998/Math/MathML";
+            const SVG_NS: &str = "http://www.w3.org/2000/svg";
+            let use_local = matches!(elem.namespace(), HTML_NS | MATHML_NS | SVG_NS);
             let tag_owned: String;
-            let tag: &str = match elem.name.prefix.as_deref() {
-                Some(p) => {
-                    tag_owned = format!("{p}:{}", elem.local_name());
-                    &tag_owned
+            let tag: &str = if use_local {
+                elem.local_name()
+            } else {
+                match elem.name.prefix.as_deref() {
+                    Some(p) => {
+                        tag_owned = format!("{p}:{}", elem.local_name());
+                        &tag_owned
+                    }
+                    None => elem.local_name(),
                 }
-                None => elem.local_name(),
             };
             output.push_str(tag);
 
@@ -402,30 +416,36 @@ mod tests {
         assert_eq!(html, "<textarea>x&nbsp;y</textarea>");
     }
 
-    /// 测试 prefixed foreign 元素序列化保留 prefix（spec 限定名）。旧实现用 `local_name()`
-    /// 丢前缀，致 `create_element_ns(svg, "svg:rect")` 序列化为 `<rect>` 而非 `<svg:rect>`
-    ///（与 R3206 属性前缀对称、与 R3181 copy_subtree_from 写侧对称）。
+    /// 测试元素 tag 序列化按命名空间分流（spec §13.3「serialize an element」）：
+    /// HTML / MathML / SVG 命名空间 → local name（prefix 丢弃）；其它命名空间 → qualified name
+    ///（`prefix:local`）。R3214 修正 R3210 对 prefixed SVG/MathML 的过适用（旧输出 `<svg:rect>`，
+    /// spec 应 `<rect>`——SVG ns 走 local name 分支）。
     #[test]
-    fn test_serialize_prefixed_foreign_element_r3210() {
+    fn test_serialize_element_tag_namespace_aware_r3214() {
         let mut doc = Document::new();
-        // 带 prefix 的 foreign 元素 → 序列化为 `<prefix:local>`。
+        // SVG 命名空间带 prefix → spec local name（`<rect>`，非 `<svg:rect>`）。
         let rect = doc.create_element_ns("http://www.w3.org/2000/svg", "svg:rect");
-        let html = doc.outer_html(rect);
-        assert_eq!(html, "<svg:rect></svg:rect>");
-
-        // 无 prefix 的 foreign 元素（默认命名空间）→ 仅 local（常见情况，零回归）。
+        assert_eq!(doc.outer_html(rect), "<rect></rect>");
+        // MathML 命名空间带 prefix → 同理 local name。
+        let mrow = doc.create_element_ns("http://www.w3.org/1998/Math/MathML", "m:mo");
+        assert_eq!(doc.outer_html(mrow), "<mo></mo>");
+        // 无 prefix foreign 元素（默认命名空间）→ local（常见情况，零回归）。
         let rect2 = doc.create_element_ns("http://www.w3.org/2000/svg", "rect");
         assert_eq!(doc.outer_html(rect2), "<rect></rect>");
-
-        // HTML 元素恒无 prefix → local（小写由 create_element 负责）。
+        // HTML 元素 → local（小写由 create_element 负责）。
         let div = doc.create_element("div");
         assert_eq!(doc.outer_html(div), "<div></div>");
 
-        // 嵌套 prefixed foreign 元素 round-trip（开/闭标签同 prefix + 子节点）。
+        // 真 foreign 命名空间（非 HTML/MathML/SVG）带 prefix → spec qualified name `<prefix:local>`
+        //（R3210 正确处理、R3214 保留的唯一 qualified-name 场景）。
+        let ext = doc.create_element_ns("urn:example:custom", "ex:thing");
+        assert_eq!(doc.outer_html(ext), "<ex:thing></ex:thing>");
+
+        // 嵌套 SVG（prefix 丢弃 local）+ 真 foreign 子（qualified）混排。
         let parent = doc.create_element_ns("http://www.w3.org/2000/svg", "svg:g");
-        let child = doc.create_element_ns("http://www.w3.org/2000/svg", "svg:rect");
+        let child = doc.create_element_ns("urn:example:custom", "ex:inner");
         doc.append_child(parent, child).unwrap();
-        assert_eq!(doc.outer_html(parent), "<svg:g><svg:rect></svg:rect></svg:g>");
+        assert_eq!(doc.outer_html(parent), "<g><ex:inner></ex:inner></g>");
     }
 
     // ── Additional tests ────────────────────────────────────────────────
