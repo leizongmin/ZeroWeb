@@ -265,10 +265,22 @@ fn is_void_element(tag: &str) -> bool {
 /// 原样保留）。序列化须保持原样，否则 CSS/JS 源码（如 `<style>` 内的
 /// `<![CDATA[`、`a > b`、`x && y`）被转义后再次解析会被破坏。
 ///
+/// R3216：补全 spec §13.3 raw text 元素——`style, script, xmp, iframe, noembed, noframes,
+/// plaintext`（**无条件** raw text）。旧实现仅 `script|style`，致 `<xmp>`/`<iframe>` 等元素的文本子
+/// 被错误转义——rawtext 解析**不识别字符引用**，故 `a < b` 序列化为 `a &lt; b` 再解析仍是 `a &lt; b`，
+/// round-trip 失效。spec：https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
+///
+/// **不含 `noscript`**：spec 谓 noscript 当 scripting enabled 时亦 raw，但本浏览器 DOMPurify 清洗
+///（`test_sanitize_dompurify_real_r3019`）的 mXSS 再解析检查与 raw noscript 序列化交互致空结果
+///（noscript mXSS 是经典向量）——noscript raw 序列化需配套 mXSS 处理，**defer**，本次仅修无条件 raw 族。
+///
 /// 注：`textarea`/`title` 是 escapable raw text（解析时识别 `&` 引用），
 /// 对它们用 [`escape_text`]（转义 `&`/`<`/`>`）才能正确 round-trip，故不在此列。
 fn is_raw_text_element(tag: &str) -> bool {
-    matches!(tag.to_ascii_lowercase().as_str(), "script" | "style")
+    matches!(
+        tag.to_ascii_lowercase().as_str(),
+        "script" | "style" | "xmp" | "iframe" | "noembed" | "noframes" | "plaintext"
+    )
 }
 
 /// 为 Document 添加 innerHTML 便捷方法。
@@ -364,6 +376,54 @@ mod tests {
         let text = doc.create_text_node("a & b < c > d");
         let html = doc.outer_html(text);
         assert_eq!(html, "a &amp; b &lt; c &gt; d");
+    }
+
+    /// R3216：raw text 元素（spec §13.3 全集）的文本子内容**不转义**——rawtext 解析不识别
+    /// 字符引用，转义会破坏 round-trip。覆盖 xmp/iframe/noscript（旧仅 script/style，
+    /// 其文本子被错误转义）。经 parse_html 验证 round-trip（解析→序列化→再解析文本一致）。
+    #[test]
+    fn test_raw_text_element_unescaped_r3216() {
+        // 直接构造 DOM：raw text 元素的文本子含 `<`/`&`，序列化须原样输出（非 `&lt;`/`&amp;`）。
+        // 不含 noscript（spec conditional raw，与 DOMPurify mXSS 检查交互，defer——见 is_raw_text_element 注）。
+        for tag in ["script", "style", "xmp", "iframe", "noembed", "noframes", "plaintext"] {
+            let mut doc = Document::new();
+            let el = doc.create_element(tag);
+            let text = doc.create_text_node("a < b & c");
+            doc.append_child(el, text).unwrap();
+            let html = doc.outer_html(el);
+            assert!(
+                html.contains("a < b & c"),
+                "raw text element <{tag}> 内容不应转义，got: {html}"
+            );
+            assert!(
+                !html.contains("&lt;") && !html.contains("&amp;"),
+                "raw text element <{tag}> 不应含转义实体，got: {html}"
+            );
+        }
+        // textarea/title 是 escapable raw text（走 escape_text）——须转义 `&`/`<`/`>`。
+        let mut doc = Document::new();
+        let ta = doc.create_element("textarea");
+        let text = doc.create_text_node("a < b & c");
+        doc.append_child(ta, text).unwrap();
+        let html = doc.outer_html(ta);
+        assert_eq!(html, "<textarea>a &lt; b &amp; c</textarea>");
+    }
+
+    /// R3216：真实 round-trip——parse `<xmp>a < b</xmp>` → 序列化 → 文本须仍 "a < b"
+    ///（rawtext 再解析不识别 `&lt;`，旧转义致 round-trip 失效为 "a &lt; b"）。
+    #[test]
+    fn test_raw_text_round_trip_xmp_r3216() {
+        let doc = crate::parse_html("<xmp>a < b</xmp>");
+        let xmp = doc.query_selector(doc.root(), "xmp").unwrap();
+        let serialized = doc.outer_html(xmp);
+        // 再解析序列化结果，文本应保持 "a < b"（非 "a &lt; b"）。
+        let doc2 = crate::parse_html(&format!("<div>{serialized}</div>"));
+        let xmp2 = doc2.query_selector(doc2.root(), "xmp").unwrap();
+        assert_eq!(
+            doc2.text_content(xmp2),
+            Some("a < b".to_string()),
+            "xmp round-trip 应保持原文（rawtext 不转义）；serialized = {serialized}"
+        );
     }
 
     /// 测试属性值包含双引号的转义。
