@@ -1012,6 +1012,19 @@ fn test_merge_style_property() {
     let replaced = merge_style_property(&merged, "color", "red");
     assert!(!replaced.contains("blue"));
     assert!(replaced.contains("color: red"));
+    // R3211：空值移除声明（spec setProperty/IDL setter 空值语义；`el.style.color=''` 应移除而非留
+    // `color: `）。设既有声明为空 → 该声明消失；设不存在属性为空 → 无 dangling 残留。
+    let cleared = merge_style_property("color: red; font-size: 10px", "color", "");
+    assert!(
+        !cleared.contains("color"),
+        "empty value should remove the declaration, got: {cleared}"
+    );
+    assert!(cleared.contains("font-size: 10px"));
+    let no_dangle = merge_style_property("color: red", "margin", "  ");
+    assert!(
+        !no_dangle.contains("margin"),
+        "whitespace-only value should not leave a dangling declaration, got: {no_dangle}"
+    );
 }
 
 #[test]

@@ -1716,6 +1716,27 @@ fn native_element_style_r3151() {
         run_script(html, "(typeof __zw_native_element_for_id('a').style.constructor)"),
         "function"
     );
+    // R3211：IDL setter 空值移除声明（`el.style.color=''`；spec setProperty/IDL 空值语义）——
+    // 非 dangling `color: ` 空值。`el.style.display=''` 是 reset inline 样式事实标准高频用法。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             el.setAttribute('style','color: red; margin: 5px'); el.style.color='';\
+             return el.style.length+'/'+el.style.color+'/'+el.getAttribute('style'); })()"
+        ),
+        "1//margin: 5px"
+    );
+    // R3211：setProperty 空值移除（spec 空值语义，与 named setter / polyfill 三处对称）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             el.setAttribute('style','color: red'); el.style.setProperty('color','');\
+             return el.style.length+'/'+el.getAttribute('style'); })()"
+        ),
+        "0/"
+    );
 }
 
 /// R3152 element.dataset（DOMStringMap，spec HTML `dom-dataset`）：named-property-handler 拦 camelCase

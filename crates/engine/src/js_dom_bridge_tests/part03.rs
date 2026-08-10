@@ -427,6 +427,47 @@ fn test_style_remove_property() {
 }
 
 #[test]
+fn test_style_set_empty_value_removes_r3211() {
+    // R3211：`el.style.color = ''`（IDL setter 空值）+ `setProperty('x','')`（空值）应移除声明，
+    // 而非留 `prop: ` dangling 空值（spec `dom-cssstyledeclaration-setproperty` + 浏览器一致行为）。
+    // `el.style.display = ''` 是 reset inline 样式事实标准高频用法。旧实现 merge_style_property 恒 push
+    // 致 dangling（与 setProperty/named-setter 三处同病，本片 host 路径闭合）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\" style=\"color: red; font-size: 10px\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // IDL setter 空值移除 color；setProperty 空值移除 font-size。
+    sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.style.color='';\
+             d.style.setProperty('font-size','');",
+        )
+        .unwrap();
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(
+        !out.contains("color"),
+        "el.style.color='' 应移除 color 声明（非 dangling 空值）\n{out}"
+    );
+    assert!(
+        !out.contains("font-size"),
+        "setProperty('font-size','') 应移除 font-size 声明\n{out}"
+    );
+}
+
+#[test]
 fn test_style_camel_to_kebab() {
     // R2696：per-property camelCase style 须归一为 kebab-case 存 style 属性（CSS parser 不认
     // camelCase → 渲染静默失效）。覆盖 backgroundColor / WebkitTransform（vendor 前缀）/ cssFloat

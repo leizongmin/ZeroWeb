@@ -240,9 +240,14 @@ fn native_style_named_setter(
     }
     let prop = camel_to_kebab(&name);
     let val = local_value_to_string(scope, value);
+    // R3211：空值语义 = 移除声明（spec IDL setter ≡ setProperty(prop, value) 无 priority；value 空串 →
+    // removeProperty）。`el.style.display = ''` 是 reset inline 样式事实标准高频用法——旧实现 upsert 空值
+    // 致 dangling `prop: `（与 setProperty / polyfill merge_style_property 三处同病，本片对称闭合）。
     with_dom_mut(|d| {
         let mut props = current_props(d, owner);
-        if let Some(decl) = props.iter_mut().find(|d| d.prop == prop) {
+        if val.trim().is_empty() {
+            props.retain(|d| d.prop != prop);
+        } else if let Some(decl) = props.iter_mut().find(|d| d.prop == prop) {
             // upsert（已存在→更新值）；named setter 等价 setProperty(prop, value) 无 priority → 重置 important。
             decl.value = val.clone();
             decl.important = false;
@@ -426,6 +431,17 @@ fn native_style_set_property_invoke(
     }
     // priority 第 3 参：spec 仅 "important" 生效（空/其它 → 非 important）。
     let important = string_arg(scope, &args, 2).eq_ignore_ascii_case("important");
+    // R3211：空值语义 = 移除声明（spec `dom-cssstyledeclaration-setproperty`：value 空串 → removeProperty，
+    // 不论 priority）。`el.style.setProperty('x','')` 是 reset inline 样式高频用法——旧实现 upsert 空值
+    // 致 dangling `prop: `（同 named setter / polyfill merge_style_property 三处同病）。
+    if val.trim().is_empty() {
+        with_dom_mut(|d| {
+            let mut props = current_props(d, owner);
+            props.retain(|d| d.prop != prop);
+            write_props(d, owner, &props);
+        });
+        return;
+    }
     with_dom_mut(|d| {
         let mut props = current_props(d, owner);
         if let Some(decl) = props.iter_mut().find(|d| d.prop == prop) {

@@ -723,6 +723,14 @@ fn merge_style_property(style: &str, property: &str, value: &str) -> String {
             .unwrap_or_default()
             != prop_key
     });
+    // R3211：空值语义 = 移除声明（spec `dom-cssstyledeclaration-setproperty` + IDL setter：setProperty 空
+    // 值 / `el.style.color = ''` 移除声明，而非留 `color: ` 空值串）。`el.style.display = ''` 是 reset
+    // inline 样式的事实标准高频用法——旧实现恒 push `prop: ` 致 dangling 空值，`el.style.length`/`item()`
+    // 仍计该属性（spec 应不计）。retain 已移除同名旧声明，空值不再 push → 净移除。等同
+    // [`remove_style_property`]（removeProperty 路径）。
+    if value.trim().is_empty() {
+        return parts.join("; ");
+    }
     parts.push(format!("{}: {}", property.trim(), value.trim()));
     parts.join("; ")
 }
