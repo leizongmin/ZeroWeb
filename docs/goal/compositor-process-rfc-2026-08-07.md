@@ -142,3 +142,22 @@ compositor 启动失败或 IPC 断开时：
 - 全量质量、reftest 和产品 smoke 由后续验收任务执行。
 - 渲染线程前置见 [`archive/render-threading-rfc-2026-08-07.md`](archive/render-threading-rfc-2026-08-07.md)（已实施归档）。
 - ImageDecoder 的请求/响应协议是 compositor 消息路由的先例。
+
+## 七、验收记录（2026-08-11，AI 重构验收规范落地）
+
+按 [`archive/ai-refactor-acceptance.md`](archive/ai-refactor-acceptance.md)（调研 P5）对 C1/C2/C3 S1/4.3 S1 切片执行验收：
+
+| 门禁 | 结果 |
+|---|---|
+| `make test`（cargo test --workspace + quickjs clippy/测试，test-guard 包裹） | **16,356 passed / 0 failed**（0 warning / 0 error） |
+| `make reftest`（self 套件 686 案） | **686/686 ✓**（Layout 485 + Text 201，0 failed） |
+| `make reftest-upstream`（16,601 案） | **13,326 passed（80.3%）**；同 corpus 口径 13,251 = 08-08 基线 → **0 回归**（corpus +332 来自 08-10 smoke 子域补齐，新增 75 通过 / 257 失败全归因） |
+| `make reftest-oracle` | 未执行（本地无 oracle-shots 资产，需 capture-oracle/CI；DC-14 历史基线 36.2%） |
+| `make reftest-smoke` | **42/42** |
+| `make product-smoke` | welcome vs chromium **17.03%** ≤ 20%；8/8 struct-check PASS（桌面/窄屏双 viewport） |
+| `make layout-golden` | **43/43 已提交 golden 0 diff**（附带修复 layout-dump 块尾空行格式缺陷——marker `\n#####` 前导换行注入空行，full-corpus 下 golden 全 diff，非布局回归；删前导 `\n` 后 43/43 复原） |
+| `make browser-compositor-smoke`（双模式 lockstep） | **PASS**：legacy↔compositor 页面签名 close_samples=64/64、mean_luma_delta=4.484、dark_ratio=0.902；compositor 模式无 ViewPainted 泄漏、无 fallback、无 panic |
+| `make bench-gate`（vs 08-08 迁移前基线） | 关键路径 page/*（parse/style/layout/paint/total/首屏，welcome/medium/morning）**两轮全 PASS 且 ≤ 基线**；微基准两轮超限 21→11，失败集不相交、集中于重构未触及 crate（dom/wasm/webview/storage/script-sandbox 等），08-09 启用后报告同指标均处基线水平 → **归因共享机器测量噪声，非重构回归**；恢复计划：CI bench-trend（github-ubuntu-latest 基线）为权威趋势 |
+| 回退环境变量 | `ZW_COMPOSITOR_PROCESS=0` legacy 路径代码验证（browser compositor_client.rs / renderer main.rs）+ 双模式实测 ✓；`ZW_COMPOSITOR_SHM=1` / `ZW_COMPOSITOR_GPU=1` 开关在位 |
+
+覆盖范围与例外：本机（linux-x86_64，16 核）执行；oracle 与 CI 专用门禁未本地跑，由 CI/weekly 承担。对照差异全部归因（corpus 增量、layout-dump 格式缺陷、基准噪声），无未解释差异。

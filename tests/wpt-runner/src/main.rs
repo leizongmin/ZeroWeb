@@ -1236,7 +1236,7 @@ fn cmd_layout_dump(options: &CliOptions, filter: Option<&str>) {
         let (_, root, rendered_html) =
             render_to_framebuffer_with_layout_with_base(&case.test_html, "", &config, base_dir);
 
-        eprintln!("\n##### {} #####", case.id);
+        eprintln!("##### {} #####", case.id);
         dump_layout_tree(&root, &rendered_html);
     }
 }
