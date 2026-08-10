@@ -272,6 +272,11 @@ jobs:
             -p zero-webview \
             --target ${{ matrix.target }}
 
+      - name: Build zero-compositor (bin required by browser compositor tests)
+        shell: bash
+        run: |
+          cargo build ${{ matrix.features }} -p zero-compositor --bin zero-compositor --target ${{ matrix.target }}
+
       - name: Run app tests
         if: matrix.v8_runtime != false
         timeout-minutes: 40
@@ -307,6 +312,12 @@ jobs:
         if: matrix.v8_runtime == false
         run: |
           echo "Skipping V8-backed tests for ${{ matrix.target }} (using QuickJS runtime instead)."
+
+      - name: Build zero-compositor (bin required by browser compositor tests)
+        if: matrix.v8_runtime == false
+        shell: bash
+        run: |
+          cargo build ${{ matrix.features }} -p zero-compositor --bin zero-compositor --target ${{ matrix.target }}
 
       - name: Run QuickJS-backed tests
         if: matrix.v8_runtime == false

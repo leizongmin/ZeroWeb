@@ -26,8 +26,6 @@ parking_lot = { workspace = true }
 pollster = { workspace = true }
 winit = { workspace = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
 # FreeType（chromium Linux 同栈光栅化器）——经 `freetype-raster` feature 启用（R1159 起为 default）。
 # 默认构建即编译 FreeType2 C 源（`freetype-rs/bundled`），非-Ahem 字形优先 FreeType 光栅化。
 # 全 corpus oracle 实测 +232 零回归（R1094 A/B）。需纯 Rust 构建用 `--no-default-features`。
@@ -46,6 +44,10 @@ freetype-raster = ["dep:freetype-rs", "freetype-rs/bundled"]
 [dev-dependencies]
 criterion = { workspace = true }
 serial_test = { workspace = true }
+
+# dma-buf 导出（compositor RFC 4.3-S5）使用 libc 系统调用；仅 Linux
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
 
 [[bench]]
 name = "render_bench"
