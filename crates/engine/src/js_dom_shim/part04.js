@@ -537,21 +537,24 @@
           };
         }
         // R3024：命名空间属性族（SVG/MathML/xlink 高频，如 setAttributeNS('http://www.w3.org/1999/xlink','href',v)）。
-        // HTML 元素 ns 忽略——委托非 NS 版（setAttribute/getAttribute/hasAttribute/removeAttribute），限定名
-        // （qualifiedName，含 prefix:local）原样按 name 字符串存（host 按 name 存无 ns 解析，HTML 渲染不依赖 ns）。
-        // **已知限制**：getAttributeNS(localName) 与 setAttributeNS(qualifiedName='prefix:local') 名不一致场景
-        // 不匹配（real 浏览器按 ns+localName 解析；本实现按 name 字符串，null ns + 简单名常用场景正确）。
+        // HTML 元素 ns 忽略——setAttributeNS 限定名（qualifiedName，含 prefix:local）原样按 name 字符串存
+        //（host 按 name 存无 ns 解析，HTML 渲染不依赖 ns；SVG-in-HTML 序列化 round-trip 经 parser 再 split）。
+        // R3217：get/has/removeAttributeNS 按 **ns+local** 查找——setAttributeNS 存 'prefix:local' 限定名，
+        // 读侧用 ns→常规 prefix 映射（xlink/xml/xmlns，SVG 高频）重构限定名；null/空 ns → 裸 local（无命名空间
+        // 属性）。闭合旧「读 local 查不到 setAttributeNS 的 prefix:local」不一致。spec 按 ns+localName 匹配，
+        // 本实现按限定名字符串存故 ns→prefix 重构；自定义 ns 无常规 prefix 或 setAttributeNS 用非常规 prefix
+        // 时回落裸 local（罕见，记限）。
         if (prop === 'setAttributeNS') {
           return function(_ns, qualifiedName, value) { proxy.setAttribute(String(qualifiedName), value); };
         }
         if (prop === 'getAttributeNS') {
-          return function(_ns, localName) { return proxy.getAttribute(String(localName)); };
+          return function(ns, localName) { return proxy.getAttribute(_nsQualName(ns, localName)); };
         }
         if (prop === 'hasAttributeNS') {
-          return function(_ns, localName) { return proxy.hasAttribute(String(localName)); };
+          return function(ns, localName) { return proxy.hasAttribute(_nsQualName(ns, localName)); };
         }
         if (prop === 'removeAttributeNS') {
-          return function(_ns, localName) { return proxy.removeAttribute(String(localName)); };
+          return function(ns, localName) { return proxy.removeAttribute(_nsQualName(ns, localName)); };
         }
         // `el.focus()` / `el.blur()`——焦点状态追踪（document.activeElement 对）。纯 in-JS 状态：
         // focus 记当前 key，blur 清当前 key。**已知限制**：① 无真键盘焦点（纯状态，无输入焦点点亮）；

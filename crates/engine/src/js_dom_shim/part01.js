@@ -121,6 +121,17 @@
     if (!present) return null; // 无属性 → no popover state
     return String(raw).toLowerCase() === 'auto' ? 'auto' : 'manual';
   }
+  // R3217：ns → 限定名重构，供 get/has/removeAttributeNS 查找 setAttributeNS 存的 'prefix:local' 限定名属性。
+  // spec 按 ns+localName 匹配；本 shim 按限定名字符串存（host 无 ns 解析），故用 ns→常规 prefix 映射重构。
+  // xlink/xml/xmlns 三常规命名空间（SVG/MathML 高频）；null/空/未知 ns → 裸 local（无命名空间属性）。
+  function _nsQualName(ns, localName) {
+    var s = String(ns == null ? '' : ns);
+    var p = s === 'http://www.w3.org/1999/xlink' ? 'xlink'
+      : s === 'http://www.w3.org/XML/1998/namespace' ? 'xml'
+      : s === 'http://www.w3.org/2000/xmlns/' ? 'xmlns'
+      : null;
+    return p ? (p + ':' + String(localName)) : String(localName);
+  }
   // R3071：showPopover 状态机。非 popover（无 popover 属性）→ InvalidStateError；已 showing → InvalidStateError；
   // 派发 beforetoggle(cancelable, closed→open)，preventDefault → 中止不显；加 top-layer；派发 toggle(closed→open)。
   // headless 无真渲染层级 / paint（rendering 流域 defer）——仅 JS-observable 状态 + 事件。light-dismiss / auto

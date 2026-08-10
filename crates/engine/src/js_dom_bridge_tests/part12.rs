@@ -1617,6 +1617,26 @@ fn test_attr_instanceof_and_namespace_attrs_r3024() {
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__nsHasAfter").unwrap().value, "false", "removeAttributeNS 后 hasAttributeNS=false");
 
+    // R3217：xlink 命名空间 setAttributeNS('xlink:href') ↔ getAttributeNS('href') 一致性。旧实现读 local 'href'
+    // 查不到存为 'xlink:href' 的属性（spec 按 ns+local 匹配，本 shim ns→prefix 重构限定名）。SVG 图标库高频。
+    sandbox
+        .execute(
+            "d.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#icon');\
+             globalThis.__xlinkGet = d.getAttributeNS('http://www.w3.org/1999/xlink', 'href');\
+             globalThis.__xlinkHas = String(d.hasAttributeNS('http://www.w3.org/1999/xlink', 'href'));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__xlinkGet").unwrap().value, "#icon", "setAttributeNS(xlink,'xlink:href','#icon') 后 getAttributeNS(xlink,'href')='#icon'");
+    assert_eq!(sandbox.execute("globalThis.__xlinkHas").unwrap().value, "true", "hasAttributeNS(xlink,'href')=true");
+    // removeAttributeNS(xlink,'href') 真移除。
+    sandbox
+        .execute(
+            "d.removeAttributeNS('http://www.w3.org/1999/xlink', 'href');\
+             globalThis.__xlinkHasAfter = String(d.hasAttributeNS('http://www.w3.org/1999/xlink', 'href'));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__xlinkHasAfter").unwrap().value, "false", "removeAttributeNS(xlink,'href') 后 hasAttributeNS=false");
+
     // createAttributeNS：解析 prefix:local + namespaceURI（SVG xlink:href 用法）。
     sandbox
         .execute(
