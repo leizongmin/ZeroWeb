@@ -6,10 +6,10 @@ use zero_engine::{HitTestCache, HitTestLayoutSnapshot, node_id_to_u64};
 use zero_engine::{extract_img_srcs, image_resource_key, resolve_document_url};
 use zero_protocol::{
     IpcBlendMode, IpcBlendModePrimitive, IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcFilter, IpcFilterKind, IpcGlyph,
-    IpcGlyphSource, IpcGradient, IpcGradientColorSpace, IpcGradientInterpolation, IpcGradientKind, IpcGradientStop,
-    IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcHueMethod, IpcImage, IpcImagePayload, IpcLineCap,
-    IpcLineStyle, IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, IpcTransform,
-    PaintSnapshotParams,
+    IpcGlyphSource, IpcGlyphTextRun, IpcGradient, IpcGradientColorSpace, IpcGradientInterpolation, IpcGradientKind,
+    IpcGradientStop, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcHueMethod, IpcImage,
+    IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow,
+    IpcStroke, IpcTransform, PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -38,13 +38,21 @@ fn color_to_ipc(c: Color) -> IpcColor {
     }
 }
 
-fn glyph_source_run_id(source: &GlyphSource, source_runs: &mut HashMap<usize, u64>) -> u64 {
+fn glyph_source_run_id(
+    source: &GlyphSource,
+    source_ids: &mut HashMap<usize, u64>,
+    text_runs: &mut Vec<IpcGlyphTextRun>,
+) -> u64 {
     let key = Arc::as_ptr(&source.text) as *const () as usize;
-    if let Some(run_id) = source_runs.get(&key) {
+    if let Some(run_id) = source_ids.get(&key) {
         return *run_id;
     }
-    let run_id = source_runs.len() as u64 + 1;
-    source_runs.insert(key, run_id);
+    let run_id = source_ids.len() as u64 + 1;
+    source_ids.insert(key, run_id);
+    text_runs.push(IpcGlyphTextRun {
+        run_id,
+        text: source.text.to_string(),
+    });
     run_id
 }
 
@@ -220,7 +228,27 @@ pub fn paint_snapshot_from_primitives(
     hit_test: Option<HitTestCache>,
     navigation_epoch: u64,
 ) -> PaintSnapshotParams {
-    let mut glyph_source_runs = HashMap::new();
+    let mut glyph_source_ids = HashMap::new();
+    let mut glyph_text_runs = Vec::new();
+    let glyphs = primitives
+        .glyphs
+        .iter()
+        .map(|g| IpcGlyph {
+            x: g.x,
+            y: g.y,
+            font_size: g.font_size,
+            glyph_id: g.glyph_id,
+            font_glyph_index: g.font_glyph_index,
+            source: g.source.as_ref().map(|source| IpcGlyphSource {
+                run_id: glyph_source_run_id(source, &mut glyph_source_ids, &mut glyph_text_runs),
+                start: source.start,
+                end: source.end,
+            }),
+            font_id: g.font_id.0,
+            color: color_to_ipc(g.color),
+            rotation: g.rotation,
+        })
+        .collect();
     PaintSnapshotParams {
         viewport_width,
         viewport_height,
@@ -371,26 +399,8 @@ pub fn paint_snapshot_from_primitives(
                 mode: blend_mode_to_ipc(b.mode),
             })
             .collect(),
-        glyphs: primitives
-            .glyphs
-            .iter()
-            .map(|g| IpcGlyph {
-                x: g.x,
-                y: g.y,
-                font_size: g.font_size,
-                glyph_id: g.glyph_id,
-                font_glyph_index: g.font_glyph_index,
-                source: g.source.as_ref().map(|source| IpcGlyphSource {
-                    run_id: glyph_source_run_id(source, &mut glyph_source_runs),
-                    text: source.text.to_string(),
-                    start: source.start,
-                    end: source.end,
-                }),
-                font_id: g.font_id.0,
-                color: color_to_ipc(g.color),
-                rotation: g.rotation,
-            })
-            .collect(),
+        glyph_text_runs,
+        glyphs,
         draw_order: primitives.draw_order.iter().copied().map(draw_op_to_ipc).collect(),
         dirty_rects: dirty_rects
             .iter()
@@ -456,15 +466,18 @@ mod tests {
         let first = GlyphSource::new(text.clone(), 0, 3).expect("first cluster");
         let second = GlyphSource::new(text, 0, 3).expect("second cluster");
         let independent = GlyphSource::new(Arc::from("A\u{301}"), 0, 3).expect("independent cluster");
-        let mut source_runs = HashMap::new();
+        let mut source_ids = HashMap::new();
+        let mut text_runs = Vec::new();
 
         assert_eq!(
-            glyph_source_run_id(&first, &mut source_runs),
-            glyph_source_run_id(&second, &mut source_runs)
+            glyph_source_run_id(&first, &mut source_ids, &mut text_runs),
+            glyph_source_run_id(&second, &mut source_ids, &mut text_runs)
         );
         assert_ne!(
-            glyph_source_run_id(&first, &mut source_runs),
-            glyph_source_run_id(&independent, &mut source_runs)
+            glyph_source_run_id(&first, &mut source_ids, &mut text_runs),
+            glyph_source_run_id(&independent, &mut source_ids, &mut text_runs)
         );
+        assert_eq!(text_runs.len(), 2);
+        assert_eq!(text_runs[0].text, "A\u{301}");
     }
 }

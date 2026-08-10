@@ -928,6 +928,7 @@ mod navigation_contract_tests {
             transforms: vec![],
             filters: vec![],
             blend_modes: vec![],
+            glyph_text_runs: vec![],
             glyphs: vec![],
             draw_order: vec![],
             dirty_rects: vec![],

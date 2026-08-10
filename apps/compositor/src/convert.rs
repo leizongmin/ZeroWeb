@@ -3,11 +3,11 @@
 //! 与 browser 的 paint_ipc::apply_paint_snapshot 保持同一映射（2026-08-07
 //! 对照实现）；compositor 在合成器进程内完成光栅化所需的转换。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use zero_protocol::paint_snapshot::{
-    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGlyphSource, IpcGradientColorSpace, IpcGradientInterpolation,
-    IpcGradientKind, IpcHueMethod, IpcLineCap, IpcLineStyle, IpcRect, PaintSnapshotParams,
+    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGlyphSource, IpcGlyphTextRun, IpcGradientColorSpace,
+    IpcGradientInterpolation, IpcGradientKind, IpcHueMethod, IpcLineCap, IpcLineStyle, IpcRect, PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -27,17 +27,23 @@ fn ipc_color_to_color(c: IpcColor) -> Color {
     Color::rgba(c.r, c.g, c.b, c.a)
 }
 
-fn glyph_source_from_ipc(source: &IpcGlyphSource, text_runs: &mut HashMap<u64, Arc<str>>) -> Option<GlyphSource> {
-    if source.run_id == 0 {
-        return None;
-    }
-    let text = match text_runs.entry(source.run_id) {
-        std::collections::hash_map::Entry::Vacant(entry) => entry.insert(source.text.clone().into()).clone(),
-        std::collections::hash_map::Entry::Occupied(entry) if entry.get().as_ref() == source.text => {
-            entry.get().clone()
+fn glyph_text_runs_from_ipc(runs: &[IpcGlyphTextRun]) -> HashMap<u64, Arc<str>> {
+    let mut text_runs = HashMap::new();
+    let mut invalid_ids = HashSet::new();
+    for run in runs {
+        if run.run_id == 0 || invalid_ids.contains(&run.run_id) {
+            continue;
         }
-        std::collections::hash_map::Entry::Occupied(_) => return None,
-    };
+        if text_runs.insert(run.run_id, run.text.clone().into()).is_some() {
+            text_runs.remove(&run.run_id);
+            invalid_ids.insert(run.run_id);
+        }
+    }
+    text_runs
+}
+
+fn glyph_source_from_ipc(source: &IpcGlyphSource, text_runs: &HashMap<u64, Arc<str>>) -> Option<GlyphSource> {
+    let text = text_runs.get(&source.run_id)?.clone();
     GlyphSource::new(text, source.start, source.end)
 }
 
@@ -262,7 +268,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             mode: ipc_blend_mode_to_mode(blend.mode),
         });
     }
-    let mut glyph_text_runs = HashMap::new();
+    let glyph_text_runs = glyph_text_runs_from_ipc(&params.glyph_text_runs);
     for glyph in &params.glyphs {
         primitives.glyphs.push(GlyphPrimitive {
             x: glyph.x,
@@ -274,7 +280,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             source: glyph
                 .source
                 .as_ref()
-                .and_then(|source| glyph_source_from_ipc(source, &mut glyph_text_runs)),
+                .and_then(|source| glyph_source_from_ipc(source, &glyph_text_runs)),
             font_id: zero_render_foundation::primitive::FontId(glyph.font_id),
             bitmap_width: None,
             bitmap_height: None,
@@ -294,19 +300,27 @@ mod tests {
     fn glyph_source_decoder_interns_run_and_rejects_conflicting_text() {
         let source = IpcGlyphSource {
             run_id: 4,
-            text: "A\u{301}".to_string(),
             start: 0,
             end: 3,
         };
-        let mut text_runs = HashMap::new();
-        let first = glyph_source_from_ipc(&source, &mut text_runs).expect("first source");
-        let second = glyph_source_from_ipc(&source, &mut text_runs).expect("second source");
+        let text_runs = glyph_text_runs_from_ipc(&[IpcGlyphTextRun {
+            run_id: 4,
+            text: "A\u{301}".to_string(),
+        }]);
+        let first = glyph_source_from_ipc(&source, &text_runs).expect("first source");
+        let second = glyph_source_from_ipc(&source, &text_runs).expect("second source");
         assert!(first.same_cluster(&second));
 
-        let conflicting = IpcGlyphSource {
-            text: "different".to_string(),
-            ..source
-        };
-        assert!(glyph_source_from_ipc(&conflicting, &mut text_runs).is_none());
+        let conflicting_runs = glyph_text_runs_from_ipc(&[
+            IpcGlyphTextRun {
+                run_id: 4,
+                text: "A\u{301}".to_string(),
+            },
+            IpcGlyphTextRun {
+                run_id: 4,
+                text: "different".to_string(),
+            },
+        ]);
+        assert!(glyph_source_from_ipc(&source, &conflicting_runs).is_none());
     }
 }

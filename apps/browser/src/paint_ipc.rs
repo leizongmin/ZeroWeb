@@ -1,14 +1,14 @@
 //! 多进程 IPC 绘制快照 ↔ 浏览器 TabSnapshot 转换。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use zero_engine::{
     HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, PipelineTimings, node_id_from_u64,
 };
 use zero_protocol::{
-    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGlyphSource, IpcGradientColorSpace, IpcGradientInterpolation,
-    IpcGradientKind, IpcHitTestCache, IpcHitTestLayoutNode, IpcHueMethod, IpcLineCap, IpcLineStyle, IpcRect,
-    PaintSnapshotParams,
+    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGlyphSource, IpcGlyphTextRun, IpcGradientColorSpace,
+    IpcGradientInterpolation, IpcGradientKind, IpcHitTestCache, IpcHitTestLayoutNode, IpcHueMethod, IpcLineCap,
+    IpcLineStyle, IpcRect, PaintSnapshotParams,
 };
 // 仅测试用（构造 PaintSnapshotParams 断言）。
 #[cfg(test)]
@@ -34,17 +34,23 @@ fn ipc_color_to_color(c: IpcColor) -> Color {
     Color::rgba(c.r, c.g, c.b, c.a)
 }
 
-fn glyph_source_from_ipc(source: IpcGlyphSource, text_runs: &mut HashMap<u64, Arc<str>>) -> Option<GlyphSource> {
-    if source.run_id == 0 {
-        return None;
-    }
-    let text = match text_runs.entry(source.run_id) {
-        std::collections::hash_map::Entry::Vacant(entry) => entry.insert(source.text.into()).clone(),
-        std::collections::hash_map::Entry::Occupied(entry) if entry.get().as_ref() == source.text => {
-            entry.get().clone()
+fn glyph_text_runs_from_ipc(runs: Vec<IpcGlyphTextRun>) -> HashMap<u64, Arc<str>> {
+    let mut text_runs = HashMap::new();
+    let mut invalid_ids = HashSet::new();
+    for run in runs {
+        if run.run_id == 0 || invalid_ids.contains(&run.run_id) {
+            continue;
         }
-        std::collections::hash_map::Entry::Occupied(_) => return None,
-    };
+        if text_runs.insert(run.run_id, run.text.into()).is_some() {
+            text_runs.remove(&run.run_id);
+            invalid_ids.insert(run.run_id);
+        }
+    }
+    text_runs
+}
+
+fn glyph_source_from_ipc(source: IpcGlyphSource, text_runs: &HashMap<u64, Arc<str>>) -> Option<GlyphSource> {
+    let text = text_runs.get(&source.run_id)?.clone();
     GlyphSource::new(text, source.start, source.end)
 }
 
@@ -269,7 +275,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             mode: ipc_blend_mode_to_mode(blend.mode),
         });
     }
-    let mut glyph_text_runs = HashMap::new();
+    let glyph_text_runs = glyph_text_runs_from_ipc(params.glyph_text_runs);
     for glyph in params.glyphs {
         primitives.glyphs.push(GlyphPrimitive {
             x: glyph.x,
@@ -280,7 +286,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             font_glyph_index: glyph.font_glyph_index,
             source: glyph
                 .source
-                .and_then(|source| glyph_source_from_ipc(source, &mut glyph_text_runs)),
+                .and_then(|source| glyph_source_from_ipc(source, &glyph_text_runs)),
             font_id: FontId(glyph.font_id),
             bitmap_width: None,
             bitmap_height: None,
@@ -448,7 +454,6 @@ mod tests {
     fn apply_paint_snapshot_restores_glyph_source_run_identity() {
         let source = |run_id| IpcGlyphSource {
             run_id,
-            text: "A\u{301}".to_string(),
             start: 0,
             end: 3,
         };
@@ -469,6 +474,16 @@ mod tests {
             rotation: 0.0,
         };
         let params = PaintSnapshotParams {
+            glyph_text_runs: vec![
+                IpcGlyphTextRun {
+                    run_id: 7,
+                    text: "A\u{301}".to_string(),
+                },
+                IpcGlyphTextRun {
+                    run_id: 8,
+                    text: "A\u{301}".to_string(),
+                },
+            ],
             glyphs: vec![glyph(7, 'A' as u32), glyph(7, '\u{301}' as u32), glyph(8, 'A' as u32)],
             ..Default::default()
         };

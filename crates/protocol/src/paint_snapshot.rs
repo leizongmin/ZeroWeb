@@ -54,13 +54,20 @@ pub struct IpcRoundedRect {
     pub bottom_left_radius: f32,
 }
 
-/// IPC glyph 的源文本 cluster。
+/// IPC 绘制快照内共享的 glyph 源文本 run。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcGlyphTextRun {
+    /// 当前绘制快照内唯一的文本 run 标识。
+    pub run_id: u64,
+    /// 文本 fragment 的完整源文本。
+    pub text: String,
+}
+
+/// IPC glyph 的源文本 cluster 引用。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcGlyphSource {
     /// 当前绘制快照内的文本 run 标识。
     pub run_id: u64,
-    /// glyph 所属文本 fragment 的完整源文本。
-    pub text: String,
     /// UTF-8 起始字节偏移。
     pub start: u32,
     /// UTF-8 结束字节偏移（exclusive）。
@@ -486,6 +493,9 @@ pub struct PaintSnapshotParams {
     pub filters: Vec<IpcFilter>,
     /// mix-blend-mode。
     pub blend_modes: Vec<IpcBlendModePrimitive>,
+    /// glyph 共享的源文本 run 表。
+    #[serde(default)]
+    pub glyph_text_runs: Vec<IpcGlyphTextRun>,
     /// 文本图元。
     pub glyphs: Vec<IpcGlyph>,
     /// 绘制顺序（与 engine `DrawOp` 子集对应）。
@@ -565,6 +575,7 @@ impl Default for PaintSnapshotParams {
             transforms: Vec::new(),
             filters: Vec::new(),
             blend_modes: Vec::new(),
+            glyph_text_runs: Vec::new(),
             glyphs: Vec::new(),
             draw_order: Vec::new(),
             dirty_rects: Vec::new(),
@@ -579,7 +590,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ipc_glyph_roundtrip_preserves_source_and_font_index() {
+    fn paint_snapshot_roundtrip_preserves_glyph_source_run_and_font_index() {
         let glyph = IpcGlyph {
             x: 1.0,
             y: 2.0,
@@ -588,7 +599,6 @@ mod tests {
             font_glyph_index: Some(42),
             source: Some(IpcGlyphSource {
                 run_id: 9,
-                text: "A\u{301}".to_string(),
                 start: 0,
                 end: 3,
             }),
@@ -601,15 +611,25 @@ mod tests {
             },
             rotation: 0.0,
         };
+        let snapshot = PaintSnapshotParams {
+            glyph_text_runs: vec![IpcGlyphTextRun {
+                run_id: 9,
+                text: "A\u{301}".to_string(),
+            }],
+            glyphs: vec![glyph],
+            ..Default::default()
+        };
 
-        let bytes = bincode::serialize(&glyph).expect("serialize IpcGlyph");
-        let decoded: IpcGlyph = bincode::deserialize(&bytes).expect("deserialize IpcGlyph");
+        let bytes = bincode::serialize(&snapshot).expect("serialize PaintSnapshotParams");
+        let decoded: PaintSnapshotParams = bincode::deserialize(&bytes).expect("deserialize PaintSnapshotParams");
+        let glyph = &decoded.glyphs[0];
 
-        assert_eq!(decoded.glyph_id, 'A' as u32);
-        assert_eq!(decoded.font_glyph_index, Some(42));
-        let source = decoded.source.expect("source cluster");
+        assert_eq!(glyph.glyph_id, 'A' as u32);
+        assert_eq!(glyph.font_glyph_index, Some(42));
+        let source = glyph.source.as_ref().expect("source cluster");
         assert_eq!(source.run_id, 9);
-        assert_eq!(source.text, "A\u{301}");
         assert_eq!((source.start, source.end), (0, 3));
+        assert_eq!(decoded.glyph_text_runs[0].run_id, 9);
+        assert_eq!(decoded.glyph_text_runs[0].text, "A\u{301}");
     }
 }
