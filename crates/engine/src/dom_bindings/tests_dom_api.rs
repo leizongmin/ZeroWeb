@@ -1088,6 +1088,23 @@ fn native_inner_html_setter_empty_clears() {
     );
 }
 
+/// R3181 `innerHTML` setter 片段拷贝保留 SVG 命名空间——`<svg><rect/></svg>` 经 copy_subtree_from
+/// 重建后 rect 仍是 SVG ns（namespaceURI = SVG ns + tagName = "rect" 大小写敏感）。
+/// 旧实现 create_element(&tag) 强制 HTML ns → rect.namespaceURI = HTML ns + tagName = "RECT"。
+#[test]
+fn native_inner_html_setter_preserves_svg_namespace_r3181() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_element_for_id('a').innerHTML='<svg id=\"s\"><rect id=\"r\"/></svg>';\
+             const r=__zw_native_element_for_id('r');\
+             return r.namespaceURI+'|'+r.tagName; })()"
+        ),
+        "http://www.w3.org/2000/svg|rect"
+    );
+}
+
 /// `outerHTML` setter：元素整体替换为片段顶层节点。原元素从 DOM 移除（id 失效），
 /// 父节点 innerHTML 反映新内容。验证经父节点回读（原 id 'a' 已 detach）。
 #[test]

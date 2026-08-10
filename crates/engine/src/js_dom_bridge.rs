@@ -811,20 +811,22 @@ fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> 
     match &src_node.kind {
         NodeKind::Text(t) => doc.create_text_node(&t.content),
         NodeKind::Comment(c) => doc.create_comment(&c.content),
-        NodeKind::Element(_) => {
-            let tag = match src_doc.get(src_id) {
-                Some(n) => match &n.kind {
-                    NodeKind::Element(e) => e.local_name().to_string(),
-                    _ => "span".to_string(),
-                },
-                None => "span".to_string(),
+        NodeKind::Element(elem) => {
+            // R3181：保留源元素命名空间——经 create_element_ns(ns, prefix:local) 重建，保留 SVG /
+            // MathML 命名空间，避免 innerHTML/outerHTML 片段拷贝把 SVG 元素（如 svg>rect）误重建为
+            // HTML（旧 create_element(&tag) 强制 HTML ns）。HTML 元素 ns+local 不变（零回归）。
+            // 属性经 set_attribute 重建时，SVG-ns 新元素的属性名亦保留大小写（viewBox 等，R3174）。
+            let ns = elem.namespace();
+            let local = elem.local_name();
+            // 无前缀（常见：HTML div / SVG rect 默认命名空间）直接传 local &str，零 String 分配；
+            // 仅罕见带前缀（svg:rect）时 format!() 构造 qualified name。
+            let new_id = match elem.name.prefix.as_deref() {
+                Some(p) => doc.create_element_ns(ns, &format!("{p}:{local}")),
+                None => doc.create_element_ns(ns, local),
             };
-            let new_id = doc.create_element(&tag);
-            if let Some(NodeKind::Element(elem)) = src_doc.get(src_id).map(|n| &n.kind) {
-                for attr in &elem.attributes {
-                    let name = attr.name.local.to_string();
-                    doc.set_attribute(new_id, &name, &attr.value);
-                }
+            for attr in &elem.attributes {
+                let name = attr.name.local.to_string();
+                doc.set_attribute(new_id, &name, &attr.value);
             }
             for &child in &src_node.children {
                 let copied = copy_subtree_from(doc, src_doc, child);
