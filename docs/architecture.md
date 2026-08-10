@@ -30,7 +30,7 @@
 | `apps/browser` | 桌面浏览器应用入口，基于 `browser-shell` + `webview` + `host-runtime`，提供窗口模式与 `--headless` / remote debugging（WebSocket）入口 |
 | `apps/renderer` | 独立渲染进程入口（`zero-renderer`），负责多进程 IPC 下的页面渲染与脚本执行，通过 stdin/stdout 管道与浏览器主进程通信 |
 | `apps/image-decoder` | 图像解码进程（`zero-image-decoder`，D1）：PNG/JPEG/WebP 在独立进程解码（隔离编解码器漏洞），由渲染进程内 webview 经管道 spawn；env `ZW_IMAGE_DECODER_PROCESS=1` 启用，未启用/SVG/降级路径回退进程内解码 |
-| `apps/compositor` | 合成器进程（`zero-compositor`，C2）：protocol 消息族 + 真实光栅化 |
+| `apps/compositor` | 合成器进程（`zero-compositor`，C2）：RFC v2.1 五切片全部落地——scroll transform bake、sync_token + Viz present、GPU mailbox fence + mmap 零拷贝、dma-buf fd 导出、owned window present surface、Linux landlock/seccomp 沙箱、GPU device-lost 模拟 + CPU 回退、crash E2E legacy 回退；Vulkan 真纹理 dma-buf 导出仍为后续 |
 | `apps/webdriver` | WebDriver 服务（`zero-webdriver`）：W3C 协议骨架（wdspec 第一步） |
 | `apps/webview-demo` | 最小演示程序，用于串起宿主窗口和渲染基础设施（wgpu/CPU 渲染静态文本） |
 
@@ -102,7 +102,7 @@
 
 - **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、wasm-sandbox、script-sandbox、page-runtime、product-version、webview 都有可运行代码和对应测试。
 - **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务）已打通，但产品形态、稳定性和真实站点兼容性仍在推进。
-- **当前主线**: P1b V8 原生 DOM 绑定（2026-08-09 RFC 获批，R3095–R3126 系列：S0 PoC 验证 native ~15.6×、S1 原生只读属性族 + NodeId 映射、S2 生产接线 + 树写/属性写原生、live Document 共享、S3 查询原生、S4 EventTarget 与事件派发/冒泡/stopPropagation 原生化；P1a DOM/JS Bridge 原生化已主体落地）；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）2026-08-04 起降频守成、2026-08-09 字体栈重建 RFC v0.2.3 获批后恢复主动实施——Chromium Oracle 真一致约 47.5%、self-source 约 77%、strict 处低位 plateau，自主 clean-lever 轻量修复面已 11 vein 审计穷尽；残余缺口为 vertical writing modes（部分切片已落地，整体仍 user-gated）、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread），Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
+- **当前主线**: P1b V8 原生 DOM 绑定（2026-08-09 RFC 获批，R3095 起持续落地：S0 PoC 验证 native ~15.6×、S1 原生只读属性族 + NodeId 映射、S2 生产接线 + 树写/属性写原生、live Document 共享、S3 查询原生、S4 EventTarget 与事件派发/冒泡/stopPropagation 原生化，续以命名空间/序列化 spec 合规 R3181–R3208；P1a DOM/JS Bridge 原生化已主体落地）；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）2026-08-04 起降频守成、2026-08-09 字体栈重建 RFC v0.2.3 获批后恢复主动实施（首片 gated shaped paint R3209 已 default-off 落地）——Chromium Oracle 真一致约 47.5%、self-source 约 77%、strict 处低位 plateau，自主 clean-lever 轻量修复面已 11 vein 审计穷尽；残余缺口为 vertical writing modes（部分切片已落地，整体仍 user-gated）、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread），Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
 
 所以今天的 ZeroWeb 是一个内核已成形、产品层在打磨的浏览器工作区，但还不是一个做完的浏览器产品。
 

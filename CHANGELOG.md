@@ -10,11 +10,15 @@
 
 - **页面 JavaScript 运行时**：`script-sandbox` 提供 V8（`v8` crate，rusty_v8 更名）/ QuickJS 双后端 feature gate（V8 持久化 Context 复用；QuickJS 全矩阵 parity，136 个失败清零）、Web Worker、ES Modules、WebAssembly JS API 到 `wasm-sandbox` 的自动桥接。
 - **P1a DOM/JS Bridge 原生化（R30xx 系列，已主体落地）**：fetch 真实化（GET 端到端 + 二进制响应 body 真实字节）、setTimeout 真实延迟、MutationObserver（characterData / childList addedNodes 回填 / attributeFilter / subtree）与 IntersectionObserver / ResizeObserver 真实回调、getComputedStyle 动态 inline 覆盖 + 计算值序列化、classList 完整 DOMTokenList、HTMLCollection/NodeList item/namedItem、表单控件事件（input/textarea/select、focus/blur/change、Tab 焦点导航）、Selectors L4、DOM 遍历/变异 API（querySelector/closest/dataset/cloneNode/insertAdjacentHTML/prepend/before/after/replaceWith/createDocumentFragment/innerHTML childList emission）、布局几何（offsetWidth/getBoundingClientRect/scroll 尺寸）。
-- **P1b V8 原生 DOM 绑定（R3095–R3126 系列）**：native DOM bindings 替换 polyfill 字符串桥——S0 PoC 验证（internal-slot 值传递 + weak-handle GC，native 比 polyfill 快 ~15.6×）、S1 原生只读属性族 + NodeId↔对象身份映射（kill-switch 默认关）、S2 生产接线 + 树写/属性写原生（createElement/appendChild/insertBefore/removeChild/setAttribute）、live Document 共享（`Rc<RefCell<Document>>`，原生写触发重渲染）、S3 查询原生（querySelector/querySelectorAll 全选择器引擎）、S4 EventTarget 原生 + host→page 原生事件派发/对象丰富化/dispatchEvent 冒泡/stopPropagation、节点导航/childNodes/nodeValue/textContent/cloneNode/contains、attributes NamedNodeMap + 完整 Attr 节点、innerHTML/outerHTML getter/setter 原生；RFC §3.2 dom_bindings 五子模块化闭合。
+- **P1b V8 原生 DOM 绑定（R3095 起持续落地）**：native DOM bindings 替换 polyfill 字符串桥——S0 PoC 验证（internal-slot 值传递 + weak-handle GC，native 比 polyfill 快 ~15.6×）、S1 原生只读属性族 + NodeId↔对象身份映射（kill-switch 默认关）、S2 生产接线 + 树写/属性写原生（createElement/appendChild/insertBefore/removeChild/setAttribute）、live Document 共享（`Rc<RefCell<Document>>`，原生写触发重渲染）、S3 查询原生（querySelector/querySelectorAll 全选择器引擎）、S4 EventTarget 原生 + host→page 原生事件派发/对象丰富化/dispatchEvent 冒泡/stopPropagation、节点导航/childNodes/nodeValue/textContent/cloneNode/contains、attributes NamedNodeMap + 完整 Attr 节点、innerHTML/outerHTML getter/setter 原生；RFC §3.2 dom_bindings 五子模块化闭合。后续切片：document.referrer 原生（R3176）、MutationRecord.attributeName 有效名（R3175）、SVG/MathML 命名空间在 innerHTML/outerHTML setter 保留（R3181）、fragment 解析 context 元素（R3182）、textContent/innerHTML/outerHTML setter null→empty（R3184）。
 - **模块与 Worker 完整化（R3087–R3094）**：动态 `import()` 外部模块、transitive module 递归 fetch、外部 Worker fetch（`__zw_fetch_script`）、inline DedicatedWorker 真实消息往返、外部 script 源码 fetcher。
 - **DOM API 补充**：JS 跨文档导航（R3058）、`Element.checkVisibility`（R3074）、boolean 反射属性 set-false 修复 + `_REFLECTED_BOOL` 扩展（R3039/R3040）。
+- **反射属性与序列化 spec 合规（R3185–R3208）**：reflected string attrs null→empty（id/title/lang/accessKey）、enumerated 反射 spec 化（dir/contentEditable/draggable/input.type 等）、toggleAttribute/getAttribute 返回语义、inline style latest-wins（handle 与 parsed 两路径）、cloneNode/outerHTML/CE old-value latest-wins、SVG/外部命名空间属性前缀序列化保留、insertAdjacentHTML position ASCII 大小写不敏感、outerHTML setter Document parent 守卫。
 - **Canvas**：gradient / Pattern 逐像素光栅化（`CanvasStyle::sample_at`，linear/radial/conic，R3079/R3085）。
-- **多进程与自动化**：图像解码独立进程 `apps/image-decoder`（D1，隔离编解码器漏洞）、合成器进程 `apps/compositor`（C2，protocol 消息族 + 真实光栅化）、WebDriver 服务 `apps/webdriver`（W3C 协议骨架，wdspec 第一步）。
+- **多进程与自动化**：图像解码独立进程 `apps/image-decoder`（D1，隔离编解码器漏洞）、WebDriver 服务 `apps/webdriver`（W3C 协议骨架，wdspec 第一步）。
+- **合成器进程（C2）RFC v2.1 五切片全部落地**：scroll transform bake、sync_token + Viz present、GPU mailbox fence + mmap 零拷贝、dma-buf fd 导出路径、owned window present surface、Linux landlock + seccomp（network/exec）沙箱、GPU device-lost 模拟 + CPU 回退、compositor crash E2E legacy 回退；Vulkan 真纹理 dma-buf 导出（跳过 read_pixels）仍为后续。
+- **官网**：GitHub Pages 双语站点上线（[zeroweb.leizm.com](https://zeroweb.leizm.com)），含项目更新 feed（weekly cron 更新）。
+- **字体**：gated shaped text paint 路径（R3209，`ZW_SHAPED_TEXT=1` default-off）——受限场景直用 rustybuzz glyph index/offset/advance，Oracle 正向但产品页轻微负故未默认启用，待 layout/fragment width 与 shaped advance 同源。
 - **产品版本号**：`crates/product-version` 从构建日期推导版本。
 - **渲染兼容性度量**：导入上游真实 WPT reftest（约 9967 个）、`make reftest-oracle` Chromium Oracle 像素一致率（诚实通过率）、`make product-smoke` / `make product-smoke-legacy` 产品回归门禁、`make import-wpt` 测试资产化流程。
 - **性能预算体系**：`make bench-gate` / `make bench-capture`（测量 + 门禁比较 + 趋势，perf-gate）。
@@ -27,7 +31,7 @@
 - 跨平台打包：macOS `.app` bundle + zip、Linux AppImage / .deb、Windows .zip / NSIS 安装器，配套 CI release 工作流（`v*` tag 触发）；release zip 按平台分装、macOS 打包版本号按构建日期推导。
 - 渲染兼容性：`freetype-raster` feature 默认开启（FreeType 替代 fontdue 光栅化，broad 一致率显著提升）；WPT reftest 对齐 Chromium Oracle（self-source 约 77%、oracle 真一致约 47.5%）；2026-08-09 字体栈重建 RFC v0.2.3 获批，恢复主动实施。
 - 性能：停止页面加载后 CPU 空转、合并渲染进程 pending frames；`render_with_dom_mutations`（JS DOM 变更直接应用到 live doc，跳过 HTML round-trip）+ 增量样式/布局/绘制；`Arc<LayoutBox>` 消除整树深拷贝、cascade 借用去 3 次 String 分配、tokenizer 字节流扫描、stylesheets/query-doc 解析缓存、glyph cache 免 O(n) 驱逐、跨帧 advance 缓存、DOM 遍历合并。
-- CI：benchmarks job 授予 `contents: write`（perf 基线/趋势回写 main，修复 403）。
+- CI：benchmarks job 授予 `contents: write`（perf 基线/趋势回写 main，修复 403）；Lato-Medium.ttf 纳入 git-tracked fonts 目录（include_bytes 打包修复）。
 
 ### 文档更新
 

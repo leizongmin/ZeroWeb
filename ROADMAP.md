@@ -18,7 +18,7 @@
 
 ## 当前重点
 
-- **页面 JavaScript / P1b V8 原生 DOM 绑定（当前主线）**: P1a DOM/JS Bridge 原生化已主体落地（fetch 真实化、MutationObserver/IntersectionObserver/ResizeObserver 真实回调、表单控件事件、Selectors L4、DOM 遍历/变异 API、classList/HTMLCollection/NodeList 等 R30xx 系列）；P1b V8 原生 DOM 绑定（2026-08-09 RFC 获批）R3095–R3126 系列持续落地——S0 PoC 验证（native 比 polyfill 快 ~15.6×）→ S1 原生只读属性族 → S2 生产接线 + 树写/属性写原生 → live Document 共享 → S3 查询原生 → S4 EventTarget/事件派发/冒泡/stopPropagation 原生化。详见 [docs/goal/zero-web/master.md](docs/goal/zero-web/master.md)
+- **页面 JavaScript / P1b V8 原生 DOM 绑定（当前主线）**: P1a DOM/JS Bridge 原生化已主体落地（fetch 真实化、MutationObserver/IntersectionObserver/ResizeObserver 真实回调、表单控件事件、Selectors L4、DOM 遍历/变异 API、classList/HTMLCollection/NodeList 等 R30xx 系列）；P1b V8 原生 DOM 绑定（2026-08-09 RFC 获批）R3095 起持续落地——S0 PoC 验证（native 比 polyfill 快 ~15.6×）→ S1 原生只读属性族 → S2 生产接线 + 树写/属性写原生 → live Document 共享 → S3 查询原生 → S4 EventTarget/事件派发/冒泡/stopPropagation 原生化，续以命名空间/序列化 spec 合规（R3181–R3208）。详见 [docs/goal/zero-web/master.md](docs/goal/zero-web/master.md)
 - **Render compact（恢复主动实施）**: WPT/CSSWG reftest 对齐 Chromium Oracle（`make reftest-oracle`），Chromium Oracle 真一致约 47.5%、self-source 约 77%、strict 处低位 plateau；自主 clean-lever 轻量修复面已 11 vein 审计穷尽；2026-08-04 起降频守成、2026-08-09 字体栈重建 RFC v0.2.3 获批后恢复主动实施（Phase A IFC / R1043 vertical-mode / R2174 border-box 仍等用户点名）。残余缺口在 vertical writing modes（部分切片已落地，整体仍待推进）、multicol 碎片化、R109 inline-as-block 等 layout↔paint IFC 度量不一致（Phase-A spread）结构性方向。详见 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md)
 - **Legacy HTML 与表单**: UA 默认样式与表单控件已落地（R2156/R2162 两切片 default-on），`make product-smoke-legacy`（42 个 legacy fixture vs chrome-127 oracle）作为趋势回归门禁
 - **Browser shell 产品化**: 打通 `browser-shell` 与 WebView/渲染管线的真实验收
@@ -34,12 +34,12 @@
 | M5 | 渲染管线集成 | `✅ 已完成` | paint、dirty tracking、compositing、渲染链路打通 |
 | M6 | JavaScript 运行时与 DOM 绑定基础 | `✅ 已完成` | V8 / QuickJS feature gate、DOM bridge、事件基础、Web Worker、ES Modules、WASM bridge 等基础能力已落地；完整 Web API 兼容性放到 M13 |
 | M7 | 网络、安全与导航基础 | `✅ 已完成` | HTTP、URL、导航历史、Cookie、同源策略、CORS、CSP 基础能力 |
-| M8 | 协议与多进程基础 | `✅ 已完成` | IPC 消息、协议定义、序列化边界、renderer 入口和进程管理基础已经建立 |
+| M8 | 协议与多进程基础 | `✅ 已完成` | IPC 消息、协议定义、序列化边界、renderer 入口和进程管理基础已经建立；合成器进程（C2）RFC v2.1 五切片落地（dma-buf/mailbox fence 零拷贝、landlock/seccomp 沙箱、GPU device-lost CPU 回退） |
 | M9 | Canvas 与存储 | `✅ 已完成` | Canvas 2D、localStorage、sessionStorage、IndexedDB、Cache API、Service Worker registry 基础已在仓库中 |
 | M10 | WebView API 与自动化基础 | `✅ 已完成` | 已有可嵌入 API、导航加载、测试和 headless/自动化相关基础，但还会继续演进 |
 | M11 | 浏览器产品层 | `🚧 进行中` | `browser-shell`、标签页、地址栏、历史、书签、下载、设置等基础逐步落地；真实窗口/GPU/display 产品验收仍需补齐 |
 | M12 | Render compatibility / render-compact | `🚧 进行中` | 2026-08-04 起降频守成、2026-08-09 字体栈重建获批后恢复主动实施；WPT/CSSWG reftest 对齐 Chromium Oracle，详见「当前重点」 |
-| M13 | 完整 JS/DOM API 兼容性 | `🚧 进行中` | 当前主线：P1a DOM/JS Bridge 原生化已主体落地（R30xx 系列），P1b V8 原生 DOM 绑定接续推进（R3095–R3126 系列，native 替代 polyfill 字符串桥）；完整 Web API 兼容性仍在此阶段扩展 |
+| M13 | 完整 JS/DOM API 兼容性 | `🚧 进行中` | 当前主线：P1a DOM/JS Bridge 原生化已主体落地（R30xx 系列），P1b V8 原生 DOM 绑定接续推进（R3095 起，native 替代 polyfill 字符串桥，含命名空间/序列化 spec 合规）；完整 Web API 兼容性仍在此阶段扩展 |
 | M14 | Canvas / WebGL / WebGPU | `⏳ 计划中` | Canvas 2D 继续补全后，逐步进入 Khronos WebGL CTS 和 GPUWeb WebGPU CTS；不作为 render-compact 的阻塞项 |
 | M15 | SVG 文档与内联 SVG DOM 渲染 | `⏳ 计划中` | render-compact 只要求 SVG 作为图片资源栅格化；完整 SVG 文档、内联 SVG DOM、样式和交互放到后续阶段 |
 | M16 | CSS 动画逐帧一致性 | `⏳ 计划中` | render-compact 关注静态截图和必要的 CSS 视觉状态；动画/transition 的帧级时间轴、插值和截图一致性后续单独验收 |
