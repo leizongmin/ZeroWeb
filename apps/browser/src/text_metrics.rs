@@ -6,7 +6,7 @@
 use std::cell::Cell;
 
 use zero_engine::layout_estimate_char_width;
-use zero_render_foundation::font::{ShapedGlyph, loader::FontLoader};
+use zero_render_foundation::font::{ShapedGlyph, TextDirection, loader::FontLoader};
 
 thread_local! {
     static MEASURE_CTX: Cell<Option<(*const FontLoader, u32)>> = const { Cell::new(None) };
@@ -44,12 +44,12 @@ pub fn measure_char(ch: char, font_size: f32, is_ahem: bool) -> f32 {
 }
 
 /// 在当前浏览器字体上下文中按指定 face 整形文本。
-pub fn shape_text(font_id: u32, text: &str, font_size: f32) -> Option<Vec<ShapedGlyph>> {
+pub fn shape_text(font_id: u32, text: &str, font_size: f32, direction: TextDirection) -> Option<Vec<ShapedGlyph>> {
     MEASURE_CTX.with(|cell| {
         let (loader, _) = cell.get()?;
         // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效。
         let loader = unsafe { &*loader };
-        loader.shape_text_cached(font_id, text, font_size)
+        loader.shape_text_cached_with_direction(font_id, text, font_size, direction)
     })
 }
 

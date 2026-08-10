@@ -6,6 +6,17 @@
 use crate::font::loader::FontLoader;
 use crate::primitive::FontId;
 
+/// 文本 shaping 方向。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TextDirection {
+    /// 由 rustybuzz 根据文本猜测方向。
+    Auto,
+    /// 从左到右。
+    LeftToRight,
+    /// 从右到左。
+    RightToLeft,
+}
+
 /// 单个整形后的 Glyph 信息
 #[derive(Debug, Clone)]
 pub struct ShapedGlyph {
@@ -60,27 +71,52 @@ impl<'a> TextShaper<'a> {
     /// 优先使用 rustybuzz 进行 OpenType shaping（连字、kerning、GSUB/GPOS），
     /// 如果字体数据不可用则回退到 fontdue 的逐字符映射。
     pub fn shape_single_line(&self, text: &str, font_size: f32) -> Vec<ShapedGlyph> {
+        self.shape_single_line_with_direction(text, font_size, TextDirection::Auto)
+    }
+
+    /// 使用显式方向将文本整形为 glyph 序列。
+    pub fn shape_single_line_with_direction(
+        &self,
+        text: &str,
+        font_size: f32,
+        direction: TextDirection,
+    ) -> Vec<ShapedGlyph> {
         let font_id = self.default_font_id.unwrap_or(FontId(0));
 
         // 尝试 rustybuzz shaping
         if let Some(fid) = self.default_font_id
-            && let Some(glyphs) = self.shape_with_rustybuzz(fid, text, font_size)
+            && let Some(glyphs) = self.shape_with_rustybuzz(fid, text, font_size, direction)
         {
             return glyphs;
         }
 
         // 回退：fontdue 逐字符映射
-        self.shape_fallback(text, font_size, font_id)
+        let mut glyphs = self.shape_fallback(text, font_size, font_id);
+        if direction == TextDirection::RightToLeft {
+            glyphs.reverse();
+        }
+        glyphs
     }
 
     /// 使用 rustybuzz 进行 OpenType shaping。
-    fn shape_with_rustybuzz(&self, font_id: FontId, text: &str, font_size: f32) -> Option<Vec<ShapedGlyph>> {
+    fn shape_with_rustybuzz(
+        &self,
+        font_id: FontId,
+        text: &str,
+        font_size: f32,
+        direction: TextDirection,
+    ) -> Option<Vec<ShapedGlyph>> {
         let font_data = self.font_loader.get_font_data(font_id.0)?;
 
         let face = rustybuzz::Face::from_slice(font_data, 0)?;
 
         let mut buffer = rustybuzz::UnicodeBuffer::new();
         buffer.push_str(text);
+        match direction {
+            TextDirection::Auto => {}
+            TextDirection::LeftToRight => buffer.set_direction(rustybuzz::Direction::LeftToRight),
+            TextDirection::RightToLeft => buffer.set_direction(rustybuzz::Direction::RightToLeft),
+        }
 
         let features: Vec<rustybuzz::Feature> = Vec::new();
         let glyph_buffer = rustybuzz::shape(&face, &features, buffer);

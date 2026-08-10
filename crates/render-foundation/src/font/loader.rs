@@ -212,7 +212,7 @@ mod freetype_raster {
     }
 }
 
-type ShapeCacheKey = (u64, u32, String);
+type ShapeCacheKey = (u64, u32, crate::font::TextDirection, String);
 type ShapeCache = Arc<std::sync::Mutex<HashMap<ShapeCacheKey, Vec<crate::font::ShapedGlyph>>>>;
 
 /// 字体加载器 — 管理字体集合
@@ -233,7 +233,7 @@ pub struct FontLoader {
     bitmap_glyphs: HashMap<(u32, u32, u32), GlyphBitmap>,
     /// Ahem 测试字体 ID（WPT 标准测试字体，每个字符渲染为完美填充方块）
     ahem_font_id: Option<u32>,
-    /// 有界 shaping 缓存（font_instance_id, size_bits, text）。
+    /// 有界 shaping 缓存（font_instance_id, size_bits, direction, text）。
     ///
     /// duplicate 共享 base 字体缓存；后续 `@font-face` 即使复用相同 font_id，也因
     /// instance ID 不同而隔离。
@@ -278,15 +278,26 @@ impl FontLoader {
 
     /// 使用指定 face 整形文本，并缓存跨帧重复结果。
     pub fn shape_text_cached(&self, font_id: u32, text: &str, font_size: f32) -> Option<Vec<crate::font::ShapedGlyph>> {
+        self.shape_text_cached_with_direction(font_id, text, font_size, crate::font::TextDirection::Auto)
+    }
+
+    /// 使用指定 face 与方向整形文本，并缓存跨帧重复结果。
+    pub fn shape_text_cached_with_direction(
+        &self,
+        font_id: u32,
+        text: &str,
+        font_size: f32,
+        direction: crate::font::TextDirection,
+    ) -> Option<Vec<crate::font::ShapedGlyph>> {
         self.get(font_id)?;
         let instance_id = *self.font_instance_ids.get(&font_id)?;
-        let key = (instance_id, font_size.to_bits(), text.to_string());
+        let key = (instance_id, font_size.to_bits(), direction, text.to_string());
         if let Some(glyphs) = self.shape_cache.lock().expect("shape cache poisoned").get(&key) {
             return Some(glyphs.clone());
         }
 
         let glyphs = crate::font::TextShaper::new(self, Some(crate::primitive::FontId(font_id)))
-            .shape_single_line(text, font_size);
+            .shape_single_line_with_direction(text, font_size, direction);
         let mut cache = self.shape_cache.lock().expect("shape cache poisoned");
         if cache.len() >= 4096 {
             cache.clear();
@@ -1068,6 +1079,24 @@ mod tests {
             duplicate.font_instance_ids.get(&right_id),
             "new fonts in separate duplicates require distinct cache identities"
         );
+    }
+
+    #[test]
+    fn shape_cache_separates_text_direction() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+
+        let ltr = loader
+            .shape_text_cached_with_direction(font_id, "ABC", 16.0, crate::font::TextDirection::LeftToRight)
+            .expect("LTR shape");
+        let rtl = loader
+            .shape_text_cached_with_direction(font_id, "ABC", 16.0, crate::font::TextDirection::RightToLeft)
+            .expect("RTL shape");
+
+        assert_eq!(ltr.iter().map(|glyph| glyph.cluster).collect::<Vec<_>>(), vec![0, 1, 2]);
+        assert_eq!(rtl.iter().map(|glyph| glyph.cluster).collect::<Vec<_>>(), vec![2, 1, 0]);
+        assert_eq!(loader.shape_cache.lock().expect("shape cache").len(), 2);
     }
 
     #[test]

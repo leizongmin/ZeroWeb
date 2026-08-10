@@ -7,7 +7,7 @@ pub mod woff;
 
 pub use cache::GlyphCache;
 pub use loader::FontLoader;
-pub use shaper::{ShapedGlyph, ShapedLine, TextShaper, measure_text_width};
+pub use shaper::{ShapedGlyph, ShapedLine, TextDirection, TextShaper, measure_text_width};
 pub use woff::{decode_woff, is_woff};
 
 /// 字体描述

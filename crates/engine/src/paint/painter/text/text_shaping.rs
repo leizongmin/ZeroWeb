@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use zero_render_foundation::font::ShapedGlyph;
+use zero_render_foundation::font::{ShapedGlyph, TextDirection};
 use zero_render_foundation::primitive::GlyphSource;
 
 fn shaped_text_enabled() -> bool {
@@ -99,13 +99,17 @@ pub(super) fn fragment_glyphs<'a>(
     text: &'a str,
     font_size: f32,
     eligible: bool,
+    direction: TextDirection,
     advance_eligible: bool,
 ) -> FragmentGlyphs<'a> {
+    let complex_enabled = shaped_complex_enabled();
+    let shape_direction = effective_shape_direction(direction, complex_enabled);
     if eligible
         && shaped_text_enabled()
-        && let Some(glyphs) = crate::shape_text_for_paint(font_id, text, font_size)
+        && (direction != TextDirection::RightToLeft || complex_enabled)
+        && let Some(glyphs) = crate::shape_text_for_paint(font_id, text, font_size, shape_direction)
     {
-        let Some(complex_mapping) = mapping_mode(text, &glyphs, shaped_complex_enabled()) else {
+        let Some(complex_mapping) = mapping_mode(text, &glyphs, complex_enabled) else {
             return FragmentGlyphs::Legacy(text.chars());
         };
         let simple_mapping = !complex_mapping;
@@ -129,6 +133,14 @@ pub(super) fn fragment_glyphs<'a>(
         };
     }
     FragmentGlyphs::Legacy(text.chars())
+}
+
+fn effective_shape_direction(direction: TextDirection, complex_enabled: bool) -> TextDirection {
+    if complex_enabled {
+        direction
+    } else {
+        TextDirection::Auto
+    }
 }
 
 fn mapping_mode(text: &str, glyphs: &[ShapedGlyph], allow_complex: bool) -> Option<bool> {
@@ -264,6 +276,14 @@ mod tests {
 
     #[test]
     fn complex_glyph_sources_cover_ligature_and_decreasing_clusters() {
+        assert_eq!(
+            effective_shape_direction(TextDirection::RightToLeft, false),
+            TextDirection::Auto
+        );
+        assert_eq!(
+            effective_shape_direction(TextDirection::RightToLeft, true),
+            TextDirection::RightToLeft
+        );
         let mut ligature = glyph();
         ligature.code_point = 'f';
         assert!(source_clusters_valid("fi", &[ligature.clone()]));

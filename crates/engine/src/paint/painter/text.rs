@@ -16,6 +16,7 @@ use zero_layout_engine::inline_finalization::{
 };
 use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox};
 use zero_render_foundation::color::Color;
+use zero_render_foundation::font::TextDirection;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive};
@@ -1300,7 +1301,6 @@ impl super::Painter {
                             }
 
                             let shaped_text_eligible = !char_advance_is_y
-                                && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
                                 && !$is_ahem
                                 && letter_spacing == 0.0
                                 && word_spacing == 0.0
@@ -1315,6 +1315,10 @@ impl super::Painter {
                                 })
                                 && rotation.abs() < f32::EPSILON
                                 && transformed.chars().all(|ch| !is_cc_control_char(ch));
+                            let text_direction = match style.direction {
+                                zero_style_system::DirectionValue::Ltr => TextDirection::LeftToRight,
+                                zero_style_system::DirectionValue::Rtl => TextDirection::RightToLeft,
+                            };
                             // https://drafts.csswg.org/css-fonts/#generic-font-families
                             let generic_font = self.generic_font_ids.contains(&frag_font_id.0);
                             for glyph in fragment_glyphs(
@@ -1322,6 +1326,7 @@ impl super::Painter {
                                 &transformed,
                                 $frag_fs,
                                 shaped_text_eligible,
+                                text_direction,
                                 !generic_font,
                             ) {
                                 let ch = glyph.code_point;
