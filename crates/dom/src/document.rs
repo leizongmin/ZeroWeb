@@ -168,6 +168,23 @@ impl Document {
         self.create_element_with_qname(qual_name, Vec::new())
     }
 
+    /// 创建一个带命名空间的元素节点（spec `dom-document-createelementns`）。
+    ///
+    /// `namespace` 为命名空间 URI（如 SVG `"http://www.w3.org/2000/svg"`）；空串 = 无命名空间。
+    /// `qualified_name` 可含前缀（`"svg:rect"` → prefix=svg / local=rect）或裸名（`"svg"` → prefix=None）。
+    /// 复用 [`create_element_with_qname`]（ElementData 存 QualName，`namespace()` 可读回）。
+    /// best-effort：不校验 qualified name 合法性（spec 非法应抛 InvalidCharacterError/NamespaceError）。
+    pub fn create_element_ns(&mut self, namespace: &str, qualified_name: &str) -> NodeId {
+        use markup5ever::{LocalName, Namespace, Prefix, QualName};
+
+        let (prefix, local) = match qualified_name.split_once(':') {
+            Some((p, l)) => (Some(Prefix::from(p)), LocalName::from(l)),
+            None => (None, LocalName::from(qualified_name)),
+        };
+        let qual_name = QualName::new(prefix, Namespace::from(namespace), local);
+        self.create_element_with_qname(qual_name, Vec::new())
+    }
+
     /// 使用限定名和属性创建元素节点（内部使用）。
     pub(crate) fn create_element_with_qname(
         &mut self,

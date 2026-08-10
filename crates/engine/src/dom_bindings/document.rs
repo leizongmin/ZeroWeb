@@ -168,6 +168,14 @@ pub(super) fn build_and_cache_template(scope: &mut v8::PinScope) {
         factories::native_get_elements_by_class_name_invoke,
     );
     set_method(scope, &tmpl, "createElement", factories::native_create_element_invoke);
+    // R3163 `createElementNS(ns, qualifiedName)`（spec `dom-document-createelementns`）：带命名空间创建
+    //（SVG/MathML 编程创建高频，dom `create_element_ns` 解析 prefix:local + 建 QualName）。
+    set_method(
+        scope,
+        &tmpl,
+        "createElementNS",
+        factories::native_create_element_ns_invoke,
+    );
     set_method(
         scope,
         &tmpl,

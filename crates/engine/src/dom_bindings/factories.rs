@@ -117,6 +117,24 @@ pub(super) fn native_create_element_invoke(
     }
 }
 
+/// `document.createElementNS(ns, qualifiedName)`（spec `dom-document-createelementns`）：造带命名空间
+/// 的新 Element（SVG/MathML 编程创建高频）→ native 元素（**未挂载**）。两参 ToString 后调
+/// [`Document::create_element_ns`]（解析 prefix:local + 建 QualName）。空 ns/qualifiedName best-effort。
+pub(super) fn native_create_element_ns_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let ns = string_arg(scope, &args, 0);
+    let qualified = string_arg(scope, &args, 1);
+    let Some(id) = with_dom_mut(|d| d.create_element_ns(ns.trim(), qualified.trim())) else {
+        return;
+    };
+    if let Some(obj) = get_or_create_native_element(scope, id) {
+        rv.set(obj.into());
+    }
+}
+
 /// `__zw_native_create_text_node(text)`：spec `dom-document-createtextnode`——
 /// `Document::create_text_node` 造 Text NodeId → native 对象（nodeType=3，**未挂载**）。Text/Comment/
 /// Fragment 共用 Element 包装模板（nodeType getter 经 NodeKind 读 DOM → 3/8/11，非 Element 亦正确）。

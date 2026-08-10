@@ -2273,3 +2273,50 @@ fn native_document_import_adopt_node_r3162() {
         "true"
     );
 }
+
+/// R3163 `document.createElementNS(ns, qualifiedName)`（spec `dom-document-createelementns`）：带命名空间
+/// 创建（SVG/MathML 编程创建高频）。dom `create_element_ns` 解析 prefix:local + 建 QualName。
+#[test]
+fn native_document_create_element_ns_r3163() {
+    let html = r#"<html><head></head><body></body></html>"#;
+    // createElementNS(svg, "svg") → SVG 元素（local "svg"，tagName getter 大写 → "SVG"）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().createElementNS('http://www.w3.org/2000/svg','svg').tagName)"
+        ),
+        "SVG"
+    );
+    // createElementNS(svg, "rect") → rect（SVG 子元素）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().createElementNS('http://www.w3.org/2000/svg','rect').tagName)"
+        ),
+        "RECT"
+    );
+    // 带前缀 qualifiedName "svg:rect" → 解析 prefix=svg / local=rect（tagName 取 local）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().createElementNS('http://www.w3.org/2000/svg','svg:rect').tagName)"
+        ),
+        "RECT"
+    );
+    // createElementNS(html, "div") → HTML div（XHTML 命名空间）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().createElementNS('http://www.w3.org/1999/xhtml','div').tagName)"
+        ),
+        "DIV"
+    );
+    // createElementNS 产新对象（未挂载，nodeType 1）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().createElementNS('http://www.w3.org/2000/svg','circle').nodeType)"
+        ),
+        "1"
+    );
+}
