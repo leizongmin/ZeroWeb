@@ -83,7 +83,7 @@ fn split_priority(v: &str) -> (String, bool) {
 }
 
 /// 解析 `style` 属性串为有序 `StyleDecl` 列表（去重保首次出现位置）。格式 `prop: value; prop2: val2`。
-/// 空段 / 无冒号段跳过；重复 prop 仅留首次（后续丢弃）。prop/value trim，`!important` 剥离入 `important`。
+/// 空段 / 无冒号段 / **空值段跳过**；重复 prop 仅留首次（后续丢弃）。prop/value trim，`!important` 剥离入 `important`。
 fn parse_style(s: &str) -> Vec<StyleDecl> {
     let mut out: Vec<StyleDecl> = Vec::new();
     for seg in s.split(';') {
@@ -92,10 +92,16 @@ fn parse_style(s: &str) -> Vec<StyleDecl> {
         if prop.is_empty() {
             continue;
         }
+        let (value, important) = split_priority(v);
+        // R3212：空值声明丢弃（spec「parse a list of declarations」：无值声明 invalid 不入 declarations）。
+        // `width:` / `width:  ` 无效——与 R3211 空值 setter 移除对称（set 与 parse 两路均丢空值，行为一致）。
+        // 旧保留致 cssText 序列化 dangling `width: ` + length/item 计空值声明（spec 应不计）。
+        if value.is_empty() {
+            continue;
+        }
         if out.iter().any(|d| d.prop == prop) {
             continue; // 去重保首
         }
-        let (value, important) = split_priority(v);
         out.push(StyleDecl { prop, value, important });
     }
     out

@@ -1737,6 +1737,18 @@ fn native_element_style_r3151() {
         ),
         "0/"
     );
+    // R3212：parse_style 丢弃空值声明（spec「parse a list of declarations」：无值声明 invalid）。
+    // `width:`（无值）/ `width:  `（空白值）直接经 setAttribute 注入 → 读 cssText 应不含空值段、length 不计。
+    // 与 R3211 setter 空值移除对称（set 与 parse 两路均丢空值）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             el.setAttribute('style','color: red; width: ; margin:  ');\
+             return el.style.length+'/'+el.style.cssText; })()"
+        ),
+        "1/color: red"
+    );
 }
 
 /// R3152 element.dataset（DOMStringMap，spec HTML `dom-dataset`）：named-property-handler 拦 camelCase
