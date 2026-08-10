@@ -123,6 +123,17 @@ impl IdbKeyRange {
 }
 
 impl IdbKey {
+    /// 是否为合法 IndexedDB key（W3C IndexedDB §3.1.6）——Number 不可为 NaN；Array 递归校验所有元素。
+    /// R3227：NaN key 须拒（DataError）；旧 cmp_key 对 NaN `partial_cmp().unwrap_or(Equal)` 致 NaN 与任意键
+    /// 「相等」，破坏排序/去重。在 add/put 入口校验，避免 NaN 入库。
+    pub fn is_valid_key(&self) -> bool {
+        match self {
+            IdbKey::Number(n) => !n.is_nan(),
+            IdbKey::String(_) | IdbKey::Binary(_) => true,
+            IdbKey::Array(ks) => ks.iter().all(|k| k.is_valid_key()),
+        }
+    }
+
     /// 内部比较辅助，返回 Ordering。
     fn cmp_key(&self, other: &Self) -> Ordering {
         match (self, other) {
@@ -266,22 +277,49 @@ impl IdbIndex {
         Ok(())
     }
 
-    /// 从单条记录添加索引条目。
-    fn add_entry_from_record(&mut self, record: &IdbRecord) -> Result<(), StorageError> {
-        let keys = self.extract_keys(&record.value);
-        for index_key in keys {
-            // 唯一索引检查
-            if self.unique && self.entries.iter().any(|e| e.index_key == index_key) {
+    /// 校验：从 `value` 提取的 index keys 加入后是否违反 unique 约束（排除 `primary_key` 自身旧条目；
+    /// 含同批重复检测——multiEntry 同 record 多个相同 key）。非 mutating——供 add/put 在 mutate
+    /// record 前预校验，闭合跨 index 原子性（R3228）。非 unique index 恒 Ok。
+    fn check_unique(&self, primary_key: &IdbKey, value: &serde_json::Value) -> Result<(), StorageError> {
+        if !self.unique {
+            return Ok(());
+        }
+        let keys = self.extract_keys(value);
+        let mut seen: Vec<IdbKey> = Vec::with_capacity(keys.len());
+        for index_key in &keys {
+            let conflict = self
+                .entries
+                .iter()
+                .any(|e| &e.index_key == index_key && &e.primary_key != primary_key)
+                || seen.iter().any(|s| s == index_key);
+            if conflict {
                 return Err(StorageError::Database(format!(
                     "Unique index '{}' constraint violation for key {:?}",
                     self.name, index_key
                 )));
             }
+            seen.push(index_key.clone());
+        }
+        Ok(())
+    }
+
+    /// 仅提交（不校验）——从 record 提取 keys 批量 push。供 add/put 预校验（check_unique）全过后调用，
+    /// 避免重复校验。rebuild 等无预校验场景用 [`add_entry_from_record`]（校验 + 提交）。
+    fn commit_entry_from_record(&mut self, record: &IdbRecord) {
+        let primary_key = record.key.clone();
+        let keys = self.extract_keys(&record.value);
+        for index_key in keys {
             self.entries.push(IndexEntry {
                 index_key,
-                primary_key: record.key.clone(),
+                primary_key: primary_key.clone(),
             });
         }
+    }
+
+    /// 从单条记录添加索引条目（校验 + 提交，原子——R3228：部分 key 违 unique 不再部分提交）。
+    fn add_entry_from_record(&mut self, record: &IdbRecord) -> Result<(), StorageError> {
+        self.check_unique(&record.key, &record.value)?;
+        self.commit_entry_from_record(record);
         Ok(())
     }
 
@@ -470,7 +508,15 @@ impl IdbDatabase {
             .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
 
         let key = match key {
-            Some(k) => k,
+            Some(k) => {
+                // R3227：校验显式 key 合法性（NaN 拒，IndexedDB §3.1.6）
+                if !k.is_valid_key() {
+                    return Err(StorageError::Database(
+                        "Invalid key (NaN is not a valid IndexedDB key)".to_string(),
+                    ));
+                }
+                k
+            }
             None if store.auto_increment => {
                 let k = IdbKey::Number(store.next_key as f64);
                 store.next_key += 1;
@@ -491,14 +537,20 @@ impl IdbDatabase {
             )));
         }
 
+        // R3228：原子性——预校验所有 index（不 mutate record/index），全过后再 push record + commit index。
+        // 旧实现先 push record 再 add index，index 违例时 record 已入库（数据不一致）。
+        for idx in store.indexes.values() {
+            idx.check_unique(&key, &value)?;
+        }
+
         store.records.push(IdbRecord {
             key: key.clone(),
             value: value.clone(),
         });
-        // 更新索引
+        // 更新索引（已预校验，commit 不再失败）
         let record = store.records.last().unwrap();
         for idx in store.indexes.values_mut() {
-            idx.add_entry_from_record(record)?;
+            idx.commit_entry_from_record(record);
         }
         Ok(key)
     }
@@ -516,7 +568,15 @@ impl IdbDatabase {
             .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
 
         let key = match key {
-            Some(k) => k,
+            Some(k) => {
+                // R3227：校验显式 key 合法性（NaN 拒，IndexedDB §3.1.6）
+                if !k.is_valid_key() {
+                    return Err(StorageError::Database(
+                        "Invalid key (NaN is not a valid IndexedDB key)".to_string(),
+                    ));
+                }
+                k
+            }
             None if store.auto_increment => {
                 let k = IdbKey::Number(store.next_key as f64);
                 store.next_key += 1;
@@ -531,22 +591,28 @@ impl IdbDatabase {
 
         // Overwrite if key exists
         if let Some(record) = store.records.iter_mut().find(|r| r.key == key) {
-            // 先从索引中移除旧条目，再添加新条目
-            for idx in store.indexes.values_mut() {
-                idx.remove_by_primary_key(&key);
+            // R3228：原子性——预校验所有 index（用新 value，排除本 primary_key 旧条目），全过后再 mutate。
+            // 旧实现先 remove 旧 index + mutate value 再 add 新 index，违例时 value 已变 + index 已部分移除。
+            for idx in store.indexes.values() {
+                idx.check_unique(&key, &value)?;
             }
             record.value = value.clone();
             for idx in store.indexes.values_mut() {
-                idx.add_entry_from_record(record)?;
+                idx.remove_by_primary_key(&key);
+                idx.commit_entry_from_record(record);
             }
         } else {
+            // 新键：同 add 路径（预校验 + push + commit）。
+            for idx in store.indexes.values() {
+                idx.check_unique(&key, &value)?;
+            }
             store.records.push(IdbRecord {
                 key: key.clone(),
                 value: value.clone(),
             });
             let record = store.records.last().unwrap();
             for idx in store.indexes.values_mut() {
-                idx.add_entry_from_record(record)?;
+                idx.commit_entry_from_record(record);
             }
         }
 
@@ -941,7 +1007,15 @@ impl IdbDatabase {
             .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
         // 解析主键（自增逻辑）
         let key = match key {
-            Some(k) => k,
+            Some(k) => {
+                // R3227：校验显式 key 合法性（NaN 拒，IndexedDB §3.1.6）
+                if !k.is_valid_key() {
+                    return Err(StorageError::Database(
+                        "Invalid key (NaN is not a valid IndexedDB key)".to_string(),
+                    ));
+                }
+                k
+            }
             None if store.auto_increment => IdbKey::Number(store.next_key as f64),
             None => {
                 return Err(StorageError::Database(
@@ -999,7 +1073,15 @@ impl IdbDatabase {
             .get_mut(store_name)
             .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
         let key = match key {
-            Some(k) => k,
+            Some(k) => {
+                // R3227：校验显式 key 合法性（NaN 拒，IndexedDB §3.1.6）
+                if !k.is_valid_key() {
+                    return Err(StorageError::Database(
+                        "Invalid key (NaN is not a valid IndexedDB key)".to_string(),
+                    ));
+                }
+                k
+            }
             None if store.auto_increment => {
                 let k = IdbKey::Number(store.next_key as f64);
                 store.next_key += 1;

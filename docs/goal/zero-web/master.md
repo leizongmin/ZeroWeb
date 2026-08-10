@@ -121,7 +121,31 @@
 
 ## 最近完成的改进
 
-### Web Storage key(n) 插入序（本轮 R3226，storage crate spec 审计）
+### IndexedDB NaN key 拒绝 + add/put 原子性（本轮 R3227/R3228，IndexedDB 核实+修复）
+
+承接 R3226（storage 审计 Web Storage 闭合），本轮核实并修复上轮 IndexedDB 路标的三项 HIGH 之一二（独立核实代码 + 写复现测试 + 修复）。深审 `indexed_db/types.rs` 对照 W3C IndexedDB 3.0 §3.1.6/§3.1.9/§3.1.10——核实两项真偏差（auto-inc rollback 项核实存在但 defer）：
+
+- **R3227 NaN key 接受**（§3.1.6）：旧 `cmp_key` Number 分支 `partial_cmp(b).unwrap_or(Ordering::Equal)`——NaN `partial_cmp` 返 None → `unwrap_or(Equal)` 致 **NaN 与任意 Number 键「相等」**（破坏排序/去重/范围）。且 `add`/`put`/`tx_add`/`tx_put` 入口**不校验 key 合法性**，`IdbKey::Number(NaN)`（或 Array 内嵌 NaN）可入库。spec：NaN 非 valid key → DataError。
+- **R3228 add/put + 唯一索引非原子**（数据完整性）：核实三处部分提交：① `add_entry_from_record`（types.rs:281）**增量 push** entries——同 record 多 key（multiEntry）违 unique 时，已 push 的前序 key 不回滚；② `add()`（:544）先 `store.records.push` 再 `for idx ... add_entry_from_record?`——index 违例时 record **已入库**；③ `put()` 覆盖分支（:591）先 `remove_by_primary_key`（移旧 index 条目）+ `record.value = value`（mutate）再 `add_entry_from_record?`——违例时 **value 已被改 + 旧 index 条目已移除**（数据损坏）。既有测试 `test_unique_index_put_violation` / `test_idb_unique_constraint_on_add` **断言 buggy 行为**（注释明示「已知问题...断言当前有缺陷行为」）。
+
+**修复**：
+- R3227：加 `IdbKey::is_valid_key()`（Number 拒 NaN；Array 递归）；`add`/`put`/`tx_add`/`tx_put` 的 `Some(k) => k` 臂（4 处，replace_all）加 `is_valid_key()` 校验，违者 `Err`。Infinity 仍接受（§3.1.6 仅拒 NaN）。`cmp_key` NaN→Equal 行为不变（NaN 键现于入口拒，cmp 仅直接构造可达——既有 `test_idb_key_nan_ordering` 文档此边角）。
+- R3228：validate-then-commit 重构。加 `Index::check_unique(primary_key, value)`（**非 mutating** 预校验——提取 keys，检 unique 冲突，排除 `primary_key` 自身旧条目 + 同批重复）+ `commit_entry_from_record`（仅提交，不校验）。`add()`/`put()` 在 **mutate record/index 前**预校验所有 index（`for idx in values()`），全过后才 push record / mutate value + commit index。`add_entry_from_record` = check_unique + commit（rebuild 等无预校验场景用，自包含原子）。`put()` 覆盖分支：预校验（排除 primary_key）→ mutate value → remove 旧 + commit 新。
+
+**为何净正向**：① **闭合 §3.1.6 NaN key**——NaN 不再入库（修复排序/去重破坏根因）；② **闭合数据完整性**——违 unique 的 add/put **零部分提交**（record 不入库 / value 不变 / index 一致），spec 原子性；③ **同批 multiEntry 重复**——check_unique 检同 record 多相同 key 的 unique 冲突（旧逐 key push 不检同批）；④ **零回归**——既有 IDB 测全过；2 个 bug-文档测（`test_unique_index_put_violation` / `test_idb_unique_constraint_on_add`）改断言为正确行为（value 保原值 / count 不含违例记录），1 count 断言随之修（user-2 未入库 → 3 改 2）；新增 `test_idb_nan_key_rejected_r3227`（NaN 拒 add/put/Array-内嵌 + Infinity/合法 Number/Array 接受）；⑤ 低-中风险（types.rs 单文件，跨字段借编译通过）；⑥ storage 属本流域。
+
+| 文件 | 变更 |
+|------|------|
+| `storage/src/indexed_db/types.rs` | `IdbKey::is_valid_key()`（NaN 拒 + Array 递归）；4 处 `Some(k)` 臂加 is_valid_key 校验（R3227）；`Index::check_unique`（非 mutating 预校验）+ `commit_entry_from_record`（仅提交）；`add_entry_from_record` = check + commit（原子）；`add()`/`put()` 预校验后 mutate（R3228）。 |
+| `storage/src/indexed_db/tests_advanced.rs` | `test_unique_index_put_violation` 改断言 value 保原值；`test_idb_unique_constraint_on_add` 改 count 1 + 后续 count 3→2；新增 `test_idb_nan_key_rejected_r3227`。 |
+
+验证：`cargo fmt -p zero-storage -- --check` clean + `cargo clippy -p zero-storage --all-targets -- -D warnings` 零警告 + **zero-storage lib 656 passed**（+1 NaN 测，2 bug-文档测改正行为，零回归）。spec：https://www.w3.org/TR/IndexedDB/#key-construct （§3.1.6）+ §3.1.9/§3.1.10（add/put 原子性）。pre-commit guard 见提交。
+
+**已知限制（记，R3229 候选）**：**auto-increment key generator 在 tx.abort 不回滚**（§5.10）——核实存在：`tx_add`（:974-977）auto-inc 时**立即** `store.next_key += 1`（live store），Add mutation 缓冲但 next_key 增量**未缓冲**，abort 清缓冲不回滚 next_key（注释「与浏览器行为一致」存疑——spec 谓 abort 须 revert all changes，含 key generator）。修复需缓冲 next_key 增量于 tx（abort 时回滚）——tx 模型改动，spec 解释需深核，defer 独立轮。
+
+**下一步**：IndexedDB 核实二项闭合（R3227 NaN + R3228 原子性）。续候选：① **R3229 auto-inc key generator abort 回滚**（§5.10，核实存在，需 tx 模型缓冲 next_key 增量）；② IndexedDB feature gap（Date key 类型 / nextunique/prevunique cursor / array keyPath 复合键）；③ **net request.rs 头注入校验**（RFC 7230 token）；④ 字体栈/GPU 战略项 user/hardware gated。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。注：lark-cli 环境不可用（多轮尝试），通知走 master.md 控制面；⚠️ compositor 跨流红灯待渲染流。
+
+
 
 承接 net crate cookie 线收敛（R3218–R3225，八项），**转 storage crate spec 合规扫描**（localStorage / sessionStorage / IndexedDB / Cache API）。并发两路深审（Web Storage + IndexedDB）对照 WHATWG Web Storage / W3C IndexedDB 3.0——Web Storage 路发现核心真偏差，本轮取此修复。
 

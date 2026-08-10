@@ -347,13 +347,12 @@ fn test_unique_index_put_violation() {
         "put() changing indexed value to conflict with another record should fail unique constraint"
     );
 
-    // 已知问题：尽管 put 返回了错误，record.value 已被提前修改。
-    // 正确行为应为回滚到原始值，但当前实现先修改值再检查索引约束。
-    // 下面断言记录当前（有缺陷的）行为：
+    // R3228 已修复：put 违 unique 时 record.value 不再被提前修改（预校验后才 mutate，
+    // 违例回滚原值）。旧实现先 mutate value 再检查索引，违例时值已损坏。
     let record_a = db.get("store", &IdbKey::String("A".into())).unwrap();
     assert_eq!(
-        record_a.value["email"], "email_b@test.com",
-        "BUG: put() modified record value before unique check, value is corrupted despite error"
+        record_a.value["email"], "email_a@test.com",
+        "R3228: put 违 unique 须保持原值 email_a（不再提前修改为 email_b）"
     );
 
     // 记录数量不变
@@ -936,11 +935,12 @@ fn test_idb_unique_constraint_on_add() {
         "add() 应因唯一索引约束违反而报错：email 'alice@example.com' 已存在"
     );
 
-    // 已知问题：尽管 add 返回错误，记录仍被插入了 store（先插入记录再检查索引）
+    // R3228 已修复：add 违 unique 时记录不再插入（预校验所有 index 全过后才 push record）。
+    // 旧实现先 push record 再检查索引，违例时记录已入库。
     assert_eq!(
         db.count("users").unwrap(),
-        2,
-        "BUG: 唯一索引约束违反时记录仍被添加（应为 1）"
+        1,
+        "R3228: 违 unique 的 add 不应插入记录（仅 user-1 在库）"
     );
 
     // 原始记录不应被修改
@@ -954,7 +954,49 @@ fn test_idb_unique_constraint_on_add() {
         Some(IdbKey::String("user-3".into())),
     )
     .unwrap();
-    assert_eq!(db.count("users").unwrap(), 3, "不同索引键值的 add 应成功");
+    // R3228：user-2 违 unique 未入库 → 总数 = user-1 + user-3 = 2（旧 buggy 行为 user-2 已入库致 3）。
+    assert_eq!(
+        db.count("users").unwrap(),
+        2,
+        "不同索引键值的 add 应成功（user-2 未入库）"
+    );
+}
+
+/// R3227：NaN 不可作 IndexedDB key（W3C IndexedDB §3.1.6 → DataError）。
+/// 旧 cmp_key 对 NaN `partial_cmp().unwrap_or(Equal)` 致 NaN 与任意键「相等」（破坏排序/去重）；
+/// add/put 入口现校验 is_valid_key 拒绝 NaN（含 Array 内嵌 NaN）。
+#[test]
+fn test_idb_nan_key_rejected_r3227() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("s", None, false).unwrap();
+
+    // NaN Number key → add 拒绝。
+    let r = db.add("s", serde_json::json!("v"), Some(IdbKey::Number(f64::NAN)));
+    assert!(r.is_err(), "R3227: NaN Number key 须拒绝（add）");
+
+    // NaN Number key → put 拒绝。
+    let r = db.put("s", serde_json::json!("v"), Some(IdbKey::Number(f64::NAN)));
+    assert!(r.is_err(), "R3227: NaN Number key 须拒绝（put）");
+
+    // Array 内嵌 NaN → 拒绝（递归校验）。
+    let arr_nan = IdbKey::Array(vec![
+        IdbKey::Number(1.0),
+        IdbKey::Number(f64::NAN),
+        IdbKey::String("x".into()),
+    ]);
+    let r = db.add("s", serde_json::json!("v"), Some(arr_nan));
+    assert!(r.is_err(), "R3227: Array 内嵌 NaN 须拒绝（递归校验）");
+
+    // 合法 Number key（含 Infinity，§3.1.6 仅拒 NaN）→ 接受。
+    db.add("s", serde_json::json!("v1"), Some(IdbKey::Number(1.0))).unwrap();
+    db.add("s", serde_json::json!("vinf"), Some(IdbKey::Number(f64::INFINITY)))
+        .unwrap();
+    assert_eq!(db.count("s").unwrap(), 2, "R3227: 合法 Number（含 Infinity）须接受");
+
+    // 合法 Array key（无 NaN）→ 接受。
+    let arr_ok = IdbKey::Array(vec![IdbKey::Number(2.0), IdbKey::String("y".into())]);
+    db.add("s", serde_json::json!("v2"), Some(arr_ok)).unwrap();
+    assert_eq!(db.count("s").unwrap(), 3, "R3227: 合法 Array key 须接受");
 }
 
 /// 混合操作：add + put + delete + abort，store 不受影响。
