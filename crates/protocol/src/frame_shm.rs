@@ -42,6 +42,11 @@ pub fn compositor_gpu_image_enabled() -> bool {
     }
 }
 
+/// 是否启用 compositor Viz present（page+UI 合成；`ZW_COMPOSITOR_PRESENT=1`）。
+pub fn compositor_present_enabled() -> bool {
+    std::env::var("ZW_COMPOSITOR_PRESENT").is_ok_and(|v| v == "1")
+}
+
 /// 期望 RGBA 字节数；`width`/`height` 为 0 时允许 0。
 pub fn expected_rgba_len(width: u32, height: u32) -> usize {
     (width as usize).saturating_mul(height as usize).saturating_mul(4)
@@ -119,6 +124,7 @@ pub fn deliver_compositor_frame_pixels(
                 mailbox_name,
                 width,
                 height,
+                sync_token: frame_id,
             }),
         });
     }
@@ -218,6 +224,7 @@ mod tests {
             mailbox_name: name,
             width: 1,
             height: 1,
+            sync_token: 3,
         };
         let resolved = resolve_compositor_frame_rgba(1, 1, vec![0; 4], None, Some(desc)).expect("resolve");
         assert_eq!(resolved, pixels);

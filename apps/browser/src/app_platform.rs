@@ -191,6 +191,12 @@ impl BrowserApp {
             return None;
         }
 
+        if let Some(fb) = self.try_blit_compositor_present(width, height, cpu_surface) {
+            self.forward_compositor_chrome_ui(width, height);
+            self.maybe_request_compositor_present(width, height);
+            return Some(fb);
+        }
+
         let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
 
         // 获取 WebView 的额外图元类型（渐变、阴影、线段等）
@@ -213,10 +219,125 @@ impl BrowserApp {
             &overlay_glyphs,
             &overlay_rounded_rects,
         );
+        self.forward_compositor_chrome_ui(width, height);
+        self.maybe_request_compositor_present(width, height);
         if present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data) {
             Some(fb)
         } else {
             None
+        }
+    }
+
+    /// RFC 4.4-S3：有 compositor present 帧时直接 blit 全窗口位图。
+    fn try_blit_compositor_present(
+        &mut self,
+        width: u32,
+        height: u32,
+        cpu_surface: &mut Option<
+            softbuffer::Surface<std::sync::Arc<winit::window::Window>, std::sync::Arc<winit::window::Window>>,
+        >,
+    ) -> Option<zero_render_foundation::surface::FrameBuffer> {
+        if !crate::compositor_client::present_enabled() {
+            return None;
+        }
+        let tab_id = self.shell.active_tab_id()?;
+        let (w, h, pixels) = self.tabs.compositor_present_pixels(tab_id)?;
+        if w != width || h != height {
+            return None;
+        }
+        if !present_rgba_to_softbuffer(cpu_surface, w, h, &pixels) {
+            return None;
+        }
+        Some(zero_render_foundation::surface::FrameBuffer {
+            width: w,
+            height: h,
+            data: pixels,
+        })
+    }
+
+    /// 向 compositor 提交 Chrome UI 位图（present 时页面区透明）。
+    fn forward_compositor_chrome_ui(&mut self, width: u32, height: u32) {
+        if !crate::compositor_client::enabled() {
+            return;
+        }
+        if !crate::compositor_client::ui_frames_enabled()
+            && !crate::compositor_client::present_enabled()
+        {
+            return;
+        }
+        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) =
+            self.build_scene(width, height);
+        let mut scene_primitives = zero_render_foundation::primitive::RenderPrimitives::new();
+        scene_primitives.fills = fills;
+        scene_primitives.shadows = chrome_shadows;
+        let fb = rasterize_full_scene(
+            width,
+            height,
+            1.0,
+            &scene_primitives,
+            &self.font_loader,
+            &mut self.glyph_cache,
+            None,
+            &glyphs,
+            &overlay_fills,
+            &overlay_glyphs,
+            &overlay_rounded_rects,
+        );
+        let mut ui = fb.data;
+        if crate::compositor_client::present_enabled() {
+            let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+            Self::clear_rect_alpha_zero(&mut ui, width, height, cx, cy, cw, ch);
+        }
+        crate::compositor_client::forward_ui_frame(
+            crate::compositor_client::CHROME_UI_SURFACE_ID,
+            width,
+            height,
+            ui,
+        );
+    }
+
+    fn maybe_request_compositor_present(&self, width: u32, height: u32) {
+        if !crate::compositor_client::present_enabled() {
+            return;
+        }
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return;
+        };
+        let Some(frame) = self.tabs.compositor_frame(tab_id) else {
+            return;
+        };
+        crate::compositor_client::request_present_frame(
+            frame.surface_id,
+            crate::compositor_client::CHROME_UI_SURFACE_ID,
+            width,
+            height,
+        );
+    }
+
+    fn clear_rect_alpha_zero(
+        rgba: &mut [u8],
+        fb_width: u32,
+        fb_height: u32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) {
+        let ix0 = x.round().max(0.0) as u32;
+        let iy0 = y.round().max(0.0) as u32;
+        let ix1 = (x + w).round().min(fb_width as f32) as u32;
+        let iy1 = (y + h).round().min(fb_height as f32) as u32;
+        if ix1 <= ix0 || iy1 <= iy0 {
+            return;
+        }
+        let row = (fb_width * 4) as usize;
+        for py in iy0..iy1 {
+            for px in ix0..ix1 {
+                let i = py as usize * row + px as usize * 4;
+                if i + 3 < rgba.len() {
+                    rgba[i..i + 4].fill(0);
+                }
+            }
         }
     }
 

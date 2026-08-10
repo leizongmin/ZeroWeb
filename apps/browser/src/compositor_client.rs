@@ -91,6 +91,12 @@ enum WorkerCommand {
         height: u32,
         rgba: Vec<u8>,
     },
+    FetchPresent {
+        page_surface_id: u64,
+        ui_surface_id: u64,
+        width: u32,
+        height: u32,
+    },
 }
 
 impl WorkerCommand {
@@ -101,6 +107,7 @@ impl WorkerCommand {
             Self::SetScroll { surface_id, .. } => *surface_id,
             Self::RegisterUiSurface(info) => info.surface_id,
             Self::UiFrame { surface_id, .. } => *surface_id,
+            Self::FetchPresent { page_surface_id, .. } => *page_surface_id,
         }
     }
 }
@@ -172,6 +179,15 @@ impl CommandChannel {
             width,
             height,
             rgba,
+        })
+    }
+
+    fn fetch_present(&self, page_surface_id: u64, ui_surface_id: u64, width: u32, height: u32) -> bool {
+        self.send(WorkerCommand::FetchPresent {
+            page_surface_id,
+            ui_surface_id,
+            width,
+            height,
         })
     }
 
@@ -284,6 +300,46 @@ impl CompletedFrameChannel {
     }
 }
 
+struct PresentFrame {
+    page_surface_id: u64,
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+}
+
+/// compositor present 帧缓存（每个 page surface 最新一帧）。
+struct PresentFrameChannel {
+    frame: Mutex<Option<PresentFrame>>,
+}
+
+impl PresentFrameChannel {
+    fn new() -> Self {
+        Self {
+            frame: Mutex::new(None),
+        }
+    }
+
+    fn store(&self, frame: PresentFrame) {
+        *self.frame.lock().unwrap_or_else(|error| error.into_inner()) = Some(frame);
+    }
+
+    fn take(&self, page_surface_id: u64) -> Option<(u32, u32, Vec<u8>)> {
+        let mut slot = self.frame.lock().unwrap_or_else(|error| error.into_inner());
+        if slot
+            .as_ref()
+            .is_some_and(|frame| frame.page_surface_id == page_surface_id)
+        {
+            slot.take().map(|frame| (frame.width, frame.height, frame.rgba))
+        } else {
+            None
+        }
+    }
+
+    fn clear(&self) {
+        *self.frame.lock().unwrap_or_else(|error| error.into_inner()) = None;
+    }
+}
+
 trait WorkerTransport: Send {
     fn send(&mut self, message: IpcMessage) -> Result<(), ProtocolError>;
     fn recv(&mut self) -> Result<IpcMessage, ProtocolError>;
@@ -302,6 +358,7 @@ impl WorkerTransport for PipeTransport<std::process::ChildStdout, std::process::
 struct Client {
     commands: Arc<CommandChannel>,
     completed: Arc<CompletedFrameChannel>,
+    present: Arc<PresentFrameChannel>,
     status: Arc<SharedStatus>,
     child: Arc<Mutex<Option<Child>>>,
     worker: Option<JoinHandle<()>>,
@@ -311,18 +368,20 @@ impl Client {
     fn start() -> Self {
         let commands = Arc::new(CommandChannel::new(MAX_PENDING_SURFACES));
         let completed = Arc::new(CompletedFrameChannel::new(MAX_COMPLETED_SURFACES));
+        let present = Arc::new(PresentFrameChannel::new());
         let status = Arc::new(SharedStatus::new(CompositorStatus::Starting));
         let child = Arc::new(Mutex::new(None));
 
         let worker_commands = Arc::clone(&commands);
         let worker_completed = Arc::clone(&completed);
+        let worker_present = Arc::clone(&present);
         let worker_status = Arc::clone(&status);
         let worker_child = Arc::clone(&child);
         let worker = thread::Builder::new()
             .name("compositor-client".to_string())
             .spawn(move || {
                 let connection_child = Arc::clone(&worker_child);
-                worker_main(worker_commands, worker_completed, worker_status, || {
+                worker_main(worker_commands, worker_completed, worker_present, worker_status, || {
                     spawn_transport(connection_child)
                 });
                 reap_child(&worker_child);
@@ -335,6 +394,7 @@ impl Client {
         Self {
             commands,
             completed,
+            present,
             status,
             child,
             worker,
@@ -374,6 +434,14 @@ impl Client {
     fn forward_ui_frame(&self, surface_id: u64, width: u32, height: u32, rgba: Vec<u8>) {
         if self.status.load() != CompositorStatus::Disconnected {
             let _ = self.commands.forward_ui_frame(surface_id, width, height, rgba);
+        }
+    }
+
+    fn fetch_present(&self, page_surface_id: u64, ui_surface_id: u64, width: u32, height: u32) {
+        if self.status.load() != CompositorStatus::Disconnected {
+            let _ = self
+                .commands
+                .fetch_present(page_surface_id, ui_surface_id, width, height);
         }
     }
 
@@ -455,11 +523,13 @@ enum ExpectedResponse {
     Result(FrameKey),
     Data(FrameKey),
     ReleaseSurface,
+    PresentData { page_surface_id: u64 },
 }
 
 fn worker_main<F>(
     commands: Arc<CommandChannel>,
     completed: Arc<CompletedFrameChannel>,
+    present: Arc<PresentFrameChannel>,
     status: Arc<SharedStatus>,
     connect: F,
 ) where
@@ -471,6 +541,7 @@ fn worker_main<F>(
             tracing::warn!("Compositor connection failed: {error}");
             status.store(CompositorStatus::Disconnected);
             completed.clear();
+            present.clear();
             commands.close();
             return;
         }
@@ -482,10 +553,11 @@ fn worker_main<F>(
     let mut next_message_id = 1u64;
 
     while let Some(frames) = commands.recv() {
-        if let Err(error) = process_batch(transport.as_mut(), frames, &completed, &mut next_message_id) {
+        if let Err(error) = process_batch(transport.as_mut(), frames, &completed, &present, &mut next_message_id) {
             tracing::warn!("Compositor IPC disconnected: {error}");
             status.store(CompositorStatus::Disconnected);
             completed.clear();
+            present.clear();
             commands.close();
             return;
         }
@@ -496,6 +568,7 @@ fn process_batch(
     transport: &mut dyn WorkerTransport,
     commands: Vec<WorkerCommand>,
     completed: &CompletedFrameChannel,
+    present: &PresentFrameChannel,
     next_message_id: &mut u64,
 ) -> Result<(), ProtocolError> {
     let mut outstanding = HashMap::new();
@@ -569,6 +642,23 @@ fn process_batch(
                     },
                 })?;
                 outstanding.insert(message_id, ExpectedResponse::ReleaseSurface);
+            }
+            WorkerCommand::FetchPresent {
+                page_surface_id,
+                ui_surface_id,
+                width,
+                height,
+            } => {
+                transport.send(IpcMessage {
+                    id: message_id,
+                    kind: IpcMessageKind::GetCompositorPresentFrame {
+                        width,
+                        height,
+                        page_surface_id,
+                        ui_surface_id,
+                    },
+                })?;
+                outstanding.insert(message_id, ExpectedResponse::PresentData { page_surface_id });
             }
         }
     }
@@ -647,6 +737,26 @@ fn process_batch(
                     rgba,
                     scroll_x,
                     scroll_y,
+                });
+            }
+            (
+                ExpectedResponse::PresentData { page_surface_id },
+                IpcMessageKind::CompositorFrameData {
+                    width,
+                    height,
+                    rgba,
+                    shm_name,
+                    gpu_image,
+                    ..
+                },
+            ) => {
+                let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, gpu_image)?;
+                validate_frame_data(width, height, &rgba)?;
+                present.store(PresentFrame {
+                    page_surface_id,
+                    width,
+                    height,
+                    rgba,
                 });
             }
             (ExpectedResponse::ReleaseSurface, IpcMessageKind::Ok) => {}
@@ -761,7 +871,7 @@ pub fn register_ui_surface(info: zero_protocol::CompositorUiSurfaceInfo) {
     let client = client.get_or_insert_with(Client::start);
     let surface_id = info.surface_id;
     client.register_ui_surface(info);
-    if ui_frames_enabled() {
+    if ui_frames_enabled() || present_enabled() {
         client.forward_ui_frame(surface_id, 1, 1, vec![0, 0, 0, 0]);
     }
 }
@@ -785,6 +895,35 @@ pub fn ui_frames_enabled() -> bool {
 /// 是否启用 GPU shared image mailbox（`ZW_COMPOSITOR_GPU_IMAGE=1`，Linux）。
 pub fn gpu_image_enabled() -> bool {
     zero_protocol::compositor_gpu_image_enabled()
+}
+
+/// 是否启用 compositor Viz present（page+UI 合成；`ZW_COMPOSITOR_PRESENT=1`）。
+pub fn present_enabled() -> bool {
+    zero_protocol::compositor_present_enabled()
+}
+
+/// 请求 compositor 合成 present 帧（异步；结果经 [`take_present_frame`] 取回）。
+pub fn request_present_frame(page_surface_id: u64, ui_surface_id: u64, width: u32, height: u32) {
+    if !enabled() {
+        return;
+    }
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    client
+        .get_or_insert_with(Client::start)
+        .fetch_present(page_surface_id, ui_surface_id, width, height);
+}
+
+/// 非阻塞取回指定 page surface 的最新 present 帧。
+pub fn take_present_frame(page_surface_id: u64) -> Option<(u32, u32, Vec<u8>)> {
+    if !enabled() {
+        return None;
+    }
+    CLIENT
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .as_ref()?
+        .present
+        .take(page_surface_id)
 }
 
 /// Browser Chrome UI 层 surface 标识（与页面 surface 命名空间独立）。
@@ -916,8 +1055,9 @@ mod tests {
             })]),
         };
         let completed = CompletedFrameChannel::new(1);
+        let present = PresentFrameChannel::new();
         let mut next_message_id = 1;
-        process_batch(&mut transport, batch, &completed, &mut next_message_id).unwrap();
+        process_batch(&mut transport, batch, &completed, &present, &mut next_message_id).unwrap();
 
         let sent = sent.lock().unwrap();
         assert!(matches!(
@@ -974,6 +1114,7 @@ mod tests {
             ]),
         };
         let completed = CompletedFrameChannel::new(4);
+        let present = PresentFrameChannel::new();
         let mut next_message_id = 1;
 
         process_batch(
@@ -983,6 +1124,7 @@ mod tests {
                 WorkerCommand::Frame(Box::new(pending(20, 7, 2))),
             ],
             &completed,
+            &present,
             &mut next_message_id,
         )
         .unwrap();
@@ -1021,8 +1163,9 @@ mod tests {
         let worker_commands = Arc::clone(&commands);
         let worker_completed = Arc::clone(&completed);
         let worker_status = Arc::clone(&status);
+        let worker_present = Arc::new(PresentFrameChannel::new());
         let worker = thread::spawn(move || {
-            worker_main(worker_commands, worker_completed, worker_status, || {
+            worker_main(worker_commands, worker_completed, worker_present, worker_status, || {
                 Ok(Box::new(BlockingTransport {
                     entered: Some(entered_tx),
                     release: release_rx,
@@ -1065,8 +1208,9 @@ mod tests {
         let worker_commands = Arc::clone(&commands);
         let worker_completed = Arc::clone(&completed);
         let worker_status = Arc::clone(&status);
+        let worker_present = Arc::new(PresentFrameChannel::new());
         let worker = thread::spawn(move || {
-            worker_main(worker_commands, worker_completed, worker_status, || {
+            worker_main(worker_commands, worker_completed, worker_present, worker_status, || {
                 Ok(Box::new(ScriptedTransport {
                     sent: Arc::new(Mutex::new(Vec::new())),
                     responses: VecDeque::from([Err(ProtocolError::Channel("closed".to_string()))]),
@@ -1089,8 +1233,9 @@ mod tests {
         let worker_commands = Arc::clone(&commands);
         let worker_completed = Arc::clone(&completed);
         let worker_status = Arc::clone(&status);
+        let worker_present = Arc::new(PresentFrameChannel::new());
         let worker = thread::spawn(move || {
-            worker_main(worker_commands, worker_completed, worker_status, || {
+            worker_main(worker_commands, worker_completed, worker_present, worker_status, || {
                 Ok(Box::new(ScriptedTransport {
                     sent: Arc::new(Mutex::new(Vec::new())),
                     responses: VecDeque::new(),
@@ -1104,6 +1249,7 @@ mod tests {
         let mut client = Client {
             commands,
             completed,
+            present: Arc::new(PresentFrameChannel::new()),
             status: Arc::clone(&status),
             child: Arc::new(Mutex::new(None)),
             worker: Some(worker),

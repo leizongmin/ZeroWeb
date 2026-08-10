@@ -391,6 +391,19 @@ impl TabManager {
         self.snapshots.get(&tab_id)?.compositor_frame.as_ref()
     }
 
+    /// 活跃 Tab 最新 compositor present 全窗口位图（RFC 4.4-S3）。
+    pub fn compositor_present(&self, tab_id: TabId) -> Option<&CompositorFrame> {
+        self.snapshots.get(&tab_id)?.compositor_present.as_ref()
+    }
+
+    /// 克隆 present 帧 RGBA（用于 CPU present；需可变借用 image_cache）。
+    pub fn compositor_present_pixels(&mut self, tab_id: TabId) -> Option<(u32, u32, Vec<u8>)> {
+        let snap = self.snapshots.get_mut(&tab_id)?;
+        let present = snap.compositor_present.as_ref()?;
+        let img = snap.image_cache.get(&present.image_key)?;
+        Some((present.width, present.height, img.pixels.clone()))
+    }
+
     /// 活跃 Tab 图片缓存（绘制时可变借用）。
     pub fn image_cache_mut(&mut self, tab_id: TabId) -> Option<&mut ImageCache> {
         Some(&mut self.snapshots.get_mut(&tab_id)?.image_cache)

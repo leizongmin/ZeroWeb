@@ -66,6 +66,8 @@ pub struct TabSnapshot {
     pub compositor_submission: Option<CompositorSubmission>,
     /// compositor 已完成且可显示的最新页面位图。
     pub compositor_frame: Option<CompositorFrame>,
+    /// compositor 合成的全窗口 present 位图（RFC 4.4-S3；`ZW_COMPOSITOR_PRESENT=1`）。
+    pub compositor_present: Option<CompositorFrame>,
     /// compositor 回读的滚动偏移（RFC 4.2；`ZW_COMPOSITOR_ASYNC_SCROLL=1` 时用于显示）。
     pub compositor_scroll: Option<(f32, f32)>,
 }
@@ -90,6 +92,7 @@ impl TabSnapshot {
             navigation_epoch: 0,
             compositor_submission: None,
             compositor_frame: None,
+            compositor_present: None,
             compositor_scroll: None,
         }
     }
@@ -107,6 +110,7 @@ impl TabSnapshot {
         self.last_render = None;
         self.compositor_submission = None;
         self.compositor_frame = None;
+        self.compositor_present = None;
         self.compositor_scroll = None;
         self.document_height = None;
         self.document_width = None;
@@ -119,6 +123,7 @@ impl TabSnapshot {
     pub fn clear_compositor_state(&mut self) {
         self.compositor_submission = None;
         self.compositor_frame = None;
+        self.compositor_present = None;
         self.compositor_scroll = None;
         self.image_cache.clear();
     }
@@ -168,6 +173,7 @@ impl TabSnapshot {
         };
         self.image_cache.clear();
         let image_key = self.image_cache.insert(image);
+        self.compositor_present = None;
         self.compositor_frame = Some(CompositorFrame {
             surface_id: submission.surface_id,
             navigation_epoch: submission.navigation_epoch,
@@ -177,6 +183,35 @@ impl TabSnapshot {
             image_key,
         });
         self.compositor_scroll = Some((scroll_x, scroll_y));
+        true
+    }
+
+    /// 接收 compositor 全窗口 present 位图；须与当前 page surface 匹配。
+    pub fn commit_compositor_present_frame(
+        &mut self,
+        page_surface_id: u64,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) -> bool {
+        let Some(page) = self.compositor_frame.as_ref() else {
+            return false;
+        };
+        if page.surface_id != page_surface_id {
+            return false;
+        }
+        let Ok(image) = ImageData::from_rgba(rgba, width, height) else {
+            return false;
+        };
+        let image_key = self.image_cache.insert(image);
+        self.compositor_present = Some(CompositorFrame {
+            surface_id: page_surface_id,
+            navigation_epoch: page.navigation_epoch,
+            frame_id: page.frame_id,
+            width,
+            height,
+            image_key,
+        });
         true
     }
 }

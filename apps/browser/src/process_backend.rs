@@ -377,6 +377,30 @@ impl ProcessTabBackend {
         changed
     }
 
+    fn poll_compositor_present_frames(
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+        snapshot_seq: &mut HashMap<TabId, u64>,
+    ) -> bool {
+        if !crate::compositor_client::present_enabled() {
+            return false;
+        }
+        let mut changed = false;
+        for (tab_id, snap) in snapshots {
+            let Some(page) = snap.compositor_frame.as_ref() else {
+                continue;
+            };
+            let Some((width, height, rgba)) = crate::compositor_client::take_present_frame(page.surface_id) else {
+                continue;
+            };
+            if !snap.commit_compositor_present_frame(page.surface_id, width, height, rgba) {
+                continue;
+            }
+            *snapshot_seq.entry(*tab_id).or_insert(0) += 1;
+            changed = true;
+        }
+        changed
+    }
+
     fn handle_fetch_request(&mut self, tab_id: TabId, params: FetchParams) {
         self.fetch_proxy.enqueue(tab_id, &params);
     }
@@ -724,6 +748,7 @@ impl ProcessTabBackend {
         changed |= self.observe_compositor_status(snapshots, snapshot_seq);
         if self.compositor_status == crate::compositor_client::CompositorStatus::Healthy {
             changed |= Self::poll_compositor_frames(snapshots, snapshot_seq, &mut self.pending_loaded);
+            changed |= Self::poll_compositor_present_frames(snapshots, snapshot_seq);
         }
         changed
     }

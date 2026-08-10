@@ -1,6 +1,6 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v1.7 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1–C3 / 4.1–4.5 / 4.2-S2 / 4.3-S2 / 4.4-S2 ✅）**
+版本：v1.8 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1–C3 / 4.1–4.5 / 4.2-S2 / 4.3-S2–S3 / 4.4-S2–S3 ✅）**
 
 > 实施状态（2026-08-11 更新）：
 > - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
@@ -19,9 +19,12 @@
 > - **4.3（OS 共享资源）✅ S1 + S2**：
 >   - S1：Linux `ZW_COMPOSITOR_SHM=1` 时经 `/dev/shm/zeroweb-cmp-*` 传递 front 像素。
 >   - S2：`ZW_COMPOSITOR_GPU_IMAGE=1` 时 `gpu_image.mailbox_name` 经 shm 后端传递像素（非 GPU 纹理零拷贝）。
-> - **4.4（Viz UI surface）✅ 切片 + S2**：
+>   - S3：`GpuSharedImageDescriptor.sync_token` 占位（fence 序号 = frame_id）；真 GPU fence 为后续。
+> - **4.4（Viz UI surface）✅ 切片 + S2 + S3**：
 >   - 元数据：`CompositorRegisterUiSurface` + Browser 启动登记 `CHROME_UI_SURFACE_ID`。
 >   - S2：`CompositorUiFrame` / `GetCompositorUiFrame`；`ZW_COMPOSITOR_UI_FRAMES=1` 时 Browser 提交 UI 位图握手。
+>   - S3：`GetCompositorPresentFrame` + `ZW_COMPOSITOR_PRESENT=1` 时 compositor 合成 page+UI，
+>     Browser 直接 blit present 帧（跳过本地 chrome+page 合成）。
 > - **4.5（沙箱）✅ 钩子**：`ZW_COMPOSITOR_SANDBOX=1` 时 compositor 启动剥离
 >   `LD_PRELOAD` 等危险 env；seccomp 最小权限沙箱仍为后续。
 

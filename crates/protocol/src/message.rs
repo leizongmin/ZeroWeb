@@ -146,6 +146,17 @@ pub enum IpcMessageKind {
         /// UI surface 的稳定标识。
         surface_id: u64,
     },
+    /// 拉取 page+UI 合成 present 帧（RFC 4.4-S3 Viz present 切片）。
+    GetCompositorPresentFrame {
+        /// 输出宽度（像素）。
+        width: u32,
+        /// 输出高度（像素）。
+        height: u32,
+        /// 页面 surface 标识。
+        page_surface_id: u64,
+        /// UI surface 标识。
+        ui_surface_id: u64,
+    },
     /// 已合成帧数据（合成器 → 显示消费方）：front 缓冲像素。
     ///
     /// 默认内联 `rgba`；Linux `ZW_COMPOSITOR_SHM=1` 时 `shm_name` 非空且 `rgba` 为空，

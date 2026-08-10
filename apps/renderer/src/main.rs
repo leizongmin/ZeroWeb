@@ -1659,6 +1659,7 @@ impl RendererRuntime {
             | IpcMessageKind::CompositorRegisterUiSurface(_)
             | IpcMessageKind::CompositorUiFrame { .. }
             | IpcMessageKind::GetCompositorUiFrame { .. }
+            | IpcMessageKind::GetCompositorPresentFrame { .. }
             | IpcMessageKind::CompositorFrameData { .. }
             | IpcMessageKind::TitleChanged(_)
             | IpcMessageKind::UrlChanged(_)

@@ -523,3 +523,115 @@ fn compositor_ui_frame_round_trips() {
     assert_eq!((ui.width, ui.height), (2, 2));
     assert_eq!(&ui.rgba[..4], &[255, 0, 0, 255]);
 }
+
+fn get_present_frame(
+    transport: &mut impl IpcChannel,
+    request_id: u64,
+    width: u32,
+    height: u32,
+    page_surface_id: u64,
+    ui_surface_id: u64,
+) -> FrameData {
+    transport
+        .send(IpcMessage {
+            id: request_id,
+            kind: IpcMessageKind::GetCompositorPresentFrame {
+                width,
+                height,
+                page_surface_id,
+                ui_surface_id,
+            },
+        })
+        .expect("get present frame");
+    let resp: IpcMessage = transport.recv().expect("present frame data");
+    match resp.kind {
+        IpcMessageKind::CompositorFrameData {
+            surface_id,
+            navigation_epoch,
+            frame_id,
+            width,
+            height,
+            rgba,
+            shm_name,
+            scroll_x,
+            scroll_y,
+            gpu_image,
+        } => {
+            assert_eq!(surface_id, page_surface_id);
+            assert_eq!(navigation_epoch, 0);
+            assert_eq!(frame_id, 0);
+            assert!((scroll_x).abs() < f32::EPSILON);
+            assert!((scroll_y).abs() < f32::EPSILON);
+            let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, gpu_image)
+                .expect("resolve present rgba");
+            FrameData {
+                surface_id,
+                navigation_epoch,
+                frame_id,
+                width,
+                height,
+                rgba,
+                scroll_x: 0.0,
+                scroll_y: 0.0,
+            }
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+/// RFC 4.4-S3：compositor 合成 page + UI present 帧。
+#[test]
+fn compositor_present_composites_page_and_ui() {
+    let (mut transport, _comp) = spawn_compositor();
+    let page_surface = 42u64;
+    let ui_surface = u64::MAX;
+    let w = 2u32;
+    let h = 2u32;
+
+    assert_eq!(
+        submit_frame(
+            &mut transport,
+            1,
+            page_surface,
+            1,
+            1,
+            make_frame(w, h, [0, 0, 255, 255])
+        ),
+        (page_surface, 1, 1)
+    );
+
+    transport
+        .send(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::CompositorRegisterUiSurface(zero_protocol::CompositorUiSurfaceInfo {
+                surface_id: ui_surface,
+                width: w,
+                height: h,
+            }),
+        })
+        .expect("register ui");
+    let ack: IpcMessage = transport.recv().expect("register ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    transport
+        .send(IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::CompositorUiFrame {
+                surface_id: ui_surface,
+                width: w,
+                height: h,
+                rgba: [255u8, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0].to_vec(),
+                shm_name: None,
+            },
+        })
+        .expect("ui frame");
+    let ack: IpcMessage = transport.recv().expect("ui frame ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    let present = get_present_frame(&mut transport, 4, w, h, page_surface, ui_surface);
+    assert_eq!((present.width, present.height), (w, h));
+    // 左上：蓝 page + 50% 红 UI → (128, 0, 127)
+    assert_eq!(&present.rgba[..4], &[128, 0, 127, 255]);
+    // 右上：纯蓝 page
+    assert_eq!(&present.rgba[4..8], &[0, 0, 255, 255]);
+}

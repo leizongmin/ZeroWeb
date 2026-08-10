@@ -22,6 +22,7 @@ use zero_render_foundation::rendering_thread::{RenderingThread, render_threading
 
 mod convert;
 mod gpu_raster;
+mod present;
 mod rasterize;
 mod sandbox;
 mod scroll_transform;
@@ -552,6 +553,61 @@ fn main() {
                 };
                 if let Err(e) = transport.send(resp) {
                     tracing::warn!("compositor: UI 帧读取响应失败: {e}");
+                    break;
+                }
+            }
+            IpcMessageKind::GetCompositorPresentFrame {
+                width,
+                height,
+                page_surface_id,
+                ui_surface_id,
+            } => {
+                let page_pixels = surfaces.get(&page_surface_id).map(|s| {
+                    let front = s.backing.front();
+                    (front.width, front.height, front.data.clone())
+                });
+                let ui_pixels = ui_surfaces
+                    .get(&ui_surface_id)
+                    .map(|ui| (ui.width, ui.height, ui.rgba.clone()));
+                let (out_w, out_h, rgba, shm_name, gpu_image) = match (page_pixels, ui_pixels) {
+                    (Some((pw, ph, page)), Some((uw, uh, ui))) if !page.is_empty() && !ui.is_empty() => {
+                        let composed = present::composite_present_frame(width, height, &page, pw, ph, &ui, uw, uh);
+                        let delivery = zero_protocol::deliver_compositor_frame_pixels(
+                            page_surface_id,
+                            0,
+                            &composed,
+                            width,
+                            height,
+                        )
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("compositor: present 交付失败，回退内联 rgba: {e}");
+                            zero_protocol::CompositorFrameDelivery {
+                                rgba: composed,
+                                shm_name: None,
+                                gpu_image: None,
+                            }
+                        });
+                        (width, height, delivery.rgba, delivery.shm_name, delivery.gpu_image)
+                    }
+                    _ => (0, 0, Vec::new(), None, None),
+                };
+                let resp = IpcMessage {
+                    id: msg.id,
+                    kind: IpcMessageKind::CompositorFrameData {
+                        surface_id: page_surface_id,
+                        navigation_epoch: 0,
+                        frame_id: 0,
+                        width: out_w,
+                        height: out_h,
+                        rgba,
+                        shm_name,
+                        scroll_x: 0.0,
+                        scroll_y: 0.0,
+                        gpu_image,
+                    },
+                };
+                if let Err(e) = transport.send(resp) {
+                    tracing::warn!("compositor: present 帧响应失败: {e}");
                     break;
                 }
             }

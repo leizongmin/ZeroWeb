@@ -11,6 +11,9 @@ pub struct GpuSharedImageDescriptor {
     pub width: u32,
     /// 高度（像素）。
     pub height: u32,
+    /// 同步代际（fence 占位；单调递增，Browser 可检测 stale 帧）。
+    #[serde(default)]
+    pub sync_token: u64,
 }
 
 /// UI 层 surface 注册元数据（4.4 Viz 切片；最终 present 仍为后续）。
