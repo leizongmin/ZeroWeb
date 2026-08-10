@@ -128,5 +128,5 @@ compositor 启动失败或 IPC 断开时：
 
 - C2 定向测试覆盖协议往返、双 surface、stale frame、resize、释放、worker 非阻塞、缓存有界、发布模式、Browser 位图显示和故障回退。
 - 全量质量、reftest 和产品 smoke 由后续验收任务执行。
-- 渲染线程前置见 `render-threading-rfc-2026-08-07.md`。
+- 渲染线程前置见 [`archive/render-threading-rfc-2026-08-07.md`](archive/render-threading-rfc-2026-08-07.md)（已实施归档）。
 - ImageDecoder 的请求/响应协议是 compositor 消息路由的先例。

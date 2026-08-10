@@ -8,7 +8,7 @@
 > 滚动/交互/动画响应性显著提升。
 
 > **与 compositor-process RFC 的关系（2026-08-10）**：
-> 页面位图光栅化 + 双缓冲已由 [`compositor-process-rfc`](compositor-process-rfc-2026-08-07.md)
+> 页面位图光栅化 + 双缓冲已由 [`compositor-process-rfc`](../compositor-process-rfc-2026-08-07.md)
 > C2 在 `zero-compositor` 进程承接（renderer 录制 → compositor 光栅 → Browser 显示）。
 > 本 RFC scope：**DisplayList 显式契约（S1）**、**Browser UI 合成线程化 +
 > 持久 RenderingThread（S2）**、**dirty region 端到端接线（S3）**。

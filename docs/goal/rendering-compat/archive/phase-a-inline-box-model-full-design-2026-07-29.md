@@ -4,7 +4,7 @@
 **日期**: 2026-07-29
 **状态**: Design-only（redirect 2026-07-28 裁决 #3 允许；禁止直接按旧 phase-a-slice1 开工）
 **作者**: Rally R2157
-**关联**: [`master.md`](./master.md) 顶部裁决 / [R2156 evidence](./evidence/r2156-inline-box-model-coherence-landed-2026-07-29.txt) / [R2152–R2155 scoping](./archive/) / [redirect cda1c6d23](../../rendering-compat.md)
+**关联**: [`master.md`](../master.md) 顶部裁决 / [R2156 evidence](../evidence/r2156-inline-box-model-coherence-landed-2026-07-29.txt) / [R2152–R2155 scoping](./) / [redirect cda1c6d23](../../rendering-compat.md)
 
 > **⚠️ 2026-08-02 实施状态更新（R2420）——本文档以下「Design-only / slice 2 未修」框架为历史**
 >
@@ -127,7 +127,7 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 - **风险（R2159 精化后）**：blast-radius 大（所有多 inline block 容器）。R639-extend + skip-taffy 耦合须同 gate 同开（part1 单独 R1492-refuted，part2 单独双绘）。hit-test（`<a href>` 点击区）+ stacking-context inline（position/opacity/transform）须 gate 排除。
 
 > **★ R2160（2026-07-29）probe 实测：机制成立但 self-source net −20 → 保持 default-off，未 land**。
-> 完整 A/B 见 [`evidence/r2160-phase-a-slice2-multi-inline-probe-netneg-2026-07-29.txt`](./evidence/r2160-phase-a-slice2-multi-inline-probe-netneg-2026-07-29.txt)。
+> 完整 A/B 见 [`evidence/r2160-phase-a-slice2-multi-inline-probe-netneg-2026-07-29.txt`](../evidence/r2160-phase-a-slice2-multi-inline-probe-netneg-2026-07-29.txt)。
 >
 > - **part3 被 orphan 信号耦合避开（创新）**：part1 skip taffy → inline 无 LayoutBox → `inline_heights` 无条目 → `owner_h==0.0`；part2 把 R639 gate 放宽为 `(owner_h > fs*1.5 || phasea_orphan_fire)`，`phasea_orphan_fire = (gate_on && owner_h==0.0)`。**owner_h==0.0 既是 orphan 信号又是 part2 触发条件**，part1+part2 天然耦合（orphan 只走 fragment、非 orphan 单行只走 LayoutBox=无双绘），**无需 R2159 担心的 part3（inline_heights 数据源迁移）**。
 > - **产品面 net POSITIVE**：19-testpage 22.39→17.23%（−5.16pp）/ 20-mixed-legacy 13.13→11.49%（−1.64pp）/ legacy 51 fixture sum 259.36→252.33%（−7.03pp aggregate）/ struct_FAIL 0→0（零结构性退化）/ chromium-oracle CSS2/borders OFF=ON=415/506（零漂移，**R1492 -10 未触发**，orphan-fire 精确耦合证实安全）。welcome 16.84→17.03%（+0.19pp，含多 inline 产品页 gate 触发致微移，非崩溃）。
@@ -136,7 +136,7 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > - **forward（gate-tightening，下一 session）**：blast radius 集中 CJK line-break（−18 主因）+ multicol（−8）。候选：(a) `phasea_multi_inline_eligible` 加「祖先无 multicol」守卫（最低成本，预测恢复 multicol −8）→ A/B；(b) 排除 CJK 文本容器（预测恢复 line-break −18，可能牺牲部分产品增益）；(c) 仅对 inline 子无 text-styling（letter-spacing/word-break/line-break/text-autospace）触发（须查 computed style，较重）。先 (a) 孤立 A/B，css-text 仍 −15 再 (b)/(c)。**重启 slice 2 须先 (a)/(b)/(c) 把 self-source 拉回零 delta**，产品收益才能经 default-on 实现。
 >
 > **★ R2161（2026-07-29）gate-tightening 两 guard：probe net −20 → net +1，仍 default-off**。
-> 完整 A/B 见 [`evidence/r2161-phase-a-slice2-gate-tighten-netplus-2026-07-29.txt`](./evidence/r2161-phase-a-slice2-gate-tighten-netplus-2026-07-29.txt)。
+> 完整 A/B 见 [`evidence/r2161-phase-a-slice2-gate-tighten-netplus-2026-07-29.txt`](../evidence/r2161-phase-a-slice2-gate-tighten-netplus-2026-07-29.txt)。
 >
 > - **guard 1 = br/wbr 排除（css-text −15 主因，R2160 forward 候选 (b)/(c) 之外的真因）**：插桩实证 line-break-18 案 regress 非直接触发——`<p class="control">` 的外 `<span>` 含 `<br/>`+`<span.target>` 两 Element 子，**`<br/>` 被误判 eligible**（br display:inline+childless+非ooflow）→ 外 span eligible_count=2 → gate 触发 → br skip taffy 丢强制换行 → test/control 不匹配。修=phasea_multi_inline_eligible 加 br/wbr tag 排除。A/B：css-text ON 1727→**1741**（+14，line-break 18 全恢复）。
 > - **guard 2 = multicol-context 守卫（R2160 forward 候选 (a)）**：新 `container_in_multicol_context`（自身/祖先 column-count/width 非 Auto）→ gate 加 `&& !container_in_multicol_context(dom_id)`。multicol 列流依赖 inline 精确测量，probe 改测量破坏列几何（multicol-clip/gap-large/width-large 簇）。A/B：css-multicol ON 259→**264**（= OFF，−5 全恢复）。
@@ -145,7 +145,7 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > - **forward（残余解析 → flip default-on）**：(1) welcome +0.19pp 插桩定位 gate 触发处（<a>/<b>/<code> 多 inline），判修对 vs 退步；(2) css-text −1 判 text-wrap-balance 可排除或接受。两残余归零/documented-accept 后翻 default-on（default 路径全量三态 A/B 复测）land。**br-exclusion 教训：特殊 inline 元素（br/wbr/img）须按 tag 排除，纸面结构分析会漏 control-p 的 br**。
 >
 > **★ R2162（2026-07-29）第 3 guard（text-wrap balance）+ 翻 default-on LANDED 🎉**。
-> 完整 A/B 见 [`evidence/r2162-phase-a-slice2-textwrap-guard-default-on-landed.txt`](./evidence/r2162-phase-a-slice2-textwrap-guard-default-on-landed.txt)。
+> 完整 A/B 见 [`evidence/r2162-phase-a-slice2-textwrap-guard-default-on-landed.txt`](../evidence/r2162-phase-a-slice2-textwrap-guard-default-on-landed.txt)。
 >
 > - **guard 3 = text-wrap balance 抑制（css-text −1 → count-0）**：新 `container_has_balancing_text_wrap`（容器 text-wrap Balance/Pretty/Stable → true）→ gate 加 `&& !...`。根因 = text-wrap-balance-003 `.test` div（text-wrap:balance + 多 `<span>` 子）触发 probe 改测量偏移过 5% 阈值。ZW 未实现 text-wrap: balance 行平衡（仅 paint resolve_text_wrap 消费 Nowrap），OFF 4.97% 已是 ZW 不 balance 输出 vs chromium balancing ref，probe 推过阈值 = 噪声但守硬门。A/B：css-text ON 1741→**1742**（= OFF count-0；text-wrap-balance-003 恢复；残 1-for-1 swap：pre-wrap-021 [white-space:pre-wrap 0.06pp 噪声] −1 ↔ eol-spaces-bidi-002 [probe 改善] +1）。
 > - **翻 default-on**：`== Ok("1")` → `!= Ok("0")`（tree.rs gate + painter text.rs phasea_orphan_fire 两处）。依据：redirect item-2 产品/legacy 优先（无「零回归」qualifier）+ self-source net +2 + welcome +0.19pp documented-accept（固有 font-wall 代价，消除即失 legacy 增益，同机制；struct PASS + <20%）+ kill-switch 可回退 + 上 session「两残余归零/documented-accept」条件满足。
@@ -302,7 +302,7 @@ inline-box-model coherence 目标 = **inline 子树内容由父 IFC 单次排版
 > **裁决**：gate **default-off dormant opt-in**（`ZW_PHASEA_MULTI_INLINE=1`）。slice-3 机制跑通 + 修 R2163 主回归
 > + 保 slice-2 增益，但窄屏 multi-line-`<a>` struct 假阳性阻 default-on（须 struct-check 接 paint_skip 感知 或
 > multi-rect 表示，future）。**4 轮 slice-3 attempt 后首次跑通**，离 default-on 仅差窄屏 struct 假阳性。详见
-> [`evidence/r2197-slice3-external-set-landed-2026-07-29.txt`](./evidence/r2197-slice3-external-set-landed-2026-07-29.txt)。
+> [`evidence/r2197-slice3-external-set-landed-2026-07-29.txt`](../evidence/r2197-slice3-external-set-landed-2026-07-29.txt)。
 >
 > **★ R2198（2026-07-29）✅ slice 2+3 翻 default-on LANDED 🎉 — struct-check paint_skip-aware 解窄屏残余，
 > slice 2 多 inline block-stacking fix 进入默认渲染路径**。承接 R2197 残余（窄屏 multi-line `<a>` struct 假阳性）：
@@ -363,7 +363,7 @@ redirect 明确：Phase A 须先写可回退实施设计（含 kill-switch / 结
 ---
 
 ## 7. 参考
-- R2156 evidence: [`evidence/r2156-inline-box-model-coherence-landed-2026-07-29.txt`](./evidence/r2156-inline-box-model-coherence-landed-2026-07-29.txt)
+- R2156 evidence: [`evidence/r2156-inline-box-model-coherence-landed-2026-07-29.txt`](../evidence/r2156-inline-box-model-coherence-landed-2026-07-29.txt)
 - R2152–R2155 scoping: master.md preamble + `archive/`
 - redirect: `docs/goal/rendering-compat.md` 2026-07-28 裁决块 + commit `cda1c6d23`
 - 既有 Phase A 设计（历史）: `phase-a-IFC-unification-design.md`（R69 时代，部分过时，本设计取代其 slice 拆分）
