@@ -1994,6 +1994,7 @@ fn main() {
 
 #[cfg(test)]
 mod compositor_publish_tests;
+mod gpu_isolation_tests;
 
 #[cfg(test)]
 mod runtime_smoke {

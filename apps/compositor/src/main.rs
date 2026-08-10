@@ -21,6 +21,7 @@ use zero_render_foundation::font::{FontLoader, GlyphCache};
 use zero_render_foundation::rendering_thread::{RenderingThread, render_threading_enabled};
 
 mod convert;
+mod gpu_raster;
 mod rasterize;
 
 #[cfg(test)]
@@ -253,28 +254,15 @@ fn main() {
                 }
 
                 if gpu_enabled && !is_partial {
-                    if gpu_renderer.is_none() {
-                        gpu_renderer = zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(w, h).ok();
-                    }
-                    if let Some(gpu) = gpu_renderer.as_mut() {
-                        gpu.configure_surface(w, h);
-                        gpu.render_scene_ext(&primitives.fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
-                        if let Some(pixels) = gpu.read_pixels() {
-                            let back = surface.backing.back_mut();
-                            let len = back.data.len().min(pixels.len());
-                            back.data[..len].copy_from_slice(&pixels[..len]);
-                        } else {
-                            rasterize::rasterize_into_back(
-                                &paint,
-                                &primitives,
-                                &font_loader,
-                                &mut glyph_cache,
-                                render_thread.as_ref(),
-                                surface.backing.back_mut(),
-                                is_partial,
-                            );
-                        }
-                    } else {
+                    if !gpu_raster::try_rasterize_fills_into_back(
+                        &mut gpu_renderer,
+                        w,
+                        h,
+                        &primitives,
+                        &font_loader,
+                        &mut glyph_cache,
+                        surface.backing.back_mut(),
+                    ) {
                         rasterize::rasterize_into_back(
                             &paint,
                             &primitives,

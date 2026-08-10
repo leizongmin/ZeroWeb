@@ -39,7 +39,7 @@ struct RenderJob {
 
 /// 持久 CPU 光栅化工作线程。
 pub struct RenderingThread {
-    job_tx: Sender<RenderJob>,
+    job_tx: Option<Sender<RenderJob>>,
     join: Option<JoinHandle<()>>,
 }
 
@@ -89,7 +89,7 @@ impl RenderingThread {
             .expect("rendering thread spawn");
 
         Self {
-            job_tx,
+            job_tx: Some(job_tx),
             join: Some(join),
         }
     }
@@ -121,15 +121,71 @@ impl RenderingThread {
             overlay_rounded_rects: overlay_rounded_rects.to_vec(),
             reply: reply_tx,
         };
-        self.job_tx.send(job).expect("rendering thread job send");
+        self.job_tx
+            .as_ref()
+            .expect("RenderingThread 已关闭")
+            .send(job)
+            .expect("rendering thread job send");
         reply_rx.recv().expect("rendering thread reply")
     }
 }
 
 impl Drop for RenderingThread {
     fn drop(&mut self) {
+        // 先关闭 job 发送端，worker 从 recv 退出后再 join（否则 Drop 死锁）。
+        self.job_tx.take();
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::color::Color;
+    use crate::font::{FontLoader, GlyphCache};
+    use crate::geometry::Rect;
+    use crate::primitive::{FillPrimitive, RenderPrimitives};
+
+    use super::*;
+
+    /// S2：持久 RenderingThread 与主线程直连光栅化逐像素一致。
+    #[test]
+    fn rendering_thread_matches_direct_full_scene() {
+        let loader = Arc::new(FontLoader::new());
+        let mut glyph_cache = GlyphCache::new(64);
+        let mut primitives = RenderPrimitives::new();
+        primitives.fills.push(FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 48.0, 32.0),
+            color: Color::rgb(40, 80, 120),
+        });
+
+        let direct = render_full_scene(
+            48,
+            32,
+            1.0,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+
+        let rt = RenderingThread::spawn(Arc::clone(&loader), 64);
+        let threaded = rt.rasterize_sync(48, 32, 1.0, &primitives, &[], &[], &[], &[], None);
+        assert_eq!(direct.data, threaded.data);
+    }
+
+    /// Drop 须能在 worker 空闲时干净退出（回归：先 join 后关 channel 会死锁）。
+    #[test]
+    fn rendering_thread_drop_does_not_deadlock() {
+        let loader = Arc::new(FontLoader::new());
+        let rt = RenderingThread::spawn(loader, 64);
+        drop(rt);
     }
 }

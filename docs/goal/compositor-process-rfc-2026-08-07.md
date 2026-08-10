@@ -1,11 +1,13 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v1.2 ｜ 日期：2026-08-09 ｜ 状态：**实施中（C1 ✅ / C2 surface 级主显示链路 ✅ / C3 未完成）**
+版本：v1.3 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1 ✅ / C2 ✅ / C3 切片 S1 ✅）**
 
-> 实施状态（2026-08-09 更新）：
+> 实施状态（2026-08-11 更新）：
 > - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
-> - **C2（合成器独立进程）✅**：surface 级页面主显示链路已接通。`zero-compositor` 已负责页面图元光栅和 per-surface backing。
-> - **C3（GPU 隔离）⏳**：可选 wgpu 光栅入口已在 compositor 进程内，但跨进程 GPU 资源传输、最终 surface 所有权和沙箱尚未完成。
+> - **C2（合成器独立进程）✅**：surface 级页面主显示链路已接通。
+> - **C3（GPU 隔离）⚠️ 切片 S1**：compositor 进程内 headless wgpu（`ZW_COMPOSITOR_GPU=1`）+
+>   `gpu_raster.rs` 模块 + CPU 回退；renderer 无 GpuRenderer（隔离测试）。跨进程 GPU 纹理传输、
+>   沙箱、Viz 式 surface 所有权仍为后续切片。
 
 > 本状态不代表完整 Chromium/Chrome compositor 对齐。当前完成的是页面位图主链路。Browser 仍拥有窗口最终场景和呈现。
 
@@ -83,6 +85,7 @@ compositor 启动失败或 IPC 断开时：
 | renderer 发布 | compositor 模式发布 `CompositorFrame`；legacy 模式发布 `ViewPainted` |
 | Browser 显示 | compositor 位图是页面像素来源；Chrome UI 仍由 Browser 绘制 |
 | 生命周期 | 启动失败和断线回退；Tab 关闭释放 surface；退出终止子进程 |
+| C3 GPU 隔离 S1 | compositor `gpu_raster.rs` + `ZW_COMPOSITOR_GPU=1`；renderer 无 wgpu |
 
 ## 四、下一阶段
 

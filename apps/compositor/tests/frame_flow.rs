@@ -51,16 +51,23 @@ fn make_frame_with_dirty(
 }
 
 fn spawn_compositor() -> (PipeTransport<ChildStdout, ChildStdin>, CompositorProcess) {
+    spawn_compositor_with_env(&[])
+}
+
+fn spawn_compositor_with_env(
+    extra_env: &[(&str, &str)],
+) -> (PipeTransport<ChildStdout, ChildStdin>, CompositorProcess) {
     let bin = env!("CARGO_BIN_EXE_zero-compositor");
-    // lint 不追踪 RAII Drop（kill+wait）——见 CompositorProcess
     #[allow(clippy::zombie_processes)]
-    let mut child = Command::new(bin)
-        .args(child_process_args(ProcessRole::Compositor, 1))
+    let mut cmd = Command::new(bin);
+    cmd.args(child_process_args(ProcessRole::Compositor, 1))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn compositor");
+        .stderr(Stdio::null());
+    for (k, v) in extra_env {
+        cmd.env(k, v);
+    }
+    let mut child = cmd.spawn().expect("spawn compositor");
     let stdout = child.stdout.take().expect("stdout");
     let stdin = child.stdin.take().expect("stdin");
     (PipeTransport::new(stdout, stdin), CompositorProcess(child))
@@ -207,6 +214,18 @@ fn compositor_partial_dirty_preserves_pixels_outside_region() {
     let outside = ((40 * w + 60) * 4) as usize;
     assert_eq!(frame.rgba[outside], 0, "dirty 外 R 应保留蓝");
     assert_eq!(frame.rgba[outside + 2], 255, "dirty 外 B 应保留蓝");
+}
+
+/// C3：`ZW_COMPOSITOR_GPU=1` 时 compositor 进程内 GPU 光栅化（不可用时与 CPU 同路径回退）。
+#[test]
+fn compositor_gpu_path_produces_expected_fill() {
+    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU", "1")]);
+    assert_eq!(
+        submit_frame(&mut transport, 1, 9, 1, 1, make_frame(64, 64, [255, 0, 0, 255]),),
+        (9, 1, 1)
+    );
+    let frame = get_frame(&mut transport, 2, 9, 1, 1);
+    assert_eq!(&frame.rgba[..4], &[255, 0, 0, 255]);
 }
 
 #[test]
