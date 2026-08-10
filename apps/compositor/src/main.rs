@@ -41,6 +41,12 @@ struct SurfaceState {
     scroll_y: f32,
 }
 
+struct UiSurfaceState {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+}
+
 impl SurfaceState {
     fn accepts(&self, navigation_epoch: u64, frame_id: u64) -> bool {
         navigation_epoch > self.navigation_epoch
@@ -175,7 +181,7 @@ fn main() {
 
     // 每个页面 surface 独立维护帧序列和双缓冲；字体/字形缓存由进程共享。
     let mut surfaces: HashMap<u64, SurfaceState> = HashMap::new();
-    let mut ui_surfaces: HashMap<u64, (u32, u32)> = HashMap::new();
+    let mut ui_surfaces: HashMap<u64, UiSurfaceState> = HashMap::new();
     let font_loader = Arc::new(load_compositor_fonts());
     let mut glyph_cache = GlyphCache::new(1024);
     let render_thread = render_threading_enabled().then(|| RenderingThread::spawn(Arc::clone(&font_loader), 1024));
@@ -337,7 +343,7 @@ fn main() {
             }
             // 显示消费方拉取最新已合成帧（front 缓冲像素）
             IpcMessageKind::GetCompositorFrame { surface_id, .. } => {
-                let (response_epoch, response_frame, width, height, rgba, shm_name, scroll_x, scroll_y) =
+                let (response_epoch, response_frame, width, height, rgba, shm_name, scroll_x, scroll_y, gpu_image) =
                     match surfaces.get(&surface_id) {
                         Some(surface) => {
                             let front = surface.backing.front();
@@ -358,33 +364,34 @@ fn main() {
                             } else {
                                 front.data.clone()
                             };
-                            let (rgba, shm_name) = if zero_protocol::compositor_shm_enabled() {
-                                let name =
-                                    zero_protocol::publish_compositor_frame(surface_id, surface.frame_id, &pixel_data)
-                                        .unwrap_or_else(|e| {
-                                            tracing::warn!("compositor: shm 发布失败，回退内联 rgba: {e}");
-                                            String::new()
-                                        });
-                                if name.is_empty() {
-                                    (pixel_data, None)
-                                } else {
-                                    (Vec::new(), Some(name))
+                            let delivery = zero_protocol::deliver_compositor_frame_pixels(
+                                surface_id,
+                                surface.frame_id,
+                                &pixel_data,
+                                front.width,
+                                front.height,
+                            )
+                            .unwrap_or_else(|e| {
+                                tracing::warn!("compositor: 帧交付失败，回退内联 rgba: {e}");
+                                zero_protocol::CompositorFrameDelivery {
+                                    rgba: pixel_data,
+                                    shm_name: None,
+                                    gpu_image: None,
                                 }
-                            } else {
-                                (pixel_data, None)
-                            };
+                            });
                             (
                                 surface.navigation_epoch,
                                 surface.frame_id,
                                 front.width,
                                 front.height,
-                                rgba,
-                                shm_name,
+                                delivery.rgba,
+                                delivery.shm_name,
                                 scroll_x,
                                 scroll_y,
+                                delivery.gpu_image,
                             )
                         }
-                        None => (0, 0, 0, 0, Vec::new(), None, 0.0, 0.0),
+                        None => (0, 0, 0, 0, Vec::new(), None, 0.0, 0.0, None),
                     };
                 let resp = IpcMessage {
                     id: msg.id,
@@ -398,7 +405,7 @@ fn main() {
                         shm_name,
                         scroll_x,
                         scroll_y,
-                        gpu_image: None,
+                        gpu_image,
                     },
                 };
                 if let Err(e) = transport.send(resp) {
@@ -438,7 +445,14 @@ fn main() {
                 }
             }
             IpcMessageKind::CompositorRegisterUiSurface(info) => {
-                ui_surfaces.insert(info.surface_id, (info.width, info.height));
+                ui_surfaces.insert(
+                    info.surface_id,
+                    UiSurfaceState {
+                        width: info.width,
+                        height: info.height,
+                        rgba: Vec::new(),
+                    },
+                );
                 tracing::info!(
                     "compositor: UI surface {} 注册 {}x{}（4.4 切片）",
                     info.surface_id,
@@ -451,6 +465,93 @@ fn main() {
                 };
                 if let Err(e) = transport.send(resp) {
                     tracing::warn!("compositor: UI surface 注册响应失败: {e}");
+                    break;
+                }
+            }
+            IpcMessageKind::CompositorUiFrame {
+                surface_id,
+                width,
+                height,
+                rgba,
+                shm_name,
+            } => {
+                let stored = match zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, None) {
+                    Ok(pixels) => pixels,
+                    Err(e) => {
+                        tracing::warn!("compositor: UI 帧像素无效: {e}");
+                        let resp = IpcMessage {
+                            id: msg.id,
+                            kind: IpcMessageKind::Error(e.to_string()),
+                        };
+                        let _ = transport.send(resp);
+                        continue;
+                    }
+                };
+                if let Some(ui) = ui_surfaces.get_mut(&surface_id) {
+                    ui.width = width;
+                    ui.height = height;
+                    ui.rgba = stored;
+                    tracing::info!("compositor: UI surface {surface_id} 位图已更新 {width}x{height}");
+                } else {
+                    ui_surfaces.insert(
+                        surface_id,
+                        UiSurfaceState {
+                            width,
+                            height,
+                            rgba: stored,
+                        },
+                    );
+                }
+                let resp = IpcMessage {
+                    id: msg.id,
+                    kind: IpcMessageKind::Ok,
+                };
+                if let Err(e) = transport.send(resp) {
+                    tracing::warn!("compositor: UI 帧响应失败: {e}");
+                    break;
+                }
+            }
+            IpcMessageKind::GetCompositorUiFrame { surface_id } => {
+                let (width, height, rgba, shm_name, gpu_image) = match ui_surfaces.get(&surface_id) {
+                    Some(ui) if !ui.rgba.is_empty() => {
+                        let delivery = zero_protocol::deliver_compositor_frame_pixels(
+                            surface_id, 0, &ui.rgba, ui.width, ui.height,
+                        )
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("compositor: UI 帧交付失败，回退内联 rgba: {e}");
+                            zero_protocol::CompositorFrameDelivery {
+                                rgba: ui.rgba.clone(),
+                                shm_name: None,
+                                gpu_image: None,
+                            }
+                        });
+                        (
+                            ui.width,
+                            ui.height,
+                            delivery.rgba,
+                            delivery.shm_name,
+                            delivery.gpu_image,
+                        )
+                    }
+                    _ => (0, 0, Vec::new(), None, None),
+                };
+                let resp = IpcMessage {
+                    id: msg.id,
+                    kind: IpcMessageKind::CompositorFrameData {
+                        surface_id,
+                        navigation_epoch: 0,
+                        frame_id: 0,
+                        width,
+                        height,
+                        rgba,
+                        shm_name,
+                        scroll_x: 0.0,
+                        scroll_y: 0.0,
+                        gpu_image,
+                    },
+                };
+                if let Err(e) = transport.send(resp) {
+                    tracing::warn!("compositor: UI 帧读取响应失败: {e}");
                     break;
                 }
             }

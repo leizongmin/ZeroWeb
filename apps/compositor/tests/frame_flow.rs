@@ -146,9 +146,9 @@ fn get_frame(
             shm_name,
             scroll_x,
             scroll_y,
-            gpu_image: _,
+            gpu_image,
         } => {
-            let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name)
+            let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, gpu_image)
                 .expect("resolve compositor frame rgba");
             FrameData {
                 surface_id,
@@ -398,4 +398,127 @@ fn compositor_scroll_transform_bakes_pixels() {
     // scroll_y=1：第 0 行采样原第 1 行（蓝），末行采样越界为透明
     assert_eq!(&transformed.rgba[..4], &[0, 0, 255, 255]);
     assert_eq!(&transformed.rgba[28..32], &[0, 0, 0, 0]);
+}
+
+/// RFC 4.3-S2：gpu_image mailbox 经 shm 后端传递像素。
+#[test]
+fn compositor_gpu_image_mailbox_round_trips() {
+    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU_IMAGE", "1")]);
+    let frame = make_frame(2, 2, [42, 84, 126, 255]);
+    assert_eq!(submit_frame(&mut transport, 1, 5, 1, 1, frame), (5, 1, 1));
+
+    transport
+        .send(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::GetCompositorFrame {
+                surface_id: 5,
+                navigation_epoch: 1,
+                frame_id: 1,
+            },
+        })
+        .expect("get frame");
+    let resp: IpcMessage = transport.recv().expect("frame data");
+    match resp.kind {
+        IpcMessageKind::CompositorFrameData {
+            width,
+            height,
+            rgba,
+            shm_name,
+            gpu_image,
+            ..
+        } => {
+            assert!(rgba.is_empty());
+            assert!(shm_name.is_none());
+            let desc = gpu_image.expect("gpu_image descriptor");
+            assert_eq!(desc.width, width);
+            assert_eq!(desc.height, height);
+            let resolved =
+                zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, None, Some(desc)).expect("resolve");
+            assert_eq!(resolved.len(), (2 * 2 * 4) as usize);
+            assert!(resolved.iter().all(|&b| b == 42 || b == 84 || b == 126 || b == 255));
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+fn get_ui_frame(transport: &mut impl IpcChannel, request_id: u64, surface_id: u64) -> FrameData {
+    transport
+        .send(IpcMessage {
+            id: request_id,
+            kind: IpcMessageKind::GetCompositorUiFrame { surface_id },
+        })
+        .expect("get ui frame");
+    let resp: IpcMessage = transport.recv().expect("ui frame data");
+    match resp.kind {
+        IpcMessageKind::CompositorFrameData {
+            surface_id: sid,
+            navigation_epoch,
+            frame_id,
+            width,
+            height,
+            rgba,
+            shm_name,
+            scroll_x,
+            scroll_y,
+            gpu_image,
+        } => {
+            assert_eq!(sid, surface_id);
+            assert_eq!(navigation_epoch, 0);
+            assert_eq!(frame_id, 0);
+            assert!((scroll_x).abs() < f32::EPSILON);
+            assert!((scroll_y).abs() < f32::EPSILON);
+            let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, gpu_image)
+                .expect("resolve ui frame rgba");
+            FrameData {
+                surface_id: sid,
+                navigation_epoch,
+                frame_id,
+                width,
+                height,
+                rgba,
+                scroll_x: 0.0,
+                scroll_y: 0.0,
+            }
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+/// RFC 4.4-S2：UI 位图提交与回读。
+#[test]
+fn compositor_ui_frame_round_trips() {
+    let (mut transport, _comp) = spawn_compositor();
+    let ui_surface = u64::MAX;
+
+    transport
+        .send(IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::CompositorRegisterUiSurface(zero_protocol::CompositorUiSurfaceInfo {
+                surface_id: ui_surface,
+                width: 2,
+                height: 2,
+            }),
+        })
+        .expect("register ui");
+    let ack: IpcMessage = transport.recv().expect("register ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    transport
+        .send(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::CompositorUiFrame {
+                surface_id: ui_surface,
+                width: 2,
+                height: 2,
+                rgba: [255u8, 0, 0, 255].repeat(4),
+                shm_name: None,
+            },
+        })
+        .expect("ui frame");
+    let ack: IpcMessage = transport.recv().expect("ui frame ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    let ui = get_ui_frame(&mut transport, 3, ui_surface);
+    assert_eq!((ui.width, ui.height), (2, 2));
+    assert_eq!(&ui.rgba[..4], &[255, 0, 0, 255]);
 }

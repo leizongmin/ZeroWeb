@@ -1,6 +1,6 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v1.6 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1 ✅ / C2 ✅ / C3 ✅ S1+S2 / 4.1–4.5 + 4.2-S2 ✅）**
+版本：v1.7 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1–C3 / 4.1–4.5 / 4.2-S2 / 4.3-S2 / 4.4-S2 ✅）**
 
 > 实施状态（2026-08-11 更新）：
 > - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
@@ -16,11 +16,12 @@
 >     `ZW_COMPOSITOR_ASYNC_SCROLL=1` 时 Browser 推送滚动并消费 compositor 回读偏移。
 >   - S2：`ZW_COMPOSITOR_SCROLL_TRANSFORM=1` 时 compositor 在 `GetCompositorFrame`
 >     将 scroll 烘焙进 RGBA、回读 scroll 归零；Browser 不再对位图做 scroll 偏移。
-> - **4.3（OS 共享资源）✅ S1 / ⚠️ S2 协议预留**：
+> - **4.3（OS 共享资源）✅ S1 + S2**：
 >   - S1：Linux `ZW_COMPOSITOR_SHM=1` 时经 `/dev/shm/zeroweb-cmp-*` 传递 front 像素。
->   - S2：`GpuSharedImageDescriptor` + `CompositorFrameData.gpu_image` 协议字段（当前始终 `None`）。
-> - **4.4（Viz UI surface）✅ 切片**：`CompositorRegisterUiSurface` + Browser 启动时登记
->   Chrome UI surface（`CHROME_UI_SURFACE_ID`）；最终 present 仍为后续。
+>   - S2：`ZW_COMPOSITOR_GPU_IMAGE=1` 时 `gpu_image.mailbox_name` 经 shm 后端传递像素（非 GPU 纹理零拷贝）。
+> - **4.4（Viz UI surface）✅ 切片 + S2**：
+>   - 元数据：`CompositorRegisterUiSurface` + Browser 启动登记 `CHROME_UI_SURFACE_ID`。
+>   - S2：`CompositorUiFrame` / `GetCompositorUiFrame`；`ZW_COMPOSITOR_UI_FRAMES=1` 时 Browser 提交 UI 位图握手。
 > - **4.5（沙箱）✅ 钩子**：`ZW_COMPOSITOR_SANDBOX=1` 时 compositor 启动剥离
 >   `LD_PRELOAD` 等危险 env；seccomp 最小权限沙箱仍为后续。
 
@@ -106,10 +107,8 @@ compositor 启动失败或 IPC 断开时：
 | 生命周期 | 启动失败和断线回退；Tab 关闭释放 surface；退出终止子进程 |
 | C3 GPU S1+S2 | `gpu_raster.rs` + partial dirty GPU 路径；`ZW_COMPOSITOR_GPU=1` |
 | 4.3 shm S1 | `frame_shm.rs` + `ZW_COMPOSITOR_SHM=1`（Linux） |
-| 4.3 gpu_image S2 | 协议类型 + `CompositorFrameData.gpu_image` 字段 |
-| 4.1 发布线程 | `CompositorPublishThread` + `ZW_RENDERER_COMPOSITOR_THREAD=1` |
-| 4.2 滚动元数据 | `CompositorSetScroll` + async scroll env gate |
-| 4.4 UI surface | `CompositorRegisterUiSurface` + Browser 启动登记 |
+| 4.3 gpu_image S2 | `ZW_COMPOSITOR_GPU_IMAGE=1` + mailbox/shm 接线 |
+| 4.4 UI frame S2 | `CompositorUiFrame` + `GetCompositorUiFrame` |
 | 4.5 沙箱钩子 | `sandbox.rs` + `ZW_COMPOSITOR_SANDBOX=1` env 剥离 |
 
 ## 四、环境变量
@@ -119,16 +118,18 @@ compositor 启动失败或 IPC 断开时：
 | `ZW_COMPOSITOR_PROCESS=0` | legacy ViewPainted |
 | `ZW_COMPOSITOR_GPU=1` | compositor headless GPU 光栅 |
 | `ZW_COMPOSITOR_SHM=1` | Linux POSIX shm 帧像素 |
+| `ZW_COMPOSITOR_GPU_IMAGE=1` | gpu_image mailbox（shm 后端） |
 | `ZW_RENDERER_COMPOSITOR_THREAD=1` | renderer 异步 compositor IPC 发布 |
 | `ZW_COMPOSITOR_ASYNC_SCROLL=1` | compositor 滚动元数据 + Browser 消费 |
 | `ZW_COMPOSITOR_SCROLL_TRANSFORM=1` | compositor 侧 scroll 烘焙（回读 scroll=0） |
+| `ZW_COMPOSITOR_UI_FRAMES=1` | Browser 向 compositor 提交 UI 位图 |
 | `ZW_COMPOSITOR_SANDBOX=1` | compositor 启动 env 剥离 |
 
 ## 五、下一阶段（完整对齐）
 
 - compositor 侧滚动变换（非仅元数据回读）→ **4.2-S2 ✅**（env-gated 像素烘焙）
-- GPU shared image / mailbox / fence 零拷贝纹理传输与 present
-- Viz 式最终 surface 所有权与 Chrome UI 像素提交
+- GPU 纹理/fence **零拷贝** present（mailbox 当前为 shm 后端）
+- Viz 式最终 surface 所有权与窗口 present
 - seccomp 最小权限 OS sandbox
 - 设备丢失、进程崩溃和恢复路径的全平台验证
 
@@ -141,8 +142,9 @@ compositor 启动失败或 IPC 断开时：
 
 ## 七、验证与关系
 
-- C2/C3/4.x 定向测试：`frame_flow`（含 scroll/shm）、`compositor_protocol`、`compositor_client`、
-  `compositor_publish_thread`、GPU partial dirty 单测。
+- C2/C3/4.x 定向测试：`frame_flow`（**9** 案，含 scroll/shm/gpu_image/ui）、`compositor_protocol`、
+  `compositor_client`、`compositor_publish_thread`、GPU partial dirty 单测。
+- **2026-08-11 增量验收**：`make test` PASS；`make browser-compositor-smoke` PASS（legacy/compositor 双模式）。
 - 全量质量、reftest 和产品 smoke 由后续验收任务执行。
 - 渲染线程前置见 [`archive/render-threading-rfc-2026-08-07.md`](archive/render-threading-rfc-2026-08-07.md)（已实施归档）。
 - ImageDecoder 的请求/响应协议是 compositor 消息路由的先例。

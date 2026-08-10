@@ -1657,6 +1657,8 @@ impl RendererRuntime {
             | IpcMessageKind::ReleaseCompositorSurface { .. }
             | IpcMessageKind::CompositorSetScroll { .. }
             | IpcMessageKind::CompositorRegisterUiSurface(_)
+            | IpcMessageKind::CompositorUiFrame { .. }
+            | IpcMessageKind::GetCompositorUiFrame { .. }
             | IpcMessageKind::CompositorFrameData { .. }
             | IpcMessageKind::TitleChanged(_)
             | IpcMessageKind::UrlChanged(_)

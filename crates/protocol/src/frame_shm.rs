@@ -27,6 +27,21 @@ pub fn compositor_scroll_transform_enabled() -> bool {
     std::env::var("ZW_COMPOSITOR_SCROLL_TRANSFORM").is_ok_and(|v| v == "1")
 }
 
+/// 是否启用 GPU shared image 元数据通道（RFC 4.3-S2；Linux + `ZW_COMPOSITOR_GPU_IMAGE=1`）。
+///
+/// mailbox 当前复用 POSIX shm 后端；真正 GPU 纹理/fence 为后续切片。
+pub fn compositor_gpu_image_enabled() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("ZW_COMPOSITOR_GPU_IMAGE").is_ok_and(|v| v == "1")
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = std::env::var("ZW_COMPOSITOR_GPU_IMAGE");
+        false
+    }
+}
+
 /// 期望 RGBA 字节数；`width`/`height` 为 0 时允许 0。
 pub fn expected_rgba_len(width: u32, height: u32) -> usize {
     (width as usize).saturating_mul(height as usize).saturating_mul(4)
@@ -76,14 +91,73 @@ pub fn consume_compositor_frame(name: &str, expected_len: usize) -> Result<Vec<u
     }
 }
 
-/// 从内联 `rgba` 或 shm 名解析完整像素。
+/// compositor → Browser 帧像素交付方式（内联 / shm / gpu_image mailbox）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompositorFrameDelivery {
+    /// 内联 RGBA（非空时优先于 shm/gpu_image）。
+    pub rgba: Vec<u8>,
+    /// POSIX shm 名（不含前缀）。
+    pub shm_name: Option<String>,
+    /// GPU shared image 描述符（mailbox 复用 shm 后端）。
+    pub gpu_image: Option<crate::GpuSharedImageDescriptor>,
+}
+
+/// 按 env 选择交付方式写入像素。
+pub fn deliver_compositor_frame_pixels(
+    surface_id: u64,
+    frame_id: u64,
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<CompositorFrameDelivery, ProtocolError> {
+    if compositor_gpu_image_enabled() {
+        let mailbox_name = publish_compositor_frame(surface_id, frame_id, pixels)?;
+        return Ok(CompositorFrameDelivery {
+            rgba: Vec::new(),
+            shm_name: None,
+            gpu_image: Some(crate::GpuSharedImageDescriptor {
+                mailbox_name,
+                width,
+                height,
+            }),
+        });
+    }
+    if compositor_shm_enabled() {
+        let name = publish_compositor_frame(surface_id, frame_id, pixels)?;
+        return Ok(CompositorFrameDelivery {
+            rgba: Vec::new(),
+            shm_name: Some(name),
+            gpu_image: None,
+        });
+    }
+    Ok(CompositorFrameDelivery {
+        rgba: pixels.to_vec(),
+        shm_name: None,
+        gpu_image: None,
+    })
+}
+
+/// 从内联 `rgba`、shm 或 gpu_image mailbox 解析完整像素。
 pub fn resolve_compositor_frame_rgba(
     width: u32,
     height: u32,
     rgba: Vec<u8>,
     shm_name: Option<String>,
+    gpu_image: Option<crate::GpuSharedImageDescriptor>,
 ) -> Result<Vec<u8>, ProtocolError> {
     let expected = expected_rgba_len(width, height);
+    if let Some(desc) = gpu_image {
+        if desc.width != width || desc.height != height {
+            return Err(ProtocolError::Channel(format!(
+                "gpu_image 尺寸不匹配: 期望 {width}x{height}, 描述符 {}x{}",
+                desc.width, desc.height
+            )));
+        }
+        if desc.mailbox_name.is_empty() {
+            return Err(ProtocolError::Channel("gpu_image mailbox 名为空".into()));
+        }
+        return consume_compositor_frame(&desc.mailbox_name, expected);
+    }
     match shm_name {
         Some(name) if !name.is_empty() => consume_compositor_frame(&name, expected),
         Some(_) => Err(ProtocolError::Channel("compositor shm 名为空".into())),
@@ -131,7 +205,21 @@ mod tests {
     fn resolve_prefers_shm_over_inline_rgba() {
         let pixels = vec![255u8, 0, 0, 255];
         let name = publish_compositor_frame(1, 2, &pixels).expect("publish");
-        let resolved = resolve_compositor_frame_rgba(1, 1, vec![0; 4], Some(name)).expect("resolve");
+        let resolved = resolve_compositor_frame_rgba(1, 1, vec![0; 4], Some(name), None).expect("resolve");
+        assert_eq!(resolved, pixels);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn resolve_prefers_gpu_image_mailbox() {
+        let pixels = vec![10u8, 20, 30, 40];
+        let name = publish_compositor_frame(2, 3, &pixels).expect("publish");
+        let desc = crate::GpuSharedImageDescriptor {
+            mailbox_name: name,
+            width: 1,
+            height: 1,
+        };
+        let resolved = resolve_compositor_frame_rgba(1, 1, vec![0; 4], None, Some(desc)).expect("resolve");
         assert_eq!(resolved, pixels);
     }
 }

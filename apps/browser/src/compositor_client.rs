@@ -85,6 +85,12 @@ enum WorkerCommand {
         scroll_y: f32,
     },
     RegisterUiSurface(zero_protocol::CompositorUiSurfaceInfo),
+    UiFrame {
+        surface_id: u64,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    },
 }
 
 impl WorkerCommand {
@@ -94,6 +100,7 @@ impl WorkerCommand {
             Self::ReleaseSurface(surface_id) => *surface_id,
             Self::SetScroll { surface_id, .. } => *surface_id,
             Self::RegisterUiSurface(info) => info.surface_id,
+            Self::UiFrame { surface_id, .. } => *surface_id,
         }
     }
 }
@@ -157,6 +164,15 @@ impl CommandChannel {
 
     fn register_ui_surface(&self, info: zero_protocol::CompositorUiSurfaceInfo) -> bool {
         self.send(WorkerCommand::RegisterUiSurface(info))
+    }
+
+    fn forward_ui_frame(&self, surface_id: u64, width: u32, height: u32, rgba: Vec<u8>) -> bool {
+        self.send(WorkerCommand::UiFrame {
+            surface_id,
+            width,
+            height,
+            rgba,
+        })
     }
 
     fn send(&self, command: WorkerCommand) -> bool {
@@ -355,6 +371,12 @@ impl Client {
         }
     }
 
+    fn forward_ui_frame(&self, surface_id: u64, width: u32, height: u32, rgba: Vec<u8>) {
+        if self.status.load() != CompositorStatus::Disconnected {
+            let _ = self.commands.forward_ui_frame(surface_id, width, height, rgba);
+        }
+    }
+
     fn try_recv(&self, surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Option<CompositorFramePixels> {
         let frame = self.completed.try_recv(surface_id, navigation_epoch, frame_id)?;
         Some((
@@ -530,6 +552,24 @@ fn process_batch(
                 })?;
                 outstanding.insert(message_id, ExpectedResponse::ReleaseSurface);
             }
+            WorkerCommand::UiFrame {
+                surface_id,
+                width,
+                height,
+                rgba,
+            } => {
+                transport.send(IpcMessage {
+                    id: message_id,
+                    kind: IpcMessageKind::CompositorUiFrame {
+                        surface_id,
+                        width,
+                        height,
+                        rgba,
+                        shm_name: None,
+                    },
+                })?;
+                outstanding.insert(message_id, ExpectedResponse::ReleaseSurface);
+            }
         }
     }
 
@@ -579,7 +619,7 @@ fn process_batch(
                     shm_name,
                     scroll_x,
                     scroll_y,
-                    gpu_image: _,
+                    gpu_image,
                 },
             ) if expected
                 == (FrameKey {
@@ -588,7 +628,7 @@ fn process_batch(
                     frame_id,
                 }) =>
             {
-                let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name)?;
+                let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, gpu_image)?;
                 validate_frame_data(width, height, &rgba)?;
                 if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
                     tracing::info!(
@@ -718,7 +758,33 @@ pub fn register_ui_surface(info: zero_protocol::CompositorUiSurfaceInfo) {
         return;
     }
     let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
-    client.get_or_insert_with(Client::start).register_ui_surface(info);
+    let client = client.get_or_insert_with(Client::start);
+    let surface_id = info.surface_id;
+    client.register_ui_surface(info);
+    if ui_frames_enabled() {
+        client.forward_ui_frame(surface_id, 1, 1, vec![0, 0, 0, 0]);
+    }
+}
+
+/// RFC 4.4-S2：向 compositor 提交 Chrome UI 位图。
+pub fn forward_ui_frame(surface_id: u64, width: u32, height: u32, rgba: Vec<u8>) {
+    if !enabled() {
+        return;
+    }
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    client
+        .get_or_insert_with(Client::start)
+        .forward_ui_frame(surface_id, width, height, rgba);
+}
+
+/// 是否向 compositor 提交 UI 位图（`ZW_COMPOSITOR_UI_FRAMES=1`）。
+pub fn ui_frames_enabled() -> bool {
+    std::env::var("ZW_COMPOSITOR_UI_FRAMES").is_ok_and(|v| v == "1")
+}
+
+/// 是否启用 GPU shared image mailbox（`ZW_COMPOSITOR_GPU_IMAGE=1`，Linux）。
+pub fn gpu_image_enabled() -> bool {
+    zero_protocol::compositor_gpu_image_enabled()
 }
 
 /// Browser Chrome UI 层 surface 标识（与页面 surface 命名空间独立）。

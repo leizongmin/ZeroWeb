@@ -127,6 +127,25 @@ pub enum IpcMessageKind {
     },
     /// Browser → compositor：注册 Chrome UI 层 surface 元数据（RFC 4.4 切片）。
     CompositorRegisterUiSurface(crate::compositor_types::CompositorUiSurfaceInfo),
+    /// Browser → compositor：提交 Chrome UI 层位图（RFC 4.4-S2）。
+    CompositorUiFrame {
+        /// UI surface 的稳定标识。
+        surface_id: u64,
+        /// 宽度（像素）。
+        width: u32,
+        /// 高度（像素）。
+        height: u32,
+        /// RGBA 像素（shm 传输时为空）。
+        rgba: Vec<u8>,
+        /// POSIX shm buffer 名（不含 `zeroweb-cmp-` 前缀）。
+        #[serde(default)]
+        shm_name: Option<String>,
+    },
+    /// 拉取 UI surface 最新位图（显示消费方 → 合成器）。
+    GetCompositorUiFrame {
+        /// UI surface 的稳定标识。
+        surface_id: u64,
+    },
     /// 已合成帧数据（合成器 → 显示消费方）：front 缓冲像素。
     ///
     /// 默认内联 `rgba`；Linux `ZW_COMPOSITOR_SHM=1` 时 `shm_name` 非空且 `rgba` 为空，
