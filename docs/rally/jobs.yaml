@@ -62,7 +62,7 @@ jobs:
     query:
       session_reuse: false
 
-  # 每晚 21:00 与凌晨 3:00：手动触发 main CI，失败则修复并提交（claude-glm）
+  # 每晚 21:00 与凌晨 3:00：手动触发 main CI，失败则修复并提交（claude-dsflash）
   - id: "ci-watchdog"
     enabled: true
     schedule: "0 21,3 * * *"
@@ -73,7 +73,7 @@ jobs:
       - "-w"
       - "."
       - "--agent-command"
-      - "claude-glm"
+      - "claude-dsflash"
     cwd: "$DIR/../.."
     concurrency: "skip"
     start: "next"
