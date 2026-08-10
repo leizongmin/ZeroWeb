@@ -29,7 +29,7 @@ use crate::favicon_fetch::FaviconFetchState;
 use crate::input_keys::key_matches;
 use crate::layout;
 use crate::page_scroll::{self, TabScrollState};
-use crate::page_selection::{GlyphSelection, hit_test_glyph};
+use crate::page_selection::{GlyphSelection, hit_test_caret};
 use crate::pages;
 use crate::tab_manager::TabManager;
 use crate::text_input::TextInput;

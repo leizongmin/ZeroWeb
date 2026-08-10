@@ -515,7 +515,7 @@ impl BrowserApp {
             && self.content_pointer_drag.as_ref().is_none_or(|d| !d.scrolling)
             && let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32)
             && let Some(glyphs) = self.page_glyphs(tab_id)
-            && let Some(idx) = hit_test_glyph(&glyphs, doc_x, doc_y)
+            && let Some(idx) = hit_test_caret(&glyphs, doc_x, doc_y)
             && let Some(sel) = self.page_selection.get_mut(&tab_id)
         {
             sel.focus = idx;
@@ -975,7 +975,7 @@ impl BrowserApp {
                         last_y: y,
                         scrolling: false,
                     });
-                    let idx = hit_test_glyph(&glyphs, doc_x, doc_y).unwrap_or(0);
+                    let idx = hit_test_caret(&glyphs, doc_x, doc_y).unwrap_or(0);
                     if self.shift_pressed {
                         if let Some(sel) = self.page_selection.get_mut(&tab_id) {
                             sel.focus = idx;

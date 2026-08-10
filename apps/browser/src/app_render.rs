@@ -1242,10 +1242,9 @@ impl BrowserApp {
         if let Some(sel) = self.page_selection.get(&tab_id)
             && !sel.is_collapsed()
         {
-            let (start, end) = sel.normalized();
-            let end = end.min(page_primitives.glyphs.len().saturating_sub(1));
-            if start <= end {
-                for glyph in &page_primitives.glyphs[start..=end] {
+            let std::ops::Range { start, end } = sel.glyph_range(page_primitives.glyphs.len());
+            if start < end {
+                for glyph in &page_primitives.glyphs[start..end] {
                     let x = glyph.x * s + content_x_draw;
                     let top = glyph.y * s + content_y_draw - glyph.font_size * s;
                     let w = glyph.font_size * s * 0.55;

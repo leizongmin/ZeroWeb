@@ -13,7 +13,7 @@ fn append_source_run(text: &mut String, sources: &mut Vec<&GlyphSource>) {
     }
 }
 
-/// 页面 glyph 索引选区。
+/// 页面 glyph caret boundary 选区；端点范围为 `0..=glyphs.len()`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlyphSelection {
     pub anchor: usize,
@@ -40,18 +40,23 @@ impl GlyphSelection {
         }
     }
 
+    /// 返回裁剪到 glyph 数量的半开选区范围。
+    pub fn glyph_range(&self, glyph_count: usize) -> std::ops::Range<usize> {
+        let (start, end) = self.normalized();
+        start.min(glyph_count)..end.min(glyph_count)
+    }
+
     pub fn selected_text(glyphs: &[GlyphPrimitive], sel: &GlyphSelection) -> String {
         if glyphs.is_empty() || sel.is_collapsed() {
             return String::new();
         }
-        let (start, end) = sel.normalized();
-        if start >= glyphs.len() {
+        let std::ops::Range { start, end } = sel.glyph_range(glyphs.len());
+        if start >= end {
             return String::new();
         }
-        let end = end.min(glyphs.len().saturating_sub(1));
         let mut text = String::new();
         let mut source_run = Vec::new();
-        for glyph in &glyphs[start..=end] {
+        for glyph in &glyphs[start..end] {
             if let Some(source) = &glyph.source {
                 if source_run
                     .first()
@@ -74,9 +79,35 @@ impl GlyphSelection {
     }
 }
 
-/// 在文档坐标下命中 glyph 索引。
-pub fn hit_test_glyph(glyphs: &[GlyphPrimitive], x: f32, y: f32) -> Option<usize> {
-    let mut best: Option<(usize, f32)> = None;
+fn caret_boundary(glyphs: &[GlyphPrimitive], glyph_index: usize, after: bool) -> usize {
+    let mut boundary = glyph_index + usize::from(after);
+    if after {
+        while boundary < glyphs.len()
+            && glyphs[boundary - 1]
+                .source
+                .as_ref()
+                .zip(glyphs[boundary].source.as_ref())
+                .is_some_and(|(left, right)| left.same_cluster(right))
+        {
+            boundary += 1;
+        }
+    } else {
+        while boundary > 0
+            && glyphs[boundary - 1]
+                .source
+                .as_ref()
+                .zip(glyphs[boundary].source.as_ref())
+                .is_some_and(|(left, right)| left.same_cluster(right))
+        {
+            boundary -= 1;
+        }
+    }
+    boundary
+}
+
+/// 在文档坐标下命中 glyph 间的 caret boundary。
+pub fn hit_test_caret(glyphs: &[GlyphPrimitive], x: f32, y: f32) -> Option<usize> {
+    let mut best: Option<(usize, f32, bool)> = None;
     for (i, glyph) in glyphs.iter().enumerate() {
         let Some(ch) = char::from_u32(glyph.glyph_id) else {
             continue;
@@ -90,16 +121,16 @@ pub fn hit_test_glyph(glyphs: &[GlyphPrimitive], x: f32, y: f32) -> Option<usize
         let right = glyph.x + width;
         if x >= glyph.x && x <= right && y >= top && y <= bottom {
             let mid = glyph.x + width * 0.5;
-            return Some(if x > mid && i + 1 < glyphs.len() { i + 1 } else { i });
+            return Some(caret_boundary(glyphs, i, x > mid));
         }
         let cx = glyph.x + width * 0.5;
         let cy = glyph.y - glyph.font_size * 0.5;
         let dist = (x - cx).powi(2) + (y - cy).powi(2);
-        if best.is_none_or(|(_, d)| dist < d) {
-            best = Some((i, dist));
+        if best.is_none_or(|(_, best_dist, _)| dist < best_dist) {
+            best = Some((i, dist, x > cx));
         }
     }
-    best.map(|(i, _)| i.min(glyphs.len().saturating_sub(1)))
+    best.map(|(i, _, after)| caret_boundary(glyphs, i, after))
 }
 
 /// 双击选词：扩展 glyph 索引到相邻“词”字符。
@@ -182,13 +213,14 @@ mod tests {
     #[test]
     fn hit_test_returns_nearest_glyph_outside_tight_bounds() {
         let glyphs = vec![sample_glyph(0.0, 'H'), sample_glyph(10.0, 'i')];
-        assert_eq!(hit_test_glyph(&glyphs, 25.0, 20.0), Some(1));
+        assert_eq!(hit_test_caret(&glyphs, 25.0, 20.0), Some(2));
     }
 
     #[test]
     fn selected_text_uses_glyph_range() {
         let glyphs = vec![sample_glyph(0.0, 'a'), sample_glyph(10.0, 'b'), sample_glyph(20.0, 'c')];
-        let sel = GlyphSelection { anchor: 0, focus: 2 };
+        let sel = GlyphSelection { anchor: 0, focus: 3 };
+        assert_eq!(sel.glyph_range(glyphs.len()), 0..3);
         assert_eq!(GlyphSelection::selected_text(&glyphs, &sel), "abc");
     }
 
@@ -204,7 +236,7 @@ mod tests {
         base.source = Some(source.clone());
         let mut mark = sample_glyph(10.0, '\u{301}');
         mark.source = Some(source);
-        let sel = GlyphSelection { anchor: 0, focus: 1 };
+        let sel = GlyphSelection { anchor: 0, focus: 2 };
         assert_eq!(GlyphSelection::selected_text(&[base, mark], &sel), "A\u{301}");
     }
 
@@ -215,7 +247,7 @@ mod tests {
         let mut second = sample_glyph(10.0, 'A');
         second.source = GlyphSource::new(Arc::from("A\u{301}"), 0, 3);
 
-        let sel = GlyphSelection { anchor: 0, focus: 1 };
+        let sel = GlyphSelection { anchor: 0, focus: 2 };
         assert_eq!(
             GlyphSelection::selected_text(&[first, second], &sel),
             "A\u{301}A\u{301}"
@@ -234,12 +266,25 @@ mod tests {
         let glyphs = [gimel, bet, alef];
 
         assert_eq!(
-            GlyphSelection::selected_text(&glyphs, &GlyphSelection { anchor: 0, focus: 2 }),
+            GlyphSelection::selected_text(&glyphs, &GlyphSelection { anchor: 0, focus: 3 }),
             "אבג"
         );
         assert_eq!(
-            GlyphSelection::selected_text(&glyphs, &GlyphSelection { anchor: 0, focus: 1 }),
+            GlyphSelection::selected_text(&glyphs, &GlyphSelection { anchor: 0, focus: 2 }),
             "בג"
         );
+    }
+
+    #[test]
+    fn hit_test_snaps_caret_outside_shared_cluster() {
+        let source = GlyphSource::new(Arc::from("A\u{301}"), 0, 3).expect("valid source");
+        let mut base = sample_glyph(0.0, 'A');
+        base.source = Some(source.clone());
+        let mut mark = sample_glyph(10.0, '\u{301}');
+        mark.source = Some(source);
+        let glyphs = [base, mark];
+
+        assert_eq!(hit_test_caret(&glyphs, 8.0, 20.0), Some(2));
+        assert_eq!(hit_test_caret(&glyphs, 10.1, 20.0), Some(0));
     }
 }
