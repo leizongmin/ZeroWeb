@@ -37,6 +37,7 @@ const RESERVED: &[&str] = &[
     "length",
     "item",
     "getPropertyValue",
+    "getPropertyPriority",
     "setProperty",
     "removeProperty",
     // Object / Promise 协议名（fallthrough 到原型，保互操作正确）。
@@ -60,42 +61,70 @@ fn csd_owner(scope: &mut v8::PinScope, obj: &v8::Local<v8::Object>) -> Option<No
 
 // ── style 属性 parse / serialize（CSSOM § 声明序列化简化）──────────────
 
-/// 解析 `style` 属性串为有序 (prop, value) 声明列表（去重保首次出现位置）。格式 `prop: value; prop2: val2`。
-/// 空段 / 无冒号段跳过；重复 prop 仅留首次（后续丢弃）。prop/value trim。
-fn parse_style(s: &str) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = Vec::new();
+/// 一条 CSS 声明（属性名 kebab / 值 / `!important` 标志）。R3171：priority 经 parse→serialize 全程
+/// 跟踪——`!important` 从值剥离（CSSOM `getPropertyValue` 返不含 priority 的值，`getPropertyPriority`
+/// 单独返 "important"/""），serialize 重新附加。
+struct StyleDecl {
+    prop: String,
+    value: String,
+    important: bool,
+}
+
+/// 从值串剥离 `!important` priority（`red !important`→(`red`, true)）。`!` 后跟 `important`
+///（大小写不敏感，去空白）才视为 priority；否则保留原值（如 content `"a!b"` 不误剥）。
+fn split_priority(v: &str) -> (String, bool) {
+    if let Some(idx) = v.find('!') {
+        let after = v[idx + 1..].trim().to_ascii_lowercase();
+        if after == "important" {
+            return (v[..idx].trim().to_string(), true);
+        }
+    }
+    (v.trim().to_string(), false)
+}
+
+/// 解析 `style` 属性串为有序 `StyleDecl` 列表（去重保首次出现位置）。格式 `prop: value; prop2: val2`。
+/// 空段 / 无冒号段跳过；重复 prop 仅留首次（后续丢弃）。prop/value trim，`!important` 剥离入 `important`。
+fn parse_style(s: &str) -> Vec<StyleDecl> {
+    let mut out: Vec<StyleDecl> = Vec::new();
     for seg in s.split(';') {
         let Some((k, v)) = seg.split_once(':') else { continue };
-        let key = k.trim().to_ascii_lowercase();
-        if key.is_empty() {
+        let prop = k.trim().to_ascii_lowercase();
+        if prop.is_empty() {
             continue;
         }
-        if out.iter().any(|(pk, _)| *pk == key) {
+        if out.iter().any(|d| d.prop == prop) {
             continue; // 去重保首
         }
-        out.push((key, v.trim().to_string()));
+        let (value, important) = split_priority(v);
+        out.push(StyleDecl { prop, value, important });
     }
     out
 }
 
-/// 序列化声明列表为 `style` 属性串（`prop: value; prop2: val2`，无尾分号）。CSSOM 简化序列化。
-fn serialize_style(props: &[(String, String)]) -> String {
+/// 序列化 `StyleDecl` 列表为 `style` 属性串（`prop: value; prop2: val2`，important 附 ` !important`）。
+fn serialize_style(props: &[StyleDecl]) -> String {
     props
         .iter()
-        .map(|(k, v)| format!("{k}: {v}"))
+        .map(|d| {
+            if d.important {
+                format!("{}: {} !important", d.prop, d.value)
+            } else {
+                format!("{}: {}", d.prop, d.value)
+            }
+        })
         .collect::<Vec<_>>()
         .join("; ")
 }
 
 /// 读 owner 元素当前 style 声明（live——经 `style` 属性 `parse_style`）。
-fn current_props(doc: &zero_dom::Document, id: NodeId) -> Vec<(String, String)> {
+fn current_props(doc: &zero_dom::Document, id: NodeId) -> Vec<StyleDecl> {
     doc.get_attribute(id, "style")
         .map(|s| parse_style(&s))
         .unwrap_or_default()
 }
 
 /// 写回 owner 元素 `style` 属性（空列表 → 移除属性，spec：无声明时 style 属性为空串；dom set_attribute 写空串）。
-fn write_props(doc: &mut zero_dom::Document, id: NodeId, props: &[(String, String)]) {
+fn write_props(doc: &mut zero_dom::Document, id: NodeId, props: &[StyleDecl]) {
     let joined = serialize_style(props);
     doc.set_attribute(id, "style", &joined);
 }
@@ -179,8 +208,8 @@ fn native_style_named_getter(
     let val = with_dom(|d| {
         current_props(d, owner)
             .into_iter()
-            .find(|(k, _)| *k == prop)
-            .map(|(_, v)| v)
+            .find(|d| d.prop == prop)
+            .map(|d| d.value)
     })
     .flatten()
     .unwrap_or_default();
@@ -213,10 +242,16 @@ fn native_style_named_setter(
     let val = local_value_to_string(scope, value);
     with_dom_mut(|d| {
         let mut props = current_props(d, owner);
-        if let Some(p) = props.iter_mut().find(|(k, _)| *k == prop) {
-            p.1 = val; // upsert（已存在→更新值）
+        if let Some(decl) = props.iter_mut().find(|d| d.prop == prop) {
+            // upsert（已存在→更新值）；named setter 等价 setProperty(prop, value) 无 priority → 重置 important。
+            decl.value = val.clone();
+            decl.important = false;
         } else {
-            props.push((prop, val));
+            props.push(StyleDecl {
+                prop,
+                value: val,
+                important: false,
+            });
         }
         write_props(d, owner, &props);
     });
@@ -244,7 +279,7 @@ fn native_style_named_deleter(
     let prop = camel_to_kebab(&name);
     with_dom_mut(|d| {
         let mut props = current_props(d, owner);
-        props.retain(|(k, _)| *k != prop);
+        props.retain(|d| d.prop != prop);
         write_props(d, owner, &props);
     });
     rv.set_bool(true);
@@ -314,7 +349,7 @@ fn native_style_item_invoke(
         return;
     };
     let idx = args.get(0).integer_value(scope).unwrap_or(-1);
-    let name = with_dom(|d| current_props(d, owner).get(idx as usize).map(|(k, _)| k.clone())).flatten();
+    let name = with_dom(|d| current_props(d, owner).get(idx as usize).map(|d| d.prop.clone())).flatten();
     let name = name.unwrap_or_default();
     if let Some(s) = v8::String::new(scope, &name) {
         rv.set(s.into());
@@ -336,8 +371,8 @@ fn native_style_get_property_value_invoke(
     let val = with_dom(|d| {
         current_props(d, owner)
             .into_iter()
-            .find(|(k, _)| *k == prop)
-            .map(|(_, v)| v)
+            .find(|d| d.prop == prop)
+            .map(|d| d.value)
     })
     .flatten()
     .unwrap_or_default();
@@ -346,7 +381,35 @@ fn native_style_get_property_value_invoke(
     }
 }
 
-/// `setProperty(prop, value)`（spec）：prop（kebab）upsert + 重序列化写回。返 undefined（spec）。
+/// `getPropertyPriority(prop)`（spec `dom-cssstyledeclaration-getpropertypriority`）：prop 的 priority
+///（"important" 若 `!important`，否则 ""）。
+fn native_style_get_property_priority_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(owner) = csd_owner(scope, &this) else {
+        rv.set(v8::String::new(scope, "").unwrap().into());
+        return;
+    };
+    let prop = string_arg(scope, &args, 0).to_ascii_lowercase();
+    let important = with_dom(|d| {
+        current_props(d, owner)
+            .into_iter()
+            .find(|d| d.prop == prop)
+            .is_some_and(|d| d.important)
+    })
+    .unwrap_or(false);
+    let s = if important { "important" } else { "" };
+    if let Some(v) = v8::String::new(scope, s) {
+        rv.set(v.into());
+    }
+}
+
+/// `setProperty(prop, value, priority?)`（spec）：prop（kebab）upsert + 重序列化写回。priority 非空
+/// 且 ASCII 大小写不敏感 "important" → 设 important，否则非 important（priority 空/其它 → 非 important）。
+/// 返 undefined（spec）。
 fn native_style_set_property_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -361,12 +424,19 @@ fn native_style_set_property_invoke(
     if prop.is_empty() {
         return;
     }
+    // priority 第 3 参：spec 仅 "important" 生效（空/其它 → 非 important）。
+    let important = string_arg(scope, &args, 2).eq_ignore_ascii_case("important");
     with_dom_mut(|d| {
         let mut props = current_props(d, owner);
-        if let Some(p) = props.iter_mut().find(|(k, _)| *k == prop) {
-            p.1 = val.clone();
+        if let Some(decl) = props.iter_mut().find(|d| d.prop == prop) {
+            decl.value = val.clone();
+            decl.important = important;
         } else {
-            props.push((prop, val));
+            props.push(StyleDecl {
+                prop,
+                value: val,
+                important,
+            });
         }
         write_props(d, owner, &props);
     });
@@ -386,12 +456,12 @@ fn native_style_remove_property_invoke(
     let prop = string_arg(scope, &args, 0).to_ascii_lowercase();
     let old = with_dom_mut(|d| {
         let mut props = current_props(d, owner);
-        let pos = props.iter().position(|(k, _)| *k == prop);
+        let pos = props.iter().position(|d| d.prop == prop);
         let old = pos
-            .and_then(|i| props.get(i).map(|(_, v)| v.clone()))
+            .and_then(|i| props.get(i).map(|d| d.value.clone()))
             .unwrap_or_default();
         if pos.is_some() {
-            props.retain(|(k, _)| *k != prop);
+            props.retain(|d| d.prop != prop);
             write_props(d, owner, &props);
         }
         old
@@ -425,6 +495,11 @@ pub(super) fn build_and_cache_template(scope: &mut v8::PinScope) {
     let gpv = v8::FunctionTemplate::builder(native_style_get_property_value_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "getPropertyValue") {
         csd.set(k.into(), gpv.into());
+    }
+    // R3171 getPropertyPriority（spec priority 单独读：!"important"/""）。
+    let gpp = v8::FunctionTemplate::builder(native_style_get_property_priority_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "getPropertyPriority") {
+        csd.set(k.into(), gpp.into());
     }
     let sp = v8::FunctionTemplate::builder(native_style_set_property_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "setProperty") {

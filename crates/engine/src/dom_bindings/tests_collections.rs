@@ -290,3 +290,54 @@ fn native_class_list_cache_reclaimable_on_gc_r3145() {
     );
     reset_for_test();
 }
+
+/// R3171 CSSOM `!important`/priority：getPropertyValue 剥离 `!important`、getPropertyPriority 单独读、
+/// setProperty 第三参 priority、serialize 重新附加、named setter 重置 priority、removeProperty 旧值不含。
+#[test]
+fn native_style_important_priority_r3171() {
+    // 初始 style 属性含 !important → 解析剥离：getPropertyValue 不含，getPropertyPriority="important"。
+    let html = r#"<div id="a" style="color: red !important"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('a').style.getPropertyValue('color'))"
+        ),
+        "red"
+    );
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('a').style.getPropertyPriority('color'))"
+        ),
+        "important"
+    );
+    // setProperty priority 参 → value 不含 !important、priority="important"、style 属性附 " !important"。
+    assert_eq!(
+        run_script(
+            r#"<div id="a"></div>"#,
+            "(()=>{ const el=__zw_native_element_for_id('a'); const s=el.style;\
+             s.setProperty('color','blue','important');\
+             return s.getPropertyValue('color')+'/'+s.getPropertyPriority('color')+'/'+el.getAttribute('style'); })()"
+        ),
+        "blue/important/color: blue !important"
+    );
+    // named setter（el.style.color=X）重置 priority（setProperty(prop,value) 无 priority 语义）。
+    assert_eq!(
+        run_script(
+            r#"<div id="a" style="color: red !important"></div>"#,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.style.color='green';\
+             return el.style.getPropertyValue('color')+'/'+el.style.getPropertyPriority('color'); })()"
+        ),
+        "green/"
+    );
+    // removeProperty 返旧值（不含 !important）+ 删除后 priority=""。
+    assert_eq!(
+        run_script(
+            r#"<div id="a" style="color: red !important"></div>"#,
+            "(()=>{ const s=__zw_native_element_for_id('a').style;\
+             const old=s.removeProperty('color');\
+             return old+'/'+s.getPropertyPriority('color'); })()"
+        ),
+        "red/"
+    );
+}
