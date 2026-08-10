@@ -122,23 +122,67 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
             element::native_class_name_setter,
         );
     }
-    // R3153 aria* / role 反射属性（spec WAI-ARIA IDL reflection）：`el.ariaLabel`↔`aria-label`、
+    // R3153/R3154 aria* / role 反射属性（spec WAI-ARIA IDL reflection）：`el.ariaLabel`↔`aria-label`、
     // `el.role`↔`role` 等。共用 [`element::native_aria_reflected_getter`/`_setter`]（经 accessor name
-    // 分派 + [`element::idl_to_attr`] 转 content 属性名）。注册高频 a11y 集（a11y 库/无障碍高频）。
+    // 分派 + [`element::idl_to_attr`] 转 content 属性名）。注册标准 ARIA IDL 集（global + widget + value
+    // 族，~47 属性——a11y reflection 实质完整；[`element::idl_to_attr`] 机械转所有 aria* 名，低风险扩列）。
     for prop in [
         "role",
+        // 标签 / 描述。
         "ariaLabel",
+        "ariaLabelledBy",
+        "ariaDescribedBy",
+        "ariaDescription",
+        "ariaDetails",
+        // 全局状态 / 关系。
         "ariaHidden",
-        "ariaExpanded",
         "ariaDisabled",
+        "ariaCurrent",
+        "ariaHasPopup",
+        "ariaControls",
+        "ariaOwns",
+        "ariaFlowTo",
+        "ariaLive",
+        "ariaAtomic",
+        "ariaBusy",
+        "ariaRelevant",
+        "ariaInvalid",
+        "ariaErrorMessage",
+        "ariaKeyShortcuts",
+        "ariaRoleDescription",
+        "ariaBrailleLabel",
+        "ariaBrailleRoleDescription",
+        "ariaGrabbed",
+        "ariaDropEffect",
+        // widget 状态。
         "ariaPressed",
         "ariaSelected",
         "ariaChecked",
-        "ariaLive",
-        "ariaDescribedBy",
-        "ariaControls",
-        "ariaHasPopup",
-        "ariaCurrent",
+        "ariaExpanded",
+        "ariaModal",
+        "ariaMultiLine",
+        "ariaMultiSelectable",
+        "ariaOrientation",
+        "ariaSort",
+        "ariaAutoComplete",
+        "ariaReadOnly",
+        "ariaRequired",
+        "ariaPlaceholder",
+        "ariaLevel",
+        // value 族（slider / progress / spinbutton）。
+        "ariaValueNow",
+        "ariaValueMin",
+        "ariaValueMax",
+        "ariaValueText",
+        // 集合 / size-pos（list / grid / tree / tab）。
+        "ariaSetSize",
+        "ariaPosInSet",
+        "ariaRowCount",
+        "ariaRowIndex",
+        "ariaColCount",
+        "ariaColIndex",
+        "ariaRowSpan",
+        "ariaColSpan",
     ] {
         if let Some(k) = v8::String::new(scope, prop) {
             tmpl.set_accessor_with_setter(

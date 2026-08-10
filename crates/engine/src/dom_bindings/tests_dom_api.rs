@@ -1792,3 +1792,43 @@ fn native_element_aria_role_r3153() {
         "true"
     );
 }
+
+/// R3154 扩展 ARIA 集：value 族 / 集合 size-pos / 标签族扩展等经同一反射机制（idl_to_attr 机械转）。
+#[test]
+fn native_element_aria_extended_r3154() {
+    let html = r#"<div id="a" aria-valuenow="50"></div>"#;
+    // ariaValueNow ↔ aria-valuenow（value 族，机械转 aria + 小写余）。
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').ariaValueNow)"), "50");
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.ariaValueNow='75'; return el.getAttribute('aria-valuenow'); })()"
+        ),
+        "75"
+    );
+    // ariaLabelledBy ↔ aria-labelledby（多词单 hyphen）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.ariaLabelledBy='h1 h2'; return el.getAttribute('aria-labelledby'); })()"
+        ),
+        "h1 h2"
+    );
+    // ariaPosInSet ↔ aria-posinset（驼峰内大写转小写：PosInSet→posinset）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.ariaPosInSet='3'; return el.getAttribute('aria-posinset'); })()"
+        ),
+        "3"
+    );
+    // 多属性齐设（invalid / readonly / placeholder）经反射回读。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.ariaInvalid='true'; el.ariaReadOnly='true'; el.ariaPlaceholder='hint';\
+             return el.ariaInvalid+'/'+el.ariaReadOnly+'/'+el.ariaPlaceholder; })()"
+        ),
+        "true/true/hint"
+    );
+}
