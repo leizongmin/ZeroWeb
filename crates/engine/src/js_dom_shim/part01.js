@@ -444,7 +444,16 @@
     var out = {};
     if (!wire) return out;
     var parts = wire.split('\x1e');
-    for (var i = 0; i + 1 < parts.length; i += 2) out[parts[i]] = parts[i + 1];
+    for (var i = 0; i + 1 < parts.length; i += 2) {
+      var k = parts[i], v = parts[i + 1];
+      // R3222：多值头（Set-Cookie 等）累加为数组（旧 last-wins 丢多 cookie——getSetCookie 失效）。
+      if (Object.prototype.hasOwnProperty.call(out, k)) {
+        if (Array.isArray(out[k])) out[k].push(v);
+        else out[k] = [out[k], v];
+      } else {
+        out[k] = v;
+      }
+    }
     return out;
   }
   // 旧 / 错误路径：body 为裸文本（status 200）或 `__zw_fetch_error:` 前缀（ok:false）。增 headers:{}（向后兼容）。
@@ -505,7 +514,11 @@
       }
     }
     var out = '';
-    for (var j = 0; j < pairs.length; j++) out += (j > 0 ? '\x1e' : '') + pairs[j][0] + '\x1e' + pairs[j][1];
+    for (var j = 0; j < pairs.length; j++) {
+      // R3221：Fetch §3.4.4 出口过滤禁止请求头（JS 设的 Host/Content-Length/Cookie/Sec-*/Proxy-* 等永不到达 host）。
+      if (_zwIsForbiddenReqHeader(pairs[j][0].toLowerCase())) continue;
+      out += (out ? '\x1e' : '') + pairs[j][0] + '\x1e' + pairs[j][1];
+    }
     return out;
   }
   // R3014：headersWire（\x1e 分隔 name/value 对）header 查询/追加——fetch FormData body 接 Content-Type。
@@ -647,6 +660,9 @@
     this.ok = status >= 200 && status < 300;
     this.statusText = init.statusText != null ? String(init.statusText) : '';
     this.headers = new Headers(init.headers); // Headers 实例（spec，R2977）
+    // R3222：response guard——Fetch §3.4.5 禁止响应头（Set-Cookie/Set-Cookie2）经 get/has/iterate 不暴露，
+    // 仅 getSetCookie 返数组（spec 特例）。flag 由 Headers 各读方法消费。
+    this.headers._forbiddenResponse = true;
     this.type = 'default';
     this.url = '';
     this.redirected = false;

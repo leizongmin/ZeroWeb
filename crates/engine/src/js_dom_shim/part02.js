@@ -1101,10 +1101,41 @@
   function _hdrNorm(name) {
     return String(name).toLowerCase().trim();
   }
+  // R3221：Fetch §3.4.4 forbidden request-header names——JS 不可设（浏览器托管）。
+  // `_headersToWire` 出口过滤，保证 JS 设的禁止头永不到达 host/服务器。ln 为已小写归一的 name。
+  // https://fetch.spec.whatwg.org/#forbidden-header-name
+  var _ZW_FORBIDDEN_REQ_HEADERS = {
+    'accept-charset': 1, 'accept-encoding': 1,
+    'access-control-request-headers': 1, 'access-control-request-method': 1,
+    'connection': 1, 'content-length': 1, 'cookie': 1, 'cookie2': 1,
+    'date': 1, 'dnt': 1, 'expect': 1, 'host': 1, 'keep-alive': 1,
+    'origin': 1, 'referer': 1, 'te': 1, 'trailer': 1,
+    'transfer-encoding': 1, 'upgrade': 1, 'via': 1
+  };
+  function _zwIsForbiddenReqHeader(ln) {
+    if (_ZW_FORBIDDEN_REQ_HEADERS[ln]) return true;
+    // 前缀匹配（byte-case-insensitive，ln 已小写）：Proxy- / Sec-
+    return ln.slice(0, 6) === 'proxy-' || ln.slice(0, 4) === 'sec-';
+  }
+  // R3222：Fetch §3.4.5 forbidden response-header names——response Headers 的 get/has/iterate 不暴露，
+  // 但 getSetCookie 仍返 set-cookie 数组（spec 特例）。`_forbiddenResponse` 标记由 Response ctor 设。
+  // https://fetch.spec.whatwg.org/#forbidden-response-header-name
+  function _hdrIsForbiddenResponse(ln) {
+    return ln === 'set-cookie' || ln === 'set-cookie2';
+  }
   globalThis.Headers = globalThis.Headers || function Headers(init) {
     if (!(this instanceof Headers)) return new Headers(init);
     this._h = {}; // lowername -> string[]（保 append 序与多值）
     if (init == null) return;
+    // R3222：Headers 实例源 → 拷贝 raw _h（Fetch §5.1「for each header in init's header list」指内部列表，
+    // 含 response guard 隐藏的 Set-Cookie；新 Headers 为 guard-none，不继承 _forbiddenResponse）。
+    // 绕过 forEach（会被 response guard 过滤 Set-Cookie）——保 Response.clone() Set-Cookie 完整。
+    if (init._h) {
+      for (var k in init._h) {
+        if (Object.prototype.hasOwnProperty.call(init._h, k)) this._h[k] = init._h[k].slice();
+      }
+      return;
+    }
     if (Array.isArray(init)) {
       for (var i = 0; i < init.length; i++) {
         var pair = init[i];
@@ -1116,7 +1147,14 @@
       init.forEach(function (v, k) { self.append(k, v); });
     } else if (typeof init === 'object') {
       for (var k in init) {
-        if (Object.prototype.hasOwnProperty.call(init, k)) this.append(k, init[k]);
+        if (!Object.prototype.hasOwnProperty.call(init, k)) continue;
+        // R3222：多值头（_parseHeadersWire 累加的 Set-Cookie 数组）逐值 append（旧 String(arr) 逗号串错误）。
+        var vs = init[k];
+        if (Array.isArray(vs)) {
+          for (var vi = 0; vi < vs.length; vi++) this.append(k, vs[vi]);
+        } else {
+          this.append(k, vs);
+        }
       }
     }
   };
@@ -1131,16 +1169,21 @@
     },
     get: function (name) {
       name = _hdrNorm(name);
+      // R3222：response guard 不暴露 Set-Cookie/Set-Cookie2（Fetch §3.4.5）。
+      if (this._forbiddenResponse && _hdrIsForbiddenResponse(name)) return null;
       var v = this._h[name];
       return v && v.length ? v.join(', ') : null;
     },
     // getSetCookie：Set-Cookie 数组（spec 特例——get 合并 Set-Cookie 丢分隔，故单独返数组）。
+    // R3222：response guard 下 getSetCookie 仍返 set-cookie 数组（forbidden-response 不影响此 API）。
     getSetCookie: function () {
       var v = this._h['set-cookie'];
       return v ? v.slice() : [];
     },
     has: function (name) {
-      return Object.prototype.hasOwnProperty.call(this._h, _hdrNorm(name));
+      name = _hdrNorm(name);
+      if (this._forbiddenResponse && _hdrIsForbiddenResponse(name)) return false;
+      return Object.prototype.hasOwnProperty.call(this._h, name);
     },
     set: function (name, value) {
       name = _hdrNorm(name);
@@ -1149,27 +1192,27 @@
     },
     forEach: function (cb, thisArg) {
       for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k)) cb.call(thisArg, this._h[k].join(', '), k, this);
+        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._forbiddenResponse && _hdrIsForbiddenResponse(k))) cb.call(thisArg, this._h[k].join(', '), k, this);
       }
     },
     entries: function () {
       var out = [];
       for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k)) out.push([k, this._h[k].join(', ')]);
+        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._forbiddenResponse && _hdrIsForbiddenResponse(k))) out.push([k, this._h[k].join(', ')]);
       }
       return _zw_iter(out);
     },
     keys: function () {
       var out = [];
       for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k)) out.push(k);
+        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._forbiddenResponse && _hdrIsForbiddenResponse(k))) out.push(k);
       }
       return _zw_iter(out);
     },
     values: function () {
       var out = [];
       for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k)) out.push(this._h[k].join(', '));
+        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._forbiddenResponse && _hdrIsForbiddenResponse(k))) out.push(this._h[k].join(', '));
       }
       return _zw_iter(out);
     }

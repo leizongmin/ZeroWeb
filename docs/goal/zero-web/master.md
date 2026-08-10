@@ -121,7 +121,32 @@
 
 ## 最近完成的改进
 
-### Cookie 属性名 + SameSite 值 ASCII-大小写不敏感（本轮 R3218，net crate spec 审计）
+### fetch 禁止请求头过滤 + response Set-Cookie 隐藏（本轮 R3221/R3222，engine fetch-bridge hardening）
+
+承接上轮 net crate 扫描收敛（R3218/R3219 cookie + R3220 调查清零），其中「**engine fetch_bridge 禁止头 / Set-Cookie 暴露**」记为跨层 defer 项——本轮即取此执行。深审 JS Headers shim（`engine/src/js_dom_shim/part02.js`）+ fetch 出口（`part01.js` `_headersToWire` / `_parseHeadersWire` / Response ctor）对照 Fetch §3.4.4/§3.4.5——发现两项真偏差：
+
+- **R3221 禁止请求头未过滤**（Fetch §3.4.4）：JS `fetch(url, {headers})` 经 `_headersToWire` 收集**全量**头投递 host，**不过滤**禁止请求头名。`fetch(url, {headers: {Host: 'evil.com', Content-Length: '9999', Cookie: 'x', 'Sec-X': 'y', 'Proxy-Authorization': 'z'}})` → 这些禁止头**真到达 host/服务器**（浏览器托管的 Host/Cookie/Sec-* 等被 JS 覆写，安全风险：Host 头投毒 / 请求走私面）。
+- **R3222 Set-Cookie 暴露给 JS**（Fetch §3.4.5）：response Headers（`new Response(body,{headers})`）的 `get('Set-Cookie')` 返合并值（应 null——forbidden response-header）、`has('set-cookie')` 返 true（应 false）、迭代暴露 set-cookie。**附带**：`_parseHeadersWire` 用 plain object `out[k]=v` 收响应头，**多 Set-Cookie last-wins 折叠**（双 cookie 变单——getSetCookie 失效）。
+
+**修复**（纯 engine shim，非真跨层——禁止头契约在 JS API 边界即 Fetch 要求点）：
+- R3221：`_headersToWire` 出口按 Fetch §3.4.4 禁止请求头表（`_ZW_FORBIDDEN_REQ_HEADERS`：Accept-Charset/Accept-Encoding/Access-Control-Request-*/Connection/Content-Length/Cookie/Cookie2/Date/DNT/Expect/Host/Keep-Alive/Origin/Referer/TE/Trailer/Transfer-Encoding/Upgrade/Via + `Proxy-`/`Sec-` 前缀）过滤；JS 设的禁止头**永不到达 host**。出口过滤同时覆盖 `fetch(string)` 与 `fetch(new Request())` 两路（均经 `_headersToWire`）。
+- R3222：① `_parseHeadersWire` 多值头累加为数组（修双 Set-Cookie 折叠）；② Headers ctor 对象分支对数组值逐条 append（多值 Set-Cookie）；③ Headers ctor 对 Headers 实例源拷贝 raw `_h`（Fetch §5.1「for each header in init's header list」指内部列表——保 Response.clone() Set-Cookie 完整，新 Headers 为 guard-none）；④ Response ctor 设 `headers._forbiddenResponse=true`，get/has/forEach/entries/keys/values 经 `_hdrIsForbiddenResponse` 跳过 Set-Cookie/Set-Cookie2，**getSetCookie 不受影响**（spec 特例仍返数组）。
+
+**为何净正向**：① **闭合 Fetch §3.4.4/§3.4.5 禁止头契约**——JS 不可设浏览器托管请求头（Host/Cookie/Sec-* 等），不可读 response Set-Cookie（防 cookie 泄露给任意 JS）；② **多 Set-Cookie 保真**——getSetCookie 返完整数组（旧 last-wins 折叠，双 cookie 变单）；③ **零回归**——既有 Headers 测（`test_headers_r2794` 含 getSetCookie / append / set / 迭代全路径）零影响：`new Headers(plain)` 单值头行为不变（数组分支仅多值触发）；禁止请求头过滤仅剥离开出口（Content-Type/X-Custom 等非禁止头保留，FormData/URLSearchParams/Blob 自动 Content-Type 不受影响——content-type 非禁止）；response guard 仅 `_forbiddenResponse` 标记的 response Headers 生效，独立 `new Headers()` 不受影响；④ 集成测无发送禁止头（grep 确认），生产 fetch 路径（tab_js_worker）不依赖禁止头；⑤ 低风险（纯 JS shim，零 host/Rust 改）；⑥ engine 属本流域（zero-web P1a/P1b）。
+
+| 文件 | 变更 |
+|------|------|
+| `engine/src/js_dom_shim/part02.js` | `_ZW_FORBIDDEN_REQ_HEADERS` 表 + `_zwIsForbiddenReqHeader(ln)` + `_hdrIsForbiddenResponse(ln)` 助函数；Headers ctor：Headers 实例源 raw `_h` 拷贝 + 对象分支数组值逐条 append；get/has/forEach/entries/keys/values 经 `_forbiddenResponse` 跳过 Set-Cookie/Set-Cookie2（getSetCookie 不变，R3221/R3222 标注）。 |
+| `engine/src/js_dom_shim/part01.js` | `_headersToWire` 出口过滤禁止请求头（+ 修首项被过滤时分隔符 `j>0`→`out` 避免 leading sep）；`_parseHeadersWire` 多值头累加数组（修 Set-Cookie 折叠）；Response ctor 设 `headers._forbiddenResponse=true`（response guard）。 |
+| `engine/src/js_dom_bridge_tests/part10.rs` | +1 测 `test_fetch_forbidden_headers_r3221_r3222`（R3221：捕获 headersWire 验 5 禁止头剥离 + 2 允许头保留；R3222：双 Set-Cookie response 验 get→null / has→false / getSetCookie→双数组 / 迭代排除 / Content-Type 可读 / clone 保 Set-Cookie）。 |
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine --features v8 --all-targets -- -D warnings` 零警告 + **zero-engine --features v8 lib 1943 passed**（+1，零回归——既有 Headers/fetch 测全过）。spec：https://fetch.spec.whatwg.org/#forbidden-header-name + https://fetch.spec.whatwg.org/#forbidden-response-header-name + https://fetch.spec.whatwg.org/#dom-headers 。pre-commit guard 见提交。
+
+**已知限制（记）**：① `new Request(url,{headers:{Host:x}}).headers.get('host')` 仍返值（Request.headers 对象本身未施 request-guard——禁止头仅在 fetch **出口**剥离，spec 的 request-guard 为更大后续）；② host 侧 `fetch_bridge.rs` `FetchResponse.headers` 仍透传全量（含 Set-Cookie）——必要（getSetCookie 须在 JS 层取到数据），过滤在 JS Headers 层；③ `_forbiddenResponse` 仅 hide 读侧，append/set 仍可写 set-cookie 到 response Headers（spec response-guard 写侧 throw，本实现 lenient）。三项均 spec 边角，渐进推进。
+
+**下一步**：fetch-bridge hardening 收敛（R3221/R3222 闭合禁止头契约）。续候选：① **Request.headers request-guard**（append/set 禁止头 no-op，闭合 R3222 已知限①）；② 续 net crate（cookie 存储侧 domain_matches 空域 / IP 校验；或 net request.rs 头注入 RFC 7230 token 校验）；③ storage/IndexedDB spec 审；④ 字体栈/GPU 战略项 user/hardware gated。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。注：lark-cli 环境不可用（多轮尝试），通知走 master.md 控制面；⚠️ compositor 跨流红灯待渲染流。
+
+
 
 承接 R3217（DOM/序列化/CSSOM/Range/attribute-NS 九项 R3206–R3217 收敛，剩余项耦合或受限），**转 net crate 规范合规扫描**（URL 解析 / fetch header / 状态码处理），第一刀取 **cookie 解析**。深审 `CookieStore::parse_set_cookie`（`crates/net/src/cookie.rs`）对照 RFC 6265 §5.2——发现真偏差：属性名匹配走 `strip_prefix("Path=")`/`strip_prefix("path=")` 两分支（每属性仅覆盖首字母大小写两种），**任意其它大小写被静默忽略**：
 

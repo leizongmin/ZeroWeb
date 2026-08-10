@@ -2038,3 +2038,133 @@ fn test_element_get_elements_by_r2980() {
         "document.getElementsByName('nope') = 0（无匹配）"
     );
 }
+
+#[test]
+fn test_fetch_forbidden_headers_r3221_r3222() {
+    // R3221：fetch 出口过滤 Fetch §3.4.4 禁止请求头（Host/Content-Length/Cookie/Sec-*/Proxy-* 等）——
+    // JS 设的禁止头永不到达 host；R3222：response.headers 不暴露 Set-Cookie/Set-Cookie2（Fetch §3.4.5），
+    // 但 getSetCookie 返数组 + Response.clone() 保 Set-Cookie + 多 Set-Cookie 经 _parseHeadersWire 累加（旧 last-wins 丢）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // —— R3221：捕获 fetch 投递的 headersWire（args[3]），验禁止头被剥离、允许头保留 ——
+    let captured: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let cap = Arc::clone(&captured);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            *cap.lock().unwrap() = args.get(3).cloned().unwrap_or_default(); // headersWire
+            "ok".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "fetch('http://test.local/h', { headers: {\
+               'Host':'evil.com','Content-Length':'9999','Cookie':'sess=leak',\
+               'Sec-Fetch-Mode':'cors','Proxy-Authorization':'Basic x',\
+               'X-Custom':'keep','Content-Type':'text/plain'\
+             } });",
+        )
+        .unwrap();
+    let wire = captured.lock().unwrap().clone();
+    let tokens: Vec<&str> = wire.split('\u{001e}').collect();
+    let mut names: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i + 1 < tokens.len() {
+        names.push(tokens[i].to_ascii_lowercase());
+        i += 2;
+    }
+    for forbidden in ["host", "content-length", "cookie", "sec-fetch-mode", "proxy-authorization"] {
+        assert!(
+            !names.iter().any(|n| n == forbidden),
+            "R3221: 禁止请求头 {forbidden} 须被剥离（wire={wire:?}）"
+        );
+    }
+    for allowed in ["x-custom", "content-type"] {
+        assert!(
+            names.iter().any(|n| n == allowed),
+            "R3221: 非禁止头 {allowed} 须保留（wire={wire:?}）"
+        );
+    }
+
+    // —— R3222：resolve 一个含双 Set-Cookie 的响应，验 response guard ——
+    let captured_id: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let capid = Arc::clone(&captured_id);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *capid.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "fetch('http://test.local/s').then(function(r){\
+               globalThis.__scGet = r.headers.get('Set-Cookie');\
+               globalThis.__scHas = String(r.headers.has('set-cookie'));\
+               globalThis.__scArr = r.headers.getSetCookie().join('|');\
+               globalThis.__ctGet = r.headers.get('Content-Type');\
+               globalThis.__names = [...r.headers].map(function(p){return p[0];}).join(',');\
+               var cl = r.clone();\
+               globalThis.__cloneArr = cl.headers.getSetCookie().join('|');\
+               globalThis.__cloneGet = cl.headers.get('Set-Cookie');\
+             });",
+        )
+        .unwrap();
+    let id = captured_id.lock().unwrap().clone();
+    // wire：status=200 / statusText=OK / headersWire=双 Set-Cookie + Content-Type / body=hi
+    sandbox.resolve_async_callback(
+        &id,
+        "__zwfr:200\u{001f}OK\u{001f}Set-Cookie\u{001e}a=1\u{001e}Set-Cookie\u{001e}b=2\u{001e}Content-Type\u{001e}text/plain\u{001f}hi",
+    );
+
+    // get/has 经 response guard 不暴露 Set-Cookie（Fetch §3.4.5）。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__scGet)").unwrap().value,
+        "null",
+        "R3222: response.headers.get('Set-Cookie') 须 null（forbidden response-header）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__scHas)").unwrap().value,
+        "false",
+        "R3222: response.headers.has('set-cookie') 须 false"
+    );
+    // getSetCookie 仍返数组（spec 特例）；多 Set-Cookie 经 _parseHeadersWire 累加（旧 last-wins 丢多 cookie）。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__scArr)").unwrap().value,
+        "a=1|b=2",
+        "R3222: getSetCookie() 须返双 Set-Cookie 数组（多值累加）"
+    );
+    // 非禁止响应头正常读。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ctGet)").unwrap().value,
+        "text/plain",
+        "R3222: Content-Type 非禁止，须正常读"
+    );
+    // 迭代（entries）排除 Set-Cookie。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__names)").unwrap().value,
+        "content-type",
+        "R3222: 迭代须排除 Set-Cookie，仅含 content-type"
+    );
+    // Response.clone() 保 Set-Cookie（raw _h 拷贝 + 新 Response guard）。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cloneArr)").unwrap().value,
+        "a=1|b=2",
+        "R3222: Response.clone().headers.getSetCookie() 须保双 Set-Cookie"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cloneGet)").unwrap().value,
+        "null",
+        "R3222: clone 的 response.headers.get('Set-Cookie') 仍 null（guard）"
+    );
+}
+
