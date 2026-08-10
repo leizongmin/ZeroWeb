@@ -1451,6 +1451,33 @@ fn test_apply_select_option_mutation() {
     assert!(handles.is_empty(), "SelectOption 不创建 handle");
 }
 
+/// R3183：实证 polyfill 生产路径的 R3182 context-element 修复——`apply_dom_mutations` 经
+/// `replace_inner_html`（R3182 用 html5ever `parse_fragment` + table context）应用 `SetInnerHtml`。
+/// `table.innerHTML='<tr><td>x</td></tr>'` 序列化含 `tbody>tr>td`（context-element 解析），
+/// 旧 body-wrap 在 body context 下 `<tr>` foster-parent → table 仅含文本 "x"。
+#[test]
+fn test_apply_set_inner_html_table_context_r3183() {
+    let html = "<html><body><table id='t'></table></body></html>";
+    let out = apply_mutations_to_html(
+        html,
+        &[DomMutation::SetInnerHtml {
+            selector: "#t".into(),
+            html: "<tr><td>x</td></tr>".into(),
+        }],
+    )
+    .unwrap();
+    // context-element（table）解析 → 隐式 tbody 包裹 tr>td（R3182 修复）。
+    assert!(
+        out.contains("<tbody><tr><td>x</td></tr></tbody>"),
+        "table.innerHTML 经 context-element 解析应含 tbody>tr>td，got: {out}"
+    );
+    // 旧 body-wrap bug：table 仅含孤立文本 "x"（<table...>x</table>）。修复后无此结构。
+    assert!(
+        !out.contains(">x</table>"),
+        "table 不应含孤立文本 x（旧 foster-parent bug），got: {out}"
+    );
+}
+
 #[test]
 fn test_is_text_input() {
     // P1a change-on-blur：文本输入判定（textarea + input 文本类；排除 action 类型）。
