@@ -896,7 +896,9 @@
             } catch (_e) {}
             var nh = __zw_create_element(srcTag);
             // 复制属性（名 + 值）。R3198：handle 源经 `__zw_attr_names_handle`+`__zw_get_attr_handle`，
-            // sel 源经 `__zw_attr_names`+`__zw_get_attr`（旧 handle 源不复制属性）。
+            // sel 源经 `__zw_attr_names`（latest-wins，自 R3002）+ 值。R3203：sel 源值改走 `__zw_get_attr_lw`
+            //（latest-wins，与名源同 lw）——旧纯快照 `__zw_get_attr` 致 `setAttribute('x','v'); cloneNode()` 复制 stale 值
+            //（名 lw 含 x 但值读 stale 快照），handle 源本就读 mutations latest-wins 无此问题。
             try {
               var names = handle
                 ? (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '')
@@ -905,7 +907,7 @@
                 names.split('|').filter(Boolean).forEach(function(n) {
                   var v = handle
                     ? (typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(handle, n) : '')
-                    : __zw_get_attr(sel, n);
+                    : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
                   __zw_set_attr_handle(nh, n, v || '');
                 });
               }

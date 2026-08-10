@@ -1501,3 +1501,73 @@ fn test_form_method_enctype_enumerated_production_r3202() {
         "非 FORM 元素 method 回落通用字符串反射（原值），不走枚举"
     );
 }
+
+// ── R3203：cloneNode sel 源属性值 latest-wins（sel 读源 stale 全表审计发现）──
+//
+// R3198 cloneNode 属性复制：sel 源名经 `__zw_attr_names`（latest-wins，自 R3002）+ 值经**纯快照** `__zw_get_attr`。
+// 名源 lw 但值源纯快照 → 不一致：`el.setAttribute('data-x','newval'); el.cloneNode()` 时名含 data-x（lw）但值读
+// stale 快照（pending SetAttr 未反映）→ 克隆属性值 stale（旧值或空）。R3203：sel 源值改走 `__zw_get_attr_lw`
+//（与名源同 lw，handle 源本就读 mutations latest-wins 无此问题）。sel 读源 stale 全表审计：余（generic reflected
+// string R3037 / dataset R3002 / NamedNodeMap R3003 / defaultValue R2840 / dispatch_element_event async）均已 lw 或
+// 非 getter 时序，cloneNode 值复制为唯一真 stale latent。
+
+#[test]
+fn test_clone_node_sel_attr_latest_wins_production_r3203() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='src' data-x='old'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // sync setAttribute→cloneNode：设新值后立即克隆，克隆应含新值（旧纯快照读 stale 复制旧值）。
+    let cloned = sandbox
+        .execute(
+            "var e=document.querySelector('#src');\
+             e.setAttribute('data-x','newval');\
+             var c=e.cloneNode(false);\
+             c.getAttribute('data-x')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        cloned, "newval",
+        "cloneNode sel 源 sync setAttribute 后克隆属性值：newval（旧 stale 复制 'old'）"
+    );
+
+    // 新增属性（snapshot 无）后克隆——名 lw 含新属性 + 值 lw 反映（旧名含但值 stale 空）。
+    let added = sandbox
+        .execute(
+            "var e=document.querySelector('#src');\
+             e.setAttribute('data-added','v2');\
+             e.cloneNode(false).getAttribute('data-added')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        added, "v2",
+        "cloneNode sel 源新增属性后克隆：含新属性 + 值（旧名含但值 stale 空）"
+    );
+
+    // removeAttribute 后克隆——名 lw 不含被删属性 → 克隆无该属性（验证名源 lw 仍工作，未回归）。
+    let removed = sandbox
+        .execute(
+            "var e=document.querySelector('#src');\
+             e.removeAttribute('data-x');\
+             String(e.cloneNode(false).getAttribute('data-x')===null)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        removed, "true",
+        "cloneNode sel 源 removeAttribute 后克隆无该属性（名源 lw，未回归）"
+    );
+}
