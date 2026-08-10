@@ -435,6 +435,26 @@ pub(crate) fn listeners_local<'s>(
     })
 }
 
+/// 检查 `(ffi, event_type, capture, listener 身份)` 是否仍在 LISTENERS 中（dispatchEvent 派发期间用）。
+///
+/// spec DOM「inner invoke」：派发期间被 `removeEventListener` 的监听器（快照仍含其 Local）须 **skip**
+///（spec 检 `listener.removed` 标志）。[`listeners_local`] 返回快照不复检存活，故 dispatch 循环对本条目
+/// 调此 helper——同 `capture` 且 `strict_equals` 身份仍存在于 map 则存活，否则 skip。典型监听器数小，O(n) 查可接受。
+pub(crate) fn listener_present(
+    scope: &mut v8::PinScope,
+    ffi: u64,
+    event_type: &str,
+    capture: bool,
+    target: v8::Local<v8::Value>,
+) -> bool {
+    LISTENERS.with(|c| {
+        c.borrow().get(&(ffi, event_type.to_string())).is_some_and(|vec| {
+            vec.iter()
+                .any(|(cap, g)| *cap == capture && v8::Local::new(scope, g).strict_equals(target))
+        })
+    })
+}
+
 /// 移除与 `target`（Local）同身份且 `capture` 匹配的监听器；返移除数（removeEventListener 用）。
 /// spec：capture/bubble 监听器独立（removeEventListener 须匹配 capture 标志），故仅删 `capture` 匹配
 /// 且身份相同的条目。持 LISTENERS borrow_mut 期间仅做 `Local::new` + `strict_equals`（非 JS 回调，无再入），安全。

@@ -204,3 +204,33 @@ fn native_element_focusin_focusout_r3149() {
         "a-fout;"
     );
 }
+
+/// R3170 派发期间 `removeEventListener` 的监听器 skip（spec DOM「inner invoke」removed 标志）。
+/// l1 先注册并移除 l2，l2 后注册；dispatch 快照=[l1,l2]，l1 运行后 l2 已删 → 须 skip（非调用）。
+#[test]
+fn native_dispatch_skips_listener_removed_during_dispatch_r3170() {
+    let html = r#"<div id="x"></div>"#;
+    // l1 移除 l2（在其被调用前）→ l2 须 skip。期望 log 'l1;'（非 'l1;l2;'）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('x'); let log='';\
+             const l2=()=>{ log+='l2;'; };\
+             el.addEventListener('click', ()=>{ log+='l1;'; el.removeEventListener('click', l2); });\
+             el.addEventListener('click', l2);\
+             el.dispatchEvent({type:'click'}); return log; })()"
+        ),
+        "l1;"
+    );
+    // 对照：未被移除的监听器仍按注册序触发（l1; l2;）——确认 skip 仅针对 removed，非误伤。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('x'); let log='';\
+             el.addEventListener('click', ()=>{ log+='l1;'; });\
+             el.addEventListener('click', ()=>{ log+='l2;'; });\
+             el.dispatchEvent({type:'click'}); return log; })()"
+        ),
+        "l1;l2;"
+    );
+}

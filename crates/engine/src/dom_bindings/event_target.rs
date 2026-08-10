@@ -17,7 +17,8 @@ use v8;
 use zero_dom::NodeId;
 
 use super::gc::{
-    active_element, add_listener, encode_node_id, listeners_local, remove_listener, set_active_element, with_dom,
+    active_element, add_listener, encode_node_id, listener_present, listeners_local, remove_listener,
+    set_active_element, with_dom,
 };
 use super::{get_or_create_native_element, read_node_id, string_arg};
 
@@ -238,6 +239,11 @@ fn dispatch_event_impl(
                 _ => !cap, // BUBBLING_PHASE
             };
             if !invoke {
+                continue;
+            }
+            // R3170 spec「inner invoke」：派发期间被 removeEventListener 的监听器 skip（snapshot 仍含其
+            // Local，但 map 已删 → strict_equals 身份不再存活）。典型监听器数小，O(n) 存活检查可接受。
+            if !listener_present(scope, ffi, &event_type, cap, listener) {
                 continue;
             }
             if let Ok(func) = v8::Local::<v8::Function>::try_from(listener) {
