@@ -2135,3 +2135,48 @@ fn native_document_object_r3159() {
         "true"
     );
 }
+
+/// R3160 `document.title` get/set（spec `dom-document-title`）：经共享 factories helper（与
+/// `__zw_native_*_document_title` 工厂共用，DRY）。补全 native document 对象常用 API。
+#[test]
+fn native_document_title_r3160() {
+    // 读既有 <title> textContent。
+    let html = r#"<html><head><title>Old</title></head><body></body></html>"#;
+    assert_eq!(run_script(html, "(__zw_native_get_document().title)"), "Old");
+    // setter → 改 <title> textContent（经工厂 read 回读验证 live）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const d=__zw_native_get_document(); d.title='New'; return d.title; })()"
+        ),
+        "New"
+    );
+    // setter 与 __zw_native_get_document_title 工厂共享底层（工厂读同值）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_get_document().title='Shared'; return __zw_native_get_document_title(); })()"
+        ),
+        "Shared"
+    );
+    // 无 <title> → 空串（getter 缺省）。
+    let no_title_html = r#"<html><head></head><body></body></html>"#;
+    assert_eq!(run_script(no_title_html, "(__zw_native_get_document().title)"), "");
+    // setter 无 <title> 时在 <head> 建 <title>（html5ever 归一化有 head）→ 读回新值。
+    assert_eq!(
+        run_script(
+            no_title_html,
+            "(()=>{ __zw_native_get_document().title='Created'; return __zw_native_get_document().title; })()"
+        ),
+        "Created"
+    );
+    // setAttribute('title') **不** 反射到 document.title（element title 属性 ≠ document title）——
+    // document.title 读 <title> 元素（此 html 的 <title>Old</title>），非 title 属性。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_get_document().body.setAttribute('title','attr-tip'); return __zw_native_get_document().title; })()"
+        ),
+        "Old"
+    );
+}

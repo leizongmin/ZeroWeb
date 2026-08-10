@@ -22,8 +22,9 @@ use zero_dom::NodeId;
 use super::factories;
 use super::gc::{
     active_element, cache_document, cached_document, document_template_local, set_document_template, with_dom,
+    with_dom_mut,
 };
-use super::get_or_create_native_element;
+use super::{get_or_create_native_element, local_value_to_string};
 
 // ── accessor getter（live Document 读 → native 元素或 null）──────────────
 
@@ -86,6 +87,34 @@ fn native_or_null(scope: &mut v8::PinScope, id: Option<NodeId>, rv: &mut v8::Ret
     }
 }
 
+/// `document.title` getter（spec `dom-document-title`）：读首个 `<title>` 元素 textContent；
+/// 无 `<title>` → 空串。经共享 [`factories::read_document_title`]（与 `__zw_native_get_document_title`
+/// 工厂共用，DRY）。
+pub(super) fn native_document_title_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    _args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let title = with_dom(factories::read_document_title).unwrap_or_default();
+    if let Some(s) = v8::String::new(scope, &title) {
+        rv.set(s.into());
+    }
+}
+
+/// `document.title` setter：值 ToString 后经共享 [`factories::write_document_title`] 写回
+///（与 `__zw_native_set_document_title` 工厂共用，DRY）。
+pub(super) fn native_document_title_setter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    _args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    let val = local_value_to_string(scope, value);
+    with_dom_mut(|d| factories::write_document_title(d, &val));
+}
+
 // ── `document` ObjectTemplate 构建（方法复用 factories）+ 工厂 ──────────
 
 /// 建 `document` ObjectTemplate 并缓存（gc.rs `DOCUMENT_TEMPLATE`）。幂等（已建则 no-op）。
@@ -110,6 +139,11 @@ pub(super) fn build_and_cache_template(scope: &mut v8::PinScope) {
     }
     if let Some(k) = v8::String::new(scope, "activeElement") {
         tmpl.set_accessor(k.into(), native_active_element_getter);
+    }
+    // R3160 `document.title` get/set（spec `dom-document-title`）：经共享 factories helper（与
+    // __zw_native_*_document_title 工厂共用）。
+    if let Some(k) = v8::String::new(scope, "title") {
+        tmpl.set_accessor_with_setter(k.into(), native_document_title_getter, native_document_title_setter);
     }
 
     // 方法（复用 factories `*invoke`——忽略 `this`，查全局 live Document，与全局工厂语义一致）。

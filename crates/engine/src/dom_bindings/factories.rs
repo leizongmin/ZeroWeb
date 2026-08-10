@@ -28,7 +28,7 @@
 
 use v8;
 
-use zero_dom::NodeId;
+use zero_dom::{Document, NodeId};
 
 use super::gc::{active_element, with_dom, with_dom_mut};
 use super::{get_or_create_native_element, string_arg};
@@ -290,59 +290,67 @@ pub(super) fn native_get_elements_by_class_name_invoke(
 // ── R3139 document.title getter/setter ──
 
 /// `__zw_native_get_document_title()`：spec `dom-document-title` getter——读首个 `<title>` 元素
-/// 的 textContent；无 `<title>` → 空串。
+/// 的 textContent；无 `<title>` → 空串。经共享 [`read_document_title`]（R3160 抽出，`document.title`
+/// getter 共用）。
 pub(super) fn native_get_document_title_invoke(
     scope: &mut v8::PinScope,
     _args: v8::FunctionCallbackArguments,
     mut rv: v8::ReturnValue<v8::Value>,
 ) {
-    let title = with_dom(|d| {
-        d.get_elements_by_tag_name("title")
-            .into_iter()
-            .next()
-            .and_then(|id| d.text_content(id))
-    })
-    .flatten()
-    .unwrap_or_default();
+    let title = with_dom(read_document_title).unwrap_or_default();
     if let Some(s) = v8::String::new(scope, &title) {
         rv.set(s.into());
     }
 }
 
-/// `__zw_native_set_document_title(str)`：spec `dom-document-title` setter——
-/// ① 存在 `<title>` → 改其 textContent（清子 + 加文本节点，镜像 Node textContent setter）；
-/// ② 不存在 → 在 `<head>` 建 `<title>` 设文本（无 `<head>` 不创建，best-effort——html5ever 总归一化有 head）。
+/// 读文档 title：首个 `<title>` 元素的 textContent；无 `<title>` → 空串。[`with_dom`] 闭包用，
+/// 工厂 getter 与 `document.title` getter（document 子模块）共用（R3160 抽出，DRY）。
+pub(super) fn read_document_title(d: &Document) -> String {
+    d.get_elements_by_tag_name("title")
+        .into_iter()
+        .next()
+        .and_then(|id| d.text_content(id))
+        .unwrap_or_default()
+}
+
+/// `__zw_native_set_document_title(str)`：spec `dom-document-title` setter——经共享
+/// [`write_document_title`]（R3160 抽出，`document.title` setter 共用）。
 pub(super) fn native_set_document_title_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
     _rv: v8::ReturnValue<v8::Value>,
 ) {
     let val = string_arg(scope, &args, 0);
-    with_dom_mut(|d| {
-        let title_id = d.get_elements_by_tag_name("title").into_iter().next();
-        if let Some(tid) = title_id {
-            // 存在 → 改 textContent（清子 + 加文本节点）。
-            let children = d.child_nodes(tid);
-            for c in children {
-                let _ = d.remove_child(tid, c);
-            }
-            if !val.is_empty() {
-                let text_id = d.create_text_node(&val);
-                let _ = d.append_child(tid, text_id);
-            }
-        } else {
-            // 不存在 → 在 <head> 建 <title>（无 head 不创建）。
-            let head_id = d.get_elements_by_tag_name("head").into_iter().next();
-            if let Some(hid) = head_id {
-                let title = d.create_element("title");
-                if !val.is_empty() {
-                    let text_id = d.create_text_node(&val);
-                    let _ = d.append_child(title, text_id);
-                }
-                let _ = d.append_child(hid, title);
-            }
+    with_dom_mut(|d| write_document_title(d, &val));
+}
+
+/// 写文档 title：① 存在 `<title>` → 改其 textContent（清子 + 加文本节点，镜像 Node textContent setter）；
+/// ② 不存在 → 在 `<head>` 建 `<title>` 设文本（无 `<head>` 不创建，best-effort——html5ever 总归一化有 head）。
+/// [`with_dom_mut`] 闭包用，工厂 setter 与 `document.title` setter（document 子模块）共用（R3160 抽出，DRY）。
+pub(super) fn write_document_title(d: &mut Document, val: &str) {
+    let title_id = d.get_elements_by_tag_name("title").into_iter().next();
+    if let Some(tid) = title_id {
+        // 存在 → 改 textContent（清子 + 加文本节点）。
+        let children = d.child_nodes(tid);
+        for c in children {
+            let _ = d.remove_child(tid, c);
         }
-    });
+        if !val.is_empty() {
+            let text_id = d.create_text_node(val);
+            let _ = d.append_child(tid, text_id);
+        }
+    } else {
+        // 不存在 → 在 <head> 建 <title>（无 head 不创建）。
+        let head_id = d.get_elements_by_tag_name("head").into_iter().next();
+        if let Some(hid) = head_id {
+            let title = d.create_element("title");
+            if !val.is_empty() {
+                let text_id = d.create_text_node(val);
+                let _ = d.append_child(title, text_id);
+            }
+            let _ = d.append_child(hid, title);
+        }
+    }
 }
 
 // ── R3148 document.activeElement 工厂 ──
