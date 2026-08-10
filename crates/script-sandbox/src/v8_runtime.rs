@@ -647,14 +647,26 @@ impl Drop for V8Sandbox {
     fn drop(&mut self) {
         // 先停看门狗线程并 join（防其持 ThreadSafeHandle 对即将销毁的 isolate 调
         // terminate_execution），再释放 isolate 与 context。
+        // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+        #[cfg(feature = "v8")]
+        eprintln!("[TEMP-DIAG] V8Sandbox::drop: sending Stop");
         if let Some(tx) = &self.watchdog_tx {
             let _ = tx.send(WatchdogMsg::Stop);
         }
         if let Some(join) = self.watchdog_join.take() {
+            // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+            #[cfg(feature = "v8")]
+            eprintln!("[TEMP-DIAG] V8Sandbox::drop: joining watchdog");
             let _ = join.join();
         }
+        // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+        #[cfg(feature = "v8")]
+        eprintln!("[TEMP-DIAG] V8Sandbox::drop: watchdog joined, dropping isolate");
         self.cached_context = None;
         self.isolate = None;
+        // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+        #[cfg(feature = "v8")]
+        eprintln!("[TEMP-DIAG] V8Sandbox::drop: isolate dropped, drop complete");
     }
 }
 
