@@ -659,10 +659,10 @@
     this.status = status;
     this.ok = status >= 200 && status < 300;
     this.statusText = init.statusText != null ? String(init.statusText) : '';
-    this.headers = new Headers(init.headers); // Headers 实例（spec，R2977）
-    // R3222：response guard——Fetch §3.4.5 禁止响应头（Set-Cookie/Set-Cookie2）经 get/has/iterate 不暴露，
-    // 仅 getSetCookie 返数组（spec 特例）。flag 由 Headers 各读方法消费。
-    this.headers._forbiddenResponse = true;
+    this.headers = new Headers(init.headers); // Headers 实例（spec，R2977）；fill guard none（Set-Cookie 存）
+    // R3222/R3223：response guard（Fetch §6.2 step 13，fill 后设）——get/has/iterate 不暴露 Set-Cookie/Set-Cookie2，
+    // append/set/delete 写侧阻断（§5.2），仅 getSetCookie 返数组（spec 特例）。
+    this.headers._guard = 'response';
     this.type = 'default';
     this.url = '';
     this.redirected = false;
@@ -716,7 +716,11 @@
     var isObj = input && typeof input === 'object';
     this.url = isObj ? String(input.url || '') : String(input);
     this.method = String(init.method || (isObj ? input.method : '') || 'GET').toUpperCase();
-    this.headers = new Headers(init.headers || (isObj ? input.headers : null));
+    // R3223：request guard（Fetch §6.3 step 31-32）——guard 先于 fill 设，append 过滤禁止请求头
+    //（Host/Content-Length/Cookie/Sec-*/Proxy-* 等不在 request.headers 暴露；闭合 R3222 已知限①）。
+    this.headers = new Headers();
+    this.headers._guard = 'request';
+    _fillHeaders(this.headers, init.headers != null ? init.headers : (isObj ? input.headers : null));
     this.body = init.body != null ? String(init.body) : (isObj && input.body != null ? String(input.body) : null);
     this.cache = init.cache || 'default';
     this.mode = init.mode || 'cors';

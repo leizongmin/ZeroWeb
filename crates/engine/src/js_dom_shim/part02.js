@@ -1118,59 +1118,76 @@
     return ln.slice(0, 6) === 'proxy-' || ln.slice(0, 4) === 'sec-';
   }
   // R3222：Fetch §3.4.5 forbidden response-header names——response Headers 的 get/has/iterate 不暴露，
-  // 但 getSetCookie 仍返 set-cookie 数组（spec 特例）。`_forbiddenResponse` 标记由 Response ctor 设。
+  // 但 getSetCookie 仍返 set-cookie 数组（spec 特例）。`_guard`='response' 由 Response ctor 设。
   // https://fetch.spec.whatwg.org/#forbidden-response-header-name
   function _hdrIsForbiddenResponse(ln) {
     return ln === 'set-cookie' || ln === 'set-cookie2';
   }
-  globalThis.Headers = globalThis.Headers || function Headers(init) {
-    if (!(this instanceof Headers)) return new Headers(init);
-    this._h = {}; // lowername -> string[]（保 append 序与多值）
+  // R3223：Headers guard 写侧阻断（Fetch §5.2 append/set/delete step 3/5）——
+  // request guard 阻 forbidden request-header；response guard 阻 forbidden response-header；none 不阻。
+  function _hdrGuardBlocks(guard, ln) {
+    if (guard === 'request') return _zwIsForbiddenReqHeader(ln);
+    if (guard === 'response') return _hdrIsForbiddenResponse(ln);
+    return false;
+  }
+  // R3223：Headers fill——逐值 append（尊重目标 guard）。供 Headers ctor（guard none）与 Request ctor
+  //（guard request）复用。Headers 实例源直接迭代内部 _h（Fetch §5.1「for each header in init's header list」
+  // 指内部列表，含 response guard 隐藏的 Set-Cookie；目标 guard 决定是否过滤）。
+  function _fillHeaders(h, init) {
     if (init == null) return;
-    // R3222：Headers 实例源 → 拷贝 raw _h（Fetch §5.1「for each header in init's header list」指内部列表，
-    // 含 response guard 隐藏的 Set-Cookie；新 Headers 为 guard-none，不继承 _forbiddenResponse）。
-    // 绕过 forEach（会被 response guard 过滤 Set-Cookie）——保 Response.clone() Set-Cookie 完整。
     if (init._h) {
       for (var k in init._h) {
-        if (Object.prototype.hasOwnProperty.call(init._h, k)) this._h[k] = init._h[k].slice();
+        if (!Object.prototype.hasOwnProperty.call(init._h, k)) continue;
+        var vals = init._h[k];
+        for (var vi = 0; vi < vals.length; vi++) h.append(k, vals[vi]);
       }
       return;
     }
     if (Array.isArray(init)) {
       for (var i = 0; i < init.length; i++) {
         var pair = init[i];
-        if (pair && pair.length >= 2) this.append(pair[0], pair[1]);
+        if (pair && pair.length >= 2) h.append(pair[0], pair[1]);
       }
     } else if (typeof init.forEach === 'function') {
       // Headers-like（forEach 回调 (value, name, headers)）。
-      var self = this;
-      init.forEach(function (v, k) { self.append(k, v); });
+      init.forEach(function (v, k) { h.append(k, v); });
     } else if (typeof init === 'object') {
       for (var k in init) {
         if (!Object.prototype.hasOwnProperty.call(init, k)) continue;
-        // R3222：多值头（_parseHeadersWire 累加的 Set-Cookie 数组）逐值 append（旧 String(arr) 逗号串错误）。
+        // R3222：多值头（_parseHeadersWire 累加的 Set-Cookie 数组）逐值 append。
         var vs = init[k];
         if (Array.isArray(vs)) {
-          for (var vi = 0; vi < vs.length; vi++) this.append(k, vs[vi]);
+          for (var vi = 0; vi < vs.length; vi++) h.append(k, vs[vi]);
         } else {
-          this.append(k, vs);
+          h.append(k, vs);
         }
       }
     }
+  }
+  globalThis.Headers = globalThis.Headers || function Headers(init) {
+    if (!(this instanceof Headers)) return new Headers(init);
+    this._h = {}; // lowername -> string[]（保 append 序与多值）
+    this._guard = 'none'; // R3223：guard none/request/response（Fetch §5.1）；ctor 构造为 none（不过滤）
+    if (init != null) _fillHeaders(this, init); // guard none → 不过滤禁止头
   };
   globalThis.Headers.prototype = {
     append: function (name, value) {
       name = _hdrNorm(name);
       if (!name) return;
+      // R3223：guard 写侧阻断（request→forbidden req-header；response→forbidden resp-header）。
+      if (_hdrGuardBlocks(this._guard, name)) return;
       (this._h[name] = this._h[name] || []).push(String(value));
     },
     delete: function (name) {
-      delete this._h[_hdrNorm(name)];
+      name = _hdrNorm(name);
+      // R3223：禁止头经 guard 不可删（Fetch §5.4 delete step 3/5；request guard 下本就未存，response guard 护 Set-Cookie）。
+      if (_hdrGuardBlocks(this._guard, name)) return;
+      delete this._h[name];
     },
     get: function (name) {
       name = _hdrNorm(name);
       // R3222：response guard 不暴露 Set-Cookie/Set-Cookie2（Fetch §3.4.5）。
-      if (this._forbiddenResponse && _hdrIsForbiddenResponse(name)) return null;
+      if (this._guard === 'response' && _hdrIsForbiddenResponse(name)) return null;
       var v = this._h[name];
       return v && v.length ? v.join(', ') : null;
     },
@@ -1182,37 +1199,39 @@
     },
     has: function (name) {
       name = _hdrNorm(name);
-      if (this._forbiddenResponse && _hdrIsForbiddenResponse(name)) return false;
+      if (this._guard === 'response' && _hdrIsForbiddenResponse(name)) return false;
       return Object.prototype.hasOwnProperty.call(this._h, name);
     },
     set: function (name, value) {
       name = _hdrNorm(name);
       if (!name) return;
+      // R3223：guard 写侧阻断（同 append）。
+      if (_hdrGuardBlocks(this._guard, name)) return;
       this._h[name] = [String(value)];
     },
     forEach: function (cb, thisArg) {
       for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._forbiddenResponse && _hdrIsForbiddenResponse(k))) cb.call(thisArg, this._h[k].join(', '), k, this);
+        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._guard === 'response' && _hdrIsForbiddenResponse(k))) cb.call(thisArg, this._h[k].join(', '), k, this);
       }
     },
     entries: function () {
       var out = [];
       for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._forbiddenResponse && _hdrIsForbiddenResponse(k))) out.push([k, this._h[k].join(', ')]);
+        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._guard === 'response' && _hdrIsForbiddenResponse(k))) out.push([k, this._h[k].join(', ')]);
       }
       return _zw_iter(out);
     },
     keys: function () {
       var out = [];
       for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._forbiddenResponse && _hdrIsForbiddenResponse(k))) out.push(k);
+        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._guard === 'response' && _hdrIsForbiddenResponse(k))) out.push(k);
       }
       return _zw_iter(out);
     },
     values: function () {
       var out = [];
       for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._forbiddenResponse && _hdrIsForbiddenResponse(k))) out.push(this._h[k].join(', '));
+        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._guard === 'response' && _hdrIsForbiddenResponse(k))) out.push(this._h[k].join(', '));
       }
       return _zw_iter(out);
     }

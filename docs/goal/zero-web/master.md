@@ -121,7 +121,33 @@
 
 ## 最近完成的改进
 
-### fetch 禁止请求头过滤 + response Set-Cookie 隐藏（本轮 R3221/R3222，engine fetch-bridge hardening）
+### Headers guard 系统（request/response，闭合 R3222 已知限①③）（本轮 R3223，engine fetch-bridge hardening）
+
+承接 R3221/R3222（fetch 出口过滤禁止请求头 + response Set-Cookie 读侧隐藏），本轮闭合 R3222 记的两项**已知限制**：① `new Request(url,{headers:{Host:x}}).headers.get('host')` 仍返值（Request.headers 对象本身未施 request-guard，禁止头仅在 fetch **出口**剥离）；③ response guard 仅 hide 读侧，append/set 仍可写 Set-Cookie。深审对照 Fetch §5.1（Headers）/§5.2（append/set/delete guard 步骤）/§6.2（Response ctor，fill 后设 response guard）/§6.3（Request ctor，**guard 先于 fill** step 31-32）——发现根因：Headers 无 guard 概念，R3222 的 `_forbiddenResponse` 为单 flag（仅 response 读侧），未覆盖 request 写侧 + response 写侧。
+
+**修复**：引入 Headers guard 系统（`_guard`：`'none'`/`'request'`/`'response'`，Fetch §5.1）：
+- **`_hdrGuardBlocks(guard, ln)`**（写侧阻断，Fetch §5.2 step 3/5）：request guard 阻 forbidden request-header（`_zwIsForbiddenReqHeader`，R3221 表）；response guard 阻 forbidden response-header（`_hdrIsForbiddenResponse`，set-cookie/set-cookie2）；none 不阻。
+- **append/set/delete** 经 `_hdrGuardBlocks` 阻断（旧仅 append/set 无 guard、delete 无守卫）——闭合限③（response 写侧 Set-Cookie no-op）。
+- **`_fillHeaders(h, init)`** 抽出（Headers ctor + Request ctor 复用）：逐值 append 尊重目标 guard；Headers 实例源直接迭代内部 `_h`（Fetch §5.1「for each header in init's header list」指内部列表）。
+- **Request ctor**（part01）：`new Headers()` → `_guard='request'` **先于 fill** → `_fillHeaders(this.headers, src)`（append 经 request guard 过滤禁止请求头）——闭合限①（`request.headers.get('host')` 现 null）。
+- **Response ctor**：`new Headers(init.headers)`（fill guard none，Set-Cookie 存）→ `_guard='response'`（fill 后设，Fetch §6.2 step 13）。读侧 `_guard==='response'` 替换旧 `_forbiddenResponse` flag。
+- **standalone `new Headers()`** 为 guard-none（Fetch §5.1，不过滤）——forbidden 名可写可读（spec 一致：guard 仅 Request/Response 附着时生效）。
+
+**为何净正向**：① **闭合 R3222 两项已知限**——request.headers 施 request-guard（Host/Cookie/Sec-* 等构造时即过滤 + append/set/delete no-op）；response guard 写侧阻断 Set-Cookie；② **spec 一致性提升**——guard 系统对齐 Fetch §5.1/§5.2/§6.2/§6.3，Headers 行为可预测；③ **零回归**——既有测（`test_headers_r2794` standalone Headers 全路径含 append('Set-Cookie') + getSetCookie；`test_fetch_forbidden_headers_r3221_r3222` response Set-Cookie 读侧 + clone）零影响：standalone Headers guard-none 行为同旧；request guard 仅 `new Request()` 路径；response 读侧 `_guard==='response'` 等价旧 `_forbiddenResponse`；④ `_fillHeaders` 抽出减重复（旧 ctor 内联 fill 逻辑 + raw-copy 分支，现统一）；⑤ 低风险（纯 JS shim，零 host/Rust 改）；⑥ engine 属本流域。
+
+| 文件 | 变更 |
+|------|------|
+| `engine/src/js_dom_shim/part02.js` | `_hdrGuardBlocks(guard,ln)` + `_fillHeaders(h,init)` 助函数；Headers ctor 改用 `_fillHeaders` + `_guard='none'`；append/set/delete 经 `_hdrGuardBlocks` 写侧阻断；读方法 `_forbiddenResponse` → `_guard==='response'`。 |
+| `engine/src/js_dom_shim/part01.js` | Request ctor：`new Headers()` + `_guard='request'`（先于 fill）+ `_fillHeaders`；Response ctor：`_forbiddenResponse=true` → `_guard='response'`。 |
+| `engine/src/js_dom_bridge_tests/part10.rs` | +1 测 `test_request_headers_guard_r3223`（request guard 构造过滤 5 禁止头 + append/set no-op + 非禁止头保留 + response guard 写侧 Set-Cookie no-op + guard-none 不受限 + Request.clone() guard 一致）。 |
+
+验证：`cargo fmt --all -- --check` clean + `cargo clippy -p zero-engine --features v8 --all-targets -- -D warnings` 零警告 + **zero-engine --features v8 lib 1944 passed**（+1，零回归——R3221/R3222 + Headers 测全过）。spec：https://fetch.spec.whatwg.org/#dom-headers + §5.2（append/set/delete）+ §6.2/§6.3（Response/Request ctor）。pre-commit guard 见提交。
+
+**已知限制（记）**：① request-no-cors guard 未实现（Fetch §5.2 step 4——request-no-cors 模式额外过滤非 CORS-safelisted 值；本 shim Request.mode 存但未驱动 guard，mode='no-cors' 行为同 cors，记限）；② guard immutable（Response.error() / cache 等）未实现（本 shim 无 immutable 场景）。两项均 spec 边角，渐进推进。
+
+**下一步**：fetch-bridge hardening 三轮收敛（R3221 出口过滤 + R3222 Set-Cookie 读侧 + R3223 guard 系统——Fetch §3.4.4/§3.4.5/§5.1/§5.2/§6.2/§6.3 实质闭合）。续候选：① 续 net crate（cookie 存储侧 domain_matches 空域 / IP 校验；或 net request.rs 头注入 RFC 7230 token 校验）；② storage/IndexedDB spec 审；③ request-no-cors guard（Fetch §5.2 step 4，CORS-safelisted 值过滤）；④ 字体栈/GPU 战略项 user/hardware gated。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。注：lark-cli 环境不可用（多轮尝试），通知走 master.md 控制面；⚠️ compositor 跨流红灯待渲染流。
+
+
 
 承接上轮 net crate 扫描收敛（R3218/R3219 cookie + R3220 调查清零），其中「**engine fetch_bridge 禁止头 / Set-Cookie 暴露**」记为跨层 defer 项——本轮即取此执行。深审 JS Headers shim（`engine/src/js_dom_shim/part02.js`）+ fetch 出口（`part01.js` `_headersToWire` / `_parseHeadersWire` / Response ctor）对照 Fetch §3.4.4/§3.4.5——发现两项真偏差：
 

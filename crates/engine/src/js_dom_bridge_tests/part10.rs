@@ -2168,3 +2168,97 @@ fn test_fetch_forbidden_headers_r3221_r3222() {
     );
 }
 
+#[test]
+fn test_request_headers_guard_r3223() {
+    // R3223：Headers guard 系统（Fetch §5.1/§5.2/§6.2/§6.3）——request guard 在 fill 前设（§6.3 step 31-32），
+    // append/set/delete 写侧阻断禁止请求头（闭合 R3222 已知限①）；response guard 写侧阻断 Set-Cookie（闭合限③）；
+    // standalone new Headers 为 guard-none 不受限。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // Request guard：构造时禁止请求头被过滤（guard 先于 fill）。
+    sandbox
+        .execute(
+            "var r = new Request('http://test.local/', { headers: {\
+               'Host':'evil.com','Content-Length':'9','Cookie':'x','Sec-Fetch-Mode':'cors',\
+               'Proxy-Authorization':'z','X-Custom':'keep','Content-Type':'text/plain'\
+             } });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(r.headers.get('Host'))").unwrap().value,
+        "null",
+        "R3223: request guard 过滤 Host（构造时）"
+    );
+    assert_eq!(sandbox.execute("String(r.headers.has('content-length'))").unwrap().value, "false");
+    assert_eq!(sandbox.execute("String(r.headers.get('cookie'))").unwrap().value, "null");
+    assert_eq!(sandbox.execute("String(r.headers.has('sec-fetch-mode'))").unwrap().value, "false");
+    assert_eq!(
+        sandbox.execute("String(r.headers.has('proxy-authorization'))").unwrap().value,
+        "false"
+    );
+    // 非禁止头保留。
+    assert_eq!(sandbox.execute("r.headers.get('X-Custom')").unwrap().value, "keep");
+    assert_eq!(sandbox.execute("r.headers.get('Content-Type')").unwrap().value, "text/plain");
+
+    // append/set 在 request guard 上对禁止头 no-op（Fetch §5.2 step 3）。
+    sandbox.execute("r.headers.append('Host','more');").unwrap();
+    assert_eq!(
+        sandbox.execute("String(r.headers.get('Host'))").unwrap().value,
+        "null",
+        "R3223: append('Host') on request guard 须 no-op"
+    );
+    sandbox.execute("r.headers.set('Sec-Fetch-Site','cross');").unwrap();
+    assert_eq!(
+        sandbox.execute("String(r.headers.has('sec-fetch-site'))").unwrap().value,
+        "false",
+        "R3223: set('Sec-*') on request guard 须 no-op"
+    );
+    // append 非禁止头仍可写。
+    sandbox.execute("r.headers.append('X-More','v');").unwrap();
+    assert_eq!(sandbox.execute("r.headers.get('X-More')").unwrap().value, "v");
+
+    // response guard 写侧阻断 Set-Cookie（闭合 R3222 已知限③）。
+    sandbox
+        .execute("var resp = new Response('b', { headers: {'Content-Type':'text/plain'} });")
+        .unwrap();
+    sandbox.execute("resp.headers.append('Set-Cookie','a=1');").unwrap();
+    assert_eq!(
+        sandbox.execute("String(resp.headers.getSetCookie().length)").unwrap().value,
+        "0",
+        "R3223: response guard append('Set-Cookie') 须 no-op"
+    );
+    assert_eq!(
+        sandbox.execute("resp.headers.get('Content-Type')").unwrap().value,
+        "text/plain",
+        "R3223: response guard 非禁止头可读"
+    );
+
+    // guard-none（standalone new Headers）不受限——forbidden 可写可读（spec：guard none 不过滤）。
+    sandbox.execute("var h = new Headers(); h.append('Host','free');").unwrap();
+    assert_eq!(
+        sandbox.execute("h.get('Host')").unwrap().value,
+        "free",
+        "R3223: guard-none Headers 不受限（Host 可写可读）"
+    );
+
+    // Request.clone() 保留允许头 + guard 一致传递（Host 仍被过滤）。
+    sandbox.execute("var rc = r.clone();").unwrap();
+    assert_eq!(
+        sandbox.execute("rc.headers.get('X-Custom')").unwrap().value,
+        "keep",
+        "R3223: Request.clone() 保留允许头"
+    );
+    assert_eq!(
+        sandbox.execute("String(rc.headers.get('Host'))").unwrap().value,
+        "null",
+        "R3223: Request.clone() guard 一致（Host 仍 null）"
+    );
+}
+
+
