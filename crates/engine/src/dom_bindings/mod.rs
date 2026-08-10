@@ -274,6 +274,17 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "click") {
         tmpl.set(k.into(), click_tmpl.into());
     }
+    // R3148 element.focus() / element.blur()（spec `dom-element-focus` / `-blur`）：焦点更新/失焦步骤——
+    // 派发非冒泡 focus/blur 事件 + 追踪 document.activeElement（gc.rs ACTIVE_ELEMENT）。polyfill 旧不派发
+    // focus/blur 事件为已知限制，native 闭合之。
+    let focus_tmpl = v8::FunctionTemplate::builder(event_target::native_element_focus_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "focus") {
+        tmpl.set(k.into(), focus_tmpl.into());
+    }
+    let blur_tmpl = v8::FunctionTemplate::builder(event_target::native_element_blur_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "blur") {
+        tmpl.set(k.into(), blur_tmpl.into());
+    }
     // R3110 节点导航 getter（spec `dom-node-parent-node` 等 / `dom-node-has-child-nodes`）：
     // parentNode / firstChild / lastChild / nextSibling / previousSibling → native 节点或 null；
     // hasChildNodes() → bool。读 Document 树关系（`with_dom`），结果包 native 节点对象。
@@ -448,6 +459,13 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     let stitle_fn = stitle.get_function(scope);
     let stitle_key = v8::String::new(scope, "__zw_native_set_document_title");
     if let (Some(f), Some(key)) = (stitle_fn, stitle_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+    // R3148 全局 activeElement——当前焦点元素（element.focus/blur 追踪，gc.rs ACTIVE_ELEMENT）。
+    let gactive = v8::FunctionTemplate::builder(factories::native_get_active_element_invoke).build(scope);
+    let gactive_fn = gactive.get_function(scope);
+    let gactive_key = v8::String::new(scope, "__zw_native_get_active_element");
+    if let (Some(f), Some(key)) = (gactive_fn, gactive_key) {
         let _ = global.set(scope, key.into(), f.into());
     }
 

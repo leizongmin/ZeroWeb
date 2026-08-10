@@ -1898,3 +1898,80 @@ fn native_dispatch_event_refactor_no_regress_r3147() {
         "x"
     );
 }
+
+// ── R3148 element.focus() / element.blur() + document.activeElement ──
+
+/// `element.focus()` / `element.blur()`（spec `dom-element-focus` / `-blur`）：焦点更新/失焦步骤——
+/// 派发非冒泡 focus/blur 事件 + 追踪 document.activeElement（gc.rs ACTIVE_ELEMENT）。闭合 polyfill 限制②
+///（旧 focus/blur 不派发事件）。focus 切换 blur old→focus new 顺序 + 幂等 + blur no-op + 非冒泡。
+#[test]
+fn native_element_focus_blur_r3148() {
+    let html = r#"<div id="p"><span id="a"></span><span id="b"></span></div>"#;
+    // focus() 派发 focus 事件 + 追踪 activeElement。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a'); let log='';\
+             a.addEventListener('focus', ()=>{ log+='a-focus;'; });\
+             a.focus(); return log+'/'+(__zw_native_get_active_element()===a); })()"
+        ),
+        "a-focus;/true"
+    );
+    // focus 切换：blur old（a）→ focus new（b），顺序 a-blur 先于 b-focus；activeElement=b。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a'); const b=__zw_native_element_for_id('b');\
+             let log='';\
+             a.addEventListener('focus', ()=>{ log+='af;'; });\
+             a.addEventListener('blur', ()=>{ log+='ab;'; });\
+             b.addEventListener('focus', ()=>{ log+='bf;'; });\
+             b.addEventListener('blur', ()=>{ log+='bb;'; });\
+             a.focus(); b.focus();\
+             return log+'/'+(__zw_native_get_active_element()===b); })()"
+        ),
+        "af;ab;bf;/true"
+    );
+    // focus() 幂等：已聚焦时再 focus 不重复派发（spec no-op）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a'); let n=0;\
+             a.addEventListener('focus', ()=>{ n++; });\
+             a.focus(); a.focus(); return String(n); })()"
+        ),
+        "1"
+    );
+    // blur() 派发 blur 事件 + 清 activeElement（null）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a'); let log='';\
+             a.addEventListener('blur', ()=>{ log+='a-blur;'; });\
+             a.focus(); a.blur();\
+             return log+'/'+(__zw_native_get_active_element()===null); })()"
+        ),
+        "a-blur;/true"
+    );
+    // blur() 非当前焦点 → no-op（不派发 blur，activeElement 不变）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a'); const b=__zw_native_element_for_id('b');\
+             let log=''; a.addEventListener('blur', ()=>{ log+='a-blur;'; });\
+             b.focus(); a.blur();\
+             return log+'/'+(__zw_native_get_active_element()===b); })()"
+        ),
+        "/true"
+    );
+    // focus/blur 非冒泡：child.focus() 不触发 parent focus 监听器（spec：focus/blur 不冒泡）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const p=__zw_native_element_for_id('p'); const a=__zw_native_element_for_id('a');\
+             let fired='no'; p.addEventListener('focus', ()=>{ fired='yes'; });\
+             a.focus(); return fired; })()"
+        ),
+        "no"
+    );
+}

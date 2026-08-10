@@ -78,6 +78,10 @@ thread_local! {
     /// getter 实例化。
     static DOMTOKENLIST_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> =
         const { RefCell::new(None) };
+    /// R3148 当前焦点元素（`document.activeElement` 对）：`element.focus()` 设、`element.blur()` 清。
+    /// 线程局部 NodeId（无 ffi 包装——focus 仅 Rust 侧读写，不经 V8 句柄）。polyfill 旧 `_activeElKey`
+    /// 纯 JS 状态（不派发 focus/blur 事件）；native 经此追踪 + 真实派发 focus/blur（闭合 polyfill 限制②）。
+    static ACTIVE_ELEMENT: RefCell<Option<NodeId>> = const { RefCell::new(None) };
 }
 
 /// 注入 DOM 源 + Element 模板（`install_dom_bindings` 调用）。
@@ -111,6 +115,7 @@ pub(crate) fn reset() {
     ATTR_TEMPLATE.with(|c| *c.borrow_mut() = None);
     DOMTOKENLIST_OBJECTS.with(|c| c.borrow_mut().clear());
     DOMTOKENLIST_TEMPLATE.with(|c| *c.borrow_mut() = None);
+    ACTIVE_ELEMENT.with(|c| *c.borrow_mut() = None);
 }
 
 /// 缓存 NamedNodeMap ObjectTemplate（`install_dom_bindings` 建 `attributes` 集合模板）。
@@ -250,6 +255,18 @@ pub(crate) fn encode_node_id(id: NodeId) -> u64 {
 /// u64(ffi) → `NodeId`（slotmap `KeyData::from_ffi`，`new_key_type!` 生成 `From<KeyData>`）。
 pub(crate) fn decode_node_id(ffi: u64) -> NodeId {
     NodeId::from(KeyData::from_ffi(ffi))
+}
+
+// ── R3148 当前焦点元素（document.activeElement 对）──────────────────
+
+/// 取当前焦点元素 NodeId（`document.activeElement` 对）；无焦点 → `None`。
+pub(crate) fn active_element() -> Option<NodeId> {
+    ACTIVE_ELEMENT.with(|c| *c.borrow())
+}
+
+/// 设当前焦点元素（`element.focus()` 设 Some、`element.blur()` 设 None）。
+pub(crate) fn set_active_element(id: Option<NodeId>) {
+    ACTIVE_ELEMENT.with(|c| *c.borrow_mut() = id);
 }
 
 // ── NodeId ↔ V8 对象身份映射 ──────────────────────────────────────

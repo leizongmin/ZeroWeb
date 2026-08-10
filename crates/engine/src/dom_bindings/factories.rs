@@ -30,7 +30,7 @@ use v8;
 
 use zero_dom::NodeId;
 
-use super::gc::{with_dom, with_dom_mut};
+use super::gc::{active_element, with_dom, with_dom_mut};
 use super::{get_or_create_native_element, string_arg};
 
 /// 工厂回调：`__zw_native_element_for_id(idStr)` → 解析 `get_element_by_id` →
@@ -343,4 +343,25 @@ pub(super) fn native_set_document_title_invoke(
             }
         }
     });
+}
+
+// ── R3148 document.activeElement 工厂 ──
+
+/// `__zw_native_get_active_element()`：spec `dom-document-activeelement`——当前焦点元素（`element.focus()`
+/// 设、`element.blur()` 清；gc.rs `ACTIVE_ELEMENT` 线程局部）。返 native 元素或 `null`（无焦点）。
+/// **已知限制**：spec 无焦点时返 `<body>`（或根），本切片返 `null`（headless 简化，同 polyfill）。
+/// 工厂暴露（非 native `document` 对象 getter——native document 对象为后续切片；shim 可经此读 active）。
+pub(super) fn native_get_active_element_invoke(
+    scope: &mut v8::PinScope,
+    _args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    match active_element() {
+        Some(id) => {
+            if let Some(obj) = get_or_create_native_element(scope, id) {
+                rv.set(obj.into());
+            }
+        }
+        None => rv.set(v8::null(scope).into()),
+    }
 }
