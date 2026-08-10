@@ -240,6 +240,42 @@ pub(super) fn native_toggle_attribute_invoke(
     rv.set(v8::Boolean::new(scope, now_present).into());
 }
 
+/// `hasAttributes()`（spec `dom-element-hasattributes`）：元素是否有任意属性（经
+/// `Document::attribute_names` 非空判定）→ `v8::Boolean`。
+pub(super) fn native_has_attributes_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    let has = with_dom(|d| !d.attribute_names(id).is_empty()).unwrap_or(false);
+    rv.set(v8::Boolean::new(scope, has).into());
+}
+
+/// `getAttributeNames()`（spec `dom-element-getattributenames`）：元素全部属性名（文档序）→
+/// V8 Array of 字符串（空属性集 → 空 Array）。经 `Document::attribute_names`。
+pub(super) fn native_get_attribute_names_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let Some(id) = read_node_id(scope, &this) else {
+        return;
+    };
+    let names: Vec<String> = with_dom(|d| d.attribute_names(id)).unwrap_or_default();
+    let arr = v8::Array::new(scope, names.len() as i32);
+    for (i, name) in names.into_iter().enumerate() {
+        if let Some(s) = v8::String::new(scope, &name) {
+            let _ = arr.set_index(scope, i as u32, s.into());
+        }
+    }
+    rv.set(arr.into());
+}
+
 // ── 元素子树作用域查询（element.querySelector(-all)，注册于 Element 模板）──
 // 区别于 global `__zw_native_query_selector(-all)`（factories 子模块，R3118）。
 

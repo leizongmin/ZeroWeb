@@ -8,8 +8,12 @@ use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
     RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text, extract_img_srcs,
     extract_page_scripts, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key, register_dom_callbacks,
-    resolve_document_url, script_dispatch_dom_event, script_dispatch_native_event,
+    resolve_document_url, script_dispatch_dom_event,
 };
+// R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
+// 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
+#[cfg(feature = "v8")]
+use zero_engine::script_dispatch_native_event;
 use zero_net::{CacheLookup, HttpClient, NetError, is_file_url};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
 

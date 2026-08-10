@@ -1819,3 +1819,39 @@ fn native_insert_adjacent_text_r3146() {
         "threw"
     );
 }
+
+/// R3150 element.hasAttributes() / getAttributeNames()（spec `dom-element-hasattributes` /
+/// `-getattributenames`）：attribute 族收尾。hasAttributes 返是否有任意属性；getAttributeNames 返全部
+/// 属性名（文档序 Array，空属性集 → 空 Array）。
+#[test]
+fn native_has_attributes_attribute_names_r3150() {
+    let html = r#"<div id="a" class="row" data-x="1"></div>"#;
+    // hasAttributes：有属性（a）→ true。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').hasAttributes())"),
+        "true"
+    );
+    // 无属性元素（createElement 新建，无 id）→ hasAttributes false + getAttributeNames 空。
+    assert_eq!(
+        run_script(html, "(__zw_native_create_element('div').hasAttributes())"),
+        "false"
+    );
+    assert_eq!(
+        run_script(html, "(__zw_native_create_element('div').getAttributeNames().length)"),
+        "0"
+    );
+    // getAttributeNames：文档序全部属性名（含 id/class/data-x）。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('a').getAttributeNames().join('|'))"),
+        "id|class|data-x"
+    );
+    // setAttribute 后 hasAttributes / getAttributeNames 反映（live）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const d=__zw_native_create_element('div'); d.setAttribute('new','v');\
+             return d.hasAttributes()+'/'+d.getAttributeNames().join('|'); })()"
+        ),
+        "true/new"
+    );
+}

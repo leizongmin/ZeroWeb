@@ -175,6 +175,16 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "toggleAttribute") {
         tmpl.set(k.into(), toggle_attr_tmpl.into());
     }
+    // R3150 element.hasAttributes() / getAttributeNames()（spec `dom-element-hasattributes` /
+    // `-getattributenames`）：是否有任意属性 / 全部属性名（文档序 Array）。attribute 族收尾。
+    let has_attrs_tmpl = v8::FunctionTemplate::builder(element::native_has_attributes_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "hasAttributes") {
+        tmpl.set(k.into(), has_attrs_tmpl.into());
+    }
+    let attr_names_tmpl = v8::FunctionTemplate::builder(element::native_get_attribute_names_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "getAttributeNames") {
+        tmpl.set(k.into(), attr_names_tmpl.into());
+    }
     // element 子树作用域查询（spec `dom-parentnode-queryselector(-all)`）：`args.this()` 取
     // 元素 NodeId 作 root，**仅后代**（排除元素自身，见 [`element::native_element_query_selector_invoke`]）。
     let eqs_tmpl = v8::FunctionTemplate::builder(element::native_element_query_selector_invoke).build(scope);
