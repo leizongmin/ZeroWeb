@@ -201,6 +201,58 @@ pub(super) fn native_tab_index_setter(
     with_dom_mut(|d| d.set_attribute(id, "tabindex", &n.to_string()));
 }
 
+// ── R3156 hidden 反射 boolean 属性（spec HTML `hidden` content ↔ `hidden` IDL boolean）──
+//
+// 第三种反射子类型——`hidden` 反射 `boolean`（与 string id/className/aria*、long tabIndex 均不同）：
+// - **getter**：`hidden` content 属性在且值非 `"until-found"` → true（spec：boolean 属性在 = true；
+//   `"until-found"` 为独立「hidden until found」状态，IDL getter 返 false）。缺省 → false。
+// - **setter**：值经 V8 ToBoolean 强转（spec boolean setter）→ true 设 `hidden` content 属性为 `""`
+//   （boolean content 属性空串 = 存在）、false 移除属性。
+//
+// `el.hidden = true/false` 是现代代码高频（条件显隐组件），且 `hidden` content 属性经 UA 样式表映射
+// `display: none`（layout/渲染相关）——native 反射补 spec 合规 boolean 属性面。
+
+/// `hidden` getter（spec HTML `hidden`，content 反射 boolean）：`hidden` 属性在且值非 `"until-found"`
+/// → true；缺省 → false。
+pub(super) fn native_hidden_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let hidden = with_dom(|d| d.get_attribute(id, "hidden"))
+        .flatten()
+        .is_some_and(|v| v != "until-found");
+    rv.set(v8::Boolean::new(scope, hidden).into());
+}
+
+/// `hidden` setter：值经 V8 ToBoolean 强转（spec boolean setter）→ true 设 `hidden` 属性为 `""`、
+/// false 移除属性。ToBoolean：`""`/0/NaN/null/undefined → false，余真值 → true。
+pub(super) fn native_hidden_setter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let v = value.boolean_value(scope);
+    with_dom_mut(|d| {
+        if v {
+            d.set_attribute(id, "hidden", ""); // boolean content 属性空串 = 存在
+        } else {
+            d.remove_attribute(id, "hidden");
+        }
+    });
+}
+
 // ── R3153 aria* / role 反射属性（spec WAI-ARIA IDL reflection）──
 //
 // aria* IDL 属性 ↔ content 属性反射：`el.ariaLabel` ↔ `aria-label`、`el.ariaLabelledBy` ↔

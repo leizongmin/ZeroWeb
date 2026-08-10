@@ -1889,3 +1889,59 @@ fn native_element_tab_index_r3155() {
         "7"
     );
 }
+
+/// R3156 element.hidden（spec HTML `hidden`，content 反射 `boolean`）：getter 属性在且非
+/// `"until-found"` → true，setter 经 ToBoolean 强转 set `""` / remove。条件显隐组件高频。
+#[test]
+fn native_element_hidden_r3156() {
+    // 缺省 → false。
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').hidden)"), "false");
+    // content 属性存在（boolean 空串）→ true。
+    assert_eq!(
+        run_script(
+            r#"<div id="a" hidden></div>"#,
+            "(__zw_native_element_for_id('a').hidden)"
+        ),
+        "true"
+    );
+    // setter true → getAttribute('hidden') === ''（boolean content 属性空串 = 存在）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.hidden=true; return el.getAttribute('hidden'); })()"
+        ),
+        ""
+    );
+    // setter false → 移除属性（hasAttribute false + hidden false）。
+    assert_eq!(
+        run_script(
+            r#"<div id="a" hidden></div>"#,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.hidden=false; return el.hasAttribute('hidden')+'/'+el.hidden; })()"
+        ),
+        "false/false"
+    );
+    // ToBoolean 强转：空串/0 → false（移除），非空串/"1" → true（设）。
+    assert_eq!(
+        run_script(
+            r#"<div id="a" hidden></div>"#,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.hidden=''; return el.hidden; })()"
+        ),
+        "false"
+    );
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.hidden=1; return el.hidden; })()"
+        ),
+        "true"
+    );
+    // `hidden="until-found"` → getter 返 false（「hidden until found」独立状态，IDL boolean false）。
+    assert_eq!(
+        run_script(
+            r#"<div id="a" hidden="until-found"></div>"#,
+            "(__zw_native_element_for_id('a').hidden)"
+        ),
+        "false"
+    );
+}
