@@ -35,6 +35,19 @@ use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
 
+/// dma-buf 帧交付元组（RFC 4.3-S5）；非 Linux 上恒为 None。
+type DmaFrameTuple = (
+    u64,
+    u64,
+    u32,
+    u32,
+    Vec<u8>,
+    Option<String>,
+    f32,
+    f32,
+    Option<zero_protocol::GpuSharedImageDescriptor>,
+);
+
 struct SurfaceState {
     navigation_epoch: u64,
     frame_id: u64,
@@ -347,6 +360,8 @@ fn main() {
             }
             // 显示消费方拉取最新已合成帧（front 缓冲像素）
             IpcMessageKind::GetCompositorFrame { surface_id, .. } => {
+                // dma-buf 导出（RFC 4.3-S5）仅 Linux；非 Linux 上无此通道
+                #[cfg(target_os = "linux")]
                 let mut fd_publish: Option<zero_protocol::CompositorFrameDelivery> = None;
                 let (response_epoch, response_frame, width, height, rgba, shm_name, scroll_x, scroll_y, gpu_image) =
                     match surfaces.get(&surface_id) {
@@ -371,7 +386,7 @@ fn main() {
                             };
 
                             #[cfg(target_os = "linux")]
-                            let dma_frame = {
+                            let dma_frame: Option<DmaFrameTuple> = {
                                 if zero_protocol::compositor_gpu_texture_export_enabled()
                                     && zero_protocol::compositor_gpu_image_enabled()
                                     && gpu_enabled
@@ -408,17 +423,7 @@ fn main() {
                                 }
                             };
                             #[cfg(not(target_os = "linux"))]
-                            let dma_frame: Option<(
-                                u64,
-                                u64,
-                                u32,
-                                u32,
-                                Vec<u8>,
-                                Option<String>,
-                                f32,
-                                f32,
-                                Option<zero_protocol::GpuSharedImageDescriptor>,
-                            )> = None;
+                            let dma_frame: Option<DmaFrameTuple> = None;
 
                             if let Some(frame_tuple) = dma_frame {
                                 frame_tuple
