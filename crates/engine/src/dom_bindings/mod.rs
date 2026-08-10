@@ -122,6 +122,32 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
             element::native_class_name_setter,
         );
     }
+    // R3153 aria* / role 反射属性（spec WAI-ARIA IDL reflection）：`el.ariaLabel`↔`aria-label`、
+    // `el.role`↔`role` 等。共用 [`element::native_aria_reflected_getter`/`_setter`]（经 accessor name
+    // 分派 + [`element::idl_to_attr`] 转 content 属性名）。注册高频 a11y 集（a11y 库/无障碍高频）。
+    for prop in [
+        "role",
+        "ariaLabel",
+        "ariaHidden",
+        "ariaExpanded",
+        "ariaDisabled",
+        "ariaPressed",
+        "ariaSelected",
+        "ariaChecked",
+        "ariaLive",
+        "ariaDescribedBy",
+        "ariaControls",
+        "ariaHasPopup",
+        "ariaCurrent",
+    ] {
+        if let Some(k) = v8::String::new(scope, prop) {
+            tmpl.set_accessor_with_setter(
+                k.into(),
+                element::native_aria_reflected_getter,
+                element::native_aria_reflected_setter,
+            );
+        }
+    }
     // R3145 `classList` getter（spec `dom-element-classlist`）：返元素 class 集合 DOMTokenList
     //（live，同元素返同对象——gc.rs DOMTOKENLIST_OBJECTS 缓存；internal slot[0] = owner element NodeId）。
     if let Some(k) = v8::String::new(scope, "classList") {

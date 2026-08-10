@@ -130,6 +130,61 @@ fn write_reflected_attr(
     with_dom_mut(|d| d.set_attribute(id, attr, &val));
 }
 
+// ── R3153 aria* / role 反射属性（spec WAI-ARIA IDL reflection）──
+//
+// aria* IDL 属性 ↔ content 属性反射：`el.ariaLabel` ↔ `aria-label`、`el.ariaLabelledBy` ↔
+// `aria-labelledby`、`el.role` ↔ `role`。与 camelCase→kebab **不同**：aria 前缀后整体小写单 hyphen
+//（`ariaLabelledBy`→`aria-labelledby` 非 `aria-labelled-by`），因 ARIA content 属性名为预定义集合。
+// **共用一对 getter/setter**——accessor `name` 参即注册名（ariaLabel/role/...），经 [`idl_to_attr`]
+// 转 content 属性名后复用 [`read_reflected_attr`] / [`write_reflected_attr`]（零 per-attr 逻辑重复）。
+
+/// aria*/role IDL 名 → content 属性名：`ariaLabel`→`aria-label`、`ariaLabelledBy`→`aria-labelledby`、
+/// `role`→`role`。aria 前缀（4 字符）后跟大写 → `aria-` + 小写(余)；否则原样（role）。
+fn idl_to_attr(idl: &str) -> String {
+    if idl == "role" {
+        return "role".into();
+    }
+    if let Some(rest) = idl.strip_prefix("aria")
+        && rest.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+    {
+        return format!("aria-{}", rest.to_ascii_lowercase());
+    }
+    idl.into()
+}
+
+/// aria*/role 反射 getter（spec WAI-ARIA IDL reflection）：name 参即 IDL 名（ariaLabel/role/...）→
+/// [`idl_to_attr`] 转 content 属性名 → [`read_reflected_attr`]（缺省 `""`）。
+pub(super) fn native_aria_reflected_getter(
+    scope: &mut v8::PinScope,
+    name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let attr = name_to_attr(scope, name);
+    read_reflected_attr(scope, &args, &attr, "", &mut rv);
+}
+
+/// aria*/role 反射 setter：name 参即 IDL 名 → content 属性名 → [`write_reflected_attr`]（值 ToString）。
+pub(super) fn native_aria_reflected_setter(
+    scope: &mut v8::PinScope,
+    name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    let attr = name_to_attr(scope, name);
+    write_reflected_attr(scope, &args, &attr, value);
+}
+
+/// accessor `name` 参 → IDL 名 → [`idl_to_attr`] content 属性名。非 string 名 → 原样（不应发生）。
+fn name_to_attr(scope: &mut v8::PinScope, name: v8::Local<v8::Name>) -> String {
+    if let Ok(s) = v8::Local::<v8::String>::try_from(name) {
+        idl_to_attr(&s.to_rust_string_lossy(scope))
+    } else {
+        String::new()
+    }
+}
+
 // ── 方法回调（Element 上：getAttribute / hasAttribute / setAttribute / removeAttribute）──
 
 /// `getAttribute(name)`：读 internal slot NodeId → `Document::get_attribute`。

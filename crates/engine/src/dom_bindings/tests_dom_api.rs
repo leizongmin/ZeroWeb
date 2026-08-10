@@ -1741,3 +1741,54 @@ fn native_element_dataset_r3152() {
         "function"
     );
 }
+
+/// R3153 element.aria* / role 反射属性（spec WAI-ARIA IDL reflection）：`el.ariaLabel`↔`aria-label`、
+/// `el.ariaDescribedBy`↔`aria-describedby`（aria 前缀后整体小写单 hyphen，非 kebab）、`el.role`↔`role`。
+#[test]
+fn native_element_aria_role_r3153() {
+    let html = r#"<div id="a" role="button" aria-label="Save"></div>"#;
+    // role get（反射读 content 属性）+ set（写回）。
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').role)"), "button");
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.role='link'; return el.getAttribute('role'); })()"
+        ),
+        "link"
+    );
+    // ariaLabel ↔ aria-label（camelCase→aria-hyphen）。
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').ariaLabel)"), "Save");
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.ariaLabel='Close'; return el.getAttribute('aria-label'); })()"
+        ),
+        "Close"
+    );
+    // ariaDescribedBy ↔ aria-describedby（多词整体小写单 hyphen，非 aria-described-by）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.ariaDescribedBy='d1'; return el.getAttribute('aria-describedby'); })()"
+        ),
+        "d1"
+    );
+    // 缺失 → ""（reflected string 属性缺省空串）。
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').ariaExpanded)"), "");
+    // set 后 get 回读（live reflection）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.ariaExpanded='true'; return el.ariaExpanded; })()"
+        ),
+        "true"
+    );
+    // setAttribute 反向反射到 IDL（content→IDL 同步）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.setAttribute('aria-hidden','true'); return el.ariaHidden; })()"
+        ),
+        "true"
+    );
+}
