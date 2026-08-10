@@ -74,11 +74,14 @@ jobs:
             --no-fail-fast \
             --target x86_64-pc-windows-msvc
 
-      - name: Run B — full app tests (as CI, no-fail-fast)
+      # Run A 已证：36 个 tab_js_worker 单独跑（4 worker 并行）→ PASS。
+      # B1：zero-browser 全 346 测试单独跑（无 renderer/webview-demo 并发）。
+      #   挂 → 进程内前序测试（headless/gui 等）累积导致；过 → 跨二进制并发导致。
+      - name: Run B1 — zero-browser full 346 tests alone, no-fail-fast
         continue-on-error: true
         shell: bash
         run: |
-          cargo nextest run -p zero-browser -p zero-renderer -p zero-webview-demo \
+          cargo nextest run -p zero-browser \
             --no-fail-fast \
             --target x86_64-pc-windows-msvc
 
