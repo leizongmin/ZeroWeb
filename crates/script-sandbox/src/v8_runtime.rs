@@ -119,6 +119,76 @@ pub fn ensure_v8_initialized() {
     });
 }
 
+/// 超时看门狗消息（seq 协议）：execute 装载（Arm，携带截止时长与 isolate 句柄）、
+/// guard Drop 撤除（Disarm，仅当 seq 匹配）、沙箱销毁停线程（Stop）。
+enum WatchdogMsg {
+    Arm {
+        seq: u64,
+        timeout_ms: u64,
+        handle: v8::IsolateHandle,
+    },
+    Disarm {
+        seq: u64,
+    },
+    Stop,
+}
+
+/// 持久超时看门狗线程主循环：阻塞等待直到（a）收到消息或（b）已装载的截止时刻
+/// 到期 → `terminate_execution`。无装载时无限等待（`recv_timeout(Duration::MAX)`）。
+///
+/// 2026-08-10 重构：旧实现每次 execute spawn+join 一个 OS 线程，Windows 并行负载
+/// （nextest 全量并发 + wait_for_global 5ms 轮询）下线程 churn 经 loader lock
+/// 序列化致批量楔死（windows-x86_64 tab_js_worker ×4 120s 挂起 3/3 复现）。
+/// 每 sandbox 一个常驻线程 + seq 协议无 churn；timeout_ms 由 Arm 携带支持
+/// set_timeout_ms 动态变化。
+fn watchdog_main(rx: std::sync::mpsc::Receiver<WatchdogMsg>) {
+    let mut armed: Option<(u64, std::time::Instant, v8::IsolateHandle)> = None;
+    loop {
+        let wait = match &armed {
+            Some((_, deadline, _)) => deadline.saturating_duration_since(std::time::Instant::now()),
+            None => std::time::Duration::MAX,
+        };
+        match rx.recv_timeout(wait) {
+            Ok(WatchdogMsg::Arm {
+                seq,
+                timeout_ms,
+                handle,
+            }) => {
+                armed = Some((
+                    seq,
+                    std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms),
+                    handle,
+                ));
+            }
+            Ok(WatchdogMsg::Disarm { seq }) => {
+                if armed.as_ref().is_some_and(|(s, _, _)| *s == seq) {
+                    armed = None;
+                }
+            }
+            Ok(WatchdogMsg::Stop) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // 截止到期：终止执行（execute 侧 guard Drop 会按 seq 撤除/清理）。
+                if let Some((_, _, handle)) = armed.take() {
+                    handle.terminate_execution();
+                }
+            }
+        }
+    }
+}
+
+/// execute 超时装载守卫：Drop 时按 seq 撤除看门狗。成功与错误路径统一走 Drop
+/// （旧实现脚本编译/运行出错提前返回时看门狗线程残留，5s 后误伤下一次执行）。
+struct WatchdogGuard {
+    tx: std::sync::mpsc::Sender<WatchdogMsg>,
+    seq: u64,
+}
+
+impl Drop for WatchdogGuard {
+    fn drop(&mut self) {
+        let _ = self.tx.send(WatchdogMsg::Disarm { seq: self.seq });
+    }
+}
+
 /// V8脚本沙箱 — 封装一个V8 Isolate和Context，提供安全的脚本执行环境。
 ///
 /// # 生命周期
@@ -145,6 +215,11 @@ pub struct V8Sandbox {
     config: SandboxConfig,
     /// 宿主注入的回调名 + 线程局部注册表索引（register_callback 注册），execute 时挂到全局对象。
     callbacks: Vec<(String, usize)>,
+    /// SEC-13 持久超时看门狗（2026-08-10 重构）：常驻线程 + Arm/Disarm seq 协议，
+    /// 替代每次 execute 创建/销毁 OS 线程（Windows 并行负载线程 churn 楔死修复）。
+    watchdog_tx: Option<std::sync::mpsc::Sender<WatchdogMsg>>,
+    watchdog_seq: u64,
+    watchdog_join: Option<std::thread::JoinHandle<()>>,
 }
 
 impl V8Sandbox {
@@ -169,11 +244,22 @@ impl V8Sandbox {
 
         let isolate = v8::Isolate::new(create_params);
 
+        // SEC-13 持久看门狗（2026-08-10）：每 sandbox 一个常驻线程（execute 侧按
+        // 当前 timeout_ms Arm），避免每次 execute spawn+join 的线程 churn。
+        let (watchdog_tx, watchdog_rx) = std::sync::mpsc::channel();
+        let watchdog_join = std::thread::Builder::new()
+            .name("v8-sandbox-watchdog".to_string())
+            .spawn(move || watchdog_main(watchdog_rx))
+            .expect("spawn v8 sandbox watchdog");
+
         Ok(Self {
             isolate: Some(isolate),
             config,
             cached_context: None,
             callbacks: Vec::new(),
+            watchdog_tx: Some(watchdog_tx),
+            watchdog_seq: 0,
+            watchdog_join: Some(watchdog_join),
         })
     }
 
@@ -245,23 +331,26 @@ impl V8Sandbox {
 
         let start = std::time::Instant::now();
 
-        // SEC-13: 强制执行 timeout
-        let _timeout_guard: Option<(std::thread::JoinHandle<()>, std::sync::mpsc::Sender<()>)> =
-            if self.config.timeout_ms > 0 {
-                let handle = isolate.thread_safe_handle();
-                let timeout_ms = self.config.timeout_ms;
-                let (tx, rx) = std::sync::mpsc::channel::<()>();
-                let thread = std::thread::spawn(move || {
-                    // 等待超时或取消信号
-                    if rx.recv_timeout(std::time::Duration::from_millis(timeout_ms)).is_err() {
-                        // 超时：终止执行
-                        handle.terminate_execution();
-                    }
+        // SEC-13: 强制执行 timeout——持久看门狗 Arm/Disarm（2026-08-10 重构：
+        // 旧实现每次 execute spawn+join 一个 OS 线程，Windows 并行负载下线程
+        // churn 楔死；guard Drop 统一撤除，顺带消除脚本出错提前返回时看门狗
+        // 线程残留 5s 后 terminate_execution 误伤下一次执行的 latent bug）。
+        let _timeout_guard: Option<WatchdogGuard> = if self.config.timeout_ms > 0 {
+            let seq = self.watchdog_seq;
+            self.watchdog_seq += 1;
+            if let Some(tx) = &self.watchdog_tx {
+                let _ = tx.send(WatchdogMsg::Arm {
+                    seq,
+                    timeout_ms: self.config.timeout_ms,
+                    handle: isolate.thread_safe_handle(),
                 });
-                Some((thread, tx))
+                Some(WatchdogGuard { tx: tx.clone(), seq })
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        };
 
         v8::scope!(let hs, isolate);
         // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
@@ -301,6 +390,13 @@ impl V8Sandbox {
         // 执行脚本
         let result = script.run(try_catch);
         if try_catch.has_caught() || result.is_none() {
+            // SEC-13：超时终止（看门狗 terminate_execution）——V8 终止异常在
+            // TryCatch 表现为 caught 的 "null" 异常，须先于 RuntimeError 判定，
+            // 报告为 Timeout（2026-08-10 持久看门狗重构时校正）。
+            if try_catch.has_terminated() {
+                try_catch.cancel_terminate_execution();
+                return Err(ScriptError::Timeout(format!("{}ms", self.config.timeout_ms)));
+            }
             if result.is_none() && !try_catch.has_caught() {
                 try_catch.cancel_terminate_execution();
                 return Err(ScriptError::Timeout(format!("{}ms", self.config.timeout_ms)));
@@ -324,11 +420,8 @@ impl V8Sandbox {
 
         let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
 
-        // 清理 timeout guard（通知定时器线程取消，等待其结束）
-        if let Some((thread, tx)) = _timeout_guard {
-            let _ = tx.send(()); // 取消定时器
-            let _ = thread.join();
-        }
+        // 清理 timeout guard（Drop → Disarm 撤除看门狗；成功与错误路径统一）
+        drop(_timeout_guard);
 
         Ok(ScriptResult {
             value: result_str,
@@ -539,6 +632,14 @@ impl V8Sandbox {
 
 impl Drop for V8Sandbox {
     fn drop(&mut self) {
+        // 先停看门狗线程并 join（防其持 ThreadSafeHandle 对即将销毁的 isolate 调
+        // terminate_execution），再释放 isolate 与 context。
+        if let Some(tx) = &self.watchdog_tx {
+            let _ = tx.send(WatchdogMsg::Stop);
+        }
+        if let Some(join) = self.watchdog_join.take() {
+            let _ = join.join();
+        }
         self.cached_context = None;
         self.isolate = None;
     }
@@ -1685,6 +1786,44 @@ mod tests {
             let code = format!("var v{i} = {i}; v{i}");
             let r = sandbox.execute(&code).unwrap();
             assert_eq!(r.value, i.to_string());
+        }
+    }
+
+    #[test]
+    /// SEC-13 超时看门狗（2026-08-10 持久化重构）：死循环脚本在 timeout_ms 后被
+    /// terminate_execution 终止（Timeout 错误，非长期挂起）；且看门狗可恢复——
+    /// 后续 execute 正常（旧 per-execute 线程实现下，脚本出错提前返回会残留
+    /// 看门狗线程于 timeout 后误伤下一次执行；新 Arm/Disarm 协议经 guard Drop
+    /// 统一撤除，无残留）。多次死循环→恢复循环验证 seq 协议无累积。
+    fn test_execute_timeout_terminates_dead_loop_and_reuse() {
+        let config = SandboxConfig {
+            persistent_context: true,
+            timeout_ms: 200,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+
+        let start = std::time::Instant::now();
+        let r = sandbox.execute("while(true){}");
+        assert!(
+            matches!(r, Err(ScriptError::Timeout(_))),
+            "死循环应在 timeout_ms 后被终止: {:?}",
+            r.err()
+        );
+        assert!(
+            start.elapsed().as_millis() < 5_000,
+            "terminate 应在 ~timeout 内到达而非长期等待: {}ms",
+            start.elapsed().as_millis()
+        );
+        // 看门狗撤除后 sandbox 可复用（无残留 terminate 误伤）。
+        let r2 = sandbox.execute("1 + 1");
+        assert!(r2.is_ok(), "terminate 后 sandbox 应可复用: {:?}", r2.err());
+        assert_eq!(r2.unwrap().value, "2");
+        // 连续多次死循环→恢复：seq 协议无累积残留。
+        for _ in 0..3 {
+            let r3 = sandbox.execute("while(true){}");
+            assert!(matches!(r3, Err(ScriptError::Timeout(_))), "死循环应持续被终止: {r3:?}");
+            assert_eq!(sandbox.execute("2 * 3").unwrap().value, "6");
         }
     }
 }
