@@ -28,6 +28,24 @@ pub fn parse_html(html: &str) -> Document {
     parse_html_with_builder(html)
 }
 
+/// HTML 片段解析（spec `html-fragment-parsing-algorithm`）——以 `(namespace, local_name)` 标识的
+/// context 元素，用 html5ever `parse_fragment` 解析。返回的 `Document` 结构为 `Document > html（合成
+/// 包裹）> [片段节点]`，供 innerHTML/outerHTML setter 按目标元素 context 正确解析
+///（如 `table.innerHTML='<tr>...'` 在 table context 下解析 → 隐式 tbody 包裹，而非 body context 下
+/// foster-parent 丢失）。context 元素的 prefix 对片段解析无影响，故仅需 namespace + local_name。
+///
+/// spec：https://html.spec.whatwg.org/multipage/parsing.html#html-fragment-parsing-algorithm
+pub fn parse_html_fragment(html: &str, namespace: &str, local_name: &str) -> Document {
+    use html5ever::driver::ParseOpts;
+    use markup5ever::{LocalName, Namespace, QualName};
+    use tendril::TendrilSink;
+
+    let context_qname = QualName::new(None, Namespace::from(namespace), LocalName::from(local_name));
+    let builder = DomBuilder::new();
+    let parser = html5ever::parse_fragment(builder, ParseOpts::default(), context_qname, Vec::new());
+    parser.one(html)
+}
+
 /// 使用 html5ever 从文件解析 HTML。
 pub fn parse_html_from_file(path: &std::path::Path) -> std::io::Result<Document> {
     use html5ever::driver::ParseOpts;

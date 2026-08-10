@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use zero_style_system::ComputedStyle;
 
-use zero_dom::{Document, FocusManager, NodeId, NodeKind, parse_html};
+use zero_dom::{Document, FocusManager, NodeId, NodeKind, parse_html, parse_html_fragment};
 use zero_script_sandbox::Sandbox;
 
 // getComputedStyle 计算与序列化（R2709 从本文件拆出，控制主文件行数）。
@@ -793,14 +793,44 @@ pub(crate) fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str)
         doc.append_child(parent, text).map_err(|e| e.to_string())?;
         return Ok(());
     }
-    let frag_doc = parse_html(&format!("<!DOCTYPE html><html><body>{trimmed}</body></html>"));
-    let body = find_by_selector(&frag_doc, "body").ok_or("innerHTML fragment parse failed")?;
-    let frag_children: Vec<NodeId> = frag_doc.get(body).map(|n| n.children.clone()).unwrap_or_default();
+    // R3182：用 context element（parent namespace + local_name）做 fragment 解析（spec
+    // `html-fragment-parsing-algorithm`）——table/select 等 context-sensitive 元素的 innerHTML 在正确
+    // context 下解析（如 table → tbody 隐式包裹），旧 body-wrap 在 body context 下 `<tr>` foster-parent
+    // 丢失（实测 table.innerHTML='<tr><td>x</td></tr>' 回读仅 "x"）。非元素 parent 回落 body context。
+    let (context_ns, context_local) = match doc.get(parent).map(|n| &n.kind) {
+        Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
+        _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
+    };
+    let frag_doc = parse_html_fragment(trimmed, &context_ns, &context_local);
+    let frag_children = fragment_top_level_children(&frag_doc);
     for frag_child in frag_children {
         let copied = copy_subtree_from(doc, &frag_doc, frag_child);
         doc.append_child(parent, copied).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// 提取 `parse_html_fragment` 结果的顶层片段节点——html5ever fragment 模式产物结构为
+/// `Document > html（合成包裹）> [片段节点]`，取 html 元素子节点为片段内容（table context → tbody 隐式包裹）。
+/// 无 html 包裹（边例）回落 Document root 子节点。
+fn fragment_top_level_children(frag_doc: &Document) -> Vec<NodeId> {
+    const HTML_NS: &str = "http://www.w3.org/1999/xhtml";
+    let root = frag_doc.root();
+    let html_wrapper = frag_doc
+        .get(root)
+        .and_then(|n| {
+            n.children.iter().copied().find(|&c| {
+                matches!(
+                    frag_doc.get(c).map(|n| &n.kind),
+                    Some(NodeKind::Element(e)) if e.local_name() == "html" && e.namespace() == HTML_NS
+                )
+            })
+        })
+        .unwrap_or(root);
+    frag_doc
+        .get(html_wrapper)
+        .map(|n| n.children.clone())
+        .unwrap_or_default()
 }
 
 fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> NodeId {
@@ -945,14 +975,23 @@ fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: 
     if trimmed.is_empty() {
         return Ok(());
     }
-    // 解析顶层 fragment 节点：包入 <body> 解析取 body 子（与 replace_inner_html 同源）。
+    // 解析顶层 fragment 节点（与 replace_inner_html 同源）。R3182：context element 按 position 取
+    //（spec `dom-element-insertadjacenthtml`）——beforebegin/afterend = 目标父，afterbegin/beforeend =
+    // 目标自身。旧 body-wrap 在 body context 下 foster-parent 丢失 table/select 等结构。
     // 先全部 copy 收集，再按 position 插入（原子化，单一出口）。
     let frag_nodes: Vec<NodeId> = if !trimmed.contains('<') {
         vec![doc.create_text_node(trimmed)]
     } else {
-        let frag_doc = parse_html(&format!("<!DOCTYPE html><html><body>{trimmed}</body></html>"));
-        let body = find_by_selector(&frag_doc, "body").ok_or("insertAdjacentHTML fragment parse failed")?;
-        let kids: Vec<NodeId> = frag_doc.get(body).map(|n| n.children.clone()).unwrap_or_default();
+        let context_node = match position {
+            "beforebegin" | "afterend" => doc.get(node).and_then(|n| n.parent).unwrap_or(node),
+            _ => node, // afterbegin / beforeend → 目标自身
+        };
+        let (context_ns, context_local) = match doc.get(context_node).map(|n| &n.kind) {
+            Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
+            _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
+        };
+        let frag_doc = parse_html_fragment(trimmed, &context_ns, &context_local);
+        let kids = fragment_top_level_children(&frag_doc);
         kids.into_iter().map(|k| copy_subtree_from(doc, &frag_doc, k)).collect()
     };
     insert_nodes_at_position(doc, &frag_nodes, node, position)
@@ -983,15 +1022,20 @@ pub(crate) fn replace_outer_html_node(doc: &mut Document, node: NodeId, html: &s
         .and_then(|n| n.parent)
         .ok_or_else(|| "set_outer_html: element has no parent".to_string())?;
     // 解析顶层 fragment 节点（与 replace_inner_html 同源），逐个插到目标之前。
+    // R3182：context element = 目标父（fragment 在父 context 下解析——如父是 table，
+    // `<tr>` 正确解析为隐式 tbody；旧 body-wrap foster-parent 丢失）。
     let trimmed = html.trim();
     if !trimmed.is_empty() {
         if !trimmed.contains('<') {
             let t = doc.create_text_node(trimmed);
             doc.insert_before(parent, t, node).map_err(|e| e.to_string())?;
         } else {
-            let frag_doc = parse_html(&format!("<!DOCTYPE html><html><body>{trimmed}</body></html>"));
-            let body = find_by_selector(&frag_doc, "body").ok_or("outerHTML fragment parse failed")?;
-            let kids: Vec<NodeId> = frag_doc.get(body).map(|n| n.children.clone()).unwrap_or_default();
+            let (context_ns, context_local) = match doc.get(parent).map(|n| &n.kind) {
+                Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
+                _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
+            };
+            let frag_doc = parse_html_fragment(trimmed, &context_ns, &context_local);
+            let kids = fragment_top_level_children(&frag_doc);
             for k in kids {
                 let copied = copy_subtree_from(doc, &frag_doc, k);
                 doc.insert_before(parent, copied, node).map_err(|e| e.to_string())?;

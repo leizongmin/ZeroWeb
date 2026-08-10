@@ -1105,6 +1105,22 @@ fn native_inner_html_setter_preserves_svg_namespace_r3181() {
     );
 }
 
+/// R3182 `innerHTML` setter 用 context element 解析——`table.innerHTML='<tr><td>x</td></tr>'` 在 table
+/// context 下正确解析（隐式 tbody 包裹），回读 `<tbody><tr><td>x</td></tr></tbody>`。旧 body-wrap 在
+/// body context 下 `<tr>` foster-parent 丢失（实测回读仅 "x"）。
+#[test]
+fn native_inner_html_setter_table_context_r3182() {
+    let html = r#"<table id="t"></table>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ __zw_native_element_for_id('t').innerHTML='<tr><td>x</td></tr>';\
+             return __zw_native_element_for_id('t').innerHTML; })()"
+        ),
+        "<tbody><tr><td>x</td></tr></tbody>"
+    );
+}
+
 /// `outerHTML` setter：元素整体替换为片段顶层节点。原元素从 DOM 移除（id 失效），
 /// 父节点 innerHTML 反映新内容。验证经父节点回读（原 id 'a' 已 detach）。
 #[test]

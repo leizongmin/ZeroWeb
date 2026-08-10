@@ -1030,3 +1030,13 @@ fn test_parse_text_node_merging_complex_structure() {
     assert!(doc.query_selector(doc.root(), "span").is_some());
     assert!(doc.query_selector(doc.root(), "strong").is_some());
 }
+
+/// R3182 parse_html_fragment(table context)：table context 下 `<tr><td>` 正确解析为隐式 tbody 包裹
+///（非 body context 下的 foster-parent 丢失）。返回结构 Document > html（合成包裹）> tbody > tr > td。
+#[test]
+fn parse_html_fragment_table_context_r3182() {
+    let doc = crate::parse_html_fragment("<tr><td>x</td></tr>", "http://www.w3.org/1999/xhtml", "table");
+    // html5ever fragment 模式产物：Document > html > tbody > tr > td。
+    let serialized = doc.outer_html(doc.root());
+    assert_eq!(serialized, "<html><tbody><tr><td>x</td></tr></tbody></html>");
+}
