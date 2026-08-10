@@ -92,6 +92,12 @@ kill-switch：env `ZW_NATIVE_DOM=polyfill-live-<scope>`（unset/OFF = 现 String
 | **L2b-2 写路由（结构）** | `AppendChild`/`InsertBefore`/`CreateElement`/`Remove`/`SetInnerHtml` 等结构写（handle 系统） | 🔴 高（handle→NodeId 映射 + 结构 mutation） | 同 L2b-1 + handle 边例全覆盖 | 写全路由 C |
 | **L3 清理** | 移除 `parse_html(html)` re-parse 站点 + `cached_html` String 写路径降为 C 派生 + A/B 分支删除 | 🟢 低（删除已验证冗余） | 全量回归 | 维护体量降 + 性能（去 round-trip） |
 
+> **⚠️ 复核修正（R3179）——切片排序：L2b 写路由须先于 L2a 读路由。** 上表原按「读最安全」排 L2a 先行，但此排序**有缺陷**：C（`cached_doc`）由 `render_html` 在 re-parse 时设置，**脚本执行内的 polyfill mutation 不更新 C**（C 仅下次 render 更新）。故 reads-via-C（L2a）对 in-flight polyfill mutation **必 stale**（§3.3 已正确指出「因写即时改 C，in-flight 可见」——前提是写先到 C）。
+>
+> 关键推论：① `matches`/`closest` 等「只读」回调**非 in-flight 无关**——`el.className='foo'; el.matches('.foo')` 中 matches 依赖刚改的 class，C-path 见 pre-mutation 旧值（stale）；② 故 L2a 不能作 🟡 入口先行；**正确顺序 = L2b-1（写→C + render 改用 C）先 land，使 C 成真源并即时反映写，随后 L2a 读路由才正确**；③ **L2 无 🟡 入口切片**——crux（L2b-1 render 改用 C）是真正首切片，整条 L2 链路 🔴 风险，进一步确认 rule 11 门禁的正当性（非保守过判）。
+>
+> 修正后的实施顺序：**L2b-1（crux）→ L2a（读路由，C 已即时）→ L2b-2（结构写）→ L3**。L2a-1（matches）**不再作首切片**（见 §7 修正）。
+
 ---
 
 ## 5. handle/selector→NodeId 解析（L2 基建）
@@ -116,26 +122,28 @@ polyfill 用 **handle**（createElement 元素，path A）或 **selector**（que
 
 ---
 
-## 7. 首个落地步骤（L2a-1，implementation-ready）
+## 7. 首个落地步骤——L2b-1（crux），非 L2a-1（R3179 修正）
 
-选 `__zw_matches`（`element.matches(selector)`，幂等只读，无 in-flight 依赖，无 handle 复杂度——selector 输入）作首个路由：
+> **⚠️ R3179 修正**：原 §7 选 `__zw_matches`（L2a-1）作首切片（误判「只读无 in-flight 依赖」）。复核确认 `matches` 依赖元素属性（`el.className='foo'; el.matches('.foo')`），而 C 在脚本内不更新 → reads-via-C 必 stale（见 §4 修正注）。故 **L2a-1 非有效入口**。
 
-1. `js_dom_bridge/selector_match.rs::element_matches_test_selector` 加 C 读分支：`if ZW_NATIVE_DOM 含 polyfill-live-matches { with_dom(|d| { /* selector→NodeId + query_selector_all 全匹配集判定 */ }) } else { 现 parse_html(html) 路径 }`。
-2. A/B 对照门测试：同 (html, elem_sel, test_sel) 两路径结果断言 `==`（覆盖组合器/子树/无匹配）。
-3. `make test`（OFF 零回归）+ ON 路径单测。
-4. land 后扩到 `closest`/`children`/`query_*_sub`（L2a 余量）。
+**正确首切片 = L2b-1**（写路由属性/文本 + render 改用 C），即 crux 本身：
 
-**L2a-1 风险 🟡 中**（只读、幂等、kill-switch OFF 零回归），是 L2 全链路最低风险的入口切片——验证 C 读管线 + selector→NodeId 解析 + A/B 对照门基建，为 L2b 写路由（🔴 crux）铺路。
+1. 写回调（`SetAttr`/`RemoveAttr`/`SetText`/`SetStyle` 等）经 `with_dom_mut` 改 C（同 native），kill-switch `ZW_NATIVE_DOM=polyfill-live-write` 默认 OFF。
+2. **render 改用 C**（crux）：`render_html` 在 C live（L2 开）时**跳过 re-parse**，直接用 `cached_doc`（polyfill/native 写即时反映）；`cached_html` 改由 C 序列化（`doc.outer_html(root)`）维护。
+3. A/B 对照门：同 mutations 两路径（String vs C）reftest 最终 HTML 断言 `==` + 既有 dom_bridge 测试。
+4. `make test`（OFF 零回归）+ `make reftest` + `make product-smoke`（welcome 无回归）+ WPT。
+
+**L2b-1 风险 🔴 高**（写热路径 + render 核心变更 + 14137 测试依赖），是 L2 真正首切片——正面解决 crux（C 成真源 + in-flight 可见）。**无 🟡 入口可绕过 crux**（R3179 确认）。L2b-1 land 后，L2a 读路由（C 已即时）→ L2b-2 结构写 → L3 清理。
 
 ---
 
 ## 8. 决策门禁说明（为何需用户点名）
 
-L2 触 polyfill 热路径 + render 核心（crux 正面解决）+ 14137 测试依赖，属 rule 11「深结构」。即便每片 kill-switch 默认 OFF 零回归，**L2b-1 改 render 路径**（C live 时跳过 re-parse）是架构级转变（C 升格真源），需用户拍板方向。本文档使该决策基于清晰实施路径（非模糊「大改」）：
+L2 触 polyfill 热路径 + render 核心（crux 正面解决）+ 14137 测试依赖，属 rule 11「深结构」。即便每片 kill-switch 默认 OFF 零回归，**L2b-1 改 render 路径**（C live 时跳过 re-parse，C 升格真源）是架构级转变，需用户拍板方向。**R3179 复核进一步确认门禁正当性**：L2 无 🟡 入口切片（crux 是真正首切片），整条链路 🔴——非保守过判，是 crux 深度的真实反映。本文档使该决策基于清晰实施路径（非模糊「大改」）：
 
 - 方向：C 成 single source of truth，cached_html 降为派生。
-- 去风险：三阶段默认 OFF kill-switch + A/B 对照门 + 渐进路由。
-- 入口：L2a-1（🟡 中，只读幂等）先行验证管线。
+- 去风险：默认 OFF kill-switch + A/B 对照门 + 渐进路由。
+- 入口：L2b-1（🔴 crux）正面解决，无低风险绕道。
 
 **R3177 已确认 L2 增量价值**：polyfill 核心 API（fetch/MO/rAF/getBoundingClientRect）均已真实，L2 价值 = native 性能（~15.6x getter）+ spec 忠实度（去 String 边例差）+ 去 round-trip（大页面 ~30% parse 开销）+ 维护简化（去 A/B 双份），非「补 stub」。
 
