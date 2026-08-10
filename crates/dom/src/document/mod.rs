@@ -779,14 +779,15 @@ impl Document {
     pub fn set_attribute(&mut self, id: NodeId, name: &str, value: &str) {
         let old_value = self.get_attribute(id, name);
 
+        // HTML 命名空间元素属性名 case-insensitive：effective name 决定 id 属性检测 **和** mutation
+        // record 的 attributeName（HTML 小写，与已小写的属性存储一致；SVG/XML 大小写敏感保留）。
+        let mut attr_name = name.to_string();
         if let Some(NodeKind::Element(elem)) = self.nodes.get_mut(id).map(|n| &mut n.kind) {
-            // HTML 命名空间元素属性名 case-insensitive：effective name == "id" 即 id 属性
-            //（HTML "ID"/"Id" 均算；SVG/XML 大小写敏感，仅精确 "id" 算）。与 ElementData 内部一致。
-            let is_id_attr = elem.attr_name_effective(name) == "id";
+            attr_name = elem.attr_name_effective(name).into_owned();
             elem.set_attribute(name, value);
 
             // 更新 id 映射
-            if is_id_attr {
+            if attr_name == "id" {
                 if let Some(old_id) = &old_value {
                     self.id_map.remove(old_id);
                 }
@@ -797,14 +798,14 @@ impl Document {
             }
         }
 
-        // 记录 mutation
+        // 记录 mutation（attributeName = effective name；spec HTML 元素为小写 qualified name）
         self.record_mutation(MutationRecord {
             mutation_type: MutationType::Attributes,
             target: id,
             added_nodes: vec![],
             removed_nodes: vec![],
             previous_sibling: None,
-            attribute_name: Some(name.to_string()),
+            attribute_name: Some(attr_name),
             old_value,
         });
     }
@@ -813,13 +814,15 @@ impl Document {
     pub fn remove_attribute(&mut self, id: NodeId, name: &str) {
         let old_value = self.get_attribute(id, name);
 
+        let mut attr_name = name.to_string();
         if let Some(NodeKind::Element(elem)) = self.nodes.get_mut(id).map(|n| &mut n.kind) {
-            // HTML 元素属性名 case-insensitive：effective name == "id" 即 id 属性（见 set_attribute）。
-            let is_id_attr = elem.attr_name_effective(name) == "id";
+            attr_name = elem.attr_name_effective(name).into_owned();
             elem.remove_attribute(name);
 
             // 更新 id 映射
-            if is_id_attr && let Some(old_id) = &old_value {
+            if attr_name == "id"
+                && let Some(old_id) = &old_value
+            {
                 self.id_map.remove(old_id);
             }
         }
@@ -831,7 +834,7 @@ impl Document {
                 added_nodes: vec![],
                 removed_nodes: vec![],
                 previous_sibling: None,
-                attribute_name: Some(name.to_string()),
+                attribute_name: Some(attr_name),
                 old_value,
             });
         }

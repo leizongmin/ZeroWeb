@@ -573,3 +573,32 @@ fn test_svg_attribute_name_case_sensitive_r3174() {
     // 存储名保留原大小写
     assert_eq!(doc.attribute_names(rect), vec!["viewBox".to_string()]);
 }
+
+/// R3175：MutationRecord.attributeName 用 effective name（HTML 小写），与 R3174 已小写的属性
+/// 存储一致——`set_attribute("Foo")` 存 "foo"，record.attributeName 亦为 "foo"（非原始 "Foo"）。
+/// SVG 元素 attributeName 保留原大小写（"viewBox"）。
+#[test]
+fn test_mutation_record_attribute_name_effective_r3175() {
+    let mut doc = Document::new();
+    // HTML 元素：大写属性名 → record attributeName 小写（与存储一致）
+    let div = doc.create_element("div");
+    doc.set_attribute(div, "Data-Role", "button");
+    let records = doc.take_mutation_records();
+    assert_eq!(records.len(), 1, "set_attribute 应记录 1 条属性 mutation");
+    assert_eq!(
+        records[0].attribute_name.as_deref(),
+        Some("data-role"),
+        "attributeName 应为 effective name（HTML 小写），与存储一致"
+    );
+
+    // SVG 元素：属性名保留原大小写（非 HTML 命名空间不小写）
+    let rect = doc.create_element_ns("http://www.w3.org/2000/svg", "rect");
+    doc.set_attribute(rect, "viewBox", "0 0 1 1");
+    let records = doc.take_mutation_records();
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].attribute_name.as_deref(),
+        Some("viewBox"),
+        "SVG attributeName 应保留原大小写"
+    );
+}
