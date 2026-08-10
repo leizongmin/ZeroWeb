@@ -130,7 +130,30 @@
 
 ## 最近完成的改进
 
-### IndexedDB NaN key 拒绝 + add/put 原子性（本轮 R3227/R3228，IndexedDB 核实+修复）
+### IndexedDB auto-inc key generator 在 tx.abort 回滚（本轮 R3229，闭合 R3228 defer 项）
+
+承接 R3227/R3228（IndexedDB NaN key + add/put 原子性），本轮闭合 R3228 记的 **R3229 候选**（auto-inc key generator abort 不回滚，§5.10）。上轮已核实存在：`tx_add`/`tx_put` auto-inc 时**立即**推进 live `store.next_key`，Add/Put mutation 缓冲但 next_key 增量未缓冲；`abort()`（cursor.rs:167）清缓冲但 next_key 留在高位 → 下次 add 跳过被丢弃的 key（浪费 + spec 偏差；§5.10 谓 abort 须 revert all changes 含 key generator）。
+
+**修复（事务局部 key generator，deferred-apply）**：
+- `IdbTransaction` 增 `key_gens: RefCell<HashMap<String, u64>>`（store_name → 事务可见 next_key，惰性从 store.next_key 初始化）。
+- `tx_add`/`tx_put` auto-inc：读/推进 **tx-local** key_gens（`or_insert(store.next_key)` → `effective_next`），**不触碰 live store.next_key**；同 tx 多次 auto-inc 各取唯一递增 key（tx-local 单调推进）。
+- `commit_tx`：apply mutations 后**写回** tx-local key_gens 到各 store.next_key（取 max，保守）。
+- `abort`：**无需改**——tx-local key_gens 随 tx 丢弃，store.next_key 全程未改 → 自动回滚。保留既有 `tx.abort()` API（调用方零改）。
+
+**为何净正向**：① **闭合 §5.10**——abort 回滚 key generator（下次 add 复用被丢弃的 key，非跳过）；② **保留 API**——`tx.abort()` 签名不变，key-gen 回滚自动发生（无需新 `db.abort_tx`），既有调用方 / 测试零改；③ **commit 路径不变**——commit_tx 写回，下次 add 仍取递增 key（`test_idb_tx_put_auto_increment_in_transaction` 等既有 auto-inc 测全过）；④ **零回归**——既有 IDB 测全过（657 lib），新增 `test_idb_auto_inc_rollback_on_abort_r3229`（abort 后复用 key 1 + commit 路径写回 key 3 双断言）；⑤ 中等风险（事务模型增字段 + tx_add/tx_put/commit_tx 三处改，跨字段借编译通过）；⑥ storage 属本流域。
+
+| 文件 | 变更 |
+|------|------|
+| `storage/src/indexed_db/cursor.rs` | `IdbTransaction` 增 `key_gens: RefCell<HashMap<String,u64>>` 字段；`use HashMap`；`make_transaction()` 测试 helper 补字段。 |
+| `storage/src/indexed_db/types.rs` | `transaction()` 构造补 key_gens；`tx_add`/`tx_put` auto-inc 改用 tx-local key_gens（不触碰 live next_key）；`commit_tx` 写回 key_gens；R3229 标注。 |
+| `storage/src/indexed_db/types_coverage3.rs` | 2 处 IdbTransaction 测试构造补 key_gens + `use HashMap`。 |
+| `storage/src/indexed_db/tests_advanced.rs` | +1 测 `test_idb_auto_inc_rollback_on_abort_r3229`。 |
+
+验证：`cargo fmt -p zero-storage -- --check` clean + `cargo clippy -p zero-storage --all-targets -- -D warnings` 零警告 + **zero-storage lib 657 passed**（+1，零回归）。spec：https://www.w3.org/TR/IndexedDB/#key-generator （§5.10）+ §3.1.7.2（abort revert all changes）。pre-commit guard 见提交。
+
+**下一步**：IndexedDB 核实三项全闭合（R3227 NaN + R3228 原子性 + R3229 auto-inc 回滚——§3.1.6/§3.1.9-10/§5.10/§3.1.7.2 实质闭合）。续候选：① IndexedDB feature gap（Date key 类型 / nextunique/prevunique cursor / array keyPath 复合键）；② **net request.rs 头注入校验**（RFC 7230 §3.2.6 token——JS API 层 upfront 拒绝非法 header name，reqwest 底层已校验）；③ public-suffix 集成（cookie Domain=.com 拒绝，需 PSL）；④ 字体栈/GPU 战略项 user/hardware gated。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。注：lark-cli 环境不可用（多轮尝试），通知走 master.md 控制面；⚠️ compositor 跨流红灯待渲染流。
+
+
 
 承接 R3226（storage 审计 Web Storage 闭合），本轮核实并修复上轮 IndexedDB 路标的三项 HIGH 之一二（独立核实代码 + 写复现测试 + 修复）。深审 `indexed_db/types.rs` 对照 W3C IndexedDB 3.0 §3.1.6/§3.1.9/§3.1.10——核实两项真偏差（auto-inc rollback 项核实存在但 defer）：
 

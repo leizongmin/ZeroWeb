@@ -1,6 +1,7 @@
 //! IDB Cursor 和 Transaction 实现。
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use super::types::*;
 use crate::StorageError;
@@ -131,6 +132,10 @@ pub struct IdbTransaction {
     pub(crate) committed: bool,
     /// 缓冲的变更操作。
     pub(crate) mutations: RefCell<Vec<TxMutation>>,
+    /// R3229：事务局部 key generator 视图（store_name → next_key）——auto-inc 在此推进，
+    /// 不触碰 live store.next_key；commit_tx 写回，abort 丢弃（store.next_key 未改 → 自动回滚）。
+    /// 闭合 W3C IndexedDB §5.10：旧实现立即推进 live store.next_key，abort 不回滚。
+    pub(crate) key_gens: RefCell<HashMap<String, u64>>,
 }
 
 impl IdbTransaction {
@@ -383,6 +388,7 @@ mod tests {
             aborted: false,
             committed: false,
             mutations: RefCell::new(vec![]),
+            key_gens: RefCell::new(HashMap::new()),
         }
     }
 

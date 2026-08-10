@@ -989,6 +989,7 @@ impl IdbDatabase {
             aborted: false,
             committed: false,
             mutations: RefCell::new(Vec::new()),
+            key_gens: RefCell::new(HashMap::new()),
         })
     }
 
@@ -1005,6 +1006,13 @@ impl IdbDatabase {
             .stores
             .get(store_name)
             .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
+        // R3229：事务局部 key generator（auto-inc 推进 tx-local key_gens，不触碰 live store.next_key；
+        // commit_tx 写回，abort 丢弃 → store.next_key 未改自动回滚，闭合 W3C IndexedDB §5.10）。
+        let store_next_key = store.next_key;
+        let auto_inc = store.auto_increment;
+        let mut key_gens = tx.key_gens.borrow_mut();
+        let tx_next = key_gens.entry(store_name.to_string()).or_insert(store_next_key);
+        let effective_next = *tx_next;
         // 解析主键（自增逻辑）
         let key = match key {
             Some(k) => {
@@ -1016,13 +1024,18 @@ impl IdbDatabase {
                 }
                 k
             }
-            None if store.auto_increment => IdbKey::Number(store.next_key as f64),
+            None if auto_inc => IdbKey::Number(effective_next as f64),
             None => {
                 return Err(StorageError::Database(
                     "No key provided and auto_increment is false".to_string(),
                 ));
             }
         };
+        // auto-inc 推进：auto 分配的 key 或显式 key == effective_next（§5.10 显式推进）→ 推进 tx-local generator
+        if auto_inc && matches!(key, IdbKey::Number(n) if n == effective_next as f64) {
+            *tx_next = effective_next + 1;
+        }
+        drop(key_gens);
         // 检查 store 中是否已存在相同主键
         if store.records.iter().any(|r| r.key == key) {
             return Err(StorageError::Database(format!(
@@ -1044,12 +1057,7 @@ impl IdbDatabase {
             )));
         }
         drop(mutations);
-        // 自增计数器立即推进（与浏览器 IndexedDB 行为一致）
-        if store.auto_increment && matches!(key, IdbKey::Number(n) if n == store.next_key as f64) {
-            let _ = store;
-            let store = self.stores.get_mut(store_name).unwrap();
-            store.next_key += 1;
-        }
+        // R3229：key generator 推进已移至事务局部 key_gens（见上方 key 解析），不再触碰 live store.next_key。
 
         tx.mutations.borrow_mut().push(TxMutation::Add {
             store: store_name.to_string(),
@@ -1070,8 +1078,14 @@ impl IdbDatabase {
         tx.check_active(store_name)?;
         let store = self
             .stores
-            .get_mut(store_name)
+            .get(store_name)
             .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
+        // R3229：事务局部 key generator（同 tx_add——auto-inc 推进 tx-local key_gens，不触碰 live store.next_key）。
+        let store_next_key = store.next_key;
+        let auto_inc = store.auto_increment;
+        let mut key_gens = tx.key_gens.borrow_mut();
+        let tx_next = key_gens.entry(store_name.to_string()).or_insert(store_next_key);
+        let effective_next = *tx_next;
         let key = match key {
             Some(k) => {
                 // R3227：校验显式 key 合法性（NaN 拒，IndexedDB §3.1.6）
@@ -1082,9 +1096,9 @@ impl IdbDatabase {
                 }
                 k
             }
-            None if store.auto_increment => {
-                let k = IdbKey::Number(store.next_key as f64);
-                store.next_key += 1;
+            None if auto_inc => {
+                let k = IdbKey::Number(effective_next as f64);
+                *tx_next = effective_next + 1;
                 k
             }
             None => {
@@ -1093,6 +1107,7 @@ impl IdbDatabase {
                 ));
             }
         };
+        drop(key_gens);
         tx.mutations.borrow_mut().push(TxMutation::Put {
             store: store_name.to_string(),
             value,
@@ -1171,6 +1186,16 @@ impl IdbDatabase {
                 TxMutation::Delete { store, key } => {
                     self.delete(&store, &key)?;
                 }
+            }
+        }
+        // R3229：写回事务局部 key generator 推进（auto-inc 增量）到 live store.next_key。
+        // 取 max——tx 从 store.next_key 起单调推进；若 store.next_key 期间被独立推进（不应发生），保守保留大值。
+        let key_gens = tx.key_gens.borrow();
+        for (store_name, tx_next) in key_gens.iter() {
+            if let Some(store) = self.stores.get_mut(store_name)
+                && *tx_next > store.next_key
+            {
+                store.next_key = *tx_next;
             }
         }
         Ok(())

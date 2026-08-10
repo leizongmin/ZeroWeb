@@ -5,6 +5,7 @@ use super::types::*;
 use crate::StorageError;
 use serde_json::json;
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════════════════
 // Cursor edge cases
@@ -164,6 +165,7 @@ fn make_tx() -> IdbTransaction {
         aborted: false,
         committed: false,
         mutations: RefCell::new(Vec::new()),
+        key_gens: RefCell::new(HashMap::new()),
     }
 }
 
@@ -245,6 +247,7 @@ fn test_transaction_accessors() {
         aborted: false,
         committed: false,
         mutations: RefCell::new(Vec::new()),
+        key_gens: RefCell::new(HashMap::new()),
     };
     assert_eq!(tx.mode(), IdbTransactionMode::ReadOnly);
     assert_eq!(tx.store_names().len(), 2);

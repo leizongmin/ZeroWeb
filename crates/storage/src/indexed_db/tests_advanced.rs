@@ -999,6 +999,42 @@ fn test_idb_nan_key_rejected_r3227() {
     assert_eq!(db.count("s").unwrap(), 3, "R3227: 合法 Array key 须接受");
 }
 
+/// R3229：事务 abort 时 auto-increment key generator 须回滚（W3C IndexedDB §5.10）。
+/// 旧实现 tx_add 立即推进 live store.next_key，abort 清缓冲但 next_key 不回滚 → 下次 add 跳过被丢弃的 key（浪费 + spec 偏差）。
+/// 现实现：auto-inc 推进事务局部 key_gens，commit_tx 写回，abort 丢弃（store.next_key 未改 → 自动回滚）。
+#[test]
+fn test_idb_auto_inc_rollback_on_abort_r3229() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("s", None, /* auto_increment */ true).unwrap();
+
+    // tx_add（auto-inc 分配 key 1，推进 tx-local generator 到 2）→ abort。
+    let mut tx = db.transaction(&["s"], IdbTransactionMode::ReadWrite).unwrap();
+    let k1 = db.tx_add(&tx, "s", serde_json::json!("v1"), None).unwrap();
+    assert_eq!(k1, IdbKey::Number(1.0));
+    tx.abort().unwrap();
+
+    // R3229：abort 后 key generator 回滚 → 下一次 add 复用 key 1（旧实现 next_key=2 → 用 key 2，浪费）。
+    let k2 = db.add("s", serde_json::json!("v2"), None).unwrap();
+    assert_eq!(
+        k2,
+        IdbKey::Number(1.0),
+        "R3229: abort 后 key generator 须回滚（下次 add 复用 key 1，非 2）"
+    );
+
+    // commit 路径仍推进写回：tx_add + commit_tx → key generator 写回 store.next_key。
+    let mut tx2 = db.transaction(&["s"], IdbTransactionMode::ReadWrite).unwrap();
+    let k3 = db.tx_add(&tx2, "s", serde_json::json!("v3"), None).unwrap();
+    assert_eq!(k3, IdbKey::Number(2.0));
+    db.commit_tx(&mut tx2).unwrap();
+    // commit 写回后 → 下次 add 用 key 3（key 2 已被 tx2 用，next_key=3）。
+    let k4 = db.add("s", serde_json::json!("v4"), None).unwrap();
+    assert_eq!(
+        k4,
+        IdbKey::Number(3.0),
+        "R3229: commit 路径 key generator 仍推进写回（next_key=3）"
+    );
+}
+
 /// 混合操作：add + put + delete + abort，store 不受影响。
 #[test]
 fn test_tx_mixed_operations_abort() {
