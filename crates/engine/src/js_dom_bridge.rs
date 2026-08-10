@@ -973,7 +973,13 @@ fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: 
     let frag_nodes: Vec<NodeId> = if !trimmed.contains('<') {
         vec![doc.create_text_node(trimmed)]
     } else {
-        let context_node = match position {
+        // R3207：spec `dom-element-insertadjacenthtml` position 为 ASCII 大小写不敏感——
+        // 先规范化为小写再决定 context element。旧 `match position`（大小写敏感）对大写 position
+        //（如 "BEFOREBEGIN"）错走 `_` 分支用**目标自身**作 context（应为父），致 table 等
+        // context-sensitive 片段解析错（实测 `<tr><td>y</td></tr>` 在 caption context 下 foster-parent
+        // 丢行结构，仅剩文本 "y"）。`insert_nodes_at_position` 内部亦 trim+小写（幂等，统一语义）。
+        let pos = position.trim().to_ascii_lowercase();
+        let context_node = match pos.as_str() {
             "beforebegin" | "afterend" => doc.get(node).and_then(|n| n.parent).unwrap_or(node),
             _ => node, // afterbegin / beforeend → 目标自身
         };

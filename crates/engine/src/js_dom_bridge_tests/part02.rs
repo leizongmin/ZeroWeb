@@ -1505,6 +1505,45 @@ fn test_apply_set_inner_html_svg_xlink_prefix_r3206() {
     );
 }
 
+/// R3207：spec `dom-element-insertadjacenthtml` position 为 ASCII 大小写不敏感。beforebegin/afterend
+/// 的 context element = 目标父。旧实现 `match position`（大小写敏感）对大写 position（如 BEFOREBEGIN）
+/// 错走 `_` 分支用**目标自身**作 context（应为父），致 table 等 context-sensitive 片段解析错——
+/// 实测 `<tr><td>y</td></tr>` 在 caption（目标）context 下 foster-parent 丢行结构（仅剩文本 "y"），
+/// 而正确 table（父）context 下解析为 `<tbody><tr><td>y</td></tr></tbody>`。修复：先规范化小写。
+#[test]
+fn test_insert_adjacent_html_position_case_insensitive_r3207() {
+    let base = "<html><body><table id='tb'><caption id='c'>x</caption></table></body></html>";
+    let frag = "<tr><td>y</td></tr>";
+    let lower = apply_mutations_to_html(
+        base,
+        &[DomMutation::InsertAdjacentHtml {
+            selector: "#c".into(),
+            position: "beforebegin".into(),
+            html: frag.into(),
+        }],
+    )
+    .unwrap();
+    let upper = apply_mutations_to_html(
+        base,
+        &[DomMutation::InsertAdjacentHtml {
+            selector: "#c".into(),
+            position: "BEFOREBEGIN".into(),
+            html: frag.into(),
+        }],
+    )
+    .unwrap();
+    // 大小写 position 应产 identical output（spec ASCII-case-insensitive）。
+    assert_eq!(
+        lower, upper,
+        "ASCII-case-insensitive position should produce identical output"
+    );
+    // 正确（父 table）context：片段解析为 tbody>tr>td（行结构保留），非 foster-parent 丢行。
+    assert!(
+        lower.contains("<tbody><tr><td>y</td></tr></tbody>"),
+        "table context 应解析为 tbody>tr>td，got: {lower}"
+    );
+}
+
 #[test]
 fn test_is_text_input() {
     // P1a change-on-blur：文本输入判定（textarea + input 文本类；排除 action 类型）。
