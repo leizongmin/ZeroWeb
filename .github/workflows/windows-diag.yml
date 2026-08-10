@@ -65,25 +65,37 @@ jobs:
             Write-Host "WARNING: could not locate MSVC/SDK include paths"
           }
 
-      - name: Run A — tab_js_worker only (36 tests, no-fail-fast, 30s timeout)
+      - name: Run A — tab_js_worker only (36 tests, no-fail-fast)
+        continue-on-error: true
         shell: bash
         run: |
           cargo nextest run -p zero-browser --bin zero-browser \
             -E 'test(tab_js_worker)' \
-            --no-fail-fast --timeout 30s \
+            --no-fail-fast \
             --target x86_64-pc-windows-msvc
 
-      - name: Run B — full app tests (as CI, no-fail-fast, 30s timeout)
+      - name: Run B — full app tests (as CI, no-fail-fast)
+        continue-on-error: true
         shell: bash
         run: |
           cargo nextest run -p zero-browser -p zero-renderer -p zero-webview-demo \
-            --no-fail-fast --timeout 30s \
+            --no-fail-fast \
             --target x86_64-pc-windows-msvc
 
       - name: Run C — 4 hang tests serial (--test-threads=1)
+        continue-on-error: true
         shell: bash
         run: |
           cargo nextest run -p zero-browser --bin zero-browser \
             -E 'test(tab_js_worker_async_resolver) or test(tab_js_worker_attach_shadow_r2926)' \
+            --test-threads=1 \
+            --target x86_64-pc-windows-msvc
+
+      - name: Run D — tab_js_worker 36 tests serial (--test-threads=1)
+        continue-on-error: true
+        shell: bash
+        run: |
+          cargo nextest run -p zero-browser --bin zero-browser \
+            -E 'test(tab_js_worker)' \
             --test-threads=1 \
             --target x86_64-pc-windows-msvc
