@@ -63,7 +63,12 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
             // 序列化属性
             for attr in &elem.attributes {
                 output.push(' ');
-                output.push_str(&attr.name.local);
+                // R3206：按 HTML 序列化 spec「serializing an attribute」重建限定名——
+                // prefix 非 null 或 ns 为 XML/XMLNS 命名空间时输出 `prefix:local`
+                //（如 SVG `xlink:href`、`xml:lang`、`xmlns:x`），旧实现仅输出 `local` 丢前缀，
+                // 致 SVG 图标库（`<use xlink:href>`）等外部命名空间属性 round-trip 丢前缀。
+                // spec：https://html.spec.whatwg.org/multipage/parsing.html#serialising
+                output.push_str(&qualified_attr_name(attr));
                 output.push_str("=\"");
                 // HTML 属性值转义
                 output.push_str(&escape_html(&attr.value));
@@ -135,6 +140,37 @@ pub fn inner_html(doc: &Document, id: NodeId) -> String {
         serialize_node_inner_ctx(doc, child, parent_tag_ref, &mut output);
     }
     output
+}
+
+/// 重建属性的**限定名**（qualified name）——HTML 序列化 spec「serializing an attribute」
+///（spec：https://html.spec.whatwg.org/multipage/parsing.html#serialising）。
+///
+/// - XML 命名空间属性 → `xml:local`（如 `xml:lang`）。
+/// - XMLNS 命名空间属性 → `xmlns`（local=`xmlns`）或 `xmlns:local`（如 `xmlns:xlink`）。
+/// - 其他有前缀属性 → `prefix:local`（如 SVG `xlink:href`）。
+/// - 无前缀 → `local`（HTML 属性常态）。
+///
+/// 旧实现恒输出 `local`，丢前缀与命名空间，致外部命名空间属性（SVG `xlink:href`、`xml:lang` 等）
+/// 序列化 round-trip 丢前缀。html5ever 解析器在 DOM 中保留了完整 `QualName`（prefix + ns + local），
+/// 仅本序列化步骤丢弃。
+fn qualified_attr_name(attr: &markup5ever::Attribute) -> String {
+    const XML_NS: &str = "http://www.w3.org/XML/1998/namespace";
+    const XMLNS_NS: &str = "http://www.w3.org/2000/xmlns/";
+    let ns = &*attr.name.ns;
+    let local = &*attr.name.local;
+    if ns == XML_NS {
+        format!("xml:{local}")
+    } else if ns == XMLNS_NS {
+        if local == "xmlns" {
+            "xmlns".to_string()
+        } else {
+            format!("xmlns:{local}")
+        }
+    } else if let Some(prefix) = attr.name.prefix.as_deref() {
+        format!("{prefix}:{local}")
+    } else {
+        local.to_string()
+    }
 }
 
 /// 转义 HTML 特殊字符（用于属性值和文本）。
@@ -508,5 +544,47 @@ mod tests {
         // 对照：HTML 经 create_element 小写（同 tag 名不同命名空间，行为不同）。
         let html_div = doc.create_element("DIV");
         assert_eq!(doc.outer_html(html_div), "<div></div>");
+    }
+
+    // ── R3206 SVG/foreign-attribute prefix 序列化（spec HTML fragment serialization §13.3）──
+
+    /// 直接解析的 SVG 外部命名空间属性（`xlink:href`）序列化须保留 `prefix:local`——
+    /// HTML 序列化 spec「serializing an attribute」：prefix 非 null → `prefix:local`。
+    /// 旧 serializer 仅输出 `local`，丢 prefix（`xlink:href` → `href`），SVG 图标库 round-trip 丢前缀。
+    #[test]
+    fn test_serialize_svg_xlink_href_prefix_r3206() {
+        let html = r##"<svg><use xlink:href="#a"/></svg>"##;
+        let doc = crate::parse_html(html);
+        let serialized = doc.outer_html(doc.root());
+        assert!(
+            serialized.contains(r##"xlink:href="#a""##),
+            "xlink:href 前缀应保留（spec prefix:local），实际: {serialized}"
+        );
+    }
+
+    /// HTML 属性（无前缀、无命名空间）序列化仍为裸 `local`（回归保护：serializer hot path，
+    /// 绝大多数属性走此分支，不得因 R3206 限QualifiedName 重构破坏）。
+    #[test]
+    fn test_serialize_html_attr_no_prefix_unchanged_r3206() {
+        let html = r#"<div id="main" class="container" data-x="1">text</div>"#;
+        let doc = crate::parse_html(html);
+        let serialized = doc.outer_html(doc.root());
+        assert!(serialized.contains(r#"id="main""#), "普通属性序列化不变: {serialized}");
+        assert!(serialized.contains(r#"class="container""#));
+        assert!(serialized.contains(r#"data-x="1""#));
+        // 确保未误加前缀。
+        assert!(!serialized.contains(":"), "HTML 属性不应有前缀冒号: {serialized}");
+    }
+
+    /// `xml:lang`（XML 命名空间属性）序列化为 `xml:lang`（spec XML namespace → `xml:local`）。
+    #[test]
+    fn test_serialize_xml_lang_prefix_r3206() {
+        let html = r##"<div xml:lang="en">x</div>"##;
+        let doc = crate::parse_html(html);
+        let serialized = doc.outer_html(doc.root());
+        assert!(
+            serialized.contains(r#"xml:lang="en""#),
+            "xml:lang 应保留前缀: {serialized}"
+        );
     }
 }

@@ -832,8 +832,22 @@ fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> 
                 None => doc.create_element_ns(ns, local),
             };
             for attr in &elem.attributes {
-                let name = attr.name.local.to_string();
-                doc.set_attribute(new_id, &name, &attr.value);
+                // R3206：保留外部命名空间属性的 prefix + ns（spec setAttributeNS 语义）。
+                // 旧实现恒走 set_attribute(local)，把 `xlink:href` 的 xlink prefix + 命名空间丢为
+                // 裸 `href`（无 ns），配合 serializer（R3206 读侧）才能让 innerHTML/outerHTML/insertAdjacentHTML
+                // 设值后 round-trip 保留外部命名空间属性前缀。HTML 普通属性（无 prefix、无 ns）仍走
+                // set_attribute（保 id_map / class_list 缓存 + mutation record 语义不变）。
+                let is_foreign = attr.name.prefix.is_some() || !attr.name.ns.is_empty();
+                if is_foreign {
+                    // 目标为刚 create_element_ns 的新元素（无既有属性），直接 push 完整 QualName clone。
+                    // 外部命名空间属性非 id/class（id/class 在无命名空间），无需 id_map / 缓存更新。
+                    if let Some(NodeKind::Element(target)) = doc.get_mut(new_id).map(|n| &mut n.kind) {
+                        target.attributes.push(attr.clone());
+                    }
+                } else {
+                    let name = attr.name.local.to_string();
+                    doc.set_attribute(new_id, &name, &attr.value);
+                }
             }
             for &child in &src_node.children {
                 let copied = copy_subtree_from(doc, src_doc, child);

@@ -1478,6 +1478,33 @@ fn test_apply_set_inner_html_table_context_r3183() {
     );
 }
 
+/// R3206：innerHTML setter 经 `copy_subtree_from` 重建 SVG 外部命名空间属性时保留 prefix + ns。
+/// `div.innerHTML = '<svg><use xlink:href="#a"/></svg>'` round-trip（apply → 序列化）须保留 `xlink:href`
+/// 前缀。旧 `copy_subtree_from` 恒走 `set_attribute(local)`，把 `xlink:href` 重建为裸 `href`（无 ns），
+/// 配合 serializer（R3206 读侧）闭合 write + read 全 round-trip。
+#[test]
+fn test_apply_set_inner_html_svg_xlink_prefix_r3206() {
+    let html = r#"<html><body><div id="t"></div></body></html>"#;
+    let out = apply_mutations_to_html(
+        html,
+        &[DomMutation::SetInnerHtml {
+            selector: "#t".into(),
+            html: r##"<svg><use xlink:href="#a"/></svg>"##.into(),
+        }],
+    )
+    .unwrap();
+    // apply 后序列化保留 xlink:href 前缀（write 侧 copy_subtree_from 保留 QualName）。
+    assert!(
+        out.contains(r##"xlink:href="#a""##),
+        "innerHTML setter 应保留 xlink:href 前缀（write side），got: {out}"
+    );
+    // 裸 href 是丢失前缀的症状（旧 bug），不应出现。
+    assert!(
+        !out.contains(r##" href="#a""##),
+        "不应序列化为丢前缀的裸 href（旧 copy_subtree_from bug），got: {out}"
+    );
+}
+
 #[test]
 fn test_is_text_input() {
     // P1a change-on-blur：文本输入判定（textarea + input 文本类；排除 action 类型）。
