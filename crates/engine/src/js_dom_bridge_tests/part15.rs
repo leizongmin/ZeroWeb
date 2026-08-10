@@ -1664,3 +1664,52 @@ fn test_global_reflected_attrs_sel_lw_production_r3204() {
         .value;
     assert_eq!(default_input, "on", "input 缺省 autocomplete → 'on'（missing-default，lw 未破坏）");
 }
+
+// ── R3205：CE attributeChangedCallback old-value sel latest-wins（`__zw_has_attr(sel)` 审计最后一项）──
+//
+// `_ce_attrValue`（part03.js:258）sel 路径旧纯快照——parsed-in-HTML CE 元素（有 selector）同批连续 setAttribute 时，
+// 第 N 次 attributeChangedCallback 的 old 须读第 N-1 次设值（spec old = 变更前当前值），旧纯快照读 stale（pending
+// SetAttr 未反映）致 old=null。R2992 既有测试用 createElement（handle 路径，本就 latest-wins）未覆盖 sel 路径。
+// R3205：sel 路径改 lw，闭合 `__zw_has_attr(sel)` stale 审计。handle 路径不动（handle CE R2992 测试不变）。
+
+#[test]
+fn test_parsed_ce_attr_changed_old_value_sel_lw_production_r3205() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // parsed-CE 元素（HTML 解析，有 selector `#pe`）——区别于 R2992 的 createElement（handle）。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><parsed-ce id='pe'></parsed-ce></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 定义 CE（observedAttributes=['foo']），对 parsed 元素连续 setAttribute——第 2 次 old 须为第 1 次设值。
+    sandbox
+        .execute(
+            "globalThis.__calls = [];\
+             class ParsedCE extends HTMLElement {\
+               static get observedAttributes() { return ['foo']; }\
+               attributeChangedCallback(name, oldVal, newVal) {\
+                 globalThis.__calls.push(name + ':' + oldVal + '->' + newVal);\
+               }\
+             }\
+             customElements.define('parsed-ce', ParsedCE);\
+             var el = document.querySelector('#pe');\
+             el.setAttribute('foo', 'a');\
+             el.setAttribute('foo', 'b');",
+        )
+        .unwrap();
+    // 第 1 次：foo:null->a（首次 set old=null）。第 2 次：foo:a->b（old 须为第 1 次设值 'a'，旧 sel 纯快照 stale → null）。
+    assert_eq!(
+        sandbox.execute("globalThis.__calls.join('|')").unwrap().value,
+        "foo:null->a|foo:a->b",
+        "parsed-CE 同批连续 setAttribute：第 2 次 attributeChangedCallback old=第 1 次设值 'a'（旧 sel 纯快照 stale → null）"
+    );
+}

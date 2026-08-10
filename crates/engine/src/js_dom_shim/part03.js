@@ -253,18 +253,25 @@
     }
   }
   // 读元素属性值用于 CE old-value：absent → null（spec attributeChangedCallback old/new 为 null 表 absent），
-  // present → 值串。经 has-attr 判存在（handle 元素用 __zw_has_attr_handle，sel 用 __zw_has_attr），
+  // present → 值串。经 has-attr 判存在（handle 元素用 __zw_has_attr_handle，sel 用 __zw_has_attr_lw latest-wins），
   // 区别于 get-attr 对 absent 返 ''（无法区分 absent 与空串值）。
+  // R3205：sel 路径 latest-wins（`__zw_has_attr_lw`/`__zw_get_attr_lw`）反映同批 setAttribute——parsed-CE 同批
+  // 连续 setAttribute 时第 N 次回调的 old 须读第 N-1 次设值（旧纯快照读 stale 致 old=null）。handle 路径本就
+  // latest-wins（`__zw_*_handle` 读 mutations）。闭合 `__zw_has_attr(sel)` stale 审计最后一项。
   function _ce_attrValue(sel, handle, name) {
     var present = false;
     if (handle && typeof __zw_has_attr_handle === 'function') {
       try { present = __zw_has_attr_handle(handle, name) === '1'; } catch (_e) { present = false; }
+    } else if (sel && typeof __zw_has_attr_lw === 'function') {
+      try { present = __zw_has_attr_lw(sel, name) === '1'; } catch (_e) { present = false; }
     } else if (sel && typeof __zw_has_attr === 'function') {
       try { present = __zw_has_attr(sel, name) === '1'; } catch (_e) { present = false; }
     }
     if (!present) return null;
     try {
-      return handle ? __zw_get_attr_handle(handle, name) : __zw_get_attr(sel, name);
+      if (handle) return __zw_get_attr_handle(handle, name);
+      if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, name);
+      return __zw_get_attr(sel, name);
     } catch (_e) { return null; }
   }
 
