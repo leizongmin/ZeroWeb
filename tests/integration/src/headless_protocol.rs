@@ -91,7 +91,7 @@ fn test_webview_load_html() {
         None,
     );
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "should have fill primitives after loading HTML"
     );
 }
@@ -147,7 +147,7 @@ fn test_webview_render_primitives_structure() {
     );
     let result = webview.render();
     assert!(
-        result.primitives.fills.len() >= 2,
+        result.primitives().fills.len() >= 2,
         "should have at least 2 fills for 2 divs"
     );
 }

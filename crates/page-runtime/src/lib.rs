@@ -87,6 +87,8 @@ pub struct FrameModel {
     pub document_height: f32,
     /// 渲染图元。
     pub primitives: RenderPrimitives,
+    /// 本帧脏区域（视口 CSS 像素 `(x,y,w,h)`；空 = 全量光栅化）。
+    pub dirty_rects: Vec<(f32, f32, f32, f32)>,
     /// 主线程 hit-test 缓存（可选）。
     pub hit_test: Option<HitTestCache>,
 }

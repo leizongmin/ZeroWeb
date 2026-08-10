@@ -440,14 +440,14 @@ fn r1080_multicol_column_positioned_descendant_not_dropped() {
                 </div></div></body></html>";
     let result = pipeline.render_html(html, "");
     let has_blue = result
-        .primitives
+        .primitives()
         .fills
         .iter()
         .any(|f| f.color.b > 150 && f.color.r < 100 && f.color.g < 100);
     assert!(
         has_blue,
         "R1080: position:relative blue in overflow:hidden multicol column should render (was dropped), got {} fills",
-        result.primitives.fills.len()
+        result.primitives().fills.len()
     );
 }
 
@@ -480,7 +480,7 @@ fn r1446_multicol_span_ahem_text_fills_columns() {
     let result = pipeline.render_html(html, "");
     // 仅统计 Ahem 尺寸（font_size≈20）字形，按行盒顶 y 分桶（两列 rebase 后 y 重叠）。
     let y_rows: std::collections::BTreeSet<i32> = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .filter(|g| (g.font_size - 20.0).abs() < 1.0)

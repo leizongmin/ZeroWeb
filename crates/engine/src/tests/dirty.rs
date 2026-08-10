@@ -14,7 +14,7 @@ fn test_dirty_tracking_after_style_change() {
 
     // 首次渲染：无 CSS 背景
     let first = pipeline.render_html(html, "");
-    let first_fill_count = first.primitives.fills.len();
+    let first_fill_count = first.primitives().fills.len();
 
     // 重新解析文档并添加背景色样式
     let doc = zero_dom::parse_html(html);

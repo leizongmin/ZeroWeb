@@ -26,7 +26,7 @@ fn test_pipeline_recompute_style() {
         "style recompute should produce fills after dirty change"
     );
     assert!(
-        prims.fills.len() > first.primitives.fills.len(),
+        prims.fills.len() > first.primitives().fills.len(),
         "adding background-color should increase fill count"
     );
 }
@@ -50,7 +50,7 @@ fn test_render_pipeline_basic() {
 
     // CSS 为 div 生成背景填充图元
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "pipeline should produce fill primitives for styled div"
     );
 
@@ -104,7 +104,7 @@ fn test_pipeline_complex_page() {
     assert!(result.layout.viewport_width > 0.0);
     // 应产生至少 header、main、footer 的背景填充
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "complex page should produce fill primitives"
     );
     assert!(result.timings.total_ms >= 0.0);
@@ -130,13 +130,13 @@ fn test_pipeline_consecutive_different_renders() {
     let css1 = r#".a { background-color: red; width: 200px; height: 100px; }"#;
     let result1 = pipeline.render_html(html1, css1);
     assert!(pipeline.layout().is_some());
-    let fills1 = result1.primitives.fills.len();
+    let fills1 = result1.primitives().fills.len();
 
     let html2 = r#"<html><body><span class="b">Second</span></body></html>"#;
     let css2 = r#".b { background-color: blue; width: 300px; height: 150px; }"#;
     let result2 = pipeline.render_html(html2, css2);
     assert!(pipeline.layout().is_some());
-    let fills2 = result2.primitives.fills.len();
+    let fills2 = result2.primitives().fills.len();
 
     // 两次渲染都应产生图元
     assert!(fills1 > 0, "第一次渲染应产生填充图元");
@@ -158,7 +158,7 @@ fn test_r639_multiline_inline_bg_painted_per_fragment() {
     let html = r#"<html><body><p><span style="background-color:rgb(0,0,255)">word word word word word word word word word</span></p></body></html>"#;
     let result = pipeline.render_html(html, "");
     let blue = Color::rgba(0, 0, 255, 255);
-    let blue_fills = result.primitives.fills.iter().filter(|f| f.color == blue).count();
+    let blue_fills = result.primitives().fills.iter().filter(|f| f.color == blue).count();
     // 跨多行 span：per-fragment 绘制 → blue fill 数 == 行数（>= 2）；旧 box-level 仅 1。
     assert!(
         blue_fills >= 2,
@@ -179,13 +179,13 @@ fn test_r644_cc_control_char_visible_placeholder() {
     // 而非 fontdue .notdef 空。断言存在一个 >= 30px 的 fill（占位框）。
     assert!(
         result
-            .primitives
+            .primitives()
             .fills
             .iter()
             .any(|f| f.rect.size.width >= 30.0 && f.rect.size.height >= 30.0),
         "Cc 控制字符应产生可见占位 fill（>=30px em 方块），实际 fills = {:?}",
         result
-            .primitives
+            .primitives()
             .fills
             .iter()
             .map(|f| (f.rect.size.width, f.rect.size.height))
@@ -251,7 +251,7 @@ fn test_recompute_with_empty_stylesheets() {
 
     // 首次渲染：带 CSS
     let first = pipeline.render_html(html, css);
-    assert!(first.primitives.fills.len() > 0, "首次渲染应产生填充");
+    assert!(first.primitives().fills.len() > 0, "首次渲染应产生填充");
     let first_vp = first.layout.viewport_width;
 
     // 重新计算：空样式表
@@ -281,13 +281,13 @@ fn test_pipeline_overlapping_elements_fill_order() {
 
     // 应产生至少 2 个填充图元（parent + child）
     assert!(
-        result.primitives.fills.len() >= 2,
+        result.primitives().fills.len() >= 2,
         "重叠元素应产生至少 2 个填充图元，实际 {}",
-        result.primitives.fills.len()
+        result.primitives().fills.len()
     );
 
     // 父元素填充应在子元素之前
-    let parent_fill = &result.primitives.fills[0];
+    let parent_fill = &result.primitives().fills[0];
     // 父元素背景色为红色
     assert!(
         parent_fill.color.r > 200 && parent_fill.color.g < 50,
@@ -369,7 +369,7 @@ fn test_pipeline_html_with_inline_style_block() {
     assert!(pipeline.layout().is_some(), "布局缓存应存在");
     // CSS 规则应生成填充图元
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "含 <style> 标签的 HTML 应与外部 CSS 配合生成填充图元"
     );
 }
@@ -392,13 +392,13 @@ fn test_pipeline_background_and_border_fill_count() {
 
     // 1 背景 + 4 边框 = 5 填充
     assert!(
-        result.primitives.fills.len() >= 5,
+        result.primitives().fills.len() >= 5,
         "背景 + 4 条边框应产生至少 5 个填充图元，实际 {}",
-        result.primitives.fills.len()
+        result.primitives().fills.len()
     );
 
     // 第一个填充应为背景色 #ffcc00 → Rgba(255, 204, 0, 255)
-    let bg_fill = &result.primitives.fills[0];
+    let bg_fill = &result.primitives().fills[0];
     assert_eq!(bg_fill.color.r, 255, "背景 R 应为 255");
     assert_eq!(bg_fill.color.g, 204, "背景 G 应为 204");
     assert_eq!(bg_fill.color.b, 0, "背景 B 应为 0");
@@ -532,7 +532,7 @@ fn test_pipeline_render_only_comments_html() {
     assert!(result.timings.total_ms >= 0.0, "注释 HTML 应容错完成");
     assert!(pipeline.layout().is_some(), "布局缓存应存在");
     // 注释不产生可见元素，不应有背景填充
-    assert!(result.primitives.fills.is_empty(), "纯注释 HTML 不应产生背景填充图元");
+    assert!(result.primitives().fills.is_empty(), "纯注释 HTML 不应产生背景填充图元");
 }
 /// 首次渲染后，用完全相同的 CSS 调用 recompute_styles，
 /// 验证填充图元数量不变，确保重算不会引入额外的图元。
@@ -544,7 +544,7 @@ fn test_pipeline_recompute_same_styles_idempotent() {
 
     // 首次渲染
     let first = pipeline.render_html(html, css);
-    let first_fill_count = first.primitives.fills.len();
+    let first_fill_count = first.primitives().fills.len();
     assert!(first_fill_count > 0, "首次渲染应产生填充图元");
 
     // 用相同 CSS 重新计算
@@ -600,7 +600,7 @@ fn test_pipeline_recompute_multiple_cycles_stable() {
 
     // 首次渲染
     let first = pipeline.render_html(html, css);
-    let first_fill_count = first.primitives.fills.len();
+    let first_fill_count = first.primitives().fills.len();
     assert!(first_fill_count > 0, "首次渲染应产生填充图元");
 
     // 连续 5 次 recompute
@@ -721,7 +721,7 @@ fn test_pipeline_render_nested_table_structure() {
     assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
     assert!(!result.layout.root.children.is_empty(), "布局树根应有子节点");
     // 嵌套表格应产生填充图元（背景 + 边框）
-    assert!(!result.primitives.fills.is_empty(), "嵌套表格应产生填充图元");
+    assert!(!result.primitives().fills.is_empty(), "嵌套表格应产生填充图元");
 }
 /// Rect::new(0, 0, 0, 0) 的 is_empty() 返回 true，
 /// 任何节点都不与之相交，因此应跳过所有绘制，产生零图元。
@@ -733,7 +733,7 @@ fn test_pipeline_incremental_paint_zero_size_dirty_rect() {
 
     // 先做全量渲染
     let full_result = pipeline.render_html(html, css);
-    let full_fill_count = full_result.primitives.fills.len();
+    let full_fill_count = full_result.primitives().fills.len();
     assert!(full_fill_count > 0, "全量渲染应产生填充图元");
 
     // 增量绘制零尺寸脏矩形
@@ -784,7 +784,7 @@ fn test_pipeline_render_with_media_rules() {
 
     // 至少 .box 的背景应产生填充图元
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "含 @media 规则的 CSS 应产生填充图元"
     );
 }
@@ -815,13 +815,13 @@ fn test_pipeline_with_outline_style_solid() {
     // 应至少有背景填充（1 个）+ outline 填充（视口剔除后可能减少）
     // outline 可能部分超出视口边界被 cull_invisible 剔除
     assert!(
-        result.primitives.fills.len() >= 1,
+        result.primitives().fills.len() >= 1,
         "outline-style:solid 应产生至少 1 个填充图元（背景），实际 {}",
-        result.primitives.fills.len()
+        result.primitives().fills.len()
     );
 
     // 第一个填充应为背景色 #ffcc00 → Rgba(255, 204, 0, 255)
-    let bg_fill = &result.primitives.fills[0];
+    let bg_fill = &result.primitives().fills[0];
     assert_eq!(bg_fill.color.r, 255, "背景 R 应为 255");
     assert_eq!(bg_fill.color.g, 204, "背景 G 应为 204");
     assert_eq!(bg_fill.color.b, 0, "背景 B 应为 0");
@@ -851,7 +851,7 @@ fn test_render_with_border_spacing_property() {
     assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
     // 表格和单元格背景应产生填充图元
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "含 border-spacing 的表格应产生填充图元"
     );
 }
@@ -887,7 +887,7 @@ fn test_pipeline_with_counter_set_property() {
     assert!(result.layout.viewport_width > 0.0, "视口宽度应为正");
     // counter-set 不影响渲染图元生成，背景填充应正常
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "含 counter-set 的元素应正常产生填充图元"
     );
 }
@@ -910,7 +910,7 @@ fn test_pipeline_text_only() {
     let result = pipeline.render_html(html, "");
     assert!(result.timings.total_ms >= 0.0, "纯文本应正常完成");
     // 纯文本应产生 glyph 图元
-    assert!(!result.primitives.glyphs.is_empty(), "纯文本应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "纯文本应产生 glyph");
 }
 
 /// 文本只应由拥有直接文本子节点的元素绘制一次。
@@ -924,7 +924,7 @@ fn test_pipeline_does_not_duplicate_nested_text_glyphs() {
 
     let result = pipeline.render_html(html, css);
     let glyph_text: String = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .filter_map(|glyph| char::from_u32(glyph.glyph_id))
@@ -951,14 +951,14 @@ fn test_pipeline_text_blocks_have_distinct_baselines() {
 
     let result = pipeline.render_html(html, css);
     let first_y = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .find(|glyph| char::from_u32(glyph.glyph_id) == Some('F'))
         .map(|glyph| glyph.y)
         .expect("first paragraph glyph should exist");
     let second_y = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .find(|glyph| char::from_u32(glyph.glyph_id) == Some('S'))
@@ -1005,7 +1005,7 @@ fn test_pipeline_multiple_backgrounds() {
     "#;
     let result = pipeline.render_html(html, css);
     assert!(
-        result.primitives.fills.len() >= 3,
+        result.primitives().fills.len() >= 3,
         "3 个背景色元素应产生至少 3 个填充图元"
     );
 }
@@ -1079,7 +1079,7 @@ fn test_pipeline_sequential_renders_consistent() {
     let mut fill_counts = Vec::new();
     for _ in 0..5 {
         let result = pipeline.render_html(html, css);
-        fill_counts.push(result.primitives.fills.len());
+        fill_counts.push(result.primitives().fills.len());
         assert!(result.timings.total_ms >= 0.0);
     }
 
@@ -1210,8 +1210,8 @@ fn test_medium_page_first_paint_under_2_seconds() {
     let result = pipeline.render_html(html, "");
 
     // 验证渲染成功
-    assert!(!result.primitives.is_empty(), "应该生成渲染图元");
-    assert!(result.primitives.glyphs.len() > 0, "应该渲染文本");
+    assert!(!result.primitives().is_empty(), "应该生成渲染图元");
+    assert!(result.primitives().glyphs.len() > 0, "应该渲染文本");
 
     // 验证各阶段计时合理
     let t = &result.timings;
@@ -1258,8 +1258,8 @@ fn test_incremental_render_not_degenerate() {
 
     // 验证两次渲染结果一致
     assert_eq!(
-        result1.primitives.len(),
-        result2.primitives.len(),
+        result1.primitives().len(),
+        result2.primitives().len(),
         "同一页面重复渲染应产生相同数量的图元"
     );
 
@@ -1306,9 +1306,9 @@ fn test_render_retains_below_viewport_image_primitive() {
     let html = r#"<html><body><div style="height:800px"></div><img src="t.png" width="50" height="40"></body></html>"#;
     let result = pipeline.render_html(html, "");
     assert!(
-        !result.primitives.images.is_empty(),
+        !result.primitives().images.is_empty(),
         "below-viewport img must not be culled (got {} images)",
-        result.primitives.images.len()
+        result.primitives().images.len()
     );
 }
 

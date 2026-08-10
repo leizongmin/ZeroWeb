@@ -43,6 +43,7 @@ fn sample_frame() -> zero_page_runtime::FrameModel {
             }],
             ..RenderPrimitives::new()
         },
+        dirty_rects: vec![(0.0, 0.0, 800.0, 600.0)],
         hit_test: Some(HitTestCache::from_snapshot(HitTestCacheSnapshot {
             doc_root: root_id,
             layout_root: HitTestLayoutSnapshot {

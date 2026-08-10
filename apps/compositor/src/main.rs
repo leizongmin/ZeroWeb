@@ -16,13 +16,16 @@ use zero_protocol::message::{IpcMessage, IpcMessageKind};
 use zero_protocol::transport::stdio_transport;
 use zero_protocol::{IpcChannel, is_disconnected_channel_message};
 use zero_render_foundation::backing_store::BackingStoreManager;
-use zero_render_foundation::cpu::render_full_scene_threaded;
+use zero_render_foundation::display_list::DisplayList;
 use zero_render_foundation::font::{FontLoader, GlyphCache};
+use zero_render_foundation::rendering_thread::{RenderingThread, render_threading_enabled};
 
 mod convert;
+mod rasterize;
 
 use std::collections::HashMap;
 use std::io;
+use std::sync::Arc;
 
 struct SurfaceState {
     navigation_epoch: u64,
@@ -162,8 +165,9 @@ fn main() {
 
     // 每个页面 surface 独立维护帧序列和双缓冲；字体/字形缓存由进程共享。
     let mut surfaces: HashMap<u64, SurfaceState> = HashMap::new();
-    let font_loader = load_compositor_fonts();
+    let font_loader = Arc::new(load_compositor_fonts());
     let mut glyph_cache = GlyphCache::new(1024);
+    let render_thread = render_threading_enabled().then(|| RenderingThread::spawn(Arc::clone(&font_loader), 1024));
 
     // C3 GPU 光栅化（env ZW_COMPOSITOR_GPU=1）：headless wgpu 上下文在合成器
     // 进程内（对照 Ladybird GPU 隔离）；初始化失败/GPU 不可用 → 回退 CPU。
@@ -226,67 +230,13 @@ fn main() {
 
                 // IPC 图元 → 渲染图元 → 光栅化到 back buffer → swap
                 let primitives = convert::to_render_primitives(&paint);
-                let fb = if gpu_enabled {
-                    // C3：GPU 光栅化（headless wgpu 上下文在本进程内；
-                    // 初始化失败回退 CPU，fail-open）
-                    if gpu_renderer.is_none() {
-                        gpu_renderer = zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(w, h).ok();
-                    }
-                    match gpu_renderer.as_mut() {
-                        Some(gpu) => {
-                            gpu.configure_surface(w, h);
-                            gpu.render_scene_ext(&primitives.fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
-                            match gpu.read_pixels() {
-                                Some(pixels) => {
-                                    let mut fb = zero_render_foundation::surface::FrameBuffer::new(w, h);
-                                    let len = fb.data.len().min(pixels.len());
-                                    fb.data[..len].copy_from_slice(&pixels[..len]);
-                                    fb
-                                }
-                                None => render_full_scene_threaded(
-                                    w,
-                                    h,
-                                    1.0,
-                                    &primitives,
-                                    &font_loader,
-                                    &mut glyph_cache,
-                                    None,
-                                    &[],
-                                    &[],
-                                    &[],
-                                    &[],
-                                ),
-                            }
-                        }
-                        None => render_full_scene_threaded(
-                            w,
-                            h,
-                            1.0,
-                            &primitives,
-                            &font_loader,
-                            &mut glyph_cache,
-                            None,
-                            &[],
-                            &[],
-                            &[],
-                            &[],
-                        ),
-                    }
-                } else {
-                    render_full_scene_threaded(
-                        w,
-                        h,
-                        1.0,
-                        &primitives,
-                        &font_loader,
-                        &mut glyph_cache,
-                        None,
-                        &[],
-                        &[],
-                        &[],
-                        &[],
-                    )
-                };
+                let dirty_rects: Vec<(f32, f32, f32, f32)> = paint
+                    .dirty_rects
+                    .iter()
+                    .map(|r| (r.x, r.y, r.width, r.height))
+                    .collect();
+                let is_partial =
+                    !DisplayList::new(primitives.clone(), dirty_rects).is_full_viewport(w as f32, h as f32);
 
                 let surface = surfaces.entry(surface_id).or_insert_with(|| SurfaceState {
                     navigation_epoch,
@@ -294,7 +244,56 @@ fn main() {
                     backing: BackingStoreManager::new(w, h),
                 });
                 surface.backing.resize(w, h);
-                *surface.backing.back_mut() = fb;
+
+                if is_partial {
+                    surface.backing.copy_front_to_back();
+                }
+
+                if gpu_enabled && !is_partial {
+                    if gpu_renderer.is_none() {
+                        gpu_renderer = zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(w, h).ok();
+                    }
+                    if let Some(gpu) = gpu_renderer.as_mut() {
+                        gpu.configure_surface(w, h);
+                        gpu.render_scene_ext(&primitives.fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+                        if let Some(pixels) = gpu.read_pixels() {
+                            let back = surface.backing.back_mut();
+                            let len = back.data.len().min(pixels.len());
+                            back.data[..len].copy_from_slice(&pixels[..len]);
+                        } else {
+                            rasterize::rasterize_into_back(
+                                &paint,
+                                &primitives,
+                                &font_loader,
+                                &mut glyph_cache,
+                                render_thread.as_ref(),
+                                surface.backing.back_mut(),
+                                is_partial,
+                            );
+                        }
+                    } else {
+                        rasterize::rasterize_into_back(
+                            &paint,
+                            &primitives,
+                            &font_loader,
+                            &mut glyph_cache,
+                            render_thread.as_ref(),
+                            surface.backing.back_mut(),
+                            is_partial,
+                        );
+                    }
+                } else {
+                    rasterize::rasterize_into_back(
+                        &paint,
+                        &primitives,
+                        &font_loader,
+                        &mut glyph_cache,
+                        render_thread.as_ref(),
+                        surface.backing.back_mut(),
+                        is_partial,
+                    );
+                }
+
                 surface.backing.swap();
                 surface.navigation_epoch = navigation_epoch;
                 surface.frame_id = frame_id;

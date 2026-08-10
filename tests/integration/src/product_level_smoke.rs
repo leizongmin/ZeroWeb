@@ -415,11 +415,11 @@ fn test_product_shell_webview_zoom_render() {
 
     // 渲染并记录原始图元数
     let result1 = webview.render();
-    let glyphs1 = result1.primitives.glyphs.len();
+    let glyphs1 = result1.primitives().glyphs.len();
 
     // 重新渲染应产生相同结果
     let result2 = webview.render();
-    let glyphs2 = result2.primitives.glyphs.len();
+    let glyphs2 = result2.primitives().glyphs.len();
 
     assert_eq!(glyphs1, glyphs2, "相同内容重新渲染图元数应一致");
 }

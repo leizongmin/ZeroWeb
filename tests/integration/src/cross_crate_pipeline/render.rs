@@ -560,7 +560,7 @@ fn test_opacity_render_pipeline() {
     assert!(result.timings.total_ms >= 0.0, "opacity 渲染管线应成功完成");
     // 应生成填充图元（background-color: red）
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "background-color: red 应生成填充图元"
     );
 }

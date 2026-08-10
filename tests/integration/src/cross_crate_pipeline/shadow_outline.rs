@@ -306,13 +306,13 @@ fn test_box_shadow_render_pipeline() {
     assert!(result.timings.total_ms >= 0.0, "渲染应成功完成");
     // 应生成至少一个 shadow 图元
     assert!(
-        !result.primitives.shadows.is_empty(),
+        !result.primitives().shadows.is_empty(),
         "box-shadow 应生成 ShadowPrimitive，实际 shadows 数量: {}",
-        result.primitives.shadows.len()
+        result.primitives().shadows.len()
     );
 
     // 验证 shadow 参数
-    let shadow = &result.primitives.shadows[0];
+    let shadow = &result.primitives().shadows[0];
     assert!(
         (shadow.offset_x - 5.0).abs() < 0.01,
         "shadow offset_x 应为 5.0，实际为 {}",
@@ -344,8 +344,8 @@ fn test_box_shadow_with_background_color_pipeline() {
     let result = pipeline.render_html(html, css);
 
     // 应同时有 fills（背景色）和 shadows（box-shadow）
-    assert!(!result.primitives.fills.is_empty(), "background-color 应生成填充图元");
-    assert!(!result.primitives.shadows.is_empty(), "box-shadow 应生成阴影图元");
+    assert!(!result.primitives().fills.is_empty(), "background-color 应生成填充图元");
+    assert!(!result.primitives().shadows.is_empty(), "box-shadow 应生成阴影图元");
 }
 
 /// CSS box-shadow 负偏移管线集成测试。
@@ -359,8 +359,8 @@ fn test_box_shadow_negative_offset_pipeline() {
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
     let result = pipeline.render_html(html, css);
 
-    assert!(!result.primitives.shadows.is_empty(), "应有阴影图元");
-    let shadow = &result.primitives.shadows[0];
+    assert!(!result.primitives().shadows.is_empty(), "应有阴影图元");
+    let shadow = &result.primitives().shadows[0];
     assert!(
         (shadow.offset_x - (-5.0)).abs() < 0.01,
         "shadow offset_x 应为 -5.0，实际为 {}",
@@ -391,12 +391,12 @@ fn test_box_shadow_none_pipeline() {
 
     // 无 box-shadow 时 shadows 应为空
     assert!(
-        result.primitives.shadows.is_empty(),
+        result.primitives().shadows.is_empty(),
         "无 box-shadow 时不应生成阴影图元，实际数量: {}",
-        result.primitives.shadows.len()
+        result.primitives().shadows.len()
     );
     // 背景色应生成 fills
-    assert!(!result.primitives.fills.is_empty(), "背景色应生成填充图元");
+    assert!(!result.primitives().fills.is_empty(), "背景色应生成填充图元");
 }
 
 /// CSS text-shadow 渲染管线集成测试。
@@ -413,14 +413,14 @@ fn test_text_shadow_render_pipeline() {
     // text-shadow 会为每个字符生成额外的 shadow glyph
     // 应有 glyph 生成（shadow glyphs + main glyphs）
     assert!(
-        !result.primitives.glyphs.is_empty(),
+        !result.primitives().glyphs.is_empty(),
         "text-shadow 应生成 glyph 图元（shadow + main），实际数量: {}",
-        result.primitives.glyphs.len()
+        result.primitives().glyphs.len()
     );
 
     // 有 text-shadow 时 glyph 数量应多于无 shadow 的情况
     // 因为每个字符会同时生成 shadow glyph 和 main glyph
-    let glyph_count = result.primitives.glyphs.len();
+    let glyph_count = result.primitives().glyphs.len();
     assert!(glyph_count >= 2, "至少应有 shadow + main 两个 glyph");
 }
 
@@ -442,7 +442,7 @@ fn test_text_shadow_with_color_pipeline() {
     let result = pipeline.render_html(html, css);
 
     // 验证 glyph 生成
-    assert!(!result.primitives.glyphs.is_empty(), "应有 glyph 生成");
+    assert!(!result.primitives().glyphs.is_empty(), "应有 glyph 生成");
 
     // 查找 shadow glyph — 颜色应为 green (0, 128, 0)
     let has_shadow_glyph = result
@@ -475,7 +475,7 @@ fn test_text_shadow_none_pipeline() {
     // 无 text-shadow 时，每个字符只有 1 个 main glyph，没有 shadow glyph
     // 所有 glyph 的颜色应为主色（黑色或继承色）
     // 不应有红色/绿色等 shadow 颜色的 glyph
-    assert!(!result.primitives.glyphs.is_empty(), "应生成主文本 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "应生成主文本 glyph");
 }
 
 /// CSS background-image url() 渲染管线集成测试。
@@ -491,9 +491,9 @@ fn test_background_image_url_render_pipeline() {
 
     // 应生成 ImagePrimitive
     assert!(
-        !result.primitives.images.is_empty(),
+        !result.primitives().images.is_empty(),
         "background-image: url() 应生成 ImagePrimitive，实际数量: {}",
-        result.primitives.images.len()
+        result.primitives().images.len()
     );
 }
 
@@ -510,9 +510,9 @@ fn test_background_image_none_pipeline() {
 
     // background-image: none 不应生成 ImagePrimitive
     assert!(
-        result.primitives.images.is_empty(),
+        result.primitives().images.is_empty(),
         "background-image: none 不应生成图片图元，实际数量: {}",
-        result.primitives.images.len()
+        result.primitives().images.len()
     );
 }
 
@@ -533,8 +533,11 @@ fn test_background_image_with_color_pipeline() {
     let result = pipeline.render_html(html, css);
 
     // 应同时有 fills（背景色）和 images（背景图片）
-    assert!(!result.primitives.fills.is_empty(), "background-color 应生成填充图元");
-    assert!(!result.primitives.images.is_empty(), "background-image 应生成图片图元");
+    assert!(!result.primitives().fills.is_empty(), "background-color 应生成填充图元");
+    assert!(
+        !result.primitives().images.is_empty(),
+        "background-image 应生成图片图元"
+    );
 }
 
 /// CSS box-shadow 继承性管线集成测试（box-shadow 不可继承）。
@@ -648,12 +651,12 @@ fn test_box_shadow_with_outline_pipeline() {
     let result = pipeline.render_html(html, css);
 
     // 应同时有 shadows 和 outline fills
-    assert!(!result.primitives.shadows.is_empty(), "box-shadow 应生成阴影图元");
+    assert!(!result.primitives().shadows.is_empty(), "box-shadow 应生成阴影图元");
     // outline 生成 fill 图元（视口剔除后可能少于 4 个）
     assert!(
-        result.primitives.fills.len() >= 1,
+        result.primitives().fills.len() >= 1,
         "outline 应生成至少 1 个填充图元，实际数量: {}",
-        result.primitives.fills.len()
+        result.primitives().fills.len()
     );
 }
 
@@ -677,19 +680,22 @@ fn test_all_three_new_properties_combined_pipeline() {
     let result = pipeline.render_html(html, css);
 
     // 验证所有新属性都生成了图元
-    assert!(!result.primitives.images.is_empty(), "background-image 应生成图片图元");
-    assert!(!result.primitives.shadows.is_empty(), "box-shadow 应生成阴影图元");
-    assert!(!result.primitives.fills.is_empty(), "背景色 + 边框应生成填充图元");
     assert!(
-        !result.primitives.glyphs.is_empty(),
+        !result.primitives().images.is_empty(),
+        "background-image 应生成图片图元"
+    );
+    assert!(!result.primitives().shadows.is_empty(), "box-shadow 应生成阴影图元");
+    assert!(!result.primitives().fills.is_empty(), "背景色 + 边框应生成填充图元");
+    assert!(
+        !result.primitives().glyphs.is_empty(),
         "text-shadow + 文本应生成 glyph 图元"
     );
 
     // glyph 数量应 >= 2（shadow glyph + main glyph）
     assert!(
-        result.primitives.glyphs.len() >= 2,
+        result.primitives().glyphs.len() >= 2,
         "text-shadow 应使 glyph 数量翻倍（shadow + main），实际数量: {}",
-        result.primitives.glyphs.len()
+        result.primitives().glyphs.len()
     );
 }
 
@@ -706,12 +712,12 @@ fn test_box_shadow_spread_only_pipeline() {
 
     // spread-only shadow 仍应生成 ShadowPrimitive（spread_radius=5）
     assert!(
-        !result.primitives.shadows.is_empty(),
+        !result.primitives().shadows.is_empty(),
         "spread-only box-shadow 应生成阴影图元，实际数量: {}",
-        result.primitives.shadows.len()
+        result.primitives().shadows.len()
     );
 
-    let shadow = &result.primitives.shadows[0];
+    let shadow = &result.primitives().shadows[0];
     assert!(
         (shadow.spread_radius - 5.0).abs() < 0.01,
         "shadow spread_radius 应为 5.0，实际为 {}",
@@ -1165,7 +1171,7 @@ fn test_transform_origin_rotate_pipeline() {
 
     // 应该有至少一个 TransformPrimitive（rotate 45° 且非 identity）
     assert!(
-        !result.primitives.transforms.is_empty(),
+        !result.primitives().transforms.is_empty(),
         "rotate(45deg) 应该生成 TransformPrimitive"
     );
 }
@@ -1180,10 +1186,10 @@ fn test_transform_scale_pipeline() {
     let result = pipeline.render_html(html, css);
 
     assert!(
-        !result.primitives.transforms.is_empty(),
+        !result.primitives().transforms.is_empty(),
         "scale(2, 0.5) 应该生成 TransformPrimitive"
     );
-    let tp = &result.primitives.transforms[0];
+    let tp = &result.primitives().transforms[0];
     assert!((tp.a - 2.0).abs() < 0.01, "a 应为 2.0");
     assert!((tp.d - 0.5).abs() < 0.01, "d 应为 0.5");
 }
@@ -1198,7 +1204,7 @@ fn test_translate_only_no_transform_primitive() {
     let result = pipeline.render_html(html, css);
 
     assert!(
-        result.primitives.transforms.is_empty(),
+        result.primitives().transforms.is_empty(),
         "translate-only 不应生成 TransformPrimitive"
     );
 }

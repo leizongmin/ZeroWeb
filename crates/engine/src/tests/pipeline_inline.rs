@@ -85,10 +85,10 @@ fn test_pipeline_wbr_renders_zero_width_no_glyph() {
     let r2 = without.render_html("<html><body><div>abcd</div></body></html>", "");
 
     // 两侧都应有 4 个 glyph（a/b/c/d），wbr 不增加 glyph。
-    assert_eq!(r1.primitives.glyphs.len(), r2.primitives.glyphs.len());
-    assert_eq!(r1.primitives.glyphs.len(), 4, "ab<wbr>cd → 4 glyphs (a/b/c/d)");
+    assert_eq!(r1.primitives().glyphs.len(), r2.primitives().glyphs.len());
+    assert_eq!(r1.primitives().glyphs.len(), 4, "ab<wbr>cd → 4 glyphs (a/b/c/d)");
     // glyph_id 序列应为 a/b/c/d（确认 wbr 未插入额外字符或打断）。
-    let ids: Vec<u32> = r1.primitives.glyphs.iter().map(|g| g.glyph_id).collect();
+    let ids: Vec<u32> = r1.primitives().glyphs.iter().map(|g| g.glyph_id).collect();
     assert_eq!(
         ids,
         vec!['a' as u32, 'b' as u32, 'c' as u32, 'd' as u32],
@@ -104,7 +104,7 @@ fn test_pipeline_render_with_css() {
     let css = "div { background-color: red; width: 200px; height: 100px; }";
     let result = pipeline.render_html(html, css);
 
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试渲染空 HTML 文档。
@@ -126,7 +126,7 @@ fn test_pipeline_render_nested_elements() {
     let css = "div { background-color: #ff0000; width: 300px; height: 200px; }";
     let result = pipeline.render_html(html, css);
 
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
     assert!(pipeline.layout().is_some());
 }
 
@@ -287,7 +287,7 @@ fn test_pipeline_incremental_paint() {
     let css = "div { background-color: red; width: 200px; height: 100px; }";
 
     let full_result = pipeline.render_html(html, css);
-    let full_fills = full_result.primitives.fills.len();
+    let full_fills = full_result.primitives().fills.len();
 
     let doc = zero_dom::parse_html(html);
     let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
@@ -307,7 +307,7 @@ fn test_full_vs_incremental_render_primitive_count() {
     let css = "div { background-color: blue; width: 300px; height: 200px; }";
 
     let full_result = pipeline.render_html(html, css);
-    let full_count = full_result.primitives.len();
+    let full_count = full_result.primitives().len();
 
     let doc = zero_dom::parse_html(html);
     let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(css)];
@@ -358,7 +358,7 @@ fn test_pipeline_render_with_opacity() {
     let css = "div { opacity: 0.5; background-color: red; width: 100px; height: 100px; }";
     let result = pipeline.render_html(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试多次 recompute_styles 后 layout 缓存更新。
@@ -392,8 +392,8 @@ fn test_render_produces_primitives_with_css() {
     let css = ".box { background-color: #ff6600; width: 150px; height: 75px; border: 2px solid black; }";
     let result = pipeline.render_html(html, css);
 
-    assert!(!result.primitives.fills.is_empty());
-    assert!(result.primitives.fills.len() >= 1);
+    assert!(!result.primitives().fills.is_empty());
+    assert!(result.primitives().fills.len() >= 1);
 }
 
 // ── 脏区域追踪测试 ──
@@ -405,7 +405,7 @@ fn test_dirty_recompute_after_style_change_produces_different_primitives() {
     let html = r#"<html><body><div class="box">Content</div></body></html>"#;
 
     let first = pipeline.render_html(html, "");
-    let first_fill_count = first.primitives.fills.len();
+    let first_fill_count = first.primitives().fills.len();
 
     let doc = zero_dom::parse_html(html);
     let css_red = ".box { background-color: red; width: 200px; height: 100px; }";
@@ -538,7 +538,7 @@ fn test_mixed_render_operations() {
     let first = pipeline.render_html(html, "div { background-color: red; width: 200px; height: 100px; }");
     assert!(pipeline.layout().is_some());
     assert!(pipeline.dirty_tracker().dirty_rects().is_empty());
-    let first_fill_count = first.primitives.fills.len();
+    let first_fill_count = first.primitives().fills.len();
 
     let doc = zero_dom::parse_html(html);
     let css_blue = ".box { background-color: blue; width: 300px; height: 150px; }";
@@ -565,7 +565,7 @@ fn test_render_html_with_inline_styles() {
     let css = "div { background-color: red; width: 200px; height: 100px; }";
     let result = pipeline.render_html(html, css);
 
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
     assert!(result.timings.total_ms >= 0.0);
     assert!(pipeline.layout().is_some());
 }
@@ -583,7 +583,7 @@ fn test_render_html_with_script_tags() {
 
     assert!(result.timings.total_ms >= 0.0);
     assert!(pipeline.layout().is_some());
-    assert!(result.primitives.len() > 0);
+    assert!(result.primitives().len() > 0);
 }
 
 /// 测试多次渲染调用后图元顺序稳定。
@@ -602,11 +602,11 @@ fn test_render_preserves_order() {
 
     let mut pipeline1 = RenderPipeline::new(800.0, 600.0);
     let result1 = pipeline1.render_html(html, css);
-    let fills1: Vec<_> = result1.primitives.fills.iter().map(|f| f.color).collect();
+    let fills1: Vec<_> = result1.primitives().fills.iter().map(|f| f.color).collect();
 
     let mut pipeline2 = RenderPipeline::new(800.0, 600.0);
     let result2 = pipeline2.render_html(html, css);
-    let fills2: Vec<_> = result2.primitives.fills.iter().map(|f| f.color).collect();
+    let fills2: Vec<_> = result2.primitives().fills.iter().map(|f| f.color).collect();
 
     assert_eq!(fills1.len(), fills2.len());
     assert_eq!(fills1, fills2);
@@ -633,7 +633,7 @@ fn test_render_html_with_head_and_body() {
 
     assert!(result.timings.total_ms >= 0.0);
     assert!(pipeline.layout().is_some());
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
     assert!(result.layout.viewport_width > 0.0);
     assert!(result.layout.viewport_height > 0.0);
     assert!(!result.layout.root.children.is_empty());
@@ -660,7 +660,7 @@ fn test_pipeline_render_with_media_query() {
 
     assert!(result.timings.total_ms >= 0.0);
     assert!(pipeline.layout().is_some());
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
     assert!(!result.layout.root.children.is_empty());
 }
 
@@ -677,7 +677,7 @@ fn test_perspective_transform_offset() {
     let result = pipeline.render_html(html, css);
     assert!(result.timings.total_ms >= 0.0);
     assert!(pipeline.layout().is_some());
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试 transform-origin 偏移变换效果。
@@ -697,7 +697,7 @@ fn test_transform_origin_offset() {
     let result = pipeline.render_html(html, css);
     assert!(result.timings.total_ms >= 0.0);
     assert!(pipeline.layout().is_some());
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试负坐标绘制不崩溃。
@@ -716,7 +716,7 @@ fn test_paint_with_negative_coords() {
     let result = pipeline.render_html(html, css);
     assert!(result.timings.total_ms >= 0.0);
     assert!(pipeline.layout().is_some());
-    assert!(result.primitives.len() > 0);
+    assert!(result.primitives().len() > 0);
 }
 
 /// 测试深层嵌套 z-index 合成。
@@ -739,7 +739,7 @@ fn test_composite_deeply_nested_z() {
     let result = pipeline.render_html(html, "");
     assert!(result.timings.total_ms >= 0.0);
     assert!(pipeline.layout().is_some());
-    assert!(result.primitives.len() > 0);
+    assert!(result.primitives().len() > 0);
 }
 
 /// 测试 recompute_styles 后布局信息保持完整。
@@ -783,7 +783,7 @@ fn test_render_html_table_structure() {
 
     assert!(result.timings.total_ms >= 0.0);
     assert!(pipeline.layout().is_some());
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
     assert!(result.layout.viewport_width > 0.0);
     assert!(!result.layout.root.children.is_empty());
 }
@@ -798,11 +798,11 @@ fn test_pipeline_multiple_incremental_renders() {
     let css = "div { width: 100px; height: 50px; background-color: blue; }";
     let result = pipeline.render_html(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    let count1 = result.primitives.fills.len();
+    let count1 = result.primitives().fills.len();
 
     let result2 = pipeline.render_html(html, css);
     assert!(result2.timings.total_ms >= 0.0);
-    assert_eq!(result2.primitives.fills.len(), count1);
+    assert_eq!(result2.primitives().fills.len(), count1);
 }
 
 /// 测试渲染包含 <style> 标签的 HTML 不崩溃。
@@ -821,7 +821,7 @@ fn test_pipeline_render_inline_style_tag_applies_css() {
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
     let html = r#"<html><head><style>div { background-color: red; width: 200px; height: 100px; }</style></head><body><div>Box</div></body></html>"#;
     let result = pipeline.render_html(html, "");
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试 grid 两列布局。
@@ -1014,10 +1014,10 @@ fn test_animated_opacity_changes_over_time() {
     "#;
 
     let r0 = pipeline.render_html_animated(html, css, 0.0);
-    assert!(!r0.primitives.fills.is_empty());
+    assert!(!r0.primitives().fills.is_empty());
 
     let r5 = pipeline.render_html_animated(html, css, 0.5);
-    assert!(!r5.primitives.fills.is_empty());
+    assert!(!r5.primitives().fills.is_empty());
 
     let r1 = pipeline.render_html_animated(html, css, 1.0);
     assert!(r1.timings.total_ms >= 0.0);
@@ -1032,7 +1032,7 @@ fn test_animated_pipeline_without_animation() {
 
     let result = pipeline.render_html_animated(html, css, 0.5);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试动画时钟可通过 pipeline 访问。
@@ -1087,7 +1087,7 @@ fn test_multiple_keyframes_rules() {
 
     let result = pipeline.render_html_animated(html, css, 0.5);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试动画延迟期间渲染正确。
@@ -1134,7 +1134,7 @@ fn test_animated_keyframes_in_style_tag() {
 
     let result = pipeline.render_html_animated(html, "", 1.0);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试 render_html_animated 处理 CSS transition 不崩溃。

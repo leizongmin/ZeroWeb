@@ -471,6 +471,9 @@ pub struct PaintSnapshotParams {
     pub glyphs: Vec<IpcGlyph>,
     /// 绘制顺序（与 engine `DrawOp` 子集对应）。
     pub draw_order: Vec<IpcDrawOp>,
+    /// 本帧脏区域（S3 增量重绘；空 = 全量）。
+    #[serde(default)]
+    pub dirty_rects: Vec<IpcRect>,
     /// 主线程命中测试快照（与绘制同帧）。
     pub hit_test: Option<IpcHitTestCache>,
     /// 与浏览器 `TabSnapshot.navigation_epoch` 对齐；不匹配则丢弃 stale 帧。
@@ -545,6 +548,7 @@ impl Default for PaintSnapshotParams {
             blend_modes: Vec::new(),
             glyphs: Vec::new(),
             draw_order: Vec::new(),
+            dirty_rects: Vec::new(),
             hit_test: None,
             navigation_epoch: 0,
         }

@@ -179,7 +179,7 @@ fn test_text_decoration_underline_overline() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty(), "Expected glyph primitives");
+    assert!(!result.primitives().glyphs.is_empty(), "Expected glyph primitives");
 }
 
 // ── 4. CSS 间距和边框 ────────────────────────────────────────────
@@ -452,7 +452,7 @@ fn test_font_shorthand() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty(), "Expected glyphs");
+    assert!(!result.primitives().glyphs.is_empty(), "Expected glyphs");
 }
 
 #[test]
@@ -596,7 +596,10 @@ fn test_responsive_card_layout() {
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
     assert!(!result.layout.root.children.is_empty());
-    assert!(!result.primitives.glyphs.is_empty(), "Card text should produce glyphs");
+    assert!(
+        !result.primitives().glyphs.is_empty(),
+        "Card text should produce glyphs"
+    );
 }
 
 #[test]
@@ -622,7 +625,7 @@ fn test_holy_grail_layout() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty(), "Layout should produce glyphs");
+    assert!(!result.primitives().glyphs.is_empty(), "Layout should produce glyphs");
 }
 
 // ── 11. CSS 容器查询管线 ──────────────────────────────────────
@@ -690,7 +693,7 @@ fn test_supports_property() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -789,7 +792,7 @@ fn test_contain_layout() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -810,7 +813,7 @@ fn test_will_change_transform() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -834,7 +837,7 @@ fn test_linear_gradient_to_direction() {
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
     assert!(
-        !result.primitives.gradients.is_empty(),
+        !result.primitives().gradients.is_empty(),
         "Should produce gradient primitives"
     );
 }
@@ -847,7 +850,7 @@ fn test_radial_gradient_circle() {
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
     assert!(
-        !result.primitives.gradients.is_empty(),
+        !result.primitives().gradients.is_empty(),
         "Should produce gradient primitives"
     );
 }
@@ -860,7 +863,7 @@ fn test_linear_gradient_with_angle() {
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
     assert!(
-        !result.primitives.gradients.is_empty(),
+        !result.primitives().gradients.is_empty(),
         "Should produce gradient primitives"
     );
 }
@@ -907,7 +910,7 @@ fn test_text_shadow_render() {
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
     // text-shadow 通过 style 元素渲染；至少应该有 glyphs
-    assert!(!result.primitives.glyphs.is_empty() || !result.primitives.shadows.is_empty());
+    assert!(!result.primitives().glyphs.is_empty() || !result.primitives().shadows.is_empty());
 }
 
 #[test]
@@ -918,7 +921,7 @@ fn test_multiple_text_shadows() {
     let css = ".multi-shadow { text-shadow: 1px 1px red, -1px -1px blue; background:white; padding:10px; }";
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty() || !result.primitives.shadows.is_empty());
+    assert!(!result.primitives().glyphs.is_empty() || !result.primitives().shadows.is_empty());
 }
 
 #[test]
@@ -929,7 +932,7 @@ fn test_box_shadow_inset_render() {
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
     assert!(
-        !result.primitives.shadows.is_empty(),
+        !result.primitives().shadows.is_empty(),
         "Should produce shadow primitives"
     );
 }
@@ -947,7 +950,7 @@ fn test_column_count_render() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty(), "Should produce glyphs for text");
+    assert!(!result.primitives().glyphs.is_empty(), "Should produce glyphs for text");
 }
 
 #[test]
@@ -984,7 +987,7 @@ fn test_css_variable_fallback() {
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "Should produce fill from CSS variable"
     );
 }
@@ -997,7 +1000,7 @@ fn test_css_variable_undefined_fallback() {
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "Should produce fill from fallback value"
     );
 }
@@ -1009,7 +1012,7 @@ fn test_css_variable_chain() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 // ── 21. CSS 背景属性管线 ──────────────────────────────────────────
@@ -1021,7 +1024,7 @@ fn test_background_position_center() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty(), "Should produce fill");
+    assert!(!result.primitives().fills.is_empty(), "Should produce fill");
 }
 
 #[test]
@@ -1031,7 +1034,7 @@ fn test_background_repeat_no_repeat() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -1041,7 +1044,7 @@ fn test_background_size_cover() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -1051,7 +1054,7 @@ fn test_background_attachment_fixed() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -1061,7 +1064,7 @@ fn test_background_clip_content_box() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -1071,7 +1074,7 @@ fn test_background_origin_padding_box() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 // ── 22. CSS 内容与排版属性管线 ──────────────────────────────────────
@@ -1083,7 +1086,7 @@ fn test_word_spacing_wide() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty(), "Should produce glyphs");
+    assert!(!result.primitives().glyphs.is_empty(), "Should produce glyphs");
 }
 
 #[test]
@@ -1093,7 +1096,7 @@ fn test_quotes_property() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty(), "Should produce glyphs");
+    assert!(!result.primitives().glyphs.is_empty(), "Should produce glyphs");
 }
 
 #[test]
@@ -1103,7 +1106,7 @@ fn test_resize_property() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -1178,7 +1181,7 @@ fn test_keyframes_animation_pipeline() {
     let result = render_pipeline_animated(html, css, 0.5);
     assert!(result.timings.total_ms >= 0.0);
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "animated element should produce fills"
     );
 }
@@ -1209,7 +1212,7 @@ fn test_animation_fill_forwards_pipeline() {
     // t=1.0: animation complete, forwards keeps opacity at 1.0
     let r1 = render_pipeline_animated(html, css, 1.0);
     assert!(r1.timings.total_ms >= 0.0);
-    assert!(!r1.primitives.fills.is_empty());
+    assert!(!r1.primitives().fills.is_empty());
 }
 
 /// 测试动画 direction alternate 渲染管线。
@@ -1222,7 +1225,7 @@ fn test_animation_direction_alternate_pipeline() {
     "#;
     let result = render_pipeline_animated(html, css, 0.5);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试 CSS transition 定义通过渲染管线不崩溃。
@@ -1238,7 +1241,7 @@ fn test_transition_property_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试 transition 多属性管线渲染。
@@ -1255,7 +1258,7 @@ fn test_transition_multi_property_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试动画 + transition 组合通过渲染管线。
@@ -1272,7 +1275,7 @@ fn test_animation_transition_combo_pipeline() {
     "#;
     let result = render_pipeline_animated(html, css, 0.5);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 // ── writing-mode + word-break 渲染管线集成测试 ──
@@ -1292,7 +1295,7 @@ fn test_writing_mode_vertical_rl_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // 应有 fill（背景）和 glyph（文本），且 glyph 旋转 90°
-    assert!(!result.primitives.fills.is_empty(), "应有背景 fill");
+    assert!(!result.primitives().fills.is_empty(), "应有背景 fill");
     let has_rotated = result
         .primitives
         .glyphs
@@ -1314,7 +1317,7 @@ fn test_writing_mode_horizontal_tb_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // 所有 glyph 的 rotation 应为 0.0
-    for g in &result.primitives.glyphs {
+    for g in &result.primitives().glyphs {
         if g.glyph_id != 0 {
             assert_eq!(g.rotation, 0.0, "horizontal-tb glyph 不应旋转");
         }
@@ -1335,7 +1338,7 @@ fn test_word_break_break_all_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // break-all 应生成字形
-    let glyph_count = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).count();
+    let glyph_count = result.primitives().glyphs.iter().filter(|g| g.glyph_id != 0).count();
     assert!(glyph_count > 0, "break-all 应生成字形");
 }
 
@@ -1352,7 +1355,7 @@ fn test_word_break_keep_all_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // keep-all 应生成字形（CJK 作为整体）
-    let glyph_count = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).count();
+    let glyph_count = result.primitives().glyphs.iter().filter(|g| g.glyph_id != 0).count();
     assert!(glyph_count > 0, "keep-all 应生成字形");
 }
 
@@ -1371,7 +1374,7 @@ fn test_direction_rtl_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // rtl 应生成方向指示器 stroke
-    assert!(!result.primitives.strokes.is_empty(), "rtl 应渲染方向指示器 stroke");
+    assert!(!result.primitives().strokes.is_empty(), "rtl 应渲染方向指示器 stroke");
 }
 
 /// 测试 direction:ltr 渲染管线（无指示器）。
@@ -1387,7 +1390,7 @@ fn test_direction_ltr_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // ltr 不应生成方向指示器
-    assert!(result.primitives.strokes.is_empty(), "ltr 不应渲染方向指示器");
+    assert!(result.primitives().strokes.is_empty(), "ltr 不应渲染方向指示器");
 }
 
 /// 测试 tab-size 渲染管线。
@@ -1403,7 +1406,7 @@ fn test_tab_size_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // tab-size:4 应生成指示器 fill
-    assert!(!result.primitives.fills.is_empty(), "tab-size:4 应渲染指示器");
+    assert!(!result.primitives().fills.is_empty(), "tab-size:4 应渲染指示器");
 }
 
 /// 测试 border-collapse:collapse 渲染管线。
@@ -1417,7 +1420,7 @@ fn test_border_collapse_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // collapse 应生成边框合并指示器 stroke
-    assert!(!result.primitives.strokes.is_empty(), "collapse 应渲染边框合并指示器");
+    assert!(!result.primitives().strokes.is_empty(), "collapse 应渲染边框合并指示器");
 }
 
 /// 测试 table-layout:fixed 渲染管线。
@@ -1431,7 +1434,7 @@ fn test_table_layout_fixed_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // fixed 应生成表格布局指示器 fill
-    assert!(!result.primitives.fills.is_empty(), "fixed 应渲染表格布局指示器");
+    assert!(!result.primitives().fills.is_empty(), "fixed 应渲染表格布局指示器");
 }
 
 /// 测试 font-variant-numeric:tabular-nums 渲染管线。
@@ -1447,7 +1450,10 @@ fn test_font_variant_numeric_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // tabular-nums 应生成数字变体指示器 fill
-    assert!(!result.primitives.fills.is_empty(), "tabular-nums 应渲染数字变体指示器");
+    assert!(
+        !result.primitives().fills.is_empty(),
+        "tabular-nums 应渲染数字变体指示器"
+    );
 }
 
 // ──────────────────────────────────────────────────────
@@ -1468,7 +1474,7 @@ fn test_contain_strict_render_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // contain:strict 应生成包含指示器
-    assert!(!result.primitives.fills.is_empty(), "contain:strict 应渲染指示器");
+    assert!(!result.primitives().fills.is_empty(), "contain:strict 应渲染指示器");
 }
 
 /// 测试 unicode-bidi:bidi-override 渲染管线。
@@ -1485,7 +1491,7 @@ fn test_unicode_bidi_override_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // bidi-override 应生成双向文本指示器
-    assert!(!result.primitives.fills.is_empty(), "bidi-override 应渲染指示器");
+    assert!(!result.primitives().fills.is_empty(), "bidi-override 应渲染指示器");
 }
 
 /// 测试 box-decoration-break:clone 渲染管线。
@@ -1500,7 +1506,7 @@ fn test_box_decoration_break_clone_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // clone 应生成装饰断行指示器
-    assert!(!result.primitives.fills.is_empty(), "clone 应渲染指示器");
+    assert!(!result.primitives().fills.is_empty(), "clone 应渲染指示器");
 }
 
 /// 测试 overflow-wrap:break-word 渲染管线。
@@ -1517,7 +1523,7 @@ fn test_overflow_wrap_break_word_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // break-word 应生成断词指示器
-    assert!(!result.primitives.fills.is_empty(), "break-word 应渲染指示器");
+    assert!(!result.primitives().fills.is_empty(), "break-word 应渲染指示器");
 }
 
 /// 测试 text-align-last:center 渲染管线。
@@ -1534,7 +1540,7 @@ fn test_text_align_last_center_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // text-align-last:center 应生成末行对齐指示器（fills 或 glyphs）
-    let has_output = !result.primitives.fills.is_empty() || !result.primitives.glyphs.is_empty();
+    let has_output = !result.primitives().fills.is_empty() || !result.primitives().glyphs.is_empty();
     assert!(has_output, "text-align-last:center 应渲染指示器");
 }
 
@@ -1551,7 +1557,7 @@ fn test_break_points_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // break 属性应生成断点指示器
-    assert!(!result.primitives.fills.is_empty(), "break 属性应渲染指示器");
+    assert!(!result.primitives().fills.is_empty(), "break 属性应渲染指示器");
 }
 
 /// 测试 scroll-margin + scroll-padding 渲染管线。
@@ -1567,7 +1573,7 @@ fn test_scroll_area_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // scroll-margin/padding 应生成滚动区域指示器
-    assert!(!result.primitives.fills.is_empty(), "scroll-area 应渲染指示器");
+    assert!(!result.primitives().fills.is_empty(), "scroll-area 应渲染指示器");
 }
 
 /// 测试 scroll-snap-stop:always 渲染管线。
@@ -1582,7 +1588,7 @@ fn test_scroll_snap_stop_always_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // scroll-snap-stop:always 应生成强制停止指示器
-    assert!(!result.primitives.fills.is_empty(), "snap-stop:always 应渲染指示器");
+    assert!(!result.primitives().fills.is_empty(), "snap-stop:always 应渲染指示器");
 }
 
 /// 测试 container-type:size + container-name 渲染管线。
@@ -1600,5 +1606,8 @@ fn test_container_type_size_pipeline() {
     "#;
     let result = render_pipeline(html, css);
     // container-type:size 应生成容器查询上下文指示器
-    assert!(!result.primitives.fills.is_empty(), "container-type:size 应渲染指示器");
+    assert!(
+        !result.primitives().fills.is_empty(),
+        "container-type:size 应渲染指示器"
+    );
 }

@@ -660,7 +660,7 @@ fn test_pipeline_uses_inline_formatting_for_text() {
     let html = "<html><body><p>Hello World</p></body></html>";
     let css = "p { color: black; font-size: 16px; }";
     let result = pipeline.render_html(html, css);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -670,7 +670,7 @@ fn test_pipeline_inline_text_with_css_color() {
     let html = "<html><body><p>Styled</p></body></html>";
     let css = "p { color: red; font-size: 18px; }";
     let result = pipeline.render_html(html, css);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 // ── letter-spacing 和 word-spacing 渲染测试 ──
@@ -683,7 +683,7 @@ fn test_letter_spacing_increases_glyph_gap() {
     let css_base = "p { color: black; font-size: 16px; }";
     let result_base = pipeline.render_html(html, css_base);
     let glyphs_base: Vec<_> = result_base
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .filter(|g| g.glyph_id != 0)
@@ -697,7 +697,7 @@ fn test_letter_spacing_increases_glyph_gap() {
     let css_spaced = "p { color: black; font-size: 16px; letter-spacing: 5px; }";
     let result_spaced = pipeline.render_html(html, css_spaced);
     let glyphs_spaced: Vec<_> = result_spaced
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .filter(|g| g.glyph_id != 0)
@@ -749,7 +749,7 @@ fn test_letter_spacing_zero_no_effect() {
     let html = "<html><body><p>AB</p></body></html>";
     let css = "p { color: black; font-size: 16px; letter-spacing: 0px; }";
     let result = pipeline.render_html(html, css);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -759,7 +759,7 @@ fn test_negative_letter_spacing_decreases_gap() {
     let html = "<html><body><p>AB</p></body></html>";
     let result_base = pipeline.render_html(html, "p { color: black; font-size: 16px; }");
     let glyphs_base: Vec<_> = result_base
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .filter(|g| g.glyph_id != 0)
@@ -772,7 +772,7 @@ fn test_negative_letter_spacing_decreases_gap() {
     pipeline = RenderPipeline::new(800.0, 600.0);
     let result_neg = pipeline.render_html(html, "p { color: black; font-size: 16px; letter-spacing: -2px; }");
     let glyphs_neg: Vec<_> = result_neg
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .filter(|g| g.glyph_id != 0)
@@ -797,7 +797,7 @@ fn test_text_overflow_ellipsis_adds_dots() {
     let html = "<html><body><p>ABCDEFGHIJKLMNOPQRSTUVWXYZ</p></body></html>";
     let css = "p { color: black; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 80px; }";
     let result = pipeline.render_html(html, css);
-    let has_ellipsis = result.primitives.glyphs.iter().any(|g| g.glyph_id == '.' as u32);
+    let has_ellipsis = result.primitives().glyphs.iter().any(|g| g.glyph_id == '.' as u32);
     assert!(has_ellipsis, "text-overflow: ellipsis 应生成 '.' glyph");
 }
 
@@ -810,7 +810,7 @@ fn test_text_overflow_clip_no_dots() {
         "p { color: black; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: clip; width: 80px; }";
     let result = pipeline.render_html(html, css);
     let has_ellipsis = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .filter(|g| g.glyph_id != 0)
@@ -826,7 +826,7 @@ fn test_text_overflow_ellipsis_no_overflow() {
     let css = "p { color: black; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }";
     let result = pipeline.render_html(html, css);
     let dot_count = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .filter(|g| g.glyph_id == '.' as u32)
@@ -842,7 +842,7 @@ fn test_text_overflow_ellipsis_needs_hidden_overflow() {
     let css = "p { color: black; font-size: 16px; white-space: nowrap; overflow: visible; text-overflow: ellipsis; width: 80px; }";
     let result = pipeline.render_html(html, css);
     let dot_count = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .filter(|g| g.glyph_id == '.' as u32)
@@ -864,7 +864,11 @@ fn r2467_line_clamp_stored_path_emits_ellipsis() {
         XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX\
         </div></body></html>";
     let result = pipeline.render_html(html, "");
-    let has_ellipsis = result.primitives.glyphs.iter().any(|g| g.glyph_id == '\u{2026}' as u32);
+    let has_ellipsis = result
+        .primitives()
+        .glyphs
+        .iter()
+        .any(|g| g.glyph_id == '\u{2026}' as u32);
     assert!(
         has_ellipsis,
         "R2467: line-clamp stored 路径应在末行末尾渲 U+2026 ellipsis"
@@ -881,7 +885,11 @@ fn r2467_line_clamp_no_ellipsis_when_content_fits() {
         XXXX XXXX\
         </div></body></html>";
     let result = pipeline.render_html(html, "");
-    let has_ellipsis = result.primitives.glyphs.iter().any(|g| g.glyph_id == '\u{2026}' as u32);
+    let has_ellipsis = result
+        .primitives()
+        .glyphs
+        .iter()
+        .any(|g| g.glyph_id == '\u{2026}' as u32);
     assert!(!has_ellipsis, "R2467: 内容不足 line-clamp N 行时不应渲 ellipsis");
 }
 
@@ -899,7 +907,7 @@ fn r2469_body_no_box_no_canvas_propagation() {
     let mut p = RenderPipeline::new(100.0, 100.0);
     let r = p.render_html("<html><body style=\"background:red; display:none\"></body></html>", "");
     assert!(
-        !r.primitives.fills.iter().any(|f| is_red(&f.color)),
+        !r.primitives().fills.iter().any(|f| is_red(&f.color)),
         "R2469: body{{display:none}} 背景不应传播到画布"
     );
 
@@ -907,7 +915,7 @@ fn r2469_body_no_box_no_canvas_propagation() {
     let mut p = RenderPipeline::new(100.0, 100.0);
     let r = p.render_html("<html><body style=\"background:red\"></body></html>", "");
     assert!(
-        r.primitives.fills.iter().any(|f| is_red(&f.color)),
+        r.primitives().fills.iter().any(|f| is_red(&f.color)),
         "R2469: 默认 block body 红背景应传播到画布（对照）"
     );
 }
@@ -922,7 +930,7 @@ fn test_filter_blur_generates_filter_primitive() {
         "<html><body><p>Hello</p></body></html>",
         "p { color: black; font-size: 16px; filter: blur(5px); }",
     );
-    assert!(!result.primitives.filters.is_empty());
+    assert!(!result.primitives().filters.is_empty());
 }
 
 #[test]
@@ -933,7 +941,7 @@ fn test_filter_grayscale_generates_filter_primitive() {
         "<html><body><div>Test</div></body></html>",
         "div { color: black; font-size: 16px; filter: grayscale(1); }",
     );
-    assert!(!result.primitives.filters.is_empty());
+    assert!(!result.primitives().filters.is_empty());
 }
 
 #[test]
@@ -944,7 +952,7 @@ fn test_filter_none_no_primitive() {
         "<html><body><p>Hello</p></body></html>",
         "p { color: black; font-size: 16px; filter: none; }",
     );
-    assert!(result.primitives.filters.is_empty());
+    assert!(result.primitives().filters.is_empty());
 }
 
 #[test]
@@ -955,7 +963,7 @@ fn test_no_filter_property() {
         "<html><body><p>Hello</p></body></html>",
         "p { color: black; font-size: 16px; }",
     );
-    assert!(result.primitives.filters.is_empty());
+    assert!(result.primitives().filters.is_empty());
 }
 
 #[test]
@@ -967,7 +975,7 @@ fn test_filter_brightness_value() {
         "<html><body><div>Test</div></body></html>",
         "div { color: black; font-size: 16px; filter: brightness(1.5); }",
     );
-    let filters = &result.primitives.filters;
+    let filters = &result.primitives().filters;
     assert_eq!(filters.len(), 1);
     assert!(
         filters[0]
@@ -986,7 +994,7 @@ fn test_filter_drop_shadow() {
         "<html><body><div>Test</div></body></html>",
         "div { color: black; font-size: 16px; filter: drop-shadow(2px 3px 4px black); }",
     );
-    let filters = &result.primitives.filters;
+    let filters = &result.primitives().filters;
     assert_eq!(filters.len(), 1);
     assert!(filters[0].filters.iter().any(|f| matches!(f, FilterKind::DropShadow(x, y, blur, _) if (*x - 2.0).abs() < 0.1 && (*y - 3.0).abs() < 0.1 && (*blur - 4.0).abs() < 0.1)));
 }
@@ -1001,7 +1009,7 @@ fn test_filter_multiple_functions_emit_all() {
         "<html><body><div>Test</div></body></html>",
         "div { color: black; font-size: 16px; filter: blur(5px) brightness(1.5) sepia(0.5); }",
     );
-    let filters = &result.primitives.filters;
+    let filters = &result.primitives().filters;
     assert_eq!(filters.len(), 1, "应生成 1 个 FilterPrimitive（同元素多函数合并）");
     // 3 个函数按声明顺序全部 emit
     assert_eq!(filters[0].filters.len(), 3, "应 emit 3 个 filter 函数");
@@ -1019,7 +1027,7 @@ fn test_text_indent_px_offsets_first_line() {
     let html = "<html><body><p>First line text</p></body></html>";
     let result_base = pipeline_no_indent.render_html(html, "p { color: black; font-size: 16px; }");
     let glyphs_base: Vec<_> = result_base
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .filter(|g| g.glyph_id != 0)
@@ -1032,7 +1040,7 @@ fn test_text_indent_px_offsets_first_line() {
     let mut pipeline_indent = RenderPipeline::new(800.0, 600.0);
     let result_indent = pipeline_indent.render_html(html, "p { color: black; font-size: 16px; text-indent: 32px; }");
     let glyphs_indent: Vec<_> = result_indent
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .filter(|g| g.glyph_id != 0)
@@ -1059,7 +1067,7 @@ fn test_text_indent_zero_no_offset() {
     );
     assert!(
         !result
-            .primitives
+            .primitives()
             .glyphs
             .iter()
             .filter(|g| g.glyph_id != 0)
@@ -1078,7 +1086,7 @@ fn test_text_indent_em_units() {
     );
     assert!(
         !result
-            .primitives
+            .primitives()
             .glyphs
             .iter()
             .filter(|g| g.glyph_id != 0)
@@ -1099,7 +1107,7 @@ fn test_overflow_wrap_break_word_no_panic() {
     );
     assert!(
         !result
-            .primitives
+            .primitives()
             .glyphs
             .iter()
             .filter(|g| g.glyph_id != 0)
@@ -1118,7 +1126,7 @@ fn test_overflow_wrap_normal_no_break() {
     );
     assert!(
         !result
-            .primitives
+            .primitives()
             .glyphs
             .iter()
             .filter(|g| g.glyph_id != 0)
@@ -1175,7 +1183,7 @@ fn test_writing_mode_horizontal_no_rotation() {
         "p { color: black; font-size: 16px; writing-mode: horizontal-tb; }",
     );
     // 所有 glyph 的 rotation 应为 0.0
-    for g in &result.primitives.glyphs {
+    for g in &result.primitives().glyphs {
         if g.glyph_id != 0 {
             assert_eq!(g.rotation, 0.0, "horizontal-tb glyph 不应旋转");
         }
@@ -1193,7 +1201,7 @@ fn test_writing_mode_vertical_rl_rotated() {
     );
     // 所有非占位 glyph 的 rotation 应为 FRAC_PI_2 (~1.5708)
     let has_rotated = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .any(|g| g.glyph_id != 0 && (g.rotation - std::f32::consts::FRAC_PI_2).abs() < 0.01);
@@ -1210,7 +1218,7 @@ fn test_writing_mode_vertical_lr_rotated() {
         "p { color: black; font-size: 16px; writing-mode: vertical-lr; }",
     );
     let has_rotated = result
-        .primitives
+        .primitives()
         .glyphs
         .iter()
         .any(|g| g.glyph_id != 0 && (g.rotation - std::f32::consts::FRAC_PI_2).abs() < 0.01);
@@ -1229,7 +1237,7 @@ fn test_word_break_break_all_renders() {
         "p { color: black; font-size: 14px; word-break: break-all; width: 60px; }",
     );
     // break-all 应生成字形（不崩溃），且可能产生多行
-    let glyph_count = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).count();
+    let glyph_count = result.primitives().glyphs.iter().filter(|g| g.glyph_id != 0).count();
     assert!(glyph_count > 0, "break-all 应生成字形");
 }
 
@@ -1243,7 +1251,7 @@ fn test_word_break_keep_all_renders() {
         "p { color: black; font-size: 14px; word-break: keep-all; }",
     );
     // keep-all 应生成字形（CJK 文本作为整体）
-    let glyph_count = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).count();
+    let glyph_count = result.primitives().glyphs.iter().filter(|g| g.glyph_id != 0).count();
     assert!(glyph_count > 0, "keep-all 应生成字形");
 }
 
@@ -1256,6 +1264,6 @@ fn test_word_break_normal_renders() {
         "<html><body><p>Hello World</p></body></html>",
         "p { color: black; font-size: 14px; word-break: normal; }",
     );
-    let glyph_count = result.primitives.glyphs.iter().filter(|g| g.glyph_id != 0).count();
+    let glyph_count = result.primitives().glyphs.iter().filter(|g| g.glyph_id != 0).count();
     assert!(glyph_count > 0, "normal 应生成字形");
 }

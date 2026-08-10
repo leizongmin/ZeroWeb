@@ -44,6 +44,13 @@ impl BackingStoreManager {
         std::mem::swap(&mut self.front, &mut self.back);
     }
 
+    /// 将 front 像素复制到 back（S3 增量重绘前保留未变化区域）。
+    pub fn copy_front_to_back(&mut self) {
+        if self.front.data.len() == self.back.data.len() {
+            self.back.data.copy_from_slice(&self.front.data);
+        }
+    }
+
     /// 尺寸。
     pub fn size(&self) -> (u32, u32) {
         (self.front.width, self.front.height)

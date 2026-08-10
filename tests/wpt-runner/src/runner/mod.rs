@@ -127,7 +127,7 @@ pub fn render_test_html(html: &str, css: &str, ctx: &TestContext) -> RenderOutpu
     let doc = parse_html(html);
 
     RenderOutput {
-        primitives: result.primitives,
+        primitives: result.display_list.primitives.clone(),
         document: doc,
         layout: result.layout,
         viewport_width: ctx.viewport_width,
@@ -400,7 +400,7 @@ pub fn run_single_with_expectations(case: &TestCase, ctx: &TestContext, expectat
         Ok(result) => {
             let doc = parse_html(&case.html);
             let output = RenderOutput {
-                primitives: result.primitives,
+                primitives: result.display_list.primitives.clone(),
                 document: doc,
                 layout: result.layout,
                 viewport_width: ctx.viewport_width,

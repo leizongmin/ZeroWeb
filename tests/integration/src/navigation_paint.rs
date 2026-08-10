@@ -116,7 +116,7 @@ fn navigation_replaces_stale_browser_paint_with_view_painted() {
 
     snap.apply_view_painted(red_paint_snapshot(snap.navigation_epoch));
     assert!(snap.should_composite_paint());
-    let fill = &snap.last_render.as_ref().unwrap().primitives.fills[0];
+    let fill = &snap.last_render.as_ref().unwrap().primitives().fills[0];
     assert_eq!(fill.color.r, 255);
     assert_eq!(fill.color.g, 0);
 }

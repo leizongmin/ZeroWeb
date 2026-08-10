@@ -201,6 +201,7 @@ pub fn paint_snapshot_from_primitives(
     viewport_height: u32,
     document_height: f32,
     primitives: &RenderPrimitives,
+    dirty_rects: &[(f32, f32, f32, f32)],
     image_payloads: Vec<IpcImagePayload>,
     hit_test: Option<HitTestCache>,
     navigation_epoch: u64,
@@ -369,6 +370,15 @@ pub fn paint_snapshot_from_primitives(
             })
             .collect(),
         draw_order: primitives.draw_order.iter().copied().map(draw_op_to_ipc).collect(),
+        dirty_rects: dirty_rects
+            .iter()
+            .map(|(x, y, w, h)| IpcRect {
+                x: *x,
+                y: *y,
+                width: *w,
+                height: *h,
+            })
+            .collect(),
         hit_test: hit_test.map(hit_test_cache_to_ipc),
     }
 }

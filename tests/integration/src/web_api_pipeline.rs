@@ -76,7 +76,7 @@ fn test_js_modify_style_and_render() {
     let render = webview.render();
     // 验证渲染有输出
     assert!(
-        render.primitives.fills.len() + render.primitives.rounded_rects.len() >= 1,
+        render.primitives().fills.len() + render.primitives().rounded_rects.len() >= 1,
         "should have visual primitives after style change"
     );
 }
@@ -222,13 +222,13 @@ fn test_render_complex_nested_layout() {
     );
     // 验证渲染有填充图元输出（flex 布局 + border-radius + nested）
     let total_primitives =
-        result.primitives.fills.len() + result.primitives.rounded_rects.len() + result.primitives.glyphs.len();
+        result.primitives().fills.len() + result.primitives().rounded_rects.len() + result.primitives().glyphs.len();
     assert!(
         total_primitives >= 3,
         "should have primitives for flex items, got {} fills, {} rounded_rects, {} glyphs",
-        result.primitives.fills.len(),
-        result.primitives.rounded_rects.len(),
-        result.primitives.glyphs.len()
+        result.primitives().fills.len(),
+        result.primitives().rounded_rects.len(),
+        result.primitives().glyphs.len()
     );
 }
 
@@ -247,7 +247,7 @@ fn test_render_grid_holy_grail() {
         None,
     );
     let total_primitives =
-        result.primitives.fills.len() + result.primitives.rounded_rects.len() + result.primitives.glyphs.len();
+        result.primitives().fills.len() + result.primitives().rounded_rects.len() + result.primitives().glyphs.len();
     assert!(
         total_primitives >= 5,
         "should have primitives for all grid areas, got {}",
@@ -267,7 +267,7 @@ fn test_render_positioned_elements() {
         </body></html>"#,
         None,
     );
-    let total_primitives = result.primitives.fills.len() + result.primitives.rounded_rects.len();
+    let total_primitives = result.primitives().fills.len() + result.primitives().rounded_rects.len();
     assert!(
         total_primitives >= 4,
         "should have fills for container + 3 positioned elements, got {}",
@@ -286,9 +286,9 @@ fn test_render_text_with_shadows() {
         None,
     );
     // 至少应该有背景填充和文本 glyph
-    assert!(result.primitives.fills.len() + result.primitives.rounded_rects.len() >= 1);
+    assert!(result.primitives().fills.len() + result.primitives().rounded_rects.len() >= 1);
     assert!(
-        result.primitives.glyphs.len() >= 1,
+        result.primitives().glyphs.len() >= 1,
         "should have glyph primitives for text"
     );
 }
@@ -303,12 +303,12 @@ fn test_render_gradient_backgrounds() {
         None,
     );
     // 渐变元素通过 gradients 或 fills 图元渲染
-    let gradient_count = result.primitives.gradients.len() + result.primitives.fills.len();
+    let gradient_count = result.primitives().gradients.len() + result.primitives().fills.len();
     assert!(
         gradient_count >= 2,
         "should have gradient or fill primitives for gradient elements, got gradients={}, fills={}",
-        result.primitives.gradients.len(),
-        result.primitives.fills.len()
+        result.primitives().gradients.len(),
+        result.primitives().fills.len()
     );
 }
 
@@ -320,9 +320,9 @@ fn test_render_box_shadow_elements() {
         </body></html>"#,
         None,
     );
-    assert!(result.primitives.fills.len() + result.primitives.rounded_rects.len() >= 1);
+    assert!(result.primitives().fills.len() + result.primitives().rounded_rects.len() >= 1);
     assert!(
-        result.primitives.shadows.len() >= 1,
+        result.primitives().shadows.len() >= 1,
         "should have shadow primitives for box-shadow"
     );
 }
@@ -336,7 +336,7 @@ fn test_css_custom_properties_pipeline() {
         None,
     );
     assert!(
-        result.primitives.fills.len() + result.primitives.rounded_rects.len() >= 1,
+        result.primitives().fills.len() + result.primitives().rounded_rects.len() >= 1,
         "should have fill primitives for custom property element"
     );
 }
@@ -350,5 +350,5 @@ fn test_css_media_query_render() {
         </body></html>"#,
         Some(r#"@media (max-width: 600px) { .responsive { background: #3498db; } }"#),
     );
-    assert!(result.primitives.fills.len() + result.primitives.rounded_rects.len() >= 1);
+    assert!(result.primitives().fills.len() + result.primitives().rounded_rects.len() >= 1);
 }

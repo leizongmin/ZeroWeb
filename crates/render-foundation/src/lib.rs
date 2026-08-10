@@ -23,11 +23,13 @@ pub mod color;
 pub mod color_space;
 pub mod config;
 pub mod cpu;
+pub mod display_list;
 pub mod font;
 pub mod geometry;
 pub mod gpu;
 pub mod image_cache;
 pub mod primitive;
+pub mod rendering_thread;
 pub mod surface;
 
 /// 渲染错误类型

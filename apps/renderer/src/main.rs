@@ -387,7 +387,7 @@ impl RendererRuntime {
     fn publish_webview(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
         let html = self.cached_html.clone();
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
-        let (vw, vh, document_height, primitives, hit_test, mut image_cache) = {
+        let (vw, vh, document_height, primitives, dirty_rects, hit_test, mut image_cache) = {
             let wv = self.webview.as_ref().expect("webview");
             let render = wv.last_render().ok_or_else(|| "WebView 无渲染结果".to_string())?;
             (
@@ -395,6 +395,7 @@ impl RendererRuntime {
                 self.viewport.1,
                 wv.document_height().unwrap_or(self.viewport.1 as f32),
                 render.primitives.clone(),
+                render.dirty_rects.clone(),
                 wv.build_hit_test_cache(),
                 wv.snapshot_image_cache(),
             )
@@ -445,6 +446,7 @@ impl RendererRuntime {
             viewport: (vw, vh),
             document_height,
             primitives,
+            dirty_rects,
             hit_test,
         };
         publish_render_with_layout(
@@ -1745,6 +1747,7 @@ fn publish_render_with_layout(
         frame.viewport.1,
         frame.document_height,
         &frame.primitives,
+        &frame.dirty_rects,
         image_payloads,
         frame.hit_test.clone(),
         navigation_epoch,

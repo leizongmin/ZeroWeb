@@ -187,12 +187,14 @@ impl RenderPipeline {
                         paint_skip_node_ids: layout.paint_skip_node_ids.clone(),
                     });
 
-                    session.result = Some(RenderResult {
+                    let dirty_rects = vec![(0.0, 0.0, self.viewport_width, self.viewport_height)];
+                    session.result = Some(crate::pipeline::make_render_result(
                         primitives,
-                        layout: layout_out,
-                        timings: session.timings.clone(),
+                        dirty_rects,
+                        layout_out,
+                        session.timings.clone(),
                         stats,
-                    });
+                    ));
                     return BudgetAdvance::Complete;
                 }
                 BudgetStep::Done => return BudgetAdvance::Complete,
@@ -258,17 +260,24 @@ impl RenderPipeline {
         };
         self.cached_layout = Some(layout_result);
 
-        RenderResult {
+        let dirty_rects = vec![(
+            visible_rect.origin.x,
+            visible_rect.origin.y,
+            visible_rect.size.width,
+            visible_rect.size.height,
+        )];
+        crate::pipeline::make_render_result(
             primitives,
+            dirty_rects,
             layout,
-            timings: PipelineTimings {
+            PipelineTimings {
                 parse_ms,
                 style_ms,
                 layout_ms,
                 paint_ms,
                 total_ms,
             },
-            stats: zero_render_foundation::primitive::RenderStats::default(),
-        }
+            zero_render_foundation::primitive::RenderStats::default(),
+        )
     }
 }

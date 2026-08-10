@@ -14,9 +14,10 @@ use std::sync::Arc;
 
 use zero_engine::RenderPipeline;
 use zero_engine::paint::simple_hash;
-use zero_render_foundation::cpu::{render_full_scene, render_full_scene_threaded};
+use zero_render_foundation::cpu::render_full_scene;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
+use zero_render_foundation::rendering_thread::render_threading_enabled_for_tests;
 use zero_render_foundation::surface::FrameBuffer;
 
 use crate::manifest::FuzzyMeta;
@@ -505,7 +506,7 @@ fn layout_extent_max_y(b: &zero_layout_engine::types::LayoutBox, offset_y: f32) 
 
 /// 同 [`render_to_framebuffer_with_base`]，但额外返回布局树根（DC-13 结构检查用）。
 ///
-/// `RenderResult.layout.root` 在 `render_full_scene`（仅借 `result.primitives`）后移出，
+/// `RenderResult.layout.root` 在 `render_full_scene`（仅借 `result.primitives()`）后移出，
 /// 供 product-smoke 结构自动检查（如兄弟盒重叠检测）遍历。Framebuffer 渲染不受影响。
 ///
 /// `render_to_framebuffer_with_layout_with_base` = 3-tuple（root + html，旧调用方）；
@@ -739,13 +740,13 @@ fn render_with_layout_inner(
     // DEBUG: dump primitives for diagnostic
     if std::env::var("REFTEST_DEBUG").is_ok() {
         eprintln!("=== Primitives for {} ===", html.lines().take(1).next().unwrap_or(""));
-        eprintln!("  fills: {}", result.primitives.fills.len());
-        eprintln!("  images: {}", result.primitives.images.len());
-        eprintln!("  rounded_rects: {}", result.primitives.rounded_rects.len());
-        eprintln!("  glyphs: {}", result.primitives.glyphs.len());
-        eprintln!("  gradients: {}", result.primitives.gradients.len());
-        eprintln!("  strokes: {}", result.primitives.strokes.len());
-        for (i, fill) in result.primitives.fills.iter().enumerate().take(20) {
+        eprintln!("  fills: {}", result.primitives().fills.len());
+        eprintln!("  images: {}", result.primitives().images.len());
+        eprintln!("  rounded_rects: {}", result.primitives().rounded_rects.len());
+        eprintln!("  glyphs: {}", result.primitives().glyphs.len());
+        eprintln!("  gradients: {}", result.primitives().gradients.len());
+        eprintln!("  strokes: {}", result.primitives().strokes.len());
+        for (i, fill) in result.primitives().fills.iter().enumerate().take(20) {
             eprintln!(
                 "  fill[{}]: ({:.1},{:.1},{:.1},{:.1}) rgba({},{},{},{})",
                 i,
@@ -759,7 +760,7 @@ fn render_with_layout_inner(
                 fill.color.a
             );
         }
-        for (i, img) in result.primitives.images.iter().enumerate().take(10) {
+        for (i, img) in result.primitives().images.iter().enumerate().take(10) {
             eprintln!(
                 "  image[{}]: ({:.1},{:.1},{:.1},{:.1}) key={:?}",
                 i, img.rect.origin.x, img.rect.origin.y, img.rect.size.width, img.rect.size.height, img.image_key
@@ -787,26 +788,32 @@ fn render_with_layout_inner(
     // S2 可选线程化（#3 渲染线程化 RFC）：ZW_RENDER_THREAD=1 时光栅化在
     // 独立线程执行（thread::scope），结果与单线程逐像素一致——默认关，
     // 测试确定性优先；env 用于验证线程路径正确性。
-    let fb = if std::env::var("ZW_RENDER_THREAD").is_ok_and(|v| v == "1") {
-        render_full_scene_threaded(
-            config.viewport_width,
-            fb_height,
-            config.scale_factor,
-            &result.primitives,
-            font_loader,
-            &mut glyph_cache,
-            Some(&mut image_cache),
-            &[],
-            &[],
-            &[],
-            &[],
-        )
+    let fb = if render_threading_enabled_for_tests() {
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                render_full_scene(
+                    config.viewport_width,
+                    fb_height,
+                    config.scale_factor,
+                    &result.display_list.primitives,
+                    font_loader,
+                    &mut glyph_cache,
+                    Some(&mut image_cache),
+                    &[],
+                    &[],
+                    &[],
+                    &[],
+                )
+            })
+            .join()
+            .expect("渲染线程 panic")
+        })
     } else {
         render_full_scene(
             config.viewport_width,
             fb_height,
             config.scale_factor,
-            &result.primitives,
+            &result.display_list.primitives,
             font_loader,
             &mut glyph_cache,
             Some(&mut image_cache),
@@ -816,7 +823,7 @@ fn render_with_layout_inner(
             &[],
         )
     };
-    // render_full_scene 仅借 result.primitives（借用已结束）；移出 layout 根供结构检查。
+    // render_full_scene 仅借 result.display_list.primitives（借用已结束）；移出 layout 根供结构检查。
     // 一并返回 mutated_html（render_html 实际解析的 HTML，经 script DOM 变更后可能与调用方传入
     // 的原 html 不同）——DC-13 结构检查须用它建 labels，否则 layout 树 node_id 与 collect_dom_labels
     //（解析原 html）不匹配 → 真元素误标 "(anon)"（R1499：morning disqus loadDisqus() appendChild

@@ -11,6 +11,7 @@ use zero_css_parser::media_query::PrefersColorSchemeValue;
 use zero_dom::{Document, NodeId};
 use zero_layout_engine::{LayoutEngine, LayoutResult};
 use zero_render_foundation::color::Color;
+use zero_render_foundation::display_list::DisplayList;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{RenderPrimitives, RenderStats};
 use zero_style_system::ComputedStyle;
@@ -103,16 +104,78 @@ pub struct PipelineTimings {
     pub total_ms: f64,
 }
 
-/// 渲染结果 — 包含图元、布局、计时和统计信息。
+/// 渲染结果 — 包含 display list、布局、计时和统计信息。
 pub struct RenderResult {
-    /// 生成的渲染图元。
-    pub primitives: RenderPrimitives,
+    /// 本帧 display list（图元 + 脏区域）。
+    pub display_list: DisplayList,
     /// 布局结果。
     pub layout: LayoutResult,
     /// 各阶段计时。
     pub timings: PipelineTimings,
     /// 渲染统计信息（draw call 估算、图元数量、剔除数量）。
     pub stats: RenderStats,
+}
+
+impl RenderResult {
+    /// 本帧图元序列（`display_list.primitives` 的便捷访问）。
+    pub fn primitives(&self) -> &RenderPrimitives {
+        &self.display_list.primitives
+    }
+}
+
+/// 从图元与脏区域组装 [`RenderResult`]（S1 DisplayList 契约）。
+pub(crate) fn make_render_result(
+    primitives: RenderPrimitives,
+    dirty_rects: Vec<(f32, f32, f32, f32)>,
+    layout: LayoutResult,
+    timings: PipelineTimings,
+    mut stats: RenderStats,
+) -> RenderResult {
+    let display_list = DisplayList::new(primitives, dirty_rects.clone());
+    display_list.apply_stats_dirty_rects(&mut stats);
+    RenderResult {
+        display_list,
+        layout,
+        timings,
+        stats,
+    }
+}
+
+/// 从布局树收集指定 DOM 节点的脏矩形（视口 CSS 像素）。
+fn layout_dirty_rects_for_nodes(
+    root: &zero_layout_engine::LayoutBox,
+    node_ids: &[NodeId],
+    viewport_w: f32,
+    viewport_h: f32,
+) -> Vec<(f32, f32, f32, f32)> {
+    use std::collections::HashSet;
+    let targets: HashSet<NodeId> = node_ids.iter().copied().collect();
+    let mut out = Vec::new();
+    collect_node_dirty_rects(root, 0.0, 0.0, &targets, &mut out);
+    if out.is_empty() {
+        vec![(0.0, 0.0, viewport_w, viewport_h)]
+    } else {
+        out
+    }
+}
+
+fn collect_node_dirty_rects(
+    layout_box: &zero_layout_engine::LayoutBox,
+    offset_x: f32,
+    offset_y: f32,
+    targets: &std::collections::HashSet<NodeId>,
+    out: &mut Vec<(f32, f32, f32, f32)>,
+) {
+    let abs_x = offset_x + layout_box.x;
+    let abs_y = offset_y + layout_box.y;
+    if layout_box.node_id.is_some_and(|id| targets.contains(&id)) {
+        out.push((abs_x, abs_y, layout_box.width, layout_box.height));
+    }
+    let child_ox = abs_x + layout_box.content_x;
+    let child_oy = abs_y + layout_box.content_y;
+    for child in &layout_box.children {
+        collect_node_dirty_rects(child, child_ox, child_oy, targets, out);
+    }
 }
 
 impl RenderPipeline {
@@ -414,7 +477,7 @@ impl RenderPipeline {
         let mut primitives = painter.into_primitives();
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
         // S7b：cull_invisible 原位剔除（primitives 变量即结果，不再返回新对象）
-        let mut stats = primitives.cull_invisible(viewport);
+        let stats = primitives.cull_invisible(viewport);
         // 性能门禁优化 S7（2026-08-08）：draw_order 路径下 batch_fills 是纯 clone
         // no-op（ops.rs:273-275），跳过免全量克隆（4400 元素页每帧 ~11k fills）
         let primitives = if primitives.draw_order.is_empty() {
@@ -422,11 +485,7 @@ impl RenderPipeline {
         } else {
             primitives
         };
-        // S3 dirty region 契约：当前为全量渲染，脏区域 = 整个视口。
-        // 增量重绘（RFC S3 后续切片）接入 DirtyTracker 后只输出变化区域。
-        stats
-            .dirty_rects
-            .push((0.0, 0.0, viewport.size.width, viewport.size.height));
+        let dirty_rects = vec![(0.0, 0.0, viewport.size.width, viewport.size.height)];
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
@@ -443,10 +502,11 @@ impl RenderPipeline {
         };
         self.cached_layout = Some(layout_result);
 
-        RenderResult {
+        make_render_result(
             primitives,
+            dirty_rects,
             layout,
-            timings: PipelineTimings {
+            PipelineTimings {
                 parse_ms,
                 style_ms,
                 layout_ms,
@@ -454,7 +514,7 @@ impl RenderPipeline {
                 total_ms,
             },
             stats,
-        }
+        )
     }
 
     /// 命中测试链接，返回点击位置处 `<a href>` 的目标 URL。
@@ -559,11 +619,8 @@ impl RenderPipeline {
         // 视口剔除 — 移除视口外的图元（高度取文档布局范围，供浏览器滚动消费）
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
         // S7b：cull_invisible 原位剔除（primitives 变量即结果，不再返回新对象）
-        let mut stats = primitives.cull_invisible(viewport);
-        // S3 dirty region 契约：全量渲染 → 脏区域 = 整个视口
-        stats
-            .dirty_rects
-            .push((0.0, 0.0, viewport.size.width, viewport.size.height));
+        let stats = primitives.cull_invisible(viewport);
+        let dirty_rects = vec![(0.0, 0.0, viewport.size.width, viewport.size.height)];
         // 对填充图元进行批处理优化（S7：draw_order 路径跳过——纯 clone no-op）
         let mut primitives = if primitives.draw_order.is_empty() {
             primitives.batch_fills()
@@ -595,10 +652,11 @@ impl RenderPipeline {
         };
         self.cached_layout = Some(layout_result);
 
-        RenderResult {
+        make_render_result(
             primitives,
+            dirty_rects,
             layout,
-            timings: PipelineTimings {
+            PipelineTimings {
                 parse_ms,
                 style_ms,
                 layout_ms,
@@ -606,7 +664,7 @@ impl RenderPipeline {
                 total_ms,
             },
             stats,
-        }
+        )
     }
 
     /// 仅重新计算样式和布局（增量更新）。
@@ -757,12 +815,14 @@ impl RenderPipeline {
             viewport_height: layout_ref.viewport_height,
             paint_skip_node_ids: layout_ref.paint_skip_node_ids.clone(),
         };
-        Some(RenderResult {
+        let dirty_rects = vec![(0.0, 0.0, self.viewport_width, self.viewport_height)];
+        Some(make_render_result(
             primitives,
+            dirty_rects,
             layout,
-            timings: PipelineTimings::default(),
-            stats: RenderStats::default(),
-        })
+            PipelineTimings::default(),
+            RenderStats::default(),
+        ))
     }
 
     /// DOM 变更增量渲染（M3-S9 第一刀：消除 HTML 往返）。
@@ -911,17 +971,20 @@ impl RenderPipeline {
         painter.viewport_h = self.viewport_height;
         painter.paint(&layout.root, &self.cached_styles, Some(doc));
         let primitives = painter.into_primitives();
-        Some(RenderResult {
+        let dirty_rects =
+            layout_dirty_rects_for_nodes(&layout.root, &changed, self.viewport_width, self.viewport_height);
+        Some(make_render_result(
             primitives,
-            layout: LayoutResult {
+            dirty_rects,
+            LayoutResult {
                 root: layout.root.clone(),
                 viewport_width: layout.viewport_width,
                 viewport_height: layout.viewport_height,
                 paint_skip_node_ids: layout.paint_skip_node_ids.clone(),
             },
-            timings: PipelineTimings::default(),
-            stats: RenderStats::default(),
-        })
+            PipelineTimings::default(),
+            RenderStats::default(),
+        ))
     }
 
     /// 文本变更增量渲染：全量 style + 脏标记文本节点 → `compute_incremental` +
@@ -979,12 +1042,24 @@ impl RenderPipeline {
             viewport_height: layout.viewport_height,
             paint_skip_node_ids: layout.paint_skip_node_ids.clone(),
         });
-        Some(RenderResult {
+        let dirty_nodes: Vec<NodeId> = mutations
+            .iter()
+            .filter_map(|m| match m {
+                crate::js_dom_bridge::DomMutation::SetText { selector, .. } => {
+                    doc.query_selector(doc.root(), selector.trim())
+                }
+                _ => None,
+            })
+            .collect();
+        let dirty_rects =
+            layout_dirty_rects_for_nodes(&layout.root, &dirty_nodes, self.viewport_width, self.viewport_height);
+        Some(make_render_result(
             primitives,
+            dirty_rects,
             layout,
-            timings: PipelineTimings::default(),
-            stats: RenderStats::default(),
-        })
+            PipelineTimings::default(),
+            RenderStats::default(),
+        ))
     }
 
     /// 获取当前布局结果。

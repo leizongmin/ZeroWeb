@@ -871,7 +871,7 @@ fn test_paint_with_border_image_source_no_panic() {
     assert!(pipeline.layout().is_some(), "布局缓存应存在");
     // 即使 border-image 无法加载，背景和边框仍应产生填充图元
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "含 border-image 的元素仍应产生填充图元"
     );
 }
@@ -901,7 +901,7 @@ fn test_paint_with_box_shadow_css_property() {
     assert!(pipeline.layout().is_some(), "布局缓存应存在");
     // 背景填充应正常生成
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "含 box-shadow 的元素仍应产生背景填充图元"
     );
 }
@@ -928,7 +928,7 @@ fn test_paint_with_text_shadow_css_property() {
     assert!(pipeline.layout().is_some(), "布局缓存应存在");
     // 背景和文本图元应正常生成
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "含 text-shadow 的元素应产生背景填充图元"
     );
 }
@@ -1089,7 +1089,7 @@ fn test_paint_box_shadow_negative_offset() {
     );
     assert!(pipeline.layout().is_some());
     assert!(
-        !result.primitives.fills.is_empty(),
+        !result.primitives().fills.is_empty(),
         "element with negative box-shadow should produce fills"
     );
 }
@@ -1113,7 +1113,7 @@ fn test_paint_box_shadow_zero_spread() {
         result.timings.total_ms >= 0.0,
         "zero-spread box-shadow should not crash"
     );
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试渲染管线处理 inset box-shadow 不崩溃。
@@ -1132,7 +1132,7 @@ fn test_paint_box_shadow_inset() {
 
     let result = pipeline.render_html(html, css);
     assert!(result.timings.total_ms >= 0.0, "inset box-shadow should not crash");
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 /// 测试渲染管线处理含角度渐变的 CSS 不崩溃。

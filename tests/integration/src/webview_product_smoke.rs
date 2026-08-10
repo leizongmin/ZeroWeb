@@ -71,15 +71,15 @@ fn test_smoke_load_multi_paragraph_page() {
     assert!(result.timings.total_ms >= 0.0, "渲染应成功完成");
 
     // 必须有 glyph（文本内容）
-    assert!(!result.primitives.glyphs.is_empty(), "页面应包含文本 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "页面应包含文本 glyph");
 
     // 必须有 fill（背景、边框等）
-    assert!(!result.primitives.fills.is_empty(), "页面应包含填充图元");
+    assert!(!result.primitives().fills.is_empty(), "页面应包含填充图元");
 
     // 应有圆角矩形（.card 的 border-radius）
     // 注：圆角矩形可能通过 fills 或 rounded_rects 实现
-    let has_rounded = !result.primitives.rounded_rects.is_empty();
-    let has_border_fill = result.primitives.fills.len() >= 3; // 至少有背景+边框
+    let has_rounded = !result.primitives().rounded_rects.is_empty();
+    let has_border_fill = result.primitives().fills.len() >= 3; // 至少有背景+边框
     assert!(has_rounded || has_border_fill, "页面应有圆角或边框填充图元");
 
     // URL 状态
@@ -115,7 +115,7 @@ fn test_smoke_load_form_page() {
     let result = wv.load_html(form_html(), None);
 
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty(), "表单标签应有文本");
+    assert!(!result.primitives().glyphs.is_empty(), "表单标签应有文本");
 }
 
 /// 加载纯文本页面，验证极简内容渲染
@@ -125,7 +125,7 @@ fn test_smoke_load_minimal_page() {
     let result = wv.load_html("<html><body><p>Hello World</p></body></html>", None);
 
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
     // 极简页面可能只有 glyph 没有 fill（无背景/边框）
 }
 
@@ -149,7 +149,7 @@ fn test_smoke_load_page_with_external_css() {
 
     assert!(result.timings.total_ms >= 0.0);
     assert!(
-        !result.primitives.fills.is_empty() || !result.primitives.rounded_rects.is_empty(),
+        !result.primitives().fills.is_empty() || !result.primitives().rounded_rects.is_empty(),
         "外部 CSS 应产生填充图元"
     );
 }
@@ -163,12 +163,12 @@ fn test_smoke_resize_renders_differently() {
 
     // 加载页面
     let result_800 = wv.load_html(multi_paragraph_html(), None);
-    let glyphs_800 = result_800.primitives.glyphs.len();
+    let glyphs_800 = result_800.primitives().glyphs.len();
 
     // 调整为更窄的视口（文本会换行更多行）
     wv.resize(400, 300);
     let result_400 = wv.render();
-    let glyphs_400 = result_400.primitives.glyphs.len();
+    let glyphs_400 = result_400.primitives().glyphs.len();
 
     // 两种视口都应有渲染结果
     assert!(glyphs_800 > 0, "800px 宽视口应有 glyph");
@@ -213,11 +213,11 @@ fn test_smoke_inject_css_changes_rendering() {
 
     // 先加载基础页面
     let result_before = wv.load_html("<html><body><div id='box'>Hello</div></body></html>", None);
-    let fills_before = result_before.primitives.fills.len();
+    let fills_before = result_before.primitives().fills.len();
 
     // 注入 CSS 改变背景
     let result_after = wv.inject_css("#box { background: red; width: 200px; height: 50px; }");
-    let fills_after = result_after.primitives.fills.len();
+    let fills_after = result_after.primitives().fills.len();
 
     // 注入后可能增加 fill（红色背景）
     assert!(
@@ -253,12 +253,12 @@ fn test_smoke_navigate_between_pages() {
 
     // 页面 1
     let r1 = wv.load_html("<html><body><h1>Page One</h1></body></html>", None);
-    assert!(!r1.primitives.glyphs.is_empty());
+    assert!(!r1.primitives().glyphs.is_empty());
     let html1 = wv.html_content().to_string();
 
     // 页面 2
     let r2 = wv.load_html("<html><body><h1>Page Two</h1></body></html>", None);
-    assert!(!r2.primitives.glyphs.is_empty());
+    assert!(!r2.primitives().glyphs.is_empty());
     let html2 = wv.html_content().to_string();
 
     // 两个页面的 HTML 内容应不同
@@ -278,7 +278,7 @@ fn test_smoke_complete_load_flow() {
     let result = wv.complete_load(html, None);
 
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 /// fail_load 不 panic 并保持可用
@@ -292,7 +292,7 @@ fn test_smoke_fail_load_recoverable() {
     // 失败后应仍能加载新页面
     let result = wv.load_html("<html><body><h1>Recovered</h1></body></html>", None);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 // ── Phase 4: Script Execution 验证 ──
@@ -470,11 +470,11 @@ fn webview_skips_debug_indicators_by_default() {
     wv_indicators.set_skip_indicators(false);
     let r_indicators = wv_indicators.load_html(html, None);
     assert!(
-        r_indicators.primitives.fills.len() > r_default.primitives.fills.len(),
+        r_indicators.primitives().fills.len() > r_default.primitives().fills.len(),
         "skip=false should render more fills (debug indicators) than default skip=true; \
          got indicators={} vs default={}",
-        r_indicators.primitives.fills.len(),
-        r_default.primitives.fills.len()
+        r_indicators.primitives().fills.len(),
+        r_default.primitives().fills.len()
     );
 }
 
@@ -499,10 +499,10 @@ fn inline_page_break_before_applied_via_style_attr() {
     // 背景 red（1 fill）+ page-break-before 指示器（2 fills，skip=false 时）→ 3 > 1。
     // default（skip=true）仅背景（1 fill）。差值证 inline page-break-before 被正确应用。
     assert!(
-        r_indicators.primitives.fills.len() > r_default.primitives.fills.len(),
+        r_indicators.primitives().fills.len() > r_default.primitives().fills.len(),
         "inline page-break-before:always should add indicator fills on top of bg: {} vs {}",
-        r_indicators.primitives.fills.len(),
-        r_default.primitives.fills.len()
+        r_indicators.primitives().fills.len(),
+        r_default.primitives().fills.len()
     );
 }
 
@@ -553,8 +553,8 @@ fn test_smoke_full_product_scenario() {
         None,
     );
     assert!(r.timings.total_ms >= 0.0);
-    assert!(!r.primitives.glyphs.is_empty());
-    assert!(!r.primitives.fills.is_empty());
+    assert!(!r.primitives().glyphs.is_empty());
+    assert!(!r.primitives().fills.is_empty());
 
     // 2. CSS 注入
     let r = wv.inject_css(".content { border: 1px solid #eee; }");
@@ -574,7 +574,7 @@ fn test_smoke_full_product_scenario() {
     wv.resize(1440, 900);
     let r = wv.render();
     assert!(r.timings.total_ms >= 0.0);
-    assert!(!r.primitives.glyphs.is_empty());
+    assert!(!r.primitives().glyphs.is_empty());
 
     // 6. 最终状态验证
     assert_eq!(wv.config().width, 1440);
@@ -610,7 +610,7 @@ fn test_smoke_sequential_page_loads() {
     for (i, html) in pages.iter().enumerate() {
         let result = wv.load_html(html, None);
         assert!(result.timings.total_ms >= 0.0, "第 {i} 个页面应渲染成功");
-        assert!(!result.primitives.glyphs.is_empty(), "第 {i} 个页面应有 glyph");
+        assert!(!result.primitives().glyphs.is_empty(), "第 {i} 个页面应有 glyph");
     }
 }
 

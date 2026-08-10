@@ -493,7 +493,7 @@ fn test_incremental_render_performance_criterion() {
 
     // 1. 全量渲染
     let full_result = pipeline.render_html(html, css);
-    let full_primitives = full_result.primitives.len();
+    let full_primitives = full_result.primitives().len();
     let full_time_ms = full_result.timings.total_ms;
 
     assert!(full_primitives > 0, "全量渲染应产生图元");
@@ -553,7 +553,7 @@ fn test_incremental_render_dirty_area_sizes() {
 
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
     let full_result = pipeline.render_html(html, "");
-    let full_count = full_result.primitives.len();
+    let full_count = full_result.primitives().len();
 
     let doc = zero_dom::parse_html(html);
 

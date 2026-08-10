@@ -25,7 +25,7 @@ fn test_font_fallback_chinese_glyphs() {
     let result = wv.load_html(r#"<html><body><p>这是中文文本测试</p></body></html>"#, None);
 
     // 即使字体不支持 CJK，布局引擎也应生成 glyph 图元
-    assert!(!result.primitives.glyphs.is_empty(), "中文文本应产生 glyph 图元");
+    assert!(!result.primitives().glyphs.is_empty(), "中文文本应产生 glyph 图元");
 }
 
 /// 日文文本（平假名+片假名+汉字）渲染管线
@@ -37,7 +37,7 @@ fn test_font_fallback_japanese_glyphs() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "日文文本应产生 glyph 图元");
+    assert!(!result.primitives().glyphs.is_empty(), "日文文本应产生 glyph 图元");
 }
 
 /// 韩文文本渲染管线
@@ -46,7 +46,7 @@ fn test_font_fallback_korean_glyphs() {
     let mut wv = create_webview();
     let result = wv.load_html(r#"<html><body><p>한국어 텍스트 렌더링 테스트</p></body></html>"#, None);
 
-    assert!(!result.primitives.glyphs.is_empty(), "韩文文本应产生 glyph 图元");
+    assert!(!result.primitives().glyphs.is_empty(), "韩文文本应产生 glyph 图元");
 }
 
 /// CJK 大段落文本渲染管线不 panic
@@ -57,7 +57,7 @@ fn test_font_fallback_cjk_large_paragraph() {
     let html = format!(r#"<html><body><p>{}</p></body></html>"#, long_text);
     let result = wv.load_html(&html, None);
 
-    assert!(!result.primitives.glyphs.is_empty(), "大段落 CJK 文本应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "大段落 CJK 文本应产生 glyph");
     assert!(result.timings.total_ms >= 0.0);
 }
 
@@ -71,7 +71,7 @@ fn test_font_fallback_emoji_basic() {
 
     // emoji 可能无法渲染为可视 glyph，但管线不应崩溃
     assert!(result.timings.total_ms >= 0.0, "emoji 渲染不应崩溃");
-    assert!(!result.primitives.glyphs.is_empty(), "混合文本应至少产生部分 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "混合文本应至少产生部分 glyph");
 }
 
 /// 复杂 emoji 序列渲染不 panic
@@ -110,7 +110,7 @@ fn test_font_fallback_arabic_rtl() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "阿拉伯文应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "阿拉伯文应产生 glyph");
     assert!(result.timings.total_ms >= 0.0);
 }
 
@@ -123,7 +123,7 @@ fn test_font_fallback_hebrew_rtl() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "希伯来文应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "希伯来文应产生 glyph");
 }
 
 /// 双向混合文本渲染管线
@@ -138,7 +138,7 @@ fn test_font_fallback_bidi_mixed() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "双向混合文本应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "双向混合文本应产生 glyph");
     assert!(result.timings.total_ms >= 0.0);
 }
 
@@ -156,7 +156,7 @@ fn test_font_fallback_multilingual_mixed() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "多语言混合文本应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "多语言混合文本应产生 glyph");
 }
 
 /// 泰文/天城文渲染管线不 panic
@@ -173,7 +173,7 @@ fn test_font_fallback_thai_devanagari() {
     );
 
     assert!(result.timings.total_ms >= 0.0, "泰文/天城文渲染不应崩溃");
-    assert!(!result.primitives.glyphs.is_empty(), "泰文/天城文应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "泰文/天城文应产生 glyph");
 }
 
 // ── 字体样式回退管线测试 ──
@@ -190,7 +190,10 @@ fn test_font_fallback_nonexistent_font_family() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "不存在的字体应回退并仍产生 glyph");
+    assert!(
+        !result.primitives().glyphs.is_empty(),
+        "不存在的字体应回退并仍产生 glyph"
+    );
 }
 
 /// 不同字号的 CJK 文本渲染
@@ -207,7 +210,7 @@ fn test_font_fallback_cjk_various_sizes() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "不同字号 CJK 文本应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "不同字号 CJK 文本应产生 glyph");
     assert!(result.timings.total_ms >= 0.0);
 }
 
@@ -224,7 +227,7 @@ fn test_font_fallback_cjk_bold_italic() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "粗斜体 CJK 应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "粗斜体 CJK 应产生 glyph");
 }
 
 // ── Unicode 特殊字符渲染管线测试 ──
@@ -242,7 +245,7 @@ fn test_font_fallback_math_symbols() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "数学符号应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "数学符号应产生 glyph");
 }
 
 /// 货币和特殊符号渲染
@@ -257,7 +260,7 @@ fn test_font_fallback_currency_symbols() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "货币符号应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "货币符号应产生 glyph");
 }
 
 // ── 竖排文本渲染管线测试 ──
@@ -276,7 +279,7 @@ fn test_font_fallback_vertical_text() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "竖排文本应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "竖排文本应产生 glyph");
     assert!(result.timings.total_ms >= 0.0);
 }
 
@@ -315,9 +318,9 @@ fn test_font_fallback_multilingual_dashboard() {
         None,
     );
 
-    assert!(!result.primitives.glyphs.is_empty(), "多语言仪表盘应产生 glyph");
+    assert!(!result.primitives().glyphs.is_empty(), "多语言仪表盘应产生 glyph");
     assert!(
-        !result.primitives.fills.is_empty() || !result.primitives.rounded_rects.is_empty(),
+        !result.primitives().fills.is_empty() || !result.primitives().rounded_rects.is_empty(),
         "多语言仪表盘应产生 fill"
     );
     assert!(result.timings.total_ms >= 0.0);

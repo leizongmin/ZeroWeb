@@ -57,9 +57,9 @@ fn test_visibility_hidden_render_pipeline() {
 
     let result = RenderPipeline::new(800.0, 600.0).render_html(html, css);
     assert!(
-        result.primitives.fills.is_empty(),
+        result.primitives().fills.is_empty(),
         "visibility:hidden 不应产生 fill 图元，实际有 {} 个",
-        result.primitives.fills.len()
+        result.primitives().fills.len()
     );
 }
 

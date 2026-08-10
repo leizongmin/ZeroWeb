@@ -26,7 +26,7 @@ fn test_font_family_stack() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn test_font_size_variants() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
     // 不同字号应该产生不同的 glyph 位置
     assert!(result.layout.root.children.len() >= 2);
 }
@@ -62,7 +62,7 @@ fn test_font_weight_variants() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn test_text_align_center() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn test_text_decoration_underline() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn test_text_decoration_line_through() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn test_text_transform_uppercase() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn test_letter_spacing() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -133,7 +133,7 @@ fn test_line_height() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 // ── 2. 颜色和背景管线 ──────────────────────────────────────────
@@ -152,8 +152,8 @@ fn test_named_colors_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().fills.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -165,8 +165,8 @@ fn test_rgb_hsl_colors() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().fills.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -178,8 +178,8 @@ fn test_hex_colors() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().fills.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 // ── 3. 边框和圆角管线 ──────────────────────────────────────────
@@ -198,7 +198,7 @@ fn test_border_styles_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
     assert!(!result.layout.root.children.is_empty());
 }
 
@@ -214,7 +214,7 @@ fn test_border_radius_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -224,7 +224,7 @@ fn test_individual_borders() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 // ── 4. 阴影和渐变管线 ──────────────────────────────────────────
@@ -242,8 +242,8 @@ fn test_box_shadow_multiple() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.shadows.is_empty());
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().shadows.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -253,7 +253,7 @@ fn test_box_shadow_inset() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.shadows.is_empty());
+    assert!(!result.primitives().shadows.is_empty());
 }
 
 #[test]
@@ -266,7 +266,7 @@ fn test_text_shadow_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -283,7 +283,7 @@ fn test_linear_gradient_directions() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.gradients.is_empty());
+    assert!(!result.primitives().gradients.is_empty());
 }
 
 #[test]
@@ -293,7 +293,7 @@ fn test_radial_gradient_render() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.gradients.is_empty());
+    assert!(!result.primitives().gradients.is_empty());
 }
 
 // ── 5. opacity / visibility / overflow 管线 ──────────────────────────────────────────
@@ -306,8 +306,8 @@ fn test_opacity_levels() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().fills.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -332,7 +332,7 @@ fn test_overflow_hidden_clips() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 // ── 6. CSS 变量管线 ──────────────────────────────────────────
@@ -359,8 +359,8 @@ fn test_css_variables_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().fills.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -370,7 +370,7 @@ fn test_css_variables_fallback() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 // ── 7. position / z-index 管线 ──────────────────────────────────────────
@@ -388,7 +388,7 @@ fn test_absolute_position() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -407,7 +407,7 @@ fn test_z_index_stacking() {
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
     // Verify render completes and produces output
-    assert!(!result.primitives.is_empty());
+    assert!(!result.primitives().is_empty());
 }
 
 // ── 8. display 变体管线 ──────────────────────────────────────────
@@ -424,7 +424,7 @@ fn test_display_inline_block() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
     assert!(!result.layout.root.children.is_empty());
 }
 
@@ -516,7 +516,7 @@ fn test_calc_width() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 // ── 10. 2D transform 管线 ──────────────────────────────────────────
@@ -528,7 +528,7 @@ fn test_transform_translate() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -538,7 +538,7 @@ fn test_transform_scale() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 #[test]
@@ -548,7 +548,7 @@ fn test_transform_rotate() {
     </body></html>"#;
     let result = render_pipeline(html, "");
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
+    assert!(!result.primitives().fills.is_empty());
 }
 
 // ── 11. CSS filter 管线 ──────────────────────────────────────────
@@ -601,10 +601,10 @@ fn test_landing_page_render() {
     "##;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
-    assert!(!result.primitives.glyphs.is_empty());
-    assert!(!result.primitives.gradients.is_empty());
-    assert!(!result.primitives.shadows.is_empty());
+    assert!(!result.primitives().fills.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
+    assert!(!result.primitives().gradients.is_empty());
+    assert!(!result.primitives().shadows.is_empty());
 }
 
 #[test]
@@ -631,8 +631,8 @@ fn test_styled_form_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().fills.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -653,9 +653,9 @@ fn test_pricing_cards_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
-    assert!(!result.primitives.glyphs.is_empty());
-    assert!(!result.primitives.shadows.is_empty());
+    assert!(!result.primitives().fills.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
+    assert!(!result.primitives().shadows.is_empty());
 }
 
 #[test]
@@ -686,8 +686,8 @@ fn test_blog_article_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().fills.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }
 
 #[test]
@@ -729,6 +729,6 @@ fn test_dashboard_render() {
     "##;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives.fills.is_empty());
-    assert!(!result.primitives.glyphs.is_empty());
+    assert!(!result.primitives().fills.is_empty());
+    assert!(!result.primitives().glyphs.is_empty());
 }

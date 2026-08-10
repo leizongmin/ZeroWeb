@@ -35,9 +35,9 @@ fn b3_load_self_contained_drains_and_renders() {
     assert!(!load.is_active(), "load 须在 1000 tick 内完成");
     let render = wv.last_render().expect("drain 后 WebView 须产出渲染结果");
     assert!(
-        !(render.primitives.fills.is_empty()
-            && render.primitives.rounded_rects.is_empty()
-            && render.primitives.images.is_empty()),
+        !(render.primitives().fills.is_empty()
+            && render.primitives().rounded_rects.is_empty()
+            && render.primitives().images.is_empty()),
         "须产出至少一个可见图元"
     );
 }

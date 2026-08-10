@@ -31,7 +31,7 @@ fn test_webview() -> WebView {
 /// - glyph 或 fill 至少有一个非空（文字或背景）
 /// - 管线各阶段耗时 >= 0
 fn assert_valid_render(result: &zero_webview::WebViewRenderResult, site: &str) {
-    let total = result.primitives.len();
+    let total = result.primitives().len();
     assert!(
         total > 0,
         "{site}: 渲染结果应包含至少一个图元，实际 primitives.len() = {total}"
@@ -40,13 +40,13 @@ fn assert_valid_render(result: &zero_webview::WebViewRenderResult, site: &str) {
     assert!(result.timings.total_ms >= 0.0, "{site}: 总渲染时间应为非负值");
 
     // 至少应有文字（glyph）或填充（fill）图元
-    let has_glyphs = !result.primitives.glyphs.is_empty();
-    let has_fills = !result.primitives.fills.is_empty();
+    let has_glyphs = !result.primitives().glyphs.is_empty();
+    let has_fills = !result.primitives().fills.is_empty();
     assert!(
         has_glyphs || has_fills,
         "{site}: 页面应包含文字或填充图元（glyphs={}, fills={}",
-        result.primitives.glyphs.len(),
-        result.primitives.fills.len()
+        result.primitives().glyphs.len(),
+        result.primitives().fills.len()
     );
 }
 
@@ -581,7 +581,7 @@ fn test_page_structure_w3_org() {
     assert!(lower.contains("w3c"), "应包含 W3C 相关内容");
 
     // 渲染结果应有大量图元（W3C 页面内容丰富）
-    let total = result.primitives.len();
+    let total = result.primitives().len();
     assert!(total > 10, "W3C 页面应产生大量渲染图元，实际: {total}");
 }
 

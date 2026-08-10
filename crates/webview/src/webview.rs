@@ -107,8 +107,18 @@ impl std::fmt::Debug for WebViewConfig {
 pub struct WebViewRenderResult {
     /// 渲染图元。
     pub primitives: RenderPrimitives,
+    /// 本帧脏区域（S3；空 = 全量光栅化）。
+    pub dirty_rects: Vec<(f32, f32, f32, f32)>,
     /// 管线耗时。
     pub timings: PipelineTimings,
+}
+
+fn render_result_to_webview(result: &RenderResult) -> WebViewRenderResult {
+    WebViewRenderResult {
+        primitives: result.display_list.primitives.clone(),
+        dirty_rects: result.display_list.dirty_rects.clone(),
+        timings: result.timings.clone(),
+    }
 }
 
 /// WebView 事件回调。
@@ -335,10 +345,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(html, css_str);
-        let render_result = WebViewRenderResult {
-            primitives: result.primitives,
-            timings: result.timings,
-        };
+        let render_result = render_result_to_webview(&result);
         self.last_render = Some(render_result.clone());
         render_result
     }
@@ -365,10 +372,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(html, &self.cached_css);
-        let render_result = WebViewRenderResult {
-            primitives: result.primitives,
-            timings: result.timings,
-        };
+        let render_result = render_result_to_webview(&result);
         self.last_render = Some(render_result.clone());
         render_result
     }
@@ -401,10 +405,7 @@ impl WebView {
             self.pipeline.set_image_no_ratio(image_no_ratio);
         }
         self.cached_html = mutated.clone();
-        let render_result = WebViewRenderResult {
-            primitives: result.primitives,
-            timings: result.timings,
-        };
+        let render_result = render_result_to_webview(&result);
         self.last_render = Some(render_result.clone());
         Ok((render_result, mutated, handle_selectors))
     }
@@ -819,10 +820,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(&self.cached_html, &self.cached_css);
-        let render_result = WebViewRenderResult {
-            primitives: result.primitives,
-            timings: result.timings,
-        };
+        let render_result = render_result_to_webview(&result);
         self.last_render = Some(render_result.clone());
         render_result
     }
@@ -836,10 +834,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.repaint_cached_viewport(&self.cached_css)?;
-        let render_result = WebViewRenderResult {
-            primitives: result.primitives,
-            timings: result.timings,
-        };
+        let render_result = render_result_to_webview(&result);
         self.last_render = Some(render_result.clone());
         Some(render_result)
     }
@@ -872,10 +867,7 @@ impl WebView {
 
     /// 应用预算渲染结果到 WebView 状态。
     pub fn apply_render_result(&mut self, result: RenderResult, page_url: &str, finished: bool) {
-        let render_result = WebViewRenderResult {
-            primitives: result.primitives,
-            timings: result.timings,
-        };
+        let render_result = render_result_to_webview(&result);
         self.last_render = Some(render_result);
         if finished {
             self.loading = false;
@@ -1202,10 +1194,7 @@ impl WebView {
         if let Some(result) = self.pipeline.repaint_cached_viewport(&self.cached_css) {
             // repaint 只读不改 Document，live_html（repaint 前序列化）仍等于当前 DOM。
             self.cached_html = live_html;
-            self.last_render = Some(WebViewRenderResult {
-                primitives: result.primitives,
-                timings: result.timings,
-            });
+            self.last_render = Some(render_result_to_webview(&result));
         }
     }
 
@@ -1429,10 +1418,7 @@ impl WebView {
             .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
         if mutated != html {
             self.cached_html = mutated.clone();
-            self.last_render = Some(WebViewRenderResult {
-                primitives: result.primitives,
-                timings: result.timings,
-            });
+            self.last_render = Some(render_result_to_webview(&result));
         }
         Ok(mutated)
     }
@@ -1496,10 +1482,7 @@ impl WebView {
             .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
         if mutated != self.cached_html {
             self.cached_html = mutated;
-            self.last_render = Some(WebViewRenderResult {
-                primitives: result.primitives,
-                timings: result.timings,
-            });
+            self.last_render = Some(render_result_to_webview(&result));
         }
         Ok(())
     }
@@ -1517,10 +1500,7 @@ impl WebView {
             &self.cached_html
         };
         let result = self.pipeline.render_html(html, &self.cached_css);
-        let render_result = WebViewRenderResult {
-            primitives: result.primitives,
-            timings: result.timings,
-        };
+        let render_result = render_result_to_webview(&result);
         self.last_render = Some(render_result.clone());
         render_result
     }
