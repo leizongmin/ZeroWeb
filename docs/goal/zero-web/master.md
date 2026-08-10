@@ -130,7 +130,28 @@
 
 ## 最近完成的改进
 
-### NavigationHistory 空/退化历史 panic 修复（本轮 R3230，net crate spec + robustness）
+### HTTP 缓存 304 元数据 header 并入（本轮 R3231，net crate RFC 9111 spec 审计）
+
+承接 R3230（navigation panic-safety），转 **HTTP 缓存 RFC 9111 合规审**（`net/src/http_cache.rs` 1024 行 + `cache_policy.rs` / `cache_key.rs` / `disk_cache.rs`）。深审并发一路 agent 对照 RFC 9111（Caching）——核实六项发现，确认一项 HIGH 真偏差（余为误报 / subtle / feature gap）：
+
+- **核实清零（非 bug）**：① **must-revalidate 未强制**——误报；lookup_memory 已对**所有** stale 条目返 Revalidate（line 256，比 §4.2.2.2 更严，must-revalidate 约束自然满足，flag 未用无害）。② **Expires 用 now 而非 Date**——subtle 时钟偏差（compute_ttl `expires - now`，与 `expires - date` 仅在 server/client 时钟不一致时差异；freshness check `stored_at.elapsed() <= ttl` + stored_at≈now 使 fresh_until≈expires，clock 同步时等价）。
+- **R3231（HIGH，真偏差）**：`not_modified`（304 处理）仅更 etag/last_modified **便捷字段**（e.etag/cached.etag），**headers Vec 不更**——RFC 9111 §4.3.4 要求 304 的元数据字段（Cache-Control / Content-Location / Date / Expires / Vary + ETag / Last-Modified）**并入**存储 + 返回的响应。具体：缓存 200 `Cache-Control: max-age=60, ETag "v1"`，收 304 `Cache-Control: max-age=300, ETag "v2"` → TTL 经 storable_mode 更新（300s，正确），但 **返回调用方的 cached.headers 仍为旧 max-age=60 / "v1"**（JS `response.headers.get('cache-control')` 读旧值）+ 内存持久化 headers 旧值。
+
+**修复（R3231，内存层）**：加 `merge_header(headers, name, value)` 助函数（同名 case-insensitive 替换，缺则追加）；`not_modified` 在 storable_mode 块内对 §4.3.4 七字段（cache-control / content-location / date / expires / vary / etag / last-modified）逐字段并入 `e.headers`（存储）+ `cached.headers`（返回）。
+
+**为何净正向**：① **闭合 §4.3.4**——304 后返回 + 持久化的 headers 反映 304 元数据（JS API 读到正确 Cache-Control/etag）；② **零回归**——既有 36 http_cache 测全过；新增 `test_cache_304_merges_metadata_headers_r3231`（存 200 max-age=60/"v1" → 304 max-age=300/"v2" → 验 headers 反映 300/"v2" + body/status 仍 200）；③ 低风险单点（merge_header 纯函数 + not_modified 内循环）；④ net 属本流域。
+
+| 文件 | 变更 |
+|------|------|
+| `net/src/http_cache.rs` | `merge_header` 助函数；`not_modified` storable_mode 块内 §4.3.4 七字段并入 e.headers + cached.headers；+1 测 `test_cache_304_merges_metadata_headers_r3231`。 |
+
+验证：`cargo fmt -p zero-net -- --check` clean + `cargo clippy -p zero-net --all-targets -- -D warnings` 零警告 + **zero-net 387 passed**（+1，零回归）。spec：https://www.rfc-editor.org/rfc/rfc9111#section-4.3.4 。pre-commit guard 见提交。
+
+**已知限制（记）**：① **磁盘层 304 未并 headers**——`disk_cache.rs::refresh_not_modified` 仅更 DiskEntryMeta 字段（etag/last_modified/expires_at/revalidate_only），不重写 body 文件的 headers Vec（结构不同：meta vs body 文件）；内存层 R3231 闭合，磁盘层 defer。② **Expires 时钟偏差**（compute_ttl 用 now 非 Date）——subtle，clock 同步时等价，defer。③ **Age header 未处理**（§4.2.3）——cache 不 track request_time/response_time/date_value，Age 响应按 receipt 时刻重计 age（feature gap）。
+
+**下一步**：HTTP 缓存内存层 304 §4.3.4 闭合（R3231）。续候选：① **磁盘层 304 并入 headers**（disk_cache refresh_not_modified 重写 body headers）；② **Age header 处理**（§4.2.3，需 track date/request_time）；③ **Expires 用 Date 而非 now**（时钟偏差）；④ public-suffix 集成（cookie）；⑤ IndexedDB feature gap（JS 双实现，defer）；⑥ 字体栈/GPU 战略项 user/hardware gated。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。注：lark-cli 环境不可用（多轮尝试），通知走 master.md 控制面；⚠️ compositor 跨流红灯待渲染流。
+
+
 
 承接 R3229（IndexedDB 三项闭合），原计划续 IndexedDB array keyPath（§3.1.10）——核实发现**IndexedDB 双实现**：JS 侧（`engine/src/js_dom_shim/part02.js` `_zwIDBDatabase`/`_zwIDBStore`）为纯 JS mock（JS Map，index.get 委派 store.get、openCursor 返 null，无真 key 提取），Rust `zero-storage` crate 的 IndexedDB 无 JS 消费者；且 `create_index(key_path:&str)` 有 418 调用者。故 Rust 侧 array keyPath 价值/摩擦比低，**defer**（待 JS bridge 路由到 Rust crate 或 JS mock 功能化时再做）。
 

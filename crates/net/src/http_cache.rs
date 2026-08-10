@@ -200,6 +200,23 @@ impl HttpCache {
                     e.last_modified = Some(lm.to_string());
                     cached.last_modified = e.last_modified.clone();
                 }
+                // R3231：RFC 9111 §4.3.4——304 的元数据字段须并入存储 + 返回的 headers（同名替换，
+                // 缺则追加）。旧实现仅更 etag/last_modified 便捷字段，headers Vec 保留旧 Cache-Control/
+                // Expires/Date/Vary——返回给调用方（JS response.headers）+ 内存持久化的头为旧值。
+                for field in [
+                    "cache-control",
+                    "content-location",
+                    "date",
+                    "expires",
+                    "vary",
+                    "etag",
+                    "last-modified",
+                ] {
+                    if let Some(val) = response.header(field) {
+                        merge_header(&mut e.headers, field, val);
+                        merge_header(&mut cached.headers, field, val);
+                    }
+                }
             }
             if let Some(disk) = self.disk.as_mut() {
                 let _ = disk.refresh_not_modified(&key, response);
@@ -580,6 +597,17 @@ fn is_revalidatable(etag: &Option<String>, last_modified: &Option<String>) -> bo
     etag.is_some() || last_modified.is_some()
 }
 
+/// 用 304 响应的元数据字段更新 header 列表（RFC 9111 §4.3.4——同名替换，缺则追加；name 大小写不敏感）。
+fn merge_header(headers: &mut Vec<(String, String)>, name: &str, value: &str) {
+    for (n, v) in headers.iter_mut() {
+        if n.eq_ignore_ascii_case(name) {
+            *v = value.to_string();
+            return;
+        }
+    }
+    headers.push((name.to_string(), value.to_string()));
+}
+
 fn conditional_from_validators(etag: &Option<String>, last_modified: &Option<String>) -> Vec<(String, String)> {
     let mut headers = Vec::new();
     if let Some(e) = etag {
@@ -733,6 +761,50 @@ mod tests {
         cache.put("https://example.com/test", &resp);
         let cached = cache.get("https://example.com/test").unwrap();
         assert_eq!(cached.etag, Some("\"abc123\"".to_string()));
+    }
+
+    /// R3231：304 Not Modified 须并入 304 的元数据 header（RFC 9111 §4.3.4）——
+    /// 旧 not_modified 仅更 etag/last_modified 便捷字段，headers Vec 保留旧 Cache-Control/etag，
+    /// 致返回调用方（JS response.headers）+ 内存持久化的头为旧值。
+    #[test]
+    fn test_cache_304_merges_metadata_headers_r3231() {
+        let mut cache = HttpCache::new();
+        // 存 200：Cache-Control: max-age=60 + ETag "v1" + 旧 Expires。
+        let resp = make_response(
+            200,
+            b"hello",
+            vec![
+                ("cache-control", "max-age=60"),
+                ("etag", "\"v1\""),
+                ("expires", "Wed, 21 Oct 2015 07:28:00 GMT"),
+            ],
+        );
+        cache.put("https://example.com/test", &resp);
+
+        // 304 携新 Cache-Control: max-age=300 + ETag "v2"。
+        let not_mod = make_response(304, b"", vec![("cache-control", "max-age=300"), ("etag", "\"v2\"")]);
+        let cached = cache
+            .not_modified("https://example.com/test", &[], &not_mod)
+            .expect("304 须刷新缓存条目");
+
+        let header_val = |name: &str| {
+            cached
+                .headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                .map(|(_, v)| v.as_str())
+        };
+        // R3231：返回的 headers 须反映 304 的元数据（旧 max-age=60 / "v1" 被替换）。
+        assert_eq!(
+            header_val("cache-control"),
+            Some("max-age=300"),
+            "304 的 Cache-Control 须并入 headers"
+        );
+        assert_eq!(header_val("etag"), Some("\"v2\""), "304 的 ETag 须并入 headers");
+        assert_eq!(cached.etag, Some("\"v2\"".to_string()), "etag 便捷字段亦更新");
+        // body + status 仍为缓存的 200（304 仅 revalidate，不替换 body）。
+        assert_eq!(cached.body, b"hello");
+        assert_eq!(cached.status_code, 200);
     }
 
     #[test]
