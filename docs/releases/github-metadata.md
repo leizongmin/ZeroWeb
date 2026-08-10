@@ -2,6 +2,12 @@
 
 这份文档整理了 ZeroWeb 在 GitHub 仓库设置页和首个 Release 页面里可以直接拿去用的文案。
 
+## 官方网站
+
+`https://zeroweb.leizm.com`
+
+将此地址填写到 GitHub 仓库 **About → Website**，并用于发布产物的 Homepage 字段。
+
 ## 仓库一句话介绍
 
 ### 推荐英文版

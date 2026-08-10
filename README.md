@@ -6,8 +6,11 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-experimental-brown.svg)](#当前状态)
 [![CI](https://img.shields.io/badge/ci-github--actions-black.svg)](.github/workflows/ci.yml)
+[![Website](https://img.shields.io/badge/website-zeroweb.leizm.com-155eef.svg)](https://zeroweb.leizm.com)
 
 ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库同时在做两件事：
+
+官网：[zeroweb.leizm.com](https://zeroweb.leizm.com)
 
 - 一个可嵌入、可复用的 `ZeroWebView` 库
 - 一个完整的 `ZeroBrowser` 浏览器应用
@@ -22,6 +25,7 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 **快速导航**
 
 - [路线图](ROADMAP.md)
+- [官网](https://zeroweb.leizm.com)
 - [当前状态](#当前状态)
 - [快速开始](#快速开始)
 - [仓库结构](#仓库结构)

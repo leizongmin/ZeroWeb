@@ -353,7 +353,7 @@ jobs:
           Installed-Size: ${SIZE}
           Maintainer: ZeroWeb Team <zeroweb@example.com>
           Description: ZeroBrowser - A cross-platform browser built with Rust
-          Homepage: https://github.com/leizongmin/ZeroWeb
+          Homepage: https://zeroweb.leizm.com
           Depends: libc6 (>= 2.31)
           EOF
 
