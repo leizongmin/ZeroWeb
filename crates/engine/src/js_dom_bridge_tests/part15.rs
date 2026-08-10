@@ -1326,3 +1326,88 @@ fn test_handle_style_sync_set_read_production_r3199() {
         "handle style cssText 设后 per-property 读：parse 正确 + length（旧纯快照 readRaw 读不到）"
     );
 }
+
+// ── R3201：handle outerHTML getter 客户端构造 ──
+//
+// R3198 闭合 handle 属性枚举（NamedNodeMap/cloneNode），但 `outerHTML` getter 对 handle 源元素旧 best-effort
+// 返 innerHTML（无 wrapper）——`document.createElement('section').outerHTML` 返 "" 而非 "<section></section>"。
+// 现 R3198 三 handle 回调（get_tag/attr_names/get_attr）+ inner_html_handle 就绪，客户端构造完整序列化
+//（void 元素无闭合标签 + 属性值转义），闭合 handle-vs-sel 序列化最后一面。isEqualNode 经 outerHTML 比对亦受益。
+
+#[test]
+fn test_handle_outerhtml_production_r3201() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 空 section：完整 wrapper（旧返空串）。
+    let section = sandbox
+        .execute("document.createElement('section').outerHTML")
+        .unwrap()
+        .value;
+    assert_eq!(
+        section, "<section></section>",
+        "handle section outerHTML：完整 wrapper（旧返 ''）"
+    );
+
+    // void 元素 img：无闭合标签（旧返空串）。
+    let img = sandbox
+        .execute("document.createElement('img').outerHTML")
+        .unwrap()
+        .value;
+    assert_eq!(img, "<img>", "handle void img outerHTML：无闭合标签（旧返 ''）");
+
+    // 属性 + 转义：id + title 含双引号 → `&quot;` 转义。
+    let attrs = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.id='x';\
+             e.setAttribute('title','a\"b');\
+             e.outerHTML",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        attrs, "<div id=\"x\" title=\"a&quot;b\"></div>",
+        "handle outerHTML 属性序列化：文档序 + 双引号转义 &quot;"
+    );
+
+    // 含子树：innerHTML 嵌入。
+    let with_kids = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.innerHTML='<span>hi</span>';\
+             e.outerHTML",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        with_kids, "<div><span>hi</span></div>",
+        "handle outerHTML 含子树：innerHTML 嵌入"
+    );
+
+    // & 转义：属性值含 & → &amp;。
+    let amp = sandbox
+        .execute(
+            "var e=document.createElement('a');\
+             e.setAttribute('href','a&b');\
+             e.outerHTML",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        amp, "<a href=\"a&amp;b\"></a>",
+        "handle outerHTML 属性 & 转义 → &amp;"
+    );
+}

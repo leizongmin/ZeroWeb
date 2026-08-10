@@ -150,16 +150,35 @@
         if (prop === 'innerHTML') {
           return handle ? __zw_get_inner_html_handle(handle) : __zw_get_inner_html(sel);
         }
-        // `element.outerHTML`（getter）：含自身 tag/属性 + 子树序列化。仅 sel-based（已挂载）
-        // 元素经 host `__zw_get_outer_html` 真实序列化；handle-only（detached）无 tag host 查询，
-        // best-effort 返 innerHTML（无 wrapper，罕见读取场景）。
+        // `element.outerHTML`（getter）：含自身 tag/属性 + 子树序列化。sel-based（已挂载）经 host
+        // `__zw_get_outer_html` 真实序列化（含 void 元素 + 属性转义）。R3201：handle-only（createElement 未挂载）
+        // 旧 best-effort 返 innerHTML（无 wrapper）；现客户端构造 `<tag attrs>innerHTML</tag>`，复用 R3198 三 handle
+        // 回调（`__zw_get_tag_handle`/`__zw_attr_names_handle`/`__zw_get_attr_handle`）+ `__zw_get_inner_html_handle`。
+        // void 元素（br/img/input 等）无闭合标签；属性值转义 `&`/`"`（HTML 序列化 §attribute value）。isEqualNode
+        // handle 经 outerHTML 比对亦受益。
         if (prop === 'outerHTML') {
           if (sel && typeof __zw_get_outer_html === 'function') {
             try { return __zw_get_outer_html(sel); } catch (_e) { return ''; }
           }
-          return handle && typeof __zw_get_inner_html_handle === 'function'
-            ? (__zw_get_inner_html_handle(handle) || '')
-            : '';
+          if (handle) {
+            try {
+              var VOID = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
+              var tag = (typeof __zw_get_tag_handle === 'function' ? __zw_get_tag_handle(handle) : '') || 'div';
+              var names = (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '');
+              var attrStr = '';
+              if (names) {
+                names.split('|').filter(Boolean).forEach(function(n) {
+                  var v = typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(handle, n) : '';
+                  var esc = String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+                  attrStr += ' ' + n + '="' + esc + '"';
+                });
+              }
+              if (VOID[tag.toLowerCase()]) return '<' + tag + attrStr + '>';
+              var inner = typeof __zw_get_inner_html_handle === 'function' ? (__zw_get_inner_html_handle(handle) || '') : '';
+              return '<' + tag + attrStr + '>' + inner + '</' + tag + '>';
+            } catch (_e) { return ''; }
+          }
+          return '';
         }
         if (prop === 'parentNode' || prop === 'parentElement') {
           return _parentNodeFor(sel, handle);
