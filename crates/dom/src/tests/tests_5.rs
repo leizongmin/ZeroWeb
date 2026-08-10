@@ -168,13 +168,27 @@ fn test_set_attribute_overwrite_returns_new() {
     );
 }
 
-/// 测试 create_element 名称大小写保留。
+/// 测试 create_element 名称大小写保留（DOM 层 local_name 保留），序列化层按 spec 小写。
+///
+/// 两层语义分离（R3172）：① **DOM 低层原语保留大小写**——`create_element("MyComponent")` 的
+/// `local_name` 存原值 "MyComponent"（不主动小写，低层原语语义）；② **HTML 序列化 spec 小写**——
+/// `outer_html` 经 serializer 对 HTML 命名空间元素 ASCII 小写 → "<mycomponent></mycomponent>"
+/// （HTML serialization 规范，与真实浏览器一致）；③ **tagName getter** HTML-uppercased → "MYCOMPONENT"。
 #[test]
 fn test_create_element_case_preserved() {
     let mut doc = Document::new();
     let elem = doc.create_element("MyComponent");
-    // 元素创建后 tag_name 应保留原始大小写
-    assert!(doc.outer_html(elem).contains("MyComponent"), "tag 名应保留大小写");
+    // ① DOM 层 local_name 保留原始大小写（低层原语语义）。
+    if let Some(NodeKind::Element(e)) = doc.get(elem).map(|n| n.kind.clone()) {
+        assert_eq!(e.local_name(), "MyComponent", "DOM 层 local_name 应保留原始大小写");
+        assert_eq!(e.tag_name(), "MYCOMPONENT", "tagName getter 应 HTML-uppercased");
+    }
+    // ② HTML 序列化层按 spec 小写（不保留原大小写）。
+    assert_eq!(
+        doc.outer_html(elem),
+        "<mycomponent></mycomponent>",
+        "outer_html 应按 HTML 序列化 spec 小写 tag 名"
+    );
 }
 
 /// 测试 remove_child 从中间移除不影响兄弟顺序。

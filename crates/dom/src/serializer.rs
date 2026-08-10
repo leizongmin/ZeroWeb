@@ -51,8 +51,22 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
             output.push('>');
         }
         NodeKind::Element(elem) => {
+            // HTML 序列化 spec（`html-fragment-serialization-algorithm`）：HTML 命名空间元素的 tag 名
+            // ASCII 小写——编程创建的大写（`createElement('DIV')`）经序列化须回到 `<div></div>`
+            // （parser 已小写解析 tag，此路径处理 dom 低层原语 `create_element` 保留的大写）。
+            // SVG / MathML 等非 HTML 命名空间元素 tag 名**大小写保留**。对称于 `ElementData::tag_name()`
+            // 的 HTML-namespace-aware 大写（tagName getter 大写 / serializer 小写，互补且均 HTML-ns 感知）。
+            // spec：https://html.spec.whatwg.org/multipage/parsing.html#html-fragment-serialization-algorithm
+            const HTML_NS: &str = "http://www.w3.org/1999/xhtml";
+            let local = elem.local_name();
+            let tag_owned: String = if elem.namespace() == HTML_NS {
+                local.to_ascii_lowercase()
+            } else {
+                local.to_string()
+            };
+            let tag = tag_owned.as_str();
+
             output.push('<');
-            let tag = elem.local_name();
             output.push_str(tag);
 
             // 序列化属性
@@ -69,10 +83,11 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
 
             // 自闭合元素
             if !is_void_element(tag) {
-                let tag_lower = tag.to_ascii_lowercase();
-                // 序列化子节点（传当前标签名，供 Text 节点判断 raw text 上下文）
+                // 序列化子节点（传当前标签名小写，供 Text 节点判断 raw text 上下文）。
+                // HTML ns 的 tag 已小写；非 HTML ns 无 raw text 元素，`is_raw_text_element`
+                // 内部再小写判别，传任意大小写均安全。
                 for &child in &node_data.children {
-                    serialize_node_inner_ctx(doc, child, Some(&tag_lower), output);
+                    serialize_node_inner_ctx(doc, child, Some(tag), output);
                 }
 
                 output.push_str("</");
@@ -463,5 +478,45 @@ mod tests {
         let br = doc.create_element("br");
         let html = doc.outer_html(br);
         assert_eq!(html, "<br>");
+    }
+
+    // ── R3172 HTML 序列化 tag 名大小写（HTML 小写 / 非 HTML 保留）── ──────
+
+    /// HTML 命名空间元素 tag 名 ASCII 小写：`create_element("DIV")`（dom 低层原语保留大小写）
+    /// 经序列化须回到 `<div></div>`（HTML serialization spec）。回归保护：编程创建的大写 tag
+    /// 在 outerHTML/innerHTML 须小写，与真实浏览器一致。
+    #[test]
+    fn test_serialize_html_namespace_tag_lowercased_r3172() {
+        let mut doc = Document::new();
+        let div = doc.create_element("DIV");
+        assert_eq!(doc.outer_html(div), "<div></div>");
+        // 小写输入无变化（无回归）。
+        let span = doc.create_element("span");
+        assert_eq!(doc.outer_html(span), "<span></span>");
+        // 混合大小写同样小写。
+        let mixed = doc.create_element("DiV");
+        assert_eq!(doc.outer_html(mixed), "<div></div>");
+    }
+
+    /// HTML 命名空间 void 元素大写 → 序列化小写自闭合：`create_element("BR")` → `<br>`（无闭合标签）。
+    #[test]
+    fn test_serialize_html_void_uppercase_lowercased_r3172() {
+        let mut doc = Document::new();
+        let br = doc.create_element("BR");
+        assert_eq!(doc.outer_html(br), "<br>");
+        let img = doc.create_element("IMG");
+        assert_eq!(doc.outer_html(img), "<img>");
+    }
+
+    /// 非 HTML 命名空间（SVG/MathML）元素 tag 名**大小写保留**：HTML↔SVG 的核心区别。
+    /// `createElementNS(svg, "RECT")` → `<RECT></RECT>`（SVG 大小写敏感，不强制小写）。
+    #[test]
+    fn test_serialize_svg_namespace_tag_case_preserved_r3172() {
+        let mut doc = Document::new();
+        let rect = doc.create_element_ns("http://www.w3.org/2000/svg", "RECT");
+        assert_eq!(doc.outer_html(rect), "<RECT></RECT>");
+        // 对照：HTML ns 大写被小写（同 tag 名不同命名空间，行为不同）。
+        let html_div = doc.create_element("DIV");
+        assert_eq!(doc.outer_html(html_div), "<div></div>");
     }
 }

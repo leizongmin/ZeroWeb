@@ -2514,6 +2514,34 @@ fn native_element_content_editable_r3167() {
     );
 }
 
+/// R3172 HTML 序列化 tag 小写：createElement('DIV').outerHTML → '<div></div>'（dom serializer 对 HTML
+/// 命名空间元素 ASCII 小写，SVG/MathML 保留）。修正编程创建大写 tag 的序列化 + void 元素识别。
+#[test]
+fn native_create_element_uppercase_serializes_lowercase_r3172() {
+    let html = r#"<html><head></head><body></body></html>"#;
+    // createElement('DIV')（大写）→ outerHTML '<div></div>'（HTML 序列化小写；旧 '<DIV></DIV>'）。
+    assert_eq!(
+        run_script(html, "(__zw_native_create_element('DIV').outerHTML)"),
+        "<div></div>"
+    );
+    // void 元素 createElement('BR')（大写）→ outerHTML '<br>'（is_void_element 识别小写 'br'；旧 '<BR></BR>'）。
+    assert_eq!(run_script(html, "(__zw_native_create_element('BR').outerHTML)"), "<br>");
+    // 对照：createElement('div')（小写）→ '<div></div>'（无回归）。
+    assert_eq!(
+        run_script(html, "(__zw_native_create_element('div').outerHTML)"),
+        "<div></div>"
+    );
+    // SVG createElementNS 保留 tag 名大小写（非 HTML 命名空间不强制小写——HTML↔SVG 的核心区别）。
+    // 真实浏览器：createElementNS(svg,'RECT').outerHTML → '<RECT></RECT>'（SVG 大小写敏感保留）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().createElementNS('http://www.w3.org/2000/svg','RECT').outerHTML)"
+        ),
+        "<RECT></RECT>"
+    );
+}
+
 /// R3165 `element.namespaceURI` getter（spec `dom-node-namespaceuri`）：元素命名空间 URI 字符串，
 /// 空 namespace → null。闭合 R3163 限制②（namespace 经 native 可读）。
 #[test]
