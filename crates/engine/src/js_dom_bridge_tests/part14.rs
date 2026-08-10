@@ -651,3 +651,155 @@ fn test_document_dispatch_event_r3082() {
     assert_eq!(sandbox.execute("globalThis.__ret").unwrap().value, "true", "dispatchEvent 返 !defaultPrevented = true");
     assert_eq!(sandbox.execute("globalThis.__afterDispatch").unwrap().value, "ok", "dispatchEvent 后续执行不中断");
 }
+
+// ── R3184：textContent / innerHTML / outerHTML setter 生产路径 spec `LegacyNullToEmptyString` ──
+//
+// 生产 always-on B-gen shim 路径（js_dom_shim/part04.js set trap）。spec：三 setter 均把 null 视作空串
+//（textContent/innerHTML 清子、outerHTML 移除自身），非通用 JS ToString 的 "null"。验证 JS 侧
+// `value === null ? '' : String(value)` 强制 → 入队 mutation 的 text/html 字段为 "" 而非 "null"。
+
+#[test]
+fn test_text_content_null_clears_production_r3184() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t'>hi</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute("document.querySelector('#t').textContent = null;")
+        .unwrap();
+    let texts: Vec<String> = mutations
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|m| match m {
+            DomMutation::SetText { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    // null → 空串（spec）→ SetText{text:""}，非 "null"。
+    assert_eq!(
+        texts,
+        vec!["".to_string()],
+        "textContent=null 应入队 SetText{{text:\"\"}}（spec 空串），非 \"null\""
+    );
+}
+
+#[test]
+fn test_text_content_undefined_is_string_production_r3184() {
+    // spec：仅 null 特判，undefined 仍 ToString → "undefined"（锁定 null/undefined 区别）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t'>hi</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute("document.querySelector('#t').textContent = undefined;")
+        .unwrap();
+    let texts: Vec<String> = mutations
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|m| match m {
+            DomMutation::SetText { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        texts,
+        vec!["undefined".to_string()],
+        "textContent=undefined 不特判 → ToString='undefined'（仅 null 清子）"
+    );
+}
+
+#[test]
+fn test_inner_html_null_clears_production_r3184() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t'><b>x</b></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute("document.querySelector('#t').innerHTML = null;")
+        .unwrap();
+    let htmls: Vec<String> = mutations
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|m| match m {
+            DomMutation::SetInnerHtml { html, .. } => Some(html.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        htmls,
+        vec!["".to_string()],
+        "innerHTML=null 应入队 SetInnerHtml{{html:\"\"}}（清子），非 \"null\""
+    );
+}
+
+#[test]
+fn test_outer_html_null_removes_production_r3184() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t'><b>x</b></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute("document.querySelector('#t').outerHTML = null;")
+        .unwrap();
+    let htmls: Vec<String> = mutations
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|m| match m {
+            DomMutation::SetOuterHtml { html, .. } => Some(html.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        htmls,
+        vec!["".to_string()],
+        "outerHTML=null 应入队 SetOuterHtml{{html:\"\"}}（移除自身），非 \"null\""
+    );
+}

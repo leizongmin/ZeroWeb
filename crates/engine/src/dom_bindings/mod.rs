@@ -669,6 +669,16 @@ fn local_value_to_string(scope: &mut v8::PinScope, value: v8::Local<v8::Value>) 
         .unwrap_or_default()
 }
 
+/// 同 [`local_value_to_string`]，但 **null → 空串**（spec `LegacyNullToEmptyString`：textContent /
+/// innerHTML / outerHTML setter 把 null 视作空串，而非通用 JS ToString 的 `"null"`）。undefined 仍经
+/// ToString → `"undefined"`（spec：仅 null 特判）。
+fn local_value_to_string_null_as_empty(scope: &mut v8::PinScope, value: v8::Local<v8::Value>) -> String {
+    if value.is_null() {
+        return String::new();
+    }
+    local_value_to_string(scope, value)
+}
+
 /// 取 FunctionCallbackArguments 第 `idx` 参为 Rust String（缺省空串）。
 fn string_arg(scope: &mut v8::PinScope, args: &v8::FunctionCallbackArguments, idx: i32) -> String {
     args.get(idx)
@@ -745,3 +755,7 @@ mod tests_collections;
 // 行为方法 + 事件族测试（拆自 tests_dom_api.rs，rule 5 <2000 行；R3147+）。共享 tests::run_script。
 #[cfg(test)]
 mod tests_events;
+// textContent/innerHTML/outerHTML setter spec 边界测试（R3184 LegacyNullToEmptyString）。
+// 拆为独立模块避免 tests_dom_api.rs（2631 行）继续膨胀；共享 tests::run_script。
+#[cfg(test)]
+mod tests_html_setters;

@@ -17,7 +17,10 @@ use v8;
 use zero_dom::{Document, DomError, NodeId, NodeKind};
 
 use super::gc::{with_dom, with_dom_mut};
-use super::{get_or_create_native_element, local_value_to_string, node_id_from_value, read_node_id, string_arg};
+use super::{
+    get_or_create_native_element, local_value_to_string, local_value_to_string_null_as_empty, node_id_from_value,
+    read_node_id, string_arg,
+};
 
 // ── accessor getter（ZST fn；状态经 gc.rs 线程局部）─────────────────
 
@@ -101,6 +104,7 @@ pub(super) fn native_text_content_getter(
 
 /// `textContent` setter（spec `dom-node-textcontent`）：值 ToString 后**清空全部子节点**，
 /// 非空则追加单 Text 节点（`create_text_node` + `append_child`）。空串 → 仅清空（不添空 Text 节点）。
+/// **null → 空串**（spec `LegacyNullToEmptyString`：`el.textContent=null` 清子，非写 "null" 文本）。
 pub(super) fn native_text_content_setter(
     scope: &mut v8::PinScope,
     _name: v8::Local<v8::Name>,
@@ -112,7 +116,7 @@ pub(super) fn native_text_content_setter(
     let Some(id) = read_node_id(scope, &holder) else {
         return;
     };
-    let val = local_value_to_string(scope, value);
+    let val = local_value_to_string_null_as_empty(scope, value);
     with_dom_mut(|d| {
         // 移除全部子节点（先收集 NodeId 避免边遍历边改）。
         let children = d.child_nodes(id);

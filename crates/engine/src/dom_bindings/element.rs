@@ -17,7 +17,9 @@ use v8;
 use zero_dom::{NodeId, NodeKind};
 
 use super::gc::{with_dom, with_dom_mut};
-use super::{get_or_create_native_element, local_value_to_string, read_node_id, string_arg};
+use super::{
+    get_or_create_native_element, local_value_to_string, local_value_to_string_null_as_empty, read_node_id, string_arg,
+};
 
 // ── accessor getter（ZST fn；状态经 gc.rs 线程局部）─────────────────
 
@@ -963,6 +965,7 @@ pub(super) fn native_outer_html_getter(
 
 /// `innerHTML` setter（spec `dom-element-innerhtml`）：值 ToString 后清空元素现有子节点，
 /// 解析 HTML 片段，深拷贝顶层节点追加。复用 [`crate::js_dom_bridge::replace_inner_html`]。
+/// **null → 空串**（spec `LegacyNullToEmptyString`：`el.innerHTML=null` 清子，非写 "null" 文本）。
 pub(super) fn native_inner_html_setter(
     scope: &mut v8::PinScope,
     _name: v8::Local<v8::Name>,
@@ -974,7 +977,7 @@ pub(super) fn native_inner_html_setter(
     let Some(id) = read_node_id(scope, &holder) else {
         return;
     };
-    let html = local_value_to_string(scope, value);
+    let html = local_value_to_string_null_as_empty(scope, value);
     let res = with_dom_mut(|d| crate::js_dom_bridge::replace_inner_html(d, id, &html));
     if let Some(Err(e)) = res {
         tracing::warn!(error = %e, "native innerHTML setter failed");
@@ -984,6 +987,7 @@ pub(super) fn native_inner_html_setter(
 /// `outerHTML` setter（spec `dom-element-outerhtml`）：值 ToString 后把元素整体替换为解析的
 /// 片段顶层节点（在父节点中、目标位置前逐个插入，再移除目标自身）。需父节点（文档根无父 →
 /// 失败）。复用 [`crate::js_dom_bridge::replace_outer_html_node`]。
+/// **null → 空串**（spec `LegacyNullToEmptyString`：`el.outerHTML=null` 移除自身，非替换为 "null" 文本）。
 pub(super) fn native_outer_html_setter(
     scope: &mut v8::PinScope,
     _name: v8::Local<v8::Name>,
@@ -995,7 +999,7 @@ pub(super) fn native_outer_html_setter(
     let Some(id) = read_node_id(scope, &holder) else {
         return;
     };
-    let html = local_value_to_string(scope, value);
+    let html = local_value_to_string_null_as_empty(scope, value);
     let res = with_dom_mut(|d| crate::js_dom_bridge::replace_outer_html_node(d, id, &html));
     if let Some(Err(e)) = res {
         tracing::warn!(error = %e, "native outerHTML setter failed");

@@ -1445,8 +1445,10 @@
             // 框架 observe 后递归观测新子树）；host 未注册 `__zw_parse_html_child_nodes` → []（旧行为）。
             var _ihRemoved = _childNodeList(sel, handle);
             var _ihAdded = _zwFragmentAdded(value);
-            if (handle) __zw_set_inner_html_handle(handle, String(value));
-            else __zw_set_inner_html(sel, String(value));
+            // spec `LegacyNullToEmptyString`：null → 空串（清子），非写 "null" 文本；undefined 仍 ToString。
+            var _ihVal = value === null ? '' : String(value);
+            if (handle) __zw_set_inner_html_handle(handle, _ihVal);
+            else __zw_set_inner_html(sel, _ihVal);
             _mo_notify(sel, handle, { type: 'childList', addedNodes: _ihAdded, removedNodes: _ihRemoved });
           } else {
             // R3027：textContent 变更 → emit characterData 记录（target=元素，pragmatic——文本节点无 selector
@@ -1454,8 +1456,10 @@
             // R3028：characterDataOldValue——有 observer 请求时 mutate 前捕获 old 文本（latest-wins，反映同批前序 textContent=）。
             var _charMoId = _mo_id(handle, sel);
             var _charMoOld = _mo_any_wants_char_old(_charMoId) ? _mo_read_text(sel, handle) : null;
-            if (handle) __zw_set_text_handle(handle, String(value));
-            else __zw_set_text(sel, String(value));
+            // spec `LegacyNullToEmptyString`：null → 空串（清子）。
+            var _tcVal = value === null ? '' : String(value);
+            if (handle) __zw_set_text_handle(handle, _tcVal);
+            else __zw_set_text(sel, _tcVal);
             _mo_notify(sel, handle, { type: 'characterData', oldValue: _charMoOld });
           }
         } else if (p === 'outerHTML') {
@@ -1466,7 +1470,8 @@
           if (sel && typeof __zw_set_outer_html === 'function') {
             try {
               var _ohAdded = _zwFragmentAdded(value);
-              __zw_set_outer_html(sel, String(value));
+              // spec `LegacyNullToEmptyString`：null → 空串（移除自身），非替换为 "null" 文本。
+              __zw_set_outer_html(sel, value === null ? '' : String(value));
               _mo_notify(sel, handle, { type: 'childList', addedNodes: _ohAdded, removedNodes: [] });
             } catch (_e) {}
           }
