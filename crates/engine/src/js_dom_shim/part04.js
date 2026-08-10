@@ -668,19 +668,29 @@
             _makeProxy(sel, handle).scrollIntoView({ block: centerIfNeeded ? 'center' : 'nearest' });
           };
         }
-        // `el.hasAttributes()`——是否有任意属性（经 `__zw_attr_names` 非空判定）。
+        // `el.hasAttributes()`——是否有任意属性。R3197：handle 经 `__zw_attr_names_handle`（属性名仅来自
+        // mutations，无快照基底），sel 经 `__zw_attr_names`（latest-wins）。旧 handle 路径恒返 false。
         if (prop === 'hasAttributes') {
           return function() {
-            if (!sel || typeof __zw_attr_names !== 'function') return false;
-            try { return __zw_attr_names(sel).length > 0; } catch (_e) { return false; }
+            try {
+              if (handle && typeof __zw_attr_names_handle === 'function') {
+                return __zw_attr_names_handle(handle).length > 0;
+              }
+              if (sel && typeof __zw_attr_names === 'function') {
+                return __zw_attr_names(sel).length > 0;
+              }
+            } catch (_e) {}
+            return false;
           };
         }
-        // `el.getAttributeNames()`——属性名数组（经 `__zw_attr_names` "|"-split）。
+        // `el.getAttributeNames()`——属性名数组（文档序）。R3197：handle 经 `__zw_attr_names_handle`
+        //（属性名仅来自 mutations），sel 经 `__zw_attr_names`（latest-wins）。旧 handle 路径恒返 []。
         if (prop === 'getAttributeNames') {
           return function() {
-            if (!sel || typeof __zw_attr_names !== 'function') return [];
             try {
-              var n = __zw_attr_names(sel);
+              var n = handle
+                ? (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '')
+                : (typeof __zw_attr_names === 'function' ? __zw_attr_names(sel) : '');
               return n ? n.split('|').filter(Boolean) : [];
             } catch (_e) { return []; }
           };

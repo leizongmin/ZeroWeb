@@ -1719,3 +1719,89 @@ fn test_dataset_handle_enumeration_production_r3196() {
         "handle dataset 空：Object.keys 返空数组"
     );
 }
+
+// ── R3197：handle getAttributeNames / hasAttributes 枚举 ──
+//
+// R3196 新增 `__zw_attr_names_handle` 回调闭合了 handle dataset 枚举，但 `el.getAttributeNames()` /
+// `el.hasAttributes()`（part04.js）对 handle 元素仍短路返 []/false（未走新回调）。本切片接线两方法 handle
+// 路径走 `__zw_attr_names_handle`，闭合 handle 属性名枚举面（dataset 已 R3196 闭合；getAttributeNames/
+// hasAttributes 是更通用的属性名遍历——`el.getAttributeNames()`/`el.hasAttributes()` 在 createElement 未挂载
+// 元素上旧恒 []/false）。
+
+#[test]
+fn test_handle_attribute_enumeration_production_r3197() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // hasAttributes：有属性 true / 无属性 false（旧恒 false）。
+    let has = sandbox
+        .execute(
+            "var a=document.createElement('div');\
+             var b=document.createElement('div');\
+             a.setAttribute('id','x');\
+             String(a.hasAttributes())+'/'+String(b.hasAttributes())",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(has, "true/false", "handle hasAttributes：有/无（旧恒 false）");
+
+    // getAttributeNames：返文档序属性名（含非 data-*）。旧恒 []。
+    let names = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.setAttribute('id','main');\
+             e.className='btn';\
+             e.setAttribute('data-x','1');\
+             e.getAttributeNames().join(',')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        names, "id,class,data-x",
+        "handle getAttributeNames：文档序全部属性名（旧恒空）"
+    );
+
+    // removeAttribute 反映 + 删后重设追加到末尾（DOM getAttributeNames 序）。
+    let after = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.setAttribute('first','a');\
+             e.setAttribute('second','b');\
+             e.removeAttribute('first');\
+             e.setAttribute('first','c');\
+             e.getAttributeNames().join(',')+'/'+e.hasAttributes()",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        after, "second,first/true",
+        "handle getAttributeNames：remove 移除 + 删后重设追加末尾（DOM 序），hasAttributes 仍 true"
+    );
+
+    // remove 全部属性后 hasAttributes→false（属性名仅来自 mutations，正序 latest-wins）。
+    let all_gone = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.setAttribute('k','v');\
+             e.removeAttribute('k');\
+             String(e.hasAttributes())+'/'+String(e.getAttributeNames().length===0)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        all_gone, "false/true",
+        "handle 全删后 hasAttributes→false，getAttributeNames→[]"
+    );
+}
