@@ -559,3 +559,6 @@ mod tests;
 // 扩展 API 表面 + 生命周期测试（拆自 tests.rs，rule 5 <2000 行；R3136+）。共享 tests::run_script。
 #[cfg(test)]
 mod tests_dom_api;
+// 行为方法 + 事件族测试（拆自 tests_dom_api.rs，rule 5 <2000 行；R3147+）。共享 tests::run_script。
+#[cfg(test)]
+mod tests_events;

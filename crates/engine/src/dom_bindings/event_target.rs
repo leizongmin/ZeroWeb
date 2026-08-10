@@ -346,12 +346,12 @@ pub(super) fn native_element_click_invoke(
     rv.set(v8::Boolean::new(scope, not_prevented).into());
 }
 
-// ── R3148 element.focus() / element.blur()（spec dom-element-focus / dom-element-blur）──
+// ── R3148/R3149 element.focus() / element.blur() + focusin/focusout（spec dom-element-focus/-blur）──
 
-/// 在 `target_id` 元素上派发**非冒泡、不可取消**的简单事件（仅 type），复用 [`dispatch_event_impl`]
-/// 三阶段派发核心。focus/blur 用（spec：focus/blur 不冒泡；focusin/focusout 才冒泡）。事件对象为 plain
-/// object（bubbles/cancelable 缺省 false）。
-fn dispatch_focus_event(scope: &mut v8::PinScope, target_id: NodeId, event_type: &str) {
+/// 在 `target_id` 元素上派发简单焦点事件（仅 type，不可取消），复用 [`dispatch_event_impl`] 三阶段派发
+/// 核心。`bubbles` 控制是否冒泡：focus/blur **不冒泡**（spec），focusin/focusout **冒泡**（spec——
+/// 焦点事件委托唯一手段，jQuery/a11y 库惯用 `document.addEventListener('focusin', ...)`）。
+fn dispatch_focus_event(scope: &mut v8::PinScope, target_id: NodeId, event_type: &str, bubbles: bool) {
     let Some(this) = get_or_create_native_element(scope, target_id) else {
         return;
     };
@@ -361,14 +361,18 @@ fn dispatch_focus_event(scope: &mut v8::PinScope, target_id: NodeId, event_type:
     {
         let _ = event_obj.set(scope, k.into(), t.into());
     }
-    // bubbles/cancelable 缺省 false——focus/blur 不冒泡、不可取消。
+    if bubbles && let Some(k) = v8::String::new(scope, "bubbles") {
+        let _ = event_obj.set(scope, k.into(), v8::Boolean::new(scope, true).into());
+    }
+    // cancelable 缺省 false——焦点事件不可取消。
     let _ = dispatch_event_impl(scope, target_id, this, event_obj);
 }
 
-/// `element.focus()`（spec `dom-element-focus`，焦点更新步骤）：若非已聚焦——先对旧焦点元素派发 `blur`
-///（非冒泡），设 `document.activeElement` = this（gc.rs `ACTIVE_ELEMENT`），再对 this 派发 `focus`
-///（非冒泡）。已聚焦（active==this）→ no-op（spec）。**已知限制**：不校验可聚焦性（任何元素均可 focus，
-/// 同 polyfill；spec 须 focusable/tabindex）。
+/// `element.focus()`（spec `dom-element-focus`，焦点更新步骤）：若非已聚焦——按 spec 焦点事件序列派发
+/// `focusout`（旧，冒泡）→ `focusin`（this，冒泡）→ `blur`（旧，非冒泡）→ `focus`（this，非冒泡），
+/// 设 `document.activeElement` = this（gc.rs `ACTIVE_ELEMENT`）。已聚焦（active==this）→ no-op（spec）。
+/// R3149：补 focusin/focusout 冒泡版（闭合焦点事件模型——polyfill 旧不派发任何焦点事件）。
+/// **已知限制**：不校验可聚焦性（任何元素均可 focus，同 polyfill；spec 须 focusable/tabindex）。
 pub(super) fn native_element_focus_invoke(
     scope: &mut v8::PinScope,
     _args: v8::FunctionCallbackArguments,
@@ -382,16 +386,21 @@ pub(super) fn native_element_focus_invoke(
     if prev == Some(id) {
         return; // 已聚焦 → no-op（spec）
     }
-    // 旧焦点元素（prev 为 None 或 Some(other)，非 this）派发 blur（spec：blur old 先于 focus new）。
+    // spec 焦点事件序列（old→new）：focusout(old,冒泡) → focusin(new,冒泡) → blur(old) → focus(new)。
     if let Some(old) = prev {
-        dispatch_focus_event(scope, old, "blur");
+        dispatch_focus_event(scope, old, "focusout", true); // 冒泡
+    }
+    dispatch_focus_event(scope, id, "focusin", true); // 冒泡
+    if let Some(old) = prev {
+        dispatch_focus_event(scope, old, "blur", false); // 非冒泡
     }
     set_active_element(Some(id));
-    dispatch_focus_event(scope, id, "focus");
+    dispatch_focus_event(scope, id, "focus", false); // 非冒泡
 }
 
-/// `element.blur()`（spec `dom-element-blur`，失焦步骤）：若 this 为当前焦点——派发 `blur`（非冒泡）+
-/// 清 `document.activeElement`（gc.rs `ACTIVE_ELEMENT` = None）。非当前焦点 → no-op（spec）。
+/// `element.blur()`（spec `dom-element-blur`，失焦步骤）：若 this 为当前焦点——派发 `focusout`（this，
+/// 冒泡）→ `blur`（this，非冒泡）+ 清 `document.activeElement`（gc.rs `ACTIVE_ELEMENT` = None）。
+/// 非当前焦点 → no-op（spec）。R3149：补 focusout 冒泡版。
 pub(super) fn native_element_blur_invoke(
     scope: &mut v8::PinScope,
     _args: v8::FunctionCallbackArguments,
@@ -405,5 +414,6 @@ pub(super) fn native_element_blur_invoke(
         return; // 非当前焦点 → no-op
     }
     set_active_element(None);
-    dispatch_focus_event(scope, id, "blur");
+    dispatch_focus_event(scope, id, "focusout", true); // 冒泡
+    dispatch_focus_event(scope, id, "blur", false); // 非冒泡
 }
