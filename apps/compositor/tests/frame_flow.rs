@@ -18,6 +18,15 @@ impl Drop for CompositorProcess {
 }
 
 fn make_frame(viewport_w: u32, viewport_h: u32, color: [u8; 4]) -> PaintSnapshotParams {
+    make_frame_with_dirty(viewport_w, viewport_h, color, Vec::new())
+}
+
+fn make_frame_with_dirty(
+    viewport_w: u32,
+    viewport_h: u32,
+    color: [u8; 4],
+    dirty_rects: Vec<IpcRect>,
+) -> PaintSnapshotParams {
     PaintSnapshotParams {
         viewport_width: viewport_w,
         viewport_height: viewport_h,
@@ -36,6 +45,7 @@ fn make_frame(viewport_w: u32, viewport_h: u32, color: [u8; 4]) -> PaintSnapshot
                 a: color[3],
             },
         }],
+        dirty_rects,
         ..Default::default()
     }
 }
@@ -156,6 +166,47 @@ fn compositor_accepts_frames_and_confirms() {
     assert_eq!(&frame.rgba[..4], &[255, 0, 0, 255], "首像素应为纯红");
     let last = &frame.rgba[frame.rgba.len() - 4..];
     assert_eq!(last, &[255, 0, 0, 255], "末像素应为纯红");
+}
+
+/// S3：部分 dirty 帧经 compositor 进程 copy_front + 区域重绘，区外像素保留。
+#[test]
+fn compositor_partial_dirty_preserves_pixels_outside_region() {
+    let (mut transport, _comp) = spawn_compositor();
+    let w = 100u32;
+    let h = 80u32;
+
+    assert_eq!(
+        submit_frame(&mut transport, 1, 5, 1, 1, make_frame(w, h, [0, 0, 255, 255]),),
+        (5, 1, 1)
+    );
+
+    assert_eq!(
+        submit_frame(
+            &mut transport,
+            2,
+            5,
+            1,
+            2,
+            make_frame_with_dirty(
+                w,
+                h,
+                [255, 0, 0, 255],
+                vec![IpcRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 40.0,
+                    height: 40.0,
+                }],
+            ),
+        ),
+        (5, 1, 2)
+    );
+
+    let frame = get_frame(&mut transport, 3, 5, 1, 2);
+    assert_eq!(&frame.rgba[..4], &[255, 0, 0, 255], "dirty 内应为红");
+    let outside = ((40 * w + 60) * 4) as usize;
+    assert_eq!(frame.rgba[outside], 0, "dirty 外 R 应保留蓝");
+    assert_eq!(frame.rgba[outside + 2], 255, "dirty 外 B 应保留蓝");
 }
 
 #[test]

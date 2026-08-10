@@ -157,6 +157,41 @@ fn publish_frame_emits_compositor_sequence_with_full_paint_payload() {
 }
 
 #[test]
+fn publish_compositor_frame_carries_dirty_rects() {
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
+    let mut next_msg_id = 1_u64;
+    let mut publish_state = FramePublishState::new(73, FramePublishMode::Compositor);
+    let mut frame = sample_frame();
+    frame.dirty_rects = vec![(10.0, 20.0, 30.0, 40.0)];
+
+    publish_render_with_layout(
+        &mut outbound,
+        &mut next_msg_id,
+        &mut publish_state,
+        &frame,
+        None,
+        Vec::new(),
+        11,
+    )
+    .expect("publish compositor frame");
+
+    let messages = drain_messages(&buf.0.lock().unwrap());
+    let paint = messages
+        .iter()
+        .find_map(|message| match &message.kind {
+            IpcMessageKind::CompositorFrame { paint, .. } => Some(paint.as_ref()),
+            _ => None,
+        })
+        .expect("CompositorFrame");
+    assert_eq!(paint.dirty_rects.len(), 1);
+    assert!((paint.dirty_rects[0].x - 10.0).abs() < f32::EPSILON);
+    assert!((paint.dirty_rects[0].y - 20.0).abs() < f32::EPSILON);
+    assert!((paint.dirty_rects[0].width - 30.0).abs() < f32::EPSILON);
+    assert!((paint.dirty_rects[0].height - 40.0).abs() < f32::EPSILON);
+}
+
+#[test]
 fn publish_mode_switch_republishes_legacy_only() {
     let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
     let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);

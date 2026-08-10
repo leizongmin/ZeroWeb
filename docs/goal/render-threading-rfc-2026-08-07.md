@@ -50,6 +50,8 @@
 | `make product-smoke` | welcome vs chromium **17.03%** ≤ 20%；struct-check 全 PASS |
 | S2 scope 线程 A/B 单测 | `cpu/tests.rs` `render_full_scene_threaded_matches_direct` |
 | S3 compositor 单测 | `rasterize_tests.rs` partial dirty 保留区外像素 |
+| S3 compositor 集成 | `frame_flow.rs` partial dirty 端到端（进程内 copy_front + 区域重绘） |
+| S3 renderer IPC | `compositor_publish_tests.rs` dirty_rects 写入 CompositorFrame |
 | 回退 `ZW_RENDER_THREAD=0` | Browser/compositor 直连路径可用 |
 
 未在本 RFC 范围跑全量 `make reftest`（16k+ case，CI/weekly 承担）。
