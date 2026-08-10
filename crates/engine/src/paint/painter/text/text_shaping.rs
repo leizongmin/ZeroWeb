@@ -30,6 +30,11 @@ fn shaped_offsets_enabled() -> bool {
     *ENABLED.get_or_init(|| shaped_positioning_enabled() || std::env::var("ZW_SHAPED_OFFSETS").as_deref() != Ok("0"))
 }
 
+fn shaped_complex_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_COMPLEX").as_deref() == Ok("1"))
+}
+
 /// Paint 循环消费的单个字形。
 pub(super) struct FragmentGlyph {
     pub(super) code_point: char,
@@ -99,29 +104,66 @@ pub(super) fn fragment_glyphs<'a>(
     if eligible
         && shaped_text_enabled()
         && let Some(glyphs) = crate::shape_text_for_paint(font_id, text, font_size)
-        && crate::text_metrics::one_to_one_source_mapping(text, &glyphs)
     {
-        let offsets_enabled = shaped_offsets_enabled();
-        if crate::text_metrics::source_mapping_requires_offsets(text, &glyphs) && !offsets_enabled {
+        let Some(complex_mapping) = mapping_mode(text, &glyphs, shaped_complex_enabled()) else {
+            return FragmentGlyphs::Legacy(text.chars());
+        };
+        let simple_mapping = !complex_mapping;
+        let indexed = indexed_glyph_enabled();
+        if complex_mapping && !indexed {
             return FragmentGlyphs::Legacy(text.chars());
         }
-        let sources = glyph_sources(text, &glyphs);
+        let offsets_enabled = shaped_offsets_enabled();
+        if simple_mapping && crate::text_metrics::source_mapping_requires_offsets(text, &glyphs) && !offsets_enabled {
+            return FragmentGlyphs::Legacy(text.chars());
+        }
+        let Some(sources) = glyph_sources(text, &glyphs, complex_mapping) else {
+            return FragmentGlyphs::Legacy(text.chars());
+        };
         return FragmentGlyphs::Shaped {
             glyphs: glyphs.into_iter(),
             sources: sources.into_iter(),
-            indexed: indexed_glyph_enabled(),
-            advanced: shaped_advance_enabled() && (advance_eligible || shaped_positioning_enabled()),
-            offset: offsets_enabled,
+            indexed,
+            advanced: complex_mapping || shaped_advance_enabled() && (advance_eligible || shaped_positioning_enabled()),
+            offset: complex_mapping || offsets_enabled,
         };
     }
     FragmentGlyphs::Legacy(text.chars())
 }
 
-fn glyph_sources(text: &str, glyphs: &[ShapedGlyph]) -> Vec<Option<GlyphSource>> {
-    if !crate::text_metrics::source_mapping_requires_offsets(text, glyphs) {
-        return vec![None; glyphs.len()];
+fn mapping_mode(text: &str, glyphs: &[ShapedGlyph], allow_complex: bool) -> Option<bool> {
+    if crate::text_metrics::one_to_one_source_mapping(text, glyphs) {
+        Some(false)
+    } else if allow_complex && source_clusters_valid(text, glyphs) {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+fn source_clusters_valid(text: &str, glyphs: &[ShapedGlyph]) -> bool {
+    let Ok(text_len) = u32::try_from(text.len()) else {
+        return false;
+    };
+    !glyphs.is_empty()
+        && glyphs.iter().any(|glyph| glyph.cluster == 0)
+        && glyphs.iter().all(|glyph| {
+            glyph.glyph_id > 0
+                && u16::try_from(glyph.glyph_id).is_ok()
+                && glyph.cluster < text_len
+                && text.is_char_boundary(glyph.cluster as usize)
+        })
+}
+
+fn glyph_sources(text: &str, glyphs: &[ShapedGlyph], all_clusters: bool) -> Option<Vec<Option<GlyphSource>>> {
+    if !all_clusters && !crate::text_metrics::source_mapping_requires_offsets(text, glyphs) {
+        return Some(vec![None; glyphs.len()]);
+    }
+    if !source_clusters_valid(text, glyphs) {
+        return None;
     }
     let text: Arc<str> = Arc::from(text);
+    let text_len = u32::try_from(text.len()).ok()?;
     let mut starts: Vec<u32> = glyphs.iter().map(|glyph| glyph.cluster).collect();
     starts.sort_unstable();
     starts.dedup();
@@ -129,18 +171,21 @@ fn glyph_sources(text: &str, glyphs: &[ShapedGlyph]) -> Vec<Option<GlyphSource>>
     for glyph in glyphs {
         *cluster_counts.entry(glyph.cluster).or_insert(0usize) += 1;
     }
-    glyphs
-        .iter()
-        .map(|glyph| {
-            let end = starts
-                .iter()
-                .copied()
-                .find(|start| *start > glyph.cluster)
-                .unwrap_or(text.len() as u32);
-            GlyphSource::new(text.clone(), glyph.cluster, end)
-                .filter(|source| cluster_counts[&glyph.cluster] > 1 || source.as_str().chars().nth(1).is_some())
-        })
-        .collect()
+    Some(
+        glyphs
+            .iter()
+            .map(|glyph| {
+                let end = starts
+                    .iter()
+                    .copied()
+                    .find(|start| *start > glyph.cluster)
+                    .unwrap_or(text_len);
+                GlyphSource::new(text.clone(), glyph.cluster, end).filter(|source| {
+                    all_clusters || cluster_counts[&glyph.cluster] > 1 || source.as_str().chars().nth(1).is_some()
+                })
+            })
+            .collect(),
+    )
 }
 
 /// 判断是否为须绘制占位框的非空白 Cc 控制字符。
@@ -208,12 +253,45 @@ mod tests {
         trailing.code_point = 'B';
         trailing.cluster = 3;
 
-        let sources = glyph_sources("A\u{301}B", &[base, mark, trailing]);
+        let sources = glyph_sources("A\u{301}B", &[base, mark, trailing], false).expect("valid sources");
         let base = sources[0].as_ref().expect("base source");
         let mark = sources[1].as_ref().expect("mark source");
 
         assert_eq!(base.as_str(), "A\u{301}");
         assert!(base.same_cluster(mark));
         assert!(sources[2].is_none());
+    }
+
+    #[test]
+    fn complex_glyph_sources_cover_ligature_and_decreasing_clusters() {
+        let mut ligature = glyph();
+        ligature.code_point = 'f';
+        assert!(source_clusters_valid("fi", &[ligature.clone()]));
+        assert_eq!(mapping_mode("fi", &[ligature.clone()], false), None);
+        assert_eq!(mapping_mode("fi", &[ligature.clone()], true), Some(true));
+        let ligature_sources = glyph_sources("fi", &[ligature], true).expect("ligature sources");
+        assert_eq!(ligature_sources[0].as_ref().expect("ligature source").as_str(), "fi");
+
+        let mut gimel = glyph();
+        gimel.cluster = 4;
+        gimel.code_point = 'ג';
+        let mut bet = glyph();
+        bet.cluster = 2;
+        bet.code_point = 'ב';
+        let mut alef = glyph();
+        alef.code_point = 'א';
+        let rtl = [gimel, bet, alef];
+        assert!(source_clusters_valid("אבג", &rtl));
+        let sources = glyph_sources("אבג", &rtl, true).expect("RTL sources");
+        assert_eq!(sources[0].as_ref().expect("gimel source").as_str(), "ג");
+        assert_eq!(sources[1].as_ref().expect("bet source").as_str(), "ב");
+        assert_eq!(sources[2].as_ref().expect("alef source").as_str(), "א");
+    }
+
+    #[test]
+    fn complex_glyph_sources_reject_non_boundary_cluster() {
+        let mut invalid = glyph();
+        invalid.cluster = 1;
+        assert!(!source_clusters_valid("אב", &[invalid]));
     }
 }

@@ -493,6 +493,18 @@ mod tests {
         assert_eq!(glyphs.iter().map(|glyph| glyph.cluster).collect::<Vec<_>>(), vec![0, 0]);
     }
 
+    #[test]
+    fn test_ltr_ligature_preserves_source_cluster() {
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+        let shaper = TextShaper::new(&loader, Some(FontId(font_id)));
+        let glyphs = shaper.shape_single_line("fi", 16.0);
+
+        assert_eq!(glyphs.len(), 1);
+        assert_eq!(glyphs[0].cluster, 0);
+        assert_eq!(glyphs[0].code_point, 'f');
+    }
+
     /// shaping advance 必须保留 rustybuzz 的 kerning/GPOS 结果。
     #[test]
     fn test_rustybuzz_position_is_authoritative_advance() {
