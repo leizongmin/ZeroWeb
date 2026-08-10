@@ -1,6 +1,6 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v1.8 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1–C3 / 4.1–4.5 / 4.2-S2 / 4.3-S2–S3 / 4.4-S2–S3 ✅）**
+版本：v1.9 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1–C3 / 4.1–4.5 / 4.2-S2 / 4.3-S2–S3 / 4.4-S2–S3 / 4.5-S2 ✅）**
 
 > 实施状态（2026-08-11 更新）：
 > - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
@@ -25,8 +25,10 @@
 >   - S2：`CompositorUiFrame` / `GetCompositorUiFrame`；`ZW_COMPOSITOR_UI_FRAMES=1` 时 Browser 提交 UI 位图握手。
 >   - S3：`GetCompositorPresentFrame` + `ZW_COMPOSITOR_PRESENT=1` 时 compositor 合成 page+UI，
 >     Browser 直接 blit present 帧（跳过本地 chrome+page 合成）。
-> - **4.5（沙箱）✅ 钩子**：`ZW_COMPOSITOR_SANDBOX=1` 时 compositor 启动剥离
->   `LD_PRELOAD` 等危险 env；seccomp 最小权限沙箱仍为后续。
+> - **4.5（沙箱）✅ S1 + S2**：
+>   - S1：`ZW_COMPOSITOR_SANDBOX=1` 时 compositor 启动剥离 `LD_PRELOAD` 等危险 env。
+>   - S2：`ZW_COMPOSITOR_SECCOMP=1` 时 Linux seccomp-bpf 阻断网络 socket 与 exec/fork
+>     （与 `ZW_COMPOSITOR_GPU=1` 不兼容；landlock 文件系统沙箱仍为后续）。
 
 > 本状态不代表完整 Chromium/Chrome compositor 对齐。当前完成的是页面位图主链路 + 上述协议/线程切片。
 > Browser 仍拥有窗口最终场景和呈现。
@@ -112,7 +114,7 @@ compositor 启动失败或 IPC 断开时：
 | 4.3 shm S1 | `frame_shm.rs` + `ZW_COMPOSITOR_SHM=1`（Linux） |
 | 4.3 gpu_image S2 | `ZW_COMPOSITOR_GPU_IMAGE=1` + mailbox/shm 接线 |
 | 4.4 UI frame S2 | `CompositorUiFrame` + `GetCompositorUiFrame` |
-| 4.5 沙箱钩子 | `sandbox.rs` + `ZW_COMPOSITOR_SANDBOX=1` env 剥离 |
+| 4.5 沙箱 S1+S2 | `sandbox.rs` + env 剥离 + Linux seccomp（`ZW_COMPOSITOR_SECCOMP=1`） |
 
 ## 四、环境变量
 
@@ -126,14 +128,16 @@ compositor 启动失败或 IPC 断开时：
 | `ZW_COMPOSITOR_ASYNC_SCROLL=1` | compositor 滚动元数据 + Browser 消费 |
 | `ZW_COMPOSITOR_SCROLL_TRANSFORM=1` | compositor 侧 scroll 烘焙（回读 scroll=0） |
 | `ZW_COMPOSITOR_UI_FRAMES=1` | Browser 向 compositor 提交 UI 位图 |
+| `ZW_COMPOSITOR_PRESENT=1` | compositor 合成 page+UI present 帧 |
 | `ZW_COMPOSITOR_SANDBOX=1` | compositor 启动 env 剥离 |
+| `ZW_COMPOSITOR_SECCOMP=1` | Linux seccomp 阻断网络/exec（与 GPU 不兼容） |
 
 ## 五、下一阶段（完整对齐）
 
 - compositor 侧滚动变换（非仅元数据回读）→ **4.2-S2 ✅**（env-gated 像素烘焙）
 - GPU 纹理/fence **零拷贝** present（mailbox 当前为 shm 后端）
 - Viz 式最终 surface 所有权与窗口 present
-- seccomp 最小权限 OS sandbox
+- landlock 文件系统最小权限沙箱
 - 设备丢失、进程崩溃和恢复路径的全平台验证
 
 ## 六、Non-Goals（仍为后续）
@@ -145,7 +149,7 @@ compositor 启动失败或 IPC 断开时：
 
 ## 七、验证与关系
 
-- C2/C3/4.x 定向测试：`frame_flow`（**9** 案，含 scroll/shm/gpu_image/ui）、`compositor_protocol`、
+- C2/C3/4.x 定向测试：`frame_flow`（**11** 案，含 scroll/shm/gpu_image/ui/present/seccomp）、`compositor_protocol`、
   `compositor_client`、`compositor_publish_thread`、GPU partial dirty 单测。
 - **2026-08-11 增量验收**：`make test` PASS；`make browser-compositor-smoke` PASS（legacy/compositor 双模式）。
 - 全量质量、reftest 和产品 smoke 由后续验收任务执行。
