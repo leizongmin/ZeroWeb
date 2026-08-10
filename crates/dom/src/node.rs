@@ -140,7 +140,9 @@ impl ElementData {
     /// spec：https://dom.spec.whatwg.org/#concept-element-attributes-get-by-name
     pub(crate) fn attr_name_effective<'a>(&self, name: &'a str) -> std::borrow::Cow<'a, str> {
         const HTML_NS: &str = "http://www.w3.org/1999/xhtml";
-        if self.namespace() == HTML_NS {
+        // 仅当 HTML 命名空间**且** name 含 ASCII 大写字母时才分配（罕见——大写属性名编程创建）；
+        // 常见情况（lowercase name）零分配 Cow::Borrowed，避免超高频属性访问的 per-call 堆分配。
+        if self.namespace() == HTML_NS && name.bytes().any(|b| b.is_ascii_uppercase()) {
             std::borrow::Cow::Owned(name.to_ascii_lowercase())
         } else {
             std::borrow::Cow::Borrowed(name)
