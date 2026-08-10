@@ -189,14 +189,45 @@ impl Range {
     }
 
     /// 在范围的起始位置插入节点。
+    ///
+    /// spec `dom-range-insertnode`：若 start 节点为 **Text** 节点，先在 `start_offset` 处拆分文本
+    ///（原节点保留 `[0, offset)`，新建后半文本节点作为原节点的下一兄弟），再把 `node` 插到后半之前
+    ///（即两半之间）。否则（元素/注释等容器）按 `start_offset` 子索引 `insertBefore`，越界则 `appendChild`。
+    /// R3215：旧实现不分节点类型，对 Text 容器取 `child_nodes`（Text 无元素子 → 空）→ `appendChild` 进
+    /// Text 节点（非法，无操作），致文本内部插入静默失效（rich-text 编辑 `range.insertNode(span)` 场景）。
+    /// 字符偏移拆分（非字节），多字节安全。spec：https://dom.spec.whatwg.org/#dom-range-insertnode
     pub fn insert_node(&mut self, doc: &mut Document, node: NodeId) -> Result<(), RangeError> {
-        let parent = self.start_container;
-        let children = doc.child_nodes(parent);
+        let start = self.start_container;
+        let is_text = doc.get(start).is_some_and(|n| matches!(n.kind, NodeKind::Text(_)));
+        if is_text {
+            let parent = doc.parent_node(start);
+            let full = doc.text_content(start).unwrap_or_default();
+            let off = self.start_offset.min(full.chars().count());
+            let head: String = full.chars().take(off).collect();
+            let tail: String = full.chars().skip(off).collect();
+            doc.set_text_content(start, &head);
+            let second = doc.create_text_node(&tail);
+            if let Some(p) = parent {
+                // 后半插到原节点下一兄弟之前（即原节点之后）；`node` 插到后半之前 → 终序 [head][node][tail]。
+                match doc.next_sibling(start) {
+                    Some(ref_node) => {
+                        let _ = doc.insert_before(p, second, ref_node);
+                    }
+                    None => {
+                        let _ = doc.append_child(p, second);
+                    }
+                }
+                let _ = doc.insert_before(p, node, second);
+            }
+            return Ok(());
+        }
+        // 非 Text 容器：start_offset 子索引 insertBefore，越界 appendChild。
+        let children = doc.child_nodes(start);
         if self.start_offset < children.len() {
             let ref_node = children[self.start_offset];
-            let _ = doc.insert_before(parent, node, ref_node);
+            let _ = doc.insert_before(start, node, ref_node);
         } else {
-            let _ = doc.append_child(parent, node);
+            let _ = doc.append_child(start, node);
         }
         Ok(())
     }
@@ -487,6 +518,57 @@ mod tests {
 
         let children = doc.child_nodes(div);
         assert_eq!(children.len(), 2, "div should have 2 children after insert");
+    }
+
+    /// R3215：insert_node 在 **Text 节点** start 容器上拆分文本并在两半之间插入（spec
+    /// `dom-range-insertnode`）。旧实现不分节点类型致文本内部插入静默失效。
+    #[test]
+    fn test_range_insert_node_text_split_r3215() {
+        let mut doc = parse_html("<div>Hello World</div>");
+        let body = body_of(&doc);
+        let div = doc.first_child(body).unwrap();
+        // div 的首子是文本节点 "Hello World"。
+        let text = doc.first_child(div).unwrap();
+        assert!(matches!(doc.get(text).unwrap().kind, NodeKind::Text(_)));
+
+        let span = doc.create_element("span");
+        doc.set_text_content(span, "X");
+
+        // start 容器 = text，offset = 5（"Hello" 与 " World" 之间）。
+        let mut range = Range::at(text, 5);
+        range.insert_node(&mut doc, span).unwrap();
+
+        // 终序应为 [text "Hello"][span "X"][text " World"]。
+        let kids = doc.child_nodes(div);
+        assert_eq!(kids.len(), 3, "div 应有 3 子（拆分两半 + 插入节点）");
+        assert_eq!(doc.text_content(kids[0]), Some("Hello".to_string()));
+        assert!(matches!(doc.get(kids[1]).unwrap().kind, NodeKind::Element(_)));
+        assert_eq!(doc.text_content(kids[1]), Some("X".to_string()));
+        assert_eq!(doc.text_content(kids[2]), Some(" World".to_string()));
+        // 原文本节点保留前半（未被整体覆盖）。
+        assert_eq!(doc.text_content(text), Some("Hello".to_string()));
+    }
+
+    /// R3215：start_offset 越界（> 文本长度）clamp 到末尾，文本不拆分，节点插到末尾。
+    #[test]
+    fn test_range_insert_node_text_offset_clamp_r3215() {
+        let mut doc = parse_html("<div>Hi</div>");
+        let body = body_of(&doc);
+        let div = doc.first_child(body).unwrap();
+        let text = doc.first_child(div).unwrap();
+
+        let span = doc.create_element("em");
+        doc.set_text_content(span, "!");
+
+        // offset 99 远超 "Hi"（2 字符）→ clamp 到 2，head="Hi" tail=""。
+        let mut range = Range::at(text, 99);
+        range.insert_node(&mut doc, span).unwrap();
+
+        let kids = doc.child_nodes(div);
+        assert_eq!(kids.len(), 3, "仍拆出空 tail 文本节点");
+        assert_eq!(doc.text_content(kids[0]), Some("Hi".to_string()));
+        assert_eq!(doc.text_content(kids[1]), Some("!".to_string()));
+        assert_eq!(doc.text_content(kids[2]), Some(String::new()));
     }
 
     /// 测试 Range::at 创建折叠范围。
