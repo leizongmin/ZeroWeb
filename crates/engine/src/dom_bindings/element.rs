@@ -291,6 +291,153 @@ pub(super) fn native_hidden_setter(
     });
 }
 
+// ── R3167 contentEditable 枚举反射 + isContentEditable / spellcheck 继承走查 ──
+//
+// 第四/五种反射子类型——`contentEditable` 反射**枚举**属性（spec HTML `contenteditable`），
+// `spellcheck` 反射**带继承的 boolean**（spec HTML `spellcheck`，IDL boolean 经继承走查）：
+// - **contentEditable getter**：返 "true" / "false" / "inherit"（content 属性 keyword ""/"true"/"false"，
+//   缺省/非法/"inherit" → "inherit" 状态，ASCII 大小写不敏感）。
+// - **contentEditable setter**：值 ASCII 大小写不敏感为 "true"→设 "true"、"false"→设 "false"、
+//   "inherit"→移除属性；其它 → 抛 SyntaxError（spec `dom-contenteditable` setter）。
+// - **isContentEditable getter**：沿祖先链（含 self）找最近显式 true/false contenteditable 状态——
+//   最近为 true → 真（可编辑），false → 假，无显式 → 假（spec 编辑宿主简化）。
+// - **spellcheck getter/setter**：boolean getter 经同款继承走查（最近显式 true→true / false→false /
+//   无→false），setter ToBoolean 强转设 "true"/"false"。
+//
+// `contentEditable` / `isContentEditable` 是富文本编辑器（contenteditable 高频 API）核心；`spellcheck`
+// 为输入控件拼写检查开关。共享 [`nearest_enumerated_ancestor`] 走查助手（isContentEditable + spellcheck 复用）。
+
+/// 沿祖先链（含 `id` 自身）找最近的「显式 true/false」`attr` 枚举值。
+///
+/// 用于 `isContentEditable` / `spellcheck` 的**继承走查**：返最近的 ancestor（含 self）的 content
+/// 属性是否 ASCII 大小写不敏感匹配 "true"（→ `Some(true)`）或 "false"（→ `Some(false)`）。
+/// 其它值（incl 缺省 / 空串 / "inherit" / garbage）→ 视为 inherit 状态，继续向上。无显式 → `None`。
+fn nearest_enumerated_ancestor(doc: &zero_dom::Document, id: NodeId, attr: &str) -> Option<bool> {
+    let mut cur = Some(id);
+    while let Some(cid) = cur {
+        if let Some(v) = doc.get_attribute(cid, attr) {
+            if v.eq_ignore_ascii_case("true") {
+                return Some(true);
+            }
+            if v.eq_ignore_ascii_case("false") {
+                return Some(false);
+            }
+            // 空串 / "inherit" / 非法 → inherit 状态，继续向上走查。
+        }
+        cur = doc.parent_node(cid);
+    }
+    None
+}
+
+/// `contentEditable` getter（spec HTML `dom-contenteditable`）：枚举属性 → "true"/"false"/"inherit"。
+pub(super) fn native_content_editable_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    // 闭包内完成枚举状态求值，返 &'static str（with_dom 包装为 Option<&'static str>，
+    // 外层 None = 无 DOM 源 → 留 undefined）。
+    let val: Option<&str> = with_dom(|d| {
+        match d.get_attribute(id, "contenteditable").as_deref() {
+            Some(s) if s.eq_ignore_ascii_case("true") => "true",
+            Some(s) if s.eq_ignore_ascii_case("false") => "false",
+            // 空串 / "inherit" / 缺省 / 非法 → "inherit" 状态（spec 枚举属性默认 inherit）。
+            _ => "inherit",
+        }
+    });
+    if let Some(s) = val.and_then(|s| v8::String::new(scope, s)) {
+        rv.set(s.into());
+    }
+}
+
+/// `contentEditable` setter（spec HTML `dom-contenteditable`）：值 ASCII 大小写不敏感匹配
+/// "true"→设 "true"、"false"→设 "false"、"inherit"→移除属性；其它 → 抛 SyntaxError。
+pub(super) fn native_content_editable_setter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let v = local_value_to_string(scope, value);
+    with_dom_mut(|d| {
+        if v.eq_ignore_ascii_case("true") {
+            d.set_attribute(id, "contenteditable", "true");
+        } else if v.eq_ignore_ascii_case("false") {
+            d.set_attribute(id, "contenteditable", "false");
+        } else if v.eq_ignore_ascii_case("inherit") {
+            d.remove_attribute(id, "contenteditable");
+        } else {
+            // spec：非法值抛 SyntaxError（"An invalid or illegal string was specified"）。
+            if let Some(msg) = v8::String::new(scope, "An invalid or illegal string was specified") {
+                scope.throw_exception(v8::Exception::syntax_error(scope, msg));
+            }
+        }
+    });
+}
+
+/// `isContentEditable` getter（spec HTML `dom-iscontenteditable`）：沿祖先链继承走查——
+/// 最近显式 contenteditable=true → 真，false → 假，无显式 → 假（缺省不可编辑）。
+pub(super) fn native_is_content_editable_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let editable = with_dom(|d| nearest_enumerated_ancestor(d, id, "contenteditable"))
+        .flatten()
+        .unwrap_or(false);
+    rv.set(v8::Boolean::new(scope, editable).into());
+}
+
+/// `spellcheck` getter（spec HTML `dom-spellcheck`）：带继承的 boolean——沿祖先链走查最近显式
+/// spellcheck=true→true / false→false / 无显式→false（headless 简化：缺省 false，spec 实际依赖
+/// 可编辑性默认 true）。
+pub(super) fn native_spellcheck_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let sp = with_dom(|d| nearest_enumerated_ancestor(d, id, "spellcheck"))
+        .flatten()
+        .unwrap_or(false);
+    rv.set(v8::Boolean::new(scope, sp).into());
+}
+
+/// `spellcheck` setter：值经 V8 ToBoolean 强转 → true 设 `spellcheck="true"`、false 设 `"false"`。
+pub(super) fn native_spellcheck_setter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let v = value.boolean_value(scope);
+    with_dom_mut(|d| d.set_attribute(id, "spellcheck", if v { "true" } else { "false" }));
+}
+
 // ── R3157 通用字符串反射属性（spec HTML title/lang/dir/accessKey 等，IDL 名 = content 名小写）──
 //
 // title/lang/dir/accessKey 等「IDL 名 = content 属性名（小写）」的字符串反射属性共用一对 getter/setter

@@ -2355,6 +2355,106 @@ fn native_element_tag_name_namespace_case_r3166() {
     assert_eq!(run_script(html2, "(__zw_native_element_for_id('d').nodeName)"), "DIV");
 }
 
+/// R3167 `element.contentEditable`（枚举反射 + setter 非法值抛 SyntaxError）+ `isContentEditable`
+///（继承走查）+ `spellcheck`（带继承 boolean）。spec HTML `dom-contenteditable` / `dom-iscontenteditable`
+/// / `dom-spellcheck`。
+#[test]
+fn native_element_content_editable_r3167() {
+    let html = r#"<html><head></head><body>
+      <div id="e"></div>
+      <div id="p" contenteditable="true"><span id="c1">x</span></div>
+      <div id="pf" contenteditable="false"><span id="c2">y</span></div>
+      <input id="sp" spellcheck="true"/>
+    </body></html>"#;
+    // contentEditable 默认（无属性）→ "inherit"。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('e').contentEditable)"),
+        "inherit"
+    );
+    // setter "true" → contentEditable "true" + isContentEditable true + contenteditable 属性 "true"。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const e=__zw_native_element_for_id('e'); e.contentEditable='true';\
+             return e.contentEditable+'/'+e.isContentEditable+'/'+e.getAttribute('contenteditable');})()"
+        ),
+        "true/true/true"
+    );
+    // setter "false" → "false" + isContentEditable false。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const e=__zw_native_element_for_id('e'); e.contentEditable='false';\
+             return e.contentEditable+'/'+e.isContentEditable;})()"
+        ),
+        "false/false"
+    );
+    // setter "inherit" → 移除属性 + contentEditable "inherit"。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const e=__zw_native_element_for_id('e'); e.contentEditable='inherit';\
+             return e.contentEditable+'/'+e.hasAttribute('contenteditable');})()"
+        ),
+        "inherit/false"
+    );
+    // setAttribute("contenteditable","garbage")（非法 keyword）→ 状态 inherit → contentEditable "inherit"。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const e=__zw_native_element_for_id('e'); e.setAttribute('contenteditable','garbage');\
+             return e.contentEditable;})()"
+        ),
+        "inherit"
+    );
+    // isContentEditable 继承：父 contenteditable=true，子 span 继承 → isContentEditable true。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('c1').isContentEditable)"),
+        "true"
+    );
+    // 父 contenteditable=false，子继承 → isContentEditable false。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('c2').isContentEditable)"),
+        "false"
+    );
+    // setter 非法值 → 抛 SyntaxError（e.name === "SyntaxError"）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const e=__zw_native_element_for_id('e');\
+             try{ e.contentEditable='garbage'; return 'no-throw'; }catch(ex){ return ex.name; }})()"
+        ),
+        "SyntaxError"
+    );
+    // spellcheck：显式 spellcheck=true → getter true。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('sp').spellcheck)"),
+        "true"
+    );
+    // spellcheck setter ToBoolean 强转：set true → 属性 "true" + getter true；set 0 → "false"。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const e=__zw_native_element_for_id('e'); e.spellcheck=1;\
+             return e.spellcheck+'/'+e.getAttribute('spellcheck');})()"
+        ),
+        "true/true"
+    );
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{const e=__zw_native_element_for_id('e'); e.spellcheck=0;\
+             return e.spellcheck+'/'+e.getAttribute('spellcheck');})()"
+        ),
+        "false/false"
+    );
+    // spellcheck 默认（无属性，无可编辑祖先）→ false。
+    assert_eq!(
+        run_script(html, "(__zw_native_element_for_id('e').spellcheck)"),
+        "false"
+    );
+}
+
 /// R3165 `element.namespaceURI` getter（spec `dom-node-namespaceuri`）：元素命名空间 URI 字符串，
 /// 空 namespace → null。闭合 R3163 限制②（namespace 经 native 可读）。
 #[test]

@@ -143,6 +143,25 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "hidden") {
         tmpl.set_accessor_with_setter(k.into(), element::native_hidden_getter, element::native_hidden_setter);
     }
+    // R3167 `contentEditable`（枚举反射，setter 非法值抛 SyntaxError）+ `isContentEditable`（继承走查）
+    // + `spellcheck`（带继承 boolean）——富文本编辑器核心 contenteditable API + 拼写检查开关。
+    if let Some(k) = v8::String::new(scope, "contentEditable") {
+        tmpl.set_accessor_with_setter(
+            k.into(),
+            element::native_content_editable_getter,
+            element::native_content_editable_setter,
+        );
+    }
+    if let Some(k) = v8::String::new(scope, "isContentEditable") {
+        tmpl.set_accessor(k.into(), element::native_is_content_editable_getter);
+    }
+    if let Some(k) = v8::String::new(scope, "spellcheck") {
+        tmpl.set_accessor_with_setter(
+            k.into(),
+            element::native_spellcheck_getter,
+            element::native_spellcheck_setter,
+        );
+    }
     // R3157 通用字符串反射属性（spec HTML title/lang/dir/accessKey）：IDL 名经 to_ascii_lowercase 映射
     // content 属性名（accessKey→accesskey，余 identity）。共用 [`element::native_string_reflected_getter`/
     // `_setter`]（经 accessor name 分派 + 复用 read/write_reflected_attr，零 per-attr 逻辑）。
