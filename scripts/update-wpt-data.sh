@@ -17,8 +17,10 @@
 #
 # 依赖：git, curl
 #
-# 已知套件打包缺口（升级时按需补，2026-08-07 状态）：
-#   - css/filter-effects 已用 scripts/fetch-wpt-subdir.sh 补入本地 wpt-data
+# 已知套件打包缺口（升级时按需补，2026-08-10 状态）：
+#   - css/css-variables、css/css-ruby：v1.10 未打包，reftest-smoke 依赖；
+#     fetch-wpt-data 经 scripts/fetch-wpt-smoke-subdirs.sh 自动补齐
+#   - css/filter-effects：已用 scripts/fetch-wpt-subdir.sh 补入本地 wpt-data
 #     （652 文件；该子域不在 skip list，属于范围内）——升级新 ref 后需重新补
 #   - css/css-masking、css/css-shapes 未打包但**在 reftest-skip-list.txt**
 #     （SVG 渲染不在范围），无需补
@@ -129,6 +131,7 @@ mv "${TMP_DIR}/wpt-data" "$WPT_DATA_DIR"
 
 # 补齐 common/ 资源并校验完整性
 fetch_common_resources || exit 1
+bash "${SCRIPT_DIR}/fetch-wpt-smoke-subdirs.sh"
 
 NEW_COUNT=$(find "$WPT_DATA_DIR" -type f | wc -l)
 NEW_MANIFEST_ENTRIES=$(python3 -c "import json,sys; d=json.load(open('${WPT_DATA_DIR}/reftest-manifest.json')); print(len(d.get('reftest_entries',[])))" 2>/dev/null || echo "?")
