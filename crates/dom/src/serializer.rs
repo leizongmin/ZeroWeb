@@ -174,6 +174,12 @@ fn qualified_attr_name(attr: &markup5ever::Attribute) -> String {
 }
 
 /// 转义 HTML 特殊字符（用于属性值和文本）。
+/// 转义属性值中的特殊字符。
+///
+/// 按 HTML 序列化 spec「attribute value escaping」（https://html.spec.whatwg.org/multipage/parsing.html#escapingString）
+/// 必转 `&` → `&amp;`、**U+00A0 NO-BREAK SPACE → `&nbsp;`**、`"` → `&quot;`（`<`/`>` 亦转，历史防御，
+/// 零 round-trip 影响）。R3209：补 U+00A0 → `&nbsp;`（旧实现漏转，输出字面 U+00A0，致
+/// innerHTML/outerHTML 字面串与 spec / 浏览器不一致——JS 测试套件常按 `&nbsp;` 比对 innerHTML）。
 fn escape_html(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for c in s.chars() {
@@ -182,6 +188,7 @@ fn escape_html(s: &str) -> String {
             '"' => result.push_str("&quot;"),
             '<' => result.push_str("&lt;"),
             '>' => result.push_str("&gt;"),
+            '\u{00A0}' => result.push_str("&nbsp;"),
             _ => result.push(c),
         }
     }
@@ -189,6 +196,10 @@ fn escape_html(s: &str) -> String {
 }
 
 /// 转义文本内容中的特殊字符。
+///
+/// 按 HTML 序列化 spec「text content escaping」转义：`&` → `&amp;`、
+/// **U+00A0 NO-BREAK SPACE → `&nbsp;`**、`<` → `&lt;`、`>` → `&gt;`。R3209：补
+/// U+00A0 → `&nbsp;`（同 [`escape_html`]）。
 fn escape_text(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for c in s.chars() {
@@ -196,6 +207,7 @@ fn escape_text(s: &str) -> String {
             '&' => result.push_str("&amp;"),
             '<' => result.push_str("&lt;"),
             '>' => result.push_str("&gt;"),
+            '\u{00A0}' => result.push_str("&nbsp;"),
             _ => result.push(c),
         }
     }
@@ -338,6 +350,46 @@ mod tests {
         doc.set_attribute(elem, "title", "say \"hello\"");
         let html = doc.outer_html(elem);
         assert!(html.contains("&quot;"), "attribute quotes should be escaped");
+    }
+
+    /// 测试文本内容中 U+00A0（NO-BREAK SPACE）序列化为 `&nbsp;`（spec「text content
+    /// escaping」要求）。旧实现输出字面 U+00A0，致 innerHTML/outerHTML 与 spec / 浏览器不一致。
+    #[test]
+    fn test_text_nbsp_escaping_r3209() {
+        let mut doc = Document::new();
+        let p = doc.create_element("p");
+        let text = doc.create_text_node("a\u{00A0}b");
+        doc.append_child(p, text).unwrap();
+        let html = doc.outer_html(p);
+        assert_eq!(html, "<p>a&nbsp;b</p>");
+        // 普通空格 U+0020 不转义（仅 NO-BREAK SPACE 转）。
+        let p2 = doc.create_element("p");
+        let text2 = doc.create_text_node("a b");
+        doc.append_child(p2, text2).unwrap();
+        assert_eq!(doc.outer_html(p2), "<p>a b</p>");
+    }
+
+    /// 测试属性值中 U+00A0 序列化为 `&nbsp;`（spec「attribute value escaping」要求，
+    /// 与文本对称）。
+    #[test]
+    fn test_attribute_value_nbsp_escaping_r3209() {
+        let mut doc = Document::new();
+        let elem = doc.create_element("div");
+        doc.set_attribute(elem, "title", "a\u{00A0}b");
+        let html = doc.outer_html(elem);
+        assert_eq!(html, r#"<div title="a&nbsp;b"></div>"#);
+    }
+
+    /// 测试 `<textarea>`（escapable raw text）内 U+00A0 序列化为 `&nbsp;`——
+    /// textarea/title 经 `escape_text` 路径（非 raw text），故同样须转。
+    #[test]
+    fn test_textarea_nbsp_escaping_r3209() {
+        let mut doc = Document::new();
+        let ta = doc.create_element("textarea");
+        let text = doc.create_text_node("x\u{00A0}y");
+        doc.append_child(ta, text).unwrap();
+        let html = doc.outer_html(ta);
+        assert_eq!(html, "<textarea>x&nbsp;y</textarea>");
     }
 
     // ── Additional tests ────────────────────────────────────────────────
