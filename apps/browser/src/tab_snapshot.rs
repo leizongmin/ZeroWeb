@@ -190,6 +190,7 @@ mod tests {
                 }],
                 ..RenderPrimitives::new()
             },
+            dirty_rects: Vec::new(),
             timings: Default::default(),
         }
     }

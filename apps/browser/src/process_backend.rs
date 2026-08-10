@@ -879,6 +879,7 @@ mod navigation_contract_tests {
             blend_modes: vec![],
             glyphs: vec![],
             draw_order: vec![],
+            dirty_rects: vec![],
             hit_test: None,
         }
     }
@@ -892,6 +893,7 @@ mod navigation_contract_tests {
                 }],
                 ..RenderPrimitives::new()
             },
+            dirty_rects: Vec::new(),
             timings: Default::default(),
         }
     }

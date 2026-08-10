@@ -137,6 +137,7 @@ fn healthy_compositor_scene_never_contains_same_page_legacy_primitives() {
         tab_id,
         WebViewRenderResult {
             primitives: legacy,
+            dirty_rects: Vec::new(),
             timings: Default::default(),
         },
         200.0,
@@ -1186,10 +1187,10 @@ fn welcome_page_fits_800px_webview_viewport() {
     let result = pipeline.render_html(pages::WELCOME_HTML, "");
 
     let mut page_h = 0.0f32;
-    for fill in &result.primitives.fills {
+    for fill in &result.primitives().fills {
         page_h = page_h.max(fill.rect.origin.y + fill.rect.size.height);
     }
-    for glyph in &result.primitives.glyphs {
+    for glyph in &result.primitives().glyphs {
         page_h = page_h.max(glyph.y + glyph.font_size);
     }
 

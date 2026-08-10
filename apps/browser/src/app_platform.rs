@@ -890,7 +890,7 @@ mod tests {
         let mut pipeline = RenderPipeline::new(800.0, 600.0);
         let result = pipeline.render_html(&html, "");
         let image_key = result
-            .primitives
+            .primitives()
             .images
             .first()
             .expect("engine should emit image primitive for <img>")
@@ -900,7 +900,8 @@ mod tests {
         app.tabs.ensure_tab(tab_id);
         if let Some(snap) = app.tabs.snapshot_mut(tab_id) {
             snap.last_render = Some(zero_webview::WebViewRenderResult {
-                primitives: result.primitives,
+                primitives: result.primitives().clone(),
+                dirty_rects: result.display_list.dirty_rects.clone(),
                 timings: zero_engine::PipelineTimings::default(),
             });
             snap.document_height = pipeline.document_height();
@@ -952,14 +953,15 @@ mod tests {
             "",
         );
         assert!(
-            !result.primitives.glyphs.is_empty(),
+            !result.primitives().glyphs.is_empty(),
             "engine should emit page text glyphs for overlap regression"
         );
 
         app.inject_tab_render_for_test(
             tab_id,
             zero_webview::WebViewRenderResult {
-                primitives: result.primitives,
+                primitives: result.primitives().clone(),
+                dirty_rects: result.display_list.dirty_rects.clone(),
                 timings: zero_engine::PipelineTimings::default(),
             },
             pipeline.document_height().unwrap_or(ch),

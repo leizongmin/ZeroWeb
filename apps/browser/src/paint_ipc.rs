@@ -277,6 +277,13 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
     let document_width = crate::page_scroll::primitives_content_width(&primitives);
     snap.last_render = Some(WebViewRenderResult {
         primitives,
+        // S3：保留本帧脏区域（IpcRect → (x,y,w,h)），与 engine→webview 的 render_result_to_webview
+        // 对齐；browser 侧当前未消费，但保持数据通路完整以便后续增量重绘接入。
+        dirty_rects: params
+            .dirty_rects
+            .iter()
+            .map(|r| (r.x, r.y, r.width, r.height))
+            .collect(),
         timings: PipelineTimings::default(),
     });
     snap.document_height = Some(params.document_height);
