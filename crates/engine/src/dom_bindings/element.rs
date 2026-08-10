@@ -130,6 +130,77 @@ fn write_reflected_attr(
     with_dom_mut(|d| d.set_attribute(id, attr, &val));
 }
 
+// ── R3155 tabIndex 反射 long 属性（spec HTML `tabindex` content ↔ `tabIndex` IDL long）──
+//
+// 与 string 反射（id/className/aria*）不同——`tabIndex` 反射 `long`（i32）类型：
+// - **getter**：解析 `tabindex` content 属性为整数（HTML「rules for parsing integers」，缺省/非法 → -1）。
+//   headless 简化：spec 当元素为原生可聚焦候选时默认返 0、否则 -1，此处统一退化 -1（无原生可聚焦性判定，
+//   匹配 `<div>`/`<span>` 等通用元素的实际行为——`document.createElement('div').tabIndex === -1`）。
+// - **setter**：值经 V8 ToInt32 强转（spec long setter 经 ToInt32：NaN→0、3.7→3、"12"→12）→
+//   写 `tabindex` content 属性为整数字符串。
+//
+// **a11y 相关**：补充 R3148 焦点工作（focus/blur + activeElement）——`tabIndex` 是程序化控制焦点序的
+// 核心属性（FocusManager Tab 导航排序依赖 tabindex 值；0=自然序、正值=显式序、-1=可聚焦但不在 Tab 序）。
+
+/// HTML「rules for parsing integers」简化版：去首尾 ASCII 空白 + 可选 `+`/`-` + 前导 ASCII 数字 → i32。
+/// 无数字 / 仅符号 → None；溢出 clamp 至 i32 边界（spec：超 ±2147483647 截断至边界）。遇首个非数字停
+/// （spec「collect sequence of ASCII digits」），故 `"12abc"` → `12`。
+fn parse_html_integer(s: &str) -> Option<i32> {
+    let s = s.trim();
+    let bytes = s.as_bytes();
+    let (sign, rest) = match bytes.first() {
+        Some(b'+') => (1i64, &bytes[1..]),
+        Some(b'-') => (-1i64, &bytes[1..]),
+        _ => (1i64, bytes),
+    };
+    if rest.is_empty() || !rest[0].is_ascii_digit() {
+        return None;
+    }
+    let end = rest.iter().position(|b| !b.is_ascii_digit()).unwrap_or(rest.len());
+    let num_str = std::str::from_utf8(&rest[..end]).ok()?;
+    // i64 解析（避免 usize 前导零 OK）后 clamp 至 i32（spec 溢出截断至 ±2147483647）。
+    let n: i64 = num_str.parse().ok()?;
+    let n = sign.saturating_mul(n);
+    Some(n.clamp(i32::MIN as i64, i32::MAX as i64) as i32)
+}
+
+/// `tabIndex` getter（spec HTML `tabIndex`，`tabindex` content 反射 long）：解析 content 属性为整数
+/// （HTML 整数解析）；缺省 / 非法 → -1（headless 简化：无原生可聚焦性判定，统一默认 -1）。
+pub(super) fn native_tab_index_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let idx = with_dom(|d| d.get_attribute(id, "tabindex"))
+        .flatten()
+        .and_then(|s| parse_html_integer(&s))
+        .unwrap_or(-1);
+    rv.set(v8::Integer::new(scope, idx).into());
+}
+
+/// `tabIndex` setter：值经 V8 ToInt32 强转（spec long setter）→ 写 `tabindex` content 属性为整数字符串。
+/// ToInt32：NaN→0、布尔/字符串→数值（经 JS Number 强转）、3.7→3。
+pub(super) fn native_tab_index_setter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    value: v8::Local<v8::Value>,
+    args: v8::PropertyCallbackArguments,
+    _rv: v8::ReturnValue<()>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    // ToInt32 强转；NaN/undefined → 0（int32_value 返 0）。
+    let n = value.int32_value(scope).unwrap_or(0);
+    with_dom_mut(|d| d.set_attribute(id, "tabindex", &n.to_string()));
+}
+
 // ── R3153 aria* / role 反射属性（spec WAI-ARIA IDL reflection）──
 //
 // aria* IDL 属性 ↔ content 属性反射：`el.ariaLabel` ↔ `aria-label`、`el.ariaLabelledBy` ↔

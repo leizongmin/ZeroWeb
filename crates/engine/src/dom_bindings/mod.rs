@@ -122,6 +122,16 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
             element::native_class_name_setter,
         );
     }
+    // R3155 `tabIndex` getter/setter（spec HTML `tabIndex`，`tabindex` content 反射 long）：a11y 焦点序
+    // 核心属性——getter 解析 content 属性为 i32（缺省/非法 → -1，headless 简化），setter 经 ToInt32
+    // 强转写回。补充 R3148 焦点工作（focus/blur + activeElement）。
+    if let Some(k) = v8::String::new(scope, "tabIndex") {
+        tmpl.set_accessor_with_setter(
+            k.into(),
+            element::native_tab_index_getter,
+            element::native_tab_index_setter,
+        );
+    }
     // R3153/R3154 aria* / role 反射属性（spec WAI-ARIA IDL reflection）：`el.ariaLabel`↔`aria-label`、
     // `el.role`↔`role` 等。共用 [`element::native_aria_reflected_getter`/`_setter`]（经 accessor name
     // 分派 + [`element::idl_to_attr`] 转 content 属性名）。注册标准 ARIA IDL 集（global + widget + value

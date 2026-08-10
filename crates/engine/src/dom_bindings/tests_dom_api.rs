@@ -1832,3 +1832,60 @@ fn native_element_aria_extended_r3154() {
         "true/true/hint"
     );
 }
+
+/// R3155 element.tabIndex（spec HTML `tabIndex`，`tabindex` content 反射 `long`）：getter 解析 content
+/// 属性为 i32（缺省/非法 → -1），setter 经 ToInt32 强转写回。补充 R3148 焦点工作（a11y 焦点序核心属性）。
+#[test]
+fn native_element_tab_index_r3155() {
+    // 缺省 → -1（headless 简化：无原生可聚焦性判定，统一默认 -1；匹配 `document.createElement('div').tabIndex`）。
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').tabIndex)"), "-1");
+    // content 属性存在且可解析 → 解析值。
+    assert_eq!(
+        run_script(
+            r#"<div id="a" tabindex="3"></div>"#,
+            "(__zw_native_element_for_id('a').tabIndex)"
+        ),
+        "3"
+    );
+    // setter：el.tabIndex = 5 → getAttribute('tabindex') === '5'。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.tabIndex=5; return el.getAttribute('tabindex'); })()"
+        ),
+        "5"
+    );
+    // setter round-trip：el.tabIndex = -1 → el.tabIndex === -1（-1 = 可聚焦但不在 Tab 序，a11y 高频）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.tabIndex=-1; return el.tabIndex; })()"
+        ),
+        "-1"
+    );
+    // 非法 content 属性 → -1（HTML 整数解析失败回退默认）。
+    assert_eq!(
+        run_script(
+            r#"<div id="a" tabindex="abc"></div>"#,
+            "(__zw_native_element_for_id('a').tabIndex)"
+        ),
+        "-1"
+    );
+    // ToInt32 强转：el.tabIndex = 3.7 → getAttribute('tabindex') === '3'（spec long setter 经 ToInt32）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.tabIndex=3.7; return el.getAttribute('tabindex'); })()"
+        ),
+        "3"
+    );
+    // setAttribute 反向反射到 IDL（content→IDL live）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.setAttribute('tabindex','7'); return el.tabIndex; })()"
+        ),
+        "7"
+    );
+}
