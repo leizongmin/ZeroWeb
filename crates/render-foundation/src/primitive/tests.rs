@@ -367,6 +367,8 @@ fn test_glyph_source_validates_utf8_range_and_cluster_identity() {
     let independent = GlyphSource::new(Arc::from("A\u{301}B"), 0, 3).expect("independent text run");
 
     assert_eq!(first.as_str(), "A\u{301}");
+    assert!(first.same_text_run(&shared));
+    assert!(!first.same_text_run(&independent));
     assert!(first.same_cluster(&shared));
     assert!(!first.same_cluster(&independent));
     assert!(GlyphSource::new(Arc::from("A\u{301}"), 2, 3).is_none());

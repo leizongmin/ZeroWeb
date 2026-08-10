@@ -2,6 +2,17 @@
 
 use zero_render_foundation::primitive::{GlyphPrimitive, GlyphSource};
 
+fn append_source_run(text: &mut String, sources: &mut Vec<&GlyphSource>) {
+    sources.sort_unstable_by_key(|source| (source.start, source.end));
+    let mut previous = None;
+    for source in sources.drain(..) {
+        if previous.is_none_or(|previous: &GlyphSource| !previous.same_cluster(source)) {
+            text.push_str(source.as_str());
+        }
+        previous = Some(source);
+    }
+}
+
 /// 页面 glyph 索引选区。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlyphSelection {
@@ -39,20 +50,26 @@ impl GlyphSelection {
         }
         let end = end.min(glyphs.len().saturating_sub(1));
         let mut text = String::new();
-        let mut previous_source = None;
+        let mut source_run = Vec::new();
         for glyph in &glyphs[start..=end] {
             if let Some(source) = &glyph.source {
-                if previous_source.is_none_or(|previous: &GlyphSource| !previous.same_cluster(source)) {
-                    text.push_str(source.as_str());
+                if source_run
+                    .first()
+                    .is_some_and(|first: &&GlyphSource| !first.same_text_run(source))
+                {
+                    append_source_run(&mut text, &mut source_run);
                 }
-                previous_source = Some(source);
+                source_run.push(source);
             } else {
+                append_source_run(&mut text, &mut source_run);
                 if let Some(ch) = char::from_u32(glyph.glyph_id) {
                     text.push(ch);
                 }
-                previous_source = None;
             }
         }
+        // https://drafts.csswg.org/css-writing-modes-4/#bidi-algo
+        // Paint glyphs may be visual-order; copied text follows logical source byte order.
+        append_source_run(&mut text, &mut source_run);
         text
     }
 }
@@ -202,6 +219,27 @@ mod tests {
         assert_eq!(
             GlyphSelection::selected_text(&[first, second], &sel),
             "A\u{301}A\u{301}"
+        );
+    }
+
+    #[test]
+    fn selected_text_orders_rtl_clusters_by_logical_source_range() {
+        let text: Arc<str> = Arc::from("אבג");
+        let mut gimel = sample_glyph(0.0, 'ג');
+        gimel.source = GlyphSource::new(text.clone(), 4, 6);
+        let mut bet = sample_glyph(10.0, 'ב');
+        bet.source = GlyphSource::new(text.clone(), 2, 4);
+        let mut alef = sample_glyph(20.0, 'א');
+        alef.source = GlyphSource::new(text, 0, 2);
+        let glyphs = [gimel, bet, alef];
+
+        assert_eq!(
+            GlyphSelection::selected_text(&glyphs, &GlyphSelection { anchor: 0, focus: 2 }),
+            "אבג"
+        );
+        assert_eq!(
+            GlyphSelection::selected_text(&glyphs, &GlyphSelection { anchor: 0, focus: 1 }),
+            "בג"
         );
     }
 }

@@ -278,9 +278,14 @@ impl GlyphSource {
         Some(Self { text, start, end })
     }
 
+    /// 判断两个 source 是否属于同一文本 run。
+    pub fn same_text_run(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.text, &other.text)
+    }
+
     /// 判断两个 glyph 是否指向同一文本 run 的同一 cluster。
     pub fn same_cluster(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.text, &other.text) && self.start == other.start && self.end == other.end
+        self.same_text_run(other) && self.start == other.start && self.end == other.end
     }
 
     /// 返回该 glyph 对应的源文本 cluster。
