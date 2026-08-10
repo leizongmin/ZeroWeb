@@ -275,8 +275,9 @@ jobs:
       - name: Build zero-compositor (bin required by browser compositor tests)
         shell: bash
         run: |
-          # 不带 --target：browser 测试 fallback 路径硬编码 target/debug/zero-compositor
-          cargo build ${{ matrix.features }} -p zero-compositor --bin zero-compositor
+          # 不带 --target/--features：browser 测试 fallback 路径硬编码
+          # target/debug/zero-compositor；compositor 无 features 定义
+          cargo build -p zero-compositor --bin zero-compositor
 
       - name: Run app tests
         if: matrix.v8_runtime != false
@@ -318,11 +319,9 @@ jobs:
         if: matrix.v8_runtime == false
         shell: bash
         run: |
-          # 不带 --target：browser 测试 fallback 路径硬编码 target/debug/zero-compositor
-          # compositor 无 quickjs feature，剥掉（同 render CPU tests 模式）
-          COMPOSITOR_FEATURES="${{ matrix.features }}"
-          COMPOSITOR_FEATURES="${COMPOSITOR_FEATURES//--features quickjs/}"
-          cargo build $COMPOSITOR_FEATURES -p zero-compositor --bin zero-compositor
+          # 不带 --target/--features：browser 测试 fallback 路径硬编码
+          # target/debug/zero-compositor；compositor 无 features 定义
+          cargo build -p zero-compositor --bin zero-compositor
 
       - name: Run QuickJS-backed tests
         if: matrix.v8_runtime == false
