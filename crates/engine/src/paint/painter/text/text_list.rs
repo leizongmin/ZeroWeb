@@ -5,7 +5,7 @@
 //! compute_list_item_index 兄弟索引。paint_content（CSS content 计数器）通过
 //! `use super::text_list::{format_counter_alpha, format_counter_roman}` 复用格式化函数。
 
-use zero_css_parser::values::{LengthValue, ListStyleTypeValue};
+use zero_css_parser::values::{ContentListItem, LengthValue, ListStyleTypeValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::geometry::Rect;
@@ -13,6 +13,7 @@ use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, RoundedRectPrimitive};
 use zero_style_system::{ComputedStyle, ContentComputedValue};
 
+use super::format_counter_text;
 use crate::paint::color::color_value_to_render;
 use crate::paint::helpers::image_resource_key;
 
@@ -397,6 +398,55 @@ pub(super) fn format_counter_roman(value: i64, upper: bool) -> String {
 }
 
 impl super::super::Painter {
+    /// 解析 CSS `content` 的字符串与计数器项。
+    pub(super) fn resolve_generated_content_text(&self, content: &ContentComputedValue) -> Option<String> {
+        match content {
+            ContentComputedValue::String(s) => Some(s.clone()),
+            ContentComputedValue::Counter { name, style } => {
+                Some(format_counter_text(self.get_counter(name).unwrap_or(0), style))
+            }
+            ContentComputedValue::Counters { name, separator, style } => {
+                let scopes: Vec<i64> = match self.get_counter_scopes(name) {
+                    Some(scopes) if !scopes.is_empty() => scopes.to_vec(),
+                    _ => vec![0],
+                };
+                Some(
+                    scopes
+                        .iter()
+                        .map(|&value| format_counter_text(value, style))
+                        .collect::<Vec<_>>()
+                        .join(separator),
+                )
+            }
+            ContentComputedValue::List(items) => {
+                let mut text = String::new();
+                for item in items {
+                    match item {
+                        ContentListItem::Str(value) => text.push_str(value),
+                        ContentListItem::Counter { name, style } => {
+                            text.push_str(&format_counter_text(self.get_counter(name).unwrap_or(0), style));
+                        }
+                        ContentListItem::Counters { name, separator, style } => {
+                            let scopes: Vec<i64> = match self.get_counter_scopes(name) {
+                                Some(scopes) if !scopes.is_empty() => scopes.to_vec(),
+                                _ => vec![0],
+                            };
+                            text.push_str(
+                                &scopes
+                                    .iter()
+                                    .map(|&value| format_counter_text(value, style))
+                                    .collect::<Vec<_>>()
+                                    .join(separator),
+                            );
+                        }
+                    }
+                }
+                Some(text)
+            }
+            _ => None,
+        }
+    }
+
     /// 绘制列表项标记（disc / circle / square / decimal / alpha / roman / list-style-image）。
     pub(crate) fn paint_list_marker(
         &mut self,

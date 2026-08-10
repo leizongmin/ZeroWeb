@@ -59,8 +59,10 @@ mod tests {
             src[i..i + 4].copy_from_slice(&[255, 0, 0, 255]);
         }
         let out = bake_scroll_into_rgba(&src, 2, 4, 0.0, 1.0);
-        // row 0 cleared; row 1 gets old row 0 (red)
-        assert_eq!(&out[0..4], &[0, 0, 0, 0]);
-        assert_eq!(&out[4..8], &[255, 0, 0, 255]);
+        // Positive scroll moves content up: old red row 0 leaves the viewport,
+        // output row 0 samples old black row 1, and the bottom row is cleared.
+        assert_eq!(&out[0..4], &[0, 0, 0, 255]);
+        let bottom = ((4 - 1) * 2 * 4) as usize;
+        assert_eq!(&out[bottom..bottom + 4], &[0, 0, 0, 0]);
     }
 }

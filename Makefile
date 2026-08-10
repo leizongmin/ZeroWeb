@@ -93,9 +93,9 @@ test: target/test-guard
 	#   quickjs feature 组合产物（与 v8 产物不冲突），cargo 各自持锁；v8 测试
 	#   （~50s）时长覆盖 clippy 编译，总时长省一个编译段。test-guard 两个实例
 	#   独立监控各自进程树（阈值各自生效，不叠加）。
-	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace & \
-	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & \
-	wait
+	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace & test_pid=$$!; \
+	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & clippy_pid=$$!; \
+	rc=0; wait $$test_pid || rc=$$?; wait $$clippy_pid || rc=$$?; exit $$rc
 	# QuickJS 运行测试（v8/quickjs 接口一致性保证）
 	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES))
 

@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::types::FontStyleValue;
-use zero_css_parser::values::{ColorValue, ContentListItem, FloatValue, LengthValue};
+use zero_css_parser::values::{ColorValue, FloatValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::inline_finalization::{
     build_text_parent_override_map, resolve_text_align, resolve_text_align_last, resolve_text_indent,
@@ -20,8 +20,8 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive};
 use zero_style_system::{
-    BackgroundPositionComputedValue, ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TabSizeValue,
-    TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
+    BackgroundPositionComputedValue, ComputedStyle, ObjectFitComputedValue, TabSizeValue, TextEmphasisPositionValue,
+    TextEmphasisStyleValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
 };
 
 use super::super::color::{color_value_to_render, resolve_color_current};
@@ -36,37 +36,13 @@ use super::super::helpers::apply_text_transform;
 pub(crate) mod text_list;
 mod text_multicol;
 mod text_ruby;
+mod text_shaping;
 
 use text_list::{format_counter_alpha, format_counter_roman};
 use text_multicol::compute_multicol_info_for_paint;
 use text_multicol::multicol_balance_target_height;
 use text_ruby::ruby_annotation_segments;
-
-/// R644：判断是否为 Cc 类控制字符（非空白）。CSS Text 3 §white-space-processing 要求
-/// 控制字符（Unicode 类别 Cc）必须可见；但 fontdue 对 Cc 无字形（.notdef 空白），
-/// 故 paint 时渲染可见占位框（修 control-chars-* mismatch 测试：test 应 != 空 ref）。
-/// 排除空白控制符（U+0009 TAB / U+000A LF / U+000C FF / U+000D CR），它们由换行/空白处理。
-pub(super) fn is_cc_control_char(ch: char) -> bool {
-    let cp = ch as u32;
-    ((cp <= 0x1F) || (0x7F..=0x9F).contains(&cp)) // Cc category
-        && !matches!(cp, 0x09 | 0x0A | 0x0C | 0x0D) // 排除空白 TAB/LF/FF/CR
-}
-
-/// R841：判定真正 Ahem 方块字形是否使用 em-box 位（glyph 顶 = 基线 − 0.8·fs）而非
-/// R817 默认位（基线 − fs）。
-///
-/// Chromium 的有效 Ahem 方块位**随 line-height 变**（R839 实测）：当 half-leading ≈ 0
-/// （即 line-height ≈ font-size，如 lh:1 / lh:1em / Ahem lh:normal=1.0）时，方块填满
-/// 整个 line-box，em-box 位才是正确的（修 inline-formatting-context-008、line-height-121）；
-/// 当 line-height 偏离 font-size（lh:0 行盒塌缩 / lh>1 含 leading）时，R817 的基线−fs 位
-/// 对多数用例更接近 chromium（R839 妥协）。
-///
-/// R837 全量应用 em-box 位反致 27 个 line-height:0 用例 0.99%→1.02% 越过 1% 阈值
-/// （见 evidence/r841-*）；本门控仅对 half-leading≈0 的子集启用，得 +2 零回归。
-pub(super) fn ahem_uses_embox_position(line_height: f32, font_size: f32) -> bool {
-    let half_leading = (line_height - font_size) / 2.0;
-    half_leading.abs() < 0.5
-}
+use text_shaping::{ahem_uses_embox_position, fragment_glyphs, is_cc_control_char};
 
 impl super::Painter {
     /// 收集浮动子元素的排除区域（带样式映射版本）。
@@ -109,64 +85,6 @@ impl super::Painter {
         }
 
         exclusions
-    }
-
-    /// 解析生成内容（`content` 属性）为文本字面量。
-    ///
-    /// 返回 `Some(text)` 当 content 为 `String`/`Counter`/`Counters`/`List`（计数器经当前
-    /// counter 作用域状态解析）；返回 `None` 当 `Normal`/`None`/`Attr`/`Url`（后者由别处
-    /// 处理或无文本）。`paint_content`（元素生成内容）与 `paint_list_marker`（`::marker`
-    /// content 覆盖）共用此解析，避免两处重复实现计数器/拼接逻辑。
-    pub(super) fn resolve_generated_content_text(&self, content: &ContentComputedValue) -> Option<String> {
-        match content {
-            ContentComputedValue::String(s) => Some(s.clone()),
-            ContentComputedValue::Counter { name, style } => {
-                Some(format_counter_text(self.get_counter(name).unwrap_or(0), style))
-            }
-            // counters(name, sep[, style])（CSS Lists 3）：取全部祖先作用域值，按 sep 拼接。
-            ContentComputedValue::Counters { name, separator, style } => {
-                let scopes: Vec<i64> = match self.get_counter_scopes(name) {
-                    Some(s) if !s.is_empty() => s.to_vec(),
-                    // 无作用域（计数器未建立）→ 单个默认 0，与 counter() 的 unwrap_or(0) 一致。
-                    _ => vec![0],
-                };
-                Some(
-                    scopes
-                        .iter()
-                        .map(|&v| format_counter_text(v, style))
-                        .collect::<Vec<_>>()
-                        .join(separator),
-                )
-            }
-            // 多 item 混合内容（`"Chapter " counter(c) ": "`）：逐 item 解析拼文本。
-            ContentComputedValue::List(items) => {
-                let mut buf = String::new();
-                for item in items {
-                    match item {
-                        ContentListItem::Str(s) => buf.push_str(s),
-                        ContentListItem::Counter { name, style } => {
-                            buf.push_str(&format_counter_text(self.get_counter(name).unwrap_or(0), style));
-                        }
-                        ContentListItem::Counters { name, separator, style } => {
-                            let scopes: Vec<i64> = match self.get_counter_scopes(name) {
-                                Some(s) if !s.is_empty() => s.to_vec(),
-                                _ => vec![0],
-                            };
-                            buf.push_str(
-                                &scopes
-                                    .iter()
-                                    .map(|&v| format_counter_text(v, style))
-                                    .collect::<Vec<_>>()
-                                    .join(separator),
-                            );
-                        }
-                    }
-                }
-                Some(buf)
-            }
-            // Normal/None/Attr/Url → 无文本。
-            _ => None,
-        }
     }
 
     /// 绘制列表标记（disc/circle/square/decimal 等）。
@@ -1374,11 +1292,33 @@ impl super::Painter {
                                 }
                             }
 
-                            for ch in transformed.chars() {
+                            let shaped_text_eligible = !char_advance_is_y
+                                && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
+                                && !$is_ahem
+                                && letter_spacing == 0.0
+                                && word_spacing == 0.0
+                                && active_text_shadows.is_empty()
+                                && emphasis_mark.is_none()
+                                && ruby_segs.as_ref().is_none_or(Vec::is_empty)
+                                && !frag_synthetic_italic
+                                && !style.text_decoration_line.has_any()
+                                && owner_style_opt.is_none_or(|owner| {
+                                    !owner.text_decoration_line.has_any()
+                                        && owner.background_color == ColorValue::Transparent
+                                })
+                                && rotation.abs() < f32::EPSILON
+                                && transformed.chars().all(|ch| !is_cc_control_char(ch));
+                            for glyph in fragment_glyphs(
+                                frag_font_id.0,
+                                &transformed,
+                                $frag_fs,
+                                shaped_text_eligible,
+                            ) {
+                                let ch = glyph.code_point;
                                 let (glyph_x, glyph_y) = if char_advance_is_y {
                                     (frag_base_x, char_pos)
                                 } else {
-                                    (char_pos, frag_base_y)
+                                    (char_pos + glyph.x_offset, frag_base_y - glyph.y_offset)
                                 };
 
                                 for &(shadow_ox, shadow_oy, shadow_color) in &active_text_shadows {
@@ -1403,7 +1343,7 @@ impl super::Painter {
                                     font_size: $frag_fs,
                                     color: frag_color,
                                     glyph_id: ch as u32,
-                                    font_glyph_index: None,
+                                    font_glyph_index: glyph.font_glyph_index,
                                     font_id: frag_font_id,
                                     bitmap_width: None,
                                     bitmap_height: None,
@@ -1422,7 +1362,9 @@ impl super::Painter {
                                     );
                                 }
 
-                                let advance = self.measure_char_cached(ch, $frag_fs, $is_ahem)
+                                let advance = glyph
+                                    .advance_x
+                                    .unwrap_or_else(|| self.measure_char_cached(ch, $frag_fs, $is_ahem))
                                     + letter_spacing
                                     + if ch == ' ' { word_spacing } else { 0.0 };
                                 char_pos += advance;

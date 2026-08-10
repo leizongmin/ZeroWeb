@@ -401,6 +401,7 @@ fn compositor_scroll_transform_bakes_pixels() {
 }
 
 /// RFC 4.3-S2：gpu_image mailbox 经 shm 后端传递像素。
+#[cfg(target_os = "linux")]
 #[test]
 fn compositor_gpu_image_mailbox_round_trips() {
     let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU_IMAGE", "1")]);

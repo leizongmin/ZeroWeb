@@ -12,3 +12,5 @@
 # 格式（空格分隔，# 开头为注释）：
 #   <test_path> <ref_path> <relation> <导入日期> <关联修复/备注>
 css/CSS2/text/text-align-white-space-001.xht css/CSS2/text/text-align-white-space-001-ref.xht == 2026-08-07 P1 落地验证
+css/css-fonts/font-feature-resolution-001.html css/css-fonts/font-feature-resolution-001-ref.html == 2026-08-11 R3209 shaped-text paint gate
+css/css-fonts/font-feature-resolution-002.html css/css-fonts/font-feature-resolution-002-ref.html == 2026-08-11 R3209 shaped-text paint gate

@@ -264,12 +264,12 @@ fi
 
 # 合并硬编码列表 + 账本条目（按 test_path 去重，保留先出现者）
 declare -a ENTRIES=()
-declare -A SEEN=()
+SEEN=$'\n'
 for entry in "${RENDERING_TESTS[@]}" "${LEDGER_ENTRIES[@]}"; do
   test_path=$(echo "$entry" | awk '{print $1}')
   [[ -z "$test_path" ]] && continue
-  if [[ -z "${SEEN[$test_path]:-}" ]]; then
-    SEEN[$test_path]=1
+  if [[ "$SEEN" != *$'\n'"$test_path"$'\n'* ]]; then
+    SEEN+="${test_path}"$'\n'
     ENTRIES+=("$entry")
   fi
 done
